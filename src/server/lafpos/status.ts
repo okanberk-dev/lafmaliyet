@@ -222,14 +222,19 @@ export async function loadLafposCard(db: DB = getDb(), now: Date = new Date()): 
   const switchDay = await loadLafposSwitchDay(db);
   const r = s.posDayReports;
   const d = s.posDailySales;
-  const unmatchedWhere = and(isNull(d.productId), eq(d.isService, false));
+  // Kart yalnız LafPOS'un şubesinin (Marina) kaydını sayar: öteki şubenin ModPOS günleri ve satırları karışmaz, panelde
+  // seçili şube de kartı değiştirmez
+  const ofR = eq(r.branchId, LAFPOS_BRANCH_ID);
+  const ofD = eq(d.branchId, LAFPOS_BRANCH_ID);
+  const unmatchedWhere = and(isNull(d.productId), eq(d.isService, false), ofD);
   const missingFrom = switchDay && switchDay < today ? (switchDay > addDays(today, -60) ? switchDay : addDays(today, -60)) : null;
   const [state, recent, [totals], unmatched, [{ unmatchedCount }], receivedRange, closed, ikram] = await Promise.all([
     readLafposState(db),
-    db.select({ date: r.date, z: r.z, receivedAt: r.receivedAt }).from(r).orderBy(desc(r.date)).limit(DAYS_SHOWN),
+    db.select({ date: r.date, z: r.z, receivedAt: r.receivedAt }).from(r).where(ofR).orderBy(desc(r.date)).limit(DAYS_SHOWN),
     db
       .select({ total: count(), trial: switchDay ? sql<number>`count(*) filter (where ${r.date} < ${switchDay})`.mapWith(Number) : count() })
-      .from(r),
+      .from(r)
+      .where(ofR),
     db
       .select({ posName: d.posName, qty: sum(d.qty).mapWith(Number), days: countDistinct(d.date) })
       .from(d)
@@ -238,11 +243,11 @@ export async function loadLafposCard(db: DB = getDb(), now: Date = new Date()): 
       .orderBy(desc(sum(d.qty)), asc(d.posName))
       .limit(10),
     db.select({ unmatchedCount: countDistinct(d.posName) }).from(d).where(unmatchedWhere),
-    missingFrom ? db.select({ date: r.date }).from(r).where(and(gte(r.date, missingFrom), lt(r.date, today))) : Promise.resolve([]),
+    missingFrom ? db.select({ date: r.date }).from(r).where(and(gte(r.date, missingFrom), lt(r.date, today), ofR)) : Promise.resolve([]),
     // Gün sonu gelmeyen gün LafPOS'un şubesinin kapalı günüyse eksik değil (öteki şubenin kapalı günü sayılmaz)
     missingFrom ? closedDaysBetween(missingFrom, addDays(today, -1), db, LAFPOS_BRANCH_ID) : Promise.resolve([]),
     // İkramın adları geçiş gününden itibaren (okuma anındaki bağla çözülür; bağlanınca listeden düşer)
-    switchDay ? loadLafposIkram(db, switchDay) : Promise.resolve(null),
+    switchDay ? loadLafposIkram(db, switchDay, {}, LAFPOS_BRANCH_ID) : Promise.resolve(null),
   ]);
   const ikramNames = ikram ? unmatchedIkramNames(ikram.lines, unmatched.map((u) => u.posName)) : { items: [], count: 0 };
   // Günlü retlerin günlerinin paneldeki kaydı (409'da silinecek olan; retten sonra yeniden yazıldıysa ret çözüldü)
@@ -252,10 +257,10 @@ export async function loadLafposCard(db: DB = getDb(), now: Date = new Date()): 
       ? db
           .select({ date: d.date, n: count() })
           .from(d)
-          .where(inArray(d.date, [...new Set([...recent.map((x) => x.date), ...errDates])]))
+          .where(and(inArray(d.date, [...new Set([...recent.map((x) => x.date), ...errDates])]), ofD))
           .groupBy(d.date)
       : Promise.resolve([]),
-    errDates.length ? db.select({ date: r.date, z: r.z, receivedAt: r.receivedAt }).from(r).where(inArray(r.date, errDates)) : Promise.resolve([]),
+    errDates.length ? db.select({ date: r.date, z: r.z, receivedAt: r.receivedAt }).from(r).where(and(inArray(r.date, errDates), ofR)) : Promise.resolve([]),
   ]);
   const linesOf = new Map(lineCounts.map((x) => [x.date, x.n]));
   const days = recent.map((x) => ({

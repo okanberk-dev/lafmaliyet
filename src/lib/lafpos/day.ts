@@ -116,10 +116,15 @@ const paymentSchema = z.object({
  * Banka POS (Pavo) gün sonu karşılaştırması (isteğe bağlı; LafPOS PR #154, server/sync/lafmaliyet.ts buildDayPayload):
  * Pavo'nun kart toplamı LafPOS'un kart toplamıyla. Pavo sonucu gün kapandıktan birkaç dakika sonra geldiği için aynı gün
  * bu alanla ikinci kez gelir. Tutarlar TL. Okunamayan alan günü reddetmez: yalnız karşılaştırma düşer (posDaySchema'da
- * `.catch`), gün sonu yine yazılır.
+ * `.catch`; parsePosDay günlüğe yazar), gün sonu yine yazılır. Bilinmeyen durum (ileride gelecek ya da LafPOS'un eski
+ * sürümünün "running"i) karşılaştırmayı düşürmez, "unknown" okunur: mesaj ve tutarlar yine görünür.
  */
+export const BANK_POS_STATUSES = ["ok", "failed", "unknown"] as const;
 export const bankPosSchema = z.object({
-  status: z.enum(["ok", "failed", "unknown"]),
+  status: z
+    .string()
+    .max(40)
+    .transform((s): (typeof BANK_POS_STATUSES)[number] => ((BANK_POS_STATUSES as readonly string[]).includes(s) ? (s as (typeof BANK_POS_STATUSES)[number]) : "unknown")),
   batchNo: z
     .string()
     .max(60)
@@ -195,6 +200,12 @@ export function parsePosDay(body: string, now: Date = new Date()): PosDayParse {
     return { ok: false, field: path.length ? path.map(String).join(".") : "body" };
   }
   if (r.data.date > businessDate(now)) return { ok: false, field: "date" };
+  // Pavo karşılaştırması okunamadıysa gün yine yazılır, ama sessiz kalmaz (önceki karşılaştırma yerinde kalır)
+  const sentBank = (json as { bankPos?: unknown }).bankPos;
+  if (sentBank !== undefined && sentBank !== null && r.data.bankPos === undefined) {
+    const issue = bankPosSchema.safeParse(sentBank).error?.issues[0];
+    console.warn("[lafpos] bankPos okunamadı, karşılaştırma yazılmadı:", issue ? `${issue.path.map(String).join(".") || "bankPos"}: ${issue.code}` : "bankPos");
+  }
   const seen = new Set<string>();
   for (const [i, l] of r.data.lines.entries()) {
     if (seen.has(l.posName)) return { ok: false, field: `lines.${i}.posName` };

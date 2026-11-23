@@ -673,36 +673,49 @@ test("anahtar: sitenin anahtarıyla (KARAOKE_SYNC_SECRET) aynı LAFPOS_SYNC_SECR
   assert.equal(lafposSecretFrom({ LAFPOS_SYNC_SECRET: SECRET, KARAOKE_SYNC_SECRET: `${SECRET}-site` }), SECRET);
 });
 
-test("altın gövde: LafPOS'un buildDayPayload biçimi (iki boy, ekler, hizmet, ikram, ödeme kanalları, cashIn) sözleşmeye uyar", () => {
-  // tests/fixtures/lafpos-gun.golden.json: LafPOS server/sync/lafmaliyet.ts › buildDayPayload'ın alan sırası ve
-  // biçimi (main 58856f9). LafPOS'un L1 partisi kendi tohumlanmış gününden aynı adlı dosyayı üretince bayt bayt
-  // buraya kopyalanır; şema kayması üretimde kalıcı 400 olurdu, burada test kırılır.
+test("altın gövde: LafPOS'un buildDayPayload biçimi (şube, iki boy, ekler, hizmet, ikram, ödeme kanalları, kartla bahşiş ve tahsilat) sözleşmeye uyar", () => {
+  // tests/fixtures/lafpos-gun.golden.json: LafPOS tests/fixtures/lafmaliyet-gun.golden.json'ın bayt bayt kopyası
+  // (LafPOS tests/lafmaliyet-gun.test.ts tohumlanmış günden üretir). LafPOS'ta yeniden üretilince buraya kopyalanır; şema
+  // kayması üretimde kalıcı 400 olurdu, burada test kırılır.
   const raw = read("tests/fixtures/lafpos-gun.golden.json");
   const r = parsePosDay(raw, NOW);
   assert.ok(r.ok, r.ok ? "" : r.field);
-  assert.equal(r.data.date, "2026-10-25");
-  assert.equal(r.data.lines.length, 7);
+  assert.equal(r.data.date, "2026-10-26");
+  assert.equal(r.data.sube, LAFPOS_BRANCH_ID, "LafPOS kasası şubesini yazar (Marina)");
   assert.deepEqual(
     r.data.lines.map((l) => [l.posName, l.siteMenuId, l.slot, l.isService]),
     [
-      ["LATTE MEDIUM", "mnu-0003", "M", false],
       ["KARAOKE ODASI", null, null, true],
-      ["LATTE LARGE", "mnu-0003", "L", false],
-      ["TÜRK KAHVESİ", null, null, false],
-      ["EXTRA SHOT", "mnu-0081", "M", false],
+      ["LATTE MEDIUM", "mnu-0007", "M", false],
+      ["SAN SEBASTİAN", "mnu-0058", "M", false],
+      ["LATTE LARGE", "mnu-0007", "L", false],
+      ["AMERİCANO LARGE", "mnu-0006", "L", false],
+      ["TÜRK KAHVESİ MEDIUM", "mnu-0019", "M", false],
       ["SYRUP", "mnu-0080", "M", false],
+      ["YENİLEBİLİR BARDAK", null, null, false],
       ["ALTERNATIF SÜT", "mnu-0082", "M", false],
+      ["EXTRA SHOT", "mnu-0081", "M", false],
     ],
   );
-  assert.equal(r.data.z.cashIn, 1000);
-  assert.equal(r.data.z.expectedCash, 8170);
-  assert.equal(r.data.ikram[1].reason, null, "boş neden null");
+  assert.equal(r.data.z.expectedCash, 1645);
+  assert.equal(r.data.z.cardTips, 25);
+  assert.equal(r.data.z.cardCollections, 400);
   assert.deepEqual(r.data.payments.map((p) => p.channel), [null, null, "pluxee", null]);
   // Z toplamı ödeme alanlarının toplamı, beklenen nakit LafPOS'un formülüyle (kasa eşlemesi aynısını hesaplar)
   const z = r.data.z;
   assert.equal(Math.round((z.cash + z.card + z.mealCard + z.online + z.other) * 100) / 100, z.zTotal);
   const prefill = lafposPrefill(z);
   assert.deepEqual(prefill.checks, [], "panelin olması gerekeni LafPOS'unkiyle aynı");
+
+  // Aynı gövdenin kenarları: boş ikram nedeni null, kasaya giren nakit beklenen nakde girer
+  const body = JSON.parse(raw) as { z: Record<string, number>; ikram: { reason: string | null }[] };
+  body.ikram[1].reason = "";
+  body.z.cashIn = 1000;
+  body.z.expectedCash = 2645;
+  const edge = parsePosDay(JSON.stringify(body), NOW);
+  assert.ok(edge.ok, edge.ok ? "" : edge.field);
+  assert.equal(edge.data.ikram[1].reason, null, "boş neden null");
+  assert.deepEqual(lafposPrefill(edge.data.z).checks, [], "kasaya giren nakit de aynı formülle");
 });
 
 test("durum: kayıtlı değer parça parça okunur (bozuk parça yok sayılır); gövdeden gün ve Z", () => {

@@ -271,4 +271,10 @@ test("Pavo: gün paketi bankPos'suz da geçerli; bozuk bankPos günü reddetmez"
   assert.ok(withPavo.ok && withPavo.data.bankPos?.pavoCard === 8_000, "bankPos okundu");
   const broken = parsePosDay(body({ bankPos: { status: "belki" } }), now);
   assert.ok(broken.ok && broken.data.bankPos === undefined, "bozuk bankPos yok sayıldı");
+  // Bilinmeyen durum (LafPOS'un eski sürümünün "running"i, ileride gelecek bir durum) karşılaştırmayı düşürmez
+  const running = parsePosDay(body({ bankPos: { ...PAVO, status: "running", message: "Cihazda gün sonu sürüyor" } }), now);
+  assert.ok(running.ok, "gün yazılır");
+  assert.equal(running.data.bankPos?.status, "unknown");
+  assert.equal(running.data.bankPos?.pavoCard, 8_000);
+  assert.equal(running.data.bankPos?.message, "Cihazda gün sonu sürüyor");
 });

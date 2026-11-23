@@ -295,6 +295,24 @@ describe("LafPOS bağlantısı: veritabanında", { skip: !URL_ && "LAFPOS_TEST_D
     assert.equal(await kasa.loadLafposDay(D1, db), null);
   });
 
+  test("Ayarlar › LafPOS (kasa) kartı yalnız LafPOS'un şubesini sayar: öteki şubenin günü ve eşleşmeyen adı karışmaz", async () => {
+    const { loadLafposCard } = await import("../src/server/lafpos/status");
+    const tuzlaName = `TUZLA MODPOS ADI ${tag}`;
+    const marinaName = `MARINA EŞLEŞMEYEN ${tag}`;
+    const z = { zNo: 7, receipts: 1, zTotal: 100 } as unknown as typeof s.posDayReports.$inferInsert.z;
+    await db.insert(s.posDayReports).values({ date: D5, branchId: MODPOS_SUBE, z, payments: [], ikram: [], source: "modpos" });
+    await db.insert(s.posDailySales).values([
+      { date: D5, branchId: MODPOS_SUBE, posName: tuzlaName, qty: 50, revenue: 500, productId: null },
+      { date: D4, branchId: LAFPOS_SUBE, posName: marinaName, qty: 1, revenue: 10, productId: null },
+    ]);
+    const card = await loadLafposCard(db, NOW);
+    assert.equal(card.days.some((d) => d.date === D5 && d.zNo === 7), false, "Tuzla'nın günü (Z 7) kartta yok");
+    assert.equal(card.unmatched.some((u) => u.posName === tuzlaName), false, "Tuzla'nın adı eşleşmeyenlerde yok");
+    assert.equal(card.unmatched.some((u) => u.posName === marinaName), true, "Marina'nın eşleşmeyen adı var");
+    const marinaDays = await db.select({ date: s.posDayReports.date }).from(s.posDayReports).where(eq(s.posDayReports.branchId, LAFPOS_SUBE));
+    assert.equal(card.totalDays, marinaDays.length, "toplam yalnız Marina'nın günleri");
+  });
+
   test("ürün maliyetleri: yalnız imzayla; yalnız siteye bağlı ürünler ve altı alan; maliyet modelden, kuruş", async () => {
     const h = signedHeaders(SECRET, "GET", URUNLER, "", NOW.getTime());
     const input = { secret: SECRET, url: URUNLER, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"], now: NOW };
