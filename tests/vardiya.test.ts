@@ -22,6 +22,7 @@ import {
   dayHeading,
   formatShiftCell,
   hoursLabel,
+  listedRows,
   nameRef,
   parseShiftCell,
   pdfFileName,
@@ -341,4 +342,45 @@ test("PDF: kaydedilen plandan çizilir; %PDF ile başlar, A4 yatay, başlığı 
   assert.match(pdf, /drawSvgPath\(LAF_BEAN_PATH, \{ x: MARGIN, y: top, scale, color: GOLD \}\)/);
   // Sade tasarım: dolu kutu yok (yalnız daire, çizgi ve yazı)
   assert.doesNotMatch(pdf, /roundRect|drawRectangle/);
+});
+
+test("boş bırakılanlar listede yazmaz: haftası boş kişi ızgarada, o günü boş kişi telefonun listesinde yok; açılan ve eklenen kalır", () => {
+  const E = ["", "", "", "", "", "", ""];
+  const rows = [
+    { ref: "u:1", texts: ["09:00–18:00", "", "", "", "", "", ""] },
+    { ref: "u:2", texts: [...E] },
+    { ref: "u:3", texts: ["", "İzin", "", "", "", "", "   "] },
+    { ref: "n:can", texts: [...E], added: true },
+  ];
+  const refs = (r: { listed: { ref: string }[]; hidden: { ref: string }[] }) => [r.listed.map((x) => x.ref), r.hidden.map((x) => x.ref)];
+  // Hafta: yazılmış her şey (izin de) listede; boşluk boş sayılır; bu oturumda eklenen satır listede
+  assert.deepEqual(refs(listedRows(rows)), [["u:1", "u:3", "n:can"], ["u:2"]]);
+  // Gün: yalnız o günü yazılmış olanlar
+  assert.deepEqual(refs(listedRows(rows, new Set(), 0)), [["u:1", "n:can"], ["u:2", "u:3"]]);
+  assert.deepEqual(refs(listedRows(rows, new Set(), 1)), [["u:3", "n:can"], ["u:1", "u:2"]]);
+  assert.deepEqual(refs(listedRows(rows, new Set(), 6)), [["n:can"], ["u:1", "u:2", "u:3"]]);
+  // Açılan: `ref` bütün hafta, `ref|gün` yalnız o gün (ızgarada hafta için de listede)
+  assert.deepEqual(refs(listedRows(rows, new Set(["u:2"]), 3)), [["u:2", "n:can"], ["u:1", "u:3"]]);
+  assert.deepEqual(refs(listedRows(rows, new Set(["u:2|4"]), 3)), [["n:can"], ["u:1", "u:2", "u:3"]]);
+  assert.deepEqual(refs(listedRows(rows, new Set(["u:2|4"]), 4)), [["u:2", "n:can"], ["u:1", "u:3"]]);
+  assert.deepEqual(refs(listedRows(rows, new Set(["u:2|4"]))), [["u:1", "u:2", "u:3", "n:can"], []]);
+
+  const grid = read("src/app/panel/vardiya/shift-grid.tsx");
+  // Yönetici: ızgara haftası yazılmış olanları, telefon o günü yazılmış olanları listeler; kalanlar "Ekle" düğmelerinde
+  assert.match(grid, /const weekList = listedRows\(rows, opened\);/);
+  assert.match(grid, /const dayList = listedRows\(rows, opened, day\);/);
+  assert.match(grid, /\{weekList\.listed\.map\(\(r\) => \{/);
+  assert.match(grid, /\{dayList\.listed\.map\(\(r\) => \{/);
+  assert.match(grid, /\{addChips\(weekList\.hidden, null\)\}/);
+  assert.match(grid, /\{addChips\(dayList\.hidden, day\)\}/);
+  // Kayıttan sonra (sunucunun planı) açılanlar sıfırlanır: boşaltılan kişi listeden düşer
+  assert.match(grid, /setRows\(saved\);\n\s+setDraftNote\(null\);\n\s+setOpened\(new Set\(\)\);/);
+  // Personel: "Benim haftam" yalnız yazılmış günler, telefonun gün listesi yalnız o günü yazılmış kişiler; tabloda boş kutu yazısız
+  const staffView = grid.slice(grid.indexOf("if (!canEdit) {"), grid.indexOf("  return (\n    <div className=\"space-y-4\">\n      {savedNote"));
+  assert.match(staffView, /mine\.texts\[i\]\.trim\(\) \? \(/);
+  assert.match(staffView, /const dayStaff = listedRows\(planned, undefined, day\)\.listed;/);
+  assert.match(staffView, /\{cell \? formatShiftCell\(cell\) : null\}/);
+  assert.doesNotMatch(grid, /: "–"\}/);
+  // Seçim düğmelerinin altında boş kutu için yazı yok (yer tutucu boşluk)
+  assert.match(grid, /formatShiftCell\(cell\)\) : "\\u00a0";/);
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarRange, Copy, Eraser, FileDown, Save, Sparkles, Undo2, UserPlus, X } from "lucide-react";
+import { CalendarRange, Copy, Eraser, FileDown, Plus, Save, Sparkles, Undo2, UserPlus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -28,6 +28,7 @@ import {
   dayLong,
   formatShiftCell,
   hoursLabel,
+  listedRows,
   nameRef,
   parseShiftCell,
   expandShiftAbbr,
@@ -158,12 +159,19 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
   const [prompt, setPrompt] = useState("");
   const [draftNote, setDraftNote] = useState<DraftNote | null>(null);
   const [rows, setRows] = useState<GridRow[]>(saved);
+  /**
+   * Listede yalnız bir şey yazılmış kişi durur ("boş bıraktıklarım da hiç listede yazmasın"; listedRows): ızgarada
+   * haftası boş, telefonda o günü boş kişi listenin altındaki "Ekle" düğmelerindedir. Dokunulan kişi (`ref`, telefonda
+   * `ref|gün`) kaydedilene kadar listede kalır, kutusunu boşaltsa da
+   */
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
   // Sunucudaki plan değişti (kayıttan sonraki yenileme, başka sekmenin kaydı): ızgara onunla yeniden kurulur
   const [seen, setSeen] = useState(stamp);
   if (seen !== stamp) {
     setSeen(stamp);
     setRows(saved);
     setDraftNote(null);
+    setOpened(new Set());
   }
   const [newName, setNewName] = useState("");
   const [discardOpen, setDiscardOpen] = useState(false);
@@ -218,6 +226,15 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
   const headcount = days.map((_, i) => rows.filter((r) => cellOfText(r.texts[i])?.kind === "work").length);
   const totalMinutes = rows.reduce((sum, r) => sum + minutesOf(r.texts), 0);
   const planned = rows.filter((r) => r.texts.some((t) => t.trim()));
+  // Yöneticinin listeleri: ızgarada haftası, telefonda o günü yazılmış olanlar ve açılanlar
+  const weekList = listedRows(rows, opened);
+  const dayList = listedRows(rows, opened, day);
+
+  /** Listede olmayan kişiyi açar (telefonda yalnız o gün için) ve ilk düğmesine ya da kutusuna odaklanır */
+  function openRow(ref: string, onDay: number | null) {
+    setOpened((set) => new Set(set).add(onDay === null ? ref : `${ref}|${onDay}`));
+    requestAnimationFrame(() => (document.querySelector(`[data-row="${CSS.escape(ref)}"] :is(button, input)`) as HTMLElement | null)?.focus());
+  }
 
   function setText(ref: string, day: number, text: string) {
     setSavedNote(null);
@@ -239,14 +256,15 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
     const ref = user ? userRef(user.id) : nameRef(name);
     const dup = rows.find((r) => r.ref === ref || fold(r.name) === fold(name));
     if (dup) {
-      toast.info(`${dup.name} zaten listede`);
-      document.getElementById(`${addId}-${dup.ref}-0`)?.focus();
+      // Listede değilse (haftası ya da o günü boş) listeye girer; zaten listedeyse yalnız ona gidilir
+      if ((phone ? dayList : weekList).listed.includes(dup)) toast.info(`${dup.name} zaten listede`);
+      openRow(dup.ref, null);
       return void setNewName("");
     }
     setRows((list) => [...list, { ref, userId: user?.id ?? null, name: user?.name ?? name, texts: Array<string>(7).fill(""), added: true }]);
     setNewName("");
-    // Yeni satırın ilk kutusu çizildikten sonra odaklanır
-    requestAnimationFrame(() => document.getElementById(`${addId}-${ref}-0`)?.focus());
+    // Yeni satırın ilk düğmesi ya da kutusu çizildikten sonra odaklanır
+    openRow(ref, null);
   }
 
   /** Geçen haftanın planı boş hücrelere kopyalanır (yazılmış hücrenin üstüne yazmaz); kaydedilene kadar taslaktır */
@@ -375,7 +393,7 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
     const chosen = cell?.kind === "off" ? "off" : (preset?.key ?? null);
     const invalid = bad.has(`${r.ref}|${i}`);
     const changed = norm(t) !== (before.get(r.ref)?.[i] ?? "");
-    const under = invalid ? t : cell ? (cell.kind === "off" ? (cell.note ?? "İzin") : formatShiftCell(cell)) : "–";
+    const under = invalid ? t : cell ? (cell.kind === "off" ? (cell.note ?? "İzin") : formatShiftCell(cell)) : "\u00a0";
     return (
       <div className={cn(big ? "flex items-center gap-3" : "min-w-[5.5rem]")}>
         <div role="group" aria-label={`${r.name}, ${dayLong(days[i], i)}`} className={cn("inline-flex shrink-0", big ? "gap-1.5" : "gap-1")}>
@@ -411,6 +429,21 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
       </div>
     );
   };
+
+  /** Listede olmayanlar (haftası ya da o günü boş): dokununca listeye girer; telefonda yalnız o gün için */
+  const addChips = (hidden: readonly GridRow[], onDay: number | null) =>
+    hidden.length ? (
+      <div className={onDay === null ? "px-5 pt-3" : "mt-3"}>
+        <p className="text-[13px] text-ink-mute">{onDay === null ? "Bu hafta yazılmayanlar" : `${DAY_NAMES[onDay]} yazılmayanlar`}</p>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {hidden.map((r) => (
+            <button key={r.ref} type="button" disabled={drafting} onClick={() => openRow(r.ref, onDay)} className={buttonClass("secondary", "sm")} aria-label={`${r.name}: listeye ekle`}>
+              <Plus size={14} aria-hidden="true" /> {r.name}
+            </button>
+          ))}
+        </div>
+      </div>
+    ) : null;
 
   /** Satırın eylemi: bu oturumda eklenen satır kaldırılır, kayıtlı satırın haftası boşaltılır */
   const rowAction = (r: GridRow) =>
@@ -456,28 +489,33 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
     const under = [presetLabel(text), cell?.kind === "work" ? cell.note : null].filter(Boolean).join(" · ");
     return (
       <span className={cn("shrink-0 text-right text-sm tabular", cell?.kind === "work" ? "font-semibold text-ink" : "text-ink-mute")}>
-        <span className="block whitespace-nowrap">{cell ? (cell.kind === "work" ? shiftTimes(cell) : formatShiftCell(cell)) : "–"}</span>
+        <span className="block whitespace-nowrap">{cell ? (cell.kind === "work" ? shiftTimes(cell) : formatShiftCell(cell)) : null}</span>
         {under ? <span className="block max-w-[11rem] truncate text-xs font-normal text-ink-mute">{under}</span> : null}
       </span>
     );
   };
 
   if (!canEdit) {
+    // Telefonun gün listesi: yalnız o günü yazılmış kişiler
+    const dayStaff = listedRows(planned, undefined, day).listed;
     return (
       <div className="space-y-4">
         {mine && mine.texts.some((t) => t.trim()) ? (
           <Card>
             <CardHeader icon={<CalendarRange />} title="Benim haftam" description={`${weekLabel(monday)} · ${hoursLabel(minutesOf(mine.texts))}`} actions={pdfButton} />
             <ul className="mx-5 mb-5 divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
-              {days.map((d, i) => (
-                <li key={d} className={cn("flex items-start justify-between gap-3 px-4 py-2.5", d === today && "bg-panel/60")}>
-                  <span className="min-w-0 text-sm text-ink-mute">
-                    {dayLong(d, i)}
-                    {d === today ? <span className="block text-xs font-medium text-ink">bugün</span> : null}
-                  </span>
-                  {shiftValue(mine.texts[i])}
-                </li>
-              ))}
+              {/* Yalnız yazılmış günler (boş gün listede yok) */}
+              {days.map((d, i) =>
+                mine.texts[i].trim() ? (
+                  <li key={d} className={cn("flex items-start justify-between gap-3 px-4 py-2.5", d === today && "bg-panel/60")}>
+                    <span className="min-w-0 text-sm text-ink-mute">
+                      {dayLong(d, i)}
+                      {d === today ? <span className="block text-xs font-medium text-ink">bugün</span> : null}
+                    </span>
+                    {shiftValue(mine.texts[i])}
+                  </li>
+                ) : null,
+              )}
             </ul>
           </Card>
         ) : null}
@@ -498,21 +536,26 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
                 {dayLong(days[day], day)}
                 {days[day] === today ? " · bugün" : ""} · {headcount[day] ? `${headcount[day]} kişi çalışıyor` : "çalışan yazılmadı"}
               </p>
-              <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
-                {planned.map((r) => (
-                  <li key={r.ref} className="flex items-start justify-between gap-3 px-4 py-2.5">
-                    <span className="min-w-0 text-sm leading-5 font-medium break-words text-ink">
-                      {r.name}
-                      {r.ref === meRef ? (
-                        <Badge tone="blue" className="ml-2">
-                          Siz
-                        </Badge>
-                      ) : null}
-                    </span>
-                    {shiftValue(r.texts[day])}
-                  </li>
-                ))}
-              </ul>
+              {/* Yalnız o günü yazılmış kişiler (boş olan listede yok) */}
+              {dayStaff.length ? (
+                <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
+                  {dayStaff.map((r) => (
+                    <li key={r.ref} className="flex items-start justify-between gap-3 px-4 py-2.5">
+                      <span className="min-w-0 text-sm leading-5 font-medium break-words text-ink">
+                        {r.name}
+                        {r.ref === meRef ? (
+                          <Badge tone="blue" className="ml-2">
+                            Siz
+                          </Badge>
+                        ) : null}
+                      </span>
+                      {shiftValue(r.texts[day])}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-mute ring-1 ring-line">Bu gün için vardiya yazılmadı.</p>
+              )}
               <p className="mt-2 text-[13px] text-ink-mute tabular">Haftanın toplamı {hoursLabel(totalMinutes)}</p>
             </div>
           ) : (
@@ -544,7 +587,7 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
                         const cell = cellOfText(t);
                         return (
                           <TD key={i} className={cn("whitespace-nowrap tabular", cell?.kind === "work" ? "text-ink" : "text-ink-quiet")}>
-                            {cell ? formatShiftCell(cell) : "–"}
+                            {cell ? formatShiftCell(cell) : null}
                             {presetLabel(t) ? <span className="block text-[11px] leading-4 text-ink-mute">{presetLabel(t)}</span> : null}
                           </TD>
                         );
@@ -562,7 +605,7 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
                     </TD>
                     {headcount.map((n, i) => (
                       <TD key={i} className="font-normal text-ink-mute tabular">
-                        {n ? `${n} kişi` : "–"}
+                        {n ? `${n} kişi` : null}
                       </TD>
                     ))}
                     <TD numeric>{hoursLabel(totalMinutes)}</TD>
@@ -729,9 +772,9 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
               {dayLong(days[day], day)}
               {days[day] === today ? " · bugün" : ""} · {headcount[day] ? `${headcount[day]} kişi çalışıyor` : "çalışan yazılmadı"}
             </p>
-            {rows.length ? (
+            {dayList.listed.length ? (
               <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
-                {rows.map((r) => {
+                {dayList.listed.map((r) => {
                   const minutes = minutesOf(r.texts);
                   return (
                     // Ad kendi satırında (dar telefonda kesilmez); altında o günün düğmeleri ya da kutusu tam genişlikte
@@ -746,7 +789,7 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
                         </p>
                         <div className="flex shrink-0 justify-end">{rowAction(r)}</div>
                       </div>
-                      <div className="mt-1.5">
+                      <div className="mt-1.5" data-row={r.ref}>
                         {mode === "pick" ? (
                           cellPicker(r, day, true)
                         ) : (
@@ -761,87 +804,95 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
                 })}
               </ul>
             ) : (
-              <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-mute ring-1 ring-line">Bu şubede personel hesabı yok. Aşağıdan kişi ekleyin.</p>
+              <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-mute ring-1 ring-line">
+                {rows.length ? `${DAY_NAMES[day]} için kimse yazılmadı. Aşağıdan kişiye dokunun ya da yazarak doldurun.` : "Bu şubede personel hesabı yok. Aşağıdan kişi ekleyin."}
+              </p>
             )}
+            {addChips(dayList.hidden, day)}
             <p className="mt-2 text-[13px] text-ink-mute tabular">Haftanın toplamı {hoursLabel(totalMinutes)}</p>
           </div>
         ) : (
-          <TableWrap className={cn(drafting && "opacity-60")} inert={drafting} aria-busy={drafting || undefined}>
-            <Table>
-              <THead>
-                <tr>
-                  <TH sticky>Kişi</TH>
-                  {days.map((d, i) => (
-                    <TH key={d} className={cn("px-2", d === today && "text-info")} title={dayLong(d, i)}>
-                      {dayHeading(d, i, crossMonth)}
-                    </TH>
-                  ))}
-                  <TH numeric className="px-2">
-                    Toplam
-                  </TH>
-                  <TH aria-label="Satır eylemleri" className="px-0.5" />
-                </tr>
-              </THead>
-              <tbody>
-                {rows.map((r) => {
-                  const minutes = minutesOf(r.texts);
-                  return (
-                    <TR key={r.ref}>
-                      <TD sticky className="py-2 pr-1 font-medium">
-                        <span className="block max-w-28 min-w-20 truncate xl:max-w-40" title={r.name}>
-                          {r.name}
-                        </span>
-                        {r.userId === null ? <span className="block text-xs font-normal text-ink-quiet">hesabı yok</span> : null}
-                      </TD>
-                      {r.texts.map((text, i) => {
-                        // Kutunun altında küçük yazı: hazır vardiyanın adı ve not (dar kutuda not kesilir)
-                        const under = [presetLabel(text), cellOfText(text)?.note].filter(Boolean).join(" · ");
-                        return mode === "pick" ? (
-                          <TD key={i} className="px-1 py-1.5 align-top">
-                            {cellPicker(r, i)}
-                          </TD>
-                        ) : (
-                          <TD key={i} className="px-0.5 py-1.5 align-top">
-                            {cellInput(r, i, "min-w-[5.5rem] px-1.5 sm:text-[13px]")}
-                            {under ? <span className="mt-0.5 block max-w-[7rem] truncate px-1.5 text-[11px] leading-4 text-ink-mute">{under}</span> : null}
-                          </TD>
-                        );
-                      })}
-                      <TD numeric className={cn("px-2 font-semibold", !minutes && "font-normal text-ink-quiet")}>
-                        {minutes ? hoursLabel(minutes) : "–"}
-                      </TD>
-                      <TD className="w-9 px-0.5 py-1.5 text-right">{rowAction(r)}</TD>
-                    </TR>
-                  );
-                })}
-                {!rows.length ? (
+          <>
+            <TableWrap className={cn(drafting && "opacity-60")} inert={drafting} aria-busy={drafting || undefined}>
+              <Table>
+                <THead>
                   <tr>
-                    <td colSpan={10} className="px-3 py-6 text-center text-sm text-ink-mute">
-                      Bu şubede personel hesabı yok. Aşağıdan kişi ekleyin; hesabı olmayan çalışan adıyla yazılır.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-              {rows.length ? (
-                <tfoot>
-                  <TFootRow>
-                    <TD sticky className="text-ink-mute">
-                      Çalışan
-                    </TD>
-                    {headcount.map((n, i) => (
-                      <TD key={i} className="px-2 font-normal text-ink-mute tabular">
-                        {n ? `${n} kişi` : "–"}
-                      </TD>
+                    <TH sticky>Kişi</TH>
+                    {days.map((d, i) => (
+                      <TH key={d} className={cn("px-2", d === today && "text-info")} title={dayLong(d, i)}>
+                        {dayHeading(d, i, crossMonth)}
+                      </TH>
                     ))}
-                    <TD numeric className="px-2">
-                      {hoursLabel(totalMinutes)}
-                    </TD>
-                    <TD />
-                  </TFootRow>
-                </tfoot>
-              ) : null}
-            </Table>
-          </TableWrap>
+                    <TH numeric className="px-2">
+                      Toplam
+                    </TH>
+                    <TH aria-label="Satır eylemleri" className="px-0.5" />
+                  </tr>
+                </THead>
+                <tbody>
+                  {weekList.listed.map((r) => {
+                    const minutes = minutesOf(r.texts);
+                    return (
+                      <TR key={r.ref} data-row={r.ref}>
+                        <TD sticky className="py-2 pr-1 font-medium">
+                          <span className="block max-w-28 min-w-20 truncate xl:max-w-40" title={r.name}>
+                            {r.name}
+                          </span>
+                          {r.userId === null ? <span className="block text-xs font-normal text-ink-quiet">hesabı yok</span> : null}
+                        </TD>
+                        {r.texts.map((text, i) => {
+                          // Kutunun altında küçük yazı: hazır vardiyanın adı ve not (dar kutuda not kesilir)
+                          const under = [presetLabel(text), cellOfText(text)?.note].filter(Boolean).join(" · ");
+                          return mode === "pick" ? (
+                            <TD key={i} className="px-1 py-1.5 align-top">
+                              {cellPicker(r, i)}
+                            </TD>
+                          ) : (
+                            <TD key={i} className="px-0.5 py-1.5 align-top">
+                              {cellInput(r, i, "min-w-[5.5rem] px-1.5 sm:text-[13px]")}
+                              {under ? <span className="mt-0.5 block max-w-[7rem] truncate px-1.5 text-[11px] leading-4 text-ink-mute">{under}</span> : null}
+                            </TD>
+                          );
+                        })}
+                        <TD numeric className={cn("px-2 font-semibold", !minutes && "font-normal text-ink-quiet")}>
+                          {minutes ? hoursLabel(minutes) : null}
+                        </TD>
+                        <TD className="w-9 px-0.5 py-1.5 text-right">{rowAction(r)}</TD>
+                      </TR>
+                    );
+                  })}
+                  {!weekList.listed.length ? (
+                    <tr>
+                      <td colSpan={10} className="px-3 py-6 text-center text-sm text-ink-mute">
+                        {rows.length
+                          ? "Bu hafta için kimse yazılmadı. Aşağıdan kişiye dokunun, geçen haftayı kopyalayın ya da yazarak doldurun."
+                          : "Bu şubede personel hesabı yok. Aşağıdan kişi ekleyin; hesabı olmayan çalışan adıyla yazılır."}
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+                {weekList.listed.length ? (
+                  <tfoot>
+                    <TFootRow>
+                      <TD sticky className="text-ink-mute">
+                        Çalışan
+                      </TD>
+                      {headcount.map((n, i) => (
+                        <TD key={i} className="px-2 font-normal text-ink-mute tabular">
+                          {n ? `${n} kişi` : null}
+                        </TD>
+                      ))}
+                      <TD numeric className="px-2">
+                        {hoursLabel(totalMinutes)}
+                      </TD>
+                      <TD />
+                    </TFootRow>
+                  </tfoot>
+                ) : null}
+              </Table>
+            </TableWrap>
+            {addChips(weekList.hidden, null)}
+          </>
         )}
         <form
           className="flex flex-wrap items-center gap-2 px-5 pt-1 pb-5"
@@ -862,6 +913,9 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
             className="max-w-64"
           />
           <datalist id={`${addId}-kisiler`}>
+            {(phone ? dayList : weekList).hidden.map((r) => (
+              <option key={r.ref} value={r.name} />
+            ))}
             {others.map((u) => (
               <option key={u.id} value={u.name} />
             ))}
