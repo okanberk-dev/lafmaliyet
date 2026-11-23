@@ -150,6 +150,12 @@ export const branches = pgTable(
     /** Açılış günü (YYYY-MM-DD); boşsa "başından beri" (Tuzla) */
     openedOn: text("opened_on"),
     sortOrder: integer("sort_order").notNull().default(0),
+    /**
+     * Banka POS komisyon oranı (0,02 = %2; sahibin kararı 23 Kasım 2026: iki şube %2, Şubeler'den yönetici değiştirir).
+     * Banka POS komisyonu = Σ şube (kart × bu oran) (src/lib/calc/engine.ts posCommission); Ayarlar'daki genel oran
+     * yalnız kasa kartı olmayan eski aylarda
+     */
+    posRate: doublePrecision("pos_rate").notNull().default(0.02),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

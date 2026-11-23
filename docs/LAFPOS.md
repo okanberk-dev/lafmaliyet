@@ -5,7 +5,9 @@ LafPOS (kasa)** (bağlantının durumu, son ret ve onarımı, **LafPOS'a geçiş
 gününden itibaren **Kasa raporu** (`/panel/kasa`) › **LafPOS'tan doldur**, **Satışlar** (`/panel/satislar`:
 LafPOS'un ürün satışları, ay toplamı), **Komisyon & hakediş** (kanal kanal satış) ve **Zayi & ikram** (LafPOS'un
 ikramı). Sözleşmenin asıl hâli LafPOS deposunda (`RiosenBeq/lafpos`)
-`docs/03-ENTEGRASYON.md` §3, §4 ve §4.1; bu belge panelin tarafıdır.
+`docs/03-ENTEGRASYON.md` §3, §4 ve §4.1; bu belge panelin tarafıdır. Formüller, yuvarlama ve hangi toplamın hangi
+gövde alanından geldiği iki depoda bayt bayt aynı olan [hesap sözleşmesinde](hesap-sozlesmesi.md) (liste değeri,
+indirim, ciro dışı, KDV, banka POS komisyonu, tutarlılık; `tests/hesap-sozlesmesi.test.ts` belgenin özetini sabitler).
 
 **Varsayılan kapalı (sahibin 26 Ekim kararı).** Kafede bugün ModPOS var. "LafPOS'a geçiş günü" boşken LafPOS'un
 gönderdiği günler saklanır ama hiçbir hesaba, ekrana, göreve, hatırlatmaya, e-postaya ya da ön doldurmaya girmez;

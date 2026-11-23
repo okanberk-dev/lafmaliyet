@@ -102,7 +102,13 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
     {
       label: listDays ? `– Yönetici indirimleri (${listDays})` : "– Yönetici indirimleri",
       value: tl(-c.sales.discounts),
-      note: listDays ? `${listDays} kasa raporları: satış listesi bu günleri kapsıyor` : undefined,
+      note:
+        [
+          listDays ? `${listDays} kasa raporları: satış listesi bu günleri kapsıyor` : null,
+          c.sales.lafposLines ? "Yalnız ModPOS listesinin günleri: LafPOS satırları indirimden sonradır, indirimi bir daha düşülmez" : null,
+        ]
+          .filter(Boolean)
+          .join(". ") || undefined,
     },
     { label: "Hesaplanan ciro (liste − indirim)", value: tl(c.sales.computed), strong: true },
     {

@@ -25,7 +25,7 @@ export type FieldDef = {
 export const RATE_FIELDS: FieldDef[] = [
   { key: "kdv", label: "Satış KDV oranı", hint: "Kafe satışlarında %10", kind: "pct", sane: true },
   { key: "kdvHizmet", label: "Hizmet satışı KDV oranı", hint: "Satışlar'da HİZMET işaretli satırlar (karaoke odası): %20", kind: "pct", sane: true },
-  { key: "komisyon", label: "Banka / POS komisyon oranı", hint: "Sadece kartlı satışlara uygulanır", kind: "pct", sane: true },
+  { key: "komisyon", label: "Banka / POS komisyon oranı", hint: "Kasa raporu olmayan aylarda; kasa raporu olan ayda her şubenin oranı Şubeler'de", kind: "pct", sane: true },
   {
     key: "kartOrani",
     label: "Kartlı satış oranı",

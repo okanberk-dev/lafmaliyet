@@ -1,6 +1,6 @@
 import type { LafposSalesMonth, SalesLine } from "@/lib/calc/types";
 import { missingText } from "@/lib/cash-month";
-import { monthLabel, pct, tl } from "@/lib/format";
+import { monthLabel, money, pct, tl } from "@/lib/format";
 import { coverageFor } from "@/lib/sales-coverage";
 import { addDays, dayAblativeTR, dayMonthTR, monthEnd } from "@/lib/reminders";
 
@@ -124,6 +124,8 @@ export function lafposMonthStatus(i: {
   modpos: { lines: number; revenue: number; through: string } | null;
   lafpos: { days: number; last: string } | null;
   modposZ?: number | null;
+  /** Listenin günlerinin kasa raporlarındaki indirim toplamı (liste indirimden öncedir; modposOverZText) */
+  modposDiscounts?: number | null;
   /** Kasa raporunu bekleyen günler (süren ay) */
   held?: { from: string; to: string } | null;
   /** Ayın kasa raporu olan günleri ve gelen LafPOS gün sonları: raporlu ama gün sonu gelmemiş gün (`missing`) */
@@ -155,6 +157,7 @@ export function lafposMonthStatus(i: {
     lafpos: i.lafpos && i.lafpos.days > 0 ? i.lafpos : null,
     modpos: list ? { ...list, counted } : null,
     modposZ: source === "gecis" ? (i.modposZ ?? null) : null,
+    modposDiscounts: source === "gecis" && i.modposZ != null ? (i.modposDiscounts ?? 0) : null,
     gap,
     overlap,
     ...(i.held ? { held: i.held } : {}),
@@ -175,13 +178,33 @@ export function dayRangeTR(from: string, to: string): string {
 export const MODPOS_OVER_Z = 0.05;
 
 /**
- * Geçiş ayında liste toplamı, listenin günlerinin (`from` → `through`) kasa raporlarındaki Z toplamını %5'ten fazla
- * aşıyorsa uyarı metni; Z yoksa ya da aşmıyorsa null. Liste ürün cirosudur (indirimden önce), Z indirimden sonra:
- * küçük fark olağandır
+ * Kasa satırlarının `from` → `through` günlerindeki Z toplamı ve indirim toplamı (iki uç dahil; indirimi girilmemiş gün
+ * 0); satır yoksa null. Satırlar çağıranın süzdüğü şubenin kasa raporlarıdır (veri kümesi: LafPOS'un şubesi; içe aktarma:
+ * listenin şubesi): başka şubenin Z'si listenin Z'sine girmez ("%8 fazla", 23 Kasım 2026)
  */
-export function modposOverZText(revenue: number, z: number | null, from: string, through: string): string | null {
-  if (z === null || !(z > 0) || revenue <= z * (1 + MODPOS_OVER_Z)) return null;
-  return `ModPOS listesinin toplamı (${tl(revenue)}) ${dayRangeTR(from, through)} kasa raporlarının Z toplamından (${tl(z)}) ${pct(revenue / z - 1, 0)} fazla: liste sonraki günlerin satışını da içeriyor olabilir, o günler LafPOS'tan da sayılır. Listeyi yalnız ${dayRangeTR(from, through)} için alıp yeniden yükleyin.`;
+export function modposZBetween(
+  rows: readonly { date: string; zTotal: number; discounts: number | null }[],
+  from: string,
+  through: string,
+): { z: number; discounts: number } | null {
+  const inRange = rows.filter((r) => r.date >= from && r.date <= through);
+  if (!inRange.length) return null;
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  return { z: r2(inRange.reduce((a, r) => a + r.zTotal, 0)), discounts: r2(inRange.reduce((a, r) => a + (r.discounts ?? 0), 0)) };
+}
+
+/**
+ * Geçiş ayında liste toplamı indirimden sonra (`revenue − discounts`), listenin günlerinin (`from` → `through`) kasa
+ * raporlarındaki Z toplamını %5'ten fazla aşıyorsa uyarı metni; Z yoksa ya da aşmıyorsa null. ModPOS'un ürün listesi
+ * indirimden öncedir, Z indirimden sonra: liste − indirim = Z (hesap sözleşmesi §11). `discounts`: listenin günlerinin
+ * kasa raporlarındaki indirim (verilmezse 0; eskiden hiç düşülmüyordu, Marina'nın doğru listesi "%8 fazla" görünürdü)
+ */
+export function modposOverZText(revenue: number, z: number | null, from: string, through: string, discounts = 0): string | null {
+  const net = Math.round((revenue - discounts) * 100) / 100;
+  if (z === null || !(z > 0) || net <= z * (1 + MODPOS_OVER_Z)) return null;
+  const total = discounts > 0 ? `indirimden sonraki toplamı (${money(net)}: liste ${money(revenue)} − indirim ${money(discounts)})` : `toplamı (${tl(revenue)})`;
+  const zText = discounts > 0 ? money(z) : tl(z);
+  return `ModPOS listesinin ${total} ${dayRangeTR(from, through)} kasa raporlarının Z toplamından (${zText}) ${pct(net / z - 1, 0)} fazla: liste sonraki günlerin satışını da içeriyor olabilir, o günler LafPOS'tan da sayılır. Listeyi yalnız ${dayRangeTR(from, through)} için alıp yeniden yükleyin.`;
 }
 
 export interface LafposMonthNotes {
@@ -230,8 +253,8 @@ export function lafposMonthNotes(st: LafposSalesMonth, switchDay: string): Lafpo
   }
   if (missing) warnings.push(missing);
   if (st.modpos?.counted) {
-    // modposZ listenin kendi günlerinin (ayın 1'i → listenin son günü) Z toplamı
-    const over = modposOverZText(st.modpos.revenue, st.modposZ, first, st.modpos.through);
+    // modposZ listenin kendi günlerinin (ayın 1'i → listenin son günü) Z toplamı; liste o günlerin indiriminden sonra
+    const over = modposOverZText(st.modpos.revenue, st.modposZ, first, st.modpos.through, st.modposDiscounts ?? 0);
     if (over) warnings.push(over);
   }
   return { info, warnings };

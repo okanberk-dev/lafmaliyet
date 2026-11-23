@@ -1,0 +1,1 @@
+ALTER TABLE "branches" ADD COLUMN "pos_rate" double precision DEFAULT 0.02 NOT NULL;

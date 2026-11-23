@@ -35,7 +35,7 @@ import { Notice, NoticeLink } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { ALL_BRANCHES, branchViewNote, type BranchScope } from "@/lib/branches";
-import { shiftMonth, type ProductStatus } from "@/lib/calc/engine";
+import { POS_COMMISSION_SAME_NOTE, shiftMonth, type ProductStatus } from "@/lib/calc/engine";
 import {
   alerts,
   dailyChange,
@@ -271,9 +271,12 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
         {
           label: "Kart / POS komisyonu",
           value: -t.commission,
-          sub: `Ciro × %${num(st.komisyon * 100, 1)} × kartlı oran %${num(model.cardShareOf(month).rate * 100, 1)}`,
-          // Satış raporunun ürün başına tahmini (yemek kartı dahil); Gelir-gider'in banka POS komisyonu ayrı kuralla (E-43)
-          info: POS_COMMISSION_SALES_NOTE,
+          // Kasa kartı olan ayda Gelir-gider'in banka POS komisyonuyla aynı tutar (engine posCommission); yoksa satış raporunun
+          // ürün başına tahmini (yemek kartı dahil; E-43)
+          sub: model.posCommission(month)
+            ? "Kart × şubenin POS oranı (yemek kartı hariç)"
+            : `Ciro × %${num(st.komisyon * 100, 1)} × kartlı oran %${num(model.cardShareOf(month).rate * 100, 1)}`,
+          info: model.posCommission(month) ? POS_COMMISSION_SAME_NOTE : POS_COMMISSION_SALES_NOTE,
           sign: -1,
         },
         ...t.fixedFlow.map((l) => ({

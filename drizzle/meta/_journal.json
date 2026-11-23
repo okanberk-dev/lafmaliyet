@@ -484,6 +484,13 @@
       "when": 1795379974167,
       "tag": "0068_pavo_karsilastirma",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1795455973047,
+      "tag": "0069_sube_pos_orani",
+      "breakpoints": true
     }
   ]
 }

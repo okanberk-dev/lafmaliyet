@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { channelNameResolver } from "@/app/panel/tedarikciler/logic";
-import { ALL_BRANCHES, branchPnlEntry, monthTotalsLocked, type BranchScope } from "@/lib/branches";
+import { ALL_BRANCHES, branchPnlEntry, DEFAULT_POS_RATE, monthTotalsLocked, type BranchScope } from "@/lib/branches";
 import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, SalesLine, Settings } from "@/lib/calc/types";
@@ -12,6 +12,7 @@ import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn, closedRowApplies } from "@/lib/closed-days";
 import { channelOf } from "@/lib/commission/channels";
 import { COMMISSION_CATEGORY, settingsFromRows } from "@/lib/constants";
+import { modposZBetween } from "@/lib/lafpos/sales";
 import { isLafposBranch, scopeSwitchDay } from "@/lib/lafpos/switch";
 import { addDays } from "@/lib/reminders";
 import { parseCoverage, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
@@ -207,10 +208,13 @@ async function readDataset(): Promise<Dataset> {
   // Şube görünümünde şubenin açılışı: sonradan açılan şubenin ilk ayı "kasa raporları ay ortasında başladı" sayılmaz
   // (src/lib/cash-month.ts tillOpenedOn; Tuzla ve "Tümü" bugünkü kural)
   const opened = tillOpenedOn(branch);
+  // LafPOS satışlarının sayıldığı ilk gün: o günden itibaren LafPOS'un şubesinin indirimi satırlarda zaten düşülmüş
+  // (TillMonth.lafposDiscounts; satış listesi ↔ POS karşılaştırması, engine listDiscounts)
+  const lafposFrom = sales.lafposSales?.countFrom ?? null;
   const salesCoverage = Object.entries(sales.coverage).map(([month, upto]) => ({
     month,
     through: upto,
-    till: tillMonths(till.filter((r) => r.date.slice(0, 7) === month && r.date <= upto), upto, firstEver, undefined, undefined, firstReport, undefined, opened)[0] ?? null,
+    till: tillMonths(till.filter((r) => r.date.slice(0, 7) === month && r.date <= upto), upto, firstEver, undefined, undefined, firstReport, undefined, opened, lafposFrom)[0] ?? null,
   }));
 
   // Etkin ay bilgisi: elle yazılan, yoksa kasa raporlarından (hiçbir şey months'a kopyalanmaz); yalnız kasa raporu olan
@@ -224,7 +228,7 @@ async function readDataset(): Promise<Dataset> {
   const closedFor = (rows: typeof closedRows, reports: readonly TillRow[]) => closedDaysIn(rows, "2000-01-01", through, reports.filter(isReportRow).map((r) => r.date));
   const closedPast = closedFor(scopeClosedRows, reportRows);
   const monthsOf = (rows: TillRow[], openedOn: ReturnType<typeof tillOpenedOn>, closed: string[] = closedPast) =>
-    tillMonths(rows, through, undefined, lateDays, closed, undefined, undefined, openedOn);
+    tillMonths(rows, through, undefined, lateDays, closed, undefined, undefined, openedOn, lafposFrom);
   const entriesOf = (rows: typeof months): MonthEntry[] =>
     rows.map((m) => ({ month: m.month, openDays: m.openDays, posRevenue: m.posRevenue, discounts: m.discounts, offRevenue: m.offRevenue, cardShare: m.cardShare, note: m.note }));
   // "Tümü": her şube kendi elle yazılanı ve kasasıyla (açılış günüyle: tillOpenedOn) çözülür, sonra toplanır; bir şubenin
@@ -305,6 +309,8 @@ async function readDataset(): Promise<Dataset> {
     ...(lafposIkram ? { lafposIkram } : {}),
     // Kapalı işaretli bütün günler (ileri tarihliler dahil): süren ayın ay sonu öngörüsü bunları açık saymaz (E-41).
     // Raporlu gün ve satışlı yedek satır (LafPOS gün sonu, ModPOS föyü) kapalı sayılmaz (tillMonths ile aynı kural)
+    // Şubelerin banka POS oranı (Şubeler): banka POS komisyonu şube şube kart × oran (engine.ts posCommission)
+    branchRates: branches.filter((b) => b.kind === "fiziksel").map((b) => ({ id: b.id, name: b.name, posRate: b.posRate ?? DEFAULT_POS_RATE })),
     closedDays: closedDaysIn(
       scopeClosedRows,
       "2000-01-01",
@@ -459,10 +465,8 @@ function mergeSales(db: DB, input: { switchDay: string | null; salesLines: Sales
     // Kasa raporlarının son günü (tarihe göre sıralı): süren ayın sonraki LafPOS günleri rapor girilince sayılır
     lastTillDay: reportRows.at(-1)?.date ?? null,
     reportDays: reportRows.map((r) => r.date),
-    zOf: (from, upto) => {
-      const rows = reportRows.filter((r) => r.date >= from && r.date <= upto);
-      return rows.length ? Math.round(rows.reduce((a, r) => a + r.zTotal, 0) * 100) / 100 : null;
-    },
+    // Z ve indirim: ModPOS listesi indirimden öncedir, liste − indirim Z ile karşılaştırılır ("%8 fazla", 23 Kasım 2026)
+    zOf: (from, upto) => modposZBetween(reportRows, from, upto),
   });
 }
 

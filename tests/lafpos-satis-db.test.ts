@@ -369,6 +369,52 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.deepEqual([oct.data.through, oct.data.warning], [null, null]);
   });
 
+  lafposTest("içe aktarma ve bant: geçiş ayının listesi Z ile indirimden sonra ve yalnız listenin şubesinin kasa raporlarıyla karşılaştırılır (\"%8 fazla\", Marina Kasım)", async () => {
+    // Marina 22 Kasım'da LafPOS'a geçti; ModPOS günleri 13–21 Kasım (hesap sözleşmesi §6): Z 27.348,75, indirim 2.066,25
+    const marina = 22;
+    await setSwitch(`2026-11-${marina}`);
+    await db.execute(sql`TRUNCATE cash_reports RESTART IDENTITY CASCADE`);
+    const days: [number, number, number][] = [
+      [13, 390, 0],
+      [14, 3311, 249],
+      [15, 5753, 517],
+      [16, 2670, 0],
+      [17, 1641.25, 153.75],
+      [18, 2419.25, 315.75],
+      [19, 2535.75, 204.25],
+      [20, 4008, 397],
+      [21, 4620.5, 229.5],
+    ];
+    for (const [d, zTotal, discounts] of days) {
+      await db.insert(s.cashReports).values({ date: `2026-11-${d}`, branchId: LAFPOS_SUBE, zTotal, cash: zTotal, discounts, submittedByName: "Ayşe" });
+      // Tuzla'nın aynı günlerdeki raporu Marina'nın listesinin Z'sine girmez (eskiden girip uyarıyı saklıyordu)
+      await report(`2026-11-${d}`, 5_000, MODPOS_SUBE);
+    }
+    // Listenin indirim öncesi toplamı 29.415,00 = Z + indirim: uyarı yok (eskiden "%8 fazla")
+    const ok = await sales.importSales({
+      month: "2026-11",
+      lines: [
+        { posName: "LATTE MEDIUM", qty: 100, revenue: 20_000 },
+        { posName: "TIRAMISU", qty: 47, revenue: 9_415 },
+      ],
+      mode: "replace",
+      through: "2026-11-21",
+    });
+    assert.ok(ok.ok, JSON.stringify(ok));
+    assert.equal(ok.data.warning, null);
+    // İndirimden sonra da %5'ten fazla aşan liste: Tuzla'nın Z'si saklamaz, uyarı çıkar
+    const big = await sales.importSales({ month: "2026-11", lines: [{ posName: "LATTE MEDIUM", qty: 150, revenue: 31_000 }], mode: "replace", through: "2026-11-21" });
+    assert.ok(big.ok, JSON.stringify(big));
+    assert.match(
+      (big.data.warning ?? "").replace(/\u00a0/g, " ").replace(/\u2060/g, ""),
+      /^ModPOS listesinin indirimden sonraki toplamı \(28\.933,75 ₺: liste 31\.000 ₺ − indirim 2\.066,25 ₺\) 1–21 Kasım kasa raporlarının Z toplamından \(27\.348,75 ₺\) %6 fazla/,
+    );
+    // Bant (veri kümesi): listenin günlerinin Z'si ve indirimi Marina'nın raporlarından
+    const ds = await dataset.loadDataset();
+    const nov = ds.lafposSales?.months.find((m) => m.month === "2026-11");
+    assert.deepEqual([nov?.modposZ, nov?.modposDiscounts], [27_348.75, 2_066.25]);
+  });
+
   lafposTest("geçiş ayının ilk elle satırı ModPOS listesini geçiş gününden önceki güne kadar başlatır: LafPOS günleri hesaptan düşmez", async () => {
     await setSwitch(S);
     // Kasım'ın listesi yok (yüklenmedi ya da "Ayı temizle"): LafPOS 10 Kasım'dan sayılıyor

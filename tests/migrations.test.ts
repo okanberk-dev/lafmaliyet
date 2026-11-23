@@ -145,3 +145,10 @@ test("LafPOS satırının site kalemi ve hizmet işareti (denetim B08, E-33): ik
     'ALTER TABLE "pos_daily_sales" ADD COLUMN "site_menu_id" text;--> statement-breakpoint\nALTER TABLE "pos_daily_sales" ADD COLUMN "slot" text;--> statement-breakpoint\nALTER TABLE "pos_daily_sales" ADD COLUMN "lafpos_service" boolean DEFAULT false NOT NULL;',
   );
 });
+
+test("şubenin banka POS oranı (23 Kasım 2026): tek varsayılanlı NOT NULL sütun, var olan şubeler %2 (Instant Rollback'e uygun)", () => {
+  const entry = readJournal().find((e) => e.tag.endsWith("_sube_pos_orani"));
+  assert.ok(entry, "sube_pos_orani migration'ı yok");
+  const sql = readFileSync(join(process.cwd(), "drizzle", `${entry.tag}.sql`), "utf8").trim();
+  assert.equal(sql, 'ALTER TABLE "branches" ADD COLUMN "pos_rate" double precision DEFAULT 0.02 NOT NULL;');
+});

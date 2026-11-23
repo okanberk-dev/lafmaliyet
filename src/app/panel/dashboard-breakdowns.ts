@@ -184,8 +184,11 @@ function grossRows(model: Model, d: DashboardData): BreakdownRow[] {
     {
       key: "komisyon",
       label: "Kart / POS komisyonu",
-      // Satış raporunun tahmini: kartlı oran yemek kartını da içerir (Gelir-gider'in banka POS komisyonu yalnız banka kartı payıyla)
-      sub: `Ciro × ${rate(st.komisyon)} × kartlı oran ${rate(model.cardShareOf(d.month).rate)} (yemek kartı dahil)`,
+      // Kasa kartı olan ayda Gelir-gider'in banka POS komisyonuyla aynı (engine posCommission); yoksa satış raporunun tahmini:
+      // kartlı oran yemek kartını da içerir (Gelir-gider'in banka POS komisyonu yalnız banka kartı payıyla)
+      sub: model.posCommission(d.month)
+        ? "Kart × şubenin POS oranı (yemek kartı hariç), Gelir-gider'le aynı"
+        : `Ciro × ${rate(st.komisyon)} × kartlı oran ${rate(model.cardShareOf(d.month).rate)} (yemek kartı dahil)`,
       amount: -t.commission,
     },
   ];
