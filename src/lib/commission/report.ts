@@ -738,7 +738,7 @@ const byLevel = (flags: Flag[]) => flags.map((f, i) => ({ f, i })).sort((a, b) =
  * gelmemiş günün kasa raporu) `tek` kuralıyla yalnız grupta tek kanal varsa kanala yazılır (`zShare`). Birden çok kanal
  * varken geçiş gününden önceki günlerde grubun satışı varsa ay bilinmez (kasa raporu kuralı); yalnız kanalsız ödeme ya
  * da gün sonu gelmemiş gün varsa satış kanalın ödemeleridir, eksik kalan günler uyarılır (`gap`). ModPOS'ta kalan
- * şubenin (Marina) kasa raporları geçiş gününden önceki günler gibidir: Z'de grubun tek toplamı (`lm.modpos`).
+ * şubenin (Tuzla) kasa raporları geçiş gününden önceki günler gibidir: Z'de grubun tek toplamı (`lm.modpos`).
  */
 function lafposSales(
   def: Pick<ChannelDef, "key" | "label" | "kind">,

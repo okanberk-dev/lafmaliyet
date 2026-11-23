@@ -156,7 +156,7 @@ export async function importSales(input: { month: string; lines: z.input<typeof 
     const me = await requireAdmin();
     const month = zMonth.parse(input.month);
     const sube = await currentWriteBranch();
-    // Geçiş günü listenin şubesininki (branchSwitchDay): ModPOS'ta kalan şubenin (Marina) listesi her ay yüklenir
+    // Geçiş günü listenin şubesininki (branchSwitchDay): ModPOS'ta kalan şubenin (Tuzla) listesi her ay yüklenir
     const switchDay = branchSwitchDay(await loadLafposSwitchDay(), sube);
     // Süren ayda listenin son günü (verilmezse dün); biten aya yüklenen liste ayın tamamı (src/lib/sales-coverage.ts);
     // geçiş ayında en çok geçiş gününden önceki gün, LafPOS'un ayında red (src/lib/lafpos/sales.ts)

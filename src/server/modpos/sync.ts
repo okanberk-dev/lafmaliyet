@@ -154,7 +154,7 @@ async function runSync(trigger: ModposTrigger, o: SyncOptions, env: Record<strin
   const wall0 = Date.now();
   const clock = () => (o.now ? new Date(o.now.getTime() + (Date.now() - wall0)) : new Date());
   const from = modposSyncFrom(env);
-  // LafPOS'a geçiş günü yalnız LafPOS'un şubesinin kasasınındır: ModPOS'ta kalan şubenin (Marina) föyü çekilmeye devam
+  // LafPOS'a geçiş günü yalnız LafPOS'un şubesinin kasasınındır: ModPOS'ta kalan şubenin (Tuzla) föyü çekilmeye devam
   // eder (branchSwitchDay; denetim 21 Kasım #5)
   const [state, have, switchDay] = await Promise.all([
     readModposState(db, branchId),
