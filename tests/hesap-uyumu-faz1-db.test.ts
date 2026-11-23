@@ -20,6 +20,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import { consistency } from "../src/lib/calc/insights";
+import { branchCommissionShare, groupOf, rowOf } from "../src/lib/commission/report";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 
@@ -53,6 +54,7 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
   let dataset: typeof import("../src/server/data/dataset");
   let branches: typeof import("../src/server/actions/branches");
   let branchScope: typeof import("../src/server/branch-scope");
+  let commission: typeof import("../src/server/data/commission");
 
   before(async () => {
     mock.timers.enable({ apis: ["Date"], now: new Date(NOW) });
@@ -79,6 +81,7 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
     dataset = await import("../src/server/data/dataset");
     branches = await import("../src/server/actions/branches");
     branchScope = await import("../src/server/branch-scope");
+    commission = await import("../src/server/data/commission");
 
     // Marina: LafPOS'a 22 Kasım'da geçti; ModPOS listesi 13–21 Kasım (indirim öncesi), kasa raporları 13–22 Kasım
     await db.insert(s.settings).values({ key: "lafposGecisGunu", value: S });
@@ -119,6 +122,23 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
 
   const inMarina = <T>(fn: () => Promise<T>) => branchScope.withBranchScope(LAFPOS_SUBE, fn);
 
+  /**
+   * Tuzla'nın 23–30 Kasım kasa raporları (Z'de yemek kartı 200; Tuzla'nın raporları Ekim'den beri: ay yarım değil),
+   * Pluxee'nin Kasım faturası, 23–26 Kasım Tuzla föyü (Pluxee 150)
+   */
+  const seedCommission = async () => {
+    await db.insert(s.cashReports).values({ date: "2026-10-31", branchId: MODPOS_SUBE, zTotal: 0, submittedByName: "Can" });
+    for (let d = 23; d <= 30; d++) {
+      await db.insert(s.cashReports).values({ date: `2026-11-${d}`, branchId: MODPOS_SUBE, zTotal: 1_000, cash: 800, mealCard: 200, submittedByName: "Can" });
+    }
+    await db.insert(s.invoices).values({ date: "2026-11-30", supplier: "Pluxee", category: "Komisyon", amount: 60, payable: 72, vat: 12 });
+    for (let d = 23; d <= 26; d++) {
+      const odeme = { yontem: "Pluxee", kod: "PLUXEE", ciroyaDahil: true, satis: 150, cariTahsilat: 0, sistem: 150, defter: null, fark: null, kirilim: [] };
+      const sheet = { kasaGunu: `2026-11-${d}`, olusturulma: null, kasalar: [{ odemeler: [odeme] }], foysuzGunler: [], ozet: null, kota: null };
+      await db.insert(s.modposCashSheets).values({ day: `2026-11-${d}`, branchId: MODPOS_SUBE, sheet: sheet as never, state: "KAPALI", final: true, fingerprint: `f${d}` });
+    }
+  };
+
   test("banka POS komisyonu: Marina Kasım kart 24.774,25 × %2 = 495,49 Satışlar'da ve Gelir-gider'de; liste ↔ POS farkı 0", async () => {
     const model = await inMarina(() => dataset.loadModel());
     assert.equal(model.pnlMonth("2026-11").cells.get("commission:pos")?.value, 495.49, "Gelir-gider");
@@ -155,5 +175,40 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
     const again = await inMarina(() => dataset.loadModel());
     assert.equal(again.pnlMonth("2026-11").cells.get("commission:pos")?.value, 495.49);
     await db.update(s.branches).set({ posRate: 0.02 }).where(eq(s.branches.id, MODPOS_SUBE));
+  });
+
+  test("Komisyon & hakediş: Tuzla'nın Z'deki yemek kartı Pluxee'ye yığılmaz (marka belirsiz), föyde markası olan gün yazılır", async () => {
+    await seedCommission();
+    const r = await branchScope.withBranchScope("hepsi", () => commission.loadCommissionReport());
+    const p = rowOf(r, "pluxee", "2026-11");
+    // Tuzla 8 gün × 200 = 1.600; föyde 4 gün × 150 = 600 Pluxee, kalan 1.000 markası belirsiz (eskiden 1.600'ü Pluxee'nin)
+    assert.deepEqual(p?.sales, { amount: 600, source: "lafpos", foy: 600 });
+    assert.deepEqual(groupOf(r, "meal", "2026-11")?.unbranded, { amount: 1000, pre: 0, modpos: 1000, loose: 0, fallback: 0 });
+  });
+
+  test("Komisyon & hakediş şube seçimine uyar: satış şubenin, oran ve hakediş işletmenin; zil ve Bugün işletme geneli", async () => {
+    // Marina seçili: Tuzla'nın kasa raporları ve föyü okunmaz
+    const marina = await inMarina(() => commission.loadCommissionReport());
+    assert.equal(groupOf(marina, "meal", "2026-11")?.zTotal, 0, "Marina'nın Z'sinde yemek kartı yok");
+    assert.equal(rowOf(marina, "pluxee", "2026-11")?.sales, null);
+    // Tuzla seçili: LafPOS okunmaz (geçiş günü Marina'nın), Z Tuzla'nın
+    const tuzla = await branchScope.withBranchScope(MODPOS_SUBE, () => commission.loadCommissionReport());
+    assert.equal(tuzla.switchDay, null);
+    assert.equal(groupOf(tuzla, "meal", "2026-11")?.zTotal, 1600);
+    // Ekran şube seçiliyken iki raporu okur: oran işletmenin, şubenin payı satış × oran
+    const both = await inMarina(() => commission.loadCommissionReports());
+    assert.equal(both.scope, LAFPOS_SUBE);
+    assert.equal(rowOf(both.all, "pluxee", "2026-11")?.rate, 0.1, "60 ÷ 600 (işletmenin bilinen Pluxee satışı)");
+    assert.ok(both.branch, "şubenin raporu");
+    assert.deepEqual(branchCommissionShare(both.all, both.branch, "2026-11").find((x) => x.channel === "pluxee"), {
+      channel: "pluxee",
+      label: "Pluxee",
+      kind: "meal",
+      sales: null,
+      rate: 0.1,
+      commission: null,
+    });
+    // Bugün'ün hakediş satırı seçiciden bağımsız (işletme geneli): Marina seçiliyken de aynı
+    assert.deepEqual(await inMarina(() => commission.loadOverduePayouts()), await branchScope.withBranchScope("hepsi", () => commission.loadOverduePayouts()));
   });
 });

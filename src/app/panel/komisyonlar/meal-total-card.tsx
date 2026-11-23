@@ -7,7 +7,7 @@ import { dayLocativeTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 
 import { ANCHOR, FlagList } from "./channel-card";
-import { overMealLimit, tillSub } from "./texts";
+import { overMealLimit, tillSub, unbrandedLine } from "./texts";
 
 /** Ortalama oranın alt satırı: nasıl hesaplandı ya da neden yok */
 function rateSub(g: GroupMonth): string {
@@ -52,6 +52,8 @@ export function MealTotalCard({ group, rows, className }: { group: GroupMonth; r
           ))}
         </dl>
         <FlagList flags={group.flags} />
+        {/* Hiçbir karta yazılmayan tutar (LafPOS'un girdiği ayda; 23 Kasım 2026) */}
+        {unbrandedLine(group.unbranded, "meal") ? <p className="text-[13px] leading-5 text-ink-mute">{unbrandedLine(group.unbranded, "meal")}</p> : null}
         {untyped ? (
           <p className="text-[13px] leading-5 text-ink-mute">
             {fullLafpos

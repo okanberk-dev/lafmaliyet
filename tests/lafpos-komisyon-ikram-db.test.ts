@@ -260,11 +260,11 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     const report = buildCommissionReport(input);
     // 1–9 Kasım'ın gün sonu yok: satış kanalın ödemeleri, eksik günler uyarılır
     const pluxee = rowOf(report, "pluxee", "2026-11")!;
-    assert.deepEqual(pluxee.sales, { amount: 3_100, source: "lafpos", zShare: 0 });
+    assert.deepEqual(pluxee.sales, { amount: 3_100, source: "lafpos" });
     assert.equal(plain(pluxee.flags.find((f) => f.key === "kasa-eksik")!.text), "9 gün LafPOS gün sonu yok ve kanalı seçilmemiş 300 ₺ ödeme var; satış eksik kaldıysa oran yüksek görünür.");
     // Multinet'in faturası yok ama LafPOS'ta satışı var: kartı çıkar
-    assert.deepEqual(rowOf(report, "multinet", "2026-11")?.sales, { amount: 1_600, source: "lafpos", zShare: 0 });
-    assert.deepEqual(rowOf(report, "yemeksepeti", "2026-11")?.sales, { amount: 2_000, source: "lafpos", zShare: 0 });
+    assert.deepEqual(rowOf(report, "multinet", "2026-11")?.sales, { amount: 1_600, source: "lafpos" });
+    assert.deepEqual(rowOf(report, "yemeksepeti", "2026-11")?.sales, { amount: 2_000, source: "lafpos" });
     const g = groupOf(report, "meal", "2026-11")!;
     assert.equal(g.zTotal, 5_000);
     assert.equal(g.lafposFrom, "2026-11-01");

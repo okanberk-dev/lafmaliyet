@@ -305,3 +305,153 @@ test("POS komisyonu: kasa kartı olmayan ay (Excel) eski formüllerle kalır", (
   const pm = model.pnlMonth("2026-09");
   assert.ok(Math.abs((pm.cells.get("commission:pos")?.value ?? 0) - pm.revenue! * st.komisyon * st.kartOrani) < 1e-6);
 });
+
+// --- 5. Komisyon & hakediş: markası belirsiz tutar tek karta yığılmaz, şube görünümü ------------------------------------
+
+import { sourceLabel } from "../src/app/panel/komisyonlar/texts";
+import { lafposChannel } from "../src/lib/commission/channels";
+import {
+  branchCommissionShare,
+  buildCommissionReport,
+  groupOf,
+  rowOf,
+  type CommissionInput,
+  type CommissionInvoiceIn,
+  type LafposDayIn,
+  type LafposPaymentIn,
+  type TillDayIn,
+} from "../src/lib/commission/report";
+
+let invId = 1;
+const cinv = (supplier: string, date: string, amount: number): CommissionInvoiceIn => ({
+  id: invId++,
+  date,
+  supplier,
+  names: [supplier],
+  invoiceNo: null,
+  amount,
+  discount: 0,
+  payable: round2(amount * 1.2),
+  needsReview: false,
+  lines: [{ name: "Komisyon", description: null, netTotal: amount }],
+});
+const cpay = (name: string, zField: LafposPaymentIn["zField"], channel: string | null, amount: number): LafposPaymentIn => ({ name, zField, channel: lafposChannel(channel), rawChannel: channel, amount });
+const days = (from: string, to: string): string[] => {
+  const out: string[] = [];
+  for (let d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) out.push(d.toISOString().slice(0, 10));
+  return out;
+};
+const lafposDays = (from: string, to: string, payments: () => LafposPaymentIn[]): LafposDayIn[] =>
+  days(from, to).map((date) => {
+    const p = payments();
+    const sum = (f: LafposPaymentIn["zField"]) => p.filter((x) => x.zField === f).reduce((a, x) => a + x.amount, 0);
+    return { date, mealCard: sum("meal_card"), online: sum("online"), payments: p };
+  });
+const tillDays = (from: string, to: string, row: Omit<TillDayIn, "date">): TillDayIn[] => days(from, to).map((date) => ({ date, ...row }));
+
+/**
+ * Bugün 2 Aralık 2026; Marina 1 Kasım'dan LafPOS'ta (her gün Pluxee 50), Ekim'de Marina'nın kasa raporlarında yemek kartı
+ * 500; Tuzla ModPOS'ta, Kasım'ın her günü Z'de yemek kartı 200. Pluxee'nin Kasım faturası 60
+ */
+function commissionInput(o: Partial<CommissionInput> = {}): CommissionInput {
+  invId = 1;
+  return {
+    today: "2026-12-02",
+    through: "2026-12-01",
+    since: "2026-10-01",
+    fromMonth: "2026-01",
+    firstReport: "2026-10-01",
+    till: [...tillDays("2026-10-01", "2026-10-31", { mealCard: 500, online: 0, branchId: "marina" }), ...tillDays("2026-11-01", "2026-11-30", { mealCard: 200, online: 0, branchId: "tuzla" })],
+    invoices: [cinv("Pluxee", "2026-11-30", 60), cinv("Pluxee", "2026-10-31", 600)],
+    marks: [],
+    settings: {},
+    lafpos: { switchDay: "2026-11-01", days: lafposDays("2026-11-01", "2026-11-30", () => [cpay("Pluxee", "meal_card", "pluxee", 50)]) },
+    ...o,
+  };
+}
+
+test("Marka belirsiz: Tuzla'nın Z'deki yemek kartı (6.000) tek karta (Pluxee) yığılmaz; grupta markası belirsiz satır", () => {
+  const r = buildCommissionReport(commissionInput());
+  const p = rowOf(r, "pluxee", "2026-11");
+  assert.ok(p, "Pluxee Kasım");
+  // Eskiden 1.500 + Tuzla'nın 6.000'i = 7.500 (oran %0,8)
+  assert.deepEqual(p.sales, { amount: 1500, source: "lafpos" });
+  assert.equal(p.rate, 0.04);
+  assert.equal(sourceLabel(p.sales!, "meal"), "LafPOS ödemelerinden");
+  const g = groupOf(r, "meal", "2026-11");
+  assert.ok(g, "yemek kartları Kasım");
+  assert.deepEqual(g.unbranded, { amount: 6000, modpos: 6000, pre: 0, loose: 0, fallback: 0 });
+  assert.equal(g.zTotal, 7500, "grubun Z'si yine iki kasanın toplamı");
+  // Satış eksik kalmış olabilir: bilgi
+  assert.equal(p.flags.find((f) => f.key === "kasa-eksik")?.text.replace(/ /g, " "), "Z'de markası belirsiz 6.000 ₺ var; satış eksik kaldıysa oran yüksek görünür.");
+  // Geçiş ayından önceki ay eski kuralla (tek kart: Z'deki yemek kartının tamamı Pluxee'nin)
+  assert.deepEqual(rowOf(r, "pluxee", "2026-10")?.sales, { amount: 15_500, source: "tek" });
+  assert.equal(groupOf(r, "meal", "2026-10")?.unbranded, null);
+});
+
+test("Marka belirsiz: Tuzla'nın markası ModPOS föyünden (modposChannels) bulunursa kanalına yazılır, kalan belirsiz", () => {
+  // Tuzla'nın föyünde her gün Pluxee 120, Multinet 50 (Z'deki 200'ün 30'u föyde markasız)
+  const brands = days("2026-11-01", "2026-11-30").map((date) => ({ date, branchId: "tuzla", byChannel: { pluxee: 120, multinet: 50 } }));
+  const r = buildCommissionReport(commissionInput({ modposBrands: brands }));
+  assert.deepEqual(rowOf(r, "pluxee", "2026-11")?.sales, { amount: 1500 + 3600, source: "lafpos", foy: 3600 });
+  assert.deepEqual(rowOf(r, "multinet", "2026-11")?.sales, { amount: 1500, source: "lafpos", foy: 1500 });
+  assert.equal(sourceLabel(rowOf(r, "multinet", "2026-11")!.sales!, "meal"), "ModPOS föyünden");
+  assert.deepEqual(groupOf(r, "meal", "2026-11")?.unbranded, { amount: 900, modpos: 900, pre: 0, loose: 0, fallback: 0 });
+  // Föy Z'den fazlasını söylüyorsa (föy ile kasa raporu tutmuyor) o gün föye güvenilmez: hepsi belirsiz
+  const wrong = days("2026-11-01", "2026-11-30").map((date) => ({ date, branchId: "tuzla", byChannel: { pluxee: 250 } }));
+  assert.deepEqual(groupOf(buildCommissionReport(commissionInput({ modposBrands: wrong })), "meal", "2026-11")?.unbranded?.modpos, 6000);
+});
+
+test("Marka belirsiz: LafPOS'ta kanalı seçilmemiş ödeme tek karta da yazılmaz", () => {
+  const r = buildCommissionReport(
+    commissionInput({
+      till: tillDays("2026-10-01", "2026-10-31", { mealCard: 500, online: 0, branchId: "marina" }),
+      lafpos: { switchDay: "2026-11-01", days: lafposDays("2026-11-01", "2026-11-30", () => [cpay("Pluxee", "meal_card", "pluxee", 50), cpay("Yemek kartı", "meal_card", null, 10)]) },
+    }),
+  );
+  assert.deepEqual(rowOf(r, "pluxee", "2026-11")?.sales, { amount: 1500, source: "lafpos" });
+  const g = groupOf(r, "meal", "2026-11");
+  assert.deepEqual(g?.unbranded, { amount: 300, modpos: 0, pre: 0, loose: 300, fallback: 0 });
+  assert.match((g?.flags[0]?.text ?? "").replace(/ /g, " "), /Bu tutar hiçbir karta yazılmaz, markası belirsiz satırda; LafPOS'ta ödeme türünün kanalını seçin\.$/);
+});
+
+test("şube görünümü: satış şubenin, oran işletmenin (faturalar ortak); şubenin komisyon payı = şube satışı × işletme oranı", () => {
+  const brands = days("2026-11-01", "2026-11-30").map((date) => ({ date, branchId: "tuzla", byChannel: { pluxee: 200 } }));
+  const all = buildCommissionReport(commissionInput({ modposBrands: brands }));
+  // Marina'nın kapsamı: Tuzla'nın kasa raporları ve föyü okunmaz
+  const marina = buildCommissionReport(commissionInput({ till: tillDays("2026-10-01", "2026-10-31", { mealCard: 500, online: 0, branchId: "marina" }) }));
+  const share = branchCommissionShare(all, marina, "2026-11");
+  const p = share.find((x) => x.channel === "pluxee");
+  assert.ok(p, "Pluxee");
+  // İşletme: 1.500 (Marina) + 6.000 (Tuzla) = 7.500, kesilen 60 → %0,8; Marina'nın payı 1.500 × %0,8 = 12
+  assert.equal(rowOf(all, "pluxee", "2026-11")?.sales?.amount, 7500);
+  assert.deepEqual(p, { channel: "pluxee", label: "Pluxee", kind: "meal", sales: 1500, rate: 0.008, commission: 12 });
+});
+
+import { commissionBranchNote, unbrandedLine } from "../src/app/panel/komisyonlar/texts";
+
+test("Komisyon ekranı: markası belirsiz satırı ve şube görünümünün notu; zil, Bugün, e-posta ve haftalık özet işletme geneli", () => {
+  assert.equal(unbrandedLine(null, "meal"), null);
+  assert.equal(unbrandedLine({ amount: 0, pre: 0, modpos: 0, loose: 0, fallback: 0 }, "meal"), null);
+  assert.equal(
+    plain(unbrandedLine({ amount: 6300, pre: 0, modpos: 6000, loose: 300, fallback: 0 }, "meal") ?? ""),
+    "Marka belirsiz: 6.300 ₺ (ModPOS'ta kalan şubenin Z'si 6.000 ₺, LafPOS'ta kanalı seçilmemiş ödeme 300 ₺). Hiçbir karta yazılmaz; kartın oranı yalnız markası bilinen satışla hesaplanır.",
+  );
+  assert.equal(
+    plain(unbrandedLine({ amount: 900, pre: 900, modpos: 0, loose: 0, fallback: 0 }, "platform") ?? ""),
+    "Marka belirsiz: 900 ₺ (LafPOS'tan önceki günlerin Z'si 900 ₺). Hiçbir platforma yazılmaz; platformun oranı yalnız markası bilinen satışla hesaplanır.",
+  );
+  const note = commissionBranchNote("Marina");
+  assert.equal(note.title, "Marina seçili: satış yalnız bu şubenin, faturalar ve hakediş işletmenin");
+  assert.match(note.text, /oran bütün şubelerin satışıyla hesaplanır/);
+  assert.match(note.text, /payı = şubenin satışı × oran/);
+  // Ekran iki raporu okur (işletme + şube); hafif yollar ve haftalık özet "Tümü" ile
+  const page = read("src/app/panel/komisyonlar/page.tsx");
+  assert.match(page, /const \{ all: report, branch, scope \} = await loadCommissionReports\(\);/);
+  assert.match(page, /branchCommissionShare\(report, branch, month\)/);
+  const data = read("src/server/data/commission.ts");
+  assert.match(data, /return withBranchScope\(ALL_BRANCHES, async \(\) => buildCommissionReport\(await loadCommissionInput\(\{ resolveNames: false, today \}\)\)\);/);
+  assert.match(data, /\.where\(andWhere\(gte\(s\.cashReports\.date, fromDay\), branchWhere\(s\.cashReports\.branchId, scope\)\)\)/);
+  assert.match(data, /const switchDay = scopeSwitchDay\(readLafposSwitchDay\(switchRow\[0\]\?\.value\), scope\);/);
+  assert.match(read("src/server/weekly/collect.ts"), /withBranchScope\(ALL_BRANCHES, \(\) => loadCommissionInput\(\{ resolveNames: false, today: ctx\.today \}\)\)/);
+});

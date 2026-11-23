@@ -33,7 +33,7 @@ export interface ChannelMonthData {
   invoiced: boolean;
   /** Satış yazılmazsa kullanılan Z toplamı (yalnız grupta tek kanal varsa) */
   /** Satış boş bırakılırsa kullanılacak: LafPOS'un ödemeleri ya da (grupta tek kanalken) Z toplamı */
-  autoSales: { amount: number; source: "lafpos" | "tek"; zShare?: number } | null;
+  autoSales: { amount: number; source: "lafpos" | "tek"; foy?: number } | null;
 }
 
 /** "Geldi": hakedişi işaretle; "duzenle": kayıtlı işareti değiştir; "satis": yalnız satışı yaz (alan odaklanır) */
@@ -151,8 +151,8 @@ function ChannelMonthDialog({ data, mode, onClose, onSave }: { data: ChannelMont
     data.autoSales === null
       ? "Boş bırakırsanız satış bilinmez."
       : data.autoSales.source === "lafpos"
-        ? data.autoSales.zShare
-          ? `Boş bırakırsanız LafPOS ödemeleri ve Z'deki toplam kullanılır: ${money(data.autoSales.amount)} (Z'den ${money(data.autoSales.zShare)}).`
+        ? data.autoSales.foy
+          ? `Boş bırakırsanız LafPOS ödemeleri ve ModPOS föyündeki markalı ödemeler kullanılır: ${money(data.autoSales.amount)} (föyden ${money(data.autoSales.foy)}).`
           : `Boş bırakırsanız LafPOS'taki ödemeler kullanılır: ${money(data.autoSales.amount)}.`
         : `Boş bırakırsanız Z'deki toplam kullanılır: ${money(data.autoSales.amount)}.`
   }`;

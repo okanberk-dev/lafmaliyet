@@ -7,10 +7,14 @@
  * Satış kanal kanal ayrı yazılmaz: Z raporunda yemek kartları da online (platformlar) da tek toplamdır. Bir kanalın
  * satışı önce yöneticinin yazdığı aylık ekstreden (`elle`), yoksa o ay grubunda tek kanal varsa Z'deki toplamdan
  * (`tek`) gelir; ikisi de yoksa bilinmez ve nedeni yazılır. LafPOS'a geçiş günü seçiliyse o günden itibaren LafPOS'un
- * gün sonu ödemeleri kanal kanal yollar (`lafpos`, denetim E-37): elle > lafpos > tek; geçiş ayının önceki günleri
- * kasa raporu kuralıyla. Yemek kartlarının toplam oranı her zaman hesaplanır: %6'yı aşıyorsa en az bir kart aşıyordur.
+ * gün sonu ödemeleri kanal kanal yollar (`lafpos`, denetim E-37): elle > lafpos > tek. Geçiş ayından itibaren markası
+ * bilinmeyen tutar (geçiş gününden önceki günlerin ve ModPOS'ta kalan şubenin Z'si, LafPOS'ta kanalı seçilmemiş ödeme,
+ * gün sonu gelmemiş günün kasa raporu) tek kanala da yazılmaz: grubun "Marka belirsiz" satırında durur (23 Kasım 2026);
+ * ModPOS föyünde markası olan ödeme (modposBrands) kanalına yazılır. Yemek kartlarının toplam oranı her zaman
+ * hesaplanır: %6'yı aşıyorsa en az bir kart aşıyordur.
  */
 
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { MONTH_NAMES } from "@/lib/constants";
 import { money, pct } from "@/lib/format";
 import { isLafposBranch } from "@/lib/lafpos/switch";
@@ -68,6 +72,18 @@ export interface LafposDayIn {
   mealCard: number;
   online: number;
   payments: LafposPaymentIn[];
+}
+
+/**
+ * ModPOS föyünden bir kasa gününün markalı ödemeleri (src/lib/modpos/z.ts modposChannels; yalnız kanalı olanlar):
+ * LafPOS'un girdiği ayda kasa raporu kuralıyla sayılan günün (geçiş gününden önce ya da ModPOS'ta kalan şubede) Z'deki
+ * yemek kartı ve online toplamı föydeki markalara bölünür; föy Z'den fazlasını söylüyorsa o gün bölünmez
+ */
+export interface ModposBrandDay {
+  date: string;
+  /** Föyün şubesi (yoksa Tuzla) */
+  branchId?: string | null;
+  byChannel: Partial<Record<ChannelKey, number>>;
 }
 
 /** Yöneticinin bir kanal ve satış ayı için yazdığı: aylık ekstredeki satış, gelen hakediş, not (boş = yazılmadı) */
@@ -152,6 +168,8 @@ export interface CommissionInput {
    * (deneme) buraya hiç girmez
    */
   lafpos?: { switchDay: string; days: LafposDayIn[] } | null;
+  /** ModPOS föylerinin markalı ödemeleri (yalnız LafPOS'un girdiği aylarda okunur; yoksa markası bilinmez) */
+  modposBrands?: ModposBrandDay[];
 }
 
 // ---------------------------------------------------------------- Çıktı
@@ -160,13 +178,13 @@ export interface CommissionInput {
 export type SalesSource = "elle" | "lafpos" | "tek";
 
 /**
- * Kanal-ayın satışı. `zShare` (yalnız `lafpos`): grupta tek kanal varken kanala yazılan, kanal kanal bilinmeyen kısım
- * (geçiş gününden önceki Z toplamı, LafPOS'ta kanalı seçilmemiş ödeme, gün sonu gelmemiş günün kasa raporu)
+ * Kanal-ayın satışı. `foy` (yalnız `lafpos`): ModPOS föyünde markası bulunan kısım (geçiş gününden önceki ya da ModPOS'ta
+ * kalan şubenin günleri); yoksa alan yok. Markası bilinmeyen tutar kanala yazılmaz (GroupMonth.unbranded)
  */
 export interface ChannelSales {
   amount: number;
   source: SalesSource;
-  zShare?: number;
+  foy?: number;
 }
 export type PayoutStatus = "geldi" | "eksik" | "bekliyor" | "gecikti" | "takip-oncesi" | "faturasiz" | "yok";
 export type FlagKey = "oran-sinir" | "yasak-ucret" | "erken-odeme" | "asli-ucret" | "reklam" | "fatura-yok" | "fatura-kayan" | "kasa-eksik" | "lafpos-kanal";
@@ -236,7 +254,7 @@ export interface ChannelMonth {
    * Yazılan satış silinirse kullanılacak satış (pencerenin ipucu): LafPOS'un ödemeleri ya da (grupta tek kanal varsa)
    * Z toplamı; yoksa null
    */
-  autoSales: { amount: number; source: "lafpos" | "tek"; zShare?: number } | null;
+  autoSales: { amount: number; source: "lafpos" | "tek"; foy?: number } | null;
   rate: number | null;
   /**
    * Platform: seçilen ay ve önceki iki ayda satışı bilinen (en az iki) ayın toplam oranı; haftalık fatura ay sınırında
@@ -263,6 +281,12 @@ export interface GroupMonth {
   partialFrom: string | null;
   /** Ayın LafPOS'tan sayıldığı ilk gün (geçiş günü ya da ayın 1'i); LafPOS'un girmediği ayda null */
   lafposFrom: string | null;
+  /**
+   * Marka belirsiz (LafPOS'un girdiği ayda; öncesinde null): grubun hiçbir kanala yazılmayan tutarı. `pre` geçiş gününden
+   * önceki günlerin, `modpos` ModPOS'ta kalan şubenin Z'si (föyde markası bulunan kısım hariç), `loose` LafPOS'ta kanalı
+   * seçilmemiş ödeme, `fallback` gün sonu gelmemiş günün kasa raporu
+   */
+  unbranded: { amount: number; pre: number; modpos: number; loose: number; fallback: number } | null;
   invoiceCount: number;
   feesTotal: number;
   vat: number;
@@ -474,6 +498,11 @@ export interface LafposMonth {
    * toplamı: kasa raporu kuralıyla (kanal kanal bilinmez, `pre` gibi) sayılır; yoksa null (denetim 21 Kasım #5)
    */
   modpos: { meal: number; online: number } | null;
+  /**
+   * ModPOS föyünde markası bulunan kısım, kanal kanal: geçiş gününden önceki günlerin (`pre`) ve ModPOS'ta kalan şubenin
+   * (`modpos`) kasa raporlarından (ModposBrandDay). Kalan Z markası belirsizdir
+   */
+  branded: { pre: Partial<Record<ChannelKey, number>>; modpos: Partial<Record<ChannelKey, number>> };
 }
 
 const groupKindOf = (p: Pick<LafposPaymentIn, "channel" | "zField">): ChannelKind | null =>
@@ -485,7 +514,7 @@ const groupKindOf = (p: Pick<LafposPaymentIn, "channel" | "zField">): ChannelKin
  * belirler), kanalsız ya da tanınmayan kanallı tür Z alanına göre gruba ("loose"); nakit, kart ve diğer komisyona girmez.
  */
 export function lafposMonth(
-  input: Pick<CommissionInput, "lafpos" | "till" | "through" | "firstReport" | "closed">,
+  input: Pick<CommissionInput, "lafpos" | "till" | "through" | "firstReport" | "closed" | "modposBrands">,
   month: string,
 ): LafposMonth | null {
   const S = input.lafpos?.switchDay ?? null;
@@ -547,6 +576,10 @@ export function lafposMonth(
     unassigned: r2(g.unassigned),
     loose: [...g.loose.values()].map((l) => ({ ...l, amount: r2(l.amount) })).sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, "tr")),
   });
+  // ModPOS föyünde markası bulunan kısım: kasa raporu kuralıyla sayılan günler (geçiş gününden önce ya da ModPOS'ta kalan
+  // şubede); yalnız föyün markalı tutarı Z'dekini aşmıyorsa (föy ile rapor tutmuyorsa o gün o grup belirsiz kalır)
+  const preRows = from > start ? input.till.filter((r) => r.date >= start && r.date < from) : [];
+  const branded = { pre: brandedOf(preRows, input.modposBrands), modpos: brandedOf(modposRows, input.modposBrands) };
   let pre: ChannelTill | null = null;
   let preUnknown = false;
   if (from > start) {
@@ -563,7 +596,57 @@ export function lafposMonth(
       }
     }
   }
-  return { from, pre, preUnknown, days: days.length, fallback, missing, closed, meal: done(groups.meal), platform: done(groups.platform), modpos };
+  return { from, pre, preUnknown, days: days.length, fallback, missing, closed, meal: done(groups.meal), platform: done(groups.platform), modpos, branded };
+}
+
+/**
+ * Kasa raporu günlerinin föyde markası bulunan ödemeleri, kanal kanal (lafposMonth `branded`): gün ve şube başına föyün
+ * markalı tutarı, grubun (yemek kartı ya da online) o günkü Z'sini aşmıyorsa kanala yazılır; aşıyorsa o gün o grup
+ * markasız kalır (föy ile kasa raporu tutmuyor)
+ */
+function brandedOf(rows: readonly TillDayIn[], brands: readonly ModposBrandDay[] | undefined): Partial<Record<ChannelKey, number>> {
+  const out: Partial<Record<ChannelKey, number>> = {};
+  if (!brands?.length || !rows.length) return out;
+  // Şubesi verilmeyen kayıt Tuzla'nındır (şubeler öncesi)
+  const key = (date: string, branchId: string | null | undefined) => `${branchId ?? DEFAULT_BRANCH_ID}|${date}`;
+  const byDay = new Map<string, Partial<Record<ChannelKey, number>>>();
+  for (const b of brands) {
+    const k = key(b.date, b.branchId);
+    const cur = byDay.get(k) ?? {};
+    for (const [ch, v] of Object.entries(b.byChannel) as [ChannelKey, number][]) if (v > 0) cur[ch] = (cur[ch] ?? 0) + v;
+    byDay.set(k, cur);
+  }
+  for (const r of rows) {
+    const day = byDay.get(key(r.date, r.branchId));
+    if (!day) continue;
+    for (const kind of ["meal", "platform"] as const) {
+      const entries = (Object.entries(day) as [ChannelKey, number][]).filter(([ch]) => channelDef(ch).kind === kind);
+      const sum = entries.reduce((a, [, v]) => a + v, 0);
+      const z = kind === "meal" ? r.mealCard : r.online;
+      if (!(sum > 0) || sum > z + 0.005) continue;
+      for (const [ch, v] of entries) out[ch] = r2((out[ch] ?? 0) + v);
+    }
+  }
+  return out;
+}
+
+/** Grubun (yemek kartı ya da platform) föyde markası bulunan toplamı */
+const brandedTotal = (b: Partial<Record<ChannelKey, number>>, kind: ChannelKind) =>
+  r2((Object.entries(b) as [ChannelKey, number][]).filter(([ch]) => channelDef(ch).kind === kind).reduce((a, [, v]) => a + v, 0));
+
+/**
+ * Grubun markası belirsiz tutarı (GroupMonth.unbranded): geçiş gününden önceki ve ModPOS'ta kalan şubenin Z'sinden föyde
+ * markası bulunmayan kısım, LafPOS'ta kanalı seçilmemiş ödeme ve gün sonu gelmemiş günün kasa raporu
+ */
+export function unbrandedOf(lm: LafposMonth, kind: ChannelKind): NonNullable<GroupMonth["unbranded"]> {
+  const g = kind === "meal" ? lm.meal : lm.platform;
+  const preTotal = lm.pre ? (kind === "meal" ? lm.pre.meal : lm.pre.online) : 0;
+  const modposTotal = lm.modpos ? (kind === "meal" ? lm.modpos.meal : lm.modpos.online) : 0;
+  const pre = Math.max(0, r2(preTotal - brandedTotal(lm.branded.pre, kind)));
+  const modpos = Math.max(0, r2(modposTotal - brandedTotal(lm.branded.modpos, kind)));
+  const loose = r2(g.loose.reduce((a, l) => a + l.amount, 0));
+  const fallback = Math.max(0, r2(g.unassigned - loose));
+  return { amount: r2(pre + modpos + loose + fallback), pre, modpos, loose, fallback };
 }
 
 /**
@@ -733,62 +816,41 @@ const LEVEL_ORDER: Record<FlagLevel, number> = { bad: 0, warn: 1, info: 2 };
 const byLevel = (flags: Flag[]) => flags.map((f, i) => ({ f, i })).sort((a, b) => LEVEL_ORDER[a.f.level] - LEVEL_ORDER[b.f.level] || a.i - b.i).map((x) => x.f);
 
 /**
- * LafPOS'un girdiği ayda kanalın satışı, yazılmadıysa (denetim E-37; docs/KOMISYON.md §3): kanalın LafPOS ödemeleri.
- * Kanal kanal bilinmeyen kısım (geçiş gününden önceki günlerin Z toplamı, kanalı seçilmemiş ödeme türü, gün sonu
- * gelmemiş günün kasa raporu) `tek` kuralıyla yalnız grupta tek kanal varsa kanala yazılır (`zShare`). Birden çok kanal
- * varken geçiş gününden önceki günlerde grubun satışı varsa ay bilinmez (kasa raporu kuralı); yalnız kanalsız ödeme ya
- * da gün sonu gelmemiş gün varsa satış kanalın ödemeleridir, eksik kalan günler uyarılır (`gap`). ModPOS'ta kalan
- * şubenin (Tuzla) kasa raporları geçiş gününden önceki günler gibidir: Z'de grubun tek toplamı (`lm.modpos`).
+ * LafPOS'un girdiği ayda kanalın satışı, yazılmadıysa (denetim E-37; docs/KOMISYON.md §3): kanalın LafPOS ödemeleri ve
+ * ModPOS föyünde markası bulunan ödemeleri (geçiş gününden önceki günler, ModPOS'ta kalan şube). Markası bilinmeyen
+ * tutar (Z'de grubun tek toplamı, kanalı seçilmemiş ödeme türü, gün sonu gelmemiş günün kasa raporu) grupta tek kanal
+ * olsa da kanala yazılmaz (23 Kasım 2026; eskiden `tek` kuralıyla yazılırdı): grubun "Marka belirsiz" satırındadır,
+ * kanalda "satış eksik kalmış olabilir" bilgisi çıkar (`gap`). Geçiş gününden önce hiç kasa raporu yoksa ya da raporlar
+ * ay ortasında başladıysa ay bilinmez.
  */
-function lafposSales(
-  def: Pick<ChannelDef, "key" | "label" | "kind">,
-  month: string,
-  lm: LafposMonth,
-  active: ActiveChannels,
-  hasInvoice: boolean,
-): { sales: ChannelSales | null; reason: string | null; gap: SalesGap | null } {
+function lafposSales(def: Pick<ChannelDef, "key" | "label" | "kind">, lm: LafposMonth, hasInvoice: boolean): { sales: ChannelSales | null; reason: string | null; gap: SalesGap | null } {
   const g = def.kind === "meal" ? lm.meal : lm.platform;
   const own = g.byChannel[def.key] ?? 0;
+  const foy = r2((lm.branded.pre[def.key] ?? 0) + (lm.branded.modpos[def.key] ?? 0));
   const pre = lm.pre;
-  const preTotal = pre ? (def.kind === "meal" ? pre.meal : pre.online) : 0;
-  const modposTotal = lm.modpos ? (def.kind === "meal" ? lm.modpos.meal : lm.modpos.online) : 0;
-  const sole = active.own.length === 1 && active.own[0] === def.key && !active.late.length;
   const unknown = (reason: string) => ({ sales: null, reason: `${reason}${TYPE_HINT}`, gap: null });
   if (lm.preUnknown) return unknown(`Satış bilinmiyor: LafPOS ${dayLocativeTR(lm.from)} başladı, öncesinin kasa raporu yok.`);
   if (pre?.partialFrom) return unknown(`Satış bilinmiyor: kasa raporları ${dayLocativeTR(pre.partialFrom)} başladı.`);
-  if (!sole && (preTotal > 0.005 || modposTotal > 0.005)) {
-    const total = def.kind === "meal" ? "Z'de yemek kartları tek toplam" : "Z'deki online (platformlar) tek toplam";
-    const [late] = active.late;
-    const why =
-      active.own.length >= 2
-        ? ` ve bu ay ${active.own.length} ${def.kind === "meal" ? "kart" : "platform"} var`
-        : late
-          ? ` ve ${dayMonthTR(late.date)} tarihli ${channelDef(late.key).label} faturası ${monthName(month)} satışlarını da kapsıyor olabilir`
-          : "";
-    return unknown(
-      preTotal > 0.005
-        ? `Satış bilinmiyor: LafPOS ${dayLocativeTR(lm.from)} başladı; öncesinde ${total}${why}.`
-        : `Satış bilinmiyor: kasası ModPOS'ta kalan şubede ${total}${why}.`,
-    );
-  }
-  const zShare = sole ? r2(preTotal + modposTotal + g.unassigned) : 0;
-  const amount = r2(own + zShare);
+  const ub = unbrandedOf(lm, def.kind);
+  const zUnbranded = r2(ub.pre + ub.modpos);
+  const amount = r2(own + foy);
   if (!(amount > 0)) {
     if (!hasInvoice) return unknown("Satış bilinmiyor.");
     const loose = g.loose.length ? " LafPOS'ta kanalı seçilmemiş ödeme türü var; türün kanalını seçin." : "";
-    return unknown(`Satış bilinmiyor: LafPOS'ta bu ay ${def.label} ödemesi yok.${loose}`);
+    const unb = zUnbranded > 0 ? ` Z'de markası belirsiz ${money(zUnbranded)} var.` : "";
+    return unknown(`Satış bilinmiyor: LafPOS'ta bu ay ${def.label} ödemesi yok.${loose}${unb}`);
   }
-  // Eksik kalmış olabilecek günler: tek kanalda gün sonu gelmemiş günün kasa raporu kanala yazıldı, eksik yalnız hiç
-  // kaydı olmayan gün; birden çok kanalda o günlerin ve kanalsız ödemenin payı bilinmez
-  const noLafpos = sole ? lm.missing.length : lm.missing.length + lm.fallback.length;
-  const looseTotal = sole ? 0 : r2(g.loose.reduce((a, l) => a + l.amount, 0));
+  // Eksik kalmış olabilecek: gün sonu gelmemiş (raporlu ya da raporsuz) günler, raporsuz günler, kanalsız ödeme ve Z'de
+  // markası belirsiz tutar (hiçbiri kanala yazılmaz)
+  const noLafpos = lm.missing.length + lm.fallback.length;
   const parts = [
     noLafpos ? `${noLafpos} gün LafPOS gün sonu yok` : null,
     pre?.missing.length ? `${pre.missing.length} gün kasa raporu yok` : null,
-    looseTotal > 0 ? `kanalı seçilmemiş ${money(looseTotal)} ödeme var` : null,
+    ub.loose > 0 ? `kanalı seçilmemiş ${money(ub.loose)} ödeme var` : null,
+    zUnbranded > 0 ? `Z'de markası belirsiz ${money(zUnbranded)} var` : null,
   ].filter((p): p is string => p !== null);
   const text = parts.join(" ve ");
-  return { sales: { amount, source: "lafpos", zShare }, reason: null, gap: parts.length ? { text, doubt: text } : null };
+  return { sales: { amount, source: "lafpos", ...(foy > 0 ? { foy } : {}) }, reason: null, gap: parts.length ? { text, doubt: text } : null };
 }
 
 /**
@@ -895,10 +957,10 @@ export function buildCommissionReport(input: CommissionInput): CommissionReport 
       return [m, lm ? lafposTill(lm) : channelTill(input.till, m, through, input.firstReport, input.closed)];
     }),
   );
-  /** Kanalın o ayki LafPOS ödemeleri (LafPOS'un girmediği ayda 0) */
+  /** Kanalın o ayki LafPOS ödemeleri ve föyde markası bulunan ödemeleri (LafPOS'un girmediği ayda 0) */
   const lafposOwn = (c: Pick<ChannelDef, "key" | "kind">, month: string): number => {
     const lm = lafposMonths.get(month);
-    return lm ? ((c.kind === "meal" ? lm.meal : lm.platform).byChannel[c.key] ?? 0) : 0;
+    return lm ? ((c.kind === "meal" ? lm.meal : lm.platform).byChannel[c.key] ?? 0) + (lm.branded.pre[c.key] ?? 0) + (lm.branded.modpos[c.key] ?? 0) : 0;
   };
   // Etkin kanallar. Bir kanalın bu ayın satışları için faturası sonraki ayın ilk yarısında kesilebilir (ilk ayı, kayan
   // fatura): o kanal da sayılır, yoksa Z'deki toplamın tamamı öteki kanala yazılırdı (`tek`). LafPOS'ta ödemesi olan
@@ -937,7 +999,7 @@ export function buildCommissionReport(input: CommissionInput): CommissionReport 
       let reason: string | null;
       let gap: SalesGap | null;
       if (lm) {
-        ({ sales: auto, reason, gap } = lafposSales(def, month, lm, active, invoices.length > 0));
+        ({ sales: auto, reason, gap } = lafposSales(def, lm, invoices.length > 0));
       } else {
         const groupTotal = def.kind === "meal" ? till.meal : till.online;
         const tekOk = invoices.length > 0 && active.own.length === 1 && active.own[0] === def.key && !active.late.length && till.reportDays > 0 && !till.partialFrom && groupTotal > 0;
@@ -961,8 +1023,12 @@ export function buildCommissionReport(input: CommissionInput): CommissionReport 
         payable,
         sales,
         salesReason: sales ? null : reason,
-        // LafPOS'ta Z'deki payı da taşır (tek kanalda geçişten önceki günlerin ve kanalsız ödemenin toplamı): pencere söyler
-        autoSales: auto ? (auto.source === "lafpos" ? { amount: auto.amount, source: "lafpos" as const, zShare: auto.zShare ?? 0 } : { amount: auto.amount, source: "tek" as const }) : null,
+        // LafPOS'ta föyden gelen payı da taşır (geçişten önceki ya da ModPOS'ta kalan şubenin günleri): pencere söyler
+        autoSales: auto
+          ? auto.source === "lafpos"
+            ? { amount: auto.amount, source: "lafpos" as const, ...(auto.foy ? { foy: auto.foy } : {}) }
+            : { amount: auto.amount, source: "tek" as const }
+          : null,
         // İade (eksi) faturası ayın toplamını eksiye düşürürse oran yazılmaz
         rate: sales && sales.amount > 0 && invoices.length && feesTotal >= 0 ? feesTotal / sales.amount : null,
         payout: payoutOf({ sales, payable, invoices }, mark, settings[def.key].payDays, today, since),
@@ -1037,9 +1103,8 @@ export function buildCommissionReport(input: CommissionInput): CommissionReport 
         flags.push({
           key: "lafpos-kanal",
           level: "info",
-          text: `LafPOS'ta kanalı seçilmemiş ya da tanınmayan ödeme türü: ${shown}${more}. ${
-            activeChannels.length === 1 ? `Bu ay tek ${kind === "meal" ? "kart" : "platform"} olduğu için ona yazıldı` : `Bu tutar hiçbir ${kind === "meal" ? "karta" : "platforma"} yazılmaz`
-          }; LafPOS'ta ödeme türünün kanalını seçin.`,
+          // Tek kanal olsa da yazılmaz (23 Kasım 2026): markası belirsiz satırda durur
+          text: `LafPOS'ta kanalı seçilmemiş ya da tanınmayan ödeme türü: ${shown}${more}. Bu tutar hiçbir ${kind === "meal" ? "karta" : "platforma"} yazılmaz, markası belirsiz satırda; LafPOS'ta ödeme türünün kanalını seçin.`,
         });
       }
       groups.push({
@@ -1051,6 +1116,7 @@ export function buildCommissionReport(input: CommissionInput): CommissionReport 
         closed: till.closed,
         partialFrom: till.partialFrom,
         lafposFrom: lm?.from ?? null,
+        unbranded: lm ? unbrandedOf(lm, kind) : null,
         invoiceCount,
         feesTotal,
         vat: r2(kRows.reduce((a, r) => a + r.vat, 0)),
@@ -1137,6 +1203,35 @@ export function channelMonthChange(prev: ChannelMonthValues, next: ChannelMonthV
 /** Kanalın o ayki satırı (yoksa null) */
 export function rowOf(report: Pick<CommissionReport, "rows">, channel: ChannelKey, month: string): ChannelMonth | null {
   return report.rows.find((r) => r.channel === channel && r.month === month) ?? null;
+}
+
+/** Şube görünümünde bir kanalın şube payı (branchCommissionShare) */
+export interface BranchShareRow {
+  channel: ChannelKey;
+  label: string;
+  kind: ChannelKind;
+  /** Şubenin bu kanaldan satışı (şubenin kasa raporları ve LafPOS'u); bilinmiyorsa null */
+  sales: number | null;
+  /** İşletmenin oranı: bütün faturalar ÷ bütün şubelerin satışı (faturalar şubeye bölünmez) */
+  rate: number | null;
+  /** Şubenin komisyon payı = şube satışı × işletmenin oranı; ikisinden biri yoksa null */
+  commission: number | null;
+}
+
+/**
+ * Şube görünümü (Komisyon & hakediş; 23 Kasım 2026): faturalar, hakediş ve oran işletme genelidir (`all`: "Tümü"nün
+ * raporu); şubenin satışı şubenin raporundan (`branch`: şube seçimiyle okunan kasa raporları ve LafPOS). Şubenin payı =
+ * şube satışı × işletmenin oranı. Ayda iki rapordan birinde satırı olan kanallar, kayıt sırasıyla
+ */
+export function branchCommissionShare(all: Pick<CommissionReport, "rows">, branch: Pick<CommissionReport, "rows">, month: string): BranchShareRow[] {
+  return CHANNELS.flatMap((c): BranchShareRow[] => {
+    const a = rowOf(all, c.key, month);
+    const b = rowOf(branch, c.key, month);
+    if (!a && !b) return [];
+    const sales = b?.sales ? b.sales.amount : null;
+    const rate = a?.rate ?? null;
+    return [{ channel: c.key, label: c.label, kind: c.kind, sales, rate, commission: sales !== null && rate !== null ? r2(sales * rate) : null }];
+  });
 }
 
 /** Grubun o ayki özeti (yoksa null) */

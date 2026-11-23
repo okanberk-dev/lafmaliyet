@@ -6,19 +6,20 @@ import type { Tone } from "@/components/ui/badge";
 import { LINE_CLASSES, LINE_LABEL, type ChannelDef, type ChannelKind } from "@/lib/commission/channels";
 import { approxMoney, MEAL_LIMIT, LIMIT_TOLERANCE, type ChannelMonth, type ChannelSales, type GroupMonth } from "@/lib/commission/report";
 import { money, pct } from "@/lib/format";
+import { genitive } from "@/lib/recipe-change";
 import { dayAblativeTR, dayLocativeTR, dayMonthTR } from "@/lib/reminders";
 
 import type { ChannelMonthData } from "./channel-month-dialog";
 
 /**
- * Satışın kaynağı (Satış satırının altında, sönük): yazılan ekstre, LafPOS'un ödemeleri (grupta tek kanal varken kanal
- * kanal bilinmeyen kısım da) ya da (grupta tek kanal varken) Z toplamı
+ * Satışın kaynağı (Satış satırının altında, sönük): yazılan ekstre, LafPOS'un ödemeleri (ModPOS föyünde markası bulunan
+ * ödemeler de; markası belirsiz tutar kanala yazılmaz) ya da (LafPOS'tan önceki ayda, grupta tek kanal varken) Z toplamı
  */
-export function sourceLabel(sales: Pick<ChannelSales, "source" | "zShare">, kind: ChannelKind): string {
+export function sourceLabel(sales: Pick<ChannelSales, "source"> & Partial<Pick<ChannelSales, "foy" | "amount">>, kind: ChannelKind): string {
   if (sales.source === "elle") return "Kanalın ekstresinden (elle)";
   if (sales.source === "lafpos") {
-    if (!sales.zShare) return "LafPOS ödemelerinden";
-    return kind === "meal" ? "LafPOS ödemeleri ve Z'deki yemek kartı toplamı (tek kart)" : "LafPOS ödemeleri ve Z'deki online toplamı (tek platform)";
+    if (!sales.foy) return "LafPOS ödemelerinden";
+    return sales.amount !== undefined && sales.amount <= sales.foy ? "ModPOS föyünden" : "LafPOS ödemeleri ve ModPOS föyünden";
   }
   return kind === "meal" ? "Z'deki yemek kartı toplamı (tek kart)" : "Z'deki online (platformlar) toplamı (tek platform)";
 }
@@ -157,6 +158,35 @@ export function tillSub(g: (Pick<GroupMonth, "zTotal" | "reportDays" | "missing"
 /** Platformlar bölümünün satırı: "Z'deki online (platformlar): 0 ₺ · 31 / 31 gün raporlu"; o ay kasa raporu yoksa "Kasa raporu yok" */
 export function platformTillLine(g: (Pick<GroupMonth, "zTotal" | "reportDays" | "missing" | "partialFrom"> & { closed?: readonly string[]; lafposFrom?: string | null }) | null): string {
   return g?.zTotal != null ? `Z'deki online (platformlar): ${money(g.zTotal)} · ${tillSub(g)}` : "Kasa raporu yok";
+}
+
+/**
+ * Grubun markası belirsiz satırı (LafPOS'un girdiği ayda; GroupMonth.unbranded): hiçbir kanala yazılmayan tutar ve
+ * nereden geldiği. Belirsiz tutar yoksa null
+ */
+export function unbrandedLine(u: GroupMonth["unbranded"], kind: ChannelKind): string | null {
+  if (!u || !(u.amount > 0)) return null;
+  const parts = [
+    u.pre > 0 ? `LafPOS'tan önceki günlerin Z'si ${money(u.pre)}` : null,
+    u.modpos > 0 ? `ModPOS'ta kalan şubenin Z'si ${money(u.modpos)}` : null,
+    u.loose > 0 ? `LafPOS'ta kanalı seçilmemiş ödeme ${money(u.loose)}` : null,
+    u.fallback > 0 ? `gün sonu gelmemiş günlerin kasa raporu ${money(u.fallback)}` : null,
+  ].filter((p): p is string => p !== null);
+  const [to, what] = kind === "meal" ? ["karta", "kartın"] : ["platforma", "platformun"];
+  return `Marka belirsiz: ${money(u.amount)} (${parts.join(", ")}). Hiçbir ${to} yazılmaz; ${what} oranı yalnız markası bilinen satışla hesaplanır.`;
+}
+
+/**
+ * Şube seçiliyken Komisyon & hakediş'in notu (docs/SUBE.md): satış şubenin, komisyon faturaları ve hakediş işletmenin
+ * (faturalar şubeye bölünmez); oran işletmenin, şubenin payı = şube satışı × oran
+ */
+export function commissionBranchNote(name: string): { title: string; text: string } {
+  return {
+    title: `${name} seçili: satış yalnız bu şubenin, faturalar ve hakediş işletmenin`,
+    text:
+      "Komisyon faturaları şubeye bölünmez: kartlar ve platformlar, oran, beklenen hakediş ve uyarılar işletmenin toplamıdır; oran bütün şubelerin satışıyla hesaplanır. " +
+      `${genitive(name)} payı = şubenin satışı × oran (aşağıdaki tablo). İşletmenin tamamı için soldan Tümü'nü seçin.`,
+  };
 }
 
 /** Yemek kartı oranı karosunun alt satırı: Z'deki yemek kartı (kasa raporu olan ayda 0 da) ve oran yoksa nedeni */

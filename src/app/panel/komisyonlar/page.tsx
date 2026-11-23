@@ -8,18 +8,21 @@ import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton, SectionTitle, Stat } from "@/components/ui/misc";
-import { groupOf, shownChannels } from "@/lib/commission/report";
+import { Notice } from "@/components/ui/notice";
+import { branchCommissionShare, groupOf, shownChannels } from "@/lib/commission/report";
 import { COMMISSION_CATEGORY } from "@/lib/constants";
 import { dateTR, money, monthLabel, num, pct } from "@/lib/format";
 import { dayAblativeTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
-import { loadCommissionReport } from "@/server/data/commission";
+import { listBranches } from "@/server/branches";
+import { loadCommissionReports } from "@/server/data/commission";
 
+import { BranchShareCard } from "./branch-share-card";
 import { ChannelCard, FlagList } from "./channel-card";
 import { ChannelSettingsCard } from "./channel-settings";
 import { MealTotalCard } from "./meal-total-card";
 import { PendingCard } from "./pending-card";
-import { mealStatSub, openPayouts, openPayoutsSub, overMealLimit, platformTillLine } from "./texts";
+import { commissionBranchNote, mealStatSub, openPayouts, openPayoutsSub, overMealLimit, platformTillLine, unbrandedLine } from "./texts";
 
 export const metadata: Metadata = { title: "Komisyon & hakediş" };
 
@@ -54,7 +57,9 @@ const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
 async function CommissionContent({ searchParams }: { searchParams: PageProps<"/panel/komisyonlar">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
-  const report = await loadCommissionReport();
+  // Faturalar, oran ve hakediş işletmenin (`report`); şube seçiliyken şubenin satışı ayrıca (`branch`; docs/KOMISYON.md › Şube)
+  const { all: report, branch, scope } = await loadCommissionReports();
+  const branchName = branch ? ((await listBranches()).find((b) => b.id === scope)?.name ?? scope) : null;
   const raw = pick(sp.ay);
   const month = raw && report.months.includes(raw) ? raw : report.defaultMonth;
   const hasData = report.rows.length > 0 || report.unmatched.length > 0 || report.groups.some((g) => (g.zTotal ?? 0) > 0);
@@ -86,6 +91,8 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
   const open = openPayouts(report.rows);
   const openSub = openPayoutsSub(open);
   const unmatched = report.unmatched.filter((u) => u.date.slice(0, 7) === month);
+  const branchNote = branchName ? commissionBranchNote(branchName) : null;
+  const platformUnbranded = unbrandedLine(platform?.unbranded ?? null, "platform");
 
   return (
     <>
@@ -95,6 +102,13 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
       />
       <HashScroll key={month} />
       <div className="space-y-6">
+        {/* Şube seçili (soldaki seçici): satış o şubenin, faturalar ve hakediş işletmenin (docs/SUBE.md) */}
+        {branchNote ? (
+          <Notice tone="neutral" size="sm" title={branchNote.title}>
+            {branchNote.text}
+          </Notice>
+        ) : null}
+        {branch && branchName ? <BranchShareCard name={branchName} month={month} rows={branchCommissionShare(report, branch, month)} /> : null}
         {report.pending.length ? <PendingCard rows={report.pending} /> : null}
 
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
@@ -132,6 +146,7 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
         <section aria-label="Platformlar">
           <SectionTitle>Platformlar</SectionTitle>
           <p className="-mt-1.5 mb-3 text-[13px] text-ink-mute">{platformTillLine(platform)}</p>
+          {platformUnbranded ? <p className="-mt-1.5 mb-3 text-[13px] text-ink-mute">{platformUnbranded}</p> : null}
           {platform?.flags.length ? (
             <div className="mb-3">
               <FlagList flags={platform.flags} />
