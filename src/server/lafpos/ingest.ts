@@ -16,7 +16,7 @@ import { schema as s, type DB } from "@/server/db";
  * (tests/lafpos-db.test.ts doğrudan çalıştırır).
  */
 
-/** LafPOS'un anahtarı (LAFPOS_SYNC_SECRET, en az 32 karakter); yoksa iki uç da 503 */
+/** LafPOS'un anahtarı (LAFPOS_SYNC_SECRET, en az 32 karakter); yoksa uçların hepsi 503 */
 export function lafposSecret(): string | null {
   return lafposSecretFrom(process.env);
 }

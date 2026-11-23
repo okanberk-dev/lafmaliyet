@@ -1,6 +1,7 @@
 # LafPOS bağlantısı (kafenin kasası)
 
-Uçlar: `POST /api/pos/gun` (gün sonu) ve `GET /api/panel/pos/urunler` (ürün maliyetleri). Ekranlar: **Ayarlar ›
+Uçlar: `POST /api/pos/gun` (gün sonu), `GET /api/panel/pos/urunler` (ürün maliyetleri) ve
+`GET /api/panel/pos/modpos-gunler` (geçiş gününden önceki ModPOS günleri). Ekranlar: **Ayarlar ›
 LafPOS (kasa)** (bağlantının durumu, son ret ve onarımı, **LafPOS'a geçiş günü**, ürüne bağlanamayan adlar) ve geçiş
 gününden itibaren **Kasa raporu** (`/panel/kasa`) › **LafPOS'tan doldur**, **Satışlar** (`/panel/satislar`:
 LafPOS'un ürün satışları, ay toplamı), **Komisyon & hakediş** (kanal kanal satış) ve **Zayi & ikram** (LafPOS'un
@@ -9,7 +10,7 @@ ikramı). Sözleşmenin asıl hâli LafPOS deposunda (`RiosenBeq/lafpos`)
 
 **Varsayılan kapalı (sahibin 26 Ekim kararı).** Kafede bugün ModPOS var. "LafPOS'a geçiş günü" boşken LafPOS'un
 gönderdiği günler saklanır ama hiçbir hesaba, ekrana, göreve, hatırlatmaya, e-postaya ya da ön doldurmaya girmez;
-yalnız Ayarlar'daki LafPOS kartında "deneme" olarak görünür. Anahtar (`LAFPOS_SYNC_SECRET`) yokken iki uç 503 döner ve
+yalnız Ayarlar'daki LafPOS kartında "deneme" olarak görünür. Anahtar (`LAFPOS_SYNC_SECRET`) yokken uçlar 503 döner ve
 hiçbir şey yazılmaz. Açma sırası aşağıda, "Açılış sırası".
 
 ## İş bölümü (26 Ekim 2026)
@@ -54,6 +55,10 @@ gün sonu (ve düzeltme)
 
 GET /api/panel/pos/urunler (imzalı)  ─────────▶  maliyet modelinden siteye bağlı ürünler
      ◀── {version: 1, now, items: [{siteMenuId, slot, name, size, costMinor, active}]}
+
+GET /api/panel/pos/modpos-gunler?sube=marina  ─▶  geçiş gününden önceki ModPOS günleri (kasa raporu, föy) ve
+    (imzalı; günde en çok bir kez)                 dönemin ModPOS ürün listesi; hiçbir şey yazılmaz
+     ◀── {version: 1, now, sube, switchDay, days, urunler} · 400 {error, field} · 409 {error: "wrong_branch", sube, expected} · 401 · 503
 ```
 
 ### Gün sonu: `POST /api/pos/gun`
@@ -368,6 +373,68 @@ Aynı anahtar ve imza (gövdesiz GET); yanıt `Cache-Control: no-store`:
 - Başka alan gitmez: fiyat, kâr, marj, reçete ve hammadde yok (`src/lib/lafpos/costs.ts`). Makine ucudur: oturumla
   açılmaz, panel ekranlarında yoktur; LafPOS bu rakamı yalnız `rapor.maliyet` yetkisi olanlara gösterir.
 
+### ModPOS dönemi: `GET /api/panel/pos/modpos-gunler`
+
+**Neden (sahibin 23 Kasım 2026 bildirimi):** LafPOS Uzaktan › Raporlar › "Geçen hafta" (16–22 Kasım) yalnız 22
+Kasım'ı gösteriyordu; Marina'nın 16–21 Kasım ModPOS günleri hiç yoktu. O günler panelde (kasa raporları, föy, Satışlar'a
+yüklenen ModPOS listesi) duruyor. Kasa bu uçtan şubesinin ModPOS dönemini çeker, kendi Raporlar'ında "ModPOS" etiketiyle
+gösterir ve Uzaktan'a kendi dükkân kimliğiyle iter (LafPOS deposu `docs/03-ENTEGRASYON.md` §4); indirim, ödenmez, KDV
+ve ürünler elle yüklenmez, buradan gelir. Uç yalnız okur.
+
+İstek: aynı anahtar ve imza, gövdesiz GET, şube sorguda (sorgu imzanın içinde):
+`GET /api/panel/pos/modpos-gunler?sube=marina`. Yanıt `Cache-Control: no-store`:
+
+```json
+{ "version": 1, "now": "2026-11-23T07:00:00.000Z", "sube": "marina", "switchDay": "2026-11-22",
+  "days": [
+    { "date": "2026-11-14", "ciro": 3311, "kart": 2687.25, "nakit": 623.75, "yemek": 0, "online": 0, "diger": 0,
+      "indirim": 249, "odenmez": 0, "ikram": 0, "fis": 14, "zNo": "Z-2026-003",
+      "kdv": [{ "rate": 10, "base": 3010, "vat": 301 }] }
+  ],
+  "urunler": { "from": "2026-11-13", "to": "2026-11-21",
+               "rows": [{ "ad": "Latte", "boy": "M", "adet": 8, "tutar": 950 }] } }
+```
+
+| Yanıt | Ne zaman |
+|-------|----------|
+| `200` | Yukarıdaki gövde; geçiş günü boşken `switchDay: null`, `days: []`, `urunler: null` |
+| `400 {error: "invalid", field: "sube"}` | `sube` yok, birden çok ya da biçimi bozuk (gün sonunun `sube` kuralı) |
+| `401` / `503` | İmza tutmuyor / anahtar yok (öteki uçlar gibi); imzasız istek şubenin doğru olup olmadığını öğrenmez |
+| `409 {error: "wrong_branch", sube, expected}` | `sube` LafPOS'un şubesi (Marina) değil: başka şubeye ayarlı kasa başka şubenin rakamını almaz |
+
+**Günler** (`days`, güne göre sıralı):
+- Geçiş gününden **önceki** günler, en çok 400 gün geriye. Geçiş günü ve sonrası LafPOS'undur, hiç gelmez.
+- Kaynak ay rakamınınkiyle aynı (`tillRows`, şubenin seçiminde): günün **kasa raporu**; raporsuz günde, Ayarlar › ModPOS
+  › **Ay rakamına yedek** açıkken kapanmış **ModPOS föyü** (yalnız raporların başına kesintisiz uzanan föyler;
+  docs/MODPOS-API.md › Ay rakamına yedek). Yedek kapalıyken föy günü gelmez: panelin ay rakamı da o günü saymaz.
+- `ciro` = ödemelerin toplamı (`kart + nakit + yemek + online + diger`): indirimden sonra, ödenmez / ikram hariç (Z
+  toplamı ödenmezi içerse de; Kasa raporu › Ciro ve ödenmez). Panel ödenmezle ikramı tek tutar tutar: hepsi `odenmez`'de,
+  `ikram` 0. Föyde indirim yok: föy gününde `indirim` 0. `fis` Z'nin fiş (adisyon) sayısı, `zNo` ModPOS'un Z no'su (metin,
+  yoksa null).
+- `kdv`: kasa raporunun yazarkasa dökümü (`okc_vat`) günün cirosunu kuruşu kuruşuna tutuyorsa oran oran o (matrah =
+  toplam − KDV); tutmuyorsa ya da yoksa tek satır %10, matrah = round(ciro × 100 / 110). Satırların KDV dahil toplamı
+  ciroya eşittir.
+- Satışı, indirimi, ödenmezi ve fişi olmayan gün (kapalı gün, satışsız föy) gelmez. Tutarlar TL, iki ondalık, sıfırdan
+  küçük değil.
+
+**Ürün listesi** (`urunler`): şubenin Satışlar'a yüklenen ModPOS listesi, **indirim öncesi** (liste = ciro + indirim),
+dönem için tek blok (aylık liste gün gün bölünemez):
+- Aylar: pencerenin içinde başlayan, listesi olan en son aya kesintisiz uzanan aylar (arada listesi olmayan ay varsa
+  öncesi girmez).
+- `to`: son ayın listesinin son günü (Satışlar'ın "Liste hangi güne kadar?" kaydı, yoksa ayın sonu), geçiş gününden
+  önceki günü geçmez; `from`: ilk ayın 1'i, o aydan itibaren ModPOS günü varsa ilki (Marina 13 Kasım'da açıldı).
+- Satır: `ad` ve `boy` bağlı panel ürününün adı ve boyu (`M` / `L`; tek boy `null`), bağlanmamış satırda ModPOS'taki ad;
+  aynı (ad, boy) toplanır, tutara göre sıralı; en çok 500 satır, fazlası "Diğer ürünler" satırında (toplam değişmez).
+- Listesi yoksa `null`. Marina 13–21 Kasım 2026: 31 satır, 240 adet, 29.415,00.
+
+**Bütçe:** LafPOS kendiliğinden **iş günü başına en çok bir kez** çeker (gün açıldıktan sonraki ilk turda ya da
+05:00'ten sonra); Yönetim › Entegrasyon'daki "ModPOS dönemini çek" elle, **5 dakikada bir**den sık değil. LafPOS'ta
+`LAFMALIYET_URL` yoksa hiç istek gitmez; hata olursa kasa son iyi veriyi tutar. Panel hiçbir şey itmez ve saklamaz:
+her istek o anki kasa raporlarını, föyleri ve listeyi okur (düzeltilen rapor ertesi çekimde gider).
+
+**KVKK:** kişi adı (raporu gönderen, sayan, föydeki personel, cari müşteri), kasa ve sayım rakamı, açılış, gider
+gitmez; yalnız yukarıdaki alanlar.
+
 ## Gün sonu otomasyonu (22 Kasım 2026)
 
 Yalnız LafPOS'un şubesinde (Marina) ve geçiş gününden itibaren (`src/server/lafpos/gun-sonu.ts`, saf kuralları
@@ -609,18 +676,20 @@ birleşip yayına çıkmak hiçbir şeyi açmaz: anahtar ve geçiş günü yokke
    ortasındaysa o ayın ModPOS listesi Satışlar'a geçiş gününden önceki günler için yüklenir (1–9 Kasım; yükleme o güne
    kırpar). Geçiş günü yalnız Marina'nın kasasınındır; Tuzla'da hiçbir şey değişmez ("Şubeler").
 
-Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi gibi çalışır.
+Anahtar yokken üç uç da `503` döner; panelin geri kalanı ve Kasa raporu eskisi gibi çalışır.
 
 ## Güvenlik ve KVKK
 
 - İmza laffogato.net bağlantısınınkiyle aynı kural ve aynı kod (`src/lib/karaoke/signature.ts`): `x-laf-timestamp`
   (unix saniye), `x-laf-signature: v1=<hex>`, HMAC-SHA256(zaman, yöntem, yol, sıralı sorgu, gövdenin SHA-256'sı),
-  ±5 dakika, sabit süreli karşılaştırma. Yol imzanın içindedir: bir ucun imzası öteki uçta geçmez. İki ucun vektörleri
-  `tests/lafpos.test.ts`'te sabit; LafPOS'un `server/lib/signature.ts`'i aynılarını verir.
+  ±5 dakika, sabit süreli karşılaştırma. Yol ve sorgu imzanın içindedir: bir ucun imzası öteki uçta, bir şubenin imzası
+  öteki şubede geçmez. Üç ucun vektörleri `tests/lafpos.test.ts`'te sabit; LafPOS'un `server/lib/signature.ts`'i
+  aynılarını verir (LafPOS `tests/signature.test.ts`).
 - Gövdede kişisel veri yoktur (müşteri, personel adı, telefon). İkram nedeni serbest metindir ve yalnız yöneticinin
   verisinde kalır; personele giden Kasa bandı yalnız Z'yi, Zayi'nin günü LafPOS ikramının yalnız adını ve adedini
   taşır; ödeme kanalları yalnız yöneticinin Komisyon & hakediş'inde.
 - Maliyet ucu yalnız imzayla açılır; personel maliyet ve kâr görmez.
+- ModPOS dönemi ucu yalnız imzayla ve yalnız LafPOS'un şubesi için açılır; kişi adı, kasa ve sayım rakamı taşımaz.
 - Yedeğe iki tablo kendiliğinden girer (gizli sütun yok). `db:reset` ürünleri baştan yüklediği için günlük satırlar da
   silinir (ürün kimliklerine bağlı); gün sonu özetleri kalır.
 
@@ -637,6 +706,7 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
 | Kasa raporunda bant yok | Geçiş günü seçilmedi ya da gün ondan önce (bilerek: deneme günü Kasa'ya girmez); o günün gönderimi gelmedi (LafPOS'un giden kutusu; kart gelmeyen günleri listeler) ya da gün başka (05:00 kuralı) |
 | Satışlar'da LafPOS satırı yok | Geçiş günü seçilmedi ya da ay ondan önce (deneme satırları yalnız Ayarlar kartında); geçiş ayında liste ayın sonuna kadarsa LafPOS o ay sayılmaz (Satışlar'ın uyarısı: yalnız geçiş gününden önceki günlerin listesini yükleyin) |
 | Satışlar "ModPOS listesi sayılmıyor" | Ayın tamamı geçiş gününden sonra: o aya eskiden yüklenmiş liste hesaba girmez; "Ayı temizle" ile silinir |
+| LafPOS'ta ModPOS günü eksik (`modpos-gunler`) | Geçiş günü boşsa dönem yok (`days: []`); gün geçiş gününden önce mi, o günün kasa raporu var mı, yoksa Ayarlar › ModPOS › Ay rakamına yedek açık ve föy kapanmış mı (ay rakamı da o günü saymıyor demektir); indirim föy gününde 0. Ürün bloğu için ayın ModPOS listesi Satışlar'a yüklenmiş olmalı. Kasa iş günü başına bir kez çeker; hemen görmek için LafPOS'ta Yönetim › Entegrasyon › ModPOS dönemini çek |
 | LafPOS satırı ürünsüz | Ayarlar › LafPOS kartında Bağla, Satışlar'da eşleştir ya da ürünü Ürünler › Site menüsü'nde sitenin kalemine bağla; kayıtlı günler yeniden gönderim olmadan bağlanır |
 
 ## Dosyalar
@@ -665,11 +735,12 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
 | `src/app/panel/ayarlar/lafpos-card.tsx`, `lafpos-client.tsx` | Ayarlar › LafPOS (kasa) |
 | `src/server/lafpos/ingest.ts` | Gün sonunun denetimi ve tek işlemde yazımı |
 | `src/server/lafpos/products.ts` | Maliyet ucunun çekirdeği (maliyet modeli) |
+| `src/lib/lafpos/modpos-gunler.ts`, `src/server/lafpos/modpos-gunler.ts` | ModPOS dönemi ucu: isteğin denetimi, günün ve ürün bloğunun biçimi (saf); kasa raporu, föy ve ModPOS listesinin okunması |
 | `src/server/data/daily-sales.ts` | `loadDailyProductSales` (gün gün; bugün okuyan yok) |
 | `src/app/panel/satislar/page.tsx`, `sales-client.tsx`, `product-picker.tsx` | Satışlar'ın bandı, LafPOS satırları ve eşleştirmesi, geçiş ayının yüklemesi |
 | `src/lib/lafpos/gun-sonu.ts`, `src/server/lafpos/gun-sonu.ts` | Gün sonu otomasyonu: Kasa raporuna otomatik yazım ve birleştirme, gün sonu e-postası, günlük işin yakalaması |
 | `src/server/data/lafpos-day.ts` | Kasa raporunun okuyucusu (yalnız Z; `loadKasaLafpos` ve ay görünümünün `loadKasaLafposDays` yalnız geçiş gününden sonra), günün kanıtı (`kasaEvidence`) |
-| `src/app/api/pos/gun/route.ts`, `src/app/api/panel/pos/urunler/route.ts` | Uçlar |
+| `src/app/api/pos/gun/route.ts`, `src/app/api/panel/pos/urunler/route.ts`, `src/app/api/panel/pos/modpos-gunler/route.ts` | Uçlar |
 | `src/app/panel/kasa/cash-form.tsx`, `page.tsx`, `late-report.tsx`, `cash-history.tsx`, `cash-summary.tsx` | LafPOS gününde form (açılışta doldurma, Z bölümü, bilgi satırı), kayıtlı rapor ve günden güne farkları, geç rapor |
 | `src/server/closed-days.ts` | Kapalı gün kanıtında LafPOS'un gün sonu, satışlı gün sonunun kapalı işareti kaldırması (`onLafposDaySaved`) |
 | `src/server/data/cash-reports.ts` | `tillRows`: raporsuz LafPOS gününün ay satırı (`lafposTillRows`) |
@@ -677,4 +748,5 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
 | `tests/lafpos-satis.test.ts`, `tests/lafpos-satis-db.test.ts` | Her gün tek kaynak (özellik testi), birleştirme, model (tüketim, karaoke KDV'si), Satışlar'ın bandı, yükleme kuralı; veritabanında geçiş günü boşken bayt bayt aynılık, geçiş ve LafPOS ayları, kapsam, yükleme reddi ve kırpma, sonradan bağlama, silme engeli, satış tahmini |
 | `tests/lafpos-kasa.test.ts`, `tests/lafpos-kasa-db.test.ts` | Kasa raporunun LafPOS'la uzlaşması (B09): farklı yazılanlar ve metinler, gün içinde çıkan, kapalı gün kanıtı, e-posta anahtarı, ay satırı, geç rapor ve fotoğraf kanıtı, kart; veritabanında geçiş günü boşken bugünkü gibi, kapalı işaretin kalkması, e-posta, geç rapor ve kartı |
 | `tests/lafpos-komisyon.test.ts`, `tests/lafpos-ikram.test.ts`, `tests/lafpos-komisyon-ikram-db.test.ts` | Ödeme kanalları komisyona (B10, E-37) ve ikram tüketime (E-38): geçiş günü boşken bugünkü gibi, LafPOS ayı, geçiş ayı, kanalsız ödeme, eksik gün; ikramın kayıtlı tüketime bir kez girmesi, panel ürün ikramının sayılmaması ve reddi, kasa özeti ve e-postası |
+| `tests/lafpos-modpos.test.ts`, `tests/lafpos-modpos-db.test.ts` | ModPOS dönemi: isteğin denetimi (503 / 401 / 400 / 409), günün biçimi, KDV, pencere, ürün bloğu; veritabanında Marina 13–21 Kasım 2026'nın rakamları (kasa raporu ve föy, öncelik, Tuzla ve geçiş günü dışarıda) |
 | `tests/lafpos-durum-db.test.ts` | Kendi geçici veritabanında: durum satırı (200 / 400 / 409 / 401 / 413 / 500 / 503), güne göre açık retler (sonraki 200 ve başka günün 400 / 500'ü örtmez, aynı günün 200'ü kapatır), `counted`, günün silinmesi (yalnız çözdüğü 409'u kapatır), geçiş günü, Kasa okuyucusunun kapısı, eylemlerin parolası ve işlem geçmişi |
