@@ -49,7 +49,7 @@ gün sonu (ve düzeltme)
       ikram, payments} (imzalı)                        ├─ kayıtlı Z no başkaysa: 409, hiçbir şey yazılmaz
                                                        ├─ pos_day_reports: günün özeti (yenisi eskisinin yerine)
                                                        └─ pos_daily_sales: günün satırları silinir, yenisi yazılır
-     ◀── 200 {ok, date, lines, matched, unmatched, counted, switchDay} · 400 {error, field} · 409 {error, date, zNo} · 401 · 413 · 503
+     ◀── 200 {ok, date, lines, matched, unmatched, counted, switchDay} · 400 {error, field} · 409 {error, date, zNo} · 409 {error: "wrong_branch", sube, expected} · 401 · 413 · 503
                                                     └─ sonuç integration_state › lafpos'a (Ayarlar › LafPOS kartı)
 
 GET /api/panel/pos/urunler (imzalı)  ─────────▶  maliyet modelinden siteye bağlı ürünler
@@ -245,6 +245,14 @@ birleşik tutarı farklıysa alanın altında "LafPOS'ta 5.450 ₺" görünür a
 5.450 ₺ olur." Geç rapor ve düzeltme kartı fişlerden fazlası LafPOS'taki teslim kadarsa "fişsiz" demez
 (`lafposHandedGap`).
 
+#### Pavo – LafPOS kart karşılaştırması (`bankPos`)
+
+İsteğe bağlı `bankPos` (LafPOS #154): yazarkasa POS'unun (Pavo) banka gün sonu ve LafPOS'un kart tutarı
+(`lafposCard`: Z'nin kartı + kartla bahşiş + kartla cari tahsilatı). LafPOS onu yalnız gün sonu bittiğinde yollar
+(`status` `ok`, `failed`, `unknown`); bilinmeyen bir durum (eski LafPOS'un `running`'i) `unknown` okunur, karşılaştırma
+düşmez. Okunamayan `bankPos` günü reddetmez: gün yazılır, önceki karşılaştırma yerinde kalır, günlüğe
+"bankPos okunamadı" yazılır (`parsePosDay`).
+
 #### Kart: kartla bahşiş ve cari tahsilatı (G11)
 
 LafPOS isteğe bağlı `z.cardTips` (kartla bahşiş) ve `z.cardCollections` (kartla cari tahsilatı) yollar: banka POS'u
@@ -437,8 +445,10 @@ LafPOS 21 Kasım 2026'dan beri **Marina**'da kurulu (#98): gün sonunu Marina'ya
 `src/lib/lafpos/switch.ts`) ve geçiş günü **yalnız Marina'nın kasasınındır**. Gövdedeki `sube` alanı (LafPOS › Yönetim ›
 Ayarlar ve yedek › Şube) `marina` değilse gün yazılmaz: 409 `{ error: "wrong_branch", sube, expected }`; Ayarlar ›
 LafPOS kartı kasanın hangi şubeye ayarlı olduğunu ve ne yapılacağını yazar (`rejectionText`). Eski kasa `sube`
-göndermez, kabul edilir. Tuzla'nın kasası ModPOS'tur ([SUBE.md](SUBE.md)); geçiş günü seçilince Tuzla'da hiçbir şey
-değişmez. Marina'nın ModPOS föyü yedek olarak çekilmeye devam eder ama geçiş gününden sonra hiçbir rakama girmez.
+göndermez, kabul edilir (bugünkü LafPOS her zaman gönderir). Ayarlar › LafPOS kartı yalnız Marina'nın kaydını sayar
+(günler, toplam, eşleşmeyen adlar, ikram): öteki şubenin ModPOS günleri karışmaz, panelde seçili şube kartı
+değiştirmez (`loadLafposCard`, `tests/lafpos-db.test.ts`). Tuzla'nın kasası ModPOS'tur ([SUBE.md](SUBE.md)); geçiş
+günü seçilince Tuzla'da hiçbir şey değişmez. Marina'nın ModPOS föyü yedek olarak çekilmeye devam eder ama geçiş gününden sonra hiçbir rakama girmez.
 
 Kural tek yerde: `branchSwitchDay(geçiş günü, şube)` LafPOS'un şubesinde ayarı, öteki şubede ve online kanalda `null`
 (her günü ModPOS günü) verir; şubesiz eski kayıt Tuzla'nındır (`isLafposBranch`). Tek kasanın gününe bakan her yer geçiş
@@ -659,7 +669,7 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
 | `src/app/panel/kasa/cash-form.tsx`, `page.tsx`, `late-report.tsx`, `cash-history.tsx`, `cash-summary.tsx` | LafPOS gününde form (açılışta doldurma, Z bölümü, bilgi satırı), kayıtlı rapor ve günden güne farkları, geç rapor |
 | `src/server/closed-days.ts` | Kapalı gün kanıtında LafPOS'un gün sonu, satışlı gün sonunun kapalı işareti kaldırması (`onLafposDaySaved`) |
 | `src/server/data/cash-reports.ts` | `tillRows`: raporsuz LafPOS gününün ay satırı (`lafposTillRows`) |
-| `tests/lafpos.test.ts`, `tests/lafpos-db.test.ts` | İmza, gövde, ürün sırası, form ve kasa eşlemesi, geçiş günü, kartın özeti, altın gövde (`tests/fixtures/lafpos-gun.golden.json`); veritabanında yazım, idempotent değişim, Z çakışması (409), ağız ve uçlar |
+| `tests/lafpos.test.ts`, `tests/lafpos-db.test.ts` | İmza, gövde, ürün sırası, form ve kasa eşlemesi, geçiş günü, kartın özeti, altın gövde (`tests/fixtures/lafpos-gun.golden.json`: LafPOS `tests/fixtures/lafmaliyet-gun.golden.json`'ın bayt bayt kopyası, şubeli); veritabanında yazım, idempotent değişim, Z çakışması (409), ağız ve uçlar |
 | `tests/lafpos-satis.test.ts`, `tests/lafpos-satis-db.test.ts` | Her gün tek kaynak (özellik testi), birleştirme, model (tüketim, karaoke KDV'si), Satışlar'ın bandı, yükleme kuralı; veritabanında geçiş günü boşken bayt bayt aynılık, geçiş ve LafPOS ayları, kapsam, yükleme reddi ve kırpma, sonradan bağlama, silme engeli, satış tahmini |
 | `tests/lafpos-kasa.test.ts`, `tests/lafpos-kasa-db.test.ts` | Kasa raporunun LafPOS'la uzlaşması (B09): farklı yazılanlar ve metinler, gün içinde çıkan, kapalı gün kanıtı, e-posta anahtarı, ay satırı, geç rapor ve fotoğraf kanıtı, kart; veritabanında geçiş günü boşken bugünkü gibi, kapalı işaretin kalkması, e-posta, geç rapor ve kartı |
 | `tests/lafpos-komisyon.test.ts`, `tests/lafpos-ikram.test.ts`, `tests/lafpos-komisyon-ikram-db.test.ts` | Ödeme kanalları komisyona (B10, E-37) ve ikram tüketime (E-38): geçiş günü boşken bugünkü gibi, LafPOS ayı, geçiş ayı, kanalsız ödeme, eksik gün; ikramın kayıtlı tüketime bir kez girmesi, panel ürün ikramının sayılmaması ve reddi, kasa özeti ve e-postası |
