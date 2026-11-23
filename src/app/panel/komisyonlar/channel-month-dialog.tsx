@@ -31,8 +31,10 @@ export interface ChannelMonthData {
   payable: number;
   /** Faturası var mı (yoksa beklenen hesaplanmaz) */
   invoiced: boolean;
-  /** Satış yazılmazsa kullanılan Z toplamı (yalnız grupta tek kanal varsa) */
-  /** Satış boş bırakılırsa kullanılacak: LafPOS'un ödemeleri ya da (grupta tek kanalken) Z toplamı */
+  /**
+   * Satış boş bırakılırsa kullanılacak: LafPOS'un girdiği ayda kanalın LafPOS ödemeleri (ve föyde markalı ödemeleri,
+   * `foy`), öncesinde (grupta tek kanalken) Z toplamı
+   */
   autoSales: { amount: number; source: "lafpos" | "tek"; foy?: number } | null;
 }
 

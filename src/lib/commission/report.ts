@@ -251,8 +251,8 @@ export interface ChannelMonth {
   /** Satış bilinmiyorsa nedeni ve ne yapılacağı */
   salesReason: string | null;
   /**
-   * Yazılan satış silinirse kullanılacak satış (pencerenin ipucu): LafPOS'un ödemeleri ya da (grupta tek kanal varsa)
-   * Z toplamı; yoksa null
+   * Yazılan satış silinirse kullanılacak satış (pencerenin ipucu): LafPOS'un girdiği ayda kanalın LafPOS ödemeleri (ve
+   * föyde markalı ödemeleri), öncesinde (grupta tek kanal varsa) Z toplamı; yoksa null
    */
   autoSales: { amount: number; source: "lafpos" | "tek"; foy?: number } | null;
   rate: number | null;

@@ -454,7 +454,10 @@ LafPOS kartı kasanın hangi şubeye ayarlı olduğunu ve ne yapılacağını ya
 göndermez, kabul edilir (bugünkü LafPOS her zaman gönderir). Ayarlar › LafPOS kartı yalnız Marina'nın kaydını sayar
 (günler, toplam, eşleşmeyen adlar, ikram): öteki şubenin ModPOS günleri karışmaz, panelde seçili şube kartı
 değiştirmez (`loadLafposCard`, `tests/lafpos-db.test.ts`). Tuzla'nın kasası ModPOS'tur ([SUBE.md](SUBE.md)); geçiş
-günü seçilince Tuzla'da hiçbir şey değişmez. Marina'nın ModPOS föyü yedek olarak çekilmeye devam eder ama geçiş gününden sonra hiçbir rakama girmez.
+günü seçilince Tuzla'da hiçbir şey değişmez. Marina'da ModPOS bir daha kullanılmaz (sahip, 23 Kasım 2026): Marina'nın
+ModPOS dönemi yalnız 13–21 Kasım 2026'dır. Geçiş gününden sonra Marina için gelen ModPOS verisi hiçbir rakama girmez;
+föyün yedek çekimi sürüyorsa (kasa kaynağı Ayarlar › Şubeler'de hâlâ ModPOS) saklanır ama sayılmaz, kaynağı LafPOS
+yapmak çekimi durdurur (saklı föyler kalır).
 
 Kural tek yerde: `branchSwitchDay(geçiş günü, şube)` LafPOS'un şubesinde ayarı, öteki şubede ve online kanalda `null`
 (her günü ModPOS günü) verir; şubesiz eski kayıt Tuzla'nındır (`isLafposBranch`). Tek kasanın gününe bakan her yer geçiş
@@ -465,7 +468,7 @@ gününü kasanın şubesinden geçirir:
 | Sabah işi ve Ayarlar › ModPOS kartı (`sync.ts`, `status.ts`) | Föy geçiş gününden sonra da çekilir, eksik gün sayılır |
 | Kasa raporu, geç rapor, fotoğraf kaldırma (`loadKasaLafpos`, `kasaEvidence`, `loadKasaLafposDays`) | ModPOS'a göre: LafPOS bandı yok, kanıt ModPOS Z fotoğrafı |
 | Föy ↔ rapor (`loadKasaModpos`, `loadKasaModposDays`, `modposMismatches`: Kasa, zil, Bugün, sabah e-postası) | Karşılaştırılmaya devam eder |
-| Ay rakamına föy yedeği (`modposTillRows`) | Marina'nın föyü geçiş gününden sonra da girer |
+| Ay rakamına föy yedeği (`modposTillRows`) | Föyü geçiş gününden sonra da girer (Marina'nınki girmez) |
 | Zayi & ikram (`loadDayLafposIkram`, zayi eylemleri, Onaylar'daki zayi kartı) | Ürün ikramı panele girilir ve sayılır |
 | Kasadaki fiyatlar (`loadTillScope`, kasanın şubesine göre) | ModPOS listesi, personel işaretler |
 | Bugün'ün ve zilin akşam satırı, fotoğraf okuma önerisi | ModPOS der |
@@ -476,8 +479,9 @@ günü yok sayılır (LafPOS hiç okunmaz, etiketler ModPOS der); Marina'da ayar
 şube şube ayrılır: ModPOS'taki şubenin (Tuzla) listesi her ay sayılır (`mergeSalesSources`), LafPOS'un sayılmaya
 başladığı gün ve Satışlar'ın uyarıları yalnız LafPOS'un şubesinin listesine ve kasa raporlarına bakar, LafPOS gün sonu
 yalnız o şubenin panel ikramını düşürür (`panelWasteCounts`, kaydın şubesiyle). Satışlar'ın içe aktarması "Tümü"de
-varsayılan şubeye (Tuzla) yazar; Marina'nın listesi Marina seçiliyken yüklenir. Komisyon & hakediş işletme genelidir
-(`lafposMonth`, [KOMISYON.md](KOMISYON.md) §3).
+varsayılan şubeye (Tuzla) yazar; Marina'nın listesi Marina seçiliyken yüklenir. Komisyon & hakediş satışı seçili
+şubeden okur, faturalar, oran ve hakediş işletmenindir; LafPOS'un girdiği ayda markası belirsiz tutar hiçbir kanala
+yazılmaz (23 Kasım 2026; `lafposMonth`, [KOMISYON.md](KOMISYON.md) › Şube ve §3).
 
 "Kafe kapalıydı" şubenindir ([SUBE.md › Kasa raporu "Tümü"de › Kapalı gün](SUBE.md#kasa-raporu-tümüde-20-kasım-2026)): Marina'nın satışlı
 LafPOS gün sonu Marina'nın kapalı gününün kanıtıdır, Tuzla'nınkinin değil. Şube verilmeyen okuma da LafPOS kanıtı olarak
