@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
 
 import { LAFPOS_VERSION } from "@/lib/lafpos/day";
 import {
@@ -13,7 +13,7 @@ import {
   type ModposDaysData,
 } from "@/lib/lafpos/modpos-gunler";
 import { branchSwitchDay } from "@/lib/lafpos/switch";
-import { parseCoverage, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
+import { branchCoverage, parseBranchCoverage, parseCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { loadModposSheets } from "@/server/modpos/store";
 
@@ -31,7 +31,8 @@ import { loadLafposSwitchDay } from "./status";
  * (`kasa_raporu`); raporsuz günde kapanmış föy (`foy`). Föy günü Ayarlar › ModPOS › Ay rakamına yedek'ten ve ay
  * rakamının kesintisiz kısım kuralından bağımsız gider (CONTRACT §9: Uzaktan boş gün göstermesin); panelin ay rakamı
  * (tillRows) bundan etkilenmez. Ayrıntılar (Z no, ödeme türleri, yazarkasa KDV dökümü) raporun ve föyün kendisinden.
- * Geçiş günü boşsa gün ve liste yok; geçiş günü ve sonrası hiç okunmaz (Marina ModPOS'a dönmez).
+ * Geçiş günü boşsa gün ve liste yok; geçiş günü ve sonrası hiç okunmaz (Marina ModPOS'a dönmez). Ürün listesinin son
+ * günü şubenin kendi kapsam kaydından (`sales.coverage.sube`), yoksa ortak kayıttan (src/lib/sales-coverage.ts).
  */
 export async function loadModposDays(db: DB, sube: string): Promise<ModposDaysData> {
   const switchDay = branchSwitchDay(await loadLafposSwitchDay(db), sube);
@@ -69,7 +70,10 @@ export async function loadModposDays(db: DB, sube: string): Promise<ModposDaysDa
       .leftJoin(s.products, eq(s.salesLines.productId, s.products.id))
       .where(and(eq(s.salesLines.branchId, sube), gte(s.salesLines.month, window.from.slice(0, 7)), lte(s.salesLines.month, window.to.slice(0, 7))))
       .orderBy(asc(s.salesLines.month), asc(s.salesLines.sortOrder), asc(s.salesLines.id)),
-    db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, SALES_COVERAGE_KEY)).limit(1),
+    db
+      .select({ key: s.integrationState.key, value: s.integrationState.value })
+      .from(s.integrationState)
+      .where(inArray(s.integrationState.key, [SALES_COVERAGE_KEY, SALES_COVERAGE_BRANCH_KEY])),
   ]);
   // Rapor föyden önce: modposDays aynı günün ilkini alır (rapor kazanır, boş rapor da)
   const inputs: ModposDayInput[] = [
@@ -77,7 +81,11 @@ export async function loadModposDays(db: DB, sube: string): Promise<ModposDaysDa
     ...sheets.flatMap((sh) => (sh.branchId === sube ? (modposFoyInput(sh) ?? []) : [])),
   ];
   const days = modposDays(inputs, window);
-  return { switchDay, days, urunler: modposProducts({ lines, coverage: parseCoverage(coverage[0]?.value), window, days }) };
+  // Listenin son günü şubenin kendi kaydından (öteki şubenin aynı aya yüklediği liste ortak kaydı ezer); kaydı olmayan
+  // ayda (şube kaydından önce yüklenen liste) ortak kayıt
+  const stored = (key: string) => coverage.find((c) => c.key === key)?.value;
+  const listCoverage = branchCoverage(parseCoverage(stored(SALES_COVERAGE_KEY)), parseBranchCoverage(stored(SALES_COVERAGE_BRANCH_KEY), sube));
+  return { switchDay, days, urunler: modposProducts({ lines, coverage: listCoverage, window, days }) };
 }
 
 /**

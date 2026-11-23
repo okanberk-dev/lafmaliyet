@@ -15,7 +15,7 @@ import { basisText, salesBasis } from "../src/lib/calc/price-loss";
 import type { Dataset, SalesLine } from "../src/lib/calc/types";
 import { resolveMonth, tillMonths, type TillRow } from "../src/lib/cash-month";
 import { addDays } from "../src/lib/reminders";
-import { coverageFor, parseCoverage } from "../src/lib/sales-coverage";
+import { branchCoverage, coverageFor, parseBranchCoverage, parseCoverage } from "../src/lib/sales-coverage";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const root = join(__dirname, "..");
@@ -73,13 +73,28 @@ test("kapsam kaydı: süren ayda verilen gün (ayın içinde, bugünden ileri de
   assert.deepEqual(parseCoverage(null), {});
 });
 
+test("şubenin kendi kapsam kaydı: şubenin ayı varsa o (null: ayın tamamı), yoksa ortak kayıt; öteki şubenin yüklemesi kaydırmaz", () => {
+  const stored = {
+    marina: { "2026-11": "2026-11-21", "2026-10": null, "2026-09": "2026-10-01", bozuk: "2026-11-01", "2026-08": 5 },
+    tuzla: { "2026-11": "2026-11-10" },
+  };
+  assert.deepEqual(parseBranchCoverage(stored, "marina"), { "2026-11": "2026-11-21", "2026-10": null });
+  assert.deepEqual(parseBranchCoverage(stored, "online"), {});
+  assert.deepEqual(parseBranchCoverage(null, "marina"), {});
+  assert.deepEqual(parseBranchCoverage({ marina: ["2026-11"] }, "marina"), {});
+  // Ortak kayıt Tuzla'nın son yüklemesi (10 Kasım) ve Ekim'in süren ayda kalmış kaydı; Marina'nın kendi kaydı geçer
+  const shared = { "2026-11": "2026-11-10", "2026-10": "2026-10-15", "2026-07": "2026-07-20" };
+  assert.deepEqual(branchCoverage(shared, parseBranchCoverage(stored, "marina")), { "2026-11": "2026-11-21", "2026-07": "2026-07-20" });
+  assert.deepEqual(branchCoverage(shared, {}), shared, "şube kaydından önce yüklenen liste: ortak kayıt");
+});
+
 test("kapsam kaydı: yükleme süren ayda günü yazar, biten aya yükleme ve 'Ayı temizle' siler; tek ifadeyle (iki ay birbirini ezmez)", () => {
   const sales = read("src/server/actions/sales.ts");
   // Kural src/lib/lafpos/sales.ts › modposImportRule'da: geçiş günü yokken ya da ondan önceki ayda coverageFor'un kendisi
   // (geçiş ayında en çok geçiş gününden önceki güne kadar, LafPOS ayında red; tests/lafpos-satis.test.ts)
   assert.match(sales, /const rule = modposImportRule\(month, switchDay, todayTR\(\), z\.string\(\)\.max\(10\)\.nullish\(\)\.parse\(input\.through\)\);/);
   assert.match(read("src/lib/lafpos/sales.ts"), /if \(src === "modpos" \|\| switchDay === null\) return \{ ok: true, through: coverageFor\(month, today, given\) \};/);
-  assert.match(sales, /await setCoverage\(tx, month, through\);/, "satırlarla aynı işlemde");
+  assert.match(sales, /await setCoverage\(tx, month, through\);\n\s*await setBranchCoverage\(tx, sube, month, through\);/, "satırlarla aynı işlemde, şubenin kendi kaydıyla");
   // Ayı temizle kaydı siler; kayıt ayın tek kaydıdır, yalnız ayda hiçbir şubenin listesi kalmadıysa (denetim 21 Kasım #7)
   assert.match(sales, /if \(!left\?\.n\) await setCoverage\(tx, m, null\);/, "Ayı temizle kaydı siler");
   assert.match(sales, /\$\{current\} \|\| jsonb_build_object\(\$\{month\}::text, \$\{through\}::text\)/);

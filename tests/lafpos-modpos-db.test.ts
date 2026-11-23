@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { after, before, beforeEach, describe, test } from "node:test";
+import { after, before, beforeEach, describe, mock, test } from "node:test";
 
 import { and, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -88,6 +88,7 @@ describe("LafPOS ModPOS dönemi ucu: veritabanında", { skip: !SERVER_URL && "LA
   let store: typeof import("../src/server/modpos/store");
   let cash: typeof import("../src/server/data/cash-reports");
   let withBranchScope: typeof import("../src/server/branch-scope").withBranchScope;
+  let sales: typeof import("../src/server/actions/sales");
 
   const setting = async (key: string, value: unknown) => {
     await db.delete(s.settings).where(eq(s.settings.key, key));
@@ -131,6 +132,10 @@ describe("LafPOS ModPOS dönemi ucu: veritabanında", { skip: !SERVER_URL && "LA
     store = await import("../src/server/modpos/store");
     cash = await import("../src/server/data/cash-reports");
     withBranchScope = (await import("../src/server/branch-scope")).withBranchScope;
+    // Satışlar'ın içe aktarması (kapsam kaydı) yönetici oturumuyla
+    const [u] = await db.insert(s.users).values({ email: "yonetici@laffogato.net", name: "Yönetici", passwordHash: "x", role: "admin" }).returning();
+    stub(require.resolve("../src/server/auth/dal"), { requireAdmin: async () => ({ ...u, role: "admin" }), requireUser: async () => ({ ...u, role: "admin" }) });
+    sales = await import("../src/server/actions/sales");
   });
 
   after(async () => {
@@ -344,6 +349,33 @@ describe("LafPOS ModPOS dönemi ucu: veritabanında", { skip: !SERVER_URL && "LA
       ["2026-11-13", "2026-11-16", "2026-11-20", "2026-11-21"].map((d) => by.get(d)!.kaynak),
       ["foy", "foy", "kasa_raporu", "kasa_raporu"],
     );
+  });
+
+  test("ürün bloğunun son günü Marina'nın kendi kaydından: Tuzla'nın aynı aya sonradan kendi son günüyle yüklediği liste Marina'nın bloğunu kaydırmaz; Marina'nın listesini temizlemek kendi kaydını siler", async () => {
+    // Satışlar'ın kuralı bugüne bakar: 23 Kasım (Kasım süren ay)
+    mock.timers.enable({ apis: ["Date"], now: NOW });
+    try {
+      await db.execute(sql`TRUNCATE sales_lines, integration_state RESTART IDENTITY CASCADE`);
+      const list = Array.from({ length: 31 }, (_, i) => ({ posName: `ÜRÜN ${String(i + 1).padStart(2, "0")}`, qty: i < 23 ? 8 : 7, revenue: i < 30 ? 950 : 915 }));
+      const marina = await withBranchScope(LAFPOS_SUBE, () => sales.importSales({ month: "2026-11", lines: list, mode: "replace", through: "2026-11-21" }));
+      assert.ok(marina.ok, JSON.stringify(marina));
+      // Tuzla (ModPOS'ta kalan şube) Kasım listesini sonradan, 10 Kasım'a kadar yükler: ortak kayıt 10 Kasım olur
+      const tuzla = await withBranchScope(MODPOS_SUBE, () => sales.importSales({ month: "2026-11", lines: [{ posName: "TUZLA LATTE", qty: 500, revenue: 100_000 }], mode: "replace", through: "2026-11-10" }));
+      assert.ok(tuzla.ok, JSON.stringify(tuzla));
+      const [shared] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, "sales.coverage"));
+      assert.deepEqual(shared.value, { "2026-11": "2026-11-10" }, "panelin ortak kaydı (ay kuralı) değişmedi: son yükleyenin günü");
+      const p = (await get("?sube=marina")).body.urunler as ModposProducts;
+      assert.deepEqual([p.from, p.to], ["2026-11-13", "2026-11-21"], "Marina'nın listesi 13–21 Kasım (Tuzla'nın 1–10'u değil)");
+      assert.equal(sumK(p.rows.map((x) => x.tutar)), 2_941_500, "yalnız Marina'nın satırları");
+      // Marina'nın listesi temizlenince kendi kaydı da gider; Tuzla'nınki kalır
+      const cleared = await withBranchScope(LAFPOS_SUBE, () => sales.clearMonthSales("2026-11"));
+      assert.ok(cleared.ok, JSON.stringify(cleared));
+      const [own] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, "sales.coverage.sube"));
+      assert.deepEqual(own.value, { [LAFPOS_SUBE]: {}, [MODPOS_SUBE]: { "2026-11": "2026-11-10" } });
+      assert.equal((await get("?sube=marina")).body.urunler, null, "Marina'nın listesi yok");
+    } finally {
+      mock.timers.reset();
+    }
   });
 
   test("geçiş günü boşken: gün yok, ürün listesi yok (her gün ModPOS; LafPOS'un çekeceği dönem yok)", async () => {

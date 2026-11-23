@@ -276,7 +276,8 @@ function productKey(l: ModposListLine): { ad: string; boy: "M" | "L" | null } {
  * - Aylar: pencerenin içinde başlayan, listesi olan en son aya kesintisiz uzanan aylar (arada listesi olmayan ay
  *   varsa öncesi girmez: blok boşluklu bir dönemi kapsıyormuş gibi görünmesin).
  * - `to`: son ayın listesinin son günü (kapsam kaydı, yoksa ayın sonu), geçiş gününden önceki günü geçmez (Satışlar'ın
- *   yükleme kuralı geçiş ayında listeyi zaten oraya kırpar).
+ *   yükleme kuralı geçiş ayında listeyi zaten oraya kırpar). Kapsam şubenin kendi kaydıdır (yükleyici branchCoverage
+ *   ile verir; öteki şubenin aynı aya yüklediği liste kaydırmaz).
  * - `from`: ilk ayın 1'i; o aydan itibaren ModPOS günü varsa ilki (ay ortasında açılan şube: Marina 13 Kasım).
  * - Satırlar (ad, boy) başına toplanır, tutara göre sıralı; boş satır gitmez; MODPOS_PRODUCTS_MAX'ı aşan kısım tek satırda.
  * - Hiçbir satırın adedi ya da tutarı eksi değildir (LafPOS eksi satırı düşürür): ürüne bağlı iade satırı ürünün satırında

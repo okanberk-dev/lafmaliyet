@@ -328,7 +328,7 @@ test("kaynak: veri kümesi geçiş günü yokken LafPOS'u hiç okumaz; Satışla
   assert.match(actions, /const switchDay = branchSwitchDay\(await loadLafposSwitchDay\(\), sube\);/);
   assert.match(actions, /const switchDay = branchSwitchDay\(await loadLafposSwitchDay\(\), lineBranch\);\n\s+if \(monthSource\(month, switchDay\) === "lafpos"\)/, "LafPOS ayına elle satır eklenmez");
   // Geçiş ayının ilk elle satırı listeyi içe aktarmanın kuralıyla başlatır (denetim B08 incelemesi)
-  assert.match(actions, /if \(n === 0 && monthSource\(month, switchDay\) === "gecis"\) \{\n\s+const rule = modposImportRule\(month, switchDay, todayTR\(\), null\);\n\s+if \(rule\.ok\) await setCoverage\(tx, month, rule\.through\);/);
+  assert.match(actions, /if \(n === 0 && monthSource\(month, switchDay\) === "gecis"\) \{\n\s+const rule = modposImportRule\(month, switchDay, todayTR\(\), null\);\n\s+if \(rule\.ok\) \{\n\s+await setCoverage\(tx, month, rule\.through\);\n\s+await setBranchCoverage\(tx, sube, month, rule\.through\);/);
   // Süren ayın kasa raporundan sonraki LafPOS günleri bekler (kasa raporlarının son günü; LafPOS'un yedek ay satırları,
   // B09 G6, rapor sayılmaz)
   assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);

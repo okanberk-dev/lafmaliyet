@@ -676,7 +676,9 @@ silinen rapor ayın rakamını hemen değiştirir.
   o günlerin Z toplamı ve indirimiyle, Genel bakış'ın günlük ortalaması listenin açık günüyle, reçeteye göre kârın
   sabit gideri ve online satışı o günlere düşen payla, "ayda …" adetleri listenin açık günüyle. Ay bitince ayın
   tamamının listesi yüklenir; biten aya yüklenen liste ayın tamamı sayılır (kayıt silinir), Ayı temizle de siler
-  (yalnız ayda hiçbir şubenin listesi kalmadıysa: Ayı temizle gösterilen şubenin listesini siler; [SUBE.md](SUBE.md)).
+  (yalnız ayda hiçbir şubenin listesi kalmadıysa: Ayı temizle gösterilen şubenin listesini siler; [SUBE.md](SUBE.md)). Listenin
+  son günü şube şube de yazılır (`sales.coverage.sube`; yalnız LafPOS'un ModPOS dönemi ucu okur, öteki şubenin yüklemesi
+  onu ezmez: [LAFPOS.md](LAFPOS.md) › ModPOS dönemi).
   **LafPOS'a geçildiyse** (Ayarlar › LafPOS › geçiş günü) bu kural geçiş gününden önceki aylar içindir: geçiş ayında
   liste ay bittikten sonra da en çok geçiş gününden önceki güne kadar sayılır, sonraki aylara liste yüklenmez (satışlar
   her gün sonunda LafPOS'tan gelir). Ayrıntı: [LAFPOS.md › Günlük satış](LAFPOS.md#günlük-satış-aylık-model).
