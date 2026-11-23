@@ -1,10 +1,13 @@
 // LafPOS'un ModPOS dönemi ucu, saf taraf (docs/LAFPOS.md › ModPOS dönemi: `GET /api/panel/pos/modpos-gunler`): isteğin
 // denetimi (503 / 401 / 400 / 409), günün biçimi (ciro = ödemelerin toplamı, ödenmez ayrı, KDV dökümü ya da %10),
+// günün kaynağı (`kaynak`: kasa raporu ya da yalnız föy; föy gününde indirim bilinmez, null), kapanmış föyün günü,
 // pencere (geçiş gününden önceki en çok 400 gün) ve ModPOS ürün listesinin dönem bloğu. Sözleşmenin rakamları (Marina
 // 13–21 Kasım 2026, CONTRACT §6) burada da çıkar; veritabanından okuma tests/lafpos-modpos-db.test.ts'te.
 // Çalıştırma: npx tsx --test tests/lafpos-modpos.test.ts
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { signedHeaders } from "../src/lib/karaoke/signature";
@@ -14,6 +17,7 @@ import {
   MODPOS_PRODUCTS_MAX,
   modposDay,
   modposDays,
+  modposFoyInput,
   modposKdv,
   modposProducts,
   modposSube,
@@ -21,6 +25,8 @@ import {
   type ModposDayInput,
   type ModposListLine,
 } from "../src/lib/lafpos/modpos-gunler";
+import { parseKasaFoyu, type KasaFoyu } from "../src/lib/modpos/foy";
+import { foyZ } from "../src/lib/modpos/z";
 import { addDays } from "../src/lib/reminders";
 
 const SECRET = "test-secret-0123456789-abcdefghijklmnop";
@@ -41,6 +47,7 @@ export const MARINA: [string, number, number, number, number, number, number, st
 ];
 
 const input = ([date, , kart, nakit, indirim, odenmez, fis, zNo]: (typeof MARINA)[number]): ModposDayInput => ({
+  kaynak: "kasa_raporu",
   date,
   zNo,
   receipts: fis,
@@ -56,7 +63,7 @@ const input = ([date, , kart, nakit, indirim, odenmez, fis, zNo]: (typeof MARINA
 /** Kuruş toplamı (kayan nokta artığı olmadan) */
 const sumK = (xs: number[]) => xs.reduce((a, v) => a + Math.round(v * 100), 0);
 
-const KEYS = ["date", "ciro", "kart", "nakit", "yemek", "online", "diger", "indirim", "odenmez", "ikram", "fis", "zNo", "kdv"];
+const KEYS = ["date", "ciro", "kart", "nakit", "yemek", "online", "diger", "indirim", "odenmez", "ikram", "fis", "zNo", "kdv", "kaynak"];
 
 test("istek: anahtar yoksa 503, imza yok / yanlış / başka uç / başka sorgu 401, şube yok ya da bozuksa 400, başka şube 409", () => {
   const check = (u: URL, o: { sign?: URL; secret?: string | null; now?: number } = {}) => {
@@ -112,26 +119,112 @@ test("gün: ciro ödemelerin toplamı (indirimden sonra, ödenmez hariç); alanl
     fis: 14,
     zNo: "Z-2026-003",
     kdv: [{ rate: 10, base: 3010, vat: 301 }],
+    kaynak: "kasa_raporu",
   });
   assert.deepEqual(Object.keys(d!), KEYS);
   // Yemek kartı, online ve diğer de ciroya girer; Z toplamı (ödenmezi içerse de) girdi değil: ciro hep ödemelerin toplamı
-  const all = modposDay({ date: "2026-11-15", zNo: " 0042 ", receipts: 3, cash: 100.1, card: 200.2, mealCard: 50.05, online: 30, other: 9.99, discounts: null, offRevenue: 25.5 })!;
+  const all = modposDay({ kaynak: "kasa_raporu", date: "2026-11-15", zNo: " 0042 ", receipts: 3, cash: 100.1, card: 200.2, mealCard: 50.05, online: 30, other: 9.99, discounts: 0, offRevenue: 25.5 })!;
   assert.equal(all.ciro, 390.34);
   assert.deepEqual([all.yemek, all.online, all.diger, all.indirim, all.odenmez, all.ikram], [50.05, 30, 9.99, 0, 25.5, 0]);
   assert.equal(all.zNo, "0042", "baştaki sıfırlar korunur, boşluk kırpılır");
   assert.deepEqual(all.kdv, [{ rate: 10, base: 354.85, vat: 35.49 }]);
   // Boş Z no ve fiş sayısı
-  const bare = modposDay({ date: "2026-11-16", zNo: "  ", receipts: null, cash: 10, card: 0, mealCard: 0, online: 0, other: 0, discounts: 0, offRevenue: null })!;
+  const bare = modposDay({ kaynak: "kasa_raporu", date: "2026-11-16", zNo: "  ", receipts: null, cash: 10, card: 0, mealCard: 0, online: 0, other: 0, discounts: 0, offRevenue: null })!;
   assert.equal(bare.zNo, null);
   assert.equal(bare.fis, 0);
   // Satışı, indirimi, ödenmezi ve fişi olmayan gün gitmez (kapalı gün, satışsız föy)
-  assert.equal(modposDay({ date: "2026-11-17", zNo: "Z-1", receipts: 0, cash: 0, card: 0, mealCard: 0, online: 0, other: 0, discounts: null, offRevenue: 0 }), null);
+  assert.equal(modposDay({ kaynak: "kasa_raporu", date: "2026-11-17", zNo: "Z-1", receipts: 0, cash: 0, card: 0, mealCard: 0, online: 0, other: 0, discounts: null, offRevenue: 0 }), null);
+  assert.equal(modposDay({ kaynak: "foy", date: "2026-11-17", zNo: "Z-1", receipts: 0, cash: 0, card: 0, mealCard: 0, online: 0, other: 0, discounts: null, offRevenue: 0 }), null, "satışsız föy");
   // Yalnız ödenmezli gün gider (ciro 0, KDV satırı yok)
-  const comp = modposDay({ date: "2026-11-18", zNo: null, receipts: 1, cash: 0, card: 0, mealCard: 0, online: 0, other: 0, discounts: 0, offRevenue: 120 })!;
+  const comp = modposDay({ kaynak: "kasa_raporu", date: "2026-11-18", zNo: null, receipts: 1, cash: 0, card: 0, mealCard: 0, online: 0, other: 0, discounts: 0, offRevenue: 120 })!;
   assert.deepEqual([comp.ciro, comp.odenmez, comp.kdv], [0, 120, []]);
   // Eksi tutar gitmez (sözleşme: tutarlar ≥ 0)
-  const neg = modposDay({ date: "2026-11-19", zNo: null, receipts: 1, cash: 50, card: -0.001, mealCard: 0, online: 0, other: -5, discounts: -1, offRevenue: -2 })!;
+  const neg = modposDay({ kaynak: "kasa_raporu", date: "2026-11-19", zNo: null, receipts: 1, cash: 50, card: -0.001, mealCard: 0, online: 0, other: -5, discounts: -1, offRevenue: -2 })!;
   assert.deepEqual([neg.ciro, neg.kart, neg.diger, neg.indirim, neg.odenmez], [50, 0, 0, 0, 0]);
+});
+
+/** Kitapçığın örnek föyleri (tests/fixtures/modpos): kafenin verisi değil */
+const fixture = (name: string): KasaFoyu => {
+  const p = parseKasaFoyu(readFileSync(join(__dirname, `fixtures/modpos/${name}.xml`), "utf8"));
+  assert.ok(p.ok, name);
+  return p.foy;
+};
+
+test("kaynak ve indirim: kasa raporu günü `kasa_raporu` (girilen indirim, 0 dahil); föy günü `foy`, indirimi null (bilinmiyor, 0 değil)", () => {
+  const base = { date: "2026-11-16", zNo: "Z-2026-005", receipts: 9, cash: 530, card: 2140, mealCard: 0, online: 0, other: 0, offRevenue: 0 };
+  const rapor = modposDay({ ...base, kaynak: "kasa_raporu", discounts: 0 })!;
+  assert.equal(rapor.kaynak, "kasa_raporu");
+  assert.equal(rapor.indirim, 0, "raporda yazılan 0 indirim 0'dır");
+  const foy = modposDay({ ...base, kaynak: "foy", discounts: null })!;
+  assert.equal(foy.kaynak, "foy");
+  assert.equal(foy.indirim, null, "föyde indirim yok: bilinmiyor");
+  // Föyde indirim alanı yok: föy gününe bir tutar verilse de yazılmaz
+  assert.equal(modposDay({ ...base, kaynak: "foy", discounts: 120 })!.indirim, null);
+  // Kasa raporunda indirim yazılmamışsa (isteğe bağlı alan) o da bilinmez: null, 0 değil
+  assert.equal(modposDay({ ...base, kaynak: "kasa_raporu", discounts: null })!.indirim, null);
+  // Rakamların gerisi kaynaktan bağımsız
+  const figures = (d: NonNullable<ReturnType<typeof modposDay>>) => [d.date, d.ciro, d.kart, d.nakit, d.yemek, d.online, d.diger, d.odenmez, d.ikram, d.fis, d.zNo, d.kdv];
+  assert.deepEqual(figures(foy), figures(rapor));
+  // İndirimi bilinmeyen günün boşluğu da ciro, ödenmez ve fişle ölçülür
+  assert.equal(modposDay({ ...base, kaynak: "foy", discounts: null, cash: 0, card: 0, receipts: 0 }), null);
+});
+
+test("föy günü: yalnız kapanmış föy (bütün kasalar kapalı ya da kesinleşmiş föysüz satış); açık kasa, kesinleşmemiş föysüz gün ve satışsız gün gitmez", () => {
+  // Kapalı kasalı föy: Z'nin rakamları, kaynak foy, indirim ve KDV dökümü yok (ModPOS föyü ikisini de vermez)
+  const closed = fixture("belge-ornegi");
+  const z = foyZ(closed)!;
+  const day = { day: "2026-11-01", state: "KAPALI" as const, final: true, foy: closed };
+  assert.deepEqual(modposFoyInput(day), {
+    kaynak: "foy",
+    date: "2026-11-01",
+    zNo: z.zNo,
+    receipts: z.receipts,
+    cash: z.cash,
+    card: z.card,
+    mealCard: z.mealCard,
+    online: z.online,
+    other: z.other,
+    discounts: null,
+    offRevenue: z.offRevenue,
+    vat: null,
+  });
+  assert.equal(modposFoyInput({ ...day, final: false })?.kaynak, "foy", "kasalar kapandıysa sabahın kesin föyü beklenmez");
+  // Açık kasa: tutarlar daha değişir
+  assert.equal(modposFoyInput({ day: "2026-11-02", state: "ACIK", final: false, foy: fixture("acik-gun") }), null);
+  // Kasası açılmamış (föysüz) satış: kesinleşince gider, gün içinde alınmışsa gitmez
+  const foysuz = fixture("foysuz-gun");
+  assert.equal(modposFoyInput({ day: "2026-10-25", state: "BOS", final: false, foy: foysuz }), null);
+  const fz = modposFoyInput({ day: "2026-10-25", state: "BOS", final: true, foy: foysuz })!;
+  assert.deepEqual([fz.kaynak, fz.zNo, fz.discounts, fz.vat], ["foy", null, null, null]);
+  // Satışsız gün (kasa açılmamış, föysüz satış yok): gün yok
+  assert.equal(modposFoyInput({ day: "2026-10-26", state: "BOS", final: true, foy: { ...closed, kasaGunu: "2026-10-26", kasalar: [], foysuzGunler: [] } }), null);
+  // Günü föyün saklandığı gün verir; gün biçimi modposDay'inki
+  const out = modposDay(modposFoyInput(day)!)!;
+  assert.deepEqual([out.date, out.kaynak, out.indirim, out.ciro], ["2026-11-01", "foy", null, Math.round((z.cash + z.card + z.mealCard + z.online + z.other) * 100) / 100]);
+});
+
+test("KDV kaynağa göre: kasa raporunun yazarkasa dökümü ciroyu tutuyorsa o (karaoke %20 ayrı); tutmuyorsa ya da föy gününde tek satır %10; %20 hiç varsayılmaz", () => {
+  const base = { date: "2026-11-21", zNo: "Z-2026-010", receipts: 17, cash: 1417.5, card: 3203, mealCard: 0, online: 0, other: 0, discounts: 229.5, offRevenue: 0 };
+  // Marina'da %20 yalnız karaoke: yazarkasa dökümü ciroyu kuruşu kuruşuna tutuyorsa oran oran o
+  const okc = [
+    { rate: 10, total: 3870.5, vat: 351.86 },
+    { rate: 20, total: 750, vat: 125 },
+  ];
+  assert.deepEqual(modposDay({ ...base, kaynak: "kasa_raporu", vat: okc })!.kdv, [
+    { rate: 10, base: 3518.64, vat: 351.86 },
+    { rate: 20, base: 625, vat: 125 },
+  ]);
+  // Döküm ciroyu tutmuyor (yazarkasa dışı satış): oranlar bilinmez, tek satır %10 (dökümdeki %20 ölçeklenmez)
+  const tenOnly = [{ rate: 10, base: 4200.45, vat: 420.05 }];
+  assert.deepEqual(modposDay({ ...base, kaynak: "kasa_raporu", vat: [{ rate: 20, total: 750, vat: 125 }] })!.kdv, tenOnly);
+  assert.deepEqual(modposDay({ ...base, kaynak: "kasa_raporu", vat: null })!.kdv, tenOnly);
+  // Föy gününde döküm yok (ModPOS föyü KDV dökümü vermez, panel saklamaz): tek satır %10
+  const foyDay = modposDay(modposFoyInput({ day: "2026-11-01", state: "KAPALI", final: true, foy: fixture("belge-ornegi") })!)!;
+  assert.equal(foyDay.kdv.length, 1);
+  assert.equal(foyDay.kdv[0].rate, 10);
+  assert.equal(sumK(foyDay.kdv.map((k) => k.base + k.vat)), Math.round(foyDay.ciro * 100), "KDV dahil = ciro");
+  // Hiçbir günde %20 kendiliğinden çıkmaz
+  for (const d of [modposDay({ ...base, kaynak: "kasa_raporu" })!, foyDay]) assert.ok(d.kdv.every((k) => k.rate === 10), d.date);
 });
 
 test("KDV: kasa raporunun yazarkasa dökümü ciroyu kuruşu kuruşuna tutuyorsa o; yoksa tek satır %10, matrah = round(ciro × 100 / 110)", () => {
@@ -177,7 +270,7 @@ test("günler: Marina 13–21 Kasım (CONTRACT §6) toplamları, KDV hariç 24.8
   assert.equal(sumK(days.map((d) => d.kart)), 1_974_425);
   assert.equal(sumK(days.map((d) => d.nakit)), 760_450);
   assert.equal(sumK(days.map((d) => d.yemek)), 0);
-  assert.equal(sumK(days.map((d) => d.indirim)), 206_625);
+  assert.equal(sumK(days.map((d) => d.indirim ?? 0)), 206_625);
   assert.equal(sumK(days.map((d) => d.odenmez + d.ikram)), 150_000);
   assert.equal(days.reduce((a, d) => a + d.fis, 0), 135);
   assert.equal(sumK(days.flatMap((d) => d.kdv.map((k) => k.base))), 2_486_251, "KDV hariç (gün gün) 24.862,51");
@@ -214,7 +307,7 @@ test("ürünler: Marina'nın Kasım listesi 13–21 Kasım bloğu (31 satır, 24
   assert.equal(p.rows.length, 31);
   assert.equal(p.rows.reduce((a, r) => a + r.adet, 0), 240);
   assert.equal(sumK(p.rows.map((r) => r.tutar)), 2_941_500);
-  assert.equal(sumK(p.rows.map((r) => r.tutar)), sumK(days.map((d) => d.ciro + d.indirim)), "indirim öncesi = ciro + indirim");
+  assert.equal(sumK(p.rows.map((r) => r.tutar)), sumK(days.map((d) => d.ciro + (d.indirim ?? 0))), "indirim öncesi = ciro + indirim");
   for (const r of p.rows) assert.deepEqual(Object.keys(r), ["ad", "boy", "adet", "tutar"]);
   // Kapsam kaydı yoksa (ayın tamamı) son gün geçiş gününden önceki gün
   assert.equal(modposProducts({ lines: LIST, coverage: {}, window, days })!.to, "2026-11-21");

@@ -1,11 +1,12 @@
 // LafPOS'un ModPOS dönemi ucu, gerçek Postgres'te (docs/LAFPOS.md › ModPOS dönemi: `GET /api/panel/pos/modpos-gunler`):
-// Marina'nın 13–21 Kasım 2026 ModPOS günleri panelin kendi kaynaklarından (kasa raporu; raporsuz günde, Ayarlar › ModPOS
-// › Ay rakamına yedek açıkken kapanmış föy; öncelik ay rakamınınkiyle aynı, src/server/data/cash-reports.ts tillRows)
-// ve Marina'nın Kasım ModPOS ürün listesi sözleşmenin rakamlarını kuruşu kuruşuna verir (CONTRACT §6: ciro 27.348,75,
-// kart 19.744,25, nakit 7.604,50, indirim 2.066,25, ödenmez 1.500,00, 135 fiş, KDV hariç 24.862,51; liste 31 satır,
-// 240 adet, 29.415,00). Tuzla'nın raporu, föyü ve listesi, geçiş günü ve sonrası, föylerin kesintisiz kısmının dışı
-// gitmez; imzasız istek 401, başka şube 409, geçiş günü boşken gün yok. Sahibin derdi: LafPOS Uzaktan › Raporlar ›
-// "Geçen hafta"da 16–21 Kasım görünmüyordu; kasa bu günleri buradan çekip kendisi iter (LafPOS LP-D).
+// Marina'nın 13–21 Kasım 2026 ModPOS günleri panelin kendi kaynaklarından (günün kasa raporu, raporsuz günde kapanmış
+// ModPOS föyü; föy günü Ayarlar › ModPOS › Ay rakamına yedek'ten bağımsız gider, CONTRACT §9) ve Marina'nın Kasım ModPOS
+// ürün listesi sözleşmenin rakamlarını kuruşu kuruşuna verir (CONTRACT §6: ciro 27.348,75, kart 19.744,25, nakit
+// 7.604,50, indirim 2.066,25, ödenmez 1.500,00, 135 fiş, KDV hariç 24.862,51; liste 31 satır, 240 adet, 29.415,00).
+// Her gün kaynağını söyler (`kaynak`); föy gününde indirim bilinmez (null). Tuzla'nın raporu, föyü ve listesi, açık föy,
+// geçiş günü ve sonrası (Marina ModPOS'a dönmez) gitmez; panelin ay kuralı değişmez; imzasız istek 401, başka şube 409,
+// geçiş günü boşken gün yok. Sahibin derdi: LafPOS Uzaktan › Raporlar › "Geçen hafta"da 16–21 Kasım görünmüyordu; kasa
+// bu günleri buradan çekip kendisi iter (LafPOS LP-D).
 //
 // Test kendi geçici veritabanını açar (LAFPOS_TEST_DATABASE_URL'in sunucusunda), migration'ları uygular, sonunda siler.
 //
@@ -18,7 +19,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { after, before, beforeEach, describe, test } from "node:test";
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
@@ -85,6 +86,8 @@ describe("LafPOS ModPOS dönemi ucu: veritabanında", { skip: !SERVER_URL && "LA
   let db: DB;
   let modpos: typeof import("../src/server/lafpos/modpos-gunler");
   let store: typeof import("../src/server/modpos/store");
+  let cash: typeof import("../src/server/data/cash-reports");
+  let withBranchScope: typeof import("../src/server/branch-scope").withBranchScope;
 
   const setting = async (key: string, value: unknown) => {
     await db.delete(s.settings).where(eq(s.settings.key, key));
@@ -126,6 +129,8 @@ describe("LafPOS ModPOS dönemi ucu: veritabanında", { skip: !SERVER_URL && "LA
     await seedBranches(db);
     modpos = await import("../src/server/lafpos/modpos-gunler");
     store = await import("../src/server/modpos/store");
+    cash = await import("../src/server/data/cash-reports");
+    withBranchScope = (await import("../src/server/branch-scope")).withBranchScope;
   });
 
   after(async () => {
@@ -164,8 +169,6 @@ describe("LafPOS ModPOS dönemi ucu: veritabanında", { skip: !SERVER_URL && "LA
     }
     // Raporu olan günün föyü (başka rakam): rapor kazanır
     await saveFoy(foy("2026-11-17", { kart: 9_999, nakit: 1, fis: 99, zNo: "FOY-17" }), LAFPOS_SUBE);
-    // Föylerin kesintisiz kısmının dışı (11–12 Kasım boş): ay rakamı gibi sayılmaz
-    await saveFoy(foy("2026-11-10", { kart: 7_777, nakit: 0, fis: 7, zNo: "FOY-10" }), LAFPOS_SUBE);
     // Geçiş günü ve sonrası LafPOS'un: ne föy ne rapor gider
     await saveFoy(foy(SWITCH, { kart: 5_555, nakit: 0, fis: 5, zNo: "FOY-22" }), LAFPOS_SUBE);
     await db.insert(s.cashReports).values({ date: SWITCH, branchId: LAFPOS_SUBE, zNo: "L-1", zTotal: 6_285, cash: 1_255, card: 5_030, submittedByName: "Ayşe" });
@@ -211,13 +214,15 @@ describe("LafPOS ModPOS dönemi ucu: veritabanında", { skip: !SERVER_URL && "LA
     assert.deepEqual(
       days.map((d) => d.date),
       MARINA.map((m) => m[0]),
-      "yalnız 13–21 Kasım: 10 Kasım föyü kesintisiz kısmın dışında, 22 Kasım LafPOS'un",
+      "yalnız 13–21 Kasım: 22 Kasım LafPOS'un",
     );
     for (const [i, [date, ciro, kart, nakit, indirim, odenmez, fis, zNo]] of MARINA.entries()) {
       const d = days[i];
+      const fromFoy = FOY_DAYS.has(date);
       assert.deepEqual(
-        { ciro: d.ciro, kart: d.kart, nakit: d.nakit, yemek: d.yemek, online: d.online, diger: d.diger, indirim: d.indirim, odenmez: d.odenmez, ikram: d.ikram, fis: d.fis, zNo: d.zNo },
-        { ciro, kart, nakit, yemek: 0, online: 0, diger: 0, indirim, odenmez, ikram: 0, fis, zNo },
+        { ciro: d.ciro, kart: d.kart, nakit: d.nakit, yemek: d.yemek, online: d.online, diger: d.diger, indirim: d.indirim, odenmez: d.odenmez, ikram: d.ikram, fis: d.fis, zNo: d.zNo, kaynak: d.kaynak },
+        // Föy gününde indirim bilinmez (föyde yok): null, 0 değil (CONTRACT §9)
+        { ciro, kart, nakit, yemek: 0, online: 0, diger: 0, indirim: fromFoy ? null : indirim, odenmez, ikram: 0, fis, zNo, kaynak: fromFoy ? "foy" : "kasa_raporu" },
         date,
       );
       assert.equal(d.kdv.length, 1, `${date}: tek KDV satırı`);
@@ -229,7 +234,7 @@ describe("LafPOS ModPOS dönemi ucu: veritabanında", { skip: !SERVER_URL && "LA
     assert.equal(sumK(days.map((d) => d.kart)), 1_974_425, "kart 19.744,25");
     assert.equal(sumK(days.map((d) => d.nakit)), 760_450, "nakit 7.604,50");
     assert.equal(sumK(days.map((d) => d.yemek)), 0, "yemek kartı 0");
-    assert.equal(sumK(days.map((d) => d.indirim)), 206_625, "indirim 2.066,25");
+    assert.equal(sumK(days.map((d) => d.indirim ?? 0)), 206_625, "indirim 2.066,25 (föy günlerinin indirimi bilinmiyor: §6'da ikisi de 0)");
     assert.equal(sumK(days.map((d) => d.odenmez + d.ikram)), 150_000, "ödenmez 1.500,00");
     assert.equal(
       days.reduce((a, d) => a + d.fis, 0),
@@ -249,7 +254,7 @@ describe("LafPOS ModPOS dönemi ucu: veritabanında", { skip: !SERVER_URL && "LA
       "240 adet",
     );
     assert.equal(sumK(p.rows.map((x) => x.tutar)), 2_941_500, "29.415,00 indirim öncesi");
-    assert.equal(sumK(p.rows.map((x) => x.tutar)), sumK(days.map((d) => d.ciro + d.indirim)), "liste = ciro + indirim");
+    assert.equal(sumK(p.rows.map((x) => x.tutar)), sumK(days.map((d) => d.ciro + (d.indirim ?? 0))), "liste = ciro + indirim");
     const named = p.rows.filter((x) => x.ad === "Latte" || x.ad === "Tiramisu").map((x) => [x.ad, x.boy]);
     assert.deepEqual(named.sort(), [
       ["Latte", "L"],
@@ -262,17 +267,83 @@ describe("LafPOS ModPOS dönemi ucu: veritabanında", { skip: !SERVER_URL && "LA
     for (const name of ["Ayşe", "Mehmet", "Yıldız", "TUZLA", "FOY-"]) assert.doesNotMatch(json, new RegExp(name), name);
   });
 
-  test("öncelik ay rakamınınki: Ay rakamına yedek kapalıyken föy günü gitmez (13 ve 16 Kasım yok); rapor her zaman", async () => {
+  test("föy günü Ay rakamına yedek'ten bağımsız (CONTRACT §9): yedek kapalıyken de 13 ve 16 Kasım föyden gider; kesintisiz kısmın dışındaki kapanmış föy de; açık föy, Tuzla ve geçiş günü sonrası gitmez; panelin ay kuralı değişmez", async () => {
     await setting(MODPOS_FALLBACK_KEY, undefined);
+    // Kesintisiz kısmın dışında (11–12 Kasım föysüz) kapanmış föy: panelin ay rakamı saymaz, LafPOS'a yine gider
+    await saveFoy(foy("2026-11-10", { kart: 7_777, nakit: 0, odenmez: 70, fis: 7, zNo: "FOY-10" }), LAFPOS_SUBE);
+    // Kasası hâlâ açık föy (tutarlar değişir): gitmez
+    const open = foy("2026-11-11", { kart: 1_111, nakit: 0, fis: 1, zNo: "FOY-11" });
+    open.kasalar[0].durum = "ACIK";
+    await saveFoy(open, LAFPOS_SUBE);
+    // Marina geçişten sonra ModPOS kullanmaz (sahip, 23 Kasım 2026): sonradan gelen föy de gitmez
+    await saveFoy(foy("2026-11-23", { kart: 2_323, nakit: 0, fis: 2, zNo: "FOY-23" }), LAFPOS_SUBE);
+
     const r = await get("?sube=marina");
     assert.equal(r.status, 200);
-    const days = (r.body.days as ModposDay[]).map((d) => d.date);
+    const days = r.body.days as ModposDay[];
     assert.deepEqual(
-      days,
+      days.map((d) => [d.date, d.kaynak]),
+      [["2026-11-10", "foy"], ...MARINA.map((m) => [m[0], FOY_DAYS.has(m[0]) ? "foy" : "kasa_raporu"])],
+      "föy günleri yedek kapalıyken de; 11 Kasım (açık), 12 Kasım (Tuzla), 22 ve 23 Kasım (geçişten sonra) yok",
+    );
+    for (const d of days.filter((x) => x.kaynak === "foy")) {
+      assert.equal(d.indirim, null, `${d.date}: föyde indirim yok, bilinmiyor`);
+      assert.deepEqual(
+        d.kdv.map((k) => k.rate),
+        [10],
+        `${d.date}: föy KDV dökümü vermez, tek satır %10`,
+      );
+      assert.equal(sumK(d.kdv.map((k) => k.base + k.vat)), Math.round(d.ciro * 100), `${d.date}: KDV dahil = ciro`);
+    }
+    const ten = days[0];
+    assert.deepEqual([ten.ciro, ten.kart, ten.odenmez, ten.fis, ten.zNo], [7_777, 7_777, 70, 7, "FOY-10"]);
+    // Ürün bloğunun ilk günü ayın ilk ModPOS günü: 10 Kasım föyü de listenin ayında
+    assert.equal((r.body.urunler as ModposProducts).from, "2026-11-10");
+
+    // Panelin ay kuralı değişmedi (docs/LAFPOS.md › ModPOS dönemi): yedek kapalıyken ay yalnız raporları sayar, açıkken
+    // föyleri yalnız ilk rapora kesintisiz uzanan kısımla (10 Kasım hiç)
+    const monthDays = async () => (await withBranchScope(LAFPOS_SUBE, () => cash.tillRows(db))).filter((x) => x.date < SWITCH).map((x) => x.date);
+    assert.deepEqual(
+      await monthDays(),
       MARINA.map((m) => m[0]).filter((d) => !FOY_DAYS.has(d)),
     );
-    // Ürün bloğunun ilk günü artık ayın ilk raporlu günü
-    assert.equal((r.body.urunler as ModposProducts).from, "2026-11-14");
+    await setting(MODPOS_FALLBACK_KEY, true);
+    assert.deepEqual(
+      await monthDays(),
+      MARINA.map((m) => m[0]),
+    );
+    // Uç ayardan bağımsız: aynı günler
+    assert.deepEqual(((await get("?sube=marina")).body.days as ModposDay[]).map((d) => d.date), days.map((d) => d.date));
+  });
+
+  test("KDV: kasa raporunun yazarkasa dökümü ciroyu tutuyorsa oran oran (karaoke %20), tutmuyorsa ve föy gününde tek satır %10", async () => {
+    // 21 Kasım: yazarkasa dökümü ciroyu (4.620,50) kuruşu kuruşuna tutuyor; karaoke %20
+    await db
+      .update(s.cashReports)
+      .set({
+        okcVat: [
+          { rate: 10, total: 3_870.5, vat: 351.86 },
+          { rate: 20, total: 750, vat: 125 },
+        ],
+      })
+      .where(and(eq(s.cashReports.date, "2026-11-21"), eq(s.cashReports.branchId, LAFPOS_SUBE)));
+    const days = (await get("?sube=marina")).body.days as ModposDay[];
+    const by = new Map(days.map((d) => [d.date, d]));
+    assert.deepEqual(by.get("2026-11-21")!.kdv, [
+      { rate: 10, base: 3_518.64, vat: 351.86 },
+      { rate: 20, base: 625, vat: 125 },
+    ]);
+    // 20 Kasım: döküm ciroyu tutmuyor; 13 ve 16 Kasım: föy (döküm yok): tek satır %10, %20 varsayılmaz
+    const ten = (ciro: number) => {
+      const k = Math.round(ciro * 100);
+      const base = Math.round((k * 100) / 110);
+      return [{ rate: 10, base: base / 100, vat: (k - base) / 100 }];
+    };
+    for (const date of ["2026-11-20", "2026-11-13", "2026-11-16"]) assert.deepEqual(by.get(date)!.kdv, ten(by.get(date)!.ciro), date);
+    assert.deepEqual(
+      ["2026-11-13", "2026-11-16", "2026-11-20", "2026-11-21"].map((d) => by.get(d)!.kaynak),
+      ["foy", "foy", "kasa_raporu", "kasa_raporu"],
+    );
   });
 
   test("geçiş günü boşken: gün yok, ürün listesi yok (her gün ModPOS; LafPOS'un çekeceği dönem yok)", async () => {

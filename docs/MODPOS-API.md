@@ -231,10 +231,14 @@ sabah kapanmış föy kendiliğinden gelir. Kasası açılmamış (föysüz) gü
 
 Ayarlar › ModPOS kartındaki anahtar (`settings › modposAyYedegi`). Açıkken kasa raporu (ve LafPOS gün sonu) olmayan
 günün **kapanmış** föyü ayın açık gün, ciro, ödenmez ve kart payına girer (LafPOS'un yedek satırıyla aynı kural, G6):
-gün yine "rapor yok" sayılır, rapor girilince rapor kazanır. Tuzla'nın föyü LafPOS'a geçiş gününden önceki günler
-için, Marina'nınki her gün (`modposTillRows`). İndirim föyde olmadığı için o günlerin indirimi
-bilinmez. Elle yazılan ay bilgisi her zaman kazanır (yalnız föyden gelen ayda elle yazılan 0 da silinmez). Kapalıyken
-föy hiçbir hesaba girmez.
+gün yine "rapor yok" sayılır, rapor girilince rapor kazanır. Marina'nın (LafPOS'un şubesi) föyü LafPOS'a geçiş
+gününden önceki günler için, Tuzla'nınki (ModPOS'ta kalan şube) her gün (`modposTillRows`, `branchSwitchDay`). İndirim
+föyde olmadığı için o günlerin indirimi bilinmez. Elle yazılan ay bilgisi her zaman kazanır (yalnız föyden gelen ayda
+elle yazılan 0 da silinmez). Kapalıyken föy hiçbir hesaba girmez.
+
+Bu anahtar yalnız panelin ay rakamını yönetir. LafPOS'un ModPOS dönemi ucu (`GET /api/panel/pos/modpos-gunler`,
+[LAFPOS.md](LAFPOS.md) › ModPOS dönemi) Marina'nın raporsuz gününün kapanmış föyünü anahtar kapalıyken de gönderir
+(`kaynak: "foy"`, indirim `null`). Aşağıdaki kesintisiz kısım kuralı da o uçta aranmaz (karar 23 Kasım 2026).
 
 Raporlar başlamadan önceki föyler yalnız **ilk rapora kesintisiz uzanan kısımla** sayılır: arada föyü olmayan gün varsa
 (alınamadı, henüz çekilmedi) ondan öncesi sayılmaz, boşluk dolunca kendiliğinden sayılır; kesintisiz kısmın başladığı
