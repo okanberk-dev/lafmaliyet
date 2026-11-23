@@ -81,7 +81,7 @@ export interface SalesSources {
 /**
  * ModPOS listeleriyle LafPOS ay toplamlarını birleştirir (her gün tek kaynak). Geçiş günü yoksa girdi olduğu gibi döner
  * (aynı satırlar, aynı sıra): LafPOS hiçbir hesaba girmez. Geçiş günü yalnız LafPOS'un şubesinindir: ModPOS'ta kalan
- * şubenin (Marina) listesi her ay sayılır ("Tümü"de iki şubenin satırları yan yana; denetim 21 Kasım #5).
+ * şubenin (Tuzla) listesi her ay sayılır ("Tümü"de iki şubenin satırları yan yana; denetim 21 Kasım #5).
  */
 export function mergeSalesSources(input: SalesSourcesInput): SalesSources {
   const S = input.switchDay;

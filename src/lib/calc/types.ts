@@ -236,7 +236,7 @@ export interface SalesLine {
   note: string | null;
   /**
    * Listenin şubesi (veri kümesi; yoksa Tuzla): LafPOS'a geçiş günü yalnız LafPOS'un şubesinin ModPOS listesini düşürür,
-   * ModPOS'ta kalan şubenin (Marina) listesi her ay sayılır (src/lib/lafpos/sales.ts mergeSalesSources)
+   * ModPOS'ta kalan şubenin (Tuzla) listesi her ay sayılır (src/lib/lafpos/sales.ts mergeSalesSources)
    */
   branchId?: string;
   /**

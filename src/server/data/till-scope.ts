@@ -14,7 +14,7 @@ import { getDb, schema as s, type DB } from "@/server/db";
  * kuralı) ondan önce değilse LafPOS, değilse ModPOS. Kasadaki fiyatların okuyucuları (Kasaya işle, Kasadaki fiyatlar,
  * zil, Bugün, haftalık özet, ürün kartı) ve metinleri buna bakar. İşlem içinden de okunur (fiyat yazımı). Kasa,
  * kasanın şubesinindir (seçili fiziksel şube, "Tümü"de ve istek dışında Tuzla): geçiş günü yalnız LafPOS'un şubesinin
- * kasasına uygulanır, ModPOS'ta kalan şubede (Marina) liste ModPOS'a göredir (branchSwitchDay; denetim 21 Kasım #5)
+ * kasasına uygulanır, ModPOS'ta kalan şubede (Tuzla) liste ModPOS'a göredir (branchSwitchDay; denetim 21 Kasım #5)
  */
 export async function loadTillScope(db: Pick<DB, "select"> = getDb(), now: Date = new Date()): Promise<TillScope> {
   const [switchDay, sube] = await Promise.all([lafposSwitchDayOf(db), currentTillBranch()]);

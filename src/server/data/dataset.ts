@@ -161,7 +161,7 @@ async function readDataset(): Promise<Dataset> {
       .where(eq(s.specialDays.kind, "kapali")),
   ]);
 
-  // LafPOS'a geçiş günü görünümün kasasınınki (scopeSwitchDay; denetim 21 Kasım #5): ModPOS'ta kalan şube (Marina) ya da
+  // LafPOS'a geçiş günü görünümün kasasınınki (scopeSwitchDay; denetim 21 Kasım #5): ModPOS'ta kalan şube (Tuzla) ya da
   // online kanal seçiliyken yok (LafPOS hiç okunmaz, ekranlar ModPOS der); "Tümü"de ve LafPOS'un şubesinde ayar. Veri
   // kümesini okuyan her ekran (Satışlar, Genel bakış, Gelir-gider, Ürünler, Analiz, Zayi) bunu görür
   const settings = { ...storedSettings, lafposGecisGunu: scopeSwitchDay(storedSettings.lafposGecisGunu, scope) };
