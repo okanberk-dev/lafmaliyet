@@ -42,6 +42,8 @@ export const MODPOS_KDV_RATE = 10;
 export const MODPOS_PRODUCTS_MAX = 500;
 /** Toplanan fazla satırların adı */
 export const MODPOS_PRODUCTS_REST = "Diğer ürünler";
+/** Toplanan satırda ürüne bağlanmamış eksi satır (iade, düzeltme) da varsa adı */
+export const MODPOS_PRODUCTS_REST_RETURNS = "Diğer ürünler ve iadeler";
 /** Z no en çok bu kadar karakter (LafPOS'un geçmiş gününün sınırı) */
 const ZNO_MAX = 40;
 /** Şube kimliği: gün sonu gövdesinin `sube` kuralı (src/lib/lafpos/day.ts) */
@@ -277,7 +279,10 @@ function productKey(l: ModposListLine): { ad: string; boy: "M" | "L" | null } {
  *   yükleme kuralı geçiş ayında listeyi zaten oraya kırpar).
  * - `from`: ilk ayın 1'i; o aydan itibaren ModPOS günü varsa ilki (ay ortasında açılan şube: Marina 13 Kasım).
  * - Satırlar (ad, boy) başına toplanır, tutara göre sıralı; boş satır gitmez; MODPOS_PRODUCTS_MAX'ı aşan kısım tek satırda.
- * Listesi yoksa null.
+ * - Hiçbir satırın adedi ya da tutarı eksi değildir (LafPOS eksi satırı düşürür): ürüne bağlı iade satırı ürünün satırında
+ *   düşülür; bağlanmamış eksi satır toplanan satıra girer, eksiyi kapatacak kadar en küçük satırla birlikte ("Diğer
+ *   ürünler ve iadeler"). Tutar ve adet toplamı listeninkidir (liste ↔ ciro + indirim denetimi bozulmaz).
+ * Listesi yoksa ya da toplamı eksiyse null.
  */
 export function modposProducts(input: {
   lines: readonly ModposListLine[];
@@ -308,14 +313,24 @@ export function modposProducts(input: {
     row.adet += Math.round(l.qty * 100);
     row.tutar += Math.round(l.revenue * 100);
   }
-  const sorted = [...rows.values()]
-    .filter((r) => r.adet !== 0 || r.tutar !== 0)
+  const all = [...rows.values()].filter((r) => r.adet !== 0 || r.tutar !== 0);
+  // Eksi satır (iade, düzeltme; ürüne bağlıysa yukarıda ürünün satırında düşüldü) eksi gitmez: LafPOS adedi ve tutarı
+  // sıfırdan küçük satırı düşürür, blok listeden büyük görünürdü. Eksiler toplanan satırda, en küçük satırlarla
+  // kapatılır (toplam ve adet değişmez); taşan satırlar da (MODPOS_PRODUCTS_MAX) aynı satıra
+  const negative = all.filter((r) => r.adet < 0 || r.tutar < 0);
+  const kept = all
+    .filter((r) => r.adet >= 0 && r.tutar >= 0)
     .sort((a, b) => b.tutar - a.tutar || a.ad.localeCompare(b.ad, "tr") || (a.boy ?? "").localeCompare(b.boy ?? ""));
-  if (!sorted.length) return null;
-  const kept = sorted.length > MODPOS_PRODUCTS_MAX ? sorted.slice(0, MODPOS_PRODUCTS_MAX - 1) : sorted;
-  if (kept.length < sorted.length) {
-    const rest = sorted.slice(kept.length);
-    kept.push({ ad: MODPOS_PRODUCTS_REST, boy: null, adet: rest.reduce((a, r) => a + r.adet, 0), tutar: rest.reduce((a, r) => a + r.tutar, 0) });
+  const rest = { adet: negative.reduce((a, r) => a + r.adet, 0), tutar: negative.reduce((a, r) => a + r.tutar, 0) };
+  const restShown = () => rest.adet !== 0 || rest.tutar !== 0;
+  while (kept.length && (rest.adet < 0 || rest.tutar < 0 || kept.length + (restShown() ? 1 : 0) > MODPOS_PRODUCTS_MAX)) {
+    const r = kept.pop()!;
+    rest.adet += r.adet;
+    rest.tutar += r.tutar;
   }
-  return { from, to, rows: kept.map((r) => ({ ad: r.ad, boy: r.boy, adet: r.adet / 100, tutar: tl(r.tutar) })) };
+  // Liste toplamı eksi (ya da hepsi birbirini götürdü): anlamlı liste yok
+  if (rest.adet < 0 || rest.tutar < 0 || (!kept.length && !restShown())) return null;
+  const out = kept.map((r) => ({ ad: r.ad, boy: r.boy, adet: r.adet / 100, tutar: tl(r.tutar) }));
+  if (restShown()) out.push({ ad: negative.length ? MODPOS_PRODUCTS_REST_RETURNS : MODPOS_PRODUCTS_REST, boy: null, adet: rest.adet / 100, tutar: tl(rest.tutar) });
+  return { from, to, rows: out };
 }

@@ -374,3 +374,43 @@ test("ürünler: dönem pencere içinde, en son listeli aya kesintisiz uzanan ay
   assert.deepEqual(big.rows.at(-1), { ad: "Diğer ürünler", boy: null, adet: 21, tutar: many.slice(MODPOS_PRODUCTS_MAX - 1).reduce((a, l) => a + l.revenue, 0) });
   assert.equal(sumK(big.rows.map((r) => r.tutar)), sumK(many.map((l) => l.revenue)));
 });
+
+test("ürünler: eksi satır (iade, düzeltme) eksi gitmez, toplam değişmez: ürüne bağlıysa ürünün satırında düşülür, değilse en küçük satırlarla 'Diğer ürünler ve iadeler'de; liste eksiye inerse blok yok", () => {
+  const window = modposWindow("2026-11-22");
+  const coverage = { "2026-11": "2026-11-21" };
+  const line = (posName: string, qty: number, revenue: number, productName: string | null = null, productSize: string | null = null): ModposListLine => ({
+    month: "2026-11",
+    posName,
+    qty,
+    revenue,
+    productName,
+    productSize,
+  });
+  // İnceleme bulgusu: LATTE 5 / 500 yanında bağlanmamış LATTE IADE −1 / −100. LafPOS eksi satırı düşürür (adet ve tutar
+  // sıfırdan küçük olamaz), blok 500 yerine 600 derdi: liste ≠ ciro + indirim
+  const lines = [line("LATTE", 5, 500), line("LATTE IADE", -1, -100), line("CHEESECAKE", 1, 80), line("COOKIE", 2, 50)];
+  const p = modposProducts({ lines, coverage, window, days: [] })!;
+  assert.deepEqual(p.rows, [
+    { ad: "LATTE", boy: null, adet: 5, tutar: 500 },
+    // −100 + 50 (COOKIE, en küçük) hâlâ eksi: CHEESECAKE de girer; 2 adet, 30 TL
+    { ad: "Diğer ürünler ve iadeler", boy: null, adet: 2, tutar: 30 },
+  ]);
+  for (const r of p.rows) assert.ok(r.adet >= 0 && r.tutar >= 0, `${r.ad}: eksi değil`);
+  assert.equal(sumK(p.rows.map((r) => r.tutar)), sumK(lines.map((l) => l.revenue)), "tutar toplamı listeninki (530)");
+  assert.equal(
+    p.rows.reduce((a, r) => a + r.adet, 0),
+    7,
+    "adet toplamı listeninki",
+  );
+  // Satışlar'da ürüne bağlanan iade satırı ürünün kendi satırında düşülür
+  const linked = modposProducts({ lines: [line("LATTE MEDIUM", 5, 500, "Latte", "M"), line("LATTE IADE", -1, -100, "Latte", "M"), line("COOKIE", 2, 50)], coverage, window, days: [] })!;
+  assert.deepEqual(linked.rows, [
+    { ad: "Latte", boy: "M", adet: 4, tutar: 400 },
+    { ad: "COOKIE", boy: null, adet: 2, tutar: 50 },
+  ]);
+  // İade küçük satırı tam karşılıyorsa (net 0) toplanan satır kalmaz
+  const net = modposProducts({ lines: [line("LATTE", 5, 500), line("COOKIE", 2, 50), line("COOKIE IADE", -2, -50)], coverage, window, days: [] })!;
+  assert.deepEqual(net.rows, [{ ad: "LATTE", boy: null, adet: 5, tutar: 500 }]);
+  // Liste toplamı eksi: blok yok (anlamlı liste yok)
+  assert.equal(modposProducts({ lines: [line("LATTE", 1, 100), line("LATTE IADE", -2, -200)], coverage, window, days: [] }), null);
+});

@@ -448,7 +448,12 @@ dönem için tek blok (aylık liste gün gün bölünemez):
   önceki günü geçmez; `from`: ilk ayın 1'i, o aydan itibaren ModPOS günü varsa ilki (Marina 13 Kasım'da açıldı).
 - Satır: `ad` ve `boy` bağlı panel ürününün adı ve boyu (`M` / `L`; tek boy `null`), bağlanmamış satırda ModPOS'taki ad;
   aynı (ad, boy) toplanır, tutara göre sıralı; en çok 500 satır, fazlası "Diğer ürünler" satırında (toplam değişmez).
-- Listesi yoksa `null`. Marina 13–21 Kasım 2026: 31 satır, 240 adet, 29.415,00.
+- Hiçbir satırın `adet`'i ya da `tutar`'ı eksi değildir (LafPOS eksi satırı düşürür, blok listeden büyük görünürdü).
+  ModPOS listesindeki eksi satır (iade, düzeltme) Satışlar'da ürüne bağlıysa ürünün satırında düşülür. Bağlanmamışsa
+  toplanan satıra girer, eksiyi kapatacak kadar en küçük satırla birlikte: "Diğer ürünler ve iadeler". Tutar ve adet
+  toplamı yine listeninkidir (liste = ciro + indirim denetimi bozulmaz). İade satırının adı görünsün istenirse Satışlar'da
+  ürününe bağlanır.
+- Listesi yoksa ya da toplamı eksiyse `null`. Marina 13–21 Kasım 2026: 31 satır, 240 adet, 29.415,00.
 
 **Bütçe:** LafPOS kendiliğinden **iş günü başına en çok bir kez** çeker (gün açıldıktan sonraki ilk turda ya da
 05:00'ten sonra); Yönetim › Entegrasyon'daki "ModPOS dönemini çek" elle, **5 dakikada bir**den sık değil. LafPOS'ta
@@ -771,5 +776,5 @@ Anahtar yokken üç uç da `503` döner; panelin geri kalanı ve Kasa raporu esk
 | `tests/lafpos-satis.test.ts`, `tests/lafpos-satis-db.test.ts` | Her gün tek kaynak (özellik testi), birleştirme, model (tüketim, karaoke KDV'si), Satışlar'ın bandı, yükleme kuralı; veritabanında geçiş günü boşken bayt bayt aynılık, geçiş ve LafPOS ayları, kapsam, yükleme reddi ve kırpma, sonradan bağlama, silme engeli, satış tahmini |
 | `tests/lafpos-kasa.test.ts`, `tests/lafpos-kasa-db.test.ts` | Kasa raporunun LafPOS'la uzlaşması (B09): farklı yazılanlar ve metinler, gün içinde çıkan, kapalı gün kanıtı, e-posta anahtarı, ay satırı, geç rapor ve fotoğraf kanıtı, kart; veritabanında geçiş günü boşken bugünkü gibi, kapalı işaretin kalkması, e-posta, geç rapor ve kartı |
 | `tests/lafpos-komisyon.test.ts`, `tests/lafpos-ikram.test.ts`, `tests/lafpos-komisyon-ikram-db.test.ts` | Ödeme kanalları komisyona (B10, E-37) ve ikram tüketime (E-38): geçiş günü boşken bugünkü gibi, LafPOS ayı, geçiş ayı, kanalsız ödeme, eksik gün; ikramın kayıtlı tüketime bir kez girmesi, panel ürün ikramının sayılmaması ve reddi, kasa özeti ve e-postası |
-| `tests/lafpos-modpos.test.ts`, `tests/lafpos-modpos-db.test.ts` | ModPOS dönemi: isteğin denetimi (503 / 401 / 400 / 409), günün biçimi, kaynak ve bilinmeyen indirim, kapanmış föy, KDV sırası, pencere, ürün bloğu; veritabanında Marina 13–21 Kasım 2026'nın rakamları (kasa raporu ve föy, öncelik, föy günü Ay rakamına yedek'ten bağımsız, panelin ay kuralı değişmez, açık föy, Tuzla ve geçiş günü sonrası dışarıda) |
+| `tests/lafpos-modpos.test.ts`, `tests/lafpos-modpos-db.test.ts` | ModPOS dönemi: isteğin denetimi (503 / 401 / 400 / 409), günün biçimi, kaynak ve bilinmeyen indirim, kapanmış föy, KDV sırası, pencere, ürün bloğu (eksi satır eksi gitmez, toplam değişmez); veritabanında Marina 13–21 Kasım 2026'nın rakamları (kasa raporu ve föy, öncelik, föy günü Ay rakamına yedek'ten bağımsız, panelin ay kuralı değişmez, açık föy, Tuzla ve geçiş günü sonrası dışarıda) |
 | `tests/lafpos-durum-db.test.ts` | Kendi geçici veritabanında: durum satırı (200 / 400 / 409 / 401 / 413 / 500 / 503), güne göre açık retler (sonraki 200 ve başka günün 400 / 500'ü örtmez, aynı günün 200'ü kapatır), `counted`, günün silinmesi (yalnız çözdüğü 409'u kapatır), geçiş günü, Kasa okuyucusunun kapısı, eylemlerin parolası ve işlem geçmişi |
