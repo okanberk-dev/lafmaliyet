@@ -88,6 +88,11 @@ export interface MergedSales extends SalesSources {
  * Satış satırlarını geçiş gününe göre birleştirir (veri kümesi ve tatlı payı). Geçiş günü yoksa girdi olduğu gibi
  * döner, LafPOS tablosu okunmaz. `zOf(from, through)`: kasa raporlarının o günlerdeki Z toplamı (rapor yoksa null;
  * geçiş ayında liste ↔ Z karşılaştırması). `today`: iş günü; `currentMonth`: özetin son ayı en az bu.
+ *
+ * İki kapsam: `coverage` görünümün listelerinin son günü (modelin `coverage`'ı, engine listPeriod); `lafposCoverage`
+ * LafPOS'un şubesinin (Marina) kendi kaydı (src/lib/sales-coverage.ts readCoverage). LafPOS'un sayıldığı ilk gün ve
+ * ayların ModPOS listesi (son günü, çakışma, liste ↔ Z) yalnız Marina'nın listesine bakar: ortak kayıt ayın tek
+ * kaydıdır, Tuzla'nın aynı aya yüklediği liste onu ezer ve Marina'nın LafPOS günlerini düşürürdü.
  */
 export async function mergeWithLafpos(
   db: DB,
@@ -95,6 +100,8 @@ export async function mergeWithLafpos(
     switchDay: string | null;
     salesLines: SalesLine[];
     coverage: Record<string, string>;
+    /** LafPOS'un şubesinin (Marina) listelerinin son günü: şubenin kendi kaydı, yoksa ortak kayıt (readCoverage) */
+    lafposCoverage: Record<string, string>;
     today: string;
     zOf?: (from: string, through: string) => number | null;
     /** Yalnız bu aya kadar (dahil) okunur (tatlı payı); verilmezse hepsi */
@@ -111,7 +118,7 @@ export async function mergeWithLafpos(
   },
 ): Promise<MergedSales> {
   const S = input.switchDay;
-  const countFrom = lafposSalesCountFrom(S, input.salesLines, input.coverage);
+  const countFrom = lafposSalesCountFrom(S, input.salesLines, input.lafposCoverage);
   if (S === null || countFrom === null) return { salesLines: input.salesLines, coverage: { ...input.coverage }, lafposSales: null };
   const running = input.today.slice(0, 7);
   const hold = input.lastTillDay?.slice(0, 7) === running ? { month: running, after: input.lastTillDay } : null;
@@ -126,7 +133,7 @@ export async function mergeWithLafpos(
   const months: LafposSalesMonth[] = [];
   for (let m = switchMonth; m <= last; m = shiftMonth(m, 1)) {
     const list = own.filter((l) => l.month === m);
-    const through = modposThroughOf(m, input.coverage);
+    const through = modposThroughOf(m, input.lafposCoverage);
     const days = lafpos.received.find((x) => x.month === m) ?? null;
     const counted = lafpos.days.find((x) => x.month === m) ?? null;
     const st = lafposMonthStatus({

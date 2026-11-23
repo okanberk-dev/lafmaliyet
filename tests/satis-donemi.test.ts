@@ -15,7 +15,7 @@ import { basisText, salesBasis } from "../src/lib/calc/price-loss";
 import type { Dataset, SalesLine } from "../src/lib/calc/types";
 import { resolveMonth, tillMonths, type TillRow } from "../src/lib/cash-month";
 import { addDays } from "../src/lib/reminders";
-import { branchCoverage, coverageFor, parseBranchCoverage, parseCoverage } from "../src/lib/sales-coverage";
+import { branchCoverage, coverageFor, legacyCoveragePins, parseBranchCoverage, parseCoverage, readCoverage } from "../src/lib/sales-coverage";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const root = join(__dirname, "..");
@@ -88,13 +88,41 @@ test("şubenin kendi kapsam kaydı: şubenin ayı varsa o (null: ayın tamamı),
   assert.deepEqual(branchCoverage(shared, {}), shared, "şube kaydından önce yüklenen liste: ortak kayıt");
 });
 
+test("şubenin kapsamı (readCoverage): şube seçiliyken şubenin kendi kaydı, kaydı olmayan ayda ortak kayıt; 'Tümü'de ortak kayıt", () => {
+  // Ortak kayıt son yükleyenin (Tuzla, 27 Kasım); Marina'nın kendi kaydı 21 Kasım; Tuzla'nın Ekim'i ayın tamamı
+  const shared = { "2026-11": "2026-11-27", "2026-10": "2026-10-15" };
+  const perBranch = { marina: { "2026-11": "2026-11-21" }, tuzla: { "2026-11": "2026-11-27", "2026-10": null } };
+  assert.deepEqual(readCoverage(shared, perBranch, "marina"), { "2026-11": "2026-11-21", "2026-10": "2026-10-15" });
+  assert.deepEqual(readCoverage(shared, perBranch, "tuzla"), { "2026-11": "2026-11-27" });
+  assert.deepEqual(readCoverage(shared, perBranch, null), shared, "Tümü: işletme geneli, ortak kayıt");
+  assert.deepEqual(readCoverage(shared, null, "marina"), shared, "şube kaydından önce yüklenen listeler: ortak kayıt");
+  assert.deepEqual(readCoverage(null, perBranch, "marina"), { "2026-11": "2026-11-21" });
+  assert.deepEqual(readCoverage({ bozuk: 1 }, "bozuk", "marina"), {});
+});
+
+test("eski listenin son günü korunur (legacyCoveragePins): ortak kayıt ezilmeden önce o ayda listesi olup kendi kaydı olmayan öteki şubeye yazılır", () => {
+  // Marina'nın listesi bu değişiklikten önce 21 Kasım'a kadar yüklendi (yalnız ortak kayıt); Tuzla şimdi yüklüyor
+  assert.deepEqual(legacyCoveragePins({ "2026-11": "2026-11-21" }, {}, "2026-11", "tuzla", ["marina", "tuzla"]), { marina: "2026-11-21" });
+  // Ortak kayıtta ayın kaydı yok: liste ayın tamamıydı
+  assert.deepEqual(legacyCoveragePins({}, null, "2026-11", "tuzla", ["marina"]), { marina: null });
+  // Kendi kaydı olan şubeye dokunulmaz (null da kayıttır), yazan şubenin kendisi ve listesi olmayan şube yazılmaz
+  assert.deepEqual(legacyCoveragePins({ "2026-11": "2026-11-27" }, { marina: { "2026-11": "2026-11-21" } }, "2026-11", "tuzla", ["marina"]), {});
+  assert.deepEqual(legacyCoveragePins({ "2026-11": "2026-11-27" }, { marina: { "2026-11": null } }, "2026-11", "tuzla", ["marina"]), {});
+  assert.deepEqual(legacyCoveragePins({ "2026-11": "2026-11-21" }, {}, "2026-11", "marina", ["marina"]), {});
+  assert.deepEqual(legacyCoveragePins({ "2026-11": "2026-11-21" }, { marina: { "2026-10": null } }, "2026-11", "tuzla", ["marina", "online"]), { marina: "2026-11-21", online: "2026-11-21" });
+});
+
 test("kapsam kaydı: yükleme süren ayda günü yazar, biten aya yükleme ve 'Ayı temizle' siler; tek ifadeyle (iki ay birbirini ezmez)", () => {
   const sales = read("src/server/actions/sales.ts");
   // Kural src/lib/lafpos/sales.ts › modposImportRule'da: geçiş günü yokken ya da ondan önceki ayda coverageFor'un kendisi
   // (geçiş ayında en çok geçiş gününden önceki güne kadar, LafPOS ayında red; tests/lafpos-satis.test.ts)
   assert.match(sales, /const rule = modposImportRule\(month, switchDay, todayTR\(\), z\.string\(\)\.max\(10\)\.nullish\(\)\.parse\(input\.through\)\);/);
   assert.match(read("src/lib/lafpos/sales.ts"), /if \(src === "modpos" \|\| switchDay === null\) return \{ ok: true, through: coverageFor\(month, today, given\) \};/);
-  assert.match(sales, /await setCoverage\(tx, month, through\);\n\s*await setBranchCoverage\(tx, sube, month, through\);/, "satırlarla aynı işlemde, şubenin kendi kaydıyla");
+  assert.match(sales, /await writeCoverage\(tx, sube, month, through\);/, "satırlarla aynı işlemde, şubenin kendi kaydıyla");
+  // Önce eski listelerin son günü şubelerine (ortak kayıt ezilmeden), sonra ortak kayıt ve yazanın kendi kaydı
+  assert.match(sales, /await pinLegacyCoverage\(db, branchId, month\);\n\s*await setCoverage\(db, month, through\);\n\s*await setBranchCoverage\(db, branchId, month, through\);/);
+  // Eski günün yazımı kendi kaydı olan şubeyi ezmez (null da kayıttır)
+  assert.match(sales, /where key = \$\{SALES_COVERAGE_BRANCH_KEY\} and \(\$\{own\} -> \$\{month\}::text\) is null/);
   // Ayı temizle kaydı siler; kayıt ayın tek kaydıdır, yalnız ayda hiçbir şubenin listesi kalmadıysa (denetim 21 Kasım #7)
   assert.match(sales, /if \(!left\?\.n\) await setCoverage\(tx, m, null\);/, "Ayı temizle kaydı siler");
   assert.match(sales, /\$\{current\} \|\| jsonb_build_object\(\$\{month\}::text, \$\{through\}::text\)/);

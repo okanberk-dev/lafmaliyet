@@ -13,7 +13,7 @@ import {
   type ModposDaysData,
 } from "@/lib/lafpos/modpos-gunler";
 import { branchSwitchDay } from "@/lib/lafpos/switch";
-import { branchCoverage, parseBranchCoverage, parseCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
+import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { loadModposSheets } from "@/server/modpos/store";
 
@@ -84,7 +84,7 @@ export async function loadModposDays(db: DB, sube: string): Promise<ModposDaysDa
   // Listenin son günü şubenin kendi kaydından (öteki şubenin aynı aya yüklediği liste ortak kaydı ezer); kaydı olmayan
   // ayda (şube kaydından önce yüklenen liste) ortak kayıt
   const stored = (key: string) => coverage.find((c) => c.key === key)?.value;
-  const listCoverage = branchCoverage(parseCoverage(stored(SALES_COVERAGE_KEY)), parseBranchCoverage(stored(SALES_COVERAGE_BRANCH_KEY), sube));
+  const listCoverage = readCoverage(stored(SALES_COVERAGE_KEY), stored(SALES_COVERAGE_BRANCH_KEY), sube);
   return { switchDay, days, urunler: modposProducts({ lines, coverage: listCoverage, window, days }) };
 }
 

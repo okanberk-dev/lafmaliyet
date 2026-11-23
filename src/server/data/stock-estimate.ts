@@ -9,7 +9,7 @@ import { isCountable } from "@/lib/ingredient-usage";
 import { lafposSalesCountFrom } from "@/lib/lafpos/sales";
 import { branchSwitchDay } from "@/lib/lafpos/switch";
 import { addDays } from "@/lib/reminders";
-import { parseCoverage, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
+import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import {
   displayUnit,
   estimateStock,
@@ -87,10 +87,16 @@ export async function loadStockEstimate(db: DB = getDb(), now: Date = new Date()
     .from(s.salesLines)
     .where(and(eq(s.salesLines.month, switchMonth), eq(s.salesLines.branchId, STOCK_ESTIMATE_BRANCH)))
     .limit(1);
-  // Ayın satış listesinin son günü integration_state'te (src/server/actions/sales.ts setCoverage; veri kümesi de oradan
-  // okur, src/server/data/dataset.ts): settings'te aranırsa hep boş kalır ve "LafPOS satışları şu günden beri" yanlış görünür
-  const [coverageRow] = await db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, SALES_COVERAGE_KEY)).limit(1);
-  const coverage = parseCoverage(coverageRow?.value);
+  // Ayın satış listesinin son günü integration_state'te (src/server/actions/sales.ts writeCoverage; veri kümesi de oradan
+  // okur, src/server/data/dataset.ts): settings'te aranırsa hep boş kalır ve "LafPOS satışları şu günden beri" yanlış görünür.
+  // Marina'nın kendi kaydı, kaydı olmayan ayda ortak kayıt (readCoverage): ortak kayıt son yükleyenindir, Tuzla'nın aynı aya
+  // yüklediği liste sınırı kaydırırdı
+  const coverageRows = await db
+    .select({ key: s.integrationState.key, value: s.integrationState.value })
+    .from(s.integrationState)
+    .where(inArray(s.integrationState.key, [SALES_COVERAGE_KEY, SALES_COVERAGE_BRANCH_KEY]));
+  const stored = (key: string) => coverageRows.find((r) => r.key === key)?.value;
+  const coverage = readCoverage(stored(SALES_COVERAGE_KEY), stored(SALES_COVERAGE_BRANCH_KEY), STOCK_ESTIMATE_BRANCH);
   const lafposFrom = lafposSalesCountFrom(switchDay, switchList, coverage) ?? switchDay;
 
   // Dönem en erken LafPOS'un sayıldığı ilk günde başlar (öncesi "LafPOS öncesi sayım"): okumalar oradan bugüne

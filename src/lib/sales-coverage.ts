@@ -6,12 +6,15 @@
  *
  * Saklama: integration_state › `sales.coverage` = { "YYYY-MM": "YYYY-MM-DD" } (yalnız süren ayda yüklenen listeler;
  * biten aya yüklenen liste kaydı siler: ayın tamamı). Bu kayıt ayın tek, şubesiz kaydıdır: aynı aya öteki şubenin
- * yüklediği liste onu ezer. Panelin ay kuralı (veri kümesi, satış tahmini) bunu okur.
+ * yüklediği liste onu ezer. Yalnız işletme geneli okur ("Tümü" görünümünün liste dönemi).
  *
  * Şubenin kendi kaydı: integration_state › `sales.coverage.sube` = { "<şube>": { "YYYY-MM": "YYYY-MM-DD" | null } }
  * (null: ayın tamamı). Satışlar ortak kayıtla aynı anda yazar, şubenin listesi temizlenince şubenin ayı silinir. Şubeye
- * bakan okuyucu (LafPOS'un ModPOS dönemi ucu, docs/LAFPOS.md) branchCoverage ile okur: Tuzla'nın listesi Marina'nın
- * listesinin son gününü kaydırmaz.
+ * bakan her okuyucu readCoverage ile şubenin kendi kaydını okur, kaydı olmayan ayda (bu kayıttan önce yüklenen liste)
+ * ortak kaydı: şube görünümünün liste dönemi (veri kümesi), Marina'nın LafPOS'unun sayıldığı ilk gün ve geçiş ayının
+ * çakışması (lafposSalesCountFrom; veri kümesi "Tümü"de de, tahmini stok), LafPOS'un ModPOS dönemi ucu
+ * (docs/LAFPOS.md). Tuzla'nın listesi Marina'nın listesinin son gününü kaydırmaz. Ortak kayıt ezilmeden önce eski
+ * listelerin son günü şubelerinin kaydına geçer (legacyCoveragePins).
  */
 
 import { addDays } from "./reminders";
@@ -67,6 +70,31 @@ export function branchCoverage(shared: Readonly<Record<string, string>>, own: Re
   for (const [m, d] of Object.entries(own)) {
     if (d === null) delete out[m];
     else out[m] = d;
+  }
+  return out;
+}
+
+/**
+ * Bir şubenin listelerinin son günleri, ay ay: şubenin kendi kaydı, kaydı olmayan ayda ortak kayıt (branchCoverage).
+ * `branchId` null: işletme geneli ("Tümü"), ortak kayıt. Saklandığı gibi okur (bozuk alanlar atılır).
+ */
+export function readCoverage(shared: unknown, perBranch: unknown, branchId: string | null): Record<string, string> {
+  const common = parseCoverage(shared);
+  return branchId === null ? common : branchCoverage(common, parseBranchCoverage(perBranch, branchId));
+}
+
+/**
+ * Ortak kayıt ezilmeden önce korunacak eski son günler: `writer` şubesi `month` ayına liste yazarken, o ayda listesi olan
+ * (`withLines`) ve o ay için kendi kaydı olmayan (bu kayıttan önce yüklenmiş) öteki şubelere ortak kaydın o anki değeri
+ * (ayın kaydı yoksa null: liste ayın tamamıydı). Yazılmazsa o şube ortak kayda düşer ve yazanın son gününü okurdu:
+ * Marina'nın 21 Kasım'a kadar listesi Tuzla'nın Aralık'ta yüklediği Kasım listesiyle "ayın tamamı" olurdu.
+ */
+export function legacyCoveragePins(shared: unknown, perBranch: unknown, month: string, writer: string, withLines: readonly string[]): Record<string, string | null> {
+  const legacy = parseCoverage(shared)[month] ?? null;
+  const out: Record<string, string | null> = {};
+  for (const branchId of new Set(withLines)) {
+    if (branchId === writer || month in parseBranchCoverage(perBranch, branchId)) continue;
+    out[branchId] = legacy;
   }
   return out;
 }

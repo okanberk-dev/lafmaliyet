@@ -24,8 +24,9 @@ import {
   modposThroughOf,
   type LafposMonthLine,
 } from "../src/lib/lafpos/sales";
-import { branchSwitchDay, lafposCountFrom, lafposSalesFrom, modposListCounts, monthSource } from "../src/lib/lafpos/switch";
+import { branchSwitchDay, LAFPOS_BRANCH_ID, lafposCountFrom, lafposSalesFrom, modposListCounts, monthSource } from "../src/lib/lafpos/switch";
 import { addDays, dayAblativeTR, monthEnd, shiftMonth } from "../src/lib/reminders";
+import { readCoverage } from "../src/lib/sales-coverage";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
@@ -64,6 +65,36 @@ test("geçiş günü: ayın LafPOS'u hangi günden sayılır, ModPOS listesi say
   assert.equal(lafposSalesCountFrom(S, lines, { "2026-11": "2026-11-09" }), S);
   assert.equal(lafposSalesCountFrom(S, [], {}), S, "liste yok");
   assert.equal(lafposSalesCountFrom(null, lines, {}), null);
+});
+
+test("LafPOS'un sayıldığı ilk gün Marina'nın kendi kapsam kaydından: Tuzla'nın aynı aya 27 Kasım'a kadar yüklediği liste ve Aralık'ta yüklediği ayın tamamı kaydırmaz", () => {
+  const G = "2026-11-22";
+  const lines = [line({ id: 1, month: "2026-11", posName: "LATTE" }), line({ id: 2, month: "2026-11", posName: "TUZLA LATTE", branchId: "tuzla" })];
+  // Ortak kayıt (sales.coverage) ayın tek, şubesiz kaydıdır: son yükleyenin günü. Onu okuyan sınır Tuzla'nın yüklemesiyle
+  // kayardı: 27 Kasım'a kadar liste Marina'nın 22–27 Kasım LafPOS günlerini, Aralık'taki ayın tamamı bütün Kasım'ı düşürürdü
+  assert.equal(lafposSalesCountFrom(G, lines, { "2026-11": "2026-11-27" }), "2026-11-28");
+  assert.equal(lafposSalesCountFrom(G, lines, {}), "2026-12-01");
+  const marina = (shared: unknown, perBranch: unknown) => readCoverage(shared, perBranch, LAFPOS_BRANCH_ID);
+  const cases: [string, Record<string, string>][] = [
+    ["Marina 21 Kasım'a kadar yükledi", marina({ "2026-11": "2026-11-21" }, { marina: { "2026-11": "2026-11-21" } })],
+    ["Tuzla aynı aya 27 Kasım'a kadar yükledi", marina({ "2026-11": "2026-11-27" }, { marina: { "2026-11": "2026-11-21" }, tuzla: { "2026-11": "2026-11-27" } })],
+    ["Tuzla Aralık'ta Kasım'ın tamamını yükledi", marina({}, { marina: { "2026-11": "2026-11-21" }, tuzla: { "2026-11": null } })],
+    ["şube kaydından önce yüklenen liste: ortak kayıt", marina({ "2026-11": "2026-11-21" }, {})],
+  ];
+  for (const [name, coverage] of cases) {
+    assert.equal(lafposSalesCountFrom(G, lines, coverage), G, name);
+    // Satışlar'ın bandı: ModPOS 1–21 Kasım, LafPOS 22 Kasım'dan; çakışma yok, 22–27 Kasım sayılır
+    const st = lafposMonthStatus({
+      month: "2026-11",
+      switchDay: G,
+      today: "2026-11-28",
+      modpos: { lines: 1, revenue: 100, through: modposThroughOf("2026-11", coverage) },
+      lafpos: { days: 6, last: "2026-11-27" },
+    });
+    assert.deepEqual([st?.from, st?.modpos?.through, st?.overlap], [G, "2026-11-21", null], name);
+  }
+  // Marina'nın kendi kaydı ayın tamamıysa (null) ortak kayıt yok sayılır: liste ayın tamamı, LafPOS Aralık'tan
+  assert.equal(lafposSalesCountFrom(G, lines, marina({ "2026-11": "2026-11-21" }, { marina: { "2026-11": null } })), "2026-12-01");
 });
 
 test("her gün tek kaynak: rastgele geçiş günü ve liste kapsamında hiçbir gün iki kaynaktan sayılmaz; tam listede her gün bir kaynakta", () => {
@@ -328,7 +359,17 @@ test("kaynak: veri kümesi geçiş günü yokken LafPOS'u hiç okumaz; Satışla
   assert.match(actions, /const switchDay = branchSwitchDay\(await loadLafposSwitchDay\(\), sube\);/);
   assert.match(actions, /const switchDay = branchSwitchDay\(await loadLafposSwitchDay\(\), lineBranch\);\n\s+if \(monthSource\(month, switchDay\) === "lafpos"\)/, "LafPOS ayına elle satır eklenmez");
   // Geçiş ayının ilk elle satırı listeyi içe aktarmanın kuralıyla başlatır (denetim B08 incelemesi)
-  assert.match(actions, /if \(n === 0 && monthSource\(month, switchDay\) === "gecis"\) \{\n\s+const rule = modposImportRule\(month, switchDay, todayTR\(\), null\);\n\s+if \(rule\.ok\) \{\n\s+await setCoverage\(tx, month, rule\.through\);\n\s+await setBranchCoverage\(tx, sube, month, rule\.through\);/);
+  assert.match(actions, /if \(n === 0 && monthSource\(month, switchDay\) === "gecis"\) \{\n\s+const rule = modposImportRule\(month, switchDay, todayTR\(\), null\);\n\s+if \(rule\.ok\) await writeCoverage\(tx, sube, month, rule\.through\);/);
+  // LafPOS'un sayıldığı ilk gün ve ayların ModPOS listesi Marina'nın kendi kapsam kaydından (readCoverage), görünümün
+  // listelerinin son günü görünümün şubesinden ("Tümü"de ortak kayıt)
+  assert.match(merged, /const countFrom = lafposSalesCountFrom\(S, input\.salesLines, input\.lafposCoverage\);/);
+  assert.match(merged, /const through = modposThroughOf\(m, input\.lafposCoverage\);/);
+  assert.doesNotMatch(merged, /lafposSalesCountFrom\(S, input\.salesLines, input\.coverage\)|modposThroughOf\(m, input\.coverage\)/);
+  assert.match(dataset, /const coverage = coverageOf\(scope === ALL_BRANCHES \? null : scope\);/);
+  assert.match(dataset, /const lafposCoverage = coverageOf\(LAFPOS_BRANCH_ID\);/);
+  assert.match(dataset, /readCoverage\(storedCoverage\(SALES_COVERAGE_KEY\), storedCoverage\(SALES_COVERAGE_BRANCH_KEY\), branchId\)/);
+  assert.match(read("src/server/data/stock-estimate.ts"), /readCoverage\(stored\(SALES_COVERAGE_KEY\), stored\(SALES_COVERAGE_BRANCH_KEY\), STOCK_ESTIMATE_BRANCH\)/);
+  assert.doesNotMatch(dataset + read("src/server/data/stock-estimate.ts"), /parseCoverage\(/, "ortak kayıt yalnız readCoverage'dan");
   // Süren ayın kasa raporundan sonraki LafPOS günleri bekler (kasa raporlarının son günü; LafPOS'un yedek ay satırları,
   // B09 G6, rapor sayılmaz)
   assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);

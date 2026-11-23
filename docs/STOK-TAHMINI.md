@@ -105,3 +105,4 @@ tahmini stok olduğundan az görünür, sayım düzeltir.
 | `src/app/panel/stock-alert-card.tsx` | Genel bakış ve Bugün'ün kartı |
 | `drizzle/0066_tahmini_stok.sql` | `stock_thresholds`, `stock_receipts` (yalnız ekleme) |
 | `tests/stok-tahmini.test.ts` | Sayım yok, LafPOS öncesi, reçetesiz ve bağlanmamış ürün, birim dönüşümü, zayi ve ikram kuralı, alış, eşik, Tuzla'nın etkilenmemesi |
+| `tests/stok-tahmini-db.test.ts` | Veritabanında LafPOS'un sayıldığı ilk gün: Marina'nın geçiş ayı listesinin son gününden sonra, Marina'nın kendi kapsam kaydından (Tuzla'nın aynı aya yüklediği liste kaydırmaz; docs/LAFPOS.md › Günlük satış) |

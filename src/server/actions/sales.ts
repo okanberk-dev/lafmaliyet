@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, gte, inArray, isNull, lte, max, or, sql, sum } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, max, ne, or, sql, sum } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -12,7 +12,7 @@ import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { modposImportRule, modposOverZText } from "@/lib/lafpos/sales";
 import { branchSwitchDay, monthSource } from "@/lib/lafpos/switch";
 import { todayTR } from "@/lib/reminders";
-import { SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
+import { legacyCoveragePins, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import { requireAdmin } from "@/server/auth/dal";
 import { hasTillRowsIn } from "@/server/data/cash-reports";
 import { andWhere, currentBranchWhere, currentWriteBranch } from "@/server/branch-scope";
@@ -57,6 +57,46 @@ async function setBranchCoverage(db: Db | Tx, branchId: string, month: string, t
     update integration_state
        set value = ${root} || jsonb_build_object(${branchId}::text, ${own} || jsonb_build_object(${month}::text, ${through}::text)), updated_at = now()
      where key = ${SALES_COVERAGE_BRANCH_KEY}`);
+}
+
+/**
+ * Bu kayıttan önce yüklenmiş listenin son günü yalnız ortak kayıttadır: ortak kayıt ezilmeden önce o ayda listesi olup
+ * kendi kaydı olmayan öteki şubelere yazılır (src/lib/sales-coverage.ts legacyCoveragePins). Her şube tek ifadeyle ve
+ * yalnız kaydı hâlâ yoksa: aynı anda yazılan kendi kaydı ezilmez
+ */
+async function pinLegacyCoverage(db: Db | Tx, writer: string, month: string) {
+  const withLines = await db
+    .selectDistinct({ branchId: s.salesLines.branchId })
+    .from(s.salesLines)
+    .where(and(eq(s.salesLines.month, month), ne(s.salesLines.branchId, writer)));
+  if (!withLines.length) return;
+  const stored = await db
+    .select({ key: s.integrationState.key, value: s.integrationState.value })
+    .from(s.integrationState)
+    .where(inArray(s.integrationState.key, [SALES_COVERAGE_KEY, SALES_COVERAGE_BRANCH_KEY]));
+  const valueOf = (key: string) => stored.find((r) => r.key === key)?.value;
+  const pins = legacyCoveragePins(valueOf(SALES_COVERAGE_KEY), valueOf(SALES_COVERAGE_BRANCH_KEY), month, writer, withLines.map((r) => r.branchId));
+  for (const [branchId, through] of Object.entries(pins)) {
+    await db.execute(sql`
+      insert into integration_state (key, value) values (${SALES_COVERAGE_BRANCH_KEY}, '{}'::jsonb)
+      on conflict (key) do nothing`);
+    const root = sql`(case when jsonb_typeof(value) = 'object' then value else '{}'::jsonb end)`;
+    const own = sql`(case when jsonb_typeof(value -> ${branchId}::text) = 'object' then value -> ${branchId}::text else '{}'::jsonb end)`;
+    await db.execute(sql`
+      update integration_state
+         set value = ${root} || jsonb_build_object(${branchId}::text, ${own} || jsonb_build_object(${month}::text, ${through}::text)), updated_at = now()
+       where key = ${SALES_COVERAGE_BRANCH_KEY} and (${own} -> ${month}::text) is null`);
+  }
+}
+
+/**
+ * Listenin son günü (null: ayın tamamı): önce eski listelerin son günü şubelerine geçer, sonra ortak kayıt ve yazan
+ * şubenin kendi kaydı. Satırlarla aynı işlemde
+ */
+async function writeCoverage(db: Db | Tx, branchId: string, month: string, through: string | null) {
+  await pinLegacyCoverage(db, branchId, month);
+  await setCoverage(db, month, through);
+  await setBranchCoverage(db, branchId, month, through);
 }
 
 /** Listesi temizlenen şubelerin o ayki kendi kaydı silinir (liste yok: kapsam yok) */
@@ -229,8 +269,7 @@ export async function importSales(input: { month: string; lines: z.input<typeof 
           };
         }),
       );
-      await setCoverage(tx, month, through);
-      await setBranchCoverage(tx, sube, month, through);
+      await writeCoverage(tx, sube, month, through);
     });
     // Geçiş ayı: liste toplamı listenin günlerinin Z toplamını aşıyorsa (liste geçiş gününden sonrasını da içerebilir)
     let warning: string | null = null;
@@ -568,10 +607,7 @@ export async function saveLine(input: { id: number | null; month: string; posNam
         // ayki bütün günleri hesaptan düşer (denetim B08 incelemesi)
         if (n === 0 && monthSource(month, switchDay) === "gecis") {
           const rule = modposImportRule(month, switchDay, todayTR(), null);
-          if (rule.ok) {
-            await setCoverage(tx, month, rule.through);
-            await setBranchCoverage(tx, sube, month, rule.through);
-          }
+          if (rule.ok) await writeCoverage(tx, sube, month, rule.through);
         }
       });
     }

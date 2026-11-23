@@ -46,7 +46,9 @@ export function modposThroughOf(month: string, coverage: Readonly<Record<string,
 
 /**
  * LafPOS günlük satırlarının sayıldığı ilk gün (bütün aylar için tek sınır, docs/LAFPOS.md › Günlük satış): geçiş ayında
- * o ayın ModPOS listesinin son gününden sonra (liste varsa), sonraki aylarda her gün. Geçiş günü yoksa null.
+ * o ayın ModPOS listesinin son gününden sonra (liste varsa), sonraki aylarda her gün. Geçiş günü yoksa null. `coverage`
+ * LafPOS'un şubesinin (Marina) kendi kaydıdır (src/lib/sales-coverage.ts readCoverage(…, LAFPOS_BRANCH_ID)), ayın ortak
+ * kaydı değil: ortak kayıt son yükleyenindir, Tuzla'nın aynı aya yüklediği liste sınırı kaydırırdı.
  */
 export function lafposSalesCountFrom(switchDay: string | null, salesLines: readonly Pick<SalesLine, "month" | "branchId">[], coverage: Readonly<Record<string, string>>): string | null {
   if (switchDay === null) return null;
@@ -60,7 +62,10 @@ export interface SalesSourcesInput {
   switchDay: string | null;
   /** Satışlar'a yüklenmiş ModPOS listeleri (sales_lines), veritabanındaki sırayla */
   salesLines: SalesLine[];
-  /** sales.coverage: ayın listesinin son günü (yalnız ay sonundan önce biten listeler; src/lib/sales-coverage.ts) */
+  /**
+   * Görünümün listelerinin son günü (yalnız ay sonundan önce biten listeler; src/lib/sales-coverage.ts readCoverage):
+   * şube seçiliyken şubenin kendi kaydı, "Tümü"de ayın ortak kaydı
+   */
   coverage: Readonly<Record<string, string>>;
   /** LafPOS ay toplamları, yalnız sayılan günlerden (lafposSalesCountFrom'dan itibaren) */
   lafposLines: readonly LafposMonthLine[];
