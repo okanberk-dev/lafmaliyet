@@ -427,6 +427,7 @@ async function readDataset(): Promise<Dataset> {
       cashOutId: e.cashOutId,
       docType,
       supplierEntryId: e.supplierEntryId,
+      branchId: e.branchId,
     })),
   };
 }

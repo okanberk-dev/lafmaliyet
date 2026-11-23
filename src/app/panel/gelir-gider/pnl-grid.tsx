@@ -25,6 +25,7 @@ import { TableWrap, TD, TH } from "@/components/ui/table";
 import type { PnlCell, PnlRowDef } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { MONTH_NAMES } from "@/lib/constants";
+import { FIXED_LOCKED_CELL_TEXT } from "@/lib/fixed-expense-rules";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { setMonthField, setMonthNote, setPnlCell } from "@/server/actions/pnl";
@@ -1232,9 +1233,12 @@ function SectionRows({
               // Bu ayın kaynağı (faturalar, harcamalar, stok sayımı, komisyon, satışlar); faturasız ayda yok
               const link = rowLink(def.key, m, { value: c.value, current });
               const monthLink = link?.scope === "month" ? link : null;
+              // Geçerlilik aralığının dışındaki sabit gider kalemi (bitmiş ya da başlamamış): boş hücreye yeni tutar yazılmaz
+              // (sunucu da reddeder: setPnlCell, fixed-expense-rules.ts); önceden yazılmış tutar düzenlenir ve silinir
+              const locked = c.outOfRange && !c.overridden;
               return (
                 <td key={m} className={cn(CELL, "text-right")}>
-                  {def.editable ? (
+                  {def.editable && !locked ? (
                     <EditableCell
                       value={c.value}
                       computed={c.computed}
@@ -1279,7 +1283,7 @@ function SectionRows({
                         tone(c.value),
                         c.value === null && "text-ink-quiet",
                       )}
-                      title={c.info}
+                      title={locked ? FIXED_LOCKED_CELL_TEXT : c.info}
                     >
                       {fmt(c.value, def.format)}
                       {c.tag ? <CellTag tag={c.tag} /> : null}

@@ -5,7 +5,7 @@
 //   Şubeler'den (yalnız yönetici) değişir
 // - Tutarlılık: liste − yalnız ModPOS günlerinin indirimi − POS = 0 (eskiden −90)
 // - Komisyon & hakediş şube seçimine uyar
-// - Bitmiş sabit gidere yeni ay değeri girilmez
+// - Bitmiş sabit gidere yeni ay değeri girilmez (setPnlCell); aynı gider sabit gider ve harcama olarak girilince uyarı
 //
 // Test kendi geçici veritabanını açar (HESAP_UYUMU_TEST_DATABASE_URL'in sunucusunda), migration'ları uygular, sonunda
 // siler. HESAP_UYUMU_TEST_DATABASE_URL verilmezse atlanır.
@@ -210,5 +210,59 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
     });
     // Bugün'ün hakediş satırı seçiciden bağımsız (işletme geneli): Marina seçiliyken de aynı
     assert.deepEqual(await inMarina(() => commission.loadOverduePayouts()), await branchScope.withBranchScope("hepsi", () => commission.loadOverduePayouts()));
+  });
+
+  test("bitmiş sabit gider: Kasım'da biten haftalık Part-time kalemine Aralık için yeni tutar yazılmaz; var olanı düzeltmek ve silmek serbest", async () => {
+    const pnl = await import("../src/server/actions/pnl");
+    // Sahibin kararı (sözleşme §1.12): haftalık "Part-time çalışan" Kasım 2026'da kalır, Aralık'tan günlük model
+    const [pt] = await db
+      .insert(s.fixedExpenses)
+      .values({ name: "Part-time çalışan", section: "personel", period: "haftalik", amount: 2_500, startMonth: "2026-10", endMonth: "2026-11", branchId: LAFPOS_SUBE })
+      .returning();
+    const key = `fixed:${pt.id}`;
+    const refused = await pnl.setPnlCell("2026-12", key, 10_000);
+    assert.equal(refused.ok, false, "bitişten sonraki aya yeni tutar");
+    assert.match(refused.ok ? "" : refused.error, /^Part-time çalışan Kasım 2026 sonunda bitti: Aralık 2026 için yeni tutar yazılmaz\./);
+    assert.equal((await pnl.setPnlCell("2026-12", `stopaj:${pt.id}`, 100)).ok, false, "stopaj satırı da");
+    assert.equal((await db.select().from(s.pnlEntries).where(eq(s.pnlEntries.month, "2026-12"))).length, 0, "hiçbir şey yazılmadı");
+    // Bitiş ayı dahil: Kasım'a yazılır
+    const nov = await pnl.setPnlCell("2026-11", key, 9_000);
+    assert.ok(nov.ok, JSON.stringify(nov));
+    // Önceden yazılmış Aralık değeri (kural öncesi): düzeltilir, sayılmaya devam eder, silinir
+    await db.insert(s.pnlEntries).values({ month: "2026-12", rowKey: key, amount: 10_000 });
+    const fix = await pnl.setPnlCell("2026-12", key, 8_000);
+    assert.ok(fix.ok, JSON.stringify(fix));
+    const cell = (await inMarina(() => dataset.loadModel())).pnlMonth("2026-12").cells.get(key);
+    assert.deepEqual([cell?.value, cell?.overridden, cell?.outOfRange], [8_000, true, true], "motor eski değeri saymaya devam eder");
+    assert.ok((await pnl.setPnlCell("2026-12", key, null)).ok, "silmek serbest");
+    assert.equal((await pnl.setPnlCell("2026-12", key, 8_000)).ok, false, "silindikten sonra yeniden yazılmaz");
+    // Silinmiş kalemin satırına yeni tutar yazılmaz
+    const gone = await pnl.setPnlCell("2026-12", "fixed:987654", 500);
+    assert.match(gone.ok ? "" : gone.error, /^Bu sabit gider silinmiş: yeni tutar yazılmaz/);
+    await db.delete(s.pnlEntries);
+    await db.delete(s.fixedExpenses).where(eq(s.fixedExpenses.id, pt.id));
+  });
+
+  test("aynı gider iki kez: Marina'nın sabit gideri Muhasebe ve Marina'nın Kasım harcaması Muhasebe → uyarı; başka şubenin harcaması eşleşmez", async () => {
+    const [cat] = await db.insert(s.expenseCategories).values({ name: "Muhasebe", section: "genel" }).returning();
+    const [fe] = await db
+      .insert(s.fixedExpenses)
+      .values({ name: "Muhasebe", section: "genel", period: "aylik", amount: 5_000, startMonth: "2026-01", branchId: LAFPOS_SUBE })
+      .returning();
+    const [entry] = await db.insert(s.expenseEntries).values({ date: "2026-11-05", categoryId: cat.id, description: "Kasım muhasebe", amount: 5_000, branchId: LAFPOS_SUBE }).returning();
+    const title = "Aynı gider iki kez sayılıyor olabilir";
+    const all = await branchScope.withBranchScope("hepsi", () => dataset.loadModel());
+    const { alerts } = await import("../src/lib/calc/insights");
+    assert.ok(alerts(all, "2026-11").some((a) => a.title === title), "Tümü: uyarı");
+    assert.match(all.pnlMonth("2026-11").cells.get(`fixed:${fe.id}`)?.warn ?? "", /harcama olarak da girildi \(Muhasebe\)/);
+    assert.ok(alerts(await inMarina(() => dataset.loadModel()), "2026-11").some((a) => a.title === title), "Marina: uyarı");
+    // Harcama Tuzla'nın: Marina'nın kalemiyle aynı ödeme değil (veri kümesi harcamanın şubesini taşır)
+    await db.update(s.expenseEntries).set({ branchId: MODPOS_SUBE }).where(eq(s.expenseEntries.id, entry.id));
+    const after = await branchScope.withBranchScope("hepsi", () => dataset.loadModel());
+    assert.deepEqual(after.duplicateExpenses("2026-11"), []);
+    assert.equal(alerts(after, "2026-11").some((a) => a.title === title), false);
+    await db.delete(s.expenseEntries).where(eq(s.expenseEntries.id, entry.id));
+    await db.delete(s.fixedExpenses).where(eq(s.fixedExpenses.id, fe.id));
+    await db.delete(s.expenseCategories).where(eq(s.expenseCategories.id, cat.id));
   });
 });

@@ -476,6 +476,8 @@ export interface ExpenseEntry {
   docType?: "fis" | "e_arsiv" | "fatura" | "yok" | null;
   /** Cari hesaptaki faturasız bir borca aitse onun kimliği (dalga 11; vergide "belgesi yok") */
   supplierEntryId?: number | null;
+  /** Şube; null = işletme geneli (aynı gider iki kez: sabit giderin şubesiyle karşılaştırılır) */
+  branchId?: string | null;
 }
 
 /**

@@ -458,7 +458,7 @@ test("Komisyon ekranı: markası belirsiz satırı ve şube görünümünün not
 
 // --- 6. Bitmiş sabit gider ve aynı giderin iki kez girilmesi ------------------------------------------------------------
 
-import { duplicateExpenses, sameExpenseName } from "../src/lib/calc/duplicate-expense";
+import { duplicateAlertDetail, duplicateCellWarn, duplicateExpenses, sameExpenseName } from "../src/lib/calc/duplicate-expense";
 import { fixedCellRefusal } from "../src/lib/fixed-expense-rules";
 
 test("bitmiş sabit gider: bitişten sonraki aya yeni tutar yazılmaz; var olanı düzeltmek ve silmek serbest", () => {
@@ -494,8 +494,11 @@ test("aynı gider iki kez: ad eşleşmesi (Türkçe harfler sade, parantez içi 
 test("aynı gider iki kez: sabit gider ile aynı ayın harcaması, faturası ya da elle hücresi → uyarı ve hücrede işaret", () => {
   const base: Dataset = { ...excelToDataset(seed), currentMonth: "2026-12" };
   const fixedId = 9100;
+  // Kasım'ın ay bilgisi (açık gün 30): sabit gider bu ay sayılır (ay bilgisi olmayan ayda tutarı 0, iki kez sayılmaz)
+  const nov: Month = { month: "2026-11", openDays: 30, posRevenue: 100_000, discounts: 0, offRevenue: 0, cardShare: null, note: null };
   const ds: Dataset = {
     ...base,
+    months: [...base.months, nov],
     fixedExpenses: [
       ...base.fixedExpenses,
       { id: fixedId, name: "Muhasebe", section: "genel", period: "aylik", amount: 5000, note: null, active: true, startMonth: "2026-01", endMonth: null, sortOrder: 99, branchId: "tuzla" },
@@ -506,9 +509,18 @@ test("aynı gider iki kez: sabit gider ile aynı ayın harcaması, faturası ya 
   const model = createModel(ds);
   const alert = alerts(model, "2026-11").find((a) => a.title === "Aynı gider iki kez sayılıyor olabilir");
   assert.ok(alert, "uyarı var");
+  assert.equal(alert.level, "warning");
   assert.equal(plain(alert.detail), "Muhasebe: sabit gider ve Kasım ayında harcama (Muhasebe, 5.000 ₺). İkisi aynı ödemeyse birini silin ya da sabit gidere bu ay 0 yazın.");
-  assert.equal(alert.href, "/panel/gelir-gider?ay=2026-11");
-  assert.match(model.pnlMonth("2026-11").cells.get(`fixed:${fixedId}`)?.warn ?? "", /^Bu ay harcama olarak da girildi \(Muhasebe\): iki kez sayılıyor olabilir/);
+  assert.equal(alert.href, "/panel/gelir-gider?yil=2026&ay=2026-11&ara=Muhasebe");
+  const pm = model.pnlMonth("2026-11");
+  assert.equal(pm.cells.get(`fixed:${fixedId}`)?.warn, "Bu ay harcama olarak da girildi (Muhasebe): iki kez sayılıyor olabilir. İkisi aynı ödemeyse birini silin ya da bu hücreye 0 yazın.");
+  // Yalnız uyarı: tutarlar değişmez (sabit gider 5.000 ve harcama 5.000 genel giderde)
+  const plainModel = createModel({ ...ds, expenseEntries: [] });
+  assert.equal(pm.sections.genel - plainModel.pnlMonth("2026-11").sections.genel, 5000);
+  // Sabit gidere bu ay 0 yazılınca (ikisi aynı ödeme) uyarı kalkar
+  const zeroed = createModel({ ...ds, pnlEntries: [...base.pnlEntries, { month: "2026-11", rowKey: `fixed:${fixedId}`, amount: 0, note: null }] });
+  assert.deepEqual(zeroed.duplicateExpenses("2026-11"), []);
+  assert.equal(alerts(zeroed, "2026-11").some((a) => a.title === "Aynı gider iki kez sayılıyor olabilir"), false);
   const found = model.duplicateExpenses("2026-11");
   assert.deepEqual(found.map((d) => [d.fixedId, d.matches.map((m) => [m.kind, m.label])]), [[fixedId, [["harcama", "Muhasebe"]]]]);
   // Başka şubenin harcaması eşleşmez; başka ayın da
@@ -531,9 +543,46 @@ test("aynı gider iki kez: sabit gider ile aynı ayın harcaması, faturası ya 
     pnlEntries: [...base.pnlEntries, { month: "2026-11", rowKey: "manual:dogalgaz", amount: 1200, note: null }],
   });
   assert.deepEqual(manual.duplicateExpenses("2026-11").flatMap((d) => d.matches.map((m) => [m.kind, m.label])), [["elle", "DOĞALGAZ"]]);
+  // Adı kısa kalem ("Su") elle satırın anahtarıyla tanınır (manual:su "SU GİDERİ")
+  const water = createModel({
+    ...manual.ds,
+    fixedExpenses: [...base.fixedExpenses, { ...ds.fixedExpenses.at(-1)!, name: "Su", section: "faturalar" }],
+    pnlEntries: [...base.pnlEntries, { month: "2026-11", rowKey: "manual:su", amount: 900, note: null }],
+  });
+  assert.deepEqual(water.duplicateExpenses("2026-11").flatMap((d) => d.matches.map((m) => [m.kind, m.label])), [["elle", "SU GİDERİ"]]);
+  assert.match(water.pnlMonth("2026-11").cells.get(`fixed:${fixedId}`)?.warn ?? "", /^Bu ay Gelir-gider'e elle de yazıldı \(SU GİDERİ\)/);
+  // Ayın Gelir-gider'e girmeyen faturası (kafe dışı, bağlı olmayan kategori) eşleşmez
+  const separate = createModel({
+    ...ds,
+    expenseEntries: [],
+    invoices: [...base.invoices, { id: 9901, date: "2026-11-30", supplier: "Muhasebe Danışmanlık", description: null, invoiceNo: null, category: "Karaoke box", amount: 5000, discount: 0, payable: 6000, unpaid: false, note: null }],
+  });
+  assert.deepEqual(separate.duplicateExpenses("2026-11"), []);
   // Saf: bitmiş (tutarı olmayan) kalem uyarmaz
   assert.deepEqual(
     duplicateExpenses({ fixed: [{ id: 1, name: "Muhasebe", amount: 0, branchId: null }], invoices: [], expenses: [{ label: "Muhasebe", amount: 100, branchId: null }], manual: [] }),
     [],
   );
+});
+
+test("aynı gider iki kez: metinler (birden çok eşleşme, aynı türden aynı ad bir kez, en çok üç kalem)", () => {
+  const d = {
+    fixedId: 1,
+    fixedName: "Muhasebe",
+    matches: [
+      { kind: "harcama" as const, label: "Muhasebe", amount: 2500 },
+      { kind: "harcama" as const, label: "Muhasebe", amount: 2500 },
+      { kind: "fatura" as const, label: "Yıldız Muhasebe Ltd. Şti.", amount: 5000.5 },
+    ],
+  };
+  assert.equal(
+    duplicateCellWarn(d),
+    "Bu ay harcama olarak da girildi (Muhasebe), faturası da var (Yıldız Muhasebe Ltd. Şti.): iki kez sayılıyor olabilir. İkisi aynı ödemeyse birini silin ya da bu hücreye 0 yazın.",
+  );
+  assert.equal(
+    plain(duplicateAlertDetail([d], "2026-11")),
+    "Muhasebe: sabit gider ve Kasım ayında harcama (Muhasebe, 5.000 ₺), fatura (Yıldız Muhasebe Ltd. Şti., 5.000,50 ₺). İkisi aynı ödemeyse birini silin ya da sabit gidere bu ay 0 yazın.",
+  );
+  const many = [1, 2, 3, 4, 5].map((id) => ({ fixedId: id, fixedName: `Kalem ${id}`, matches: [{ kind: "elle" as const, label: "DİĞER", amount: 100 }] }));
+  assert.match(plain(duplicateAlertDetail(many, "2026-12")), /^Kalem 1: sabit gider ve Aralık ayında Gelir-gider'e elle yazılan tutar \(DİĞER, 100 ₺\); Kalem 2: .*; Kalem 3: .* ve 2 kalem daha\. /);
 });

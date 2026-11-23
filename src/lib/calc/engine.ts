@@ -8,6 +8,7 @@ import {
 } from "../constants";
 import { MONTH_TOTALS_LOCKED_TEXT } from "../branches";
 import { listDiscountOf } from "../cash-month";
+import { duplicateCellWarn, duplicateExpenses as findDuplicateExpenses, type DuplicateExpense } from "./duplicate-expense";
 import { channelOf } from "../commission/channels";
 import { paidWithholdingRate } from "../tax/rules";
 import { money, monthLabel, num, pct, tl } from "../format";
@@ -1194,6 +1195,12 @@ export function createModel(ds: Dataset) {
     return listDiscountOf(monthInfo.get(month), ds.lafposSales?.countFrom ?? null);
   }
 
+  /** Ayın "aynı gider iki kez" bulguları (pnlMonth'un hesabından; duplicate-expense.ts) */
+  function duplicateExpenses(month: string): DuplicateExpense[] {
+    pnlMonth(month);
+    return duplicateCache.get(month) ?? [];
+  }
+
   // --- laffogato.net online satışları (docs/SITE-SATIS.md) -------------------------
   // Ay başına bir kayıt; kafe satırları menü bağlantısıyla (products.site_menu_id + yuva) ürünlere eşlenir. ModPOS
   // satışlarından (sales_lines) ayrı bir kaynaktır: satış raporuna yazılmaz, tüketimde ve kâr-zararda ayrı görünür.
@@ -1947,6 +1954,14 @@ export function createModel(ds: Dataset) {
     byCat.set(e.categoryId, (byCat.get(e.categoryId) ?? 0) + e.amount);
     expenseByMonth.set(m, byCat);
   }
+  /** Ayın harcama kayıtları (aynı gider iki kez: duplicateExpenses) */
+  const expenseEntriesByMonth = new Map<string, NonNullable<Dataset["expenseEntries"]>>();
+  for (const e of ds.expenseEntries ?? []) {
+    const m = monthOfDate(e.date);
+    const list = expenseEntriesByMonth.get(m) ?? [];
+    list.push(e);
+    expenseEntriesByMonth.set(m, list);
+  }
   /** Kategorinin ilk kaydının ayı: "her ay girilir" hatırlatması bundan önceki aylar için yapılmaz */
   const expenseFirstMonth = new Map<number, string>();
   for (const e of ds.expenseEntries ?? []) {
@@ -2204,6 +2219,8 @@ export function createModel(ds: Dataset) {
   }
 
   const pnlCache = new Map<string, PnlMonthCalc>();
+  /** Ayın "aynı gider iki kez" bulguları (pnlMonth hesaplar; duplicateExpenses okur) */
+  const duplicateCache = new Map<string, DuplicateExpense[]>();
   function pnlMonth(month: string): PnlMonthCalc {
     let pm = pnlCache.get(month);
     if (pm) return pm;
@@ -2370,6 +2387,29 @@ export function createModel(ds: Dataset) {
       cells.set(`expense:${x.cat.id}`, { value: x.total, computed: x.total, overridden: false });
       sections[x.cat.section] += x.total;
     }
+    // Aynı gider iki kez (23 Kasım 2026; duplicate-expense.ts): bu ay sayılan sabit gider kalemi aynı adla bir faturada
+    // (Gelir-gider'e giren), harcamada ya da elle yazılmış hücrede de varsa hücrede işaret; Genel bakış'ta uyarı (alerts).
+    // Tutar değişmez
+    const catById = new Map(expenseCats.map((c) => [c.id, c]));
+    const linkedInvoiceCats = new Set(expenseCats.filter((c) => invoiceCategoryMappable(c.invoiceCategory)).map((c) => c.invoiceCategory!));
+    const duplicates = findDuplicateExpenses({
+      fixed: allFixed.map((fe) => ({ id: fe.id, name: fe.name, amount: cells.get(`fixed:${fe.id}`)?.value ?? 0, branchId: fe.branchId ?? null })),
+      invoices: invs
+        .filter((i) => GOODS_CATEGORIES.includes(i.category) || i.category === COMMISSION_CATEGORY || linkedInvoiceCats.has(i.category))
+        .map((i) => ({ supplier: i.supplier, category: i.category, amount: invoiceNet(i) })),
+      expenses: (expenseEntriesByMonth.get(month) ?? []).map((e) => ({
+        label: catById.get(e.categoryId)?.name ?? "Harcama",
+        description: e.description,
+        amount: e.amount,
+        branchId: e.branchId ?? null,
+      })),
+      manual: MANUAL_PNL_ROWS.map((r) => ({ label: r.label, key: r.key, amount: overrides.get(r.key) ?? 0 })),
+    });
+    for (const d of duplicates) {
+      const cell = cells.get(`fixed:${d.fixedId}`);
+      if (cell) cell.warn = duplicateCellWarn(d);
+    }
+    duplicateCache.set(month, duplicates);
 
     // Komisyonlar. Banka POS komisyonu yalnız banka kartı payıyla (yemek kartınınki aşağıda kendi faturalarıyla; E-43)
     const revenue = info?.posRevenue ?? null;
@@ -2713,6 +2753,11 @@ export function createModel(ds: Dataset) {
     listPeriod,
     /** Ayın satış listesinden düşülecek indirim: yalnız ModPOS listesi günlerininki (LafPOS satırları indirimden sonra) */
     listDiscounts,
+    /**
+     * Ayın "aynı gider iki kez" bulguları: sabit gider kalemi aynı adla fatura, harcama ya da elle hücre olarak da sayılıyor
+     * (duplicate-expense.ts; Genel bakış uyarısı ve Gelir-gider hücresinin işareti)
+     */
+    duplicateExpenses,
     /** Ayın online satışı reçeteye göre (gelir, malzeme, brüt kâr); çekilmemiş ayda null */
     onlineMonth,
     /** Online satışın ürün başına adedi (eşlenen kafe satırları ve seçenek ürünleri) */

@@ -8,6 +8,7 @@ import {
 } from "../constants";
 import { coveredByAllocations, isPartiallyPaid, openBalance, type BalanceInvoice } from "../cari/balance";
 import { isUnpriced } from "../count-item";
+import { DUPLICATE_ALERT_TITLE, duplicateAlertDetail } from "./duplicate-expense";
 import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, uncountedCogsText, type ListPeriod, type Model, type MonthlyExpensePlan, type OnlineMonthCalc, type ProductCalc, type StockSheet } from "./engine";
 import { monthLabel, num, tl } from "../format";
 import { OPTION_PRODUCTS } from "../site-sales/calc";
@@ -1115,6 +1116,13 @@ export function alerts(model: Model, month: string): Alert[] {
       detail: `Sayım olmadan ${uncountedCogsText(model.pnlMonth(prev).cogsMethod)}.`,
       href: `/panel/sayim?ay=${prev}`,
     });
+  }
+  // Aynı gider iki kez (23 Kasım 2026): sabit gider kalemi bu ay aynı adla fatura, harcama ya da elle hücre olarak da
+  // sayılıyor; Gelir-gider'deki hücre de işaretli (engine pnlMonth)
+  const duplicates = model.duplicateExpenses(month);
+  if (duplicates.length) {
+    const q = new URLSearchParams({ yil: month.slice(0, 4), ay: month, ...(duplicates.length === 1 ? { ara: duplicates[0].fixedName } : {}) });
+    out.push({ level: "warning", title: DUPLICATE_ALERT_TITLE, detail: duplicateAlertDetail(duplicates, month), href: `/panel/gelir-gider?${q}` });
   }
   const unpaid = model.ds.invoices.filter(isOpenInvoice);
   if (unpaid.length) {
