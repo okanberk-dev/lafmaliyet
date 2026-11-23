@@ -370,6 +370,13 @@ test("kaynak: veri kümesi geçiş günü yokken LafPOS'u hiç okumaz; Satışla
   assert.match(dataset, /readCoverage\(storedCoverage\(SALES_COVERAGE_KEY\), storedCoverage\(SALES_COVERAGE_BRANCH_KEY\), branchId\)/);
   assert.match(read("src/server/data/stock-estimate.ts"), /readCoverage\(stored\(SALES_COVERAGE_KEY\), stored\(SALES_COVERAGE_BRANCH_KEY\), STOCK_ESTIMATE_BRANCH\)/);
   assert.doesNotMatch(dataset + read("src/server/data/stock-estimate.ts"), /parseCoverage\(/, "ortak kayıt yalnız readCoverage'dan");
+  // İçe aktarma kartının "… tarihine kadar"ı yazılan şubenin (currentWriteBranch; "Tümü"de Tuzla) listesinden: "Tümü"de
+  // Marina'nın listesinin günü (lafpos.modpos) ya da son yükleyenin ortak kaydı gösterilmez
+  assert.match(dataset, /writeCoverage: coverageOf\(writeBranch\),/);
+  const salesPage = read("src/app/panel/satislar/page.tsx");
+  assert.match(salesPage, /const writeHasList = sales\.lines\.some\(\(l\) => !l\.line\.lafpos && \(l\.line\.branchId \?\? DEFAULT_BRANCH_ID\) === writeId\);/);
+  assert.match(salesPage, /const coveredThrough = writeHasList\n\s+\? \(model\.ds\.writeCoverage\?\.\[month\] \?\? null\)/);
+  assert.match(salesPage, /coveredThrough=\{coveredThrough\}/);
   // Süren ayın kasa raporundan sonraki LafPOS günleri bekler (kasa raporlarının son günü; LafPOS'un yedek ay satırları,
   // B09 G6, rapor sayılmaz)
   assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);

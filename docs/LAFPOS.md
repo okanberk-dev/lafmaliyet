@@ -152,11 +152,14 @@ son günü, aşağıda "Şubenin kendi kaydı") belirleyicidir:
   ayın tamamı; şubenin listesi temizlenince şubenin ayı silinir) ve panelin ay kuralı şubenin kendi kaydını okur
   (`readCoverage`, `src/lib/sales-coverage.ts`): LafPOS'un sayıldığı ilk gün, geçiş ayının çakışması ve liste ↔ Z her
   görünümde ("Tümü" dahil) ve tahmini stokta Marina'nın kaydından; şube seçiliyken listeye dayanan hesapların dönemi
-  (`listPeriod`, "… tarihine kadar") şubenin kaydından. Ortak kayıt yalnız "Tümü"nün liste dönemi içindir. Marina 21
-  Kasım'a kadar yükledi, Tuzla aynı aya 27 Kasım'a kadar ya da Aralık'ta ayın tamamını yükledi: Marina'nın LafPOS'u yine
-  22 Kasım'dan sayılır. Şube kaydı olmayan ayda (bu kayıttan önce yüklenmiş liste) ortak kayıt okunur; Satışlar ortak
-  kaydı ezmeden önce o ayda listesi olup kendi kaydı olmayan şubelere ortak kaydın o anki gününü yazar
-  (`legacyCoveragePins`), eski listenin son günü de öteki şubenin yüklemesiyle kaybolmaz.
+  (`listPeriod`, "… tarihine kadar") şubenin kaydından. Satışlar'ın içe aktarma kartındaki "… tarihine kadar" yazılan
+  şubenin listesinin günüdür (`writeCoverage`): "Tümü"de içe aktarma Tuzla'ya yazar ve "Değiştir" yalnız onun listesini
+  değiştirir, kart Tuzla'nın gününü gösterir (Tuzla'nın o ayda listesi yoksa geçiş ayından itibaren Marina'nın listesinin
+  gününü). Ortak kayıt yalnız "Tümü"nün liste dönemi içindir. Marina 21 Kasım'a kadar yükledi, Tuzla aynı aya 27 Kasım'a
+  kadar ya da Aralık'ta ayın tamamını yükledi: Marina'nın LafPOS'u yine 22 Kasım'dan sayılır. Şube kaydı olmayan ayda
+  (bu kayıttan önce yüklenmiş liste) ortak kayıt okunur; Satışlar ortak kaydı ezmeden önce o ayda listesi olup kendi
+  kaydı olmayan şubelere ortak kaydın o anki gününü yazar (`legacyCoveragePins`), eski listenin son günü de öteki şubenin
+  yüklemesiyle kaybolmaz.
 - **Liste geçiş gününü aşıyorsa** (geçiş günü sonradan, liste zaten yüklüyken seçildi) LafPOS'un o günleri sayılmaz,
   Satışlar söyler: "Kasım listesi 20 Kasım gününe kadar: LafPOS'un 10–20 Kasım günleri … sayılmıyor. LafPOS'u saymak için
   yalnız 1–9 Kasım listesini yükleyin."
@@ -790,7 +793,7 @@ Anahtar yokken üç uç da `503` döner; panelin geri kalanı ve Kasa raporu esk
 | `src/server/closed-days.ts` | Kapalı gün kanıtında LafPOS'un gün sonu, satışlı gün sonunun kapalı işareti kaldırması (`onLafposDaySaved`) |
 | `src/server/data/cash-reports.ts` | `tillRows`: raporsuz LafPOS gününün ay satırı (`lafposTillRows`) |
 | `tests/lafpos.test.ts`, `tests/lafpos-db.test.ts` | İmza, gövde, ürün sırası, form ve kasa eşlemesi, geçiş günü, kartın özeti, altın gövde (`tests/fixtures/lafpos-gun.golden.json`: LafPOS `tests/fixtures/lafmaliyet-gun.golden.json`'ın bayt bayt kopyası, şubeli); veritabanında yazım, idempotent değişim, Z çakışması (409), ağız ve uçlar |
-| `tests/lafpos-satis.test.ts`, `tests/lafpos-satis-db.test.ts` | Her gün tek kaynak (özellik testi), birleştirme, model (tüketim, karaoke KDV'si), Satışlar'ın bandı, yükleme kuralı, sayılan ilk gün Marina'nın kendi kapsam kaydından; veritabanında geçiş günü boşken bayt bayt aynılık, geçiş ve LafPOS ayları, kapsam, Tuzla'nın aynı aya ya da Aralık'ta yüklediği liste Marina'nın LafPOS günlerini düşürmez (eski liste dahil), yükleme reddi ve kırpma, sonradan bağlama, silme engeli, satış tahmini |
+| `tests/lafpos-satis.test.ts`, `tests/lafpos-satis-db.test.ts` | Her gün tek kaynak (özellik testi), birleştirme, model (tüketim, karaoke KDV'si), Satışlar'ın bandı, yükleme kuralı, sayılan ilk gün Marina'nın kendi kapsam kaydından; veritabanında geçiş günü boşken bayt bayt aynılık, geçiş ve LafPOS ayları, kapsam, Tuzla'nın aynı aya ya da Aralık'ta yüklediği liste Marina'nın LafPOS günlerini düşürmez (eski liste dahil), içe aktarma kartının günü yazılan şubenin ("Tümü"de Tuzla'nın), yükleme reddi ve kırpma, sonradan bağlama, silme engeli, satış tahmini |
 | `tests/lafpos-kasa.test.ts`, `tests/lafpos-kasa-db.test.ts` | Kasa raporunun LafPOS'la uzlaşması (B09): farklı yazılanlar ve metinler, gün içinde çıkan, kapalı gün kanıtı, e-posta anahtarı, ay satırı, geç rapor ve fotoğraf kanıtı, kart; veritabanında geçiş günü boşken bugünkü gibi, kapalı işaretin kalkması, e-posta, geç rapor ve kartı |
 | `tests/lafpos-komisyon.test.ts`, `tests/lafpos-ikram.test.ts`, `tests/lafpos-komisyon-ikram-db.test.ts` | Ödeme kanalları komisyona (B10, E-37) ve ikram tüketime (E-38): geçiş günü boşken bugünkü gibi, LafPOS ayı, geçiş ayı, kanalsız ödeme, eksik gün; ikramın kayıtlı tüketime bir kez girmesi, panel ürün ikramının sayılmaması ve reddi, kasa özeti ve e-postası |
 | `tests/lafpos-modpos.test.ts`, `tests/lafpos-modpos-db.test.ts` | ModPOS dönemi: isteğin denetimi (503 / 401 / 400 / 409), günün biçimi, kaynak ve bilinmeyen indirim, kapanmış föy, KDV sırası, pencere, ürün bloğu (eksi satır eksi gitmez, toplam değişmez; son gün şubenin kendi kapsam kaydından); veritabanında Marina 13–21 Kasım 2026'nın rakamları (kasa raporu ve föy, öncelik, föy günü Ay rakamına yedek'ten bağımsız, panelin ay kuralı değişmez, açık föy, Tuzla ve geçiş günü sonrası dışarıda; Tuzla'nın aynı aya sonradan yüklediği liste Marina'nın bloğunu kaydırmaz) |

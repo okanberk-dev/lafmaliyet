@@ -9,6 +9,7 @@ import { SalesSourceLine } from "@/components/panel/sales-source-line";
 import { GrowthPill, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { listDaysText } from "@/lib/calc/insights";
 import { manualOf, MONTH_FIELDS } from "@/lib/cash-month";
 import { RECIPE_COST_NOTE } from "@/lib/constants";
@@ -154,6 +155,17 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   const modposLines = lafpos?.source === "lafpos" ? (lafpos.modpos?.lines ?? 0) : rows.filter((r) => r.lafposDays === null).length;
   // Tablodaki LafPOS satırları (geçiş ayında kartın metinleri iki kaynağı ayrı söyler)
   const lafposLines = rows.filter((r) => r.lafposDays !== null).length;
+  // Yüklü listenin son günü (kartın "… tarihine kadar"ı): yeni yüklemenin değiştireceği ya da ekleneceği liste, yani
+  // yazılan şubeninki. "Tümü"de içe aktarma Tuzla'ya yazar ("Değiştir" yalnız onun listesini değiştirir): Tuzla'nın ayda
+  // listesi varsa onun kendi kaydı (writeCoverage; ay yoksa ayın tamamı), Marina'nın listesinin günü (lafpos.modpos) ya
+  // da son yükleyenin ortak kaydı değil. Yazılan şubenin listesi yoksa geçiş gününden sonra LafPOS'un şubesinin listesi,
+  // öncesinde görünümün kapsamı
+  const writeHasList = sales.lines.some((l) => !l.line.lafpos && (l.line.branchId ?? DEFAULT_BRANCH_ID) === writeId);
+  const coveredThrough = writeHasList
+    ? (model.ds.writeCoverage?.[month] ?? null)
+    : lafpos
+      ? (lafpos.modpos?.through ?? null)
+      : (model.ds.salesCoverage?.find((c) => c.month === month)?.through ?? null);
 
   return (
     <>
@@ -279,7 +291,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           products={products}
           hasInfo={hasInfo}
           running={runningImport}
-          coveredThrough={lafpos ? (lafpos.modpos?.through ?? null) : (model.ds.salesCoverage?.find((c) => c.month === month)?.through ?? null)}
+          coveredThrough={coveredThrough}
           listDays={listPeriod ? listDaysText(listPeriod) : null}
           lafpos={
             lafpos?.source === "lafpos"

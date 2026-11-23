@@ -407,6 +407,12 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
         [["2026-11", "2026-11-27"]],
         "Tuzla'nın listesi 27 Kasım'a kadar (Marina'nın 21 Kasım'ı değil)",
       );
+      // İçe aktarma kartının "… tarihine kadar"ı yazılan şubenin listesinden: "Tümü"de içe aktarma Tuzla'ya yazar, gün
+      // Tuzla'nın 27 Kasım'ı (Marina'nın 21 Kasım'ı da, son yükleyenin ortak kaydı da değil); şube seçiliyken şubenin kendisi
+      const allAfter = await branchScope.withBranchScope(ALL_BRANCHES, () => dataset.loadDataset());
+      assert.deepEqual(allAfter.writeCoverage, { "2026-11": "2026-11-27" }, "Tümü: yazılan şube Tuzla");
+      assert.deepEqual((await dataset.loadDataset()).writeCoverage, { "2026-11": "2026-11-21" }, "Marina seçiliyken Marina'nın kaydı");
+      assert.deepEqual(tuzlaView.writeCoverage, { "2026-11": "2026-11-27" }, "Tuzla seçiliyken Tuzla'nın kaydı");
     });
 
     lafposTest("Tuzla Kasım'ın tamamını Aralık'ta yükleyince (ortak kayıttan Kasım silinir) Marina'nın LafPOS'u yine 22 Kasım'dan", async () => {

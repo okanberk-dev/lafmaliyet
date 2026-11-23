@@ -16,7 +16,7 @@ import { isLafposBranch, LAFPOS_BRANCH_ID, scopeSwitchDay } from "@/lib/lafpos/s
 import { addDays } from "@/lib/reminders";
 import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import type { SiteSalesMonth } from "@/lib/site-sales/schema";
-import { branchWhere, branchWhereWithShared, currentBranchScope, withBranchScope } from "@/server/branch-scope";
+import { branchWhere, branchWhereWithShared, currentBranchScope, currentWriteBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { loadSiteSales } from "@/server/site-sales/sync";
@@ -51,7 +51,8 @@ export async function loadDataset(opts: DatasetOptions = {}): Promise<Dataset> {
 
 async function readDataset(): Promise<Dataset> {
   const db = getDb();
-  const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+  // Satışlar'ın içe aktarmasının yazdığı şube (seçili şube, "Tümü"de Tuzla): kartın listesinin son günü (writeCoverage)
+  const [scope, branches, writeBranch] = await Promise.all([currentBranchScope(), listBranches(), currentWriteBranch()]);
   const branch = scope === ALL_BRANCHES ? null : (branches.find((b) => b.id === scope) ?? null);
   const [
     storedSettings,
@@ -191,7 +192,8 @@ async function readDataset(): Promise<Dataset> {
   const reportRows = till.filter(isReportRow);
   // Listelerin son günü (src/lib/sales-coverage.ts readCoverage): şube seçiliyken şubenin kendi kaydı (Tuzla'nın listesi
   // Marina'nın son gününü kaydırmaz), "Tümü"de ayın ortak kaydı. LafPOS'un sayıldığı ilk gün ve geçiş ayının çakışması her
-  // görünümde Marina'nın kendi kaydından (lafposCoverage)
+  // görünümde Marina'nın kendi kaydından (lafposCoverage). Satışlar'ın içe aktarma kartının "… tarihine kadar"ı yazılan
+  // şubenin kaydından (writeCoverage; "Tümü"de Tuzla'nın)
   const storedCoverage = (key: string) => coverageRows.find((r) => r.key === key)?.value;
   const coverageOf = (branchId: string | null) => readCoverage(storedCoverage(SALES_COVERAGE_KEY), storedCoverage(SALES_COVERAGE_BRANCH_KEY), branchId);
   const coverage = coverageOf(scope === ALL_BRANCHES ? null : scope);
@@ -273,6 +275,7 @@ async function readDataset(): Promise<Dataset> {
     monthTotalsLocked: monthTotalsLocked(scope, branches),
     ...(waterSales ? { waterSales } : {}),
     salesCoverage,
+    writeCoverage: coverageOf(writeBranch),
     ingredients: ingredients.map((i) => ({
       id: i.id,
       name: i.name,
