@@ -191,10 +191,28 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
     const marina = await inMarina(() => commission.loadCommissionReport());
     assert.equal(groupOf(marina, "meal", "2026-11")?.zTotal, 0, "Marina'nın Z'sinde yemek kartı yok");
     assert.equal(rowOf(marina, "pluxee", "2026-11")?.sales, null);
+    // Marina 13 Kasım'da açıldı (kütükte açılış günü yok: sonradan açılan şube): açılış ayı "kasa raporları 13 Kasım'da
+    // başladı" diye yarım sayılmaz (eskiden partialFrom 13 Kasım, şubenin bütün kanalları "Satış bilinmiyor")
+    assert.equal(groupOf(marina, "meal", "2026-11")?.partialFrom, null);
+    assert.doesNotMatch(rowOf(marina, "pluxee", "2026-11")?.salesReason ?? "", /kasa raporları/);
     // Tuzla seçili: LafPOS okunmaz (geçiş günü Marina'nın), Z Tuzla'nın
     const tuzla = await branchScope.withBranchScope(MODPOS_SUBE, () => commission.loadCommissionReport());
     assert.equal(tuzla.switchDay, null);
     assert.equal(groupOf(tuzla, "meal", "2026-11")?.zTotal, 1600);
+    // Geçiş ayından itibaren Tuzla'nın Z'si de tek karta yığılmaz ("Tümü"yle aynı): föyde 600 Pluxee, 1.000 markası belirsiz.
+    // Eskiden 1.600 (tek kart) × %10 = 160 ₺ pay, işletmenin bütün faturası 60 ₺
+    assert.deepEqual(rowOf(tuzla, "pluxee", "2026-11")?.sales, { amount: 600, source: "lafpos", foy: 600 });
+    assert.deepEqual(groupOf(tuzla, "meal", "2026-11")?.unbranded, { amount: 1000, pre: 0, modpos: 1000, loose: 0, fallback: 0 });
+    const tuzlaBoth = await branchScope.withBranchScope(MODPOS_SUBE, () => commission.loadCommissionReports());
+    assert.ok(tuzlaBoth.branch, "Tuzla'nın raporu");
+    assert.deepEqual(branchCommissionShare(tuzlaBoth.all, tuzlaBoth.branch, "2026-11").find((x) => x.channel === "pluxee"), {
+      channel: "pluxee",
+      label: "Pluxee",
+      kind: "meal",
+      sales: 600,
+      rate: 0.1,
+      commission: 60,
+    });
     // Ekran şube seçiliyken iki raporu okur: oran işletmenin, şubenin payı satış × oran
     const both = await inMarina(() => commission.loadCommissionReports());
     assert.equal(both.scope, LAFPOS_SUBE);

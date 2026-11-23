@@ -306,6 +306,70 @@ test("POS komisyonu: kasa kartı olmayan ay (Excel) eski formüllerle kalır", (
   assert.ok(Math.abs((pm.cells.get("commission:pos")?.value ?? 0) - pm.revenue! * st.komisyon * st.kartOrani) < 1e-6);
 });
 
+import { salesPosSub } from "../src/app/panel/dashboard-breakdowns";
+import { salesBreakdowns } from "../src/app/panel/satislar/breakdowns";
+import { POS_COMMISSION_SAME_NOTE, posCommissionNote } from "../src/lib/calc/engine";
+
+test("POS komisyonu: süren ayda liste kasa raporlarından kısaysa Satışlar listenin günleriyle; metin 'Gelir-gider'le aynı' demez", () => {
+  // Tuzla, Aralık 2026 sürüyor: kasa raporları 1–20 Aralık (her gün kart 1.000), ModPOS listesi 15 Aralık'a kadar, oran %2
+  const base: Dataset = { ...excelToDataset(seed), currentMonth: "2026-12" };
+  const rows: TillRow[] = Array.from({ length: 20 }, (_, i) => ({
+    date: `2026-12-${String(i + 1).padStart(2, "0")}`,
+    zTotal: 2000,
+    card: 1000,
+    mealCard: 0,
+    discounts: 0,
+    offRevenue: 0,
+    payments: 2000,
+    branchId: "tuzla",
+  }));
+  const [dec] = tillMonths(rows, "2026-12-20", undefined, undefined, undefined, undefined, undefined, null);
+  const [upto] = tillMonths(rows.filter((r) => r.date <= "2026-12-15"), "2026-12-15", "2026-12-01", undefined, undefined, "2026-12-01", undefined, null);
+  const sept = base.salesLines.filter((l) => l.month === "2026-09");
+  const model = createModel({
+    ...base,
+    branchView: { id: "tuzla", name: "Tuzla", kind: "fiziksel" },
+    branchRates: [{ id: "tuzla", name: "Tuzla", posRate: 0.02 }],
+    salesLines: [...base.salesLines, { ...sept[0], id: 99001, month: "2026-12", revenue: 30_000, branchId: "tuzla" }],
+    months: [...base.months, resolveMonth("2026-12", undefined, dec)],
+    salesCoverage: [{ month: "2026-12", through: "2026-12-15", till: upto }],
+  });
+  const m = "2026-12";
+  // Gelir-gider ayın bugüne kadarki kasa raporlarıyla (20 gün × 1.000 × %2), Satışlar listenin günleriyle (15 gün)
+  assert.equal(model.pnlMonth(m).cells.get("commission:pos")?.value, 400);
+  assert.equal(model.posCommission(m)?.amount, 400);
+  assert.equal(round2(model.monthSales(m).commission), 300);
+  const spc = model.salesPosCommission(m);
+  assert.ok(spc, "kasa kartı olan ay");
+  assert.equal(spc.amount, 300);
+  assert.equal(spc.month.amount, 400);
+  assert.deepEqual(spc.period, { from: "2026-12-01", through: "2026-12-15" });
+  // Metinler iki tutarın neden farklı olduğunu söyler (eskiden "Gelir-gider'le aynı", 300 ↔ 400)
+  const sub = salesBreakdowns(model.monthSales(m), model.settings, m, model.cardShareOf(m).rate, spc).revenue.flatMap((g) => g.rows).find((r) => r.key === "commission")?.sub ?? "";
+  assert.doesNotMatch(sub, /Gelir-gider'le aynı/);
+  assert.equal(plain(sub), "Banka POS komisyonunun ciro payı (listenin günleri 1–15 Aralık: kart × şubenin POS oranı, yemek kartı hariç; Gelir-gider'de ayın tamamı 400 ₺); brüt kârdan düşülür");
+  assert.equal(
+    plain(posCommissionNote(spc)),
+    "Banka POS komisyonu satış listesinin günleri (1–15 Aralık) için: o günlerin kasa raporlarındaki banka kartı (yemek kartı hariç) × şubenin POS oranı, satırlara ciro payıyla dağıtılır. Gelir-gider ayın bugüne kadarki bütün kasa raporlarıyla sayar (400 ₺); liste kasa raporlarına yetişince iki tutar aynı olur. Yemek kartlarının komisyonu kendi faturalarıyla sayılır.",
+  );
+  // Ay bitip liste kasaya yetişince (Marina Kasım) tutar ve metin Gelir-gider'le aynı
+  const { model: nov } = marinaView();
+  const full = nov.salesPosCommission("2026-11");
+  assert.ok(full, "Marina Kasım");
+  assert.deepEqual([full.amount, full.month.amount, full.period], [495.49, 495.49, null]);
+  assert.equal(posCommissionNote(full), POS_COMMISSION_SAME_NOTE);
+  const fullSub = salesBreakdowns(nov.monthSales("2026-11"), nov.settings, "2026-11", nov.cardShareOf("2026-11").rate, full).revenue.flatMap((g) => g.rows).find((r) => r.key === "commission")?.sub;
+  assert.equal(fullSub, "Banka POS komisyonunun ciro payı (Gelir-gider'le aynı: kart × şubenin POS oranı, yemek kartı hariç); brüt kârdan düşülür");
+  // Genel bakış'ın komisyon dökümü (alt yazı) aynı ayrımla
+  assert.equal(plain(salesPosSub(spc) ?? ""), "Kart × şubenin POS oranı (yemek kartı hariç), listenin günleri 1–15 Aralık; Gelir-gider'de ayın tamamı 400 ₺");
+  assert.equal(salesPosSub(full), "Kart × şubenin POS oranı (yemek kartı hariç), Gelir-gider'le aynı");
+  assert.equal(salesPosSub(null), null);
+  // Satışlar ve Genel bakış Satışlar'ın tutarını ve onun metnini kullanır
+  assert.match(read("src/app/panel/satislar/page.tsx"), /model\.salesPosCommission\(month\)\)/);
+  assert.match(read("src/app/panel/page.tsx"), /posCommissionNote\(salesPos\)/);
+  assert.match(read("src/app/panel/dashboard-breakdowns.ts"), /model\.salesPosCommission\(d\.month\)/);
+});
+
 // --- 5. Komisyon & hakediş: markası belirsiz tutar tek karta yığılmaz, şube görünümü ------------------------------------
 
 import { sourceLabel } from "../src/app/panel/komisyonlar/texts";
@@ -313,6 +377,7 @@ import { lafposChannel } from "../src/lib/commission/channels";
 import {
   branchCommissionShare,
   buildCommissionReport,
+  commissionScopeDays,
   groupOf,
   rowOf,
   type CommissionInput,
@@ -428,7 +493,83 @@ test("şube görünümü: satış şubenin, oran işletmenin (faturalar ortak); 
   assert.deepEqual(p, { channel: "pluxee", label: "Pluxee", kind: "meal", sales: 1500, rate: 0.008, commission: 12 });
 });
 
-import { commissionBranchNote, unbrandedLine } from "../src/app/panel/komisyonlar/texts";
+test("şube görünümü: ModPOS'ta kalan şube (Tuzla) seçiliyken de geçiş ayından itibaren Z tek karta yığılmaz", () => {
+  // Loader'ın Tuzla kapsamı: yalnız Tuzla'nın kasa raporları, LafPOS okunmaz; geçiş günü Marina'nın (commissionScopeDays)
+  assert.deepEqual(commissionScopeDays("2026-11-01", "tuzla"), { lafpos: null, modpos: "2026-11-01" });
+  assert.deepEqual(commissionScopeDays("2026-11-01", "marina"), { lafpos: "2026-11-01", modpos: null });
+  assert.deepEqual(commissionScopeDays("2026-11-01", "hepsi"), { lafpos: "2026-11-01", modpos: null });
+  assert.deepEqual(commissionScopeDays(null, "tuzla"), { lafpos: null, modpos: null });
+  const tuzlaTill = [...tillDays("2026-10-01", "2026-10-31", { mealCard: 100, online: 0, branchId: "tuzla" }), ...tillDays("2026-11-01", "2026-11-30", { mealCard: 200, online: 0, branchId: "tuzla" })];
+  const tuzlaInput = (o: Partial<CommissionInput> = {}) => commissionInput({ till: tuzlaTill, lafpos: null, modposScope: { switchDay: "2026-11-01" }, ...o });
+  const all = buildCommissionReport(commissionInput());
+  const tuzla = buildCommissionReport(tuzlaInput());
+  // Eskiden: Tuzla'nın Kasım Z'si (6.000) Pluxee'nin (`tek`), payı 6.000 × %4 = 240 ₺ (işletmenin bütün faturası 60 ₺)
+  assert.equal(rowOf(tuzla, "pluxee", "2026-11")?.sales, null);
+  assert.equal(plain(rowOf(tuzla, "pluxee", "2026-11")?.salesReason ?? ""), "Satış bilinmiyor: ModPOS föyünde bu ay Pluxee ödemesi yok. Z'de markası belirsiz 6.000 ₺ var. Kanalın ekstresindeki satışı yazarsanız oran hesaplanır.");
+  assert.deepEqual(groupOf(tuzla, "meal", "2026-11")?.unbranded, { amount: 6000, pre: 0, modpos: 6000, loose: 0, fallback: 0 });
+  assert.equal(groupOf(tuzla, "meal", "2026-11")?.lafposFrom, null, "Tuzla'nın ayı LafPOS'tan sayılmaz");
+  assert.equal(groupOf(tuzla, "meal", "2026-11")?.zTotal, 6000);
+  assert.deepEqual(branchCommissionShare(all, tuzla, "2026-11").find((x) => x.channel === "pluxee"), { channel: "pluxee", label: "Pluxee", kind: "meal", sales: null, rate: 0.04, commission: null });
+  // Geçiş ayından önceki ay eski kuralla (Tümü'yle aynı: tek kart)
+  assert.deepEqual(rowOf(tuzla, "pluxee", "2026-10")?.sales, { amount: 3100, source: "tek" });
+  // Föyde markası olan kısım kanalına ("Tümü"yle aynı tutar); şubelerin payları işletmenin faturasını aşmaz
+  const brands = days("2026-11-01", "2026-11-30").map((date) => ({ date, branchId: "tuzla", byChannel: { pluxee: 120 } }));
+  const allB = buildCommissionReport(commissionInput({ modposBrands: brands }));
+  const tuzlaB = buildCommissionReport(tuzlaInput({ modposBrands: brands }));
+  assert.deepEqual(rowOf(tuzlaB, "pluxee", "2026-11")?.sales, { amount: 3600, source: "lafpos", foy: 3600 });
+  assert.equal(sourceLabel(rowOf(tuzlaB, "pluxee", "2026-11")!.sales!, "meal"), "ModPOS föyünden");
+  assert.deepEqual(groupOf(tuzlaB, "meal", "2026-11")?.unbranded, groupOf(allB, "meal", "2026-11")?.unbranded);
+  const marinaB = buildCommissionReport(commissionInput({ till: tillDays("2026-10-01", "2026-10-31", { mealCard: 500, online: 0, branchId: "marina" }), modposBrands: brands }));
+  const fee = rowOf(allB, "pluxee", "2026-11")!.feesTotal;
+  const shares = [tuzlaB, marinaB].map((b) => branchCommissionShare(allB, b, "2026-11").find((x) => x.channel === "pluxee")!.commission!);
+  assert.deepEqual(shares, [round2(fee * (3600 / 5100)), round2(fee * (1500 / 5100))]);
+  assert.equal(round2(shares[0] + shares[1]), fee);
+});
+
+test("şube görünümü: elle yazılan ekstre satışı işletmenin; şubenin payı şubenin kendi satışından (ekstre şubeye yazılmaz)", () => {
+  // Pluxee'nin Kasım ekstresi elle 10.000 (işletmenin; commission_months şubesiz): oran 60 ÷ 10.000 = %0,6
+  const marks = [{ channel: "pluxee" as const, month: "2026-11", sales: 10_000, receivedOn: null, received: null, note: null }];
+  const all = buildCommissionReport(commissionInput({ marks }));
+  assert.equal(rowOf(all, "pluxee", "2026-11")?.rate, 0.006);
+  // Marina'nın kapsamı aynı işareti okur; payı Marina'nın LafPOS'taki 1.500'ünden (eskiden 10.000 × %0,6 = 60: bütün fatura)
+  const marina = buildCommissionReport(commissionInput({ marks, till: tillDays("2026-10-01", "2026-10-31", { mealCard: 500, online: 0, branchId: "marina" }) }));
+  assert.deepEqual(branchCommissionShare(all, marina, "2026-11").find((x) => x.channel === "pluxee"), { channel: "pluxee", label: "Pluxee", kind: "meal", sales: 1500, rate: 0.006, commission: 9 });
+});
+
+test("şube görünümü: sonradan açılan şubenin (Marina, 13 Kasım) açılış ayı 'kasa raporları ay ortasında başladı' sayılmaz", () => {
+  // Marina: ModPOS kasa raporları 13–21 Kasım, LafPOS 22 Kasım'dan (her gün Pluxee 50); Pluxee'nin Kasım faturası 60
+  const marina = (openedOn?: CommissionInput["openedOn"]) =>
+    buildCommissionReport(
+      commissionInput({
+        firstReport: "2026-11-13",
+        till: tillDays("2026-11-13", "2026-11-21", { mealCard: 0, online: 0, branchId: "marina" }),
+        lafpos: { switchDay: "2026-11-22", days: lafposDays("2026-11-22", "2026-11-30", () => [cpay("Pluxee", "meal_card", "pluxee", 50)]) },
+        ...(openedOn !== undefined ? { openedOn } : {}),
+      }),
+    );
+  for (const openedOn of ["2026-11-13", true] as const) {
+    const r = marina(openedOn);
+    assert.deepEqual(rowOf(r, "pluxee", "2026-11")?.sales, { amount: 450, source: "lafpos" }, `açılış ${openedOn}`);
+    assert.equal(groupOf(r, "meal", "2026-11")?.partialFrom, null);
+  }
+  // Kural yalnız şubenin açılışıyla: açılışı verilmeyen kapsamda (Tümü, Tuzla) raporlar ay ortasında başladıysa ay yarım
+  assert.equal(rowOf(marina(), "pluxee", "2026-11")?.sales, null);
+  assert.match(plain(rowOf(marina(), "pluxee", "2026-11")?.salesReason ?? ""), /^Satış bilinmiyor: kasa raporları 13 Kasım'da başladı\./);
+  // Açılıştan sonra başlayan raporlar (şube 10 Kasım'da açıldı, raporlar 13'ünde) yine yarım
+  assert.equal(rowOf(marina("2026-11-10"), "pluxee", "2026-11")?.sales, null);
+  // LafPOS'la açılan şube (geçiş gününden önce hiç kasa raporu yok): açılıştan önceki günler bilinmez sayılmaz
+  const fresh = buildCommissionReport(
+    commissionInput({
+      firstReport: null,
+      till: [],
+      openedOn: "2026-11-22",
+      lafpos: { switchDay: "2026-11-22", days: lafposDays("2026-11-22", "2026-11-30", () => [cpay("Pluxee", "meal_card", "pluxee", 50)]) },
+    }),
+  );
+  assert.deepEqual(rowOf(fresh, "pluxee", "2026-11")?.sales, { amount: 450, source: "lafpos" });
+});
+
+import { branchUnbrandedNote, commissionBranchNote, unbrandedLine } from "../src/app/panel/komisyonlar/texts";
 
 test("Komisyon ekranı: markası belirsiz satırı ve şube görünümünün notu; zil, Bugün, e-posta ve haftalık özet işletme geneli", () => {
   assert.equal(unbrandedLine(null, "meal"), null);
@@ -441,6 +582,14 @@ test("Komisyon ekranı: markası belirsiz satırı ve şube görünümünün not
     plain(unbrandedLine({ amount: 900, pre: 900, modpos: 0, loose: 0, fallback: 0 }, "platform") ?? ""),
     "Marka belirsiz: 900 ₺ (LafPOS'tan önceki günlerin Z'si 900 ₺). Hiçbir platforma yazılmaz; platformun oranı yalnız markası bilinen satışla hesaplanır.",
   );
+  // Şube payı kartının alt satırı: şubenin markası belirsiz satışı paya girmez
+  assert.equal(branchUnbrandedNote(null, undefined), null);
+  assert.equal(branchUnbrandedNote({ amount: 0, pre: 0, modpos: 0, loose: 0, fallback: 0 }, null), null);
+  assert.equal(
+    plain(branchUnbrandedNote({ amount: 1000, pre: 0, modpos: 1000, loose: 0, fallback: 0 }, { amount: 250, pre: 250, modpos: 0, loose: 0, fallback: 0 }) ?? ""),
+    "Şubenin markası belirsiz satışı: yemek kartı 1.000 ₺, online 250 ₺. Hiçbir kanala yazılmaz, paya girmez (oran da yalnız markası bilinen satışla hesaplanır).",
+  );
+  assert.match(read("src/app/panel/komisyonlar/page.tsx"), /note=\{branchUnbrandedNote\(groupOf\(branch, "meal", month\)\?\.unbranded, groupOf\(branch, "platform", month\)\?\.unbranded\)\}/);
   const note = commissionBranchNote("Marina");
   assert.equal(note.title, "Marina seçili: satış yalnız bu şubenin, faturalar ve hakediş işletmenin");
   assert.match(note.text, /oran bütün şubelerin satışıyla hesaplanır/);
@@ -452,7 +601,13 @@ test("Komisyon ekranı: markası belirsiz satırı ve şube görünümünün not
   const data = read("src/server/data/commission.ts");
   assert.match(data, /return withBranchScope\(ALL_BRANCHES, async \(\) => buildCommissionReport\(await loadCommissionInput\(\{ resolveNames: false, today \}\)\)\);/);
   assert.match(data, /\.where\(andWhere\(gte\(s\.cashReports\.date, fromDay\), branchWhere\(s\.cashReports\.branchId, scope\)\)\)/);
-  assert.match(data, /const switchDay = scopeSwitchDay\(readLafposSwitchDay\(switchRow\[0\]\?\.value\), scope\);/);
+  assert.match(data, /const \{ lafpos: switchDay, modpos: modposFrom \} = commissionScopeDays\(readLafposSwitchDay\(switchRow\[0\]\?\.value\), scope\);/);
+  // Şube seçiliyken şubenin açılışı ve ModPOS'ta kalan şubenin föy kuralı loader'dan
+  assert.match(data, /\.\.\.\(branchOnly \? \{ openedOn: tillOpenedOn\(branchRow\[0\] \?\? null\) \} : \{\}\),/);
+  assert.match(data, /\.\.\.\(modposFrom \? \{ modposScope: \{ switchDay: modposFrom \} \} : \{\}\),/);
+  // Föyün markası geçiş ayının başından ("Tümü" ve Tuzla aynı günleri böler; geçiş gününden önceki günler de)
+  assert.match(data, /const brandsFrom = switchDay \?\? modposFrom;/);
+  assert.match(data, /brandsStart \? loadModposBrands\(brandsStart, today\)/);
   assert.match(read("src/server/weekly/collect.ts"), /withBranchScope\(ALL_BRANCHES, \(\) => loadCommissionInput\(\{ resolveNames: false, today: ctx\.today \}\)\)/);
 });
 
@@ -479,6 +634,43 @@ test("bitmiş sabit gider: Gelir-gider'de bitmiş kalemin boş hücresi salt oku
   assert.match(grid, /\{def\.editable && !locked \? \(/);
   const month = read("src/app/panel/gelir-gider/month-view.tsx");
   assert.match(month, /def\.editable && !\(c\.outOfRange && !c\.overridden\) \?/);
+});
+
+test("bitmiş sabit gider: stopaj satırı ve silinmiş giderin satırı da boş ayda salt okunur (motor aralık dışı der)", () => {
+  // Kira Ekim 2026'da bitti, resmi kirası var: Kasım'da KİRA STOPAJI satırı hücresi motorun hesabında yok; silinmiş kalemin
+  // yalnız Ekim'de elle girişi var. setPnlCell ikisini de reddeder (fixedCellRefusal), hücre de kilitli olmalı
+  const base: Dataset = { ...excelToDataset(seed), currentMonth: "2026-12" };
+  const rentId = 9200;
+  const goneId = 9201;
+  const ds: Dataset = {
+    ...base,
+    fixedExpenses: [
+      ...base.fixedExpenses,
+      { id: rentId, name: "Kira (Marina)", section: "kira", period: "aylik", amount: 160_000, officialAmount: 100_000, officialBasis: "brut", note: null, active: false, startMonth: "2026-01", endMonth: "2026-10", sortOrder: 98, branchId: "tuzla" },
+    ],
+    pnlEntries: [...base.pnlEntries, { month: "2026-10", rowKey: `fixed:${goneId}`, amount: 1234, note: null }],
+  };
+  const model = createModel(ds);
+  const rows = model.pnlRowDefs(["2026-10", "2026-11"]);
+  assert.ok(rows.some((r) => r.key === `stopaj:${rentId}`), "KİRA STOPAJI satırı var");
+  assert.ok(rows.some((r) => r.key === `fixed:${goneId}`), "SİLİNMİŞ GİDER satırı var");
+  const nov = model.pnlMonth("2026-11");
+  const oct = model.pnlMonth("2026-10");
+  // Bitmiş kalemin Kasım hücreleri: sabit gider (motor zaten işaretliyordu) ve stopaj
+  assert.equal(model.pnlValue(nov, `fixed:${rentId}`).outOfRange, true);
+  assert.deepEqual(model.pnlValue(nov, `stopaj:${rentId}`), { value: null, computed: null, overridden: false, outOfRange: true });
+  // Silinmiş kalem: girişi olmayan ay kilitli, girişi olan ay düzenlenir (overridden)
+  assert.deepEqual(model.pnlValue(nov, `fixed:${goneId}`), { value: null, computed: null, overridden: false, outOfRange: true });
+  assert.deepEqual(model.pnlValue(nov, `stopaj:${goneId}`), { value: null, computed: null, overridden: false, outOfRange: true });
+  assert.equal(model.pnlValue(oct, `fixed:${goneId}`).overridden, true);
+  // Aralıktaki kalem kilitlenmez (Ekim: hesaplanan değer, stopaj resmi kiradan)
+  assert.equal(model.pnlValue(oct, `fixed:${rentId}`).outOfRange, undefined);
+  assert.equal(model.pnlValue(oct, `stopaj:${rentId}`).outOfRange, undefined);
+  // Hücre listesi (vergi ve dışa aktarma pm.cells'i okur) değişmez: boş hücre eklenmez
+  assert.equal(nov.cells.has(`stopaj:${rentId}`), false);
+  assert.equal(nov.cells.has(`fixed:${goneId}`), false);
+  // Başka satır etkilenmez
+  assert.equal(model.pnlValue(nov, "manual:su").outOfRange, undefined);
 });
 
 test("aynı gider iki kez: ad eşleşmesi (Türkçe harfler sade, parantez içi de, kelime sınırı)", () => {

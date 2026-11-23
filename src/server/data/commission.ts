@@ -4,12 +4,14 @@ import { and, asc, eq, gte, inArray, min } from "drizzle-orm";
 
 import { channelNameResolver, type SupplierRef } from "@/app/panel/tedarikciler/logic";
 import { ALL_BRANCHES } from "@/lib/branches";
+import { tillOpenedOn } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn, closedRowApplies } from "@/lib/closed-days";
 import { channelOf, isChannelKey, lafposChannel } from "@/lib/commission/channels";
 import {
   buildCommissionReport,
   commissionAlerts,
+  commissionScopeDays,
   commissionDigestBox,
   commissionLogKey,
   freshAlerts,
@@ -26,7 +28,7 @@ import {
 } from "@/lib/commission/report";
 import { COMMISSION_CATEGORY, readLafposSwitchDay } from "@/lib/constants";
 import { posDaySchema, posZSchema } from "@/lib/lafpos/day";
-import { LAFPOS_SWITCH_KEY, scopeSwitchDay } from "@/lib/lafpos/switch";
+import { LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { modposChannels } from "@/lib/modpos/z";
 import { addDays, todayTR } from "@/lib/reminders";
 import { andWhere, branchWhere, currentBranchScope, withBranchScope } from "@/server/branch-scope";
@@ -47,10 +49,11 @@ import type { DigestExtraCtx, DigestExtraLoad } from "@/server/notify/digest-tem
  * LafPOS'a geçiş günü seçiliyse o günden itibaren LafPOS'un gün sonları (Z'deki yemek kartı ve online, ödeme türleri)
  * da okunur (denetim E-37); geçiş günü boşken LafPOS tablosuna hiç bakılmaz, rapor bugünküyle aynıdır.
  *
- * Şube (23 Kasım 2026; docs/SUBE.md): satış seçili şubenin kasa raporlarından ve LafPOS'undan (ilk rapor ve kapalı
- * günler de şubenin), faturalar ve hakediş işletme geneli. Ekran şube seçiliyken işletmenin raporunu da okur (oran
- * işletmenin; şubenin payı = şube satışı × oran). Zil, Bugün, sabah e-postası ve haftalık özet her zaman işletme
- * geneli ("Tümü"; seçiciden bağımsız).
+ * Şube (23 Kasım 2026; docs/SUBE.md): satış seçili şubenin kasa raporlarından ve LafPOS'undan (ilk rapor, açılış günü ve
+ * kapalı günler de şubenin), faturalar ve hakediş işletme geneli. ModPOS'ta kalan şube (Tuzla) seçiliyken LafPOS okunmaz
+ * ama geçiş ayından itibaren Z'si "Tümü"deki gibi tek kanala yığılmaz (modposScope; föyde markası olan kanalına). Ekran
+ * şube seçiliyken işletmenin raporunu da okur (oran işletmenin; şubenin payı = şube satışı × oran). Zil, Bugün, sabah
+ * e-postası ve haftalık özet her zaman işletme geneli ("Tümü"; seçiciden bağımsız).
  */
 
 /** Kanal ayarları (ödeme süresi): { channels: { pluxee: { payDays: 30 }, … } } */
@@ -73,7 +76,7 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
   // Seçili şube: satış (kasa raporları, LafPOS) onun; "Tümü"de koşul yok
   const scope = await currentBranchScope();
   const branchOnly = scope === ALL_BRANCHES ? null : scope;
-  const [invoiceRows, marks, state, till, firstRow, pageNames, closedRows, switchRow] = await Promise.all([
+  const [invoiceRows, marks, state, till, firstRow, pageNames, closedRows, switchRow, branchRow] = await Promise.all([
     // Komisyon faturaları ve kalemleri tek sorguda (kalemsiz fatura bir satır)
     db
       .select({
@@ -131,11 +134,22 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
       .where(and(eq(s.specialDays.kind, "kapali"), gte(s.specialDays.dateTo, fromDay))),
     // LafPOS'a geçiş günü (yoksa LafPOS okunmaz)
     db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1),
+    // Seçili şubenin açılışı: sonradan açılan şubenin açılış ayı "kasa raporları ay ortasında başladı" sayılmaz
+    branchOnly
+      ? db.select({ id: s.branches.id, openedOn: s.branches.openedOn }).from(s.branches).where(eq(s.branches.id, branchOnly)).limit(1)
+      : Promise.resolve([]),
   ]);
-  // Geçiş günü seçili şubenin kasasınınki: ModPOS'ta kalan şube (Tuzla) seçiliyken LafPOS hiç okunmaz
-  const switchDay = scopeSwitchDay(readLafposSwitchDay(switchRow[0]?.value), scope);
+  // Geçiş günü seçili şubenin kasasınınki: ModPOS'ta kalan şube (Tuzla) seçiliyken LafPOS hiç okunmaz, Z'si geçiş ayından
+  // itibaren föyün markasıyla (modposScope)
+  const { lafpos: switchDay, modpos: modposFrom } = commissionScopeDays(readLafposSwitchDay(switchRow[0]?.value), scope);
   const lafposFrom = switchDay ? (switchDay > fromDay ? switchDay : fromDay) : null;
-  const [lafposDays, modposBrands] = lafposFrom ? await Promise.all([loadLafposPaymentDays(lafposFrom, scope), loadModposBrands(lafposFrom, today)]) : [[], []];
+  // Föyün markası geçiş ayının başından (geçiş gününden önceki günler de kasa raporu kuralıyla sayılır)
+  const brandsFrom = switchDay ?? modposFrom;
+  const brandsStart = brandsFrom ? (`${brandsFrom.slice(0, 7)}-01` > fromDay ? `${brandsFrom.slice(0, 7)}-01` : fromDay) : null;
+  const [lafposDays, modposBrands] = await Promise.all([
+    lafposFrom ? loadLafposPaymentDays(lafposFrom, scope) : Promise.resolve([]),
+    brandsStart ? loadModposBrands(brandsStart, today) : Promise.resolve([]),
+  ]);
   // Hafif yol: faturadaki adı bir kanala bağlanmayan fatura varsa kartların adları da aranır (Kanalı bulunamayan
   // faturalar kartının "Diğer adlar" önerisi zilde, Bugün'de ve e-postada da geçerli olsun)
   const names = pageNames ?? (invoiceRows.some((r) => !channelOf([r.supplier])) ? await supplierNames(false) : null);
@@ -161,13 +175,16 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
     settings: parseCommissionSettings(stored.get(COMMISSION_SETTINGS_KEY)),
     lafpos: switchDay ? { switchDay, days: lafposDays } : null,
     ...(modposBrands.length ? { modposBrands } : {}),
+    ...(branchOnly ? { openedOn: tillOpenedOn(branchRow[0] ?? null) } : {}),
+    ...(modposFrom ? { modposScope: { switchDay: modposFrom } } : {}),
   };
 }
 
 /**
- * ModPOS föylerinin markalı ödemeleri (`from`'dan bugüne, seçili şubenin): kasa raporu kuralıyla sayılan günün (geçiş
- * gününden önce ya da ModPOS'ta kalan şubede) Z'sindeki yemek kartı ve online kanal kanal bölünür (modposChannels;
- * markası olmayan ödeme sayılmaz). Föy yoksa boş: markası belirsiz kalır
+ * ModPOS föylerinin markalı ödemeleri (`from`'dan bugüne, seçili şubenin; `from` geçiş ayının başı): kasa raporu kuralıyla
+ * sayılan günün (geçiş gününden önce ya da ModPOS'ta kalan şubede) Z'sindeki yemek kartı ve online kanal kanal bölünür
+ * (modposChannels; markası olmayan ödeme sayılmaz). LafPOS'un şubesinin geçiş gününden sonraki föyü eşleşmez (o günlerin
+ * kasa raporu Z kuralıyla sayılmaz; Marina'da ModPOS bir daha kullanılmaz). Föy yoksa boş: markası belirsiz kalır
  */
 async function loadModposBrands(from: string, to: string): Promise<ModposBrandDay[]> {
   // Açık (sürmekte olan) kasa günü hesaba girmez

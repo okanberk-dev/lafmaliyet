@@ -168,8 +168,9 @@ test("B16: Genel bakış'ın 'Kart / POS komisyonu' satış raporunun tahmini ol
   const page = readFileSync(join(root, "src/app/panel/page.tsx"), "utf8");
   assert.match(dash, /kartlı oran \$\{rate\(model\.cardShareOf\(d\.month\)\.rate\)\} \(yemek kartı dahil\)/);
   assert.match(dash, /POS_COMMISSION_SALES_NOTE =\s*"Satış raporunun tahmini: kartlı oran yemek kartı satışını da içerir\. Gelir-gider'deki banka POS komisyonu yalnız banka kartı payıyla/);
-  // Kasa kartı olan ayda (23 Kasım 2026, hesap sözleşmesi §10) iki rakam aynıdır: not bunu söyler
-  assert.match(page, /label: "Kart \/ POS komisyonu",[\s\S]{0,600}info: model\.posCommission\(month\) \? POS_COMMISSION_SAME_NOTE : POS_COMMISSION_SALES_NOTE/);
+  // Kasa kartı olan ayda (23 Kasım 2026, hesap sözleşmesi §10) iki rakam aynıdır: not bunu söyler; süren ayda liste kasa
+  // raporlarından kısaysa Satışlar listenin günleriyle sayar, not farkı ve Gelir-gider'in tutarını söyler (posCommissionNote)
+  assert.match(page, /label: "Kart \/ POS komisyonu",[\s\S]{0,700}info: salesPos \? posCommissionNote\(salesPos\) : POS_COMMISSION_SALES_NOTE/);
 });
 
 // ---------------------------------------------------------------- E-44 personel satırı

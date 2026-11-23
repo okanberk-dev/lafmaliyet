@@ -22,7 +22,7 @@ import { ChannelCard, FlagList } from "./channel-card";
 import { ChannelSettingsCard } from "./channel-settings";
 import { MealTotalCard } from "./meal-total-card";
 import { PendingCard } from "./pending-card";
-import { commissionBranchNote, mealStatSub, openPayouts, openPayoutsSub, overMealLimit, platformTillLine, unbrandedLine } from "./texts";
+import { branchUnbrandedNote, commissionBranchNote, mealStatSub, openPayouts, openPayoutsSub, overMealLimit, platformTillLine, unbrandedLine } from "./texts";
 
 export const metadata: Metadata = { title: "Komisyon & hakediş" };
 
@@ -108,7 +108,14 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
             {branchNote.text}
           </Notice>
         ) : null}
-        {branch && branchName ? <BranchShareCard name={branchName} month={month} rows={branchCommissionShare(report, branch, month)} /> : null}
+        {branch && branchName ? (
+          <BranchShareCard
+            name={branchName}
+            month={month}
+            rows={branchCommissionShare(report, branch, month)}
+            note={branchUnbrandedNote(groupOf(branch, "meal", month)?.unbranded, groupOf(branch, "platform", month)?.unbranded)}
+          />
+        ) : null}
         {report.pending.length ? <PendingCard rows={report.pending} /> : null}
 
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">

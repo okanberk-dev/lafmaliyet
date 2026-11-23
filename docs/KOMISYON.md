@@ -14,12 +14,25 @@ ve kalemlerini okur.
 ## 1. Ekran
 
 **Şube** (23 Kasım 2026; [SUBE.md](SUBE.md)): satış seçili şubenin kasa raporlarından, LafPOS gün sonlarından ve ModPOS
-föyünden okunur (ilk rapor ve kapalı günler de şubenin; ModPOS'ta kalan şube seçiliyken LafPOS okunmaz). Komisyon
+föyünden okunur (ilk rapor, açılış günü ve kapalı günler de şubenin; ModPOS'ta kalan şube seçiliyken LafPOS okunmaz). Komisyon
 faturaları, oran, beklenen hakediş ve uyarılar işletmenindir: faturalar şubeye bölünmez, oran bütün şubelerin satışıyla
 hesaplanır. Şube seçiliyken ekran işletmenin raporunu gösterir; üstte "Marina seçili: satış yalnız bu şubenin, faturalar
 ve hakediş işletmenin" notu ve **Marina payı** kartı (kanal kanal şubenin satışı, işletmenin oranı, pay = satış × oran;
 `branchCommissionShare`). Zil, Bugün, sabah e-postası ve haftalık özet seçiciden bağımsız, işletme genelidir
 (`withBranchScope(ALL_BRANCHES, …)`). Önceden ekran seçimi hiç okumuyordu: her şubede bütün şubelerin satışı vardı.
+Şubenin payı "Tümü"yle aynı kuralla sayılır, payların toplamı işletmenin faturasını aşmaz:
+
+- **ModPOS'ta kalan şube** (Tuzla) seçiliyken de geçiş ayından itibaren Z'deki yemek kartı ve online tek kanala yazılmaz
+  (`modposScope`, `commissionScopeDays`): föyde markası olan kısım kanalına ("ModPOS föyünden"), kalan **Marka belirsiz**.
+  Önceden şube görünümünde `tek` kuralı sürüyordu: Tuzla'nın bütün Z'si tek karta yazılır, "Tuzla payı" işletmenin bütün
+  faturasından büyük çıkabilirdi. Geçiş ayından önceki aylar eski kuralla (tek kanal).
+- **Sonradan açılan şubenin açılış ayı** (Marina, 13 Kasım 2026) "kasa raporları ay ortasında başladı" sayılmaz
+  (`openedOn`, Kasa'nın kuralı `tillOpenedOn` / `partialStart`); önceden Marina'nın Kasım'ındaki bütün kanallar "Satış
+  bilinmiyor" çıkıyordu.
+- **Elle yazılan ekstre satışı işletmenindir** (`commission_months` şubesiz): şubenin payı şubenin kendi kaynağından
+  (LafPOS, föy, Z) gelir, ekstreden değil; yoksa ekstrenin tamamı her şubenin payına girerdi.
+- Kartın altında şubenin markası belirsiz satışı yazar ("Şubenin markası belirsiz satışı: yemek kartı 1.000 ₺. Hiçbir
+  kanala yazılmaz, paya girmez …").
 
 Telefonda tek sütun, bu sırayla; geniş ekranda kanal kartları iki sütun.
 

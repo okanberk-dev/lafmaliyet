@@ -37,7 +37,8 @@ export function fixedCellRefusal(i: {
 }
 
 /**
- * Gelir-gider'de geçerlilik aralığının dışındaki (başlamamış ya da bitmiş) kalemin boş hücresi salt okunurdur: ipucu.
- * Önceden yazılmış tutar (overridden) düzenlenir ve silinir
+ * Gelir-gider'de geçerlilik aralığının dışındaki (başlamamış ya da bitmiş) ya da silinmiş kalemin boş hücresi (sabit gider
+ * ve stopaj satırı; engine.ts pnlValue `outOfRange`) salt okunurdur: ipucu. Önceden yazılmış tutar (overridden) düzenlenir
+ * ve silinir
  */
-export const FIXED_LOCKED_CELL_TEXT = "Kalem bu ayda geçerli değil (Sabit giderler'deki başlangıç / bitiş ayı): yeni tutar yazılmaz.";
+export const FIXED_LOCKED_CELL_TEXT = "Kalem bu ayda geçerli değil (Sabit giderler'deki başlangıç / bitiş ayı ya da kalem silinmiş): yeni tutar yazılmaz.";

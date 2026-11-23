@@ -1,7 +1,8 @@
 import type { BreakdownGroup, BreakdownRow } from "@/lib/breakdown";
-import type { MonthSales, PosCommission, SalesLineCalc } from "@/lib/calc/engine";
+import type { MonthSales, SalesLineCalc, SalesPosCommission } from "@/lib/calc/engine";
 import type { Settings } from "@/lib/calc/types";
-import { num, pct, tl } from "@/lib/format";
+import { money, num, pct, tl } from "@/lib/format";
+import { dayRangeTR } from "@/lib/lafpos/sales";
 
 /** Dökümün kullandığı ay satışı alanları (`model.monthSales`); sayfanın zaten yüklediği veri, yeni sorgu yok */
 export type SalesMonth = Pick<
@@ -103,15 +104,16 @@ const linesNote = (n: number) => (n > 1 ? ` · ${num(n)} POS kalemi` : "");
  * Satışlar kartlarının dökümü, ayın satış satırlarından (`model.monthSales`). Her döküm kartın rakamını tutar:
  * ciro ve adet satır toplamı, brüt kâr net ciro − maliyet − komisyon, eşleşmeyen kalem sayısı. `cardShare`: ayın kartlı
  * satış oranı (`model.cardShareOf(ay).rate`: kasa raporlarından ya da elle; verilmezse Ayarlar'daki). `posCommission`:
- * ayın banka POS komisyonu (`model.posCommission(ay)`; kasa kartı olan ayda Gelir-gider'le aynı tutar, satırlara ciro
- * payıyla); yoksa satırın komisyonu eski formülle (ciro × kartlı oran × komisyon)
+ * Satışlar'ın banka POS komisyonu (`model.salesPosCommission(ay)`; kasa kartı olan ayda Gelir-gider'in kuralı, satırlara
+ * ciro payıyla; süren ayda liste kasa raporlarından kısaysa listenin günleriyle, metin bunu ve Gelir-gider'in tutarını
+ * söyler); yoksa satırın komisyonu eski formülle (ciro × kartlı oran × komisyon)
  */
 export function salesBreakdowns(
   sales: SalesMonth,
   settings: Pick<Settings, "kdv" | "kdvHizmet" | "komisyon" | "kartOrani">,
   month: string,
   cardShare: number = settings.kartOrani,
-  posCommission: PosCommission | null = null,
+  posCommission: SalesPosCommission | null = null,
 ): SalesBreakdowns {
   if (!sales.lines.length) return { revenue: [], grossProfit: [], qty: [], unmatched: [] };
   const buckets = bucketsOf(sales.lines, month);
@@ -124,9 +126,11 @@ export function salesBreakdowns(
   const services = byKind("service");
   const unmatchedNet = total(unmatched, (l) => l.net);
   const unmatchedCost = total(unmatched, (l) => l.cost);
-  const commissionSub = posCommission
-    ? "Banka POS komisyonunun ciro payı (Gelir-gider'le aynı: kart × şubenin POS oranı, yemek kartı hariç)"
-    : `Ciro × kartlı satış ${rate(cardShare)} × komisyon ${rate(settings.komisyon)}`;
+  const commissionSub = posCommission?.period
+    ? `Banka POS komisyonunun ciro payı (listenin günleri ${dayRangeTR(posCommission.period.from, posCommission.period.through)}: kart × şubenin POS oranı, yemek kartı hariç; Gelir-gider'de ayın tamamı ${money(posCommission.month.amount)})`
+    : posCommission
+      ? "Banka POS komisyonunun ciro payı (Gelir-gider'le aynı: kart × şubenin POS oranı, yemek kartı hariç)"
+      : `Ciro × kartlı satış ${rate(cardShare)} × komisyon ${rate(settings.komisyon)}`;
 
   const itemRows = (b: Bucket, amount: (ls: SalesLineCalc[]) => number, sub: (ls: SalesLineCalc[]) => string): BreakdownRow[] =>
     b.items.map((it) => ({ key: it.key, label: it.label, sub: sub(it.lines), amount: amount(it.lines), href: it.href }));

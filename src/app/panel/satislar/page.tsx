@@ -149,7 +149,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   const assignedRevenue = rows.reduce((a, r) => a + (r.matched || r.isService ? r.revenue : 0), 0);
   const coverage = sales.revenue ? assignedRevenue / sales.revenue : 0;
   // Kartların dökümü (karta dokununca açılan pencere): aynı ay satırlarından, yeni sorgu yok
-  const breakdown = salesBreakdowns(sales, model.settings, month, model.cardShareOf(month).rate, model.posCommission(month));
+  const breakdown = salesBreakdowns(sales, model.settings, month, model.cardShareOf(month).rate, model.salesPosCommission(month));
   const label = monthLabel(month);
   // ModPOS listesinin satırları (LafPOS'un ay toplamları ayrı); LafPOS ayında sayılmayan listenin satırları
   const modposLines = lafpos?.source === "lafpos" ? (lafpos.modpos?.lines ?? 0) : rows.filter((r) => r.lafposDays === null).length;

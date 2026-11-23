@@ -1,8 +1,9 @@
 import { withRemainder, type BreakdownGroup, type BreakdownRow } from "@/lib/breakdown";
-import type { Model } from "@/lib/calc/engine";
+import type { Model, SalesPosCommission } from "@/lib/calc/engine";
 import { expensePlanSub, listDaysText, listShareFactor, type DashboardData, type FixedLine, type FixedMonthBreakdown } from "@/lib/calc/insights";
-import { monthLabel, num, numPossessive, pct, tl } from "@/lib/format";
+import { money, monthLabel, num, numPossessive, pct, tl } from "@/lib/format";
 import { monthKasa, salesMonthKasa, type MonthKasa } from "@/lib/lafpos/kasa";
+import { dayRangeTR } from "@/lib/lafpos/sales";
 import { siteGross } from "@/lib/site-sales/calc";
 
 import { pnlRowLabel, sentenceCase } from "./gelir-gider/breakdowns";
@@ -35,6 +36,16 @@ const differs = (a: number, b: number) => Math.abs(a - b) >= 1;
 const safeDiv = (a: number, b: number) => (b ? a / b : 0);
 /** "%10": ayarlardaki oran (0,1) yazı olarak */
 const rate = (v: number) => `%${num(v * 100, 1)}`;
+
+/**
+ * Komisyon satırının alt yazısı, kasa kartı olan ayda (SalesPosCommission): ay bitince ya da liste kasaya yetişince
+ * Gelir-gider'le aynı tutar; süren ayda liste kısaysa listenin günleri ve Gelir-gider'in tutarı. Kasa kartı yoksa null
+ */
+export function salesPosSub(spc: SalesPosCommission | null): string | null {
+  if (!spc) return null;
+  if (!spc.period) return "Kart × şubenin POS oranı (yemek kartı hariç), Gelir-gider'le aynı";
+  return `Kart × şubenin POS oranı (yemek kartı hariç), listenin günleri ${dayRangeTR(spc.period.from, spc.period.through)}; Gelir-gider'de ayın tamamı ${money(spc.month.amount)}`;
+}
 
 /** Satış listesinin KDV hariç hesabı: ürünler satış KDV'siyle, HİZMET satırları (karaoke) hizmet KDV'siyle */
 const salesNetSub = (model: Model, d: DashboardData) =>
@@ -184,11 +195,10 @@ function grossRows(model: Model, d: DashboardData): BreakdownRow[] {
     {
       key: "komisyon",
       label: "Kart / POS komisyonu",
-      // Kasa kartı olan ayda Gelir-gider'in banka POS komisyonuyla aynı (engine posCommission); yoksa satış raporunun tahmini:
-      // kartlı oran yemek kartını da içerir (Gelir-gider'in banka POS komisyonu yalnız banka kartı payıyla)
-      sub: model.posCommission(d.month)
-        ? "Kart × şubenin POS oranı (yemek kartı hariç), Gelir-gider'le aynı"
-        : `Ciro × ${rate(st.komisyon)} × kartlı oran ${rate(model.cardShareOf(d.month).rate)} (yemek kartı dahil)`,
+      // Kasa kartı olan ayda Gelir-gider'in banka POS komisyonunun kuralı (engine salesPosCommission): ay bitince aynı tutar,
+      // süren ayda liste kasa raporlarından kısaysa listenin günleriyle. Yoksa satış raporunun tahmini: kartlı oran yemek
+      // kartını da içerir (Gelir-gider'in banka POS komisyonu yalnız banka kartı payıyla)
+      sub: salesPosSub(model.salesPosCommission(d.month)) ?? `Ciro × ${rate(st.komisyon)} × kartlı oran ${rate(model.cardShareOf(d.month).rate)} (yemek kartı dahil)`,
       amount: -t.commission,
     },
   ];

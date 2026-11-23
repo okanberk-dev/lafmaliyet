@@ -9,12 +9,14 @@ import {
 import { MONTH_TOTALS_LOCKED_TEXT } from "../branches";
 import { listDiscountOf } from "../cash-month";
 import { duplicateCellWarn, duplicateExpenses as findDuplicateExpenses, type DuplicateExpense } from "./duplicate-expense";
+import { fixedIdOfKey } from "../fixed-expense-rules";
 import { channelOf } from "../commission/channels";
 import { paidWithholdingRate } from "../tax/rules";
 import { money, monthLabel, num, pct, tl } from "../format";
 import { isCountable } from "../ingredient-usage";
 import { panelWasteCounts } from "../lafpos/ikram";
 import { periodKasa } from "../lafpos/kasa";
+import { dayRangeTR } from "../lafpos/sales";
 import { buildSiteLinkIndex, mapSiteLines, OPTION_KINDS, optionProductId, optionTotals, siteRevenue, type OptionKind, type SiteRevenue } from "../site-sales/calc";
 import type { SiteSalesLine, SiteSalesMonth } from "../site-sales/schema";
 import { evaluateExpression } from "./expr";
@@ -551,8 +553,8 @@ export interface PnlCell {
   /** Elle girilen hücrenin notu (pnl_entries.note) */
   note?: string | null;
   /**
-   * Sabit gider satırında: kalem bu ayda geçerlilik aralığının dışında (başlamadı ya da bitti).
-   * Elle girilmiş tutar varsa yine de sayılır (overridden = true).
+   * Sabit gider ve stopaj satırında: kalem bu ayda geçerlilik aralığının dışında (başlamadı ya da bitti) ya da silinmiş.
+   * Elle girilmiş tutar varsa yine de sayılır (overridden = true); yoksa Gelir-gider'de hücre salt okunur
    */
   outOfRange?: boolean;
   /** Bu ayın hesabı nasıl yapıldı (hücrenin ipucuna eklenir), ör. POS komisyonunun kart payı */
@@ -608,9 +610,30 @@ const kurus = (v: number) => Math.round(v * 100 + 1e-7) / 100;
 /** Oran: %2, %1,5 */
 const ratePct = (r: number) => `%${num(r * 100, 2)}`;
 
-/** Satışlar'ın ve Genel bakış'ın komisyon satırı açıklaması (kasa kartı olan ay) */
+/** Satışlar'ın ve Genel bakış'ın komisyon satırı açıklaması (kasa kartı olan ay, liste kasa raporlarına yetişmiş) */
 export const POS_COMMISSION_SAME_NOTE =
   "Banka POS komisyonu Gelir-gider'deki tutarın aynısıdır: şube şube kasa raporlarındaki banka kartı (yemek kartı hariç) × şubenin POS oranı (Şubeler), satırlara ciro payıyla dağıtılır. Yemek kartlarının komisyonu kendi faturalarıyla sayılır.";
+
+/**
+ * Satışlar'ın banka POS komisyonu (model.salesPosCommission): aynı kural (şube şube kart × oran), satış listesinin
+ * dönemiyle. Ay bitince ya da liste kasa raporlarına yetişince Gelir-gider'in tutarıdır (`period` null); süren ayda liste
+ * kasa raporlarından kısaysa (listPeriod) listenin günlerinin kartıyla: satırlar o günlerin satışıdır, Genel bakış'ın
+ * reçeteye göre kârı da o dönemle hesaplanır
+ */
+export interface SalesPosCommission {
+  /** Satışlar'ın tutarı (satırlara ciro payıyla) */
+  amount: number;
+  /** Gelir-gider'in tutarı (posCommission: ayın bugüne kadarki kasa raporları) */
+  month: PosCommission;
+  /** Tutar yalnız listenin günleri içinse o dönem; null: ayın tamamı, Gelir-gider'le aynı */
+  period: { from: string; through: string } | null;
+}
+
+/** Satışlar'ın ve Genel bakış'ın komisyon satırı açıklaması: listenin dönemiyle sayıldıysa neden Gelir-gider'den farklı */
+export function posCommissionNote(spc: SalesPosCommission): string {
+  if (!spc.period) return POS_COMMISSION_SAME_NOTE;
+  return `Banka POS komisyonu satış listesinin günleri (${dayRangeTR(spc.period.from, spc.period.through)}) için: o günlerin kasa raporlarındaki banka kartı (yemek kartı hariç) × şubenin POS oranı, satırlara ciro payıyla dağıtılır. Gelir-gider ayın bugüne kadarki bütün kasa raporlarıyla sayar (${money(spc.month.amount)}); liste kasa raporlarına yetişince iki tutar aynı olur. Yemek kartlarının komisyonu kendi faturalarıyla sayılır.`;
+}
 
 /** Banka POS komisyonunun kısa açıklaması: "Marina kart 24.774,25 ₺ × %2 = 495,49 ₺" */
 export function posCommissionText(pc: PosCommission, nameOf: (id: string | null) => string | null = (id) => id): string {
@@ -1461,17 +1484,20 @@ export function createModel(ds: Dataset) {
   }
 
   /**
-   * Satışlar'ın banka POS komisyonu toplamı (posCommission): süren ayda liste kasa raporlarından kısaysa (listPeriod)
-   * listenin günlerinin kartıyla, şube şube oranla; kasa kartı olmayan ayda null (eski formül)
+   * Satışlar'ın banka POS komisyonu (SalesPosCommission; posCommission'ın kuralı): süren ayda liste kasa raporlarından
+   * kısaysa (listPeriod) listenin günlerinin kartıyla, şube şube oranla, `period` o dönem (Gelir-gider'in tutarından farklı
+   * olabilir; metin posCommissionNote); değilse Gelir-gider'in tutarı. Kasa kartı olmayan ayda null (eski formül)
    */
-  function salesPosCommission(month: string): number | null {
+  function salesPosCommission(month: string): SalesPosCommission | null {
     const pc = posCommission(month);
     if (!pc) return null;
     const lp = listPeriod(month);
     const t = lp ? coverageByMonth.get(month)?.till : null;
-    if (!t || typeof t.card !== "number") return pc.amount;
-    if (t.cardByBranch) return kurus(Object.entries(t.cardByBranch).reduce((a, [b, card]) => a + kurus(card * posRateOf(b)), 0));
-    return kurus(t.card * posRateOf(ds.branchView?.id ?? null));
+    if (!lp || !t || typeof t.card !== "number") return { amount: pc.amount, month: pc, period: null };
+    const amount = t.cardByBranch
+      ? kurus(Object.entries(t.cardByBranch).reduce((a, [b, card]) => a + kurus(card * posRateOf(b)), 0))
+      : kurus(t.card * posRateOf(ds.branchView?.id ?? null));
+    return { amount, month: pc, period: { from: lp.from, through: lp.through } };
   }
 
   // --- Aylık satış analizi (Satış Raporu) ------------------------------------
@@ -1481,9 +1507,10 @@ export function createModel(ds: Dataset) {
     if (ms) return ms;
     const raw = linesByMonth.get(month) ?? [];
     const cardShare = cardShareOf(month).rate;
-    // Banka POS komisyonu Gelir-gider'le aynı tutar (posCommission), satırlara ciro payıyla; kasa kartı olmayan ayda eski
-    // formül (satır cirosu × komisyon × kartlı oran; Excel)
-    const pos = salesPosCommission(month);
+    // Banka POS komisyonu Gelir-gider'in kuralıyla (salesPosCommission: ay bitince aynı tutar, süren ayda liste kısaysa
+    // listenin günleriyle), satırlara ciro payıyla; kasa kartı olmayan ayda eski formül (satır cirosu × komisyon × kartlı
+    // oran; Excel)
+    const pos = salesPosCommission(month)?.amount ?? null;
     const listRevenue = raw.reduce((a, l) => a + l.revenue, 0);
     const base = raw.map((line) => {
       const product = line.productId ? productById.get(line.productId) : undefined;
@@ -2617,7 +2644,7 @@ export function createModel(ds: Dataset) {
       label: posRates.size === 1 ? `BANKA POS KOMİSYONU (%${([...posRates][0] * 100).toLocaleString("tr-TR")})` : "BANKA POS KOMİSYONU",
       kind: "auto",
       editable: companyCell,
-      hint: "Tahmin: şube şube kasa raporlarındaki banka kartı (KDV dahil, yemek kartı hariç) × şubenin POS oranı (Şubeler); Satışlar'daki komisyon aynı tutardır, satırlara ciro payıyla dağılır. Yemek kartlarının komisyonu kendi faturalarıyla aşağıda sayılır. Kasa raporu olmayan ayda aylık ciro × komisyon (Ayarlar) × kartlı satış oranı. Banka dekontundaki gerçek tutarı yazabilirsiniz; banka POS komisyonunu Komisyon faturası olarak kesiyorsa 0 yazın.",
+      hint: "Tahmin: şube şube kasa raporlarındaki banka kartı (KDV dahil, yemek kartı hariç) × şubenin POS oranı (Şubeler); Satışlar'daki komisyon aynı tutardır, satırlara ciro payıyla dağılır (süren ayda satış listesi kasa raporlarından kısaysa Satışlar listenin günleriyle sayar). Yemek kartlarının komisyonu kendi faturalarıyla aşağıda sayılır. Kasa raporu olmayan ayda aylık ciro × komisyon (Ayarlar) × kartlı satış oranı. Banka dekontundaki gerçek tutarı yazabilirsiniz; banka POS komisyonunu Komisyon faturası olarak kesiyorsa 0 yazın.",
     });
     for (const k of [...commSuppliers].sort()) {
       kom({ key: k, label: `${k.slice("commission:".length).toLocaleUpperCase("tr-TR")} KOMİSYONU`, kind: "auto", editable: false, hint: "Faturalar sayfasından otomatik (Komisyon kategorisi)." });
@@ -2718,8 +2745,17 @@ export function createModel(ds: Dataset) {
         return v(r(pm.sections[key.slice(6) as FixedSection | "komisyon"]));
       case "ratio:profit":
         return v(r(pm.profit));
-      default:
+      default: {
+        // Sabit gider ve stopaj satırının hesapta olmayan hücresi: kalem bu ay aralık dışında (başlamadı ya da bitti) ya da
+        // silinmiş, elle girişi de yok. Gelir-gider'de salt okunur (aralık dışı; setPnlCell de yeni tutarı reddeder,
+        // fixed-expense-rules.ts). Hücre listesine (pm.cells) eklenmez: vergi ve dışa aktarma onu okur
+        const id = fixedIdOfKey(key);
+        if (id !== null) {
+          const fe = fixedById.get(id);
+          if (!fe || !inRange(fe, pm.month)) return { ...v(null), outOfRange: true };
+        }
         return v(null);
+      }
     }
   }
 
@@ -2747,6 +2783,8 @@ export function createModel(ds: Dataset) {
     bankShareOf,
     /** Banka POS komisyonu: Σ şube (kart × şubenin oranı); kasa kartı olmayan ayda null (eski formül). İki sayfada aynı */
     posCommission,
+    /** Satışlar'ın banka POS komisyonu: süren ayda listenin dönemiyle (SalesPosCommission) */
+    salesPosCommission,
     salesMonths,
     monthSales,
     /** Süren ayda yapıştırılan satış listesinin dönemi (kasa raporlarından kısaysa; yoksa null) */

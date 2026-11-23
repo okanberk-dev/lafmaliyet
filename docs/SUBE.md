@@ -102,7 +102,10 @@ nakit planı kartı, Tutarlılık (alınan mal şubeye bölünmez; tek şubenin 
 **Komisyon & hakediş** (23 Kasım 2026, [KOMISYON.md](KOMISYON.md) › Şube): satış seçili şubenin kasa raporlarından,
 LafPOS'undan ve ModPOS föyünden; komisyon faturaları, oran ve hakediş işletmenin (faturalar şubeye bölünmez). Şube
 seçiliyken ekran işletmenin raporunu gösterir ve üstte şubenin payını (şube satışı × işletmenin oranı) notuyla ekler.
-Zil, Bugün'ün Hakedişler satırı, sabah e-postası ve haftalık özet seçiciden bağımsız, işletme genelidir.
+Şubenin satışı "Tümü"nün kuralıyla sayılır: ModPOS'ta kalan şubenin Z'si de geçiş ayından itibaren tek kanala yazılmaz
+(föyde markası olan kanalına, kalan markası belirsiz), sonradan açılan şubenin açılış ayı yarım sayılmaz, elle yazılan
+ekstre satışı (işletmenin) şubeye yazılmaz. Zil, Bugün'ün Hakedişler satırı, sabah e-postası ve haftalık özet seçiciden
+bağımsız, işletme genelidir.
 
 **E-postalar** da işletme genelidir ve elle tetiklenen yolları sabah işiyle aynı hesaplar: sabah e-postası (önizleme ve
 "Bugünküleri şimdi gönder" dahil, `runReminderDigest`) ile haftalık özet (önizleme ve örnek dahil, `collectWeekly`)

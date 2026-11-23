@@ -189,6 +189,18 @@ export function commissionBranchNote(name: string): { title: string; text: strin
   };
 }
 
+/**
+ * Şube payı kartının alt satırı (BranchShareCard; şubenin raporunun grupları, GroupMonth.unbranded): şubenin markası
+ * belirsiz tutarı hiçbir kanala yazılmaz, şubenin payına da girmez (işletmenin oranı da onsuz hesaplanır). Yoksa null
+ */
+export function branchUnbrandedNote(meal: GroupMonth["unbranded"] | undefined, platform: GroupMonth["unbranded"] | undefined): string | null {
+  const parts = [meal && meal.amount > 0 ? `yemek kartı ${money(meal.amount)}` : null, platform && platform.amount > 0 ? `online ${money(platform.amount)}` : null].filter(
+    (p): p is string => p !== null,
+  );
+  if (!parts.length) return null;
+  return `Şubenin markası belirsiz satışı: ${parts.join(", ")}. Hiçbir kanala yazılmaz, paya girmez (oran da yalnız markası bilinen satışla hesaplanır).`;
+}
+
 /** Yemek kartı oranı karosunun alt satırı: Z'deki yemek kartı (kasa raporu olan ayda 0 da) ve oran yoksa nedeni */
 export function mealStatSub(g: Pick<GroupMonth, "zTotal" | "rate" | "partialFrom" | "invoiceCount"> | null): string {
   if (!g || g.zTotal === null) return "Satış bilinmiyor";
