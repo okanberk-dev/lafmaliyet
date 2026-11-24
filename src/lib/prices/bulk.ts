@@ -13,8 +13,10 @@ import { SIZE_LABELS } from "../constants";
 import { num } from "../format";
 import type { PushFailure } from "../site-menu/push";
 import { SITE_MONEY_MAX_MINOR } from "../site-menu/schema";
-import { fromMinor, toMinor } from "../site-menu/slot";
+import { fromMinor, toMinor, type SiteMenuSlot } from "../site-menu/slot";
 import type { SiteMarkerKind } from "../site-menu/view";
+
+import { branchBlockReason } from "./branch";
 
 // ---------------------------------------------------------------- Yuvarlama
 
@@ -144,6 +146,9 @@ export interface BulkRow {
   siteText: string | null;
   /** Ayda satılan adet (salesBasis, standart aya ölçekli); satış verisi yoksa 0 */
   monthlyQty: number;
+  /** Bağlı olduğu site kalemi ve boyu (şube fiyatının önizlemesi ve engeli; src/lib/prices/branch.ts); bağlı değilse null */
+  siteMenuId?: string | null;
+  siteMenuSlot?: SiteMenuSlot | null;
 }
 
 /** Bağlı ve fiyatı siteye yazılacak (kopuk ve sitede olmayan bağlantı engellidir) */
@@ -153,8 +158,14 @@ export const isLinked = (site: SiteMarkerKind | null) => site === "linked" || si
  * Satırın neden değiştirilemeyeceği (önizlemede gösterilir, işaretlenemez; sunucu planPush'la yeniden denetler).
  * Maliyetin altına inmek engel değil, uyarıdır (Zararına).
  */
-export function blockReason(row: { newPrice: number; site: SiteMarkerKind | null }, ctx: { siteConfigured: boolean }): string | null {
+export function blockReason(
+  row: { newPrice: number; site: SiteMarkerKind | null; siteMenuId?: string | null },
+  ctx: { siteConfigured: boolean; branch?: boolean },
+): string | null {
   if (!(row.newPrice > 0)) return "Fiyat 0 ₺'ye ya da altına iner";
+  // Şube fiyatı (Toplu değiştir'in Şube seçimi): yalnız siteye bağlı, seçenek olmayan ürün
+  const branch = ctx.branch ? branchBlockReason(row) : null;
+  if (branch) return branch;
   if (isLinked(row.site) && toMinor(row.newPrice) > SITE_MONEY_MAX_MINOR) return "Sitenin üst sınırını aşıyor";
   if (row.site === "broken") return "Site bağlantısı kopuk (sitede L fiyatı yok); önce bağlantıyı düzeltin";
   if (row.site === "missing") return "Bağlı kalem sitede yok; bağlantı sonraki eşitlemede kalkar";
@@ -191,13 +202,13 @@ export function previewRows(
   overrides: ReadonlyMap<number, number>,
   excluded: ReadonlySet<number>,
   st: PriceSettings,
-  ctx: { siteConfigured: boolean },
+  ctx: { siteConfigured: boolean; branch?: boolean },
 ): PreviewRow[] {
   return rows.map((r) => {
     const override = overrides.get(r.id);
     const newPrice = override ?? (rule ? rulePrice(r.price, r.suggestedPrice, rule) : r.price);
     const unchanged = toMinor(newPrice) === toMinor(r.price);
-    const blocked = unchanged ? null : blockReason({ newPrice, site: r.site }, ctx);
+    const blocked = unchanged ? null : blockReason({ newPrice, site: r.site, siteMenuId: r.siteMenuId }, ctx);
     const before = economicsAt(r.price, r.cost, st);
     const after = economicsAt(newPrice, r.cost, st);
     const isExcluded = excluded.has(r.id);

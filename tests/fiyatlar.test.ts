@@ -784,10 +784,10 @@ test("toplu değişiklik: menü kilidi önce, iyimser denetim, kaleme göre sır
   assert.match(read("src/app/panel/urunler/fiyatlar/page.tsx"), /export const maxDuration = 60;/);
 });
 
-test("eylemler: toplu fiyat yöneticinin; kasaya işle iki rolde (requireUser); zil iki rolde, personelinki kendi özetinden; yeni ürün kasaya girmez (D3)", () => {
+test("eylemler: toplu fiyat ve şube fiyatı yöneticinin; kasaya işle iki rolde (requireUser); zil iki rolde, personelinki kendi özetinden; yeni ürün kasaya girmez (D3)", () => {
   const actions = read("src/server/actions/prices.ts");
   const exported = [...actions.matchAll(/^export async function (\w+)/gm)].map((m) => m[1]);
-  assert.deepEqual(exported.sort(), ["applyBulkPrices", "undoPriceBatch"]);
+  assert.deepEqual(exported.sort(), ["applyBranchPrices", "applyBulkPrices", "cancelBranchPriceRow", "setBranchPrice", "undoPriceBatch"]);
   for (const name of exported) {
     const body = actions.slice(actions.indexOf(`export async function ${name}`));
     assert.match(body.slice(0, 300), /return attempt\(async \(\) => \{\s+const me = await requireAdmin\(\);/, name);

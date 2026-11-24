@@ -86,6 +86,55 @@ export function numPossessive(n: number, digits = 0): string {
   return `${text}'${possessiveOf(Number(frac ?? whole.replace(/\./g, "")))}`;
 }
 
+// Ayrılma ("'dan / 'den / 'tan / 'ten") ve bulunma ("'da / 'de / 'ta / 'te") ekleri: ünlüsü son ünlüye göre (kalın a ı o u
+// → a, ince e i ö ü → e), ünsüzü son harfe göre (sert ünsüzden, f s t k ç ş h p, sonra t). Özel adın ekleri kesmeyle
+const HARD_CONSONANTS = "fstkçşhp";
+function caseSuffix(word: string, ablative: boolean): string {
+  const lower = word.trim().toLocaleLowerCase("tr-TR");
+  let vowel = "e";
+  for (let i = lower.length - 1; i >= 0; i--) {
+    if ("aıou".includes(lower[i])) {
+      vowel = "a";
+      break;
+    }
+    if ("eiöü".includes(lower[i])) break;
+  }
+  return `'${HARD_CONSONANTS.includes(lower[lower.length - 1] ?? "") ? "t" : "d"}${vowel}${ablative ? "n" : ""}`;
+}
+
+/** Bulunma hâli, son sözcüğe göre: "Marina'da", "Kadıköy'de", "Beşiktaş'ta", "Moda Sahil'de" */
+export function locativeTR(name: string): string {
+  return `${name}${caseSuffix(name, false)}`;
+}
+
+/** Ayrılma hâli, son sözcüğe göre: "Marina'dan", "25 Kasım'dan", "1 Eylül'den", "3 Ağustos'tan" */
+export function ablativeTR(word: string): string {
+  return `${word}${caseSuffix(word, true)}`;
+}
+
+const ONES_WORD = ["sıfır", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz"];
+const TENS_WORD = ["", "on", "yirmi", "otuz", "kırk", "elli", "altmış", "yetmiş", "seksen", "doksan"];
+
+/** Tam sayının okunuşunun son sözcüğü: 5 → beş, 30 → otuz, 0 → sıfır */
+function lastSpokenWord(v: number): string {
+  if (v % 10 || v === 0) return ONES_WORD[v % 10];
+  if (v % 100) return TENS_WORD[(v % 100) / 10];
+  if (v % 1000) return "yüz";
+  if (v % 1_000_000) return "bin";
+  return v % 1_000_000_000 ? "milyon" : "milyar";
+}
+
+/**
+ * Saat ve ayrılma eki, okunuşun son sözcüğüne göre (dakika 00 ise saat okunur): "05:00'ten" (beş), "10:00'dan" (on),
+ * "06:00'dan" (altı), "09:30'dan" (otuz), "14:40'tan" (kırk)
+ */
+export function timeAblative(hhmm: string): string {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm);
+  if (!m) return ablativeTR(hhmm);
+  const minutes = Number(m[2]);
+  return `${hhmm}${caseSuffix(lastSpokenWord(minutes || Number(m[1])), true)}`;
+}
+
 /** "2026-09" -> "Eylül 2026" */
 export function monthLabel(month: string): string {
   const [y, m] = month.split("-").map(Number);

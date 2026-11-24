@@ -7,11 +7,13 @@ import { SIZE_LABELS, SIZES } from "@/lib/constants";
 
 export const FIYATLAR_HREF = "/panel/urunler/fiyatlar";
 
-export type FiyatlarTab = "toplu" | "kasa" | "gecmis";
+export type FiyatlarTab = "toplu" | "kasa" | "gecmis" | "sube" | "eski";
 
-/** ?sekme: boş = Toplu değiştir */
+const TABS: readonly FiyatlarTab[] = ["toplu", "kasa", "gecmis", "sube", "eski"];
+
+/** ?sekme: boş = Toplu değiştir; "sube" Şube fiyatı, "eski" Eski fiyattan satılanlar */
 export function tabOf(sekme: string | string[] | undefined): FiyatlarTab {
-  return sekme === "kasa" ? "kasa" : sekme === "gecmis" ? "gecmis" : "toplu";
+  return TABS.includes(sekme as FiyatlarTab) ? (sekme as FiyatlarTab) : "toplu";
 }
 
 /** "3,5" → [3, 5]; bozuk parçalar atlanır, her kimlik bir kez */
