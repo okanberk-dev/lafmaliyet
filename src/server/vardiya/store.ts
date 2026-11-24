@@ -68,6 +68,15 @@ export async function loadShiftEntries(db: Pick<DB, "select">, branchId: string,
 }
 
 /**
+ * Şubenin vardiyasına önerilebilir hesap (şube kapsamı C P2-11): yönetici, şubesiz personel ve o şubenin personeli. Başka
+ * şubeye kilitli personel o şubenin ekranını göremez; "Kişi ekle" ve Claude'un taslağı onu önermez (elle yazılan ad yine
+ * hesapsız satır olabilir)
+ */
+export function shiftCandidate(u: { role: string; branchId: string | null }, branchId: string): boolean {
+  return u.role === "admin" || u.branchId === null || u.branchId === branchId;
+}
+
+/**
  * Haftanın planı. `roster`: yöneticinin ızgarası için şubenin etkin personeli planı boş olsa da satır olur ve "Kişi
  * ekle"ye öteki hesaplar önerilir; personelin görünümünde ve PDF'te yalnız planı olanlar. Hesabı duran kişi güncel
  * adıyla görünür.
@@ -81,7 +90,13 @@ export async function loadShiftWeek(db: DB, branch: { id: string; name: string }
   const roster = opts.roster ? users.filter((u) => u.active && u.role === "staff" && (u.branchId === null || u.branchId === branch.id)) : users.filter((u) => u.id === opts.includeUserId);
   const rows = buildRows(monday, roster, named);
   const inGrid = new Set(rows.map((r) => r.ref));
-  const others = opts.roster ? users.filter((u) => u.active && !inGrid.has(userRef(u.id))).map((u) => ({ id: u.id, name: u.name })).sort(byName) : [];
+  // "Kişi ekle" önerileri: başka şubeye kilitli personel önerilmez (şube kapsamı C P2-11); yönetici ve şubesiz personel kalır
+  const others = opts.roster
+    ? users
+        .filter((u) => u.active && !inGrid.has(userRef(u.id)) && shiftCandidate(u, branch.id))
+        .map((u) => ({ id: u.id, name: u.name }))
+        .sort(byName)
+    : [];
   return { branch: { id: branch.id, name: branch.name }, monday, rows: opts.roster ? rows : rows.filter((r) => r.cells.some(Boolean) || r.userId === opts.includeUserId), others, updated };
 }
 

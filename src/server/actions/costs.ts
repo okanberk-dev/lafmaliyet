@@ -4,6 +4,7 @@ import { and, asc, eq, gt, inArray, lt, ne, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { BRANCH_REQUIRED } from "@/lib/branches";
 import { activeFromRange, currentMonthTR, inRange, mealCardCarry, planVersionChange, shiftMonth } from "@/lib/calc/engine";
 import { resolveMonths, tillMonths } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
@@ -105,6 +106,8 @@ function latestBefore<V extends { fromMonth: string }>(versions: V[], month: str
  */
 async function checkedBranch(raw: string | null | undefined, physical: boolean): Promise<string | null | undefined> {
   if (raw === undefined || raw === null) return raw;
+  // Boş seçim ("Tümü"de şube sorulan form): sessizce varsayılana düşülmez (şube kapsamı C P2-12)
+  if (raw === "") throw new UserError(BRANCH_REQUIRED);
   const b = (await listBranches()).find((x) => x.id === raw && x.active);
   if (!b || (physical && b.kind !== "fiziksel")) throw new UserError("Seçilen şube bulunamadı ya da kapalı (sayfayı yenileyin)");
   return b.id;

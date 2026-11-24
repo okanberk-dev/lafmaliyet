@@ -38,12 +38,22 @@ export interface TemplateRow {
  * Listeleri düzenle: her liste bir satır (günler ve saat, madde / fotoğraf / ölçüm sayısı, Etkin anahtarı, Düzenle) ve
  * "Yeni liste" penceresi. Oluşturulunca pencere kapanır, sonra listenin sayfası açılır (önce pencere, sonra gezinme).
  */
-export function TemplatesClient({ templates, branches }: { templates: TemplateRow[]; branches: readonly BranchOption[] }) {
+export function TemplatesClient({
+  templates,
+  branches,
+  defaultBranchId = "",
+}: {
+  templates: TemplateRow[];
+  branches: readonly BranchOption[];
+  /** Yeni listenin şubesi: panelde seçili fiziksel şube; "Tümü"de "" (bütün şubeler; şube kapsamı C P2-12) */
+  defaultBranchId?: string;
+}) {
+  const empty: TemplateDraft = { ...EMPTY_TEMPLATE, branchId: defaultBranchId };
   const router = useRouter();
   const [pending, start] = useActionTransition();
   const [rows, setRowActive] = useOptimistic(templates, (state, p: { id: number; active: boolean }) => state.map((t) => (t.id === p.id ? { ...t, active: p.active } : t)));
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<TemplateDraft>(EMPTY_TEMPLATE);
+  const [draft, setDraft] = useState<TemplateDraft>(empty);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -65,7 +75,7 @@ export function TemplatesClient({ templates, branches }: { templates: TemplateRo
     if (!res.ok) return setError(res.error);
     // Önce pencere kapanır, sonra listenin sayfasına gidilir
     setOpen(false);
-    setDraft(EMPTY_TEMPLATE);
+    setDraft(empty);
     toast.success(`${listTitle(draft.name.trim())} eklendi`, { description: "Şimdi maddelerini ekleyin." });
     router.push(`/panel/kontrol/duzenle/${res.data.id}`);
   };
@@ -81,7 +91,7 @@ export function TemplatesClient({ templates, branches }: { templates: TemplateRo
           actions={
             <Button
               onClick={() => {
-                setDraft(EMPTY_TEMPLATE);
+                setDraft(empty);
                 setError(null);
                 setOpen(true);
               }}

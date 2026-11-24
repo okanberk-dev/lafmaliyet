@@ -19,6 +19,7 @@ import { Avatar } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
+import { BRANCH_REQUIRED } from "@/lib/branches";
 import { shiftMonth, staffCost, type RangeStatus, type StaffCost, type StaffHistoryEntry } from "@/lib/calc/engine";
 import { extrasLookLikeMealCard, type StaffWarning } from "@/lib/calc/personnel";
 import { parseNumberTR } from "@/lib/calc/expr";
@@ -74,6 +75,7 @@ export type StaffRow = {
 };
 
 /** Şube seçimi: açık fiziksel şubeler (bir taneyse seçim çizilmez) ve yeni kişinin varsayılanı (seçili şube) */
+/** Şube seçenekleri; `fallback` yeni kişinin şubesi ("" = "Tümü"de birden çok şube açık: form şubeyi sorar) */
 export type StaffBranches = { options: { id: string; name: string }[]; fallback: string };
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -1110,6 +1112,8 @@ function StaffDialog({
     setTried(true);
     if (!name.trim()) return nameRef.current?.focus();
     if (netValue === null || extValue === null || dailyValue === null || netError || extError || dailyError) return netRef.current?.focus();
+    // Şube "Tümü"de boş başlar (şube kapsamı C P2-12): seçilmeden kaydedilmez
+    if (!branch) return void (toast.error(BRANCH_REQUIRED), document.getElementById("st-sube")?.focus());
     setBusy(true);
     const self = {
       id: row?.id ?? null,
@@ -1211,7 +1215,8 @@ function StaffDialog({
         </Field>
         {branches.options.length > 1 ? (
           <Field label="Şube" htmlFor="st-sube" tip="Maaşı bu şubenin gideri olarak sayılır (Gelir-gider'de şube seçiliyken).">
-            <Select id="st-sube" value={branch} onChange={(e) => setBranch(e.target.value)}>
+            <Select id="st-sube" value={branch} onChange={(e) => setBranch(e.target.value)} aria-invalid={(tried && !branch) || undefined}>
+              {branch ? null : <option value="">Şube seçin</option>}
               {branches.options.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
