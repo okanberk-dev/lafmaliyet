@@ -28,7 +28,7 @@ import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
-import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
+import { loadCashOutInvoiceState, scopeCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders } from "@/server/data/user-reminders";
@@ -259,8 +259,11 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
     // Kalemi hammaddeye bağlı ama mal alışı sayılmayan, kontrol bekleyen faturalar (E-07)
     countStockOnlyReview(db).catch(() => 0),
     // Kasadan faturalı alımlar: faturası Faturalar'da yok, Aylık harcamalar'a da yazılmadı (E-42); yazılmışken
-    // faturası sonradan gelenler (iki kez sayılıyor)
-    loadCashOutInvoiceState(db).catch(() => ({ pending: [], duplicates: [] })),
+    // faturası sonradan gelenler (iki kez sayılıyor). Seçili şubenin kasasından çıkanlar (docs/SUBE.md › Ödemeler); zilin
+    // kimliği süzülmüş listeden üretilir, öbür şubenin yeni satırı bu şubenin zilini yeniden okunmamış yapmaz
+    Promise.all([loadCashOutInvoiceState(db), currentBranchScope()])
+      .then(([state, scope]) => scopeCashOutInvoiceState(state, scope))
+      .catch(() => ({ pending: [], duplicates: [] })),
   ]);
   const cashOuts = cashState.pending;
   const twice = cashState.duplicates;

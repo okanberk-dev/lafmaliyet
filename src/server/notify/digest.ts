@@ -94,11 +94,17 @@ export async function loadUpcoming(today = todayTR(), scope: { branch?: BranchSc
   const items = up.items;
   // Takvim için: vadesi listenin ufkundan sonra olan faturalar ve faturasız borçlar (listede ve e-postada yer almaz)
   const laterInvoices: UpcomingItem[] = up.later;
-  return { today, settings, reminders, items, laterInvoices, covered: up.covered, cari: cariSummary(index) };
+  return { today, settings, reminders, items, laterInvoices, covered: up.covered, cari: cariSummary(index, single) };
 }
 
-/** Ödemeler, zil ve Genel bakış için cari hesabın özeti: açık faturasız borçlar, hesaptaki para, işlenmemiş Kasa satırları, uyarılar */
-function cariSummary(index: CariIndex) {
+/**
+ * Ödemeler, zil ve Genel bakış için cari hesabın özeti: açık faturasız borçlar, hesaptaki para, işlenmemiş Kasa satırları,
+ * uyarılar. Cari işletme genelidir; kasa satırı şubenindir (docs/SUBE.md › Ödemeler): tek şube (`single`) verilirse işlenmemiş
+ * Kasa satırlarının sayısı yalnız o şubenin kasasını sayar. Liste (`index.kasaPending`) süzülmez: `cariHints` işletme
+ * geneli faturaları onunla sessize alır, Tuzla'nın kasasından ödenmiş fatura Marina'da da ödenmiş görünür.
+ */
+function cariSummary(index: CariIndex, single: string | null = null) {
+  const kasaLines = single ? index.kasaPending.filter((l) => l.branchId === single) : index.kasaPending;
   const cardName = (id: number) => index.cards.get(id)?.name ?? "";
   // Faturası gelmeyen alım: tutarı alımın kendisi (ödenmiş olsa da gideri yazılmadı)
   const late = index.lateDebts.map((d) => ({ id: d.id, cardId: d.supplierId, name: cardName(d.supplierId), date: d.date, description: d.description, amount: d.amount, href: index.hrefOf(d.supplierId) ?? null }));
@@ -107,7 +113,7 @@ function cariSummary(index: CariIndex) {
     debts: index.openDebts.length,
     debtTotal: Math.round(index.openDebts.reduce((a, d) => a + d.remaining, 0) * 100) / 100,
     credit: Math.round([...index.credit.values()].reduce((a, v) => a + v, 0) * 100) / 100,
-    kasaPending: { count: index.kasaPending.length, total: Math.round(index.kasaPending.reduce((a, l) => a + l.amount, 0) * 100) / 100 },
+    kasaPending: { count: kasaLines.length, total: Math.round(kasaLines.reduce((a, l) => a + l.amount, 0) * 100) / 100 },
     late,
     strong,
   };

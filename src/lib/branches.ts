@@ -157,6 +157,20 @@ export function tillBranches<T extends Pick<BranchRow, "kind" | "active" | "sort
   return sortBranches(rows.filter((b) => b.kind === "fiziksel" && b.active));
 }
 
+/**
+ * İşletme geneli ekranda gösterilen kasa satırları (Tedarikçiler'in işlenmemiş kasa ödemeleri; docs/SUBE.md › Ödemeler):
+ * her satır kasasının adını (birden çok kasa açıkken, `namedTill`) ve seçili kapsamda olup olmadığını taşır. Tek şube
+ * seçiliyken ekran yalnız o şubenin satırlarını gösterir, öbür şubelerinkini yalnız sayar ("Öbür şubede N satır daha");
+ * "Tümü"de hepsi kapsamdadır. Cari işletme genelidir: satırın kendisi süzülmez, yalnız gösterim.
+ */
+export function tillRowsInScope<T extends { branchId: string }>(
+  rows: readonly T[],
+  scope: BranchScope,
+  known: readonly BranchRow[],
+): (T & { tillName: string | null; inScope: boolean })[] {
+  return rows.map((r) => ({ ...r, tillName: namedTill(known, r.branchId)?.name ?? null, inScope: scope === ALL_BRANCHES || r.branchId === scope }));
+}
+
 /** Kasadan ödemenin kasası belirsizken (Tümü ya da online kanal, birden çok kasa) eylemin ve formun metni */
 export const TILL_REQUIRED = "Kasadan ödeme hangi şubenin kasasından çıktı? Şubeyi seçin";
 

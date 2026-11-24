@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
-import { defaultTill, EXPENSE_SHARED, sortBranches, tillBranches } from "@/lib/branches";
+import { defaultTill, EXPENSE_SHARED, sortBranches, tillBranches, tillRowsInScope } from "@/lib/branches";
 import { compareOpenItems, debtLabel, debtRemaining, invoiceLabel, showsCredit } from "@/lib/cari/account";
 import { defaultCostMode } from "@/lib/cari/match";
 import { businessDate } from "@/lib/cash-report";
@@ -189,7 +189,9 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
       // Faturası gelmeyen alımın tutarı (ödenmiş olsa da: gideri yazılmadı; §5.2)
       return d ? [{ id, date: d.date, label: debtLabel(d), amount: d.amount }] : [];
     }),
-    kasa: data.kasa,
+    // İşlenmemiş kasa satırları kasasının adıyla; şeritler yalnız seçili şubenin kasasınınkini gösterir, öbürlerini sayar
+    // (docs/SUBE.md › Ödemeler). Bağlantıyla gelen satır (?kasa=) hangi şubede olursa olsun açılır
+    kasa: tillRowsInScope(data.kasa, scope, branches),
     foreign: data.foreign,
     foreignIn: data.foreignIn,
     drift: data.drift.length,

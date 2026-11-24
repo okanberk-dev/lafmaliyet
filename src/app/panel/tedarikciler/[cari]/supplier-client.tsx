@@ -276,7 +276,7 @@ export function SupplierClient({
     photoId: p.photoId,
   });
   // Ödeme ekle: o gün kasada bu tedarikçiye işlenmemiş Teslim satırı varsa Kasadan, satır seçili gelir (R1b)
-  const todayKasa = cari.kasa.find((l) => l.kind === "teslim" && l.date === cari.businessDay);
+  const todayKasa = cari.kasa.find((l) => l.inScope && l.kind === "teslim" && l.date === cari.businessDay);
   const openPayment = (initial?: CariPaymentInitial) =>
     setPayFor({ initial: initial ?? (todayKasa ? { method: "kasa", cashOutId: todayKasa.id, amount: todayKasa.amount, date: todayKasa.date } : undefined) });
   // Listeden ya da Kasa'dan gelen "İşle" / "Ödemeye çevir" (?kasa=<satır>): Ödeme ekle Kasadan ve o satırla açılır

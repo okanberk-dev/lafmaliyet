@@ -26,6 +26,10 @@ export interface KasaStrip {
   amount: number;
   store: string | null;
   createdByName: string;
+  /** Kasanın şubesi; birden çok kasa açıkken (`namedTill`), tek kasada null */
+  tillName: string | null;
+  /** Seçili şubenin kasasından mı ("Tümü"de hepsi); değilse şerit yalnız sayar */
+  inScope: boolean;
 }
 
 // Şeridin tonu: mavi artık uyarı rengi değil (öneri ve bilgi nötr); borç ve ödeme uyarıları para riski taşır, katlanmaz
@@ -34,7 +38,7 @@ const STRIP_TONE = { good: "good", info: "neutral", warn: "warn", gray: "neutral
 /** Bir şerit: başlık + düğmeler (docs/planlar/ux-sade.md §6.2; eski yerel Strip) */
 function strip(key: string, tone: keyof typeof STRIP_TONE, title: ReactNode, action: ReactNode): NoticeItem {
   const t = STRIP_TONE[tone];
-  return { key, tone: t, risk: t === "warn" ? "para" : undefined, live: "polite", title, action: <span className="flex flex-wrap gap-1.5">{action}</span> };
+  return { key, tone: t, risk: t === "warn" ? "para" : undefined, live: "polite", title, action: action ? <span className="flex flex-wrap gap-1.5">{action}</span> : undefined };
 }
 
 /**
@@ -133,15 +137,19 @@ export function CariStrips({
       ),
     );
   }
-  const teslim = kasa.filter((l) => l.kind === "teslim");
-  const fissiz = kasa.filter((l) => l.kind === "harcama");
+  // Seçili şubenin kasasından çıkanlar; öbür şubelerinki tek satırda sayılır (docs/SUBE.md › Ödemeler)
+  const shownKasa = kasa.filter((l) => l.inScope);
+  const elsewhere = kasa.length - shownKasa.length;
+  const teslim = shownKasa.filter((l) => l.kind === "teslim");
+  const fissiz = shownKasa.filter((l) => l.kind === "harcama");
+  const till = (l: KasaStrip) => (l.tillName ? ` · ${l.tillName}` : "");
   for (const l of teslim) {
     strips.push(
       strip(
         `kasa-${l.id}`,
         // Borç bakiyesi yanlış görünür: Tedarikçiler listesindeki aynı uyarıyla aynı önemde (Ek A 227)
         "warn",
-        `Kasadan bu tedarikçiye ödeme hesaba işlenmedi: ${dateTR(l.date).slice(0, 5)} ${kasaLineText(l)}`,
+        `Kasadan bu tedarikçiye ödeme hesaba işlenmedi: ${dateTR(l.date).slice(0, 5)}${till(l)}${l.tillName ? " ·" : ""} ${kasaLineText(l)}`,
         <>
           <Button size="xs" variant="secondary" onClick={() => onProcessKasa(l)} disabled={busy}>
             İşle
@@ -158,7 +166,7 @@ export function CariStrips({
       strip(
         `kasa-${l.id}`,
         "gray",
-        `Tedarikçi ödemesi miydi? ${dateTR(l.date).slice(0, 5)} · fişsiz alışveriş · ${l.store} · ${tl(l.amount, 2)} · ${l.createdByName}`,
+        `Tedarikçi ödemesi miydi? ${dateTR(l.date).slice(0, 5)}${till(l)} · fişsiz alışveriş · ${l.store} · ${tl(l.amount, 2)} · ${l.createdByName}`,
         <>
           <Button size="xs" variant="secondary" onClick={() => onConvertKasa(l)} disabled={busy}>
             Ödemeye çevir
@@ -167,6 +175,16 @@ export function CariStrips({
             Ayrı alım
           </Button>
         </>,
+      ),
+    );
+  }
+  if (elsewhere) {
+    strips.push(
+      strip(
+        "kasa-baska-sube",
+        "gray",
+        `Öbür şubenin kasasında bu tedarikçiye ${elsewhere} işlenmemiş satır daha var; Tümü'nde görünür.`,
+        null,
       ),
     );
   }

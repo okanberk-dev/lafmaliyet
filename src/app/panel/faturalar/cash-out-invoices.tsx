@@ -204,7 +204,7 @@ export function CashOutInvoicesCard({
                       <Badge tone="red">İki kez sayılıyor</Badge>
                     </p>
                     <p className="text-[13px] leading-5 text-ink-mute">
-                      {[`Kasa ${dateTR(r.receiptDate ?? r.date)}`, r.createdByName, r.expenseCategory ? `Aylık harcamalar: ${r.expenseCategory}` : "Aylık harcamalar'da"]
+                      {[`Kasa ${dateTR(r.receiptDate ?? r.date)}`, r.tillName, r.createdByName, r.expenseCategory ? `Aylık harcamalar: ${r.expenseCategory}` : "Aylık harcamalar'da"]
                         .filter(Boolean)
                         .join(" · ")}
                     </p>
@@ -276,6 +276,7 @@ export function CashOutInvoicesCard({
                   <p className="text-[13px] leading-5 text-ink-mute">
                     {[
                       r.receiptDate && r.receiptDate !== r.date ? `Fiş ${dateTR(r.receiptDate)} · kasa ${dateTR(r.date)}` : dateTR(r.date),
+                      r.tillName,
                       r.createdByName,
                       r.receiptNo ? `No ${r.receiptNo}` : null,
                       r.vat ? `KDV ${money(r.vat)}` : null,

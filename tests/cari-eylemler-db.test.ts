@@ -17,6 +17,7 @@ import { asc, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import { DEFAULT_BRANCHES } from "../src/lib/branches";
 import { businessDate } from "../src/lib/cash-report";
 import { addDays, todayTR } from "../src/lib/reminders";
 import * as s from "../src/server/db/schema";
@@ -765,6 +766,32 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     const other = up.items.find((i) => i.ref === `invoice:${sts2.id}`);
     assert.equal(other?.quiet, "kasa");
     assert.equal(other?.hint?.kind === "kasa" ? other.hint.cashOutId : null, teslim.id);
+  });
+
+  test("şube kapsamı (24 Kasım): cari işletme geneli, kasa satırı şubenin; Marina'nın zil sayısı Tuzla'nın Teslim satırını saymaz, fatura yine sessiz", async () => {
+    await db
+      .insert(s.branches)
+      .values(DEFAULT_BRANCHES.map((b) => ({ ...b, active: true })))
+      .onConflictDoNothing();
+    await card();
+    const today = todayTR();
+    const teslim = await cashOut({ amount: 2200, date: today, branchId: "tuzla" });
+    const sts = await invoice({ payable: 2200, date: today, dueDate: today, invoiceNo: "STS9" });
+    const digest = await import("../src/server/notify/digest");
+    const count = async (branch: string) => (await digest.loadUpcoming(today, { branch })).cari.kasaPending.count;
+    assert.equal(await count("marina"), 0, "Tuzla'nın kasasından çıkan satır Marina'nın zilinde sayılmaz");
+    assert.equal(await count("tuzla"), 1);
+    assert.equal(await count("hepsi"), 1);
+    // Liste süzülmez: Tuzla'nın kasasından ödenmiş fatura Marina'da da "kasadan ödenmiş olabilir" diye sessiz
+    const up = await digest.loadUpcoming(today, { branch: "marina" });
+    const item = up.items.find((i) => i.ref === `invoice:${sts.id}`);
+    assert.equal(item?.quiet, "kasa");
+    assert.equal(item?.hint?.kind === "kasa" ? item.hint.cashOutId : null, teslim.id);
+    const index = await data.loadCariIndex(today);
+    assert.deepEqual(
+      index.kasaPending.map((l) => [l.id, l.branchId]),
+      [[teslim.id, "tuzla"]],
+    );
   });
 
   test("K18: silinen borcun Geri al'ı geçmiş ayın giderini silmenin onayıyla yazar, onaylanmamış ayı yazmaz; işlem geçmişine düşer", async () => {

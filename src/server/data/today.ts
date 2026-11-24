@@ -37,7 +37,7 @@ import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
-import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
+import { loadCashOutInvoiceState, scopeCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { countPendingRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders, type UserReminderDTO } from "@/server/data/user-reminders";
@@ -202,8 +202,10 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
         db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
         countStockOnlyReview(db),
         // Kasadan faturalı alımlar, faturası yok (E-42) ve faturası sonradan gelip iki kez sayılanlar; okunamazsa satır
-        // yalnız faturaları söyler
-        loadCashOutInvoiceState(db).catch(() => ({ pending: [], duplicates: [] })),
+        // yalnız faturaları söyler. Seçili şubenin kasasından çıkanlar (docs/SUBE.md › Ödemeler)
+        Promise.all([loadCashOutInvoiceState(db), currentBranchScope()])
+          .then(([state, scope]) => scopeCashOutInvoiceState(state, scope))
+          .catch(() => ({ pending: [], duplicates: [] })),
       ]).then(([[r], stockOnly, { pending, duplicates }]) => ({
         review: r?.n ?? 0,
         stockOnly,

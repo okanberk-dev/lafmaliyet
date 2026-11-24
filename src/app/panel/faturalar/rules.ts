@@ -207,6 +207,8 @@ export interface CashOutInvoiceSource {
   receiptNo: string | null;
   photoId: number | null;
   createdByName: string;
+  /** Kasanın şubesinin adı; birden çok kasa açıkken (`namedTill`), tek kasada yok */
+  tillName?: string | null;
 }
 
 /**

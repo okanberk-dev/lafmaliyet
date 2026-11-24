@@ -60,7 +60,7 @@ import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { currentBranchScope, withBranchScope } from "@/server/branch-scope";
 import { availableMonths, loadModel, monthParam, resolveMonth } from "@/server/data/dataset";
-import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
+import { loadCashOutInvoiceState, scopeCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCashPlan } from "@/server/data/cash-plan";
 import { tillRows } from "@/server/data/cash-reports";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
@@ -195,8 +195,11 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
     // denetim 21 Kasım #27): tek şube seçiliyken o şubenin ve işletme genelinin ödemeleri. "Tümü"nde aynı liste
     scope === ALL_BRANCHES ? Promise.resolve(null) : loadPayments(scope),
     loadParasut(),
-    // Kasadan faturalı alımlar (E-42): ayın işlerinde Faturalar'ı açık tutar; okunamazsa liste onsuz
-    loadCashOutInvoiceState().catch(() => null),
+    // Kasadan faturalı alımlar (E-42): ayın işlerinde Faturalar'ı açık tutar; seçili şubenin kasasından çıkanlar
+    // (docs/SUBE.md › Ödemeler). Okunamazsa liste onsuz
+    loadCashOutInvoiceState()
+      .then((state) => scopeCashOutInvoiceState(state, scope))
+      .catch(() => null),
     // Günlük ciro grafiği: ay bilgisinin okuduğu kasa satırları (seçili şubeyle; okunamazsa kart çizilmez)
     tillRows().catch(() => null),
   ]);

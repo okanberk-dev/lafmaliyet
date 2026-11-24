@@ -14,9 +14,12 @@ import { unpaidSummary } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { monthLabel, monthShort, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { namedTill } from "@/lib/branches";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { loadInvoiceCariLinks } from "@/server/data/cari";
-import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
+import { loadCashOutInvoiceState, scopeCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { cashOutCategories } from "@/server/data/cash-outs";
 import { loadModel } from "@/server/data/dataset";
 import { stockOnlyIds } from "@/server/data/stock-only-invoices";
@@ -82,7 +85,7 @@ export default function InvoicesPage() {
 async function InvoicesContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, state, docs, cards, taxRows, cariLinks, stockOnly, cashOuts, cashOutCats, parasutSettings] = await Promise.all([
+  const [model, state, docs, cards, taxRows, cariLinks, stockOnly, cashOutState, cashOutCats, parasutSettings, scope, branches] = await Promise.all([
     loadModel(),
     db
       .select()
@@ -106,7 +109,17 @@ async function InvoicesContent() {
     cashOutCategories("admin"),
     // Paraşüt'teki faturanın bağlantısı için firma numarası (panelde ya da ortamda); okunamazsa bağlantı çıkmaz
     loadParasutSettings().catch(() => null),
+    currentBranchScope(),
+    listBranches(),
   ]);
+  // Kasadan faturalı alımlar seçili şubenin kasasından (docs/SUBE.md › Ödemeler; faturalar işletme geneli kalır); birden çok
+  // kasa açıkken satır hangi kasadan çıktığını söyler ("Kasa 24 Kas · Marina")
+  const tillName = (id: string) => namedTill(branches, id)?.name ?? null;
+  const scopedCashOuts = scopeCashOutInvoiceState(cashOutState, scope);
+  const cashOuts = {
+    pending: scopedCashOuts.pending.map((r) => ({ ...r, tillName: tillName(r.branchId) })),
+    duplicates: scopedCashOuts.duplicates.map((r) => ({ ...r, tillName: tillName(r.branchId) })),
+  };
   const taxOf = new Map(taxRows.map((r) => [r.id, r.supplierTaxNumber]));
   // Kalan borç (kısmen ödenmiş Paraşüt faturası) çekirdek veriyle gelir: Invoice.outstanding
   const invoices: InvoiceRow[] = model.ds.invoices
