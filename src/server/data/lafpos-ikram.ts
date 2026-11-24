@@ -5,7 +5,7 @@ import { and, asc, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { createPosMappingIndex } from "@/lib/calc/pos-paste";
 import { readLafposSwitchDay } from "@/lib/constants";
 import { posDaySchema, posZSchema, resolvePosLine, siteSlotKey, type PosIptal } from "@/lib/lafpos/day";
-import { iptalWasteLines, lafposCompKind, lafposLineKind, type LafposIkramData, type LafposIkramLine } from "@/lib/lafpos/ikram";
+import { iptalWasteLines, lafposCompKind, lafposLineKind, lafposZKinds, type LafposIkramData, type LafposIkramLine, type LafposZKinds } from "@/lib/lafpos/ikram";
 import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { productLabel } from "@/lib/waste";
 import { currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
@@ -91,8 +91,8 @@ export interface DayLafposIkram {
   received: boolean;
   /** Z'deki ödenmez tutarı (yalnız yöneticinin e-postası) */
   offRevenue: number | null;
-  /** Faz 2: LafPOS'un Z'sindeki türe göre toplamlar (lafposIkramCheck); eski LafPOS'ta null */
-  zByKind: { ikram: number; odenmez: number; zayi: number } | null;
+  /** Faz 2: LafPOS'un Z'sindeki türe göre toplamlar ve satışın eşitliğinin girdileri (lafposIkramCheck); eski LafPOS'ta null */
+  zByKind: LafposZKinds | null;
   /** Ad: paneldeki ürün adı, yoksa LafPOS'taki ad. Hazırlanmış iptaller zayi satırı olarak burada (`iptal`) */
   lines: (LafposIkramLine & { name: string })[];
   /** Faz 2: hazırlanmamış iptaller (tüketim değil, yalnız bilgi); gün iptal listesi taşımıyorsa (eski LafPOS) null */
@@ -127,7 +127,7 @@ export async function loadDayLafposIkram(date: string, db: Reader = getDb(), bra
     switchDay,
     received: Boolean(day),
     offRevenue: typeof off === "number" && Number.isFinite(off) ? off : null,
-    zByKind: zd && zd.ikramTotal !== undefined && zd.odenmezTotal !== undefined && zd.zayiTotal !== undefined ? { ikram: zd.ikramTotal, odenmez: zd.odenmezTotal, zayi: zd.zayiTotal } : null,
+    zByKind: zd ? lafposZKinds(zd) : null,
     lines: data.lines.map((l) => {
       const p = l.productId !== null ? byId.get(l.productId) : undefined;
       return { ...l, name: p ? productLabel(p) : l.posName };

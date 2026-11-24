@@ -230,10 +230,10 @@ describe("kabul: Marina Kasım 2026 (ModPOS 13–21 + LafPOS 22 Kasım)", { skip
     assert.ok(dw.lafpos, "LafPOS günü");
     assert.deepEqual(
       [dw.lafpos.offRevenue, dw.lafpos.listValue, dw.lafpos.iptalValue, dw.lafpos.unprepared, dw.lafpos.byKind?.z],
-      [1_065, 1_065, 1_270, { count: 6, value: 1_125 }, { ikram: 130, odenmez: 935, zayi: 0 }],
+      [1_065, 1_065, 1_270, { count: 6, value: 1_125 }, { ikram: 130, odenmez: 935, zayi: 0, sale: { listValue: 7_440, discounts: 90, zTotal: 6_285 } }],
     );
     const { lafposIkramCheck } = await import("../src/lib/lafpos/ikram");
-    assert.equal(lafposIkramCheck(dw.lafpos.offRevenue!, dw.lafpos.listValue, dw.lafpos.byKind), null, "LafPOS'un toplamları listeyi tutuyor");
+    assert.equal(lafposIkramCheck(dw.lafpos.offRevenue!, dw.lafpos.listValue, dw.lafpos.byKind), null, "LafPOS'un toplamları listeyi ve Z'nin eşitliğini tutuyor (7.440 − 90 − 130 − 935 = 6.285)");
     // Gün görünümünün ayrıntısı
     const kasa = await import("../src/server/data/lafpos-day");
     const detail = await kasa.loadLafposDayDetail(S, db, LAFPOS_SUBE);

@@ -4,7 +4,7 @@ import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 
 import { countFactor } from "@/lib/calc/engine";
 import type { DayWaste } from "@/lib/cash-report";
-import { lafposListByKind, panelWasteCounts } from "@/lib/lafpos/ikram";
+import { lafposListByKind, panelWasteCounts, type LafposZKinds } from "@/lib/lafpos/ikram";
 import { productLabel, summarize, type WasteChoice, type WasteKind, type WasteLine } from "@/lib/waste";
 import { currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
@@ -109,7 +109,7 @@ export interface DayWasteLafpos {
   /** Faz 2: hazırlanmamış iptallerin liste değeri ve kalem sayısı (bilgi: tüketim değil) */
   unprepared?: { count: number; value: number };
   /** Faz 2: türe göre Z toplamları ve liste (lafposIkramCheck); eski LafPOS'ta z null */
-  byKind?: { z: { ikram: number; odenmez: number; zayi: number } | null; list: { ikram: number; odenmez: number; zayi: number } };
+  byKind?: { z: LafposZKinds | null; list: { ikram: number; odenmez: number; zayi: number } };
 }
 
 /**

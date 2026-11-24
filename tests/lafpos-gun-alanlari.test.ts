@@ -25,7 +25,7 @@ import { lafposDayDetail } from "../src/lib/lafpos/gun-ayrinti";
 import { autoValuesOf, dayEndNotes, dayEndSections, dayHash, mergeAuto, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
 import { lafposDayOf } from "../src/lib/lafpos/prefill";
 import { lafposMonthNotes, lafposMonthStatus, mergeSalesSources } from "../src/lib/lafpos/sales";
-import { IPTAL_ZAYI_REASON, iptalWasteLines, lafposCompKind, lafposIkramCheck, lafposLineKind, lafposListByKind, lafposReasonText, recordedOffRevenue } from "../src/lib/lafpos/ikram";
+import { IPTAL_ZAYI_REASON, iptalWasteLines, lafposCompKind, lafposIkramCheck, lafposLineKind, lafposListByKind, lafposReasonText, lafposZKinds, recordedOffRevenue } from "../src/lib/lafpos/ikram";
 import { okcReconcile } from "../src/lib/okc-z";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 import { renderCashReport } from "../src/server/notify/cash-report-template";
@@ -271,6 +271,26 @@ test("kasa e-postasının denetimi: LafPOS'un Z'sindeki türe göre toplamlar li
   assert.match(plain(own), /LafPOS'un ödenmez tutarı \(Z\) türlerin toplamından \(630 ₺\) 70 ₺ fazla/);
   // Türe göre toplam yoksa (eski LafPOS) bugünkü kural
   assert.equal(plain(lafposIkramCheck(520, 340)), "LafPOS'un ödenmez tutarı (Z) ikram ve zayi listesinden 180 ₺ fazla: LafPOS'ta ödenmez işaretlenen ama listeye girmeyen satır olabilir.");
+});
+
+test("kasa e-postasının denetimi: LafPOS'un Z'si kendi içinde tutmuyorsa (liste − indirim − ikram − ödenmez ≠ toplam satış) söylenir; z.listValue okunur", () => {
+  const r = parsePosDay(kabul(), NOW);
+  assert.ok(r.ok, r.ok ? "" : r.field);
+  const z = r.data.z;
+  const kinds = lafposZKinds(z);
+  assert.deepEqual(kinds, { ikram: 130, odenmez: 935, zayi: 0, sale: { listValue: 7440, discounts: 90, zTotal: 6285 } });
+  const list = lafposListByKind(r.data.ikram);
+  assert.equal(lafposIkramCheck(z.offRevenue, 1065, { z: kinds, list }), null, "kabul günü tutar: 7.440 − 90 − 130 − 935 = 6.285");
+  // Listenin değerinden bir satır düşmüş (15 ₺): Z kendi içinde tutmuyor
+  const broken = lafposIkramCheck(z.offRevenue, 1065, { z: lafposZKinds({ ...z, listValue: 7425 }), list });
+  assert.equal(plain(broken), "LafPOS'un Z'si kendi içinde tutmuyor: liste 7.425 ₺ − indirim 90 ₺ − ikram 130 ₺ − ödenmez 935 ₺ = 6.270 ₺, toplam satış 6.285 ₺ (15 ₺ fazla).");
+  // listValue'yu göndermeyen LafPOS: eşitlik denetlenmez, türler yine karşılaştırılır
+  assert.equal(lafposZKinds({ ...z, listValue: undefined })?.sale, undefined);
+  assert.equal(lafposIkramCheck(z.offRevenue, 1065, { z: lafposZKinds({ ...z, listValue: undefined }), list }), null);
+  // Türe göre toplamı olmayan eski LafPOS: null (eski kural)
+  assert.equal(lafposZKinds({ ...z, ikramTotal: undefined }), null);
+  // Kasa e-postasının okuyucusu aynı yardımcıyla kurar
+  assert.match(read("src/server/data/lafpos-ikram.ts"), /zByKind: zd \? lafposZKinds\(zd\) : null/);
 });
 
 test("Pavo: cihazın hata kodu karşılaştırmada görünür", () => {

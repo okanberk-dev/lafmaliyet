@@ -32,7 +32,7 @@ import {
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { lafposDiffsLine } from "@/lib/lafpos/diffs";
-import { lafposIkramCheck } from "@/lib/lafpos/ikram";
+import { lafposIkramCheck, type LafposZKinds } from "@/lib/lafpos/ikram";
 import { okcHasFigures, okcReconcile, type OkcReconcileLine } from "@/lib/okc-z";
 import { photoDiffText } from "@/lib/photo-read/kasa";
 import { longDateTR } from "@/lib/reminders";
@@ -117,7 +117,7 @@ export function renderCashReport(
       iptalValue?: number;
       unprepared?: { count: number; value: number };
       /** Faz 2: türe göre Z toplamları ve liste; varsa denetim tür tür (lafposIkramCheck) */
-      byKind?: { z: { ikram: number; odenmez: number; zayi: number } | null; list: { ikram: number; odenmez: number; zayi: number } };
+      byKind?: { z: LafposZKinds | null; list: { ikram: number; odenmez: number; zayi: number } };
     } | null;
     /**
      * laffogato.net'in o günkü online satışı ve karaoke ön ödemesi (bilgi; kasadan geçmez, kasa farkına girmez). Site

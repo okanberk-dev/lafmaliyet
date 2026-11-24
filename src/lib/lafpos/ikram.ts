@@ -2,7 +2,7 @@ import { posMatchKey } from "@/lib/calc/pos-paste";
 import { money } from "@/lib/format";
 import { dayAblativeTR } from "@/lib/reminders";
 
-import type { PosIkram, PosIptal } from "./day";
+import type { PosDayZ, PosIkram, PosIptal } from "./day";
 import { isLafposBranch, isLafposDay } from "./switch";
 
 /**
@@ -206,15 +206,36 @@ export function productIkramRefusal(
 }
 
 /**
+ * LafPOS'un Z'sindeki türe göre toplamlar (Faz 2; hesap sözleşmesi §5): ikram, ödenmez, zayi ve `listValue`
+ * gönderildiyse satışın kendi eşitliğinin girdileri (`sale`: liste, indirim, toplam satış). Türe göre toplamları
+ * göndermeyen eski LafPOS'ta null (lafposIkramCheck eski kuralla)
+ */
+export interface LafposZKinds {
+  ikram: number;
+  odenmez: number;
+  zayi: number;
+  sale?: { listValue: number; discounts: number; zTotal: number };
+}
+
+/** Saklı Z özetinden türe göre toplamlar (kasa e-postasının okuyucusu: src/server/data/lafpos-ikram.ts) */
+export function lafposZKinds(z: Pick<PosDayZ, "ikramTotal" | "odenmezTotal" | "zayiTotal" | "listValue" | "discounts" | "zTotal">): LafposZKinds | null {
+  if (z.ikramTotal === undefined || z.odenmezTotal === undefined || z.zayiTotal === undefined) return null;
+  const kinds: LafposZKinds = { ikram: z.ikramTotal, odenmez: z.odenmezTotal, zayi: z.zayiTotal };
+  if (z.listValue !== undefined) kinds.sale = { listValue: z.listValue, discounts: z.discounts ?? 0, zTotal: z.zTotal };
+  return kinds;
+}
+
+/**
  * Kasa e-postasının ikram denetimi LafPOS gününde (yalnız yönetici): LafPOS'un Z'sindeki ödenmez tutarı ile aynı
  * günün ikram listesinin (ikram, ödenmez ve zayi satırları; LafPOS'ta ödenmez tutarı üçünü de kapsar) menü değeri.
  * LafPOS ikisini aynı adisyonlardan hesaplar; fark varsa bilgi satırı, yoksa null. Z büyükse listeye girmeyen ödenmez
- * satır, küçükse listede kalmış iptal edilen adisyonun ikramı (eski LafPOS onu da yazıyordu) açıklar.
+ * satır, küçükse listede kalmış iptal edilen adisyonun ikramı (eski LafPOS onu da yazıyordu) açıklar. Faz 2'de Z'nin
+ * kendi eşitliği de (toplam satış = liste − indirim − ikram − ödenmez; `byKind.z.sale`) denetlenir.
  */
 export function lafposIkramCheck(
   offRevenue: number,
   listValue: number,
-  byKind?: { z: { ikram: number; odenmez: number; zayi: number } | null; list: { ikram: number; odenmez: number; zayi: number } } | null,
+  byKind?: { z: LafposZKinds | null; list: { ikram: number; odenmez: number; zayi: number } } | null,
 ): string | null {
   const r2 = (v: number) => Math.round(v * 100) / 100;
   // Faz 2: LafPOS'un Z'si türe göre toplamları da yollar (hesap sözleşmesi §5): tür tür karşılaştırılır, LafPOS'un kendi
@@ -222,6 +243,17 @@ export function lafposIkramCheck(
   if (byKind?.z) {
     const z = byKind.z;
     const out: string[] = [];
+    // Z'nin kendi eşitliği (sözleşme §5): bir satır listeden ya da satıştan düştüyse burada görünür
+    if (z.sale) {
+      const { listValue: list, discounts, zTotal } = z.sale;
+      const expected = r2(list - discounts - z.ikram - z.odenmez);
+      const gap = r2(zTotal - expected);
+      if (Math.abs(gap) >= 1) {
+        out.push(
+          `LafPOS'un Z'si kendi içinde tutmuyor: liste ${money(list)} − indirim ${money(discounts)} − ikram ${money(z.ikram)} − ödenmez ${money(z.odenmez)} = ${money(expected)}, toplam satış ${money(zTotal)} (${money(Math.abs(gap))} ${gap > 0 ? "fazla" : "az"}).`,
+        );
+      }
+    }
     const own = r2(offRevenue - (z.ikram + z.odenmez + z.zayi));
     if (Math.abs(own) >= 1) out.push(`LafPOS'un ödenmez tutarı (Z) türlerin toplamından (${money(r2(z.ikram + z.odenmez + z.zayi))}) ${money(Math.abs(own))} ${own > 0 ? "fazla" : "az"}.`);
     const NAMES = { ikram: ["ikram", "ikramdan"], odenmez: ["ödenmez", "ödenmezden"], zayi: ["zayi", "zayiden"] } as const;
