@@ -241,5 +241,10 @@ describe("kabul: Marina Kasım 2026 (ModPOS 13–21 + LafPOS 22 Kasım)", { skip
     const rows = Object.fromEntries(detail.sections.flatMap((x) => x.rows));
     assert.equal(rows["Yazarkasa Z no"], "11");
     assert.equal(detail.sends, 1);
+    // Pavo'nun batch'i yazarkasadan geçmeyen kartı (870) beklemez: LafPOS'un kıyası 5.030 − 870 = 4.160, uyumlu
+    const bank = await kasa.loadLafposBankPos(S, db, LAFPOS_SUBE);
+    assert.ok(bank, "Pavo karşılaştırması");
+    const { pavoView } = await import("../src/lib/lafpos/bank-pos");
+    assert.deepEqual([bank.pavoCard, bank.lafposCard, r2(day.z.card - day.offDevice!.card), pavoView(bank).state], [4_160, 4_160, 4_160, "uyumlu"]);
   });
 });

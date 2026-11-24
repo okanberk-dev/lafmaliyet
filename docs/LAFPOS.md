@@ -101,7 +101,8 @@ Gövde katı JSON, en çok 256 KB. Tutarlar TL (iki ondalık; fazlası yuvarlan�
   değilse `true`), `switchDay` paneldeki geçiş günü (`null`: seçilmedi, kasa ModPOS). LafPOS (#159'dan beri) 200'ü
   yalnız gövdede `ok: true` ve gönderdiği `date` varsa gönderildi sayar; yoksa (araya giren bir giriş ya da bakım
   sayfası) günü gönderilmiş işaretlemez, yeniden dener. Bu iki alan kaldırılmaz; ötekileri durum ekranı için okur,
-  eski LafPOS onları görmez. Veritabanı yazamazsa
+  eski LafPOS onları görmez. Faz 2 alanları (aşağıda) 200'ün gövdesini değiştirmez; 200 yalnız kabul edilen gövdenin
+  yazıldığını ve sürüm geçmişine girdiğini söyler. Veritabanı yazamazsa
   `500 {"error":"server_error"}` (LafPOS yeniden dener). Reddedilen istek gün sonundan hiçbir şey yazmaz; sonucu
   yalnız durum satırına düşer (aşağıda, "Durum ve onarım").
 - **Aynı gün aynı Z no ile yeniden gelince** (düzeltme ya da yeniden deneme) tek işlemde günün özeti yenisiyle
@@ -384,7 +385,8 @@ geçildikten sonra). LafPOS satış satırları (`lines[]`) ikramı içermez (La
 
 - Satır panel ürününe gün sonu satırlarıyla aynı sırayla bağlanır (sitenin kalemi ve boyu, sonra POS adı
   eşleştirmesi), okuma anında: ürün sonradan bağlanınca geçmiş ikram da bulunur. Bağlanamayan satır tüketime girmez;
-  adı Ayarlar › LafPOS'ta "İkramda ürüne bağlanamayan POS adları" altında listelenir ve oradan bağlanır (yalnız ikram
+  adı Ayarlar › LafPOS'ta "İkramda ürüne bağlanamayan POS adları" altında listelenir (Faz 2'den hazırlanmış iptalin
+  bağlanamayan adı da: o da tüketime ürünüyle girer) ve oradan bağlanır (yalnız ikram
   edilen kalem satış satırlarına hiç düşmez).
 - **Tür:** Faz 2'den LafPOS `kind`'ı yollar ve o önce gelir; yollamayan eski LafPOS'ta nedenin ön ekinden (LafPOS
   `shared/comp.ts` `compReasonText`): "Zayi: Döküldü" zayidir (ön ek atılır), "Ödenmez: Personel yemeği" ve öteki her
@@ -454,7 +456,11 @@ Marina'nın laffogato.net online satışı (`&branch=marina`), raporun durumu ve
 yok. İptal sözleşmede ayrı alan değil (yazılmaz).
 
 - Gün başına içerik başına bir kez: günün özeti (`dayHash`: Z, ödemeler, ikram) gönderilenle aynıysa gitmez. LafPOS
-  düzeltip farklı rakamla yeniden gönderirse konu "· düzeltildi" ile ve başta "Düzeltildi: …" notuyla bir kez daha gider.
+  düzeltip farklı rakamla yeniden gönderirse konu "· düzeltildi" ile ve başta "Düzeltildi: …" notuyla bir kez daha gider
+  (Faz 2'den gövdede düzeltmenin türü ve nedeni varsa not onu yazar: "Düzeltildi: gün yeniden açıldı (…)"). Faz 2
+  anahtarları (Z'nin liste ve tür toplamları, KDV dökümü, açılış / kapanış anı, yazarkasa Z no'su; ikramın türü ve kişi
+  türü) özete girmez: öteki alanlardan türerler; panel yükseltilmeden önce saklanmış bir gün aynı rakamlarla yeniden
+  gelince "Düzeltildi" e-postası gitmez.
 - Gönderim başarısızsa hata `lafpos_day_ends.email_error`'a ve işlem kaydına (`notification_log`, anahtar
   `lafpos-gun:marina:GÜN`) yazılır; günlük iş yeniden dener. Aynı anda iki gönderim olmaz (`sending_at`).
 - Geçiş gününden önceki gün (deneme) e-posta almaz, rapor yazılmaz.
