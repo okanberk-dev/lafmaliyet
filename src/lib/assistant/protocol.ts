@@ -141,6 +141,8 @@ export interface ChatMessage {
   note?: string;
   /** Yanıttaki onay kartları ve son durumları */
   cards?: OpCardState[];
+  /** Yanıtın sonundaki takip önerileri (followups.ts; metinden ayrılmış, yalnız ekranda) */
+  followups?: string[];
 }
 
 /** Sayfa işlem sürerken yenilendiyse kartın iletisi (durum sunucudan yeniden okunana kadar) */

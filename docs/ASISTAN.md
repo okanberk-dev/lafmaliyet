@@ -59,6 +59,18 @@ işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları 
   `src/lib/assistant/page-context.ts` › `PAGE_SUGGESTIONS` (her kayıt menüdeki gerçek bir ekran; testli). Çipler yalnız
   okuma sorusudur; işlem (onay kartı) öneren çip yoktur.
 
+## Takip önerileri
+
+- Bilgi veren her yanıtın altında, modelin önerdiği **2–3 kısa takip sorusu** çip olarak durur ("Geçen haftayla
+  kıyaslar mısın?"); dokununca soru olarak gider. **Ek API çağrısı yoktur:** model aynı yanıtın sonuna etiketli bir
+  blok yazar (`<takip>` … `</takip>`, sistem isteminde tarif edilir); tarayıcı bloğu yanıttan ayırır. Akarken blok ve
+  yarım gelen etiket görünmez; bitince metin bloksuz saklanır ve sonraki sorunun geçmişine de bloksuz gider.
+- Güvenlik: bloğun içi veridir. Her satır düz yazıya indirilir (etiket, markdown işareti, görünmeyen ve yön değiştiren
+  karakterler atılır), bağlantı ya da adres taşıyan satır düşer, en çok 3 soru, her biri en çok 80 karakter; ekranda
+  React yazısı olarak çizilir (HTML yok). Bir öneri yalnız soru olarak gönderilir: işlem gerekirse yine onay kartı çıkar.
+- Onay kartı açılan, bilgi sorulan (eksik bilgi), hata ya da retle biten yanıtta ve selamlaşmada öneri yazılmaz.
+  Öneriler yalnız son yanıtın altında görünür. Dosya: `src/lib/assistant/followups.ts`, çipler `followup-chips.tsx`.
+
 ## Telefonda
 
 - **Alt menü:** yöneticinin alt menüsü asistan açıkken **Bugün · Kasa · Asistan · Ödemeler · Tümü** olur (asistan

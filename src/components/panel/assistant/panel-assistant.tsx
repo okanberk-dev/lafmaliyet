@@ -6,11 +6,13 @@ import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } f
 
 import { useMediaQuery } from "@/components/ui/use-media";
 import type { OpCardState } from "@/lib/assistant/ops";
+import { restoreFollowups, splitFollowups } from "@/lib/assistant/followups";
 import { pageFromLocation, suggestionsFor } from "@/lib/assistant/page-context";
 import { ASSISTANT_DAILY_CAP, ASSISTANT_LIMITS, eventReader, historyForRequest, restoreCards, type AssistantDone, type AssistantEvent, type ChatMessage } from "@/lib/assistant/protocol";
 import { cn } from "@/lib/utils";
 
 import { onAssistantOpened, setAssistantOpen, useAssistantOpen } from "./assistant-open";
+import { FollowupChips } from "./followup-chips";
 import { MarkdownView } from "./markdown-view";
 import { OpCardView } from "./op-card";
 
@@ -24,6 +26,7 @@ import { OpCardView } from "./op-card";
  *   açıkken onların üstünde; baskıda görünmez. Telefonda düğme hiç çizilmez (`!sheet`, sınıfta da `max-lg:hidden`).
  * - Sayfa bağlamı (src/lib/assistant/page-context.ts): boşken açık ekrana özel 3–4 öneri çipi; her soruda açık ekranın
  *   yolu ve adresteki ?ay / ?gun gider (sunucu değişken bağlama tek satır yazar).
+ * - Takip önerileri (src/lib/assistant/followups.ts): yanıtın sonundaki <takip> bloğu ayrılır, son yanıtın altında çip.
  * - Sohbet bu sekmede durur (sessionStorage, kullanıcıya özel anahtar); "Yeni sohbet" siler. Sunucuya her soruda yalnız
  *   önceki turların görünen metni gider (historyForRequest); sunucu hiçbir mesajı saklamaz.
  * - Yanıt akarak gelir (satır satır JSON): metin parça parça, araç çalışırken durum satırı ("Tedarikçi özeti…"),
@@ -77,7 +80,10 @@ function loadMessages(userId: number): ChatMessage[] {
       .filter((m): m is ChatMessage => !!m && (m.role === "user" || m.role === "assistant") && typeof m.text === "string")
       .map((m) => {
         const cards = m.role === "assistant" ? restoreCards(m.cards) : undefined;
-        return { role: m.role, text: m.text, ...(m.failed ? { failed: true } : {}), ...(typeof m.note === "string" ? { note: m.note } : {}), ...(cards ? { cards } : {}) };
+        const followups = m.role === "assistant" ? restoreFollowups(m.followups) : undefined;
+        // Takip bloğu yarım kalmış bir metin (sayfa akış sürerken yenilendi) bloksuz geri gelir
+        const text = m.role === "assistant" ? splitFollowups(m.text).body : m.text;
+        return { role: m.role, text, ...(m.failed ? { failed: true } : {}), ...(typeof m.note === "string" ? { note: m.note } : {}), ...(cards ? { cards } : {}), ...(followups ? { followups } : {}) };
       });
   } catch {
     return [];
@@ -264,7 +270,10 @@ export function PanelAssistant({ userId }: { userId: number }) {
     let ended = false;
     const fail = (message: string, keepText = true) => {
       ended = true;
-      patchLast((m) => ({ ...m, text: keepText ? m.text : "", failed: !keepText || !m.text.trim(), note: message }));
+      patchLast((m) => {
+        const body = keepText ? splitFollowups(m.text).body : "";
+        return { ...m, text: body, failed: !keepText || !body.trim(), note: message };
+      });
       setAnnounce(message);
     };
     lastText.current = "";
@@ -282,9 +291,17 @@ export function PanelAssistant({ userId }: { userId: number }) {
         ended = true;
         setTool(null);
         const note = DONE_NOTE[e.reason];
-        patchLast((m) => ({ ...m, ...(note ? { note } : {}), ...(m.text.trim() || m.cards?.length ? {} : { failed: true, note: note ?? "Yanıt boş geldi." }) }));
+        // Takip önerileri yanıttan ayrılır: metin bloksuz kalır (geçmişe de böyle gider), sorular çip olur
+        const split = splitFollowups(lastText.current);
+        patchLast((m) => ({
+          ...m,
+          text: split.body,
+          ...(split.followups.length ? { followups: split.followups } : {}),
+          ...(note ? { note } : {}),
+          ...(split.body.trim() || m.cards?.length ? {} : { failed: true, note: note ?? "Yanıt boş geldi." }),
+        }));
         if (e.left !== null) setGate((g) => (g ? { ...g, left: e.left!, ...(e.left! <= 0 ? { state: "cap", message: capText(g.cap) } : {}) } : g));
-        setAnnounce(answerAnnouncement(lastText.current));
+        setAnnounce(answerAnnouncement(split.body));
       } else if (e.type === "error") {
         setTool(null);
         // Ret: yarım gelen metin atılır (yanıtın yerine yalnız açıklama)
@@ -318,7 +335,11 @@ export function PanelAssistant({ userId }: { userId: number }) {
       if (!ended) fail("Bağlantı yarıda kesildi. Yeniden deneyin.");
     } catch (e) {
       if (controller.signal.aborted) {
-        if (!ended) patchLast((m) => ({ ...m, note: DONE_NOTE.aborted, ...(m.text.trim() ? {} : { failed: true }) }));
+        if (!ended)
+          patchLast((m) => {
+            const body = splitFollowups(m.text).body;
+            return { ...m, text: body, note: DONE_NOTE.aborted, ...(body.trim() ? {} : { failed: true }) };
+          });
         setAnnounce("Durduruldu");
       } else fail(e instanceof Error && e.name === "TypeError" ? "Asistana ulaşılamadı. İnterneti kontrol edip yeniden deneyin." : "Yanıt alınamadı. Yeniden deneyin.");
     } finally {
@@ -467,9 +488,16 @@ export function PanelAssistant({ userId }: { userId: number }) {
               ) : (
                 <div key={i} data-turn="assistant" className="space-y-2">
                   {m.text ? (
-                    <MarkdownView text={m.text} onNavigate={sheet ? close : undefined} className={cn("max-lg:text-[16px] max-lg:leading-7 dark:text-ink-soft", m.failed && "text-ink-mute")} />
+                    <MarkdownView
+                      // Akarken sondaki takip bloğu (ve yarım "<tak") görünmez; bitince metin zaten bloksuzdur
+                      text={busy && i === messages.length - 1 ? splitFollowups(m.text, true).body : m.text}
+                      onNavigate={sheet ? close : undefined}
+                      className={cn("max-lg:text-[16px] max-lg:leading-7 dark:text-ink-soft", m.failed && "text-ink-mute")}
+                    />
                   ) : null}
                   {m.cards?.map((c) => <OpCardView key={c.card.id} state={c} onChange={patchCard} />)}
+                  {/* Takip önerileri yalnız son yanıtın altında */}
+                  {i === messages.length - 1 && !busy && m.followups?.length ? <FollowupChips items={m.followups} onPick={(q) => void send(q)} disabled={blocked} /> : null}
                   {m.note ? <p className={cn("text-[12.5px] leading-5 max-lg:text-[14px] max-lg:leading-6", m.failed ? "text-warn-ink dark:text-brass-300" : "text-ink-mute")}>{m.note}</p> : null}
                 </div>
               ),

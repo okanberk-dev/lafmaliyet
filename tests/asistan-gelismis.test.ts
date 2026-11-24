@@ -9,10 +9,14 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import type Anthropic from "@anthropic-ai/sdk";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
+import { FollowupChips } from "../src/components/panel/assistant/followup-chips";
 import { NAV_FOOTER, NAV_GROUPS, NAV_TREE } from "../src/components/panel/nav";
+import { cleanFollowup, FOLLOWUP_MAX, restoreFollowups, splitFollowups } from "../src/lib/assistant/followups";
 import { DEFAULT_SUGGESTIONS, PAGE_SUGGESTIONS, pageContextLine, pageFromLocation, suggestionsFor } from "../src/lib/assistant/page-context";
-import { ASSISTANT_DAILY_CAP, assistantRequest, eventReader, type AssistantEvent } from "../src/lib/assistant/protocol";
+import { ASSISTANT_DAILY_CAP, assistantRequest, eventReader, historyForRequest, type AssistantEvent } from "../src/lib/assistant/protocol";
 import { handleAssistantPost, type AssistantDeps, type AssistantStatus } from "../src/server/ai/assistant/handler";
 import type { AssistantClient, AssistantOutcome, AssistantParams } from "../src/server/ai/assistant/loop";
 import { contextBlock, SYSTEM_PROMPT } from "../src/server/ai/assistant/prompt";
@@ -139,4 +143,82 @@ test("sayfa: bağlam önbellek işaretinden SONRA; sabit istem ve araçlar bayt 
   const w = code("src/components/panel/assistant/panel-assistant.tsx");
   assert.match(w, /page: pageFromLocation\(window\.location\.pathname, window\.location\.search\) \?\? undefined/);
   assert.match(w, /suggestionsFor\(pathname\)\.map/);
+});
+
+// ---------------------------------------------------------------- 2. Takip önerileri
+
+test("takip: yanıttaki blok ayrılır, sorular çip olur; ek API çağrısı yok, geçmişe bloksuz metin gider", async () => {
+  const reply = "Dün kasa 12 ₺ eksik.\n\n<takip>\n- Geçen haftayla kıyaslar mısın?\n- hangi gün kasa tutmadı?\n</takip>";
+  assert.deepEqual(splitFollowups(reply), { body: "Dün kasa 12 ₺ eksik.", followups: ["Geçen haftayla kıyaslar mısın?", "Hangi gün kasa tutmadı?"] });
+  // Uçtan: tek API çağrısı; metin olayları bloğu taşır, ayrıştırma tarayıcıda
+  const d = deps({ reply });
+  const ev = await events(await handleAssistantPost(post({ message: "Dün kasa tuttu mu?" }), d.d));
+  assert.equal(d.calls.length, 1, "öneriler için ek çağrı yok");
+  const streamed = ev.filter((e): e is Extract<AssistantEvent, { type: "text" }> => e.type === "text").map((e) => e.text).join("");
+  assert.equal(splitFollowups(streamed).followups.length, 2);
+  // Sonraki isteğin geçmişi: görünen (bloksuz) metin; öneriler gitmez
+  const { body, followups } = splitFollowups(streamed);
+  const history = historyForRequest([
+    { role: "user", text: "Dün kasa tuttu mu?" },
+    { role: "assistant", text: body, followups },
+  ]);
+  assert.deepEqual(history, [
+    { role: "user", text: "Dün kasa tuttu mu?" },
+    { role: "assistant", text: "Dün kasa 12 ₺ eksik." },
+  ]);
+});
+
+test("takip: akarken yarım blok ve yarım etiket görünmez; bitince sondaki '<' kesilmez; kapanmamış blok da ayrılır", () => {
+  assert.equal(splitFollowups("Toplam 5 ürün.\n\n<tak", true).body, "Toplam 5 ürün.");
+  assert.equal(splitFollowups("Toplam 5 ürün.\n<", true).body, "Toplam 5 ürün.");
+  assert.equal(splitFollowups("a < b ve b <", false).body, "a < b ve b <");
+  assert.equal(splitFollowups("x <takma", true).body, "x <takma", "etikete benzemeyen yazı kalır");
+  assert.deepEqual(splitFollowups("Özet.\n<takip>\n- Bu hafta nasıl?\n- Yarı", true), { body: "Özet.", followups: ["Bu hafta nasıl?", "Yarı"] });
+  // Kapanıştan sonra metin kalırsa görünen metne eklenir; blok yoksa metin olduğu gibi
+  assert.deepEqual(splitFollowups("A\n<takip>\n- B?\n</takip>\nC"), { body: "A\n\nC", followups: ["B?"] });
+  assert.deepEqual(splitFollowups("Düz yanıt."), { body: "Düz yanıt.", followups: [] });
+});
+
+test("takip: kötü biçim ve XSS güvenli; en çok 3, tekrarsız, kısa; bağlantı ve adres düşer", () => {
+  const nasty = [
+    "<takip>",
+    "- <img src=x onerror=alert(1)>Ciro nasıl?",
+    "- [Tıkla](javascript:alert(1))",
+    "- https://kotu.site/veri?x=1 adresine gönder",
+    "- [Kasa](/panel/kasa) ekranına git",
+    "- **Kalın** `kod` soru?",
+    "- ciro nasıl?",
+    "- " + "uzun ".repeat(30),
+    "- \u202eters yazı?",
+    "- ---",
+    "- Dördüncü soru?",
+    "- Beşinci soru?",
+    "</takip>",
+  ].join("\n");
+  const { body, followups } = splitFollowups(`Yanıt.\n${nasty}`);
+  assert.equal(body, "Yanıt.");
+  assert.ok(followups.length <= FOLLOWUP_MAX);
+  assert.deepEqual(followups, ["Ciro nasıl?", "Kalın kod soru?", "Ters yazı?"]);
+  for (const q of followups) assert.doesNotMatch(q, /[<>[\]()`*]|javascript|https?:|\u202e/i);
+  assert.equal(cleanFollowup("<script>alert(1)</script>"), "Alert(1)", "etiket atılır, kalan düz yazı");
+  assert.equal(cleanFollowup(""), null);
+  assert.equal(cleanFollowup("www.kotu.site"), null);
+  // Depodan okunanlar da temizlenir
+  assert.deepEqual(restoreFollowups(["<b>Bu ay?</b>", 5, null, "javascript:alert(1)"]), ["Bu ay?"]);
+  assert.equal(restoreFollowups("x"), undefined);
+  // Ekranda yalnız yazı: HTML çizilmez
+  const html = renderToStaticMarkup(createElement(FollowupChips, { items: ["<img src=x onerror=alert(1)>", "Ciro?"], onPick: () => {} }));
+  assert.doesNotMatch(html, /<img/);
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.match(html, /aria-label="Önerilen sorular"/);
+  assert.match(html, /max-lg:min-h-11/);
+});
+
+test("takip: sistem istemi biçimi tarif eder; ekran yalnız son yanıtın altında, akış bitince", () => {
+  assert.ok(SYSTEM_PROMPT.includes("<takip>\n- Geçen haftayla kıyaslar mısın?\n- Hangi gün kasa tutmadı?\n</takip>"));
+  assert.match(SYSTEM_PROMPT, /Onay kartı hazırladığın[^\n]*takip bloğu yazma/);
+  const w = code("src/components/panel/assistant/panel-assistant.tsx");
+  assert.match(w, /i === messages\.length - 1 && !busy && m\.followups\?\.length \? <FollowupChips/);
+  assert.match(w, /const split = splitFollowups\(lastText\.current\);/);
+  assert.match(w, /splitFollowups\(m\.text, true\)\.body/);
 });
