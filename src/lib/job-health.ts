@@ -309,10 +309,11 @@ export function requestsStep(r: { expired: number } | { error: string }): StepRe
  * LafPOS gün sonu otomasyonunun adımı (src/server/lafpos/gun-sonu.ts catchUpLafposDayEnds): yalnız bir şey yapıldıysa
  * (rapor yazıldı ya da e-posta gitti) ya da hata varsa yazılır
  */
-export function gunSonuStep(r: { status: string; days: { date?: string; report: string; email: string; error?: string }[] } | { error: string }): StepResult | undefined {
+export function gunSonuStep(r: { status: string; days: { date?: string; report: string; email: string; staff?: string; error?: string }[] } | { error: string }): StepResult | undefined {
   if ("error" in r) return { code: "error", error: r.error };
-  const failed = r.days.filter((d) => d.report === "error" || d.email === "error" || d.email === "failed");
-  if (failed.length) return { code: "error", error: failed.map((d) => `${d.date ?? ""} ${d.error ?? d.email}`.trim()).join(" · ") };
+  const failed = r.days.filter((d) => d.report === "error" || d.email === "error" || d.email === "failed" || d.staff === "error" || d.staff === "failed");
+  const why = (d: (typeof failed)[number]) => d.error ?? (d.report !== "error" && d.email !== "error" && d.email !== "failed" ? "çalışanların e-postası gitmedi" : d.email);
+  if (failed.length) return { code: "error", error: failed.map((d) => `${d.date ?? ""} ${why(d)}`.trim()).join(" · ") };
   return r.days.some((d) => d.report === "written" || d.report === "updated" || d.email === "sent") ? { code: "ok" } : undefined;
 }
 

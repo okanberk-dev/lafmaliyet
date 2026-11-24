@@ -1,3 +1,4 @@
+import { reportNo } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
 
@@ -123,10 +124,13 @@ export function bankPosHash(b: BankPos): string {
   return h.toString(16).padStart(8, "0");
 }
 
-/** Kısa Pavo e-postasının konusu: "Marina · Pavo karşılaştırması · 22 Kasım Pazar" (farkta sonda "· FARK VAR") */
+/**
+ * Kısa Pavo e-postasının konusu, gün sonu e-postasıyla aynı baş: "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar ·
+ * Pavo karşılaştırması" (farkta sonda "· FARK VAR")
+ */
 export function pavoSubject(branchName: string, date: string, b: BankPos): string {
   const state = pavoState(b);
-  return `${branchName} · Pavo karşılaştırması · ${longDateTR(date)}${state === "fark" ? " · FARK VAR" : state === "yok" ? " · alınamadı" : ""}`;
+  return `Kasa raporu ${reportNo(date)} · ${branchName} · ${longDateTR(date)} · Pavo karşılaştırması${state === "fark" ? " · FARK VAR" : state === "yok" ? " · alınamadı" : ""}`;
 }
 
 const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);

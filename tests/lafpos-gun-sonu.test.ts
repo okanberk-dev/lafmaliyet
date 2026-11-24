@@ -9,7 +9,7 @@ import { test } from "node:test";
 import { gunSonuStep } from "../src/lib/job-health";
 import { pavoState, pavoSubject, pavoView, renderPavoMail } from "../src/lib/lafpos/bank-pos";
 import { bankPosSchema, parsePosDay, type PosDayZ } from "../src/lib/lafpos/day";
-import { autoMissing, autoValuesOf, compareText, dayEndSubject, dayHash, mergeAuto, renderDayEnd, type AutoValues, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
+import { autoMissing, autoValuesOf, compareText, dayEndSubject, dayHash, mergeAuto, renderDayEnd, renderStaffDayEnd, type AutoValues, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
 import { unmatchedIkramNames } from "../src/lib/lafpos/ikram";
 import { rejectionText, type LafposRejection } from "../src/lib/lafpos/status";
 import { siteBranchMatches, siteBranchOf } from "../src/lib/site-sales/calc";
@@ -114,9 +114,9 @@ const mail = (o: Partial<DayEndMail> = {}): DayEndMail => ({
   ...o,
 });
 
-test("Gün sonu e-postası: konu şube ve tarih; ciro, ödemeler, ikram, kasa farkı, Z, kıyas ve bağlantı", () => {
+test("Gün sonu e-postası: konu Tuzla'nın kasa e-postası biçiminde (şube, tarih, kasa sonucu); ciro, ödemeler, ikram, kasa farkı, Z, kıyas ve bağlantı", () => {
   const m = renderDayEnd(mail());
-  assert.equal(m.subject, "Marina gün sonu · 22 Kasım Pazar");
+  assert.equal(m.subject, "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · kasa tutuyor");
   assert.ok(!m.subject.endsWith("."));
   const t = plain(m.text);
   assert.match(t, /Toplam satış: 20\.000 ₺/);
@@ -157,18 +157,43 @@ test("Z'nin online alanı paket platformlarının ödemesi: e-postada 'sitede ö
 test("Düzeltme e-postası: konuda ve başta 'düzeltildi'; kasa farkı raporun rakamıyla", () => {
   const values = { ...autoValuesOf("2026-11-22", Z, NO_OUTS, null), countedCash: 9_300 };
   const m = renderDayEnd(mail({ corrected: true, report: "updated", values }));
-  assert.equal(m.subject, "Marina gün sonu · 22 Kasım Pazar · düzeltildi");
+  assert.equal(plain(m.subject), "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · 50 ₺ eksik · düzeltildi");
   const t = plain(m.text);
   assert.match(t, /Düzeltildi: LafPOS bu günü yeniden gönderdi/);
   assert.match(t, /Kasa farkı: 50 ₺ eksik/);
   assert.match(t, /elle düzeltilen alanlar korundu/);
 });
 
-test("Sayım yoksa e-posta 'sayım yok' der, rapor yazılmadığını söyler", () => {
-  const t = plain(renderDayEnd(mail({ z: { ...Z, countedCash: null, cashDiff: null }, values: null, report: "no-count", missing: ["bankPos", "countedCash"] })).text);
+test("Sayım yoksa e-posta 'sayım yok' der (konuda da), rapor yazılmadığını ve LafPOS'ta nereden sayılacağını söyler", () => {
+  const m = renderDayEnd(mail({ z: { ...Z, countedCash: null, cashDiff: null }, values: null, report: "no-count", missing: ["bankPos", "countedCash"] }));
+  assert.equal(m.subject, "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · sayım yok");
+  const t = plain(m.text);
   assert.match(t, /Sayılan nakit: sayım yok/);
   assert.match(t, /Kasa farkı: sayım yok/);
   assert.match(t, /Kasa raporu yazılmadı/);
+  assert.match(t, /Kasa › Geçmiş günler › Kasa föyü/);
+});
+
+test("Sayımsız giden gün sayımla gelince: konu 'kasa sayıldı', 'düzeltildi' değil", () => {
+  const m = renderDayEnd(mail({ recount: true, corrected: false }));
+  assert.equal(m.subject, "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · kasa tutuyor · kasa sayıldı");
+  const t = plain(m.text);
+  assert.match(t, /Önceki e-postada sayım yoktu/);
+  assert.doesNotMatch(t, /Düzeltildi/);
+});
+
+test("Çalışanların e-postası: sayım varsa 'alındı' ve teşekkür; sayım yoksa uyarı, teşekkür yok", () => {
+  const z = { zNo: 14, receipts: 63, zTotal: 20_000, cash: 12_000, card: 8_000, mealCard: 0, other: 0 };
+  const ok = renderStaffDayEnd({ branchName: "Marina", date: "2026-11-22", kind: "alindi", z, amounts: false });
+  assert.equal(ok.subject, "Marina · gün sonu alındı · 22 Kasım Pazar");
+  assert.match(ok.text, /Z no: 14/);
+  assert.match(ok.text, /Emeğiniz için teşekkürler/);
+  assert.doesNotMatch(ok.text, /Toplam satış/, "tutarlar kapalıyken ciro yok");
+  assert.match(plain(renderStaffDayEnd({ branchName: "Marina", date: "2026-11-22", kind: "alindi", z, amounts: true }).text), /Toplam satış: 20\.000,00 ₺/);
+  const none = renderStaffDayEnd({ branchName: "Marina", date: "2026-11-22", kind: "sayim-yok", z, amounts: true });
+  assert.equal(none.subject, "Marina · kasa sayılmadı · 22 Kasım Pazar");
+  assert.match(none.text, /Kasa › Geçmiş günler › Kasa föyü/);
+  assert.doesNotMatch(none.text, /teşekkür|alındı|Toplam satış/i);
 });
 
 test("Kıyas metni", () => {
@@ -176,7 +201,7 @@ test("Kıyas metni", () => {
   assert.equal(plain(compareText(80, 100)), "100 ₺ (%20 az)");
   assert.equal(plain(compareText(100, 100)), "100 ₺ (aynı)");
   assert.equal(compareText(100, null), "bilinmiyor");
-  assert.equal(dayEndSubject("Marina", "2026-11-23", false), "Marina gün sonu · 23 Kasım Pazartesi");
+  assert.equal(dayEndSubject("Marina", "2026-11-23", { result: "sayım yok" }), "Kasa raporu KR-20261123 · Marina · 23 Kasım Pazartesi · sayım yok");
 });
 
 test("Günlük işin adımı: yalnız bir şey yapılınca ya da hata varsa", () => {
@@ -184,6 +209,7 @@ test("Günlük işin adımı: yalnız bir şey yapılınca ya da hata varsa", ()
   assert.equal(gunSonuStep({ status: "ok", days: [{ date: "2026-11-22", report: "unchanged", email: "same" }] }), undefined);
   assert.deepEqual(gunSonuStep({ status: "ok", days: [{ date: "2026-11-22", report: "unchanged", email: "sent" }] }), { code: "ok" });
   assert.equal(gunSonuStep({ status: "error", days: [{ date: "2026-11-22", report: "written", email: "failed" }] })?.code, "error");
+  assert.equal(gunSonuStep({ status: "error", days: [{ date: "2026-11-22", report: "unchanged", email: "same", staff: "failed" }] })?.code, "error", "çalışan e-postası düştüyse de");
   assert.equal(gunSonuStep({ error: "süre doldu" })?.code, "error");
 });
 
@@ -244,8 +270,8 @@ test("Pavo: fark 0 'Uyumlu', fark varsa 'FARK VAR' (konu dahil), sonuç alınama
   const fark = { ...PAVO, pavoCard: 8_120, diff: 120 };
   assert.equal(pavoState(fark), "fark");
   assert.match(plain(pavoView(fark).headline), /^FARK VAR: 120 ₺ \(Pavo fazla\)/);
-  assert.equal(pavoSubject("Marina", "2026-11-22", fark), "Marina · Pavo karşılaştırması · 22 Kasım Pazar · FARK VAR");
-  assert.equal(pavoSubject("Marina", "2026-11-22", PAVO), "Marina · Pavo karşılaştırması · 22 Kasım Pazar");
+  assert.equal(pavoSubject("Marina", "2026-11-22", fark), "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · Pavo karşılaştırması · FARK VAR");
+  assert.equal(pavoSubject("Marina", "2026-11-22", PAVO), "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · Pavo karşılaştırması");
   // Fark gelmediyse iki tutardan
   assert.equal(pavoState({ ...PAVO, pavoCard: 7_900, diff: null }), "fark");
   assert.equal(pavoState({ ...PAVO, status: "failed", message: "Pavo yanıt vermedi" }), "yok");

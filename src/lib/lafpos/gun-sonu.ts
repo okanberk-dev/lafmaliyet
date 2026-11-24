@@ -1,4 +1,4 @@
-import { carryCheck, carryDiffText, computeCash, openingNeedsNote, type CashReportFields } from "@/lib/cash-report";
+import { carryCheck, carryDiffText, computeCash, openingNeedsNote, reportNo, type CashReportFields } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { normalizeVat, sameVat, type OkcVatLine } from "@/lib/okc-z";
 import { addDays, longDateTR } from "@/lib/reminders";
@@ -336,8 +336,13 @@ export interface DayEndMail {
   values: AutoValues | null;
   missing: readonly string[];
   report: ReportState;
-  /** LafPOS günü düzeltip yeniden gönderdi (önceki e-posta gitti) */
+  /** LafPOS günü düzeltip yeniden gönderdi (önceki e-posta sayımlı bir günü taşıyordu) */
   corrected: boolean;
+  /**
+   * Önceki e-posta sayımsız günü taşıyordu, bu ilk sayımlı olanı (konuda "· kasa sayıldı"; düzeltme sayılmaz). Verilmezse
+   * false
+   */
+  recount?: boolean;
   yesterday: DayCompare;
   lastWeek: DayCompare;
   /** laffogato.net'in o şubeye düşen online satışı (kasadan geçmez); okunamadıysa null */
@@ -364,16 +369,38 @@ export function compareText(today: number, other: number | null): string {
   return `${money(other)} (${pct === 0 ? "aynı" : `%${Math.abs(pct)} ${pct > 0 ? "fazla" : "az"}`})`;
 }
 
-/** Konu: "Marina gün sonu · 22 Kasım Pazar" (düzeltmede sonda "· düzeltildi") */
-export function dayEndSubject(branchName: string, date: string, corrected: boolean): string {
-  return `${branchName} gün sonu · ${longDateTR(date)}${corrected ? " · düzeltildi" : ""}`;
+/**
+ * Gün sonu e-postalarının ortak başı, Tuzla'nın kasa e-postasıyla aynı biçim (reportSubject): "Kasa raporu KR-20261122 ·
+ * Marina · 22 Kasım Pazar". Gün sonu, Pavo ve fotoğraf e-postası bununla başlar: gelen kutusunda aynı günün e-postaları
+ * yan yana durur, aramada birlikte çıkar
+ */
+export function dayEndSubjectHead(branchName: string, date: string): string {
+  return `Kasa raporu ${reportNo(date)} · ${branchName} · ${longDateTR(date)}`;
+}
+
+/**
+ * Konu: "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · 120 ₺ eksik" (`result`: kasa tutuyor, 120 ₺ eksik, sayım
+ * yok). Düzeltmede sonda "· düzeltildi"; sayımsız giden gün sayımla gelince "· kasa sayıldı" (düzeltme değil)
+ */
+export function dayEndSubject(branchName: string, date: string, o: { result: string; corrected?: boolean; recount?: boolean }): string {
+  return `${dayEndSubjectHead(branchName, date)} · ${o.result}${o.recount ? " · kasa sayıldı" : o.corrected ? " · düzeltildi" : ""}`;
+}
+
+/** Konudaki kasa sonucu (Kasa bölümünün farkıyla aynı): "kasa tutuyor", "120 ₺ eksik", "sayım yok" */
+export function dayEndCashResult(m: Pick<DayEndMail, "z" | "values">): string {
+  const v = m.values;
+  const cash = v && typeof v.countedCash === "number" ? computeCash(cashFieldsOf(v)) : null;
+  const d = cash ? cash.cashDiff : m.z.cashDiff;
+  if (d === null || (!cash && m.z.countedCash === null)) return "sayım yok";
+  const word = diffWord(d);
+  return word === "tutuyor" ? "kasa tutuyor" : word;
 }
 
 const REPORT_TEXT: Record<ReportState, string> = {
   auto: "Kasa raporu LafPOS'tan kendiliğinden yazıldı.",
   updated: "Kasa raporu LafPOS'un düzeltmesiyle güncellendi; elle düzeltilen alanlar korundu.",
   human: "Kasa raporunu personel girdi; LafPOS'tan farklı yazılan varsa panel gösterir.",
-  "no-count": "LafPOS'ta gün sonu sayımı yok: Kasa raporu yazılmadı. Çekmeceyi LafPOS'ta sayın; LafPOS günü yeniden gönderir.",
+  "no-count": "LafPOS'ta gün sonu sayımı yok: Kasa raporu yazılmadı. Çekmeceyi LafPOS'ta Kasa › Geçmiş günler › Kasa föyü'nden sayın; LafPOS günü yeniden gönderir.",
   none: "Kasa raporu henüz yok.",
 };
 
@@ -468,7 +495,7 @@ export function photoCheckHash(check: LafposPhotoCheck): string {
  * okunduysa ya da kodla okunup güvenle seçilmediyse, karşılaştırma satır satır. Personele hiçbir zaman gitmez
  */
 export function renderPhotoMail(m: { branchName: string; date: string; check: LafposPhotoCheck; link: string }): { subject: string; html: string; text: string } {
-  const subject = `${m.branchName} gün sonu fotoğrafı · ${longDateTR(m.date)} · ${m.check.state === "fark" ? "LafPOS'tan FARKLI" : "okunamadı, yönetici baksın"}`;
+  const subject = `${dayEndSubjectHead(m.branchName, m.date)} · gün sonu fotoğrafı ${m.check.state === "fark" ? "LafPOS'tan FARKLI" : "okunamadı, yönetici baksın"}`;
   const rows = photoRows(m.check);
   const headline = m.check.state === "fark" ? "Fotoğraf LafPOS'un rakamlarından farklı okundu" : `${photoUnsureText(m.check)}: fotoğrafa bakın`;
   const rowHtml = ([label, value]: [string, string]) =>
@@ -483,7 +510,7 @@ export function renderPhotoMail(m: { branchName: string; date: string; check: La
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:18px"><tr><td colspan="2" style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT};font-size:13px;font-weight:600;color:#3f3f46">${esc(PHOTO_TITLE)}</td></tr>${rows.map(rowHtml).join("")}</table>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px"><tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717"><a href="${esc(m.link)}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Panelde aç</a></td></tr></table>
   </td></tr>
-  <tr><td style="padding:16px 12px 0;font-family:${FONT};font-size:12px;color:#a1a1aa;text-align:center">Bu e-posta kasa raporu alıcılarına ve bildirim adreslerine gönderildi.</td></tr>
+  <tr><td style="padding:16px 12px 0;font-family:${FONT};font-size:12px;color:#a1a1aa;text-align:center">Bu e-posta kasa raporu alıcılarına gönderildi.</td></tr>
 </table>
 </td></tr></table>
 </body></html>`;
@@ -536,7 +563,8 @@ export function dayEndNotes(m: DayEndMail): string[] {
   const out: string[] = [];
   // Faz 2: LafPOS düzeltmenin türünü ve nedenini yollar (yeniden açılış, sonradan sayım)
   const why = m.detail?.correction ? m.detail.correction.replace(/^Düzeltme: /, "") : null;
-  if (m.corrected) out.push(`Düzeltildi: ${why ? `${why}; ` : "LafPOS bu günü yeniden gönderdi; "}bu e-postadaki rakamlar öncekinin yerine geçer.`);
+  if (m.recount) out.push("Önceki e-postada sayım yoktu; LafPOS günü sayımla yeniden gönderdi.");
+  else if (m.corrected) out.push(`Düzeltildi: ${why ? `${why}; ` : "LafPOS bu günü yeniden gönderdi; "}bu e-postadaki rakamlar öncekinin yerine geçer.`);
   out.push(REPORT_TEXT[m.report]);
   const missing = m.report === "human" ? [] : m.missing.map((f) => MISSING_LABEL[f] ?? f);
   if (missing.length) out.push(`Eksik: ${missing.join(", ")}.`);
@@ -548,7 +576,7 @@ const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial
 
 /** Gün sonu e-postası: konu, HTML ve düz metin. Maliyet ve kâr yok (alıcılar yönetici ya da hesabı olmayan adres) */
 export function renderDayEnd(m: DayEndMail): { subject: string; html: string; text: string } {
-  const subject = `${dayEndSubject(m.branchName, m.date, m.corrected)}${m.bankPos && pavoState(m.bankPos) === "fark" ? " · Pavo FARK VAR" : ""}${m.photo?.check?.state === "fark" ? " · Fotoğraf FARKLI" : ""}`;
+  const subject = `${dayEndSubject(m.branchName, m.date, { result: dayEndCashResult(m), corrected: m.corrected, recount: m.recount })}${m.bankPos && pavoState(m.bankPos) === "fark" ? " · Pavo FARK VAR" : ""}${m.photo?.check?.state === "fark" ? " · Fotoğraf FARKLI" : ""}`;
   const sections = dayEndSections(m);
   const notes = dayEndNotes(m);
   const rowHtml = ([label, value]: [string, string]) =>
@@ -567,7 +595,7 @@ export function renderDayEnd(m: DayEndMail): { subject: string; html: string; te
     ${sections.map(sectionHtml).join("\n    ")}${m.bankPos ? `\n    ${pavoSectionHtml(m.bankPos)}` : ""}
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px"><tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717"><a href="${esc(m.link)}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Panelde aç</a></td></tr></table>
   </td></tr>
-  <tr><td style="padding:16px 12px 0;font-family:${FONT};font-size:12px;color:#a1a1aa;text-align:center">Bu e-posta kasa raporu alıcılarına ve bildirim adreslerine gönderildi.</td></tr>
+  <tr><td style="padding:16px 12px 0;font-family:${FONT};font-size:12px;color:#a1a1aa;text-align:center">Bu e-posta kasa raporu alıcılarına gönderildi.</td></tr>
 </table>
 </td></tr></table>
 </body></html>`;
@@ -581,6 +609,40 @@ export function renderDayEnd(m: DayEndMail): { subject: string; html: string; te
     "",
     `Panelde aç: ${m.link}`,
   ].join("\n");
+  return { subject, html, text };
+}
+
+/** Çalışanların sayımsız gün uyarısının ne yapılacağı (Kasa sayfasının ve zilin metniyle aynı iş) */
+export const STAFF_NO_COUNT_TEXT = "LafPOS'ta gün sonu sayımı yok, kasa raporu yazılmadı. Çekmeceyi LafPOS'ta Kasa › Geçmiş günler › Kasa föyü'nden sayın; LafPOS günü yeniden gönderir.";
+
+/**
+ * Çalışanların kısa e-postası (saf): sayım varsa "Marina · gün sonu alındı" (Z no, fiş sayısı; `amounts` açıksa ciro ve
+ * ödeme türleri), sayım yoksa "Marina · kasa sayılmadı" uyarısı ve ne yapılacağı (teşekkür yok: iş bitmedi). Kasa farkı,
+ * maliyet ve karaoke ödemesi hiç girmez
+ */
+export function renderStaffDayEnd(m: { branchName: string; date: string; kind: "alindi" | "sayim-yok"; z: Pick<PosDayZ, "zNo" | "receipts" | "zTotal" | "cash" | "card" | "mealCard" | "other">; amounts: boolean }): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const day = longDateTR(m.date);
+  if (m.kind === "sayim-yok") {
+    const subject = `${m.branchName} · kasa sayılmadı · ${day}`;
+    const text = [`${m.branchName} gün sonu sayımsız geldi (${day}).`, "", STAFF_NO_COUNT_TEXT].join("\n");
+    const html = `<!doctype html><html lang="tr"><body style="font-family:Inter,Arial,sans-serif;color:#171a26"><h2 style="margin:0 0 12px">${esc(m.branchName)} · kasa sayılmadı</h2><p style="color:#5f6371;margin:0 0 12px">${esc(day)}</p><p style="margin:0">${esc(STAFF_NO_COUNT_TEXT)}</p></body></html>`;
+    return { subject, html, text };
+  }
+  const z = m.z;
+  const tlText = (v: number) => `${v.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₺`;
+  const rows: [string, string][] = [["Z no", String(z.zNo)], ["Fiş sayısı", String(z.receipts)]];
+  if (m.amounts) {
+    rows.push(["Toplam satış", tlText(z.zTotal)], ["Nakit", tlText(z.cash)], ["Kart", tlText(z.card)]);
+    if (z.mealCard) rows.push(["Yemek kartı", tlText(z.mealCard)]);
+    if (z.other) rows.push(["Diğer", tlText(z.other)]);
+  }
+  const subject = `${m.branchName} · gün sonu alındı · ${day}`;
+  const text = [`${m.branchName} gün sonu alındı (${day}).`, "", ...rows.map(([k, v]) => `${k}: ${v}`), "", "Emeğiniz için teşekkürler."].join("\n");
+  const html = `<!doctype html><html lang="tr"><body style="font-family:Inter,Arial,sans-serif;color:#171a26"><h2 style="margin:0 0 12px">${esc(m.branchName)} · gün sonu alındı</h2><p style="color:#5f6371;margin:0 0 12px">${esc(day)}</p><table style="border-collapse:collapse">${rows.map(([k, v]) => `<tr><td style="padding:4px 16px 4px 0;color:#5f6371">${esc(k)}</td><td style="padding:4px 0;font-weight:600">${esc(v)}</td></tr>`).join("")}</table><p style="margin-top:16px">Emeğiniz için teşekkürler.</p></body></html>`;
   return { subject, html, text };
 }
 

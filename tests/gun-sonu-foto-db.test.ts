@@ -384,7 +384,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     assert.equal(sent.length, 1);
     const mail = sent[0];
     assert.deepEqual(mail.to, ["sahip@ornek.com"], "yalnız yöneticinin alıcıları");
-    assert.match(plain(mail.subject), /Marina gün sonu fotoğrafı · 22 Kasım Pazar · LafPOS'tan FARKLI/);
+    assert.match(plain(mail.subject), /Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · gün sonu fotoğrafı LafPOS'tan FARKLI/);
     const t = plain(mail.text);
     assert.match(t, /Yazarkasa kartı: fotoğrafta 4\.000 ₺ · LafPOS'ta 4\.160 ₺ · FARK/);
     assert.match(t, /Yazarkasa nakdi: fotoğrafta 1\.215 ₺ · LafPOS'ta 1\.055 ₺ · FARK/);

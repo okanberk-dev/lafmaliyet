@@ -299,11 +299,14 @@ Haftalık özet zaten yalnız etkin yöneticilerin giriş e-postalarına gider.
 
 ## Marina gün sonu e-postası (22 Kasım 2026)
 
-LafPOS'un şubesinin (Marina) gün sonu geçiş gününden itibaren geldiğinde kasa raporu alıcılarına ve etkin bildirim
-adreslerine (yeni liste yok; personel ve pasif hesap düşer) "Marina gün sonu · 22 Kasım Pazar" gider: satış, ödemeler,
-ikram / ödenmez, kasa farkı, Z no, dün ve geçen haftayla kıyas, panele bağlantı; maliyet ve kâr yok. İçerik başına bir
-kez; LafPOS düzeltip yeniden gönderirse "· düzeltildi" ile bir kez daha. Gidemezse sabahki günlük iş yeniden dener
-(adım "LafPOS gün sonu"). Tuzla'nın e-postaları değişmez. Ayrıntı:
+LafPOS'un şubesinin (Marina) gün sonu geçiş gününden itibaren geldiğinde kasa raporu alıcılarına (Tuzla'nın kasa
+e-postasıyla aynı liste; personel ve pasif hesap düşer) "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · 120 ₺ eksik"
+gider: satış, ödemeler, ikram / ödenmez, kasa farkı, Z no, dün ve geçen haftayla kıyas, Pavo karşılaştırması, panele
+bağlantı; maliyet ve kâr yok. Pavo'nun sonucu birkaç dakika içinde bekleniyorsa onu bekler (tek e-posta). İçerik başına
+bir kez; LafPOS düzeltip yeniden gönderirse "· düzeltildi", sayımsız giden gün sayılınca "· kasa sayıldı" ile bir kez
+daha. Pavo ya da fotoğraf sonradan farklı gelirse kısa e-posta aynı konu başıyla gider. Çalışanlara (Kasa › Rapor
+alıcıları › Çalışanlar) "gün sonu alındı" günde bir kez; sayım yoksa teşekkür değil "kasa sayılmadı" uyarısı. Gidemezse
+sabahki günlük iş yeniden dener (adım "LafPOS gün sonu"). Ayrıntı:
 [LAFPOS.md › Gün sonu otomasyonu](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026).
 
 ## Karaoke e-postaları (22 Kasım 2026)

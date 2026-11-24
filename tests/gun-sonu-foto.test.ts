@@ -415,7 +415,7 @@ test("Fotoğraf e-postası (gün sonu e-postasından sonra eklenen fotoğraf): y
   assert.equal(photoMailNeeded(check([{ photoId: 1, raw: detailedZ(), error: null }])), false, "uyumlu fotoğraf e-posta göndermez");
   assert.equal(photoMailNeeded(null), false);
   const mail = renderPhotoMail({ branchName: "Marina", date: DAY, check: c, link: "https://ladmin.test/panel/kasa?gun=2026-11-24" });
-  assert.equal(plain(mail.subject), "Marina gün sonu fotoğrafı · 24 Kasım Salı · LafPOS'tan FARKLI");
+  assert.equal(plain(mail.subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · gün sonu fotoğrafı LafPOS'tan FARKLI");
   const t = plain(mail.text);
   assert.match(t, /Yazarkasa kartı: fotoğrafta 850 ₺ · LafPOS'ta 800 ₺ · FARK/);
   assert.match(t, /Okuyan: Yapay zekâ \(Claude Opus 5\.5\)/);
@@ -427,5 +427,5 @@ test("Fotoğraf e-postası (gün sonu e-postasından sonra eklenen fotoğraf): y
   const unsure: LafposPhotoCheck = { ...check([{ photoId: 1, raw: parsePavoOcr([line("~~~(20)")]).raw, error: null, source: "kod", model: OCR_MODEL }]) };
   assert.equal(unsure.state, "belirsiz");
   assert.equal(photoMailNeeded(unsure), true);
-  assert.equal(plain(renderPhotoMail({ branchName: "Marina", date: DAY, check: unsure, link: "x" }).subject), "Marina gün sonu fotoğrafı · 24 Kasım Salı · okunamadı, yönetici baksın");
+  assert.equal(plain(renderPhotoMail({ branchName: "Marina", date: DAY, check: unsure, link: "x" }).subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · gün sonu fotoğrafı okunamadı, yönetici baksın");
 });
