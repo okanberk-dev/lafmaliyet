@@ -22,7 +22,7 @@ import { DEFAULT_BRANCH_ID, type BranchKind, type BranchPosSource } from "../../
 import type { CashRevisionData } from "../../lib/cash-report";
 import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checklists";
 import type { InvoiceReading } from "../../lib/invoice-reading";
-import type { BankPos, PosCorrection, PosDayPush, PosDayZ, PosIkram, PosIptal, PosOffDevice, PosPayment, PosRefund } from "../../lib/lafpos/day";
+import type { BankPos, PosCashMove, PosCorrection, PosDayPush, PosDayZ, PosIkram, PosIptal, PosOffDevice, PosPayment, PosRefund } from "../../lib/lafpos/day";
 import type { KasaFoyu } from "../../lib/modpos/foy";
 import type { ModposSheetPrevious } from "../../lib/modpos/z";
 import type { OkcVatLine } from "../../lib/okc-z";
@@ -1541,10 +1541,16 @@ export const cashOuts = pgTable(
     photoId: integer("photo_id").references(() => photos.id, { onDelete: "set null" }),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     createdByName: text("created_by_name").notNull(),
+    /**
+     * LafPOS'un kasa hareketinin kimliği (ULID; Faz 3, docs/LAFPOS.md › Kasadan çıkanlar LafPOS'tan): satır LafPOS'tan
+     * geldi ya da elle girilmiş eşi LafPOS'a bağlandı. Tutar, tür ve gün LafPOS'undur (src/lib/lafpos/cash-moves.ts
+     * lafposCashOutChange); fotoğraf, yer, belge ve kategori panelden. Elle girilen satırda null
+     */
+    lafposId: text("lafpos_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("cash_outs_date_idx").on(t.date), uniqueIndex("cash_outs_photo_uq").on(t.photoId)],
+  (t) => [index("cash_outs_date_idx").on(t.date), uniqueIndex("cash_outs_photo_uq").on(t.photoId), uniqueIndex("cash_outs_lafpos_uq").on(t.lafposId)],
 );
 
 // ---------------------------------------------------------------- Zayi ve ikram
@@ -2270,6 +2276,11 @@ export const posDayReports = pgTable(
      * yollar: alanı taşımayan sonraki gönderim (Pavo sonucu) silmez. Düzeltilmemiş günde null
      */
     correction: jsonb("correction").$type<PosCorrection>(),
+    /**
+     * Faz 3: günün kasa hareketleri (harcama, teslim, giriş; son gövdeninkiler). Harcama ve teslim ayrıca "Kasadan
+     * çıkanlar"a satır olur (cash_outs.lafpos_id); giriş yalnız burada. Eski LafPOS göndermez ya da okunamadıysa null
+     */
+    cashMoves: jsonb("cash_moves").$type<PosCashMove[]>(),
     /** LafPOS'un son kabul edilen gövdesinin gönderim sırası (1'den); eski LafPOS göndermez: null */
     revision: integer("revision"),
     /** Gönderen sistem ("lafpos") */

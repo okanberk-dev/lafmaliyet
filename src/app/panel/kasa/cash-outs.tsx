@@ -257,6 +257,11 @@ export function CashOutsCard({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm text-ink">{label}</span>
                   <span className="block truncate text-xs text-ink-mute">{rowSub(o)}</span>
+                  {o.lafposId ? (
+                    <Badge tone="gray" className="mt-1 mr-1.5" title="LafPOS'un kasa hareketinden: tutar, tür ve gün LafPOS'tan">
+                      LafPOS
+                    </Badge>
+                  ) : null}
                   {mine ? (
                     <Badge tone="amber" className="mt-1">
                       {mine.view.op === "sil" ? "Silme isteğiniz bekliyor" : "Düzeltme isteğiniz bekliyor"}

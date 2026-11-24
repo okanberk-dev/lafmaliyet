@@ -125,8 +125,10 @@ export function lafposDayOf(z: PosDayZ, receivedAt: Date | string, offDevice?: P
 }
 
 /**
- * "Gün içinde çıkan"ın iki kaynağı (denetim E-35; sahip sorusu 5 cevaplanana kadar varsayılan): panelin Kasadan
- * çıkanlar'ı kaynaktır (Aylık harcamalar ve tedarikçi ödemeleri oradan okunur), LafPOS'un harcama + teslimi bilgidir.
+ * "Gün içinde çıkan"ın iki kaynağı (denetim E-35): panelin Kasadan çıkanlar'ı kaynaktır (Aylık harcamalar ve tedarikçi
+ * ödemeleri oradan okunur), LafPOS'un harcama + teslimi bilgidir. Sahip sorusu 5 yanıtlandı (23 Kasım 2026, Faz 3):
+ * kasa hareketlerini gönderen LafPOS'un günü satır satır gelir (src/server/lafpos/cash-moves.ts) ve ikisi kendiliğinden
+ * tutar; bu satır eski LafPOS'un gününde ya da panele LafPOS'ta olmayan bir çıkış girildiğinde görünür.
  * İkisi tutmuyorsa formun bilgi satırı: "LafPOS'ta harcama 450 ₺ + teslim 5.000 ₺; Kasadan çıkanlar'da 450 ₺." Fark
  * LafPOS'taki teslim kadarsa ne yapılacağı söylenir: teslim Kasadan çıkanlar'a "Teslim" olarak eklenince Gün içinde
  * çıkan kendiliğinden toplamı alır (fişsiz çıkış ya da sahte eksik olmaz). Tutuyorsa null.

@@ -130,6 +130,9 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
    hiçbir reçete değişmez.
 5. **Kasadan çıkan para nereye girilecek** (E-35, B09): fişli harcamalar ve sahibe teslim edilen nakit panelin "Kasadan
    çıkanlar"ına mı, LafPOS'a mı, ikisine birden mi?
+   **Yanıt (23 Kasım, Faz 3 kararı 3):** LafPOS'ta girilir, satır satır "Kasadan çıkanlar"a gelir. **Yapıldı (LM-3):**
+   `cashMoves[]` → `cash_outs` (`lafpos_id`; elle girilmiş eşi sahiplenilir, tutar / tür / gün kilitli; fiş ve kategori
+   panelden), `docs/LAFPOS.md` › Kasadan çıkanlar LafPOS'tan.
 6. **LafPOS ikramları** (E-38, B10): Zayi & ikram'a yeniden girilmesin, LafPOS'tan mı alınsın?
    **Yanıt (26 Ekim):** evet, LafPOS'a geçilince ikram kendiliğinden LafPOS'tan gelir (B10). **Yapıldı (B10):** geçiş
    gününden itibaren ürün ikramı yalnız LafPOS'tan; panelde hammadde ikramı ve zayi kalır.
@@ -486,7 +489,7 @@ Bugün'ün ve zilin akşam kasa satırı "LafPOS'ta Günü kapat" der; Kasa rapo
 kapalı gün kartı günün kasasını, aylık rapor etiketleri (Genel bakış, Gelir-gider, Tutarlılık, Ürünler, Analiz, KDV
 tahmini, Excel, Claude) ayın kasasını yazar (geçiş ayında "Kasa (ModPOS 1–9 · LafPOS 10–30)"). Geçiş günü boşken
 metinlerin hepsi bugünkünün aynısı.
-Kalan: sahibe soru 5.
+Kalan: yok (sahibe soru 5, 23 Kasım 2026'da yanıtlandı; LM-3).
 
 **Açılış sırası (sahibin adımları, `docs/LAFPOS.md` › "Açılış sırası"):** B07-B11 yayına girmeden geçiş günü seçilmez;
 anahtarlar en erken B07 yayındayken girilir.

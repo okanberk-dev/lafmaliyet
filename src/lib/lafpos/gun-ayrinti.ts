@@ -13,6 +13,9 @@ import type { PosDayPush, PosRefund } from "./day";
  * - İptal edilen kalemler: hazırlanmış olan zayi tüketimidir (src/lib/lafpos/ikram.ts iptalWasteLines), hazırlanmamış
  *   yalnız bilgi
  * - Yazarkasa Z no (okcZNo): LafPOS'un Z no'sundan ayrı, kasa raporunun "Yazarkasa Z no"suna otomatik yazılır
+ * - Kasa açılışı (Faz 3, kasa zinciri): LafPOS'un açılışta beklediği (önceki günün devri), fark ve kasiyerin yazdığı neden
+ * - Kasa hareketleri (Faz 3): harcama, teslim ve giriş, türüne göre sayı ve toplam; harcama ve teslim "Kasadan
+ *   çıkanlar"a satır satır gelir (src/server/lafpos/cash-moves.ts), giriş yalnız burada görünür
  */
 
 export interface LafposDayDetail {
@@ -36,7 +39,10 @@ export function correctionText(c: NonNullable<PosDayPush["correction"]>): string
 /** Oranın etiketi: "KDV %10" */
 const rateLabel = (rate: number) => `KDV %${Number.isInteger(rate) ? rate : rate.toLocaleString("tr-TR")}`;
 
-export function lafposDayDetail(d: Pick<PosDayPush, "z" | "offDevice" | "refunds" | "iptal" | "revision" | "correction">): LafposDayDetail {
+/** İşaretli tutar: "+100 ₺", "−20,50 ₺", "0 ₺" */
+const signedMoney = (v: number) => (v > 0 ? `+${money(v)}` : v < 0 ? `−${money(-v)}` : money(0));
+
+export function lafposDayDetail(d: Pick<PosDayPush, "z" | "offDevice" | "refunds" | "iptal" | "revision" | "correction" | "cashMoves">): LafposDayDetail {
   const sections: LafposDayDetail["sections"] = [];
   const pay: [string, string][] = [];
   if (d.offDevice) {
@@ -57,6 +63,27 @@ export function lafposDayDetail(d: Pick<PosDayPush, "z" | "offDevice" | "refunds
   if (d.z.okcZNo !== undefined) fiscal.push(["Yazarkasa Z no", d.z.okcZNo ?? "yok"]);
   for (const v of d.z.vat ?? []) fiscal.push([rateLabel(v.rate), `matrah ${money(v.base)} · KDV ${money(v.vat)}`]);
   if (fiscal.length) sections.push({ title: "Yazarkasa ve KDV", rows: fiscal });
+  // Kasa zinciri (Faz 3): beklenen bilinmiyorsa (önceki gerçek gün yok) yalnız o satır
+  if (d.z.expectedOpening !== undefined) {
+    const opening: [string, string][] = [["Beklenen açılış", d.z.expectedOpening === null ? "bilinmiyor" : money(d.z.expectedOpening)]];
+    if (d.z.expectedOpening !== null && d.z.openingDiff != null) opening.push(["Açılış farkı", signedMoney(d.z.openingDiff)]);
+    if (d.z.openingReason) opening.push(["Farkın nedeni", d.z.openingReason]);
+    sections.push({ title: "Kasa açılışı (LafPOS)", rows: opening });
+  }
+  if (d.cashMoves) {
+    const of = (kind: string) => {
+      const ms = d.cashMoves!.filter((m) => m.kind === kind);
+      return ms.length ? `${ms.length} · ${money(sum(ms.map((m) => m.amount)))}` : "yok";
+    };
+    sections.push({
+      title: "Kasa hareketleri (LafPOS)",
+      rows: [
+        ["Harcama", of("harcama")],
+        ["Teslim", of("teslim")],
+        ["Kasaya giren (giriş)", of("giris")],
+      ],
+    });
+  }
   if (d.revision !== undefined) sections.push({ title: "Gönderim", rows: [["Gönderim", `${d.revision}. gönderim`]] });
   return {
     sections,

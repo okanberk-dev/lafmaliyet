@@ -83,6 +83,7 @@ async function loadStoredDay(db: DB | CashTx, date: string, branchId: string): P
       iptal: s.posDayReports.iptal,
       revision: s.posDayReports.revision,
       correction: s.posDayReports.correction,
+      cashMoves: s.posDayReports.cashMoves,
     })
     .from(s.posDayReports)
     .where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, branchId)))
@@ -100,6 +101,7 @@ async function loadStoredDay(db: DB | CashTx, date: string, branchId: string): P
     iptal: row.iptal ? sh.iptal.parse(row.iptal) : undefined,
     revision: row.revision ?? undefined,
     correction: row.correction ? sh.correction.parse(row.correction) : undefined,
+    cashMoves: row.cashMoves ? sh.cashMoves.parse(row.cashMoves) : undefined,
   });
   return {
     z: z.data,

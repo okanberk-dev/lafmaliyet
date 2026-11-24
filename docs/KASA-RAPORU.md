@@ -268,8 +268,12 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
   harcamalar'a yazılır (kategori sorulur); faturası geldiyse ya da yönetici listeden çıkardıysa yazılmaz (inceleme D5).
 - Akşam raporunun **Gün içinde kasadan çıkan** tutarı ve **Neye çıktı** notu satırlardan dolar ("Fişlerden: 2 kalem ·
   …"). Yazılan tutar satırların toplamından azsa uyarı çıkar (engellemez).
-- **LafPOS gününde de kaynak bu satırlardır** (denetim E-35; sahip sorusu 5 cevaplanana kadar varsayılan): Aylık
-  harcamalar ve tedarikçi ödemeleri buradan okunur. LafPOS'un harcama + teslimi tutmuyorsa formda bilgi satırı:
+- **LafPOS gününde de kaynak bu satırlardır** (denetim E-35): Aylık harcamalar ve tedarikçi ödemeleri buradan
+  okunur. **Sahip sorusu 5 yanıtlandı (23 Kasım 2026, Faz 3):** kasadan çıkan para LafPOS'ta girilir, harcama ve
+  teslim gün sonunda buraya satır satır gelir ("LafPOS" rozetli; tutar, tür ve gün LafPOS'tan, satır silinmez; fiş
+  fotoğrafı, yer, belge ve kategori buradan eklenir; elle girilmiş eşi bire bir sahiplenilir, iki kez sayılmaz;
+  [LAFPOS.md](LAFPOS.md) › Kasadan çıkanlar LafPOS'tan). Eski LafPOS'un (yalnız toplam yollayan) gününde ve LafPOS'ta
+  olmayan elle satırda: LafPOS'un harcama + teslimi tutmuyorsa formda bilgi satırı:
   "LafPOS'ta harcama 450 ₺ + teslim 5.000 ₺; Kasadan çıkanlar'da 450 ₺. Teslimi Kasadan çıkanlar'a "Teslim" olarak
   ekleyin; Gün içinde çıkan kendiliğinden 5.450 ₺ olur." Fişler varken alanın altında "LafPOS'ta 5.450 ₺" görünür ama
   **LafPOS'takini yaz** yoktur (fişsiz çıkış olurdu). Geç rapor ve düzeltme kartında fişlerden fazlası LafPOS'taki teslim

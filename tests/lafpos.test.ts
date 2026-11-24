@@ -110,6 +110,16 @@ test("imza: LafPOS uçlarının vektörleri (sitenin bağlantısıyla aynı kod;
     sign(SECRET, { timestamp: T, method: "GET", url: new URL("https://ladmin.laffogato.net/api/panel/pos/modpos-gunler?sube=marina"), body: "" }),
     "e653d2f73b92e4fa1f6acc750f6702872e7e3a68204f9adad8f17e5bf6dd9023",
   );
+  // Kasa zinciri uçları (Faz 3; LafPOS tests/signature.test.ts aynı vektörler): devir okuması (sorgu imzaya girer) ve
+  // gider kategorileri, ikisi de gövdesiz imzalı GET
+  assert.equal(
+    sign(SECRET, { timestamp: T, method: "GET", url: new URL("https://ladmin.laffogato.net/api/panel/pos/devir?date=2026-11-22"), body: "" }),
+    "d0d42a100852f660d76a81e1f1631684faef9838a67f1788ded57de92640205b",
+  );
+  assert.equal(
+    sign(SECRET, { timestamp: T, method: "GET", url: new URL("https://ladmin.laffogato.net/api/panel/pos/gider-kategorileri"), body: "" }),
+    "7309e560164d15d4ccb5c17ecaa6355bde88073a238c1cc5976f1858431c10b1",
+  );
   // İmza kuralı kopyalanmadı: denetim karaoke bağlantısının verifySignature'ını çağırır
   const src = read("src/lib/lafpos/request.ts");
   assert.match(src, /import \{ verifySignature \} from "@\/lib\/karaoke\/signature";/);
@@ -535,6 +545,17 @@ test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; 
   const check = read("src/lib/lafpos/modpos-gunler.ts");
   const checkFn = check.slice(check.indexOf("export function checkModposDaysRequest"));
   assert.ok(checkFn.indexOf("checkLafposRequest(") > 0 && checkFn.indexOf("checkLafposRequest(") < checkFn.indexOf("modposSube("), "imza şubeden önce");
+  // Kasa zinciri (Faz 3): devir ve gider kategorileri de yalnız imzayla, önbelleğe alınmadan
+  for (const [file, fn] of [
+    ["src/app/api/panel/pos/devir/route.ts", "servePosDevir"],
+    ["src/app/api/panel/pos/gider-kategorileri/route.ts", "servePosExpenseCategories"],
+  ] as const) {
+    const route = read(file);
+    assert.match(route, /export async function GET\(request: NextRequest\) \{\s*await connection\(\);/, file);
+    assert.match(route, /"Cache-Control": "no-store"/, file);
+    assert.match(route, new RegExp(`${fn}\\(getDb\\(\\), \\{\\s*secret: lafposSecret\\(\\),`), file);
+    assert.doesNotMatch(route, /getCurrentUser|requireUser|requireAdmin/, `${file}: oturumla açılmaz`);
+  }
   // Oturum ara katmanı bu uçlara dokunmaz (imza tek kapı)
   assert.doesNotMatch(read("src/proxy.ts"), /\/api\/pos|\/api\/panel/);
 });
@@ -722,9 +743,25 @@ test("altın gövde: LafPOS'un buildDayPayload biçimi (şube, iki boy, ekler, h
       ["EXTRA SHOT", "mnu-0081", "M", false],
     ],
   );
-  assert.equal(r.data.z.expectedCash, 1845);
+  // 23 Kasım 2026'dan (LafPOS kasa zinciri, Faz 3): günde teslim (200) ve giriş (50) var; sayılan teslimden sonradır
+  assert.deepEqual([r.data.z.countedCash, r.data.z.handedOver, r.data.z.cashIn, r.data.z.expectedCash], [1685, 200, 50, 1695]);
   assert.equal(r.data.z.cardTips, 25);
   assert.equal(r.data.z.cardCollections, 400);
+  // Faz 3: açılışın beklenen tutarı, farkı ve nedeni; kasa hareketleri satır satır (Σ harcama = cashOut, Σ teslim =
+  // handedOver, Σ giriş ≤ cashIn)
+  assert.deepEqual([r.data.z.expectedOpening, r.data.z.openingDiff, r.data.z.openingReason], [1400, 100, "Sabah bozuk para eklendi"]);
+  const moves = r.data.cashMoves ?? [];
+  assert.deepEqual(
+    moves.map((m) => [m.kind, m.amount, m.description, m.categoryId]),
+    [
+      ["harcama", 120, "Buz", 1],
+      ["teslim", 200, "Patrona teslim", null],
+      ["giris", 50, "Bozuk para", null],
+    ],
+  );
+  const moved = (k: string) => Math.round(moves.filter((m) => m.kind === k).reduce((a, m) => a + m.amount, 0) * 100) / 100;
+  assert.deepEqual([moved("harcama"), moved("teslim")], [r.data.z.cashOut, r.data.z.handedOver]);
+  assert.ok(moved("giris") <= (r.data.z.cashIn ?? 0), "giriş cashIn'in içinde");
   assert.deepEqual(r.data.payments.map((p) => p.channel), [null, null, null, "pluxee"]);
   // Z toplamı ödeme alanlarının toplamı, beklenen nakit LafPOS'un formülüyle (kasa eşlemesi aynısını hesaplar)
   const z = r.data.z;
@@ -735,8 +772,8 @@ test("altın gövde: LafPOS'un buildDayPayload biçimi (şube, iki boy, ekler, h
   // Aynı gövdenin kenarları: boş ikram nedeni null, kasaya giren nakit beklenen nakde girer
   const body = JSON.parse(raw) as { z: Record<string, number>; ikram: { reason: string | null }[] };
   body.ikram[1].reason = "";
-  body.z.cashIn = 1000;
-  body.z.expectedCash = 2845;
+  body.z.cashIn = 1050;
+  body.z.expectedCash = 2695;
   const edge = parsePosDay(JSON.stringify(body), NOW);
   assert.ok(edge.ok, edge.ok ? "" : edge.field);
   assert.equal(edge.data.ikram[1].reason, null, "boş neden null");

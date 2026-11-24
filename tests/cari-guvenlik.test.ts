@@ -167,7 +167,7 @@ test("Kasa (§8): personelin satır verisi beyaz listeyle kurulur; ödeme bağı
   const { STAFF_CASH_OUT_FIELDS, staffCashOutRow, nameKey, supplierNameHint } = await import("../src/lib/cash-outs");
   assert.deepEqual(
     [...STAFF_CASH_OUT_FIELDS].sort(),
-    ["amount", "categoryId", "categoryName", "createdAt", "createdByName", "date", "description", "docType", "expenseEntryId", "id", "kind", "photoId", "receiptDate", "receiptNo", "store", "vat"],
+    ["amount", "categoryId", "categoryName", "createdAt", "createdByName", "date", "description", "docType", "expenseEntryId", "id", "kind", "lafposAwaitingCategory", "lafposId", "photoId", "receiptDate", "receiptNo", "store", "vat"],
   );
   const full = Object.fromEntries([...STAFF_CASH_OUT_FIELDS, "createdBy", "updatedAt", "supplierId", "paymentId"].map((k) => [k, k])) as Record<string, string>;
   const row = staffCashOutRow(full as Record<(typeof STAFF_CASH_OUT_FIELDS)[number], unknown>, true);

@@ -8,6 +8,7 @@ import { EPS, round2 } from "@/lib/cari/balance";
 import { KASA_DEBT_DAYS, kasaMatches, type KasaFound } from "@/lib/cari/match";
 import type { MonthEffect } from "@/lib/cari/months";
 import { dateTR, tl } from "@/lib/format";
+import { LAFPOS_CASH_OUT_TEXT } from "@/lib/lafpos/cash-moves";
 import { addDays } from "@/lib/reminders";
 import { UserError } from "@/server/actions/util";
 import { KASA_AYRI_KEY, KASA_AYRI_LIMIT, loadKasaHandled } from "@/server/data/cari";
@@ -169,6 +170,8 @@ export async function convertCashOut(
   const [line] = await tx.select().from(s.cashOuts).where(eq(s.cashOuts.id, input.cashOutId)).for("update").limit(1);
   if (!line) throw new UserError("Kasa satırı bulunamadı; silinmiş olabilir. Sayfayı yenileyin.");
   if (line.kind !== "harcama") throw new UserError("Satır zaten Teslim · ödeme; Ödeme ekle › Kasadan ile bağlayın.");
+  // LafPOS'tan gelen satırın türü LafPOS'undur (Faz 3): Teslim'e çevrilemez
+  if (line.lafposId) throw new UserError(LAFPOS_CASH_OUT_TEXT.locked);
   const [taken] = await tx.select({ id: s.supplierEntries.id }).from(s.supplierEntries).where(eq(s.supplierEntries.cashOutId, line.id)).limit(1);
   if (taken) throw new UserError("Bu kasa satırı başka bir ödemeye bağlı");
   const [exp] = await tx.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, line.id)).for("update").limit(1);

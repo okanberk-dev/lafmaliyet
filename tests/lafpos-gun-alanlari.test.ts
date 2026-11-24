@@ -161,8 +161,9 @@ test("Faz 2 alanı bozuk gelirse yok sayılır, gün reddedilmez (400 LafPOS'ta 
 
 test("eski gövde ve saklanmış eski Z: Faz 2 alanları olmadan geçer, alan eklenmez", () => {
   const b = JSON.parse(golden()) as Record<string, unknown> & { z: Record<string, unknown>; lines: Record<string, unknown>[]; ikram: Record<string, unknown>[]; bankPos: Record<string, unknown> };
-  for (const k of ["revision", "correction", "offDevice", "refunds", "iptal"]) delete b[k];
-  for (const k of ["listValue", "ikramTotal", "odenmezTotal", "zayiTotal", "vat", "openedAt", "closedAt", "okcZNo"]) delete b.z[k];
+  // 23 Kasım 2026'dan altın gövde Faz 3 alanlarını da taşır (kasa zinciri): eski gövde onları da taşımaz
+  for (const k of ["revision", "correction", "offDevice", "refunds", "iptal", "cashMoves"]) delete b[k];
+  for (const k of ["listValue", "ikramTotal", "odenmezTotal", "zayiTotal", "vat", "openedAt", "closedAt", "okcZNo", "expectedOpening", "openingDiff", "openingReason"]) delete b.z[k];
   for (const l of b.lines) for (const k of ["gross", "isAddon"]) delete l[k];
   for (const i of b.ikram) for (const k of ["kind", "personKind"]) delete i[k];
   delete b.bankPos.errorCode;
@@ -608,8 +609,17 @@ test("gün ayrıntısı (kabul günü): yazarkasadan geçmeyen, ödeme iptalleri
   assert.ok(g.ok, g.ok ? "" : g.field);
   const gd = lafposDayDetail(g.data);
   assert.equal(plain(gd.correction), "Düzeltme: gün yeniden açıldı (Geç gelen masa)");
-  // Eski LafPOS'un günü: Faz 2 satırları yok
-  const old = lafposDayDetail({ ...g.data, offDevice: undefined, refunds: undefined, iptal: undefined, revision: undefined, correction: undefined, z: { ...g.data.z, okcZNo: undefined, vat: undefined } });
+  // Eski LafPOS'un günü: Faz 2 (ve Faz 3) satırları yok
+  const old = lafposDayDetail({
+    ...g.data,
+    offDevice: undefined,
+    refunds: undefined,
+    iptal: undefined,
+    revision: undefined,
+    correction: undefined,
+    cashMoves: undefined,
+    z: { ...g.data.z, okcZNo: undefined, vat: undefined, expectedOpening: undefined, openingDiff: undefined, openingReason: undefined },
+  });
   assert.deepEqual(old.sections, []);
   assert.equal(old.correction, null);
 });
