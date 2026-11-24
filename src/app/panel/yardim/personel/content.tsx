@@ -120,7 +120,7 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
     body: (
       <>
         Kapanışta ModPOS&apos;tan ve banka POS&apos;tan (yazarkasa) Z raporunu alın, kasadaki nakdi sayın ve <StaffPath href="/panel/kasa" /> ekranına girin. Kasada
-        LafPOS kullanılmaya başlandıysa ModPOS yerine LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın: gün sonu panele gönderilir, form ondan dolar.{" "}
+        LafPOS kullanılmaya başlandıysa LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın: rapor LafPOS&apos;tan kendiliğinden yazılır, siz yalnız Pavo gün sonu fişinin (detaylı Z) fotoğrafını eklersiniz.{" "}
         {clockSuffixTR(hour(CASH_EVENING_HOUR), "abl")} sonra
         Bugün ekranı hatırlatır.
       </>
@@ -178,8 +178,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             <B>Raporu gönder</B>&apos;e siz basarsınız. Kasada sayılan nakdi, sayımdan sonra teslim edileni ve kasayı kimin saydığını
             yazın. Satış dışında kasaya para konduysa (bozuk para, tahsilat, nakit bahşiş) <B>Kasaya giren ekle</B> ile yazın. Kasa farkı yazarken
             hesaplanır; fark varsa nedenini nota yazın. Gece {hour(DAY_TURN_HOUR)}&apos;e kadar kapanan gün bir önceki güne yazılır. Kasada LafPOS
-            kullanılmaya başlandıysa önce LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın: form LafPOS&apos;un gün sonundan dolar (bölümün adı &quot;LafPOS gün
-            sonu (Z)&quot;), ModPOS Z fotoğrafı istenmez ve banka POS Z&apos;sinin kartı LafPOS&apos;la karşılaştırılır.
+            kullanılmaya başlandıysa form doldurulmaz: LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın, rapor LafPOS&apos;tan kendiliğinden yazılır ve rakamlar
+            yalnız okunur; siz yalnız Pavo gün sonu fişinin (detaylı Z) fotoğrafını eklersiniz.
           </>
         ),
         icon: Banknote,
