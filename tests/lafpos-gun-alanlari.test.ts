@@ -10,8 +10,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { posRevenueBreakdown } from "../src/app/panel/dashboard-breakdowns";
 import { discountColumns, discountTotals } from "../src/app/panel/satislar/sales-logic";
 import { createModel } from "../src/lib/calc/engine";
+import { dashboard } from "../src/lib/calc/insights";
 import type { Dataset } from "../src/lib/calc/types";
 import { resolveMonth, tillMonths, type TillRow } from "../src/lib/cash-month";
 import { vatMonthInputs } from "../src/lib/kdv";
@@ -348,6 +350,16 @@ test("KDV hariç ciro: LafPOS'un dökümü günün cirosunu tutmuyorsa (rapor el
   assert.equal(model.pnlMonth("2026-11").revenueNet, 30576.15);
 });
 
+test("KDV hariç cironun açıklaması gün gün hesabı söyler (Genel bakış dökümü, Gelir-gider satırının ipucu); ay toplamından hesaplanan ayda eski metin", () => {
+  const { model } = novemberModel(marinaRows());
+  const sub = (m: typeof model, month: string) => plain(posRevenueBreakdown(m, dashboard(m, month)).groups[0]?.rows.find((r) => r.key === "net")?.sub);
+  assert.equal(sub(model, "2026-11"), "POS cirosu 33.634 ₺ gün gün: LafPOS günü kendi KDV dökümüyle, öteki günler ÷ (1 + KDV %10); ay günlerin toplamı");
+  const hint = model.pnlRowDefs(["2026-11"]).find((r) => r.key === "revenueNet")?.hint ?? "";
+  assert.match(plain(hint), /LafPOS'un şubesinin günleri gün gün: LafPOS gününün KDV'si kendi dökümünden, öteki günler günün oranıyla; ay günlerin toplamı/);
+  const tuzla = novemberModel(marinaRows(undefined, "tuzla"), null).model;
+  assert.equal(sub(tuzla, "2026-11"), "POS cirosu 33.634 ₺ ÷ (1 + KDV %10)");
+});
+
 test("KDV hariç ciro: LafPOS'un şubesi olmayan ay (Tuzla, eski satırlar) bugünkü gibi ay toplamından", () => {
   const { model, till } = novemberModel(marinaRows(undefined, "tuzla"), null);
   assert.equal(till.dayVat, undefined);
@@ -417,6 +429,13 @@ test("Satışlar: LafPOS gününün ürün satırları Z'yi tutmuyorsa uyarı; M
   assert.deepEqual(nearNotes.warnings, []);
   assert.deepEqual(nearNotes.checks.map((c) => c.ok), [false, true]);
   assert.match(plain(nearNotes.checks[0].text), /liste − indirim Z'den 85,00 ₺ fazla/);
+});
+
+test("Satışlar bandı: tutmayan ModPOS denetimi bilgi kutusu (uyarı tonu yalnız %5'i aşan farkın kendi uyarısında), tutanlar tek satır", () => {
+  const page = read("src/app/panel/satislar/page.tsx");
+  const band = page.slice(page.indexOf("function LafposBand"));
+  assert.match(band, /\{off\.map\(\(c\) => \(\s*<Notice key=\{c\.text\} tone="neutral" title=\{c\.text\} \/>/, "tutmayan denetim bilgi tonunda");
+  assert.doesNotMatch(band.slice(0, band.indexOf("</div>")), /off\.map\(\(c\) => \(\s*<Notice key=\{c\.text\} tone="warn"/);
 });
 
 // ---------------------------------------------------------------- Kasa gün görünümü ve gün sonu e-postası

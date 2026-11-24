@@ -2716,7 +2716,7 @@ export function createModel(ds: Dataset) {
       label: "AYLIK CİRO (KDV hariç)",
       kind: "total",
       editable: false,
-      hint: `AYLIK CİRO'dan ${pctOf(st.kdv)} KDV düşülür; Satışlar'da HİZMET işaretli satırların (karaoke odası) cirosu ${pctOf(st.kdvHizmet)} ile ayrılır (Ayarlar › Oranlar).`,
+      hint: `AYLIK CİRO'dan ${pctOf(st.kdv)} KDV düşülür; Satışlar'da HİZMET işaretli satırların (karaoke odası) cirosu ${pctOf(st.kdvHizmet)} ile ayrılır (Ayarlar › Oranlar). Ciro kasa raporlarından geliyorsa LafPOS'un şubesinin günleri gün gün: LafPOS gününün KDV'si kendi dökümünden, öteki günler günün oranıyla; ay günlerin toplamı.`,
     });
     // laffogato.net online satışları: yalnız bu aylardan en az biri siteden çekildiyse (çekilmemiş ay boş kalır, 0 değil)
     if (months.some((m) => siteByMonth.has(m))) {
