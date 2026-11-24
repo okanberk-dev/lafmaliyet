@@ -107,7 +107,7 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
         id: `kasa-bekliyor-${day}`,
         kind: "warning",
         title: "Bugünün kasa raporu bekliyor",
-        body: lafpos ? "Kapanışta LafPOS'ta Günü kapat'a basın, kasayı girin" : "Kapanışta ModPOS'un Z raporunu ve kasayı girin",
+        body: lafpos ? "Kapanışta LafPOS'ta Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin fotoğrafını ekleyin" : "Kapanışta ModPOS'un Z raporunu ve kasayı girin",
         timeLabel: "Bugün",
         unread: true,
         href: "/panel/kasa",

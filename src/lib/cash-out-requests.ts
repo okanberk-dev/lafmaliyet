@@ -140,6 +140,16 @@ export type RemovablePhotoKind = PhotoRemovalPayloadT["photoKind"];
 export type KasaEvidence = "modpos-z" | "lafpos" | "okc-z";
 
 /**
+ * Fotoğrafın okunuşu rapordan farklıysa (net okunmuş alan, suspiciousDiffs) kaldırma kapalı mı: fotoğraf kanıttır. Otomatik
+ * LafPOS gününde personelin düğmesi ve isteği buna bakmaz (son denetim, 24 Kasım 2026): o fark fotoğraf ↔ LafPOS
+ * karşılaştırmasıdır, yalnız yöneticinin; düğmenin kaybolması personele farkı ele verirdi. Yöneticinin onayı yine bakar
+ */
+export function readingBlocksRemoval(o: { suspicious: number; staff: boolean; lafposAuto: boolean }): boolean {
+  if (o.suspicious === 0) return false;
+  return !(o.staff && o.lafposAuto);
+}
+
+/**
  * Fotoğrafın türü yüzünden kaldırılamaması (null: tür engel değil; okuma farkı ayrıca denetlenir): raporun tek ModPOS Z
  * fotoğrafı ve, yazarkasa bölümü yazılmışken, tek Banka POS Z (yazarkasa) fotoğrafı kanıttır (docs/planlar/okc-z.md
  * §16 S4: ModPOS Z'siyle aynı kural). Yazarkasa bölümü boşken o fotoğraf hiçbir rakamın kanıtı değildir, kaldırılabilir.

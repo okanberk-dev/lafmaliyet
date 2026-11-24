@@ -65,8 +65,8 @@ fiyatlar'da işaretleyin" diye **Kasadaki fiyatlar**'a götürür (dalga 10 §2.
 satır yalnız yöneticide ve yalnız siteye bağlı olmayan, fiyatı LafPOS günü panelde değişen ürünleri sayar ("Siteye
 bağlı olmayan ürün: LafPOS'ta yerelse orada elle değiştirip …; LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde
 bağlayın"); siteye bağlı ürünün fiyatını LafPOS siteden alır, zil çıkmaz. Personelde satır yok: LafPOS'ta ürün fiyatını
-kasiyer değiştiremez (denetim B11). Personelin akşam kasa zili o günden itibaren "Kapanışta LafPOS'ta Günü kapat'a
-basın, kasayı girin" der. Yöneticinin **Uyarılar** başlığında
+kasiyer değiştiremez (denetim B11). Personelin akşam kasa zili o günden itibaren (yalnız Marina) "Kapanışta LafPOS'ta
+Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin fotoğrafını ekleyin" der. Yöneticinin **Uyarılar** başlığında
 personelin Siparişler ekranında tükendi yaptığı ve hâlâ satışta olmayan ürünler: "Tükendi: Tiramisu, Cheesecake" (en çok 3
 ad), gövdesi "Personel kapattı: Selin 21:40 · Ali 22:05. Sitede, uygulamada ve QR menüde satışta değil.", Siparişler
 ekranının Tükenenler kartına (`/panel/siparisler#tukenenler`) götürür; bir kayıt 24 saatten eskiyse ya da son bir saatte personel 3 ya da daha çok ürün

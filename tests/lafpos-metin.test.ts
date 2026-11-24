@@ -181,7 +181,8 @@ test("Bugün: personelin akşam kasa satırı günün kasasıyla (geçiş günü
   assert.equal(byKey(dayTasks(staffFacts(evening))).kasa.detail, "Kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayıp girin.");
   assert.equal(byKey(dayTasks(staffFacts(evening, { lafposSwitch: "2026-11-13" }))).kasa.detail, eveningCashText("ModPOS"), "geçiş günü yarın");
   const laf = byKey(dayTasks(staffFacts(evening, { lafposSwitch: S }))).kasa.detail;
-  assert.equal(laf, "Kapanışta LafPOS'ta Günü kapat'a basın (gün sonu panele gönderilir), kasadaki nakdi sayıp girin.");
+  // LafPOS gününde rapor LafPOS'tan gelir; personel rakam girmez (son denetim, 24 Kasım 2026; tests/son-kontrol.test.ts)
+  assert.equal(laf, "Kapanışta LafPOS'ta Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin (detaylı Z) fotoğrafını eklersiniz.");
   assert.equal(eveningCashText("LafPOS"), laf);
 });
 

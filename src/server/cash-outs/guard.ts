@@ -5,9 +5,12 @@ import { eq } from "drizzle-orm";
 import { staffCanReport } from "@/lib/cash-report";
 import { CASH_OUT_REQUEST_TEXT, cashOutNeedsApproval, requestDayAllowed, type CashOutOp } from "@/lib/cash-out-requests";
 import { staffExpenseLocked } from "@/lib/cash-outs";
+import { LAFPOS_CASH_OUT_TEXT, staffLafposEntryClosed } from "@/lib/lafpos/cash-moves";
+import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { currentTillBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { CARI_LOCKED_STAFF, cashOutPayment } from "@/server/cari/kasa";
 import { closedDayRefusal } from "@/server/closed-days";
+import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { schema as s } from "@/server/db";
 import { staffDayOpen } from "@/server/photo-read/rules";
 import { UserError } from "@/server/user-error";
@@ -22,7 +25,11 @@ import type { CashOutActor, CashOutRow, CashOutTx } from "./write";
  * (src/lib/cash-out-requests.ts cashOutNeedsApproval, `rowLocked`) yazılır; doğrudan yol da istek yolu da onu görür.
  */
 
-export type CashOutTarget = { op: "ekle"; date: string } | { op: Exclude<CashOutOp, "ekle"> | "fis"; row: CashOutRow };
+/**
+ * `restore`: silinenin "Geri al"ı (mühürlü kopyayla, 15 dakika; actions/cash-outs.ts restoreCashOut): yeni satır sayılmaz,
+ * LafPOS gününün ekleme reddi uygulanmaz (personelin az önce sildiği elle girilmiş satır geri gelir)
+ */
+export type CashOutTarget = { op: "ekle"; date: string; restore?: boolean } | { op: Exclude<CashOutOp, "ekle"> | "fis"; row: CashOutRow };
 
 /** Satırın bağlı harcama kaydı yöneticinin kategorisinde mi (personelin seçemediği; maaş, avans, kapatılmış kategori) */
 async function adminCategoryOf(tx: CashOutTx, cashOutId: number): Promise<boolean> {
@@ -47,6 +54,14 @@ export async function staffCashOutGate(tx: CashOutTx, me: CashOutActor, target: 
   const refusal = target.op === "ekle" ? null : await staffBranchRefusal(me, target.row.branchId);
   if (refusal) throw new UserError(refusal);
   const date = target.op === "ekle" ? target.date : target.row.date;
+  // LafPOS gününe personel satır eklemez (sahibin kararı, 24 Kasım 2026; staffLafposEntryClosed): kasadan çıkanlar LafPOS'un
+  // kasa hareketlerinden gelir. Doğrudan ekleme, ekleme isteği ve satırı başka güne taşıma buradan geçer. Düzeltme ve fiş
+  // (LafPOS satırına fiş fotoğrafı, kategori) açık kalır; yönetici her zaman ekler
+  if (target.op === "ekle" && !target.restore) {
+    const till = await currentTillBranch();
+    const lafposDay = isLafposDay(date, branchSwitchDay(await lafposSwitchDayOf(tx), till));
+    if (staffLafposEntryClosed({ admin: false, branchId: till, lafposDay })) throw new UserError(LAFPOS_CASH_OUT_TEXT.staffAdd);
+  }
   const [dayOpen, adminCategory, payment] = await Promise.all([
     // Satırın kasası: var olan satırda satırın şubesi, yeni satırda kasanın şubesi (yazım da oraya iner)
     staffDayOpen(date, tx, now, target.op === "ekle" ? undefined : target.row.branchId),

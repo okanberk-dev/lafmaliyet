@@ -37,7 +37,17 @@ import { genitive } from "@/lib/recipe-change";
 import { cumulativeRejectedText, okcCumulativeToStore, okcHasFigures, okcMonth, type OkcPrev } from "@/lib/okc-z";
 import { photoDiffs, savedFields, suspiciousDiffs, type CashReading } from "@/lib/photo-read/kasa";
 import { okcReadFigures } from "@/lib/photo-read/okc";
-import { lafposPhotoLabel, staffAutoNote, staffLafposAutoOf, staffLafposDescriptionOf, staffPhotoDiffs } from "@/lib/lafpos/foto";
+import {
+  LAFPOS_STAFF_BEFORE_DAY_END_DESCRIPTION,
+  LAFPOS_STAFF_BEFORE_DAY_END_TEXT,
+  lafposPhotoLabel,
+  staffAutoNote,
+  staffBeforeLafposDayEnd,
+  staffLafposAutoOf,
+  staffLafposDescriptionOf,
+  staffPhotoDiffs,
+} from "@/lib/lafpos/foto";
+import { LAFPOS_STAFF_ENTRY_LINE, staffLafposEntryClosed } from "@/lib/lafpos/cash-moves";
 import { LAFPOS_NO_COUNT_TEXT } from "@/lib/lafpos/prefill";
 import { addDays, dayLocativeTR, isCalendarDate, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -120,7 +130,7 @@ function more(email: boolean) {
   return (
     <KasaText
       modpos={`Her akşam kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayın ve buraya girin. Eksik / fazla kendiliğinden hesaplanır; ${send}.`}
-      lafpos={`Her akşam kapanışta LafPOS'ta Günü kapat'a basın: gün sonu buraya gelir, form ondan dolar. Kasadaki nakdi sayıp girin; eksik / fazla kendiliğinden hesaplanır, ${send}.`}
+      lafpos="Her akşam kapanışta LafPOS'ta Günü kapat'a basılır: kasa raporu LafPOS'un gün sonundan kendiliğinden yazılır (sayım LafPOS'ta), personel yalnız Pavo'nun gün sonu fişinin fotoğrafını ekler; gün sonu e-postası kendiliğinden gider. LafPOS göndermezse raporu siz girersiniz."
     />
   );
 }
@@ -170,8 +180,12 @@ async function staffLafposDescription(searchParams: PageProps<"/panel/kasa">["se
   const gun = pick((await searchParams).gun);
   const today = businessDate();
   const date = isDay(gun) && gun <= today && (staffCanReport(gun) || staffLateDay(gun)) ? gun : today;
-  const state = await lafposPhotoState(getDb(), date, await currentTillBranch(), "staff").catch(() => null);
-  return staffLafposDescriptionOf(state);
+  const till = await currentTillBranch();
+  const state = await lafposPhotoState(getDb(), date, till, "staff").catch(() => null);
+  if (state) return staffLafposDescriptionOf(state);
+  // Gün sonundan önce: rapor LafPOS'tan gelecek (formun yerindeki bilgiyle aynı kural)
+  const [kasa, report] = await Promise.all([loadKasaLafpos(date, getDb(), till).catch(() => NO_LAFPOS), getCashReport(date, "staff", till).then(Boolean).catch(() => true)]);
+  return staffBeforeLafposDayEnd({ admin: false, branchId: till, lafposDay: kasa.lafpos, dayEnd: kasa.day !== null, hasReport: report }) ? LAFPOS_STAFF_BEFORE_DAY_END_DESCRIPTION : null;
 }
 /** LafPOS günü değil (geçiş günü boş ya da gün ondan önce): form ModPOS'a göre */
 const NO_LAFPOS = { lafpos: false, day: null } as const;
@@ -391,6 +405,9 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
       ? [...counters, { id: counterId, name: `${report.countedByName ?? report.submittedByName} (pasif)` }]
       : counters;
   const photoUi = { storage: storage.available, reading: ai.state, admin, me: user.name };
+  // LafPOS gününde personel Kasa sayfasından kasadan çıkan ve zayi / ikram eklemez (sahibin kararı, 24 Kasım 2026): harcama
+  // LafPOS'un kasa hareketlerinden, ikram / zayi / iptal gün sonundan gelir. Yönetici ekler; sunucu personelin eklemesini reddeder
+  const entryClosed = staffLafposEntryClosed({ admin, branchId: view.till, lafposDay: lafposState.lafpos });
   // Günün zayi ve ikramı: kasa raporuyla birlikte gider (ModPOS'ta ödenmez görünen ikramla karşılaştırılır)
   const wasteCard = waste ? (
     <Card>
@@ -411,9 +428,11 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
           </>
         ) : (
           <p className="text-ink-mute">
-            {waste.lafpos
-              ? "Bu gün zayi ya da ikram yok. Atılan bir şey ya da hammadde ikramı olduysa kasa raporundan önce girin; ürün ikramı LafPOS'ta işaretlenir."
-              : "Bu gün zayi ya da ikram girilmedi. Ödenmeden verilen ya da atılan bir şey olduysa kasa raporundan önce girin."}
+            {entryClosed
+              ? "Bu gün zayi ya da ikram yok."
+              : waste.lafpos
+                ? "Bu gün zayi ya da ikram yok. Atılan bir şey ya da hammadde ikramı olduysa kasa raporundan önce girin; ürün ikramı LafPOS'ta işaretlenir."
+                : "Bu gün zayi ya da ikram girilmedi. Ödenmeden verilen ya da atılan bir şey olduysa kasa raporundan önce girin."}
           </p>
         )}
         {waste.lafpos ? (
@@ -425,9 +444,13 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
             {waste.lafpos.received && waste.lafpos.notCounted ? ` Panele girilen ${waste.lafpos.notCounted} ürün ikramı sayılmıyor: LafPOS'taki sayılıyor.` : ""}
           </p>
         ) : null}
-        <ButtonLink href={`/panel/zayi?gun=${date}`} variant="secondary" size="sm">
-          <Gift size={14} /> Zayi / ikram ekle
-        </ButtonLink>
+        {entryClosed ? (
+          <p className="text-[13px] text-ink-mute">{LAFPOS_STAFF_ENTRY_LINE}</p>
+        ) : (
+          <ButtonLink href={`/panel/zayi?gun=${date}`} variant="secondary" size="sm">
+            <Gift size={14} /> Zayi / ikram ekle
+          </ButtonLink>
+        )}
       </div>
     </Card>
   ) : null;
@@ -509,6 +532,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
       oldDays={oldDays}
       supplierNames={supplierNames}
       hints={cariHints}
+      lafposEntryClosed={entryClosed}
     />
   ) : null;
   const yesterday = addDays(today, -1);
@@ -533,6 +557,9 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
 
   // LafPOS'un gün sonu geldi ama rapor yok (LafPOS'ta sayım yok): personele form değil, yalnız fotoğraf (rapor LafPOS'tan gelir)
   const waitingLafpos = lafposPhoto !== null && !report;
+  // LafPOS gününde gün sonu henüz gelmedi (son denetim, 24 Kasım 2026): personel rakam girmez, rapor LafPOS'tan gelir.
+  // Yönetici formu görür (LafPOS göndermezse yedek); sunucu da personelin yazımını reddeder (saveCashReport)
+  const beforeDayEnd = staffBeforeLafposDayEnd({ admin, branchId: view.till, lafposDay: lafposState.lafpos, dayEnd: lafposState.day !== null, hasReport: Boolean(report) });
   if (!admin) {
     return (
       <div className="space-y-4">
@@ -540,7 +567,9 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
         {dayChips}
         {closedBar}
         {outsCard}
-        {waitingLafpos ? <Notice tone="warn" title="Kasa raporu LafPOS'tan gelecek" text={LAFPOS_NO_COUNT_TEXT} /> : form}
+        {waitingLafpos ? (
+          <Notice tone="warn" title="Kasa raporu LafPOS'tan gelecek" text={LAFPOS_NO_COUNT_TEXT} />
+        ) : beforeDayEnd ? <Notice tone="neutral" title="Kasa raporu LafPOS'tan gelecek" text={LAFPOS_STAFF_BEFORE_DAY_END_TEXT} /> : form}
         {photoCard}
         {siteRow}
         {wasteCard}
@@ -807,10 +836,17 @@ async function StaffLateDay({ date, user, view }: { date: string; user: { id: nu
       <Card>
         <CardHeader icon={<Gift />} title="Günün zayi & ikramı" description="Geç rapora eklenmez" />
         <div className="space-y-2 px-5 pb-5 text-sm">
-          <p className="text-ink-mute">Bu günün zayi / ikramı için Zayi &amp; ikram › Önceki gün&apos;den istek gönderin.</p>
-          <ButtonLink href={`/panel/zayi?gun=${date}`} variant="secondary" size="sm">
-            <Gift size={14} /> Zayi &amp; ikram
-          </ButtonLink>
+          {/* LafPOS gününde ikram / zayi gün sonundan gelir (staffLafposEntryClosed; kasanın günüyle aynı kural) */}
+          {staffLafposEntryClosed({ admin: false, branchId: view.till, lafposDay: lafposState.lafpos }) ? (
+            <p className="text-[13px] text-ink-mute">{LAFPOS_STAFF_ENTRY_LINE}</p>
+          ) : (
+            <>
+              <p className="text-ink-mute">Bu günün zayi / ikramı için Zayi &amp; ikram › Önceki gün&apos;den istek gönderin.</p>
+              <ButtonLink href={`/panel/zayi?gun=${date}`} variant="secondary" size="sm">
+                <Gift size={14} /> Zayi &amp; ikram
+              </ButtonLink>
+            </>
+          )}
         </div>
       </Card>
       <MyCashRequests requests={myRequests} />

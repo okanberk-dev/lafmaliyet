@@ -93,10 +93,12 @@ export function pavoView(b: BankPos): PavoView {
         ["Günün farkı", diffText(day.diff)],
       ]
     : [];
-  // Son batch'in ayrıntısı (gün sonu tam gövdesinde ayrıntı; eski gövdede karşılaştırmanın kendisi)
+  // Son batch'in ayrıntısı (gün sonu tam gövdesinde ayrıntı; eski gövdede karşılaştırmanın kendisi). Gün sonu alınamadıysa
+  // (batch yok) LafPOS'un kart toplamı yine bilinir: bütün gün kartı (dayCard; son denetim, 24 Kasım 2026)
+  const lafposCard = b.lafposCard ?? (b.status !== "ok" ? (b.dayCard ?? null) : null);
   rows.push(
     ["Pavo kart toplamı", b.pavoCard === null ? "yok" : money(b.pavoCard)],
-    ["LafPOS kart toplamı", b.lafposCard === null ? "yok" : money(b.lafposCard)],
+    ["LafPOS kart toplamı", lafposCard === null ? "yok" : money(lafposCard)],
     [day ? "Son gün sonunun farkı" : "Fark", diffText(pavoDiff(b))],
   );
   if (b.batchNo) rows.push(["Batch no", b.batchNo]);
