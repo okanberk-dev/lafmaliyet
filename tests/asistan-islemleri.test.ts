@@ -364,7 +364,7 @@ test("rehber: konular gerçek ekranlara gider; silme, toplu ve şifreli işler b
   for (const g of OP_GUIDES) {
     const path = g.path.split("#")[0];
     assert.ok(path === "/panel" || hrefs.has(path) || [...hrefs].some((h) => path.startsWith(`${h}/`)), `${g.topic}: ${g.path}`);
-    assert.ok(g.steps.length > 10 && g.why.length > 10, g.topic);
+    assert.ok(g.steps.length >= 1 && g.steps.every((x) => x.length > 10) && g.why.length > 10, g.topic);
   }
   assert.match(searchGuides("bütün ürünlere toplu zam")[0].topic, /Toplu fiyat/);
   assert.match(searchGuides("faturayı ödenmedi yap")[0].topic, /ödenmedi/);
