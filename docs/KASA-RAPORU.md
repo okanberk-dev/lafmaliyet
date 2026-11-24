@@ -364,7 +364,7 @@ kategorisindeki satır (maaş, avans) kârı değiştirir. Bunlar yöneticinin o
 
 ## Kafe kapalıydı
 
-Tek kavram: Satış tahmini'ndeki özel günlerin `kapali` satırı ([SATIS-TAHMINI.md](SATIS-TAHMINI.md) § 4). Satırı
+Tek kavram: özel günlerin `kapali` satırı ([OZEL-GUNLER.md](OZEL-GUNLER.md); Kafe › Özel günler). Satırı
 yalnız yönetici yazar; satırın varlığı onaydır. Kapalı işaretli gün eksik rapor ve kontrol listesi uyarılarına girmez,
 ay bilgisinde ve komisyonda eksik sayılmaz ("2 gün kapalı işaretli: 3, 4 Kasım"), geç rapor listesine girmez ve
 personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayıt girilemez").
@@ -643,12 +643,6 @@ Fotoğraflar istek beklerken tutulur (silinmez, başka bir kayda bağlanamaz); s
 `src/server/data/cash-late.ts` (okuyucular), `src/app/panel/kasa/late-report.tsx`, `src/app/panel/onaylar/kasa-cards.tsx`.
 Testler: `tests/kasa-raporu.test.ts`, `tests/kasa-gec-rapor-db.test.ts` (`KASA_GEC_TEST_DATABASE_URL`),
 `tests/foto-altyapi.test.ts` (`uploadRule`).
-
-## Satış tahmini
-
-Kasa raporlarının Z toplamı satış tahminini besler (son 6 haftanın hafta günleri; [SATIS-TAHMINI.md](SATIS-TAHMINI.md)):
-0 girilen gün kapalı sayılır, raporu girilmeyen gün yok sayılır; her sabahki tahmin gerçekleşen Z toplamıyla
-karşılaştırılır.
 
 ## Ay bilgisine aktarım
 

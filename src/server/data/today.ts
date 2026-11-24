@@ -75,10 +75,6 @@ export interface TodayData {
   /** Yalnız yönetici: Yaklaşan ödemeler kartının listesi (DashboardPayments) */
   payments: UpcomingItem[] | null;
   cafe: { karaoke: KaraokeToday | null; orders: OrdersLite | null; configured: boolean };
-  /**
-   * Satış tahmini (docs/SATIS-TAHMINI.md): yöneticinin kartı (tutar, aralık, kişi, 7 gün) ve personelin satırı
-   * (yalnız yoğunluk ve tatlı sayısı); her rol yalnız kendininkini yükler
-   */
   renderedAt: string;
 }
 
@@ -165,11 +161,9 @@ async function cashView(admin: boolean): Promise<CashView> {
 }
 
 /**
- * Yalnız personel: iş gününün zayi / ikram özeti (ikramın menü fiyatıyla değeri gösterilmez) ve satış tahmininin
- * satırı (maliyet modeli verilmez)
+ * Yalnız personel: iş gününün zayi / ikram özeti (ikramın menü fiyatıyla değeri gösterilmez; maliyet modeli verilmez)
  */
 async function staffFacts(c: DayContext): Promise<RoleFacts> {
-  // Satış tahmini: yalnız yoğunluk ve tatlı sayısı (tutar, aralık, kişi önerisi yok; ayar kapalıysa null)
   const [waste] = await Promise.all([safe(dayWaste(c.day))]);
   return {
     // LafPOS günü (geçiş günü seçili ve iş günü ondan önce değil): ürün ikramı kasada işaretlenir, satırın metni söyler
@@ -276,7 +270,6 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     ),
     // Geciken hakedişler (hafif okuma: ekranın 13 ayının Komisyon faturaları ve işaretler; docs/KOMISYON.md)
     safe(loadOverduePayouts()),
-    // Satış tahmini kartı: bugünün tahmini, aralık, kişi, tatlı ve 7 günün şeridi (docs/SATIS-TAHMINI.md)
     // Sayımın uyarıları (zil ile aynı; src/server/data/count-alerts.ts): fiyatsız ek kalemler, personelin geç kaydı
     safe(
       Promise.all([loadUnpricedExtras([month, prevMonth]), loadStaffLateEdits(prevMonth)]).then(([extras, edits]) => ({ extras, late: { month: prevMonth, edits } })),

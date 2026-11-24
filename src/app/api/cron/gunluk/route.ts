@@ -30,8 +30,7 @@ import { runWeeklyStep } from "@/server/weekly/send";
 // önceki iki ay: geç iadeler; salesMonthsToPull, docs/SITE-SATIS.md), süresi dolan fotoğrafların silinmesi (docs/FOTOGRAF.md),
 // Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md), ayın son günü ay sonu
 // stok sayımı bildirimi (tamamlanmadıysa). Pazartesi (gönderilemezse salı, çarşamba) yöneticilere haftalık özet
-// (docs/HAFTALIK-OZET.md). Satış tahmini (hava durumu ve günün tahmin kaydı; docs/SATIS-TAHMINI.md) Paraşüt'ün
-// yeniden denemesiyle aynı anda çalışır, sabah e-postasından önce beklenir. Süresi dolan personel istekleri (kasadan
+// (docs/HAFTALIK-OZET.md). Süresi dolan personel istekleri (kasadan
 // çıkan) kapanır ve tuttukları fotoğraflar bırakılır (docs/ONAYLAR.md). ModPOS'un kasa föyü (dün ve bir geçmiş gün,
 // günde 2 hak; docs/MODPOS-API.md) de Paraşüt'le aynı anda yalnız bir kez çekilir, sabah e-postasından önce beklenir.
 // Her çalışma ve adımlarının sonucu job_runs'a yazılır (Ayarlar › Günlük işler); e-posta gidemezse ya da iş hiç
@@ -64,8 +63,6 @@ export async function GET(request: NextRequest) {
   const denied = await rejectUnlessCron(request);
   if (denied) return denied;
   const runId = await startJobRun("gunluk");
-  // Satış tahmini Paraşüt'ün yeniden denemesiyle aynı anda başlar; e-postadan önce beklenir (kutusu taze havayla ve
-  // kaydedilen sayılarla). Hata fırlatmaz, en çok 7 sn
   // ModPOS kasa föyü (docs/MODPOS-API.md): yalnız burada ve bir kez başlar; ModPOS'lu her şube kendi anahtarı ve hakkıyla,
   // sırayla (docs/MODPOS-API.md › Şubeler) (extras() iki kez çalışabilir, günde 2 hak
   // var). Paraşüt'le aynı anda sürer, e-postadan önce beklenir: e-posta, zil ve Bugün taze föyü görür. Hata fırlatmaz,

@@ -61,9 +61,6 @@ maddeyi düşer (komisyonda sıradaki uyarı geçer). Ertesi pazartesi hâlâ a�
   ikram düşülür: Genel bakış ve Bugün'ün cirosuyla aynı kural, denetim 13 Kasım HM-08; laffogato.net online kasadan
   geçmez). Geçen hafta ve önceki dört haftanın en az ikisi tam (6+ raporlu gün) ise karşılaştırılır, %2'den az farkta
   "önceki 4 haftayla aynı"; değilse `(5 gün raporlu)`; rapor yoksa satır yok.
-- `Önümüzdeki 7 gün beklenen satış ≈ 72.000 ₺ · en yoğun gün Cumartesi` (satış tahmini kendi verisiyle çalışıyorsa:
-  kalite tam, karma ya da ortalama; kapalı günler toplanmaz). Satış tahmininin yükleyicisini okur (`loadForecastCore`,
-  [SATIS-TAHMINI.md](SATIS-TAHMINI.md)); okunamazsa satır düşer, dipnota girmez.
 
 Kişi adı yazılmaz: kasa raporunu giren ya da sayan, kontrol listesini dolduran, "Sorun var" notu (serbest metin)
 e-postaya girmez; yalnız ürün, hammadde, kanal, liste ve madde adları.

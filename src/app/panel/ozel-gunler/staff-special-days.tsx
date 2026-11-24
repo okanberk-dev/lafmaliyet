@@ -16,7 +16,7 @@ import type { StaffSpecialRow } from "@/server/staff-special";
 import { SpecialDayProvider, useSpecialDay, type SpecialDayActions } from "./special-days";
 
 /*
- * Personelin özel günleri (/panel/ozel-gunler; docs/SATIS-TAHMINI.md › Personelin özel günleri): "Yaklaşan" listesi
+ * Personelin özel günleri (/panel/ozel-gunler; docs/OZEL-GUNLER.md): "Yaklaşan" listesi
  * (bugün ile 60 gün), kişinin kendi girdiği, başlamamış ve yöneticinin dokunmadığı satır dokunulabilir; pencere Satış
  * tahmini'ninki (`mode="staff"`, eylemler sayfadan). Altta "Kapalı gün bildirimlerim" (son 30 gün).
  */

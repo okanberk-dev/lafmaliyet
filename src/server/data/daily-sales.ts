@@ -9,8 +9,7 @@ import { getDb, schema as s, type DB } from "@/server/db";
  * LafPOS doldurur: her iş gününün satış listesi gün sonunda `POST /api/pos/gun` ile gelir ve `pos_daily_sales`'e yazılır
  * (docs/LAFPOS.md). Aylık maliyet modeli bu satırları geçiş gününden itibaren ay toplamı olarak okur
  * (src/server/data/lafpos-sales.ts; Satışlar, Tutarlılık, Ürünler, Analiz, Genel bakış, KDV tahmini, tatlı payı).
- * Satırları gün gün okuyan bugün yok: satış tahmininin günlük toplamı kasa raporundan, raporsuz LafPOS gününde LafPOS'un
- * Z'sinden gelir (src/server/forecast/load.ts). Günlük pencereye geçecek okuyucu (ör. hafta gününe göre tatlı oranı) bu
+ * Satırları gün gün okuyan bugün yok (satış tahmini 4 Kasım 2026'da kalktı). Günlük pencereye geçecek okuyucu (ör. hafta gününe göre tatlı oranı) bu
  * ağızdan okur ve geçiş gününden önceki deneme günlerini kendisi ayırır (isLafposDay, src/lib/lafpos/switch.ts): ağız
  * bütün günleri döner. Aralıkta satır yoksa null.
  */

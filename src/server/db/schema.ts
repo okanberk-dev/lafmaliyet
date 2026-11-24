@@ -2174,7 +2174,7 @@ export const mcpCalls = pgTable(
 // ---------------------------------------------------------------- Satış tahmini
 /**
  * Yöneticinin tahmine eklediği özel günler (derbi, AVM etkinliği, kampanya, kafe kapalı). effect −0,30 … +0,30
- * (kapalı −1). Geçmiş günler de girilebilir: o gün normal günlerin ortalamasına katılmaz. Ayrıntı: docs/SATIS-TAHMINI.md.
+ * (kapalı −1). Geçmiş günler de girilebilir: o gün normal günlerin ortalamasına katılmaz. Ayrıntı: docs/OZEL-GUNLER.md.
  */
 export const specialDays = pgTable(
   "special_days",

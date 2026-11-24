@@ -160,8 +160,9 @@ export interface DigestBox {
 }
 
 /**
- * renderDigest'in 6. bağımsız değişkeni: komisyon (komisyon grubu), kontrol (kontrol), tahmin (tahmin), onay bekleyen
- * personel istekleri (dalga 10; docs/ONAYLAR.md)
+ * renderDigest'in 6. bağımsız değişkeni: komisyon (komisyon grubu), kontrol (kontrol), onay bekleyen personel istekleri
+ * (dalga 10; docs/ONAYLAR.md). `forecast` haber sayılmayan genel kutunun yuvasıdır (zamdan sonra, konuya ve başlığa
+ * girmez): adı satış tahmininden kaldı (4 Kasım 2026'da kalktı), bugün onu dolduran kaynak yok
  */
 export interface DigestExtras {
   commission?: DigestBox | null;
@@ -183,7 +184,7 @@ export interface DigestExtraCtx {
 
 /**
  * Ek kutu kaynağı (DIGEST_EXTRA_SOURCES'ın bir satırı). `news`: kutu varsa e-posta gider (yeni bir şey var sayılır);
- * tahmin hiçbir zaman haber değildir (yalnız zaten giden e-postaya eklenir; konuya ve başlığa da girmez). `load` boş
+ * `forecast` yuvası hiçbir zaman haber değildir (yalnız zaten giden e-postaya eklenir; konuya ve başlığa da girmez). `load` boş
  * dönerse (null) kutu yok.
  */
 export type DigestExtraSource =
