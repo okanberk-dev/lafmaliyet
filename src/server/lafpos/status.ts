@@ -18,12 +18,14 @@ import {
   type LafposRejection,
   type LafposState,
 } from "@/lib/lafpos/status";
+import type { NextOpening } from "@/lib/lafpos/devir";
 import { isLafposDay, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { addDays } from "@/lib/reminders";
 import { closedDaysBetween } from "@/server/closed-days";
 import { loadLafposIkram } from "@/server/data/lafpos-ikram";
 import { getDb, schema as s, type DB } from "@/server/db";
 
+import { lafposNextOpening } from "./devir";
 import { receivePosDay, type EndpointResult } from "./ingest";
 
 /**
@@ -132,8 +134,9 @@ type PosDayInput = Parameters<typeof receivePosDay>[1];
 
 /**
  * `POST /api/pos/gun`'un sonucu (uç bunu çağırır): gün sonunu receivePosDay'e verir, sonucu durum satırına yazar.
- * 200'e `counted` (gün geçiş gününden önce değil: hesaplara giriyor) ve `switchDay` eklenir; LafPOS yanıtın gövdesini
- * okumaz, eklenen alanlar eski LafPOS'u etkilemez; o günün açık reddi kapanır. 400 ve 409 son ret olarak (alan, gün, iki Z
+ * 200'e `counted` (gün geçiş gününden önce değil: hesaplara giriyor), `switchDay` ve kasa zincirinin `nextOpening`'i
+ * (ertesi günün beklenen açılışı; sayılmayan günde null, src/server/lafpos/devir.ts) eklenir; eski LafPOS bilmediği
+ * alanları atar; o günün açık reddi kapanır. 400 ve 409 son ret olarak (alan, gün, iki Z
  * no) ve günü okunduysa güne göre yazılır, gövdesiz günlüğe düşer; 401 ve 413 yalnız sayaçtır; 503'te (anahtar yok)
  * hiçbir şey yazılmaz. Veritabanı hatası son ret olarak yazılmaya çalışılır ve yeniden fırlar (uç 500 döner, LafPOS
  * yeniden dener).
@@ -167,7 +170,15 @@ export async function handlePosDay(db: DB, input: PosDayInput, now: Date = new D
     }
     const counted = isLafposDay(date, switchDay);
     await noteOk(db, { at, date, zNo: sent.zNo, lines: Number(r.body.lines ?? 0), counted });
-    return { status: 200, body: { ...r.body, counted, switchDay } };
+    // Kasa zinciri (Faz 3): ertesi günün beklenen açılışı (devir.ts lafposNextOpening; gün az önce yazıldı). Okunamazsa
+    // alan yazılmaz (LafPOS "lafmaliyet söylemedi" sayar, kendi sayımına döner); yanıt yine 200
+    let nextOpening: NextOpening | null | undefined;
+    try {
+      nextOpening = counted ? await lafposNextOpening(db, date) : null;
+    } catch (e) {
+      console.error("[lafpos] devir okunamadı:", e instanceof Error ? e.message : e);
+    }
+    return { status: 200, body: { ...r.body, counted, switchDay, ...(nextOpening !== undefined ? { nextOpening } : {}) } };
   }
   const error = String(r.body.error ?? "unknown");
   const date = typeof r.body.date === "string" ? r.body.date : sent.date;

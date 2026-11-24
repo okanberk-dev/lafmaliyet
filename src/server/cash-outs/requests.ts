@@ -22,6 +22,7 @@ import {
   type RemovablePhotoKind,
 } from "@/lib/cash-out-requests";
 import { staffCategory, staffToExpenses, type CashOutSnapshot } from "@/lib/cash-outs";
+import { LAFPOS_CASH_OUT_TEXT, lafposCashOutChange } from "@/lib/lafpos/cash-moves";
 import { photoDiffs, photoDiffText, savedFields, suspiciousDiffs } from "@/lib/photo-read/kasa";
 import { DELETED_REPORT_DAYS } from "@/lib/photo-rules";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
@@ -132,6 +133,10 @@ export async function proposeCashOutChange(db: DB, me: CashOutActor, input: Cash
       if (!input.cashOutId) throw new UserError(CASH_OUT_REQUEST_TEXT.rowGone);
       const row = await lockCashOut(tx, input.cashOutId);
       if (!row) throw new UserError(CASH_OUT_REQUEST_TEXT.rowGone);
+      // LafPOS satırı (Faz 3): silme ve tutarı, türü değiştiren düzeltme istenmez (yönetici de yapamaz; LafPOS'tan gelir)
+      if (row.lafposId && input.op === "sil") throw new UserError(LAFPOS_CASH_OUT_TEXT.delete);
+      const lafposLock = input.op === "duzelt" && input.line ? lafposCashOutChange(row, { kind: input.line.kind, amount: input.line.amount, date: row.date }) : null;
+      if (lafposLock) throw new UserError(lafposLock);
       if ((await staffCashOutGate(tx, me, { op: input.op, row }, now)) === "direct") throw new UserError(CASH_OUT_REQUEST_TEXT.direct);
       const before = await beforeOf(tx, row);
       let line: CashOutLineT | null = null;

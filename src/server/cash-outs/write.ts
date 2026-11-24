@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { cashOutWritesExpense, isInvoiceDoc, staffCategory, staffExpenseLocked, staffToExpenses, type CashOutSnapshot } from "@/lib/cash-outs";
+import { LAFPOS_CASH_OUT_TEXT, lafposCashOutChange } from "@/lib/lafpos/cash-moves";
 import { expenseDateFor } from "@/lib/photo-read/receipt";
 import { linkedUntil, RELEASED_DAYS } from "@/lib/photo-rules";
 import { longDateTR, todayTR } from "@/lib/reminders";
@@ -91,6 +92,11 @@ export interface WriteCashOutOptions {
   heldBy?: number;
   /** İşlemin içinde kilitlenmiş satır (düzeltmede; verilmezse burada kilitlenir) */
   prev?: CashOutRow | null;
+  /**
+   * LafPOS'un kasa hareketinin eşitlemesi (src/server/lafpos/cash-moves.ts; başka çağıran vermez): LafPOS satırının
+   * kilidi bu yazıma uygulanmaz; yeni satıra hareketin kimliği ve anı yazılır
+   */
+  lafpos?: { id: string; at: Date };
 }
 
 /**
@@ -104,6 +110,9 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
   const harcama = d.kind === "harcama";
   const prev = o.prev !== undefined ? o.prev : d.id ? await lockCashOut(tx, d.id) : null;
   if (d.id && !prev) throw new UserError("Satır bulunamadı; silinmiş olabilir");
+  // LafPOS satırı (Faz 3): tutar, tür ve gün LafPOS'undur; yönetici de değiştiremez (yeniden gönderim geri yazardı)
+  const lafposLock = prev && !o.lafpos ? lafposCashOutChange(prev, d) : null;
+  if (lafposLock) throw new UserError(lafposLock);
   const [existing] = prev ? await tx.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, prev.id)).limit(1) : [];
   const mode = o.restore ? "restore" : prev ? "edit" : "new";
   // Personel faturalı satırı fişe düzeltiyor: satır hâlâ faturasını bekliyorsa kayıt açılır (faturası geldiyse ya da
@@ -119,6 +128,7 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
     hasExpense: Boolean(existing),
     prevDocType: prev?.docType ?? null,
     awaitingInvoice,
+    lafposRow: Boolean(prev?.lafposId),
   });
 
   // Yöneticinin kategorisindeki kayıt: personel tutarı düzeltir, kaydı kaldıramaz (teslime çevirerek) ve taşıyamaz
@@ -158,6 +168,8 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
     vat: harcama ? d.vat : null,
     docType: harcama ? d.docType : ("yok" as const),
     photoId: d.photoId,
+    // LafPOS'un eşitlemesi: hareketin kimliği ve anı (satırın saati hareketinki)
+    ...(o.lafpos ? { lafposId: o.lafpos.id, createdAt: o.lafpos.at } : {}),
   };
   const author = o.author ?? { id: me.id, name: me.name };
   const [row] = prev
@@ -223,9 +235,11 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
 /**
  * Satırı siler (bağlı harcama kaydıyla, işlemin içinde); fotoğraf 7 gün daha saklanır. Satırın bekleyen istekleri
  * kapanır ("Satır silindi"; silmeyi onaylanan istek `exceptRequestId` hariç). Silinenin kopyası döner ("Geri al" ve
- * işlem geçmişi). Satır kilitli okunmuş olmalı (`row`).
+ * işlem geçmişi). Satır kilitli okunmuş olmalı (`row`). LafPOS satırı silinmez (gün yeniden gönderilince geri gelirdi);
+ * yalnız LafPOS'un eşitlemesi (`lafpos`) gövdeden kalkan hareketin satırını siler.
  */
-export async function removeCashOut(tx: CashOutTx, row: CashOutRow, o: { exceptRequestId?: number } = {}): Promise<CashOutSnapshot> {
+export async function removeCashOut(tx: CashOutTx, row: CashOutRow, o: { exceptRequestId?: number; lafpos?: boolean } = {}): Promise<CashOutSnapshot> {
+  if (row.lafposId && !o.lafpos) throw new UserError(LAFPOS_CASH_OUT_TEXT.delete);
   const [entry] = await tx.delete(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, row.id)).returning();
   await tx.delete(s.cashOuts).where(eq(s.cashOuts.id, row.id));
   if (row.photoId) await releasePhoto(row.photoId, RELEASED_DAYS, tx);

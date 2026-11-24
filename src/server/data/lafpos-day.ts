@@ -142,7 +142,15 @@ export async function loadLafposDayDetail(date: string, db: DB = getDb(), branch
   const where = and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, sube));
   const [[row], sends] = await Promise.all([
     db
-      .select({ z: s.posDayReports.z, offDevice: s.posDayReports.offDevice, refunds: s.posDayReports.refunds, iptal: s.posDayReports.iptal, revision: s.posDayReports.revision, correction: s.posDayReports.correction })
+      .select({
+        z: s.posDayReports.z,
+        offDevice: s.posDayReports.offDevice,
+        refunds: s.posDayReports.refunds,
+        iptal: s.posDayReports.iptal,
+        revision: s.posDayReports.revision,
+        correction: s.posDayReports.correction,
+        cashMoves: s.posDayReports.cashMoves,
+      })
       .from(s.posDayReports)
       .where(where)
       .limit(1),
@@ -159,6 +167,7 @@ export async function loadLafposDayDetail(date: string, db: DB = getDb(), branch
     iptal: row.iptal ? sh.iptal.parse(row.iptal) : undefined,
     revision: row.revision ?? undefined,
     correction: row.correction ? sh.correction.parse(row.correction) : undefined,
+    cashMoves: row.cashMoves ? sh.cashMoves.parse(row.cashMoves) : undefined,
   });
   return { ...detail, sends: Number(sends[0]?.n ?? 0) };
 }

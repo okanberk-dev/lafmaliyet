@@ -498,6 +498,13 @@
       "when": 1795477436309,
       "tag": "0070_lafpos_gun_alanlari",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1795494664844,
+      "tag": "0071_kasa_zinciri",
+      "breakpoints": true
     }
   ]
 }

@@ -27,6 +27,8 @@ export interface CashOutDTO {
   expenseEntryId: number | null;
   categoryId: number | null;
   categoryName: string | null;
+  /** LafPOS'un kasa hareketinin kimliği (Faz 3): tutar, tür ve gün LafPOS'tan, satır silinmez; elle girilen satırda null */
+  lafposId: string | null;
 }
 
 /**
@@ -54,6 +56,7 @@ const columns = {
   expenseEntryId: s.expenseEntries.id,
   categoryId: s.expenseEntries.categoryId,
   categoryName: s.expenseCategories.name,
+  lafposId: s.cashOuts.lafposId,
 };
 
 /**

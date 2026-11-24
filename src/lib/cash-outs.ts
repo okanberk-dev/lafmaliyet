@@ -125,9 +125,15 @@ export function cashOutWritesExpense(o: {
    * bilir; pencere bilmez (verilmezse bekliyor sayılır: kategori alanı görünür, kararı sunucu verir)
    */
   awaitingInvoice?: boolean;
+  /**
+   * Satır LafPOS'un kasa hareketinden geldi (Faz 3; cash_outs.lafpos_id). LafPOS kategorisiz harcamayı kayıtsız yazar:
+   * kaydı olmayan LafPOS satırının personel düzeltmesi yeni satırın kuralıyla (kategori seçilince kayıt açılır)
+   */
+  lafposRow?: boolean;
 }): boolean {
   if (o.kind !== "harcama") return false;
   if (o.admin || o.mode === "restore") return o.requested;
+  if (o.mode === "edit" && o.lafposRow && !o.hasExpense) return staffToExpenses(o.kind, o.docType);
   if (o.mode === "edit") {
     const leftInvoice = o.prevDocType != null && isInvoiceDoc(o.prevDocType) && staffToExpenses(o.kind, o.docType) && o.awaitingInvoice !== false;
     return o.hasExpense || leftInvoice;
@@ -245,6 +251,8 @@ export const STAFF_CASH_OUT_FIELDS = [
   "expenseEntryId",
   "categoryId",
   "categoryName",
+  // Faz 3: satır LafPOS'un kasa hareketinden geldi (kimlik ULID; kişisel değil): tutar, tür ve gün kilitli
+  "lafposId",
 ] as const;
 
 export type StaffCashOutField = (typeof STAFF_CASH_OUT_FIELDS)[number];
