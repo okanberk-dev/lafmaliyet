@@ -51,7 +51,11 @@ interface BranchPick {
   locked?: boolean;
 }
 
-export function Sidebar({ user, index = [], branch }: { user: User; index?: SearchEntry[]; branch?: BranchPick }) {
+/**
+ * `assistant`: alt menüde panel asistanının sekmesi (yalnız yönetici ve asistan açıkken; panel düzeni sunucuda verir,
+ * docs/ASISTAN.md)
+ */
+export function Sidebar({ user, index = [], branch, assistant = false }: { user: User; index?: SearchEntry[]; branch?: BranchPick; assistant?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const reduce = useReducedMotion();
@@ -258,7 +262,8 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
       {/* Telefon ve tablet üst çubuğu: logo (ana sayfa), sayfa başlığı, arama ve zil (personelde menü düğmesi). Karaoke
           şeridi varken onun altında yapışır (--alarm-h, globals.css). Zil açıkken sayfanın yüzen düğmelerinin (z-30)
           üstüne çıkar: listenin alt bağlantıları "Yeni" düğmesinin altında kalmaz; çekmece (z-40/50) yine üstte */}
-      <header className="no-print sticky top-(--alarm-h) z-30 flex h-14 items-center gap-1.5 border-b border-border bg-background/90 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(0.625rem,env(safe-area-inset-left))] backdrop-blur-md has-[[data-component=notification-dropdown][data-open]]:z-[35] lg:hidden">
+      {/* data-mobile-top: telefonda asistanın tam ekran sayfası açıkken etkisiz (inert) yapılır (panel-assistant.tsx) */}
+      <header className="no-print sticky top-(--alarm-h) z-30 flex h-14 items-center gap-1.5 border-b border-border bg-background/90 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(0.625rem,env(safe-area-inset-left))] backdrop-blur-md has-[[data-component=notification-dropdown][data-open]]:z-[35] lg:hidden" data-mobile-top>
         <Link
           href={home}
           className="flex size-11 shrink-0 items-center justify-center rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
@@ -337,7 +342,7 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
         ) : null}
       </AnimatePresence>
 
-      <BottomNav role={user.role} pathname={pathname} overdue={overdue} menuOpen={mobileOpen} onMenu={openDrawer} menuButtonRef={navMenuRef} />
+      <BottomNav role={user.role} pathname={pathname} overdue={overdue} menuOpen={mobileOpen} onMenu={openDrawer} menuButtonRef={navMenuRef} assistant={isAdmin && assistant} />
 
       <AlertCenter role={user.role} userId={user.id} branchScope={branch?.scope ?? null} />
 

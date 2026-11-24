@@ -34,6 +34,7 @@ import {
   Scale,
   Settings,
   ShoppingBag,
+  Sparkles,
   Store,
   SunMoon,
   Tags,
@@ -617,8 +618,10 @@ export interface BottomNavItem {
   id: string;
   label: string;
   icon: LucideIcon;
-  /** Yoksa öğe bağlantı değil, çekmeceyi açan düğmedir */
+  /** Yoksa öğe bağlantı değil, düğmedir: çekmeceyi açar ya da (`action: "assistant"`) panel asistanını açıp kapatır */
   href?: string;
+  /** Bağlantısız öğenin işi: "assistant" panel asistanı; yoksa çekmece ("Tümü") */
+  action?: "assistant";
   match?: string[];
   /** "overdue": gecikmiş ödeme sayısı (kırmızı); "orders": açık uygulama siparişi ve masa çağrısı (turuncu) */
   badge?: "overdue" | "orders";
@@ -645,11 +648,35 @@ export const BOTTOM_NAV: Record<"admin" | "staff", BottomNavItem[]> = {
 };
 
 /**
- * Alt menüde etkin öğe: çekmece açıksa "Tümü"; değilse adresle eşleşen öğe; hiçbiri eşleşmiyorsa (Ürünler,
- * Ayarlar gibi çekmecedeki bir ekran) "Tümü". Çekmeceyi açan öğesi olmayan listede eşleşme yoksa null.
+ * Panel asistanının alt menü sekmesi (docs/ASISTAN.md › Telefonda). Telefonda sağ alttaki yüzen düğme yoktur; asistan
+ * alt menünün ortasındaki bu sekmeden açılır. Yalnız yöneticide ve asistan bu kurulumda açıkken (ASISTAN_KAPALI değil):
+ * bottomNavFor.
  */
-export function bottomNavActive(items: BottomNavItem[], pathname: string, menuOpen = false): string | null {
-  const menu = items.find((i) => !i.href);
+export const ASSISTANT_TAB: BottomNavItem = { id: "asistan", label: "Asistan", icon: Sparkles, action: "assistant" };
+
+/**
+ * Rolün alt menüsü. Yönetici ve asistan açıkken beş öğe yine beş kalır (390 px'te hücre başına 78 px; altıncı öğe
+ * 360 px'te "Genel bakış"ı keser, 60 px hücre): Asistan ortaya girer, Genel bakış çubuktan çıkar. Neden Genel bakış:
+ * öğelerden yalnız onun her ekranda tek dokunuşluk ikinci yolu var (üst çubuktaki L'Af karosu ana sayfaya, yani Genel
+ * bakış'a gider; çekmecede de durur); Bugün, Kasa ve Ödemeler'in (gecikmiş rozeti) başka tek dokunuşluk yolu yok.
+ * Giriş de zaten Genel bakış'ta açılır. Personelin alt menüsü değişmez.
+ */
+export function bottomNavFor(role: "admin" | "staff", opts: { assistant?: boolean } = {}): BottomNavItem[] {
+  const items = BOTTOM_NAV[role];
+  if (role !== "admin" || !opts.assistant) return items;
+  const rest = items.filter((i) => i.id !== "genel");
+  return [...rest.slice(0, 2), ASSISTANT_TAB, ...rest.slice(2)];
+}
+
+/**
+ * Alt menüde etkin öğe: asistan açıksa "Asistan"; çekmece açıksa "Tümü"; değilse adresle eşleşen öğe; hiçbiri
+ * eşleşmiyorsa (Ürünler, Ayarlar gibi çekmecedeki bir ekran) "Tümü". Çekmeceyi açan öğesi olmayan listede eşleşme
+ * yoksa null.
+ */
+export function bottomNavActive(items: BottomNavItem[], pathname: string, menuOpen = false, assistantOpen = false): string | null {
+  const assistant = items.find((i) => i.action === "assistant");
+  if (assistantOpen && assistant) return assistant.id;
+  const menu = items.find((i) => !i.href && !i.action);
   if (menuOpen && menu) return menu.id;
   const hit = items.find((i) => i.href && pathMatches(pathname, i.href, i.match));
   return hit?.id ?? menu?.id ?? null;

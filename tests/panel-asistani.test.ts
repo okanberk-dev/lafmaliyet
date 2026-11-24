@@ -853,7 +853,8 @@ test("kaynak: araçlar yalnız izinli okuyucuları çağırır; istemci dosyalar
   for (const s of ["Dünkü gün sonu nasıldı?", "Dün en çok ne sattı?", "Bugün kim çalışıyor?", "Ne bitmek üzere?", "Bu ay nasıl gidiyor?", "En çok kime borcumuz var?", "Hangi ürünler hammaddeye bağlanmayı bekliyor?"]) {
     assert.ok(widget.includes(`"${s}"`), s);
   }
+  // Masaüstünün düğmesi köşede; telefonda düğme yok (alt menünün sekmesi), Fab'ın köşesi ona ayrılmaz
   const css = read("src/app/globals.css");
-  assert.match(css, /:has\(\[data-fab\]\)/);
-  assert.match(read("src/components/ui/fab.tsx"), /data-fab\n/);
+  assert.match(css, /--assistant-bottom: calc\(var\(--mobile-nav-h\) \+ 1\.5rem\);/);
+  assert.doesNotMatch(css, /:has\(\[data-fab\]\)/);
 });

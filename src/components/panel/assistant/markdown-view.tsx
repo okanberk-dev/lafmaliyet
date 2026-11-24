@@ -54,13 +54,13 @@ function block(b: Block, key: number, onNavigate?: () => void): ReactNode {
       return <p key={key}>{inlines(b.c, onNavigate)}</p>;
     case "h":
       return (
-        <p key={key} className={cn("font-semibold text-ink", b.level === 1 && "text-[15px]")}>
+        <p key={key} className={cn("pt-1 font-semibold text-ink", b.level === 1 && "text-[15px] max-lg:text-[17px]")}>
           {inlines(b.c, onNavigate)}
         </p>
       );
     case "ul":
       return (
-        <ul key={key} className="list-disc space-y-1 pl-5 marker:text-ink-quiet">
+        <ul key={key} className="list-disc space-y-1 pl-5 marker:text-ink-quiet max-lg:space-y-1.5">
           {b.items.map((it, i) => (
             <li key={i}>{inlines(it, onNavigate)}</li>
           ))}
@@ -68,7 +68,7 @@ function block(b: Block, key: number, onNavigate?: () => void): ReactNode {
       );
     case "ol":
       return (
-        <ol key={key} start={b.start} className="list-decimal space-y-1 pl-5 marker:text-ink-mute">
+        <ol key={key} start={b.start} className="list-decimal space-y-1 pl-5 marker:text-ink-mute max-lg:space-y-1.5">
           {b.items.map((it, i) => (
             <li key={i}>{inlines(it, onNavigate)}</li>
           ))}
@@ -77,7 +77,7 @@ function block(b: Block, key: number, onNavigate?: () => void): ReactNode {
     case "table":
       return (
         <div key={key} className="-mx-1 overflow-x-auto overscroll-x-contain px-1">
-          <table className="w-full border-collapse text-[13px] tabular-nums">
+          <table className="w-full border-collapse text-[13px] tabular-nums max-lg:text-[14px]">
             <thead>
               <tr>
                 {b.head.map((c, i) => (
@@ -113,5 +113,5 @@ function block(b: Block, key: number, onNavigate?: () => void): ReactNode {
 }
 
 export function MarkdownView({ text, onNavigate, className }: { text: string; onNavigate?: () => void; className?: string }) {
-  return <div className={cn("space-y-2 text-[14px] leading-6 break-words text-ink", className)}>{parseMarkdown(text).map((b, i) => block(b, i, onNavigate))}</div>;
+  return <div className={cn("space-y-2 text-[14px] leading-6 break-words text-ink max-lg:space-y-3", className)}>{parseMarkdown(text).map((b, i) => block(b, i, onNavigate))}</div>;
 }

@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import "@/components/arc/foundation.css";
 import { PanelAssistantGate } from "@/components/panel/assistant/assistant-gate";
 import { Sidebar, SidebarSkeleton } from "@/components/panel/sidebar";
+import { assistantEnabled } from "@/lib/assistant/protocol";
 import { requireUser } from "@/server/auth/dal";
 import { branchScope } from "@/server/branch-scope";
 import { loadSearchIndex } from "@/server/data/search";
@@ -25,6 +26,8 @@ async function SidebarWithUser() {
       user={{ id: user.id, name: user.name, email: user.email, role: user.role }}
       index={index}
       branch={{ scope: branch.scope, branches: branch.branches, locked: branch.locked }}
+      // Telefonda alt menünün "Asistan" sekmesi: asistanın kapısıyla aynı koşul (yönetici, ASISTAN_KAPALI değil)
+      assistant={user.role === "admin" && assistantEnabled()}
     />
   );
 }
@@ -55,7 +58,8 @@ export default function PanelLayout({ children }: LayoutProps<"/panel">) {
           {children}
         </div>
       </main>
-      {/* Panel asistanı (yalnız yönetici; docs/ASISTAN.md): sağ altta düğme, yeri globals.css --assistant-bottom */}
+      {/* Panel asistanı (yalnız yönetici; docs/ASISTAN.md): masaüstünde sağ altta düğme (yeri globals.css
+          --assistant-bottom), telefonda alt menünün "Asistan" sekmesi */}
       <Suspense fallback={null}>
         <PanelAssistantGate />
       </Suspense>

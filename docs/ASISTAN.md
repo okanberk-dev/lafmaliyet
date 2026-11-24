@@ -1,10 +1,10 @@
-# Panel asistanı (sağ alttaki yardımcı)
+# Panel asistanı
 
-Ekran: her panel sayfasında sağ altta küçük yuvarlak düğme (parıltı simgesi, "Panel asistanı"); **yalnız yöneticide**.
-Tıklayınca masaüstünde sağ altta 400 × 560'lık bir pencere, telefon ve tablette tam ekran bir sayfa açılır. Panelin
-verisine (LafPOS'un gün sonları ve günlük satışları dahil) bakarak soruları yanıtlar ve panelin nasıl kullanılacağını
-gösterir. **Kendisi hiçbir şeyi değiştirmez:**
-birkaç risksiz işi (Tükendi, fiyat, ödendi işareti, hatırlatıcı, kasadan çıkan, vardiya…) bir **onay kartıyla** hazırlar;
+Ekran: **yalnız yöneticide**. Masaüstünde her panel sayfasının sağ altında küçük yuvarlak düğme (parıltı simgesi,
+"Panel asistanı"); tıklayınca sağ altta 400 × 560'lık bir pencere açılır. **Telefon ve tablette** (lg altı) yüzen düğme
+yoktur: asistan **alt menünün ortasındaki "Asistan" sekmesinden** açılır, alt menünün üstünde biten sade bir tam ekran
+sayfadır (aşağıda Telefonda). Panelin verisine (LafPOS'un gün sonları ve günlük satışları dahil) bakarak soruları
+yanıtlar ve panelin nasıl kullanılacağını gösterir. **Kendisi hiçbir şeyi değiştirmez:** birkaç risksiz işi (Tükendi, fiyat, ödendi işareti, hatırlatıcı, kasadan çıkan, vardiya…) bir **onay kartıyla** hazırlar;
 siz karttaki **Onayla**'ya basmadan hiçbir şey değişmez (aşağıda İşlemler). Silme, toplu işlem, şifre isteyen ve riskli
 işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları verir (aşağıda Yapmadığı işler).
 
@@ -34,19 +34,38 @@ işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları 
   çizilmez. Neden liste: araç sonuçlarında dışarıdan gelen metin var (Paraşüt kalem adları, LafPOS adları); onlarla
   yapılan istem enjeksiyonu panel verisini taşıyan bir bağlantı ürettirse bile tıklanamaz.
 - **Esc** pencereyi kapatır (masaüstünde odak sayfadayken de). Masaüstünde pencere modal değildir: sayfa kullanılabilir.
-  Telefonda sayfa tam ekran ve modaldır, Tab pencerenin içinde döner. Ekran okuyucu yanıt bitince ilk cümlesini okur.
-  Baskıda görünmez.
-- **Telefonda** (390 ve 360 px genişlikte denendi) sayfa ekranın tamamını kaplar ve görünür alana oturur: ekran klavyesi
-  açıkken yazı kutusu klavyenin hemen üstünde kalır, son mesaj görünür kalır, alttaki ipucu satırı gizlenir. Üstte,
-  yanlarda ve klavye kapalıyken altta güvenli alan (çentik, ana ekran çubuğu) boş bırakılır. Açılışta yazı kutusuna
-  değil başlığa odaklanılır: klavye kendiliğinden açılmaz (onay kartını ve çipleri örtmez), kullanıcı kutuya dokununca
-  açılır. Karaoke "süre doldu" şeridi varken sayfa şeridin altından başlar (başlık ve Kapat örtülmez). Alt menü ve sayfanın
-  yüzen düğmesi sayfanın altında kalır. Bütün düğmeler (Gönder, Durdur, Kapat, Yeni sohbet, örnek çipler, kartın
-  Onayla / Vazgeç'i) en az 44 px; yazı kutusu 16 px (iPhone odakta yakınlaştırmaz). Dar ekranda "Yeni sohbet" yalnız
-  simgedir. Onay kartında satırların etiketi üstte, değeri altta durur ve yazılar bir boy büyüktür.
-- Düğmenin yeri: telefonda alt menünün üstünde; sayfada yüzen ekleme düğmesi (ör. Hatırlatıcılarım'daki "Yeni") varsa
-  onun, kaydetme çubuğu açıksa çubuğun üstünde; masaüstünde köşede, yapılmamış hatırlatma kartı açıkken kartın üstünde.
-  Telefonda aşağı kaydırırken kaybolur, yukarı kaydırınca gelir; ekran klavyesi açıkken gizlidir.
+  Telefonda sayfa modal değildir (alt menü kullanılabilir, aşağıda Telefonda). Ekran okuyucu yanıt bitince ilk
+  cümlesini okur. Baskıda görünmez.
+- **Telefonda** (390 ve 360 px genişlikte denendi) sayfa görünür alana oturur: ekran klavyesi açıkken yazı kutusu
+  klavyenin hemen üstünde kalır, son mesaj görünür kalır. Üstte ve yanlarda güvenli alan (çentik) boş bırakılır; alttaki
+  pay alt menünün içindedir. Karaoke "süre doldu" şeridi varken sayfa şeridin altından başlar (başlık ve Kapat
+  örtülmez). Dar ekranda "Yeni sohbet" yalnız simgedir. Onay kartında satırların etiketi üstte, değeri altta durur ve
+  yazılar bir boy büyüktür.
+- Düğmenin yeri (yalnız masaüstü): köşede; yapılmamış hatırlatma kartı ya da kaydetme çubuğu açıkken onların üstünde.
+
+## Telefonda
+
+- **Alt menü:** yöneticinin alt menüsü asistan açıkken **Bugün · Kasa · Asistan · Ödemeler · Tümü** olur (asistan
+  kapalıysa, `ASISTAN_KAPALI=1`, ve personelde değişmez). Beş öğe kalır: altıncı öğe 360 px'te hücreyi 60 px'e indirir,
+  "Genel bakış" yazısı kesilir. Çubuktan çıkan **Genel bakış**: öğelerin içinde her ekranda tek dokunuşluk ikinci yolu
+  olan yalnız odur (üst çubuktaki L'Af karosu ana sayfaya, Genel bakış'a gider; çekmecede de durur; giriş de orada
+  açılır). Bugün, Kasa ve Ödemeler'in (gecikmiş rozeti) başka tek dokunuşluk yolu yok. Asistan ortada, sade: aynı
+  hücre, parıltı simgesi marka renginde; yükseltilmiş daire, gölge yok (AkmanOS alt menüsünün diliyle).
+- **Açıkken:** alt menü görünür kalır, "Asistan" sekmesi etkin görünür (hap); sayfa üst çubuğu örter ve alt menünün
+  hemen üstünde biter. Sekmeye yeniden dokununca kapanır; başka bir öğeye dokununca asistan kapanır ve o ekran açılır
+  ("Tümü" çekmeceyi açar). Yanıttaki bir panel bağlantısı da sayfayı kapatıp ekranı açar. Arkadaki sayfa ve üst çubuk
+  bu sırada etkisizdir (odak ve ekran okuyucu yalnız asistanla alt menü arasında gezer). Konuşma sekme kapanmadıkça
+  kalır: yeniden açınca kaldığı yerden sürer.
+- **Klavye:** yazı kutusuna dokununca ekran klavyesi açılır, alt menü gizlenir, sayfa klavyenin hemen üstünde biter;
+  klavye kapanınca alt menü geri gelir. Açılışta yazı kutusuna değil başlığa odaklanılır (klavye kendiliğinden açılmaz).
+- **Göz yormasın:** sayfa zemininde, kenarlık ve gölge yok; başlık tek satır ("Panel asistanı", Yeni sohbet, Kapat).
+  Mesaj balonu yok: soru hafif zeminli düz bir blok, yanıt altında düz metin. Yazılar 16 px, satır aralığı geniş
+  (1,75), turlar arası boşluk bol; başlık, madde ve tablo yanıtın içinde ayrışır, tablo yatay kayar. Koyu temada yanıt
+  saf beyaz değil, bir ton kısık (`ink-soft`): siyah zeminde parlama yapmaz; kalın yazı ve rakam beyaz kalır. Alttaki
+  ipucu satırı telefonda yalnız uyarı varken (son 10 soru, soru çok uzun) görünür. Onay kartı tek sütun, çizgisi bir
+  ton açık, dış etki rozetleri gri; renk yalnız uyarıda ve sonuçta.
+- Dokunulan her şey (sekme, Gönder, Durdur, Kapat, Yeni sohbet, çipler, kartın Onayla / Vazgeç'i) en az 44 px; yazı
+  kutusu 16 px (iPhone odakta yakınlaştırmaz).
 
 Yanıtlar panelin verisinden gelir ama yanlış olabilir: önemli bir rakamı (ödeme, vergi) ekranda kontrol edin. Vergi
 rakamları paneldeki gibi tahmindir.
@@ -226,7 +245,10 @@ satırlar düşer, asistan bu ekranlara bağlantı vermez. Belge değişince `np
 - Sistem istemi: `src/server/ai/assistant/prompt.ts` (ekranlar `src/components/panel/nav.ts`'ten).
 - Kapı ve kayıt: `src/server/ai/claude.ts` (`assistantStatus`, `startAssistantCall`, `finishAssistantCall`).
 - Ekran: `src/components/panel/assistant/` (düğme ve pencere, güvenli markdown; panel düzenine bir kez eklenir,
-  `src/app/panel/layout.tsx`). Düğmenin yeri `src/app/globals.css` › `--assistant-bottom`.
+  `src/app/panel/layout.tsx`). Açık / kapalı durumu `assistant-open.ts` (alt menünün sekmesi ile asistan ayrı ağaçlarda;
+  ikisi bu küçük depoyu paylaşır). Alt menü: `src/components/panel/nav.ts` › `bottomNavFor`, `ASSISTANT_TAB`;
+  `bottom-nav.tsx`; sekme yalnız yöneticide ve `assistantEnabled()` iken (düzen `Sidebar`'a `assistant` verir).
+  Masaüstü düğmesinin yeri `src/app/globals.css` › `--assistant-bottom`, telefondaki sayfanın alt payı `--assistant-nav`.
 - Bilgi tabanı: `src/lib/assistant/knowledge-build.ts` (derleme), `knowledge-data.ts` (üretilir), `knowledge.ts` (arama).
   TS modülüne gömüldü, çünkü `docs/` klasörü Next'in sunucu işlevinin izine kendiliğinden girmez; gömülü modül pakete
   girer, çalışma anında dosya okunmaz, testler doğrudan kullanır.
