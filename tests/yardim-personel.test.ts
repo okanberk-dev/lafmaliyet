@@ -228,3 +228,13 @@ test("LafPOS: ürün ikramı LafPOS'ta işaretlenir cümlesi zayi sorusunda ve g
   const gun = ROUTINE_TEXTS.find((t) => t.startsWith("Gün içinde")) ?? "";
   assert.match(gun, /Kasada LafPOS kullanılmaya başlandıysa ürün ikramı LafPOS'ta işaretlenir; panele yalnız zayi ve hammadde ikramı girilir\./);
 });
+
+test("sade metin (24.11.2026): her cevap en çok 800, her adım en çok 400 harf; başlık açıklaması aramayı yeniden anlatmaz", () => {
+  for (const t of FAQ_TEXTS) {
+    const g = STAFF_FAQ_GROUPS.find((x) => x.title === t.group)!;
+    const len = textOf(g.items.find((f) => f.id === t.id)!.a, staffPathText).length;
+    assert.ok(len <= 800, `${t.id}: ${len} harf`);
+  }
+  for (const r of STAFF_ROUTINE) assert.ok(textOf(r.body, staffPathText).length <= 400, r.title);
+  assert.doesNotMatch(STAFF_PAGE, /[Ss]oruya dokunun ya da arayın/);
+});

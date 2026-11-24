@@ -112,3 +112,77 @@ test("yöneticinin yardımı: Vergi sorusu (dalga 12, docs/planlar/vergi.md §4.
   assert.deepEqual(pathOf("/panel/vergi/kurallar"), ["Vergi, KDV, SGK", "Muhasebeci"]);
   assert.match(PAGE, /\{ href: "\/panel\/vergi\/kurallar#sorular", label: "Muhasebeciye sorulacaklar" \}/);
 });
+
+// ---------------------------------------------------------------- Sade metinler (sahibin isteği 24.11.2026)
+// "Yardım sayfasındaki gereksiz bilgileri temizle": UI'nin zaten söylediği, geliştirici notu, kalkmış ya da değişmiş
+// özellik (Marina'nın ModPOS dönemi kapandı, CONTRACT §9), tek cümleye inebilen uzun paragraf. Kalır: yasal/vergi notları,
+// Formüller, güvenlik uyarıları, kısa ipuçları.
+
+/** Kaynaktaki JSX parçasının düz metni (etiket, yorum ve kaçışlar atılır; <Path> sayılmaz: ölçü alttan) */
+const plain = (src: string) =>
+  src
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\{" "\}/g, " ")
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+const FAQ_IDS = [...PAGE.matchAll(/^\s+id: "([^"]+)",$/gm)].map((m) => m[1]);
+function answer(id: string): string {
+  const at = PAGE.indexOf(`id: "${id}"`);
+  assert.ok(at > 0, `${id} sorusu yok`);
+  return plain(PAGE.slice(PAGE.indexOf("a:", at) + 2, PAGE.indexOf("icon:", at)));
+}
+const ROUTINE_SRC = PAGE.slice(PAGE.indexOf("const ROUTINE"), PAGE.indexOf("const FAQ_GROUPS"));
+const ROUTINE_BODIES = [...ROUTINE_SRC.matchAll(/title: "([^"]+)",\s*body: \(([\s\S]*?)\),\s*href/g)].map((m) => ({ title: m[1], text: plain(m[2]) }));
+
+test("sade metin: her cevap en çok 800, her adım en çok 500 harf (hesap yöntemi anlatan stok değerleme hariç)", () => {
+  assert.ok(FAQ_IDS.length > 40, `${FAQ_IDS.length} soru`);
+  const KEEP = new Set(["stok-degerleme"]);
+  for (const id of FAQ_IDS.filter((i) => !KEEP.has(i))) {
+    const len = answer(id).length;
+    assert.ok(len <= 800, `${id}: ${len} harf`);
+  }
+  assert.equal(ROUTINE_BODIES.length, 6);
+  for (const r of ROUTINE_BODIES) assert.ok(r.text.length <= 500, `${r.title}: ${r.text.length} harf`);
+});
+
+test("sade metin: geliştirici notu ve kalkmış özellik anlatılmaz", () => {
+  // Kodun yorumları ekranda görünmez
+  const all = plain(PAGE.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, ""));
+  for (const s of [
+    /docs\/[A-Z]/, // belge yolu sahibin işi değil
+    /henüz ölçülmedi/,
+    /ücretsiz planın/,
+    /sitenin ucuna/,
+    /"Pasif" yerine/, // eski düğme adı
+    /bana söyleyin/, // Excel dönemi
+    /otomatik testlerle/,
+    /Claude anahtarıyla canlı/,
+    /açılan ay adreste durur/,
+    /Açmak için soruya dokunun/, // arama kutusu ve sorular zaten görünüyor
+  ]) {
+    assert.doesNotMatch(all, s, String(s));
+  }
+});
+
+test("sade metin: Marina'nın ModPOS dönemi kapandı (CONTRACT §9); kasa şubeye göre anlatılır, Tuzla ModPOS'ta", () => {
+  for (const s of ["Kasadaki (ModPOS)", "LafPOS&apos;a geçildiyse", "LafPOS&apos;a geçiş günü seçildiyse", "ModPOS raporuyla çalışan aylarda", "ModPOS fiyatları", "ModPOS için kayıt sürer"]) {
+    assert.ok(!PAGE.includes(s), s);
+  }
+  const kasa = answer("kasa-fiyat");
+  assert.match(kasa, /ModPOS'lu şubede/);
+  assert.match(kasa, /LafPOS'lu şubede/);
+  assert.match(PAGE, /q: "Kasadaki fiyatlar \(Kasaya işle\)"/);
+  assert.match(answer("zam"), /Kasaya işle/);
+  for (const id of ["fotograf", "komisyon", "ay-ortasi-liste"]) assert.match(answer(id), /LafPOS'lu şube/, id);
+});
+
+test("sade metin: ay sonu tahmini Formüller'le birleşti (formül iki yerde yazılmaz)", () => {
+  const t = answer("tahmin");
+  assert.match(t, /Formüller/);
+  assert.doesNotMatch(t, /÷ açık gün/);
+  assert.match(PAGE, /"Ay sonu tahmini \(yalnızca devam eden ay\)"/);
+});

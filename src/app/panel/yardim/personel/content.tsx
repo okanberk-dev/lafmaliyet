@@ -32,7 +32,6 @@ import type { ReactNode } from "react";
 
 import { CASH_EVENING_HOUR, DAY_TURN_HOUR, LATE_REPORT_DAYS } from "@/lib/cash-report";
 import { OKC_PREFILL_ENABLED } from "@/lib/okc-z";
-import { MAX_OKC_PHOTOS } from "@/lib/photo-rules";
 import { REQUEST_DAYS } from "@/lib/cash-out-requests";
 import { CASH_OUT_UNDO_TOAST_MS } from "@/lib/cash-outs";
 import { ANSWER_GRACE_MIN, STAFF_HISTORY_DAYS } from "@/lib/checklists";
@@ -172,13 +171,11 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Akşam kasa raporunu nasıl girerim?",
         a: (
           <>
-            <StaffPath href="/panel/kasa" /> ekranında ModPOS Z raporunun ve banka POS Z raporunun (yazarkasa) fotoğrafını çekin. ModPOS&apos;un rakamları forma
-            dolar; banka POS Z&apos;si için aşağıdaki soruya bakın. Turuncu alanları fişle karşılaştırın; hiçbir şey kendiliğinden kaydedilmez,{" "}
-            <B>Raporu gönder</B>&apos;e siz basarsınız. Kasada sayılan nakdi, sayımdan sonra teslim edileni ve kasayı kimin saydığını
-            yazın. Satış dışında kasaya para konduysa (bozuk para, tahsilat, nakit bahşiş) <B>Kasaya giren ekle</B> ile yazın. Kasa farkı yazarken
-            hesaplanır; fark varsa nedenini nota yazın. Gece {hour(DAY_TURN_HOUR)}&apos;e kadar kapanan gün bir önceki güne yazılır. Kasada LafPOS
-            kullanılmaya başlandıysa önce LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın: form LafPOS&apos;un gün sonundan dolar (bölümün adı &quot;LafPOS gün
-            sonu (Z)&quot;), ModPOS Z fotoğrafı istenmez ve banka POS Z&apos;sinin kartı LafPOS&apos;la karşılaştırılır.
+            <StaffPath href="/panel/kasa" /> ekranında ModPOS Z raporunun ve banka POS Z raporunun (yazarkasa) fotoğrafını çekin; ModPOS&apos;un rakamları
+            forma dolar. Turuncu alanları fişle karşılaştırın; hiçbir şey kendiliğinden kaydedilmez, <B>Raporu gönder</B>&apos;e siz basarsınız. Sayılan nakdi,
+            teslim edileni ve kasayı kimin saydığını yazın; satış dışında kasaya konan parayı (bozuk para, tahsilat, nakit bahşiş) <B>Kasaya giren ekle</B> ile
+            girin. Kasa farkı varsa nedenini nota yazın. Kasada LafPOS kullanılmaya başlandıysa önce LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın: form
+            LafPOS&apos;un gün sonundan dolar, ModPOS Z fotoğrafı istenmez.
           </>
         ),
         icon: Banknote,
@@ -190,24 +187,19 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             Banka POS&apos;tan (yazarkasa) aldığınız Z raporudur: üstünde Z RAPORU ve KDV dökümü yazar, banka gün sonu fişi değil. <StaffPath href="/panel/kasa" />{" "}
-            ekranındaki Banka POS Z raporu (yazarkasa) kartında fotoğrafını çekin: fişi düz koyun, ekranı fişle doldurun; uzunsa önce üst yarısını, sonra alt
-            yarısını çekin (en çok {MAX_OKC_PHOTOS} fotoğraf).{" "}
+            ekranındaki Banka POS Z raporu (yazarkasa) kartında fişi düz koyup fotoğrafını çekin; uzunsa önce üst, sonra alt yarısını.{" "}
             {OKC_PREFILL_ENABLED ? (
               <>Birbirini tutan rakamlar forma dolar; tutmayan rakam turuncu kalır, altında nedeni yazar: fişe bakıp yazın.</>
             ) : (
               <>
-                Okunan rakamlar şimdilik forma kendiliğinden yazılmaz: her alanın altında fotoğrafta okunan rakam ve <B>Fotoğraftakini yaz</B> çıkar. Fişle
-                karşılaştırıp aynıysa düğmeye basın, değilse fişteki rakamı yazın.
+                Okunan rakamlar şimdilik forma kendiliğinden yazılmaz: her alanın altında okunan rakam ve <B>Fotoğraftakini yaz</B> çıkar; fişle aynıysa
+                basın, değilse fişteki rakamı yazın.
               </>
             )}{" "}
-            Fotoğraf çekemediyseniz dört alanı fişten yazın: <B>Günlük toplam</B> (NET SATIŞ ya da TOPLAM satırı, en büyük rakam değil), <B>Z no</B> (Z NO
-            ya da Z SAYAÇ, fiş no değil), <B>Nakit</B> ve <B>Kredi kartı</B> (K.KARTI satırı, altındaki banka satırları değil). KDV dökümü, fiş sayısı, yemek
-            kartı ve banka gün sonu <B>Ayrıntılar</B>&apos;dadır ve isteğe bağlıdır. Bölümü bütünüyle boş bırakabilirsiniz; bir rakam yazdıysanız günlük
-            toplam, nakit ve kredi kartı da gerekir (yoksa 0 yazın). Rakamlar birbirini tutmazsa tutmayan alan turuncu olur ve altında nedeni yazar: fişe bakıp
-            düzeltin. Kartın altında yazarkasanın kartı ModPOS&apos;taki kartla karşılaştırılır; farklıysa kartla alınan bir ödeme ModPOS&apos;ta başka ödeme
-            türüyle girilmiş olabilir. Yanlış bölüme çekilen fotoğraf hiçbir alanı doldurmaz: altındaki <B>ModPOS bölümüne okut</B> ya da{" "}
-            <B>Banka POS Z bölümüne okut</B> ile doğru bölüme okutun. Kasada LafPOS kullanılmaya başlandıysa yazarkasanın kartı LafPOS&apos;taki kartla
-            karşılaştırılır ve ModPOS bölümü yoktur: bu fiş yalnız bu karta çekilir.
+            Elle yazarken <B>Günlük toplam</B> NET SATIŞ ya da TOPLAM satırıdır, <B>Z no</B> fiş no değildir, <B>Kredi kartı</B> K.KARTI satırıdır. Kartın altında
+            yazarkasanın kartı ModPOS&apos;taki kartla karşılaştırılır (LafPOS kullanılıyorsa LafPOS&apos;takiyle); farklıysa bir kart ödemesi başka
+            türle girilmiş olabilir. Yanlış bölüme çekilen fotoğrafı altındaki <B>… bölümüne okut</B> düğmesi doğru
+            bölüme taşır.
           </>
         ),
         icon: ScrollText,
@@ -285,9 +277,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Rapora yanlış fotoğraf eklendi",
         a: (
           <>
-            Kayıtlı raporda yanlış ModPOS Z ya da banka POS Z fotoğrafının yanındaki <B>Kaldırılmasını iste</B> ile nedenini yazıp gönderin; yönetici onaylayınca
-            fotoğraf rapordan çıkar. Fotoğrafın okumasıyla rapordaki rakam farklıysa, raporun tek ModPOS Z fotoğrafıysa ya da banka POS Z rakamları yazılmış
-            raporun tek banka POS Z fotoğrafıysa bu düğme yoktur.
+            Kayıtlı raporda yanlış fotoğrafın yanındaki <B>Kaldırılmasını iste</B> ile nedenini yazıp gönderin; yönetici onaylayınca fotoğraf rapordan çıkar.
+            Rakamlar o fotoğrafa dayanıyorsa düğme görünmez.
           </>
         ),
         icon: Camera,
