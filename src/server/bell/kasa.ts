@@ -251,7 +251,7 @@ async function cashIntegrityNotifications(reports: CashReportDTO[], day: string,
     const t = tills.of(m.report.branchId);
     out.push({ ...modposMismatchBell(m, t.named ? t.name : undefined), kind: "warning", timeLabel: timeLabel(m.report.date), unread: true, group: "kasa" });
   }
-  // Gün sonu tam (24 Kasım 2026): LafPOS gününün gün sonu fotoğrafı LafPOS'un rakamlarından farklı (yalnız yönetici, son 7
+  // Gün sonu tam (24 Kasım 2026): LafPOS gününün gün sonu fotoğrafı LafPOS'un rakamlarından farklı ya da kodla okunup güvenle seçilmedi (yalnız yönetici, son 7
   // gün; src/lib/lafpos/foto.ts). Kimlik karşılaştırmanın anından: yeni fotoğraf ya da LafPOS'un yeniden gönderimi yeniden okunmamış
   const photoRows = await getDb()
     .select({ reportId: s.lafposDayEnds.reportId, photoCheck: s.lafposDayEnds.photoCheck })
@@ -261,13 +261,14 @@ async function cashIntegrityNotifications(reports: CashReportDTO[], day: string,
   for (const row of photoRows) {
     const r = reports.find((x) => x.id === row.reportId);
     const check = row.photoCheck;
-    if (!r || check?.state !== "fark") continue;
+    // Kodla okunup bir satırı güvenle seçilmeyen fotoğraf da yöneticinin (yapay zekâ yokken; "yönetici baksın")
+    if (!r || (check?.state !== "fark" && check?.state !== "belirsiz")) continue;
     const t = tills.of(r.branchId);
-    const body = check.issues.join("; ");
+    const body = check.state === "fark" ? check.issues.join("; ") : "Yapay zekâ kullanılamadı, fotoğraf kodla okundu ama bir satır güvenle seçilmedi; fotoğrafa bakın.";
     out.push({
       id: `kasa-foto-${r.date}${idPart(t)}-${Date.parse(check.at)}`,
       kind: "warning",
-      title: `Kasa fotoğrafı LafPOS'tan farklı · ${t.name} ${longDateTR(r.date)}`,
+      title: `${check.state === "fark" ? "Kasa fotoğrafı LafPOS'tan farklı" : "Kasa fotoğrafı okunamadı, yönetici baksın"} · ${t.name} ${longDateTR(r.date)}`,
       body: body.length > 220 ? `${body.slice(0, 219)}…` : body,
       timeLabel: timeLabel(r.date),
       unread: true,

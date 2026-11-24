@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
 import { money } from "@/lib/format";
-import { LAFPOS_PHOTO_TEXT, type LafposPhotoCheck, type LafposPhotoNeed } from "@/lib/lafpos/foto";
+import { LAFPOS_PHOTO_TEXT, photoSourceText, type LafposPhotoCheck, type LafposPhotoNeed } from "@/lib/lafpos/foto";
 import { MAX_OKC_PHOTOS, type ReadingState } from "@/lib/photo-rules";
 import { attachLafposDayPhoto, setLafposBankPos } from "@/server/actions/cash-report";
 
@@ -38,15 +38,15 @@ export function LafposPhotoCard({
 }) {
   const up = usePhotoUpload();
   const [pending, start] = useActionTransition();
-  const read = reading === "on";
   const full = state.attached >= MAX_OKC_PHOTOS;
-  // Okuma kapalıyken fotoğraf yine alınır; personelden rakam istenmez (formun "rakamları elle yazın"ı burada yok)
-  const offLine = storage && admin && reading !== "on" ? "Fotoğraftan okuma kapalı: fotoğraf alınır, LafPOS'la karşılaştırılmaz." : null;
+  // Personelden rakam istenmez (formun "rakamları elle yazın"ı burada yok); yöneticiye okumanın yolu
+  const offLine = storage && admin && reading !== "on" ? "Yapay zekâ ile okuma şu an kullanılamıyor: fotoğraf kodla okunur (OCR), LafPOS'la karşılaştırılır." : null;
   // Pavo istenince detaylı Z basar: tek fiş (banka gün sonu da Z de üstünde); ayrı mali Z basan cihazda Z de
   const what = state.need.z ? "Pavo gün sonu fişi ve yazarkasa Z raporu" : "Pavo gün sonu fişi (detaylı Z)";
 
   async function pick(file: File) {
-    const res = await up.upload(file, { kind: "kasa-okc", day: date, read });
+    // Fotoğraf her zaman okunur: yapay zekâ kapalı / kurulu değil / sınırda ise sunucu kodla okur (OCR; src/server/photo-read/lafpos.ts)
+    const res = await up.upload(file, { kind: "kasa-okc", day: date, read: true });
     if (!res) return;
     start(async () => {
       const out = await attachLafposDayPhoto({ date, branchId, photoId: res.photo.id });
@@ -76,7 +76,7 @@ export function LafposPhotoCard({
         <Notice tone={tone} size="sm" title={state.line} text={state.attached ? `${state.attached} fotoğraf${state.pending && !state.auto ? " (rapor bekleniyor)" : ""}` : undefined} />
         {storage && !full ? (
           <>
-            <PhotoPicker onPick={(f) => void pick(f)} read={read} disabled={up.busy || pending} />
+            <PhotoPicker onPick={(f) => void pick(f)} read disabled={up.busy || pending} />
             <PhotoStatus phase={up.phase} />
             {offLine ? <p className="text-[13px] leading-5 text-ink-mute">{offLine}</p> : null}
           </>
@@ -99,10 +99,12 @@ function AdminCheck({ check, bankPos, onWrite, busy }: { check: LafposPhotoCheck
         ? "Fotoğraf ↔ LafPOS: farklı"
         : check.state === "okunamadi"
           ? "Fotoğraf okunamadı ya da yanlış belge"
-          : "Fotoğraf okunmadı (okuma kapalı ya da sınırda)";
+          : check.state === "belirsiz"
+            ? "Fotoğraf kodla okundu ama bir satır güvenle seçilmedi: yönetici baksın"
+            : "Fotoğraf okunmadı (henüz okunmadı)";
   return (
     <section aria-label="Fotoğraf ↔ LafPOS" className="space-y-2">
-      <Notice tone={check.state === "fark" ? "bad" : check.state === "uyumlu" ? "good" : "warn"} size="sm" title={head} />
+      <Notice tone={check.state === "fark" ? "bad" : check.state === "uyumlu" ? "good" : "warn"} size="sm" title={head} text={check.state === "okunmadi" ? undefined : `Okuyan: ${photoSourceText(check)}`} />
       {check.rows.length ? (
         <ul className="divide-y divide-line">
           {check.rows.map((r) => (

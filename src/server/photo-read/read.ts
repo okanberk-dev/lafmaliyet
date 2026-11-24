@@ -19,6 +19,8 @@ import { previousOkc } from "@/server/data/cash-reports";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { getDb, schema as s } from "@/server/db";
 
+import { readLafposDayPhoto } from "./lafpos";
+
 export interface ReadOutcome {
   reading: PhotoReading | null;
   /** Okunamadı (servis, sınır, kapalı): fotoğraf yine saklandı; metin personele */
@@ -108,6 +110,18 @@ export async function readPhotoFor(
     return { reading: normalizeZ(res.data, { day: input.day, prevZNo }), readError: null, readCode: null, canRetry: false };
   }
   if (kind === "kasa-okc" || kind === "kasa-pos") {
+    // LafPOS gününün gün sonu fotoğrafı (Pavo'nun detaylı Z'si): önce ucuz model, gerekirse bir kez güçlü model, yapay zekâ
+    // yoksa kodla (src/server/photo-read/lafpos.ts). Personel okunuşu görmez (yalnız "Fotoğraf alındı"); okunamadıysa da
+    // ondan rakam istenmez: hata metni yok, karşılaştırma yöneticinin
+    const till = await currentTillBranch();
+    const lafpos = await readLafposDayPhoto(getDb(), { photoId: input.photoId, bytes: input.bytes, contentType: input.contentType, day: input.day, userId: input.me.id, branchId: till });
+    if (lafpos) {
+      if (!lafpos.raw) return { reading: null, readError: null, readCode: null, canRetry: false };
+      const [prev, recentTotals] = await Promise.all([previousOkc(input.day), okcTypical(input.day)]);
+      const full = okcReadingOnLafposDay(normalizeOkc(lafpos.raw, { day: input.day, prev, recentTotals }));
+      const reading = input.me.role === "admin" ? full : toStaffReading(full);
+      return { reading: kind === "kasa-pos" ? okcToLegacyPos(reading) : reading, readError: null, readCode: null, canRetry: false };
+    }
     const [prev, recentTotals, switchDay, res] = await Promise.all([
       previousOkc(input.day),
       okcTypical(input.day),

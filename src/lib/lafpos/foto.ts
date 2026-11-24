@@ -1,7 +1,8 @@
 import { dateTR, money } from "@/lib/format";
 import { normalizeVat, sameVat, zNoNumber, type OkcVatLine } from "@/lib/okc-z";
 import { businessDayOf, printedAmount, round2 } from "@/lib/photo-read/common";
-import type { KasaOkc } from "@/lib/photo-read/schemas";
+import { modelName, type ReadingSource } from "@/lib/photo-read/models";
+import type { AmountRaw, KasaOkc } from "@/lib/photo-read/schemas";
 import { addDays } from "@/lib/reminders";
 
 import type { BankPos, PosOkc } from "./day";
@@ -100,11 +101,17 @@ export function lafposPhotoNeed(d: { bankPos: BankPos | null | undefined; okc: P
   return { slip, z, count: (slip ? 1 : 0) + (z ? 1 : 0) };
 }
 
-/** Fotoğrafın bir okunuşu: ai_calls'un son başarılı sonucu (okunmadıysa raw null; okuma düştüyse error) */
+/**
+ * Fotoğrafın bir okunuşu: ai_calls'un son başarılı sonucu (okunmadıysa raw null; okuma düştüyse error). `source`: yapay
+ * zekâ ("ai", varsayılan) ya da kodla okuma ("kod": OCR + Pavo fişinin ayrıştırıcısı, src/lib/photo-read/pavo-ocr.ts);
+ * `model` okuyan model (kodda OCR_MODEL)
+ */
 export interface LafposPhotoRead {
   photoId: number;
   raw: KasaOkc | null;
   error: string | null;
+  source?: ReadingSource;
+  model?: string | null;
 }
 
 /** Fotoğrafın LafPOS'la karşılaştırması: satır, fotoğraftaki, LafPOS'taki, tutuyor mu */
@@ -113,6 +120,8 @@ export interface LafposPhotoRow {
   photo: string;
   lafpos: string;
   ok: boolean;
+  /** Fotoğraftaki rakam okunmadı (kodla okunan günde "okunamadı — yönetici baksın"; yapay zekâda fark) */
+  unread?: boolean;
 }
 
 export interface LafposPhotoCheck {
@@ -122,9 +131,14 @@ export interface LafposPhotoCheck {
   photos: number;
   /**
    * "uyumlu" fotoğraf LafPOS'u tutuyor; "fark" yöneticinin uyarısı; "okunamadi" okunamadı ya da yanlış belge (personel
-   * yeniden çeker); "okunmadi" okuma yok (bu ortamda kapalı, ya da henüz okunmadı)
+   * yeniden çeker); "okunmadi" okuma yok (henüz okunmadı); "belirsiz" kodla okundu (yapay zekâ yoktu) ama karşılaştırılan
+   * bir satır yüksek güvenle okunmadı: "okunamadı — yönetici baksın" (personelin işi bitti, rakam uydurulmaz)
    */
-  state: "uyumlu" | "fark" | "okunamadi" | "okunmadi";
+  state: "uyumlu" | "fark" | "okunamadi" | "okunmadi" | "belirsiz";
+  /** Okuyan: yapay zekâ ya da kod (eski kayıtta yok: yapay zekâ) */
+  source?: ReadingSource | null;
+  /** Okuyan model (yapay zekâda "claude-haiku-5-5" / "claude-opus-5-5"; kodda OCR_MODEL) */
+  model?: string | null;
   rows: LafposPhotoRow[];
   /** Tutmayan satırların kısa metni (zil, e-posta, ay satırı) */
   issues: string[];
@@ -174,11 +188,26 @@ export function lafposPhotoCheck(
   i: { day: string; reads: readonly LafposPhotoRead[]; bankPos: BankPos | null; okc: PosOkc | null; report: LafposPhotoReport },
   now: Date = new Date(),
 ): LafposPhotoCheck {
-  const base = { at: now.toISOString(), photos: i.reads.length, rows: [] as LafposPhotoRow[], issues: [] as string[], readBankPos: null as number | null, zNoFromPhoto: null as string | null };
+  // Kodla okunan fotoğrafta "low" güvenli rakam okunmamış sayılır (strictView); kaynak: biri kodla okunduysa "kod"
+  const reads = i.reads.map((r) => (r.source === "kod" && r.raw ? { ...r, raw: strictView(r.raw) } : r));
+  const kod = reads.some((r) => r.source === "kod");
+  const lead = reads.find((r) => r.source === "kod") ?? reads.find((r) => r.raw) ?? reads[0];
+  const base = {
+    at: now.toISOString(),
+    photos: i.reads.length,
+    rows: [] as LafposPhotoRow[],
+    issues: [] as string[],
+    readBankPos: null as number | null,
+    zNoFromPhoto: null as string | null,
+    source: lead ? (lead.source ?? "ai") : null,
+    model: lead?.model ?? null,
+  };
   // Batch satırı okunmamış Pavo fişi (ör. batch bölümü kadrajın dışında) karşılaştırılacak bir şey vermez: okunamadı sayılır
-  const usable = i.reads.filter((r) => r.raw && r.raw.readable && ((r.raw.documentType === "batch_slip" && r.raw.batches.length > 0) || r.raw.documentType === "z_report"));
+  const usable = reads.filter((r) => r.raw && r.raw.readable && ((r.raw.documentType === "batch_slip" && r.raw.batches.length > 0) || r.raw.documentType === "z_report"));
   if (!usable.length) {
-    const failed = i.reads.some((r) => r.error !== null || (r.raw !== null && !usable.includes(r)));
+    const failed = reads.some((r) => r.error !== null || (r.raw !== null && !usable.includes(r)));
+    // Kodla okunup bir şey seçilmediyse fotoğraf kötü olmayabilir (OCR'ın sınırı): personelden yeniden çekmesi istenmez, yönetici bakar
+    if (kod) return { ...base, state: "belirsiz" };
     return { ...base, state: failed ? "okunamadi" : "okunmadi" };
   }
   const rows: LafposPhotoRow[] = [];
@@ -242,7 +271,7 @@ export function lafposPhotoCheck(
         const clash = mine.find((x) => x.nets.length > 1);
         const net = mine.every((x) => x.net !== null) ? round2(mine.reduce((a, x) => a + x.net!, 0)) : null;
         const lafpos = totals.get(batchKey(no)) ?? null;
-        rows.push({ label: `Batch ${no}`, photo: clash ? slipAmount(clash) : amountOf(net), lafpos: amountOf(lafpos), ok: !clash && net !== null && lafpos !== null && near(net, lafpos) });
+        rows.push({ label: `Batch ${no}`, photo: clash ? slipAmount(clash) : amountOf(net), lafpos: amountOf(lafpos), ok: !clash && net !== null && lafpos !== null && near(net, lafpos), ...(!clash && net === null ? { unread: true } : {}) });
       }
       const unshot = lafposNos.filter((n) => !keys.has(batchKey(n)));
       rows.push({ label: "Fotoğrafı olmayan batch", photo: "yok", lafpos: unshot.join(", "), ok: true });
@@ -256,7 +285,7 @@ export function lafposPhotoCheck(
         readBankPos = sum;
         rows.push({ label: "Banka POS toplamı", photo: amountOf(sum), lafpos: "boş", ok: true });
       } else {
-        rows.push({ label: "Banka POS toplamı", photo: amountOf(sum), lafpos: money(i.report.bankPos), ok: sum !== null && near(sum, i.report.bankPos) });
+        rows.push({ label: "Banka POS toplamı", photo: amountOf(sum), lafpos: money(i.report.bankPos), ok: sum !== null && near(sum, i.report.bankPos), ...(sum === null ? { unread: true } : {}) });
       }
     }
     // Fişin günü: başlıktaki tarih ve saat (05:00'ten önce basılan bir önceki gün); saatsizse batch'in tarihi, ertesi gün de olur
@@ -277,7 +306,7 @@ export function lafposPhotoCheck(
       const a = [...acq].sort((x, y) => x - y);
       const r = lastRead.map((x) => x.net).filter((n): n is number => n !== null).sort((x, y) => x - y);
       const ok = a.length === r.length && a.every((v, k) => near(v, r[k]));
-      rows.push({ label: "Banka dökümü", photo: r.map(money).join(" + ") || "okunamadı", lafpos: a.map(money).join(" + "), ok });
+      rows.push({ label: "Banka dökümü", photo: r.map(money).join(" + ") || "okunamadı", lafpos: a.map(money).join(" + "), ok, ...(lastRead.some((x) => x.net === null) ? { unread: true } : {}) });
     }
   }
 
@@ -316,7 +345,7 @@ export function lafposPhotoCheck(
     if (lafposNo) {
       // LafPOS gönderdi: raporunkiyle (elle düzeltilmişse o) karşılaştırılır
       const reportNo = i.report.okcZNo ?? lafposNo;
-      rows.push({ label: "Yazarkasa Z no", photo: uniq(nos.map((n) => n ?? "okunamadı")), lafpos: reportNo, ok: nos.every((n) => n !== null && sameNo(n, reportNo)) });
+      rows.push({ label: "Yazarkasa Z no", photo: uniq(nos.map((n) => n ?? "okunamadı")), lafpos: reportNo, ok: nos.every((n) => n !== null && sameNo(n, reportNo)), ...(nos.some((n) => n === null) ? { unread: true } : {}) });
     } else if (readNos.length) {
       // LafPOS göndermedi: fotoğraftaki raporun boş Z no'suna yazılır (sunucu; okunanlar birbirini tutuyorsa); raporda başka
       // bir Z no varsa ya da fotoğraflar farklı Z no gösteriyorsa fark
@@ -349,7 +378,7 @@ export function lafposPhotoCheck(
       if (lafpos === null || lafpos === undefined) continue;
       const photo = zs.map(read).filter((v): v is number | null => v !== undefined);
       if (!photo.length) continue;
-      rows.push({ label, photo: uniq(photo.map(amountOf)), lafpos: money(lafpos), ok: photo.every((v) => v !== null && near(v, lafpos)) });
+      rows.push({ label, photo: uniq(photo.map(amountOf)), lafpos: money(lafpos), ok: photo.every((v) => v !== null && near(v, lafpos)), ...(photo.some((v) => v === null) ? { unread: true } : {}) });
     }
     if (i.report.okcVat) {
       const text = (xs: readonly OkcVatLine[]) => xs.map((g) => `%${g.rate} ${money(g.vat)}`).join(" · ") || "yok";
@@ -362,18 +391,51 @@ export function lafposPhotoCheck(
           }),
         ),
       );
-      rows.push({ label: "Yazarkasa KDV", photo: uniq(vats.map(text)), lafpos: text(normalizeVat(i.report.okcVat)), ok: vats.every((v) => sameVat(v, i.report.okcVat!)) });
+      // Kodla okunan Z'de KDV dökümü hiç seçilmediyse "yok" değil okunmamış (OCR kaçırmış olabilir)
+      const vatUnread = zs.some((z) => (kod && !z.kdvGroups.length) || z.kdvGroups.some((g) => printedAmount(g.total).value === null || printedAmount(g.vat).value === null));
+      rows.push({ label: "Yazarkasa KDV", photo: uniq(vats.map(text)), lafpos: text(normalizeVat(i.report.okcVat)), ok: vats.every((v) => sameVat(v, i.report.okcVat!)), ...(vatUnread ? { unread: true } : {}) });
     }
   }
 
   // Karşılaştırılan hiçbir satır yoksa "uyumlu" denmez: Pavo fişi okundu ama LafPOS'ta karşılığı henüz yok (Pavo'nun sonucu
   // gelmedi) ise okunmadı, öteki durumda (ör. Pavo cihazında Z fotoğrafı, fiş yok) okunamadı / yanlış belge
-  if (!rows.length) return { ...base, state: slips.length && !i.bankPos ? "okunmadi" : "okunamadi" };
+  if (!rows.length) return { ...base, state: slips.length && !i.bankPos ? "okunmadi" : kod ? "belirsiz" : "okunamadi" };
   const issues = rows.filter((r) => !r.ok).map((r) => `${r.label}: fotoğrafta ${r.photo}; LafPOS'ta ${r.lafpos}`);
+  // Kodla okunan günde "uyumlu" / "fark" yalnız her karşılaştırılan satır yüksek güvenle okunduysa ve en az bir tutar
+  // (Banka POS ya da yazarkasa toplamı, batch tutarı) karşılaştırıldıysa; değilse "okunamadı — yönetici baksın"
+  if (kod) {
+    const hasAmount = rows.some((r) => r.label === "Banka POS toplamı" || r.label === "Yazarkasa toplamı" || /^Batch [0-9?]/.test(r.label));
+    if (!hasAmount || rows.some((r) => r.unread && !r.ok)) return { ...base, rows, issues, state: "belirsiz" };
+  }
   const state = issues.length ? "fark" : "uyumlu";
   // Fotoğraftan Z no yalnız fotoğraf LafPOS'u tutuyorsa (uyumlu) ve Z'nin günü doğrulandıysa: başka günün Z'si, rakamı
   // farklı Z ya da günü okunmayan Z rapora Z no yazmaz (aynı Z no iki raporda olur, Z zinciri ve kümülatif bozulur)
   return { ...base, rows, issues, readBankPos, zNoFromPhoto: state === "uyumlu" && zDayOk ? zNoFromPhoto : null, state };
+}
+
+/**
+ * Kodla okunan okunuşun katı hâli: güveni "high" olmayan her tutar, Z no ve tarih okunmamış (null) sayılır. Karşılaştırma
+ * şüpheli bir rakamla "uyumlu" ya da "fark" demesin; okunmayan satır "okunamadı — yönetici baksın"a gider
+ */
+function strictView(raw: KasaOkc): KasaOkc {
+  const a = (x: AmountRaw): AmountRaw => (x.confidence === "high" ? x : { text: null, value: null, confidence: "low" });
+  return {
+    ...raw,
+    date: raw.dateConfidence === "high" ? raw.date : null,
+    time: raw.dateConfidence === "high" ? raw.time : null,
+    zNo: raw.zNo.confidence === "high" ? raw.zNo : { text: null, value: null, confidence: "low" },
+    dailyTotal: a(raw.dailyTotal),
+    totalVat: a(raw.totalVat),
+    kdvGroups: raw.kdvGroups.map((g) => ({ ...g, total: a(g.total), vat: a(g.vat) })),
+    payments: raw.payments.map((p) => ({ ...p, amount: a(p.amount) })),
+    batches: raw.batches.map((b) => ({ ...b, salesTotal: a(b.salesTotal), refundTotal: b.refundTotal.text === null ? b.refundTotal : a(b.refundTotal), netTotal: a(b.netTotal) })),
+  };
+}
+
+/** Okuyanın adı (yöneticinin kartı, e-posta): "Yapay zekâ (Claude Haiku 5.5)" ya da "Kodla okundu" */
+export function photoSourceText(check: Pick<LafposPhotoCheck, "source" | "model"> | null): string {
+  if (check?.source === "kod") return "Kodla okundu";
+  return check?.model ? `Yapay zekâ (${modelName(check.model)})` : "Yapay zekâ";
 }
 
 /**
@@ -411,6 +473,8 @@ export function photoCheckText(check: LafposPhotoCheck | null, need: LafposPhoto
       return `alındı · LafPOS'tan farklı: ${check.issues.join("; ")}`;
     case "okunamadi":
       return "okunamadı ya da yanlış belge (personel yeniden çeker)";
+    case "belirsiz":
+      return "alındı · kodla okunamadı, yönetici baksın";
     default:
       return "alındı · okunmadı";
   }
