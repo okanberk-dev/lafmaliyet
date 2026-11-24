@@ -222,7 +222,9 @@ Aynı uyarı iki tetikleyiciden de bir kez gider (aşağıda: sahiplenme).
 - **Kime (22 Kasım 2026'dan beri vardiyaya göre):** listenin şubesinde **o an vardiyada olan** hesaplar
   ([Vardiya planı](VARDIYA.md); dün başlayıp gece yarısını geçen vardiya da sayılır, vardiyaya yazılan yönetici dahil):
   10:00 ve 14:00 bildirimi sabahçıya, 18:00 ve 22:00 akşamcıya gider, iki vardiyanın kesiştiği saatte ikisine de. O an
-  kimse vardiyada değilse o gün o şubede çalışacak herkese. O gün için plan hiç yazılmadıysa eskisi gibi listeyi
+  kimse vardiyada değilse vardiyası son 2 saatte biten ya da önümüzdeki 2 saatte başlayana (25 Kasım 2026: 14–22
+  vardiyasında 22:00 kapanış hatırlatması az önce çıkana gider, o gün çalışmış sabahçıya değil); o da yoksa o gün o
+  şubede çalışacak herkese. O gün için plan hiç yazılmadıysa eskisi gibi listeyi
   doldurabilen etkin **personel**: şubeli listede o şubenin personeli ve şubesi boş personel, şubesiz listede bütün
   personel (`alertRecipients`). Tuvalet çizelgesi yalnız Tuzla'nın.
   Her kişiye kendi adresine tek e-posta (adresler birbirine görünmez); o çalışmadaki bütün uyarıları bir arada,

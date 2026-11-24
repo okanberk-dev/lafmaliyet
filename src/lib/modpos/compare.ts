@@ -108,7 +108,7 @@ export function modposDiffText(d: ModposDiff): string {
   return `${d.label} ${shown(d, d.saved)} (ModPOS API'de ${shown(d, d.modpos)})`;
 }
 
-/** "ModPOS föyünden farklı: Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺); …" */
+/** "ModPOS API'den farklı: Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺); …" */
 export function modposDiffsLine(diffs: readonly ModposDiff[]): string | null {
   return diffs.length ? `ModPOS API'den farklı: ${diffs.map(modposDiffText).join("; ")}` : null;
 }

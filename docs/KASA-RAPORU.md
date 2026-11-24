@@ -832,7 +832,7 @@ onu okur); değişen yalnız ciroya girmemesidir. **Kartlı satış oranı** da 
   uyarıları), **ladmin** (panelde yazılan raporun ayrıntısı: Z, ödemeler, nakit kasa ve devir zinciri, kart ve
   yazarkasa, kasadan çıkanlar, künye) ve **Karşılaştırma** (alan alan tablo; Z alanları, açılış ve sayılan farklı
   yazılan, gider, giren, olması gereken, kasa farkı, ödemelerin toplamı ve banka POS bilgi olarak). Personelin yazdığı
-  Z rakamı föyden farklıysa günden güne listede **ModPOS'tan farklı** rozeti, zilde "Kasa raporu ModPOS föyünden
+  Z rakamı föyden farklıysa günden güne listede **ModPOS'tan farklı** rozeti, zilde "Kasa raporu ModPOS API'den
   farklı". Föy her sabah 08:00'de gelir; personelin ekranı değişmez.
 - **Rapor alıcıları:** e-posta adresleri (en çok 10), e-posta açık / kapalı, WhatsApp numarası ve "Deneme e-postası".
   E-posta için Vercel'de `RESEND_API_KEY` gerekir (`docs/BILDIRIMLER.md`). E-posta kapalıysa, gönderim kurulmamışsa

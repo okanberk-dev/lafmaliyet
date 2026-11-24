@@ -112,7 +112,7 @@ export function modposMismatchBell(m: ModposMismatch<{ date: string; revision: n
 }
 
 /**
- * Sabah e-postasının satırı: "Kasa raporu ModPOS föyünden farklı. 2 Kasım · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)";
+ * Sabah e-postasının satırı: "Kasa raporu ModPOS API'den farklı. 2 Kasım · Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺)";
  * birden çok kasa açıkken şubenin adıyla: "Kasa raporu ModPOS API'den farklı (Tuzla). 2 Kasım · …"
  */
 export function modposMismatchDigestText(date: string, diffs: readonly ModposDiff[], branchName?: string): string {

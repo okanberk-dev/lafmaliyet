@@ -184,13 +184,23 @@ test("kime gider (vardiya planıyla): o an vardiyada olana; kimse yoksa o gün �
   assert.deepEqual(ids("tuzla", plan, "2026-11-24", 1000), [2, 3]);
   // Gece yarısını geçen vardiya ertesi günün ilk saatinde de vardiyadadır (dün başladı)
   assert.deepEqual(ids("tuzla", plan, "2026-11-25", 30), [3]);
-  // 01:00'de vardiya bitti ve yeni gün için plan yok: bütün personele düşer
-  assert.deepEqual(ids("tuzla", plan, "2026-11-25", 60), [2, 3, 5]);
+  // 01:00'de vardiya bitti: az önce çıkana (son 2 saatte biten); 03:30'da yakın vardiya da yok, yeni gün için plan yok:
+  // bütün personele düşer
+  assert.deepEqual(ids("tuzla", plan, "2026-11-25", 60), [3]);
+  assert.deepEqual(ids("tuzla", plan, "2026-11-25", 210), [2, 3, 5]);
+  // 22:00 kapanış hatırlatması, akşamcı 14–22: vardiyası tam 22:00'de bitti; sabahçıya değil ona gider
+  const closing = [
+    { branchId: "tuzla", userId: 2, date: "2026-11-24", startMin: 480, endMin: 960 },
+    { branchId: "tuzla", userId: 3, date: "2026-11-24", startMin: 840, endMin: 1320 },
+  ];
+  assert.deepEqual(ids("tuzla", closing, "2026-11-24", 1320), [3]);
   // Marina'nın listesi Marina'nın vardiyasına; şubesiz liste bütün şubelerde o an vardiyada olanlara
   assert.deepEqual(ids("marina", plan, "2026-11-24", 600), [4]);
   assert.deepEqual(ids(null, plan, "2026-11-24", 600), [2, 4]);
-  // O an kimse vardiyada değil (08:00): o gün o şubede çalışacak herkese
-  assert.deepEqual(ids("tuzla", plan, "2026-11-24", 480), [2, 3]);
+  // O an kimse vardiyada değil (08:00): 2 saat içinde başlayana (09:00 sabahçı); yakında kimse yoksa (06:00) o gün o
+  // şubede çalışacak herkese
+  assert.deepEqual(ids("tuzla", plan, "2026-11-24", 480), [2]);
+  assert.deepEqual(ids("tuzla", plan, "2026-11-24", 360), [2, 3]);
   // Vardiyaya yazılan yönetici de alır
   assert.deepEqual(ids("tuzla", [{ branchId: "tuzla", userId: 1, date: "2026-11-24", startMin: 540, endMin: 1080 }], "2026-11-24", 600), [1]);
   // O gün için plan yok (ya da plandaki hesap pasif: listede yok): eskisi gibi şubenin personeli ve şubesiz personel

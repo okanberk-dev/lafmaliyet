@@ -263,3 +263,20 @@ export function sinceLabel(atMs: number, nowMs: number): string {
   if (h < 24) return `${h} saat önce`;
   return `${Math.floor(h / 24)} gün önce`;
 }
+
+/**
+ * Sabah bildiriminin metni (src/server/notify/reminder-push.ts): başlık bugünküyle gecikmişi ayırır ("2 bugün · 1
+ * gecikmiş hatırlatıcı"; gecikmiş "bugün" sayılmaz), gövdede önce bugünküler (saatlisi saatiyle), sonra gecikmişler, en
+ * çok üçü
+ */
+export function reminderPushText(list: readonly { title: string; dueDate: string; dueTime: string | null }[], today: string): { title: string; body: string } {
+  const now = list.filter((r) => r.dueDate >= today);
+  const late = list.filter((r) => r.dueDate < today);
+  const title = !late.length
+    ? `Bugün ${now.length} hatırlatıcınız var`
+    : !now.length
+      ? `${late.length} gecikmiş hatırlatıcınız var`
+      : `${now.length} bugün · ${late.length} gecikmiş hatırlatıcı`;
+  const shown = [...now, ...late].slice(0, 3).map((r) => (r.dueTime && r.dueDate === today ? `${r.dueTime} ${r.title}` : r.title));
+  return { title, body: `${shown.join(" · ")}${list.length > 3 ? " …" : ""}` };
+}

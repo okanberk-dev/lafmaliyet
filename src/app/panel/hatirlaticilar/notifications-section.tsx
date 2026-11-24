@@ -183,6 +183,10 @@ export function NotificationsSection({
               <p className="mt-0.5 text-xs leading-5 break-words text-ink-mute">
                 Zamanı gelen ödemeler her sabah tek e-postada gider · {email.from}
               </p>
+              {/* Aynı anahtar personelin e-postalarını da durdurur (checklist-alerts, karaoke/staff-mail); kapatan bunu bilsin */}
+              <p className="mt-0.5 text-xs leading-5 text-pretty text-ink-mute">
+                Kapatınca personelin kontrol listesi ve karaoke e-postaları ile sistem uyarısı e-postası da durur. Kasa e-postaları ayrı: Kasa › Rapor alıcıları.
+              </p>
             </div>
             <Switch checked={enabled} showText onText="Açık" offText="Kapalı" label="Hatırlatma e-postaları" disabled={pending} className="pointer-coarse:h-11" onChange={toggle} />
           </div>

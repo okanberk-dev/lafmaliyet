@@ -53,8 +53,8 @@ kasa başlığında son 7 günün LafPOS'un gün sonundan farklı yazılan rapor
 11 Kasım · Sayılan nakit 9.350 ₺ (LafPOS'ta 9.000 ₺)"; LafPOS günü rapordan sonra farklı rakamla yeniden gönderdiyse
 "LafPOS rapordan sonra farklı rakamla geldi" (yeniden gönderim ya da düzeltme satırı yeniden okunmamış yapar;
 [LAFPOS.md](LAFPOS.md) › Kasa raporu). ModPOS günlerinde (geçiş günü boşken ya da ondan önce) aynı başlıkta son 7
-günün saklanan ModPOS kasa föyünden farklı yazılan raporları durur, "Kasa raporu ModPOS föyünden farklı · 2 Kasım
-Pazartesi · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)" (kasası açıkken çekilen föy karşılaştırılmaz; rapor ya da föy
+günün saklanan ModPOS kasa föyünden farklı yazılan raporları durur, "Kasa raporu ModPOS API'den farklı · 2 Kasım
+Pazartesi · Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺)" (kasası açıkken çekilen föy karşılaştırılmaz; rapor ya da föy
 değişince yeniden okunmamış olur), ModPOS anahtarı tanımlı ama çalışmıyorsa da **Sistem** başlığında "ModPOS kasa föyü
 çekilemiyor" ve hatanın metni, Ayarlar › ModPOS (kasa föyü)'ne götürür ([MODPOS-API.md](MODPOS-API.md) › Nerede
 görünür). Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
@@ -135,6 +135,10 @@ altındaki **Son ödenenler** bölümünden (kapalı açılır kutu; `#son-odene
 
 ## E-posta
 
+Ödemeler › E-posta bildirimleri'ndeki **Hatırlatma e-postaları** anahtarı tek başına birden çok e-postayı açıp kapatır:
+sabah e-postası, sistem uyarısı e-postası ve personelin kontrol listesi ve karaoke e-postaları (ekranda anahtarın altında
+yazar). Kasa e-postaları (iki şubenin de) Kasa › Rapor alıcıları'ndan, haftalık özet kendi anahtarından açılıp kapanır.
+
 Her sabah 08:00–09:00 arasında (Vercel Cron, `/api/cron/gunluk`; Hobby planında saat esnek) tek bir **sabah
 e-postası**, bildirim adreslerine gider. İçinde:
 
@@ -174,8 +178,8 @@ e-postası**, bildirim adreslerine gider. İçinde:
   (yalnız ad, kişi ve süre); ilk 10 günde geçen ayın stok sayımı yarımsa ya da yoksa onun satırı. Bekleyen istek yokken
   bu satırlar kutuyu tek başına açar: yalnız tükendi satırı "Personelden", yalnız sayım satırı "Stok sayımı" (o ayın
   sayımına götürür), ikisi birden "Operasyon" başlığıyla. ModPOS kasa föyünün satırları da bu kutudadır: anahtar
-  çalışmıyorsa "ModPOS kasa föyü çekilemiyor. …", dünün raporu föyden farklıysa "Kasa raporu ModPOS föyünden farklı. 2
-  Kasım · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)"; yalnız bunlar varsa başlık "ModPOS kasa föyü" (o güne ya da Ayarlar'a
+  çalışmıyorsa "ModPOS API'den veri çekilemiyor. …", dünün raporu föyden farklıysa "Kasa raporu ModPOS API'den farklı.
+  2 Kasım · Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺)"; yalnız bunlar varsa başlık "ModPOS kasa föyü" (o güne ya da Ayarlar'a
   götürür). Konuya "2 istek onay bekliyor" eklenir ([ONAYLAR.md](ONAYLAR.md));
 - en üstte **Sistem uyarıları**: dünkü sabah işi çalışmadıysa ya da hata verdiyse, bu sabahki Paraşüt işi
   çalışmadıysa (aşağıda "Sistem uyarıları"; yalnız canlıda).
@@ -427,7 +431,8 @@ görür ve değiştirir (yönetici de başkasınınkini görmez); ödemeler ve s
 - **Saatli** hatırlatma, panel hangi ekranda açık olursa olsun saatinde ses ve kartla çalar; bildirim izni verilmiş
   cihazda sekme arka plandayken sistem bildirimi olarak gelir. Zil, bugünkü ve gecikmiş hatırlatıcıları gösterir.
 - **Sabah özeti:** günlük iş (`/api/cron/gunluk`, 08:00–09:00), bugün ya da önceden kalmış açık hatırlatıcısı olan
-  her kişinin bildirim açık cihazlarına tek bir Web Push gönderir ("Bugün 3 hatırlatıcınız var"). Ayın son günü aynı
+  her kişinin bildirim açık cihazlarına tek bir Web Push gönderir ("Bugün 3 hatırlatıcınız var"; gecikmiş varsa ayrı
+  sayılır: "2 bugün · 1 gecikmiş hatırlatıcı", gövdede önce bugünküler). Ayın son günü aynı
   iş, sayım listesi doluysa ve ayın sayımı tamamlanmadıysa sabah özeti açık bütün cihazlara bir de "Bugün ay sonu stok
   sayımı" gönderir (o ayın Stok sayımı'nı açar; `src/server/notify/count-push.ts`, Günlük işler'de adımı "Sayım
   bildirimi"). Sayım şube başınadır: her açık şubenin sayımına ayrı bakılır. Birden çok şube açıkken sayımı bitmeyen
