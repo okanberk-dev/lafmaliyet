@@ -1,12 +1,12 @@
 import { shiftMonth } from "@/lib/reminders";
 
-import { checkModposDaysRequest, type ModposDaysCheck } from "./modpos-gunler";
 import { isLafposBranch, isLafposDay, LAFPOS_BRANCH_ID } from "./switch";
 
 /*
  * LafPOS personel bağlantısının lafmaliyet tarafı (LM-4b, 24 Kasım 2026; CONTRACT §3, sahibin kararı 2: "ladmin'de
  * hesapları var; doğru hesabı bağladığından emin ol"; docs/LAFPOS.md › Personel bağlantısı). Saf kurallar: imzalı liste
- * ucu (src/server/lafpos/personel.ts), gün sonunun 200 yanıtı (src/server/lafpos/status.ts handlePosDay) ve yemek kartının
+ * ucu (src/server/lafpos/personel.ts; isteğin denetimi src/lib/lafpos/personel-istek.ts, motorun ağacına node:crypto
+ * girmesin diye ayrı), gün sonunun 200 yanıtı (src/server/lafpos/status.ts handlePosDay) ve yemek kartının
  * günü (src/lib/calc/engine.ts) aynı işlevleri çağırır. Testleri tests/personel-lafpos.test.ts ve
  * tests/personel-lafpos-db.test.ts.
  *
@@ -97,15 +97,6 @@ export function posStaffItems(input: { rows: readonly PosStaffRow[]; accounts: R
     .sort((a, b) => a.name.localeCompare(b.name, "tr") || Number(a.ref.slice(2)) - Number(b.ref.slice(2)));
 }
 
-/**
- * İsteğin denetimi (ModPOS dönemi ucuyla aynı kural ve sıra: src/lib/lafpos/modpos-gunler.ts): anahtar (503), imza (401;
- * sorgu imzanın içinde), şube yoksa 400 `{ error: "invalid", field: "sube" }`, LAFPOS_BRANCH_ID değilse 409
- * `{ error: "wrong_branch", sube, expected }`
- */
-export function checkPosStaffRequest(input: { secret: string | null; url: URL; timestamp: string | null; signature: string | null; now?: number }): ModposDaysCheck {
-  return checkModposDaysRequest(input);
-}
-
 // ---------------------------------------------------------------- gün sonu: workedStaffRefs
 
 /** Gün sonunun 200 yanıtındaki karşılık (LafPOS Entegrasyon'da bilinmeyen ve başka şubenin kimliklerini adıyla gösterir) */
@@ -152,19 +143,45 @@ export interface LafposWorked {
 }
 
 /**
+ * Ayın LafPOS günleri, ay biliniyorsa (kişi LafPOS'un şubesinde, ayın tamamı LafPOS dönemi, ayın en az bir sayılan günü
+ * var ve HER biri çalışan listesini taşıyor); yoksa null
+ */
+function coveredDays(worked: LafposWorked | null | undefined, staff: { branchId?: string | null }, month: string): { date: string; refs: string[] }[] | null {
+  if (!worked || !isLafposBranch(staff.branchId)) return null;
+  if (!isLafposDay(`${month}-01`, worked.switchDay)) return null;
+  const days = worked.days.filter((d) => d.date.slice(0, 7) === month && isLafposDay(d.date, worked.switchDay));
+  if (!days.length || days.some((d) => d.refs === null)) return null;
+  return days as { date: string; refs: string[] }[];
+}
+
+/**
  * Kişinin ayda LafPOS'ta çalıştığı gün (yemek kartının günü; Maaşlar gösterir). Yalnız şu hâlde bilinir, yoksa null
  * (yemek kartı Ayarlar'daki günle: 26):
  * - kişi LafPOS'un şubesinde (öteki şubeler ModPOS'ta: hep varsayılan),
  * - ayın tamamı LafPOS dönemi (ayın 1'i geçiş gününden önce değil: geçiş ayının ModPOS günlerinde kimin çalıştığı
  *   bilinmez; Kasım 2026'da Marina 13–21 ModPOS, §6'nın 330 × 26'sı kalır),
- * - ayın en az bir sayılan LafPOS günü var ve HER biri çalışan listesini taşıyor (bir gün eksikse ay eksik sayılır).
- * Gün = ayın gün sonlarından kişinin kimliğinin (`s:<id>`) geçtiği gün. Süren ayda bugüne kadar gelen günler.
+ * - ayın en az bir sayılan LafPOS günü var ve HER biri çalışan listesini taşıyor (bir gün eksikse ay eksik sayılır),
+ * - kişinin kimliği ayın en az bir gününde geçiyor. Hiç geçmeyen kimlik "0 gün" değildir: LafPOS listeyi bir kullanıcı
+ *   bağlanınca her güne yazar; bağlı olmayan (ortak kasa) ya da "Devam ettir"den önceki satıra bağlı kişi hiç geçmez.
+ *   Bu durumda null ve lafposWorkedUnseen true (uyarı).
+ * Gün = ayın gün sonlarından kişinin kimliğinin (`s:<id>`) geçtiği gün. Süren ayda bugüne kadar gelen günler (yemek
+ * kartı süren ayda bunu kullanmaz: model.lafposMealDaysOf yalnız biten ay).
  */
 export function lafposWorkedDays(worked: LafposWorked | null | undefined, staff: { id: number; branchId?: string | null }, month: string): number | null {
-  if (!worked || !isLafposBranch(staff.branchId)) return null;
-  if (!isLafposDay(`${month}-01`, worked.switchDay)) return null;
-  const days = worked.days.filter((d) => d.date.slice(0, 7) === month && isLafposDay(d.date, worked.switchDay));
-  if (!days.length || days.some((d) => d.refs === null)) return null;
+  const days = coveredDays(worked, staff, month);
+  if (!days) return null;
   const ref = staffRefOf(staff.id);
-  return days.filter((d) => d.refs!.includes(ref)).length;
+  const n = days.filter((d) => d.refs.includes(ref)).length;
+  return n > 0 ? n : null;
+}
+
+/**
+ * Ay biliniyor (lafposWorkedDays'in ilk üç koşulu) ama kişinin kimliği ayın hiçbir gününde yok: LafPOS'ta bağlı değil, eski
+ * satıra bağlı ya da ay boyu çalışmadı. Yemek kartı varsayılan günle; Maaşlar ve Genel bakış uyarır
+ */
+export function lafposWorkedUnseen(worked: LafposWorked | null | undefined, staff: { id: number; branchId?: string | null }, month: string): boolean {
+  const days = coveredDays(worked, staff, month);
+  if (!days) return false;
+  const ref = staffRefOf(staff.id);
+  return !days.some((d) => d.refs.includes(ref));
 }

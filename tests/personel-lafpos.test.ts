@@ -14,12 +14,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { createModel, staffCost } from "../src/lib/calc/engine";
+import { createModel, mealCardText, staffCost } from "../src/lib/calc/engine";
+import { staffWarnings } from "../src/lib/calc/personnel";
 import type { Dataset, Staff } from "../src/lib/calc/types";
 import { DEFAULT_SETTINGS } from "../src/lib/constants";
 import { signedHeaders } from "../src/lib/karaoke/signature";
 import { parsePosDay, sentWorkedStaffRefs } from "../src/lib/lafpos/day";
-import { checkPosStaffRequest, classifyWorkedStaff, lafposWorkedDays, posStaffItems, type LafposWorked, type PosStaffRow } from "../src/lib/lafpos/personel";
+import { classifyWorkedStaff, lafposWorkedDays, lafposWorkedUnseen, posStaffItems, type LafposWorked, type PosStaffRow } from "../src/lib/lafpos/personel";
+import { checkPosStaffRequest } from "../src/lib/lafpos/personel-istek";
+import { taxPayrollFromModel } from "../src/lib/tax/payroll";
+import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const root = join(__dirname, "..");
@@ -226,6 +230,15 @@ test("çalışılan gün: ayın her sayılan LafPOS günü liste taşıyorsa ki�
   // taşısa da ay eksik sayılır (§6: Alper'in Kasım yemek kartı 330 × 26 = 8.580)
   const novFull: LafposWorked = { switchDay: "2026-11-22", days: [22, 23, 24, 25, 26, 27, 28, 29, 30].map((d) => ({ date: `2026-11-${d}`, refs: ["s:7"] })) };
   assert.equal(lafposWorkedDays(novFull, ALPER, "2026-11"), null);
+  // Ayın hiçbir gününde geçmeyen kimlik (LafPOS'ta bağlı değil ya da "Devam ettir"den önceki satıra bağlı): 0 gün
+  // sayılmaz, bilinmiyor (varsayılan 26) ve "görünmüyor" diye işaretlenir (Maaşlar ve Genel bakış uyarır)
+  const ege = { id: 50, branchId: "marina" };
+  assert.equal(lafposWorkedDays(w, ege, "2026-12"), null);
+  assert.equal(lafposWorkedUnseen(w, ege, "2026-12"), true);
+  assert.equal(lafposWorkedUnseen(w, ALPER, "2026-12"), false);
+  assert.equal(lafposWorkedUnseen(w, TUZLA, "2026-12"), false, "başka şube");
+  assert.equal(lafposWorkedUnseen(decWorked((d, r) => (d === decDay(5) ? null : r)), ege, "2026-12"), false, "eksik ay bilinmiyor");
+  assert.equal(lafposWorkedUnseen(novFull, ege, "2026-11"), false, "geçiş ayı");
 });
 
 test("yemek kartı: LafPOS'un çalışılan günüyle (Alper 20 × 330, Cem 18 × 330); işaretsiz kişide yine 0; Kasım ve eksik ay varsayılan 26", () => {
@@ -249,9 +262,20 @@ test("yemek kartı: LafPOS'un çalışılan günüyle (Alper 20 × 330, Cem 18 �
   const gap = createModel(ds([ALPER], { lafposWorked: decWorked((d, r) => (d === decDay(30) ? null : r)) }));
   close(gap.personnelFor("2026-12").rows[0].mealCard, 8_580, "eksik ay 330 × 26");
   assert.equal(gap.personnelFor("2026-12").rows[0].lafposDays, null);
+  // LafPOS'ta bağlı olmayan (ortak kasa) işaretli kişi: listede hiç geçmiyor, yemek kartı 0 değil varsayılan 26; uyarılır
+  const EGE = person({ id: 50, name: "Ege", netSalary: 30_000, mealCard: true });
+  const un = createModel(ds([ALPER, EGE], { lafposWorked: decWorked() }));
+  const ege = un.personnelFor("2026-12").rows.find((r) => r.staff.id === 50)!;
+  close(ege.mealCard, 8_580, "bağlantısız kişi 330 × 26 (0 değil)");
+  assert.equal(ege.lafposDays, null);
+  const warn = staffWarnings(un, "2026-12").find((x) => x.kind === "meal-lafpos-unseen");
+  assert.ok(warn, "uyarı var");
+  assert.deepEqual(warn.staffIds, [50]);
+  assert.match(warn.detail, /Ege/);
+  assert.equal(staffWarnings(createModel(ds([ALPER], { lafposWorked: decWorked() })), "2026-12").find((x) => x.kind === "meal-lafpos-unseen"), undefined);
 });
 
-test("Gelir-gider: LafPOS günüyle yemek kartı gün oranıyla bir daha oranlanmaz (süren ayda da gerçek gün); metin LafPOS'u söyler", () => {
+test("Gelir-gider: biten ayda LafPOS günüyle yemek kartı gün oranıyla bir daha oranlanmaz; süren ay Ayarlar'daki günle; metin LafPOS'u söyler", () => {
   // Biten Aralık: 20 + 18 gün
   const m = createModel(ds([ALPER, CEM], { lafposWorked: decWorked() }));
   const pm = m.pnlMonth("2026-12");
@@ -260,30 +284,117 @@ test("Gelir-gider: LafPOS günüyle yemek kartı gün oranıyla bir daha oranlan
   const alper = staffCost(ALPER, DEFAULT_SETTINGS, { lafposDays: 20 });
   const cem = staffCost(CEM, DEFAULT_SETTINGS, { lafposDays: 18 });
   close(pm.cells.get("personnel:employer")!.value!, alper.total + cem.total - 67_000 - 330 * 38, "maliyet − net − yemek kartı");
-  // Süren ay (Aralık'ın 10'u, 10 açık gün): maaş 10/31 oranlanır, LafPOS'un bugüne kadarki günü oranlanmaz
+  // Süren ay (Aralık'ın 10'u, 10 açık gün): ay bitmedi, yemek kartı Ayarlar'daki günle ve maaş gibi 10/31 oranlanır
   const upTo10 = decWorked();
   upTo10.days = upTo10.days.filter((d) => d.date <= decDay(10));
   const run = createModel(ds([ALPER], { currentMonth: "2026-12", months: [...excel.months, nov, { ...dec, openDays: 10 }], lafposWorked: upTo10 })).pnlMonth("2026-12");
-  close(run.cells.get("personnel:meal")!.value!, 330 * 10, "Alper 10 gün, oranlanmadan");
+  close(run.cells.get("personnel:meal")!.value!, (8_580 * 10) / 31, "süren ay 330 × 26 × 10/31");
   close(run.cells.get("personnel:net")!.value!, (35_000 * 10) / 31, "maaş gün oranıyla");
-  // Varsayılanlı kişi yanında: o kişinin payı yine oranlanır
-  const mixed = createModel(ds([ALPER, TUZLA], { currentMonth: "2026-12", months: [...excel.months, nov, { ...dec, openDays: 10 }], lafposWorked: upTo10 })).pnlMonth("2026-12");
-  close(mixed.cells.get("personnel:meal")!.value!, 330 * 10 + (8_580 * 10) / 31, "LafPOS'lu kişi oranlanmaz, varsayılanlı oranlanır");
+  assert.doesNotMatch(run.cells.get("personnel:meal")!.info!, /LafPOS/);
+  // Biten ayda kapalı günler (28 açık gün): LafPOS'lu kişi oranlanmaz, varsayılanlı kişi oranlanır
+  const mixed = createModel(ds([ALPER, TUZLA], { months: [...excel.months, nov, { ...dec, openDays: 28 }], lafposWorked: decWorked() })).pnlMonth("2026-12");
+  close(mixed.cells.get("personnel:meal")!.value!, 330 * 20 + (8_580 * 28) / 31, "LafPOS'lu kişi oranlanmaz, varsayılanlı oranlanır");
+});
+
+test("yemek kartı hücresinin notu: LafPOS'lu ve varsayılanlı kişiler karışıkken oran yalnız varsayılanlılara yazılır", () => {
+  const st = { mealCardDaily: 330 };
+  const alper = { mealCard: 6_600, mealDays: 20, lafposDays: 20, staff: { name: "Alper", kind: "full_time" as const } };
+  const tuzla = { mealCard: 8_580, mealDays: 26, lafposDays: null, staff: { name: "Tuzla", kind: "full_time" as const } };
+  // tl() tutar ile ₺ arasına bölünmez boşluk koyar
+  const text = mealCardText([alper, tuzla], st, 28 / 31, 28, 31).replace(/\u00a0/g, " ");
+  assert.ok(text.includes("1 kişi × 330 ₺ × 26 gün = 8.580 ₺ × 28 / 31 gün"), text);
+  assert.ok(text.includes("LafPOS'ta çalıştığı günle (oranlanmaz): Alper 20 gün = 6.600 ₺"), text);
+  assert.doesNotMatch(text, /2 kişi/);
+  // Hepsi LafPOS'lu: oran yok
+  assert.equal(mealCardText([alper], st, 1, 31, 31).replace(/\u00a0/g, " "), "Yemek kartı LafPOS'ta çalıştığı günle (oranlanmaz): Alper 20 gün = 6.600 ₺; brütleştirilmez.");
+  // LafPOS'suz: eski metin aynen
+  assert.equal(mealCardText([tuzla], st, 28 / 31, 28, 31).replace(/\u00a0/g, " "), "Yemek kartı 1 kişi × 330 ₺ × 26 gün = 8.580 ₺ × 28 / 31 gün; brütleştirilmez.");
+});
+
+test("süren ay: aylık / standart rakamlar bugüne kadar gelen LafPOS günüyle küçülmez (yemek kartı ay bitene dek 330 × 26)", () => {
+  const two = decWorked();
+  two.days = two.days.filter((d) => d.date <= decDay(2)).map((d) => ({ ...d, refs: ["s:7", "s:12"] }));
+  const base = { currentMonth: "2026-12", months: [...excel.months, nov, { ...dec, openDays: 2 }] };
+  const without = createModel(ds([ALPER, CEM], base));
+  const withDays = createModel(ds([ALPER, CEM], { ...base, lafposWorked: two }));
+  close(withDays.fixedStandardTotal, without.fixedStandardTotal, "standart sabit gider aynı");
+  close(withDays.personnel.total, without.personnel.total, "aylık personel aynı");
+  close(withDays.personnelFor("2026-12").mealCard, 2 * 8_580, "yemek kartı 2 × 330 × 26");
+  const alper = withDays.staffList.find((x) => x.id === 7)!;
+  close(alper.cost.mealCard, 8_580, "Maaşlar'daki maliyet aylık");
+  assert.equal(alper.cost.lafposDays, null);
+  // Gösterilen gün yine bugüne kadarki gün (bilgi)
+  assert.equal(alper.lafposDays, 2);
+  assert.equal(withDays.lafposDaysOf(ALPER, "2026-12"), 2);
+  assert.equal(withDays.lafposMealDaysOf(ALPER, "2026-12"), null);
+});
+
+test("vergi bordrosu: biten ayın yemek kartı Gelir-gider'le aynı LafPOS günüyle; geçiş ayı ve süren ay 330 × 26", () => {
+  const m = createModel(ds([ALPER], { lafposWorked: decWorked() }));
+  const pay = taxPayrollFromModel(m, 2026, DEFAULT_TAX_SETTINGS);
+  const alperIn = (month: string) => pay.get(month)!.people.find((p) => p.staffId === 7)!;
+  close(alperIn("2026-12").extras, 330 * 20, "Aralık 20 gün");
+  close(alperIn("2026-11").extras, 8_580, "Kasım 330 × 26");
+  close(m.personnelFor("2026-12").mealCard, alperIn("2026-12").extras, "Gelir-gider ile bordro aynı");
 });
 
 test("Maaşlar: kişi başına 'LafPOS'ta çalıştığı gün' (veri varsa); yemek kartı sütunu günü LafPOS'tan yazar", () => {
-  const m = createModel(ds([ALPER, DAMLA, TUZLA], { currentMonth: "2026-12", lafposWorked: decWorked() }));
+  // Aralık'ta biten satır (Ocak'ta bakılıyor): gösterilen ay biten Aralık, yemek kartı LafPOS günüyle
+  const m = createModel(ds([{ ...ALPER, endMonth: "2026-12" }, { ...DAMLA, endMonth: "2026-12" }, { ...TUZLA, endMonth: "2026-12" }], { lafposWorked: decWorked() }));
   const views = new Map(m.staffList.map((x) => [x.name, x]));
   assert.equal(views.get("Alper")!.cost.lafposDays, 20);
+  assert.equal(views.get("Alper")!.lafposDays, 20);
   close(views.get("Alper")!.cost.mealCard, 330 * 20, "Maaşlar'daki yemek kartı LafPOS günüyle");
-  assert.equal(views.get("Damla")!.cost.lafposDays, 25);
+  assert.equal(views.get("Damla")!.lafposDays, 25);
   assert.equal(views.get("Tuzla")!.cost.lafposDays, null);
+  assert.equal(views.get("Tuzla")!.lafposDays, null);
+  // Bağlantısız işaretli kişi Maaşlar'da "görünmüyor" diye işaretlenir
+  const un = createModel(ds([person({ id: 50, name: "Ege", netSalary: 30_000, mealCard: true, endMonth: "2026-12" })], { lafposWorked: decWorked() }));
+  assert.equal(un.staffList[0].lafposUnseen, true);
+  assert.equal(views.get("Alper")!.lafposUnseen, false);
   const page = read("src/app/panel/personel/page.tsx");
-  assert.match(page, /lafposDays: x\.cost\.lafposDays/);
+  assert.match(page, /lafposDays: x\.lafposDays/);
+  assert.match(page, /lafposMealDays: x\.cost\.lafposDays/);
+  assert.match(page, /lafposUnseen: x\.lafposUnseen/);
   const editor = read("src/app/panel/personel/staff-editor.tsx");
   assert.match(editor, /LafPOS'ta çalıştığı gün/);
-  // İstemcinin yeniden hesabı aynı günle (önizleme ve toplamlar sunucuyla aynı)
-  assert.match(editor, /lafposDays: x\.lafposDays/);
+  assert.match(editor, /LafPOS'ta bu ay görünmüyor/);
+  // İstemcinin yeniden hesabı sunucunun yemek kartı günüyle (önizleme ve toplamlar sunucuyla aynı)
+  assert.match(editor, /lafposDays: x\.lafposMealDays/);
+});
+
+test("motor istemci paketine node modülü çekmez: src/lib/calc/engine.ts'in değer içe aktarımları node:* / crypto'ya ulaşmaz", () => {
+  // engine.ts "use client" bileşenlerinden içe aktarılır (Maaşlar, Gelir-gider, ...): imza modülü (node:crypto) bu
+  // ağaçta olamaz. checkPosStaffRequest bu yüzden src/lib/lafpos/personel-istek.ts'te
+  const seen = new Set<string>();
+  const bad: string[] = [];
+  const resolve = (from: string, spec: string): string | null => {
+    const base = spec.startsWith("@/") ? join(root, "src", spec.slice(2)) : spec.startsWith(".") ? join(from, "..", spec) : null;
+    if (!base) return null;
+    for (const c of [`${base}.ts`, `${base}.tsx`, join(base, "index.ts")]) {
+      try {
+        readFileSync(c);
+        return c;
+      } catch {
+        // sonraki aday
+      }
+    }
+    return null;
+  };
+  const walk = (file: string, chain: string[]) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const src = readFileSync(file, "utf8");
+    const specs = [...src.matchAll(/^(?:import|export)\s+(?!type\b)(?:[^;]*?\s+from\s+)?"([^"]+)";/gm)].map((x) => x[1]);
+    for (const spec of specs) {
+      if (/^node:|^(crypto|fs|path|os|child_process)$|^server-only$/.test(spec)) bad.push([...chain, file.slice(root.length + 1), spec].join(" ← "));
+      const next = resolve(file, spec);
+      if (next) walk(next, [...chain, file.slice(root.length + 1)]);
+    }
+  };
+  walk(join(root, "src/lib/calc/engine.ts"), []);
+  assert.deepEqual(bad, []);
+  assert.ok(seen.has(join(root, "src/lib/lafpos/personel.ts")), "motor personel kurallarını okur");
 });
 
 test("belge: KVKK cümlesi (ad gitmez; yalnız personel kimliği), uç ve yemek kartı kuralı docs/LAFPOS.md'de", () => {

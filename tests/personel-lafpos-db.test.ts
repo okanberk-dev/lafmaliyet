@@ -198,9 +198,13 @@ describe("personel bağlantısı: veritabanında", { skip: !SERVER_URL && "PERSO
     assert.equal(rows.get("Alper")?.lafposDays, 20);
     assert.ok(Math.abs((rows.get("Alper")?.mealCard ?? 0) - 330 * 20) < 0.01, "Alper 330 × 20");
     assert.ok(Math.abs((rows.get("Cem")?.mealCard ?? 0) - 330 * 18) < 0.01, "Cem 330 × 18");
-    // Kasım (yalnız 21'i geldi, liste taşıyor): ayın tek sayılan günü 21, Alper o gün yok → 0 gün
+    // Kasım (yalnız 21'i geldi, liste taşıyor): ayın tek sayılan günü 21, Alper o gün yok. Hiç geçmeyen kimlik "0 gün"
+    // değildir (bağlı değil ya da eski satıra bağlı olabilir): yemek kartı varsayılan 26, kişi "görünmüyor" diye işaretli
     const novAlper = model.personnelFor("2026-11").rows.find((r) => r.staff.name === "Alper");
-    assert.equal(novAlper?.lafposDays, 0, "Kasım: 21'i geldi, Alper listede yok");
+    assert.equal(novAlper?.lafposDays, null, "Kasım: 21'i geldi, Alper listede yok");
+    assert.ok(Math.abs((novAlper?.mealCard ?? 0) - 330 * 26) < 0.01, "Kasım varsayılan 330 × 26 (0 değil)");
+    assert.equal(model.lafposUnseenOf(novAlper!.staff, "2026-11"), true);
+    assert.equal(model.lafposUnseenOf(novAlper!.staff, "2026-10"), false);
     // Ekim'in bir günü listesiz kalınca (eski LafPOS ya da bağlı kimse yokken gönderilmiş; sonra yeniden gönderilmedi)
     await db.update(s.posDayReports).set({ workedStaff: null }).where(and(eq(s.posDayReports.date, "2026-10-12"), eq(s.posDayReports.branchId, LAFPOS_SUBE)));
     const gap = await dataset.loadModel({ scope: "marina" });

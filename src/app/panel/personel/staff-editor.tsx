@@ -51,10 +51,14 @@ export type StaffRow = {
   /** Part-time: gösterilen ayda Vardiya'da çağrıldığı gün (bağlantısızsa null) */
   calledDays: number | null;
   /**
-   * Gösterilen ayda LafPOS'ta çalıştığı gün (LM-4b): ayın her sayılan LafPOS günü çalışan listesini taşıyorsa; tam
-   * zamanlıda yemek kartı bu günle. Bilinmiyorsa null
+   * Gösterilen ayda LafPOS'ta çalıştığı gün (LM-4b): ayın her sayılan LafPOS günü çalışan listesini taşıyorsa (süren ayda
+   * bugüne kadar). Yalnız bilgi; bilinmiyorsa null
    */
   lafposDays: number | null;
+  /** Yemek kartının LafPOS günü (yalnız biten ay; tam zamanlıda yemek kartı bu günle). Süren ayda ve bilinmiyorsa null */
+  lafposMealDays: number | null;
+  /** Ayın LafPOS günleri çalışanlarıyla geliyor ama kişi hiçbir günde yok (bağlı değil ya da eski satıra bağlı) */
+  lafposUnseen: boolean;
   startMonth: string | null;
   endMonth: string | null;
   status: RangeStatus;
@@ -248,7 +252,7 @@ export function StaffEditor({
   const st: Settings = check.ok
     ? { ...settings, isciSgk: check.values.isciSgk!, isciIssizlik: check.values.isciIssizlik!, isverenSgk: check.values.isverenSgk!, isverenIssizlik: check.values.isverenIssizlik! }
     : settings;
-  const costOf = (x: StaffRow) => staffCost(staffOf(x), st, x.kind === "part_time" ? { calledDays: x.calledDays, lafposDays: x.lafposDays } : { lafposDays: x.lafposDays });
+  const costOf = (x: StaffRow) => staffCost(staffOf(x), st, x.kind === "part_time" ? { calledDays: x.calledDays, lafposDays: x.lafposMealDays } : { lafposDays: x.lafposMealDays });
 
   const live = staff.filter((x) => x.status !== "ended");
   const ended = staff.filter((x) => x.status === "ended");
@@ -559,7 +563,7 @@ export function StaffEditor({
                     <TH numeric className={WRAP_HEAD}>
                       <span className="inline-flex items-end gap-1">
                         <span>Yemek kartı</span>
-                        <InfoTip text={`İşaretli kişide günlük ${tl(settings.mealCardDaily)} × ${settings.mealCardDays} gün (Ayarlar › Personel yemek kartı); ayın her LafPOS günü çalışanlarıyla geldiyse LafPOS'ta çalıştığı gün; part-time'da çağrıldığı gün. Brütleştirilmez.`} className="mb-0.5" />
+                        <InfoTip text={`İşaretli kişide günlük ${tl(settings.mealCardDaily)} × ${settings.mealCardDays} gün (Ayarlar › Personel yemek kartı); biten ayın her LafPOS günü çalışanlarıyla geldiyse LafPOS'ta çalıştığı gün; part-time'da çağrıldığı gün. Brütleştirilmez.`} className="mb-0.5" />
                       </span>
                     </TH>
                     <TH numeric className={WRAP_HEAD}>
@@ -584,7 +588,11 @@ export function StaffEditor({
                               {x.name}
                               {x.branchName ? <span className="block text-xs font-normal text-ink-mute">{x.branchName}</span> : null}
                               {x.lafposDays !== null ? (
-                                <span className="block text-xs font-normal text-ink-mute">{`LafPOS'ta çalıştığı gün: ${x.lafposDays}`}</span>
+                                <span className="block text-xs font-normal text-ink-mute">
+                                  {`LafPOS'ta çalıştığı gün: ${x.lafposDays}${x.lafposMealDays === null && x.kind !== "part_time" ? " (bugüne kadar)" : ""}`}
+                                </span>
+                              ) : x.lafposUnseen ? (
+                                <span className="block text-xs font-normal text-warn-ink">{"LafPOS'ta bu ay görünmüyor: bağlı değil ya da eski satıra bağlı"}</span>
                               ) : null}
                               <ChangeLines row={x} className="mt-0.5" />
                             </span>
@@ -1067,7 +1075,7 @@ function StaffDialog({
   const calledDays = partTime && row && link === linkValue(row) ? row.calledDays : null;
 
   // LafPOS'ta çalıştığı gün (LM-4b): satırın bu ayki günü (kişinin kimliğine bağlı; tür ve maaş değişse de aynı)
-  const lafposDays = row?.lafposDays ?? null;
+  const lafposDays = row?.lafposMealDays ?? null;
   const cost = staffCost(staffOf(draft), settings, partTime ? { calledDays, lafposDays } : { lafposDays });
   const before = row ? staffCost(staffOf(row), settings, row.kind === "part_time" ? { calledDays: row.calledDays, lafposDays } : { lafposDays }) : null;
   const pay = { netSalary: netValue ?? 0, extras: extValue ?? 0, mealCard: meal, dailyWage: dailyValue ?? 0 };
@@ -1284,7 +1292,7 @@ function StaffDialog({
               ? `Günlük ${tl(settings.mealCardDaily)} × Vardiya'da çağrıldığı gün; brütleştirilmez.`
               : lafposDays !== null
                 ? `Günlük ${tl(settings.mealCardDaily)} × LafPOS'ta çalıştığı gün (${monthLabel(row?.valueMonth ?? currentMonth)}: ${lafposDays} gün) = ${tl(settings.mealCardDaily * lafposDays)}; brütleştirilmez, SGK'ya girmez.`
-                : `Günlük ${tl(settings.mealCardDaily)} × ${settings.mealCardDays} gün = ${tl(settings.mealCardDaily * settings.mealCardDays)} (Ayarlar › Personel yemek kartı); brütleştirilmez, SGK'ya girmez. Ayın her LafPOS günü çalışanlarıyla gelirse LafPOS'ta çalıştığı günle sayılır.`
+                : `Günlük ${tl(settings.mealCardDaily)} × ${settings.mealCardDays} gün = ${tl(settings.mealCardDaily * settings.mealCardDays)} (Ayarlar › Personel yemek kartı); brütleştirilmez, SGK'ya girmez. Ay bitince, ayın her LafPOS günü çalışanlarıyla geldiyse LafPOS'ta çalıştığı günle sayılır.`
           }
         >
           <Checkbox id="st-meal" label="Yemek kartı veriliyor" checked={meal} onChange={(e) => setMeal(e.target.checked)} />

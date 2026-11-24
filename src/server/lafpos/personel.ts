@@ -4,7 +4,8 @@ import { eq, inArray } from "drizzle-orm";
 
 import { currentMonthTR } from "@/lib/calc/engine";
 import { LAFPOS_VERSION } from "@/lib/lafpos/day";
-import { checkPosStaffRequest, classifyWorkedStaff, posStaffItems, staffIdOfRef, type PosStaffItem, type WorkedStaffAnswer } from "@/lib/lafpos/personel";
+import { classifyWorkedStaff, posStaffItems, staffIdOfRef, type PosStaffItem, type WorkedStaffAnswer } from "@/lib/lafpos/personel";
+import { checkPosStaffRequest } from "@/lib/lafpos/personel-istek";
 import { getDb, schema as s, type DB } from "@/server/db";
 
 import type { EndpointResult } from "./ingest";

@@ -1071,16 +1071,24 @@ Personel'de iki tarafı gösteren onayla, elle bağlanır; hiçbir şey kendili�
   ettir"den sonra LafPOS'taki bağlantı yeni satıra taşınmalı). LafPOS bilinmeyen ve başka şubenin kimliklerini
   Entegrasyon'da kendi adıyla gösterir. Sınıf günün sayılıp sayılmamasından bağımsızdır (yanıtın `counted` alanı ayrıca
   söyler); okunamazsa `staff` yazılmaz, yanıt yine 200.
-- **Yemek kartının günü ve Maaşlar:** tam zamanlı, yemek kartı işaretli kişide gün Ayarlar'dakidir (26). Şu üçü
-  birlikte tutunca **LafPOS'ta çalıştığı gün** kullanılır (`lafposWorkedDays`, engine `lafposDaysOf`): kişi LafPOS'un
-  şubesinde; ayın tamamı LafPOS dönemi (ayın 1'i geçiş gününden önce değil: geçiş ayının ModPOS günlerinde kimin
-  çalıştığı bilinmez, Kasım 2026'da Marina'nın yemek kartı 330 × 26 kalır); ayın en az bir sayılan LafPOS günü var ve
-  **her biri** çalışan listesini taşıyor (bir gün listesizse ay varsayılanla). Gün = ayın gün sonlarından kişinin
-  kimliğinin geçtiği gün; süren ayda bugüne kadar gelen günler. Bu gün gerçek gündür: Gelir-gider'in "PERSONEL YEMEK
-  KARTI" satırında maaş gibi gün oranıyla bir daha oranlanmaz (hücre notu kişileri ve günlerini yazar). Maaşlar kişinin
-  altında "LafPOS'ta çalıştığı gün: N" yazar (veri varsa; yemek kartı işaretsiz kişide ve part-time'da yalnız bilgi:
-  part-time'ın yemek kartı Vardiya'da çağrıldığı günle), yemek kartı sütunu "N gün · LafPOS". Excel'in Personel sekmesi
-  aynı günle. Vergi bordrosu ve nakit planı ayın bütün planıyla kalır (Ayarlar'daki gün).
+- **Yemek kartının günü ve Maaşlar:** tam zamanlı, yemek kartı işaretli kişide gün Ayarlar'dakidir (26). Şunların hepsi
+  tutunca **LafPOS'ta çalıştığı gün** kullanılır (`lafposWorkedDays`; engine `lafposMealDaysOf`): **ay bitti** (süren ve
+  ileri ayda hep 26: başa baş, sabit gider standardı, Genel bakış'ın Personel tutarı ve Maaşlar'ın "Size maliyeti" ay
+  başında bugüne kadar gelen günle küçülmesin); kişi LafPOS'un şubesinde; ayın tamamı LafPOS dönemi (ayın 1'i geçiş
+  gününden önce değil: geçiş ayının ModPOS günlerinde kimin çalıştığı bilinmez, Kasım 2026'da Marina'nın yemek kartı
+  330 × 26 kalır); ayın en az bir sayılan LafPOS günü var ve **her biri** çalışan listesini taşıyor (bir gün listesizse ay
+  varsayılanla); kişinin kimliği ayın **en az bir** gününde geçiyor. Gün = ayın gün sonlarından kişinin kimliğinin geçtiği
+  gün. Bu gün gerçek gündür: Gelir-gider'in "PERSONEL YEMEK KARTI" satırında maaş gibi gün oranıyla bir daha oranlanmaz
+  (hücre notu oranı yalnız varsayılanlılara yazar, LafPOS'luları adı ve günüyle ayrı). Excel'in Personel sekmesi ve vergi
+  bordrosu (nakit planı dahil) biten ayda aynı günle; süren ve ileri ayda Ayarlar'daki günle.
+- **Görünmeyen kişi:** LafPOS listeyi bir kullanıcı bağlanınca her güne yazar. Ay biliniyor ama kişinin kimliği hiçbir
+  günde yoksa (LafPOS'ta bağlı değil, ortak kasa; ya da "Devam ettir"den önceki satıra bağlı) bu "0 gün" sayılmaz:
+  yemek kartı Ayarlar'daki günle kalır (`lafposWorkedUnseen`, engine `lafposUnseenOf`). Yemek kartı işaretliyse Maaşlar ve
+  Genel bakış uyarır ("Yemek kartı işaretli kişi LafPOS'ta görünmüyor"); Maaşlar kişinin altında "LafPOS'ta bu ay
+  görünmüyor" yazar.
+- **Maaşlar:** kişinin altında "LafPOS'ta çalıştığı gün: N" yazar (veri varsa; süren ayda "(bugüne kadar)" ve yemek kartı
+  yine 26; yemek kartı işaretsiz kişide ve part-time'da yalnız bilgi: part-time'ın yemek kartı Vardiya'da çağrıldığı
+  günle). Biten ayın satırında yemek kartı sütunu "N gün · LafPOS".
 - **KVKK:** ad gitmez; yalnız personel kimliği ve o gün var olup olmadığı (saat yok). Kimlik takma addır (lafmaliyet
   kişiyi bulur): amaç bordro ve yemek kartı; günler yalnız yöneticinin ekranlarında (Maaşlar, Gelir-gider). Adlar yalnız
   lafmaliyet → LafPOS yönünde, seçicinin listesinde gider.
@@ -1159,7 +1167,7 @@ Anahtar yokken altı uç da `503` döner; panelin geri kalanı ve Kasa raporu es
 | `src/server/lafpos/ingest.ts` | Gün sonunun denetimi ve tek işlemde yazımı |
 | `src/server/lafpos/products.ts` | Maliyet ucunun çekirdeği (maliyet modeli) |
 | `src/lib/lafpos/modpos-gunler.ts`, `src/server/lafpos/modpos-gunler.ts` | ModPOS dönemi ucu: isteğin denetimi, günün ve ürün bloğunun biçimi (saf); kasa raporu, föy ve ModPOS listesinin okunması |
-| `src/lib/lafpos/personel.ts`, `src/server/lafpos/personel.ts` | Personel bağlantısı (LM-4b): listenin biçimi ve hesap başına tek öğe, kimliklerin sınıfı, LafPOS'ta çalıştığı gün (saf); maaş satırlarının ve hesap adlarının okunması |
+| `src/lib/lafpos/personel.ts`, `src/lib/lafpos/personel-istek.ts`, `src/server/lafpos/personel.ts` | Personel bağlantısı (LM-4b): listenin biçimi ve hesap başına tek öğe, kimliklerin sınıfı, LafPOS'ta çalıştığı gün ve görünmeyen kişi (saf; motor okur, node modülü yok); uç isteğinin denetimi (imza: motorun ağacı dışında); maaş satırlarının ve hesap adlarının okunması |
 | `src/server/data/daily-sales.ts` | `loadDailyProductSales` (gün gün; bugün okuyan yok) |
 | `src/app/panel/satislar/page.tsx`, `sales-client.tsx`, `product-picker.tsx` | Satışlar'ın bandı, LafPOS satırları ve eşleştirmesi, geçiş ayının yüklemesi |
 | `src/lib/lafpos/gun-sonu.ts`, `src/server/lafpos/gun-sonu.ts` | Gün sonu otomasyonu: Kasa raporuna otomatik yazım ve birleştirme, gün sonu e-postası, günlük işin yakalaması; gün sonu tamda Banka POS (`bankPosAuto`) ve yazarkasa alanları (`okcAuto`), cihaz boşluklarının tam metni (`autoGaps`) |
