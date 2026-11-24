@@ -49,7 +49,8 @@ import { dateTimeTR, dateTR, num, tl, tl2 } from "@/lib/format";
 import type { ParasutSettingsView } from "@/lib/parasut/settings";
 import type { ReadingState } from "@/lib/photo-rules";
 import { evidenceLead, factorText, HOLDS_HREF } from "@/lib/price-hold";
-import { guessLinkFactor, packEvidence, packPairChoices, sameFactor, suggestIngredient, type PackEvidence } from "@/lib/product-match";
+import { guessLinkFactor, packEvidence, packPairChoices, sameFactor, type PackEvidence } from "@/lib/product-match";
+import { MATCH_DAILY_CAP, matchView, preselected, unitPriceText, type AiMatchState, type MatchView } from "@/lib/product-match-ai";
 import type { IgnoredProduct } from "@/lib/product-ignore";
 import { todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -62,6 +63,7 @@ import {
   saveCategoryRule,
   saveProductLink,
   saveProductLinks,
+  suggestProductLinksAi,
   testParasutConnection,
   ignoreProduct,
   unignoreProduct,
@@ -69,6 +71,7 @@ import {
 
 import { connectionBreakdown, connectionHeadline, linkedBreakdown, LINKS_ID, runsBreakdown } from "./breakdowns";
 import { ConnectionCard } from "./connection-card";
+import { AiSuggestBar, MatchBadges, MatchWarnings, SuggestionBox } from "./match-suggestions";
 
 type MatchType = "supplier" | "parasut_category" | "keyword";
 const MATCH_LABEL: Record<MatchType, string> = { supplier: "Tedarikçi adı", parasut_category: "Paraşüt kategorisi", keyword: "Açıklama / kalemde geçen" };
@@ -136,12 +139,6 @@ interface Ingredient {
   unitCost?: number;
 }
 
-/** Birim maliyet okunur birimle: ₺/gr → ₺/kg, ₺/ml → ₺/L */
-function unitPriceText(v: number, unit: string): string {
-  if (unit === "gr") return `${tl2(v * 1000)}/kg`;
-  if (unit === "ml") return `${tl2(v * 1000)}/L`;
-  return `${tl2(v)}/${UNIT_LABEL[unit] ?? unit}`;
-}
 interface Unlinked {
   productKey: string;
   productName: string;
@@ -188,6 +185,9 @@ function heldToast(r: { held: number; flagged?: number }, router: { push: (href:
 /** Faturalar'ın kontrol bekleyenler süzgeci (stoğa girip gelir-gidere girmeyen faturalar orada) */
 const STOCK_ONLY_HREF = "/panel/faturalar?durum=kontrol#fatura-listesi";
 
+/** AI önerisinin bilgisi gelmezse (eski sayfa, test): bölüm bugünkü gibi, düğme kapalı */
+const NO_AI_MATCH: AiMatchState = { state: "nokey", usedToday: 0, cap: MATCH_DAILY_CAP, monthCalls: 0, monthUsd: 0, items: {}, askable: 0, batchSize: 1 };
+
 /** Adresten gelen değer beklenenlerden biri değilse varsayılan kullanılır */
 function oneOf<T extends string>(value: string, allowed: readonly T[], fallback: T): T {
   return (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
@@ -209,6 +209,7 @@ export function ParasutClient({
   ingredients,
   unlinked,
   unlinkedTotal,
+  aiMatch = NO_AI_MATCH,
   ignored = [],
   lineReads,
   categories,
@@ -237,6 +238,8 @@ export function ParasutClient({
   unlinked: Unlinked[];
   /** Bağlanmayı bekleyen ürünlerin tamamı (listede ilk 40'ı) */
   unlinkedTotal: number;
+  /** "AI ile öner": düğmenin durumu, saklı öneriler, sorulacak ürün sayısı (docs/PARASUT.md § 5e) */
+  aiMatch?: AiMatchState;
   /** "Hammadde değil" denen ürünler (en yeni önce) */
   ignored?: IgnoredProduct[];
   /** E-faturaya bağlı, gider faturası olmayan kayıtlar: kalemleri okunan / sırada */
@@ -578,6 +581,7 @@ export function ParasutClient({
         links={links}
         unlinked={unlinked}
         unlinkedTotal={unlinkedTotal}
+        aiMatch={aiMatch}
         ignored={ignored}
         ingredients={ingredients}
         lineReads={lineReads}
@@ -678,6 +682,7 @@ function ProductLinks({
   links,
   unlinked,
   unlinkedTotal,
+  aiMatch,
   ignored,
   ingredients,
   lineReads,
@@ -691,6 +696,7 @@ function ProductLinks({
   links: LinkRow[];
   unlinked: Unlinked[];
   unlinkedTotal: number;
+  aiMatch: AiMatchState;
   ignored: IgnoredProduct[];
   ingredients: Ingredient[];
   lineReads: { read: number; pending: number };
@@ -702,6 +708,7 @@ function ProductLinks({
   readState: ReadingState;
 }) {
   const [pending, start] = useActionTransition();
+  const bulkId = useId();
   const router = useRouter();
   const [draft, setDraft] = useState<Record<string, Draft>>({});
   const [removing, setRemoving] = useState<LinkRow | null>(null);
@@ -773,26 +780,59 @@ function ProductLinks({
       toast.success(`${e.productName} yeniden bağlanmayı bekleyenlerde`);
     });
 
-  // Hazır olanlar: hammaddesi seçilmiş (elle ya da öneriyle) ve çarpanı belli bekleyenler; tek seferde bağlanır
-  const [bulkOpen, setBulkOpen] = useState(false);
-  /** Toplu bağlamada çıkarılan ürünler (pencere her açılışta hepsi seçili başlar) */
-  const [skipped, setSkipped] = useState<Set<string>>(new Set());
+  // Satırın önerisi (src/lib/product-match-ai.ts matchView): aynı ürün bağlıysa o, yoksa saklı AI önerisi, yoksa ad
+  // benzerliği; addaki paket boyuna ve fiyata karşı denetlenmiş. "Yoksay" denen bu sayfada gösterilmez.
   // En çok 40 ürün × hammadde listesi: her çizimde hesaplanabilir
-  const proposals = waitingShown.flatMap((u) => {
-        const d = draft[u.productKey];
-        if (d?.ingredientId) {
-          const ing = byId.get(Number(d.ingredientId));
-          const f = parseNumberTR(d.factor);
-          return ing && f && f > 0 ? [{ u, ing, factor: f, updatePrice: d.updatePrice }] : [];
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const views = new Map<string, MatchView | null>(
+    waitingShown.map((u) => [u.productKey, dismissed.has(u.productKey) ? null : matchView(u, ingredients, linked, aiMatch.items[u.productKey])]),
+  );
+
+  // "AI ile öner": yalnız düğmeyle; her çağrı bir parti, sorulacak ürün bitene kadar sürdürülür. Bağlantı kurulmaz
+  const [aiRunning, startAi] = useActionTransition();
+  const [aiProgress, setAiProgress] = useState<{ done: number; left: number } | null>(null);
+  const runAi = () =>
+    startAi(async () => {
+      const t = toast.loading("AI önerileri hazırlanıyor…");
+      const sum = { asked: 0, link: 0, notIngredient: 0, unsure: 0, rejected: 0 };
+      for (let round = 0; round < MATCH_DAILY_CAP; round++) {
+        const r = await suggestProductLinksAi();
+        if (!r.ok) {
+          setAiProgress(null);
+          return void toast.error(sum.asked ? `${num(sum.asked)} ürün önerildi; ${r.error}` : r.error, { id: t });
         }
-        const sug = suggestIngredient(u.productName, ingredients, linked);
-        const ing = sug ? byId.get(sug.ingredientId) : undefined;
-        if (!sug || !ing) return [];
-        // Bağlantının çarpanı yalnız aynı pakette gelir (suggestIngredient); başka pakette ("SÜT 5 LT") addan tahmin edilir
-        const f = sug.factor ?? parseNumberTR(guessLinkFactor(lineOf(u), ing.unit) ?? "");
-        return f && f > 0 ? [{ u, ing, factor: f, updatePrice: true }] : [];
+        for (const k of ["asked", "link", "notIngredient", "unsure", "rejected"] as const) sum[k] += r.data[k];
+        setAiProgress({ done: sum.asked, left: r.data.remaining });
+        if (!r.data.remaining || !r.data.asked) break;
+        toast.loading(`AI önerileri hazırlanıyor… ${num(sum.asked)} ürün önerildi, ${num(r.data.remaining)} kaldı`, { id: t });
+      }
+      setAiProgress(null);
+      if (!sum.asked) return void toast.info("AI'ye sorulacak ürün kalmadı", { id: t });
+      toast.success(
+        `${num(sum.asked)} ürün için AI önerisi hazır: ${num(sum.link)} bağlantı, ${num(sum.notIngredient)} hammadde değil, ${num(sum.unsure)} emin değil${sum.rejected ? ` · ${num(sum.rejected)} uydurma hammadde reddedildi` : ""}`,
+        { id: t, description: "Önerileri satırlarda inceleyin; hiçbiri siz onaylamadan bağlanmaz.", duration: 8000 },
+      );
+    });
+
+  // Hazır olanlar: hammaddesi seçilmiş (elle ya da öneriyle) ve çarpanı belli bekleyenler; tek seferde bağlanır.
+  // Pencere açılınca yalnız sizin seçtikleriniz ve yüksek güvenli öneriler işaretli gelir
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const proposals = waitingShown.flatMap((u) => {
+    const d = draft[u.productKey];
+    if (d?.ingredientId) {
+      const ing = byId.get(Number(d.ingredientId));
+      const f = parseNumberTR(d.factor);
+      // Öneri uygulanıp değiştirilmediyse rozetleri ve uyarıları onun
+      const v = views.get(u.productKey);
+      const same = v && v.ingredientId === ing?.id && v.factor !== null && f !== null && sameFactor(v.factor, f) ? v : null;
+      return ing && f && f > 0 ? [{ u, ing, factor: f, updatePrice: d.updatePrice, view: same, preselect: true }] : [];
+    }
+    const v = views.get(u.productKey);
+    const ing = v?.decision === "bagla" && v.ingredientId !== null ? byId.get(v.ingredientId) : undefined;
+    return v && ing && v.factor && v.factor > 0 ? [{ u, ing, factor: v.factor, updatePrice: true, view: v, preselect: preselected(v) }] : [];
   });
-  const chosen = proposals.filter((p) => !skipped.has(p.u.productKey));
+  const chosen = proposals.filter((p) => picked.has(p.u.productKey));
   const linkAll = () =>
     start(async () => {
       if (!chosen.length) return;
@@ -905,6 +945,8 @@ function ProductLinks({
         </Notice>
       ) : null}
 
+      {waiting.length ? <AiSuggestBar ai={aiMatch} running={aiRunning} progress={aiProgress} onRun={runAi} /> : null}
+
       {total + notIngredients.length === 0 ? (
         <CardContent>
           <EmptyState
@@ -957,7 +999,7 @@ function ProductLinks({
                     className="ml-auto normal-case tracking-normal"
                     disabled={pending}
                     onClick={() => {
-                      setSkipped(new Set());
+                      setPicked(new Set(proposals.filter((p) => p.preselect).map((p) => p.u.productKey)));
                       setBulkOpen(true);
                     }}
                   >
@@ -969,8 +1011,12 @@ function ProductLinks({
                 {waitingShown.map((u) => {
                   const d = get(u.productKey);
                   const ing = byId.get(Number(d.ingredientId));
-                  const suggestion = d.ingredientId ? null : suggestIngredient(u.productName, ingredients, linked);
-                  const suggested = suggestion ? byId.get(suggestion.ingredientId) : undefined;
+                  // Öneri kutusu: seçim boşken ya da önerinin hammaddesi seçiliyken görünür (başka hammadde seçildiyse öneri geride kalır)
+                  const sv = views.get(u.productKey) ?? null;
+                  const suggested = sv?.ingredientId != null ? byId.get(sv.ingredientId) : undefined;
+                  const showSuggestion = sv && (!d.ingredientId || (suggested && d.ingredientId === String(suggested.id)));
+                  const typed = parseNumberTR(d.factor);
+                  const applied = Boolean(sv && suggested && d.ingredientId === String(suggested.id) && (sv.factor === null || (typed !== null && sameFactor(typed, sv.factor))));
                   // Hammadde seçilince çarpan addaki paket bilgisinden tahmin edilir ("330ML 1X24" → 24 adet); elle yazılmışsa dokunulmaz.
                   // Adında iki sayı varsa ve birimden hangisi olduğu belli değilse ("50'Lİ X 20", 1 Adet) kutu boşalır: "1" kalıp
                   // yanlışlıkla bağlanmasın, sahibi iki olasılıktan birini seçer ya da faturadan okur
@@ -1004,26 +1050,26 @@ function ProductLinks({
                             </p>
                           </div>
                         </div>
+                        {showSuggestion ? (
+                          // Telefonda ürün adının hemen altında; geniş ekranda form satırının altında, tam genişlikte
+                          <SuggestionBox
+                            className="lg:order-1 lg:col-span-5"
+                            view={sv}
+                            productName={u.productName}
+                            lineUnit={u.unit}
+                            ingredient={suggested}
+                            applied={applied}
+                            pending={pending}
+                            onApply={() => (suggested ? choose(String(suggested.id), sv.factor) : undefined)}
+                            onIgnore={() => ignore(u)}
+                            onDismiss={() => setDismissed((cur) => new Set(cur).add(u.productKey))}
+                          />
+                        ) : null}
                         <div className="min-w-0">
                           <Select value={d.ingredientId} onChange={(e) => choose(e.target.value)} aria-label={`${u.productName} için hammadde`}>
                             <option value="">Hammadde seçin…</option>
                             <IngredientOptions ingredients={ingredients} />
                           </Select>
-                          {suggestion && suggested ? (
-                            <button
-                              type="button"
-                              onClick={() => choose(String(suggestion.ingredientId), suggestion.factor)}
-                              className="mt-1 inline-flex min-h-7 cursor-pointer items-center gap-1 rounded-md px-1 text-left text-xs text-info hover:underline pointer-coarse:min-h-11"
-                            >
-                              <Sparkles size={12} aria-hidden="true" className="shrink-0" /> Öneri: {suggested.name}
-                              {/* Çarpan yalnız aynı paket bağlıysa gelir; başka paketse (1 L bağlı, 5 L geldi) addan tahmin edilir */}
-                              {suggestion.reason === "link"
-                                ? suggestion.factor
-                                  ? ` (aynı ürün bağlı, × ${num(suggestion.factor, 3)})`
-                                  : " (aynı ürün başka paketle bağlı, çarpanı kontrol edin)"
-                                : ""}
-                            </button>
-                          ) : null}
                         </div>
                         <label className="flex items-center gap-2 text-xs text-ink-mute">
                           <span className="shrink-0">1 {u.unit ?? "birim"} =</span>
@@ -1064,7 +1110,7 @@ function ProductLinks({
                           </div>
                         </div>
                         <FactorHelp
-                          className="lg:col-span-5"
+                          className="lg:order-2 lg:col-span-5"
                           productKey={u.productKey}
                           line={lineOf(u)}
                           ingredient={ing}
@@ -1304,18 +1350,19 @@ function ProductLinks({
         }
       >
         <p className="text-sm text-pretty text-ink-mute">
-          Önerilen ya da sizin seçtiğiniz hammadde ve çarpanla bağlanır; alınan miktarlar ve fiyatlar faturalardan hesaplanır. Emin olmadığınızın işaretini kaldırın;
-          fiyatı bugünkünden çok farklı çıkan (turuncu) öneride çarpanı ya da hammaddeyi kontrol edin. Bağlantıyı sonradan düzenleyebilir ya da silebilirsiniz.
+          Önerilen ya da sizin seçtiğiniz hammadde ve çarpanla bağlanır; alınan miktarlar ve fiyatlar faturalardan hesaplanır. Yalnız sizin seçtikleriniz ve{" "}
+          <span className="font-medium text-ink-soft">yüksek güvenli</span> öneriler işaretli gelir: orta ve düşük güvenlileri kontrol edip işaretleyin. Fiyatı
+          bugünkünden çok farklı çıkan (turuncu) öneride çarpanı ya da hammaddeyi kontrol edin. Bağlantıyı sonradan düzenleyebilir ya da silebilirsiniz.
         </p>
         <ul className="mt-3 max-h-[50dvh] divide-y divide-ink/[0.06] overflow-y-auto rounded-2xl bg-surface px-3">
-          {proposals.map((p) => {
-            const checked = !skipped.has(p.u.productKey);
+          {proposals.map((p, i) => {
+            const checked = picked.has(p.u.productKey);
             const newUnit = p.u.lastUnitPrice > 0 ? p.u.lastUnitPrice / p.factor : 0;
             const nowUnit = p.ing.unitCost ?? 0;
             const ratio = newUnit && nowUnit ? newUnit / nowUnit : null;
             const odd = ratio !== null && (ratio > 1.5 || ratio < 0.67);
-            // Önerinin çarpanı (aynı ürünün bağlantısından) addaki paket boyundan farklıysa söylenir
-            const ev = packEvidence(lineOf(p.u), p.ing.unit);
+            // Sizin seçiminizin çarpanı addaki paket boyundan farklıysa söylenir (önerinin uyarıları kendi listesinde)
+            const ev = p.view ? null : packEvidence(lineOf(p.u), p.ing.unit);
             const evOff = ev && !sameFactor(ev.factor, p.factor) ? ev : null;
             return (
               <li key={p.u.productKey} className="py-2.5 text-sm">
@@ -1324,8 +1371,9 @@ function ProductLinks({
                     type="checkbox"
                     className="mt-1 size-4 shrink-0 accent-ink pointer-coarse:size-5"
                     checked={checked}
+                    aria-describedby={p.view ? `${bulkId}-${i}` : undefined}
                     onChange={() =>
-                      setSkipped((cur) => {
+                      setPicked((cur) => {
                         const next = new Set(cur);
                         if (next.has(p.u.productKey)) next.delete(p.u.productKey);
                         else next.add(p.u.productKey);
@@ -1334,7 +1382,15 @@ function ProductLinks({
                     }
                   />
                   <span className="min-w-0">
-                    <span className={cn("block font-medium break-words", checked ? "text-ink" : "text-ink-mute line-through")}>{p.u.productName}</span>
+                    <span className={cn("block font-medium break-words", checked ? "text-ink" : "text-ink-mute")}>{p.u.productName}</span>
+                    {p.view ? (
+                      <span id={`${bulkId}-${i}`} className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <MatchBadges view={p.view} />
+                        {p.view.reason ? <span className="min-w-0 text-xs break-words text-ink-soft">{p.view.reason}</span> : null}
+                      </span>
+                    ) : (
+                      <span className="mt-0.5 block text-xs text-ink-mute">Sizin seçiminiz</span>
+                    )}
                     <span className="mt-0.5 block text-xs text-ink-mute">
                       → <span className="font-medium text-ink-soft">{p.ing.name}</span>
                       {p.ing.packageDesc ? ` (${p.ing.packageDesc})` : ""} · 1 {p.u.unit ?? "birim"} ={" "}
@@ -1355,6 +1411,7 @@ function ProductLinks({
                         {evidenceLead(evOff)}: {factorText(p.u.unit, evOff.factor, UNIT_LABEL[p.ing.unit] ?? p.ing.unit)} olabilir.
                       </span>
                     ) : null}
+                    {p.view ? <MatchWarnings warnings={p.view.warnings} className="mt-0.5 text-xs" /> : null}
                   </span>
                 </label>
               </li>
