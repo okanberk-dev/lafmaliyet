@@ -187,8 +187,11 @@ staffCost); testleri `tests/personel-part-time.test.ts`, `tests/personel-baglant
 - **Haftalık "Part-time çalışan" sabit gideri** Kasım 2026 için kalır (sahibin veri işi: son ayı 2026-11). Aynı ayda
   hem bu kalem (işletme geneli ya da kişinin şubesinin) hem de çağrıldığı günü olan günlük part-time satırı sayılıyorsa
   Genel bakış ve Maaşlar uyarır ("Part-time iki kez sayılabilir"); tutarlar kendiliğinden değişmez.
-- **Yemek kartı ve LafPOS (LM-4b):** tam zamanlı kişide yemek kartının günü Ayarlar'daki gündür (26); `staffCost`'un
-  `mealDays` seçeneği, ayın her sayılan LafPOS gününde çalışılan gün geldiğinde LafPOS'un gününe geçmek için hazır kancadır.
+- **Yemek kartı ve LafPOS (LM-4b):** tam zamanlı kişide yemek kartının günü Ayarlar'daki gündür (26); ayın tamamı LafPOS
+  dönemiyse, ay bittiyse, ayın her sayılan LafPOS günü çalışan kimliklerini taşıyorsa ve kişi en az bir günde geçiyorsa
+  LafPOS'ta çalıştığı gündür (`staffCost`'un `lafposDays` seçeneği; kural ve ayrıntı docs/LAFPOS.md › Personel bağlantısı).
+  Hiç geçmeyen kişi 0 gün sayılmaz: 26 kalır, Maaşlar ve Genel bakış uyarır. Maaşlar kişinin altında "LafPOS'ta çalıştığı
+  gün" yazar. LafPOS'un `GET /api/panel/pos/personel` listesi yukarıdaki notla hesap başına tek öğe verir.
 
 ## Veri
 

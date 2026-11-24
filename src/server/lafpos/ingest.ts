@@ -112,6 +112,8 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
       receivedAt: now,
       ...(day.bankPos !== undefined ? { bankPos: day.bankPos } : {}),
       ...(day.correction !== undefined ? { correction: day.correction } : {}),
+      // Çalışanların personel kimlikleri (LM-4b): bankPos gibi, alanı taşımayan gönderim kayıtlı listeyi silmez
+      ...(day.workedStaffRefs !== undefined ? { workedStaff: day.workedStaffRefs } : {}),
     };
     // Gün sonunun şubesi: LafPOS'un kurulu olduğu şube (LAFPOS_BRANCH_ID; 21 Kasım 2026'dan beri Marina; Tuzla ModPOS'ta, geçiş günü de
     // yalnız onun kasasınındır; docs/SUBE.md).

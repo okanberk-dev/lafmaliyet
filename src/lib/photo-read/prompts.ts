@@ -73,3 +73,16 @@ Reading the Z:
 - receiptCount: MÜŞTERİ FİŞ ADEDİ, MALİ FİŞ ADEDİ or FİŞ SAYISI. Not TOPLAM FİŞ ADEDİ when slip or bilgi fişi counts are listed.
 - batches: one entry per bank end-of-day slip or bank batch section in the photo (alone, printed after the Z, or inside the Pavo's detailed end-of-day slip; BATCH NO, bank, sales, refunds, net). A slip printed after the Z is not a reason for "multiple_documents".
 - Two Z reports, or Z reports of two devices, in one photo: add "multiple_documents" and read the one dated ${day}.`;
+
+/**
+ * LafPOS gününün gün sonu fotoğrafının ucuz (ilk) okuması (src/lib/photo-read/lafpos-read.ts; sahibin isteği, 24 Kasım
+ * 2026: "fazla token harcamayan"): Pavo'nun istenince bastığı detaylı Z (banka gün sonu ve Z'nin rakamları tek fişte).
+ * OKC_TASK'ın kısası, aynı şema (KasaOkcRaw); okunuş eksik, kendi içinde tutarsız ya da LafPOS'tan farklıysa güçlü model
+ * OKC_TASK ile bir kez yeniden okur. Canlıda henüz denenmedi: scripts/foto-eval ile ölçülür.
+ */
+export const OKC_SHORT_TASK = (day: string) => `This should be the Pavo POS end-of-day slip of the café (GÜN SONU / DETAYLI Z). Business day: ${day} (printed before 05:00 = the day before).
+- documentType: z_report if Z figures are printed (Z NO, total, payment lines, KDV); batch_slip if only the bank end-of-day (BATCH / GRUP, bank, net); else other.
+- dailyTotal: the Z's own total (TOPLAM / NET SATIŞ / MALİ VERİ TOPLAM). Never KÜM. / cumulative, never TOPKDV.
+- payments: every payment line. NAKİT → cash; KREDİ KARTI / K.KARTI → card; YEMEK KARTI → meal_card; a bank name under the card line → bank_subline; else other.
+- kdvGroups: per rate total and vat (skip 0,00 groups); totalVat: TOPKDV. zNo: Z NO / Z SAYAÇ (not FİŞ NO, not BATCH NO).
+- batches: one per bank batch section: bank, batchNo, sales, refunds, net.`;

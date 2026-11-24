@@ -120,6 +120,11 @@ test("imza: LafPOS uçlarının vektörleri (sitenin bağlantısıyla aynı kod;
     sign(SECRET, { timestamp: T, method: "GET", url: new URL("https://ladmin.laffogato.net/api/panel/pos/gider-kategorileri"), body: "" }),
     "7309e560164d15d4ccb5c17ecaa6355bde88073a238c1cc5976f1858431c10b1",
   );
+  // Personel bağlantısı (LM-4b; LafPOS tests/signature.test.ts aynı vektör): şube sorguda, gövdesiz imzalı GET
+  assert.equal(
+    sign(SECRET, { timestamp: T, method: "GET", url: new URL("https://ladmin.laffogato.net/api/panel/pos/personel?sube=marina"), body: "" }),
+    "b6933a6b1b6469c8e430564d5f31c9002ca2ed6a2100fd3cc41df4ccc2d77f31",
+  );
   // İmza kuralı kopyalanmadı: denetim karaoke bağlantısının verifySignature'ını çağırır
   const src = read("src/lib/lafpos/request.ts");
   assert.match(src, /import \{ verifySignature \} from "@\/lib\/karaoke\/signature";/);

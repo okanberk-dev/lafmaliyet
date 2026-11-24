@@ -1548,7 +1548,7 @@ function addPeople(wb: ExcelJS.Workbook, model: Model, month: string, investment
       t: r.total,
     });
     if (part) row.getCell("pt").note = r.calledDays === null ? "Vardiya bağlantısı yok: çağrıldığı gün bilinmiyor, ücret sayılmadı." : `${num(r.calledDays)} gün × ${tl(r.staff.dailyWage ?? 0)}`;
-    if (r.mealCard) row.getCell("meal").note = `${num(r.mealDays)} gün × ${tl(st.mealCardDaily)}`;
+    if (r.mealCard) row.getCell("meal").note = `${num(r.mealDays)} gün × ${tl(st.mealCardDaily)}${!part && r.lafposDays !== null ? " (LafPOS'ta çalıştığı gün)" : ""}`;
   }
   if (!pers.rows.length) pr.addRow({ n: `${label} ayında çalışan personel yok.` });
   // TOPLAM herkesi kapsar: tam zamanlıların net, brüt ve payları; ek ve yemek kartı part-time dahil
