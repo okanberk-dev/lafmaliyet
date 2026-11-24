@@ -320,8 +320,9 @@ son günü, aşağıda "Şubenin kendi kaydı") belirleyicidir:
   (`readCoverage`, `src/lib/sales-coverage.ts`): LafPOS'un sayıldığı ilk gün, geçiş ayının çakışması ve liste ↔ Z her
   görünümde ("Tümü" dahil) ve tahmini stokta Marina'nın kaydından; şube seçiliyken listeye dayanan hesapların dönemi
   (`listPeriod`, "… tarihine kadar") şubenin kaydından. Satışlar'ın içe aktarma kartındaki "… tarihine kadar" yazılan
-  şubenin listesinin günüdür (`writeCoverage`): "Tümü"de içe aktarma Tuzla'ya yazar ve "Değiştir" yalnız onun listesini
-  değiştirir, kart Tuzla'nın gününü gösterir (Tuzla'nın o ayda listesi yoksa geçiş ayından itibaren Marina'nın listesinin
+  şubenin listesinin günüdür (`writeCoverage`): "Tümü"de içe aktarma şubeyi sorar (ayı LafPOS'tan gelen şube listede yok,
+  bugün yalnız Tuzla kalır; docs/SUBE.md › Yazarken hangi şube) ve "Değiştir" yalnız onun listesini değiştirir, kart
+  Tuzla'nın gününü gösterir (Tuzla'nın o ayda listesi yoksa geçiş ayından itibaren Marina'nın listesinin
   gününü). Ortak kayıt yalnız "Tümü"nün liste dönemi içindir. Marina 21 Kasım'a kadar yükledi, Tuzla aynı aya 27 Kasım'a
   kadar ya da Aralık'ta ayın tamamını yükledi: Marina'nın LafPOS'u yine 22 Kasım'dan sayılır. Şube kaydı olmayan ayda
   (bu kayıttan önce yüklenmiş liste) ortak kayıt okunur; Satışlar ortak kaydı ezmeden önce o ayda listesi olup kendi

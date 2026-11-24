@@ -366,7 +366,8 @@ test("Stok sekmeleri Sayım, Zayi & ikram ve Tutarlılık sayfalarında; rol say
   assert.match(page("sayim"), /<StockHeader\s+month=\{month\}\s+role=\{user\.role\}/);
   assert.match(page("sayim"), /<StockHeader month=\{null\} role="staff" \/>/);
   assert.match(page("zayi"), /<SectionTabs section="stok" current="\/panel\/zayi" role=\{role\} \/>/);
-  assert.match(page("zayi"), /<WasteHeader role=\{user\.role\}( lafpos=\{[^}]+\})? \/>/);
+  // Birden çok kasa açıkken başlık formun şubesini yazar (24 Kasım şube kapsamı)
+  assert.match(page("zayi"), /<WasteHeader role=\{user\.role\}( lafpos=\{[^}]+\})?( branch=\{[^}]+\})? \/>/);
   assert.match(page("zayi"), /<WasteHeader role="staff" \/>/);
   // Tutarlılık yalnız yönetici
   assert.match(page("tutarlilik"), /requireAdmin\(\)/);
