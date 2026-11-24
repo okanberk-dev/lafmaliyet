@@ -11,7 +11,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { LAFPOS_CASH_OUT_TEXT, lafposCashOutChange, planLafposCashOuts, type LafposCashOutRow } from "../src/lib/lafpos/cash-moves";
+import { cashOutWritesExpense } from "../src/lib/cash-outs";
+import {
+  LAFPOS_CASH_OUT_BY,
+  LAFPOS_CASH_OUT_TEXT,
+  lafposAwaitingCategory,
+  lafposCashOutChange,
+  lafposInsertedRow,
+  planLafposCashOuts,
+  planLafposDetach,
+  type LafposCashOutRow,
+} from "../src/lib/lafpos/cash-moves";
 import { parsePosDay, type PosCashMove } from "../src/lib/lafpos/day";
 import { nextOpeningOf } from "../src/lib/lafpos/devir";
 import { lafposDayDetail } from "../src/lib/lafpos/gun-ayrinti";
@@ -75,6 +85,9 @@ test("gövde: bozuk Faz 3 alanı günü reddetmez (400 LafPOS'ta kalıcı): alan
     ["sıfır tutar", (b) => void (b.cashMoves[2].amount = 0), "cashMoves"],
     ["kesirli kategori", (b) => void (b.cashMoves[0].categoryId = 1.5), "cashMoves"],
     ["aynı kimlik iki kez", (b) => void (b.cashMoves[2].id = b.cashMoves[0].id), "cashMoves"],
+    // İnceleme (LM-3): biçime uyan ama takvimde olmayan an satırın saatine Invalid Date yazdırıp günü 500'e düşürüyordu
+    ["olmayan an", (b) => void (b.cashMoves[0].at = "2026-10-26T25:99:00.000Z"), "cashMoves"],
+    ["metin an", (b) => void (b.cashMoves[1].at = "2026-10-26Tbozuk"), "cashMoves"],
   ];
   for (const [name, edit, field] of cases) {
     const b = golden();
@@ -118,6 +131,15 @@ test("devir: LafPOS'un elle değişmemiş otomatik raporunda gelen gövdenin say
   assert.deepEqual(nextOpeningOf({ counted: true, z: { countedCash: 1_300 }, report: { ...report, countedCash: 1_250 }, auto: auto(1_279.5) }), { amount: 1_250, source: "kasa_raporu" });
   // Kişi teslim yazdı (200): sayım yeni gövdeden, teslim kişiden
   assert.deepEqual(nextOpeningOf({ counted: true, z: { countedCash: 1_300 }, report: { ...report, handedOver: 200 }, auto: auto(1_279.5) }), { amount: 1_100, source: "kasa_raporu" });
+});
+
+test("devir: tutarsız rapor (teslim sayılandan büyük) eksi devir vermez, null (LafPOS kendi sayımına döner)", () => {
+  // Kişi teslimi 1.000,00 yazdı; yeniden sayım 900,00 geldi: birleştirme sayılanı gövdeden, teslimi kişiden alır
+  assert.equal(nextOpeningOf({ counted: true, z: { countedCash: 900 }, report: { ...report, handedOver: 1_000 }, auto: auto(1_279.5) }), null);
+  // Kişinin raporu da: sayılan 500, teslim 600
+  assert.equal(nextOpeningOf({ counted: true, z: Z, report: { id: 9, countedCash: 500, handedOver: 600 }, auto: null }), null);
+  // Sıfır devir geçerlidir (hepsi teslim edildi)
+  assert.deepEqual(nextOpeningOf({ counted: true, z: Z, report: { id: 9, countedCash: 600, handedOver: 600 }, auto: null }), { amount: 0, source: "kasa_raporu" });
 });
 
 test("devir: otomatik raporun hesabı birleştirmenin (mergeAuto) aynısı", () => {
@@ -240,6 +262,40 @@ test("kilit: LafPOS satırının tutarı, türü ve günü değişmez; yer, belg
   assert.equal(lafposCashOutChange(prev, { kind: "harcama", amount: 800, date: "2026-11-21" }), LAFPOS_CASH_OUT_TEXT.locked);
   assert.equal(lafposCashOutChange({ ...prev, lafposId: null }, { kind: "teslim", amount: 1, date: "2026-11-01" }), null);
   for (const t of Object.values(LAFPOS_CASH_OUT_TEXT)) assert.match(t, /LafPOS/, "metin satırın kaynağını söyler");
+});
+
+test("ayırma: sayılmayan günde LafPOS'un açtığı satır kalkar, sahiplenilen elle satır ve tedarikçi ödemesine bağlı satır kalır; kaydı silinen sayılan günde hepsi kalır", () => {
+  const lafpos = { createdBy: null, createdByName: LAFPOS_CASH_OUT_BY };
+  const rows = [
+    { id: 1, lafposId: "01A", ...lafpos, paid: false },
+    { id: 2, lafposId: "01B", createdBy: 5, createdByName: "Ayşe", paid: false },
+    { id: 3, lafposId: "01C", ...lafpos, paid: true },
+    { id: 4, lafposId: null, createdBy: 5, createdByName: "Ayşe", paid: false },
+    // Açanı silinmiş elle satır (createdBy null) LafPOS'un değil
+    { id: 5, lafposId: "01D", createdBy: null, createdByName: "Ayşe", paid: false },
+  ];
+  assert.deepEqual(planLafposDetach(rows, "drop"), { remove: [1], release: [2, 3, 5] });
+  assert.deepEqual(planLafposDetach(rows, "release"), { remove: [], release: [1, 2, 3, 5] });
+  assert.equal(lafposInsertedRow({ lafposId: null, ...lafpos }), false, "LafPOS'tan ayrılmış satır artık elle satır");
+});
+
+test("kategori bekleyen LafPOS harcaması: yalnız LafPOS'un açtığı, kaydı olmayan ve personelin kategorisiyle gelmeyen harcama; personelin düzeltmesinde kural", () => {
+  const staffCat = (id: number) => id === 3;
+  const r = { lafposId: "01A", createdBy: null, createdByName: LAFPOS_CASH_OUT_BY, kind: "harcama" as const, hasExpense: false };
+  assert.equal(lafposAwaitingCategory(r, null, staffCat), true, "kategorisiz");
+  assert.equal(lafposAwaitingCategory(r, 99, staffCat), true, "personelin seçemediği kategori");
+  assert.equal(lafposAwaitingCategory(r, 3, staffCat), false, "kategoriyle geldi: kaydı eşitlemede açıldı, yoksa yönetici kaldırdı");
+  assert.equal(lafposAwaitingCategory(r, undefined, staffCat), false, "hareket saklı gövdede yok");
+  assert.equal(lafposAwaitingCategory({ ...r, hasExpense: true }, null, staffCat), false);
+  assert.equal(lafposAwaitingCategory({ ...r, kind: "teslim" }, null, staffCat), false);
+  assert.equal(lafposAwaitingCategory({ ...r, createdBy: 5, createdByName: "Ayşe" }, null, staffCat), false, "sahiplenilen elle satır");
+  // cashOutWritesExpense: personelin düzeltmesi
+  const edit = { admin: false, mode: "edit" as const, kind: "harcama" as const, docType: "yok" as const, requested: false, hasExpense: false, prevDocType: "yok" as const };
+  assert.equal(cashOutWritesExpense({ ...edit, lafposAwaitingCategory: true }), true, "kategori bekleyen: yeni satırın kuralı");
+  assert.equal(cashOutWritesExpense({ ...edit, lafposAwaitingCategory: true, docType: "fatura" }), false, "faturalı değil");
+  assert.equal(cashOutWritesExpense({ ...edit, lafposAwaitingCategory: false }), false, "kaydı kaldırılan LafPOS satırı: geri gelmez");
+  assert.equal(cashOutWritesExpense({ ...edit, prevDocType: "fatura", awaitingInvoice: false, lafposAwaitingCategory: false }), false, "sahiplenilen faturalı satır, faturası beklenmiyor");
+  assert.equal(cashOutWritesExpense({ ...edit, prevDocType: "fatura", awaitingInvoice: true, lafposAwaitingCategory: false }), true, "faturası beklenen satır fişe döndü");
 });
 
 // ---------------------------------------------------------------- Otomatik rapor ve gün görünümü

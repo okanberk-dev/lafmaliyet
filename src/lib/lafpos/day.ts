@@ -204,7 +204,13 @@ export const cashMoveSchema = z.object({
     .max(1000)
     .nullable()
     .transform((v) => v?.trim().slice(0, 200) ?? ""),
-  at: z.string().max(40).regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/),
+  // Takvimde olan an: biçime uyan ama olmayan an ("…T25:99") satırın saatine Invalid Date yazdırır, yazım düşer ve gün
+  // 500 alır (LafPOS yeniden dener, gün hiç yazılmaz). Okunamayan an listeyi düşürür (soft; gün yine yazılır)
+  at: z
+    .string()
+    .max(40)
+    .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/)
+    .refine((v) => Number.isFinite(Date.parse(v))),
   categoryId: z.number().int().positive().max(2_147_483_647).nullable(),
 });
 

@@ -1,9 +1,9 @@
 import "server-only";
 
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
 
 import { staffCategory } from "@/lib/cash-outs";
-import { isCashOutMove, planLafposCashOuts, type LafposCashOutRow } from "@/lib/lafpos/cash-moves";
+import { isCashOutMove, LAFPOS_CASH_OUT_BY, planLafposCashOuts, planLafposDetach, type LafposCashOutRow } from "@/lib/lafpos/cash-moves";
 import type { PosCashMove } from "@/lib/lafpos/day";
 import { LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
 import { longDateTR } from "@/lib/reminders";
@@ -26,10 +26,9 @@ import { schema as s } from "@/server/db";
  *   fotoğraf, kategori, açıklama) kalır.
  * - Gövdede olmayan LafPOS satırı silinir; bir tedarikçi ödemesine bağlıysa silinmez, LafPOS bağı çözülür (satır elle
  *   girilmiş gibi kalır, ödeme bozulmaz).
+ * - Gün sayılmaz olunca ve günün LafPOS kaydı silinince satırlar LafPOS'tan ayrılır (detachLafposCashOuts).
  */
 
-/** Satırların ve harcama kayıtlarının "gönderen"i: sistem, kişi değil */
-export const LAFPOS_CASH_OUT_BY = "LafPOS";
 const SYSTEM: CashOutActor = { id: 0, name: LAFPOS_CASH_OUT_BY, role: "admin" };
 
 export interface LafposCashOutSync {
@@ -137,15 +136,59 @@ export async function syncLafposCashOuts(tx: CashOutTx, date: string, moves: rea
     }
   }
 
-  const parts = [
+  await logCashOuts(tx, date, [
     out.inserted && `${out.inserted} yeni`,
     out.adopted && `${out.adopted} elle girilmiş satır eşleşti`,
     out.updated && `${out.updated} güncellendi`,
     out.removed && `${out.removed} kaldırıldı`,
     out.released && `${out.released} tedarikçi ödemesine bağlı olduğu için kaldı`,
-  ].filter(Boolean);
-  if (parts.length) {
-    await tx.insert(s.activityLog).values({ userName: LAFPOS_CASH_OUT_BY, userId: null, action: "Kasadan çıkanlar (LafPOS)", detail: `${longDateTR(date)}: ${parts.join(", ")}` });
-  }
+  ]);
   return out;
+}
+
+/**
+ * İşlem geçmişine "Kasadan çıkanlar (LafPOS)" satırı (yalnız değişiklik varsa): "24 Kasım Salı: <neden>; 1 yeni, …". Yazan
+ * verilmezse LafPOS (sistem)
+ */
+async function logCashOuts(tx: CashOutTx, date: string, parts: (string | false | 0)[], by: { id: number | null; name: string } = { id: null, name: LAFPOS_CASH_OUT_BY }, why?: string) {
+  const text = parts.filter(Boolean);
+  if (!text.length) return;
+  await tx.insert(s.activityLog).values({ userName: by.name, userId: by.id, action: "Kasadan çıkanlar (LafPOS)", detail: `${longDateTR(date)}: ${why ? `${why}; ` : ""}${text.join(", ")}` });
+}
+
+/**
+ * Günün LafPOS satırlarını LafPOS'tan ayırır (inceleme LM-3; plan: src/lib/lafpos/cash-moves.ts planLafposDetach). Satır
+ * kilitli kalıp silinemez olmasın, sayılmayan gün Kasadan çıkanlar'ı beslemesin:
+ * - `drop`: gün artık sayılmıyor (geçiş günü sonraya alındı; ingest.ts her gönderimde, ve deneme gününün kaydı silinince).
+ *   LafPOS'un açtığı satır harcama kaydıyla kalkar; sahiplenilen elle satır ve tedarikçi ödemesine bağlı satır kalır,
+ *   bağı çözülür.
+ * - `release`: sayılan günün LafPOS kaydı silindi (admin.ts removeLafposDay, 409'un çözümü): satırlar kalır, bağları
+ *   çözülür; yeni Z gelince elle girilmiş eş olarak yeniden sahiplenilir.
+ * Gün sonunun (şube, gün) danışma kilidinin altında çağrılır. `by`: işlem geçmişinde yazan (verilmezse LafPOS)
+ */
+export async function detachLafposCashOuts(tx: CashOutTx, date: string, mode: "drop" | "release", by?: { id: number | null; name: string }): Promise<{ removed: number; released: number }> {
+  const rows: CashOutRow[] = await tx
+    .select()
+    .from(s.cashOuts)
+    .where(and(eq(s.cashOuts.date, date), eq(s.cashOuts.branchId, LAFPOS_BRANCH_ID), isNotNull(s.cashOuts.lafposId)))
+    .for("update");
+  if (!rows.length) return { removed: 0, released: 0 };
+  const paid = new Set(
+    (await tx.select({ id: s.supplierEntries.cashOutId }).from(s.supplierEntries).where(inArray(s.supplierEntries.cashOutId, rows.map((r) => r.id)))).map((p) => p.id),
+  );
+  const plan = planLafposDetach(
+    rows.map((r) => ({ id: r.id, lafposId: r.lafposId, createdBy: r.createdBy, createdByName: r.createdByName, paid: paid.has(r.id) })),
+    mode,
+  );
+  for (const id of plan.remove) await removeCashOut(tx, rows.find((r) => r.id === id)!, { lafpos: true });
+  if (plan.release.length) await tx.update(s.cashOuts).set({ lafposId: null, updatedAt: new Date() }).where(inArray(s.cashOuts.id, plan.release));
+  const why = mode === "drop" ? "gün sayılmıyor (geçiş gününden önce)" : "günün LafPOS kaydı silindi";
+  await logCashOuts(
+    tx,
+    date,
+    [plan.remove.length && `${plan.remove.length} LafPOS satırı kaldırıldı`, plan.release.length && `${plan.release.length} satır elle girilmiş gibi kaldı (LafPOS bağı çözüldü)`],
+    by,
+    why,
+  );
+  return { removed: plan.remove.length, released: plan.release.length };
 }
