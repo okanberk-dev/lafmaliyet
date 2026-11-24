@@ -2627,6 +2627,9 @@ export function createModel(ds: Dataset) {
     // aynı dönem). Resmi kirası olan kalemin stopajı ayrı satır: resmi brüt × kira stopajı oranı, kiranın gün payıyla
     // Tam ay yalnız kafenin verisi olan aylarda (ilk veri ayından önce, başlangıç ayı yazılmamış kalem 0 kalır)
     const fullDays = month < currentMonth && firstDataMonth !== null && month >= firstDataMonth ? dim : days;
+    // İşletme geneli tam ay kalem (Faz 5): şube seçiliyken de işletmenin günüyle ve ilk veri ayıyla (bilgi satırı Tümü'nün
+    // saydığı tutar; süren ayda işletmenin günü, şubenin verisinden önceki kapanmış ayda tam ay)
+    const sharedFullDays = month < currentMonth && companyFirstDataMonth !== null && month >= companyFirstDataMonth ? dim : companyDays().days;
     const rentRate = rentWithholdingRate(month);
     const officialRent: PnlMonthCalc["officialRent"] = [];
     // İşletme geneli (Faz 5, sahibin kararı 4): şubesi boş sabit gider ve stopajı, silinmiş kalemin elle girişi, elle
@@ -2650,7 +2653,7 @@ export function createModel(ds: Dataset) {
       const sharedItem = (fe.branchId ?? null) === null;
       if (inRange(fe, month)) {
         const own = sharedItem ? companyDays() : branchDays(fe.branchId);
-        const d = fe.prorate === false ? fullDays : own.days;
+        const d = fe.prorate === false ? (sharedItem ? sharedFullDays : fullDays) : own.days;
         book(fe.section, key, fe.name, auto(key, fixedForMonth(fixedAtMonth(fe, month), st, own.open, dim, d)), sharedItem);
         if (fe.prorate === false && d !== own.days) cells.get(key)!.info = "Tam ay: açık güne göre oranlanmıyor (Sabit giderler › Açık güne göre oranla).";
         const gross = officialRentGross(fe, rentRate);
@@ -2808,6 +2811,9 @@ export function createModel(ds: Dataset) {
       ...ds.stockCounts.map((c) => c.month),
       ...pnlByMonth.keys(),
     ].sort()[0] ?? null;
+  /** İşletmenin ("Tümü"nün) ilk veri ayı: şube seçiliyken Tümü'nün ay bilgisi de sayılır (işletme geneli tam ay kalem) */
+  const companyFirstDataMonth =
+    ds.branchView && ds.companyMonths ? ([...(firstDataMonth ? [firstDataMonth] : []), ...ds.companyMonths.map((x) => x.month)].sort()[0] ?? null) : firstDataMonth;
 
   /** Tedarikçinin sattığı ürünler (Hammaddeler'deki tedarikçi adından): Excel'deki "SÜTAŞ (süt)" açıklaması */
   const firstWord = (x: string) => x.trim().split(/\s+/)[0]?.toLocaleLowerCase("tr-TR") ?? "";

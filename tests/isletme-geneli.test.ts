@@ -147,6 +147,31 @@ test("açılış ayı: şubenin günü az olsa da bilgi satırı işletmenin gü
   assert.ok(fallback.shared.total < all.shared.total, "yedek: şubenin günü");
 });
 
+test("tam ay kalem (oranlanmayan kira) işletme geneliyken bilgi satırı Tümü'nün saydığı tutarı gösterir: süren ay ve şubenin verisinden önceki ay", () => {
+  // Kira işletme geneli (şubesi henüz seçilmemiş), açık güne göre oranlanmıyor, resmi kiralı (stopajıyla)
+  const sharedRent = fixed.map((f) => (f.id === kira.id ? { ...f, branchId: null } : f));
+  const viewWith = (id: "tuzla" | "marina", months: Month[], company: Month[], currentMonth: string): Dataset => ({
+    ...view(id, months, company),
+    currentMonth,
+    fixedExpenses: sharedRent.filter((f) => f.branchId === null || f.branchId === id),
+  });
+  // Süren Kasım: Marina 12 gün, işletme 24 gün
+  const runMarina = [m("2026-11", 40_000, 12)];
+  const runAll = [{ ...m("2026-11", 200_000, 24), byBranch: { tuzla: m("2026-11", 160_000, 24), marina: runMarina[0] } }];
+  const allRun = createModel({ ...ALL, currentMonth: "2026-11", months: runAll, fixedExpenses: sharedRent }).pnlMonth("2026-11");
+  const marinaRun = createModel(viewWith("marina", runMarina, runAll, "2026-11")).pnlMonth("2026-11");
+  close(marinaRun.shared.parts.find((p) => p.key === `fixed:${kira.id}`)!.amount, allRun.cells.get(`fixed:${kira.id}`)!.value!, "süren ay: kira");
+  close(marinaRun.shared.parts.find((p) => p.key === stopajKey(kira.id))!.amount, allRun.cells.get(stopajKey(kira.id))!.value!, "süren ay: stopaj");
+  close(marinaRun.shared.total, allRun.shared.total, "süren ay: bilgi satırı = Tümü");
+  // Kapanmış Ekim: yalnız Tuzla'nın verisi var (Marina'nın ilk veri ayı Kasım); Tümü kirayı tam ay sayar
+  const oct = m("2026-10", 150_000, 31);
+  const allOct = [{ ...oct, byBranch: { tuzla: oct } }, ...allMonths];
+  const allClosed = createModel({ ...ALL, months: allOct, fixedExpenses: sharedRent }).pnlMonth("2026-10");
+  close(allClosed.cells.get(`fixed:${kira.id}`)!.value!, 160_000, "Tümü Ekim: tam ay");
+  const marinaClosed = createModel(viewWith("marina", marinaMonths, allOct, "2027-01")).pnlMonth("2026-10");
+  close(marinaClosed.shared.total, allClosed.shared.total, "Marina'nın verisinden önceki ay: bilgi satırı = Tümü");
+});
+
 test("Genel bakış: şube seçiliyken sabit gider dökümü işletme genelini saymaz, bölümlerle tutar (eksi 'diğer' satırı yok)", () => {
   const model = createModel(view("marina", marinaMonths));
   const f = fixedCostsForMonth(model, "2026-11");
