@@ -1,18 +1,20 @@
 "use client";
 
-import { ArrowUp, Brain, LoaderCircle, RotateCcw, Sparkles, Square, X } from "lucide-react";
+import { ArrowUp, Brain, History, LoaderCircle, RotateCcw, Sparkles, Square, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import { useMediaQuery } from "@/components/ui/use-media";
 import type { OpCardState } from "@/lib/assistant/ops";
 import { restoreFollowups, splitFollowups } from "@/lib/assistant/followups";
+import { fromStored, loadHistory, newConversationId, removeConversation, saveHistory, upsertConversation, type Conversation, type KeyValueStore } from "@/lib/assistant/history";
 import { pageFromLocation, suggestionsFor } from "@/lib/assistant/page-context";
 import { ASSISTANT_DAILY_CAP, ASSISTANT_DEEP_WEIGHT, ASSISTANT_LIMITS, eventReader, historyForRequest, restoreCards, type AssistantDone, type AssistantEvent, type ChatMessage } from "@/lib/assistant/protocol";
 import { cn } from "@/lib/utils";
 
 import { onAssistantOpened, setAssistantOpen, useAssistantOpen } from "./assistant-open";
 import { FollowupChips } from "./followup-chips";
+import { HistoryList } from "./history-list";
 import { MarkdownView } from "./markdown-view";
 import { OpCardView } from "./op-card";
 
@@ -29,7 +31,9 @@ import { OpCardView } from "./op-card";
  * - Takip önerileri (src/lib/assistant/followups.ts): yanıtın sonundaki <takip> bloğu ayrılır, son yanıtın altında çip.
  * - Derin analiz anahtarı (yazı kutusunun üstünde): varsayılan kapalı, bir soruluk; efor high, 2 soru sayılır (loop.ts
  *   ASSISTANT_DEEP). Hak 2'den azsa kapalı.
- * - Sohbet bu sekmede durur (sessionStorage, kullanıcıya özel anahtar); "Yeni sohbet" siler. Sunucuya her soruda yalnız
+ * - Sohbet geçmişi (src/lib/assistant/history.ts): son 10 sohbet cihazda (localStorage, kullanıcıya özel), yalnız
+ *   görünen metin ve kartın özeti; başlıktaki Geçmiş düğmesi listeler, açar, siler. Çıkışta silinir (sidebar.tsx).
+ * - Etkin sohbet bu sekmede durur (sessionStorage, kullanıcıya özel anahtar); "Yeni sohbet" yenisini açar. Sunucuya yalnız
  *   önceki turların görünen metni gider (historyForRequest); sunucu hiçbir mesajı saklamaz.
  * - Yanıt akarak gelir (satır satır JSON): metin parça parça, araç çalışırken durum satırı ("Tedarikçi özeti…"),
  *   "Durdur" isteği keser. Yanıt güvenli markdown'la çizilir (markdown-view.tsx; HTML yok).
@@ -101,6 +105,26 @@ function saveMessages(userId: number, messages: ChatMessage[]) {
   }
 }
 
+/** Etkin sohbetin kimliği (geçmiş listesindeki kaydı; sekmede durur) */
+function loadConversationId(userId: number): string {
+  try {
+    const v = window.sessionStorage.getItem(`${storageKey(userId)}.id`);
+    if (v && /^[a-z0-9-]{1,64}$/i.test(v)) return v;
+  } catch {
+    // Depo kapalı
+  }
+  return newConversationId();
+}
+
+/** Cihazdaki geçmişin deposu (localStorage; yoksa ya da kapalıysa null) */
+function localStore(): KeyValueStore | null {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 /** Günün sınırı dolunca kapının metni (sunucudaki aiErrorText("cap", …, "asistan") ile aynı) */
 const capText = (cap: number) => `Bugünkü soru sınırı doldu (${cap || ASSISTANT_DAILY_CAP}); yarın yeniden açılır.`;
 
@@ -120,6 +144,13 @@ export function PanelAssistant({ userId }: { userId: number }) {
   const open = useAssistantOpen();
   const pathname = usePathname();
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadMessages(userId));
+  /** Etkin sohbetin geçmişteki kimliği; "Yeni sohbet" yenisini açar */
+  const [convId, setConvId] = useState(() => (typeof window === "undefined" ? "" : loadConversationId(userId)));
+  /** Geçmiş listesi: açılınca cihazdan okunur */
+  const [view, setView] = useState<"chat" | "history">("chat");
+  const [history, setHistory] = useState<Conversation[]>([]);
+  /** Açılıştaki mesajlar: yalnız sonradan değişince geçmişe yazılır (açmak sırayı değiştirmesin) */
+  const initialMessages = useRef(messages);
   const [input, setInput] = useState("");
   /** Derin analiz anahtarı: varsayılan kapalı, bir soru için açılır (gönderince kapanır; 2 soru sayılır) */
   const [deep, setDeep] = useState(false);
@@ -142,6 +173,21 @@ export function PanelAssistant({ userId }: { userId: number }) {
   const titleId = useId();
 
   useEffect(() => saveMessages(userId, messages), [userId, messages]);
+
+  useEffect(() => {
+    try {
+      if (convId) window.sessionStorage.setItem(`${storageKey(userId)}.id`, convId);
+    } catch {
+      // Depo kapalı
+    }
+  }, [userId, convId]);
+
+  // Cihazdaki geçmiş (history.ts): yanıt bitince etkin sohbet listenin başına yazılır (yalnız görünen metin, kartın özeti)
+  useEffect(() => {
+    if (busy || !convId || messages === initialMessages.current) return;
+    const store = localStore();
+    saveHistory(store, userId, upsertConversation(loadHistory(store, userId), convId, messages));
+  }, [userId, convId, messages, busy]);
 
   // Açılınca: durum (anahtar, ayar, bugün kalan) sorulur; kapalı ya da sınırdaysa her açılışta yeniden (gece yarısı açılır)
   const loadGate = useCallback(async () => {
@@ -362,8 +408,35 @@ export function PanelAssistant({ userId }: { userId: number }) {
   const reset = () => {
     abortRef.current?.abort();
     setMessages([]);
+    setConvId(newConversationId());
+    setView("chat");
     setInput("");
     inputRef.current?.focus();
+  };
+
+  const showHistory = () => {
+    setHistory(loadHistory(localStore(), userId));
+    setView((v) => (v === "history" ? "chat" : "history"));
+  };
+
+  const openConversation = (c: Conversation) => {
+    if (busy) return;
+    setMessages(fromStored(c));
+    setConvId(c.id);
+    setView("chat");
+  };
+
+  const deleteConversation = (c: Conversation) => {
+    const store = localStore();
+    const list = removeConversation(loadHistory(store, userId), c.id);
+    saveHistory(store, userId, list);
+    setHistory(list);
+    // Açık sohbet silindiyse ekrandan da gider (yoksa sıradaki yanıtta yeniden yazılırdı)
+    if (c.id === convId) {
+      abortRef.current?.abort();
+      setMessages([]);
+      setConvId(newConversationId());
+    }
   };
 
   const onPanelKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -441,6 +514,19 @@ export function PanelAssistant({ userId }: { userId: number }) {
               </h2>
               <p className="truncate text-[12px] leading-4 text-ink-mute max-lg:hidden">Panelin verisine bakar; onayınızla küçük işleri yapar</p>
             </div>
+            <button
+              type="button"
+              onClick={showHistory}
+              aria-label="Sohbet geçmişi"
+              aria-pressed={view === "history"}
+              title="Sohbet geçmişi"
+              className={cn(
+                "inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-ink-mute hover:bg-panel hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none max-lg:size-11 pointer-coarse:size-11",
+                view === "history" && "bg-panel text-ink",
+              )}
+            >
+              <History className="size-4 max-lg:size-5" aria-hidden="true" />
+            </button>
             {messages.length ? (
               <button
                 type="button"
@@ -464,76 +550,82 @@ export function PanelAssistant({ userId }: { userId: number }) {
           </header>
 
           <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 max-lg:space-y-7 max-lg:px-5 max-lg:pt-2 max-lg:pb-6">
-            {!messages.length ? (
-              <div className="space-y-4 max-lg:space-y-5">
-                <p className="text-[14px] leading-6 text-ink-soft max-lg:text-[16px] max-lg:leading-7">
-                  Merhaba! LafPOS gün sonları ve günlük satışlar, kasa, vardiya, Tükendi, bekleyen işler, ciro, kâr, tedarikçi borçları, ödemeler ve panelin
-                  nasıl kullanıldığı hakkında sorabilirsiniz. Tükendi, fiyat, ödendi işareti, hatırlatıcı, vardiya gibi küçük işleri onay kartıyla hazırlarım:
-                  siz Onayla&apos;ya basmadan hiçbir şey değişmez. Silme, toplu ve riskli işleri yapmam; onlarda ekranın bağlantısını ve adımları veririm.
-                </p>
-                {!blocked ? (
-                  <div className="flex flex-wrap gap-2">
-                    {suggestionsFor(pathname).map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => void send(s)}
-                        disabled={busy}
-                        className="min-h-9 cursor-pointer rounded-full bg-panel px-3 py-1.5 text-left text-[13px] leading-5 text-ink-soft ring-1 ring-line hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none disabled:opacity-50 max-lg:min-h-11 max-lg:px-4 max-lg:text-[15px] max-lg:ring-0 pointer-coarse:min-h-11"
-                      >
-                        {s}
-                      </button>
-                    ))}
+            {view === "history" ? (
+              <HistoryList items={history} activeId={convId} onOpen={openConversation} onDelete={deleteConversation} onBack={() => setView("chat")} disabled={busy} />
+            ) : (
+              <>
+                {!messages.length ? (
+                  <div className="space-y-4 max-lg:space-y-5">
+                    <p className="text-[14px] leading-6 text-ink-soft max-lg:text-[16px] max-lg:leading-7">
+                      Merhaba! LafPOS gün sonları ve günlük satışlar, kasa, vardiya, Tükendi, bekleyen işler, ciro, kâr, tedarikçi borçları, ödemeler ve panelin
+                      nasıl kullanıldığı hakkında sorabilirsiniz. Tükendi, fiyat, ödendi işareti, hatırlatıcı, vardiya gibi küçük işleri onay kartıyla hazırlarım:
+                      siz Onayla&apos;ya basmadan hiçbir şey değişmez. Silme, toplu ve riskli işleri yapmam; onlarda ekranın bağlantısını ve adımları veririm.
+                    </p>
+                    {!blocked ? (
+                      <div className="flex flex-wrap gap-2">
+                        {suggestionsFor(pathname).map((s) => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => void send(s)}
+                            disabled={busy}
+                            className="min-h-9 cursor-pointer rounded-full bg-panel px-3 py-1.5 text-left text-[13px] leading-5 text-ink-soft ring-1 ring-line hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none disabled:opacity-50 max-lg:min-h-11 max-lg:px-4 max-lg:text-[15px] max-lg:ring-0 pointer-coarse:min-h-11"
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
-              </div>
-            ) : null}
 
-            {messages.map((m, i) =>
-              m.role === "user" ? (
-                // Soru: hafif zeminli düz blok (balon yok); yanıt altında düz metin
-                <p key={i} data-turn="user" className="rounded-xl bg-panel px-3.5 py-2.5 text-[14px] leading-6 break-words whitespace-pre-wrap text-ink max-lg:text-[16px] max-lg:leading-7 dark:text-ink-soft">
-                  {m.text}
-                  {m.deep ? (
-                    <span className="mt-1 flex items-center gap-1 text-[12px] leading-4 font-medium text-ink-mute max-lg:text-[13px]">
-                      <Brain className="size-3" aria-hidden="true" /> Derin analiz
-                    </span>
-                  ) : null}
-                </p>
-              ) : (
-                <div key={i} data-turn="assistant" className="space-y-2">
-                  {m.text ? (
-                    <MarkdownView
-                      // Akarken sondaki takip bloğu (ve yarım "<tak") görünmez; bitince metin zaten bloksuzdur
-                      text={busy && i === messages.length - 1 ? splitFollowups(m.text, true).body : m.text}
-                      onNavigate={sheet ? close : undefined}
-                      className={cn("max-lg:text-[16px] max-lg:leading-7 dark:text-ink-soft", m.failed && "text-ink-mute")}
-                    />
-                  ) : null}
-                  {m.cards?.map((c) => <OpCardView key={c.card.id} state={c} onChange={patchCard} />)}
-                  {/* Takip önerileri yalnız son yanıtın altında */}
-                  {i === messages.length - 1 && !busy && m.followups?.length ? <FollowupChips items={m.followups} onPick={(q) => void send(q)} disabled={blocked} /> : null}
-                  {m.note ? <p className={cn("text-[12.5px] leading-5 max-lg:text-[14px] max-lg:leading-6", m.failed ? "text-warn-ink dark:text-brass-300" : "text-ink-mute")}>{m.note}</p> : null}
-                </div>
-              ),
-            )}
+                {messages.map((m, i) =>
+                  m.role === "user" ? (
+                    // Soru: hafif zeminli düz blok (balon yok); yanıt altında düz metin
+                    <p key={i} data-turn="user" className="rounded-xl bg-panel px-3.5 py-2.5 text-[14px] leading-6 break-words whitespace-pre-wrap text-ink max-lg:text-[16px] max-lg:leading-7 dark:text-ink-soft">
+                      {m.text}
+                      {m.deep ? (
+                        <span className="mt-1 flex items-center gap-1 text-[12px] leading-4 font-medium text-ink-mute max-lg:text-[13px]">
+                          <Brain className="size-3" aria-hidden="true" /> Derin analiz
+                        </span>
+                      ) : null}
+                    </p>
+                  ) : (
+                    <div key={i} data-turn="assistant" className="space-y-2">
+                      {m.text ? (
+                        <MarkdownView
+                          // Akarken sondaki takip bloğu (ve yarım "<tak") görünmez; bitince metin zaten bloksuzdur
+                          text={busy && i === messages.length - 1 ? splitFollowups(m.text, true).body : m.text}
+                          onNavigate={sheet ? close : undefined}
+                          className={cn("max-lg:text-[16px] max-lg:leading-7 dark:text-ink-soft", m.failed && "text-ink-mute")}
+                        />
+                      ) : null}
+                      {m.cards?.map((c) => <OpCardView key={c.card.id} state={c} onChange={patchCard} />)}
+                      {/* Takip önerileri yalnız son yanıtın altında */}
+                      {i === messages.length - 1 && !busy && m.followups?.length ? <FollowupChips items={m.followups} onPick={(q) => void send(q)} disabled={blocked} /> : null}
+                      {m.note ? <p className={cn("text-[12.5px] leading-5 max-lg:text-[14px] max-lg:leading-6", m.failed ? "text-warn-ink dark:text-brass-300" : "text-ink-mute")}>{m.note}</p> : null}
+                    </div>
+                  ),
+                )}
 
-            {busy ? (
-              <div className="flex items-center gap-2 text-[13px] text-ink-mute max-lg:text-[14px]" aria-hidden="true">
-                {tool ? (
-                  <>
-                    <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />
-                    <span>{tool} hazırlanıyor…</span>
-                  </>
-                ) : waiting ? (
-                  <span className="flex gap-1" title="Yazıyor">
-                    <span className="size-1.5 animate-bounce rounded-full bg-ink-quiet motion-reduce:animate-none" />
-                    <span className="size-1.5 animate-bounce rounded-full bg-ink-quiet [animation-delay:120ms] motion-reduce:animate-none" />
-                    <span className="size-1.5 animate-bounce rounded-full bg-ink-quiet [animation-delay:240ms] motion-reduce:animate-none" />
-                  </span>
+                {busy ? (
+                  <div className="flex items-center gap-2 text-[13px] text-ink-mute max-lg:text-[14px]" aria-hidden="true">
+                    {tool ? (
+                      <>
+                        <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />
+                        <span>{tool} hazırlanıyor…</span>
+                      </>
+                    ) : waiting ? (
+                      <span className="flex gap-1" title="Yazıyor">
+                        <span className="size-1.5 animate-bounce rounded-full bg-ink-quiet motion-reduce:animate-none" />
+                        <span className="size-1.5 animate-bounce rounded-full bg-ink-quiet [animation-delay:120ms] motion-reduce:animate-none" />
+                        <span className="size-1.5 animate-bounce rounded-full bg-ink-quiet [animation-delay:240ms] motion-reduce:animate-none" />
+                      </span>
+                    ) : null}
+                  </div>
                 ) : null}
-              </div>
-            ) : null}
+              </>
+            )}
           </div>
 
           <p className="sr-only" role="status" aria-live="polite">

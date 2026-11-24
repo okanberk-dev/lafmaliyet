@@ -13,10 +13,26 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { FollowupChips } from "../src/components/panel/assistant/followup-chips";
+import { HistoryList } from "../src/components/panel/assistant/history-list";
 import { NAV_FOOTER, NAV_GROUPS, NAV_TREE } from "../src/components/panel/nav";
 import { cleanFollowup, FOLLOWUP_MAX, restoreFollowups, splitFollowups } from "../src/lib/assistant/followups";
+import {
+  conversationTitle,
+  forgetAssistantData,
+  fromStored,
+  HISTORY_MAX,
+  historyKey,
+  loadHistory,
+  parseConversations,
+  removeConversation,
+  saveHistory,
+  toStored,
+  upsertConversation,
+  type KeyValueStore,
+} from "../src/lib/assistant/history";
+import type { OpCard } from "../src/lib/assistant/ops";
 import { DEFAULT_SUGGESTIONS, PAGE_SUGGESTIONS, pageContextLine, pageFromLocation, suggestionsFor } from "../src/lib/assistant/page-context";
-import { ASSISTANT_DAILY_CAP, ASSISTANT_DEEP_WEIGHT, assistantRequest, eventReader, historyForRequest, type AssistantEvent } from "../src/lib/assistant/protocol";
+import { ASSISTANT_DAILY_CAP, ASSISTANT_DEEP_WEIGHT, assistantRequest, eventReader, historyForRequest, type AssistantEvent, type ChatMessage } from "../src/lib/assistant/protocol";
 import { handleAssistantPost, type AssistantDeps, type AssistantStatus } from "../src/server/ai/assistant/handler";
 import { ASSISTANT_DEEP, ASSISTANT_EFFORT, ASSISTANT_MAX_TOKENS, ASSISTANT_TIMING, assistantParams, runAssistant, type AssistantClient, type AssistantOutcome, type AssistantParams } from "../src/server/ai/assistant/loop";
 import { contextBlock, SYSTEM_PROMPT } from "../src/server/ai/assistant/prompt";
@@ -319,4 +335,123 @@ test("derin analiz: ekranda varsayılan kapalı, bir soruluk; hak 2'den azsa kap
   assert.match(claude, /case when \$\{s\.aiCalls\.effort\} = \$\{ASSISTANT_DEEP\.effort\} then \$\{ASSISTANT_DEEP\.weight\} else 1 end/);
   assert.match(claude, /if \(Number\(row\?\.n \?\? 0\) \+ weight > cap\) return null;/);
   assert.match(read("docs/ASISTAN.md"), /## Derin analiz/);
+});
+
+// ---------------------------------------------------------------- 4. Sohbet geçmişi (cihazda)
+
+function memoryStore(): KeyValueStore & { data: Map<string, string> } {
+  const data = new Map<string, string>();
+  return { data, getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v), removeItem: (k) => void data.delete(k) };
+}
+
+const CARD: OpCard = {
+  id: "op_gizli_kimlik_123",
+  tool: "urun_fiyati_degistir",
+  title: "Latte M fiyatı",
+  subject: "Latte M",
+  branch: "Bütün şubeler",
+  day: "24 Kasım 2026 Salı",
+  lines: [{ label: "Fiyat", from: "85 ₺", to: "90 ₺" }],
+  effects: ["site"],
+  undo: "Kartın Geri al düğmesi (1 saat)",
+  undoable: true,
+  warnings: ["Kasada eski fiyat duruyor: GIZLI_UYARI"],
+  note: "GIZLI_NOT modelin açıklaması",
+  expiresAt: "2026-11-24T10:00:00Z",
+} as OpCard;
+
+test("geçmiş: kullanıcıya özel anahtar; yalnız görünen metin, kartın yalnız özeti (kimlik, satır, uyarı, not yok)", () => {
+  assert.equal(historyKey(7), "lafm.asistan.gecmis.v1.7");
+  assert.notEqual(historyKey(7), historyKey(8));
+  const messages: ChatMessage[] = [
+    { role: "user", text: "  Latte M 90 ₺ olsun\nlütfen  ", deep: true },
+    { role: "assistant", text: "Kartı hazırladım.", cards: [{ card: CARD, status: "done", message: "GIZLI_SONUC", undoUntil: "2026-11-24T11:00:00Z" }], followups: ["Kâra etkisi ne?"] },
+    { role: "assistant", text: "", note: "Durduruldu." },
+  ];
+  const stored = toStored(messages);
+  assert.deepEqual(stored, [
+    { role: "user", text: "Latte M 90 ₺ olsun\nlütfen" },
+    { role: "assistant", text: "Kartı hazırladım.\n\n[Onay kartı: Latte M fiyatı — yapıldı]" },
+    { role: "assistant", text: "", note: "Durduruldu." },
+  ]);
+  const json = JSON.stringify(stored);
+  for (const secret of ["op_gizli_kimlik_123", "85 ₺", "GIZLI_UYARI", "GIZLI_NOT", "GIZLI_SONUC", "undoUntil", "Kâra etkisi", "urun_fiyati_degistir"]) assert.ok(!json.includes(secret), secret);
+  // Geçmişten açılan sohbette kart yok (onaylanamaz); özet metnin içinde
+  const back = fromStored({ id: "a", title: "x", updatedAt: "2026-11-24T09:00:00Z", messages: stored });
+  assert.ok(back.every((m) => !("cards" in m)));
+  assert.match(back[1].text, /\[Onay kartı: Latte M fiyatı — yapıldı\]$/);
+  assert.equal(conversationTitle(messages), "Latte M 90 ₺ olsun lütfen");
+  assert.equal(conversationTitle([{ role: "user", text: "x".repeat(200) }]).length, 60);
+  assert.equal(conversationTitle([]), "Yeni sohbet");
+});
+
+test("geçmiş: en çok 10 sohbet, en yenisi başta, aynı sohbet bir kez; sorusuz sohbet saklanmaz; silme", () => {
+  let list = [] as ReturnType<typeof upsertConversation>;
+  for (let i = 0; i < 13; i++) list = upsertConversation(list, `s${i}`, [{ role: "user", text: `Soru ${i}` }, { role: "assistant", text: `Yanıt ${i}` }], new Date(Date.UTC(2026, 10, 24, 9, i)));
+  assert.equal(list.length, HISTORY_MAX);
+  assert.equal(HISTORY_MAX, 10);
+  assert.deepEqual(list.slice(0, 2).map((c) => c.id), ["s12", "s11"]);
+  assert.ok(!list.some((c) => c.id === "s0"));
+  // Aynı sohbet güncellenince başa geçer, iki kez yazılmaz
+  list = upsertConversation(list, "s5", [{ role: "user", text: "Soru 5" }, { role: "assistant", text: "Yeni yanıt" }]);
+  assert.equal(list[0].id, "s5");
+  assert.equal(list.filter((c) => c.id === "s5").length, 1);
+  assert.equal(list.length, 10);
+  assert.equal(upsertConversation([], "bos", []).length, 0);
+  assert.equal(upsertConversation([], "bos", [{ role: "assistant", text: "Merhaba" }]).length, 0);
+  // Uzun sohbet: son 40 mesaj
+  const long = Array.from({ length: 60 }, (_, i): ChatMessage => ({ role: i % 2 ? "assistant" : "user", text: `m${i}` }));
+  assert.equal(upsertConversation([], "uzun", long)[0].messages.length, 40);
+  assert.equal(removeConversation(list, "s5").length, 9);
+});
+
+test("geçmiş: depo kullanıcıya özel; bozuk veri düşer; çıkışta silinir; depo kapalıysa sessiz", () => {
+  const store = memoryStore();
+  saveHistory(store, 7, upsertConversation([], "a1", [{ role: "user", text: "Benim sorum" }]));
+  assert.equal(loadHistory(store, 7).length, 1);
+  assert.equal(loadHistory(store, 8).length, 0, "başka yönetici görmez");
+  assert.deepEqual([...store.data.keys()], ["lafm.asistan.gecmis.v1.7"]);
+  // Bozuk kayıtlar
+  assert.deepEqual(parseConversations("{bozuk"), []);
+  assert.deepEqual(parseConversations(JSON.stringify({ a: 1 })), []);
+  const parsed = parseConversations(
+    JSON.stringify([
+      { id: "<script>", title: "x", updatedAt: "2026", messages: [{ role: "user", text: "a" }] },
+      { id: "ok-1", title: "<b>Başlık</b>", updatedAt: "2026-11-24T09:00:00Z", messages: [{ role: "system", text: "x" }, { role: "user", text: "Soru", cards: [{ card: CARD }] }] },
+      { id: "ok-1", title: "kopya", updatedAt: "2026", messages: [{ role: "user", text: "b" }] },
+      { id: "bos", title: "t", updatedAt: "2026", messages: [] },
+    ]),
+  );
+  assert.equal(parsed.length, 1);
+  assert.deepEqual(parsed[0].messages, [{ role: "user", text: "Soru" }], "kart ve tanınmayan rol düşer");
+  // Başlık ekranda React yazısı (HTML çizilmez)
+  const html = renderToStaticMarkup(createElement(HistoryList, { items: parsed, activeId: "ok-1", onOpen: () => {}, onDelete: () => {}, onBack: () => {} }));
+  assert.doesNotMatch(html, /<b>Başlık/);
+  assert.match(html, /&lt;b&gt;Başlık&lt;\/b&gt;/);
+  assert.match(html, /aria-label="Sil: &lt;b&gt;Başlık&lt;\/b&gt;"/);
+  assert.match(html, /max-lg:size-11/);
+  // Çıkış: bu kullanıcının geçmişi ve etkin sohbeti gider, başkasınınki kalır
+  const session = memoryStore();
+  session.setItem("lafm.asistan.v1.7", "[]");
+  session.setItem("lafm.asistan.v1.7.id", "a1");
+  saveHistory(store, 8, upsertConversation([], "b1", [{ role: "user", text: "Öteki" }]));
+  forgetAssistantData(7, [store, session, null]);
+  assert.equal(loadHistory(store, 7).length, 0);
+  assert.equal(loadHistory(store, 8).length, 1);
+  assert.equal(session.data.size, 0);
+  // Depo fırlatırsa (gizli sekme) sessiz
+  const broken: KeyValueStore = { getItem: () => { throw new Error("x"); }, setItem: () => { throw new Error("x"); }, removeItem: () => { throw new Error("x"); } };
+  assert.deepEqual(loadHistory(broken, 7), []);
+  saveHistory(broken, 7, parsed);
+  forgetAssistantData(7, [broken]);
+});
+
+test("geçmiş: ekranda Geçmiş düğmesi, sunucuya yine yalnız etkin sohbetin turları; çıkışta silinir", () => {
+  const w = code("src/components/panel/assistant/panel-assistant.tsx");
+  assert.match(w, /aria-label="Sohbet geçmişi"/);
+  assert.match(w, /saveHistory\(store, userId, upsertConversation\(loadHistory\(store, userId\), convId, messages\)\)/);
+  assert.match(w, /if \(busy \|\| !convId \|\| messages === initialMessages\.current\) return;/);
+  assert.match(w, /const history = historyForRequest\(messages\);/);
+  assert.match(w, /window\.localStorage/);
+  assert.match(code("src/components/panel/sidebar.tsx"), /forgetAssistantData\(user\.id, \[safeStore\("localStorage"\), safeStore\("sessionStorage"\)\]\)/);
 });

@@ -10,6 +10,7 @@ import { ProfileDropdown, type ProfileDropdownItem } from "@/components/akmanos/
 import { SPRING_PANEL } from "@/components/akmanos/lib/motion-ease";
 import { LafTile } from "@/components/brand";
 import { actionFailure, toastUnreachable } from "@/components/ui/action-error";
+import { forgetAssistantData } from "@/lib/assistant/history";
 import { ROLES } from "@/lib/constants";
 import { ALERTS_REFRESH_EVENT } from "@/lib/live-poll";
 import { homeFor } from "@/lib/roles";
@@ -30,6 +31,15 @@ import { SidebarNav } from "./sidebar-nav";
 import { ThemeChoice } from "./theme-choice";
 
 type User = { id: number; name: string; email: string; role: "admin" | "staff" };
+
+/** Tarayıcı deposu (kapalıysa null: gizli sekme, engelli site verisi) */
+function safeStore(kind: "localStorage" | "sessionStorage"): Storage | null {
+  try {
+    return window[kind];
+  } catch {
+    return null;
+  }
+}
 
 const iconButton =
   "flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-border bg-background text-foreground outline-none transition-colors hover:bg-chart-bg focus-visible:ring-2 focus-visible:ring-foreground/30";
@@ -215,7 +225,11 @@ export function Sidebar({ user, index = [], branch, assistant = false }: { user:
           accountItems={accountItems}
           workspaceItems={cafeItems}
           appearance={<ThemeChoice inMenu className="dark:bg-panel" />}
-          onSignOut={() => void forgetDeviceOnSignOut().finally(() => logoutAction().catch(toastUnreachable))}
+          onSignOut={() => {
+            // Asistanın cihazdaki sohbet geçmişi bu kullanıcıyla gider (docs/ASISTAN.md › Sohbet geçmişi)
+            forgetAssistantData(user.id, [safeStore("localStorage"), safeStore("sessionStorage")]);
+            void forgetDeviceOnSignOut().finally(() => logoutAction().catch(toastUnreachable));
+          }}
           className="w-full max-w-none"
         />
       </footer>

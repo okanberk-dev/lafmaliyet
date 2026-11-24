@@ -27,7 +27,8 @@ işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları 
 
 - Soruyu yazıp **Enter** (yeni satır için **Shift+Enter**). Yanıt yazılırken akar; araç çalışırken altta durum satırı
   görünür ("Tedarikçi özeti hazırlanıyor…"). **Durdur** yanıtı keser.
-- **Yeni sohbet** konuşmayı siler. Konuşma yalnız bu sekmede durur: sekme kapanınca gider, başka cihaza geçmez.
+- **Yeni sohbet** ekranı temizler ve yeni bir sohbet açar; önceki sohbet **Geçmiş**'te kalır (aşağıda Sohbet geçmişi).
+  Etkin sohbet sekmede durur; başka cihaza geçmez.
 - Yanıttaki panel bağlantıları aynı sekmede açılır (telefonda pencere kapanır, sayfa görünsün); dış bağlantı yalnız
   izin listesindeki sitelere (laffogato.net, Paraşüt, Claude), https ve yeni sekmede. Başka her adres (javascript:,
   http:, panelin dışına çıkan yol, listede olmayan site) bağlantısız yazı kalır (yalnız etiketi); yanıtta HTML
@@ -191,8 +192,9 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
 
 ## Ne saklar, ne saklamaz
 
-- **Tarayıcıda:** konuşma bu sekmenin oturum belleğinde (sessionStorage, kullanıcıya özel anahtar), en çok son 40 mesaj.
-  Sekme kapanınca ya da **Yeni sohbet** ile silinir.
+- **Tarayıcıda:** etkin konuşma bu sekmenin oturum belleğinde (sessionStorage, kullanıcıya özel anahtar), en çok son
+  40 mesaj; son 10 sohbetin görünen metni cihazın kalıcı deposunda (localStorage, kullanıcıya özel; yukarıda Sohbet
+  geçmişi). Çıkışta ikisi de silinir.
 - **Sunucuda:** hiçbir mesaj saklanmaz; yalnız onay kartlarının planı (`assistant_ops`: araç, girdi, kartın içeriği,
   durum, sonuç; denetim kaydıdır ve yedeğe girer, bekleyen kartlar girmez). Her soru `ai_calls` tablosuna tek satır yazar (tür `asistan`): kim sordu, ne
   zaman, model, süre, token sayıları, tutar (dolar), bitiş nedeni, kaç çağrı ve kaç araç çalıştığı. **Sorunun, yanıtın ve
@@ -228,6 +230,21 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
   yanıt kesilir ("Süre doldu"). Soru en çok 4000 karakter.
 - Soru reddedilirse (güvenlik sınıflandırıcısı) Anthropic'in sunucu tarafındaki yedek modeli denenir; o da reddederse
   pencere "Bu soruyu yanıtlayamıyorum" der.
+
+## Sohbet geçmişi
+
+- Başlıktaki **Geçmiş** düğmesi (saat simgesi) bu cihazdaki **son 10 sohbeti** listeler: başlık (ilk soru, en çok 60
+  karakter), tarih ve soru sayısı. Satıra dokununca sohbet açılır ve kaldığı yerden sürer; çöp kutusu siler; "Yeni
+  sohbet" yenisini açar. Açık olan sohbet silinirse ekrandan da gider.
+- **Nerede:** tarayıcının kalıcı deposunda (localStorage), **kullanıcıya özel anahtarla**
+  (`lafm.asistan.gecmis.v1.<kullanıcı>`): aynı cihazda başka bir yönetici yalnız kendi listesini görür. Sunucuya
+  gitmez, başka cihaza geçmez. **Çıkış yapınca** bu kullanıcının geçmişi ve etkin sohbeti cihazdan silinir.
+- **Ne saklanır:** yalnız görünen metin (soru, yanıt, yanıtın altındaki kısa not). Onay kartlarının yalnız **özeti**
+  ("[Onay kartı: Latte M fiyatı — yapıldı]"): kartın kimliği, satırları, eski / yeni değerleri, uyarıları, notu ve
+  sonucu saklanmaz; geçmişten açılan sohbette kart düğmesi yoktur, onaylanamaz. Takip önerileri saklanmaz. Sohbet başına
+  en çok 40 mesaj.
+- **Sunucuya giden değişmez:** her soruda yalnız etkin sohbetin son turları (en çok 20 mesaj; aşağıda Ne saklar).
+  Geçmişe yanıt bitince yazılır (akarken değil). Dosya: `src/lib/assistant/history.ts`, liste `history-list.tsx`.
 
 ## Derin analiz
 
