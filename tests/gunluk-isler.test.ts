@@ -15,7 +15,6 @@ import {
   expectedDay,
   jobHealth,
   jobsSummary,
-  parasutMigrationAlert,
   parasutOutcome,
   photosStep,
   reminderStep,
@@ -233,71 +232,19 @@ test("uyarılar: Paraşüt işinin hatası eşitlemenin kendi hatası olarak zil
   assert.deepEqual(older.map((x) => x.id), [`is-parasut-failed-${pFail.id}`]);
 });
 
-test("Paraşüt kimlik geçişi: eski ayarlar dururken hatırlatılır, silinince kalkar", () => {
+test("Paraşüt kimlik geçişi tamamlandı: işler sağlıklıyken zil ve şerit tarihe bağlı bir Paraşüt uyarısı vermez", () => {
   const fine = (now: Date) => [run("gunluk", `${trClock(now).day} 08:05`, "ok"), run("parasut", `${trClock(now).day} 07:30`, "ok")];
-  const alerts = (when: string, legacyParasutAuth: boolean) => {
+  // Eski parola yönteminin son günleri (1 ve 10 Aralık 2026) ve sonrası: sessiz
+  for (const when of ["2026-11-24 10:00", "2026-12-01 09:00", "2026-12-10 09:00", "2027-01-05 09:00"]) {
     const now = tr(when);
-    return systemAlerts({ production: true, cronSecret: true, now, health: health(now, fine(now)), parasutSyncErrorAt: null, legacyParasutAuth });
-  };
-
-  // Eski parolalı ayarlar silinmişse (geçiş tamam) hiç uyarı yok; varsayılan da sessiz
-  assert.deepEqual(alerts("2026-12-05 10:00", false), []);
-  const now = tr("2026-11-10 10:00");
-  assert.deepEqual(systemAlerts({ production: true, cronSecret: true, now, health: health(now, fine(now)), parasutSyncErrorAt: null }), []);
-
-  // 1 Aralık'tan önce: yalnız zilde (warning), şeride çıkmaz — /api/health 503 vermemeli
-  const before = alerts("2026-11-10 10:00", true);
-  assert.deepEqual(before.map((a) => [a.id, a.level, a.banner, a.href]), [["parasut-kimlik-gecisi", "warning", undefined, "/panel/parasut"]]);
-  assert.match(before[0].title, /^Paraşüt kimlik geçişi bekliyor \(1 Aralık/);
-  assert.match(before[0].body, /30 gün kaldı/);
-  // Geçiş kodu main'de: metin artık birleştirmeyi değil, hesabı bağlamayı söyler
-  assert.match(before[0].body, /“Paraşüt hesabını bağla”ya basın/);
-  assert.match(before[0].body, /eşitleme şimdilik onunla sürüyor/);
-  assert.doesNotMatch(before[0].body, /PR #92/);
-  assert.equal(before[0].day, null);
-
-  // 1 Aralık: aynı gün şeride çıkar ama hâlâ warning (hizmet bozulmadı)
-  const onDay = alerts("2026-12-01 09:00", true);
-  assert.deepEqual(onDay.map((a) => [a.level, a.banner, a.title]), [["warning", true, "Paraşüt kimlik geçişini bugün yapın"]]);
-  assert.match(onDay[0].body, /9 gün kaldı/);
-  assert.equal(onDay.some((a) => a.level === "danger"), false, "son tarihten önce 503'e düşmez");
-
-  // Son tarih geldi: artık gerçekten bozuk, danger
-  const after = alerts("2026-12-10 09:00", true);
-  assert.deepEqual(after.map((a) => [a.level, a.banner, a.title]), [["danger", true, "Paraşüt bağlantısı kapandı: kimlik geçişi yapılmadı"]]);
-  assert.match(after[0].body, /faturalar artık panele gelmiyor/);
-  assert.deepEqual(alerts("2026-12-20 09:00", true).map((a) => a.level), ["danger"]);
-
-  // CRON_SECRET yokken de hatırlatılır (geçiş işlerden bağımsız)
-  const noSecret = tr("2026-12-01 09:00");
-  const withoutCron = systemAlerts({
-    production: true,
-    cronSecret: false,
-    now: noSecret,
-    health: health(noSecret, fine(noSecret)),
-    parasutSyncErrorAt: null,
-    legacyParasutAuth: true,
-  });
-  assert.deepEqual(withoutCron.map((a) => a.id), ["is-cron-secret", "parasut-kimlik-gecisi"]);
-
-  // Hesap yeni yöntemle bağlandı ama eski kullanıcı adı/parola Vercel'de duruyor: geçiş uyarısı kalkar, yerine yalnız zilde
-  // "silebilirsiniz" notu (info: şeride ve /api/health'e girmez); son tarihten sonra da danger olmaz
-  for (const when of ["2026-11-10 10:00", "2026-12-01 09:00", "2026-12-20 09:00"]) {
-    const at = tr(when);
-    const linked = systemAlerts({ production: true, cronSecret: true, now: at, health: health(at, fine(at)), parasutSyncErrorAt: null, legacyParasutAuth: true, parasutConnected: true });
-    assert.deepEqual(
-      linked.map((a) => [a.id, a.level, a.banner]),
-      [["parasut-eski-ayar", "info", undefined]],
-      when,
-    );
-    assert.match(linked[0].body, /PARASUT_USERNAME ve PARASUT_PASSWORD'ü silebilirsiniz/);
+    assert.deepEqual(systemAlerts({ production: true, cronSecret: true, now, health: health(now, fine(now)), parasutSyncErrorAt: null }), [], when);
   }
-  // Bağlı ve eski değişkenler silinmiş: hiçbir şey
-  assert.deepEqual(alerts("2026-12-20 09:00", false), []);
-  assert.equal(parasutMigrationAlert(tr("2026-12-20 09:00"), false, true), null);
-
-  // Canlı değilse hiç çıkmaz
-  assert.deepEqual(alerts("2026-12-01 09:00", true).length && systemAlerts({ production: false, cronSecret: true, now: noSecret, health: health(noSecret, fine(noSecret)), parasutSyncErrorAt: null, legacyParasutAuth: true }), []);
+  // CRON_SECRET yokken yalnız o
+  const now = tr("2026-12-10 09:00");
+  assert.deepEqual(
+    systemAlerts({ production: true, cronSecret: false, now, health: health(now, fine(now)), parasutSyncErrorAt: null }).map((a) => a.id),
+    ["is-cron-secret"],
+  );
 });
 
 test("e-posta: bekçi dünkü sabah işini söyler, Paraşüt işini söylemez", () => {

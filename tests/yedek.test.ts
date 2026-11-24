@@ -249,8 +249,8 @@ test("yedek dışı: adı gizli görünen her durum anahtarı (integration_state
 });
 
 test("yedek dışı: Paraşüt belirteci, bildirim anahtarı ve uygulama siparişlerinin müşteri adları dosyaya yazılmaz", () => {
-  assert.deepEqual(Object.keys(EXCLUDED_STATE_KEYS).sort(), ["parasut.legacyToken", "parasut.token", "site_orders", "webpush_vapid"]);
-  assert.equal(TABLE_RULES.integration_state.where, "key NOT IN ('parasut.token', 'parasut.legacyToken', 'webpush_vapid', 'site_orders')");
+  assert.deepEqual(Object.keys(EXCLUDED_STATE_KEYS).sort(), ["parasut.token", "site_orders", "webpush_vapid"]);
+  assert.equal(TABLE_RULES.integration_state.where, "key NOT IN ('parasut.token', 'webpush_vapid', 'site_orders')");
   // Paraşüt'ün PDF'i önbellek: yalnız yüklenenler, onlar da yalnız istenince
   assert.equal(TABLE_RULES.invoice_documents.where, "source = 'upload'");
   assert.equal(TABLE_RULES.invoice_documents.documents, true);
@@ -261,7 +261,7 @@ test("yedek dışı: Paraşüt belirteci, bildirim anahtarı ve uygulama sipari�
   assert.deepEqual(noDocs.tables, ["invoice_documents", "push_subscriptions", "user_tokens"]);
   assert.equal(noDocs.documents, "hepsi");
   assert.deepEqual(Object.keys(noDocs.columns), ["users"]);
-  assert.deepEqual(noDocs.stateKeys, ["parasut.token", "parasut.legacyToken", "webpush_vapid", "site_orders"]);
+  assert.deepEqual(noDocs.stateKeys, ["parasut.token", "webpush_vapid", "site_orders"]);
 });
 
 test("panelden belgeli yedek en çok 4 MB (Vercel'in yanıt sınırı canlıda doğrulanana kadar)", () => {

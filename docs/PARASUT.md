@@ -8,21 +8,12 @@ Ekran: **Ayarlar › Paraşüt entegrasyonu** (`/panel/parasut`).
 
 ## 1. Kurulum (bir kez)
 
-> **Paraşüt 10 Aralık 2026'da eski girişi kapatıyor.** Panel bugüne kadar Paraşüt'e bir e-posta ve parolayla
-> (`PARASUT_USERNAME` / `PARASUT_PASSWORD`, `grant_type=password`) giriyordu. Paraşüt bu yöntemi ve
-> `api.parasut.com/oauth/*` üzerinden açılmış eski istemcileri **10 Aralık 2026**'da kapatıyor. Yeni yöntemde
-> istemci **DevHub**'dan alınır ve hesap bir kez panelden **“Paraşüt hesabını bağla”** ile bağlanır (OAuth 2.0
-> Authorization Code + PKCE). Eski istemciler yeni altyapıya taşınmadı: yeni bir `client_id` / `client_secret` gerekir.
->
-> **O güne kadar eşitleme durmaz:** hesap yeni yöntemle bağlanmadıysa ve Vercel'de eski kullanıcı adı ile parola
-> duruyorsa panel eski yöntemle eşitlemeye devam eder (geçici yedek, § 2) ve Paraşüt ekranında sarı bir uyarı gösterir:
-> *“Eski bağlantı 10 Aralık'ta kapanacak, Paraşüt hesabını bağlayın”*. 10 Aralık'tan sonra eski yöntem hiç denenmez;
-> uyarı kırmızıya döner ve eşitleme “yeniden bağlayın” der.
+Panel Paraşüt'e kullanıcı adı ve parolayla girmez: istemci Paraşüt **DevHub**'dan alınır ve hesap bir kez panelden
+**“Paraşüt hesabını bağla”** ile bağlanır (OAuth 2.0 Authorization Code + PKCE).
 
 ### Sahibin yapacakları (yazılımcı gerekmez, yaklaşık 15 dakika)
 
-Bunu **10 Aralık 2026'dan önce** yapın (planlanan gün 1 Aralık). Adımlar bilgisayardan, tek oturuşta yapılır; 5. ve 6.
-adımın arasını uzatmayın.
+Adımlar bilgisayardan, tek oturuşta yapılır; 5. ve 6. adımın arasını uzatmayın.
 
 1. **DevHub'da uygulama açın.** Paraşüt'ün geliştirici sitesi **DevHub**'a kendi Paraşüt hesabınızla girin.
    *“Paraşüt Kullanıcısıyım”* seçeneğiyle başvurun (kendi firmamız için; *“İş Ortağı Olmak İstiyorum”* değil).
@@ -48,17 +39,13 @@ adımın arasını uzatmayın.
 5. **Vercel'de iki değeri değiştirin.** vercel.com › **lafmaliyet** › **Settings** › **Environment Variables**:
    - `PARASUT_CLIENT_ID` → düzenleyin, 3. adımdaki **client_id**'yi yapıştırın, kaydedin.
    - `PARASUT_CLIENT_SECRET` → düzenleyin, 3. adımdaki **client_secret**'ı yapıştırın, kaydedin.
-   - `PARASUT_COMPANY_ID` değişmez; `PARASUT_USERNAME` ve `PARASUT_PASSWORD`'e şimdilik dokunmayın.
+   - `PARASUT_COMPANY_ID` değişmez.
 
-   Sonra **Deployments** › en üstteki yayının **⋯** menüsü › **Redeploy**. Birkaç dakika sürer.
-   Bu adımdan sonra eski yöntem çalışmaz (eski client_id gitti); 6. adımı hemen yapın.
+   Sonra **Deployments** › en üstteki yayının **⋯** menüsü › **Redeploy**. Birkaç dakika sürer; 6. adımı hemen yapın.
 6. **Panelde bağlayın.** Panelde **Ayarlar › Paraşüt entegrasyonu** ekranında **“Paraşüt hesabını bağla”**ya basın.
    Paraşüt'ün kendi giriş ekranı açılır: Paraşüt e-posta ve parolanızla girip izin verin. Panel parolanızı hiçbir zaman
    görmez. Panele dönünce “Paraşüt hesabı bağlandı” yazar ve sarı uyarı kalkar.
 7. **Deneyin.** Aynı ekranda **Bağlantıyı dene** (“Bağlantı tamam” görmelisiniz), ardından **Şimdi eşitle**.
-8. **Temizlik.** Her şey çalışıyorsa Vercel'den `PARASUT_USERNAME` ve `PARASUT_PASSWORD`'ü silin (Environment
-   Variables › satırın ⋯ menüsü › Remove). Panel onları artık kullanmıyor. Bunun için ayrıca Redeploy gerekmez;
-   zildeki “artık gerekmiyor” notu bir sonraki yayından sonra kalkar.
 
 **Takılırsanız**
 
@@ -69,12 +56,8 @@ adımın arasını uzatmayın.
   bu belgeyi sunuculardan gelen isteğe kapatıyor (yetki ve belirteç adresleri açık). Panel bu durumda Keycloak'ın
   standart adreslerine kendiliğinden döner; Vercel'de ayrıca `PARASUT_AUTHORIZE_URL` ve `PARASUT_TOKEN_URL` tanımlı
   (aşağıdaki tablo), keşif hiç denenmez.
-- *Hesap bağlanmadan “Bağlantıyı dene”: “Paraşüt eski kullanıcı adı ve parola yöntemini artık kabul etmiyor (Client
-  authentication failed …)”:* beklenen durum. 5. adımdan sonra eski yöntem yeni client_id ile çalışmaz; 6. adımı yapın.
 - *Bağlandı ama eşitleme “yetkiniz yok” (403) diyor:* 4. adımdaki **Uygulama Entegrasyonları** izni kapalı.
-- *5. adımı yaptım, 6. adımı yapamadım:* sabah eşitlemesi “yeniden bağlayın” der; 6. adımı yapınca düzelir. Acil
-  geri dönmek isterseniz `PARASUT_CLIENT_ID` / `PARASUT_CLIENT_SECRET`'a eski değerleri geri yazıp Redeploy edin
-  (10 Aralık'a kadar çalışır).
+- *5. adımı yaptım, 6. adımı yapamadım:* sabah eşitlemesi “yeniden bağlayın” der; 6. adımı yapınca düzelir.
 - *Paraşüt'te izni durdurdum ya da uzun süre eşitleme yapılmadı:* ekranda “yeniden bağlayın” yazar; 6. adımı tekrarlayın.
 - Paraşüt'ün geçiş desteği: `devhubdestek@parasut.com`.
 
@@ -84,10 +67,9 @@ Vercel → lafmaliyet → Settings → Environment Variables, Production:
 
 | Değişken | Değer |
 |----------|-------|
-| `PARASUT_CLIENT_ID` | DevHub'daki uygulamanın client_id'si (geçişten önce eski istemcininki) |
-| `PARASUT_CLIENT_SECRET` | DevHub'daki uygulamanın client_secret'ı (geçişten önce eski istemcininki) |
+| `PARASUT_CLIENT_ID` | DevHub'daki uygulamanın client_id'si |
+| `PARASUT_CLIENT_SECRET` | DevHub'daki uygulamanın client_secret'ı |
 | `PARASUT_COMPANY_ID` | Firma numarası: Paraşüt'e girince adres çubuğundaki sayı, `uygulama.parasut.com/123456/...` → `123456`. **Bağlantıyı dene** kullanıcının erişebildiği firmaları da gösterir |
-| `PARASUT_USERNAME`, `PARASUT_PASSWORD` | **Geçici, 10 Aralık 2026'ya kadar.** Eski yöntemin kullanıcı e-postası ve parolası; yalnız hesap bağlı değilken kullanılır. Bağlandıktan sonra silin |
 | `PARASUT_SYNC_FROM` | (isteğe bağlı) İlk eşitlemenin başlangıcı, `YYYY-MM-DD`; boşsa bu yılın başı |
 | `PARASUT_REDIRECT_URI` | (isteğe bağlı) DevHub'a kaydedilen dönüş adresi; boşsa `APP_URL` + `/panel/parasut/baglan/geri` |
 | `PARASUT_ISSUER` | (isteğe bağlı) Kimlik sunucusu; varsayılan `https://id.parasut.com/realms/parasut` |
@@ -126,26 +108,9 @@ der.
   Yenileme kalıcı olarak reddedilirse (`invalid_grant`: izin durduruldu, 30 gün doldu ya da `client_secret`
   yenilendi) kayıtlı oturum silinir ve ekran yeniden bağlanmayı ister. Geçici ağ/5xx hatasında belirteç korunur.
   Oturum yedeğe girmez ([YEDEK.md](YEDEK.md)): geri yüklemeden sonra hesap yeniden bağlanır.
-- **Geçici yedek (10 Aralık 2026'ya kadar):** yol her eşitlemenin başında bir kez seçilir
-  (`chooseParasutAuth`, `src/lib/parasut/legacy.ts`):
-  1. Kayıtlı yeni oturum (bu istemciye ait `refresh_token`) varsa **yalnız o** kullanılır. Eski kullanıcı adı/parola
-     Vercel'de dursa da, yeni oturum iptal edilse de aynı çalışmada eski yönteme dönülmez.
-  2. Yoksa ve `PARASUT_USERNAME` + `PARASUT_PASSWORD` tanımlıysa, **10 Aralık 2026 00:00 (İstanbul)** gelmediyse eski
-     yöntem: `{PARASUT_BASE_URL}/oauth/token`, önce kayıtlı `refresh_token`, olmazsa `grant_type=password` (eski kodla
-     aynı). Eski belirteç ayrı bir anahtarda (`integration_state` › `parasut.legacyToken`) durur, yeni oturumu hiçbir
-     zaman ezmez; hesap bağlanınca silinir.
-  3. Son tarih geçtiyse eski uca **hiç istek atılmaz**: “Paraşüt eski kullanıcı adı ve parola yöntemini 10 Aralık
-     2026'da kapattı … yeniden bağlayın”.
-  4. Hiçbiri yoksa: “Paraşüt hesabı bağlı değil … Paraşüt hesabını bağla”.
-
-  Eski uç son tarihten önce kapanırsa ya da istemciyi reddederse (`unsupported_grant_type`, `invalid_client`,
-  `unauthorized_client` ya da 401) eşitleme açık bir Türkçe hatayla durur: “Paraşüt eski kullanıcı adı ve parola
-  yöntemini artık kabul etmiyor … “Paraşüt hesabını bağla” ile yeniden bağlayın”. Parola reddi (`invalid_grant`) aynı
-  çözümü söyler. 429 ve 5xx geçicidir, sonraki eşitlemede yeniden denenir. Panel: hesap bağlı değilken eski yöntem
-  sürüyorsa Paraşüt ekranında sarı uyarı ve “Bağlantı: Eski yöntem” kartı; son tarihten sonra kırmızı; hesap bağlı ama
-  eski değişkenler duruyorsa “artık gerekmiyor” notu. Zil ve Genel bakış: `parasutMigrationAlert`
-  (`src/lib/job-health.ts`). 10 Aralık 2026'dan sonra `src/lib/parasut/legacy.ts`, `src/server/parasut/legacy.ts` ve
-  çağrıldıkları yerler silinir ([planlar/parasut-kimlik-gecisi.md](planlar/parasut-kimlik-gecisi.md)).
+- **Bağlı değilken:** kayıtlı oturum yoksa (hiç bağlanmadı, “Oturumu sıfırla” ya da Paraşüt izni kaldırdı) eşitleme
+  Paraşüt'e istek atmaz: “Paraşüt hesabı bağlı değil … Paraşüt hesabını bağla”. Kullanıcı adı ve parolayla giriş yolu
+  yok (Paraşüt `grant_type=password`'ü kapattı; eski yedek 24 Kasım 2026'da koddan kaldırıldı).
 - **Okuma:** `GET /v4/{firma}/purchase_bills?sort=-issue_date&include=supplier,category,details,details.product,active_e_document`,
   sayfa başına 25 kayıt (Paraşüt'ün üst sınırı). Paraşüt "değişme tarihine göre" süzmeye izin vermediği için her
   eşitleme son faturanın tarihinden **75 gün geriye** bakar; bu pencerede ödenen, düzeltilen ya da iptal edilen
@@ -637,14 +602,13 @@ bir gidere bağlıysa uyarı faturanın gelir-giderde o giderde sayıldığını
 - Tek bir tedarikçinin bütün geçmişi için tedarikçi sayfasındaki **Geçmiş faturaları al** ([TEDARIKCILER.md](TEDARIKCILER.md#geçmiş-faturalar)):
   kişiye göre süzülür, listede görünmeyeni kaldırmaz (Paraşüt'te iptal edileni kaldırır), imleci değiştirmez;
   eşitleme geçmişinde "tedarikçi geçmişi" diye görünür, son eşitleme sayılmaz.
-- **Oturumu sıfırla:** kayıtlı belirteci (yeni oturum ve eski yöntemin belirteci) ve eşitleme imlecini siler (eski
-  faturaların vergi no tamamlaması ve geç girilen faturaların kimliği de baştan başlar); mevcut faturalar çoğalmaz.
-  Sonra hesabı **“Paraşüt hesabını bağla”** ile yeniden bağlamak gerekir (10 Aralık'a kadar eski kullanıcı adı/parola
-  tanımlıysa eşitleme o arada eski yöntemle sürer).
+- **Oturumu sıfırla:** kayıtlı oturumu ve eşitleme imlecini siler (eski faturaların vergi no tamamlaması ve geç
+  girilen faturaların kimliği de baştan başlar); mevcut faturalar çoğalmaz. Sonra hesabı **“Paraşüt hesabını bağla”**
+  ile yeniden bağlamak gerekir.
 - **Deneme:** `tests/parasut-esitleme-db.test.ts` eşitlemeyi sahte bir Paraşüt'e karşı gerçek Postgres'te çalıştırır
   (silinen / iptal edilen / yeniden içeri alınan e-faturalı fatura, eski faturası okunamayan yeniden içeri alma, satış
-  ve tedarikçi iadeleri, geç girilen fatura, 100'den fazla yeni faturada süren tarama, 429 ve reddedilen yenileme;
-  geçici yedek: eski yöntemle eşitleme, hesabı bağlayınca yeni yönteme geçiş, kapanan eski uç ve son tarih).
+  ve tedarikçi iadeleri, geç girilen fatura, 100'den fazla yeni faturada süren tarama, 429 ve reddedilen yenileme,
+  bağlı değilken istek atılmaması ve hesabı bağlama).
   Taramanın kuralları ayrıca Paraşüt'süz `tests/parasut-gec-fatura.test.ts`'te. Kendi geçici veritabanını açıp siler:
   `PARASUT_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx tsx --test tests/parasut-esitleme-db.test.ts`.
 - Aynı anda tek eşitleme çalışır (Postgres danışma kilidi, `SYNC_LOCK`): sabah işi sürerken "Şimdi eşitle" ya da

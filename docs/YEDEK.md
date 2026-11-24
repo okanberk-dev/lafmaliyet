@@ -42,7 +42,6 @@ Yalnız şunlar dosyaya girmez (`src/lib/backup/format.ts` › `TABLE_RULES`, `E
 | Çıkışta kapatılan oturumlar (`revoked_sessions`) | geçici; çerezin süresiyle gereksizleşir | geri yükleme herkesin oturum sürümünü artırır, eski oturumların hepsi zaten düşer |
 | Bildirim abonelikleri (`push_subscriptions`) | cihaz anahtarları | cihazlar panel açılınca yeniden abone olur |
 | Paraşüt oturumu (`integration_state` › `parasut.token`) | şifreli belirteç, her yenilemede değişir | geri yüklemeden sonra panelden **“Paraşüt hesabını bağla”** ile yeniden bağlanır |
-| Paraşüt'ün eski parola yönteminin belirteci (`parasut.legacyToken`, 10 Aralık 2026'ya kadar) | şifreli belirteç | ilk eşitlemede ortam değişkenleriyle yeniden alınır |
 | Bildirim (VAPID) anahtarı (`webpush_vapid`) | şifreli anahtar | yenisi üretilir |
 | Bar ekranındaki uygulama siparişlerinin kopyası (`site_orders`) | müşteri adları (KVKK); site bu listeyi bilerek geçmişsiz tutar | bar ekranı açılınca siteden yeniden çekilir |
 | Paraşüt'ten alınan e-fatura PDF'leri | önbellek | ilk açılışta Paraşüt'ten yeniden indirilir |
