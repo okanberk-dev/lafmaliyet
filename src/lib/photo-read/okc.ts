@@ -51,7 +51,7 @@ function wrongOkcDocument(documentType: KasaOkc["documentType"]): CashReading {
  */
 export const OKC_SOFTWARE_Z_LAFPOS_TEXT = "Bu kasanın (LafPOS) gün sonu gibi görünüyor; onun rakamları panele kendiliğinden gelir. Banka POS'un (yazarkasa) Z raporunu çekin.";
 /** Aynısı Pavo gününde (24 Kasım 2026, Marina): Pavo ayrı mali Z basmaz, gün sonu fişi istenir */
-export const OKC_SOFTWARE_Z_PAVO_TEXT = "Bu LafPOS'un kendi gün sonu raporu; rakamları panele kendiliğinden gelir. Pavo'nun gün sonu fişinin (detaylı Z) fotoğrafını çekin.";
+export const OKC_SOFTWARE_Z_PAVO_TEXT = "Bu LafPOS'un kendi raporu (mali Z değil); rakamları panele kendiliğinden gelir. Pavo'nun gün sonu fişinin (detaylı Z) fotoğrafını çekin.";
 
 /** Yalnız banka gün sonu fişi okundu (ModPOS günü, ayrı mali Z basan cihaz): yazarkasanın Z'si de istenir */
 export const OKC_BATCH_SLIP_TEXT = "Bu banka gün sonu fişi; yalnız Banka gün sonu okundu. Yazarkasanın Z raporunu da çekin.";
@@ -85,48 +85,65 @@ export function okcReadingOnLafposDay(r: CashReading, device?: LafposOkcDevice |
 /**
  * LafPOS'un kendi gün sonu kâğıdı (kapanışta fiş yazıcısından; 24 Kasım 2026, Marina): kasanın rakamlarını gören basınca
  * önce LafPOS'un yönetim raporu ("GÜN SONU · Z n", NET CİRO, altında "LafPOS yönetim raporudur, mali Z değildir"),
- * ardından Pavo'nun banka gün sonu ("BANKA GÜN SONU · PAVO"); kör kasada (kasa.rakam yok) yalnız banka kısmı. Mali
- * değildir: Z no'su LafPOS'un kendi sayacı, NET CİRO'su LafPOS'un cirosu; yazarkasa alanlarına ve Z no'ya hiç gitmez.
- * Tanıma: basılı başlık (model de kod da ilk başlığı aynen yazar) ya da mali işareti olmayan kâğıtta "NET CİRO" etiketi
+ * ardından Pavo'nun banka gün sonu ("BANKA GÜN SONU · PAVO"); kör kasada (kasa.rakam yok) yalnız banka kısmı. Gün
+ * açıkken basılan ara raporun başlığı "ARA RAPOR (X)" (aynı düzen, aynı dipnot). Mali değildir: Z no'su LafPOS'un kendi
+ * sayacı, NET CİRO'su LafPOS'un cirosu; yazarkasa alanlarına ve Z no'ya hiç gitmez. Tanıma: basılı başlık (model de kod
+ * da ilk başlığı aynen yazar; ayraç "·", "-", "|", "—" ya da hiç) ya da "NET CİRO" etiketi ("NET CİRO:", "NET CİRO (KDV
+ * DAHİL)" da); ikisinde de mali işaret (MF logosu, EKÜ NO, KÜM. satırları) olmamalı: LafPOS'un kâğıdında hiçbiri yoktur,
+ * başlığı "GÜN SONU - Z 7" okunmuş gerçek bir mali Z LafPOS'un kâğıdı sayılmaz
  */
 export function isLafposPaper(raw: Pick<KasaOkc, "title" | "dailyTotalLabel" | "fiscalMarks">): boolean {
-  const up = (v: string | null) => (v ?? "").toLocaleUpperCase("tr-TR");
-  const title = up(raw.title);
-  if (/G[ÜU]N\s*SONU\s*[·•.\-–:]\s*Z\s*\d/.test(title) || /BANKA\s*G[ÜU]N\s*SONU\s*[·•.\-–:]?\s*PAVO/.test(title)) return true;
-  return /^NET\s*C[İI]RO$/.test(up(raw.dailyTotalLabel).trim()) && !raw.fiscalMarks.ekuNo && !raw.fiscalMarks.cumulativeLines;
+  if (raw.fiscalMarks.mfLogo || raw.fiscalMarks.ekuNo || raw.fiscalMarks.cumulativeLines) return false;
+  const title = upTR(raw.title);
+  if (MANAGEMENT_TITLE.test(title) || BANK_TITLE.test(title) || INTERIM_TITLE.test(title)) return true;
+  // Etiketin noktalaması ve eki atılır: "NET CİRO:", "NET CİRO (KDV DAHİL)"
+  const label = upTR(raw.dailyTotalLabel).replace(/[^A-Z0-9ÇĞİÖŞÜ]+/g, " ").trim();
+  return /^NET\s*C[İI]RO(\s|$)/.test(label);
 }
+
+const upTR = (v: string | null) => (v ?? "").toLocaleUpperCase("tr-TR");
+/** "GÜN SONU · Z 31", "GÜN SONU - Z31", "GÜN SONU Z 31", "GÜN SONU | Z 31"; "GÜN SONU Z NO: 7" değil */
+const MANAGEMENT_TITLE = /G[ÜU]N\s*SONU\s*[^A-Z0-9ÇĞİÖŞÜ]{0,2}\s*Z\s*\d/;
+/** "BANKA GÜN SONU · PAVO" (ayraç isteğe bağlı) */
+const BANK_TITLE = /BANKA\s*G[ÜU]N\s*SONU\s*[^A-Z0-9ÇĞİÖŞÜ]{0,2}\s*PAVO/;
+/** "ARA RAPOR (X)": gün açıkken LafPOS'un ara raporu */
+const INTERIM_TITLE = /ARA\s*RAPOR\s*\(?\s*X\b/;
 
 const NO_AMOUNT: AmountRaw = { text: null, value: null, confidence: "low" };
 
 /**
- * Okunuşun karşılaştırılan ve forma giden hâli (yeni şema değeri yok: eski ai_calls satırları da aynı yoldan geçer):
- * - LafPOS'un kâğıdı: banka kısmı okunduysa banka gün sonu fişi (`batch_slip`), yoksa yazılım Z'si; Z no, toplam, ödeme
- *   ve KDV (LafPOS'un kendi rakamları) atılır, model `z_report` dese de.
- * - Banka kısmı okunmuş yazılım Z'si (aynı kâğıtta banka gün sonu): banka gün sonu fişi; yalnız banka kısmı kullanılır.
- * - Öteki her okunuş olduğu gibi.
+ * Okunuşun karşılaştırılan ve forma giden hâli (yeni şema değeri yok: eski ai_calls satırları da aynı yoldan geçer).
+ * Yalnız LafPOS'un kâğıdı dönüşür: banka kısmı okunduysa banka gün sonu fişi (`batch_slip`); Z no, toplam, ödeme ve KDV
+ * (LafPOS'un kendi rakamları) atılır, model `z_report` dese de. Banka kısmı ("BANKA GÜN SONU · PAVO" başlığı ya da model
+ * `batch_slip` dedi) var ama hiçbir banka satırı okunmadıysa (satırlar kadraj dışı, ya da kartla satış yok: "İşlem
+ * yok") okunamamış banka gün sonu fişidir (personele "Z'yi çekin" denmez); banka kısmı yoksa yazılım Z'si (ARA RAPOR da).
+ * Öteki her okunuş olduğu gibi: banka satırı da okunmuş bir yazılım Z'si (Tuzla'da ModPOS Z'si; ya da Pavo'nun detaylı
+ * Z'si yanlış sınıflanmış) yanlış belge kalır, ModPOS bölümüne okut önerisi ve güçlü modelin ikinci bakışı korunur
  */
 export function okcPaperView(raw: KasaOkc): KasaOkc {
-  if (isLafposPaper(raw)) {
-    return {
-      ...raw,
-      documentType: raw.batches.length ? "batch_slip" : "software_z",
-      zNo: { text: null, value: null, confidence: "low" },
-      receiptCount: { text: null, value: null, confidence: "low" },
-      dailyTotal: NO_AMOUNT,
-      dailyTotalLabel: null,
-      kdvGroups: [],
-      totalVat: NO_AMOUNT,
-      payments: [],
-      outside: [],
-      voids: NO_AMOUNT,
-      discounts: NO_AMOUNT,
-      cumulativeTotal: NO_AMOUNT,
-      cumulativeVat: NO_AMOUNT,
-    };
-  }
-  if (raw.documentType === "software_z" && raw.batches.length) return { ...raw, documentType: "batch_slip" };
-  return raw;
+  if (!isLafposPaper(raw)) return raw;
+  const bankPart = raw.batches.length > 0 || raw.documentType === "batch_slip" || BANK_TITLE.test(upTR(raw.title));
+  return {
+    ...raw,
+    documentType: bankPart ? "batch_slip" : "software_z",
+    readable: raw.readable && (raw.batches.length > 0 || !bankPart),
+    zNo: { text: null, value: null, confidence: "low" },
+    receiptCount: { text: null, value: null, confidence: "low" },
+    dailyTotal: NO_AMOUNT,
+    dailyTotalLabel: null,
+    kdvGroups: [],
+    totalVat: NO_AMOUNT,
+    payments: [],
+    outside: [],
+    voids: NO_AMOUNT,
+    discounts: NO_AMOUNT,
+    cumulativeTotal: NO_AMOUNT,
+    cumulativeVat: NO_AMOUNT,
+  };
 }
+
+/** LafPOS'un banka gün sonu kâğıdı okundu ama banka satırları yok (kadraj dışı ya da "İşlem yok") */
+export const OKC_LAFPOS_BANK_UNREAD_TEXT = "Bu LafPOS'un banka gün sonu kâğıdı ama banka satırları okunamadı; Bankalar ve TOPLAM görünecek şekilde yeniden çekin.";
 
 /**
  * Yalnız banka gün sonu fişi okundu ama Z'nin izleri var (Z no, günün toplamı, nakit / kart / yemek kartı / diğer satırı,
@@ -203,7 +220,7 @@ function batchesOf(raw: KasaOkc, day: string): { value: number; confidence: Conf
 export function normalizeOkc(read: KasaOkc, ctx: OkcReadContext): CashReading {
   const raw = okcPaperView(read);
   if (raw.documentType !== "z_report" && raw.documentType !== "batch_slip") return wrongOkcDocument(raw.documentType);
-  if (!raw.readable || raw.issues.includes("not_a_document")) return failed("kasa-okc", UNREADABLE_TEXT);
+  if (!raw.readable || raw.issues.includes("not_a_document")) return failed("kasa-okc", raw !== read && raw.documentType === "batch_slip" && !raw.batches.length ? OKC_LAFPOS_BANK_UNREAD_TEXT : UNREADABLE_TEXT);
   const values: Partial<Record<ReadField, ReadValue>> = {};
   const checks: (ReadCheck | null)[] = [];
   const issues = (fieldValues: Partial<Record<ReadField, ReadValue>>) =>

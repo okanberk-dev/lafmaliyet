@@ -94,9 +94,9 @@ const bankHit = (f: string) => BANKS.some((b) => new RegExp(`(^|\\s)${b}(\\s|$)`
 /**
  * LafPOS'un kendi gün sonu kâğıdının işaretleri (katlanmış metinde): "GÜN SONU · Z n" başlığı, "LafPOS yönetim
  * raporudur, mali Z değildir", "BANKA GÜN SONU · PAVO", "PAVO - LAFPOS KARŞILAŞTIRMA", "Pavo cihazının banka gün sonu
- * özetidir" (LafPOS src/lib/print.tsx ZReceipt, BankEodReceipt)
+ * özetidir"; gün açıkken basılan ara raporun başlığı "ARA RAPOR (X)" (LafPOS src/lib/print.tsx ZReceipt, BankEodReceipt)
  */
-const LAFPOS_MARK = /^GUN SONU Z \d+$|LAFPOS YONETIM RAPORUDUR|MALI Z DEGILDIR|BANKA GUN SONU PAVO|PAVO LAFPOS KARSILASTIRMA|PAVO CIHAZININ BANKA GUN SONU/;
+const LAFPOS_MARK = /^GUN SONU Z \d+$|^ARA RAPOR \(?X\)?$|LAFPOS YONETIM RAPORUDUR|MALI Z DEGILDIR|BANKA GUN SONU PAVO|PAVO LAFPOS KARSILASTIRMA|PAVO CIHAZININ BANKA GUN SONU/;
 
 /** İşaret karşılaştırması: ayraçlar ("·" OCR'da ":" ya da "." okunabilir) boşluk */
 const markOf = (s: string) => fold(s).replace(/[.:/]/g, " ").replace(/\s+/g, " ").trim();
@@ -111,7 +111,8 @@ export function isLafposPaperOcr(lines: readonly OcrLine[]): boolean {
  * okunmaz, Z sayılmaz. Banka kısmı ("BANKA GÜN SONU · PAVO") varsa banka gün sonu fişidir: "Bankalar" altındaki her satır
  * aynı batch'in bir bankası (batch no "Batch" satırından, net = satırın tutarı); banka satırı yoksa TOPLAM tek satır.
  * Bankaların toplamı TOPLAM'ı tutmuyorsa hepsi şüpheli. "PAVO - LAFPOS KARŞILAŞTIRMA" satırları (Pavo kart toplamı,
- * LafPOS kart toplamı, FARK) okunmaz. Banka kısmı yoksa yazılım Z'si (yanlış belge). Başlık aynen (okc.ts isLafposPaper)
+ * LafPOS kart toplamı, FARK) okunmaz. Banka kısmı yoksa yazılım Z'si (yanlış belge; ARA RAPOR (X) de); banka kısmı var ama
+ * satırı yoksa okunamamış banka fişi. Başlık aynen (okc.ts isLafposPaper)
  */
 function parseLafposPaperOcr(lines: readonly OcrLine[]): { raw: KasaOkc; found: string[] } {
   const found = new Set<string>(["lafpos"]);
@@ -120,6 +121,7 @@ function parseLafposPaperOcr(lines: readonly OcrLine[]): { raw: KasaOkc; found: 
   let time: string | null = null;
   let dateConfidence: "high" | "low" = "low";
   let inBank = false;
+  let bankPart = false;
   let batchNo: string | null = null;
   let total: AmountRaw = LOW_NONE;
   const banks: { bank: string; net: AmountRaw }[] = [];
@@ -141,13 +143,14 @@ function parseLafposPaperOcr(lines: readonly OcrLine[]): { raw: KasaOkc; found: 
       }
     }
     const mark = markOf(l.text);
-    if (/^GUN SONU Z \d+$/.test(mark)) {
+    if (/^GUN SONU Z \d+$|^ARA RAPOR \(?X\)?$/.test(mark)) {
       title ??= l.text.trim();
       continue;
     }
     if (/BANKA GUN SONU PAVO/.test(mark)) {
       title ??= l.text.trim();
       inBank = true;
+      bankPart = true;
       continue;
     }
     if (!inBank) continue;
@@ -182,11 +185,12 @@ function parseLafposPaperOcr(lines: readonly OcrLine[]): { raw: KasaOkc; found: 
   }
   const entries = banks.length ? banks : total.text !== null ? [{ bank: null, net: total }] : [];
   const batches: Batch[] = entries.map((e) => ({ bank: e.bank, batchNo, date, salesTotal: LOW_NONE, refundTotal: LOW_NONE, netTotal: e.net, transactionCount: null }));
-  const documentType: KasaOkc["documentType"] = batches.length ? "batch_slip" : title ? "software_z" : "other";
+  // Banka kısmı var ama satırı yok (kadraj dışı ya da "İşlem yok"): okunamamış banka fişi (okc.ts okcPaperView ile aynı)
+  const documentType: KasaOkc["documentType"] = batches.length || bankPart ? "batch_slip" : title ? "software_z" : "other";
   const raw: KasaOkc = {
     documentType,
     fiscalMarks: { mfLogo: false, ekuNo: false, cumulativeLines: false, vatBlock: false },
-    readable: documentType !== "other",
+    readable: documentType === "software_z" || batches.length > 0,
     title,
     date,
     time,

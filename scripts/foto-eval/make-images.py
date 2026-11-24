@@ -231,3 +231,23 @@ MODPOS_ON_OKC = [
     "", "^MALİ DEĞERİ YOKTUR",
 ]
 photo(receipt(MODPOS_ON_OKC, fade=0.15), "modpos-z-yazarkasada.jpg", angle=-2.0)
+
+# ── İnceleme (gün sonu dalı): istem değişikliğinin en riskli yolları ──
+# Katlanmış (KDV ve kümülatif kısmı kâğıdın arkasında) yazarkasa Z'si: yalnız MF logosu, Z SAYAÇ ve toplamlar görünür,
+# EKÜ NO ve KÜM. satırı yok. Z_TASK / POS_TASK artık Z NO'yu tek başına mali işaret saymıyor; mali Z yine tanınmalı
+OKC_Z_FOLDED = OKC_Z[:7] + [
+    "-" * 40, "**NET SATIŞ|*12.300,00", "NAKİT|41", "|*3.180,00", "K.KARTI|87", "|*8.480,00", "YEMEK KARTI|6", "|*640,00",
+    "-" * 40, "MALİ VERİ TOPLAM|*12.300,00", "Z SAYAÇ|0188", "", "^MF  AB 0000012345",
+]
+photo(receipt(OKC_Z_FOLDED, fade=0.15), "yazarkasa-z-katli.jpg", angle=-1.5)
+
+# LafPOS'un gün açıkken bastığı ara rapor: başlık "ARA RAPOR (X)", NET CİRO, "mali Z değildir"; Z sayılmaz
+LAFPOS_X = LAFPOS_HEAD + [
+    "**^ARA RAPOR (X)", "İş günü|2026-11-24", "Yazdırma|24.11.2026 18:40", "-" * 40,
+    "Brüt satış|820,00", "İndirim|-20,00", "**NET CİRO|800,00 TL", "Adisyon / kişi|11 / 18", "-" * 40,
+    "^Ödemeler", "Nakit (7)|260,00", "Kart (4)|540,00", "-" * 40,
+    "KDV oranı / matrah|KDV", "%10 / 727,27|72,73", "-" * 40,
+    "^Kasa", "Açılış nakiti|1.500,00", "**Beklenen nakit|1.760,00", "-" * 40,
+    "^LafPOS yönetim raporudur, mali Z değildir", "",
+]
+photo(receipt(LAFPOS_X, fade=0.1), "lafpos-ara-rapor.jpg", angle=1.0)

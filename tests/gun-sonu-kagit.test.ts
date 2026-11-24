@@ -19,6 +19,7 @@ import {
   normalizeOkc,
   OKC_BATCH_SLIP_LAFPOS_TEXT,
   OKC_BATCH_SLIP_TEXT,
+  OKC_LAFPOS_BANK_UNREAD_TEXT,
   OKC_SOFTWARE_Z_LAFPOS_TEXT,
   OKC_SOFTWARE_Z_PAVO_TEXT,
   okcPaperView,
@@ -201,8 +202,26 @@ test("LafPOS rakamlı kâğıdı (GÜN SONU · Z n + NET CİRO + banka kısmı):
   assert.equal(check(byLabel).zNoFromPhoto, null);
   assert.equal(isLafposPaper({ ...byLabel, fiscalMarks: { mfLogo: true, ekuNo: true, cumulativeLines: true, vatBlock: true } }), false);
   // Başlığın yazımı: ayraç ve harf büyüklüğü
-  for (const title of ["GÜN SONU · Z 31", "Gün sonu - Z 31", "GUN SONU • Z31", "Banka gün sonu · Pavo", "BANKA GÜN SONU PAVO"]) assert.equal(isLafposPaper(base({ title })), true, title);
-  for (const title of ["Z RAPORU", "GÜN SONU RAPORU", "BANKA GÜN SONU", "DETAYLI Z", "GÜN SONU Z NO: 7", null]) assert.equal(isLafposPaper(base({ title })), false, String(title));
+  // NET CİRO etiketi noktalama ya da ekle yazılsa da ("NET CİRO:", "NET CİRO (KDV DAHİL)")
+  for (const dailyTotalLabel of ["NET CİRO:", "NET CİRO (KDV DAHİL)", "Net Ciro", "NET CIRO"]) {
+    const raw = rakamliKagit({ title: "L'AFFOGATO", dailyTotalLabel });
+    assert.equal(isLafposPaper(raw), true, dailyTotalLabel);
+    assert.equal(okcPaperView(raw).zNo.text, null, dailyTotalLabel);
+  }
+  assert.equal(isLafposPaper(base({ dailyTotalLabel: "NET SATIŞ" })), false);
+  // Başlığın yazımı: ayraç (hiç yoksa da) ve harf büyüklüğü; ara rapor da LafPOS'un
+  for (const title of ["GÜN SONU · Z 31", "Gün sonu - Z 31", "GUN SONU • Z31", "GÜN SONU Z 14", "GÜN SONU — Z 14", "GÜN SONU | Z 14", "Banka gün sonu · Pavo", "BANKA GÜN SONU PAVO", "BANKA GÜN SONU — PAVO", "ARA RAPOR (X)", "Ara rapor X"])
+    assert.equal(isLafposPaper(base({ title })), true, title);
+  for (const title of ["Z RAPORU", "GÜN SONU RAPORU", "BANKA GÜN SONU", "DETAYLI Z", "GÜN SONU Z NO: 7", "GÜN SONU (DETAYLI Z)", "X RAPORU", null]) assert.equal(isLafposPaper(base({ title })), false, String(title));
+  // Mali işareti olan kâğıt başlığı ne olursa olsun LafPOS'un değildir: Z no'su ve rakamları kalır
+  for (const title of ["GÜN SONU - Z 0007", "GÜN SONU: Z 7"]) {
+    const fiscal = maliZ();
+    for (const marks of [{ mfLogo: true }, { ekuNo: true }, { cumulativeLines: true }]) {
+      const raw = { ...fiscal, title, fiscalMarks: { mfLogo: false, ekuNo: false, cumulativeLines: false, vatBlock: true, ...marks } };
+      assert.equal(isLafposPaper(raw), false, `${title} ${JSON.stringify(marks)}`);
+      assert.equal(okcPaperView(raw).zNo.text, "0188");
+    }
+  }
 });
 
 test("LafPOS kâğıdının yalnız TOPLAM'ı okunduysa (banka adı yok) Pavo'nun iki bankalı dökümüyle fark çıkmaz; toplamı karşılaştırılır", () => {
@@ -229,6 +248,48 @@ test("Yalnız LafPOS'un yönetim raporu (banka kısmı yok): yanlış belge; Pav
   assert.ok(cheapReadingProblems(raw, { expectBatches: true }).includes("belge türü"));
 });
 
+test("LafPOS'un banka kısmı okundu ama banka satırı yok (kadraj dışı ya da 'İşlem yok'): okunamadı, yeniden çekin; 'Z'yi çekin' denmez", () => {
+  for (const raw of [korKagit({ batches: [] }), korKagit({ batches: [], title: "L'AFFOGATO", dailyTotalLabel: "NET CİRO" })]) {
+    const view = okcPaperView(raw);
+    assert.deepEqual([view.documentType, view.readable], ["batch_slip", false], raw.title ?? "");
+    const r = read(raw);
+    assert.deepEqual([r.ok, r.switchTo, r.error], [false, null, OKC_LAFPOS_BANK_UNREAD_TEXT]);
+    assert.deepEqual(okcReadingOnLafposDay(r, PAVO), r, "Pavo gününde de aynı metin");
+    assert.ok(!/Z rapor|detaylı Z/i.test(r.error ?? ""));
+    assert.equal(check(raw).state, "okunamadi");
+    assert.ok(cheapReadingProblems(raw, { expectBatches: true }).includes("okunamadı"), "güçlü model bir kez bakar");
+  }
+});
+
+test("LafPOS'un ara raporu (ARA RAPOR (X)): model x_report dese de yazılım Z'si; Pavo gününde LafPOS'un raporu denir, Z no ve NET CİRO forma gitmez", () => {
+  const raw = rakamliKagit({ documentType: "x_report", title: "ARA RAPOR (X)", zNo: NONE, batches: [] });
+  assert.equal(isLafposPaper(raw), true);
+  assert.equal(okcPaperView(raw).documentType, "software_z");
+  const pavo = okcReadingOnLafposDay(read(raw), PAVO);
+  assert.deepEqual([pavo.ok, pavo.error, pavo.switchTo], [false, OKC_SOFTWARE_Z_PAVO_TEXT, null]);
+  assert.doesNotMatch(pavo.error ?? "", /yazarkasadan Z raporunu/);
+  assert.equal(check(raw).state, "okunamadi");
+});
+
+test("Pavo'nun detaylı Z'si ucuz okumada software_z sanıldıysa (banka satırlarıyla): Z kaybolmaz; güçlü model çağrılır, 'uyumlu' denmez", () => {
+  const detayli = base({
+    ...maliZ(),
+    documentType: "software_z",
+    title: "GÜN SONU (DETAYLI Z)",
+    zNo: { text: "0007", value: 7, confidence: "high" },
+    batches: [bank("Garanti BBVA", "000278", 240), bank("Garanti BBVA", "000279", 755)],
+  });
+  assert.equal(isLafposPaper(detayli), false);
+  assert.equal(okcPaperView(detayli), detayli, "LafPOS'un kâğıdı değilse dönüşmez");
+  assert.ok(cheapReadingProblems(detayli, { expectBatches: true }).includes("belge türü"), "güçlü model okur");
+  const r = okcReadingOnLafposDay(read(detayli), PAVO);
+  assert.equal(r.ok, false);
+  assert.ok(!texts(r).includes(OKC_BATCH_SLIP_LAFPOS_TEXT), "Banka gün sonu okundu denmez");
+  const c = check(detayli);
+  assert.notEqual(c.state, "uyumlu");
+  assert.ok(!c.rows.some((x) => x.info), JSON.stringify(c.rows));
+});
+
 // ——— 3. ModPOS'un Z'si ———
 
 test("ModPOS Z'si (kendi Z no'su, MF logosu, BİLGİ FİŞİ): yazarkasa bölümünde yanlış belge, ModPOS bölümüne okut; istemlerde Z NO tek başına mali işaret değil", () => {
@@ -237,10 +298,13 @@ test("ModPOS Z'si (kendi Z no'su, MF logosu, BİLGİ FİŞİ): yazarkasa bölüm
   assert.equal(okcPaperView(raw), raw);
   const r = read(raw);
   assert.deepEqual([r.ok, r.switchTo, r.error], [false, "kasa-z", "Bu ModPOS'un Z raporu gibi görünüyor."]);
-  // Aynı şeritte banka gün sonu da okunduysa banka kısmı kullanılır (yalnız Banka gün sonu)
-  const withSlip = read({ ...raw, batches: [bank("Garanti BBVA", "0234", 8_915)] });
-  assert.equal(withSlip.ok, true);
-  assert.deepEqual(Object.keys(withSlip.values), ["bankPos"]);
+  // Aynı şeritte banka satırı da okunduysa da (Tuzla: ModPOS Z'sinin altında banka fişi) yanlış belge kalır: ModPOS
+  // bölümüne okut önerisi gider, Banka POS dolmaz (dönüşüm yalnız LafPOS'un kâğıdında)
+  const withSlip = { ...raw, batches: [bank("Garanti BBVA", "0234", 8_915)] };
+  assert.equal(okcPaperView(withSlip), withSlip);
+  assert.deepEqual([read(withSlip).ok, read(withSlip).switchTo], [false, "kasa-z"]);
+  assert.deepEqual(Object.keys(read(withSlip).values), []);
+  assert.ok(cheapReadingProblems(withSlip, { expectBatches: true }).includes("belge türü"));
   // İstemler: ModPOS Z bölümü ve kart bölümü Z NO'yu mali işaret saymaz; yazarkasa bölümü yazılımın Z no'sunu bilir
   assert.doesNotMatch(Z_TASK(DAY), /KÜMÜLATİF lines, Z NO \/ Z SAYAÇ\)/);
   assert.match(Z_TASK(DAY), /MF logo with a registry number together with EKÜ NO or KÜM\. \/ KÜMÜLATİF lines/);
@@ -380,4 +444,11 @@ test("Kodla okuma: LafPOS'un kâğıdı Z sayılmaz; Bankalar satırları batch,
   // Banka satırı okunmadıysa TOPLAM tek satır
   const totalOnly = parsePavoOcr(KOR_LINES.filter((l) => !/^(Garanti|Akbank)/.test(l)).map((l) => ln(l))).raw;
   assert.deepEqual(totalOnly.batches.map((b) => [b.bank, b.netTotal.value]), [[null, 755]]);
+  // Kartla satış yok ("İşlem yok", "TOPLAM -"): okunamamış banka fişi, yazılım Z'si değil
+  const empty = parsePavoOcr(["L'AFFOGATO", "BANKA GÜN SONU · PAVO", "Batch 000280", "Bankalar", "İşlem yok", "TOPLAM -", "PAVO - LAFPOS KARŞILAŞTIRMA"].map((l) => ln(l))).raw;
+  assert.deepEqual([empty.documentType, empty.readable, empty.batches.length], ["batch_slip", false, 0]);
+  assert.equal(read(empty).error, OKC_LAFPOS_BANK_UNREAD_TEXT);
+  // Ara rapor: LafPOS'un kâğıdı, yazılım Z'si; NET CİRO'su okunmaz
+  const x = parsePavoOcr(Z_LINES.map((l) => ln(l === "GÜN SONU · Z 31" ? "ARA RAPOR (X)" : l))).raw;
+  assert.deepEqual([x.documentType, x.title, x.dailyTotal.value, x.zNo.text], ["software_z", "ARA RAPOR (X)", null, null]);
 });

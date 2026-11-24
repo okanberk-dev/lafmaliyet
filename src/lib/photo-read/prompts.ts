@@ -64,8 +64,9 @@ documentType:
 - other: anything else.
 Fill fiscalMarks with what is printed.
 
-The café's own software (LafPOS) prints a non-fiscal paper at day close: a management report titled "GÜN SONU · Z <n>" (NET CİRO, payments, KDV, ending "LafPOS yönetim raporudur, mali Z değildir") and/or a bank part titled "BANKA GÜN SONU · PAVO" (Batch, Bankalar, TOPLAM, then PAVO - LAFPOS KARŞILAŞTIRMA). Its Z number is the software's own counter, not a fiscal Z. For this paper:
-- title: copy the LafPOS title exactly ("GÜN SONU · Z 42" or "BANKA GÜN SONU · PAVO"), not the business name above it.
+The café's own software (LafPOS) prints a non-fiscal paper at day close: a management report titled "GÜN SONU · Z <n>" (NET CİRO, payments, KDV, ending "LafPOS yönetim raporudur, mali Z değildir") and/or a bank part titled "BANKA GÜN SONU · PAVO" (Batch, Bankalar, TOPLAM, then PAVO - LAFPOS KARŞILAŞTIRMA). Before close the same management report is titled "ARA RAPOR (X)". Its Z number is the software's own counter, not a fiscal Z. For this paper:
+- title: copy the LafPOS title exactly ("GÜN SONU · Z 42", "ARA RAPOR (X)" or "BANKA GÜN SONU · PAVO"), not the business name above it.
+- dailyTotalLabel: "NET CİRO" as printed, even though dailyTotal stays null.
 - documentType batch_slip when the BANKA GÜN SONU part is in the photo, else software_z.
 - zNo, dailyTotal, totalVat: null; payments, kdvGroups: empty. Never copy NET CİRO, its Z number or its payment lines.
 - batches: one entry per line under Bankalar, each with the printed Batch number, bank = the line's name, netTotal = its amount (salesTotal and refundTotal null); if no bank line is printed, one entry with the TOPLAM. The PAVO - LAFPOS KARŞILAŞTIRMA lines (Pavo kart toplamı, LafPOS kart toplamı, FARK) are never a batch.
@@ -92,7 +93,7 @@ Reading the Z:
  */
 export const OKC_SHORT_TASK = (day: string) => `This should be the Pavo POS end-of-day slip of the café (GÜN SONU / DETAYLI Z). Business day: ${day} (printed before 05:00 = the day before).
 - documentType: z_report if Z figures are printed (Z NO, total, payment lines, KDV), also when the bank end-of-day is on the same paper; batch_slip if only the bank end-of-day (BATCH / GRUP, bank, net); else other.
-- LafPOS paper (title "GÜN SONU · Z <n>" with NET CİRO and "mali Z değildir", or "BANKA GÜN SONU · PAVO"): not fiscal. title = that title exactly; batch_slip if the BANKA GÜN SONU part is there, else software_z; zNo, dailyTotal null, payments and kdvGroups empty; batches: one per line under Bankalar (Batch no, bank, net = its amount), never the PAVO - LAFPOS KARŞILAŞTIRMA lines.
+- LafPOS paper (title "GÜN SONU · Z <n>" or "ARA RAPOR (X)" with NET CİRO and "mali Z değildir", or "BANKA GÜN SONU · PAVO"): not fiscal. title = that title exactly; batch_slip if the BANKA GÜN SONU part is there, else software_z; zNo, dailyTotal null, payments and kdvGroups empty; batches: one per line under Bankalar (Batch no, bank, net = its amount), never the PAVO - LAFPOS KARŞILAŞTIRMA lines.
 - dailyTotal: the Z's own total (TOPLAM / NET SATIŞ / MALİ VERİ TOPLAM). Never KÜM. / cumulative, never TOPKDV.
 - payments: every payment line. NAKİT → cash; KREDİ KARTI / K.KARTI → card; YEMEK KARTI → meal_card; a bank name under the card line → bank_subline; else other.
 - kdvGroups: per rate total and vat (skip 0,00 groups); totalVat: TOPKDV. zNo: Z NO / Z SAYAÇ (not FİŞ NO, not BATCH NO).

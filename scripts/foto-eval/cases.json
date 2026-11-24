@@ -203,5 +203,43 @@
     "day": "2026-11-23",
     "prevZNo": "0186",
     "expect": { "documentType": "z_report", "values": { "zTotal": 12975.5, "cash": 3420.5, "card": 8915, "mealCard": 640, "zNo": "0187" } }
+  },
+  {
+    "name": "modpos-z-yazarkasada-yazarkasa-bolumune",
+    "image": "modpos-z-yazarkasada.jpg",
+    "feature": "kasa-okc",
+    "day": "2026-11-23",
+    "expect": { "documentType": "software_z", "viewType": "software_z", "ok": false, "switchTo": "kasa-z", "absent": ["okcZNo", "okcTotal", "bankPos"] }
+  },
+  {
+    "name": "yazarkasa-z-katli-modpos-bolumune",
+    "image": "yazarkasa-z-katli.jpg",
+    "feature": "kasa-z",
+    "day": "2026-10-21",
+    "expect": { "documentType": "fiscal_z_report", "ok": false, "switchTo": null }
+  },
+  {
+    "name": "yazarkasa-z-katli-kart-bolumune",
+    "image": "yazarkasa-z-katli.jpg",
+    "feature": "kasa-pos",
+    "day": "2026-10-21",
+    "expect": { "documentType": "fiscal_z_report", "ok": false, "switchTo": null }
+  },
+  {
+    "name": "lafpos-ara-rapor",
+    "image": "lafpos-ara-rapor.jpg",
+    "feature": "kasa-okc",
+    "day": "2026-11-24",
+    "lafposDevice": { "provider": "pavo", "zReport": false },
+    "expect": { "viewType": "software_z", "ok": false, "switchTo": null, "absent": ["okcZNo", "okcTotal", "okcCash", "okcCard"], "errorIncludes": "LafPOS" }
+  },
+  {
+    "name": "lafpos-ara-rapor-ucuz",
+    "image": "lafpos-ara-rapor.jpg",
+    "feature": "kasa-okc",
+    "task": "kisa",
+    "day": "2026-11-24",
+    "lafposDevice": { "provider": "pavo", "zReport": false },
+    "expect": { "viewType": "software_z", "ok": false, "switchTo": null, "absent": ["okcZNo", "okcTotal", "okcCash", "okcCard"], "errorIncludes": "LafPOS" }
   }
 ]
