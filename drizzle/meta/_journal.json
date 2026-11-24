@@ -519,6 +519,13 @@
       "when": 1795499072687,
       "tag": "0073_kira_ev_sahibi",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1795529645133,
+      "tag": "0074_lafpos_personel",
+      "breakpoints": true
     }
   ]
 }

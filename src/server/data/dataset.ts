@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, gte, inArray } from "drizzle-orm";
 
 import { channelNameResolver } from "@/app/panel/tedarikciler/logic";
 import { ALL_BRANCHES, branchPnlEntry, DEFAULT_POS_RATE, monthTotalsLocked, type BranchScope } from "@/lib/branches";
@@ -13,7 +13,8 @@ import { closedDaysIn, closedRowApplies } from "@/lib/closed-days";
 import { channelOf } from "@/lib/commission/channels";
 import { COMMISSION_CATEGORY, settingsFromRows } from "@/lib/constants";
 import { modposZBetween } from "@/lib/lafpos/sales";
-import { isLafposBranch, LAFPOS_BRANCH_ID, scopeSwitchDay } from "@/lib/lafpos/switch";
+import type { LafposWorked } from "@/lib/lafpos/personel";
+import { branchSwitchDay, isLafposBranch, LAFPOS_BRANCH_ID, scopeSwitchDay } from "@/lib/lafpos/switch";
 import { addDays } from "@/lib/reminders";
 import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import type { SiteSalesMonth } from "@/lib/site-sales/schema";
@@ -209,13 +210,16 @@ async function readDataset(): Promise<Dataset> {
   const billMonths = new Set(pnlEntries.filter((e) => e.rowKey === "manual:su" && e.amount > 0).map((e) => e.month));
   // Satış satırları LafPOS'la birleşir (mergeSales). LafPOS'un ikramları geçiş gününden itibaren kayıtlı tüketime
   // (src/lib/lafpos/ikram.ts); geçiş günü yoksa okunmaz
-  const [sales, lafposIkram, waterSales] = await Promise.all([
+  const [sales, lafposIkram, waterSales, lafposWorked] = await Promise.all([
     mergeSales(db, { switchDay: settings.lafposGecisGunu, salesLines: salesLines.map(salesLineOf), coverage, lafposCoverage, today, till }),
     settings.lafposGecisGunu ? loadLafposIkram(db, settings.lafposGecisGunu) : Promise.resolve(null),
     branch && billMonths.size
       ? // Su litresi "Tümü" kapsamında: geçiş günü şubeye göre kısılmış değil, işletmenin ayarı (Tuzla'nın LafPOS satışı da sayılsın)
         companyWaterSales(db, { switchDay: scopeSwitchDay(storedSettings.lafposGecisGunu, ALL_BRANCHES), coverage: coverageOf(null), lafposCoverage, today, months: billMonths, siteSales: branch.kind === "online" ? siteSales : null })
       : Promise.resolve(null),
+    // Personel bağlantısı (LM-4b): LafPOS'un şubesinin sayılan günlerinin çalışan kimlikleri (yemek kartının günü);
+    // görünümün geçiş günü yoksa (LafPOS'un şubesi görünümde değil) okunmaz
+    settings.lafposGecisGunu ? loadLafposWorked(db, branchSwitchDay(storedSettings.lafposGecisGunu, LAFPOS_BRANCH_ID)) : Promise.resolve(null),
   ]);
   // Satış listesinin son gününe kadarki kasa raporları (aynı ilk rapor günüyle: ay ortasında başlayan ilk ay aynı tanınır).
   // Eksik gün, ay bilgisindeki gibi ilk kasa raporundan (ya da LafPOS gün sonundan) aranır: raporlar başlamadan önceki
@@ -336,6 +340,7 @@ async function readDataset(): Promise<Dataset> {
     salesLines: sales.salesLines,
     ...(sales.lafposSales ? { lafposSales: sales.lafposSales } : {}),
     ...(lafposIkram ? { lafposIkram } : {}),
+    ...(lafposWorked ? { lafposWorked } : {}),
     // Kapalı işaretli bütün günler (ileri tarihliler dahil): süren ayın ay sonu öngörüsü bunları açık saymaz (E-41).
     // Raporlu gün ve satışlı yedek satır (LafPOS gün sonu, ModPOS föyü) kapalı sayılmaz (tillMonths ile aynı kural)
     // Şubelerin banka POS oranı (Şubeler): banka POS komisyonu şube şube kart × oran (engine.ts posCommission)
@@ -469,6 +474,21 @@ async function readDataset(): Promise<Dataset> {
 }
 
 /** Veritabanının satış satırı → modelin satış satırı */
+/**
+ * LafPOS'un şubesinin geçiş gününden itibaren gelen gün sonları ve her günün çalışan kimlikleri (LM-4b;
+ * pos_day_reports.worked_staff, gelmediyse null). Yemek kartının günü bundan (src/lib/lafpos/personel.ts
+ * lafposWorkedDays). Yalnız gün ve kimlik okunur
+ */
+async function loadLafposWorked(db: DB, switchDay: string | null): Promise<LafposWorked | null> {
+  if (!switchDay) return null;
+  const rows = await db
+    .select({ date: s.posDayReports.date, refs: s.posDayReports.workedStaff })
+    .from(s.posDayReports)
+    .where(and(eq(s.posDayReports.branchId, LAFPOS_BRANCH_ID), gte(s.posDayReports.date, switchDay)))
+    .orderBy(asc(s.posDayReports.date));
+  return { switchDay, days: rows.map((r) => ({ date: r.date, refs: Array.isArray(r.refs) ? r.refs.filter((x): x is string => typeof x === "string") : null })) };
+}
+
 function salesLineOf(l: typeof s.salesLines.$inferSelect): SalesLine {
   return {
     id: l.id,

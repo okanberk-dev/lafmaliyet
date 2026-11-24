@@ -84,6 +84,7 @@ async function StaffContent() {
     userId: x.userId ?? null,
     personRef: x.personRef ?? null,
     calledDays: x.cost.calledDays,
+    lafposDays: x.cost.lafposDays,
     startMonth: x.startMonth ?? null,
     endMonth: x.endMonth ?? null,
     status: x.status,

@@ -2316,6 +2316,13 @@ export const posDayReports = pgTable(
     cashMoves: jsonb("cash_moves").$type<PosCashMove[]>(),
     /** LafPOS'un son kabul edilen gövdesinin gönderim sırası (1'den); eski LafPOS göndermez: null */
     revision: integer("revision"),
+    /**
+     * LM-4b (personel bağlantısı; docs/LAFPOS.md › Personel bağlantısı): o gün çalışanların lafmaliyet personel kimlikleri
+     * (`s:<staff.id>`, tekil, sayı sırasıyla; ad yok). Gövde alanı taşıdıysa yazılır, taşımayan gönderim (eski LafPOS ya da
+     * bağlı kullanıcı kalmadı) öncekini silmez. Hiç gelmediyse null: o günün çalışanları bilinmez (yemek kartı varsayılan
+     * günle; src/lib/lafpos/personel.ts lafposWorkedDays)
+     */
+    workedStaff: jsonb("worked_staff").$type<string[]>(),
     /** Gönderen sistem ("lafpos") */
     source: text("source").notNull(),
     /** Son gönderimin geldiği an (düzeltme yeniden gönderince değişir) */

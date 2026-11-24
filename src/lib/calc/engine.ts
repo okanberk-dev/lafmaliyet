@@ -16,6 +16,7 @@ import { money, monthLabel, num, pct, tl } from "../format";
 import { isCountable } from "../ingredient-usage";
 import { panelWasteCounts } from "../lafpos/ikram";
 import { periodKasa } from "../lafpos/kasa";
+import { lafposWorkedDays } from "../lafpos/personel";
 import { dayRangeTR } from "../lafpos/sales";
 import { buildSiteLinkIndex, mapSiteLines, OPTION_KINDS, optionProductId, optionTotals, siteRevenue, type OptionKind, type SiteRevenue } from "../site-sales/calc";
 import type { SiteSalesLine, SiteSalesMonth } from "../site-sales/schema";
@@ -372,6 +373,12 @@ export interface StaffCost {
   dailyWages: number;
   /** Part-time: Vardiya'da çağrıldığı gün; bağlantısız part-time ve tam zamanlıda null */
   calledDays: number | null;
+  /**
+   * LafPOS'ta çalıştığı gün (LM-4b; src/lib/lafpos/personel.ts lafposWorkedDays): ayın her sayılan LafPOS günü çalışan
+   * listesini taşıyorsa. Tam zamanlıda yemek kartının günü budur (gün oranıyla bir daha oranlanmaz); part-time'da yalnız
+   * bilgi (yemek kartı çağrıldığı günle). Bilinmiyorsa null
+   */
+  lafposDays: number | null;
   total: number;
 }
 
@@ -383,6 +390,11 @@ export interface StaffCostOptions {
   mealDays?: number;
   /** Part-time: Vardiya'da çağrıldığı gün (model.calledDaysOf); bağlantısızsa null ya da verilmez (tutar tahmin edilmez) */
   calledDays?: number | null;
+  /**
+   * LafPOS'ta çalıştığı gün (LM-4b, model.lafposDaysOf): verilirse tam zamanlının yemek kartı bu günle (mealDays'ten önce);
+   * null ya da verilmezse Ayarlar'daki gün. Part-time'da yalnız satıra yazılır
+   */
+  lafposDays?: number | null;
 }
 
 /** Yemek kartı ayda: günlük tutar × gün (işaretsiz kişide 0) */
@@ -425,6 +437,7 @@ export function staffCost(s: Staff, st: Settings, opts: StaffCostOptions = {}): 
       mealDays: s.mealCard ? days : 0,
       dailyWages,
       calledDays,
+      lafposDays: opts.lafposDays ?? null,
       total: dailyWages + mealCard + s.extras,
     };
   }
@@ -432,7 +445,8 @@ export function staffCost(s: Staff, st: Settings, opts: StaffCostOptions = {}): 
   const deductions = gross * (st.isciSgk + st.isciIssizlik);
   const employerSgk = gross * st.isverenSgk;
   const employerUnemployment = gross * st.isverenIssizlik;
-  const mealDays = s.mealCard ? (opts.mealDays ?? st.mealCardDays) : 0;
+  const lafposDays = opts.lafposDays ?? null;
+  const mealDays = s.mealCard ? (lafposDays ?? opts.mealDays ?? st.mealCardDays) : 0;
   const mealCard = mealCardOf(s, st, mealDays);
   return {
     staff: s,
@@ -444,6 +458,7 @@ export function staffCost(s: Staff, st: Settings, opts: StaffCostOptions = {}): 
     mealDays,
     dailyWages: 0,
     calledDays: null,
+    lafposDays,
     total: gross + employerSgk + employerUnemployment + s.extras + mealCard,
   };
 }
@@ -455,11 +470,21 @@ export type PersonnelSummary = ReturnType<typeof personnelSummary>;
  * verilmezse (eski kullanım) yalnızca active bakılır ve taban değerler kullanılır. Net, brüt, kesintiler, işveren
  * payları, ekler ve `mealCard` tam zamanlıların (Gelir-gider'in maaş, maliyet − net ve yemek kartı satırları); part-time
  * kişiler `partTime`'da (ücret, yemek kartı, ek; Faz 5). `total` hepsini içerir. `calledDays`: part-time'ın çağrıldığı
- * gün (model.calledDaysOf; verilmezse bilinmiyor)
+ * gün (model.calledDaysOf; verilmezse bilinmiyor). `lafposDays`: LafPOS'ta çalıştığı gün (model.lafposDaysOf, LM-4b;
+ * verilmezse ya da null ise yemek kartı Ayarlar'daki günle)
  */
-export function personnelSummary(staff: Staff[], st: Settings, month?: string, versions?: StaffVersion[], calledDays?: (s: Staff) => number | null) {
+export function personnelSummary(
+  staff: Staff[],
+  st: Settings,
+  month?: string,
+  versions?: StaffVersion[],
+  calledDays?: (s: Staff) => number | null,
+  lafposDays?: (s: Staff) => number | null,
+) {
   const list = month === undefined ? staff.filter((s) => s.active) : staff.filter((s) => inRange(s, month)).map((s) => staffAt(s, versions, month));
-  const rows = list.map((s) => staffCost(s, st, isPartTime(s) ? { calledDays: calledDays?.(s) ?? null } : {}));
+  const rows = list.map((s) =>
+    staffCost(s, st, isPartTime(s) ? { calledDays: calledDays?.(s) ?? null, lafposDays: lafposDays?.(s) ?? null } : { lafposDays: lafposDays?.(s) ?? null }),
+  );
   const full = rows.filter((r) => !isPartTime(r.staff));
   const part = rows.filter((r) => isPartTime(r.staff));
   return {
@@ -471,6 +496,8 @@ export function personnelSummary(staff: Staff[], st: Settings, month?: string, v
     employerUnemployment: sum(full.map((r) => r.employerUnemployment)),
     extras: sum(full.map((r) => r.staff.extras)),
     mealCard: sum(full.map((r) => r.mealCard)),
+    /** `mealCard`'ın LafPOS'ta çalıştığı günle sayılan kısmı (LM-4b): Gelir-gider'de gün oranıyla bir daha oranlanmaz */
+    mealCardLafpos: sum(full.filter((r) => r.lafposDays !== null).map((r) => r.mealCard)),
     partTime: {
       people: part.length,
       wages: sum(part.map((r) => r.dailyWages)),
@@ -730,10 +757,19 @@ export function partTimeUnlinkedText(people: readonly Pick<Staff, "name">[]): st
 }
 export const MEAL_CARD_ROW_LABEL = "PERSONEL YEMEK KARTI";
 export const MEAL_CARD_HINT =
-  "Maaşlar'da yemek kartı işaretli kişiler: günlük tutar × ayda gün (Ayarlar › Personel yemek kartı, 330 ₺ × 26); brütleştirilmez, SGK'ya girmez. × (açık gün ÷ ayın gün sayısı), maaş satırı gibi. İşletme geneli \"Personel yemeği\" sabit gideri de varsa aynı yemek iki kez sayılabilir (Genel bakış uyarır).";
+  "Maaşlar'da yemek kartı işaretli kişiler: günlük tutar × ayda gün (Ayarlar › Personel yemek kartı, 330 ₺ × 26); brütleştirilmez, SGK'ya girmez. × (açık gün ÷ ayın gün sayısı), maaş satırı gibi; ayın her LafPOS günü çalışanlarıyla geldiyse gün LafPOS'ta çalıştığı gündür, oranlanmaz. İşletme geneli \"Personel yemeği\" sabit gideri de varsa aynı yemek iki kez sayılabilir (Genel bakış uyarır).";
 
-/** Yemek kartı hücresinin bu ayki bileşimi: "2 kişi × 330 ₺ × 26 gün = 17.160 ₺" (gün oranıyla) */
-export function mealCardText(rows: readonly Pick<StaffCost, "mealCard" | "mealDays">[], st: Pick<Settings, "mealCardDaily">, ratio: number, days: number, dim: number): string {
+/**
+ * Yemek kartı hücresinin bu ayki bileşimi: "2 kişi × 330 ₺ × 26 gün = 17.160 ₺" (gün oranıyla). LafPOS'ta çalıştığı
+ * günle sayılan kişiler (LM-4b) adıyla ve günüyle yazılır; onların payı oranlanmaz (`ratio` yalnız ötekilere)
+ */
+export function mealCardText(
+  rows: readonly (Pick<StaffCost, "mealCard" | "mealDays"> & Partial<Pick<StaffCost, "lafposDays">> & { staff?: Pick<Staff, "name" | "kind"> })[],
+  st: Pick<Settings, "mealCardDaily">,
+  ratio: number,
+  days: number,
+  dim: number,
+): string {
   const flagged = rows.filter((r) => r.mealCard > 0);
   const total = sum(flagged.map((r) => r.mealCard));
   const dayCounts = [...new Set(flagged.map((r) => r.mealDays))];
@@ -741,7 +777,11 @@ export function mealCardText(rows: readonly Pick<StaffCost, "mealCard" | "mealDa
     dayCounts.length === 1
       ? `${flagged.length} kişi × ${tl(st.mealCardDaily)} × ${dayCounts[0]} gün = ${tl(total)}`
       : `${flagged.length} kişi, günlük ${tl(st.mealCardDaily)}: ${tl(total)}`;
-  return `Yemek kartı ${head}${Math.abs(ratio - 1) > 1e-9 ? ` × ${days} / ${dim} gün` : ""}; brütleştirilmez.`;
+  const fromLafpos = flagged.filter((r) => r.lafposDays != null && r.staff?.kind !== "part_time");
+  const lafpos = fromLafpos.length
+    ? ` LafPOS'ta çalıştığı günle (oranlanmaz): ${fromLafpos.map((r) => `${r.staff?.name ?? "kişi"} ${r.lafposDays} gün`).join(", ")}.`
+    : "";
+  return `Yemek kartı ${head}${Math.abs(ratio - 1) > 1e-9 ? ` × ${days} / ${dim} gün` : ""}; brütleştirilmez.${lafpos}`;
 }
 
 /** `personnel:employer` hücresinin bu ayki bileşimi (gün oranıyla; parçaların toplamı hücrenin hesaplanan değeri) */
@@ -1918,12 +1958,28 @@ export function createModel(ds: Dataset) {
     return out;
   }
 
+  /**
+   * Kişinin ayda LafPOS'ta çalıştığı gün (LM-4b; src/lib/lafpos/personel.ts lafposWorkedDays): LafPOS'un şubesinde, ayın
+   * tamamı LafPOS döneminde ve ayın her sayılan günü çalışan listesini taşıyorsa; yoksa null (yemek kartı Ayarlar'daki
+   * günle). Süren ayda bugüne kadar gelen gün sonları
+   */
+  function lafposDaysOf(x: Pick<Staff, "id" | "branchId">, month: string): number | null {
+    return lafposWorkedDays(ds.lafposWorked, x, month);
+  }
+
   const personnelCache = new Map<string, PersonnelSummary>();
-  /** O ayda çalışan personel, o ayın maaşıyla (part-time: Vardiya'da çağrıldığı günle) */
+  /** O ayda çalışan personel, o ayın maaşıyla (part-time: Vardiya'da çağrıldığı günle; yemek kartı LafPOS'un günüyle) */
   function personnelFor(month: string): PersonnelSummary {
     let p = personnelCache.get(month);
     if (!p) {
-      p = personnelSummary(ds.staff, st, month, ds.staffVersions, (x) => calledDaysOf(x, month));
+      p = personnelSummary(
+        ds.staff,
+        st,
+        month,
+        ds.staffVersions,
+        (x) => calledDaysOf(x, month),
+        (x) => lafposDaysOf(x, month),
+      );
       personnelCache.set(month, p);
     }
     return p;
@@ -1991,7 +2047,7 @@ export function createModel(ds: Dataset) {
       active: x.startMonth === undefined && x.endMonth === undefined ? x.active : activeFromRange(x.endMonth, currentMonth),
       base: { netSalary: x.netSalary, extras: x.extras, mealCard: x.mealCard ?? false, dailyWage: x.dailyWage ?? 0 },
       history,
-      cost: staffCost(cur, st, isPartTime(cur) ? { calledDays: calledDaysOf(cur, valueMonth) } : {}),
+      cost: staffCost(cur, st, isPartTime(cur) ? { calledDays: calledDaysOf(cur, valueMonth), lafposDays: lafposDaysOf(cur, valueMonth) } : { lafposDays: lafposDaysOf(cur, valueMonth) }),
       inRangeNow: inRange(x, currentMonth),
       status: rangeStatus(x, currentMonth),
       valueMonth,
@@ -2702,11 +2758,16 @@ export function createModel(ds: Dataset) {
       : personnelExtraText(pers, ratio, days, dim);
     // Yemek kartı (Faz 5): işaretli kişilerin günlük tutar × günü, brütleştirilmez; tam zamanlıda maaş gibi gün oranıyla,
     // part-time'da çağrıldığı günle. Kimsede yoksa (ve elle yazılmamışsa) hücre yok: eski tablo değişmez
+    // LafPOS'ta çalıştığı günle sayılan yemek kartı (LM-4b) gerçek gündür: gün oranıyla bir daha oranlanmaz (süren ayda
+    // da bugüne kadar gelen günler)
     const mealAll = pers.mealCard + pers.partTime.mealCard;
     if (mealAll > 0 || overrides.has(MEAL_CARD_KEY)) {
-      sections.personel += auto(MEAL_CARD_KEY, (scaled ? scaled.mealCard : pers.mealCard * ratio) + pers.partTime.mealCard);
+      const fullMeal = scaled
+        ? sum(fullRows.map((r) => (r.lafposDays !== null ? r.mealCard : r.mealCard * rowRatio(r))))
+        : (pers.mealCard - pers.mealCardLafpos) * ratio + pers.mealCardLafpos;
+      sections.personel += auto(MEAL_CARD_KEY, fullMeal + pers.partTime.mealCard);
       cells.get(MEAL_CARD_KEY)!.info =
-        mealCardText(pers.rows, st, scaled || pers.mealCard === 0 ? 1 : ratio, days, dim) + (scaled ? " Tam zamanlılar kendi şubesinin günüyle oranlandı." : "");
+        mealCardText(pers.rows, st, scaled || pers.mealCard === pers.mealCardLafpos ? 1 : ratio, days, dim) + (scaled ? " Tam zamanlılar kendi şubesinin günüyle oranlandı." : "");
     }
     // Part-time (Faz 5): günlük ücret × çağrıldığı gün + ek ödeme; gün oranı yok. Bağlantısız kişi uyarılır (tahmin yok)
     if (partRows.length || overrides.has(PART_TIME_KEY)) {
@@ -3252,6 +3313,7 @@ export function createModel(ds: Dataset) {
     staffAtMonth,
     /** Part-time kişinin aydaki çağrıldığı gün (Vardiya; bağlantısızsa null; `planned`: ayın bütün planı) */
     calledDaysOf,
+    lafposDaysOf,
     strayPartTimeShifts,
     /** Bütün sabit giderler (bitmiş / başlamamış dahil), bugünkü tutar + geçmiş */
     fixedList,

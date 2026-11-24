@@ -1,0 +1,1 @@
+ALTER TABLE "pos_day_reports" ADD COLUMN "worked_staff" jsonb;

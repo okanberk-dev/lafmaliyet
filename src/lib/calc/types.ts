@@ -6,6 +6,7 @@ import type { SiteSalesMonth } from "../site-sales/schema";
 import type { TaxDoc, Withholding } from "../tax/rules";
 
 import type { LafposIkramData } from "../lafpos/ikram";
+import type { LafposWorked } from "../lafpos/personel";
 
 import type { PurchaseLot } from "./fifo";
 
@@ -669,6 +670,13 @@ export interface Dataset {
    * (varsayılan) ikram yalnız Zayi & ikram'dan
    */
   lafposIkram?: LafposIkramData;
+  /**
+   * LafPOS personel bağlantısı (LM-4b): LafPOS'un şubesinin geçiş gününden itibaren gelen gün sonları ve her günün
+   * çalışan kimlikleri (pos_day_reports.worked_staff). Yemek kartının günü bundan (src/lib/lafpos/personel.ts
+   * lafposWorkedDays): ayın her sayılan günü liste taşıyorsa LafPOS'ta çalıştığı gün, yoksa Ayarlar'daki gün. Geçiş günü
+   * yoksa (ya da görünüm LafPOS'un şubesini içermiyorsa) yok
+   */
+  lafposWorked?: LafposWorked;
   /**
    * Kafe kapalı işaretli günler (Özel günler'in `kapali` satırı, kasa raporu olmayan; geçmiş ve ileri tarihli,
    * YYYY-MM-DD, sıralı). Süren ayın ay sonu öngörüsü bu günleri açık saymaz (denetim E-41). Yoksa boş
