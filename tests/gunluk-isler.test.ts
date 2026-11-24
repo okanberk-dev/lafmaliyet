@@ -21,6 +21,7 @@ import {
   reminderStep,
   stepTexts,
   systemAlerts,
+  todaysKontrolRun,
   trClock,
   watchRestarts,
   type JobHealth,
@@ -519,6 +520,24 @@ test("kontrol listesi / karaoke e-postaları (job_runs 'kontrol'): gidemeyen kı
   assert.equal(down.status, "error");
   assert.equal(down.message, "Kontrol listesi e-postası: zaman aşımı · Karaoke e-postası: 1 kişiye gidemedi");
   assert.deepEqual(stepTexts(partial.steps), ["Kontrol listesi e-postası bir kısmına gidemedi", "Karaoke e-postası: gönderilecek yok"]);
+});
+
+test("canlı yoklamanın karaoke çalışması (kontrol listesi yok): gidemeyen karaoke e-postası 'partial', zil uyarır; sonra gelen boş çalışma onu saklamaz", () => {
+  const none = { sent: 0, failed: 0 };
+  const k = kontrolOutcome({ checklist: none, karaoke: [{ sent: 2, failed: 1 }, none] });
+  assert.deepEqual([k.status, k.steps.checklist, k.steps.karaokeMail, k.message], ["partial", "none", "failed", "Karaoke e-postası: 1 kişiye gidemedi"]);
+  const now = tr("2026-10-22 18:50");
+  const failed = run("kontrol", "2026-10-22 18:05", "partial", { message: "Karaoke e-postası: 1 kişiye gidemedi" });
+  // GitHub'ın sonraki çalışması "gönderilecek yok" (anahtar sahiplenilmiş): zil de Günlük işler de gidemeyeni gösterir
+  const empty = run("kontrol", "2026-10-22 18:37", "skipped");
+  assert.equal(todaysKontrolRun([empty, failed], now), failed);
+  const a = systemAlerts({ production: true, cronSecret: true, now, parasutSyncErrorAt: null, health: health(now, [run("gunluk", "2026-10-22 08:10", "ok"), run("parasut", "2026-10-22 07:20", "ok")]), runs: [empty, failed] });
+  assert.deepEqual(a.map((x) => x.title), ["Personel e-postası gidemedi"]);
+  assert.equal(todaysKontrolRun([empty], now), null, "yalnız boş çalışma varsa Günlük işler son çalışmayı gösterir");
+  const card = readFileSync(join(process.cwd(), "src/app/panel/ayarlar/jobs-card.tsx"), "utf8");
+  assert.match(card, /todaysKontrolRun\(runs, now\) \?\? runs\.find/);
+  const live = readFileSync(join(process.cwd(), "src/app/api/canli/route.ts"), "utf8");
+  assert.match(live, /if \(sent \|\| failed \|\| error\) await recordJobRun\("kontrol", startedAt, kontrolOutcome\(\{ checklist: none, karaoke: \[r\.guest, r\.staff\] \}\)\)/);
 });
 
 test("sistem uyarısı: bugünün son kontrol çalışması e-postası gidemediyse; sonraki başarılı çalışma kaldırır; günlük işlerin sağlığına girmez", () => {

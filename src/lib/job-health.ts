@@ -377,6 +377,16 @@ export function kontrolOutcome(r: { checklist: MailRun; karaoke: MailRun[] }): J
   return { status, steps, message: problems.length ? cut(problems.join(" · "), 500) : null };
 }
 
+/**
+ * Bugünün son anlamlı `kontrol` çalışması: bir şey gönderen ya da gidemeyen (süren ve "gönderilecek yok" çalışmalar
+ * atlanır). Zil ve Ayarlar › Günlük işler aynı satırı gösterir: sonradan gelen boş bir çalışma (canlı yoklama, GitHub'ın
+ * ikinci denemesi) gidemeyen e-postayı saklamaz. `runs` yeni önce
+ */
+export function todaysKontrolRun<T extends Pick<JobRunLite, "job" | "status" | "startedAt">>(runs: readonly T[], now: Date): T | null {
+  const today = trClock(now).day;
+  return runs.find((r) => r.job === "kontrol" && r.status !== "running" && r.status !== "skipped" && trDay(r.startedAt) === today) ?? null;
+}
+
 // ---------------------------------------------------------------- Uyarılar
 
 export interface SystemAlert {
@@ -483,7 +493,7 @@ export function systemAlerts(i: {
     }
   }
   // Kontrol listesi / karaoke personel e-postası gidemedi (bugünün son çalışması; sonraki başarılı çalışma uyarıyı kaldırır)
-  const k = i.runs?.find((r) => r.job === "kontrol" && r.status !== "running" && r.status !== "skipped" && trDay(r.startedAt) === today);
+  const k = i.runs ? todaysKontrolRun(i.runs, i.now) : null;
   if (k && (k.status === "error" || k.status === "partial")) {
     out.push({ id: `is-kontrol-${k.id}`, level: "warning", title: "Personel e-postası gidemedi", body: cut(k.message || "Bilinmeyen hata", 200), href: JOBS_HREF, day: today });
   }

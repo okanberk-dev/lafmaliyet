@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { CardContent } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
-import { JOB_KEYS, JOBS, jobsSummary, stepTexts, trClock, type JobHealth, type JobRunLite, type JobState } from "@/lib/job-health";
+import { JOB_KEYS, JOBS, jobsSummary, stepTexts, trClock, todaysKontrolRun, type JobHealth, type JobRunLite, type JobState } from "@/lib/job-health";
 import { addDays } from "@/lib/reminders";
 import { loadJobsOverview } from "@/server/jobs/alerts";
 
@@ -81,7 +81,8 @@ const KONTROL_BADGE: Record<JobRunLite["status"], { tone: Tone; text: string }> 
  * "çalışmadı" uyarısı vermez (asıl tetik açık sekme, GitHub yedek); yalnız gidemeyen e-posta uyarır
  */
 function KontrolRow({ runs, now }: { runs: JobRunLite[]; now: Date }) {
-  const run = runs.find((r) => r.job === "kontrol") ?? null;
+  // Bugün bir şey gönderen ya da gidemeyen çalışma (zilin uyarısıyla aynı); yoksa son çalışma ("Gönderilecek yok")
+  const run = todaysKontrolRun(runs, now) ?? runs.find((r) => r.job === "kontrol") ?? null;
   const badge = run ? KONTROL_BADGE[run.status] : null;
   const steps = stepTexts(run?.steps ?? null);
   return (

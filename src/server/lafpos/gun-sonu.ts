@@ -60,7 +60,9 @@ import { applyPhotoZNo, dayPhotoIds, linkPendingPhotos, photoCheckOf, refreshDay
  *    sayım yoksa "kasa sayılmadı" uyarısı günde bir kez. Sonucu notification_log'a yazılır; düşerse günlük iş yeniden dener.
  *
  * Tetik: `POST /api/pos/gun` yanıtı döndükten sonra (after(); kasa e-postayı beklemez) ve günlük iş (son 7 gün; geçiş günü
- * sonradan girildiyse eksik günler). Tuzla (ModPOS) bu yoldan hiç geçmez.
+ * sonradan girildiyse eksik günler). Pavo'yu bekleyen gün (LafPOS günü yeniden göndermedi) beklemesi dolunca canlı
+ * yoklamadan (en çok 5 dakikada bir) ya da kontrol işinden (22:07, 22:37) biter: finishWaitingDayEnds. Tuzla (ModPOS) bu
+ * yoldan hiç geçmez.
  */
 
 /** Günlük işin geriye baktığı gün sayısı (geçiş günü sonradan girilse de en çok bu kadar eski gün işlenir) */
@@ -70,10 +72,12 @@ const SENDING_STALE_MS = 5 * 60_000;
 /**
  * Pavo'nun banka gün sonu çoğu zaman günün kapanışından bir iki dakika sonra biter ve LafPOS günü yeniden gönderir (24
  * Kasım 2026: 58 sn). Cihaz Pavo'ysa ve önceki gün de sonucu geldiyse gün sonu e-postası en çok bu kadar bekler:
- * karşılaştırma aynı e-postaya girer, yöneticiye ikinci bir Pavo e-postası gitmez. Gelmezse sonraki gönderim ya da
- * günlük iş gönderir
+ * karşılaştırma aynı e-postaya girer, yöneticiye ikinci bir Pavo e-postası gitmez. Gelmezse beklemeyi canlı yoklama ve
+ * kontrol işi bitirir (finishWaitingDayEnds); yoksa günlük iş gönderir
  */
 export const PAVO_WAIT_MS = 10 * 60_000;
+/** Canlı yoklamanın bekleyen gün sonuna bakma aralığı (sunucu örneği başına) */
+const WAIT_POLL_GAP_MS = 5 * 60_000;
 
 export type AutoReportResult = "written" | "updated" | "unchanged" | "human" | "no-count" | "old" | "deleted" | "skipped";
 /** "waiting": Pavo'nun sonucu bekleniyor (PAVO_WAIT_MS), sonraki gönderim ya da günlük iş gönderir */
@@ -416,7 +420,9 @@ const staffMailKey = (branchId: string, date: string, kind: StaffMailKind) => `l
  * kez. Rapor ayrıntısı, kasa farkı ve karaoke ödemesi gitmez.
  *
  * Yalnız dün ve bugün (iş günü): günlük iş eski günleri işlerken personele geçmiş günün e-postası gitmez. `retryOnly`:
- * yönetici e-postası bu tetikte gitmedi; yalnız daha önce düşen (ok = false) kayıt yeniden denenir
+ * yöneticinin e-postası daha önce gitti (bu tetikte "same" ya da başka gönderim sürüyor); yalnız daha önce düşen (ok =
+ * false) kayıt yeniden denenir. Başarılı kayıt ezilmez: aynı anahtarla yarışan ikinci gönderim (Resend 409) düşse de
+ * ilk "gitti" kaydı kalır ve "same" döner
  */
 export async function sendStaffDayEnd(db: DB, date: string, now = new Date(), opts?: SendOptions & { retryOnly?: boolean }): Promise<StaffEmailResult> {
   const branchId = LAFPOS_BRANCH_ID;
@@ -446,9 +452,16 @@ export async function sendStaffDayEnd(db: DB, date: string, now = new Date(), op
   await db
     .insert(s.notificationLog)
     .values({ key, channel: "email", subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error })
-    .onConflictDoUpdate({ target: s.notificationLog.key, set: { subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error, sentAt: new Date() } });
-  if (!res.ok) console.error("[lafpos] çalışanların gün sonu e-postası gitmedi:", date, kind, res.error);
-  return res.ok ? "sent" : "failed";
+    .onConflictDoUpdate({
+      target: s.notificationLog.key,
+      set: { subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error, sentAt: new Date() },
+      setWhere: eq(s.notificationLog.ok, false),
+    });
+  if (res.ok) return "sent";
+  const [logged] = await db.select({ ok: s.notificationLog.ok }).from(s.notificationLog).where(eq(s.notificationLog.key, key)).limit(1);
+  if (logged?.ok) return "same";
+  console.error("[lafpos] çalışanların gün sonu e-postası gitmedi:", date, kind, res.error);
+  return "failed";
 }
 
 /**
@@ -501,7 +514,7 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
   try {
     const to = await dayEndRecipients(db);
     if (!to.length) {
-      await finish({ emailError: "Alıcı yok: kasa raporu alıcıları ve bildirim adresleri boş ya da kapalı" });
+      await finish({ emailError: "Alıcı yok: Kasa › Rapor alıcıları boş ya da kapalı" });
       return "off";
     }
     if (!isEmailConfigured()) {
@@ -537,7 +550,8 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
       values,
       missing: st.missing ?? [],
       report,
-      corrected: st.emailCount > 0 && !prevNoCount,
+      // Sayımsız giden günün yine sayımsız düzeltmesi de "düzeltildi" (konu ilkinden ayrılsın); yalnız ilk sayım değil
+      corrected: st.emailCount > 0 && !recount,
       recount,
       yesterday: { date: days.yesterday, zTotal: yesterday },
       lastWeek: { date: days.lastWeek, zTotal: lastWeek },
@@ -775,16 +789,64 @@ export async function runLafposDayEnd(
     photo = "error";
     error = error ?? (e instanceof Error ? e.message : String(e));
   }
-  // Çalışanlar: yöneticinin e-postası bu tetikte gittiyse (ya da yönetici alıcısı yoksa) sırası gelir; değilse yalnız
-  // daha önce düşen kayıt yeniden denenir (sabah işi). Düşmesi yöneticinin e-postasını etkilemez
+  // Çalışanlar: yöneticinin e-postası daha önce gittiyse ("same", "busy") yalnız daha önce düşen kayıt yeniden denenir
+  // (sabah işi). Öteki her durumda (gitti, alıcı yok, düştü) kendi kaydına göre gider: yöneticinin e-postası düşse de
+  // çalışanlar "alındı"yı ya da "kasa sayılmadı"yı alır. Pavo beklenirken gitmez (yöneticininkiyle gider)
   let staff: StaffEmailResult | "error";
   try {
-    staff = report === "skipped" || email === "waiting" ? "skipped" : await sendStaffDayEnd(db, date, now, { ...opts, retryOnly: email !== "sent" && email !== "off" });
+    staff = report === "skipped" || email === "waiting" ? "skipped" : await sendStaffDayEnd(db, date, now, { ...opts, retryOnly: email === "same" || email === "busy" });
   } catch (e) {
     console.error("[lafpos] çalışanların gün sonu e-postası:", date, e);
     staff = "error";
   }
   return { date, report, email, pavo, photo, staff, ...(error ? { error } : {}) };
+}
+
+/** Bu sunucu örneğinde canlı yoklamanın bekleyen gün sonuna son baktığı an (ms) */
+let lastWaitPoll = 0;
+
+/**
+ * Canlı yoklama (/api/canli) bekleyen gün sonuna şimdi baksın mı: e-posta kurulu ve bu örnekte son bakıştan 5 dakika
+ * geçti. Evetse anı hemen yazar (aynı anda gelen yoklamalar ikinci kez bakmaz). Birden çok örnek aynı anda bakarsa
+ * gönderim yine bir kez (lafpos_day_ends.sending_at)
+ */
+export function claimLafposWaitPoll(nowMs: number = Date.now()): boolean {
+  if (!isEmailConfigured() || nowMs - lastWaitPoll < WAIT_POLL_GAP_MS) return false;
+  lastWaitPoll = nowMs;
+  return true;
+}
+
+/**
+ * Pavo'yu bekleyen gün sonu e-postasının sonu: LafPOS günü yeniden göndermezse (kasa bilgisayarı kapandı, ağ düştü)
+ * bekleme kendiliğinden bitmez, yöneticinin ve çalışanların e-postası sabahki işe kalırdı. Dün ve bugünün LafPOS günü
+ * Pavo'yu bekleyen hâldeyse (cihaz Pavo, sonuç yok, e-postası gitmedi ve düşmedi) ve geleli PAVO_WAIT_MS geçtiyse o günün
+ * otomasyonu çalışır (runLafposDayEnd: bekleme dolduğu için e-posta gider, Pavo'nun sonucu sonra gelirse kısa Pavo
+ * e-postası). Bekleyen gün yoksa tek sorgu. Tetik: canlı yoklama (claimLafposWaitPoll) ve kontrol işi
+ */
+export async function finishWaitingDayEnds(db: DB, now = new Date(), opts?: SendOptions): Promise<Awaited<ReturnType<typeof runLafposDayEnd>>[]> {
+  const today = businessDate(now);
+  const rows = await db
+    .select({ date: s.posDayReports.date, emailedHash: s.lafposDayEnds.emailedHash, emailError: s.lafposDayEnds.emailError })
+    .from(s.posDayReports)
+    .leftJoin(s.lafposDayEnds, and(eq(s.lafposDayEnds.date, s.posDayReports.date), eq(s.lafposDayEnds.branchId, s.posDayReports.branchId)))
+    .where(
+      and(
+        eq(s.posDayReports.branchId, LAFPOS_BRANCH_ID),
+        gte(s.posDayReports.date, addDays(today, -1)),
+        lte(s.posDayReports.date, today),
+        lte(s.posDayReports.receivedAt, new Date(now.getTime() - PAVO_WAIT_MS)),
+      ),
+    )
+    .orderBy(s.posDayReports.date);
+  const out: Awaited<ReturnType<typeof runLafposDayEnd>>[] = [];
+  for (const r of rows) {
+    // Düşen gönderim (email_error) sabahki işe kalır: her yoklamada yeniden denenmez
+    if (r.emailError) continue;
+    const day = await loadStoredDay(db, r.date, LAFPOS_BRANCH_ID);
+    if (!day || day.bankPos || day.okc?.provider !== "pavo" || r.emailedHash === day.hash) continue;
+    out.push(await runLafposDayEnd(db, r.date, now, opts));
+  }
+  return out;
 }
 
 /**

@@ -38,7 +38,14 @@ jobs:
             echo "::error::CRON_SECRET depo sırrı yok; hatırlatmalar gönderilmedi."
             exit 1
           fi
-          curl -fsS --retry 2 --retry-delay 10 --max-time 70 \
-            -H "Authorization: Bearer $CRON_SECRET" \
-            "${PANEL_URL%/}/api/cron/kontrol"
-          echo
+          # Yalnız panele hiç ulaşılamadıysa (curl 6: ad çözülemedi, 7: bağlanılamadı) yeniden denenir. Panelin HTTP
+          # hatası (22; ör. e-posta gidemedi, 500) ve zaman aşımı denenmez: panel çalışmış olabilir, ikinci çağrıda
+          # anahtarlar sahiplenilmiş olur, "gönderilecek yok" ile 200 döner ve iş yanlışlıkla yeşil biter
+          for i in 1 2 3; do
+            curl -fsS --max-time 70 \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "${PANEL_URL%/}/api/cron/kontrol" && { echo; exit 0; }
+            code=$?
+            if [ "$i" = 3 ] || { [ "$code" != 6 ] && [ "$code" != 7 ]; }; then exit "$code"; fi
+            sleep 10
+          done

@@ -8,9 +8,11 @@ import { siteErrorFor } from "@/lib/staff-errors";
 import { kontrolOutcome } from "@/lib/job-health";
 import { getCurrentUser } from "@/server/auth/dal";
 import { pendingKaraokeAsks } from "@/server/data/karaoke-requests";
+import { getDb } from "@/server/db";
 import { loadDueReminders, remindersMarker } from "@/server/data/user-reminders";
 import { recordJobRun } from "@/server/jobs/runs";
 import { liveWindow, loadSessions } from "@/server/karaoke/board";
+import { claimLafposWaitPoll, finishWaitingDayEnds } from "@/server/lafpos/gun-sonu";
 import { claimKaraokeMailPoll, runKaraokeMails } from "@/server/karaoke/staff-mail";
 import { ensureKaraokeFresh, karaokeSecret, readKaraokeLive } from "@/server/karaoke/sync";
 import { claimChecklistAlertPoll, runChecklistAlerts } from "@/server/notify/checklist-alerts";
@@ -69,12 +71,32 @@ export async function GET(request: NextRequest) {
   // Karaoke e-postaları (docs/KARAOKE.md › Hatırlatma e-postası, Personel e-postaları): aynı düzen, site bağlıysa
   if (linked && claimKaraokeMailPoll()) {
     after(async () => {
+      const startedAt = new Date();
+      const none = { sent: 0, failed: 0 };
       try {
         const r = await runKaraokeMails(new Date(), Date.now() + 20_000);
         const failed = ("failed" in r.guest ? r.guest.failed : 0) + ("failed" in r.staff ? r.staff.failed : 0);
+        const sent = ("sent" in r.guest ? r.guest.sent : 0) + ("sent" in r.staff ? r.staff.sent : 0);
+        const error = "error" in r.guest || "error" in r.staff;
         if (failed) console.warn(`[karaoke] e-posta: ${failed} ileti gidemedi`);
+        // Kontrol listesininki gibi: bir şey gönderildiyse, gidemediyse ya da iş hata verdiyse job_runs'a (zil "Personel
+        // e-postası gidemedi"; kısmen gidemeyen e-postanın anahtarı serbest kalmaz, sonraki GitHub çalışması onu görmez)
+        if (sent || failed || error) await recordJobRun("kontrol", startedAt, kontrolOutcome({ checklist: none, karaoke: [r.guest, r.staff] }));
       } catch (e) {
         console.error("[karaoke] e-posta", e);
+        await recordJobRun("kontrol", startedAt, kontrolOutcome({ checklist: none, karaoke: [{ error: (e as Error).message }] }));
+      }
+    });
+  }
+  // Pavo'yu bekleyen LafPOS gün sonu (docs/LAFPOS.md › Pavo'yu bekler): LafPOS günü yeniden göndermediyse bekleme dolunca
+  // yöneticinin ve çalışanların e-postası buradan gider (en çok 5 dakikada bir; bekleyen gün yoksa tek sorgu)
+  if (claimLafposWaitPoll()) {
+    after(async () => {
+      try {
+        const days = await finishWaitingDayEnds(getDb(), new Date(), { deadlineAt: Date.now() + 25_000 });
+        if (days.length) console.info("[lafpos] Pavo beklemesi bitti", days);
+      } catch (e) {
+        console.error("[lafpos] Pavo beklemesi", e);
       }
     });
   }

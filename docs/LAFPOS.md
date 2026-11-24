@@ -846,8 +846,12 @@ LafPOS'un gününde bu bölümler yok.
 
 - **Pavo'yu bekler** (25 Kasım 2026; canlıda 24 Kasım'da gün sonu 22:03'te, Pavo'nun sonucu 58 sn sonra ayrı e-postayla
   gitmişti): Pavo'nun sonucu henüz yoksa, günün yazarkasası Pavo'ysa ve önceki LafPOS gününde sonucu geldiyse (otomatik
-  banka gün sonu açık) e-posta en çok 10 dakika bekler (`PAVO_WAIT_MS`, sonuç `waiting`). Sonuç gelince LafPOS günü
-  yeniden gönderir ve tek e-posta karşılaştırmayla gider. Gelmezse sonraki gönderim ya da sabahki günlük iş gönderir.
+  banka gün sonu açık) e-posta 10 dakika bekler (`PAVO_WAIT_MS`, sonuç `waiting`). Sonuç gelince LafPOS günü
+  yeniden gönderir ve tek e-posta karşılaştırmayla gider. LafPOS günü yeniden göndermezse (kasa bilgisayarı kapandı, ağ
+  düştü) beklemeyi panel bitirir (`finishWaitingDayEnds`): açık bir panel sekmesinin canlı yoklaması (en çok 5 dakikada
+  bir) ya da kontrol hatırlatma işi (22:07, 22:37) bekleme dolan dünkü ya da bugünkü günün yöneticisine ve çalışanlarına
+  e-postayı gönderir; Pavo'nun sonucu sonra gelirse kısa Pavo e-postası gider. Kimse panele bakmıyor ve GitHub işi de
+  gecikiyorsa e-posta sabahki günlük işe kalır.
 - Gün başına içerik başına bir kez: günün özeti (`dayHash`: Z, ödemeler, ikram) gönderilenle aynıysa gitmez. LafPOS
   düzeltip farklı rakamla yeniden gönderirse konu "· düzeltildi" ile ve başta "Düzeltildi: …" notuyla bir kez daha gider.
   Sayımsız giden gün sayımla gelince bu düzeltme sayılmaz: konu "· kasa sayıldı", başta "Önceki e-postada sayım yoktu"
@@ -870,13 +874,14 @@ LafPOS'un gününde bu bölümler yok.
   (`runLafposDayEnd` › `photo`) denenir; gün sonu e-postası henüz gitmediyse beklenir (fark onunla gider). **Çalışanların
   kısa gün sonu e-postasına fotoğraf ve fark hiç girmez.** Sabah e-postası kasa sorunlarını listelemez (fotoğraf farkı
   orada yok).
-- **Çalışanların kısa e-postası** (`sendStaffDayEnd`; Kasa › Rapor alıcıları › Çalışanlar): yöneticinin e-postası gidince
-  ayrı gönderilir. Sayım varsa (rapor yazıldı ya da elle girildi) "Marina · gün sonu alındı · 22 Kasım Pazar": Z no, fiş
+- **Çalışanların kısa e-postası** (`sendStaffDayEnd`; Kasa › Rapor alıcıları › Çalışanlar): yöneticinin e-postasıyla
+  aynı tetikte, ondan ayrı gönderilir; yöneticininki düşse ya da alıcısı olmasa da gider (Pavo beklenirken beklenir). Sayım varsa (rapor yazıldı ya da elle girildi) "Marina · gün sonu alındı · 22 Kasım Pazar": Z no, fiş
   sayısı, "tutarlar" açıksa ciro ve ödeme türleri, "Emeğiniz için teşekkürler". **Günde bir kez**: LafPOS düzeltip
   yeniden gönderse de ikinci "alındı" gitmez. Sayım yoksa teşekkür değil uyarı gider: "Marina · kasa sayılmadı": çekmeceyi
   LafPOS'ta Kasa › Geçmiş günler › Kasa föyü'nden sayın, LafPOS günü yeniden gönderir (o da günde bir kez). Sonuç
   `notification_log`'a yazılır (`lafpos-gun-calisan:marina:GÜN:alindi | sayim-yok`); düşerse günlüğe hata yazılır ve
-  sabahki günlük iş yalnız o kaydı yeniden dener (yöneticiye yeniden gitmez; adım "LafPOS gün sonu" hata verir). Yalnız
+  sabahki günlük iş yalnız o kaydı yeniden dener (yöneticiye yeniden gitmez; adım "LafPOS gün sonu" hata verir). Giden
+  kaydın üstüne yazılmaz: aynı anda iki tetik yarışır, ikincisi Resend'den 409 alırsa ilk "gitti" kalır. Yalnız
   dün ve bugün: günlük iş eski günleri işlerken personele geçmiş günün e-postası gitmez.
 
 Durum tablosu `lafpos_day_ends` (gün, şube): otomatik rapor, son otomatik değerler, eksikler, gönderilen içerik, gönderim
