@@ -21,7 +21,8 @@ import { NAV_FOOTER, NAV_GROUPS } from "../src/components/panel/nav";
 import { EXCERPT_MAX, foldText, queryWords, searchKnowledge } from "../src/lib/assistant/knowledge";
 import { compileKnowledge, EXCLUDED_DOCS, SECTION_MAX } from "../src/lib/assistant/knowledge-build";
 import { KNOWLEDGE } from "../src/lib/assistant/knowledge-data";
-import { parseInline, parseMarkdown, plainText, safeHref } from "../src/lib/assistant/markdown";
+import { errorTag } from "../src/lib/assistant/error-tag";
+import { EXTERNAL_HOSTS, parseInline, parseMarkdown, plainText, safeHref } from "../src/lib/assistant/markdown";
 import {
   ASSISTANT_DAILY_CAP,
   ASSISTANT_LIMITS,
@@ -303,6 +304,11 @@ test("araç: zod hatası, aracın uyarısı, beklenmeyen hata, süre ve bilinmey
   // Ayrıntı Claude'a gitmez (parola, bağlantı metni), sunucu günlüğüne gider
   assert.deepEqual(boom, { type: "tool_result", tool_use_id: "t4", is_error: true, content: TOOL_FAILED });
   assert.deepEqual(errors, ["kizgin"]);
+  // Sunucu günlüğüne yalnız hatanın adı ve kodu: sorgu hatasının "params:" kısmı (modelin girdisi) yazılmaz
+  const pg = Object.assign(new Error('Failed query: select … params: Sütçü,2026-11-24'), { name: "DrizzleQueryError", cause: Object.assign(new Error("duplicate key"), { name: "PostgresError", code: "23505" }) });
+  assert.equal(errorTag(pg), "DrizzleQueryError PostgresError 23505");
+  assert.doesNotMatch(errorTag(pg), /Sütçü|params/);
+  assert.equal(errorTag("metin"), "string");
   const slow = await runToolUse(tools, { id: "t5", name: "yavas", input: {} }, { ...opts, timeoutMs: 20 });
   assert.equal(slow.is_error, true);
   assert.match(String(slow.content), /Yavaş araç zamanında yanıt vermedi/);
@@ -571,6 +577,13 @@ test("uç: gövde ve geçmiş sınırları (soru ≤ 4000, geçmiş ≤ 20 mesaj
   const cap = await handleAssistantPost(post({ message: "x" }), deps({ statusValue: { state: "cap", usedToday: 60, cap: 60 } }).d);
   assert.equal(cap.status, 429);
   assert.deepEqual(await cap.json(), { error: "Bugünkü soru sınırı doldu (60); yarın yeniden açılır.", code: "cap", left: 0 });
+  // Kapıdan sonra aynı anda gelen soru sınırı doldurduysa: start satır açmaz (atomik), yanıt yine 429 ve akış yok
+  const raced = deps({ start: async () => null });
+  const race = await handleAssistantPost(post({ message: "x" }), raced.d);
+  assert.equal(race.status, 429);
+  assert.equal(((await race.json()) as { code: string }).code, "cap");
+  assert.equal(raced.calls.length, 0, "Claude'a istek gitmez");
+  assert.equal(raced.finished.length, 0);
   const off = await handleAssistantPost(post({ message: "x" }), deps({ statusValue: { state: "off", usedToday: 0, cap: 60 } }).d);
   assert.equal(off.status, 503);
   assert.equal(((await off.json()) as { code: string }).code, "off");
@@ -654,6 +667,12 @@ test("markdown: bağlantı yalnız /panel ve https; javascript:, data:, //, gör
   assert.deepEqual(safeHref("/panel"), { href: "/panel", external: false });
   assert.deepEqual(safeHref("/panel/parasut#urun-baglantilari"), { href: "/panel/parasut#urun-baglantilari", external: false });
   assert.deepEqual(safeHref("https://laffogato.net/menu"), { href: "https://laffogato.net/menu", external: true });
+  assert.deepEqual(safeHref("https://uygulama.parasut.com/123"), { href: "https://uygulama.parasut.com/123", external: true });
+  // Dış bağlantı yalnız izin listesindeki sitelere (enjeksiyonla üretilen veri sızdıran bağlantı tıklanamaz)
+  assert.deepEqual([...EXTERNAL_HOSTS], ["laffogato.net", "parasut.com", "claude.ai"]);
+  for (const bad of ["https://saldirgan.ornek/?d=ciro", "https://laffogato.net.evil.example/x", "https://evillaffogato.net/", "https://laffogato.net:8443/x"]) assert.equal(safeHref(bad), null, bad);
+  const leak = parseInline("[Onayla](https://saldirgan.ornek/?d=12500)");
+  assert.deepEqual(leak, [{ t: "text", v: "Onayla" }], "listede olmayan site: yalnız etiket, adres yok");
   for (const bad of [
     "javascript:alert(1)",
     "JaVaScRiPt:alert(1)",
@@ -683,14 +702,14 @@ test("markdown: bağlantı yalnız /panel ve https; javascript:, data:, //, gör
   const ok = parseInline("Bkz. [Tedarikçiler](/panel/tedarikciler) ve **Sütaş** `kod`");
   assert.deepEqual(ok[1], { t: "link", href: "/panel/tedarikciler", external: false, c: [{ t: "text", v: "Tedarikçiler" }] });
 
-  const html = '<script>alert(1)</script> <img src=x onerror="alert(1)"> [a](data:text/html,x) [b](https://ok.example/x)';
+  const html = '<script>alert(1)</script> <img src=x onerror="alert(1)"> [a](data:text/html,x) [b](https://laffogato.net/x)';
   const out = renderToStaticMarkup(createElement(MarkdownView, { text: html }));
   // Yalnız iki öğe türü çıkar (p, a); hiçbir öğede olay özniteliği yok; tek bağlantı https
   assert.doesNotMatch(out, /<script|<img/i);
   assert.doesNotMatch(out, /<[a-z]+[^>]*\son[a-z]+=/i);
-  assert.deepEqual([...out.matchAll(/href="([^"]*)"/g)].map((m) => m[1]), ["https://ok.example/x"]);
+  assert.deepEqual([...out.matchAll(/href="([^"]*)"/g)].map((m) => m[1]), ["https://laffogato.net/x"]);
   assert.match(out, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
-  assert.match(out, /<a href="https:\/\/ok\.example\/x" target="_blank" rel="noopener noreferrer nofollow"/);
+  assert.match(out, /<a href="https:\/\/laffogato\.net\/x" target="_blank" rel="noopener noreferrer nofollow"/);
 
   // Blok ayrıştırma: başlık, liste, tablo, kod bloğu; yarım akışta kapanmamış ** düz yazı
   const blocks = parseMarkdown("## Özet\n- bir\n- iki\n\n| Ürün | Kâr |\n|---|---:|\n| Latte | 12,50 ₺ |\n\n```\nkod <b>\n```\n**yarım");

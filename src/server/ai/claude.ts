@@ -176,13 +176,24 @@ export function assistantClient(): AssistantClient {
   return liveAssistant;
 }
 
-/** Sorunun satırı (önce "running": aynı anda gelen iki soru sınırı bir kez aşabilir, çökme de kalır); kimliği */
-export async function startAssistantCall(userId: number): Promise<number> {
-  const [call] = await getDb()
-    .insert(s.aiCalls)
-    .values({ feature: ASSISTANT_FEATURE, model: ASSISTANT_MODEL, effort: ASSISTANT_EFFORT, status: "running", userId, photoId: null })
-    .returning({ id: s.aiCalls.id });
-  return call.id;
+/**
+ * Sorunun satırı ("running"; çökme de kalır): sayım ve ekleme tek işlemde, yönetici başına danışma kilidiyle
+ * (pg_advisory_xact_lock): aynı anda gelen sorular günlük sınırı aşamaz. Sınır dolduysa satır açılmaz, null döner.
+ */
+export async function startAssistantCall(userId: number, cap: number = ASSISTANT_DAILY_CAP, now: Date = new Date()): Promise<number | null> {
+  return getDb().transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('ai_calls.asistan'), ${userId})`);
+    const [row] = await tx
+      .select({ n: count() })
+      .from(s.aiCalls)
+      .where(and(gte(s.aiCalls.at, dayStart(now)), eq(s.aiCalls.feature, ASSISTANT_FEATURE), eq(s.aiCalls.userId, userId)));
+    if ((row?.n ?? 0) >= cap) return null;
+    const [call] = await tx
+      .insert(s.aiCalls)
+      .values({ feature: ASSISTANT_FEATURE, model: ASSISTANT_MODEL, effort: ASSISTANT_EFFORT, status: "running", userId, photoId: null })
+      .returning({ id: s.aiCalls.id });
+    return call.id;
+  });
 }
 
 /**

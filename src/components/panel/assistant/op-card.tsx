@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Notice, type NoticeTone } from "@/components/ui/notice";
 import { cardExpired, isSettled, OP_EFFECTS, OP_STATUS_LABEL, type OpCardState, type OpOutcome, type OpStatus } from "@/lib/assistant/ops";
 import { cn } from "@/lib/utils";
-import { cancelAssistantOp, confirmAssistantOp, undoAssistantOp } from "@/server/actions/assistant-ops";
+import { cancelAssistantOp, confirmAssistantOp, readAssistantOp, undoAssistantOp } from "@/server/actions/assistant-ops";
 
 /**
  * Panel asistanının onay kartı (docs/ASISTAN-ISLEMLER.md › Onay kartı). İçeriği sunucu yazar: ne yapılacak, eski → yeni,
@@ -18,6 +18,15 @@ import { cancelAssistantOp, confirmAssistantOp, undoAssistantOp } from "@/server
  */
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Istanbul" });
+
+/**
+ * Sunucunun bildirdiği plan durumu → kartın durumu. Başka bir yerde hâlâ sürüyorsa ("işleniyor", "geri alınıyor") kart
+ * beklemede kalmaz: sonucu belirsiz / yapıldı gösterir (yeniden okununca ya da Geri al'da sunucu doğrusunu söyler)
+ */
+function fromServer(state: OpCardState, current: NonNullable<OpOutcome["current"]>, message: string): OpCardState {
+  const status: OpStatus = current.status === "running" ? "unknown" : current.status === "undoing" ? "done" : current.status;
+  return { card: state.card, status, message, undoUntil: current.undoUntil };
+}
 
 /** Sonucun uyarı tonu (Notice): yapıldı iyi, yapılamadı kötü, belirsiz dikkat, öteki durumlar bilgi */
 const TONE: Partial<Record<OpStatus, NoticeTone>> = { done: "good", failed: "bad", unknown: "warn" };
@@ -33,6 +42,25 @@ export function OpCardView({ state, onChange }: { state: OpCardState; onChange: 
     const t = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(t);
   }, [status, state.undoUntil]);
+
+  // Sekmeden geri yüklenen, işlem sürerken kalmış kart: planın gerçek durumu bir kez sunucudan okunur
+  useEffect(() => {
+    if (!state.recheck) return;
+    let live = true;
+    readAssistantOp(card.id)
+      .then((out) => {
+        if (live) onChange(out.current ? fromServer(state, out.current, out.message) : { ...state, recheck: undefined, message: out.message });
+      })
+      .catch(() => {
+        // Okunamadı: kart "sonucu belirsiz" iletisiyle kalır (ekranda denetlenir)
+        if (live) onChange({ ...state, recheck: undefined });
+      });
+    return () => {
+      live = false;
+    };
+    // Yalnız ilk çizimde (kartın kimliği değişmez)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.id]);
 
   const expired = status === "pending" && cardExpired(card, now);
   const canUndo = status === "done" && card.undoable && !!state.undoUntil && Date.parse(state.undoUntil) > now;
@@ -53,9 +81,10 @@ export function OpCardView({ state, onChange }: { state: OpCardState; onChange: 
     }
     setBusy(null);
     if (out.status === "refused") {
-      // Hiçbir şey yapılmadı: kart önceki durumunda kalır, ileti görünür (zaten kullanılmışsa düğmeler kapanır)
-      const used = kind === "confirm" && /zaten/.test(out.message);
-      onChange({ ...state, status: used ? "unknown" : kind === "undo" ? "done" : state.status === "running" ? "pending" : state.status, message: out.message });
+      // Hiçbir şey yapılmadı. Plan zaten işlenmişse (ağ hatasından sonra yeniden deneme, başka sekme) sunucu gerçek
+      // durumunu verir: kart onu gösterir (yapıldıysa Geri al da gelir); yoksa önceki durumunda kalır, ileti görünür
+      if (out.current) onChange(fromServer(state, out.current, out.message));
+      else onChange({ ...state, status: kind === "undo" ? "done" : state.status === "running" ? "pending" : state.status, message: out.message });
       return;
     }
     onChange({ ...state, status: out.status, message: out.message, undoUntil: out.undoUntil ?? (out.status === "done" ? state.undoUntil : null) });

@@ -15,7 +15,7 @@ import { NAV_FOOTER, NAV_GROUPS } from "../src/components/panel/nav";
 import { OP_GUIDES, searchGuides } from "../src/lib/assistant/guides";
 import { OP_INPUTS, OP_NAMES, OP_SPECS, OP_TAIL, type OpName } from "../src/lib/assistant/op-specs";
 import { cardExpired, cardHistoryLine, isOpCard, OP_EFFECTS, OP_TTL_MS, type OpCard } from "../src/lib/assistant/ops";
-import { eventReader, historyForRequest, restoreCards, type AssistantEvent, type ChatMessage } from "../src/lib/assistant/protocol";
+import { eventReader, historyForRequest, replyText, RESTORED_RUNNING, restoreCards, type AssistantEvent, type ChatMessage } from "../src/lib/assistant/protocol";
 import { ToolInputError } from "../src/lib/mcp/answers/common";
 import { handleAssistantPost, type AssistantDeps } from "../src/server/ai/assistant/handler";
 import { runAssistant, type AssistantClient } from "../src/server/ai/assistant/loop";
@@ -193,7 +193,9 @@ test("araç: kart açar, Claude'a 'henüz hiçbir şey değişmedi' döner; bir 
   const out = await price.run({ urun: "Latte", boy: "M", yeniFiyat: 90 }, c);
   assert.equal(c.emitted.length, 1);
   assert.match(String(out.durum), /henüz hiçbir şey değişmedi/);
-  assert.match(String(out.talimat), /İşlemi yaptığını SÖYLEME/);
+  // Araç çıktısı yalnız durum verisi: talimat taşımaz (ne söyleneceği sistem isteminde ve aracın açıklamasında)
+  assert.equal("talimat" in out, false);
+  assert.match(OP_TAIL, /işlemin yapıldığını söyleme/);
   assert.deepEqual(out.satirlar, ["Satış fiyatı: 85 ₺ → 90 ₺"]);
   // İkinci kart aynı yanıtta açılmaz (toplu işlem yok)
   assert.equal(CARDS_PER_REPLY, 1);
@@ -209,6 +211,25 @@ test("araç: kart açar, Claude'a 'henüz hiçbir şey değişmedi' döner; bir 
   const staff = ctx({ user: { id: 9, role: "staff" } });
   await assert.rejects(price.run({ urun: "Latte", yeniFiyat: 90 }, staff), /yalnız yönetici/);
   assert.equal(staff.emitted.length, 0);
+  // Süre sınırı ya da Durdur: geç gelen kart ekrana konmaz, hak hemen geri verilir (model aynı yanıtta yeniden dener)
+  let finish: (() => void) | null = null;
+  const slowTools = opTools({
+    plan: (name) =>
+      new Promise((resolve) => {
+        finish = () => resolve(card({ tool: name }));
+      }),
+  });
+  const slowPrice = slowTools.find((t) => t.name === "urun_fiyati_degistir")!;
+  const stop = new AbortController();
+  const c3 = { ...ctx(), signal: stop.signal };
+  const late = slowPrice.run({ urun: "Latte", yeniFiyat: 90 }, c3);
+  assert.equal(c3.cards!.count, 1);
+  stop.abort();
+  assert.equal(c3.cards!.count, 0, "hak süre dolunca geri verilir");
+  finish!();
+  await assert.rejects(late, /zamanında hazırlanamadı/);
+  assert.equal(c3.emitted.length, 0, "geç kart ekrana konmaz");
+  assert.equal(c3.cards!.count, 0, "hak iki kez geri verilmez");
 });
 
 test("araç listesi: okuma araçları önce ve strict; işlem araçları sonra (sığmayan strict'siz); rehber araç okur", async () => {
@@ -273,7 +294,7 @@ test("döngü: işlem aracı kartı akışa koyar; araç sonucu tek mesajda, asi
   const results = last.content as { type: string; tool_use_id: string; content: string; is_error?: boolean }[];
   assert.equal(results.length, 1);
   assert.equal(results[0].type, "tool_result");
-  assert.match(results[0].content, /Onay kartı kullanıcıya gösterildi/);
+  assert.match(results[0].content, /"kart":"gösterildi"/);
   assert.equal(results[0].is_error, undefined);
   const echoed = second.messages[second.messages.length - 2];
   assert.deepEqual(echoed, { role: "assistant", content: [text("Kartı hazırlıyorum."), toolUse("t1", "urun_tukendi_yap", { urun: "Ice Latte" })] });
@@ -329,6 +350,21 @@ test("tarayıcı: kart olayı doğrulanır; kartın durumu sekmede saklanır; ge
   const k = card();
   assert.deepEqual(restoreCards([{ card: k, status: "done", message: "Fiyat 90 ₺ oldu." }, { card: k, status: "uçtu" }, null]), [{ card: k, status: "done", message: "Fiyat 90 ₺ oldu." }]);
   assert.equal(restoreCards("x"), undefined);
+  // İşlem sürerken kaydedilen kart takılı kalmaz: işleniyor → sonucu belirsiz, geri alınıyor → yapıldı; durum sunucudan
+  // yeniden okunur (recheck); geçmişe "işleniyor" satırı gitmez
+  const restored = restoreCards([
+    { card: k, status: "running" },
+    { card: k, status: "undoing", undoUntil: "2026-11-24T12:00:00.000Z" },
+  ])!;
+  assert.deepEqual(
+    restored.map((c) => [c.status, c.recheck, c.undoUntil ?? null]),
+    [
+      ["unknown", true, null],
+      ["done", true, "2026-11-24T12:00:00.000Z"],
+    ],
+  );
+  assert.equal(restored[0].message, RESTORED_RUNNING);
+  assert.doesNotMatch(replyText({ text: "", cards: restored }), /işleniyor|geri alınıyor/);
   // Geçmiş: yanıtın metni + kartın sonucu (asistan sonraki turda bilsin); kart tek başına da yanıt sayılır
   const msgs: ChatMessage[] = [
     { role: "user", text: "Latte M 90 olsun" },

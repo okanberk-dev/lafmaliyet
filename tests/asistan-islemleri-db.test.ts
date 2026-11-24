@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { after, before, beforeEach, describe, test } from "node:test";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
@@ -366,6 +366,46 @@ describe("asistanın işlemleri: veritabanında", { skip: !SERVER_URL && "ASISTA
     assert.equal((await db.select().from(s.invoices).where(eq(s.invoices.id, a.id)))[0].unpaid, true);
     // İleri tarih reddedilir
     await assert.rejects(open("fatura_odendi", { tedarikci: "Kahveci Ltd", faturaNo: "KAH2026002", durum: "odendi", odemeGunu: addDays(todayTR(), 3) }), /ileri/);
+  });
+
+  test("fatura ödendi: hesaptaki para faturayı kapatınca kart ödemenin gününü ve şeklini gösterir; geri al çalışır", async () => {
+    const { saveSupplierPayment } = await import("../src/server/actions/cari");
+    const [sutcu] = await db.insert(s.suppliers).values({ name: "Sütçü", key: "sutcu" }).returning();
+    const payDay = addDays(todayTR(), -5);
+    const pay = await saveSupplierPayment({ target: { cardId: sutcu.id }, id: null, date: payDay, amount: 1000, method: "elden", cashOut: null, allocation: { mode: "none", lines: [] }, note: null, photoId: null });
+    assert.equal(pay.ok, true, JSON.stringify(pay));
+    // Hazırlığın ödemesi ekrandan girilmiş gibi: işlem geçmişi testi yalnız asistanın satırlarına bakar
+    await db.delete(s.activityLog).where(and(eq(s.activityLog.action, "Cari ödeme eklendi"), isNull(s.activityLog.via)));
+    const [inv] = await db.insert(s.invoices).values({ date: addDays(todayTR(), -2), supplier: "Sütçü", invoiceNo: "SUT1", category: GOODS_CATEGORIES[0], amount: 400, payable: 400, unpaid: true }).returning();
+    const card = await open("fatura_odendi", { tedarikci: "Sütçü", durum: "odendi", odemeSekli: "havale" });
+    // Kart: hesaptan sayılan tutar, gün ve şekil ödemenin kendisinden; kartın bugünü ve havale gösterilmez
+    assert.ok(card.lines.some((l) => l.label === "Hesaptan sayılacak" && /^400,00\s₺ \(faturanın tamamı\)$/.test(l.to)), JSON.stringify(card.lines));
+    assert.ok(card.lines.some((l) => l.label === "Ödeme günü ve şekli" && l.to.includes("Nakit")), JSON.stringify(card.lines));
+    assert.equal(card.lines.some((l) => l.label === "Ödeme günü" || l.label === "Ödeme şekli"), false);
+    const out = await confirm.confirmOp(users.ali, card.id);
+    assert.equal(out.status, "done", out.message);
+    assert.match(out.message, /hesaptaki ödemeyle kapandı/);
+    assert.ok(out.undoUntil);
+    const [paid] = await db.select().from(s.invoices).where(eq(s.invoices.id, inv.id));
+    assert.equal(paid.unpaid, false);
+    assert.equal(paid.paidAt, payDay);
+    assert.equal(paid.paidByLedger, true);
+    // Geri al: dağıtım silinir, para hesaba döner, fatura yeniden ödenmemiş
+    const undo = await confirm.undoOp(users.ali, card.id);
+    assert.equal(undo.status, "undone", undo.message);
+    const [back] = await db.select().from(s.invoices).where(eq(s.invoices.id, inv.id));
+    assert.equal(back.unpaid, true);
+    assert.equal(back.allocated, 0);
+    // Kısmen: hesapta 1000 ₺ var, 1500 ₺'lik faturada 1000 ₺ sayılır, kalanı kartın günü ve şekliyle
+    await db.insert(s.invoices).values({ date: addDays(todayTR(), -1), supplier: "Sütçü", invoiceNo: "SUT2", category: GOODS_CATEGORIES[0], amount: 1500, payable: 1500, unpaid: true });
+    const part = await open("fatura_odendi", { tedarikci: "Sütçü", faturaNo: "SUT2", durum: "odendi", odemeSekli: "havale" });
+    assert.ok(part.lines.some((l) => l.label === "Hesaptan sayılacak" && /^1\.000,00\s₺ \(kalan 500,00\s₺/.test(l.to)), JSON.stringify(part.lines));
+    assert.ok(part.lines.some((l) => l.label === "Ödeme şekli" && l.to === "Havale / EFT"));
+    await confirm.cancelOp(users.ali, part.id);
+    // "Ayrıca ödendi": hesaptaki para sayılmaz, kartın günü ve şekli yazılır
+    const sep = await open("fatura_odendi", { tedarikci: "Sütçü", faturaNo: "SUT1", durum: "odendi", odemeSekli: "kart", ayricaOdendi: true });
+    assert.equal(sep.lines.some((l) => l.label === "Hesaptan sayılacak"), false);
+    await confirm.cancelOp(users.ali, sep.id);
   });
 
   test("tedarikçiye ödeme: kartı olan tedarikçiye, otomatik dağıtımla; kartı olmayana rehber", async () => {

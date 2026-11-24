@@ -28,13 +28,19 @@ işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları 
 - Soruyu yazıp **Enter** (yeni satır için **Shift+Enter**). Yanıt yazılırken akar; araç çalışırken altta durum satırı
   görünür ("Tedarikçi özeti hazırlanıyor…"). **Durdur** yanıtı keser.
 - **Yeni sohbet** konuşmayı siler. Konuşma yalnız bu sekmede durur: sekme kapanınca gider, başka cihaza geçmez.
-- Yanıttaki panel bağlantıları aynı sekmede açılır (telefonda pencere kapanır, sayfa görünsün); başka sitelere bağlantı
-  yalnız https ve yeni sekmede. Başka her adres (javascript:, http:, panelin dışına çıkan yol) bağlantısız yazı kalır;
-  yanıtta HTML çizilmez.
-- **Esc** pencereyi kapatır; pencere açıkken Tab pencerenin içinde döner. Baskıda görünmez.
+- Yanıttaki panel bağlantıları aynı sekmede açılır (telefonda pencere kapanır, sayfa görünsün); dış bağlantı yalnız
+  izin listesindeki sitelere (laffogato.net, Paraşüt, Claude), https ve yeni sekmede. Başka her adres (javascript:,
+  http:, panelin dışına çıkan yol, listede olmayan site) bağlantısız yazı kalır (yalnız etiketi); yanıtta HTML
+  çizilmez. Neden liste: araç sonuçlarında dışarıdan gelen metin var (Paraşüt kalem adları, LafPOS adları); onlarla
+  yapılan istem enjeksiyonu panel verisini taşıyan bir bağlantı ürettirse bile tıklanamaz.
+- **Esc** pencereyi kapatır (masaüstünde odak sayfadayken de). Masaüstünde pencere modal değildir: sayfa kullanılabilir.
+  Telefonda sayfa tam ekran ve modaldır, Tab pencerenin içinde döner. Ekran okuyucu yanıt bitince ilk cümlesini okur.
+  Baskıda görünmez.
 - **Telefonda** (390 ve 360 px genişlikte denendi) sayfa ekranın tamamını kaplar ve görünür alana oturur: ekran klavyesi
   açıkken yazı kutusu klavyenin hemen üstünde kalır, son mesaj görünür kalır, alttaki ipucu satırı gizlenir. Üstte,
-  yanlarda ve klavye kapalıyken altta güvenli alan (çentik, ana ekran çubuğu) boş bırakılır. Alt menü ve sayfanın
+  yanlarda ve klavye kapalıyken altta güvenli alan (çentik, ana ekran çubuğu) boş bırakılır. Açılışta yazı kutusuna
+  değil başlığa odaklanılır: klavye kendiliğinden açılmaz (onay kartını ve çipleri örtmez), kullanıcı kutuya dokununca
+  açılır. Karaoke "süre doldu" şeridi varken sayfa şeridin altından başlar (başlık ve Kapat örtülmez). Alt menü ve sayfanın
   yüzen düğmesi sayfanın altında kalır. Bütün düğmeler (Gönder, Durdur, Kapat, Yeni sohbet, örnek çipler, kartın
   Onayla / Vazgeç'i) en az 44 px; yazı kutusu 16 px (iPhone odakta yakınlaştırmaz). Dar ekranda "Yeni sohbet" yalnız
   simgedir. Onay kartında satırların etiketi üstte, değeri altta durur ve yazılar bir boy büyüktür.
@@ -143,7 +149,9 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
 - **Sunucuda:** hiçbir mesaj saklanmaz; yalnız onay kartlarının planı (`assistant_ops`: araç, girdi, kartın içeriği,
   durum, sonuç; denetim kaydıdır ve yedeğe girer, bekleyen kartlar girmez). Her soru `ai_calls` tablosuna tek satır yazar (tür `asistan`): kim sordu, ne
   zaman, model, süre, token sayıları, tutar (dolar), bitiş nedeni, kaç çağrı ve kaç araç çalıştığı. **Sorunun, yanıtın ve
-  araç sonuçlarının metni yazılmaz.** Sunucu günlüğüne yalnız hata kodu ve Anthropic'in istek kimliği düşer.
+  araç sonuçlarının metni yazılmaz.** Sunucu günlüğüne yalnız hata kodu ve Anthropic'in istek kimliği düşer; araç ve
+  işlem hatalarında hatanın yalnız adı ve kodu (`src/lib/assistant/error-tag.ts`): sorgu hatasının iletisi modelin
+  girdisini ("params: …") taşıdığı için yazılmaz.
 - **Anthropic'e giden:** soru, aynı sohbetteki önceki soru ve yanıtların görünen metni (en çok son 20 mesaj) ve
   araçların sonuçları (panelin verisi). Anthropic (ABD) bu isteği işler; fotoğraftan okumada olduğu gibi.
 
@@ -153,9 +161,21 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
   yanıtlar kısa tutulur). Fiyat: milyon token başına girdi 2 $, çıktı 10 $, önbellekten okuma 0,10 $.
 - Sabit kısım (yönergeler, ekran listesi, kavramlar, araç tanımları) her istekte aynıdır ve önbellekten okunur; bir
   sorunun araç turları da önceki turu önbellekten okur.
-- Bir soru tipik olarak **0,01–0,03 $** tutar (bir iki araç turu); ayın toplamı Ayarlar › Fotoğraftan okuma kartındaki
-  "Bu ay" tutarına girer (okumalar ve vardiya taslaklarıyla birlikte).
-- **Günlük sınır:** yönetici başına günde 60 soru (hata ve ret dahil her soru sayılır). Asistanın soruları fotoğraftan
+- Sabit önek (31 araç tanımı ve sistem istemi) yaklaşık 13–16 bin tokendir (tahmin: ~45 bin karakter Türkçe ve JSON;
+  anahtarsız ortamda `count_tokens` çağrılamadı). Önbelleğin ömrü 5 dakikadır: aradan 5 dakikadan uzun süre geçince
+  sıradaki soru öneki yeniden önbelleğe yazar (1,25×). Bu yüzden iki rakam: **ilk soru ≈ 0,05 $** (önbellek soğuk;
+  önekin yazımı tek başına ≈ 0,035–0,04 $), **5 dakika içindeki sonraki sorular ≈ 0,01–0,03 $** (bir iki araç turu,
+  önek önbellekten okunur). Ayın toplamı Ayarlar › Fotoğraftan okuma kartındaki "Bu ay" tutarına girer (okumalar ve
+  vardiya taslaklarıyla birlikte).
+- Efor neden **medium**: Sonnet 5.5'te `medium` çok adımlı araç kullanımı için, `low` sohbet için başlangıç noktasıdır.
+  `medium`'da model en basit yanıttan önce de kısa bir düşünme yapar (ilk yazının gecikmesi ve çıktı tokeni artar);
+  `low`'da basit sorularda düşünmez. Asistanın soruları çoğunlukla tek araçlı olduğundan `low` denenmeye değer: kalite
+  ve gecikme gerçek sorularla (anahtarlı ortamda) ölçülüp karşılaştırılmadan değiştirilmez. Efor değişince önbellek
+  bir kez yeniden yazılır.
+- **Günlük sınır:** yönetici başına günde 60 soru (hata ve ret dahil her soru sayılır). Sayım ve soru satırının eklenmesi
+  tek işlemde, yönetici başına danışma kilidiyle yapılır: aynı anda gönderilen sorular sınırı aşamaz. Günün son
+  sorusundan sonra pencere "Bugünkü soru sınırı doldu" der; pencere her açılışta kapıyı yeniden sorar (gece yarısı
+  sayfa yenilenmeden açılır). Asistanın soruları fotoğraftan
   okumanın günlük sınırını tüketmez. Kalan hak 10'un altına inince pencerenin altında yazar.
 - Bir soruda en çok **8 araç turu** ve yaklaşık **35 saniye**; dolunca asistan eldeki bilgiyle toparlar. 50 saniyede
   yanıt kesilir ("Süre doldu"). Soru en çok 4000 karakter.
@@ -181,7 +201,8 @@ satırlar düşer, asistan bu ekranlara bağlantı vermez. Belge değişince `np
 
 - Uç: `src/app/api/asistan/route.ts` (GET durum, POST soru; satır satır JSON akışı; 60 sn). Kurallar ve sıra
   `src/server/ai/assistant/handler.ts`: açık mı → aynı köken → oturum → yalnız yönetici (403) → gövde şeması (soru ≤ 4000,
-  geçmiş ≤ 20 mesaj, soru ve yanıt sırayla) → kapı (anahtar, ayar, günlük sınır) → `ai_calls` "running" → akış → kayıt.
+  geçmiş ≤ 20 mesaj, soru ve yanıt sırayla) → kapı (anahtar, ayar, günlük sınır) → `ai_calls` "running" (sayım ve
+  ekleme atomik; sınır bu arada dolduysa 429) → akış → kayıt.
 - Döngü: `src/server/ai/assistant/loop.ts` (Messages API, akışlı, `claude-sonnet-5-5`, `output_config.effort:
   "medium"`, `fallbacks: "default"` + beta `server-side-fallback-2026-07-01`; `thinking`, `temperature` ve zorunlu
   `tool_choice` gönderilmez). Önbellek: araçlar → sabit sistem istemi (`cache_control`) → değişken bağlam (tarih, şube)
@@ -191,8 +212,10 @@ satırlar düşer, asistan bu ekranlara bağlantı vermez. Belge değişince `np
 - Araçlar: `src/server/ai/assistant/tool-defs.ts` (MCP'nin yedi aracı aynen + `panel_rehberi`, `parasut_bekleyenler`),
   `read-tools.ts` (saf: `gun_sonu`, `gunluk_satislar`, `lafpos_durumu`, `menu_durumu`, `vardiya`, `bugun_ozeti`,
   `bekleyen_isler`, `stok_tahmini`; okuyucular dışarıdan verilir), `op-tools.ts` (işlem araçları ve `islem_rehberi`;
-  rehberin girdileri `src/lib/assistant/guides.ts`), `tool-adapter.ts` (zod → `strict: true` araç tanımı, girdi
-  doğrulama, süre sınırı, hata sonucu), `tools.ts` (gerçek okuyucular).
+  rehberin girdileri `src/lib/assistant/guides.ts`), `tool-adapter.ts` (zod → `strict: true` araç tanımı; karmaşıklık
+  sınırına önce işlem araçları, sonra okuma araçları sığdıkça strict, az karmaşık olan önce; girdi doğrulama, süre
+  sınırı ve aracın iptal sinyali, hata sonucu), `tools.ts` (gerçek okuyucular). Araç sonuçları yalnız veri taşır
+  (durum, satırlar); ne söyleneceği sistem isteminde ve aracın açıklamasındadır.
 - LafPOS ve operasyon okuyucuları: `src/server/assistant-reads/index.ts`. Yalnız panelin mevcut okuma işlevleri
   (`loadLafposDayEnd`, `loadLafposZTotals`, `loadDayLafposIkram`, `dailyBranchSalesFrom`, `loadLafposCard`,
   `loadSoldOut`, `posPendingSummary`, `shiftsOn`, `loadShiftWeek`, `loadToday` ve Bugün'ün kuralları,

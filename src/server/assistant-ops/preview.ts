@@ -3,7 +3,9 @@ import "server-only";
 import { and, desc, eq, gt, isNotNull, max } from "drizzle-orm";
 import { z } from "zod";
 
+import { EPS, openBalance, paidViaOf, round2, type BalanceInvoice, type CariMethod } from "@/lib/cari/balance";
 import { businessDate } from "@/lib/cash-report";
+import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { dateTR, num, pct, tl, tlUnit } from "@/lib/format";
 import { cleanName, foldName, ToolInputError } from "@/lib/mcp/answers/common";
 import type { OpName } from "@/lib/assistant/op-specs";
@@ -24,7 +26,10 @@ import {
   weekStart,
 } from "@/lib/vardiya";
 import { loadModel } from "@/server/data/dataset";
+import { cardResolver, paymentCredits } from "@/server/cari/settle";
 import { activeProductsUsing } from "@/server/data/ingredient-usage";
+import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
+import { loadTillScope } from "@/server/data/till-scope";
 import { soldOutNoteFor } from "@/server/data/menu-status";
 import { getDb, schema as s } from "@/server/db";
 import { siteLinkSecret } from "@/server/site-link";
@@ -46,6 +51,12 @@ const NO_CHANGE = (what: string) => new ToolInputError(`${what}; değişiklik yo
 const yesNo = (v: boolean) => (v ? "Evet" : "Hayır");
 const today = (ctx: PreviewCtx) => todayTR(ctx.now);
 const dayText = (date: string) => `${longDateTR(date)} ${date.slice(0, 4)}`;
+
+/**
+ * Modelin yazdığı serbest metin, kartta görünen ve yazılan AYNI olsun diye temizlenir (kırpılmaz; uzunluk girdi
+ * şemasında): denetim, sıfır genişlikli ve yön değiştiren karakterler ile satır sonları boşluğa. Boş kalırsa null
+ */
+const plainText = (v: string | undefined | null): string | null => (v ? cleanName(v, Number.POSITIVE_INFINITY) || null : null);
 
 /** Ürünler adla ve boyla: önce ad (birebir, sonra adında geçen; tek ad kalmalı), sonra boy (birden çok boy varsa zorunlu) */
 function pickProduct<T extends { name: string; size: string }>(rows: readonly T[], name: string, size: string | undefined, hint = ""): T {
@@ -215,23 +226,25 @@ const reminderAdd: OpPreview<"hatirlatici_ekle", z.output<typeof reminderArgs>, 
   before: reminderBefore,
   async preview(input, ctx) {
     const b = expenseBranch(input.sube, ctx.scope, ctx.branches);
+    const title = plainText(input.baslik);
+    if (!title) throw new ToolInputError("Hatırlatıcının başlığı boş; kullanıcıya sor.");
     const [{ maxId }] = await db().select({ maxId: max(s.reminders.id) }).from(s.reminders);
     const same = await db()
       .select({ id: s.reminders.id, title: s.reminders.title })
       .from(s.reminders)
       .where(and(eq(s.reminders.active, true), eq(s.reminders.dueDate, input.ilkTarih)));
     const warnings = ["Sabah e-postasında ve nakit planında görünür; ödendi işaretini Ödemeler'den koyarsınız."];
-    if (same.some((r) => foldName(r.title) === foldName(input.baslik))) warnings.push("Aynı gün aynı adla açık bir hatırlatıcı zaten var: iki kez eklemediğinizden emin olun.");
+    if (same.some((r) => foldName(r.title) === foldName(title))) warnings.push("Aynı gün aynı adla açık bir hatırlatıcı zaten var: iki kez eklemediğinizden emin olun.");
     if (input.ilkTarih < today(ctx)) warnings.push("İlk tarih geçmişte: hatırlatıcı hemen gecikmiş görünür.");
     const days = input.kacGunOnce ?? 3;
     return {
       card: {
-        title: `Hatırlatıcı eklenecek: ${cleanName(input.baslik, 60)}`,
-        subject: cleanName(input.baslik, 60),
+        title: `Hatırlatıcı eklenecek: ${cleanName(title, 60)}`,
+        subject: cleanName(title, 60),
         branch: b.label,
         day: dayText(input.ilkTarih),
         lines: [
-          { label: "Başlık", to: cleanName(input.baslik, 120) },
+          { label: "Başlık", to: title },
           { label: "Tür", to: KIND_LABEL[input.tur] },
           { label: "Tutar", to: input.tutar === undefined ? "Yok" : tl(input.tutar, 2) },
           { label: "İlk tarih", to: dayText(input.ilkTarih) },
@@ -244,7 +257,7 @@ const reminderAdd: OpPreview<"hatirlatici_ekle", z.output<typeof reminderArgs>, 
         warnings,
       },
       args: {
-        title: input.baslik,
+        title,
         kind: input.tur,
         amount: input.tutar ?? null,
         dueDate: input.ilkTarih,
@@ -341,6 +354,32 @@ export async function invoicePaymentState(id: number) {
   return r ?? null;
 }
 
+/**
+ * Önce hesaptaki para (settle.ts creditFirst'ün salt okunur tahmini): faturanın kartının hesabında sayılmamış ödeme
+ * varsa en eski ödemeden başlayarak faturanın kalanına kadar sayılır. Fatura tamamen karşılanırsa defterle kapanır:
+ * ödeme günü ve şekli son sayılan ödemeninki olur (kartın gösterdiği bugün ve seçilen şekil değil).
+ */
+async function creditEstimate(inv: BalanceInvoice & { supplier: string; supplierTaxNumber: string | null }): Promise<{ used: number; closes: boolean; last: { date: string; method: CariMethod } } | null> {
+  if (inv.payable <= 0) return null;
+  const cardId = (await cardResolver(db()))(inv.supplier, inv.supplierTaxNumber);
+  if (cardId === null) return null;
+  const credits = (await paymentCredits(db(), cardId)).filter((p) => p.credit > EPS);
+  if (!credits.length) return null;
+  // Faturanın sayılabilecek kalanı: takipteyse Ödenecek − taban − sayılan; takip ödemeyle başlayacaksa tabanı Paraşüt'ün
+  // ödendi gösterdiği kısım olur, kalan yine bugünkü kalandır (openBalance ikisini de verir)
+  let room = round2(Math.max(0, openBalance(inv)));
+  let used = 0;
+  let last: { date: string; method: CariMethod } | null = null;
+  for (const p of credits) {
+    if (room <= EPS) break;
+    const take = round2(Math.min(room, p.credit));
+    used = round2(used + take);
+    room = round2(room - take);
+    last = { date: p.date, method: p.method };
+  }
+  return used > EPS && last ? { used, closes: room <= EPS, last } : null;
+}
+
 const invoicePaid: OpPreview<"fatura_odendi", z.output<typeof invoiceArgs>, z.output<typeof invoiceState>> = {
   args: invoiceArgs,
   before: invoiceState,
@@ -356,6 +395,10 @@ const invoicePaid: OpPreview<"fatura_odendi", z.output<typeof invoiceArgs>, z.ou
         paidAt: s.invoices.paidAt,
         paidVia: s.invoices.paidVia,
         paymentRequestedAt: s.invoices.paymentRequestedAt,
+        supplierTaxNumber: s.invoices.supplierTaxNumber,
+        ledgerBase: s.invoices.ledgerBase,
+        allocated: s.invoices.allocated,
+        outstanding: s.invoices.outstanding,
       })
       .from(s.invoices)
       .where(eq(s.invoices.unpaid, true));
@@ -385,13 +428,26 @@ const invoicePaid: OpPreview<"fatura_odendi", z.output<typeof invoiceArgs>, z.ou
       { label: "Tutar", to: tl(inv.payable, 2) },
       { label: "Durum", from: inv.paymentRequestedAt ? "Ödemesi istendi" : "Ödenmedi", to: status === "paid" ? "Ödendi" : "Ödemesi istendi" },
     ];
-    if (status === "paid") {
+    const credit = status === "paid" && !input.ayricaOdendi ? await creditEstimate(inv) : null;
+    if (credit) {
+      lines.push({ label: "Hesaptan sayılacak", to: credit.closes ? `${tl(credit.used, 2)} (faturanın tamamı)` : `${tl(credit.used, 2)} (kalan ${tl(round2(inv.payable - credit.used), 2)} karttaki gün ve şekille ödendi yazılır)` });
+    }
+    if (credit?.closes) {
+      // Defter kapatır: gün ve şekil ödemenin kendisinden (kartın seçtiği gün ve şekil yazılmaz)
+      lines.push({ label: "Ödeme günü ve şekli", to: `Ödemenin kendisinden: ${dateTR(credit.last.date)}, ${METHOD_LABEL[paidViaOf(credit.last.method)]}` });
+    } else if (status === "paid") {
       lines.push({ label: "Ödeme günü", to: dayText(date) });
       lines.push({ label: "Ödeme şekli", to: input.odemeSekli ? METHOD_LABEL[input.odemeSekli] : "Belirtilmedi" });
     }
     const warnings = ["Yalnız işaret: banka ödemesi yapmaz, Paraşüt'e yazmaz."];
     if (status === "paid")
-      warnings.unshift(input.ayricaOdendi ? "“Ayrıca ödendi”: tedarikçinin hesabındaki ödeme bu faturaya sayılmaz." : "Tedarikçinin hesabında sayılmamış ödeme varsa önce o sayılır.");
+      warnings.unshift(
+        input.ayricaOdendi
+          ? "“Ayrıca ödendi”: tedarikçinin hesabındaki ödeme bu faturaya sayılmaz."
+          : credit
+            ? `Tedarikçinin hesabında sayılmamış ödeme var: önce o sayılır${credit.closes ? "; fatura onunla kapanır" : ""}. Ayrıca ödendiyse asistana “ayrıca ödendi” deyin.`
+            : "Tedarikçinin hesabında sayılmamış ödeme yok: fatura bu gün ve şekille işaretlenir.",
+      );
     return {
       card: {
         title: status === "paid" ? `${cleanName(inv.supplier)} faturası ödendi işaretlenecek` : `${cleanName(inv.supplier)} faturasının ödemesi talep edilecek`,
@@ -460,7 +516,8 @@ const supplierPayment: OpPreview<"tedarikci_odemesi_ekle", z.output<typeof suppl
         to: input.dagitim === "otomatik" ? "En eski vadeli borçtan başlayarak açık kalemlere; artan hesapta durur" : "Hiçbir kaleme sayılmaz, hesapta bekler",
       },
     ];
-    if (input.aciklama) lines.push({ label: "Not", to: cleanName(input.aciklama, 200) });
+    const note = plainText(input.aciklama);
+    if (note) lines.push({ label: "Not", to: note });
     return {
       card: {
         title: `${cleanName(card.name)} için ${tl(input.tutar, 2)} ödeme kaydı girilecek`,
@@ -473,7 +530,7 @@ const supplierPayment: OpPreview<"tedarikci_odemesi_ekle", z.output<typeof suppl
         undoable: false,
         warnings,
       },
-      args: { cardId: card.id, amount: input.tutar, date: input.tarih, method: input.odemeSekli, mode: input.dagitim === "otomatik" ? "auto" : "none", note: input.aciklama || null },
+      args: { cardId: card.id, amount: input.tutar, date: input.tarih, method: input.odemeSekli, mode: input.dagitim === "otomatik" ? "auto" : "none", note },
       before: {},
       branch: null,
     };
@@ -566,6 +623,9 @@ const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof prod
     };
     const change = p.price > 0 ? (input.yeniFiyat - p.price) / p.price : null;
     const linked = p.siteMenuId !== null;
+    // Seçili şubenin bugünkü kasası (Fiyatlar › Kasaya işle ile aynı kural): LafPOS gününde bağlı olmayan ürün de
+    // listeye düşer, LafPOS'ta yerel ürünse fiyat orada elle değişir
+    const lafposTill = (await loadTillScope(db(), ctx.now)).lafpos;
     const lines: OpCardLine[] = [
       { label: "Satış fiyatı", from: tl(p.price, 2), to: `${tl(input.yeniFiyat, 2)}${change !== null ? ` (${change >= 0 ? "+" : ""}${pct(change)})` : ""}` },
       { label: "Birim maliyet", to: calc?.cost ? tl(calc.cost, 2) : "Reçete yok" },
@@ -577,7 +637,11 @@ const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof prod
           "Önce siteye yazılır; site kabul etmezse hiçbir şey değişmez.",
           "LafPOS fiyatı siteden alır (en geç 15 dakika). ModPOS kullanan kasada fiyatı elle değiştirin: Fiyatlar › Kasaya işle listesine düşer.",
         ]
-      : ["Sitede değişmez. Kasada elle değiştirilecek: Fiyatlar › Kasaya işle listesine düşer."];
+      : lafposTill
+        ? [
+            "Sitede değişmez. LafPOS ürünü siteden alıyorsa fiyat LafPOS'ta da değişmez: Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; LafPOS'ta yerel ürünse orada elle değiştirin. Fiyatlar › Kasaya işle listesine düşer.",
+          ]
+        : ["Sitede değişmez. Kasada elle değiştirilecek: Fiyatlar › Kasaya işle listesine düşer."];
     if (change !== null && Math.abs(change) > 0.3) warnings.unshift(`Fiyat ${pct(change)} değişiyor: tutarı kontrol edin.`);
     return {
       card: {
@@ -586,7 +650,7 @@ const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof prod
         branch: "Bütün şubeler (menü ortak)",
         day: dayText(today(ctx)),
         lines,
-        effects: linked ? ["site", "lafpos", "modpos"] : ["modpos"],
+        effects: linked ? ["site", "lafpos", "modpos"] : lafposTill ? ["lafpos"] : ["modpos"],
         undo: "Sonuç kartındaki Geri al eski fiyatı geri yazar (fiyat bu arada başka yerde değişmediyse).",
         undoable: true,
         warnings,
@@ -646,36 +710,47 @@ const cashOutAdd: OpPreview<"kasadan_cikan_ekle", z.output<typeof cashOutArgs>, 
     if (teslim && input.harcamalaraYaz) throw new ToolInputError("Teslim (birine verilen para) Aylık harcamalar'a yazılmaz; harcamalaraYaz false olmalı.");
     if (input.harcamalaraYaz && !input.kategori) throw new ToolInputError("Aylık harcamalar'a yazılacaksa gider kategorisi gerekli; kullanıcıya sor.");
     const cat = !teslim && input.kategori ? pickByName(await activeCategories(), input.kategori, (c) => c.name, "Gider kategorisi", "Kategoriler Aylık harcamalar › Kategoriler'de.") : null;
+    // Şubenin bu günü LafPOS'taysa kasadan çıkan LafPOS'ta girilir (docs/LAFPOS.md, KASA-RAPORU.md): panelden eklenen
+    // satır LafPOS'un nakit sayımına girmez; aynı tür ve tutarda LafPOS hareketi gün sonunda bu satırı sahiplenir
+    const lafposDay = isLafposDay(date, branchSwitchDay(await lafposSwitchDayOf(db()), b.id));
+    const warnings = lafposDay
+      ? [
+          `${b.name} bu gün LafPOS'ta: kasadan çıkanı LafPOS'ta (Kasa › Harcama / Teslim) girin. Aynı tür ve tutarda LafPOS girişi gün sonunda bu satırı sahiplenir; LafPOS'a girilmezse LafPOS'un kasa sayımı eksik çıkar, tutarı farklıysa panelde ayrı bir satır olarak kalır.`,
+          "Akşam kasa raporunun “Gün içinde kasadan çıkan” toplamına girer.",
+        ]
+      : ["Akşam kasa raporunun “Gün içinde kasadan çıkan” toplamına girer; LafPOS'a gitmez."];
     const lines: OpCardLine[] = [
       { label: "Kasa", to: b.name },
       { label: "Gün", to: dayText(date) },
       { label: "Tür", to: teslim ? "Teslim (birine verilen para)" : "Alışveriş" },
       { label: "Tutar", to: tl(input.tutar, 2) },
     ];
-    if (input.yer) lines.push({ label: teslim ? "Kime" : "Yer", to: cleanName(input.yer, 60) });
-    if (input.aciklama) lines.push({ label: "Ne alındı", to: cleanName(input.aciklama, 200) });
+    const store = plainText(input.yer);
+    const description = plainText(input.aciklama);
+    if (store) lines.push({ label: teslim ? "Kime" : "Yer", to: store });
+    if (description) lines.push({ label: "Ne alındı", to: description });
     lines.push({ label: "Belge", to: DOC_LABEL[input.belge] });
     if (cat) lines.push({ label: "Kategori", to: cleanName(cat.name) });
     lines.push({ label: "Aylık harcamalar'a", to: yesNo(input.harcamalaraYaz) });
     return {
       card: {
         title: `${b.name} kasasından ${tl(input.tutar, 2)} çıkış eklenecek`,
-        subject: cleanName(input.yer ?? input.aciklama ?? (teslim ? "Teslim" : "Alışveriş"), 60),
+        subject: cleanName(store ?? description ?? (teslim ? "Teslim" : "Alışveriş"), 60),
         branch: b.name,
         day: dayText(date),
         lines,
         effects: input.harcamalaraYaz ? ["kasa", "gelirGider"] : ["kasa"],
         undo: "Asistan geri almaz (silmek gerekir): Kasa › Kasadan çıkanlar › satır › Sil (bildirimde 15 dk Geri al).",
         undoable: false,
-        warnings: ["Akşam kasa raporunun “Gün içinde kasadan çıkan” toplamına girer; LafPOS'a gitmez."],
+        warnings,
       },
       args: {
         branchId: b.id,
         date,
         kind: input.tur,
         amount: input.tutar,
-        store: input.yer || null,
-        description: input.aciklama || null,
+        store,
+        description,
         docType: input.belge,
         categoryId: cat?.id ?? null,
         toExpenses: input.harcamalaraYaz,
@@ -715,7 +790,8 @@ const expenseAdd: OpPreview<"harcama_ekle", z.output<typeof expenseArgs>, z.outp
       { label: "Ödeme şekli", to: input.odemeSekli ? PAY_LABEL[input.odemeSekli] : "Belirtilmedi" },
       { label: "Şube", to: eb.label },
     ];
-    if (input.aciklama) lines.push({ label: "Açıklama", to: cleanName(input.aciklama, 200) });
+    const description = plainText(input.aciklama);
+    if (description) lines.push({ label: "Açıklama", to: description });
     return {
       card: {
         title: `${cleanName(cat.name)} gideri eklenecek: ${tl(input.tutar, 2)}`,
@@ -728,7 +804,7 @@ const expenseAdd: OpPreview<"harcama_ekle", z.output<typeof expenseArgs>, z.outp
         undoable: false,
         warnings: input.tarih.slice(0, 7) < today(ctx).slice(0, 7) ? ["Geçmiş ayın giderine yazılır: o ayın kârı değişir."] : [],
       },
-      args: { categoryId: cat.id, date: input.tarih, amount: input.tutar, paymentMethod: input.odemeSekli ?? null, description: input.aciklama || null },
+      args: { categoryId: cat.id, date: input.tarih, amount: input.tutar, paymentMethod: input.odemeSekli ?? null, description },
       before: {},
       branch: eb.scope,
     };
@@ -779,7 +855,8 @@ const wasteAdd: OpPreview<"zayi_ikram_ekle", z.output<typeof wasteArgs>, z.outpu
       { label: target.productId ? "Ürün" : "Hammadde", to: cleanName(target.name) },
       { label: "Miktar", to: `${num(input.miktar, 3)} ${target.unit}` },
     ];
-    if (input.neden) lines.push({ label: "Neden", to: cleanName(input.neden, 60) });
+    const reason = plainText(input.neden);
+    if (reason) lines.push({ label: "Neden", to: reason });
     return {
       card: {
         title: `${kindLabel} kaydı girilecek: ${cleanName(target.name)} ${num(input.miktar, 3)} ${target.unit}`,
@@ -792,7 +869,7 @@ const wasteAdd: OpPreview<"zayi_ikram_ekle", z.output<typeof wasteArgs>, z.outpu
         undoable: false,
         warnings: target.ingredientId ? [`Miktar hammaddenin sayım biriminde (${target.unit}); kontrol edin.`] : [],
       },
-      args: { date, kind: input.tur, productId: target.productId, ingredientId: target.ingredientId, qty: input.miktar, reason: input.neden || null },
+      args: { date, kind: input.tur, productId: target.productId, ingredientId: target.ingredientId, qty: input.miktar, reason },
       before: {},
       branch: b.id,
     };

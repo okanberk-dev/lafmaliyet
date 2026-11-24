@@ -6,7 +6,7 @@ import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } f
 import { useHideOnScrollDown } from "@/components/ui/fab";
 import { useMediaQuery } from "@/components/ui/use-media";
 import type { OpCardState } from "@/lib/assistant/ops";
-import { ASSISTANT_LIMITS, eventReader, historyForRequest, restoreCards, type AssistantDone, type AssistantEvent, type ChatMessage } from "@/lib/assistant/protocol";
+import { ASSISTANT_DAILY_CAP, ASSISTANT_LIMITS, eventReader, historyForRequest, restoreCards, type AssistantDone, type AssistantEvent, type ChatMessage } from "@/lib/assistant/protocol";
 import { cn } from "@/lib/utils";
 
 import { MarkdownView } from "./markdown-view";
@@ -23,7 +23,11 @@ import { OpCardView } from "./op-card";
  *   önceki turların görünen metni gider (historyForRequest); sunucu hiçbir mesajı saklamaz.
  * - Yanıt akarak gelir (satır satır JSON): metin parça parça, araç çalışırken durum satırı ("Tedarikçi özeti…"),
  *   "Durdur" isteği keser. Yanıt güvenli markdown'la çizilir (markdown-view.tsx; HTML yok).
- * - Klavye: Esc kapatır, Tab pencerenin içinde döner, Enter gönderir, Shift+Enter yeni satır.
+ * - Klavye: Esc kapatır (masaüstünde odak sayfadayken de), Enter gönderir, Shift+Enter yeni satır. Telefonda sayfa tam
+ *   ekran ve modaldır (aria-modal, Tab pencerenin içinde döner); masaüstünde pencere modal değildir (sayfa kullanılabilir).
+ * - Açılış odağı: masaüstünde yazı alanı; telefonda pencerenin kendisi (klavye kullanıcı alana dokununca açılır: iOS
+ *   hareketsiz focus()'ta klavye açmaz, odak yine de bottom-nav.tsx'te "klavye açık" sayılır ve alt güvenli alan düşerdi).
+ * - Karaoke "süre doldu" şeridi (z-70) varken telefondaki sayfa şeridin altından başlar (--alarm-h, globals.css).
  * - Telefon (390 ve 360 px): tam ekran alt sayfa, görünür alana oturur (--vvh yüksekliği, --vv-top üstü; bottom-nav.tsx
  *   yazar): ekran klavyesi açıkken giriş kutusu klavyenin hemen üstünde kalır, alttaki güvenli alan payı klavye
  *   kapalıyken eklenir; üstte, solda ve sağda güvenli alan (çentik). Alt menü ve sayfanın yüzen düğmesi (Fab) sayfanın
@@ -89,6 +93,21 @@ function saveMessages(userId: number, messages: ChatMessage[]) {
   }
 }
 
+/** Günün sınırı dolunca kapının metni (sunucudaki aiErrorText("cap", …, "asistan") ile aynı) */
+const capText = (cap: number) => `Bugünkü soru sınırı doldu (${cap || ASSISTANT_DAILY_CAP}); yarın yeniden açılır.`;
+
+/** Ekran okuyucu için bitiş duyurusu: yanıtın ilk cümlesi (markdown işaretleri atılarak, en çok 160 harf) */
+function answerAnnouncement(text: string): string {
+  const plain = text
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[*_`#>|]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!plain) return "Yanıt hazır";
+  const first = (plain.match(/^.+?[.!?…](?=\s|$)/)?.[0] ?? plain).slice(0, 160);
+  return `Yanıt hazır: ${first}`;
+}
+
 const FOCUSABLE = 'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function PanelAssistant({ userId }: { userId: number }) {
@@ -103,14 +122,17 @@ export function PanelAssistant({ userId }: { userId: number }) {
   const sheet = useMediaQuery("(width < 64rem)");
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  /** Akan yanıtın metni (bitişte ekran okuyucuya ilk cümlesi okunur) */
+  const lastText = useRef("");
   const titleId = useId();
 
   useEffect(() => saveMessages(userId, messages), [userId, messages]);
 
-  // Açılınca: durum (anahtar, ayar, bugün kalan) bir kez sorulur, yazı alanına odaklanılır
+  // Açılınca: durum (anahtar, ayar, bugün kalan) sorulur; kapalı ya da sınırdaysa her açılışta yeniden (gece yarısı açılır)
   const loadGate = useCallback(async () => {
     try {
       const res = await fetch("/api/asistan", { cache: "no-store" });
@@ -124,7 +146,7 @@ export function PanelAssistant({ userId }: { userId: number }) {
 
   const show = () => {
     setOpen(true);
-    if (!gate) void loadGate();
+    if (!gate || gate.state !== "on") void loadGate();
   };
 
   const close = useCallback(() => {
@@ -134,9 +156,25 @@ export function PanelAssistant({ userId }: { userId: number }) {
 
   useEffect(() => {
     if (!open) return;
-    const t = requestAnimationFrame(() => inputRef.current?.focus());
+    // Telefonda yazı alanına değil başlığa: klavye kendiliğinden açılmasın, onay kartı ve çipler örtülmesin
+    const t = requestAnimationFrame(() => (sheet ? headingRef.current?.focus() : inputRef.current?.focus()));
     return () => cancelAnimationFrame(t);
+    // Yalnız açılışta (genişlik değişince odak taşınmaz)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Masaüstünde pencere modal değil: odak sayfadayken de Esc kapatır (telefonda panelin kendi onKeyDown'ı)
+  useEffect(() => {
+    if (!open || sheet) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      // Açık bir menü, pencere ya da açılır liste Esc'i önce kendisi kullanır
+      if (document.querySelector('[role="dialog"][aria-modal="true"], [role="menu"], [role="listbox"]')) return;
+      close();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, sheet, close]);
 
   // Yeni metin gelince sona kaydır (kullanıcı yukarıda okumuyorsa)
   useEffect(() => {
@@ -191,8 +229,12 @@ export function PanelAssistant({ userId }: { userId: number }) {
       patchLast((m) => ({ ...m, text: keepText ? m.text : "", failed: !keepText || !m.text.trim(), note: message }));
       setAnnounce(message);
     };
+    lastText.current = "";
     const handle = (e: AssistantEvent) => {
-      if (e.type === "text") patchLast((m) => ({ ...m, text: m.text + e.text }));
+      if (e.type === "text") {
+        lastText.current += e.text;
+        patchLast((m) => ({ ...m, text: m.text + e.text }));
+      }
       else if (e.type === "tool") setTool(e.label);
       else if (e.type === "card") {
         patchLast((m) => ({ ...m, cards: [...(m.cards ?? []), { card: e.card, status: "pending" }] }));
@@ -203,8 +245,8 @@ export function PanelAssistant({ userId }: { userId: number }) {
         setTool(null);
         const note = DONE_NOTE[e.reason];
         patchLast((m) => ({ ...m, ...(note ? { note } : {}), ...(m.text.trim() || m.cards?.length ? {} : { failed: true, note: note ?? "Yanıt boş geldi." }) }));
-        if (e.left !== null) setGate((g) => (g ? { ...g, left: e.left!, state: e.left! <= 0 ? "cap" : g.state } : g));
-        setAnnounce("Yanıt hazır");
+        if (e.left !== null) setGate((g) => (g ? { ...g, left: e.left!, ...(e.left! <= 0 ? { state: "cap", message: capText(g.cap) } : {}) } : g));
+        setAnnounce(answerAnnouncement(lastText.current));
       } else if (e.type === "error") {
         setTool(null);
         // Ret: yarım gelen metin atılır (yanıtın yerine yalnız açıklama)
@@ -262,7 +304,8 @@ export function PanelAssistant({ userId }: { userId: number }) {
       close();
       return;
     }
-    if (e.key !== "Tab" || !panelRef.current) return;
+    // Odak tuzağı yalnız telefondaki tam ekran (modal) sayfada
+    if (e.key !== "Tab" || !sheet || !panelRef.current) return;
     const items = [...panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.offsetParent !== null);
     if (!items.length) return;
     const first = items[0];
@@ -314,19 +357,21 @@ export function PanelAssistant({ userId }: { userId: number }) {
         <div
           ref={panelRef}
           role="dialog"
-          aria-modal="true"
+          aria-modal={sheet || undefined}
           aria-labelledby={titleId}
+          tabIndex={-1}
           onKeyDown={onPanelKey}
           data-scroll-lock={sheet || undefined}
           data-component="panel-assistant"
           className={cn(
-            "no-print fixed z-[60] flex flex-col overflow-hidden bg-surface text-ink",
+            "no-print fixed z-[60] flex flex-col overflow-hidden bg-surface text-ink focus:outline-none",
             // Telefon ve tablet: tam ekran sayfa, görünür alana oturur (klavye açıkken klavyenin üstünde biter: --vvh,
             // --vv-top); güvenli alan üstte, yanlarda ve klavye kapalıyken altta
-            "max-lg:inset-x-0 max-lg:top-(--vv-top,0px) max-lg:bottom-auto max-lg:h-(--vvh,100dvh)",
+            // Karaoke şeridi (z-70) varken onun altından başlar (--alarm-h): başlık ve Kapat örtülmez
+            "max-lg:inset-x-0 max-lg:top-[calc(var(--vv-top,0px)+var(--alarm-h,0px))] max-lg:bottom-auto max-lg:h-[calc(var(--vvh,100dvh)-var(--alarm-h,0px))]",
             "max-lg:pt-[env(safe-area-inset-top)] max-lg:pr-[env(safe-area-inset-right)] max-lg:pb-[env(safe-area-inset-bottom)] max-lg:pl-[env(safe-area-inset-left)] max-lg:in-data-[keyboard=open]:pb-0",
             // Masaüstü: sağ altta 400 × 560 pencere
-            "lg:right-6 lg:bottom-6 lg:h-[min(560px,calc(100dvh-3rem))] lg:w-[400px] lg:rounded-2xl lg:shadow-[0_16px_48px_rgba(0,0,0,0.22)] lg:ring-1 lg:ring-line-strong",
+            "lg:right-6 lg:bottom-6 lg:h-[min(560px,calc(100dvh-3rem-var(--alarm-h,0px)))] lg:w-[400px] lg:rounded-2xl lg:shadow-[0_16px_48px_rgba(0,0,0,0.22)] lg:ring-1 lg:ring-line-strong",
           )}
         >
           <header className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-3 max-lg:gap-2 max-lg:py-2 max-lg:pr-2">
@@ -334,7 +379,7 @@ export function PanelAssistant({ userId }: { userId: number }) {
               <Sparkles className="size-4 text-brand-500" aria-hidden="true" />
             </span>
             <div className="min-w-0 flex-1">
-              <h2 id={titleId} className="text-[15px] leading-5 font-semibold">
+              <h2 id={titleId} ref={headingRef} tabIndex={-1} className="text-[15px] leading-5 font-semibold focus:outline-none">
                 Panel asistanı
               </h2>
               <p className="truncate text-[12px] leading-4 text-ink-mute">Panelin verisine bakar; onayınızla küçük işleri yapar</p>

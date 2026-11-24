@@ -1,10 +1,11 @@
 // Panel asistanının veritabanı yüzü (docs/ASISTAN.md), gerçek Postgres'te: günlük sınır yönetici başına ve yalnız
 // asistanın satırlarını sayar (vardiya taslağı, okuma ve başka yöneticinin sorusu sayılmaz), asistanın soruları da
 // okuma sınırına girmez; Ayarlar › Fotoğraftan okuma kapalıysa "off"; soru satırı "running" açılır, maliyet, token ve
-// sayılarla kapanır (metin yok); parasut_bekleyenler aracı Paraşüt sayfasının listesini okur. Claude'a istek gitmez
-// (anahtar sahte, istemci çağrılmaz). Kendi kullanıcılarını, satırlarını ve faturasını açar, sonunda siler.
+// sayılarla kapanır (metin yok); sınır sayımla eklemeyi tek sorguda yapar (aynı anda gelen sorular aşamaz);
+// parasut_bekleyenler aracı Paraşüt sayfasının listesini okur. Claude'a istek gitmez (anahtar sahte, istemci çağrılmaz).
 //
-// ASISTAN_TEST_DATABASE_URL verilmezse atlanır (migration'ları uygulanmış bir yerel veritabanı).
+// ASISTAN_TEST_DATABASE_URL verilmezse atlanır (öteki iki DB testi gibi: verilen sunucuda kendi geçici veritabanını,
+// lm_asistan_panel_<pid>, açar, migration'ları uygular, sonunda siler).
 // Çalıştırma: ASISTAN_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/lm_asistan npx tsx --test tests/panel-asistani-db.test.ts
 
 import assert from "node:assert/strict";
@@ -12,30 +13,39 @@ import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { after, before, describe, test } from "node:test";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
+import postgres from "postgres";
 
 import { ASSISTANT_DAILY_CAP } from "../src/lib/assistant/protocol";
 import type { AssistantOutcome } from "../src/server/ai/assistant/loop";
 import * as s from "../src/server/db/schema";
 
-const URL = process.env.ASISTAN_TEST_DATABASE_URL;
+const SERVER_URL = process.env.ASISTAN_TEST_DATABASE_URL;
+const DB_NAME = `lm_asistan_panel_${process.pid}`;
 
-describe("Panel asistanı: veritabanında sınır ve kayıt", { skip: !URL && "ASISTAN_TEST_DATABASE_URL yok" }, () => {
+describe("Panel asistanı: veritabanında sınır ve kayıt", { skip: !SERVER_URL && "ASISTAN_TEST_DATABASE_URL yok" }, () => {
+  let admin: postgres.Sql;
   const tag = `${process.pid}-${randomBytes(3).toString("hex")}`;
   let db: import("../src/server/db").DB;
   let claude: typeof import("../src/server/ai/claude");
   let tools: typeof import("../src/server/ai/assistant/tools");
   let adapter: typeof import("../src/server/ai/assistant/tool-adapter");
   const ids = { admin: 0, other: 0, invoice: 0 };
-  let settingsBefore: unknown;
 
   before(async () => {
-    Object.assign(process.env, { DATABASE_URL: URL, ANTHROPIC_API_KEY: "sahte-anahtar-istek-gitmez", AUTH_SECRET: "panel-asistani-testi-icin-en-az-otuz-iki-karakterlik-anahtar" });
+    admin = postgres(SERVER_URL!, { max: 1, onnotice: () => {} });
+    await admin.unsafe(`DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)`);
+    await admin.unsafe(`CREATE DATABASE ${DB_NAME}`);
+    const url = new URL(SERVER_URL!);
+    url.pathname = `/${DB_NAME}`;
+    Object.assign(process.env, { DATABASE_URL: url.href, ANTHROPIC_API_KEY: "sahte-anahtar-istek-gitmez", AUTH_SECRET: "panel-asistani-testi-icin-en-az-otuz-iki-karakterlik-anahtar" });
     // "server-only" Next'in sunucu derlemesi dışında hata fırlatır
     const require = createRequire(import.meta.url);
     const p = require.resolve("server-only");
     require.cache[p] = { id: p, filename: p, loaded: true, exports: {} } as unknown as NodeJS.Module;
     db = (await import("../src/server/db")).getDb();
+    await migrate(db, { migrationsFolder: "drizzle" });
     claude = await import("../src/server/ai/claude");
     tools = await import("../src/server/ai/assistant/tools");
     adapter = await import("../src/server/ai/assistant/tool-adapter");
@@ -43,19 +53,13 @@ describe("Panel asistanı: veritabanında sınır ve kayıt", { skip: !URL && "A
     const [b] = await db.insert(s.users).values({ email: `asistan-diger-${tag}@test.local`, name: "Öteki Yönetici", passwordHash: "x", role: "admin" }).returning();
     ids.admin = a.id;
     ids.other = b.id;
-    [settingsBefore] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, "ai.settings"));
     await claude.saveAiSettings({ enabled: true, dailyCap: 40 });
   });
 
   after(async () => {
-    if (!db) return;
-    await db.delete(s.aiCalls).where(inArray(s.aiCalls.userId, [ids.admin, ids.other]));
-    if (ids.invoice) await db.delete(s.invoices).where(eq(s.invoices.id, ids.invoice));
-    await db.delete(s.users).where(inArray(s.users.id, [ids.admin, ids.other]));
-    // Paylaşılan veritabanında ayar eski hâline
-    if (settingsBefore) await db.update(s.integrationState).set({ value: (settingsBefore as { value: unknown }).value }).where(eq(s.integrationState.key, "ai.settings"));
-    else await db.delete(s.integrationState).where(eq(s.integrationState.key, "ai.settings"));
-    await db.$client.end();
+    await db?.$client.end();
+    await admin?.unsafe(`DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)`);
+    await admin?.end();
   });
 
   const rows = (userId: number | null, feature: string, n: number) =>
@@ -86,7 +90,7 @@ describe("Panel asistanı: veritabanında sınır ve kayıt", { skip: !URL && "A
   });
 
   test("soru satırı: önce running, sonra maliyet, token ve sayılarla kapanır; metin yazılmaz", async () => {
-    const id = await claude.startAssistantCall(ids.admin);
+    const id = (await claude.startAssistantCall(ids.admin))!;
     const [open] = await db.select().from(s.aiCalls).where(eq(s.aiCalls.id, id));
     assert.equal(open.status, "running");
     assert.equal(open.feature, "asistan");
@@ -113,14 +117,25 @@ describe("Panel asistanı: veritabanında sınır ve kayıt", { skip: !URL && "A
     assert.deepEqual(row.result, { apiCalls: 2, toolCalls: 2 });
     assert.equal(row.error, null);
 
-    const refused = await claude.startAssistantCall(ids.admin);
+    const refused = (await claude.startAssistantCall(ids.admin))!;
     await claude.finishAssistantCall(refused, { ...outcome, done: null, error: { code: "refusal", detail: "refusal (cyber)", status: null } }, 900);
     const [r] = await db.select().from(s.aiCalls).where(eq(s.aiCalls.id, refused));
     assert.deepEqual([r.status, r.errorCode, r.error], ["refusal", "refusal", "refusal (cyber)"]);
-    const stopped = await claude.startAssistantCall(ids.admin);
+    const stopped = (await claude.startAssistantCall(ids.admin))!;
     await claude.finishAssistantCall(stopped, { ...outcome, done: "aborted" }, 300);
     const [st] = await db.select().from(s.aiCalls).where(eq(s.aiCalls.id, stopped));
     assert.deepEqual([st.status, st.stopReason], ["incomplete", "aborted"]);
+  });
+
+  test("günlük sınır yarışa kapalı: aynı anda gelen sorular sınırı aşmaz (sayım ve ekleme tek işlemde)", async () => {
+    await db.delete(s.aiCalls).where(eq(s.aiCalls.userId, ids.other));
+    await rows(ids.other, "asistan", ASSISTANT_DAILY_CAP - 2);
+    const started = await Promise.all(Array.from({ length: 8 }, () => claude.startAssistantCall(ids.other)));
+    assert.equal(started.filter((x) => x !== null).length, 2, "yalnız kalan iki hak");
+    assert.equal((await claude.assistantStatus(ids.other)).usedToday, ASSISTANT_DAILY_CAP);
+    assert.equal(await claude.startAssistantCall(ids.other), null);
+    // Öteki yöneticinin hakkı ayrı
+    assert.notEqual(await claude.startAssistantCall(ids.admin), null);
   });
 
   test("parasut_bekleyenler: Paraşüt sayfasının listesini okur (bağlanmamış ürün, ekran bağlantısı)", async () => {

@@ -21,6 +21,6 @@ export const ASSISTANT_TOOLS = allAssistantTools(TOOLS as unknown as readonly To
   ...assistantReads,
   plan: async (name, input, ctx) => {
     if (!ctx.user) throw new ToolInputError("Oturum bulunamadı.");
-    return planOp(ctx.user, name, input, { scope: await currentBranchScope(), now: ctx.now });
+    return planOp(ctx.user, name, input, { scope: await currentBranchScope(), now: ctx.now, signal: ctx.signal });
   },
 });

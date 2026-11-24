@@ -1,9 +1,9 @@
 import "server-only";
 
-import { and, eq, gt, isNotNull, lte, sql } from "drizzle-orm";
+import { and, eq, gt, isNotNull, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import type { OpStatus } from "@/lib/assistant/ops";
+import { OP_UNDO_MS, type OpStatus } from "@/lib/assistant/ops";
 import { getDb, schema as s } from "@/server/db";
 
 /*
@@ -91,6 +91,32 @@ export async function claimUndo(id: string, userId: number, since: Date): Promis
     )
     .returning();
   return row ?? null;
+}
+
+/** Bir eylemin en uzun süresinden epey fazla: bundan eski "running" / "undoing" satırı yarıda kalmıştır */
+export const STUCK_AFTER_MS = 15 * 60_000;
+
+/**
+ * Yarıda kalan planlar (sunucu eylemi kesildi, süreç yeniden başladı): süresi (onay) ya da geri al penceresi bittikten
+ * STUCK_AFTER_MS sonra hâlâ "running" / "undoing" olan plan "unknown" olur (yazım olmuş olabilir). Yalnız bu
+ * kullanıcının bu planı; kartın durumu okunurken çağrılır.
+ */
+export async function settleStuck(id: string, userId: number, now: Date = new Date()): Promise<void> {
+  const runningSince = new Date(now.getTime() - STUCK_AFTER_MS);
+  const undoingSince = new Date(now.getTime() - OP_UNDO_MS - STUCK_AFTER_MS);
+  await getDb()
+    .update(s.assistantOps)
+    .set({ status: "unknown" })
+    .where(
+      and(
+        eq(s.assistantOps.id, id),
+        eq(s.assistantOps.userId, userId),
+        or(
+          and(eq(s.assistantOps.status, "running"), lt(s.assistantOps.expiresAt, runningSince)),
+          and(eq(s.assistantOps.status, "undoing"), lt(s.assistantOps.doneAt, undoingSince)),
+        ),
+      ),
+    );
 }
 
 /** Geri almanın sonucu: başardıysa "undone", olmadıysa yeniden "done" (kart yapılmış kalır), beklenmeyende "unknown" */

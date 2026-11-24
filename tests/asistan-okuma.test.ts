@@ -21,7 +21,7 @@ import { DEFAULT_BRANCHES, ALL_BRANCHES, type BranchRow } from "../src/lib/branc
 import { posZSchema, type PosPayment } from "../src/lib/lafpos/day";
 import type { LafposRejection } from "../src/lib/lafpos/status";
 import { ToolInputError } from "../src/lib/mcp/answers/common";
-import { fitsStructuredOutputs } from "../src/lib/photo-read/claude-schema";
+import { fitsStructuredOutputs, schemaComplexity } from "../src/lib/photo-read/claude-schema";
 import type { StockEstimateLine } from "../src/lib/stock-estimate";
 import { runAssistant, type AssistantClient } from "../src/server/ai/assistant/loop";
 import { islemRehberi, opTools } from "../src/server/ai/assistant/op-tools";
@@ -467,7 +467,7 @@ test("hepsi: personel okuyamaz; araç hatası Claude'a is_error; açıklamalar '
 
 // ---------------------------------------------------------------- Araç listesi ve döngü
 
-test("araç listesi: okuma araçları işlem rehberinden ve işlem araçlarından önce; strict önek sınıra sığar; okuma araçlarının çoğu strict", () => {
+test("araç listesi: okuma araçları işlem rehberinden ve işlem araçlarından önce; strict kümesi sınıra sığar, önce işlem araçları", () => {
   const tools = allAssistantTools([], { unlinked: async () => ({ items: [], total: 0 }), plan: async () => Promise.reject(new Error("x")), ...fakeDeps() });
   const names = tools.map((t) => t.name);
   const readNames = Object.keys(READ_TOOL_LABELS);
@@ -478,8 +478,16 @@ test("araç listesi: okuma araçları işlem rehberinden ve işlem araçlarında
   const strict = params.filter((p) => p.strict);
   assert.equal(fitsStructuredOutputs(strict.map((p) => p.input_schema)), true);
   for (const p of params) assert.equal((p.input_schema as { additionalProperties?: boolean }).additionalProperties, false, p.name);
-  // Gerçek listede MCP'nin 7 aracı da var; burada onlarsız: okuma araçlarının hepsi strict sığar
-  for (const n of readNames) assert.equal(params.find((p) => p.name === n)!.strict, true, n);
+  // Strict önceliği işlem araçlarında (onay kartının girdisi): sınıra sığdıkça az karmaşık olandan; 13 aracın en az
+  // 10'u strict. Sınırı tüketmeyen (parametresiz ya da yalnız zorunlu parametreli) her araç strict
+  const ops = new Set(opTools({ plan: async () => Promise.reject(new Error("x")) }).map((t) => t.name));
+  assert.ok(params.filter((p) => ops.has(p.name) && p.strict).length >= 10, params.map((p) => `${p.name}:${p.strict ? "S" : "-"}`).join(" "));
+  for (const p of params) {
+    const c = schemaComplexity(p.input_schema);
+    if (c.optionalParams + c.unionParams === 0) assert.equal(p.strict, true, p.name);
+  }
+  // Strict'siz kalan her işlem aracı, eklenseydi sınırı aşardı
+  for (const p of params.filter((x) => ops.has(x.name) && !x.strict)) assert.equal(fitsStructuredOutputs([...strict.map((x) => x.input_schema), p.input_schema]), false, p.name);
 });
 
 test("döngü: iki okuma aracı paralel → sonuçlar tek kullanıcı mesajında, asistanın içeriği değişmeden geri", async () => {
@@ -631,7 +639,9 @@ test("işlem rehberi aracı: neden, bağlantı (markdown), numaralı adımlar, g
   assert.equal(first.tur, "asistan yapmaz, yol gösterir");
   assert.match(first.adimlar[0], /^1\. /);
   assert.match(first.baglanti, /^\[Ekranı aç\]\(\/panel/);
-  assert.match(String(del.kural), /kendin yapmaya çalışma/);
+  // Araç çıktısı talimat taşımaz: kural aracın açıklamasında ve sistem isteminde
+  assert.equal("kural" in del, false);
+  assert.match(islemRehberi.description, /kendin yapmaya çalışma/);
   const bulk = (await islemRehberi.run({ konu: "bütün ürünlere %10 toplu zam" }, ctx)).rehberler as Record<string, Json>[];
   assert.equal(bulk[0].ekran, "/panel/urunler/fiyatlar");
   assert.match(bulk[0].asistaninYapabildigi, /urun_fiyati_degistir/);
@@ -741,9 +751,10 @@ test("arayüz (telefon 390 / 360 px): tam ekran alt sayfa görünür alana oturu
   // Görünür alan: yükseklik --vvh, üst --vv-top (bottom-nav.tsx yazar); klavye açıkken alt güvenli alan payı yok
   for (const cls of [
     "max-lg:inset-x-0",
-    "max-lg:top-(--vv-top,0px)",
+    // Karaoke şeridi (--alarm-h) varken onun altından başlar
+    "max-lg:top-[calc(var(--vv-top,0px)+var(--alarm-h,0px))]",
     "max-lg:bottom-auto",
-    "max-lg:h-(--vvh,100dvh)",
+    "max-lg:h-[calc(var(--vvh,100dvh)-var(--alarm-h,0px))]",
     "max-lg:pt-[env(safe-area-inset-top)]",
     "max-lg:pr-[env(safe-area-inset-right)]",
     "max-lg:pb-[env(safe-area-inset-bottom)]",
@@ -763,6 +774,15 @@ test("arayüz (telefon 390 / 360 px): tam ekran alt sayfa görünür alana oturu
   assert.match(w, /max-lg:h-11 pointer-coarse:h-11/);
   assert.match(w, /max-lg:min-h-11 [^"]*pointer-coarse:min-h-11/);
   assert.match(w, /<span className="max-\[400px\]:sr-only">Yeni sohbet<\/span>/);
+  // Telefonda açılışta yazı alanına değil başlığa odak (klavye kendiliğinden açılmaz, alt güvenli alan düşmez);
+  // aria-modal ve odak tuzağı yalnız telefonda, masaüstünde Esc belge düzeyinde
+  assert.match(w, /sheet \? headingRef\.current\?\.focus\(\) : inputRef\.current\?\.focus\(\)/);
+  assert.match(w, /aria-modal=\{sheet \|\| undefined\}/);
+  assert.match(w, /if \(e\.key !== "Tab" \|\| !sheet \|\| !panelRef\.current\) return;/);
+  assert.match(w, /document\.addEventListener\("keydown", onKey\)/);
+  // Günün son sorusu: kapı sınır metnini gösterir; kapalı ya da sınırdaysa her açılışta yeniden sorulur
+  assert.match(w, /state: "cap", message: capText\(g\.cap\)/);
+  assert.match(w, /if \(!gate \|\| gate\.state !== "on"\) void loadGate\(\);/);
   // Klavye açılınca son mesaj görünür kalsın
   assert.match(w, /vv\.addEventListener\("resize", onResize\)/);
   const nav = code("src/components/panel/bottom-nav.tsx");

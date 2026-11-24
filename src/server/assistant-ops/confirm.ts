@@ -2,6 +2,7 @@ import "server-only";
 
 import { unstable_rethrow } from "next/navigation";
 
+import { errorTag } from "@/lib/assistant/error-tag";
 import { OP_STATUS_LABEL, OP_UNDO_MS, type OpOutcome, type OpStatus } from "@/lib/assistant/ops";
 import { isOpName, OP_INPUTS, type OpName } from "@/lib/assistant/op-specs";
 import { runViaAssistant } from "@/server/activity-via";
@@ -9,7 +10,7 @@ import { withBranchScope } from "@/server/branch-scope";
 
 import { APPLIERS } from "./apply";
 import { PREVIEWS } from "./preview";
-import { cancelPlan, claimUndo, consumePlan, expirePlan, finishPlan, finishUndo, getPlan, parseOpId, type OpRow } from "./store";
+import { cancelPlan, claimUndo, consumePlan, expirePlan, finishPlan, finishUndo, getPlan, parseOpId, settleStuck, type OpRow } from "./store";
 import type { ApplyCtx, OpApplier, OpPreview } from "./types";
 
 /*
@@ -53,6 +54,19 @@ function partsOf(row: OpRow): Parts | null {
   return { name, args: args.data, before: before.data, preview, applier: APPLIERS[name] as OpApplier<unknown, unknown> };
 }
 
+/** Planın şimdiki durumu ve (yapılmışsa) geri al süresi: kart bunu gösterir */
+function currentOf(row: OpRow): NonNullable<OpOutcome["current"]> {
+  const status = row.status as OpStatus;
+  const undoable = status === "done" && row.undo !== null && row.undo !== undefined && row.doneAt;
+  return { status, undoUntil: undoable ? new Date(row.doneAt!.getTime() + OP_UNDO_MS).toISOString() : null };
+}
+
+/** Plan zaten işlenmiş: hiçbir şey yapılmaz, kart gerçek durumu gösterir */
+function already(row: OpRow, tail: string): OpOutcome {
+  const label = OP_STATUS_LABEL[row.status as OpStatus] ?? row.status;
+  return { status: "refused", message: `Bu kart zaten ${label}${tail}`, undoUntil: null, current: currentOf(row) };
+}
+
 /** Planın şubesiyle (şubesiz işte isteğin seçimi) */
 const scoped = <T>(row: OpRow, fn: () => Promise<T>) => (row.branch ? withBranchScope(row.branch, fn) : fn());
 
@@ -68,7 +82,7 @@ export async function confirmOp(me: OpUser | null, rawId: unknown, now: Date = n
       await expirePlan(id, now);
       return { status: "expired", message: "Kartın süresi doldu (10 dakika); hiçbir şey değişmedi. Asistandan yeniden isteyin.", undoUntil: null };
     }
-    return refused(`Bu kart zaten ${OP_STATUS_LABEL[existing.status as OpStatus] ?? existing.status}; ikinci kez uygulanmaz.`);
+    return already(existing, "; ikinci kez uygulanmaz.");
   }
   const parts = partsOf(row);
   if (!parts) {
@@ -94,7 +108,7 @@ export async function confirmOp(me: OpUser | null, rawId: unknown, now: Date = n
   } catch (e) {
     await finishPlan(id, "unknown", { message: UNKNOWN }).catch(() => {});
     unstable_rethrow(e);
-    console.error("[asistan] işlem", parts.name, e instanceof Error ? e.message : e);
+    console.error("[asistan] işlem", parts.name, errorTag(e));
     return { status: "unknown", message: UNKNOWN, undoUntil: null };
   }
 }
@@ -106,7 +120,24 @@ export async function cancelOp(me: OpUser | null, rawId: unknown): Promise<OpOut
   if (!id) return refused(NOT_FOUND);
   if (await cancelPlan(id, me.id)) return { status: "cancelled", message: "Vazgeçildi; hiçbir şey değişmedi.", undoUntil: null };
   const existing = await getPlan(id, me.id);
-  return refused(existing ? `Bu kart zaten ${OP_STATUS_LABEL[existing.status as OpStatus] ?? existing.status}.` : NOT_FOUND);
+  return existing ? already(existing, ".") : refused(NOT_FOUND);
+}
+
+/**
+ * Kartın durumu (salt okur; sekmeden geri yüklenen, işlem sürerken kalmış kart için). Yarıda kalan plan önce "unknown"
+ * olur (settleStuck). Dönen `current` planın gerçek durumudur; iletisi sonuç iletisidir.
+ */
+export async function readOp(me: OpUser | null, rawId: unknown, now: Date = new Date()): Promise<OpOutcome> {
+  if (!me || me.role !== "admin") return refused(ADMIN_ONLY);
+  const id = parseOpId(rawId);
+  if (!id) return refused(NOT_FOUND);
+  await settleStuck(id, me.id, now);
+  const row = await getPlan(id, me.id);
+  if (!row) return refused(NOT_FOUND);
+  const result = (row.result ?? {}) as { message?: unknown; undoMessage?: unknown };
+  const message = typeof result.undoMessage === "string" ? result.undoMessage : typeof result.message === "string" ? result.message : "";
+  const current = currentOf(row);
+  return { status: "refused", message: message || `Kart ${OP_STATUS_LABEL[current.status] ?? current.status}.`, undoUntil: null, current };
 }
 
 /** Sonuç kartının Geri al'ı: yalnız katalogda geri alması tanımlı ve süresi (1 saat) geçmemiş işlemde, bir kez */
@@ -133,7 +164,7 @@ export async function undoOp(me: OpUser | null, rawId: unknown, now: Date = new 
   } catch (e) {
     await finishUndo(id, "unknown", UNKNOWN).catch(() => {});
     unstable_rethrow(e);
-    console.error("[asistan] geri al", parts.name, e instanceof Error ? e.message : e);
+    console.error("[asistan] geri al", parts.name, errorTag(e));
     return { status: "unknown", message: UNKNOWN, undoUntil: null };
   }
 }

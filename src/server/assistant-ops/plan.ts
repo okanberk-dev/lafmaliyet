@@ -24,7 +24,7 @@ export interface PlanUser {
  * Modelin girdisinden onay kartı: rol, şema (yeniden), önizleme, plan satırı. Kart açılamıyorsa (bulunamadı, birden
  * çok aday, değişiklik yok, şube belirsiz) ToolInputError: metni asistana döner.
  */
-export async function planOp(me: PlanUser, name: OpName, raw: unknown, ctx: { scope: BranchScope; now?: Date }): Promise<OpCard> {
+export async function planOp(me: PlanUser, name: OpName, raw: unknown, ctx: { scope: BranchScope; now?: Date; signal?: AbortSignal }): Promise<OpCard> {
   // Rol araç listesi kurulurken de denetlenir (uç yalnız yöneticiye açılır); burada ikinci kez
   if (me.role !== "admin") throw new ToolInputError("İşlem kartını yalnız yönetici açabilir.");
   const parsed = OP_INPUTS[name].safeParse(raw);
@@ -33,6 +33,8 @@ export async function planOp(me: PlanUser, name: OpName, raw: unknown, ctx: { sc
   const now = ctx.now ?? new Date();
   const preview = PREVIEWS[name] as unknown as { preview(i: unknown, c: unknown): Promise<{ card: Omit<OpCard, "id" | "expiresAt" | "note" | "tool">; args: unknown; before: unknown; branch: string | null }> };
   const plan = await preview.preview(input, { userId: me.id, scope: ctx.scope, branches: await listBranches(), now });
+  // Aracın süresi doldu ya da yanıt durduruldu: plan satırı açılmaz (model başarısız saydı, kart gösterilmeyecek)
+  if (ctx.signal?.aborted) throw new ToolInputError("Kart zamanında hazırlanamadı; hiçbir şey değişmedi.");
   const expiresAt = new Date(now.getTime() + OP_TTL_MS);
   const { id } = await createPlan({ userId: me.id, tool: name, input, preview: { card: plan.card, args: plan.args, before: plan.before }, branch: plan.branch, expiresAt });
   const note = (input as { not?: string }).not;

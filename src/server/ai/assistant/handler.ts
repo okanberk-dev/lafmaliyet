@@ -14,6 +14,7 @@
  * eyleminde.
  */
 
+import { errorTag } from "@/lib/assistant/error-tag";
 import { ASSISTANT_LIMITS, assistantRequest, encodeEvent, type AssistantEvent } from "@/lib/assistant/protocol";
 
 import type { AiErrorCode } from "../run";
@@ -51,8 +52,8 @@ export interface AssistantDeps {
   sameOrigin(request: Request): boolean;
   user(): Promise<AssistantUser | null>;
   status(userId: number): Promise<AssistantStatus>;
-  /** ai_calls'a "running" satırı; kimliği */
-  start(userId: number): Promise<number>;
+  /** ai_calls'a "running" satırı; kimliği. Sayım ve ekleme atomik: günlük sınır dolduysa satır açılmaz, null */
+  start(userId: number): Promise<number | null>;
   /** Satırı sonuçla kapatır (maliyet, token, süre; metin yok) */
   finish(callId: number, outcome: AssistantOutcome, ms: number): Promise<void>;
   setup(): Promise<AssistantSetup>;
@@ -131,6 +132,8 @@ export async function handleAssistantPost(request: Request, deps: AssistantDeps)
 
   const setup = await deps.setup();
   const callId = await deps.start(me.id);
+  // Kapıdan sonra aynı anda gelen başka bir soru sınırı doldurduysa (sayım ve ekleme start'ta atomik)
+  if (callId === null) return gateRefusal({ state: "cap", usedToday: status.cap, cap: status.cap })!;
   // Bu soru sayıldı: bugün kalan hak
   const left = Math.max(0, status.cap - status.usedToday - 1);
   const stop = new AbortController();
@@ -169,7 +172,7 @@ export async function handleAssistantPost(request: Request, deps: AssistantDeps)
         if (outcome.error) send({ type: "error", code: outcome.error.code, message: assistantErrorText(outcome.error.code), left });
         else send({ type: "done", reason: outcome.done ?? "end", left });
       } catch (e) {
-        console.error("[asistan] beklenmeyen hata", e instanceof Error ? e.message : e);
+        console.error("[asistan] beklenmeyen hata", errorTag(e));
         send({ type: "error", code: "error", message: "Beklenmeyen bir hata oldu. Yeniden deneyin.", left });
       } finally {
         request.signal?.removeEventListener("abort", onClientAbort);
@@ -177,7 +180,7 @@ export async function handleAssistantPost(request: Request, deps: AssistantDeps)
           // Beklenmeyen hatada da satır "running" kalmaz
           await deps.finish(callId, outcome ?? UNEXPECTED, Date.now() - t0);
         } catch (e) {
-          console.error("[asistan] kayıt kapanmadı", callId, e instanceof Error ? e.message : e);
+          console.error("[asistan] kayıt kapanmadı", callId, errorTag(e));
         }
         try {
           controller.close();

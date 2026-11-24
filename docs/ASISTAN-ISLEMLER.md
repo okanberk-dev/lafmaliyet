@@ -94,7 +94,9 @@ Doğrulanan dayanaklar:
   `result jsonb`, `undo jsonb`, `created_at`, `done_at`, `undone_at`.
 - Onay: `UPDATE … SET status='running' WHERE id=$1 AND user_id=$2 AND status='pending' AND expires_at>now() RETURNING *`.
   Satır dönmezse hiçbir şey yapılmaz: ikinci dokunuş "Bu kart zaten yapıldı; ikinci kez uygulanmaz", başkasının kartı
-  "bulunamadı" (plan beklemede kalır), süresi geçen kart `expired`.
+  "bulunamadı" (plan beklemede kalır), süresi geçen kart `expired`. "Zaten" yanıtı planın gerçek durumunu da taşır
+  (`current`: durum ve yapılmışsa Geri al süresi): ağ hatasından sonra yeniden denemede ya da başka sekmede işlenmiş
+  kart "sonucu belirsiz" değil gerçek durumunu gösterir (yapıldıysa Geri al da gelir).
 - Eylem `ok:false` dönerse `failed`. Beklenmeyen hatada `unknown`: yazım olmuş olabilir, kart "sonucu ekranda denetleyin"
   der ve aynı plan yeniden onaylanamaz.
 - `clientKey` alan eylemde (`addWasteEntry`) `clientKey = opId`.
@@ -187,7 +189,7 @@ Bütün araçlarda geçerli olanlar: yönetici, tek kayıt, şifre onayı yok, s
 | `urun_tukendi_yap` (**var**) | menu-status.ts:setSoldOut | {urunId} → `products.siteMenuId` sunucuda çözülür; soldOut:true. Siteye bağlı değilse rehber ("Site menüsü'nden bağlayın"). | Ürün, iki boy birlikte kapanır (M+L), şu anki durum | urun_satisa_ac (aynı eylem, soldOut:false) | Site, uygulama ve QR menüde hemen. LafPOS kasasında gün açıkken en geç 15 dk. |
 | `urun_satisa_ac` (**var**) | menu-status.ts:setSoldOut | soldOut:false | Ürün, boylar, kim kapatmıştı | urun_tukendi_yap | Site ve LafPOS (15 dk) |
 | `urun_kapali_tut` (henüz yok) | menu-status.ts:holdSoldOut | {siteMenuId} sunucuda çözülür | "Personel artık satışa açamaz" uyarısı | urun_satisa_ac | Site ve LafPOS |
-| `urun_fiyati_degistir` (**var**) | products.ts:updateProductPrice | (id, price, ackAlert=false, source 'manual'; zam önerisinden geliyorsa 'suggestion', seenPrice). **seenPrice zorunlu**: önizlemedeki fiyat. | Ürün ve boy, eski → yeni fiyat, % fark, birim maliyet ve marj eski → yeni, siteye bağlı mı | Aynı eylem: eski fiyat, seenPrice=yeni (`undo.previous`) | Bağlıysa önce laffogato.net'e yazar; site yazımı başarısızsa hiçbir şey değişmez. LafPOS geçiş gününden beri fiyatı siteden alır. Bağlı değilse ModPOS "Kasaya işle" listesine ve zile düşer. |
+| `urun_fiyati_degistir` (**var**) | products.ts:updateProductPrice | (id, price, ackAlert=false, source 'manual'; zam önerisinden geliyorsa 'suggestion', seenPrice). **seenPrice zorunlu**: önizlemedeki fiyat. | Ürün ve boy, eski → yeni fiyat, % fark, birim maliyet ve marj eski → yeni, siteye bağlı mı | Aynı eylem: eski fiyat, seenPrice=yeni (`undo.previous`) | Bağlıysa önce laffogato.net'e yazar; site yazımı başarısızsa hiçbir şey değişmez. LafPOS geçiş gününden beri fiyatı siteden alır. Bağlı değilse "Kasaya işle" listesine ve zile düşer: seçili şube LafPOS'taysa (Marina) kart LafPOS rozetini ve "LafPOS'ta yerel ürünse orada elle değiştirin" uyarısını verir. Sonuç iletisi ekranın ortak metnidir (`priceReminder`: fiyat listesinin tarihi, LafPOS / ModPOS). |
 | `zam_uyarisini_kapat` (henüz yok) | products.ts:acknowledgePriceAlert | (productId, false) | Ürün, bugünkü maliyet ve fiyat | Aynı eylem, undo=true | Yok |
 | `urun_ac` (henüz yok) | products.ts:createProduct | productSchema {name, size, categoryId, price}, copyFromId isteğe bağlı | Kategori, boy, fiyat, kopyalanacak reçete | Ürün kartında Aktif'i kapatmak (rehber). Geçmişi yoksa silme (rehber). | Yok (siteye bağlanmaz) |
 | `kasaya_islendi` (henüz yok) | pos-marks.ts:markPosDone | [1] {productId, price=önizlemedeki fiyat} | "Kasada (ModPOS) fiyatı X ₺ yaptınız mı?" Asistan bunu doğrulayamaz, beyandır. | kasaya_islendi_geri_al: undoPosMarks [1], `undo.markId` ile | Kasaya yazmaz |
@@ -229,7 +231,7 @@ Vardiyada boşaltma silme sayılmaz, hücre değişikliğidir. Ama kullanıcı a
 | `sabit_giderden_hatirlatici` (henüz yok) | reminders.ts:addFixedExpenseReminder | (fixedExpenseId, firstDate). Önce aynı gider için hatırlatıcı var mı diye bakılır. | Gider, tutar, dönem, ilk tarih | hatirlatici_kapat | Dolaylı |
 | `fatura_vadesi_ertele` (henüz yok) | reminders.ts:postponeInvoice | (id, 'week' ya da 'month'), yalnız ödenmemiş fatura | Tedarikçi, no, vade eski → yeni | setInvoiceDueDate(id, prev) | Paraşüt'e yazmaz |
 | `fatura_vadesi_ayarla` (henüz yok) | reminders.ts:setInvoiceDueDate | (id, tarih). Eylem "ödenmemiş" denetimi yapmıyor; uyarlayıcı önce okur, ödenmişse reddeder. null (vadeyi kaldır) kullanılmaz. | Vade eski → yeni | Önceki vadeyle aynı eylem | Yok |
-| `fatura_odendi` (**var**) | invoices.ts:setInvoicePayment | ([id], {status:'paid', date ≤ bugün, via}, {onlyOpen:true}). `separately` yalnız kullanıcı "ayrıca ödendi" derse. 'requested' (ödeme talep edildi) de bu araçla yapılır. 'unpaid' bu araçta yok. | **Tutar, tedarikçi, fatura no, ödeme günü, ödeme şekli, "hesapta duran X ₺ önce sayılır"** | Kartın Geri al'ı: restoreInvoicePayment(previous). Ya da Ödemeler › Son ödenenler › Geri al (30 gün). | Paraşüt'e yazmaz, banka ödemesi yapmaz |
+| `fatura_odendi` (**var**) | invoices.ts:setInvoicePayment | ([id], {status:'paid', date ≤ bugün, via}, {onlyOpen:true}). `separately` yalnız kullanıcı "ayrıca ödendi" derse. 'requested' (ödeme talep edildi) de bu araçla yapılır. 'unpaid' bu araçta yok. | **Tutar, tedarikçi, fatura no, ödeme günü, ödeme şekli, "Hesaptan sayılacak: X ₺"** (creditFirst'ün salt okunur tahmini: `paymentCredits`, en eski ödemeden). Fatura hesaptaki parayla tamamen kapanacaksa gün ve şekil ödemenin kendisindendir: kart "Ödeme günü ve şekli: ödemenin kendisinden (gg.aa.yyyy, şekil)" yazar, kartın günü ve seçilen şekli göstermez | Kartın Geri al'ı: restoreInvoicePayment(previous); "bizim mi" denetimi yazımdan hemen sonra okunan durumla (defterin kapattığı faturada da çalışır: dağıtım silinir, para hesaba döner). Ya da Ödemeler › Son ödenenler › Geri al (30 gün). | Paraşüt'e yazmaz, banka ödemesi yapmaz |
 | `fatura_kategorisi` (henüz yok) | invoices.ts:setInvoiceCategory | [1] {id, category ∈ INVOICE_CATEGORIES} | Eski → yeni kategori. Kafe dışına geçişte "stok miktarları yeniden hesaplanır". | Aynı eylem, previous ile | Yok |
 | `fatura_kontrol_edildi` (henüz yok) | invoices.ts:confirmInvoices | ([id]), acceptStockOnly verilmez. Dönen kept doluysa "kategoriyi mal alışı yapın" diye yol gösterilir. | Fatura, tahmin edilen kategori | Aynı eylem, undo=true | Yok |
 | `kasadan_alim_gidere_yaz` (henüz yok) | cash-out-invoices.ts:writeCashOutInvoiceExpense | {id, categoryId (etkin)} | Kasa satırı (gün, yer, tutar, şube), kategori | Kartta rehber: bildirimdeki Geri al ya da Aylık harcamalar'dan silmek (silme, kullanıcı yapar) | Gelir-gider |
@@ -239,7 +241,7 @@ Vardiyada boşaltma silme sayılmaz, hücre değişikliğidir. Ama kullanıcı a
 
 | Araç | Eylem | Girdi ve sınır | K | GA | DE |
 |---|---|---|---|---|---|
-| `tedarikci_odemesi_ekle` (**var**) | cari.ts:saveSupplierPayment | Yalnız id=null. method ∈ elden, havale, kart, çek, diğer: **kasa yöntemi yok**, kasa raporuna satır açar. cashOut=null, photoId=null, tarih ≤ bugün, allocation mode 'auto' ya da 'none' (manual yok). target {cardId} var olan karttır. Yeni kart açmak ({key}) rehberdir. | **Tedarikçi, tutar, tarih, ödeme şekli, sayılacağı kalemler** (eylem önizleme vermez; `accountOf` defterinden "en eski vadeden: …" tahmini), "hesapta kalacak: X ₺", not | Ödemeler › Son ödenenler › Geri al (30 gün, `rememberPayment` yazılır) | Yalnız kayıt; banka ödemesi yapmaz |
+| `tedarikci_odemesi_ekle` (**var**) | cari.ts:saveSupplierPayment | Yalnız id=null. method ∈ elden, havale, kart, çek, diğer: **kasa yöntemi yok**, kasa raporuna satır açar. cashOut=null, photoId=null, tarih ≤ bugün, allocation mode 'auto' ya da 'none' (manual yok). target {cardId} var olan karttır. Yeni kart açmak ({key}) rehberdir. | **Tedarikçi, tutar, tarih, ödeme şekli, nereye sayılacağı** (otomatikte "en eski vadeli borçtan başlayarak açık kalemlere; artan hesapta durur", beklesinde "hiçbir kaleme sayılmaz"), not. Kalem kalem tahmin kartta yok (eylem önizleme vermez; defter kilit altında ve takip başlatılarak okunur, salt okunur önizlemede aynısı kurulamaz): kapanan kalem sayısı ve hesapta kalan sonuç iletisinde | Ödemeler › Son ödenenler › Geri al (30 gün, `rememberPayment` yazılır) | Yalnız kayıt; banka ödemesi yapmaz |
 | `tedarikci_borcu_ekle` (henüz yok) | cari.ts:saveSupplierDebt | Yalnız yeni. target {cardId}, id=null, paid=null, photoId=null, adoptExpenseId=null, kasaChoice=null, confirmPast=[]. costMode 'fatura' ya da 'gider'+categoryId. Tarih bu ay. | **Tedarikçi, tutar, alım günü, vade, gider kategorisi** ('gider' ise "Aylık harcamalar'a da yazılır") | Tedarikçiler › hareket › Sil (kullanıcı yapar, 15 dk Geri al) | Gelir-gider ('gider' modunda) |
 | `faturasiz_alim_odendi` (henüz yok) | cari.ts:payDebt | (debtId) | **Tedarikçi, alım, tutar, hesaptan sayılacak tahmini tutar, kalan için ödeme şekli** (kartın şekli; "nakit" kasa dışı elden), bugünün tarihi | Ödemeler › Son ödenenler › Geri al (30 gün) | Kasayı kullanmaz |
 | `faturasiz_alim_ertele` (henüz yok) | cari.ts:postponeSupplierDebt | (debtId, 'week' ya da 'month') | Vade eski → yeni | setSupplierDebtDueDate(previous) | Yok |
@@ -252,7 +254,7 @@ Vardiyada boşaltma silme sayılmaz, hücre değişikliğidir. Ama kullanıcı a
 
 | Araç | Eylem | Girdi ve sınır | K | GA | DE |
 |---|---|---|---|---|---|
-| `kasadan_cikan_ekle` (**var**) | cash-outs.ts:saveCashOut | id=null, **date = bugünün iş günü** (`businessDate`), **branchId açıkça**, photoId=null. Kind 'harcama' ise categoryId etkin kategoriden. O günün o kasası için kasa raporu zaten girilmişse rehbere düşer. | **Şube (kasa), gün, tür, tutar, yer, belge türü, kategori, "Aylık harcamalar'a da yazılır mı"** | Kasa › satır › Sil (kullanıcı yapar, 15 dk Geri al) | Akşam kasa raporunun "Gün içinde kasadan çıkan" toplamı. LafPOS'a gitmez. |
+| `kasadan_cikan_ekle` (**var**) | cash-outs.ts:saveCashOut | id=null, **date = bugünün iş günü** (`businessDate`), **branchId açıkça**, photoId=null. Kind 'harcama' ise categoryId etkin kategoriden. O günün o kasası için kasa raporu zaten girilmişse rehbere düşer. | **Şube (kasa), gün, tür, tutar, yer, belge türü, kategori, "Aylık harcamalar'a da yazılır mı"** | Kasa › satır › Sil (kullanıcı yapar, 15 dk Geri al) | Akşam kasa raporunun "Gün içinde kasadan çıkan" toplamı. LafPOS'a gitmez: şubenin günü LafPOS'taysa (Marina) kart uyarır, kasadan çıkan LafPOS'ta (Kasa › Harcama / Teslim) girilir; aynı tür ve tutarda LafPOS hareketi bu satırı sahiplenir, girilmezse LafPOS'un kasa sayımı eksik çıkar. |
 | `harcama_ekle` (**var**) | expenses.ts:saveExpenseEntry | Yalnız yeni (id=null). Tarih ≤ bugün, tutar > 0 (iade yalnız açıkça istenirse), kategori etkin. `withBranchScope`: şube ya da ALL (işletme geneli). | **Şube ("işletme geneli" de olabilir), gün, kategori, tutar, ödeme şekli, açıklama** | Aylık harcamalar › kayıt › Sil (kullanıcı yapar, Geri al'ı var) | Gelir-gider |
 | `kasa_epostasini_yeniden_gonder` (henüz yok) | cash-report.ts:resendCashReportEmail | (id) | Gün, şube, alıcı sayısı, "e-posta gidecek" | Geri alınamaz (aynı sürüm için çift gönderim anahtarla engelli) | E-posta |
 | `nakit_bakiye` (henüz yok) | cash-plan.ts:saveCashBalance | amount. null (kaldırma) kullanılmaz. | Eski → yeni | Eski değerle aynı eylem | Yok |
@@ -489,10 +491,17 @@ Panelde bu araçlar çerez yüzünden **seçili şubeye göre** okur; MCP'de "T�
 10. **Tükendi.** Önizleme yerel kopyadan (`menu_site_items`) okur, siteye istek atmaz; eylem siteye yazar. Geri al aynı
     eylemle ters yönde.
 11. **Model ve maliyet.** Asistanın isteği değişmedi (docs/ASISTAN.md): `claude-sonnet-5-5`, efor `medium`, yedek model.
-    İşlem araçları da araç listesinin sonunda; yapılandırılmış girdinin karmaşıklık sınırına sığan önek `strict` gider
-    (okuma araçları önce), kalanlar strict'siz ama girdileri her durumda zod'dan geçer.
+    İşlem araçları da araç listesinin sonunda; strict kümesi sıraya değil önceliğe göre seçilir: yapılandırılmış
+    girdinin karmaşıklık sınırına önce işlem araçları (az karmaşık olan önce; 13 aracın 10'u sığar), sonra okuma
+    araçları sığdıkça `strict` gider, kalanlar strict'siz ama girdileri her durumda zod'dan geçer. Araç sonucu
+    (`cardResult`) yalnız durum verisidir; "işlemi yaptığını söyleme" kuralı sistem isteminde ve aracın açıklamasında.
+    Araç süre sınırını (15 sn) aşarsa ya da yanıt durdurulursa aracın sinyali kesilir: plan satırı açılmaz, geç gelen
+    kart ekrana konmaz, yanıtın kart hakkı geri verilir.
 12. **Uzun süren eylemler.** Sunucu eylemi çağrıldığı sayfanın süresiyle çalışır; Paraşüt bağlantısı ve fiyat değişikliği
-    hesap yeniler. Kart beklerken "İşleniyor…" der, düğme kilitlenir.
+    hesap yeniler. Kart beklerken "İşleniyor…" der, düğme kilitlenir. Sayfa bu sırada yenilenirse kart takılı kalmaz:
+    sekmeden geri yüklenirken "işleniyor" → sonucu belirsiz, "geri alınıyor" → yapıldı olur ve kart planın durumunu
+    sunucudan bir kez okur (`readAssistantOp`, salt okur). Yarıda kalan plan (süresinden ya da Geri al penceresinden
+    15 dakika sonra hâlâ "running" / "undoing") okunurken `unknown` olur.
 
 ## 7) Karar bekleyenler
 

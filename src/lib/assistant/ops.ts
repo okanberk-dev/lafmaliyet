@@ -71,13 +71,16 @@ export type OpStatus = "pending" | "running" | "done" | "failed" | "unknown" | "
 
 /**
  * Onay, vazgeç ve geri al eylemlerinin yanıtı. `refused`: hiçbir şey yapılmadı ve plan değişmedi (başkasının kartı,
- * zaten kullanılmış, yetki yok); kart durumunu `status`'tan değil iletiden okur.
+ * zaten kullanılmış, yetki yok). Plan zaten işlenmişse (ikinci dokunuş, ağ hatasından sonra yeniden deneme, başka
+ * sekme) sunucunun bildiği gerçek durumu `current`'ta döner: kart onu gösterir (iletiyi aramaz).
  */
 export interface OpOutcome {
   status: OpStatus | "refused";
   message: string;
   /** Geri al bu ana kadar (ISO); geri alınamıyorsa null */
   undoUntil: string | null;
+  /** Yalnız `refused`'ta, plan bulunduysa: planın şimdiki durumu ve (yapılmışsa) geri al süresi */
+  current?: { status: OpStatus; undoUntil: string | null };
 }
 
 /** Tarayıcıdaki kart: kart + son durum */
@@ -86,6 +89,8 @@ export interface OpCardState {
   status: OpStatus;
   message?: string;
   undoUntil?: string | null;
+  /** Sekmeden geri yüklenen ve işlem sürerken kalan kart: durumu sunucudan yeniden okunacak */
+  recheck?: boolean;
 }
 
 export const OP_STATUS_LABEL: Record<OpStatus, string> = {

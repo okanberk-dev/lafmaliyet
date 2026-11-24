@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { dateTR, tl } from "@/lib/format";
+import { priceReminder } from "@/lib/prices/pos";
 import type { OpName } from "@/lib/assistant/op-specs";
 import { formatShiftCell, parseShiftCell, refUserId, weekDays, weekDiff, type ShiftEntry } from "@/lib/vardiya";
 import { saveSupplierPayment } from "@/server/actions/cari";
@@ -34,6 +35,8 @@ import type { ApplyResult, OpApplier, UndoResult } from "./types";
  * "ok: true her zaman başarı değil": değişiklik olmadan dönen yanıt (`changed: 0`, `changed: false`) başarı sayılmaz.
  */
 
+const INVOICE_VIA_LABEL: Record<string, string> = { havale: "Havale / EFT", nakit: "Nakit", kart: "Kart", cek: "Çek", diger: "Diğer" };
+
 const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
 const notOk = <T>(r: ActionResult<T>): r is { ok: false; error: string } => !r.ok;
 
@@ -45,6 +48,8 @@ const soldOut: OpApplier<SoldOutArgs, { isActive: boolean }> = {
   async apply(args) {
     const r = await setSoldOut({ siteMenuId: args.siteMenuId, soldOut: args.soldOut });
     if (notOk(r)) return r;
+    // changed:false başarı değil (zaten tükendi / satışta). setSoldOutCore'un "Tükenenler listesi dolu" dalı (capHit)
+    // yalnız personelde olur (capRefusal yöneticiye sınır koymaz); kartı yalnız yönetici onaylar
     if (!r.data.changed) return fail(r.data.message || "Değişiklik olmadı.");
     return { ok: true, message: r.data.message || (args.soldOut ? "Ürün Tükendi yapıldı." : "Ürün satışa açıldı."), undo: { soldOut: args.soldOut } };
   },
@@ -135,7 +140,12 @@ const reminderPaid: OpApplier<{ reminderId: number; title: string }, { dueDate: 
 
 type InvoiceArgs = { invoiceId: number; status: "paid" | "requested"; date: string; via: "havale" | "nakit" | "kart" | "cek" | "diger" | null; separately: boolean };
 type InvoiceState = { unpaid: boolean; paidAt: string | null; paidVia: string | null; paymentRequestedAt: string | null };
-const invoiceUndo = z.object({ previous: z.array(z.record(z.string(), z.unknown())).min(1).max(1) });
+const invoiceStateSchema = z.object({ unpaid: z.boolean(), paidAt: z.string().nullable(), paidVia: z.string().nullable(), paymentRequestedAt: z.string().nullable() });
+/** previous: eylemin geri yazacağı önceki durum; after: yazımdan hemen sonra okunan durum ("bizim mi" denetimi) */
+const invoiceUndo = z.object({ previous: z.array(z.record(z.string(), z.unknown())).min(1).max(1), after: invoiceStateSchema.nullable().optional() });
+
+const sameInvoiceState = (a: InvoiceState, b: InvoiceState) =>
+  a.unpaid === b.unpaid && a.paidAt === b.paidAt && a.paidVia === b.paidVia && a.paymentRequestedAt === b.paymentRequestedAt;
 
 const invoicePaid: OpApplier<InvoiceArgs, InvoiceState> = {
   async apply(args) {
@@ -143,13 +153,24 @@ const invoicePaid: OpApplier<InvoiceArgs, InvoiceState> = {
     const r = await setInvoicePayment([args.invoiceId], change, { onlyOpen: true, separately: args.separately });
     if (notOk(r)) return r;
     if (!r.data.changed) return fail("Fatura zaten ödenmiş; değişiklik yapılmadı.");
+    // Gerçek durum: hesaptaki para faturayı tamamen kapattıysa gün ve şekil ödemeninkidir (kartınki değil)
+    const after = await invoicePaymentState(args.invoiceId);
     const used = r.data.credit.used > 0 ? ` Tedarikçinin hesabındaki ${tl(r.data.credit.used, 2)} önce sayıldı.` : "";
-    return { ok: true, message: `${args.status === "paid" ? "Fatura ödendi işaretlendi." : "Faturanın ödemesi talep edildi."}${used}`, undo: { previous: r.data.previous } };
+    const fromLedger =
+      args.status === "paid" && after && !after.unpaid && after.paidAt && (after.paidAt !== args.date || after.paidVia !== args.via)
+        ? ` Fatura hesaptaki ödemeyle kapandı: ödeme günü ${dateTR(after.paidAt)}${after.paidVia ? `, ${INVOICE_VIA_LABEL[after.paidVia] ?? after.paidVia}` : ""}.`
+        : "";
+    return {
+      ok: true,
+      message: `${args.status === "paid" ? "Fatura ödendi işaretlendi." : "Faturanın ödemesi talep edildi."}${used}${fromLedger}`,
+      undo: { previous: r.data.previous, after },
+    };
   },
   async undo(args, _before, data) {
-    const { previous } = invoiceUndo.parse(data);
+    const { previous, after } = invoiceUndo.parse(data);
     const now = await invoicePaymentState(args.invoiceId);
-    const ours = now && (args.status === "paid" ? !now.unpaid && now.paidAt === args.date : now.unpaid && now.paymentRequestedAt !== null);
+    // Bizim mi: yazımdan sonra okunan durum hâlâ duruyorsa (eski planlarda: kartın günü ya da talep)
+    const ours = now && (after ? sameInvoiceState(now, after) : args.status === "paid" ? !now.unpaid && now.paidAt === args.date : now.unpaid && now.paymentRequestedAt !== null);
     if (!ours) return fail("Faturanın ödeme durumu bu arada değişmiş; Ödemeler › Son ödenenler'den bakın.");
     const r = await restoreInvoicePayment(previous as Parameters<typeof restoreInvoicePayment>[0]);
     if (notOk(r)) return r;
@@ -215,8 +236,9 @@ const productPriceChange: OpApplier<ProductPriceArgs, { price: number }> = {
     // Eylemin kendi bayatlık denetimi: önizlemede görülen fiyat (seenPrice)
     const r = await updateProductPrice(args.productId, args.price, false, "manual", before.price);
     if (notOk(r)) return r;
-    const where = [r.data.site ? "sitede de değişti" : null, r.data.posPending ? `${r.data.kasa === "LafPOS" ? "ModPOS kullanan kasada" : "kasada"} elle değiştirin (Fiyatlar › Kasaya işle)` : null].filter(Boolean);
-    return { ok: true, message: `Fiyat ${tl(r.data.price, 2)} oldu${where.length ? `; ${where.join("; ")}` : ""}.`, undo: { price: r.data.price } };
+    // Ekranın kullandığı ortak metin (Ürünler, Reçete): site, fiyat listesinin tarihi ve günün kasası (LafPOS / ModPOS)
+    const reminder = priceReminder({ site: r.data.site, posPending: r.data.posPending, kasa: r.data.kasa });
+    return { ok: true, message: `Fiyat ${tl(r.data.price, 2)} oldu.${reminder ? ` ${reminder}` : ""}`, undo: { price: r.data.price } };
   },
   async undo(args, before, data) {
     const { price } = productUndo.parse(data);

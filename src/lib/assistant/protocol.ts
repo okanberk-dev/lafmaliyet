@@ -140,13 +140,25 @@ export interface ChatMessage {
   cards?: OpCardState[];
 }
 
-/** sessionStorage'dan okunan kartlar: biçimi bozuk olan düşer */
+/** Sayfa işlem sürerken yenilendiyse kartın iletisi (durum sunucudan yeniden okunana kadar) */
+export const RESTORED_RUNNING = "Sayfa işlem sürerken yenilendi; sonuç sunucudan okunuyor. Okunamazsa ilgili ekranda denetleyin.";
+
+/**
+ * sessionStorage'dan okunan kartlar: biçimi bozuk olan düşer. İşlem sürerken ("işleniyor", "geri alınıyor") kaydedilen
+ * kart o hâliyle kalmaz (düğmeler sonsuza dek kapalı kalırdı): "işleniyor" → sonucu belirsiz, "geri alınıyor" → yapıldı
+ * olur ve `recheck` ile işaretlenir; kart açılınca planın gerçek durumunu sunucudan okur.
+ */
 export function restoreCards(v: unknown): OpCardState[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const out = v.flatMap((x): OpCardState[] => {
     const c = x as Partial<OpCardState> | null;
     if (!c || !isOpCard(c.card) || !isOpStatus(c.status)) return [];
-    return [{ card: c.card, status: c.status, ...(typeof c.message === "string" ? { message: c.message } : {}), ...(typeof c.undoUntil === "string" ? { undoUntil: c.undoUntil } : {}) }];
+    const undoUntil = typeof c.undoUntil === "string" ? { undoUntil: c.undoUntil } : {};
+    if (c.status === "running" || c.status === "undoing" || c.recheck === true) {
+      const status = c.status === "running" ? "unknown" : c.status === "undoing" ? "done" : c.status;
+      return [{ card: c.card, status, message: RESTORED_RUNNING, ...undoUntil, recheck: true }];
+    }
+    return [{ card: c.card, status: c.status, ...(typeof c.message === "string" ? { message: c.message } : {}), ...undoUntil }];
   });
   return out.length ? out : undefined;
 }

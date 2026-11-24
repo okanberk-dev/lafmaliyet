@@ -6,7 +6,10 @@
  *
  * Desteklenen alt küme: paragraf, satır sonu, başlık (#–###), madde ve numaralı liste, tablo (| a | b |), kod bloğu,
  * **kalın**, *eğik*, `kod`, [bağlantı](adres). Bağlantı yalnız panelin kendi ekranlarına (`/panel`, `/panel/...`) ya da
- * https adresine olur; başka her adres (javascript:, data:, http:, //başka-site, göreli yol) bağlantısız yazı kalır.
+ * izin listesindeki sitelerin https adresine olur (EXTERNAL_HOSTS: laffogato.net, Paraşüt, Claude); başka her adres
+ * (javascript:, data:, http:, //başka-site, göreli yol, listede olmayan site) bağlantısız yazı kalır (yalnız etiketi).
+ * Neden liste: araç çıktılarında dışarıdan gelen metin var (Paraşüt kalem adları, LafPOS adları); onlarla yapılan istem
+ * enjeksiyonu, içine panel verisi gömülmüş bir bağlantı ürettirse bile tıklanamaz.
  * Akış sırasında yarım gelen metin de ayrışır (kapanmamış ** düz yazı kalır).
  */
 
@@ -27,6 +30,11 @@ export type Block =
   | { t: "pre"; v: string }
   | { t: "hr" };
 
+/** Yanıtta tıklanabilen dış siteler (alan adı ya da alt alanı; yalnız https) */
+export const EXTERNAL_HOSTS = ["laffogato.net", "parasut.com", "claude.ai"] as const;
+
+const allowedHost = (host: string) => EXTERNAL_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+
 /** İzin verilen bağlantı adresi; değilse null. Panel yolu: `/panel` ya da `/panel/…`, `/panel?…`, `/panel#…` */
 export function safeHref(raw: string): { href: string; external: boolean } | null {
   const href = raw.trim();
@@ -40,7 +48,7 @@ export function safeHref(raw: string): { href: string; external: boolean } | nul
   if (/^https:\/\//i.test(href)) {
     try {
       const url = new URL(href);
-      if (url.protocol !== "https:" || !url.hostname || url.username || url.password) return null;
+      if (url.protocol !== "https:" || !url.hostname || url.username || url.password || url.port || !allowedHost(url.hostname.toLowerCase())) return null;
       return { href: url.toString(), external: true };
     } catch {
       return null;
