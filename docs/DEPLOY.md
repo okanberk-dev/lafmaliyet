@@ -113,7 +113,7 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `MIGRATE_ON_PREVIEW` | (yalnız Preview, isteğe bağlı) `1`: önizlemelerin **kendi** veritabanı varsa (Neon önizleme dalları) önizleme derlemesi de migration uygular. Önizleme canlının veritabanını kullanıyorsa tanımlamayın (§ 3) |
 | `ALLOW_BRANCH_PRODUCTION` | (yalnız acil durumda, tek derleme için) `1`: `main` dışındaki bir dalın Production derlemesine bilerek izin verir; derleme günlüğüne uyarı yazılır. Proje ayarlarına **eklemeyin**: `vercel deploy --prod --build-env ALLOW_BRANCH_PRODUCTION=1` ile yalnız o derlemeye verilir (§ 7, "Production yalnız main'den") |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | (isteğe bağlı) Web Push anahtarları; yoksa ilk kullanımda üretilip veritabanında şifreli saklanır |
-| `ANTHROPIC_API_KEY` | (isteğe bağlı, **yalnız Production**) Fotoğraftan okuma (Claude): kasa raporunda Z raporu, banka POS fişi ve kasadan çıkan fişler. Yoksa fotoğraf yine eklenir, rakamlar elle yazılır. Aynı anahtar Vardiya'daki **Yazarak doldur**u da çalıştırır ([VARDIYA.md](VARDIYA.md) › Yazarak doldurma); yoksa kutular elle doldurulur. Ayrıntı [FOTOGRAF.md](FOTOGRAF.md) |
+| `ANTHROPIC_API_KEY` | (isteğe bağlı, **yalnız Production**) Fotoğraftan okuma (Claude): kasa raporunda Z raporu, banka POS fişi ve kasadan çıkan fişler. Yoksa fotoğraf yine eklenir, rakamlar elle yazılır; LafPOS gününün gün sonu fotoğrafı (Pavo'nun detaylı Z'si) anahtarsız da kodla (OCR) okunur, öteki fotoğraflar okunmaz. Aynı anahtar Vardiya'daki **Yazarak doldur**u da çalıştırır ([VARDIYA.md](VARDIYA.md) › Yazarak doldurma); yoksa kutular elle doldurulur. Ayrıntı [FOTOGRAF.md](FOTOGRAF.md) |
 | `BLOB_READ_WRITE_TOKEN` | (isteğe bağlı, **yalnız Production**) Fotoğraf deposu: Vercel › Storage › Blob, erişim **Private**, bölge Frankfurt (fra1). Depoyu projeye bağlayınca kendiliğinden eklenir (yeni bağlantı anahtar yerine `BLOB_STORE_ID` verirse o da yeter). Yoksa fotoğraf düğmeleri görünmez ([FOTOGRAF.md](FOTOGRAF.md)) |
 | `PHOTO_DIR` | (yalnız yerel, isteğe bağlı) Fotoğrafların yerel klasörü; yoksa `.data/photos` |
 | `MCP_DISABLED` | (isteğe bağlı) `1` ise Claude bağlantısı kapalı (bütün uçlar 404, verilmiş anahtarlar çalışmaz). Önizlemelerde zaten kapalı ([CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md)) |
@@ -140,6 +140,14 @@ uyarıları; iki iş birden durursa diye isteğe bağlı dış izleme: `/api/hea
 ✓ Excel verisi yüklendi: 74 hammadde, 129 ürün, 699 reçete satırı, 125 satış satırı, 81 fatura
 ✓ Yönetici hesabı oluşturuldu: …
 ```
+
+**Kodla okuma (OCR):** LafPOS gününün gün sonu fotoğrafı yapay zekâ yokken panelin içinde okunur (tesseract.js). Dil
+verisi (`@tesseract.js-data/tur`) ve çekirdek (`tesseract.js-core`, WebAssembly) paketle gelir: ortam değişkeni yok, ağ
+isteği yok. `next.config.ts` bunları fotoğrafı okuyan iki yola (`/api/foto`, `/api/foto/[id]/oku`) ekler
+(`outputFileTracingIncludes`, `serverExternalPackages`). Denetim: yerelde `npx next build`, sonra
+`.next/server/app/api/foto/route.js.nft.json` içinde `tur.traineddata.gz` ve `tesseract-core-*lstm.wasm` geçmeli; canlıda
+ilk kodla okumada sunucu günlüğünde "[foto] kodla okuma" hatası yoksa çalışıyor ([FOTOGRAF.md](FOTOGRAF.md) › LafPOS
+gününün fotoğrafı).
 
 Önizleme derlemesinde bunların yerine `! Önizleme dağıtımı …: migration ve seed atlandı` yazar. Bekçiyi içeren bir
 commit'te `main` dışındaki bir dal Production'a derlenirse derleme `✗ Production derlemesi yalnız main dalından yapılır;

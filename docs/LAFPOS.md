@@ -448,7 +448,8 @@ düşmez. Okunamayan `bankPos` günü reddetmez: gün yazılır, önceki karşı
 karşılaştırır: Pavo'nun günü (bütün batch'lerin toplamı, gün ortasında elle alınan da) ↔ LafPOS'un bütün gün kartı;
 her batch ayrı satırda, son batch'in Pavo / LafPOS kartı ayrıntı olarak kalır (eski kart yalnız son batch'e bakıp
 "Uyumlu 755 = 755" diyordu, günün 995'ini görmüyordu). Farkta metin kartla cari tahsilatının başka bir POS'tan çekilmiş
-olabileceğini de söyler (LafPOS'un tabanı onu Pavo'da sayar).
+olabileceğini de söyler (LafPOS'un tabanı onu Pavo'da sayar). Gün sonu alınamadıysa (`failed`, batch yok, `lafposCard`
+boş) "LafPOS kart toplamı" satırı bütün gün kartını (`dayCard`) gösterir, "yok" demez (son denetim, 24 Kasım 2026).
 
 #### Kart: kartla bahşiş ve cari tahsilatı (G11)
 
@@ -753,6 +754,17 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   (`staffAutoNote`; yönetici yazdıysa yok). Kasadan çıkan satırlarındaki "Fiş fotoğrafı ekle" eskisi gibi (isteğe bağlı).
   Tuzla / ModPOS ve elle girilen günler değişmedi. Yönetici Düzenle'yi görür; elle düzelttiği alanı sonraki otomatik
   güncelleme ezmez.
+- **Gün sonundan önce** (son denetim, 24 Kasım 2026): LafPOS gününde (Marina, geçiş gününden itibaren) LafPOS'un gün sonu
+  gelmeden ve rapor yokken personel kasa formunu görmez; yerinde "Kasa raporu LafPOS'tan gelecek: Kapanışta LafPOS'ta
+  Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin (detaylı Z) fotoğrafını eklersiniz." yazar
+  (alt başlık, Bugün'ün akşam satırı ve zil de aynı işi söyler; "kasadaki nakdi sayıp girin" denmez). Personel girseydi
+  otomasyon raporu "elle girildi" sayar, Banka POS'u ve yazarkasa alanlarını hiç yazmazdı. Sunucu da reddeder
+  (`saveCashReport`): personel LafPOS gününde yeni rapor yazmaz, otomatik raporu değiştirmez ("rakamlarını yalnız yönetici
+  düzeltir"); yöneticinin yedek yolla elle girdiği rapor personelin kendi kapısıyla açık kalır. LafPOS hiç göndermezse
+  raporu yönetici girer; dünden eski gün personelin geç rapor yolundan girilir.
+- Otomatik raporlu LafPOS gününde personelin "Kaldırılmasını iste" düğmesi ve isteği fotoğrafın okuma farkına bakmaz
+  (fark fotoğraf ↔ LafPOS karşılaştırmasıdır, yalnız yöneticinin; düğmenin kaybolması farkı ele verirdi). Yöneticinin
+  onayı farka yine bakar (`readingBlocksRemoval`).
 - Fotoğraf `attachLafposDayPhoto` ile rapora bağlanır (yazarkasa bölümü, `kasa-okc`, en çok 3): kaydetme yolu
   (`saveCashReport`) yok, sürüm yok, gönderen ve sayan değişmez, onay yok (rakam değişmiyor). Personel günden 14 gün
   (`LATE_REPORT_DAYS`) içinde, ertesi günün raporu girilmiş olsa da ekler; yalnız kendi yüklediğini; işlem geçmişine
@@ -807,7 +819,7 @@ fotoğrafı: bekleniyor / alındı / LafPOS'tan farklı), **Fotoğraf ↔ LafPOS
 her satır "fotoğrafta X · LafPOS'ta Y · aynı | FARK | okunamadı"; fark varsa konunun sonunda "· Fotoğraf FARKLI"), "Panelde
 aç". Maliyet ve kâr yok. Faz 2 alanlarıyla gelen günde ayrıca gün görünümünün bölümleri (`lafposDayDetail`): LafPOS'un ödeme ayrıntısı
 (yazarkasadan geçmeyen kart ve nakit, ödeme iptalleri), **İptal edilen kalemler** (`iptal[]`: hazırlanmış olanlar zayi,
-hazırlanmamışlar "tüketim değil"), yazarkasa Z no ve KDV dökümü, gönderim sırası; Faz 3 alanlarıyla gelen günde
+hazırlanmamışlar "tüketim değil", kapanmış adisyondan iade `refund` ayrı satırda "İade (kapanmış adisyondan)"), yazarkasa Z no ve KDV dökümü, gönderim sırası; Faz 3 alanlarıyla gelen günde
 **Kasa açılışı (LafPOS)** (beklenen, fark, neden) ve **Kasa hareketleri (LafPOS)** (harcama, teslim, giriş); eski
 LafPOS'un gününde bu bölümler yok.
 
@@ -958,7 +970,7 @@ listesi yok"); Z ve ciro etiketleri geçiş gününde böler. Geçiş günü bo�
   yerelse LafPOS'ta elle" der. Bu iş yalnız yöneticinindir (LafPOS'ta ürün fiyatını kasiyer değiştiremez): personelin
   zilinde ve Bugün'ünde satır yok, Kasadaki fiyatlar boş, işaret eylemi personeli reddeder. Zil, Bugün, haftalık özet,
   ürün kartı, Ürünler ve Fiyatlar aynı süzgeçten okur (`src/server/data/till-scope.ts`).
-- **Günün kasası:** Bugün'ün ve zilin akşam satırı ("Kapanışta LafPOS'ta Günü kapat'a basın"), Kasa raporunun
+- **Günün kasası:** Bugün'ün ve zilin akşam satırı ("Kapanışta LafPOS'ta Günü kapat'a basın; rapor LafPOS'tan gelir"), Kasa raporunun
   başlığı, yazarkasa karşılaştırmaları (form, kayıtlı görünüm, onay kartı, e-posta, WhatsApp: "Kart LafPOS ile aynı",
   "LafPOS kart"), günün online satış satırı, kapalı gün kartı ve Bugün'ün kapalı gün satırı ("o günün LafPOS / banka
   POS'una bakın"). LafPOS gününde yazarkasa bölümüne çekilen kasa çıktısına "ModPOS bölümüne okut" önerilmez.

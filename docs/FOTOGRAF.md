@@ -196,7 +196,12 @@ sonra, LafPOS'un gün sonu gelmiş gün) başka sırayla okunur (`src/server/pho
    Σ ödemeler ≠ toplam, Σ KDV grupları ≠ toplam, Pavo'nun sonucu geldiyse batch yok, satış − iade ≠ net, düşük güven) ya da
    LafPOS'un rakamlarından farklıysa (aynı karşılaştırma "fark" diyorsa): yanlış bir "fark" yöneticiye gitmeden ikinci kez
    bakılır. Güçlü okuma düşerse ucuz okunuş kalır. Ucuz model yanıt verip okunuş vermediyse (ret, yarım, şema dışı) de
-   önce güçlü model denenir.
+   önce güçlü model denenir. **Karşılaştırma sonradan değişirse de** (son denetim, 24 Kasım 2026): fotoğraf Pavo'nun
+   sonucu gelmeden eklendiyse ucuz okunuş o anki rakamlarla karşılaştırılmıştır; LafPOS günü Pavo'nun sonucuyla yeniden
+   gönderince karşılaştırma kayıtlı okunuşla yeniden kurulur. Otomatik raporun karşılaştırması "fark" ya da "okunamadı"
+   olduysa, okunuşu ucuz modelden gelen ve güçlü modelin hiç denenmediği fotoğraf gün sonu e-postalarından önce bir kez
+   güçlü modelle okunur (`strongRecheckDayPhotos`, gün sonu otomasyonunda `after()` içinde; süre yetmezse günlük iş),
+   karşılaştırma yenilenir, zil ve e-posta yenisini görür.
 4. **Kodla okuma:** yapay zekâ yoksa ya da yanıt vermiyorsa (anahtar yok, Ayarlar'da kapalı, günlük sınır, fotoğraf başına
    3 okuma, kredi bitti, anahtar geçersiz, yoğunluk, zaman aşımı, bağlantı, reddedilen istek, büyük dosya) fotoğraf panelde
    yerel OCR'la okunur (`src/server/photo-read/ocr.ts`, tesseract.js 7, WebAssembly; en çok 15 sn) ve Pavo fişinin kural
@@ -249,7 +254,7 @@ yazmıyorsa çalışıyor demektir. node_modules'a ~55 MB eklenir (işleve giden
 Testler: `tests/gun-sonu-foto.test.ts` (modeller, ucuz okumanın denetimi, sıra ve her hata türünde koda düşme, ayrıştırıcı,
 güven kuralı, fotoğraf e-postası), `tests/gun-sonu-foto-ocr.test.ts` (testte çizilen sentetik Pavo fişi gerçek OCR'la,
 ağsız), `tests/gun-sonu-foto-eposta.test.ts`, `tests/gun-sonu-foto-db.test.ts` (sahte istemciyle Haiku → Opus, tutarlar,
-yeniden okumama, anahtarsız OCR, e-posta).
+yeniden okumama, anahtarsız OCR, e-posta, Pavo'nun sonucu sonradan gelince güçlü modelin bir kez bakması).
 
 ## 6. Gizlilik (KVKK)
 
@@ -275,7 +280,7 @@ değil); indirilen yedek dosyası sizde, sizin sakladığınız kadar kalır ([Y
 
 | Değişken | Nerede | Ne |
 |----------|--------|----|
-| `ANTHROPIC_API_KEY` | Vercel, yalnız Production | Okuma. Yoksa durum "nokey": fotoğraf eklenir, okunmaz |
+| `ANTHROPIC_API_KEY` | Vercel, yalnız Production | Okuma. Yoksa durum "nokey": fotoğraf eklenir; LafPOS gününün gün sonu fotoğrafı kodla (OCR) okunur, öteki fotoğraflar okunmaz |
 | `BLOB_READ_WRITE_TOKEN` | Vercel, yalnız Production | Özel Blob deposu (Storage › Blob › Private, fra1; projeye bağlayınca eklenir). Yeni bağlantı anahtar yerine `BLOB_STORE_ID` verirse o da yeter (OIDC). Vercel'de ikisi de yoksa fotoğraf düğmeleri görünmez |
 | `PHOTO_DIR` | yalnız yerel | Fotoğraf klasörü (varsayılan `.data/photos`) |
 | `AI_REPLAY` | yalnız `next dev` | `1`: kayıtlı yanıtlar (§ 8); canlıda hiçbir koşulda çalışmaz |
