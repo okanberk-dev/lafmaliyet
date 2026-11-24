@@ -251,3 +251,43 @@ test("şube seçiliyken 'Excel temeli' net kâr ve başabaş işletme genelini s
   assert.equal(all.fixedStandardSharedFor("2026-11"), 0, "Tümü'de dışarıda kalan yok");
   close(breakEvenOf(all, "2026-11").expensesTotal, 3_000 + 4_000 + 5_000 + 6_000, "Tümü'nün aylık harcaması hepsi");
 });
+
+test("Tümü'nün şube kırılımı: fiziksel olmayan kanala (online) yazılan gider kendi sütununda, farka düşmez", () => {
+  // İnceleme bulgusu 5: "Site barındırma" 2.000 ₺/ay ve bir harcama kaydı online kanala yazılı. Tümü sayar; Tuzla, Marina ve
+  // İşletme geneli taşımaz. Önceden fark (residual) olarak "mal maliyetinin yöntemi" notuyla yazılıyordu
+  const hosting: FixedExpense = { ...kira, id: 600, name: "Site barındırma", section: "genel", amount: 2_000, branchId: "online", officialAmount: null, landlordType: null, prorate: true, sortOrder: 60 };
+  const fixedOnline = [...fixed, hosting];
+  const entriesOnline = [...entries, entry(4, 500, "online")];
+  const allDs: Dataset = { ...ALL, fixedExpenses: fixedOnline, expenseEntries: entriesOnline };
+  const branchDs = (id: "tuzla" | "marina", months: Month[]): Dataset => ({
+    ...view(id, months),
+    fixedExpenses: fixedOnline.filter((f) => f.branchId === null || f.branchId === id),
+    expenseEntries: entriesOnline.filter((e) => e.branchId === null || e.branchId === id),
+  });
+  const months = ["2026-11", "2026-12"];
+  const of = (ds: Dataset) => {
+    const model = createModel(ds);
+    return months.map((x) => model.pnlMonth(x));
+  };
+  const all = of(allDs);
+  const branches = [
+    { id: "tuzla", name: "Tuzla", months: of(branchDs("tuzla", tuzlaMonths)) },
+    { id: "marina", name: "Marina", months: of(branchDs("marina", marinaMonths)) },
+  ];
+  const online = all.reduce((a, p) => a + (p.cells.get("fixed:600")?.value ?? 0) + 0, 0) + 500;
+  close(online, 2_000 * 2 + 500, "online kanalın gideri: iki ay barındırma + harcama");
+  const b = branchBreakdown(branches, all);
+  assert.deepEqual(
+    b.columns.map((c) => c.label),
+    ["Tuzla", "Marina", "Diğer kanallar", "İşletme geneli", "Tümü"],
+  );
+  assert.equal(b.residual, 0, "fark yok: kanalın gideri kendi sütununda");
+  const other = b.columns.find((c) => c.key === "kanallar")!;
+  close(other.expenses, online, "Diğer kanallar: gider");
+  close(other.profit, -online, "Diğer kanallar: kâr");
+  close(b.columns.reduce((a, c) => (c.key === "tumu" ? a : a + c.profit), 0), b.columns.at(-1)!.profit, "sütunlar = Tümü");
+  // Kanalın adı biliniyorsa sütun onun adıyla
+  assert.equal(branchBreakdown(branches, all, { online: "Online" }).columns[2].label, "Online");
+  // Kanala yazılan gider yoksa sütun yok (bugünkü kart)
+  assert.equal(branchBreakdown(branches.map((x) => ({ ...x, months: of(view(x.id as "tuzla" | "marina", x.id === "tuzla" ? tuzlaMonths : marinaMonths)) })), of(ALL)).columns.length, 4);
+});

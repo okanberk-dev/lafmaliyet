@@ -130,6 +130,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
             branchBreakdown(
               list.map((x) => ({ id: x.id, name: x.name, months: yt.counted.map((m) => x.model.pnlMonth(m)) })),
               yt.counted.map((m) => model.pnlMonth(m)),
+              // Fiziksel olmayan kanala (online) yazılan giderin sütunu kanalın adıyla (inceleme bulgusu 5)
+              Object.fromEntries(branchList.map((b) => [b.id, b.name])),
             ),
           )
           .catch((e) => {
@@ -468,7 +470,7 @@ function BranchSplitCard({ year, months, split }: { year: number; months: number
         description={
           <>
             Yıl kartlarıyla aynı {months} ay. Şubenin kârı kendi görünümündeki gibi: işletme geneli giderler şubeye bölünmez, ayrı sütunda bir kez sayılır.{" "}
-            <InfoTip text="İşletme geneli: şubesi seçilmemiş sabit giderler ve stopajı, şubesi boş harcamalar ve harcamaya bağlı faturalar, Gelir-gider'e elle yazılan tutarlar, komisyon faturaları; cirosu laffogato.net online satışı. Şubelerin mal maliyeti satışından reçeteye göre, Tümü'nün sayımla." />
+            <InfoTip text="İşletme geneli: şubesi seçilmemiş sabit giderler ve stopajı, şubesi boş harcamalar ve harcamaya bağlı faturalar, Gelir-gider'e elle yazılan tutarlar, komisyon faturaları; cirosu laffogato.net online satışı. Fiziksel şube olmayan kanala (online) yazılan sabit gider, harcama ve personel varsa kendi sütununda (tek kanalsa onun adıyla, yoksa Diğer kanallar). Şubelerin mal maliyeti satışından reçeteye göre, Tümü'nün sayımla." />
           </>
         }
       />
@@ -504,7 +506,7 @@ function BranchSplitCard({ year, months, split }: { year: number; months: number
       </TableWrap>
       {split.residual ? (
         <p className="px-5 pb-4 text-xs text-pretty text-ink-mute">
-          Şubeler + işletme geneli Tümü&apos;yü {tl(split.residual)} farkla verir: Tümü&apos;nün mal maliyeti sayım ve faturalardan, şubelerinki satıştan reçeteye
+          Sütunların toplamı Tümü&apos;yü {tl(split.residual)} farkla verir: Tümü&apos;nün mal maliyeti sayım ve faturalardan, şubelerinki satıştan reçeteye
           göre; Tümü&apos;de elle yazılan personel ve POS komisyonu da şubelere bölünmez. Hiçbir gider iki kez sayılmaz.
         </p>
       ) : null}

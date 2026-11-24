@@ -878,6 +878,12 @@ export interface PnlMonthCalc {
    * işletme geneli olan hücreler (harcama hücresi şubede şubenin kendi kaydıdır, işletme geneli kısmı `parts`'ta)
    */
   shared: { total: number; parts: { key: string; label: string; amount: number }[]; keys: ReadonlySet<string> };
+  /**
+   * Şubeye yazılan giderler, şube kimliği başına (Faz 5; Tümü'nün şube kırılımı, src/lib/branch-breakdown.ts): şubesi
+   * seçilmiş sabit gider ve stopajı, şubesi seçilmiş harcama kaydı (mal dışı), kişinin şubesine göre personel. Fiziksel
+   * olmayan kanala (online) yazılan gider kırılımda kendi sütununda görünür. Elle yazılmış personel hücresi bölünmez
+   */
+  byBranch: Readonly<Record<string, number>>;
   expenses: number;
   /** ModPOS cirosu (KDV dahil, Satışlar'a girilen); girilmediyse null */
   revenue: number | null;
@@ -2198,10 +2204,18 @@ export function createModel(ds: Dataset) {
     byCat.set(cat, (byCat.get(cat) ?? 0) + v);
     map.set(m, byCat);
   };
+  // Şubesi seçilmiş kayıtlar şube başına (ay|kategori → şube → tutar): Tümü'nün şube kırılımı (PnlMonthCalc.byBranch)
+  const expenseByBranch = new Map<string, Map<string, number>>();
   for (const e of ds.expenseEntries ?? []) {
     const m = monthOfDate(e.date);
     addTo(expenseByMonth, m, e.categoryId, e.amount);
     addTo((e.branchId ?? null) === null ? expenseSharedByMonth : expenseOwnByMonth, m, e.categoryId, e.amount);
+    if (e.branchId) {
+      const k = `${m}|${e.categoryId}`;
+      const byB = expenseByBranch.get(k) ?? new Map<string, number>();
+      byB.set(e.branchId, (byB.get(e.branchId) ?? 0) + e.amount);
+      expenseByBranch.set(k, byB);
+    }
   }
   /** Ayın harcama kayıtları (aynı gider iki kez: duplicateExpenses) */
   const expenseEntriesByMonth = new Map<string, NonNullable<Dataset["expenseEntries"]>>();
@@ -2647,6 +2661,12 @@ export function createModel(ds: Dataset) {
       cell.info = partTimeText(partRows);
       if (pers.partTime.unlinked.length) cell.warn = partTimeUnlinkedText(pers.partTime.unlinked);
     }
+    // Şubeye yazılan giderler (Tümü'nün şube kırılımı): personel kişinin şubesine, tam zamanlı kendi şubesinin günüyle
+    const byBranch: Record<string, number> = {};
+    const toBranch = (branchId: string | null | undefined, amount: number) => {
+      if (branchId && amount) byBranch[branchId] = (byBranch[branchId] ?? 0) + amount;
+    };
+    for (const r of pers.rows) toBranch(r.staff.branchId ?? DEFAULT_BRANCH_ID, isPartTime(r.staff) ? r.total : r.total * rowRatio(r));
     // Sabit giderler: aralıktaki kalemler o ayın tutarıyla. Aralık dışındaki (ya da silinmiş) kalemin
     // elle girilmiş tutarı yine de sayılır; böylece dondurulmuş geçmiş ay kaybolmaz.
     // "Açık güne göre oranla" kapalı kalem (kira varsayılanı) biten ayda tam ay; süren ayda bugüne kadarki pay (ciroyla
@@ -2665,12 +2685,12 @@ export function createModel(ds: Dataset) {
     const sharedParts: PnlMonthCalc["shared"]["parts"] = [];
     const sharedKeys = new Set<string>();
     /** Tutarı bölümüne (Tümü ya da şubenin kendi kalemi) ya da şube görünümünde işletme geneli payına yazar */
-    const book = (section: FixedSection | "komisyon", key: string, label: string, amount: number, sharedItem: boolean) => {
+    const book = (section: FixedSection | "komisyon", key: string, label: string, amount: number, sharedItem: boolean, branchId?: string | null) => {
       if (sharedItem) {
         sharedKeys.add(key);
         if (amount) sharedParts.push({ key, label, amount });
         if (ds.branchView) return;
-      }
+      } else toBranch(branchId, amount);
       sections[section] += amount;
     };
     for (const fe of allFixed) {
@@ -2680,13 +2700,13 @@ export function createModel(ds: Dataset) {
       if (inRange(fe, month)) {
         const own = sharedItem ? companyDays() : branchDays(fe.branchId);
         const d = fe.prorate === false ? (sharedItem ? sharedFullDays : fullDays) : own.days;
-        book(fe.section, key, fe.name, auto(key, fixedForMonth(fixedAtMonth(fe, month), st, own.open, dim, d)), sharedItem);
+        book(fe.section, key, fe.name, auto(key, fixedForMonth(fixedAtMonth(fe, month), st, own.open, dim, d)), sharedItem, fe.branchId);
         if (fe.prorate === false && d !== own.days) cells.get(key)!.info = "Tam ay: açık güne göre oranlanmıyor (Sabit giderler › Açık güne göre oranla).";
         const gross = officialRentGross(fe, rentRate);
         if (gross !== null) {
           const share = dim ? d / dim : 0;
           const stopaj = auto(sKey, gross * rentRate * share);
-          book(fe.section, sKey, `${fe.name} stopajı`, stopaj, sharedItem);
+          book(fe.section, sKey, `${fe.name} stopajı`, stopaj, sharedItem, fe.branchId);
           cells.get(sKey)!.info = `Resmi brüt kira ${tl(gross)}${fe.officialBasis === "net" ? ` (net ${tl(fe.officialAmount ?? 0)} ÷ ${num(1 - rentRate, 2)})` : ""} × %${num(rentRate * 100)} stopaj${share < 1 ? ` × ${d}/${dim} gün` : ""}. Muhtasarla izleyen ayın 26'sında ödenir.`;
           // Tek kaynak (Faz 5): stopaj resmi kiradan bu satırda; "Kira stopajı" adlı ayrı bir sabit gider de sayılıyorsa
           // aynı stopaj iki kez girer. Tutar değişmez, hücre uyarır (Genel bakış da)
@@ -2697,11 +2717,11 @@ export function createModel(ds: Dataset) {
       } else {
         const ov = overrides.get(key);
         cells.set(key, { value: ov ?? null, computed: null, overridden: ov !== undefined, note: ov !== undefined ? noteOf(key) : null, outOfRange: true });
-        if (ov !== undefined) book(fe.section, key, fe.name, ov, sharedItem);
+        if (ov !== undefined) book(fe.section, key, fe.name, ov, sharedItem, fe.branchId);
         const sov = overrides.get(sKey);
         if (sov !== undefined) {
           cells.set(sKey, { value: sov, computed: null, overridden: true, note: noteOf(sKey), outOfRange: true });
-          book(fe.section, sKey, `${fe.name} stopajı`, sov, sharedItem);
+          book(fe.section, sKey, `${fe.name} stopajı`, sov, sharedItem, fe.branchId);
         }
       }
     }
@@ -2731,6 +2751,7 @@ export function createModel(ds: Dataset) {
       const own = ds.branchView ? (expenseOwnByMonth.get(month)?.get(x.cat.id) ?? 0) : x.total;
       cells.set(key, { value: own, computed: own, overridden: false });
       sections[x.cat.section] += own;
+      for (const [b, v] of expenseByBranch.get(`${month}|${x.cat.id}`) ?? []) toBranch(b, v);
       const sharedPart = (expenseSharedByMonth.get(month)?.get(x.cat.id) ?? 0) + x.invoices;
       if (sharedPart) sharedParts.push({ key, label: x.cat.name, amount: sharedPart });
     }
@@ -2816,6 +2837,7 @@ export function createModel(ds: Dataset) {
       officialRent,
       sections,
       shared: { total: sum(sharedParts.map((x) => x.amount)), parts: sharedParts, keys: sharedKeys },
+      byBranch,
       expenses,
       revenue,
       serviceRevenue,
