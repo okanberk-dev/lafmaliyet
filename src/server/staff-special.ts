@@ -24,13 +24,12 @@ import { UserError } from "@/server/user-error";
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
 
 /**
- * Kişinin şubesinin özel günleri (docs/SUBE.md › Kapalı gün): maç, AVM etkinliği ve kampanya şubesizdir, her şubede
- * görünür; kapalı gün şubenindir: tek şube seçiliyken (personelin kilitli şubesi ya da seçicisi) o şubenin ve işletme
- * genelinin kapalı günleri. "Tümü"de koşul yok. Liste ve çakışma denetimi aynı koşulu kullanır: Tuzla'nın kapalı günü
- * Marina'nın personelinin maçını "çakışıyor" diye reddetmesin
+ * Kişinin şubesinin özel günleri (docs/SUBE.md › Özel günlerin şubesi; şube kapsamı C P1-10): her türün şubesi olabilir
+ * (boş = işletme geneli, her şubede görünür). Tek şube seçiliyken (personelin kilitli şubesi ya da seçicisi) o şubenin ve
+ * işletme genelinin günleri; "Tümü"de koşul yok. Liste ve çakışma denetimi aynı koşulu kullanır: Tuzla'nın kapalı günü ya
+ * da kampanyası Marina'nın personelinin maçını "çakışıyor" diye reddetmesin
  */
-const specialScopeWhere = (scope: BranchScope) =>
-  scope === ALL_BRANCHES ? undefined : or(ne(s.specialDays.kind, "kapali"), isNull(s.specialDays.branchId), eq(s.specialDays.branchId, scope));
+const specialScopeWhere = (scope: BranchScope) => (scope === ALL_BRANCHES ? undefined : or(isNull(s.specialDays.branchId), eq(s.specialDays.branchId, scope)));
 
 export interface StaffSpecialSave extends StaffSpecialInput {
   id?: number | null;
@@ -83,9 +82,18 @@ async function editable(tx: Tx, me: Actor, id: number, today: string) {
 
 /**
  * Personelin özel günü: ekler ya da (id ile) kendi satırını düzenler. Dönüşte satırın kimliği ve önceki değerler.
- * `scope`: kişinin şube seçimi; çakışma yalnız o şubenin ve işletme genelinin kapalı günleriyle aranır
+ * `scope`: kişinin şube seçimi; çakışma yalnız o şubenin ve işletme genelinin günleriyle aranır. `branchId`: yeni satırın
+ * şubesi, şubesine kilitli personelde kendi şubesi (şube kapsamı C P1-10); şubesiz personelde işletme geneli. Düzenleme
+ * satırın şubesini değiştirmez
  */
-export async function saveStaffSpecialCore(db: DB, me: Actor, input: StaffSpecialSave, now = new Date(), scope: BranchScope = ALL_BRANCHES): Promise<{ id: number; created: boolean; values: StaffSpecialValues }> {
+export async function saveStaffSpecialCore(
+  db: DB,
+  me: Actor,
+  input: StaffSpecialSave,
+  now = new Date(),
+  scope: BranchScope = ALL_BRANCHES,
+  branchId: string | null = null,
+): Promise<{ id: number; created: boolean; values: StaffSpecialValues }> {
   if (me.role === "admin") throw new UserError(STAFF_SPECIAL_TEXT.adminDirect);
   const dateTo = input.dateTo || input.dateFrom;
   const title = input.title.trim();
@@ -112,7 +120,7 @@ export async function saveStaffSpecialCore(db: DB, me: Actor, input: StaffSpecia
     }
     const [row] = await tx
       .insert(s.specialDays)
-      .values({ ...values, byStaff: true, createdBy: me.id, createdByName: me.name })
+      .values({ ...values, branchId, byStaff: true, createdBy: me.id, createdByName: me.name })
       .returning({ id: s.specialDays.id });
     return { id: row.id, created: true, values };
   });
@@ -146,9 +154,9 @@ export interface StaffSpecialRow {
   addedBy: string | null;
   /** Kişi bu satırı değiştirebilir: kendi girdiği, başlamamış, yöneticinin dokunmadığı */
   editable: boolean;
-  /** Kapalı günün şubesi (boş: bütün şubeler); öbür türlerde null. Sayfa "Tümü"de şubenin adını yazar */
+  /** Günün şubesi (boş: bütün şubeler). Sayfa "Tümü"de şubenin adını yazar */
   branchId: string | null;
-  /** "Tümü"de birden çok kasa açıkken kapalı günün şubesi ("Marina", "Bütün şubeler"); sayfa doldurur */
+  /** "Tümü"de birden çok kasa açıkken günün şubesi ("Marina", "Bütün şubeler"); sayfa doldurur */
   branchName?: string | null;
 }
 
@@ -189,7 +197,7 @@ export async function staffSpecialList(db: DB, me: { id: number }, now = new Dat
       note: own ? r.note : null,
       addedBy: r.byStaff ? r.createdByName : null,
       editable: own && r.dateFrom > today && (r.updatedBy === null || r.updatedBy === me.id),
-      branchId: r.kind === "kapali" ? r.branchId : null,
+      branchId: r.branchId,
     };
   });
 }

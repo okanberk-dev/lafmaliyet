@@ -131,9 +131,9 @@ test("karaoke: kilitli personelin eylemleri, canlı uç, Bugün ve bildirim kara
   assert.match(sync, /\{ userIds \}\);/);
 });
 
-test("personelin özel günleri: liste ve çakışma kişinin şubesinin kapalı günleriyle", () => {
+test("personelin özel günleri: liste ve çakışma kişinin şubesinin günleriyle (her tür; şube kapsamı C P1-10)", () => {
   const src = read("src/server/staff-special.ts");
-  assert.match(src, /or\(ne\(s\.specialDays\.kind, "kapali"\), isNull\(s\.specialDays\.branchId\), eq\(s\.specialDays\.branchId, scope\)\)/);
+  assert.match(src, /or\(isNull\(s\.specialDays\.branchId\), eq\(s\.specialDays\.branchId, scope\)\)/);
   assert.equal((src.match(/specialScopeWhere\(scope\)/g) ?? []).length, 2, "liste ve çakışma");
   assert.match(read("src/server/actions/special-days-staff.ts"), /await currentBranchScope\(\),/);
   assert.match(read("src/app/panel/ozel-gunler/page.tsx"), /staffSpecialList\(getDb\(\), user, undefined, scope\)/);
