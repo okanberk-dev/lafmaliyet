@@ -6,7 +6,9 @@ import { z } from "zod";
 import { genitive } from "@/lib/recipe-change";
 import { longDateTR } from "@/lib/reminders";
 import { wasteRequestLog } from "@/lib/waste-requests";
+import { zFormBranch } from "@/lib/branches";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { formBranch, withBranchScope } from "@/server/branch-scope";
 import { getDb } from "@/server/db";
 import { proposeLateWaste, proposeWasteDelete, reviewWasteRequestCore } from "@/server/waste/core";
 
@@ -39,6 +41,8 @@ const lateSchema = z
     note: zOptText(300),
     message: zMessage,
     clientKey,
+    /** Formun şubesi (addWasteEntry gibi); göndermeyen eski sekmede seçili fiziksel şube */
+    branchId: zFormBranch,
   })
   .refine((d) => (d.productId === null) !== (d.ingredientId === null), "Bir ürün ya da bir hammadde seçin");
 
@@ -50,8 +54,10 @@ export async function requestLateWaste(input: z.input<typeof lateSchema>) {
   return attempt(async () => {
     const me = await requireUser();
     if (me.role === "admin") throw new UserError("Yönetici doğrudan girer; istek gerekmez");
-    const data = lateSchema.parse(input);
-    const out = await proposeLateWaste(getDb(), me, data);
+    const { branchId, ...data } = lateSchema.parse(input);
+    // Kaydın ineceği şube formun gösterdiği (addWasteEntry ile aynı kapı); kilit de o şubenin kasasından
+    const sube = await formBranch(branchId, "waste", { requireExplicit: true });
+    const out = await withBranchScope(sube, () => proposeLateWaste(getDb(), me, data, undefined, sube));
     if (out.created) {
       const p = out.payload;
       await logActivity(me, "Geç zayi / ikram kaydı istendi", wasteRequestLog({ name: p.name, qty: p.qty, unit: p.unit, dayText: longDateTR(p.date), reason: p.reason, message: data.message }));

@@ -11,9 +11,10 @@ import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Input, NumberInput, Textarea } from "@/components/ui/form";
+import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
+import { BRANCH_REQUIRED } from "@/lib/branches";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { tl } from "@/lib/format";
 import { LAFPOS_IKRAM_TEXT } from "@/lib/lafpos/ikram";
@@ -74,6 +75,7 @@ export function WasteBoard({
   lateBadges,
   pendingLate,
   lafpos = null,
+  branches,
 }: {
   date: string;
   choices: WasteChoice[];
@@ -88,6 +90,11 @@ export function WasteBoard({
   pendingLate: PendingLate[];
   /** LafPOS günü (geçiş gününden itibaren); değilse null: bugünkü gibi */
   lafpos?: LafposDayView | null;
+  /**
+   * Kaydın ineceği şube (docs/SUBE.md › Yazarken hangi şube): tekse o; "Tümü"de birden çoksa form sorar, varsayılan yok.
+   * Sunucu doğrular (formBranch "waste"); gönderim anındaki seçim değil bu yazılır
+   */
+  branches: { id: string; name: string }[];
 }) {
   const [kind, setKind] = useState<WasteKind>("zayi");
   const [query, setQuery] = useState("");
@@ -97,6 +104,8 @@ export function WasteBoard({
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
   const [pending, start] = useActionTransition();
+  const [branchPick, setBranchPick] = useState<string | null>(null);
+  const branchId = branches.length === 1 ? branches[0].id : branchPick;
   const [removing, setRemoving] = useState<WasteEntryDTO | null>(null);
   const [asking, setAsking] = useState<WasteEntryDTO | null>(null);
   const [askReason, setAskReason] = useState("");
@@ -135,7 +144,9 @@ export function WasteBoard({
     const n = parseNumberTR(qty);
     if (n === null || n <= 0) return void (toast.error("Miktarı yazın (ör. 1 ya da 0,5)"), document.getElementById("zi-miktar")?.focus());
     if (late && message.trim().length < 3) return void (toast.error(T.messageShort), document.getElementById("zi-aciklama")?.focus());
+    if (!branchId) return void (toast.error(BRANCH_REQUIRED), document.getElementById("zi-sube")?.focus());
     const input = {
+      branchId,
       date,
       kind,
       productId: picked.type === "product" ? picked.id : null,
@@ -214,6 +225,19 @@ export function WasteBoard({
           description={late ? `${longDateTR(date)} · ${T.lateHint}` : `${longDateTR(date)} · ödenmeyen ve atılan her şey`}
         />
         <div className="space-y-4 px-5 pb-5">
+          {branches.length > 1 ? (
+            // "Tümü" seçili ve birden çok kasa açık: kayıt hangi şubenin, varsayılan yok (sessizce Tuzla'ya inmez)
+            <Field label="Şube" htmlFor="zi-sube">
+              <Select id="zi-sube" value={branchId ?? ""} onChange={(e) => setBranchPick(e.target.value || null)} aria-invalid={!branchId || undefined}>
+                {branchId ? null : <option value="">Şube seçin</option>}
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
           <Segmented<WasteKind>
             label="Kayıt türü"
             value={kind}
