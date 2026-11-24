@@ -347,6 +347,37 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DA
     assert.ok(st3.photoCheck?.issues.some((i) => i.startsWith("Yazarkasa Z no")), JSON.stringify(st3.photoCheck?.issues));
   });
 
+  test("LafPOS'un kendi kâğıdı (24 Kasım, Marina): Z no'su ve NET CİRO'su yazarkasa alanlarına yazılmaz; banka kısmı karşılaştırılır, Z yok bilgi satırıdır", async () => {
+    assert.ok((await push({}, { okcZNo: null })).ok);
+    await gun.writeAutoReport(db, DAY, NOW);
+    // Rakamı gören basınca: "GÜN SONU · Z 31" (LafPOS'un sayacı) + NET CİRO + altında "BANKA GÜN SONU · PAVO"; ucuz
+    // model z_report okumuş olsun
+    const lafposZ = {
+      ...detailed(),
+      title: "GÜN SONU · Z 31",
+      zNo: { text: "31", value: 31, confidence: "high" },
+      dailyTotal: amt(5_215),
+      dailyTotalLabel: "NET CİRO",
+    };
+    const res = await foto.attachLafposDayPhotoCore(db, ayse, { date: DAY, branchId: LAFPOS_SUBE, photoId: await photo(lafposZ) }, NOW);
+    assert.equal(res.line, "Fotoğraf alındı");
+    const st = (await state())!;
+    assert.equal(st.photoCheck?.state, "uyumlu", JSON.stringify(st.photoCheck));
+    assert.equal(st.photoCheck?.zNoFromPhoto ?? null, null, "LafPOS'un Z no'su fotoğraftan yazılmaz");
+    assert.equal((await report())?.okcZNo, null);
+    assert.equal((st.autoValues as Record<string, unknown>).okcZNo ?? null, null);
+    assert.equal((await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Yazarkasa Z no fotoğraftan yazıldı (LafPOS günü)"))).length, 0);
+    assert.ok(!st.photoCheck!.rows.some((r) => r.label.startsWith("Yazarkasa")), JSON.stringify(st.photoCheck!.rows));
+    assert.ok(st.photoCheck!.rows.some((r) => r.label === "Pavo detaylı Z" && r.info && r.ok), JSON.stringify(st.photoCheck!.rows));
+    // Kör kasada yalnız banka kısmı: aynı sonuç
+    await db.delete(s.cashReportPhotos);
+    const kor = { ...slip([{ no: "0001", net: 4_160 }]), title: "BANKA GÜN SONU · PAVO" };
+    assert.equal((await foto.attachLafposDayPhotoCore(db, ayse, { date: DAY, branchId: LAFPOS_SUBE, photoId: await photo(kor) }, NOW)).line, "Fotoğraf alındı");
+    const st2 = (await state())!;
+    assert.equal(st2.photoCheck?.state, "uyumlu", JSON.stringify(st2.photoCheck));
+    assert.equal((await report())?.okcZNo, null);
+  });
+
   test("Fotoğraftan Z no: başka günün Z'si yazılmaz; yöneticinin sildiği Z no geri yazılmaz (yeniden gönderim, yeni fotoğraf); otomatik rapor kendi kaydından tanınır", async () => {
     assert.ok((await push({}, { okcZNo: null })).ok);
     await gun.writeAutoReport(db, DAY, NOW);

@@ -2,6 +2,7 @@ import { dateTR, money } from "@/lib/format";
 import { normalizeVat, sameVat, zNoNumber, type OkcVatLine } from "@/lib/okc-z";
 import { businessDayOf, printedAmount, round2 } from "@/lib/photo-read/common";
 import { modelName, type ReadingSource } from "@/lib/photo-read/models";
+import { okcPaperView } from "@/lib/photo-read/okc";
 import type { AmountRaw, KasaOkc } from "@/lib/photo-read/schemas";
 import { addDays } from "@/lib/reminders";
 
@@ -148,6 +149,11 @@ export interface LafposPhotoRow {
   ok: boolean;
   /** Fotoğraftaki rakam okunmadı (kodla okunan günde "okunamadı — yönetici baksın"; yapay zekâda fark) */
   unread?: boolean;
+  /**
+   * Yalnız bilgi (karşılaştırma değil, fark sayılmaz; e-postada "aynı" yerine "bilgi"; karşılaştırmanın özetine girmez):
+   * ör. Pavo gününde fotoğrafta Z'nin rakamları yok, onlar LafPOS'tan geldi
+   */
+  info?: boolean;
 }
 
 export interface LafposPhotoCheck {
@@ -214,8 +220,15 @@ export function lafposPhotoCheck(
   i: { day: string; reads: readonly LafposPhotoRead[]; bankPos: BankPos | null; okc: PosOkc | null; report: LafposPhotoReport },
   now: Date = new Date(),
 ): LafposPhotoCheck {
-  // Kodla okunan fotoğrafta "low" güvenli rakam okunmamış sayılır (strictView); kaynak: biri kodla okunduysa "kod"
-  const reads = i.reads.map((r) => (r.source === "kod" && r.raw ? { ...r, raw: strictView(r.raw) } : r));
+  // Okunuşun karşılaştırılan hâli (okcPaperView): LafPOS'un kendi kâğıdı ("GÜN SONU · Z n" / "BANKA GÜN SONU · PAVO")
+  // yalnız banka gün sonudur, Z no'su ve NET CİRO'su Z sayılmaz (zNoFromPhoto olmaz); banka kısmı okunmuş yazılım Z'si
+  // de banka gün sonu fişidir. Kodla okunan fotoğrafta "low" güvenli rakam okunmamış sayılır (strictView); kaynak: biri
+  // kodla okunduysa "kod"
+  const reads = i.reads.map((r) => {
+    if (!r.raw) return r;
+    const raw = okcPaperView(r.raw);
+    return { ...r, raw: r.source === "kod" ? strictView(raw) : raw };
+  });
   const kod = reads.some((r) => r.source === "kod");
   const lead = reads.find((r) => r.source === "kod") ?? reads.find((r) => r.raw) ?? reads[0];
   const base = {
@@ -328,7 +341,10 @@ export function lafposPhotoCheck(
     const acq = i.bankPos.acquirers.map((a) => a.total).filter((t): t is number => t !== null);
     const last = i.bankPos.batchNo ? batchKey(i.bankPos.batchNo) : null;
     const lastRead = slips.filter((x) => last !== null && x.no !== null && batchKey(x.no) === last);
-    if (acq.length && lastRead.length) {
+    // Son batch'in yalnız toplamı okunduysa (banka adı yok, tek satır; ör. LafPOS kâğıdının TOPLAM'ı) döküm okunmamıştır:
+    // birden çok bankalı dökümle karşılaştırılmaz (toplamı Banka POS satırı karşılaştırır)
+    const totalOnly = lastRead.length === 1 && lastRead[0].bank === "" && acq.length > 1;
+    if (acq.length && lastRead.length && !totalOnly) {
       const a = [...acq].sort((x, y) => x - y);
       const r = lastRead.map((x) => x.net).filter((n): n is number => n !== null).sort((x, y) => x - y);
       const ok = a.length === r.length && a.every((v, k) => near(v, r[k]));
@@ -430,6 +446,9 @@ export function lafposPhotoCheck(
   // Karşılaştırılan hiçbir satır yoksa "uyumlu" denmez: Pavo fişi okundu ama LafPOS'ta karşılığı henüz yok (Pavo'nun sonucu
   // gelmedi) ise okunmadı, öteki durumda (ör. Pavo cihazında Z fotoğrafı, fiş yok) okunamadı / yanlış belge
   if (!rows.length) return { ...base, state: slips.length && !i.bankPos ? "okunmadi" : kod ? "belirsiz" : "okunamadi" };
+  // Pavo gününde (ayrı mali Z yok) fotoğrafta Z'nin rakamları yoksa (yalnız banka gün sonu: Pavo'nun fişi ya da LafPOS'un
+  // kâğıdı) yöneticiye bilgi: Z rakamları LafPOS'tan geldi, fotoğrafla karşılaştırılmadı. Fark değildir, alarm gitmez
+  if (!zs.length && i.okc?.provider === "pavo") rows.push({ label: "Pavo detaylı Z", photo: "yok", lafpos: "Z rakamları geldi", ok: true, info: true });
   const issues = rows.filter((r) => !r.ok).map((r) => `${r.label}: fotoğrafta ${r.photo}; LafPOS'ta ${r.lafpos}`);
   // Kodla okunan günde "uyumlu" / "fark" yalnız her karşılaştırılan satır yüksek güvenle okunduysa ve en az bir tutar
   // (Banka POS ya da yazarkasa toplamı, batch tutarı) karşılaştırıldıysa; değilse "okunamadı — yönetici baksın"

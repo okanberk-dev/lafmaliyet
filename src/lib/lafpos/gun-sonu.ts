@@ -437,7 +437,7 @@ const PHOTO_TITLE = "Fotoğraf ↔ LafPOS";
 export function photoRows(check: LafposPhotoCheck): [string, string][] {
   const rows: [string, string][] = [["Okuyan", photoSourceText(check)]];
   if (check.state === "belirsiz") rows.push(["Durum", "okunamadı — yönetici baksın (kodla okunan bir satır güvenle seçilmedi; rakam uydurulmadı)"]);
-  for (const r of check.rows) rows.push([r.label, `fotoğrafta ${r.photo} · LafPOS'ta ${r.lafpos} · ${r.ok ? "aynı" : r.unread ? "okunamadı" : "FARK"}`]);
+  for (const r of check.rows) rows.push([r.label, `fotoğrafta ${r.photo} · LafPOS'ta ${r.lafpos} · ${r.info ? "bilgi" : r.ok ? "aynı" : r.unread ? "okunamadı" : "FARK"}`]);
   return rows;
 }
 
@@ -449,9 +449,12 @@ export function photoMailNeeded(check: Pick<LafposPhotoCheck, "state"> | null | 
   return check?.state === "fark" || check?.state === "belirsiz";
 }
 
-/** Karşılaştırmanın özeti (aynı içerik bir kez gider): durum, okuyan ve satırlar; karşılaştırmanın anı girmez */
+/**
+ * Karşılaştırmanın özeti (aynı içerik bir kez gider): durum, okuyan ve satırlar; karşılaştırmanın anı ve bilgi satırları
+ * girmez (bilgi satırı eklenince gönderilmiş fark e-postası yeniden gitmez)
+ */
 export function photoCheckHash(check: LafposPhotoCheck): string {
-  const text = JSON.stringify([check.state, check.source ?? "ai", check.model ?? null, check.rows.map((r) => [r.label, r.photo, r.lafpos, r.ok])]);
+  const text = JSON.stringify([check.state, check.source ?? "ai", check.model ?? null, check.rows.filter((r) => !r.info).map((r) => [r.label, r.photo, r.lafpos, r.ok])]);
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
     h ^= text.charCodeAt(i);

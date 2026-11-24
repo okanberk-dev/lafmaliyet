@@ -184,3 +184,50 @@ OKC_Z = [
     "-" * 40, "Z SAYAÇ|0188", "EKÜ NO|0001", "", "^MF  AB 0000012345",
 ]
 photo(receipt(OKC_Z, fade=0.15), "yazarkasa-z.jpg", angle=2.0)
+
+# ── LafPOS günü (24 Kasım 2026, Marina: Z fotoğrafı "Z raporu" olarak tanınmadı) ──
+# LafPOS'un kapanışta fiş yazıcısından bastığı kâğıt (LafPOS src/lib/print.tsx ZReceipt, BankEodReceipt). Kör kasada
+# (kasa.rakam yok) yalnız banka kısmı; rakamı gören basınca önce LafPOS'un yönetim raporu ("GÜN SONU · Z 31", NET CİRO,
+# "mali Z değildir"), altında banka kısmı. İkisi de mali değildir: Z no'su LafPOS'un sayacı, yazarkasa alanlarına gitmez;
+# banka kısmı Banka gün sonudur (Garanti 500 + Akbank 255 = 755, batch 000279). Pavo'nun istenince bastığı detaylı Z
+# (Z no 0007, toplam 1.190, banka gün sonu 240 + 755) ve yazarkasada basılmış, kendi Z no'su olan ModPOS Z'si (BİLGİ
+# FİŞİ, MF logosu; mali değil). En sonda: öncekilerin rastgele sırası değişmesin
+LAFPOS_HEAD = ["**^L'AFFOGATO", "^Marina Şubesi", "^Tel 0216 000 00 00"]
+LAFPOS_BANK = LAFPOS_HEAD + [
+    "**^BANKA GÜN SONU · PAVO", "Batch|000279", "Cihaz saati|24.11.2026 22:03", "Alınış|Gün kapanınca",
+    "Yazdırma|24.11.2026 22:03", "-" * 40, "^Bankalar", "Garanti BBVA (3)|500,00", "Akbank (2)|255,00",
+    "**TOPLAM|755,00 TL", "-" * 40, "^PAVO - LAFPOS KARŞILAŞTIRMA", "Pavo kart toplamı|755,00",
+    "LafPOS kart toplamı|755,00", "**FARK|0,00", "**UYUMLU|OK", "-" * 40, "^Pavo cihazının banka gün sonu özetidir",
+]
+photo(receipt(LAFPOS_BANK, fade=0.1), "lafpos-kor-kagit.jpg", angle=1.5)
+
+LAFPOS_Z = LAFPOS_HEAD + [
+    "**^GÜN SONU · Z 31", "İş günü|2026-11-24", "Kapanış|24.11.2026 22:03", "Yazdırma|24.11.2026 22:03", "-" * 40,
+    "Brüt satış|1.250,00", "İndirim|-60,00", "**NET CİRO|1.190,00 TL", "Adisyon / kişi|17 / 29", "-" * 40,
+    "^Ödemeler", "Nakit (12)|390,00", "Kart (5)|800,00", "-" * 40,
+    "KDV oranı / matrah|KDV", "%10 / 1.081,82|108,18", "-" * 40,
+    "^Ciro dışı", "İkram|45,00", "İptal (0 hazırlandıktan sonra)|0,00", "-" * 40,
+    "^Kasa", "Açılış nakiti|1.500,00", "Kasa girişi|0,00", "Harcama|-0,00", "Teslim|-0,00",
+    "**Beklenen nakit|1.890,00", "-" * 40, "^LafPOS yönetim raporudur, mali Z değildir", "",
+]
+photo(receipt(LAFPOS_Z + LAFPOS_BANK, fade=0.1), "lafpos-rakamli-kagit.jpg", angle=-1.0)
+
+PAVO_Z = [
+    "^PAVO", "^L'AFFOGATO MARİNA", "^KADIKÖY VD  VKN: 1234567890", "",
+    "TARİH: 24.11.2026|SAAT: 23:10", "**^GÜN SONU (DETAYLI Z)", "Z NO|0007", "FİŞ SAYISI|19", "-" * 40,
+    "NAKİT|*390,00", "KREDİ KARTI|*800,00", "YEMEK KARTI|*0,00", "**TOPLAM|*1.190,00", "-" * 40,
+    "%10 TOPLAM|*1.190,00", "%10 KDV|*108,18", "TOPKDV|*108,18", "KÜM. TOPLAM|*1.259.350,00", "-" * 40,
+    "**^BANKA GÜN SONU", "GARANTİ BBVA", "BATCH NO|000278", "SATIŞ TOPLAMI|240,00", "İADE TOPLAMI|0,00",
+    "NET TOPLAM|240,00", "GARANTİ BBVA", "BATCH NO|000279", "SATIŞ TOPLAMI|755,00", "NET TOPLAM|755,00",
+    "", "^MF  AB 0000067890",
+]
+photo(receipt(PAVO_Z, fade=0.15), "pavo-detayli-z.jpg", angle=2.5)
+
+MODPOS_ON_OKC = [
+    "^L'AFFOGATO KAHVE", "^Tuzla Şubesi", "^TUZLA VD  VKN: 1234567890", "^MF  AB 0000012345", "",
+    "**^BİLGİ FİŞİ", "**^Z RAPORU", "^MODPOS v4.2", "TARİH: 23.11.2026|SAAT: 23:40", "Z NO: 0187|KASİYER: AYŞE",
+    "FİŞ SAYISI|143", "-" * 40, "**ÖDEME TİPLERİ", "NAKİT|3.420,50", "KREDİ KARTI|8.915,00", "YEMEK KARTI|640,00",
+    "-" * 40, "**TOPLAM SATIŞ|*12.975,50", "ÖDENMEZ / İKRAM|245,00", "-" * 40, "MASA SAYISI|38",
+    "", "^MALİ DEĞERİ YOKTUR",
+]
+photo(receipt(MODPOS_ON_OKC, fade=0.15), "modpos-z-yazarkasada.jpg", angle=-2.0)

@@ -122,5 +122,86 @@
     "feature": "kasa-pos",
     "day": "2026-10-21",
     "expect": { "documentType": "fiscal_z_report", "ok": false, "switchTo": null, "errorIncludes": "K.KARTI" }
+  },
+  {
+    "name": "lafpos-kor-kagit",
+    "image": "lafpos-kor-kagit.jpg",
+    "feature": "kasa-okc",
+    "day": "2026-11-24",
+    "lafposDevice": { "provider": "pavo", "zReport": false },
+    "expect": { "documentType": "batch_slip", "viewType": "batch_slip", "values": { "bankPos": 755 }, "absent": ["okcZNo", "okcTotal", "okcCash", "okcCard"], "checksInclude": ["yazarkasa rakamları LafPOS'tan gelir"], "checksExclude": ["Z raporunu"] }
+  },
+  {
+    "name": "lafpos-kor-kagit-ucuz",
+    "image": "lafpos-kor-kagit.jpg",
+    "feature": "kasa-okc",
+    "task": "kisa",
+    "day": "2026-11-24",
+    "lafposDevice": { "provider": "pavo", "zReport": false },
+    "expect": { "documentType": "batch_slip", "viewType": "batch_slip", "values": { "bankPos": 755 }, "absent": ["okcZNo", "okcTotal", "okcCash", "okcCard"], "checksInclude": ["yazarkasa rakamları LafPOS'tan gelir"], "checksExclude": ["Z raporunu"] }
+  },
+  {
+    "name": "lafpos-rakamli-kagit",
+    "image": "lafpos-rakamli-kagit.jpg",
+    "feature": "kasa-okc",
+    "day": "2026-11-24",
+    "lafposDevice": { "provider": "pavo", "zReport": false },
+    "expect": { "documentType": "batch_slip", "viewType": "batch_slip", "values": { "bankPos": 755 }, "absent": ["okcZNo", "okcTotal", "okcCash", "okcCard"], "checksInclude": ["yazarkasa rakamları LafPOS'tan gelir"], "checksExclude": ["Z raporunu"] }
+  },
+  {
+    "name": "lafpos-rakamli-kagit-ucuz",
+    "image": "lafpos-rakamli-kagit.jpg",
+    "feature": "kasa-okc",
+    "task": "kisa",
+    "day": "2026-11-24",
+    "lafposDevice": { "provider": "pavo", "zReport": false },
+    "expect": { "viewType": "batch_slip", "values": { "bankPos": 755 }, "absent": ["okcZNo", "okcTotal", "okcCash", "okcCard"], "checksInclude": ["yazarkasa rakamları LafPOS'tan gelir"], "checksExclude": ["Z raporunu"] }
+  },
+  {
+    "name": "pavo-detayli-z",
+    "image": "pavo-detayli-z.jpg",
+    "feature": "kasa-okc",
+    "day": "2026-11-24",
+    "lafposDevice": { "provider": "pavo", "zReport": false },
+    "expect": { "documentType": "z_report", "viewType": "z_report", "values": { "okcZNo": "0007", "okcTotal": 1190, "okcCash": 390, "okcCard": 800, "bankPos": 995 } }
+  },
+  {
+    "name": "pavo-detayli-z-ucuz",
+    "image": "pavo-detayli-z.jpg",
+    "feature": "kasa-okc",
+    "task": "kisa",
+    "day": "2026-11-24",
+    "lafposDevice": { "provider": "pavo", "zReport": false },
+    "expect": { "documentType": "z_report", "values": { "okcZNo": "0007", "okcTotal": 1190, "bankPos": 995 } }
+  },
+  {
+    "name": "pavo-banka-fisi-lafpos-gununde",
+    "image": "pos-gun-sonu.jpg",
+    "feature": "kasa-okc",
+    "day": "2026-10-21",
+    "lafposDevice": { "provider": "pavo", "zReport": false },
+    "expect": { "documentType": "batch_slip", "values": { "bankPos": 8915 }, "absent": ["okcZNo", "okcTotal"], "checksExclude": ["Z raporunu"] }
+  },
+  {
+    "name": "yazarkasa-z-yazarkasa-bolumune",
+    "image": "yazarkasa-z.jpg",
+    "feature": "kasa-okc",
+    "day": "2026-10-21",
+    "expect": { "documentType": "z_report", "values": { "okcZNo": "0188", "okcTotal": 12300, "okcCash": 3180, "okcCard": 8480 } }
+  },
+  {
+    "name": "modpos-z-yazarkasa-bolumune",
+    "image": "z-raporu.jpg",
+    "feature": "kasa-okc",
+    "day": "2026-10-21",
+    "expect": { "documentType": "software_z", "ok": false, "switchTo": "kasa-z" }
+  },
+  {
+    "name": "modpos-z-yazarkasada-basilmis",
+    "image": "modpos-z-yazarkasada.jpg",
+    "feature": "kasa-z",
+    "day": "2026-11-23",
+    "prevZNo": "0186",
+    "expect": { "documentType": "z_report", "values": { "zTotal": 12975.5, "cash": 3420.5, "card": 8915, "mealCard": 640, "zNo": "0187" } }
   }
 ]

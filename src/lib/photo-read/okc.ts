@@ -45,13 +45,107 @@ function wrongOkcDocument(documentType: KasaOkc["documentType"]): CashReading {
 
 /**
  * LafPOS gününde (geçiş gününden itibaren; denetim E-39) ModPOS Z bölümü yok: yazılım Z'si (LafPOS'un gün sonu çıktısı)
- * yazarkasa bölümüne çekilirse "ModPOS bölümüne okut" önerilmez, kasanın rakamları gün sonuyla kendiliğinden gelir
+ * yazarkasa bölümüne çekilirse "ModPOS bölümüne okut" önerilmez, kasanın rakamları gün sonuyla kendiliğinden gelir.
+ * Ayrı mali Z basan cihazda (TokenX) ya da cihaz bilinmiyorsa yazarkasanın Z'si istenir; Pavo ayrı mali Z basmaz
+ * (LafPOS'ta `zReport: false`), orada Pavo'nun gün sonu fişi (detaylı Z) istenir
  */
 export const OKC_SOFTWARE_Z_LAFPOS_TEXT = "Bu kasanın (LafPOS) gün sonu gibi görünüyor; onun rakamları panele kendiliğinden gelir. Banka POS'un (yazarkasa) Z raporunu çekin.";
+/** Aynısı Pavo gününde (24 Kasım 2026, Marina): Pavo ayrı mali Z basmaz, gün sonu fişi istenir */
+export const OKC_SOFTWARE_Z_PAVO_TEXT = "Bu LafPOS'un kendi gün sonu raporu; rakamları panele kendiliğinden gelir. Pavo'nun gün sonu fişinin (detaylı Z) fotoğrafını çekin.";
 
-/** Yazarkasa okumasını LafPOS gününe uyarlar: ModPOS bölümüne okutma önerisi kalkar (yalnız o hata değişir) */
-export function okcReadingOnLafposDay(r: CashReading): CashReading {
-  return r.kind === "kasa-okc" && !r.ok && r.switchTo === "kasa-z" ? { ...r, error: OKC_SOFTWARE_Z_LAFPOS_TEXT, switchTo: null } : r;
+/** Yalnız banka gün sonu fişi okundu (ModPOS günü, ayrı mali Z basan cihaz): yazarkasanın Z'si de istenir */
+export const OKC_BATCH_SLIP_TEXT = "Bu banka gün sonu fişi; yalnız Banka gün sonu okundu. Yazarkasanın Z raporunu da çekin.";
+/**
+ * Aynısı LafPOS gününde (ayrı mali Z basmayan cihaz, ör. Pavo): yazarkasa rakamları LafPOS'tan gelir, ikinci bir Z
+ * istenmez (24 Kasım 2026, Marina: kör kasada LafPOS'un bastığı kâğıtta yalnız banka gün sonu var; "Z değil, Z'yi de
+ * çekin" yanlış yönergeydi)
+ */
+export const OKC_BATCH_SLIP_LAFPOS_TEXT = "Banka gün sonu okundu; yazarkasa rakamları LafPOS'tan gelir.";
+
+/** Günün yazarkasa cihazı (LafPOS'un `okc`'si): sağlayıcı ve ayrı mali Z basıyor mu */
+export interface LafposOkcDevice {
+  provider: "pavo" | "tokenx";
+  zReport: boolean;
+}
+
+/** Cihaz ayrı mali Z basıyor mu (TokenX); bilinmiyorsa basar sayılır (eski metin, yazarkasanın Z'si istenir) */
+const separateZ = (device: LafposOkcDevice | null | undefined) => !device || (device.provider === "tokenx" && device.zReport);
+
+/**
+ * Yazarkasa okumasını LafPOS gününe uyarlar: ModPOS bölümüne okutma önerisi kalkar; ayrı mali Z basmayan cihazda (Pavo)
+ * yazılım Z'sinin metni Pavo'nun fişini, yalnız banka gün sonunun bilgisi "rakamlar LafPOS'tan gelir" der
+ */
+export function okcReadingOnLafposDay(r: CashReading, device?: LafposOkcDevice | null): CashReading {
+  if (r.kind !== "kasa-okc") return r;
+  if (!r.ok) return r.switchTo === "kasa-z" ? { ...r, error: separateZ(device) ? OKC_SOFTWARE_Z_LAFPOS_TEXT : OKC_SOFTWARE_Z_PAVO_TEXT, switchTo: null } : r;
+  if (separateZ(device) || !r.checks.some((c) => c.text === OKC_BATCH_SLIP_TEXT)) return r;
+  return { ...r, checks: r.checks.map((c) => (c.text === OKC_BATCH_SLIP_TEXT ? { ...c, text: OKC_BATCH_SLIP_LAFPOS_TEXT } : c)) };
+}
+
+/**
+ * LafPOS'un kendi gün sonu kâğıdı (kapanışta fiş yazıcısından; 24 Kasım 2026, Marina): kasanın rakamlarını gören basınca
+ * önce LafPOS'un yönetim raporu ("GÜN SONU · Z n", NET CİRO, altında "LafPOS yönetim raporudur, mali Z değildir"),
+ * ardından Pavo'nun banka gün sonu ("BANKA GÜN SONU · PAVO"); kör kasada (kasa.rakam yok) yalnız banka kısmı. Mali
+ * değildir: Z no'su LafPOS'un kendi sayacı, NET CİRO'su LafPOS'un cirosu; yazarkasa alanlarına ve Z no'ya hiç gitmez.
+ * Tanıma: basılı başlık (model de kod da ilk başlığı aynen yazar) ya da mali işareti olmayan kâğıtta "NET CİRO" etiketi
+ */
+export function isLafposPaper(raw: Pick<KasaOkc, "title" | "dailyTotalLabel" | "fiscalMarks">): boolean {
+  const up = (v: string | null) => (v ?? "").toLocaleUpperCase("tr-TR");
+  const title = up(raw.title);
+  if (/G[ÜU]N\s*SONU\s*[·•.\-–:]\s*Z\s*\d/.test(title) || /BANKA\s*G[ÜU]N\s*SONU\s*[·•.\-–:]?\s*PAVO/.test(title)) return true;
+  return /^NET\s*C[İI]RO$/.test(up(raw.dailyTotalLabel).trim()) && !raw.fiscalMarks.ekuNo && !raw.fiscalMarks.cumulativeLines;
+}
+
+const NO_AMOUNT: AmountRaw = { text: null, value: null, confidence: "low" };
+
+/**
+ * Okunuşun karşılaştırılan ve forma giden hâli (yeni şema değeri yok: eski ai_calls satırları da aynı yoldan geçer):
+ * - LafPOS'un kâğıdı: banka kısmı okunduysa banka gün sonu fişi (`batch_slip`), yoksa yazılım Z'si; Z no, toplam, ödeme
+ *   ve KDV (LafPOS'un kendi rakamları) atılır, model `z_report` dese de.
+ * - Banka kısmı okunmuş yazılım Z'si (aynı kâğıtta banka gün sonu): banka gün sonu fişi; yalnız banka kısmı kullanılır.
+ * - Öteki her okunuş olduğu gibi.
+ */
+export function okcPaperView(raw: KasaOkc): KasaOkc {
+  if (isLafposPaper(raw)) {
+    return {
+      ...raw,
+      documentType: raw.batches.length ? "batch_slip" : "software_z",
+      zNo: { text: null, value: null, confidence: "low" },
+      receiptCount: { text: null, value: null, confidence: "low" },
+      dailyTotal: NO_AMOUNT,
+      dailyTotalLabel: null,
+      kdvGroups: [],
+      totalVat: NO_AMOUNT,
+      payments: [],
+      outside: [],
+      voids: NO_AMOUNT,
+      discounts: NO_AMOUNT,
+      cumulativeTotal: NO_AMOUNT,
+      cumulativeVat: NO_AMOUNT,
+    };
+  }
+  if (raw.documentType === "software_z" && raw.batches.length) return { ...raw, documentType: "batch_slip" };
+  return raw;
+}
+
+/**
+ * Yalnız banka gün sonu fişi okundu ama Z'nin izleri var (Z no, günün toplamı, nakit / kart / yemek kartı / diğer satırı,
+ * KDV) ya da başlığı Z ya da detaylı Z diyor; LafPOS'un kâğıdı değil: ucuz okuma Pavo'nun detaylı Z'sini banka fişi
+ * sanmış olabilir. Güçlü model bir kez bakar (yoksa Z no hiç okunmaz, karşılaştırma sessizce "uyumlu" kalır)
+ */
+export function slipWithZTraces(raw: KasaOkc): boolean {
+  if (raw.documentType !== "batch_slip" || isLafposPaper(raw)) return false;
+  const has = (a: AmountRaw) => a.text !== null || a.value !== null;
+  const title = (raw.title ?? "").toLocaleUpperCase("tr-TR");
+  return (
+    raw.zNo.text !== null ||
+    raw.zNo.value !== null ||
+    has(raw.dailyTotal) ||
+    raw.kdvGroups.length > 0 ||
+    has(raw.totalVat) ||
+    raw.payments.some((p) => p.kind === "cash" || p.kind === "card" || p.kind === "meal_card" || p.kind === "other") ||
+    /(^|[^A-ZÇĞİÖŞÜ])Z([^A-ZÇĞİÖŞÜ]|$)|DETAYLI/.test(title)
+  );
 }
 
 const PAY_FIELD = { cash: "okcCash", card: "okcCard", meal_card: "okcMealCard", other: "okcOther", unknown: "okcOther" } as const;
@@ -106,7 +200,8 @@ function batchesOf(raw: KasaOkc, day: string): { value: number; confidence: Conf
  * Yazarkasa Z okuması → forma gidecek değerler, alan durumları ve denetimler. `ctx.prev.cum` yalnız sunucuda verilir
  * (zincir, K6); formdaki canlı denetim kümülatifsiz çalışır.
  */
-export function normalizeOkc(raw: KasaOkc, ctx: OkcReadContext): CashReading {
+export function normalizeOkc(read: KasaOkc, ctx: OkcReadContext): CashReading {
+  const raw = okcPaperView(read);
   if (raw.documentType !== "z_report" && raw.documentType !== "batch_slip") return wrongOkcDocument(raw.documentType);
   if (!raw.readable || raw.issues.includes("not_a_document")) return failed("kasa-okc", UNREADABLE_TEXT);
   const values: Partial<Record<ReadField, ReadValue>> = {};
@@ -120,7 +215,7 @@ export function normalizeOkc(raw: KasaOkc, ctx: OkcReadContext): CashReading {
     if (b) values.bankPos = { value: b.value, confidence: b.confidence };
     checks.push(...(b?.checks ?? []));
     if (b && b.count > 1) checks.push({ fields: [], level: "info", text: `${b.count} banka gün sonu toplandı: ${money(b.value)}.` });
-    checks.push({ fields: [], level: "info", text: "Bu banka gün sonu fişi; yalnız Banka gün sonu okundu. Yazarkasanın Z raporunu da çekin." });
+    checks.push({ fields: [], level: "info", text: OKC_BATCH_SLIP_TEXT });
     const printedDay = businessDayOf(raw.date, raw.time);
     // Fişin başlık tarihi partilerinkiyle aynı kuralla (ertesi gün de olur) ve partiler zaten uyarmadıysa: tek tarih
     // uyarısı (E-69; önceden ertesi sabah basılmış fişi bir kural kabul edip öbürü uyarıyordu)

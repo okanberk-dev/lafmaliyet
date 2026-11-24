@@ -795,7 +795,11 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   rakamları da okunduysa (Pavo'nun detaylı Z'si ya da ayrı mali Z) Z no, günlük toplam, nakit, kart (kart satırı yoksa banka
   satırlarının toplamı), yemek kartı, diğer ve KDV dökümü raporun LafPOS'tan yazılmış yazarkasa alanlarıyla (`okc.total`,
   `cash`, `card`, `mealCard`, `other`, `vat`) karşılaştırılır; ayrı mali Z basan cihazda Z fotoğrafı yoksa "Yazarkasa Z:
-  yok". Z'nin günü fişin günüyle aynı kuralla karşılaştırılır (detaylı Z'de fişin günü satırı; ayrı Z'de "Z'nin günü").
+  yok"; Pavo gününde fotoğrafta Z yoksa bilgi satırı "Pavo detaylı Z: fotoğrafta yok · LafPOS'ta Z rakamları geldi"
+  (fark değil). LafPOS'un kapanışta bastığı kendi kâğıdı ("GÜN SONU · Z n" + NET CİRO + "mali Z değildir", altında
+  "BANKA GÜN SONU · PAVO"; kör kasada yalnız banka kısmı) Z sayılmaz: yalnız banka kısmı karşılaştırılır, Z no'su
+  `okc_z_no`'ya yazılmaz (FOTOGRAF.md › LafPOS'un kendi gün sonu kâğıdı). Z'nin günü fişin günüyle aynı kuralla
+  karşılaştırılır (detaylı Z'de fişin günü satırı; ayrı Z'de "Z'nin günü").
   Aynı fişin birden çok fotoğrafında aynı batch (no ve banka) bir kez sayılır, metni farklı okunsa da; aynı batch farklı
   tutarla okunduysa fark satırı çıkar ve "Banka POS'a yaz" önerilmez. Ödeme bölümü hiç okunmayan Z'nin nakit / kart
   satırları karşılaştırılmaz (sahte fark yok). LafPOS yazarkasa Z no'su göndermediyse fotoğrafta okunan Z no raporun boş

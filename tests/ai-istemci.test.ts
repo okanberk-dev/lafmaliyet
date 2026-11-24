@@ -304,8 +304,11 @@ test("kasa istekleri (yazarkasa Z kapısı, dalga 13 PR-a): biçim aynı; yalnı
   const taskOf = (r: typeof z) => (r.params.messages[0].content as { type: string; text?: string }[])[1].text!;
   // ModPOS bölümü: yazarkasanın Z'si fiscal_z_report; BİLGİ FİŞİ / MALİ DEĞERİ YOKTUR basan ModPOS raporu mali değildir
   assert.match(taskOf(z), /^This should be the café's ModPOS end-of-day Z report/);
-  assert.match(taskOf(z), /- If the paper is the cash register's fiscal Z \(MF logo with a registry number, EKÜ NO, KÜM\. \/ KÜMÜLATİF lines, Z NO \/ Z SAYAÇ\), set documentType fiscal_z_report\./);
-  assert.match(taskOf(z), /BİLGİ FİŞİ or MALİ DEĞERİ YOKTUR; neither makes it fiscal\.$/);
+  // Z NO tek başına mali işaret değil: ModPOS'un Z'si de Z no basar (24 Kasım 2026, Tuzla riski)
+  assert.match(taskOf(z), /- If the paper is the cash register's fiscal Z \(MF logo with a registry number together with EKÜ NO or KÜM\. \/ KÜMÜLATİF lines\), set documentType fiscal_z_report\./);
+  assert.match(taskOf(z), /A ModPOS report prints its own Z NO too/);
+  assert.match(taskOf(z), /BİLGİ FİŞİ or MALİ DEĞERİ YOKTUR; none of these makes it fiscal\.$/);
+  assert.match(taskOf(pos), /a Z NO alone is not enough, the ModPOS report prints one too/);
   // Kart bölümü: yazarkasanın Z'si fiscal_z_report, fişin alanları boş
   assert.match(taskOf(pos), /^This should be the end-of-day slip/);
   assert.match(taskOf(pos), /set documentType fiscal_z_report and leave the slip fields null\.$/);

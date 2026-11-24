@@ -113,7 +113,10 @@ yazarkasa Z'si okunurken ModPOS Z'sinin fotoğrafı çekilebilir; **Raporu gönd
   zaman kendiliğinden yazılmaz. Z no önceki yazarkasa Z'siyle aynıysa okumanın bütünü durur:
   "Bu Z no (0187) 21 Ekim raporunda da var; dünkü Z raporu olabilir." Aynı şeritte banka gün sonu da basılıysa **Banka
   gün sonu** da okunur ("Aynı fişte banka gün sonu da var: …"); yalnız banka gün sonu fişi çekilirse yalnız o alan:
-  "Bu banka gün sonu fişi; yalnız Banka gün sonu okundu. Yazarkasanın Z raporunu da çekin." Doldurma kapısı kapalıyken
+  "Bu banka gün sonu fişi; yalnız Banka gün sonu okundu. Yazarkasanın Z raporunu da çekin." LafPOS gününde ayrı mali Z
+  basmayan cihazda (Pavo) bunun yerine "Banka gün sonu okundu; yazarkasa rakamları LafPOS'tan gelir." LafPOS'un kendi
+  gün sonu kâğıdı ("GÜN SONU · Z n", "BANKA GÜN SONU · PAVO") Z sayılmaz, yalnız banka kısmı okunur (FOTOGRAF.md ›
+  LafPOS'un kendi gün sonu kâğıdı). Doldurma kapısı kapalıyken
   alan dolmaz, öneri olur; özet satırı "Banka gün sonu fişi okundu; turuncu alanı fişle karşılaştırıp yazın." (Z raporu
   demez).
 - İki banka gün sonu fişi varsa ikincisinde **Toplama ekle** ya da **Yerine yaz** sorulur. İkinci fişin rakamı net

@@ -92,10 +92,129 @@ function merge(prev: AmountRaw, next: AmountRaw): AmountRaw {
 const bankHit = (f: string) => BANKS.some((b) => new RegExp(`(^|\\s)${b}(\\s|$)`).test(f));
 
 /**
+ * LafPOS'un kendi gün sonu kâğıdının işaretleri (katlanmış metinde): "GÜN SONU · Z n" başlığı, "LafPOS yönetim
+ * raporudur, mali Z değildir", "BANKA GÜN SONU · PAVO", "PAVO - LAFPOS KARŞILAŞTIRMA", "Pavo cihazının banka gün sonu
+ * özetidir" (LafPOS src/lib/print.tsx ZReceipt, BankEodReceipt)
+ */
+const LAFPOS_MARK = /^GUN SONU Z \d+$|LAFPOS YONETIM RAPORUDUR|MALI Z DEGILDIR|BANKA GUN SONU PAVO|PAVO LAFPOS KARSILASTIRMA|PAVO CIHAZININ BANKA GUN SONU/;
+
+/** İşaret karşılaştırması: ayraçlar ("·" OCR'da ":" ya da "." okunabilir) boşluk */
+const markOf = (s: string) => fold(s).replace(/[.:/]/g, " ").replace(/\s+/g, " ").trim();
+
+/** Kâğıt LafPOS'un kendi gün sonu kâğıdı mı (OCR satırlarından) */
+export function isLafposPaperOcr(lines: readonly OcrLine[]): boolean {
+  return lines.some((l) => LAFPOS_MARK.test(markOf(l.text)));
+}
+
+/**
+ * LafPOS'un kâğıdı → KasaOkcRaw. Mali değildir: Z no'su, NET CİRO'su, ödemeleri ve KDV'si (LafPOS'un kendi rakamları)
+ * okunmaz, Z sayılmaz. Banka kısmı ("BANKA GÜN SONU · PAVO") varsa banka gün sonu fişidir: "Bankalar" altındaki her satır
+ * aynı batch'in bir bankası (batch no "Batch" satırından, net = satırın tutarı); banka satırı yoksa TOPLAM tek satır.
+ * Bankaların toplamı TOPLAM'ı tutmuyorsa hepsi şüpheli. "PAVO - LAFPOS KARŞILAŞTIRMA" satırları (Pavo kart toplamı,
+ * LafPOS kart toplamı, FARK) okunmaz. Banka kısmı yoksa yazılım Z'si (yanlış belge). Başlık aynen (okc.ts isLafposPaper)
+ */
+function parseLafposPaperOcr(lines: readonly OcrLine[]): { raw: KasaOkc; found: string[] } {
+  const found = new Set<string>(["lafpos"]);
+  let title: string | null = null;
+  let date: string | null = null;
+  let time: string | null = null;
+  let dateConfidence: "high" | "low" = "low";
+  let inBank = false;
+  let batchNo: string | null = null;
+  let total: AmountRaw = LOW_NONE;
+  const banks: { bank: string; net: AmountRaw }[] = [];
+  for (const l of lines) {
+    const f = fold(l.text);
+    if (!f) continue;
+    if (date === null) {
+      const dw = l.words.find((w) => /^\d{2}[./-]\d{2}[./-]\d{4}$/.test(w.text.replace(/[^\d./-]/g, "")));
+      const m = dw ? /(\d{2})[./-](\d{2})[./-](\d{4})/.exec(dw.text) : null;
+      if (m && dw && sure(dw)) {
+        const iso = `${m[3]}-${m[2]}-${m[1]}`;
+        if (!Number.isNaN(Date.parse(`${iso}T00:00:00Z`))) {
+          date = iso;
+          dateConfidence = "high";
+          found.add("date");
+          const tw = l.words.find((w) => /^\d{2}[:.]\d{2}$/.test(w.text));
+          if (tw && sure(tw)) time = tw.text.replace(".", ":");
+        }
+      }
+    }
+    const mark = markOf(l.text);
+    if (/^GUN SONU Z \d+$/.test(mark)) {
+      title ??= l.text.trim();
+      continue;
+    }
+    if (/BANKA GUN SONU PAVO/.test(mark)) {
+      title ??= l.text.trim();
+      inBank = true;
+      continue;
+    }
+    if (!inBank) continue;
+    // Karşılaştırma ve sonrası banka kısmı değil
+    if (/PAVO LAFPOS KARSILASTIRMA|PAVO CIHAZININ/.test(mark)) {
+      inBank = false;
+      continue;
+    }
+    const bm = /^BATCH\s*:?\s*(\d+)$/.exec(f);
+    if (bm) {
+      const w = l.words.find((x) => x.text.replace(/\D/g, "") === bm[1]);
+      batchNo = sure(w) ? bm[1] : null;
+      continue;
+    }
+    const split = splitLine(l);
+    if (!split) continue;
+    const label = split.label.filter((w, k, all) => !(k === all.length - 1 && /^\(?\d+\)?$/.test(w.text)));
+    const lf = fold(label.map((w) => w.text).join(" "));
+    if (!lf || /^(CIHAZ SAATI|ALINIS|YAZDIRMA|BANKALAR|ISLEM YOK)/.test(lf)) continue;
+    const amount = amountOf(split.amount, label);
+    if (lf === "TOPLAM") {
+      total = merge(total, amount);
+      found.add("total");
+      continue;
+    }
+    banks.push({ bank: label.map((w) => w.text).join(" ").trim(), net: amount });
+    found.add("batch");
+  }
+  // Bankaların toplamı TOPLAM'ı tutmalı (hiçbir rakam düzeltilmez; tutmuyorsa hepsi şüpheli)
+  if (banks.length && isHigh(total) && banks.every((b) => isHigh(b.net)) && Math.abs(round2(banks.reduce((a, b) => a + b.net.value!, 0)) - total.value!) > TOL) {
+    for (const b of banks) b.net = low(b.net);
+  }
+  const entries = banks.length ? banks : total.text !== null ? [{ bank: null, net: total }] : [];
+  const batches: Batch[] = entries.map((e) => ({ bank: e.bank, batchNo, date, salesTotal: LOW_NONE, refundTotal: LOW_NONE, netTotal: e.net, transactionCount: null }));
+  const documentType: KasaOkc["documentType"] = batches.length ? "batch_slip" : title ? "software_z" : "other";
+  const raw: KasaOkc = {
+    documentType,
+    fiscalMarks: { mfLogo: false, ekuNo: false, cumulativeLines: false, vatBlock: false },
+    readable: documentType !== "other",
+    title,
+    date,
+    time,
+    dateConfidence,
+    zNo: { text: null, value: null, confidence: "low" },
+    receiptCount: { text: null, value: null, confidence: "low" },
+    dailyTotal: LOW_NONE,
+    dailyTotalLabel: null,
+    kdvGroups: [],
+    totalVat: LOW_NONE,
+    payments: [],
+    outside: [],
+    voids: LOW_NONE,
+    discounts: LOW_NONE,
+    cumulativeTotal: LOW_NONE,
+    cumulativeVat: LOW_NONE,
+    batches,
+    issues: [],
+  };
+  return { raw, found: [...found] };
+}
+
+/**
  * OCR satırları → KasaOkcRaw. `found` hangi alanların okunduğunu söyler (günlük ve yöneticinin ayrıntısı için). Hiçbir
- * şey seçilmediyse belge türü "other" ve okunamaz
+ * şey seçilmediyse belge türü "other" ve okunamaz. LafPOS'un kendi kâğıdı ayrı kurallarla okunur (Z sayılmaz)
  */
 export function parsePavoOcr(lines: readonly OcrLine[]): { raw: KasaOkc; found: string[] } {
+  if (isLafposPaperOcr(lines)) return parseLafposPaperOcr(lines);
   const found = new Set<string>();
   let date: string | null = null;
   let time: string | null = null;
