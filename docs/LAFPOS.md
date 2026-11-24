@@ -785,8 +785,15 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   altındaki "Gün sonu fotoğrafı" kartında satır satır, zilde "Kasa fotoğrafı LafPOS'tan farklı · Marina <gün>" (son 7
   gün, yalnız yönetici), gün sonu e-postasında ve ay satırında rozet ("Fotoğraf ↔ LafPOS farklı"). Banka POS boşken (Pavo
   alınamadı) okunan toplam "Fotoğrafta 995 ₺" olarak yöneticiye gösterilir, "Banka POS'a yaz" onu rapora yazar
-  (`setLafposBankPos`; önceki sürüm geçmişe, sonraki otomatik değer ezmez). Okuma kapalıysa (anahtar yok) fotoğraf yine
-  alınır, karşılaştırma "okunmadı".
+  (`setLafposBankPos`; önceki sürüm geçmişe, sonraki otomatik değer ezmez). Okuma: önce ucuz model (Claude Haiku 5.5),
+  okunuş eksik / tutarsız ya da LafPOS'tan farklıysa bir kez güçlü model (Claude Opus 5.5); yapay zekâ yoksa (anahtar,
+  kapalı, sınır, kredi, hata) kodla (OCR + Pavo fişinin ayrıştırıcısı): [FOTOGRAF.md › LafPOS gününün
+  fotoğrafı](FOTOGRAF.md#lafpos-gününün-fotoğrafı-önce-ucuz-model-gerekirse-güçlü-yapay-zekâ-yoksa-kod-24-kasım-2026).
+  Kodla okunan bir satır güvenle seçilmediyse ya da OCR hiç okuyamadıysa durum "okunamadı — yönetici baksın" (`belirsiz`;
+  personelin işi bitti, zilde "Kasa fotoğrafı okunamadı, yönetici baksın" ve nedeni: "fotoğraf kodla okundu ama bir satır
+  güvenle seçilmedi" ya da "fotoğraf kodla da okunamadı"; ay satırında "Gün sonu fotoğrafına bakın"). Kodla okunan fişte
+  güvenle okunmamış NET / İADE batch tutarı ve tanınmayan ödeme satırı uydurulmaz ("okunamadı"). Yöneticinin kartı
+  okuyanı yazar ("Yapay zekâ (Claude Haiku 5.5)" / "Kodla okundu").
 
 **Gün sonu e-postası** (`sendDayEndEmail`): kasa raporu alıcılarına (Kasa › Rapor alıcıları, e-posta açıksa) ve etkin
 bildirim adreslerine (Hatırlatıcılar, bildirim e-postası açıksa); personel ve pasif hesabın adresi gönderimde düşer
@@ -795,8 +802,9 @@ türleri ve LafPOS'un ödeme dökümü, ödenmez / ikram ve ikram edilenlerin ad
 gereken, sayılan, fark), dün ve geçen haftanın aynı günüyle kıyas (satış; LafPOS günü yoksa o günün kasa raporu),
 Marina'nın laffogato.net online satışı (`&branch=marina`), raporun durumu ve eksikler, **Cihazlar ve fotoğraf** (Banka
 POS: Σ batch, batch numaralarıyla, ya da boşsa tam neden; yazarkasa: "LafPOS cihaz belgeleri · N belge · tutar"; gün sonu
-fotoğrafı: bekleniyor / alındı / LafPOS'tan farklı), "Panelde aç". Fotoğraf için ayrıca e-posta gitmez. Maliyet ve kâr
-yok. Faz 2 alanlarıyla gelen günde ayrıca gün görünümünün bölümleri (`lafposDayDetail`): LafPOS'un ödeme ayrıntısı
+fotoğrafı: bekleniyor / alındı / LafPOS'tan farklı), **Fotoğraf ↔ LafPOS** (fotoğraf eklendiyse satır satır: okuyan,
+her satır "fotoğrafta X · LafPOS'ta Y · aynı | FARK | okunamadı"; fark varsa konunun sonunda "· Fotoğraf FARKLI"), "Panelde
+aç". Maliyet ve kâr yok. Faz 2 alanlarıyla gelen günde ayrıca gün görünümünün bölümleri (`lafposDayDetail`): LafPOS'un ödeme ayrıntısı
 (yazarkasadan geçmeyen kart ve nakit, ödeme iptalleri), **İptal edilen kalemler** (`iptal[]`: hazırlanmış olanlar zayi,
 hazırlanmamışlar "tüketim değil"), yazarkasa Z no ve KDV dökümü, gönderim sırası; Faz 3 alanlarıyla gelen günde
 **Kasa açılışı (LafPOS)** (beklenen, fark, neden) ve **Kasa hareketleri (LafPOS)** (harcama, teslim, giriş); eski
@@ -811,11 +819,23 @@ LafPOS'un gününde bu bölümler yok.
 - Gönderim başarısızsa hata `lafpos_day_ends.email_error`'a ve işlem kaydına (`notification_log`, anahtar
   `lafpos-gun:marina:GÜN`) yazılır; günlük iş yeniden dener. Aynı anda iki gönderim olmaz (`sending_at`).
 - Geçiş gününden önceki gün (deneme) e-posta almaz, rapor yazılmaz.
+- **Fotoğraf e-postası** (`sendPhotoEmail`; sahibin isteği, 24 Kasım 2026: "mail olarak vs. bilgilerde de farklı olunca
+  belirsin"): fotoğraf çoğu gün gün sonu e-postasından sonra eklenir. Fotoğraf LafPOS'tan farklı okunduysa ya da kodla
+  okunup "yönetici baksın" ise aynı alıcılara (yönetici: kasa raporu alıcıları ve bildirim adresleri) kısa e-posta gider:
+  konu "Marina gün sonu fotoğrafı · 22 Kasım Pazar · LafPOS'tan FARKLI" (ya da "· okunamadı, yönetici baksın"), okuyan ve
+  satır satır karşılaştırma, "Panelde aç". Uyumlu fotoğraf e-posta göndermez. Aynı karşılaştırma bir kez gider
+  (`notification_log` anahtarı `lafpos-foto:marina:GÜN:<özet>`; özet durum, okuyan ve satırlardan, `photoCheckHash`):
+  gün sonu e-postası farkla birlikte gittiyse fotoğraf e-postası gitmez; yeni fotoğraf ya da LafPOS'un düzeltmesi
+  karşılaştırmayı değiştirirse yeniden gider. Fotoğraf bağlanınca (`attachLafposDayPhoto`, yanıttan sonra) ve günlük işte
+  (`runLafposDayEnd` › `photo`) denenir; gün sonu e-postası henüz gitmediyse beklenir (fark onunla gider). **Çalışanların
+  kısa gün sonu e-postasına fotoğraf ve fark hiç girmez.** Sabah e-postası kasa sorunlarını listelemez (fotoğraf farkı
+  orada yok).
 
 Durum tablosu `lafpos_day_ends` (gün, şube): otomatik rapor, son otomatik değerler, eksikler, gönderilen içerik, gönderim
 sayısı ve hatası (`drizzle/0061_lafpos_gun_sonu.sql`); gün sonu tamda fotoğrafın karşılaştırması (`photo_check`) ve rapor
 yokken bekleyen fotoğraflar (`pending_photos`; `drizzle/0074_gun_sonu_tam.sql`). Testler: `tests/lafpos-gun-sonu.test.ts`,
-`tests/lafpos-gun-sonu-db.test.ts`, `tests/lafpos-gun-sonu-tam.test.ts`, `tests/lafpos-gun-sonu-tam-db.test.ts`.
+`tests/lafpos-gun-sonu-db.test.ts`, `tests/lafpos-gun-sonu-tam.test.ts`, `tests/lafpos-gun-sonu-tam-db.test.ts`; fotoğrafın
+okunuşu ve fotoğraf e-postası `tests/gun-sonu-foto*.test.ts`.
 
 ### Gün sonu tam alanları (24 Kasım 2026)
 
