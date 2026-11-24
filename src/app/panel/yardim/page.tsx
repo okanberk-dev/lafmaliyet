@@ -171,7 +171,7 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
   },
 ];
 
-/** Sık sorulanlar, konuya göre gruplu; her grup kendi yaylı akordeonu */
+/** Sık sorulanlar, konuya göre gruplu; her grup kendi sohbet listesi (ui/faq-chat.tsx) */
 const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
   {
     title: "Menü ve reçete",

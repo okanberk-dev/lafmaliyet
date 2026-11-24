@@ -182,7 +182,8 @@ test("kaynak: ekran secret'ın değerini almaz; eylem yönetici ister; ayarlar �
   }
   // Secret alanı parola türünde, tarayıcı doldurmaz; ekranda dönüş adresi https:// olmadan kopyalanır
   const card = read("src/app/panel/parasut/connection-card.tsx");
-  assert.match(card, /id="ps-client-secret"\s+type="password"[\s\S]{0,200}autoComplete="new-password"/);
+  // Parola kutusu (ui/password-input): gizliyken type="password", değeri DOM'a yazmaz
+  assert.match(card, /<PasswordInput\s+id="ps-client-secret"[\s\S]{0,300}autoComplete="new-password"/);
   assert.match(card, /redirectUri\.replace\(\/\^https:\\\/\\\/\/, ""\)/);
 
   const actions = read("src/server/actions/parasut.ts");

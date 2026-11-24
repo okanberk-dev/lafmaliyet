@@ -1,9 +1,9 @@
 "use client";
 
-import { Ban, Eye, EyeOff, Loader2, ShieldCheck, TriangleAlert } from "lucide-react";
+import { Ban, Eye, Loader2, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 
-import { AuthError, AuthHeading, authButton, authCard, FloatingField } from "@/app/giris/auth-ui";
+import { AuthError, AuthHeading, authButton, authCard, FloatingPasswordField } from "@/app/giris/auth-ui";
 import { actionErrorText, useActionTransition } from "@/components/ui/action-error";
 import type { ConsentText, Rich } from "@/lib/mcp/oauth";
 import { approveConnection, denyConnection } from "@/server/actions/mcp";
@@ -77,7 +77,6 @@ export function DenyButton({ istek, label }: { istek: string; label: string }) {
 
 export function ConsentForm({ istek, text }: { istek: string; text: ConsentText }) {
   const [password, setPassword] = useState("");
-  const [show, setShow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [leaving, setLeaving] = useState<string | null>(null);
   const [busy, setBusy] = useState<"approve" | "deny" | null>(null);
@@ -151,10 +150,9 @@ export function ConsentForm({ istek, text }: { istek: string; text: ConsentText 
           <form onSubmit={submit} className="flex flex-col gap-5">
             {/* Parola yöneticisi alanı doğru hesaba bağlasın */}
             <input type="hidden" name="username" autoComplete="username" value={text.account.email} readOnly />
-            <FloatingField
+            <FloatingPasswordField
               id="password"
               label="Parolanız"
-              type={show ? "text" : "password"}
               name="password"
               autoComplete="current-password"
               required
@@ -162,16 +160,6 @@ export function ConsentForm({ istek, text }: { istek: string; text: ConsentText 
               onChange={(e) => setPassword(e.target.value)}
               aria-invalid={error ? true : undefined}
               aria-describedby={error ? "consent-error" : undefined}
-              trailing={
-                <button
-                  type="button"
-                  onClick={() => setShow((v) => !v)}
-                  className="flex size-11 cursor-pointer items-center justify-center rounded-full text-black/60 hover:bg-black/[0.04] hover:text-black"
-                  aria-label={show ? "Parolayı gizle" : "Parolayı göster"}
-                >
-                  {show ? <EyeOff className="size-5" strokeWidth={1.75} /> : <Eye className="size-5" strokeWidth={1.75} />}
-                </button>
-              }
             />
             {error ? (
               <div id="consent-error">

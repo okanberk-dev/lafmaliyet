@@ -1,5 +1,5 @@
 {
-  "id": "b3d813ce-c9a7-4b43-92a4-3af9d0dde05a",
+  "id": "5d34650b-9613-4e9e-9c30-58ad2d4bbae0",
   "prevId": "a490fb6d-4058-48e8-b245-9ed719229a73",
   "version": "7",
   "dialect": "postgresql",
@@ -4101,6 +4101,19 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
+        "photo_check": {
+          "name": "photo_check",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pending_photos": {
+          "name": "pending_photos",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
         "day_hash": {
           "name": "day_hash",
           "type": "text",
@@ -6045,15 +6058,33 @@
           "primaryKey": false,
           "notNull": false
         },
-        "revision": {
-          "name": "revision",
-          "type": "integer",
+        "okc": {
+          "name": "okc",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
-        "worked_staff": {
-          "name": "worked_staff",
+        "collections": {
+          "name": "collections",
           "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "shift_counts": {
+          "name": "shift_counts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "discount_lines": {
+          "name": "discount_lines",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },

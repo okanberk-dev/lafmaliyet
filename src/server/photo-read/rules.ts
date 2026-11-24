@@ -8,6 +8,7 @@ import type { CurrentUser } from "@/server/auth/dal";
 import { currentTillBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { isClosedDay } from "@/server/closed-days";
 import { getDb, schema as s } from "@/server/db";
+import { lafposPhotoDayOpen } from "@/server/lafpos/foto";
 import type { PhotoKindRules } from "@/server/storage/photo-access";
 
 /*
@@ -97,5 +98,8 @@ export async function canUploadPhoto(me: CurrentUser, kind: PhotoKind, day: stri
   if (rule === "no" || !day) return false;
   if (rule === "yes") return true;
   if (await staffDayOpen(day)) return true;
-  return rule === "open-or-late" && staffLateDayOpen(day);
+  if (rule === "open-or-late" && (await staffLateDayOpen(day))) return true;
+  // Gün sonu tam (24 Kasım 2026): LafPOS gününün gün sonu fotoğrafı (yazarkasa bölümü) günden 14 gün içinde, ertesi günün
+  // raporu girilmiş olsa da (rakam değişmez; src/server/lafpos/foto.ts)
+  return (kind === "kasa-okc" || kind === "kasa-pos") && lafposPhotoDayOpen(getDb(), day, await currentTillBranch(), me.role);
 }

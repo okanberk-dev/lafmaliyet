@@ -41,7 +41,17 @@ import { DIFF_TONE, type OkcAdminView } from "./cash-summary";
 import { ReportSheet } from "./report-sheet";
 
 /** Raporların fotoğrafları (rapor kimliğine göre): fotoğraftan farklı yazılanlar, alarm sayılanlar, WhatsApp ekleri */
-export type CashHistoryPhotos = Record<number, { photos: CashPhotoDTO[]; diffs: PhotoDiff[]; suspicious: PhotoDiff[]; extras: CashReportExtras }>;
+export type CashHistoryPhotos = Record<
+  number,
+  {
+    photos: CashPhotoDTO[];
+    diffs: PhotoDiff[];
+    suspicious: PhotoDiff[];
+    extras: CashReportExtras;
+    /** LafPOS gününün otomatik raporunda gün sonu fotoğrafı (gün sonu tam): LafPOS'tan farklı, bekleniyor ya da okunamadı */
+    lafposPhoto?: "fark" | "bekliyor" | "okunamadi" | null;
+  }
+>;
 
 export interface CashMonthTotals {
   zTotal: number;
@@ -264,7 +274,7 @@ export function CashHistory({
               );
             }
             // LafPOS gününde kart farkı kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen kartı (Faz 2) düşer
-            const c = computeCash(withCardExtra(report, photos[report.id]?.extras.cardExtra, photos[report.id]?.extras.offDevice));
+            const c = computeCash(withCardExtra(report, photos[report.id]?.extras.cardExtra, photos[report.id]?.extras.offDevice, photos[report.id]?.extras.kasa));
             const cardOff = c.cardDiff !== null && Math.abs(c.cardDiff) >= CASH_TOLERANCE;
             // Yazarkasa Z'si: kayıtlı değerlerde kendi içinde tutmuyor ya da (ilk girildiği günden sonra) hiç girilmemiş
             const okcOff = okcHasFigures(report) && okcReconcile(report, "admin").some((l) => l.key === "okc-self");
@@ -294,6 +304,9 @@ export function CashHistory({
                     {lateApproved[report.id] ? <Badge tone="gray">Geç girildi</Badge> : null}
                     {photos[report.id]?.suspicious.length ? <Badge tone="amber">Fotoğraftan farklı</Badge> : null}
                     {photos[report.id]?.extras.lafposDiffs?.length ? <Badge tone="amber">LafPOS&apos;tan farklı</Badge> : null}
+                    {photos[report.id]?.lafposPhoto === "fark" ? <Badge tone="amber">Fotoğraf ↔ LafPOS farklı</Badge> : null}
+                    {photos[report.id]?.lafposPhoto === "okunamadi" ? <Badge tone="amber">Gün sonu fotoğrafı okunamadı</Badge> : null}
+                    {photos[report.id]?.lafposPhoto === "bekliyor" ? <Badge tone="gray">Gün sonu fotoğrafı yok</Badge> : null}
                     {modposDays[date]?.diffs.length ? <Badge tone="amber">ModPOS API&apos;den farklı</Badge> : null}
                     {carry[report.date] ? <Badge tone="amber">Açılış ≠ devir</Badge> : null}
                     {lateEdited(report) ? <Badge tone="amber">Ertesi gün düzeltildi</Badge> : null}

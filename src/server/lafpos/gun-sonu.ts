@@ -6,7 +6,8 @@ import { businessDate, changesText, computeCash, revisionChanges, revisionDataOf
 import { cashDaySubject } from "@/lib/cash-requests";
 import { cashOutNoteOf, cashOutsTotal, type CashOutKind } from "@/lib/cash-outs";
 import { bankPosHash, renderPavoMail } from "@/lib/lafpos/bank-pos";
-import { bankPosSchema, posDaySchema, posZSchema, type BankPos, type PosIkram, type PosPayment } from "@/lib/lafpos/day";
+import { bankPosSchema, posDaySchema, posZSchema, type BankPos, type PosIkram, type PosOffDevice, type PosOkc, type PosPayment } from "@/lib/lafpos/day";
+import { lafposPhotoNeed } from "@/lib/lafpos/foto";
 import { lafposDayDetail, type LafposDayDetail } from "@/lib/lafpos/gun-ayrinti";
 import {
   AUTO_FIELDS,
@@ -25,7 +26,7 @@ import { branchSwitchDay, isLafposDay, LAFPOS_BRANCH_ID } from "@/lib/lafpos/swi
 import { emailKey } from "@/lib/notify-recipients";
 import { DELETED_REPORT_DAYS } from "@/lib/photo-rules";
 import { addDays, longDateTR } from "@/lib/reminders";
-import { lockCashReport, lockLateDay, okcServerColumns, type CashTx } from "@/server/cash/report-store";
+import { adoptPendingDayPhotos, lockCashReport, lockLateDay, okcServerColumns, type CashTx } from "@/server/cash/report-store";
 import { onNextReport, onReportSaved } from "@/server/closed-days";
 import { loadCashSettings } from "@/server/data/cash-reports";
 import { schema as s, type DB } from "@/server/db";
@@ -36,6 +37,8 @@ import { isEmailConfigured, resolveFrom, sendEmail, type SendOptions } from "@/s
 import { loadNotifySettings } from "@/server/notify/settings";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 import { supersede } from "@/server/staff-requests/core";
+
+import { applyPhotoZNo, dayPhotoIds, linkPendingPhotos, photoCheckOf } from "./foto";
 
 /*
  * LafPOS gün sonunun otomasyonu (docs/LAFPOS.md › Gün sonu otomasyonu): LafPOS'un şubesinin (Marina, LAFPOS_BRANCH_ID)
@@ -68,6 +71,9 @@ interface StoredDay {
   bankPos: BankPos | null;
   /** Faz 2 ayrıntısı (yazarkasadan geçmeyen, iptaller, düzeltme; src/lib/lafpos/gun-ayrinti.ts); özete girmez */
   detail: LafposDayDetail;
+  /** Gün sonu tam: yazarkasanın cihaz belgeleri ve yazarkasadan geçmeyen (raporun yazarkasa alanları ve Banka POS) */
+  okc: PosOkc | null;
+  offDevice: PosOffDevice | null;
   hash: string;
 }
 
@@ -84,6 +90,10 @@ async function loadStoredDay(db: DB | CashTx, date: string, branchId: string): P
       revision: s.posDayReports.revision,
       correction: s.posDayReports.correction,
       cashMoves: s.posDayReports.cashMoves,
+      okc: s.posDayReports.okc,
+      collections: s.posDayReports.collections,
+      shiftCounts: s.posDayReports.shiftCounts,
+      discountLines: s.posDayReports.discountLines,
     })
     .from(s.posDayReports)
     .where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, branchId)))
@@ -94,14 +104,20 @@ async function loadStoredDay(db: DB | CashTx, date: string, branchId: string): P
   const bankPos = row.bankPos ? bankPosSchema.safeParse(row.bankPos) : null;
   // Saklanan Faz 2 alanları aynı şemayla (bozuk ya da yoksa yok sayılır)
   const sh = posDaySchema.shape;
+  const offDevice = row.offDevice ? (sh.offDevice.parse(row.offDevice) ?? null) : null;
+  const okc = row.okc ? (sh.okc.parse(row.okc) ?? null) : null;
   const detail = lafposDayDetail({
     z: z.data,
-    offDevice: row.offDevice ? sh.offDevice.parse(row.offDevice) : undefined,
+    offDevice: offDevice ?? undefined,
     refunds: row.refunds ? sh.refunds.parse(row.refunds) : undefined,
     iptal: row.iptal ? sh.iptal.parse(row.iptal) : undefined,
     revision: row.revision ?? undefined,
     correction: row.correction ? sh.correction.parse(row.correction) : undefined,
     cashMoves: row.cashMoves ? sh.cashMoves.parse(row.cashMoves) : undefined,
+    okc: okc ?? undefined,
+    collections: row.collections ? sh.collections.parse(row.collections) : undefined,
+    shiftCounts: row.shiftCounts ? sh.shiftCounts.parse(row.shiftCounts) : undefined,
+    discountLines: row.discountLines ? sh.discountLines.parse(row.discountLines) : undefined,
   });
   return {
     z: z.data,
@@ -109,6 +125,8 @@ async function loadStoredDay(db: DB | CashTx, date: string, branchId: string): P
     ikram: row.ikram ?? [],
     bankPos: bankPos?.success ? bankPos.data : null,
     detail,
+    okc,
+    offDevice,
     hash: dayHash({ z: row.z, payments: row.payments, ikram: row.ikram }),
   };
 }
@@ -143,7 +161,7 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
     if (!day) return "skipped";
     const state = await ensureState(tx, date, branchId);
     const prev = await lockCashReport(tx, date, branchId);
-    const missing = autoMissing(day.z);
+    const device = { bankPos: day.bankPos, okc: day.okc, offDevice: day.offDevice };
     const outs = await tx
       .select({ kind: s.cashOuts.kind, amount: s.cashOuts.amount, store: s.cashOuts.store, description: s.cashOuts.description })
       .from(s.cashOuts)
@@ -156,11 +174,14 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
       .orderBy(desc(s.cashReports.date))
       .limit(1);
     const carry = before ? { date: before.date, amount: Math.round((before.counted - before.handed) * 100) / 100 } : null;
-    const next = autoValuesOf(date, day.z, { count: lines.length, total: cashOutsTotal(lines), note: cashOutNoteOf(lines) }, carry);
+    const next = autoValuesOf(date, day.z, { count: lines.length, total: cashOutsTotal(lines), note: cashOutNoteOf(lines) }, carry, device);
+    // Eksikler: cihaz boşlukları ve (otomatik rapor varken) gün sonu fotoğrafı; rapor yokken fotoğraf beklemede sayılır
+    const missingFor = (attached: number | null, check: typeof state.photoCheck = null) =>
+      attached === null ? autoMissing(day.z, device) : autoMissing(day.z, device, { attached, check });
     const setState = (patch: Partial<typeof s.lafposDayEnds.$inferInsert>) =>
       tx
         .update(s.lafposDayEnds)
-        .set({ dayHash: day.hash, missing, updatedAt: now, ...patch })
+        .set({ dayHash: day.hash, missing: missingFor(null), updatedAt: now, ...patch })
         .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
 
     // Otomatik rapor yönetici tarafından silindiyse yeniden yazılmaz
@@ -176,13 +197,13 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
         return "old";
       }
       const values = toColumns(next);
-      const [row] = await tx
+      let [row] = await tx
         .insert(s.cashReports)
         .values({
           date,
           branchId,
           ...values,
-          cashDiff: computeCash({ ...values, bankPos: null, okcCard: null }).cashDiff,
+          cashDiff: computeCash(values).cashDiff,
           submittedBy: null,
           submittedByName: LAFPOS_AUTO_BY,
           countedBy: null,
@@ -195,17 +216,29 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
       await onNextReport(tx, row, now);
       await supersede(tx, { kinds: ["kasa-gec"], subject: cashDaySubject(date, branchId) }, "LafPOS gün sonundan rapor yazıldı", now, DELETED_REPORT_DAYS);
       await tx.insert(s.activityLog).values({ userName: LAFPOS_AUTO_BY, userId: null, action: "Kasa raporu (LafPOS otomatik)", detail: `${longDateTR(date)}: Z ${day.z.zNo}` });
-      await setState({ reportId: row.id, autoValues: next });
+      // Rapor yokken (sayım yok) eklenen gün sonu fotoğrafları şimdi bağlanır; yazarkasa alanları geldiyse sunucu sütunları
+      row = (await linkPendingPhotos(tx, row, state.pendingPhotos, now)).row;
+      if (row.okcZNo && row.okcTotal !== null) row = await serverColumns(tx, row);
+      const check = await photoCheckOf(tx, row, { ...device, z: day.z }, now);
+      await setState({ reportId: row.id, autoValues: next, pendingPhotos: [], photoCheck: check, missing: missingFor((await dayPhotoIds(tx, row.id)).length, check) });
+      // LafPOS yazarkasa Z no'su göndermediyse bekleyen fotoğrafta (Pavo'nun detaylı Z'si) okunan
+      await applyPhotoZNo(tx, row, check, now);
       return "written";
     }
 
     if (state.reportId !== prev.id || !state.autoValues) {
+      // Sayım yokken bekleyen gün sonu fotoğrafları elle girilen rapora bağlanır (yoksa sahipsiz kalırdı)
+      if (state.pendingPhotos.length && (await adoptPendingDayPhotos(tx, prev, now)) > 0) await serverColumns(tx, prev);
       await setState({ autoValues: null, missing: [] });
       return "human";
     }
     const merged = mergeAuto(autoValuesOfReport(prev), state.autoValues as AutoValues, next);
+    const attached = (await dayPhotoIds(tx, prev.id)).length;
     if (!merged.changed.length) {
-      await setState({ autoValues: merged.auto });
+      // Pavo sonucu geldi ama rakam aynı (ya da elle düzeltildi): karşılaştırma yine yenilenir (Pavo'nun batch'leri)
+      const check = await photoCheckOf(tx, prev, { ...device, z: day.z }, now);
+      await setState({ autoValues: merged.auto, photoCheck: check, missing: missingFor(attached, check) });
+      await applyPhotoZNo(tx, prev, check, now);
       return "unchanged";
     }
     await tx.insert(s.cashReportRevisions).values({
@@ -224,13 +257,9 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
       .set({ ...values, cashDiff: computeCash(fields).cashDiff, revision: prev.revision + 1, submittedBy: null, submittedByName: LAFPOS_AUTO_BY, emailStatus: null, emailError: null, updatedAt: now })
       .where(eq(s.cashReports.id, prev.id))
       .returning();
-    // Yazarkasa Z no'su değiştiyse sunucu sütunları (kümülatif, yazarkasa dışı) formun kaydındaki gibi yeniden hesaplanır
-    if ((prev.okcZNo ?? null) !== (row.okcZNo ?? null)) {
-      const server = await okcServerColumns(tx, row);
-      if (server.okcCumTotal !== row.okcCumTotal || server.okcCumVat !== row.okcCumVat || server.okcOutside !== row.okcOutside) {
-        [row] = await tx.update(s.cashReports).set(server).where(eq(s.cashReports.id, row.id)).returning();
-      }
-    }
+    // Yazarkasa Z no'su ya da günlük toplamı değiştiyse sunucu sütunları (kümülatif, yazarkasa dışı) formun kaydındaki gibi
+    // yeniden hesaplanır
+    if ((prev.okcZNo ?? null) !== (row.okcZNo ?? null) || (prev.okcTotal ?? null) !== (row.okcTotal ?? null)) row = await serverColumns(tx, row);
     const changes = revisionChanges(revisionDataOf(prev), revisionDataOf(row));
     await tx.insert(s.activityLog).values({
       userName: LAFPOS_AUTO_BY,
@@ -238,9 +267,19 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
       action: "Kasa raporu güncellendi (LafPOS otomatik)",
       detail: `${longDateTR(date)}: ${changesText(changes)}${merged.kept.length ? ` · elle düzeltilen korundu: ${merged.kept.length} alan` : ""}`,
     });
-    await setState({ autoValues: merged.auto });
+    const check = await photoCheckOf(tx, row, { ...device, z: day.z }, now);
+    await setState({ autoValues: merged.auto, photoCheck: check, missing: missingFor(attached, check) });
+    await applyPhotoZNo(tx, row, check, now);
     return "updated";
   });
+}
+
+/** Sunucu sütunları (kümülatif, yazarkasa dışı tahsilat; report-store okcServerColumns): değiştiyse yazılır */
+async function serverColumns(tx: CashTx, row: typeof s.cashReports.$inferSelect): Promise<typeof s.cashReports.$inferSelect> {
+  const server = await okcServerColumns(tx, row);
+  if (server.okcCumTotal === row.okcCumTotal && server.okcCumVat === row.okcCumVat && server.okcOutside === row.okcOutside) return row;
+  const [next] = await tx.update(s.cashReports).set(server).where(eq(s.cashReports.id, row.id)).returning();
+  return next;
 }
 
 /** Otomatik değerler → rapor sütunları (sayısal sütunlarda boş 0 değil: çağıran sayımı olmayan raporu yazmaz) */
@@ -248,7 +287,18 @@ function toColumns(v: AutoValues) {
   const num = (f: (typeof AUTO_FIELDS)[number]) => (typeof v[f] === "number" ? (v[f] as number) : 0);
   const opt = (f: (typeof AUTO_FIELDS)[number]) => (typeof v[f] === "number" ? (v[f] as number) : null);
   const text = (f: (typeof AUTO_FIELDS)[number]) => (typeof v[f] === "string" ? (v[f] as string) : null);
+  // Gün sonu tam: Banka POS (Pavo) ve yazarkasa alanları (LafPOS'un cihaz belgeleri); cihaz rakamı yoksa boş
+  const vat = Array.isArray(v.okcVat) && v.okcVat.length ? v.okcVat : null;
   return {
+    bankPos: opt("bankPos"),
+    okcReceipts: opt("okcReceipts"),
+    okcTotal: opt("okcTotal"),
+    okcCash: opt("okcCash"),
+    okcCard: opt("okcCard"),
+    okcMealCard: opt("okcMealCard"),
+    okcOther: opt("okcOther"),
+    okcVat: vat,
+    okcVatTotal: opt("okcVatTotal"),
     zNo: text("zNo"),
     okcZNo: text("okcZNo"),
     receipts: opt("receipts"),
@@ -346,7 +396,14 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
         or(isNull(s.lafposDayEnds.sendingAt), lt(s.lafposDayEnds.sendingAt, stale)),
       ),
     )
-    .returning({ emailCount: s.lafposDayEnds.emailCount, missing: s.lafposDayEnds.missing, reportId: s.lafposDayEnds.reportId });
+    .returning({
+      emailCount: s.lafposDayEnds.emailCount,
+      missing: s.lafposDayEnds.missing,
+      reportId: s.lafposDayEnds.reportId,
+      photoCheck: s.lafposDayEnds.photoCheck,
+      pendingPhotos: s.lafposDayEnds.pendingPhotos,
+      autoValues: s.lafposDayEnds.autoValues,
+    });
   if (!claimed.length) {
     const [st] = await db.select({ emailedHash: s.lafposDayEnds.emailedHash }).from(s.lafposDayEnds).where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
     return st?.emailedHash === day.hash ? "same" : "busy";
@@ -376,6 +433,12 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
       fetchTillOnlineRow(date, branchId),
     ]);
     const values = rep[0] ? autoValuesOfReport(rep[0]) : null;
+    // Gün sonu fotoğrafı: otomatik raporda (ya da rapor yokken bekleyen) eklenen; elle girilen raporda bölüm yok
+    const auto = rep[0] && st.reportId === rep[0].id && st.autoValues;
+    const photo =
+      auto || !rep[0]
+        ? { need: lafposPhotoNeed(day), attached: rep[0] ? (await dayPhotoIds(db, rep[0].id)).length : st.pendingPhotos.length, check: st.photoCheck ?? null }
+        : null;
     const msg = renderDayEnd({
       branchName: branch?.name ?? "Marina",
       date,
@@ -391,6 +454,8 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
       online: online ? online.online : null,
       link: `${APP_URL}/panel/kasa?gun=${date}&sube=${encodeURIComponent(branchId)}`,
       bankPos: day.bankPos,
+      okc: day.okc,
+      photo,
       detail: day.detail,
     });
     const notify = await loadNotifySettings();

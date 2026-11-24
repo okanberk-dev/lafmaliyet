@@ -22,7 +22,23 @@ import { DEFAULT_BRANCH_ID, type BranchKind, type BranchPosSource } from "../../
 import type { CashRevisionData } from "../../lib/cash-report";
 import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checklists";
 import type { InvoiceReading } from "../../lib/invoice-reading";
-import type { BankPos, PosCashMove, PosCorrection, PosDayPush, PosDayZ, PosIkram, PosIptal, PosOffDevice, PosPayment, PosRefund } from "../../lib/lafpos/day";
+import type {
+  BankPos,
+  PosCashMove,
+  PosCollection,
+  PosCorrection,
+  PosDayPush,
+  PosDayZ,
+  PosDiscountLine,
+  PosIkram,
+  PosIptal,
+  PosOffDevice,
+  PosOkc,
+  PosPayment,
+  PosRefund,
+  PosShiftCount,
+} from "../../lib/lafpos/day";
+import type { LafposPhotoCheck } from "../../lib/lafpos/foto";
 import type { KasaFoyu } from "../../lib/modpos/foy";
 import type { ModposSheetPrevious } from "../../lib/modpos/z";
 import type { OkcVatLine } from "../../lib/okc-z";
@@ -2314,6 +2330,15 @@ export const posDayReports = pgTable(
      * çıkanlar"a satır olur (cash_outs.lafpos_id); giriş yalnız burada. Eski LafPOS göndermez ya da okunamadıysa null
      */
     cashMoves: jsonb("cash_moves").$type<PosCashMove[]>(),
+    /**
+     * Gün sonu tam (24 Kasım 2026; docs/LAFPOS.md › Gün sonu otomasyonu): yazarkasanın cihaz belgelerinden rakamları (kasa
+     * raporunun yazarkasa alanları bundan), siparişsiz tahsilatlar, vardiya devri sayımları ve indirim satırları. Son
+     * gövdeninkiler; eski LafPOS göndermez ya da okunamadıysa null
+     */
+    okc: jsonb("okc").$type<PosOkc>(),
+    collections: jsonb("collections").$type<PosCollection[]>(),
+    shiftCounts: jsonb("shift_counts").$type<PosShiftCount[]>(),
+    discountLines: jsonb("discount_lines").$type<PosDiscountLine[]>(),
     /** LafPOS'un son kabul edilen gövdesinin gönderim sırası (1'den); eski LafPOS göndermez: null */
     revision: integer("revision"),
     /**
@@ -2371,9 +2396,22 @@ export const lafposDayEnds = pgTable(
     /** Otomatik yazılan kasa raporu (rapor silinirse boşalır) */
     reportId: integer("report_id").references(() => cashReports.id, { onDelete: "set null" }),
     /** Son otomatik yazımın alan değerleri; elle girilmiş raporda null (hiç dokunulmaz) */
-    autoValues: jsonb("auto_values").$type<Record<string, number | string | null>>(),
-    /** Fotoğraf ya da elle giriş bekleyen alanlar (ör. "bankPos", "countedCash") */
+    autoValues: jsonb("auto_values").$type<Record<string, unknown>>(),
+    /**
+     * Eksikler: cihaz boşlukları ("bankPos", "okc", "okcZNo"; sayım yoksa "countedCash") ve personelin gün sonu fotoğrafı
+     * eklenene kadar "photo" (src/lib/lafpos/gun-sonu.ts autoMissing)
+     */
     missing: jsonb("missing").$type<string[]>().notNull().default([]),
+    /**
+     * Gün sonu fotoğrafının LafPOS'la karşılaştırması (src/lib/lafpos/foto.ts lafposPhotoCheck): fotoğraf eklenince ya da
+     * LafPOS yeniden gönderince yenilenir; yalnız yönetici görür. Fotoğraf yokken null
+     */
+    photoCheck: jsonb("photo_check").$type<LafposPhotoCheck>(),
+    /**
+     * Rapor yokken (LafPOS'ta sayım yok) personelin eklediği gün sonu fotoğrafları: rapor yazılınca ona bağlanır
+     * (src/server/lafpos/foto.ts)
+     */
+    pendingPhotos: jsonb("pending_photos").$type<number[]>().notNull().default([]),
     /** Son işlenen gün sonunun içerik özeti (Z, ödemeler, ikram) */
     dayHash: text("day_hash"),
     /** Gün sonu e-postası: gönderilen içerik özeti, gönderim sayısı, son hata, gönderim anı */

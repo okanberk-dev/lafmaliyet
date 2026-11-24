@@ -24,6 +24,7 @@ import { unpricedNotice } from "@/lib/count-item";
 import { money, monthLabel, num } from "@/lib/format";
 import { JOBS_HREF, systemAlerts, type JobHealth, type JobKey } from "@/lib/job-health";
 import { isPlayable, phase, sessionEnd, sessionStart, trClock, type KaraokeSessionDTO } from "@/lib/karaoke/session";
+import { LAFPOS_PHOTO_TEXT } from "@/lib/lafpos/foto";
 import type { KasaName } from "@/lib/lafpos/kasa";
 import { kasaName } from "@/lib/lafpos/switch";
 import { holdAlert, HOLDS_HREF } from "@/lib/price-hold";
@@ -94,6 +95,11 @@ export interface CashLite {
   note: string | null;
   /** Yalnız yönetici: kasanın bütünlük uyarıları (CASH_FLAGS); varsa satır "sorun var" olur */
   flags?: string[];
+  /**
+   * LafPOS gününün otomatik raporu (gün sonu tam, 24 Kasım 2026; src/lib/lafpos/foto.ts): personelin tek işi gün sonu
+   * fotoğrafı. "pending" istenen fotoğraf eklenmedi (ya da okunamadı); "done" eklendi. Elle girilen raporda yok
+   */
+  lafposPhoto?: "pending" | "done";
 }
 
 /** "Tümü"de birden çok kasa açıkken bir şubenin kasası (yönetici): dünün ve bugünün raporu, şubenin ilk raporu */
@@ -378,6 +384,8 @@ function cashYesterdayOf(f: DayFacts, c: DayContext, till: TillDays | null): Day
   const href = `/panel/kasa?gun=${c.yesterday}`;
   if (!till) return admin ? { key: "kasa-dun", title, status: "later", badge: "Okunamadı", detail: "Kasa raporları şu an okunamadı.", href: "/panel/kasa", action: "Kasa raporu" } : null;
   const r = till.yesterday;
+  // LafPOS gününün otomatik raporu: personele yalnız gün sonu fotoğrafı (sayılar LafPOS'tan)
+  if (r && !admin && r.lafposPhoto === "pending") return { key: "kasa-dun", title: "Dünkü gün sonu fotoğrafı", status: "todo", detail: LAFPOS_PHOTO_TEXT.slip, href, action: "Fotoğraf ekle" };
   if (r) return admin ? { key: "kasa-dun", title, status: cashStatus(r), badge: cashBadge(r), detail: dated(c, r.date, cashDetail(r, true)), href, action: "Rapora bak" } : null;
   // Kasa hiç kullanılmadıysa ya da ilk rapor dünden sonraysa dünün raporu beklenmez (kurulum sakin açılır)
   if (!till.firstDate || c.yesterday < till.firstDate) return null;
@@ -479,6 +487,9 @@ function cashTodayOf(f: DayFacts, c: DayContext, till: TillDays | null): DayTask
   const title = "Kasa raporu";
   if (!till) return { key: "kasa", title, status: "later", badge: "Okunamadı", detail: "Kasa raporları şu an okunamadı.", href: "/panel/kasa", action: "Kasa raporu" };
   const r = till.today;
+  // LafPOS gününün otomatik raporu: rakamlar LafPOS'tan, personelin tek işi gün sonu fotoğrafı; "Raporu gönder" yok
+  if (r?.lafposPhoto === "pending") return { key: "kasa", title: "Gün sonu fotoğrafı", status: "todo", detail: LAFPOS_PHOTO_TEXT.slip, href, action: "Fotoğraf ekle" };
+  if (r?.lafposPhoto === "done") return { key: "kasa", title, status: "done", badge: "Tamam", detail: dated(c, r.date, `LafPOS gün sonu · ${LAFPOS_PHOTO_TEXT.done} · ${diffText(r.cashDiff)}`), href, action: "Raporu aç" };
   if (r) return { key: "kasa", title, status: "done", badge: "Gönderildi", detail: dated(c, r.date, `${r.submittedByName} gönderdi · ${diffText(r.cashDiff)}`), href, action: "Raporu aç" };
   if (c.evening) return { key: "kasa", title, status: "todo", detail: dated(c, c.day, eveningCashText(kasaName(c.day, f.lafposSwitch ?? null))), href: "/panel/kasa", action: "Raporu gir" };
   return { key: "kasa", title, status: "later", badge: "Akşam", detail: "Kapanışta girilir: Z raporu ve kasa sayımı.", href: "/panel/kasa", action: "Kasa raporu" };

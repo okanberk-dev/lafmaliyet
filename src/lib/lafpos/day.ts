@@ -128,6 +128,14 @@ export const posZSchema = z.object({
   expectedOpening: soft(tl.nullable()),
   openingDiff: soft(signedTl.nullable()),
   openingReason: soft(reasonText),
+  /**
+   * Gün sonu tam (24 Kasım 2026; docs/LAFPOS.md › Gün sonu otomasyonu; isteğe bağlı, bozuksa yok sayılır): iade edilmemiş
+   * nakit satış ödemelerinin bahşişi (z.cashIn'in içinde), kapanış / föy notu (en çok 200) ve föyde ödeme türü başına
+   * sayılan (personelin yazdığı banka POS slibi, yemek kartı raporu; yalnız bilgi, Banka POS'u doldurmaz)
+   */
+  cashTips: soft(tl),
+  closeNote: soft(reasonText),
+  methodCounts: soft(z.array(z.object({ name: z.string().trim().min(1).max(60), zField: z.enum(["cash", "card", "meal_card", "online", "other"]), channel: z.string().trim().max(40).nullable().transform((v) => v || null), counted: tl })).max(50)),
 });
 
 const lineSchema = z.object({
@@ -222,6 +230,10 @@ const cashMovesSchema = z
   .max(2000)
   .refine((ms) => new Set(ms.map((m) => m.id)).size === ms.length);
 
+/** Ödeme türünün cinsi (LafPOS payment_methods.kind): "Diğer"in içinde cari ile havaleyi ayırır */
+export const PAYMENT_KINDS = ["nakit", "kart", "yemek", "havale", "cari", "online", "diger"] as const;
+const paymentKind = z.enum(PAYMENT_KINDS);
+
 const paymentSchema = z.object({
   name: z.string().trim().min(1).max(60),
   zField: z.enum(["cash", "card", "meal_card", "online", "other"]),
@@ -234,7 +246,84 @@ const paymentSchema = z.object({
     .transform((v) => v || null),
   count,
   amount: tl,
+  /** Gün sonu tam: ödeme türünün cinsi (eski LafPOS göndermez). Günün özetine (dayHash) girmez */
+  kind: soft(paymentKind),
 });
+
+/**
+ * Gün sonu tam (24 Kasım 2026): siparişsiz tahsilatlar (cari tahsilatı), ödeme türü başına. Müşterinin adı ve kimliği
+ * gelmez. Kart satırlarının toplamı z.cardCollections
+ */
+const collectionSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  zField: z.enum(["cash", "card", "meal_card", "online", "other"]),
+  channel: z
+    .string()
+    .trim()
+    .max(40)
+    .nullable()
+    .transform((v) => v || null),
+  kind: paymentKind,
+  count,
+  amount: tl,
+});
+
+/** Gün sonu tam: vardiya devrinde sayım (kişi gelmez); fark işaretli (sayılan − beklenen) */
+const shiftCountSchema = z.object({
+  at: isoInstant.unwrap(),
+  counted: tl,
+  expected: tl,
+  diff: signedTl,
+  confirmed: z.boolean(),
+});
+
+/** Gün sonu tam: indirim satırları (Σ amount = z.discounts); indirimi yapan gelmez */
+const discountLineSchema = z.object({
+  scope: z.enum(["order", "item"]),
+  posName: posName.nullable(),
+  type: z.enum(["percent", "amount"]),
+  value: z.number().finite().min(0).max(MAX_TL),
+  amount: tl,
+  reason: reasonText,
+});
+
+/**
+ * Gün sonu tam (24 Kasım 2026): yazarkasanın (mali cihaz: Pavo e-Arşiv ya da TokenX ÖKC) günün belgelerinden rakamları.
+ * `zReport`: cihaz mali Z basıyor mu (TokenX evet, Pavo hayır: VUK 507, e-Arşiv). `docs` tamamlanan belge sayısı; tutarlar
+ * o belgelerle kaydedilen, iade edilmemiş ödemeler (online ve diğer "other"da); `voided` cihazda iptal edilen belgeler
+ * (yukarıdakilere girmez); `vat` tamamlanan belgelerin sepetinden (hesaplanamazsa null). Değişmezler: cash = z.cash −
+ * offDevice.cash − voided.cash; card = z.card − offDevice.card − voided.card. Cihaz yoksa ya da eski LafPOS'ta alan yok
+ */
+export const okcSchema = z.object({
+  provider: z.enum(["pavo", "tokenx"]),
+  zReport: z.boolean(),
+  docs: count,
+  cash: tl,
+  card: tl,
+  mealCard: tl,
+  other: tl,
+  total: tl,
+  voided: z.object({ count, cash: tl, card: tl }),
+  vat: z.array(z.object({ rate: z.number().finite().min(0).max(100), total: tl, vat: tl })).max(10).nullable(),
+});
+export type PosOkc = z.output<typeof okcSchema>;
+
+/**
+ * Gün sonu tam: Pavo'nun bu LafPOS gününe ait başarılı gün sonları (batch), eskiden yeniye (gün ortasında elle alınan da).
+ * `total` Pavo'nun genel toplamı (TL); okunamadıysa null
+ */
+const batchSchema = z.object({
+  batchNo: z
+    .string()
+    .max(60)
+    .nullable()
+    .transform((v) => v?.trim() || null),
+  at: z.string().trim().max(40),
+  total: tl.nullable(),
+  trigger: z.enum(["otomatik", "elle"]),
+  dayClosed: z.boolean(),
+});
+export type PavoBatch = z.output<typeof batchSchema>;
 
 /**
  * Banka POS (Pavo) gün sonu karşılaştırması (isteğe bağlı; LafPOS PR #154, server/sync/lafmaliyet.ts buildDayPayload):
@@ -274,6 +363,14 @@ export const bankPosSchema = z.object({
     .transform((v) => v?.trim().slice(0, 300) || null),
   /** Faz 2: cihazın hata kodu (alınamayan gün sonu, ör. "5085"); alındıysa ya da kod yoksa null. Bozuksa yok sayılır */
   errorCode: soft(shortText(40)),
+  /**
+   * Gün sonu tam (24 Kasım 2026): günün bütün başarılı Pavo gün sonları (eskiden yeniye, en çok 20; hiçbiri başarılı
+   * değilse `[]`). pavoCard / lafposCard / diff yalnız son batch'indir; günün banka toplamı Σ batches.total. Eski LafPOS
+   * göndermez
+   */
+  batches: soft(z.array(batchSchema).max(20)),
+  /** Gün sonu tam: LafPOS'un bütün günün kıyas tabanı (Z kartı + kart bahşişi + kart tahsilatı − yazarkasadan geçmeyen − cihazda iptal); gün açıkken null */
+  dayCard: soft(tl.nullable()),
 });
 
 export type BankPos = z.output<typeof bankPosSchema>;
@@ -301,8 +398,11 @@ export const posDaySchema = z.object({
   revision: soft(z.number().int().min(1).max(1_000_000)),
   /** Düzeltme: gün yeniden açıldı (`reopen`) ya da kapandıktan sonra sayım değişti (`recount`); yalnız düzeltmeyi taşıyan gövdede */
   correction: soft(z.object({ kind: z.enum(["reopen", "recount"]), reason: z.string().max(1000).transform((v) => v.trim().slice(0, 200)) })),
-  /** Mali fişi yazarkasada kesilmeyen satış ödemeleri (bahşiş hariç) */
-  offDevice: soft(z.object({ card: tl, cash: tl })),
+  /**
+   * Mali fişi yazarkasada kesilmeyen satış ödemeleri (bahşiş hariç); gün sonu tam: o kart ödemelerinin bahşişi ayrıca
+   * (`cardTips`; Pavo'nun batch'inde de yok, eski LafPOS göndermez)
+   */
+  offDevice: soft(z.object({ card: tl, cash: tl, cardTips: soft(tl) })),
   /** Günün iptal edilen ödemeleri (en çok 2000) */
   refunds: soft(z.array(refundSchema).max(2000)),
   /** Günün iptal edilen kalemleri (en çok 2000 parça) */
@@ -312,6 +412,15 @@ export const posDaySchema = z.object({
    * `[]`: "hareket yok" eski LafPOS'tan (alan yok) ayrılır. Bozuk tek hareket bütün listeyi düşürür (satırlara dokunulmaz)
    */
   cashMoves: soft(cashMovesSchema),
+  // Gün sonu tam (24 Kasım 2026; docs/LAFPOS.md › Gün sonu otomasyonu). Hepsi isteğe bağlı; bozuksa yok sayılır
+  /** Yazarkasanın (mali cihaz) günün belgelerinden rakamları; cihaz yoksa ya da eski LafPOS'ta yok */
+  okc: soft(okcSchema),
+  /** Siparişsiz tahsilatlar (cari), ödeme türü başına (en çok 200; yoksa `[]`) */
+  collections: soft(z.array(collectionSchema).max(200)),
+  /** Vardiya devri sayımları (en çok 50; yoksa `[]`) */
+  shiftCounts: soft(z.array(shiftCountSchema).max(50)),
+  /** İndirim satırları (en çok 2000; yoksa `[]`) */
+  discountLines: soft(z.array(discountLineSchema).max(2000)),
   /**
    * LM-4b (personel bağlantısı; docs/LAFPOS.md › Personel bağlantısı): o gün çalışanların lafmaliyet personel kimlikleri
    * (`s:<staff.id>`), tekil, sayı sırasıyla. Yalnız en az bir LafPOS kullanıcısı bağlıyken gelir (yoksa bilinmiyor); `[]`
@@ -330,6 +439,9 @@ export type PosIptal = NonNullable<PosDayPush["iptal"]>[number];
 export type PosCorrection = NonNullable<PosDayPush["correction"]>;
 export type PosOffDevice = NonNullable<PosDayPush["offDevice"]>;
 export type PosCashMove = NonNullable<PosDayPush["cashMoves"]>[number];
+export type PosCollection = NonNullable<PosDayPush["collections"]>[number];
+export type PosShiftCount = NonNullable<PosDayPush["shiftCounts"]>[number];
+export type PosDiscountLine = NonNullable<PosDayPush["discountLines"]>[number];
 
 /** Takvimde olan gün (2026-02-30 değil), 2020'den sonra */
 function realDate(v: string): boolean {
@@ -373,12 +485,37 @@ export function parsePosDay(body: string, now: Date = new Date()): PosDayParse {
   return { ok: true, data: r.data };
 }
 
-const TOP_SOFT = ["revision", "correction", "offDevice", "refunds", "iptal", "cashMoves", "workedStaffRefs"] as const;
-const Z_SOFT = ["listValue", "ikramTotal", "odenmezTotal", "zayiTotal", "vat", "openedAt", "closedAt", "okcZNo", "expectedOpening", "openingDiff", "openingReason"] as const;
+const TOP_SOFT = ["revision", "correction", "offDevice", "refunds", "iptal", "cashMoves", "okc", "collections", "shiftCounts", "discountLines", "workedStaffRefs"] as const;
+const Z_SOFT = [
+  "listValue",
+  "ikramTotal",
+  "odenmezTotal",
+  "zayiTotal",
+  "vat",
+  "openedAt",
+  "closedAt",
+  "okcZNo",
+  "expectedOpening",
+  "openingDiff",
+  "openingReason",
+  "cashTips",
+  "closeNote",
+  "methodCounts",
+] as const;
 
-/** Gönderilip okunamayan Faz 2 ve Faz 3 alanlarının yolları ("z.vat", "lines.3.gross", "bankPos.errorCode", "cashMoves") */
+/**
+ * Gönderilip okunamayan Faz 2, Faz 3 ve gün sonu tam alanlarının yolları ("z.vat", "lines.3.gross", "bankPos.errorCode",
+ * "bankPos.batches", "offDevice.cardTips", "payments.0.kind", "cashMoves")
+ */
 function droppedSoftFields(json: unknown, data: PosDayPush): string[] {
-  const raw = json as Record<string, unknown> & { z?: Record<string, unknown>; lines?: Record<string, unknown>[]; ikram?: Record<string, unknown>[]; bankPos?: Record<string, unknown> | null };
+  const raw = json as Record<string, unknown> & {
+    z?: Record<string, unknown>;
+    lines?: Record<string, unknown>[];
+    ikram?: Record<string, unknown>[];
+    payments?: Record<string, unknown>[];
+    bankPos?: Record<string, unknown> | null;
+    offDevice?: Record<string, unknown> | null;
+  };
   const sent = (o: Record<string, unknown> | null | undefined, k: string) => !!o && typeof o === "object" && k in o && o[k] !== undefined;
   const out: string[] = [];
   for (const k of TOP_SOFT) if (sent(raw, k) && data[k] === undefined) out.push(k);
@@ -389,7 +526,11 @@ function droppedSoftFields(json: unknown, data: PosDayPush): string[] {
   data.ikram.forEach((l, i) => {
     for (const k of ["kind", "personKind"] as const) if (sent(raw.ikram?.[i], k) && l[k] === undefined) out.push(`ikram.${i}.${k}`);
   });
-  if (data.bankPos && sent(raw.bankPos, "errorCode") && data.bankPos.errorCode === undefined) out.push("bankPos.errorCode");
+  data.payments.forEach((p, i) => {
+    if (sent(raw.payments?.[i], "kind") && p.kind === undefined) out.push(`payments.${i}.kind`);
+  });
+  for (const k of ["errorCode", "batches", "dayCard"] as const) if (data.bankPos && sent(raw.bankPos, k) && data.bankPos[k] === undefined) out.push(`bankPos.${k}`);
+  if (data.offDevice && sent(raw.offDevice, "cardTips") && data.offDevice.cardTips === undefined) out.push("offDevice.cardTips");
   return out.slice(0, 20);
 }
 

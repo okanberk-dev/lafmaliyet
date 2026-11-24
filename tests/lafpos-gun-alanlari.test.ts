@@ -47,7 +47,8 @@ test("altın gövde: Faz 2 alanlarının hepsi okunur (sıra, düzeltme, yazarka
   const d = r.data;
   assert.equal(d.revision, 1);
   assert.deepEqual(d.correction, { kind: "reopen", reason: "Geç gelen masa" });
-  assert.deepEqual(d.offDevice, { card: 1509, cash: 465 });
+  // Gün sonu tam (24 Kasım 2026): yazarkasadan geçmeyen kart ödemelerinin bahşişi de
+  assert.deepEqual(d.offDevice, { card: 1509, cash: 465, cardTips: 25 });
   assert.deepEqual(d.refunds, [
     { amount: 195, zField: "card", name: "Kredi kartı", channel: null, reason: "İade: Soğuk geldi" },
     { amount: 60, zField: "cash", name: "Nakit", channel: null, reason: "Kartla ödeyecek" },
@@ -108,7 +109,7 @@ test("kabul günü (Marina 22.11.2026): sözleşmenin rakamları dosyadan okunur
   );
   assert.deepEqual(z.vat, [{ rate: 10, base: 5713.64, vat: 571.36 }]);
   assert.deepEqual([z.openingCash, z.cashOut, z.expectedCash, z.countedCash, z.cashDiff], [1120, 800, 1575, 1279.5, -295.5]);
-  assert.deepEqual(d.offDevice, { card: 870, cash: 200 });
+  assert.deepEqual(d.offDevice, { card: 870, cash: 200, cardTips: 0 });
   assert.deepEqual(
     d.refunds?.map((x) => [x.amount, x.zField]),
     [
@@ -162,17 +163,21 @@ test("Faz 2 alanı bozuk gelirse yok sayılır, gün reddedilmez (400 LafPOS'ta 
 test("eski gövde ve saklanmış eski Z: Faz 2 alanları olmadan geçer, alan eklenmez", () => {
   const b = JSON.parse(golden()) as Record<string, unknown> & { z: Record<string, unknown>; lines: Record<string, unknown>[]; ikram: Record<string, unknown>[]; bankPos: Record<string, unknown> };
   // 23 Kasım 2026'dan altın gövde Faz 3 alanlarını da taşır (kasa zinciri): eski gövde onları da taşımaz
-  for (const k of ["revision", "correction", "offDevice", "refunds", "iptal", "cashMoves"]) delete b[k];
-  for (const k of ["listValue", "ikramTotal", "odenmezTotal", "zayiTotal", "vat", "openedAt", "closedAt", "okcZNo", "expectedOpening", "openingDiff", "openingReason"]) delete b.z[k];
+  // 24 Kasım 2026'dan gün sonu tam alanlarını da (yazarkasa, tahsilat, vardiya, indirim satırları, batch'ler, ödemenin cinsi)
+  for (const k of ["revision", "correction", "offDevice", "refunds", "iptal", "cashMoves", "okc", "collections", "shiftCounts", "discountLines"]) delete b[k];
+  for (const k of ["listValue", "ikramTotal", "odenmezTotal", "zayiTotal", "vat", "openedAt", "closedAt", "okcZNo", "expectedOpening", "openingDiff", "openingReason", "cashTips", "closeNote", "methodCounts"]) delete b.z[k];
   for (const l of b.lines) for (const k of ["gross", "isAddon"]) delete l[k];
   for (const i of b.ikram) for (const k of ["kind", "personKind"]) delete i[k];
-  delete b.bankPos.errorCode;
+  for (const p of b.payments as Record<string, unknown>[]) delete p.kind;
+  for (const k of ["errorCode", "batches", "dayCard"]) delete b.bankPos[k];
   const r = parsePosDay(JSON.stringify(b), NOW);
   assert.ok(r.ok, r.ok ? "" : r.field);
   assert.deepEqual(Object.keys(r.data).sort(), ["bankPos", "date", "ikram", "lines", "payments", "source", "sube", "version", "z"]);
   assert.deepEqual(Object.keys(r.data.lines[0]).sort(), ["isService", "posName", "qty", "revenue", "siteMenuId", "slot"]);
   assert.deepEqual(Object.keys(r.data.ikram[0]).sort(), ["menuValue", "posName", "qty", "reason", "siteMenuId", "slot"]);
   assert.equal("errorCode" in (r.data.bankPos ?? {}), false);
+  assert.equal("batches" in (r.data.bankPos ?? {}), false);
+  assert.deepEqual(Object.keys(r.data.payments[0]).sort(), ["amount", "channel", "count", "name", "zField"]);
   // Saklanmış Z (jsonb) aynı şemayla yeniden okunur: eski gün düşmez
   const stored = posZSchema.safeParse(b.z);
   assert.ok(stored.success);
@@ -383,13 +388,14 @@ test("kasa raporunun kart karşılaştırması yazarkasadan geçmeyen kartı yaz
   );
   // Her okur aynı özeti alır: formun kartı, kayıtlı görünüm, yöneticinin penceresi, Onaylar, günden güne, metinler
   assert.match(read("src/server/data/cash-photos.ts"), /offDevice: lafpos\.day\?\.offDevice \?\? null/);
-  assert.equal(read("src/server/data/lafpos-day.ts").match(/lafposDayOf\(z\.data, r(ow)?\.receivedAt, offDeviceOf\(r(ow)?\.offDevice\)\)/g)?.length, 2);
+  // Gün sonu tam: cihazda iptal edilen belge de (okc.voided) yazarkasadan geçmeyene eklenir
+  assert.equal(read("src/server/data/lafpos-day.ts").match(/lafposDayOf\(z\.data, r(ow)?\.receivedAt, offDeviceOf\(r(ow)?\.offDevice\), okcOf\(r(ow)?\.okc\)\)/g)?.length, 2);
   const form = read("src/app/panel/kasa/cash-form.tsx");
   assert.match(form, /offDevice=\{lafpos\?\.offDevice \?\? null\}/);
   assert.match(form, /cardExtra: lafpos\?\.cardExtra \?\? null, offDevice: lafpos\?\.offDevice \?\? null/);
   assert.match(read("src/app/panel/onaylar/kasa-cards.tsx"), /offDevice=\{card\.lafpos\.day\?\.offDevice \?\? null\}/);
   const history = read("src/app/panel/kasa/cash-history.tsx");
-  assert.match(history, /withCardExtra\(report, photos\[report\.id\]\?\.extras\.cardExtra, photos\[report\.id\]\?\.extras\.offDevice\)/);
+  assert.match(history, /withCardExtra\(report, photos\[report\.id\]\?\.extras\.cardExtra, photos\[report\.id\]\?\.extras\.offDevice, photos\[report\.id\]\?\.extras\.kasa\)/);
   assert.match(history, /offDevice=\{openPhotos\?\.extras\.offDevice\}/);
   assert.match(read("src/app/panel/kasa/report-sheet.tsx"), /reportChecks\(\{ report, cardExtra, offDevice,/);
 });
@@ -618,7 +624,11 @@ test("gün ayrıntısı (kabul günü): yazarkasadan geçmeyen, ödeme iptalleri
     revision: undefined,
     correction: undefined,
     cashMoves: undefined,
-    z: { ...g.data.z, okcZNo: undefined, vat: undefined, expectedOpening: undefined, openingDiff: undefined, openingReason: undefined },
+    okc: undefined,
+    collections: undefined,
+    shiftCounts: undefined,
+    discountLines: undefined,
+    z: { ...g.data.z, okcZNo: undefined, vat: undefined, expectedOpening: undefined, openingDiff: undefined, openingReason: undefined, cashTips: undefined, closeNote: undefined, methodCounts: undefined },
   });
   assert.deepEqual(old.sections, []);
   assert.equal(old.correction, null);

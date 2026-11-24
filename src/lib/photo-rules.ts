@@ -195,10 +195,10 @@ export function photoViewDecision(
   return "rules";
 }
 
-/** "Z raporu · 23:52 · Ayşe" */
-export function photoCaption(kind: PhotoKind, createdAt: Date | string, byName: string | null): string {
+/** "Z raporu · 23:52 · Ayşe"; `label` türün adının yerine (LafPOS gününde "Pavo gün sonu fişi") */
+export function photoCaption(kind: PhotoKind, createdAt: Date | string, byName: string | null, label?: string): string {
   const time = new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(new Date(createdAt));
-  return [PHOTO_KIND_LABEL[kind], time, byName].filter(Boolean).join(" · ");
+  return [label ?? PHOTO_KIND_LABEL[kind], time, byName].filter(Boolean).join(" · ");
 }
 
 function errorOf(body: unknown): string | null {

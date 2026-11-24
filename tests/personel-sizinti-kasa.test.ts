@@ -271,7 +271,8 @@ test("LafPOS'tan doldur: personelin okuyucusu yalnız Z, yazarkasadan geçmeyen 
   assert.match(loader, /^import "server-only";/);
   // Faz 2: yazarkasadan geçmeyen kart ve nakit (iki tutar) da gider: personelin kart karşılaştırması yöneticininkiyle aynı
   // sonucu versin (kartla bahşiş gibi, G11; tutarı metinde yalnız yöneticininki yazar)
-  assert.match(loader, /\.select\(\{ z: s\.posDayReports\.z, offDevice: s\.posDayReports\.offDevice, receivedAt: s\.posDayReports\.receivedAt \}\)/);
+  // Gün sonu tam: yazarkasanın belgeleri (okc) yalnız cihazda iptal edileni yazarkasadan geçmeyene eklemek için okunur
+  assert.match(loader, /\.select\(\{ z: s\.posDayReports\.z, offDevice: s\.posDayReports\.offDevice, okc: s\.posDayReports\.okc, receivedAt: s\.posDayReports\.receivedAt \}\)/);
   assert.doesNotMatch(loader, /\.select\(\)|payments|ikram|posDailySales/);
   // Forma giden yalnız formun alanları: kasa farkı (LafPOS'un hesabı) da gitmez, form kendisi hesaplar
   const prefill = read("src/lib/lafpos/prefill.ts");

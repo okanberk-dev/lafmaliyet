@@ -29,7 +29,7 @@ import { toast } from "sonner";
 
 import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { useCalmMotion } from "@/components/ui/motion";
-import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
+import { TlCounter } from "@/components/ui/animated-counter";
 import { EASE_OUT, SPRING_PRESS, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink, IconButton } from "@/components/ui/button";
@@ -144,19 +144,11 @@ export interface SalesRow {
 // ---------------------------------------------------------------- Sayaçlar
 
 /**
- * AkmanOS AnimatedNumber ile sayan rakam. Ekran okuyucu ara değerleri değil, son değeri okur;
- * hareket azaltıldığında AnimatedNumber doğrudan son değeri yazar.
+ * Kayan rakamlı sayaç (components/ui/animated-counter): yazı `tl()` / `num()` ile aynı. Ekran okuyucu ara
+ * değerleri değil, son değeri okur; hareket azaltıldığında rakam doğrudan değişir.
  */
 export function CountUp({ value, kind = "tl" }: { value: number; kind?: "tl" | "num" }) {
-  const format = kind === "tl" ? (v: number) => tl(v) : (v: number) => num(v);
-  return (
-    <>
-      <span aria-hidden="true">
-        <AnimatedNumber value={value} format={format} />
-      </span>
-      <span className="sr-only">{format(value)}</span>
-    </>
-  );
+  return <TlCounter value={value} kind={kind} />;
 }
 
 const COVERAGE_SEGMENTS = 20;

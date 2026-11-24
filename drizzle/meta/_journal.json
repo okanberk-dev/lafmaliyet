@@ -523,8 +523,15 @@
     {
       "idx": 74,
       "version": "7",
-      "when": 1795529645133,
-      "tag": "0074_lafpos_personel",
+      "when": 1795528624054,
+      "tag": "0074_gun_sonu_tam",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1795532383149,
+      "tag": "0075_lafpos_personel",
       "breakpoints": true
     }
   ]

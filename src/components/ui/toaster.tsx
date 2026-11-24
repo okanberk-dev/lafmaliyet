@@ -4,9 +4,10 @@ import { useEffect, useState, type ComponentProps } from "react";
 import { createPortal } from "react-dom";
 import { Toaster } from "sonner";
 
+import { TOAST_ICONS } from "./toast-icon";
 import { toastLayout, type ToastLayout, type ToastScene } from "./toast-layout";
 
-type ToasterProps = Omit<ComponentProps<typeof Toaster>, "position" | "offset" | "mobileOffset">;
+type ToasterProps = Omit<ComponentProps<typeof Toaster>, "position" | "offset" | "mobileOffset" | "icons">;
 
 const PHONE = "(width < 40rem)";
 const BELOW_LG = "(width < 64rem)";
@@ -32,6 +33,9 @@ function openModals(order: HTMLDialogElement[]): HTMLDialogElement[] {
  *   açıkken üstte ekranın kenarına yakın durur, alttan açılan sayfanın başlığını ve Kapat düğmesini örtmez.
  *   Tablette (lg altı) üst çubuğun altında, masaüstünde üstte.
  * Popover desteklemeyen tarayıcıda kap sıradan bir öğe gibi davranır (bildirimler z-index'le görünür).
+ * - Kart (rare-ui toast'tan uyarlandı): solda hareketli ikon karosu (`TOAST_ICONS`, toast-icon.tsx), 21 px köşe, ince
+ *   çizgi, panelin gölgesi; eylem düğmesi ("Geri al") karo köşesinde gri, kapatma düğmesi farede kartın üstüne
+ *   gelince görünür (dokunmatikte hep görünür). Biçim globals.css › "Bildirim kartı". `toast.*` API'si aynı.
  */
 export function TopLayerToaster({ toastOptions, ...props }: ToasterProps) {
   const [host, setHost] = useState<HTMLDivElement | null>(null);
@@ -135,6 +139,7 @@ export function TopLayerToaster({ toastOptions, ...props }: ToasterProps) {
       offset={layout.offset}
       mobileOffset={layout.offset}
       containerAriaLabel="Bildirimler"
+      icons={TOAST_ICONS}
       toastOptions={{ closeButtonAriaLabel: "Bildirimi kapat", ...toastOptions }}
     />,
     host,
