@@ -1,10 +1,11 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
-import { and, count, eq, gte, ne, sql } from "drizzle-orm";
+import { and, count, eq, gte, notInArray, sql } from "drizzle-orm";
 import type { z } from "zod";
 
 import { MAX_READS_PER_PHOTO, type ReadingState } from "@/lib/photo-rules";
+import { MATCH_DAILY_CAP } from "@/lib/product-match-ai";
 import { todayTR } from "@/lib/reminders";
 import { SHIFT_DRAFT_DAILY_CAP } from "@/lib/vardiya-taslak";
 import { getDb, schema as s } from "@/server/db";
@@ -16,6 +17,7 @@ import {
   AI_MODEL,
   aiAlertLog,
   aiErrorText,
+  MATCH_REQUEST,
   runExtraction,
   type AiClient,
   type AiDocumentType,
@@ -25,6 +27,7 @@ import {
   type AiImageType,
   type AiInput,
   type AiModel,
+  type AiSubject,
   type AiTimeouts,
 } from "./run";
 
@@ -36,7 +39,7 @@ import {
  * (docs/FOTOGRAF.md); fatura okunmaz, kart bugünkü gibi kalır (docs/FATURA-OKUMA.md).
  */
 
-export { AI_INVOICE_MODEL, AI_MODEL, type AiErrorCode, type AiFeature } from "./run";
+export { AI_INVOICE_MODEL, AI_MATCH_MODEL, AI_MODEL, type AiErrorCode, type AiFeature } from "./run";
 
 export interface AiSettings {
   enabled: boolean;
@@ -85,21 +88,27 @@ const monthStart = (now: Date) => new Date(`${todayTR(now).slice(0, 7)}-01T00:00
 
 /** Vardiyayı yazarak doldurma günlükte bu türle durur; okuma sınırına sayılmaz, kendi sınırı vardır */
 const SHIFT_FEATURE: AiFeature = "vardiya";
+/** Paraşüt'te ürün → hammadde önerisi (parti başına bir satır); okuma sınırına sayılmaz, kendi sınırı vardır */
+const MATCH_FEATURE: AiFeature = "eslestirme";
+/** Kendi günlük sınırı olan türler: fotoğraf ve fatura okumasının sınırına sayılmaz (kasadaki okumayı kesmesin) */
+const OWN_CAP: Partial<Record<AiFeature, number>> = { [SHIFT_FEATURE]: SHIFT_DRAFT_DAILY_CAP, [MATCH_FEATURE]: MATCH_DAILY_CAP };
+const OWN_CAP_FEATURES = Object.keys(OWN_CAP);
 
-/** Okumalar (fotoğraf ve fatura): günlük sınır bunları sayar. Vardiya taslakları sayılmaz (kasadaki okumayı kesmesin) */
+/** Okumalar (fotoğraf ve fatura): günlük sınır bunları sayar. Vardiya taslakları ve ürün önerileri sayılmaz */
 async function readingsSince(since: Date): Promise<number> {
   const [row] = await getDb()
     .select({ n: count() })
     .from(s.aiCalls)
-    .where(and(gte(s.aiCalls.at, since), ne(s.aiCalls.feature, SHIFT_FEATURE)));
+    .where(and(gte(s.aiCalls.at, since), notInArray(s.aiCalls.feature, OWN_CAP_FEATURES)));
   return row?.n ?? 0;
 }
 
-async function shiftDraftsSince(since: Date): Promise<number> {
+/** Kendi sınırı olan türün çağrıları */
+async function featureCallsSince(feature: AiFeature, since: Date): Promise<number> {
   const [row] = await getDb()
     .select({ n: count() })
     .from(s.aiCalls)
-    .where(and(gte(s.aiCalls.at, since), eq(s.aiCalls.feature, SHIFT_FEATURE)));
+    .where(and(gte(s.aiCalls.at, since), eq(s.aiCalls.feature, feature)));
   return row?.n ?? 0;
 }
 
@@ -118,12 +127,30 @@ export async function aiStatus(now = new Date()): Promise<{ state: AiState; used
  */
 export async function shiftDraftStatus(now = new Date()): Promise<{ state: AiState; usedToday: number; cap: number }> {
   if (!aiConfigured()) return { state: "nokey", usedToday: 0, cap: SHIFT_DRAFT_DAILY_CAP };
-  const [settings, usedToday] = await Promise.all([loadAiSettings(), shiftDraftsSince(dayStart(now))]);
+  const [settings, usedToday] = await Promise.all([loadAiSettings(), featureCallsSince(SHIFT_FEATURE, dayStart(now))]);
   const state: AiState = !settings.enabled ? "off" : usedToday >= SHIFT_DRAFT_DAILY_CAP ? "cap" : "on";
   return { state, usedToday, cap: SHIFT_DRAFT_DAILY_CAP };
 }
 
-/** Ayarlar kartı: bu ayın çağrıları ve tutarı (dolar; vardiya taslakları dahil), bugünün okumaları */
+/**
+ * Paraşüt'te "AI ile öner" düğmesi için: kullanılabilir mi, bugün kaç parti soruldu, bu ayın ürün önerisi çağrıları ve
+ * tutarı. Anahtar ve Ayarlar › Fotoğraftan okuma anahtarı okumayla ortaktır; günlük sınır ayrıdır (MATCH_DAILY_CAP)
+ */
+export async function matchSuggestStatus(now = new Date()): Promise<{ state: AiState; usedToday: number; cap: number; monthCalls: number; monthUsd: number }> {
+  if (!aiConfigured()) return { state: "nokey", usedToday: 0, cap: MATCH_DAILY_CAP, monthCalls: 0, monthUsd: 0 };
+  const [settings, usedToday, [month]] = await Promise.all([
+    loadAiSettings(),
+    featureCallsSince(MATCH_FEATURE, dayStart(now)),
+    getDb()
+      .select({ n: count(), usd: sql<number>`coalesce(sum(${s.aiCalls.costUsd}), 0)`.mapWith(Number) })
+      .from(s.aiCalls)
+      .where(and(gte(s.aiCalls.at, monthStart(now)), eq(s.aiCalls.feature, MATCH_FEATURE))),
+  ]);
+  const state: AiState = !settings.enabled ? "off" : usedToday >= MATCH_DAILY_CAP ? "cap" : "on";
+  return { state, usedToday, cap: MATCH_DAILY_CAP, monthCalls: month?.n ?? 0, monthUsd: month?.usd ?? 0 };
+}
+
+/** Ayarlar kartı: bu ayın çağrıları ve tutarı (dolar; vardiya taslakları ve ürün önerileri dahil), bugünün okumaları */
 export async function aiUsageSummary(now = new Date()): Promise<{ monthCalls: number; monthUsd: number; today: number }> {
   const [[month], today] = await Promise.all([
     getDb()
@@ -153,6 +180,8 @@ interface ExtractCall<T> {
   effort?: AiEffort;
   timeouts?: AiTimeouts;
   stored?: (data: T) => T;
+  /** Sistem istemi önbelleğe yazılır (run.ts; yalnız ürün önerisi) */
+  cacheSystem?: boolean;
 }
 
 /**
@@ -188,16 +217,30 @@ export async function extractText<T>(req: Omit<ExtractCall<T>, "feature" | "phot
   return extract({ ...req, feature: SHIFT_FEATURE, photoId: null, model: AI_MODEL, keepResult: false });
 }
 
+/**
+ * Paraşüt'te bekleyen ürünlerin bir partisi için hammadde önerisi (Claude Sonnet 5.5, yalnız metin; src/lib/product-match-ai.ts,
+ * src/server/parasut/ai-match.ts). Kapılar okumayla aynı (anahtar, Ayarlar › Fotoğraftan okuma), günlük sınır ayrı
+ * (MATCH_DAILY_CAP, parti başına bir çağrı). Sistem istemi (hammadde listesi, örnekler) önbelleğe yazılır. Günlüğe yalnız
+ * maliyet satırı düşer: istem ve yanıt ai_calls'a yazılmaz (doğrulanmış öneriler integration_state'te)
+ */
+export async function extractMatch<T>(req: Omit<ExtractCall<T>, "feature" | "photoId" | "effort" | "timeouts" | "maxTokens" | "cacheSystem">): Promise<AiResult<T>> {
+  return extract({ ...req, ...MATCH_REQUEST, feature: MATCH_FEATURE, photoId: null, keepResult: false });
+}
+
+const SUBJECT: Partial<Record<AiFeature, AiSubject>> = { fatura: "fatura", [SHIFT_FEATURE]: "vardiya", [MATCH_FEATURE]: "eslestirme" };
+const TAG: Record<AiSubject, string> = { foto: "[foto] okuma", fatura: "[fatura] okuma", vardiya: "[vardiya] taslak", eslestirme: "[eslestirme] öneri" };
+
 async function extract<T>(req: ExtractCall<T> & AiInput & { model: AiModel; totalMs?: number; keepResult: boolean }): Promise<AiResult<T>> {
-  const subject = req.feature === "fatura" ? "fatura" : req.feature === SHIFT_FEATURE ? "vardiya" : "foto";
-  const tag = subject === "vardiya" ? "[vardiya] taslak" : `[${subject}] okuma`;
+  const subject: AiSubject = SUBJECT[req.feature] ?? "foto";
+  const tag = TAG[subject];
   const gate = (code: AiErrorCode, cap?: number): AiResult<T> => ({ ok: false, code, message: aiErrorText(code, cap, subject), callId: null });
   if (!aiConfigured()) return gate("nokey");
   const settings = await loadAiSettings();
   if (!settings.enabled) return gate("off");
   const db = getDb();
-  if (subject === "vardiya") {
-    if ((await shiftDraftsSince(dayStart(new Date()))) >= SHIFT_DRAFT_DAILY_CAP) return gate("cap", SHIFT_DRAFT_DAILY_CAP);
+  const ownCap = OWN_CAP[req.feature];
+  if (ownCap !== undefined) {
+    if ((await featureCallsSince(req.feature, dayStart(new Date()))) >= ownCap) return gate("cap", ownCap);
   } else if ((await readingsSince(dayStart(new Date()))) >= settings.dailyCap) return gate("cap", settings.dailyCap);
   if (req.photoId !== null) {
     const [row] = await db.select({ n: count() }).from(s.aiCalls).where(eq(s.aiCalls.photoId, req.photoId));

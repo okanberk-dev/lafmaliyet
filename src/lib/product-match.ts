@@ -313,10 +313,10 @@ function fragment(text: string, at: number[], hits: Hit[]): string {
   return sorted.map((h) => text.slice(at[h.start], at[h.end - 1] + 1).trim()).join(" … ");
 }
 
-type UnitKind = "mass" | "volume" | "package" | "single" | "other";
+export type UnitKind = "mass" | "volume" | "package" | "single" | "other";
 
 /** Faturadaki birimin türü: ölçü (kg, lt), paket (koli, kutu), tek parça (adet; boş da) ya da başka (şişe, rulo) */
-function unitKind(unit: string | null): UnitKind {
+export function unitKind(unit: string | null): UnitKind {
   const u = unitWord(unit);
   if (u in MASS_UNITS) return "mass";
   if (u in VOLUME_UNITS) return "volume";
