@@ -17,6 +17,7 @@ import { FollowupChips } from "./followup-chips";
 import { HistoryList } from "./history-list";
 import { MarkdownView } from "./markdown-view";
 import { OpCardView } from "./op-card";
+import { VoiceButton } from "./voice-button";
 
 /**
  * Panel asistanı (docs/ASISTAN.md): masaüstünde (lg+) sağ altta küçük yuvarlak düğme ve 400×560'lık pencere; telefon
@@ -33,6 +34,7 @@ import { OpCardView } from "./op-card";
  *   ASSISTANT_DEEP). Hak 2'den azsa kapalı.
  * - Sohbet geçmişi (src/lib/assistant/history.ts): son 10 sohbet cihazda (localStorage, kullanıcıya özel), yalnız
  *   görünen metin ve kartın özeti; başlıktaki Geçmiş düğmesi listeler, açar, siler. Çıkışta silinir (sidebar.tsx).
+ * - Sesle soru (voice-button.tsx; telefonda, tarayıcı destekliyorsa): tanınan metin kutuya yazılır, kullanıcı gönderir.
  * - Etkin sohbet bu sekmede durur (sessionStorage, kullanıcıya özel anahtar); "Yeni sohbet" yenisini açar. Sunucuya yalnız
  *   önceki turların görünen metni gider (historyForRequest); sunucu hiçbir mesajı saklamaz.
  * - Yanıt akarak gelir (satır satır JSON): metin parça parça, araç çalışırken durum satırı ("Tedarikçi özeti…"),
@@ -154,6 +156,8 @@ export function PanelAssistant({ userId }: { userId: number }) {
   const [input, setInput] = useState("");
   /** Derin analiz anahtarı: varsayılan kapalı, bir soru için açılır (gönderince kapanır; 2 soru sayılır) */
   const [deep, setDeep] = useState(false);
+  /** Sesle sorunun kısa notu (izin yok, mikrofon yok…) */
+  const [voiceNote, setVoiceNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tool, setTool] = useState<string | null>(null);
   const [gate, setGate] = useState<Gate | null>(null);
@@ -636,6 +640,11 @@ export function PanelAssistant({ userId }: { userId: number }) {
             {blocked ? (
               <p className="mb-2 rounded-xl bg-panel px-3 py-2 text-[13px] leading-5 text-ink-soft max-lg:text-[15px] max-lg:leading-6">{gate?.message ?? "Asistan şu an kapalı."}</p>
             ) : null}
+            {voiceNote ? (
+              <p className="mb-1.5 px-1 text-[13px] leading-5 text-warn-ink max-lg:text-[14px] dark:text-brass-300" role="status">
+                {voiceNote}
+              </p>
+            ) : null}
             {!blocked ? (
               <div className="mb-1.5 flex items-center gap-2 px-0.5">
                 {/* Derin analiz: efor high, daha çok araç turu; günlük sınıra 2 soru sayılır (docs/ASISTAN.md) */}
@@ -680,6 +689,8 @@ export function PanelAssistant({ userId }: { userId: number }) {
                 aria-invalid={tooLong || undefined}
                 className="field-sizing-content max-h-36 min-h-11 min-w-0 flex-1 resize-none rounded-xl bg-panel px-3.5 py-2.5 text-[16px] leading-6 text-ink placeholder:text-ink-mute focus:ring-2 focus:ring-ink/25 focus:outline-none disabled:opacity-60 max-lg:in-data-[keyboard=open]:max-h-28 lg:text-[14px]"
               />
+              {/* Sesle soru: yalnız telefonda ve tarayıcı destekliyorsa (yoksa düğme hiç çizilmez); metin kutuya yazılır */}
+              {sheet ? <VoiceButton value={input} onChange={setInput} onNote={setVoiceNote} disabled={blocked || busy} /> : null}
               {busy ? (
                 <button
                   type="button"

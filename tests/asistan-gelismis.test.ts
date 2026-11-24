@@ -14,6 +14,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { FollowupChips } from "../src/components/panel/assistant/followup-chips";
 import { HistoryList } from "../src/components/panel/assistant/history-list";
+import { VoiceButton } from "../src/components/panel/assistant/voice-button";
 import { NAV_FOOTER, NAV_GROUPS, NAV_TREE } from "../src/components/panel/nav";
 import { cleanFollowup, FOLLOWUP_MAX, restoreFollowups, splitFollowups } from "../src/lib/assistant/followups";
 import {
@@ -31,6 +32,7 @@ import {
   type KeyValueStore,
 } from "../src/lib/assistant/history";
 import type { OpCard } from "../src/lib/assistant/ops";
+import { configureRecognition, mergeTranscript, speechErrorText, speechRecognitionCtor, transcriptOf, type SpeechRecognitionLike } from "../src/lib/assistant/speech";
 import { DEFAULT_SUGGESTIONS, PAGE_SUGGESTIONS, pageContextLine, pageFromLocation, suggestionsFor } from "../src/lib/assistant/page-context";
 import { ASSISTANT_DAILY_CAP, ASSISTANT_DEEP_WEIGHT, assistantRequest, eventReader, historyForRequest, type AssistantEvent, type ChatMessage } from "../src/lib/assistant/protocol";
 import { handleAssistantPost, type AssistantDeps, type AssistantStatus } from "../src/server/ai/assistant/handler";
@@ -454,4 +456,39 @@ test("geçmiş: ekranda Geçmiş düğmesi, sunucuya yine yalnız etkin sohbetin
   assert.match(w, /const history = historyForRequest\(messages\);/);
   assert.match(w, /window\.localStorage/);
   assert.match(code("src/components/panel/sidebar.tsx"), /forgetAssistantData\(user\.id, \[safeStore\("localStorage"\), safeStore\("sessionStorage"\)\]\)/);
+});
+
+// ---------------------------------------------------------------- 5. Sesle soru
+
+test("ses: tanıyıcı yoksa null (düğme çizilmez); Türkçe, ara sonuç, tek cümle", () => {
+  assert.equal(speechRecognitionCtor({}), null);
+  assert.equal(speechRecognitionCtor(null), null);
+  assert.equal(speechRecognitionCtor({ webkitSpeechRecognition: "değil" }), null);
+  class Fake {}
+  assert.equal(speechRecognitionCtor({ webkitSpeechRecognition: Fake }), Fake);
+  assert.equal(speechRecognitionCtor({ SpeechRecognition: Fake, webkitSpeechRecognition: class {} }), Fake);
+  const r = configureRecognition({} as SpeechRecognitionLike);
+  assert.deepEqual({ lang: r.lang, interimResults: r.interimResults, continuous: r.continuous, maxAlternatives: r.maxAlternatives }, { lang: "tr-TR", interimResults: true, continuous: false, maxAlternatives: 1 });
+  // Sunucuda (ve hidrasyonda) tarayıcı bilinmez: düğme hiç çizilmez
+  assert.equal(renderToStaticMarkup(createElement(VoiceButton, { value: "", onChange: () => {}, onNote: () => {} })), "");
+});
+
+test("ses: tanınan metin kutudakinin sonuna yazılır, gönderilmez; sınırda kesilir; hata notu kısa", () => {
+  assert.equal(mergeTranscript("", "dün kasa tuttu mu"), "Dün kasa tuttu mu");
+  assert.equal(mergeTranscript("Marina'da ", "  dün kasa\ntuttu mu "), "Marina'da dün kasa tuttu mu");
+  assert.equal(mergeTranscript("Soru", ""), "Soru");
+  assert.equal(mergeTranscript("", "ışık").charAt(0), "I", "Türkçe büyük harf");
+  assert.equal(mergeTranscript("x".repeat(3999), "uzun konuşma").length, 4000);
+  assert.equal(transcriptOf([Object.assign([{ transcript: "dün kasa" }], { isFinal: true }), Object.assign([{ transcript: " tuttu mu" }], { isFinal: false })]), "dün kasa tuttu mu");
+  assert.match(speechErrorText("not-allowed")!, /Mikrofon izni/);
+  assert.equal(speechErrorText("no-speech"), null);
+  assert.equal(speechErrorText("aborted"), null);
+  // Ses sunucuya gitmez: düğme yalnız metni kutuya yazar, istek atmaz; yalnız telefonda
+  const v = code("src/components/panel/assistant/voice-button.tsx");
+  assert.doesNotMatch(v, /fetch\(|XMLHttpRequest|MediaRecorder|getUserMedia|send\(/);
+  assert.match(v, /rec\.onresult = \(e\) => onChange\(mergeTranscript\(base, transcriptOf\(e\.results\)\)\);/);
+  assert.match(v, /if \(!supported\) return null;/);
+  assert.match(v, /inline-flex size-11 shrink-0/);
+  const w = code("src/components/panel/assistant/panel-assistant.tsx");
+  assert.match(w, /\{sheet \? <VoiceButton value=\{input\} onChange=\{setInput\} onNote=\{setVoiceNote\} disabled=\{blocked \|\| busy\} \/> : null\}/);
 });

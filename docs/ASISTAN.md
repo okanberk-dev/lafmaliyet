@@ -246,6 +246,18 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
 - **Sunucuya giden değişmez:** her soruda yalnız etkin sohbetin son turları (en çok 20 mesaj; aşağıda Ne saklar).
   Geçmişe yanıt bitince yazılır (akarken değil). Dosya: `src/lib/assistant/history.ts`, liste `history-list.tsx`.
 
+## Sesle soru
+
+- **Telefonda** yazı kutusunun yanında mikrofon düğmesi (44 px). Dokununca dinler (Türkçe, `tr-TR`), konuşma bitince
+  kendiliğinden durur (yeniden dokunmak da durdurur). Tanınan metin yazı kutusuna, varsa yazılanın sonuna eklenir;
+  **gönderilmez**: okuyup düzeltip Gönder'e basarsınız.
+- Tarayıcının **Web Speech API**'si kullanılır (Chrome / Android'de `SpeechRecognition`, Safari / iPhone'da
+  `webkitSpeechRecognition`). Tarayıcı desteklemiyorsa (ör. Firefox) düğme **hiç görünmez**. Masaüstünde yoktur.
+- **Ses panelin sunucusuna da Anthropic'e de gitmez;** yalnız tanınan metin, siz gönderince soru olarak gider. Tanımayı
+  tarayıcının kendisi yapar: Chrome sesi tanıma için Google'ın hizmetine, Safari Apple'ınkine gönderebilir (tarayıcının
+  kuralı; panel sesi görmez, saklamaz). İlk kullanımda tarayıcı mikrofon izni ister; izin yoksa kutunun üstünde kısa
+  not çıkar. Dosyalar: `src/lib/assistant/speech.ts`, `voice-button.tsx`.
+
 ## Derin analiz
 
 - Yazı kutusunun üstünde küçük bir **Derin analiz** anahtarı (beyin simgesi). **Varsayılan kapalı**; açılınca yalnız o
