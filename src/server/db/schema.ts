@@ -262,11 +262,11 @@ export const products = pgTable(
     /** Bu satır sitedeki hangi fiyat: M = priceMinor (tek boyda tek fiyat), L = priceMinorL */
     siteMenuSlot: text("site_menu_slot", { enum: ["M", "L"] }),
     /**
-     * Kasada (ModPOS) hâlâ duran eski fiyat: panelde ya da sitede fiyat değişince kasa elle güncellenene kadar dolu kalır
-     * ("Fiyatlar › Kasaya işle"). Boşsa kasa panelle aynı sayılır. Fiyat kasadaki fiyata geri dönerse kendiliğinden boşalır.
+     * ESKİ: kasada duran eski fiyat ve kasanın geri kaldığı an, şubeler öncesi tek kasa. 24 Kasım 2026'dan beri kasanın
+     * durumu şube başına `pos_stale`'de (göç 0079 bu değerleri oraya kopyaladı); bu iki sütun ne okunur ne yazılır, bir
+     * sürüm geri dönüş güvenliği için durur, sonraki göçle kalkar (tests/fiyatlar.test.ts kaynakta arar).
      */
     posStalePrice: doublePrecision("pos_stale_price"),
-    /** Kasanın panelden geri kaldığı an (işlenmemiş ilk değişiklik) */
     posStaleSince: timestamp("pos_stale_since", { withTimezone: true }),
     updatedAt: updatedAt(),
   },
@@ -2208,6 +2208,31 @@ export const specialDays = pgTable(
   ],
 );
 
+/**
+ * Kasada bekleyen fiyat, şube başına (docs/FIYATLAR.md › Kasaya işle; şube kapsamı A3, 24 Kasım 2026): satır varsa o
+ * şubenin kasasında ürünün eski fiyatı duruyor ("Fiyatlar › Kasaya işle"), yoksa kasa panelle aynı. Fiyat değişince
+ * her etkin fiziksel şubenin satırı açılır ya da güncellenir (src/server/prices/record.ts), kasada işaretlenince yalnız o
+ * şubeninki silinir (src/server/prices/pos-marks.ts); fiyat kasadaki fiyata geri dönerse kendiliğinden silinir. Tuzla'da
+ * işaretlemek Marina'nın listesini değiştirmez. Okuyucular seçili şubenin kasasına bakar (src/server/data/till-scope.ts).
+ * Şube silinince satırları da gider (durumdur, geçmiş değil; geçmiş pos_marks'ta): bu yüzden şube silme sayımına girmez.
+ */
+export const posStale = pgTable(
+  "pos_stale",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "cascade" }),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    /** Kasada duran eski fiyat (TL, KDV dahil) */
+    stalePrice: doublePrecision("stale_price").notNull(),
+    /** Kasanın panelden geri kaldığı an (işlenmemiş ilk değişiklik) */
+    staleSince: timestamp("stale_since", { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.branchId, t.productId] }), index("pos_stale_product_idx").on(t.productId)],
+);
+
 export const posMarks = pgTable(
   "pos_marks",
   {
@@ -2215,6 +2240,8 @@ export const posMarks = pgTable(
     productId: integer("product_id")
       .notNull()
       .references(() => products.id, { onDelete: "cascade" }),
+    /** İşaretin kasası (şube); şubeler öncesi işaretler Tuzla'nındır */
+    branchId: branchId(),
     /** Kasada işlenen fiyat (TL, KDV dahil) */
     price: doublePrecision("price").notNull(),
     /** İşaretlenmeden önce kasada duran fiyat ve kasanın geri kaldığı an (geri almada ürüne yazılır) */
@@ -2230,6 +2257,7 @@ export const posMarks = pgTable(
     index("pos_marks_marked_idx").on(t.markedAt),
     index("pos_marks_user_idx").on(t.markedBy, t.markedAt),
     index("pos_marks_product_idx").on(t.productId, t.markedAt),
+    index("pos_marks_branch_product_idx").on(t.branchId, t.productId),
   ],
 );
 

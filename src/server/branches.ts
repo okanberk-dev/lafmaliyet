@@ -82,6 +82,8 @@ export async function branchUsageCount(db: DB, id: string): Promise<number> {
     s.stockReceipts,
     // Vardiya planı (docs/VARDIYA.md)
     s.shifts,
+    // Kasaya işle işaretleri (şube kapsamı A3). Kasada bekleyen fiyat (pos_stale) sayılmaz: durumdur, şubeyle silinir
+    s.posMarks,
   ];
   const counts = await Promise.all(
     tables.map(async (table) => {
