@@ -13,7 +13,7 @@ import { amountOf, OKC_RATES_SHOWN, okcFigures, okcTKey, okcVKey, type OkcKey, t
 /*
  * Yazarkasa Z raporu kartı (dalga 13 PR-b; docs/planlar/okc-z.md §3.2–§3.6, §8, D16, D18; eski adı "Banka POS Z raporu
  * (yazarkasa)": aynı cihaz üç adla anılıyordu). Dört alan (Günlük toplam, Z no, Nakit, Kredi kartı; fişteki satırın
- * adı yer tutucuda, alan altında satır yok), gerisi Ayrıntılar'da (KDV dökümü,
+ * adı yer tutucuda, doğruluk ipucu alanın altında kısa satır), gerisi Ayrıntılar'da (KDV dökümü,
  * fiş sayısı, yemek kartı, diğer, banka gün sonu yedeği). Değerler ve fotoğraf işaretleri cash-form.tsx'te kalır (köprü:
  * `field` / `textField` / `marked`); bu kart düzeni, canlı denetimi (okcFormChecks: alan başına tek turuncu neden, tek
  * özet satırı) ve kart satırını (okcReconcile) çizer. Kümülatif formda yoktur (D17): personelin denetimi yalnız önceki
@@ -130,11 +130,14 @@ export function OkcCard({
     <Card>
       <CardHeader icon={<ScrollText />} title="Yazarkasa Z raporu" description={description} />
       <div className="grid gap-3 px-5 pb-5 sm:grid-cols-2">
-        {/* Fişteki satırın adı yer tutucuda (alanın altında ayrı satır yerine); turuncu nedeni yine alanın altında */}
-        {field("okcTotal", "Günlük toplam", opts("okcTotal", undefined, "NET SATIŞ / TOPLAM satırı"))}
+        {/*
+          Fişteki satırın adı yer tutucuda; doğruluk ipucu (en büyük rakam / banka satırları değil) ve "isteğe bağlı" alanın
+          altında kısa satır: yer tutucu alan dolunca kaybolur, etiketin yerine geçemez. Turuncu neden ipucunun yerine geçer
+        */}
+        {field("okcTotal", "Günlük toplam", opts("okcTotal", "İsteğe bağlı; en büyük rakam (KÜMÜLATİF) değil", "NET SATIŞ / TOPLAM satırı"))}
         {textField("okcZNo", "Z no", opts("okcZNo", undefined, "Z NO (fiş no değil)"))}
         {field("okcCash", "Nakit", opts("okcCash", undefined, "isteğe bağlı"))}
-        {field("okcCard", "Kredi kartı", opts("okcCard", undefined, "K.KARTI satırı"))}
+        {field("okcCard", "Kredi kartı", opts("okcCard", "İsteğe bağlı; altındaki banka satırları değil", "K.KARTI satırı"))}
         <div className="sm:col-span-2">
           <button
             type="button"

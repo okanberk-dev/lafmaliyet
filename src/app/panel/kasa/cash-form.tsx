@@ -2,6 +2,7 @@
 
 import { Calculator, Camera, ChevronDown, Copy, MessageCircle, Pencil, Plus, ReceiptText, RotateCw, Send, Wallet } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { toast } from "sonner";
 
 import { PhotoPicker, PhotoStatus, usePhotoUpload } from "@/components/panel/photo-picker";
@@ -12,7 +13,8 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
 import { parseNumberTR } from "@/lib/calc/expr";
-import { cashOutCheck, cashOutNoteOf, cashOutsTotal } from "@/lib/cash-outs";
+import { reportAttention, reportFlags } from "@/lib/cash-attention";
+import { cashOutCheck, cashOutNoteOf, cashOutNoteVisible, cashOutsTotal } from "@/lib/cash-outs";
 import {
   CASH_TOLERANCE,
   carryCheck,
@@ -105,6 +107,24 @@ const LABELS: Record<MoneyKey, string> = {
   offRevenue: "Ödenmez / ikram",
   discounts: "İndirim",
 };
+
+/** Bildirimde hatalı alanın adı (tutarlar LABELS'tan; yazarkasa alanlarının iletisi adını zaten söyler) */
+const FIELD_NAMES: Partial<Record<Key, string>> = { ...LABELS, zNo: "Z no", receipts: "Fiş sayısı" };
+
+/**
+ * Alana gider ve odaklanır. Alan kapalı bir katın içindeyse (Fold, ya da Yazarkasa kartının Ayrıntılar'ı) önce kat
+ * açılır: gizli alana kaydırılamaz, odak da düşmez (kişi katı kapatıp yeniden gönderdiyse de)
+ */
+function goToField(el: HTMLElement | null) {
+  if (!el) return;
+  const fold = el.closest<HTMLElement>("[hidden]");
+  if (fold?.id) {
+    const toggle = document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(fold.id)}"]`);
+    if (toggle) flushSync(() => toggle.click());
+  }
+  el.scrollIntoView({ block: "center" });
+  el.focus({ preventScroll: true });
+}
 
 /**
  * Formda fotoğraftan dolabilen alanlar (Z okuması İndirim'i de doldurur; yazılan değer hiçbir zaman değişmez). Yazarkasa
@@ -753,12 +773,14 @@ export function CashForm({
     const { fields, errors: errs } = readValues(values, date);
     setErrors(errs);
     if (!fields) {
-      toast.error("Eksik ya da hatalı alan var", { description: Object.values(errs)[0] });
-      // Telefonda düğme formun altında: hatalı ilk alana gidilir (yoksa uyarı ekranın dışında kalır)
-      const first = Object.keys(errs)[0];
-      const el = first ? document.getElementById(fid(first)) : null;
-      el?.scrollIntoView({ block: "center" });
-      el?.focus({ preventScroll: true });
+      // Hatalar hemen çizilir: katlı bölümdeki hatalı alanın katı açılır, alan görünür olur (sonra gidilir)
+      flushSync(() => setErrors(errs));
+      const first = Object.keys(errs)[0] as Key | undefined;
+      const name = first ? FIELD_NAMES[first] : undefined;
+      const message = first ? errs[first] : undefined;
+      toast.error("Eksik ya da hatalı alan var", { description: name && message && !message.startsWith(name) ? `${name}: ${message}` : message });
+      // Telefonda düğme formun altında (ya da çubukta): hatalı ilk alana gidilir (yoksa uyarı ekranın dışında kalır)
+      goToField(first ? document.getElementById(fid(first)) : null);
       return;
     }
     if (review) {
@@ -772,11 +794,7 @@ export function CashForm({
     }
     if (isLate) {
       // Geç rapor: Z no, Z fotoğrafı, neden ve (teslim varsa) teslim alan zorunlu; açılış zincirin önceki halkasıyla
-      const focus = (id: string) => {
-        const el = document.getElementById(id);
-        el?.scrollIntoView({ block: "center" });
-        el?.focus({ preventScroll: true });
-      };
+      const focus = (id: string) => goToField(document.getElementById(id));
       if (!fields.zNo) {
         // LafPOS gününde Z no LafPOS'unkidir (yazarkasa Z'sinin numarası değil; Z LafPOS'ta 1'den başlar)
         setErrors((x) => ({ ...x, zNo: lafposMode ? "LafPOS'un Z no'su gerekli (LafPOS › Kasa › Geçmiş günler)" : "Z no gerekli (Z raporunun üstünde)" }));
@@ -935,6 +953,13 @@ export function CashForm({
     // Rapordan sonra eklenen kasadan çıkanlar: rapordaki tutar kendiliğinden değişmez (sayılan kasaya bağlı)
     const later = cashOuts.filter((o) => o.createdAt > report.updatedAt);
     const laterNote = later.length && Math.abs(outsTotal - report.cashOut) >= CASH_TOLERANCE ? `Rapordan sonra ${later.length} kasadan çıkan eklendi; fişlerin toplamı ${money(outsTotal)}, raporda ${money(report.cashOut)}.` : null;
+    // Yöneticinin dikkat etmesi gerekenler (ay listesinin rozetleri; gün açıkken liste yok): döküm açık gelir, özet söyler
+    const attention = photoUi.admin
+      ? reportAttention(reportFlags(report, { cardExtra: lafpos?.cardExtra ?? null, offDevice: lafpos?.offDevice ?? null, kasa: lafposMode ? "LafPOS" : "ModPOS" }), {
+          photoDiffs: diffs.length,
+          lafposDiffs: fromLafpos.length,
+        })
+      : [];
     return (
       <Card>
         <CardHeader
@@ -1002,13 +1027,15 @@ export function CashForm({
           {requests ? <PendingRequests own={requests.own} others={requests.others} onEdit={(c) => propose(c)} /> : null}
           {/*
             Rapor dökümü katlı: kartın üstü özet (fark, e-posta, eylemler), satır satır döküm istenince. Açılış ya da ertesi
-            günün açılışı devirle tutmuyorsa açık gelir (uyarı dökümün içinde; gizlenmez)
+            günün açılışı devirle tutmuyorsa ya da yöneticinin dikkat etmesi gereken bir şey varsa (Z / yazarkasa tutmuyor,
+            kart farkı, fotoğraftan ya da LafPOS'tan farklı) açık gelir ve özet adını söyler (uyarı dökümün içinde; gizlenmez)
           */}
-          <details open={Boolean(savedCarry || savedNext)} className="group/r border-t border-line pt-1">
+          <details open={Boolean(savedCarry || savedNext || attention.length)} className="group/r border-t border-line pt-1">
             <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm text-ink-soft select-none [&::-webkit-details-marker]:hidden">
               <ChevronDown size={16} aria-hidden="true" className="shrink-0 motion-safe:transition-transform group-open/r:rotate-180" />
               <span className="min-w-0 flex-1">
                 <span className="font-medium text-ink">Rapor dökümü</span> · Z {money(report.zTotal)} · nakit {money(report.cash)} · sayılan {money(report.countedCash)}
+                {attention.length ? <span className="font-medium text-warn"> · {attention.join(" · ")}</span> : null}
               </span>
             </summary>
             <div className="space-y-4 pt-2">
@@ -1238,10 +1265,10 @@ export function CashForm({
   );
   // Kasayı sayan: çoğu akşam formu açan sayar; tek satır, "Değiştir" ile seçici (başkası saydıysa seçici açık)
   const meCounts = me !== null && counter === me.id && !counterOpen;
-  // "Neye çıktı": fişlerden gelen kalemlerin adları kendiliğinden yazılır; yalnız elle yazılan çıkışta (ya da adlar
-  // değiştirildiyse) alan görünür
+  // "Neye çıktı": fişlerden gelen kalemlerin adları kendiliğinden yazılır; elle yazılan çıkışta, adlar değiştirildiyse ya
+  // da fişlerin toplamının üstüne elle tutar eklendiyse alan görünür
   const outsNote = cashOutNoteOf(cashOuts) ?? "";
-  const showOutNote = (cashOutValue ?? 0) > 0 && (!cashOuts.length || values.cashOutNote !== outsNote);
+  const showOutNote = cashOutNoteVisible({ cashOut: cashOutValue, outs: cashOuts, note: values.cashOutNote, outsNote });
   const submitLabel =
     pending || reviewPending
       ? "Gönderiliyor…"
@@ -1261,6 +1288,8 @@ export function CashForm({
   // Telefonda sonuç çubuğu: Sonuç kartı ekranın altında kaldıkça fark ve Gönder alt menünün üstünde durur (klavye
   // açıkken gizli). Yalnız günün raporunda (Onaylar'daki "Düzeltip onayla" kartında birden çok form olabilir)
   const bar = mode === "report" && resultBelow;
+  // Çubuğun kısa düğmesi işlemi söyler: öneri "Onaya gönder", gönderilmiş raporun düzenlenmesi "Güncelle"
+  const barLabel = pending || busy || reviewPending ? submitLabel : proposal || isLate ? "Onaya gönder" : report ? "Güncelle" : "Gönder";
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -1634,7 +1663,10 @@ export function CashForm({
         </Card>
       </div>
       {bar ? (
-        <div className="no-print pointer-events-none fixed inset-x-0 bottom-[calc(var(--mobile-nav-h,0px)+0.5rem)] z-30 flex justify-center pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] in-data-[keyboard=open]:hidden lg:left-[17.5rem] xl:hidden">
+        // data-bottom-bar: bildirimler çubuğun ve Gönder'in üstüne binmez, telefonda üstte çıkar (toast-layout.ts)
+        <div
+          data-bottom-bar
+          className="no-print pointer-events-none fixed inset-x-0 bottom-[calc(var(--mobile-nav-h,0px)+0.5rem)] z-30 flex justify-center pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] in-data-[keyboard=open]:hidden lg:left-[17.5rem] xl:hidden">
           <div
             role="region"
             aria-label="Kasa farkı ve gönderme"
@@ -1648,7 +1680,7 @@ export function CashForm({
               )}
             </p>
             <Button size="lg" onClick={submit} disabled={pending || busy || reviewPending}>
-              <Send size={16} /> {pending || busy || reviewPending ? submitLabel : "Gönder"}
+              <Send size={16} /> {barLabel}
             </Button>
           </div>
         </div>

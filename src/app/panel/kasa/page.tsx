@@ -12,6 +12,7 @@ import { InfoTip } from "@/components/ui/info-tip";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { pavoView } from "@/lib/lafpos/bank-pos";
+import { dayDetailNotes } from "@/lib/lafpos/gun-ayrinti";
 import { kasaMonthLine, resolveMonth, tillMonths, tillOpenedOn } from "@/lib/cash-month";
 import {
   businessDate,
@@ -728,13 +729,14 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
           {adminBand}
           {closedBar}
           {outsCard}
+          {/* Gün sonu fotoğrafı formdan önce (personeldeki gibi): Yazarkasa kartı fotoğrafın bu karttan eklendiğini söyler */}
+          {photoCard}
           {form}
           {modposDay?.modpos ? <ModposSections date={date} today={today} sheet={modposDay.sheet} z={modposDay.z} report={report} ladmin={ladmin} keySet={modposKeySet(process.env, modposDay.sheet?.branchId ?? report?.branchId)} now={new Date()} /> : null}
-          {photoCard}
           {wasteCard}
           {siteRow}
           {bankPos || lafposDetail ? (
-            <DayDetails pavo={bankPos ? pavoView(bankPos).state : null} lafpos={lafposDetail !== null}>
+            <DayDetails pavo={bankPos ? pavoView(bankPos).state : null} lafpos={lafposDetail !== null} notes={dayDetailNotes(lafposDetail)}>
               {bankPos ? <PavoCard bankPos={bankPos} /> : null}
               {lafposDetail ? <LafposDayCard detail={lafposDetail} /> : null}
             </DayDetails>
@@ -808,16 +810,18 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
 
 /**
  * Yöneticinin gün görünümünde LafPOS gününün ayrıntı kartları (Pavo kart karşılaştırması, LafPOS gün sonu dökümü) katlı:
- * özet ve form üstte, döküm istenince. Pavo farkı varsa ya da karşılaştırılamadıysa açık gelir (para riski gizlenmez)
+ * özet ve form üstte, döküm istenince. Pavo farkı varsa, karşılaştırılamadıysa ya da LafPOS'un dökümünde hassas işlem
+ * varsa (`notes`: günü düzeltti, ödeme iptali) açık gelir ve özet söyler (para riski ve hassas işlem gizlenmez)
  */
-function DayDetails({ pavo, lafpos, children }: { pavo: "uyumlu" | "fark" | "yok" | null; lafpos: boolean; children: ReactNode }) {
+function DayDetails({ pavo, lafpos, notes, children }: { pavo: "uyumlu" | "fark" | "yok" | null; lafpos: boolean; notes: string[]; children: ReactNode }) {
   const parts = [pavo ? `Pavo kart: ${pavo === "uyumlu" ? "uyumlu" : pavo === "fark" ? "FARK VAR" : "karşılaştırılamadı"}` : null, lafpos ? "LafPOS gün sonu dökümü" : null].filter(Boolean).join(" · ");
   return (
-    <details open={pavo !== null && pavo !== "uyumlu"} className="group/d space-y-4">
+    <details open={(pavo !== null && pavo !== "uyumlu") || notes.length > 0} className="group/d space-y-4">
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-2xl bg-panel px-5 py-3 text-sm text-ink-soft select-none [&::-webkit-details-marker]:hidden">
         <ChevronDown size={16} aria-hidden="true" className="shrink-0 motion-safe:transition-transform group-open/d:rotate-180" />
         <span className="min-w-0 flex-1">
           <span className="font-medium text-ink">Ayrıntı</span> · <span className={pavo === "fark" ? "font-semibold text-bad-ink" : undefined}>{parts}</span>
+          {notes.length ? <span className="font-medium text-warn"> · {notes.join(" · ")}</span> : null}
         </span>
       </summary>
       <div className="space-y-4">{children}</div>

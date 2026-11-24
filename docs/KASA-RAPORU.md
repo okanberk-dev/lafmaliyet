@@ -23,29 +23,37 @@ yalnız düzen ve metin sadeleşti (`src/app/panel/kasa/cash-form.tsx`, `page.ts
 
 - **Sıra.** ModPOS gününde yeni raporda: Gün içinde kasadan çıkanlar, **Zayi & ikram** (tek satır, formdan önce: metni
   "raporu göndermeden ekleyin" der), **Fiş fotoğrafları**, ModPOS Z, Kasa (nakit), Yazarkasa Z, Sonuç. Gönderilmiş
-  raporda rapor kartı en üstte. LafPOS gününde personelin tek işi olan **Gün sonu fotoğrafı** kartı en üstte.
+  raporda rapor kartı en üstte. LafPOS gününde personelin tek işi olan **Gün sonu fotoğrafı** kartı en üstte;
+  yöneticide de formdan önce (Yazarkasa kartı fotoğrafın o karttan eklendiğini söyler).
 - **Fiş fotoğrafları tek kartta.** ModPOS Z'sinin ve yazarkasa Z'sinin seçicisi formun başında, aynı kartta iki
   bölüm. LafPOS gününde ModPOS Z bölümü yok; gün sonu geldiyse yazarkasa fişi yalnız **Gün sonu fotoğrafı** kartından
   eklenir (formda ikinci seçici çizilmez).
 - **Katlı alanlar.** ModPOS Z'nin yemek kartı, online, diğer, ödenmez / ikram, indirim, fiş sayısı ve Z no'su
   **Diğer ödemeler ve Z ayrıntısı** altında; başlıkta dolu olanların özeti ("Z no 11 · İndirim 90 ₺ · 26 fiş").
   Turuncu, hata ya da ödeme türleri Z'yi tutmuyorsa kendiliğinden açılır. Geç raporda Z no zorunlu, katın dışında.
-  Yazarkasa'nın **Ayrıntılar**'ı yöneticide de kapalı gelir.
-- **Tek satırlık ipuçları.** "isteğe bağlı" yalnız alanın içinde (yer tutucu); fişteki satırın adı ("NET SATIŞ /
-  TOPLAM satırı", "K.KARTI satırı") yazarkasa alanının yer tutucusunda. LafPOS'tan dolan alanlara rozet basılmaz
+  Yazarkasa'nın **Ayrıntılar**'ı yöneticide de kapalı gelir. Gönderimde hatalı ilk alan kapalı bir katın içindeyse kat
+  açılır, sayfa alana gider ve odak oraya düşer; bildirim alanın adını söyler ("Yemek kartı: Geçerli bir tutar yazın").
+- **Tek satırlık ipuçları.** "isteğe bağlı" ModPOS alanlarında alanın içinde (yer tutucu); fişteki satırın adı ("NET
+  SATIŞ / TOPLAM satırı", "K.KARTI satırı") yazarkasa alanının yer tutucusunda. Yazarkasanın Günlük toplam ve Kredi
+  kartı alanlarında doğruluk ipucu alanın altında kısa satır ("İsteğe bağlı; en büyük rakam (KÜMÜLATİF) değil",
+  "İsteğe bağlı; altındaki banka satırları değil"): yer tutucu alan dolunca kaybolur. LafPOS'tan dolan alanlara rozet basılmaz
   (bant söyler); fotoğraftan dolan alan "Fotoğraftan" rozetini taşır, LafPOS'tan farklı olan turuncu kalır.
-- **Kasa (nakit).** "Neye çıktı" yalnız elle yazılan çıkışta görünür (fişlerden gelen kalemlerin adı kendiliğinden
-  yazılır). Sayımdan sonraki alanın adı **Sayımdan sonra teslim** ("Gün içinde çıkan"ın ipucunda "teslim" geçmez).
+- **Kasa (nakit).** "Neye çıktı" fişlerden gelen kalemlerle yetinildiğinde gizli (adları kendiliğinden yazılır); elle
+  yazılan çıkışta, adlar değiştirildiyse ya da fişlerin toplamının üstüne elle tutar eklendiyse görünür. Sayımdan sonraki alanın adı **Sayımdan sonra teslim** ("Gün içinde çıkan"ın ipucunda "teslim" geçmez).
   **Kasayı sayan** tek satır: "Kasayı sayan: Ayşe (siz) · Değiştir"; başkası saydıysa seçici açık.
-- **Sonuç çubuğu.** Telefonda Sonuç kartı ekranın altındayken alt menünün üstünde fark ve **Gönder** durur; klavye
-  açıkken ve Sonuç kartı göründüğünde gizlenir. Fark varken not boşsa ilk gönderim nota götürür ("750 ₺ eksik:
+- **Sonuç çubuğu.** Telefonda Sonuç kartı ekranın altındayken alt menünün üstünde fark ve **Gönder** durur (öneride
+  ve geç raporda **Onaya gönder**, gönderilmiş raporun düzenlenmesinde **Güncelle**); klavye açıkken ve Sonuç kartı
+  göründüğünde gizlenir. Çubuk varken bildirimler üstte çıkar (çubuğu örtmez). Fark varken not boşsa ilk gönderim nota götürür ("750 ₺ eksik:
   nedenini nota yazın"); not zorunlu değil, yeniden basınca gönderir. Açılış devirle tutmuyorsa not eskisi gibi zorunlu.
 - **Gönderilmiş rapor.** Kartın üstünde fark (bir kez; başlıktaki rozet kalktı), e-posta durumu ve eylemler; satır
   satır döküm **Rapor dökümü** altında katlı ("Z 18.450 ₺ · nakit 6.200 ₺ · sayılan 6.400 ₺"). Açılış ya da ertesi
-  günün açılışı devirle tutmuyorsa açık gelir.
+  günün açılışı devirle tutmuyorsa ya da yöneticinin dikkat etmesi gereken bir şey varsa açık gelir ve özet onu söyler
+  ("… · Z tutmuyor · Yazarkasa tutmuyor"): ay listesinin rozetleriyle aynı kural (`src/lib/cash-attention.ts`;
+  fotoğraftan ya da LafPOS'tan farklı, Z tutmuyor, kart farkı, yazarkasa tutmuyor).
 - **Yöneticinin gün görünümü** (`?gun=`): ayın listesi ve rapor ayarları yok (**Günden güne** ile dönülür). LafPOS
-  gününün Pavo kart karşılaştırması ve LafPOS gün sonu dökümü **Ayrıntı** altında katlı; Pavo farkı varsa ya da
-  karşılaştırılamadıysa açık gelir.
+  gününün Pavo kart karşılaştırması ve LafPOS gün sonu dökümü **Ayrıntı** altında katlı; Pavo farkı varsa,
+  karşılaştırılamadıysa ya da LafPOS'un dökümünde hassas işlem varsa (günü düzeltti, ödeme iptali) açık gelir ve özet
+  söyler ("… · LafPOS düzeltti · 2 ödeme iptali").
 - **Dil.** Aynı cihaz tek adla: **Yazarkasa Z raporu** (fotoğrafın türü "Yazarkasa Z"). Düz Türkçe: "Fiş LafPOS'la
   aynı / LafPOS'tan farklı", "Fiş fotoğrafı yok", "Açılış devirden farklı" (ok ve ≠ işaretleri yerine).
 

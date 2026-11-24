@@ -11,6 +11,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { Fold } from "../src/app/panel/kasa/fold";
+import { toastLayout } from "../src/components/ui/toast-layout";
+import { cardDiffLabel, reportAttention, reportFlags } from "../src/lib/cash-attention";
+import { cashOutNoteVisible } from "../src/lib/cash-outs";
+import { dayDetailNotes } from "../src/lib/lafpos/gun-ayrinti";
 import { LAFPOS_STAFF_NO_COUNT } from "../src/lib/lafpos/foto";
 import { OKC_PHOTOS_TEXT, PHOTO_KIND_LABEL } from "../src/lib/photo-rules";
 
@@ -57,7 +61,10 @@ test("Yazarkasa: tek ad, Ayrıntılar yöneticide de kapalı (turuncuda açılı
   assert.match(okc, /title="Yazarkasa Z raporu"/);
   assert.doesNotMatch(okc, /forceDetails/);
   assert.match(okc, /const open = Boolean\(posPrompt\) \|\| \(chosen \?\? \(orange > 0 \|\| legacy\)\);/);
-  assert.match(okc, /opts\("okcTotal", undefined, "NET SATIŞ \/ TOPLAM satırı"\)/);
+  assert.match(okc, /"NET SATIŞ \/ TOPLAM satırı"/);
+  // Doğruluk ipucu yer tutucuda kalmaz (alan dolunca kaybolur): alanın altında kısa satır
+  assert.match(okc, /opts\("okcTotal", "İsteğe bağlı; en büyük rakam \(KÜMÜLATİF\) değil"/);
+  assert.match(okc, /opts\("okcCard", "İsteğe bağlı; altındaki banka satırları değil"/);
   assert.doesNotMatch(form + okc, /title="Banka POS Z raporu \(yazarkasa\)"/);
   assert.equal(PHOTO_KIND_LABEL["kasa-okc"], "Yazarkasa Z");
   assert.match(OKC_PHOTOS_TEXT, /^Yazarkasa Z bölümüne/);
@@ -66,7 +73,17 @@ test("Yazarkasa: tek ad, Ayrıntılar yöneticide de kapalı (turuncuda açılı
 test("Kasa (nakit): sayan tek satır, 'Neye çıktı' yalnız elle yazılan çıkışta, teslim tek anlamda", () => {
   assert.match(form, /const meCounts = me !== null && counter === me\.id && !counterOpen;/);
   assert.match(form, /Kasayı sayan: <span className="font-medium text-ink">\{me\.name\} \(siz\)<\/span>/);
-  assert.match(form, /const showOutNote = \(cashOutValue \?\? 0\) > 0 && \(!cashOuts\.length \|\| values\.cashOutNote !== outsNote\);/);
+  assert.match(form, /const showOutNote = cashOutNoteVisible\(/);
+  // Davranış: fişlerden gelen toplam ve adlar aynıysa gizli; elle yazılan çıkış, değişen adlar ya da fişlerin üstüne
+  // eklenen tutar varsa görünür
+  const outs = [{ amount: 500 }, { amount: 300 }];
+  const v = (cashOut: number | null, note = "Migros, buz", list = outs) => cashOutNoteVisible({ cashOut, outs: list, note, outsNote: "Migros, buz" });
+  assert.equal(v(0), false);
+  assert.equal(v(null), false);
+  assert.equal(v(800), false, "fişlerin toplamı, kendiliğinden yazılan adlar");
+  assert.equal(v(1_000), true, "fişlerin üstüne 200 ₺ elle eklendi: ne için çıktığı yazılabilsin");
+  assert.equal(v(800, "Migros, buz, tamirci"), true);
+  assert.equal(v(250, "", []), true, "fiş yok, elle yazılan çıkış");
   assert.match(form, /field\("handedOver", "Sayımdan sonra teslim"/);
   assert.doesNotMatch(form, /"Kasadan ödenen harcama, gün içinde teslim edilen"/);
 });
@@ -86,7 +103,8 @@ test("Gönderilmiş rapor: fark bir kez, döküm katlı (devir tutmuyorsa açık
   const saved = form.slice(form.indexOf("if (report && !editing) {"), form.indexOf("const kind = live ? live.kind : null;"));
   assert.doesNotMatch(saved, /meta=\{/, "başlıkta ikinci fark rozeti yok");
   assert.equal(saved.match(/<DiffHeadline\b/g)?.length, 1);
-  assert.match(saved, /<details open=\{Boolean\(savedCarry \|\| savedNext\)\}/);
+  assert.match(saved, /<details open=\{Boolean\(savedCarry \|\| savedNext \|\| attention\.length\)\}/);
+  assert.match(saved, /\{attention\.length \? <span className="font-medium text-warn"> · \{attention\.join\(" · "\)\}<\/span> : null\}/);
   assert.match(saved, /Rapor dökümü<\/span> · Z \{money\(report\.zTotal\)\}/);
 });
 
@@ -105,8 +123,62 @@ test("Sayfa: personelin LafPOS gününde fotoğraf kartı en üstte, sayımsız 
 test("Sayfa: yöneticinin gün görünümünde ay listesi ve ayarlar yok; Pavo ve LafPOS dökümü katlı, fark varsa açık", () => {
   const admin = page.slice(page.indexOf("const ay = pick(sp.ay);"));
   assert.match(admin, /\{showForm \? \(\n\s+<>[\s\S]*?<\/>\n\s+\) : \(\n[^\n]*\n\s+<div className="grid gap-4 xl:grid-cols-\[minmax\(0,1fr\)_360px\]">\n\s+<div className="min-w-0">\n\s+<CashHistory/);
-  assert.match(page, /<details open=\{pavo !== null && pavo !== "uyumlu"\}/);
-  assert.match(admin, /<DayDetails pavo=\{bankPos \? pavoView\(bankPos\)\.state : null\} lafpos=\{lafposDetail !== null\}>/);
+  assert.match(page, /<details open=\{\(pavo !== null && pavo !== "uyumlu"\) \|\| notes\.length > 0\}/);
+  assert.match(admin, /<DayDetails pavo=\{bankPos \? pavoView\(bankPos\)\.state : null\} lafpos=\{lafposDetail !== null\} notes=\{dayDetailNotes\(lafposDetail\)\}>/);
+  // Hassas işlem (LafPOS'un düzeltmesi, ödeme iptali) Pavo uyumluyken de katı açar ve özette görünür
+  assert.deepEqual(dayDetailNotes(null), []);
+  assert.deepEqual(dayDetailNotes({ correction: null, refunds: [] }), []);
+  assert.deepEqual(dayDetailNotes({ correction: "Gün yeniden açıldı", refunds: [{ name: "Kart", amount: "120 ₺", reason: null }, { name: "Nakit", amount: "40 ₺", reason: "yanlış" }] }), ["LafPOS düzeltti", "2 ödeme iptali"]);
+  // Yöneticide gün sonu fotoğrafı formdan önce (Yazarkasa kartı fotoğrafın o karttan eklendiğini söyler)
+  assert.match(admin, /\{outsCard\}\n(\s+\{\/\*[^\n]*\*\/\}\n)?\s+\{photoCard\}\n\s+\{form\}/);
+});
+
+test("Gönderilmiş rapor: yöneticinin dikkat etmesi gerekenler (ay listesinin rozetleri) döküm özetinde; ikisi aynı kuraldan", () => {
+  const report = {
+    zTotal: 18_450,
+    cash: 6_200,
+    card: 11_450,
+    mealCard: 0,
+    online: 0,
+    other: 0,
+    openingCash: 1_500,
+    cashIn: 0,
+    cashOut: 650,
+    countedCash: 7_050,
+    handedOver: 5_500,
+    bankPos: 11_450,
+    okcTotal: 18_450,
+    okcCash: 6_200,
+    okcCard: 11_450,
+  };
+  const flags = reportFlags(report);
+  // İnceleme örneği (21 Kasım, Tuzla): ödemeler 17.650, Z 18.450; yazarkasanın nakit + kartı da günlük toplamını tutmuyor
+  assert.deepEqual(flags, { paymentsOff: true, cardDiff: null, okcOff: true });
+  assert.deepEqual(reportAttention(flags), ["Z tutmuyor", "Yazarkasa tutmuyor"]);
+  assert.deepEqual(reportAttention(reportFlags({ ...report, card: 12_250, okcCard: 12_250, bankPos: 12_250 })), []);
+  const cardOff = reportFlags({ ...report, card: 12_250, bankPos: 12_000, okcCard: 12_000, okcTotal: null, okcCash: null });
+  assert.equal(Math.abs(cardOff.cardDiff ?? 0), 250, JSON.stringify(cardOff));
+  assert.deepEqual(reportAttention(cardOff), [cardDiffLabel(cardOff.cardDiff!)]);
+  assert.match(cardDiffLabel(-250), /^Kart −250/);
+  assert.deepEqual(reportAttention({ paymentsOff: false, cardDiff: null, okcOff: true }, { photoDiffs: 1, lafposDiffs: 2 }), ["Fotoğraftan farklı", "LafPOS'tan farklı", "Yazarkasa tutmuyor"]);
+  // Ay listesi aynı işlevden okur (iki yerde ayrı kural kalmadı)
+  assert.match(read("src/app/panel/kasa/cash-history.tsx"), /reportFlags\(report, photos\[report\.id\]\?\.extras \?\? \{\}\)/);
+});
+
+test("Gönderimde hata katlı alandaysa: hatalar hemen çizilir, kat açılır, alana gidilir; bildirim alanın adını söyler; çubuk işlemi söyler", () => {
+  const submit = form.slice(form.indexOf("function submit()"), form.indexOf("async function resend()"));
+  assert.match(submit, /flushSync\(\(\) => setErrors\(errs\)\);/);
+  assert.match(submit, /goToField\(first \? document\.getElementById\(fid\(first\)\) : null\);/);
+  assert.match(submit, /description: name && message && !message\.startsWith\(name\) \? `\$\{name\}: \$\{message\}` : message/);
+  // Kapalı katın içindeki alan: katın düğmesi (aria-controls) eşzamanlı açılır, sonra kaydırılır ve odaklanır
+  const go = form.slice(form.indexOf("function goToField("));
+  assert.match(go, /el\.closest<HTMLElement>\("\[hidden\]"\)/);
+  assert.match(go, /flushSync\(\(\) => toggle\.click\(\)\)/);
+  assert.match(read("src/app/panel/kasa/fold.tsx"), /aria-controls=\{`\$\{uid\}fold`\}[\s\S]*id=\{`\$\{uid\}fold`\} hidden=\{!open\}/);
+  // Çubuk: bildirim çubuğun üstüne binmez (data-bottom-bar → bildirim üstte); düğme işlemi söyler
+  assert.match(form, /data-bottom-bar\n\s+className="no-print pointer-events-none fixed/);
+  assert.match(form, /const barLabel = pending \|\| busy \|\| reviewPending \? submitLabel : proposal \|\| isLate \? "Onaya gönder" : report \? "Güncelle" : "Gönder";/);
+  assert.equal(toastLayout({ phone: true, belowLg: true, shell: true, modal: false, keyboard: false, bottomBar: true }).position, "top-center");
 });
 
 test("Dil: ok ve eşit değil işareti yerine düz Türkçe", () => {

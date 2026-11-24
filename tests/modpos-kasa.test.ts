@@ -153,7 +153,8 @@ test("kasa sayfası: föy yalnız yönetici dalında okunur; ortak kısım, pers
   assert.match(admin, /const m = modposOf\(d\.date, d\.report\?\.branchId\);/);
   assert.match(admin, /loadKasaModposDays\(`\$\{month\}-01`, monthEnd\)\.catch\(\(\) => \(\) => NO_MODPOS\)/);
   // Üç bölüm (ModPOS, ladmin, Karşılaştırma) kasa raporu formunun hemen altında, site satırından önce; bir kez
-  assert.match(admin, /\{form\}\s*\{modposDay\?\.modpos \? <ModposSections [^\n]*\/> : null\}\s*\{photoCard\}\s*\{wasteCard\}\s*\{siteRow\}/);
+  // (LafPOS gününün gün sonu fotoğrafı kartı formdan önce; Tuzla'da yok)
+  assert.match(admin, /\{form\}\s*\{modposDay\?\.modpos \? <ModposSections [^\n]*\/> : null\}\s*\{wasteCard\}\s*\{siteRow\}/);
   assert.equal(page.match(/<ModposSections\b/g)?.length, 1);
   assert.doesNotMatch(page, /<ModposSheetCard\b|<LadminReportCard\b|<ModposCompareCard\b/, "bölümler yalnız ModposSections'tan");
   // ladmin bölümünün girdileri yönetici dalında kurulur
