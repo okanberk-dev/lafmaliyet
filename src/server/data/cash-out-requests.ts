@@ -12,6 +12,7 @@ import {
   oldRequestDays,
   photoKindRefusal,
   PhotoRemovalPayload,
+  readingBlocksRemoval,
   staffCashOutView,
   type CashOutBeforeT,
   type CashOutLineT,
@@ -30,7 +31,7 @@ import { currentTillBranch } from "@/server/branch-scope";
 import { closedDaysBetween } from "@/server/closed-days";
 import { cashOutsOn } from "@/server/data/cash-outs";
 import { photoReadingOf, type CashPhotoDTO } from "@/server/data/cash-photos";
-import { kasaEvidence } from "@/server/data/lafpos-day";
+import { kasaEvidence, lafposAutoReportOf } from "@/server/data/lafpos-day";
 import { getDb, schema as s } from "@/server/db";
 import { staffDayOpen } from "@/server/photo-read/rules";
 
@@ -88,7 +89,8 @@ export async function staffCashOutRequests(day: string, me: { id: number }): Pro
 
 /**
  * Raporun fotoğraflarında kaldırma isteği açılabilir mi (personelin kasa sayfası): "pending" bekleyen istek var (kimin
- * olursa), "blocked" raporun tek Z fotoğrafı ya da fotoğraftan farklı yazılan alan var, "ok" açılabilir. Yalnız
+ * olursa), "blocked" raporun tek Z fotoğrafı ya da fotoğraftan farklı yazılan alan var (otomatik LafPOS gününde
+ * değil: readingBlocksRemoval), "ok" açılabilir. Yalnız
  * personelin açabildiği gün (bugün, dün); değilse boş.
  */
 export async function photoRemovalStates(report: { id: number; date: string; branchId: string } & Parameters<typeof savedFields>[0], photos: readonly CashPhotoDTO[]): Promise<Record<number, "ok" | "pending" | "blocked">> {
@@ -106,13 +108,15 @@ export async function photoRemovalStates(report: { id: number; date: string; bra
     evidence: await kasaEvidence(db, report.date, report.branchId),
   };
   const saved = savedFields(report);
+  // Otomatik LafPOS gününde okuma farkı (fotoğraf ↔ LafPOS) personelin düğmesini gizlemez: farkı ele verirdi
+  const lafposAuto = await lafposAutoReportOf(db, report.id);
   const out: Record<number, "ok" | "pending" | "blocked"> = {};
   for (const p of photos) {
     if (waiting.has(p.id)) out[p.id] = "pending";
     else if (photoKindRefusal(p.kind, counts)) out[p.id] = "blocked";
     else {
       const reading = await photoReadingOf(db, p.id, p.kind, report.date);
-      out[p.id] = reading && suspiciousDiffs([reading], saved).length ? "blocked" : "ok";
+      out[p.id] = reading && readingBlocksRemoval({ suspicious: suspiciousDiffs([reading], saved).length, staff: true, lafposAuto }) ? "blocked" : "ok";
     }
   }
   return out;
