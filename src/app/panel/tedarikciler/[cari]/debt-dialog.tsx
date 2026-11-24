@@ -4,6 +4,7 @@ import { Banknote } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { ExpenseBranchField, type ExpenseBranchChoice } from "@/components/panel/expense-branch-field";
 import { toastUnreachable, useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -44,6 +45,8 @@ export interface EditDebt {
   /** "Gideri zaten girildi"de sahiplenilen kayıt */
   adoptedExpenseId: number | null;
   photoId: number | null;
+  /** Borcun gider kaydının şubesi (kimlik ya da "isletme"); kayıt yoksa null */
+  expenseBranch?: string | null;
 }
 
 const MODE_NOTE: Record<CostMode, string> = {
@@ -85,6 +88,7 @@ export function DebtDialog({
   debt,
   initialMode,
   tills,
+  expenseBranches,
   onClose,
   onSaved,
 }: {
@@ -107,6 +111,8 @@ export function DebtDialog({
   initialMode?: CostMode;
   /** "Ödendi › Kasadan"ın yeni satırının kasaları ve varsayılanı */
   tills: TillOptions;
+  /** "Faturası yok · gider yaz"ın gider kaydının şubesi (varsayılan seçili şube, "Tümü"de işletme geneli) */
+  expenseBranches: ExpenseBranchChoice;
   onClose: () => void;
   onSaved?: (r: { slug: string | null }) => void;
 }) {
@@ -116,6 +122,8 @@ export function DebtDialog({
   const [description, setDescription] = useState(edit?.description ?? "");
   const [mode, setMode] = useState<CostMode>(initialMode ?? edit?.costMode ?? defaultMode);
   const [categoryId, setCategoryId] = useState<number | null>(edit?.categoryId ?? defaultCategoryId);
+  // Gider kaydının şubesi: kaydı varsa onun şubesi, yoksa varsayılan (gönderim anındaki seçim değil)
+  const [expenseBranch, setExpenseBranch] = useState<string>(edit?.expenseBranch ?? expenseBranches.defaultId);
   const [adoptId, setAdoptId] = useState<number | null>(edit?.adoptedExpenseId ?? null);
   const [adoptOk, setAdoptOk] = useState(false);
   const [dueDate, setDueDate] = useState(edit?.dueDate ?? "");
@@ -197,6 +205,7 @@ export function DebtDialog({
         description: description.trim(),
         costMode: mode,
         categoryId: mode === "gider" ? categoryId : null,
+        expenseBranch: mode === "gider" ? expenseBranch : null,
         adoptExpenseId: mode === "mevcut" ? (adopted?.id ?? null) : null,
         dueDate: dueDate || null,
         note: note.trim() || null,
@@ -271,6 +280,8 @@ export function DebtDialog({
                 description: prev.description ?? description.trim(),
                 costMode: prev.costMode,
                 categoryId: prev.costMode === "gider" ? prev.categoryId : null,
+                // Gider kaydının şubesi de yerine döner
+                expenseBranch: prev.costMode === "gider" ? (prev.expenseBranch ?? null) : null,
                 adoptExpenseId: prev.costMode === "mevcut" ? prev.adoptedExpenseId : null,
                 dueDate: prev.dueDate,
                 note: prev.note,
@@ -402,6 +413,7 @@ export function DebtDialog({
                 ))}
               </Select>
             </Field>
+            {expenseBranches.ask ? <ExpenseBranchField id="db-branch" choice={expenseBranches} value={expenseBranch} onChange={setExpenseBranch} /> : null}
             {duplicates.slice(0, 2).map((x) => (
               <Notice
                 key={x.id}

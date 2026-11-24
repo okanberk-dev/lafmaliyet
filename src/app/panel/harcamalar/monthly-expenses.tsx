@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { ExpenseBranchField, expenseBranchName, type ExpenseBranchChoice } from "@/components/panel/expense-branch-field";
 import { PhotoThumb } from "@/components/panel/photo-picker";
 import { PhotoViewer } from "@/components/panel/photo-viewer";
 import { useActionTransition } from "@/components/ui/action-error";
@@ -20,6 +21,7 @@ import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Switch } from "@/components/ui/switch";
+import { EXPENSE_SHARED } from "@/lib/branches";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { PANEL_FIXED_GROUPS } from "@/lib/constants";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
@@ -73,7 +75,10 @@ export interface EntryRow {
   cashOutDate?: string | null;
   /** Sahibi bir cari borç (faturasız alımın gideri): tedarikçi ve sayfası; tutar, gün ve kategori orada düzeltilir */
   cari?: { name: string; href: string | null } | null;
+  /** Giderin şubesi; null = işletme geneli */
+  branchId?: string | null;
 }
+
 export interface InvoiceItem {
   id: number;
   date: string;
@@ -127,6 +132,8 @@ type EntryDraft = {
   cashOutDate?: string | null;
   /** Cari borcun gideri: tutar, tarih ve kategori Tedarikçiler'de düzeltilir */
   cari?: { name: string; href: string | null } | null;
+  /** Şube kimliği ya da "isletme" (işletme geneli) */
+  branchId: string;
 };
 
 /**
@@ -141,6 +148,7 @@ export function MonthlyExpenses({
   invoices,
   fixed,
   invoiceCategories,
+  branches,
 }: {
   month: string;
   isCurrent: boolean;
@@ -149,11 +157,22 @@ export function MonthlyExpenses({
   invoices: InvoiceItem[];
   fixed: FixedCandidate[];
   invoiceCategories: string[];
+  branches: ExpenseBranchChoice;
 }) {
   const [pending, start] = useActionTransition();
   const defaultDate = isCurrent ? localToday() : `${month}-01`;
   const active = categories.filter((c) => c.active);
-  const blank = (categoryId = ""): EntryDraft => ({ id: null, date: defaultDate, categoryId, description: "", amount: "", paymentMethod: null, note: "" });
+  const blank = (categoryId = ""): EntryDraft => ({
+    id: null,
+    date: defaultDate,
+    categoryId,
+    description: "",
+    amount: "",
+    paymentMethod: null,
+    note: "",
+    branchId: branches.defaultId,
+  });
+  const branchName = (id: string) => expenseBranchName(branches, id);
   const [draft, setDraft] = useState<EntryDraft>(() => blank(active[0] ? String(active[0].id) : ""));
   const [editing, setEditing] = useState<EntryDraft | null>(null);
   const [catEdit, setCatEdit] = useState<CategoryRow | "new" | null>(null);
@@ -184,10 +203,11 @@ export function MonthlyExpenses({
         amount,
         paymentMethod: d.paymentMethod,
         note: d.note,
+        branchId: d.branchId,
       });
       if (!r.ok) return void toast.error(r.error);
       const cat = categories.find((c) => c.id === Number(d.categoryId));
-      toast.success(`${d.id ? "Düzeltildi" : "Eklendi"}: ${cat?.name ?? "harcama"} · ${tl(amount, 2)}`);
+      toast.success(`${d.id ? "Düzeltildi" : "Eklendi"}: ${cat?.name ?? "harcama"} · ${tl(amount, 2)}${branches.ask ? ` · ${branchName(d.branchId)}` : ""}`);
       done();
     });
   };
@@ -211,7 +231,7 @@ export function MonthlyExpenses({
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    save(draft, () => setDraft((d) => ({ ...blank(d.categoryId), date: d.date, paymentMethod: d.paymentMethod })));
+    save(draft, () => setDraft((d) => ({ ...blank(d.categoryId), date: d.date, paymentMethod: d.paymentMethod, branchId: d.branchId })));
   };
 
   return (
@@ -322,6 +342,15 @@ export function MonthlyExpenses({
                     options={METHODS}
                   />
                 </Field>
+                {branches.ask ? (
+                  <ExpenseBranchField
+                    id="x-branch"
+                    className="sm:col-span-2"
+                    choice={branches}
+                    value={draft.branchId}
+                    onChange={(v) => setDraft((d) => ({ ...d, branchId: v }))}
+                  />
+                ) : null}
                 <div className="sm:col-span-2">
                   <Button type="submit" disabled={pending} className="w-full sm:w-auto">
                     <Plus size={16} /> {pending ? "Kaydediliyor…" : "Ekle"}
@@ -390,6 +419,7 @@ export function MonthlyExpenses({
                                   photoId: e.photoId ?? null,
                                   cashOutDate: e.cashOutId ? (e.cashOutDate ?? e.date) : null,
                                   cari: e.cari ?? null,
+                                  branchId: e.branchId ?? EXPENSE_SHARED,
                                 })
                               }
                               className="flex w-full cursor-pointer items-start justify-between gap-3 py-2 text-left hover:bg-ink/[0.02] pointer-coarse:min-h-11"
@@ -403,6 +433,7 @@ export function MonthlyExpenses({
                                 </span>
                                 <span className="block text-xs text-ink-mute">
                                   {dateTR(e.date)}
+                                  {branches.ask ? ` · ${branchName(e.branchId ?? EXPENSE_SHARED)}` : ""}
                                   {e.paymentMethod ? ` · ${METHOD_LABEL[e.paymentMethod]}` : ""}
                                   {e.note ? ` · ${e.note}` : ""}
                                 </span>
@@ -509,6 +540,7 @@ export function MonthlyExpenses({
         <EntryDialog
           draft={editing}
           categories={categories}
+          branches={branches}
           pending={pending}
           onChange={setEditing}
           onClose={() => setEditing(null)}
@@ -563,6 +595,7 @@ export function MonthlyExpenses({
 function EntryDialog({
   draft,
   categories,
+  branches,
   pending,
   onChange,
   onClose,
@@ -571,6 +604,7 @@ function EntryDialog({
 }: {
   draft: EntryDraft;
   categories: CategoryRow[];
+  branches: ExpenseBranchChoice;
   pending: boolean;
   onChange: (d: EntryDraft) => void;
   onClose: () => void;
@@ -678,6 +712,17 @@ function EntryDialog({
             options={METHODS}
           />
         </Field>
+        {branches.ask ? (
+          <ExpenseBranchField
+            id="e-branch"
+            className="sm:col-span-2"
+            choice={branches}
+            value={draft.branchId}
+            onChange={(v) => set({ branchId: v })}
+            // Kaynağa bağlı kaydın şubesi kaynağın: kasadan çıkanınki o kasanın, cari giderinki Tedarikçiler'de
+            locked={cari ? "Şubesi Tedarikçiler'deki faturasız alımda seçilir." : draft.cashOutDate ? "Şubesi fişin çıktığı kasanın şubesidir." : null}
+          />
+        ) : null}
         <Field label="Not" htmlFor="e-note" className="sm:col-span-2">
           <Textarea id="e-note" rows={2} value={draft.note} onChange={(e) => set({ note: e.target.value })} />
         </Field>

@@ -7,9 +7,11 @@ import { z } from "zod";
 import { COST_MODE_LABEL, COST_MODES, debtLabel, dueOf, invoiceLabel, type CostMode } from "@/lib/cari/account";
 import { CARI_METHODS, EPS, METHOD_LABEL, methodFromCard, round2, type CariMethod } from "@/lib/cari/balance";
 import { pastMonthLogSuffix, type MonthEffect } from "@/lib/cari/months";
+import { zFormBranch } from "@/lib/branches";
 import { dateTR, monthLabel, tl } from "@/lib/format";
 import { addDays, postponeDate, todayTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
+import { formBranch } from "@/server/branch-scope";
 import {
   applyCredit,
   checkPast,
@@ -128,6 +130,11 @@ const debtSchema = z.object({
   applyCredit: z.boolean(),
   paid: z.object({ method: methodSchema, date: zDate, cashOut: cashOutSchema.nullable() }).nullable(),
   confirmPast: confirmSchema,
+  /**
+   * "Faturası yok · gider yaz"da gider kaydının şubesi: şube kimliği ya da "isletme" (işletme geneli). Gönderilmezse
+   * yeni kayıtta seçili şube ("Tümü"de işletme geneli), düzeltmede kaydın şubesi kalır
+   */
+  expenseBranch: zFormBranch,
   /** Kasa denetiminin seçimi (K15): pencerenin gördüğü satırlar ve ne yapılacağı */
   kasaChoice: z
     .discriminatedUnion("action", [
@@ -152,6 +159,8 @@ export async function saveSupplierDebt(input: z.input<typeof debtSchema>) {
     if (d.date > addDays(today, 1)) throw new UserError("Alım günü ileri bir tarih olamaz");
     if (d.dueDate && d.dueDate < d.date) throw new UserError("Vade alım gününden önce olamaz");
     if (d.paid && d.paid.date > addDays(today, 1)) throw new UserError("Ödeme günü ileri bir tarih olamaz");
+    // Gider kaydının şubesi formun seçtiği (docs/SUBE.md › Yazarken hangi şube); gönderim anındaki seçim değil
+    const expenseBranch = d.costMode === "gider" && d.expenseBranch ? await formBranch(d.expenseBranch, "expense") : undefined;
     let r: Awaited<ReturnType<typeof inTx<{ card: Card; created: boolean; written: DebtResult | null; kasa: KasaResolution }>>>;
     try {
       r = await inTx(async (tx) => {
@@ -161,7 +170,7 @@ export async function saveSupplierDebt(input: z.input<typeof debtSchema>) {
         if (kasa.action === "pesin") return { card, created, written: null, kasa };
         const paid = kasa.action === "kapat" ? { method: "kasa" as const, date: kasa.line.date, cashOut: { mode: "existing" as const, id: kasa.line.id }, amount: kasa.line.amount } : d.paid;
         const kasaApart = kasa.action === "ayri" ? kasa.teslim : [];
-        const written = await writeDebt(tx, me, card, { ...d, paid, description: d.description, note: d.note, kasaApart }, await termDaysOf(card));
+        const written = await writeDebt(tx, me, card, { ...d, paid, description: d.description, note: d.note, kasaApart, expenseBranch }, await termDaysOf(card));
         return { card, created, written, kasa };
       });
     } catch (e) {

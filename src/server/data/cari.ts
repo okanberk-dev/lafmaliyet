@@ -264,7 +264,7 @@ export interface SupplierCari {
   /** Başka kartların ödemelerinden bu grubun faturalarına sayılanlar (ekstrenin ödeme satırları) */
   foreignIn: ForeignCredit[];
   /** Borçların gider kayıtları ("gider" ve "mevcut") */
-  expenses: Record<number, { id: number; date: string; amount: number; categoryId: number; categoryName: string }>;
+  expenses: Record<number, { id: number; date: string; amount: number; categoryId: number; categoryName: string; branchId: string | null }>;
   categories: DebtCategory[];
   /** Gelir-gider'de bir harcama kalemine bağlı fatura kategorileri (mal dışı faturanın gideri orada sayılır) */
   countedCategories: string[];
@@ -352,11 +352,20 @@ export async function loadSupplierCari<I extends AccountInvoice & { category: st
   const debtIds = entries.debts.map((d) => d.id);
   if (debtIds.length) {
     const rows = await db
-      .select({ id: s.expenseEntries.id, owner: s.expenseEntries.supplierEntryId, date: s.expenseEntries.date, amount: s.expenseEntries.amount, categoryId: s.expenseEntries.categoryId, categoryName: s.expenseCategories.name })
+      .select({
+        id: s.expenseEntries.id,
+        owner: s.expenseEntries.supplierEntryId,
+        date: s.expenseEntries.date,
+        amount: s.expenseEntries.amount,
+        categoryId: s.expenseEntries.categoryId,
+        categoryName: s.expenseCategories.name,
+        branchId: s.expenseEntries.branchId,
+      })
       .from(s.expenseEntries)
       .innerJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
       .where(inArray(s.expenseEntries.supplierEntryId, debtIds));
-    for (const r of rows) if (r.owner !== null) expenses[r.owner] = { id: r.id, date: r.date, amount: r.amount, categoryId: r.categoryId, categoryName: r.categoryName };
+    for (const r of rows)
+      if (r.owner !== null) expenses[r.owner] = { id: r.id, date: r.date, amount: r.amount, categoryId: r.categoryId, categoryName: r.categoryName, branchId: r.branchId };
   }
 
   // İşlenmemiş Kasa satırları: Teslim ve (grubun o gün açık kalemi varken) fişsiz Alışveriş

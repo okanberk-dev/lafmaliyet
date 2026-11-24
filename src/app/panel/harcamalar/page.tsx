@@ -8,7 +8,10 @@ import { PageSkeleton } from "@/components/ui/misc";
 import { fixedMonthly, monthOfDate, shiftMonth } from "@/lib/calc/engine";
 import { panelGroupOf } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
+import { EXPENSE_SHARED, sortBranches, tillBranches } from "@/lib/branches";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { availableMonths, loadModel } from "@/server/data/dataset";
 import { expenseExtras } from "@/server/data/expense-extras";
 import { supplierSlugOf } from "@/server/data/suppliers";
@@ -107,6 +110,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
         cashOutId: x?.cashOutId ?? null,
         cashOutDate: x?.cashOutDate ?? null,
         cari: x?.cariCardId ? { name: x.cariName ?? "", href: cariHref.get(x.cariCardId) ? `/panel/tedarikciler/${cariHref.get(x.cariCardId)}?sekme=hareketler` : null } : null,
+        branchId: e.branchId ?? null,
       };
     })
     .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
@@ -124,6 +128,16 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
     .filter((f) => f.amount > 0)
     .sort((a, b) => Number(b.group === "reklam") - Number(a.group === "reklam") || b.amount - a.amount);
 
+  // Harcamanın şubesi (docs/SUBE.md › Yazarken hangi şube): form seçer, gönderim anındaki seçim değil. Varsayılan seçili
+  // şube; "Tümü"de görünür biçimde işletme geneli. Tek şube açıkken seçim çizilmez
+  const [scope, branchRows] = await Promise.all([currentBranchScope(), listBranches()]);
+  const open = sortBranches(branchRows.filter((b) => b.active));
+  const branches = {
+    options: open.map((b) => ({ id: b.id, name: b.name })),
+    defaultId: open.some((b) => b.id === scope) ? scope : EXPENSE_SHARED,
+    ask: tillBranches(branchRows).length > 1,
+  };
+
   return (
     <>
       <Header actions={<MonthPicker months={months} value={month} />} />
@@ -137,6 +151,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
         invoices={invoices}
         fixed={fixed}
         invoiceCategories={MAPPABLE}
+        branches={branches}
       />
     </>
   );

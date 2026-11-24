@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
-import { defaultTill, tillBranches } from "@/lib/branches";
+import { defaultTill, EXPENSE_SHARED, sortBranches, tillBranches } from "@/lib/branches";
 import { compareOpenItems, debtLabel, debtRemaining, invoiceLabel, showsCredit } from "@/lib/cari/account";
 import { defaultCostMode } from "@/lib/cari/match";
 import { businessDate } from "@/lib/cash-report";
@@ -201,6 +201,12 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
     businessDay: businessDate(),
     // Kasadan ödemenin yeni satırı: seçili fiziksel şubenin kasası; "Tümü"de birden çok kasa açıksa pencere sorar (#31)
     tills: { options: tillBranches(branches).map((b) => ({ id: b.id, name: b.name })), defaultId: defaultTill(scope, branches) },
+    // "Faturası yok · gider yaz"ın gider kaydının şubesi: varsayılan seçili şube, "Tümü"de işletme geneli; tek şube açıkken sorulmaz
+    expenseBranches: {
+      options: sortBranches(branches.filter((b) => b.active)).map((b) => ({ id: b.id, name: b.name })),
+      defaultId: branches.some((b) => b.id === scope && b.active) ? scope : EXPENSE_SHARED,
+      ask: tillBranches(branches).length > 1,
+    },
   };
 
   return (
