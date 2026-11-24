@@ -340,6 +340,19 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
     assert.deepEqual([...(await lafposNoCountDays([DAY], LAFPOS_SUBE, db))], [], "rapor yazıldı");
   });
 
+  test("sayımsız günden sonraki ilk sayımlı e-posta düşüp yeniden denenince de 'kasa sayıldı' der (düzeltildi değil)", async () => {
+    assert.ok((await push(DAY, 14, { countedCash: null, cashDiff: null })).ok);
+    assert.equal((await gun.runLafposDayEnd(db, DAY, NOW)).email, "sent");
+    assert.ok((await push(DAY, 14)).ok);
+    resendStatus = 422;
+    assert.equal((await gun.runLafposDayEnd(db, DAY, NOW, { attempts: 1 })).email, "failed");
+    const [log] = await db.select().from(s.notificationLog).where(eq(s.notificationLog.key, `lafpos-gun:${LAFPOS_SUBE}:${DAY}`));
+    assert.match(log?.subject ?? "", /sayım yok$/, "düşen gönderim konuyu değiştirmez");
+    resendStatus = 200;
+    assert.equal((await gun.runLafposDayEnd(db, DAY, NOW)).email, "sent");
+    assert.equal(sent.at(-1)!.subject, "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · kasa tutuyor · kasa sayıldı");
+  });
+
   test("çalışanların e-postası düşerse kaydı kalır ve sabah işi yeniden dener", async () => {
     await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: true, whatsapp: null, staffRecipients: ["kasa@ornek.com"], staffAmounts: false });
     assert.ok((await push(DAY, 14)).ok);

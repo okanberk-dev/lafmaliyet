@@ -9,7 +9,7 @@ import { test } from "node:test";
 import { gunSonuStep } from "../src/lib/job-health";
 import { pavoState, pavoSubject, pavoView, renderPavoMail } from "../src/lib/lafpos/bank-pos";
 import { bankPosSchema, parsePosDay, type PosDayZ } from "../src/lib/lafpos/day";
-import { autoMissing, autoValuesOf, compareText, dayEndSubject, dayHash, mergeAuto, renderDayEnd, renderStaffDayEnd, type AutoValues, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
+import { autoMissing, autoValuesOf, compareText, dayEndSubject, dayEndSubjectNoCount, dayHash, mergeAuto, renderDayEnd, renderStaffDayEnd, type AutoValues, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
 import { unmatchedIkramNames } from "../src/lib/lafpos/ikram";
 import { rejectionText, type LafposRejection } from "../src/lib/lafpos/status";
 import { siteBranchMatches, siteBranchOf } from "../src/lib/site-sales/calc";
@@ -172,6 +172,13 @@ test("Sayım yoksa e-posta 'sayım yok' der (konuda da), rapor yazılmadığın�
   assert.match(t, /Kasa farkı: sayım yok/);
   assert.match(t, /Kasa raporu yazılmadı/);
   assert.match(t, /Kasa › Geçmiş günler › Kasa föyü/);
+});
+
+test("konudan sayımsız gün: 'sayım yok' sonuç olarak (sonda ya da ekten önce); eski biçim sayımlı sayılır", () => {
+  assert.ok(dayEndSubjectNoCount("Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · sayım yok"));
+  assert.ok(dayEndSubjectNoCount("Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · sayım yok · Pavo FARK VAR"));
+  assert.ok(!dayEndSubjectNoCount("Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · kasa tutuyor · kasa sayıldı"));
+  assert.ok(!dayEndSubjectNoCount("Marina gün sonu · 22 Kasım Pazar"));
 });
 
 test("Sayımsız giden gün sayımla gelince: konu 'kasa sayıldı', 'düzeltildi' değil", () => {

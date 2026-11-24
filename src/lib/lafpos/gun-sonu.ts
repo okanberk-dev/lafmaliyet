@@ -386,6 +386,14 @@ export function dayEndSubject(branchName: string, date: string, o: { result: str
   return `${dayEndSubjectHead(branchName, date)} · ${o.result}${o.recount ? " · kasa sayıldı" : o.corrected ? " · düzeltildi" : ""}`;
 }
 
+/**
+ * Gönderilmiş gün sonu e-postasının konusundan: sayımsız günü mü taşıyordu (sonuç "sayım yok"). Sonraki sayımlı e-posta
+ * "düzeltildi" değil "kasa sayıldı" der. Eski biçimdeki konu ("Marina gün sonu · …") sayımlı sayılır (önceki davranış)
+ */
+export function dayEndSubjectNoCount(subject: string): boolean {
+  return / · sayım yok(?: · |$)/.test(subject);
+}
+
 /** Konudaki kasa sonucu (Kasa bölümünün farkıyla aynı): "kasa tutuyor", "120 ₺ eksik", "sayım yok" */
 export function dayEndCashResult(m: Pick<DayEndMail, "z" | "values">): string {
   const v = m.values;

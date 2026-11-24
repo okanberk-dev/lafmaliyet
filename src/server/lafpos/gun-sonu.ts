@@ -15,6 +15,7 @@ import {
   autoValuesOf,
   autoValuesOfReport,
   compareDays,
+  dayEndSubjectNoCount,
   dayHash,
   LAFPOS_AUTO_BY,
   mergeAuto,
@@ -406,9 +407,6 @@ export async function dayEndRecipients(db: DB): Promise<string[]> {
 type StaffMailKind = "alindi" | "sayim-yok";
 /** Çalışan e-postasının kaydı (notification_log): şube, gün ve tür başına bir anahtar */
 const staffMailKey = (branchId: string, date: string, kind: StaffMailKind) => `lafpos-gun-calisan:${branchId}:${date}:${kind}`;
-/** Gün sonu e-postasının son başarılı gönderiminin taşıdığı durum (notification_log; konu "no-count" ya da "sayım var") */
-const dayEndStateKey = (branchId: string, date: string) => `lafpos-gun-durum:${branchId}:${date}`;
-const NO_COUNT_STATE = "no-count";
 
 /**
  * Çalışanların kısa gün sonu e-postası (Kasa raporu ayarları › Çalışanlar), yöneticinin e-postasından ayrı ve sonucu
@@ -517,11 +515,11 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
       dayTotal(db, days.yesterday, branchId, switchDay),
       dayTotal(db, days.lastWeek, branchId, switchDay),
       fetchTillOnlineRow(date, branchId),
-      db.select({ subject: s.notificationLog.subject }).from(s.notificationLog).where(eq(s.notificationLog.key, dayEndStateKey(branchId, date))).limit(1),
+      db.select({ subject: s.notificationLog.subject }).from(s.notificationLog).where(eq(s.notificationLog.key, `lafpos-gun:${branchId}:${date}`)).limit(1),
     ]);
-    // Önceki e-posta sayımsız günü taşıdıysa bu sayımlı ilk e-posta "kasa sayıldı"dır, düzeltme değil (kayıt yoksa: bu
-    // kayıttan önce giden e-posta, bugünkü gibi düzeltme)
-    const prevNoCount = st.emailCount > 0 && prevState?.subject === NO_COUNT_STATE;
+    // Önceki e-posta sayımsız günü taşıdıysa bu sayımlı ilk e-posta "kasa sayıldı"dır, düzeltme değil. Kaydın konusu son
+    // başarılı gönderiminki (düşen gönderim konuyu değiştirmez, aşağıda)
+    const prevNoCount = st.emailCount > 0 && dayEndSubjectNoCount(prevState?.subject ?? "");
     const recount = prevNoCount && report !== "no-count";
     const values = rep[0] ? autoValuesOfReport(rep[0]) : null;
     // Gün sonu fotoğrafı: otomatik raporda (ya da rapor yokken bekleyen) eklenen; elle girilen raporda bölüm yok
@@ -555,18 +553,14 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
     await db
       .insert(s.notificationLog)
       .values({ key: `lafpos-gun:${branchId}:${date}`, channel: "email", subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error })
-      .onConflictDoUpdate({ target: s.notificationLog.key, set: { subject: msg.subject, ok: res.ok, error: res.ok ? null : res.error, sentAt: new Date() } });
+      // Düşen gönderim konuyu değiştirmez: konu son giden e-postanınkidir (sonraki "kasa sayıldı" kararı ona bakar)
+      .onConflictDoUpdate({ target: s.notificationLog.key, set: { ...(res.ok ? { subject: msg.subject, recipients: to.join(", ") } : {}), ok: res.ok, error: res.ok ? null : res.error, sentAt: new Date() } });
     if (!res.ok) {
       await finish({ emailError: res.error });
       return "failed";
     }
     // Pavo karşılaştırması bu e-postayla gittiyse kısa Pavo e-postası ayrıca gitmez
     await finish({ emailedHash: day.hash, emailCount: st.emailCount + 1, emailedAt: new Date(), emailError: null, ...(day.bankPos ? { pavoEmailedHash: bankPosHash(day.bankPos) } : {}) });
-    const stateSubject = report === "no-count" ? NO_COUNT_STATE : "sayım var";
-    await db
-      .insert(s.notificationLog)
-      .values({ key: dayEndStateKey(branchId, date), channel: "email", subject: stateSubject, recipients: to.join(", "), ok: true, error: null })
-      .onConflictDoUpdate({ target: s.notificationLog.key, set: { subject: stateSubject, sentAt: new Date() } });
     // Fotoğraf farkı bu e-postada satır satır gitti: aynı karşılaştırma için fotoğraf e-postası ayrıca gitmez
     if (photo?.check && photoMailNeeded(photo.check)) {
       await db
