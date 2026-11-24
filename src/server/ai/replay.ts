@@ -6,13 +6,15 @@
  * scripts/foto-eval/make-images.py'nin `yazarkasa-z.jpg`'sidir); başka bir fotoğrafa türün olağan yanıtı döner.
  * Yazarkasa Z bölümünün (`kasa-okc`; geçişte eski sayfanın `kasa-pos`'u da buraya okunur) yanıtları
  * tests/fixtures/foto/okc*.json'dur ve sentetiktir (adım b2'de gerçek yanıtlarla değişir). Fatura okuması (tests/fixtures/fatura/*.json) istemdeki kalem adına göre seçilir; bunlar sentetiktir
- * (yerelde anahtar yok, canlı istek yapılmadı). Görsel ve belge hiçbir yere gönderilmez.
+ * (yerelde anahtar yok, canlı istek yapılmadı). Ürün → hammadde önerisinin yanıtı da sentetiktir: istemdeki hammadde
+ * listesinden ve ürün adlarından kurulur (replayMatchAnswer). Görsel ve belge hiçbir yere gönderilmez.
  */
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { imageSize } from "@/lib/photo-rules";
+import { guessLinkFactor, packEvidence, suggestIngredient } from "@/lib/product-match";
 
 import type { AiClient, AiFeature, AiMessage } from "./run";
 
@@ -109,7 +111,7 @@ interface Recorded {
 }
 
 /** Türe ve görsele göre kayıtlı yanıt (fotoğraflar) */
-export function replayAnswer(feature: Exclude<AiFeature, "fatura" | "vardiya">, size: { width: number; height: number } | null): Recorded {
+export function replayAnswer(feature: Exclude<AiFeature, "fatura" | "vardiya" | "eslestirme">, size: { width: number; height: number } | null): Recorded {
   const image = size ? IMAGES[`${size.width}x${size.height}`] : undefined;
   const key = image ? `${feature}:${image}` : feature;
   const usage = { input_tokens: 4000, output_tokens: 300, iterations: [{ type: "message", model: null, input_tokens: 4000, output_tokens: 300 }] };
@@ -147,6 +149,44 @@ export function replayShiftAnswer(task: string): Recorded {
   return { json: { assignments, unclear: "Kayıtlı yanıt (geliştirme): yazdığınız metin okunmadı." }, usage, ms: 900, model: "claude-opus-5-5" };
 }
 
+/** İstemdeki birim sözcüğü → hammaddenin birimi (src/lib/product-match-ai.ts UNIT_WORD'ün tersi) */
+const UNIT_OF: Record<string, string> = { gram: "gr", millilitre: "ml", piece: "adet", slice: "dilim" };
+const NOT_INGREDIENT = /kargo|nakliye|hizmet|servis|tamir|bakim|bakım/i;
+
+/**
+ * Ürün → hammadde önerisinin geliştirmedeki yanıtı (sentetik; canlı istek yapılmaz): sistem istemindeki hammadde
+ * listesinden adı ürün adında geçen hammadde "bagla" (addaki paket kanıtı varsa onun çarpanıyla, yüksek güven; yoksa
+ * formun tahminiyle, orta güven), kargo / hizmet "hammadde_degil", gerisi "emin_degil". Ekranın akışını (rozetler,
+ * Uygula, toplu pencere) denemeye yeter.
+ */
+export function replayMatchAnswer(system: string, task: string): Recorded {
+  const ingredients = [...system.matchAll(/^(\d+) \| ([^|\n]+?) \| (gram|millilitre|piece|slice) \|/gm)].map((m) => ({ id: Number(m[1]), name: m[2], unit: UNIT_OF[m[3]] }));
+  const products = [...task.matchAll(/^(u\d+) \| ("(?:[^"\\]|\\.)*") \| invoice unit ("(?:[^"\\]|\\.)*")/gm)].map((m) => ({
+    key: m[1],
+    name: JSON.parse(m[2]) as string,
+    unit: JSON.parse(m[3]) as string,
+  }));
+  const oneriler = products.map((p) => {
+    if (NOT_INGREDIENT.test(p.name)) return { urun_anahtari: p.key, karar: "hammadde_degil", hammadde_id: null, carpan: null, guven: "yuksek", gerekce: "Kayıtlı yanıt: hizmet ya da kargo kalemi" };
+    const hit = suggestIngredient(p.name, ingredients);
+    const ing = hit ? ingredients.find((i) => i.id === hit.ingredientId) : undefined;
+    if (!ing) return { urun_anahtari: p.key, karar: "emin_degil", hammadde_id: null, carpan: null, guven: "dusuk", gerekce: "Kayıtlı yanıt: listede uyan hammadde bulunamadı" };
+    const line = { name: p.name, unit: p.unit };
+    const ev = packEvidence(line, ing.unit);
+    const guess = guessLinkFactor(line, ing.unit);
+    return {
+      urun_anahtari: p.key,
+      karar: "bagla",
+      hammadde_id: ing.id,
+      carpan: ev ? ev.factor : guess ? Number(guess.replace(",", ".")) : 1,
+      guven: ev ? "yuksek" : "orta",
+      gerekce: `Kayıtlı yanıt: ad ${ing.name} ile örtüşüyor`,
+    };
+  });
+  const usage = { input_tokens: 600, output_tokens: 60 * products.length, cache_read_input_tokens: 4000, iterations: [{ type: "message", model: null, input_tokens: 600, output_tokens: 60 * products.length, cache_read_input_tokens: 4000 }] };
+  return { json: { oneriler }, usage, ms: 1500, model: "claude-sonnet-5-5" };
+}
+
 /** Kayıtlı yanıtı gerçek bir çağrı gibi (kısa bir beklemeyle) döndüren istemci */
 export function replayClient(feature: AiFeature): AiClient {
   return {
@@ -157,8 +197,15 @@ export function replayClient(feature: AiFeature): AiClient {
           const block = Array.isArray(first) ? first.find((b) => b.type === "image") : undefined;
           const data = block && block.type === "image" && block.source.type === "base64" ? block.source.data : "";
           const task = Array.isArray(first) ? first.map((b) => (b.type === "text" ? b.text : "")).join("\n") : "";
+          const system = typeof params.system === "string" ? params.system : (params.system ?? []).map((b) => b.text).join("\n");
           const rec =
-            feature === "fatura" ? replayInvoiceAnswer(task) : feature === "vardiya" ? replayShiftAnswer(task) : replayAnswer(feature, imageSize(new Uint8Array(Buffer.from(data, "base64"))));
+            feature === "fatura"
+              ? replayInvoiceAnswer(task)
+              : feature === "vardiya"
+                ? replayShiftAnswer(task)
+                : feature === "eslestirme"
+                  ? replayMatchAnswer(system, task)
+                  : replayAnswer(feature, imageSize(new Uint8Array(Buffer.from(data, "base64"))));
           await new Promise((r) => setTimeout(r, Math.min(rec.ms, 2500)));
           return { model: rec.model, stop_reason: "end_turn", stop_details: null, content: [{ type: "text", text: JSON.stringify(rec.json) }], usage: rec.usage, _request_id: "kayitli-yanit" };
         },
