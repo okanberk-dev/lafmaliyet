@@ -1,7 +1,8 @@
 /**
- * Fotoğraftan ve faturadan okumanın ve panel asistanının maliyeti (saf; tests/ai-istemci.test.ts). Fiyatlar dolar / milyon token; yedek model
- * çalıştıysa (server-side fallback) o denemenin kendi modelinin fiyatıyla. `usage.iterations` her denemeyi ayrı verir
- * (model null: istenen model); yoksa üst düzey kullanım. Anthropic dolar üzerinden faturalar; tutarlar yaklaşıktır.
+ * Fotoğraftan ve faturadan okumanın, vardiya taslağının, ürün önerisinin ve panel asistanının maliyeti (saf;
+ * tests/ai-istemci.test.ts). Fiyatlar dolar / milyon token; yedek model çalıştıysa (server-side fallback) o denemenin
+ * kendi modelinin fiyatıyla. `usage.iterations` her denemeyi ayrı verir (model null: istenen model); yoksa üst düzey
+ * kullanım. Anthropic dolar üzerinden faturalar; tutarlar yaklaşıktır.
  */
 
 export interface ModelPrice {
@@ -17,8 +18,9 @@ export const PRICES: Record<string, ModelPrice> = {
   "claude-opus-5-5": { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 },
   "claude-opus-5": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
   "claude-opus-4-8": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
-  // Panel asistanı (docs/ASISTAN.md): 2 / 10 $, önbellek okuma 0,10 $ (Sonnet 5'in yarısı), 5 dakikalık yazma 1,25×.
-  // Reddedilen soru sunucu tarafında Sonnet 5'e düşebilir (fallbacks "default"): onun önbellek okuması 0,20 $
+  // Ürün → hammadde önerisi (Paraşüt) ve panel asistanı (docs/ASISTAN.md): 2 / 10 $; önbellek okuma 0,10 $ (girdinin
+  // 0,05'i), 5 dakikalık yazma 1,25×. Reddedilen istek sunucu tarafında Claude Sonnet 5'e düşebilir (fallbacks
+  // "default"): onun önbellek okuması 0,20 $
   "claude-sonnet-5-5": { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.1 },
   "claude-sonnet-5": { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
   // Fatura okuma: 100 bin tokena kadar 0,10 / 0,50 $, üstü 0,50 / 2,50 $; önbellek okuma 0,1×, 5 dakikalık yazma 1,25×
