@@ -1,6 +1,7 @@
 import type { CashOutKind } from "@/lib/cash-outs";
 
 import type { PosCashMove } from "./day";
+import { LAFPOS_BRANCH_ID } from "./switch";
 
 /**
  * LafPOS'un kasa hareketleri → panelin "Kasadan çıkanlar"ı (Faz 3, 23 Kasım 2026; sahibin kararı: docs/LAFPOS.md "Soru
@@ -133,7 +134,25 @@ export const LAFPOS_CASH_OUT_TEXT = {
     "LafPOS'tan gelen satır silinmez: gün yeniden gönderilince geri gelir. Hareket yanlışsa LafPOS'ta düzeltilip gün yeniden gönderilir; deneme günüyse Ayarlar › LafPOS'ta günün kaydı silinince satır da kalkar.",
   /** Penceredeki kısa not ("LafPOS'tan geldi" başlığının altında) */
   hint: "Tutar, tür ve gün LafPOS'tan gelir, burada değişmez; fiş, yer, belge ve kategori buradan eklenir.",
+  /** Personel LafPOS gününe satır eklemek istedi (staffLafposEntryClosed; kapı: src/server/cash-outs/guard.ts) */
+  staffAdd:
+    "LafPOS günü: kasadan çıkan para LafPOS'ta kasa hareketi olarak girilir, gün sonuyla buraya kendiliğinden gelir. Gelen satıra fiş fotoğrafını ve kategoriyi buradan eklersiniz.",
 } as const;
+
+/** LafPOS gününde personelin Kasa sayfasında ekleme düğmelerinin yerindeki kısa satır (kasadan çıkanlar ve zayi / ikram kartı) */
+export const LAFPOS_STAFF_ENTRY_LINE = "LafPOS günü: harcama ve ikram/zayi LafPOS'tan girilir";
+
+/**
+ * Personel Kasa sayfasından kasadan çıkan ve ikram / zayi ekleyemez mi (sahibin kararı, 24 Kasım 2026: "sadece gün sonu
+ * ladmin'e personel foto atsın"): LafPOS'un şubesinde LafPOS günü (geçiş gününden itibaren; staffBeforeLafposDayEnd'in
+ * şube ve gün kuralı). Kasadan çıkanlar LafPOS'un kasa hareketlerinden (cashMoves → cash_outs), ürün ikramı, zayisi ve
+ * hazırlanmış iptal gün sonunun gövdesinden gelir. Yönetici her zaman ekler; personel LafPOS'un satırına fiş fotoğrafı ve
+ * kategori ekler. Sunucu: personelin ekleme yolu (doğrudan, istek, başka güne taşıma) staffCashOutGate'te reddedilir.
+ * ModPOS'ta kalan şube ve geçiş gününden önceki gün eskisi gibi; Zayi & ikram sayfasının hammadde yolu değişmez
+ */
+export function staffLafposEntryClosed(o: { admin: boolean; branchId: string | null | undefined; lafposDay: boolean }): boolean {
+  return !o.admin && o.branchId === LAFPOS_BRANCH_ID && o.lafposDay;
+}
 
 /**
  * LafPOS satırında yasak değişiklik: tutar (kuruşta), tür ya da gün değişiyorsa reddin metni, değilse null. Elle girilmiş

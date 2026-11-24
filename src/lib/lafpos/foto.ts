@@ -6,6 +6,7 @@ import type { AmountRaw, KasaOkc } from "@/lib/photo-read/schemas";
 import { addDays } from "@/lib/reminders";
 
 import type { BankPos, PosOkc } from "./day";
+import { LAFPOS_BRANCH_ID } from "./switch";
 
 /**
  * LafPOS gününün gün sonu fotoğrafı (sahibin isteği, 24 Kasım 2026: "sadece gün sonu ladmine personel foto atsın";
@@ -36,6 +37,31 @@ export const LAFPOS_PHOTO_TEXT = {
 export const LAFPOS_STAFF_DESCRIPTION = "Rakamlar LafPOS'tan geldi; Pavo'dan gün sonu fişini (detaylı Z) alıp fotoğrafını ekleyin.";
 /** Sayım bekleyen LafPOS günü (gün sonu geldi, rapor yok): rakam henüz yok, rapor LafPOS'tan gelecek */
 export const LAFPOS_STAFF_WAITING_DESCRIPTION = "Kasa raporu LafPOS'tan gelecek; Pavo'dan gün sonu fişini (detaylı Z) alıp fotoğrafını ekleyin.";
+
+/**
+ * LafPOS gününde gün sonundan önce (LafPOS'un şubesi, geçiş gününden itibaren, LafPOS'un gün sonu gelmedi, rapor yok)
+ * personelin gördüğü (son denetim, 24 Kasım 2026): form yok, rapor LafPOS'tan gelir. Bugün'ün akşam satırı da bunu söyler
+ */
+export const LAFPOS_STAFF_BEFORE_DAY_END_TEXT = "Kapanışta LafPOS'ta Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin (detaylı Z) fotoğrafını eklersiniz.";
+/** Aynı günün alt başlığı */
+export const LAFPOS_STAFF_BEFORE_DAY_END_DESCRIPTION = "Kasa raporu LafPOS'tan gelecek: kapanışta LafPOS'ta Günü kapat'a basın.";
+
+/**
+ * Personelin kasa formu yerine bilgi mi görür: LafPOS'un şubesinde LafPOS günü, gün sonu gelmedi ve rapor yok. Yönetici
+ * formu görür (LafPOS hiç göndermezse yedek yol); dünden eski gün geç rapor yolundan girer. Elle girilmiş rapor eski yolla
+ */
+export function staffBeforeLafposDayEnd(o: { admin: boolean; branchId: string; lafposDay: boolean; dayEnd: boolean; hasReport: boolean }): boolean {
+  return !o.admin && o.branchId === LAFPOS_BRANCH_ID && o.lafposDay && !o.dayEnd && !o.hasReport;
+}
+
+/**
+ * Personelin LafPOS gününde formdan yazımını sunucu reddeder (saveCashReport): rapor LafPOS'tan gelir, otomatik raporun
+ * rakamlarını yalnız yönetici düzeltir. Personelin elle girilmiş raporu (eski yol) kendi kapısıyla açık kalır
+ */
+export const LAFPOS_STAFF_WRITE_TEXT = {
+  fresh: "LafPOS gününün kasa raporu LafPOS'tan gelir: kapanışta LafPOS'ta Günü kapat'a basın. LafPOS göndermezse yöneticinize yazın.",
+  auto: "Bu rapor LafPOS'tan yazıldı; rakamlarını yalnız yönetici düzeltir. Gün sonu fotoğrafını Kasa sayfasından ekleyin.",
+} as const;
 
 /** Personelin alt başlığı: LafPOS günü değilse null (eski metin); otomatik raporlu gün ya da sayım bekleyen gün */
 export function staffLafposDescriptionOf(state: { auto: boolean } | null): string | null {

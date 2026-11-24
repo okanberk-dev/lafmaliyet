@@ -274,6 +274,32 @@ export async function attachLafposDayPhotoCore(db: DB, me: CashActor, input: { d
   });
 }
 
+/**
+ * Otomatik raporun fotoğraf karşılaştırmasını kayıtlı okunuşlarla yeniden kurar (güçlü modelin sonradan bakışından sonra,
+ * gun-sonu.ts runLafposDayEnd): karşılaştırma, eksikler ve fotoğraftan Z no. Otomatik rapor yoksa null
+ */
+export async function refreshDayPhotoCheck(db: DB, date: string, branchId: string, now = new Date()): Promise<LafposPhotoCheck | null> {
+  return db.transaction(async (tx) => {
+    const device = await lafposDayDevice(tx, date, branchId);
+    const report = await lockCashReport(tx, date, branchId);
+    const [state] = await tx
+      .select()
+      .from(s.lafposDayEnds)
+      .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)))
+      .for("update")
+      .limit(1);
+    if (!device || !report || !state || state.reportId !== report.id || !state.autoValues) return null;
+    const check = await photoCheckOf(tx, report, device, now);
+    const attached = (await dayPhotoIds(tx, report.id)).length;
+    await tx
+      .update(s.lafposDayEnds)
+      .set({ photoCheck: check, missing: autoMissing(device.z, device, { attached, check }), updatedAt: now })
+      .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
+    await applyPhotoZNo(tx, report, check, now);
+    return check;
+  });
+}
+
 /** Sayfanın gün sonu fotoğrafı bölümü: istenen, eklenen (bağlı ya da bekleyen) ve karşılaştırma (yalnız yöneticiye) */
 export interface LafposPhotoState {
   /** Günün otomatik raporu var mı (yoksa ve gün sonu geldiyse fotoğraf bekler) */

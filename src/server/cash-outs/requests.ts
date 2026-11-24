@@ -14,6 +14,7 @@ import {
   photoKindRefusal,
   PhotoRemovalPayload,
   photoRemovalTitle,
+  readingBlocksRemoval,
   type CashOutBeforeT,
   type CashOutLineT,
   type CashOutOp,
@@ -29,7 +30,7 @@ import { REQUEST_TEXT } from "@/lib/staff-requests";
 import { cashOutPayment } from "@/server/cari/kasa";
 import { okcServerColumns } from "@/server/cash/report-store";
 import { photoReadingOf } from "@/server/data/cash-photos";
-import { kasaEvidence } from "@/server/data/lafpos-day";
+import { kasaEvidence, lafposAutoReportOf } from "@/server/data/lafpos-day";
 import { currentTillBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
 import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
@@ -210,7 +211,7 @@ async function lockReport(tx: CashOutTx, reportId: number) {
  * Z (yazarkasa) fotoğrafı (photoKindRefusal) ve fotoğraftan farklı yazılan (net okunmuş) alanı olan fotoğraf
  * kaldırılmaz. İstek ve onay aynı denetimi yapar. Okuma farkları da döner (işlem geçmişine).
  */
-async function removalCheck(tx: CashOutTx, photoId: number, kind: RemovablePhotoKind, reportId: number) {
+async function removalCheck(tx: CashOutTx, photoId: number, kind: RemovablePhotoKind, reportId: number, o: { staff: boolean }) {
   const report = await lockReport(tx, reportId);
   if (!report) return { refusal: CASH_OUT_REQUEST_TEXT.photoNotLinked, diffs: [] as string[], report: null };
   // Bağ kilit altında yeniden: önceki okuma kilitsizdi, arada onaylanan kaldırma bağı silmiş olabilir (istek açan yol)
@@ -231,7 +232,10 @@ async function removalCheck(tx: CashOutTx, photoId: number, kind: RemovablePhoto
   const reading = await photoReadingOf(tx, photoId, kind, report.date);
   const saved = savedFields(report);
   const diffs = reading ? photoDiffs([reading], saved).map((d) => photoDiffText(d)) : [];
-  if (reading && suspiciousDiffs([reading], saved).length) return { refusal: CASH_OUT_REQUEST_TEXT.photoDiffs, diffs, report };
+  // Otomatik LafPOS gününde personelin isteği okuma farkına bakmaz (fark fotoğraf ↔ LafPOS, yalnız yöneticinin); onay bakar
+  if (reading && readingBlocksRemoval({ suspicious: suspiciousDiffs([reading], saved).length, staff: o.staff, lafposAuto: await lafposAutoReportOf(tx, report.id) })) {
+    return { refusal: CASH_OUT_REQUEST_TEXT.photoDiffs, diffs, report };
+  }
   return { refusal: null, diffs, report };
 }
 
@@ -253,7 +257,7 @@ export async function proposePhotoRemoval(
     const otherBranch = await staffBranchRefusal(me, link.branchId);
     if (otherBranch) throw new UserError(otherBranch);
     if (!staffCanReport(link.date, now)) throw new UserError(CASH_OUT_REQUEST_TEXT.photoDay);
-    const check = await removalCheck(tx, input.photoId, link.kind, link.reportId);
+    const check = await removalCheck(tx, input.photoId, link.kind, link.reportId, { staff: true });
     if (check.refusal) throw new UserError(check.refusal);
     const payload = PhotoRemovalPayload.parse({ photoId: input.photoId, photoKind: link.kind, reportId: link.reportId, day: link.date });
     const out = await createOrUpdateRequest(
@@ -376,7 +380,7 @@ export async function reviewPhotoRemovalCore(
     if (input.decision === "reject") return { status: "rejected" as const, payload, diffs: [], request: await decide(tx, row, me, "rejected", { note: input.note, releaseDays: null }, now) };
     const link = await linkOf(tx, payload.photoId);
     if (!link || link.reportId !== payload.reportId) throw new UserError(CASH_OUT_REQUEST_TEXT.photoNotLinked);
-    const check = await removalCheck(tx, payload.photoId, payload.photoKind, payload.reportId);
+    const check = await removalCheck(tx, payload.photoId, payload.photoKind, payload.reportId, { staff: false });
     if (check.refusal) throw new UserError(check.refusal);
     await tx.delete(s.cashReportPhotos).where(and(eq(s.cashReportPhotos.reportId, payload.reportId), eq(s.cashReportPhotos.photoId, payload.photoId)));
     await releasePhoto(payload.photoId, DELETED_REPORT_DAYS, tx);

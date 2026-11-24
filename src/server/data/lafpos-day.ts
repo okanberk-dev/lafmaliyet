@@ -59,6 +59,15 @@ export async function kasaEvidence(db: Reader, date: string, branchId?: string):
 }
 
 /**
+ * Rapor LafPOS'un otomatik raporu mu (lafpos_day_ends.report_id bu rapor, otomatik değerler kayıtlı). İşlem içinden de
+ * okunur (fotoğraf kaldırma isteği, src/server/cash-outs/requests.ts)
+ */
+export async function lafposAutoReportOf(db: Reader, reportId: number): Promise<boolean> {
+  const [row] = await db.select({ autoValues: s.lafposDayEnds.autoValues }).from(s.lafposDayEnds).where(eq(s.lafposDayEnds.reportId, reportId)).limit(1);
+  return Boolean(row?.autoValues);
+}
+
+/**
  * [from, to] içindeki günlerin kasası ve LafPOS özetleri (yöneticinin ay görünümü, zil): `of(gün, şube)`
  * loadKasaLafpos'un aynısını verir (geçiş gününden önceki günde ya da geçiş günü boşken `{ lafpos: false, day: null }`).
  * Gün sonları (şube, gün) ile tutulur: "Tümü"de iki şubenin aynı günü birbirine karışmaz; şube verilmezse kasanın

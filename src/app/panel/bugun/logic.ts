@@ -24,7 +24,7 @@ import { unpricedNotice } from "@/lib/count-item";
 import { money, monthLabel, num } from "@/lib/format";
 import { JOBS_HREF, systemAlerts, type JobHealth, type JobKey } from "@/lib/job-health";
 import { isPlayable, phase, sessionEnd, sessionStart, trClock, type KaraokeSessionDTO } from "@/lib/karaoke/session";
-import { LAFPOS_PHOTO_TEXT } from "@/lib/lafpos/foto";
+import { LAFPOS_PHOTO_TEXT, LAFPOS_STAFF_BEFORE_DAY_END_TEXT } from "@/lib/lafpos/foto";
 import type { KasaName } from "@/lib/lafpos/kasa";
 import { kasaName } from "@/lib/lafpos/switch";
 import { holdAlert, HOLDS_HREF } from "@/lib/price-hold";
@@ -452,9 +452,8 @@ function cashYesterdayOf(f: DayFacts, c: DayContext, till: TillDays | null): Day
  * gününde (geçiş gününden itibaren) LafPOS'ta "Günü kapat" gün sonunu panele gönderir, form ondan dolar
  */
 export function eveningCashText(kasa: KasaName): string {
-  return kasa === "LafPOS"
-    ? "Kapanışta LafPOS'ta Günü kapat'a basın (gün sonu panele gönderilir), kasadaki nakdi sayıp girin."
-    : "Kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayıp girin.";
+  // LafPOS gününde rapor LafPOS'un gün sonundan kendiliğinden yazılır; personel rakam girmez (son denetim, 24 Kasım 2026)
+  return kasa === "LafPOS" ? LAFPOS_STAFF_BEFORE_DAY_END_TEXT : "Kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayıp girin.";
 }
 
 /**
@@ -491,8 +490,10 @@ function cashTodayOf(f: DayFacts, c: DayContext, till: TillDays | null): DayTask
   if (r?.lafposPhoto === "pending") return { key: "kasa", title: "Gün sonu fotoğrafı", status: "todo", detail: LAFPOS_PHOTO_TEXT.slip, href, action: "Fotoğraf ekle" };
   if (r?.lafposPhoto === "done") return { key: "kasa", title, status: "done", badge: "Tamam", detail: dated(c, r.date, `LafPOS gün sonu · ${LAFPOS_PHOTO_TEXT.done} · ${diffText(r.cashDiff)}`), href, action: "Raporu aç" };
   if (r) return { key: "kasa", title, status: "done", badge: "Gönderildi", detail: dated(c, r.date, `${r.submittedByName} gönderdi · ${diffText(r.cashDiff)}`), href, action: "Raporu aç" };
-  if (c.evening) return { key: "kasa", title, status: "todo", detail: dated(c, c.day, eveningCashText(kasaName(c.day, f.lafposSwitch ?? null))), href: "/panel/kasa", action: "Raporu gir" };
-  return { key: "kasa", title, status: "later", badge: "Akşam", detail: "Kapanışta girilir: Z raporu ve kasa sayımı.", href: "/panel/kasa", action: "Kasa raporu" };
+  const kasa = kasaName(c.day, f.lafposSwitch ?? null);
+  if (c.evening) return { key: "kasa", title, status: "todo", detail: dated(c, c.day, eveningCashText(kasa)), href: "/panel/kasa", action: kasa === "LafPOS" ? "Kasa raporu" : "Raporu gir" };
+  const later = kasa === "LafPOS" ? "Kapanışta LafPOS'ta Günü kapat'a basılır; rapor LafPOS'tan gelir." : "Kapanışta girilir: Z raporu ve kasa sayımı.";
+  return { key: "kasa", title, status: "later", badge: "Akşam", detail: later, href: "/panel/kasa", action: "Kasa raporu" };
 }
 
 // ---------------------------------------------------------------- Zayi (personel)

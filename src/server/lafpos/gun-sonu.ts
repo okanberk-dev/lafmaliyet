@@ -38,10 +38,11 @@ import { APP_URL } from "@/server/notify/digest-template";
 import { activeDigestEmails, sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail, type SendOptions } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
+import { strongRecheckDayPhotos, type StrongRecheckDeps } from "@/server/photo-read/lafpos";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 import { supersede } from "@/server/staff-requests/core";
 
-import { applyPhotoZNo, dayPhotoIds, linkPendingPhotos, photoCheckOf } from "./foto";
+import { applyPhotoZNo, dayPhotoIds, linkPendingPhotos, photoCheckOf, refreshDayPhotoCheck } from "./foto";
 
 /*
  * LafPOS gün sonunun otomasyonu (docs/LAFPOS.md › Gün sonu otomasyonu): LafPOS'un şubesinin (Marina, LAFPOS_BRANCH_ID)
@@ -643,6 +644,7 @@ export async function runLafposDayEnd(
   date: string,
   now = new Date(),
   opts?: SendOptions,
+  recheck?: StrongRecheckDeps,
 ): Promise<{ date: string; report: AutoReportResult | "error"; email: DayEndEmailResult | "error"; pavo: PavoEmailResult | "error"; photo: PhotoEmailResult | "error"; error?: string }> {
   let report: AutoReportResult | "error";
   let error: string | undefined;
@@ -652,6 +654,15 @@ export async function runLafposDayEnd(
     console.error("[lafpos] gün sonu raporu yazılamadı:", date, e);
     report = "error";
     error = e instanceof Error ? e.message : String(e);
+  }
+  // LafPOS'un yeni rakamları ucuz okunuşu "fark"a çevirdiyse e-postalardan ve zilden önce bir kez güçlü model bakar
+  // (strongRecheckDayPhotos); düşerse kayıtlı karşılaştırma kalır
+  if (report === "written" || report === "updated" || report === "unchanged") {
+    try {
+      if ((await strongRecheckDayPhotos(db, date, { deadlineAt: opts?.deadlineAt, ...recheck })) > 0) await refreshDayPhotoCheck(db, date, LAFPOS_BRANCH_ID, now);
+    } catch (e) {
+      console.error("[lafpos] gün sonu fotoğrafının güçlü okuması:", date, e instanceof Error ? e.message : e);
+    }
   }
   let email: DayEndEmailResult | "error";
   try {

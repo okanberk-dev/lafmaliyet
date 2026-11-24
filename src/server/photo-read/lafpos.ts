@@ -10,11 +10,12 @@ import { OCR_MODEL } from "@/lib/photo-read/models";
 import { parsePavoOcr } from "@/lib/photo-read/pavo-ocr";
 import { OKC_SHORT_TASK, OKC_TASK, SYSTEM } from "@/lib/photo-read/prompts";
 import { KasaOkcRaw, type KasaOkc } from "@/lib/photo-read/schemas";
-import { extractImage, loadAiSettings, type AiResult } from "@/server/ai/claude";
+import { aiConfigured, extractImage, loadAiSettings, type AiResult } from "@/server/ai/claude";
 import { OKC_EFFORT, OKC_MAX_TOKENS, type AiClient, type AiImageType, type AiTimeouts } from "@/server/ai/run";
 import { schema as s, type DB } from "@/server/db";
-import { lafposDayDevice } from "@/server/lafpos/foto";
+import { dayPhotoIds, lafposDayDevice } from "@/server/lafpos/foto";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
+import { getPhoto, readPhoto } from "@/server/storage/photos";
 
 import { ocrImage, OCR_TIMEOUT_MS } from "./ocr";
 
@@ -156,4 +157,53 @@ export async function readLafposDayPhoto(
     needsSecond: (raw) => cheapReadingProblems(raw, { expectBatches: Boolean(device.bankPos?.batches?.length || device.bankPos?.batchNo) }).length > 0 || differs(raw),
   });
   return result;
+}
+
+export interface StrongRecheckDeps {
+  /** Yalnız testte */
+  client?: AiClient;
+  /** Fotoğrafın baytları (testte); verilmezse depodan */
+  read?: (photoId: number) => Promise<{ bytes: Uint8Array; contentType: string } | null>;
+  /** Bu andan önce bitmeli (after(): e-postalara süre kalsın); kalan süre güçlü okumaya yetmezse denenmez */
+  deadlineAt?: number;
+}
+
+/** Güçlü okumadan sonra e-postalara kalması gereken süre */
+const AFTER_STRONG_MS = 10_000;
+
+/**
+ * Sonradan değişen karşılaştırmanın güçlü model bakışı (son denetim, 24 Kasım 2026; docs/FOTOGRAF.md › LafPOS gününün
+ * fotoğrafı). Fotoğraf yüklenirken ucuz okunuş o anki LafPOS rakamlarıyla karşılaştırılır; Pavo'nun sonucu sonra gelirse
+ * (LafPOS günü yeniden gönderir) karşılaştırma kayıtlı ucuz okunuşla yeniden kurulur ve yalnız ucuzun gördüğü bir "fark"
+ * ikinci bakış olmadan yöneticiye giderdi. Otomatik raporun karşılaştırması "fark" ya da "okunamadı" ise, okunuşu ucuz
+ * modelden gelen ve güçlü modelin hiç denenmediği her fotoğraf bir kez güçlü modelle okunur (readLafposDayPhoto: kayıtlı
+ * okunuş yeniden kullanılır, LafPOS'un şimdiki rakamlarıyla farklıysa güçlü model). Yapay zekâ kapalıysa hiçbir şey
+ * yapılmaz. Güçlü okuma denenen fotoğraf sayısı döner (çağıran karşılaştırmayı yeniler, sonra e-postaları gönderir)
+ */
+export async function strongRecheckDayPhotos(db: DB, date: string, deps: StrongRecheckDeps = {}): Promise<number> {
+  const branchId = LAFPOS_BRANCH_ID;
+  const [st] = await db
+    .select({ reportId: s.lafposDayEnds.reportId, autoValues: s.lafposDayEnds.autoValues, photoCheck: s.lafposDayEnds.photoCheck })
+    .from(s.lafposDayEnds)
+    .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)))
+    .limit(1);
+  const state = st?.photoCheck?.state;
+  if (!st?.reportId || !st.autoValues || (state !== "fark" && state !== "okunamadi")) return 0;
+  if (!aiConfigured()) return 0;
+  const settings = await loadAiSettings();
+  if (!settings.enabled) return 0;
+  const strong = settings.photoModels.strong;
+  let tried = 0;
+  for (const photoId of await dayPhotoIds(db, st.reportId)) {
+    if (deps.deadlineAt !== undefined && deps.deadlineAt - Date.now() < STRONG_TIMEOUTS.totalMs + AFTER_STRONG_MS) break;
+    const prev = await previousReads(db, photoId, strong);
+    if (!prev.reading || prev.model === strong || prev.strongTried) continue;
+    const photo = await getPhoto(photoId);
+    if (!photo?.createdBy) continue;
+    const file = await (deps.read ?? readPhoto)(photoId).catch(() => null);
+    if (!file) continue;
+    const r = await readLafposDayPhoto(db, { photoId, bytes: file.bytes, contentType: file.contentType as AiImageType, day: date, userId: photo.createdBy, branchId }, deps.client ? { client: deps.client } : {});
+    if (r?.steps.includes("strong")) tried++;
+  }
+  return tried;
 }

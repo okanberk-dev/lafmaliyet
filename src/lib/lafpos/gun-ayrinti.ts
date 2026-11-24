@@ -11,7 +11,7 @@ import type { PosDayPush, PosRefund } from "./day";
  *   POS'unun (Pavo) batch'inde ve yazarkasanın Z'sinde yoktur
  * - Ödeme iptalleri: günün iptal edilen ödemeleri (ödeme türünün adıyla; kişi değil)
  * - İptal edilen kalemler: hazırlanmış olan zayi tüketimidir (src/lib/lafpos/ikram.ts iptalWasteLines), hazırlanmamış
- *   yalnız bilgi
+ *   yalnız bilgi; kapanmış adisyondan iade (`refund`) ayrı satırda
  * - Yazarkasa Z no (okcZNo): LafPOS'un Z no'sundan ayrı, kasa raporunun "Yazarkasa Z no"suna otomatik yazılır
  * - Kasa açılışı (Faz 3, kasa zinciri): LafPOS'un açılışta beklediği (önceki günün devri), fark ve kasiyerin yazdığı neden
  * - Kasa hareketleri (Faz 3): harcama, teslim ve giriş, türüne göre sayı ve toplam; harcama ve teslim "Kasadan
@@ -67,10 +67,14 @@ export function lafposDayDetail(
   if (pay.length) sections.push({ title: "Ödemeler (LafPOS)", rows: pay });
   if (d.iptal) {
     const prepared = d.iptal.filter((l) => l.prepared);
-    const rest = d.iptal.filter((l) => !l.prepared);
+    // Kapanmış adisyondan iade (`refund`, hazırlanmamış): hazırlanmamış iptalle karışmaz, ayrı satırda (son denetim, 24
+    // Kasım 2026). Hazırlanmış iade zayi tüketimidir (iptalWasteLines), orada kalır
+    const refunded = d.iptal.filter((l) => !l.prepared && l.refund);
+    const rest = d.iptal.filter((l) => !l.prepared && !l.refund);
     const rows: [string, string][] = [];
     rows.push(["İptal, hazırlanmıştı (zayi)", prepared.length ? `${prepared.length} kalem · ${money(sum(prepared.map((l) => l.listValue)))}` : "yok"]);
     rows.push(["İptal, hazırlanmamıştı", rest.length ? `${rest.length} kalem · ${money(sum(rest.map((l) => l.listValue)))} · tüketim değil` : "yok"]);
+    if (refunded.length) rows.push(["İade (kapanmış adisyondan)", `${refunded.length} kalem · ${money(sum(refunded.map((l) => l.listValue)))}`]);
     sections.push({ title: "İptal edilen kalemler", rows });
   }
   const fiscal: [string, string][] = [];
