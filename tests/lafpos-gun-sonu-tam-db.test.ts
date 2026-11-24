@@ -238,7 +238,8 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DA
     assert.equal(await gun.writeAutoReport(db, DAY, NOW), "written");
     assert.equal((await report())?.bankPos, null, "uydurulmaz");
     assert.equal((await report())?.note, "LafPOS gün sonundan otomatik yazıldı. Eksik: Banka POS: LafPOS'tan Pavo gün sonu gelmedi.");
-    assert.deepEqual((await state())?.missing, ["bankPos"]);
+    // Pavo'nun sonucu gelmedi, fotoğraf da yok: gün tamam sayılmaz (fotoğraf bekleniyor)
+    assert.deepEqual((await state())?.missing, ["bankPos", "photo"]);
     // Otomatik gün sonu alınamadı (5085)
     assert.ok((await push({ bankPos: FAILED })).ok);
     assert.equal(await gun.writeAutoReport(db, DAY, NOW), "updated");
@@ -324,6 +325,34 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DA
     assert.deepEqual(links.map((l) => l.photoId), [id]);
     const st = (await state())!;
     assert.deepEqual([st.pendingPhotos, st.missing, st.photoCheck?.state], [[], [], "uyumlu"]);
+  });
+
+  test("Sayım yokken bekleyen fotoğraf, rapor elle girilince o rapora bağlanır (sahipsiz kalmaz)", async () => {
+    assert.ok((await push({}, { countedCash: null, cashDiff: null })).ok);
+    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "no-count");
+    const id = await photo(slip([{ no: "0001", net: 4_160 }]));
+    assert.equal((await foto.attachLafposDayPhotoCore(db, ayse, { date: DAY, branchId: LAFPOS_SUBE, photoId: id }, NOW)).status, "pending");
+    const r0 = await scope.withBranchScope(LAFPOS_SUBE, () =>
+      store.saveCashReport(
+        db,
+        ali,
+        { date: DAY, zNo: "11", receipts: 26, zTotal: 6_285, cash: 1_255, card: 5_030, mealCard: 0, online: 0, other: 0, openingCash: 1_120, cashIn: 0, cashOut: 800, cashOutNote: null, countedCash: 1_279.5, handedOver: 0, bankPos: null, offRevenue: 1_065, discounts: 90, note: null, countedBy: null, revision: 0, photos: [] },
+        NOW,
+      ),
+    );
+    assert.equal(r0.kind, "saved");
+    const rep = (await report())!;
+    const links = await db.select().from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, rep.id));
+    assert.deepEqual(links.map((l) => l.photoId), [id]);
+    assert.deepEqual((await state())?.pendingPhotos, []);
+    // Eski kayıt (düzeltmeden önce bekleyip kalmış): LafPOS'un sonraki gönderimi elle girilen rapora bağlar
+    const id2 = await photo(slip([{ no: "0001", net: 4_160 }]));
+    await db.update(s.lafposDayEnds).set({ pendingPhotos: [id2] }).where(and(eq(s.lafposDayEnds.date, DAY), eq(s.lafposDayEnds.branchId, LAFPOS_SUBE)));
+    assert.ok((await push()).ok);
+    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    const after2 = await db.select().from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, rep.id));
+    assert.deepEqual(after2.map((l) => l.photoId).sort(), [id, id2].sort());
+    assert.deepEqual((await state())?.pendingPhotos, []);
   });
 
   test("Elle girilen raporda bu yol kapalı (eski yol: formun Düzenle'si)", async () => {

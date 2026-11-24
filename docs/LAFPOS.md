@@ -477,7 +477,10 @@ yoktur. Gün sonu tamda ikisi de kapandı: `offDevice.cardTips` kartla bahşişt
 (`okc.voided`) yazarkasadan geçmeyene eklenir (`lafposDayOf`). LafPOS gününde kart farkı önce Pavo'nun banka gün
 sonuyla ölçülür (`withCardExtra(…, "LafPOS")`, `computeCash` `cardBank`); yazarkasa alanları LafPOS'un kendi
 belgelerinden geldiği için yazarkasa ↔ LafPOS satırı (`okcReconcile`) Z − yazarkasadan geçmeyen − cihazda iptal ile,
-banka gün sonu yazarkasa kartı + bahşiş + tahsilatla karşılaştırılır. Uçtan uca gün (24.11): kart 1.088, yazarkasadan
+banka gün sonu yazarkasa kartı + bahşiş + tahsilatla karşılaştırılır. Bu yalnız yazarkasa kartı LafPOS'un cihaz
+belgesinin kartıyla aynıysa geçerlidir (`okcFromDevice`; gün özeti `offDevice.okcCard` taşır): elle yazılan yazarkasa
+kartı (ör. personel LafPOS'tan önce banka fişindeki tutarı yazdı) eskisi gibi bahşiş / tahsilat düşülerek karşılaştırılır.
+Uçtan uca gün (24.11): kart 1.088, yazarkasadan
 geçmeyen 288 (+20 bahşiş), kartla cari tahsilatı 195, Pavo 240 + 755 = 995: "Kart: banka gün sonu ile LafPOS aynı".
 
 #### Geç rapor, fotoğraf kaldırma, kapalı gün, ay rakamı (G8, E-36, G6)
@@ -731,12 +734,16 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   "Gün sonu fotoğrafı" kartı: Pavo gün sonu fişi (Pavo sonucu geldiyse), mali Z basan cihazda (`okc.zReport`) yazarkasa Z
   raporu da. Metin yalnız "Pavo gün sonu fişinin fotoğrafını ekleyin" (+ "Yazarkasa Z raporunun fotoğrafını ekleyin"),
   eklenince "Fotoğraf alındı", okunamadı ya da yanlış belgeyse "Fotoğraf okunamadı / yanlış belge, yeniden çekin".
+  Pavo'nun sonucu LafPOS'a henüz gelmediyse (istenen fotoğraf yok) ve fotoğraf da yoksa "Pavo gün sonu bekleniyor; gün
+  sonu fişinin fotoğrafını ekleyin" ("alındı" denmez, gün tamam sayılmaz; fiş çekilince tamam).
   Yönetici Düzenle'yi görür; elle düzelttiği alanı sonraki otomatik güncelleme ezmez.
 - Fotoğraf `attachLafposDayPhoto` ile rapora bağlanır (yazarkasa bölümü, `kasa-okc`, en çok 3): kaydetme yolu
   (`saveCashReport`) yok, sürüm yok, gönderen ve sayan değişmez, onay yok (rakam değişmiyor). Personel günden 14 gün
   (`LATE_REPORT_DAYS`) içinde, ertesi günün raporu girilmiş olsa da ekler; yalnız kendi yüklediğini; işlem geçmişine
   "Gün sonu fotoğrafı (LafPOS günü)" düşer. Fotoğraf kaldırma kuralı aynı. Rapor yokken (LafPOS'ta sayım yok) fotoğraf
-  günün kaydında bekler (`lafpos_day_ends.pending_photos`), rapor yazılınca bağlanır. Dünden eski LafPOS gününde de
+  günün kaydında bekler (`lafpos_day_ends.pending_photos`), rapor yazılınca bağlanır; rapor elle girilirse
+  (`writeCashReport`, ya da LafPOS'un sonraki gönderiminde elle girilmiş rapor) o rapora bağlanır
+  (`adoptPendingDayPhotos`), sahipsiz kalmaz. Dünden eski LafPOS gününde de
   personel geç rapor değil yalnız bu kartı görür; LafPOS'un gün sonu gelmiş güne geç rapor isteği açılmaz
   (`CASH_REQUEST_TEXT.lateLafpos`). LafPOS'un gönderimi olmayan günde eski yol (yazarkasa Z fotoğrafıyla geç rapor).
 - Gün, otomatik rapor ve istenen fotoğraflar eklenince tamamdır (`lafpos_day_ends.missing`: cihaz boşlukları ve fotoğraf
@@ -745,7 +752,10 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
 - **Fotoğraf ↔ LafPOS** (`lafposPhotoCheck`, `lafpos_day_ends.photo_check`): okuma LafPOS gününde hiçbir alanı yazmaz.
   Bağlanınca (ve LafPOS yeniden gönderince) sunucu okunuşu karşılaştırır: Pavo fişinde okunan her batch no LafPOS'un
   batch'lerinde, batch sayısı aynı, okunan netlerin toplamı raporun Banka POS'u (±0,01), fişin günü raporun günü (ertesi
-  gün 05:00'ten önce basılan da), son batch'in banka dökümü Pavo'nunkiyle aynı; yazarkasa Z'si (yalnız `zReport`) Z no,
+  gün 05:00'ten önce basılan da), son batch'in banka dökümü Pavo'nunkiyle aynı. Günde birden çok Pavo gün sonu varsa
+  (gün içinde elle + kapanış) ve fotoğrafta yalnız bir kısmı varsa (bilinmeyen batch yok), yalnız çekilen batch'ler kendi
+  tutarıyla karşılaştırılır, çekilmeyenler bilgi satırıdır ("Fotoğrafı olmayan batch"; fark değil). Batch satırı okunmayan
+  fiş (ya da karşılaştırılacak satır çıkmayan okuma) "uyumlu" değil "okunamadı"dır (yeniden çekilir); yazarkasa Z'si (yalnız `zReport`) Z no,
   günlük toplam, nakit, kart, yemek kartı ve KDV dökümü. Fark yöneticinin uyarısıdır: Kasa gün görünümünde Pavo kartının
   altındaki "Gün sonu fotoğrafı" kartında satır satır, zilde "Kasa fotoğrafı LafPOS'tan farklı · Marina <gün>" (son 7
   gün, yalnız yönetici), gün sonu e-postasında ve ay satırında rozet ("Fotoğraf ↔ LafPOS farklı"). Banka POS boşken (Pavo

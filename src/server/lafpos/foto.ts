@@ -4,7 +4,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { businessDate, LATE_REPORT_DAYS, revisionDataOf } from "@/lib/cash-report";
 import { bankPosSchema, okcSchema, posZSchema, type BankPos, type PosDayZ, type PosOkc } from "@/lib/lafpos/day";
-import { lafposPhotoCheck, lafposPhotoNeed, staffPhotoLine, type LafposPhotoCheck, type LafposPhotoNeed, type LafposPhotoRead } from "@/lib/lafpos/foto";
+import { lafposPhotoCheck, lafposPhotoDone, lafposPhotoNeed, staffPhotoLine, type LafposPhotoCheck, type LafposPhotoNeed, type LafposPhotoRead } from "@/lib/lafpos/foto";
 import { autoMissing } from "@/lib/lafpos/gun-sonu";
 import { isLafposDay, LAFPOS_BRANCH_ID, branchSwitchDay } from "@/lib/lafpos/switch";
 import { KasaOkcRaw } from "@/lib/photo-read/schemas";
@@ -260,7 +260,7 @@ export async function lafposPhotoState(db: DB, date: string, branchId: string, r
   const pending = state?.pendingPhotos.length ?? 0;
   const attached = report ? (await dayPhotoIds(db, report.id)).length : pending;
   const check = state?.photoCheck ?? null;
-  const done = attached >= need.count && check?.state !== "okunamadi";
+  const done = lafposPhotoDone(need, attached, check);
   return { auto, need, attached, pending, line: staffPhotoLine(need, attached, check), done, check: role === "admin" ? check : null };
 }
 

@@ -2,7 +2,7 @@ import { DEFAULT_BRANCH_ID } from "./branches";
 import { CASH_OUT_LINES_SHOWN, cashOutShortLine, type CashOutLine } from "./cash-outs";
 import { dayRevenue } from "./cash-revenue";
 import { money } from "./format";
-import { okcHasFigures, okcReconcile, sameVat, type OkcReconcileLine, type OkcReportFields, type OkcVatLine } from "./okc-z";
+import { okcFromDevice, okcHasFigures, okcReconcile, sameVat, type OkcReconcileLine, type OkcReportFields, type OkcVatLine } from "./okc-z";
 import { lafposDiffsLine, type LafposDiff } from "./lafpos/diffs";
 import { photoDiffText, type PhotoDiff } from "./photo-read/kasa";
 import { addDays, dayMonthTR, daysBetween, longDateTR, todayTR } from "./reminders";
@@ -78,6 +78,8 @@ export type OkcFormKey = (typeof OKC_FORM_KEYS)[number];
 export interface CashOffDevice {
   card: number;
   cash: number;
+  /** LafPOS'un cihaz belgelerinin kartı (okc.card; src/lib/okc-z.ts okcFromDevice); eski gövdede yok */
+  okcCard?: number | null;
 }
 
 /** Günün zayi ve ikram özeti (src/lib/waste.ts summarize): "2× Latte M, Süt 1 LT" */
@@ -146,8 +148,8 @@ export function computeCash(
     offDevice?: CashOffDevice | null;
     /**
      * LafPOS günü (gün sonu tam, 24 Kasım 2026; withCardExtra): kart farkı önce Pavo'nun banka gün sonuyla ölçülür.
-     * Yazarkasa alanları LafPOS'un kendi belgelerinden (kartı Z'nin kartından türer, bahşiş ve tahsilat içermez): banka
-     * yoksa yazarkasa kartı bahşiş / tahsilat düşülmeden karşılaştırılır
+     * Banka yoksa yazarkasa kartıyla: LafPOS'un cihaz belgelerinden geldiyse (okcFromDevice; bahşiş ve tahsilat içermez)
+     * bahşiş / tahsilat düşülmeden, elle yazıldıysa eskisi gibi düşülerek
      */
     cardBank?: boolean;
     /** Ödenmez / ikram (ciro dışı); verilmezse ciro = Z toplamı (eski kayıt, kısmi test nesnesi) */
@@ -164,7 +166,7 @@ export function computeCash(
   const useBank = f.cardBank ? bankPos !== null : okcCard === null && bankPos !== null;
   const cardRef = useBank ? bankPos : okcCard;
   // Bahşiş ve cari tahsilatı bankadadır; ModPOS gününün yazarkasa kartında da (entegre POS), LafPOS gününün belge kartında değil
-  const extra = useBank || !f.cardBank ? (f.cardExtra ?? 0) : 0;
+  const extra = useBank || !(f.cardBank && okcFromDevice(okcCard, f.offDevice)) ? (f.cardExtra ?? 0) : 0;
   return {
     paymentsTotal,
     paymentsDiff: r2(paymentsTotal - revenue),
@@ -748,7 +750,7 @@ export function withCardExtra<T extends object>(
   kasa?: "ModPOS" | "LafPOS",
 ): T & { cardExtra?: number; offDevice?: CashOffDevice; cardBank?: boolean } {
   const extra = cardExtra && cardExtra > 0 ? { cardExtra } : null;
-  const off = offDevice && (offDevice.card > 0 || offDevice.cash > 0) ? { offDevice } : null;
+  const off = offDevice && (offDevice.card > 0 || offDevice.cash > 0 || offDevice.okcCard != null) ? { offDevice } : null;
   // LafPOS gününde kart farkı Pavo'nun banka gün sonuyla (computeCash cardBank)
   const bank = kasa === "LafPOS" ? { cardBank: true } : null;
   return extra || off || bank ? { ...f, ...extra, ...off, ...bank } : f;

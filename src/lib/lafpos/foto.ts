@@ -20,6 +20,8 @@ export const LAFPOS_PHOTO_TEXT = {
   slip: "Pavo gün sonu fişinin fotoğrafını ekleyin",
   z: "Yazarkasa Z raporunun fotoğrafını ekleyin",
   done: "Fotoğraf alındı",
+  /** Pavo'nun sonucu LafPOS'a henüz gelmedi (Banka POS yok): fotoğraf yokken "alındı" denmez */
+  waiting: "Pavo gün sonu bekleniyor; gün sonu fişinin fotoğrafını ekleyin",
   retry: "Fotoğraf okunamadı / yanlış belge, yeniden çekin",
 } as const;
 
@@ -96,7 +98,8 @@ export function lafposPhotoCheck(
   now: Date = new Date(),
 ): LafposPhotoCheck {
   const base = { at: now.toISOString(), photos: i.reads.length, rows: [] as LafposPhotoRow[], issues: [] as string[], readBankPos: null as number | null };
-  const usable = i.reads.filter((r) => r.raw && r.raw.readable && (r.raw.documentType === "batch_slip" || r.raw.documentType === "z_report"));
+  // Batch satırı okunmamış Pavo fişi (ör. batch bölümü kadrajın dışında) karşılaştırılacak bir şey vermez: okunamadı sayılır
+  const usable = i.reads.filter((r) => r.raw && r.raw.readable && ((r.raw.documentType === "batch_slip" && r.raw.batches.length > 0) || r.raw.documentType === "z_report"));
   if (!usable.length) {
     const failed = i.reads.some((r) => r.error !== null || (r.raw !== null && !usable.includes(r)));
     return { ...base, state: failed ? "okunamadi" : "okunmadi" };
@@ -116,14 +119,30 @@ export function lafposPhotoCheck(
     const readNos = [...new Set(slips.flatMap(({ b }) => (b.batchNo?.trim() ? [b.batchNo.trim()] : [])))];
     const lafposBatches = i.bankPos.batches ?? (i.bankPos.batchNo ? [{ batchNo: i.bankPos.batchNo, total: i.bankPos.pavoCard }] : []);
     const lafposNos = lafposBatches.flatMap((b) => (b.batchNo ? [b.batchNo] : []));
+    // Günde birden çok Pavo gün sonu olabilir (gün içinde elle alınan + kapanış); personel her fişi çekmeyebilir. Fotoğrafta
+    // LafPOS'un batch'lerinin yalnız bir kısmı varsa (bilinmeyen batch yok) yalnız çekilen batch'ler karşılaştırılır: her
+    // birinin tutarı LafPOS'taki batch'iyle; çekilmeyenler bilgi satırıdır (fark değil). Hepsi çekildiyse sayı ve toplam
+    const keys = new Set(readNos.map(batchKey));
+    const known = new Set(lafposNos.map(batchKey));
+    const partial = readNos.length > 0 && lafposNos.length > 0 && [...keys].every((k) => known.has(k)) && lafposNos.some((n) => !keys.has(batchKey(n)));
     if (readNos.length) {
-      const known = new Set(lafposNos.map(batchKey));
       rows.push({ label: "Batch no", photo: readNos.join(", "), lafpos: lafposNos.join(", ") || "yok", ok: readNos.every((n) => known.has(batchKey(n))) });
-      const keys = new Set(readNos.map(batchKey));
-      rows.push({ label: "Batch sayısı", photo: String(keys.size), lafpos: String(lafposBatches.length), ok: keys.size === lafposBatches.length });
+      if (!partial) rows.push({ label: "Batch sayısı", photo: String(keys.size), lafpos: String(lafposBatches.length), ok: keys.size === lafposBatches.length });
     }
     const sum = nets.every((n) => n !== null) ? round2((nets as number[]).reduce((a, n) => a + n, 0)) : null;
-    if (i.report.bankPos === null) {
+    if (partial) {
+      const totals = new Map(lafposBatches.flatMap((b) => (b.batchNo ? [[batchKey(b.batchNo), b.total] as const] : [])));
+      const seen = new Set<string>();
+      slips.forEach(({ b }, k) => {
+        const key = b.batchNo?.trim() ? batchKey(b.batchNo.trim()) : null;
+        if (key === null || seen.has(key)) return;
+        seen.add(key);
+        const lafpos = totals.get(key) ?? null;
+        rows.push({ label: `Batch ${b.batchNo!.trim()}`, photo: amountOf(nets[k]), lafpos: amountOf(lafpos), ok: nets[k] !== null && lafpos !== null && near(nets[k]!, lafpos) });
+      });
+      const unshot = lafposNos.filter((n) => !keys.has(batchKey(n)));
+      rows.push({ label: "Fotoğrafı olmayan batch", photo: "yok", lafpos: unshot.join(", "), ok: true });
+    } else if (i.report.bankPos === null) {
       readBankPos = sum;
       rows.push({ label: "Banka POS toplamı", photo: amountOf(sum), lafpos: "boş", ok: true });
     } else {
@@ -186,6 +205,9 @@ export function lafposPhotoCheck(
     }
   }
 
+  // Karşılaştırılan hiçbir satır yoksa "uyumlu" denmez: Pavo fişi okundu ama LafPOS'ta karşılığı henüz yok (Pavo'nun sonucu
+  // gelmedi) ise okunmadı, öteki durumda (ör. Pavo cihazında Z fotoğrafı, fiş yok) okunamadı / yanlış belge
+  if (!rows.length) return { ...base, state: slips.length && !i.bankPos ? "okunmadi" : "okunamadi" };
   const issues = rows.filter((r) => !r.ok).map((r) => `${r.label}: fotoğrafta ${r.photo}; LafPOS'ta ${r.lafpos}`);
   return { ...base, rows, issues, readBankPos, state: issues.length ? "fark" : "uyumlu" };
 }
@@ -195,6 +217,7 @@ export function lafposPhotoCheck(
  * yanlış belgeyse yeniden çekmesi. Fotoğrafla LafPOS'un farkı personele söylenmez (yöneticinin uyarısı)
  */
 export function staffPhotoLine(need: LafposPhotoNeed, attached: number, check: Pick<LafposPhotoCheck, "state"> | null): string {
+  if (need.count === 0 && attached === 0) return LAFPOS_PHOTO_TEXT.waiting;
   if (attached < need.count) {
     if (need.slip && need.z && attached === 0) return `${LAFPOS_PHOTO_TEXT.slip}. ${LAFPOS_PHOTO_TEXT.z}`;
     return need.slip && attached === 0 ? LAFPOS_PHOTO_TEXT.slip : LAFPOS_PHOTO_TEXT.z;
@@ -203,13 +226,18 @@ export function staffPhotoLine(need: LafposPhotoNeed, attached: number, check: P
   return LAFPOS_PHOTO_TEXT.done;
 }
 
-/** Fotoğraf tamam mı (günün raporu bitti): istenen sayı eklendi ve okunamadı / yanlış belge değil */
+/**
+ * Fotoğraf tamam mı (günün raporu bitti): istenen sayı eklendi ve okunamadı / yanlış belge değil. Pavo'nun sonucu henüz
+ * gelmediyse (istenen 0) fotoğrafsız gün tamam sayılmaz: Pavo'nun fişi gün sonunda basılır, çekilince tamamlanır
+ */
 export function lafposPhotoDone(need: LafposPhotoNeed, attached: number, check: Pick<LafposPhotoCheck, "state"> | null): boolean {
+  if (need.count === 0 && attached === 0) return false;
   return attached >= need.count && check?.state !== "okunamadi";
 }
 
 /** Yöneticinin kısa satırı (ay satırının rozeti, e-posta): "Fotoğraf ↔ LafPOS: farklı (2)" */
 export function photoCheckText(check: LafposPhotoCheck | null, need: LafposPhotoNeed, attached: number): string {
+  if (need.count === 0 && attached === 0) return "bekleniyor (Pavo gün sonu henüz gelmedi)";
   if (attached < need.count) return `bekleniyor (${[need.slip && attached === 0 ? "Pavo gün sonu fişi" : null, need.z ? "yazarkasa Z" : null].filter(Boolean).join(", ") || "fotoğraf"})`;
   if (!check) return "alındı";
   switch (check.state) {

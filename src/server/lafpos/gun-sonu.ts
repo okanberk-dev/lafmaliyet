@@ -26,7 +26,7 @@ import { branchSwitchDay, isLafposDay, LAFPOS_BRANCH_ID } from "@/lib/lafpos/swi
 import { emailKey } from "@/lib/notify-recipients";
 import { DELETED_REPORT_DAYS } from "@/lib/photo-rules";
 import { addDays, longDateTR } from "@/lib/reminders";
-import { lockCashReport, lockLateDay, okcServerColumns, type CashTx } from "@/server/cash/report-store";
+import { adoptPendingDayPhotos, lockCashReport, lockLateDay, okcServerColumns, type CashTx } from "@/server/cash/report-store";
 import { onNextReport, onReportSaved } from "@/server/closed-days";
 import { loadCashSettings } from "@/server/data/cash-reports";
 import { schema as s, type DB } from "@/server/db";
@@ -225,6 +225,8 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
     }
 
     if (state.reportId !== prev.id || !state.autoValues) {
+      // Sayım yokken bekleyen gün sonu fotoğrafları elle girilen rapora bağlanır (yoksa sahipsiz kalırdı)
+      if (state.pendingPhotos.length && (await adoptPendingDayPhotos(tx, prev, now)) > 0) await serverColumns(tx, prev);
       await setState({ autoValues: null, missing: [] });
       return "human";
     }

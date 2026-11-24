@@ -756,9 +756,20 @@ export interface OkcReportFields {
   /**
    * LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2; src/lib/lafpos/prefill.ts LafposDay.offDevice): mali
    * fişi yazarkasada kesilmedi. Z'nin kartında ve nakdinde var, yazarkasanın Z'sinde ve banka gün sonunda yok: kart, nakit
-   * ve toplam karşılaştırmaları bunu düşer; kaydedilmez
+   * ve toplam karşılaştırmaları bunu düşer; kaydedilmez. `okcCard` LafPOS'un cihaz belgelerinin kartıdır (okc.card;
+   * okcFromDevice)
    */
-  offDevice?: { card: number; cash: number } | null;
+  offDevice?: { card: number; cash: number; okcCard?: number | null } | null;
+}
+
+/**
+ * Raporun yazarkasa kartı LafPOS'un cihaz belgelerinden mi (gün sonu tam, 24 Kasım 2026): LafPOS'un gönderdiği belge kartıyla
+ * aynıysa evet. Belge kartı Z − yazarkasadan geçmeyen − cihazda iptaldir, kartla bahşiş ve cari tahsilatı içermez; elle
+ * yazılan yazarkasa kartı (ör. banka fişinden, eski LafPOS günleri) içerebilir, onda bahşiş / tahsilat eskisi gibi düşülür
+ */
+export function okcFromDevice(okcCard: number | null | undefined, offDevice: { okcCard?: number | null } | null | undefined): boolean {
+  const device = offDevice?.okcCard;
+  return isNum(okcCard) && isNum(device) && Math.abs(Math.round((okcCard - device) * 100) / 100) < 0.005;
 }
 
 export interface OkcReconcileLine {
@@ -824,7 +835,8 @@ export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin", ka
     (extra ? (audience === "admin" ? ` LafPOS'taki kartla bahşiş ve cari tahsilatı (${money(extra)}) düşüldü.` : " LafPOS'taki kartla bahşiş ve cari tahsilatı düşüldü.") : "") +
     offNote("kart", offCard);
   const card = r2(f.card - offCard);
-  const lafpos = kasa === "LafPOS";
+  // Yazarkasa kartı LafPOS'un cihaz belgelerinden (otomatik rapor): bahşiş / tahsilat onda yok, banka satırında var
+  const lafpos = kasa === "LafPOS" && okcFromDevice(okcCard, f.offDevice);
   // Kart: yazarkasa kartı varsa o, yoksa banka gün sonu − ModPOS kart
   if (okcCard !== null) {
     const d = r2(okcCard - card - (lafpos ? 0 : extra));

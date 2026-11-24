@@ -259,13 +259,14 @@ describe("kabul: Marina Kasım 2026 (ModPOS 13–21 + LafPOS 22 Kasım)", { skip
     assert.deepEqual([bank.pavoCard, bank.lafposCard, r2(day.z.card - day.offDevice!.card), pavoView(bank).state], [4_160, 4_160, 4_160, "uyumlu"]);
     // Kasa raporunun kart karşılaştırması da aynı kuralla: yazarkasa kartı ve banka gün sonu 4.160 yazılınca fark yok
     const laf = await kasa.loadLafposDay(S, db, LAFPOS_SUBE);
-    assert.deepEqual(laf?.offDevice, { card: 870, cash: 200 });
+    // okcCard: LafPOS'un cihaz belgelerinin kartı (okc.card; otomatik raporun yazarkasa kartı bununla aynıysa bahşiş düşülmez)
+    assert.deepEqual(laf?.offDevice, { card: 870, cash: 200, okcCard: 4_160 });
     const [saved] = await db.select().from(s.cashReports).where(and(eq(s.cashReports.date, S), eq(s.cashReports.branchId, LAFPOS_SUBE)));
     const { withCardExtra } = await import("../src/lib/cash-report");
     const report = { ...saved, bankPos: 4_160, okcCard: 4_160 };
     assert.equal(computeCash(withCardExtra(report, laf!.cardExtra, laf!.offDevice)).cardDiff, 0, "Kart'tan 870 eksik demez");
     const days = await inMarina(() => kasa.loadKasaLafposDays(S, S, db));
-    assert.deepEqual(days(S, LAFPOS_SUBE).day?.offDevice, { card: 870, cash: 200 }, "ay görünümünün okuyucusu da");
+    assert.deepEqual(days(S, LAFPOS_SUBE).day?.offDevice, { card: 870, cash: 200, okcCard: 4_160 }, "ay görünümünün okuyucusu da");
   });
 
   test("22 Kasım kasa zinciri (Faz 3): 23 Kasım'ın beklenen açılışı 1.279,50 (gün sonu yanıtı ve devir ucu); 800,00 'Diğer fatura dışı' fişsiz harcama Kasadan çıkanlar'da bir kez", async () => {

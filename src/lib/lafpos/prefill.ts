@@ -35,7 +35,7 @@ export interface LafposDay {
    * kesilmediği için yazarkasanın kartında ve nakdinde, Pavo'nun banka gün sonunda yoktur; kart karşılaştırması kartı,
    * yazarkasanın nakit ve toplam satırları ikisini düşer (withCardExtra). Tutarı yalnız yöneticinin metni yazar
    */
-  offDevice: PosOffDevice | null;
+  offDevice: (PosOffDevice & { okcCard?: number | null }) | null;
 }
 
 /**
@@ -118,7 +118,7 @@ export function lafposCardExtra(z: PosDayZ, offDevice?: Pick<PosOffDevice, "card
  * Saklanan Z özetinden günün LafPOS özeti (Kasa raporunun okuyucusu: src/server/data/lafpos-day.ts). `offDevice`
  * gövdenin üst düzey alanıdır (Z'nin değil): ayrı sütundan gelir, yoksa (eski gövde) null
  */
-export function lafposDayOf(z: PosDayZ, receivedAt: Date | string, offDevice?: PosOffDevice | null, okc?: Pick<PosOkc, "voided"> | null): LafposDay {
+export function lafposDayOf(z: PosDayZ, receivedAt: Date | string, offDevice?: PosOffDevice | null, okc?: Pick<PosOkc, "voided"> & Partial<Pick<PosOkc, "card">> | null): LafposDay {
   // Gün sonu tam: cihazda iptal edilen belgenin ödemesi Z'de kalır, yazarkasanın ve Pavo'nun toplamında yoktur
   // (okc.cash = z.cash − offDevice.cash − voided.cash): karşılaştırmalar onu da düşer
   const card = round2((offDevice?.card ?? 0) + (okc?.voided.card ?? 0));
@@ -128,7 +128,8 @@ export function lafposDayOf(z: PosDayZ, receivedAt: Date | string, offDevice?: P
     prefill: lafposPrefill(z),
     till: { spent: z.cashOut, handed: z.handedOver },
     cardExtra: lafposCardExtra(z, offDevice),
-    offDevice: card > 0 || cash > 0 ? { card, cash } : null,
+    // Cihaz belgelerinin kartı da: raporun yazarkasa kartı ondan geldiyse kart karşılaştırması bahşişi düşmez (okcFromDevice)
+    offDevice: card > 0 || cash > 0 || okc?.card != null ? { card, cash, ...(okc?.card != null ? { okcCard: okc.card } : {}) } : null,
   };
 }
 
