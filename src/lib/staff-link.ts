@@ -4,10 +4,12 @@
 //
 // - Bağlantı yalnız yöneticinin açık seçimiyle kurulur; ad benzerliğiyle kendiliğinden bağlanmaz, seçici önseçmez.
 // - Panel hesabı (staff.userId) Vardiya'da "u:<id>"; hesabı olmayan çalışan adıyla "n:<küçük harfli ad>" (personRef).
-// - Bir hesap (ya da bir şubedeki bir ad) aynı ayda tek maaş satırına bağlanır: aralığı çakışan iki satır aynı kişiyi
-//   gösteremez. "Devam ettir"in açtığı yeni kayıttan önceki satır kendi geçmişiyle bağlı kalabilir (aralıkları ayrık).
-//   Bu yüzden bir hesaba birden çok (aralığı ayrık) satır düşebilir: hesap başına liste verenler (LM-4b'nin
-//   /api/panel/pos/personel'i) hesap başına tek öğe vermelidir. Veritabanında tekil indeks yok (kural aralığa bağlı); eylem
+// - Bir hesap (ya da bir ad) bir şubede aynı ayda tek maaş satırına bağlanır: aynı şubede aralığı çakışan iki satır aynı
+//   kişiyi gösteremez. Şubeye kilitli olmayan hesap iki şubenin satırına bağlanabilir: part-time'ın çağrıldığı gün satırın
+//   şubesindeki vardiyalardır, öteki şubedeki günler o şubenin satırına aittir (inceleme bulgusu LM-4 2. tur, 1).
+//   "Devam ettir"in açtığı yeni kayıttan önceki satır kendi geçmişiyle bağlı kalabilir (aralıkları ayrık). Bu yüzden bir
+//   hesaba bir şubede birden çok (aralığı ayrık) satır düşebilir: şube başına liste verenler (LM-4b'nin
+//   /api/panel/pos/personel'i) şubede hesap başına tek öğe vermelidir. Veritabanında tekil indeks yok (kural aralığa bağlı); eylem
 //   denetimi ve yazımı bir işlem kilidi altında yapar (src/server/actions/costs.ts lockStaffLinks).
 
 import type { MonthRange } from "./calc/types";
@@ -41,9 +43,13 @@ export function rangesOverlap(a: MonthRange, b: MonthRange): boolean {
   return aFrom <= bTo && bFrom <= aTo;
 }
 
-/** Aynı kişiyi gösteriyor mu: aynı hesap (şubeden bağımsız) ya da aynı şubede aynı Vardiya adı */
+/**
+ * Aynı şubede aynı kişiyi gösteriyor mu: aynı hesap ya da aynı Vardiya adı. Şubeye kilitli olmayan hesap başka şubenin
+ * satırına da bağlanabilir (inceleme bulgusu LM-4 2. tur, 1): part-time'ın çağrıldığı gün satırın şubesindeki vardiyalardır,
+ * öteki şubedeki günler o şubenin satırına aittir
+ */
 const samePerson = (a: LinkRow, b: LinkRow) =>
-  (a.userId !== null && a.userId === b.userId) || (a.personRef !== null && a.personRef === b.personRef && a.branchId === b.branchId);
+  a.branchId === b.branchId && ((a.userId !== null && a.userId === b.userId) || (a.personRef !== null && a.personRef === b.personRef));
 
 /**
  * Bağlantı çakışması: aynı hesaba / ada bağlı, aralığı çakışan başka bir satır varsa ret metni; yoksa null. `others`
@@ -54,7 +60,7 @@ export function linkConflict(self: LinkRow, others: readonly LinkRow[]): string 
   const hit = others.find((o) => o.id !== self.id && samePerson(self, o) && rangesOverlap(self, o));
   if (!hit) return null;
   const what = self.userId !== null ? "Bu hesap" : "Bu Vardiya kişisi";
-  return `${self.name}: ${what} aynı aylarda "${hit.name}" maaş satırına bağlı. Bir kişi aynı ayda tek satıra bağlanır; önce o satırın bağlantısını kaldırın ya da bitiş ayını girin.`;
+  return `${self.name}: ${what} aynı şubede ve aynı aylarda "${hit.name}" maaş satırına bağlı. Bir kişi bir şubede aynı ayda tek satıra bağlanır; önce o satırın bağlantısını kaldırın ya da bitiş ayını girin.`;
 }
 
 /** Seçicinin değeri: "u:<id>", "n:<ad>" ya da "" (bağlı değil) */

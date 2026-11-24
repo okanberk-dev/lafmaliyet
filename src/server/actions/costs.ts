@@ -332,14 +332,15 @@ export async function saveStaff(
 
 /**
  * Maaş satırı bağlantılarının işlem kilidi (inceleme bulgusu 6). staff.user_id'de veritabanı tekilliği yok: kural "bir hesap
- * aynı ayda tek satıra" (aralığı çakışan iki satır aynı kişiyi gösteremez), aralığa bağlı olduğundan bir indeksle
- * yazılamaz. Denetim (checkStaffLinks, linkConflict) ve yazım bu kilidi tutan işlemde yapılır; kilidi tutan öteki kayıt
+ * bir şubede aynı ayda tek satıra" (bir şubede aralığı çakışan iki satır aynı kişiyi gösteremez), aralığa bağlı olduğundan
+ * bir indeksle yazılamaz. Denetim (checkStaffLinks, linkConflict) ve yazım bu kilidi tutan işlemde yapılır; kilidi tutan öteki kayıt
  * (saveStaff, endStaff) bitene kadar beklenir ve READ COMMITTED'da sonraki okuma onun yazdığını görür. Böylece iki
  * yöneticinin aynı anda kaydı aynı hesabı aralığı çakışan iki satıra bağlayamaz.
  *
  * Biten satır ile "Devam ettir"in açtığı yeni satır (aralıkları ayrık) aynı hesaba bağlı kalabilir: eski satırın geçmiş
- * ayları kendi bağlantısıyla sayılır. Bu yüzden bir hesaba birden çok satır düşebilir; LM-4b'nin personel listesi
- * (GET /api/panel/pos/personel, "bu ay ve geçen ay aralıktaki satırlar") hesap başına TEK öğe vermelidir (docs/VARDIYA.md).
+ * ayları kendi bağlantısıyla sayılır. Bu yüzden bir hesaba bir şubede birden çok satır düşebilir; LM-4b'nin personel listesi
+ * (GET /api/panel/pos/personel?sube=…, "bu ay ve geçen ay aralıktaki satırlar") şubede hesap başına TEK öğe vermelidir
+ * (docs/VARDIYA.md).
  */
 async function lockStaffLinks(tx: Tx): Promise<void> {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext('personel-baglanti'))`);
@@ -347,7 +348,7 @@ async function lockStaffLinks(tx: Tx): Promise<void> {
 
 /**
  * Maaş satırlarının Vardiya / hesap bağlantısı (Faz 5; src/lib/staff-link.ts): seçilen hesap var mı ve şubesine kilitliyse
- * satırın şubesi mi; aynı hesap (ya da bir şubede aynı Vardiya adı) aralığı çakışan iki satıra bağlanmış mı. Kayıttaki
+ * satırın şubesi mi; aynı şubede aynı hesap ya da aynı Vardiya adı aralığı çakışan iki satıra bağlanmış mı. Kayıttaki
  * yeni değerlerle (silinenler hariç) denetlenir. Dışa açılmaz ("use server" dosyasının her dışa verdiği bir uçtur)
  */
 async function checkStaffLinks(

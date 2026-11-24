@@ -7,7 +7,7 @@ import type { FixedExpense, Staff } from "./types";
 /** Gelir-gider'in yemek kartı satırının adı (engine.ts MEAL_CARD_ROW_LABEL) */
 export const MEAL_CARD_LABEL = MEAL_CARD_ROW_LABEL;
 
-export type StaffWarningKind = "meal-double" | "meal-extras" | "parttime-double" | "parttime-unlinked";
+export type StaffWarningKind = "meal-double" | "meal-extras" | "parttime-double" | "parttime-unlinked" | "parttime-other-branch";
 
 export interface StaffWarning {
   kind: StaffWarningKind;
@@ -56,9 +56,15 @@ const names = (xs: readonly { name: string }[]) => [...new Set(xs.map((x) => x.n
  * - meal-extras: işaretli kişinin ek ödemesi yemek kartı gibi duruyor (günlük tutarın tam katı);
  * - parttime-double: aynı ayda "Part-time çalışan" sabit gideri ve çağrıldığı günü olan günlük part-time satırı (işletme
  *   geneli ya da kişinin şubesinin kalemi): aynı iş iki kez sayılabilir;
- * - parttime-unlinked: Vardiya bağlantısı olmayan part-time: günü bilinmez, ücreti sayılmadı (tahmin yok).
+ * - parttime-unlinked: Vardiya bağlantısı olmayan part-time: günü bilinmez, ücreti sayılmadı (tahmin yok);
+ * - parttime-other-branch: hesabıyla bağlı part-time kişinin, ona bağlı maaş satırı olmayan şubedeki çalışma günleri
+ *   (model.strayPartTimeShifts): o günler hiçbir satıra girmiyor ("Tümü"de görülür; şube seçiliyken yalnız o şubenin
+ *   vardiyaları okunur).
  */
-export function staffWarnings(model: Pick<Model, "personnelFor" | "fixedInMonth" | "settings">, month: string): StaffWarning[] {
+export function staffWarnings(
+  model: Pick<Model, "personnelFor" | "fixedInMonth" | "settings"> & Partial<Pick<Model, "strayPartTimeShifts">>,
+  month: string,
+): StaffWarning[] {
   const out: StaffWarning[] = [];
   const rows = model.personnelFor(month).rows;
   const flagged: Staff[] = rows.filter((r) => r.mealCard > 0 || (r.staff.mealCard && isPartTime(r.staff))).map((r) => r.staff);
@@ -113,6 +119,17 @@ export function staffWarnings(model: Pick<Model, "personnelFor" | "fixedInMonth"
       title: "Part-time personelin Vardiya bağlantısı yok",
       detail: partTimeUnlinkedText(unlinked),
       staffIds: unlinked.map((s) => s.id),
+      href: "/panel/personel",
+    });
+  }
+  const stray = model.strayPartTimeShifts?.(month) ?? [];
+  if (stray.length) {
+    out.push({
+      kind: "parttime-other-branch",
+      level: "warning",
+      title: "Part-time'ın başka şubedeki günleri sayılmıyor",
+      detail: `${stray.map((x) => `${x.staff.name}: ${x.branchName} şubesinde ${x.days} gün`).join(", ")}. Part-time ücreti maaş satırının şubesindeki vardiyalardan sayılır; o şubede bu kişiye bağlı bir part-time satırı yok, günler hiçbir yere girmiyor. Maaşlar'da o şube için bir part-time satırı açıp aynı hesaba bağlayın. Tutarlar kendiliğinden değişmez.`,
+      staffIds: [...new Set(stray.map((x) => x.staff.id))],
       href: "/panel/personel",
     });
   }

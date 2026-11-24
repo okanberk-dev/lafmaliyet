@@ -1894,6 +1894,30 @@ export function createModel(ds: Dataset) {
     if (to) return to;
     return `${month}-${String(prorationDays(info)).padStart(2, "0")}`;
   }
+  /**
+   * Hesabıyla bağlı part-time kişinin, o ay maaş satırı olmayan bir şubedeki çalışma günleri (inceleme bulgusu LM-4 2. tur,
+   * 1): başka şubedeki vardiya o şubenin satırına aittir; o şubede kişiye bağlı satır yoksa günler hiçbir yere girmez.
+   * Uyarı içindir (personnel.ts parttime-other-branch), tutar değişmez. Yalnız seçili kapsamdaki vardiyalar görülür
+   * ("Tümü"de hepsi). Hesabı olmayan ad (n:) şube başınadır: başka şubedeki aynı ad başka kişi sayılır
+   */
+  function strayPartTimeShifts(month: string): { staff: Staff; branchId: string; branchName: string; days: number }[] {
+    const rowsOf = ds.staff.filter((x) => inRange(x, month));
+    const linked = new Set(rowsOf.flatMap((x) => (staffShiftRef(x) ? [`${x.branchId ?? DEFAULT_BRANCH_ID}|${staffShiftRef(x)}`] : [])));
+    const out: { staff: Staff; branchId: string; branchName: string; days: number }[] = [];
+    const seen = new Set<string>();
+    for (const x of rowsOf) {
+      const ref = staffShiftRef(x);
+      if (!ref?.startsWith("u:") || !isPartTime(staffAtMonth(x, month))) continue;
+      for (const [key, days] of shiftDaysByKey) {
+        const [branchId, r, m] = key.split("|");
+        if (r !== ref || m !== month || linked.has(`${branchId}|${ref}`) || seen.has(`${branchId}|${ref}`)) continue;
+        seen.add(`${branchId}|${ref}`);
+        out.push({ staff: x, branchId, branchName: branchNameOf(branchId) ?? branchId, days: days.length });
+      }
+    }
+    return out;
+  }
+
   const personnelCache = new Map<string, PersonnelSummary>();
   /** O ayda çalışan personel, o ayın maaşıyla (part-time: Vardiya'da çağrıldığı günle) */
   function personnelFor(month: string): PersonnelSummary {
@@ -3228,6 +3252,7 @@ export function createModel(ds: Dataset) {
     staffAtMonth,
     /** Part-time kişinin aydaki çağrıldığı gün (Vardiya; bağlantısızsa null; `planned`: ayın bütün planı) */
     calledDaysOf,
+    strayPartTimeShifts,
     /** Bütün sabit giderler (bitmiş / başlamamış dahil), bugünkü tutar + geçmiş */
     fixedList,
     /** Bütün personel (ayrılmış / başlamamış dahil), bugünkü maaş + geçmiş */

@@ -158,15 +158,17 @@ staffCost); testleri `tests/personel-part-time.test.ts`, `tests/personel-baglant
   anahtarı `u:<id>`) ya da hesabı olmayan, Vardiya'ya adıyla yazılmış kişi (`staff.person_ref` = `n:<küçük harfli ad>`).
   İkisi birden olmaz (CHECK `staff_link_ck`). Seçici iki yanı birlikte gösterir ("Maaş satırı: Ayşe (Marina) ↔ Vardiya:
   Ayşe Kaya · ayse@… "), hiçbir zaman önseçmez; ad benzerliğiyle kendiliğinden bağlanmaz. Sunucu doğrular: hesap var mı,
-  hesap bir şubeye kilitliyse satırın şubesi mi, aynı hesap (ya da bir şubede aynı ad) **aynı ayda** başka bir maaş
-  satırına bağlı mı (aralıkları çakışan iki satır aynı kişiyi gösteremez; "Devam ettir"in açtığı yeni kayıttan önceki satır
-  kendi aylarıyla bağlı kalabilir, yeni kayıt kendiliğinden bağlanmaz). Bitiş ayını kaldırmak çakışma yaratıyorsa reddedilir.
+  hesap bir şubeye kilitliyse satırın şubesi mi, aynı hesap ya da aynı ad **aynı şubede ve aynı ayda** başka bir maaş
+  satırına bağlı mı (bir şubede aralıkları çakışan iki satır aynı kişiyi gösteremez; "Devam ettir"in açtığı yeni kayıttan
+  önceki satır kendi aylarıyla bağlı kalabilir, yeni kayıt kendiliğinden bağlanmaz). Şubeye kilitli olmayan hesap iki
+  şubenin satırına bağlanabilir: part-time iki şubede çalışıyorsa her şubede kendi satırı olur ve o şubedeki günleri
+  sayar (inceleme bulgusu LM-4 2. tur, 1). Bitiş ayını kaldırmak çakışma yaratıyorsa reddedilir.
   `staff.user_id`'de veritabanı tekilliği yok (kural aralığa bağlı); denetim ve yazım bir işlem kilidi altında yapılır
   (`pg_advisory_xact_lock`, `saveStaff` ve `endStaff`; `lockStaffLinks`): iki yönetici aynı anda kaydederse ikincisi
   öncekini bekler ve onun bağladığını görür (inceleme bulgusu 6).
 - **LM-4b notu (personel listesi):** biten satır ile "Devam ettir"in açtığı yeni satır aynı hesaba bağlı olabilir (aralıkları
-  ayrık). `GET /api/panel/pos/personel` "bu ay ve geçen ay aralıktaki satırlar"ı okurken bir hesaba iki satır düşebilir;
-  liste **hesap başına tek öğe** vermelidir (o ayın satırı, yoksa en yeni satır). Aksi hâlde LafPOS'un seçicisi aynı
+  ayrık). `GET /api/panel/pos/personel?sube=…` "bu ay ve geçen ay aralıktaki satırlar"ı okurken o şubede bir hesaba iki satır
+  düşebilir; liste **şubede hesap başına tek öğe** vermelidir (o ayın satırı, yoksa en yeni satır). Aksi hâlde LafPOS'un seçicisi aynı
   hesabı iki kez gösterir.
 - **Part-time** (Maaşlar › Çalışma: Part-time; tür yalnız yeni kişide seçilir, maaş hesabına girmiş satırın türü
   değişmez): günlük ücret (işletmenin çağrılan gün başına maliyeti; **SGK brütleştirmesi yok**), yemek kartı (Ayarlar'daki
@@ -174,10 +176,11 @@ staffCost); testleri `tests/personel-part-time.test.ts`, `tests/personel-baglant
   itibaren" sürümlenir. Yemek kartı bir aydan itibaren açılıp kapanınca önceden girilmiş sonraki sürümlere (ör. planlı
   zam) de işlenir; sahibin ayrıca değiştirdiği ilk sürümde durur (`mealCardCarry`, inceleme bulgusu 8). Kayıt mesajı
   hangi aylara işlendiğini yazar; sürüm etiketi "… net + yemek kartı" olur. **Çağrıldığı gün** = kişinin Vardiya anahtarıyla, kendi şubesinde, o aydaki çalışma (`work`)
-  vardiyaları; izin sayılmaz, başka şubedeki vardiya o şubenin satırına aittir. Gelir-gider'de süren ayda bugüne kadarki
-  vardiyalar (ileri günlerin planı değil), maaş satırının gün oranıyla aynı kaynaktan: kasa raporlarının son günü; rapor
-  yoksa elle girilen açık gün kadar (ayın başından); ay bilgisi yoksa 0 (`calledDaysCutoff`). "Tümü"de kişinin şubesinin
-  raporları. Vergi bordrosu ve nakit planı ayın bütün planı.
+  vardiyaları; izin sayılmaz, başka şubedeki vardiya o şubenin satırına aittir. Kişiye o şubede bağlı satır yoksa o
+  günler hiçbir yere girmez: Genel bakış ve Maaşlar "Part-time'ın başka şubedeki günleri sayılmıyor" diye uyarır ("Tümü"de;
+  `strayPartTimeShifts`). Gelir-gider'de süren ayda bugüne kadarki vardiyalar (ileri günlerin planı değil), maaş satırının
+  gün oranıyla aynı kaynaktan: kasa raporlarının son günü; rapor yoksa elle girilen açık gün kadar (ayın başından); ay
+  bilgisi yoksa 0 (`calledDaysCutoff`). "Tümü"de kişinin şubesinin raporları. Vergi bordrosu ve nakit planı ayın bütün planı.
   Gelir-gider'de "PART-TIME (GÜNLÜK ÜCRET)" satırı (ücret + ek; gün oranı yok), yemek kartı "PERSONEL YEMEK KARTI"
   satırında. **Bağlantısız part-time** tahmin edilmez: ücreti 0, hücre, Maaşlar ve Genel bakış uyarır.
 - **Haftalık "Part-time çalışan" sabit gideri** Kasım 2026 için kalır (sahibin veri işi: son ayı 2026-11). Aynı ayda

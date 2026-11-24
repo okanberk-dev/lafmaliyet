@@ -225,6 +225,30 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
     assert.deepEqual([hist.netSalary, hist.mealCard], [40_000, true]);
   });
 
+  test("şubeye kilitli olmayan hesap iki şubenin part-time satırına bağlanabilir (aynı şubede iki satıra değil)", async () => {
+    // İnceleme bulgusu (LM-4, 2. tur, 1): aynı hesap şubeden bağımsız tek satıra bağlanıyordu; öteki şubedeki vardiyaları
+    // hiçbir satıra girmiyordu
+    const [free] = await db.insert(s.users).values({ email: `serbest-${Date.now()}@laffogato.net`, name: "Serbest", passwordHash: "x", role: "staff" }).returning();
+    assert.ok((await costs.saveStaff([part({ userId: free.id, name: "Serbest" })])).ok);
+    const tuzla = await costs.saveStaff([...(await current()), part({ userId: free.id, name: "Serbest (Tuzla)", branchId: "tuzla" })]);
+    assert.ok(tuzla.ok, tuzla.ok ? "" : tuzla.error);
+    const again = await costs.saveStaff([...(await current()), part({ userId: free.id, name: "Serbest (Tuzla 2)", branchId: "tuzla" })]);
+    assert.equal(again.ok, false);
+    assert.match(again.ok ? "" : again.error, /aynı şubede ve aynı aylarda "Serbest \(Tuzla\)" maaş satırına bağlı/);
+    await db.insert(s.months).values([
+      { month: "2026-12", branchId: "marina", openDays: 31 },
+      { month: "2026-12", branchId: "tuzla", openDays: 31 },
+    ]);
+    await db.insert(s.shifts).values([
+      { branchId: "marina", personRef: `u:${free.id}`, userId: free.id, personName: "Serbest", date: "2026-12-01", kind: "work", startMin: 600, endMin: 1080 },
+      { branchId: "tuzla", personRef: `u:${free.id}`, userId: free.id, personName: "Serbest", date: "2026-12-02", kind: "work", startMin: 600, endMin: 1080 },
+      { branchId: "tuzla", personRef: `u:${free.id}`, userId: free.id, personName: "Serbest", date: "2026-12-03", kind: "work", startMin: 600, endMin: 1080 },
+    ]);
+    const model = await dataset.loadModel({ scope: "hepsi" });
+    const days = new Map(model.personnelFor("2026-12").rows.map((r) => [r.staff.name, r.calledDays]));
+    assert.deepEqual([days.get("Serbest"), days.get("Serbest (Tuzla)")], [1, 2]);
+  });
+
   /** Kayıtlı satırlar, eylemin "değişmeden kalanlar" biçiminde */
   async function current() {
     return (await db.select().from(s.staff)).map((x) => ({

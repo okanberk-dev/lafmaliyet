@@ -18,6 +18,7 @@ import { planInputFromModel } from "../src/lib/cash-plan";
 import { createModel, staffCost, staffShiftRef } from "../src/lib/calc/engine";
 import { alerts } from "../src/lib/calc/insights";
 import { staffWarnings } from "../src/lib/calc/personnel";
+import { linkConflict, type LinkRow } from "../src/lib/staff-link";
 import type { Dataset, Staff } from "../src/lib/calc/types";
 import { DEFAULT_SETTINGS } from "../src/lib/constants";
 import { taxPayrollFromModel } from "../src/lib/tax/payroll";
@@ -124,7 +125,8 @@ test("uyarılar: bağlantısız part-time; aynı ayda haftalık 'Part-time çal�
   // Haftalık kalem Kasım'da biter (sahibin veri işi): Aralık'ta çift sayım yok
   const ended = excel.fixedExpenses.map((f) => (f.id === weekly.id ? { ...f, endMonth: "2026-11" } : f));
   const ok = createModel(ds([AYSE], { fixedExpenses: ended }));
-  assert.deepEqual(staffWarnings(ok, "2026-12").map((w) => w.kind).filter((k) => k.startsWith("parttime")), []);
+  // (Ayşe'nin Tuzla'daki 2 günü ayrı uyarı: parttime-other-branch, aşağıdaki testte)
+  assert.deepEqual(staffWarnings(ok, "2026-12").map((w) => w.kind).filter((k) => k.startsWith("parttime") && k !== "parttime-other-branch"), []);
   // Haftalık kalem Aralık'ta da etkin ve Ayşe'nin çağrıldığı günü var: uyarı
   const both = createModel(ds([AYSE]));
   const w = staffWarnings(both, "2026-12").find((x) => x.kind === "parttime-double")!;
@@ -166,6 +168,28 @@ test("süren ay kasa raporu yokken: maaş satırının gün oranıyla aynı kayn
   const all = { ...kasa("2026-12-10", 10), byBranch: { marina: kasa("2026-12-03", 3), tuzla: kasa("2026-12-10", 10) } } as Dataset["months"][number];
   const tumu = createModel(ds([AYSE], { currentMonth: "2026-12", months: [...excel.months, nov, all] }));
   assert.equal(tumu.personnelFor("2026-12").rows[0].calledDays, 3, "Tümü: Marina'nın raporları 3 Aralık'a kadar");
+});
+
+test("aynı hesap iki şubede: her şubenin satırı kendi şubesindeki günleri sayar, hesap şube başına bir satıra bağlanabilir; satırsız şubedeki günler uyarılır", () => {
+  // İnceleme bulgusu (LM-4, 2. tur, 1): başka şubedeki vardiya o şubenin satırına aitti ama bağlantı kuralı aynı hesabı
+  // ikinci bir şubenin satırına bağlatmıyordu: Tuzla'daki 2 gün hiçbir yerde ödenmiyor, hiçbir şey uyarmıyordu
+  const row = (p: Partial<LinkRow>): LinkRow => ({ id: null, name: "Ayşe", branchId: "marina", userId: 7, personRef: null, startMonth: "2026-12", endMonth: null, ...p });
+  assert.equal(linkConflict(row({ id: 2, name: "Ayşe (Tuzla)", branchId: "tuzla" }), [row({ id: 1 })]), null, "başka şubede serbest");
+  assert.match(linkConflict(row({ id: 2, name: "Ayşe 2" }), [row({ id: 1 })]) ?? "", /aynı şubede ve aynı aylarda "Ayşe" maaş satırına bağlı/);
+  const AYSE_TUZLA: Staff = { ...AYSE, id: 204, name: "Ayşe (Tuzla)", branchId: "tuzla", mealCard: false, extras: 0 };
+  const m = createModel(ds([AYSE, AYSE_TUZLA]));
+  const rows = new Map(m.personnelFor("2026-12").rows.map((r) => [r.staff.name, r]));
+  assert.equal(rows.get("Ayşe")!.calledDays, 10);
+  assert.equal(rows.get("Ayşe (Tuzla)")!.calledDays, 2, "Tuzla'daki 2 gün Tuzla satırında");
+  close(m.pnlMonth("2026-12").cells.get("personnel:parttime")!.value!, 15_000 + 2_000 + 3_000, "Tümü iki şubenin günlerini sayar");
+  close(taxPayrollFromModel(m, 2026, DEFAULT_TAX_SETTINGS).get("2026-12")!.people.reduce((a, p) => a + p.cost, 0), 20_300 + 3_000, "bordro");
+  assert.equal(staffWarnings(m, "2026-12").some((x) => x.kind === "parttime-other-branch"), false, "Tuzla satırı var: uyarı yok");
+  // Tuzla satırı yok: Tuzla'daki 2 gün hiçbir satıra girmiyor, uyarılır (tutar değişmez)
+  const w = staffWarnings(createModel(ds([AYSE])), "2026-12").find((x) => x.kind === "parttime-other-branch")!;
+  assert.ok(w, "satırsız şube uyarısı");
+  assert.deepEqual(w.staffIds, [AYSE.id]);
+  assert.match(w.detail, /Ayşe: tuzla şubesinde 2 gün/);
+  assert.ok(alerts(createModel(ds([AYSE])), "2026-12").some((a) => a.title === w.title), "Genel bakış");
 });
 
 test("vergi bordrosu ve nakit planı: part-time brütleştirilmez (net 0, ek = bütün maliyet), planlanan bütün vardiyalar", () => {
