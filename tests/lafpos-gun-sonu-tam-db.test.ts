@@ -343,6 +343,28 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DA
     assert.ok(st3.photoCheck?.issues.some((i) => i.startsWith("Yazarkasa Z no")), JSON.stringify(st3.photoCheck?.issues));
   });
 
+  test("Fotoğraftan Z no: başka günün Z'si yazılmaz; yöneticinin sildiği Z no geri yazılmaz (yeniden gönderim, yeni fotoğraf); otomatik rapor kendi kaydından tanınır", async () => {
+    assert.ok((await push({}, { okcZNo: null })).ok);
+    await gun.writeAutoReport(db, DAY, NOW);
+    // Dünün detaylı Z'si (21.11): fark, Z no boş kalır
+    const yesterday = { ...detailed(), date: "2026-11-21", time: "23:30", zNo: { text: "0006", value: 6, confidence: "high" } };
+    await foto.attachLafposDayPhotoCore(db, ayse, { date: DAY, branchId: LAFPOS_SUBE, photoId: await photo(yesterday) }, NOW);
+    assert.equal((await state())!.photoCheck?.state, "fark");
+    assert.equal((await report())?.okcZNo, null, "başka günün Z no'su yazılmaz");
+    await db.delete(s.cashReportPhotos);
+    // Doğru günün fişi: Z no yazılır; yönetici siler, sonra ne LafPOS'un yeniden gönderimi ne yeni fotoğraf geri yazar
+    await foto.attachLafposDayPhotoCore(db, ayse, { date: DAY, branchId: LAFPOS_SUBE, photoId: await photo(detailed()) }, NOW);
+    const rep = (await report())!;
+    assert.equal(rep.okcZNo, "0007");
+    assert.equal(await foto.lafposAutoReport(db, rep.id), true);
+    await db.update(s.cashReports).set({ okcZNo: null }).where(eq(s.cashReports.id, rep.id));
+    assert.ok((await push({}, { okcZNo: null })).ok);
+    await gun.writeAutoReport(db, DAY, NOW);
+    assert.equal((await report())?.okcZNo, null, "yeniden gönderim geri yazmaz");
+    await foto.attachLafposDayPhotoCore(db, ayse, { date: DAY, branchId: LAFPOS_SUBE, photoId: await photo(detailed()) }, NOW);
+    assert.equal((await report())?.okcZNo, null, "yeni fotoğraf geri yazmaz");
+  });
+
   test("Pavo alınamadıysa yönetici fotoğrafta okunan toplamı 'Banka POS'a yaz'la yazar; sonraki otomatik değer ezmez", async () => {
     assert.ok((await push({ bankPos: FAILED })).ok);
     await gun.writeAutoReport(db, DAY, NOW);

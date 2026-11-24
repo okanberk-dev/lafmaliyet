@@ -33,6 +33,24 @@ export const LAFPOS_PHOTO_TEXT = {
 
 /** Personelin Kasa sayfasının alt başlığı, LafPOS'un otomatik gününde (rakam girmez, yalnız fotoğraf) */
 export const LAFPOS_STAFF_DESCRIPTION = "Rakamlar LafPOS'tan geldi; Pavo'dan gün sonu fişini (detaylı Z) alıp fotoğrafını ekleyin.";
+/** Sayım bekleyen LafPOS günü (gün sonu geldi, rapor yok): rakam henüz yok, rapor LafPOS'tan gelecek */
+export const LAFPOS_STAFF_WAITING_DESCRIPTION = "Kasa raporu LafPOS'tan gelecek; Pavo'dan gün sonu fişini (detaylı Z) alıp fotoğrafını ekleyin.";
+
+/** Personelin alt başlığı: LafPOS günü değilse null (eski metin); otomatik raporlu gün ya da sayım bekleyen gün */
+export function staffLafposDescriptionOf(state: { auto: boolean } | null): string | null {
+  if (!state) return null;
+  return state.auto ? LAFPOS_STAFF_DESCRIPTION : LAFPOS_STAFF_WAITING_DESCRIPTION;
+}
+
+/**
+ * Personel bu raporu LafPOS'un otomatik raporu olarak mı görür (rakamlar salt okunur; Düzenle, WhatsApp, Metni kopyala,
+ * fotoğraf farkı ve notun yönetici yönergesi yok). Kapalı kalır: fotoğraf durumu okunamadıysa (`photoAuto` null) raporun
+ * kendi kaydı (lafpos_day_ends.report_id) karar verir, o da okunamadıysa ("error") gizli
+ */
+export function staffLafposAutoOf(o: { admin: boolean; hasReport: boolean; photoAuto: boolean | null; reportAuto: boolean | "error" }): boolean {
+  if (o.admin || !o.hasReport) return false;
+  return o.photoAuto === true || o.reportAuto !== false;
+}
 
 /** Rapora bağlı gün sonu fotoğrafının adı (LafPOS günü): Pavo'nun fişi; ayrı mali Z basan cihazda "Yazarkasa Z" */
 export function lafposPhotoLabel(need: Pick<LafposPhotoNeed, "z">): string {
@@ -55,7 +73,8 @@ export function staffPhotoDiffs<T>(diffs: readonly T[] | null, o: { admin: boole
  */
 export function staffAutoNote(note: string | null, r: { bankPos: number | null; okcTotal?: number | null }): string | null {
   if (note === null) return null;
-  const at = note.indexOf(" Eksik: ");
+  // Otomatik eksik bölümü notun sonundadır (autoNote); kapanış notunda geçen "Eksik:" personelin kendi yazısıdır, kesilmez
+  const at = note.lastIndexOf(" Eksik: ");
   if (at < 0 && !note.startsWith("Eksik: ")) return note;
   const head = at < 0 ? "" : note.slice(0, at);
   const gaps = note.slice(at < 0 ? 0 : at + 1);
@@ -112,8 +131,9 @@ export interface LafposPhotoCheck {
   /** Raporun Banka POS'u boşken (Pavo alınamadı) fotoğrafta okunan toplam: yönetici "Banka POS'a yaz" ile yazar */
   readBankPos: number | null;
   /**
-   * LafPOS yazarkasa Z no'su göndermediyse fotoğrafta (Pavo'nun detaylı Z'si) okunan Z no: sunucu raporun boş Z no'suna
-   * yazar, yönetici "fotoğraftan okundu" görür. LafPOS gönderdiyse yok (yalnız karşılaştırılır). Eski kayıtta alan yok
+   * LafPOS yazarkasa Z no'su göndermediyse fotoğrafta (Pavo'nun detaylı Z'si) okunan Z no: yalnız fotoğraf LafPOS'u
+   * tutuyorsa (uyumlu) ve Z'nin günü doğrulandıysa. Sunucu raporun boş Z no'suna yazar (yönetici silmediyse), yönetici
+   * "fotoğraftan okundu" görür. LafPOS gönderdiyse yok (yalnız karşılaştırılır). Eski kayıtta alan yok
    */
   zNoFromPhoto?: string | null;
 }
@@ -146,8 +166,9 @@ const amountOf = (v: number | null) => (v === null ? "okunamadı" : money(v));
  * okunan netlerin toplamı raporun Banka POS'u (±0,01), fişin günü raporun günü (ertesi gün 05:00'ten önce basılan da),
  * son batch'in banka dökümü Pavo'nunkiyle aynı. Z'nin rakamları (Pavo'nun detaylı Z'si ya da ayrı mali Z): okunduysa Z
  * no, günlük toplam, nakit, kart, yemek kartı, diğer ve KDV dökümü raporun yazarkasa alanlarıyla; ayrı mali Z basan cihazda
- * (TokenX) Z fotoğrafı yoksa "yok". Banka POS boşsa okunan toplam yöneticiye önerilir; LafPOS Z no göndermediyse okunan Z
- * no `zNoFromPhoto`.
+ * (TokenX) Z fotoğrafı yoksa "yok"; Z'nin günü fişin günüyle aynı kuralla. Aynı batch (no ve banka) bir kez sayılır; farklı
+ * tutarla okunduysa fark. Banka POS boşsa okunan toplam yöneticiye önerilir; LafPOS Z no göndermediyse, fotoğraf uyumlu ve
+ * Z'nin günü doğrulanmışsa okunan Z no `zNoFromPhoto`.
  */
 export function lafposPhotoCheck(
   i: { day: string; reads: readonly LafposPhotoRead[]; bankPos: BankPos | null; okc: PosOkc | null; report: LafposPhotoReport },
@@ -164,29 +185,45 @@ export function lafposPhotoCheck(
   let readBankPos: number | null = null;
   let zNoFromPhoto: string | null = null;
 
-  // Pavo gün sonu fişi (yalnız ya da Z'nin altında basılmış)
-  // Aynı fişin iki fotoğrafı (personel birden çok çekebilir): aynı batch no ve aynı tutar bir kez sayılır; farklı tutarla
-  // okunan aynı batch ise iki kez kalır (fark yöneticiye)
-  const seenSlip = new Set<string>();
-  const slips = usable
-    .flatMap((r) => r.raw!.batches.map((b) => ({ raw: r.raw!, b })))
-    .filter(({ b }) => {
-      if (!b.batchNo?.trim()) return true;
-      const key = `${batchKey(b.batchNo.trim())}|${b.netTotal.text ?? ""}|${b.salesTotal.text ?? ""}`;
-      if (seenSlip.has(key)) return false;
-      seenSlip.add(key);
-      return true;
-    });
+  // Pavo gün sonu fişi (yalnız ya da Z'nin altında basılmış). Okunan her batch'in tutarı: NET; NET okunmadıysa satış − iade
+  const netOf = (b: KasaOkc["batches"][number]) => {
+    const net = printedAmount(b.netTotal).value;
+    if (net !== null) return net;
+    const sales = printedAmount(b.salesTotal).value;
+    return sales === null ? null : round2(sales - (b.refundTotal.text === null ? 0 : (printedAmount(b.refundTotal).value ?? 0)));
+  };
+  // Aynı fişin birden çok fotoğrafı (personel birden çok çekebilir): aynı batch no ve banka bir kez sayılır, tutarın metni
+  // farklı okunsa da ("755,00" / "755.00") ya da bir fotoğrafta NET satırı kesik olsa da. Aynı batch iki farklı tutarla
+  // okunduysa tutarı belirsizdir (toplam yok, "Banka POS'a yaz" önerisi yok) ve fark satırı yöneticiye. Aynı batch'in
+  // farklı bankaları (Pavo'nun banka dökümü) ayrı satırdır
+  const bankKey = (v: string | null) => (v ?? "").toLocaleLowerCase("tr").replace(/[^0-9a-zçğıöşü]/g, "");
+  type Slip = { raw: KasaOkc; no: string | null; bank: string; net: number | null; nets: number[] };
+  const slips: Slip[] = [];
+  for (const r of usable) {
+    for (const b of r.raw!.batches) {
+      const no = b.batchNo?.trim() || null;
+      const bank = bankKey(b.bank);
+      const net = netOf(b);
+      const same = no === null ? [] : slips.filter((x) => x.no !== null && batchKey(x.no) === batchKey(no));
+      // Banka adı bir fotoğrafta okunmadıysa aynı batch'in tek satırı odur
+      const had = same.find((x) => x.bank === bank) ?? (same.length === 1 && (bank === "" || same[0].bank === "") ? same[0] : undefined);
+      if (!had) {
+        slips.push({ raw: r.raw!, no, bank, net, nets: net === null ? [] : [net] });
+        continue;
+      }
+      if (net !== null && !had.nets.some((n) => near(n, net))) had.nets.push(net);
+      had.net = had.nets.length === 1 ? had.nets[0] : null;
+      if (!had.bank) had.bank = bank;
+    }
+  }
+  const slipAmount = (x: Pick<Slip, "net" | "nets">) => (x.nets.length > 1 ? x.nets.map(money).join(" / ") : amountOf(x.net));
+  // Fişin günü satırının belgesi: Z ayrı bir kâğıttaysa (ayrı fiş) Z'nin günü ayrıca karşılaştırılır
+  let slipDay: { raw: KasaOkc; ok: boolean } | null = null;
   if (slips.length && i.bankPos) {
-    const nets = slips.map(({ b }) => {
-      const net = printedAmount(b.netTotal).value;
-      if (net !== null) return net;
-      const sales = printedAmount(b.salesTotal).value;
-      return sales === null ? null : round2(sales - (b.refundTotal.text === null ? 0 : (printedAmount(b.refundTotal).value ?? 0)));
-    });
-    const readNos = [...new Set(slips.flatMap(({ b }) => (b.batchNo?.trim() ? [b.batchNo.trim()] : [])))];
+    const readNos = [...new Set(slips.flatMap((x) => (x.no ? [x.no] : [])))].filter((n, k, all) => all.findIndex((m) => batchKey(m) === batchKey(n)) === k);
     const lafposBatches = i.bankPos.batches ?? (i.bankPos.batchNo ? [{ batchNo: i.bankPos.batchNo, total: i.bankPos.pavoCard }] : []);
     const lafposNos = lafposBatches.flatMap((b) => (b.batchNo ? [b.batchNo] : []));
+    const totals = new Map(lafposBatches.flatMap((b) => (b.batchNo ? [[batchKey(b.batchNo), b.total] as const] : [])));
     // Günde birden çok Pavo gün sonu olabilir (gün içinde elle alınan + kapanış); personel her fişi çekmeyebilir. Fotoğrafta
     // LafPOS'un batch'lerinin yalnız bir kısmı varsa (bilinmeyen batch yok) yalnız çekilen batch'ler karşılaştırılır: her
     // birinin tutarı LafPOS'taki batch'iyle; çekilmeyenler bilgi satırıdır (fark değil). Hepsi çekildiyse sayı ve toplam
@@ -197,41 +234,48 @@ export function lafposPhotoCheck(
       rows.push({ label: "Batch no", photo: readNos.join(", "), lafpos: lafposNos.join(", ") || "yok", ok: readNos.every((n) => known.has(batchKey(n))) });
       if (!partial) rows.push({ label: "Batch sayısı", photo: String(keys.size), lafpos: String(lafposBatches.length), ok: keys.size === lafposBatches.length });
     }
-    const sum = nets.every((n) => n !== null) ? round2((nets as number[]).reduce((a, n) => a + n, 0)) : null;
+    const sum = slips.every((x) => x.net !== null) ? round2(slips.reduce((a, x) => a + x.net!, 0)) : null;
     if (partial) {
-      const totals = new Map(lafposBatches.flatMap((b) => (b.batchNo ? [[batchKey(b.batchNo), b.total] as const] : [])));
-      const seen = new Set<string>();
-      slips.forEach(({ b }, k) => {
-        const key = b.batchNo?.trim() ? batchKey(b.batchNo.trim()) : null;
-        if (key === null || seen.has(key)) return;
-        seen.add(key);
-        const lafpos = totals.get(key) ?? null;
-        rows.push({ label: `Batch ${b.batchNo!.trim()}`, photo: amountOf(nets[k]), lafpos: amountOf(lafpos), ok: nets[k] !== null && lafpos !== null && near(nets[k]!, lafpos) });
-      });
+      // Çekilen her batch (bankaları toplanır) LafPOS'taki batch'iyle
+      for (const no of readNos) {
+        const mine = slips.filter((x) => x.no !== null && batchKey(x.no) === batchKey(no));
+        const clash = mine.find((x) => x.nets.length > 1);
+        const net = mine.every((x) => x.net !== null) ? round2(mine.reduce((a, x) => a + x.net!, 0)) : null;
+        const lafpos = totals.get(batchKey(no)) ?? null;
+        rows.push({ label: `Batch ${no}`, photo: clash ? slipAmount(clash) : amountOf(net), lafpos: amountOf(lafpos), ok: !clash && net !== null && lafpos !== null && near(net, lafpos) });
+      }
       const unshot = lafposNos.filter((n) => !keys.has(batchKey(n)));
       rows.push({ label: "Fotoğrafı olmayan batch", photo: "yok", lafpos: unshot.join(", "), ok: true });
-    } else if (i.report.bankPos === null) {
-      readBankPos = sum;
-      rows.push({ label: "Banka POS toplamı", photo: amountOf(sum), lafpos: "boş", ok: true });
     } else {
-      rows.push({ label: "Banka POS toplamı", photo: amountOf(sum), lafpos: money(i.report.bankPos), ok: sum !== null && near(sum, i.report.bankPos) });
+      // Farklı tutarla okunan batch: tutarı belirsiz
+      for (const x of slips.filter((y) => y.nets.length > 1)) {
+        const lafpos = x.no ? (totals.get(batchKey(x.no)) ?? null) : null;
+        rows.push({ label: `Batch ${x.no ?? "?"}`, photo: slipAmount(x), lafpos: lafpos === null ? "yok" : money(lafpos), ok: false });
+      }
+      if (i.report.bankPos === null) {
+        readBankPos = sum;
+        rows.push({ label: "Banka POS toplamı", photo: amountOf(sum), lafpos: "boş", ok: true });
+      } else {
+        rows.push({ label: "Banka POS toplamı", photo: amountOf(sum), lafpos: money(i.report.bankPos), ok: sum !== null && near(sum, i.report.bankPos) });
+      }
     }
     // Fişin günü: başlıktaki tarih ve saat (05:00'ten önce basılan bir önceki gün); saatsizse batch'in tarihi, ertesi gün de olur
     const slipRaw = usable.find((r) => r.raw!.documentType === "batch_slip")?.raw ?? slips[0].raw;
     const printed = businessDayOf(slipRaw.date, slipRaw.time);
-    const fallback = slips.find(({ b }) => b.date)?.b.date ?? null;
+    const fallback = slipRaw.batches.find((b) => b.date)?.date ?? usable.flatMap((r) => r.raw!.batches).find((b) => b.date)?.date ?? null;
     const shown = printed ?? fallback;
     if (shown) {
       const ok = printed ? printed === i.day || (slipRaw.time === null && printed === addDays(i.day, 1)) : fallback === i.day || fallback === addDays(i.day, 1);
       rows.push({ label: "Fişin günü", photo: dateTR(shown), lafpos: dateTR(i.day), ok });
+      slipDay = { raw: slipRaw, ok };
     }
     // Son batch'in banka dökümü (Pavo'nun acquirer satırları)
     const acq = i.bankPos.acquirers.map((a) => a.total).filter((t): t is number => t !== null);
     const last = i.bankPos.batchNo ? batchKey(i.bankPos.batchNo) : null;
-    const lastRead = slips.map((s, k) => ({ no: s.b.batchNo ? batchKey(s.b.batchNo) : null, net: nets[k] })).filter((s) => last !== null && s.no === last);
+    const lastRead = slips.filter((x) => last !== null && x.no !== null && batchKey(x.no) === last);
     if (acq.length && lastRead.length) {
       const a = [...acq].sort((x, y) => x - y);
-      const r = lastRead.map((s) => s.net).filter((n): n is number => n !== null).sort((x, y) => x - y);
+      const r = lastRead.map((x) => x.net).filter((n): n is number => n !== null).sort((x, y) => x - y);
       const ok = a.length === r.length && a.every((v, k) => near(v, r[k]));
       rows.push({ label: "Banka dökümü", photo: r.map(money).join(" + ") || "okunamadı", lafpos: a.map(money).join(" + "), ok });
     }
@@ -242,9 +286,28 @@ export function lafposPhotoCheck(
   // Birden çok Z okunduysa (aynı fişin iki fotoğrafı) her biri karşılaştırılır: satır hepsi LafPOS'u tutunca tamam
   const zs = usable.filter((r) => r.raw!.documentType === "z_report").map((r) => r.raw!);
   const separateZ = i.okc?.zReport === true && i.okc.provider === "tokenx";
+  // Z'nin günü (fişin günüyle aynı kural): fişin günü satırı aynı kâğıttan (detaylı Z) geldiyse o; ayrı Z'nin kendi tarihi.
+  // Fotoğraftan Z no yalnız günü doğrulanmış Z'den yazılır (günü okunmayan ya da başka günün Z'si rapora girmez)
+  let zDayOk = zs.length > 0;
   if (!zs.length) {
     if (separateZ) rows.push({ label: "Yazarkasa Z", photo: "yok", lafpos: "bekleniyor", ok: false });
   } else {
+    const own = zs.filter((z) => z !== slipDay?.raw);
+    if (zs.some((z) => z === slipDay?.raw) && !slipDay!.ok) zDayOk = false;
+    const days = own.map((z) => {
+      const printed = businessDayOf(z.date, z.time);
+      const fallback = z.batches.find((b) => b.date)?.date ?? null;
+      const shown = printed ?? fallback;
+      if (!shown) return null;
+      return { shown, ok: printed ? printed === i.day || (z.time === null && printed === addDays(i.day, 1)) : fallback === i.day || fallback === addDays(i.day, 1) };
+    });
+    if (days.some((d) => d === null)) zDayOk = false;
+    const read = days.filter((d): d is { shown: string; ok: boolean } => d !== null);
+    if (read.length) {
+      const ok = read.every((d) => d.ok);
+      if (!ok) zDayOk = false;
+      rows.push({ label: "Z'nin günü", photo: [...new Set(read.map((d) => dateTR(d.shown)))].join(" / "), lafpos: dateTR(i.day), ok });
+    }
     const uniq = (xs: readonly string[]) => [...new Set(xs)].join(" / ");
     const sameNo = (a: string, b: string) => (zNoNumber(a) !== null && zNoNumber(b) !== null ? zNoNumber(a) === zNoNumber(b) : a === b);
     const nos = zs.map((z) => z.zNo.text?.trim() || (z.zNo.value !== null ? String(z.zNo.value) : null));
@@ -266,13 +329,16 @@ export function lafposPhotoCheck(
         ok: agreed && (i.report.okcZNo === null || sameNo(readNos[0], i.report.okcZNo)),
       });
     }
+    // Ödeme bölümü hiç okunmadıysa (kadrajın dışında) bu Z'nin ödeme satırları karşılaştırılmaz (undefined); okunduysa
+    // basılmayan satır 0 sayılır (cihaz sıfır satırı basmaz)
     const sumOf = (z: KasaOkc, kinds: readonly string[]) => {
+      if (!z.payments.length) return undefined;
       const xs = z.payments.filter((p) => kinds.includes(p.kind)).map((p) => printedAmount(p.amount).value);
       return xs.some((x) => x === null) ? null : round2((xs as number[]).reduce((a, x) => a + x, 0));
     };
     // Kart satırı basmayan cihaz kartı yalnız banka adlarıyla basar (OKC_TASK): o zaman banka satırları kart sayılır
     const cardOf = (z: KasaOkc) => (z.payments.some((p) => p.kind === "card") ? sumOf(z, ["card"]) : sumOf(z, ["bank_subline"]));
-    const pairs: [string, (z: KasaOkc) => number | null, number | null | undefined][] = [
+    const pairs: [string, (z: KasaOkc) => number | null | undefined, number | null | undefined][] = [
       ["Yazarkasa toplamı", (z) => printedAmount(z.dailyTotal).value, i.report.okcTotal],
       ["Yazarkasa nakdi", (z) => sumOf(z, ["cash"]), i.report.okcCash],
       ["Yazarkasa kartı", cardOf, i.report.okcCard],
@@ -281,7 +347,8 @@ export function lafposPhotoCheck(
     ];
     for (const [label, read, lafpos] of pairs) {
       if (lafpos === null || lafpos === undefined) continue;
-      const photo = zs.map(read);
+      const photo = zs.map(read).filter((v): v is number | null => v !== undefined);
+      if (!photo.length) continue;
       rows.push({ label, photo: uniq(photo.map(amountOf)), lafpos: money(lafpos), ok: photo.every((v) => v !== null && near(v, lafpos)) });
     }
     if (i.report.okcVat) {
@@ -303,7 +370,10 @@ export function lafposPhotoCheck(
   // gelmedi) ise okunmadı, öteki durumda (ör. Pavo cihazında Z fotoğrafı, fiş yok) okunamadı / yanlış belge
   if (!rows.length) return { ...base, state: slips.length && !i.bankPos ? "okunmadi" : "okunamadi" };
   const issues = rows.filter((r) => !r.ok).map((r) => `${r.label}: fotoğrafta ${r.photo}; LafPOS'ta ${r.lafpos}`);
-  return { ...base, rows, issues, readBankPos, zNoFromPhoto, state: issues.length ? "fark" : "uyumlu" };
+  const state = issues.length ? "fark" : "uyumlu";
+  // Fotoğraftan Z no yalnız fotoğraf LafPOS'u tutuyorsa (uyumlu) ve Z'nin günü doğrulandıysa: başka günün Z'si, rakamı
+  // farklı Z ya da günü okunmayan Z rapora Z no yazmaz (aynı Z no iki raporda olur, Z zinciri ve kümülatif bozulur)
+  return { ...base, rows, issues, readBankPos, zNoFromPhoto: state === "uyumlu" && zDayOk ? zNoFromPhoto : null, state };
 }
 
 /**

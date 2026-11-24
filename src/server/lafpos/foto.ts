@@ -109,27 +109,41 @@ export async function photoCheckOf(
 
 /**
  * Fotoğrafta (Pavo'nun detaylı Z'si) okunan Z no'yu raporun boş yazarkasa Z no'suna yazar: yalnız LafPOS göndermediyse
- * (`check.zNoFromPhoto`) ve raporda Z no yoksa. Sürüm yok (boş alan doluyor, rakam değişmiyor); günün son otomatik
+ * (`check.zNoFromPhoto`: fotoğraf uyumlu, Z'nin günü doğrulanmış), raporda Z no yoksa ve günün son otomatik değerinde de
+ * yoksa (fotoğraftan yazılanı yönetici Düzenle'yle sildiyse geri yazılmaz). Sürüm yok (boş alan doluyor, rakam değişmiyor); günün son otomatik
  * değerine de yazılır: LafPOS sonradan Z no gönderirse onunki geçer (elle düzeltilmiş sayılmaz). Sunucu sütunları
  * (kümülatif) yeniden hesaplanır, işlem geçmişine düşer. Çağıran durum satırını yazdıktan sonra çağırır
  */
 export async function applyPhotoZNo(tx: CashTx, row: CashReportRow, check: LafposPhotoCheck | null, now = new Date()): Promise<CashReportRow> {
   const no = check?.zNoFromPhoto ?? null;
   if (!no || row.okcZNo) return row;
-  const [updated] = await tx.update(s.cashReports).set({ okcZNo: no }).where(eq(s.cashReports.id, row.id)).returning();
   const [state] = await tx
     .select({ autoValues: s.lafposDayEnds.autoValues })
     .from(s.lafposDayEnds)
     .where(and(eq(s.lafposDayEnds.date, row.date), eq(s.lafposDayEnds.branchId, row.branchId)))
     .limit(1);
-  if (state?.autoValues) {
-    await tx
-      .update(s.lafposDayEnds)
-      .set({ autoValues: { ...state.autoValues, okcZNo: no }, updatedAt: now })
-      .where(and(eq(s.lafposDayEnds.date, row.date), eq(s.lafposDayEnds.branchId, row.branchId)));
-  }
+  // Otomatik değer doluyken rapor boşsa biri sildi (elle düzeltilen alan): dokunulmaz
+  if (!state?.autoValues || state.autoValues.okcZNo) return row;
+  const [updated] = await tx.update(s.cashReports).set({ okcZNo: no }).where(eq(s.cashReports.id, row.id)).returning();
+  await tx
+    .update(s.lafposDayEnds)
+    .set({ autoValues: { ...state.autoValues, okcZNo: no }, updatedAt: now })
+    .where(and(eq(s.lafposDayEnds.date, row.date), eq(s.lafposDayEnds.branchId, row.branchId)));
   await tx.insert(s.activityLog).values({ userName: "LafPOS (otomatik)", userId: null, action: "Yazarkasa Z no fotoğraftan yazıldı (LafPOS günü)", detail: `${longDateTR(row.date)}: Z no ${no}` });
   return refreshServerColumns(tx, updated);
+}
+
+/**
+ * Rapor LafPOS'un otomatik raporu mu (lafpos_day_ends.report_id bu rapor, otomatik değerler kayıtlı): personelden gizleme
+ * kuralının fotoğraf durumuna bağlı olmayan, raporun kendi kaydından okunan yedeği (staffLafposAutoOf)
+ */
+export async function lafposAutoReport(db: Reader, reportId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ autoValues: s.lafposDayEnds.autoValues })
+    .from(s.lafposDayEnds)
+    .where(eq(s.lafposDayEnds.reportId, reportId))
+    .limit(1);
+  return Boolean(row?.autoValues);
 }
 
 /** Fotoğrafı rapora bağlar (gün sonu fotoğrafı bölümü; rapor başına en çok 6, yazarkasa bölümüne en çok 3) */

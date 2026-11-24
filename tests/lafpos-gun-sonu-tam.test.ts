@@ -19,6 +19,7 @@ import { parsePosDay, type BankPos, type PosDayZ, type PosOkc } from "../src/lib
 import {
   LAFPOS_PHOTO_TEXT,
   LAFPOS_STAFF_DESCRIPTION,
+  LAFPOS_STAFF_WAITING_DESCRIPTION,
   lafposPhotoCheck,
   lafposPhotoDone,
   lafposPhotoLabel,
@@ -26,6 +27,8 @@ import {
   photoCheckText,
   staffAutoNote,
   staffPhotoDiffs,
+  staffLafposAutoOf,
+  staffLafposDescriptionOf,
   staffPhotoLine,
 } from "../src/lib/lafpos/foto";
 import { lafposDayDetail } from "../src/lib/lafpos/gun-ayrinti";
@@ -587,9 +590,108 @@ test("Personelin LafPOS günü metinleri: yalnız fotoğraf; notun yönetici yö
 test("Kasa sayfası: personelin LafPOS gününde alt başlık LafPOS metni, fotoğraf farkı ve not personelden süzülür (kaynak denetimi)", () => {
   const page = readFileSync(join(process.cwd(), "src/app/panel/kasa/page.tsx"), "utf8");
   const form = readFileSync(join(process.cwd(), "src/app/panel/kasa/cash-form.tsx"), "utf8");
-  assert.ok(page.includes("LAFPOS_STAFF_DESCRIPTION"), "alt başlık");
+  assert.ok(page.includes("staffLafposDescriptionOf("), "alt başlık");
   assert.ok(page.includes("staffPhotoDiffs("), "WhatsApp metninin fotoğraf farkı");
   assert.ok(page.includes("staffAutoNote("), "eski LafPOS gününün notu");
   assert.ok(form.includes("staffPhotoDiffs("), "Fotoğraflar bloğunun farkı");
   assert.ok(form.includes("staffAutoNote("), "kayıtlı raporun notu");
+});
+
+/*
+ * İnceleme düzeltmeleri (üçüncü tur): fotoğraftan Z no yalnız günü doğrulanmış ve LafPOS'u tutan fotoğraftan; aynı batch
+ * metni farklı okunsa da bir kez sayılır; personelin LafPOS notu kesilmez; ödeme bölümü okunmayan Z sahte fark vermez;
+ * personelden gizleme kuralı hata olursa kapalı kalır; sayım bekleyen günün alt başlığı gövdeyle çelişmez
+ */
+
+test("Fotoğraftan Z no: yalnız günü doğrulanmış ve LafPOS'u tutan fotoğraftan (başka günün Z'si rapora yazılmaz)", () => {
+  const base = { bankPos: OK, okc: OKC, report: { ...REPORT, okcOther: 0, lafposZNo: null } };
+  // Dünün Z'si (batch bölümü yok, 23.11, toplam 2.000): fark, Z'nin günü satırı, Z no yazılmaz
+  const yesterday = slipRaw([], { documentType: "z_report", title: "Z RAPORU", date: "2026-11-23", time: "23:40", zNo: { text: "0006", value: 6, confidence: "high" }, dailyTotal: amt(2_000) });
+  const y = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: yesterday, error: null }], ...base }, NOW);
+  assert.equal(y.state, "fark");
+  assert.equal(y.zNoFromPhoto ?? null, null);
+  const zDay = y.rows.find((r) => r.label === "Z'nin günü");
+  assert.ok(zDay && !zDay.ok, JSON.stringify(y.rows));
+  // Rakamları tutan ama dünün detaylı Z'si (fişin günü 23.11): fark, Z no yazılmaz
+  const old = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: { ...detailedZ(), date: "2026-11-23", time: "23:10" }, error: null }], ...base }, NOW);
+  assert.equal(old.state, "fark");
+  assert.equal(old.zNoFromPhoto ?? null, null);
+  // Rakamı farklı detaylı Z (kart): fark, Z no yazılmaz (yönetici bakar)
+  const card = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: detailedZ({ card: 850 }), error: null }], ...base }, NOW);
+  assert.equal(card.state, "fark");
+  assert.equal(card.zNoFromPhoto ?? null, null);
+  // Batch bölümü olmayan Z, günü tutuyor ve rakamlar aynı: Z'nin günü satırı tamam, Z no yazılır
+  const sameDayZ = slipRaw([], { documentType: "z_report", title: "Z RAPORU", zNo: { text: "0007", value: 7, confidence: "high" }, dailyTotal: amt(1_190), payments: detailedZ().payments, kdvGroups: detailedZ().kdvGroups });
+  const ok = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: sameDayZ, error: null }], ...base }, NOW);
+  assert.equal(ok.state, "uyumlu", JSON.stringify(ok.rows));
+  assert.ok(ok.rows.some((r) => r.label === "Z'nin günü" && r.ok));
+  assert.equal(ok.zNoFromPhoto, "0007");
+  // Tarihi okunmayan Z: günü bilinmiyor, Z no yazılmaz (uydurulmaz)
+  const noDate = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: { ...sameDayZ, date: null, time: null }, error: null }], ...base }, NOW);
+  assert.equal(noDate.zNoFromPhoto ?? null, null);
+  // Detaylı Z'de fişin günü satırı Z'nin de günüdür: ayrı "Z'nin günü" satırı yok
+  const detailed = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: detailedZ(), error: null }], ...base }, NOW);
+  assert.ok(!detailed.rows.some((r) => r.label === "Z'nin günü"), JSON.stringify(detailed.rows));
+  assert.equal(detailed.zNoFromPhoto, "0007");
+});
+
+test("Aynı batch farklı metinle okunsa da bir kez sayılır; aynı batch farklı tutarla okunursa fark ve öneri yok", () => {
+  const one: BankPos = { ...OK, batches: [batch("000279", 755, "elle", true)], dayCard: 755 };
+  const report = { ...REPORT, bankPos: null };
+  const read = (net: { text: string | null; value: number | null }, sales: { text: string | null; value: number | null } = net) => {
+    const r = slipRaw([{ no: "000279", net: 755 }]);
+    r.batches[0] = { ...r.batches[0], netTotal: { ...net, confidence: "high" }, salesTotal: { ...sales, confidence: "high" } };
+    return r;
+  };
+  const c = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: read({ text: "755,00", value: 755 }), error: null }, { photoId: 2, raw: read({ text: "755.00", value: 755 }), error: null }], bankPos: one, okc: OKC, report }, NOW);
+  assert.equal(c.readBankPos, 755, JSON.stringify(c.rows));
+  assert.equal(c.state, "uyumlu", JSON.stringify(c.issues));
+  // Bir fotoğrafta NET satırı kesik (yalnız satış okundu)
+  const cut = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: read({ text: "755", value: 755 }), error: null }, { photoId: 2, raw: read({ text: null, value: null }, { text: "755", value: 755 }), error: null }], bankPos: one, okc: OKC, report }, NOW);
+  assert.equal(cut.readBankPos, 755, JSON.stringify(cut.rows));
+  // Bir fotoğrafta tutar hiç okunmadı: öteki fotoğrafın tutarı geçer
+  const blank = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: read({ text: "755", value: 755 }), error: null }, { photoId: 2, raw: read({ text: null, value: null }), error: null }], bankPos: one, okc: OKC, report }, NOW);
+  assert.equal(blank.readBankPos, 755, JSON.stringify(blank.rows));
+  // Aynı batch iki farklı tutarla: fark, "Banka POS'a yaz" önerisi yok
+  const clash = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: read({ text: "755", value: 755 }), error: null }, { photoId: 2, raw: read({ text: "760", value: 760 }), error: null }], bankPos: one, okc: OKC, report }, NOW);
+  assert.equal(clash.state, "fark");
+  assert.equal(clash.readBankPos, null);
+  assert.match(plain(clash.issues.join(" | ")), /Batch 000279: fotoğrafta 755 ₺ \/ 760 ₺/);
+});
+
+test("Ödeme bölümü okunmayan Z sahte nakit / kart farkı vermez; yazdırılmayan sıfır satır sıfır sayılır", () => {
+  const z = { ...detailedZ(), payments: [] };
+  const c = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: z, error: null }], bankPos: OK, okc: OKC, report: { ...REPORT, okcOther: 0, lafposZNo: null } }, NOW);
+  assert.equal(c.state, "uyumlu", JSON.stringify(c.issues));
+  assert.ok(!c.rows.some((r) => r.label === "Yazarkasa nakdi" || r.label === "Yazarkasa kartı"), JSON.stringify(c.rows));
+  // Ödeme bölümü okundu, yemek kartı satırı yok (LafPOS'ta 0): tamam; kart satırı yokken LafPOS'ta kart varsa fark
+  const noCard = { ...detailedZ(), payments: [detailedZ().payments[0]] };
+  const d = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: noCard, error: null }], bankPos: OK, okc: OKC, report: { ...REPORT, okcOther: 0, lafposZNo: null } }, NOW);
+  assert.ok(d.rows.find((r) => r.label === "Yazarkasa yemek kartı")?.ok);
+  assert.match(plain(d.issues.join(" | ")), /Yazarkasa kartı: fotoğrafta 0 ₺; LafPOS'ta 800 ₺/);
+});
+
+test("Personelin notu: LafPOS kapanış notundaki 'Eksik:' kesilmez (otomatik eksik bölümü notun sonundadır)", () => {
+  const note = "LafPOS gün sonundan otomatik yazıldı. Kapanış notu (LafPOS): Eksik: 2 bardak kırıldı. Eksik: Banka POS: Pavo gün sonu alınamadı; LafPOS'ta Yönetim › Yazarkasa POS › Cihazda gün sonu al.";
+  assert.equal(staffAutoNote(note, { bankPos: null, okcTotal: 1_190 }), "LafPOS gün sonundan otomatik yazıldı. Kapanış notu (LafPOS): Eksik: 2 bardak kırıldı. Banka POS henüz gelmedi; yönetici ilgileniyor.");
+});
+
+test("Personelden gizleme kapalı kalır: fotoğraf durumu okunamazsa otomatik rapor kendi kaydından tanınır, okuma hatasında gizli", () => {
+  assert.equal(staffLafposAutoOf({ admin: true, hasReport: true, photoAuto: true, reportAuto: true }), false);
+  assert.equal(staffLafposAutoOf({ admin: false, hasReport: false, photoAuto: null, reportAuto: "error" }), false);
+  assert.equal(staffLafposAutoOf({ admin: false, hasReport: true, photoAuto: true, reportAuto: false }), true);
+  assert.equal(staffLafposAutoOf({ admin: false, hasReport: true, photoAuto: null, reportAuto: true }), true, "fotoğraf durumu düştü, rapor otomatik");
+  assert.equal(staffLafposAutoOf({ admin: false, hasReport: true, photoAuto: null, reportAuto: "error" }), true, "okunamadı: gizli");
+  assert.equal(staffLafposAutoOf({ admin: false, hasReport: true, photoAuto: null, reportAuto: false }), false, "elle girilen / ModPOS günü");
+  const page = readFileSync(join(process.cwd(), "src/app/panel/kasa/page.tsx"), "utf8");
+  assert.ok(page.includes("staffLafposAutoOf("), "sayfa kuralı kullanır");
+  assert.ok(page.includes("lafposAutoReport("), "raporun kendi kaydı");
+});
+
+test("Personelin alt başlığı: otomatik raporlu günde 'Rakamlar LafPOS'tan geldi', sayım bekleyen günde rapor bekleniyor", () => {
+  assert.equal(staffLafposDescriptionOf(null), null);
+  assert.equal(staffLafposDescriptionOf({ auto: true }), LAFPOS_STAFF_DESCRIPTION);
+  assert.equal(staffLafposDescriptionOf({ auto: false }), LAFPOS_STAFF_WAITING_DESCRIPTION);
+  assert.doesNotMatch(LAFPOS_STAFF_WAITING_DESCRIPTION, /geldi/);
+  assert.match(LAFPOS_STAFF_WAITING_DESCRIPTION, /LafPOS'tan gelecek/);
 });

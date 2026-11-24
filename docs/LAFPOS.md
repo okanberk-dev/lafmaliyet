@@ -771,9 +771,14 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   rakamları da okunduysa (Pavo'nun detaylı Z'si ya da ayrı mali Z) Z no, günlük toplam, nakit, kart (kart satırı yoksa banka
   satırlarının toplamı), yemek kartı, diğer ve KDV dökümü raporun LafPOS'tan yazılmış yazarkasa alanlarıyla (`okc.total`,
   `cash`, `card`, `mealCard`, `other`, `vat`) karşılaştırılır; ayrı mali Z basan cihazda Z fotoğrafı yoksa "Yazarkasa Z:
-  yok". LafPOS yazarkasa Z no'su göndermediyse fotoğrafta okunan Z no raporun boş `okc_z_no`'suna yazılır
-  (`applyPhotoZNo`; sürüm yok, işlem geçmişine "Yazarkasa Z no fotoğraftan yazıldı"), yönetici kartta "fotoğraftan
-  okundu (LafPOS göndermedi)" görür; LafPOS sonradan gönderirse onunki geçer ve fotoğraftaki farklıysa fark olur. Fark yöneticinin uyarısıdır: Kasa gün görünümünde Pavo kartının
+  yok". Z'nin günü fişin günüyle aynı kuralla karşılaştırılır (detaylı Z'de fişin günü satırı; ayrı Z'de "Z'nin günü").
+  Aynı fişin birden çok fotoğrafında aynı batch (no ve banka) bir kez sayılır, metni farklı okunsa da; aynı batch farklı
+  tutarla okunduysa fark satırı çıkar ve "Banka POS'a yaz" önerilmez. Ödeme bölümü hiç okunmayan Z'nin nakit / kart
+  satırları karşılaştırılmaz (sahte fark yok). LafPOS yazarkasa Z no'su göndermediyse fotoğrafta okunan Z no raporun boş
+  `okc_z_no`'suna yazılır, yalnız fotoğraf LafPOS'u tutuyorsa (uyumlu) ve Z'nin günü doğrulandıysa (başka günün ya da
+  günü okunmayan Z'nin numarası yazılmaz); yönetici Düzenle'yle sildiyse geri yazılmaz (`applyPhotoZNo`; sürüm yok,
+  işlem geçmişine "Yazarkasa Z no fotoğraftan yazıldı"), yönetici kartta "fotoğraftan okundu (LafPOS göndermedi)" görür;
+  LafPOS sonradan gönderirse onunki geçer ve fotoğraftaki farklıysa fark olur. Fark yöneticinin uyarısıdır: Kasa gün görünümünde Pavo kartının
   altındaki "Gün sonu fotoğrafı" kartında satır satır, zilde "Kasa fotoğrafı LafPOS'tan farklı · Marina <gün>" (son 7
   gün, yalnız yönetici), gün sonu e-postasında ve ay satırında rozet ("Fotoğraf ↔ LafPOS farklı"). Banka POS boşken (Pavo
   alınamadı) okunan toplam "Fotoğrafta 995 ₺" olarak yöneticiye gösterilir, "Banka POS'a yaz" onu rapora yazar

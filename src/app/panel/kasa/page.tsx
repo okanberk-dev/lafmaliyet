@@ -37,7 +37,7 @@ import { genitive } from "@/lib/recipe-change";
 import { cumulativeRejectedText, okcCumulativeToStore, okcHasFigures, okcMonth, type OkcPrev } from "@/lib/okc-z";
 import { photoDiffs, savedFields, suspiciousDiffs, type CashReading } from "@/lib/photo-read/kasa";
 import { okcReadFigures } from "@/lib/photo-read/okc";
-import { LAFPOS_STAFF_DESCRIPTION, lafposPhotoLabel, staffAutoNote, staffPhotoDiffs } from "@/lib/lafpos/foto";
+import { lafposPhotoLabel, staffAutoNote, staffLafposAutoOf, staffLafposDescriptionOf, staffPhotoDiffs } from "@/lib/lafpos/foto";
 import { LAFPOS_NO_COUNT_TEXT } from "@/lib/lafpos/prefill";
 import { addDays, dayLocativeTR, isCalendarDate, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -76,7 +76,7 @@ import {
   type CashReportDTO,
 } from "@/server/data/cash-reports";
 import { loadKasaLafpos, loadKasaLafposDays, loadLafposBankPos, loadLafposDayDetail } from "@/server/data/lafpos-day";
-import { lafposPhotoBadges, lafposPhotoState, type LafposPhotoState } from "@/server/lafpos/foto";
+import { lafposAutoReport, lafposPhotoBadges, lafposPhotoState, type LafposPhotoState } from "@/server/lafpos/foto";
 import { loadKasaModpos, loadKasaModposDays, modposKeySet, NO_MODPOS } from "@/server/data/modpos-day";
 import { dayWaste } from "@/server/data/waste";
 import { getDb } from "@/server/db";
@@ -162,7 +162,8 @@ export default function CashPage({ searchParams }: PageProps<"/panel/kasa">) {
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 /**
- * Personelin açtığı gün LafPOS'un otomatik raporlu (ya da sayım bekleyen) günüyse alt başlığın LafPOS metni; değilse null
+ * Personelin açtığı gün LafPOS'un otomatik raporlu günüyse "Rakamlar LafPOS'tan geldi", sayım bekleyen günüyse "Kasa raporu
+ * LafPOS'tan gelecek" (staffLafposDescriptionOf); değilse null
  * (ModPOS günü, elle girilen rapor: eski metin). Gün seçimi cashContentFor'unki gibi (bugün, dün ya da son 14 günün biri)
  */
 async function staffLafposDescription(searchParams: PageProps<"/panel/kasa">["searchParams"]): Promise<string | null> {
@@ -170,7 +171,7 @@ async function staffLafposDescription(searchParams: PageProps<"/panel/kasa">["se
   const today = businessDate();
   const date = isDay(gun) && gun <= today && (staffCanReport(gun) || staffLateDay(gun)) ? gun : today;
   const state = await lafposPhotoState(getDb(), date, await currentTillBranch(), "staff").catch(() => null);
-  return state ? LAFPOS_STAFF_DESCRIPTION : null;
+  return staffLafposDescriptionOf(state);
 }
 /** LafPOS günü değil (geçiş günü boş ya da gün ondan önce): form ModPOS'a göre */
 const NO_LAFPOS = { lafpos: false, day: null } as const;
@@ -357,8 +358,15 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const showPhotos = canEdit;
   // Personel: rapora bağlı Z / POS fotoğrafının kaldırılmasını isteyebilir mi (fotoğraf başına; tek Z ya da okuma farkı varsa hayır)
   const removal = !admin && report && showPhotos && photoInfo?.photos.length ? await photoRemovalStates(report, photoInfo.photos) : undefined;
-  // LafPOS'un otomatik gününde personel fotoğraf ↔ rapor farkını ve notun yönetici yönergesini görmez (metinde de)
-  const staffLafposAuto = !admin && Boolean(lafposPhoto?.auto);
+  // LafPOS'un otomatik gününde personel fotoğraf ↔ rapor farkını ve notun yönetici yönergesini görmez (metinde de).
+  // Kapalı kalır: fotoğraf durumu okunamadıysa (ya da LafPOS'un günü okunamadıysa) raporun kendi kaydı karar verir, o da
+  // okunamazsa gizli (staffLafposAutoOf)
+  const staffLafposAuto = staffLafposAutoOf({
+    admin,
+    hasReport: Boolean(report),
+    photoAuto: lafposPhoto ? lafposPhoto.auto : null,
+    reportAuto: !admin && report && !lafposPhoto?.auto ? await lafposAutoReport(getDb(), report.id).catch(() => "error" as const) : false,
+  });
   const whatsapp = report
     ? (() => {
         const extras = extrasFrom(photoInfo, outs, report, lafposState);
@@ -455,7 +463,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
       // Kartla bahşiş ve cari tahsilatı personelde de düşer: form, kayıtlı görünüm ve WhatsApp aynı kuralla (G11)
       lafpos={lafposState.day}
       lafposMode={lafposState.lafpos}
-      lafposAuto={lafposPhoto?.auto ?? false}
+      lafposAuto={admin ? (lafposPhoto?.auto ?? false) : staffLafposAuto}
       // LafPOS gününün gün sonu fotoğrafının adı ("Banka POS Z" yerine "Pavo gün sonu fişi")
       lafposPhotoLabel={lafposPhoto ? lafposPhotoLabel(lafposPhoto.need) : undefined}
       // Kümülatif ve yazarkasa dışı tahsilat yalnız yöneticiye: personelin yükünde anahtarı da yok
