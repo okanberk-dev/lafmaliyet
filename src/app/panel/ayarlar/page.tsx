@@ -298,7 +298,7 @@ async function SiteLinksCard() {
       summary={!configured ? "Bağlantı kurulmadı" : errors ? `${errors} bağlantıda hata` : "Karaoke, menü, siparişler, online satışlar"}
       description={
         configured
-          ? "Karaoke rezervasyonları, menü, uygulama siparişleri ve online satışlar siteden kendiliğinden gelir."
+          ? "Değişiklikler kendiliğinden eşitlenir; panelde değişen menü fiyatı siteye yazılır."
           : "Bağlantı kurulmadı: Vercel'de iki projeye de (laffogato.net ve bu panel) aynı değerle KARAOKE_SYNC_SECRET ekleyin (en az 32 karakter), ikisini yeniden yayınlayın."
       }
       actionsClassName="max-sm:w-full"

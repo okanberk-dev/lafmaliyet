@@ -118,7 +118,8 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
     body: (
       <>
         Kapanışta ModPOS&apos;tan ve banka POS&apos;tan (yazarkasa) Z raporunu alın, kasadaki nakdi sayın ve <StaffPath href="/panel/kasa" /> ekranına girin. Kasada
-        LafPOS kullanılmaya başlandıysa ModPOS yerine LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın: gün sonu panele gönderilir, form ondan dolar.{" "}
+        LafPOS kullanılıyorsa LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın; rapor panele kendisi yazılır, siz Pavo&apos;dan gün sonu fişini (detaylı Z) alıp
+        fotoğrafını <B>Gün sonu fotoğrafı</B> kartına eklersiniz.{" "}
         {clockSuffixTR(hour(CASH_EVENING_HOUR), "abl")} sonra
         Bugün ekranı hatırlatır.
       </>
@@ -174,8 +175,9 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             <StaffPath href="/panel/kasa" /> ekranında ModPOS Z raporunun ve banka POS Z raporunun (yazarkasa) fotoğrafını çekin; ModPOS&apos;un rakamları
             forma dolar. Turuncu alanları fişle karşılaştırın; hiçbir şey kendiliğinden kaydedilmez, <B>Raporu gönder</B>&apos;e siz basarsınız. Sayılan nakdi,
             teslim edileni ve kasayı kimin saydığını yazın; satış dışında kasaya konan parayı (bozuk para, tahsilat, nakit bahşiş) <B>Kasaya giren ekle</B> ile
-            girin. Kasa farkı varsa nedenini nota yazın. Kasada LafPOS kullanılmaya başlandıysa önce LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın: form
-            LafPOS&apos;un gün sonundan dolar, ModPOS Z fotoğrafı istenmez.
+            girin. Kasa farkı varsa nedenini nota yazın. Kasada LafPOS kullanılıyorsa bunların hiçbiri yok: LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın, rapor
+            panele kendisi yazılır ve salt okunurdur (düzeltme LafPOS&apos;ta yapılır). Sizin tek işiniz Pavo&apos;dan gün sonu fişini (detaylı Z) alıp fotoğrafını{" "}
+            <B>Gün sonu fotoğrafı</B> kartına eklemek.
           </>
         ),
         icon: Banknote,
@@ -197,9 +199,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
               </>
             )}{" "}
             Elle yazarken <B>Günlük toplam</B> NET SATIŞ ya da TOPLAM satırıdır, <B>Z no</B> fiş no değildir, <B>Kredi kartı</B> K.KARTI satırıdır. Kartın altında
-            yazarkasanın kartı ModPOS&apos;taki kartla karşılaştırılır (LafPOS kullanılıyorsa LafPOS&apos;takiyle); farklıysa bir kart ödemesi başka
-            türle girilmiş olabilir. Yanlış bölüme çekilen fotoğrafı altındaki <B>… bölümüne okut</B> düğmesi doğru
-            bölüme taşır.
+            yazarkasanın kartı ModPOS&apos;taki kartla karşılaştırılır; farklıysa bir kart ödemesi başka türle girilmiş olabilir. Kasada LafPOS kullanılıyorsa bu kart çıkmaz: Pavo&apos;nun gün sonu fişi{" "}
+            <B>Gün sonu fotoğrafı</B> kartına eklenir.
           </>
         ),
         icon: ScrollText,
@@ -254,7 +255,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Dünün raporunu bugün doğrudan girersiniz. Daha eski bir gün, son {LATE_REPORT_DAYS} günün içindeyse, <StaffPath href="/panel/kasa" /> ekranındaki{" "}
             <B>Girilmemiş günler</B> kartında çip olarak durur: güne dokunun, Z raporunun fotoğrafını ekleyin, Z no&apos;yu ve neden geç girildiğini yazıp{" "}
             <B>Onaya gönder</B>&apos;e basın. Rapor yönetici onaylayınca kayda geçer. Fotoğrafsız gönderilemez. Daha eski bir günü yönetici girer; Z raporunu ona
-            iletin. Kasada LafPOS kullanılmaya başlandıysa o günün rakamları LafPOS&apos;un gün sonundan dolar ve fotoğraf gerekmez; LafPOS o günü göndermediyse
+            iletin. Kasada LafPOS kullanılıyorsa LafPOS&apos;un gönderdiği güne geç rapor girilmez: o günde yalnız <B>Gün sonu fotoğrafı</B> kartı çıkar, Pavo&apos;nun
+            gün sonu fişini ekleyin. LafPOS o günü göndermediyse
             banka POS Z raporunun fotoğrafını ekleyin ve Z no&apos;yu LafPOS&apos;un Kasa › Geçmiş günler ekranından yazın.
           </>
         ),
@@ -278,20 +280,20 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             Kayıtlı raporda yanlış fotoğrafın yanındaki <B>Kaldırılmasını iste</B> ile nedenini yazıp gönderin; yönetici onaylayınca fotoğraf rapordan çıkar.
-            Rakamlar o fotoğrafa dayanıyorsa düğme görünmez.
+            Rakamlar o fotoğrafa dayanıyorsa ya da fotoğraf rapordaki rakamlardan farklı okunduysa düğme görünmez; yöneticinize haber verin.
           </>
         ),
         icon: Camera,
       },
       {
         id: "kasa-fiyatlar",
-        q: "Kasadaki (ModPOS) satış fiyatları",
+        q: "Kasadaki satış fiyatları",
         a: (
           <>
-            Menüde satış fiyatı değişince ModPOS&apos;ta da elle değiştirilir. Bekleyenler <StaffPath href="/panel/kasa/fiyatlar" /> ekranında, kasadaki adlarıyla
+            Kasada ModPOS kullanılıyorsa menüde satış fiyatı değişince ModPOS&apos;ta da elle değiştirilir. Bekleyenler <StaffPath href="/panel/kasa/fiyatlar" /> ekranında, kasadaki adlarıyla
             durur; Bugün&apos;de satır olarak da çıkar. ModPOS&apos;ta değiştirdikçe ürüne tek tek dokunun: satır listeden düşer, bildirimde <B>Geri al</B> vardır.
             Son işaretledikleriniz listenin üstünde {minutes(POS_UNDO_WINDOW_MS)} kalır, oradan da geri alırsınız; sonrasını yönetici geri alır. Her işaret adınızla
-            kaydedilir. Kasada LafPOS kullanılmaya başlandıysa bu iş size düşmez: menüdeki ürünlerin satış fiyatını LafPOS siteden kendisi alır, öbürlerini
+            kaydedilir. Kasada LafPOS kullanılıyorsa bu iş size düşmez: menüdeki ürünlerin satış fiyatını LafPOS siteden kendisi alır, öbürlerini
             LafPOS&apos;ta yönetici değiştirir. Kasada yanlış bir satış fiyatı görürseniz yöneticinize haber verin.
           </>
         ),

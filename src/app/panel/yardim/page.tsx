@@ -424,12 +424,13 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Fiş ve Z raporunu fotoğraftan doldurmak",
         a: (
           <>
-            <Path href="/panel/kasa" /> ekranında Z raporunun ve banka POS Z raporunun (yazarkasa) fotoğrafını çekin. ModPOS&apos;lu şubede ModPOS Z&apos;nin
-            rakamları forma dolar; LafPOS&apos;lu şubede form LafPOS&apos;un gün sonundan dolar, yalnız banka POS Z&apos;si çekilir.{" "}
+            ModPOS&apos;lu şubede <Path href="/panel/kasa" /> ekranında ModPOS Z&apos;nin ve banka POS Z raporunun (yazarkasa) fotoğrafı çekilir; ModPOS
+            Z&apos;nin rakamları forma dolar.{" "}
             {OKC_PREFILL_ENABLED
               ? "Banka POS Z'sinde yalnız birbirini tutan ve net okunan rakamlar dolar."
               : "Banka POS Z'sinin rakamları şimdilik forma yazılmaz, her alanın altında öneri olarak çıkar."}{" "}
-            Turuncu alanları fişle karşılaştırıp gönderin; hiçbir şey kendiliğinden kaydedilmez. Kasadan çıkan paranın fişini aynı ekranda Fiş ekle ile çekin;
+            Turuncu alanları fişle karşılaştırıp gönderin; hiçbir şey kendiliğinden kaydedilmez. LafPOS&apos;lu şubede rapor LafPOS&apos;un gün sonundan
+            kendisi yazılır; personel yalnız Pavo&apos;nun gün sonu fişinin (detaylı Z) fotoğrafını Gün sonu fotoğrafı kartına ekler. Kasadan çıkan paranın fişini aynı ekranda Fiş ekle ile çekin;
             kaydedince Harcamalar&apos;a da yazılır. Okuma Claude ile yapılır (fotoğraf başına birkaç sent); aç / kapat ve bu ayın tutarı Ayarlar › Fotoğraftan
             okuma&apos;da.
           </>
@@ -446,10 +447,12 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             İki ayrı sayaçtır: kasanın Z&apos;si (ModPOS ya da LafPOS gün sonu) satış programınındır, banka POS Z raporu yazarkasanın mali Z&apos;sidir
-            (üstünde Z RAPORU ve KDV dökümü yazar; banka gün sonu fişi değil). Banka POS Z&apos;si isteğe bağlıdır. Kayıtlı raporda yazarkasa kasayla
-            karşılaştırılır: kart, nakit, toplam, yemek kartı ve yazarkasanın kendi içindeki denetimleri. Toplam ve nakit farkı kendiliğinden hata değildir
-            (online satış, faturalı satış, Z&apos;nin saati); personel yalnız kart satırını görür. Günden güne&apos;de Yazarkasa tutmuyor ve Yazarkasa Z yok
-            rozetleri çıkar. Kümülatif yanlış saklandıysa gün ayrıntısında Kümülatifi temizle&apos;ye basın.
+            (üstünde Z RAPORU ve KDV dökümü yazar; banka gün sonu fişi değil). ModPOS&apos;lu şubede banka POS Z&apos;si isteğe bağlıdır; raporda
+            yazarkasa kasayla karşılaştırılır: kart, nakit, toplam, yemek kartı ve yazarkasanın kendi içindeki denetimleri. Toplam ve nakit farkı
+            kendiliğinden hata değildir (online satış, faturalı satış, Z&apos;nin saati); personel yalnız kart satırını görür. LafPOS&apos;lu şubede
+            Pavo&apos;nun gün sonu fişi istenir ve LafPOS&apos;la batch batch karşılaştırılır; fark yalnız size görünür (Gün sonu fotoğrafı kartı ve
+            zil). Günden güne&apos;de Yazarkasa tutmuyor ve Yazarkasa Z yok rozetleri çıkar. Yanlış saklanan kümülatifi gün
+            ayrıntısındaki Kümülatifi temizle siler.
           </>
         ),
         icon: ScanText,
@@ -921,8 +924,8 @@ const FORMULAS = [
   ["Birim maliyet", "Paket fiyatı ÷ paket içeriği"],
   ["Ürün maliyeti", "Σ (miktar × birim maliyet) × (1 + fire oranı)"],
   ["Net satış", "Satış fiyatı ÷ (1 + KDV)"],
-  ["POS komisyonu", "Satış fiyatı × komisyon × kartlı satış oranı"],
-  ["Birim kâr", "Net satış − ürün maliyeti − POS komisyonu"],
+  ["POS komisyonu (ürün başına)", "Satış fiyatı × komisyon × kartlı satış oranı"],
+  ["Birim kâr", "Net satış − ürün maliyeti − POS komisyonu (ürün başına)"],
   ["Maliyet oranı", "Ürün maliyeti ÷ net satış (hedef: Ayarlar › Oranlar, ör. %30)"],
   ["Önerilen fiyat", "TAVAN(maliyet ÷ hedef oran × (1 + KDV); 5\u00a0₺)"],
   ["Durum", "İyi ≤ hedef · Dikkat ≤ hedef + 10 puan · Düşük kâr > hedef + 10 puan"],
@@ -931,7 +934,11 @@ const FORMULAS = [
     "Reçetesi boş ürün",
     "Satışı eşleşmeyen satır gibi: net ciro × ortalama maliyet oranı (orana girmez). Kâr sıralamalarına, Analiz'deki gruplara ve Ürünler'in brüt kâr kartına girmez",
   ],
-  ["Brüt kâr", "Net satış − malzeme/ambalaj (reçeteye göre) − POS komisyonu; Genel bakış'ta laffogato.net online satışı da dahil"],
+  [
+    "Banka POS komisyonu (ay)",
+    "Σ şube (kasa raporlarındaki banka kartı, yemek kartı hariç × şubenin POS oranı, Şubeler). Satışlar satırlara ciro payıyla dağıtır. Kasa kartı olmayan ayda: ciro × komisyon × kart payı",
+  ],
+  ["Brüt kâr", "Net satış − malzeme/ambalaj (reçeteye göre) − banka POS komisyonu (ay); Genel bakış'ta laffogato.net online satışı da dahil"],
   [
     "Net kâr / zarar (reçeteye göre)",
     "Brüt kâr (laffogato.net online dahil) − indirimler ÷ (1 + KDV) − o ayın sabit giderleri (Gelir-gider: gün oranı + bu aya özel giderler). Satış listesi ayın bir kısmını kapsıyorsa indirim o günlerin kasa raporlarından, sabit gider ve online satış o günlere düşen payla. Excel temeli: standart aylık sabit gider",

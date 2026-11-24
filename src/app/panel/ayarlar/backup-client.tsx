@@ -79,7 +79,7 @@ export function BackupDownload({ uploads, last }: { uploads: { count: number; by
                 className={tooBig ? "cursor-not-allowed text-ink-mute [&>input]:cursor-not-allowed" : undefined}
               />
               <p className="mt-0.5 pl-6 text-xs leading-5 text-pretty text-ink-mute pointer-coarse:pl-7">
-                {tooBig ? documentsTooBigText(estimate) : `${size}; dosya büyür, Wi-Fi'de indirin`}
+                {tooBig ? `${documentsTooBigText(estimate)}; belgeli yedeği geliştiriciden isteyin` : `${size}; dosya büyür, Wi-Fi'de indirin`}
               </p>
             </div>
           ) : null}

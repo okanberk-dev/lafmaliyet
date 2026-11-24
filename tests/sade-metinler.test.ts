@@ -42,3 +42,16 @@ test("Karaoke ve Site menüsü: eşitlemenin iç işleyişi (imzalı ping, sorgu
     assert.doesNotMatch(src, /imzalı bir ping|Sürekli sorgu yapılmaz|en çok beş dakikada/, p);
   }
 });
+
+test("Ayarlar › laffogato.net bağlıyken açıklama özeti tekrarlamaz; menü iki yönlü", () => {
+  const page = code("src/app/panel/ayarlar/page.tsx");
+  assert.doesNotMatch(page, /Karaoke rezervasyonları, menü, uygulama siparişleri ve online satışlar siteden kendiliğinden gelir/);
+  assert.match(page, /panelde değişen menü fiyatı siteye yazılır/);
+});
+
+test("Yedek: belgeli yedek panelden inemeyecek kadar büyükse ne yapılacağı yazılı (belge yolu değil)", () => {
+  assert.match(code("src/app/panel/ayarlar/backup-client.tsx"), /belgeli yedeği geliştiriciden isteyin/);
+  const action = code("src/server/actions/backup.ts");
+  assert.doesNotMatch(action, /docs\/YEDEK\.md/);
+  assert.match(action, /geliştiriciden isteyin/);
+});

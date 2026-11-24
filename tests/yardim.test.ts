@@ -186,3 +186,22 @@ test("sade metin: ay sonu tahmini Formüller'le birleşti (formül iki yerde yaz
   assert.doesNotMatch(t, /÷ açık gün/);
   assert.match(PAGE, /"Ay sonu tahmini \(yalnızca devam eden ay\)"/);
 });
+
+test("sade metin: LafPOS'lu şubenin gün sonu (#132): rapor LafPOS'tan, personel Pavo'nun fişini çeker, karşılaştırma batch batch", () => {
+  const foto = answer("fotograf");
+  assert.match(foto, /Pavo/);
+  assert.match(foto, /Gün sonu fotoğrafı/);
+  assert.doesNotMatch(foto, /yalnız banka POS Z'si çekilir/);
+  const z = answer("yazarkasa-z");
+  assert.match(z, /ModPOS'lu şubede banka POS Z'si isteğe bağlıdır/);
+  assert.match(z, /LafPOS'lu şubede/);
+  assert.match(z, /batch/);
+});
+
+test("Formüller: banka POS komisyonu şubenin POS oranıyla (LM-1, posCommission); eski formül yalnız kasa kartı olmayan ayda", () => {
+  const f = PAGE.slice(PAGE.indexOf("const FORMULAS"), PAGE.indexOf("];", PAGE.indexOf("const FORMULAS")));
+  assert.match(f, /şubenin POS oranı/);
+  assert.match(f, /yemek kartı hariç/);
+  assert.match(f, /kasa kartı olmayan ayda/i);
+  assert.match(f, /\["Brüt kâr", "Net satış − malzeme\/ambalaj \(reçeteye göre\) − banka POS komisyonu/);
+});
