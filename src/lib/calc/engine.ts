@@ -1141,7 +1141,19 @@ export function createModel(ds: Dataset) {
   const countedWaste: WasteEntry[] = [
     ...(ds.wasteEntries ?? []).filter((w) => panelWasteCounts(w, lafposIkramDays)),
     ...(ds.lafposIkram?.lines ?? []).map(
-      (l): WasteEntry => ({ date: l.date, kind: l.kind, productId: l.productId, ingredientId: null, qty: l.qty, factor: 1, source: "lafpos", name: l.posName, menuValue: l.menuValue }),
+      (l): WasteEntry => ({
+        date: l.date,
+        kind: l.kind,
+        productId: l.productId,
+        ingredientId: null,
+        qty: l.qty,
+        factor: 1,
+        source: "lafpos",
+        name: l.posName,
+        menuValue: l.menuValue,
+        // Hazırlanmış iptal: zayi tüketimi, ödenmez tutarında yok (recordedOffRevenue onu saymaz)
+        ...(l.iptal ? { iptal: true } : {}),
+      }),
     ),
   ];
   const wasteByMonth = new Map<string, WasteEntry[]>();

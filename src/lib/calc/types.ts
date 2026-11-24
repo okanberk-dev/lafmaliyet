@@ -517,6 +517,11 @@ export interface WasteEntry {
   name?: string;
   /** LafPOS'un menü değeri, KDV dahil */
   menuValue?: number;
+  /**
+   * LafPOS'un hazırlanmış iptalinden gelen zayi (Faz 2; src/lib/lafpos/ikram.ts iptalWasteLines): tüketimdir ama Z'nin
+   * ödenmez tutarında (offRevenue) yoktur, onunla karşılaştırılan kayıtlı değere girmez (recordedOffRevenue)
+   */
+  iptal?: boolean;
 }
 
 export interface Dataset {

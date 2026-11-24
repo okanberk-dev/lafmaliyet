@@ -105,6 +105,23 @@ export function lafposReasonText(l: Pick<LafposIkramLine, "reason" | "iptal" | "
   return l.reason ? `${l.reason} (${person})` : `(${person})`;
 }
 
+/**
+ * Günün Z'deki ödenmez tutarıyla (offRevenue) karşılaştırılan kayıtlı değer (Onaylar'ın geç ikram kartı): LafPOS'un
+ * satırı kendi menü değeriyle (ikram, ödenmez ve zayi listesi: ödenmez tutarı onu kapsar), panelin ürün ikramı menü
+ * fiyatıyla. Hazırlanmış iptalin zayisi (Faz 2, `iptal`) tüketimdir ama ödenmez tutarında yoktur: sayılmaz
+ */
+export function recordedOffRevenue(
+  entries: readonly { kind: "zayi" | "ikram"; productId: number | null; qty: number; source?: "lafpos"; menuValue?: number; iptal?: boolean }[],
+  priceOf: (productId: number) => number | null,
+): number {
+  let total = 0;
+  for (const w of entries) {
+    if (w.source === "lafpos") total += w.iptal ? 0 : (w.menuValue ?? 0);
+    else if (w.kind === "ikram" && w.productId !== null) total += (priceOf(w.productId) ?? 0) * w.qty;
+  }
+  return total;
+}
+
 /** İkram listesinin (iptal satırları hariç) türe göre menü değeri: Z'nin türe göre toplamlarıyla karşılaştırılır */
 export function lafposListByKind(lines: readonly (Pick<PosIkram, "menuValue" | "reason" | "kind"> & { iptal?: boolean; compKind?: PosIkram["kind"] })[]): { ikram: number; odenmez: number; zayi: number } {
   const out = { ikram: 0, odenmez: 0, zayi: 0 };

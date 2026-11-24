@@ -20,7 +20,7 @@ import { parsePosDay, posZSchema, type PosDayZ } from "../src/lib/lafpos/day";
 import { lafposDayDetail } from "../src/lib/lafpos/gun-ayrinti";
 import { autoValuesOf, dayEndNotes, dayEndSections, mergeAuto, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
 import { lafposMonthNotes, lafposMonthStatus, mergeSalesSources } from "../src/lib/lafpos/sales";
-import { IPTAL_ZAYI_REASON, iptalWasteLines, lafposCompKind, lafposIkramCheck, lafposLineKind, lafposListByKind, lafposReasonText } from "../src/lib/lafpos/ikram";
+import { IPTAL_ZAYI_REASON, iptalWasteLines, lafposCompKind, lafposIkramCheck, lafposLineKind, lafposListByKind, lafposReasonText, recordedOffRevenue } from "../src/lib/lafpos/ikram";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
@@ -230,9 +230,20 @@ test("motor: hazırlanmış iptal kayıtlı zayi tüketimine girer (LafPOS'un za
     assert.equal(model.recordedUsage("2026-11").get(id)?.ikram ?? 0, 0, `${id}: ikram değil`);
   }
   assert.deepEqual(
-    model.countedWaste.filter((w) => w.source === "lafpos").map((w) => [w.kind, w.name, w.qty, w.menuValue]),
-    [["zayi", "LATTE MEDIUM", 2, 390]],
+    model.countedWaste.filter((w) => w.source === "lafpos").map((w) => [w.kind, w.name, w.qty, w.menuValue, w.iptal]),
+    [["zayi", "LATTE MEDIUM", 2, 390, true]],
   );
+});
+
+test("Z'nin ödenmez tutarıyla karşılaştırılan kayıtlı değer: LafPOS'un listesi (zayi dahil) ve panelin ürün ikramı; hazırlanmış iptal girmez", () => {
+  const entries = [
+    { kind: "ikram" as const, productId: 1, qty: 1, source: "lafpos" as const, menuValue: 130 },
+    { kind: "zayi" as const, productId: 2, qty: 1, source: "lafpos" as const, menuValue: 60 },
+    { kind: "zayi" as const, productId: 3, qty: 1, source: "lafpos" as const, menuValue: 280, iptal: true },
+    { kind: "ikram" as const, productId: 4, qty: 2 },
+    { kind: "zayi" as const, productId: 4, qty: 5 },
+  ];
+  assert.equal(recordedOffRevenue(entries, (id) => (id === 4 ? 100 : null)), 390);
 });
 
 test("kasa e-postasının denetimi: LafPOS'un Z'sindeki türe göre toplamlar listeyle karşılaştırılır (Faz 2); yoksa eski kural", () => {
