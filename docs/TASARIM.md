@@ -143,7 +143,8 @@ Sayfalar önce `src/components/ui/*` ve `src/components/panel/*`'ı kullanır (b
 | `Fab` (`ui/fab.tsx`) | — | Telefon ve tabletin yüzen ekleme düğmesi: alt menünün üstünde, aşağı kaydırırken ve klavye açıkken gizlenir. |
 | `FloatingBar` | — | Kaydedilmemiş değişiklik çubuğu; açıkken sayfanın sonuna çubuk kadar boşluk eklenir. |
 | `@/components/akmanos/range-slider` | range-slider | Senaryo ve fiyat simülatöründe kaydırıcılar. |
-| `@/components/akmanos/bouncy-accordion` | bouncy-accordion | Yardım sayfasında SSS. |
+| `FaqChat({ items, value, onValueChange, anchors })` (`ui/faq-chat.tsx`) | rare-ui faq (uyarlama) | Yardım'ın "Nasıl yapılır?" listesi (yönetici ve personel): soru solda beyaz balon (başında tek renk konu ikonu), açılınca siyah; cevap sağda `bg-brand-100` balonda L'Af karosuyla, bağlantılar balonun içinde. Kapalı cevap DOM'da yok, her soru sunucu HTML'inde; soru kimliği çapa (`/panel/yardim#claude`). ↑ ↓ Home End sorular arasında; `useCalmMotion`. |
+| `@/components/akmanos/bouncy-accordion` | bouncy-accordion | Şu an kullanılmıyor (Yardım'ın SSS'i 24 Kas 2026'dan beri `FaqChat`). |
 | `@/components/akmanos/bounce-sidebar` (`BounceSidebarNav`) | bounce-sidebar | Uzun ayar sayfalarında bölüm gezinmesi. |
 | `@/components/akmanos/streak` | streak | Şu an kullanılmıyor (sayım yapılan aylar için ayrılmış desen). |
 | `@/components/akmanos/capacity-allocation-card`, `agent-limits-card` | bölümlü kullanım çubuğu | Gider dağılımı gibi parçalı toplamlar için desen. |
