@@ -80,8 +80,11 @@ describe("gelir-gider komisyon ve açılış: veritabanında", { skip: !SERVER_U
     assert.deepEqual(model.bankShareOf(PREV), { rate: 0.6, source: "kasa", split: true, meal: 0.1 });
     assert.equal(model.cardShareOf(PREV).rate, 0.7, "kartlı satış oranı yemek kartını içerir");
     let pm = model.pnlMonth(PREV);
-    const estimate = z * st.komisyon * 0.6;
-    assert.ok(Math.abs(pm.cells.get("commission:pos")!.value! - estimate) < 1e-6, "yalnız banka kartı payıyla");
+    // Kasa kartı olan ay (23 Kasım 2026, hesap sözleşmesi §10): banka kartı × şubenin POS oranı (Tuzla, migration'ın
+    // varsayılanı %2); Ayarlar'daki genel oran yalnız kasa kartı olmayan ayda
+    const estimate = Math.round(z * 0.6 * 0.02 * 100) / 100;
+    assert.notEqual(st.komisyon, 0.02, "genel oran şubenin oranından farklı: hangisinin kullanıldığı görünsün");
+    assert.ok(Math.abs(pm.cells.get("commission:pos")!.value! - estimate) < 1e-6, "yalnız banka kartı, şubenin oranıyla");
     assert.equal(pm.cells.get("commission:pos")!.warn, undefined);
 
     // Yemek kartının kendi faturası: tahmin aynı, faturası bir kez

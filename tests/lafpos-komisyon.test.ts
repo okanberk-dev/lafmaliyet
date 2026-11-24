@@ -142,9 +142,9 @@ test("LafPOS ayı: her kartın ve platformun satışı kendi ödemelerinden; ora
   const p = must(rowOf(r, "pluxee", "2026-11"));
   const m = must(rowOf(r, "multinet", "2026-11"));
   const y = must(rowOf(r, "yemeksepeti", "2026-11"));
-  assert.deepEqual(p.sales, { amount: 1500, source: "lafpos", zShare: 0 });
-  assert.deepEqual(m.sales, { amount: 900, source: "lafpos", zShare: 0 });
-  assert.deepEqual(y.sales, { amount: 1200, source: "lafpos", zShare: 0 });
+  assert.deepEqual(p.sales, { amount: 1500, source: "lafpos" });
+  assert.deepEqual(m.sales, { amount: 900, source: "lafpos" });
+  assert.deepEqual(y.sales, { amount: 1200, source: "lafpos" });
   assert.equal(p.salesReason, null);
   assert.equal(p.rate, 0.04);
   assert.ok(Math.abs(m.rate! - 60 / 900) < 1e-9);
@@ -155,7 +155,7 @@ test("LafPOS ayı: her kartın ve platformun satışı kendi ödemelerinden; ora
   assert.ok(commissionAlerts(r, "2026-12-02").some((a) => a.key === "oran:multinet:2026-11:67"));
   // Beklenen hakediş = satış − faturalar (KDV dahil)
   assert.equal(p.payout.expected, 1500 - 72);
-  assert.deepEqual(p.autoSales, { amount: 1500, source: "lafpos", zShare: 0 });
+  assert.deepEqual(p.autoSales, { amount: 1500, source: "lafpos" });
   assert.equal(sourceLabel(p.sales!, "meal"), "LafPOS ödemelerinden");
   // Grup: Z'deki yemek kartı LafPOS'un Z'sinden, ortalama oran, ay LafPOS'tan
   const g = groupOf(r, "meal", "2026-11")!;
@@ -177,7 +177,7 @@ test("elle > lafpos: yazılan ekstre kazanır, boş bırakılırsa LafPOS'un öd
   const r = buildCommissionReport(fx({ marks: [mark("pluxee", "2026-11", { sales: 1600 })] }));
   const p = must(rowOf(r, "pluxee", "2026-11"));
   assert.deepEqual(p.sales, { amount: 1600, source: "elle" });
-  assert.deepEqual(p.autoSales, { amount: 1500, source: "lafpos", zShare: 0 });
+  assert.deepEqual(p.autoSales, { amount: 1500, source: "lafpos" });
   // Yazılan ekstrede eksik gün uyarısı yok
   const gap = buildCommissionReport(fx({ marks: [mark("pluxee", "2026-11", { sales: 1600 })], lafpos: { switchDay: "2026-11-01", days: lafDays("2026-11-01", "2026-11-30", dayPayments, ["2026-11-05"]) } }));
   assert.ok(!must(rowOf(gap, "pluxee", "2026-11")).flags.some((f) => f.key === "kasa-eksik"));
@@ -186,7 +186,7 @@ test("elle > lafpos: yazılan ekstre kazanır, boş bırakılırsa LafPOS'un öd
 test("gün sonu gelmeyen gün: kart kart satış eksik kalabilir; %6 aşımı kesin değil", () => {
   const r = buildCommissionReport(fx({ lafpos: { switchDay: "2026-11-01", days: lafDays("2026-11-01", "2026-11-30", dayPayments, ["2026-11-05", "2026-11-06"]) } }));
   const m = must(rowOf(r, "multinet", "2026-11"));
-  assert.deepEqual(m.sales, { amount: 840, source: "lafpos", zShare: 0 });
+  assert.deepEqual(m.sales, { amount: 840, source: "lafpos" });
   assert.deepEqual(
     m.flags.map((f) => [f.key, f.level, plain(f.text)]),
     [
@@ -215,29 +215,32 @@ test("gün sonu gelmeyen gün: kart kart satış eksik kalabilir; %6 aşımı ke
   assert.equal(tillSub(groupOf(shut, "meal", "2026-11")), "29 / 30 gün kayıtlı · 1 gün kapalı · LafPOS'tan");
 });
 
-test("geçiş ayı: önceki günler kasa raporu kuralıyla; birden çok kartta bilinmez, tek kartta Z toplamı da eklenir", () => {
+test("geçiş ayı: önceki günlerin Z'si markası belirsiz satırda; kanalın satışı LafPOS'taki ödemeleri (tek kartta da Z'den yazılmaz)", () => {
   // Geçiş günü 10 Kasım; 1–9 Kasım kasa raporlarında yemek kartı 100, online 0
   const input = (o: Partial<CommissionInput> = {}) =>
     fx({ till: [...till("2026-10-01", "2026-10-31"), ...till("2026-11-01", "2026-11-09", { mealCard: 100, online: 0 })], lafpos: { switchDay: "2026-11-10", days: lafDays("2026-11-10", "2026-11-30") }, ...o });
   const r = buildCommissionReport(input());
   const p = must(rowOf(r, "pluxee", "2026-11"));
-  assert.equal(p.sales, null);
-  assert.equal(plain(p.salesReason), "Satış bilinmiyor: LafPOS 10 Kasım'da başladı; öncesinde Z'de yemek kartları tek toplam ve bu ay 2 kart var. Kanalın ekstresindeki satışı yazarsanız oran hesaplanır.");
+  // 23 Kasım 2026: 1–9 Kasım'ın Z'deki 900'ü hiçbir karta yazılmaz (grupta markası belirsiz); kartın satışı LafPOS'taki
+  // ödemeleri, eksik kalmış olabileceği söylenir
+  assert.deepEqual(p.sales, { amount: 1050, source: "lafpos" });
+  assert.equal(plain(p.flags.find((f) => f.key === "kasa-eksik")?.text), "Z'de markası belirsiz 900 ₺ var; satış eksik kaldıysa oran yüksek görünür.");
+  assert.deepEqual(groupOf(r, "meal", "2026-11")!.unbranded, { amount: 900, pre: 900, modpos: 0, loose: 0, fallback: 0 });
   // Online (Yemeksepeti) önceki günlerde 0: satış LafPOS'tan
-  assert.deepEqual(must(rowOf(r, "yemeksepeti", "2026-11")).sales, { amount: 840, source: "lafpos", zShare: 0 });
+  assert.deepEqual(must(rowOf(r, "yemeksepeti", "2026-11")).sales, { amount: 840, source: "lafpos" });
   const g = groupOf(r, "meal", "2026-11")!;
   assert.equal(g.zTotal, 900 + 21 * 80);
   assert.equal(g.reportDays, 30);
   assert.equal(plain(tillSub(g)), "30 / 30 gün kayıtlı · 10 Kasım'dan LafPOS");
 
-  // Tek kart (yalnız Pluxee): önceki günlerin Z toplamı da ona
+  // Tek kart (yalnız Pluxee): önceki günlerin Z toplamı ona da yazılmaz (eskiden 1.050 + 900 yazılırdı)
   const single = () => [pay("Pluxee", "meal_card", "pluxee", 50)];
   const one = buildCommissionReport(input({ invoices: [inv("Pluxee", "2026-11-30", 60)], lafpos: { switchDay: "2026-11-10", days: lafDays("2026-11-10", "2026-11-30", single) } }));
   const op = must(rowOf(one, "pluxee", "2026-11"));
-  assert.deepEqual(op.sales, { amount: 1050 + 900, source: "lafpos", zShare: 900 });
-  assert.equal(sourceLabel(op.sales!, "meal"), "LafPOS ödemeleri ve Z'deki yemek kartı toplamı (tek kart)");
-  // Hakediş penceresi Z'nin payını ayrıca söyler ("LafPOS ödemeleri ve Z'deki toplam … (Z'den 900 ₺)")
-  assert.deepEqual(op.autoSales, { amount: 1950, source: "lafpos", zShare: 900 });
+  assert.deepEqual(op.sales, { amount: 1050, source: "lafpos" });
+  assert.equal(sourceLabel(op.sales!, "meal"), "LafPOS ödemelerinden");
+  assert.deepEqual(op.autoSales, { amount: 1050, source: "lafpos" });
+  assert.equal(groupOf(one, "meal", "2026-11")!.unbranded?.pre, 900);
   // Önceki günlerden biri raporsuz: eksik
   const gap = buildCommissionReport(
     input({
@@ -246,7 +249,7 @@ test("geçiş ayı: önceki günler kasa raporu kuralıyla; birden çok kartta b
       lafpos: { switchDay: "2026-11-10", days: lafDays("2026-11-10", "2026-11-30", single) },
     }),
   );
-  assert.equal(must(rowOf(gap, "pluxee", "2026-11")).flags.find((f) => f.key === "kasa-eksik")?.text, "1 gün kasa raporu yok; satış eksik kaldıysa oran yüksek görünür.");
+  assert.equal(plain(must(rowOf(gap, "pluxee", "2026-11")).flags.find((f) => f.key === "kasa-eksik")?.text), "1 gün kasa raporu yok ve Z'de markası belirsiz 800 ₺ var; satış eksik kaldıysa oran yüksek görünür.");
   // Geçiş gününden önce hiç kasa raporu yok: ay bilinmez
   const none = buildCommissionReport(input({ invoices: [inv("Pluxee", "2026-11-30", 60)], till: till("2026-10-01", "2026-10-31"), lafpos: { switchDay: "2026-11-10", days: lafDays("2026-11-10", "2026-11-30", single) } }));
   assert.equal(plain(must(rowOf(none, "pluxee", "2026-11")).salesReason), "Satış bilinmiyor: LafPOS 10 Kasım'da başladı, öncesinin kasa raporu yok. Kanalın ekstresindeki satışı yazarsanız oran hesaplanır.");
@@ -265,15 +268,15 @@ test("ModPOS'ta kalan şube (Tuzla): raporları LafPOS'un yerine geçmez, kasa r
   const r = buildCommissionReport(input);
   // Grubun Z'si iki kasanın toplamı
   assert.equal(groupOf(r, "meal", "2026-11")!.zTotal, 2400 + 6000);
-  // İki kart: Tuzla'nın Z'sindeki yemek kartı kart kart bilinmez (kasa raporu kuralı); önceden sessizce düşüyordu
+  // Tuzla'nın Z'sindeki yemek kartı kart kart bilinmez: hiçbir karta yazılmaz, grupta markası belirsiz (23 Kasım 2026);
+  // kartın satışı Marina'nın LafPOS ödemeleri, eksik kalmış olabileceği söylenir
   const p = must(rowOf(r, "pluxee", "2026-11"));
-  assert.equal(p.sales, null);
-  assert.equal(
-    plain(p.salesReason),
-    "Satış bilinmiyor: kasası ModPOS'ta kalan şubede Z'de yemek kartları tek toplam ve bu ay 2 kart var. Kanalın ekstresindeki satışı yazarsanız oran hesaplanır.",
-  );
-  // Tek platform: Tuzla'nın online toplamı kanala yazılır (tek kuralı)
-  assert.deepEqual(must(rowOf(r, "yemeksepeti", "2026-11")).sales, { amount: 1200 + 3000, source: "lafpos", zShare: 3000 });
+  assert.deepEqual(p.sales, { amount: 1500, source: "lafpos" });
+  assert.equal(plain(p.flags.find((f) => f.key === "kasa-eksik")?.text), "Z'de markası belirsiz 6.000 ₺ var; satış eksik kaldıysa oran yüksek görünür.");
+  assert.deepEqual(groupOf(r, "meal", "2026-11")!.unbranded, { amount: 6000, pre: 0, modpos: 6000, loose: 0, fallback: 0 });
+  // Tek platform da olsa Tuzla'nın online toplamı kanala yazılmaz (eskiden 1.200 + 3.000 yazılırdı)
+  assert.deepEqual(must(rowOf(r, "yemeksepeti", "2026-11")).sales, { amount: 1200, source: "lafpos" });
+  assert.equal(groupOf(r, "platform", "2026-11")!.unbranded?.modpos, 3000);
   // Şubesiz rapor Tuzla'nın: ModPOS'unki gibi kasa raporu kuralıyla eklenir, Marina'nın gün sonunun yedeği değil
   const branchless = lafposMonth(fx({ till: [...till("2026-10-01", "2026-10-31"), ...tuzla.map((r) => ({ date: r.date, mealCard: r.mealCard, online: r.online }))] }), "2026-11")!;
   assert.deepEqual(branchless.modpos, { meal: 6000, online: 3000 });
@@ -290,7 +293,7 @@ test("ModPOS'ta kalan şube (Tuzla): raporları LafPOS'un yerine geçmez, kasa r
   assert.deepEqual(own.fallback, ["2026-11-05"]);
 });
 
-test("kanalı seçilmemiş ya da tanınmayan ödeme türü: grupta uyarı; birden çok kartta yazılmaz, tek kartta yazılır", () => {
+test("kanalı seçilmemiş ya da tanınmayan ödeme türü: grupta uyarı; hiçbir karta yazılmaz (tek kartta da), markası belirsiz", () => {
   const loose = () => [...dayPayments(), pay("Yemek kartı", "meal_card", null, 10), pay("Ticket", "meal_card", "Ticket", 5)];
   const r = buildCommissionReport(fx({ lafpos: { switchDay: "2026-11-01", days: lafDays("2026-11-01", "2026-11-30", loose) } }));
   const g = groupOf(r, "meal", "2026-11")!;
@@ -301,18 +304,19 @@ test("kanalı seçilmemiş ya da tanınmayan ödeme türü: grupta uyarı; birde
       [
         "lafpos-kanal",
         "info",
-        "LafPOS'ta kanalı seçilmemiş ya da tanınmayan ödeme türü: “Yemek kartı” 300 ₺, “Ticket” (kanal “Ticket”) 150 ₺. Bu tutar hiçbir karta yazılmaz; LafPOS'ta ödeme türünün kanalını seçin.",
+        "LafPOS'ta kanalı seçilmemiş ya da tanınmayan ödeme türü: “Yemek kartı” 300 ₺, “Ticket” (kanal “Ticket”) 150 ₺. Bu tutar hiçbir karta yazılmaz, markası belirsiz satırda; LafPOS'ta ödeme türünün kanalını seçin.",
       ],
     ],
   );
   const p = must(rowOf(r, "pluxee", "2026-11"));
-  assert.deepEqual(p.sales, { amount: 1500, source: "lafpos", zShare: 0 });
+  assert.deepEqual(p.sales, { amount: 1500, source: "lafpos" });
   assert.equal(plain(p.flags.find((f) => f.key === "kasa-eksik")?.text), "Kanalı seçilmemiş 450 ₺ ödeme var; satış eksik kaldıysa oran yüksek görünür.");
-  // Tek kart: kanalsız ödeme ona yazılır
+  // Tek kart: kanalsız ödeme ona da yazılmaz (23 Kasım 2026; eskiden 1.500 + 300), markası belirsiz satırda
   const single = () => [pay("Pluxee", "meal_card", "pluxee", 50), pay("Yemek kartı", "meal_card", null, 10)];
   const one = buildCommissionReport(fx({ invoices: [inv("Pluxee", "2026-11-30", 60)], lafpos: { switchDay: "2026-11-01", days: lafDays("2026-11-01", "2026-11-30", single) } }));
-  assert.deepEqual(must(rowOf(one, "pluxee", "2026-11")).sales, { amount: 1800, source: "lafpos", zShare: 300 });
-  assert.match(plain(groupOf(one, "meal", "2026-11")!.flags[0].text), /Bu ay tek kart olduğu için ona yazıldı; LafPOS'ta ödeme türünün kanalını seçin\.$/);
+  assert.deepEqual(must(rowOf(one, "pluxee", "2026-11")).sales, { amount: 1500, source: "lafpos" });
+  assert.deepEqual(groupOf(one, "meal", "2026-11")!.unbranded, { amount: 300, pre: 0, modpos: 0, loose: 300, fallback: 0 });
+  assert.match(plain(groupOf(one, "meal", "2026-11")!.flags[0].text), /Bu tutar hiçbir karta yazılmaz, markası belirsiz satırda; LafPOS'ta ödeme türünün kanalını seçin\.$/);
   // Platformda: uyarı Platformlar satırının altında (grup)
   const plat = buildCommissionReport(fx({ lafpos: { switchDay: "2026-11-01", days: lafDays("2026-11-01", "2026-11-30", () => [...dayPayments(), pay("Getir", "online", null, 20)]) } }));
   assert.equal(groupOf(plat, "platform", "2026-11")!.flags[0]?.key, "lafpos-kanal");
@@ -323,7 +327,7 @@ test("LafPOS'ta ödemesi olan kanalın faturası gelmediyse kartı çıkar; ayı
   const input = (today: string) => fx({ today, through: today, invoices: [inv("Pluxee", "2026-11-30", 60)] });
   const r = buildCommissionReport(input("2026-12-02"));
   const m = must(rowOf(r, "multinet", "2026-11"));
-  assert.deepEqual(m.sales, { amount: 900, source: "lafpos", zShare: 0 });
+  assert.deepEqual(m.sales, { amount: 900, source: "lafpos" });
   assert.equal(m.invoices.length, 0);
   assert.equal(m.payout.status, "faturasiz");
   assert.deepEqual(statusBadge(m), { text: "Fatura bekleniyor", tone: "gray" });

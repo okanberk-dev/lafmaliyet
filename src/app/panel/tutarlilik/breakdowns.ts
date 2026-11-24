@@ -184,7 +184,14 @@ export function consistencyBreakdowns(c: ConsistencyCalc, month: string): Consis
           label: "Hesaplanan ciro",
           rows: [
             { key: "liste", label: "Ürün listesi toplamı", sub: "POS ürün listesi, indirim öncesi", amount: s.listTotal, href: `${salesHref}#satirlar` },
-            { key: "indirim", label: "Yönetici indirimleri", sub: period, amount: -s.discounts, href: salesHref },
+            {
+              key: "indirim",
+              label: "Yönetici indirimleri",
+              // LafPOS'un satırları indirimden sonradır: yalnız ModPOS listesi günlerinin indirimi (engine listDiscounts)
+              sub: s.lafposLines ? `${period}; yalnız ModPOS listesinin günleri` : period,
+              amount: -s.discounts,
+              href: salesHref,
+            },
           ],
         },
         {

@@ -40,6 +40,11 @@ export interface BranchRow {
   /** Açılış günü (YYYY-MM-DD); boşsa "başından beri" */
   openedOn: string | null;
   sortOrder: number;
+  /**
+   * Banka POS komisyon oranı (0,02 = %2; branches.pos_rate, varsayılan %2): banka POS komisyonu şube şube bu oranla
+   * (engine.ts posCommission). Tohum ve eski okuyucular vermez (veritabanının varsayılanı)
+   */
+  posRate?: number;
 }
 
 /** İlk kurulumda ve boş veritabanında yazılan kayıtlar (idempotent; scripts/seed.ts) */
@@ -80,6 +85,21 @@ export function suggestBranchId(name: string): string {
     .replace(/^-+|-+$/g, "")
     .replace(/^([^a-z])/, "s$1")
     .slice(0, BRANCH_ID_MAX);
+}
+
+/**
+ * Şubenin varsayılan banka POS komisyon oranı (branches.pos_rate; sahibin kararı, 23 Kasım 2026: iki şube %2). Yönetici
+ * Şubeler'den değiştirir; banka POS komisyonu şube şube kart × oran (src/lib/calc/engine.ts posCommission)
+ */
+export const DEFAULT_POS_RATE = 0.02;
+/** Oranın üst sınırı (%10): bankaların POS oranı bunun çok altında, yazım hatası (2 yerine 20) kaydedilmesin */
+export const POS_RATE_MAX = 0.1;
+
+/** POS oranı geçerli mi (0 ile %10 arası, 0 dahil: komisyonsuz anlaşma); geçersizse nedeni */
+export function posRateError(rate: number): string | null {
+  if (!Number.isFinite(rate) || rate < 0) return "POS oranını yüzde olarak yazın (ör. 2)";
+  if (rate > POS_RATE_MAX) return `POS oranı en çok %${POS_RATE_MAX * 100} olabilir`;
+  return null;
 }
 
 /** Tip ile kasa kaynağı birbirine uymalı: online kanalın kasası olmaz, fiziksel şube kasasız kalmaz */

@@ -21,6 +21,7 @@ export async function listBranches(db: DB = getDb()): Promise<BranchRow[]> {
       active: s.branches.active,
       openedOn: s.branches.openedOn,
       sortOrder: s.branches.sortOrder,
+      posRate: s.branches.posRate,
     })
     .from(s.branches)
     .orderBy(asc(s.branches.sortOrder), asc(s.branches.name));
@@ -37,6 +38,7 @@ export async function getBranch(db: DB, id: string): Promise<BranchRow | null> {
       active: s.branches.active,
       openedOn: s.branches.openedOn,
       sortOrder: s.branches.sortOrder,
+      posRate: s.branches.posRate,
     })
     .from(s.branches)
     .where(eq(s.branches.id, id))

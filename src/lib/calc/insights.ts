@@ -8,6 +8,7 @@ import {
 } from "../constants";
 import { coveredByAllocations, isPartiallyPaid, openBalance, type BalanceInvoice } from "../cari/balance";
 import { isUnpriced } from "../count-item";
+import { DUPLICATE_ALERT_TITLE, duplicateAlertDetail } from "./duplicate-expense";
 import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, uncountedCogsText, type ListPeriod, type Model, type MonthlyExpensePlan, type OnlineMonthCalc, type ProductCalc, type StockSheet } from "./engine";
 import { monthLabel, num, tl } from "../format";
 import { OPTION_PRODUCTS } from "../site-sales/calc";
@@ -637,7 +638,8 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   const listFixed = listShare ? fixedForListPeriod(fixedMonth, listShare) : fixedMonth;
   const fixed = listFixed.sections;
   const fixedTotal = listFixed.total;
-  const discountsNet = ((listShare ? listShare.lp.discounts : info?.discounts) ?? 0) / (1 + st.kdv);
+  // Yalnız ModPOS listesi günlerinin indirimi: LafPOS'un satırları indirimden sonradır (engine listDiscounts)
+  const discountsNet = (listShare ? listShare.lp.discounts : model.listDiscounts(month)) / (1 + st.kdv);
   // laffogato.net online satışı reçeteye göre (kâr-zarardaki gibi: kâr ModPOS + online ile)
   const online = hasSales ? onlineTheory(model.onlineMonth(month), share) : null;
 
@@ -1001,7 +1003,7 @@ export function alerts(model: Model, month: string): Alert[] {
     // Liste kasa raporlarından kısa bir dönemi kapsıyorsa (süren ayda yapıştırılan liste) o dönemin Z toplamıyla
     const lp = model.listPeriod(month);
     const pos = lp ? lp.posRevenue : info.posRevenue;
-    const diff = sales.revenue - ((lp ? lp.discounts : info.discounts) ?? 0) - pos;
+    const diff = sales.revenue - (lp ? lp.discounts : model.listDiscounts(month)) - pos;
     if (Math.abs(diff) >= 1000) {
       out.push({
         level: "warning",
@@ -1115,6 +1117,13 @@ export function alerts(model: Model, month: string): Alert[] {
       href: `/panel/sayim?ay=${prev}`,
     });
   }
+  // Aynı gider iki kez (23 Kasım 2026): sabit gider kalemi bu ay aynı adla fatura, harcama ya da elle hücre olarak da
+  // sayılıyor; Gelir-gider'deki hücre de işaretli (engine pnlMonth)
+  const duplicates = model.duplicateExpenses(month);
+  if (duplicates.length) {
+    const q = new URLSearchParams({ yil: month.slice(0, 4), ay: month, ...(duplicates.length === 1 ? { ara: duplicates[0].fixedName } : {}) });
+    out.push({ level: "warning", title: DUPLICATE_ALERT_TITLE, detail: duplicateAlertDetail(duplicates, month), href: `/panel/gelir-gider?${q}` });
+  }
   const unpaid = model.ds.invoices.filter(isOpenInvoice);
   if (unpaid.length) {
     out.push({
@@ -1196,7 +1205,8 @@ export function consistency(model: Model, month: string) {
   const listTotal = sales.revenue;
   // Liste kasa raporlarından kısa bir dönemi kapsıyorsa (süren ayda yapıştırılan liste) karşılaştırma o dönemle
   const lp = sales.lines.length ? model.listPeriod(month) : null;
-  const discounts = (lp ? lp.discounts : info?.discounts) ?? 0;
+  // Yalnız ModPOS listesi günlerinin indirimi: LafPOS'un satırları indirimden sonradır (engine listDiscounts)
+  const discounts = lp ? lp.discounts : model.listDiscounts(month);
   const computed = listTotal - discounts;
   const pos = lp ? lp.posRevenue : (info?.posRevenue ?? null);
   const diff = pos === null || !sales.lines.length ? null : computed - pos;
@@ -1299,6 +1309,11 @@ export function consistency(model: Model, month: string) {
       ok: diff !== null && Math.abs(diff) < 1000,
       /** Listenin dönemi, kasa raporlarından kısaysa (POS ve indirim o dönemin); yoksa null */
       listPeriod: lp,
+      /**
+       * Listede LafPOS satırı var: `discounts` yalnız ModPOS listesi günlerinin indirimidir, LafPOS'un satırları indirimden
+       * sonradır (engine listDiscounts; hesap sözleşmesi §11)
+       */
+      lafposLines: sales.lines.some((l) => l.line.lafpos),
       offRevenue,
       offRevenueCost: (offRevenue / (1 + st.kdv)) * sales.avgCostRatio,
       hasLines: sales.lines.length > 0,

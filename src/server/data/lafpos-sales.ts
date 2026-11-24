@@ -86,8 +86,8 @@ export interface MergedSales extends SalesSources {
 
 /**
  * Satış satırlarını geçiş gününe göre birleştirir (veri kümesi ve tatlı payı). Geçiş günü yoksa girdi olduğu gibi
- * döner, LafPOS tablosu okunmaz. `zOf(from, through)`: kasa raporlarının o günlerdeki Z toplamı (rapor yoksa null;
- * geçiş ayında liste ↔ Z karşılaştırması). `today`: iş günü; `currentMonth`: özetin son ayı en az bu.
+ * döner, LafPOS tablosu okunmaz. `zOf(from, through)`: kasa raporlarının o günlerdeki Z ve indirim toplamı (rapor yoksa
+ * null; geçiş ayında liste − indirim ↔ Z karşılaştırması). `today`: iş günü; `currentMonth`: özetin son ayı en az bu.
  */
 export async function mergeWithLafpos(
   db: DB,
@@ -96,7 +96,7 @@ export async function mergeWithLafpos(
     salesLines: SalesLine[];
     coverage: Record<string, string>;
     today: string;
-    zOf?: (from: string, through: string) => number | null;
+    zOf?: (from: string, through: string) => { z: number; discounts: number } | null;
     /** Yalnız bu aya kadar (dahil) okunur (tatlı payı); verilmezse hepsi */
     toMonth?: string;
     /**
@@ -129,13 +129,15 @@ export async function mergeWithLafpos(
     const through = modposThroughOf(m, input.coverage);
     const days = lafpos.received.find((x) => x.month === m) ?? null;
     const counted = lafpos.days.find((x) => x.month === m) ?? null;
+    const modposZ = list.length && input.zOf ? input.zOf(`${m}-01`, through) : null;
     const st = lafposMonthStatus({
       month: m,
       switchDay: S,
       today: input.today,
       modpos: list.length ? { lines: list.length, revenue: list.reduce((a, l) => a + l.revenue, 0), through } : null,
       lafpos: days ? { days: days.days, last: days.last } : null,
-      modposZ: list.length && input.zOf ? input.zOf(`${m}-01`, through) : null,
+      modposZ: modposZ?.z ?? null,
+      modposDiscounts: modposZ?.discounts ?? null,
       kasaDays: input.reportDays?.filter((x) => x.slice(0, 7) === m),
       lafposDates: lafpos.dates.filter((x) => x.slice(0, 7) === m),
       // Kasa raporunu bekleyen günler: gelen son gün sayılan son günden sonraysa

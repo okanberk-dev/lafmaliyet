@@ -35,7 +35,7 @@ import { Notice, NoticeLink } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { ALL_BRANCHES, branchViewNote, type BranchScope } from "@/lib/branches";
-import { shiftMonth, type ProductStatus } from "@/lib/calc/engine";
+import { posCommissionNote, shiftMonth, type ProductStatus } from "@/lib/calc/engine";
 import {
   alerts,
   dailyChange,
@@ -252,6 +252,8 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const t = d.theoretical;
   const purchases = model.goodsPurchases(month);
 
+  // Satışlar'ın banka POS komisyonu (kasa kartı olan ayda; süren ayda listenin günleriyle, metin söyler)
+  const salesPos = model.salesPosCommission(month);
   // Süren ayda kısa satış listesi: sabit gider grupları listenin günlerine düşen payla
   const listNote = t?.listPeriod ? ` Satış listesi ${listDaysText(t.listPeriod)} (ayın ${t.listPeriod.of} gününün ${numPossessive(t.listPeriod.days)}): tutar o günlere düşen pay.` : "";
   // "Para nereye gitti?": Excel Panel'in 4 grubu (Kira, Personel, Reklam, Diğer) + varsa bu aya özel giderler; online
@@ -271,9 +273,12 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
         {
           label: "Kart / POS komisyonu",
           value: -t.commission,
-          sub: `Ciro × %${num(st.komisyon * 100, 1)} × kartlı oran %${num(model.cardShareOf(month).rate * 100, 1)}`,
-          // Satış raporunun ürün başına tahmini (yemek kartı dahil); Gelir-gider'in banka POS komisyonu ayrı kuralla (E-43)
-          info: POS_COMMISSION_SALES_NOTE,
+          // Kasa kartı olan ayda Gelir-gider'in banka POS komisyonunun kuralı (engine salesPosCommission; süren ayda liste kısaysa
+          // listenin günleriyle); yoksa satış raporunun ürün başına tahmini (yemek kartı dahil; E-43)
+          sub: salesPos
+            ? `Kart × şubenin POS oranı (yemek kartı hariç)${salesPos.period ? ", listenin günleri" : ""}`
+            : `Ciro × %${num(st.komisyon * 100, 1)} × kartlı oran %${num(model.cardShareOf(month).rate * 100, 1)}`,
+          info: salesPos ? posCommissionNote(salesPos) : POS_COMMISSION_SALES_NOTE,
           sign: -1,
         },
         ...t.fixedFlow.map((l) => ({

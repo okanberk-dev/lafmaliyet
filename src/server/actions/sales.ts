@@ -9,7 +9,7 @@ import { daysInMonth } from "@/lib/calc/engine";
 import { createPosMappingIndex, describeSkipped, extractSalesRows, isSummaryRow, posMatchKey, samePosName } from "@/lib/calc/pos-paste";
 import { monthRowEmpty } from "@/lib/cash-month";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
-import { modposImportRule, modposOverZText } from "@/lib/lafpos/sales";
+import { modposImportRule, modposOverZText, modposZBetween } from "@/lib/lafpos/sales";
 import { branchSwitchDay, monthSource } from "@/lib/lafpos/switch";
 import { todayTR } from "@/lib/reminders";
 import { SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
@@ -134,14 +134,18 @@ const lineSchema = z.object({
   revenue: z.number().finite(),
 });
 
-/** Kasa raporlarının `from`–`through` günlerindeki Z toplamı (iki uç dahil); rapor yoksa null */
-async function zTotalBetween(from: string, through: string): Promise<number | null> {
+/**
+ * Şubenin kasa raporlarının `from`–`through` günlerindeki Z ve indirim toplamı (iki uç dahil; indirimi girilmemiş gün 0);
+ * rapor yoksa null. Yalnız listenin şubesi: başka şubenin Z'si listenin Z'sini şişirip uyarıyı saklamasın ("%8 fazla",
+ * 23 Kasım 2026); veri kümesinin bandıyla aynı kural (modposZBetween)
+ */
+async function zTotalBetween(from: string, through: string, branchId: string): Promise<{ z: number; discounts: number } | null> {
   const t = s.cashReports;
-  const [r] = await getDb()
-    .select({ total: sum(t.zTotal).mapWith(Number), n: sql<number>`count(*)::int` })
+  const rows = await getDb()
+    .select({ date: t.date, zTotal: t.zTotal, discounts: t.discounts })
     .from(t)
-    .where(and(gte(t.date, from), lte(t.date, through)));
-  return r && r.n > 0 ? (r.total ?? 0) : null;
+    .where(and(gte(t.date, from), lte(t.date, through), eq(t.branchId, branchId)));
+  return modposZBetween(rows, from, through);
 }
 
 /**
@@ -204,14 +208,16 @@ export async function importSales(input: { month: string; lines: z.input<typeof 
       );
       await setCoverage(tx, month, through);
     });
-    // Geçiş ayı: liste toplamı listenin günlerinin Z toplamını aşıyorsa (liste geçiş gününden sonrasını da içerebilir)
+    // Geçiş ayı: liste toplamı indirimden sonra listenin günlerinin Z toplamını aşıyorsa (liste geçiş gününden sonrasını
+    // da içerebilir). Liste ve kasa raporları yalnız listenin şubesinin
     let warning: string | null = null;
     if (through && monthSource(month, switchDay) === "gecis") {
       const [{ total }] = await db
         .select({ total: sum(s.salesLines.revenue).mapWith(Number) })
         .from(s.salesLines)
-        .where(andWhere(eq(s.salesLines.month, month), await currentBranchWhere(s.salesLines.branchId)));
-      warning = modposOverZText(total ?? 0, await zTotalBetween(`${month}-01`, through), `${month}-01`, through);
+        .where(and(eq(s.salesLines.month, month), eq(s.salesLines.branchId, sube)));
+      const zr = await zTotalBetween(`${month}-01`, through, sube);
+      warning = modposOverZText(total ?? 0, zr?.z ?? null, `${month}-01`, through, zr?.discounts ?? 0);
     }
     await logActivity(
       me,

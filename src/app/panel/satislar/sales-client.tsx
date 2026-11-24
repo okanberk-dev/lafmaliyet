@@ -56,7 +56,7 @@ import {
   type SalesParseResult,
 } from "@/lib/calc/pos-paste";
 import type { MonthField, TillMonth } from "@/lib/calc/types";
-import { missingSentence, MONTH_FIELDS, partialSentence } from "@/lib/cash-month";
+import { missingSentence, MONTH_FIELDS, partialSentence, type LafposListPart } from "@/lib/cash-month";
 import { num, pct, tl } from "@/lib/format";
 import { genitive } from "@/lib/recipe-change";
 import { dayMonthTR } from "@/lib/reminders";
@@ -84,6 +84,7 @@ import {
   initialModes,
   inMarginScale,
   kasaHint,
+  listVsPos,
   marginColor,
   marginLevelLabel,
   marginScale,
@@ -215,6 +216,7 @@ export function MonthInfoForm({
   settingsCardShare,
   listTotal,
   listPeriod = null,
+  lafposList = null,
   currentMonth,
   recordedIkram,
   className,
@@ -239,6 +241,11 @@ export function MonthInfoForm({
    * Ekim"), o günlerin Z toplamı ve indirimi: liste ↔ POS kutusu onlarla karşılaştırır (açık gün ve ciro kasadan geldikçe)
    */
   listPeriod?: { label: string; posRevenue: number; discounts: number } | null;
+  /**
+   * Ayın indiriminin LafPOS satırlarında zaten düşülmüş kısmı (cash-month.ts lafposListPart): liste ↔ POS kutusu onu
+   * listeden bir daha düşmez. Geçiş günü yoksa null
+   */
+  lafposList?: LafposListPart | null;
   /** Türkiye saatine göre bu ay; açık gün açıklaması (devam eden ay / kapanmış ay) buna göre */
   currentMonth: string;
   /** Personelin bu ay panele girdiği ikram (Zayi & ikram): ödenmez tutarına öneri, ModPOS'un rakamı esas */
@@ -272,9 +279,15 @@ export function MonthInfoForm({
   // Liste kasa raporlarından kısaysa listenin günleriyle (motorun kuralı: açık gün ve ciro kasadan gelirken)
   const byList = listPeriod && modes.posRevenue === "kasa" && modes.openDays === "kasa" ? listPeriod : null;
   const posNum = byList ? byList.posRevenue : effective("posRevenue");
-  const discNum = (byList && modes.discounts === "kasa" ? byList.discounts : effective("discounts")) ?? 0;
+  // Listenin dönemindeki kasa indirimi zaten yalnız ModPOS günlerinin; öteki durumda LafPOS günlerininki düşülür
+  const fromList = byList !== null && modes.discounts === "kasa";
   const list = listTotal ?? 0;
-  const diff = posNum !== null && list ? list - discNum - posNum : null;
+  const { discount: discNum, diff } = listVsPos({
+    list,
+    discount: (fromList ? byList.discounts : effective("discounts")) ?? 0,
+    pos: posNum,
+    lafpos: fromList ? null : lafposList,
+  });
   const consistent = diff !== null && Math.abs(diff) < 1000;
   const dim = daysInMonth(month);
   const phase = monthPhase(month, currentMonth);

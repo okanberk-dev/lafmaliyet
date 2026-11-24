@@ -1194,7 +1194,7 @@ export function CashForm({
             {field("card", "Kredi / banka kartı")}
             {field("mealCard", "Yemek kartı", { hint: "Multinet, Pluxee, Edenred, Setcard…" })}
             {field("online", "Online", { hint: "Yemeksepeti, Getir, Trendyol…" })}
-            {field("other", "Diğer", { hint: "havale, cari, ikram…" })}
+            {field("other", "Diğer", { hint: "havale, cari…" })}
             {field("offRevenue", "Ödenmez / ikram", { hint: "Z raporunda ciro dışı (isteğe bağlı)" })}
             {field("discounts", "İndirim", { hint: "Z raporundaki indirim toplamı (isteğe bağlı)" })}
             <Field label={labelOf("receipts", "Fiş sayısı")} htmlFor={fid("receipts")} hint={hintOf("receipts", "isteğe bağlı")}>

@@ -6,6 +6,7 @@ import { daysInMonth } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { createPosMappingIndex, posMatchKey } from "@/lib/calc/pos-paste";
 import type { MonthField, TillMonth } from "@/lib/calc/types";
+import { listDiscount, type LafposListPart } from "@/lib/cash-month";
 import { money, monthLabel, num, pct } from "@/lib/format";
 
 // ---------------------------------------------------------------- Açık gün
@@ -109,6 +110,18 @@ export function effectiveValue(f: MonthField, o: { mode: FieldMode; text: string
   const t = o.text.trim();
   if (o.mode === "kasa" || !t || (o.kasa !== null && t === fieldText(f, o.kasa))) return o.kasa;
   return null;
+}
+
+/**
+ * Ay formunun liste ↔ POS kutusu (motorun kuralı, engine listDiscounts; hesap sözleşmesi §11): ürün listesi − listeden
+ * düşülecek indirim − POS cirosu. LafPOS'un satırları indirimden sonradır: `lafpos` (sunucudan, lafposListPart) varken
+ * yazılan ya da kasadaki indirimden LafPOS günlerininki düşülür, ay bütünüyle LafPOS'sa hiç düşülmez. Liste ya da POS
+ * cirosu yoksa fark yok (null). `discount` zaten listeden düşülecek olansa (listenin dönemi, engine listPeriod) `lafpos`
+ * null verilir
+ */
+export function listVsPos(o: { list: number; discount: number; pos: number | null; lafpos: LafposListPart | null }): { discount: number; diff: number | null } {
+  const discount = listDiscount(o.discount, o.lafpos);
+  return { discount, diff: o.pos !== null && o.list ? Math.round((o.list - discount - o.pos) * 100) / 100 : null };
 }
 
 /**

@@ -10,10 +10,11 @@ import { GrowthPill, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { listDaysText } from "@/lib/calc/insights";
-import { manualOf, MONTH_FIELDS } from "@/lib/cash-month";
+import { lafposListPart, manualOf, MONTH_FIELDS } from "@/lib/cash-month";
 import { RECIPE_COST_NOTE } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { dayRangeTR, lafposMonthNotes, lafposMonthStatus, type LafposMonthNotes } from "@/lib/lafpos/sales";
+import { isLafposBranch } from "@/lib/lafpos/switch";
 import { addDays, dayAblativeTR, todayTR } from "@/lib/reminders";
 import { coverageFor } from "@/lib/sales-coverage";
 import { salesSourceOf, type SalesSourceKind } from "@/lib/sales-source";
@@ -148,7 +149,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   const assignedRevenue = rows.reduce((a, r) => a + (r.matched || r.isService ? r.revenue : 0), 0);
   const coverage = sales.revenue ? assignedRevenue / sales.revenue : 0;
   // Kartların dökümü (karta dokununca açılan pencere): aynı ay satırlarından, yeni sorgu yok
-  const breakdown = salesBreakdowns(sales, model.settings, month, model.cardShareOf(month).rate);
+  const breakdown = salesBreakdowns(sales, model.settings, month, model.cardShareOf(month).rate, model.salesPosCommission(month));
   const label = monthLabel(month);
   // ModPOS listesinin satırları (LafPOS'un ay toplamları ayrı); LafPOS ayında sayılmayan listenin satırları
   const modposLines = lafpos?.source === "lafpos" ? (lafpos.modpos?.lines ?? 0) : rows.filter((r) => r.lafposDays === null).length;
@@ -305,6 +306,10 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           listTotal={formBranch ? null : sales.revenue}
           listPeriod={
             !formBranch && listPeriod ? { label: listDaysText(listPeriod), posRevenue: listPeriod.posRevenue, discounts: listPeriod.discounts } : null
+          }
+          // LafPOS günlerinin indirimi satırlarda zaten düşülmüş (engine listDiscounts); "Tümü"de yalnız formun şubesi LafPOS'unsa
+          lafposList={
+            !formBranch && formInfo && (!info?.byBranch || isLafposBranch(writeId)) ? lafposListPart(formInfo, model.ds.lafposSales?.countFrom ?? null) : null
           }
           currentMonth={model.currentMonth}
           recordedIkram={model.wasteSummary(month).ikram}
