@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { getDb, schema as s } from "@/server/db";
 import { open, seal } from "@/server/secret-box";
 
-import { forgetLegacyParasutToken, postParasutToken, saveParasutToken } from "./client";
+import { postParasutToken, saveParasutToken } from "./client";
 import { assertOidcSettings, readParasutConfig, type ParasutConfig } from "./config";
 import { authorizeRequestUrl, challengeOf, createState, createVerifier, sameToken } from "@/lib/parasut/oidc";
 
@@ -21,9 +21,6 @@ import { parasutEndpoints } from "./oidc";
  *
  * Bekleyen istek (state + code_verifier) integration_state'te şifreli durur ve 10 dakika geçerlidir; tek seferliktir
  * (dönüşte silinir), böylece aynı kod ikinci kez kullanılamaz.
- *
- * Bağlantı kurulunca eşitleme bir sonraki çalışmadan itibaren yalnız yeni yöntemi kullanır; eski parola yönteminin
- * (geçici yedek, src/lib/parasut/legacy.ts) kayıtlı belirteci silinir.
  */
 
 const PENDING_KEY = "parasut.connect";
@@ -70,8 +67,8 @@ async function takePending(): Promise<Pending | null> {
  * döner. Çağıranın yönetici olduğunu doğrulaması gerekir.
  */
 export async function startParasutConnect(by: string): Promise<string> {
-  const cfg = readParasutConfig();
-  // Yanlış yazılmış adres değişkeniyle Paraşüt'e gidilmez (eski yöntemle süren eşitleme bundan etkilenmez)
+  const cfg = await readParasutConfig();
+  // Yanlış yazılmış adres değişkeniyle Paraşüt'e gidilmez (kayıtlı oturumla süren eşitleme bundan etkilenmez)
   assertOidcSettings(cfg);
   const { authorizeUrl } = await parasutEndpoints(cfg);
   const verifier = createVerifier();
@@ -85,7 +82,7 @@ export async function startParasutConnect(by: string): Promise<string> {
  * Başarılıysa refresh_token şifreli olarak saklanır ve bağlantıyı kuran yöneticinin adı döner.
  */
 export async function finishParasutConnect(input: { code: string | null; state: string | null }): Promise<{ by: string }> {
-  const cfg: ParasutConfig = readParasutConfig();
+  const cfg: ParasutConfig = await readParasutConfig();
   const pending = await takePending();
   if (!pending) throw new ParasutConnectError("Bağlanma isteği bulunamadı ya da süresi doldu (10 dakika). Yeniden deneyin.");
   if (!input.state || !sameToken(input.state, pending.state)) throw new ParasutConnectError("Bağlanma isteği doğrulanamadı (state eşleşmedi). Yeniden deneyin.");
@@ -102,12 +99,10 @@ export async function finishParasutConnect(input: { code: string | null; state: 
     );
   }
   await saveParasutToken(cfg, token);
-  // Artık yeni oturum var: geçici yedeğin belirteci gerekmiyor
-  await forgetLegacyParasutToken();
   return { by: pending.by };
 }
 
-/** Yarıda kalan bir bağlanma isteğini siler (oturum sıfırlanırken) */
-export async function forgetParasutConnect() {
-  await getDb().delete(s.integrationState).where(eq(s.integrationState.key, PENDING_KEY));
+/** Yarıda kalan bir bağlanma isteğini siler (oturum sıfırlanırken, istemci ayarları değişince) */
+export async function forgetParasutConnect(db: Pick<ReturnType<typeof getDb>, "delete"> = getDb()) {
+  await db.delete(s.integrationState).where(eq(s.integrationState.key, PENDING_KEY));
 }

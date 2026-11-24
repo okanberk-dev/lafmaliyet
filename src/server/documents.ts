@@ -77,8 +77,8 @@ export async function getInvoiceDocument(invoiceId: number, documentId?: number 
   const cached = docs.find((d) => d.source === "parasut");
   if (cached) return { bytes: cached.data, mime: cached.mime, fileName: cached.fileName, source: "parasut" };
 
-  if ((inv.eInvoiceId || inv.externalId) && isParasutConfigured()) {
-    const client = new ParasutClient(readParasutConfig());
+  if ((inv.eInvoiceId || inv.externalId) && (await isParasutConfigured())) {
+    const client = new ParasutClient(await readParasutConfig());
     const file = inv.eInvoiceId ? await fetchEInvoicePdf(client, inv.eInvoiceId) : await fetchBillDocument(client, inv.externalId!);
     if (file) {
       const fileName = documentFileName({ supplier: inv.supplier, date: inv.date, invoiceNo: inv.invoiceNo, mime: file.mime });

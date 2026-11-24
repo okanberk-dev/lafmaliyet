@@ -1,4 +1,4 @@
-import { Droplets, Globe, HardDriveDownload, History, Layers, Percent, QrCode, ReceiptTurkishLira, Ruler, ScanText, Store, SunMoon, Tags, Timer, Users, type LucideIcon } from "lucide-react";
+import { Droplets, Globe, HardDriveDownload, History, Layers, Percent, QrCode, ReceiptTurkishLira, Ruler, ScanText, Store, SunMoon, Tags, Timer, Users, Utensils, type LucideIcon } from "lucide-react";
 
 /**
  * Ayarlar sayfasının bölümleri: kenardaki gezinme bu sırayla listelenir, her kart `id` olarak bunu taşır.
@@ -11,6 +11,8 @@ export const SETTINGS_SECTIONS = [
   { id: "gorunum", label: "Görünüm", icon: SunMoon },
   { id: "oranlar", label: "Oranlar", icon: Percent },
   { id: "olculer", label: "Reçete ölçüleri", icon: Ruler },
+  // Personel yemek kartı: günlük tutar ve ayda gün (Maaşlar'da işaretli kişi; Faz 5)
+  { id: "personel", label: "Personel yemek kartı", icon: Utensils },
   { id: "su", label: "Su + buz", icon: Droplets },
   { id: "qr-menu", label: "QR menü", icon: QrCode },
   // Ay sonu stoğunun değerleme yöntemi: ilk giren ilk çıkar (FIFO) başlangıç ayı (docs/STOK-DEGERLEME.md)

@@ -14,14 +14,16 @@ import { Card, CardFooter, CardHeader, Well } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { FilterBar, matches, SearchField, useQueryText } from "@/components/ui/filters";
-import { Field, Input, NumberInput, Select } from "@/components/ui/form";
+import { Checkbox, Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { Avatar } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { shiftMonth, staffCost, type RangeStatus, type StaffCost, type StaffHistoryEntry } from "@/lib/calc/engine";
+import { extrasLookLikeMealCard, type StaffWarning } from "@/lib/calc/personnel";
 import { parseNumberTR } from "@/lib/calc/expr";
-import type { Settings } from "@/lib/calc/types";
+import type { Settings, Staff, StaffKind } from "@/lib/calc/types";
+import { linkValue, parseLinkValue, type StaffLinkOptions } from "@/lib/staff-link";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { deleteStaffVersion, endStaff, saveStaff, saveStaffRates } from "@/server/actions/costs";
@@ -38,6 +40,16 @@ export type StaffRow = {
   name: string;
   netSalary: number;
   extras: number;
+  /** Yemek kartı (Faz 5): Ayarlar'daki günlük tutar × gün, brütleştirilmez */
+  mealCard: boolean;
+  /** Tam zamanlı ya da part-time (günlük ücret × Vardiya'da çağrıldığı gün) */
+  kind: StaffKind;
+  dailyWage: number;
+  /** Vardiya / hesap bağlantısı: panel hesabı ya da hesabı olmayan Vardiya adı ("n:<ad>") */
+  userId: number | null;
+  personRef: string | null;
+  /** Part-time: gösterilen ayda Vardiya'da çağrıldığı gün (bağlantısızsa null) */
+  calledDays: number | null;
   startMonth: string | null;
   endMonth: string | null;
   status: RangeStatus;
@@ -77,6 +89,40 @@ const invalidAmount = (text: string) => {
 /** "30.000 ₺ net" ya da "30.000 ₺ net + 2.000 ₺ ek" */
 const salaryLabel = (net: number, extras: number) => `${tl(net)} net${extras ? ` + ${tl(extras)} ek` : ""}`;
 
+/** Maaşın etiketi türüyle: "30.000 ₺ net + yemek kartı", part-time "günlük 1.500 ₺ + 2.000 ₺ ek" (Faz 5) */
+const payLabel = (kind: StaffKind, x: { netSalary: number; extras: number; mealCard: boolean; dailyWage: number }) =>
+  `${kind === "part_time" ? `günlük ${tl(x.dailyWage)}${x.extras ? ` + ${tl(x.extras)} ek` : ""}` : salaryLabel(x.netSalary, x.extras)}${x.mealCard ? " + yemek kartı" : ""}`;
+
+/** Satırın hesap girdisi (Staff): Maaşlar'daki hesap motorla aynı (staffCost) */
+const staffOf = (x: Pick<StaffRow, "id" | "name" | "netSalary" | "extras" | "mealCard" | "kind" | "dailyWage" | "userId" | "personRef">): Staff => ({
+  id: x.id,
+  name: x.name,
+  netSalary: x.netSalary,
+  extras: x.extras,
+  mealCard: x.mealCard,
+  kind: x.kind,
+  dailyWage: x.dailyWage,
+  userId: x.userId,
+  personRef: x.personRef,
+  active: true,
+});
+
+/** Bağlantının iki yanı: "Ayşe Yılmaz · ayse@… (Marina)" ya da "Mert (Vardiya'da adıyla)" */
+function linkLabel(value: string, links: StaffLinkOptions, branchName: (id: string | null) => string | null): string | null {
+  const { userId, personRef } = parseLinkValue(value);
+  if (userId !== null) {
+    const u = links.users.find((x) => x.id === userId);
+    if (!u) return `Panel hesabı #${userId}`;
+    const b = branchName(u.branchId);
+    return `${u.name} · ${u.email}${b ? ` (${b})` : ""}${u.active ? "" : " · pasif"}`;
+  }
+  if (personRef !== null) {
+    const n = links.names.find((x) => x.ref === personRef);
+    return `${n?.name ?? personRef.slice(2)} (Vardiya'da adıyla, hesabı yok)`;
+  }
+  return null;
+}
+
 /** Uzun sütun başlıkları iki satıra sarılır, alta hizalanır: tablo 1400px ekranda yatay kaydırmasız sığar */
 const WRAP_HEAD = "align-bottom leading-5 whitespace-normal";
 /** Az önce kaydedilen satırın kısa süreli vurgusu */
@@ -95,9 +141,9 @@ function useFlash(): [number | null, (id: number) => void] {
 /** Satırın altındaki açıklamalar: "Kasım 2026 itibarıyla 32.000 ₺ net", "Ekim 2026 itibarıyla · önce 30.000 ₺ net" */
 function ChangeLines({ row, className }: { row: StaffRow; className?: string }) {
   const { entry, prev } = entryAt(row.history, row.valueMonth);
-  const since = entry?.versionId && prev ? `${monthLabel(entry.fromMonth!)} itibarıyla · önce ${salaryLabel(prev.netSalary, prev.extras)}` : null;
+  const since = entry?.versionId && prev ? `${monthLabel(entry.fromMonth!)} itibarıyla · önce ${payLabel(row.kind, prev)}` : null;
   const up = row.history.find((h) => h.versionId !== null && h.fromMonth! > row.valueMonth && (!row.endMonth || h.fromMonth! <= row.endMonth));
-  const next = up ? `${monthLabel(up.fromMonth!)} itibarıyla ${salaryLabel(up.netSalary, up.extras)}` : null;
+  const next = up ? `${monthLabel(up.fromMonth!)} itibarıyla ${payLabel(row.kind, up)}` : null;
   if (!since && !next) return null;
   return (
     <span className={cn("block space-y-0.5 text-xs leading-5 font-normal text-ink-mute", className)}>
@@ -122,6 +168,8 @@ export function StaffEditor({
   closed,
   months,
   branches,
+  links,
+  warnings,
 }: {
   staff: StaffRow[];
   rates: Rates;
@@ -133,6 +181,10 @@ export function StaffEditor({
   /** "Hangi aydan itibaren?" listesindeki aylar */
   months: string[];
   branches: StaffBranches;
+  /** Vardiya / hesap seçicisinin seçenekleri (Faz 5) */
+  links: StaffLinkOptions;
+  /** Bu ayın personel uyarıları (çift sayım, bağlantısız part-time; src/lib/calc/personnel.ts) */
+  warnings: StaffWarning[];
 }) {
   const reduce = useCalmMotion();
   const ratesId = useId();
@@ -191,7 +243,7 @@ export function StaffEditor({
   const st: Settings = check.ok
     ? { ...settings, isciSgk: check.values.isciSgk!, isciIssizlik: check.values.isciIssizlik!, isverenSgk: check.values.isverenSgk!, isverenIssizlik: check.values.isverenIssizlik! }
     : settings;
-  const costOf = (x: StaffRow) => staffCost({ id: x.id, name: x.name, netSalary: x.netSalary, extras: x.extras, active: true }, st);
+  const costOf = (x: StaffRow) => staffCost(staffOf(x), st, x.kind === "part_time" ? { calledDays: x.calledDays } : {});
 
   const live = staff.filter((x) => x.status !== "ended");
   const ended = staff.filter((x) => x.status === "ended");
@@ -205,6 +257,8 @@ export function StaffEditor({
     employerSgk: sum((c) => c.employerSgk),
     employerUnemployment: sum((c) => c.employerUnemployment),
     extras: sum((c) => c.staff.extras),
+    mealCard: sum((c) => c.mealCard),
+    dailyWages: sum((c) => c.dailyWages),
     total: sum((c) => c.total),
   };
   const visible = live.filter((x) => matches(x.name, q));
@@ -233,7 +287,9 @@ export function StaffEditor({
 
   /** Diğer kişiler olduğu gibi gider (sıra korunur; gösterilen ayın değeri gider, hiçbir ay değişmez) */
   const unchanged = (except?: number) =>
-    staff.filter((x) => x.id !== except).map((x) => ({ id: x.id, name: x.name, netSalary: x.netSalary, extras: x.extras, effectiveFrom: x.valueMonth }));
+    staff
+      .filter((x) => x.id !== except)
+      .map((x) => ({ id: x.id, name: x.name, netSalary: x.netSalary, extras: x.extras, mealCard: x.mealCard, dailyWage: x.dailyWage, effectiveFrom: x.valueMonth }));
 
   async function stop(x: StaffRow, lastMonth: string) {
     const done = await run(endStaff(x.id, lastMonth), `${x.name} durduruldu`);
@@ -249,7 +305,11 @@ export function StaffEditor({
     }
     // Arada kapanmış aylar var: o ayları değiştirmemek için seçilen aydan itibaren yeni kayıt açılır
     const done = await run(
-      saveStaff([...unchanged(), { id: null, name: x.name, netSalary: x.netSalary, extras: x.extras, effectiveFrom: fromMonth, branchId: x.branchId }]),
+      // Yeni kayıt Vardiya'ya kendiliğinden bağlanmaz (bağlantı yeniden seçilir; eski satır kendi aylarıyla bağlı kalır)
+      saveStaff([
+        ...unchanged(),
+        { id: null, name: x.name, netSalary: x.netSalary, extras: x.extras, mealCard: x.mealCard, kind: x.kind, dailyWage: x.dailyWage, effectiveFrom: fromMonth, branchId: x.branchId },
+      ]),
       `${x.name} ${monthLabel(fromMonth)} itibarıyla devam ediyor`,
       true,
     );
@@ -281,7 +341,7 @@ export function StaffEditor({
     const h = x.history[i];
     const prev = x.history[i - 1];
     if (!h || !prev) return;
-    setUndoing({ row: x, versionId, fromMonth: h.fromMonth!, label: salaryLabel(h.netSalary, h.extras), back: salaryLabel(prev.netSalary, prev.extras) });
+    setUndoing({ row: x, versionId, fromMonth: h.fromMonth!, label: payLabel(x.kind, h), back: payLabel(x.kind, prev) });
   }
 
   async function confirmUndo() {
@@ -351,6 +411,17 @@ export function StaffEditor({
 
   return (
     <div className={cn("space-y-6", ratesDirty && "pb-4")}>
+      {/* Bu ayın personel uyarıları (Faz 5): yemek kartı + Personel yemeği, ekte yemek kartı, part-time çift sayım ve Vardiya
+          bağlantısı. Tutarlar kendiliğinden değişmez */}
+      {warnings.length ? (
+        <div className="space-y-2">
+          {warnings.map((w) => (
+            <Notice key={w.kind} tone={w.level === "warning" ? "warn" : "neutral"} size="sm" title={w.title}>
+              {w.detail}
+            </Notice>
+          ))}
+        </div>
+      ) : null}
       {/* Asıl cevap: bu ayın işveren maliyeti ve nereye gittiği */}
       <Card className="p-5">
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
@@ -393,7 +464,10 @@ export function StaffEditor({
             { key: "deductions", label: "İşçi kesintileri", value: sums.deductions, color: "var(--chart-muted)", note: "SGK + işsizlik, brütten" },
             { key: "employerSgk", label: "İşveren SGK", value: sums.employerSgk, color: SERIES[1] },
             { key: "employerUnemployment", label: "İşveren işsizlik", value: sums.employerUnemployment, color: SERIES[0] },
-            { key: "extras", label: "Yemek / yol / prim", value: sums.extras, color: SERIES[2] },
+            { key: "extras", label: "Yol / prim", value: sums.extras, color: SERIES[2] },
+            // Yemek kartı ve part-time (Faz 5) yalnız varsa
+            ...(sums.mealCard > 0 ? [{ key: "mealCard", label: "Yemek kartı", value: sums.mealCard, color: "var(--viz-4)", note: "Brütleştirilmez" }] : []),
+            ...(sums.dailyWages > 0 ? [{ key: "dailyWages", label: "Part-time günlük ücret", value: sums.dailyWages, color: "var(--viz-3)", note: "Vardiya'daki günler" }] : []),
           ]}
         />
       </Card>
@@ -474,7 +548,13 @@ export function StaffEditor({
                     <TH numeric className={WRAP_HEAD}>
                       <span className="inline-flex items-end gap-1">
                         <span>Yemek / yol / prim</span>
-                        <InfoTip text="Varsa yemek kartı, yol parası, prim gibi aylık ek ödemeler." className="mb-0.5" />
+                        <InfoTip text="Yol parası, prim gibi aylık ek ödemeler (brütleştirilmez). Yemek kartı artık kendi alanında: Yemek kartı sütunu." className="mb-0.5" />
+                      </span>
+                    </TH>
+                    <TH numeric className={WRAP_HEAD}>
+                      <span className="inline-flex items-end gap-1">
+                        <span>Yemek kartı</span>
+                        <InfoTip text={`İşaretli kişide günlük ${tl(settings.mealCardDaily)} × ${settings.mealCardDays} gün (Ayarlar › Personel yemek kartı); part-time'da çağrıldığı gün. Brütleştirilmez.`} className="mb-0.5" />
                       </span>
                     </TH>
                     <TH numeric className={WRAP_HEAD}>
@@ -503,7 +583,17 @@ export function StaffEditor({
                           </div>
                         </TD>
                         <TD numeric className={cn("font-medium", dim)}>
-                          {tl(x.netSalary)}
+                          {x.kind === "part_time" ? (
+                            <>
+                              <span className="font-normal text-ink-mute">günlük </span>
+                              {tl(x.dailyWage)}
+                              <span className="block text-xs font-normal text-ink-mute">
+                                {c.calledDays === null ? "Vardiya bağlı değil" : `${c.calledDays} gün · ${tl(c.dailyWages)}`}
+                              </span>
+                            </>
+                          ) : (
+                            tl(x.netSalary)
+                          )}
                         </TD>
                         <TD numeric className={cn(dim)}>
                           {tl(c.gross)}
@@ -521,6 +611,10 @@ export function StaffEditor({
                         </TD>
                         <TD numeric className={cn("text-ink-soft", dim)}>
                           {tl(x.extras)}
+                        </TD>
+                        <TD numeric className={cn("text-ink-soft", dim)}>
+                          {x.mealCard ? tl(c.mealCard) : <span className="text-ink-quiet">—</span>}
+                          {x.mealCard ? <span className="block text-xs text-ink-mute">{c.mealDays} gün</span> : null}
                         </TD>
                         <TD numeric className={cn("font-semibold", dim)}>
                           {tl(c.total)}
@@ -548,6 +642,7 @@ export function StaffEditor({
                       </span>
                     </TD>
                     <TD numeric>{tl(sums.extras)}</TD>
+                    <TD numeric>{tl(sums.mealCard)}</TD>
                     <TD numeric>{tl(sums.total)}</TD>
                     <TD colSpan={2} className="text-[13px] font-normal text-ink-mute">
                       {live.length > now.length ? "Başlamayanlar dahil değil" : null}
@@ -569,7 +664,7 @@ export function StaffEditor({
                         <span className="block font-medium break-words text-ink">{x.name}</span>
                         <span className="block text-xs text-ink-mute tabular">
                           {x.branchName ? `${x.branchName} · ` : ""}
-                          {salaryLabel(x.netSalary, x.extras)}
+                          {payLabel(x.kind, x)}
                         </span>
                         <ChangeLines row={x} className="mt-0.5" />
                       </span>
@@ -630,7 +725,7 @@ export function StaffEditor({
                         <button type="button" onClick={() => setEditing(x)} className="min-w-0 cursor-pointer text-left">
                           <span className="block text-sm font-medium text-ink">{x.name}</span>
                           <span className="block text-xs text-ink-mute">
-                            {rangeText(x)} · son maaş {salaryLabel(x.netSalary, x.extras)}
+                            {rangeText(x)} · son maaş {payLabel(x.kind, x)}
                           </span>
                         </button>
                         <span className="flex items-center gap-1.5">
@@ -658,8 +753,8 @@ export function StaffEditor({
                           <span className="font-medium text-ink">{x.name}</span>
                           <span className="text-ink-mute">
                             {" "}
-                            · {monthLabel(h.fromMonth!)} itibarıyla <span className="font-semibold text-ink tabular">{salaryLabel(h.netSalary, h.extras)}</span> (önce{" "}
-                            {salaryLabel(prev.netSalary, prev.extras)})
+                            · {monthLabel(h.fromMonth!)} itibarıyla <span className="font-semibold text-ink tabular">{payLabel(x.kind, h)}</span> (önce{" "}
+                            {payLabel(x.kind, prev)})
                           </span>
                         </span>
                         <Button size="xs" variant="ghost" onClick={() => askUndo(x, h.versionId!)}>
@@ -790,6 +885,8 @@ export function StaffEditor({
           row={editing === "new" ? null : editing}
           staff={staff}
           branches={branches}
+          links={links}
+          warnings={warnings}
           settings={st}
           currentMonth={currentMonth}
           closed={closed}
@@ -886,6 +983,8 @@ function StaffDialog({
   row,
   staff,
   branches,
+  links,
+  warnings,
   settings,
   currentMonth,
   closed,
@@ -902,13 +1001,15 @@ function StaffDialog({
   row: StaffRow | null;
   staff: StaffRow[];
   branches: StaffBranches;
+  links: StaffLinkOptions;
+  warnings: StaffWarning[];
   /** Hesapta kullanılan oranlar (yazılan geçerli oranlar ya da kayıtlı oranlar) */
   settings: Settings;
   currentMonth: string;
   closed: string[];
   months: string[];
   /** Diğer kişiler olduğu gibi (sıra korunsun) */
-  unchanged: (except?: number) => { id: number; name: string; netSalary: number; extras: number; effectiveFrom: string }[];
+  unchanged: (except?: number) => { id: number; name: string; netSalary: number; extras: number; mealCard: boolean; dailyWage: number; effectiveFrom: string }[];
   onClose: () => void;
   onSaved: (id: number) => void;
   onDelete: (row: StaffRow) => void;
@@ -926,20 +1027,36 @@ function StaffDialog({
   const [net, setNet] = useState(row ? num(row.netSalary, 2) : "");
   const [ext, setExt] = useState(row ? num(row.extras, 2) : "");
   const [branch, setBranch] = useState(row?.branchId ?? branches.fallback);
+  // Faz 5: yemek kartı, tür (yalnız yeni kişide seçilir), günlük ücret, Vardiya / hesap bağlantısı (önseçim yok)
+  const [meal, setMeal] = useState(row?.mealCard ?? false);
+  const [kind, setKind] = useState<StaffKind>(row?.kind ?? "full_time");
+  const [daily, setDaily] = useState(row ? num(row.dailyWage, 2) : "");
+  const [link, setLink] = useState<string>(row ? linkValue(row) : "");
   const [choice, setChoice] = useState<MonthChoice>(() =>
     row?.status === "ended" ? { mode: "month", month: row.valueMonth } : { mode: "current", month: row?.status === "upcoming" ? row.valueMonth : currentMonth },
   );
-  const netValue = parseOrZero(net);
+  const partTime = kind === "part_time";
+  const netValue = partTime ? 0 : parseOrZero(net);
   const extValue = parseOrZero(ext);
+  const dailyValue = partTime ? parseOrZero(daily) : (row?.dailyWage ?? 0);
   const nameError = tried && !name.trim() ? "Adını yazın" : null;
-  const netError = invalidAmount(net) ? "Tutarı sayı olarak yazın, ör. 28.500" : null;
+  const netError = !partTime && invalidAmount(net) ? "Tutarı sayı olarak yazın, ör. 28.500" : null;
   const extError = invalidAmount(ext) ? "Tutarı sayı olarak yazın, ör. 2.000" : null;
-  const valid = netValue !== null && extValue !== null;
-  const changed = !!row && valid && (Math.abs(netValue - row.netSalary) > 1e-9 || Math.abs(extValue - row.extras) > 1e-9);
+  const dailyError = partTime && invalidAmount(daily) ? "Tutarı sayı olarak yazın, ör. 1.500" : null;
+  const valid = netValue !== null && extValue !== null && dailyValue !== null;
+  const changed =
+    !!row &&
+    valid &&
+    (Math.abs(netValue - row.netSalary) > 1e-9 || Math.abs(extValue - row.extras) > 1e-9 || meal !== row.mealCard || Math.abs(dailyValue - row.dailyWage) > 1e-9);
   const eff = choiceValue(choice, currentMonth);
+  const linked = parseLinkValue(link);
+  const draft = { id: row?.id ?? 0, name, netSalary: netValue ?? 0, extras: extValue ?? 0, mealCard: meal, kind, dailyWage: dailyValue ?? 0, ...linked };
+  // Part-time'ın günü Vardiya'dan: bağlantı değişmediyse satırın bu ayki günü, yoksa bilinmiyor (kayıttan sonra sayılır)
+  const calledDays = partTime && row && link === linkValue(row) ? row.calledDays : null;
 
-  const cost = staffCost({ id: row?.id ?? 0, name, netSalary: netValue ?? 0, extras: extValue ?? 0, active: true }, settings);
-  const before = row ? staffCost({ id: row.id, name: row.name, netSalary: row.netSalary, extras: row.extras, active: true }, settings) : null;
+  const cost = staffCost(staffOf(draft), settings, partTime ? { calledDays } : {});
+  const before = row ? staffCost(staffOf(row), settings, row.kind === "part_time" ? { calledDays: row.calledDays } : {}) : null;
+  const pay = { netSalary: netValue ?? 0, extras: extValue ?? 0, mealCard: meal, dailyWage: dailyValue ?? 0 };
 
   const effect: EffectText | null = !row
     ? startText({ choice: eff, currentMonth, closed, what: "personel" })
@@ -952,19 +1069,39 @@ function StaffDialog({
             currentMonth,
             closed,
             range: row,
-            before: prev ? salaryLabel(prev.netSalary, prev.extras) : salaryLabel(row.netSalary, row.extras),
-            after: salaryLabel(netValue, extValue),
-            versions: row.history.filter((h) => h.versionId !== null).map((h) => ({ fromMonth: h.fromMonth!, label: salaryLabel(h.netSalary, h.extras) })),
+            before: prev ? payLabel(kind, prev) : payLabel(kind, row),
+            after: payLabel(kind, pay),
+            versions: row.history.filter((h) => h.versionId !== null).map((h) => ({ fromMonth: h.fromMonth!, label: payLabel(kind, h) })),
           });
         })()
       : null;
 
+  // Bağlantı seçicisi: satırın şubesindeki hesaplar (şubesi boş olanlar da) ve Vardiya adları; kayıtlı değer listede yoksa da
+  const branchName = (id: string | null) => (id ? (branches.options.find((b) => b.id === id)?.name ?? id) : null);
+  const userOptions = links.users.filter((u) => u.branchId === null || u.branchId === branch || `u:${u.id}` === link);
+  const nameOptions = links.names.filter((n) => n.branchId === branch || n.ref === link);
+  const linkKnown = link === "" || userOptions.some((u) => `u:${u.id}` === link) || nameOptions.some((n) => n.ref === link);
+  const linkText = linkLabel(link, links, branchName);
+  const rowWarnings = row ? warnings.filter((w) => w.staffIds.includes(row.id)) : [];
+
   async function save() {
     setTried(true);
     if (!name.trim()) return nameRef.current?.focus();
-    if (netValue === null || extValue === null || netError || extError) return netRef.current?.focus();
+    if (netValue === null || extValue === null || dailyValue === null || netError || extError || dailyError) return netRef.current?.focus();
     setBusy(true);
-    const self = { id: row?.id ?? null, name, netSalary: netValue, extras: extValue, effectiveFrom: !row || changed ? eff : row.valueMonth, branchId: branch };
+    const self = {
+      id: row?.id ?? null,
+      name,
+      netSalary: netValue,
+      extras: extValue,
+      mealCard: meal,
+      dailyWage: dailyValue,
+      // Tür yalnız yeni kişide seçilir; bağlantı açık seçimle (boş = bağlı değil)
+      ...(row ? {} : { kind }),
+      ...linked,
+      effectiveFrom: !row || changed ? eff : row.valueMonth,
+      branchId: branch,
+    };
     // Liste sırası korunur: düzenlenen kişi yerinde, yeni kişi sonda
     const list = row ? unchanged().map((x) => (x.id === row.id ? { ...self, id: row.id } : x)) : [...unchanged(), self];
     // Yeni kişide yanıt yolda kaybolursa kişi yazılmış olabilir: ikinci "Kaydet" aynı kişiyi iki kez ekler
@@ -1061,21 +1198,59 @@ function StaffDialog({
             </Select>
           </Field>
         ) : null}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Net maaş (₺)" htmlFor="st-net" error={netError}>
-            <NumberInput
-              ref={netRef}
-              id="st-net"
-              value={net}
-              onChange={(e) => setNet(e.target.value)}
-              onFocus={(e) => e.currentTarget.select()}
-              enterKeyHint="next"
-              placeholder="0"
-              aria-invalid={netError ? true : undefined}
-              className="cell-input pointer-coarse:h-12 pointer-coarse:text-lg"
-            />
+        {row ? (
+          <p className="text-xs text-ink-mute">
+            {row.kind === "part_time" ? "Part-time (günlük ücret)" : "Tam zamanlı"}. Tür değişmez: değişiyorsa bu satırı durdurup yeni kişi ekleyin; geçmiş aylar korunur.
+          </p>
+        ) : (
+          <Field label="Çalışma" htmlFor="st-kind" tip="Part-time: günlük ücret × Vardiya'da bu şubede çağrıldığı gün (Aralık 2026'dan itibaren günlük model).">
+            <Select id="st-kind" value={kind} onChange={(e) => setKind(e.target.value as StaffKind)}>
+              <option value="full_time">Tam zamanlı (net maaş)</option>
+              <option value="part_time">Part-time (günlük ücret)</option>
+            </Select>
           </Field>
-          <Field label="Yemek / yol / prim (₺)" htmlFor="st-ext" error={extError} tip="Varsa yemek kartı, yol parası, prim gibi aylık ek ödemeler.">
+        )}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {partTime ? (
+            <Field
+              label="Günlük ücret (₺)"
+              htmlFor="st-daily"
+              error={dailyError}
+              tip="İşletmenin çağrıldığı gün başına maliyeti, SGK brütleştirmesi yok: gün sayısı Vardiya'daki çalışma günlerinden gelir."
+            >
+              <NumberInput
+                ref={netRef}
+                id="st-daily"
+                value={daily}
+                onChange={(e) => setDaily(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
+                enterKeyHint="next"
+                placeholder="0"
+                aria-invalid={dailyError ? true : undefined}
+                className="cell-input pointer-coarse:h-12 pointer-coarse:text-lg"
+              />
+            </Field>
+          ) : (
+            <Field label="Net maaş (₺)" htmlFor="st-net" error={netError}>
+              <NumberInput
+                ref={netRef}
+                id="st-net"
+                value={net}
+                onChange={(e) => setNet(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
+                enterKeyHint="next"
+                placeholder="0"
+                aria-invalid={netError ? true : undefined}
+                className="cell-input pointer-coarse:h-12 pointer-coarse:text-lg"
+              />
+            </Field>
+          )}
+          <Field
+            label="Yemek / yol / prim (₺)"
+            htmlFor="st-ext"
+            error={extError}
+            tip="Yol parası, prim gibi aylık ek ödemeler; brütleştirilmez. Yemek kartı artık kendi alanında (aşağıdaki Yemek kartı kutusu): burada ayrıca yazmayın."
+          >
             <NumberInput
               id="st-ext"
               value={ext}
@@ -1087,41 +1262,117 @@ function StaffDialog({
             />
           </Field>
         </div>
+        <Field
+          label="Yemek kartı"
+          htmlFor="st-meal"
+          hint={
+            partTime
+              ? `Günlük ${tl(settings.mealCardDaily)} × Vardiya'da çağrıldığı gün; brütleştirilmez.`
+              : `Günlük ${tl(settings.mealCardDaily)} × ${settings.mealCardDays} gün = ${tl(settings.mealCardDaily * settings.mealCardDays)} (Ayarlar › Personel yemek kartı); brütleştirilmez, SGK'ya girmez.`
+          }
+        >
+          <Checkbox id="st-meal" label="Yemek kartı veriliyor" checked={meal} onChange={(e) => setMeal(e.target.checked)} />
+        </Field>
+        {meal && extValue !== null && extrasLookLikeMealCard(extValue, settings) ? (
+          <Notice tone="neutral" size="sm" title="Ek ödeme yemek kartı gibi duruyor">
+            Yemek kartı artık kendi alanında; ekte de yazılıysa iki kez sayılır. Ekten düşün (kayıt kendiliğinden değişmez).
+          </Notice>
+        ) : null}
+        <Field
+          label="Vardiya / hesap bağlantısı"
+          htmlFor="st-link"
+          tip="Bu maaş satırı Vardiya'da hangi kişi? Kendiliğinden bağlanmaz: doğru kişiyi siz seçin. Part-time'ın çağrıldığı gün bu bağlantıyla Vardiya'dan sayılır."
+          hint={
+            linkText ? (
+              <span>
+                Maaş satırı: <strong className="font-medium text-ink-soft">{name.trim() || "Yeni kişi"}</strong>
+                {branches.options.length > 1 && branchName(branch) ? ` (${branchName(branch)})` : ""} ↔ Vardiya: <strong className="font-medium text-ink-soft">{linkText}</strong>
+              </span>
+            ) : (
+              "Bağlı değil. Panel hesabı varsa onu, yoksa Vardiya'da adıyla yazılan kişiyi seçin."
+            )
+          }
+        >
+          <Select id="st-link" value={link} onChange={(e) => setLink(e.target.value)}>
+            <option value="">Bağlı değil</option>
+            {userOptions.length ? (
+              <optgroup label="Panel hesapları">
+                {userOptions.map((u) => (
+                  <option key={u.id} value={`u:${u.id}`}>
+                    {u.name} · {u.email}
+                    {u.active ? "" : " (pasif)"}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+            {nameOptions.length ? (
+              <optgroup label="Vardiya'da adıyla (hesabı yok)">
+                {nameOptions.map((n) => (
+                  <option key={n.ref} value={n.ref}>
+                    {n.name}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+            {!linkKnown ? <option value={link}>{linkText ?? link}</option> : null}
+          </Select>
+        </Field>
+        {partTime && link === "" ? (
+          <Notice tone="warn" size="sm" title="Vardiya bağlantısı yok">
+            Çağrıldığı gün bilinmiyor: günlük ücret ve yemek kartı sayılmaz (tahmin yapılmaz). Vardiya kişisini seçin.
+          </Notice>
+        ) : null}
+        {rowWarnings.map((w) => (
+          <Notice key={w.kind} tone={w.level === "warning" ? "warn" : "neutral"} size="sm" title={w.title}>
+            {w.detail}
+          </Notice>
+        ))}
         {row && !changed ? <p className="-mt-1 text-xs text-ink-mute">{monthLabel(row.valueMonth)} maaşı. Değiştirirseniz hangi aydan itibaren geçerli olacağı sorulur.</p> : null}
 
-        {/* Canlı hesap: yazdıkça brüt, kesintiler ve işveren maliyeti (tablodaki bütün tutarlar) */}
+        {/* Canlı hesap: yazdıkça brüt, kesintiler ve işveren maliyeti (tablodaki bütün tutarlar); part-time'da gün × ücret */}
         {/* Telefonda alt alta satırlar (etiket solda, tutar sağda), genişte iki sütun */}
-        <Well className="grid grid-cols-1 gap-3 p-3 text-[13px] max-sm:gap-0 max-sm:divide-y max-sm:divide-line max-sm:py-1 sm:grid-cols-2">
-          <div className="min-w-0 max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-3 max-sm:py-2">
-            <p className="text-ink-mute">Tahmini brüt</p>
-            <p className="font-semibold text-ink tabular">{tl(cost.gross)}</p>
-          </div>
-          <div className="min-w-0 max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-3 max-sm:py-2">
-            <p className="text-ink-mute">İşçi kesintileri</p>
-            <p className="font-semibold text-ink tabular">{tl(cost.deductions)}</p>
-          </div>
-          <div className="min-w-0 max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-3 max-sm:py-2">
-            <p className="text-ink-mute">İşveren SGK + işsizlik</p>
-            <p className="font-semibold text-ink tabular max-sm:text-right">
-              {tl(cost.employerSgk + cost.employerUnemployment)}
-              <span className="block text-xs font-normal text-ink-mute">
-                SGK {tl(cost.employerSgk)} + işsizlik {tl(cost.employerUnemployment)}
-              </span>
+        {partTime ? (
+          <Well className="grid grid-cols-1 gap-1 p-3 text-[13px]">
+            <p className="text-ink-mute">
+              {calledDays === null
+                ? "Gün Vardiya'dan sayılır (bağlantı kaydedilince). SGK brütleştirmesi yok."
+                : `${monthLabel(row?.valueMonth ?? currentMonth)}: ${calledDays} gün × ${tl(dailyValue ?? 0)} = ${tl(cost.dailyWages)}${cost.mealCard ? ` · yemek kartı ${tl(cost.mealCard)}` : ""}${extValue ? ` · ek ${tl(extValue)}` : ""}. SGK brütleştirmesi yok.`}
             </p>
-          </div>
-          <div className="min-w-0 max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-3 max-sm:py-2">
-            <p className="text-ink-mute">İşveren maliyeti</p>
-            <p className="font-semibold text-ink tabular max-sm:text-right">
-              {tl(cost.total)}
-              {changed && Math.abs(diff) >= 1 ? (
-                <span className={cn("ml-1 block text-xs font-medium sm:inline", diff > 0 ? "text-bad" : "text-good")}>
-                  ({diff > 0 ? "+" : "−"}
-                  {tl(Math.abs(diff))})
+            <p className="font-semibold text-ink tabular">İşletmeye maliyeti {tl(cost.total)}</p>
+          </Well>
+        ) : (
+          <Well className="grid grid-cols-1 gap-3 p-3 text-[13px] max-sm:gap-0 max-sm:divide-y max-sm:divide-line max-sm:py-1 sm:grid-cols-2">
+            <div className="min-w-0 max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-3 max-sm:py-2">
+              <p className="text-ink-mute">Tahmini brüt</p>
+              <p className="font-semibold text-ink tabular">{tl(cost.gross)}</p>
+            </div>
+            <div className="min-w-0 max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-3 max-sm:py-2">
+              <p className="text-ink-mute">İşçi kesintileri</p>
+              <p className="font-semibold text-ink tabular">{tl(cost.deductions)}</p>
+            </div>
+            <div className="min-w-0 max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-3 max-sm:py-2">
+              <p className="text-ink-mute">İşveren SGK + işsizlik</p>
+              <p className="font-semibold text-ink tabular max-sm:text-right">
+                {tl(cost.employerSgk + cost.employerUnemployment)}
+                <span className="block text-xs font-normal text-ink-mute">
+                  SGK {tl(cost.employerSgk)} + işsizlik {tl(cost.employerUnemployment)}
                 </span>
-              ) : null}
-            </p>
-          </div>
-        </Well>
+              </p>
+            </div>
+            <div className="min-w-0 max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-3 max-sm:py-2">
+              <p className="text-ink-mute">İşveren maliyeti</p>
+              <p className="font-semibold text-ink tabular max-sm:text-right">
+                {tl(cost.total)}
+                {changed && Math.abs(diff) >= 1 ? (
+                  <span className={cn("ml-1 block text-xs font-medium sm:inline", diff > 0 ? "text-bad" : "text-good")}>
+                    ({diff > 0 ? "+" : "−"}
+                    {tl(Math.abs(diff))})
+                  </span>
+                ) : null}
+              </p>
+            </div>
+          </Well>
+        )}
 
         {!row || changed ? (
           <MonthChoiceField
@@ -1145,7 +1396,7 @@ function StaffDialog({
           >
             <div className="space-y-2.5 pt-0.5">
               <HistoryList
-                rows={row.history.map((h) => ({ fromMonth: h.fromMonth, versionId: h.versionId, label: salaryLabel(h.netSalary, h.extras) }))}
+                rows={row.history.map((h) => ({ fromMonth: h.fromMonth, versionId: h.versionId, label: payLabel(row.kind, h) }))}
                 startMonth={row.startMonth}
                 activeIndex={activeIdx}
                 onUndo={(h) => h.versionId && onUndo(row, h.versionId)}

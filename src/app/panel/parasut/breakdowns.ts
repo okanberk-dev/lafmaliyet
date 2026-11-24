@@ -1,5 +1,6 @@
 import type { BreakdownGroup, BreakdownRow } from "@/lib/breakdown";
 import { dateTimeTR, dateTR, monthLabel, num } from "@/lib/format";
+import { PARASUT_SETTINGS, REQUIRED_SETTINGS, type ParasutSettingsView, type SettingSource } from "@/lib/parasut/settings";
 
 /**
  * Paraşüt entegrasyonu sayfasındaki dört özet kartının dökümü (karta dokununca açılan pencere). Saf fonksiyonlar:
@@ -194,45 +195,43 @@ export function linkedBreakdown(links: LinkedProduct[], ingredients: { id: numbe
 
 // ---------------------------------------------------------------- Bağlantı
 
-const ENV_HELP: Record<string, string> = {
-  PARASUT_CLIENT_ID: "DevHub'daki uygulamanın client_id'si",
-  PARASUT_CLIENT_SECRET: "DevHub'daki uygulamanın client_secret'ı",
-  PARASUT_COMPANY_ID: "Firma numarası (Paraşüt adresindeki sayı)",
-  CRON_SECRET: "Her sabahki otomatik eşitlemenin anahtarı",
+const SETTING_HELP: Record<(typeof REQUIRED_SETTINGS)[number], string> = {
+  clientId: "DevHub'daki uygulamanın client_id'si",
+  clientSecret: "DevHub'daki uygulamanın client_secret'ı; gösterilmez",
+  companyId: "Paraşüt adresindeki sayı",
 };
 
-/**
- * Hesap bağlı değilken eski kullanıcı adı/parola yönteminin durumu (src/lib/parasut/legacy.ts): "active" 10 Aralık
- * 2026'ya kadar geçici yedek olarak çalışıyor, "closed" son tarih geçti; null eski ayar yok ya da hesap bağlı.
- */
-export type LegacyState = "active" | "closed" | null;
+/** Ayarın nereden geldiği, dökümde */
+const SOURCE: Record<"panel" | "env" | "none", Pick<BreakdownRow, "display" | "tone">> = {
+  panel: { display: "Panelde", tone: "good" },
+  env: { display: "Vercel'den", tone: "good" },
+  none: { display: "Eksik", tone: "bad" },
+};
+const sourceRow = (source: SettingSource) => SOURCE[source ?? "none"];
 
 /** "Bağlantı" kartının kısa durumu: kart ve dökümü aynı kurala bakar */
 export function connectionHeadline(x: {
   configured: boolean;
   connected: boolean;
   stale: boolean;
-  legacy?: LegacyState;
   cronSet: boolean;
 }): { value: string; tone: "good" | "warn" | "bad"; sub: string } {
-  if (!x.configured) return { value: "Kurulmadı", tone: "warn", sub: "Aşağıdaki kurulum adımlarını izleyin" };
+  if (!x.configured) return { value: "Kurulmadı", tone: "warn", sub: "Bağlantı kartından ayarları girin" };
   if (x.connected) {
     return { value: x.stale ? "Yenilenmeli" : "Bağlı", tone: x.stale ? "warn" : "good", sub: `Her sabah 07:00–08:00${x.cronSet ? "" : " · CRON_SECRET eksik"}` };
   }
-  if (x.legacy === "active") return { value: "Eski yöntem", tone: "warn", sub: "10 Aralık'ta kapanacak · hesabı bağlayın" };
-  if (x.legacy === "closed") return { value: "Eski yöntem kapandı", tone: "bad", sub: "“Paraşüt hesabını bağla” ile yeniden bağlayın" };
-  return { value: "Hesap bağlanmadı", tone: "warn", sub: "“Paraşüt hesabını bağla” ile bir kez yetkilendirin" };
+  return { value: "Bağlı değil", tone: "warn", sub: "“Paraşüt hesabını bağla” ile bir kez yetkilendirin" };
 }
 
 /**
- * Bağlantı kartı: ortam değişkenleri (tanımlı / eksik) ve eşitlemenin zamanı: otomatik eşitleme, ilk eşitlemenin
- * başlangıcı, son alınan fatura tarihi (imleç) ve son başarılı eşitleme. Toplanamaz: bilgi satırları.
+ * Bağlantı kartı: bağlantı ayarları (panelde, Vercel'den ya da eksik; client_secret'ın değeri yok) ve eşitlemenin
+ * zamanı: otomatik eşitleme, ilk eşitlemenin başlangıcı, son alınan fatura tarihi (imleç) ve son başarılı eşitleme.
+ * Toplanamaz: bilgi satırları. CRON_SECRET yalnız eksikse "Otomatik eşitleme" satırında söylenir.
  */
 export function connectionBreakdown(x: {
   configured: boolean;
-  env: { name: string; set: boolean }[];
+  settings: Pick<ParasutSettingsView, "clientId" | "clientSecret" | "companyId" | "syncFrom">;
   cronSet: boolean;
-  syncFrom: string | null;
   cursor: string | null;
   /** Paraşüt hesabı tarayıcıdan yetkilendirilmiş mi (refresh_token kayıtlı) */
   connected: boolean;
@@ -240,22 +239,18 @@ export function connectionBreakdown(x: {
   refreshedAt: string | null;
   /** 30 günlük yenileme süresinin sonuna yaklaşıldı */
   stale: boolean;
-  /** Hesap bağlı değilken eski yöntemin durumu (verilmezse yok sayılır) */
-  legacy?: LegacyState;
   /** En son başarılı eşitleme (geçmişteki son 8 içinde) */
   lastOk: { startedAt: string; trigger: "cron" | "manual" | "history" } | null;
 }): BreakdownGroup[] {
-  const vars = [...x.env, { name: "CRON_SECRET", set: x.cronSet }];
+  const set = REQUIRED_SETTINGS.filter((k) => x.settings[k].source !== null).length;
+  const syncFrom = x.settings.syncFrom;
   const auto: Pick<BreakdownRow, "display" | "tone" | "sub"> = !x.configured
-    ? { display: "Kurulum bekliyor", tone: "warn", sub: "Paraşüt değişkenleri tamamlanınca her sabah çalışır." }
-    : !x.connected && x.legacy !== "active"
+    ? { display: "Kurulum bekliyor", tone: "warn", sub: "Bağlantı ayarları tamamlanınca her sabah çalışır." }
+    : !x.connected
       ? { display: "Hesap bağlanmadı", tone: "warn", sub: "“Paraşüt hesabını bağla”ya basıp Paraşüt'te onay verin." }
       : !x.cronSet
         ? { display: "Kapalı", tone: "warn", sub: "CRON_SECRET eksik: yalnız “Şimdi eşitle” ile çalışır." }
-        : !x.connected
-          ? // Eski yöntem geçici yedek olarak sürüyor: çalışıyor ama son tarihi var
-            { display: "Her sabah", tone: "warn", sub: "07:00–08:00 arasında; şimdilik eski kullanıcı adı ve parolayla, 10 Aralık 2026'ya kadar." }
-          : { display: "Her sabah", tone: "good", sub: "07:00–08:00 arasında; gelen e-faturalar ve gider faturaları." };
+        : { display: "Her sabah", tone: "good", sub: "07:00–08:00 arasında; gelen e-faturalar ve gider faturaları." };
   const account: Pick<BreakdownRow, "display" | "tone" | "sub"> = x.connected
     ? {
         display: x.stale ? "Yenilenmeli" : "Bağlı",
@@ -266,29 +261,19 @@ export function connectionBreakdown(x: {
             ? `Son yenileme ${dateTimeTR(x.refreshedAt)}; her eşitlemede kendiliğinden yenilenir.`
             : "Bağlı.",
       }
-    : x.legacy === "active"
-      ? {
-          display: "Eski yöntem",
-          tone: "warn",
-          sub: "Kullanıcı adı ve parolayla geçici olarak çalışıyor; Paraşüt bunu 10 Aralık 2026'da kapatıyor. “Paraşüt hesabını bağla” ile geçin.",
-        }
-      : x.legacy === "closed"
-        ? { display: "Eski yöntem kapandı", tone: "bad", sub: "Paraşüt eski yöntemi 10 Aralık 2026'da kapattı. “Paraşüt hesabını bağla” ile yeniden bağlayın." }
-        : { display: "Bağlı değil", tone: "bad", sub: "Bir kez tarayıcıdan yetkilendirin: “Paraşüt hesabını bağla” (Authorization Code + PKCE)." };
+    : { display: "Bağlı değil", tone: "bad", sub: "Bir kez tarayıcıdan yetkilendirin: “Paraşüt hesabını bağla” (Authorization Code + PKCE)." };
   return [
     {
-      key: "ortam",
-      label: "Ortam değişkenleri",
-      note: "Vercel'de tanımlanır; değerler panelde gösterilmez.",
-      display: `${num(vars.filter((v) => v.set).length)} / ${num(vars.length)}`,
-      rows: vars.map((v) => ({
-        key: v.name,
-        label: v.name,
-        sub: ENV_HELP[v.name],
-        amount: v.set ? 1 : 0,
-        display: v.set ? "Tanımlı" : "Eksik",
-        // CRON_SECRET yoksa bağlantı yine çalışır, yalnız sabah eşitlemesi olmaz
-        tone: v.set ? "good" : v.name === "CRON_SECRET" ? "warn" : "bad",
+      key: "ayarlar",
+      label: "Bağlantı ayarları",
+      note: "Bağlantı kartından girilir; panelde olmayan değer Vercel'deki ortam değişkeninden okunur.",
+      display: `${num(set)} / ${num(REQUIRED_SETTINGS.length)}`,
+      rows: REQUIRED_SETTINGS.map((k) => ({
+        key: k,
+        label: PARASUT_SETTINGS[k].label,
+        sub: k === "companyId" && x.settings.companyId.value ? `${x.settings.companyId.value} · ${SETTING_HELP[k]}` : SETTING_HELP[k],
+        amount: x.settings[k].source ? 1 : 0,
+        ...sourceRow(x.settings[k].source),
       })),
     },
     {
@@ -301,9 +286,11 @@ export function connectionBreakdown(x: {
         {
           key: "baslangic",
           label: "İlk eşitlemenin başlangıcı",
-          sub: x.syncFrom ? "PARASUT_SYNC_FROM" : "PARASUT_SYNC_FROM tanımlı değil: bu yılın başından alınır.",
+          sub: syncFrom.value
+            ? `${syncFrom.source === "panel" ? "Panelde kayıtlı" : "Vercel'den"}; yalnız ilk eşitlemede kullanılır.`
+            : "Girilmedi: ilk eşitleme bu yılın başından alır.",
           amount: 0,
-          display: x.syncFrom ? dateTR(x.syncFrom) : "Yıl başı",
+          display: syncFrom.value ? dateTR(syncFrom.value) : "Yıl başı",
         },
         {
           key: "imlec",

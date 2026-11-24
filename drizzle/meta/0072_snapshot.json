@@ -1,5 +1,5 @@
 {
-  "id": "a579c931-e66b-46ff-8da1-9204cfc8259d",
+  "id": "4add7811-3ca4-49eb-bf1e-6dfd54853242",
   "prevId": "499f1fc4-dd2a-4a8c-9f32-ee63ee91b2ec",
   "version": "7",
   "dialect": "postgresql",
@@ -4095,19 +4095,6 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
-        "photo_check": {
-          "name": "photo_check",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pending_photos": {
-          "name": "pending_photos",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
         "day_hash": {
           "name": "day_hash",
           "type": "text",
@@ -6048,30 +6035,6 @@
         },
         "cash_moves": {
           "name": "cash_moves",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "okc": {
-          "name": "okc",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "collections": {
-          "name": "collections",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "shift_counts": {
-          "name": "shift_counts",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "discount_lines": {
-          "name": "discount_lines",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
@@ -8256,6 +8219,39 @@
           "notNull": true,
           "default": 0
         },
+        "meal_card": {
+          "name": "meal_card",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'full_time'"
+        },
+        "daily_wage": {
+          "name": "daily_wage",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "person_ref": {
+          "name": "person_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "active": {
           "name": "active",
           "type": "boolean",
@@ -8283,7 +8279,23 @@
           "default": 0
         }
       },
-      "indexes": {},
+      "indexes": {
+        "staff_user_idx": {
+          "name": "staff_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "staff_branch_id_branches_id_fk": {
           "name": "staff_branch_id_branches_id_fk",
@@ -8297,12 +8309,34 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
+        },
+        "staff_user_id_users_id_fk": {
+          "name": "staff_user_id_users_id_fk",
+          "tableFrom": "staff",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "staff_kind_ck": {
+          "name": "staff_kind_ck",
+          "value": "\"staff\".\"kind\" in ('full_time','part_time')"
+        },
+        "staff_link_ck": {
+          "name": "staff_link_ck",
+          "value": "\"staff\".\"user_id\" is null or \"staff\".\"person_ref\" is null"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.staff_requests": {
@@ -8670,6 +8704,20 @@
         },
         "extras": {
           "name": "extras",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "meal_card": {
+          "name": "meal_card",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "daily_wage": {
+          "name": "daily_wage",
           "type": "double precision",
           "primaryKey": false,
           "notNull": true,

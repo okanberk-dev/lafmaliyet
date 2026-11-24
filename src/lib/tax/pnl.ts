@@ -9,9 +9,9 @@
  */
 
 import type { Model } from "../calc/engine";
-import { daysInMonth, shiftMonth } from "../calc/engine";
+import { daysInMonth, PERSONNEL_SUB_KEYS, shiftMonth } from "../calc/engine";
 import type { ExpenseCategory, ExpenseEntry, FixedExpense, FixedSection, Invoice } from "../calc/types";
-import { COMMISSION_CATEGORY, FIXED_ESTIMATE_DESCRIPTION, GOODS_CATEGORIES, MANUAL_PNL_ROWS, SEPARATE_CATEGORIES } from "../constants";
+import { COMMISSION_CATEGORY, FIXED_ESTIMATE_DESCRIPTION, fixedVatRate, GOODS_CATEGORIES, MANUAL_PNL_ROWS, SEPARATE_CATEGORIES } from "../constants";
 import { money, tl } from "../format";
 import { monthSource } from "../lafpos/switch";
 import { monthEnd } from "../reminders";
@@ -316,8 +316,9 @@ export function taxPnlInputFromModel(
       manualCells,
       personnel: {
         net: value("personnel:net"),
-        employer: value("personnel:employer"),
-        overridden: Boolean(pm.cells.get("personnel:net")?.overridden || pm.cells.get("personnel:employer")?.overridden),
+        // Maliyet − net ve personelin alt satırları (yemek kartı; Faz 5): bordro köprüsü bütün personel hücreleriyle
+        employer: r2(PERSONNEL_SUB_KEYS.reduce((a, k) => a + value(k), 0)),
+        overridden: ["personnel:net", ...PERSONNEL_SUB_KEYS].some((k) => Boolean(pm.cells.get(k)?.overridden)),
         section: pm.sections.personel,
       },
       pos: { amount: value("commission:pos"), overridden: Boolean(pm.cells.get("commission:pos")?.overridden) },
@@ -615,7 +616,7 @@ function monthCalc(ctx: Ctx, month: string): TaxMonth {
   for (const c of base.fixedCells) {
     if (!c.value || official.has(c.id)) continue;
     const fe = ctx.fixedById.get(c.id);
-    const doc: TaxDoc | null = fe?.taxDoc ?? null;
+    const doc: TaxDoc | null = fe ? fixedTaxDoc(fe) : null;
     if (doc === "belgeli") {
       fixedBelgeli = r2(fixedBelgeli + c.value);
       belgeliItems.push({ label: fe!.name, amount: c.value });
@@ -945,6 +946,14 @@ export function taxQuarters(input: TaxPnlInput, months: readonly TaxMonth[], yea
 
 // ---------------------------------------------------------------- Sınıflandırma listesi
 
+/**
+ * Sabit giderin vergi belgesi: seçilen; seçilmemiş kira kaleminde ev sahibi şirketse fatura (Faz 5: kira faturası
+ * Paraşüt'ten gelir, sabit gider ayrıca sayılmaz; muhtasar da "en az"a düşmez)
+ */
+export function fixedTaxDoc(f: Pick<FixedExpense, "taxDoc" | "section" | "landlordType">): TaxDoc | null {
+  return f.taxDoc ?? (f.section === "kira" && f.landlordType === "sirket" ? "fatura" : null);
+}
+
 export interface ClassifyTarget {
   /** "fixed:1" | "manual:su" | "category:3" */
   key: string;
@@ -981,9 +990,10 @@ export function classificationTargets(input: TaxPnlInput, months: readonly TaxMo
       id: f.id,
       name: f.name,
       section: f.section,
-      doc: f.taxDoc ?? null,
+      doc: fixedTaxDoc(f),
       withholding: f.taxWithholding ?? null,
-      vatRate: f.vatRate ?? null,
+      // Ev sahibi türü seçili kira kaleminde KDV ondan (Faz 5): şahıs KDV'siz, şirket %20
+      vatRate: f.section === "kira" && f.landlordType ? fixedVatRate(f) : (f.vatRate ?? null),
       total: fixedTotal.get(f.id) ?? 0,
       partTime: f.section === "personel" && /part.?time|yarı zamanlı/i.test(f.name),
     });

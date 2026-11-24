@@ -19,6 +19,7 @@ import {
   type SyncRun,
 } from "../src/app/panel/parasut/breakdowns";
 import { prepareBreakdown, type BreakdownGroup } from "../src/lib/breakdown";
+import type { SettingSource } from "../src/lib/parasut/settings";
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const groupsSum = (gs: BreakdownGroup[]) => sum(gs.filter((g) => !g.apart).flatMap((g) => g.rows.map((r) => r.amount)));
@@ -136,114 +137,102 @@ test("Bağlı ürün: çok ürünlü hammaddede ilk beş ürün ve kalan sayıs�
 
 // ---------------------------------------------------------------- Bağlantı
 
-// Kullanıcı adı/parola yok: Paraşüt grant_type=password'ü kaldırdı, yetki tarayıcıdan bir kez alınıyor
-const env = (missing: string[] = []) => ["PARASUT_CLIENT_ID", "PARASUT_CLIENT_SECRET", "PARASUT_COMPANY_ID"].map((name) => ({ name, set: !missing.includes(name) }));
+/** Bağlantı ayarları: alan alan nereden geldiği (client_secret'ın yalnız kaynağı) */
+const settings = (over: { clientId?: SettingSource; clientSecret?: SettingSource; companyId?: SettingSource; syncFrom?: string | null; syncSource?: SettingSource } = {}) => {
+  const src = (k: "clientId" | "clientSecret" | "companyId"): SettingSource => (k in over ? (over[k] ?? null) : "env");
+  return {
+    clientId: { value: src("clientId") ? "istemci" : null, source: src("clientId") },
+    clientSecret: { source: src("clientSecret") },
+    companyId: { value: src("companyId") ? "424242" : null, source: src("companyId") },
+    syncFrom: { value: over.syncFrom ?? null, source: over.syncFrom ? (over.syncSource ?? "panel") : null },
+  };
+};
 
 /** Bağlı bir hesap (çoğu durumda değişmeyen kısım) */
 const linked = { connected: true, refreshedAt: "2026-10-20T04:30:00.000Z", stale: false };
 
-test("Bağlantı: ortam değişkenleri tanımlı / eksik, eşitlemenin zamanı; bilgi satırları pencerede kalır", () => {
+test("Bağlantı: ayarların kaynağı (panel / Vercel / eksik), eşitlemenin zamanı; bilgi satırları pencerede kalır", () => {
   const g = connectionBreakdown({
     configured: true,
-    env: env(),
+    settings: settings({ clientSecret: "panel" }),
     cronSet: false,
-    syncFrom: null,
     cursor: "2026-10-18",
     ...linked,
     lastOk: { startedAt: "2026-10-20T04:30:00.000Z", trigger: "cron" },
   });
   const vars = g[0];
-  assert.equal(vars.display, "3 / 4");
-  assert.deepEqual(vars.rows.at(-1), { key: "CRON_SECRET", label: "CRON_SECRET", sub: "Her sabahki otomatik eşitlemenin anahtarı", amount: 0, display: "Eksik", tone: "warn" });
-  assert.deepEqual(vars.rows[0].display, "Tanımlı");
+  assert.equal(vars.label, "Bağlantı ayarları");
+  assert.equal(vars.display, "3 / 3");
+  assert.deepEqual(
+    vars.rows.map((r) => [r.key, r.display]),
+    [
+      ["clientId", "Vercel'den"],
+      ["clientSecret", "Panelde"],
+      ["companyId", "Vercel'den"],
+    ],
+  );
+  // Firma numarası gizli değil: dökümde görünür; secret'ın değeri dökümün hiçbir yerinde yok
+  assert.match(vars.rows[2].sub ?? "", /^424242 · /);
+  // CRON_SECRET ayar satırı değil: yalnız eksikse otomatik eşitleme satırında söylenir
+  assert.equal(vars.rows.some((r) => r.key === "CRON_SECRET"), false);
   const sync = Object.fromEntries(g[1].rows.map((r) => [r.key, r]));
   assert.equal(sync.hesap.display, "Bağlı");
   assert.equal(sync.hesap.tone, "good");
   assert.equal(sync.otomatik.display, "Kapalı");
-  assert.equal(sync.otomatik.tone, "warn");
+  assert.match(sync.otomatik.sub ?? "", /CRON_SECRET eksik/);
   assert.equal(sync.baslangic.display, "Yıl başı");
   assert.equal(sync.imlec.display, "18.10.2026");
   assert.equal(sync["son-basarili"].display, "20.10.2026 07:30");
   assert.equal(sync["son-basarili"].sub, "Otomatik");
   // Tutarı 0 olan bilgi satırları düşmez
   const p = prepareBreakdown(g, { order: "given" });
-  assert.equal(p.groups.flatMap((x) => x.rows).length, 9);
+  assert.equal(p.groups.flatMap((x) => x.rows).length, 8);
+  // Hiçbir metin ayarların Vercel'de saklandığını söylemez (kaynak etiketi hariç)
+  assert.doesNotMatch(JSON.stringify(g.map((x) => x.note ?? "")), /Vercel'de (tanımlanır|saklanır)/);
 
   const missing = connectionBreakdown({
     configured: false,
-    env: env(["PARASUT_CLIENT_SECRET"]),
+    settings: settings({ clientSecret: null, syncFrom: "2026-01-15" }),
     cronSet: true,
-    syncFrom: "2026-01-15",
     cursor: null,
     connected: false,
     refreshedAt: null,
     stale: false,
     lastOk: null,
   });
-  assert.equal(missing[0].display, "3 / 4");
-  assert.equal(missing[0].rows.find((r) => r.key === "PARASUT_CLIENT_SECRET")?.tone, "bad");
+  assert.equal(missing[0].display, "2 / 3");
+  assert.equal(missing[0].rows.find((r) => r.key === "clientSecret")?.display, "Eksik");
+  assert.equal(missing[0].rows.find((r) => r.key === "clientSecret")?.tone, "bad");
   const ms = Object.fromEntries(missing[1].rows.map((r) => [r.key, r]));
   assert.equal(ms.hesap.display, "Bağlı değil");
   assert.equal(ms.hesap.tone, "bad");
   assert.equal(ms.otomatik.display, "Kurulum bekliyor");
   assert.equal(ms.baslangic.display, "15.01.2026");
+  assert.match(ms.baslangic.sub ?? "", /^Panelde kayıtlı/);
   assert.equal(ms.imlec.display, "Henüz yok");
   assert.equal(ms["son-basarili"].display, "Yok");
 
   // Ayarlar tam ama hesap bağlanmamış: otomatik eşitleme çalışmaz, kart bunu söyler
-  const unlinked = connectionBreakdown({ configured: true, env: env(), cronSet: true, syncFrom: null, cursor: null, connected: false, refreshedAt: null, stale: false, lastOk: null });
+  const unlinked = connectionBreakdown({ configured: true, settings: settings(), cronSet: true, cursor: null, connected: false, refreshedAt: null, stale: false, lastOk: null });
   assert.equal(unlinked[1].rows[1].display, "Hesap bağlanmadı");
   assert.equal(unlinked[1].rows[1].tone, "warn");
 
   // Yetki uzun süre yenilenmedi (refresh_token 30 gün): bağlı ama tazelenmeli
-  const old = connectionBreakdown({ configured: true, env: env(), cronSet: true, syncFrom: null, cursor: null, connected: true, refreshedAt: "2026-09-01T00:00:00.000Z", stale: true, lastOk: null });
+  const old = connectionBreakdown({ configured: true, settings: settings(), cronSet: true, cursor: null, connected: true, refreshedAt: "2026-09-01T00:00:00.000Z", stale: true, lastOk: null });
   assert.equal(old[1].rows[0].display, "Yenilenmeli");
   assert.equal(old[1].rows[0].tone, "warn");
 
-  assert.equal(connectionBreakdown({ configured: true, env: env(), cronSet: true, syncFrom: null, cursor: null, ...linked, lastOk: null })[1].rows[1].display, "Her sabah");
+  assert.equal(connectionBreakdown({ configured: true, settings: settings(), cronSet: true, cursor: null, ...linked, lastOk: null })[1].rows[1].display, "Her sabah");
 });
 
-test("Bağlantı: hesap bağlanmadan eski yöntem geçici yedek olarak çalışırken kart ve döküm bunu söyler", () => {
-  const base = { configured: true, env: env(), cronSet: true, syncFrom: null, cursor: null, connected: false, refreshedAt: null, stale: false, lastOk: null };
-
-  // 10 Aralık'a kadar: eşitleme her sabah sürer ama son tarihi var (uyarı rengi)
-  const active = Object.fromEntries(connectionBreakdown({ ...base, legacy: "active" })[1].rows.map((r) => [r.key, r]));
-  assert.equal(active.hesap.display, "Eski yöntem");
-  assert.equal(active.hesap.tone, "warn");
-  assert.match(active.hesap.sub ?? "", /10 Aralık 2026'da kapatıyor/);
-  assert.match(active.hesap.sub ?? "", /“Paraşüt hesabını bağla”/);
-  assert.equal(active.otomatik.display, "Her sabah");
-  assert.equal(active.otomatik.tone, "warn");
-  assert.match(active.otomatik.sub ?? "", /eski kullanıcı adı ve parolayla, 10 Aralık 2026'ya kadar/);
-  // CRON_SECRET yoksa eski yöntemle de yalnız elle çalışır
-  assert.equal(Object.fromEntries(connectionBreakdown({ ...base, cronSet: false, legacy: "active" })[1].rows.map((r) => [r.key, r])).otomatik.display, "Kapalı");
-
-  // Son tarih geçti: kırmızı, eşitleme çalışmaz
-  const closed = Object.fromEntries(connectionBreakdown({ ...base, legacy: "closed" })[1].rows.map((r) => [r.key, r]));
-  assert.equal(closed.hesap.display, "Eski yöntem kapandı");
-  assert.equal(closed.hesap.tone, "bad");
-  assert.match(closed.hesap.sub ?? "", /yeniden bağlayın/);
-  assert.equal(closed.otomatik.display, "Hesap bağlanmadı");
-
-  // Hesap bağlıysa eski yöntemin durumu hiç görünmez
-  const linkedRows = Object.fromEntries(connectionBreakdown({ ...base, ...linked, legacy: "active" })[1].rows.map((r) => [r.key, r]));
-  assert.equal(linkedRows.hesap.display, "Bağlı");
-  assert.equal(linkedRows.otomatik.tone, "good");
-
-  // Kartın kısa durumu aynı kuraldan
-  assert.deepEqual(connectionHeadline({ configured: false, connected: false, stale: false, legacy: "active", cronSet: true }), {
+test("Bağlantı: kartın kısa durumu dökümle aynı kurala bakar", () => {
+  assert.deepEqual(connectionHeadline({ configured: false, connected: false, stale: false, cronSet: true }), {
     value: "Kurulmadı",
     tone: "warn",
-    sub: "Aşağıdaki kurulum adımlarını izleyin",
+    sub: "Bağlantı kartından ayarları girin",
   });
-  assert.deepEqual(connectionHeadline({ configured: true, connected: false, stale: false, legacy: "active", cronSet: true }), {
-    value: "Eski yöntem",
-    tone: "warn",
-    sub: "10 Aralık'ta kapanacak · hesabı bağlayın",
-  });
-  assert.equal(connectionHeadline({ configured: true, connected: false, stale: false, legacy: "closed", cronSet: true }).tone, "bad");
-  assert.equal(connectionHeadline({ configured: true, connected: false, stale: false, legacy: null, cronSet: true }).value, "Hesap bağlanmadı");
-  assert.deepEqual(connectionHeadline({ configured: true, connected: true, stale: false, legacy: null, cronSet: false }), {
+  assert.equal(connectionHeadline({ configured: true, connected: false, stale: false, cronSet: true }).value, "Bağlı değil");
+  assert.deepEqual(connectionHeadline({ configured: true, connected: true, stale: false, cronSet: false }), {
     value: "Bağlı",
     tone: "good",
     sub: "Her sabah 07:00–08:00 · CRON_SECRET eksik",

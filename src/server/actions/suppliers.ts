@@ -32,7 +32,7 @@ import { loadCardEntries } from "@/server/data/cari";
 import { loadSupplierLedger, loadSupplierRefs, supplierSlugOf, supplierSlugOfKey } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "@/server/parasut/client";
-import { isParasutConfigured } from "@/server/parasut/config";
+import { isParasutConfigured, readParasutConfig } from "@/server/parasut/config";
 import { contactInfo, sameSupplier } from "@/server/parasut/mapping";
 import { syncSupplierHistory } from "@/server/parasut/sync";
 import { extractUblXml, parseUbl } from "@/server/parasut/ubl";
@@ -339,7 +339,7 @@ export async function restoreSupplier(snapshot: CardInput) {
 export async function importSupplierHistory(input: z.input<typeof targetSchema> & { confirmDevir?: boolean }) {
   return attempt(async () => {
     const me = await requireAdmin();
-    if (!isParasutConfigured()) throw new UserError("Paraşüt bağlantısı kurulu değil.");
+    if (!(await isParasutConfigured())) throw new UserError("Paraşüt bağlantısı kurulu değil.");
     const { g } = await findGroup(input);
     if (g.key === supplierMatchKey(PLACEHOLDER_SUPPLIER_NAME)) throw new UserError("Bunlar Paraşüt'te adı okunamayan faturalar; geçmişi tedarikçinin kendi sayfasından alın.");
     // Eski borç (devir) girilmiş kartta (K22): o günden eski faturalar gelirse aynı borç iki kez sayılır; önce sorulur
@@ -415,7 +415,7 @@ const INFO_TRIES = 3;
 export async function supplierInfoFromParasut(names: string[]) {
   return attempt(async () => {
     await requireAdmin();
-    if (!isParasutConfigured()) throw new UserError("Paraşüt bağlantısı kurulu değil; bilgileri faturadan bakıp elle girin.");
+    if (!(await isParasutConfigured())) throw new UserError("Paraşüt bağlantısı kurulu değil; bilgileri faturadan bakıp elle girin.");
     const keys = new Set(z.array(z.string().max(300)).min(1).max(40).parse(names).map(supplierMatchKey));
     const rows = await getDb()
       .select({ id: s.invoices.id, supplier: s.invoices.supplier, date: s.invoices.date, invoiceNo: s.invoices.invoiceNo, eInvoiceId: s.invoices.eInvoiceId, externalId: s.invoices.externalId })
@@ -424,7 +424,7 @@ export async function supplierInfoFromParasut(names: string[]) {
       .orderBy(desc(s.invoices.date), desc(s.invoices.id));
     const mine = rows.filter((r) => keys.has(supplierMatchKey(r.supplier))).slice(0, INFO_TRIES);
     if (!mine.length) throw new UserError("Bu tedarikçinin Paraşüt'ten gelen faturası yok; bilgileri elle girin.");
-    const client = new ParasutClient();
+    const client = new ParasutClient(await readParasutConfig());
     client.setDeadline(Date.now() + 40_000);
     const parts: Partial<SupplierInfo>[] = [];
     let source: string | null = null;

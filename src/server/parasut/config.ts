@@ -1,20 +1,107 @@
 import "server-only";
 
+import { eq, isNotNull, or } from "drizzle-orm";
+
+import {
+  missingSettings,
+  PARASUT_SETTING_KEYS,
+  PARASUT_SETTINGS,
+  resolveParasutSettings,
+  settingsView,
+  type PanelValues,
+  type ParasutSettingsView,
+  type ResolvedSettings,
+} from "@/lib/parasut/settings";
 import { appUrl } from "@/server/auth/tokens";
+import { getDb, schema as s } from "@/server/db";
+import { open, seal } from "@/server/secret-box";
 
 /**
- * Paraşüt API v4 bağlantı ayarları ortam değişkenlerinden okunur (docs/PARASUT.md).
- * Değerler hiçbir zaman istemciye gönderilmez; ekranda yalnızca "tanımlı mı" bilgisi gösterilir.
+ * Paraşüt API v4 bağlantı ayarları (docs/PARASUT.md § 1). client_id, client_secret, firma numarası ve ilk eşitleme
+ * başlangıcı panelden girilebilir (integration_state › parasut.settings); panelde olmayan alan ortam değişkeninden
+ * okunur (kurallar src/lib/parasut/settings.ts). Adres ve izin ayarları yalnız ortamda. client_secret veritabanında
+ * şifreli durur ve hiçbir zaman istemciye gönderilmez; ekranda yalnız "kayıtlı mı, nereden" görünür.
  *
  * Kimlik: OAuth 2.0 Authorization Code + PKCE (id.parasut.com). İstemci DevHub'dan alınır ve gizli (confidential)
- * olduğu için client_secret ile birlikte kullanılır. Paraşüt `grant_type=password` yöntemini 10 Aralık 2026'da
- * kapatıyor; o güne kadar hesap bağlanmadıysa eski kullanıcı adı/parola geçici yedek olarak çalışır (legacy.ts).
+ * olduğu için client_secret ile birlikte kullanılır.
  *
  * İsteğe bağlı adres değişkenleri (PARASUT_ISSUER, PARASUT_REDIRECT_URI, …) yanlış yazılmışsa ayarlar yine okunur:
- * değer yok sayılır ve `invalid`'e yazılır. Böylece eski yöntemle süren eşitleme bozulmaz; hesabı bağlama ise
+ * değer yok sayılır ve `invalid`'e yazılır. Böylece kayıtlı oturumla süren eşitleme bozulmaz; hesabı bağlama ise
  * düzeltilene kadar başlamaz (connect.ts).
  */
-export const PARASUT_ENV = ["PARASUT_CLIENT_ID", "PARASUT_CLIENT_SECRET", "PARASUT_COMPANY_ID"] as const;
+
+/**
+ * Panelden girilen ayarlar. client_secret şifreli (amaç "parasut-settings"); öteki alanlar düz metin. Yedeğe girmez
+ * (src/lib/backup/format.ts › EXCLUDED_STATE_KEYS): şifreli değer başka AUTH_SECRET'la açılmaz, geri yüklemeden sonra
+ * oturum da yeniden bağlanır; ayarlar o sırada panelden yeniden girilir (ortamda varsa onlar kullanılır).
+ */
+const SETTINGS_KEY = "parasut.settings";
+
+interface StoredSettings {
+  clientId?: string;
+  /** Şifreli */
+  clientSecret?: string;
+  companyId?: string;
+  syncFrom?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+type Exec = Pick<ReturnType<typeof getDb>, "select" | "insert" | "delete">;
+
+/** Panelde kayıtlı değerler; şifreli client_secret açılamazsa (AUTH_SECRET değişmiş) yok sayılır ve söylenir */
+export async function loadPanelSettings(db: Pick<Exec, "select"> = getDb()): Promise<{ values: PanelValues; secretUnreadable: boolean }> {
+  const [row] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, SETTINGS_KEY)).limit(1);
+  const v = (row?.value ?? {}) as StoredSettings;
+  const values: PanelValues = {};
+  for (const key of PARASUT_SETTING_KEYS) {
+    if (key === "clientSecret" || typeof v[key] !== "string" || !v[key]) continue;
+    values[key] = v[key];
+  }
+  const secret = typeof v.clientSecret === "string" && v.clientSecret ? open(v.clientSecret, "parasut-settings") : null;
+  if (secret) values.clientSecret = secret;
+  return { values, secretUnreadable: Boolean(v.clientSecret) && !secret };
+}
+
+/** Panel ayarlarını yazar (client_secret şifrelenir); boş kalan kayıt silinir */
+export async function writePanelSettings(values: PanelValues, by: string, db: Exec = getDb()) {
+  const value: StoredSettings = {};
+  for (const key of PARASUT_SETTING_KEYS) {
+    const v = values[key]?.trim();
+    if (v) value[key] = key === "clientSecret" ? seal(v, "parasut-settings") : v;
+  }
+  if (!Object.keys(value).length) {
+    await db.delete(s.integrationState).where(eq(s.integrationState.key, SETTINGS_KEY));
+    return;
+  }
+  Object.assign(value, { updatedAt: new Date().toISOString(), updatedBy: by });
+  await db
+    .insert(s.integrationState)
+    .values({ key: SETTINGS_KEY, value })
+    .onConflictDoUpdate({ target: s.integrationState.key, set: { value, updatedAt: new Date() } });
+}
+
+/** Kullanılacak ayarlar: alan alan önce panel, yoksa ortam değişkeni */
+export async function loadParasutSettings(db: Pick<Exec, "select"> = getDb()): Promise<{ resolved: ResolvedSettings; secretUnreadable: boolean }> {
+  const { values, secretUnreadable } = await loadPanelSettings(db);
+  return { resolved: resolveParasutSettings(values, process.env), secretUnreadable };
+}
+
+/** Paraşüt'ten gelmiş (ya da Paraşüt'e bağlanmış) fatura var mı: varsa firma numarası panelden değiştirilemez */
+export async function hasParasutInvoices(db: Pick<Exec, "select"> = getDb()): Promise<boolean> {
+  const [row] = await db
+    .select({ id: s.invoices.id })
+    .from(s.invoices)
+    .where(or(eq(s.invoices.source, "parasut"), isNotNull(s.invoices.externalId), isNotNull(s.invoices.eInvoiceId)))
+    .limit(1);
+  return Boolean(row);
+}
+
+/** Bağlantı kartının ayar görünümü (client_secret'ın değeri yok) */
+export async function parasutSettingsView(): Promise<ParasutSettingsView> {
+  const [{ resolved, secretUnreadable }, invoices] = await Promise.all([loadParasutSettings(), hasParasutInvoices()]);
+  return settingsView(resolved, { secretUnreadable, hasParasutInvoices: invoices });
+}
 
 /**
  * Paraşüt'ün yeni kimlik sunucusu (Keycloak, "parasut" alanı). Keşif belgesi {issuer}/.well-known/openid-configuration;
@@ -52,12 +139,10 @@ export interface ParasutConfig {
   syncFrom: string | null;
 }
 
-export function parasutEnvStatus(): { name: (typeof PARASUT_ENV)[number]; set: boolean }[] {
-  return PARASUT_ENV.map((name) => ({ name, set: Boolean(process.env[name]?.trim()) }));
-}
-
-export function isParasutConfigured(): boolean {
-  return parasutEnvStatus().every((v) => v.set);
+/** Zorunlu üç ayar (client_id, client_secret, firma numarası) panelde ya da ortamda var mı */
+export async function isParasutConfigured(): Promise<boolean> {
+  const { resolved } = await loadParasutSettings();
+  return missingSettings(resolved).length === 0;
 }
 
 /** Yalnız https adresi kabul edilir; yanlış yazılmışsa değer yok sayılır ve `invalid: true` döner */
@@ -92,30 +177,36 @@ export function assertOidcSettings(cfg: Pick<ParasutConfig, "invalid">, only?: r
 }
 
 /**
- * Ayarlar. Yalnız zorunlu üç değişken eksikse hata atar (o zaman ne yeni ne eski yöntem çalışabilir); isteğe bağlı
+ * Kullanılacak ayarlardan bağlantı yapılandırması. Yalnız zorunlu üç ayar eksikse hata atar; isteğe bağlı
  * değişkenlerin yanlışı uygulamayı durdurmaz.
  */
-export function readParasutConfig(): ParasutConfig {
-  const missing = parasutEnvStatus().filter((v) => !v.set).map((v) => v.name);
-  if (missing.length) throw new Error(`Paraşüt ayarları eksik: ${missing.join(", ")}`);
-  const from = process.env.PARASUT_SYNC_FROM?.trim();
+export function configFrom(r: ResolvedSettings): ParasutConfig {
+  const missing = missingSettings(r);
+  if (missing.length) {
+    throw new Error(`Paraşüt bağlantı ayarları eksik: ${missing.map((k) => PARASUT_SETTINGS[k].label).join(", ")}. Paraşüt entegrasyonu › Bağlantı kartından girin.`);
+  }
   const invalid: string[] = [];
   const https = (name: string) => {
-    const r = readHttps(name);
-    if (r.invalid) invalid.push(name);
-    return r.value;
+    const x = readHttps(name);
+    if (x.invalid) invalid.push(name);
+    return x.value;
   };
   return {
-    clientId: process.env.PARASUT_CLIENT_ID!.trim(),
-    clientSecret: process.env.PARASUT_CLIENT_SECRET!.trim(),
-    companyId: process.env.PARASUT_COMPANY_ID!.trim(),
+    clientId: r.clientId.value!,
+    clientSecret: r.clientSecret.value!,
+    companyId: r.companyId.value!,
     baseUrl: (process.env.PARASUT_BASE_URL?.trim() || "https://api.parasut.com").replace(/\/+$/, ""),
     issuer: https("PARASUT_ISSUER") ?? DEFAULT_ISSUER,
     authorizeUrl: https("PARASUT_AUTHORIZE_URL"),
     tokenUrl: https("PARASUT_TOKEN_URL"),
     redirectUri: https("PARASUT_REDIRECT_URI") ?? `${appUrl()}${PARASUT_CALLBACK_PATH}`,
     scope: process.env.PARASUT_SCOPE?.trim() || DEFAULT_SCOPE,
-    syncFrom: from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : null,
+    syncFrom: r.syncFrom.value,
     invalid,
   };
+}
+
+/** Bağlantı yapılandırması (panel ayarları + ortam); zorunlu ayar eksikse hata */
+export async function readParasutConfig(): Promise<ParasutConfig> {
+  return configFrom((await loadParasutSettings()).resolved);
 }

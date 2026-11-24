@@ -4,8 +4,8 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
  * Paraşüt'ün yeni kimlik altyapısının (id.parasut.com) saf kuralları: PKCE üretimi, keşif belgesinin okunması ve
  * yetki adresinin kurulması. Ağa çıkmaz, veritabanına dokunmaz; indirme ve önbellek src/server/parasut/oidc.ts'te.
  *
- * Paraşüt 10 Aralık 2026'da `grant_type=password`'ü ve eski api.parasut.com/oauth istemcilerini kapattı; erişim
- * yalnızca Authorization Code + PKCE ile alınıyor (OAuth 2.0 / OpenID Connect).
+ * Paraşüt `grant_type=password`'ü ve eski api.parasut.com/oauth istemcilerini kapattı; erişim yalnızca Authorization
+ * Code + PKCE ile alınıyor (OAuth 2.0 / OpenID Connect).
  */
 
 export interface ParasutEndpoints {
@@ -68,6 +68,25 @@ export function readDiscovery(doc: unknown, issuer: string): ParasutEndpoints {
     authorizeUrl: endpointUrl("authorization_endpoint", d.authorization_endpoint, issuerHost),
     tokenUrl: endpointUrl("token_endpoint", d.token_endpoint, issuerHost),
   };
+}
+
+/**
+ * Keycloak'ın standart uçları: `{issuer}/protocol/openid-connect/auth` ve `…/token`. Keşif belgesi okunamazsa
+ * kullanılır: id.parasut.com'da Cloudflare `.well-known` isteğini sunuculardan 403 ile engelliyor (24 Kasım 2026'da
+ * Vercel'den ve başka bir sunucudan görüldü), yetki ve belirteç uçları ise açık. Yalnız https ve Keycloak alanı
+ * (`/realms/<ad>`) biçimindeki yayıncıda döner; başka biçimde null (o zaman keşif hatası olduğu gibi gösterilir).
+ */
+export function keycloakEndpoints(issuer: string): ParasutEndpoints | null {
+  let u: URL;
+  try {
+    u = new URL(issuer);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "https:" || u.username || u.password || u.search || u.hash) return null;
+  if (!/^\/realms\/[^/]+\/?$/.test(u.pathname)) return null;
+  const base = `${u.origin}${u.pathname.replace(/\/+$/, "")}`;
+  return { issuer: base, authorizeUrl: `${base}/protocol/openid-connect/auth`, tokenUrl: `${base}/protocol/openid-connect/token` };
 }
 
 /** Paraşüt'ün onay ekranının adresi: Authorization Code + PKCE (S256), `state` ve `scope` ile */

@@ -20,8 +20,8 @@
  */
 
 import { supplierMatchKey } from "../app/panel/faturalar/rules";
-import { daysInMonth, shiftMonth, type Model } from "./calc/engine";
-import type { FixedPeriod, FixedSection } from "./calc/types";
+import { daysInMonth, officialRentGross, shiftMonth, type Model } from "./calc/engine";
+import type { FixedExpense, FixedPeriod, FixedSection } from "./calc/types";
 import { dayRevenue } from "./cash-revenue";
 import { FIXED_ESTIMATE_DESCRIPTION, fixedVatRate, GOODS_CATEGORIES, MONTH_NAMES } from "./constants";
 import { money, monthLabel, num, pct, tl } from "./format";
@@ -624,6 +624,32 @@ function onlineBasis(model: Model, today: string): CashPlanInput["online"] {
 }
 
 /**
+ * Sabit giderin ödemesinden kesilen stopaj profili (nakit planı): resmi kiralı kalemde yok (stopaj resmi brütten muhtasarla
+ * ayrıca, ev sahibine kesintisiz); ev sahibi şahıs ve resmi kira yoksa kira stopajı; şirkete kirada yok; öteki kalemlerde
+ * Vergi'de seçilen profil (Faz 5)
+ */
+type PaidFixedInput = Pick<FixedExpense, "section" | "officialAmount" | "officialBasis" | "landlordType"> & {
+  taxWithholding?: Withholding | null;
+  vatRate?: number | null;
+};
+
+function paidWithholdingOf(f: PaidFixedInput): Withholding | null {
+  if (f.section === "kira" && f.landlordType === "sirket") return null;
+  if (f.section === "kira" && f.landlordType === "sahis") return officialRentGross(f, 0.2) !== null ? null : "kira";
+  return f.officialAmount ? null : (f.taxWithholding ?? null);
+}
+
+/**
+ * Sabit giderin bankadan çıkan tutarının oranları (tek kural): nakit planının yayılımı ve Ödemeler'in "Sabit giderlerden
+ * ekle", izleme ve tutarsızlık denetimi aynı sonucu verir. Ev sahibi türü (Faz 5) KDV'yi ve ödemeden kesilen stopajı
+ * belirler (paidWithholdingOf, fixedVatRate); yurt dışı hizmette KDV 0 (paidFixedRates)
+ */
+export function paidFixedRatesOf<T extends PaidFixedInput>(f: T, year: number): T & { taxWithholding: Withholding | null; vatRate: number; withholdingRate: number } {
+  const rated = paidFixedRates({ ...f, taxWithholding: paidWithholdingOf(f), vatRate: fixedVatRate(f) }, year);
+  return { ...rated, vatRate: rated.vatRate ?? 0 };
+}
+
+/**
  * Modelden planın girdileri: oranlar, POS yedeği, online, bordro ve sabit giderler (önceki aylardan ufkun sonuna), KDV.
  * Bordro Vergi'nin bordrosudur (K18; src/lib/tax/payroll.ts taxPayrollFromModel): netten brüt, 2026 yasal SGK oranları,
  * PEK sınırı; Ayarlar'daki SGK oranları yalnız Gelir-gider'de kalır. `tax` vergi ayarlarıdır (hesap dönemi, asgari ücret
@@ -690,15 +716,17 @@ export function planInputFromModel(
         // Stopajlı kalemde stopaj düşülür; yurt dışı hizmette KDV yok (KDV-2 ayrı satırda; paidFixedRates). Besleme
         // yoksa brüt, faturanın KDV'siyle
         if (!feed) return { id: f.id, name: f.name, period: f.period, amount: f.amount, vatRate: fixedVatRate(f) };
-        // Resmi kirası olan kalemde ev sahibine giden tutar kesintisiz (stopaj resmi brütten, muhtasarla ayrıca)
-        const rated = paidFixedRates({ taxWithholding: f.officialAmount ? null : f.taxWithholding, vatRate: fixedVatRate(f) }, year);
+        // Resmi kirası olan kalemde ev sahibine giden tutar kesintisiz (stopaj resmi brütten, muhtasarla ayrıca). Ev sahibi
+        // türü (Faz 5): şahsa kira KDV'siz, resmi kira yoksa stopaj ödemeden kesilir; şirkete kira %20 KDV'li, stopajsız
+        const rated = paidFixedRatesOf(f, year);
+        const withholding = rated.taxWithholding;
         return {
           id: f.id,
           name: f.name,
           period: f.period,
           amount: f.amount,
           vatRate: rated.vatRate,
-          ...(f.taxWithholding && !f.officialAmount ? { withholding: f.taxWithholding, withholdingRate: rated.withholdingRate } : {}),
+          ...(withholding ? { withholding, withholdingRate: rated.withholdingRate } : {}),
         };
       }),
       expenses: monthExpenses(m),

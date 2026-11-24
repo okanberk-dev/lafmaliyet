@@ -3,6 +3,14 @@
 **Kaynak:** Paraşüt'ten gelen duyuru e-postası (5 Kasım 2026'da alındı).
 **Panelde etkilenen yer:** `lafmaliyet` → Paraşüt entegrasyonu (gider faturaları ve gelen e-faturalar, her sabah
 07:00–08:00 arası eşitleme).
+> **Tamamlandı (24 Kasım 2026): eski yöntem kaldırıldı.** Sahip DevHub istemcisini açtı, hesap canlıda
+> “Paraşüt hesabını bağla” ile bağlandı. Geçici yedek (`src/lib/parasut/legacy.ts`, `src/server/parasut/legacy.ts`,
+> `parasut.legacyToken`), “Eski yöntem” durumları ve `parasutMigrationAlert` hatırlatması koddan silindi; aşağıdaki
+> *10 Aralık 2026'dan sonra silinecekler* listesi bu değişiklikle yapıldı. Vercel'de `PARASUT_USERNAME` /
+> `PARASUT_PASSWORD` kaldıysa artık hiçbir yerde okunmuyor, silinebilir. Bağlantı ayarları (client_id, client_secret,
+> firma numarası, ilk eşitleme başlangıcı) artık panelden de girilebilir ([PARASUT.md](../PARASUT.md) § 1). Aşağısı
+> geçişin o günkü kaydıdır.
+
 **Durum (21 Kasım 2026):** kod hazır (PR #92). Birleştirilmesi artık güvenli: hesap bağlanana kadar eşitleme eski
 yöntemle sürer (aşağıda *Geçici yedek*). Sahibin yapacakları aşağıda, sade dille.
 
@@ -109,6 +117,16 @@ engelledi; yetki ve belirteç adreslerinin tam yolları **canlıda doğrulanmad�
 kendiliğinden çalışır. Keşif belgesi bir nedenle okunamazsa `PARASUT_AUTHORIZE_URL` ve `PARASUT_TOKEN_URL` ile elle
 verilebilir (DevHub → "Yardımcı Kaynaklar"daki adresler). Geçici yedek sayesinde bu doğrulama 10 Aralık'a kadar
 eşitlemeyi riske atmıyor: bağlanma başarısız olursa eski değerler geri yazılıp eski yönteme dönülebilir.
+
+**24 Kasım 2026, geçiş günü:** keşif belgesi gerçekten okunamadı. id.parasut.com önündeki Cloudflare
+`/realms/parasut/.well-known/openid-configuration` isteğini hem Vercel'den hem başka bir sunucudan 403 ("Attention
+Required! | Cloudflare", *you have been blocked*) ile engelledi; “Paraşüt hesabını bağla” *“Paraşüt keşif belgesi
+okunamadı (HTTP 403 …)”* dedi. Aynı sunucudan yetki ucu (`…/protocol/openid-connect/auth`, Keycloak giriş sayfası,
+200) ve belirteç ucu (`…/protocol/openid-connect/token`, Keycloak JSON) açık. DevHub istemcisi sahte bir kodla
+denendi: `invalid_grant · Code not valid` (istemci ve secret doğru); yetki adresi bu client_id, dönüş adresi ve
+`openid offline_access` ile giriş sayfasını açtı (dönüş adresi ve izinler kabul). Çözüm: Vercel'e
+`PARASUT_AUTHORIZE_URL` ve `PARASUT_TOKEN_URL` elle yazıldı; kod da belge okunamazsa Keycloak alanının standart
+uçlarına döner (`keycloakEndpoints`, src/lib/parasut/oidc.ts).
 
 ## Sahibin yapacakları (yazılımcı gerekmez)
 

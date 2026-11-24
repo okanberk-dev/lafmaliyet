@@ -667,13 +667,37 @@ export const staff = pgTable("staff", {
   name: text("name").notNull(),
   netSalary: doublePrecision("net_salary").notNull().default(0),
   extras: doublePrecision("extras").notNull().default(0),
+  /**
+   * Yemek kartı (Faz 5, sahibin kararı 11): işaretliyse işveren maliyetine Ayarlar'daki günlük tutar × gün eklenir,
+   * brütleştirilmez (src/lib/calc/engine.ts staffCost). Taban değer: sürüm (staff_versions) aydan itibaren değiştirir
+   */
+  mealCard: boolean("meal_card").notNull().default(false),
+  /**
+   * Tam zamanlı ya da part-time (Faz 5, sahibin kararı 12). Part-time: günlük ücret × Vardiya'da o şubede çağrıldığı gün
+   * (shifts.kind = work), SGK brütleştirmesi yok; net maaş kullanılmaz
+   */
+  kind: text("kind", { enum: ["full_time", "part_time"] }).notNull().default("full_time"),
+  /** Part-time günlük ücret (₺; işletmenin gün başına maliyeti). Taban değer: sürüm aydan itibaren değiştirir */
+  dailyWage: doublePrecision("daily_wage").notNull().default(0),
+  /**
+   * Vardiya / hesap bağlantısı (Faz 5; sahibin kararı 2): bu maaş satırının panel hesabı. Yalnız yönetici, açıkça bağlar;
+   * kendiliğinden bağlanmaz. Bir hesap aynı ayda tek satıra (benzersiz; aralığı çakışmayan eski satırı, ör. "devam ettir"in
+   * açtığı yeni kayıttan önceki, kendi geçmişiyle bağlı kalır: src/lib/staff-link.ts). Vardiya anahtarı "u:<id>"
+   */
+  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+  /** Hesabı olmayan Vardiya kişisi: "n:<küçük harfli ad>" (src/lib/vardiya.ts nameRef); user_id varken boş */
+  personRef: text("person_ref"),
   active: boolean("active").notNull().default(true),
   startMonth: text("start_month"),
   endMonth: text("end_month"),
   sortOrder: integer("sort_order").notNull().default(0),
-});
+}, (t) => [
+  index("staff_user_idx").on(t.userId),
+  check("staff_kind_ck", sql`${t.kind} in ('full_time','part_time')`),
+  check("staff_link_ck", sql`${t.userId} is null or ${t.personRef} is null`),
+]);
 
-/** Personel maaş değişiklikleri: fromMonth ayından itibaren geçerli net maaş ve ek ödemeler */
+/** Personel maaş değişiklikleri: fromMonth ayından itibaren geçerli net maaş, ek ödemeler ve yemek kartı */
 export const staffVersions = pgTable(
   "staff_versions",
   {
@@ -684,6 +708,10 @@ export const staffVersions = pgTable(
     fromMonth: text("from_month").notNull(),
     netSalary: doublePrecision("net_salary").notNull().default(0),
     extras: doublePrecision("extras").notNull().default(0),
+    /** Yemek kartı bu aydan itibaren (Faz 5) */
+    mealCard: boolean("meal_card").notNull().default(false),
+    /** Part-time günlük ücret bu aydan itibaren (Faz 5) */
+    dailyWage: doublePrecision("daily_wage").notNull().default(0),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("staff_versions_staff_month_uq").on(t.staffId, t.fromMonth)],
@@ -722,6 +750,11 @@ export const fixedExpenses = pgTable("fixed_expenses", {
   officialAmount: doublePrecision("official_amount"),
   /** Resmi kira brüt mü net mi (net: brüt = net ÷ 0,8) */
   officialBasis: text("official_basis", { enum: ["brut", "net"] }),
+  /**
+   * Kira: ev sahibi şahıs mı şirket mi (Faz 5; boş = seçilmedi, bugünkü kural). Şahıs: KDV yok, stopaj %20 resmi kiradan;
+   * şirket: %20 KDV, stopaj yok, belgesi fatura (src/lib/constants.ts fixedVatRate; docs/VERGI.md)
+   */
+  landlordType: text("landlord_type", { enum: ["sahis", "sirket"] }),
   /** Açık güne göre oranla; false: biten ayda tam ay (kira varsayılanı) */
   prorate: boolean("prorate").notNull().default(true),
   /**

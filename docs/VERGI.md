@@ -227,6 +227,13 @@ Diğer ekranlara dokunuşlar:
   sınırı), 2026 yasal SGK oranlarıyla (işçi %14 + %1, işveren %19,75 + %2; teşvik varsa Muhasebeci'den elle). Gelir-gider
   Ayarlar'daki oranla kalır (Excel eşitliği). "Asgari ücret desteği SGK'dan düşülsün" açıksa destek ödenen SGK'dan
   düştüğü kadar Vergi kârı'nın "Personel (bordro)" giderinden de düşer (satırın notu; denetim VG-08).
+  **Faz 5 (23 Kasım 2026):** yemek kartı işaretli kişinin yemek kartı (Ayarlar › Personel yemek kartı: günlük 330 ₺ × 26
+  gün) bordroda **ek ödeme gibi** girer: vergisiz, brütleştirilmeden maliyete; yasal brüt, SGK, GV ve DV değişmez
+  (`src/lib/tax/payroll.ts` taxPayrollFromModel; kartın vergi ve SGK istisna sınırı aşılıyorsa muhasebeciye sorulur).
+  **Part-time** kişinin (Maaşlar › Çalışma: Part-time) günlük ücreti işletmenin gün başına maliyetidir, yasal bordroda
+  **brütleştirilmez**: brüt 0, ücret × Vardiya'daki çalışma günü + yemek kartı × gün + ek ödeme bütün maliyet olarak ek
+  ödeme gibi girer (asgari ücret desteği ona yazılmaz); bordro ayın Vardiya planındaki bütün çalışma günleriyle (süren
+  ayda ileri günlerin planı dahil) hesaplanır. Günlük ücretin brüt mü net mi olduğu sahibin teyidini bekler (PR notu).
 - **Muhtasar (K20):** ay P'nin ücret gelir ve damga vergisi + sabit giderin stopaj profiline göre stopaj (kira %20,
   serbest meslek %20, internet reklamı %15) + beyanname damgası (personel varsa 939,70, yalnız stopajda 791,00);
   P+1'in 26'sında. Adı kira, reklam ya da dışarıdan hizmete uyan profilsiz kalem varsa tutar "en az"dır. Ödemeler'de
@@ -243,6 +250,18 @@ Diğer ekranlara dokunuşlar:
   stopaj düşülmez. Resmi kiranın tutar geçmişi yok: değişince bütün aylar için geçer. Kira kalemi varsayılan olarak
   açık güne göre oranlanmaz (tam ay; süren ayda bugüne kadarki pay); migration `drizzle/0052_kira_resmi_stopaj.sql` elle
   eklenmiş "Kira stopajı" kalemini kira kalemine taşır.
+- **Kira ev sahibi türü (Faz 5, 23 Kasım 2026):** kira kaleminde "Ev sahibi" seçilir (`fixed_expenses.landlord_type`;
+  `src/lib/constants.ts` fixedVatRate, `engine.ts` officialRentGross, `tax/muhtasar.ts`, `cash-plan.ts`):
+  - **Şahıs:** KDV hiçbir yerde yok (kalemde %20 yazılı ya da bölümün varsayılanı olsa da nakit planı KDV eklemez);
+    stopaj %20 **resmi kiradan** (resmi tutar + brüt / net), tek kaynak: Gelir-gider'in stopaj satırı ve muhtasarın
+    matrahı aynı tutar. Resmi kira yazılmamışsa tutar brüt sayılır, stopaj ödemeden kesilir (bankadan %80) ve muhtasara
+    girer (ayrı stopaj satırı yok). Sabit tutarlı "Kira stopajı" hatırlatıcısı muhtasarın yalnız kira stopajının yerine
+    geçer (VG-02), iki kez sayılmaz; "Kira stopajı" adlı ayrı bir **sabit gider** de sayılıyorsa stopaj hücresi ve Genel
+    bakış uyarır ("Kira stopajı iki kez sayılabilir"; tutar kendiliğinden değişmez).
+  - **Şirket:** %20 KDV (nakit planı KDV dahil öder: 160.000 → 192.000; indirilecek KDV kira faturasıyla Paraşüt'ten),
+    stopaj yok (resmi kira yazılı olsa da), belgesi fatura sayılır: muhtasar "en az"a düşmez.
+  - **Seçilmedi:** bugünkü kural (KDV kalemden ya da bölümden, stopaj Vergi'deki profilden ve resmi kiradan).
+  Kalemin şubesi (Tuzla'nın kirası Tuzla'ya) Sabit giderler'de seçilir; kayıt sahibinindir.
 - **SGK:** bordronun dört payı, P+1'in son günü (tatilde ilk iş günü).
 - **Geçici vergi (K21):** kümülatif, %25; asgari kurumlar vergisi (%10) muafiyet yoksa karşılaştırılır; önceki
   dönemler düşülür. Muhasebecinin matrahlı kaydı **çapa**dır: sonraki dönem o matraha çapadan sonraki ayları ekler.
