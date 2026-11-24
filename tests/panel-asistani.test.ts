@@ -432,8 +432,10 @@ test("döngü: süre (softMs) geçince yeni araç turu açılmaz; kesin süre (h
     [null, null, "none"],
   );
 
-  const slow = fakeClient(() => scriptedMessage({ content: [text("Uzun uzun yazan bir yanıt ".repeat(20))], stop_reason: "end_turn" }), { delayMs: 15 });
-  const r = run(slow.client, { timing: { hardMs: 60 } });
+  const slow = fakeClient(() => scriptedMessage({ content: [text("Uzun uzun yazan bir yanıt ".repeat(60))], stop_reason: "end_turn" }), { delayMs: 15 });
+  // Gerçek saat: 1560 karakter 24'lük parçalarla ~70 olay × 15 ms ≈ 1 sn; 400 ms yük altında da ilk parçalar
+  // geldikten sonra, yanıt bitmeden dolar (eskiden 60 ms: yüklü makinede ilk parça gelmeden doluyordu)
+  const r = run(slow.client, { timing: { hardMs: 400 } });
   const hard = await r.promise;
   assert.equal(hard.done, "deadline");
   assert.equal(hard.error, null);
