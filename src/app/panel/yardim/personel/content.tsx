@@ -107,7 +107,7 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
       <>
         Atılan ya da ikram edilen her şeyi <StaffPath href="/panel/zayi" /> ekranına, kasadan çıkan her parayı fişiyle <StaffPath href="/panel/kasa" /> ekranına
         girin. Akşama bırakmayın; akşam hatırlamak zordur. Kasada LafPOS kullanılmaya başlandıysa ürün ikramı LafPOS&apos;ta işaretlenir; panele yalnız zayi
-        ve hammadde ikramı girilir.
+        ve hammadde ikramı girilir. Kasadan çıkan para da LafPOS&apos;ta girilir; siz gelen satıra fişin fotoğrafını eklersiniz.
       </>
     ),
     href: "/panel/zayi",
@@ -215,7 +215,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             <B>Kaydet</B>&apos;e basın. Fişiniz yoksa <B>Fişsiz ekle</B>. Tedarikçinin şoförüne verilen para <B>Teslim · ödeme</B>&apos;dir (kime verildiğini yazın).
             Akşam raporunun &quot;Gün içinde kasadan çıkan&quot; alanı bu satırlardan dolar. Satıra dokununca düzeltir ya da silersiniz; silince bildirimdeki{" "}
             <B>Geri al</B> {seconds(CASH_OUT_UNDO_TOAST_MS)} görünür. Kilit simgeli satır yöneticinin kaydına bağlıdır; değişmesi gerekiyorsa yöneticiye haber verin.
-            Yöneticinin seçtiği bir kategorideki satırı değiştirmek ya da silmek de yöneticinin onayıyla olur.
+            Yöneticinin seçtiği bir kategorideki satırı değiştirmek ya da silmek de yöneticinin onayıyla olur. Kasada LafPOS kullanılmaya başlandıysa kasadan çıkan para LafPOS&apos;ta girilir; satır gün sonuyla buraya yazılır, siz
+            yalnız <B>Fiş fotoğrafı ekle</B> ile fişini eklersiniz.
           </>
         ),
         icon: Wallet,
