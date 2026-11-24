@@ -706,8 +706,9 @@ günler (en çok 7 gün geriye) yakalanır.
   gün sonlarının toplamı (`bankPos.batches[].total`; gün ortasında elle alınan da), batch listesi olmayan eski gövdede son
   sonucun `pavoCard`'ı. Yazarkasa alanları LafPOS'un cihaz belgelerinden (`okc`; `okcAuto`): fiş sayısı ← `docs`,
   günlük toplam, nakit, kart, yemek kartı, diğer, KDV dökümü (`{rate, total, vat}`) ve KDV toplamı (döküm hesaplanamadıysa
-  boş). Yazarkasa Z no'su LafPOS'un `z.okcZNo`'su (Pavo e-Arşiv basar, Z basmaz: `okc.zReport` false iken boş Z no eksik
-  sayılmaz). Kümülatif, KDV kümülatifi ve yazarkasa dışı tahsilat yalnız fotoğraftan (yönetici). **Cihazın rakamı yoksa
+  boş). Yazarkasa Z no'su LafPOS'un `z.okcZNo`'su (`okc.zReport` false iken boş Z no eksik sayılmaz). LafPOS Z no
+  göndermediyse personelin gün sonu fotoğrafında (Pavo'nun detaylı Z'si) okunan Z no boş alana yazılır (aşağıda); LafPOS
+  sonradan gönderirse onunki geçer. Kümülatif, KDV kümülatifi ve yazarkasa dışı tahsilat yalnız fotoğraftan (yönetici). **Cihazın rakamı yoksa
   alan boş kalır** ve not tam olarak nedenini söyler: Pavo alınamadı ("Banka POS: Pavo gün sonu alınamadı (hata {kod}:
   {mesaj}); LafPOS'ta Yönetim › Yazarkasa POS › Cihazda gün sonu al"), sonuç belirsiz ("Banka POS: Pavo gün sonunun sonucu belirsiz;
   LafPOS'ta Yönetim › Yazarkasa POS › Doğrula"), Pavo sonucu gelmedi ("Banka POS: LafPOS'tan Pavo gün sonu gelmedi"),
@@ -729,14 +730,25 @@ günler (en çok 7 gün geriye) yakalanır.
 **Personelin tek işi: gün sonu fotoğrafı** (sahibin isteği, 24 Kasım 2026: "sadece gün sonu ladmine personel foto
 atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
 
+- **Pavo detaylı Z basar** (sahibin yanıtı, 24 Kasım 2026: "Pavo cihazdan fiş isteyince veriyor, Z olarak detaylı"):
+  Marina'nın Pavo'su istenince tek fişte banka gün sonunu (batch'ler) ve Z'nin rakamlarını (Z no, satış toplamı, nakit,
+  kart, yemek kartı / diğer, KDV satırları) basar; yalnız "Z basmayan e-Arşiv cihazı" değildir. LafPOS `okc.zReport`'u
+  Pavo için hâlâ false gönderir: panel buna bakmaz. Personelden **tek fotoğraf** istenir: "Pavo'dan gün sonu fişini
+  (detaylı Z) alın ve fotoğrafını ekleyin" (birden çok fotoğraf da alınır, iki ayrı fotoğraf istenmez). Yalnız ayrı mali Z
+  basan cihazda (TokenX, `zReport`) yazarkasa Z'si ayrıca istenir.
 - Otomatik raporlu LafPOS gününde personelin Kasa sayfası raporu salt okunur gösterir (Düzenle, Silinmesini iste,
   Düzeltme öner, WhatsApp ile gönder ve Metni kopyala yok; düzeltme LafPOS'ta yapılır, LafPOS yeniden gönderir) ve tek bir
-  "Gün sonu fotoğrafı" kartı: Pavo gün sonu fişi (Pavo sonucu geldiyse), mali Z basan cihazda (`okc.zReport`) yazarkasa Z
-  raporu da. Metin yalnız "Pavo gün sonu fişinin fotoğrafını ekleyin" (+ "Yazarkasa Z raporunun fotoğrafını ekleyin"),
-  eklenince "Fotoğraf alındı", okunamadı ya da yanlış belgeyse "Fotoğraf okunamadı / yanlış belge, yeniden çekin".
-  Pavo'nun sonucu LafPOS'a henüz gelmediyse (istenen fotoğraf yok) ve fotoğraf da yoksa "Pavo gün sonu bekleniyor; gün
-  sonu fişinin fotoğrafını ekleyin" ("alındı" denmez, gün tamam sayılmaz; fiş çekilince tamam).
-  Yönetici Düzenle'yi görür; elle düzelttiği alanı sonraki otomatik güncelleme ezmez.
+  "Gün sonu fotoğrafı" kartı. Sayfanın alt başlığı "Rakamlar LafPOS'tan geldi; Pavo'dan gün sonu fişini (detaylı Z) alıp
+  fotoğrafını ekleyin." ("Kapanışta Z raporunu alın, kasadaki nakdi sayın…" değil). Kart eklenince "Fotoğraf alındı",
+  okunamadı ya da yanlış belgeyse "Fotoğraf okunamadı / yanlış belge, yeniden çekin" der; Pavo'nun sonucu LafPOS'a henüz
+  gelmediyse de iş aynıdır ("alındı" denmez, gün tamam sayılmaz; fiş çekilince tamam). Rapora bağlı fotoğrafın adı
+  "Pavo gün sonu fişi" ("Banka POS Z" değil; "Yazarkasa Z" yalnız ayrı mali Z basan cihazda). Personel fotoğraf ↔ rapor
+  farkını hiç görmez: eski "Fotoğraftan farklı yazılan: …" kutusu ve WhatsApp metnindeki satırı LafPOS'un otomatik
+  gününde personelden süzülür (`staffPhotoDiffs`); notun yönetici yönergesi ("Eksik: Banka POS … LafPOS'ta Yönetim ›
+  Yazarkasa POS › Cihazda gün sonu al") personele kısa nötr satırdır: "Banka POS henüz gelmedi; yönetici ilgileniyor"
+  (`staffAutoNote`; yönetici yazdıysa yok). Kasadan çıkan satırlarındaki "Fiş fotoğrafı ekle" eskisi gibi (isteğe bağlı).
+  Tuzla / ModPOS ve elle girilen günler değişmedi. Yönetici Düzenle'yi görür; elle düzelttiği alanı sonraki otomatik
+  güncelleme ezmez.
 - Fotoğraf `attachLafposDayPhoto` ile rapora bağlanır (yazarkasa bölümü, `kasa-okc`, en çok 3): kaydetme yolu
   (`saveCashReport`) yok, sürüm yok, gönderen ve sayan değişmez, onay yok (rakam değişmiyor). Personel günden 14 gün
   (`LATE_REPORT_DAYS`) içinde, ertesi günün raporu girilmiş olsa da ekler; yalnız kendi yüklediğini; işlem geçmişine
@@ -755,8 +767,13 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   gün 05:00'ten önce basılan da), son batch'in banka dökümü Pavo'nunkiyle aynı. Günde birden çok Pavo gün sonu varsa
   (gün içinde elle + kapanış) ve fotoğrafta yalnız bir kısmı varsa (bilinmeyen batch yok), yalnız çekilen batch'ler kendi
   tutarıyla karşılaştırılır, çekilmeyenler bilgi satırıdır ("Fotoğrafı olmayan batch"; fark değil). Batch satırı okunmayan
-  fiş (ya da karşılaştırılacak satır çıkmayan okuma) "uyumlu" değil "okunamadı"dır (yeniden çekilir); yazarkasa Z'si (yalnız `zReport`) Z no,
-  günlük toplam, nakit, kart, yemek kartı ve KDV dökümü. Fark yöneticinin uyarısıdır: Kasa gün görünümünde Pavo kartının
+  fiş (ya da karşılaştırılacak satır çıkmayan okuma) "uyumlu" değil "okunamadı"dır (yeniden çekilir). Fişte Z'nin
+  rakamları da okunduysa (Pavo'nun detaylı Z'si ya da ayrı mali Z) Z no, günlük toplam, nakit, kart (kart satırı yoksa banka
+  satırlarının toplamı), yemek kartı, diğer ve KDV dökümü raporun LafPOS'tan yazılmış yazarkasa alanlarıyla (`okc.total`,
+  `cash`, `card`, `mealCard`, `other`, `vat`) karşılaştırılır; ayrı mali Z basan cihazda Z fotoğrafı yoksa "Yazarkasa Z:
+  yok". LafPOS yazarkasa Z no'su göndermediyse fotoğrafta okunan Z no raporun boş `okc_z_no`'suna yazılır
+  (`applyPhotoZNo`; sürüm yok, işlem geçmişine "Yazarkasa Z no fotoğraftan yazıldı"), yönetici kartta "fotoğraftan
+  okundu (LafPOS göndermedi)" görür; LafPOS sonradan gönderirse onunki geçer ve fotoğraftaki farklıysa fark olur. Fark yöneticinin uyarısıdır: Kasa gün görünümünde Pavo kartının
   altındaki "Gün sonu fotoğrafı" kartında satır satır, zilde "Kasa fotoğrafı LafPOS'tan farklı · Marina <gün>" (son 7
   gün, yalnız yönetici), gün sonu e-postasında ve ay satırında rozet ("Fotoğraf ↔ LafPOS farklı"). Banka POS boşken (Pavo
   alınamadı) okunan toplam "Fotoğrafta 995 ₺" olarak yöneticiye gösterilir, "Banka POS'a yaz" onu rapora yazar

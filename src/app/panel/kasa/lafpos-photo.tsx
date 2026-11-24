@@ -15,8 +15,8 @@ import { attachLafposDayPhoto, setLafposBankPos } from "@/server/actions/cash-re
 
 /**
  * LafPOS gününün gün sonu fotoğrafı (sahibin isteği, 24 Kasım 2026; docs/LAFPOS.md › Gün sonu otomasyonu): kasa raporu
- * LafPOS'tan ve Pavo'dan kendiliğinden yazıldı, personelin tek işi Pavo'nun gün sonu fişinin (mali Z basan cihazda
- * yazarkasa Z'sinin de) fotoğrafı. Fotoğraf hiçbir rakamı yazmaz (kayıt, sürüm, onay yok): rapora bağlanır, okunuşu
+ * LafPOS'tan ve Pavo'dan kendiliğinden yazıldı, personelin tek işi Pavo'nun gün sonu fişinin (istenince basılan detaylı Z;
+ * ayrı mali Z basan cihazda yazarkasa Z'sinin de) fotoğrafı. Fotoğraf hiçbir rakamı yazmaz (kayıt, sürüm, onay yok): rapora bağlanır, okunuşu
  * LafPOS'un rakamlarıyla karşılaştırılır. Personel yalnız "Fotoğraf alındı" ya da "yeniden çekin" görür; fark ve "Banka
  * POS'a yaz" yalnız yöneticinin (`admin`).
  */
@@ -42,7 +42,8 @@ export function LafposPhotoCard({
   const full = state.attached >= MAX_OKC_PHOTOS;
   // Okuma kapalıyken fotoğraf yine alınır; personelden rakam istenmez (formun "rakamları elle yazın"ı burada yok)
   const offLine = storage && admin && reading !== "on" ? "Fotoğraftan okuma kapalı: fotoğraf alınır, LafPOS'la karşılaştırılmaz." : null;
-  const what = [state.need.slip ? "Pavo gün sonu fişi" : null, state.need.z ? "yazarkasa Z raporu" : null].filter(Boolean).join(" ve ") || "gün sonu fişi";
+  // Pavo istenince detaylı Z basar: tek fiş (banka gün sonu da Z de üstünde); ayrı mali Z basan cihazda Z de
+  const what = state.need.z ? "Pavo gün sonu fişi ve yazarkasa Z raporu" : "Pavo gün sonu fişi (detaylı Z)";
 
   async function pick(file: File) {
     const res = await up.upload(file, { kind: "kasa-okc", day: date, read });
@@ -114,6 +115,7 @@ function AdminCheck({ check, bankPos, onWrite, busy }: { check: LafposPhotoCheck
           ))}
         </ul>
       ) : null}
+      {check.zNoFromPhoto ? <p className="text-[13px] text-ink-mute">Yazarkasa Z no {check.zNoFromPhoto} fotoğraftan okundu (LafPOS göndermedi).</p> : null}
       {bankPos === null && check.readBankPos !== null ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-ink">Fotoğrafta {money(check.readBankPos)}</span>

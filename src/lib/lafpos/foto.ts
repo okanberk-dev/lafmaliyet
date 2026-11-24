@@ -9,23 +9,66 @@ import type { BankPos, PosOkc } from "./day";
 /**
  * LafPOS gününün gün sonu fotoğrafı (sahibin isteği, 24 Kasım 2026: "sadece gün sonu ladmine personel foto atsın";
  * docs/LAFPOS.md › Gün sonu otomasyonu; saf, tests/lafpos-gun-sonu-tam.test.ts). Kasa raporunun rakamları LafPOS'tan ve
- * Pavo'dan kendiliğinden yazılır; personel yalnız fotoğraf ekler (Pavo'nun gün sonu fişi; mali Z basan cihazda yazarkasa
- * Z'si de). Fotoğraf hiçbir alanı yazmaz: okunuşu LafPOS'un rakamlarıyla karşılaştırılır, sonuç yöneticiye gider
- * (lafpos_day_ends.photo_check). Personel yalnız "Fotoğraf alındı" ya da "Fotoğraf okunamadı / yanlış belge, yeniden
- * çekin" görür.
+ * Pavo'dan kendiliğinden yazılır; personel yalnız fotoğraf ekler. Pavo istenince detaylı Z basar (sahibin yanıtı, 24
+ * Kasım 2026: "Pavo cihazdan fiş isteyince veriyor, Z olarak detaylı"): tek fişte banka gün sonu (batch'ler) ve Z'nin
+ * rakamları (Z no, toplam, nakit, kart, yemek kartı / diğer, KDV); personelden tek fotoğraf istenir. LafPOS'un
+ * `okc.zReport`'u Pavo için hâlâ false gelir, ölçü değildir. Yalnız ayrı mali Z basan cihazda (TokenX) yazarkasa Z'si
+ * ayrıca istenir. Fotoğraf hiçbir alanı yazmaz (tek istisna: LafPOS Z no göndermediyse fotoğrafta okunan Z no): okunuşu
+ * LafPOS'un rakamlarıyla karşılaştırılır, sonuç yöneticiye gider (lafpos_day_ends.photo_check). Personel yalnız
+ * "Fotoğraf alındı" ya da "Fotoğraf okunamadı / yanlış belge, yeniden çekin" görür.
  */
 
 /** Personelin gördüğü metinler (başka hiçbir iş yok) */
 export const LAFPOS_PHOTO_TEXT = {
-  slip: "Pavo gün sonu fişinin fotoğrafını ekleyin",
+  slip: "Pavo'dan gün sonu fişini (detaylı Z) alın ve fotoğrafını ekleyin",
   z: "Yazarkasa Z raporunun fotoğrafını ekleyin",
   done: "Fotoğraf alındı",
-  /** Pavo'nun sonucu LafPOS'a henüz gelmedi (Banka POS yok): fotoğraf yokken "alındı" denmez */
-  waiting: "Pavo gün sonu bekleniyor; gün sonu fişinin fotoğrafını ekleyin",
+  /**
+   * Pavo'nun sonucu LafPOS'a henüz gelmedi (Banka POS yok): fotoğraf yokken "alındı" denmez. Personel için iş aynı (fişi
+   * Pavo istenince basar); bekleyen sonuç yöneticinin
+   */
+  waiting: "Pavo'dan gün sonu fişini (detaylı Z) alın ve fotoğrafını ekleyin",
   retry: "Fotoğraf okunamadı / yanlış belge, yeniden çekin",
 } as const;
 
-/** İstenen fotoğraflar: Pavo sonucu geldiyse gün sonu fişi; cihaz mali Z basıyorsa (TokenX) Z'si de */
+/** Personelin Kasa sayfasının alt başlığı, LafPOS'un otomatik gününde (rakam girmez, yalnız fotoğraf) */
+export const LAFPOS_STAFF_DESCRIPTION = "Rakamlar LafPOS'tan geldi; Pavo'dan gün sonu fişini (detaylı Z) alıp fotoğrafını ekleyin.";
+
+/** Rapora bağlı gün sonu fotoğrafının adı (LafPOS günü): Pavo'nun fişi; ayrı mali Z basan cihazda "Yazarkasa Z" */
+export function lafposPhotoLabel(need: Pick<LafposPhotoNeed, "z">): string {
+  return need.z ? "Yazarkasa Z" : "Pavo gün sonu fişi";
+}
+
+/**
+ * Personelin gördüğü fotoğraf farkı: LafPOS'un otomatik gününde hiç (fark yöneticinin uyarısı; eski "Fotoğraftan farklı
+ * yazılan" yolu da personele gösterilmez). Yönetici ve ModPOS / elle girilen gün eskisi gibi
+ */
+export function staffPhotoDiffs<T>(diffs: readonly T[] | null, o: { admin: boolean; lafposAuto: boolean }): T[] | null {
+  if (diffs === null) return null;
+  return !o.admin && o.lafposAuto ? [] : [...diffs];
+}
+
+/**
+ * Otomatik raporun notu personele: "Eksik: …" bölümü (yöneticinin yönergesi: "LafPOS'ta Yönetim › Yazarkasa POS › …")
+ * yerine kısa nötr satır. Banka POS hâlâ boşsa "Banka POS henüz gelmedi; yönetici ilgileniyor" (yönetici yazdıysa yok),
+ * yazarkasa alanları boşsa aynısı yazarkasa için; başka eksik personele söylenmez
+ */
+export function staffAutoNote(note: string | null, r: { bankPos: number | null; okcTotal?: number | null }): string | null {
+  if (note === null) return null;
+  const at = note.indexOf(" Eksik: ");
+  if (at < 0 && !note.startsWith("Eksik: ")) return note;
+  const head = at < 0 ? "" : note.slice(0, at);
+  const gaps = note.slice(at < 0 ? 0 : at + 1);
+  const lines: string[] = [];
+  if (/Banka POS/.test(gaps) && r.bankPos === null) lines.push("Banka POS henüz gelmedi; yönetici ilgileniyor.");
+  if (/Yazarkasa/.test(gaps) && (r.okcTotal ?? null) === null) lines.push("Yazarkasa belgeleri henüz gelmedi; yönetici ilgileniyor.");
+  return [head, ...lines].filter(Boolean).join(" ") || null;
+}
+
+/**
+ * İstenen fotoğraflar: Pavo'nun gün sonu fişi (detaylı Z; tek fotoğraf, banka gün sonu da Z de üstünde); yalnız ayrı mali
+ * Z basan cihazda (TokenX) yazarkasa Z'si de. Pavo'nun sonucu henüz gelmediyse istenen 0 (fotoğraf yine alınır)
+ */
 export interface LafposPhotoNeed {
   slip: boolean;
   z: boolean;
@@ -34,7 +77,7 @@ export interface LafposPhotoNeed {
 
 export function lafposPhotoNeed(d: { bankPos: BankPos | null | undefined; okc: PosOkc | null | undefined }): LafposPhotoNeed {
   const slip = Boolean(d.bankPos);
-  const z = d.okc?.zReport === true;
+  const z = d.okc?.zReport === true && d.okc.provider === "tokenx";
   return { slip, z, count: (slip ? 1 : 0) + (z ? 1 : 0) };
 }
 
@@ -68,6 +111,11 @@ export interface LafposPhotoCheck {
   issues: string[];
   /** Raporun Banka POS'u boşken (Pavo alınamadı) fotoğrafta okunan toplam: yönetici "Banka POS'a yaz" ile yazar */
   readBankPos: number | null;
+  /**
+   * LafPOS yazarkasa Z no'su göndermediyse fotoğrafta (Pavo'nun detaylı Z'si) okunan Z no: sunucu raporun boş Z no'suna
+   * yazar, yönetici "fotoğraftan okundu" görür. LafPOS gönderdiyse yok (yalnız karşılaştırılır). Eski kayıtta alan yok
+   */
+  zNoFromPhoto?: string | null;
 }
 
 /** Raporun karşılaştırılan alanları (LafPOS'tan yazılmış değerler) */
@@ -78,7 +126,13 @@ export interface LafposPhotoReport {
   okcCash: number | null;
   okcCard: number | null;
   okcMealCard: number | null;
+  okcOther?: number | null;
   okcVat: OkcVatLine[] | null;
+  /**
+   * LafPOS'un gönderdiği yazarkasa Z no'su (gövdenin `z.okcZNo`'su). Yoksa (undefined) raporunki LafPOS'unki sayılır.
+   * null: LafPOS göndermedi, fotoğrafta okunan Z no yazılabilir (`zNoFromPhoto`)
+   */
+  lafposZNo?: string | null;
 }
 
 const TOL = 0.01;
@@ -90,14 +144,16 @@ const amountOf = (v: number | null) => (v === null ? "okunamadı" : money(v));
 /**
  * Fotoğraf(lar)ın okunuşu ↔ LafPOS. Pavo gün sonu fişi: okunan her batch no LafPOS'un batch'lerinde, batch sayısı aynı,
  * okunan netlerin toplamı raporun Banka POS'u (±0,01), fişin günü raporun günü (ertesi gün 05:00'ten önce basılan da),
- * son batch'in banka dökümü Pavo'nunkiyle aynı. Yazarkasa Z'si (yalnız cihaz Z basıyorsa): Z no, günlük toplam, nakit,
- * kart, yemek kartı ve KDV dökümü raporun yazarkasa alanlarıyla. Banka POS boşsa okunan toplam yöneticiye önerilir.
+ * son batch'in banka dökümü Pavo'nunkiyle aynı. Z'nin rakamları (Pavo'nun detaylı Z'si ya da ayrı mali Z): okunduysa Z
+ * no, günlük toplam, nakit, kart, yemek kartı, diğer ve KDV dökümü raporun yazarkasa alanlarıyla; ayrı mali Z basan cihazda
+ * (TokenX) Z fotoğrafı yoksa "yok". Banka POS boşsa okunan toplam yöneticiye önerilir; LafPOS Z no göndermediyse okunan Z
+ * no `zNoFromPhoto`.
  */
 export function lafposPhotoCheck(
   i: { day: string; reads: readonly LafposPhotoRead[]; bankPos: BankPos | null; okc: PosOkc | null; report: LafposPhotoReport },
   now: Date = new Date(),
 ): LafposPhotoCheck {
-  const base = { at: now.toISOString(), photos: i.reads.length, rows: [] as LafposPhotoRow[], issues: [] as string[], readBankPos: null as number | null };
+  const base = { at: now.toISOString(), photos: i.reads.length, rows: [] as LafposPhotoRow[], issues: [] as string[], readBankPos: null as number | null, zNoFromPhoto: null as string | null };
   // Batch satırı okunmamış Pavo fişi (ör. batch bölümü kadrajın dışında) karşılaştırılacak bir şey vermez: okunamadı sayılır
   const usable = i.reads.filter((r) => r.raw && r.raw.readable && ((r.raw.documentType === "batch_slip" && r.raw.batches.length > 0) || r.raw.documentType === "z_report"));
   if (!usable.length) {
@@ -106,9 +162,21 @@ export function lafposPhotoCheck(
   }
   const rows: LafposPhotoRow[] = [];
   let readBankPos: number | null = null;
+  let zNoFromPhoto: string | null = null;
 
   // Pavo gün sonu fişi (yalnız ya da Z'nin altında basılmış)
-  const slips = usable.flatMap((r) => r.raw!.batches.map((b) => ({ raw: r.raw!, b })));
+  // Aynı fişin iki fotoğrafı (personel birden çok çekebilir): aynı batch no ve aynı tutar bir kez sayılır; farklı tutarla
+  // okunan aynı batch ise iki kez kalır (fark yöneticiye)
+  const seenSlip = new Set<string>();
+  const slips = usable
+    .flatMap((r) => r.raw!.batches.map((b) => ({ raw: r.raw!, b })))
+    .filter(({ b }) => {
+      if (!b.batchNo?.trim()) return true;
+      const key = `${batchKey(b.batchNo.trim())}|${b.netTotal.text ?? ""}|${b.salesTotal.text ?? ""}`;
+      if (seenSlip.has(key)) return false;
+      seenSlip.add(key);
+      return true;
+    });
   if (slips.length && i.bankPos) {
     const nets = slips.map(({ b }) => {
       const net = printedAmount(b.netTotal).value;
@@ -169,39 +237,65 @@ export function lafposPhotoCheck(
     }
   }
 
-  // Yazarkasa Z'si: yalnız cihaz mali Z basıyorsa (Pavo e-Arşiv, Z yok)
-  if (i.okc?.zReport) {
-    const z = usable.find((r) => r.raw!.documentType === "z_report")?.raw ?? null;
-    if (!z) rows.push({ label: "Yazarkasa Z", photo: "yok", lafpos: "bekleniyor", ok: false });
-    else {
-      const no = z.zNo.text?.trim() || (z.zNo.value !== null ? String(z.zNo.value) : null);
-      const sameNo = no !== null && i.report.okcZNo !== null && (zNoNumber(no) !== null && zNoNumber(i.report.okcZNo) !== null ? zNoNumber(no) === zNoNumber(i.report.okcZNo) : no === i.report.okcZNo);
-      rows.push({ label: "Yazarkasa Z no", photo: no ?? "okunamadı", lafpos: i.report.okcZNo ?? "yok", ok: sameNo });
-      const sumOf = (kinds: readonly string[]) => {
-        const xs = z.payments.filter((p) => kinds.includes(p.kind)).map((p) => printedAmount(p.amount).value);
-        return xs.some((x) => x === null) ? null : round2((xs as number[]).reduce((a, x) => a + x, 0));
-      };
-      const pairs: [string, number | null, number | null][] = [
-        ["Yazarkasa toplamı", printedAmount(z.dailyTotal).value, i.report.okcTotal],
-        ["Yazarkasa nakdi", sumOf(["cash"]), i.report.okcCash],
-        ["Yazarkasa kartı", sumOf(["card"]), i.report.okcCard],
-        ["Yazarkasa yemek kartı", sumOf(["meal_card"]), i.report.okcMealCard],
-      ];
-      for (const [label, photo, lafpos] of pairs) {
-        if (lafpos === null) continue;
-        rows.push({ label, photo: amountOf(photo), lafpos: money(lafpos), ok: photo !== null && near(photo, lafpos) });
-      }
-      const vat = normalizeVat(
-        z.kdvGroups.flatMap((g) => {
-          const t = printedAmount(g.total).value;
-          const v = printedAmount(g.vat).value;
-          return t !== null && v !== null ? [{ rate: g.rate, total: t, vat: v }] : [];
-        }),
+  // Z'nin rakamları: Pavo'nun detaylı Z'si (gün sonu fişiyle aynı kâğıtta) ya da ayrı mali Z basan cihazın (TokenX) Z'si.
+  // Okunduysa her cihazda karşılaştırılır (LafPOS'un `zReport`'u Pavo için false gelir, ölçü değil); TokenX'te Z yoksa "yok"
+  // Birden çok Z okunduysa (aynı fişin iki fotoğrafı) her biri karşılaştırılır: satır hepsi LafPOS'u tutunca tamam
+  const zs = usable.filter((r) => r.raw!.documentType === "z_report").map((r) => r.raw!);
+  const separateZ = i.okc?.zReport === true && i.okc.provider === "tokenx";
+  if (!zs.length) {
+    if (separateZ) rows.push({ label: "Yazarkasa Z", photo: "yok", lafpos: "bekleniyor", ok: false });
+  } else {
+    const uniq = (xs: readonly string[]) => [...new Set(xs)].join(" / ");
+    const sameNo = (a: string, b: string) => (zNoNumber(a) !== null && zNoNumber(b) !== null ? zNoNumber(a) === zNoNumber(b) : a === b);
+    const nos = zs.map((z) => z.zNo.text?.trim() || (z.zNo.value !== null ? String(z.zNo.value) : null));
+    const readNos = nos.filter((n): n is string => n !== null);
+    const lafposNo = i.report.lafposZNo === undefined ? i.report.okcZNo : i.report.lafposZNo;
+    if (lafposNo) {
+      // LafPOS gönderdi: raporunkiyle (elle düzeltilmişse o) karşılaştırılır
+      const reportNo = i.report.okcZNo ?? lafposNo;
+      rows.push({ label: "Yazarkasa Z no", photo: uniq(nos.map((n) => n ?? "okunamadı")), lafpos: reportNo, ok: nos.every((n) => n !== null && sameNo(n, reportNo)) });
+    } else if (readNos.length) {
+      // LafPOS göndermedi: fotoğraftaki raporun boş Z no'suna yazılır (sunucu; okunanlar birbirini tutuyorsa); raporda başka
+      // bir Z no varsa ya da fotoğraflar farklı Z no gösteriyorsa fark
+      const agreed = readNos.every((n) => sameNo(n, readNos[0]));
+      if (agreed) zNoFromPhoto = readNos[0];
+      rows.push({
+        label: "Yazarkasa Z no",
+        photo: `${uniq(readNos)} (fotoğraftan okundu)`,
+        lafpos: i.report.okcZNo ? `gönderilmedi; raporda ${i.report.okcZNo}` : "gönderilmedi",
+        ok: agreed && (i.report.okcZNo === null || sameNo(readNos[0], i.report.okcZNo)),
+      });
+    }
+    const sumOf = (z: KasaOkc, kinds: readonly string[]) => {
+      const xs = z.payments.filter((p) => kinds.includes(p.kind)).map((p) => printedAmount(p.amount).value);
+      return xs.some((x) => x === null) ? null : round2((xs as number[]).reduce((a, x) => a + x, 0));
+    };
+    // Kart satırı basmayan cihaz kartı yalnız banka adlarıyla basar (OKC_TASK): o zaman banka satırları kart sayılır
+    const cardOf = (z: KasaOkc) => (z.payments.some((p) => p.kind === "card") ? sumOf(z, ["card"]) : sumOf(z, ["bank_subline"]));
+    const pairs: [string, (z: KasaOkc) => number | null, number | null | undefined][] = [
+      ["Yazarkasa toplamı", (z) => printedAmount(z.dailyTotal).value, i.report.okcTotal],
+      ["Yazarkasa nakdi", (z) => sumOf(z, ["cash"]), i.report.okcCash],
+      ["Yazarkasa kartı", cardOf, i.report.okcCard],
+      ["Yazarkasa yemek kartı", (z) => sumOf(z, ["meal_card"]), i.report.okcMealCard],
+      ["Yazarkasa diğer", (z) => sumOf(z, ["other"]), i.report.okcOther],
+    ];
+    for (const [label, read, lafpos] of pairs) {
+      if (lafpos === null || lafpos === undefined) continue;
+      const photo = zs.map(read);
+      rows.push({ label, photo: uniq(photo.map(amountOf)), lafpos: money(lafpos), ok: photo.every((v) => v !== null && near(v, lafpos)) });
+    }
+    if (i.report.okcVat) {
+      const text = (xs: readonly OkcVatLine[]) => xs.map((g) => `%${g.rate} ${money(g.vat)}`).join(" · ") || "yok";
+      const vats = zs.map((z) =>
+        normalizeVat(
+          z.kdvGroups.flatMap((g) => {
+            const t = printedAmount(g.total).value;
+            const v = printedAmount(g.vat).value;
+            return t !== null && v !== null ? [{ rate: g.rate, total: t, vat: v }] : [];
+          }),
+        ),
       );
-      if (i.report.okcVat) {
-        const text = (xs: readonly OkcVatLine[]) => xs.map((g) => `%${g.rate} ${money(g.vat)}`).join(" · ") || "yok";
-        rows.push({ label: "Yazarkasa KDV", photo: text(vat), lafpos: text(normalizeVat(i.report.okcVat)), ok: sameVat(vat, i.report.okcVat) });
-      }
+      rows.push({ label: "Yazarkasa KDV", photo: uniq(vats.map(text)), lafpos: text(normalizeVat(i.report.okcVat)), ok: vats.every((v) => sameVat(v, i.report.okcVat!)) });
     }
   }
 
@@ -209,7 +303,7 @@ export function lafposPhotoCheck(
   // gelmedi) ise okunmadı, öteki durumda (ör. Pavo cihazında Z fotoğrafı, fiş yok) okunamadı / yanlış belge
   if (!rows.length) return { ...base, state: slips.length && !i.bankPos ? "okunmadi" : "okunamadi" };
   const issues = rows.filter((r) => !r.ok).map((r) => `${r.label}: fotoğrafta ${r.photo}; LafPOS'ta ${r.lafpos}`);
-  return { ...base, rows, issues, readBankPos, state: issues.length ? "fark" : "uyumlu" };
+  return { ...base, rows, issues, readBankPos, zNoFromPhoto, state: issues.length ? "fark" : "uyumlu" };
 }
 
 /**

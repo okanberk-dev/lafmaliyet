@@ -38,7 +38,7 @@ import { loadNotifySettings } from "@/server/notify/settings";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 import { supersede } from "@/server/staff-requests/core";
 
-import { dayPhotoIds, linkPendingPhotos, photoCheckOf } from "./foto";
+import { applyPhotoZNo, dayPhotoIds, linkPendingPhotos, photoCheckOf } from "./foto";
 
 /*
  * LafPOS gün sonunun otomasyonu (docs/LAFPOS.md › Gün sonu otomasyonu): LafPOS'un şubesinin (Marina, LAFPOS_BRANCH_ID)
@@ -219,8 +219,10 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
       // Rapor yokken (sayım yok) eklenen gün sonu fotoğrafları şimdi bağlanır; yazarkasa alanları geldiyse sunucu sütunları
       row = (await linkPendingPhotos(tx, row, state.pendingPhotos, now)).row;
       if (row.okcZNo && row.okcTotal !== null) row = await serverColumns(tx, row);
-      const check = await photoCheckOf(tx, row, device, now);
+      const check = await photoCheckOf(tx, row, { ...device, z: day.z }, now);
       await setState({ reportId: row.id, autoValues: next, pendingPhotos: [], photoCheck: check, missing: missingFor((await dayPhotoIds(tx, row.id)).length, check) });
+      // LafPOS yazarkasa Z no'su göndermediyse bekleyen fotoğrafta (Pavo'nun detaylı Z'si) okunan
+      await applyPhotoZNo(tx, row, check, now);
       return "written";
     }
 
@@ -234,8 +236,9 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
     const attached = (await dayPhotoIds(tx, prev.id)).length;
     if (!merged.changed.length) {
       // Pavo sonucu geldi ama rakam aynı (ya da elle düzeltildi): karşılaştırma yine yenilenir (Pavo'nun batch'leri)
-      const check = await photoCheckOf(tx, prev, device, now);
+      const check = await photoCheckOf(tx, prev, { ...device, z: day.z }, now);
       await setState({ autoValues: merged.auto, photoCheck: check, missing: missingFor(attached, check) });
+      await applyPhotoZNo(tx, prev, check, now);
       return "unchanged";
     }
     await tx.insert(s.cashReportRevisions).values({
@@ -264,8 +267,9 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
       action: "Kasa raporu güncellendi (LafPOS otomatik)",
       detail: `${longDateTR(date)}: ${changesText(changes)}${merged.kept.length ? ` · elle düzeltilen korundu: ${merged.kept.length} alan` : ""}`,
     });
-    const check = await photoCheckOf(tx, row, device, now);
+    const check = await photoCheckOf(tx, row, { ...device, z: day.z }, now);
     await setState({ autoValues: merged.auto, photoCheck: check, missing: missingFor(attached, check) });
+    await applyPhotoZNo(tx, row, check, now);
     return "updated";
   });
 }

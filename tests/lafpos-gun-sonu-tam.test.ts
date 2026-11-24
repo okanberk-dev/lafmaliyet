@@ -8,13 +8,26 @@
 // kartla cari tahsilatı 195; Pavo gün ortasında 000278 = 240, kapanıştan sonra 000279 = 755: günün bankası 995.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { dayTasks, type CashLite, type DayFacts } from "../src/app/panel/bugun/logic";
 import { computeCash, withCardExtra } from "../src/lib/cash-report";
 import { pavoView } from "../src/lib/lafpos/bank-pos";
 import { parsePosDay, type BankPos, type PosDayZ, type PosOkc } from "../src/lib/lafpos/day";
-import { lafposPhotoCheck, lafposPhotoDone, lafposPhotoNeed, LAFPOS_PHOTO_TEXT, photoCheckText, staffPhotoLine } from "../src/lib/lafpos/foto";
+import {
+  LAFPOS_PHOTO_TEXT,
+  LAFPOS_STAFF_DESCRIPTION,
+  lafposPhotoCheck,
+  lafposPhotoDone,
+  lafposPhotoLabel,
+  lafposPhotoNeed,
+  photoCheckText,
+  staffAutoNote,
+  staffPhotoDiffs,
+  staffPhotoLine,
+} from "../src/lib/lafpos/foto";
 import { lafposDayDetail } from "../src/lib/lafpos/gun-ayrinti";
 import { autoMissing, autoValuesOf, bankPosAuto, dayHash, mergeAuto, renderDayEnd, type AutoValues, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
 import { lafposDayOf } from "../src/lib/lafpos/prefill";
@@ -203,7 +216,9 @@ test("Yazarkasa: LafPOS'un cihaz belgelerinden; Pavo'da (Z basmaz) Z no'suz eksi
 
 test("Eksikler: cihaz boşlukları ve fotoğraf (Pavo fişi; Z basan cihazda Z de) eklenene kadar", () => {
   assert.deepEqual(lafposPhotoNeed({ bankPos: OK, okc: OKC }), { slip: true, z: false, count: 1 });
-  assert.deepEqual(lafposPhotoNeed({ bankPos: OK, okc: { ...OKC, zReport: true } }), { slip: true, z: true, count: 2 });
+  // Pavo istenince detaylı Z basar (sahibin yanıtı, 24 Kasım): tek fotoğraf; LafPOS'un `zReport`'u (Pavo için false) ölçü değil
+  assert.deepEqual(lafposPhotoNeed({ bankPos: OK, okc: { ...OKC, zReport: true } }), { slip: true, z: false, count: 1 });
+  assert.deepEqual(lafposPhotoNeed({ bankPos: OK, okc: { ...OKC, provider: "tokenx", zReport: true } }), { slip: true, z: true, count: 2 });
   assert.deepEqual(lafposPhotoNeed({ bankPos: null, okc: null }), { slip: false, z: false, count: 0 });
   assert.deepEqual(autoMissing(Z, { bankPos: FAILED, okc: OKC }, { attached: 0 }), ["bankPos", "photo"]);
   assert.deepEqual(autoMissing(Z, { bankPos: OK, okc: OKC }, { attached: 1 }), []);
@@ -427,7 +442,7 @@ test("Bugün: LafPOS gününün raporu fotoğraf bekliyorsa personelin işi 'Gü
     stock: { month: "2026-11", counted: 40, total: 40, prevMonth: "2026-10", prevHasData: true, prevCounted: 40, prevTotal: 40 },
   });
   const pending = dayTasks(facts(r({ lafposPhoto: "pending" }))).find((t) => t.key === "kasa")!;
-  assert.deepEqual([pending.title, pending.status, pending.detail, pending.action], ["Gün sonu fotoğrafı", "todo", "Pavo gün sonu fişinin fotoğrafını ekleyin", "Fotoğraf ekle"]);
+  assert.deepEqual([pending.title, pending.status, pending.detail, pending.action], ["Gün sonu fotoğrafı", "todo", "Pavo'dan gün sonu fişini (detaylı Z) alın ve fotoğrafını ekleyin", "Fotoğraf ekle"]);
   const done = dayTasks(facts(r({ lafposPhoto: "done" }))).find((t) => t.key === "kasa")!;
   assert.equal(done.status, "done");
   assert.match(done.detail, /Fotoğraf alındı/);
@@ -485,4 +500,96 @@ test("Gün sonu e-postası: Banka POS (batch'leriyle ya da tam hata metniyle), y
   assert.doesNotMatch(t, /panelde tamamlanacak/i);
   const failed = plain(renderDayEnd({ ...m, bankPos: FAILED }).text);
   assert.match(failed, /Banka POS: boş · Banka POS: Pavo gün sonu alınamadı \(hata 5085/);
+});
+
+/**
+ * Pavo'nun detaylı Z'si (sahibin yanıtı, 24 Kasım 2026: "Pavo cihazdan fiş isteyince veriyor, Z olarak detaylı"): tek
+ * fişte banka gün sonu (batch'ler) ve Z'nin rakamları (Z no, toplam, nakit, kart, yemek kartı / diğer, KDV)
+ */
+const detailedZ = (o: { card?: number; zNo?: string | null } = {}) =>
+  slipRaw([{ no: "000278", net: 240 }, { no: "000279", net: 755 }], {
+    documentType: "z_report",
+    title: "Z RAPORU",
+    zNo: o.zNo === null ? { text: null, value: null, confidence: "high" } : { text: o.zNo ?? "0007", value: Number(o.zNo ?? 7), confidence: "high" },
+    dailyTotal: amt(1_190),
+    payments: [
+      { label: "NAKİT", count: null, amount: amt(390), kind: "cash" },
+      { label: "KREDİ KARTI", count: null, amount: amt(o.card ?? 800), kind: "card" },
+    ],
+    kdvGroups: [{ rate: 10, total: amt(1_190), vat: amt(108.18), base: null }],
+  });
+
+test("Pavo detaylı Z: batch'ler ve Z rakamları LafPOS'u tutuyorsa uyumlu; LafPOS Z no göndermediyse fotoğraftaki yazılır (yöneticiye 'fotoğraftan')", () => {
+  const c = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: detailedZ(), error: null }], bankPos: OK, okc: OKC, report: { ...REPORT, okcOther: 0, lafposZNo: null } }, NOW);
+  assert.equal(c.state, "uyumlu", JSON.stringify(c.rows));
+  const labels = c.rows.map((r) => r.label);
+  for (const l of ["Batch no", "Banka POS toplamı", "Yazarkasa Z no", "Yazarkasa toplamı", "Yazarkasa nakdi", "Yazarkasa kartı", "Yazarkasa KDV"]) assert.ok(labels.includes(l), `${l}: ${labels.join(", ")}`);
+  assert.equal(c.zNoFromPhoto, "0007");
+  // Aynı fişin iki fotoğrafı: batch'ler iki kez sayılmaz, Z'ler birlikte tutar
+  const twice = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: detailedZ(), error: null }, { photoId: 2, raw: detailedZ(), error: null }], bankPos: OK, okc: OKC, report: { ...REPORT, lafposZNo: null } }, NOW);
+  assert.equal(twice.state, "uyumlu", JSON.stringify(twice.issues));
+  assert.equal(twice.zNoFromPhoto, "0007");
+  // LafPOS'un Z no'su varsa fotoğraftaki yazılmaz, yalnız karşılaştırılır
+  const sent = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: detailedZ(), error: null }], bankPos: OK, okc: OKC, report: { ...REPORT, okcZNo: "7", lafposZNo: "7" } }, NOW);
+  assert.equal(sent.state, "uyumlu", JSON.stringify(sent.issues));
+  assert.equal(sent.zNoFromPhoto ?? null, null);
+  const other = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: detailedZ(), error: null }], bankPos: OK, okc: OKC, report: { ...REPORT, okcZNo: "8", lafposZNo: "8" } }, NOW);
+  assert.match(plain(other.issues.join(" | ")), /Yazarkasa Z no: fotoğrafta 0007; LafPOS'ta 8/);
+  // Z no'suz okunan detaylı Z: Z no satırı yok, yazılmaz
+  const noNo = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: detailedZ({ zNo: null }), error: null }], bankPos: OK, okc: OKC, report: { ...REPORT, lafposZNo: null } }, NOW);
+  assert.equal(noNo.state, "uyumlu", JSON.stringify(noNo.issues));
+  assert.equal(noNo.zNoFromPhoto ?? null, null);
+});
+
+test("Pavo detaylı Z: kart farkı yöneticinin uyarısıdır; personel yalnız 'Fotoğraf alındı' görür", () => {
+  const c = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: detailedZ({ card: 850 }), error: null }], bankPos: OK, okc: OKC, report: { ...REPORT, lafposZNo: null } }, NOW);
+  assert.equal(c.state, "fark");
+  assert.match(plain(c.issues.join(" | ")), /Yazarkasa kartı: fotoğrafta 850 ₺; LafPOS'ta 800 ₺/);
+  assert.match(plain(photoCheckText(c, lafposPhotoNeed({ bankPos: OK, okc: OKC }), 1)), /LafPOS'tan farklı: .*Yazarkasa kartı/);
+  // Personelin satırı farkı söylemez
+  assert.equal(staffPhotoLine(lafposPhotoNeed({ bankPos: OK, okc: OKC }), 1, c), LAFPOS_PHOTO_TEXT.done);
+  // Kart satırı basmayan cihaz (yalnız banka adları): banka satırlarının toplamı kart sayılır
+  const sub = detailedZ();
+  sub.payments = [
+    { label: "NAKİT", count: null, amount: amt(390), kind: "cash" },
+    { label: "GARANTI", count: null, amount: amt(800), kind: "bank_subline" },
+  ];
+  const bySub = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw: sub, error: null }], bankPos: OK, okc: OKC, report: { ...REPORT, lafposZNo: null } }, NOW);
+  assert.equal(bySub.state, "uyumlu", JSON.stringify(bySub.issues));
+});
+
+test("Personel LafPOS'un otomatik gününde fotoğraf ↔ rapor farkını görmez (eski 'Fotoğraftan farklı yazılan' yolu); yönetici ve ModPOS günü eskisi gibi", () => {
+  const diffs = [{ field: "bankPos" }];
+  assert.deepEqual(staffPhotoDiffs(diffs, { admin: false, lafposAuto: true }), []);
+  assert.equal(staffPhotoDiffs(null, { admin: false, lafposAuto: true }), null);
+  assert.deepEqual(staffPhotoDiffs(diffs, { admin: true, lafposAuto: true }), diffs);
+  assert.deepEqual(staffPhotoDiffs(diffs, { admin: false, lafposAuto: false }), diffs);
+});
+
+test("Personelin LafPOS günü metinleri: yalnız fotoğraf; notun yönetici yönergesi yerine kısa nötr satır; fotoğrafın adı 'Pavo gün sonu fişi'", () => {
+  assert.equal(LAFPOS_STAFF_DESCRIPTION, "Rakamlar LafPOS'tan geldi; Pavo'dan gün sonu fişini (detaylı Z) alıp fotoğrafını ekleyin.");
+  assert.equal(LAFPOS_PHOTO_TEXT.slip, "Pavo'dan gün sonu fişini (detaylı Z) alın ve fotoğrafını ekleyin");
+  const note =
+    "LafPOS gün sonundan otomatik yazıldı. Kapanış notu (LafPOS): Kasa föyü sayıldı. Eksik: Banka POS: Pavo gün sonu alınamadı (hata 5085: Günsonu alınamadı (kod 5085)); LafPOS'ta Yönetim › Yazarkasa POS › Cihazda gün sonu al.";
+  const staff = staffAutoNote(note, { bankPos: null, okcTotal: 1_190 })!;
+  assert.equal(staff, "LafPOS gün sonundan otomatik yazıldı. Kapanış notu (LafPOS): Kasa föyü sayıldı. Banka POS henüz gelmedi; yönetici ilgileniyor.");
+  assert.doesNotMatch(staff, /Yönetim ›|Cihazda gün sonu|hata 5085/);
+  // Yönetici Banka POS'u yazdıysa satır yok; eksik yoksa not aynen
+  assert.equal(staffAutoNote(note, { bankPos: 995, okcTotal: 1_190 }), "LafPOS gün sonundan otomatik yazıldı. Kapanış notu (LafPOS): Kasa föyü sayıldı.");
+  assert.equal(staffAutoNote("LafPOS gün sonundan otomatik yazıldı.", { bankPos: 995, okcTotal: 1_190 }), "LafPOS gün sonundan otomatik yazıldı.");
+  assert.equal(staffAutoNote(null, { bankPos: null, okcTotal: null }), null);
+  assert.match(staffAutoNote("LafPOS gün sonundan otomatik yazıldı. Eksik: Yazarkasa: LafPOS'ta cihaz belgesi yok.", { bankPos: 995, okcTotal: null })!, /Yazarkasa belgeleri henüz gelmedi; yönetici ilgileniyor\.$/);
+  // Fotoğrafın adı: Pavo gününde "Pavo gün sonu fişi"; "Yazarkasa Z" yalnız mali Z basan cihazda
+  assert.equal(lafposPhotoLabel(lafposPhotoNeed({ bankPos: OK, okc: OKC })), "Pavo gün sonu fişi");
+  assert.equal(lafposPhotoLabel(lafposPhotoNeed({ bankPos: OK, okc: { ...OKC, provider: "tokenx", zReport: true } })), "Yazarkasa Z");
+});
+
+test("Kasa sayfası: personelin LafPOS gününde alt başlık LafPOS metni, fotoğraf farkı ve not personelden süzülür (kaynak denetimi)", () => {
+  const page = readFileSync(join(process.cwd(), "src/app/panel/kasa/page.tsx"), "utf8");
+  const form = readFileSync(join(process.cwd(), "src/app/panel/kasa/cash-form.tsx"), "utf8");
+  assert.ok(page.includes("LAFPOS_STAFF_DESCRIPTION"), "alt başlık");
+  assert.ok(page.includes("staffPhotoDiffs("), "WhatsApp metninin fotoğraf farkı");
+  assert.ok(page.includes("staffAutoNote("), "eski LafPOS gününün notu");
+  assert.ok(form.includes("staffPhotoDiffs("), "Fotoğraflar bloğunun farkı");
+  assert.ok(form.includes("staffAutoNote("), "kayıtlı raporun notu");
 });

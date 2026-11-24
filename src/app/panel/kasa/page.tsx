@@ -37,6 +37,7 @@ import { genitive } from "@/lib/recipe-change";
 import { cumulativeRejectedText, okcCumulativeToStore, okcHasFigures, okcMonth, type OkcPrev } from "@/lib/okc-z";
 import { photoDiffs, savedFields, suspiciousDiffs, type CashReading } from "@/lib/photo-read/kasa";
 import { okcReadFigures } from "@/lib/photo-read/okc";
+import { LAFPOS_STAFF_DESCRIPTION, lafposPhotoLabel, staffAutoNote, staffPhotoDiffs } from "@/lib/lafpos/foto";
 import { LAFPOS_NO_COUNT_TEXT } from "@/lib/lafpos/prefill";
 import { addDays, dayLocativeTR, isCalendarDate, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -124,10 +125,13 @@ function more(email: boolean) {
   );
 }
 
-/** Başlık iki rolün açtığı sayfada içerikten önce çizilir: rol okunana kadar personelin cümlesi (en dar olan) */
-async function CashDescription() {
+/**
+ * Başlık iki rolün açtığı sayfada içerikten önce çizilir: rol okunana kadar personelin cümlesi (en dar olan). LafPOS'un
+ * otomatik gününde (gün sonu tam) personel rakam girmez: alt başlık yalnız fotoğrafı ister
+ */
+async function CashDescription({ searchParams }: { searchParams: PageProps<"/panel/kasa">["searchParams"] }) {
   const user = await requireUser();
-  if (user.role !== "admin") return STAFF_DESCRIPTION;
+  if (user.role !== "admin") return (await staffLafposDescription(searchParams)) ?? STAFF_DESCRIPTION;
   const mailTo = await cashMailTo(await loadCashSettings());
   return (
     <>
@@ -144,7 +148,7 @@ export default function CashPage({ searchParams }: PageProps<"/panel/kasa">) {
         path="/panel/kasa"
         description={
           <Suspense fallback={STAFF_DESCRIPTION}>
-            <CashDescription />
+            <CashDescription searchParams={searchParams} />
           </Suspense>
         }
       />
@@ -156,6 +160,18 @@ export default function CashPage({ searchParams }: PageProps<"/panel/kasa">) {
 }
 
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+
+/**
+ * Personelin açtığı gün LafPOS'un otomatik raporlu (ya da sayım bekleyen) günüyse alt başlığın LafPOS metni; değilse null
+ * (ModPOS günü, elle girilen rapor: eski metin). Gün seçimi cashContentFor'unki gibi (bugün, dün ya da son 14 günün biri)
+ */
+async function staffLafposDescription(searchParams: PageProps<"/panel/kasa">["searchParams"]): Promise<string | null> {
+  const gun = pick((await searchParams).gun);
+  const today = businessDate();
+  const date = isDay(gun) && gun <= today && (staffCanReport(gun) || staffLateDay(gun)) ? gun : today;
+  const state = await lafposPhotoState(getDb(), date, await currentTillBranch(), "staff").catch(() => null);
+  return state ? LAFPOS_STAFF_DESCRIPTION : null;
+}
 /** LafPOS günü değil (geçiş günü boş ya da gün ondan önce): form ModPOS'a göre */
 const NO_LAFPOS = { lafpos: false, day: null } as const;
 /** Takvimde olan gün (KP-09: ?gun=2026-02-30 formu açmaz, ?gun=2026-00-10 sayfayı çökertmez; bugüne düşer) */
@@ -341,15 +357,20 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const showPhotos = canEdit;
   // Personel: rapora bağlı Z / POS fotoğrafının kaldırılmasını isteyebilir mi (fotoğraf başına; tek Z ya da okuma farkı varsa hayır)
   const removal = !admin && report && showPhotos && photoInfo?.photos.length ? await photoRemovalStates(report, photoInfo.photos) : undefined;
+  // LafPOS'un otomatik gününde personel fotoğraf ↔ rapor farkını ve notun yönetici yönergesini görmez (metinde de)
+  const staffLafposAuto = !admin && Boolean(lafposPhoto?.auto);
   const whatsapp = report
     ? (() => {
-        const text = whatsappText(report, {
+        const extras = extrasFrom(photoInfo, outs, report, lafposState);
+        const shown = staffLafposAuto ? { ...report, note: staffAutoNote(report.note, report) } : report;
+        const text = whatsappText(shown, {
           by: report.submittedByName,
           revision: report.revision,
           waste,
           // Birden çok kasa açıkken başlıkta kasanın şubesi (e-postadaki gibi)
           branchName: view.branch?.name ?? null,
-          ...extrasFrom(photoInfo, outs, report, lafposState),
+          ...extras,
+          photoDiffs: staffPhotoDiffs(extras.photoDiffs ?? null, { admin, lafposAuto: staffLafposAuto }),
           ...integrityOf(report, carry, next, revisions),
         });
         return { text, link: whatsappLink(text, settings.whatsapp) };
@@ -435,6 +456,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
       lafpos={lafposState.day}
       lafposMode={lafposState.lafpos}
       lafposAuto={lafposPhoto?.auto ?? false}
+      // LafPOS gününün gün sonu fotoğrafının adı ("Banka POS Z" yerine "Pavo gün sonu fişi")
+      lafposPhotoLabel={lafposPhoto ? lafposPhotoLabel(lafposPhoto.need) : undefined}
       // Kümülatif ve yazarkasa dışı tahsilat yalnız yöneticiye: personelin yükünde anahtarı da yok
       {...(admin && report ? { okcAdmin: okcAdminView(report, photoInfo?.readings ?? [], prevOkc.cum ?? null) } : {})}
     />
@@ -814,7 +837,7 @@ async function StaffLafposDay({ date, view, photo }: { date: string; view: KasaV
         <Card>
           <CardHeader icon={<ReceiptText />} title={`Kasa raporu · ${longDateTR(date)}`} description="LafPOS'un gün sonundan" />
           <div className="px-5 pb-5">
-            <CashBreakdown report={report} audience="staff" kasa="LafPOS" />
+            <CashBreakdown report={{ ...report, note: staffAutoNote(report.note, report) }} audience="staff" kasa="LafPOS" />
           </div>
         </Card>
       ) : (

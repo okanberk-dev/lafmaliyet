@@ -440,10 +440,17 @@ Banka POS Pavo'nun kendi gün sonlarından (günün bütün batch'lerinin toplam
 belgelerinden kendiliğinden yazılır; eski "Uydurma değer yok: Banka POS ve yazarkasa alanları boş kalır" kuralı LafPOS
 günlerinde bunun yerine geçti (Tuzla / ModPOS günleri değişmedi). Cihazın rakamı yoksa (Pavo alınamadı ya da belirsiz,
 cihaz yok) alan boş kalır ve not tam nedenini yazar, "panelden ekleyin" demez. **Personelin tek işi gün sonu
-fotoğrafıdır:** rapor personelde salt okunur (Düzenle, silme isteği, WhatsApp ve metin yok; düzeltme LafPOS'ta), "Gün
-sonu fotoğrafı" kartından Pavo'nun gün sonu fişi (mali Z basan cihazda yazarkasa Z'si de) eklenir; kayıt, sürüm, sayan ve
-onay yok, günden 14 gün içinde. Fotoğraf hiçbir alanı yazmaz: okunuşu LafPOS'la karşılaştırılır, fark yöneticinin
-uyarısıdır (Kasa gün görünümü, zil, gün sonu e-postası, ay satırının rozeti). Ayrıntı:
+fotoğrafıdır:** rapor personelde salt okunur (Düzenle, silme isteği, WhatsApp ve metin yok; düzeltme LafPOS'ta), alt
+başlık "Rakamlar LafPOS'tan geldi; Pavo'dan gün sonu fişini (detaylı Z) alıp fotoğrafını ekleyin." ve "Gün sonu
+fotoğrafı" kartından tek fotoğraf eklenir: Pavo istenince detaylı Z basar (sahibin yanıtı, 24 Kasım 2026), banka gün sonu
+da Z'nin rakamları da aynı fişte (ayrı mali Z basan cihazda yazarkasa Z'si de); kayıt, sürüm, sayan ve onay yok, günden
+14 gün içinde. Fotoğrafın adı "Pavo gün sonu fişi". Fotoğraf hiçbir alanı yazmaz (LafPOS yazarkasa Z no göndermediyse
+okunan Z no boş alana yazılır, yöneticiye "fotoğraftan okundu"): okunuşu, batch'ler Banka POS'la, Z'nin rakamları (Z no,
+toplam, nakit, kart, yemek kartı / diğer, KDV) yazarkasa alanlarıyla karşılaştırılır; fark yalnız yöneticinin uyarısıdır
+(Kasa gün görünümü, zil, gün sonu e-postası, ay satırının rozeti). Personel farkı görmez: eski "Fotoğraftan farklı
+yazılan" kutusu ve WhatsApp satırı LafPOS'un otomatik gününde personelden süzülür, notun yönetici yönergesi yerine "Banka
+POS henüz gelmedi; yönetici ilgileniyor" yazar. Pavo'nun gün sonu alınamadıysa Banka POS boş kalır, föyde personelin
+yazdığı kart sayımı onu doldurmaz. Ayrıntı:
 [LAFPOS.md › Gün sonu otomasyonu](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026).
 
 ## Düzeltmeler

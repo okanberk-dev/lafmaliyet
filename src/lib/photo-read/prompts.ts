@@ -52,7 +52,7 @@ ${categories.map((c) => `${c.id} · ${c.name} · ${c.section}`).join("\n")}`;
 export const OKC_TASK = (day: string) => `This should be the fiscal Z report (Z RAPORU) of the café's cash register POS (yeni nesil ÖKC, yazarkasa POS). Expected business day: ${day} (a Z printed after midnight but before 05:00 belongs to the day before). The same paper strip may also carry the bank end-of-day slip printed right after the Z.
 
 documentType:
-- z_report: title Z RAPORU / Z GÜNLÜK RAPORU / Z-GÜN SONU RAPORU with fiscal marks: the MF logo with a registry number, EKÜ NO, a VERGİ DÖKÜMÜ with TOPKDV, usually KÜM. lines.
+- z_report: title Z RAPORU / Z GÜNLÜK RAPORU / Z-GÜN SONU RAPORU with fiscal marks: the MF logo with a registry number, EKÜ NO, a VERGİ DÖKÜMÜ with TOPKDV, usually KÜM. lines. The Pavo POS prints, on request, a detailed end-of-day slip (GÜN SONU / DETAYLI Z) that carries the Z figures (Z NO, sales total, payment lines, KDV) and the bank batch section on the same paper: that is z_report; read the Z figures and put the bank section in batches.
 - x_report: X RAPORU or another intraday report (no new Z number; may print SON Z-SAYISI).
 - period_report: MALİ HAFIZA / MALİ BELLEK RAPORU, İKİ Z ARASI, İKİ TARİH ARASI, EKÜ RAPORU, GÜNLÜK / AYLIK SATIŞ RAPORU.
 - batch_slip: only a bank end-of-day slip (GÜN SONU, BATCH / GRUP KAPAMA, MUTABAKAT; no KDV, no Z NO, no MF logo).
@@ -71,5 +71,5 @@ Reading the Z:
 - voids: FİŞ İPTAL amount. discounts: İNDİRİM total. They are already netted out of the total: copy, never subtract.
 - zNo: Z NO / Z SAYAÇ / Z SAYACI. Not FİŞ NO (the Z's own document number), not EKÜ NO, not the registry number, not BATCH NO.
 - receiptCount: MÜŞTERİ FİŞ ADEDİ, MALİ FİŞ ADEDİ or FİŞ SAYISI. Not TOPLAM FİŞ ADEDİ when slip or bilgi fişi counts are listed.
-- batches: one entry per bank end-of-day slip in the photo (alone, or printed after the Z). A slip printed after the Z is not a reason for "multiple_documents".
+- batches: one entry per bank end-of-day slip or bank batch section in the photo (alone, printed after the Z, or inside the Pavo's detailed end-of-day slip; BATCH NO, bank, sales, refunds, net). A slip printed after the Z is not a reason for "multiple_documents".
 - Two Z reports, or Z reports of two devices, in one photo: add "multiple_documents" and read the one dated ${day}.`;

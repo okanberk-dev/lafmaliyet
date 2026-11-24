@@ -65,6 +65,20 @@ const slip = (batches: { no: string; net: number }[], date = DAY) => ({
   issues: [],
 });
 
+/** Pavo'nun istenince bastığı detaylı Z'nin okunuşu: banka gün sonu (batch 0001) ve Z rakamları aynı fişte */
+const detailed = (o: { card?: number } = {}) => ({
+  ...slip([{ no: "0001", net: 4_160 }]),
+  documentType: "z_report",
+  title: "Z RAPORU",
+  zNo: { text: "0007", value: 7, confidence: "high" },
+  dailyTotal: amt(5_215),
+  payments: [
+    { label: "NAKİT", count: null, amount: amt(1_055), kind: "cash" },
+    { label: "KREDİ KARTI", count: null, amount: amt(o.card ?? 4_160), kind: "card" },
+  ],
+  kdvGroups: [{ rate: 10, total: amt(5_215), vat: amt(474.09), base: null }],
+});
+
 describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DATABASE_URL yok" }, () => {
   let admin: postgres.Sql;
   let db: DB;
@@ -172,7 +186,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DA
     );
     // Personelin sayfası: istenen tek fotoğraf
     const st = (await foto.lafposPhotoState(db, DAY, LAFPOS_SUBE, "staff"))!;
-    assert.deepEqual([st.auto, st.need.count, st.attached, st.done, st.line, st.check], [true, 1, 0, false, "Pavo gün sonu fişinin fotoğrafını ekleyin", null]);
+    assert.deepEqual([st.auto, st.need.count, st.attached, st.done, st.line, st.check], [true, 1, 0, false, "Pavo'dan gün sonu fişini (detaylı Z) alın ve fotoğrafını ekleyin", null]);
   });
 
   test("Personel yalnız fotoğraf ekler: kayıt, sürüm, sayan ve onay yok; okunuş LafPOS'la karşılaştırılır (fark yöneticinin)", async () => {
@@ -292,6 +306,41 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DA
     assert.ok((await push({ bankPos: okBank(4_150) })).ok);
     await gun.writeAutoReport(db, DAY, NOW);
     assert.equal((await report())?.bankPos, 4_200, "elle yazılan kalır");
+  });
+
+  test("Pavo detaylı Z: tek fotoğraf; batch ve Z rakamları LafPOS'la karşılaştırılır, LafPOS Z no göndermediyse fotoğraftaki yazılır (LafPOS'unki gelince o geçer); kart farkı yalnız yöneticiye", async () => {
+    assert.ok((await push({}, { okcZNo: null })).ok);
+    await gun.writeAutoReport(db, DAY, NOW);
+    assert.equal((await report())?.okcZNo, null);
+    const staffState = (await foto.lafposPhotoState(db, DAY, LAFPOS_SUBE, "staff"))!;
+    assert.deepEqual(staffState.need, { slip: true, z: false, count: 1 }, "Pavo gününde tek fotoğraf (zReport false olsa da)");
+    assert.equal(staffState.line, "Pavo'dan gün sonu fişini (detaylı Z) alın ve fotoğrafını ekleyin");
+    const before = (await report())!;
+    const id = await photo(detailed());
+    const res = await foto.attachLafposDayPhotoCore(db, ayse, { date: DAY, branchId: LAFPOS_SUBE, photoId: id }, NOW);
+    assert.equal(res.line, "Fotoğraf alındı");
+    const st = (await state())!;
+    assert.equal(st.photoCheck?.state, "uyumlu", JSON.stringify(st.photoCheck));
+    assert.equal(st.photoCheck?.zNoFromPhoto, "0007");
+    assert.deepEqual(st.missing, [], "tek fotoğrafla tamam");
+    const rep = (await report())!;
+    assert.deepEqual([rep.okcZNo, rep.revision, rep.submittedByName, rep.bankPos], ["0007", before.revision, "LafPOS (otomatik)", 4_160], "boş Z no fotoğraftan; sürüm yok");
+    assert.equal((st.autoValues as Record<string, unknown>).okcZNo, "0007");
+    assert.equal((await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Yazarkasa Z no fotoğraftan yazıldı (LafPOS günü)"))).length, 1);
+    // Kartı farklı okunan ikinci fotoğraf: yöneticiye fark, personele yine "alındı" ve karşılaştırma yok
+    const res2 = await foto.attachLafposDayPhotoCore(db, ayse, { date: DAY, branchId: LAFPOS_SUBE, photoId: await photo(detailed({ card: 4_100 })) }, NOW);
+    assert.equal(res2.line, "Fotoğraf alındı");
+    const admin2 = (await foto.lafposPhotoState(db, DAY, LAFPOS_SUBE, "admin"))!.check!;
+    assert.equal(admin2.state, "fark");
+    assert.ok(admin2.issues.some((i) => i.startsWith("Yazarkasa kartı")), JSON.stringify(admin2.issues));
+    assert.equal((await foto.lafposPhotoState(db, DAY, LAFPOS_SUBE, "staff"))?.check, null, "personel görmez");
+    // LafPOS sonradan Z no gönderdi: onunki geçer (fotoğraftaki elle düzeltilmiş sayılmaz), fark yöneticiye
+    assert.ok((await push({}, { okcZNo: "12" })).ok);
+    await gun.writeAutoReport(db, DAY, NOW);
+    assert.equal((await report())?.okcZNo, "12");
+    const st3 = (await state())!;
+    assert.equal(st3.photoCheck?.zNoFromPhoto ?? null, null);
+    assert.ok(st3.photoCheck?.issues.some((i) => i.startsWith("Yazarkasa Z no")), JSON.stringify(st3.photoCheck?.issues));
   });
 
   test("Pavo alınamadıysa yönetici fotoğrafta okunan toplamı 'Banka POS'a yaz'la yazar; sonraki otomatik değer ezmez", async () => {

@@ -73,8 +73,16 @@ export async function photoReads(db: Reader, ids: readonly number[]): Promise<La
   });
 }
 
-/** Raporun fotoğraf(lar)ını LafPOS'la karşılaştırır; fotoğraf yoksa null */
-export async function photoCheckOf(db: Reader, report: CashReportRow, device: { bankPos: BankPos | null; okc: PosOkc | null }, now = new Date()): Promise<LafposPhotoCheck | null> {
+/**
+ * Raporun fotoğraf(lar)ını LafPOS'la karşılaştırır; fotoğraf yoksa null. `device.z` günün Z'si: LafPOS'un yazarkasa Z
+ * no'su (`okcZNo`) yoksa fotoğrafta okunan Z no `zNoFromPhoto` olur (applyPhotoZNo yazar)
+ */
+export async function photoCheckOf(
+  db: Reader,
+  report: CashReportRow,
+  device: { bankPos: BankPos | null; okc: PosOkc | null; z?: Pick<PosDayZ, "okcZNo"> | null },
+  now = new Date(),
+): Promise<LafposPhotoCheck | null> {
   const ids = await dayPhotoIds(db, report.id);
   if (!ids.length) return null;
   return lafposPhotoCheck(
@@ -90,11 +98,38 @@ export async function photoCheckOf(db: Reader, report: CashReportRow, device: { 
         okcCash: report.okcCash ?? null,
         okcCard: report.okcCard ?? null,
         okcMealCard: report.okcMealCard ?? null,
+        okcOther: report.okcOther ?? null,
         okcVat: report.okcVat ?? null,
+        ...(device.z ? { lafposZNo: device.z.okcZNo ?? null } : {}),
       },
     },
     now,
   );
+}
+
+/**
+ * Fotoğrafta (Pavo'nun detaylı Z'si) okunan Z no'yu raporun boş yazarkasa Z no'suna yazar: yalnız LafPOS göndermediyse
+ * (`check.zNoFromPhoto`) ve raporda Z no yoksa. Sürüm yok (boş alan doluyor, rakam değişmiyor); günün son otomatik
+ * değerine de yazılır: LafPOS sonradan Z no gönderirse onunki geçer (elle düzeltilmiş sayılmaz). Sunucu sütunları
+ * (kümülatif) yeniden hesaplanır, işlem geçmişine düşer. Çağıran durum satırını yazdıktan sonra çağırır
+ */
+export async function applyPhotoZNo(tx: CashTx, row: CashReportRow, check: LafposPhotoCheck | null, now = new Date()): Promise<CashReportRow> {
+  const no = check?.zNoFromPhoto ?? null;
+  if (!no || row.okcZNo) return row;
+  const [updated] = await tx.update(s.cashReports).set({ okcZNo: no }).where(eq(s.cashReports.id, row.id)).returning();
+  const [state] = await tx
+    .select({ autoValues: s.lafposDayEnds.autoValues })
+    .from(s.lafposDayEnds)
+    .where(and(eq(s.lafposDayEnds.date, row.date), eq(s.lafposDayEnds.branchId, row.branchId)))
+    .limit(1);
+  if (state?.autoValues) {
+    await tx
+      .update(s.lafposDayEnds)
+      .set({ autoValues: { ...state.autoValues, okcZNo: no }, updatedAt: now })
+      .where(and(eq(s.lafposDayEnds.date, row.date), eq(s.lafposDayEnds.branchId, row.branchId)));
+  }
+  await tx.insert(s.activityLog).values({ userName: "LafPOS (otomatik)", userId: null, action: "Yazarkasa Z no fotoğraftan yazıldı (LafPOS günü)", detail: `${longDateTR(row.date)}: Z no ${no}` });
+  return refreshServerColumns(tx, updated);
 }
 
 /** Fotoğrafı rapora bağlar (gün sonu fotoğrafı bölümü; rapor başına en çok 6, yazarkasa bölümüne en çok 3) */
@@ -194,6 +229,8 @@ export async function attachLafposDayPhotoCore(db: DB, me: CashActor, input: { d
       const row = already ? report : await refreshServerColumns(tx, report);
       attached = (await dayPhotoIds(tx, report.id)).length;
       check = await photoCheckOf(tx, row, device, now);
+      // LafPOS Z no göndermediyse fotoğrafta okunan Z no raporun boş alanına (yöneticiye "fotoğraftan okundu")
+      await applyPhotoZNo(tx, row, check, now);
     } else {
       if (!already) {
         if (pending.length >= MAX_OKC_PHOTOS) throw new UserError(OKC_PHOTOS_TEXT);
@@ -304,6 +341,7 @@ export async function setLafposBankPosCore(db: DB, me: CashActor, input: { date:
       .update(s.lafposDayEnds)
       .set({ photoCheck: check, missing: autoMissing(device.z, device, { attached, check }), updatedAt: now })
       .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
+    await applyPhotoZNo(tx, row, check, now);
     await tx.insert(s.activityLog).values({ userName: me.name, userId: me.id, action: "Banka POS fotoğraftan yazıldı (LafPOS günü)", detail: `${longDateTR(date)}: ${amount.toLocaleString("tr-TR")} ₺` });
   });
 }
