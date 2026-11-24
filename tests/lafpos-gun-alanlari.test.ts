@@ -20,7 +20,7 @@ import { vatMonthInputs } from "../src/lib/kdv";
 import { pavoView } from "../src/lib/lafpos/bank-pos";
 import { parsePosDay, posZSchema, type PosDayZ } from "../src/lib/lafpos/day";
 import { lafposDayDetail } from "../src/lib/lafpos/gun-ayrinti";
-import { autoValuesOf, dayEndNotes, dayEndSections, mergeAuto, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
+import { autoValuesOf, dayEndNotes, dayEndSections, dayHash, mergeAuto, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
 import { lafposMonthNotes, lafposMonthStatus, mergeSalesSources } from "../src/lib/lafpos/sales";
 import { IPTAL_ZAYI_REASON, iptalWasteLines, lafposCompKind, lafposIkramCheck, lafposLineKind, lafposListByKind, lafposReasonText, recordedOffRevenue } from "../src/lib/lafpos/ikram";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
@@ -436,6 +436,19 @@ test("Satışlar bandı: tutmayan ModPOS denetimi bilgi kutusu (uyarı tonu yaln
   const band = page.slice(page.indexOf("function LafposBand"));
   assert.match(band, /\{off\.map\(\(c\) => \(\s*<Notice key=\{c\.text\} tone="neutral" title=\{c\.text\} \/>/, "tutmayan denetim bilgi tonunda");
   assert.doesNotMatch(band.slice(0, band.indexOf("</div>")), /off\.map\(\(c\) => \(\s*<Notice key=\{c\.text\} tone="warn"/);
+});
+
+test("gün sonu e-postasının özeti: Faz 2 alanları özeti değiştirmez (yükseltmeden önce saklanıp sonra yeniden gönderilen gün \"Düzeltildi\" e-postası yollamaz); rakam değişince değişir", () => {
+  const r = parsePosDay(golden(), NOW);
+  assert.ok(r.ok, r.ok ? "" : r.field);
+  const { z, payments, ikram } = r.data;
+  // Eski panelin sakladığı gün: Faz 2 anahtarları atılmış (z.object)
+  const { listValue: _a, ikramTotal: _b, odenmezTotal: _c, zayiTotal: _d, vat: _e, openedAt: _f, closedAt: _g, okcZNo: _h, ...oldZ } = z;
+  const oldIkram = ikram.map(({ kind: _k, personKind: _p, ...rest }) => rest);
+  const before = dayHash({ z: oldZ, payments, ikram: oldIkram });
+  assert.equal(dayHash({ z, payments, ikram }), before, "aynı rakamlar, yalnız Faz 2 alanları eklendi");
+  assert.notEqual(dayHash({ z: { ...z, zTotal: z.zTotal + 1 }, payments, ikram }), before, "Z değişti");
+  assert.notEqual(dayHash({ z, payments, ikram: ikram.slice(1) }), before, "ikram listesi değişti");
 });
 
 // ---------------------------------------------------------------- Kasa gün görünümü ve gün sonu e-postası

@@ -143,9 +143,21 @@ export function autoValuesOfReport(r: Pick<CashReportFields, Exclude<AutoField, 
   return Object.fromEntries(AUTO_FIELDS.map((f) => [f, (r as Record<string, unknown>)[f] ?? null])) as AutoValues;
 }
 
-/** Günün içerik özeti (FNV-1a, 32 bit): aynı içerik yeniden gelirse e-posta yinelenmez */
+/** Z'nin ve ikram satırının Faz 2 anahtarları (23 Kasım 2026): günün özetine girmez */
+const FAZ2_Z_KEYS: ReadonlySet<string> = new Set(["listValue", "ikramTotal", "odenmezTotal", "zayiTotal", "vat", "openedAt", "closedAt", "okcZNo"]);
+const FAZ2_IKRAM_KEYS: ReadonlySet<string> = new Set(["kind", "personKind"]);
+const withoutKeys = (v: unknown, keys: ReadonlySet<string>): unknown =>
+  v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([k]) => !keys.has(k))) : v;
+
+/**
+ * Günün içerik özeti (FNV-1a, 32 bit): aynı içerik yeniden gelirse e-posta yinelenmez. Faz 2 anahtarları (Z'nin liste ve
+ * tür toplamları, KDV dökümü, açılış / kapanış anı, yazarkasa Z no'su; ikramın türü ve kişi türü) özete girmez: aynı
+ * rakamlarla yalnız onları ekleyen gönderim (yükseltmeden önce saklanıp sonra yeniden gönderilen gün) düzeltme değildir,
+ * "Düzeltildi" e-postası yollamaz. Bu anahtarlar öteki alanlardan türer: rakam değişince özet zaten değişir
+ */
 export function dayHash(day: { z: unknown; payments: unknown; ikram: unknown }): string {
-  const text = JSON.stringify([day.z, day.payments, day.ikram]);
+  const ikram = Array.isArray(day.ikram) ? day.ikram.map((l) => withoutKeys(l, FAZ2_IKRAM_KEYS)) : day.ikram;
+  const text = JSON.stringify([withoutKeys(day.z, FAZ2_Z_KEYS), day.payments, ikram]);
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
     h ^= text.charCodeAt(i);
