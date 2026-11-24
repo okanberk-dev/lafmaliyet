@@ -828,7 +828,8 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
 
 **Gün sonu e-postası** (`sendDayEndEmail`): kasa raporu alıcılarına (Kasa › Rapor alıcıları, e-posta açıksa), Tuzla'nın
 kasa e-postasıyla aynı liste; sabah e-postasının adresleri girmez (25 Kasım 2026'ya kadar girerdi: yalnız sabah e-postasını
-alan adres Marina'nın kasa farkını alıp Tuzla'nınkini almıyordu). Personel ve pasif hesabın adresi gönderimde düşer
+alan adres Marina'nın kasa farkını alıp Tuzla'nınkini almıyordu). Rapor alıcıları boş ya da kapalıysa e-posta susmasın
+diye etkin bildirim adreslerine gider (`dayEndRecipients`). Personel ve pasif hesabın adresi gönderimde düşer
 (`sendableRecipients`). Konu Tuzla'nın kasa e-postasının biçiminde: "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar ·
 120 ₺ eksik" (sonuç "kasa tutuyor", "120 ₺ eksik", "sayım yok"); Pavo ve fotoğraf e-postası da aynı başla başlar, gelen
 kutusunda günün e-postaları yan yana durur. İçerik: toplam satış, Z no ve fiş, indirim, ödeme

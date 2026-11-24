@@ -37,7 +37,7 @@ import { loadCashSettings } from "@/server/data/cash-reports";
 import { schema as s, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { APP_URL } from "@/server/notify/digest-template";
-import { sendableRecipients } from "@/server/notify/recipients";
+import { activeDigestEmails, sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail, type SendOptions } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
 import { strongRecheckDayPhotos, type StrongRecheckDeps } from "@/server/photo-read/lafpos";
@@ -397,14 +397,22 @@ async function dayTotal(db: DB, date: string, branchId: string, switchDay: strin
 /**
  * Gün sonu e-postasının alıcıları: Kasa › Rapor alıcıları (açıksa), Tuzla'nın kasa e-postasıyla aynı (src/server/cash/
  * report-email.ts). Sabah e-postasının adresleri girmez: yalnız sabah e-postasını alan adres (ör. muhasebeci) iki şubenin
- * kasa sonucunu da ya alır ya almaz. Personel ve pasif hesabın adresi düşer
+ * kasa sonucunu da ya alır ya almaz. Personel ve pasif hesabın adresi düşer.
+ *
+ * Rapor alıcıları boş ya da kapalıysa (bu dal yayına girmeden önce Marina'nın e-postası sabah adreslerine de gidiyordu)
+ * e-posta susmasın diye etkin bildirim adreslerine gider; alıcı listesi kurulunca yalnız ona döner.
  */
 export async function dayEndRecipients(db: DB): Promise<string[]> {
-  const cash = await loadCashSettings();
-  if (!cash.emailEnabled) return [];
+  const [cash, notify] = await Promise.all([loadCashSettings(), loadNotifySettings()]);
+  const own = cash.emailEnabled ? (await sendableRecipients(db, dedupe(cash.recipients))).to : [];
+  if (own.length) return own;
+  if (!notify.emailEnabled) return [];
+  return (await sendableRecipients(db, dedupe(await activeDigestEmails(db)))).to;
+}
+
+function dedupe(list: string[]): string[] {
   const seen = new Set<string>();
-  const unique = cash.recipients.filter((e) => (seen.has(emailKey(e)) ? false : (seen.add(emailKey(e)), true)));
-  return (await sendableRecipients(db, unique)).to;
+  return list.filter((e) => (seen.has(emailKey(e)) ? false : (seen.add(emailKey(e)), true)));
 }
 
 /** Çalışanların e-postasının türü: sayım varsa "alındı", yoksa "kasa sayılmadı" (her biri günde bir kez) */
@@ -514,7 +522,7 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
   try {
     const to = await dayEndRecipients(db);
     if (!to.length) {
-      await finish({ emailError: "Alıcı yok: Kasa › Rapor alıcıları boş ya da kapalı" });
+      await finish({ emailError: "Alıcı yok: Kasa › Rapor alıcıları ve bildirim e-postaları boş ya da kapalı" });
       return "off";
     }
     if (!isEmailConfigured()) {

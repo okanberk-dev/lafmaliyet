@@ -625,6 +625,23 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
     assert.match(sent[0].text, /Uyumlu/);
   });
 
+  test("alıcılar: Rapor alıcıları kapalı ya da boşsa e-posta susmaz, etkin bildirim adreslerine gider", async () => {
+    await db.execute(sql`TRUNCATE notification_recipients RESTART IDENTITY CASCADE`);
+    await db.insert(s.notificationRecipients).values([
+      { email: "muhasebe@ornek.com", active: true },
+      { email: "eski@ornek.com", active: false },
+    ]);
+    try {
+      assert.deepEqual(await gun.dayEndRecipients(db), ["sahip@ornek.com"], "liste kuruluysa yalnız o");
+      await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: false, whatsapp: null });
+      assert.deepEqual(await gun.dayEndRecipients(db), ["muhasebe@ornek.com"]);
+      await reports.saveCashSettings({ recipients: [], emailEnabled: true, whatsapp: null });
+      assert.deepEqual(await gun.dayEndRecipients(db), ["muhasebe@ornek.com"]);
+    } finally {
+      await db.execute(sql`TRUNCATE notification_recipients RESTART IDENTITY CASCADE`);
+    }
+  });
+
   test("Pavo: bozuk karşılaştırma günü reddetmez, yalnız yok sayılır", async () => {
     assert.ok((await push(DAY, 14, {}, { bankPos: { status: "belki" } })).ok);
     const [row] = await db.select({ bankPos: s.posDayReports.bankPos }).from(s.posDayReports).where(eq(s.posDayReports.date, DAY));
