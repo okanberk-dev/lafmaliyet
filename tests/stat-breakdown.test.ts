@@ -87,6 +87,7 @@ const crow = (p: Partial<CategoryRow> & Pick<CategoryRow, "id" | "name">): Categ
   monthInvoices: 0,
   monthTotal: 0,
   prevTotal: 0,
+  sharedTotal: 0,
   ...p,
 });
 const erow = (id: number, categoryId: number, amount: number, description: string | null = null): EntryRow => ({ id, date: "2026-10-05", categoryId, description, amount, paymentMethod: null, note: null });

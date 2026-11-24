@@ -25,6 +25,7 @@ import { EXPENSE_SHARED } from "@/lib/branches";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { PANEL_FIXED_GROUPS } from "@/lib/constants";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
+import { genitive } from "@/lib/recipe-change";
 import { cn } from "@/lib/utils";
 import {
   convertFixedToMonthly,
@@ -55,8 +56,11 @@ export interface CategoryRow {
   entryCount: number;
   monthEntries: number;
   monthInvoices: number;
+  /** Ayın toplamı: "Tümü"de girilenler + bağlı faturalar; şube seçiliyken yalnız şubenin kendi kayıtları (`expenseSplit`) */
   monthTotal: number;
   prevTotal: number;
+  /** Şube seçiliyken işletme geneli kısım (şubesi boş kayıtlar ve bağlı faturalar; toplama girmez); "Tümü"de 0 */
+  sharedTotal: number;
 }
 export interface EntryRow {
   id: number;
@@ -77,6 +81,8 @@ export interface EntryRow {
   cari?: { name: string; href: string | null } | null;
   /** Giderin şubesi; null = işletme geneli */
   branchId?: string | null;
+  /** Şube seçiliyken işletme geneli kayıt (şubesi boş): satırda rozet, şubenin toplamına girmez */
+  shared?: boolean;
 }
 
 export interface InvoiceItem {
@@ -149,9 +155,12 @@ export function MonthlyExpenses({
   fixed,
   invoiceCategories,
   branches,
+  branchName: viewBranch = null,
 }: {
   month: string;
   isCurrent: boolean;
+  /** Seçili şube (şube görünümü); "Tümü"de null. Toplam şubenin kendi kayıtları, işletme geneli ayrı (expenseSplit) */
+  branchName?: string | null;
   categories: CategoryRow[];
   entries: EntryRow[];
   invoices: InvoiceItem[];
@@ -184,9 +193,10 @@ export function MonthlyExpenses({
   const ads = categories.filter((c) => c.panelGroup === "reklam").reduce((a, c) => a + c.monthTotal, 0);
   const offInvoice = categories.reduce((a, c) => a + c.monthEntries, 0);
   const fromInvoices = categories.reduce((a, c) => a + c.monthInvoices, 0);
+  const shared = categories.reduce((a, c) => a + c.sharedTotal, 0);
   const missing = missingCategories(categories);
   const shownFixed = showAllFixed ? fixed : fixed.filter((f) => f.group === "reklam");
-  const breakdown = expenseBreakdowns(month, categories, entries, invoices);
+  const breakdown = expenseBreakdowns(month, categories, entries, invoices, viewBranch !== null);
 
   const save = (d: EntryDraft, done: () => void) => {
     const amount = parseNumberTR(d.amount);
@@ -251,7 +261,7 @@ export function MonthlyExpenses({
             icon={<Wallet />}
             label={`${monthLabel(month)} toplamı`}
             value={tl(total)}
-            sub={prevTotal ? `Geçen ay ${tl(prevTotal)}` : "Geçen ay kayıt yok"}
+            sub={shared ? `İşletme geneli ${tl(shared)} ayrı` : prevTotal ? `Geçen ay ${tl(prevTotal)}` : "Geçen ay kayıt yok"}
             info="Bu sayfadaki bütün kategoriler: girilen harcamalar (ödenen tutar, KDV dahil; fişin KDV'si ayrılmaz) ve kategoriye bağlı faturalar (KDV hariç). Gelir-gider'de her kategori kendi satırında bu tutarla sayılır."
           />
         </StatBreakdown>
@@ -283,10 +293,25 @@ export function MonthlyExpenses({
           exact
           empty="Bu ay bağlı kategorilerden fatura yok."
         >
-          <Stat compact icon={<Tags />} label="Faturadan" value={tl(fromInvoices)} sub={fromInvoices ? "Bağlı fatura kategorilerinden" : "Bağlı fatura yok"} />
+          <Stat
+            compact
+            icon={<Tags />}
+            label="Faturadan"
+            value={tl(fromInvoices)}
+            sub={fromInvoices ? (viewBranch ? "İşletme geneli; şubenin toplamına girmez" : "Bağlı fatura kategorilerinden") : "Bağlı fatura yok"}
+          />
         </StatBreakdown>
       </div>
 
+      {viewBranch && shared ? (
+        <Notice
+          tone="neutral"
+          size="sm"
+          className="mb-4"
+          title={`${viewBranch} seçili: toplam yalnız ${genitive(viewBranch)} harcamaları`}
+          text={`Şubesi seçilmemiş harcamalar ve kategoriye bağlı faturalar işletme genelidir (${tl(shared)}): satırlarda “İşletme geneli” rozetiyle görünür, Gelir-gider'de “İşletme geneli payı (bilgi)” satırındadır. Hepsi için soldan Tümü'nü seçin.`}
+        />
+      ) : null}
       {missing.length ? (
         <Notice
           tone="warn"
@@ -379,11 +404,11 @@ export function MonthlyExpenses({
             meta={<span className="font-semibold text-ink tabular">{tl(total)}</span>}
           />
           <CardContent className="space-y-3">
-            {categories.filter((c) => c.monthTotal || c.expected).length === 0 ? (
+            {categories.filter((c) => c.monthTotal || c.sharedTotal || c.expected).length === 0 ? (
               <EmptyState title="Bu ay harcama yok" description="Soldan ekledikçe burada kategori kategori listelenir." />
             ) : (
               categories
-                .filter((c) => c.monthTotal || c.expected)
+                .filter((c) => c.monthTotal || c.sharedTotal || c.expected)
                 .map((c) => {
                   const rows = entries.filter((e) => e.categoryId === c.id);
                   const invs = invoices.filter((i) => i.categoryId === c.id);
@@ -399,6 +424,7 @@ export function MonthlyExpenses({
                         </h3>
                         <p className="text-sm text-ink tabular">
                           <span className="font-semibold">{tl(c.monthTotal)}</span>
+                          {c.sharedTotal ? <span className="ml-1.5 text-xs text-ink-mute">+ işletme geneli {tl(c.sharedTotal)}</span> : null}
                           {c.prevTotal ? <span className="ml-1.5 text-xs text-ink-mute">geçen ay {tl(c.prevTotal)}</span> : null}
                         </p>
                       </div>
@@ -430,6 +456,7 @@ export function MonthlyExpenses({
                                   {e.photoId ? <Camera size={13} className="shrink-0 text-ink-mute" aria-label="Fişli" role="img" /> : null}
                                   {e.cashOutId ? <Badge tone="gray">Kasadan</Badge> : null}
                                   {e.cari ? <Badge tone="amber">Cari · {e.cari.name}</Badge> : null}
+                                  {e.shared ? <Badge tone="gray">İşletme geneli</Badge> : null}
                                 </span>
                                 <span className="block text-xs text-ink-mute">
                                   {dateTR(e.date)}
@@ -452,7 +479,7 @@ export function MonthlyExpenses({
                                 {i.supplier}
                               </Link>
                               <span className="block text-xs text-ink-mute">
-                                {dateTR(i.date)} · faturadan ({i.invoiceCategory}, KDV hariç)
+                                {dateTR(i.date)} · faturadan ({i.invoiceCategory}, KDV hariç){viewBranch ? " · işletme geneli" : ""}
                               </span>
                             </span>
                             <span className="shrink-0 text-sm text-ink-soft tabular">{tl(i.net, 2)}</span>

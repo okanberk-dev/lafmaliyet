@@ -81,6 +81,8 @@ export interface FixedRow {
   versions: { fromMonth: string; period: FixedPeriod; amount: number }[];
   /** Bitiş ayı (bu ay ya da sonrası; bitmişler listelenmez): ilk ödeme en geç bu ayda (E-62) */
   endMonth: string | null;
+  /** "Tümü"de birden çok kasa açıkken kalemin şubesi ("Marina", "İşletme geneli"); tek şubede ya da tek kasada null */
+  branchName?: string | null;
 }
 
 /**
@@ -623,6 +625,7 @@ function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow
                       <div className="min-w-0">
                         <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[15px] font-semibold text-ink">
                           <span className="min-w-0 break-words">{f.name}</span>
+                          {f.branchName ? <Badge tone="blue">{f.branchName}</Badge> : null}
                           {exists && !added[f.id] ? <Badge tone="gray">Listede var</Badge> : null}
                         </p>
                         <p className="text-[13px] text-ink-mute tabular">

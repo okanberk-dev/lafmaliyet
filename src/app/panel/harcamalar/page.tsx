@@ -16,6 +16,8 @@ import { availableMonths, loadModel } from "@/server/data/dataset";
 import { expenseExtras } from "@/server/data/expense-extras";
 import { supplierSlugOf } from "@/server/data/suppliers";
 
+import { expenseSplit } from "./summary";
+
 import { MonthlyExpenses, type CategoryRow, type EntryRow, type FixedCandidate, type InvoiceItem } from "./monthly-expenses";
 
 export const metadata: Metadata = { title: "Aylık harcamalar" };
@@ -67,8 +69,13 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
   const months = [...new Set([...availableMonths(model), model.currentMonth, month])].sort();
 
   const amounts = model.expenseAmounts(month);
-  const prevAmounts = new Map(model.expenseAmounts(prev).map((x) => [x.cat.id, x.total]));
   const allEntries = model.ds.expenseEntries ?? [];
+  // Şube seçiliyken toplam şubenin kendi kayıtlarıdır; şubesi boş kayıtlar ve bağlı faturalar işletme geneli, ayrı
+  // gösterilir (şube kapsamı C P1-4; Gelir-gider'in harcama hücresiyle aynı kural, expenseSplit)
+  const branchView = model.ds.branchView?.id ?? null;
+  const split = expenseSplit(allEntries.filter((e) => monthOfDate(e.date) === month), branchView);
+  const prevSplit = expenseSplit(allEntries.filter((e) => monthOfDate(e.date) === prev), branchView);
+  const prevAmounts = new Map(model.expenseAmounts(prev).map((x) => [x.cat.id, branchView ? (prevSplit.get(x.cat.id)?.own ?? 0) : x.total]));
   const usage = new Map<number, number>();
   for (const e of allEntries) usage.set(e.categoryId, (usage.get(e.categoryId) ?? 0) + 1);
 
@@ -82,10 +89,11 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
     active: cat.active,
     expected: model.expenseExpected(cat, month),
     entryCount: usage.get(cat.id) ?? 0,
-    monthEntries: entries,
+    monthEntries: branchView ? (split.get(cat.id)?.own ?? 0) : entries,
     monthInvoices: invoices,
-    monthTotal: total,
+    monthTotal: branchView ? (split.get(cat.id)?.own ?? 0) : total,
     prevTotal: prevAmounts.get(cat.id) ?? 0,
+    sharedTotal: branchView ? (split.get(cat.id)?.shared ?? 0) + invoices : 0,
   }));
 
   // Kasadan çıkan fişten yazılan kayıtların fotoğrafı ve kasa günü (veri kümesi dosyalarına dokunmadan)
@@ -111,6 +119,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
         cashOutDate: x?.cashOutDate ?? null,
         cari: x?.cariCardId ? { name: x.cariName ?? "", href: cariHref.get(x.cariCardId) ? `/panel/tedarikciler/${cariHref.get(x.cariCardId)}?sekme=hareketler` : null } : null,
         branchId: e.branchId ?? null,
+        shared: Boolean(branchView) && (e.branchId ?? null) === null,
       };
     })
     .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
@@ -152,6 +161,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
         fixed={fixed}
         invoiceCategories={MAPPABLE}
         branches={branches}
+        branchName={model.ds.branchView?.name ?? null}
       />
     </>
   );
