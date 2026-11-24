@@ -12,11 +12,11 @@ import { after, before, describe, test } from "node:test";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
-import { SALES_COVERAGE_KEY } from "../src/lib/sales-coverage";
+import { SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "../src/lib/sales-coverage";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 
-import { LAFPOS_SUBE, seedBranches } from "./helpers/subeler";
+import { LAFPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
 
 const SERVER_URL = process.env.STOK_TAHMINI_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_stok_tahmini_${process.pid}`;
@@ -59,5 +59,24 @@ describe("Tahmini stok: LafPOS'un sayıldığı ilk gün", { skip: !SERVER_URL &
     assert.ok(r, "geçiş günü var: tahmin döner");
     assert.equal(r.switchDay, "2026-11-21");
     assert.equal(r.lafposFrom, "2026-11-21");
+  });
+
+  test("sınır Marina'nın kendi kapsam kaydından: Tuzla aynı aya 24 Kasım'a kadar yükleyince ya da Aralık'ta ayın tamamını yükleyince kaymaz", async () => {
+    await db.insert(s.months).values({ month: "2026-11", branchId: MODPOS_SUBE }).onConflictDoNothing();
+    await db.insert(s.salesLines).values({ month: "2026-11", branchId: MODPOS_SUBE, posName: "TUZLA LATTE", qty: 10, revenue: 1_000 });
+    const coverage = async (shared: Record<string, string>, perBranch: Record<string, Record<string, string | null>>) => {
+      await db.delete(s.integrationState);
+      await db.insert(s.integrationState).values([
+        { key: SALES_COVERAGE_KEY, value: shared },
+        { key: SALES_COVERAGE_BRANCH_KEY, value: perBranch },
+      ]);
+      return (await estimate.loadStockEstimate(db, NOW))?.lafposFrom;
+    };
+    // Tuzla'nın yüklemesi ortak kaydı 24 Kasım yaptı; Marina'nın kendi kaydı 20 Kasım
+    assert.equal(await coverage({ "2026-11": "2026-11-24" }, { [LAFPOS_SUBE]: { "2026-11": "2026-11-20" }, [MODPOS_SUBE]: { "2026-11": "2026-11-24" } }), "2026-11-21");
+    // Tuzla Kasım'ın tamamını Aralık'ta yükledi: ortak kayıtta Kasım yok
+    assert.equal(await coverage({}, { [LAFPOS_SUBE]: { "2026-11": "2026-11-20" }, [MODPOS_SUBE]: { "2026-11": null } }), "2026-11-21");
+    // Şube kaydı olmayan (bu değişiklikten önce yüklenmiş) listede ortak kayıt
+    assert.equal(await coverage({ "2026-11": "2026-11-20" }, {}), "2026-11-21");
   });
 });

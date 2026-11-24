@@ -1705,7 +1705,7 @@ export function ImportCard({
    * (src/lib/sales-coverage.ts). Biten ayda null: liste ayın tamamı
    */
   running?: { today: string; defaultThrough: string } | null;
-  /** Yüklü listenin son günü (süren ayda yüklendiyse); yoksa null */
+  /** Yüklü listenin son günü (süren ayda yüklendiyse; "Tümü"de yüklemenin yazdığı şubenin listesi, Tuzla); yoksa null */
   coveredThrough?: string | null;
   /** Liste kasa raporlarından kısa bir dönemi kapsıyorsa dönemi ("1–15 Kasım"); yoksa null */
   listDays?: string | null;

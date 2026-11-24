@@ -343,6 +343,105 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.deepEqual([nov?.from, nov?.overlap], [null, { from: S, to: "2026-11-30" }]);
   });
 
+  describe("LafPOS'un başlangıcı Marina'nın kendi kapsam kaydından (ortak kayıt ayın tek, şubesiz kaydı)", () => {
+    const G = "2026-11-22";
+    const marinaList = [
+      { posName: "LATTE MEDIUM", qty: 30, revenue: 6_000 },
+      { posName: "PUMPKIN LATTE", qty: 2, revenue: 400 },
+    ];
+    const tuzlaList = [{ posName: "TUZLA FILTRE", qty: 500, revenue: 100_000 }];
+    const stored = async (key: string) => (await db.select().from(s.integrationState).where(eq(s.integrationState.key, key)))[0]?.value;
+    /** Marina'nın Kasım'ı: ModPOS ve LafPOS satırları (gün sayısıyla), sayılan ilk gün, ayın ModPOS listesinin son günü */
+    const marinaNovember = async () => {
+      const ds = await dataset.loadDataset();
+      const nov = ds.lafposSales?.months.find((m) => m.month === "2026-11");
+      return {
+        countFrom: ds.lafposSales?.countFrom,
+        lines: ds.salesLines.filter((l) => l.month === "2026-11").map((l) => [l.posName, l.qty, l.revenue, l.lafpos?.days ?? null]),
+        through: nov?.modpos?.through,
+        overlap: nov?.overlap,
+      };
+    };
+    const expected = {
+      countFrom: G,
+      lines: [
+        ["LATTE MEDIUM", 30, 6_000, null],
+        ["PUMPKIN LATTE", 2, 400, null],
+        // LafPOS 22–27 Kasım: 6 gün
+        ["LATTE MEDIUM", 60, 12_000, 6],
+      ],
+      through: "2026-11-21",
+      overlap: null,
+    };
+
+    beforeEach(async () => {
+      // 28 Kasım: Kasım süren ay; Marina 22 Kasım'da LafPOS'a geçti (ModPOS listesi 13–21 Kasım)
+      at("2026-11-28T12:00:00+03:00");
+      await setSwitch(G);
+      await db.execute(sql`TRUNCATE pos_daily_sales, pos_day_reports, sales_lines, cash_reports, integration_state, months RESTART IDENTITY CASCADE`);
+      for (let d = 22; d <= 27; d++) await day(`2026-11-${d}`, 2_000, [{ posName: "LATTE MEDIUM", productId: ids.latteM, qty: 10, revenue: 2_000 }]);
+    });
+
+    lafposTest("Tuzla aynı aya 27 Kasım'a kadar yükleyince LafPOS yine 22 Kasım'dan sayılır; Tuzla seçiliyken liste Tuzla'nın kendi son günüyle", async () => {
+      const marina = await sales.importSales({ month: "2026-11", lines: marinaList, mode: "replace", through: "2026-11-21" });
+      assert.ok(marina.ok, JSON.stringify(marina));
+      assert.deepEqual(await marinaNovember(), expected, "Marina'nın yüklemesinden sonra");
+      // Tuzla (ModPOS'ta kalan şube) Kasım listesini 27 Kasım'a kadar yükler: ortak kayıt 27 Kasım olur
+      const tuzla = await inTuzla(() => sales.importSales({ month: "2026-11", lines: tuzlaList, mode: "replace", through: "2026-11-27" }));
+      assert.ok(tuzla.ok, JSON.stringify(tuzla));
+      assert.deepEqual(await stored("sales.coverage"), { "2026-11": "2026-11-27" }, "ortak kayıt son yükleyenin");
+      assert.deepEqual(await marinaNovember(), expected, "Marina'nın LafPOS'u 22–27 Kasım sayılmaya devam eder");
+      // "Tümü"de de sınır Marina'nın listesi
+      const all = await branchScope.withBranchScope(ALL_BRANCHES, () => dataset.loadDataset());
+      assert.equal(all.lafposSales?.countFrom, G);
+      assert.deepEqual(
+        all.salesLines.filter((l) => l.month === "2026-11" && l.lafpos).map((l) => [l.posName, l.qty, l.lafpos?.days]),
+        [["LATTE MEDIUM", 60, 6]],
+      );
+      // Marina listesini yeniden yükler: ortak kayıt 21 Kasım olur, Tuzla seçiliyken listenin son günü yine Tuzla'nınki
+      assert.ok((await sales.importSales({ month: "2026-11", lines: marinaList, mode: "replace", through: "2026-11-21" })).ok);
+      assert.deepEqual(await stored("sales.coverage"), { "2026-11": "2026-11-21" });
+      const tuzlaView = await inTuzla(() => dataset.loadDataset());
+      assert.deepEqual(
+        tuzlaView.salesCoverage?.map((c) => [c.month, c.through]),
+        [["2026-11", "2026-11-27"]],
+        "Tuzla'nın listesi 27 Kasım'a kadar (Marina'nın 21 Kasım'ı değil)",
+      );
+      // İçe aktarma kartının "… tarihine kadar"ı yazılan şubenin listesinden: "Tümü"de içe aktarma Tuzla'ya yazar, gün
+      // Tuzla'nın 27 Kasım'ı (Marina'nın 21 Kasım'ı da, son yükleyenin ortak kaydı da değil); şube seçiliyken şubenin kendisi
+      const allAfter = await branchScope.withBranchScope(ALL_BRANCHES, () => dataset.loadDataset());
+      assert.deepEqual(allAfter.writeCoverage, { "2026-11": "2026-11-27" }, "Tümü: yazılan şube Tuzla");
+      assert.deepEqual((await dataset.loadDataset()).writeCoverage, { "2026-11": "2026-11-21" }, "Marina seçiliyken Marina'nın kaydı");
+      assert.deepEqual(tuzlaView.writeCoverage, { "2026-11": "2026-11-27" }, "Tuzla seçiliyken Tuzla'nın kaydı");
+    });
+
+    lafposTest("Tuzla Kasım'ın tamamını Aralık'ta yükleyince (ortak kayıttan Kasım silinir) Marina'nın LafPOS'u yine 22 Kasım'dan", async () => {
+      assert.ok((await sales.importSales({ month: "2026-11", lines: marinaList, mode: "replace", through: "2026-11-21" })).ok);
+      at("2026-12-05T12:00:00+03:00");
+      const tuzla = await inTuzla(() => sales.importSales({ month: "2026-11", lines: tuzlaList, mode: "replace" }));
+      assert.ok(tuzla.ok, JSON.stringify(tuzla));
+      assert.equal(tuzla.data.through, null, "biten ay: ayın tamamı");
+      assert.deepEqual(await stored("sales.coverage"), {}, "ortak kayıttan Kasım silindi");
+      assert.deepEqual(await marinaNovember(), expected);
+    });
+
+    lafposTest("bu değişiklikten önce yüklenmiş liste (yalnız ortak kayıt): öteki şubenin yüklemesi ortak kaydı ezmeden önce Marina'nın son gününü onun kaydına yazar", async () => {
+      // Marina'nın listesi eskiden yüklendi: şube kaydı yok, ortak kayıt 21 Kasım
+      await modpos("2026-11", marinaList);
+      await setCoverage({ "2026-11": "2026-11-21" });
+      assert.deepEqual(await marinaNovember(), expected, "eski kayıtta ortak kayıt okunur");
+      // Tuzla süren ayda yükler: Marina'nın 21 Kasım'ı onun kendi kaydına geçer
+      assert.ok((await inTuzla(() => sales.importSales({ month: "2026-11", lines: tuzlaList, mode: "replace", through: "2026-11-27" }))).ok);
+      assert.deepEqual(await stored("sales.coverage.sube"), { [LAFPOS_SUBE]: { "2026-11": "2026-11-21" }, [MODPOS_SUBE]: { "2026-11": "2026-11-27" } });
+      assert.deepEqual(await marinaNovember(), expected);
+      // Aralık'ta ayın tamamını yeniden yükler: Marina'nın kaydı değişmez
+      at("2026-12-05T12:00:00+03:00");
+      assert.ok((await inTuzla(() => sales.importSales({ month: "2026-11", lines: tuzlaList, mode: "replace" }))).ok);
+      assert.deepEqual(await stored("sales.coverage.sube"), { [LAFPOS_SUBE]: { "2026-11": "2026-11-21" }, [MODPOS_SUBE]: { "2026-11": null } });
+      assert.deepEqual(await marinaNovember(), expected);
+    });
+  });
+
   lafposTest("içe aktarma: LafPOS ayında red, elle satır yok; geçiş ayında liste geçiş gününden önceki güne kırpılır, Z'yi aşarsa uyarı", async () => {
     await setSwitch(S);
     const lines = [{ posName: "LATTE MEDIUM", qty: 50, revenue: 10_000 }];
