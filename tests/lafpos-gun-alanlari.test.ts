@@ -175,6 +175,8 @@ test("eski gövde ve saklanmış eski Z: Faz 2 alanları olmadan geçer, alan ek
 // ---------------------------------------------------------------- İptaller, ikramın türü, Pavo, yazarkasa Z no, toplamlar
 
 const plain = (v: string | null | undefined) => (v ?? "").replace(/[\u00a0\u202f]/g, " ");
+/** Nesnenin verilen anahtarları olmadan kopyası (eski gövde, eski otomatik değerler) */
+const omit = <T extends object>(o: T, keys: readonly string[]): T => Object.fromEntries(Object.entries(o).filter(([k]) => !keys.includes(k))) as T;
 
 test("ikramın türü: LafPOS'un `kind`'ı nedenin ön ekinden önce gelir; yoksa ön ek (eski LafPOS)", () => {
   assert.deepEqual(lafposLineKind("Zayi: Döküldü", "zayi"), { kind: "zayi", reason: "Döküldü" });
@@ -289,8 +291,8 @@ test("Kasa raporu: yazarkasanın Z no'su (okcZNo) otomatik alan; elle ya da foto
   assert.equal(none.okcZNo, null);
   assert.equal(mergeAuto({ ...none, okcZNo: "0011" }, none, none).values.okcZNo, "0011");
   // Bu alan yokken yazılmış otomatik rapor: fotoğraftan okunan Z no ezilmez (son otomatik değer bilinmiyor)
-  const { okcZNo: _drop, ...before } = none;
-  const m = mergeAuto({ ...v, okcZNo: "0011" }, before as typeof v, v);
+  const before = omit(none, ["okcZNo"]);
+  const m = mergeAuto({ ...v, okcZNo: "0011" }, before, v);
   assert.equal(m.values.okcZNo, "0011");
   assert.ok(m.kept.includes("okcZNo"));
   // Elle değişmemişse LafPOS'unki yazılır
@@ -443,8 +445,8 @@ test("gün sonu e-postasının özeti: Faz 2 alanları özeti değiştirmez (yü
   assert.ok(r.ok, r.ok ? "" : r.field);
   const { z, payments, ikram } = r.data;
   // Eski panelin sakladığı gün: Faz 2 anahtarları atılmış (z.object)
-  const { listValue: _a, ikramTotal: _b, odenmezTotal: _c, zayiTotal: _d, vat: _e, openedAt: _f, closedAt: _g, okcZNo: _h, ...oldZ } = z;
-  const oldIkram = ikram.map(({ kind: _k, personKind: _p, ...rest }) => rest);
+  const oldZ = omit(z, ["listValue", "ikramTotal", "odenmezTotal", "zayiTotal", "vat", "openedAt", "closedAt", "okcZNo"]);
+  const oldIkram = ikram.map((l) => omit(l, ["kind", "personKind"]));
   const before = dayHash({ z: oldZ, payments, ikram: oldIkram });
   assert.equal(dayHash({ z, payments, ikram }), before, "aynı rakamlar, yalnız Faz 2 alanları eklendi");
   assert.notEqual(dayHash({ z: { ...z, zTotal: z.zTotal + 1 }, payments, ikram }), before, "Z değişti");
