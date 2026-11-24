@@ -158,8 +158,7 @@ export function KaraokeAdmin({
               </div>
               {health.tone === "red" && sync?.lastError ? <Notice tone="bad" size="sm" title={sync.lastError} /> : null}
               <p className="text-[13px] leading-5 text-ink-mute">
-                Site her rezervasyon değişikliğinde panele imzalı bir ping atar; panel değişenleri hemen çeker ve cihazlara bildirir. Ayrıca bu sayfa açılınca en
-                çok beş dakikada bir kontrol edilir. Sürekli sorgu yapılmaz. Bütün bağlantıların durumu: Ayarlar › laffogato.net.
+                Rezervasyon sitede değişince panel birkaç saniyede alır ve cihazlara bildirir. Bütün bağlantıların durumu: Ayarlar › laffogato.net.
               </p>
               <a href={sitePanelUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[13px] font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink">
                 laffogato.net paneli <ExternalLink size={13} aria-hidden="true" />

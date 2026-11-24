@@ -150,7 +150,7 @@ async function BackupCard() {
         <>
           Paneldeki bütün veri tek dosyada iner ve gerekirse geri yüklenir. Ayda bir indirip bilgisayarınızda ya da Google Drive&apos;da saklayın. Parolalar
           dosyaya yazılmaz; dosyada ciro, maaş ve IBAN&apos;lar var, kimseyle paylaşmayın.{" "}
-          <InfoTip text="Veritabanı Neon'da da kendiliğinden yedeklenir ama yalnız kısa bir süre geriye gidilebilir; bu dosya sizde kalan uzun süreli kopyadır. Geri yükleme panelden yapılmaz (tek dokunuşla bütün veri değişmesin); bilgisayardan bir komutla yapılır, adımlar docs/YEDEK.md'de. Excel kopyası okunmak içindir, geri yüklenmez." />
+          <InfoTip text="Veritabanı Neon'da da kendiliğinden yedeklenir ama yalnız kısa bir süre geriye gidilebilir; bu dosya sizde kalan uzun süreli kopyadır. Geri yükleme panelden yapılmaz (tek dokunuşla bütün veri değişmesin); geliştirici bilgisayardan bir komutla yapar. Excel kopyası okunmak içindir, geri yüklenmez." />
         </>
       }
       actionsClassName="max-sm:w-full"
@@ -298,7 +298,7 @@ async function SiteLinksCard() {
       summary={!configured ? "Bağlantı kurulmadı" : errors ? `${errors} bağlantıda hata` : "Karaoke, menü, siparişler, online satışlar"}
       description={
         configured
-          ? "Kafenin sitesiyle dört bağlantı: aynı anahtar (KARAOKE_SYNC_SECRET) ve imza. Site her değişiklikte panele imzalı ping atar, panel imzalı tek okumayla çeker."
+          ? "Değişiklikler kendiliğinden eşitlenir; panelde değişen menü fiyatı siteye yazılır."
           : "Bağlantı kurulmadı: Vercel'de iki projeye de (laffogato.net ve bu panel) aynı değerle KARAOKE_SYNC_SECRET ekleyin (en az 32 karakter), ikisini yeniden yayınlayın."
       }
       actionsClassName="max-sm:w-full"

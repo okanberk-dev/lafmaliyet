@@ -26,7 +26,7 @@ const FAQ = buildFaq(STAFF_FAQ_GROUPS, staffPathText);
 export default function StaffHelpPage() {
   return (
     <>
-      <PageHeader path="/panel/yardim/personel" role="staff" title="Yardım" description="Ekranlarınızda ne yapılır, adım adım. Soruya dokunun ya da arayın." />
+      <PageHeader path="/panel/yardim/personel" role="staff" title="Yardım" description="Ekranlarınızda ne yapılır, adım adım" />
       <Suspense fallback={<PageSkeleton rows={6} />}>
         <StaffHelpContent />
       </Suspense>
@@ -56,7 +56,7 @@ async function StaffHelpContent() {
         </CardContent>
       </Card>
       <Card>
-        <CardHeader icon={<Info />} title="Nasıl yapılır?" description="Ekranlarınızdaki işler ve yöneticinin onayına gidenler. Açmak için soruya dokunun ya da arayın." />
+        <CardHeader icon={<Info />} title="Nasıl yapılır?" description="Ekranlarınızdaki işler ve yöneticinin onayına gidenler" />
         <CardContent>
           <Suspense fallback={<HelpFaqFallback groups={FAQ} />}>
             <HelpFaq groups={FAQ} />

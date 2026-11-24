@@ -228,3 +228,46 @@ test("LafPOS: ürün ikramı LafPOS'ta işaretlenir cümlesi zayi sorusunda ve g
   const gun = ROUTINE_TEXTS.find((t) => t.startsWith("Gün içinde")) ?? "";
   assert.match(gun, /Kasada LafPOS kullanılmaya başlandıysa ürün ikramı LafPOS'ta işaretlenir; panele yalnız zayi ve hammadde ikramı girilir\./);
 });
+
+test("sade metin (24.11.2026): her cevap en çok 800, her adım en çok 400 harf; başlık açıklaması aramayı yeniden anlatmaz", () => {
+  for (const t of FAQ_TEXTS) {
+    const g = STAFF_FAQ_GROUPS.find((x) => x.title === t.group)!;
+    const len = textOf(g.items.find((f) => f.id === t.id)!.a, staffPathText).length;
+    assert.ok(len <= 800, `${t.id}: ${len} harf`);
+  }
+  for (const r of STAFF_ROUTINE) assert.ok(textOf(r.body, staffPathText).length <= 400, r.title);
+  assert.doesNotMatch(STAFF_PAGE, /[Ss]oruya dokunun ya da arayın/);
+});
+
+test("LafPOS günü (gün sonu tam, #132): rapor LafPOS'tan salt okunur gelir, personelin tek işi Pavo'nun gün sonu fotoğrafı", () => {
+  const aksam = FAQ_TEXTS.find((t) => t.id === "kasa-aksam")?.text ?? "";
+  const routine = ROUTINE_TEXTS.find((t) => t.startsWith("Akşam kasa raporu")) ?? "";
+  for (const [name, t] of [["kasa-aksam", aksam], ["Akşam kasa raporu", routine]] as const) {
+    assert.match(t, /Pavo'dan gün sonu fişini \(detaylı Z\)/, name);
+    assert.match(t, /Gün sonu fotoğrafı/, name);
+  }
+  assert.match(aksam, /salt okunur/);
+  assert.match(aksam, /düzeltme LafPOS'ta yapılır/);
+  // Eski akış (form LafPOS'tan dolar, personel karşılaştırıp gönderir) ve personelin görmediği karşılaştırma anlatılmaz
+  assert.doesNotMatch(ALL_TEXT, /form (ondan|LafPOS'un gün sonundan) dolar/);
+  assert.doesNotMatch(ALL_TEXT, /LafPOS'takiyle/);
+  assert.doesNotMatch(ALL_TEXT, /fotoğraf gerekmez/);
+  const gec = FAQ_TEXTS.find((t) => t.id === "kasa-gec")?.text ?? "";
+  assert.match(gec, /Gün sonu fotoğrafı/);
+});
+
+test("Rapora yanlış fotoğraf: düğme fotoğraf rapordan farklı okunduğunda da çıkmaz (photoRemovalStates)", () => {
+  const foto = FAQ_TEXTS.find((t) => t.id === "kasa-foto")?.text ?? "";
+  assert.match(foto, /dayanıyorsa/);
+  assert.match(foto, /farklı okunduysa/);
+});
+
+test("Kasadaki satış fiyatları: Marina'nın ModPOS dönemi kapandı (CONTRACT §9), soru ModPOS'a bağlı değil", () => {
+  assert.doesNotMatch(CONTENT, /Kasadaki \(ModPOS\)/);
+  const item = STAFF_FAQ_GROUPS.flatMap((g) => g.items).find((f) => f.id === "kasa-fiyatlar");
+  assert.ok(item);
+  assert.doesNotMatch(item.q, /ModPOS/);
+  const text = FAQ_TEXTS.find((t) => t.id === "kasa-fiyatlar")?.text ?? "";
+  assert.match(text, /Kasada ModPOS kullanılıyorsa/);
+  assert.match(text, /Kasada LafPOS kullanılıyorsa/);
+});
