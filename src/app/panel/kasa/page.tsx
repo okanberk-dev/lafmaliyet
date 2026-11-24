@@ -47,6 +47,7 @@ import {
   staffLafposDescriptionOf,
   staffPhotoDiffs,
 } from "@/lib/lafpos/foto";
+import { LAFPOS_STAFF_ENTRY_LINE, staffLafposEntryClosed } from "@/lib/lafpos/cash-moves";
 import { LAFPOS_NO_COUNT_TEXT } from "@/lib/lafpos/prefill";
 import { addDays, dayLocativeTR, isCalendarDate, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -404,6 +405,9 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
       ? [...counters, { id: counterId, name: `${report.countedByName ?? report.submittedByName} (pasif)` }]
       : counters;
   const photoUi = { storage: storage.available, reading: ai.state, admin, me: user.name };
+  // LafPOS gününde personel Kasa sayfasından kasadan çıkan ve zayi / ikram eklemez (sahibin kararı, 24 Kasım 2026): harcama
+  // LafPOS'un kasa hareketlerinden, ikram / zayi / iptal gün sonundan gelir. Yönetici ekler; sunucu personelin eklemesini reddeder
+  const entryClosed = staffLafposEntryClosed({ admin, branchId: view.till, lafposDay: lafposState.lafpos });
   // Günün zayi ve ikramı: kasa raporuyla birlikte gider (ModPOS'ta ödenmez görünen ikramla karşılaştırılır)
   const wasteCard = waste ? (
     <Card>
@@ -424,9 +428,11 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
           </>
         ) : (
           <p className="text-ink-mute">
-            {waste.lafpos
-              ? "Bu gün zayi ya da ikram yok. Atılan bir şey ya da hammadde ikramı olduysa kasa raporundan önce girin; ürün ikramı LafPOS'ta işaretlenir."
-              : "Bu gün zayi ya da ikram girilmedi. Ödenmeden verilen ya da atılan bir şey olduysa kasa raporundan önce girin."}
+            {entryClosed
+              ? "Bu gün zayi ya da ikram yok."
+              : waste.lafpos
+                ? "Bu gün zayi ya da ikram yok. Atılan bir şey ya da hammadde ikramı olduysa kasa raporundan önce girin; ürün ikramı LafPOS'ta işaretlenir."
+                : "Bu gün zayi ya da ikram girilmedi. Ödenmeden verilen ya da atılan bir şey olduysa kasa raporundan önce girin."}
           </p>
         )}
         {waste.lafpos ? (
@@ -438,9 +444,13 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
             {waste.lafpos.received && waste.lafpos.notCounted ? ` Panele girilen ${waste.lafpos.notCounted} ürün ikramı sayılmıyor: LafPOS'taki sayılıyor.` : ""}
           </p>
         ) : null}
-        <ButtonLink href={`/panel/zayi?gun=${date}`} variant="secondary" size="sm">
-          <Gift size={14} /> Zayi / ikram ekle
-        </ButtonLink>
+        {entryClosed ? (
+          <p className="text-[13px] text-ink-mute">{LAFPOS_STAFF_ENTRY_LINE}</p>
+        ) : (
+          <ButtonLink href={`/panel/zayi?gun=${date}`} variant="secondary" size="sm">
+            <Gift size={14} /> Zayi / ikram ekle
+          </ButtonLink>
+        )}
       </div>
     </Card>
   ) : null;
@@ -522,6 +532,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
       oldDays={oldDays}
       supplierNames={supplierNames}
       hints={cariHints}
+      lafposEntryClosed={entryClosed}
     />
   ) : null;
   const yesterday = addDays(today, -1);
@@ -825,10 +836,17 @@ async function StaffLateDay({ date, user, view }: { date: string; user: { id: nu
       <Card>
         <CardHeader icon={<Gift />} title="Günün zayi & ikramı" description="Geç rapora eklenmez" />
         <div className="space-y-2 px-5 pb-5 text-sm">
-          <p className="text-ink-mute">Bu günün zayi / ikramı için Zayi &amp; ikram › Önceki gün&apos;den istek gönderin.</p>
-          <ButtonLink href={`/panel/zayi?gun=${date}`} variant="secondary" size="sm">
-            <Gift size={14} /> Zayi &amp; ikram
-          </ButtonLink>
+          {/* LafPOS gününde ikram / zayi gün sonundan gelir (staffLafposEntryClosed; kasanın günüyle aynı kural) */}
+          {staffLafposEntryClosed({ admin: false, branchId: view.till, lafposDay: lafposState.lafpos }) ? (
+            <p className="text-[13px] text-ink-mute">{LAFPOS_STAFF_ENTRY_LINE}</p>
+          ) : (
+            <>
+              <p className="text-ink-mute">Bu günün zayi / ikramı için Zayi &amp; ikram › Önceki gün&apos;den istek gönderin.</p>
+              <ButtonLink href={`/panel/zayi?gun=${date}`} variant="secondary" size="sm">
+                <Gift size={14} /> Zayi &amp; ikram
+              </ButtonLink>
+            </>
+          )}
         </div>
       </Card>
       <MyCashRequests requests={myRequests} />

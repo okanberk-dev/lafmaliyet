@@ -14,6 +14,7 @@ import { dayTasks, eveningCashText, type DayFacts, type DayTask } from "../src/a
 import { readingBlocksRemoval } from "../src/lib/cash-out-requests";
 import { pavoView } from "../src/lib/lafpos/bank-pos";
 import { lafposDayDetail } from "../src/lib/lafpos/gun-ayrinti";
+import { LAFPOS_CASH_OUT_TEXT, LAFPOS_STAFF_ENTRY_LINE, staffLafposEntryClosed } from "../src/lib/lafpos/cash-moves";
 import { LAFPOS_STAFF_BEFORE_DAY_END_TEXT, LAFPOS_STAFF_WRITE_TEXT, staffBeforeLafposDayEnd } from "../src/lib/lafpos/foto";
 import type { BankPos, PosDayPush } from "../src/lib/lafpos/day";
 
@@ -126,4 +127,45 @@ test("fotoğraf kaldırma: otomatik LafPOS gününde personelin düğmesi ve ist
   assert.equal(readingBlocksRemoval({ suspicious: 0, staff: true, lafposAuto: false }), false);
   assert.match(read("src/server/data/cash-out-requests.ts"), /readingBlocksRemoval\(\{ suspicious: suspiciousDiffs\(\[reading\], saved\)\.length, staff: true, lafposAuto \}\)/);
   assert.match(read("src/server/cash-outs/requests.ts"), /readingBlocksRemoval\(\{ suspicious: suspiciousDiffs\(\[reading\], saved\)\.length, staff: o\.staff, lafposAuto: await lafposAutoReportOf\(tx, report\.id\) \}\)/);
+});
+
+// ---------------------------------------------------------------- LafPOS günü: harcama ve ikram/zayi LafPOS'tan
+
+test("personel: LafPOS'un şubesinde LafPOS gününde Kasa sayfasından kasadan çıkan ve ikram/zayi eklemez", () => {
+  const base = { admin: false, branchId: "marina", lafposDay: true };
+  assert.equal(staffLafposEntryClosed(base), true);
+  assert.equal(staffLafposEntryClosed({ ...base, admin: true }), false, "yönetici her zaman ekler");
+  assert.equal(staffLafposEntryClosed({ ...base, branchId: "tuzla" }), false, "ModPOS'ta kalan şube");
+  assert.equal(staffLafposEntryClosed({ ...base, branchId: null }), false, "şubesiz (Tuzla)");
+  assert.equal(staffLafposEntryClosed({ ...base, lafposDay: false }), false, "geçiş gününden önce");
+  assert.equal(LAFPOS_STAFF_ENTRY_LINE, "LafPOS günü: harcama ve ikram/zayi LafPOS'tan girilir");
+  assert.match(LAFPOS_CASH_OUT_TEXT.staffAdd, /LafPOS/);
+  assert.match(LAFPOS_CASH_OUT_TEXT.staffAdd, /fiş fotoğraf/i, "gelen satıra fiş eklenebildiğini söyler");
+});
+
+test("Kasa sayfası: LafPOS gününde personel ekle düğmeleri yerine kısa satırı görür; fiş fotoğrafı ekle kalır", () => {
+  const page = read("src/app/panel/kasa/page.tsx");
+  assert.match(page, /const entryClosed = staffLafposEntryClosed\(\{ admin, branchId: view\.till, lafposDay: lafposState\.lafpos \}\);/);
+  assert.match(page, /lafposEntryClosed=\{entryClosed\}/, "kasadan çıkanlar kartı");
+  assert.match(page, /\{entryClosed \? \(\n\s+<p className="text-\[13px\] text-ink-mute">\{LAFPOS_STAFF_ENTRY_LINE\}<\/p>\n\s+\) : \(\n\s+<ButtonLink href=\{`\/panel\/zayi\?gun=\$\{date\}`\}/, "zayi / ikram kartı");
+  // Geç rapor görünümü de aynı kuralla
+  assert.match(page, /staffLafposEntryClosed\(\{ admin: false, branchId: view\.till, lafposDay: lafposState\.lafpos \}\)/);
+  const outs = read("src/app/panel/kasa/cash-outs.tsx");
+  assert.match(outs, /\{lafposEntryClosed \? \(\n\s+<p[^>]*>\n\s+<Info[^>]*\/>\n\s+\{LAFPOS_STAFF_ENTRY_LINE\}\n\s+<\/p>\n\s+\) : canEdit \|\| \(staffActs && locked\) \? \(/);
+  // Fiş fotoğrafı ekle (LafPOS satırına da) ekleme kuralından bağımsız
+  assert.match(outs, /staffActs && storage && !o\.locked && o\.kind === "harcama" && o\.photoId === null/);
+});
+
+test("sunucu: personelin LafPOS gününe ekleme yolu (doğrudan, istek, taşıma) kapıda reddedilir; geri alma ve eski gün listesi", () => {
+  const guard = read("src/server/cash-outs/guard.ts");
+  assert.match(guard, /if \(target\.op === "ekle" && !target\.restore\) \{/);
+  assert.match(guard, /throw new UserError\(LAFPOS_CASH_OUT_TEXT\.staffAdd\)/);
+  assert.match(read("src/server/actions/cash-outs.ts"), /\{ op: "ekle", date: d\.date, restore: opts\.restore \}/);
+  assert.match(read("src/server/data/cash-out-requests.ts"), /isLafposDay\(d, switchDay\)/, "Eski bir güne ekle LafPOS günlerini göstermez");
+});
+
+test("Yardım: personelin kasadan çıkan sorusu LafPOS gününü anlatır", () => {
+  const help = plain(read("src/app/panel/yardim/personel/content.tsx"));
+  assert.match(help, /LafPOS\s+kullanılmaya\s+başlandıysa\s+kasadan\s+çıkan\s+para\s+LafPOS&apos;ta\s+girilir/);
+  assert.match(help, /Kasadan\s+çıkan\s+para\s+da\s+LafPOS&apos;ta\s+girilir/, "Gün içinde: LafPOS günü ayrı");
 });

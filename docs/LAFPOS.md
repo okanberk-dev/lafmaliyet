@@ -284,6 +284,14 @@ saf: `src/lib/lafpos/cash-moves.ts` › `planLafposCashOuts`):
   alışverişi "Ödemeye çevir"le Teslim'e çevrilmez. Fiş fotoğrafı (onaysız "Fiş fotoğrafı ekle"), yer, belge, açıklama
   ve kategori panelden eklenir. Kasa kartında satır "LafPOS" rozetini, pencerede "LafPOS'tan geldi" notunu taşır, tutar
   salt okunur, Sil düğmesi yoktur.
+- **Personel LafPOS gününe satır eklemez** (sahibin kararı, 24 Kasım 2026: "sadece gün sonu ladmin'e personel foto
+  atsın"; saf kural `staffLafposEntryClosed`): LafPOS'un şubesinde geçiş gününden itibaren Kasa sayfasında personelin
+  "Fiş ekle / Fişsiz ekle" ve "Zayi / ikram ekle" düğmelerinin yerinde "LafPOS günü: harcama ve ikram/zayi LafPOS'tan
+  girilir" yazar (geç rapor görünümünde de). Sunucu: personelin ekleme yolu (doğrudan, ekleme isteği, satırı başka güne
+  taşıma) `staffCashOutGate`'te reddedilir, "Eski bir güne ekle" LafPOS günlerini göstermez; silinenin "Geri al"ı yeni
+  satır sayılmaz. Gelen satıra fiş fotoğrafı ve kategori eklenir; yönetici her zaman ekler; Tuzla ve geçiş gününden
+  önceki gün eskisi gibi. Ürün ikramı zaten LafPOS gününde panele girilmez (`productIkramRefusal`); Zayi & ikram
+  sayfasının zayi ve hammadde yolu değişmez.
 
 Otomatik rapor "Gün içinde çıkan"ı satırlardan yazar (harcama + teslim; teslim edilen 0): LafPOS'un toplamıyla aynı,
 `lafposOutsCheck` ve `lafposHandedGap` sessiz kalır. Kabul günü: 22 Kasım'ın tek harcaması (800,00, "Diğer fatura
