@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
+import { PasswordInput } from "@/components/ui/password-input";
 import { dateTimeTR } from "@/lib/format";
 import { COMPANY_LOCKED_TEXT, sourceText, type ParasutSettingsView, type SettingSource } from "@/lib/parasut/settings";
 import { todayTR } from "@/lib/reminders";
@@ -235,9 +236,9 @@ function SettingsForm({ settings, connected, hasSynced }: { settings: ParasutSet
             aside={<SourceBadge source={settings.clientSecret.source} />}
             hint={settings.clientSecret.source ? "Gösterilmez; boş bırakırsanız kayıtlı olan kalır." : "DevHub'daki client_secret; şifreli saklanır, gösterilmez."}
           >
-            <Input
+            <PasswordInput
               id="ps-client-secret"
-              type="password"
+              toggleLabels={{ show: "Anahtarı göster", hide: "Anahtarı gizle" }}
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
               autoComplete="new-password"
