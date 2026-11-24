@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { badgeText, BOTTOM_NAV, bottomNavActive, mobileTitleFor, NAV_TREE, navTreeFor, overdueCount } from "../src/components/panel/nav";
+import { ASSISTANT_TAB, badgeText, BOTTOM_NAV, bottomNavActive, bottomNavFor, mobileTitleFor, NAV_TREE, navTreeFor, overdueCount } from "../src/components/panel/nav";
 import { canOpen, STAFF_PATHS } from "../src/lib/roles";
 
 test("yönetici alt menüsü: Genel bakış, Bugün, Kasa, Ödemeler, Tümü (Satışlar ve Faturalar çekmecede; kenar çubuğunun Menü grubuyla karışmasın diye 'Tümü')", () => {
@@ -45,6 +45,49 @@ test("personel alt menüsü günün işleri; hepsi personelin açabildiği ekran
   // Beş öğe: 390 px'te hücre başına 78 px
   assert.equal(BOTTOM_NAV.staff.length, 5);
   assert.equal(BOTTOM_NAV.admin.length, 5);
+});
+
+test("panel asistanı alt menüde: yalnız yönetici ve asistan açıkken, ortada; beş öğe kalır, Genel bakış üst çubuğun karosunda", () => {
+  // Yönetici + asistan: Bugün · Kasa · Asistan · Ödemeler · Tümü (docs/ASISTAN.md › Telefonda)
+  const admin = bottomNavFor("admin", { assistant: true });
+  assert.deepEqual(
+    admin.map((i) => i.label),
+    ["Bugün", "Kasa", "Asistan", "Ödemeler", "Tümü"],
+  );
+  assert.equal(admin.length, 5, "390 px'te hücre başına 78 px");
+  assert.equal(admin[2], ASSISTANT_TAB);
+  assert.equal(ASSISTANT_TAB.action, "assistant");
+  assert.equal(ASSISTANT_TAB.href, undefined, "bağlantı değil, asistanı açan düğme");
+  assert.equal(admin.find((i) => i.id === "odemeler")?.badge, "overdue", "gecikmiş rozeti çubukta kalır");
+  // Asistan kapalıysa (ASISTAN_KAPALI) yöneticinin çubuğu değişmez
+  assert.deepEqual(bottomNavFor("admin"), BOTTOM_NAV.admin);
+  assert.deepEqual(bottomNavFor("admin", { assistant: false }), BOTTOM_NAV.admin);
+  // Personel: asistan istense de sekme yok, çubuk bayt bayt aynı
+  assert.deepEqual(bottomNavFor("staff", { assistant: true }), BOTTOM_NAV.staff);
+  assert.equal(
+    bottomNavFor("staff", { assistant: true }).some((i) => i.action === "assistant"),
+    false,
+  );
+  // Genel bakış çekmecede de var (çubuktan çıkınca kaybolmaz)
+  assert.ok(NAV_TREE.some((n) => n.href === "/panel"));
+});
+
+test("etkin öğe asistanla: açıkken Asistan, kapalıyken adres; Tümü yine çekmece", () => {
+  const admin = bottomNavFor("admin", { assistant: true });
+  assert.equal(bottomNavActive(admin, "/panel/kasa", false, true), "asistan");
+  assert.equal(bottomNavActive(admin, "/panel/kasa", true, true), "asistan");
+  assert.equal(bottomNavActive(admin, "/panel/kasa"), "kasa");
+  assert.equal(bottomNavActive(admin, "/panel/kasa", true), "menu", "asistan sekmesi çekmece sayılmaz");
+  // Genel bakış çubukta değil: ana sayfada (girişten sonraki ilk ekran) hiçbir öğe etkin değil, çekmece kapalıyken
+  // "Tümü" yanmaz; çekmece açıkken Tümü, asistan açıkken Asistan. Çekmecedeki öteki ekranlar "Tümü"
+  assert.equal(bottomNavActive(admin, "/panel"), null);
+  assert.equal(bottomNavActive(admin, "/panel/"), null);
+  assert.equal(bottomNavActive(admin, "/panel", true), "menu");
+  assert.equal(bottomNavActive(admin, "/panel", false, true), "asistan");
+  assert.equal(bottomNavActive(admin, "/panel/urunler"), "menu");
+  // Sekmesi olmayan listede asistan açık olsa da etkisiz
+  assert.equal(bottomNavActive(BOTTOM_NAV.staff, "/panel/bugun", false, true), "bugun");
+  assert.equal(bottomNavActive(BOTTOM_NAV.admin, "/panel", false, true), "genel");
 });
 
 test("her alt menü bağlantısı kenar çubuğunda da var (çekmecede kaybolan ekran yok)", () => {

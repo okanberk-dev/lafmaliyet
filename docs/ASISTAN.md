@@ -1,14 +1,14 @@
-# Panel asistanı (sağ alttaki yardımcı)
+# Panel asistanı
 
-Ekran: her panel sayfasında sağ altta küçük yuvarlak düğme (parıltı simgesi, "Panel asistanı"); **yalnız yöneticide**.
-Tıklayınca masaüstünde sağ altta 400 × 560'lık bir pencere, telefon ve tablette tam ekran bir sayfa açılır. Panelin
-verisine (LafPOS'un gün sonları ve günlük satışları dahil) bakarak soruları yanıtlar ve panelin nasıl kullanılacağını
-gösterir. **Kendisi hiçbir şeyi değiştirmez:**
-birkaç risksiz işi (Tükendi, fiyat, ödendi işareti, hatırlatıcı, kasadan çıkan, vardiya…) bir **onay kartıyla** hazırlar;
+Ekran: **yalnız yöneticide**. Masaüstünde her panel sayfasının sağ altında küçük yuvarlak düğme (parıltı simgesi,
+"Panel asistanı"); tıklayınca sağ altta 400 × 560'lık bir pencere açılır. **Telefon ve tablette** (lg altı) yüzen düğme
+yoktur: asistan **alt menünün ortasındaki "Asistan" sekmesinden** açılır, alt menünün üstünde biten sade bir tam ekran
+sayfadır (aşağıda Telefonda). Panelin verisine (LafPOS'un gün sonları ve günlük satışları dahil) bakarak soruları
+yanıtlar ve panelin nasıl kullanılacağını gösterir. **Kendisi hiçbir şeyi değiştirmez:** birkaç risksiz işi (Tükendi, fiyat, ödendi işareti, hatırlatıcı, kasadan çıkan, vardiya…) bir **onay kartıyla** hazırlar;
 siz karttaki **Onayla**'ya basmadan hiçbir şey değişmez (aşağıda İşlemler). Silme, toplu işlem, şifre isteyen ve riskli
 işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları verir (aşağıda Yapmadığı işler).
 
-Örnek sorular (pencere boşken ilk yedisi çip olarak da durur):
+Örnek sorular (pencere boşken açık ekrana özel 3–4 tanesi çip olarak durur; aşağıda Sayfa bağlamı):
 
 - "Dünkü gün sonu nasıldı?", "Dün kasa tuttu mu?" → LafPOS'un gün sonu: Z, ödeme türleri, kasa farkı, ikram, Pavo,
   dün ve geçen haftayla kıyas
@@ -27,26 +27,99 @@ işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları 
 
 - Soruyu yazıp **Enter** (yeni satır için **Shift+Enter**). Yanıt yazılırken akar; araç çalışırken altta durum satırı
   görünür ("Tedarikçi özeti hazırlanıyor…"). **Durdur** yanıtı keser.
-- **Yeni sohbet** konuşmayı siler. Konuşma yalnız bu sekmede durur: sekme kapanınca gider, başka cihaza geçmez.
+- **Yeni sohbet** ekranı temizler ve yeni bir sohbet açar; önceki sohbet **Geçmiş**'te kalır (aşağıda Sohbet geçmişi).
+  Etkin sohbet sekmede durur; başka cihaza geçmez.
+- **Yanıtın biçimi:** başlık, madde ve numaralı liste, **tablo** (sağa hizalı sayı sütunu; tablo kendi kabında yatay
+  kayar, telefonda sayfa yana kaymaz). Düz yazıda tutar ve yüzde **orta kalınlıkta** ve satır sonunda bölünmez
+  ("12.450,50 ₺", "%12,5"; renk yok, yazının rengini alır); tabloda vurgu yoktur (sağa hizalı rakam yeter, sütunlar tek
+  tip). Tarih, saat ve adet vurgulanmaz.
+- **Kopyala** (her yanıtın altında): yanıtın düz metni panoya (bağlantının yalnız etiketi, işaretsiz; madde "• ",
+  tablo satırı "a | b"). **Yeniden sor** (son yanıtın altında; hata, kesinti ve "Süre doldu"da da): son soru yeniden
+  gider; önceki soru ve yanıtı konuşmadan çıkar (aynı soru geçmişte iki kez gitmez), yeni bir soru sayılır. Derin
+  analizle sorulduysa yine derin gider (bugün 2 hak yoksa olağan). Yanıtında onay kartı olan soruda Yeniden sor yoktur:
+  kart ekrandan sessizce kalkmasın, aynı iş için ikinci kart hazırlanmasın.
+- **Masaüstünde ⌘J / Ctrl+J** asistanı açar ve kapatır (sayfanın neresinde olursanız olun).
 - Yanıttaki panel bağlantıları aynı sekmede açılır (telefonda pencere kapanır, sayfa görünsün); dış bağlantı yalnız
   izin listesindeki sitelere (laffogato.net, Paraşüt, Claude), https ve yeni sekmede. Başka her adres (javascript:,
   http:, panelin dışına çıkan yol, listede olmayan site) bağlantısız yazı kalır (yalnız etiketi); yanıtta HTML
   çizilmez. Neden liste: araç sonuçlarında dışarıdan gelen metin var (Paraşüt kalem adları, LafPOS adları); onlarla
   yapılan istem enjeksiyonu panel verisini taşıyan bir bağlantı ürettirse bile tıklanamaz.
 - **Esc** pencereyi kapatır (masaüstünde odak sayfadayken de). Masaüstünde pencere modal değildir: sayfa kullanılabilir.
-  Telefonda sayfa tam ekran ve modaldır, Tab pencerenin içinde döner. Ekran okuyucu yanıt bitince ilk cümlesini okur.
-  Baskıda görünmez.
-- **Telefonda** (390 ve 360 px genişlikte denendi) sayfa ekranın tamamını kaplar ve görünür alana oturur: ekran klavyesi
-  açıkken yazı kutusu klavyenin hemen üstünde kalır, son mesaj görünür kalır, alttaki ipucu satırı gizlenir. Üstte,
-  yanlarda ve klavye kapalıyken altta güvenli alan (çentik, ana ekran çubuğu) boş bırakılır. Açılışta yazı kutusuna
-  değil başlığa odaklanılır: klavye kendiliğinden açılmaz (onay kartını ve çipleri örtmez), kullanıcı kutuya dokununca
-  açılır. Karaoke "süre doldu" şeridi varken sayfa şeridin altından başlar (başlık ve Kapat örtülmez). Alt menü ve sayfanın
-  yüzen düğmesi sayfanın altında kalır. Bütün düğmeler (Gönder, Durdur, Kapat, Yeni sohbet, örnek çipler, kartın
-  Onayla / Vazgeç'i) en az 44 px; yazı kutusu 16 px (iPhone odakta yakınlaştırmaz). Dar ekranda "Yeni sohbet" yalnız
-  simgedir. Onay kartında satırların etiketi üstte, değeri altta durur ve yazılar bir boy büyüktür.
-- Düğmenin yeri: telefonda alt menünün üstünde; sayfada yüzen ekleme düğmesi (ör. Hatırlatıcılarım'daki "Yeni") varsa
-  onun, kaydetme çubuğu açıksa çubuğun üstünde; masaüstünde köşede, yapılmamış hatırlatma kartı açıkken kartın üstünde.
-  Telefonda aşağı kaydırırken kaybolur, yukarı kaydırınca gelir; ekran klavyesi açıkken gizlidir.
+  Telefonda sayfa modal değildir (alt menü kullanılabilir, aşağıda Telefonda). Ekran okuyucu yanıt bitince ilk
+  cümlesini okur. Baskıda görünmez.
+- **Telefonda** sayfa görünür alana oturur: ekran klavyesi açıkken yazı kutusu
+  klavyenin hemen üstünde kalır, son mesaj görünür kalır. Üstte ve yanlarda güvenli alan (çentik) boş bırakılır; alttaki
+  pay alt menünün içindedir. Karaoke "süre doldu" şeridi varken sayfa şeridin altından başlar (başlık ve Kapat
+  örtülmez). Dar ekranda "Yeni sohbet" yalnız simgedir. Onay kartında satırların etiketi üstte, değeri altta durur ve
+  yazılar bir boy büyüktür.
+- Düğmenin yeri (yalnız masaüstü): köşede; yapılmamış hatırlatma kartı ya da kaydetme çubuğu açıkken onların üstünde.
+
+## Sayfa bağlamı
+
+- Asistan **açık olan ekranı bilir**: her soruda tarayıcı ekranın yolunu (`/panel/kasa`) ve adreste seçiliyse ayı
+  (`?ay=2026-11`) ya da günü (`?gun=2026-11-24`) gönderir; sorgunun geri kalanı, çapa ve sayfanın içeriği gitmez.
+  Sunucu bundan tek kısa satır yazar ("Yöneticinin açık ekranı: Kasa raporu (/panel/kasa); ekranda seçili ay: Kasım
+  2026") ve onu sistem isteminin **değişken** bloğuna (tarih ve şubenin yanına, önbellek işaretinden sonra) ekler: sabit
+  istem ve araç tanımları bayt bayt aynı kalır, önbellekten okunur. Ekranın adı menüden gelir; yol yalnız panelin
+  biçimindeyse (küçük harf, rakam, tire) kabul edilir, bozuksa satır yazılmaz (soru yine gider). Şube zaten panelin
+  seçicisinden okunur. "Bu ne demek?", "buradaki farkı açıkla" gibi sorular bu ekranı kastedebilir; soruda başka dönem
+  ya da şube geçiyorsa o geçerlidir.
+- **Önbellek notu:** değişken blok (tarih, şube, ekran satırı) mesajlardan önce gelir. Araçlar ve sabit istem ekran
+  değişse de önbellekten okunur; ama yönetici ekran ya da `?ay` / `?gun` değiştirip aynı sohbette sorarsa sohbetin
+  önceki turları (en çok 20 mesaj) önbellekten okunamaz, yeniden yazılır (girdi fiyatının 1,25 katı). Kısa bir sohbette
+  bu birkaç bin token, yani 0,01 $'ın altındadır; aynı ekranda sorulan ardışık sorular önceki turları önbellekten okur.
+  Ekran satırı bilerek sistemin değişken bloğunda (soru metnine eklenmez): soruların ve geçmişin metni yöneticinin
+  yazdığı gibi kalır.
+- **Ekrana özel öneriler:** asistan boşken açık ekrana göre 3–4 çip (en uzun eşleşen yol; alt sayfa ana ekranınkini
+  alır, eşleşmeyen ekranda genel liste). Örnekler: Paraşüt'te "Bağlanmayı bekleyen ürünleri özetle", Kasa'da "Bugünkü
+  kasa farkını açıkla", Vardiya'da "Bu hafta kimin vardiyası eksik?", Ödemeler'de "Geciken ödemeler neler?". Liste
+  `src/lib/assistant/page-context.ts` › `PAGE_SUGGESTIONS` (her kayıt menüdeki gerçek bir ekran; testli). Çipler yalnız
+  okuma sorusudur; işlem (onay kartı) öneren çip yoktur.
+
+## Takip önerileri
+
+- Bilgi veren her yanıtın altında, modelin önerdiği **2–3 kısa takip sorusu** çip olarak durur ("Geçen haftayla
+  kıyaslar mısın?"); dokununca soru olarak gider. **Ek API çağrısı yoktur:** model aynı yanıtın sonuna etiketli bir
+  blok yazar (`<takip>` … `</takip>`, sistem isteminde tarif edilir); tarayıcı bloğu yanıttan ayırır. Akarken blok ve
+  yarım gelen etiket görünmez; bitince metin bloksuz saklanır ve sonraki sorunun geçmişine de bloksuz gider.
+- Güvenlik: bloğun içi veridir. Her satır düz yazıya indirilir (etiket, markdown işareti, görünmeyen ve yön değiştiren
+  karakterler atılır), bağlantı ya da adres taşıyan satır düşer, en çok 3 soru, her biri en çok 80 karakter; ekranda
+  React yazısı olarak çizilir (HTML yok). İş yaptıran satır da düşer ("Latte fiyatını 1 ₺ yap", "ödendi olarak
+  işaretler misin?"; emir ve rica biçimi): öneri yalnız soru ya da bakma isteğidir, araç verisine gömülü bir istem
+  enjeksiyonu tek dokunuşluk bir işlem isteği üretemez. Bir öneri yalnız soru olarak gönderilir: işlem gerekirse yine
+  onay kartı çıkar.
+- Onay kartı açılan, bilgi sorulan (eksik bilgi), hata ya da retle biten yanıtta ve selamlaşmada öneri yazılmaz.
+  Öneriler yalnız son yanıtın altında görünür. Dosya: `src/lib/assistant/followups.ts`, çipler `followup-chips.tsx`.
+
+## Telefonda
+
+- **Alt menü:** yöneticinin alt menüsü asistan açıkken **Bugün · Kasa · Asistan · Ödemeler · Tümü** olur (asistan
+  kapalıysa, `ASISTAN_KAPALI=1`, ve personelde değişmez). Beş öğe kalır: altıncı öğe 360 px'te hücreyi 60 px'e indirir,
+  "Genel bakış" yazısı kesilir. Çubuktan çıkan **Genel bakış**: öğelerin içinde her ekranda tek dokunuşluk ikinci yolu
+  olan yalnız odur (üst çubuktaki L'Af karosu ana sayfaya, Genel bakış'a gider; çekmecede de durur; giriş de orada
+  açılır). Bugün, Kasa ve Ödemeler'in (gecikmiş rozeti) başka tek dokunuşluk yolu yok. Genel bakış'tayken (girişten
+  sonraki ilk ekran) alt menüde hiçbir öğe etkin görünmez; çekmecedeki öteki ekranlarda "Tümü" etkin görünür. Asistan ortada, sade: aynı
+  hücre, parıltı simgesi marka renginde; yükseltilmiş daire, gölge yok (AkmanOS alt menüsünün diliyle).
+- **Açıkken:** alt menü görünür kalır, "Asistan" sekmesi etkin görünür (hap); sayfa üst çubuğu örter ve alt menünün
+  hemen üstünde biter. Sekmeye yeniden dokununca kapanır; başka bir öğeye dokununca asistan kapanır ve o ekran açılır
+  ("Tümü" çekmeceyi açar). Yanıttaki bir panel bağlantısı da sayfayı kapatıp ekranı açar. Arkadaki sayfa ve üst çubuk
+  bu sırada etkisizdir; "İçeriğe geç" bağlantısı ve yapılmamış hatırlatmanın köşe kartı gizlenir (sayfanın altında
+  kalırlardı): odak ve ekran okuyucu yalnız asistanla alt menü arasında gezer. Bir öneri ya da takip çipine dokununca
+  odak konuşmaya geçer (boşa düşmez). Konuşma sekme kapanmadıkça
+  kalır: yeniden açınca kaldığı yerden sürer.
+- **Klavye:** yazı kutusuna dokununca ekran klavyesi açılır, alt menü gizlenir, sayfa klavyenin hemen üstünde biter;
+  klavye kapanınca alt menü geri gelir. Açılışta yazı kutusuna değil başlığa odaklanılır (klavye kendiliğinden açılmaz).
+  Klavye açıkken Derin analiz satırı gizlenir (yazıya yer kalsın); anahtar açıksa görünür kalır.
+- **Göz yormasın:** sayfa zemininde, kenarlık ve gölge yok; başlık tek satır ("Panel asistanı", Yeni sohbet, Kapat).
+  Boş sohbet baştan görünür: iki cümlelik karşılama ve ekrana özel öneriler (uzun tanıtım masaüstünde).
+  Mesaj balonu yok: soru hafif zeminli düz bir blok, yanıt altında düz metin. Yazılar 16 px, satır aralığı geniş
+  (1,75), turlar arası boşluk bol; başlık, madde ve tablo yanıtın içinde ayrışır, tablo yatay kayar. Koyu temada yanıt
+  saf beyaz değil, bir ton kısık (`ink-soft`): siyah zeminde parlama yapmaz; kalın yazı, başlık, bağlantı, tutar ve
+  yüzde de aynı tonda (yalnız kalınlıkları ayırır). Alttaki
+  ipucu satırı telefonda yalnız uyarı varken (son 10 soru, soru çok uzun) görünür. Onay kartı tek sütun, çizgisi bir
+  ton açık, dış etki rozetleri gri; renk yalnız uyarıda ve sonuçta.
+- Dokunulan her şey (sekme, Gönder, Durdur, Kapat, Yeni sohbet, çipler, kartın Onayla / Vazgeç'i) en az 44 px; yazı
+  kutusu 16 px (iPhone odakta yakınlaştırmaz).
 
 Yanıtlar panelin verisinden gelir ama yanlış olabilir: önemli bir rakamı (ödeme, vergi) ekranda kontrol edin. Vergi
 rakamları paneldeki gibi tahmindir.
@@ -144,16 +217,17 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
 
 ## Ne saklar, ne saklamaz
 
-- **Tarayıcıda:** konuşma bu sekmenin oturum belleğinde (sessionStorage, kullanıcıya özel anahtar), en çok son 40 mesaj.
-  Sekme kapanınca ya da **Yeni sohbet** ile silinir.
+- **Tarayıcıda:** etkin konuşma bu sekmenin oturum belleğinde (sessionStorage, kullanıcıya özel anahtar), en çok son
+  40 mesaj; son 10 sohbetin görünen metni cihazın kalıcı deposunda (localStorage, kullanıcıya özel; yukarıda Sohbet
+  geçmişi). Çıkışta ikisi de silinir.
 - **Sunucuda:** hiçbir mesaj saklanmaz; yalnız onay kartlarının planı (`assistant_ops`: araç, girdi, kartın içeriği,
   durum, sonuç; denetim kaydıdır ve yedeğe girer, bekleyen kartlar girmez). Her soru `ai_calls` tablosuna tek satır yazar (tür `asistan`): kim sordu, ne
   zaman, model, süre, token sayıları, tutar (dolar), bitiş nedeni, kaç çağrı ve kaç araç çalıştığı. **Sorunun, yanıtın ve
   araç sonuçlarının metni yazılmaz.** Sunucu günlüğüne yalnız hata kodu ve Anthropic'in istek kimliği düşer; araç ve
   işlem hatalarında hatanın yalnız adı ve kodu (`src/lib/assistant/error-tag.ts`): sorgu hatasının iletisi modelin
   girdisini ("params: …") taşıdığı için yazılmaz.
-- **Anthropic'e giden:** soru, aynı sohbetteki önceki soru ve yanıtların görünen metni (en çok son 20 mesaj) ve
-  araçların sonuçları (panelin verisi). Anthropic (ABD) bu isteği işler; fotoğraftan okumada olduğu gibi.
+- **Anthropic'e giden:** soru, aynı sohbetteki önceki soru ve yanıtların görünen metni (en çok son 20 mesaj), açık
+  ekranın yolu ve seçili ay / gün (Sayfa bağlamı) ve araçların sonuçları (panelin verisi). Anthropic (ABD) bu isteği işler; fotoğraftan okumada olduğu gibi.
 
 ## Model ve maliyet
 
@@ -161,8 +235,8 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
   yanıtlar kısa tutulur). Fiyat: milyon token başına girdi 2 $, çıktı 10 $, önbellekten okuma 0,10 $.
 - Sabit kısım (yönergeler, ekran listesi, kavramlar, araç tanımları) her istekte aynıdır ve önbellekten okunur; bir
   sorunun araç turları da önceki turu önbellekten okur.
-- Sabit önek (31 araç tanımı ve sistem istemi) yaklaşık 13–16 bin tokendir (tahmin: ~45 bin karakter Türkçe ve JSON;
-  anahtarsız ortamda `count_tokens` çağrılamadı). Önbelleğin ömrü 5 dakikadır: aradan 5 dakikadan uzun süre geçince
+- Sabit önek (31 araç tanımı ve sistem istemi) yaklaşık 14–17 bin tokendir (tahmin: ~47 bin karakter Türkçe ve JSON;
+  sistem istemi ~20 bin karakter; anahtarsız ortamda `count_tokens` çağrılamadı). Önbelleğin ömrü 5 dakikadır: aradan 5 dakikadan uzun süre geçince
   sıradaki soru öneki yeniden önbelleğe yazar (1,25×). Bu yüzden iki rakam: **ilk soru ≈ 0,05 $** (önbellek soğuk;
   önekin yazımı tek başına ≈ 0,035–0,04 $), **5 dakika içindeki sonraki sorular ≈ 0,01–0,03 $** (bir iki araç turu,
   önek önbellekten okunur). Ayın toplamı Ayarlar › Fotoğraftan okuma kartındaki "Bu ay" tutarına girer (okumalar ve
@@ -172,15 +246,66 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
   `low`'da basit sorularda düşünmez. Asistanın soruları çoğunlukla tek araçlı olduğundan `low` denenmeye değer: kalite
   ve gecikme gerçek sorularla (anahtarlı ortamda) ölçülüp karşılaştırılmadan değiştirilmez. Efor değişince önbellek
   bir kez yeniden yazılır.
-- **Günlük sınır:** yönetici başına günde 60 soru (hata ve ret dahil her soru sayılır). Sayım ve soru satırının eklenmesi
+- **Günlük sınır:** yönetici başına günde 60 soru (hata ve ret dahil her soru sayılır; derin analiz 2 soru sayılır). Sayım ve soru satırının eklenmesi
   tek işlemde, yönetici başına danışma kilidiyle yapılır: aynı anda gönderilen sorular sınırı aşamaz. Günün son
   sorusundan sonra pencere "Bugünkü soru sınırı doldu" der; pencere her açılışta kapıyı yeniden sorar (gece yarısı
   sayfa yenilenmeden açılır). Asistanın soruları fotoğraftan
   okumanın günlük sınırını tüketmez. Kalan hak 10'un altına inince pencerenin altında yazar.
 - Bir soruda en çok **8 araç turu** ve yaklaşık **35 saniye**; dolunca asistan eldeki bilgiyle toparlar. 50 saniyede
-  yanıt kesilir ("Süre doldu"). Soru en çok 4000 karakter.
+  yanıt kesilir ("Süre doldu"). Derin analizde 12 tur, 42 ve 55 saniye (aşağıda). Soru en çok 4000 karakter.
 - Soru reddedilirse (güvenlik sınıflandırıcısı) Anthropic'in sunucu tarafındaki yedek modeli denenir; o da reddederse
   pencere "Bu soruyu yanıtlayamıyorum" der.
+
+## Sohbet geçmişi
+
+- Başlıktaki **Geçmiş** düğmesi (saat simgesi) bu cihazdaki **son 10 sohbeti** listeler: başlık (ilk soru, en çok 60
+  karakter), tarih ve soru sayısı. Satıra dokununca sohbet açılır ve kaldığı yerden sürer; çöp kutusu siler; "Yeni
+  sohbet" yenisini açar. Açık olan sohbet silinirse ekrandan da gider.
+- **Nerede:** tarayıcının kalıcı deposunda (localStorage), **kullanıcıya özel anahtarla**
+  (`lafm.asistan.gecmis.v1.<kullanıcı>`): aynı cihazda başka bir yönetici yalnız kendi listesini görür. Sunucuya
+  gitmez, başka cihaza geçmez. **Çıkış yapınca** bu kullanıcının geçmişi ve etkin sohbeti cihazdan silinir.
+- **Ne saklanır:** yalnız görünen metin (soru, yanıt, yanıtın altındaki kısa not). Onay kartlarının yalnız **başlığı
+  ve durumu** ("[Onay kartı: Latte M fiyatı 90,00 ₺ olacak — yapıldı]"); başlık kartın kendisinin yazdığıdır ve yeni
+  değeri ya da kişinin adını içerebilir. Kartın kimliği, satırları (eski → yeni), şubesi, uyarıları, notu ve sonuç
+  iletisi saklanmaz; geçmişten açılan sohbette kart düğmesi yoktur, onaylanamaz. Listeden yalnız açmak sohbetin sırasını
+  ve tarihini değiştirmez; yeni bir soru ya da yanıtla başa geçer. Takip önerileri saklanmaz. Sohbet başına
+  en çok 40 mesaj.
+- **Sunucuya giden değişmez:** her soruda yalnız etkin sohbetin son turları (en çok 20 mesaj; aşağıda Ne saklar).
+  Geçmişe yanıt bitince yazılır (akarken değil). Dosya: `src/lib/assistant/history.ts`, liste `history-list.tsx`.
+
+## Sesle soru
+
+- **Telefonda** yazı kutusunun yanında mikrofon düğmesi (44 px). Dokununca dinler (Türkçe, `tr-TR`), konuşma bitince
+  kendiliğinden durur (yeniden dokunmak da durdurur). Tanınan metin yazı kutusuna, varsa yazılanın sonuna eklenir;
+  **gönderilmez**: okuyup düzeltip Gönder'e basarsınız.
+- Tarayıcının **Web Speech API**'si kullanılır (Chrome / Android'de `SpeechRecognition`, Safari / iPhone'da
+  `webkitSpeechRecognition`). Tarayıcı desteklemiyorsa (ör. Firefox) düğme **hiç görünmez**. Masaüstünde yoktur.
+- **Ses panelin sunucusuna da Anthropic'e de gitmez;** yalnız tanınan metin, siz gönderince soru olarak gider. Tanımayı
+  tarayıcının kendisi yapar: Chrome sesi tanıma için Google'ın hizmetine, Safari Apple'ınkine gönderebilir (tarayıcının
+  kuralı; panel sesi görmez, saklamaz). İlk kullanımda tarayıcı mikrofon izni ister; izin yoksa kutunun üstünde kısa
+  not çıkar. Dosyalar: `src/lib/assistant/speech.ts`, `voice-button.tsx`.
+
+## Derin analiz
+
+- Yazı kutusunun üstünde küçük bir **Derin analiz** anahtarı (beyin simgesi). **Varsayılan kapalı**; açılınca yalnız o
+  soru için geçerlidir (gönderince kendiliğinden kapanır), soru ekranda "Derin analiz" işaretiyle durur.
+- Ne değişir: efor **high** (olağan soru medium), bir soruda en çok **12 araç turu** (olağan 8), çıktı sınırı 16.000
+  token (düşünme dahil; olağan 8.000). Süre bütçesi biraz geniş: 42 sn'ye dek yeni araç turu açar (olağan 35), 55 sn'de
+  kesilir (olağan 50). Rotanın sınırı 60 sn (Vercel); kayıt için 5 sn pay kalır, son yanıta 13 sn. High eforda her tur
+  daha uzun sürdüğünden **12 tur bir tavandır; pratikte sınırı çoğu zaman süre koyar** (42 sn'de eldeki bilgiyle
+  toparlar). Derin soru "Süre doldu" ile kesilse de 2 soru sayılır (satır sorunun başında yazılır). Canlı denemeden
+  sonra derin soruların tur ve süre dağılımı buraya yazılacak (Açık kalanlar). Çok adımlı sorular için: "Bu ayın kârını
+  geçen ayla kalem kalem karşılaştır", "Kasa farklarında bir örüntü var mı?".
+- **Maliyet:** high eforda model daha uzun düşünür ve daha çok araç çağırır; çıktı tokeni (milyonu 10 $) birkaç
+  katına çıkabilir. Üst düzey efor değişimi önbelleğin mesaj kısmını (bu modelde araç + sistem önekini de) geçersiz
+  kılar: derin soru öneki bir kez yeniden yazar (≈0,035–0,04 $); ardından gelen olağan soru, 5 dakika içinde yazılmış
+  medium önbelleğini okur. Tahmin: **derin soru ≈ 0,06–0,15 $** (olağan ≈ 0,01–0,05 $).
+- **Günlük sınır:** derin analiz **2 soru sayılır** (satır `ai_calls`'a eforu `high` ile yazılır; sayım satırın
+  eforundan ağırlıklı yapılır, sayım ve ekleme yine tek işlemde). Bugün 2'den az hak kaldıysa anahtar kapalıdır;
+  sunucu da "Derin analiz 2 soru sayılır; bugün 1 soru hakkı kaldı" der (429, `deep_cap`), olağan soru sorulabilir.
+- Neden mesaj içi efor değil: Sonnet 5.5'te efor bir sistem mesajıyla (beta `mid-conversation-output-config-2026-07-01`)
+  mesaj içinde de değiştirilebilir ve önbelleği korur; anahtarsız ortamda canlı denenemediği için kullanılmadı (Açık
+  kalanlar). Kod: `src/server/ai/assistant/loop.ts` › `ASSISTANT_DEEP`, sayım `src/server/ai/claude.ts`.
 
 ## Nasıl kapatılır
 
@@ -196,6 +321,16 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
 (kod, dosya yolu, işlev adı atılır) ve sunucunun koduna gömülür. Kurulum, tasarım dili ve API ayrıntısı belgeleri
 girmez; panelden kaldırılmış ekranlar da girmez (26 Ekim 2026'da kalkan sayım ve sipariş ekranları): onları anan
 satırlar düşer, asistan bu ekranlara bağlantı vermez. Belge değişince `npm run asistan:bilgi` ile yeniden yazılır; unutulursa test düşer.
+
+## Açık kalanlar (teknik)
+
+- **Derin analizin süre bütçesi:** anahtarlı ortamda ilk canlı denemede derin soruların tur sayısı, süresi ve tutarı
+  ölçülüp Derin analiz bölümüne yazılacak; 42 / 55 sn ve 12 tur buna göre ayarlanır. "Süre doldu" ile kesilen derin
+  soru bugün yine 2 sayılır (satır sorunun başında `high` eforla yazılır; iade için kayıtta ayrı bir alan gerekir).
+- **Mesaj içi efor:** beta `mid-conversation-output-config-2026-07-01` ile derin analiz önbelleği bozmadan verilebilir;
+  canlı denenmeden kullanılmadı.
+- **Gerçek telefonda deneme:** telefon düzeni (alt menü sekmesi, klavye, koyu tema) tarayıcının telefon görünümünde
+  denendi; iPhone Safari ve Android Chrome'da elle bakılacak (klavye, ses tanıma izni).
 
 ## Dosyalar (teknik)
 
@@ -223,10 +358,19 @@ satırlar düşer, asistan bu ekranlara bağlantı vermez. Belge değişince `np
   `handlePosDay`) içe aktarılmaz. Serbest metinler burada atılır. Strict araç tanımları yapılandırılmış girdinin
   karmaşıklık sınırına sığan önektir; isteğe bağlı alanı çok olan okuma araçları (vardiya, günlük satışlar, stok) sınırın
   dışında kalır, girdileri yine zod'dan geçer.
-- Sistem istemi: `src/server/ai/assistant/prompt.ts` (ekranlar `src/components/panel/nav.ts`'ten).
+- Sistem istemi: `src/server/ai/assistant/prompt.ts` (ekranlar `src/components/panel/nav.ts`'ten). Bölümler: yanıt
+  kuralları (kısa, telefonda okunur; tablo en çok 4 sütun × 8 satır, sayılar sağa hizalı; rakam yalnız araçtan, kendi
+  hesabı kaynağıyla), nasıl çalışır (çok adımlı soruda önce veriyi topla, bağımsız araçlar aynı turda, sonra kısa sonuç
+  + gerekçe; örnek araç birleşimleri; belirsizlikte tek kısa soru ya da söylenen varsayım; açık ekran satırının
+  anlamı), işlemler (bir yanıtta en çok bir işlem aracı, riskli işte rehber), araç seçimi (hangi soru hangi araç), takip
+  önerilerinin biçimi, LafPOS, ekranlar, kavramlar. İstem **bayt bayt sabittir**: tarih, şube, açık ekran ve efor
+  değişken blokta ya da isteğin kendisinde; testi `tests/asistan-gelismis.test.ts`.
 - Kapı ve kayıt: `src/server/ai/claude.ts` (`assistantStatus`, `startAssistantCall`, `finishAssistantCall`).
 - Ekran: `src/components/panel/assistant/` (düğme ve pencere, güvenli markdown; panel düzenine bir kez eklenir,
-  `src/app/panel/layout.tsx`). Düğmenin yeri `src/app/globals.css` › `--assistant-bottom`.
+  `src/app/panel/layout.tsx`). Açık / kapalı durumu `assistant-open.ts` (alt menünün sekmesi ile asistan ayrı ağaçlarda;
+  ikisi bu küçük depoyu paylaşır). Alt menü: `src/components/panel/nav.ts` › `bottomNavFor`, `ASSISTANT_TAB`;
+  `bottom-nav.tsx`; sekme yalnız yöneticide ve `assistantEnabled()` iken (düzen `Sidebar`'a `assistant` verir).
+  Masaüstü düğmesinin yeri `src/app/globals.css` › `--assistant-bottom`, telefondaki sayfanın alt payı `--assistant-nav`.
 - Bilgi tabanı: `src/lib/assistant/knowledge-build.ts` (derleme), `knowledge-data.ts` (üretilir), `knowledge.ts` (arama).
   TS modülüne gömüldü, çünkü `docs/` klasörü Next'in sunucu işlevinin izine kendiliğinden girmez; gömülü modül pakete
   girer, çalışma anında dosya okunmaz, testler doğrudan kullanır.
