@@ -1117,7 +1117,8 @@ test("kaynak: zil Bugün ile aynı akşam kuralına bakar; Bugün canlı veride 
   // Kasa satırları kasa modülünde (src/server/bell/kasa.ts), toplayıcı iki rolde çağırır
   const bell = read("src/server/bell/kasa.ts");
   assert.match(read("src/server/actions/notifications.ts"), /kasaBell\(user\)\.catch\(\(\) => \[\]\)/);
-  assert.match(bell, /if \(!isCashEvening\(now\) \|\| reports\.some\(\(r\) => r\.date === day\)\) return \[\];/);
+  // Şubesiz personel "Tümü"de birden çok kasa açıkken kasa başına satır (şube kapsamı C P2-10), yoksa tek satır
+  assert.match(bell, /if \(!isCashEvening\(now\)\) return \[\];\s+\/\/[^\n]*\n\s+const perTill = await staffTillsWaiting\(day\);\s+if \(perTill\) return perTill;\s+if \(reports\.some\(\(r\) => r\.date === day\)\) return \[\];/);
   assert.doesNotMatch(bell, /hour < 20/);
   // Bildirim gelince Bugün yenilenir (kural src/lib/live-poll.ts › refreshesScreen)
   assert.match(read("src/components/panel/live/alert-center.tsx"), /if \(refreshesScreen\(pathRef\.current, kind\)\) router\.refresh\(\)/);

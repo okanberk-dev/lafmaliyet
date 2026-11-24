@@ -126,10 +126,12 @@ export async function deleteCashReport(id: number) {
     const reportId = z.number().int().positive().parse(id);
     // Yanlışlıkla silinen raporun fotoğrafları 30 gün daha saklanır (bağları raporla birlikte silinir)
     const { row, photos } = await getDb().transaction((tx) => removeCashReport(tx, reportId));
+    // Birden çok kasa açıkken kaydın kasası adıyla (şube kapsamı C P2-4): "24 Kasım Pazartesi · Marina · Z …"
+    const till = namedTill(await listBranches(), row.branchId)?.name ?? null;
     await logActivity(
       me,
       "Kasa raporu silindi",
-      [longDateTR(row.date), `Z ${money(row.zTotal)}`, `sayılan ${money(row.countedCash)}`, diffText(row.cashDiff), row.countedByName ?? row.by, photos ? `${photos} fotoğraf` : null]
+      [longDateTR(row.date), till, `Z ${money(row.zTotal)}`, `sayılan ${money(row.countedCash)}`, diffText(row.cashDiff), row.countedByName ?? row.by, photos ? `${photos} fotoğraf` : null]
         .filter(Boolean)
         .join(" · "),
     );

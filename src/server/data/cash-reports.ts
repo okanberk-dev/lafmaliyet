@@ -1,10 +1,11 @@
 import "server-only";
 
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, like, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, like, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 
 import { modposRunStart, tillKey, type MonthEntry, type TillRow } from "@/lib/cash-month";
 import {
+  businessDate,
   defaultCashRecipients,
   integrityOf,
   type CashReportFields,
@@ -18,6 +19,7 @@ import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/sw
 import { MODPOS_FALLBACK_KEY, readModposFallback } from "@/lib/modpos/status";
 import { foyZ } from "@/lib/modpos/z";
 import type { OkcPrev, OkcRow, OkcVatLine } from "@/lib/okc-z";
+import { addDays } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
 import { andWhere, currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
@@ -546,9 +548,24 @@ export async function nextReportAfter(date: string, branchId?: string): Promise<
   return row ?? null;
 }
 
-/** "Kasayı sayan" seçeneği: etkin kullanıcılar, ada göre */
-export async function cashCounters(): Promise<{ id: number; name: string }[]> {
-  return getDb().select({ id: s.users.id, name: s.users.name }).from(s.users).where(eq(s.users.active, true)).orderBy(asc(s.users.name));
+/**
+ * "Kasayı sayan" seçeneği: etkin kullanıcılar, ada göre. `branchId` verilirse (kasa formu; şube kapsamı C P2-3) o kasayı
+ * sayabilecekler: yöneticiler, şubesiz personel, o şubenin personeli ve son 60 günde o kasayı saymış olan (başka şubeye
+ * geçmiş kişinin eski raporu formda boş görünmesin). Verilmezse (Onaylar: kartlar birden çok kasanın) herkes
+ */
+export async function cashCounters(branchId?: string): Promise<{ id: number; name: string }[]> {
+  const u = s.users;
+  const recent = branchId
+    ? getDb()
+        .select({ id: s.cashReports.countedBy })
+        .from(s.cashReports)
+        .where(and(eq(s.cashReports.branchId, branchId), isNotNull(s.cashReports.countedBy), gte(s.cashReports.date, addDays(businessDate(), -60))))
+    : null;
+  return getDb()
+    .select({ id: u.id, name: u.name })
+    .from(u)
+    .where(and(eq(u.active, true), branchId && recent ? or(eq(u.role, "admin"), isNull(u.branchId), eq(u.branchId, branchId), inArray(u.id, recent)) : undefined))
+    .orderBy(asc(u.name));
 }
 
 /** Kayıtlı raporun bütünlük bilgisi (WhatsApp metni ve e-posta; src/lib/cash-report.ts integrityOf). Üç küçük sorgu */

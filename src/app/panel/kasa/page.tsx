@@ -318,7 +318,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
     showForm ? cashOutCategories(user.role) : Promise.resolve([]),
     // Sonraki günün raporu: açılışı bu raporun devriyle karşılaştırılır; varsa personel bu raporu düzeltemez
     showForm ? nextReportAfter(date) : Promise.resolve(null),
-    showForm ? cashCounters() : Promise.resolve([]),
+    // Kasayı sayan: bu kasayı sayabilecekler (şube kapsamı C P2-3)
+    showForm ? cashCounters(view.till) : Promise.resolve([]),
     // Önceki yazarkasa Z'si: forma yalnız gün ve numara gider (Z no denetimi); kümülatif yalnız yöneticinin satırında
     showForm ? previousOkc(date) : Promise.resolve<OkcPrev>({ z: null, cum: null }),
     // Günün kasası ve LafPOS'un bu günün sonu ("LafPOS'tan doldur", docs/LAFPOS.md): yalnız geçiş gününden sonraki
@@ -783,7 +784,7 @@ async function StaffLateDay({ date, user, view }: { date: string; user: { id: nu
   const [request, chain, counters, ai, myRequests, prevOkc, lafposState] = await Promise.all([
     lateRequestFor(date, user),
     chainNeighbours(getDb(), date, { prefer: user.id, branchId: view.till }),
-    cashCounters(),
+    cashCounters(view.till),
     aiStatus(),
     myCashRequests(user.id),
     previousOkc(date),
