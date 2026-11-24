@@ -8,7 +8,7 @@ yanıtlar ve panelin nasıl kullanılacağını gösterir. **Kendisi hiçbir şe
 siz karttaki **Onayla**'ya basmadan hiçbir şey değişmez (aşağıda İşlemler). Silme, toplu işlem, şifre isteyen ve riskli
 işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları verir (aşağıda Yapmadığı işler).
 
-Örnek sorular (pencere boşken ilk yedisi çip olarak da durur):
+Örnek sorular (pencere boşken açık ekrana özel 3–4 tanesi çip olarak durur; aşağıda Sayfa bağlamı):
 
 - "Dünkü gün sonu nasıldı?", "Dün kasa tuttu mu?" → LafPOS'un gün sonu: Z, ödeme türleri, kasa farkı, ikram, Pavo,
   dün ve geçen haftayla kıyas
@@ -42,6 +42,22 @@ işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları 
   örtülmez). Dar ekranda "Yeni sohbet" yalnız simgedir. Onay kartında satırların etiketi üstte, değeri altta durur ve
   yazılar bir boy büyüktür.
 - Düğmenin yeri (yalnız masaüstü): köşede; yapılmamış hatırlatma kartı ya da kaydetme çubuğu açıkken onların üstünde.
+
+## Sayfa bağlamı
+
+- Asistan **açık olan ekranı bilir**: her soruda tarayıcı ekranın yolunu (`/panel/kasa`) ve adreste seçiliyse ayı
+  (`?ay=2026-11`) ya da günü (`?gun=2026-11-24`) gönderir; sorgunun geri kalanı, çapa ve sayfanın içeriği gitmez.
+  Sunucu bundan tek kısa satır yazar ("Yöneticinin açık ekranı: Kasa raporu (/panel/kasa); ekranda seçili ay: Kasım
+  2026") ve onu sistem isteminin **değişken** bloğuna (tarih ve şubenin yanına, önbellek işaretinden sonra) ekler: sabit
+  istem ve araç tanımları bayt bayt aynı kalır, önbellekten okunur. Ekranın adı menüden gelir; yol yalnız panelin
+  biçimindeyse (küçük harf, rakam, tire) kabul edilir, bozuksa satır yazılmaz (soru yine gider). Şube zaten panelin
+  seçicisinden okunur. "Bu ne demek?", "buradaki farkı açıkla" gibi sorular bu ekranı kastedebilir; soruda başka dönem
+  ya da şube geçiyorsa o geçerlidir.
+- **Ekrana özel öneriler:** asistan boşken açık ekrana göre 3–4 çip (en uzun eşleşen yol; alt sayfa ana ekranınkini
+  alır, eşleşmeyen ekranda genel liste). Örnekler: Paraşüt'te "Bağlanmayı bekleyen ürünleri özetle", Kasa'da "Bugünkü
+  kasa farkını açıkla", Vardiya'da "Bu hafta kimin vardiyası eksik?", Ödemeler'de "Geciken ödemeler neler?". Liste
+  `src/lib/assistant/page-context.ts` › `PAGE_SUGGESTIONS` (her kayıt menüdeki gerçek bir ekran; testli). Çipler yalnız
+  okuma sorusudur; işlem (onay kartı) öneren çip yoktur.
 
 ## Telefonda
 
@@ -171,8 +187,8 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
   araç sonuçlarının metni yazılmaz.** Sunucu günlüğüne yalnız hata kodu ve Anthropic'in istek kimliği düşer; araç ve
   işlem hatalarında hatanın yalnız adı ve kodu (`src/lib/assistant/error-tag.ts`): sorgu hatasının iletisi modelin
   girdisini ("params: …") taşıdığı için yazılmaz.
-- **Anthropic'e giden:** soru, aynı sohbetteki önceki soru ve yanıtların görünen metni (en çok son 20 mesaj) ve
-  araçların sonuçları (panelin verisi). Anthropic (ABD) bu isteği işler; fotoğraftan okumada olduğu gibi.
+- **Anthropic'e giden:** soru, aynı sohbetteki önceki soru ve yanıtların görünen metni (en çok son 20 mesaj), açık
+  ekranın yolu ve seçili ay / gün (Sayfa bağlamı) ve araçların sonuçları (panelin verisi). Anthropic (ABD) bu isteği işler; fotoğraftan okumada olduğu gibi.
 
 ## Model ve maliyet
 

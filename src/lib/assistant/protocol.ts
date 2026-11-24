@@ -10,6 +10,7 @@
 import { z } from "zod";
 
 import { cardHistoryLine, isOpCard, isOpStatus, type OpCard, type OpCardState } from "./ops";
+import { assistantPage } from "./page-context";
 
 export const ASSISTANT_LIMITS = {
   /** Kullanıcının bir mesajı (karakter) */
@@ -43,13 +44,15 @@ const turn = z
 export type AssistantTurn = z.output<typeof turn>;
 
 /**
- * İsteğin gövdesi: yeni soru ve önceki turlar. Geçmiş soruyla başlar, soru ve yanıt sırayla gelir, yanıtla biter
+ * İsteğin gövdesi: yeni soru, önceki turlar ve açık ekran (yol, seçili ay / gün; isteğe bağlı). Geçmiş soruyla başlar, soru ve yanıt sırayla gelir, yanıtla biter
  * (yeni soru ayrı alanda). Soru en çok 4000, yanıt en çok 8000 karakter, geçmiş en çok 20 mesaj.
  */
 export const assistantRequest = z
   .object({
     message: z.string().trim().min(1, "Soru boş").max(ASSISTANT_LIMITS.message, `Soru en çok ${ASSISTANT_LIMITS.message} karakter olabilir`),
     history: z.array(turn).max(ASSISTANT_LIMITS.history, `Geçmiş en çok ${ASSISTANT_LIMITS.history} mesaj olabilir`).default([]),
+    /** Açık ekran (page-context.ts): bozuksa soru reddedilmez, alan düşer */
+    page: assistantPage.optional().catch(undefined),
   })
   .strict()
   .superRefine((v, ctx) => {

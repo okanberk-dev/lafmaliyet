@@ -6,6 +6,7 @@ import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } f
 
 import { useMediaQuery } from "@/components/ui/use-media";
 import type { OpCardState } from "@/lib/assistant/ops";
+import { pageFromLocation, suggestionsFor } from "@/lib/assistant/page-context";
 import { ASSISTANT_DAILY_CAP, ASSISTANT_LIMITS, eventReader, historyForRequest, restoreCards, type AssistantDone, type AssistantEvent, type ChatMessage } from "@/lib/assistant/protocol";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +22,8 @@ import { OpCardView } from "./op-card";
  *
  * - Düğmenin yeri globals.css'te (--assistant-bottom): masaüstünde köşede, hatırlatma kartı ya da kaydetme çubuğu
  *   açıkken onların üstünde; baskıda görünmez. Telefonda düğme hiç çizilmez (`!sheet`, sınıfta da `max-lg:hidden`).
+ * - Sayfa bağlamı (src/lib/assistant/page-context.ts): boşken açık ekrana özel 3–4 öneri çipi; her soruda açık ekranın
+ *   yolu ve adresteki ?ay / ?gun gider (sunucu değişken bağlama tek satır yazar).
  * - Sohbet bu sekmede durur (sessionStorage, kullanıcıya özel anahtar); "Yeni sohbet" siler. Sunucuya her soruda yalnız
  *   önceki turların görünen metni gider (historyForRequest); sunucu hiçbir mesajı saklamaz.
  * - Yanıt akarak gelir (satır satır JSON): metin parça parça, araç çalışırken durum satırı ("Tedarikçi özeti…"),
@@ -44,16 +47,6 @@ import { OpCardView } from "./op-card";
  *   sonraki sorunun geçmişine kısa bir satır olarak gider.
  */
 
-/** Örnek sorular (çipler): LafPOS ve operasyon önce, sonra maliyet ve ödemeler */
-const SAMPLES = [
-  "Dünkü gün sonu nasıldı?",
-  "Dün en çok ne sattı?",
-  "Bugün kim çalışıyor?",
-  "Ne bitmek üzere?",
-  "Bu ay nasıl gidiyor?",
-  "En çok kime borcumuz var?",
-  "Hangi ürünler hammaddeye bağlanmayı bekliyor?",
-];
 
 /** Sekmede en çok bu kadar mesaj saklanır (sunucuya yalnız son 20'si gider) */
 const KEEP = 40;
@@ -303,7 +296,8 @@ export function PanelAssistant({ userId }: { userId: number }) {
       const res = await fetch("/api/asistan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: question, history }),
+        // Açık ekran: yalnız yol ve adresteki ?ay / ?gun (page-context.ts); sunucu bağlamın sonuna tek satır yazar
+        body: JSON.stringify({ message: question, history, page: pageFromLocation(window.location.pathname, window.location.search) ?? undefined }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
@@ -448,7 +442,7 @@ export function PanelAssistant({ userId }: { userId: number }) {
                 </p>
                 {!blocked ? (
                   <div className="flex flex-wrap gap-2">
-                    {SAMPLES.map((s) => (
+                    {suggestionsFor(pathname).map((s) => (
                       <button
                         key={s}
                         type="button"

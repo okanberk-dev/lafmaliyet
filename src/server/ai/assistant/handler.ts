@@ -4,7 +4,7 @@
  * src/app/api/asistan/route.ts'te.
  *
  * Sıra (POST): açık mı (ASISTAN_KAPALI) → aynı köken (tarayıcı POST'ta Origin'i hep yollar) → oturum (401) → yalnız
- * yönetici (403; personel düğmeyi hiç görmez) → gövde (en çok 256 KB, şema: soru ≤ 4000, geçmiş ≤ 20 mesaj; 400) →
+ * yönetici (403; personel düğmeyi hiç görmez) → gövde (en çok 256 KB, şema: soru ≤ 4000, geçmiş ≤ 20 mesaj, açık ekran; 400) →
  * kapı (anahtar, Ayarlar › Fotoğraftan okuma, yönetici başına günlük sınır; 503 / 429) → ai_calls'a "running" satırı →
  * akış. Akış satır satır JSON'dur (src/lib/assistant/protocol.ts); bitince satır maliyetle kapanır. Sorunun ve yanıtın
  * METNİ hiçbir yere yazılmaz; sunucu günlüğüne yalnız hata kodu ve Anthropic'in istek kimliği düşer.
@@ -15,6 +15,7 @@
  */
 
 import { errorTag } from "@/lib/assistant/error-tag";
+import { pageContextLine } from "@/lib/assistant/page-context";
 import { ASSISTANT_LIMITS, assistantRequest, encodeEvent, type AssistantEvent } from "@/lib/assistant/protocol";
 
 import type { AiErrorCode } from "../run";
@@ -158,7 +159,8 @@ export async function handleAssistantPost(request: Request, deps: AssistantDeps)
         outcome = await setup.scoped(() =>
           runAssistant(setup.client, {
             system: SYSTEM_PROMPT,
-            context: setup.context,
+            // Değişken blok (önbellek işaretinden sonra): tarih, şube ve açık ekranın tek satırı
+            context: [setup.context, pageContextLine(parsed.data.page)].filter(Boolean).join("\n"),
             tools: setup.tools,
             toolCtx,
             history: parsed.data.history,

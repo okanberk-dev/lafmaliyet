@@ -850,9 +850,8 @@ test("kaynak: araçlar yalnız izinli okuyucuları çağırır; istemci dosyalar
   assert.match(widget, /no-print/);
   assert.match(widget, /e\.key === "Escape"/);
   assert.match(widget, /e\.key === "Enter" && !e\.shiftKey/);
-  for (const s of ["Dünkü gün sonu nasıldı?", "Dün en çok ne sattı?", "Bugün kim çalışıyor?", "Ne bitmek üzere?", "Bu ay nasıl gidiyor?", "En çok kime borcumuz var?", "Hangi ürünler hammaddeye bağlanmayı bekliyor?"]) {
-    assert.ok(widget.includes(`"${s}"`), s);
-  }
+  // Boşken çipler açık ekranın önerileri (src/lib/assistant/page-context.ts; tests/asistan-gelismis.test.ts)
+  assert.match(widget, /suggestionsFor\(pathname\)\.map/);
   // Masaüstünün düğmesi köşede; telefonda düğme yok (alt menünün sekmesi), Fab'ın köşesi ona ayrılmaz
   const css = read("src/app/globals.css");
   assert.match(css, /--assistant-bottom: calc\(var\(--mobile-nav-h\) \+ 1\.5rem\);/);
