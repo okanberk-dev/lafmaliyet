@@ -11,6 +11,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import ExcelJS from "exceljs";
+
+import { buildWorkbook } from "../src/app/api/export/workbook";
 import { planInputFromModel } from "../src/lib/cash-plan";
 import { createModel, staffCost, staffShiftRef } from "../src/lib/calc/engine";
 import { alerts } from "../src/lib/calc/insights";
@@ -170,4 +173,51 @@ test("Maaşlar ve eylem: tür, günlük ücret, Vardiya bağlantısı (hesap ya 
   assert.match(editor, /SGK brütleştirmesi yok/);
   // Önseçim yok: yeni kişide bağlantı boş başlar
   assert.match(editor, /useState<string>\(row \? linkValue\(row\) : ""\)/);
+});
+
+test("Excel 'Personel' sekmesi tutar: satırın sütunları (yemek kartı ve part-time ücreti dahil) toplam işveren maliyetini verir, TOPLAM herkesi kapsar", () => {
+  // İnceleme bulgusu 4: Alper (35.000 net + yemek kartı) 57.065; Ayşe part-time 10 gün × 1.500 + yemek kartı + 2.000 ek
+  const ALPER: Staff = { id: 301, name: "Alper", netSalary: 35_000, extras: 0, active: true, startMonth: null, endMonth: null, branchId: "marina", mealCard: true };
+  const model = createModel(ds([ALPER, AYSE]));
+  const ws = buildWorkbook(model, "2026-12", { investments: [], findings: data.findings, now: new Date("2027-01-05T10:00:00Z") }).getWorksheet("Personel")!;
+  const val = (c: ExcelJS.Cell) => (c.type === ExcelJS.ValueType.Formula ? c.result : c.value);
+  const rowOf = (text: string) => {
+    for (let r = 1; r <= ws.rowCount; r++) if (ws.getRow(r).getCell(1).value === text) return ws.getRow(r);
+    assert.fail(`"${text}" satırı yok`);
+  };
+  const header = ws.getRow(1);
+  const col = (re: RegExp) => {
+    for (let c = 1; c <= ws.columnCount; c++) if (re.test(String(header.getCell(c).value ?? ""))) return c;
+    assert.fail(`sütun yok: ${re}`);
+  };
+  const c = {
+    net: col(/^Net maaş/),
+    gross: col(/^Tahmini brüt/),
+    ded: col(/^İşçi kesintileri/),
+    sgk: col(/^İşveren SGK/),
+    unemp: col(/^İşveren işsizlik/),
+    extras: col(/^Yemek \/ yol \/ prim/),
+    meal: col(/^Yemek kartı/),
+    part: col(/^Part-time ücreti/),
+    total: col(/^Toplam işveren maliyeti/),
+  };
+  const n = (row: ExcelJS.Row, k: keyof typeof c) => Number(val(row.getCell(c[k])) ?? 0);
+  /** net + kesintiler + işveren payları + ek + yemek kartı + part-time ücreti = toplam; brüt = net + kesintiler */
+  const reconciles = (row: ExcelJS.Row, label: string) => {
+    close(n(row, "net") + n(row, "ded"), n(row, "gross"), `${label}: brüt = net + kesintiler`);
+    close(n(row, "gross") + n(row, "sgk") + n(row, "unemp") + n(row, "extras") + n(row, "meal") + n(row, "part"), n(row, "total"), `${label}: sütunlar toplamı verir`);
+  };
+  const alper = rowOf("Alper");
+  close(n(alper, "total"), 57_065.29, "Alper toplam (§6)");
+  close(n(alper, "meal"), 330 * 26, "Alper yemek kartı");
+  reconciles(alper, "Alper");
+  const ayse = rowOf("Ayşe");
+  close(n(ayse, "part"), 10 * 1_500, "Ayşe part-time ücreti");
+  close(n(ayse, "meal"), 10 * 330, "Ayşe yemek kartı");
+  close(n(ayse, "extras"), 2_000, "Ayşe ek");
+  close(n(ayse, "total"), 15_000 + 3_300 + 2_000, "Ayşe toplam");
+  reconciles(ayse, "Ayşe");
+  const total = rowOf("TOPLAM");
+  for (const k of Object.keys(c) as (keyof typeof c)[]) close(n(total, k), n(alper, k) + n(ayse, k), `TOPLAM ${k}: herkes`);
+  reconciles(total, "TOPLAM");
 });
