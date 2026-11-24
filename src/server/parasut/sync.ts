@@ -716,7 +716,7 @@ export async function syncParasut(
   const db = getDb();
   let runId: number | null = null;
   try {
-    const cfg = readParasutConfig();
+    const cfg = await readParasutConfig();
     const id = await openRun(trigger, started);
     if (id === null) return { ok: false, error: SYNC_BUSY, runId: null, busy: true };
     runId = id;
@@ -1059,7 +1059,7 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
   const db = getDb();
   let runId: number | null = null;
   try {
-    const cfg = readParasutConfig();
+    const cfg = await readParasutConfig();
     const client = new ParasutClient(cfg);
     client.setDeadline(fetchUntil + 15_000);
     // Kişi önce bulunur (yalnız okur): bulunamazsa eşitleme kaydı açılmaz

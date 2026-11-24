@@ -7,7 +7,9 @@
 > “Paraşüt hesabını bağla” ile bağlandı. Geçici yedek (`src/lib/parasut/legacy.ts`, `src/server/parasut/legacy.ts`,
 > `parasut.legacyToken`), “Eski yöntem” durumları ve `parasutMigrationAlert` hatırlatması koddan silindi; aşağıdaki
 > *10 Aralık 2026'dan sonra silinecekler* listesi bu değişiklikle yapıldı. Vercel'de `PARASUT_USERNAME` /
-> `PARASUT_PASSWORD` kaldıysa artık hiçbir yerde okunmuyor, silinebilir. Aşağısı geçişin o günkü kaydıdır.
+> `PARASUT_PASSWORD` kaldıysa artık hiçbir yerde okunmuyor, silinebilir. Bağlantı ayarları (client_id, client_secret,
+> firma numarası, ilk eşitleme başlangıcı) artık panelden de girilebilir ([PARASUT.md](../PARASUT.md) § 1). Aşağısı
+> geçişin o günkü kaydıdır.
 
 **Durum (21 Kasım 2026):** kod hazır (PR #92). Birleştirilmesi artık güvenli: hesap bağlanana kadar eşitleme eski
 yöntemle sürer (aşağıda *Geçici yedek*). Sahibin yapacakları aşağıda, sade dille.

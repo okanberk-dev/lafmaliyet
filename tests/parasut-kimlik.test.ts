@@ -150,9 +150,8 @@ test("eski parola yönteminden iz kalmadı: geçici yedek, 10 Aralık uyarılar�
     }
   }
   assert.deepEqual(bad, []);
-  const cfg = read("src/server/parasut/config.ts");
-  // Kurulumun zorunlu değişkenleri: istemci bilgileri ve firma; kullanıcı/parola değil
-  assert.match(cfg, /export const PARASUT_ENV = \["PARASUT_CLIENT_ID", "PARASUT_CLIENT_SECRET", "PARASUT_COMPANY_ID"\] as const;/);
+  // Kurulumun zorunlu ayarları: istemci bilgileri ve firma; kullanıcı/parola değil (tests/parasut-ayarlar.test.ts)
+  assert.match(read("src/lib/parasut/settings.ts"), /REQUIRED_SETTINGS = \["clientId", "clientSecret", "companyId"\] as const/);
   assert.match(read("src/server/parasut/client.ts"), /grant_type: "refresh_token"/);
   assert.match(read("src/server/parasut/connect.ts"), /grant_type: "authorization_code"/);
 });
@@ -221,9 +220,11 @@ test("keşif belgesi engellenirse Keycloak'ın standart uçları; yalnız https 
   assert.match(server, /if \(cfg\.authorizeUrl && cfg\.tokenUrl\) return/);
 });
 
-test("varsayılan izinler offline_access içerir; client_secret kırpılır", () => {
+test("varsayılan izinler offline_access içerir; client_secret kırpılmış ayardan gelir", () => {
   const cfg = read("src/server/parasut/config.ts");
   assert.match(cfg, /DEFAULT_SCOPE = "openid offline_access";/);
   assert.match(cfg, /PARASUT_SCOPE\?\.trim\(\) \|\| DEFAULT_SCOPE/);
-  assert.match(cfg, /clientSecret: process\.env\.PARASUT_CLIENT_SECRET!\.trim\(\)/);
+  // Panel ya da ortam: değer src/lib/parasut/settings.ts'te kırpılarak çözülür
+  assert.match(cfg, /clientSecret: r\.clientSecret\.value!/);
+  assert.match(read("src/lib/parasut/settings.ts"), /const v = raw\?\.trim\(\);/);
 });

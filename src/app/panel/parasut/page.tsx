@@ -6,12 +6,13 @@ import { HashScroll } from "@/components/panel/hash-scroll";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
 import { INVOICE_CATEGORIES } from "@/lib/constants";
+import { missingSettings, settingsView } from "@/lib/parasut/settings";
 import { packEvidence, sameFactor } from "@/lib/product-match";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { invoiceReadingState } from "@/server/invoice-reading/read";
 import { parasutConnection } from "@/server/parasut/client";
-import { isParasutConfigured, parasutEnvStatus, parasutRedirectUri } from "@/server/parasut/config";
+import { configFrom, hasParasutInvoices, loadParasutSettings, parasutRedirectUri } from "@/server/parasut/config";
 import { parseReturnLog, RETURNS_KEY, supplierReturnEntered } from "@/server/parasut/returns";
 import { ignoredProducts, unlinkedProducts } from "@/server/parasut/sync";
 
@@ -45,7 +46,7 @@ export default function ParasutPage() {
 async function ParasutContent() {
   await requireAdmin();
   const db = getDb();
-  const [runs, rules, links, ingredients, unlinked, invoiceRows, cursorRow, pendingRow, [lineReads], ignored, newestLines, readState, returnsRow, negatives] = await Promise.all([
+  const [runs, rules, links, ingredients, unlinked, invoiceRows, cursorRow, pendingRow, [lineReads], ignored, newestLines, readState, returnsRow, negatives, settings, invoicesExist] = await Promise.all([
     db.select().from(s.parasutSyncRuns).orderBy(desc(s.parasutSyncRuns.startedAt)).limit(8),
     db.select().from(s.parasutCategoryRules).orderBy(asc(s.parasutCategoryRules.priority), asc(s.parasutCategoryRules.id)),
     db
@@ -120,6 +121,10 @@ async function ParasutContent() {
       .select({ date: s.invoices.date, supplier: s.invoices.supplier, payable: s.invoices.payable, supplierTaxNumber: s.invoices.supplierTaxNumber })
       .from(s.invoices)
       .where(lt(s.invoices.payable, 0)),
+    // Bağlantı ayarları: alan alan panel, yoksa ortam değişkeni (client_secret'ın değeri ekrana gitmez)
+    loadParasutSettings(),
+    // Paraşüt'ten fatura geldiyse firma numarası panelden değiştirilemez
+    hasParasutInvoices(),
   ]);
   const lineOf = new Map(newestLines.map((l) => [l.productKey, l]));
   // Adındaki ya da birimindeki paket boyu bağlantının çarpanından farklı olanlar: yalnız gösterilir, hiçbir şey değişmez
@@ -139,8 +144,9 @@ async function ParasutContent() {
     last: r.last ? new Date(r.last).toISOString() : null,
   }));
   const pending = pendingRow[0]?.value as { count: number; total?: number; ingested?: boolean; sample?: { from: string | null; date: string | null }[]; at: string } | undefined;
+  const configured = missingSettings(settings.resolved).length === 0;
   // Paraşüt hesabı tarayıcıdan yetkilendirildi mi (belirteçlerin kendisi panele hiç gelmez)
-  const connection = await parasutConnection();
+  const connection = await parasutConnection(undefined, configured ? configFrom(settings.resolved) : null);
   // DevHub'a kaydedilecek dönüş adresi; PARASUT_REDIRECT_URI yanlış yazıldıysa ekran yine açılır
   let redirectUri: string | null = null;
   try {
@@ -154,12 +160,11 @@ async function ParasutContent() {
       {/* ⌘K "Fatura kalemini hammaddeye bağla" ve Hammaddeler'in bağlantıları (#urun-baglantilari) içerik akınca iner */}
       <HashScroll />
       <ParasutScreen
-        configured={isParasutConfigured()}
+        configured={configured}
         connection={connection}
         redirectUri={redirectUri}
-        env={parasutEnvStatus()}
+        settings={settingsView(settings.resolved, { secretUnreadable: settings.secretUnreadable, hasParasutInvoices: invoicesExist })}
         cronSet={Boolean(process.env.CRON_SECRET)}
-        syncFrom={process.env.PARASUT_SYNC_FROM?.trim() || null}
         cursor={(cursorRow[0]?.value as { lastIssueDate?: string } | undefined)?.lastIssueDate ?? null}
         pendingEInvoices={pending ?? null}
         stats={invoiceStats(invoiceMix)}
