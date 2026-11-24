@@ -66,6 +66,12 @@ Bu sürümde karaoke, zayi / ikram ve hammadde fiyat geçmişi araçları **yok*
 | `kasa_raporlari` (Gün sonu kasa raporları) | En çok 92 günün Z toplamı, nakit, kart, yemek kartı, Z'deki online (platformlar), kasa farkı, raporu girilmemiş günler | "Geçen hafta kasa tuttu mu?", "Ekimde toplam kart ne?" | Kasa raporu |
 | `ara` (Ürün, hammadde, tedarikçi ara) | Adla arama, tür ve ekran bağlantısı (tutar yok) | "Süt adlı hammaddeler hangileri?" | ⌘K arama |
 
+**Şube** (şube kapsamı C, 24 Kasım 2026): `ay_ozeti`, `urun_karliligi`, `zam_etkisi`, `odemeler` ve `kasa_raporlari`
+isteğe bağlı `sube` alır (adı ya da kimliği, ör. "Marina"; "hepsi" bütün şubeler). Verilmezse Claude bağlantısında
+bütün şubeler, panel asistanında yöneticinin seçimi. Her cevap `kapsam` yazar ("Tümü", "Marina"); `tedarikci_ozeti` ve
+`ara` "Firma geneli"dir. Nakit planı firmanındır (şube verilse de bütün şubelerle). Kapalı ya da bilinmeyen şube
+seçenekleriyle söylenir; şubesine kilitli hesap başka şubeyi isteyemez.
+
 Her cevap `hesap` (gerçek rakamlarla hesap satırları), `kaynak` (verinin dayanağı), gerekirse `uyarilar` (sayım
 girilmedi, POS cirosu girilmedi, satış listesi yok, kasa raporu eksik, fiyatı girilmemiş hammadde) ve `panelAdresi`
 taşır. Fiyatı girilmemiş hammadde yalnız cevaptaki ürünler için söylenir ve o ürünlerin satırında `maliyetEksik: true`

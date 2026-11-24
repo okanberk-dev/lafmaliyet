@@ -297,6 +297,14 @@ E-53; `src/lib/notify-recipients.ts`, `src/server/notify/recipients.ts`):
 
 Haftalık özet zaten yalnız etkin yöneticilerin giriş e-postalarına gider.
 
+**Adresin şubesi** (şube kapsamı C, 24 Kasım 2026; [SUBE.md](SUBE.md)): birden çok kasa açıkken bildirim adresinin
+satırında "Bütün şubeler" ya da "Yalnız Marina" seçilir (`notification_recipients.branch_ids`, migration 0080; bütün
+kasalar seçilince boş yazılır). Şubeye bağlı adres sabah e-postasını ayrı alır: konu şubenin adıyla başlar ("Marina:
+Ödeme hatırlatması: …"), kartın üstü kapsamı söyler; ödemeler şubenin ve işletme genelinin, onay bekleyen istekler ve
+dünkü kontrol listeleri yalnız şubenin; faturalar, zam ve komisyon firma geneli. Şubesi seçilmemiş adreslerin e-postası
+bugünküyle aynıdır. Bütün grupların içeriği gönderimden önce kurulur (bir grubun günlüğe yazdığı "kontrol:<gün>" öbür
+grubun kutusunu düşürmez); bir grubun gönderimi düşerse öbürleri gider, hiçbiri gitmediyse sonuç hata.
+
 ## Marina gün sonu e-postası (22 Kasım 2026)
 
 LafPOS'un şubesinin (Marina) gün sonu geçiş gününden itibaren geldiğinde kasa raporu alıcılarına ve etkin bildirim
