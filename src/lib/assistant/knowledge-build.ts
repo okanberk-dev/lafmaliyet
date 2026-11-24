@@ -34,6 +34,8 @@ export const EXCLUDED_DOCS = [
   "SENKRON.md",
   // Panelden kaldırılan özelliğin belgesi (26 Ekim 2026): asistan kalkmış ekranı anlatmasın
   "MAL-SIPARISI.md",
+  // Asistanın işlem kataloğu (geliştirici belgesi: eylem adları, uyarlayıcılar); kullanıcıya dönük özeti ASISTAN.md'de
+  "ASISTAN-ISLEMLER.md",
 ] as const;
 
 /**

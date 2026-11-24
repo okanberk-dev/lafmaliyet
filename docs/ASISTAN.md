@@ -2,8 +2,10 @@
 
 Ekran: her panel sayfasında sağ altta küçük yuvarlak düğme (parıltı simgesi, "Panel asistanı"); **yalnız yöneticide**.
 Tıklayınca masaüstünde sağ altta 400 × 560'lık bir pencere, telefon ve tablette tam ekran bir sayfa açılır. Panelin
-verisine bakarak soruları yanıtlar ve panelin nasıl kullanılacağını gösterir; **hiçbir şeyi değiştirmez** (ödendi
-işareti, fatura, fiyat, reçete, kayıt yok). Değişiklik gereken yerde ilgili ekrana bağlantı verir.
+verisine bakarak soruları yanıtlar ve panelin nasıl kullanılacağını gösterir. **Kendisi hiçbir şeyi değiştirmez:**
+birkaç risksiz işi (Tükendi, fiyat, ödendi işareti, hatırlatıcı, kasadan çıkan, vardiya…) bir **onay kartıyla** hazırlar;
+siz karttaki **Onayla**'ya basmadan hiçbir şey değişmez (aşağıda İşlemler). Silme, toplu işlem ve şifre isteyen işleri
+yapmaz; ilgili ekranın bağlantısını ve adımları verir.
 
 Örnek sorular (pencere boşken çip olarak da durur):
 
@@ -30,9 +32,47 @@ işareti, fatura, fiyat, reçete, kayıt yok). Değişiklik gereken yerde ilgili
 Yanıtlar panelin verisinden gelir ama yanlış olabilir: önemli bir rakamı (ödeme, vergi) ekranda kontrol edin. Vergi
 rakamları paneldeki gibi tahmindir.
 
+## İşlemler (onay kartı)
+
+Ayrıntılı katalog ve kurallar: [ASISTAN-ISLEMLER.md](ASISTAN-ISLEMLER.md).
+
+Asistanın onay kartıyla hazırlayabildiği işler:
+
+| İş | Örnek |
+|---|---|
+| Ürünü Tükendi yapmak ya da yeniden satışa açmak (siteye bağlı ürün; LafPOS'a yansır) | "Ice Latte bitti, tükendi yap" |
+| Paraşüt'teki bir ürünü hammaddeye bağlamak (tek ürün, çarpanıyla) | "LAKTOZSUZ SÜT 1 LT'yi Süt Laktozsuz'a 1000 çarpanla bağla" |
+| Ödeme hatırlatıcısı eklemek; bir hatırlatıcının bu dönemini ödendi işaretlemek | "Her ayın 5'inde kira hatırlatıcısı ekle", "Kira ödendi" |
+| Faturayı ödendi (ya da ödemesi talep edildi) işaretlemek | "Sütaş'ın 12 Kasım faturası havaleyle ödendi" |
+| Tedarikçiye ödeme kaydı girmek (havale, elden, kart, çek; kasadan değil) | "Ambalajcı'ya bugün 3.000 ₺ havale yaptık" |
+| Hammaddenin paket fiyatını değiştirmek | "Süt paketi artık 48 ₺" |
+| Bir ürünün (tek boy) satış fiyatını değiştirmek; kart siteye ve LafPOS'a etkisini gösterir | "Latte M 90 ₺ olsun" |
+| Bugünün kasasına kasadan çıkan eklemek; Aylık harcamalar'a gider eklemek | "Tuzla kasasından Migros'a 85 ₺ süt aldık" |
+| Zayi ya da ikram kaydı | "Marina'da 2 cheesecake döküldü" |
+| Tek kişinin vardiyasını ayarlamak (aynı haftanın günleri) | "Ayşe Cuma 10-18, Pazar izinli" |
+
+- **Kart:** ne yapılacağı, eski → yeni değerler, şube, gün, kişi / ürün, dış etki rozetleri (Site / QR menü, LafPOS,
+  ModPOS kasası, Kasa raporu, Gelir-gider…), geri alma yolu ve 10 dakikalık süre. Kartı sunucu yazar; asistanın
+  açıklaması ayrıca "Asistanın notu" olarak durur. **Onayla** işlemi yapar, **Vazgeç** kartı kapatır; süre dolunca kart
+  hiçbir şey yapmaz.
+- **Bir kez:** kart tek kullanımlıktır; ikinci dokunuş, yenilenen sayfa ya da başka bir yöneticinin dokunuşu ikinci
+  kayıt açmaz. Onaydan önce değer değiştiyse (ör. fiyat bu arada başka yerde değişti) işlem yapılmaz, kart "Değer
+  değişti, yeniden bakın" der.
+- **Geri al:** fiyat, Tükendi, ödendi işareti, hatırlatıcı, Paraşüt bağlantısı değişikliği ve vardiyada sonuç kartında
+  **Geri al** düğmesi 1 saat durur (bir kez). Yeni kasa satırı, gider, zayi ve ödeme kaydı silinerek geri alınır: asistan
+  silmez, kart ekranı gösterir.
+- **İşlem geçmişi:** onaylanan iş sizin adınıza yazılır ve Ayarlar › İşlem geçmişi'nde "… (asistan aracılığıyla)" diye
+  görünür.
+- **Şube:** kasa, zayi ve vardiya tek şubeye yazılır; panelde "Tümü" seçiliyken asistan şubeyi size sorar. Gider ve
+  hatırlatıcıda "işletme geneli" de seçilebilir.
+- **Bir yanıtta tek kart:** toplu işlem yapılmaz; birden çok kayıt istenirse birer birer, her biri ayrı onayla.
+- **Yapmadıkları:** silme, toplu işlem (toplu fiyat, toplu bağlama, çok dönemi birden ödendi), faturayı ödenmedi yapma,
+  fatura ekleme / düzenleme, reçete, kasa raporu, ayarlar, kullanıcılar, yedek, parola ve iki adımlı doğrulama. Bunlarda
+  ekranın bağlantısını ve adımları verir; şifre isteyen işlerde parolayı sohbette istemez.
+
 ## Hangi verilere bakar
 
-Asistan yalnız okuyan araçlarla çalışır; araçlar Claude bağlantısınınkilerle aynıdır
+Okuma araçları Claude bağlantısınınkilerle aynıdır
 ([CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md): aynı hesap, aynı rakam):
 
 | Araç | Ne okur |
@@ -46,6 +86,7 @@ Asistan yalnız okuyan araçlarla çalışır; araçlar Claude bağlantısının
 | Arama | Ürün, hammadde, tedarikçi adları |
 | Panel rehberi | Panelin belgelerinde arama (aşağıda Bilgi tabanı) |
 | Paraşüt'te bekleyen ürünler | Hammaddeye bağlanmayı bekleyen Paraşüt ürünleri (Paraşüt sayfasındaki liste) |
+| İşlem rehberi | Asistanın yapmadığı işlerde (silme, toplu, şifreli, riskli) ekran ve adımlar |
 
 - **Şube:** araçlar panelde seçili şubeyle okur (üstteki seçici). "Tümü" işletme genelidir. Asistan yanıtında hangi
   şubeye baktığını söyler.
@@ -58,7 +99,8 @@ Asistan yalnız okuyan araçlarla çalışır; araçlar Claude bağlantısının
 
 - **Tarayıcıda:** konuşma bu sekmenin oturum belleğinde (sessionStorage, kullanıcıya özel anahtar), en çok son 40 mesaj.
   Sekme kapanınca ya da **Yeni sohbet** ile silinir.
-- **Sunucuda:** hiçbir mesaj saklanmaz. Her soru `ai_calls` tablosuna tek satır yazar (tür `asistan`): kim sordu, ne
+- **Sunucuda:** hiçbir mesaj saklanmaz; yalnız onay kartlarının planı (`assistant_ops`: araç, girdi, kartın içeriği,
+  durum, sonuç; denetim kaydıdır ve yedeğe girer, bekleyen kartlar girmez). Her soru `ai_calls` tablosuna tek satır yazar (tür `asistan`): kim sordu, ne
   zaman, model, süre, token sayıları, tutar (dolar), bitiş nedeni, kaç çağrı ve kaç araç çalıştığı. **Sorunun, yanıtın ve
   araç sonuçlarının metni yazılmaz.** Sunucu günlüğüne yalnız hata kodu ve Anthropic'in istek kimliği düşer.
 - **Anthropic'e giden:** soru, aynı sohbetteki önceki soru ve yanıtların görünen metni (en çok son 20 mesaj) ve
@@ -117,5 +159,9 @@ satırlar düşer, asistan bu ekranlara bağlantı vermez. Belge değişince `np
   girer, çalışma anında dosya okunmaz, testler doğrudan kullanır.
 - Geliştirme: `AI_REPLAY=1 npm run dev` iken anahtarsız kayıtlı yanıt (`src/server/ai/replay.ts`): soruya göre bir araç
   gerçekten çalışır, yanıt aracın sonucunun kısa özetidir; Claude'a istek gitmez.
+- İşlemler: [ASISTAN-ISLEMLER.md](ASISTAN-ISLEMLER.md) › Dosyalar (`src/server/assistant-ops/`, onay eylemi
+  `src/server/actions/assistant-ops.ts`, kart `src/components/panel/assistant/op-card.tsx`).
 - Testler: `tests/panel-asistani.test.ts` (sahte istemciyle istek, döngü, uç, markdown, bilgi tabanı) ve
-  `tests/panel-asistani-db.test.ts` (`ASISTAN_TEST_DATABASE_URL`: günlük sınır, kayıt, bekleyen ürünler).
+  `tests/panel-asistani-db.test.ts` (`ASISTAN_TEST_DATABASE_URL`: günlük sınır, kayıt, bekleyen ürünler); işlemler
+  `tests/asistan-islemleri.test.ts` (şemalar, kaynak taraması, kart olayı) ve `tests/asistan-islemleri-db.test.ts`
+  (`ASISTAN_TEST_DATABASE_URL`: plan → onay → tek kullanım, süre, başka kullanıcı, bayatlık, geri al, her uyarlayıcı).
