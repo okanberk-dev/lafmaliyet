@@ -28,7 +28,7 @@ import { loadCommissionInput } from "@/server/data/commission";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { loadPosChecklist } from "@/server/data/prices";
-import { loadTillScope } from "@/server/data/till-scope";
+import { loadTillScopes } from "@/server/data/till-scope";
 import { getDb, schema as s } from "@/server/db";
 import { capped } from "@/server/jobs/capped";
 import { loadOccupancySessions, readKaraokeHours } from "@/server/karaoke/occupancy";
@@ -189,24 +189,25 @@ const komisyon: Collector = {
 
 /**
  * Kasada eski fiyat (menu, insight dayanağı): ayda ModPOS'ta satılan adet salesBasis'in ölçeğiyle; online kafe
- * siparişi sitenin fiyatını öder, sayılmaz
+ * siparişi sitenin fiyatını öder, sayılmaz. Kasa şube başınadır (şube kapsamı A3): özet "Tümü"yle okur, birden çok kasa
+ * açıkken her kasa ayrı madde ("Marina: …"; anahtar şubeyi taşır). Aylık adet işletmenin toplamıdır (şubeye bölünmez)
  */
 const kasaFiyat: Collector = {
   source: "kasa-fiyat",
   timeoutMs: 4_000,
   async run(ctx) {
-    // Bugünün kasası: LafPOS gününde liste yalnız siteye bağlı olmayan ürünler (denetim E-39)
-    const scope = await loadTillScope();
-    const [model, pending] = await Promise.all([ctx.model(), loadPosChecklist(scope)]);
-    if (!pending.length) return {};
+    // Bugünün kasaları: LafPOS gününde liste yalnız siteye bağlı olmayan ürünler (denetim E-39)
+    const tills = await loadTillScopes();
+    const [model, lists] = await Promise.all([ctx.model(), Promise.all(tills.map((t) => loadPosChecklist(t)))]);
+    if (!lists.some((l) => l.length)) return {};
     const month = latestSalesMonth(model);
     const basis = month ? salesBasis(model, month) : null;
     const sold = month ? model.soldByProduct(month) : new Map<number, number>();
-    return one(
-      posPriceItem({
+    const items = tills.flatMap((scope, i) => {
+      const item = posPriceItem({
         today: ctx.today,
         kdv: model.settings.kdv,
-        rows: pending.map((p) => ({
+        rows: lists[i].map((p) => ({
           label: productLabel(p),
           price: p.price,
           posPrice: p.stalePrice,
@@ -214,8 +215,11 @@ const kasaFiyat: Collector = {
           perMonth: basis ? (sold.get(p.productId) ?? 0) * basis.basis.scale : null,
         })),
         kasa: scope.kasa,
-      }),
-    );
+      });
+      if (!item) return [];
+      return [scope.name ? { ...item, key: `${item.key}-${scope.branchId}`, title: `${scope.name}: ${item.title}` } : item];
+    });
+    return { items };
   },
 };
 

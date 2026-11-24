@@ -303,10 +303,10 @@ test("yazarkasa bölümüne çekilen kasa çıktısı: LafPOS gününde ModPOS b
 
 test("kaynak: kasadaki fiyatların okuyucuları ve yazımı bugünün kasasına bakar; hiçbir işaret silinmez", () => {
   const record = read("src/server/prices/record.ts");
-  // Kasanın durumu geçiş gününden bağımsız yazılır (B11 incelemesi D1); geçiş günü yalnız bildirimin `posPending`'i için
-  // ve yalnız siteye bağlı üründe okunur
-  assert.match(record, /if \(opts\.pos !== false && c\.before !== null\) \{\n    const next = posAfterPriceChange/);
-  assert.match(record, /posPending = next\.stalePrice !== null && \(row\.siteMenuId === null \|\| tillPriceManual\(await loadTillScope\(tx, at\), true\)\);/);
+  // Kasanın durumu geçiş gününden bağımsız yazılır (B11 incelemesi D1), her etkin fiziksel şubeye (şube kapsamı A3);
+  // geçiş günü yalnız bildirimin `posPending`'i için ve yalnız siteye bağlı üründe okunur
+  assert.match(record, /for \(const till of tills\) \{\n      const cur = [^\n]*\n      const next = posAfterPriceChange/);
+  assert.match(record, /if \(next\.stalePrice !== null && \(row\.siteMenuId === null \|\| tillPriceManual\(branchTill\(switchDay, till\.id, at\), true\)\)\) posPending = true;/);
   const scope = read("src/server/data/till-scope.ts");
   assert.match(scope, /return and\(isNull\(s\.products\.siteMenuId\), changedSinceStart\);/);
   const prices = read("src/server/data/prices.ts");
@@ -326,15 +326,15 @@ test("kaynak: kasadaki fiyatların okuyucuları ve yazımı bugünün kasasına 
   // LafPOS gününde personele fiyat görevi yok (B11 incelemesi K1): zil sorgusu hiç yapılmaz, işaret eylemi reddeder,
   // Kasadaki fiyatlar listesi okunmaz (kendi işaretini geri alması sürer)
   const bell = read("src/server/bell/ops.ts");
-  assert.match(bell, /if \(user\.role !== "admin" && scope\.lafpos\) return \[\];/);
+  assert.match(bell, /if \(user\.role !== "admin" && scope\.lafpos\) continue;/);
   const action = read("src/server/actions/pos-marks.ts");
   const mark = action.slice(action.indexOf("export async function markPosDone"), action.indexOf("export async function undoPosMarks"));
-  assert.match(mark, /if \(me\.role !== "admin" && \(await loadTillScope\(\)\)\.lafpos\) throw new UserError\(/);
+  assert.match(mark, /if \(me\.role !== "admin" && \(await loadTillScope\(undefined, undefined, till\)\)\.lafpos\) throw new UserError\(/);
   assert.doesNotMatch(action.slice(action.indexOf("export async function undoPosMarks")), /loadTillScope/);
   const page = read("src/app/panel/kasa/fiyatlar/page.tsx");
   assert.match(page, /scope\.lafpos \? \[\] : loadStaffPosList\(scope\)/);
   // Geçiş günü değişince hiçbir kasa işareti yazılmaz ya da silinmez (yalnız okuyucular değişir)
   for (const f of ["src/server/data/till-scope.ts", "src/server/lafpos/admin.ts", "src/server/actions/lafpos.ts"]) {
-    assert.doesNotMatch(read(f), /posStalePrice|pos_stale_price/, f);
+    assert.doesNotMatch(read(f), /posStalePrice|pos_stale_price|\.(insert|update|delete)\(s\.posStale\)/, f);
   }
 });

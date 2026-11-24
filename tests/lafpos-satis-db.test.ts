@@ -684,7 +684,8 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     await db.insert(s.posMappings).values({ posName: "MOCHA", productId: ids.mocha });
     // Hiçbir listede geçmeyen ad (ayı temizlenmiş liste) bugünkü gibi kalır
     await db.insert(s.posMappings).values({ posName: "MOCHA ESKI", productId: ids.mocha });
-    await db.update(s.products).set({ posStalePrice: 180, posStaleSince: new Date(NOW) }).where(eq(s.products.id, ids.mocha));
+    // Kasa şube başına (pos_stale; şube kapsamı A3): okuyucular seçili şubenin (Marina) kasasına bakar
+    await db.insert(s.posStale).values({ branchId: LAFPOS_SUBE, productId: ids.mocha, stalePrice: 180, staleSince: new Date(NOW) }).onConflictDoNothing();
     const staff = await import("../src/server/data/pos-staff");
     const prices = await import("../src/server/data/prices");
     assert.deepEqual((await staff.loadStaffPosList()).find((i) => i.productId === ids.mocha)?.posNames, ["MOCHA", "MOCHA ESKI"]);

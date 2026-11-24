@@ -79,7 +79,8 @@ export interface LafposCardRead extends LafposCardInput {
 export interface MenuRead {
   configured: boolean;
   entries: { name: string; category: string; sizes: string[]; state: "on" | "card" | "closed" | "drifted"; marker: { by: string; at: string; staff: boolean } | null }[];
-  pos: { count: number; oldest: string | null; kasa: "ModPOS" | "LafPOS" };
+  /** Seçimin kasaları (şube kapsamı A3): toplam; "Tümü"de birden çok kasa açıkken `byBranch` kasa başına sayı */
+  pos: { count: number; oldest: string | null; kasa: "ModPOS" | "LafPOS"; byBranch?: { name: string; count: number }[] | null };
 }
 
 /** Bir haftanın planı (vardiya/store.ts loadShiftWeek; notlar okunmaz) */
@@ -517,7 +518,12 @@ export function menuDurumu(deps: ReadToolDeps): AssistantTool<typeof menuDurumuI
         sitedeKapali: closed.slice(0, 20).map((e) => ({ urun: cleanName(e.name, 60), kategori: cleanName(e.category, 40) })),
         ...(closed.length > 20 ? { sitedeKapaliSayisi: closed.length } : {}),
         satistaUrun: m.entries.filter((e) => e.state === "on").length,
-        kasayaIslenecekFiyat: { adet: m.pos.count, enEski: m.pos.oldest ? dateTimeTR(m.pos.oldest) : null, kasa: m.pos.kasa },
+        kasayaIslenecekFiyat: {
+          adet: m.pos.count,
+          enEski: m.pos.oldest ? dateTimeTR(m.pos.oldest) : null,
+          kasa: m.pos.kasa,
+          ...(m.pos.byBranch ? { subeBasina: m.pos.byBranch.map((b) => ({ sube: cleanName(b.name, 40), adet: b.count })) } : {}),
+        },
         not:
           m.pos.kasa === "LafPOS"
             ? "LafPOS ürün ve fiyatı siteden alır: siteye bağlı ürünün fiyatı ve Tükendi'si LafPOS'a kendiliğinden gider; listede yalnız siteye bağlı olmayan, panelde değişen fiyatlar kalır."

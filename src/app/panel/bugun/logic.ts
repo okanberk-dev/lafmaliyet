@@ -186,9 +186,10 @@ export interface DayFacts {
   countAlerts?: { extras: UnpricedExtras[]; late: { month: string; edits: StaffLateEdit[] } | null } | null;
   /**
    * Kasada (ModPOS) değişecek fiyatlar, en eskisinin anı ve bugünün kasası (operasyonun yükleyicisi,
-   * src/server/data/today-ops.ts; LafPOS gününde yalnız siteye bağlı olmayan ürünler)
+   * src/server/data/today-ops.ts; LafPOS gününde yalnız siteye bağlı olmayan ürünler). "Tümü"de birden çok kasa açıkken
+   * seçimin kasalarının toplamı ve `byBranch` kasa başına sayı (combineTillPos; şube kapsamı A3)
    */
-  pos?: { count: number; oldest: string | null; kasa?: KasaName } | null;
+  pos?: { count: number; oldest: string | null; kasa?: KasaName; byBranch?: { name: string; count: number }[] | null } | null;
   // ---- İkisi (kontrol listeleri)
   /** Dünün (iş günü) kontrol listeleri: tamamlanmayan ve sorunlu olan (docs/KONTROL-LISTELERI.md); personelde kendininkiler */
   checklistsYesterday?: { day: string; lists: ChecklistLite[] } | null;

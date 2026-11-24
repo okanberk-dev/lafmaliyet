@@ -8,7 +8,7 @@ import { PosChecklist } from "@/components/panel/pos-checklist";
 import { PageSkeleton } from "@/components/ui/misc";
 import { requireUser } from "@/server/auth/dal";
 import { loadMyPosMarks, loadStaffPosList } from "@/server/data/pos-staff";
-import { loadTillScope } from "@/server/data/till-scope";
+import { loadTillScopes } from "@/server/data/till-scope";
 
 export const metadata: Metadata = { title: "Kasadaki fiyatlar" };
 
@@ -43,7 +43,20 @@ async function StaffPosContent() {
   const me = await requireUser();
   if (me.role === "admin") redirect("/panel/urunler/fiyatlar?sekme=kasa");
   const now = new Date();
-  const scope = await loadTillScope(undefined, now);
-  const [items, mine] = await Promise.all([scope.lafpos ? [] : loadStaffPosList(scope), loadMyPosMarks(me.id, now)]);
-  return <PosChecklist staff items={items} mine={mine} kasa={scope.kasa} />;
+  // Kasa şube başınadır (şube kapsamı A3): seçili şubenin (kilitli personelde kendi şubesinin) kasası; "Tümü"de birden çok
+  // kasa açıkken her kasa ayrı liste
+  const tills = await loadTillScopes(undefined, now);
+  const lists = await Promise.all(
+    tills.map(async (scope) => {
+      const [items, mine] = await Promise.all([scope.lafpos ? [] : loadStaffPosList(scope), loadMyPosMarks(me.id, now, scope.branchId)]);
+      return { scope, items, mine };
+    }),
+  );
+  return (
+    <div className="space-y-4">
+      {lists.map(({ scope, items, mine }) => (
+        <PosChecklist key={scope.branchId} staff items={items} mine={mine} kasa={scope.kasa} branchId={scope.branchId} branchName={scope.name} />
+      ))}
+    </div>
+  );
 }

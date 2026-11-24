@@ -13,12 +13,13 @@ import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { soldWithOnline } from "@/lib/calc/insights";
 import { monthLabel, num, pct } from "@/lib/format";
 import { monthKasa } from "@/lib/lafpos/kasa";
+import { combineTillPos } from "@/lib/prices/pos";
 import { salesSourceOf } from "@/lib/sales-source";
 import { siteMarker } from "@/lib/site-menu/view";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
-import { posPendingSummary } from "@/server/data/prices";
+import { posPendingSummaries } from "@/server/data/prices";
 import { syncSiteMenu } from "@/server/site-menu/sync";
 import { loadSiteLinks } from "@/server/site-menu/view";
 
@@ -61,8 +62,15 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
     }
   });
   const sp = await searchParams;
-  // Kasada (ModPOS) değişecek fiyatlar: Fiyatlar düğmesinin rozeti (okunamazsa rozet yok)
-  const [model, site, pos] = await Promise.all([loadModel(), loadSiteLinks(), posPendingSummary().catch(() => null)]);
+  // Kasada (ModPOS) değişecek fiyatlar: Fiyatlar düğmesinin rozeti (okunamazsa rozet yok); seçimin kasalarının toplamı
+  // (şube kapsamı A3: "Tümü"de birden çok kasa açıkken hepsi)
+  const [model, site, pos] = await Promise.all([
+    loadModel(),
+    loadSiteLinks(),
+    posPendingSummaries()
+      .then(combineTillPos)
+      .catch(() => null),
+  ]);
   const month = resolveMonth(sp.ay, model);
   // Hammadde zamları (son 30 gün) ve kârı düşen ürünler; genel bakış, zil ve sabah e-postası buraya getirir
   const prices = await loadPriceAlerts(model).catch(() => null);

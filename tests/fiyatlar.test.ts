@@ -739,13 +739,18 @@ test("satış fiyatını yazan her yol geçmişe ve kasanın durumuna yazar", ()
   const walk = (dir: string): string[] =>
     readdirSync(join(root, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${dir}/${e.name}`) : /\.tsx?$/.test(e.name) ? [`${dir}/${e.name}`] : []));
   const updaters = walk("src").filter((f) => read(f).includes(".update(s.products)"));
-  const noPrice = ["src/server/actions/recipe-requests.ts", "src/server/site-menu/link.ts", "src/server/actions/prices.ts", "src/server/prices/record.ts", "src/server/prices/pos-marks.ts", "src/server/site-menu/sold-out-core.ts"];
+  const noPrice = ["src/server/actions/recipe-requests.ts", "src/server/site-menu/link.ts", "src/server/actions/prices.ts", "src/server/site-menu/sold-out-core.ts"];
   for (const f of updaters) {
     if (noPrice.includes(f)) {
       for (const m of read(f).matchAll(/\.update\(s\.products\)\s*\.set\(\{([^}]*)\}/g)) assert.doesNotMatch(m[1], /\bprice\b|\.\.\./, `${f}: fiyat yazıyor`);
     } else assert.match(read(f), /recordPriceChange\(/, `${f}: ürün fiyatını yazıyor ama geçmişe yazmıyor`);
   }
-  assert.ok(updaters.length >= 8, updaters.join(", "));
+  assert.ok(updaters.length >= 6, updaters.join(", "));
+  // Kasanın durumu şube başına (pos_stale; şube kapsamı A3): yalnız fiyat yazımı (record.ts) ve işaretler (pos-marks.ts)
+  // yazar; ürünün eski pos_stale_* sütunlarını hiçbir dosya okumaz ya da yazmaz
+  const staleWriters = walk("src").filter((f) => /\.(insert|update|delete)\(s\.posStale\)|\.(insert|delete|update)\(ps\)/.test(read(f)));
+  assert.deepEqual(staleWriters.sort(), ["src/server/prices/pos-marks.ts", "src/server/prices/record.ts"]);
+  for (const f of walk("src").filter((x) => x !== "src/server/db/schema.ts")) assert.doesNotMatch(read(f), /products\.posStale(Price|Since)\b|pos_stale_(price|since)/, f);
 });
 
 test("panel → site yazımı: önce site, sonra tek işlemde yazım ve geçmiş; sitenin hatası nedeniyle", () => {
@@ -813,8 +818,9 @@ test("eylemler: toplu fiyat ve şube fiyatı yöneticinin; kasaya işle iki rold
   const ops = read("src/server/bell/ops.ts");
   // Personel dalı kendi sabit sütunlu özetinden okur (yalnız etkin ürünler), yönetici posPendingSummary'den
   const pos = ops.slice(ops.indexOf("async function posNotifications"), ops.indexOf("export async function opsBell"));
-  // Bugünün kasası (geçiş gününden itibaren LafPOS; denetim E-39) iki özete ve metne aynı
-  assert.match(pos, /const scope = await loadTillScope\(undefined, now\);/);
+  // Bugünün kasaları (geçiş gününden itibaren LafPOS; denetim E-39; şube başına, A3) iki özete ve metne aynı
+  assert.match(pos, /const tills = await loadTillScopes\(undefined, now\);/);
+  assert.match(pos, /for \(const scope of tills\)/);
   assert.match(pos, /user\.role === "admin" \? await posPendingSummary\(scope\) : await staffPosSummary\(scope\)/);
   assert.match(pos, /posBell\(user\.role, summary, now, scope\.kasa\)/);
   // Yönetici dizisinin sırası korunur, operasyonun öğeleri uyarıların başında (sayim-ekle testi sonu sabitler)
@@ -833,8 +839,9 @@ test("kaynak: personelin kasaya işle yükleyicisi sabit sütunlu (beyaz liste),
     "products.name",
     "products.size",
     "products.price",
-    "products.posStalePrice",
-    "products.posStaleSince",
+    // Kasanın şube başına durumu (şube kapsamı A3): yalnız fiyat ve an (join şubeyi ve ürünü süzer)
+    "posStale.stalePrice",
+    "posStale.staleSince",
     "products.sortOrder",
     "products.active",
     "categories.name",

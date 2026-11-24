@@ -1,7 +1,7 @@
 import "server-only";
 
 import { pastCountReminder, pastCountReminders, staffLateEditNotice, unpricedExtrasNotice } from "@/app/panel/sayim/logic";
-import { ALL_BRANCHES } from "@/lib/branches";
+import { ALL_BRANCHES, BRANCH_PARAM } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { shiftMonth } from "@/lib/calc/engine";
 import { dateTR, num } from "@/lib/format";
@@ -17,7 +17,7 @@ import { currentBranchScope } from "@/server/branch-scope";
 import { soldOutFacts } from "@/server/data/menu-status";
 import { staffPosSummary } from "@/server/data/pos-staff";
 import { posPendingSummary } from "@/server/data/prices";
-import { loadTillScope } from "@/server/data/till-scope";
+import { loadTillScopes } from "@/server/data/till-scope";
 import { loadStaffLateEdits, loadUnpricedExtras } from "@/server/data/count-alerts";
 import { countProgress, countProgressByBranch } from "@/server/data/count-progress";
 import { myKaraokeRequests, pendingKaraokeSummary } from "@/server/data/karaoke-requests";
@@ -36,15 +36,28 @@ import type { DigestBox } from "@/server/notify/digest-template";
  * Kasaya işle'ye (Uyarılar); personel kendi sabit sütunlu özetinden (yalnız etkin ürünler), Kasadaki fiyatlar'a (Kasa).
  * Kimlik en yeni geri kalıştan: işaret zili yeniden okunmamış yapmaz, listeye yeni bir fiyat girmesi yapar. LafPOS
  * gününde (geçiş gününden itibaren) yalnız siteye bağlı olmayan ürünler ve yalnız yöneticide; siteye bağlınınkini LafPOS
- * siteden alır, öbürünü LafPOS'ta menüyü yöneten değiştirir (E-39).
+ * siteden alır, öbürünü LafPOS'ta menüyü yöneten değiştirir (E-39). Kasa şube başınadır (şube kapsamı A3): seçimin her
+ * kasası ayrı satır; "Tümü"de birden çok kasa açıkken başlık şubeyle başlar ("Marina: Kasada değişecek 2 fiyat"),
+ * kimlik şubeyi taşır ve bağlantı o şubeyi seçer.
  */
 async function posNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
-  const scope = await loadTillScope(undefined, now);
-  // LafPOS gününde personele fiyat görevi yok (LafPOS'ta ürün fiyatını kasiyer değiştiremez; posBell)
-  if (user.role !== "admin" && scope.lafpos) return [];
-  const summary = user.role === "admin" ? await posPendingSummary(scope) : await staffPosSummary(scope);
-  const item = posBell(user.role, summary, now, scope.kasa);
-  return item ? [item] : [];
+  const tills = await loadTillScopes(undefined, now);
+  const out: PanelNotification[] = [];
+  for (const scope of tills) {
+    // LafPOS gününde personele fiyat görevi yok (LafPOS'ta ürün fiyatını kasiyer değiştiremez; posBell)
+    if (user.role !== "admin" && scope.lafpos) continue;
+    const summary = user.role === "admin" ? await posPendingSummary(scope) : await staffPosSummary(scope);
+    const item = posBell(user.role, summary, now, scope.kasa);
+    if (!item) continue;
+    out.push(scope.name ? { ...item, id: `${item.id}-${scope.branchId}`, title: `${scope.name}: ${item.title}`, href: withBranchParam(item.href, scope.branchId) } : item);
+  }
+  return out;
+}
+
+/** Bağlantıya şube seçimi: seçici `?sube=`'yi çereze benimsetir (src/components/panel/branch-picker.tsx) */
+function withBranchParam(href: string, branchId: string): string {
+  const [path, hash] = href.split("#");
+  return `${path}${path.includes("?") ? "&" : "?"}${BRANCH_PARAM}=${encodeURIComponent(branchId)}${hash ? `#${hash}` : ""}`;
 }
 
 /**

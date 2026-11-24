@@ -1247,13 +1247,14 @@ test("kaynak: operasyon ve kapalı gün olguları iki rolde; kasa fiyatı okumas
   assert.doesNotMatch(src, /posPendingSummary/);
   const ops = read("src/server/data/today-ops.ts");
   assert.match(ops, /^import "server-only";/);
-  // Bugünün kasası bir kez okunur (geçiş gününden itibaren LafPOS: siteye bağlı ürün sayılmaz; denetim E-39)
-  assert.match(ops, /const scope = loadTillScope\(undefined, now\);/);
-  assert.match(ops, /safe\(scope\.then\(posPendingSummary\)/);
-  // Personel dalı yönetici olgusu yüklemez: kasa fiyatları personelin sabit sütunlu özetinden (§2.2)
+  // Bugünün kasaları bir kez okunur (geçiş gününden itibaren LafPOS: siteye bağlı ürün sayılmaz; denetim E-39; kasa şube
+  // başına, şube kapsamı A3)
+  assert.match(ops, /const scope = loadTillScopes\(undefined, now\);/);
+  assert.match(ops, /safe\(scope\.then\(\(t\) => each\(t, posPendingSummary\)\)\)/);
+  // Personel dalı yönetici olgusu yüklemez: kasa fiyatları personelin sabit sütunlu özetinden (§2.2), yalnız ModPOS kasaları
   const staffAt = ops.indexOf('if (user.role !== "admin")');
-  assert.ok(staffAt > 0 && staffAt < ops.indexOf("then(posPendingSummary)"));
-  assert.match(ops.slice(staffAt, ops.indexOf("then(posPendingSummary)")), /safe\(scope\.then\(staffPosSummary\)/);
+  assert.ok(staffAt > 0 && staffAt < ops.indexOf("each(t, posPendingSummary)"));
+  assert.match(ops.slice(staffAt, ops.indexOf("each(t, posPendingSummary)")), /each\(t\.filter\(\(x\) => !x\.lafpos\), staffPosSummary\)/);
 });
 
 test("Tümü, iki kasa (yönetici): dünün ve bugünün satırı şube başına, adında şube, adresinde ?sube=; tek kasada bugünkü gibi", () => {

@@ -23,46 +23,54 @@ export interface ProductPriceHistoryInfo {
   rows: HistoryRow[];
   /** Panelin bugünkü fiyatı (sayfa açılırken); "Kasada değiştirdim" kasaya bunun yazıldığını söyler */
   price: number | null;
-  posStalePrice: number | null;
-  posStaleSince: string | null;
-  /** Bugünün kasası (LafPOS gününde siteye bağlı üründe uyarı hiç gelmez: LafPOS fiyatı siteden alır) */
-  kasa?: KasaName;
+  /**
+   * Ürünün eski fiyatı duran kasaları (şube kapsamı A3): seçili şubenin kasası, "Tümü"de birden çok kasa açıkken her
+   * biri (`name` şubenin adı). LafPOS gününde siteye bağlı üründe uyarı hiç gelmez: LafPOS fiyatı siteden alır
+   */
+  pos: { branchId: string; name: string | null; kasa: KasaName; stalePrice: number; since: string }[];
 }
 
 /**
- * Ürün kartındaki "Fiyat geçmişi": son 20 satış fiyatı değişikliği ve kasada hâlâ eski fiyat duruyorsa uyarı
- * ("Kasada değiştirdim" ürünü Kasaya işle listesinden düşürür, bildirimdeki Geri al geri getirir). Sunucudan gelen
- * veriyle çizilir: kayıttan sonra sayfa yenilenince güncellenir (docs/FIYATLAR.md).
+ * Ürün kartındaki "Fiyat geçmişi": son 20 satış fiyatı değişikliği ve kasada hâlâ eski fiyat duruyorsa uyarı, kasa
+ * başına ("Kasada değiştirdim" ürünü o kasanın Kasaya işle listesinden düşürür, bildirimdeki Geri al geri getirir).
+ * Sunucudan gelen veriyle çizilir: kayıttan sonra sayfa yenilenince güncellenir (docs/FIYATLAR.md).
  */
 export function PriceHistoryCard({ product, history }: { product: { id: number; name: string; size: string }; history: ProductPriceHistoryInfo }) {
   const [pending, start] = useActionTransition();
-  // İşaretlenince uyarı hemen kalkar; aynı ürün sonra yeniden kasada geri kalırsa (başka an) yine görünür
-  const [doneSince, setDoneSince] = useState<string | null>(null);
-  const stale = history.price !== null && history.posStalePrice !== null && history.posStaleSince !== null && history.posStaleSince !== doneSince;
+  // İşaretlenince uyarı hemen kalkar (kasa başına, geri kalış anıyla); aynı ürün sonra yeniden kasada geri kalırsa (başka
+  // an) yine görünür
+  const [doneSince, setDoneSince] = useState<ReadonlyMap<string, string>>(() => new Map());
+  const setDone = (branchId: string, since: string | null) =>
+    setDoneSince((m) => {
+      const next = new Map(m);
+      if (since === null) next.delete(branchId);
+      else next.set(branchId, since);
+      return next;
+    });
+  const stale = history.price === null ? [] : history.pos.filter((t) => doneSince.get(t.branchId) !== t.since);
   const today = todayTR();
 
-  function markDone() {
-    const since = history.posStaleSince;
-    setDoneSince(since);
+  function markDone(till: ProductPriceHistoryInfo["pos"][number]) {
+    setDone(till.branchId, till.since);
     start(async () => {
       // Görülen fiyatla: sayfa açıldıktan sonra fiyat yeniden değiştiyse işaretlenmez, uyarı bugünkü fiyatla kalır
-      const r = await markPosDone([{ productId: product.id, price: history.price! }]);
+      const r = await markPosDone([{ productId: product.id, price: history.price! }], till.branchId);
       if (!r.ok) {
-        setDoneSince(null);
+        setDone(till.branchId, null);
         return void toast.error(r.error);
       }
       const changed = posChangedText(r.data.changed);
       if (changed) {
-        setDoneSince(null);
+        setDone(till.branchId, null);
         return void toast.warning(changed.title, { description: changed.description, duration: 12_000 });
       }
       const d = r.data.done[0];
       if (!d) return;
-      toast.success(`${d.label} kasada ${money(d.price)} olarak işaretlendi`, {
+      toast.success(`${d.label} ${till.name ? `${till.name} kasasında` : "kasada"} ${money(d.price)} olarak işaretlendi`, {
         action: {
           label: "Geri al",
           onClick: () => {
-            setDoneSince(null);
+            setDone(till.branchId, null);
             start(async () => {
               const u = await undoPosMarks([d.markId]);
               if (!u.ok) return void toast.error(u.error);
@@ -89,19 +97,20 @@ export function PriceHistoryCard({ product, history }: { product: { id: number; 
         }
       />
       <CardContent className="space-y-3">
-        {stale ? (
+        {stale.map((t) => (
           <Notice
+            key={t.branchId}
             tone="warn"
             live="polite"
-            title={`Kasada (${history.kasa ?? "ModPOS"}) hâlâ ${money(history.posStalePrice!)}, panelde ${money(history.price!)}`}
-            text={upperFirst(staleForText(history.posStaleSince!))}
+            title={`${t.name ? `${t.name} kasasında` : "Kasada"} (${t.kasa}) hâlâ ${money(t.stalePrice)}, panelde ${money(history.price!)}`}
+            text={upperFirst(staleForText(t.since))}
             action={
-              <Button size="sm" variant="secondary" onClick={markDone} disabled={pending}>
+              <Button size="sm" variant="secondary" onClick={() => markDone(t)} disabled={pending}>
                 Kasada değiştirdim
               </Button>
             }
           />
-        ) : null}
+        ))}
         {history.rows.length ? (
           <ul className="divide-y divide-line-strong/70 rounded-2xl bg-surface px-4">
             {history.rows.map((r) => (

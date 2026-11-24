@@ -1,8 +1,9 @@
 // Kasaya işle işaretleri (dalga 10 §2.2; src/server/prices/pos-marks.ts), gerçek Postgres'te: personelin işareti tek
 // satır yazar, eşzamanlı iki işaretten biri "zaten" olur, bu arada fiyatı değişen işaretlenmez, başkasının işaretini
 // personel geri alamaz, yöneticinin geri alması saklanan bayat fiyatı ve anı yazar (istemciden fiyat alınmaz), sonra
-// yeniden işaretlenen ürünün eski işareti geri alınmaz, pasif ürün personelde reddedilir. Kendi kullanıcılarını,
-// kategorisini ve ürünlerini açar, sonunda siler.
+// yeniden işaretlenen ürünün eski işareti geri alınmaz, pasif ürün personelde reddedilir. Kasa şube başınadır
+// (pos_stale; şube kapsamı A3): bu dosya Tuzla'nın kasasıyla çalışır, şubeler arası kurallar
+// tests/kasa-fiyat-sube-db.test.ts'te. Kendi kullanıcılarını, kategorisini ve ürünlerini açar, sonunda siler.
 //
 // POS_TEST_DATABASE_URL verilmezse atlanır (migration'ları uygulanmış bir yerel veritabanı).
 // Çalıştırma: POS_TEST_DATABASE_URL=postgres://postgres:postgres@localhost/laffogato_yetki npx tsx --test tests/kasaya-isle-db.test.ts
@@ -11,8 +12,9 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { after, before, describe, test } from "node:test";
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
+import { DEFAULT_BRANCH_ID } from "../src/lib/branches";
 import { POS_UNDO_TEXT } from "../src/lib/prices/pos";
 import { createDb, type DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
@@ -31,15 +33,24 @@ describe("Kasaya işle: işaret ve geri alma", { skip: !URL && "POS_TEST_DATABAS
   const ids: number[] = [];
   const since = new Date("2026-10-20T07:00:00Z");
 
+  const TUZLA = DEFAULT_BRANCH_ID;
   async function product(name: string, o: { price?: number; stale?: number | null; active?: boolean } = {}): Promise<number> {
     const [row] = await db
       .insert(s.products)
-      .values({ categoryId, name: `${name} ${tag}`, size: "M", price: o.price ?? 205, active: o.active ?? true, posStalePrice: o.stale === undefined ? 195 : o.stale, posStaleSince: o.stale === null ? null : since })
+      .values({ categoryId, name: `${name} ${tag}`, size: "M", price: o.price ?? 205, active: o.active ?? true })
       .returning({ id: s.products.id });
     ids.push(row.id);
+    if (o.stale !== null) await db.insert(s.posStale).values({ branchId: TUZLA, productId: row.id, stalePrice: o.stale ?? 195, staleSince: since });
     return row.id;
   }
-  const productRow = async (id: number) => (await db.select().from(s.products).where(eq(s.products.id, id)))[0];
+  /** Tuzla'nın kasasında ürünün durumu: bekleyen fiyat ve an (yoksa null) */
+  const productRow = async (id: number) => {
+    const [r] = await db
+      .select()
+      .from(s.posStale)
+      .where(and(eq(s.posStale.branchId, TUZLA), eq(s.posStale.productId, id)));
+    return { posStalePrice: r?.stalePrice ?? null, posStaleSince: r?.staleSince ?? null };
+  };
   const marksOf = (id: number) => db.select().from(s.posMarks).where(eq(s.posMarks.productId, id));
   const refused = async (p: Promise<unknown>, re: RegExp) => assert.rejects(p, (e: unknown) => e instanceof UserError && re.test(e.message));
 
@@ -64,7 +75,7 @@ describe("Kasaya işle: işaret ve geri alma", { skip: !URL && "POS_TEST_DATABAS
 
   test("personelin işareti tek satır yazar, ürünü listeden düşürür; bayat fiyat işaretlenmez", async () => {
     const latte = await product("Latte");
-    const r = await markPos(db, users.ayse, [{ productId: latte, price: 205 }], NOW);
+    const r = await markPos(db, users.ayse, [{ productId: latte, price: 205 }], NOW, TUZLA);
     assert.equal(r.done.length, 1);
     assert.deepEqual(r.already, []);
     assert.deepEqual(r.changed, []);
@@ -81,18 +92,18 @@ describe("Kasaya işle: işaret ve geri alma", { skip: !URL && "POS_TEST_DATABAS
     assert.equal(marks[0].markedByName, "Ayşe");
     // Liste açıldıktan sonra fiyatı değişen işaretlenmez, bugünkü fiyatıyla döner
     const mocha = await product("Mocha", { price: 230 });
-    const changed = await markPos(db, users.ayse, [{ productId: mocha, price: 220 }], NOW);
+    const changed = await markPos(db, users.ayse, [{ productId: mocha, price: 220 }], NOW, TUZLA);
     assert.deepEqual(changed.done, []);
     assert.equal(changed.changed[0].price, 230);
     assert.equal((await productRow(mocha)).posStalePrice, 195);
     assert.equal((await marksOf(mocha)).length, 0);
     // Personel tek tek işaretler
-    await refused(markPos(db, users.ayse, [{ productId: latte, price: 205 }, { productId: mocha, price: 230 }], NOW), /tek tek/);
+    await refused(markPos(db, users.ayse, [{ productId: latte, price: 205 }, { productId: mocha, price: 230 }], NOW, TUZLA), /tek tek/);
   });
 
   test("eşzamanlı iki işaretten biri 'zaten' olur; zaten yalnız kimlik taşır", async () => {
     const cortado = await product("Cortado");
-    const [a, b] = await Promise.all([markPos(db, users.ayse, [{ productId: cortado, price: 205 }], NOW), markPos(db, users.mehmet, [{ productId: cortado, price: 205 }], NOW)]);
+    const [a, b] = await Promise.all([markPos(db, users.ayse, [{ productId: cortado, price: 205 }], NOW, TUZLA), markPos(db, users.mehmet, [{ productId: cortado, price: 205 }], NOW, TUZLA)]);
     assert.equal(a.done.length + b.done.length, 1);
     assert.deepEqual([...a.already, ...b.already], [cortado]);
     assert.equal((await marksOf(cortado)).length, 1);
@@ -100,7 +111,7 @@ describe("Kasaya işle: işaret ve geri alma", { skip: !URL && "POS_TEST_DATABAS
 
   test("geri alma: personel başkasınınkini ve 30 dakikadan sonrakini alamaz; yönetici saklanan değerleri yazar", async () => {
     const tea = await product("Lemon Tea");
-    const [m] = (await markPos(db, users.ayse, [{ productId: tea, price: 205 }], NOW)).done;
+    const [m] = (await markPos(db, users.ayse, [{ productId: tea, price: 205 }], NOW, TUZLA)).done;
     const other = await undoPos(db, users.mehmet, [m.markId], later(1));
     assert.deepEqual(other.undone, []);
     assert.equal(other.refused[0].reason, POS_UNDO_TEXT.notMine);
@@ -120,7 +131,7 @@ describe("Kasaya işle: işaret ve geri alma", { skip: !URL && "POS_TEST_DATABAS
     // İkinci geri alma: zaten
     assert.equal((await undoPos(db, users.admin, [m.markId], later(60 * 24))).refused[0].reason, POS_UNDO_TEXT.undone);
     // Personel kendi işaretini 30 dakika içinde geri alır
-    const [m2] = (await markPos(db, users.ayse, [{ productId: tea, price: 205 }], later(60 * 25))).done;
+    const [m2] = (await markPos(db, users.ayse, [{ productId: tea, price: 205 }], later(60 * 25), TUZLA)).done;
     const own = await undoPos(db, users.ayse, [m2.markId], later(60 * 25 + 5));
     assert.equal(own.undone.length, 1);
     assert.equal((await productRow(tea)).posStalePrice, 195);
@@ -128,11 +139,12 @@ describe("Kasaya işle: işaret ve geri alma", { skip: !URL && "POS_TEST_DATABAS
 
   test("M1 → fiyat değişti → M2: M1 geri alınmaz (son işareti geri alın); listeye yeniden giren ürün geri alınmaz", async () => {
     const flat = await product("Flat White");
-    const [m1] = (await markPos(db, users.admin, [{ productId: flat, price: 205 }], NOW)).done;
+    const [m1] = (await markPos(db, users.admin, [{ productId: flat, price: 205 }], NOW, TUZLA)).done;
     // Fiyat değişti (panel): kasa 205'te kaldı, ürün listeye yeniden girdi
-    await db.update(s.products).set({ price: 215, posStalePrice: 205, posStaleSince: later(10) }).where(eq(s.products.id, flat));
+    await db.update(s.products).set({ price: 215 }).where(eq(s.products.id, flat));
+    await db.insert(s.posStale).values({ branchId: TUZLA, productId: flat, stalePrice: 205, staleSince: later(10) });
     assert.equal((await undoPos(db, users.admin, [m1.markId], later(11))).refused[0].reason, POS_UNDO_TEXT.relisted);
-    const [m2] = (await markPos(db, users.admin, [{ productId: flat, price: 215 }], later(12))).done;
+    const [m2] = (await markPos(db, users.admin, [{ productId: flat, price: 215 }], later(12), TUZLA)).done;
     const r = await undoPos(db, users.admin, [m1.markId], later(13));
     assert.equal(r.refused[0].reason, POS_UNDO_TEXT.notLatest);
     // Son işaret geri alınır: kasada 205 duruyordu
@@ -144,13 +156,13 @@ describe("Kasaya işle: işaret ve geri alma", { skip: !URL && "POS_TEST_DATABAS
 
   test("pasif ürün ve bilinmeyen kimlik personelde reddedilir; yönetici pasif ürünü işaretleyebilir", async () => {
     const old = await product("Eski Ürün", { active: false });
-    await refused(markPos(db, users.ayse, [{ productId: old, price: 205 }], NOW), /listesinde değil/);
+    await refused(markPos(db, users.ayse, [{ productId: old, price: 205 }], NOW, TUZLA), /listesinde değil/);
     assert.equal((await productRow(old)).posStalePrice, 195);
-    await refused(markPos(db, users.ayse, [{ productId: 999_999_999, price: 205 }], NOW), /bulunamadı/);
-    const r = await markPos(db, users.admin, [{ productId: old, price: 205 }], NOW);
+    await refused(markPos(db, users.ayse, [{ productId: 999_999_999, price: 205 }], NOW, TUZLA), /bulunamadı/);
+    const r = await markPos(db, users.admin, [{ productId: old, price: 205 }], NOW, TUZLA);
     assert.equal(r.done.length, 1);
     // Listede olmayan (zaten işlenmiş) ürün "zaten"
     const fresh = await product("Güncel", { stale: null });
-    assert.deepEqual((await markPos(db, users.ayse, [{ productId: fresh, price: 205 }], NOW)).already, [fresh]);
+    assert.deepEqual((await markPos(db, users.ayse, [{ productId: fresh, price: 205 }], NOW, TUZLA)).already, [fresh]);
   });
 });
