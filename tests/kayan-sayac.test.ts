@@ -30,8 +30,26 @@ test("kayan sayaç num() / tl() ile aynı rakamı yazar (yuvarlama dahil)", () =
   }
 });
 
+test("kayan sayaç num() ile her değerde aynı: -0,5 ve yarım kuruş dahil", () => {
+  // num() -0'a yuvarlanan değeri 0 yazar (-0,5 → "0"); Intl yarımı sıfırdan uzağa yuvarlar (5143,485 → 5.143,49)
+  const edges = [-0.5, -0.005, 0.005, 5143.485, 1.005, 2.675, -2.675, 0.125, 1e12 + 0.5];
+  for (const v of edges) {
+    for (const d of [0, 2]) assert.equal(shown(v, d), num(v, d, d), `değer ${v}, ${d} ondalık`);
+  }
+  // Rastgele değerler: tam, yarım ve kuruşlu
+  let seed = 7;
+  const next = () => ((seed = (seed * 48271) % 2147483647) / 2147483647) * 2 - 1;
+  for (let i = 0; i < 20000; i++) {
+    const big = next() * 10 ** Math.floor(Math.abs(next()) * 9);
+    for (const v of [big, Math.round(big * 2) / 2, Math.round(big * 1000) / 1000]) {
+      for (const d of [0, 2]) assert.equal(shown(v, d), num(v, d, d), `değer ${v}, ${d} ondalık`);
+    }
+  }
+});
+
 test("sıfıra yuvarlanan eksi değer işaretsiz, geçersiz değer 0", () => {
   assert.equal(shown(-0.4), "0");
+  assert.equal(shown(-0.5), "0");
   assert.equal(shown(Number.NaN), "0");
   assert.equal(shown(Number.POSITIVE_INFINITY), "0");
 });

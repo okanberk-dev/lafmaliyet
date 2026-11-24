@@ -2,7 +2,9 @@
  * Kayan rakamlı sayacın (animated-counter.tsx) saf hesabı: değeri basamaklara böler, Türkçe biçimler ve her
  * basamağa sağdan sayılan kalıcı bir anahtar verir. React ve tarayıcı içermez; testler doğrudan bunu okur.
  *
- * Biçim `tl()` / `num()` ile aynıdır: binlik ayırıcı nokta, ondalık virgül, yuvarlama sıfırdan uzağa.
+ * Biçim `tl()` / `num()` ile aynıdır: binlik ayırıcı nokta, ondalık virgül, yuvarlama sıfırdan uzağa. Yuvarlamayı da
+ * `num()` gibi Intl yapar (5143,485 → 5.143,49; çarpmayla 514348,4999… olur ve ,48 çıkardı); `num()`un -0 kuralı da
+ * aynı: yuvarlanınca -0 olan değer 0 yazılır (-0,5 → "0").
  */
 
 export const MAX_DECIMALS = 15;
@@ -31,13 +33,27 @@ export type Shape = {
   width: number;
 };
 
+const roundCache = new Map<number, Intl.NumberFormat>();
+
+/** |değer| × 10^ondalık, `num()`un Intl yuvarlamasıyla */
+function roundScaled(abs: number, places: number): number {
+  let f = roundCache.get(places);
+  if (!f) {
+    f = new Intl.NumberFormat("en-US", { useGrouping: false, minimumFractionDigits: places, maximumFractionDigits: places });
+    roundCache.set(places, f);
+  }
+  return Number(f.format(abs).replace(".", ""));
+}
+
 export function measure(value: number, decimals: number, padStart: number, duration: number): Shape {
   // NaN bir önceki değerle karşılaştırmayı sonsuza dek "değişti" yapar
   const amount = Number.isFinite(value) ? value : 0;
   const places = clamp(Math.trunc(decimals), 0, MAX_DECIMALS);
   const pad = clamp(Math.trunc(padStart), 1, MAX_PAD);
   // MAX_SAFE_INTEGER'dan sonrası gürültü, 1e21'den sonra String() üslü yazar
-  const scaled = Math.min(Number.MAX_SAFE_INTEGER, Math.round(Math.abs(amount) * 10 ** places));
+  // num(): Math.round(v × 10^ondalık) -0 ise değer 0 sayılır
+  const toZero = Object.is(Math.round(amount * 10 ** places), -0);
+  const scaled = toZero ? 0 : Math.min(Number.MAX_SAFE_INTEGER, roundScaled(Math.abs(amount), places));
   return {
     amount,
     scaled,

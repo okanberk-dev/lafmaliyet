@@ -268,6 +268,15 @@ test("her parola alanı parola kutusunu kullanır; ad / kimlik / autocomplete ay
   }
   const meters = raw.flatMap((f) => [...read(f).matchAll(/<(?:PasswordInput|FloatingPasswordField)\b[\s\S]*?\/>/g)].filter((m) => /\bstrength\b/.test(m[0])).map(() => f));
   assert.deepEqual(meters.sort(), ["src/app/davet/set-password-form.tsx", "src/app/panel/hesap/password-form.tsx", "src/app/panel/kullanicilar/password-field.tsx"]);
+  // Parola gücü sunucunun kuralını (passwordProblem(parola, e-posta)) e-postayla birlikte uygular: e-postayı içeren
+  // parola, e-postasız "Güçlü" olsa da "Zayıf"
+  assert.equal(passwordLevel("AyseKaya2026!"), 4);
+  assert.equal(passwordLevel("AyseKaya2026!", "ayse.kaya@ornek.com"), 1);
+  assert.match(read("src/app/panel/kullanicilar/password-field.tsx"), /strength=\{\{ email \}\}/);
+  const users = read("src/app/panel/kullanicilar/users-client.tsx");
+  const fields = [...users.matchAll(/<PasswordField\b[\s\S]*?\/>/g)].map((m) => m[0]);
+  assert.equal(fields.length, 2, "kullanıcı ekle ve düzenle");
+  for (const f of fields) assert.match(f, /\bemail=\{email\}/, f.slice(0, 80));
   // Giriş ve onay alanlarında parola gücü yok
   assert.doesNotMatch(read("src/app/giris/login-form.tsx"), /strength/);
   assert.doesNotMatch(read("src/components/panel/confirm-password-dialog.tsx"), /strength/);

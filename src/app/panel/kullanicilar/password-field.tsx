@@ -69,6 +69,7 @@ export function PasswordField({
   value,
   onChange,
   initiallyVisible = false,
+  email,
 }: {
   id: string;
   label: string;
@@ -77,6 +78,8 @@ export function PasswordField({
   value: string;
   onChange: (v: string) => void;
   initiallyVisible?: boolean;
+  /** Kişinin e-postası: parola gücü sunucu gibi e-postayı içeren parolayı da "Zayıf" sayar */
+  email?: string | null;
 }) {
   const [visible, setVisible] = useState(initiallyVisible);
   // Sonuç düğmede yazar ("Kopyalandı"); telefonda üstteki bildirim pencerenin başlığını örtmesin
@@ -92,7 +95,7 @@ export function PasswordField({
         className="h-11 pointer-coarse:h-11"
         visible={visible}
         onVisibleChange={setVisible}
-        strength
+        strength={{ email }}
       />
       <div className="flex flex-wrap gap-2">
         <Button
