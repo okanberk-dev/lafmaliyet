@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { clearQuery, FilterChip, releaseScroll, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { FloatingBar } from "@/components/ui/floating-bar";
-import { Field, NumberInput, Select } from "@/components/ui/form";
+import { Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { EmptyState, InfoTip, Signed, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
@@ -20,7 +20,7 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import { basisText, type SalesBasis } from "@/lib/calc/price-loss";
 import type { Size } from "@/lib/calc/types";
 import { SIZE_LABELS, SIZES } from "@/lib/constants";
-import { money, num, numPossessive, pct } from "@/lib/format";
+import { locativeTR, money, num, numPossessive, pct } from "@/lib/format";
 import {
   bulkSummary,
   defaultRounding,
@@ -39,10 +39,12 @@ import {
   type RoundingId,
 } from "@/lib/prices/bulk";
 import type { KasaName } from "@/lib/lafpos/kasa";
+import { branchBulkRows, effectiveFromText, effectiveLocalValue, parseEffectiveLocal } from "@/lib/prices/branch";
 import { batchPosNote } from "@/lib/prices/pos";
+import type { SiteBranchPrice } from "@/lib/site-menu/schema";
 import { toMinor } from "@/lib/site-menu/slot";
 import { cn } from "@/lib/utils";
-import { applyBulkPrices, undoPriceBatch } from "@/server/actions/prices";
+import { applyBranchPrices, applyBulkPrices, undoPriceBatch } from "@/server/actions/prices";
 
 import { FilterSheet, FilterSheetButton, FilterSummaryLine, SHEET_CHIP, SheetSection, SheetToggle } from "../filter-sheet";
 import { filterSummary } from "../filter-text";
@@ -93,13 +95,16 @@ const posPendingOf = (applied: readonly { posPending: boolean }[]) => applied.fi
 
 /** Toplu değişikliğin ya da geri almasının sonucu (önizlemenin yerine durur) */
 interface Outcome {
-  kind: "bulk" | "undo";
+  /** "branch": şube fiyatı (Şube seçimi); geri alınmaz, anı gelmemiş satır Şube fiyatı sekmesinde iptal edilir */
+  kind: "bulk" | "undo" | "branch";
   /** Toplu değişikliğin kimliği (geri alma ve "Tekrar dene" bununla) */
   batchId: string;
   note: string;
   applied: { productId: number; label: string; from: number; to: number; site: boolean; posPending: boolean }[];
   failed: { productId: number; label: string; from: number; to: number; reason: string }[];
   skipped: { productId: number; label: string; reason: string }[];
+  /** Şube fiyatının şubesi ve anı ("Tekrar dene" aynısını gönderir) */
+  target?: { branch: string; effectiveFrom: string };
 }
 
 /**
@@ -116,6 +121,7 @@ export function BulkEditor({
   basis,
   salesMissing,
   kasa = "ModPOS",
+  branchPrice = null,
 }: {
   rows: BulkRow[];
   categories: { id: number; name: string }[];
@@ -127,6 +133,16 @@ export function BulkEditor({
   salesMissing: string;
   /** Bugünün kasası (src/lib/lafpos/kasa.ts): LafPOS gününde siteye bağlı ürünün fiyatını LafPOS siteden alır */
   kasa?: KasaName;
+  /**
+   * Şube seçimi (şube fiyatı, src/lib/prices/branch.ts): yazılabilen şubeler, kalemlerin tabanı (kuruş) ve sitenin şube
+   * satırları; site `writes.branchPrice` duyurmadıysa null (seçim görünmez)
+   */
+  branchPrice?: {
+    branches: { id: string; name: string }[];
+    defaultEffective: string;
+    items: Record<string, { priceMinor: number; priceMinorL: number }>;
+    rows: SiteBranchPrice[];
+  } | null;
 }) {
   // Süzgeçler adreste, Ürün listesiyle aynı adlarla (listedeki "Toplu fiyat" süzgeçleriyle açar)
   const [q, setQ] = useQueryText("ara");
@@ -137,7 +153,18 @@ export function BulkEditor({
   const selected = useMemo(() => parseCategoryParam(kategori).filter((id) => categories.some((c) => c.id === id)), [kategori, categories]);
   const size = parseSizeParam(boy);
   const includeInactive = pasif === "1";
-  const scope = useMemo(() => filterBulkRows(rows, { categories: selected, size, q, includeInactive }), [rows, selected, size, q, includeInactive]);
+  // Şube: boşsa taban (Tümü: sitenin fiyatı ve kendi fiyatı olmayan her şube); seçilince bugünkü fiyat şubenin Geçerlilik
+  // anındaki fiyatıdır ve yalnız siteye bağlı ürünler değişir
+  const [branchId, setBranchId] = useState("");
+  const [when, setWhen] = useState(() => (branchPrice ? effectiveLocalValue(branchPrice.defaultEffective) : ""));
+  const branch = branchPrice?.branches.find((b) => b.id === branchId) ?? null;
+  const effective = parseEffectiveLocal(when);
+  const effectiveAt = effective.ok ? Date.parse(effective.iso) : branchPrice ? Date.parse(branchPrice.defaultEffective) : 0;
+  const baseRows = useMemo(
+    () => (branch && branchPrice ? branchBulkRows(rows, { items: branchPrice.items, rows: branchPrice.rows, branch: branch.id, at: effectiveAt }) : rows),
+    [rows, branch, branchPrice, effectiveAt],
+  );
+  const scope = useMemo(() => filterBulkRows(baseRows, { categories: selected, size, q, includeInactive }), [baseRows, selected, size, q, includeInactive]);
   const inactiveCount = rows.filter((r) => !r.active).length;
   const categoryCounts = useMemo(() => {
     const m = new Map<number, number>();
@@ -174,7 +201,10 @@ export function BulkEditor({
   const [excluded, setExcluded] = useState<ReadonlySet<number>>(() => new Set());
   const [showUnchanged, setShowUnchanged] = useState(false);
 
-  const preview = useMemo(() => previewRows(scope, rule, overrides, excluded, settings, { siteConfigured }), [scope, rule, overrides, excluded, settings, siteConfigured]);
+  const preview = useMemo(
+    () => previewRows(scope, rule, overrides, excluded, settings, { siteConfigured, branch: !!branch }),
+    [scope, rule, overrides, excluded, settings, siteConfigured, branch],
+  );
   const listed = preview.filter((p) => !p.unchanged || p.overridden);
   const unchanged = preview.filter((p) => p.unchanged && !p.overridden);
   const summary = bulkSummary(preview);
@@ -241,6 +271,21 @@ export function BulkEditor({
     setConfirm(false);
     setLinkedRun(summary.linked > 0);
     const sent = { items, note };
+    if (branch) {
+      if (!effective.ok) return void toast.error(effective.error);
+      const target = { branch: branch.id, effectiveFrom: effective.iso };
+      return start(async () => {
+        const r = await applyBranchPrices({ ...target, ...sent });
+        if (!r.ok) return void toast.error(r.error);
+        const res = r.data;
+        const label = `${branch.name} · ${effectiveFromText(target.effectiveFrom)} · ${sent.note}`;
+        setOutcome({ kind: "branch", batchId: "", note: label, applied: res.applied.map((a) => ({ ...a, site: true, posPending: false })), failed: res.failed, skipped: [], target });
+        setShowApplied(false);
+        resetRule();
+        if (res.applied.length) toast.success(`${num(res.applied.length)} şube fiyatı yazıldı`, { description: `${branch.name}, ${effectiveFromText(target.effectiveFrom)}; LafPOS o anda siteden alır` });
+        else toast.error("Hiçbir şube fiyatı yazılmadı", { description: res.failed[0]?.reason });
+      });
+    }
     start(async () => {
       const r = await applyBulkPrices(sent);
       if (!r.ok) return void toast.error(r.error);
@@ -258,6 +303,24 @@ export function BulkEditor({
     if (!outcome) return;
     const o = outcome;
     if (o.kind === "undo") return undo(o.batchId);
+    // Şube fiyatı yeniden gönderilir (önizlemedeki şube fiyatıyla): aynı satır sitede zaten varsa ikinci kez yazılmaz
+    if (o.kind === "branch" && o.target && branchPrice) {
+      const target = o.target;
+      const current = new Map(branchBulkRows(rows, { items: branchPrice.items, rows: branchPrice.rows, branch: target.branch, at: Date.parse(target.effectiveFrom) }).map((r) => [r.id, r.price]));
+      const again = o.failed.flatMap((f) => {
+        const from = current.get(f.productId);
+        return from === undefined || toMinor(from) === toMinor(f.to) ? [] : [{ productId: f.productId, from, to: f.to }];
+      });
+      if (!again.length) return void setOutcome({ ...o, failed: [] });
+      return start(async () => {
+        const r = await applyBranchPrices({ ...target, items: again, note: o.note });
+        if (!r.ok) return void toast.error(r.error);
+        const res = r.data;
+        setOutcome({ ...o, applied: [...o.applied, ...res.applied.map((a) => ({ ...a, site: true, posPending: false }))], failed: res.failed });
+        if (res.applied.length) toast.success(`${num(res.applied.length)} şube fiyatı daha yazıldı`);
+        else toast.error("Yine yazılmadı", { description: res.failed[0]?.reason });
+      });
+    }
     const byId = new Map(rows.map((r) => [r.id, r]));
     // Silinmiş ürün yeniden denenmez (listede kalır); fiyatı zaten yeni olan listeden düşer
     const missing = o.failed.filter((f) => !byId.has(f.productId));
@@ -298,6 +361,36 @@ export function BulkEditor({
   const ruleCaption = rule ? ruleText(rule) : null;
 
   // ---------------------------------------------------------------- Görünüm
+
+  const branchField = branchPrice ? (
+    <div className="space-y-3">
+      <Field label="Şube" htmlFor="bulk-branch" hint={branch ? "Yalnız siteye bağlı ürünler; taban (Tuzla) değişmez." : "Tümü: sitenin fiyatı (Tuzla ve kendi fiyatı olmayan her şube)."}>
+        <Select
+          id="bulk-branch"
+          value={branchId}
+          onChange={(e) => {
+            // Bugünkü fiyat şubeye göre değişir: elle yazılanlar ve çıkarılanlar sıfırlanır
+            setBranchId(e.target.value);
+            setOverrides(new Map());
+            setExcluded(new Set());
+          }}
+          className="h-11 sm:h-9"
+        >
+          <option value="">Tümü (taban fiyat)</option>
+          {branchPrice.branches.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      {branch ? (
+        <Field label="Geçerlilik" htmlFor="bulk-effective" error={effective.ok ? null : effective.error} hint="Varsayılan sonraki iş günü 05:00 (İstanbul).">
+          <Input id="bulk-effective" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className="h-11 sm:h-9" />
+        </Field>
+      ) : null}
+    </div>
+  ) : null;
 
   const productsCard = (
     <Card>
@@ -349,6 +442,7 @@ export function BulkEditor({
     <Card>
       <CardHeader icon={<Percent />} title="Değişiklik" description="Bir toplu değişiklikte tek kural; kategoriye göre farklı kural için iki kez yapın." />
       <CardContent className="space-y-4">
+        {branchField}
         <Segmented stretch label="Kural" value={kind} onChange={setKind} options={KINDS} />
         {kind === "suggested" ? (
           <p className="rounded-2xl bg-surface px-4 py-3 text-sm leading-6 text-ink-soft">
@@ -579,11 +673,11 @@ export function BulkEditor({
       <FloatingBar open={!outcome && summary.count > 0}>
         <div className="min-w-0 flex-1 text-sm">
           <p className="font-semibold text-ink tabular">
-            {num(summary.count)} fiyat değişecek{summary.linked ? ` · ${numPossessive(summary.linked)} sitede de` : ""}
+            {branch ? `${num(summary.count)} fiyat ${locativeTR(branch.name)} değişecek` : `${num(summary.count)} fiyat değişecek${summary.linked ? ` · ${numPossessive(summary.linked)} sitede de` : ""}`}
           </p>
           {pending ? <p className="text-xs text-ink-mute">{linkedRun ? "Siteye yazılıyor…" : "Kaydediliyor…"}</p> : null}
         </div>
-        <Button onClick={() => setConfirm(true)} disabled={pending} className="h-11 px-4 pointer-coarse:h-11 sm:h-9">
+        <Button onClick={() => setConfirm(true)} disabled={pending || (!!branch && !effective.ok)} className="h-11 px-4 pointer-coarse:h-11 sm:h-9">
           {pending ? "Değiştiriliyor…" : "Fiyatları değiştir"}
         </Button>
       </FloatingBar>
@@ -594,8 +688,14 @@ export function BulkEditor({
         onConfirm={apply}
         tone="primary"
         confirmLabel="Değiştir"
-        title={`${num(summary.count)} ürünün fiyatı değişsin mi?`}
-        description={[
+        title={branch ? `${num(summary.count)} ürünün ${branch.name} fiyatı değişsin mi?` : `${num(summary.count)} ürünün fiyatı değişsin mi?`}
+        description={(branch && effective.ok
+          ? [
+              `${note}.`,
+              `${locativeTR(branch.name)} ${effectiveFromText(effective.iso)} geçerli; taban (Tuzla) değişmez. Fiyatlar siteye kalem kalem yazılır, LafPOS o anda siteden alır.`,
+              "Anı gelmeden Şube fiyatı sekmesinden iptal edebilirsiniz.",
+            ]
+          : [
           `${note}.`,
           summary.linked ? `${num(summary.linked)} ürün laffogato.net menüsünde de değişir (siteye tek tek yazılır, birkaç saniye sürebilir).` : null,
           kasa === "LafPOS"
@@ -604,7 +704,8 @@ export function BulkEditor({
               : "LafPOS yeni fiyatları siteden alır; kasada bir şey yapmanız gerekmez."
             : "Kasadaki (ModPOS) fiyatları elle değiştirmeniz gerekecek; liste Kasaya işle sekmesinde.",
           summary.decreases ? `${num(summary.decreases)} ürünün fiyatı düşüyor.` : null,
-        ]
+            ]
+        )
           .filter(Boolean)
           .join(" ")}
       />
@@ -924,14 +1025,19 @@ function ResultCard({
   const n = outcome.applied.length;
   const pos = posPendingOf(outcome.applied);
   const undo = outcome.kind === "undo";
-  const title = n
+  const branch = outcome.kind === "branch";
+  const title = branch
+    ? n
+      ? `${num(n)} şube fiyatı yazıldı.`
+      : "Hiçbir şube fiyatı yazılmadı."
+    : n
     ? `${num(n)} fiyat ${undo ? "eski haline döndü" : "değişti"}${site ? ` (${numPossessive(site)} sitede de)` : ""}.`
     : undo
       ? "Hiçbir fiyat geri alınmadı."
       : "Hiçbir fiyat değişmedi.";
   // Elle yapılacaklar: sitede fiyat listesinin tarihi; geri almada kasada bir şey kalıp kalmadığı (toplu değişiklikte
   // kasaya giden düğme zaten aşağıda)
-  const notes = [site ? "Fiyat listesinin tarihini sitede (Ayarlar → Vergi) güncellemeyi unutma." : null, undo && n ? batchPosNote("undo", outcome.applied, kasa) : null].filter(
+  const notes = [site && !branch ? "Fiyat listesinin tarihini sitede (Ayarlar → Vergi) güncellemeyi unutma." : null, undo && n ? batchPosNote("undo", outcome.applied, kasa) : null].filter(
     (x): x is string => !!x,
   );
   return (
@@ -1009,7 +1115,12 @@ function ResultCard({
               Kasaya işle ({num(pos)}) <ArrowRight size={15} aria-hidden="true" />
             </ButtonLink>
           ) : null}
-          {!undo && n ? (
+          {branch && n ? (
+            <ButtonLink href={tabHref("sube")} variant="secondary">
+              Şube fiyatı&apos;nda gör (iptal) <ArrowRight size={15} aria-hidden="true" />
+            </ButtonLink>
+          ) : null}
+          {!undo && !branch && n ? (
             <Button variant="secondary" onClick={onUndo} disabled={pending}>
               <RotateCcw size={15} aria-hidden="true" /> Değişikliği geri al
             </Button>

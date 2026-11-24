@@ -3,7 +3,9 @@ import { Suspense } from "react";
 
 // Arc UI belirteçleri yalnız `.arc` kabının içinde (src/components/arc/README.md)
 import "@/components/arc/foundation.css";
+import { PanelAssistantGate } from "@/components/panel/assistant/assistant-gate";
 import { Sidebar, SidebarSkeleton } from "@/components/panel/sidebar";
+import { assistantEnabled } from "@/lib/assistant/protocol";
 import { requireUser } from "@/server/auth/dal";
 import { branchScope } from "@/server/branch-scope";
 import { loadSearchIndex } from "@/server/data/search";
@@ -24,6 +26,8 @@ async function SidebarWithUser() {
       user={{ id: user.id, name: user.name, email: user.email, role: user.role }}
       index={index}
       branch={{ scope: branch.scope, branches: branch.branches, locked: branch.locked }}
+      // Telefonda alt menünün "Asistan" sekmesi: asistanın kapısıyla aynı koşul (yönetici, ASISTAN_KAPALI değil)
+      assistant={user.role === "admin" && assistantEnabled()}
     />
   );
 }
@@ -36,10 +40,10 @@ export default function PanelLayout({ children }: LayoutProps<"/panel">) {
   return (
     <div data-component="app-shell" className="min-h-dvh bg-background text-foreground lg:pl-[17.5rem]">
       {/* Klavyeyle gezinenler için: menüyü atlayıp doğrudan sayfa içeriğine. Karaoke şeridi varken onun altında
-          görünür (--alarm-h, globals.css) */}
+          görünür (--alarm-h, globals.css). Telefonda asistanın sayfası açıkken yok (içerik etkisiz; panel-assistant.tsx) */}
       <a
         href="#icerik"
-        className="no-print sr-only focus:not-sr-only focus:fixed focus:top-[calc(var(--alarm-h)+0.75rem)] focus:left-3 focus:z-[70] focus:rounded-xl focus:bg-ink focus:px-4 focus:py-2.5 focus:text-sm focus:font-medium focus:text-on-solid"
+        className="no-print sr-only in-data-[assistant=sheet]:hidden focus:not-sr-only focus:fixed focus:top-[calc(var(--alarm-h)+0.75rem)] focus:left-3 focus:z-[70] focus:rounded-xl focus:bg-ink focus:px-4 focus:py-2.5 focus:text-sm focus:font-medium focus:text-on-solid"
       >
         İçeriğe geç
       </a>
@@ -54,6 +58,11 @@ export default function PanelLayout({ children }: LayoutProps<"/panel">) {
           {children}
         </div>
       </main>
+      {/* Panel asistanı (yalnız yönetici; docs/ASISTAN.md): masaüstünde sağ altta düğme (yeri globals.css
+          --assistant-bottom), telefonda alt menünün "Asistan" sekmesi */}
+      <Suspense fallback={null}>
+        <PanelAssistantGate />
+      </Suspense>
     </div>
   );
 }

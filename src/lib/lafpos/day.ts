@@ -45,6 +45,8 @@ const slot = z.enum(["M", "L"]).nullable();
  * kalıcıdır. Saklanan jsonb aynı şemayla yeniden okunur; zorunlu bir alan eski günleri sessizce düşürürdü
  */
 const soft = <T extends z.ZodType>(schema: T) => schema.optional().catch(undefined);
+/** `lines[].listPrices` en çok bu kadar fiyat (LafPOS docs/03-ENTEGRASYON.md §4) */
+export const LIST_PRICES_MAX = 20;
 /** Serbest metin neden: kırpılır, en çok 200 karakter, boşsa null (KVKK: LafPOS da 200'de keser) */
 const reasonText = z
   .string()
@@ -150,6 +152,13 @@ const lineSchema = z.object({
   gross: soft(tl),
   /** Faz 2: birleşen satırda içeceğin seçeneğinden ayrılan ek parçası var (EXTRA SHOT, SYRUP, ALTERNATIF SÜT) */
   isAddon: soft(z.boolean()),
+  /**
+   * Şube fiyatı (LP-E, 24 Kasım 2026): satılan parçaların dondurulan liste birim fiyatları (TL; ana parçada kalemin
+   * `basePrice`'ı, ekte seçeneğin fiyatı) ve adetleri, en çok 20. Hizmet satırında ve eski LafPOS'ta yok. "Eski fiyattan
+   * satılanlar" ve fiyat değişikliğinin durumu yalnız buradan okunur (src/lib/prices/branch.ts); `revenue / qty` liste
+   * fiyatı değildir. Bozuksa yok sayılır, gün reddedilmez
+   */
+  listPrices: soft(z.array(z.object({ price: tl, qty })).max(LIST_PRICES_MAX)),
 });
 
 const ikramSchema = z.object({
@@ -504,7 +513,7 @@ const Z_SOFT = [
 ] as const;
 
 /**
- * Gönderilip okunamayan Faz 2, Faz 3 ve gün sonu tam alanlarının yolları ("z.vat", "lines.3.gross", "bankPos.errorCode",
+ * Gönderilip okunamayan Faz 2, Faz 3, gün sonu tam ve şube fiyatı alanlarının yolları ("z.vat", "lines.3.gross", "lines.3.listPrices", "bankPos.errorCode",
  * "bankPos.batches", "offDevice.cardTips", "payments.0.kind", "cashMoves")
  */
 function droppedSoftFields(json: unknown, data: PosDayPush): string[] {
@@ -521,7 +530,7 @@ function droppedSoftFields(json: unknown, data: PosDayPush): string[] {
   for (const k of TOP_SOFT) if (sent(raw, k) && data[k] === undefined) out.push(k);
   for (const k of Z_SOFT) if (sent(raw.z, k) && data.z[k] === undefined) out.push(`z.${k}`);
   data.lines.forEach((l, i) => {
-    for (const k of ["gross", "isAddon"] as const) if (sent(raw.lines?.[i], k) && l[k] === undefined) out.push(`lines.${i}.${k}`);
+    for (const k of ["gross", "isAddon", "listPrices"] as const) if (sent(raw.lines?.[i], k) && l[k] === undefined) out.push(`lines.${i}.${k}`);
   });
   data.ikram.forEach((l, i) => {
     for (const k of ["kind", "personKind"] as const) if (sent(raw.ikram?.[i], k) && l[k] === undefined) out.push(`ikram.${i}.${k}`);

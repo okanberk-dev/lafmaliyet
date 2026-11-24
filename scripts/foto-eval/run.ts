@@ -27,7 +27,7 @@ import { AI_MODEL, runExtraction, type AiClient, type AiFeature, type ExtractReq
 interface Case {
   name: string;
   image: string;
-  feature: AiFeature;
+  feature: Exclude<AiFeature, "asistan">;
   day: string;
   prevZNo?: string | null;
   expect: {
@@ -121,7 +121,7 @@ async function main() {
   }
 
   const anthropic = recorded ? null : new Anthropic();
-  const clientFor = (feature: AiFeature): AiClient =>
+  const clientFor = (feature: Exclude<AiFeature, "asistan">): AiClient =>
     anthropic ? { beta: { messages: { create: (params, options) => anthropic.beta.messages.create(params, options) } } } : replayClient(feature);
   let totalUsd = 0;
   let failed = 0;

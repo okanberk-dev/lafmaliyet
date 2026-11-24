@@ -34,6 +34,7 @@ import { liveNow, patchLive, refreshLive, useLive } from "./store";
  * - **Köşe kartı:** saati gelmiş, yapılmamış her saatli hatırlatma "Yaptım" denene (ya da ertelenene) kadar sağ altta
  *   (telefonda alt menünün üstünde) durur; kapatılamaz, ara ara sallanır (hareket azaltılmışsa durur). Liste sunucunun
  *   verisinden türer (src/lib/user-reminders.ts › pendingReminders): başka ekrana geçince ve sayfa yenilenince yerinde.
+ *   Telefonda panel asistanının sayfası açıkken gizlenir (sayfanın altında kalırdı; Tab görünmeyene gitmesin).
  *
  * Kart açıkken telefonda yüzen düğmeler ve kaydetme çubuğu kartın üstüne çıkar (globals.css, [data-reminder-dock]).
  */
@@ -302,7 +303,7 @@ function ReminderDock({
       ref={ref}
       data-reminder-dock
       aria-label="Yapılmamış hatırlatmalar"
-      className="no-print fixed right-3 bottom-[calc(var(--mobile-nav-space,0px)+0.75rem)] left-3 z-[35] in-data-[keyboard=open]:hidden sm:left-auto sm:w-[23rem] lg:right-6 lg:bottom-6"
+      className="no-print fixed right-3 bottom-[calc(var(--mobile-nav-space,0px)+0.75rem)] left-3 z-[35] in-data-[assistant=sheet]:hidden in-data-[keyboard=open]:hidden sm:left-auto sm:w-[23rem] lg:right-6 lg:bottom-6"
     >
       <div className="reminder-nudge overflow-hidden rounded-2xl bg-ink text-on-solid shadow-[0_12px_40px_rgba(0,0,0,0.3)] ring-2 ring-warn">
         {!single || anyRinging ? (

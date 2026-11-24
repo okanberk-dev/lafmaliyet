@@ -5,7 +5,7 @@ import { Suspense, type ReactNode } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { PosChecklist } from "@/components/panel/pos-checklist";
 import { ButtonLink } from "@/components/ui/button";
-import { PageSkeleton } from "@/components/ui/misc";
+import { EmptyState, PageSkeleton } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { salesBasis } from "@/lib/calc/price-loss";
@@ -16,12 +16,15 @@ import { salesSourceOf } from "@/lib/sales-source";
 import { siteMarker } from "@/lib/site-menu/view";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
+import { loadBranchBulk, loadBranchPrices, loadOldPriceReport, pickBranch } from "@/server/data/branch-prices";
 import { loadPosChecklist, loadPriceHistory, loadRecentPosMarks, posPendingSummary } from "@/server/data/prices";
 import { loadTillScope } from "@/server/data/till-scope";
 import { loadSiteLinks } from "@/server/site-menu/view";
 
+import { BranchPrices } from "./branch-prices";
 import { BulkEditor } from "./bulk-editor";
 import { tabHref, tabOf, type FiyatlarTab } from "./logic";
+import { OldPriceReportView } from "./old-price-report";
 import { PriceHistory } from "./price-history";
 import { RecentPosMarks } from "./recent-marks";
 
@@ -93,6 +96,9 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
     // Sayı yalnız kasada bekleyen varken (boş listede "0" yazmasın)
     { value: "kasa", label: "Kasaya işle", href: tabHref("kasa"), count: pending.count || undefined },
     { value: "gecmis", label: "Geçmiş", href: tabHref("gecmis") },
+    // Şube fiyatı (docs/FIYATLAR.md › Şube fiyatı): şubenin kendi fiyatları ve LafPOS'ta uygulanıp uygulanmadığı
+    { value: "sube", label: "Şube fiyatı", href: tabHref("sube") },
+    { value: "eski", label: "Eski fiyattan satılanlar", href: tabHref("eski") },
   ];
   const header = <Header kasa={scope.kasa} tabs={<SegmentedLinks label="Fiyatlar" value={tab} options={options} />} />;
 
@@ -109,6 +115,35 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
       </>
     );
   }
+  if (tab === "sube" || tab === "eski") {
+    const now = new Date();
+    const data = tab === "sube" ? await loadBranchPrices(sp.sube, now) : null;
+    const report = tab === "eski" ? await loadOldPriceReport(sp.sube, now) : null;
+    const ctx = data?.ctx ?? report!.ctx;
+    const branch = pickBranch(ctx.branches, sp.sube);
+    // İki şube olunca seçici (bugün yalnız Marina)
+    const picker =
+      ctx.branches.length > 1 && branch ? (
+        <SegmentedLinks label="Şube" value={branch.id} options={ctx.branches.map((b) => ({ value: b.id, label: b.name, href: `${tabHref(tab)}&sube=${b.id}` }))} />
+      ) : null;
+    return (
+      <>
+        {header}
+        <div className="space-y-4">
+          {picker}
+          {data ? (
+            data.branch ? (
+              <BranchPrices ctx={data.ctx} branch={data.branch} items={data.items} now={now.toISOString()} />
+            ) : (
+              <EmptyState title="Şube yok" description="Şube fiyatı Tuzla dışındaki açık bir şubede yazılır (Ayarlar › Şubeler)." />
+            )
+          ) : (
+            <OldPriceReportView report={report!} />
+          )}
+        </div>
+      </>
+    );
+  }
   if (tab === "gecmis") {
     const history = await loadPriceHistory({ limit: 500 });
     return (
@@ -119,7 +154,7 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
     );
   }
 
-  const [model, site] = await Promise.all([loadModel(), loadSiteLinks()]);
+  const [model, site, branchBulk] = await Promise.all([loadModel(), loadSiteLinks(), loadBranchBulk()]);
   // "Aylık etki": zam etkisiyle aynı dayanak (son satış ayı, standart aya ölçekli; price-loss.ts salesBasis)
   const month = latestSalesMonth(model);
   const sb = month ? salesBasis(model, month) : null;
@@ -143,6 +178,8 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
       note: p.product.note,
       siteText: marker?.text ?? null,
       monthlyQty: sb?.perMonth.get(p.product.id) ?? 0,
+      siteMenuId: link?.siteMenuId ?? null,
+      siteMenuSlot: link?.slot ?? null,
     };
   });
   const st = model.settings;
@@ -158,6 +195,8 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
         // Satış verisi yokken ne yapılacağı ayın kaynağından (bugünün ayı; docs/planlar/ux-sade.md §10)
         salesMissing={salesSourceOf(todayTR().slice(0, 7), st.lafposGecisGunu, model.ds.lafposSales).missing}
         kasa={scope.kasa}
+        // Şube seçimi yalnız site şube fiyatını duyurduysa (writes.branchPrice) ve yazılabilen şube varsa
+        branchPrice={branchBulk}
       />
     </>
   );

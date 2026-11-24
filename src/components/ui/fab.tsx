@@ -35,7 +35,8 @@ export function useHideOnScrollDown(threshold = 80): boolean {
 /**
  * Telefon ve tabletin yüzen ekleme düğmesi (lg altında): sağ altta, alt menünün (--mobile-nav-h) üstünde,
  * başparmak hizasında. Aşağı kaydırırken kaybolur: altındaki satırların anahtarı, tutarı ya da düğmesi örtülmez;
- * yukarı kaydırınca geri gelir. Ekran klavyesi açıkken gizlidir.
+ * yukarı kaydırınca geri gelir. Ekran klavyesi açıkken gizlidir. Telefonda panel asistanının yüzen düğmesi yoktur
+ * (alt menünün sekmesi; docs/ASISTAN.md): Fab'ın köşesi ona ayrılmaz.
  */
 export function Fab({ className, children, type = "button", ...props }: ComponentProps<"button">) {
   const hidden = useHideOnScrollDown();

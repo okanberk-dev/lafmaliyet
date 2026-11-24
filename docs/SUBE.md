@@ -8,7 +8,7 @@ Sahibin kararları (4 Kasım 2026):
 
 | Soru | Karar |
 |---|---|
-| Menü, reçete, hammadde, tedarikçi | **Ortak**; şubeye göre değişen yalnız satış fiyatı ve "Satışta / Tükendi" |
+| Menü, reçete, hammadde, tedarikçi | **Ortak**; şubeye göre değişen yalnız satış fiyatı ve "Satışta / Tükendi". **24 Kasım 2026:** şube fiyatı yapıldı (sitede satır, panelde Fiyatlar › Şube fiyatı ve Toplu değiştir › Şube, LafPOS siteden alır; [FIYATLAR.md › Şube fiyatı](FIYATLAR.md#şube-fiyatı-24-kasım-2026)) |
 | Panel | **Tek panel** (`ladmin.laffogato.net`) + üstte şube / kanal seçici |
 | Marina'nın kasası | **ModPOS** (Tuzla gibi); **21 Kasım 2026'da değişti:** önce Marina LafPOS'a geçer, Tuzla ModPOS'ta kalır. LafPOS'un şubesi `LAFPOS_BRANCH_ID = "marina"`; geçiş gününden sonra sayılan LafPOS'un günüdür. **23 Kasım 2026:** Marina'da ModPOS bir daha kullanılmaz (ModPOS dönemi 13–21 Kasım 2026); föyün yedek çekimi sürerse (kasa kaynağı ModPOS) saklanır ama sayılmaz |
 | Bugüne kadarki veri | Hepsi **Tuzla**'ya |
