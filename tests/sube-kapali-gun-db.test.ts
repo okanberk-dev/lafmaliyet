@@ -248,11 +248,13 @@ describe("Kapalı gün şube şube (KP-05)", { skip: !SERVER_URL && "SUBE_TEST_D
     const twin = await special.saveSpecialDay({ ...input, branchId: "marina" });
     assert.ok(!twin.ok && /aynı adla/.test(twin.error));
     assert.equal(await closed.isClosedDay(E, db, "marina"), true);
-    // Düzenlemede şube verilmezse kayıtlıdaki kalır; kapalı olmayan özel günde şube yok
+    // Düzenlemede şube verilmezse kayıtlıdaki kalır; kapalı olmayan özel gün de şubeli (şube kapsamı C P1-10)
     assert.ok((await special.saveSpecialDay({ ...input, id: m.ok ? m.data.id : 0, title: "Tadilat (Marina)" })).ok);
     assert.equal((await db.select().from(s.specialDays).where(eq(s.specialDays.id, m.ok ? m.data.id : 0)))[0].branchId, "marina");
     const derbi = await special.saveSpecialDay({ ...input, kind: "derbi", title: "Derbi", effect: 0.15, branchId: "marina" });
-    assert.equal((await db.select().from(s.specialDays).where(eq(s.specialDays.id, derbi.ok ? derbi.data.id : 0)))[0].branchId, null);
+    assert.equal((await db.select().from(s.specialDays).where(eq(s.specialDays.id, derbi.ok ? derbi.data.id : 0)))[0].branchId, "marina");
+    // Şubeli maç kapalı gün değildir: Marina'nın kapalı günü yalnız kapalı satırdan
+    assert.equal(await closed.isClosedDay(addDays(businessDate(), 21), db, "marina"), false);
     const unknown = await special.saveSpecialDay({ ...input, title: "Başka", branchId: "yok" });
     assert.ok(!unknown.ok);
   });
