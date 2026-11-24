@@ -128,3 +128,24 @@ test("ekran ve eylem: kira kaleminde ev sahibi türü seçilir", () => {
   assert.match(labels, /label: "Şahıs \(KDV yok, stopaj %20\)"/);
   assert.match(labels, /label: "Şirket \(%20 KDV, stopaj yok\)"/);
 });
+
+test("Ödemeler: 'Sabit giderlerden ekle', izleme ve tutarsızlık denetimi ev sahibi türünü nakit planıyla aynı kuralla sayar", async () => {
+  const { paidFixedRatesOf } = await import("../src/lib/cash-plan");
+  const { fixedReminderAt } = await import("../src/lib/reminders");
+  const at = (patch: Partial<FixedExpense>) => fixedReminderAt(paidFixedRatesOf({ ...kira, ...patch }, 2026), [], "2026-11").amount ?? NaN;
+  // Şahıs, resmi kira yok: bankadan 160.000 × 0,8 (nakit planının yayılımıyla aynı; stopaj muhtasarla ayrıca)
+  close(at({ landlordType: "sahis", officialAmount: null, vatRate: 0, taxWithholding: null }), 128_000, "şahıs, resmi kira yok");
+  close(paidMonthly(withKira({ landlordType: "sahis", officialAmount: null, vatRate: 0, taxWithholding: null }), "2026-11").paid, 128_000, "yayılım");
+  // Şahıs, resmi kiralı: ev sahibine kesintisiz, KDV yok
+  close(at({ landlordType: "sahis", officialAmount: 100_000, officialBasis: "brut" }), 160_000, "şahıs, resmi kiralı");
+  // Şirket, eski Vergi profili 'kira' kalmış: %20 KDV, stopaj yok
+  close(at({ landlordType: "sirket", taxWithholding: "kira", vatRate: 0 }), 192_000, "şirket");
+  close(paidMonthly(withKira({ landlordType: "sirket", taxWithholding: "kira", vatRate: 0 }), "2026-11").paid, 192_000, "yayılım");
+  // Üç yol da aynı fonksiyondan geçer; yükleyici ev sahibi türünü ve resmi kirayı okur
+  for (const p of ["src/server/data/fixed-reminders.ts", "src/server/data/fixed-follow.ts", "src/server/actions/reminders.ts"]) {
+    assert.match(read(p), /paidFixedRatesOf\(/, p);
+    assert.doesNotMatch(read(p), /[^f]paidFixedRates\(/, p);
+  }
+  const loader = read("src/server/data/fixed-reminders.ts");
+  for (const c of ["landlordType", "officialAmount", "officialBasis"]) assert.match(loader, new RegExp(`${c}: s\\.fixedExpenses\\.${c}`), c);
+});
