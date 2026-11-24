@@ -15,6 +15,7 @@ import {
   branchSourceError,
   BRANCH_COOKIE,
   parseBranchScope,
+  posRateError,
   type BranchKind,
   type BranchPosSource,
 } from "@/lib/branches";
@@ -35,6 +36,19 @@ const posSource = z.enum(BRANCH_POS_SOURCES as unknown as [BranchPosSource, ...B
   message: "Kasa kaynağı seçin",
 });
 const openedOn = zDate.nullish().transform((v) => v ?? null);
+/**
+ * Banka POS komisyon oranı (0,02 = %2; branches.pos_rate). İsteğe bağlı: verilmezse eklemede veritabanının varsayılanı
+ * (%2), düzenlemede eski değer kalır. Yalnız yönetici (eylemler requireAdmin); banka POS komisyonu şube şube bu oranla
+ */
+const posRate = z
+  .number({ message: "POS oranını yüzde olarak yazın (ör. 2)" })
+  .optional()
+  .superRefine((v, ctx) => {
+    const hata = v === undefined ? null : posRateError(v);
+    if (hata) ctx.addIssue({ code: "custom", message: hata });
+  });
+/** "%2", "%1,5" (işlem geçmişi) */
+const oranMetni = (v: number) => `%${(Math.round(v * 10_000) / 100).toLocaleString("tr-TR")}`;
 const scopeInput = z.object({ scope: z.string().trim().max(24) });
 
 const createInput = z.object({
@@ -43,6 +57,7 @@ const createInput = z.object({
   kind,
   posSource,
   openedOn,
+  posRate,
 });
 
 /** Yeni şube ya da kanal açar. Kimlik bir daha değişmez: kayıtlar ona bağlanır. */
@@ -61,7 +76,8 @@ export async function createBranch(input: z.input<typeof createInput>) {
       throw new UserError("Bu adda bir şube zaten var");
     }
     const sortOrder = Math.max(0, ...mevcut.map((b) => b.sortOrder)) + 1;
-    await db.insert(s.branches).values({ ...d, id: d.id.trim(), sortOrder });
+    const { posRate: oran, ...alanlar } = d;
+    await db.insert(s.branches).values({ ...alanlar, id: d.id.trim(), sortOrder, ...(oran !== undefined ? { posRate: oran } : {}) });
     await logActivity(me, "Şube eklendi", `${d.name} (${d.id})`);
     refresh();
     return { id: d.id.trim() };
@@ -75,9 +91,13 @@ const updateInput = z.object({
   posSource,
   openedOn,
   active: z.boolean(),
+  posRate,
 });
 
-/** Adı, türü, kasa kaynağını, açılış gününü ve açık / kapalı durumunu değiştirir (kimlik değişmez). */
+/**
+ * Adı, türü, kasa kaynağını, açılış gününü, banka POS oranını ve açık / kapalı durumunu değiştirir (kimlik değişmez).
+ * POS oranı verilmezse eskisi kalır
+ */
 export async function updateBranch(input: z.input<typeof updateInput>) {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -97,11 +117,20 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
     }
     await db
       .update(s.branches)
-      .set({ name: d.name, kind: d.kind, posSource: d.posSource, openedOn: d.openedOn, active: d.active, updatedAt: new Date() })
+      .set({
+        name: d.name,
+        kind: d.kind,
+        posSource: d.posSource,
+        openedOn: d.openedOn,
+        active: d.active,
+        ...(d.posRate !== undefined ? { posRate: d.posRate } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(s.branches.id, d.id));
     const degisen = [
       mevcut.name === d.name ? null : `ad: ${mevcut.name} → ${d.name}`,
       mevcut.posSource === d.posSource ? null : `kasa: ${mevcut.posSource} → ${d.posSource}`,
+      d.posRate === undefined || mevcut.posRate === d.posRate ? null : `POS oranı: ${mevcut.posRate === undefined ? "?" : oranMetni(mevcut.posRate)} → ${oranMetni(d.posRate)}`,
       mevcut.active === d.active ? null : d.active ? "açıldı" : "kapatıldı",
     ].filter(Boolean);
     await logActivity(me, "Şube güncellendi", [d.name, ...degisen].join(" · "));

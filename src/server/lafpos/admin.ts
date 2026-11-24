@@ -51,7 +51,8 @@ export async function writeLafposSwitchDay(db: DB, me: Actor, day: string | null
  * altında, tek işlemde: günün özeti (pos_day_reports) ve satırları (pos_daily_sales). `zNo`: yöneticinin gördüğü Z; bu
  * arada gün başka bir Z ile yeniden yazıldıysa silinmez. Durum satırındaki o günün reddi yalnız bu silmenin çözdüğü
  * çakışmaysa (409, aynı Z) "silindi" olur (kart kırmızı yerine "Gönder bekleniyor" der); aynı günün 400'ü olduğu gibi
- * kalır (alanı ve nedeni görünmeye devam eder).
+ * kalır (alanı ve nedeni görünmeye devam eder). Sürüm geçmişi (pos_day_revisions) silinmez: silinen Z'nin gövdeleri
+ * denetim için kalır, sonra gelen yeni Z'nin gövdeleri aynı güne eklenir (docs/LAFPOS.md › Sürüm geçmişi).
  */
 export async function removeLafposDay(db: DB, me: Actor, date: string, zNo: number, now: Date = new Date()): Promise<{ zNo: number; lines: number }> {
   if (me.role !== "admin") throw new UserError(ADMIN_ONLY);

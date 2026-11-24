@@ -959,6 +959,7 @@ export function CashForm({
             okcAdmin={okcAdmin}
             kasa={lafposMode ? "LafPOS" : "ModPOS"}
             cardExtra={lafpos?.cardExtra ?? null}
+            offDevice={lafpos?.offDevice ?? null}
           />
           <CashRevisions report={report} revisions={revisions} proposedBy={proposedBy} />
         </div>
@@ -1194,7 +1195,7 @@ export function CashForm({
             {field("card", "Kredi / banka kartı")}
             {field("mealCard", "Yemek kartı", { hint: "Multinet, Pluxee, Edenred, Setcard…" })}
             {field("online", "Online", { hint: "Yemeksepeti, Getir, Trendyol…" })}
-            {field("other", "Diğer", { hint: "havale, cari, ikram…" })}
+            {field("other", "Diğer", { hint: "havale, cari…" })}
             {field("offRevenue", "Ödenmez / ikram", { hint: "Z raporunda ciro dışı (isteğe bağlı)" })}
             {field("discounts", "İndirim", { hint: "Z raporundaki indirim toplamı (isteğe bağlı)" })}
             <Field label={labelOf("receipts", "Fiş sayısı")} htmlFor={fid("receipts")} hint={hintOf("receipts", "isteğe bağlı")}>
@@ -1358,7 +1359,7 @@ export function CashForm({
           kasa={lafposMode ? "LafPOS" : "ModPOS"}
           modpos={
             values.card.trim()
-              ? { zTotal: num("zTotal"), cash: num("cash"), card: num("card"), mealCard: num("mealCard"), online: num("online"), other: num("other"), cardExtra: lafpos?.cardExtra ?? null }
+              ? { zTotal: num("zTotal"), cash: num("cash"), card: num("card"), mealCard: num("mealCard"), online: num("online"), other: num("other"), cardExtra: lafpos?.cardExtra ?? null, offDevice: lafpos?.offDevice ?? null }
               : null
           }
         />

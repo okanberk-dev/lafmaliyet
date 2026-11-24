@@ -691,6 +691,8 @@ test("anahtar: sitenin anahtarıyla (KARAOKE_SYNC_SECRET) aynı LAFPOS_SYNC_SECR
 });
 
 test("altın gövde: LafPOS'un buildDayPayload biçimi (şube, iki boy, ekler, hizmet, ikram, ödeme kanalları, kartla bahşiş ve tahsilat) sözleşmeye uyar", () => {
+  // 23 Kasım 2026'dan altın gövde Faz 2 alanlarını da taşır (indirim, iptaller, kişili ödenmez, zayi, iadeler, yazarkasadan
+  // geçmeyen ödeme, yeniden açılış, alınamayan banka gün sonu): yeni alanların okunuşu tests/lafpos-gun-alanlari.test.ts
   // tests/fixtures/lafpos-gun.golden.json: LafPOS tests/fixtures/lafmaliyet-gun.golden.json'ın bayt bayt kopyası
   // (LafPOS tests/lafmaliyet-gun.test.ts tohumlanmış günden üretir). LafPOS'ta yeniden üretilince buraya kopyalanır; şema
   // kayması üretimde kalıcı 400 olurdu, burada test kırılır.
@@ -705,19 +707,25 @@ test("altın gövde: LafPOS'un buildDayPayload biçimi (şube, iki boy, ekler, h
       ["KARAOKE ODASI", null, null, true],
       ["LATTE MEDIUM", "mnu-0007", "M", false],
       ["SAN SEBASTİAN", "mnu-0058", "M", false],
+      ["TİRAMİSU", "mnu-0072", "M", false],
       ["LATTE LARGE", "mnu-0007", "L", false],
       ["AMERİCANO LARGE", "mnu-0006", "L", false],
+      ["CAPPUCCİNO MEDIUM", "mnu-0010", "M", false],
+      ["FİLTRE KAHVE MEDIUM", "mnu-0020", "M", false],
+      ["ESPRESSO LARGE", "mnu-0005", "L", false],
       ["TÜRK KAHVESİ MEDIUM", "mnu-0019", "M", false],
       ["SYRUP", "mnu-0080", "M", false],
       ["YENİLEBİLİR BARDAK", null, null, false],
+      ["ÇAY MEDIUM", "mnu-0042", "M", false],
+      ["SU", "mnu-0036", "M", false],
       ["ALTERNATIF SÜT", "mnu-0082", "M", false],
       ["EXTRA SHOT", "mnu-0081", "M", false],
     ],
   );
-  assert.equal(r.data.z.expectedCash, 1645);
+  assert.equal(r.data.z.expectedCash, 1845);
   assert.equal(r.data.z.cardTips, 25);
   assert.equal(r.data.z.cardCollections, 400);
-  assert.deepEqual(r.data.payments.map((p) => p.channel), [null, null, "pluxee", null]);
+  assert.deepEqual(r.data.payments.map((p) => p.channel), [null, null, null, "pluxee"]);
   // Z toplamı ödeme alanlarının toplamı, beklenen nakit LafPOS'un formülüyle (kasa eşlemesi aynısını hesaplar)
   const z = r.data.z;
   assert.equal(Math.round((z.cash + z.card + z.mealCard + z.online + z.other) * 100) / 100, z.zTotal);
@@ -728,7 +736,7 @@ test("altın gövde: LafPOS'un buildDayPayload biçimi (şube, iki boy, ekler, h
   const body = JSON.parse(raw) as { z: Record<string, number>; ikram: { reason: string | null }[] };
   body.ikram[1].reason = "";
   body.z.cashIn = 1000;
-  body.z.expectedCash = 2645;
+  body.z.expectedCash = 2845;
   const edge = parsePosDay(JSON.stringify(body), NOW);
   assert.ok(edge.ok, edge.ok ? "" : edge.field);
   assert.equal(edge.data.ikram[1].reason, null, "boş neden null");

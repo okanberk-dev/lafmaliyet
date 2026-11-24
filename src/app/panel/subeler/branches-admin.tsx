@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
-import { Checkbox, Field, Input, Select } from "@/components/ui/form";
+import { Checkbox, Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
 import {
   BRANCH_ID_MAX,
@@ -21,30 +21,52 @@ import {
   BRANCH_POS_SOURCES,
   branchIdError,
   branchSourceError,
+  DEFAULT_POS_RATE,
   FIXED_BRANCH_IDS,
+  posRateError,
   suggestBranchId,
   type BranchKind,
   type BranchPosSource,
   type BranchRow,
 } from "@/lib/branches";
+import { parseNumberTR } from "@/lib/calc/expr";
+import { num } from "@/lib/format";
 import { shortDateTR } from "@/lib/takvim";
 import type { ActionResult } from "@/server/actions/util";
 
 /*
  * Şubeler ve kanallar (/panel/subeler; docs/SUBE.md). Liste + tek pencere: "Şube ekle" ve satıra dokununca
  * "Düzenle". Kurallar saf dosyadan (src/lib/branches.ts) okunur, böylece pencere sunucuyla aynı şeyi söyler:
- * kimlik bir daha değişmez, Tuzla ve laffogato.net silinemez / kapatılamaz, online kanalın kasası olmaz.
+ * kimlik bir daha değişmez, Tuzla ve laffogato.net silinemez / kapatılamaz, online kanalın kasası olmaz. Şubenin banka
+ * POS oranı da burada (yüzde olarak yazılır, %2 varsayılan): banka POS komisyonu şube şube kart × bu oran.
  */
 
-type Taslak = { id: string; name: string; kind: BranchKind; posSource: BranchPosSource; openedOn: string; active: boolean };
+/** `posRate`: yüzde metni ("2", "1,5"); kaydederken 0,02 gibi orana çevrilir */
+type Taslak = { id: string; name: string; kind: BranchKind; posSource: BranchPosSource; openedOn: string; active: boolean; posRate: string };
+
+/** Oran → yüzde metni: 0,02 → "2", 0,015 → "1,5" */
+const oranMetni = (rate: number | undefined) => num((rate ?? DEFAULT_POS_RATE) * 100, 2);
+/** Yüzde metni → oran (okunamazsa NaN: hata gösterilir) */
+const oranOf = (text: string) => {
+  const v = parseNumberTR(text.replace(/%/g, ""));
+  return v === null ? Number.NaN : Math.round(v * 100) / 10_000;
+};
 
 export interface BranchActions {
-  createAction: (input: { id: string; name: string; kind: BranchKind; posSource: BranchPosSource; openedOn: string | null }) => Promise<ActionResult<{ id: string }>>;
-  updateAction: (input: { id: string; name: string; kind: BranchKind; posSource: BranchPosSource; openedOn: string | null; active: boolean }) => Promise<ActionResult<{ id: string }>>;
+  createAction: (input: { id: string; name: string; kind: BranchKind; posSource: BranchPosSource; openedOn: string | null; posRate?: number }) => Promise<ActionResult<{ id: string }>>;
+  updateAction: (input: {
+    id: string;
+    name: string;
+    kind: BranchKind;
+    posSource: BranchPosSource;
+    openedOn: string | null;
+    active: boolean;
+    posRate?: number;
+  }) => Promise<ActionResult<{ id: string }>>;
   deleteAction: (input: { id: string }) => Promise<ActionResult<{ id: string }>>;
 }
 
-const BOS: Taslak = { id: "", name: "", kind: "fiziksel", posSource: "modpos", openedOn: "", active: true };
+const BOS: Taslak = { id: "", name: "", kind: "fiziksel", posSource: "modpos", openedOn: "", active: true, posRate: oranMetni(DEFAULT_POS_RATE) };
 
 export function BranchesAdmin({ rows, createAction, updateAction, deleteAction }: { rows: BranchRow[] } & BranchActions) {
   const [acik, setAcik] = useState<Taslak | null>(null);
@@ -54,7 +76,7 @@ export function BranchesAdmin({ rows, createAction, updateAction, deleteAction }
 
   function duzenle(b: BranchRow) {
     setYeni(false);
-    setAcik({ id: b.id, name: b.name, kind: b.kind, posSource: b.posSource, openedOn: b.openedOn ?? "", active: b.active });
+    setAcik({ id: b.id, name: b.name, kind: b.kind, posSource: b.posSource, openedOn: b.openedOn ?? "", active: b.active, posRate: oranMetni(b.posRate) });
   }
 
   function ekle() {
@@ -63,7 +85,8 @@ export function BranchesAdmin({ rows, createAction, updateAction, deleteAction }
   }
 
   function kaydet(t: Taslak) {
-    const gonder = { name: t.name.trim(), kind: t.kind, posSource: t.posSource, openedOn: t.openedOn || null };
+    // Online kanalın kasası yok: POS oranı yalnız fiziksel şubede gider
+    const gonder = { name: t.name.trim(), kind: t.kind, posSource: t.posSource, openedOn: t.openedOn || null, ...(t.kind === "fiziksel" ? { posRate: oranOf(t.posRate) } : {}) };
     basla(async () => {
       const sonuc = yeni
         ? await createAction({ ...gonder, id: t.id.trim() })
@@ -112,6 +135,7 @@ export function BranchesAdmin({ rows, createAction, updateAction, deleteAction }
                   <span className="min-w-0 flex-1 basis-40 font-medium text-ink">{b.name}</span>
                   <Badge tone={b.kind === "online" ? "blue" : "gray"}>{BRANCH_KIND_LABEL[b.kind]}</Badge>
                   <span className="text-[13px] text-ink-soft">{BRANCH_POS_SOURCE_LABEL[b.posSource]}</span>
+                  {b.kind === "fiziksel" ? <span className="text-[13px] text-ink-mute tabular">POS %{oranMetni(b.posRate)}</span> : null}
                   {b.openedOn ? <span className="text-[13px] text-ink-mute tabular">{shortDateTR(b.openedOn)} açıldı</span> : null}
                   {b.active ? null : <Badge tone="amber">Kapalı</Badge>}
                   <code className="text-[12px] text-ink-mute">{b.id}</code>
@@ -170,7 +194,8 @@ function BranchDialog({
   const idHata = yeni ? branchIdError(t.id) : null;
   const kaynakHata = branchSourceError(t.kind, t.posSource);
   const adHata = t.name.trim() ? null : "Şube adı gerekli";
-  const hata = adHata ?? idHata ?? kaynakHata;
+  const oranHata = t.kind === "fiziksel" ? posRateError(oranOf(t.posRate)) : null;
+  const hata = adHata ?? idHata ?? kaynakHata ?? oranHata;
 
   /** Tür değişince kasa kaynağı kendiliğinden uyar: online kanalın kasası olmaz */
   function turDegis(kind: BranchKind) {
@@ -234,6 +259,16 @@ function BranchDialog({
             ))}
           </Select>
         </Field>
+        {t.kind === "fiziksel" ? (
+          <Field
+            label="Banka POS oranı (%)"
+            htmlFor="sube-pos-orani"
+            error={oranHata}
+            hint="Bankanın kart satışından kestiği oran. Gelir-gider ve Satışlar'daki banka POS komisyonu = kart tutarı (yemek kartı hariç) × bu oran."
+          >
+            <NumberInput id="sube-pos-orani" value={t.posRate} onChange={(e) => setT((o) => ({ ...o, posRate: e.target.value }))} />
+          </Field>
+        ) : null}
         <Field label="Açılış günü" htmlFor="sube-acilis" hint="Boş bırakılırsa “başından beri” sayılır.">
           <Input id="sube-acilis" type="date" value={t.openedOn} onChange={(e) => setT((o) => ({ ...o, openedOn: e.target.value }))} />
         </Field>

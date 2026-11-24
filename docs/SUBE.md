@@ -10,7 +10,7 @@ Sahibin kararları (4 Kasım 2026):
 |---|---|
 | Menü, reçete, hammadde, tedarikçi | **Ortak**; şubeye göre değişen yalnız satış fiyatı ve "Satışta / Tükendi" |
 | Panel | **Tek panel** (`ladmin.laffogato.net`) + üstte şube / kanal seçici |
-| Marina'nın kasası | **ModPOS** (Tuzla gibi); **21 Kasım 2026'da değişti:** önce Marina LafPOS'a geçer, Tuzla ModPOS'ta kalır. LafPOS'un şubesi `LAFPOS_BRANCH_ID = "marina"`; Marina'nın ModPOS'u yedek olarak çekilmeye devam eder (kasa kaynağı ModPOS kalır), geçiş gününden sonra sayılan LafPOS'un günüdür |
+| Marina'nın kasası | **ModPOS** (Tuzla gibi); **21 Kasım 2026'da değişti:** önce Marina LafPOS'a geçer, Tuzla ModPOS'ta kalır. LafPOS'un şubesi `LAFPOS_BRANCH_ID = "marina"`; geçiş gününden sonra sayılan LafPOS'un günüdür. **23 Kasım 2026:** Marina'da ModPOS bir daha kullanılmaz (ModPOS dönemi 13–21 Kasım 2026); föyün yedek çekimi sürerse (kasa kaynağı ModPOS) saklanır ama sayılmaz |
 | Bugüne kadarki veri | Hepsi **Tuzla**'ya |
 
 ## Kütük
@@ -98,6 +98,14 @@ satışı "Tümü"de ve online kanal seçiliyken okunur, fiziksel şubede yoktur
 nakit planı kartı, Tutarlılık (alınan mal şubeye bölünmez; tek şubenin tüketimiyle karşılaştırılmaz), Excel'e aktar
 (panelin yedeği) ve Ayarlar › Stok değerleme önizlemesi (ayar "Tümü"nün kâr-zararını değiştirir; denetim 21 Kasım
 #32). Para ve beyan işletmenindir.
+
+**Komisyon & hakediş** (23 Kasım 2026, [KOMISYON.md](KOMISYON.md) › Şube): satış seçili şubenin kasa raporlarından,
+LafPOS'undan ve ModPOS föyünden; komisyon faturaları, oran ve hakediş işletmenin (faturalar şubeye bölünmez). Şube
+seçiliyken ekran işletmenin raporunu gösterir ve üstte şubenin payını (şube satışı × işletmenin oranı) notuyla ekler.
+Şubenin satışı "Tümü"nün kuralıyla sayılır: ModPOS'ta kalan şubenin Z'si de geçiş ayından itibaren tek kanala yazılmaz
+(föyde markası olan kanalına, kalan markası belirsiz), sonradan açılan şubenin açılış ayı yarım sayılmaz, elle yazılan
+ekstre satışı (işletmenin) şubeye yazılmaz. Zil, Bugün'ün Hakedişler satırı, sabah e-postası ve haftalık özet seçiciden
+bağımsız, işletme genelidir.
 
 **E-postalar** da işletme genelidir ve elle tetiklenen yolları sabah işiyle aynı hesaplar: sabah e-postası (önizleme ve
 "Bugünküleri şimdi gönder" dahil, `runReminderDigest`) ile haftalık özet (önizleme ve örnek dahil, `collectWeekly`)
@@ -254,7 +262,8 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
 LafPOS 21 Kasım 2026'dan beri Marina'da kurulu (gün sonunu Marina'ya yazar); Ayarlar › LafPOS'taki geçiş günü yalnız
 **Marina'nın kasasınındır** (`branchSwitchDay`, `src/lib/lafpos/switch.ts`; canlıda 22 Kasım 2026). Tuzla'nın kasası
 ModPOS'ta kalır: föyü çekilir, Kasa raporu, föy karşılaştırması, ürün listesi, ürün ikramı ve kasadaki fiyatlar Tuzla'da
-bugünkü gibidir. Marina'nın ModPOS föyü yedek çekilir ama geçiş gününden sonra sayılmaz. Ay ekranları Tuzla seçiliyken
+bugünkü gibidir. Marina'da ModPOS bir daha kullanılmaz (sahip, 23 Kasım 2026; ModPOS dönemi 13–21 Kasım): föyün yedek
+çekimi sürerse geçiş gününden sonraki günü saklanır ama sayılmaz. Ay ekranları Tuzla seçiliyken
 geçiş gününü yok sayar, "Tümü"de iki şubenin satırlarını şube şube ayırır. Marina'nın gün sonu Kasa raporuna
 kendiliğinden yazılır ve e-postası gider ([LAFPOS.md › Gün sonu otomasyonu](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026)). Ayrıntı:
 [LAFPOS.md › Şubeler](LAFPOS.md#şubeler-denetim-21-kasım-5).

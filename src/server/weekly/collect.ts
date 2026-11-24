@@ -178,7 +178,8 @@ const komisyon: Collector = {
   source: "komisyon",
   timeoutMs: 3_000,
   async run(ctx) {
-    const report = buildCommissionReport(await loadCommissionInput({ resolveNames: false, today: ctx.today }));
+    // İşletme geneli (haftalık özet seçiciden bağımsız; docs/SUBE.md)
+    const report = buildCommissionReport(await withBranchScope(ALL_BRANCHES, () => loadCommissionInput({ resolveNames: false, today: ctx.today })));
     const cands = commissionAlerts(report, ctx.today, Infinity)
       .map((a) => commissionCand(report, a))
       .filter((c): c is KomisyonCand => c !== null);

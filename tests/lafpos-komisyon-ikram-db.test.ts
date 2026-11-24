@@ -88,7 +88,9 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     { posName: "MOCHA", siteMenuId: null, slot: null, qty: 1, menuValue: 180, reason: "Personel" },
     { posName: "PUMPKIN CHAI", siteMenuId: null, slot: null, qty: 1, menuValue: 200, reason: null },
   ];
-  const push = async (date: string, zNo: number, o: { payments?: Pay[]; ikram?: Ikram[]; offRevenue?: number } = {}) => {
+  /** Faz 2: günün iptal edilen kalemi (hazırlanmışı zayi tüketimi; ödenmez tutarında yok) */
+  type Iptal = { posName: string; siteMenuId: string | null; slot: "M" | "L" | null; qty: number; listValue: number; prepared: boolean; reason: string | null; refund: boolean };
+  const push = async (date: string, zNo: number, o: { payments?: Pay[]; ikram?: Ikram[]; offRevenue?: number; iptal?: Iptal[] } = {}) => {
     const payments = o.payments ?? PAYMENTS;
     const sum = (f: Pay["zField"]) => payments.filter((p) => p.zField === f).reduce((a, p) => a + p.amount, 0);
     const ikram = o.ikram ?? IKRAM;
@@ -116,6 +118,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
       lines: [{ posName: "LATTE MEDIUM", siteMenuId: "mnu-0003", slot: "M", qty: 20, revenue: 3_400, isService: false }],
       ikram,
       payments: payments.map((p) => ({ ...p, count: 1 })),
+      ...(o.iptal ? { iptal: o.iptal } : {}),
     };
     const parsed = parsePosDay(JSON.stringify(body), NOW);
     assert.ok(parsed.ok, "gövde geçerli");
@@ -260,11 +263,11 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     const report = buildCommissionReport(input);
     // 1–9 Kasım'ın gün sonu yok: satış kanalın ödemeleri, eksik günler uyarılır
     const pluxee = rowOf(report, "pluxee", "2026-11")!;
-    assert.deepEqual(pluxee.sales, { amount: 3_100, source: "lafpos", zShare: 0 });
+    assert.deepEqual(pluxee.sales, { amount: 3_100, source: "lafpos" });
     assert.equal(plain(pluxee.flags.find((f) => f.key === "kasa-eksik")!.text), "9 gün LafPOS gün sonu yok ve kanalı seçilmemiş 300 ₺ ödeme var; satış eksik kaldıysa oran yüksek görünür.");
     // Multinet'in faturası yok ama LafPOS'ta satışı var: kartı çıkar
-    assert.deepEqual(rowOf(report, "multinet", "2026-11")?.sales, { amount: 1_600, source: "lafpos", zShare: 0 });
-    assert.deepEqual(rowOf(report, "yemeksepeti", "2026-11")?.sales, { amount: 2_000, source: "lafpos", zShare: 0 });
+    assert.deepEqual(rowOf(report, "multinet", "2026-11")?.sales, { amount: 1_600, source: "lafpos" });
+    assert.deepEqual(rowOf(report, "yemeksepeti", "2026-11")?.sales, { amount: 2_000, source: "lafpos" });
     const g = groupOf(report, "meal", "2026-11")!;
     assert.equal(g.zTotal, 5_000);
     assert.equal(g.lafposFrom, "2026-11-01");
@@ -434,6 +437,34 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     assert.equal(card.ikramFromLafpos, true);
     // LafPOS'un listesi 720 (ödenmez tutarıyla aynı); panelde ürün ikramı yok ama 0 yazmaz
     assert.equal(card.ikramRecorded, 720);
+  });
+
+  lafposTest("Faz 2: hazırlanmış iptal zayi tüketimidir ama Onaylar kartının Z kıyasına (kayıtlı ikram ↔ ödenmez tutarı) girmez", async () => {
+    await setSwitch(S);
+    // Ödenmez tutarı (Z) ikram listesidir (720); hazırlanmış iptal (Latte M, 340) ödenmez tutarında yok, hazırlanmamış hiç sayılmaz
+    await push("2026-11-10", 12, {
+      iptal: [
+        { posName: "LATTE MEDIUM", siteMenuId: "mnu-0003", slot: "M", qty: 2, listValue: 340, prepared: true, reason: "Müşteri gitti", refund: false },
+        { posName: "MOCHA", siteMenuId: null, slot: null, qty: 1, listValue: 180, prepared: false, reason: "Vazgeçti", refund: false },
+      ],
+    });
+    const asked = await core.proposeLateWaste(
+      db,
+      users.ayse,
+      { date: "2026-11-10", kind: "ikram", productId: null, ingredientId: ids.milk, qty: 0.2, reason: "Personel", note: null, message: "Unuttum", clientKey: "k-ham-iptal" },
+      NOW,
+    );
+    const model = createModel(await dataset.loadDataset());
+    const day = model.countedWaste.filter((w) => w.source === "lafpos" && w.date === "2026-11-10");
+    assert.deepEqual(
+      day.filter((w) => w.kind === "zayi").map((w) => [w.productId, w.qty, w.menuValue]),
+      [[ids.latteM, 2, 340]],
+      "hazırlanmış iptal zayi tüketimi",
+    );
+    const card = (await wasteRequests.loadWasteRequestQueue(async (b) => createModel(await dataset.loadDataset({ scope: b })), NOW)).find((c) => c.id === asked.row.id);
+    assert.equal(card?.kind, "zayi-gec");
+    if (card?.kind !== "zayi-gec") return;
+    assert.equal(card.ikramRecorded, 720, "Z'nin ödenmez tutarıyla karşılaştırılan değer iptali saymaz");
   });
 
   lafposTest("E-38: ikramda ürüne bağlanamayan ad Ayarlar › LafPOS'ta listelenir (geçiş gününden itibaren); bağlanınca düşer", async () => {

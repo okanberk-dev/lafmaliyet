@@ -342,6 +342,10 @@ export async function tillRows(db: Db | Tx = getDb()): Promise<TillRow[]> {
     modposTillRows(db),
   ]);
   if (!lafpos.length && !modpos.length) return reports;
+  // LafPOS gününün KDV dökümü (Faz 2) o günün kasa raporuna da: günün KDV'si ondan (rapor LafPOS'un cirosunu tutuyorsa;
+  // cash-month.ts dayVatOf denetler), raporu elle değişmiş günde oranla
+  const vatOf = new Map(lafpos.filter((r) => r.vat?.length).map((r) => [tillKey(r), r.vat]));
+  if (vatOf.size) for (const r of reports) if (vatOf.has(tillKey(r))) r.vat = vatOf.get(tillKey(r));
   // Öncelik ve kesintisiz kısım şube içinde (tillKey; docs/MODPOS-API.md › Şubeler): "Tümü"de Tuzla'nın raporu Marina'nın
   // aynı günkü föyünü düşürmez, Marina'nın föyleri Marina'nın ilk raporuna göre sayılır
   const have = new Set(reports.map(tillKey));
@@ -397,6 +401,8 @@ export async function lafposTillRows(db: Db | Tx = getDb(), from?: string, to?: 
         receipts: d.receipts,
         payments: Math.round((d.cash + d.card + d.mealCard + d.online + d.other) * 100) / 100,
         source: "lafpos" as const,
+        // Faz 2: günün KDV dökümü (yoksa günün oranıyla; engine.ts posNet)
+        ...(d.vat?.length ? { vat: d.vat } : {}),
       },
     ];
   });

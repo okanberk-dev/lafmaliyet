@@ -360,7 +360,9 @@ test("yükleyici: etkin ay bilgisi kasa raporlarıyla birleşir; saat okumalarda
   assert.match(src, /const through = addDays\(today, -1\)/);
   // Tek şube seçiliyken o şubenin satırları (açılış günüyle); "Tümü"de şube şube çözülüp toplanır (denetim 13 Kasım HM-02)
   assert.match(src, /const lateDays = lateWaiting\.flatMap\(\(r\) => \(r\.day \? \[r\.day\] : \[\]\)\);/);
-  assert.match(src, /tillMonths\(rows, through, undefined, lateDays, closed, undefined, undefined, openedOn\)/);
+  // LafPOS satışlarının ilk günüyle: LafPOS günlerinin indirimi ayrı (TillMonth.lafposDiscounts; −90 ₺, 23 Kasım 2026)
+  assert.match(src, /tillMonths\(rows, through, undefined, lateDays, closed, undefined, undefined, openedOn, lafposFrom\)/);
+  assert.match(src, /const lafposFrom = sales\.lafposSales\?\.countFrom \?\? null;/);
   assert.match(src, /branch !== null\s*\? resolveMonths\(entriesOf\(months\), monthsOf\(till, opened\)\)\s*: resolveBranchMonths\(/);
   assert.match(src, /months: monthInfo,/);
 });
@@ -453,7 +455,7 @@ test("şube görünümü: Marina'nın açılış ayı yarım sayılmaz; ciro, a�
 test("şube görünümü: yükleyici, Kasa'nın ay satırı ve geç rapor kartı şubenin açılışıyla aynı kuralı kullanır", () => {
   const dataset = readFileSync(join(root, "src/server/data/dataset.ts"), "utf8");
   assert.match(dataset, /const opened = tillOpenedOn\(branch\);/);
-  assert.match(dataset, /firstEver, undefined, undefined, firstReport, undefined, opened\)\[0\]/, "satış listesinin dönemi");
+  assert.match(dataset, /firstEver, undefined, undefined, firstReport, undefined, opened, lafposFrom\)\[0\]/, "satış listesinin dönemi");
   // Kapalı gün şubenin (denetim 13 Kasım KP-05): görünümün şubesinin ve işletme genelinin satırları
   assert.match(dataset, /const scopeClosedRows = closedRows\.filter\(\(r\) => closedRowApplies\(r, branch\?\.id\)\);/, "ay bilgisi: şubenin kapalı günleri");
   assert.match(dataset, /const closedPast = closedFor\(scopeClosedRows, reportRows\);/, "ay bilgisi");

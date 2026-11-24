@@ -75,8 +75,10 @@ test("E-43: kart 200 bin, yemek kartı 30 bin, Z 300 bin: banka POS komisyonu ya
   // Kartlı satış oranı yemek kartını içerir (satış raporunun tahmini komisyonu onunla kalır)
   close(model.cardShareOf("2026-11").rate, 0.7667, "kartlı satış oranı");
   const pm = model.pnlMonth("2026-11");
-  close(pm.cells.get("commission:pos")!.value, 300_000 * st.komisyon * 0.6667, "commission:pos");
-  assert.equal(pm.cells.get("commission:pos")!.info, "Kart payı %66,7: kasa raporlarından kart ÷ Z toplamı (yemek kartı %10,0 hariç).");
+  // Kasa kartı olan ay (23 Kasım 2026, hesap sözleşmesi §10): kart × oran, payın 4 ondalığa yuvarlanması yok (eskiden
+  // 300.000 × oran × 0,6667 = 5.000,25). Şube kütüğü verilmediği için oran Ayarlar'daki
+  close(pm.cells.get("commission:pos")!.value, 200_000 * st.komisyon, "commission:pos");
+  assert.equal(pm.cells.get("commission:pos")!.info?.replace(/\u00a0/g, " "), "Banka POS komisyonu, yemek kartı hariç: kart 200.000 ₺ × %2,5 = 5.000 ₺.");
   assert.equal(pm.cells.get("commission:pos")!.warn, undefined, "kanalı belli olmayan fatura yok: uyarı yok");
 });
 
@@ -156,8 +158,8 @@ test("E-43: kasa raporu olmayan ay kartlı satış oranıyla kalır (yemek kart�
 test("E-43: satır ipucu yemek kartının hariç olduğunu ve banka faturasında 0 yazmayı söyler", () => {
   const model = november();
   const def = model.pnlRowDefs(["2026-11"]).find((d) => d.key === "commission:pos")!;
-  assert.match(def.hint!, /banka kartı payı/);
-  assert.match(def.hint!, /yemek kartı hariç/);
+  assert.match(def.hint!, /banka kartı \(KDV dahil, yemek kartı hariç\) × şubenin POS oranı/);
+  assert.match(def.hint!, /Satışlar'daki komisyon aynı tutardır/);
   assert.match(def.hint!, /0 yazın/);
 });
 
@@ -166,7 +168,9 @@ test("B16: Genel bakış'ın 'Kart / POS komisyonu' satış raporunun tahmini ol
   const page = readFileSync(join(root, "src/app/panel/page.tsx"), "utf8");
   assert.match(dash, /kartlı oran \$\{rate\(model\.cardShareOf\(d\.month\)\.rate\)\} \(yemek kartı dahil\)/);
   assert.match(dash, /POS_COMMISSION_SALES_NOTE =\s*"Satış raporunun tahmini: kartlı oran yemek kartı satışını da içerir\. Gelir-gider'deki banka POS komisyonu yalnız banka kartı payıyla/);
-  assert.match(page, /label: "Kart \/ POS komisyonu",[\s\S]{0,300}info: POS_COMMISSION_SALES_NOTE/);
+  // Kasa kartı olan ayda (23 Kasım 2026, hesap sözleşmesi §10) iki rakam aynıdır: not bunu söyler; süren ayda liste kasa
+  // raporlarından kısaysa Satışlar listenin günleriyle sayar, not farkı ve Gelir-gider'in tutarını söyler (posCommissionNote)
+  assert.match(page, /label: "Kart \/ POS komisyonu",[\s\S]{0,700}info: salesPos \? posCommissionNote\(salesPos\) : POS_COMMISSION_SALES_NOTE/);
 });
 
 // ---------------------------------------------------------------- E-44 personel satırı

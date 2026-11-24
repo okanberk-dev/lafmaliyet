@@ -11,10 +11,11 @@ import { Notice } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { listDaysText } from "@/lib/calc/insights";
-import { manualOf, MONTH_FIELDS } from "@/lib/cash-month";
+import { lafposListPart, manualOf, MONTH_FIELDS } from "@/lib/cash-month";
 import { RECIPE_COST_NOTE } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { dayRangeTR, lafposMonthNotes, lafposMonthStatus, type LafposMonthNotes } from "@/lib/lafpos/sales";
+import { isLafposBranch } from "@/lib/lafpos/switch";
 import { addDays, dayAblativeTR, todayTR } from "@/lib/reminders";
 import { coverageFor } from "@/lib/sales-coverage";
 import { salesSourceOf, type SalesSourceKind } from "@/lib/sales-source";
@@ -122,6 +123,9 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
     note: l.line.note,
     avgPrice: l.line.qty ? l.line.revenue / l.line.qty : 0,
     menuPrice: l.product?.price ?? null,
+    // LafPOS satırının indirimden önceki liste değeri ve eki (Faz 2); ModPOS satırında yok
+    gross: l.line.gross ?? null,
+    isAddon: l.line.isAddon ?? false,
   }));
   const unmatched = sales.unmatched.length;
   const mappingList = mappings.map((m) => ({ posName: m.posName, productId: m.productId, isService: m.isService, updatedAt: m.updatedAt }));
@@ -149,7 +153,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   const assignedRevenue = rows.reduce((a, r) => a + (r.matched || r.isService ? r.revenue : 0), 0);
   const coverage = sales.revenue ? assignedRevenue / sales.revenue : 0;
   // Kartların dökümü (karta dokununca açılan pencere): aynı ay satırlarından, yeni sorgu yok
-  const breakdown = salesBreakdowns(sales, model.settings, month, model.cardShareOf(month).rate);
+  const breakdown = salesBreakdowns(sales, model.settings, month, model.cardShareOf(month).rate, model.salesPosCommission(month));
   const label = monthLabel(month);
   // ModPOS listesinin satırları (LafPOS'un ay toplamları ayrı); LafPOS ayında sayılmayan listenin satırları
   const modposLines = lafpos?.source === "lafpos" ? (lafpos.modpos?.lines ?? 0) : rows.filter((r) => r.lafposDays === null).length;
@@ -318,6 +322,10 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           listPeriod={
             !formBranch && listPeriod ? { label: listDaysText(listPeriod), posRevenue: listPeriod.posRevenue, discounts: listPeriod.discounts } : null
           }
+          // LafPOS günlerinin indirimi satırlarda zaten düşülmüş (engine listDiscounts); "Tümü"de yalnız formun şubesi LafPOS'unsa
+          lafposList={
+            !formBranch && formInfo && (!info?.byBranch || isLafposBranch(writeId)) ? lafposListPart(formInfo, model.ds.lafposSales?.countFrom ?? null) : null
+          }
           currentMonth={model.currentMonth}
           recordedIkram={model.wasteSummary(month).ikram}
         />
@@ -352,7 +360,11 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
  * yalnız uyarı (sayılmayan ModPOS listesi). Yalnız yönetici (sayfa requireAdmin)
  */
 function LafposBand({ notes, source }: { notes: LafposMonthNotes; source: "gecis" | "lafpos" }) {
-  if (source === "lafpos" && !notes.warnings.length) return null;
+  // Tutmayan denetim (ModPOS listesi − indirim ↔ Z) bilgi kutusu: %5'i aşan fark ayrıca uyarılarda (modposOverZText),
+  // aynı fark iki kez uyarı tonunda görünmez. Tutanlar tek satır (sakin)
+  const off = notes.checks.filter((c) => !c.ok);
+  const ok = notes.checks.filter((c) => c.ok);
+  if (source === "lafpos" && !notes.warnings.length && !off.length && !ok.length) return null;
   return (
     <div className="mb-4 space-y-2">
       {source === "gecis" ? <Notice tone="neutral" title={notes.info} /> : null}
@@ -360,6 +372,10 @@ function LafposBand({ notes, source }: { notes: LafposMonthNotes; source: "gecis
       {notes.warnings.map((w) => (
         <Notice key={w} tone="warn" risk="veri" title={w} />
       ))}
+      {off.map((c) => (
+        <Notice key={c.text} tone="neutral" title={c.text} />
+      ))}
+      {ok.length ? <p className="px-1 text-xs text-ink-mute">{ok.map((c) => c.text).join(" · ")}</p> : null}
     </div>
   );
 }

@@ -135,7 +135,9 @@ export function vatMonthInputs(model: Model, today: string): { months: VatMonthI
     let pos: VatMonthInput["pos"] = null;
     if (revenue > 0) {
       const service = Math.min(revenue, model.monthSales(m).serviceRevenue);
-      pos = { revenue, vat: posVat(revenue, service, st.kdv, st.kdvHizmet), openDays: info?.openDays ?? null, serviceRevenue: service };
+      // Gelir-gider'in kuralıyla (engine.ts posNet): LafPOS'un şubesinin günleri gün gün, LafPOS gününün KDV'si kendi dökümünden
+      const net = model.posNet(m);
+      pos = { revenue, vat: net?.byDay ? net.vat : posVat(revenue, service, st.kdv, st.kdvHizmet), openDays: info?.openDays ?? null, serviceRevenue: service };
     }
     const rec = model.siteSales(m);
     const pulled = rec ? Date.parse(rec.pulledAt) : NaN;

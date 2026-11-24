@@ -22,7 +22,7 @@ import { DEFAULT_BRANCH_ID, type BranchKind, type BranchPosSource } from "../../
 import type { CashRevisionData } from "../../lib/cash-report";
 import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checklists";
 import type { InvoiceReading } from "../../lib/invoice-reading";
-import type { BankPos, PosDayZ, PosIkram, PosPayment } from "../../lib/lafpos/day";
+import type { BankPos, PosCorrection, PosDayPush, PosDayZ, PosIkram, PosIptal, PosOffDevice, PosPayment, PosRefund } from "../../lib/lafpos/day";
 import type { KasaFoyu } from "../../lib/modpos/foy";
 import type { ModposSheetPrevious } from "../../lib/modpos/z";
 import type { OkcVatLine } from "../../lib/okc-z";
@@ -150,6 +150,12 @@ export const branches = pgTable(
     /** Açılış günü (YYYY-MM-DD); boşsa "başından beri" (Tuzla) */
     openedOn: text("opened_on"),
     sortOrder: integer("sort_order").notNull().default(0),
+    /**
+     * Banka POS komisyon oranı (0,02 = %2; sahibin kararı 23 Kasım 2026: iki şube %2, Şubeler'den yönetici değiştirir).
+     * Banka POS komisyonu = Σ şube (kart × bu oran) (src/lib/calc/engine.ts posCommission); Ayarlar'daki genel oran
+     * yalnız kasa kartı olmayan eski aylarda
+     */
+    posRate: doublePrecision("pos_rate").notNull().default(0.02),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -2219,6 +2225,13 @@ export const posDailySales = pgTable(
     qty: doublePrecision("qty").notNull(),
     /** TL, KDV dahil */
     revenue: doublePrecision("revenue").notNull(),
+    /**
+     * Satırın liste değeri, indirimden önce (TL, KDV dahil; Faz 2, 23 Kasım 2026): `revenue` indirimden sonradır, fark
+     * satırın indirim payı. Eski LafPOS göndermez: null
+     */
+    gross: doublePrecision("gross"),
+    /** Birleşen satırda içeceğin seçeneğinden ayrılan ek parçası var (EXTRA SHOT, SYRUP, ALTERNATIF SÜT; Faz 2) */
+    isAddon: boolean("is_addon").notNull().default(false),
     /** Hizmet satırı (karaoke): ürün değil, reçetesi yok */
     isService: boolean("is_service").notNull().default(false),
     /**
@@ -2245,12 +2258,53 @@ export const posDayReports = pgTable(
     ikram: jsonb("ikram").$type<PosIkram[]>().notNull(),
     /** Banka POS (Pavo) karşılaştırması (src/lib/lafpos/day.ts bankPosSchema); gelmediyse null */
     bankPos: jsonb("bank_pos").$type<BankPos>(),
+    /**
+     * Faz 2 (23 Kasım 2026; docs/LAFPOS.md › Faz 2 alanları): mali fişi yazarkasada kesilmeyen ödemeler, günün iptal edilen
+     * ödemeleri ve kalemleri. Son gövdeninkiler; eski LafPOS göndermez: null
+     */
+    offDevice: jsonb("off_device").$type<PosOffDevice>(),
+    refunds: jsonb("refunds").$type<PosRefund[]>(),
+    iptal: jsonb("iptal").$type<PosIptal[]>(),
+    /**
+     * Günün son düzeltmesi (yeniden açılış ya da sayım; nedeniyle). LafPOS onu yalnız düzeltmeden sonraki ilk gövdeyle
+     * yollar: alanı taşımayan sonraki gönderim (Pavo sonucu) silmez. Düzeltilmemiş günde null
+     */
+    correction: jsonb("correction").$type<PosCorrection>(),
+    /** LafPOS'un son kabul edilen gövdesinin gönderim sırası (1'den); eski LafPOS göndermez: null */
+    revision: integer("revision"),
     /** Gönderen sistem ("lafpos") */
     source: text("source").notNull(),
     /** Son gönderimin geldiği an (düzeltme yeniden gönderince değişir) */
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.date, t.branchId] })],
+);
+
+/**
+ * LafPOS gün sonlarının sürüm geçmişi (23 Kasım 2026; docs/LAFPOS.md › Sürüm geçmişi): kabul edilen (200) HER gövdenin
+ * okunmuş hâli, geliş sırasıyla. pos_day_reports günün son hâlidir (yeniden gönderim öncekinin yerine geçer); öncekiler
+ * burada kalır: neyin ne zaman, hangi sırayla ve hangi düzeltmeyle geldiği. Yalnız eklenir, aynı işlemde (gün sonunun
+ * danışma kilidi altında) yazılır; reddedilen gövde yazılmaz. Günün kaydını silmek (z_conflict'in çözümü, src/server/lafpos/
+ * admin.ts removeLafposDay) geçmişi silmez: silinen Z'nin gövdeleri de denetim için kalır. Gövde kişisel veri taşımaz
+ * (beyaz liste: src/lib/lafpos/day.ts)
+ */
+export const posDayRevisions = pgTable(
+  "pos_day_revisions",
+  {
+    id: serial("id").primaryKey(),
+    date: text("date").notNull(),
+    branchId: branchId(),
+    /** LafPOS'un gönderim sırası (gövdenin `revision`'ı); eski LafPOS göndermez: null */
+    revision: integer("revision"),
+    /** Gövdenin LafPOS Z no'su (silinen Z'nin gövdeleri de kalır) */
+    zNo: integer("z_no").notNull(),
+    /** Gövdenin düzeltmesi (yeniden açılış ya da sayım); yoksa null */
+    correction: jsonb("correction").$type<PosCorrection>(),
+    /** Gövdenin okunmuş hâli (posDaySchema çıktısı) */
+    body: jsonb("body").$type<PosDayPush>().notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("pos_day_revisions_day_idx").on(t.date, t.branchId)],
 );
 
 /**

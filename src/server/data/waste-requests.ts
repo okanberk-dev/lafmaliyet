@@ -6,7 +6,7 @@ import { z } from "zod";
 import { DEFAULT_BRANCH_ID, namedTill } from "@/lib/branches";
 import type { Model } from "@/lib/calc/engine";
 import { businessDate, stampTR } from "@/lib/cash-report";
-import { productIkramRefusal } from "@/lib/lafpos/ikram";
+import { productIkramRefusal, recordedOffRevenue } from "@/lib/lafpos/ikram";
 import { branchSwitchDay } from "@/lib/lafpos/switch";
 import { longDateTR, monthTitleTR, shiftMonth, addDays } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
@@ -298,11 +298,15 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
   // şubenin modelinden (LafPOS'un şubesinde geçiş gününden itibaren; ModPOS'ta kalan şubede boş) ve iş günü
   const switchDay = await lafposSwitchDayOf(db);
   const today = businessDate(now);
-  /** Günün sayılan ikramının menü değeri (şubenin modeli): LafPOS satırı kendi değeriyle (zayi dahil), panelin ürün ikramı menü fiyatıyla */
+  /**
+   * Günün sayılan ikramının menü değeri (şubenin modeli; Z'nin ödenmez tutarıyla karşılaştırılır): LafPOS satırı kendi
+   * değeriyle (zayi dahil, hazırlanmış iptal hariç: ödenmez tutarında yok), panelin ürün ikramı menü fiyatıyla
+   */
   const ikramValueOf = (model: Model, date: string) =>
-    model.countedWaste
-      .filter((w) => w.date === date)
-      .reduce((a, w) => a + (w.source === "lafpos" ? (w.menuValue ?? 0) : w.kind === "ikram" && w.productId !== null ? (productPrice(model, w.productId) ?? 0) * w.qty : 0), 0);
+    recordedOffRevenue(
+      model.countedWaste.filter((w) => w.date === date),
+      (id) => productPrice(model, id),
+    );
 
   return rows.flatMap((r): WasteRequestCard[] => {
     const base = {

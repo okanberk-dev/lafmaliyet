@@ -56,7 +56,7 @@ import {
   type SalesParseResult,
 } from "@/lib/calc/pos-paste";
 import type { MonthField, TillMonth } from "@/lib/calc/types";
-import { missingSentence, MONTH_FIELDS, partialSentence } from "@/lib/cash-month";
+import { missingSentence, MONTH_FIELDS, partialSentence, type LafposListPart } from "@/lib/cash-month";
 import { num, pct, tl } from "@/lib/format";
 import { genitive } from "@/lib/recipe-change";
 import { dayMonthTR } from "@/lib/reminders";
@@ -84,6 +84,7 @@ import {
   initialModes,
   inMarginScale,
   kasaHint,
+  listVsPos,
   marginColor,
   marginLevelLabel,
   marginScale,
@@ -96,6 +97,8 @@ import {
   SALES_FILE_MAX_MB,
   salesFileProblem,
   suggestProduct,
+  discountColumns,
+  discountTotals,
   type FieldMode,
   type MappingLite,
   type MarginScale,
@@ -129,6 +132,13 @@ export interface SalesRow {
   note: string | null;
   avgPrice: number;
   menuPrice: number | null;
+  /**
+   * LafPOS satırının indirimden önceki liste değeri (Faz 2; `revenue` indirimden sonradır); bilinmiyorsa ya da ModPOS
+   * listesinin satırıysa (liste zaten indirimden önce) null. Tablonun Brüt ve İndirimli sütunları (discountColumns)
+   */
+  gross: number | null;
+  /** LafPOS satırında içeceğin seçeneğinden ayrılan ek parçası (EXTRA SHOT, SYRUP, ALTERNATIF SÜT) */
+  isAddon: boolean;
 }
 
 // ---------------------------------------------------------------- Sayaçlar
@@ -215,6 +225,7 @@ export function MonthInfoForm({
   settingsCardShare,
   listTotal,
   listPeriod = null,
+  lafposList = null,
   currentMonth,
   recordedIkram,
   className,
@@ -239,6 +250,11 @@ export function MonthInfoForm({
    * Ekim"), o günlerin Z toplamı ve indirimi: liste ↔ POS kutusu onlarla karşılaştırır (açık gün ve ciro kasadan geldikçe)
    */
   listPeriod?: { label: string; posRevenue: number; discounts: number } | null;
+  /**
+   * Ayın indiriminin LafPOS satırlarında zaten düşülmüş kısmı (cash-month.ts lafposListPart): liste ↔ POS kutusu onu
+   * listeden bir daha düşmez. Geçiş günü yoksa null
+   */
+  lafposList?: LafposListPart | null;
   /** Türkiye saatine göre bu ay; açık gün açıklaması (devam eden ay / kapanmış ay) buna göre */
   currentMonth: string;
   /** Personelin bu ay panele girdiği ikram (Zayi & ikram): ödenmez tutarına öneri, ModPOS'un rakamı esas */
@@ -272,9 +288,15 @@ export function MonthInfoForm({
   // Liste kasa raporlarından kısaysa listenin günleriyle (motorun kuralı: açık gün ve ciro kasadan gelirken)
   const byList = listPeriod && modes.posRevenue === "kasa" && modes.openDays === "kasa" ? listPeriod : null;
   const posNum = byList ? byList.posRevenue : effective("posRevenue");
-  const discNum = (byList && modes.discounts === "kasa" ? byList.discounts : effective("discounts")) ?? 0;
+  // Listenin dönemindeki kasa indirimi zaten yalnız ModPOS günlerinin; öteki durumda LafPOS günlerininki düşülür
+  const fromList = byList !== null && modes.discounts === "kasa";
   const list = listTotal ?? 0;
-  const diff = posNum !== null && list ? list - discNum - posNum : null;
+  const { discount: discNum, diff } = listVsPos({
+    list,
+    discount: (fromList ? byList.discounts : effective("discounts")) ?? 0,
+    pos: posNum,
+    lafpos: fromList ? null : lafposList,
+  });
   const consistent = diff !== null && Math.abs(diff) < 1000;
   const dim = daysInMonth(month);
   const phase = monthPhase(month, currentMonth);
@@ -563,7 +585,8 @@ type SortKey = "ad" | "adet" | "ciro" | "maliyet" | "kom" | "kar" | "marj";
 const COMPARE: Record<SortKey, (a: SalesRow, b: SalesRow) => number> = {
   ad: (a, b) => a.posName.localeCompare(b.posName, "tr"),
   adet: (a, b) => a.qty - b.qty,
-  ciro: (a, b) => a.revenue - b.revenue,
+  // İndirimden önceki tutar (Brüt sütunu): ModPOS satırında ciro, LafPOS'ta brüt (bilinmiyorsa ciro)
+  ciro: (a, b) => (discountColumns(a).before ?? a.revenue) - (discountColumns(b).before ?? b.revenue),
   maliyet: (a, b) => a.cost - b.cost,
   kom: (a, b) => a.commission - b.commission,
   kar: (a, b) => a.grossProfit - b.grossProfit,
@@ -743,6 +766,8 @@ export function SalesTable({
       })()
     : totals;
   const totalsLabel = anyFilter ? `Süzülen ${num(visible.length)} satır` : "Ay toplamı";
+  // İndirimden önce ve sonra (Brüt, İndirimli): görünen satırlardan; ModPOS satırı varken indirimden sonrası bilinmez
+  const shownDiscount = discountTotals(anyFilter ? visible : rows);
 
   const toggleFilter = (f: StatusFilter) => setFilter(filter === f ? "tumu" : f);
   // Sayısal sütun: azalan → artan → rapor sırası; ad: A→Z → Z→A → rapor sırası
@@ -913,7 +938,7 @@ export function SalesTable({
     r.lafposDays !== null ? (
       <p className="flex items-center gap-1 text-xs text-info" title="LafPOS'un gün sonlarından, ay toplamı; salt okunur">
         <Store size={12} className="shrink-0" aria-hidden="true" />
-        LafPOS · {num(r.lafposDays)} gün
+        LafPOS · {num(r.lafposDays)} gün{r.isAddon ? " · ek" : ""}
       </p>
     ) : null;
 
@@ -1086,6 +1111,7 @@ export function SalesTable({
                       {lafposNote(r)}
                       <p className="mt-0.5 text-[13px] text-ink-mute tabular">
                         {num(r.qty)} adet · {tl(r.revenue)}
+                        {r.lafposDays !== null && r.gross !== null && Math.abs(r.gross - r.revenue) >= 0.005 ? ` · indirimden önce ${tl(r.gross)}` : ""}
                       </p>
                       {Math.abs(priceGap) > 0.03 ? (
                         <p className="text-xs text-warn tabular">
@@ -1148,12 +1174,20 @@ export function SalesTable({
                     </SortButton>
                   </TH>
                   <TH numeric>
-                    <HeadLabel sub="KDV dahil">
+                    <HeadLabel sub="indirimden önce">
                       <span className="inline-flex items-center gap-1.5">
-                        <InfoTip text="Altında KDV hariç net ciro. Ortalama satış fiyatı menü fiyatından %3'ten fazla saparsa uyarı görünür." />
+                        <InfoTip text="KDV dahil. ModPOS ürün listesi indirimden öncedir. LafPOS satırında indirimden önceki liste değeri; eski bir günü brütsüz geldiyse boş. Ortalama satış fiyatı menü fiyatından %3'ten fazla saparsa uyarı görünür." />
                         <SortButton numeric dir={dirOf("ciro")} onClick={() => toggleSort("ciro")}>
-                          Ciro
+                          Brüt
                         </SortButton>
+                      </span>
+                    </HeadLabel>
+                  </TH>
+                  <TH numeric>
+                    <HeadLabel sub="indirimden sonra">
+                      <span className="inline-flex items-center gap-1.5">
+                        <InfoTip text="KDV dahil. LafPOS satırı indirimden sonradır (adisyonun indirimi satırlara bölünür). ModPOS listesinde satır başına indirim bilinmez: ayın indirimi kasa raporlarından. Altındaki “KDV hariç” hesaba giren cironun KDV hariç tutarı." />
+                        İndirimli
                       </span>
                     </HeadLabel>
                   </TH>
@@ -1204,6 +1238,7 @@ export function SalesTable({
                   const status = rowStatus(r);
                   const priceGap = r.menuPrice && r.avgPrice ? r.avgPrice / r.menuPrice - 1 : 0;
                   const product = r.productId ? productById.get(r.productId) : undefined;
+                  const cols = discountColumns(r);
                   return (
                     <TR key={r.id}>
                       <TD sticky className="max-w-64 min-w-36 sm:min-w-40">
@@ -1231,14 +1266,26 @@ export function SalesTable({
                       </TD>
                       <TD numeric>{num(r.qty)}</TD>
                       <TD numeric>
-                        {tl(r.revenue)}
-                        <span className="block text-xs text-ink-mute">net {tl(r.net)}</span>
+                        {cols.before === null ? <span className="text-ink-mute">–</span> : tl(cols.before)}
+                        {cols.after === null ? <span className="block text-xs text-ink-mute">KDV hariç {tl(r.net)}</span> : null}
                         {Math.abs(priceGap) > 0.03 ? (
                           <span className="block text-[11px] text-warn" title="Ortalama satış fiyatı menü fiyatından farklı">
                             ort. {tl(r.avgPrice)} ({priceGap > 0 ? "+" : ""}
                             {pct(priceGap, 0)})
                           </span>
                         ) : null}
+                      </TD>
+                      <TD numeric>
+                        {cols.after === null ? (
+                          <span className="text-ink-mute" title="ModPOS listesinde satır başına indirim bilinmez">
+                            –
+                          </span>
+                        ) : (
+                          <>
+                            {tl(cols.after)}
+                            <span className="block text-xs text-ink-mute">KDV hariç {tl(r.net)}</span>
+                          </>
+                        )}
                       </TD>
                       <TD numeric className={cn((status === "unmatched" || r.noRecipe) && "text-warn")}>
                         {tl(r.cost)}
@@ -1272,8 +1319,20 @@ export function SalesTable({
                   <TD />
                   <TD numeric>{num(shownTotals.qty)}</TD>
                   <TD numeric>
-                    {tl(shownTotals.revenue)}
-                    <span className="block text-xs font-normal text-ink-mute">net {tl(shownTotals.net)}</span>
+                    {tl(shownDiscount.before)}
+                    {shownDiscount.after === null ? <span className="block text-xs font-normal text-ink-mute">KDV hariç {tl(shownTotals.net)}</span> : null}
+                  </TD>
+                  <TD numeric>
+                    {shownDiscount.after === null ? (
+                      <span className="font-normal text-ink-mute" title="ModPOS listesinde satır başına indirim bilinmez">
+                        –
+                      </span>
+                    ) : (
+                      <>
+                        {tl(shownDiscount.after)}
+                        <span className="block text-xs font-normal text-ink-mute">KDV hariç {tl(shownTotals.net)}</span>
+                      </>
+                    )}
                   </TD>
                   <TD numeric>{tl(shownTotals.cost)}</TD>
                   <TD numeric>{tl(shownTotals.commission)}</TD>

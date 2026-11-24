@@ -455,8 +455,8 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
   const settingRows: [string, number | string, string | null, string][] = [
     ["Satış KDV oranı", st.kdv, PCT, "Menü fiyatları KDV dahil kabul edilir; net satış = fiyat ÷ (1 + KDV)."],
     ["Hizmet satışı KDV oranı", st.kdvHizmet, PCT, "Satışlar'da HİZMET işaretli satırlar (karaoke odası); ayın cirosundan bu satırlar kadarı bu oranla ayrılır."],
-    ["Banka / POS komisyon oranı", st.komisyon, PCT, "Yalnızca kartlı satışlara uygulanır."],
-    ["Kartlı satış oranı (kredi kartı + yemek kartı)", st.kartOrani, PCT, "POS komisyonu = ciro × komisyon oranı × kartlı satış oranı."],
+    ["Banka / POS komisyon oranı", st.komisyon, PCT, "Kasa raporu (kart tutarı) olmayan aylarda; kasa kartı olan ayda her şubenin kendi oranı (Şubeler) geçer."],
+    ["Kartlı satış oranı (kredi kartı + yemek kartı)", st.kartOrani, PCT, "Kasa kartı olmayan ayda POS komisyonu = ciro × komisyon oranı × kartlı satış oranı; kasa kartı olan ayda şube şube kart (yemek kartı hariç) × şubenin POS oranı."],
     ["Hedef maliyet oranı (food cost)", st.hedefMaliyet, PCT, "Önerilen fiyat bu orana göre hesaplanır."],
     ["Fire / kayıp payı", st.fire, PCT, "Malzeme maliyetine eklenen dökülen / atılan mal payı (ürün kartında ayrı oran verilebilir)."],
     ["Fire ambalaja uygulanmaz", st.fireExcludesPackaging ? "Evet" : "Hayır", null, "Evet: fire payı bardak, kapak, peçete hariç malzemelere uygulanır."],

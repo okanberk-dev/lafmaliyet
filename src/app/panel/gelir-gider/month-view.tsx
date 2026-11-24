@@ -343,7 +343,9 @@ export function MonthView({
                   );
                   return (
                     <li key={def.key}>
-                      {def.editable ? (
+                      {/* Geçerlilik aralığının dışındaki sabit gider kaleminin boş hücresi salt okunur (setPnlCell de reddeder);
+                          satır Sabit giderler'e götürür */}
+                      {def.editable && !(c.outOfRange && !c.overridden) ? (
                         <button type="button" onClick={() => openEdit(def, c)} className={cn(ROW, "cursor-pointer")}>
                           {label}
                           <Value

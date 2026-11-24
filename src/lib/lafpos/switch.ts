@@ -40,8 +40,9 @@ export function isLafposDay(day: string, switchDay: string | null): boolean {
  * LafPOS'a geçer, Tuzla ModPOS'ta kalır). LafPOS gün sonunu yalnız bu şubeye yazar (src/server/lafpos/ingest.ts; kasanın
  * gönderdiği `sube` buna eşit değilse gün reddedilir) ve geçiş günü yalnız bu şubenin kasasınındır. Öteki şubelerin
  * kasası ModPOS kalır: föyü çekilir, Kasa raporu ModPOS'a göre açılır, ürün listesi sayılır, panelde girilen ürün ikramı
- * sayılır. Marina'nın ModPOS'u da yedek olarak çekilmeye devam eder (şubenin kasa kaynağı Ayarlar › Şubeler'de ModPOS
- * kalır): geçiş gününden önce sayılan odur, sonra LafPOS'un günü sayılır, ModPOS'unki saklanır ama hesaba girmez.
+ * sayılır. Marina'da ModPOS bir daha kullanılmaz (sahip, 23 Kasım 2026): Marina'nın ModPOS dönemi yalnız 13–21 Kasım
+ * 2026'dır, geçiş gününden önce sayılan odur, sonra yalnız LafPOS'un günü sayılır. Föyün yedek çekimi sürerse
+ * (şubenin kasa kaynağı Ayarlar › Şubeler'de hâlâ ModPOS) geçiş gününden sonraki günü saklanır ama hiçbir hesaba girmez.
  * Şubesi verilmeyen eski kayıtlar Tuzla'nındır.
  */
 export const LAFPOS_BRANCH_ID = "marina";

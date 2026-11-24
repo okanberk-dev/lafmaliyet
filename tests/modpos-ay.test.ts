@@ -341,7 +341,7 @@ test("kaynak: yedek kapalıyken föy tablosu okunmaz; yükleyici rapor > LafPOS 
   const dataset = read("src/server/data/dataset.ts");
   assert.match(dataset, /till\.filter\(\(r\) => isReportRow\(r\) \|\| r\.zTotal > 0 \|\| \(r\.receipts \?\? 0\) > 0\)/, "kapalı gün: satışlı yedek de açar");
   // Satış dönemi de ilk rapordan arar; şube görünümünde şubenin açılışıyla (denetim 21 Kasım #21)
-  assert.match(dataset, /upto, firstEver, undefined, undefined, firstReport, undefined, opened\)\[0\] \?\? null/, "satış dönemi de ilk rapordan arar");
+  assert.match(dataset, /upto, firstEver, undefined, undefined, firstReport, undefined, opened, lafposFrom\)\[0\] \?\? null/, "satış dönemi de ilk rapordan arar");
   // Kasa'nın ay satırı Gelir-gider'le aynı satırlar ve ilk günle
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /modposTillRows\(getDb\(\), `\$\{month\}-01`, monthEnd\),\s*firstModposTillDay\(getDb\(\)\)/);

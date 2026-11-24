@@ -1,4 +1,4 @@
-import { CASH_TOLERANCE, carryDiffText, computeCash, nextWarning, revenueWord, withCardExtra, type CarryCheck, type CashReportFields } from "./cash-report";
+import { CASH_TOLERANCE, carryDiffText, computeCash, nextWarning, revenueWord, withCardExtra, type CarryCheck, type CashOffDevice, type CashReportFields } from "./cash-report";
 import { money } from "./format";
 import { lafposDiffText, type LafposDiff } from "./lafpos/diffs";
 import { modposDiffText, type ModposDiff } from "./modpos/compare";
@@ -21,6 +21,8 @@ export interface ReportCheck {
 export function reportChecks(i: {
   report: CashReportFields;
   cardExtra?: number | null;
+  /** LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): kart karşılaştırması düşer (withCardExtra) */
+  offDevice?: CashOffDevice | null;
   kasa?: "ModPOS" | "LafPOS";
   carry?: CarryCheck | null;
   next?: CarryCheck | null;
@@ -30,7 +32,7 @@ export function reportChecks(i: {
   emailError?: string | null;
 }): ReportCheck[] {
   const kasa = i.kasa ?? "ModPOS";
-  const f = withCardExtra(i.report, i.cardExtra);
+  const f = withCardExtra(i.report, i.cardExtra, i.offDevice);
   const c = computeCash(f);
   const out: ReportCheck[] = [];
   if (i.emailError) out.push({ key: "email", tone: "bad", text: `E-posta gitmedi: ${i.emailError}` });

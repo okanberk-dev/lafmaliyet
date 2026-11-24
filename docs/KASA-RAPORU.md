@@ -746,7 +746,10 @@ onu okur); değişen yalnız ciroya girmemesidir. **Kartlı satış oranı** da 
   günü rapordan sonra farklı rakamla yeniden gönderdiyse "LafPOS rapordan sonra farklı rakamla geldi". Kart
   karşılaştırması LafPOS'un kartla bahşişini ve kartla cari tahsilatını düşer (Z'nin kartında yok, banka POS'unda var;
   personelin formunda ve WhatsApp'ında da, aynı sonuçla; tutar yalnız yöneticinin metninde, Kart bölümünde ve
-  e-postada ayrı satır "− LafPOS kartla bahşiş + cari tahsilatı"). Geçiş günü boşken metin bugünkü gibi.
+  e-postada ayrı satır "− LafPOS kartla bahşiş + cari tahsilatı"). LafPOS'un yazarkasadan geçmeyen ödemesi (Faz 2,
+  `offDevice`: Z'nin kartında ve nakdinde var, yazarkasada ve banka gün sonunda yok) aynı yoldan LafPOS'un kartından ve
+  nakdinden düşülür (ayrı satır "− Yazarkasadan geçmeyen kart"; [LAFPOS.md](LAFPOS.md) › Kart: yazarkasadan geçmeyen
+  ödeme). Geçiş günü boşken metin bugünkü gibi.
 - **Banka POS Z bloğu: kim neyi görür.** Kart satırının kaynağı formdakiyle aynı (yazarkasa kartı, yoksa banka gün
   sonu).
 

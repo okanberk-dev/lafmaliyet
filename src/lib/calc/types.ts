@@ -150,6 +150,12 @@ export interface TillMonth {
   /** İndirim ve ödenmez: yalnız girildiği günlerin toplamı (hiç girilmediyse null) ve o gün sayısı */
   discounts: number | null;
   discountDays: number;
+  /**
+   * İndirimin LafPOS günlerindeki kısmı (LafPOS'un şubesinin, LafPOS satışlarının sayıldığı ilk günden itibaren): LafPOS'un
+   * satırları indirimden sonradır, satış listesinden bir daha düşülmez (cash-month.ts listDiscountOf). Yalnız tillMonths'a
+   * LafPOS'un ilk günü verildiyse; yoksa alan yok (geçiş günü yok: bütün günler ModPOS listesi)
+   */
+  lafposDiscounts?: number;
   offRevenue: number | null;
   offDays: number;
   /** (Kart + yemek kartı) ÷ Z toplamı; Z toplamı 0 ise null */
@@ -159,6 +165,21 @@ export interface TillMonth {
    * (engine.ts bankShareOf; denetim E-43). Yoksa (eski kayıt, test) yemek kartı payı ayrılamaz, kartlı oran geçer
    */
   bankShare?: number | null;
+  /**
+   * Banka kartı ve yemek kartı tutarları (KDV dahil). Banka POS komisyonu banka kartından, şubenin oranıyla (engine.ts
+   * posCommission; hesap sözleşmesi §10): yemek kartının komisyonu kendi faturasıyla. Yoksa (eski kayıt, test) oran yolu
+   */
+  card?: number;
+  mealCard?: number;
+  /** Banka kartı şube şube (satırların hepsi şubeliyse): "Tümü"de her şube kendi oranıyla */
+  cardByBranch?: Record<string, number>;
+  /**
+   * LafPOS'un şubesinin günlerinin KDV'si (23 Kasım 2026; src/lib/cash-month.ts dayVatOf, engine.ts posNet): `known`
+   * LafPOS'un KDV dökümü günün cirosunu tutan günler (matrah ve KDV oradan), `days` dökümü olmayan günlerin cirosu (ModPOS
+   * günleri; her biri günün oranıyla ayrı ayrı). Yalnız satırlar şubeliyse ve LafPOS'un şubesinin satırı varsa; yoksa alan
+   * yok, KDV ay toplamından (bugünkü gibi)
+   */
+  dayVat?: { known: { days: number; revenue: number; base: number; vat: number }; days: number[] };
   /**
    * [from, to] içinde raporu olmayan günler. Yalnız ilk kasa raporundan (ya da LafPOS gün sonundan) itibaren aranır:
    * raporlar başlamadan önceki ModPOS föy günleri eksik değildir (docs/MODPOS-API.md › Ay rakamına yedek)
@@ -245,6 +266,13 @@ export interface SalesLine {
    * Yoksa Satışlar'a yüklenen ModPOS listesinin satırı.
    */
   lafpos?: { days: number };
+  /**
+   * LafPOS satırının indirimden önceki liste değeri (Faz 2; `revenue` LafPOS'ta indirimden sonradır). Bir günü eski
+   * LafPOS'tan gelmişse null (bilinmez). ModPOS listesinin satırında yok: liste zaten indirimden öncedir
+   */
+  gross?: number | null;
+  /** LafPOS satırında içeceğin seçeneğinden ayrılan ek parçası var (EXTRA SHOT, SYRUP, ALTERNATIF SÜT; Faz 2) */
+  isAddon?: boolean;
 }
 
 export interface Invoice {
@@ -462,6 +490,8 @@ export interface ExpenseEntry {
   docType?: "fis" | "e_arsiv" | "fatura" | "yok" | null;
   /** Cari hesaptaki faturasız bir borca aitse onun kimliği (dalga 11; vergide "belgesi yok") */
   supplierEntryId?: number | null;
+  /** Şube; null = işletme geneli (aynı gider iki kez: sabit giderin şubesiyle karşılaştırılır) */
+  branchId?: string | null;
 }
 
 /**
@@ -487,6 +517,11 @@ export interface WasteEntry {
   name?: string;
   /** LafPOS'un menü değeri, KDV dahil */
   menuValue?: number;
+  /**
+   * LafPOS'un hazırlanmış iptalinden gelen zayi (Faz 2; src/lib/lafpos/ikram.ts iptalWasteLines): tüketimdir ama Z'nin
+   * ödenmez tutarında (offRevenue) yoktur, onunla karşılaştırılan kayıtlı değere girmez (recordedOffRevenue)
+   */
+  iptal?: boolean;
 }
 
 export interface Dataset {
@@ -580,6 +615,12 @@ export interface Dataset {
    * YYYY-MM-DD, sıralı). Süren ayın ay sonu öngörüsü bu günleri açık saymaz (denetim E-41). Yoksa boş
    */
   closedDays?: string[];
+  /**
+   * Şubelerin banka POS oranı (Şubeler › POS oranı, branches.pos_rate; sahibin kararı 23 Kasım 2026: iki şube %2):
+   * banka POS komisyonu = Σ şube (kart × şubenin oranı) (engine.ts posCommission). Kütükte olmayan şube (testler,
+   * Excel) Ayarlar'daki eski genel orandan (`settings.komisyon`); kasa kartı olmayan ay eski formülle
+   */
+  branchRates?: { id: string; name: string; posRate: number }[];
 }
 
 /**
@@ -609,11 +650,21 @@ export interface LafposSalesMonth {
    * Ayın Satışlar'a yüklenmiş ModPOS listesi: satır sayısı, ciro toplamı, son günü (kapsam kaydı yoksa ayın sonu) ve
    * hesaba girip girmediği (geçiş ayında evet, sonraki aylarda hayır); liste yoksa null
    */
-  modpos: { lines: number; revenue: number; through: string; counted: boolean } | null;
+  modpos: { lines: number; revenue: number; through: string; counted: boolean; /** Listenin günlerinin ilk kasa raporu (yoksa yok: ayın 1'i) */ from?: string } | null;
   /** Geçiş ayında listenin günlerinin (ayın 1'i → son günü) kasa raporlarındaki Z toplamı; rapor yoksa null */
   modposZ: number | null;
+  /**
+   * Aynı günlerin kasa raporlarındaki indirim (girilmemiş gün 0): liste indirimden öncedir, Z ile liste − indirim
+   * karşılaştırılır (modposOverZText). Z yoksa null; eski kayıtta (test) yok
+   */
+  modposDiscounts?: number | null;
   /** Hiçbir kaynakta olmayan geçmiş günler: geçiş ayında liste geçiş gününden önce bitiyor ya da hiç yok */
   gap: { from: string; to: string } | null;
   /** Liste geçiş gününü aştığı için sayılmayan LafPOS günleri (aynı gün iki kez sayılmasın diye) */
   overlap: { from: string; to: string } | null;
+  /**
+   * LafPOS günlerinin ürün satırları ↔ Z (hesap sözleşmesi: Σ ciro = zTotal; 23 Kasım 2026): denetlenen gün sayısı ve
+   * tutmayan günler (satırların toplamı, Z). Yükleyici vermediyse (test, eski çağıran) yok
+   */
+  zCheck?: { days: number; off: { date: string; lines: number; z: number }[] };
 }

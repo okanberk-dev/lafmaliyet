@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { ALL_BRANCHES, companyPnlKey, MONTH_TOTALS_LOCKED_TEXT, monthTotalsLocked } from "@/lib/branches";
 import { daysInMonth } from "@/lib/calc/engine";
+import { fixedCellRefusal, fixedIdOfKey } from "@/lib/fixed-expense-rules";
 import { monthLabel, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { currentBranchScope, currentWriteBranch } from "@/server/branch-scope";
@@ -26,6 +27,8 @@ const zNote = z
 /**
  * Gelir-gider tablosunda bir hücreyi elle girer (amount null = hesaplanan değere dön / boşalt; not da silinir).
  * note: undefined = var olan notu koru, null ya da "" = notu sil, metin = notu yaz (Excel'deki hücre açıklaması).
+ * Bitmiş (bitiş ayı geçmiş) ya da silinmiş sabit giderin satırına (`fixed:<id>`, `stopaj:<id>`) o ay kayıtlı değer yoksa
+ * yeni tutar yazılmaz (fixed-expense-rules.ts; 23 Kasım 2026): kayıtlı değeri düzeltmek ve silmek serbest.
  */
 export async function setPnlCell(month: string, rowKey: string, amount: number | null, note?: string | null) {
   return attempt(async () => {
@@ -37,6 +40,19 @@ export async function setPnlCell(month: string, rowKey: string, amount: number |
     if (companyPnlKey(key) && (await currentBranchScope()) !== ALL_BRANCHES) throw new UserError("Bu satır işletmenin toplamıdır: yazmak için soldan şubeyi Tümü yapın");
     const n = note === undefined ? undefined : zNote.parse(note);
     const db = getDb();
+    const fixedId = fixedIdOfKey(key);
+    if (fixedId !== null && amount !== null) {
+      const [[item], [entry]] = await Promise.all([
+        db.select({ name: s.fixedExpenses.name, endMonth: s.fixedExpenses.endMonth }).from(s.fixedExpenses).where(eq(s.fixedExpenses.id, fixedId)).limit(1),
+        db
+          .select({ month: s.pnlEntries.month })
+          .from(s.pnlEntries)
+          .where(and(eq(s.pnlEntries.month, m), eq(s.pnlEntries.rowKey, key)))
+          .limit(1),
+      ]);
+      const refusal = fixedCellRefusal({ key, month: m, item: item ?? null, hasEntry: entry !== undefined, amount });
+      if (refusal) throw new UserError(refusal);
+    }
     if (amount === null) {
       await db.delete(s.pnlEntries).where(and(eq(s.pnlEntries.month, m), eq(s.pnlEntries.rowKey, key)));
     } else {
