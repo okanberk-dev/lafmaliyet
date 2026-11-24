@@ -13,8 +13,6 @@ import { renderSystemAlert } from "@/server/notify/digest-template";
 import { activeDigestEmails, sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
-import { parasutConnection } from "@/server/parasut/client";
-import { legacyEnvPresent } from "@/server/parasut/legacy";
 
 import { lastParasutSyncErrorAt, loadJobRuns, parasutSyncedToday, readWatchSince } from "./runs";
 
@@ -49,22 +47,12 @@ export async function loadJobsOverview(now = new Date()): Promise<JobsOverview> 
   const cronSecret = Boolean(process.env.CRON_SECRET);
   const health = { parasut: jobHealth("parasut", runs, now, { watchSince }), gunluk: jobHealth("gunluk", runs, now, { watchSince }) };
   const lastBackupAt = lastBackup === undefined ? undefined : (lastBackup?.at ?? null);
-  // Hesap yeni yöntemle bağlanınca geçiş uyarısı kalkar; eski değişkenler silinince "silebilirsiniz" notu da kalkar
-  const legacyParasutAuth = legacyEnvPresent();
-  const parasutConnected = legacyParasutAuth
-    ? await parasutConnection(now.getTime())
-        .then((c) => c.connected)
-        .catch((e) => {
-          console.error("[sistem uyarıları] Paraşüt bağlantı durumu okunamadı", e);
-          return false;
-        })
-    : false;
   return {
     production,
     cronSecret,
     runs,
     health,
-    alerts: systemAlerts({ production, cronSecret, now, health, parasutSyncErrorAt, lastBackupAt, legacyParasutAuth, parasutConnected }),
+    alerts: systemAlerts({ production, cronSecret, now, health, parasutSyncErrorAt, lastBackupAt }),
   };
 }
 

@@ -7,11 +7,10 @@ import { appUrl } from "@/server/auth/tokens";
  * Değerler hiçbir zaman istemciye gönderilmez; ekranda yalnızca "tanımlı mı" bilgisi gösterilir.
  *
  * Kimlik: OAuth 2.0 Authorization Code + PKCE (id.parasut.com). İstemci DevHub'dan alınır ve gizli (confidential)
- * olduğu için client_secret ile birlikte kullanılır. Paraşüt `grant_type=password` yöntemini 10 Aralık 2026'da
- * kapatıyor; o güne kadar hesap bağlanmadıysa eski kullanıcı adı/parola geçici yedek olarak çalışır (legacy.ts).
+ * olduğu için client_secret ile birlikte kullanılır.
  *
  * İsteğe bağlı adres değişkenleri (PARASUT_ISSUER, PARASUT_REDIRECT_URI, …) yanlış yazılmışsa ayarlar yine okunur:
- * değer yok sayılır ve `invalid`'e yazılır. Böylece eski yöntemle süren eşitleme bozulmaz; hesabı bağlama ise
+ * değer yok sayılır ve `invalid`'e yazılır. Böylece kayıtlı oturumla süren eşitleme bozulmaz; hesabı bağlama ise
  * düzeltilene kadar başlamaz (connect.ts).
  */
 export const PARASUT_ENV = ["PARASUT_CLIENT_ID", "PARASUT_CLIENT_SECRET", "PARASUT_COMPANY_ID"] as const;
@@ -92,8 +91,7 @@ export function assertOidcSettings(cfg: Pick<ParasutConfig, "invalid">, only?: r
 }
 
 /**
- * Ayarlar. Yalnız zorunlu üç değişken eksikse hata atar (o zaman ne yeni ne eski yöntem çalışabilir); isteğe bağlı
- * değişkenlerin yanlışı uygulamayı durdurmaz.
+ * Ayarlar. Yalnız zorunlu üç değişken eksikse hata atar; isteğe bağlı değişkenlerin yanlışı uygulamayı durdurmaz.
  */
 export function readParasutConfig(): ParasutConfig {
   const missing = parasutEnvStatus().filter((v) => !v.set).map((v) => v.name);

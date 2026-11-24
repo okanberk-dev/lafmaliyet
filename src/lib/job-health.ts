@@ -7,7 +7,6 @@
  */
 
 import { BACKUP_HREF, backupReminder } from "@/lib/backup/format";
-import { LEGACY_DEADLINE_DAY } from "@/lib/parasut/legacy";
 import { addDays, longDateTR } from "@/lib/reminders";
 
 export type JobKey = "parasut" | "gunluk";
@@ -355,76 +354,12 @@ export interface SystemAlert {
   /** İşin değerlendirilen günü (zilde tarih); işe bağlı olmayan uyarıda null */
   day: string | null;
   /**
-   * Genel bakış şeridinde "danger" olmasa da gösterilsin. Son tarihi yaklaşan ama henüz bir şeyi bozmamış işler
-   * için: şeritte görünür, /api/health'in 503'ünü tetiklemez (o yalnız "danger"a bakar).
+   * Genel bakış şeridinde "danger" olmasa da gösterilsin: günü gelmiş ama henüz bir şeyi bozmamış işler için. Şeritte
+   * görünür, /api/health'in 503'ünü tetiklemez (o yalnız "danger"a bakar).
    */
   banner?: boolean;
   /** Şeritteki bağlantının adı; verilmezse "Günlük işler" */
   actionLabel?: string;
-}
-
-/** Paraşüt'ün eski kimlik doğrulamayı (grant_type=password) kapattığı gün (eşitlemenin geçici yedeği de o gün durur) */
-export const PARASUT_DEADLINE_DAY = LEGACY_DEADLINE_DAY;
-/** Geçişin yapılması planlanan gün: bu günden itibaren uyarı Genel bakış şeridine de çıkar */
-export const PARASUT_CUTOVER_DAY = "2026-12-01";
-export const PARASUT_MIGRATION_HREF = "/panel/parasut";
-
-/** İki İstanbul günü arasındaki gün farkı (hedef geçmişteyse negatif) */
-function daysBetween(from: string, to: string): number {
-  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
-}
-
-/**
- * Paraşüt kimlik geçişi hatırlatması (docs/planlar/parasut-kimlik-gecisi.md).
- *
- * Yalnız ortamda eski parolalı ayarlar (PARASUT_USERNAME / PARASUT_PASSWORD) dururken görünür. Hesap yeni yöntemle
- * bağlanınca (`connected`) geçiş uyarısı kalkar; eski değişkenler hâlâ duruyorsa yerine yalnız zilde bir "silebilirsiniz"
- * notu ("info") kalır, o da değişkenler silinince kalkar.
- *
- * Seviye: son tarihe kadar "warning" — eşitleme o güne kadar eski yöntemle (geçici yedek) sürüyor, /api/health 503
- * vermemeli. Ama planlanan günden (1 Aralık) itibaren `banner: true` ile Genel bakış şeridine çıkar. 10 Aralık'tan
- * sonra eşitleme gerçekten çalışmaz: o zaman "danger" olur.
- */
-export function parasutMigrationAlert(now: Date, legacyAuth: boolean, connected = false): SystemAlert | null {
-  if (!legacyAuth) return null;
-  const today = trClock(now).day;
-  const left = daysBetween(today, PARASUT_DEADLINE_DAY);
-  const base = { id: "parasut-kimlik-gecisi", href: PARASUT_MIGRATION_HREF, actionLabel: "Paraşüt entegrasyonu", day: null };
-  if (connected) {
-    return {
-      ...base,
-      id: "parasut-eski-ayar",
-      level: "info",
-      title: "Paraşüt'ün eski kullanıcı adı ve parolası artık gerekmiyor",
-      body: "Paraşüt hesabı yeni yöntemle bağlı. Vercel'deki PARASUT_USERNAME ve PARASUT_PASSWORD'ü silebilirsiniz; panel onları artık kullanmıyor.",
-    };
-  }
-  const tamamla =
-    "DevHub'dan aldığınız yeni client_id ile client_secret'ı Vercel'e girip yeniden deploy edin, ardından hemen panelden “Paraşüt hesabını bağla”ya basın. Bağlandıktan sonra PARASUT_USERNAME ve PARASUT_PASSWORD silinebilir.";
-  if (left <= 0) {
-    return {
-      ...base,
-      level: "danger",
-      banner: true,
-      title: "Paraşüt bağlantısı kapandı: kimlik geçişi yapılmadı",
-      body: `Paraşüt eski kimlik doğrulamayı ${longDateTR(PARASUT_DEADLINE_DAY)} günü kapattı; faturalar artık panele gelmiyor. ${tamamla}`,
-    };
-  }
-  if (today >= PARASUT_CUTOVER_DAY) {
-    return {
-      ...base,
-      level: "warning",
-      banner: true,
-      title: "Paraşüt kimlik geçişini bugün yapın",
-      body: `Geçiş için planlanan gün bugün. Paraşüt eski yöntemi ${longDateTR(PARASUT_DEADLINE_DAY)} günü kapatıyor: ${left} gün kaldı. ${tamamla}`,
-    };
-  }
-  return {
-    ...base,
-    level: "warning",
-    title: `Paraşüt kimlik geçişi bekliyor (${longDateTR(PARASUT_CUTOVER_DAY)})`,
-    body: `Paraşüt eski kimlik doğrulamayı ${longDateTR(PARASUT_DEADLINE_DAY)} günü kapatıyor; eşitleme şimdilik onunla sürüyor: ${left} gün kaldı. Geçiş ${longDateTR(PARASUT_CUTOVER_DAY)} günü yapılacak. ${tamamla}`,
-  };
 }
 
 /** "bu sabah" / "dün sabah" / "20 Ekim Pazartesi sabahı" */
@@ -452,18 +387,11 @@ export function systemAlerts(i: {
   parasutSyncErrorAt: string | null;
   /** Son yedeğin anı (integration_state › backup.last); hiç yoksa null, verilmezse yedek hatırlatılmaz */
   lastBackupAt?: string | null;
-  /** Ortamda eski Paraşüt parolalı ayarları (PARASUT_USERNAME / PARASUT_PASSWORD) hâlâ duruyor mu */
-  legacyParasutAuth?: boolean;
-  /** Paraşüt hesabı yeni yöntemle (Authorization Code + PKCE) bağlı mı */
-  parasutConnected?: boolean;
 }): SystemAlert[] {
   if (!i.production) return [];
   const today = trClock(i.now).day;
   const reminder = i.lastBackupAt === undefined ? null : backupReminder(i.lastBackupAt, i.now);
   const backup: SystemAlert[] = reminder ? [{ ...reminder, level: "info", href: BACKUP_HREF, day: null }] : [];
-  // Kimlik geçişi işlerden bağımsız: CRON_SECRET yokken de hatırlatılır
-  const migration = parasutMigrationAlert(i.now, i.legacyParasutAuth ?? false, i.parasutConnected ?? false);
-  const pending: SystemAlert[] = migration ? [migration] : [];
   if (!i.cronSecret) {
     return [
       {
@@ -474,7 +402,6 @@ export function systemAlerts(i: {
         href: JOBS_HREF,
         day: null,
       },
-      ...pending,
       ...backup,
     ];
   }
@@ -519,7 +446,7 @@ export function systemAlerts(i: {
       );
     }
   }
-  return [...out, ...pending, ...backup].sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
+  return [...out, ...backup].sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
 }
 
 export interface EmailProblem {

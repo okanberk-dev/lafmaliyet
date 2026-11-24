@@ -3,6 +3,12 @@
 **Kaynak:** Paraşüt'ten gelen duyuru e-postası (5 Kasım 2026'da alındı).
 **Panelde etkilenen yer:** `lafmaliyet` → Paraşüt entegrasyonu (gider faturaları ve gelen e-faturalar, her sabah
 07:00–08:00 arası eşitleme).
+> **Tamamlandı (24 Kasım 2026): eski yöntem kaldırıldı.** Sahip DevHub istemcisini açtı, hesap canlıda
+> “Paraşüt hesabını bağla” ile bağlandı. Geçici yedek (`src/lib/parasut/legacy.ts`, `src/server/parasut/legacy.ts`,
+> `parasut.legacyToken`), “Eski yöntem” durumları ve `parasutMigrationAlert` hatırlatması koddan silindi; aşağıdaki
+> *10 Aralık 2026'dan sonra silinecekler* listesi bu değişiklikle yapıldı. Vercel'de `PARASUT_USERNAME` /
+> `PARASUT_PASSWORD` kaldıysa artık hiçbir yerde okunmuyor, silinebilir. Aşağısı geçişin o günkü kaydıdır.
+
 **Durum (21 Kasım 2026):** kod hazır (PR #92). Birleştirilmesi artık güvenli: hesap bağlanana kadar eşitleme eski
 yöntemle sürer (aşağıda *Geçici yedek*). Sahibin yapacakları aşağıda, sade dille.
 

@@ -4,8 +4,8 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
  * Paraşüt'ün yeni kimlik altyapısının (id.parasut.com) saf kuralları: PKCE üretimi, keşif belgesinin okunması ve
  * yetki adresinin kurulması. Ağa çıkmaz, veritabanına dokunmaz; indirme ve önbellek src/server/parasut/oidc.ts'te.
  *
- * Paraşüt 10 Aralık 2026'da `grant_type=password`'ü ve eski api.parasut.com/oauth istemcilerini kapattı; erişim
- * yalnızca Authorization Code + PKCE ile alınıyor (OAuth 2.0 / OpenID Connect).
+ * Paraşüt `grant_type=password`'ü ve eski api.parasut.com/oauth istemcilerini kapattı; erişim yalnızca Authorization
+ * Code + PKCE ile alınıyor (OAuth 2.0 / OpenID Connect).
  */
 
 export interface ParasutEndpoints {
