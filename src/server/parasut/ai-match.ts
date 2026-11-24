@@ -1,11 +1,12 @@
 import "server-only";
 
-import { and, count, desc, eq, gte } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
 import {
   aiCandidates,
   freshItems,
   ingredientsHash,
+  inventedCount,
   MATCH_BATCH_SIZE,
   MatchAiRaw,
   matchSystemPrompt,
@@ -22,6 +23,7 @@ import {
   type StoredAiMatch,
 } from "@/lib/product-match-ai";
 import { extractMatch, matchSuggestStatus } from "@/server/ai/claude";
+import { MATCH_TIMEOUTS } from "@/server/ai/run";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { UserError } from "@/server/user-error";
 
@@ -40,8 +42,14 @@ import { unlinkedProducts } from "./sync";
 
 /** Saklanan öneriler: { hash, items: { ürün anahtarı → öneri } } (yedeğe girer; docs/PARASUT.md § 5e) */
 export const AI_SUGGESTIONS_KEY = "parasut.aiSuggestions";
-/** Bundan yeni "running" çağrısı varsa başka sekmede öneri sürüyor (çağrı en çok 52 sn) */
-const RUNNING_MS = 70_000;
+/**
+ * Eylemin başından AI yanıtının en geç gelmesi gereken süre: sayfa 60 sn'de kesilir, kalan ~12 sn doğrulama, saklama,
+ * etkinlik günlüğü ve yanıta. Öncesindeki okumalar uzarsa servis çağrısının süresi o kadar kısalır (en çok
+ * MATCH_TIMEOUTS.totalMs); kesilen çağrı "timeout" olur, ai_calls satırı kapanır ("running" kalmaz)
+ */
+export const MATCH_BUDGET_MS = 48_000;
+/** Servis çağrısına en az bu kadar süre kalmalı; kalmadıysa yine bu kadar beklenir (hemen "timeout" yerine) */
+const MIN_CALL_MS = 5_000;
 
 type Ingredient = MatchIngredientInfo & { active: boolean };
 
@@ -94,15 +102,6 @@ async function saveSuggestions(db: DB, hash: string, items: Record<string, Store
   });
 }
 
-/** Başka sekmede (ya da yöneticide) öneri isteği sürüyor mu */
-async function matchRunning(db: DB, now: Date): Promise<boolean> {
-  const [row] = await db
-    .select({ n: count() })
-    .from(s.aiCalls)
-    .where(and(eq(s.aiCalls.feature, "eslestirme"), eq(s.aiCalls.status, "running"), gte(s.aiCalls.at, new Date(now.getTime() - RUNNING_MS))));
-  return (row?.n ?? 0) > 0;
-}
-
 /**
  * Sayfa için: düğmenin durumu, saklı öneriler ve sorulacak ürün sayısı. Servise istek göndermez. `products` sayfadaki
  * bekleyenler, `links` bağlantılar (sezgisel "aynı ürün bağlı" önerisi bunlardan)
@@ -124,7 +123,7 @@ export interface MatchBatchResult {
   link: number;
   notIngredient: number;
   unsure: number;
-  /** AI'nin listede olmayan hammadde önerdiği ürün sayısı (reddedildi) */
+  /** AI'nin listede olmayan hammadde önerdiği ürün sayısı (doğrulamada reddedildi, öneri "emin değil" oldu) */
   rejected: number;
   costUsd: number;
 }
@@ -132,11 +131,12 @@ export interface MatchBatchResult {
 /**
  * Bir parti: sayfadaki bekleyenlerden sezgiselin "aynı ürün bağlı" diyemediği ve geçerli saklı önerisi olmayan ilk
  * MATCH_BATCH_SIZE ürün tek istekte sorulur, yanıt doğrulanır, saklanır. Ekran `remaining` bitene kadar yeniden çağırır.
- * Yetkiyi eylem denetler (yalnız yönetici). Bağlantı kurmaz
+ * Aynı anda tek istek ve günlük parti sınırı claude.ts'te, "running" satırıyla aynı işlemde denetlenir (iki sekme ya da
+ * çift basış ikisi birden geçemez). Yetkiyi eylem denetler (yalnız yönetici). Bağlantı kurmaz. `startedAt`: eylemin
+ * başladığı an (ms), süre bütçesi ondan sayılır
  */
-export async function suggestNextBatch(me: { id: number }, now = new Date()): Promise<MatchBatchResult> {
+export async function suggestNextBatch(me: { id: number }, now = new Date(), startedAt = Date.now()): Promise<MatchBatchResult> {
   const db = getDb();
-  if (await matchRunning(db, now)) throw new UserError("AI önerisi başka bir sekmede sürüyor; bitince sayfayı yenileyin.");
   const [{ items: products }, ingredients, links, store] = await Promise.all([unlinkedProducts(40), matchIngredients(db), exampleLinks(db), loadStore(db)]);
   const active = ingredients.filter((i) => i.active);
   if (!active.length) throw new UserError("Önce hammadde ekleyin: AI yalnız listedeki hammaddelerden önerir.");
@@ -147,7 +147,8 @@ export async function suggestNextBatch(me: { id: number }, now = new Date()): Pr
   if (!candidates.length) return empty;
   const batch = candidates.slice(0, MATCH_BATCH_SIZE);
   const ids = new Set(active.map((i) => i.id));
-  const res = await extractMatch({ userId: me.id, system: matchSystemPrompt(active, pickExamples(links, ids)), task: matchTask(batch), schema: MatchAiRaw });
+  const totalMs = Math.max(MIN_CALL_MS, Math.min(MATCH_TIMEOUTS.totalMs, MATCH_BUDGET_MS - (Date.now() - startedAt)));
+  const res = await extractMatch({ userId: me.id, system: matchSystemPrompt(active, pickExamples(links, ids)), task: matchTask(batch), schema: MatchAiRaw, totalMs });
   if (!res.ok) throw new UserError(res.message);
   const items = validateAnswer(res.data, { keys: shortKeys(batch), ingredientIds: ids, at: now.toISOString() });
   await saveSuggestions(db, hash, items, pendingKeys);
@@ -158,7 +159,7 @@ export async function suggestNextBatch(me: { id: number }, now = new Date()): Pr
     link: list.filter((i) => i.decision === "bagla").length,
     notIngredient: list.filter((i) => i.decision === "hammadde_degil").length,
     unsure: list.filter((i) => i.decision === "emin_degil").length,
-    rejected: res.data.oneriler.filter((o) => o.hammadde_id !== null && !ids.has(o.hammadde_id)).length,
+    rejected: inventedCount(items),
     costUsd: res.costUsd,
   };
 }

@@ -321,7 +321,7 @@ test("bağlantılar: eylem yalnız yönetici ve kayıt yapmaz; günlük sınır 
   const claude = src("src/server/ai/claude.ts");
   assert.match(claude, /const OWN_CAP: Partial<Record<AiFeature, number>> = \{ \[SHIFT_FEATURE\]: SHIFT_DRAFT_DAILY_CAP,/);
   assert.match(claude, /notInArray\(s\.aiCalls\.feature, OWN_CAP_FEATURES\)/);
-  assert.match(claude, /const ownCap = OWN_CAP\[req\.feature\];\s*if \(ownCap !== undefined\) \{\s*if \(\(await featureCallsSince\(req\.feature, dayStart\(new Date\(\)\)\)\) >= ownCap\) return gate\("cap", ownCap\);/);
+  assert.match(claude, /if \(ownCap !== undefined\) \{\s*if \(\(await featureCallsSince\(req\.feature, since, tx\)\) >= ownCap\) return gate\("cap", ownCap\);/);
   assert.match(claude, /feature: SHIFT_FEATURE, photoId: null, model: AI_MODEL, keepResult: false/);
   const page = src("src/app/panel/vardiya/page.tsx");
   assert.match(page, /export const maxDuration = 60;/);

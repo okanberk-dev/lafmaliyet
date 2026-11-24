@@ -8,7 +8,7 @@ import { MAX_READS_PER_PHOTO, type ReadingState } from "@/lib/photo-rules";
 import { MATCH_DAILY_CAP } from "@/lib/product-match-ai";
 import { todayTR } from "@/lib/reminders";
 import { SHIFT_DRAFT_DAILY_CAP } from "@/lib/vardiya-taslak";
-import { getDb, schema as s } from "@/server/db";
+import { getDb, schema as s, type DB } from "@/server/db";
 
 import { costUsd } from "./pricing";
 import { replayClient, replayEnabled } from "./replay";
@@ -18,6 +18,7 @@ import {
   aiAlertLog,
   aiErrorText,
   MATCH_REQUEST,
+  MATCH_RUNNING_MS,
   runExtraction,
   type AiClient,
   type AiDocumentType,
@@ -33,10 +34,10 @@ import {
 
 /*
  * Fotoğraftan ve faturadan okumanın kapısı (Claude): anahtar var mı, ayar açık mı, bugünkü sınır doldu mu, fotoğraf kaç
- * kez okundu. Her çağrı ai_calls'a yazılır (önce "running": aynı anda gelen iki okuma sınırı bir kez aşabilir, çökme de
- * kalır); görüntü, PDF ve istem hiçbir yere yazılmaz. Anahtar (ANTHROPIC_API_KEY) yalnız sunucuda: sayfalar yalnız
- * aiStatus().state alır. Anahtar yoksa (yerelde, önizlemelerde) fotoğraf yine eklenir, rakamlar elle yazılır
- * (docs/FOTOGRAF.md); fatura okunmaz, kart bugünkü gibi kalır (docs/FATURA-OKUMA.md).
+ * kez okundu. Her çağrı ai_calls'a yazılır (önce "running", kapılarla aynı işlemde ve sınırın kilidiyle: aynı anda gelen
+ * iki istek sınırı aşamaz; çökme de kalır); görüntü, PDF ve istem hiçbir yere yazılmaz. Anahtar (ANTHROPIC_API_KEY)
+ * yalnız sunucuda: sayfalar yalnız aiStatus().state alır. Anahtar yoksa (yerelde, önizlemelerde) fotoğraf yine eklenir,
+ * rakamlar elle yazılır (docs/FOTOGRAF.md); fatura okunmaz, kart bugünkü gibi kalır (docs/FATURA-OKUMA.md).
  */
 
 export { AI_INVOICE_MODEL, AI_MATCH_MODEL, AI_MODEL, type AiErrorCode, type AiFeature } from "./run";
@@ -94,9 +95,12 @@ const MATCH_FEATURE: AiFeature = "eslestirme";
 const OWN_CAP: Partial<Record<AiFeature, number>> = { [SHIFT_FEATURE]: SHIFT_DRAFT_DAILY_CAP, [MATCH_FEATURE]: MATCH_DAILY_CAP };
 const OWN_CAP_FEATURES = Object.keys(OWN_CAP);
 
+/** Sorgu yapan: bağlantı havuzu ya da kapıların işlemi (extract) */
+type Q = Pick<DB, "select">;
+
 /** Okumalar (fotoğraf ve fatura): günlük sınır bunları sayar. Vardiya taslakları ve ürün önerileri sayılmaz */
-async function readingsSince(since: Date): Promise<number> {
-  const [row] = await getDb()
+async function readingsSince(since: Date, q: Q = getDb()): Promise<number> {
+  const [row] = await q
     .select({ n: count() })
     .from(s.aiCalls)
     .where(and(gte(s.aiCalls.at, since), notInArray(s.aiCalls.feature, OWN_CAP_FEATURES)));
@@ -104,8 +108,8 @@ async function readingsSince(since: Date): Promise<number> {
 }
 
 /** Kendi sınırı olan türün çağrıları */
-async function featureCallsSince(feature: AiFeature, since: Date): Promise<number> {
-  const [row] = await getDb()
+async function featureCallsSince(feature: AiFeature, since: Date, q: Q = getDb()): Promise<number> {
+  const [row] = await q
     .select({ n: count() })
     .from(s.aiCalls)
     .where(and(gte(s.aiCalls.at, since), eq(s.aiCalls.feature, feature)));
@@ -182,6 +186,11 @@ interface ExtractCall<T> {
   stored?: (data: T) => T;
   /** Sistem istemi önbelleğe yazılır (run.ts; yalnız ürün önerisi) */
   cacheSystem?: boolean;
+  /**
+   * Aynı anda tek istek (yalnız ürün önerisi): bu türün bu kadar ms'den yeni "running" satırı varsa istek gitmez
+   * ("busy"). Pencere en uzun çağrıdan geniş tutulur; çöküp "running" kalan satır pencere geçince engellemez
+   */
+  exclusiveMs?: number;
 }
 
 /**
@@ -223,8 +232,13 @@ export async function extractText<T>(req: Omit<ExtractCall<T>, "feature" | "phot
  * (MATCH_DAILY_CAP, parti başına bir çağrı). Sistem istemi (hammadde listesi, örnekler) önbelleğe yazılır. Günlüğe yalnız
  * maliyet satırı düşer: istem ve yanıt ai_calls'a yazılmaz (doğrulanmış öneriler integration_state'te)
  */
-export async function extractMatch<T>(req: Omit<ExtractCall<T>, "feature" | "photoId" | "effort" | "timeouts" | "maxTokens" | "cacheSystem">): Promise<AiResult<T>> {
-  return extract({ ...req, ...MATCH_REQUEST, feature: MATCH_FEATURE, photoId: null, keepResult: false });
+export async function extractMatch<T>(
+  req: Omit<ExtractCall<T>, "feature" | "photoId" | "effort" | "timeouts" | "maxTokens" | "cacheSystem" | "exclusiveMs"> & {
+    /** Toplam süre (varsayılan MATCH_TIMEOUTS.totalMs): eylemin başından geçen süre düşülür (parasut/ai-match.ts) */
+    totalMs?: number;
+  },
+): Promise<AiResult<T>> {
+  return extract({ ...req, ...MATCH_REQUEST, feature: MATCH_FEATURE, photoId: null, keepResult: false, exclusiveMs: MATCH_RUNNING_MS });
 }
 
 const SUBJECT: Partial<Record<AiFeature, AiSubject>> = { fatura: "fatura", [SHIFT_FEATURE]: "vardiya", [MATCH_FEATURE]: "eslestirme" };
@@ -239,19 +253,36 @@ async function extract<T>(req: ExtractCall<T> & AiInput & { model: AiModel; tota
   if (!settings.enabled) return gate("off");
   const db = getDb();
   const ownCap = OWN_CAP[req.feature];
-  if (ownCap !== undefined) {
-    if ((await featureCallsSince(req.feature, dayStart(new Date()))) >= ownCap) return gate("cap", ownCap);
-  } else if ((await readingsSince(dayStart(new Date()))) >= settings.dailyCap) return gate("cap", settings.dailyCap);
-  if (req.photoId !== null) {
-    const [row] = await db.select({ n: count() }).from(s.aiCalls).where(eq(s.aiCalls.photoId, req.photoId));
-    if ((row?.n ?? 0) >= MAX_READS_PER_PHOTO) return gate("photo-limit");
-  }
-  // Efor yalnız açıkça seçilen okumada yazılır (yazarkasa Z'si; docs/planlar/okc-z.md §6.2): canlıda hangi okumanın hangi
-  // eforla yapıldığı ve tutarı görülsün. Ötekilerde boş (modelin varsayılanı)
-  const [call] = await db
-    .insert(s.aiCalls)
-    .values({ feature: req.feature, model: req.model, effort: req.effort ?? null, status: "running", userId: req.userId, photoId: req.photoId })
-    .returning({ id: s.aiCalls.id });
+  // Kapılar ve "running" satırı tek işlemde, sınırın danışma kilidiyle (kendi sınırı olan tür ya da okumalar): aynı anda
+  // gelen iki istek sıraya girer, ikincisi ilkinin satırını görür; günlük sınır aşılmaz, "aynı anda tek istek"
+  // (exclusiveMs) iki sekmeyi birden geçirmez. Kilit yalnız bu kısa işlemde tutulur, servis çağrısı işlemin dışında
+  const opened = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`ai-sinir:${ownCap !== undefined ? req.feature : "okuma"}`}))`);
+    const since = dayStart(new Date());
+    if (ownCap !== undefined) {
+      if ((await featureCallsSince(req.feature, since, tx)) >= ownCap) return gate("cap", ownCap);
+    } else if ((await readingsSince(since, tx)) >= settings.dailyCap) return gate("cap", settings.dailyCap);
+    if (req.photoId !== null) {
+      const [row] = await tx.select({ n: count() }).from(s.aiCalls).where(eq(s.aiCalls.photoId, req.photoId));
+      if ((row?.n ?? 0) >= MAX_READS_PER_PHOTO) return gate("photo-limit");
+    }
+    if (req.exclusiveMs) {
+      const [row] = await tx
+        .select({ n: count() })
+        .from(s.aiCalls)
+        .where(and(eq(s.aiCalls.feature, req.feature), eq(s.aiCalls.status, "running"), gte(s.aiCalls.at, new Date(Date.now() - req.exclusiveMs))));
+      if ((row?.n ?? 0) > 0) return gate("busy");
+    }
+    // Efor yalnız açıkça seçilen okumada yazılır (yazarkasa Z'si; docs/planlar/okc-z.md §6.2): canlıda hangi okumanın
+    // hangi eforla yapıldığı ve tutarı görülsün. Ötekilerde boş (modelin varsayılanı)
+    const [row] = await tx
+      .insert(s.aiCalls)
+      .values({ feature: req.feature, model: req.model, effort: req.effort ?? null, status: "running", userId: req.userId, photoId: req.photoId })
+      .returning({ id: s.aiCalls.id });
+    return row;
+  });
+  if ("ok" in opened) return opened;
+  const call = opened;
   const t0 = Date.now();
   const client = replayEnabled() ? replayClient(req.feature) : liveClient();
   const res = await runExtraction(client, req);

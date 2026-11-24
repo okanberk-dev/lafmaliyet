@@ -788,7 +788,9 @@ function ProductLinks({
     waitingShown.map((u) => [u.productKey, dismissed.has(u.productKey) ? null : matchView(u, ingredients, linked, aiMatch.items[u.productKey])]),
   );
 
-  // "AI ile öner": yalnız düğmeyle; her çağrı bir parti, sorulacak ürün bitene kadar sürdürülür. Bağlantı kurulmaz
+  // "AI ile öner": yalnız düğmeyle; her çağrı bir parti, sorulacak ürün bitene kadar sürdürülür. Bağlantı kurulmaz.
+  // Eylem sayfayı yenilemez (partinin 60 sn'si AI'ye ve saklamaya): öneriler gelince sayfa burada, ayrı istekte
+  // yenilenir
   const [aiRunning, startAi] = useActionTransition();
   const [aiProgress, setAiProgress] = useState<{ done: number; left: number } | null>(null);
   const runAi = () =>
@@ -799,6 +801,7 @@ function ProductLinks({
         const r = await suggestProductLinksAi();
         if (!r.ok) {
           setAiProgress(null);
+          if (sum.asked) router.refresh();
           return void toast.error(sum.asked ? `${num(sum.asked)} ürün önerildi; ${r.error}` : r.error, { id: t });
         }
         for (const k of ["asked", "link", "notIngredient", "unsure", "rejected"] as const) sum[k] += r.data[k];
@@ -808,6 +811,7 @@ function ProductLinks({
       }
       setAiProgress(null);
       if (!sum.asked) return void toast.info("AI'ye sorulacak ürün kalmadı", { id: t });
+      router.refresh();
       toast.success(
         `${num(sum.asked)} ürün için AI önerisi hazır: ${num(sum.link)} bağlantı, ${num(sum.notIngredient)} hammadde değil, ${num(sum.unsure)} emin değil${sum.rejected ? ` · ${num(sum.rejected)} uydurma hammadde reddedildi` : ""}`,
         { id: t, description: "Önerileri satırlarda inceleyin; hiçbiri siz onaylamadan bağlanmaz.", duration: 8000 },

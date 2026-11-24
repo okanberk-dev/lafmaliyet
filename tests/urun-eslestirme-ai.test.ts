@@ -19,6 +19,7 @@ import {
   clipReason,
   freshItems,
   ingredientsHash,
+  inventedCount,
   MATCH_BATCH_SIZE,
   MATCH_DAILY_CAP,
   MATCH_EXAMPLES_MAX,
@@ -50,6 +51,8 @@ import {
   aiErrorText,
   buildRequest,
   MATCH_REQUEST,
+  MATCH_RUNNING_MS,
+  MATCH_TIMEOUTS,
   runExtraction,
   type AiClient,
   type AiMessage,
@@ -91,6 +94,26 @@ test("doğrulama: listede olmayan (uydurulmuş) hammadde kimliği reddedilir, ö
   assert.equal(out["k:a"].confidence, "dusuk");
   assert.match(out["k:a"].rejected ?? "", /listede olmayan bir hammadde önerdi \(#999\); reddedildi/);
   assert.deepEqual({ ...out["k:b"], at: "" }, { decision: "bagla", ingredientId: 2, factor: 150, confidence: "yuksek", reason: "Ad SÜT 1 LT", at: "" });
+});
+
+test("doğrulama: reddedilen (uydurma hammadde) sayısı doğrulanmış önerilerden; 'hammadde değil' yanıtındaki kimlik, bilinmeyen ve tekrarlanan anahtar sayılmaz", () => {
+  const out = validateAnswer(
+    {
+      oneriler: [
+        raw({ hammadde_id: 999 }),
+        raw({ hammadde_id: 998 }),
+        raw({ urun_anahtari: "u2", karar: "hammadde_degil", hammadde_id: 999, carpan: null }),
+        raw({ urun_anahtari: "u9", hammadde_id: 999 }),
+        raw({ urun_anahtari: "u3", carpan: 0 }),
+      ],
+    },
+    { keys: { u1: "a", u2: "b", u3: "c", u4: "d" }, ingredientIds: IDS, at: "t" },
+  );
+  assert.equal(inventedCount(out), 1);
+  assert.deepEqual([out.a.decision, out.b.decision, out.b.rejected], ["emin_degil", "hammadde_degil", undefined]);
+  assert.match(out.c.rejected ?? "", /çarpanı geçersiz/, "çarpanı düşen uydurma sayılmaz");
+  assert.equal(out.d.rejected, "AI bu ürün için yanıt vermedi", "yanıtsız ürün uydurma sayılmaz");
+  assert.equal(inventedCount({}), 0);
 });
 
 test("doğrulama: geçersiz çarpan düşer (hammadde kalır, güven düşük); hammadde değil; emin değil her zaman düşük", () => {
@@ -353,8 +376,11 @@ test("istek: Sonnet 5.5, efor medium, JSON şeması, yedek model 'default', sist
   assert.equal(params.messages.length, 1);
   assert.deepEqual(params.messages[0], { role: "user", content: [{ type: "text", text: task }] });
   assert.equal(JSON.stringify(params.messages).includes("cache_control"), false);
-  assert.equal(options.timeout, 50_000);
+  assert.equal(options.timeout, 45_000);
   assert.equal(options.maxRetries, 1);
+  // 60 sn'lik sayfada çağrı en çok 45 sn; "aynı anda tek istek" penceresi ondan ve sayfanın süresinden geniş
+  assert.deepEqual(MATCH_TIMEOUTS, { timeout: 45_000, maxRetries: 1, totalMs: 45_000 });
+  assert.ok(MATCH_RUNNING_MS > 60_000);
 
   // Şema yapılandırılmış çıktıya sığar: hammadde kimliği tam sayı, karar ve güven sabit listeden
   const schema = claudeSchema(MatchAiRaw);
@@ -378,6 +404,7 @@ test("istek: ret içerik okunmadan döner; Türkçe metinler ve günlük sınır
   assert.equal(aiErrorText("refusal", undefined, "eslestirme"), "Bu ürünler için öneri alınamadı; hammaddeyi elle seçin.");
   assert.equal(aiErrorText("cap", 20, "eslestirme"), "AI önerisinin bugünkü sınırı doldu (20 parti); hammaddeyi elle seçin.");
   assert.equal(aiErrorText("nokey", undefined, "eslestirme"), "AI önerisi bu ortamda kurulu değil; hammaddeyi elle seçin.");
+  assert.equal(aiErrorText("busy", undefined, "eslestirme"), "AI önerisi başka bir sekmede sürüyor; bitince sayfayı yenileyin.");
   const cut = await runExtraction(fake({ stop_reason: "max_tokens" }).client, { ...MATCH_REQUEST, system: "S", task: "T", schema: MatchAiRaw });
   assert.equal(!cut.ok && cut.code, "incomplete");
 });
@@ -428,14 +455,19 @@ test("tutar: Sonnet 5.5 (önbellek okuma 0,10 $) ve yedek model Sonnet 5", () =>
 test("kaynak: eylem yalnız yönetici; öneri bağlantı kurmaz, yalnız saklar; sayfa açılınca istek gitmez", () => {
   const actions = code("src/server/actions/parasut.ts");
   const action = actions.slice(actions.indexOf("export async function suggestProductLinksAi"), actions.indexOf("const ignoreSchema"));
-  assert.match(action, /const me = await requireAdmin\(\);\s*const r = await suggestNextBatch\(me\);/);
+  assert.match(action, /const startedAt = Date\.now\(\);[\s\S]*const me = await requireAdmin\(\);\s*const r = await suggestNextBatch\(me, new Date\(\), startedAt\);/);
   assert.doesNotMatch(action, /parasutProductLinks|applyProductLinks|saveProductLink/);
+  // Sayfayı eylem yenilemez (60 sn'lik bütçe AI'ye ve saklamaya): ekran partiler bitince router.refresh() ile yeniler
+  assert.doesNotMatch(action, /refresh\(\)/);
 
   const server = code("src/server/parasut/ai-match.ts");
   assert.match(server, /^import "server-only";/);
   assert.doesNotMatch(server, /parasutProductLinks\)\s*\.values|insert\(s\.parasutProductLinks\)|applyProductLinks|updateIgnoredProducts/, "AI bağlantı ya da işaret yazmaz");
   assert.match(server, /export const AI_SUGGESTIONS_KEY = "parasut\.aiSuggestions";/);
   assert.match(server, /extractMatch\(/);
+  // Süre bütçesi eylemin başından sayılır; reddedilen sayısı doğrulanmış önerilerden
+  assert.match(server, /MATCH_BUDGET_MS - \(Date\.now\(\) - startedAt\)/);
+  assert.match(server, /rejected: inventedCount\(items\),/);
   // Sayfanın okuması servise gitmez (yalnız durum, saklı öneriler)
   const page = server.slice(server.indexOf("export async function aiMatchPage"), server.indexOf("export interface MatchBatchResult"));
   assert.doesNotMatch(page, /extractMatch|suggestNextBatch/);
@@ -453,6 +485,7 @@ test("kaynak: ekranda AI yalnız düğmeyle çağrılır; Uygula formu doldurur;
   const run = client.slice(client.indexOf("const runAi = () =>"), client.indexOf("const [bulkOpen, setBulkOpen]"));
   assert.match(run, /startAi\(async \(\) => \{/);
   assert.match(run, /await suggestProductLinksAi\(\)/);
+  assert.equal(run.match(/router\.refresh\(\);/g)?.length, 2, "öneriler gelince (hata olsa da) sayfa yenilenir");
   assert.doesNotMatch(run, /saveProductLink/);
   assert.match(client, /<AiSuggestBar ai=\{aiMatch\} running=\{aiRunning\} progress=\{aiProgress\} onRun=\{runAi\} \/>/);
   // Uygula: formu doldurur (choose), kaydetmez; Hammadde değil: bugünkü işaretleme (geri alınır)
@@ -476,7 +509,13 @@ test("kaynak: ürün önerisi okuma sınırına sayılmaz, kendi sınırı var; 
   assert.match(claude, /const OWN_CAP: Partial<Record<AiFeature, number>> = \{ \[SHIFT_FEATURE\]: SHIFT_DRAFT_DAILY_CAP, \[MATCH_FEATURE\]: MATCH_DAILY_CAP \};/);
   assert.match(claude, /notInArray\(s\.aiCalls\.feature, OWN_CAP_FEATURES\)/);
   const extractMatch = claude.slice(claude.indexOf("export async function extractMatch"), claude.indexOf("const SUBJECT"));
-  assert.match(extractMatch, /\.\.\.MATCH_REQUEST, feature: MATCH_FEATURE, photoId: null, keepResult: false/);
+  assert.match(extractMatch, /\.\.\.MATCH_REQUEST, feature: MATCH_FEATURE, photoId: null, keepResult: false, exclusiveMs: MATCH_RUNNING_MS/);
+  // Kapılar (sınır, aynı anda tek istek) ve "running" satırı tek işlemde, danışma kilidiyle
+  const gates = claude.slice(claude.indexOf("const opened = await db.transaction"), claude.indexOf("const t0 = Date.now()"));
+  assert.match(gates, /pg_advisory_xact_lock/);
+  assert.match(gates, /featureCallsSince\(req\.feature, since, tx\)/);
+  assert.match(gates, /if \(\(row\?\.n \?\? 0\) > 0\) return gate\("busy"\);/);
+  assert.match(gates, /tx\s*\.insert\(s\.aiCalls\)/);
   // Saklanan öneriler gizli değer taşımaz (ürün adı anahtarı, hammadde, çarpan, gerekçe): tam yedekte kalır
   assert.equal(EXCLUDED_STATE_KEYS["parasut.aiSuggestions"], undefined);
 });

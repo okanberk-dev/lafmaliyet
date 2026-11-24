@@ -230,19 +230,21 @@ export async function saveProductLinks(input: z.input<typeof linkSchema>[]) {
 /**
  * "AI ile öner" (docs/PARASUT.md § 5e): bekleyen ürünlerin bir partisini Claude'a sorar, doğrulanmış önerileri saklar.
  * **Bağlantı kurmaz**: öneriler ekranda görünür, yönetici "Uygula" / "Bağla" ya da toplu pencerede onaylar. Ekran
- * `remaining` bitene kadar yeniden çağırır (parti başına bir istek; sayfanın süresi 60 sn). Yalnız yönetici
+ * `remaining` bitene kadar yeniden çağırır (parti başına bir istek; sayfanın süresi 60 sn). Sayfayı eylem yenilemez
+ * (`refresh()` bütün Paraşüt sayfasını bu isteğin 60 sn'sinde yeniden çizerdi): ekran partiler bitince
+ * `router.refresh()` ile ayrı istekte yeniler. Yalnız yönetici
  */
 export async function suggestProductLinksAi() {
+  const startedAt = Date.now();
   return attempt(async () => {
     const me = await requireAdmin();
-    const r = await suggestNextBatch(me);
+    const r = await suggestNextBatch(me, new Date(), startedAt);
     if (r.asked) {
       await logActivity(
         me,
         "Paraşüt ürünleri için AI önerisi",
         `${r.asked} ürün soruldu: ${r.link} bağlantı önerisi, ${r.notIngredient} hammadde değil, ${r.unsure} emin değil${r.rejected ? ` · ${r.rejected} uydurma hammadde reddedildi` : ""}${r.remaining ? ` · ${r.remaining} sırada` : ""}`,
       );
-      refresh();
     }
     return r;
   });

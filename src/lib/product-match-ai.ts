@@ -285,6 +285,16 @@ export function clipReason(text: string): string {
   return t.length > MATCH_REASON_MAX ? `${t.slice(0, MATCH_REASON_MAX - 1).trimEnd()}…` : t;
 }
 
+/** Uydurma hammadde reddinin metninin başı (inventedCount bunu sayar) */
+const INVENTED = "AI listede olmayan bir hammadde önerdi";
+
+/**
+ * Doğrulamada uydurma hammadde kimliği yüzünden reddedilen ürün sayısı (özet ve etkinlik günlüğü). Ham yanıttan değil
+ * doğrulanmış önerilerden sayılır: "hammadde değil" yanıtındaki kimlik, bilinmeyen ve tekrarlanan anahtar sayılmaz
+ */
+export const inventedCount = (items: Readonly<Record<string, StoredAiMatch>>): number =>
+  Object.values(items).filter((i) => i.rejected?.startsWith(INVENTED)).length;
+
 const validFactor = (f: number | null): f is number => f !== null && Number.isFinite(f) && f >= FACTOR_MIN && f <= FACTOR_MAX;
 
 /**
@@ -309,7 +319,7 @@ export function validateAnswer(raw: MatchAiRaw, ctx: { keys: Readonly<Record<str
       continue;
     }
     if (!ctx.ingredientIds.has(o.hammadde_id)) {
-      out[key] = unsure(reason, `AI listede olmayan bir hammadde önerdi (#${o.hammadde_id}); reddedildi`);
+      out[key] = unsure(reason, `${INVENTED} (#${o.hammadde_id}); reddedildi`);
       continue;
     }
     const factorOk = validFactor(o.carpan);

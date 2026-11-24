@@ -159,15 +159,30 @@ describe("AI ile ürün → hammadde önerisi: veritabanında", { skip: !SERVER_
     assert.equal(st?.items["p:surup"].decision, "bagla");
   });
 
-  test("aynı anda tek istek; günlük parti sınırı dolunca istek gitmez, nedeni Türkçe", async () => {
+  test("aynı anda tek istek; sınıra bir parti kala aynı anda iki basıştan yalnız biri gider; sınır dolunca istek gitmez, nedeni Türkçe", async () => {
     await db.insert(s.ingredients).values({ name: "Karamel şurubu", category: "Şurup", unit: "ml", packagePrice: 400, packageSize: 700 });
     const [running] = await db.insert(s.aiCalls).values({ feature: "eslestirme", model: "claude-sonnet-5-5", status: "running" }).returning();
+    const rows = (await calls()).length;
     const busy = await actions.suggestProductLinksAi();
     assert.equal(!busy.ok && busy.error, "AI önerisi başka bir sekmede sürüyor; bitince sayfayı yenileyin.");
+    assert.equal((await calls()).length, rows, "sürerken günlüğe satır yazılmaz");
     await db.update(s.aiCalls).set({ status: "error" }).where(eq(s.aiCalls.id, running.id));
 
-    const used = (await calls()).filter((c) => c.feature === "eslestirme").length;
-    await db.insert(s.aiCalls).values(Array.from({ length: 20 - used }, () => ({ feature: "eslestirme", model: "claude-sonnet-5-5", status: "ok" as const })));
+    // İki sekme aynı anda: sınır denetimi ve "running" satırı tek işlemde, danışma kilidiyle (ikincisi ilkini görür)
+    const matchCalls = async () => (await calls()).filter((c) => c.feature === "eslestirme").length;
+    await db.insert(s.aiCalls).values(Array.from({ length: 19 - (await matchCalls()) }, () => ({ feature: "eslestirme", model: "claude-sonnet-5-5", status: "ok" as const })));
+    const both = await Promise.all([actions.suggestProductLinksAi(), actions.suggestProductLinksAi()]);
+    assert.equal(both.filter((r) => r.ok && r.data.asked > 0).length, 1, JSON.stringify(both));
+    for (const r of both.filter((x) => !x.ok)) {
+      assert.ok(
+        ["AI önerisi başka bir sekmede sürüyor; bitince sayfayı yenileyin.", "AI önerisinin bugünkü sınırı doldu (20 parti); hammaddeyi elle seçin."].includes(!r.ok ? r.error : ""),
+        JSON.stringify(r),
+      );
+    }
+    assert.equal(await matchCalls(), 20, "sınır aşılmaz: yalnız bir parti daha soruldu");
+
+    // Liste yine değişir (sorulacak ürün var), ama bugünkü sınır dolu
+    await db.insert(s.ingredients).values({ name: "Fındık şurubu", category: "Şurup", unit: "ml", packagePrice: 400, packageSize: 700 });
     const before = (await calls()).length;
     assert.equal((await page()).state, "cap");
     const capped = await actions.suggestProductLinksAi();

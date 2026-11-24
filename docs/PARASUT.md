@@ -530,7 +530,11 @@ ad benzerliği tahmindir, adında hammaddenin adı geçmeyen ürüne ("PINAR TAM
   tasarruftan değerli), JSON şemalı çıktı (`output_config.format`), reddedilirse sunucu tarafında yedek model
   (`fallbacks: "default"`). `thinking`, sıcaklık ve ön doldurma gönderilmez. Partide en çok **20 ürün**, tek istek:
   sayfanın süresi 60 sn (Vercel Hobby) ve 40'lık parti buna sığmayabilirdi; ekran kalan bitene kadar partileri sırayla
-  ister. Sistem istemi (talimat, etkin hammaddeler, örnekler) önbelleğe yazılır: aynı oturumdaki ikinci parti onu
+  ister. (İsteğin ilk hâli "40'lık partiler" diyordu; 20 bilinçli sapma: 40 ürün iki istek ve iki günlük sınır hakkı
+  yer. Canlı ölçüm 40'lık partinin 45 sn'ye sığdığını gösterirse `MATCH_BATCH_SIZE` büyütülür.) Servis çağrısı en çok
+  45 sn sürer ve eylemin başından en geç 48 sn'de kesilir (önündeki okumalar uzarsa çağrının süresi kısalır); kalan
+  süre doğrulama, saklama ve günlüğe. Eylem sayfayı kendisi yenilemez; ekran partiler bitince ayrı istekte yeniler.
+  Sistem istemi (talimat, etkin hammaddeler, örnekler) önbelleğe yazılır: aynı oturumdaki ikinci parti onu
   önbellekten okur (milyon token 0,10 $).
 - **Ne gönderilir:** etkin hammaddelerin kimliği, adı, birimi, kategorisi, paket açıklaması ve birim maliyeti; sistemin
   kendi bağlantılarından en çok **60 örnek** (ürün adı, faturadaki birim, hammadde, çarpan; önce her hammaddeden biri):
@@ -558,8 +562,11 @@ ad benzerliği tahmindir, adında hammaddenin adı geçmeyen ürüne ("PINAR TAM
 - **Maliyet ve sınır:** girdi 2 $, çıktı 10 $ / milyon token; önbellek okuma 0,10 $, 5 dakikalık yazma 2,50 $. 20 ürünlük
   parti ~5 bin token sistem + ~1 bin token ürün + 2–5 bin token yanıt (düşünme dahil): parti başına yaklaşık 0,03–0,06 $.
   Günde en çok **20 parti** (`MATCH_DAILY_CAP`, işletme için); fotoğraf ve fatura okumasının sınırına sayılmaz. Aynı
-  anda tek istek (başka sekmede sürüyorsa bekler). Düğmenin yanında bu ayın ürün önerisi istekleri ve tutarı yazar;
-  Ayarlar › Fotoğraftan okuma'daki "Bu ay" tutarı bunları da sayar.
+  anda tek istek (başka sekmede sürüyorsa "başka bir sekmede sürüyor" der). Sınır ve tek istek denetimi `ai_calls`'ın
+  "running" satırıyla aynı işlemde, danışma kilidiyle yapılır (`src/server/ai/claude.ts`): iki sekme ya da çift basış
+  aynı anda gelse de yalnız biri gider, sınır aşılmaz. 70 sn'den eski "running" satırı (çöken istek) engellemez. Özetteki
+  "uydurma hammadde reddedildi" sayısı doğrulanmış önerilerden sayılır. Düğmenin yanında bu ayın ürün önerisi istekleri
+  ve tutarı yazar; Ayarlar › Fotoğraftan okuma'daki "Bu ay" tutarı bunları da sayar.
 - **Yerelde:** `AI_REPLAY=1 npx next dev` sentetik yanıt verir (istemdeki hammaddelerden: adı geçen hammadde, kargo /
   hizmet "hammadde değil", gerisi "emin değil"). Testler: `tests/urun-eslestirme-ai.test.ts` (doğrulama, öncelik, parti,
   önbellek anahtarı, istek gövdesi, kaynak kuralları), `tests/urun-eslestirme-ai-db.test.ts`

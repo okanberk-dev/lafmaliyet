@@ -72,11 +72,18 @@ export const OKC_TIMEOUTS: AiTimeouts = { timeout: 50_000, maxRetries: 1, totalM
 
 /**
  * Ürün → hammadde önerisinin bir partisi (src/lib/product-match-ai.ts): yanıt ürün başına ~60 token + düşünme; 16 000
- * token sığmazsa yarım kalır ("incomplete"). Tek 50 sn'lik deneme (yazarkasa Z'si gibi): hızlı dönen hata kalan sürede
- * bir kez yeniden denenir; 52 sn'de kesilir, sayfa (60 sn) önerileri saklamaya yetişir
+ * token sığmazsa yarım kalır ("incomplete"). Tek 45 sn'lik deneme (yazarkasa Z'si gibi): hızlı dönen hata kalan sürede
+ * bir kez yeniden denenir; en geç 45 sn'de kesilir. Eylem ayrıca kendi başından geçen süreyi düşer (ai-match.ts
+ * MATCH_BUDGET_MS): öncesindeki okumalar ve sonrasındaki saklama, günlük ve yanıt sayfanın 60 sn'sine sığar
  */
 export const MATCH_MAX_TOKENS = 16_000;
-export const MATCH_TIMEOUTS: AiTimeouts = { timeout: 50_000, maxRetries: 1, totalMs: 52_000 };
+export const MATCH_TIMEOUTS: AiTimeouts = { timeout: 45_000, maxRetries: 1, totalMs: 45_000 };
+/**
+ * Ürün önerisinde "aynı anda tek istek" penceresi (claude.ts exclusiveMs): bundan yeni "running" satırı varsa başka
+ * sekmede öneri sürüyor. En uzun çağrıdan (45 sn) ve sayfanın süresinden (60 sn) geniş: o süreyi aşan satır çökmüş
+ * isteğin
+ */
+export const MATCH_RUNNING_MS = 70_000;
 /** Ürün önerisi isteğinin sabit kısmı (claude.ts extractMatch; testte buildRequest'le biçimi sınanır) */
 export const MATCH_REQUEST = { model: AI_MATCH_MODEL, maxTokens: MATCH_MAX_TOKENS, timeouts: MATCH_TIMEOUTS, cacheSystem: true } as const;
 
@@ -87,6 +94,7 @@ export type AiErrorCode =
   | "off"
   | "cap"
   | "photo-limit"
+  | "busy"
   | "timeout"
   | "connection"
   | "rate"
@@ -142,6 +150,7 @@ const MATCH_TEXT: Partial<Record<AiErrorCode, string>> = {
   refusal: "Bu ürünler için öneri alınamadı; hammaddeyi elle seçin.",
   incomplete: "AI yanıtı yarım kaldı. Yeniden deneyin.",
   invalid: "AI yanıtı anlaşılamadı. Yeniden deneyin ya da hammaddeyi elle seçin.",
+  busy: "AI önerisi başka bir sekmede sürüyor; bitince sayfayı yenileyin.",
 };
 
 export type AiSubject = "foto" | "fatura" | "vardiya" | "eslestirme";
@@ -175,6 +184,8 @@ export function aiErrorText(code: AiErrorCode, cap?: number, subject: AiSubject 
       return `Bugünkü okuma sınırı doldu (${cap ?? "?"}). Fotoğraf eklendi; rakamları elle yazın.`;
     case "photo-limit":
       return "Bu fotoğraf 3 kez okundu; yeni bir fotoğraf çekin ya da elle yazın.";
+    case "busy":
+      return "Başka bir okuma sürüyor; biraz sonra yeniden deneyin.";
     case "timeout":
       return "Okuma çok uzun sürdü. Yeniden deneyin ya da elle yazın.";
     case "connection":
