@@ -498,6 +498,52 @@ html:has([data-scroll-lock]) {
   }
 }
 
+/* ── Panel asistanının düğmesi (src/components/panel/assistant/panel-assistant.tsx; docs/ASISTAN.md) ─────────────
+   --assistant-bottom düğmenin alttan uzaklığı. Telefon ve tablette alt menünün (--mobile-nav-h; hatırlatma kartı açıkken
+   kartın yüksekliği de içinde) üstünde; sayfanın yüzen ekleme düğmesi (Fab, data-fab, 3.5rem) varken onun üstünde;
+   kaydetme çubuğu açıkken çubuğun üstünde. Masaüstünde köşede (1.5rem), hatırlatma kartı açıkken kartın üstünde
+   (--mobile-nav-h lg'de kartın yüksekliğidir). Klavye açıkken düğme gizli. */
+[data-component="app-shell"] {
+  --assistant-bottom: calc(var(--mobile-nav-h) + 0.75rem);
+}
+
+@media (width < 64rem) {
+  [data-component="app-shell"]:has([data-fab]) {
+    --assistant-bottom: calc(var(--mobile-nav-h) + 0.75rem + 3.5rem + 0.75rem);
+  }
+}
+
+@media (width >= 64rem) {
+  [data-component="app-shell"] {
+    --assistant-bottom: calc(var(--mobile-nav-h) + 1.5rem);
+  }
+}
+
+[data-component="app-shell"]:has([data-floating-bar]) {
+  --assistant-bottom: calc(var(--floating-bar-h, 4.5rem) + var(--mobile-nav-h) + 1.75rem);
+}
+
+/* Asistanın penceresi açılırken: telefon ve tablette alttan gelen sayfa (Dialog'unkiyle aynı hareket), masaüstünde
+   köşeden hafifçe yükselir. Hareket azaltılmışsa yok. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-component="panel-assistant"] {
+    animation: assistant-rise 0.2s ease-out;
+  }
+}
+
+@media (width < 64rem) and (prefers-reduced-motion: no-preference) {
+  [data-component="panel-assistant"] {
+    animation: sheet-in 0.36s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+@keyframes assistant-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+
 /* ── Telefonda alttan açılan pencere (Dialog, ConfirmDialog: src/components/ui/dialog.tsx) ── */
 @media (width < 40rem) and (prefers-reduced-motion: no-preference) {
   dialog[data-sheet][open] {

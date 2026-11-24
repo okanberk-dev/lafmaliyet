@@ -319,7 +319,7 @@ cirosuyla zaten girer. Marina'nın basılı fiyat listesinin tarihi sitede tek (
 | `product_prices` | Ekleme yalnız: `product_id` (ürünle silinir), `price_before` (yeni üründe boş), `price`, `source`, `on_site` (panelin değişikliği sitede de yapıldı), `batch_id` (toplu değişiklik ve Tekrar dene'si; geri almanın kendi kimliği), `note` (kuralın özeti, en çok 200 karakter), `changed_by`, `changed_at` |
 | `products.pos_stale_price`, `pos_stale_since` | Kasanın durumu (yukarıda); hesaplama modeli bu sütunları okumaz |
 | `integration_state.menu_site_branch_prices` | Sitenin şube fiyatı satırları (`now`, `at`, `rows`), menü çekmesinde ve şube fiyatı yazımının yanıtıyla ([SITE-MENU.md](SITE-MENU.md)) |
-| `pos_daily_sales.list_prices` | LafPOS gün sonu satırının liste fiyatları (`[{price, qty}]`, eski LafPOS'ta null); migration `0076_sube_fiyati` |
+| `pos_daily_sales.list_prices` | LafPOS gün sonu satırının liste fiyatları (`[{price, qty}]`, eski LafPOS'ta null); migration `0077_sube_fiyati` |
 
 Ayrı bir toplu değişiklik tablosu yok: başlık satırlardan türer. Migration `fiyat_gecmisi` (numarası birleştirmede
 verilir). `npm run db:reset` ürünlerle birlikte geçmişi de siler; tam yedek yeni tabloyu ve sütunları kendiliğinden

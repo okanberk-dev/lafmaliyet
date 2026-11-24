@@ -9,6 +9,8 @@ verisine dayandığını ve hesabı gösterir, ilgili ekranın bağlantısını 
 - **Yalnız yönetici** bağlar; her yeni bağlantı panelde **parolanızla** onaylanır ve size e-posta gelir.
 - Bağlantı **90 gün** geçerlidir; **Hesabım › Bağlı uygulamalar**'dan istediğiniz an kaldırırsınız.
 - Adres: **`https://ladmin.laffogato.net/api/mcp`** (başka adres kullanmayın).
+- Panelin içinde de aynı araçlarla çalışan bir asistan var: her sayfanın sağ altındaki **Panel asistanı** (bağlantı
+  kurmak gerekmez, yalnız yönetici; [ASISTAN.md](ASISTAN.md)).
 
 ## 1. Bağlamak (bir kez)
 

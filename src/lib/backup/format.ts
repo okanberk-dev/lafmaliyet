@@ -98,6 +98,9 @@ export const TABLE_RULES: Record<string, TableRule> = {
   mcp_grants: { skip: MCP_SKIP },
   mcp_tokens: { skip: MCP_SKIP },
   mcp_calls: { skip: MCP_SKIP },
+  // Panel asistanının onay kartları (docs/ASISTAN-ISLEMLER.md): sonuçlanmış kartlar denetim kaydıdır, yedeğe girer.
+  // Bekleyen ve işlenen kart geçicidir (10 dakika): geri yüklenen bir yedekten onaylanabilir bir kart dönmesin
+  assistant_ops: { where: `status NOT IN ('pending', 'running')` },
 };
 
 export interface BackupMigration {

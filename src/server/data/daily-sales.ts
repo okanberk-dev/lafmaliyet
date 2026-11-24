@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, gte, lte } from "drizzle-orm";
+import { and, asc, eq, gte, lte } from "drizzle-orm";
 
 import { getDb, schema as s, type DB } from "@/server/db";
 
@@ -49,4 +49,27 @@ export async function dailyProductSalesFrom(db: DB, from: string, to: string): P
  */
 export async function loadDailyProductSales(from: string, to: string): Promise<DailyProductSale[] | null> {
   return dailyProductSalesFrom(getDb(), from, to);
+}
+
+/** Şubenin günlük satırı ve Faz 2 alanları (asistanın gunluk_satislar aracı) */
+export interface BranchDailySale extends DailyProductSale {
+  /** Satırın liste değeri, indirimden önce (TL, KDV dahil); eski LafPOS göndermez: null */
+  gross: number | null;
+  /** Birleşen satırda ek parça var (EXTRA SHOT, SYRUP, ALTERNATIF SÜT) */
+  isAddon: boolean;
+}
+
+/**
+ * Tek şubenin `from`–`to` satırları (iki uç dahil), güne ve POS adına göre; satır yoksa boş dizi. dailyProductSalesFrom
+ * şubeye bakmaz; bu okuyucu şube koşulunu ve Faz 2 alanlarını ekler (panel asistanı; src/server/assistant-reads).
+ * Geçiş gününden önceki deneme günlerini ayırmak okuyanın işidir (isLafposDay). Yalnız okur.
+ */
+export async function dailyBranchSalesFrom(db: Pick<DB, "select">, from: string, to: string, branchId: string): Promise<BranchDailySale[]> {
+  if (from > to) return [];
+  const t = s.posDailySales;
+  return db
+    .select({ date: t.date, posName: t.posName, productId: t.productId, qty: t.qty, revenue: t.revenue, isService: t.isService, gross: t.gross, isAddon: t.isAddon })
+    .from(t)
+    .where(and(gte(t.date, from), lte(t.date, to), eq(t.branchId, branchId)))
+    .orderBy(asc(t.date), asc(t.posName));
 }

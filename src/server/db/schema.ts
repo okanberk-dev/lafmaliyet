@@ -14,6 +14,7 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 
 // Yalnız tip (derlemede silinir): drizzle-kit'in okuduğu şemaya uygulama kodu girmez
@@ -981,6 +982,11 @@ export const activityLog = pgTable(
     userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
     action: text("action").notNull(),
     detail: text("detail"),
+    /**
+     * Kaydın aracı: "asistan" = kullanıcı panel asistanının onay kartında Onayla'ya bastı (docs/ASISTAN-ISLEMLER.md
+     * › İşlem geçmişi); boş = kişi ekrandan kendisi yaptı. İşlem geçmişi "… (asistan aracılığıyla)" diye gösterir
+     */
+    via: text("via"),
   },
   (t) => [index("activity_log_at_idx").on(t.at)],
 );
@@ -1796,7 +1802,10 @@ export const aiCalls = pgTable(
   {
     id: serial("id").primaryKey(),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-    /** "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya" (yazarak doldurma; okuma sınırına sayılmaz) */
+    /**
+     * "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya" (yazarak doldurma; okuma sınırına sayılmaz) |
+     * "asistan" (panel asistanının sorusu, docs/ASISTAN.md; okuma sınırına sayılmaz, yönetici başına kendi sınırı var)
+     */
     feature: text("feature").notNull(),
     /** İstenen model */
     model: text("model").notNull(),
@@ -1814,7 +1823,7 @@ export const aiCalls = pgTable(
     costUsd: doublePrecision("cost_usd").notNull().default(0),
     /** Yedek model (server-side fallback) çalıştı */
     fallback: boolean("fallback").notNull().default(false),
-    /** İstenen efor ("low" | "medium"); yalnız eforu açıkça seçilen okumalarda (yazarkasa Z'si), ötekilerde boş */
+    /** İstenen efor ("low" | "medium"); eforu açıkça seçilen okumalarda (yazarkasa Z'si) ve asistanda, ötekilerde boş */
     effort: text("effort"),
     ms: integer("ms"),
     stopReason: text("stop_reason"),
@@ -1823,6 +1832,43 @@ export const aiCalls = pgTable(
     error: text("error"),
   },
   (t) => [index("ai_calls_at_idx").on(t.at), index("ai_calls_photo_idx").on(t.photoId)],
+);
+
+/**
+ * Panel asistanının onay kartları (docs/ASISTAN-ISLEMLER.md): asistanın önerdiği her işlem burada bir plan olarak durur.
+ * Sohbet yalnız planı yazar (önizleme: kartın metni ve önceki değerler); asıl eylem yalnız kartın Onayla düğmesinin
+ * sunucu eyleminde çalışır. Onay tek kullanımlıktır: `pending` → `running` geçişi tek koşullu UPDATE'tir (sahibi,
+ * süresi ve durumu birlikte denetlenir), ikinci dokunuş satır bulamaz ve hiçbir şey yazmaz. Kim, ne zaman, hangi kartı
+ * onayladı: kaydın kendisi de denetim kaydıdır.
+ */
+export const assistantOps = pgTable(
+  "assistant_ops",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Aracın adı (src/lib/assistant/op-specs.ts) */
+    tool: text("tool").notNull(),
+    /** Modelin girdisi, zod'dan geçmiş hâli (onayda aynı şemayla yeniden ayrıştırılır) */
+    input: jsonb("input").notNull(),
+    /** Kartın içeriği, sunucunun çözdüğü bağımsız değişkenler ve önizlemede okunan önceki değerler (bayatlık denetimi) */
+    preview: jsonb("preview").notNull(),
+    /** Yazımın şube kapsamı (şube kimliği ya da "hepsi"); şubesiz işte boş */
+    branch: text("branch"),
+    status: text("status", { enum: ["pending", "running", "done", "failed", "unknown", "cancelled", "expired", "undoing", "undone"] })
+      .notNull()
+      .default("pending"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** Eylemin sonucu ya da hata metni (ekranda gösterilen) */
+    result: jsonb("result"),
+    /** Geri al için sunucuda saklanan anlık görüntü (yalnız katalogda geri alması tanımlı işlemlerde) */
+    undo: jsonb("undo"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    doneAt: timestamp("done_at", { withTimezone: true }),
+    undoneAt: timestamp("undone_at", { withTimezone: true }),
+  },
+  (t) => [index("assistant_ops_user_idx").on(t.userId, t.createdAt)],
 );
 
 /**

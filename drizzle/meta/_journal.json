@@ -537,8 +537,15 @@
     {
       "idx": 76,
       "version": "7",
-      "when": 1795541970344,
-      "tag": "0076_sube_fiyati",
+      "when": 1795542175290,
+      "tag": "0076_asistan_islemleri",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1795546012109,
+      "tag": "0077_sube_fiyati",
       "breakpoints": true
     }
   ]

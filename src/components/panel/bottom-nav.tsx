@@ -24,8 +24,9 @@ function opensKeyboard(el: Element | null) {
 /**
  * Dokunmatik ekranda bir yazı alanı odaktayken `<html data-keyboard="open">`: alt menü gizlenir ve
  * --mobile-nav-h 0 olur (globals.css), yüzen çubuklar klavyenin hemen üstüne iner. Görünür alanın yüksekliği
- * `--vvh`, ekran klavyesinin düzenin altından örttüğü pay `--keyboard-inset` olarak yazılır: iOS'ta klavye düzeni
- * küçültmez, alttan açılan pencereler (ui/dialog) bu payla klavyenin üstüne çıkar; Android'de düzen küçülür, pay 0.
+ * `--vvh`, üstünün düzene uzaklığı `--vv-top`, ekran klavyesinin düzenin altından örttüğü pay `--keyboard-inset` olarak
+ * yazılır: iOS'ta klavye düzeni küçültmez, alttan açılan pencereler (ui/dialog) bu payla klavyenin üstüne çıkar, tam
+ * ekran sayfalar (panel asistanı) görünür alana oturur; Android'de düzen küçülür, pay 0.
  *
  * Android'de klavye geri tuşuyla kapanınca odak alanda kalır: görünür alan klavyeyle küçülüp sonra eski boyuna
  * döndüyse klavye kapanmış sayılır (menü geri gelir); alana yeniden dokununca alan yine küçülür ve menü gizlenir.
@@ -55,6 +56,8 @@ function useViewportState() {
       if (vv.scale > 1.01) return;
       base = Math.max(base, vv.height);
       root.style.setProperty("--vvh", `${Math.round(vv.height)}px`);
+      // iOS klavye açılınca görünür alanı yukarı kaydırabilir: tam ekran sayfalar (panel asistanı) bu kadar aşağıdan başlar
+      root.style.setProperty("--vv-top", `${Math.max(0, Math.round(vv.offsetTop))}px`);
       const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       root.style.setProperty("--keyboard-inset", `${Math.round(inset)}px`);
     };
@@ -107,6 +110,7 @@ function useViewportState() {
       vv?.removeEventListener("scroll", measure);
       delete root.dataset.keyboard;
       root.style.removeProperty("--vvh");
+      root.style.removeProperty("--vv-top");
       root.style.removeProperty("--keyboard-inset");
     };
   }, []);

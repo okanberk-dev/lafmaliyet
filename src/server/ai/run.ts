@@ -10,6 +10,9 @@
  * tarafı yedek model yok, `fallbacks` gönderilmez. İkisinde de gönderilmeyenler: `thinking` (iki modelde de düşünme
  * uyarlamalı ve varsayılan; Opus 5.5'te kapatmak 400), temperature / top_p / top_k (400) ve asistan ön doldurması (400).
  * Yapılandırılmış çıktının karmaşıklık sınırını aşan şema (yazarkasa Z'si) `format` olmadan, metinde gider (JSON_REPLY).
+ * Ürün → hammadde önerisi (Paraşüt, docs/PARASUT.md § 5e): claude-sonnet-5-5, efor "medium", yedek model ("default"),
+ * yalnız metin; uzun ve sabit sistem istemi (talimat, hammadde listesi, örnek bağlantılar) önbelleğe yazılır
+ * (`cacheSystem`), aynı oturumdaki ikinci parti onu okur.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -22,16 +25,27 @@ import type { UsageLike } from "./pricing";
 export const AI_MODEL = "claude-opus-5-5";
 /** Fatura okuma: sahibin istediği hızlı ve ucuz model (temiz e-fatura PDF'i için yeter) */
 export const AI_INVOICE_MODEL = "claude-haiku-5-5";
-export type AiModel = typeof AI_MODEL | typeof AI_INVOICE_MODEL;
+/**
+ * Ürün → hammadde önerisi: sahibin seçtiği model ("çok API yemeden Sonnet"). Opus 5.5'in yarı fiyatı, önbellek okuması
+ * 0,10 $; 150 küsur hammadde arasında seçmek ve paket çarpanını hesaplamak için Haiku'dan güvenilir
+ */
+export const AI_MATCH_MODEL = "claude-sonnet-5-5";
+export type AiModel = typeof AI_MODEL | typeof AI_INVOICE_MODEL | typeof AI_MATCH_MODEL;
 /** Reddedilen okuma Anthropic'in önerdiği modelle yeniden denenir; reddedilmezse bedeli yok */
 export const AI_FALLBACK_BETA = "server-side-fallback-2026-07-01";
 /**
  * Modele göre istek: Opus 5.5 yedek modelli ve efor "low" (varsayılanı medium); Haiku 5.5'te sunucu tarafı yedek model
- * yok ("default" reddedileni reddedilmiş bırakır, model listesi 400), efor "medium" (varsayılanı, açıkça)
+ * yok ("default" reddedileni reddedilmiş bırakır, model listesi 400), efor "medium" (varsayılanı, açıkça). Sonnet 5.5
+ * yedek modelli ("default": cyber ve frontier_llm retlerini Claude Sonnet 5'te yeniden dener; dizi biçimi burada yalnız
+ * claude-sonnet-5'i alırdı) ve efor "medium": modelin varsayılanı "high", sınıflandırma için önerilen başlangıç "low";
+ * ama yanlış çarpan birim fiyatı ve bütün reçete maliyetlerini bozar, düşünme payı (paket × boyut hesabı, 150 küsur
+ * hammadde arasında seçim) API tasarrufundan değerli. "high" daha uzun düşünür; 60 sn'lik sayfa süresine sığması
+ * ölçülmedi, denenmez
  */
 const MODEL_REQUEST: Record<AiModel, { fallback: boolean; effort: "low" | "medium" }> = {
   "claude-opus-5-5": { fallback: true, effort: "low" },
   "claude-haiku-5-5": { fallback: false, effort: "medium" },
+  "claude-sonnet-5-5": { fallback: true, effort: "medium" },
 };
 /** Düşünme + JSON için pay; ölçülen çıktı 184–577 token */
 export const AI_MAX_TOKENS = 6000;
@@ -57,12 +71,42 @@ export const OKC_EFFORT: AiEffort = "low";
 export const OKC_MAX_TOKENS = 8000;
 export const OKC_TIMEOUTS: AiTimeouts = { timeout: 50_000, maxRetries: 1, totalMs: 50_000 };
 
-export type AiFeature = "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya";
+/**
+ * Ürün → hammadde önerisinin bir partisi (src/lib/product-match-ai.ts, 10 ürün): yanıt ürün başına ~50–60 token JSON +
+ * düşünme; tahmin parti başına 1,5–4 bin token (canlıda ölçülmedi; ilk partilerde ai_calls'taki ms ve çıktı tokenına
+ * bakılır). 16 000 token sığmazsa yarım kalır ("incomplete"). Tek 45 sn'lik deneme (yazarkasa Z'si gibi): hızlı dönen
+ * hata kalan sürede bir kez yeniden denenir; en geç 45 sn'de kesilir. Kesilen çağrının kullanım bilgisi gelmez:
+ * ai_calls'ta 0 $ görünür ama günlük sınırdan bir parti yer (servis yine ücretlendirebilir). Eylem ayrıca kendi
+ * başından geçen süreyi düşer (ai-match.ts MATCH_BUDGET_MS): öncesindeki okumalar ve sonrasındaki saklama, günlük ve
+ * yanıt sayfanın 60 sn'sine sığar
+ */
+export const MATCH_MAX_TOKENS = 16_000;
+/**
+ * Efor açıkça yazılır (MODEL_REQUEST'teki Sonnet 5.5 eforuyla aynı): ai_calls.effort'a düşer, zaman aşımı sunucu
+ * günlüğüne eforla yazılır (claude.ts); canlıda partinin hangi eforla ne kadar sürdüğü görülür
+ */
+export const MATCH_EFFORT: AiEffort = "medium";
+export const MATCH_TIMEOUTS: AiTimeouts = { timeout: 45_000, maxRetries: 1, totalMs: 45_000 };
+/**
+ * Ürün önerisinde "aynı anda tek istek" penceresi (claude.ts exclusiveMs): bundan yeni "running" satırı varsa başka
+ * sekmede öneri sürüyor. En uzun çağrıdan (45 sn) ve sayfanın süresinden (60 sn) geniş: o süreyi aşan satır çökmüş
+ * isteğin
+ */
+export const MATCH_RUNNING_MS = 70_000;
+/** Ürün önerisi isteğinin sabit kısmı (claude.ts extractMatch; testte buildRequest'le biçimi sınanır) */
+export const MATCH_REQUEST = { model: AI_MATCH_MODEL, effort: MATCH_EFFORT, maxTokens: MATCH_MAX_TOKENS, timeouts: MATCH_TIMEOUTS, cacheSystem: true } as const;
+
+/**
+ * ai_calls.feature: okumalar, vardiya taslağı, "eslestirme" (Paraşüt'te ürün → hammadde önerisi) ve "asistan" (panel
+ * asistanı, src/server/ai/assistant); son ikisi okuma sınırına sayılmaz, kendi günlük sınırları var
+ */
+export type AiFeature = "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya" | "eslestirme" | "asistan";
 export type AiErrorCode =
   | "nokey"
   | "off"
   | "cap"
   | "photo-limit"
+  | "busy"
   | "timeout"
   | "connection"
   | "rate"
@@ -103,8 +147,53 @@ const SHIFT_TEXT: Partial<Record<AiErrorCode, string>> = {
   invalid: "Yanıt anlaşılamadı. Yeniden deneyin ya da kutuları seçerek doldurun.",
 };
 
-/** Personelin göreceği metinler (ayrıntı günlüğe gider, ekrana değil); fatura okumasında ve vardiyada yöneticinin göreceği */
-export function aiErrorText(code: AiErrorCode, cap?: number, subject: "foto" | "fatura" | "vardiya" = "foto"): string {
+/** Panel asistanında yöneticinin göreceği metinler (docs/ASISTAN.md): yanıtın yerine ya da yarım yanıtın altında */
+const ASSISTANT_TEXT: Partial<Record<AiErrorCode, string>> = {
+  nokey: "Asistan bu ortamda kurulu değil (ANTHROPIC_API_KEY yok).",
+  off: "Asistan kapalı: Ayarlar › Fotoğraftan okuma kapalıyken Claude'a hiçbir istek gitmez.",
+  timeout: "Yanıt çok uzun sürdü. Soruyu daraltıp yeniden deneyin.",
+  connection: "Servise ulaşılamadı. İnterneti kontrol edip yeniden deneyin.",
+  rate: "Servis şu an yoğun. Biraz sonra yeniden deneyin.",
+  overloaded: "Servis şu an yanıt vermiyor. Biraz sonra yeniden deneyin.",
+  auth: "Servisin anahtarı geçersiz (ANTHROPIC_API_KEY); Vercel'deki anahtarı kontrol edin.",
+  billing: "Servisin kredisi bitmiş; Anthropic hesabını kontrol edin.",
+  toolarge: "Konuşma çok uzadı; Yeni sohbet başlatıp yeniden sorun.",
+  badrequest: "Servis isteği kabul etmedi; Yeni sohbet başlatıp yeniden deneyin.",
+  refusal: "Bu soruyu yanıtlayamıyorum; başka sözcüklerle sorabilirsiniz.",
+  incomplete: "Yanıt yarım kaldı. Yeniden deneyin.",
+  invalid: "Yanıt anlaşılamadı. Yeniden deneyin.",
+};
+
+/** Ürün → hammadde önerisinde yöneticinin göreceği metinler: her biri bugünkü sezgisel öneriye ve elle seçime yollar */
+const MATCH_TEXT: Partial<Record<AiErrorCode, string>> = {
+  nokey: "AI önerisi bu ortamda kurulu değil; hammaddeyi elle seçin.",
+  off: "AI önerisi kapalı (Ayarlar › Fotoğraftan okuma); hammaddeyi elle seçin.",
+  timeout: "AI yanıtı çok uzun sürdü. Yeniden deneyin ya da hammaddeyi elle seçin.",
+  connection: "Servise ulaşılamadı. İnterneti kontrol edip yeniden deneyin.",
+  rate: "Servis şu an yoğun. Biraz sonra yeniden deneyin.",
+  overloaded: "Servis şu an yanıt vermiyor. Biraz sonra yeniden deneyin.",
+  auth: "Servisin anahtarı geçersiz (ANTHROPIC_API_KEY); hammaddeyi elle seçin.",
+  billing: "Servisin kredisi bitmiş; hammaddeyi elle seçin.",
+  toolarge: "İstek çok büyük; yöneticiye haber verin.",
+  badrequest: "Servis isteği kabul etmedi; hammaddeyi elle seçin.",
+  refusal: "Bu ürünler için öneri alınamadı; hammaddeyi elle seçin.",
+  incomplete: "AI yanıtı yarım kaldı. Yeniden deneyin.",
+  invalid: "AI yanıtı anlaşılamadı. Yeniden deneyin ya da hammaddeyi elle seçin.",
+  busy: "AI önerisi başka bir sekmede sürüyor; bitince sayfayı yenileyin.",
+};
+
+export type AiSubject = "foto" | "fatura" | "vardiya" | "eslestirme" | "asistan";
+
+/**
+ * Personelin göreceği metinler (ayrıntı günlüğe gider, ekrana değil); fatura okumasında, vardiyada ve ürün önerisinde
+ * yöneticinin göreceği; panel asistanında da yöneticinin
+ */
+export function aiErrorText(code: AiErrorCode, cap?: number, subject: AiSubject = "foto"): string {
+  if (subject === "asistan") {
+    if (code === "cap") return `Bugünkü soru sınırı doldu (${cap ?? "?"}); yarın yeniden açılır.`;
+    const t = ASSISTANT_TEXT[code];
+    if (t) return t;
+  }
   if (subject === "fatura") {
     if (code === "cap") return `Bugünkü okuma sınırı doldu (${cap ?? "?"}); faturayı açıp bakın.`;
     const t = INVOICE_TEXT[code];
@@ -113,6 +202,11 @@ export function aiErrorText(code: AiErrorCode, cap?: number, subject: "foto" | "
   if (subject === "vardiya") {
     if (code === "cap") return `Yazarak doldurmanın bugünkü sınırı doldu (${cap ?? "?"}); kutuları seçerek doldurun.`;
     const t = SHIFT_TEXT[code];
+    if (t) return t;
+  }
+  if (subject === "eslestirme") {
+    if (code === "cap") return `AI önerisinin bugünkü sınırı doldu (${cap ?? "?"} parti); hammaddeyi elle seçin.`;
+    const t = MATCH_TEXT[code];
     if (t) return t;
   }
   switch (code) {
@@ -124,6 +218,8 @@ export function aiErrorText(code: AiErrorCode, cap?: number, subject: "foto" | "
       return `Bugünkü okuma sınırı doldu (${cap ?? "?"}). Fotoğraf eklendi; rakamları elle yazın.`;
     case "photo-limit":
       return "Bu fotoğraf 3 kez okundu; yeni bir fotoğraf çekin ya da elle yazın.";
+    case "busy":
+      return "Başka bir okuma sürüyor; biraz sonra yeniden deneyin.";
     case "timeout":
       return "Okuma çok uzun sürdü. Yeniden deneyin ya da elle yazın.";
     case "connection":
@@ -177,6 +273,11 @@ export type ExtractRequest<T> = AiInput & {
   timeouts?: AiTimeouts;
   /** Toplam süre (varsayılan `timeouts.totalMs`): faturada belge indirmesi de aynı sayfa süresine sığmalı */
   totalMs?: number;
+  /**
+   * Sistem istemi önbelleğe yazılsın (5 dakika; ürün önerisi): uzun ve partiden partiye aynı olan önek (talimat,
+   * hammadde listesi, örnek bağlantılar) ikinci partide önbellekten okunur. Değişen kısım (ürünler) görev metninde
+   */
+  cacheSystem?: boolean;
 };
 
 /** Yanıtın kullandığımız kısmı (SDK'nın BetaMessage'ı buna uyar) */
@@ -214,7 +315,9 @@ export const JSON_REPLY = (schema: Record<string, unknown>) =>
 /**
  * İsteğin kendisi (testte biçimi sınanır). Fotoğraf isteği alan alan ve sırasıyla canlıda denenen hâlidir; fatura
  * isteğinde yedek model alanları yok, belge görselin yerinde (PDF, metinden önce). Girdisiz istekte (vardiyayı yazarak
- * doldurma) içerik yalnız görev metnidir. Şema sınırı aşarsa `format` yok, şema görev metninde (JSON_REPLY).
+ * doldurma, ürün önerisi) içerik yalnız görev metnidir. Şema sınırı aşarsa `format` yok, şema görev metninde
+ * (JSON_REPLY). `cacheSystem`: sistem istemi tek metin bloğu, sonunda önbellek işareti (sabit önek önde, değişen ürünler
+ * sonda, işaretten sonra)
  */
 export function buildRequest<T>(req: ExtractRequest<T>): { params: CreateParams; options: CreateOptions } {
   const model = req.model ?? AI_MODEL;
@@ -232,7 +335,7 @@ export function buildRequest<T>(req: ExtractRequest<T>): { params: CreateParams;
     max_tokens: req.maxTokens ?? AI_MAX_TOKENS,
     ...(m.fallback ? { betas: [AI_FALLBACK_BETA], fallbacks: "default" as const } : {}),
     output_config: structured ? { effort, format: { type: "json_schema", schema } } : { effort },
-    system: req.system,
+    system: req.cacheSystem ? [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }] : req.system,
     messages: [{ role: "user", content: [...(input ? [input] : []), { type: "text" as const, text: structured ? req.task : `${req.task}\n\n${JSON_REPLY(schema)}` }] }],
   };
   const t = req.timeouts ?? AI_TIMEOUTS;

@@ -1,22 +1,27 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
-import { and, count, eq, gte, ne, sql } from "drizzle-orm";
+import { and, count, eq, gte, ne, notInArray, sql } from "drizzle-orm";
 import type { z } from "zod";
 
+import { ASSISTANT_DAILY_CAP } from "@/lib/assistant/protocol";
 import { OCR_MODEL, photoModelsOf, type PhotoModels } from "@/lib/photo-read/models";
 import { MAX_READS_PER_PHOTO, type ReadingState } from "@/lib/photo-rules";
+import { MATCH_DAILY_CAP } from "@/lib/product-match-ai";
 import { todayTR } from "@/lib/reminders";
 import { SHIFT_DRAFT_DAILY_CAP } from "@/lib/vardiya-taslak";
-import { getDb, schema as s } from "@/server/db";
+import { getDb, schema as s, type DB } from "@/server/db";
 
+import { ASSISTANT_EFFORT, ASSISTANT_MODEL, type AssistantClient, type AssistantOutcome } from "./assistant/loop";
 import { costUsd } from "./pricing";
-import { replayClient, replayEnabled } from "./replay";
+import { replayAssistantClient, replayClient, replayEnabled } from "./replay";
 import {
   AI_INVOICE_MODEL,
   AI_MODEL,
   aiAlertLog,
   aiErrorText,
+  MATCH_REQUEST,
+  MATCH_RUNNING_MS,
   runExtraction,
   type AiClient,
   type AiDocumentType,
@@ -26,18 +31,19 @@ import {
   type AiImageType,
   type AiInput,
   type AiModel,
+  type AiSubject,
   type AiTimeouts,
 } from "./run";
 
 /*
  * Fotoğraftan ve faturadan okumanın kapısı (Claude): anahtar var mı, ayar açık mı, bugünkü sınır doldu mu, fotoğraf kaç
- * kez okundu. Her çağrı ai_calls'a yazılır (önce "running": aynı anda gelen iki okuma sınırı bir kez aşabilir, çökme de
- * kalır); görüntü, PDF ve istem hiçbir yere yazılmaz. Anahtar (ANTHROPIC_API_KEY) yalnız sunucuda: sayfalar yalnız
- * aiStatus().state alır. Anahtar yoksa (yerelde, önizlemelerde) fotoğraf yine eklenir, rakamlar elle yazılır
- * (docs/FOTOGRAF.md); fatura okunmaz, kart bugünkü gibi kalır (docs/FATURA-OKUMA.md).
+ * kez okundu. Her çağrı ai_calls'a yazılır (önce "running", kapılarla aynı işlemde ve sınırın kilidiyle: aynı anda gelen
+ * iki istek sınırı aşamaz; çökme de kalır); görüntü, PDF ve istem hiçbir yere yazılmaz. Anahtar (ANTHROPIC_API_KEY)
+ * yalnız sunucuda: sayfalar yalnız aiStatus().state alır. Anahtar yoksa (yerelde, önizlemelerde) fotoğraf yine eklenir,
+ * rakamlar elle yazılır (docs/FOTOGRAF.md); fatura okunmaz, kart bugünkü gibi kalır (docs/FATURA-OKUMA.md).
  */
 
-export { AI_INVOICE_MODEL, AI_MODEL, type AiErrorCode, type AiFeature } from "./run";
+export { AI_INVOICE_MODEL, AI_MATCH_MODEL, AI_MODEL, type AiErrorCode, type AiFeature } from "./run";
 
 export interface AiSettings {
   enabled: boolean;
@@ -98,25 +104,36 @@ const dayStart = (now: Date) => new Date(`${todayTR(now)}T00:00:00+03:00`);
 const monthStart = (now: Date) => new Date(`${todayTR(now).slice(0, 7)}-01T00:00:00+03:00`);
 
 /** Vardiyayı yazarak doldurma günlükte bu türle durur; okuma sınırına sayılmaz, kendi sınırı vardır */
-const SHIFT_FEATURE: AiFeature = "vardiya";
+const SHIFT_FEATURE = "vardiya" satisfies AiFeature;
+/** Paraşüt'te ürün → hammadde önerisi (parti başına bir satır); okuma sınırına sayılmaz, kendi sınırı vardır */
+const MATCH_FEATURE = "eslestirme" satisfies AiFeature;
+/** Kendi günlük sınırı olan türler: fotoğraf ve fatura okumasının sınırına sayılmaz (kasadaki okumayı kesmesin) */
+const OWN_CAP: Partial<Record<AiFeature, number>> = { [SHIFT_FEATURE]: SHIFT_DRAFT_DAILY_CAP, [MATCH_FEATURE]: MATCH_DAILY_CAP };
+const OWN_CAP_FEATURES = Object.keys(OWN_CAP);
+/** Panel asistanı (docs/ASISTAN.md): okuma sınırına sayılmaz, yönetici başına kendi sınırı vardır (ASSISTANT_DAILY_CAP) */
+const ASSISTANT_FEATURE = "asistan" satisfies AiFeature;
+
+/** Sorgu yapan: bağlantı havuzu ya da kapıların işlemi (extract) */
+type Q = Pick<DB, "select">;
 
 /**
- * Okumalar (fotoğraf ve fatura): günlük sınır bunları sayar. Vardiya taslakları sayılmaz (kasadaki okumayı kesmesin);
- * kodla okuma (OCR_MODEL, yapay zekâ değil, ücretsiz) da sayılmaz
+ * Okumalar (fotoğraf ve fatura): günlük sınır bunları sayar. Kendi sınırı olan türler (vardiya taslakları, ürün
+ * önerileri) ve asistanın soruları sayılmaz; kodla okuma (OCR_MODEL, yapay zekâ değil, ücretsiz) da sayılmaz
  */
-async function readingsSince(since: Date): Promise<number> {
-  const [row] = await getDb()
+async function readingsSince(since: Date, q: Q = getDb()): Promise<number> {
+  const [row] = await q
     .select({ n: count() })
     .from(s.aiCalls)
-    .where(and(gte(s.aiCalls.at, since), ne(s.aiCalls.feature, SHIFT_FEATURE), ne(s.aiCalls.model, OCR_MODEL)));
+    .where(and(gte(s.aiCalls.at, since), notInArray(s.aiCalls.feature, [...OWN_CAP_FEATURES, ASSISTANT_FEATURE]), ne(s.aiCalls.model, OCR_MODEL)));
   return row?.n ?? 0;
 }
 
-async function shiftDraftsSince(since: Date): Promise<number> {
-  const [row] = await getDb()
+/** Kendi sınırı olan türün çağrıları */
+async function featureCallsSince(feature: AiFeature, since: Date, q: Q = getDb()): Promise<number> {
+  const [row] = await q
     .select({ n: count() })
     .from(s.aiCalls)
-    .where(and(gte(s.aiCalls.at, since), eq(s.aiCalls.feature, SHIFT_FEATURE)));
+    .where(and(gte(s.aiCalls.at, since), eq(s.aiCalls.feature, feature)));
   return row?.n ?? 0;
 }
 
@@ -135,12 +152,121 @@ export async function aiStatus(now = new Date()): Promise<{ state: AiState; used
  */
 export async function shiftDraftStatus(now = new Date()): Promise<{ state: AiState; usedToday: number; cap: number }> {
   if (!aiConfigured()) return { state: "nokey", usedToday: 0, cap: SHIFT_DRAFT_DAILY_CAP };
-  const [settings, usedToday] = await Promise.all([loadAiSettings(), shiftDraftsSince(dayStart(now))]);
+  const [settings, usedToday] = await Promise.all([loadAiSettings(), featureCallsSince(SHIFT_FEATURE, dayStart(now))]);
   const state: AiState = !settings.enabled ? "off" : usedToday >= SHIFT_DRAFT_DAILY_CAP ? "cap" : "on";
   return { state, usedToday, cap: SHIFT_DRAFT_DAILY_CAP };
 }
 
-/** Ayarlar kartı: bu ayın çağrıları ve tutarı (dolar; vardiya taslakları dahil), bugünün okumaları */
+/** Yöneticinin bugünkü asistan soruları (hata ve ret dahil: her soru bir satır) */
+async function assistantCallsSince(userId: number, since: Date): Promise<number> {
+  const [row] = await getDb()
+    .select({ n: count() })
+    .from(s.aiCalls)
+    .where(and(gte(s.aiCalls.at, since), eq(s.aiCalls.feature, ASSISTANT_FEATURE), eq(s.aiCalls.userId, userId)));
+  return row?.n ?? 0;
+}
+
+/**
+ * Panel asistanı (docs/ASISTAN.md): soru sorulabilir mi. Anahtar ve Ayarlar › Fotoğraftan okuma anahtarı okumayla
+ * ortaktır (kapalıyken Claude'a hiçbir istek gitmez); günlük sınır yönetici başınadır (ASSISTANT_DAILY_CAP)
+ */
+export async function assistantStatus(userId: number, now = new Date()): Promise<{ state: AiState; usedToday: number; cap: number }> {
+  if (!aiConfigured()) return { state: "nokey", usedToday: 0, cap: ASSISTANT_DAILY_CAP };
+  const [settings, usedToday] = await Promise.all([loadAiSettings(), assistantCallsSince(userId, dayStart(now))]);
+  const state: AiState = !settings.enabled ? "off" : usedToday >= ASSISTANT_DAILY_CAP ? "cap" : "on";
+  return { state, usedToday, cap: ASSISTANT_DAILY_CAP };
+}
+
+let liveAssistant: AssistantClient | null = null;
+
+/** Asistanın istemcisi: geliştirmede kayıtlı yanıtlar (AI_REPLAY=1), yoksa gerçek SDK (akışlı) */
+export function assistantClient(): AssistantClient {
+  if (replayEnabled()) return replayAssistantClient();
+  if (!liveAssistant) {
+    const anthropic = new Anthropic();
+    liveAssistant = { beta: { messages: { stream: (params, options) => anthropic.beta.messages.stream(params, options) } } };
+  }
+  return liveAssistant;
+}
+
+/**
+ * Sorunun satırı ("running"; çökme de kalır): sayım ve ekleme tek işlemde, yönetici başına danışma kilidiyle
+ * (pg_advisory_xact_lock): aynı anda gelen sorular günlük sınırı aşamaz. Sınır dolduysa satır açılmaz, null döner.
+ */
+export async function startAssistantCall(userId: number, cap: number = ASSISTANT_DAILY_CAP, now: Date = new Date()): Promise<number | null> {
+  return getDb().transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('ai_calls.asistan'), ${userId})`);
+    const [row] = await tx
+      .select({ n: count() })
+      .from(s.aiCalls)
+      .where(and(gte(s.aiCalls.at, dayStart(now)), eq(s.aiCalls.feature, ASSISTANT_FEATURE), eq(s.aiCalls.userId, userId)));
+    if ((row?.n ?? 0) >= cap) return null;
+    const [call] = await tx
+      .insert(s.aiCalls)
+      .values({ feature: ASSISTANT_FEATURE, model: ASSISTANT_MODEL, effort: ASSISTANT_EFFORT, status: "running", userId, photoId: null })
+      .returning({ id: s.aiCalls.id });
+    return call.id;
+  });
+}
+
+/**
+ * Satırı kapatır: maliyet, token, süre, bitiş nedeni, çağrı ve araç sayısı. Sorunun, yanıtın ve araç sonuçlarının
+ * METNİ yazılmaz. Anahtar, kredi ve reddedilen istek hataları sunucu günlüğüne de düşer (API'nin hata metniyle)
+ */
+export async function finishAssistantCall(callId: number, outcome: AssistantOutcome, ms: number): Promise<void> {
+  const c = outcome.cost;
+  const status = outcome.error
+    ? outcome.error.code === "refusal"
+      ? "refusal"
+      : "error"
+    : outcome.done === "end" || outcome.done === "limit"
+      ? "ok"
+      : "incomplete";
+  if (!c.priceKnown) console.warn("[asistan] fiyatı bilinmeyen model", outcome.servedModel);
+  if (outcome.error) {
+    const alert = aiAlertLog(ASSISTANT_FEATURE, { ...outcome.error, requestId: outcome.requestId });
+    if (alert) console.error("[asistan]", alert);
+  }
+  await getDb()
+    .update(s.aiCalls)
+    .set({
+      status,
+      errorCode: outcome.error?.code ?? null,
+      error: outcome.error?.detail.slice(0, 300) ?? null,
+      servedModel: outcome.servedModel,
+      stopReason: outcome.done === "aborted" || outcome.done === "deadline" ? outcome.done : outcome.stopReason,
+      requestId: outcome.requestId,
+      ms,
+      inputTokens: c.inputTokens,
+      outputTokens: c.outputTokens,
+      cacheReadTokens: c.cacheReadTokens,
+      cacheWriteTokens: c.cacheWriteTokens,
+      costUsd: c.costUsd,
+      fallback: c.fallback,
+      result: { apiCalls: outcome.apiCalls, toolCalls: outcome.toolCalls },
+    })
+    .where(eq(s.aiCalls.id, callId));
+}
+
+/**
+ * Paraşüt'te "AI ile öner" düğmesi için: kullanılabilir mi, bugün kaç parti soruldu, bu ayın ürün önerisi çağrıları ve
+ * tutarı. Anahtar ve Ayarlar › Fotoğraftan okuma anahtarı okumayla ortaktır; günlük sınır ayrıdır (MATCH_DAILY_CAP)
+ */
+export async function matchSuggestStatus(now = new Date()): Promise<{ state: AiState; usedToday: number; cap: number; monthCalls: number; monthUsd: number }> {
+  if (!aiConfigured()) return { state: "nokey", usedToday: 0, cap: MATCH_DAILY_CAP, monthCalls: 0, monthUsd: 0 };
+  const [settings, usedToday, [month]] = await Promise.all([
+    loadAiSettings(),
+    featureCallsSince(MATCH_FEATURE, dayStart(now)),
+    getDb()
+      .select({ n: count(), usd: sql<number>`coalesce(sum(${s.aiCalls.costUsd}), 0)`.mapWith(Number) })
+      .from(s.aiCalls)
+      .where(and(gte(s.aiCalls.at, monthStart(now)), eq(s.aiCalls.feature, MATCH_FEATURE))),
+  ]);
+  const state: AiState = !settings.enabled ? "off" : usedToday >= MATCH_DAILY_CAP ? "cap" : "on";
+  return { state, usedToday, cap: MATCH_DAILY_CAP, monthCalls: month?.n ?? 0, monthUsd: month?.usd ?? 0 };
+}
+
+/** Ayarlar kartı: bu ayın çağrıları ve tutarı (dolar; vardiya taslakları, ürün önerileri ve asistan dahil), bugünün okumaları */
 export async function aiUsageSummary(now = new Date()): Promise<{ monthCalls: number; monthUsd: number; today: number }> {
   const [[month], today] = await Promise.all([
     getDb()
@@ -159,7 +285,8 @@ export type AiResult<T> =
 const STATUS: Partial<Record<AiErrorCode, "refusal" | "incomplete" | "invalid">> = { refusal: "refusal", incomplete: "incomplete", invalid: "invalid" };
 
 interface ExtractCall<T> {
-  feature: AiFeature;
+  /** Okuma ya da vardiya taslağı (asistanın kendi yolu var: startAssistantCall) */
+  feature: Exclude<AiFeature, "asistan">;
   userId: number;
   photoId: number | null;
   system: string;
@@ -170,6 +297,13 @@ interface ExtractCall<T> {
   effort?: AiEffort;
   timeouts?: AiTimeouts;
   stored?: (data: T) => T;
+  /** Sistem istemi önbelleğe yazılır (run.ts; yalnız ürün önerisi) */
+  cacheSystem?: boolean;
+  /**
+   * Aynı anda tek istek (yalnız ürün önerisi): bu türün bu kadar ms'den yeni "running" satırı varsa istek gitmez
+   * ("busy"). Pencere en uzun çağrıdan geniş tutulur; çöküp "running" kalan satır pencere geçince engellemez
+   */
+  exclusiveMs?: number;
   /** Yalnız testte: sahte istemci (canlı yapay zekâ yok); verilmezse gerçek istemci ya da geliştirmede kayıtlı yanıtlar */
   client?: AiClient;
 }
@@ -207,31 +341,69 @@ export async function extractText<T>(req: Omit<ExtractCall<T>, "feature" | "phot
   return extract({ ...req, feature: SHIFT_FEATURE, photoId: null, model: AI_MODEL, keepResult: false });
 }
 
+/**
+ * Paraşüt'te bekleyen ürünlerin bir partisi için hammadde önerisi (Claude Sonnet 5.5, yalnız metin; src/lib/product-match-ai.ts,
+ * src/server/parasut/ai-match.ts). Kapılar okumayla aynı (anahtar, Ayarlar › Fotoğraftan okuma), günlük sınır ayrı
+ * (MATCH_DAILY_CAP, parti başına bir çağrı). Sistem istemi (hammadde listesi, örnekler) önbelleğe yazılır. Günlüğe yalnız
+ * maliyet satırı düşer (efor, süre, token, tutar): istem ve yanıt ai_calls'a yazılmaz (doğrulanmış öneriler
+ * integration_state'te). Zaman aşımı sunucu günlüğüne eforla yazılır
+ */
+export async function extractMatch<T>(
+  req: Omit<ExtractCall<T>, "feature" | "photoId" | "effort" | "timeouts" | "maxTokens" | "cacheSystem" | "exclusiveMs"> & {
+    /** Toplam süre (varsayılan MATCH_TIMEOUTS.totalMs): eylemin başından geçen süre düşülür (parasut/ai-match.ts) */
+    totalMs?: number;
+  },
+): Promise<AiResult<T>> {
+  return extract({ ...req, ...MATCH_REQUEST, feature: MATCH_FEATURE, photoId: null, keepResult: false, exclusiveMs: MATCH_RUNNING_MS });
+}
+
+const SUBJECT: Partial<Record<AiFeature, AiSubject>> = { fatura: "fatura", [SHIFT_FEATURE]: "vardiya", [MATCH_FEATURE]: "eslestirme" };
+const TAG: Record<AiSubject, string> = { foto: "[foto] okuma", fatura: "[fatura] okuma", vardiya: "[vardiya] taslak", eslestirme: "[eslestirme] öneri", asistan: "[asistan] soru" };
+
 async function extract<T>(req: ExtractCall<T> & AiInput & { model: AiModel; totalMs?: number; keepResult: boolean }): Promise<AiResult<T>> {
-  const subject = req.feature === "fatura" ? "fatura" : req.feature === SHIFT_FEATURE ? "vardiya" : "foto";
-  const tag = subject === "vardiya" ? "[vardiya] taslak" : `[${subject}] okuma`;
+  const subject: AiSubject = SUBJECT[req.feature] ?? "foto";
+  const tag = TAG[subject];
   const gate = (code: AiErrorCode, cap?: number): AiResult<T> => ({ ok: false, code, message: aiErrorText(code, cap, subject), callId: null });
   if (!aiConfigured()) return gate("nokey");
   const settings = await loadAiSettings();
   if (!settings.enabled) return gate("off");
   const db = getDb();
-  if (subject === "vardiya") {
-    if ((await shiftDraftsSince(dayStart(new Date()))) >= SHIFT_DRAFT_DAILY_CAP) return gate("cap", SHIFT_DRAFT_DAILY_CAP);
-  } else if ((await readingsSince(dayStart(new Date()))) >= settings.dailyCap) return gate("cap", settings.dailyCap);
-  if (req.photoId !== null) {
-    // Kodla okuma (OCR_MODEL) fotoğraf başına okuma sınırına sayılmaz
-    const [row] = await db
-      .select({ n: count() })
-      .from(s.aiCalls)
-      .where(and(eq(s.aiCalls.photoId, req.photoId), ne(s.aiCalls.model, OCR_MODEL)));
-    if ((row?.n ?? 0) >= MAX_READS_PER_PHOTO) return gate("photo-limit");
-  }
-  // Efor yalnız açıkça seçilen okumada yazılır (yazarkasa Z'si; docs/planlar/okc-z.md §6.2): canlıda hangi okumanın hangi
-  // eforla yapıldığı ve tutarı görülsün. Ötekilerde boş (modelin varsayılanı)
-  const [call] = await db
-    .insert(s.aiCalls)
-    .values({ feature: req.feature, model: req.model, effort: req.effort ?? null, status: "running", userId: req.userId, photoId: req.photoId })
-    .returning({ id: s.aiCalls.id });
+  const ownCap = OWN_CAP[req.feature];
+  // Kapılar ve "running" satırı tek işlemde, sınırın danışma kilidiyle (kendi sınırı olan tür ya da okumalar): aynı anda
+  // gelen iki istek sıraya girer, ikincisi ilkinin satırını görür; günlük sınır aşılmaz, "aynı anda tek istek"
+  // (exclusiveMs) iki sekmeyi birden geçirmez. Kilit yalnız bu kısa işlemde tutulur, servis çağrısı işlemin dışında
+  const opened = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`ai-sinir:${ownCap !== undefined ? req.feature : "okuma"}`}))`);
+    const since = dayStart(new Date());
+    if (ownCap !== undefined) {
+      if ((await featureCallsSince(req.feature, since, tx)) >= ownCap) return gate("cap", ownCap);
+    } else if ((await readingsSince(since, tx)) >= settings.dailyCap) return gate("cap", settings.dailyCap);
+    if (req.photoId !== null) {
+      // Kodla okuma (OCR_MODEL) fotoğraf başına okuma sınırına sayılmaz
+      const [row] = await tx
+        .select({ n: count() })
+        .from(s.aiCalls)
+        .where(and(eq(s.aiCalls.photoId, req.photoId), ne(s.aiCalls.model, OCR_MODEL)));
+      if ((row?.n ?? 0) >= MAX_READS_PER_PHOTO) return gate("photo-limit");
+    }
+    if (req.exclusiveMs) {
+      const [row] = await tx
+        .select({ n: count() })
+        .from(s.aiCalls)
+        .where(and(eq(s.aiCalls.feature, req.feature), eq(s.aiCalls.status, "running"), gte(s.aiCalls.at, new Date(Date.now() - req.exclusiveMs))));
+      if ((row?.n ?? 0) > 0) return gate("busy");
+    }
+    // Efor yalnız açıkça seçilen istekte yazılır (yazarkasa Z'si, docs/planlar/okc-z.md §6.2; ürün önerisi, run.ts
+    // MATCH_EFFORT): canlıda hangi isteğin hangi eforla yapıldığı, ne kadar sürdüğü ve tutarı görülsün. Ötekilerde boş
+    // (modelin varsayılanı)
+    const [row] = await tx
+      .insert(s.aiCalls)
+      .values({ feature: req.feature, model: req.model, effort: req.effort ?? null, status: "running", userId: req.userId, photoId: req.photoId })
+      .returning({ id: s.aiCalls.id });
+    return row;
+  });
+  if ("ok" in opened) return opened;
+  const call = opened;
   const t0 = Date.now();
   const client = req.client ?? (replayEnabled() ? replayClient(req.feature) : liveClient());
   const res = await runExtraction(client, req);

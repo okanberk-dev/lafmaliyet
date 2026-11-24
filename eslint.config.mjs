@@ -18,6 +18,8 @@ const eslintConfig = defineConfig([
     "src/components/arc/**",
     // Design Lab beceri şablonları (.claude/skills/design-lab): kullanılırken src/app/design-lab/ altına kopyalanır
     ".claude/**",
+    // Panel asistanının bilgi tabanı: docs/*.md'den üretilir (npm run asistan:bilgi)
+    "src/lib/assistant/knowledge-data.ts",
   ]),
 ]);
 

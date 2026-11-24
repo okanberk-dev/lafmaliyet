@@ -1,0 +1,117 @@
+import Link from "next/link";
+import { Fragment, type ReactNode } from "react";
+
+import { parseMarkdown, type Block, type Inline } from "@/lib/assistant/markdown";
+import { cn } from "@/lib/utils";
+
+/**
+ * Asistan yanıtının ekranı: src/lib/assistant/markdown.ts'in ağacı React öğeleriyle çizilir. HTML'e çevrilmez,
+ * `dangerouslySetInnerHTML` yok; her metni React kaçışlar. Bağlantı yalnız ayrıştırıcının izin verdiği adrese:
+ * panelin ekranı (Link, aynı sekme) ya da https (yeni sekme, noopener). `onNavigate`: panel bağlantısına tıklanınca
+ * (telefonda pencere kapanır, sayfa görünsün).
+ */
+
+function inlines(nodes: Inline[], onNavigate?: () => void): ReactNode[] {
+  return nodes.map((n, i) => {
+    switch (n.t) {
+      case "text":
+        return <Fragment key={i}>{n.v}</Fragment>;
+      case "br":
+        return <br key={i} />;
+      case "code":
+        return (
+          <code key={i} className="rounded-md bg-note px-1 py-0.5 font-mono text-[0.92em]">
+            {n.v}
+          </code>
+        );
+      case "strong":
+        return (
+          <strong key={i} className="font-semibold text-ink">
+            {inlines(n.c, onNavigate)}
+          </strong>
+        );
+      case "em":
+        return <em key={i}>{inlines(n.c, onNavigate)}</em>;
+      case "link":
+        return n.external ? (
+          <a key={i} href={n.href} target="_blank" rel="noopener noreferrer nofollow" className="font-medium text-ink underline decoration-ink-quiet underline-offset-2 hover:decoration-ink">
+            {inlines(n.c, onNavigate)}
+          </a>
+        ) : (
+          <Link key={i} href={n.href} onClick={onNavigate} className="font-medium text-ink underline decoration-ink-quiet underline-offset-2 hover:decoration-ink">
+            {inlines(n.c, onNavigate)}
+          </Link>
+        );
+    }
+  });
+}
+
+const ALIGN = { left: "text-left", right: "text-right", center: "text-center" } as const;
+
+function block(b: Block, key: number, onNavigate?: () => void): ReactNode {
+  switch (b.t) {
+    case "p":
+      return <p key={key}>{inlines(b.c, onNavigate)}</p>;
+    case "h":
+      return (
+        <p key={key} className={cn("font-semibold text-ink", b.level === 1 && "text-[15px]")}>
+          {inlines(b.c, onNavigate)}
+        </p>
+      );
+    case "ul":
+      return (
+        <ul key={key} className="list-disc space-y-1 pl-5 marker:text-ink-quiet">
+          {b.items.map((it, i) => (
+            <li key={i}>{inlines(it, onNavigate)}</li>
+          ))}
+        </ul>
+      );
+    case "ol":
+      return (
+        <ol key={key} start={b.start} className="list-decimal space-y-1 pl-5 marker:text-ink-mute">
+          {b.items.map((it, i) => (
+            <li key={i}>{inlines(it, onNavigate)}</li>
+          ))}
+        </ol>
+      );
+    case "table":
+      return (
+        <div key={key} className="-mx-1 overflow-x-auto overscroll-x-contain px-1">
+          <table className="w-full border-collapse text-[13px] tabular-nums">
+            <thead>
+              <tr>
+                {b.head.map((c, i) => (
+                  <th key={i} className={cn("border-b border-line-strong px-2 py-1.5 text-left font-semibold whitespace-nowrap text-ink-soft", b.align[i] && ALIGN[b.align[i]!])}>
+                    {inlines(c, onNavigate)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {b.rows.map((r, i) => (
+                <tr key={i} className="border-b border-line last:border-0">
+                  {r.map((c, k) => (
+                    <td key={k} className={cn("px-2 py-1.5 align-top", b.align[k] && ALIGN[b.align[k]!])}>
+                      {inlines(c, onNavigate)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    case "pre":
+      return (
+        <pre key={key} className="overflow-x-auto rounded-xl bg-note px-3 py-2 font-mono text-[12.5px] leading-5 whitespace-pre">
+          {b.v}
+        </pre>
+      );
+    case "hr":
+      return <hr key={key} className="border-line-strong" />;
+  }
+}
+
+export function MarkdownView({ text, onNavigate, className }: { text: string; onNavigate?: () => void; className?: string }) {
+  return <div className={cn("space-y-2 text-[14px] leading-6 break-words text-ink", className)}>{parseMarkdown(text).map((b, i) => block(b, i, onNavigate))}</div>;
+}

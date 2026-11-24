@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 // Arc UI belirteçleri yalnız `.arc` kabının içinde (src/components/arc/README.md)
 import "@/components/arc/foundation.css";
+import { PanelAssistantGate } from "@/components/panel/assistant/assistant-gate";
 import { Sidebar, SidebarSkeleton } from "@/components/panel/sidebar";
 import { requireUser } from "@/server/auth/dal";
 import { branchScope } from "@/server/branch-scope";
@@ -54,6 +55,10 @@ export default function PanelLayout({ children }: LayoutProps<"/panel">) {
           {children}
         </div>
       </main>
+      {/* Panel asistanı (yalnız yönetici; docs/ASISTAN.md): sağ altta düğme, yeri globals.css --assistant-bottom */}
+      <Suspense fallback={null}>
+        <PanelAssistantGate />
+      </Suspense>
     </div>
   );
 }
