@@ -11,10 +11,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { scenarioBreakEvenItems } from "../src/app/panel/analiz/breakdowns";
 import { branchBreakdown } from "../src/lib/branch-breakdown";
 import { branchPnlEntry } from "../src/lib/branches";
-import { createModel, stopajKey } from "../src/lib/calc/engine";
-import { fixedCostsForMonth } from "../src/lib/calc/insights";
+import { createModel, staffCost, stopajKey } from "../src/lib/calc/engine";
+import { breakEvenOf, dashboard, fixedCostsForMonth } from "../src/lib/calc/insights";
 import type { Dataset, ExpenseCategory, ExpenseEntry, FixedExpense, Invoice, Month, Staff } from "../src/lib/calc/types";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -207,4 +208,46 @@ test("Tümü'nün şube kırılımı: şubeler + 'İşletme geneli' sütunu = T�
   close(tuzla.revenue + marina.revenue + shared.revenue, tumu.revenue, "ciro");
   const all = of(ALL);
   close(shared.expenses, all[0].shared.total + all[1].shared.total, "işletme geneli Tümü'nün toplamı");
+});
+
+test("şube seçiliyken 'Excel temeli' net kâr ve başabaş işletme genelini saymaz (kârın temeliyle aynı); Tümü değişmez", () => {
+  // İnceleme bulgusu 3: Marina görünümü, Excel'in sabit giderlerinin hepsi işletme geneli, Alper (35.000 net + yemek kartı).
+  // Şubenin sabit gideri yalnız Alper'in 57.065'i; işletme geneli (bilgi) Tümü'de bir kez sayılır
+  const sharedFixed = excel.fixedExpenses.map((f) => ({ ...f, branchId: null }));
+  const monthly: ExpenseCategory = { ...reklam, monthly: true };
+  const ds = (id: "marina" | "tuzla", months: Month[]): Dataset => ({
+    ...view(id, months),
+    salesLines: excel.salesLines,
+    fixedExpenses: sharedFixed,
+    expenseCategories: [monthly],
+  });
+  const marina = createModel(ds("marina", marinaMonths));
+  const tuzla = createModel(ds("tuzla", tuzlaMonths));
+  const all = createModel({ ...ALL, salesLines: excel.salesLines, fixedExpenses: sharedFixed, expenseCategories: [monthly] });
+  const alper = staffCost(staff[0], marina.settings).total;
+  close(alper, 57_065.29, "Alper'in işveren maliyeti (§6)");
+  close(fixedCostsForMonth(marina, "2026-11").standard, alper, "kârın temeli");
+  close(marina.fixedStandardTotalFor("2026-11"), alper, "Excel temeli: şubenin standart sabit gideri 57.065 (351.760 değil)");
+  // Başabaş: şubenin sabit gideri + şubenin kendi her ay girilen harcaması (3.000; işletme geneli 4.000 ve bağlı fatura yok)
+  const be = breakEvenOf(marina, "2026-11");
+  close(be.standard, alper, "başabaşın standart sabit gideri");
+  close(be.expensesTotal, 3_000, "başabaşın aylık harcaması: şubenin kendi kaydı");
+  close(be.fixed, alper + 3_000, "başabaşın sabit gideri");
+  // Genel bakış'ın "Excel temeli" net kârı aynı sabit giderle
+  const d = dashboard(marina, "2026-09");
+  close(d.fixedStandardTotal, alper, "Genel bakış: standart sabit gider");
+  const t = d.theoretical!;
+  close(t.netProfitStandard, t.grossProfit - t.discountsNet - alper, "Excel temeli net kâr");
+  // Analiz'in başabaş dökümü: işletme geneli kalem yok, toplam başabaşın sabit gideri ("Diğer" düzeltmesi yok)
+  const items = scenarioBreakEvenItems(marina, "2026-11");
+  assert.equal(items.some((r) => sharedFixed.some((f) => r.key === `fixed:${f.id}`)), false, "Analiz: işletme geneli kalem yok");
+  assert.equal(items.some((r) => r.key === "fixed:other"), false, "Analiz: döküm başabaşın sabit gideriyle tutar");
+  close(items.reduce((a, r) => a + r.amount, 0), be.fixed, "Analiz: toplam");
+  // Tümü değişmez: işletme geneli bir kez; Marina + Tuzla + işletme geneli = Tümü
+  const excluded = marina.fixedStandardSharedFor("2026-11");
+  close(excluded, tuzla.fixedStandardSharedFor("2026-11"), "iki şubede aynı işletme geneli");
+  close(alper + excluded, 351_760.46, "inceleme senaryosu: eski toplam 351.760");
+  close(marina.fixedStandardTotalFor("2026-11") + tuzla.fixedStandardTotalFor("2026-11") + excluded, all.fixedStandardTotalFor("2026-11"), "Tümü");
+  assert.equal(all.fixedStandardSharedFor("2026-11"), 0, "Tümü'de dışarıda kalan yok");
+  close(breakEvenOf(all, "2026-11").expensesTotal, 3_000 + 4_000 + 5_000 + 6_000, "Tümü'nün aylık harcaması hepsi");
 });

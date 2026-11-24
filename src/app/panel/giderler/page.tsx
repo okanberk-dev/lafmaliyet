@@ -62,11 +62,13 @@ async function ExpensesContent() {
   const nameOf = new Map(all.map((b) => [b.id, b.name]));
   const st = model.settings;
   const cur = model.currentMonth;
-  // Bu ayın kalemleri ve tutarları (bitmiş / başlamamış kalemler toplama girmez)
+  // Bu ayın kalemleri ve tutarları (bitmiş / başlamamış kalemler toplama girmez). Şube seçiliyken işletme geneli kalemler
+  // toplama ve başabaşa girmez (sahibin kararı 4; model.fixedOwnInMonth), özette bilgi olarak yazılır
+  const own = model.fixedOwnInMonth(cur);
   const bySection: SectionTotal[] = FIXED_SECTIONS.map((sec) => ({
     key: sec.key,
     label: sec.label,
-    total: model.activeFixed.filter((f) => f.section === sec.key).reduce((a, f) => a + fixedMonthly(f, st), 0) + (sec.key === "personel" ? model.personnel.total : 0),
+    total: own.filter((f) => f.section === sec.key).reduce((a, f) => a + fixedMonthly(f, st), 0) + (sec.key === "personel" ? model.personnel.total : 0),
   }));
   // Başabaş Genel bakış ve Analiz'le aynı kuraldan (breakEvenOf, denetim E-59): her ay girilen harcamalar dahil, son
   // kapanmış online ayın brüt kârı düşülmüş
@@ -119,6 +121,7 @@ async function ExpensesContent() {
         breakEvenOnline={be.onlineCover ? { month: monthLabel(be.onlineCover.month), amount: be.onlineCover.grossProfit } : null}
         monthlyExpenses={be.expenses.map((x) => ({ name: x.cat.name, amount: x.amount, from: x.from }))}
         next={Math.abs(nextTotal - total) >= 1 ? { month: monthLabel(nextMonth), total: nextTotal } : null}
+        shared={model.ds.branchView ? { branch: model.ds.branchView.name, amount: model.fixedStandardSharedFor(cur) } : null}
       />
 
       <FixedExpensesClient

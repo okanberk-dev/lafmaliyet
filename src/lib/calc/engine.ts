@@ -1869,9 +1869,26 @@ export function createModel(ds: Dataset) {
     return p;
   }
 
-  /** Standart bir ayın sabit gider toplamı (personel dahil), o ayın kalemleri ve tutarlarıyla */
+  /** Kalem şube seçiliyken işletme geneli mi (şubesi boş; Faz 5, sahibin kararı 4): şubenin kârına ve başabaşına girmez */
+  const sharedInView = (f: Pick<FixedExpense, "branchId">) => Boolean(ds.branchView) && (f.branchId ?? null) === null;
+  /**
+   * O ayda şubenin hesabına giren sabit giderler: "Tümü"de hepsi, şube seçiliyken işletme geneli kalemler hariç
+   * (Gelir-gider'in bölümleri gibi; başabaş, "Excel temeli", Analiz ve Sabit giderler'in özeti bunlarla)
+   */
+  function fixedOwnInMonth(month: string): FixedExpense[] {
+    return ds.branchView ? fixedInMonth(month).filter((f) => !sharedInView(f)) : fixedInMonth(month);
+  }
+  /**
+   * Standart bir ayın sabit gider toplamı (personel dahil), o ayın kalemleri ve tutarlarıyla (Excel SabitGiderToplam).
+   * Şube seçiliyken işletme geneli kalemler girmez (sahibin kararı 4, inceleme bulgusu 3): şubenin "Excel temeli" net
+   * kârı ve başabaşı kârın temeliyle aynı kalemlerden; dışarıda kalan fixedStandardSharedFor
+   */
   function fixedStandardTotalFor(month: string): number {
-    return personnelFor(month).total + sum(fixedInMonth(month).map((f) => fixedMonthly(f, st) + rentStopajMonthly(f, month)));
+    return personnelFor(month).total + sum(fixedOwnInMonth(month).map((f) => fixedMonthly(f, st) + rentStopajMonthly(f, month)));
+  }
+  /** Şube seçiliyken standart sabit gidere girmeyen işletme geneli kalemlerin toplamı (stopajıyla; bilgi). "Tümü"de 0 */
+  function fixedStandardSharedFor(month: string): number {
+    return sum(fixedInMonth(month).filter(sharedInView).map((f) => fixedMonthly(f, st) + rentStopajMonthly(f, month)));
   }
 
   /** Kalemin aylık kira stopajı (resmi brüt × kira stopajı oranı; resmi kirası yoksa 0): standart sabit gidere dahil */
@@ -2232,7 +2249,16 @@ export function createModel(ds: Dataset) {
   function monthlyExpensePlan(month: string): MonthlyExpensePlan[] {
     const cats = expenseCats.filter((c) => c.monthly && c.section !== "mal");
     if (!cats.length) return [];
-    const amountsOf = (m: string) => new Map(expenseAmounts(m).map((x) => [x.cat.id, x]));
+    // Şube seçiliyken şubenin kendi kayıtları: şubesi boş kayıtlar ve bağlı faturalar işletme geneli (Gelir-gider'in
+    // harcama hücresi gibi; inceleme bulgusu 3)
+    const amountsOf = (m: string) =>
+      new Map(
+        expenseAmounts(m).map((x) => {
+          if (!ds.branchView) return [x.cat.id, x];
+          const own = expenseOwnByMonth.get(m)?.get(x.cat.id) ?? 0;
+          return [x.cat.id, { ...x, entries: own, invoices: 0, invoicesPayable: 0, total: own }];
+        }),
+      );
     const own = amountsOf(month);
     const out: MonthlyExpensePlan[] = [];
     const window: string[] = [];
@@ -3156,6 +3182,10 @@ export function createModel(ds: Dataset) {
     /** Bu ayın standart sabit gider toplamı; belirli bir ay için fixedStandardTotalFor(ay) */
     fixedStandardTotal,
     fixedStandardTotalFor,
+    /** Şube seçiliyken standart sabit gidere girmeyen işletme geneli kalemler (bilgi); "Tümü"de 0 */
+    fixedStandardSharedFor,
+    /** O ayın şubenin hesabına giren sabit giderleri ("Tümü"de hepsi; şube seçiliyken işletme geneli hariç) */
+    fixedOwnInMonth,
     rentStopajMonthly,
     stockSheet,
     /** Malzemenin ay sonu FIFO katmanları ve havuzu, Ayarlar'daki başlangıç ayıyla */

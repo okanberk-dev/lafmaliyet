@@ -591,6 +591,11 @@ export interface BreakEven {
   onlineCover: { month: string; grossProfit: number } | null;
   /** Kasanın karşılaması gereken: max(0, fixed − online brüt kâr) */
   toCover: number;
+  /**
+   * Şube seçiliyken başabaşa girmeyen işletme geneli standart sabit gider (bilgi; model.fixedStandardSharedFor). Şubenin
+   * kârı gibi başabaşı da işletme genelini saymaz (sahibin kararı 4); "Tümü"de 0
+   */
+  shared: number;
   /** Başabaş aylık ciro (KDV dahil); brüt kâr oranı sıfır ya da eksiyse null */
   monthly: number | null;
   /** Başabaş günlük ciro (KDV dahil): aylık ÷ Ayarlar'daki ayda açık gün */
@@ -624,6 +629,7 @@ export function breakEvenOf(model: Model, month: string): BreakEven {
     fixed,
     onlineCover,
     toCover,
+    shared: model.fixedStandardSharedFor(month),
     monthly,
     daily: monthly === null ? null : monthly / acikGun,
     acikGun,
@@ -779,7 +785,7 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   // Başabaşın sabit gideriyle aynı kalemler: personel, sabit giderler ve her ay girilen harcamalar (toplam breakEven.fixed)
   const topExpenses = [
     { name: "Personel (maaş + SGK)", amount: model.personnelFor(month).total },
-    ...model.fixedInMonth(month).flatMap((f) => [
+    ...model.fixedOwnInMonth(month).flatMap((f) => [
       { name: f.name, amount: fixedMonthly(f, st) },
       ...(model.rentStopajMonthly(f, month) > 0 ? [{ name: `${f.name} stopajı`, amount: model.rentStopajMonthly(f, month) }] : []),
     ]),

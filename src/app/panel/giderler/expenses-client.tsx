@@ -255,6 +255,7 @@ export function FixedSummary({
   breakEvenOnline = null,
   monthlyExpenses = [],
   next,
+  shared = null,
 }: {
   total: number;
   /** Toplamın ayı, ör. "Ekim 2026" */
@@ -271,6 +272,8 @@ export function FixedSummary({
   monthlyExpenses?: { name: string; amount: number; from: string }[];
   /** Gelecek ay toplam değişiyorsa (planlı zam, biten kalem): o ayın toplamı */
   next: { month: string; total: number } | null;
+  /** Şube seçiliyken toplama ve başabaşa girmeyen işletme geneli kalemler (sahibin kararı 4); "Tümü"de null */
+  shared?: { branch: string; amount: number } | null;
 }) {
   return (
     <Card className="mb-6 p-5">
@@ -286,6 +289,12 @@ export function FixedSummary({
             <CountUp value={total} />
           </p>
           <p className="mt-1 text-[13px] text-ink-mute">{acikGun} açık gün varsayımıyla · KDV hariç</p>
+          {shared && shared.amount > 0 ? (
+            <p className="mt-1.5 max-w-xl text-[13px] text-pretty text-ink-soft">
+              {shared.branch} seçili: işletme geneli kalemler (<span className="font-medium whitespace-nowrap text-ink tabular">{tl(shared.amount)}</span>, bilgi) bu
+              toplama ve başabaşa girmez; Tümü&apos;de bir kez sayılır.
+            </p>
+          ) : null}
           {monthlyExpenses.length ? (
             <p className="mt-1.5 max-w-xl text-[13px] text-pretty text-ink-soft">
               Başabaşa ayrıca her ay girilen harcamalar girer:{" "}
