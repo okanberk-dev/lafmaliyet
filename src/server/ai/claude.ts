@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { and, count, eq, gte, ne, sql } from "drizzle-orm";
 import type { z } from "zod";
 
+import { OCR_MODEL, photoModelsOf, type PhotoModels } from "@/lib/photo-read/models";
 import { MAX_READS_PER_PHOTO, type ReadingState } from "@/lib/photo-rules";
 import { todayTR } from "@/lib/reminders";
 import { SHIFT_DRAFT_DAILY_CAP } from "@/lib/vardiya-taslak";
@@ -42,21 +43,34 @@ export interface AiSettings {
   enabled: boolean;
   /** Günde en çok okuma (0: hiç) */
   dailyCap: number;
+  /**
+   * LafPOS gününün gün sonu fotoğrafını okuyan modeller (src/lib/photo-read/models.ts): önce ucuz, gerekirse bir kez güçlü.
+   * Kayıtta yoksa ya da bilinmeyen modelse sabitler (Claude Haiku 5.5 / Claude Opus 5.5)
+   */
+  photoModels: PhotoModels;
 }
 
-export const DEFAULT_AI_SETTINGS: AiSettings = { enabled: true, dailyCap: 40 };
+export const DEFAULT_AI_SETTINGS: AiSettings = { enabled: true, dailyCap: 40, photoModels: photoModelsOf(undefined) };
 const SETTINGS_KEY = "ai.settings";
 
-export async function loadAiSettings(): Promise<AiSettings> {
+async function storedAiSettings(): Promise<Record<string, unknown>> {
   const [row] = await getDb().select().from(s.integrationState).where(eq(s.integrationState.key, SETTINGS_KEY)).limit(1);
-  const v = (row?.value as Partial<AiSettings> | undefined) ?? {};
+  const v = row?.value;
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
+export async function loadAiSettings(): Promise<AiSettings> {
+  const v = (await storedAiSettings()) as Partial<AiSettings>;
   return {
     enabled: typeof v.enabled === "boolean" ? v.enabled : DEFAULT_AI_SETTINGS.enabled,
     dailyCap: typeof v.dailyCap === "number" && Number.isInteger(v.dailyCap) && v.dailyCap >= 0 ? v.dailyCap : DEFAULT_AI_SETTINGS.dailyCap,
+    photoModels: photoModelsOf(v),
   };
 }
 
-export async function saveAiSettings(value: AiSettings): Promise<void> {
+/** Verilen alanları kayda yazar; verilmeyenler (ör. okuma modelleri) kalır */
+export async function saveAiSettings(patch: Partial<AiSettings>): Promise<void> {
+  const value = { ...(await storedAiSettings()), ...patch };
   await getDb()
     .insert(s.integrationState)
     .values({ key: SETTINGS_KEY, value })
@@ -86,12 +100,15 @@ const monthStart = (now: Date) => new Date(`${todayTR(now).slice(0, 7)}-01T00:00
 /** Vardiyayı yazarak doldurma günlükte bu türle durur; okuma sınırına sayılmaz, kendi sınırı vardır */
 const SHIFT_FEATURE: AiFeature = "vardiya";
 
-/** Okumalar (fotoğraf ve fatura): günlük sınır bunları sayar. Vardiya taslakları sayılmaz (kasadaki okumayı kesmesin) */
+/**
+ * Okumalar (fotoğraf ve fatura): günlük sınır bunları sayar. Vardiya taslakları sayılmaz (kasadaki okumayı kesmesin);
+ * kodla okuma (OCR_MODEL, yapay zekâ değil, ücretsiz) da sayılmaz
+ */
 async function readingsSince(since: Date): Promise<number> {
   const [row] = await getDb()
     .select({ n: count() })
     .from(s.aiCalls)
-    .where(and(gte(s.aiCalls.at, since), ne(s.aiCalls.feature, SHIFT_FEATURE)));
+    .where(and(gte(s.aiCalls.at, since), ne(s.aiCalls.feature, SHIFT_FEATURE), ne(s.aiCalls.model, OCR_MODEL)));
   return row?.n ?? 0;
 }
 
@@ -129,7 +146,7 @@ export async function aiUsageSummary(now = new Date()): Promise<{ monthCalls: nu
     getDb()
       .select({ n: count(), usd: sql<number>`coalesce(sum(${s.aiCalls.costUsd}), 0)`.mapWith(Number) })
       .from(s.aiCalls)
-      .where(gte(s.aiCalls.at, monthStart(now))),
+      .where(and(gte(s.aiCalls.at, monthStart(now)), ne(s.aiCalls.model, OCR_MODEL))),
     readingsSince(dayStart(now)),
   ]);
   return { monthCalls: month?.n ?? 0, monthUsd: month?.usd ?? 0, today };
@@ -153,6 +170,8 @@ interface ExtractCall<T> {
   effort?: AiEffort;
   timeouts?: AiTimeouts;
   stored?: (data: T) => T;
+  /** Yalnız testte: sahte istemci (canlı yapay zekâ yok); verilmezse gerçek istemci ya da geliştirmede kayıtlı yanıtlar */
+  client?: AiClient;
 }
 
 /**
@@ -160,8 +179,8 @@ interface ExtractCall<T> {
  * Doğrulanmış okuma ai_calls.result'ta saklanır (karşılaştırmalar istemcinin gönderdiğine değil buna bakar);
  * `stored` saklanacak hâlini verir (ör. fişte vergi no düşer). Sonuç fotoğrafla birlikte silinir.
  */
-export async function extractImage<T>(req: ExtractCall<T> & { image: { bytes: Uint8Array; mediaType: AiImageType } }): Promise<AiResult<T>> {
-  return extract({ ...req, model: AI_MODEL, keepResult: true });
+export async function extractImage<T>(req: ExtractCall<T> & { image: { bytes: Uint8Array; mediaType: AiImageType }; model?: AiModel }): Promise<AiResult<T>> {
+  return extract({ ...req, model: req.model ?? AI_MODEL, keepResult: true });
 }
 
 /**
@@ -200,7 +219,11 @@ async function extract<T>(req: ExtractCall<T> & AiInput & { model: AiModel; tota
     if ((await shiftDraftsSince(dayStart(new Date()))) >= SHIFT_DRAFT_DAILY_CAP) return gate("cap", SHIFT_DRAFT_DAILY_CAP);
   } else if ((await readingsSince(dayStart(new Date()))) >= settings.dailyCap) return gate("cap", settings.dailyCap);
   if (req.photoId !== null) {
-    const [row] = await db.select({ n: count() }).from(s.aiCalls).where(eq(s.aiCalls.photoId, req.photoId));
+    // Kodla okuma (OCR_MODEL) fotoğraf başına okuma sınırına sayılmaz
+    const [row] = await db
+      .select({ n: count() })
+      .from(s.aiCalls)
+      .where(and(eq(s.aiCalls.photoId, req.photoId), ne(s.aiCalls.model, OCR_MODEL)));
     if ((row?.n ?? 0) >= MAX_READS_PER_PHOTO) return gate("photo-limit");
   }
   // Efor yalnız açıkça seçilen okumada yazılır (yazarkasa Z'si; docs/planlar/okc-z.md §6.2): canlıda hangi okumanın hangi
@@ -210,7 +233,7 @@ async function extract<T>(req: ExtractCall<T> & AiInput & { model: AiModel; tota
     .values({ feature: req.feature, model: req.model, effort: req.effort ?? null, status: "running", userId: req.userId, photoId: req.photoId })
     .returning({ id: s.aiCalls.id });
   const t0 = Date.now();
-  const client = replayEnabled() ? replayClient(req.feature) : liveClient();
+  const client = req.client ?? (replayEnabled() ? replayClient(req.feature) : liveClient());
   const res = await runExtraction(client, req);
   const ms = Date.now() - t0;
   const cost = res.usage ? costUsd(res.usage, req.model) : null;

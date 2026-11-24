@@ -2,6 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 
 import { BRANCH_ID_MAX, namedTill } from "@/lib/branches";
@@ -25,6 +26,7 @@ import { blockedAccounts, sendableRecipients } from "@/server/notify/recipients"
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
 import { attachLafposDayPhotoCore, setLafposBankPosCore } from "@/server/lafpos/foto";
+import { sendPhotoEmail } from "@/server/lafpos/gun-sonu";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 
 import { logActivity } from "./log";
@@ -162,6 +164,9 @@ export async function attachLafposDayPhoto(input: z.input<typeof lafposPhotoSche
     const refusal = await staffBranchRefusal(me, data.branchId);
     if (refusal) throw new UserError(refusal);
     const res = await attachLafposDayPhotoCore(getDb(), me, data);
+    // Fotoğraf LafPOS'tan farklıysa (ya da kodla okunup "yönetici baksın") yöneticiye satır satır e-posta, yanıttan sonra;
+    // düşerse günlük iş yeniden dener. Personele hiçbir şey gitmez
+    after(() => sendPhotoEmail(getDb(), data.date).catch((e) => console.error("[lafpos] fotoğraf e-postası", data.date, e)));
     refresh();
     return res;
   });

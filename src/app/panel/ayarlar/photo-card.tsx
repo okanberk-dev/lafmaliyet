@@ -3,6 +3,7 @@ import { ScanText } from "lucide-react";
 import { CardContent } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
 import { formatBytes } from "@/lib/documents";
+import { modelName } from "@/lib/photo-read/models";
 import { KEEP_DAYS } from "@/lib/photo-rules";
 import { aiConfigured, aiUsageSummary, loadAiSettings } from "@/server/ai/claude";
 import { photoStorage, photoStorageStats } from "@/server/storage/photos";
@@ -68,6 +69,10 @@ export async function PhotoReadingCard() {
             tech="Bu ortamda ANTHROPIC_API_KEY yok; okuma kapalı. Canlıda Vercel ortam değişkenine eklenir (docs/FOTOGRAF.md)."
           />
         )}
+        <p className="text-[13px] leading-5 text-pretty text-ink-mute">
+          LafPOS gününün gün sonu fotoğrafı önce {modelName(settings.photoModels.cheap)} ile okunur; okunuş eksik, tutarsız ya da LafPOS&apos;tan farklıysa bir kez{" "}
+          {modelName(settings.photoModels.strong)} ile. Yapay zekâ kapalı, kurulu değil ya da sınırdaysa fotoğraf panelde kodla okunur (OCR; Anthropic&apos;e gitmez).
+        </p>
         {storageLine ? <p className="text-[13px] leading-5 text-pretty text-ink-mute">{storageLine}</p> : null}
         {stats && stats.bytes >= STORAGE_WARN_BYTES ? <Notice tone="warn" size="sm" risk="veri" title="Fotoğraf deposu 1 GB sınırına yaklaşıyor" /> : null}
         {configured ? (
