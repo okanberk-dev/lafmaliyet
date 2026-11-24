@@ -1,6 +1,7 @@
 import { CircleAlert } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 
+import { PasswordInput, type PasswordInputProps } from "@/components/ui/password-input";
 import { cn } from "@/lib/utils";
 
 /*
@@ -23,6 +24,13 @@ export const authButton =
 /** Altı çizili yeşil bağlantı ya da bağlantı gibi düğme */
 export const authLink = "cursor-pointer font-semibold text-[#00754A] dark:text-good underline underline-offset-2 hover:text-[#006241] dark:hover:text-good/85";
 
+/** Alanın içindeki etiket: boşken ortada, odaklanınca ya da doluyken yukarı kayar (alanın `peer` kardeşi) */
+const floatingLabel =
+  "pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-base text-black/60 transition-all duration-150 peer-focus:top-[1.05rem] peer-focus:text-xs peer-focus:font-semibold peer-focus:text-[#00754A] dark:peer-focus:text-good peer-[:not(:placeholder-shown)]:top-[1.05rem] peer-[:not(:placeholder-shown)]:text-xs peer-[:not(:placeholder-shown)]:font-semibold";
+
+/** Parola kutusunun göz düğmesi kartta: yuvarlak, 44 px, alanın sağ iç kenarında */
+export const authToggle = "right-1 size-11 rounded-full text-black/60 hover:bg-black/[0.04] hover:text-black focus-visible:ring-[#00754A]/50 dark:focus-visible:ring-good/50";
+
 /**
  * Etiketi alanın içinde duran çerçeveli alan: boşken etiket ortada, odaklanınca ya da doluyken yukarı kayar
  * (`placeholder=" "` ve :placeholder-shown ile; tarayıcının otomatik doldurması da etiketi kaldırır).
@@ -31,14 +39,33 @@ export function FloatingField({ id, label, trailing, className, ...props }: Comp
   return (
     <div className="relative">
       <input id={id} placeholder=" " className={cn(authInput, "peer pt-5 pb-1", trailing ? "pr-12" : null, className)} {...props} />
-      <label
-        htmlFor={id}
-        className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-base text-black/60 transition-all duration-150 peer-focus:top-[1.05rem] peer-focus:text-xs peer-focus:font-semibold peer-focus:text-[#00754A] dark:peer-focus:text-good peer-[:not(:placeholder-shown)]:top-[1.05rem] peer-[:not(:placeholder-shown)]:text-xs peer-[:not(:placeholder-shown)]:font-semibold"
-      >
+      <label htmlFor={id} className={floatingLabel}>
         {label}
       </label>
       {trailing ? <div className="absolute top-1/2 right-1 -translate-y-1/2">{trailing}</div> : null}
     </div>
+  );
+}
+
+/**
+ * Etiketi içinde duran parola alanı (FloatingField'ın parola hâli): panelin parola kutusu (ui/password-input.tsx),
+ * kartın çerçevesiyle. Göz düğmesi kendi içinde; gizliyken parolanın karakterleri DOM'a yazılmaz.
+ */
+export function FloatingPasswordField({ id, label, className, ...props }: Omit<PasswordInputProps, "plain" | "after" | "placeholder"> & { id: string; label: string }) {
+  return (
+    <PasswordInput
+      id={id}
+      plain
+      placeholder=" "
+      className={cn(authInput, "peer pt-5 pb-1", className)}
+      toggleClassName={authToggle}
+      after={
+        <label htmlFor={id} className={floatingLabel}>
+          {label}
+        </label>
+      }
+      {...props}
+    />
   );
 }
 

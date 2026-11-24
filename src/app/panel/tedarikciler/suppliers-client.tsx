@@ -7,6 +7,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
+import { TlCounter } from "@/components/ui/animated-counter";
 import { Badge } from "@/components/ui/badge";
 import { toastUnreachable, tryAction } from "@/components/ui/action-error";
 import { Button, buttonClass, IconButton } from "@/components/ui/button";
@@ -21,7 +22,7 @@ import { ActiveFilters, BIG_FIELDS, ChoiceList, FilterButton, SHEET_BTN, type Ac
 import { Notice } from "@/components/ui/notice";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
-import { dateTR, money, num, tl } from "@/lib/format";
+import { dateTR, money, num } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { dismissCashOut } from "@/server/actions/cari";
 import { unhideSupplier } from "@/server/actions/suppliers";
@@ -60,16 +61,9 @@ export interface KasaPendingRow {
   name: string;
 }
 
-/** Sunucu sayfasının özet rakamları (sayaç); biçim işlevi sunucudan geçemediği için adıyla */
+/** Sunucu sayfasının özet rakamları (kayan rakamlı sayaç); biçim işlevi sunucudan geçemediği için adıyla */
 export function CountUp({ value, format = "tl" }: { value: number; format?: "tl" | "num" }) {
-  return (
-    <>
-      <span className="sr-only">{format === "tl" ? tl(value) : num(value)}</span>
-      <span aria-hidden="true">
-        <AnimatedNumber value={value} format={format === "tl" ? (v) => tl(v) : (v) => num(v)} className="tabular" />
-      </span>
-    </>
-  );
+  return <TlCounter value={value} kind={format} className="tabular" />;
 }
 
 /** Ödenmemişlerin en yakın vadesi: "3 gün gecikti" kırmızı, SOON_DAYS içi turuncu */
