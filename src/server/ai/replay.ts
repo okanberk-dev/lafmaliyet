@@ -6,7 +6,8 @@
  * scripts/foto-eval/make-images.py'nin `yazarkasa-z.jpg`'sidir); başka bir fotoğrafa türün olağan yanıtı döner.
  * Yazarkasa Z bölümünün (`kasa-okc`; geçişte eski sayfanın `kasa-pos`'u da buraya okunur) yanıtları
  * tests/fixtures/foto/okc*.json'dur ve sentetiktir (adım b2'de gerçek yanıtlarla değişir). Fatura okuması (tests/fixtures/fatura/*.json) istemdeki kalem adına göre seçilir; bunlar sentetiktir
- * (yerelde anahtar yok, canlı istek yapılmadı). Görsel ve belge hiçbir yere gönderilmez.
+ * (yerelde anahtar yok, canlı istek yapılmadı). Görsel ve belge hiçbir yere gönderilmez. Panel asistanının yanıtı da
+ * sentetiktir ve akışlıdır (replayAssistantClient): araç gerçekten çalışır, yanıt aracın sonucundan kısa bir özettir.
  */
 
 import { readFileSync } from "node:fs";
@@ -14,6 +15,8 @@ import { join } from "node:path";
 
 import { imageSize } from "@/lib/photo-rules";
 
+import type { AssistantClient, AssistantParams } from "./assistant/loop";
+import { scriptedMessage, scriptedStream } from "./assistant/scripted";
 import type { AiClient, AiFeature, AiMessage } from "./run";
 
 export function replayEnabled(env: Record<string, string | undefined> = process.env): boolean {
@@ -109,7 +112,7 @@ interface Recorded {
 }
 
 /** Türe ve görsele göre kayıtlı yanıt (fotoğraflar) */
-export function replayAnswer(feature: Exclude<AiFeature, "fatura" | "vardiya">, size: { width: number; height: number } | null): Recorded {
+export function replayAnswer(feature: Exclude<AiFeature, "fatura" | "vardiya" | "asistan">, size: { width: number; height: number } | null): Recorded {
   const image = size ? IMAGES[`${size.width}x${size.height}`] : undefined;
   const key = image ? `${feature}:${image}` : feature;
   const usage = { input_tokens: 4000, output_tokens: 300, iterations: [{ type: "message", model: null, input_tokens: 4000, output_tokens: 300 }] };
@@ -147,8 +150,8 @@ export function replayShiftAnswer(task: string): Recorded {
   return { json: { assignments, unclear: "Kayıtlı yanıt (geliştirme): yazdığınız metin okunmadı." }, usage, ms: 900, model: "claude-opus-5-5" };
 }
 
-/** Kayıtlı yanıtı gerçek bir çağrı gibi (kısa bir beklemeyle) döndüren istemci */
-export function replayClient(feature: AiFeature): AiClient {
+/** Kayıtlı yanıtı gerçek bir çağrı gibi (kısa bir beklemeyle) döndüren istemci (asistanınki akışlı: replayAssistantClient) */
+export function replayClient(feature: Exclude<AiFeature, "asistan">): AiClient {
   return {
     beta: {
       messages: {
@@ -165,4 +168,70 @@ export function replayClient(feature: AiFeature): AiClient {
       },
     },
   };
+}
+
+// ---------------------------------------------------------------- Panel asistanı
+
+const shiftDay = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+/** Sorudaki sözcüğe göre kayıtlı yanıtın çağıracağı araç ve girdisi (sıra önemli: ilk eşleşen) */
+const ASSISTANT_ROUTES: [RegExp, string, (today: string) => Record<string, unknown>][] = [
+  [/bağlan|bekle|paraşüt|parasut/i, "parasut_bekleyenler", () => ({ limit: 10 })],
+  [/borç|borc|tedarikçi|tedarikci/i, "tedarikci_ozeti", () => ({ siralama: "borc", limit: 5 })],
+  [/zam/i, "zam_etkisi", () => ({ limit: 5 })],
+  [/ödeme|odeme|vade/i, "odemeler", () => ({})],
+  [/kasa|z raporu/i, "kasa_raporlari", (today) => ({ baslangic: shiftDay(today, -7), bitis: shiftDay(today, -1) })],
+  [/ürün|urun|kâr|marj/i, "urun_karliligi", () => ({ limit: 5 })],
+  [/\bay\b|ciro|gidiyor/i, "ay_ozeti", () => ({})],
+];
+
+const textOf = (content: AssistantParams["messages"][number]["content"]) =>
+  typeof content === "string" ? content : content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+
+/**
+ * Asistanın geliştirmedeki yanıtı (sentetik; canlı istek yapılmaz, soru Claude'a gitmez): ilk turda sorudaki sözcüğe göre
+ * bir araç çağrılır (araç yerel veritabanında gerçekten çalışır), ikinci turda aracın sonucunun boyu ve ekran
+ * bağlantısı. Ekranın akışını (yazıyor, araç durumu, bağlantı, Durdur) denemeye yeter.
+ */
+export function replayAssistantMessage(params: AssistantParams) {
+  const usage = { input_tokens: 3200, output_tokens: 120, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  const last = params.messages[params.messages.length - 1];
+  const results = last && Array.isArray(last.content) ? last.content.filter((b) => b.type === "tool_result") : [];
+  if (results.length || params.tool_choice?.type === "none") {
+    const lines = results.map((r) => {
+      const raw = typeof r.content === "string" ? r.content : "";
+      let link: string | null = null;
+      try {
+        const v = JSON.parse(raw) as { panelAdresi?: unknown };
+        link = typeof v.panelAdresi === "string" ? v.panelAdresi : null;
+      } catch {
+        // Hata metni JSON değildir
+      }
+      return r.is_error ? `- Araç hata verdi: ${raw.slice(0, 160)}` : `- Araç ${raw.length} karakterlik veri döndü.${link ? ` [Ekranı aç](${link})` : ""}`;
+    });
+    const text = [
+      "**Kayıtlı yanıt** (geliştirme, AI_REPLAY=1): sorunuz Claude'a gitmedi.",
+      ...lines,
+      "",
+      "Gerçek yanıt için ortamda `ANTHROPIC_API_KEY` gerekir. Ekranlar: [Genel bakış](/panel), [Tedarikçiler](/panel/tedarikciler).",
+    ].join("\n");
+    return scriptedMessage({ content: [{ type: "text", text, citations: null }], stop_reason: "end_turn", usage });
+  }
+  const question = last ? textOf(last.content) : "";
+  const route = ASSISTANT_ROUTES.find(([re]) => re.test(question));
+  const name = route ? route[1] : "panel_rehberi";
+  const input = route ? route[2](new Date().toISOString().slice(0, 10)) : { soru: question.slice(0, 200) || "panel" };
+  return scriptedMessage({
+    content: [
+      { type: "text", text: "Panelden bakıyorum.", citations: null },
+      { type: "tool_use", id: `toolu_kayitli_${name}`, name, input },
+    ] as ReturnType<typeof scriptedMessage>["content"],
+    stop_reason: "tool_use",
+    usage,
+  });
+}
+
+/** Asistanın kayıtlı yanıt istemcisi: gerçek akış gibi parça parça (yazıyor göstergesi ve Durdur denensin) */
+export function replayAssistantClient(): AssistantClient {
+  return { beta: { messages: { stream: (params, options) => scriptedStream(replayAssistantMessage(params), { signal: options.signal, delayMs: 40, chunk: 6 }) } } };
 }

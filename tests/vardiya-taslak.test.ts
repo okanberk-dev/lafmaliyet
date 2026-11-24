@@ -318,7 +318,8 @@ test("bağlantılar: eylem yalnız yönetici ve kayıt yapmaz; günlük sınır 
   assert.match(draft, /extractText\(/);
   // Okumanın günlük sınırı vardiya taslaklarını saymaz; taslağın kendi sınırı var; istem ve yanıt saklanmaz
   const claude = src("src/server/ai/claude.ts");
-  assert.match(claude, /ne\(s\.aiCalls\.feature, SHIFT_FEATURE\)/);
+  // (panel asistanının soruları da okuma sınırına sayılmaz: docs/ASISTAN.md)
+  assert.match(claude, /notInArray\(s\.aiCalls\.feature, \[SHIFT_FEATURE, ASSISTANT_FEATURE\]\)/);
   assert.match(claude, /shiftDraftsSince\(dayStart\(new Date\(\)\)\)\) >= SHIFT_DRAFT_DAILY_CAP/);
   assert.match(claude, /feature: SHIFT_FEATURE, photoId: null, model: AI_MODEL, keepResult: false/);
   const page = src("src/app/panel/vardiya/page.tsx");

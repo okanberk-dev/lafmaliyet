@@ -57,7 +57,8 @@ export const OKC_EFFORT: AiEffort = "low";
 export const OKC_MAX_TOKENS = 8000;
 export const OKC_TIMEOUTS: AiTimeouts = { timeout: 50_000, maxRetries: 1, totalMs: 50_000 };
 
-export type AiFeature = "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya";
+/** ai_calls.feature: okumalar, vardiya taslağı ve panel asistanı (src/server/ai/assistant; kendi günlük sınırı var) */
+export type AiFeature = "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya" | "asistan";
 export type AiErrorCode =
   | "nokey"
   | "off"
@@ -103,8 +104,30 @@ const SHIFT_TEXT: Partial<Record<AiErrorCode, string>> = {
   invalid: "Yanıt anlaşılamadı. Yeniden deneyin ya da kutuları seçerek doldurun.",
 };
 
-/** Personelin göreceği metinler (ayrıntı günlüğe gider, ekrana değil); fatura okumasında ve vardiyada yöneticinin göreceği */
-export function aiErrorText(code: AiErrorCode, cap?: number, subject: "foto" | "fatura" | "vardiya" = "foto"): string {
+/** Panel asistanında yöneticinin göreceği metinler (docs/ASISTAN.md): yanıtın yerine ya da yarım yanıtın altında */
+const ASSISTANT_TEXT: Partial<Record<AiErrorCode, string>> = {
+  nokey: "Asistan bu ortamda kurulu değil (ANTHROPIC_API_KEY yok).",
+  off: "Asistan kapalı: Ayarlar › Fotoğraftan okuma kapalıyken Claude'a hiçbir istek gitmez.",
+  timeout: "Yanıt çok uzun sürdü. Soruyu daraltıp yeniden deneyin.",
+  connection: "Servise ulaşılamadı. İnterneti kontrol edip yeniden deneyin.",
+  rate: "Servis şu an yoğun. Biraz sonra yeniden deneyin.",
+  overloaded: "Servis şu an yanıt vermiyor. Biraz sonra yeniden deneyin.",
+  auth: "Servisin anahtarı geçersiz (ANTHROPIC_API_KEY); Vercel'deki anahtarı kontrol edin.",
+  billing: "Servisin kredisi bitmiş; Anthropic hesabını kontrol edin.",
+  toolarge: "Konuşma çok uzadı; Yeni sohbet başlatıp yeniden sorun.",
+  badrequest: "Servis isteği kabul etmedi; Yeni sohbet başlatıp yeniden deneyin.",
+  refusal: "Bu soruyu yanıtlayamıyorum; başka sözcüklerle sorabilirsiniz.",
+  incomplete: "Yanıt yarım kaldı. Yeniden deneyin.",
+  invalid: "Yanıt anlaşılamadı. Yeniden deneyin.",
+};
+
+/** Personelin göreceği metinler (ayrıntı günlüğe gider, ekrana değil); fatura okumasında, vardiyada ve asistanda yöneticinin göreceği */
+export function aiErrorText(code: AiErrorCode, cap?: number, subject: "foto" | "fatura" | "vardiya" | "asistan" = "foto"): string {
+  if (subject === "asistan") {
+    if (code === "cap") return `Bugünkü soru sınırı doldu (${cap ?? "?"}); yarın yeniden açılır.`;
+    const t = ASSISTANT_TEXT[code];
+    if (t) return t;
+  }
   if (subject === "fatura") {
     if (code === "cap") return `Bugünkü okuma sınırı doldu (${cap ?? "?"}); faturayı açıp bakın.`;
     const t = INVOICE_TEXT[code];

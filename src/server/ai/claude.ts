@@ -1,16 +1,18 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
-import { and, count, eq, gte, ne, sql } from "drizzle-orm";
+import { and, count, eq, gte, notInArray, sql } from "drizzle-orm";
 import type { z } from "zod";
 
+import { ASSISTANT_DAILY_CAP } from "@/lib/assistant/protocol";
 import { MAX_READS_PER_PHOTO, type ReadingState } from "@/lib/photo-rules";
 import { todayTR } from "@/lib/reminders";
 import { SHIFT_DRAFT_DAILY_CAP } from "@/lib/vardiya-taslak";
 import { getDb, schema as s } from "@/server/db";
 
+import { ASSISTANT_EFFORT, ASSISTANT_MODEL, type AssistantClient, type AssistantOutcome } from "./assistant/loop";
 import { costUsd } from "./pricing";
-import { replayClient, replayEnabled } from "./replay";
+import { replayAssistantClient, replayClient, replayEnabled } from "./replay";
 import {
   AI_INVOICE_MODEL,
   AI_MODEL,
@@ -84,14 +86,19 @@ const dayStart = (now: Date) => new Date(`${todayTR(now)}T00:00:00+03:00`);
 const monthStart = (now: Date) => new Date(`${todayTR(now).slice(0, 7)}-01T00:00:00+03:00`);
 
 /** Vardiyayı yazarak doldurma günlükte bu türle durur; okuma sınırına sayılmaz, kendi sınırı vardır */
-const SHIFT_FEATURE: AiFeature = "vardiya";
+const SHIFT_FEATURE = "vardiya" satisfies AiFeature;
+/** Panel asistanı (docs/ASISTAN.md): okuma sınırına sayılmaz, yönetici başına kendi sınırı vardır (ASSISTANT_DAILY_CAP) */
+const ASSISTANT_FEATURE = "asistan" satisfies AiFeature;
 
-/** Okumalar (fotoğraf ve fatura): günlük sınır bunları sayar. Vardiya taslakları sayılmaz (kasadaki okumayı kesmesin) */
+/**
+ * Okumalar (fotoğraf ve fatura): günlük sınır bunları sayar. Vardiya taslakları ve asistanın soruları sayılmaz (kasadaki
+ * okumayı kesmesin)
+ */
 async function readingsSince(since: Date): Promise<number> {
   const [row] = await getDb()
     .select({ n: count() })
     .from(s.aiCalls)
-    .where(and(gte(s.aiCalls.at, since), ne(s.aiCalls.feature, SHIFT_FEATURE)));
+    .where(and(gte(s.aiCalls.at, since), notInArray(s.aiCalls.feature, [SHIFT_FEATURE, ASSISTANT_FEATURE])));
   return row?.n ?? 0;
 }
 
@@ -123,7 +130,87 @@ export async function shiftDraftStatus(now = new Date()): Promise<{ state: AiSta
   return { state, usedToday, cap: SHIFT_DRAFT_DAILY_CAP };
 }
 
-/** Ayarlar kartı: bu ayın çağrıları ve tutarı (dolar; vardiya taslakları dahil), bugünün okumaları */
+/** Yöneticinin bugünkü asistan soruları (hata ve ret dahil: her soru bir satır) */
+async function assistantCallsSince(userId: number, since: Date): Promise<number> {
+  const [row] = await getDb()
+    .select({ n: count() })
+    .from(s.aiCalls)
+    .where(and(gte(s.aiCalls.at, since), eq(s.aiCalls.feature, ASSISTANT_FEATURE), eq(s.aiCalls.userId, userId)));
+  return row?.n ?? 0;
+}
+
+/**
+ * Panel asistanı (docs/ASISTAN.md): soru sorulabilir mi. Anahtar ve Ayarlar › Fotoğraftan okuma anahtarı okumayla
+ * ortaktır (kapalıyken Claude'a hiçbir istek gitmez); günlük sınır yönetici başınadır (ASSISTANT_DAILY_CAP)
+ */
+export async function assistantStatus(userId: number, now = new Date()): Promise<{ state: AiState; usedToday: number; cap: number }> {
+  if (!aiConfigured()) return { state: "nokey", usedToday: 0, cap: ASSISTANT_DAILY_CAP };
+  const [settings, usedToday] = await Promise.all([loadAiSettings(), assistantCallsSince(userId, dayStart(now))]);
+  const state: AiState = !settings.enabled ? "off" : usedToday >= ASSISTANT_DAILY_CAP ? "cap" : "on";
+  return { state, usedToday, cap: ASSISTANT_DAILY_CAP };
+}
+
+let liveAssistant: AssistantClient | null = null;
+
+/** Asistanın istemcisi: geliştirmede kayıtlı yanıtlar (AI_REPLAY=1), yoksa gerçek SDK (akışlı) */
+export function assistantClient(): AssistantClient {
+  if (replayEnabled()) return replayAssistantClient();
+  if (!liveAssistant) {
+    const anthropic = new Anthropic();
+    liveAssistant = { beta: { messages: { stream: (params, options) => anthropic.beta.messages.stream(params, options) } } };
+  }
+  return liveAssistant;
+}
+
+/** Sorunun satırı (önce "running": aynı anda gelen iki soru sınırı bir kez aşabilir, çökme de kalır); kimliği */
+export async function startAssistantCall(userId: number): Promise<number> {
+  const [call] = await getDb()
+    .insert(s.aiCalls)
+    .values({ feature: ASSISTANT_FEATURE, model: ASSISTANT_MODEL, effort: ASSISTANT_EFFORT, status: "running", userId, photoId: null })
+    .returning({ id: s.aiCalls.id });
+  return call.id;
+}
+
+/**
+ * Satırı kapatır: maliyet, token, süre, bitiş nedeni, çağrı ve araç sayısı. Sorunun, yanıtın ve araç sonuçlarının
+ * METNİ yazılmaz. Anahtar, kredi ve reddedilen istek hataları sunucu günlüğüne de düşer (API'nin hata metniyle)
+ */
+export async function finishAssistantCall(callId: number, outcome: AssistantOutcome, ms: number): Promise<void> {
+  const c = outcome.cost;
+  const status = outcome.error
+    ? outcome.error.code === "refusal"
+      ? "refusal"
+      : "error"
+    : outcome.done === "end" || outcome.done === "limit"
+      ? "ok"
+      : "incomplete";
+  if (!c.priceKnown) console.warn("[asistan] fiyatı bilinmeyen model", outcome.servedModel);
+  if (outcome.error) {
+    const alert = aiAlertLog(ASSISTANT_FEATURE, { ...outcome.error, requestId: outcome.requestId });
+    if (alert) console.error("[asistan]", alert);
+  }
+  await getDb()
+    .update(s.aiCalls)
+    .set({
+      status,
+      errorCode: outcome.error?.code ?? null,
+      error: outcome.error?.detail.slice(0, 300) ?? null,
+      servedModel: outcome.servedModel,
+      stopReason: outcome.done === "aborted" || outcome.done === "deadline" ? outcome.done : outcome.stopReason,
+      requestId: outcome.requestId,
+      ms,
+      inputTokens: c.inputTokens,
+      outputTokens: c.outputTokens,
+      cacheReadTokens: c.cacheReadTokens,
+      cacheWriteTokens: c.cacheWriteTokens,
+      costUsd: c.costUsd,
+      fallback: c.fallback,
+      result: { apiCalls: outcome.apiCalls, toolCalls: outcome.toolCalls },
+    })
+    .where(eq(s.aiCalls.id, callId));
+}
+
+/** Ayarlar kartı: bu ayın çağrıları ve tutarı (dolar; vardiya taslakları ve asistan dahil), bugünün okumaları */
 export async function aiUsageSummary(now = new Date()): Promise<{ monthCalls: number; monthUsd: number; today: number }> {
   const [[month], today] = await Promise.all([
     getDb()
@@ -142,7 +229,8 @@ export type AiResult<T> =
 const STATUS: Partial<Record<AiErrorCode, "refusal" | "incomplete" | "invalid">> = { refusal: "refusal", incomplete: "incomplete", invalid: "invalid" };
 
 interface ExtractCall<T> {
-  feature: AiFeature;
+  /** Okuma ya da vardiya taslağı (asistanın kendi yolu var: startAssistantCall) */
+  feature: Exclude<AiFeature, "asistan">;
   userId: number;
   photoId: number | null;
   system: string;

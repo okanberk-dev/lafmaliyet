@@ -17,6 +17,7 @@
     "db:backup": "tsx scripts/backup.ts",
     "db:restore": "tsx scripts/restore.ts",
     "modpos:foy": "tsx scripts/modpos-foy.ts",
+    "asistan:bilgi": "tsx scripts/asistan-bilgi.ts",
     "excel:extract": "python3 scripts/excel-import/extract.py"
   },
   "dependencies": {

@@ -3,21 +3,23 @@
  * taşıyor (API belge türünü ve ödeme türünü artık kısıtlamaz); burada enum kalır, her nesne additionalProperties:false
  * olur, API'nin kabul etmediği sayı / uzunluk sınırları ve $schema çıkar. Sınırları yanıt gelince zod denetler.
  * Karmaşıklık sınırını aşan şema `format` ile gönderilmez (fitsStructuredOutputs; src/server/ai/run.ts buildRequest).
+ * Aynı temizlik panel asistanının araç girdilerinde de (claudeToolSchema, `strict: true`; src/server/ai/assistant).
  */
 
 import { z } from "zod";
 
 const DROP = new Set(["$schema", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength", "maxLength", "pattern", "maxItems", "uniqueItems"]);
 
-function clean(node: unknown): unknown {
-  if (Array.isArray(node)) return node.map(clean);
+function clean(node: unknown, drop: ReadonlySet<string> = DROP): unknown {
+  if (Array.isArray(node)) return node.map((n) => clean(n, drop));
   if (!node || typeof node !== "object") return node;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(node)) {
-    if (DROP.has(k)) continue;
+    if (drop.has(k)) continue;
     if (k === "minItems" && typeof v === "number" && v > 1) continue;
     // Özellik ve tanım adları şema anahtar sözcüğü değildir ("pattern" adlı bir alan da kalır)
-    out[k] = (k === "properties" || k === "$defs") && v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([pk, pv]) => [pk, clean(pv)])) : clean(v);
+    out[k] =
+      (k === "properties" || k === "$defs") && v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([pk, pv]) => [pk, clean(pv, drop)])) : clean(v, drop);
   }
   if (out.type === "object") out.additionalProperties = false;
   return out;
@@ -25,6 +27,17 @@ function clean(node: unknown): unknown {
 
 export function claudeSchema(schema: z.ZodType): Record<string, unknown> {
   return clean(z.toJSONSchema(schema, { target: "draft-2020-12", io: "output" })) as Record<string, unknown>;
+}
+
+/** Araç girdisinde `default` da çıkar: varsayılan açıklamada yazılı ("varsayılan 10"), değerini araç çalışmadan zod koyar */
+const TOOL_DROP: ReadonlySet<string> = new Set([...DROP, "default"]);
+
+/**
+ * Araç girdisinin şeması (`strict: true` ile gönderilir): girdi tarafı (io "input"), yani varsayılanı olan alan isteğe
+ * bağlıdır. API'nin kabul etmediği sınırlar çıkar; sınırları ve varsayılanları araç çalışmadan önce zod uygular.
+ */
+export function claudeToolSchema(schema: z.ZodType): Record<string, unknown> {
+  return clean(z.toJSONSchema(schema, { target: "draft-2020-12", io: "input" }), TOOL_DROP) as Record<string, unknown>;
 }
 
 /**
