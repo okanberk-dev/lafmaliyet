@@ -149,6 +149,25 @@ test("süren ay: Gelir-gider yalnız kasa raporlarının son gününe kadarki va
   assert.equal(m.personnelFor("2026-12").rows[0].calledDays, 6);
 });
 
+test("süren ay kasa raporu yokken: maaş satırının gün oranıyla aynı kaynak (ay bilgisi yok → 0, elle açık gün → o güne kadar); Tümü'de kişinin şubesinin raporları", () => {
+  // İnceleme bulgusu (LM-4, 2. tur, 2): kesme yalnız kasa raporu olan ayda uygulanıyordu; ay bilgisi yokken ya da yalnız
+  // elle açık gün varken ayın bütün planı (ileri günler dahil) sayılırken tam zamanlı maaş 0 ya da 3/31 oranlanıyordu
+  const none = createModel(ds([AYSE], { currentMonth: "2026-12", months: [...excel.months, nov] }));
+  assert.equal(none.personnelFor("2026-12").rows[0].calledDays, 0, "Aralık bilgisi yok: tam zamanlı maaş gibi 0");
+  assert.equal(none.pnlMonth("2026-12").cells.get("personnel:parttime")!.value, 2_000, "yalnız ek ödeme");
+  const manual = createModel(ds([AYSE], { currentMonth: "2026-12", months: [...excel.months, nov, { ...dec, openDays: 3 }] }));
+  assert.equal(manual.personnelFor("2026-12").rows[0].calledDays, 3, "elle 3 açık gün: 1, 2, 3 Aralık");
+  // Vergi bordrosu ve nakit planı ayın bütün planını sayar
+  close(taxPayrollFromModel(none, 2026, DEFAULT_TAX_SETTINGS).get("2026-12")!.people[0].cost, 20_300, "bordro bütün plan");
+  // Tümü: Marina'nın raporları 3 Aralık'ta, Tuzla'nınki 10 Aralık'ta; Ayşe'nin Marina satırı Marina'nın son gününe kadar
+  const till = (to: string, n: number) => ({ month: "2026-12", from: "2026-12-01", to, reported: n, openDays: n, posRevenue: 10_000 * n, discounts: null, discountDays: 0, offRevenue: null, offDays: 0, cardShare: null, missing: [] });
+  const kasa = (to: string, n: number) =>
+    ({ ...dec, openDays: n, posRevenue: 10_000 * n, sources: { openDays: "kasa" }, kasa: { values: { openDays: n, posRevenue: 10_000 * n, discounts: null, offRevenue: null, cardShare: null }, till: till(to, n) } }) as unknown as Dataset["months"][number];
+  const all = { ...kasa("2026-12-10", 10), byBranch: { marina: kasa("2026-12-03", 3), tuzla: kasa("2026-12-10", 10) } } as Dataset["months"][number];
+  const tumu = createModel(ds([AYSE], { currentMonth: "2026-12", months: [...excel.months, nov, all] }));
+  assert.equal(tumu.personnelFor("2026-12").rows[0].calledDays, 3, "Tümü: Marina'nın raporları 3 Aralık'a kadar");
+});
+
 test("vergi bordrosu ve nakit planı: part-time brütleştirilmez (net 0, ek = bütün maliyet), planlanan bütün vardiyalar", () => {
   const m = createModel(ds([AYSE]));
   const p = taxPayrollFromModel(m, 2026, DEFAULT_TAX_SETTINGS).get("2026-12")!;

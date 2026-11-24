@@ -712,7 +712,7 @@ export const MEAL_CARD_KEY = "personnel:meal";
 export const PART_TIME_KEY = "personnel:parttime";
 export const PART_TIME_ROW_LABEL = "PART-TIME (GÜNLÜK ÜCRET)";
 export const PART_TIME_HINT =
-  "Maaşlar'da part-time kişiler: günlük ücret × Vardiya'da o şubede çağrıldığı gün + ek ödeme (yemek kartı kendi satırında). Günlük ücret işletmenin gün başına maliyetidir, SGK brütleştirmesi yok. Gün oranı uygulanmaz; süren ayda kasa raporlarının son gününe kadarki vardiyalar. Vardiya kişisi bağlı değilse tutar tahmin edilmez, hücre uyarır.";
+  "Maaşlar'da part-time kişiler: günlük ücret × Vardiya'da o şubede çağrıldığı gün + ek ödeme (yemek kartı kendi satırında). Günlük ücret işletmenin gün başına maliyetidir, SGK brütleştirmesi yok. Gün oranı uygulanmaz; süren ayda bugüne kadarki vardiyalar (kasa raporlarının son günü, rapor yoksa elle girilen açık gün; ay bilgisi yoksa 0, maaş satırı gibi). Vardiya kişisi bağlı değilse tutar tahmin edilmez, hücre uyarır.";
 /** Net maaş dışındaki personel hücreleri (vergi köprüsü bunları maliyet − net ile birlikte sayar) */
 export const PERSONNEL_SUB_KEYS: readonly string[] = ["personnel:employer", MEAL_CARD_KEY, PART_TIME_KEY];
 
@@ -1868,18 +1868,32 @@ export function createModel(ds: Dataset) {
   for (const list of shiftDaysByKey.values()) list.sort();
   /**
    * Part-time kişinin aydaki çağrıldığı gün (Faz 5): Vardiya'da kişinin anahtarıyla (staffShiftRef), kendi şubesindeki
-   * çalışma günleri. Bağlantısızsa null (tahmin yok). Gelir-gider (planned yok): süren ayda kasa raporlarının son gününe
-   * kadar (ileri günlerin planı sayılmaz, maaş satırının gün oranı gibi bugüne kadar); `planned` (vergi bordrosu, nakit
+   * çalışma günleri. Bağlantısızsa null (tahmin yok). Gelir-gider (planned yok): süren ayda bugüne kadar
+   * (calledDaysCutoff; ileri günlerin planı sayılmaz, maaş satırının gün oranı gibi); `planned` (vergi bordrosu, nakit
    * planı): ayın bütün planı
    */
   function calledDaysOf(x: Pick<Staff, "userId" | "personRef" | "branchId">, month: string, opts: { planned?: boolean } = {}): number | null {
     const ref = staffShiftRef(x);
     if (!ref) return null;
-    const days = shiftDaysByKey.get(`${x.branchId ?? DEFAULT_BRANCH_ID}|${ref}|${month}`) ?? [];
-    const to = !opts.planned && month >= currentMonth ? monthInfo.get(month)?.kasa?.till.to : undefined;
-    return to ? days.filter((d) => d <= to).length : days.length;
+    const branchId = x.branchId ?? DEFAULT_BRANCH_ID;
+    const days = shiftDaysByKey.get(`${branchId}|${ref}|${month}`) ?? [];
+    if (opts.planned || month !== currentMonth) return days.length;
+    const to = calledDaysCutoff(month, branchId);
+    return days.filter((d) => d <= to).length;
   }
-
+  /**
+   * Süren ayda Gelir-gider'in saydığı son vardiya günü (inceleme bulgusu LM-4 2. tur, 2): maaş satırının gün oranıyla aynı
+   * kaynak (prorationDays). Kasa raporları varsa son raporun günü; yoksa elle girilen açık gün kadar (ayın başından); ay
+   * bilgisi yoksa hiç ("-00": maaş satırı gibi 0). "Tümü"de kişinin şubesinin ay bilgisi (varsa; branchDays gibi): raporu
+   * geride kalan şubenin günleri öteki şubenin raporlarıyla sayılmaz
+   */
+  function calledDaysCutoff(month: string, branchId: string): string {
+    const all = monthInfo.get(month);
+    const info = (!ds.branchView ? all?.byBranch?.[branchId] : undefined) ?? all;
+    const to = info?.kasa?.till.to;
+    if (to) return to;
+    return `${month}-${String(prorationDays(info)).padStart(2, "0")}`;
+  }
   const personnelCache = new Map<string, PersonnelSummary>();
   /** O ayda çalışan personel, o ayın maaşıyla (part-time: Vardiya'da çağrıldığı günle) */
   function personnelFor(month: string): PersonnelSummary {

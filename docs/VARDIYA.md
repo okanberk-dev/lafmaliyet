@@ -174,8 +174,10 @@ staffCost); testleri `tests/personel-part-time.test.ts`, `tests/personel-baglant
   itibaren" sürümlenir. Yemek kartı bir aydan itibaren açılıp kapanınca önceden girilmiş sonraki sürümlere (ör. planlı
   zam) de işlenir; sahibin ayrıca değiştirdiği ilk sürümde durur (`mealCardCarry`, inceleme bulgusu 8). Kayıt mesajı
   hangi aylara işlendiğini yazar; sürüm etiketi "… net + yemek kartı" olur. **Çağrıldığı gün** = kişinin Vardiya anahtarıyla, kendi şubesinde, o aydaki çalışma (`work`)
-  vardiyaları; izin sayılmaz, başka şubedeki vardiya o şubenin satırına aittir. Gelir-gider'de süren ayda kasa
-  raporlarının son gününe kadarki vardiyalar (ileri günlerin planı değil); vergi bordrosu ve nakit planı ayın bütün planı.
+  vardiyaları; izin sayılmaz, başka şubedeki vardiya o şubenin satırına aittir. Gelir-gider'de süren ayda bugüne kadarki
+  vardiyalar (ileri günlerin planı değil), maaş satırının gün oranıyla aynı kaynaktan: kasa raporlarının son günü; rapor
+  yoksa elle girilen açık gün kadar (ayın başından); ay bilgisi yoksa 0 (`calledDaysCutoff`). "Tümü"de kişinin şubesinin
+  raporları. Vergi bordrosu ve nakit planı ayın bütün planı.
   Gelir-gider'de "PART-TIME (GÜNLÜK ÜCRET)" satırı (ücret + ek; gün oranı yok), yemek kartı "PERSONEL YEMEK KARTI"
   satırında. **Bağlantısız part-time** tahmin edilmez: ücreti 0, hücre, Maaşlar ve Genel bakış uyarır.
 - **Haftalık "Part-time çalışan" sabit gideri** Kasım 2026 için kalır (sahibin veri işi: son ayı 2026-11). Aynı ayda

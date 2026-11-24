@@ -91,6 +91,8 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
     const [row] = await db.select().from(s.staff);
     assert.deepEqual([row.kind, row.dailyWage, row.mealCard, row.userId, row.personRef, row.branchId], ["part_time", 1_500, true, users.ayse, null, "marina"]);
     const ref = `u:${users.ayse}`;
+    // Aralık'ın ay bilgisi (elle 31 açık gün): test hangi gün çalışırsa çalışsın (Aralık süren ay olsa da) bütün günler sayılır
+    await db.insert(s.months).values({ month: "2026-12", branchId: "marina", openDays: 31 });
     await db.insert(s.shifts).values([
       { branchId: "marina", date: "2026-12-01", personRef: ref, userId: users.ayse, personName: "Ayşe Kaya", kind: "work", startMin: 600, endMin: 1080 },
       { branchId: "marina", date: "2026-12-02", personRef: ref, userId: users.ayse, personName: "Ayşe Kaya", kind: "work", startMin: 600, endMin: 1080 },
