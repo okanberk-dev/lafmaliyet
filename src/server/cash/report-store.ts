@@ -316,7 +316,8 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
   // Fotoğraflar kanıttır: yalnız eklenir (yeniden gönderimde eskileri bağlı kalır), rapor gününden 180 gün saklanır
   // (geçmiş bir güne sonradan eklenen bugünden)
   const ids = [...new Set(o.photos ?? [])];
-  let okcLinked = false;
+  // LafPOS günü: sayım yokken eklenip bekleyen gün sonu fotoğrafları elle girilen bu rapora bağlanır (kaybolmaz)
+  let okcLinked = !prev && (await adoptPendingDayPhotos(tx, row)) > 0;
   if (ids.length) {
     const linked = await tx.select({ kind: s.cashReportPhotos.kind }).from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, row.id));
     if (linked.length + ids.length > MAX_REPORT_PHOTOS) throw new UserError(`Bir rapora en çok ${MAX_REPORT_PHOTOS} fotoğraf eklenir`);
@@ -360,6 +361,43 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
  * kümülatif ya da aradaki girilmemiş Z'lerle büyümüş), zincir son saklanan kümülatife bağlanır (previousOkc). Yazarkasa
  * dışı tahsilat 1 ₺'yi geçerse
  */
+/**
+ * LafPOS gününün bekleyen gün sonu fotoğrafları (lafpos_day_ends.pending_photos: LafPOS sayımsız kapandı, rapor yokken
+ * personel ekledi) günün raporuna bağlanır ve bekleyen liste boşalır. Otomatik rapor kendi yolunda bağlar
+ * (src/server/lafpos/foto.ts linkPendingPhotos); bu, rapor elle girildiğinde (formun kaydı ya da LafPOS'un sonraki
+ * gönderiminde elle girilmiş rapor) fotoğrafın sahipsiz kalmaması içindir. Sınırı aşan ya da bulunamayan fotoğraf
+ * atlanır (kayıt düşmez). Bağlananların sayısı
+ */
+export async function adoptPendingDayPhotos(tx: CashTx, row: CashReportRow, now = new Date()): Promise<number> {
+  const [state] = await tx
+    .select({ pending: s.lafposDayEnds.pendingPhotos })
+    .from(s.lafposDayEnds)
+    .where(and(eq(s.lafposDayEnds.date, row.date), eq(s.lafposDayEnds.branchId, row.branchId)))
+    .for("update")
+    .limit(1);
+  if (!state?.pending.length) return 0;
+  const linked = await tx.select({ id: s.cashReportPhotos.photoId, kind: s.cashReportPhotos.kind }).from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, row.id));
+  let total = linked.length;
+  let okc = linked.filter((l) => l.kind === "kasa-okc" || l.kind === "kasa-pos").length;
+  let adopted = 0;
+  for (const id of state.pending) {
+    if (linked.some((l) => l.id === id)) continue;
+    const p = await getPhoto(id, tx);
+    if (!p || (p.kind !== "kasa-okc" && p.kind !== "kasa-pos")) continue;
+    if (total >= MAX_REPORT_PHOTOS || okc >= MAX_OKC_PHOTOS) break;
+    await tx.insert(s.cashReportPhotos).values({ reportId: row.id, photoId: id, kind: p.kind });
+    await keepPhoto(id, linkedUntil("kasa-okc", row.date, todayTR(now)), tx);
+    total++;
+    okc++;
+    adopted++;
+  }
+  await tx
+    .update(s.lafposDayEnds)
+    .set({ pendingPhotos: [], updatedAt: now })
+    .where(and(eq(s.lafposDayEnds.date, row.date), eq(s.lafposDayEnds.branchId, row.branchId)));
+  return adopted;
+}
+
 export async function okcServerColumns(tx: CashTx, row: CashReportRow): Promise<{ okcCumTotal: number | null; okcCumVat: number | null; okcOutside: number | null }> {
   const none = { okcCumTotal: null, okcCumVat: null, okcOutside: null };
   if (!row.okcZNo || row.okcTotal === null) return none;

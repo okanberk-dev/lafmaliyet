@@ -407,7 +407,9 @@ test("uploadRule: yönetici her güne; personel Z / POS'u açık güne ya da ge�
   assert.equal(uploadRule("staff", "kasa-z", null, today), "no");
   // Kural kaynakta: personelin geç günü yalnız Z / POS'ta, staffLateDayOpen pencereye, ilk rapora, raporsuz ve kapalı olmayan güne bakar
   const rules = readFileSync(join(process.cwd(), "src/server/photo-read/rules.ts"), "utf8");
-  assert.match(rules, /return rule === "open-or-late" && staffLateDayOpen\(day\);/);
+  assert.match(rules, /if \(rule === "open-or-late" && \(await staffLateDayOpen\(day\)\)\) return true;/);
+  // Gün sonu tam (24 Kasım 2026): LafPOS gününün gün sonu fotoğrafı (yalnız yazarkasa bölümü) 14 güne kadar
+  assert.match(rules, /return \(kind === "kasa-okc" \|\| kind === "kasa-pos"\) && lafposPhotoDayOpen\(getDb\(\), day, await currentTillBranch\(\), me\.role\);/);
   assert.match(rules, /export async function staffLateDayOpen[\s\S]*?if \(!staffLateDay\(day\)\) return false;[\s\S]*?first\.date >= day \|\| same[\s\S]*?isClosedDay\(day, db, till\)/);
 });
 

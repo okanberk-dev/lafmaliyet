@@ -1,9 +1,11 @@
 import { carryCheck, carryDiffText, computeCash, openingNeedsNote, type CashReportFields } from "@/lib/cash-report";
 import { money } from "@/lib/format";
+import { normalizeVat, sameVat, type OkcVatLine } from "@/lib/okc-z";
 import { addDays, longDateTR } from "@/lib/reminders";
 
 import { pavoSectionHtml, pavoSectionText, pavoState } from "./bank-pos";
-import type { BankPos, PosDayZ, PosIkram, PosPayment } from "./day";
+import type { BankPos, PosDayZ, PosIkram, PosOffDevice, PosOkc, PosPayment } from "./day";
+import { lafposPhotoDone, lafposPhotoNeed, photoCheckText, type LafposPhotoCheck, type LafposPhotoNeed } from "./foto";
 import type { LafposDayDetail } from "./gun-ayrinti";
 
 /**
@@ -14,9 +16,12 @@ import type { LafposDayDetail } from "./gun-ayrinti";
  */
 
 /**
- * Otomatik yazılan rapor alanları: Z, kasa ve not (Banka POS / yazarkasa tutarları elle ya da fotoğrafla girilir).
- * Yazarkasanın Z no'su (okcZNo, Faz 2) LafPOS'tan gelir: günün son tamamlanan cihaz fişinin mali Z'si (LafPOS'un `zNo`'sundan
- * ayrı alan); gelmezse (Pavo satış sonucunda Z yok) kayıtlı değer kalır
+ * Otomatik yazılan rapor alanları: Z, kasa, not ve (gün sonu tam, 24 Kasım 2026) cihazların rakamları. Yazarkasanın Z
+ * no'su (okcZNo, Faz 2) LafPOS'tan gelir: günün son tamamlanan cihaz fişinin mali Z'si (LafPOS'un `zNo`'sundan ayrı
+ * alan); gelmezse (Pavo satış sonucunda Z yok) kayıtlı değer kalır. Banka POS Pavo'nun kendi gün sonlarından (Σ batch;
+ * bankPosAuto), yazarkasa alanları LafPOS'un cihaz belgelerinden (okcAuto). Cihaz rakamı yoksa alan boş kalır
+ * (uydurulmaz; birleştirmede boş değer kayıtlıyı silmez), not neyin eksik olduğunu söyler. Kümülatif, KDV kümülatifi ve
+ * yazarkasa dışı tahsilat yalnız fotoğraftan (yönetici)
  */
 export const AUTO_FIELDS = [
   "zNo",
@@ -37,18 +42,103 @@ export const AUTO_FIELDS = [
   "countedCash",
   "handedOver",
   "note",
+  "bankPos",
+  "okcReceipts",
+  "okcTotal",
+  "okcCash",
+  "okcCard",
+  "okcMealCard",
+  "okcOther",
+  "okcVat",
+  "okcVatTotal",
 ] as const;
 export type AutoField = (typeof AUTO_FIELDS)[number];
-export type AutoValues = Record<AutoField, number | string | null>;
+export type AutoValue = number | string | OkcVatLine[] | null;
+export type AutoValues = Record<AutoField, AutoValue>;
+
+/** Günün cihaz verisi (gövdenin bankPos'u, okc'si ve offDevice'ı; eski LafPOS'ta yok) */
+export interface AutoDevice {
+  bankPos?: BankPos | null;
+  okc?: PosOkc | null;
+  offDevice?: PosOffDevice | null;
+}
 
 /** Otomatik raporun "gönderen"i */
 export const LAFPOS_AUTO_BY = "LafPOS (otomatik)";
 
-/** Fotoğraf ya da elle giriş bekleyen alanların adı */
+/** Eksiklerin kısa adı (e-posta; tam metin autoGaps'ten) */
 export const MISSING_LABEL: Record<string, string> = {
-  bankPos: "Banka POS Z (yazarkasa)",
+  bankPos: "Banka POS (Pavo gün sonu)",
+  okc: "Yazarkasa (cihaz belgesi)",
+  okcZNo: "Yazarkasa Z no",
   countedCash: "Sayılan nakit (LafPOS'ta sayım yok)",
+  photo: "gün sonu fotoğrafı (personel ekler)",
 };
+
+/** Cihaz boşluklarının tam metinleri (raporun notu ve e-posta söyler; personel bunları değil fotoğrafı görür) */
+export const GAP_TEXT = {
+  bankMissing: "Banka POS: LafPOS'tan Pavo gün sonu gelmedi",
+  bankUnknown: "Banka POS: Pavo gün sonunun sonucu belirsiz; LafPOS'ta Yönetim › Yazarkasa POS › Doğrula",
+  bankNoTotal: "Banka POS: Pavo gün sonunda tutar okunamadı",
+  bankNotClosed: "Banka POS: Pavo'nun kapanış gün sonu gelmedi (yalnız gün içinde alınan var); LafPOS'ta Yönetim › Yazarkasa POS › Cihazda gün sonu al",
+  okcMissing: "Yazarkasa: LafPOS'ta cihaz belgesi yok",
+  okcZNo: "Yazarkasa: Z no LafPOS'ta yok",
+} as const;
+
+/** "Banka POS: Pavo gün sonu alınamadı (hata 5085: Günsonu alınamadı (kod 5085)); LafPOS'ta Yönetim › …" */
+export function bankFailedText(b: Pick<BankPos, "errorCode" | "message">): string {
+  const why = [b.errorCode ? `hata ${b.errorCode}` : null, b.message].filter(Boolean).join(": ");
+  return `Banka POS: Pavo gün sonu alınamadı${why ? ` (${why})` : ""}; LafPOS'ta Yönetim › Yazarkasa POS › Cihazda gün sonu al`;
+}
+
+/**
+ * Raporun Banka POS'u Pavo'nun kendi sonucundan: günün başarılı gün sonlarının toplamı (gün ortasında elle alınan da;
+ * Σ batches.total). Son sonuç başarılı değilse (alınamadı ya da belirsiz) alan boş kalır: kapanıştan sonraki kart
+ * henüz hiçbir batch'te değil, öncekilerin toplamı günün bankası değildir. Aynı nedenle başarılı sonuç yalnız gün içinde
+ * alınmışsa (hiçbir batch `dayClosed` değil: kapanışta gün ortasındaki elle gün sonu son sonuçtur) alan boş kalır. Batch
+ * listesi olmayan eski gövdede son sonucun Pavo kartı. Değer yoksa `gap` tam olarak nedenini söyler
+ */
+export function bankPosAuto(b: BankPos | null | undefined): { value: number | null; gap: string | null } {
+  if (!b) return { value: null, gap: GAP_TEXT.bankMissing };
+  if (b.status === "failed") return { value: null, gap: bankFailedText(b) };
+  if (b.status !== "ok") return { value: null, gap: GAP_TEXT.bankUnknown };
+  if (b.batches && b.batches.length) {
+    if (b.batches.some((x) => x.total === null)) return { value: null, gap: GAP_TEXT.bankNoTotal };
+    if (!b.batches.some((x) => x.dayClosed)) return { value: null, gap: GAP_TEXT.bankNotClosed };
+    return { value: round2(b.batches.reduce((a, x) => a + (x.total ?? 0), 0)), gap: null };
+  }
+  return b.pavoCard === null ? { value: null, gap: GAP_TEXT.bankNoTotal } : { value: b.pavoCard, gap: null };
+}
+
+/** Raporun yazarkasa alanları LafPOS'un cihaz belgelerinden; cihaz belgesi yoksa hepsi boş */
+export function okcAuto(okc: PosOkc | null | undefined): Pick<AutoValues, "okcReceipts" | "okcTotal" | "okcCash" | "okcCard" | "okcMealCard" | "okcOther" | "okcVat" | "okcVatTotal"> {
+  if (!okc) return { okcReceipts: null, okcTotal: null, okcCash: null, okcCard: null, okcMealCard: null, okcOther: null, okcVat: null, okcVatTotal: null };
+  const vat = okc.vat === null ? null : normalizeVat(okc.vat);
+  return {
+    okcReceipts: okc.docs,
+    okcTotal: okc.total,
+    okcCash: okc.cash,
+    okcCard: okc.card,
+    okcMealCard: okc.mealCard,
+    okcOther: okc.other,
+    okcVat: vat && vat.length ? vat : null,
+    okcVatTotal: vat === null ? null : round2(vat.reduce((a, l) => a + l.vat, 0)),
+  };
+}
+
+/**
+ * Cihaz boşlukları (anahtar ve tam metin): Banka POS, yazarkasa belgesi, mali Z basan cihazda Z no; sayım yoksa sayılan
+ * nakit. Pavo (e-Arşiv, Z basmaz) Z no'suz eksik sayılmaz
+ */
+export function autoGaps(z: Pick<PosDayZ, "countedCash" | "okcZNo">, device: AutoDevice = {}): { key: string; text: string }[] {
+  const out: { key: string; text: string }[] = [];
+  const bank = bankPosAuto(device.bankPos);
+  if (bank.gap) out.push({ key: "bankPos", text: bank.gap });
+  if (!device.okc) out.push({ key: "okc", text: GAP_TEXT.okcMissing });
+  else if (device.okc.zReport && !z.okcZNo) out.push({ key: "okcZNo", text: GAP_TEXT.okcZNo });
+  if (z.countedCash === null) out.push({ key: "countedCash", text: MISSING_LABEL.countedCash });
+  return out;
+}
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
@@ -60,20 +150,30 @@ export interface DayOuts {
 }
 
 /**
- * Eksik alanlar: Banka POS Z'si (yazarkasa) LafPOS'tan gelmez, fotoğrafla ya da elle girilir; LafPOS gün sonunda sayım
- * yoksa sayılan nakit de eksiktir (uydurulmaz: rapor yazılmaz)
+ * Eksikler (lafpos_day_ends.missing): cihaz boşlukları (autoGaps'in anahtarları; LafPOS gün sonunda sayım yoksa sayılan
+ * nakit: uydurulmaz, rapor yazılmaz) ve `photo` verildiyse istenen gün sonu fotoğrafı eklenene kadar "photo"
  */
-export function autoMissing(z: Pick<PosDayZ, "countedCash">): string[] {
-  return ["bankPos", ...(z.countedCash === null ? ["countedCash"] : [])];
+export function autoMissing(
+  z: Pick<PosDayZ, "countedCash"> & Partial<Pick<PosDayZ, "okcZNo">>,
+  device: AutoDevice = {},
+  photo?: { attached: number; check?: Pick<LafposPhotoCheck, "state"> | null },
+): string[] {
+  const keys = autoGaps({ countedCash: z.countedCash, okcZNo: z.okcZNo ?? null }, device).map((g) => g.key);
+  if (photo && !lafposPhotoDone(lafposPhotoNeed({ bankPos: device.bankPos, okc: device.okc }), photo.attached, photo.check ?? null)) keys.push("photo");
+  return keys;
 }
 
-/** Raporun otomatik notu: kaynağı, açılışın önceki devirden farkı (ve LafPOS'ta yazılan nedeni) ve eksikler */
-export function autoNote(o: { missing: readonly string[]; carry: string | null; opening?: string | null }): string {
+/**
+ * Raporun otomatik notu: kaynağı, açılışın önceki devirden farkı (ve LafPOS'ta yazılan nedeni), LafPOS'un kapanış notu ve
+ * cihaz boşluklarının tam metni. Personelden bir şey istemez ("panelden ekleyin" yok): cihazın rakamı LafPOS'ta alınır,
+ * fotoğraf ayrı (lafpos_day_ends.missing)
+ */
+export function autoNote(o: { gaps: readonly string[]; carry: string | null; opening?: string | null; closeNote?: string | null }): string {
   const parts = ["LafPOS gün sonundan otomatik yazıldı."];
   if (o.carry) parts.push(o.carry);
   if (o.opening) parts.push(o.opening);
-  const missing = o.missing.map((m) => MISSING_LABEL[m] ?? m);
-  if (missing.length) parts.push(`Eksik: ${missing.join(", ")}; panelden ekleyin.`);
+  if (o.closeNote) parts.push(`Kapanış notu (LafPOS): ${o.closeNote}.`);
+  if (o.gaps.length) parts.push(`Eksik: ${o.gaps.join(" · ")}.`);
   return parts.join(" ");
 }
 
@@ -83,7 +183,7 @@ export function autoNote(o: { missing: readonly string[]; carry: string | null; 
  * teslim edilen 0. Sayım yoksa `countedCash` null (rapor yazılmaz). `prevCarry`: önceki raporun devri (açılış farkı
  * nota yazılır, LafPOS'taki açılış kalır)
  */
-export function autoValuesOf(date: string, z: PosDayZ, outs: DayOuts, prevCarry: { date: string; amount: number } | null): AutoValues {
+export function autoValuesOf(date: string, z: PosDayZ, outs: DayOuts, prevCarry: { date: string; amount: number } | null, device: AutoDevice = {}): AutoValues {
   const check = carryCheck(date, z.openingCash, prevCarry);
   const carry =
     check && openingNeedsNote({ check, openingCash: z.openingCash, prevOpening: null, note: null })
@@ -108,7 +208,10 @@ export function autoValuesOf(date: string, z: PosDayZ, outs: DayOuts, prevCarry:
     cashOutNote: outs.count ? outs.note : null,
     countedCash: z.countedCash,
     handedOver: 0,
-    note: autoNote({ missing: autoMissing(z), carry, opening }),
+    // Sayım yoksa rapor yazılmaz (sayılan nakdin boşluğu e-postada): not yalnız cihazların boşluklarını söyler
+    note: autoNote({ gaps: autoGaps(z, device).filter((g) => g.key !== "countedCash").map((g) => g.text), carry, opening, closeNote: z.closeNote ?? null }),
+    bankPos: bankPosAuto(device.bankPos).value,
+    ...okcAuto(device.okc),
   };
 }
 
@@ -129,8 +232,12 @@ export function lafposOpeningNote(z: Pick<PosDayZ, "expectedOpening" | "openingD
   return reason ? `Açılış notu (LafPOS): ${reason}.` : null;
 }
 
-const same = (a: number | string | null | undefined, b: number | string | null | undefined) =>
-  typeof a === "number" && typeof b === "number" ? Math.round(a * 100) === Math.round(b * 100) : (a ?? null) === (b ?? null);
+const same = (a: AutoValue | undefined, b: AutoValue | undefined) =>
+  Array.isArray(a) || Array.isArray(b)
+    ? sameVat(Array.isArray(a) ? a : null, Array.isArray(b) ? b : null)
+    : typeof a === "number" && typeof b === "number"
+      ? Math.round(a * 100) === Math.round(b * 100)
+      : (a ?? null) === (b ?? null);
 
 /**
  * Düzeltme gelince birleştirme: kayıtlı değer son otomatik değere eşitse (elle değişmemiş) yenisi yazılır, değilse
@@ -157,8 +264,8 @@ export function mergeAuto(current: AutoValues, lastAuto: AutoValues, next: AutoV
   return { values, auto, changed, kept };
 }
 
-/** Kayıtlı raporun otomatik alanları */
-export function autoValuesOfReport(r: Pick<CashReportFields, Exclude<AutoField, "discounts" | "okcZNo">> & { discounts?: number | null; okcZNo?: string | null }): AutoValues {
+/** Kayıtlı raporun otomatik alanları (yazarkasa alanı yoksa boş) */
+export function autoValuesOfReport(r: Pick<CashReportFields, Exclude<AutoField, "discounts" | "okcZNo" | "okcReceipts" | "okcTotal" | "okcCash" | "okcCard" | "okcMealCard" | "okcOther" | "okcVat" | "okcVatTotal">> & Partial<Pick<CashReportFields, "discounts" | "okcZNo" | "okcReceipts" | "okcTotal" | "okcCash" | "okcCard" | "okcMealCard" | "okcOther" | "okcVat" | "okcVatTotal">>): AutoValues {
   return Object.fromEntries(AUTO_FIELDS.map((f) => [f, (r as Record<string, unknown>)[f] ?? null])) as AutoValues;
 }
 
@@ -166,8 +273,26 @@ export function autoValuesOfReport(r: Pick<CashReportFields, Exclude<AutoField, 
  * Z'nin ve ikram satırının Faz 2 anahtarları (23 Kasım 2026) ve Z'nin Faz 3 açılış anahtarları (kasa zinciri): günün
  * özetine girmez
  */
-const FAZ2_Z_KEYS: ReadonlySet<string> = new Set(["listValue", "ikramTotal", "odenmezTotal", "zayiTotal", "vat", "openedAt", "closedAt", "okcZNo", "expectedOpening", "openingDiff", "openingReason"]);
+const FAZ2_Z_KEYS: ReadonlySet<string> = new Set([
+  "listValue",
+  "ikramTotal",
+  "odenmezTotal",
+  "zayiTotal",
+  "vat",
+  "openedAt",
+  "closedAt",
+  "okcZNo",
+  "expectedOpening",
+  "openingDiff",
+  "openingReason",
+  // Gün sonu tam (24 Kasım 2026): nakit bahşiş (cashIn'in içinde), kapanış notu, föyde sayılan
+  "cashTips",
+  "closeNote",
+  "methodCounts",
+]);
 const FAZ2_IKRAM_KEYS: ReadonlySet<string> = new Set(["kind", "personKind"]);
+/** Gün sonu tam: ödemenin cinsi (cari / havale) özete girmez */
+const PAYMENT_SOFT_KEYS: ReadonlySet<string> = new Set(["kind"]);
 const withoutKeys = (v: unknown, keys: ReadonlySet<string>): unknown =>
   v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([k]) => !keys.has(k))) : v;
 
@@ -180,7 +305,8 @@ const withoutKeys = (v: unknown, keys: ReadonlySet<string>): unknown =>
  */
 export function dayHash(day: { z: unknown; payments: unknown; ikram: unknown }): string {
   const ikram = Array.isArray(day.ikram) ? day.ikram.map((l) => withoutKeys(l, FAZ2_IKRAM_KEYS)) : day.ikram;
-  const text = JSON.stringify([withoutKeys(day.z, FAZ2_Z_KEYS), day.payments, ikram]);
+  const payments = Array.isArray(day.payments) ? day.payments.map((p) => withoutKeys(p, PAYMENT_SOFT_KEYS)) : day.payments;
+  const text = JSON.stringify([withoutKeys(day.z, FAZ2_Z_KEYS), payments, ikram]);
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
     h ^= text.charCodeAt(i);
@@ -219,6 +345,10 @@ export interface DayEndMail {
   link: string;
   /** Pavo – LafPOS kart karşılaştırması (geldiyse; src/lib/lafpos/bank-pos.ts) */
   bankPos?: BankPos | null;
+  /** Gün sonu tam: yazarkasanın cihaz belgeleri (gövdenin okc'si; yoksa null) */
+  okc?: PosOkc | null;
+  /** Gün sonu tam: istenen gün sonu fotoğrafı, eklenen sayı ve fotoğraf ↔ LafPOS karşılaştırması (verilmezse bölüm yok) */
+  photo?: { need: LafposPhotoNeed; attached: number; check: LafposPhotoCheck | null } | null;
   /**
    * Faz 2 ayrıntısı (src/lib/lafpos/gun-ayrinti.ts): yazarkasadan geçmeyen, ödeme iptalleri, iptal edilen kalemler,
    * yazarkasa Z no, KDV dökümü, düzeltmenin nedeni. Eski LafPOS'un gününde bölümleri boş
@@ -289,9 +419,26 @@ export function dayEndSections(m: DayEndMail): { title: string; rows: [string, s
       ],
     },
     ...(m.online !== null ? [{ title: "laffogato.net (kasadan geçmez)", rows: [["Online sipariş", money(m.online)]] as [string, string][] }] : []),
+    // Gün sonu tam: Banka POS ve yazarkasa cihazlardan (LafPOS), personelin fotoğrafı ve LafPOS'la karşılaştırması
+    ...(m.bankPos !== undefined || m.okc !== undefined || m.photo ? [{ title: "Cihazlar ve fotoğraf", rows: deviceRows(m) }] : []),
     // Faz 2: yazarkasadan geçmeyen, ödeme iptalleri, iptal edilen kalemler, yazarkasa Z no ve KDV (gönderim sırası yazılmaz)
     ...(m.detail?.sections.filter((x) => x.title !== "Gönderim") ?? []),
   ];
+}
+
+/** "Banka POS: 995 ₺ (000278 240 ₺ + 000279 755 ₺)", ya da "boş · <tam neden>"; yazarkasanın kaynağı; fotoğraf */
+function deviceRows(m: DayEndMail): [string, string][] {
+  const rows: [string, string][] = [];
+  const bank = bankPosAuto(m.bankPos);
+  if (bank.value === null) rows.push(["Banka POS", `boş · ${bank.gap}`]);
+  else {
+    const batches = m.bankPos?.batches?.length ? m.bankPos.batches : null;
+    const parts = batches ? batches.map((b) => `${b.batchNo ?? "batch"} ${money(b.total)}`).join(" + ") : m.bankPos?.batchNo ? `batch ${m.bankPos.batchNo}` : null;
+    rows.push(["Banka POS", `${money(bank.value)}${parts ? ` (${parts})` : ""}`]);
+  }
+  rows.push(["Yazarkasa", m.okc ? `LafPOS cihaz belgeleri · ${m.okc.docs} belge · ${money(m.okc.total)}` : GAP_TEXT.okcMissing.replace(/^Yazarkasa: /, "")]);
+  if (m.photo) rows.push(["Fotoğraf", photoCheckText(m.photo.check, m.photo.need, m.photo.attached)]);
+  return rows;
 }
 
 function diffWord(d: number): string {
@@ -327,7 +474,7 @@ export function dayEndNotes(m: DayEndMail): string[] {
   if (m.corrected) out.push(`Düzeltildi: ${why ? `${why}; ` : "LafPOS bu günü yeniden gönderdi; "}bu e-postadaki rakamlar öncekinin yerine geçer.`);
   out.push(REPORT_TEXT[m.report]);
   const missing = m.report === "human" ? [] : m.missing.map((f) => MISSING_LABEL[f] ?? f);
-  if (missing.length) out.push(`Panelde tamamlanacak: ${missing.join(", ")}.`);
+  if (missing.length) out.push(`Eksik: ${missing.join(", ")}.`);
   return out;
 }
 

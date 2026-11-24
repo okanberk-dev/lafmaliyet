@@ -7,8 +7,9 @@ import type { BankPos } from "@/lib/lafpos/day";
 
 /**
  * Yöneticinin Kasa gün görünümünde LafPOS gününün Pavo – LafPOS kart karşılaştırması (src/lib/lafpos/bank-pos.ts):
- * Pavo kart toplamı, LafPOS kart toplamı ve fark; fark 0 ise "Uyumlu", değilse belirgin "FARK VAR". Pavo sonucu
- * gelmediyse kart görünmez. Yazarkasa (Banka POS Z) fotoğrafının eksik uyarısından ayrıdır. Sunucu bileşeni.
+ * gün sonu tam gövdesinde Pavo'nun günü (Σ batch) ↔ LafPOS'un bütün gün kartı, sonra her batch ve son batch'in ayrıntısı;
+ * fark 0 ise "Uyumlu", değilse belirgin "FARK VAR". Pavo sonucu gelmediyse kart görünmez. Gün sonu fotoğrafının
+ * karşılaştırması altındaki kartta (lafpos-photo.tsx). Sunucu bileşeni.
  */
 export function PavoCard({ bankPos }: { bankPos: BankPos }) {
   const v = pavoView(bankPos);
@@ -25,7 +26,7 @@ export function PavoCard({ bankPos }: { bankPos: BankPos }) {
         )}
         <section aria-label={PAVO_TITLE}>
           <ul className="divide-y divide-line">
-            {[...v.rows, ...v.acquirers].map(([label, value], i) => (
+            {[...v.rows, ...v.batches, ...v.acquirers].map(([label, value], i) => (
               <li key={`${label}:${i}`} className="flex items-baseline justify-between gap-4 py-1.5">
                 <span className={i < v.rows.length ? "min-w-0 font-medium break-words text-ink" : "min-w-0 break-words text-ink-soft"}>{label}</span>
                 <span className={i === 2 && v.state === "fark" ? "shrink-0 text-right font-semibold text-bad-ink tabular" : "shrink-0 text-right text-ink tabular"}>{value}</span>

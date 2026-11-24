@@ -68,7 +68,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {children}
         {/* Bildirim balonu üst katmanda durur, açık bir pencerenin (alttan açılan sayfa) içinde dokunulabilir; yeri
             ekrana göre değişir (telefonda panelde altta, alt menünün üstünde): components/ui/toast-layout.ts */}
-        <TopLayerToaster closeButton toastOptions={{ classNames: { toast: "!rounded-2xl !font-sans" } }} />
+        <TopLayerToaster closeButton />
       </body>
     </html>
   );

@@ -97,7 +97,7 @@ describe("LafPOS Faz 2 alanları: veritabanında", { skip: !SERVER_URL && "LAFPO
     assert.ok(r, "günün özeti");
     assert.equal(r.revision, 1);
     assert.deepEqual(r.correction, { kind: "reopen", reason: "Geç gelen masa" });
-    assert.deepEqual(r.offDevice, { card: 1509, cash: 465 });
+    assert.deepEqual(r.offDevice, { card: 1509, cash: 465, cardTips: 25 });
     assert.equal(r.refunds?.length, 2);
     assert.equal(r.iptal?.length, 4);
     assert.equal(r.z.okcZNo, "1");

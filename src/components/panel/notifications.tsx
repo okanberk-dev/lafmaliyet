@@ -1,11 +1,12 @@
 "use client";
 
-import { Activity, AlarmClock, Banknote, Bell, CalendarClock, CheckCheck, ClipboardCheck, FileText, ListChecks } from "lucide-react";
+import { Activity, AlarmClock, Banknote, CalendarClock, CheckCheck, ClipboardCheck, FileText, ListChecks } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
-import { SPRING_PANEL, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
+import { SPRING_PANEL } from "@/components/akmanos/lib/motion-ease";
+import { NotificationBell } from "@/components/ui/notification-bell";
 import { TONE_ICON, TONE_TILE, type NoticeTone } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { alertTone } from "@/app/panel/alert-tone";
@@ -140,36 +141,19 @@ export function NotificationMenu({
       data-open={open || undefined}
       className={cn("relative inline-flex shrink-0 font-sans", variant === "bar" && "max-lg:static")}
     >
-      <button
+      {/* Zil (ui/notification-bell.tsx): okunmamış sayısı sayfa açıkken artınca sallanır, rozetin rakamı döner; ilk okuma
+          (items null → liste) çaldırmaz */}
+      <NotificationBell
         ref={triggerRef}
-        type="button"
+        count={items === null ? null : unread}
         onClick={toggle}
         aria-haspopup="true"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         aria-label={items === null ? (failure ? "Bildirimler okunamadı" : "Bildirimler yükleniyor") : unread > 0 ? `Bildirimler, ${unread} okunmamış` : "Bildirimler"}
-        className={cn(
-          "relative inline-flex size-11 cursor-pointer items-center justify-center text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-foreground/30",
-          variant === "sidebar" ? "rounded-2xl bg-chart-metric-bg hover:bg-chart-bg" : "rounded-lg border border-border bg-background hover:bg-chart-bg",
-        )}
-      >
-        <Bell className="size-[18px]" strokeWidth={1.75} aria-hidden />
-        <AnimatePresence>
-          {unread > 0 ? (
-            <motion.span
-              key="badge"
-              initial={reduce ? false : { scale: 0 }}
-              animate={{ scale: 1 }}
-              exit={reduce ? undefined : { scale: 0 }}
-              transition={reduce ? { duration: 0 } : SPRING_SWAP}
-              aria-hidden="true"
-              className="absolute top-1.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-foreground px-1 text-[10px] font-semibold text-background tabular ring-2 ring-chart-metric-bg"
-            >
-              {unread > 9 ? "9+" : unread}
-            </motion.span>
-          ) : null}
-        </AnimatePresence>
-      </button>
+        badgeClassName="ring-2 ring-chart-metric-bg"
+        className={variant === "sidebar" ? "rounded-2xl bg-chart-metric-bg hover:bg-chart-bg" : "rounded-lg border border-border bg-background hover:bg-chart-bg"}
+      />
 
       <AnimatePresence>
         {open ? (

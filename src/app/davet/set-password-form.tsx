@@ -1,15 +1,16 @@
 "use client";
 
-import { CircleCheck, Eye, EyeOff, Loader2 } from "lucide-react";
+import { CircleCheck, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useState } from "react";
 
 import { catchingFormAction } from "@/components/ui/action-error";
+import { PasswordInput } from "@/components/ui/password-input";
 import { PASSWORD_MIN, passwordProblem } from "@/lib/password-rules";
 import { setPasswordWithToken, type SetPasswordState } from "@/server/actions/invites";
 
-import { AuthError, authButton, authInput } from "@/app/giris/auth-ui";
+import { AuthError, authButton, authInput, authToggle } from "@/app/giris/auth-ui";
 
 import { rememberLoginEmail } from "./keys";
 import { TokenProblem } from "./problem";
@@ -24,7 +25,8 @@ const input = authInput;
 
 /**
  * Yeni parola + tekrarı (en az 8, göster/gizle). Kaydedilince kısa bir onay gösterilir ve giriş sayfasına
- * ("Parolanız kaydedildi" mesajıyla) geçilir. Oturum açılmaz.
+ * ("Parolanız kaydedildi" mesajıyla) geçilir. Oturum açılmaz. Alanlar panelin parola kutusu (ui/password-input.tsx):
+ * ilk alanın göz düğmesi ikisini birden gösterir; ilk alanın altında parola gücü (aynı `passwordProblem` kuralıyla).
  */
 export function SetPasswordForm({ token, name, email, kind, until }: { token: string; name: string; email: string; kind: "invite" | "reset"; until: string }) {
   const [state, action, pending] = useActionState<SetPasswordState, FormData>(submitNewPassword, {});
@@ -84,35 +86,26 @@ export function SetPasswordForm({ token, name, email, kind, until }: { token: st
         <label htmlFor="sp-new" className="text-sm font-semibold text-black/70">
           {kind === "invite" ? "Parolanız" : "Yeni parola"}
         </label>
-        <div className="relative">
-          <input
-            id="sp-new"
-            type={show ? "text" : "password"}
-            name="password"
-            autoComplete="new-password"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            required
-            minLength={MIN}
-            maxLength={200}
-            autoFocus
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            aria-invalid={short || weak ? true : undefined}
-            aria-describedby="pw-hint"
-            className={`${input} pr-12`}
-          />
-          <button
-            type="button"
-            onClick={() => setShow((v) => !v)}
-            className="absolute top-1/2 right-1 flex size-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-black/60 hover:bg-black/[0.04] hover:text-black"
-            aria-label={show ? "Parolaları gizle" : "Parolaları göster"}
-            aria-pressed={show}
-          >
-            {show ? <EyeOff className="size-[18px]" /> : <Eye className="size-[18px]" />}
-          </button>
-        </div>
+        <PasswordInput
+          id="sp-new"
+          plain
+          name="password"
+          autoComplete="new-password"
+          required
+          minLength={MIN}
+          maxLength={200}
+          autoFocus
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          aria-invalid={short || weak ? true : undefined}
+          aria-describedby="pw-hint"
+          className={input}
+          visible={show}
+          onVisibleChange={setShow}
+          toggleLabels={{ show: "Parolaları göster", hide: "Parolaları gizle" }}
+          toggleClassName={authToggle}
+          strength={{ email }}
+        />
         <span id="pw-hint" className={`text-sm ${short || weak ? "font-semibold text-[#c82014] dark:text-bad" : "text-black/60"}`}>
           {short ? `En az ${MIN} karakter (şu an ${password.length})` : (weak ?? `En az ${MIN} karakter. Başka yerde kullanmadığınız bir parola seçin.`)}
         </span>
@@ -122,14 +115,11 @@ export function SetPasswordForm({ token, name, email, kind, until }: { token: st
         <label htmlFor="sp-repeat" className="text-sm font-semibold text-black/70">
           Parola (tekrar)
         </label>
-        <input
+        <PasswordInput
           id="sp-repeat"
-          type={show ? "text" : "password"}
+          plain
           name="repeat"
           autoComplete="new-password"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
           required
           maxLength={200}
           value={repeat}
@@ -137,6 +127,8 @@ export function SetPasswordForm({ token, name, email, kind, until }: { token: st
           aria-invalid={mismatch ? true : undefined}
           aria-describedby={mismatch ? "pw-repeat" : undefined}
           className={input}
+          visible={show}
+          toggle={false}
         />
         {mismatch ? (
           <span id="pw-repeat" className="text-sm font-semibold text-[#c82014] dark:text-bad">

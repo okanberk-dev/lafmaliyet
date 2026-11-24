@@ -58,7 +58,7 @@ export function ReportSheet({
   revisions?: CashRevisionRow[];
   proposedBy?: Record<number, string>;
 }) {
-  const f = withCardExtra(report, cardExtra, offDevice);
+  const f = withCardExtra(report, cardExtra, offDevice, kasa);
   const c = computeCash(f);
   const kind = diffKind(report.cashDiff);
   const checks = reportChecks({ report, cardExtra, offDevice, kasa, carry, next, modposDiffs, lafposDiffs, photoDiffs, emailError });

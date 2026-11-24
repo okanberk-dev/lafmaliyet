@@ -606,6 +606,134 @@ body {
   }
 }
 
+/* ── Bildirim kartı (sonner, components/ui/toaster.tsx; rare-ui toast'tan uyarlandı) ───────────────
+   Solda 36px ikon karosu (toast-icon.tsx, köşesi 11px), kart dolgusu 10px: kartın köşesi 21px (iç içe köşeler aynı
+   merkezli). Renkler sonner'ın değişkenlerinden (koyuda yukarıda yükseltilmiş yüzey), gölge panelin --shadow-lift'i. */
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] {
+  gap: 12px;
+  padding: 10px 14px 10px 10px;
+  border-radius: 21px;
+  box-shadow: var(--shadow-lift);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+}
+/* İkonsuz bildirim (toast(), toast.message) karo yeri kadar içeriden başlar */
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"]:not(:has([data-icon])) {
+  padding-left: 16px;
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-icon] {
+  width: 36px;
+  height: 36px;
+  margin: 0;
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-title] {
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: -0.01em;
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-description] {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--color-ink-mute);
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button] {
+  height: 36px;
+  padding-inline: 14px;
+  border-radius: 11px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--color-panel);
+  color: var(--color-ink);
+  transition:
+    background-color 0.15s,
+    transform 0.15s;
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button]:hover {
+  background: var(--color-panel-deep);
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button]:active {
+  transform: scale(0.96);
+}
+/* Farede kapatma düğmesi kartın üstüne gelince ya da klavyeyle odakta görünür (rare-ui); dokunmatikte hep görünür */
+@media (hover: hover) and (pointer: fine) {
+  [data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button] {
+    opacity: 0;
+  }
+  [data-sonner-toaster] [data-sonner-toast][data-styled="true"]:is(:hover, :focus-within) [data-close-button] {
+    opacity: 1;
+  }
+}
+
+/* Karonun hareketi: kart kaydıktan sonra (sonner 400ms) karo belirir, işaret küçükten büyür ve çizilir. "Yükleniyor"
+   kartı sonuca dönünce (data-laf-spun) karo beklemez, bir kez kabarır. */
+@keyframes laf-toast-tile {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+@keyframes laf-toast-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes laf-toast-bump {
+  40% {
+    transform: scale(1.08);
+  }
+}
+@keyframes laf-toast-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes laf-toast-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+[data-slot="toast-icon"] {
+  animation: laf-toast-tile 0.32s cubic-bezier(0.2, 0.9, 0.3, 1) 0.24s both;
+}
+[data-slot="toast-icon"] [data-slot="toast-glyph"] {
+  animation: laf-toast-pop 0.36s cubic-bezier(0.2, 0.9, 0.3, 1) 0.32s both;
+}
+[data-slot="toast-icon"] [data-draw] {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: laf-toast-draw 0.3s ease-out 0.42s forwards;
+}
+[data-slot="toast-icon"] [data-spin] {
+  animation: laf-toast-spin 0.8s linear infinite;
+}
+[data-laf-spun] [data-slot="toast-icon"]:not([data-type="loading"]) {
+  animation: laf-toast-bump 0.4s ease-out 0.1s both;
+}
+[data-laf-spun] [data-slot="toast-icon"]:not([data-type="loading"]) [data-slot="toast-glyph"] {
+  animation-delay: 0.04s;
+}
+[data-laf-spun] [data-slot="toast-icon"]:not([data-type="loading"]) [data-draw] {
+  animation-delay: 0.14s;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="toast-icon"],
+  [data-slot="toast-icon"] * {
+    animation: none !important;
+  }
+  [data-slot="toast-icon"] [data-draw] {
+    stroke-dashoffset: 0;
+  }
+}
+
 /* ── Bildirim balonları (sonner, components/ui/toaster.tsx) ──────────────────────────────────
    Dokunmatikte "Geri al" gibi eylem düğmesi 44px, kapatma düğmesinin dokunma alanı 44px. */
 @media (pointer: coarse) {

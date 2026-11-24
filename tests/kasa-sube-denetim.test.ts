@@ -134,7 +134,7 @@ test("#12 yazımlar formun kasasının kapsamında: rapor, istekler, geç rapor 
 test("#12 sayfa formlara kasayı koyar, formlar gönderir; form anahtarı kasayı da taşır", () => {
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /key=\{`\$\{view\.till\}:\$\{date\}:\$\{report\?\.revision \?\? 0\}`\}/);
-  assert.equal(page.match(/branchId=\{view\.till\}/g)?.length, 3, "CashForm, CashOutsCard, LateReport");
+  assert.equal(page.match(/branchId=\{view\.till\}/g)?.length, 5, "CashForm, CashOutsCard, LateReport, gün sonu fotoğrafı (gün ve eski LafPOS günü)");
   assert.match(page, /chainNeighbours\(getDb\(\), date, \{ prefer: user\.id, branchId: view\.till \}\)/);
   const form = read("src/app/panel/kasa/cash-form.tsx");
   assert.match(form, /submitCashReport\(\{[^}]*branchId \}\)/);

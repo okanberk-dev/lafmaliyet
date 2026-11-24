@@ -16,6 +16,9 @@ import type { PosDayPush, PosRefund } from "./day";
  * - Kasa açılışı (Faz 3, kasa zinciri): LafPOS'un açılışta beklediği (önceki günün devri), fark ve kasiyerin yazdığı neden
  * - Kasa hareketleri (Faz 3): harcama, teslim ve giriş, türüne göre sayı ve toplam; harcama ve teslim "Kasadan
  *   çıkanlar"a satır satır gelir (src/server/lafpos/cash-moves.ts), giriş yalnız burada görünür
+ * - Gün sonu tam (24 Kasım 2026): kasaya giren nakdin parçaları (giriş, nakit bahşiş, cari tahsilatı), yazarkasanın cihaz
+ *   belgeleri (belge sayısı, tutar, cihazda iptal), LafPOS'un kapanış notu, föyde sayılan, vardiya devri sayımları ve
+ *   indirim satırları
  */
 
 export interface LafposDayDetail {
@@ -42,7 +45,18 @@ const rateLabel = (rate: number) => `KDV %${Number.isInteger(rate) ? rate : rate
 /** İşaretli tutar: "+100 ₺", "−20,50 ₺", "0 ₺" */
 const signedMoney = (v: number) => (v > 0 ? `+${money(v)}` : v < 0 ? `−${money(-v)}` : money(0));
 
-export function lafposDayDetail(d: Pick<PosDayPush, "z" | "offDevice" | "refunds" | "iptal" | "revision" | "correction" | "cashMoves">): LafposDayDetail {
+/** Tahsilatın satır adı ödeme alanına göre */
+const COLLECTION_LABEL: Record<string, string> = {
+  cash: "Nakit tahsilat (cari)",
+  card: "Kartla tahsilat (cari)",
+  meal_card: "Yemek kartıyla tahsilat (cari)",
+  online: "Online tahsilat (cari)",
+  other: "Diğer tahsilat (cari)",
+};
+
+export function lafposDayDetail(
+  d: Pick<PosDayPush, "z" | "offDevice" | "refunds" | "iptal" | "revision" | "correction" | "cashMoves"> & Partial<Pick<PosDayPush, "okc" | "collections" | "shiftCounts" | "discountLines">>,
+): LafposDayDetail {
   const sections: LafposDayDetail["sections"] = [];
   const pay: [string, string][] = [];
   if (d.offDevice) {
@@ -61,6 +75,11 @@ export function lafposDayDetail(d: Pick<PosDayPush, "z" | "offDevice" | "refunds
   }
   const fiscal: [string, string][] = [];
   if (d.z.okcZNo !== undefined) fiscal.push(["Yazarkasa Z no", d.z.okcZNo ?? "yok"]);
+  // Gün sonu tam: yazarkasanın cihaz belgeleri (kasa raporunun yazarkasa alanları bunlardan)
+  if (d.okc) {
+    fiscal.push(["Cihaz belgesi", `${d.okc.docs} belge · ${money(d.okc.total)}`]);
+    if (d.okc.voided.count) fiscal.push(["Cihazda iptal", `${d.okc.voided.count} · ${money(sum([d.okc.voided.cash, d.okc.voided.card]))}`]);
+  }
   for (const v of d.z.vat ?? []) fiscal.push([rateLabel(v.rate), `matrah ${money(v.base)} · KDV ${money(v.vat)}`]);
   if (fiscal.length) sections.push({ title: "Yazarkasa ve KDV", rows: fiscal });
   // Kasa zinciri (Faz 3): beklenen bilinmiyorsa (önceki gerçek gün yok) yalnız o satır
@@ -81,6 +100,32 @@ export function lafposDayDetail(d: Pick<PosDayPush, "z" | "offDevice" | "refunds
         ["Harcama", of("harcama")],
         ["Teslim", of("teslim")],
         ["Kasaya giren (giriş)", of("giris")],
+      ],
+    });
+  }
+  // Gün sonu tam: kasaya giren nakdin parçaları (z.cashIn = giriş + nakit tahsilat + nakit bahşiş) ve kartla tahsilat
+  if (d.z.cashTips !== undefined || d.collections) {
+    const rows: [string, string][] = [];
+    if (d.z.cashTips) rows.push(["Nakit bahşiş", money(d.z.cashTips)]);
+    for (const field of ["cash", "card", "meal_card", "online", "other"] as const) {
+      const cs = (d.collections ?? []).filter((c) => c.zField === field);
+      if (cs.length) rows.push([COLLECTION_LABEL[field], `${cs.reduce((a, c) => a + c.count, 0)} · ${money(sum(cs.map((c) => c.amount)))}`]);
+    }
+    if (rows.length) sections.push({ title: "Kasaya giren ve tahsilat (LafPOS)", rows });
+  }
+  // Kapanış: LafPOS'un notu, föyde ödeme türü başına sayılan (bilgi; Banka POS'u doldurmaz) ve vardiya devri sayımları
+  const close: [string, string][] = [];
+  if (d.z.closeNote) close.push(["Kapanış notu", d.z.closeNote]);
+  for (const m of d.z.methodCounts ?? []) close.push([`Föyde sayılan · ${m.name}`, money(m.counted)]);
+  (d.shiftCounts ?? []).forEach((c, k) => close.push([`Vardiya devri ${k + 1}`, `sayılan ${money(c.counted)} · fark ${signedMoney(c.diff)}${c.confirmed ? "" : " · onaylanmadı"}`]));
+  if (close.length) sections.push({ title: "Kapanış (LafPOS)", rows: close });
+  if (d.discountLines?.length) {
+    const withReason = d.discountLines.filter((l) => l.reason);
+    sections.push({
+      title: "İndirimler (LafPOS)",
+      rows: [
+        ["İndirim satırı", `${d.discountLines.length} · ${money(sum(d.discountLines.map((l) => l.amount)))}`],
+        ...withReason.slice(0, 10).map((l, k): [string, string] => [`${k + 1}. ${l.reason}`, money(l.amount)]),
       ],
     });
   }

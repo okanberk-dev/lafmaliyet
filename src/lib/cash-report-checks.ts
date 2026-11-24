@@ -32,7 +32,7 @@ export function reportChecks(i: {
   emailError?: string | null;
 }): ReportCheck[] {
   const kasa = i.kasa ?? "ModPOS";
-  const f = withCardExtra(i.report, i.cardExtra, i.offDevice);
+  const f = withCardExtra(i.report, i.cardExtra, i.offDevice, kasa);
   const c = computeCash(f);
   const out: ReportCheck[] = [];
   if (i.emailError) out.push({ key: "email", tone: "bad", text: `E-posta gitmedi: ${i.emailError}` });

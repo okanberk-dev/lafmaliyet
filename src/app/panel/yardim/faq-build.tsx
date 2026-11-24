@@ -2,8 +2,6 @@ import { ArrowUpRight, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 
-import { IconTile, toneFor } from "@/components/ui/icon-tile";
-
 import type { FaqGroup } from "./faq-search";
 
 /**
@@ -44,7 +42,11 @@ export function textOf(node: ReactNode, pathText: PathText): string {
   return "";
 }
 
-/** Soru gruplarından arama kutulu listenin grupları: ikon karosu, cevap ve altındaki bağlantılar */
+/**
+ * Soru gruplarından arama kutulu listenin grupları: sorunun konu ikonu, cevap ve altındaki bağlantılar (cevap balonunun
+ * içinde). İkon karosuz, tek renk: rengi sorunun metninden türüyordu, anlam taşımıyordu; glif uzun listede konuyu
+ * gözle bulmaya yeter, balonu telefonda daraltmaz.
+ */
 export function buildFaq(groups: readonly { title: string; items: readonly FaqItem[] }[], pathText: PathText): FaqGroup[] {
   return groups.map((g) => ({
     title: g.title,
@@ -52,11 +54,7 @@ export function buildFaq(groups: readonly { title: string; items: readonly FaqIt
       id: f.id,
       title: f.q,
       text: `${textOf(f.a, pathText)} ${f.links?.map((l) => l.label).join(" ") ?? ""}`,
-      icon: (
-        <IconTile size="sm" tone={toneFor(f.q)}>
-          <f.icon />
-        </IconTile>
-      ),
+      icon: <f.icon />,
       description: (
         <>
           <span className="block">{f.a}</span>
