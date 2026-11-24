@@ -935,10 +935,9 @@ yazılmaz (23 Kasım 2026; `lafposMonth`, [KOMISYON.md](KOMISYON.md) › Şube v
 "Kafe kapalıydı" şubenindir ([SUBE.md › Kasa raporu "Tümü"de › Kapalı gün](SUBE.md#kasa-raporu-tümüde-20-kasım-2026)): Marina'nın satışlı
 LafPOS gün sonu Marina'nın kapalı gününün kanıtıdır, Tuzla'nınkinin değil. Şube verilmeyen okuma da LafPOS kanıtı olarak
 yalnız LafPOS'un şubesinin gün sonunu okur (`lafposEvidence`, 22 Kasım 2026): Tuzla'nın eski deneme satırı kanıt sayılmaz.
-Kasadaki fiyatların
-işareti (`pos_marks`, ürünün kasadaki eski fiyatı) şubesizdir: Tuzla'da (ModPOS) işaretlenen ürün Marina'nın LafPOS
-listesinden de düşer, Marina'da işaretlenen Tuzla'nınkinden (yalnız siteye bağlı olmayan, fiyatı geçiş gününden sonra
-değişen üründe). Şube başına işaret ayrı bir iş (Tuzla'nın akışını da değiştirir; açık).
+Kasadaki fiyatlar
+şube başınadır (`pos_stale`, `pos_marks.branch_id`; 24 Kasım 2026, [FIYATLAR.md › Şube başına kasa](FIYATLAR.md#şube-başına-kasa-şube-kapsamı-a3-24-kasım-2026)):
+Tuzla'da (ModPOS) işaretlenen ürün Marina'nın LafPOS listesinde kalır, Marina'da işaretlenen Tuzla'nınkinde.
 
 İleride Tuzla da LafPOS'a geçerse geçiş günü şube başına tutulur (okuyucular zaten `branchSwitchDay` /
 `scopeSwitchDay`'den geçer).
