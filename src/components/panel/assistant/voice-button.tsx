@@ -21,13 +21,36 @@ function useSpeechSupported(): boolean {
  * Sesle soru (src/lib/assistant/speech.ts; docs/ASISTAN.md › Sesle soru): mikrofon düğmesi. Tarayıcı desteklemiyorsa
  * HİÇ çizilmez. Dokununca dinler (tr-TR), konuşma bitince durur; tanınan metin yazı kutusundaki metnin sonuna yazılır
  * (`value` + konuşma), gönderilmez: kullanıcı okuyup Gönder'e basar. Ses panelin sunucusuna gitmez. 44 px.
+ *
+ * Dinleme kendiliğinden kesilir (sonuç yok sayılır): düğme devre dışı kalınca (soru gönderildi, yanıt bekleniyor) ya da
+ * kutudaki metin dinlemenin yazdığından başka olunca (kullanıcı yazdı, sildi ya da Gönder kutuyu boşalttı). Yoksa geç
+ * gelen bir sonuç boşalan kutuyu eski metinle yeniden doldurur ya da kullanıcının yazdığını ezerdi.
  */
 export function VoiceButton({ value, onChange, onNote, disabled }: { value: string; onChange: (text: string) => void; onNote: (note: string | null) => void; disabled?: boolean }) {
   const supported = useSpeechSupported();
   const [listening, setListening] = useState(false);
   const recRef = useRef<SpeechRecognitionLike | null>(null);
+  /** Dinlemenin kutuya son yazdığı metin (başlarken kutudaki metin) */
+  const written = useRef<string | null>(null);
+
+  /** Dinlemeyi keser; sonradan gelen sonuç yok sayılır (onresult yalnız etkin tanıyıcıdan) */
+  const cancel = () => {
+    const rec = recRef.current;
+    recRef.current = null;
+    written.current = null;
+    setListening(false);
+    rec?.abort();
+  };
 
   useEffect(() => () => recRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (disabled && recRef.current) cancel();
+  }, [disabled]);
+
+  useEffect(() => {
+    if (recRef.current && written.current !== null && value !== written.current) cancel();
+  }, [value]);
 
   if (!supported) return null;
 
@@ -40,19 +63,30 @@ export function VoiceButton({ value, onChange, onNote, disabled }: { value: stri
     if (!Ctor) return;
     const base = value;
     const rec = configureRecognition(new Ctor());
-    rec.onresult = (e) => onChange(mergeTranscript(base, transcriptOf(e.results)));
-    rec.onerror = (e) => onNote(speechErrorText(e.error));
+    rec.onresult = (e) => {
+      if (recRef.current !== rec) return;
+      const next = mergeTranscript(base, transcriptOf(e.results));
+      written.current = next;
+      onChange(next);
+    };
+    rec.onerror = (e) => {
+      if (recRef.current === rec) onNote(speechErrorText(e.error));
+    };
     rec.onend = () => {
+      if (recRef.current !== rec) return;
       setListening(false);
       recRef.current = null;
+      written.current = null;
     };
     recRef.current = rec;
+    written.current = base;
     onNote(null);
     try {
       rec.start();
       setListening(true);
     } catch {
       recRef.current = null;
+      written.current = null;
       onNote("Ses tanıma başlatılamadı.");
     }
   };

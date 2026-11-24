@@ -670,8 +670,9 @@ export function bottomNavFor(role: "admin" | "staff", opts: { assistant?: boolea
 
 /**
  * Alt menüde etkin öğe: asistan açıksa "Asistan"; çekmece açıksa "Tümü"; değilse adresle eşleşen öğe; hiçbiri
- * eşleşmiyorsa (Ürünler, Ayarlar gibi çekmecedeki bir ekran) "Tümü". Çekmeceyi açan öğesi olmayan listede eşleşme
- * yoksa null.
+ * eşleşmiyorsa (Ürünler, Ayarlar gibi çekmecedeki bir ekran) "Tümü". Ana sayfa (`/panel`, Genel bakış) çubukta
+ * değilse (yönetici, asistan açık: bottomNavFor) orada hiçbir öğe etkin değildir: girişten sonraki ilk ekranda çekmece
+ * kapalıyken "Tümü" yanmasın. Çekmeceyi açan öğesi olmayan listede eşleşme yoksa null.
  */
 export function bottomNavActive(items: BottomNavItem[], pathname: string, menuOpen = false, assistantOpen = false): string | null {
   const assistant = items.find((i) => i.action === "assistant");
@@ -679,7 +680,9 @@ export function bottomNavActive(items: BottomNavItem[], pathname: string, menuOp
   const menu = items.find((i) => !i.href && !i.action);
   if (menuOpen && menu) return menu.id;
   const hit = items.find((i) => i.href && pathMatches(pathname, i.href, i.match));
-  return hit?.id ?? menu?.id ?? null;
+  if (hit) return hit.id;
+  const home = (pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname) === "/panel";
+  return home ? null : (menu?.id ?? null);
 }
 
 /** Alt menüdeki "Ödemeler" rozeti: zildeki ödeme bildirimlerinden gecikmiş olanlar */

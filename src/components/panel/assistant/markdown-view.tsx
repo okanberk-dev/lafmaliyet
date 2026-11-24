@@ -8,11 +8,15 @@ import { cn } from "@/lib/utils";
  * Asistan yanıtının ekranı: src/lib/assistant/markdown.ts'in ağacı React öğeleriyle çizilir. HTML'e çevrilmez,
  * `dangerouslySetInnerHTML` yok; her metni React kaçışlar. Bağlantı yalnız ayrıştırıcının izin verdiği adrese:
  * panelin ekranı (Link, aynı sekme) ya da https (yeni sekme, noopener). `onNavigate`: panel bağlantısına tıklanınca
- * (telefonda pencere kapanır, sayfa görünsün). Tablo kendi kabında yatay kayar (telefonda sayfa yana kaymaz); tutar ve
- * yüzde vurgulu ve bölünmez.
+ * (telefonda pencere kapanır, sayfa görünsün). Tablo kendi kabında yatay kayar (telefonda sayfa yana kaymaz).
+ *
+ * Göz yormasın: tutar ve yüzde düz yazıda yalnız orta kalınlıkta ve bölünmez, rengi yazının rengidir (koyu temada
+ * yanıtın kısık tonu: saf beyaz parlamaz); tabloda vurgu yok (sağa hizalı tabular rakam yeter, sütunlar tek tip).
+ * Kalın yazı, başlık ve bağlantı da kendi rengini taşımaz, yanıtın tonunu alır.
  */
 
-function inlines(nodes: Inline[], onNavigate?: () => void): ReactNode[] {
+/** `table`: tablo hücresi (tutar vurgusuz) */
+function inlines(nodes: Inline[], onNavigate?: () => void, table = false): ReactNode[] {
   return nodes.map((n, i) => {
     switch (n.t) {
       case "text":
@@ -20,9 +24,9 @@ function inlines(nodes: Inline[], onNavigate?: () => void): ReactNode[] {
       case "br":
         return <br key={i} />;
       case "num":
-        // Tutar ve yüzde: vurgulu, bölünmez, tabular rakam (renk yok: göz yormasın)
+        // Tutar ve yüzde: bölünmez, tabular rakam; düz yazıda orta kalınlık, tabloda vurgusuz. Renk yazınınki
         return (
-          <span key={i} className="font-semibold whitespace-nowrap text-ink tabular-nums" data-num>
+          <span key={i} className={cn("whitespace-nowrap tabular-nums", !table && "font-medium")} data-num>
             {n.v}
           </span>
         );
@@ -34,20 +38,20 @@ function inlines(nodes: Inline[], onNavigate?: () => void): ReactNode[] {
         );
       case "strong":
         return (
-          <strong key={i} className="font-semibold text-ink">
-            {inlines(n.c, onNavigate)}
+          <strong key={i} className="font-semibold">
+            {inlines(n.c, onNavigate, table)}
           </strong>
         );
       case "em":
-        return <em key={i}>{inlines(n.c, onNavigate)}</em>;
+        return <em key={i}>{inlines(n.c, onNavigate, table)}</em>;
       case "link":
         return n.external ? (
-          <a key={i} href={n.href} target="_blank" rel="noopener noreferrer nofollow" className="font-medium text-ink underline decoration-ink-quiet underline-offset-2 hover:decoration-ink">
-            {inlines(n.c, onNavigate)}
+          <a key={i} href={n.href} target="_blank" rel="noopener noreferrer nofollow" className="font-medium underline decoration-ink-quiet underline-offset-2 hover:decoration-current">
+            {inlines(n.c, onNavigate, table)}
           </a>
         ) : (
-          <Link key={i} href={n.href} onClick={onNavigate} className="font-medium text-ink underline decoration-ink-quiet underline-offset-2 hover:decoration-ink">
-            {inlines(n.c, onNavigate)}
+          <Link key={i} href={n.href} onClick={onNavigate} className="font-medium underline decoration-ink-quiet underline-offset-2 hover:decoration-current">
+            {inlines(n.c, onNavigate, table)}
           </Link>
         );
     }
@@ -62,7 +66,7 @@ function block(b: Block, key: number, onNavigate?: () => void): ReactNode {
       return <p key={key}>{inlines(b.c, onNavigate)}</p>;
     case "h":
       return (
-        <p key={key} className={cn("pt-1 font-semibold text-ink", b.level === 1 && "text-[15px] max-lg:text-[17px]")}>
+        <p key={key} className={cn("pt-1 font-semibold", b.level === 1 && "text-[15px] max-lg:text-[17px]")}>
           {inlines(b.c, onNavigate)}
         </p>
       );
@@ -90,7 +94,7 @@ function block(b: Block, key: number, onNavigate?: () => void): ReactNode {
               <tr>
                 {b.head.map((c, i) => (
                   <th key={i} className={cn("border-b border-line-strong px-2 py-1.5 text-left font-semibold whitespace-nowrap text-ink-soft", b.align[i] && ALIGN[b.align[i]!])}>
-                    {inlines(c, onNavigate)}
+                    {inlines(c, onNavigate, true)}
                   </th>
                 ))}
               </tr>
@@ -100,7 +104,7 @@ function block(b: Block, key: number, onNavigate?: () => void): ReactNode {
                 <tr key={i} className="border-b border-line last:border-0">
                   {r.map((c, k) => (
                     <td key={k} className={cn("px-2 py-1.5 align-top", b.align[k] && ALIGN[b.align[k]!])}>
-                      {inlines(c, onNavigate)}
+                      {inlines(c, onNavigate, true)}
                     </td>
                   ))}
                 </tr>

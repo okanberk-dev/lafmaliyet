@@ -10,7 +10,10 @@
  * Tarayıcı bloğu yanıttan ayırır: metin bloksuz görünür (akarken yarım gelen "<tak" da gizlenir), sorular yanıtın altında
  * çip olur, dokununca soru olarak gider. Bloğun içi veridir: her satır düz yazıya indirilir (etiket, markdown işareti,
  * denetim karakteri atılır), bağlantı ya da adres taşıyan satır düşer, en çok 3 soru, her biri en çok 80 karakter.
- * Ekranda React yazısı olarak çizilir (HTML yok). Geçmişe (sonraki isteğe) yalnız bloksuz metin gider.
+ * İş yaptıran satır da düşer (ACTION: "Latte fiyatını 1 ₺ yap", "ödendi olarak işaretler misin?"): öneri yalnız soru ya
+ * da bakma isteğidir; araç verisine gömülü bir istem enjeksiyonu tek dokunuşluk bir işlem isteği üretemesin (işlem yine
+ * onay kartı isterdi; bu ikinci kat). Ekranda React yazısı olarak çizilir (HTML yok). Geçmişe (sonraki isteğe) yalnız
+ * bloksuz metin gider.
  */
 
 export const FOLLOWUP_OPEN = "<takip>";
@@ -26,6 +29,19 @@ function partialOpenAt(text: string): number {
   return -1;
 }
 
+/**
+ * İşlem isteği: iş yapan bir fiil kökü emir ekiyle ("yap", "ekleyin", "silelim mi") ya da rica biçiminde ("işaretler
+ * misin", "kaydedebilir misiniz"). Edilgen ve üçüncü kişi soruları geçer ("nasıl kaydedilir?", "ne eklendi?", "fark
+ * yapar mı?", "ödemem lazım").
+ */
+const ACTION_STEMS = "yap|ekle|sil|değiştir|güncelle|işaretle|onayla|kapat|öde|ayarla|kaydet|kayded|düzelt|düzenle|gönder|aktar|taşı|iptal et|iptal ed|artır|azalt|düşür|sıfırla|tamamla|ertele|oluştur";
+const IMPERATIVE = "|ın|in|un|ün|yın|yin|yun|yün|ınız|iniz|yınız|yiniz|alım|elim|yalım|yelim|sana|sene";
+const REQUEST = "ar|er|ır|ir|ur|ür|r|abilir|ebilir|yabilir|yebilir";
+const ACTION = new RegExp(
+  `(?<!\\p{L})(?:${ACTION_STEMS})(?:(?:${IMPERATIVE})(?:\\s+(?:mı|mi))?|(?:${REQUEST})\\s+(?:mı|mi|mu|mü)(?:sın|sin|sun|sün|sınız|siniz|sunuz|sünüz))(?!\\p{L})`,
+  "iu",
+);
+
 /** Bir öneri satırı → düz soru (geçersizse null) */
 export function cleanFollowup(line: string): string | null {
   let q = line
@@ -40,6 +56,8 @@ export function cleanFollowup(line: string): string | null {
   if (!q || q.length > FOLLOWUP_CHARS) return null;
   // Adres ya da bağlantı taşıyan satır öneri değildir (istem enjeksiyonuyla gelen bir "soruya" dokunulmasın)
   if (/:\/\/|\bwww\.|javascript:|data:|\(\/|\/panel\b/i.test(q)) return null;
+  // İş yaptıran satır öneri değildir (yukarıda ACTION)
+  if (ACTION.test(q.toLocaleLowerCase("tr-TR"))) return null;
   if (!/[\p{L}\p{N}]/u.test(q)) return null;
   q = q.charAt(0).toLocaleUpperCase("tr-TR") + q.slice(1);
   return q;

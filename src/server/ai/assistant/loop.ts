@@ -48,7 +48,11 @@ export const ASSISTANT_MAX_TOKENS = 8000;
 
 /**
  * "Derin analiz" (docs/ASISTAN.md › Derin analiz; varsayılan kapalı, yönetici sorunun yanındaki anahtarla açar): efor
- * "high", araç turu sınırı 8 yerine 12, çıktı sınırı (düşünme dahil) 16.000. Süre sınırları aynı (rotanın 60 sn'si).
+ * "high", araç turu sınırı 8 yerine 12, çıktı sınırı (düşünme dahil) 16.000. Süre bütçesi de biraz geniş: yeni araç
+ * turu 42 sn'ye dek açılır (olağan 35), akış 55 sn'de kesilir (olağan 50). Rotanın maxDuration'ı 60 sn (Vercel):
+ * kesinti ile kayıt (ai_calls satırını kapatma) arasında 5 sn pay kalır; son, araçsız çağrıya 13 sn (olağanda 15).
+ * High eforda her tur daha uzun sürdüğünden 12 tur bir TAVANDIR: pratikte sınırı çoğu zaman süre koyar (42 sn'de
+ * model eldeki bilgiyle toparlar, `limit`). Canlı denemeden sonra derin soruların tur ve süre dağılımı belgeye yazılır.
  *
  * Maliyet notu: high eforda model daha uzun düşünür ve daha çok araç turu açar; çıktı tokeni (10 $ / M) birkaç katına
  * çıkabilir. Üst düzey `effort` değişimi mesajların önbelleğini (bu modelde araç + sistem önekini de) geçersiz kılar:
@@ -57,7 +61,7 @@ export const ASSISTANT_MAX_TOKENS = 8000;
  * (`weight`; src/server/ai/claude.ts satırın eforundan sayar). Mesaj içi efor (beta mid-conversation-output-config)
  * önbelleği korurdu; anahtarsız ortamda denenemediği için kullanılmadı (docs/ASISTAN.md › Açık kalanlar).
  */
-export const ASSISTANT_DEEP = { effort: "high" as const, maxToolRounds: 12, maxTokens: 16_000, weight: ASSISTANT_DEEP_WEIGHT };
+export const ASSISTANT_DEEP = { effort: "high" as const, maxToolRounds: 12, maxTokens: 16_000, softMs: 42_000, hardMs: 55_000, weight: ASSISTANT_DEEP_WEIGHT };
 
 export interface AssistantTiming {
   /** Bir istekte en çok araç turu */
@@ -157,7 +161,7 @@ export interface AssistantRun {
   toolCtx: ToolContext;
   history: readonly AssistantTurn[];
   message: string;
-  /** Derin analiz (ASSISTANT_DEEP): efor high, araç turu sınırı 12 */
+  /** Derin analiz (ASSISTANT_DEEP): efor high, araç turu sınırı 12, süre 42 / 55 sn */
   deep?: boolean;
   emit: (e: AssistantEvent) => void;
   /** Kullanıcı durdurdu (tarayıcı isteği kesti) */
@@ -176,7 +180,8 @@ function mergeUsage(prev: UsageLike | null, next: Partial<Record<keyof UsageLike
 }
 
 export async function runAssistant(client: AssistantClient, run: AssistantRun): Promise<AssistantOutcome> {
-  const timing = { ...ASSISTANT_TIMING, ...(run.deep ? { maxToolRounds: ASSISTANT_DEEP.maxToolRounds } : {}), ...run.timing };
+  const deepTiming = { maxToolRounds: ASSISTANT_DEEP.maxToolRounds, softMs: ASSISTANT_DEEP.softMs, hardMs: ASSISTANT_DEEP.hardMs };
+  const timing = { ...ASSISTANT_TIMING, ...(run.deep ? deepTiming : {}), ...run.timing };
   const clock = run.clock ?? Date.now;
   const t0 = clock();
   const deadline = new AbortController();

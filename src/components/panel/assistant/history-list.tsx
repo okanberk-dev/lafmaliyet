@@ -72,7 +72,7 @@ export function HistoryList({
         <p className="text-[14px] leading-6 text-ink-mute max-lg:text-[15px]">Henüz kayıtlı sohbet yok.</p>
       )}
       <p className="text-[12px] leading-5 text-ink-mute max-lg:text-[13px]">
-        Son {HISTORY_MAX} sohbet yalnız bu cihazda ve yalnız sizin için durur; onay kartlarının yalnız özeti saklanır. Çıkış yapınca silinir.
+        Son {HISTORY_MAX} sohbet yalnız bu cihazda ve yalnız sizin için durur; onay kartlarının yalnız başlığı ve durumu saklanır. Çıkış yapınca silinir.
       </p>
     </section>
   );

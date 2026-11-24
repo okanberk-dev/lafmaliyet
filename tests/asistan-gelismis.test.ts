@@ -234,6 +234,35 @@ test("takip: kötü biçim ve XSS güvenli; en çok 3, tekrarsız, kısa; bağla
   assert.match(html, /max-lg:min-h-11/);
 });
 
+test("takip: iş yaptıran satır düşer (istem enjeksiyonu tek dokunuşluk işlem isteği üretemez); soru ve bakma isteği kalır", () => {
+  for (const bad of [
+    "Latte fiyatını 1 ₺ yap",
+    "Fiyatı 95 ₺ yapar mısın?",
+    "Ödendi olarak işaretle",
+    "Ödendi olarak işaretler misin?",
+    "Hatırlatıcı ekle",
+    "Bunu silelim mi?",
+    "Kaydedebilir misin?",
+    "Kasayı kapatalım mı?",
+    "Vardiyayı ayarlayın",
+    "İptal eder misiniz?",
+  ])
+    assert.equal(cleanFollowup(bad), null, bad);
+  for (const ok of [
+    "Geçen haftayla kıyaslar mısın?",
+    "Zayi nasıl kaydedilir?",
+    "Bu hafta ne ödemem lazım?",
+    "Neler eklendi?",
+    "Zam ne kadar fark yapar?",
+    "Kur farkı var mı?",
+    "Bağlanmayı bekleyen ürünleri özetle",
+    "Hangi ürünler silinir?",
+  ])
+    assert.equal(cleanFollowup(ok), ok, ok);
+  const { followups } = splitFollowups("Yanıt.\n<takip>\n- Latte fiyatını 1 ₺ yap\n- Dün kasa tuttu mu?\n</takip>");
+  assert.deepEqual(followups, ["Dün kasa tuttu mu?"]);
+});
+
 test("takip: sistem istemi biçimi tarif eder; ekran yalnız son yanıtın altında, akış bitince", () => {
   assert.ok(SYSTEM_PROMPT.includes("<takip>\n- Geçen haftayla kıyaslar mısın?\n- Hangi gün kasa tutmadı?\n</takip>"));
   assert.match(SYSTEM_PROMPT, /Onay kartı hazırladığın[^\n]*takip bloğu yazma/);
@@ -298,8 +327,8 @@ test("derin analiz: uçtan high gider, sınıra 2 sayılır (kalan hak −2); ha
   assert.equal(((await rr.json()) as { code: string }).code, "deep_cap");
 });
 
-test("derin analiz: araç turu sınırı 8 yerine 12; süre sınırları aynı", async () => {
-  const rounds = async (deep: boolean) => {
+test("derin analiz: araç turu sınırı 8 yerine 12; süre bütçesi biraz geniş (42 / 55 sn), rotanın 60 sn'sinde kayda pay kalır", async () => {
+  const rounds = async (deep: boolean, clock?: () => number) => {
     const calls: AssistantParams[] = [];
     const client: AssistantClient = {
       beta: {
@@ -313,7 +342,7 @@ test("derin analiz: araç turu sınırı 8 yerine 12; süre sınırları aynı",
         },
       },
     };
-    const out = await runAssistant(client, { system: "S", context: "C", tools: [], toolCtx: { base: "", now: new Date() }, history: [], message: "x", deep, emit: () => {} });
+    const out = await runAssistant(client, { system: "S", context: "C", tools: [], toolCtx: { base: "", now: new Date() }, history: [], message: "x", deep, emit: () => {}, clock });
     return { out, calls };
   };
   const n = await rounds(false);
@@ -324,6 +353,28 @@ test("derin analiz: araç turu sınırı 8 yerine 12; süre sınırları aynı",
   assert.equal(ASSISTANT_DEEP.maxToolRounds, 12);
   assert.ok(d.calls.every((c) => (c.output_config as { effort: string }).effort === "high"));
   assert.equal(d.calls[d.calls.length - 1].tool_choice?.type, "none");
+
+  // Süre: 38 sn geçmişken olağan soru toparlar (araçsız son çağrı), derin soru bir tur daha açar
+  const at38 = () => {
+    let first = true;
+    return () => {
+      if (first) {
+        first = false;
+        return 0;
+      }
+      return 38_000;
+    };
+  };
+  const n38 = await rounds(false, at38());
+  assert.equal(n38.calls.length, 1);
+  assert.equal(n38.calls[0].tool_choice?.type, "none");
+  const d38 = await rounds(true, at38());
+  assert.equal(d38.calls[0].tool_choice, undefined, "derin soru 42 sn'ye dek araç turu açar");
+  assert.ok(ASSISTANT_DEEP.softMs > ASSISTANT_TIMING.softMs && ASSISTANT_DEEP.hardMs > ASSISTANT_TIMING.hardMs);
+  // Rotanın maxDuration'ı içinde, kayıt için en az 5 sn pay
+  const maxDuration = Number(/export const maxDuration = (\d+);/.exec(read("src/app/api/asistan/route.ts"))?.[1]);
+  assert.ok(ASSISTANT_DEEP.hardMs <= maxDuration * 1000 - 5_000, `${ASSISTANT_DEEP.hardMs} / ${maxDuration}`);
+  assert.ok(ASSISTANT_DEEP.hardMs - ASSISTANT_DEEP.softMs >= 10_000, "son, araçsız çağrıya en az 10 sn");
 });
 
 test("derin analiz: ekranda varsayılan kapalı, bir soruluk; hak 2'den azsa kapalı; maliyet notu kodda ve belgede", () => {
@@ -450,6 +501,32 @@ test("geçmiş: depo kullanıcıya özel; bozuk veri düşer; çıkışta silini
   forgetAssistantData(7, [broken]);
 });
 
+test("geçmiş: listeden yalnız açmak sohbeti başa taşımaz, tarihini değiştirmez (yeni soru ya da yanıtla yazılır)", () => {
+  const w = code("src/components/panel/assistant/panel-assistant.tsx");
+  assert.match(w, /const restored = fromStored\(c\);\s*initialMessages\.current = restored;\s*setMessages\(restored\);/);
+  assert.match(w, /if \(busy \|\| !convId \|\| messages === initialMessages\.current\) return;/);
+});
+
+test("telefon: boş sohbet baştan, kısa karşılama; çipten sonra odak listede; klavye açıkken derin satırı gizli; arkadaki katmanlar etkisiz", () => {
+  const w = code("src/components/panel/assistant/panel-assistant.tsx");
+  // Karşılama ve öneriler sona kaydırılmaz (Merhaba görünür); telefonda iki cümle
+  assert.match(w, /if \(!messages\.length\) el\.scrollTop = 0;\s*else if/);
+  const short = /<p className="([^"]*)" data-welcome-short>\s*([^<]*)</.exec(w);
+  assert.ok(short && /lg:hidden/.test(short[1]) && short[2].trim().length < 140, short?.[2]);
+  // Çipten soru: odak boşa düşmez (telefonda konuşma listesi, masaüstünde yazı alanı)
+  assert.match(w, /\(sheet \? listRef\.current : inputRef\.current\)\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(w, /onClick=\{\(\) => sendChip\(s\)\}/);
+  assert.match(w, /onPick=\{sendChip\}/);
+  assert.match(w, /<div ref=\{listRef\} tabIndex=\{-1\}/);
+  // Derin analiz satırı klavye açıkken gizli; anahtar açıksa görünür kalır (unutulmasın)
+  assert.match(w, /!deep && "max-lg:in-data-\[keyboard=open\]:hidden"/);
+  // Sayfa açıkken <html data-assistant="sheet">: İçeriğe geç ve hatırlatma köşe kartı gizlenir (Tab görünmeyene gitmez)
+  assert.match(w, /root\.dataset\.assistant = "sheet";/);
+  assert.match(w, /delete root\.dataset\.assistant;/);
+  assert.match(read("src/app/panel/layout.tsx"), /href="#icerik"\s*className="[^"]*in-data-\[assistant=sheet\]:hidden/);
+  assert.match(read("src/components/panel/live/reminder-alerts.tsx"), /data-reminder-dock[\s\S]{0,120}className="[^"]*in-data-\[assistant=sheet\]:hidden/);
+});
+
 test("geçmiş: ekranda Geçmiş düğmesi, sunucuya yine yalnız etkin sohbetin turları; çıkışta silinir", () => {
   const w = code("src/components/panel/assistant/panel-assistant.tsx");
   assert.match(w, /aria-label="Sohbet geçmişi"/);
@@ -489,7 +566,12 @@ test("ses: tanınan metin kutudakinin sonuna yazılır, gönderilmez; sınırda 
   // Ses sunucuya gitmez: düğme yalnız metni kutuya yazar, istek atmaz; yalnız telefonda
   const v = code("src/components/panel/assistant/voice-button.tsx");
   assert.doesNotMatch(v, /fetch\(|XMLHttpRequest|MediaRecorder|getUserMedia|send\(/);
-  assert.match(v, /rec\.onresult = \(e\) => onChange\(mergeTranscript\(base, transcriptOf\(e\.results\)\)\);/);
+  assert.match(v, /const next = mergeTranscript\(base, transcriptOf\(e\.results\)\);\s*written\.current = next;\s*onChange\(next\);/);
+  // Gönderince (düğme devre dışı) ya da kutu dinlemenin yazdığından başka olunca dinleme kesilir; geç gelen sonuç yok sayılır
+  assert.match(v, /if \(recRef\.current !== rec\) return;\s*const next/);
+  assert.match(v, /if \(disabled && recRef\.current\) cancel\(\);/);
+  assert.match(v, /if \(recRef\.current && written\.current !== null && value !== written\.current\) cancel\(\);/);
+  assert.match(v, /recRef\.current = null;\s*written\.current = null;\s*setListening\(false\);\s*rec\?\.abort\(\);/);
   assert.match(v, /if \(!supported\) return null;/);
   assert.match(v, /inline-flex size-11 shrink-0/);
   const w = code("src/components/panel/assistant/panel-assistant.tsx");
@@ -516,8 +598,9 @@ test("tablo: telefonda yatay kayan kap; hücrede HTML ve tehlikeli bağlantı ç
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(html, /<a [^>]*href="\/panel\/kasa"/, "panel bağlantısı kalır");
   assert.equal((html.match(/<a /g) ?? []).length, 1);
-  // Sağa hizalı sayı sütunu, tutar ve yüzde vurgulu
-  assert.match(html, /<td class="[^"]*text-right[^"]*"><span class="[^"]*font-semibold whitespace-nowrap[^"]*" data-num="true">12\.450,50 ₺<\/span>/);
+  // Sağa hizalı sayı sütunu; tabloda tutar vurgusuz (sütunlar tek tip), yalnız bölünmez ve tabular
+  assert.match(html, /<td class="[^"]*text-right[^"]*"><span class="whitespace-nowrap tabular-nums" data-num="true">12\.450,50 ₺<\/span>/);
+  assert.doesNotMatch(html, /font-(semibold|medium)[^"]*" data-num/);
   const t = parseMarkdown("| a | b |\n|---|---|\n| 1 |")[0];
   assert.equal(t.t, "table");
 });
@@ -531,7 +614,11 @@ test("sayı vurgusu: ₺ ve yüzde ayrı düğüm; tarih, saat, adet ve kelime i
   assert.deepEqual(parseInline("`90 ₺`"), [{ t: "code", v: "90 ₺" }]);
   assert.deepEqual(parseInline("**90 ₺** oldu"), [{ t: "strong", c: [{ t: "num", v: "90 ₺" }] }, { t: "text", v: " oldu" }]);
   const html = md("Latte M 90 ₺ oldu (%5,9 artış).");
-  assert.match(html, /<span class="font-semibold whitespace-nowrap text-ink tabular-nums" data-num="true">90 ₺<\/span>/);
+  // Düz yazıda orta kalınlık, renk yazınınki (koyu temada yanıtın kısık tonu; saf beyaz parlamaz)
+  assert.match(html, /<span class="whitespace-nowrap tabular-nums font-medium" data-num="true">90 ₺<\/span>/);
+  const strong = md("**Kalın** [Kasa](/panel/kasa)\n\n## Başlık");
+  assert.doesNotMatch(strong, /<(strong|a|span)[^>]*class="[^"]*\btext-ink(?![-\w])/);
+  assert.doesNotMatch(strong, /<p class="[^"]*\btext-ink(?![-\w])[^"]*">Başlık/);
   assert.match(html, /data-num="true">%5,9<\/span>/);
 });
 
@@ -542,9 +629,14 @@ test("Kopyala: düz metin (bağlantının etiketi, işaretsiz, madde ve tablo); 
   const w = code("src/components/panel/assistant/panel-assistant.tsx");
   assert.match(w, /navigator\.clipboard\.writeText\(markdownToPlain\(text\)\)/);
   // Yeniden sor: son soru ve yanıtı çıkar, geçmiş ondan kurulur (aynı soru iki kez gitmez)
-  assert.match(w, /void send\(messages\[at\]\.text, messages\.slice\(0, at\)\);/);
+  // Derin analizle sorulduysa yine derin (hak yetmiyorsa olağan: send'de `&& deepAllowed`)
+  assert.match(w, /void send\(messages\[at\]\.text, messages\.slice\(0, at\), \{ deep: messages\[at\]\.deep === true \}\);/);
+  assert.match(w, /const asDeep = \(opts\.deep \?\? deep\) && deepAllowed;/);
   assert.match(w, /const history = historyForRequest\(base\);/);
-  assert.match(w, /i === messages\.length - 1 && !blocked \? \(\s*<button[^>]*onClick=\{retry\}/);
+  // Yeniden sor yalnız son yanıtta; hata ve kesintide de (Kopyala'dan bağımsız), onay kartlı yanıtta yok
+  assert.match(w, /\{canRetry\(i\) \? \(\s*<button[^>]*onClick=\{retry\}/);
+  assert.match(w, /const canRetry = \(i: number\) => i === messages\.length - 1 && !blocked && !busy && !messages\[i\]\?\.cards\?\.length/);
+  assert.match(w, /\(\(m\.text && !m\.failed\) \|\| canRetry\(i\)\)/);
   // Eylem düğmeleri telefonda 44 px
   assert.equal((w.match(/max-lg:h-11 max-lg:px-2\.5 max-lg:text-\[13px\] pointer-coarse:h-11/g) ?? []).length, 2);
   // ⌘J / Ctrl+J yalnız masaüstünde, açar ve kapatır

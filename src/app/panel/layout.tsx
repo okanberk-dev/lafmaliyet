@@ -40,10 +40,10 @@ export default function PanelLayout({ children }: LayoutProps<"/panel">) {
   return (
     <div data-component="app-shell" className="min-h-dvh bg-background text-foreground lg:pl-[17.5rem]">
       {/* Klavyeyle gezinenler için: menüyü atlayıp doğrudan sayfa içeriğine. Karaoke şeridi varken onun altında
-          görünür (--alarm-h, globals.css) */}
+          görünür (--alarm-h, globals.css). Telefonda asistanın sayfası açıkken yok (içerik etkisiz; panel-assistant.tsx) */}
       <a
         href="#icerik"
-        className="no-print sr-only focus:not-sr-only focus:fixed focus:top-[calc(var(--alarm-h)+0.75rem)] focus:left-3 focus:z-[70] focus:rounded-xl focus:bg-ink focus:px-4 focus:py-2.5 focus:text-sm focus:font-medium focus:text-on-solid"
+        className="no-print sr-only in-data-[assistant=sheet]:hidden focus:not-sr-only focus:fixed focus:top-[calc(var(--alarm-h)+0.75rem)] focus:left-3 focus:z-[70] focus:rounded-xl focus:bg-ink focus:px-4 focus:py-2.5 focus:text-sm focus:font-medium focus:text-on-solid"
       >
         İçeriğe geç
       </a>

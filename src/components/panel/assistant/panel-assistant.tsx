@@ -252,13 +252,18 @@ export function PanelAssistant({ userId }: { userId: number }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  // Telefonda sayfa açıkken arkadaki içerik ve üst çubuk etkisiz: odak ve ekran okuyucu yalnız asistanla alt menüde
+  // Telefonda sayfa açıkken arkadaki içerik ve üst çubuk etkisiz: odak ve ekran okuyucu yalnız asistanla alt menüde.
+  // Sonradan belirebilen yüzen katmanlar (hatırlatma kartı) ve "İçeriğe geç" bağlantısı <html data-assistant="sheet">
+  // ile gizlenir (`in-data-[assistant=sheet]:hidden`; reminder-alerts.tsx, panel/layout.tsx): Tab görünmeyene gitmez
   useEffect(() => {
     if (!open || !sheet) return;
+    const root = document.documentElement;
     const behind = [document.getElementById("icerik"), document.querySelector<HTMLElement>("[data-mobile-top]")].filter((el): el is HTMLElement => !!el);
     for (const el of behind) el.inert = true;
+    root.dataset.assistant = "sheet";
     return () => {
       for (const el of behind) el.inert = false;
+      delete root.dataset.assistant;
     };
   }, [open, sheet]);
 
@@ -287,12 +292,13 @@ export function PanelAssistant({ userId }: { userId: number }) {
     return () => document.removeEventListener("keydown", onKey);
   }, [open, sheet, close]);
 
-  // Yeni metin gelince sona kaydır (kullanıcı yukarıda okumuyorsa)
+  // Yeni metin gelince sona kaydır (kullanıcı yukarıda okumuyorsa). Boş sohbet (karşılama ve öneriler) baştan görünür
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight;
-  }, [messages, tool, open]);
+    if (!messages.length) el.scrollTop = 0;
+    else if (el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight;
+  }, [messages, tool, open, view]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -325,14 +331,14 @@ export function PanelAssistant({ userId }: { userId: number }) {
 
   /**
    * Soruyu gönderir. `base`: soruların ekleneceği konuşma (Yeniden sor'da son soru ve yanıtı çıkmış hâli; geçmiş de
-   * ondan kurulur: aynı soru iki kez gitmez)
+   * ondan kurulur: aynı soru iki kez gitmez). `opts.deep`: anahtar yerine bu (Yeniden sor, sorunun kendi seçimi)
    */
-  const send = async (text: string, base: ChatMessage[] = messages) => {
+  const send = async (text: string, base: ChatMessage[] = messages, opts: { deep?: boolean } = {}) => {
     const question = text.trim();
     if (!question || busy || (gate && gate.state !== "on")) return;
     const history = historyForRequest(base);
     // Derin analiz yalnız bu soru için (yanlışlıkla iki kat hak harcanmasın); hak yetmiyorsa olağan soru gider
-    const asDeep = deep && deepAllowed;
+    const asDeep = (opts.deep ?? deep) && deepAllowed;
     setMessages([...base, { role: "user", text: question, ...(asDeep ? { deep: true } : {}) }, { role: "assistant", text: "" }]);
     setInput("");
     setDeep(false);
@@ -395,6 +401,8 @@ export function PanelAssistant({ userId }: { userId: number }) {
         const body = (await res.json().catch(() => null)) as { error?: string; code?: string; left?: number } | null;
         // deep_cap: derin analize hak yetmedi, kapı açık kalır (olağan soru sorulabilir)
         if (body?.code && ["nokey", "off", "cap"].includes(body.code)) setGate({ state: body.code as Gate["state"], left: body.left ?? 0, cap: gate?.cap ?? 0, message: body.error ?? null });
+        // Kalan hak güncellenir: anahtar kapanır, Yeniden sor olağan soru olarak gider
+        else if (body?.code === "deep_cap" && typeof body.left === "number") setGate((g) => (g ? { ...g, left: body.left! } : g));
         fail(body?.error ?? "Asistana ulaşılamadı. Yeniden deneyin.", false);
         return;
       }
@@ -426,11 +434,15 @@ export function PanelAssistant({ userId }: { userId: number }) {
 
   const stop = () => abortRef.current?.abort();
 
-  /** Yeniden sor: son soru yeniden gider (son soru ve yanıtı konuşmadan çıkar; yeni bir soru sayılır) */
+  /**
+   * Yeniden sor: son soru yeniden gider (son soru ve yanıtı konuşmadan çıkar; yeni bir soru sayılır). Derin analizle
+   * sorulduysa yine derin gider (hak yetmiyorsa olağan). Yanıtında onay kartı olan soruda düğme yok (canRetry): kart
+   * ekrandan sessizce kalkmasın, aynı iş için ikinci kart hazırlanmasın.
+   */
   const retry = () => {
     const at = messages.findLastIndex((m) => m.role === "user");
     if (at < 0 || busy) return;
-    void send(messages[at].text, messages.slice(0, at));
+    void send(messages[at].text, messages.slice(0, at), { deep: messages[at].deep === true });
   };
 
   /** Kopyala: yanıtın düz metni panoya (bağlantının yalnız etiketi, işaretsiz) */
@@ -462,7 +474,10 @@ export function PanelAssistant({ userId }: { userId: number }) {
 
   const openConversation = (c: Conversation) => {
     if (busy) return;
-    setMessages(fromStored(c));
+    const restored = fromStored(c);
+    // Yalnız açmak geçmişe yazmaz (sıra ve tarih değişmesin); yeni bir soru ya da yanıtla yazılır
+    initialMessages.current = restored;
+    setMessages(restored);
     setConvId(c.id);
     setView("chat");
   };
@@ -478,6 +493,15 @@ export function PanelAssistant({ userId }: { userId: number }) {
       setMessages([]);
       setConvId(newConversationId());
     }
+  };
+
+  /**
+   * Çipten (öneri, takip) soru: çip kaybolur, odak boşa (body) düşmesin. Masaüstünde yazı alanına; telefonda konuşma
+   * listesine (klavye açılmasın, ekran okuyucu yanıtın yerinde kalsın)
+   */
+  const sendChip = (q: string) => {
+    void send(q);
+    requestAnimationFrame(() => (sheet ? listRef.current : inputRef.current)?.focus({ preventScroll: true }));
   };
 
   const onPanelKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -502,6 +526,8 @@ export function PanelAssistant({ userId }: { userId: number }) {
   /** Derin analize hak yetiyor mu (2 soru sayılır); kapının durumu bilinmiyorsa sunucu karar verir */
   const deepAllowed = !gate || gate.left >= ASSISTANT_DEEP_WEIGHT;
   const warning = tooLong || lowLeft;
+  /** Yeniden sor yalnız son yanıtta; kapı açık, yanıt bitmiş ve yanıtta onay kartı yokken */
+  const canRetry = (i: number) => i === messages.length - 1 && !blocked && !busy && !messages[i]?.cards?.length && messages.some((m) => m.role === "user");
 
   return (
     <>
@@ -591,17 +617,21 @@ export function PanelAssistant({ userId }: { userId: number }) {
             </button>
           </header>
 
-          <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 max-lg:space-y-7 max-lg:px-5 max-lg:pt-2 max-lg:pb-6">
+          <div ref={listRef} tabIndex={-1} aria-label="Konuşma" className="min-h-0 flex-1 space-y-4 overflow-y-auto focus:outline-none overscroll-contain px-4 py-4 max-lg:space-y-7 max-lg:px-5 max-lg:pt-2 max-lg:pb-6">
             {view === "history" ? (
               <HistoryList items={history} activeId={convId} onOpen={openConversation} onDelete={deleteConversation} onBack={() => setView("chat")} disabled={busy} />
             ) : (
               <>
                 {!messages.length ? (
                   <div className="space-y-4 max-lg:space-y-5">
-                    <p className="text-[14px] leading-6 text-ink-soft max-lg:text-[16px] max-lg:leading-7">
+                    {/* Telefonda kısa (göz yormasın): iki cümle; ayrıntı masaüstünde ve bilgi tabanında */}
+                    <p className="text-[14px] leading-6 text-ink-soft max-lg:hidden">
                       Merhaba! LafPOS gün sonları ve günlük satışlar, kasa, vardiya, Tükendi, bekleyen işler, ciro, kâr, tedarikçi borçları, ödemeler ve panelin
                       nasıl kullanıldığı hakkında sorabilirsiniz. Tükendi, fiyat, ödendi işareti, hatırlatıcı, vardiya gibi küçük işleri onay kartıyla hazırlarım:
                       siz Onayla&apos;ya basmadan hiçbir şey değişmez. Silme, toplu ve riskli işleri yapmam; onlarda ekranın bağlantısını ve adımları veririm.
+                    </p>
+                    <p className="text-[16px] leading-7 text-ink-soft lg:hidden" data-welcome-short>
+                      Panelin verisine bakarım. Küçük işleri onay kartıyla hazırlarım; siz Onayla&apos;ya basmadan hiçbir şey değişmez.
                     </p>
                     {!blocked ? (
                       <div className="flex flex-wrap gap-2">
@@ -609,7 +639,7 @@ export function PanelAssistant({ userId }: { userId: number }) {
                           <button
                             key={s}
                             type="button"
-                            onClick={() => void send(s)}
+                            onClick={() => sendChip(s)}
                             disabled={busy}
                             className="min-h-9 cursor-pointer rounded-full bg-panel px-3 py-1.5 text-left text-[13px] leading-5 text-ink-soft ring-1 ring-line hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none disabled:opacity-50 max-lg:min-h-11 max-lg:px-4 max-lg:text-[15px] max-lg:ring-0 pointer-coarse:min-h-11"
                           >
@@ -643,18 +673,21 @@ export function PanelAssistant({ userId }: { userId: number }) {
                         />
                       ) : null}
                       {m.cards?.map((c) => <OpCardView key={c.card.id} state={c} onChange={patchCard} />)}
-                      {/* Kopyala (her bitmiş yanıtta) ve Yeniden sor (yalnız son yanıtta); sade, ikincil renk */}
-                  {m.text && !m.failed && !(busy && i === messages.length - 1) ? (
+                      {/* Kopyala (her bitmiş yanıtta) ve Yeniden sor (yalnız son yanıtta, hata ya da kesintide de; kartlı
+                          yanıtta yok); sade, ikincil renk */}
+                  {!(busy && i === messages.length - 1) && ((m.text && !m.failed) || canRetry(i)) ? (
                     <div className="flex items-center gap-1 text-ink-mute" data-component="answer-actions">
-                      <button
-                        type="button"
-                        onClick={() => void copy(i, m.text)}
-                        className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[12px] font-medium hover:bg-panel hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none max-lg:h-11 max-lg:px-2.5 max-lg:text-[13px] pointer-coarse:h-11"
-                      >
-                        {copied === i ? <Check className="size-3.5" aria-hidden="true" /> : <Copy className="size-3.5" aria-hidden="true" />}
-                        {copied === i ? "Kopyalandı" : "Kopyala"}
-                      </button>
-                      {i === messages.length - 1 && !blocked ? (
+                      {m.text && !m.failed ? (
+                        <button
+                          type="button"
+                          onClick={() => void copy(i, m.text)}
+                          className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[12px] font-medium hover:bg-panel hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none max-lg:h-11 max-lg:px-2.5 max-lg:text-[13px] pointer-coarse:h-11"
+                        >
+                          {copied === i ? <Check className="size-3.5" aria-hidden="true" /> : <Copy className="size-3.5" aria-hidden="true" />}
+                          {copied === i ? "Kopyalandı" : "Kopyala"}
+                        </button>
+                      ) : null}
+                      {canRetry(i) ? (
                         <button
                           type="button"
                           onClick={retry}
@@ -667,7 +700,7 @@ export function PanelAssistant({ userId }: { userId: number }) {
                     </div>
                   ) : null}
                   {/* Takip önerileri yalnız son yanıtın altında */}
-                      {i === messages.length - 1 && !busy && m.followups?.length ? <FollowupChips items={m.followups} onPick={(q) => void send(q)} disabled={blocked} /> : null}
+                      {i === messages.length - 1 && !busy && m.followups?.length ? <FollowupChips items={m.followups} onPick={sendChip} disabled={blocked} /> : null}
                       {m.note ? <p className={cn("text-[12.5px] leading-5 max-lg:text-[14px] max-lg:leading-6", m.failed ? "text-warn-ink dark:text-brass-300" : "text-ink-mute")}>{m.note}</p> : null}
                     </div>
                   ),
@@ -707,14 +740,15 @@ export function PanelAssistant({ userId }: { userId: number }) {
               </p>
             ) : null}
             {!blocked ? (
-              <div className="mb-1.5 flex items-center gap-2 px-0.5">
+              // Telefonda klavye açıkken gizli (yazı alanına yer kalsın), anahtar açıksa görünür (unutulmasın)
+              <div className={cn("mb-1.5 flex items-center gap-2 px-0.5", !deep && "max-lg:in-data-[keyboard=open]:hidden")} data-deep-row>
                 {/* Derin analiz: efor high, daha çok araç turu; günlük sınıra 2 soru sayılır (docs/ASISTAN.md) */}
                 <button
                   type="button"
                   onClick={() => setDeep((v) => !v)}
                   aria-pressed={deep}
                   disabled={busy || !deepAllowed}
-                  title={deepAllowed ? "Derin analiz: daha ayrıntılı bakar, daha uzun sürer; 2 soru sayılır" : "Derin analiz için en az 2 soru hakkı gerekir"}
+                  title={deepAllowed ? "Derin analiz: daha ayrıntılı bakar, daha uzun sürer (en çok ~55 sn; tur sayısını çoğu zaman süre sınırlar); 2 soru sayılır" : "Derin analiz için en az 2 soru hakkı gerekir"}
                   data-deep-toggle
                   className={cn(
                     "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-[12.5px] font-medium ring-1 focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none disabled:cursor-default disabled:opacity-50 max-lg:h-11 max-lg:px-3.5 max-lg:text-[14px] pointer-coarse:h-11",

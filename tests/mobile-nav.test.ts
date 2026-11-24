@@ -78,8 +78,12 @@ test("etkin öğe asistanla: açıkken Asistan, kapalıyken adres; Tümü yine �
   assert.equal(bottomNavActive(admin, "/panel/kasa", true, true), "asistan");
   assert.equal(bottomNavActive(admin, "/panel/kasa"), "kasa");
   assert.equal(bottomNavActive(admin, "/panel/kasa", true), "menu", "asistan sekmesi çekmece sayılmaz");
-  // Genel bakış çubukta değil: çekmecedeki ekran gibi "Tümü"
-  assert.equal(bottomNavActive(admin, "/panel"), "menu");
+  // Genel bakış çubukta değil: ana sayfada (girişten sonraki ilk ekran) hiçbir öğe etkin değil, çekmece kapalıyken
+  // "Tümü" yanmaz; çekmece açıkken Tümü, asistan açıkken Asistan. Çekmecedeki öteki ekranlar "Tümü"
+  assert.equal(bottomNavActive(admin, "/panel"), null);
+  assert.equal(bottomNavActive(admin, "/panel/"), null);
+  assert.equal(bottomNavActive(admin, "/panel", true), "menu");
+  assert.equal(bottomNavActive(admin, "/panel", false, true), "asistan");
   assert.equal(bottomNavActive(admin, "/panel/urunler"), "menu");
   // Sekmesi olmayan listede asistan açık olsa da etkisiz
   assert.equal(bottomNavActive(BOTTOM_NAV.staff, "/panel/bugun", false, true), "bugun");

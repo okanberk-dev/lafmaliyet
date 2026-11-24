@@ -5,8 +5,9 @@
  *   aynı cihazda başka bir yönetici kendi listesini görür. Sunucuya gitmez, başka cihaza geçmez; çıkışta silinir
  *   (sidebar.tsx › forgetAssistantHistory).
  * - Yalnız GÖRÜNEN metin saklanır: soru, yanıtın metni (takip önerileri yok), yanıtın altındaki kısa not. Onay
- *   kartlarının yalnız ÖZETİ ("[Onay kartı: Latte M fiyatı — yapıldı]"); kartın kimliği, satırları, eski / yeni değerleri,
- *   uyarıları ve notu saklanmaz: geçmişten açılan sohbette kart düğmesi yoktur, onaylanamaz.
+ *   kartlarının yalnız ÖZETİ: başlığı ve durumu ("[Onay kartı: Latte M fiyatı 90,00 ₺ olacak — yapıldı]"; başlığı kart
+ *   yazar, yeni değeri ya da kişinin adını içerebilir). Kartın kimliği, satırları (eski → yeni), uyarıları ve notu
+ *   saklanmaz: geçmişten açılan sohbette kart düğmesi yoktur, onaylanamaz.
  * - Başlık ilk sorudan (tek satır, en çok 60 karakter). Sohbet başına en çok 40 mesaj, her mesaj protokolün sınırında.
  * - Sunucuya yine yalnız etkin sohbetin son turları gider (protocol.ts › historyForRequest; 20 mesaj).
  */
@@ -52,7 +53,7 @@ export function conversationTitle(messages: readonly Pick<ChatMessage, "role" | 
   return line ? clip(line, TITLE_MAX) : "Yeni sohbet";
 }
 
-/** Kartın geçmişteki özeti: başlık ve durum (satırlar, değerler, kimlik yok) */
+/** Kartın geçmişteki özeti: başlık (kartın yazdığı; yeni değeri içerebilir) ve durum. Satırlar, uyarı, not, kimlik yok */
 export function cardSummary(c: NonNullable<ChatMessage["cards"]>[number]): string {
   return `[Onay kartı: ${clip(c.card.title, 120)} — ${OP_STATUS_LABEL[c.status] ?? c.status}]`;
 }
