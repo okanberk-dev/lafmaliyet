@@ -15,7 +15,7 @@ import {
   type KaraokeToday,
   type OrdersLite,
 } from "@/app/panel/bugun/logic";
-import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
+import { ALL_BRANCHES, KARAOKE_BRANCH_ID, tillBranches } from "@/lib/branches";
 import { shiftMonth } from "@/lib/calc/engine";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { branchDayKey, businessDate } from "@/lib/cash-report";
@@ -299,6 +299,10 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const admin = user.role === "admin";
   const range = businessDayRange(c.day);
   const configured = Boolean(karaokeSecret());
+  // Karaoke yalnız karaokenin şubesinde (docs/SUBE.md › Karaoke): "Tümü" ya da karaokenin şubesi seçiliyken; başka şube
+  // seçiliyken (şubesine kilitli personelde hep kendi şubesi) karaoke satırı yok
+  const karaokeScope = await currentBranchScope();
+  const karaokeHere = karaokeScope === ALL_BRANCHES || karaokeScope === KARAOKE_BRANCH_ID;
   // Kasa satırlarının kasası (CashView): personel kendi kasasını okur; yönetici "Tümü"de iki şubenin raporunu birlikte
   // okur, satırlar şube şube kurulur (ilk raporun günü de şubenin); değilse tek kasanın (online kanalda Tuzla'nın)
   const viewP = safe(cashView(admin));
@@ -313,7 +317,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     safe(viewP.then((v) => Promise.all((v?.tills ?? []).map((b) => closedYesterday(user, now, b.id))))),
     safe(stockProgress(c.month, c.prevMonth)),
     safe(loadDueReminders(user.id, c.today)),
-    safe(loadSessions(range.from, range.to, { admin })),
+    karaokeHere ? safe(loadSessions(range.from, range.to, { admin })) : Promise.resolve(null),
     configured ? safe(Promise.all([readOrdersSnapshot(), readOrdersState()]).then(([snapshot, state]) => ordersLite(snapshot, state))) : Promise.resolve(null),
     // Bugünün ve dünün kontrol listeleri tek okumada (iki rol; personel yalnız kendi doldurabildiklerini alır)
     safe(loadChecklistDays([c.day, c.yesterday], user.role, now)),

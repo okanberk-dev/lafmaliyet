@@ -3,6 +3,7 @@ import "server-only";
 import { and, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 
 import { CATCH_UP, needsCatchUp } from "@/lib/karaoke/freshness";
+import { karaokeAudience } from "@/lib/karaoke/staff-mail";
 import { detectEvent, pushMessages, type KaraokeEvent, type SiteReservation } from "@/lib/karaoke/session";
 import { cancelledAtFor, goneSiteRows, parseSiteResponse, sessionChannel, siteTime, type SiteSnapshot } from "@/lib/karaoke/site";
 import { fetchFailure, karaokePullError, siteErrorCode } from "@/lib/karaoke/sync-text";
@@ -258,9 +259,16 @@ export async function ensureKaraokeFresh(opts: { maxAgeMs?: number; state?: Sync
   return syncKaraoke("screen");
 }
 
-/** Olayları cihazlara bildirir: üçten fazlaysa tek özet bildirim; misafirin adı bildirime yazılmaz (kilit ekranı) */
+/**
+ * Olayları cihazlara bildirir: üçten fazlaysa tek özet bildirim; misafirin adı bildirime yazılmaz (kilit ekranı). Yalnız
+ * karaokenin kitlesine (`karaokeAudience`: yönetici, şubesiz personel ve karaokenin şubesinin personeli; docs/SUBE.md ›
+ * Karaoke): başka şubeye kilitli personelin cihazı karaoke zili çalmaz
+ */
 async function announce(events: { event: KaraokeEvent; r: SiteReservation }[], nowMs: number) {
   const fresh = events.some((e) => e.event === "created");
+  if (!events.length) return;
+  const users = await getDb().select({ id: s.users.id, role: s.users.role, branchId: s.users.branchId }).from(s.users).where(eq(s.users.active, true));
+  const userIds = karaokeAudience(users).map((u) => u.id);
   for (const m of pushMessages(events, nowMs)) {
     await sendPush("karaoke", {
       kind: "karaoke",
@@ -270,6 +278,6 @@ async function announce(events: { event: KaraokeEvent; r: SiteReservation }[], n
       tag: `karaoke-${m.event}-${nowMs}`,
       requireInteraction: m.event === "created",
       ring: fresh,
-    });
+    }, { userIds });
   }
 }

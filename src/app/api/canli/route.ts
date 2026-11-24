@@ -1,11 +1,13 @@
 import { after, connection, type NextRequest } from "next/server";
 
+import { KARAOKE_BRANCH_ID } from "@/lib/branches";
 import { needsCatchUp } from "@/lib/karaoke/freshness";
 import type { LiveResponse } from "@/lib/live";
 import { todayTR } from "@/lib/reminders";
 import { awaitingUntil } from "@/lib/site-orders/follow";
 import { siteErrorFor } from "@/lib/staff-errors";
 import { getCurrentUser } from "@/server/auth/dal";
+import { staffBranchRefusal } from "@/server/branch-scope";
 import { pendingKaraokeAsks } from "@/server/data/karaoke-requests";
 import { loadDueReminders, remindersMarker } from "@/server/data/user-reminders";
 import { liveWindow, loadSessions } from "@/server/karaoke/board";
@@ -73,12 +75,15 @@ export async function GET(request: NextRequest) {
     });
   }
   const version = karaoke.version;
+  // Karaoke yalnız karaokenin şubesinde (docs/SUBE.md › Karaoke): başka şubeye kilitli personele oturum ve silme isteği
+  // gitmez (misafir adı, alarm). Kilit ETag'te: kişinin şubesi değişince eski yanıt 304 ile onaylanmaz
+  const karaokeHere = !(await staffBranchRefusal(me, KARAOKE_BRANCH_ID));
   // Kişi de ETag'te: aynı tarayıcıda başka hesapla girilince önceki kişinin yanıtı 304 ile onaylanmaz
-  const etag = `W/"${version}.o${orders}.${marker}.${today}.u${me.id}.${me.role}"`;
+  const etag = `W/"${version}.o${orders}.${marker}.k${karaokeHere ? 1 : 0}.${today}.u${me.id}.${me.role}"`;
   if (request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: { ...headers, ETag: etag } });
   const { from, to } = liveWindow();
-  const [sessions, deleteAsks, reminders, publicKey, snapshot, ordersState] = await Promise.all([
-    loadSessions(from, to, { admin: me.role === "admin" }),
+  const [sessions, asks, reminders, publicKey, snapshot, ordersState] = await Promise.all([
+    karaokeHere ? loadSessions(from, to, { admin: me.role === "admin" }) : Promise.resolve([]),
     // Sayaç silme istekleri (E-15): istek açılınca, geri çekilince ve karara bağlanınca karaoke sayacı artar (ETag)
     pendingKaraokeAsks(),
     loadDueReminders(me.id, today),
@@ -86,6 +91,7 @@ export async function GET(request: NextRequest) {
     readOrdersSnapshot(),
     readOrdersState(),
   ]);
+  const deleteAsks = karaokeHere ? asks : [];
   const body: LiveResponse = {
     serverNow: new Date().toISOString(),
     me: { id: me.id, role: me.role },

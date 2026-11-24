@@ -5,10 +5,12 @@ import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { DEFAULT_ROOM_HOURS } from "@/lib/karaoke/occupancy";
-import { PageSkeleton } from "@/components/ui/misc";
+import { EmptyState, PageSkeleton } from "@/components/ui/misc";
+import { KARAOKE_BRANCH_ID, KARAOKE_ELSEWHERE } from "@/lib/branches";
 import { monthStats } from "@/lib/karaoke/month";
 import { isBlock, sessionEnd, trClock } from "@/lib/karaoke/session";
 import { requireUser } from "@/server/auth/dal";
+import { staffBranchRefusal } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 import { loadSessions } from "@/server/karaoke/board";
 import { readKaraokeHours } from "@/server/karaoke/occupancy";
@@ -56,6 +58,20 @@ const DAY_MS = 86_400_000;
 async function KaraokeContent() {
   const user = await requireUser();
   const admin = user.role === "admin";
+  // Karaoke yalnız karaokenin şubesinde (docs/SUBE.md › Karaoke): başka şubeye kilitli personel rezervasyonları ve misafir
+  // adlarını görmez, eşitleme de tetiklemez. Siparişlerin satırı kalır (Siparişler ekranının kısayolu)
+  if (await staffBranchRefusal(user, KARAOKE_BRANCH_ID)) {
+    const at = new Date().getTime();
+    return (
+      <>
+        <KaraokeHeader role={user.role} />
+        <div className="space-y-6">
+          <OrdersSummary role={user.role} serverNow={at} />
+          <EmptyState title={KARAOKE_ELSEWHERE} description="Karaoke odası başka şubede. Rezervasyonlar ve oda sayacı orada görünür." />
+        </div>
+      </>
+    );
+  }
   // Ping kaçtıysa diye site en çok beş dakikada bir sorulur; sayfa beklemez, yeni bir şey gelirse sekme alır
   after(async () => {
     try {

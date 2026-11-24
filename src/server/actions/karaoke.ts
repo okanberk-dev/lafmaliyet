@@ -23,7 +23,9 @@ import {
 import { extensionWindow, overlapConflict, siteOverlaps, type OverlapAction, type OverlapConflict } from "@/lib/karaoke/overlap";
 import { reminderPlanned } from "@/lib/karaoke/reminder";
 import { DESK_BLOCK_CHANNEL, durationLabel, trClock } from "@/lib/karaoke/session";
+import { KARAOKE_ELSEWHERE, KARAOKE_BRANCH_ID } from "@/lib/branches";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { staffBranchRefusal } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 import { bumpKaraokeVersion, getSession, toSessionDTO } from "@/server/karaoke/board";
 import { cancelDeskBooking, createDeskBooking } from "@/server/karaoke/desk";
@@ -102,12 +104,22 @@ async function siteConflict(window: { start: number; end: number }, action: Over
 }
 
 /**
+ * Karaoke yalnız karaokenin şubesinde (KARAOKE_BRANCH_ID; docs/SUBE.md › Karaoke): başka şubeye kilitli personel sayaç
+ * başlatamaz, uzatamaz, bitiremez, silemez, köşk rezervasyonu ekleyemez ve eşitleyemez. Sayfa ona "Bu şubede
+ * kullanılmıyor" der; eylem kimliği istemci paketinde olduğu için uç da reddeder. Yönetici ve şubesiz personel serbest
+ */
+async function assertKaraokeBranch(me: { role: string }) {
+  if (await staffBranchRefusal(me, KARAOKE_BRANCH_ID)) throw new UserError(KARAOKE_ELSEWHERE);
+}
+
+/**
  * Rezervasyonsuz gelen grup için sayaç: şimdi başlar, verilen süre sonra alarm çalar. O saatte sitede geçerli bir
  * rezervasyon varsa (ve `force` yoksa) kaydedilmez, `{ conflict }` döner.
  */
 export async function startKaraokeTimer(input: z.input<typeof timerSchema>): Promise<ActionResult<{ id: number; conflict?: undefined } | { id?: undefined; conflict: OverlapConflict }>> {
   return attempt(async () => {
     const me = await requireUser();
+    await assertKaraokeBranch(me);
     const data = timerSchema.parse(input);
     const now = new Date();
     if (!data.force) {
@@ -153,6 +165,7 @@ export async function extendKaraokeSession(
 ): Promise<ActionResult<{ extraMinutes: number; conflict?: undefined } | { extraMinutes?: undefined; conflict: OverlapConflict }>> {
   return attempt(async () => {
     const me = await requireUser();
+    await assertKaraokeBranch(me);
     const sid = zId.parse(id);
     const add = z.number().int().min(5).max(240).parse(minutes);
     const force = z.boolean().optional().parse(opts?.force);
@@ -189,6 +202,7 @@ export async function extendKaraokeSession(
 export async function endKaraokeSession(id: number) {
   return attempt(async () => {
     const me = await requireUser();
+    await assertKaraokeBranch(me);
     const sid = zId.parse(id);
     const row = await endKaraokeCore(getDb(), me, sid);
     if (row) refresh();
@@ -203,6 +217,7 @@ export async function endKaraokeSession(id: number) {
 export async function reopenKaraokeSession(id: number) {
   return attempt(async () => {
     const me = await requireUser();
+    await assertKaraokeBranch(me);
     const sid = zId.parse(id);
     await reopenKaraokeCore(getDb(), me, sid);
     refresh();
@@ -218,6 +233,7 @@ export async function reopenKaraokeSession(id: number) {
 export async function deleteKaraokeTimer(id: number) {
   return attempt(async () => {
     const me = await requireUser();
+    await assertKaraokeBranch(me);
     const sid = zId.parse(id);
     const out = await removeKaraokeTimerCore(getDb(), me, sid);
     if (out.status === "deleted") refresh();
@@ -243,6 +259,7 @@ const deleteRequestSchema = z.object({
 export async function requestKaraokeTimerDelete(input: z.input<typeof deleteRequestSchema>) {
   return attempt(async () => {
     const me = await requireUser();
+    await assertKaraokeBranch(me);
     if (me.role === "admin") throw new UserError("Yönetici doğrudan siler; istek gerekmez");
     const data = deleteRequestSchema.parse(input);
     const out = await proposeKaraokeDelete(getDb(), me, data);
@@ -316,6 +333,7 @@ async function planDeskReminder(data: DeskData, knownId: string | null, by: stri
 export async function addDeskKaraoke(input: DeskInput): Promise<ActionResult<DeskAddResult>> {
   return attempt(async () => {
     const me = await requireUser();
+    await assertKaraokeBranch(me);
     const parsed = deskInputSchema.safeParse(input);
     if (!parsed.success) return { problem: { ...deskIssue(parsed.error), uncertain: false } };
     const data = parsed.data;
@@ -350,6 +368,7 @@ export async function addDeskKaraoke(input: DeskInput): Promise<ActionResult<Des
 export async function removeDeskKaraoke(id: number): Promise<ActionResult<{ kind: DeskKind; when: string; already: boolean }>> {
   return attempt(async () => {
     const me = await requireUser();
+    await assertKaraokeBranch(me);
     const sid = zId.parse(id);
     const row = await getSession(sid);
     if (!row) throw new UserError(DESK_TEXT.gone);
@@ -380,6 +399,7 @@ export async function removeDeskKaraoke(id: number): Promise<ActionResult<{ kind
 export async function syncKaraokeNow() {
   return attempt(async () => {
     const me = await requireUser();
+    await assertKaraokeBranch(me);
     const r = await syncKaraoke("manual");
     // Kurulum ayrıntısı (anahtar adı, imza, sitenin sürümü) yalnız yöneticiye; personel Eşitle'de kısa söz görür
     if (r.status === "off") throw new UserError(me.role === "admin" ? "laffogato.net bağlantısı kurulmamış (KARAOKE_SYNC_SECRET)" : "laffogato.net bağlantısı kurulmamış; yönetici Ayarlar'dan bakabilir");

@@ -19,6 +19,8 @@ export const FIXED_BRANCH_IDS: readonly string[] = [DEFAULT_BRANCH_ID, ONLINE_BR
  * (24 Kasım 2026): Tuzla. Şube özellikleri (`branches.features`) gelince oradan okunur
  */
 export const KARAOKE_BRANCH_ID = DEFAULT_BRANCH_ID;
+/** Karaokenin şubesi dışındaki şubeye kilitli personelin karaoke ekranı ve eylemleri */
+export const KARAOKE_ELSEWHERE = "Karaoke bu şubede kullanılmıyor";
 
 export const BRANCH_ID_MAX = 24;
 export const BRANCH_NAME_MAX = 60;
