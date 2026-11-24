@@ -74,7 +74,12 @@ function inlineCode(code: string): string {
  */
 export function plainDoc(md: string): string {
   let s = md.replace(/\r\n?/g, "\n");
-  s = s.replace(/<!--[\s\S]*?-->/g, "");
+  // HTML yorumları: iç içe ya da yarım kalmış olanlar ("<!-<!-- -->-") tek geçişte yeni bir "<!--" bırakabilir;
+  // değişmeyene kadar silinir, sonra kalan açılış ve kapanış parçaları da atılır (CodeQL: eksik çok karakterli temizlik)
+  for (let prev = ""; prev !== s; ) {
+    prev = s;
+    s = s.replace(/<!--[\s\S]*?-->/g, "").replace(/<!--|-->/g, "");
+  }
   s = s.replace(/^\s*```[\s\S]*?^\s*```\s*$/gm, "");
   s = s.replace(/\*\*/g, "");
   const out: string[] = [];
