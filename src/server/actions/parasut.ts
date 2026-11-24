@@ -12,6 +12,7 @@ import { getDb, schema as s } from "@/server/db";
 import { forgetParasutToken, ParasutClient } from "@/server/parasut/client";
 import { configFrom, hasParasutInvoices, loadPanelSettings, loadParasutSettings, writePanelSettings, type ParasutConfig } from "@/server/parasut/config";
 import { forgetParasutConnect } from "@/server/parasut/connect";
+import { suggestNextBatch } from "@/server/parasut/ai-match";
 import { readEInvoiceLines } from "@/server/parasut/lines";
 import { applyProductLinks, PARASUT_STATE_KEYS, parasutSyncRunning, syncParasut, updateIgnoredProducts } from "@/server/parasut/sync";
 
@@ -223,6 +224,27 @@ export async function saveProductLinks(input: z.input<typeof linkSchema>[]) {
     await logActivity(me, "Paraşüt ürünleri topluca bağlandı", `${items.length} ürün: ${items.slice(0, 5).map((i) => i.productName).join(", ")}${items.length > 5 ? "…" : ""}`);
     refresh();
     return { ...res, linked: items.length };
+  });
+}
+
+/**
+ * "AI ile öner" (docs/PARASUT.md § 5e): bekleyen ürünlerin bir partisini Claude'a sorar, doğrulanmış önerileri saklar.
+ * **Bağlantı kurmaz**: öneriler ekranda görünür, yönetici "Uygula" / "Bağla" ya da toplu pencerede onaylar. Ekran
+ * `remaining` bitene kadar yeniden çağırır (parti başına bir istek; sayfanın süresi 60 sn). Yalnız yönetici
+ */
+export async function suggestProductLinksAi() {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const r = await suggestNextBatch(me);
+    if (r.asked) {
+      await logActivity(
+        me,
+        "Paraşüt ürünleri için AI önerisi",
+        `${r.asked} ürün soruldu: ${r.link} bağlantı önerisi, ${r.notIngredient} hammadde değil, ${r.unsure} emin değil${r.rejected ? ` · ${r.rejected} uydurma hammadde reddedildi` : ""}${r.remaining ? ` · ${r.remaining} sırada` : ""}`,
+      );
+      refresh();
+    }
+    return r;
   });
 }
 
