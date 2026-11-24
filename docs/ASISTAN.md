@@ -29,6 +29,13 @@ işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları 
   görünür ("Tedarikçi özeti hazırlanıyor…"). **Durdur** yanıtı keser.
 - **Yeni sohbet** ekranı temizler ve yeni bir sohbet açar; önceki sohbet **Geçmiş**'te kalır (aşağıda Sohbet geçmişi).
   Etkin sohbet sekmede durur; başka cihaza geçmez.
+- **Yanıtın biçimi:** başlık, madde ve numaralı liste, **tablo** (sağa hizalı sayı sütunu; tablo kendi kabında yatay
+  kayar, telefonda sayfa yana kaymaz), tutar ve yüzde **vurgulu** ve satır sonunda bölünmez ("12.450,50 ₺", "%12,5";
+  renk yok). Tarih, saat ve adet vurgulanmaz.
+- **Kopyala** (her yanıtın altında): yanıtın düz metni panoya (bağlantının yalnız etiketi, işaretsiz; madde "• ",
+  tablo satırı "a | b"). **Yeniden sor** (son yanıtın altında): son soru yeniden gider; önceki soru ve yanıtı
+  konuşmadan çıkar (aynı soru geçmişte iki kez gitmez), yeni bir soru sayılır.
+- **Masaüstünde ⌘J / Ctrl+J** asistanı açar ve kapatır (sayfanın neresinde olursanız olun).
 - Yanıttaki panel bağlantıları aynı sekmede açılır (telefonda pencere kapanır, sayfa görünsün); dış bağlantı yalnız
   izin listesindeki sitelere (laffogato.net, Paraşüt, Claude), https ve yeni sekmede. Başka her adres (javascript:,
   http:, panelin dışına çıkan yol, listede olmayan site) bağlantısız yazı kalır (yalnız etiketi); yanıtta HTML

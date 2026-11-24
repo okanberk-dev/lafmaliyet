@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Brain, History, LoaderCircle, RotateCcw, Sparkles, Square, X } from "lucide-react";
+import { ArrowUp, Brain, Check, Copy, History, LoaderCircle, RefreshCw, RotateCcw, Sparkles, Square, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
@@ -8,11 +8,12 @@ import { useMediaQuery } from "@/components/ui/use-media";
 import type { OpCardState } from "@/lib/assistant/ops";
 import { restoreFollowups, splitFollowups } from "@/lib/assistant/followups";
 import { fromStored, loadHistory, newConversationId, removeConversation, saveHistory, upsertConversation, type Conversation, type KeyValueStore } from "@/lib/assistant/history";
+import { markdownToPlain } from "@/lib/assistant/markdown";
 import { pageFromLocation, suggestionsFor } from "@/lib/assistant/page-context";
 import { ASSISTANT_DAILY_CAP, ASSISTANT_DEEP_WEIGHT, ASSISTANT_LIMITS, eventReader, historyForRequest, restoreCards, type AssistantDone, type AssistantEvent, type ChatMessage } from "@/lib/assistant/protocol";
 import { cn } from "@/lib/utils";
 
-import { onAssistantOpened, setAssistantOpen, useAssistantOpen } from "./assistant-open";
+import { onAssistantOpened, setAssistantOpen, toggleAssistant, useAssistantOpen } from "./assistant-open";
 import { FollowupChips } from "./followup-chips";
 import { HistoryList } from "./history-list";
 import { MarkdownView } from "./markdown-view";
@@ -35,6 +36,7 @@ import { VoiceButton } from "./voice-button";
  * - Sohbet geçmişi (src/lib/assistant/history.ts): son 10 sohbet cihazda (localStorage, kullanıcıya özel), yalnız
  *   görünen metin ve kartın özeti; başlıktaki Geçmiş düğmesi listeler, açar, siler. Çıkışta silinir (sidebar.tsx).
  * - Sesle soru (voice-button.tsx; telefonda, tarayıcı destekliyorsa): tanınan metin kutuya yazılır, kullanıcı gönderir.
+ * - Yanıtın altında Kopyala (düz metin) ve son yanıtta Yeniden sor; masaüstünde ⌘J / Ctrl+J açar ve kapatır.
  * - Etkin sohbet bu sekmede durur (sessionStorage, kullanıcıya özel anahtar); "Yeni sohbet" yenisini açar. Sunucuya yalnız
  *   önceki turların görünen metni gider (historyForRequest); sunucu hiçbir mesajı saklamaz.
  * - Yanıt akarak gelir (satır satır JSON): metin parça parça, araç çalışırken durum satırı ("Tedarikçi özeti…"),
@@ -260,6 +262,17 @@ export function PanelAssistant({ userId }: { userId: number }) {
     };
   }, [open, sheet]);
 
+  // Masaüstünde ⌘J / Ctrl+J asistanı açar ve kapatır (telefonda alt menünün sekmesi; klavye kısayolu yok)
+  useEffect(() => {
+    if (sheet) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "j" || e.defaultPrevented) return;
+      e.preventDefault();
+      toggleAssistant();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [sheet]);
 
   // Masaüstünde pencere modal değil: odak sayfadayken de Esc kapatır (telefonda panelin kendi onKeyDown'ı)
   useEffect(() => {
@@ -310,13 +323,17 @@ export function PanelAssistant({ userId }: { userId: number }) {
     [],
   );
 
-  const send = async (text: string) => {
+  /**
+   * Soruyu gönderir. `base`: soruların ekleneceği konuşma (Yeniden sor'da son soru ve yanıtı çıkmış hâli; geçmiş de
+   * ondan kurulur: aynı soru iki kez gitmez)
+   */
+  const send = async (text: string, base: ChatMessage[] = messages) => {
     const question = text.trim();
     if (!question || busy || (gate && gate.state !== "on")) return;
-    const history = historyForRequest(messages);
+    const history = historyForRequest(base);
     // Derin analiz yalnız bu soru için (yanlışlıkla iki kat hak harcanmasın); hak yetmiyorsa olağan soru gider
     const asDeep = deep && deepAllowed;
-    setMessages((list) => [...list, { role: "user", text: question, ...(asDeep ? { deep: true } : {}) }, { role: "assistant", text: "" }]);
+    setMessages([...base, { role: "user", text: question, ...(asDeep ? { deep: true } : {}) }, { role: "assistant", text: "" }]);
     setInput("");
     setDeep(false);
     setBusy(true);
@@ -409,6 +426,26 @@ export function PanelAssistant({ userId }: { userId: number }) {
 
   const stop = () => abortRef.current?.abort();
 
+  /** Yeniden sor: son soru yeniden gider (son soru ve yanıtı konuşmadan çıkar; yeni bir soru sayılır) */
+  const retry = () => {
+    const at = messages.findLastIndex((m) => m.role === "user");
+    if (at < 0 || busy) return;
+    void send(messages[at].text, messages.slice(0, at));
+  };
+
+  /** Kopyala: yanıtın düz metni panoya (bağlantının yalnız etiketi, işaretsiz) */
+  const [copied, setCopied] = useState<number | null>(null);
+  const copy = async (i: number, text: string) => {
+    try {
+      await navigator.clipboard.writeText(markdownToPlain(text));
+      setCopied(i);
+      setAnnounce("Yanıt kopyalandı");
+      window.setTimeout(() => setCopied((c) => (c === i ? null : c)), 2000);
+    } catch {
+      setAnnounce("Kopyalanamadı");
+    }
+  };
+
   const reset = () => {
     abortRef.current?.abort();
     setMessages([]);
@@ -475,7 +512,8 @@ export function PanelAssistant({ userId }: { userId: number }) {
           type="button"
           onClick={() => setAssistantOpen(true)}
           aria-label="Panel asistanı"
-          title="Panel asistanı"
+          title="Panel asistanı (⌘J / Ctrl+J)"
+          aria-keyshortcuts="Meta+J Control+J"
           aria-haspopup="dialog"
           className={cn(
             "no-print fixed right-6 bottom-(--assistant-bottom) z-[36] flex size-12 cursor-pointer items-center justify-center rounded-full bg-surface text-ink shadow-[0_8px_24px_rgba(0,0,0,0.18)] ring-1 ring-line-strong max-lg:hidden",
@@ -605,7 +643,30 @@ export function PanelAssistant({ userId }: { userId: number }) {
                         />
                       ) : null}
                       {m.cards?.map((c) => <OpCardView key={c.card.id} state={c} onChange={patchCard} />)}
-                      {/* Takip önerileri yalnız son yanıtın altında */}
+                      {/* Kopyala (her bitmiş yanıtta) ve Yeniden sor (yalnız son yanıtta); sade, ikincil renk */}
+                  {m.text && !m.failed && !(busy && i === messages.length - 1) ? (
+                    <div className="flex items-center gap-1 text-ink-mute" data-component="answer-actions">
+                      <button
+                        type="button"
+                        onClick={() => void copy(i, m.text)}
+                        className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[12px] font-medium hover:bg-panel hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none max-lg:h-11 max-lg:px-2.5 max-lg:text-[13px] pointer-coarse:h-11"
+                      >
+                        {copied === i ? <Check className="size-3.5" aria-hidden="true" /> : <Copy className="size-3.5" aria-hidden="true" />}
+                        {copied === i ? "Kopyalandı" : "Kopyala"}
+                      </button>
+                      {i === messages.length - 1 && !blocked ? (
+                        <button
+                          type="button"
+                          onClick={retry}
+                          title="Son soruyu yeniden sorar (bir soru sayılır)"
+                          className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[12px] font-medium hover:bg-panel hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none max-lg:h-11 max-lg:px-2.5 max-lg:text-[13px] pointer-coarse:h-11"
+                        >
+                          <RefreshCw className="size-3.5" aria-hidden="true" /> Yeniden sor
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {/* Takip önerileri yalnız son yanıtın altında */}
                       {i === messages.length - 1 && !busy && m.followups?.length ? <FollowupChips items={m.followups} onPick={(q) => void send(q)} disabled={blocked} /> : null}
                       {m.note ? <p className={cn("text-[12.5px] leading-5 max-lg:text-[14px] max-lg:leading-6", m.failed ? "text-warn-ink dark:text-brass-300" : "text-ink-mute")}>{m.note}</p> : null}
                     </div>

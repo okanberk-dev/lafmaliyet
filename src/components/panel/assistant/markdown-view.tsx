@@ -8,7 +8,8 @@ import { cn } from "@/lib/utils";
  * Asistan yanıtının ekranı: src/lib/assistant/markdown.ts'in ağacı React öğeleriyle çizilir. HTML'e çevrilmez,
  * `dangerouslySetInnerHTML` yok; her metni React kaçışlar. Bağlantı yalnız ayrıştırıcının izin verdiği adrese:
  * panelin ekranı (Link, aynı sekme) ya da https (yeni sekme, noopener). `onNavigate`: panel bağlantısına tıklanınca
- * (telefonda pencere kapanır, sayfa görünsün).
+ * (telefonda pencere kapanır, sayfa görünsün). Tablo kendi kabında yatay kayar (telefonda sayfa yana kaymaz); tutar ve
+ * yüzde vurgulu ve bölünmez.
  */
 
 function inlines(nodes: Inline[], onNavigate?: () => void): ReactNode[] {
@@ -18,6 +19,13 @@ function inlines(nodes: Inline[], onNavigate?: () => void): ReactNode[] {
         return <Fragment key={i}>{n.v}</Fragment>;
       case "br":
         return <br key={i} />;
+      case "num":
+        // Tutar ve yüzde: vurgulu, bölünmez, tabular rakam (renk yok: göz yormasın)
+        return (
+          <span key={i} className="font-semibold whitespace-nowrap text-ink tabular-nums" data-num>
+            {n.v}
+          </span>
+        );
       case "code":
         return (
           <code key={i} className="rounded-md bg-note px-1 py-0.5 font-mono text-[0.92em]">

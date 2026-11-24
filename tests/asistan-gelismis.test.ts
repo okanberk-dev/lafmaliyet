@@ -14,6 +14,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { FollowupChips } from "../src/components/panel/assistant/followup-chips";
 import { HistoryList } from "../src/components/panel/assistant/history-list";
+import { MarkdownView } from "../src/components/panel/assistant/markdown-view";
 import { VoiceButton } from "../src/components/panel/assistant/voice-button";
 import { NAV_FOOTER, NAV_GROUPS, NAV_TREE } from "../src/components/panel/nav";
 import { cleanFollowup, FOLLOWUP_MAX, restoreFollowups, splitFollowups } from "../src/lib/assistant/followups";
@@ -31,6 +32,7 @@ import {
   upsertConversation,
   type KeyValueStore,
 } from "../src/lib/assistant/history";
+import { markdownToPlain, parseInline, parseMarkdown, splitAmounts } from "../src/lib/assistant/markdown";
 import type { OpCard } from "../src/lib/assistant/ops";
 import { configureRecognition, mergeTranscript, speechErrorText, speechRecognitionCtor, transcriptOf, type SpeechRecognitionLike } from "../src/lib/assistant/speech";
 import { DEFAULT_SUGGESTIONS, PAGE_SUGGESTIONS, pageContextLine, pageFromLocation, suggestionsFor } from "../src/lib/assistant/page-context";
@@ -453,7 +455,8 @@ test("geçmiş: ekranda Geçmiş düğmesi, sunucuya yine yalnız etkin sohbetin
   assert.match(w, /aria-label="Sohbet geçmişi"/);
   assert.match(w, /saveHistory\(store, userId, upsertConversation\(loadHistory\(store, userId\), convId, messages\)\)/);
   assert.match(w, /if \(busy \|\| !convId \|\| messages === initialMessages\.current\) return;/);
-  assert.match(w, /const history = historyForRequest\(messages\);/);
+  assert.match(w, /const history = historyForRequest\(base\);/);
+  assert.match(w, /base: ChatMessage\[\] = messages/);
   assert.match(w, /window\.localStorage/);
   assert.match(code("src/components/panel/sidebar.tsx"), /forgetAssistantData\(user\.id, \[safeStore\("localStorage"\), safeStore\("sessionStorage"\)\]\)/);
 });
@@ -491,4 +494,61 @@ test("ses: tanınan metin kutudakinin sonuna yazılır, gönderilmez; sınırda 
   assert.match(v, /inline-flex size-11 shrink-0/);
   const w = code("src/components/panel/assistant/panel-assistant.tsx");
   assert.match(w, /\{sheet \? <VoiceButton value=\{input\} onChange=\{setInput\} onNote=\{setVoiceNote\} disabled=\{blocked \|\| busy\} \/> : null\}/);
+});
+
+// ---------------------------------------------------------------- 6. Tablo, sayı vurgusu, Kopyala, Yeniden sor, ⌘J
+
+const md = (text: string) => renderToStaticMarkup(createElement(MarkdownView, { text }));
+
+test("tablo: telefonda yatay kayan kap; hücrede HTML ve tehlikeli bağlantı çizilmez (XSS)", () => {
+  const html = md(
+    [
+      "| Ürün | Ciro | Pay |",
+      "|---|---:|---:|",
+      "| <img src=x onerror=alert(1)> | 12.450,50 ₺ | %12,5 |",
+      "| [Tıkla](javascript:alert(1)) | <script>alert(1)</script> | [Kasa](/panel/kasa) |",
+      "| \"><svg onload=alert(1)> | [x](data:text/html,1) | [y](//kotu.site) |",
+    ].join("\n"),
+  );
+  assert.match(html, /<div class="[^"]*overflow-x-auto[^"]*"><table/);
+  assert.doesNotMatch(html, /<img|<script|<svg|javascript:|data:text|href="\/\/kotu/);
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.match(html, /<a [^>]*href="\/panel\/kasa"/, "panel bağlantısı kalır");
+  assert.equal((html.match(/<a /g) ?? []).length, 1);
+  // Sağa hizalı sayı sütunu, tutar ve yüzde vurgulu
+  assert.match(html, /<td class="[^"]*text-right[^"]*"><span class="[^"]*font-semibold whitespace-nowrap[^"]*" data-num="true">12\.450,50 ₺<\/span>/);
+  const t = parseMarkdown("| a | b |\n|---|---|\n| 1 |")[0];
+  assert.equal(t.t, "table");
+});
+
+test("sayı vurgusu: ₺ ve yüzde ayrı düğüm; tarih, saat, adet ve kelime içi rakam değil; kod içinde değil", () => {
+  const nums = (s: string) => splitAmounts(s).filter((n) => n.t === "num").map((n) => (n as { v: string }).v);
+  assert.deepEqual(nums("Ciro 12.450,50 ₺, gider ₺3.200 ve −1.250 ₺ fark; marj %12,5, düşüş -3,2% ve % 8."), ["12.450,50 ₺", "₺3.200", "−1.250 ₺", "%12,5", "-3,2%", "% 8"]);
+  assert.deepEqual(nums("24.11.2026 saat 14:30, 3 adet, A4 kâğıt, 2026 yılı"), []);
+  assert.deepEqual(nums("85 TL"), ["85 TL"]);
+  assert.deepEqual(nums("v2%"), [], "kelimeye yapışık değil");
+  assert.deepEqual(parseInline("`90 ₺`"), [{ t: "code", v: "90 ₺" }]);
+  assert.deepEqual(parseInline("**90 ₺** oldu"), [{ t: "strong", c: [{ t: "num", v: "90 ₺" }] }, { t: "text", v: " oldu" }]);
+  const html = md("Latte M 90 ₺ oldu (%5,9 artış).");
+  assert.match(html, /<span class="font-semibold whitespace-nowrap text-ink tabular-nums" data-num="true">90 ₺<\/span>/);
+  assert.match(html, /data-num="true">%5,9<\/span>/);
+});
+
+test("Kopyala: düz metin (bağlantının etiketi, işaretsiz, madde ve tablo); Yeniden sor son soruyu bir kez yollar; ⌘J", () => {
+  const plain = markdownToPlain("## Özet\n\n**Ciro** 12.450 ₺ — [Kasa](/panel/kasa).\n\n- bir\n- iki\n\n1. ilk\n2. ikinci\n\n| a | b |\n|---|---|\n| 1 | 2 |");
+  assert.equal(plain, "Özet\n\nCiro 12.450 ₺ — Kasa.\n\n• bir\n• iki\n\n1. ilk\n2. ikinci\n\na | b\n1 | 2");
+  assert.equal(markdownToPlain("<b>yok</b> [x](javascript:void)"), "<b>yok</b> x", "tehlikeli bağlantı yalnız etiket");
+  const w = code("src/components/panel/assistant/panel-assistant.tsx");
+  assert.match(w, /navigator\.clipboard\.writeText\(markdownToPlain\(text\)\)/);
+  // Yeniden sor: son soru ve yanıtı çıkar, geçmiş ondan kurulur (aynı soru iki kez gitmez)
+  assert.match(w, /void send\(messages\[at\]\.text, messages\.slice\(0, at\)\);/);
+  assert.match(w, /const history = historyForRequest\(base\);/);
+  assert.match(w, /i === messages\.length - 1 && !blocked \? \(\s*<button[^>]*onClick=\{retry\}/);
+  // Eylem düğmeleri telefonda 44 px
+  assert.equal((w.match(/max-lg:h-11 max-lg:px-2\.5 max-lg:text-\[13px\] pointer-coarse:h-11/g) ?? []).length, 2);
+  // ⌘J / Ctrl+J yalnız masaüstünde, açar ve kapatır
+  assert.match(w, /if \(sheet\) return;\s*const onKey = \(e: globalThis\.KeyboardEvent\) => \{\s*if \(!\(e\.metaKey \|\| e\.ctrlKey\) \|\| e\.altKey \|\| e\.shiftKey \|\| e\.key\.toLowerCase\(\) !== "j"/);
+  assert.match(w, /e\.preventDefault\(\);\s*toggleAssistant\(\);/);
+  assert.match(w, /aria-keyshortcuts="Meta\+J Control\+J"/);
 });
