@@ -753,6 +753,12 @@ export interface OkcReportFields {
    * görür, Z'nin kartı görmez. Kart karşılaştırması bunu düşer; kaydedilmez, LafPOS'un gün sonundan gelir
    */
   cardExtra?: number | null;
+  /**
+   * LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2; src/lib/lafpos/prefill.ts LafposDay.offDevice): mali
+   * fişi yazarkasada kesilmedi. Z'nin kartında ve nakdinde var, yazarkasanın Z'sinde ve banka gün sonunda yok: kart, nakit
+   * ve toplam karşılaştırmaları bunu düşer; kaydedilmez
+   */
+  offDevice?: { card: number; cash: number } | null;
 }
 
 export interface OkcReconcileLine {
@@ -803,17 +809,26 @@ export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin", ka
   // LafPOS gününde kartla bahşiş ve cari tahsilatı Z'nin kartında yok, banka POS'unda var (G11): karşılaştırma düşer;
   // tutarı yalnız yöneticinin metninde
   const extra = isNum(f.cardExtra) && f.cardExtra > 0 ? f.cardExtra : 0;
-  const extraNote = extra ? (audience === "admin" ? ` LafPOS'taki kartla bahşiş ve cari tahsilatı (${money(extra)}) düşüldü.` : " LafPOS'taki kartla bahşiş ve cari tahsilatı düşüldü.") : "";
+  // Yazarkasadan geçmeyen ödeme (Faz 2) Z'nin kartında ve nakdinde var, yazarkasada ve banka gün sonunda yok: düşülür;
+  // tutarı yalnız yöneticinin metninde
+  const offCard = f.offDevice && f.offDevice.card > 0 ? f.offDevice.card : 0;
+  const offCash = f.offDevice && f.offDevice.cash > 0 ? f.offDevice.cash : 0;
+  const offNote = (what: "kart" | "nakit", amount: number) =>
+    amount ? (audience === "admin" ? ` LafPOS'ta yazarkasadan geçmeyen ${what} (${money(amount)}) düşüldü.` : ` LafPOS'ta yazarkasadan geçmeyen ${what} düşüldü.`) : "";
+  const extraNote =
+    (extra ? (audience === "admin" ? ` LafPOS'taki kartla bahşiş ve cari tahsilatı (${money(extra)}) düşüldü.` : " LafPOS'taki kartla bahşiş ve cari tahsilatı düşüldü.") : "") +
+    offNote("kart", offCard);
+  const card = r2(f.card - offCard);
   // Kart: yazarkasa kartı varsa o, yoksa banka gün sonu − ModPOS kart
   if (okcCard !== null) {
-    const d = r2(okcCard - f.card - extra);
+    const d = r2(okcCard - card - extra);
     out.push(
       same(d)
         ? { key: "okc-card", tone: "good", text: `Kart: yazarkasa ile ${kasa} aynı.${extraNote}`, diff: d }
         : { key: "okc-card", tone: "warn", text: `Yazarkasa kartı, ${kasa}'taki karttan ${moreLess(d)}. Kartla alınan bir ödeme ${kasa}'ta başka ödeme türüyle girilmiş olabilir.${extraNote}`, diff: d },
     );
   } else if (isNum(f.bankPos)) {
-    const d = r2(f.bankPos - f.card - extra);
+    const d = r2(f.bankPos - card - extra);
     const label = hasOkc ? "Banka gün sonu" : "Banka POS";
     out.push(
       same(d)
@@ -828,17 +843,25 @@ export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin", ka
   if (audience === "staff") return out;
 
   if (isNum(f.okcCash)) {
-    const d = r2(f.okcCash - f.cash);
-    out.push(same(d) ? { key: "okc-cash", tone: "good", text: `Nakit: yazarkasa ile ${kasa} aynı.`, diff: d } : { key: "okc-cash", tone: "info", text: `Yazarkasa nakdi, ${kasa}'taki nakitten ${moreLess(d)}.`, diff: d });
+    const d = r2(f.okcCash - (f.cash - offCash));
+    const note = offNote("nakit", offCash);
+    out.push(
+      same(d)
+        ? { key: "okc-cash", tone: "good", text: `Nakit: yazarkasa ile ${kasa} aynı.${note}`, diff: d }
+        : { key: "okc-cash", tone: "info", text: `Yazarkasa nakdi, ${kasa}'taki nakitten ${moreLess(d)}.${note}`, diff: d },
+    );
   }
   if (isNum(f.okcTotal)) {
     const d = r2(f.zTotal - f.okcTotal);
     const offFiscal = r2(f.online + f.other);
+    // LafPOS gününde yazarkasadan geçmeyen satış da (Faz 2)
+    const offDev = r2(offCard + offCash);
+    const why = offDev > 0 ? (offFiscal > 0 ? "online, diğer ve yazarkasadan geçmeyen satışlar kadar" : "yazarkasadan geçmeyen satışlar kadar") : "online ve diğer satışlar kadar (yazarkasadan geçmez)";
     out.push(
       same(d)
         ? { key: "okc-total", tone: "good", text: "Toplam: iki Z aynı.", diff: d }
-        : d > 0 && offFiscal > 0 && same(r2(d - offFiscal))
-          ? { key: "okc-total", tone: "info", text: `${kasa} toplamı ${money(d)} fazla; online ve diğer satışlar kadar (yazarkasadan geçmez).`, diff: d }
+        : d > 0 && offFiscal + offDev > 0 && same(r2(d - offFiscal - offDev))
+          ? { key: "okc-total", tone: "info", text: `${kasa} toplamı ${money(d)} fazla; ${why}.`, diff: d }
           : { key: "okc-total", tone: "info", text: `${kasa} toplamı yazarkasadan ${moreLess(d)}.`, diff: d },
     );
   }

@@ -266,10 +266,12 @@ test("yazarkasa Z'si: WhatsApp metni (personel de gönderir) yöneticinin satır
   assert.ok(a2.includes("Yazarkasa toplam 11.540 ₺ → 11.640,50 ₺") && a2.includes("Yazarkasa fiş sayısı (fotoğrafta 149)"), a2);
 });
 
-test("LafPOS'tan doldur: personelin okuyucusu yalnız Z ve geliş anı (sabit sütun); ödeme kanalları ve ikram okunmaz", () => {
+test("LafPOS'tan doldur: personelin okuyucusu yalnız Z, yazarkasadan geçmeyen ödeme ve geliş anı (sabit sütunlar); ödeme kanalları ve ikram okunmaz", () => {
   const loader = stripComments(read("src/server/data/lafpos-day.ts"));
   assert.match(loader, /^import "server-only";/);
-  assert.match(loader, /\.select\(\{ z: s\.posDayReports\.z, receivedAt: s\.posDayReports\.receivedAt \}\)/);
+  // Faz 2: yazarkasadan geçmeyen kart ve nakit (iki tutar) da gider: personelin kart karşılaştırması yöneticininkiyle aynı
+  // sonucu versin (kartla bahşiş gibi, G11; tutarı metinde yalnız yöneticininki yazar)
+  assert.match(loader, /\.select\(\{ z: s\.posDayReports\.z, offDevice: s\.posDayReports\.offDevice, receivedAt: s\.posDayReports\.receivedAt \}\)/);
   assert.doesNotMatch(loader, /\.select\(\)|payments|ikram|posDailySales/);
   // Forma giden yalnız formun alanları: kasa farkı (LafPOS'un hesabı) da gitmez, form kendisi hesaplar
   const prefill = read("src/lib/lafpos/prefill.ts");

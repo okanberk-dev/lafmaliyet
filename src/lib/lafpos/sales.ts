@@ -30,6 +30,10 @@ export interface LafposMonthLine {
   revenue: number;
   /** Satırın geçtiği gün sayısı */
   days: number;
+  /** Faz 2: indirimden önceki liste değeri (TL, KDV dahil); bir günü brütsüz (eski LafPOS) gelmişse null */
+  gross?: number | null;
+  /** Faz 2: ek parçası (EXTRA SHOT, SYRUP, ALTERNATIF SÜT) */
+  isAddon?: boolean;
 }
 
 /** Ayın sayılan LafPOS gün sonları (pos_day_reports): kaç gün geldi, son gün */
@@ -102,6 +106,8 @@ export function mergeSalesSources(input: SalesSourcesInput): SalesSources {
     isService: l.isService,
     note: null,
     lafpos: { days: l.days },
+    ...(l.gross !== undefined ? { gross: l.gross } : {}),
+    ...(l.isAddon !== undefined ? { isAddon: l.isAddon } : {}),
   }));
   const coverage: Record<string, string> = {};
   for (const [m, through] of Object.entries(input.coverage)) if (modposListCounts(m, S)) coverage[m] = through;
@@ -131,6 +137,8 @@ export function lafposMonthStatus(i: {
   /** Ayın kasa raporu olan günleri ve gelen LafPOS gün sonları: raporlu ama gün sonu gelmemiş gün (`missing`) */
   kasaDays?: readonly string[];
   lafposDates?: readonly string[];
+  /** Ayın sayılan LafPOS günlerinin ürün satırları toplamı ve Z'si (zCheck: Σ ciro = zTotal); verilmezse denetim yok */
+  linesVsZ?: readonly { date: string; lines: number; z: number }[];
 }): LafposSalesMonth | null {
   const source = monthSource(i.month, i.switchDay);
   if (source === "modpos") return null;
@@ -150,18 +158,22 @@ export function lafposMonthStatus(i: {
   // Raporlu ama LafPOS gün sonu gelmemiş günler (bugün hariç: gün sonu kapanışta gelir)
   const got = new Set(i.lafposDates ?? []);
   const missing = from === null ? [] : (i.kasaDays ?? []).filter((d) => d >= from && d < i.today && !got.has(d)).sort();
+  // Listenin ilk günü: listenin günlerindeki ilk kasa raporu (Marina 13 Kasım'da açıldı); rapor yoksa ayın 1'i
+  const first = list ? ((i.kasaDays ?? []).filter((d) => d.slice(0, 7) === i.month && d <= list.through).sort()[0] ?? null) : null;
+  const listFirst = first && first > `${i.month}-01` ? first : null;
   return {
     month: i.month,
     source,
     from,
     lafpos: i.lafpos && i.lafpos.days > 0 ? i.lafpos : null,
-    modpos: list ? { ...list, counted } : null,
+    modpos: list ? { ...list, counted, ...(listFirst ? { from: listFirst } : {}) } : null,
     modposZ: source === "gecis" ? (i.modposZ ?? null) : null,
     modposDiscounts: source === "gecis" && i.modposZ != null ? (i.modposDiscounts ?? 0) : null,
     gap,
     overlap,
     ...(i.held ? { held: i.held } : {}),
     ...(missing.length ? { missing } : {}),
+    ...(i.linesVsZ ? { zCheck: { days: i.linesVsZ.length, off: i.linesVsZ.filter((d) => Math.abs(d.lines - d.z) >= 0.01) } } : {}),
   };
 }
 
@@ -210,8 +222,42 @@ export function modposOverZText(revenue: number, z: number | null, from: string,
 export interface LafposMonthNotes {
   /** Ayın kaynağını anlatan satır */
   info: string;
-  /** Eksik günler, sayılmayan günler, sayılmayan liste, liste ↔ Z farkı */
+  /** Eksik günler, sayılmayan günler, sayılmayan liste, liste ↔ Z farkı, Z'yi tutmayan LafPOS günü */
   warnings: string[];
+  /**
+   * Tutarlılık denetimleri (hesap sözleşmesi, 23 Kasım 2026): ModPOS listesi − indirim = Z (listenin günleri) ve LafPOS
+   * günlerinin ürün satırları = Z. `ok` tutuyor; tutmayan ModPOS satırı bilgi (%5'i aşan fark ayrıca uyarı), tutmayan
+   * LafPOS günü uyarılarda
+   */
+  checks: { ok: boolean; text: string }[];
+}
+
+/** Ayın tutarlılık denetimleri (lafposMonthNotes checks) ve Z'yi tutmayan LafPOS günlerinin uyarıları */
+function salesZChecks(st: LafposSalesMonth): { checks: LafposMonthNotes["checks"]; warnings: string[] } {
+  const checks: LafposMonthNotes["checks"] = [];
+  const warnings: string[] = [];
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  if (st.modpos?.counted && st.modposZ != null) {
+    const disc = st.modposDiscounts ?? 0;
+    const diff = r2(st.modpos.revenue - disc - st.modposZ);
+    const range = dayRangeTR(st.modpos.from ?? `${st.month}-01`, st.modpos.through);
+    const head = `ModPOS listesi ${range}: liste ${tl(st.modpos.revenue, 2)} − indirim ${tl(disc, 2)} = ${tl(r2(st.modpos.revenue - disc), 2)}, Z ${tl(st.modposZ, 2)}`;
+    checks.push(
+      Math.abs(diff) < 1
+        ? { ok: true, text: `${head} · tutuyor` }
+        : { ok: false, text: `${head}: liste − indirim Z'den ${tl(Math.abs(diff), 2)} ${diff > 0 ? "fazla" : "az"}. Liste indirimden öncedir; fark listede olmayan ya da fazla satırdır.` },
+    );
+  }
+  if (st.zCheck && st.zCheck.days > 0) {
+    if (!st.zCheck.off.length) checks.push({ ok: true, text: `LafPOS: her günün ürün satırları Z'yi tutuyor (${st.zCheck.days} gün)` });
+    for (const d of st.zCheck.off) {
+      const diff = r2(d.lines - d.z);
+      warnings.push(
+        `${dayMonthTR(d.date)}: LafPOS'un ürün satırlarının toplamı (${tl(d.lines, 2)}) Z'den (${tl(d.z, 2)}) ${tl(Math.abs(diff), 2)} ${diff > 0 ? "fazla" : "az"}. Satır eksik gelmiş olabilir: LafPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder'e basın.`,
+      );
+    }
+  }
+  return { checks, warnings };
 }
 
 /** Satışlar'ın bandı: ayın kaynağı ve sorunlar (sakin dille; çözümüyle) */
@@ -223,6 +269,7 @@ export function lafposMonthNotes(st: LafposSalesMonth, switchDay: string): Lafpo
   const missing = st.missing?.length
     ? `${st.missing.length} günün LafPOS gün sonu gelmedi, kasa raporu var: ${missingText(st.missing)}. Bu günlerin satışı hesapta yok; LafPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder'e basın.`
     : null;
+  const z = salesZChecks(st);
   if (st.source === "lafpos") {
     if (missing) warnings.push(missing);
     if (st.modpos) {
@@ -232,7 +279,8 @@ export function lafposMonthNotes(st: LafposSalesMonth, switchDay: string): Lafpo
     }
     return {
       info: `${name} LafPOS'tan geliyor: satışlar her gün sonunda kendiliğinden gelir${days}. ModPOS listesi yüklenmez.`,
-      warnings,
+      warnings: [...warnings, ...z.warnings],
+      checks: z.checks,
     };
   }
   const first = `${st.month}-01`;
@@ -257,7 +305,7 @@ export function lafposMonthNotes(st: LafposSalesMonth, switchDay: string): Lafpo
     const over = modposOverZText(st.modpos.revenue, st.modposZ, first, st.modpos.through, st.modposDiscounts ?? 0);
     if (over) warnings.push(over);
   }
-  return { info, warnings };
+  return { info, warnings: [...warnings, ...z.warnings], checks: z.checks };
 }
 
 /**

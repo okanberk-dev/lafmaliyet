@@ -40,6 +40,12 @@ ikramı panelde girilmeye ve sayılmaya devam eder; Tuzla'nın gün sonu yalnız
   girildiyse ikisi de sayılır, panel satırı "LafPOS'ta da zayi yazıldı: aynı zayiyse bu kayıt silinmeli" der; Zayi formu
   LafPOS gününde "LafPOS'ta “Zayi yaz” ile işaretlenen ürün gün sonuyla buraya gelir; panele ayrıca girmeyin" hatırlatır
   (sahibin sorusu: ürün zayisi de gün sonu gelen günde yalnız LafPOS'tan mı sayılsın).
+- **Hazırlanmış iptal** (Faz 2, 23 Kasım 2026; [LAFPOS.md](LAFPOS.md) › Faz 2 alanları): LafPOS'ta bar ya da mutfak
+  başladıktan (ya da hazır olduktan) sonra iptal edilen kalem malzemesi harcanmış, satılmamış kalemdir: gün sonundaki
+  `iptal[]`'den **zayi** olarak gelir (neden "İptal (hazırlanmıştı)", yöneticide iptal nedeniyle), Tutarlılık'a, Tahmini
+  stoğa ve gün listesine girer; `waste_entries`'e yazılmaz, ödenmez tutarına girmez. Hazırlanmamış iptal tüketim değildir,
+  yalnız kasa e-postasında ve Kasa gün görünümünde bilgi. LafPOS türü (`kind`) yolladığında ön ek yerine o okunur;
+  ödenmezin kişi türü (personel, müşteri, patron) yöneticide parantezde.
 - **Gün listesi** LafPOS'un o günkü ikram ve zayi satırlarını salt okunur gösterir ("LafPOS'ta işaretlenen ikram ve
   zayi"): personele ad ve adet; yöneticiye ayrıca nedeni ve menü değeri. Ürüne bağlanamayan satır yöneticide "ürüne
   bağlı değil: tüketime girmez · Ayarlar › LafPOS'ta bağlayın" der; Ayarlar › LafPOS'un "İkramda ürüne bağlanamayan POS

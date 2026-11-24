@@ -39,6 +39,8 @@ export interface ModposFigures {
   other: number;
   /** LafPOS gününde kartla bahşiş + cari tahsilatı (G11): kart karşılaştırması düşer */
   cardExtra?: number | null;
+  /** LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): kart, nakit ve toplam karşılaştırmaları düşer */
+  offDevice?: { card: number; cash: number } | null;
 }
 
 export interface OkcFieldOptions {

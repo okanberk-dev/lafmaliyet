@@ -4,7 +4,7 @@ import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 
 import { countFactor } from "@/lib/calc/engine";
 import type { DayWaste } from "@/lib/cash-report";
-import { panelWasteCounts } from "@/lib/lafpos/ikram";
+import { lafposListByKind, panelWasteCounts, type LafposZKinds } from "@/lib/lafpos/ikram";
 import { productLabel, summarize, type WasteChoice, type WasteKind, type WasteLine } from "@/lib/waste";
 import { currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
@@ -104,6 +104,12 @@ export interface DayWasteLafpos {
   listValue: number;
   /** Panele bu güne girilmiş, sayılmayan ürün ikramı kaydı */
   notCounted: number;
+  /** Faz 2: hazırlanmış iptallerin liste değeri (zayi tüketimi; ödenmez tutarına girmez) */
+  iptalValue?: number;
+  /** Faz 2: hazırlanmamış iptallerin liste değeri ve kalem sayısı (bilgi: tüketim değil) */
+  unprepared?: { count: number; value: number };
+  /** Faz 2: türe göre Z toplamları ve liste (lafposIkramCheck); eski LafPOS'ta z null */
+  byKind?: { z: LafposZKinds | null; list: { ikram: number; odenmez: number; zayi: number } };
 }
 
 /**
@@ -125,9 +131,13 @@ export async function dayWaste(date: string, branchId?: string): Promise<DayWast
   // LafPOS'un satırları kendi türüyle: "Zayi: …" zayi, öteki (ödenmez dahil) ikram
   const lafLines: WasteLine[] = received ? laf!.lines.map((l) => ({ kind: l.kind, name: l.name, qty: l.qty, unit: "adet" })) : [];
   const lines = [...counted, ...lafLines];
-  const valueOf = (kind: WasteKind) => Math.round((laf?.lines.filter((l) => l.kind === kind).reduce((a, l) => a + l.menuValue, 0) ?? 0) * 100) / 100;
+  // LafPOS'un listesi (ödenmez tutarı bunu kapsar) ile hazırlanmış iptaller (zayi tüketimi, ödenmez tutarında yok) ayrı
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  const valueOf = (kind: WasteKind) => r2(laf?.lines.filter((l) => l.kind === kind && !l.iptal).reduce((a, l) => a + l.menuValue, 0) ?? 0);
   const lafIkram = valueOf("ikram");
   const lafZayi = valueOf("zayi");
+  const iptalValue = r2(laf?.lines.filter((l) => l.iptal).reduce((a, l) => a + l.menuValue, 0) ?? 0);
+  const unprepared = laf?.unprepared ?? null;
   const panelValue = counted.filter((e) => e.kind === "ikram" && e.productId !== null).reduce((a, e) => a + (price.get(e.productId!) ?? 0) * e.qty, 0);
   const ikramValue = Math.round((panelValue + (received ? lafIkram : 0)) * 100) / 100;
   return {
@@ -143,6 +153,9 @@ export async function dayWaste(date: string, branchId?: string): Promise<DayWast
           zayiValue: lafZayi,
           listValue: Math.round((lafIkram + lafZayi) * 100) / 100,
           notCounted: entries.length - counted.length,
+          // Faz 2 alanları yalnız LafPOS onları gönderdiyse (eski LafPOS'un gününde yok)
+          ...(unprepared ? { iptalValue, unprepared: { count: unprepared.length, value: r2(unprepared.reduce((a, l) => a + l.listValue, 0)) } } : {}),
+          ...(laf.zByKind ? { byKind: { z: laf.zByKind, list: lafposListByKind(laf.lines) } } : {}),
         }
       : null,
   };

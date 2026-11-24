@@ -17,8 +17,10 @@ export const maxDuration = 60;
  * düzeltmede yeniden) buraya iter; aynı gün aynı Z no ile öncekinin yerine geçer. İmza laffogato.net bağlantısınınki
  * gibi, anahtarı LAFPOS_SYNC_SECRET. Anahtar yoksa 503, gövde 256 KB'tan büyükse 413, imza tutmazsa 401 (ayrıntı
  * verilmez), gövde sözleşmeye uymazsa 400 `{ error: "invalid", field }`, o güne başka bir Z ile yazılmış özet varsa
- * 409 `{ error: "z_conflict", date, zNo }` (hiçbir şey yazılmaz); yazılınca 200 `{ ok: true, date, lines, counted,
- * switchDay }` (`counted`: gün LafPOS'a geçiş gününden önce değil). Denetim ve yazım src/server/lafpos/ingest.ts'te;
+ * 409 `{ error: "z_conflict", date, zNo }` (hiçbir şey yazılmaz), kasa başka şubeye ayarlıysa 409 `{ error:
+ * "wrong_branch", sube, expected }`; yazılınca 200 `{ ok: true, date, lines, matched, unmatched, counted, switchDay }`
+ * (`matched`: ürüne ya da hizmete bağlanan satır, `unmatched`: bağlanamayan POS adları, `counted`: gün LafPOS'a geçiş
+ * gününden önce değil). Kabul edilen her gövde sürüm geçmişine yazılır (pos_day_revisions). Denetim ve yazım src/server/lafpos/ingest.ts'te;
  * sonuç Ayarlar'daki LafPOS kartı için durum satırına yazılır (src/server/lafpos/status.ts; anahtar yokken hiçbir şey).
  * Sayılan günde yanıttan sonra Kasa raporu ve gün sonu e-postası (src/server/lafpos/gun-sonu.ts).
  */

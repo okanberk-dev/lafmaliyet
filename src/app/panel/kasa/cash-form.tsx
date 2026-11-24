@@ -959,6 +959,7 @@ export function CashForm({
             okcAdmin={okcAdmin}
             kasa={lafposMode ? "LafPOS" : "ModPOS"}
             cardExtra={lafpos?.cardExtra ?? null}
+            offDevice={lafpos?.offDevice ?? null}
           />
           <CashRevisions report={report} revisions={revisions} proposedBy={proposedBy} />
         </div>
@@ -1358,7 +1359,7 @@ export function CashForm({
           kasa={lafposMode ? "LafPOS" : "ModPOS"}
           modpos={
             values.card.trim()
-              ? { zTotal: num("zTotal"), cash: num("cash"), card: num("card"), mealCard: num("mealCard"), online: num("online"), other: num("other"), cardExtra: lafpos?.cardExtra ?? null }
+              ? { zTotal: num("zTotal"), cash: num("cash"), card: num("card"), mealCard: num("mealCard"), online: num("online"), other: num("other"), cardExtra: lafpos?.cardExtra ?? null, offDevice: lafpos?.offDevice ?? null }
               : null
           }
         />

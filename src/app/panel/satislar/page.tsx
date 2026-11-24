@@ -122,6 +122,9 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
     note: l.line.note,
     avgPrice: l.line.qty ? l.line.revenue / l.line.qty : 0,
     menuPrice: l.product?.price ?? null,
+    // LafPOS satırının indirimden önceki liste değeri ve eki (Faz 2); ModPOS satırında yok
+    gross: l.line.gross ?? null,
+    isAddon: l.line.isAddon ?? false,
   }));
   const unmatched = sales.unmatched.length;
   const mappingList = mappings.map((m) => ({ posName: m.posName, productId: m.productId, isService: m.isService, updatedAt: m.updatedAt }));
@@ -345,7 +348,11 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
  * yalnız uyarı (sayılmayan ModPOS listesi). Yalnız yönetici (sayfa requireAdmin)
  */
 function LafposBand({ notes, source }: { notes: LafposMonthNotes; source: "gecis" | "lafpos" }) {
-  if (source === "lafpos" && !notes.warnings.length) return null;
+  // Tutmayan denetim (ModPOS listesi − indirim ↔ Z) bilgi kutusu: %5'i aşan fark ayrıca uyarılarda (modposOverZText),
+  // aynı fark iki kez uyarı tonunda görünmez. Tutanlar tek satır (sakin)
+  const off = notes.checks.filter((c) => !c.ok);
+  const ok = notes.checks.filter((c) => c.ok);
+  if (source === "lafpos" && !notes.warnings.length && !off.length && !ok.length) return null;
   return (
     <div className="mb-4 space-y-2">
       {source === "gecis" ? <Notice tone="neutral" title={notes.info} /> : null}
@@ -353,6 +360,10 @@ function LafposBand({ notes, source }: { notes: LafposMonthNotes; source: "gecis
       {notes.warnings.map((w) => (
         <Notice key={w} tone="warn" risk="veri" title={w} />
       ))}
+      {off.map((c) => (
+        <Notice key={c.text} tone="neutral" title={c.text} />
+      ))}
+      {ok.length ? <p className="px-1 text-xs text-ink-mute">{ok.map((c) => c.text).join(" · ")}</p> : null}
     </div>
   );
 }

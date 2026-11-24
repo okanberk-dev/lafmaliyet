@@ -74,6 +74,9 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
         slot: l.slot,
         qty: l.qty,
         revenue: l.revenue,
+        // Faz 2: indirimden önceki liste değeri ve ek işareti (eski LafPOS göndermez: brüt boş, ek değil)
+        gross: l.gross ?? null,
+        isAddon: l.isAddon ?? false,
         isService: m.isService,
         // LafPOS'un hizmet işareti ayrıca: Satışlar'daki eşleştirme bu satırı ürüne bağlayamaz (sonraki gün sonu geri alırdı)
         lafposService: l.isService,
@@ -82,8 +85,22 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
       };
     });
     // Pavo karşılaştırması (bankPos): alanı taşımayan gönderim (eski LafPOS ya da Pavo sonucundan önceki düzeltme)
-    // kayıtlı karşılaştırmayı silmez; alan geldiyse (null da) yerine geçer
-    const report = { z: day.z, payments: day.payments, ikram: day.ikram, source: day.source, receivedAt: now, ...(day.bankPos !== undefined ? { bankPos: day.bankPos } : {}) };
+    // kayıtlı karşılaştırmayı silmez; alan geldiyse (null da) yerine geçer. Düzeltme de öyle: LafPOS onu yalnız
+    // düzeltmeden sonraki ilk gövdeyle yollar, sonraki gönderim (Pavo sonucu) silmez. Faz 2'nin gün verisi (yazarkasadan
+    // geçmeyen, iadeler, iptaller, sıra) günün kendisidir: gelmediyse (eski LafPOS) boşalır
+    const report = {
+      z: day.z,
+      payments: day.payments,
+      ikram: day.ikram,
+      offDevice: day.offDevice ?? null,
+      refunds: day.refunds ?? null,
+      iptal: day.iptal ?? null,
+      revision: day.revision ?? null,
+      source: day.source,
+      receivedAt: now,
+      ...(day.bankPos !== undefined ? { bankPos: day.bankPos } : {}),
+      ...(day.correction !== undefined ? { correction: day.correction } : {}),
+    };
     // Gün sonunun şubesi: LafPOS'un kurulu olduğu şube (LAFPOS_BRANCH_ID; 21 Kasım 2026'dan beri Marina; Tuzla ModPOS'ta, geçiş günü de
     // yalnız onun kasasınındır; docs/SUBE.md).
     // Çakışma hedefi (gün, şube) olmalı: şema 0056'dan sonra tek başına `date` benzersiz DEĞİL ve Postgres
@@ -97,6 +114,8 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
       .delete(s.posDailySales)
       .where(and(eq(s.posDailySales.date, day.date), eq(s.posDailySales.branchId, branchId)));
     if (rows.length) await tx.insert(s.posDailySales).values(rows);
+    // Sürüm geçmişi: kabul edilen her gövde, okunmuş hâliyle (yalnız eklenir; docs/LAFPOS.md › Sürüm geçmişi)
+    await tx.insert(s.posDayRevisions).values({ date: day.date, branchId, revision: day.revision ?? null, zNo: day.z.zNo, correction: day.correction ?? null, body: day, receivedAt: now });
     // Satışlı LafPOS günü kafenin açık olduğunun kanıtı (E-36): yalnız geçiş gününden sonraki günde, kasa raporunun
     // gelişi gibi o günün kapalı işaretini ve bekleyen "Kafe kapalıydı" bildirimini kaldırır; deneme günü dokunmaz.
     // Aynı günün satışlı gün sonu daha önce geldiyse (düzeltme) o andan sonra konan işaret yöneticinin kanıtı görerek

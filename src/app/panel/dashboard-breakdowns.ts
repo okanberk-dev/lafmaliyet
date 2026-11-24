@@ -51,11 +51,17 @@ export function salesPosSub(spc: SalesPosCommission | null): string | null {
 const salesNetSub = (model: Model, d: DashboardData) =>
   `KDV dahil ${tl(d.sales.revenue)} ÷ (1 + KDV ${rate(model.settings.kdv)})${d.sales.serviceRevenue ? `; hizmet (karaoke) ${tl(d.sales.serviceRevenue)} ÷ (1 + ${rate(model.settings.kdvHizmet)})` : ""}`;
 
-/** POS cirosunun KDV hariç hesabı (gelir-gider tablosuyla aynı): hizmet payı varsa kendi oranıyla */
-const posNetSub = (model: Model, pm: { revenue: number | null; serviceRevenue: number }) =>
-  pm.serviceRevenue
+/**
+ * POS cirosunun KDV hariç hesabı (gelir-gider tablosuyla aynı, engine.ts posNet): hizmet payı varsa kendi oranıyla;
+ * LafPOS'un şubesinin ayında gün gün (LafPOS günü kendi KDV dökümüyle, öteki günler günün oranıyla, ay günlerin toplamı)
+ */
+const posNetSub = (model: Model, pm: { month: string; revenue: number | null; serviceRevenue: number }) => {
+  const service = pm.serviceRevenue ? `, hizmet (karaoke) ÷ (1 + ${rate(model.settings.kdvHizmet)})` : "";
+  if (model.posNet(pm.month)?.byDay) return `POS cirosu ${tl(pm.revenue ?? 0)} gün gün: LafPOS günü kendi KDV dökümüyle, öteki günler ÷ (1 + KDV ${rate(model.settings.kdv)})${service}; ay günlerin toplamı`;
+  return pm.serviceRevenue
     ? `POS cirosu ${tl(pm.revenue ?? 0)}: hizmet (karaoke) ${tl(pm.serviceRevenue)} ÷ (1 + ${rate(model.settings.kdvHizmet)}), kalanı ÷ (1 + KDV ${rate(model.settings.kdv)})`
     : `POS cirosu ${tl(pm.revenue ?? 0)} ÷ (1 + KDV ${rate(model.settings.kdv)})`;
+};
 /** Önce en büyük gider (eksi tutarlar) / önce en büyük tutar */
 const costFirst = (rows: BreakdownRow[]) => [...rows].sort((a, b) => a.amount - b.amount);
 const biggestFirst = (rows: BreakdownRow[]) => [...rows].sort((a, b) => b.amount - a.amount);

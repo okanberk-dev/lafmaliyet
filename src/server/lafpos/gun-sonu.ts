@@ -6,7 +6,8 @@ import { businessDate, changesText, computeCash, revisionChanges, revisionDataOf
 import { cashDaySubject } from "@/lib/cash-requests";
 import { cashOutNoteOf, cashOutsTotal, type CashOutKind } from "@/lib/cash-outs";
 import { bankPosHash, renderPavoMail } from "@/lib/lafpos/bank-pos";
-import { bankPosSchema, posZSchema, type BankPos, type PosIkram, type PosPayment } from "@/lib/lafpos/day";
+import { bankPosSchema, posDaySchema, posZSchema, type BankPos, type PosIkram, type PosPayment } from "@/lib/lafpos/day";
+import { lafposDayDetail, type LafposDayDetail } from "@/lib/lafpos/gun-ayrinti";
 import {
   AUTO_FIELDS,
   autoMissing,
@@ -24,7 +25,7 @@ import { branchSwitchDay, isLafposDay, LAFPOS_BRANCH_ID } from "@/lib/lafpos/swi
 import { emailKey } from "@/lib/notify-recipients";
 import { DELETED_REPORT_DAYS } from "@/lib/photo-rules";
 import { addDays, longDateTR } from "@/lib/reminders";
-import { lockCashReport, lockLateDay, type CashTx } from "@/server/cash/report-store";
+import { lockCashReport, lockLateDay, okcServerColumns, type CashTx } from "@/server/cash/report-store";
 import { onNextReport, onReportSaved } from "@/server/closed-days";
 import { loadCashSettings } from "@/server/data/cash-reports";
 import { schema as s, type DB } from "@/server/db";
@@ -65,12 +66,24 @@ interface StoredDay {
   ikram: PosIkram[];
   /** Pavo karşılaştırması (gelmediyse ya da okunamıyorsa null); günün özetine (hash) girmez: geldiğinde gün sonu yinelenmez */
   bankPos: BankPos | null;
+  /** Faz 2 ayrıntısı (yazarkasadan geçmeyen, iptaller, düzeltme; src/lib/lafpos/gun-ayrinti.ts); özete girmez */
+  detail: LafposDayDetail;
   hash: string;
 }
 
 async function loadStoredDay(db: DB | CashTx, date: string, branchId: string): Promise<StoredDay | null> {
   const [row] = await db
-    .select({ z: s.posDayReports.z, payments: s.posDayReports.payments, ikram: s.posDayReports.ikram, bankPos: s.posDayReports.bankPos })
+    .select({
+      z: s.posDayReports.z,
+      payments: s.posDayReports.payments,
+      ikram: s.posDayReports.ikram,
+      bankPos: s.posDayReports.bankPos,
+      offDevice: s.posDayReports.offDevice,
+      refunds: s.posDayReports.refunds,
+      iptal: s.posDayReports.iptal,
+      revision: s.posDayReports.revision,
+      correction: s.posDayReports.correction,
+    })
     .from(s.posDayReports)
     .where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, branchId)))
     .limit(1);
@@ -78,7 +91,24 @@ async function loadStoredDay(db: DB | CashTx, date: string, branchId: string): P
   const z = posZSchema.safeParse(row.z);
   if (!z.success) return null;
   const bankPos = row.bankPos ? bankPosSchema.safeParse(row.bankPos) : null;
-  return { z: z.data, payments: row.payments ?? [], ikram: row.ikram ?? [], bankPos: bankPos?.success ? bankPos.data : null, hash: dayHash({ z: row.z, payments: row.payments, ikram: row.ikram }) };
+  // Saklanan Faz 2 alanları aynı şemayla (bozuk ya da yoksa yok sayılır)
+  const sh = posDaySchema.shape;
+  const detail = lafposDayDetail({
+    z: z.data,
+    offDevice: row.offDevice ? sh.offDevice.parse(row.offDevice) : undefined,
+    refunds: row.refunds ? sh.refunds.parse(row.refunds) : undefined,
+    iptal: row.iptal ? sh.iptal.parse(row.iptal) : undefined,
+    revision: row.revision ?? undefined,
+    correction: row.correction ? sh.correction.parse(row.correction) : undefined,
+  });
+  return {
+    z: z.data,
+    payments: row.payments ?? [],
+    ikram: row.ikram ?? [],
+    bankPos: bankPos?.success ? bankPos.data : null,
+    detail,
+    hash: dayHash({ z: row.z, payments: row.payments, ikram: row.ikram }),
+  };
 }
 
 /** Gün LafPOS'un şubesinin LafPOS günü mü (geçiş günü seçili ve gün ondan önce değil) */
@@ -187,11 +217,18 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
     });
     const values = toColumns(merged.values);
     const fields = { ...prev, ...values };
-    const [row] = await tx
+    let [row] = await tx
       .update(s.cashReports)
       .set({ ...values, cashDiff: computeCash(fields).cashDiff, revision: prev.revision + 1, submittedBy: null, submittedByName: LAFPOS_AUTO_BY, emailStatus: null, emailError: null, updatedAt: now })
       .where(eq(s.cashReports.id, prev.id))
       .returning();
+    // Yazarkasa Z no'su değiştiyse sunucu sütunları (kümülatif, yazarkasa dışı) formun kaydındaki gibi yeniden hesaplanır
+    if ((prev.okcZNo ?? null) !== (row.okcZNo ?? null)) {
+      const server = await okcServerColumns(tx, row);
+      if (server.okcCumTotal !== row.okcCumTotal || server.okcCumVat !== row.okcCumVat || server.okcOutside !== row.okcOutside) {
+        [row] = await tx.update(s.cashReports).set(server).where(eq(s.cashReports.id, row.id)).returning();
+      }
+    }
     const changes = revisionChanges(revisionDataOf(prev), revisionDataOf(row));
     await tx.insert(s.activityLog).values({
       userName: LAFPOS_AUTO_BY,
@@ -211,6 +248,7 @@ function toColumns(v: AutoValues) {
   const text = (f: (typeof AUTO_FIELDS)[number]) => (typeof v[f] === "string" ? (v[f] as string) : null);
   return {
     zNo: text("zNo"),
+    okcZNo: text("okcZNo"),
     receipts: opt("receipts"),
     zTotal: num("zTotal"),
     cash: num("cash"),
@@ -351,6 +389,7 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
       online: online ? online.online : null,
       link: `${APP_URL}/panel/kasa?gun=${date}&sube=${encodeURIComponent(branchId)}`,
       bankPos: day.bankPos,
+      detail: day.detail,
     });
     const notify = await loadNotifySettings();
     const res = await sendEmail({ from: resolveFrom(notify.from), to, ...msg, idempotencyKey: `lafpos-gun-${branchId}-${date}-${day.hash}` }, opts);

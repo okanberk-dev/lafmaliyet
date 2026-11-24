@@ -1141,7 +1141,19 @@ export function createModel(ds: Dataset) {
   const countedWaste: WasteEntry[] = [
     ...(ds.wasteEntries ?? []).filter((w) => panelWasteCounts(w, lafposIkramDays)),
     ...(ds.lafposIkram?.lines ?? []).map(
-      (l): WasteEntry => ({ date: l.date, kind: l.kind, productId: l.productId, ingredientId: null, qty: l.qty, factor: 1, source: "lafpos", name: l.posName, menuValue: l.menuValue }),
+      (l): WasteEntry => ({
+        date: l.date,
+        kind: l.kind,
+        productId: l.productId,
+        ingredientId: null,
+        qty: l.qty,
+        factor: 1,
+        source: "lafpos",
+        name: l.posName,
+        menuValue: l.menuValue,
+        // Hazırlanmış iptal: zayi tüketimi, ödenmez tutarında yok (recordedOffRevenue onu saymaz)
+        ...(l.iptal ? { iptal: true } : {}),
+      }),
     ),
   ];
   const wasteByMonth = new Map<string, WasteEntry[]>();
@@ -2246,6 +2258,37 @@ export function createModel(ds: Dataset) {
   }
 
   const pnlCache = new Map<string, PnlMonthCalc>();
+  /**
+   * Ayın kasa cirosunun KDV hariç tutarı ve KDV'si (Gelir-gider'in AYLIK CİRO (KDV hariç)'i, KDV tahmini; hesap
+   * sözleşmesi, 23 Kasım 2026). Ciro kasadan geliyor ve ayda LafPOS'un şubesinin günü varsa gün gün (`byDay`): LafPOS
+   * gününün KDV'si LafPOS'un kendi dökümünden (z.vat; yeniden hesaplanmaz), ModPOS günü günün oranıyla (satış KDV'si,
+   * %10) ayrı ayrı kuruşa yuvarlanır, ay günlerin toplamıdır (Marina Kasım: 30.576,15; ay toplamından 30.576,14 olurdu).
+   * Öteki şubelerin günleri ve elle yazılan ciro bugünkü gibi ay toplamından: HİZMET satırları (karaoke) hizmet KDV'siyle,
+   * gerisi satış KDV'siyle. LafPOS'un dökümü hizmeti zaten kendi oranıyla taşır: o günlerin HİZMET satırları bir daha
+   * ayrılmaz. Ciro yoksa null
+   */
+  function posNet(month: string): { net: number; vat: number; byDay: boolean } | null {
+    const info = monthInfo.get(month);
+    const revenue = info?.posRevenue ?? null;
+    if (revenue === null) return null;
+    const service = Math.min(Math.max(revenue, 0), monthSales(month).serviceRevenue);
+    const dv = info?.kasa?.till.dayVat;
+    if (!dv || info?.sources?.posRevenue !== "kasa") {
+      const net = (revenue - service) / (1 + st.kdv) + service / (1 + st.kdvHizmet);
+      return { net, vat: revenue - net, byDay: false };
+    }
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    // LafPOS'un dökümü bilinen günlerin HİZMET satırları (LafPOS'un ay satırları) o dökümün içinde
+    const lafService = dv.known.days ? sum((linesByMonth.get(month) ?? []).filter((l) => l.lafpos && l.isService).map((l) => l.revenue)) : 0;
+    const rest = Math.max(0, revenue - dv.known.revenue);
+    const restService = Math.min(rest, Math.max(0, service - lafService));
+    const daysNet = sum(dv.days.map((d) => r2(d / (1 + st.kdv))));
+    // Öteki şubelerin cirosu ("Tümü"de): ay toplamından
+    const other = Math.max(0, rest - sum(dv.days));
+    const net = r2(dv.known.base + daysNet + other / (1 + st.kdv) - restService * (1 / (1 + st.kdv) - 1 / (1 + st.kdvHizmet)));
+    return { net, vat: r2(revenue - net), byDay: true };
+  }
+
   /** Ayın "aynı gider iki kez" bulguları (pnlMonth hesaplar; duplicateExpenses okur) */
   const duplicateCache = new Map<string, DuplicateExpense[]>();
   function pnlMonth(month: string): PnlMonthCalc {
@@ -2466,9 +2509,10 @@ export function createModel(ds: Dataset) {
 
     const expenses = cogs + sections.personel + sections.faturalar + sections.kira + sections.genel + sections.komisyon;
     // Kasadan geçen hizmet satışı (karaoke odası) %20, ürünler %10: ayın satış listesindeki HİZMET satırları kadarı
-    // hizmet KDV oranıyla ayrılır (ay cirosundan büyük olamaz); satış listesi yüklenmemiş ayda bütün ciro satış KDV'siyle
+    // hizmet KDV oranıyla ayrılır (ay cirosundan büyük olamaz); satış listesi yüklenmemiş ayda bütün ciro satış KDV'siyle.
+    // LafPOS'un şubesinin günleri gün gün (posNet): LafPOS gününün KDV'si kendi dökümünden, ay günlerin toplamı
     const serviceRevenue = revenue === null ? 0 : Math.min(Math.max(revenue, 0), monthSales(month).serviceRevenue);
-    const revenueNet = revenue === null ? null : (revenue - serviceRevenue) / (1 + st.kdv) + serviceRevenue / (1 + st.kdvHizmet);
+    const revenueNet = posNet(month)?.net ?? null;
     // Online satış: ModPOS cirosuna dokunmadan ayrı gelir satırları (KDV hariç); çekilmemiş ayda hücre yok (boş)
     const site = siteRevenueOf(month);
     if (site) {
@@ -2672,7 +2716,7 @@ export function createModel(ds: Dataset) {
       label: "AYLIK CİRO (KDV hariç)",
       kind: "total",
       editable: false,
-      hint: `AYLIK CİRO'dan ${pctOf(st.kdv)} KDV düşülür; Satışlar'da HİZMET işaretli satırların (karaoke odası) cirosu ${pctOf(st.kdvHizmet)} ile ayrılır (Ayarlar › Oranlar).`,
+      hint: `AYLIK CİRO'dan ${pctOf(st.kdv)} KDV düşülür; Satışlar'da HİZMET işaretli satırların (karaoke odası) cirosu ${pctOf(st.kdvHizmet)} ile ayrılır (Ayarlar › Oranlar). Ciro kasa raporlarından geliyorsa LafPOS'un şubesinin günleri gün gün: LafPOS gününün KDV'si kendi dökümünden, öteki günler günün oranıyla; ay günlerin toplamı.`,
     });
     // laffogato.net online satışları: yalnız bu aylardan en az biri siteden çekildiyse (çekilmemiş ay boş kalır, 0 değil)
     if (months.some((m) => siteByMonth.has(m))) {
@@ -2858,6 +2902,7 @@ export function createModel(ds: Dataset) {
     invoicesByMonth,
     goodsPurchases,
     pnlMonth,
+    posNet,
     pnlRowDefs,
     pnlValue,
     /** Aylık harcama kategorileri (sıralı) ve bir aydaki tutarları */

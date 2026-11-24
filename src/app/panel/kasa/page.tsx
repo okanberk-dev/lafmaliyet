@@ -73,7 +73,7 @@ import {
   previousOkc,
   type CashReportDTO,
 } from "@/server/data/cash-reports";
-import { loadKasaLafpos, loadKasaLafposDays, loadLafposBankPos } from "@/server/data/lafpos-day";
+import { loadKasaLafpos, loadKasaLafposDays, loadLafposBankPos, loadLafposDayDetail } from "@/server/data/lafpos-day";
 import { loadKasaModpos, loadKasaModposDays, modposKeySet, NO_MODPOS } from "@/server/data/modpos-day";
 import { dayWaste } from "@/server/data/waste";
 import { getDb } from "@/server/db";
@@ -92,6 +92,7 @@ import { LateDaysCard, LateReport } from "./late-report";
 import { CashSettingsCard } from "./cash-settings";
 import { DIFF_TONE, type OkcAdminView } from "./cash-summary";
 import { ModposSections } from "./modpos-sheet";
+import { LafposDayCard } from "./lafpos-day-card";
 import { PavoCard } from "./pavo-card";
 
 export const metadata: Metadata = { title: "Kasa raporu" };
@@ -538,7 +539,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const { dropped: blockedRecipients } = await sendableRecipients(getDb(), settings.recipients);
   const days = monthDays(month, today, monthReports);
   const revised = monthReports.filter((r) => r.revision > 1).map((r) => r.id);
-  const [monthRevisions, monthProposed, lateApproved, latePending, modposDay, modposOf, bankPos] = await Promise.all([
+  const [monthRevisions, monthProposed, lateApproved, latePending, modposDay, modposOf, bankPos, lafposDetail] = await Promise.all([
     cashRevisionsFor(revised),
     proposedByForReports(revised),
     // Geç raporlar: onaylananlar (rapora göre) ve onay bekleyenler (güne göre)
@@ -552,6 +553,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
     loadKasaModposDays(`${month}-01`, monthEnd).catch(() => () => NO_MODPOS),
     // LafPOS gününün Pavo – LafPOS kart karşılaştırması (yalnız yöneticiye; okunamazsa kart görünmez)
     showForm && lafposState.lafpos ? loadLafposBankPos(date, undefined, view.till).catch(() => null) : Promise.resolve(null),
+    // LafPOS gününün Faz 2 ayrıntısı (yazarkasadan geçmeyen, iptaller, yazarkasa Z no, KDV, düzeltme; yalnız yöneticiye)
+    showForm && lafposState.lafpos ? loadLafposDayDetail(date, undefined, view.till).catch(() => null) : Promise.resolve(null),
   ]);
   const checks = carryChecks(monthReports, before);
   const lastReport = monthReports[0];
@@ -629,6 +632,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
           {modposDay?.modpos ? <ModposSections date={date} today={today} sheet={modposDay.sheet} z={modposDay.z} report={report} ladmin={ladmin} keySet={modposKeySet(process.env, modposDay.sheet?.branchId ?? report?.branchId)} now={new Date()} /> : null}
           {siteRow}
           {bankPos ? <PavoCard bankPos={bankPos} /> : null}
+          {lafposDetail ? <LafposDayCard detail={lafposDetail} /> : null}
           {wasteCard}
         </>
       ) : null}
