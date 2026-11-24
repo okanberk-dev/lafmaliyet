@@ -219,7 +219,7 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
   `low`'da basit sorularda düşünmez. Asistanın soruları çoğunlukla tek araçlı olduğundan `low` denenmeye değer: kalite
   ve gecikme gerçek sorularla (anahtarlı ortamda) ölçülüp karşılaştırılmadan değiştirilmez. Efor değişince önbellek
   bir kez yeniden yazılır.
-- **Günlük sınır:** yönetici başına günde 60 soru (hata ve ret dahil her soru sayılır). Sayım ve soru satırının eklenmesi
+- **Günlük sınır:** yönetici başına günde 60 soru (hata ve ret dahil her soru sayılır; derin analiz 2 soru sayılır). Sayım ve soru satırının eklenmesi
   tek işlemde, yönetici başına danışma kilidiyle yapılır: aynı anda gönderilen sorular sınırı aşamaz. Günün son
   sorusundan sonra pencere "Bugünkü soru sınırı doldu" der; pencere her açılışta kapıyı yeniden sorar (gece yarısı
   sayfa yenilenmeden açılır). Asistanın soruları fotoğraftan
@@ -228,6 +228,24 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
   yanıt kesilir ("Süre doldu"). Soru en çok 4000 karakter.
 - Soru reddedilirse (güvenlik sınıflandırıcısı) Anthropic'in sunucu tarafındaki yedek modeli denenir; o da reddederse
   pencere "Bu soruyu yanıtlayamıyorum" der.
+
+## Derin analiz
+
+- Yazı kutusunun üstünde küçük bir **Derin analiz** anahtarı (beyin simgesi). **Varsayılan kapalı**; açılınca yalnız o
+  soru için geçerlidir (gönderince kendiliğinden kapanır), soru ekranda "Derin analiz" işaretiyle durur.
+- Ne değişir: efor **high** (olağan soru medium), bir soruda en çok **12 araç turu** (olağan 8), çıktı sınırı 16.000
+  token (düşünme dahil; olağan 8.000). Süre sınırları aynı (yaklaşık 35 sn'de toparlar, 50 sn'de kesilir). Çok adımlı
+  sorular için: "Bu ayın kârını geçen ayla kalem kalem karşılaştır", "Kasa farklarında bir örüntü var mı?".
+- **Maliyet:** high eforda model daha uzun düşünür ve daha çok araç çağırır; çıktı tokeni (milyonu 10 $) birkaç
+  katına çıkabilir. Üst düzey efor değişimi önbelleğin mesaj kısmını (bu modelde araç + sistem önekini de) geçersiz
+  kılar: derin soru öneki bir kez yeniden yazar (≈0,035–0,04 $); ardından gelen olağan soru, 5 dakika içinde yazılmış
+  medium önbelleğini okur. Tahmin: **derin soru ≈ 0,06–0,15 $** (olağan ≈ 0,01–0,05 $).
+- **Günlük sınır:** derin analiz **2 soru sayılır** (satır `ai_calls`'a eforu `high` ile yazılır; sayım satırın
+  eforundan ağırlıklı yapılır, sayım ve ekleme yine tek işlemde). Bugün 2'den az hak kaldıysa anahtar kapalıdır;
+  sunucu da "Derin analiz 2 soru sayılır; bugün 1 soru hakkı kaldı" der (429, `deep_cap`), olağan soru sorulabilir.
+- Neden mesaj içi efor değil: Sonnet 5.5'te efor bir sistem mesajıyla (beta `mid-conversation-output-config-2026-07-01`)
+  mesaj içinde de değiştirilebilir ve önbelleği korur; anahtarsız ortamda canlı denenemediği için kullanılmadı (Açık
+  kalanlar). Kod: `src/server/ai/assistant/loop.ts` › `ASSISTANT_DEEP`, sayım `src/server/ai/claude.ts`.
 
 ## Nasıl kapatılır
 

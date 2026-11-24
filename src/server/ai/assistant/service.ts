@@ -26,7 +26,7 @@ export const liveAssistantDeps: AssistantDeps = {
     return u ? { id: u.id, role: u.role } : null;
   },
   status: (userId) => assistantStatus(userId),
-  start: (userId) => startAssistantCall(userId),
+  start: (userId, opts) => startAssistantCall(userId, undefined, undefined, opts),
   finish: (callId, outcome, ms) => finishAssistantCall(callId, outcome, ms),
   setup: async () => {
     const branch = await branchScope();

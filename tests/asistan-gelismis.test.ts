@@ -16,9 +16,9 @@ import { FollowupChips } from "../src/components/panel/assistant/followup-chips"
 import { NAV_FOOTER, NAV_GROUPS, NAV_TREE } from "../src/components/panel/nav";
 import { cleanFollowup, FOLLOWUP_MAX, restoreFollowups, splitFollowups } from "../src/lib/assistant/followups";
 import { DEFAULT_SUGGESTIONS, PAGE_SUGGESTIONS, pageContextLine, pageFromLocation, suggestionsFor } from "../src/lib/assistant/page-context";
-import { ASSISTANT_DAILY_CAP, assistantRequest, eventReader, historyForRequest, type AssistantEvent } from "../src/lib/assistant/protocol";
+import { ASSISTANT_DAILY_CAP, ASSISTANT_DEEP_WEIGHT, assistantRequest, eventReader, historyForRequest, type AssistantEvent } from "../src/lib/assistant/protocol";
 import { handleAssistantPost, type AssistantDeps, type AssistantStatus } from "../src/server/ai/assistant/handler";
-import type { AssistantClient, AssistantOutcome, AssistantParams } from "../src/server/ai/assistant/loop";
+import { ASSISTANT_DEEP, ASSISTANT_EFFORT, ASSISTANT_MAX_TOKENS, ASSISTANT_TIMING, assistantParams, runAssistant, type AssistantClient, type AssistantOutcome, type AssistantParams } from "../src/server/ai/assistant/loop";
 import { contextBlock, SYSTEM_PROMPT } from "../src/server/ai/assistant/prompt";
 import { scriptedMessage, scriptedStream } from "../src/server/ai/assistant/scripted";
 
@@ -221,4 +221,102 @@ test("takip: sistem istemi biçimi tarif eder; ekran yalnız son yanıtın altı
   assert.match(w, /i === messages\.length - 1 && !busy && m\.followups\?\.length \? <FollowupChips/);
   assert.match(w, /const split = splitFollowups\(lastText\.current\);/);
   assert.match(w, /splitFollowups\(m\.text, true\)\.body/);
+});
+
+// ---------------------------------------------------------------- 3. Derin analiz
+
+test("derin analiz: istek gövdesi efor high ve yüksek çıktı sınırı; olağan soru medium; öteki alanlar aynı", () => {
+  const base = { system: "S", context: "C", tools: [], messages: [{ role: "user" as const, content: "x" }] };
+  const normal = assistantParams(base);
+  const deep = assistantParams({ ...base, deep: true });
+  assert.deepEqual(normal.output_config, { effort: ASSISTANT_EFFORT });
+  assert.equal(ASSISTANT_EFFORT, "medium");
+  assert.deepEqual(deep.output_config, { effort: "high" });
+  assert.equal(normal.max_tokens, ASSISTANT_MAX_TOKENS);
+  assert.equal(deep.max_tokens, ASSISTANT_DEEP.maxTokens);
+  assert.ok(ASSISTANT_DEEP.maxTokens > ASSISTANT_MAX_TOKENS);
+  assert.notEqual(ASSISTANT_DEEP.effort, ASSISTANT_EFFORT, "sınır sayımı satırın eforundan ayırt eder");
+  // Model, yedek model, önbellek, sistem ve araçlar aynı; düşünme / sıcaklık / zorunlu araç yine yok
+  const rest = (p: AssistantParams) => Object.fromEntries(Object.entries(p).filter(([k]) => k !== "output_config" && k !== "max_tokens"));
+  assert.deepEqual(rest(deep), rest(normal));
+  for (const key of ["thinking", "temperature", "top_p", "top_k", "tool_choice"]) assert.equal(key in deep, false, key);
+  // Şema: varsayılan kapalı
+  const p = assistantRequest.safeParse({ message: "x" });
+  assert.ok(p.success && p.data.deep === false);
+  assert.equal(assistantRequest.safeParse({ message: "x", deep: "evet" }).success, false);
+});
+
+test("derin analiz: uçtan high gider, sınıra 2 sayılır (kalan hak −2); hak 1 ise 429 deep_cap, Claude'a gitmez", async () => {
+  const d = deps({ statusValue: { state: "on", usedToday: 10, cap: ASSISTANT_DAILY_CAP } });
+  const ev = await events(await handleAssistantPost(post({ message: "Bu ayı derinlemesine incele", deep: true }), d.d));
+  assert.deepEqual(d.calls[0].output_config, { effort: "high" });
+  assert.equal(d.calls[0].max_tokens, ASSISTANT_DEEP.maxTokens);
+  assert.deepEqual(d.started, [[7, { deep: true }]]);
+  assert.deepEqual(ev[ev.length - 1], { type: "done", reason: "end", left: ASSISTANT_DAILY_CAP - 10 - ASSISTANT_DEEP_WEIGHT });
+  assert.equal(ASSISTANT_DEEP_WEIGHT, 2);
+  // Olağan soru: medium, 1 sayılır
+  const n = deps({ statusValue: { state: "on", usedToday: 10, cap: ASSISTANT_DAILY_CAP } });
+  const ne = await events(await handleAssistantPost(post({ message: "x" }), n.d));
+  assert.deepEqual(n.calls[0].output_config, { effort: "medium" });
+  assert.deepEqual(n.started, [[7, { deep: false }]]);
+  assert.deepEqual(ne[ne.length - 1], { type: "done", reason: "end", left: ASSISTANT_DAILY_CAP - 11 });
+  // Tek hak kaldı: derin analiz reddedilir (kapı açık kalır), olağan soru gider
+  const one = deps({ statusValue: { state: "on", usedToday: ASSISTANT_DAILY_CAP - 1, cap: ASSISTANT_DAILY_CAP } });
+  const r = await handleAssistantPost(post({ message: "x", deep: true }), one.d);
+  assert.equal(r.status, 429);
+  const body = (await r.json()) as { code: string; left: number; error: string };
+  assert.equal(body.code, "deep_cap");
+  assert.equal(body.left, 1);
+  assert.match(body.error, /Derin analiz 2 soru sayılır; bugün 1 soru hakkı kaldı/);
+  assert.equal(one.calls.length, 0);
+  assert.equal(one.started.length, 0);
+  assert.equal((await handleAssistantPost(post({ message: "x" }), one.d)).status, 200);
+  // Aynı anda gelen soru hakkı yedi: start null → yine deep_cap (bir hak duruyorsa) ya da cap
+  const raced = deps({ start: async () => null, statusValue: { state: "on", usedToday: 50, cap: ASSISTANT_DAILY_CAP } });
+  const rr = await handleAssistantPost(post({ message: "x", deep: true }), raced.d);
+  assert.equal(rr.status, 429);
+  assert.equal(((await rr.json()) as { code: string }).code, "deep_cap");
+});
+
+test("derin analiz: araç turu sınırı 8 yerine 12; süre sınırları aynı", async () => {
+  const rounds = async (deep: boolean) => {
+    const calls: AssistantParams[] = [];
+    const client: AssistantClient = {
+      beta: {
+        messages: {
+          stream(params, options) {
+            calls.push(structuredClone(params));
+            const final = params.tool_choice?.type === "none";
+            const content = final ? [text("Sonuç.")] : [{ type: "tool_use", id: `t${calls.length}`, name: "yok", input: {} } as Block];
+            return scriptedStream(scriptedMessage({ content, stop_reason: final ? "end_turn" : "tool_use" }), { signal: options.signal });
+          },
+        },
+      },
+    };
+    const out = await runAssistant(client, { system: "S", context: "C", tools: [], toolCtx: { base: "", now: new Date() }, history: [], message: "x", deep, emit: () => {} });
+    return { out, calls };
+  };
+  const n = await rounds(false);
+  assert.equal(n.calls.length, ASSISTANT_TIMING.maxToolRounds + 1);
+  assert.equal(n.out.done, "limit");
+  const d = await rounds(true);
+  assert.equal(d.calls.length, ASSISTANT_DEEP.maxToolRounds + 1);
+  assert.equal(ASSISTANT_DEEP.maxToolRounds, 12);
+  assert.ok(d.calls.every((c) => (c.output_config as { effort: string }).effort === "high"));
+  assert.equal(d.calls[d.calls.length - 1].tool_choice?.type, "none");
+});
+
+test("derin analiz: ekranda varsayılan kapalı, bir soruluk; hak 2'den azsa kapalı; maliyet notu kodda ve belgede", () => {
+  const w = code("src/components/panel/assistant/panel-assistant.tsx");
+  assert.match(w, /const \[deep, setDeep\] = useState\(false\);/);
+  assert.match(w, /aria-pressed=\{deep\}/);
+  assert.match(w, /disabled=\{busy \|\| !deepAllowed\}/);
+  assert.match(w, /gate\.left >= ASSISTANT_DEEP_WEIGHT/);
+  assert.match(w, /setDeep\(false\);/);
+  assert.match(w, /\.\.\.\(asDeep \? \{ deep: true \} : \{\}\)/);
+  assert.match(read("src/server/ai/assistant/loop.ts"), /Maliyet notu: high eforda/);
+  const claude = read("src/server/ai/claude.ts");
+  assert.match(claude, /case when \$\{s\.aiCalls\.effort\} = \$\{ASSISTANT_DEEP\.effort\} then \$\{ASSISTANT_DEEP\.weight\} else 1 end/);
+  assert.match(claude, /if \(Number\(row\?\.n \?\? 0\) \+ weight > cap\) return null;/);
+  assert.match(read("docs/ASISTAN.md"), /## Derin analiz/);
 });

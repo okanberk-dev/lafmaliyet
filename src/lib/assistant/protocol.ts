@@ -26,6 +26,9 @@ export const ASSISTANT_LIMITS = {
 /** Yönetici başına günde en çok bu kadar soru (src/server/ai/claude.ts assistantStatus; ai_calls feature "asistan") */
 export const ASSISTANT_DAILY_CAP = 60;
 
+/** Derin analiz sorusu günlük sınıra bu kadar soru sayılır (src/server/ai/assistant/loop.ts ASSISTANT_DEEP.weight) */
+export const ASSISTANT_DEEP_WEIGHT = 2;
+
 /**
  * Asistan bu kurulumda açık mı: ASISTAN_KAPALI=1 ise düğme çizilmez, uç 404 döner (yalnız asistanı kapatır; fotoğraftan
  * okuma açık kalır). Sunucuda okunur (panel düzeni ve uç)
@@ -53,6 +56,8 @@ export const assistantRequest = z
     history: z.array(turn).max(ASSISTANT_LIMITS.history, `Geçmiş en çok ${ASSISTANT_LIMITS.history} mesaj olabilir`).default([]),
     /** Açık ekran (page-context.ts): bozuksa soru reddedilmez, alan düşer */
     page: assistantPage.optional().catch(undefined),
+    /** Derin analiz (efor high, daha çok araç turu; günlük sınıra 2 soru sayılır; loop.ts ASSISTANT_DEEP) */
+    deep: z.boolean().default(false),
   })
   .strict()
   .superRefine((v, ctx) => {
@@ -141,6 +146,8 @@ export interface ChatMessage {
   note?: string;
   /** Yanıttaki onay kartları ve son durumları */
   cards?: OpCardState[];
+  /** Soru derin analizle soruldu (ekranda küçük işaret; geçmişe gitmez) */
+  deep?: boolean;
   /** Yanıtın sonundaki takip önerileri (followups.ts; metinden ayrılmış, yalnız ekranda) */
   followups?: string[];
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, LoaderCircle, RotateCcw, Sparkles, Square, X } from "lucide-react";
+import { ArrowUp, Brain, LoaderCircle, RotateCcw, Sparkles, Square, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
@@ -8,7 +8,7 @@ import { useMediaQuery } from "@/components/ui/use-media";
 import type { OpCardState } from "@/lib/assistant/ops";
 import { restoreFollowups, splitFollowups } from "@/lib/assistant/followups";
 import { pageFromLocation, suggestionsFor } from "@/lib/assistant/page-context";
-import { ASSISTANT_DAILY_CAP, ASSISTANT_LIMITS, eventReader, historyForRequest, restoreCards, type AssistantDone, type AssistantEvent, type ChatMessage } from "@/lib/assistant/protocol";
+import { ASSISTANT_DAILY_CAP, ASSISTANT_DEEP_WEIGHT, ASSISTANT_LIMITS, eventReader, historyForRequest, restoreCards, type AssistantDone, type AssistantEvent, type ChatMessage } from "@/lib/assistant/protocol";
 import { cn } from "@/lib/utils";
 
 import { onAssistantOpened, setAssistantOpen, useAssistantOpen } from "./assistant-open";
@@ -27,6 +27,8 @@ import { OpCardView } from "./op-card";
  * - Sayfa bağlamı (src/lib/assistant/page-context.ts): boşken açık ekrana özel 3–4 öneri çipi; her soruda açık ekranın
  *   yolu ve adresteki ?ay / ?gun gider (sunucu değişken bağlama tek satır yazar).
  * - Takip önerileri (src/lib/assistant/followups.ts): yanıtın sonundaki <takip> bloğu ayrılır, son yanıtın altında çip.
+ * - Derin analiz anahtarı (yazı kutusunun üstünde): varsayılan kapalı, bir soruluk; efor high, 2 soru sayılır (loop.ts
+ *   ASSISTANT_DEEP). Hak 2'den azsa kapalı.
  * - Sohbet bu sekmede durur (sessionStorage, kullanıcıya özel anahtar); "Yeni sohbet" siler. Sunucuya her soruda yalnız
  *   önceki turların görünen metni gider (historyForRequest); sunucu hiçbir mesajı saklamaz.
  * - Yanıt akarak gelir (satır satır JSON): metin parça parça, araç çalışırken durum satırı ("Tedarikçi özeti…"),
@@ -83,7 +85,7 @@ function loadMessages(userId: number): ChatMessage[] {
         const followups = m.role === "assistant" ? restoreFollowups(m.followups) : undefined;
         // Takip bloğu yarım kalmış bir metin (sayfa akış sürerken yenilendi) bloksuz geri gelir
         const text = m.role === "assistant" ? splitFollowups(m.text).body : m.text;
-        return { role: m.role, text, ...(m.failed ? { failed: true } : {}), ...(typeof m.note === "string" ? { note: m.note } : {}), ...(cards ? { cards } : {}), ...(followups ? { followups } : {}) };
+        return { role: m.role, text, ...(m.role === "user" && m.deep === true ? { deep: true } : {}), ...(m.failed ? { failed: true } : {}), ...(typeof m.note === "string" ? { note: m.note } : {}), ...(cards ? { cards } : {}), ...(followups ? { followups } : {}) };
       });
   } catch {
     return [];
@@ -119,6 +121,8 @@ export function PanelAssistant({ userId }: { userId: number }) {
   const pathname = usePathname();
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadMessages(userId));
   const [input, setInput] = useState("");
+  /** Derin analiz anahtarı: varsayılan kapalı, bir soru için açılır (gönderince kapanır; 2 soru sayılır) */
+  const [deep, setDeep] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tool, setTool] = useState<string | null>(null);
   const [gate, setGate] = useState<Gate | null>(null);
@@ -260,8 +264,11 @@ export function PanelAssistant({ userId }: { userId: number }) {
     const question = text.trim();
     if (!question || busy || (gate && gate.state !== "on")) return;
     const history = historyForRequest(messages);
-    setMessages((list) => [...list, { role: "user", text: question }, { role: "assistant", text: "" }]);
+    // Derin analiz yalnız bu soru için (yanlışlıkla iki kat hak harcanmasın); hak yetmiyorsa olağan soru gider
+    const asDeep = deep && deepAllowed;
+    setMessages((list) => [...list, { role: "user", text: question, ...(asDeep ? { deep: true } : {}) }, { role: "assistant", text: "" }]);
     setInput("");
+    setDeep(false);
     setBusy(true);
     setTool(null);
     setAnnounce("Asistan yanıtlıyor");
@@ -314,11 +321,12 @@ export function PanelAssistant({ userId }: { userId: number }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // Açık ekran: yalnız yol ve adresteki ?ay / ?gun (page-context.ts); sunucu bağlamın sonuna tek satır yazar
-        body: JSON.stringify({ message: question, history, page: pageFromLocation(window.location.pathname, window.location.search) ?? undefined }),
+        body: JSON.stringify({ message: question, history, page: pageFromLocation(window.location.pathname, window.location.search) ?? undefined, ...(asDeep ? { deep: true } : {}) }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
         const body = (await res.json().catch(() => null)) as { error?: string; code?: string; left?: number } | null;
+        // deep_cap: derin analize hak yetmedi, kapı açık kalır (olağan soru sorulabilir)
         if (body?.code && ["nokey", "off", "cap"].includes(body.code)) setGate({ state: body.code as Gate["state"], left: body.left ?? 0, cap: gate?.cap ?? 0, message: body.error ?? null });
         fail(body?.error ?? "Asistana ulaşılamadı. Yeniden deneyin.", false);
         return;
@@ -377,6 +385,8 @@ export function PanelAssistant({ userId }: { userId: number }) {
   const waiting = busy && last?.role === "assistant" && !last.text;
   const tooLong = input.length > ASSISTANT_LIMITS.message;
   const lowLeft = !!gate && gate.state === "on" && gate.left <= 10;
+  /** Derin analize hak yetiyor mu (2 soru sayılır); kapının durumu bilinmiyorsa sunucu karar verir */
+  const deepAllowed = !gate || gate.left >= ASSISTANT_DEEP_WEIGHT;
   const warning = tooLong || lowLeft;
 
   return (
@@ -484,6 +494,11 @@ export function PanelAssistant({ userId }: { userId: number }) {
                 // Soru: hafif zeminli düz blok (balon yok); yanıt altında düz metin
                 <p key={i} data-turn="user" className="rounded-xl bg-panel px-3.5 py-2.5 text-[14px] leading-6 break-words whitespace-pre-wrap text-ink max-lg:text-[16px] max-lg:leading-7 dark:text-ink-soft">
                   {m.text}
+                  {m.deep ? (
+                    <span className="mt-1 flex items-center gap-1 text-[12px] leading-4 font-medium text-ink-mute max-lg:text-[13px]">
+                      <Brain className="size-3" aria-hidden="true" /> Derin analiz
+                    </span>
+                  ) : null}
                 </p>
               ) : (
                 <div key={i} data-turn="assistant" className="space-y-2">
@@ -528,6 +543,27 @@ export function PanelAssistant({ userId }: { userId: number }) {
           <div className="shrink-0 border-t border-line px-3 pt-2.5 pb-3 max-lg:border-t-0 max-lg:px-4 max-lg:pt-1 max-lg:in-data-[keyboard=open]:pb-2">
             {blocked ? (
               <p className="mb-2 rounded-xl bg-panel px-3 py-2 text-[13px] leading-5 text-ink-soft max-lg:text-[15px] max-lg:leading-6">{gate?.message ?? "Asistan şu an kapalı."}</p>
+            ) : null}
+            {!blocked ? (
+              <div className="mb-1.5 flex items-center gap-2 px-0.5">
+                {/* Derin analiz: efor high, daha çok araç turu; günlük sınıra 2 soru sayılır (docs/ASISTAN.md) */}
+                <button
+                  type="button"
+                  onClick={() => setDeep((v) => !v)}
+                  aria-pressed={deep}
+                  disabled={busy || !deepAllowed}
+                  title={deepAllowed ? "Derin analiz: daha ayrıntılı bakar, daha uzun sürer; 2 soru sayılır" : "Derin analiz için en az 2 soru hakkı gerekir"}
+                  data-deep-toggle
+                  className={cn(
+                    "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-[12.5px] font-medium ring-1 focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none disabled:cursor-default disabled:opacity-50 max-lg:h-11 max-lg:px-3.5 max-lg:text-[14px] pointer-coarse:h-11",
+                    deep ? "bg-ink text-on-solid ring-ink" : "text-ink-mute ring-line hover:text-ink",
+                  )}
+                >
+                  <Brain className="size-3.5 max-lg:size-4" aria-hidden="true" />
+                  Derin analiz
+                </button>
+                {deep ? <span className="text-[12px] leading-4 text-ink-mute max-lg:text-[13px]">Daha uzun sürer · 2 soru sayılır</span> : null}
+              </div>
             ) : null}
             <form
               className="flex items-end gap-2"
