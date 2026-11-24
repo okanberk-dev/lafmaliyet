@@ -3,7 +3,8 @@
 Uçlar: `POST /api/pos/gun` (gün sonu), `GET /api/panel/pos/urunler` (ürün maliyetleri),
 `GET /api/panel/pos/modpos-gunler` (geçiş gününden önceki ModPOS günleri) ve kasa zincirinin iki okuması
 (Faz 3): `GET /api/panel/pos/devir` (bir günün devri, ertesi günün beklenen açılışı) ve
-`GET /api/panel/pos/gider-kategorileri` (personelin harcama kategorileri). Ekranlar: **Ayarlar ›
+`GET /api/panel/pos/gider-kategorileri` (personelin harcama kategorileri), personel bağlantısının listesi
+`GET /api/panel/pos/personel` (LM-4b; aşağıda "Personel bağlantısı"). Ekranlar: **Ayarlar ›
 LafPOS (kasa)** (bağlantının durumu, son ret ve onarımı, **LafPOS'a geçiş günü**, ürüne bağlanamayan adlar) ve geçiş
 gününden itibaren **Kasa raporu** (`/panel/kasa`) › **LafPOS'tan doldur**, **Satışlar** (`/panel/satislar`:
 LafPOS'un ürün satışları, ay toplamı), **Komisyon & hakediş** (kanal kanal satış) ve **Zayi & ikram** (LafPOS'un
@@ -14,7 +15,7 @@ indirim, ciro dışı, KDV, banka POS komisyonu, tutarlılık; `tests/hesap-sozl
 
 **Varsayılan kapalı (sahibin 26 Ekim kararı).** Kafede bugün ModPOS var. "LafPOS'a geçiş günü" boşken LafPOS'un
 gönderdiği günler saklanır ama hiçbir hesaba, ekrana, göreve, hatırlatmaya, e-postaya ya da ön doldurmaya girmez;
-yalnız Ayarlar'daki LafPOS kartında "deneme" olarak görünür. Anahtar (`LAFPOS_SYNC_SECRET`) yokken beş uç da 503 döner
+yalnız Ayarlar'daki LafPOS kartında "deneme" olarak görünür. Anahtar (`LAFPOS_SYNC_SECRET`) yokken altı uç da 503 döner
 ve hiçbir şey yazılmaz. Açma sırası aşağıda, "Açılış sırası".
 
 ## İş bölümü (26 Ekim 2026)
@@ -55,7 +56,7 @@ gün sonu (ve düzeltme)
                                                        ├─ pos_day_reports: günün özeti (yenisi eskisinin yerine)
                                                        ├─ pos_daily_sales: günün satırları silinir, yenisi yazılır
                                                        └─ cash_outs: kasa hareketleri satır satır (Faz 3, sayılan gün)
-     ◀── 200 {ok, date, lines, matched, unmatched, counted, switchDay, nextOpening} · 400 {error, field} · 409 {error, date, zNo} · 409 {error: "wrong_branch", sube, expected} · 401 · 413 · 503
+     ◀── 200 {ok, date, lines, matched, unmatched, counted, switchDay, nextOpening, staff?} · 400 {error, field} · 409 {error, date, zNo} · 409 {error: "wrong_branch", sube, expected} · 401 · 413 · 503
                                                     └─ sonuç integration_state › lafpos'a (Ayarlar › LafPOS kartı)
 
 GET /api/panel/pos/urunler (imzalı)  ─────────▶  maliyet modelinden siteye bağlı ürünler
@@ -68,6 +69,8 @@ GET /api/panel/pos/devir?date= (imzalı) ──────▶  günün Kasa rap
      ◀── {version: 1, date, nextOpening: {amount, source} | null}
 GET /api/panel/pos/gider-kategorileri (imzalı) ▶  personelin seçebildiği gider kategorileri (Faz 3)
      ◀── {version: 1, now, items: [{id, name, section}]}
+GET /api/panel/pos/personel?sube=marina ──────▶  şubenin bu ay / geçen ay maaş satırları (LM-4b; bağlantı ekranı isteyince)
+     ◀── {version: 1, now, sube, items: [{ref, name, active, account}]} · 400 {error, field} · 409 {error: "wrong_branch", sube, expected} · 401 · 503
 ```
 
 ### Gün sonu: `POST /api/pos/gun`
@@ -925,18 +928,64 @@ birleşip yayına çıkmak hiçbir şeyi açmaz: anahtar ve geçiş günü yokke
    ortasındaysa o ayın ModPOS listesi Satışlar'a geçiş gününden önceki günler için yüklenir (1–9 Kasım; yükleme o güne
    kırpar). Geçiş günü yalnız Marina'nın kasasınındır; Tuzla'da hiçbir şey değişmez ("Şubeler").
 
-Anahtar yokken beş uç da `503` döner; panelin geri kalanı ve Kasa raporu eskisi gibi çalışır.
+### Personel bağlantısı: `GET /api/panel/pos/personel` ve `workedStaffRefs` (LM-4b, 24 Kasım 2026)
+
+Sahibin kararı 2 (23 Kasım 2026): "ladmin'de zaten hesapları var; doğru hesabı bağladığından emin ol". LafPOS kullanıcısı
+lafmaliyet'in **maaş satırına** (`staff.id`, kimliği `s:<id>`; yemek kartı, maaş ve şube orada) yalnız LafPOS'ta, Yönetim ›
+Personel'de iki tarafı gösteren onayla, elle bağlanır; hiçbir şey kendiliğinden bağlanmaz (LafPOS docs/03-ENTEGRASYON.md
+§4.8). lafmaliyet gelen her kimliği kendi satırına göre doğrular. Kurallar `src/lib/lafpos/personel.ts`; testleri
+`tests/personel-lafpos.test.ts`, `tests/personel-lafpos-db.test.ts`.
+
+- **Liste:** imzalı `GET /api/panel/pos/personel?sube=marina` (`src/server/lafpos/personel.ts` servePosStaff; ModPOS dönemi
+  ucuyla aynı denetim: anahtar 503, imza 401, şube yoksa 400, `sube` LafPOS'un şubesi değilse 409 `wrong_branch`).
+  `Cache-Control: no-store`. `{ version: 1, now, sube, items: [{ ref: "s:12", name, active, account }] }`: şubenin **bu ay
+  ya da geçen ay** maaş hesabında (aralıkta) olan satırları; `active` bu ay aralıkta mı (geçen ay biten satır `false`,
+  LafPOS ona bağlamaz); `account` satıra bağlı giriş hesabının görünen adı (`staff.user_id` → `users.name`, LM-4'ün
+  Maaşlar › Vardiya / hesap bağlantısı) ya da `null`. Biten satır ile "Devam ettir"in yeni satırı aynı hesaba (ya da aynı
+  Vardiya adına) bağlıysa **hesap başına tek öğe** verilir: bu ayın satırı, yoksa en yeni satır (docs/VARDIYA.md).
+  Maaş, ek, yemek kartı, e-posta ve ay gitmez; uç hiçbir şey yazmaz. LafPOS listeyi yalnız bağlantı ekranı isteyince çeker
+  ve yalnız bellekte en çok 5 dakika tutar.
+- **Gövde:** `workedStaffRefs` (isteğe bağlı): o gün çalışanların kimlikleri, tekil, sayı sırasıyla, en çok 500. LafPOS
+  onu yalnız en az bir kullanıcısı bağlıyken gönderir: alan yoksa günün çalışanları **bilinmiyor**, `[]` "bağlı var, kimse
+  çalışmadı". `.optional().catch(undefined)` ile okunur: bozuk liste (ad, `u:` kimliği, 500'den uzun) günü reddetmez,
+  yazılmaz. `pos_day_reports.worked_staff` (jsonb, migration `0074_lafpos_personel`): alanı taşıyan gövde yazar, taşımayan
+  yeniden gönderim (`bankPos` gibi) kayıtlı listeyi silmez. Sürüm geçmişi gövdeyle birlikte saklar.
+- **200 yanıtı:** alan geldiyse `staff: { counted, unknown, otherBranch }` (handlePosDay; receivePosDay'in yanıtı
+  değişmez). **Sayılan**: satır LafPOS'un şubesinde ve günün ayında maaş hesabında. **Başka şube**: satır başka şubede
+  (o günler o satıra girmez). **Bilinmeyen**: satır yok (silinmiş) ya da günün ayında aralık dışı (biten satır: "Devam
+  ettir"den sonra LafPOS'taki bağlantı yeni satıra taşınmalı). LafPOS bilinmeyen ve başka şubenin kimliklerini
+  Entegrasyon'da kendi adıyla gösterir. Sınıf günün sayılıp sayılmamasından bağımsızdır (yanıtın `counted` alanı ayrıca
+  söyler); okunamazsa `staff` yazılmaz, yanıt yine 200.
+- **Yemek kartının günü ve Maaşlar:** tam zamanlı, yemek kartı işaretli kişide gün Ayarlar'dakidir (26). Şu üçü
+  birlikte tutunca **LafPOS'ta çalıştığı gün** kullanılır (`lafposWorkedDays`, engine `lafposDaysOf`): kişi LafPOS'un
+  şubesinde; ayın tamamı LafPOS dönemi (ayın 1'i geçiş gününden önce değil: geçiş ayının ModPOS günlerinde kimin
+  çalıştığı bilinmez, Kasım 2026'da Marina'nın yemek kartı 330 × 26 kalır); ayın en az bir sayılan LafPOS günü var ve
+  **her biri** çalışan listesini taşıyor (bir gün listesizse ay varsayılanla). Gün = ayın gün sonlarından kişinin
+  kimliğinin geçtiği gün; süren ayda bugüne kadar gelen günler. Bu gün gerçek gündür: Gelir-gider'in "PERSONEL YEMEK
+  KARTI" satırında maaş gibi gün oranıyla bir daha oranlanmaz (hücre notu kişileri ve günlerini yazar). Maaşlar kişinin
+  altında "LafPOS'ta çalıştığı gün: N" yazar (veri varsa; yemek kartı işaretsiz kişide ve part-time'da yalnız bilgi:
+  part-time'ın yemek kartı Vardiya'da çağrıldığı günle), yemek kartı sütunu "N gün · LafPOS". Excel'in Personel sekmesi
+  aynı günle. Vergi bordrosu ve nakit planı ayın bütün planıyla kalır (Ayarlar'daki gün).
+- **KVKK:** ad gitmez; yalnız personel kimliği ve o gün var olup olmadığı (saat yok). Kimlik takma addır (lafmaliyet
+  kişiyi bulur): amaç bordro ve yemek kartı; günler yalnız yöneticinin ekranlarında (Maaşlar, Gelir-gider). Adlar yalnız
+  lafmaliyet → LafPOS yönünde, seçicinin listesinde gider.
+- İmza vektörü (`GET /api/panel/pos/personel?sube=marina`, zaman 1760000000, testlerin anahtarı) `tests/lafpos.test.ts`'te;
+  LafPOS `tests/signature.test.ts` aynısını sabitler. İkinci altın gövde `tests/fixtures/lafpos-gun-personel.golden.json`
+  LafPOS'un `tests/fixtures/lafmaliyet-gun-personel.golden.json`'ının bayt bayt kopyasıdır (ilki + yalnız `workedStaffRefs`).
+
+Anahtar yokken altı uç da `503` döner; panelin geri kalanı ve Kasa raporu eskisi gibi çalışır.
 
 ## Güvenlik ve KVKK
 
 - İmza laffogato.net bağlantısınınkiyle aynı kural ve aynı kod (`src/lib/karaoke/signature.ts`): `x-laf-timestamp`
   (unix saniye), `x-laf-signature: v1=<hex>`, HMAC-SHA256(zaman, yöntem, yol, sıralı sorgu, gövdenin SHA-256'sı),
   ±5 dakika, sabit süreli karşılaştırma. Yol ve sorgu imzanın içindedir: bir ucun imzası öteki uçta, bir şubenin imzası
-  öteki şubede geçmez. Beş ucun vektörleri (`/api/pos/gun`, `/api/panel/pos/urunler`,
+  öteki şubede geçmez. Altı ucun vektörleri (`/api/pos/gun`, `/api/panel/pos/urunler`,
   `/api/panel/pos/modpos-gunler?sube=marina`, `/api/panel/pos/devir?date=2026-11-22`,
-  `/api/panel/pos/gider-kategorileri`) `tests/lafpos.test.ts`'te sabit; LafPOS'un `tests/signature.test.ts`'i
+  `/api/panel/pos/gider-kategorileri`, `/api/panel/pos/personel?sube=marina`) `tests/lafpos.test.ts`'te sabit; LafPOS'un `tests/signature.test.ts`'i
   aynılarını sabitler.
-- Gövdede kişisel veri yoktur (müşteri, personel adı, kullanıcı ya da müşteri kimliği, telefon). Ödenmezde yalnız
+- Gövdede ad, kullanıcı ya da müşteri kimliği ve telefon yoktur. Tek istisna personel bağlantısı (LM-4b): ad gitmez;
+  yalnız personel kimliği (`workedStaffRefs`, `s:<maaş satırı>`; o gün var olup olmadığı, saat yok). Ödenmezde yalnız
   kişinin türü gelir (`personKind`: personel, müşteri, patron); kim olduğu gelmez (KVKK). İadelerde `name` ödeme
   türünün adıdır, kişi değil. İkram, iptal ve iade nedenleri serbest metindir (en çok 200 karakter saklanır) ve yalnız
   yöneticinin verisinde kalır; personele giden Kasa bandı yalnız Z'yi, Zayi'nin günü LafPOS ikramının yalnız adını ve
@@ -946,6 +995,8 @@ Anahtar yokken beş uç da `503` döner; panelin geri kalanı ve Kasa raporu esk
 - Maliyet, devir ve gider kategorileri uçları yalnız imzayla açılır; personel maliyet ve kâr görmez. Kategori ucu tutar
   taşımaz.
 - ModPOS dönemi ucu yalnız imzayla ve yalnız LafPOS'un şubesi için açılır; kişi adı, kasa ve sayım rakamı taşımaz.
+- Personel ucu yalnız imzayla ve yalnız LafPOS'un şubesi için açılır; maaş satırının adı ve bağlı hesabın görünen adı
+  gider, maaş, e-posta ve ay gitmez.
 - Yedeğe üç tablo (`pos_daily_sales`, `pos_day_reports`, `pos_day_revisions`) kendiliğinden girer (gizli sütun yok). `db:reset` ürünleri baştan yüklediği için günlük satırlar da
   silinir (ürün kimliklerine bağlı); gün sonu özetleri kalır.
 
@@ -993,11 +1044,12 @@ Anahtar yokken beş uç da `503` döner; panelin geri kalanı ve Kasa raporu esk
 | `src/server/lafpos/ingest.ts` | Gün sonunun denetimi ve tek işlemde yazımı |
 | `src/server/lafpos/products.ts` | Maliyet ucunun çekirdeği (maliyet modeli) |
 | `src/lib/lafpos/modpos-gunler.ts`, `src/server/lafpos/modpos-gunler.ts` | ModPOS dönemi ucu: isteğin denetimi, günün ve ürün bloğunun biçimi (saf); kasa raporu, föy ve ModPOS listesinin okunması |
+| `src/lib/lafpos/personel.ts`, `src/server/lafpos/personel.ts` | Personel bağlantısı (LM-4b): listenin biçimi ve hesap başına tek öğe, kimliklerin sınıfı, LafPOS'ta çalıştığı gün (saf); maaş satırlarının ve hesap adlarının okunması |
 | `src/server/data/daily-sales.ts` | `loadDailyProductSales` (gün gün; bugün okuyan yok) |
 | `src/app/panel/satislar/page.tsx`, `sales-client.tsx`, `product-picker.tsx` | Satışlar'ın bandı, LafPOS satırları ve eşleştirmesi, geçiş ayının yüklemesi |
 | `src/lib/lafpos/gun-sonu.ts`, `src/server/lafpos/gun-sonu.ts` | Gün sonu otomasyonu: Kasa raporuna otomatik yazım ve birleştirme, gün sonu e-postası, günlük işin yakalaması |
 | `src/server/data/lafpos-day.ts` | Kasa raporunun okuyucusu (yalnız Z; `loadKasaLafpos` ve ay görünümünün `loadKasaLafposDays` yalnız geçiş gününden sonra), günün kanıtı (`kasaEvidence`) |
-| `src/app/api/pos/gun/route.ts`, `src/app/api/panel/pos/urunler/route.ts`, `src/app/api/panel/pos/modpos-gunler/route.ts`, `src/app/api/panel/pos/devir/route.ts`, `src/app/api/panel/pos/gider-kategorileri/route.ts` | Uçlar |
+| `src/app/api/pos/gun/route.ts`, `src/app/api/panel/pos/urunler/route.ts`, `src/app/api/panel/pos/modpos-gunler/route.ts`, `src/app/api/panel/pos/devir/route.ts`, `src/app/api/panel/pos/gider-kategorileri/route.ts`, `src/app/api/panel/pos/personel/route.ts` | Uçlar |
 | `src/lib/lafpos/devir.ts`, `src/server/lafpos/devir.ts` | Kasa zinciri (Faz 3): bir günün devri (`nextOpening`; 200 yanıtı ve devir ucu) |
 | `src/server/lafpos/categories.ts` | Gider kategorileri ucunun çekirdeği (personelin kategorileri; Faz 3) |
 | `src/lib/lafpos/cash-moves.ts`, `src/server/lafpos/cash-moves.ts` | Kasa hareketleri → Kasadan çıkanlar (plan, kilit metni; eşitleme; Faz 3) |
