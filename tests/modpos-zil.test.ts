@@ -247,11 +247,13 @@ test("kaynak: zilin föy satırı kasa modülünün yönetici yolunda; personeli
   // Birden çok kasa açıkken gövdede şubenin adı
   assert.match(fn, /out\.push\(\{ \.\.\.modposMismatchBell\(m, t\.named \? t\.name : undefined\), kind: "warning", timeLabel: timeLabel\(m\.report\.date\), unread: true, group: "kasa" \}\);/);
   // cashIntegrityNotifications yalnız yönetici dalında çağrılır
-  const cash = bell.slice(bell.indexOf("async function cashNotifications"), bell.indexOf("async function cashIntegrityNotifications"));
-  const staffBranch = cash.slice(cash.indexOf('if (user.role !== "admin") {'), cash.indexOf("const out: PanelNotification[] = [];"));
+  const cash = bell.slice(bell.indexOf("async function cashNotifications"), bell.indexOf("async function staffCashNotifications"));
+  // Personelin dalı kendi işlevinde (staffCashNotifications): ModPOS föyü ve bütünlük uyarıları yok
+  assert.match(cash, /if \(user\.role !== "admin"\) return staffCashNotifications\(/);
+  const staffBranch = bell.slice(bell.indexOf("async function staffCashNotifications"), bell.indexOf("/**\n * Yönetici: kasanın bütünlüğü"));
   assert.ok(staffBranch.length > 0);
   assert.doesNotMatch(staffBranch, /modpos|Modpos|cashIntegrityNotifications/);
-  assert.ok(cash.indexOf("cashIntegrityNotifications(reports, day, user.id, tills)") > cash.indexOf('if (user.role !== "admin") {'));
+  assert.ok(cash.indexOf("cashIntegrityNotifications(reports, day, user.id, tills)") > cash.indexOf('if (user.role !== "admin") return'));
   // İstek dalları (personelin İsteklerim'i dahil) ModPOS okumaz
   assert.doesNotMatch(bell.slice(bell.indexOf("async function requestNotifications")), /modpos|Modpos/);
 });
