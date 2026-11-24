@@ -363,3 +363,29 @@ export function salesFileProblem(size: number): string | null {
   if (size > SALES_FILE_MAX_BYTES) return `Dosya ${SALES_FILE_MAX_MB} MB'tan büyük olamaz. Satırları kopyalayıp “Yapıştır” ile de ekleyebilirsiniz.`;
   return null;
 }
+
+/**
+ * Satırın indirimden önceki (brüt) ve sonraki tutarı: Satışlar'ın iki sütunu (23 Kasım 2026; "net" burada KDV hariç
+ * demek, bu değil). ModPOS listesi indirimden öncedir: satır başına indirim bilinmez (`after` null; ayın indirimi kasa
+ * raporlarından). LafPOS satırı ikisini de taşır (`gross` ve ciro); eski LafPOS'un günü varsa brüt bilinmez (null)
+ */
+export function discountColumns(r: { lafposDays: number | null; revenue: number; gross: number | null }): { before: number | null; after: number | null } {
+  if (r.lafposDays === null) return { before: r.revenue, after: null };
+  return { before: r.gross, after: r.revenue };
+}
+
+/**
+ * Satırların iki sütununun toplamı: brüt bilinmeyen LafPOS satırında ciro (indirimi bilinmiyor, en az o kadar); ModPOS
+ * satırı varken indirimden sonraki toplam satırlardan bilinmez (null)
+ */
+export function discountTotals(rows: readonly { lafposDays: number | null; revenue: number; gross: number | null }[]): { before: number; after: number | null } {
+  let before = 0;
+  let after: number | null = 0;
+  for (const r of rows) {
+    const c = discountColumns(r);
+    before += c.before ?? r.revenue;
+    after = after === null || c.after === null ? null : after + c.after;
+  }
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  return { before: r2(before), after: after === null ? null : r2(after) };
+}

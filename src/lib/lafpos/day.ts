@@ -38,6 +38,36 @@ const siteMenuId = z.string().regex(SITE_MENU_ID).nullable();
 const slot = z.enum(["M", "L"]).nullable();
 
 /**
+ * Faz 2 alanı (23 Kasım 2026; docs/LAFPOS.md › Faz 2 alanları): isteğe bağlı, eski LafPOS ve saklanmış eski gün
+ * göndermez. Bozuk gelirse yok sayılır (alan yazılmaz, parsePosDay günlüğe yazar), gün reddedilmez: 400 LafPOS'ta
+ * kalıcıdır. Saklanan jsonb aynı şemayla yeniden okunur; zorunlu bir alan eski günleri sessizce düşürürdü
+ */
+const soft = <T extends z.ZodType>(schema: T) => schema.optional().catch(undefined);
+/** Serbest metin neden: kırpılır, en çok 200 karakter, boşsa null (KVKK: LafPOS da 200'de keser) */
+const reasonText = z
+  .string()
+  .max(1000)
+  .nullable()
+  .transform((v) => v?.trim().slice(0, 200) || null);
+/** Kısa metin (Z no, hata kodu): kırpılır, boşsa null; baştaki sıfır korunur */
+const shortText = (max: number) =>
+  z
+    .string()
+    .max(max)
+    .nullable()
+    .transform((v) => v?.trim() || null);
+/** ISO an (LafPOS'un `new Date().toISOString()`'i) */
+const isoInstant = z.string().max(40).regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/).nullable();
+
+/** Günün KDV dökümünün bir oranı: oran (%), matrah ve KDV, TL (LafPOS'un summary.kdv'si; Σ(matrah + KDV) = zTotal) */
+export const vatLineSchema = z.object({
+  rate: z.number().finite().min(0).max(100),
+  base: tl,
+  vat: tl,
+});
+export type PosVatLine = z.output<typeof vatLineSchema>;
+
+/**
  * Z özeti: Kasa raporunun ModPOS Z ve kasa alanları (docs/03-ENTEGRASYON.md §3.2). `cashIn`, `expectedCash`, `cardTips`
  * ve `cardCollections` sonradan geldi: eski LafPOS'un gövdesinde (ve saklanmış eski özetlerde) yoktur, yazılmayabilir;
  * `cashIn` yoksa 0 sayılır.
@@ -72,6 +102,22 @@ export const posZSchema = z.object({
    */
   cardTips: tl.nullable().optional(),
   cardCollections: tl.nullable().optional(),
+  /**
+   * Faz 2 (hesap sözleşmesi §5; isteğe bağlı, bozuksa yok sayılır): liste değeri = satılan + ikram + ödenmez (servis
+   * dahil, zayi hariç); türüne göre liste değerleri (ikram + ödenmez + zayi = offRevenue; zTotal = liste − indirim −
+   * ikram − ödenmez)
+   */
+  listValue: soft(tl),
+  ikramTotal: soft(tl),
+  odenmezTotal: soft(tl),
+  zayiTotal: soft(tl),
+  /** Günün KDV dökümü (kapanmış kasa adisyonları, servis dahil): LafPOS günlerinde günün KDV'si buradan (yeniden hesaplanmaz) */
+  vat: soft(z.array(vatLineSchema).max(10)),
+  /** Günün açılış ve son kapanış anı (ISO) */
+  openedAt: soft(isoInstant),
+  closedAt: soft(isoInstant),
+  /** Yazarkasanın (ÖKC) mali Z no'su, günün son tamamlanan cihaz fişinden; metin (LafPOS'un `zNo`'sundan ayrı); yoksa null */
+  okcZNo: soft(shortText(30)),
 });
 
 const lineSchema = z.object({
@@ -82,6 +128,10 @@ const lineSchema = z.object({
   /** TL, KDV dahil */
   revenue: tl,
   isService: z.boolean(),
+  /** Faz 2: satırın liste değeri, indirimden önce (TL, KDV dahil; servis satırında servis ücreti). Σ(gross − revenue) = z.discounts */
+  gross: soft(tl),
+  /** Faz 2: birleşen satırda içeceğin seçeneğinden ayrılan ek parçası var (EXTRA SHOT, SYRUP, ALTERNATIF SÜT) */
+  isAddon: soft(z.boolean()),
 });
 
 const ikramSchema = z.object({
@@ -91,11 +141,42 @@ const ikramSchema = z.object({
   qty,
   /** İkram edilenin menü değeri, TL, KDV dahil */
   menuValue: tl,
-  reason: z
+  reason: reasonText,
+  /** Faz 2: türü (eski LafPOS göndermez: nedenin ön eki "Ödenmez: ", "Zayi: " okunur; src/lib/lafpos/ikram.ts) */
+  kind: soft(z.enum(["ikram", "odenmez", "zayi"])),
+  /** Faz 2: ödenmezin kişi türü (kişinin adı ve kimliği gelmez; KVKK); kişisiz ödenmez, ikram ve zayide null */
+  personKind: soft(z.enum(["personel", "musteri", "patron"]).nullable()),
+});
+
+/** Faz 2: günün iptal edilen bir ödemesi; `name` ödeme türünün adı (kişi değil) */
+const refundSchema = z.object({
+  amount: tl,
+  zField: z.enum(["cash", "card", "meal_card", "online", "other"]),
+  name: z.string().trim().min(1).max(60),
+  channel: z
     .string()
-    .max(1000)
+    .trim()
+    .max(40)
     .nullable()
-    .transform((v) => v?.trim().slice(0, 200) || null),
+    .transform((v) => v || null),
+  reason: reasonText,
+});
+
+/**
+ * Faz 2: günün kasa adisyonlarının iptal edilen bir kalemi (ana ürün ve ek parçaları ayrı, satırla aynı ad). Hazırlanmış
+ * (`prepared`: bar ya da mutfak başlamıştı ya da hazırdı) iptal zayi tüketimidir (src/server/data/lafpos-ikram.ts),
+ * hazırlanmamış yalnız bilgi. `refund`: kalem iadesi (nedeni "İade: " ile başlar; tutarı `refunds`'ta da var)
+ */
+const iptalSchema = z.object({
+  posName,
+  siteMenuId,
+  slot,
+  qty,
+  /** Adet × liste fiyatı, TL, KDV dahil */
+  listValue: tl,
+  prepared: z.boolean(),
+  reason: reasonText,
+  refund: z.boolean(),
 });
 
 const paymentSchema = z.object({
@@ -148,6 +229,8 @@ export const bankPosSchema = z.object({
     .max(1000)
     .nullable()
     .transform((v) => v?.trim().slice(0, 300) || null),
+  /** Faz 2: cihazın hata kodu (alınamayan gün sonu, ör. "5085"); alındıysa ya da kod yoksa null. Bozuksa yok sayılır */
+  errorCode: soft(shortText(40)),
 });
 
 export type BankPos = z.output<typeof bankPosSchema>;
@@ -167,6 +250,17 @@ export const posDaySchema = z.object({
   payments: z.array(paymentSchema).max(200),
   /** Pavo – LafPOS kart karşılaştırması (isteğe bağlı; eski LafPOS göndermez). Bozuksa yok sayılır, gün reddedilmez */
   bankPos: bankPosSchema.nullable().optional().catch(undefined),
+  // Faz 2 (23 Kasım 2026; docs/LAFPOS.md › Faz 2 alanları). Hepsi isteğe bağlı; bozuksa yok sayılır, gün reddedilmez
+  /** Bu tarihin kaçıncı gönderimi (1'den; LafPOS'tan 200 almış gönderimler + 1). Sürüm geçmişi (pos_day_revisions) bunu da saklar */
+  revision: soft(z.number().int().min(1).max(1_000_000)),
+  /** Düzeltme: gün yeniden açıldı (`reopen`) ya da kapandıktan sonra sayım değişti (`recount`); yalnız düzeltmeyi taşıyan gövdede */
+  correction: soft(z.object({ kind: z.enum(["reopen", "recount"]), reason: z.string().max(1000).transform((v) => v.trim().slice(0, 200)) })),
+  /** Mali fişi yazarkasada kesilmeyen satış ödemeleri (bahşiş hariç) */
+  offDevice: soft(z.object({ card: tl, cash: tl })),
+  /** Günün iptal edilen ödemeleri (en çok 2000) */
+  refunds: soft(z.array(refundSchema).max(2000)),
+  /** Günün iptal edilen kalemleri (en çok 2000 parça) */
+  iptal: soft(z.array(iptalSchema).max(2000)),
 });
 
 export type PosDayPush = z.output<typeof posDaySchema>;
@@ -174,6 +268,10 @@ export type PosDayZ = z.output<typeof posZSchema>;
 export type PosDayLine = PosDayPush["lines"][number];
 export type PosIkram = PosDayPush["ikram"][number];
 export type PosPayment = PosDayPush["payments"][number];
+export type PosRefund = NonNullable<PosDayPush["refunds"]>[number];
+export type PosIptal = NonNullable<PosDayPush["iptal"]>[number];
+export type PosCorrection = NonNullable<PosDayPush["correction"]>;
+export type PosOffDevice = NonNullable<PosDayPush["offDevice"]>;
 
 /** Takvimde olan gün (2026-02-30 değil), 2020'den sonra */
 function realDate(v: string): boolean {
@@ -206,12 +304,35 @@ export function parsePosDay(body: string, now: Date = new Date()): PosDayParse {
     const issue = bankPosSchema.safeParse(sentBank).error?.issues[0];
     console.warn("[lafpos] bankPos okunamadı, karşılaştırma yazılmadı:", issue ? `${issue.path.map(String).join(".") || "bankPos"}: ${issue.code}` : "bankPos");
   }
+  // Okunamayan Faz 2 alanları: gün yazılır, alan yazılmaz; günlükte görünür (LafPOS'un sürümü ile panelin şeması ayrıştı)
+  const dropped = droppedSoftFields(json, r.data);
+  if (dropped.length) console.warn("[lafpos] okunamayan alanlar yazılmadı:", r.data.date, dropped.join(", "));
   const seen = new Set<string>();
   for (const [i, l] of r.data.lines.entries()) {
     if (seen.has(l.posName)) return { ok: false, field: `lines.${i}.posName` };
     seen.add(l.posName);
   }
   return { ok: true, data: r.data };
+}
+
+const TOP_SOFT = ["revision", "correction", "offDevice", "refunds", "iptal"] as const;
+const Z_SOFT = ["listValue", "ikramTotal", "odenmezTotal", "zayiTotal", "vat", "openedAt", "closedAt", "okcZNo"] as const;
+
+/** Gönderilip okunamayan Faz 2 alanlarının yolları ("z.vat", "lines.3.gross", "bankPos.errorCode") */
+function droppedSoftFields(json: unknown, data: PosDayPush): string[] {
+  const raw = json as Record<string, unknown> & { z?: Record<string, unknown>; lines?: Record<string, unknown>[]; ikram?: Record<string, unknown>[]; bankPos?: Record<string, unknown> | null };
+  const sent = (o: Record<string, unknown> | null | undefined, k: string) => !!o && typeof o === "object" && k in o && o[k] !== undefined;
+  const out: string[] = [];
+  for (const k of TOP_SOFT) if (sent(raw, k) && data[k] === undefined) out.push(k);
+  for (const k of Z_SOFT) if (sent(raw.z, k) && data.z[k] === undefined) out.push(`z.${k}`);
+  data.lines.forEach((l, i) => {
+    for (const k of ["gross", "isAddon"] as const) if (sent(raw.lines?.[i], k) && l[k] === undefined) out.push(`lines.${i}.${k}`);
+  });
+  data.ikram.forEach((l, i) => {
+    for (const k of ["kind", "personKind"] as const) if (sent(raw.ikram?.[i], k) && l[k] === undefined) out.push(`ikram.${i}.${k}`);
+  });
+  if (data.bankPos && sent(raw.bankPos, "errorCode") && data.bankPos.errorCode === undefined) out.push("bankPos.errorCode");
+  return out.slice(0, 20);
 }
 
 /** Sitenin kalemi ve boyu → panel ürünü aramasının anahtarı */

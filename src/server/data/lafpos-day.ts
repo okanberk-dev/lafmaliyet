@@ -1,12 +1,13 @@
 import "server-only";
 
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, count, eq, gte, lte } from "drizzle-orm";
 
 import { branchDayKey } from "@/lib/cash-report";
 
 import type { KasaEvidence } from "@/lib/cash-out-requests";
 import { readLafposSwitchDay } from "@/lib/constants";
-import { bankPosSchema, posZSchema, type BankPos } from "@/lib/lafpos/day";
+import { bankPosSchema, posDaySchema, posZSchema, type BankPos } from "@/lib/lafpos/day";
+import { lafposDayDetail, type LafposDayDetail } from "@/lib/lafpos/gun-ayrinti";
 import { lafposDayOf, type LafposDay } from "@/lib/lafpos/prefill";
 import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { currentTillBranch } from "@/server/branch-scope";
@@ -119,4 +120,36 @@ export async function loadLafposBankPos(date: string, db: DB = getDb(), branchId
   if (!row?.bankPos) return null;
   const b = bankPosSchema.safeParse(row.bankPos);
   return b.success ? b.data : null;
+}
+
+/**
+ * Günün LafPOS ayrıntısı (Faz 2; src/lib/lafpos/gun-ayrinti.ts), yalnız yöneticinin gün görünümü okur: yazarkasadan
+ * geçmeyen, ödeme iptalleri, iptal edilen kalemler, yazarkasa Z no, KDV dökümü, gönderim sırası ve düzeltme; kaç kez
+ * gönderildiği sürüm geçmişinden (pos_day_revisions). Gün gelmediyse ya da Z okunamıyorsa null; eski LafPOS'un gününde
+ * bölümler boş
+ */
+export async function loadLafposDayDetail(date: string, db: DB = getDb(), branchId?: string): Promise<(LafposDayDetail & { sends: number }) | null> {
+  const sube = branchId ?? (await currentTillBranch());
+  const where = and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, sube));
+  const [[row], sends] = await Promise.all([
+    db
+      .select({ z: s.posDayReports.z, offDevice: s.posDayReports.offDevice, refunds: s.posDayReports.refunds, iptal: s.posDayReports.iptal, revision: s.posDayReports.revision, correction: s.posDayReports.correction })
+      .from(s.posDayReports)
+      .where(where)
+      .limit(1),
+    db.select({ n: count() }).from(s.posDayRevisions).where(and(eq(s.posDayRevisions.date, date), eq(s.posDayRevisions.branchId, sube))),
+  ]);
+  if (!row) return null;
+  const z = posZSchema.safeParse(row.z);
+  if (!z.success) return null;
+  const sh = posDaySchema.shape;
+  const detail = lafposDayDetail({
+    z: z.data,
+    offDevice: row.offDevice ? sh.offDevice.parse(row.offDevice) : undefined,
+    refunds: row.refunds ? sh.refunds.parse(row.refunds) : undefined,
+    iptal: row.iptal ? sh.iptal.parse(row.iptal) : undefined,
+    revision: row.revision ?? undefined,
+    correction: row.correction ? sh.correction.parse(row.correction) : undefined,
+  });
+  return { ...detail, sends: Number(sends[0]?.n ?? 0) };
 }

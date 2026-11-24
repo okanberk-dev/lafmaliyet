@@ -30,7 +30,14 @@ export async function loadLafposMonthSales(
   from: string,
   to?: string,
   hold?: LafposHold | null,
-): Promise<{ lines: LafposMonthLine[]; days: LafposDaysOfMonth[]; received: LafposDaysOfMonth[]; dates: string[] }> {
+): Promise<{
+  lines: LafposMonthLine[];
+  days: LafposDaysOfMonth[];
+  received: LafposDaysOfMonth[];
+  dates: string[];
+  /** Sayılan günlerin ürün satırları toplamı ve Z'si (Satışlar'ın denetimi: Σ ciro = zTotal) */
+  linesVsZ: { date: string; lines: number; z: number }[];
+}> {
   const d = s.posDailySales;
   const r = s.posDayReports;
   const lineMonth = sql<string>`substr(${d.date}, 1, 7)`;
@@ -39,7 +46,8 @@ export async function loadLafposMonthSales(
   const isHeld = (day: string) => !!hold && day > hold.after && day.slice(0, 7) === hold.month;
   // Seçili şubenin gün sonları ("Tümü"de koşul yok; docs/SUBE.md › Seçici)
   const [subeSatir, subeGun] = await Promise.all([currentBranchWhere(d.branchId), currentBranchWhere(r.branchId)]);
-  const [lines, reports] = await Promise.all([
+  const notHeld = hold ? sql`not (${d.date} > ${hold.after} and substr(${d.date}, 1, 7) = ${hold.month})` : undefined;
+  const [lines, reports, perDay] = await Promise.all([
     db
       .select({
         month: lineMonth,
@@ -48,20 +56,36 @@ export async function loadLafposMonthSales(
         isService: d.isService,
         qty: sum(d.qty).mapWith(Number),
         revenue: sum(d.revenue).mapWith(Number),
+        // Faz 2: indirimden önceki liste değeri; günlerden biri brütsüz (eski LafPOS) geldiyse bilinmez (null)
+        gross: sql<string | null>`case when count(${d.gross}) = count(*) then sum(${d.gross}) else null end`,
+        isAddon: sql<boolean>`coalesce(bool_or(${d.isAddon}), false)`,
         days: countDistinct(d.date),
       })
       .from(d)
-      .where(and(range(d.date), subeSatir, hold ? sql`not (${d.date} > ${hold.after} and substr(${d.date}, 1, 7) = ${hold.month})` : undefined))
+      .where(and(range(d.date), subeSatir, notHeld))
       .groupBy(lineMonth, d.posName, d.productId, d.isService),
-    // Gün başına bir özet (tarih benzersiz)
-    db.select({ date: r.date }).from(r).where(and(range(r.date), subeGun)).orderBy(asc(r.date)),
+    // Gün başına bir özet (tarih benzersiz); Z toplamı satırlar ↔ Z denetimi için
+    db.select({ date: r.date, z: r.z }).from(r).where(and(range(r.date), subeGun)).orderBy(asc(r.date)),
+    db
+      .select({ date: d.date, revenue: sum(d.revenue).mapWith(Number) })
+      .from(d)
+      .where(and(range(d.date), subeSatir, notHeld))
+      .groupBy(d.date),
   ]);
   const dates = reports.map((x) => x.date);
+  const byDay = new Map(perDay.map((x) => [x.date, x.revenue ?? 0]));
+  const r2 = (v: number) => Math.round(v * 100) / 100;
   return {
-    lines: lines.map((l) => ({ ...l, qty: l.qty ?? 0, revenue: l.revenue ?? 0 })),
+    lines: lines.map((l) => ({ ...l, qty: l.qty ?? 0, revenue: l.revenue ?? 0, gross: l.gross === null || l.gross === undefined ? null : r2(Number(l.gross)), isAddon: Boolean(l.isAddon) })),
     days: daysByMonth(dates.filter((x) => !isHeld(x))),
     received: daysByMonth(dates),
     dates,
+    linesVsZ: reports
+      .filter((x) => !isHeld(x.date))
+      .flatMap((x) => {
+        const z = (x.z as { zTotal?: unknown } | null)?.zTotal;
+        return typeof z === "number" ? [{ date: x.date, lines: r2(byDay.get(x.date) ?? 0), z }] : [];
+      }),
   };
 }
 
@@ -140,6 +164,7 @@ export async function mergeWithLafpos(
       modposDiscounts: modposZ?.discounts ?? null,
       kasaDays: input.reportDays?.filter((x) => x.slice(0, 7) === m),
       lafposDates: lafpos.dates.filter((x) => x.slice(0, 7) === m),
+      linesVsZ: lafpos.linesVsZ.filter((x) => x.date.slice(0, 7) === m),
       // Kasa raporunu bekleyen günler: gelen son gün sayılan son günden sonraysa
       held: hold && m === hold.month && days && (!counted || days.last > counted.last) ? { from: addDays(hold.after, 1), to: days.last } : null,
     });

@@ -4,6 +4,7 @@ import { addDays, longDateTR } from "@/lib/reminders";
 
 import { pavoSectionHtml, pavoSectionText, pavoState } from "./bank-pos";
 import type { BankPos, PosDayZ, PosIkram, PosPayment } from "./day";
+import type { LafposDayDetail } from "./gun-ayrinti";
 
 /**
  * LafPOS gün sonunun otomasyonu (saf; docs/LAFPOS.md › Gün sonu otomasyonu; sunucu tarafı src/server/lafpos/gun-sonu.ts):
@@ -12,9 +13,14 @@ import type { BankPos, PosDayZ, PosIkram, PosPayment } from "./day";
  * ModPOS'taki şube (Tuzla) hiçbir şekilde etkilenmez.
  */
 
-/** Otomatik yazılan rapor alanları: Z, kasa ve not (Banka POS / yazarkasa alanları elle ya da fotoğrafla girilir) */
+/**
+ * Otomatik yazılan rapor alanları: Z, kasa ve not (Banka POS / yazarkasa tutarları elle ya da fotoğrafla girilir).
+ * Yazarkasanın Z no'su (okcZNo, Faz 2) LafPOS'tan gelir: günün son tamamlanan cihaz fişinin mali Z'si (LafPOS'un `zNo`'sundan
+ * ayrı alan); gelmezse (Pavo satış sonucunda Z yok) kayıtlı değer kalır
+ */
 export const AUTO_FIELDS = [
   "zNo",
+  "okcZNo",
   "receipts",
   "zTotal",
   "cash",
@@ -84,6 +90,7 @@ export function autoValuesOf(date: string, z: PosDayZ, outs: DayOuts, prevCarry:
       : null;
   return {
     zNo: String(z.zNo),
+    okcZNo: z.okcZNo ?? null,
     receipts: z.receipts,
     zTotal: z.zTotal,
     cash: z.cash,
@@ -132,7 +139,7 @@ export function mergeAuto(current: AutoValues, lastAuto: AutoValues, next: AutoV
 }
 
 /** Kayıtlı raporun otomatik alanları */
-export function autoValuesOfReport(r: Pick<CashReportFields, Exclude<AutoField, "discounts">> & { discounts?: number | null }): AutoValues {
+export function autoValuesOfReport(r: Pick<CashReportFields, Exclude<AutoField, "discounts" | "okcZNo">> & { discounts?: number | null; okcZNo?: string | null }): AutoValues {
   return Object.fromEntries(AUTO_FIELDS.map((f) => [f, (r as Record<string, unknown>)[f] ?? null])) as AutoValues;
 }
 
@@ -177,6 +184,11 @@ export interface DayEndMail {
   link: string;
   /** Pavo – LafPOS kart karşılaştırması (geldiyse; src/lib/lafpos/bank-pos.ts) */
   bankPos?: BankPos | null;
+  /**
+   * Faz 2 ayrıntısı (src/lib/lafpos/gun-ayrinti.ts): yazarkasadan geçmeyen, ödeme iptalleri, iptal edilen kalemler,
+   * yazarkasa Z no, KDV dökümü, düzeltmenin nedeni. Eski LafPOS'un gününde bölümleri boş
+   */
+  detail?: LafposDayDetail | null;
 }
 
 /** Kıyas metni: "18.000 ₺ (%11 fazla)" / "bilinmiyor" */
@@ -242,6 +254,8 @@ export function dayEndSections(m: DayEndMail): { title: string; rows: [string, s
       ],
     },
     ...(m.online !== null ? [{ title: "laffogato.net (kasadan geçmez)", rows: [["Online sipariş", money(m.online)]] as [string, string][] }] : []),
+    // Faz 2: yazarkasadan geçmeyen, ödeme iptalleri, iptal edilen kalemler, yazarkasa Z no ve KDV (gönderim sırası yazılmaz)
+    ...(m.detail?.sections.filter((x) => x.title !== "Gönderim") ?? []),
   ];
 }
 
@@ -273,7 +287,9 @@ function cashFieldsOf(v: AutoValues) {
 /** Üst satırlar: düzeltme notu, raporun durumu, eksikler */
 export function dayEndNotes(m: DayEndMail): string[] {
   const out: string[] = [];
-  if (m.corrected) out.push("Düzeltildi: LafPOS bu günü yeniden gönderdi; bu e-postadaki rakamlar öncekinin yerine geçer.");
+  // Faz 2: LafPOS düzeltmenin türünü ve nedenini yollar (yeniden açılış, sonradan sayım)
+  const why = m.detail?.correction ? m.detail.correction.replace(/^Düzeltme: /, "") : null;
+  if (m.corrected) out.push(`Düzeltildi: ${why ? `${why}; ` : "LafPOS bu günü yeniden gönderdi; "}bu e-postadaki rakamlar öncekinin yerine geçer.`);
   out.push(REPORT_TEXT[m.report]);
   const missing = m.report === "human" ? [] : m.missing.map((f) => MISSING_LABEL[f] ?? f);
   if (missing.length) out.push(`Panelde tamamlanacak: ${missing.join(", ")}.`);

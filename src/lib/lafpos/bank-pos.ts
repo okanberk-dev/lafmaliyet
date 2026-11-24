@@ -45,6 +45,12 @@ const STATUS_TEXT: Record<BankPos["status"], string> = {
   unknown: "Pavo sonucu belli değil",
 };
 
+/** Başlığın parantezi: cihazın açıklaması ve hata kodu ("(Gün sonu alınamadı; hata kodu 5085)"); ikisi de yoksa boş */
+function detailOf(b: BankPos): string {
+  const parts = [b.message, b.errorCode ? `hata kodu ${b.errorCode}` : null].filter(Boolean);
+  return parts.length ? ` (${parts.join("; ")})` : "";
+}
+
 export function pavoView(b: BankPos): PavoView {
   const state = pavoState(b);
   const d = pavoDiff(b);
@@ -53,13 +59,15 @@ export function pavoView(b: BankPos): PavoView {
       ? "Uyumlu: Pavo ile LafPOS'un kart toplamı aynı."
       : state === "fark"
         ? `FARK VAR: ${money(Math.abs(d!))} (${d! > 0 ? "Pavo fazla" : "Pavo eksik"}). Kart slipleri ve LafPOS'taki kart ödemeleri kontrol edilmeli.`
-        : `${STATUS_TEXT[b.status]}${b.status === "ok" ? ": tutar eksik, karşılaştırılamadı" : ""}${b.message ? ` (${b.message})` : ""}.`;
+        : `${STATUS_TEXT[b.status]}${b.status === "ok" ? ": tutar eksik, karşılaştırılamadı" : ""}${detailOf(b)}.`;
   const rows: [string, string][] = [
     ["Pavo kart toplamı", b.pavoCard === null ? "yok" : money(b.pavoCard)],
     ["LafPOS kart toplamı", b.lafposCard === null ? "yok" : money(b.lafposCard)],
     ["Fark", d === null ? "yok" : Math.abs(d) < 0.005 ? `${money(0)} · Uyumlu` : `${money(Math.abs(d))} ${d > 0 ? "fazla" : "eksik"} · FARK VAR`],
   ];
   if (b.batchNo) rows.push(["Batch no", b.batchNo]);
+  // Cihazın hata kodu (Faz 2; alınamayan gün sonu, ör. 5085): bankaya ya da Pavo'ya sorulurken söylenir
+  if (b.errorCode) rows.push(["Hata kodu", b.errorCode]);
   const acquirers: [string, string][] = b.acquirers.map((a) => [`· ${a.name}${a.count !== null ? ` (${a.count})` : ""}`, a.total === null ? "yok" : money(a.total)]);
   return { state, headline, rows, acquirers };
 }

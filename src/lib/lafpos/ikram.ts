@@ -2,6 +2,7 @@ import { posMatchKey } from "@/lib/calc/pos-paste";
 import { money } from "@/lib/format";
 import { dayAblativeTR } from "@/lib/reminders";
 
+import type { PosIkram, PosIptal } from "./day";
 import { isLafposBranch, isLafposDay } from "./switch";
 
 /**
@@ -35,16 +36,84 @@ export interface LafposIkramLine {
   menuValue: number;
   /** LafPOS'ta yazılan neden (serbest metin; yalnız yöneticiye); zayide "Zayi: " ön eki atılmış */
   reason: string | null;
+  /** Faz 2: LafPOS'taki türü (ödenmez ayrı; tüketimde ikram sayılır); eski LafPOS'ta nedenin ön ekinden (lafposCompKind) */
+  compKind?: "ikram" | "odenmez" | "zayi";
+  /** Faz 2: ödenmezin kişi türü (personel, müşteri, patron; kişinin kendisi gelmez); yoksa null */
+  personKind?: "personel" | "musteri" | "patron" | null;
+  /**
+   * Hazırlanmış iptalden gelen zayi satırı (Faz 2; iptalWasteLines): ödenmez tutarına (Z'nin offRevenue'su) girmez, ikram
+   * listesinin denetimine katılmaz, tüketime zayi olarak girer
+   */
+  iptal?: boolean;
+  /** İptal satırında LafPOS'ta yazılan iptal nedeni (yalnız yöneticiye) */
+  detail?: string | null;
 }
 
 /**
- * LafPOS satırının türü nedeninin ön ekinden: "Zayi: Döküldü" → zayi, neden "Döküldü"; "Ödenmez: Personel yemeği" ve
- * öteki her neden ikram (neden olduğu gibi). Sözleşmede tür alanı yok, ön ek LafPOS'un compReasonText'i.
+ * LafPOS satırının tüketimdeki türü: zayi ya da ikram (ödenmez dahil). Faz 2'den (23 Kasım 2026) LafPOS türü kendisi
+ * gönderir (`kind`) ve o önce gelir; göndermeyen eski LafPOS'ta nedenin ön ekinden: "Zayi: Döküldü" → zayi, neden
+ * "Döküldü"; "Ödenmez: Personel yemeği" ve öteki her neden ikram (neden olduğu gibi). Ön ek LafPOS'un compReasonText'i;
+ * zayinin nedeninde ön ek (varsa) atılır.
  */
-export function lafposLineKind(reason: string | null): { kind: "zayi" | "ikram"; reason: string | null } {
+export function lafposLineKind(reason: string | null, kind?: PosIkram["kind"]): { kind: "zayi" | "ikram"; reason: string | null } {
   const m = reason?.match(/^zayi\s*:\s*/i);
-  if (!m || !reason) return { kind: "ikram", reason };
-  return { kind: "zayi", reason: reason.slice(m[0].length).trim() || null };
+  const zayi = kind ? kind === "zayi" : !!m;
+  if (!zayi) return { kind: "ikram", reason };
+  return { kind: "zayi", reason: m && reason ? reason.slice(m[0].length).trim() || null : reason };
+}
+
+/** LafPOS'taki türü (ikram, ödenmez, zayi): gönderildiyse `kind`, yoksa nedenin ön eki ("Ödenmez: ", "Zayi: ") */
+export function lafposCompKind(reason: string | null, kind?: PosIkram["kind"]): "ikram" | "odenmez" | "zayi" {
+  if (kind) return kind;
+  if (reason && /^ödenmez\s*:/i.test(reason.toLocaleLowerCase("tr-TR"))) return "odenmez";
+  return lafposLineKind(reason).kind === "zayi" ? "zayi" : "ikram";
+}
+
+/** Hazırlanmış iptalin zayi satırındaki nedeni (Zayi & ikram, kasa özeti) */
+export const IPTAL_ZAYI_REASON = "İptal (hazırlanmıştı)";
+
+/**
+ * Günün iptal edilen kalemlerinden zayi satırları (Faz 2; docs/LAFPOS.md › İptaller): yalnız hazırlanmış olanlar
+ * (`prepared`: bar ya da mutfak başlamıştı ya da hazırdı; kural LafPOS'un, sahibin 22.11 kararı): malzemesi harcandı,
+ * satılmadı. Hazırlanmamış iptal tüketim değildir, yalnız bilgi olarak gösterilir. Kalem iadesi de (`refund`) hazırlanmışsa
+ * zayidir. Ürün satırla aynı sırayla bulunur (`resolve`: sitenin kalemi ve boyu, sonra POS adı eşleştirmesi). `waste_entries`'e
+ * yazılmaz: gün her gönderimde yeniden okunur, yeniden gönderim çift saymaz.
+ */
+export function iptalWasteLines(
+  date: string,
+  iptal: readonly PosIptal[],
+  resolve: (l: PosIptal) => { productId: number | null; isService: boolean },
+): LafposIkramLine[] {
+  return iptal
+    .filter((l) => l.prepared)
+    .map((l) => {
+      const m = resolve(l);
+      return { date, kind: "zayi", compKind: "zayi", iptal: true, posName: l.posName, productId: m.productId, isService: m.isService, qty: l.qty, menuValue: l.listValue, reason: IPTAL_ZAYI_REASON, detail: l.reason };
+    });
+}
+
+const PERSON_KIND_TEXT = { personel: "personel", musteri: "müşteri", patron: "patron" } as const;
+
+/**
+ * Satırın yöneticiye gösterilen nedeni (Zayi & ikram): iptalde "İptal (hazırlanmıştı): Yanlış ürün", ödenmezde kişinin türü
+ * parantezde ("Ödenmez: Deneme (patron)"; kişinin kendisi gelmez), öteki satırda LafPOS'taki neden
+ */
+export function lafposReasonText(l: Pick<LafposIkramLine, "reason" | "iptal" | "detail" | "personKind">): string | null {
+  if (l.iptal) return l.detail ? `${l.reason}: ${l.detail}` : l.reason;
+  const person = l.personKind ? PERSON_KIND_TEXT[l.personKind] : null;
+  if (!person) return l.reason;
+  return l.reason ? `${l.reason} (${person})` : `(${person})`;
+}
+
+/** İkram listesinin (iptal satırları hariç) türe göre menü değeri: Z'nin türe göre toplamlarıyla karşılaştırılır */
+export function lafposListByKind(lines: readonly (Pick<PosIkram, "menuValue" | "reason" | "kind"> & { iptal?: boolean; compKind?: PosIkram["kind"] })[]): { ikram: number; odenmez: number; zayi: number } {
+  const out = { ikram: 0, odenmez: 0, zayi: 0 };
+  for (const l of lines) {
+    if (l.iptal) continue;
+    out[l.compKind ?? lafposCompKind(l.reason, l.kind)] += l.menuValue;
+  }
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  return { ikram: r2(out.ikram), odenmez: r2(out.odenmez), zayi: r2(out.zayi) };
 }
 
 /**
@@ -125,8 +194,33 @@ export function productIkramRefusal(
  * LafPOS ikisini aynı adisyonlardan hesaplar; fark varsa bilgi satırı, yoksa null. Z büyükse listeye girmeyen ödenmez
  * satır, küçükse listede kalmış iptal edilen adisyonun ikramı (eski LafPOS onu da yazıyordu) açıklar.
  */
-export function lafposIkramCheck(offRevenue: number, listValue: number): string | null {
-  const diff = Math.round((offRevenue - listValue) * 100) / 100;
+export function lafposIkramCheck(
+  offRevenue: number,
+  listValue: number,
+  byKind?: { z: { ikram: number; odenmez: number; zayi: number } | null; list: { ikram: number; odenmez: number; zayi: number } } | null,
+): string | null {
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  // Faz 2: LafPOS'un Z'si türe göre toplamları da yollar (hesap sözleşmesi §5): tür tür karşılaştırılır, LafPOS'un kendi
+  // toplamları ödenmez tutarını tutmuyorsa o da söylenir. Yollamayan eski LafPOS'ta tek karşılaştırma (aşağıda)
+  if (byKind?.z) {
+    const z = byKind.z;
+    const out: string[] = [];
+    const own = r2(offRevenue - (z.ikram + z.odenmez + z.zayi));
+    if (Math.abs(own) >= 1) out.push(`LafPOS'un ödenmez tutarı (Z) türlerin toplamından (${money(r2(z.ikram + z.odenmez + z.zayi))}) ${money(Math.abs(own))} ${own > 0 ? "fazla" : "az"}.`);
+    const NAMES = { ikram: ["ikram", "ikramdan"], odenmez: ["ödenmez", "ödenmezden"], zayi: ["zayi", "zayiden"] } as const;
+    for (const k of ["ikram", "odenmez", "zayi"] as const) {
+      const diff = r2(z[k] - byKind.list[k]);
+      if (Math.abs(diff) < 1) continue;
+      const head = `LafPOS'un ${NAMES[k][0]} toplamı (Z) ikram listesindeki ${NAMES[k][1]} ${money(Math.abs(diff))}`;
+      out.push(
+        diff > 0
+          ? `${head} fazla: LafPOS'ta ${NAMES[k][0]} işaretlenen ama listeye girmeyen satır olabilir.`
+          : `${head} az: iptal edilen adisyonun satırı listede kalmış olabilir.`,
+      );
+    }
+    return out.length ? out.join(" ") : null;
+  }
+  const diff = r2(offRevenue - listValue);
   if (Math.abs(diff) < 1) return null;
   const head = `LafPOS'un ödenmez tutarı (Z) ikram ve zayi listesinden ${money(Math.abs(diff))}`;
   return diff > 0

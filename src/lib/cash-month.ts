@@ -56,6 +56,32 @@ export interface TillRow {
   branchId?: string;
   /** Yedek satırda fiş (adisyon) sayısı: satışsız gün sonu kapalı işaretini bozmaz (lafposSold ile aynı kural) */
   receipts?: number | null;
+  /**
+   * Günün KDV dökümü (oran, matrah, KDV; TL): LafPOS gününde LafPOS'un z.vat'ı (Faz 2, 23 Kasım 2026; yükleyici kasa
+   * raporunun satırına da koyar). Gün KDV'si bundan (tillMonths dayVat; engine.ts posNet), yoksa günün oranıyla
+   */
+  vat?: readonly { rate: number; base: number; vat: number }[] | null;
+}
+
+/**
+ * LafPOS'un şubesinin günlerinin KDV'si gün gün (hesap sözleşmesi; engine.ts posNet): LafPOS'un dökümü günün cirosunu
+ * tutuyorsa (±0,01) o (`known`), tutmuyorsa ya da döküm yoksa (ModPOS günü, eski LafPOS) günün cirosu (`days`; motor her
+ * birini günün oranıyla ayrı ayrı yuvarlar, ay günlerin toplamıdır)
+ */
+export function dayVatOf(rows: readonly TillRow[]): NonNullable<TillMonth["dayVat"]> {
+  const known = { days: 0, revenue: 0, base: 0, vat: 0 };
+  const days: number[] = [];
+  for (const r of rows) {
+    const rev = dayRevenue({ zTotal: r.zTotal, offRevenue: r.offRevenue ?? null, payments: r.payments ?? null }).revenue;
+    const v = r.vat?.length ? r.vat : null;
+    if (v && Math.abs(v.reduce((a, x) => a + x.base + x.vat, 0) - rev) < 0.01) {
+      known.days++;
+      known.revenue += rev;
+      known.base += v.reduce((a, x) => a + x.base, 0);
+      known.vat += v.reduce((a, x) => a + x.vat, 0);
+    } else days.push(rev);
+  }
+  return { known: { days: known.days, revenue: r2(known.revenue), base: r2(known.base), vat: r2(known.vat) }, days };
 }
 
 /**
@@ -271,6 +297,8 @@ export function tillMonths(
     // Banka kartı şube şube (banka POS komisyonu her şubenin kendi oranıyla; engine posCommission)
     const bankByBranch = branched ? Object.fromEntries([...new Set(list.map(branchOf))].map((b) => [b, sum(list.filter((r) => branchOf(r) === b), (r) => r.card)])) : null;
     const share = (v: number) => (posRevenue > 0 ? Math.min(1, Math.round((v / posRevenue) * 10_000) / 10_000) : null);
+    // LafPOS'un şubesinin günleri: KDV gün gün (dayVatOf); öteki şubelerin satırları ay toplamıyla
+    const lafposRows = branched ? list.filter((r) => isLafposBranch(r.branchId)) : [];
     return {
       month,
       from,
@@ -290,6 +318,7 @@ export function tillMonths(
       card: bank,
       mealCard: sum(list, (r) => r.mealCard),
       ...(bankByBranch ? { cardByBranch: bankByBranch } : {}),
+      ...(lafposRows.length ? { dayVat: dayVatOf(lafposRows) } : {}),
       missing,
       ...(waiting ? { pending: missing.filter((d) => waiting.has(d)) } : {}),
       ...(shut ? { closed } : {}),

@@ -152,3 +152,14 @@ test("şubenin banka POS oranı (23 Kasım 2026): tek varsayılanlı NOT NULL s�
   const sql = readFileSync(join(process.cwd(), "drizzle", `${entry.tag}.sql`), "utf8").trim();
   assert.equal(sql, 'ALTER TABLE "branches" ADD COLUMN "pos_rate" double precision DEFAULT 0.02 NOT NULL;');
 });
+
+test("LafPOS gün sonunun Faz 2 alanları (23 Kasım 2026): yalnız ekleyen migration (yeni tablo, boş olabilen ya da varsayılanlı sütunlar; Instant Rollback'e uygun)", () => {
+  const entry = readJournal().find((e) => e.tag.endsWith("_lafpos_gun_alanlari"));
+  assert.ok(entry, "lafpos_gun_alanlari migration'ı yok");
+  const sql = readFileSync(join(process.cwd(), "drizzle", `${entry.tag}.sql`), "utf8");
+  assert.doesNotMatch(sql, /\b(DROP|RENAME|ALTER COLUMN)\b/);
+  assert.match(sql, /CREATE TABLE "pos_day_revisions"/);
+  for (const col of ['"off_device" jsonb;', '"refunds" jsonb;', '"iptal" jsonb;', '"correction" jsonb;', '"revision" integer;', '"gross" double precision;', '"is_addon" boolean DEFAULT false NOT NULL;']) {
+    assert.ok(sql.includes(`ADD COLUMN ${col}`), `${col} eksik`);
+  }
+});

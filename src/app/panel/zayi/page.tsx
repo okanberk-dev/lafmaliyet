@@ -12,7 +12,7 @@ import { EmptyState, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { businessDate } from "@/lib/cash-report";
 import { num, tl } from "@/lib/format";
-import { LAFPOS_IKRAM_TEXT, panelWasteCounts, productIkramClosed, productIkramNote } from "@/lib/lafpos/ikram";
+import { LAFPOS_IKRAM_TEXT, lafposReasonText, panelWasteCounts, productIkramClosed, productIkramNote } from "@/lib/lafpos/ikram";
 import { monthSource } from "@/lib/lafpos/switch";
 import { addDays, isCalendarDate, longDateTR, monthShortTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { productLabel, qtyText, WASTE_KIND_LABEL, type WasteKind } from "@/lib/waste";
@@ -137,7 +137,8 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
           kind: l.kind,
           name: l.name,
           qty: l.qty,
-          reason: admin ? l.reason : null,
+          // Yöneticiye nedeni: iptalde iptal nedeni, ödenmezde kişinin türü (lafposReasonText)
+          reason: admin ? lafposReasonText(l) : null,
           menuValue: admin ? l.menuValue : null,
           unmatched: admin && l.productId === null && !l.isService,
           service: admin && l.isService,
