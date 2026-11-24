@@ -13,11 +13,11 @@ import { closedDaysIn, closedRowApplies } from "@/lib/closed-days";
 import { channelOf } from "@/lib/commission/channels";
 import { COMMISSION_CATEGORY, settingsFromRows } from "@/lib/constants";
 import { modposZBetween } from "@/lib/lafpos/sales";
-import { isLafposBranch, scopeSwitchDay } from "@/lib/lafpos/switch";
+import { isLafposBranch, LAFPOS_BRANCH_ID, scopeSwitchDay } from "@/lib/lafpos/switch";
 import { addDays } from "@/lib/reminders";
-import { parseCoverage, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
+import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import type { SiteSalesMonth } from "@/lib/site-sales/schema";
-import { branchWhere, branchWhereWithShared, currentBranchScope, withBranchScope } from "@/server/branch-scope";
+import { branchWhere, branchWhereWithShared, currentBranchScope, currentWriteBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { loadSiteSales } from "@/server/site-sales/sync";
@@ -52,7 +52,8 @@ export async function loadDataset(opts: DatasetOptions = {}): Promise<Dataset> {
 
 async function readDataset(): Promise<Dataset> {
   const db = getDb();
-  const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+  // Satışlar'ın içe aktarmasının yazdığı şube (seçili şube, "Tümü"de Tuzla): kartın listesinin son günü (writeCoverage)
+  const [scope, branches, writeBranch] = await Promise.all([currentBranchScope(), listBranches(), currentWriteBranch()]);
   const branch = scope === ALL_BRANCHES ? null : (branches.find((b) => b.id === scope) ?? null);
   const [
     storedSettings,
@@ -81,7 +82,7 @@ async function readDataset(): Promise<Dataset> {
     wasteEntries,
     shiftDays,
     siteSales,
-    coverageRow,
+    coverageRows,
     till,
     lateWaiting,
     closedRows,
@@ -151,8 +152,11 @@ async function readDataset(): Promise<Dataset> {
     // laffogato.net online satışları (ay başına kayıt; docs/SITE-SATIS.md): işletmenin cirosu, şubelerin değil. "Tümü"de
     // ve online kanal seçiliyken okunur; fiziksel şube seçiliyken yok
     scope === ALL_BRANCHES || branch?.kind === "online" ? loadSiteSales() : Promise.resolve([]),
-    // Süren ayda yüklenen satış listesinin son günü (src/lib/sales-coverage.ts)
-    db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, SALES_COVERAGE_KEY)).limit(1),
+    // Süren ayda yüklenen satış listesinin son günü (src/lib/sales-coverage.ts): ayın ortak kaydı ve şube şube kayıt
+    db
+      .select({ key: s.integrationState.key, value: s.integrationState.value })
+      .from(s.integrationState)
+      .where(inArray(s.integrationState.key, [SALES_COVERAGE_KEY, SALES_COVERAGE_BRANCH_KEY])),
     // Kasa raporlarının ay bilgisine giden sütunları (src/lib/cash-month.ts)
     tillRows(),
     // Personelin onay bekleyen geç kasa raporlarının günleri: ay bilgisinde eksik sayılmaya devam eder, "onay bekliyor"
@@ -193,17 +197,24 @@ async function readDataset(): Promise<Dataset> {
   const through = addDays(today, -1);
   // Yalnız kasa raporları: yedek ay satırları (LafPOS G6, ModPOS föyü) rapor değildir
   const reportRows = till.filter(isReportRow);
-  const coverage = parseCoverage(coverageRow[0]?.value);
+  // Listelerin son günü (src/lib/sales-coverage.ts readCoverage): şube seçiliyken şubenin kendi kaydı (Tuzla'nın listesi
+  // Marina'nın son gününü kaydırmaz), "Tümü"de ayın ortak kaydı. LafPOS'un sayıldığı ilk gün ve geçiş ayının çakışması her
+  // görünümde Marina'nın kendi kaydından (lafposCoverage). Satışlar'ın içe aktarma kartının "… tarihine kadar"ı yazılan
+  // şubenin kaydından (writeCoverage; "Tümü"de Tuzla'nın)
+  const storedCoverage = (key: string) => coverageRows.find((r) => r.key === key)?.value;
+  const coverageOf = (branchId: string | null) => readCoverage(storedCoverage(SALES_COVERAGE_KEY), storedCoverage(SALES_COVERAGE_BRANCH_KEY), branchId);
+  const coverage = coverageOf(scope === ALL_BRANCHES ? null : scope);
+  const lafposCoverage = coverageOf(LAFPOS_BRANCH_ID);
   // SU GİDERİ girilmiş aylar: tek şube seçiliyken litre fiyatı bu ayların işletme geneli satışıyla (waterSales)
   const billMonths = new Set(pnlEntries.filter((e) => e.rowKey === "manual:su" && e.amount > 0).map((e) => e.month));
   // Satış satırları LafPOS'la birleşir (mergeSales). LafPOS'un ikramları geçiş gününden itibaren kayıtlı tüketime
   // (src/lib/lafpos/ikram.ts); geçiş günü yoksa okunmaz
   const [sales, lafposIkram, waterSales] = await Promise.all([
-    mergeSales(db, { switchDay: settings.lafposGecisGunu, salesLines: salesLines.map(salesLineOf), coverage, today, till }),
+    mergeSales(db, { switchDay: settings.lafposGecisGunu, salesLines: salesLines.map(salesLineOf), coverage, lafposCoverage, today, till }),
     settings.lafposGecisGunu ? loadLafposIkram(db, settings.lafposGecisGunu) : Promise.resolve(null),
     branch && billMonths.size
       ? // Su litresi "Tümü" kapsamında: geçiş günü şubeye göre kısılmış değil, işletmenin ayarı (Tuzla'nın LafPOS satışı da sayılsın)
-        companyWaterSales(db, { switchDay: scopeSwitchDay(storedSettings.lafposGecisGunu, ALL_BRANCHES), coverage, today, months: billMonths, siteSales: branch.kind === "online" ? siteSales : null })
+        companyWaterSales(db, { switchDay: scopeSwitchDay(storedSettings.lafposGecisGunu, ALL_BRANCHES), coverage: coverageOf(null), lafposCoverage, today, months: billMonths, siteSales: branch.kind === "online" ? siteSales : null })
       : Promise.resolve(null),
   ]);
   // Satış listesinin son gününe kadarki kasa raporları (aynı ilk rapor günüyle: ay ortasında başlayan ilk ay aynı tanınır).
@@ -284,6 +295,7 @@ async function readDataset(): Promise<Dataset> {
     monthTotalsLocked: monthTotalsLocked(scope, branches),
     ...(waterSales ? { waterSales } : {}),
     salesCoverage,
+    writeCoverage: coverageOf(writeBranch),
     ingredients: ingredients.map((i) => ({
       id: i.id,
       name: i.name,
@@ -475,9 +487,13 @@ function salesLineOf(l: typeof s.salesLines.$inferSelect): SalesLine {
 /**
  * Satış satırları: Satışlar'a yüklenen ModPOS listeleri; LafPOS'a geçiş günü seçiliyse o günden itibaren LafPOS'un
  * günlük satışları ay toplamı olarak (her gün tek kaynak; src/lib/lafpos/sales.ts). Geçiş günü yoksa LafPOS okunmaz,
- * satırlar ve kapsam bugünkü gibi. LafPOS gün sonları ve `till` (kasa raporları) o anki kapsamın şubesinden.
+ * satırlar ve kapsam bugünkü gibi. LafPOS gün sonları ve `till` (kasa raporları) o anki kapsamın şubesinden. `coverage`
+ * görünümün listelerinin son günü (engine listPeriod), `lafposCoverage` LafPOS'un şubesininki (sayıldığı ilk gün).
  */
-function mergeSales(db: DB, input: { switchDay: string | null; salesLines: SalesLine[]; coverage: Record<string, string>; today: string; till: readonly TillRow[] }) {
+function mergeSales(
+  db: DB,
+  input: { switchDay: string | null; salesLines: SalesLine[]; coverage: Record<string, string>; lafposCoverage: Record<string, string>; today: string; till: readonly TillRow[] },
+) {
   // Yalnız kasa raporları: LafPOS'un yedek ay satırları (G6, source "lafpos") ve ModPOS föyü rapor değildir. LafPOS'un
   // günleriyle yalnız LafPOS'un şubesinin kasa raporları karşılaştırılır ("Tümü"de ModPOS'ta kalan şubeninki değil;
   // isLafposBranch, denetim 21 Kasım #5)
@@ -486,6 +502,7 @@ function mergeSales(db: DB, input: { switchDay: string | null; salesLines: Sales
     switchDay: input.switchDay,
     salesLines: input.salesLines,
     coverage: input.coverage,
+    lafposCoverage: input.lafposCoverage,
     today: input.today,
     // Kasa raporlarının son günü (tarihe göre sıralı): süren ayın sonraki LafPOS günleri rapor girilince sayılır
     lastTillDay: reportRows.at(-1)?.date ?? null,
@@ -504,7 +521,14 @@ function mergeSales(db: DB, input: { switchDay: string | null; salesLines: Sales
  */
 async function companyWaterSales(
   db: DB,
-  input: { switchDay: string | null; coverage: Record<string, string>; today: string; months: ReadonlySet<string>; siteSales: SiteSalesMonth[] | null },
+  input: {
+    switchDay: string | null;
+    coverage: Record<string, string>;
+    lafposCoverage: Record<string, string>;
+    today: string;
+    months: ReadonlySet<string>;
+    siteSales: SiteSalesMonth[] | null;
+  },
 ): Promise<NonNullable<Dataset["waterSales"]>> {
   const read = [...input.months, ...(input.switchDay ? [input.switchDay.slice(0, 7)] : [])];
   return withBranchScope(ALL_BRANCHES, async () => {
@@ -513,7 +537,14 @@ async function companyWaterSales(
       input.switchDay ? tillRows() : Promise.resolve([]),
       input.siteSales ? Promise.resolve(input.siteSales) : loadSiteSales(),
     ]);
-    const sales = await mergeSales(db, { switchDay: input.switchDay, salesLines: lines.map(salesLineOf), coverage: input.coverage, today: input.today, till });
+    const sales = await mergeSales(db, {
+      switchDay: input.switchDay,
+      salesLines: lines.map(salesLineOf),
+      coverage: input.coverage,
+      lafposCoverage: input.lafposCoverage,
+      today: input.today,
+      till,
+    });
     return {
       salesLines: sales.salesLines.filter((l) => input.months.has(l.month)),
       siteSales: site.filter((r) => input.months.has(r.month)),

@@ -105,6 +105,11 @@ test("imza: LafPOS uçlarının vektörleri (sitenin bağlantısıyla aynı kod;
     sign(SECRET, { timestamp: T, method: "GET", url: new URL("https://ladmin.laffogato.net/api/panel/pos/urunler"), body: "" }),
     "4693defb7ef97b132908d552133471db2827261b6468b2ef565effa6fcbf8a3c",
   );
+  // ModPOS dönemi: gövdesiz GET, şube sorguda (sorgu imzanın içinde; LafPOS tests/signature.test.ts aynı değeri sabitler)
+  assert.equal(
+    sign(SECRET, { timestamp: T, method: "GET", url: new URL("https://ladmin.laffogato.net/api/panel/pos/modpos-gunler?sube=marina"), body: "" }),
+    "e653d2f73b92e4fa1f6acc750f6702872e7e3a68204f9adad8f17e5bf6dd9023",
+  );
   // Kasa zinciri uçları (Faz 3; LafPOS tests/signature.test.ts aynı vektörler): devir okuması (sorgu imzaya girer) ve
   // gider kategorileri, ikisi de gövdesiz imzalı GET
   assert.equal(
@@ -528,6 +533,18 @@ test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; 
   assert.match(urunler, /"Cache-Control": "no-store"/);
   assert.match(urunler, /servePosProducts\(\{\s*secret: lafposSecret\(\),/);
   assert.doesNotMatch(urunler, /getCurrentUser|requireUser|requireAdmin/, "oturumla açılmaz");
+  // ModPOS dönemi ucu: aynı kalıp (bağlantı, imza, önbelleksiz, oturumsuz); denetim sırası imza → şube → okuma
+  const modpos = read("src/app/api/panel/pos/modpos-gunler/route.ts");
+  assert.match(modpos, /export async function GET\(request: NextRequest\) \{\s*await connection\(\);/);
+  assert.match(modpos, /"Cache-Control": "no-store"/);
+  assert.match(modpos, /serveModposDays\(\{\s*secret: lafposSecret\(\),/);
+  assert.doesNotMatch(modpos, /getCurrentUser|requireUser|requireAdmin/, "oturumla açılmaz");
+  const serve = read("src/server/lafpos/modpos-gunler.ts");
+  const handler = serve.slice(serve.indexOf("export async function serveModposDays"));
+  assert.ok(handler.indexOf("checkModposDaysRequest(") > 0 && handler.indexOf("checkModposDaysRequest(") < handler.indexOf("await load("), "imza ve şube okumadan önce");
+  const check = read("src/lib/lafpos/modpos-gunler.ts");
+  const checkFn = check.slice(check.indexOf("export function checkModposDaysRequest"));
+  assert.ok(checkFn.indexOf("checkLafposRequest(") > 0 && checkFn.indexOf("checkLafposRequest(") < checkFn.indexOf("modposSube("), "imza şubeden önce");
   // Kasa zinciri (Faz 3): devir ve gider kategorileri de yalnız imzayla, önbelleğe alınmadan
   for (const [file, fn] of [
     ["src/app/api/panel/pos/devir/route.ts", "servePosDevir"],
@@ -546,7 +563,7 @@ test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; 
 test("kurulum: .env.example'da LAFPOS_SYNC_SECRET, belgeler bağlantılı", () => {
   assert.match(read(".env.example"), /^LAFPOS_SYNC_SECRET=$/m);
   const doc = read("docs/LAFPOS.md");
-  for (const s of ["/api/pos/gun", "/api/panel/pos/urunler", "LAFPOS_SYNC_SECRET", "pos_daily_sales", "pos_day_reports", "loadDailyProductSales", "LafPOS'tan doldur"]) assert.ok(doc.includes(s), s);
+  for (const s of ["/api/pos/gun", "/api/panel/pos/urunler", "/api/panel/pos/modpos-gunler", "LAFPOS_SYNC_SECRET", "pos_daily_sales", "pos_day_reports", "loadDailyProductSales", "LafPOS'tan doldur"]) assert.ok(doc.includes(s), s);
   assert.match(read("docs/KASA-RAPORU.md"), /\[LAFPOS\.md\]\(LAFPOS\.md\)/);
   assert.match(read("docs/planlar/CRITIQUE2.md"), /docs\/LAFPOS\.md/);
 });

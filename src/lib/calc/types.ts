@@ -652,6 +652,13 @@ export interface Dataset {
    */
   salesCoverage?: { month: string; through: string; till: TillMonth | null }[];
   /**
+   * Satışlar'ın içe aktarmasının yazdığı şubenin (currentWriteBranch: seçili şube, "Tümü"de Tuzla) listelerinin son günü,
+   * ay ay (src/lib/sales-coverage.ts readCoverage; ay yoksa liste ayın tamamı): içe aktarma kartının "… tarihine kadar"ı
+   * yeni yüklemenin değiştireceği ya da ekleneceği listenin günüdür. "Tümü"de Marina'nın listesinin günü ya da son
+   * yükleyenin ortak kaydı değil
+   */
+  writeCoverage?: Record<string, string>;
+  /**
    * LafPOS'a geçiş günü seçiliyse satış kaynaklarının özeti (src/lib/lafpos/sales.ts): geçiş ayından itibaren her ayın
    * ModPOS listesi ve LafPOS günleri. Yoksa (varsayılan) kasa ModPOS'tur, satışlar yalnız sales_lines'tan
    */

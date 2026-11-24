@@ -11,6 +11,7 @@ import { longDateTR, todayTR } from "@/lib/reminders";
 import { zAmount, zDate, zOptText } from "@/server/actions/util";
 import { currentTillBranch } from "@/server/branch-scope";
 import { loadPendingCashOutInvoices } from "@/server/data/cash-out-invoices";
+import { lafposAwaitingCategoryIds } from "@/server/data/cash-outs";
 import { schema as s, type DB } from "@/server/db";
 import { assertNotHeld, supersede } from "@/server/staff-requests/core";
 import { getPhoto, keepPhoto, releasePhoto } from "@/server/storage/photos";
@@ -119,6 +120,12 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
   // yönetici kapattıysa açılmaz: iki kez sayılırdı). Bakış yazımdan önce, satırın kayıtlı hâliyle
   const leavesInvoice = !admin && mode === "edit" && prev !== null && !existing && isInvoiceDoc(prev.docType) && staffToExpenses(d.kind, d.docType);
   const awaitingInvoice = leavesInvoice ? (await loadPendingCashOutInvoices(tx, { ids: [prev.id] })).length > 0 : undefined;
+  // Kategorisini bekleyen LafPOS harcaması (Faz 3; inceleme LM-3): LafPOS'un kategorisiz yazdığı harcamada personel
+  // kategori seçince kayıt açılır. Kaydı yöneticinin kaldırdığı LafPOS satırı ve sahiplenilen elle satır beklemez
+  const lafposAwaiting =
+    !admin && mode === "edit" && prev?.lafposId && !existing && d.kind === "harcama"
+      ? (await lafposAwaitingCategoryIds(tx, [{ ...prev, hasExpense: false }])).has(prev.id)
+      : false;
   const toExpenses = cashOutWritesExpense({
     admin,
     mode,
@@ -128,7 +135,7 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
     hasExpense: Boolean(existing),
     prevDocType: prev?.docType ?? null,
     awaitingInvoice,
-    lafposRow: Boolean(prev?.lafposId),
+    lafposAwaitingCategory: lafposAwaiting,
   });
 
   // Yöneticinin kategorisindeki kayıt: personel tutarı düzeltir, kaydı kaldıramaz (teslime çevirerek) ve taşıyamaz

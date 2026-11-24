@@ -188,7 +188,7 @@ export function CashOutDialog({
     requested: draft.toExpenses,
     hasExpense: line?.expenseEntryId != null,
     prevDocType: line?.docType ?? null,
-    lafposRow: fromLafpos,
+    lafposAwaitingCategory: line?.lafposAwaitingCategory === true,
   });
   // Kaydı yöneticinin kategorisinde (personelin listesinde yok): personel tutarı düzeltir, silemez ve taşıyamaz
   const locked = !admin && line !== null && line.expenseEntryId !== null && !categories.some((c) => c.id === line.categoryId);
@@ -371,7 +371,7 @@ export function CashOutDialog({
         )}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label={chip("amount", "Tutar (₺)")} htmlFor="co-amount">
-            <NumberInput id="co-amount" value={draft.amount} onChange={set("amount")} placeholder="0" enterKeyHint="next" data-warn={warn("amount")} readOnly={fromLafpos} className={fromLafpos ? "bg-panel text-ink-soft" : undefined} />
+            <NumberInput id="co-amount" value={draft.amount} onChange={set("amount")} placeholder="0" enterKeyHint="next" data-warn={warn("amount")} readOnly={fromLafpos} disabled={fromLafpos} />
           </Field>
           <Field label={chip("store", harcama ? "Yer" : "Kime")} htmlFor="co-store">
             <Input id="co-store" value={draft.store} onChange={set("store")} maxLength={60} placeholder={harcama ? "ör. Migros" : "ör. patrona, bankaya, tedarikçiye (Sütaş)"} autoComplete="off" data-warn={warn("store")} />

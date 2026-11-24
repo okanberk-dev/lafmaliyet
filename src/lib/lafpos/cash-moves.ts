@@ -13,7 +13,20 @@ import type { PosCashMove } from "./day";
  * - Panelde elle girilmiş eş satır (aynı gün ve şube, aynı tür, aynı tutar, LafPOS'a bağlanmamış) bire bir sahiplenilir:
  *   en eskisi önce; fotoğrafı, yeri, belgesi, kategorisi ve tedarikçi bağı kalır. Böylece aynı para iki kez sayılmaz.
  * - Günün gövdede olmayan LafPOS satırı kaldırılır; elle girilmiş satıra dokunulmaz.
+ * - Gün sayılmaz olunca (geçiş günü sonraya alındı) ya da günün LafPOS kaydı silinince satırlar LafPOS'tan ayrılır
+ *   (planLafposDetach): kilitli satır kalıp silinemez olmasın.
  */
+
+/** Satırların ve harcama kayıtlarının "gönderen"i: sistem, kişi değil */
+export const LAFPOS_CASH_OUT_BY = "LafPOS";
+
+/**
+ * LafPOS'un kendi açtığı satır (sahiplenilen elle girilmiş satır değil): LafPOS'a bağlı, gönderen "LafPOS", açan kişi yok
+ * (eşitleme satırı kişisiz yazar; düzeltme açanı değiştirmez)
+ */
+export function lafposInsertedRow(r: { lafposId: string | null; createdBy: number | null; createdByName: string }): boolean {
+  return r.lafposId !== null && r.createdBy === null && r.createdByName === LAFPOS_CASH_OUT_BY;
+}
 
 /** Günün satırı (planın gördüğü alanlar) */
 export interface LafposCashOutRow {
@@ -65,12 +78,59 @@ export function planLafposCashOuts(moves: readonly PosCashMove[], rows: readonly
   return plan;
 }
 
+/** Günün LafPOS satırı (ayırmanın gördüğü alanlar); `paid`: bir tedarikçi ödemesine bağlı */
+export interface LafposDetachRow {
+  id: number;
+  lafposId: string | null;
+  createdBy: number | null;
+  createdByName: string;
+  paid: boolean;
+}
+
+/**
+ * Günün LafPOS satırlarını LafPOS'tan ayırmanın planı (inceleme LM-3; yazımı src/server/lafpos/cash-moves.ts):
+ * - `drop`: gün artık sayılmıyor (geçiş günü sonraya alındı; deneme günü hiçbir şeyi beslemez). LafPOS'un açtığı satır
+ *   (harcama kaydıyla) kalkar; sahiplenilen elle girilmiş satır ve tedarikçi ödemesine bağlı satır kalır, bağı çözülür
+ *   (elle girilmiş gibi: yönetici düzeltir ya da siler).
+ * - `release`: sayılan günün LafPOS kaydı silindi (409'un çözümü, yeni Z gelecek). Satırların hepsi kalır, bağları
+ *   çözülür: yeni Z gelince elle girilmiş eş olarak yeniden sahiplenilir (panelin yazdığı fotoğraf, yer, kategori kalır).
+ * Elle girilmiş satır (lafposId yok) planda yer almaz.
+ */
+export function planLafposDetach(rows: readonly LafposDetachRow[], mode: "drop" | "release"): { remove: number[]; release: number[] } {
+  const plan = { remove: [] as number[], release: [] as number[] };
+  for (const r of rows) {
+    if (r.lafposId === null) continue;
+    if (mode === "drop" && !r.paid && lafposInsertedRow(r)) plan.remove.push(r.id);
+    else plan.release.push(r.id);
+  }
+  return plan;
+}
+
+/**
+ * Kategorisini bekleyen LafPOS harcaması (inceleme LM-3): LafPOS'un açtığı, Aylık harcamalar kaydı olmayan ve LafPOS'un
+ * personelin seçebildiği bir kategoriyle göndermediği (kategorisiz ya da başka kategoriyle) harcama. LafPOS böyle satırı
+ * kayıtsız yazar (src/server/lafpos/cash-moves.ts); personel düzeltirken yeni satırın kuralı geçer, kategori seçince
+ * kayıt açılır (cashOutWritesExpense `lafposAwaitingCategory`). Personelin kategorisiyle gelen harcamanın kaydı
+ * eşitlemede açılmıştı: şimdi yoksa yönetici kaldırmıştır, geri gelmez. Sahiplenilen elle girilmiş satır kendi
+ * kuralındadır (faturalı satırın faturası beklenmiyorsa kayıt açılmaz). `moveCategoryId`: saklı gövdedeki hareketin
+ * kategorisi (hareket bulunamazsa undefined: beklemiyor sayılır)
+ */
+export function lafposAwaitingCategory(
+  row: { lafposId: string | null; createdBy: number | null; createdByName: string; kind: CashOutKind; hasExpense: boolean },
+  moveCategoryId: number | null | undefined,
+  staffUsable: (id: number) => boolean,
+): boolean {
+  if (!lafposInsertedRow(row) || row.kind !== "harcama" || row.hasExpense || moveCategoryId === undefined) return false;
+  return moveCategoryId === null || !staffUsable(moveCategoryId);
+}
+
 /** LafPOS satırının metinleri (eylemlerin reddi, pencere ve kart) */
 export const LAFPOS_CASH_OUT_TEXT = {
   /** Tutar, tür ya da gün değiştirilmek istendi */
   locked: "Bu satır LafPOS'un kasa hareketinden geldi: tutarı, türü ve günü LafPOS'tan gelir, burada değişmez. Fiş fotoğrafı, yer, belge ve kategori eklenebilir.",
   /** Silinmek istendi */
-  delete: "LafPOS'tan gelen satır silinmez: gün yeniden gönderilince geri gelir. Hareket yanlışsa LafPOS'ta düzeltilip gün yeniden gönderilir.",
+  delete:
+    "LafPOS'tan gelen satır silinmez: gün yeniden gönderilince geri gelir. Hareket yanlışsa LafPOS'ta düzeltilip gün yeniden gönderilir; deneme günüyse Ayarlar › LafPOS'ta günün kaydı silinince satır da kalkar.",
   /** Penceredeki kısa not ("LafPOS'tan geldi" başlığının altında) */
   hint: "Tutar, tür ve gün LafPOS'tan gelir, burada değişmez; fiş, yer, belge ve kategori buradan eklenir.",
 } as const;

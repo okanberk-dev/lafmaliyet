@@ -25,7 +25,8 @@ const same = (a: unknown, b: unknown) => (typeof a === "number" && typeof b === 
  *   (lafpos_day_ends raporu gösteriyor ve otomatik değerleri duruyor) sayılan ve teslim gelen gövdeden, otomatik raporun
  *   birleştirmesiyle (gun-sonu.ts mergeAuto: alan son otomatik değerindeyse yenisi; kişinin düzelttiği alan kalır; yeni
  *   değer boşsa kayıtlı kalır). Otomatik rapor yanıttan sonra yazılır (after()): kayıtlı rapor önceki gönderimin
- *   sayımını taşır, yeniden sayımın yanıtı onu yankılamamalı. Kişinin yazdığı ya da düzelttiği rapor hep geçer;
+ *   sayımını taşır, yeniden sayımın yanıtı onu yankılamamalı. Kişinin yazdığı ya da düzelttiği rapor hep geçer. Teslim
+ *   sayılandan büyükse (rapor tutarsız) null: eksi devir gönderilmez;
  * - rapor yoksa LafPOS'un sayımı (`lafpos`); sayım da yoksa null.
  *
  * `z`: gelen (ya da saklı) gövdenin Z'si; `auto`: günün otomasyon durumu (lafpos_day_ends.reportId ve autoValues).
@@ -49,7 +50,11 @@ export function nextOpeningOf(o: {
       if (z.countedCash !== null && same(counted, last.countedCash)) counted = z.countedCash;
       if (same(handed, last.handedOver)) handed = 0;
     }
-    return { amount: r2(counted - handed), source: "kasa_raporu" };
+    // Teslim sayılandan büyükse rapor tutarsız (ör. kişinin yazdığı teslim, birleştirmenin gövdeden aldığı yeni sayım):
+    // eksi devir gönderilmez (LafPOS'ta tutar ≥ 0; eksi değer yanıtı ve devir ucunun gövdesini okunamaz yapar). Null:
+    // lafmaliyet bilmiyor, LafPOS kendi sayımına döner; rapor düzeltilince doğru devir gelir
+    const amount = r2(counted - handed);
+    return amount < 0 ? null : { amount, source: "kasa_raporu" };
   }
   if (z?.countedCash != null) return { amount: z.countedCash, source: "lafpos" };
   return null;
