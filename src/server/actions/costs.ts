@@ -1,6 +1,6 @@
 "use server";
 
-import { and, asc, eq, gt, inArray, lt } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lt, ne } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -10,6 +10,7 @@ import { businessDate } from "@/lib/cash-report";
 import { FIXED_VAT_RATES, MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, tl } from "@/lib/format";
 import { addDays } from "@/lib/reminders";
+import { linkConflict, PERSON_REF_PATTERN, type LinkRow } from "@/lib/staff-link";
 import { requireAdmin } from "@/server/auth/dal";
 import { tillRows } from "@/server/data/cash-reports";
 import { fixedReminderMessage, followFixedReminders, type FollowResult } from "@/server/data/fixed-follow";
@@ -116,6 +117,18 @@ const staffRowSchema = z.object({
   name: zText("Personel adı", 80),
   netSalary: z.number().finite().min(0),
   extras: z.number().finite().min(0),
+  /** Yemek kartı (Faz 5): Ayarlar'daki günlük tutar × gün, brütleştirilmez. Verilmezse geçerlilik ayındaki değer kalır */
+  mealCard: z.boolean().optional(),
+  /** Tam zamanlı ya da part-time (Faz 5); verilmezse değişmez, yeni kişide tam zamanlı */
+  kind: z.enum(["full_time", "part_time"]).optional(),
+  /** Part-time günlük ücret (₺; SGK brütleştirmesi yok). Verilmezse geçerlilik ayındaki değer kalır */
+  dailyWage: z.number().finite().min(0).max(100_000).optional(),
+  /**
+   * Vardiya / hesap bağlantısı (Faz 5): panel hesabı ya da hesabı olmayan Vardiya adı ("n:<ad>"); ikisi birden olmaz.
+   * null = bağlantıyı kaldır, verilmezse değişmez. Yalnız açık seçim: sunucu kendiliğinden bağlamaz
+   */
+  userId: z.number().int().positive().nullable().optional(),
+  personRef: z.string().regex(PERSON_REF_PATTERN, "Vardiya kişisi geçersiz (sayfayı yenileyin)").nullable().optional(),
   /** Eski kullanım: false → geçen ay sonunda bitir, true → bitiş ayını kaldır. Yeni ekranlar endStaff kullanır. */
   active: z.boolean().optional(),
   /** İşe başladığı ay (null = baştan beri). Yeni kişide verilmezse geçerlilik ayı (varsayılan bu ay). */
@@ -159,9 +172,14 @@ export async function saveStaff(
       if (b) branchOf.set(i, b);
     }
     const newcomerBranch = data.some((r, i) => !r.id && !branchOf.has(i)) ? (await currentPhysicalBranch()).id : null;
+    for (const r of data) {
+      if (r.userId && r.personRef) throw new UserError(`${r.name}: hem panel hesabı hem Vardiya adı seçilemez`);
+    }
     await db.transaction(async (tx) => {
       const past = await dataMonths(tx, cur);
       const firstData = (await dataMonths(tx))[0] ?? null;
+      // Bağlantılar (Faz 5): hesap var mı, hesabın şubesi satırın şubesi mi, aynı kişi aynı ayda iki satırda mı
+      await checkStaffLinks(tx, data, removed, (i, before) => branchOf.get(i) ?? before ?? newcomerBranch!, cur);
       for (const id of removed) {
         const [row] = await tx.select().from(s.staff).where(eq(s.staff.id, id));
         if (!row) continue;
@@ -180,14 +198,39 @@ export async function saveStaff(
           const endMonth = r.active === false ? shiftMonth(cur, -1) : null;
           const [created] = await tx
             .insert(s.staff)
-            .values({ name: r.name, netSalary: r.netSalary, extras: r.extras, sortOrder: i + 1, startMonth, endMonth, active: activeFromRange(endMonth, cur), branchId: branchOf.get(i) ?? newcomerBranch! })
+            .values({
+              name: r.name,
+              netSalary: r.netSalary,
+              extras: r.extras,
+              mealCard: r.mealCard ?? false,
+              kind: r.kind ?? "full_time",
+              dailyWage: r.dailyWage ?? 0,
+              userId: r.userId ?? null,
+              personRef: r.personRef ?? null,
+              sortOrder: i + 1,
+              startMonth,
+              endMonth,
+              active: activeFromRange(endMonth, cur),
+              branchId: branchOf.get(i) ?? newcomerBranch!,
+            })
             .returning({ id: s.staff.id });
           changes.push({ id: created.id, name: r.name, mode: "base", fromMonth: startMonth });
           continue;
         }
         const [before] = await tx.select().from(s.staff).where(eq(s.staff.id, r.id));
         if (!before) throw new UserError(`${r.name}: personel bulunamadı (sayfayı yenileyin)`);
-        const set: Partial<typeof s.staff.$inferInsert> = { name: r.name, sortOrder: i + 1, ...(branchOf.has(i) ? { branchId: branchOf.get(i)! } : {}) };
+        // Tür sürümlenmez (Faz 5): maaş hesabına girmiş satırın türü değişirse geçmiş aylar başka kuralla hesaplanırdı
+        if (r.kind !== undefined && r.kind !== before.kind && staffUsedMonths(before, past).length) {
+          throw new UserError(`${r.name}: çalışma türü değişmez (geçmiş aylar maaş hesabına girdi). Bu satırı durdurup yeni kişi olarak ekleyin.`);
+        }
+        const set: Partial<typeof s.staff.$inferInsert> = {
+          name: r.name,
+          sortOrder: i + 1,
+          ...(branchOf.has(i) ? { branchId: branchOf.get(i)! } : {}),
+          ...(r.kind !== undefined ? { kind: r.kind } : {}),
+          // Bağlantı: verilen değer (biri seçilince öteki boşalır); verilmezse değişmez
+          ...(r.userId !== undefined || r.personRef !== undefined ? { userId: r.userId ?? null, personRef: r.personRef ?? null } : {}),
+        };
         let startMonth = before.startMonth;
         let endMonth = before.endMonth;
         if (r.startMonth !== undefined) startMonth = r.startMonth;
@@ -201,36 +244,36 @@ export async function saveStaff(
         }
         Object.assign(set, { startMonth, endMonth, active: activeFromRange(endMonth, cur) });
 
-        // Maaş: tabana mı, sürüme mi? (önceki aylar eski maaşla kalsın)
+        // Maaş: tabana mı, sürüme mi? (önceki aylar eski maaşla kalsın). Yemek kartı ve günlük ücret maaşla birlikte
+        // sürümlenir (Faz 5); verilmezse geçerlilik ayındaki değer kalır
         const versions = await tx.select().from(s.staffVersions).where(eq(s.staffVersions.staffId, r.id));
-        const echoesBase =
-          r.effectiveFrom === undefined && defaultEff === undefined && echoOfBase(
-            { netSalary: before.netSalary, extras: before.extras },
-            versions,
-            { netSalary: r.netSalary, extras: r.extras },
-            (a, b) => same(a.netSalary, b.netSalary) && same(a.extras, b.extras),
-          );
+        const atEff = eff === "all" ? before : ([...versions].sort((a, b) => b.fromMonth.localeCompare(a.fromMonth)).find((v) => v.fromMonth <= eff) ?? before);
+        const pay = (x: { netSalary: number; extras: number; mealCard: boolean; dailyWage: number }) => ({ netSalary: x.netSalary, extras: x.extras, mealCard: x.mealCard, dailyWage: x.dailyWage });
+        const next = { netSalary: r.netSalary, extras: r.extras, mealCard: r.mealCard ?? atEff.mealCard, dailyWage: r.dailyWage ?? atEff.dailyWage };
+        const equalPay = (a: ReturnType<typeof pay>, b: ReturnType<typeof pay>) =>
+          same(a.netSalary, b.netSalary) && same(a.extras, b.extras) && a.mealCard === b.mealCard && same(a.dailyWage, b.dailyWage);
+        const echoesBase = r.effectiveFrom === undefined && defaultEff === undefined && echoOfBase(pay(before), versions, next, equalPay);
         const plan = echoesBase ? ({ action: "none" } as const) : planVersionChange({
-          base: { netSalary: before.netSalary, extras: before.extras },
+          base: pay(before),
           versions,
-          next: { netSalary: r.netSalary, extras: r.extras },
+          next,
           effectiveFrom: eff,
           startMonth,
           firstDataMonth: firstData,
-          equal: (a, b) => same(a.netSalary, b.netSalary) && same(a.extras, b.extras),
+          equal: equalPay,
         });
         let mode: ChangeMode = "none";
         let fromMonth: string | null = null;
         if (plan.action === "base") {
-          Object.assign(set, { netSalary: r.netSalary, extras: r.extras });
+          Object.assign(set, next);
           if (plan.clearVersions) await tx.delete(s.staffVersions).where(eq(s.staffVersions.staffId, r.id));
           mode = "base";
           fromMonth = eff === "all" ? null : eff;
         } else if (plan.action === "upsert") {
           await tx
             .insert(s.staffVersions)
-            .values({ staffId: r.id, fromMonth: plan.fromMonth, netSalary: r.netSalary, extras: r.extras })
-            .onConflictDoUpdate({ target: [s.staffVersions.staffId, s.staffVersions.fromMonth], set: { netSalary: r.netSalary, extras: r.extras } });
+            .values({ staffId: r.id, fromMonth: plan.fromMonth, ...next })
+            .onConflictDoUpdate({ target: [s.staffVersions.staffId, s.staffVersions.fromMonth], set: next });
           mode = "version";
           fromMonth = plan.fromMonth;
         } else if (plan.action === "delete") {
@@ -256,7 +299,9 @@ export async function saveStaff(
       me,
       "Personel güncellendi",
       [
-        data.map((r) => `${r.name} ${tl(r.netSalary)}`).join(", "),
+        data
+          .map((r) => `${r.name} ${r.kind === "part_time" ? `günlük ${tl(r.dailyWage ?? 0)}` : tl(r.netSalary)}${r.mealCard ? " + yemek kartı" : ""}${r.userId ? " · hesaba bağlı" : r.personRef ? " · Vardiya adına bağlı" : ""}`)
+          .join(", "),
         ...changes.filter((c) => c.mode !== "none").map((c) => `${c.name}: ${c.mode === "version" ? `${monthLabel(c.fromMonth!)} itibarıyla` : "bütün aylar"}`),
         removed.length ? `${removed.length} kişi silindi` : "",
       ]
@@ -266,6 +311,53 @@ export async function saveStaff(
     refresh();
     return { changes, message };
   });
+}
+
+/**
+ * Maaş satırlarının Vardiya / hesap bağlantısı (Faz 5; src/lib/staff-link.ts): seçilen hesap var mı ve şubesine kilitliyse
+ * satırın şubesi mi; aynı hesap (ya da bir şubede aynı Vardiya adı) aralığı çakışan iki satıra bağlanmış mı. Kayıttaki
+ * yeni değerlerle (silinenler hariç) denetlenir. Dışa açılmaz ("use server" dosyasının her dışa verdiği bir uçtur)
+ */
+async function checkStaffLinks(
+  tx: Tx,
+  data: z.infer<typeof staffSchema>,
+  removed: number[],
+  branchFor: (index: number, before: string | null) => string,
+  cur: string,
+): Promise<void> {
+  if (!data.some((r) => r.userId || r.personRef)) return;
+  const userIds = [...new Set(data.flatMap((r) => (r.userId ? [r.userId] : [])))];
+  const users = userIds.length ? await tx.select({ id: s.users.id, name: s.users.name, branchId: s.users.branchId }).from(s.users).where(inArray(s.users.id, userIds)) : [];
+  const userById = new Map(users.map((u) => [u.id, u]));
+  const stored = await tx.select().from(s.staff);
+  const byId = new Map(stored.map((x) => [x.id, x]));
+  const rows: LinkRow[] = [];
+  // Bağlantısı bu kayıtta değişen satırlar önce denetlenir: ret metni yeni seçilen satırı adlandırsın
+  const changed = new Set<number>();
+  for (const [i, r] of data.entries()) {
+    const before = r.id ? byId.get(r.id) : undefined;
+    const branch = branchFor(i, before?.branchId ?? null);
+    const keep = r.userId === undefined && r.personRef === undefined;
+    const userId = keep ? (before?.userId ?? null) : (r.userId ?? null);
+    const personRef = keep ? (before?.personRef ?? null) : (r.personRef ?? null);
+    if (userId !== null && !keep) {
+      const u = userById.get(userId);
+      if (!u) throw new UserError(`${r.name}: seçilen panel hesabı bulunamadı (sayfayı yenileyin)`);
+      if (u.branchId && u.branchId !== branch) throw new UserError(`${r.name}: ${u.name} hesabı başka bir şubeye kilitli; bu maaş satırının şubesiyle aynı olmalı`);
+    }
+    const startMonth = r.startMonth !== undefined ? r.startMonth : before ? before.startMonth : (r.effectiveFrom ?? cur) === "all" ? null : (r.effectiveFrom ?? cur);
+    const endMonth = before ? before.endMonth : r.active === false ? shiftMonth(cur, -1) : null;
+    if (!keep && (userId !== (before?.userId ?? null) || personRef !== (before?.personRef ?? null))) changed.add(i);
+    rows.push({ id: r.id, name: r.name, branchId: branch, userId, personRef, startMonth, endMonth });
+  }
+  const others: LinkRow[] = stored
+    .filter((x) => !removed.includes(x.id) && !data.some((r) => r.id === x.id))
+    .map((x) => ({ id: x.id, name: x.name, branchId: x.branchId, userId: x.userId, personRef: x.personRef, startMonth: x.startMonth, endMonth: x.endMonth }));
+  const order = [...rows.keys()].sort((a, b) => Number(changed.has(b)) - Number(changed.has(a)));
+  for (const i of order) {
+    const conflict = linkConflict(rows[i], [...others, ...rows.filter((_, j) => j !== i)]);
+    if (conflict) throw new UserError(conflict);
+  }
 }
 
 /** Personelin maaş hesabına girdiği kapanmış veri ayları (doluysa silinemez; saveStaff ve staffDeleteBlockers aynı kural) */
@@ -308,6 +400,12 @@ export async function endStaff(id: number, lastMonth: string | null) {
     if (!row) throw new UserError("Personel bulunamadı");
     if (last && row.startMonth && last < row.startMonth) {
       throw new UserError(`Bitiş ayı başlangıç ayından (${monthLabel(row.startMonth)}) önce olamaz`);
+    }
+    // Bağlı satırın aralığı uzayınca aynı kişiye bağlı başka bir satırla çakışmasın (Faz 5; src/lib/staff-link.ts)
+    if (row.userId !== null || row.personRef !== null) {
+      const others = await db.select().from(s.staff).where(ne(s.staff.id, sid));
+      const conflict = linkConflict({ ...row, endMonth: last }, others);
+      if (conflict) throw new UserError(conflict);
     }
     await db.update(s.staff).set({ endMonth: last, active: activeFromRange(last, cur) }).where(eq(s.staff.id, sid));
     const message = last
@@ -384,6 +482,11 @@ const fixedSchema = z.object({
   /** Kira: resmi (sözleşmedeki) aylık kira ve brüt / net (yalnız kira bölümünde; verilmezse değişmez) */
   officialAmount: z.number().finite().positive().max(1e9).nullable().optional(),
   officialBasis: z.enum(["brut", "net"]).nullable().optional(),
+  /**
+   * Kira: ev sahibi şahıs mı şirket mi (Faz 5; yalnız kira bölümünde, verilmezse değişmez). Şahıs: KDV yok, stopaj resmi
+   * kiradan; şirket: %20 KDV, stopaj yok
+   */
+  landlordType: z.enum(["sahis", "sirket"]).nullable().optional(),
   /** Açık güne göre oranla (verilmezse değişmez; yeni kalemde kira tam ay, ötekiler oranlı) */
   prorate: z.boolean().optional(),
   /** Şube (docs/SUBE.md): null = işletme geneli (bütün şubelerde görünür); verilmezse değişmez, yeni kalemde işletme geneli */
@@ -398,7 +501,7 @@ const fixedSchema = z.object({
 export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const { id, active, effectiveFrom, startMonth: startInput, officialAmount, officialBasis, prorate, branchId: branchInput, ...data } = fixedSchema.parse(input);
+    const { id, active, effectiveFrom, startMonth: startInput, officialAmount, officialBasis, landlordType, prorate, branchId: branchInput, ...data } = fixedSchema.parse(input);
     const branchId = await checkedBranch(branchInput, false);
     const branchSet = branchId !== undefined ? { branchId } : {};
     // Resmi kira yalnız kira bölümünde (başka bölüme taşınınca silinir)
@@ -408,6 +511,8 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
         : officialAmount !== undefined
           ? { officialAmount, officialBasis: officialAmount ? (officialBasis ?? "brut") : null }
           : {};
+    // Ev sahibi türü yalnız kira bölümünde (başka bölüme taşınınca silinir; Faz 5)
+    const landlord = data.section !== "kira" ? { landlordType: null } : landlordType !== undefined ? { landlordType } : {};
     const prorateSet = prorate !== undefined ? { prorate } : {};
     const cur = currentMonthTR();
     const eff: Effective = effectiveFrom ?? cur;
@@ -434,6 +539,7 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
           .values({
             ...data,
             ...official,
+            ...landlord,
             ...branchSet,
             prorate: prorate ?? data.section !== "kira",
             startMonth,
@@ -452,6 +558,7 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
         note: data.note,
         ...(data.vatRate !== undefined ? { vatRate: data.vatRate } : {}),
         ...official,
+        ...landlord,
         ...prorateSet,
         ...branchSet,
       };
@@ -536,7 +643,7 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
     await logActivity(
       me,
       id ? "Sabit gider düzenlendi" : "Sabit gider eklendi",
-      `${data.name}: ${tl(data.amount)} (${data.period})${data.vatRate ? ` + %${Math.round(data.vatRate * 100)} KDV` : ""}${mode === "version" && fromMonth ? ` · ${monthLabel(fromMonth)} itibarıyla` : mode === "base" && id ? " · bütün aylar" : ""}`,
+      `${data.name}: ${tl(data.amount)} (${data.period})${data.vatRate ? ` + %${Math.round(data.vatRate * 100)} KDV` : ""}${landlordType ? ` · ev sahibi ${landlordType === "sahis" ? "şahıs" : "şirket"}` : ""}${mode === "version" && fromMonth ? ` · ${monthLabel(fromMonth)} itibarıyla` : mode === "base" && id ? " · bütün aylar" : ""}`,
     );
     refresh();
     // Kimlik döner: istemci yeni ya da düzenlenen satırı listede vurgulayabilsin

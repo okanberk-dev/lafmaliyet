@@ -1,0 +1,1 @@
+ALTER TABLE "fixed_expenses" ADD COLUMN "landlord_type" text;

@@ -4,7 +4,24 @@ import { formatPercentInput, parseNumberTR, parsePercentInput } from "@/lib/calc
 import type { Settings } from "@/lib/calc/types";
 import { num } from "@/lib/format";
 
-export type NumericKey = "kdv" | "kdvHizmet" | "komisyon" | "kartOrani" | "hedefMaliyet" | "fire" | "shotTek" | "shotCift" | "pompa" | "pompaPure" | "dondurmaTop" | "tkGr" | "potGr" | "potMl" | "acikGun";
+export type NumericKey =
+  | "kdv"
+  | "kdvHizmet"
+  | "komisyon"
+  | "kartOrani"
+  | "hedefMaliyet"
+  | "fire"
+  | "shotTek"
+  | "shotCift"
+  | "pompa"
+  | "pompaPure"
+  | "dondurmaTop"
+  | "tkGr"
+  | "potGr"
+  | "potMl"
+  | "acikGun"
+  | "mealCardDaily"
+  | "mealCardDays";
 
 export type FieldDef = {
   key: NumericKey;
@@ -48,7 +65,16 @@ export const MEASURE_FIELDS: FieldDef[] = [
   { key: "acikGun", label: "Ayda kaç gün açıksınız", hint: "Başabaş ve günlük giderler için", kind: "int", positive: true, max: 31 },
 ];
 
-export const ALL_FIELDS = [...RATE_FIELDS, ...MEASURE_FIELDS];
+/**
+ * Personel yemek kartı (Faz 5, sahibin kararı 11): Maaşlar'da yemek kartı işaretli kişinin işveren maliyetine günlük
+ * tutar × gün eklenir, brütleştirilmez (Gelir-gider'de "PERSONEL YEMEK KARTI" satırı)
+ */
+export const PERSONNEL_FIELDS: FieldDef[] = [
+  { key: "mealCardDaily", label: "Yemek kartı günlük tutar (₺)", hint: "Kişi başı, günlük; Maaşlar'da yemek kartı işaretli personel için", kind: "num" },
+  { key: "mealCardDays", label: "Yemek kartı ayda gün", hint: "Ayda kaç gün yüklenir (26); brütleştirilmez", kind: "int", positive: true, max: 31 },
+];
+
+export const ALL_FIELDS = [...RATE_FIELDS, ...MEASURE_FIELDS, ...PERSONNEL_FIELDS];
 
 export const toText = (v: number, kind: FieldDef["kind"]) => (kind === "pct" ? formatPercentInput(v, 2) : num(v, kind === "int" ? 0 : 2));
 export const textsOf = (settings: Settings) => Object.fromEntries(ALL_FIELDS.map((f) => [f.key, toText(Number(settings[f.key]), f.kind)])) as Record<NumericKey, string>;

@@ -6,7 +6,7 @@ import {
   PACKAGING_CATEGORY,
   SEPARATE_CATEGORIES,
 } from "../constants";
-import { MONTH_TOTALS_LOCKED_TEXT } from "../branches";
+import { DEFAULT_BRANCH_ID, MONTH_TOTALS_LOCKED_TEXT } from "../branches";
 import { listDiscountOf } from "../cash-month";
 import { duplicateCellWarn, duplicateExpenses as findDuplicateExpenses, type DuplicateExpense } from "./duplicate-expense";
 import { fixedIdOfKey } from "../fixed-expense-rules";
@@ -241,10 +241,13 @@ export function fixedAt(fe: FixedExpense, versions: FixedExpenseVersion[] | unde
   return v ? { ...fe, period: v.period, amount: v.amount } : fe;
 }
 
-/** Personelin o aydaki net maaşı ve ek ödemeleri (sürüm varsa sürümden, yoksa tabandan) */
+/** Sürümün tutarları kişiye (net maaş, ek ödemeler, yemek kartı) */
+const withVersion = (s: Staff, v: StaffVersion): Staff => ({ ...s, netSalary: v.netSalary, extras: v.extras, mealCard: v.mealCard ?? false, dailyWage: v.dailyWage ?? 0 });
+
+/** Personelin o aydaki net maaşı, ek ödemeleri ve yemek kartı (sürüm varsa sürümden, yoksa tabandan) */
 export function staffAt(s: Staff, versions: StaffVersion[] | undefined, month: string): Staff {
   const v = versionAt(versions?.filter((x) => x.staffId === s.id), month);
-  return v ? { ...s, netSalary: v.netSalary, extras: v.extras } : s;
+  return v ? withVersion(s, v) : s;
 }
 
 /** Tutar geçmişi, eskiden yeniye. İlk satır tabandır (fromMonth = kalemin başlangıç ayı ya da null = baştan beri). */
@@ -261,6 +264,8 @@ export interface StaffHistoryEntry {
   versionId: number | null;
   netSalary: number;
   extras: number;
+  mealCard: boolean;
+  dailyWage: number;
 }
 
 export function fixedHistory(fe: FixedExpense, versions: FixedExpenseVersion[] | undefined): FixedHistoryEntry[] {
@@ -274,8 +279,8 @@ export function fixedHistory(fe: FixedExpense, versions: FixedExpenseVersion[] |
 export function staffHistory(s: Staff, versions: StaffVersion[] | undefined): StaffHistoryEntry[] {
   const own = (versions ?? []).filter((v) => v.staffId === s.id).sort((a, b) => a.fromMonth.localeCompare(b.fromMonth));
   return [
-    { fromMonth: s.startMonth ?? null, versionId: null, netSalary: s.netSalary, extras: s.extras },
-    ...own.map((v) => ({ fromMonth: v.fromMonth, versionId: v.id, netSalary: v.netSalary, extras: v.extras })),
+    { fromMonth: s.startMonth ?? null, versionId: null, netSalary: s.netSalary, extras: s.extras, mealCard: s.mealCard ?? false, dailyWage: s.dailyWage ?? 0 },
+    ...own.map((v) => ({ fromMonth: v.fromMonth, versionId: v.id, netSalary: v.netSalary, extras: v.extras, mealCard: v.mealCard ?? false, dailyWage: v.dailyWage ?? 0 })),
   ];
 }
 
@@ -343,21 +348,87 @@ export interface StaffCost {
   deductions: number;
   employerSgk: number;
   employerUnemployment: number;
+  /** Yemek kartı: Ayarlar'daki günlük tutar × gün (işaretli kişide), brütleştirilmez; işaretsizde 0 */
+  mealCard: number;
+  /** Yemek kartının günü: Ayarlar'daki gün, verilen çalışılan gün ya da part-time'ın çağrıldığı gün; işaretsizde 0 */
+  mealDays: number;
+  /** Part-time: günlük ücret × çağrıldığı gün (brütleştirilmez); tam zamanlıda 0 */
+  dailyWages: number;
+  /** Part-time: Vardiya'da çağrıldığı gün; bağlantısız part-time ve tam zamanlıda null */
+  calledDays: number | null;
   total: number;
 }
 
-export function staffCost(s: Staff, st: Settings): StaffCost {
+export interface StaffCostOptions {
+  /**
+   * Yemek kartının günü (Faz 5 kancası, LM-4b): verilirse Ayarlar'daki gün yerine bu (LafPOS'un çalışılan günleri ayın
+   * her sayılan gününde geldiğinde). Verilmezse Ayarlar › Yemek kartı günü (26). Part-time'da kullanılmaz
+   */
+  mealDays?: number;
+  /** Part-time: Vardiya'da çağrıldığı gün (model.calledDaysOf); bağlantısızsa null ya da verilmez (tutar tahmin edilmez) */
+  calledDays?: number | null;
+}
+
+/** Yemek kartı ayda: günlük tutar × gün (işaretsiz kişide 0) */
+export function mealCardOf(s: Pick<Staff, "mealCard">, st: Pick<Settings, "mealCardDaily" | "mealCardDays">, days: number = st.mealCardDays): number {
+  return s.mealCard ? st.mealCardDaily * days : 0;
+}
+
+/** Part-time mı (Faz 5; tür yoksa tam zamanlı) */
+export const isPartTime = (s: Pick<Staff, "kind">) => s.kind === "part_time";
+
+/**
+ * Kişinin Vardiya anahtarı (Faz 5; src/lib/vardiya.ts): bağlı panel hesabı "u:<id>", hesabı olmayan "n:<ad>"; bağlantı
+ * yoksa null (part-time'ın günü bilinmez, tahmin edilmez)
+ */
+export function staffShiftRef(s: Pick<Staff, "userId" | "personRef">): string | null {
+  if (s.userId) return `u:${s.userId}`;
+  return s.personRef && /^n:./.test(s.personRef) ? s.personRef : null;
+}
+
+/**
+ * Kişinin aylık işveren maliyeti (Gelir-gider ve Maaşlar):
+ * - tam zamanlı: brüt = net ÷ (1 − işçi kesintileri), işveren SGK + işsizlik brütten; ek ödemeler (yol, prim) ve yemek
+ *   kartı brütleştirilmeden eklenir;
+ * - part-time (Faz 5): günlük ücret × çağrıldığı gün + yemek kartı × çağrıldığı gün + ek ödeme; SGK brütleştirmesi yok
+ *   (günlük ücret işletmenin gün başına maliyetidir). Günü bilinmeyen (bağlantısız) part-time'ın ücreti 0: tahmin yok
+ */
+export function staffCost(s: Staff, st: Settings, opts: StaffCostOptions = {}): StaffCost {
+  if (isPartTime(s)) {
+    const calledDays = opts.calledDays ?? null;
+    const days = calledDays ?? 0;
+    const dailyWages = (s.dailyWage ?? 0) * days;
+    const mealCard = mealCardOf(s, st, days);
+    return {
+      staff: s,
+      gross: 0,
+      deductions: 0,
+      employerSgk: 0,
+      employerUnemployment: 0,
+      mealCard,
+      mealDays: s.mealCard ? days : 0,
+      dailyWages,
+      calledDays,
+      total: dailyWages + mealCard + s.extras,
+    };
+  }
   const gross = s.netSalary / (1 - st.isciSgk - st.isciIssizlik);
   const deductions = gross * (st.isciSgk + st.isciIssizlik);
   const employerSgk = gross * st.isverenSgk;
   const employerUnemployment = gross * st.isverenIssizlik;
+  const mealDays = s.mealCard ? (opts.mealDays ?? st.mealCardDays) : 0;
+  const mealCard = mealCardOf(s, st, mealDays);
   return {
     staff: s,
     gross,
     deductions,
     employerSgk,
     employerUnemployment,
-    total: gross + employerSgk + employerUnemployment + s.extras,
+    mealCard,
+    mealDays,
+    dailyWages: 0,
+    calledDays: null,
+    total: gross + employerSgk + employerUnemployment + s.extras + mealCard,
   };
 }
 
@@ -365,19 +436,34 @@ export type PersonnelSummary = ReturnType<typeof personnelSummary>;
 
 /**
  * Personel toplamları. `month` verilirse o ayda aralığı tutan personel o ayın maaşıyla (sürümler) sayılır;
- * verilmezse (eski kullanım) yalnızca active bakılır ve taban değerler kullanılır.
+ * verilmezse (eski kullanım) yalnızca active bakılır ve taban değerler kullanılır. Net, brüt, kesintiler, işveren
+ * payları, ekler ve `mealCard` tam zamanlıların (Gelir-gider'in maaş, maliyet − net ve yemek kartı satırları); part-time
+ * kişiler `partTime`'da (ücret, yemek kartı, ek; Faz 5). `total` hepsini içerir. `calledDays`: part-time'ın çağrıldığı
+ * gün (model.calledDaysOf; verilmezse bilinmiyor)
  */
-export function personnelSummary(staff: Staff[], st: Settings, month?: string, versions?: StaffVersion[]) {
+export function personnelSummary(staff: Staff[], st: Settings, month?: string, versions?: StaffVersion[], calledDays?: (s: Staff) => number | null) {
   const list = month === undefined ? staff.filter((s) => s.active) : staff.filter((s) => inRange(s, month)).map((s) => staffAt(s, versions, month));
-  const rows = list.map((s) => staffCost(s, st));
+  const rows = list.map((s) => staffCost(s, st, isPartTime(s) ? { calledDays: calledDays?.(s) ?? null } : {}));
+  const full = rows.filter((r) => !isPartTime(r.staff));
+  const part = rows.filter((r) => isPartTime(r.staff));
   return {
     rows,
-    net: sum(rows.map((r) => r.staff.netSalary)),
-    gross: sum(rows.map((r) => r.gross)),
-    deductions: sum(rows.map((r) => r.deductions)),
-    employerSgk: sum(rows.map((r) => r.employerSgk)),
-    employerUnemployment: sum(rows.map((r) => r.employerUnemployment)),
-    extras: sum(rows.map((r) => r.staff.extras)),
+    net: sum(full.map((r) => r.staff.netSalary)),
+    gross: sum(full.map((r) => r.gross)),
+    deductions: sum(full.map((r) => r.deductions)),
+    employerSgk: sum(full.map((r) => r.employerSgk)),
+    employerUnemployment: sum(full.map((r) => r.employerUnemployment)),
+    extras: sum(full.map((r) => r.staff.extras)),
+    mealCard: sum(full.map((r) => r.mealCard)),
+    partTime: {
+      people: part.length,
+      wages: sum(part.map((r) => r.dailyWages)),
+      mealCard: sum(part.map((r) => r.mealCard)),
+      extras: sum(part.map((r) => r.staff.extras)),
+      total: sum(part.map((r) => r.total)),
+      /** Vardiya bağlantısı olmayan part-time kişiler: günü bilinmez, ücreti sayılmadı */
+      unlinked: part.filter((r) => r.calledDays === null).map((r) => r.staff),
+    },
     total: sum(rows.map((r) => r.total)),
   };
 }
@@ -415,12 +501,28 @@ export function rentWithholdingRate(month: string): number {
   return paidWithholdingRate("kira", Number(month.slice(0, 4)));
 }
 
-/** Resmi kiranın brütü: brüt girildiyse o, net girildiyse net ÷ (1 − stopaj oranı); resmi kira yoksa null */
-export function officialRentGross(fe: Pick<FixedExpense, "officialAmount" | "officialBasis">, rate: number): number | null {
+/**
+ * Resmi kiranın brütü: brüt girildiyse o, net girildiyse net ÷ (1 − stopaj oranı); resmi kira yoksa null. Ev sahibi şirketse
+ * (Faz 5) stopaj yoktur: resmi kira yazılı olsa da null
+ */
+export function officialRentGross(fe: Pick<FixedExpense, "officialAmount" | "officialBasis" | "landlordType">, rate: number): number | null {
+  if (fe.landlordType === "sirket") return null;
   const a = fe.officialAmount;
   if (a === null || a === undefined || !(a > 0)) return null;
   return fe.officialBasis === "net" && rate < 1 ? a / (1 - rate) : a;
 }
+
+/** Ayrıca girilmiş "Kira stopajı" sabit gideri (Faz 5): resmi kiradan hesaplanan stopajla aynı tutar olabilir */
+export function isRentStopajItem(f: Pick<FixedExpense, "name">): boolean {
+  return /kira\s*stopaj/.test(f.name.toLocaleLowerCase("tr-TR"));
+}
+
+/** Resmi kiranın stopaj hücresinin çift sayım uyarısı */
+export const rentStopajTwinText = (name: string) =>
+  `"${name}" sabit gideri de sayılıyor: kira stopajı resmi kiradan bu satırda hesaplanır, aynı stopaj iki kez girer. Sabit gideri bitirin (Giderler › Sabit giderler). Tutar kendiliğinden değişmez.`;
+
+/** Kira stopajının çift sayım uyarısının başlığı (Genel bakış) */
+export const RENT_STOPAJ_TWIN_TITLE = "Kira stopajı iki kez sayılabilir";
 
 /** Gelir-gider'in kira stopajı satırının anahtarı (kalem başına) */
 export const stopajKey = (fixedId: number) => `stopaj:${fixedId}`;
@@ -572,7 +674,59 @@ export interface PnlCell {
  */
 export const PERSONNEL_EXTRA_LABEL = "PERSONEL SGK, KESİNTİLER + EK ÖDEMELER (maliyet − net)";
 export const PERSONNEL_EXTRA_HINT =
-  "Personel sayfasındaki maliyet − net maaş: çalışanların SGK + işsizlik kesintisi, işveren SGK + işsizlik payı ve yemek / yol / prim ekleri; × (açık gün ÷ ayın gün sayısı), maaş satırı gibi. Elle yazacaksanız bordrodaki toplam işveren maliyeti − net maaşlar (yemek / yol / prim dahil); yalnız işveren payını yazmayın.";
+  "Personel sayfasındaki maliyet − net maaş: çalışanların SGK + işsizlik kesintisi, işveren SGK + işsizlik payı ve yemek / yol / prim ekleri; × (açık gün ÷ ayın gün sayısı), maaş satırı gibi. Yemek kartı kendi satırındadır (PERSONEL YEMEK KARTI). Elle yazacaksanız bordrodaki toplam işveren maliyeti − net maaşlar − yemek kartı (yemek / yol / prim dahil); yalnız işveren payını yazmayın.";
+
+/** Gelir-gider'in işletme geneli payı satırı (Faz 5, sahibin kararı 4; yalnız şube seçiliyken, bilgi) */
+export const SHARED_KEY = "shared:total";
+export const SHARED_ROW_LABEL = "İŞLETME GENELİ PAYI (bilgi)";
+export const SHARED_ROW_HINT =
+  "Şubenin kârına girmez; Tümü'de bir kez sayılır. İşletme geneli giderlerin dönemdeki tamamı (bölüştürme değil): şubesi seçilmemiş sabit giderler ve stopajı, şubesi boş harcamalar ve harcamaya bağlı faturalar, Gelir-gider'e elle yazılan tutarlar (su, doğalgaz, harici…), komisyon faturaları. Tümü'nün günüyle oranlanır. Yazmak ya da düzeltmek için soldan Tümü'nü seçin.";
+
+/** İşletme geneli payının bileşimi: en büyük kalemler ("Instagram reklamı 30.000 ₺, SU GİDERİ 2.000 ₺ …") */
+export function sharedInfoText(parts: readonly { label: string; amount: number }[]): string {
+  if (!parts.length) return "Bu ay işletme geneli gider yok.";
+  const top = [...parts].sort((a, b) => b.amount - a.amount);
+  const head = top.slice(0, 5).map((x) => `${x.label} ${tl(x.amount)}`);
+  return `İşletme geneli: ${head.join(", ")}${top.length > 5 ? ` ve ${top.length - 5} kalem daha` : ""}. Şubenin kârına girmez; Tümü'de bir kez sayılır.`;
+}
+
+/** Gelir-gider'in personel yemek kartı satırı (Faz 5; işaretli kişilerin günlük tutar × günü) */
+export const MEAL_CARD_KEY = "personnel:meal";
+/** Gelir-gider'in part-time satırı (Faz 5; günlük ücret × çağrıldığı gün + ek ödeme) */
+export const PART_TIME_KEY = "personnel:parttime";
+export const PART_TIME_ROW_LABEL = "PART-TIME (GÜNLÜK ÜCRET)";
+export const PART_TIME_HINT =
+  "Maaşlar'da part-time kişiler: günlük ücret × Vardiya'da o şubede çağrıldığı gün + ek ödeme (yemek kartı kendi satırında). Günlük ücret işletmenin gün başına maliyetidir, SGK brütleştirmesi yok. Gün oranı uygulanmaz; süren ayda kasa raporlarının son gününe kadarki vardiyalar. Vardiya kişisi bağlı değilse tutar tahmin edilmez, hücre uyarır.";
+/** Net maaş dışındaki personel hücreleri (vergi köprüsü bunları maliyet − net ile birlikte sayar) */
+export const PERSONNEL_SUB_KEYS: readonly string[] = ["personnel:employer", MEAL_CARD_KEY, PART_TIME_KEY];
+
+/** Part-time hücresinin bileşimi: "Ayşe: 10 gün × 1.500 ₺ + ek 2.000 ₺" */
+export function partTimeText(rows: readonly Pick<StaffCost, "staff" | "calledDays" | "dailyWages">[]): string {
+  const parts = rows
+    .filter((r) => r.calledDays !== null)
+    .map((r) => `${r.staff.name}: ${r.calledDays} gün × ${tl(r.staff.dailyWage ?? 0)}${r.staff.extras ? ` + ek ${tl(r.staff.extras)}` : ""}`);
+  return parts.length ? `${parts.join(" · ")}. Vardiya'daki çalışma günleri; brütleştirilmez.` : "Vardiya'ya bağlı part-time kişi yok.";
+}
+
+/** Bağlantısız part-time uyarısı (hücre ve Maaşlar) */
+export function partTimeUnlinkedText(people: readonly Pick<Staff, "name">[]): string {
+  return `${people.map((p) => p.name).join(", ")}: Vardiya kişisi bağlı değil, çağrıldığı gün bilinmiyor; günlük ücret sayılmadı (tahmin yok). Maaşlar'da Vardiya bağlantısını seçin.`;
+}
+export const MEAL_CARD_ROW_LABEL = "PERSONEL YEMEK KARTI";
+export const MEAL_CARD_HINT =
+  "Maaşlar'da yemek kartı işaretli kişiler: günlük tutar × ayda gün (Ayarlar › Personel yemek kartı, 330 ₺ × 26); brütleştirilmez, SGK'ya girmez. × (açık gün ÷ ayın gün sayısı), maaş satırı gibi. İşletme geneli \"Personel yemeği\" sabit gideri de varsa aynı yemek iki kez sayılabilir (Genel bakış uyarır).";
+
+/** Yemek kartı hücresinin bu ayki bileşimi: "2 kişi × 330 ₺ × 26 gün = 17.160 ₺" (gün oranıyla) */
+export function mealCardText(rows: readonly Pick<StaffCost, "mealCard" | "mealDays">[], st: Pick<Settings, "mealCardDaily">, ratio: number, days: number, dim: number): string {
+  const flagged = rows.filter((r) => r.mealCard > 0);
+  const total = sum(flagged.map((r) => r.mealCard));
+  const dayCounts = [...new Set(flagged.map((r) => r.mealDays))];
+  const head =
+    dayCounts.length === 1
+      ? `${flagged.length} kişi × ${tl(st.mealCardDaily)} × ${dayCounts[0]} gün = ${tl(total)}`
+      : `${flagged.length} kişi, günlük ${tl(st.mealCardDaily)}: ${tl(total)}`;
+  return `Yemek kartı ${head}${Math.abs(ratio - 1) > 1e-9 ? ` × ${days} / ${dim} gün` : ""}; brütleştirilmez.`;
+}
 
 /** `personnel:employer` hücresinin bu ayki bileşimi (gün oranıyla; parçaların toplamı hücrenin hesaplanan değeri) */
 export function personnelExtraText(
@@ -717,6 +871,13 @@ export interface PnlMonthCalc {
   /** Resmi kirası olan kalemler: bu aya düşen resmi brüt kira (kiranın gün payıyla) ve stopaj hücresinin değeri */
   officialRent: { id: number; gross: number; stopaj: number }[];
   sections: Record<FixedSection | "komisyon", number>;
+  /**
+   * İşletme geneli giderler (Faz 5, sahibin kararı 4): şubesi boş sabit gider ve stopajı, silinmiş kalemin elle girişi,
+   * elle hücreler, şubesi boş harcama ve harcamaya bağlı faturalar, komisyon faturaları. "Tümü"de bölümlerinin içinde
+   * (bir kez); tek şube seçiliyken bölümlere ve kâra girmez, "İşletme geneli payı (bilgi)" satırıdır. `keys`: tamamı
+   * işletme geneli olan hücreler (harcama hücresi şubede şubenin kendi kaydıdır, işletme geneli kısmı `parts`'ta)
+   */
+  shared: { total: number; parts: { key: string; label: string; amount: number }[]; keys: ReadonlySet<string> };
   expenses: number;
   /** ModPOS cirosu (KDV dahil, Satışlar'a girilen); girilmediyse null */
   revenue: number | null;
@@ -959,7 +1120,7 @@ export interface FixedItemView extends FixedExpense {
 
 /** Personel listesi satırı: maaş bu aya (ya da kişinin son/ilk ayına) göre */
 export interface StaffView extends Staff {
-  base: { netSalary: number; extras: number };
+  base: { netSalary: number; extras: number; mealCard: boolean; dailyWage: number };
   history: StaffHistoryEntry[];
   cost: StaffCost;
   inRangeNow: boolean;
@@ -980,6 +1141,8 @@ export function createModel(ds: Dataset) {
     itemsByProduct.set(it.productId, list);
   }
   const monthInfo = new Map(ds.months.map((m) => [m.month, m]));
+  /** "Tümü"nün ay bilgisi (şube seçiliyken; işletme geneli kalemin günü, Faz 5): yoksa boş */
+  const companyInfo = new Map((ds.companyMonths ?? []).map((m) => [m.month, m]));
   /**
    * Ayın kartlı satış oranı: elle yazılan ya da o ayın kasa raporlarından (kart + yemek kartı ÷ Z toplamı); yoksa
    * Ayarlar › kartlı satış oranı. POS komisyonu bununla hesaplanır; ürün fiyatı hesabı Ayarlar'daki oranla kalır.
@@ -1655,10 +1818,10 @@ export function createModel(ds: Dataset) {
     const v = versionAt(fixedVersions.get(fe.id), month);
     return v ? { ...fe, period: v.period, amount: v.amount } : fe;
   }
-  /** Personelin o aydaki maaşı */
+  /** Personelin o aydaki maaşı (net, ek ödemeler, yemek kartı) */
   function staffAtMonth(x: Staff, month: string): Staff {
     const v = versionAt(staffVersions.get(x.id), month);
-    return v ? { ...x, netSalary: v.netSalary, extras: v.extras } : x;
+    return v ? withVersion(x, v) : x;
   }
 
   const fixedInMonthCache = new Map<string, FixedExpense[]>();
@@ -1672,12 +1835,35 @@ export function createModel(ds: Dataset) {
     return list;
   }
 
+  // Vardiya'nın çalışma günleri (Faz 5): şube + kişi anahtarı + ay → günler (sıralı)
+  const shiftDaysByKey = new Map<string, string[]>();
+  for (const d of ds.shifts ?? []) {
+    const k = `${d.branchId}|${d.personRef}|${d.date.slice(0, 7)}`;
+    const list = shiftDaysByKey.get(k) ?? [];
+    list.push(d.date);
+    shiftDaysByKey.set(k, list);
+  }
+  for (const list of shiftDaysByKey.values()) list.sort();
+  /**
+   * Part-time kişinin aydaki çağrıldığı gün (Faz 5): Vardiya'da kişinin anahtarıyla (staffShiftRef), kendi şubesindeki
+   * çalışma günleri. Bağlantısızsa null (tahmin yok). Gelir-gider (planned yok): süren ayda kasa raporlarının son gününe
+   * kadar (ileri günlerin planı sayılmaz, maaş satırının gün oranı gibi bugüne kadar); `planned` (vergi bordrosu, nakit
+   * planı): ayın bütün planı
+   */
+  function calledDaysOf(x: Pick<Staff, "userId" | "personRef" | "branchId">, month: string, opts: { planned?: boolean } = {}): number | null {
+    const ref = staffShiftRef(x);
+    if (!ref) return null;
+    const days = shiftDaysByKey.get(`${x.branchId ?? DEFAULT_BRANCH_ID}|${ref}|${month}`) ?? [];
+    const to = !opts.planned && month >= currentMonth ? monthInfo.get(month)?.kasa?.till.to : undefined;
+    return to ? days.filter((d) => d <= to).length : days.length;
+  }
+
   const personnelCache = new Map<string, PersonnelSummary>();
-  /** O ayda çalışan personel, o ayın maaşıyla */
+  /** O ayda çalışan personel, o ayın maaşıyla (part-time: Vardiya'da çağrıldığı günle) */
   function personnelFor(month: string): PersonnelSummary {
     let p = personnelCache.get(month);
     if (!p) {
-      p = personnelSummary(ds.staff, st, month, ds.staffVersions);
+      p = personnelSummary(ds.staff, st, month, ds.staffVersions, (x) => calledDaysOf(x, month));
       personnelCache.set(month, p);
     }
     return p;
@@ -1726,9 +1912,9 @@ export function createModel(ds: Dataset) {
     return {
       ...cur,
       active: x.startMonth === undefined && x.endMonth === undefined ? x.active : activeFromRange(x.endMonth, currentMonth),
-      base: { netSalary: x.netSalary, extras: x.extras },
+      base: { netSalary: x.netSalary, extras: x.extras, mealCard: x.mealCard ?? false, dailyWage: x.dailyWage ?? 0 },
       history,
-      cost: staffCost(cur, st),
+      cost: staffCost(cur, st, isPartTime(cur) ? { calledDays: calledDaysOf(cur, valueMonth) } : {}),
       inRangeNow: inRange(x, currentMonth),
       status: rangeStatus(x, currentMonth),
       valueMonth,
@@ -1987,11 +2173,18 @@ export function createModel(ds: Dataset) {
   // --- Aylık harcamalar (reklam, influencer, fatura dışı) -------------------------
   const expenseCats: ExpenseCategory[] = [...(ds.expenseCategories ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
   const expenseByMonth = new Map<string, Map<number, number>>();
+  // Faz 5: harcamanın şubenin kendi kaydı (şube seçiliyken) ve işletme geneli (şubesi boş) kısmı, ay ve kategori başına
+  const expenseOwnByMonth = new Map<string, Map<number, number>>();
+  const expenseSharedByMonth = new Map<string, Map<number, number>>();
+  const addTo = (map: Map<string, Map<number, number>>, m: string, cat: number, v: number) => {
+    const byCat = map.get(m) ?? new Map<number, number>();
+    byCat.set(cat, (byCat.get(cat) ?? 0) + v);
+    map.set(m, byCat);
+  };
   for (const e of ds.expenseEntries ?? []) {
     const m = monthOfDate(e.date);
-    const byCat = expenseByMonth.get(m) ?? new Map<number, number>();
-    byCat.set(e.categoryId, (byCat.get(e.categoryId) ?? 0) + e.amount);
-    expenseByMonth.set(m, byCat);
+    addTo(expenseByMonth, m, e.categoryId, e.amount);
+    addTo((e.branchId ?? null) === null ? expenseSharedByMonth : expenseOwnByMonth, m, e.categoryId, e.amount);
   }
   /** Ayın harcama kayıtları (aynı gider iki kez: duplicateExpenses) */
   const expenseEntriesByMonth = new Map<string, NonNullable<Dataset["expenseEntries"]>>();
@@ -2311,6 +2504,13 @@ export function createModel(ds: Dataset) {
       const own = !ds.branchView && branchId ? info?.byBranch?.[branchId] : undefined;
       return own ? { days: prorationDays(own, closedMonth), open: own.openDays ?? 0 } : { days, open: openDays };
     };
+    // İşletme geneli kalemin günü (Faz 5): "Tümü"de işletmenin günü; şube seçiliyken de işletmenin (Dataset.companyMonths,
+    // "Tümü"nün ay bilgisi): bilgi satırı Tümü'nün saydığı tutarı gösterir. Verilmemişse (test, eski çağıran) şubenin günü
+    const companyDays = (): { days: number; open: number } => {
+      if (!ds.branchView || !ds.companyMonths) return { days, open: openDays };
+      const c = companyInfo.get(month);
+      return c ? { days: prorationDays(c, closedMonth), open: c.openDays ?? 0 } : { days, open: openDays };
+    };
     const cells = new Map<string, PnlCell>();
     const auto = (key: string, computed: number) => {
       const ov = overrides.get(key);
@@ -2381,26 +2581,46 @@ export function createModel(ds: Dataset) {
     const sections: Record<FixedSection | "komisyon", number> = { personel: 0, faturalar: 0, kira: 0, genel: 0, komisyon: 0 };
     // Personel: o ay çalışanlar, o ayın maaşıyla (elle girilen bordro tutarı her zaman geçerli)
     const pers = personnelFor(month);
-    // Kişinin oranı şubesinin günüyle; şubelerin günü farklıysa (bir şubenin açılış ayı) parçalar kişi kişi oranlanır
+    // Tam zamanlı kişinin oranı şubesinin günüyle; şubelerin günü farklıysa (bir şubenin açılış ayı) parçalar kişi kişi
+    // oranlanır. Part-time (Faz 5) oranlanmaz: çağrıldığı gün zaten o ayın (bugüne kadarki) günüdür
+    const fullRows = pers.rows.filter((r) => !isPartTime(r.staff));
+    const partRows = pers.rows.filter((r) => isPartTime(r.staff));
     const rowRatio = (r: PersonnelSummary["rows"][number]) => branchDays(r.staff.branchId).days / dim;
-    const mixed = pers.rows.some((r) => Math.abs(rowRatio(r) - ratio) > 1e-9);
+    const mixed = fullRows.some((r) => Math.abs(rowRatio(r) - ratio) > 1e-9);
     const scaled = mixed
       ? {
-          net: sum(pers.rows.map((r) => r.staff.netSalary * rowRatio(r))),
-          total: sum(pers.rows.map((r) => r.total * rowRatio(r))),
-          deductions: sum(pers.rows.map((r) => r.deductions * rowRatio(r))),
-          employerSgk: sum(pers.rows.map((r) => r.employerSgk * rowRatio(r))),
-          employerUnemployment: sum(pers.rows.map((r) => r.employerUnemployment * rowRatio(r))),
-          extras: sum(pers.rows.map((r) => r.staff.extras * rowRatio(r))),
+          net: sum(fullRows.map((r) => r.staff.netSalary * rowRatio(r))),
+          total: sum(fullRows.map((r) => r.total * rowRatio(r))),
+          deductions: sum(fullRows.map((r) => r.deductions * rowRatio(r))),
+          employerSgk: sum(fullRows.map((r) => r.employerSgk * rowRatio(r))),
+          employerUnemployment: sum(fullRows.map((r) => r.employerUnemployment * rowRatio(r))),
+          extras: sum(fullRows.map((r) => r.staff.extras * rowRatio(r))),
+          mealCard: sum(fullRows.map((r) => r.mealCard * rowRatio(r))),
         }
       : null;
+    const fullTotal = pers.total - pers.partTime.total;
     sections.personel += auto("personnel:net", scaled ? scaled.net : pers.net * ratio);
     // Maliyet − net: çalışanların SGK + işsizlik kesintisi, işveren payları ve yemek / yol / prim ekleri (denetim E-44;
-    // yalnız işveren payı değil). Hücre bu ayın bileşimini taşır
-    sections.personel += auto("personnel:employer", scaled ? scaled.total - scaled.net : (pers.total - pers.net) * ratio);
+    // yalnız işveren payı değil). Yemek kartı kendi alt satırında (Faz 5). Hücre bu ayın bileşimini taşır
+    sections.personel += auto("personnel:employer", scaled ? scaled.total - scaled.net - scaled.mealCard : (fullTotal - pers.net - pers.mealCard) * ratio);
     cells.get("personnel:employer")!.info = scaled
       ? `${personnelExtraText(scaled, 1, dim, dim)} Her kişi kendi şubesinin günüyle oranlandı.`
       : personnelExtraText(pers, ratio, days, dim);
+    // Yemek kartı (Faz 5): işaretli kişilerin günlük tutar × günü, brütleştirilmez; tam zamanlıda maaş gibi gün oranıyla,
+    // part-time'da çağrıldığı günle. Kimsede yoksa (ve elle yazılmamışsa) hücre yok: eski tablo değişmez
+    const mealAll = pers.mealCard + pers.partTime.mealCard;
+    if (mealAll > 0 || overrides.has(MEAL_CARD_KEY)) {
+      sections.personel += auto(MEAL_CARD_KEY, (scaled ? scaled.mealCard : pers.mealCard * ratio) + pers.partTime.mealCard);
+      cells.get(MEAL_CARD_KEY)!.info =
+        mealCardText(pers.rows, st, scaled || pers.mealCard === 0 ? 1 : ratio, days, dim) + (scaled ? " Tam zamanlılar kendi şubesinin günüyle oranlandı." : "");
+    }
+    // Part-time (Faz 5): günlük ücret × çağrıldığı gün + ek ödeme; gün oranı yok. Bağlantısız kişi uyarılır (tahmin yok)
+    if (partRows.length || overrides.has(PART_TIME_KEY)) {
+      sections.personel += auto(PART_TIME_KEY, pers.partTime.wages + pers.partTime.extras);
+      const cell = cells.get(PART_TIME_KEY)!;
+      cell.info = partTimeText(partRows);
+      if (pers.partTime.unlinked.length) cell.warn = partTimeUnlinkedText(pers.partTime.unlinked);
+    }
     // Sabit giderler: aralıktaki kalemler o ayın tutarıyla. Aralık dışındaki (ya da silinmiş) kalemin
     // elle girilmiş tutarı yine de sayılır; böylece dondurulmuş geçmiş ay kaybolmaz.
     // "Açık güne göre oranla" kapalı kalem (kira varsayılanı) biten ayda tam ay; süren ayda bugüne kadarki pay (ciroyla
@@ -2409,53 +2629,81 @@ export function createModel(ds: Dataset) {
     const fullDays = month < currentMonth && firstDataMonth !== null && month >= firstDataMonth ? dim : days;
     const rentRate = rentWithholdingRate(month);
     const officialRent: PnlMonthCalc["officialRent"] = [];
+    // İşletme geneli (Faz 5, sahibin kararı 4): şubesi boş sabit gider ve stopajı, silinmiş kalemin elle girişi, elle
+    // hücreler, şubesi boş harcama ve harcamaya bağlı faturalar, komisyon faturaları. "Tümü"de bölümlerinde bir kez
+    // sayılır; tek şube seçiliyken şubenin kârına girmez, "İşletme geneli payı (bilgi)" satırında toplamı görünür
+    // (bölüştürme değil, işletmenin tamamı; işletmenin günüyle oranlanır: companyDays)
+    const sharedParts: PnlMonthCalc["shared"]["parts"] = [];
+    const sharedKeys = new Set<string>();
+    /** Tutarı bölümüne (Tümü ya da şubenin kendi kalemi) ya da şube görünümünde işletme geneli payına yazar */
+    const book = (section: FixedSection | "komisyon", key: string, label: string, amount: number, sharedItem: boolean) => {
+      if (sharedItem) {
+        sharedKeys.add(key);
+        if (amount) sharedParts.push({ key, label, amount });
+        if (ds.branchView) return;
+      }
+      sections[section] += amount;
+    };
     for (const fe of allFixed) {
       const key = `fixed:${fe.id}`;
       const sKey = stopajKey(fe.id);
+      const sharedItem = (fe.branchId ?? null) === null;
       if (inRange(fe, month)) {
-        const own = branchDays(fe.branchId);
+        const own = sharedItem ? companyDays() : branchDays(fe.branchId);
         const d = fe.prorate === false ? fullDays : own.days;
-        sections[fe.section] += auto(key, fixedForMonth(fixedAtMonth(fe, month), st, own.open, dim, d));
+        book(fe.section, key, fe.name, auto(key, fixedForMonth(fixedAtMonth(fe, month), st, own.open, dim, d)), sharedItem);
         if (fe.prorate === false && d !== own.days) cells.get(key)!.info = "Tam ay: açık güne göre oranlanmıyor (Sabit giderler › Açık güne göre oranla).";
         const gross = officialRentGross(fe, rentRate);
         if (gross !== null) {
           const share = dim ? d / dim : 0;
           const stopaj = auto(sKey, gross * rentRate * share);
-          sections[fe.section] += stopaj;
+          book(fe.section, sKey, `${fe.name} stopajı`, stopaj, sharedItem);
           cells.get(sKey)!.info = `Resmi brüt kira ${tl(gross)}${fe.officialBasis === "net" ? ` (net ${tl(fe.officialAmount ?? 0)} ÷ ${num(1 - rentRate, 2)})` : ""} × %${num(rentRate * 100)} stopaj${share < 1 ? ` × ${d}/${dim} gün` : ""}. Muhtasarla izleyen ayın 26'sında ödenir.`;
+          // Tek kaynak (Faz 5): stopaj resmi kiradan bu satırda; "Kira stopajı" adlı ayrı bir sabit gider de sayılıyorsa
+          // aynı stopaj iki kez girer. Tutar değişmez, hücre uyarır (Genel bakış da)
+          const twin = allFixed.find((x) => x.id !== fe.id && inRange(x, month) && isRentStopajItem(x));
+          if (twin) cells.get(sKey)!.warn = rentStopajTwinText(twin.name);
           officialRent.push({ id: fe.id, gross: gross * share, stopaj });
         }
       } else {
         const ov = overrides.get(key);
         cells.set(key, { value: ov ?? null, computed: null, overridden: ov !== undefined, note: ov !== undefined ? noteOf(key) : null, outOfRange: true });
-        if (ov !== undefined) sections[fe.section] += ov;
+        if (ov !== undefined) book(fe.section, key, fe.name, ov, sharedItem);
         const sov = overrides.get(sKey);
         if (sov !== undefined) {
           cells.set(sKey, { value: sov, computed: null, overridden: true, note: noteOf(sKey), outOfRange: true });
-          sections[fe.section] += sov;
+          book(fe.section, sKey, `${fe.name} stopajı`, sov, sharedItem);
         }
       }
     }
     for (const [key, ov] of overrides) {
       // Kalemi silinmiş ya da resmi kirası kaldırılmış stopajın elle girişi: kira bölümünde sayılır
+      // (işletme geneli: kalemi yok, şubesi bilinmez)
       if (key.startsWith("stopaj:") && !cells.has(key)) {
         cells.set(key, { value: ov, computed: null, overridden: true, note: noteOf(key), outOfRange: true });
-        sections.kira += ov;
+        book("kira", key, "Kira stopajı (silinmiş kalem)", ov, true);
         continue;
       }
       if (!key.startsWith("fixed:") || cells.has(key)) continue;
-      // Kalemi silinmiş eski bir elle giriş: İşletme genel giderlerinde sayılır
+      // Kalemi silinmiş eski bir elle giriş: İşletme genel giderlerinde sayılır (işletme geneli)
       cells.set(key, { value: ov, computed: null, overridden: true, note: noteOf(key), outOfRange: true });
-      sections.genel += ov;
+      book("genel", key, `Silinmiş gider (#${key.slice(6)})`, ov, true);
     }
+    // Elle yazılan hücreler (su, doğalgaz, harici…): pnl_entries şubesizdir, işletme geneli
     for (const row of MANUAL_PNL_ROWS) {
       if (row.section === "mal") continue;
-      sections[row.section] += manual(row.key);
+      book(row.section, row.key, row.label, manual(row.key), true);
     }
+    // Harcamalar: şubesi boş kayıtlar ve kategoriye bağlı faturalar işletme geneli; şube seçiliyken hücre şubenin kendi
+    // kayıtlarıdır
     for (const x of exp) {
       if (x.cat.section === "mal") continue;
-      cells.set(`expense:${x.cat.id}`, { value: x.total, computed: x.total, overridden: false });
-      sections[x.cat.section] += x.total;
+      const key = `expense:${x.cat.id}`;
+      const own = ds.branchView ? (expenseOwnByMonth.get(month)?.get(x.cat.id) ?? 0) : x.total;
+      cells.set(key, { value: own, computed: own, overridden: false });
+      sections[x.cat.section] += own;
+      const sharedPart = (expenseSharedByMonth.get(month)?.get(x.cat.id) ?? 0) + x.invoices;
+      if (sharedPart) sharedParts.push({ key, label: x.cat.name, amount: sharedPart });
     }
     // Aynı gider iki kez (23 Kasım 2026; duplicate-expense.ts): bu ay sayılan sabit gider kalemi aynı adla bir faturada
     // (Gelir-gider'e giren), harcamada ya da elle yazılmış hücrede de varsa hücrede işaret; Genel bakış'ta uyarı (alerts).
@@ -2495,7 +2743,8 @@ export function createModel(ds: Dataset) {
     }
     for (const [s, v] of commBySupplier) {
       cells.set(`commission:${s}`, { value: v, computed: v, overridden: false });
-      sections.komisyon += v;
+      // Komisyon faturaları şubeye bölünmez (işletme geneli)
+      book("komisyon", `commission:${s}`, `${s} komisyonu`, v, true);
     }
     const posCell = cells.get("commission:pos")!;
     posCell.info = pos ? posCommissionText(pos, branchNameOf) : bankShareText(bank);
@@ -2537,6 +2786,7 @@ export function createModel(ds: Dataset) {
       countClosing: cl.value,
       officialRent,
       sections,
+      shared: { total: sum(sharedParts.map((x) => x.amount)), parts: sharedParts, keys: sharedKeys },
       expenses,
       revenue,
       serviceRevenue,
@@ -2651,9 +2901,17 @@ export function createModel(ds: Dataset) {
           hint: "Personel sayfasındaki net maaşlar × (açık gün ÷ ayın gün sayısı). Açık günü kasa raporlarından gelen ayda raporların kapsadığı takvim günüyle: kapalı gün maaşı düşürmez.",
         });
         add({ key: "personnel:employer", label: PERSONNEL_EXTRA_LABEL, kind: "auto", editable: companyCell, hint: PERSONNEL_EXTRA_HINT });
+        // Yemek kartı ve part-time (Faz 5): yalnız bu aylardan birinde işaretli / part-time kişi ya da elle tutar varsa
+        if (monthsCalc.some((pm) => pm.cells.has(MEAL_CARD_KEY))) {
+          add({ key: MEAL_CARD_KEY, label: MEAL_CARD_ROW_LABEL, kind: "auto", editable: companyCell, hint: MEAL_CARD_HINT });
+        }
+        if (monthsCalc.some((pm) => pm.cells.has(PART_TIME_KEY))) {
+          add({ key: PART_TIME_KEY, label: PART_TIME_ROW_LABEL, kind: "auto", editable: companyCell, hint: PART_TIME_HINT });
+        }
       }
-      // Bu aylardan en az birinde (verisi olan dönemde) geçerli olan ya da elle tutarı girilmiş kalemler
-      for (const fe of allFixed.filter((f) => f.section === key)) {
+      // Bu aylardan en az birinde (verisi olan dönemde) geçerli olan ya da elle tutarı girilmiş kalemler. Şube seçiliyken
+      // işletme geneli kalemler (şubesi boş) satır olmaz: "İşletme geneli payı (bilgi)" satırındadır (Faz 5)
+      for (const fe of allFixed.filter((f) => f.section === key && !(ds.branchView && (f.branchId ?? null) === null))) {
         const shown =
           fixedKeysWithValue.has(`fixed:${fe.id}`) ||
           months.some((m) => (!firstDataMonth || m >= firstDataMonth) && inRange(fe, m));
@@ -2670,13 +2928,14 @@ export function createModel(ds: Dataset) {
           });
         }
       }
-      if (key === "genel") {
+      if (key === "genel" && !ds.branchView) {
         for (const k of [...fixedKeysWithValue].filter((k) => !fixedById.has(Number(k.slice(6)))).sort()) {
           add({ key: k, fixedId: Number(k.slice(6)), label: `SİLİNMİŞ GİDER (#${k.slice(6)})`, kind: "auto", editable: true, hint: "Bu sabit gider silinmiş; elle girilen tutarı korunuyor. Boşaltırsanız satır kaybolur." });
         }
       }
       for (const r of expenseRows(key)) add(r);
-      for (const r of MANUAL_PNL_ROWS.filter((r) => r.section === key)) add({ key: r.key, label: r.label, kind: "manual", editable: true, hint: r.hint });
+      // Elle hücreler işletme genelidir: şube seçiliyken satır yok, Tümü'de yazılır (Faz 5)
+      if (!ds.branchView) for (const r of MANUAL_PNL_ROWS.filter((r) => r.section === key)) add({ key: r.key, label: r.label, kind: "manual", editable: true, hint: r.hint });
       add({ key: `total:${key}`, label: sectionLabels[key], kind: "total", editable: false, strong: true });
     }
 
@@ -2690,10 +2949,15 @@ export function createModel(ds: Dataset) {
       editable: companyCell,
       hint: "Tahmin: şube şube kasa raporlarındaki banka kartı (KDV dahil, yemek kartı hariç) × şubenin POS oranı (Şubeler); Satışlar'daki komisyon aynı tutardır, satırlara ciro payıyla dağılır (süren ayda satış listesi kasa raporlarından kısaysa Satışlar listenin günleriyle sayar). Yemek kartlarının komisyonu kendi faturalarıyla aşağıda sayılır. Kasa raporu olmayan ayda aylık ciro × komisyon (Ayarlar) × kartlı satış oranı. Banka dekontundaki gerçek tutarı yazabilirsiniz; banka POS komisyonunu Komisyon faturası olarak kesiyorsa 0 yazın.",
     });
-    for (const k of [...commSuppliers].sort()) {
+    // Komisyon faturaları işletme genelidir: şube seçiliyken satır yok (Faz 5)
+    for (const k of ds.branchView ? [] : [...commSuppliers].sort()) {
       kom({ key: k, label: `${k.slice("commission:".length).toLocaleUpperCase("tr-TR")} KOMİSYONU`, kind: "auto", editable: false, hint: "Faturalar sayfasından otomatik (Komisyon kategorisi)." });
     }
     kom({ key: "total:komisyon", label: "KOMİSYON GİDERLERİ TOPLAMI", kind: "total", editable: false, strong: true });
+    // İşletme geneli payı (Faz 5, sahibin kararı 4): yalnız şube seçiliyken, bilgi satırı (kâra girmez)
+    if (ds.branchView) {
+      sec("isletme")({ key: SHARED_KEY, label: SHARED_ROW_LABEL, kind: "info", editable: false, hint: SHARED_ROW_HINT });
+    }
 
     const top = sec("toplam");
     top({ key: "total:cogs", label: "AY İÇERİSİNDE SATILAN MAL MALİYETİ", kind: "total", editable: false });
@@ -2777,6 +3041,9 @@ export function createModel(ds: Dataset) {
         return v(pm.revenueTotalNet);
       case "profit":
         return v(pm.profit);
+      case SHARED_KEY:
+        // Şube seçiliyken işletme geneli giderlerin toplamı (bilgi; kâra girmez) ve bileşimi
+        return { ...v(pm.shared.total), info: sharedInfoText(pm.shared.parts) };
       case "ratio:expenses":
         return v(r(pm.expenses));
       case "ratio:cogs":
@@ -2874,6 +3141,8 @@ export function createModel(ds: Dataset) {
     fixedAtMonth,
     /** Personelin o aydaki maaşı: staffAtMonth(kişi, "2026-11") */
     staffAtMonth,
+    /** Part-time kişinin aydaki çağrıldığı gün (Vardiya; bağlantısızsa null; `planned`: ayın bütün planı) */
+    calledDaysOf,
     /** Bütün sabit giderler (bitmiş / başlamamış dahil), bugünkü tutar + geçmiş */
     fixedList,
     /** Bütün personel (ayrılmış / başlamamış dahil), bugünkü maaş + geçmiş */

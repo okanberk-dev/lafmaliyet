@@ -6,10 +6,13 @@ import { Suspense } from "react";
 import { HashScroll } from "@/components/panel/hash-scroll";
 import { PageHeader } from "@/components/panel/page-header";
 import { SalesSourceLine } from "@/components/panel/sales-source-line";
-import { PageSkeleton, Stat } from "@/components/ui/misc";
+import { Card, CardHeader } from "@/components/ui/card";
+import { InfoTip, PageSkeleton, Stat } from "@/components/ui/misc";
+import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
+import { branchBreakdown, type BranchBreakdown } from "@/lib/branch-breakdown";
 import { branchViewNote, MONTH_TOTALS_LOCKED_TEXT, monthWriteNote } from "@/lib/branches";
 import { daysInMonth, uncountedCogsSummary, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
 import { manualOf } from "@/lib/cash-month";
@@ -18,6 +21,7 @@ import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
 import { periodKasa } from "@/lib/lafpos/kasa";
 import { periodSalesSource } from "@/lib/sales-source";
+import { cn } from "@/lib/utils";
 import { salesMonthsToPull, siteGross } from "@/lib/site-sales/calc";
 import { employerRateNotice, rateText } from "@/lib/tax/edit";
 import { requireAdmin } from "@/server/auth/dal";
@@ -48,6 +52,8 @@ const SECTION_LABELS: Record<string, string> = {
   kira: "Kira",
   genel: "İşletme genel giderleri",
   komisyon: "Komisyon giderleri",
+  // Yalnız şube seçiliyken: işletme geneli giderlerin toplamı, kâra girmez (Faz 5)
+  isletme: "İşletme geneli (bilgi)",
   toplam: "Toplamlar",
   sonuc: "Maliyet",
   oran: "Oranlar",
@@ -76,7 +82,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   await requireAdmin();
   const sp = await searchParams;
   // Vergi ayarları yalnız SGK oranı uyarısı için (K19); okunamazsa uyarı çıkmaz, tablo etkilenmez
-  const [model, salesState, taxSettings, writeNote] = await Promise.all([
+  const [model, salesState, taxSettings, writeNote, branchList] = await Promise.all([
     loadModel(),
     readSalesState(),
     loadTaxSettings().catch((e) => {
@@ -88,6 +94,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
     Promise.all([currentBranchScope(), listBranches()])
       .then(([scope, branches]) => monthWriteNote(scope, branches))
       .catch(() => null),
+    // Tümü'nün şube kırılımı (Faz 5): açık fiziksel şubeler; okunamazsa kart yok
+    listBranches().catch(() => []),
   ]);
   const known = [...model.monthInfo.keys(), ...model.ds.invoices.map((i) => i.date.slice(0, 7))].sort();
   const knownYears = new Set(known.map((k) => Number(k.slice(0, 4))));
@@ -111,6 +119,24 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   const yt = yearTotals(model, year);
   // Şube görünümü (soldaki seçici; docs/SUBE.md): bilgi notu, mal maliyeti şubenin satışından reçeteye göre
   const branchNote = model.ds.branchView ? branchViewNote(model.ds.branchView) : null;
+  // "Tümü"nün şube kırılımı (Faz 5, sahibin kararı 4; docs/SUBE.md): birden çok fiziksel şube açıkken, yıl kartlarıyla aynı
+  // aylar. Her şube kendi görünümündeki gibi (işletme geneli şubeye bölünmez), işletme geneli ayrı sütunda bir kez.
+  // Okunamazsa kart çizilmez
+  const physical = branchList.filter((b) => b.active && b.kind === "fiziksel");
+  const branchSplit =
+    !model.ds.branchView && physical.length > 1 && yt.counted.length
+      ? await Promise.all(physical.map(async (b) => ({ id: b.id, name: b.name, model: await loadModel({ scope: b.id }) })))
+          .then((list) =>
+            branchBreakdown(
+              list.map((x) => ({ id: x.id, name: x.name, months: yt.counted.map((m) => x.model.pnlMonth(m)) })),
+              yt.counted.map((m) => model.pnlMonth(m)),
+            ),
+          )
+          .catch((e) => {
+            console.error("[gelir-gider] şube kırılımı", e);
+            return null;
+          })
+      : null;
   const countedIdx = indexes((m) => yt.counted.includes(m));
   // Faturası beklenen cari alımlar (bilgi satırı; gidere girmez, fatura gelince fatura gider olur). Okunamazsa satır yok
   const expected = await loadExpectedDebtsInYear(year).catch((e) => {
@@ -362,6 +388,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
           />
         </StatBreakdown>
       </div>
+      {/* "Tümü": şube kırılımı, işletme geneli ayrı sütunda bir kez (Faz 5) */}
+      {branchSplit ? <BranchSplitCard year={year} months={yt.counted.length} split={branchSplit} /> : null}
       {/* Şube seçili (soldaki seçici): neyin şubenin, neyin işletme genelinin olduğu (docs/SUBE.md) */}
       {branchNote ? (
         <Notice tone="neutral" size="sm" className="-mt-2 mb-4" title={branchNote.title}>
@@ -420,5 +448,66 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         }
       />
     </>
+  );
+}
+
+/**
+ * "Tümü"nün şube kırılımı (Faz 5, sahibin kararı 4; docs/SUBE.md › Dalga 2'nin kararları): her şubenin kârı kendi
+ * görünümündeki gibi, işletme geneli giderler ayrı sütunda bir kez (bölüştürme yok), Tümü işletmenin toplamı
+ */
+function BranchSplitCard({ year, months, split }: { year: number; months: number; split: BranchBreakdown }) {
+  const rows: { key: "revenue" | "expenses" | "profit"; label: string }[] = [
+    { key: "revenue", label: "Ciro (KDV hariç)" },
+    { key: "expenses", label: "Mal maliyeti ve giderler" },
+    { key: "profit", label: "Kâr / zarar" },
+  ];
+  return (
+    <Card className="mb-6">
+      <CardHeader
+        title={`Şube kırılımı · ${year}`}
+        description={
+          <>
+            Yıl kartlarıyla aynı {months} ay. Şubenin kârı kendi görünümündeki gibi: işletme geneli giderler şubeye bölünmez, ayrı sütunda bir kez sayılır.{" "}
+            <InfoTip text="İşletme geneli: şubesi seçilmemiş sabit giderler ve stopajı, şubesi boş harcamalar ve harcamaya bağlı faturalar, Gelir-gider'e elle yazılan tutarlar, komisyon faturaları; cirosu laffogato.net online satışı. Şubelerin mal maliyeti satışından reçeteye göre, Tümü'nün sayımla." />
+          </>
+        }
+      />
+      <TableWrap>
+        <Table>
+          <THead>
+            <tr>
+              <TH sticky>
+                <span className="sr-only">Satır</span>
+              </TH>
+              {split.columns.map((c) => (
+                <TH key={c.key} numeric>
+                  {c.label}
+                </TH>
+              ))}
+            </tr>
+          </THead>
+          <tbody>
+            {rows.map((r) => (
+              <TR key={r.key}>
+                <TD sticky className={r.key === "profit" ? "font-semibold" : undefined}>
+                  {r.label}
+                </TD>
+                {split.columns.map((c) => (
+                  <TD key={c.key} numeric className={cn(r.key === "profit" && "font-semibold", r.key === "profit" && c[r.key] < 0 && "text-bad")}>
+                    {tl(c[r.key])}
+                  </TD>
+                ))}
+              </TR>
+            ))}
+          </tbody>
+        </Table>
+      </TableWrap>
+      {split.residual ? (
+        <p className="px-5 pb-4 text-xs text-pretty text-ink-mute">
+          Şubeler + işletme geneli Tümü&apos;yü {tl(split.residual)} farkla verir: Tümü&apos;nün mal maliyeti sayım ve faturalardan, şubelerinki satıştan reçeteye
+          göre; Tümü&apos;de elle yazılan personel ve POS komisyonu da şubelere bölünmez. Hiçbir gider iki kez sayılmaz.
+        </p>
+      ) : null}
+    </Card>
   );
 }

@@ -79,10 +79,15 @@ test("şube görünümünde işletmenin toplamı olan hücreler yazılamaz (devi
     assert.equal(tum.get(k), true, `Tümü: ${k}`);
     assert.equal(tek.get(k), false, `şube: ${k}`);
   }
-  // Sabit gider ve elle girilen satırlar şubede de yazılır
-  const fixedKey = [...tek.keys()].find((k) => k.startsWith("fixed:"));
-  assert.ok(fixedKey && tek.get(fixedKey), "sabit gider kalemi");
-  assert.equal(tek.get("manual:harici"), true);
+  // Şubenin sabit gider kalemi şubede yazılır. İşletme geneli kalemler (şubesi boş) ve elle hücreler (pnl_entries şubesiz)
+  // Faz 5'ten beri (sahibin kararı 4) şubede satır değildir: "İşletme geneli payı (bilgi)" satırında, Tümü'de yazılır
+  const kira = ds.fixedExpenses.find((f) => f.name === "Kira")!;
+  const tekKira = editable({ ...sube, fixedExpenses: sube.fixedExpenses.map((f) => (f.id === kira.id ? { ...f, branchId: "tuzla" } : f)) });
+  assert.equal(tekKira.get(`fixed:${kira.id}`), true, "sabit gider kalemi");
+  assert.equal(tek.has(`fixed:${kira.id}`), false, "işletme geneli kalem şubede satır değil");
+  assert.equal(tek.has("manual:harici"), false);
+  assert.equal(tum.get("manual:harici"), true, "elle hücre Tümü'de yazılır");
+  assert.equal(tek.get("shared:total"), false, "bilgi satırı yazılmaz");
   // Sunucu da reddeder: şube seçiliyken işletmenin hücresi yazılmaz
   const eylem = oku("src/server/actions/pnl.ts");
   assert.match(eylem, /companyPnlKey\(key\) && \(await currentBranchScope\(\)\) !== ALL_BRANCHES\) throw new UserError/);

@@ -1,4 +1,4 @@
-import type { CountUnit, FixedPeriod, FixedSection, Settings, Size, Unit } from "./calc/types";
+import type { CountUnit, FixedPeriod, FixedSection, LandlordType, Settings, Size, Unit } from "./calc/types";
 
 export const DEFAULT_SETTINGS: Settings = {
   kdv: 0.1,
@@ -20,6 +20,9 @@ export const DEFAULT_SETTINGS: Settings = {
   isciIssizlik: 0.01,
   isverenSgk: 0.1575,
   isverenIssizlik: 0.02,
+  // Personel yemek kartı (sahibin kararı 11, 23 Kasım 2026): kişi başı günlük 330 ₺ × ayda 26 gün
+  mealCardDaily: 330,
+  mealCardDays: 26,
   fireExcludesPackaging: false,
   suBirimLTOverride: null,
   publicMenu: false,
@@ -173,10 +176,24 @@ export const FIXED_VAT_RATES: { value: number; label: string }[] = [
   { value: 0.2, label: "%20" },
 ];
 
-/** Kalemin KDV oranı: girilmişse o, yoksa bölümünün varsayılanı */
-export function fixedVatRate(f: { section: FixedSection; vatRate?: number | null }): number {
+/**
+ * Kalemin KDV oranı: girilmişse o, yoksa bölümünün varsayılanı. Kira kaleminde ev sahibi türü seçildiyse o karar verir
+ * (Faz 5): şahsa kirada KDV yok (kalemde %20 yazılı olsa da), şirkete kirada %20
+ */
+export function fixedVatRate(f: { section: FixedSection; vatRate?: number | null; landlordType?: LandlordType | null }): number {
+  if (f.section === "kira" && f.landlordType === "sahis") return 0;
+  if (f.section === "kira" && f.landlordType === "sirket") return LANDLORD_COMPANY_VAT;
   return f.vatRate ?? FIXED_SECTION_VAT[f.section];
 }
+
+/** Şirkete kiranın KDV'si (Faz 5) */
+export const LANDLORD_COMPANY_VAT = 0.2;
+
+/** Ev sahibi türü seçenekleri (Sabit giderler › kira kalemi; Faz 5) */
+export const LANDLORD_TYPES: { value: LandlordType; label: string; hint: string }[] = [
+  { value: "sahis", label: "Şahıs (KDV yok, stopaj %20)", hint: "KDV yok; stopaj %20 resmi kiradan (resmi kira yoksa tutardan, ödemeden kesilir), muhtasarla ödenir." },
+  { value: "sirket", label: "Şirket (%20 KDV, stopaj yok)", hint: "Faturalı: %20 KDV, stopaj yok; resmi kira stopaja girmez." },
+];
 
 export const FIXED_PERIODS: { key: FixedPeriod; label: string; hint: string }[] = [
   { key: "aylik", label: "Aylık", hint: "Her ay aynı tutar" },

@@ -15,6 +15,7 @@ import { legalDueDate, monthName, nominalDue } from "./calendar";
 import { filingFor, filingValue, type TaxFiling } from "./corporate";
 import type { PayrollMonth } from "./payroll";
 import { r2, rulesFor, type TaxDoc, type TaxOverrides, type Withholding, withholdingKdv2, withholdingRate, WITHHOLDING_LABELS } from "./rules";
+import { fixedTaxDoc } from "./pnl";
 import { muhtasarStamp } from "./stamp";
 
 /** Ayın muhtasara giren sabit gider ve harcama kalemleri (brüt tutar) */
@@ -263,7 +264,12 @@ export function muhtasarItemsFromModel(model: Pick<Model, "fixedInMonth" | "pnlM
     }
     const cell = cells.get(`fixed:${f.id}`);
     const amount = cell?.overridden ? (cell.value ?? 0) : fixedMonthly(f, model.settings);
-    items.push({ id: f.id, name: f.name, section: f.section, amount: r2(amount), withholding: f.taxWithholding ?? null, doc: f.taxDoc ?? null });
+    // Ev sahibi türü (Faz 5): şahsa kira resmi kirasız da kira stopajlı (tutar brüt); şirkete kira stopajsız, belgesi fatura
+    // (muhtasar "en az"a düşmez). Boşsa Vergi'de seçilen profil
+    const rent = f.section === "kira" ? f.landlordType : null;
+    const withholding = rent === "sahis" ? "kira" : rent === "sirket" ? null : (f.taxWithholding ?? null);
+    const doc = fixedTaxDoc(f);
+    items.push({ id: f.id, name: f.name, section: f.section, amount: r2(amount), withholding, doc });
   }
   for (const x of model.expenseAmounts(period)) {
     if (!(x.entries > 0)) continue;
