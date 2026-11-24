@@ -447,7 +447,10 @@ da Z'nin rakamları da aynı fişte (ayrı mali Z basan cihazda yazarkasa Z'si d
 14 gün içinde. Fotoğrafın adı "Pavo gün sonu fişi". Fotoğraf hiçbir alanı yazmaz (LafPOS yazarkasa Z no göndermediyse
 okunan Z no boş alana yazılır, yöneticiye "fotoğraftan okundu"): okunuşu, batch'ler Banka POS'la, Z'nin rakamları (Z no,
 toplam, nakit, kart, yemek kartı / diğer, KDV) yazarkasa alanlarıyla karşılaştırılır; fark yalnız yöneticinin uyarısıdır
-(Kasa gün görünümü, zil, gün sonu e-postası, ay satırının rozeti). Personel farkı görmez: eski "Fotoğraftan farklı
+(Kasa gün görünümü, zil, gün sonu e-postasında satır satır, fotoğraf gün sonu e-postasından sonra eklendiyse ayrı kısa
+fotoğraf e-postası, ay satırının rozeti). Fotoğraf önce ucuz modelle, gerekirse bir kez güçlü modelle, yapay zekâ yoksa
+kodla (OCR) okunur; kodla okunan bir satır güvenle seçilmediyse "okunamadı — yönetici baksın" (rakam uydurulmaz; okuyan
+yöneticiye "Yapay zekâ" / "Kodla okundu" diye yazar; [FOTOGRAF.md](FOTOGRAF.md)). Personel farkı görmez: eski "Fotoğraftan farklı
 yazılan" kutusu ve WhatsApp satırı LafPOS'un otomatik gününde personelden süzülür, notun yönetici yönergesi yerine "Banka
 POS henüz gelmedi; yönetici ilgileniyor" yazar. Pavo'nun gün sonu alınamadıysa Banka POS boş kalır, föyde personelin
 yazdığı kart sayımı onu doldurmaz. Ayrıntı:

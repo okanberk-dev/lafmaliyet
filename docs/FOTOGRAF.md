@@ -180,6 +180,62 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
 - Hata metinleri (`src/server/ai/run.ts` › `aiErrorText`): zaman aşımı, bağlantı, yoğunluk ve yarım kalan okumada
   **Yeniden dene**; anahtar ve kredi hatası "yöneticiye haber verin".
 
+### LafPOS gününün fotoğrafı: önce ucuz model, gerekirse güçlü, yapay zekâ yoksa kod (24 Kasım 2026)
+
+Sahibin isteği: "AI kullanarak okursa çok iyi olur ama fazla token harcamayan ve sonuç verecek şekilde olsun; eğer AI
+token biterse de kod ile bir şey yaz". LafPOS gününün gün sonu fotoğrafı (Pavo'nun detaylı Z'si; Marina, geçiş gününden
+sonra, LafPOS'un gün sonu gelmiş gün) başka sırayla okunur (`src/server/photo-read/lafpos.ts`, sıra
+`src/lib/photo-read/lafpos-read.ts`); Tuzla / ModPOS günleri, ModPOS Z'si ve fişler değişmedi (Opus 5.5, eskisi gibi).
+
+1. **Kayıtlı okunuş yeniden kullanılır:** fotoğrafın `ai_calls`'ta başarılı okunuşu varsa (Yeniden dene, öteki bölüm,
+   ikinci istek) yeni çağrı yapılmaz. Güçlü model bir fotoğraf için bir kez denenir.
+2. **Ucuz model** (`PHOTO_CHEAP_MODEL` = `claude-haiku-5-5`): kısa istem (`OKC_SHORT_TASK`), aynı şema (`KasaOkcRaw`;
+   karmaşıklık sınırını aştığı için şema metinde, `JSON_REPLY`), efor `low`, tek 15 sn'lik deneme.
+3. **Güçlü model bir kez** (`PHOTO_STRONG_MODEL` = `claude-opus-5-5`, uzun istem `OKC_TASK`, 25 sn) yalnız ucuz okunuş
+   eksik ya da kendi içinde tutarsızsa (`cheapReadingProblems`: belge türü, toplam yok, Z no yok, ödeme satırı yok,
+   Σ ödemeler ≠ toplam, Σ KDV grupları ≠ toplam, Pavo'nun sonucu geldiyse batch yok, satış − iade ≠ net, düşük güven) ya da
+   LafPOS'un rakamlarından farklıysa (aynı karşılaştırma "fark" diyorsa): yanlış bir "fark" yöneticiye gitmeden ikinci kez
+   bakılır. Güçlü okuma düşerse ucuz okunuş kalır. Ucuz model yanıt verip okunuş vermediyse (ret, yarım, şema dışı) de
+   önce güçlü model denenir.
+4. **Kodla okuma:** yapay zekâ yoksa ya da yanıt vermiyorsa (anahtar yok, Ayarlar'da kapalı, günlük sınır, fotoğraf başına
+   3 okuma, kredi bitti, anahtar geçersiz, yoğunluk, zaman aşımı, bağlantı, reddedilen istek, büyük dosya) fotoğraf panelde
+   yerel OCR'la okunur (`src/server/photo-read/ocr.ts`, tesseract.js 7, WebAssembly; en çok 15 sn) ve Pavo fişinin kural
+   tabanlı ayrıştırıcısı (`src/lib/photo-read/pavo-ocr.ts`) rakamları yapay zekânın şemasıyla çıkarır: TOPLAM / NET SATIŞ,
+   NAKİT, KREDİ KARTI / K.KARTI / KART, YEMEK KARTI (Multinet, Sodexo…), KDV satırları (%oran TOPLAM / KDV, TOPKDV), Z NO /
+   Z SAYAÇ, BATCH / GRUP NO, banka adı, SATIŞ / İADE / NET TOPLAM; Türkçe tutar biçimi (1.234,56; `*` ve TL atılır);
+   KÜM. satırları alınmaz. Fotoğraf Anthropic'e gitmez (Ayarlar'da okuma kapalıyken de kodla okunur). Okunuş `ai_calls`'a
+   `model = 'kod-ocr'`, tutar 0 ile yazılır; günlük sınıra, fotoğraf başına 3 okumaya ve Ayarlar kartının okuma sayısına
+   sayılmaz. OCR da çalışmazsa okunuş yok (rakam uydurulmaz), karşılaştırma "okunamadı — yönetici baksın".
+
+**Güven kuralı (kod):** OCR'ın sözcük güveni 80'in altındaysa, tutar Türkçe biçimde değilse ya da etiketi seçilmiyorsa
+o rakam "low"dur; kendi içinde tutmayan satırlar (Σ ödemeler ≠ toplam, KDV oranı tutmuyor, Σ KDV ≠ toplam / TOPKDV,
+satış − iade ≠ net) hep birlikte "low" olur. Karşılaştırma kodla okunan "low" rakamı okunmamış sayar: "uyumlu" / "fark"
+yalnız her karşılaştırılan satır yüksek güvenle okunduysa ve en az bir tutar (Banka POS ya da yazarkasa toplamı, batch)
+karşılaştırıldıysa; değilse durum **"okunamadı — yönetici baksın"** (`belirsiz`). Personel için iş bitmiştir ("Fotoğraf
+alındı"; yeniden çekmesi istenmez), yönetici zilde, e-postada ve ay satırında ("Gün sonu fotoğrafına bakın") görür.
+Yöneticinin kartı ve e-posta okuyanı yazar: "Yapay zekâ (Claude Haiku 5.5)" ya da "Kodla okundu".
+
+**Modeller ayardan** (`integration_state` › `ai.settings` › `photoModels: { cheap, strong }`; `photoModelsOf`): yalnız
+`claude-haiku-5-5` ve `claude-opus-5-5` kabul edilir, eksik ya da bilinmeyen değer sabite döner. Ayarlar kartı hangi
+modellerin okuduğunu yazar; değiştirme ekranı yok (kayıt elle). Aç / kapat ve günlük sınır kaydı modelleri silmez.
+
+**Görsel küçültülmez:** telefon fotoğrafı zaten en çok 2576 px JPEG'e küçültür (modellerin en yüksek çözünürlüğü);
+termal fişin rakamları bu çözünürlüğe ihtiyaç duyar, sunucu görseli hiç çözmez (sıkıştırma bombasına karşı). Tasarruf
+modelden gelir: Haiku 5.5 girdi 0,10 $/M (Opus 5.5 4 $/M); görsel ~4.800 token ≈ 0,0005 $, ucuz okuma toplam ~0,001 $.
+Tahmin (ölçülmedi): çoğu gün yalnız ucuz okuma; fark ya da tutarsızlıkta Opus da (~0,04 $).
+
+**Çalışma ortamı ve boyut:** OCR Vercel işlevinde (Node 24) çalışır; dil verisi pakette (`@tesseract.js-data/tur`
+› `4.0.0_best_int/tur.traineddata.gz`, 2,1 MB), çekirdekten yalnız LSTM'li üç sürüm (~9 MB, işlemciye göre biri), ağ
+yok, diske yazmaz (`cacheMethod: "none"`). `next.config.ts`: `serverExternalPackages: ["tesseract.js",
+"tesseract.js-core"]` (işçisini kendi dosyasından açar) ve fotoğrafı okuyan iki yola `outputFileTracingIncludes`. Yerel
+`npx next build` bu dosyaların işleve girdiğini gösterir; canlıda ilk kodla okumada sunucu günlüğü "[foto] kodla okuma"
+yazmıyorsa çalışıyor demektir. node_modules'a ~55 MB eklenir (işleve giden ~12 MB).
+
+Testler: `tests/gun-sonu-foto.test.ts` (modeller, ucuz okumanın denetimi, sıra ve her hata türünde koda düşme, ayrıştırıcı,
+güven kuralı, fotoğraf e-postası), `tests/gun-sonu-foto-ocr.test.ts` (testte çizilen sentetik Pavo fişi gerçek OCR'la,
+ağsız), `tests/gun-sonu-foto-eposta.test.ts`, `tests/gun-sonu-foto-db.test.ts` (sahte istemciyle Haiku → Opus, tutarlar,
+yeniden okumama, anahtarsız OCR, e-posta).
+
 ## 6. Gizlilik (KVKK)
 
 | Veri | Nereye gider | Ne kadar kalır |
@@ -302,7 +358,8 @@ raporlarda `kasa-pos` kalmadığı denetlenerek).
 | `src/lib/cash-outs.ts` | kasadan çıkanların adları, raporun notu, uyarı, personelin kuralları |
 | `src/server/storage/` | depo sürücüleri (Blob, dosya, bellek), kayıtlar, erişim kayıt defteri |
 | `src/server/ai/` | Claude: istek ve hata kodları (`run.ts`), kapılar ve günlük (`claude.ts`), tutar (`pricing.ts`), kayıtlı yanıtlar (`replay.ts`) |
-| `src/server/photo-read/` | fotoğrafı okuyup forma hazırlama, ekleme kuralları |
+| `src/server/photo-read/` | fotoğrafı okuyup forma hazırlama, ekleme kuralları; LafPOS gününün ekonomik okunuşu (`lafpos.ts`) ve kodla okuma (`ocr.ts`) |
+| `src/lib/photo-read/models.ts`, `lafpos-read.ts`, `pavo-ocr.ts` | okuma modelleri (ayardan), okuma sırası ve ucuz okunuşun denetimi, Pavo fişinin kural tabanlı ayrıştırıcısı |
 | `src/app/api/foto/` | yükleme + okuma (`POST /api/foto`), fotoğraf (`GET /api/foto/{id}`), yeniden okuma (`POST /api/foto/{id}/oku`) |
 | `src/components/panel/photo-picker.tsx`, `photo-viewer.tsx` | fotoğraf düğmeleri, durum satırı, küçük resim, büyütme |
 | `src/app/panel/kasa/cash-form.tsx`, `okc-card.tsx`, `cash-photos.tsx`, `cash-outs.tsx`, `cash-out-dialog.tsx` | ekranlar |
