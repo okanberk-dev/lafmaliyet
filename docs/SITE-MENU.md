@@ -239,8 +239,9 @@ hâli getirir (`src/lib/site-menu/plan.ts` › `staleItemIds`). Sitenin `now`'ı
 
 | Anahtar | İçerik |
 |---------|--------|
-| `menu_sync` | `lastPullAt` (son deneme), `lastOkAt` (son başarılı), `lastError`, `lastPingAt`, `lastSiteNow`, `changedRows`, `lastChangedAt` + `lastChanges` (son değişiklikler), `broken` (kopuk bağlantılar), `unlinked` (sitede silindiği için kaldırılanlar, son 20), `itemCount`, `pushed` (panelin son bir saatte yazdığı kalemler: kalem kimliği → sitedeki `updatedAt` ve yazım anı), `writesExpect` (site son çekmede `writes.expect` duyurdu: yazım `expect` taşır) |
+| `menu_sync` | `lastPullAt` (son deneme), `lastOkAt` (son başarılı), `lastError`, `lastPingAt`, `lastSiteNow`, `changedRows`, `lastChangedAt` + `lastChanges` (son değişiklikler), `broken` (kopuk bağlantılar), `unlinked` (sitede silindiği için kaldırılanlar, son 20), `itemCount`, `pushed` (panelin son bir saatte yazdığı kalemler: kalem kimliği → sitedeki `updatedAt` ve yazım anı), `writesExpect` (site son çekmede `writes.expect` duyurdu: yazım `expect` taşır), `writesBranchPrice` (site `writes.branchPrice` duyurdu: Fiyatlar şube fiyatı yazımını önerir) |
 | `menu_site_items` | Son listenin kopyası (`now`, `at`, `items`): ekranlar siteye gitmeden kalemin adını, fiyatını ve durumunu gösterir |
+| `menu_site_branch_prices` | Sitenin şube fiyatı satırları (`now`, `at`, `rows`: `{id, branch, priceMinor\|null, priceMinorL, effectiveFrom, createdAt}`, eskiden yeniye; 24 Kasım 2026). Panelin okuması tabandır (Tuzla), satırlar okumanın `branchPrices`'ından; site göndermezse (eski site) kopya olduğu gibi kalır. Şube fiyatı yazımının yanıtı (ve 409 `stale`'i) kalemin o şubedeki satırlarını yeniler; yanıttaki `item` şubenin görünümüdür, `menu_site_items`'a yazılmaz. Ayrıntı [FIYATLAR.md](FIYATLAR.md) › Şube fiyatı |
 | `menu_sold_out` | Tükenenler kartının kaydı: `items` (kalem → kim, ne zaman, sitenin damgası) ve `toggles` (kalemin son işlem anı); yukarıda "Personel: Tükendi / Satışa aç" |
 
 Site kaynaklı değişiklikler işlem geçmişine "laffogato.net" adıyla düşer ("Site menüsünden güncellendi", "Site

@@ -252,12 +252,72 @@ fiyat `site` kaynağıyla girer.
 - **Ürün kartı:** son 20 değişiklik; kasada eski fiyat duruyorsa "Kasada (ModPOS) hâlâ 195 ₺, panelde 205 ₺ · 2
   gündür" ve **Kasada değiştirdim** (panelin fiyatı o arada değiştiyse işaretlenmez, uyarı yeni fiyatla kalır).
 
+## Şube fiyatı (24 Kasım 2026)
+
+Sahibin kararı (4 Kasım 2026, [SUBE.md](SUBE.md); yapımı 23 Kasım 2026'da onaylandı, hesap sözleşmesi §8 "ladmin
+(LM-5)"): satış fiyatı şubeye göre değişebilir. Fiyat sitede tutulur (laffogato.net'in docs/PANEL-MENU.md "Şube
+fiyatı"); panel yazar ve okur, LafPOS siteden alır.
+
+- **Taban** sitenin kalemindeki fiyattır: Tuzla'nın (ana şube) ve kendi fiyatı olmayan her şubenin. Toplu değiştir'in
+  "Tümü" seçimi ve ürün kartı bugünkü gibi tabanı (ve `products.price`'ı) yazar.
+- **Şubenin fiyatı** sitede eklenen, silinmeyen bir satırdır: "25 Kas 05:00'ten Marina'da latte 205 / 225 ₺". Satır
+  sonraki satırın anına dek geçerlidir; "Taban fiyata dön" satırı (`priceMinor: null`) şubeyi yeniden tabana bağlar.
+  Anı gelmemiş satır **İptal** ile geri alınır; yürürlükteki satır geri alınmaz, yerine yeni satır yazılır. Panel
+  ürünün fiyatına (`products.price`) ve satış fiyatı geçmişine dokunmaz: şube fiyatının geçmişi sitenin satırlarıdır.
+- **Geçerlilik** varsayılanı sonraki iş günü 05:00 (İstanbul; gece 05:00'ten önce iş günü dündür, aynı sabahın
+  05:00'i). En çok 5 dakika geçmişte (iki sunucunun saat farkı), en çok 90 gün ileride (sitenin kuralı).
+- **Yalnız site duyurunca.** Site menü okumasında `writes.branchPrice` duyurmadıysa (eski site) Şube seçimi ve yazım
+  yok, sekmeler yalnız okunur; eylem de yeniden denetler.
+- **Seçenekler** (şurup, ekstra shot, alternatif süt) şubeye göre fiyatlanmaz; Tuzla şube fiyatı almaz.
+- Bir kalemin M ve L'si tek istekte gider. Değişmeyen boy şubenin o anki kendi değerini taşır (kendi L'si yoksa taban
+  L); kendi satırı yokken yalnız L değişirse M o anki fiyatında sabitlenir (satırın M'si boş olamaz).
+- **Çakışma:** site aynı kalem, şube ve anda başka fiyatlı satır görürse 409 `stale` ve kalemin satırlarıyla döner;
+  panel kopyasını onlarla yeniler, kullanıcı "aynı anda başka bir fiyatı var" görür. Aynı yazımın yeniden gönderimi
+  (zaman aşımından sonra Tekrar dene) güvenlidir: site ikinci satır yazmaz.
+
+### Ekranlar
+
+- **Toplu değiştir › Şube** (Değişiklik kartının üstünde): "Tümü (taban fiyat)" ya da bir şube. Şube seçilince
+  **Geçerlilik** alanı çıkar, önizlemenin bugünkü fiyatı şubenin o andaki fiyatıdır, yalnız siteye bağlı ürünler
+  değişir (bağlı olmayan ve seçenek "engelli"). Uygulama kalem kalem siteye (devre kesici ve 40 sn sınırı tabanla
+  aynı, `runSiteGroups`); sonuçta geri alma yok, "Şube fiyatı'nda gör (iptal)".
+- **Şube fiyatı** (`?sekme=sube`, iki şube olunca `&sube=`): kalemler (seçenekler hariç), taban, şubede şu an geçerli
+  fiyat ve anı, planlanan değişiklikler (İptal). **Değiştir**: M, L (kalem iki boyluysa), Geçerlilik, "Taban fiyata
+  dön".
+- **Eski fiyattan satılanlar** (`?sekme=eski`): şubenin fiyat değişiklikleri, boy boy (yalnız değişen boy), durumuyla;
+  altında son 90 günde o gün geçerli fiyattan farklı liste fiyatıyla satılanlar (gün, kalem, satılan, olması gereken,
+  adet, fark).
+
+### Durum ve eski fiyat (`src/lib/prices/branch.ts`)
+
+Kaynak yalnız LafPOS gün sonunun `lines[].listPrices`'ıdır (satılan parçaların dondurulan liste fiyatları;
+[LAFPOS.md](LAFPOS.md) › Faz 2 alanları). `revenue / qty` liste fiyatı değildir (indirim, mutlu saat, ek), ondan
+hiçbir şey çıkarılmaz. İş günü [D 05:00, D+1 05:00) İstanbul.
+
+| Durum | Ne zaman |
+|---|---|
+| **Bekliyor** | Anı gelmedi ya da o andan sonra bu boy satılmadı |
+| **Uygulandı · gün** | O andan (anı içeren gün dahil) sonra yeni fiyatla satılan ilk gün |
+| **Uygulanmadı** | Yeni fiyatla satış yok; anından sonra başlayan tam bir günde yalnız başka fiyat (anı içeren günün eski fiyatı sayılmaz: andan önce satılmış olabilir) |
+| **Bilinmiyor** | Yalnız liste fiyatı taşımayan gün sonu (eski LafPOS) |
+
+Değişikliğin penceresi kalemin sonraki satırının anında biter. **Eski fiyattan satılan**: günün başında geçerli
+fiyattan farklı liste fiyatı; gün içinde fiyat değiştiyse (şube satırı ya da tabanın değişikliği) iki fiyat da
+doğrudur. Tabanın geçmişi siteye bağlı ürünün `product_prices`'ından (siteden gelen değişiklik panelin çektiği anla
+kayıtlıdır, birkaç dakika geç düşebilir). Kasada gün 05:00'ten sonra kapanırsa o gecenin satırları ertesi günün
+fiyatına göre denetlenir (yaklaşık; LafPOS iş gününü kendi açılış / kapanışıyla sayar).
+
+Ekonomi (önerilen fiyat, zam etkisi, maliyet oranı) tabanla hesaplanır; şube fiyatı Satışlar'a LafPOS'un gerçek
+cirosuyla zaten girer. Marina'nın basılı fiyat listesinin tarihi sitede tek (Tuzla'nın); kapsam dışı.
+
 ## Veri
 
 | Yer | İçerik |
 |-----|--------|
 | `product_prices` | Ekleme yalnız: `product_id` (ürünle silinir), `price_before` (yeni üründe boş), `price`, `source`, `on_site` (panelin değişikliği sitede de yapıldı), `batch_id` (toplu değişiklik ve Tekrar dene'si; geri almanın kendi kimliği), `note` (kuralın özeti, en çok 200 karakter), `changed_by`, `changed_at` |
 | `products.pos_stale_price`, `pos_stale_since` | Kasanın durumu (yukarıda); hesaplama modeli bu sütunları okumaz |
+| `integration_state.menu_site_branch_prices` | Sitenin şube fiyatı satırları (`now`, `at`, `rows`), menü çekmesinde ve şube fiyatı yazımının yanıtıyla ([SITE-MENU.md](SITE-MENU.md)) |
+| `pos_daily_sales.list_prices` | LafPOS gün sonu satırının liste fiyatları (`[{price, qty}]`, eski LafPOS'ta null); migration `0076_sube_fiyati` |
 
 Ayrı bir toplu değişiklik tablosu yok: başlık satırlardan türer. Migration `fiyat_gecmisi` (numarası birleştirmede
 verilir). `npm run db:reset` ürünlerle birlikte geçmişi de siler; tam yedek yeni tabloyu ve sütunları kendiliğinden
@@ -276,11 +336,15 @@ kapsar.
 | `src/server/data/prices.ts` | `posPendingSummary`, kasa listesi, Son işaretlenenler (`loadRecentPosMarks`), Bugün'ün personel işaretleri (`staffPosMarksRecent`), menünün ve ürünün fiyat geçmişi, toplu değişikliğin satırları |
 | `src/server/data/pos-staff.ts` | Personelin Kasadaki fiyatlar okumaları (sabit sütunlar, yalnız etkin ürünler) |
 | `src/server/prices/pos-marks.ts` | `markPos`, `undoPos`: işaret kaydı ve geri alma (kilit sırası, son işaret kuralı) |
-| `src/server/actions/prices.ts` | `applyBulkPrices`, `undoPriceBatch` (yönetici) |
+| `src/server/actions/prices.ts` | `applyBulkPrices`, `undoPriceBatch`, şube fiyatı: `setBranchPrice`, `cancelBranchPriceRow`, `applyBranchPrices` (yönetici) |
+| `src/lib/prices/branch.ts` | Şube fiyatı: şubedeki fiyat (sitenin kuralı), Geçerlilik, yazımın gövdesi, toplu önizleme, durum ve eski fiyattan satılanlar (saf) |
+| `src/server/prices/branch-write.ts` | Şube fiyatı yazımı, iptali ve toplu hâli (siteye, kopyayı yanıtla yeniler) |
+| `src/server/data/branch-prices.ts` | Şube fiyatı ve Eski fiyattan satılanlar sekmelerinin verisi, Toplu değiştir'in Şube seçimi |
 | `src/server/actions/pos-marks.ts` | `markPosDone`, `undoPosMarks` (iki rol, `requireUser`) |
 | `src/components/panel/pos-checklist.tsx` | Kasaya işle listesi, iki yüz (yönetici; personel `staff`) |
 | `src/app/panel/kasa/fiyatlar/` | Personelin Kasadaki fiyatlar sayfası |
 | `src/app/panel/urunler/fiyatlar/` | Sayfa (`maxDuration = 60`), Toplu değiştir, Kasaya işle ve Son işaretlenenler, Geçmiş, süzgeç yardımcıları |
 | `src/app/panel/urunler/[id]/price-history-card.tsx` | Ürün kartındaki Fiyat geçmişi |
 | `src/server/actions/products.ts`, `src/server/data/product-create.ts`, `src/server/site-menu/sync.ts` | Var olan yazım yolları geçmişe yazar (`updateProductPrice`, `saveRecipe`, `insertProduct`, `applyPlan`) |
+| `tests/sube-fiyat.test.ts`, `tests/sube-fiyat-db.test.ts` | Şube fiyatı: okuma ve duyuru, listPrices, Geçerlilik, gövde, engeller, durum, eski fiyat; sahte siteyle yazım, 409, yeniden gönderim, iptal, toplu, rapor |
 | `tests/fiyatlar.test.ts` | Kural ve yuvarlama, ekonominin `priceProduct`'la eşitliği, engeller, önizleme, metinler, siteye yazım sırası (sahte yazımla), kasa ve işaretleme, geçmiş, geri alma, süzgeçler, kaynak kuralları |
