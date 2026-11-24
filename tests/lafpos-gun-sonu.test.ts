@@ -47,7 +47,8 @@ test("Otomatik rapor: LafPOS'un Z'si raporun alanlarına; teslim gün içinde ç
   assert.equal(v.countedCash, 9_350);
   assert.equal(v.offRevenue, 250);
   assert.equal(v.discounts, 100);
-  assert.match(String(v.note), /^LafPOS gün sonundan otomatik yazıldı\. Eksik: Banka POS Z \(yazarkasa\); panelden ekleyin\.$/);
+  // Gün sonu tam (24 Kasım 2026): not cihazların boşluğunu tam söyler, personelden bir şey istemez ("panelden ekleyin" yok)
+  assert.equal(v.note, "LafPOS gün sonundan otomatik yazıldı. Eksik: Banka POS: LafPOS\x27tan Pavo gün sonu gelmedi · Yazarkasa: LafPOS\x27ta cihaz belgesi yok.");
   // Panelde Kasadan çıkanlar girildiyse o kaynaktır (E-35)
   const outs = autoValuesOf("2026-11-22", Z, { count: 2, total: 700, note: "Migros, buz" }, null);
   assert.equal(outs.cashOut, 700);
@@ -61,8 +62,9 @@ test("Otomatik rapor: LafPOS'un Z'si raporun alanlarına; teslim gün içinde ç
 test("Sayım yoksa sayılan nakit boş ve eksik (rapor yazılmaz, uydurma değer yok)", () => {
   const v = autoValuesOf("2026-11-22", { ...Z, countedCash: null, cashDiff: null }, NO_OUTS, null);
   assert.equal(v.countedCash, null);
-  assert.deepEqual(autoMissing({ countedCash: null }), ["bankPos", "countedCash"]);
-  assert.match(String(v.note), /Sayılan nakit \(LafPOS'ta sayım yok\)/);
+  assert.deepEqual(autoMissing({ countedCash: null }), ["bankPos", "okc", "countedCash"]);
+  // Sayım yokken rapor hiç yazılmaz: not cihazların boşluğunu söyler, sayım eksiği lafpos_day_ends.missing ve e-postada
+  assert.doesNotMatch(String(v.note), /Sayılan nakit/);
 });
 
 test("Düzeltme: elle değişen alan ezilmez, değişmeyen alan LafPOS'un yeni rakamını alır", () => {
@@ -126,7 +128,8 @@ test("Gün sonu e-postası: konu şube ve tarih; ciro, ödemeler, ikram, kasa fa
   assert.match(t, /Dün \(21 Kasım Cumartesi\): 18\.000 ₺ \(%11 fazla\)/);
   assert.match(t, /Geçen hafta \(15 Kasım Pazar\): bilinmiyor/);
   assert.match(t, /Online sipariş: 420 ₺/);
-  assert.match(t, /Panelde tamamlanacak: Banka POS Z \(yazarkasa\)\./);
+  assert.match(t, /Eksik: Banka POS \(Pavo gün sonu\)\./);
+  assert.doesNotMatch(t, /panelde tamamlanacak|panelden ekleyin/i);
   assert.match(t, /Panelde aç: https:\/\/ladmin\.laffogato\.net\/panel\/kasa\?gun=2026-11-22&sube=marina/);
   assert.match(m.html, /Panelde aç/);
   // Maliyet ve kâr hiç yazılmaz

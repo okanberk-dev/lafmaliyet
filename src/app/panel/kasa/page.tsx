@@ -37,6 +37,8 @@ import { genitive } from "@/lib/recipe-change";
 import { cumulativeRejectedText, okcCumulativeToStore, okcHasFigures, okcMonth, type OkcPrev } from "@/lib/okc-z";
 import { photoDiffs, savedFields, suspiciousDiffs, type CashReading } from "@/lib/photo-read/kasa";
 import { okcReadFigures } from "@/lib/photo-read/okc";
+import { lafposPhotoLabel, staffAutoNote, staffLafposAutoOf, staffLafposDescriptionOf, staffPhotoDiffs } from "@/lib/lafpos/foto";
+import { LAFPOS_NO_COUNT_TEXT } from "@/lib/lafpos/prefill";
 import { addDays, dayLocativeTR, isCalendarDate, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { ALL_BRANCHES, branchScopeLabel, sortBranches } from "@/lib/branches";
@@ -74,6 +76,7 @@ import {
   type CashReportDTO,
 } from "@/server/data/cash-reports";
 import { loadKasaLafpos, loadKasaLafposDays, loadLafposBankPos, loadLafposDayDetail } from "@/server/data/lafpos-day";
+import { lafposAutoReport, lafposPhotoBadges, lafposPhotoState, type LafposPhotoState } from "@/server/lafpos/foto";
 import { loadKasaModpos, loadKasaModposDays, modposKeySet, NO_MODPOS } from "@/server/data/modpos-day";
 import { dayWaste } from "@/server/data/waste";
 import { getDb } from "@/server/db";
@@ -90,9 +93,10 @@ import { CashOutsCard } from "./cash-outs";
 import { MyCashRequests } from "./cash-requests";
 import { LateDaysCard, LateReport } from "./late-report";
 import { CashSettingsCard } from "./cash-settings";
-import { DIFF_TONE, type OkcAdminView } from "./cash-summary";
+import { CashBreakdown, DIFF_TONE, type OkcAdminView } from "./cash-summary";
 import { ModposSections } from "./modpos-sheet";
 import { LafposDayCard } from "./lafpos-day-card";
+import { LafposPhotoCard } from "./lafpos-photo";
 import { PavoCard } from "./pavo-card";
 
 export const metadata: Metadata = { title: "Kasa raporu" };
@@ -121,10 +125,13 @@ function more(email: boolean) {
   );
 }
 
-/** Başlık iki rolün açtığı sayfada içerikten önce çizilir: rol okunana kadar personelin cümlesi (en dar olan) */
-async function CashDescription() {
+/**
+ * Başlık iki rolün açtığı sayfada içerikten önce çizilir: rol okunana kadar personelin cümlesi (en dar olan). LafPOS'un
+ * otomatik gününde (gün sonu tam) personel rakam girmez: alt başlık yalnız fotoğrafı ister
+ */
+async function CashDescription({ searchParams }: { searchParams: PageProps<"/panel/kasa">["searchParams"] }) {
   const user = await requireUser();
-  if (user.role !== "admin") return STAFF_DESCRIPTION;
+  if (user.role !== "admin") return (await staffLafposDescription(searchParams)) ?? STAFF_DESCRIPTION;
   const mailTo = await cashMailTo(await loadCashSettings());
   return (
     <>
@@ -141,7 +148,7 @@ export default function CashPage({ searchParams }: PageProps<"/panel/kasa">) {
         path="/panel/kasa"
         description={
           <Suspense fallback={STAFF_DESCRIPTION}>
-            <CashDescription />
+            <CashDescription searchParams={searchParams} />
           </Suspense>
         }
       />
@@ -153,6 +160,19 @@ export default function CashPage({ searchParams }: PageProps<"/panel/kasa">) {
 }
 
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+
+/**
+ * Personelin açtığı gün LafPOS'un otomatik raporlu günüyse "Rakamlar LafPOS'tan geldi", sayım bekleyen günüyse "Kasa raporu
+ * LafPOS'tan gelecek" (staffLafposDescriptionOf); değilse null
+ * (ModPOS günü, elle girilen rapor: eski metin). Gün seçimi cashContentFor'unki gibi (bugün, dün ya da son 14 günün biri)
+ */
+async function staffLafposDescription(searchParams: PageProps<"/panel/kasa">["searchParams"]): Promise<string | null> {
+  const gun = pick((await searchParams).gun);
+  const today = businessDate();
+  const date = isDay(gun) && gun <= today && (staffCanReport(gun) || staffLateDay(gun)) ? gun : today;
+  const state = await lafposPhotoState(getDb(), date, await currentTillBranch(), "staff").catch(() => null);
+  return staffLafposDescriptionOf(state);
+}
 /** LafPOS günü değil (geçiş günü boş ya da gün ondan önce): form ModPOS'a göre */
 const NO_LAFPOS = { lafpos: false, day: null } as const;
 /** Takvimde olan gün (KP-09: ?gun=2026-02-30 formu açmaz, ?gun=2026-00-10 sayfayı çökertmez; bugüne düşer) */
@@ -256,6 +276,12 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   // Personel bugünü ve dünü girer; yönetici herhangi bir geçmiş günü açar. Dünden eski, raporu girilmemiş son 14 gün
   // personele geç rapor olarak açılır (yöneticinin onayıyla; docs/KASA-RAPORU.md › Geç rapor)
   // İşlev olarak çağrılır (bileşen olarak değil): okumaları bu kasanın kapsamında kalsın
+  // LafPOS gününün gün sonu geldiyse (gün sonu tam, 24 Kasım 2026) personelin 14 güne kadar tek işi gün sonu fotoğrafı:
+  // geç rapor ve onay yok, rakamlar LafPOS'tan
+  if (!admin && isDay(gun) && staffLateDay(gun)) {
+    const lafposPhoto = await lafposPhotoState(getDb(), gun, view.till, "staff").catch(() => null);
+    if (lafposPhoto) return StaffLafposDay({ date: gun, view, photo: lafposPhoto });
+  }
   if (!admin && isDay(gun) && staffLateDay(gun) && (await staffLateDayOpen(gun))) return StaffLateDay({ date: gun, user, view });
   let date = isDay(gun) && gun <= today ? gun : today;
   if (!admin && !staffCanReport(date)) date = today;
@@ -298,6 +324,18 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
     admin ? Promise.resolve([]) : staffOldCashOutDays(),
   ]);
   const proposedBy = report ? Object.fromEntries(proposedMap.get(report.id) ?? []) : undefined;
+  // LafPOS gününün gün sonu fotoğrafı (gün sonu tam): gün sonu geldiyse ve rapor elle girilmediyse; personelin tek işi
+  const lafposPhoto = showForm && lafposState.lafpos ? await lafposPhotoState(getDb(), date, view.till, user.role).catch(() => null) : null;
+  const photoCard = lafposPhoto ? (
+    <LafposPhotoCard
+      date={date}
+      branchId={view.till}
+      state={lafposPhoto}
+      storage={storage.available}
+      reading={ai.state}
+      admin={admin ? { check: lafposPhoto.check, bankPos: report?.bankPos ?? null } : null}
+    />
+  ) : null;
   // Personel bugünü ve dünü düzenler; ertesi günün raporu girildiyse o gün kapanır (kasadan çıkanlar ve fotoğraflar da)
   const staffOpen = staffDayEditable(date, { hasReport: Boolean(report), laterReport: next !== null });
   const canEdit = admin || staffOpen;
@@ -320,15 +358,27 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const showPhotos = canEdit;
   // Personel: rapora bağlı Z / POS fotoğrafının kaldırılmasını isteyebilir mi (fotoğraf başına; tek Z ya da okuma farkı varsa hayır)
   const removal = !admin && report && showPhotos && photoInfo?.photos.length ? await photoRemovalStates(report, photoInfo.photos) : undefined;
+  // LafPOS'un otomatik gününde personel fotoğraf ↔ rapor farkını ve notun yönetici yönergesini görmez (metinde de).
+  // Kapalı kalır: fotoğraf durumu okunamadıysa (ya da LafPOS'un günü okunamadıysa) raporun kendi kaydı karar verir, o da
+  // okunamazsa gizli (staffLafposAutoOf)
+  const staffLafposAuto = staffLafposAutoOf({
+    admin,
+    hasReport: Boolean(report),
+    photoAuto: lafposPhoto ? lafposPhoto.auto : null,
+    reportAuto: !admin && report && !lafposPhoto?.auto ? await lafposAutoReport(getDb(), report.id).catch(() => "error" as const) : false,
+  });
   const whatsapp = report
     ? (() => {
-        const text = whatsappText(report, {
+        const extras = extrasFrom(photoInfo, outs, report, lafposState);
+        const shown = staffLafposAuto ? { ...report, note: staffAutoNote(report.note, report) } : report;
+        const text = whatsappText(shown, {
           by: report.submittedByName,
           revision: report.revision,
           waste,
           // Birden çok kasa açıkken başlıkta kasanın şubesi (e-postadaki gibi)
           branchName: view.branch?.name ?? null,
-          ...extrasFrom(photoInfo, outs, report, lafposState),
+          ...extras,
+          photoDiffs: staffPhotoDiffs(extras.photoDiffs ?? null, { admin, lafposAuto: staffLafposAuto }),
           ...integrityOf(report, carry, next, revisions),
         });
         return { text, link: whatsappLink(text, settings.whatsapp) };
@@ -413,6 +463,9 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
       // Kartla bahşiş ve cari tahsilatı personelde de düşer: form, kayıtlı görünüm ve WhatsApp aynı kuralla (G11)
       lafpos={lafposState.day}
       lafposMode={lafposState.lafpos}
+      lafposAuto={admin ? (lafposPhoto?.auto ?? false) : staffLafposAuto}
+      // LafPOS gününün gün sonu fotoğrafının adı ("Banka POS Z" yerine "Pavo gün sonu fişi")
+      lafposPhotoLabel={lafposPhoto ? lafposPhotoLabel(lafposPhoto.need) : undefined}
       // Kümülatif ve yazarkasa dışı tahsilat yalnız yöneticiye: personelin yükünde anahtarı da yok
       {...(admin && report ? { okcAdmin: okcAdminView(report, photoInfo?.readings ?? [], prevOkc.cum ?? null) } : {})}
     />
@@ -478,6 +531,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
     </div>
   );
 
+  // LafPOS'un gün sonu geldi ama rapor yok (LafPOS'ta sayım yok): personele form değil, yalnız fotoğraf (rapor LafPOS'tan gelir)
+  const waitingLafpos = lafposPhoto !== null && !report;
   if (!admin) {
     return (
       <div className="space-y-4">
@@ -485,7 +540,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
         {dayChips}
         {closedBar}
         {outsCard}
-        {form}
+        {waitingLafpos ? <Notice tone="warn" title="Kasa raporu LafPOS'tan gelecek" text={LAFPOS_NO_COUNT_TEXT} /> : form}
+        {photoCard}
         {siteRow}
         {wasteCard}
         <LateDaysCard days={lateDays} storage={storage.available} />
@@ -583,7 +639,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   );
   const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today, "admin"));
   // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları
-  const infos = await cashReportPhotoInfo(monthReports, "admin");
+  const [infos, photoBadges] = await Promise.all([cashReportPhotoInfo(monthReports, "admin"), lafposPhotoBadges(getDb(), monthReports.map((r) => r.id)).catch(() => new Map())]);
   const outsByDate: Record<string, typeof monthOuts> = {};
   for (const o of monthOuts) (outsByDate[o.date] ??= []).push(o);
   // Yöneticinin kayıtlı rapordaki kümülatif satırı: zincir ayın içinde eskiden yeniye son saklanan kümülatife bağlanır
@@ -605,6 +661,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
           diffs: info ? photoDiffs(info.readings, saved) : [],
           suspicious: info ? suspiciousDiffs(info.readings, saved) : [],
           extras: extrasFrom(info, outsByDate[r.date] ?? [], r, lafposOf(r.date)),
+          lafposPhoto: photoBadges.get(r.id) ?? null,
         },
       ];
     }),
@@ -632,6 +689,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
           {modposDay?.modpos ? <ModposSections date={date} today={today} sheet={modposDay.sheet} z={modposDay.z} report={report} ladmin={ladmin} keySet={modposKeySet(process.env, modposDay.sheet?.branchId ?? report?.branchId)} now={new Date()} /> : null}
           {siteRow}
           {bankPos ? <PavoCard bankPos={bankPos} /> : null}
+          {photoCard}
           {lafposDetail ? <LafposDayCard detail={lafposDetail} /> : null}
           {wasteCard}
         </>
@@ -756,6 +814,44 @@ async function StaffLateDay({ date, user, view }: { date: string; user: { id: nu
         </div>
       </Card>
       <MyCashRequests requests={myRequests} />
+    </div>
+  );
+}
+
+/**
+ * Personelin eski LafPOS günü (dünden eski, son 14 gün; gün sonu tam, 24 Kasım 2026): LafPOS'un gün sonu geldiyse geç rapor
+ * yok; rakamlar LafPOS'tan, personelin tek işi gün sonu fotoğrafı
+ */
+async function StaffLafposDay({ date, view, photo }: { date: string; view: KasaView; photo: LafposPhotoState }) {
+  const today = businessDate();
+  const [ai, report] = await Promise.all([aiStatus(), getCashReport(date, "staff")]);
+  const storage = photoStorage();
+  const yesterday = addDays(today, -1);
+  return (
+    <div className="space-y-4">
+      <ScopeNote view={view} />
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Rapor günü">
+        {[today, yesterday].map((d) => (
+          <ButtonLink key={d} href={`/panel/kasa?gun=${d}`} variant="secondary" size="sm">
+            {d === today ? "Bugün" : "Dün"} · {longDateTR(d).split(" ").slice(0, 2).join(" ")}
+          </ButtonLink>
+        ))}
+        <ButtonLink href={`/panel/kasa?gun=${date}`} variant="primary" size="sm" aria-current="page">
+          {shortDayTR(date)}
+        </ButtonLink>
+        <TillBadge view={view} />
+      </div>
+      {report ? (
+        <Card>
+          <CardHeader icon={<ReceiptText />} title={`Kasa raporu · ${longDateTR(date)}`} description="LafPOS'un gün sonundan" />
+          <div className="px-5 pb-5">
+            <CashBreakdown report={{ ...report, note: staffAutoNote(report.note, report) }} audience="staff" kasa="LafPOS" />
+          </div>
+        </Card>
+      ) : (
+        <Notice tone="warn" title="Kasa raporu LafPOS'tan gelecek" text={LAFPOS_NO_COUNT_TEXT} />
+      )}
+      <LafposPhotoCard date={date} branchId={view.till} state={photo} storage={storage.available} reading={ai.state} />
     </div>
   );
 }

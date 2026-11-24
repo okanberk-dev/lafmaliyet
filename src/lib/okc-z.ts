@@ -756,9 +756,20 @@ export interface OkcReportFields {
   /**
    * LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2; src/lib/lafpos/prefill.ts LafposDay.offDevice): mali
    * fişi yazarkasada kesilmedi. Z'nin kartında ve nakdinde var, yazarkasanın Z'sinde ve banka gün sonunda yok: kart, nakit
-   * ve toplam karşılaştırmaları bunu düşer; kaydedilmez
+   * ve toplam karşılaştırmaları bunu düşer; kaydedilmez. `okcCard` LafPOS'un cihaz belgelerinin kartıdır (okc.card;
+   * okcFromDevice)
    */
-  offDevice?: { card: number; cash: number } | null;
+  offDevice?: { card: number; cash: number; okcCard?: number | null } | null;
+}
+
+/**
+ * Raporun yazarkasa kartı LafPOS'un cihaz belgelerinden mi (gün sonu tam, 24 Kasım 2026): LafPOS'un gönderdiği belge kartıyla
+ * aynıysa evet. Belge kartı Z − yazarkasadan geçmeyen − cihazda iptaldir, kartla bahşiş ve cari tahsilatı içermez; elle
+ * yazılan yazarkasa kartı (ör. banka fişinden, eski LafPOS günleri) içerebilir, onda bahşiş / tahsilat eskisi gibi düşülür
+ */
+export function okcFromDevice(okcCard: number | null | undefined, offDevice: { okcCard?: number | null } | null | undefined): boolean {
+  const device = offDevice?.okcCard;
+  return isNum(okcCard) && isNum(device) && Math.abs(Math.round((okcCard - device) * 100) / 100) < 0.005;
 }
 
 export interface OkcReconcileLine {
@@ -801,6 +812,11 @@ function selfCheck(f: OkcReportFields): OkcFormCheck | null {
  * Personel (`"staff"`) yalnız Kart ve Kendi içinde satırlarını alır (İlke 8, D13); öteki satırlar yöneticide.
  * Yazarkasa alanları boş eski raporda yalnız bugünkü "Banka POS" kart satırı. `kasa` raporun gününün kasası (geçiş
  * gününden itibaren "LafPOS"; denetim E-39): metinler o kasanın adıyla, verilmezse ModPOS (bugünkü gibi).
+ *
+ * LafPOS gününde (gün sonu tam, 24 Kasım 2026) yazarkasanın kartı LafPOS'un cihaz belgelerinindir: Z − yazarkasadan
+ * geçmeyen − cihazda iptal (offDevice ikisini taşır; src/lib/lafpos/prefill.ts lafposDayOf), kartla bahşiş ve cari
+ * tahsilatı içermez. Yazarkasa ↔ LafPOS satırı onları düşmez; banka gün sonu yazarkasa kartı + bahşiş + tahsilatla
+ * karşılaştırılır (Pavo onları da çeker)
  */
 export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin", kasa: "ModPOS" | "LafPOS" = "ModPOS"): OkcReconcileLine[] {
   const out: OkcReconcileLine[] = [];
@@ -819,13 +835,16 @@ export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin", ka
     (extra ? (audience === "admin" ? ` LafPOS'taki kartla bahşiş ve cari tahsilatı (${money(extra)}) düşüldü.` : " LafPOS'taki kartla bahşiş ve cari tahsilatı düşüldü.") : "") +
     offNote("kart", offCard);
   const card = r2(f.card - offCard);
+  // Yazarkasa kartı LafPOS'un cihaz belgelerinden (otomatik rapor): bahşiş / tahsilat onda yok, banka satırında var
+  const lafpos = kasa === "LafPOS" && okcFromDevice(okcCard, f.offDevice);
   // Kart: yazarkasa kartı varsa o, yoksa banka gün sonu − ModPOS kart
   if (okcCard !== null) {
-    const d = r2(okcCard - card - extra);
+    const d = r2(okcCard - card - (lafpos ? 0 : extra));
+    const note = lafpos ? offNote("kart", offCard) : extraNote;
     out.push(
       same(d)
-        ? { key: "okc-card", tone: "good", text: `Kart: yazarkasa ile ${kasa} aynı.${extraNote}`, diff: d }
-        : { key: "okc-card", tone: "warn", text: `Yazarkasa kartı, ${kasa}'taki karttan ${moreLess(d)}. Kartla alınan bir ödeme ${kasa}'ta başka ödeme türüyle girilmiş olabilir.${extraNote}`, diff: d },
+        ? { key: "okc-card", tone: "good", text: `Kart: yazarkasa ile ${kasa} aynı.${note}`, diff: d }
+        : { key: "okc-card", tone: "warn", text: `Yazarkasa kartı, ${kasa}'taki karttan ${moreLess(d)}. Kartla alınan bir ödeme ${kasa}'ta başka ödeme türüyle girilmiş olabilir.${note}`, diff: d },
     );
   } else if (isNum(f.bankPos)) {
     const d = r2(f.bankPos - card - extra);
@@ -870,7 +889,7 @@ export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin", ka
     if (!same(d)) out.push({ key: "okc-meal", tone: "info", text: `Yazarkasa yemek kartı, ${kasa}'takinden ${moreLess(d)}.`, diff: d });
   }
   if (okcCard !== null && isNum(f.bankPos)) {
-    const d = r2(f.bankPos - okcCard);
+    const d = r2(f.bankPos - okcCard - (lafpos ? extra : 0));
     out.push(
       same(d)
         ? { key: "okc-bank", tone: "good", text: "Banka gün sonu yazarkasa kartıyla aynı.", diff: d }

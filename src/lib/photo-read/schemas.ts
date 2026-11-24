@@ -122,7 +122,7 @@ export const KasaOkcRaw = z.object({
   discounts: Amount.describe("İNDİRİM total; text null if not printed"),
   cumulativeTotal: Amount.describe("KÜM. TOPLAM / KÜMSAT (since the device started)"),
   cumulativeVat: Amount.describe("KÜM. TOPKDV / KÜMKDV"),
-  batches: z.array(BatchSlip).describe("Bank end-of-day slips in the photo (alone or printed after the Z); empty if none"),
+  batches: z.array(BatchSlip).describe("Bank end-of-day slips in the photo (alone, printed after the Z, or the bank section of the Pavo's detailed end-of-day Z); empty if none"),
   issues: z.array(Issue),
 });
 

@@ -193,6 +193,8 @@ export const CASH_REQUEST_TEXT = {
   lateStale: "İsteğiniz bu arada değişti ya da karara bağlandı; sayfayı yenileyin",
   lateZPhoto: "Z raporunun fotoğrafını ekleyin",
   lateOkcPhoto: "LafPOS'un bu günün sonu gelmedi: yazarkasa (Banka POS) Z raporunun fotoğrafını ekleyin",
+  /** Gün sonu tam: LafPOS gününün gün sonu geldi; rapor LafPOS'tan yazılır, personel yalnız fotoğraf ekler */
+  lateLafpos: "LafPOS'un bu günün sonu geldi: rapor LafPOS'tan yazılır. Kasa raporu sayfasında yalnız gün sonu fotoğrafını ekleyin",
   latePhoto: "Fotoğraf bulunamadı ya da başka bir kayıtta; yeniden çekin",
   lateHandedTo: "Teslim edileni kimin aldığını seçin",
   lateExists: "Bu günün raporu artık var; isteği reddedin",

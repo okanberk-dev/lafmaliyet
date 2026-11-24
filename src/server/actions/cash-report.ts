@@ -24,6 +24,7 @@ import { renderCashReport } from "@/server/notify/cash-report-template";
 import { blockedAccounts, sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
+import { attachLafposDayPhotoCore, setLafposBankPosCore } from "@/server/lafpos/foto";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 
 import { logActivity } from "./log";
@@ -143,6 +144,36 @@ export async function clearOkcCumulative(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
     await clearOkcCumulativeCore(getDb(), me, z.number().int().positive().parse(id));
+    refresh();
+    return null;
+  });
+}
+
+const lafposPhotoSchema = z.object({ date: zDate, branchId: z.string().max(BRANCH_ID_MAX), photoId: z.number().int().positive() });
+
+/**
+ * LafPOS gününün gün sonu fotoğrafı (docs/LAFPOS.md › Gün sonu otomasyonu): personelin tek işi. Fotoğraf otomatik rapora
+ * bağlanır (rapor yoksa bekler); kayıt, sürüm, sayan ve onay yok. Şubesine kilitli personel yalnız kendi şubesinin
+ */
+export async function attachLafposDayPhoto(input: z.input<typeof lafposPhotoSchema>) {
+  return attempt(async () => {
+    const me = await requireUser();
+    const data = lafposPhotoSchema.parse(input);
+    const refusal = await staffBranchRefusal(me, data.branchId);
+    if (refusal) throw new UserError(refusal);
+    const res = await attachLafposDayPhotoCore(getDb(), me, data);
+    refresh();
+    return res;
+  });
+}
+
+const lafposBankSchema = z.object({ date: zDate, branchId: z.string().max(BRANCH_ID_MAX), amount: z.number().finite().min(0).max(100_000_000) });
+
+/** Yönetici: Pavo alınamadığı gün fotoğrafta okunan banka toplamını raporun Banka POS'una yazar */
+export async function setLafposBankPos(input: z.input<typeof lafposBankSchema>) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    await setLafposBankPosCore(getDb(), me, lafposBankSchema.parse(input));
     refresh();
     return null;
   });

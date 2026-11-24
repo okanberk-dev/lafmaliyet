@@ -138,7 +138,7 @@ export function renderCashReport(
     CashReportIntegrity,
 ) {
   // LafPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen ödemeyi (Faz 2) düşer
-  f = withCardExtra(f, meta.cardExtra, meta.offDevice);
+  f = withCardExtra(f, meta.cardExtra, meta.offDevice, meta.kasa);
   const c = computeCash(f);
   const tone = TONE[c.kind];
   const branchName = meta.branch?.name ?? null;

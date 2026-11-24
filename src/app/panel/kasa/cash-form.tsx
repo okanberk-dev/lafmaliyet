@@ -28,6 +28,7 @@ import {
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { lafposDiffs } from "@/lib/lafpos/diffs";
+import { staffAutoNote, staffPhotoDiffs } from "@/lib/lafpos/foto";
 import { LAFPOS_NO_COUNT_TEXT, lafposOutsCheck, lafposSummary, type LafposDay } from "@/lib/lafpos/prefill";
 import { OKC_PREFILL_ENABLED } from "@/lib/okc-z";
 import { OKC_HALVES_TEXT, okcNeedsHalves } from "@/lib/photo-read/okc";
@@ -423,6 +424,8 @@ export function CashForm({
   okcAdmin = null,
   lafpos = null,
   lafposMode = lafpos !== null,
+  lafposAuto = false,
+  lafposPhotoLabel,
   branchId = null,
 }: {
   date: string;
@@ -484,6 +487,15 @@ export function CashForm({
   lafpos?: LafposDay | null;
   /** Günün kasası LafPOS (geçiş gününden sonra; gönderimi gelmemiş olsa da): Z bölümü LafPOS'un, ModPOS fotoğrafı yok */
   lafposMode?: boolean;
+  /**
+   * Rapor LafPOS'un gün sonundan kendiliğinden yazıldı (gün sonu tam, 24 Kasım 2026): personele rakamlar salt okunur,
+   * tek işi gün sonu fotoğrafı (sayfanın "Gün sonu fotoğrafı" kartı). Düzenle, silme isteği, düzeltme önerisi, WhatsApp ve
+   * metin personelde yok: düzeltme LafPOS'ta yapılır (föy, yeniden açma), LafPOS yeniden gönderir. Yönetici Düzenle'yi
+   * görür; elle düzelttiği alanı sonraki otomatik güncelleme ezmez
+   */
+  lafposAuto?: boolean;
+  /** LafPOS gününün gün sonu fotoğrafının adı (lafposPhotoLabel: "Pavo gün sonu fişi"); yoksa türün adı */
+  lafposPhotoLabel?: string;
 }) {
   // Öğe kimlikleri form başına: Onaylar'da iki "Düzeltip onayla" formu aynı anda açıkken etiket, odak ve kaydırma
   // öteki karta gitmesin
@@ -871,13 +883,16 @@ export function CashForm({
   }
 
   if (report && !editing) {
+    // LafPOS'un otomatik raporu personelde salt okunur (yalnız fotoğraf; sayfanın kartı)
+    const staffAuto = lafposAuto && !photoUi.admin;
     const mail = emailLine(report.emailStatus, report.emailError, recipients);
     const sentAt = new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(new Date(report.updatedAt));
     // Sayan gönderenden farklıysa ikisi de; eski raporlarda sayan yok (gönderen saymış sayılır)
     const who = report.countedByName && report.countedByName !== report.submittedByName ? `Sayan ${report.countedByName} · gönderen ${report.submittedByName}` : report.submittedByName;
     const savedCarry = carryCheck(date, report.openingCash, carry);
     const savedNext = next ? carryCheck(next.date, next.openingCash, { date, amount: computeCash(report).carryOver }) : null;
-    const diffs = saved ? photoDiffs(saved.readings, savedFields(report)) : [];
+    // LafPOS'un otomatik gününde fotoğraf ↔ rapor farkı yalnız yöneticinin (sayfanın "Fotoğraf ↔ LafPOS"u); personel görmez
+    const diffs = staffPhotoDiffs(saved ? photoDiffs(saved.readings, savedFields(report)) : [], { admin: photoUi.admin, lafposAuto }) ?? [];
     // LafPOS'un gün sonundan farklı yazılanlar (E-09; yalnız LafPOS gününde, gönderimi geldiyse)
     const fromLafpos = lafpos ? lafposDiffs(report, lafpos) : [];
     const lafposOuts = lafpos ? lafposOutsCheck(lafpos.till, outsTotal) : null;
@@ -912,10 +927,13 @@ export function CashForm({
               }
             />
           ) : null}
-          {saved ? <SavedPhotos photos={saved.photos} diffs={diffs} admin={photoUi.admin} removal={photoRemoval} /> : null}
+          {saved ? <SavedPhotos photos={saved.photos} diffs={diffs} admin={photoUi.admin} removal={photoRemoval} dayEndLabel={lafposPhotoLabel} /> : null}
           <LafposDiffList diffs={fromLafpos} />
           {lafposOuts ? <Notice tone="neutral" size="sm" title={lafposOuts.text} /> : null}
           {laterNote ? <Notice tone="neutral" size="sm" title={laterNote} /> : null}
+          {staffAuto ? (
+            <p className="text-[13px] leading-5 text-ink-mute">Rakamlar LafPOS&apos;un gün sonundan; bir yanlışlık varsa LafPOS&apos;ta düzeltin (gün yeniden gönderilir).</p>
+          ) : (
           <div className="flex flex-wrap gap-2">
             {whatsapp ? (
               <a href={whatsapp.link} target="_blank" rel="noopener noreferrer" className={buttonClass("accent", "lg")}>
@@ -934,8 +952,9 @@ export function CashForm({
             ) : null}
             {requests && !ownDelete ? <DeleteRequestButton date={date} revision={report.revision} branchId={branchId} label={`${longDateTR(date)} kasa raporu`} /> : null}
           </div>
+          )}
           {ownDelete && canEdit ? <p className="text-[13px] leading-5 text-ink-mute">Silme isteğiniz bekliyor; önce geri çekin.</p> : null}
-          {locked ? (
+          {locked && !staffAuto ? (
             <Notice
               tone="neutral"
               size="sm"
@@ -951,7 +970,8 @@ export function CashForm({
           ) : null}
           {requests ? <PendingRequests own={requests.own} others={requests.others} onEdit={(c) => propose(c)} /> : null}
           <CashBreakdown
-            report={report}
+            // Otomatik raporun notundaki yönetici yönergesi ("LafPOS'ta Yönetim › …") personele kısa nötr satır olur
+            report={staffAuto ? { ...report, note: staffAutoNote(report.note, report) } : report}
             cashOuts={cashOuts}
             carry={savedCarry}
             next={savedNext}

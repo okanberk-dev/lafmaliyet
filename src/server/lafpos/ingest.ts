@@ -101,6 +101,12 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
       refunds: day.refunds ?? null,
       iptal: day.iptal ?? null,
       cashMoves: day.cashMoves ?? null,
+      // Gün sonu tam (24 Kasım 2026): yazarkasanın cihaz belgeleri, tahsilatlar, vardiya sayımları, indirim satırları
+      // (günün kendisi: gelmediyse boşalır, eski LafPOS)
+      okc: day.okc ?? null,
+      collections: day.collections ?? null,
+      shiftCounts: day.shiftCounts ?? null,
+      discountLines: day.discountLines ?? null,
       revision: day.revision ?? null,
       source: day.source,
       receivedAt: now,
