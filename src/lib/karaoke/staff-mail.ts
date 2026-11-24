@@ -1,3 +1,5 @@
+import { KARAOKE_BRANCH_ID } from "@/lib/branches";
+
 import { holdsRoom } from "./overlap";
 import { isBlock, trClock, type KaraokeSessionDTO } from "./session";
 
@@ -77,17 +79,26 @@ export const staffMorningKey = (date: string) => `karaoke-personel-sabah:${date}
 export const staffSoonKey = (s: Pick<StaffMailSession, "id" | "startsAt">) => `karaoke-personel-3saat:${s.id}:${s.startsAt}`;
 
 /**
+ * Karaokenin kitlesi (e-posta ve bildirim; docs/KARAOKE.md): yönetici, şubesiz personel (bütün şubelerde çalışır) ve
+ * karaoke odasının şubesinin personeli (`KARAOKE_BRANCH_ID`, src/lib/branches.ts). Başka şubeye kilitli personel karaoke
+ * haberini almaz: o şubede karaoke yok
+ */
+export function karaokeAudience<U extends { role: "admin" | "staff"; branchId: string | null }>(users: readonly U[], branchId: string = KARAOKE_BRANCH_ID): U[] {
+  return users.filter((u) => u.role === "admin" || u.branchId === null || u.branchId === branchId);
+}
+
+/**
  * Kime gider. O gün Vardiya planında çalışan olarak yazılmış, hesabı etkin kişiler varsa yalnız onlar (rolü ne olursa
- * olsun); plan boşsa ya da plandakilerin hesabı yoksa karaoke odasının şubesindeki bütün etkin personel (şubesi boş
- * olan bütün şubelerde çalışır).
+ * olsun); plan boşsa ya da plandakilerin hesabı yoksa karaoke odasının şubesindeki bütün etkin personel (kitle
+ * `karaokeAudience`'ın personeli; şubesi boş olan bütün şubelerde çalışır).
  */
 export function staffMailRecipients<U extends { id: number; email: string; role: "admin" | "staff"; branchId: string | null }>(
   users: readonly U[],
   onShiftIds: readonly number[],
-  branchId: string,
+  branchId: string = KARAOKE_BRANCH_ID,
 ): U[] {
   const withMail = users.filter((u) => u.email.trim());
   const planned = withMail.filter((u) => onShiftIds.includes(u.id));
   if (planned.length) return planned;
-  return withMail.filter((u) => u.role === "staff" && (u.branchId === null || u.branchId === branchId));
+  return karaokeAudience(withMail, branchId).filter((u) => u.role === "staff");
 }

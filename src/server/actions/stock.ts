@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { planAdminExtras, staffCountIssue } from "@/app/panel/sayim/logic";
 import { countFactor } from "@/lib/calc/engine";
-import { BRANCH_ID_MAX } from "@/lib/branches";
+import { zFormBranch } from "@/lib/branches";
 import { monthRowEmpty } from "@/lib/cash-month";
 import { monthLabel } from "@/lib/format";
 import { isCountable } from "@/lib/ingredient-usage";
@@ -19,9 +19,6 @@ import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zMonth, zText } from "./util";
-
-/** Formun gösterdiği sayım şubesi (docs/SUBE.md › Yazarken hangi şube); göndermeyen eski sekmede seçili fiziksel şube */
-const zFormBranch = z.string().max(BRANCH_ID_MAX).nullish();
 
 /**
  * Sayım sonuçlarını kaydeder. Personel de kullanabilir (bu ay; geçen ay yalnız ayın ilk 10 gününde: staffCountIssue).

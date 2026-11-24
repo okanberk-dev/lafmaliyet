@@ -6,12 +6,19 @@
  * Saf: veritabanına ve Next'e bağlı değil, kurallar burada ve `tests/subeler.test.ts` doğrudan çalıştırır.
  */
 
+import { z } from "zod";
+
 /** Panelin varsayılan şubesi; şubesiz geçmiş veri bununla işaretlendi (migration 0054) */
 export const DEFAULT_BRANCH_ID = "tuzla";
 /** laffogato.net: fiziksel şube değil, kendi cirosu olan ayrı satış kanalı */
 export const ONLINE_BRANCH_ID = "online";
 /** Silinemeyen, pasife alınamayan kayıtlar: panel bunlar olmadan ciroyu bölemez */
 export const FIXED_BRANCH_IDS: readonly string[] = [DEFAULT_BRANCH_ID, ONLINE_BRANCH_ID];
+/**
+ * Karaoke odasının şubesi (docs/KARAOKE.md): personel e-postası, vardiya ve bildirim hedefi bu şubenin. Sahibin varsayılanı
+ * (24 Kasım 2026): Tuzla. Şube özellikleri (`branches.features`) gelince oradan okunur
+ */
+export const KARAOKE_BRANCH_ID = DEFAULT_BRANCH_ID;
 
 export const BRANCH_ID_MAX = 24;
 export const BRANCH_NAME_MAX = 60;
@@ -207,11 +214,106 @@ export function formCountError(raw: string, known: readonly BranchRow[], lock: s
 /** Kasa ve sayım formlarının ortak kuralı; metinler yalnız neye yazıldığını söyler */
 function formPhysicalError(raw: string, known: readonly BranchRow[], lock: string | null, words: { has: string; to: string }): string | null {
   const b = known.find((x) => x.id === raw);
-  if (!b || !b.active) return "Formun şubesi bulunamadı ya da kapalı; sayfayı yenileyin";
+  if (!b || !b.active) return FORM_BRANCH_GONE;
   if (b.kind !== "fiziksel") return `${b.name} kanalının ${words.has} olmaz; sayfayı yenileyin`;
-  if (lock !== null && raw !== lock) return `Hesabınız ${known.find((x) => x.id === lock)?.name ?? lock} şubesinde; ${b.name} ${words.to} yazamazsınız`;
-  return null;
+  return lockError(raw, b.name, known, lock, words.to);
 }
+
+const FORM_BRANCH_GONE = "Formun şubesi bulunamadı ya da kapalı; sayfayı yenileyin";
+
+/** Şubesine kilitli personel yalnız kendi şubesine yazar; değilse null */
+function lockError(raw: string, name: string, known: readonly BranchRow[], lock: string | null, to: string): string | null {
+  if (lock === null || raw === lock) return null;
+  return `Hesabınız ${known.find((x) => x.id === lock)?.name ?? lock} şubesinde; ${name} ${to} yazamazsınız`;
+}
+
+/**
+ * Formun şubesinin türü (docs/SUBE.md › Yazarken hangi şube; `formBranch`, src/server/branch-scope.ts):
+ * - `till`, `count`, `waste`: kasa, stok sayımı, zayi ve ikram. Etkin fiziksel şube (kanalın kasası, stoğu, zayisi olmaz);
+ * - `sales`: Satışlar ve Gelir-gider'in ay bilgisi (ciro, açık gün, not) ve satış listesi. Etkin fiziksel şube: online
+ *   kanalın kasa satışı yoktur, kanal seçiliyken yazılan ay "online" şubesine inmesin;
+ * - `expense`: aylık harcama ve cari giderleri. Etkin herhangi bir şube ya da açıkça işletme geneli (`EXPENSE_SHARED`).
+ */
+export type FormBranchKind = "till" | "count" | "waste" | "sales" | "expense";
+
+/** Gider formunun "İşletme geneli" seçimi: şubesiz gider (sahibin kararı 4 Kasım 2026) */
+export const EXPENSE_SHARED = "isletme";
+
+/** "Tümü" seçiliyken (birden çok kasa açık) şubeye özgü yazımın şubesi gelmediyse: sessizce Tuzla'ya inmez */
+export const BRANCH_REQUIRED = "Hangi şubeye yazılsın? Şubeyi seçin";
+
+/** Formun gösterdiği kapsam ile seçim ayrıştı (çerez sekmeler arasında ortak; `shownScopeError`) */
+export const SCOPE_CHANGED = "Şube seçimi başka sekmede değişti; sayfayı yenileyin";
+
+/** Online kanal seçiliyken satış yazımı (kanalın kasa satışı yok) */
+export function salesChannelError(name: string): string {
+  return `${name} kanalının kasa satışı yok; soldan şubeyi seçin`;
+}
+
+/**
+ * Formun gönderdiği şube kimliği (boş değil) türüne uyuyor mu (`FormBranchKind`); şubesine kilitli personel yalnız
+ * kendi şubesine yazar. Sorun yoksa null, varsa kullanıcının göreceği metin. Kasa ve sayım metinleri `formTillError`,
+ * `formCountError` ile aynı.
+ */
+export function formBranchError(raw: string, kind: FormBranchKind, known: readonly BranchRow[], lock: string | null): string | null {
+  if (kind === "till") return formTillError(raw, known, lock);
+  if (kind === "count") return formCountError(raw, known, lock);
+  if (kind === "waste") return formPhysicalError(raw, known, lock, { has: "zayisi", to: "zayisine" });
+  if (kind === "expense" && raw === EXPENSE_SHARED) {
+    return lock === null ? null : `Hesabınız ${known.find((x) => x.id === lock)?.name ?? lock} şubesinde; işletme geneline yazamazsınız`;
+  }
+  const b = known.find((x) => x.id === raw);
+  if (!b || !b.active) return FORM_BRANCH_GONE;
+  if (kind === "sales" && b.kind !== "fiziksel") return salesChannelError(b.name);
+  return lockError(raw, b.name, known, lock, kind === "sales" ? "satışına" : "giderine");
+}
+
+/**
+ * Yazımın şubesinin kararı (saf; `formBranch` sunucuda bunu çağırır, tests/form-sube.test.ts kural tablosunu sınar):
+ * - form şubeyi gönderdiyse (`raw`) o şube, `formBranchError`'dan geçerse. Gider formunda `EXPENSE_SHARED` işletme
+ *   genelidir (`id: null`);
+ * - göndermediyse (eski sekme) bugünkü kural, seçimden: kasa, sayım ve zayide seçili fiziksel şube (yoksa varsayılan
+ *   şube); satışta seçili şube ("Tümü"de varsayılan şube), online kanal seçiliyken red; giderde seçili şube ("Tümü"de
+ *   işletme geneli);
+ * - `requireExplicit`: "Tümü" (ya da kasa ve sayımda online kanal) seçiliyken ve birden çok kasa açıkken şube gelmediyse
+ *   red (`BRANCH_REQUIRED`), varsayılana düşülmez. Gider bundan etkilenmez ("Tümü"de işletme geneli bir seçimdir).
+ */
+export function pickFormBranch(o: {
+  raw: string | null | undefined;
+  kind: FormBranchKind;
+  scope: BranchScope;
+  known: readonly BranchRow[];
+  lock: string | null;
+  requireExplicit?: boolean;
+}): { id: string | null } | { error: string } {
+  if (o.raw) {
+    const error = formBranchError(o.raw, o.kind, o.known, o.lock);
+    if (error) return { error };
+    return { id: o.kind === "expense" && o.raw === EXPENSE_SHARED ? null : o.raw };
+  }
+  if (o.kind === "expense") return { id: o.scope === ALL_BRANCHES ? null : o.scope };
+  const chosen = o.known.find((b) => b.id === o.scope);
+  const many = tillBranches(o.known).length > 1;
+  if (o.kind === "sales") {
+    if (chosen && chosen.kind !== "fiziksel") return { error: salesChannelError(chosen.name) };
+    if (o.scope !== ALL_BRANCHES) return { id: o.scope };
+    return o.requireExplicit && many ? { error: BRANCH_REQUIRED } : { id: DEFAULT_BRANCH_ID };
+  }
+  if (chosen?.kind === "fiziksel") return { id: chosen.id };
+  return o.requireExplicit && many ? { error: BRANCH_REQUIRED } : { id: DEFAULT_BRANCH_ID };
+}
+
+/**
+ * Formun gösterdiği kapsam (sayfa çizilirken seçili olan: şube kimliği ya da "hepsi") ile eylem anındaki seçim tutuyor
+ * mu. Kapsamla silen yazımlar (Satışlar › Ayı temizle) bunu sorar: çerez sekmeler arasında ortaktır, Marina'nın
+ * penceresi "Tümü"de onaylanınca iki şubenin listesi giderdi. Tutarsa null
+ */
+export function shownScopeError(shown: unknown, current: BranchScope): string | null {
+  return typeof shown === "string" && shown === current ? null : SCOPE_CHANGED;
+}
+
+/** Form şube kimliğinin girdi kuralı (sunucu eylemleri; boş: eski sekme göndermedi) */
+export const zFormBranch = z.string().max(BRANCH_ID_MAX).nullish();
 
 /**
  * Kimliğiyle açılan kaydın şubesi (kasadan çıkan, zayi, kasa raporu, kasa ve fiş fotoğrafı; docs/SUBE.md › Personel

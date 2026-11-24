@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 
-import { DEFAULT_BRANCH_ID } from "@/lib/branches";
+import { KARAOKE_BRANCH_ID } from "@/lib/branches";
 import { reminderPollDue } from "@/lib/karaoke/reminder";
 import { trClock } from "@/lib/karaoke/session";
 import {
@@ -51,7 +51,7 @@ async function onShiftUserIds(date: string): Promise<number[]> {
   const rows = await getDb()
     .select({ userId: s.shifts.userId })
     .from(s.shifts)
-    .where(and(eq(s.shifts.branchId, DEFAULT_BRANCH_ID), eq(s.shifts.date, date), eq(s.shifts.kind, "work"), isNotNull(s.shifts.userId)));
+    .where(and(eq(s.shifts.branchId, KARAOKE_BRANCH_ID), eq(s.shifts.date, date), eq(s.shifts.kind, "work"), isNotNull(s.shifts.userId)));
   return rows.flatMap((r) => (r.userId === null ? [] : [r.userId]));
 }
 
@@ -103,7 +103,7 @@ export async function runStaffKaraokeMails(now: Date = new Date(), deadlineAt: n
     db.select({ id: s.users.id, email: s.users.email, role: s.users.role, branchId: s.users.branchId }).from(s.users).where(eq(s.users.active, true)),
     onShiftUserIds(today),
   ]);
-  const recipients = staffMailRecipients(users, onShift, DEFAULT_BRANCH_ID);
+  const recipients = staffMailRecipients(users, onShift, KARAOKE_BRANCH_ID);
   const from = resolveFrom(settings.from);
   let sent = 0;
   let failed = 0;

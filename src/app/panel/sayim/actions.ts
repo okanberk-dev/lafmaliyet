@@ -4,7 +4,7 @@ import { and, asc, eq, inArray, lt } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { BRANCH_ID_MAX } from "@/lib/branches";
+import { zFormBranch } from "@/lib/branches";
 import { countItemLogDetail } from "@/lib/count-item";
 import { monthLabel } from "@/lib/format";
 import { logActivity } from "@/server/actions/log";
@@ -17,8 +17,6 @@ import { getDb, schema as s } from "@/server/db";
 
 import { planStaffExtras, staffCountIssue } from "./logic";
 
-/** Formun gösterdiği sayım şubesi (docs/SUBE.md › Yazarken hangi şube); göndermeyen eski sekmede seçili fiziksel şube */
-const zFormBranch = z.string().max(BRANCH_ID_MAX).nullish();
 const addSchema = countItemSchema.extend({ branchId: zFormBranch });
 
 /**

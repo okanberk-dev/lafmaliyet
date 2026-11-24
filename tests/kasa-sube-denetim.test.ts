@@ -111,10 +111,12 @@ test("#12 formTillError: formun kasası etkin fiziksel şube; kilitli personel y
 test("#12 formTillBranch: kimlik yoksa seçili kasa, varsa doğrulanır (kilit dahil)", () => {
   const scope = read("src/server/branch-scope.ts");
   const fn = scope.slice(scope.indexOf("export async function formTillBranch"));
-  assert.match(fn, /if \(!raw\) return currentTillBranch\(\);/);
-  assert.match(fn, /staffBranchLock\(\)/);
-  assert.match(fn, /formTillError\(raw, branches, lock\)/);
-  assert.match(fn, /throw new UserError\(error\)/);
+  // Ortak kapı (formBranch; kural tablosu tests/form-sube.test.ts): kimlik yoksa seçili fiziksel şube
+  assert.match(fn, /return formBranch\(raw, "till"\);/);
+  const gate = scope.slice(scope.indexOf("export async function formBranch(raw: string | null | undefined, kind: FormBranchKind"));
+  assert.match(gate, /staffBranchLock\(\)/);
+  assert.match(gate, /pickFormBranch\(\{ raw, kind, scope, known, lock/);
+  assert.match(gate, /throw new UserError\(picked\.error\)/);
 });
 
 test("#12 yazımlar formun kasasının kapsamında: rapor, istekler, geç rapor ve kasadan çıkan", () => {
