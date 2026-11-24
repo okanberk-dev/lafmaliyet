@@ -39,7 +39,7 @@ import { DEFAULT_SUGGESTIONS, PAGE_SUGGESTIONS, pageContextLine, pageFromLocatio
 import { ASSISTANT_DAILY_CAP, ASSISTANT_DEEP_WEIGHT, assistantRequest, eventReader, historyForRequest, type AssistantEvent, type ChatMessage } from "../src/lib/assistant/protocol";
 import { handleAssistantPost, type AssistantDeps, type AssistantStatus } from "../src/server/ai/assistant/handler";
 import { ASSISTANT_DEEP, ASSISTANT_EFFORT, ASSISTANT_MAX_TOKENS, ASSISTANT_TIMING, assistantParams, runAssistant, type AssistantClient, type AssistantOutcome, type AssistantParams } from "../src/server/ai/assistant/loop";
-import { contextBlock, SYSTEM_PROMPT } from "../src/server/ai/assistant/prompt";
+import { contextBlock, screenLines, SYSTEM_PROMPT } from "../src/server/ai/assistant/prompt";
 import { scriptedMessage, scriptedStream } from "../src/server/ai/assistant/scripted";
 
 const ROOT = join(__dirname, "..");
@@ -551,4 +551,50 @@ test("Kopyala: düz metin (bağlantının etiketi, işaretsiz, madde ve tablo); 
   assert.match(w, /if \(sheet\) return;\s*const onKey = \(e: globalThis\.KeyboardEvent\) => \{\s*if \(!\(e\.metaKey \|\| e\.ctrlKey\) \|\| e\.altKey \|\| e\.shiftKey \|\| e\.key\.toLowerCase\(\) !== "j"/);
   assert.match(w, /e\.preventDefault\(\);\s*toggleAssistant\(\);/);
   assert.match(w, /aria-keyshortcuts="Meta\+J Control\+J"/);
+});
+
+// ---------------------------------------------------------------- 7. Sistem istemi
+
+test("sistem istemi: araç seçimi, önce veri sonra sonuç, tablo ölçüsü, rakam uydurmama, belirsizlikte soru, rehber, tek kart", () => {
+  for (const must of [
+    "Hangi soru hangi araç",
+    "önce gereken veriyi topla, sonra yaz",
+    "birbirinden bağımsız araçları aynı turda birlikte çağır",
+    "Örnek birleşimler: kâr düşüşü → ay_ozeti (bu ay ve geçen ay) + zam_etkisi",
+    "en çok 4 sütun ve 8 satır, sayı sütunları sağa hizalı",
+    "Veri uydurma",
+    "Araç çıktısında olmayan bir rakamı",
+    "hangi iki rakamdan hesapladığınla birlikte yaz",
+    "tek kısa soru sor",
+    "Araç birden çok aday döndürdüyse adayları göster, tahmin etme",
+    "Yöneticinin açık ekranı",
+    "islem_rehberi",
+    "bir yanıtta en çok BİR işlem aracı çağır",
+    "Kart açıldı diye işlemin yapıldığını asla söyleme",
+    "<takip>",
+  ]) {
+    assert.ok(SYSTEM_PROMPT.includes(must), must);
+  }
+  // Ölçülü: önbelleğe alınacak kadar uzun, 30 bin karakterin altında
+  assert.ok(SYSTEM_PROMPT.length > 15_000 && SYSTEM_PROMPT.length < 30_000, String(SYSTEM_PROMPT.length));
+});
+
+test("önbellek öneki bayt bayt sabit: sayfa, şube, gün, derin analiz ve son tur önü değiştirmez; değişken bilgi istemde yok", () => {
+  const msgs = [{ role: "user" as const, content: "x" }];
+  const variants = [
+    assistantParams({ system: SYSTEM_PROMPT, context: contextBlock({ today: "2026-11-24", branchLabel: "Tümü" }), tools: [], messages: msgs }),
+    assistantParams({ system: SYSTEM_PROMPT, context: `${contextBlock({ today: "2026-12-31", branchLabel: "Marina" })}\n${pageContextLine({ path: "/panel/kasa", month: "2026-12" })}`, tools: [], messages: msgs, deep: true }),
+    assistantParams({ system: SYSTEM_PROMPT, context: contextBlock({ today: "2027-01-01", branchLabel: "Tuzla" }), tools: [], messages: msgs, final: true }),
+  ];
+  const first = JSON.stringify(systemOf(variants[0])[0]);
+  for (const v of variants) {
+    assert.equal(JSON.stringify(systemOf(v)[0]), first, "sabit blok ve işareti aynı");
+    assert.equal(systemOf(v).length, 2);
+    assert.equal(systemOf(v)[1].cache_control, undefined, "değişken blok işaretsiz, sonda");
+  }
+  // İstemde değişen hiçbir şey yok: tarih, ay adı + yıl, şube seçimi, açık ekran satırı, efor
+  assert.doesNotMatch(SYSTEM_PROMPT, /\b20\d\d-\d\d-\d\d\b/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /Panelde seçili şube|Yöneticinin açık ekranı: |Bugün: \d/);
+  // Ekran listesi menüden hesaplanır, sıra sabit: istem her yüklemede aynı
+  assert.ok(SYSTEM_PROMPT.includes(screenLines().join("\n")));
 });

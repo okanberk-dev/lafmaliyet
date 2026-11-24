@@ -217,8 +217,8 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
   yanıtlar kısa tutulur). Fiyat: milyon token başına girdi 2 $, çıktı 10 $, önbellekten okuma 0,10 $.
 - Sabit kısım (yönergeler, ekran listesi, kavramlar, araç tanımları) her istekte aynıdır ve önbellekten okunur; bir
   sorunun araç turları da önceki turu önbellekten okur.
-- Sabit önek (31 araç tanımı ve sistem istemi) yaklaşık 13–16 bin tokendir (tahmin: ~45 bin karakter Türkçe ve JSON;
-  anahtarsız ortamda `count_tokens` çağrılamadı). Önbelleğin ömrü 5 dakikadır: aradan 5 dakikadan uzun süre geçince
+- Sabit önek (31 araç tanımı ve sistem istemi) yaklaşık 14–17 bin tokendir (tahmin: ~47 bin karakter Türkçe ve JSON;
+  sistem istemi ~20 bin karakter; anahtarsız ortamda `count_tokens` çağrılamadı). Önbelleğin ömrü 5 dakikadır: aradan 5 dakikadan uzun süre geçince
   sıradaki soru öneki yeniden önbelleğe yazar (1,25×). Bu yüzden iki rakam: **ilk soru ≈ 0,05 $** (önbellek soğuk;
   önekin yazımı tek başına ≈ 0,035–0,04 $), **5 dakika içindeki sonraki sorular ≈ 0,01–0,03 $** (bir iki araç turu,
   önek önbellekten okunur). Ayın toplamı Ayarlar › Fotoğraftan okuma kartındaki "Bu ay" tutarına girer (okumalar ve
@@ -324,7 +324,13 @@ satırlar düşer, asistan bu ekranlara bağlantı vermez. Belge değişince `np
   `handlePosDay`) içe aktarılmaz. Serbest metinler burada atılır. Strict araç tanımları yapılandırılmış girdinin
   karmaşıklık sınırına sığan önektir; isteğe bağlı alanı çok olan okuma araçları (vardiya, günlük satışlar, stok) sınırın
   dışında kalır, girdileri yine zod'dan geçer.
-- Sistem istemi: `src/server/ai/assistant/prompt.ts` (ekranlar `src/components/panel/nav.ts`'ten).
+- Sistem istemi: `src/server/ai/assistant/prompt.ts` (ekranlar `src/components/panel/nav.ts`'ten). Bölümler: yanıt
+  kuralları (kısa, telefonda okunur; tablo en çok 4 sütun × 8 satır, sayılar sağa hizalı; rakam yalnız araçtan, kendi
+  hesabı kaynağıyla), nasıl çalışır (çok adımlı soruda önce veriyi topla, bağımsız araçlar aynı turda, sonra kısa sonuç
+  + gerekçe; örnek araç birleşimleri; belirsizlikte tek kısa soru ya da söylenen varsayım; açık ekran satırının
+  anlamı), işlemler (bir yanıtta en çok bir işlem aracı, riskli işte rehber), araç seçimi (hangi soru hangi araç), takip
+  önerilerinin biçimi, LafPOS, ekranlar, kavramlar. İstem **bayt bayt sabittir**: tarih, şube, açık ekran ve efor
+  değişken blokta ya da isteğin kendisinde; testi `tests/asistan-gelismis.test.ts`.
 - Kapı ve kayıt: `src/server/ai/claude.ts` (`assistantStatus`, `startAssistantCall`, `finishAssistantCall`).
 - Ekran: `src/components/panel/assistant/` (düğme ve pencere, güvenli markdown; panel düzenine bir kez eklenir,
   `src/app/panel/layout.tsx`). Açık / kapalı durumu `assistant-open.ts` (alt menünün sekmesi ile asistan ayrı ağaçlarda;
