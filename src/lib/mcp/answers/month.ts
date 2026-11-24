@@ -118,8 +118,11 @@ export function monthSummary(model: Model, month: string, ctx: { base: string })
       const ciroNet = pm.revenueNet ?? 0;
       hesap.push(`Kâr = KDV hariç ciro − giderler = ${tl(total)} − ${tl(pm.expenses)} = ${tl(pm.profit)}`);
       const service = pm.serviceRevenue;
-      const pos =
-        service > 0
+      // LafPOS'un şubesinin ayında KDV gün gün (engine.ts posNet): LafPOS günü kendi dökümüyle, öteki günler günün
+      // oranıyla, ay günlerin toplamı; ay toplamının formülü o rakamı vermez (Marina Kasım: 30.576,15, ay toplamından ,14)
+      const pos = model.posNet(month)?.byDay
+        ? `${tl(pm.revenue)} gün gün (LafPOS günü kendi KDV dökümüyle, öteki günler ÷ ${kdvText(st.kdv)}${service > 0 ? `, hizmet ÷ ${kdvText(st.kdvHizmet)}` : ""}; ay günlerin toplamı)`
+        : service > 0
           ? `(${tl(pm.revenue)} − ${tl(service)} hizmet) ÷ ${kdvText(st.kdv)} + ${tl(service)} ÷ ${kdvText(st.kdvHizmet)}`
           : `${tl(pm.revenue)} ÷ ${kdvText(st.kdv)}`;
       hesap.push(`KDV hariç ciro = ${pos} = ${tl(ciroNet)} (${mk.long}${pm.site ? `; laffogato.net online ${tl(pm.site.total)} ayrıca eklendi, toplam ${tl(total)}` : "; online satış yok"})`);

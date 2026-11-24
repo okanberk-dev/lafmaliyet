@@ -24,6 +24,7 @@ import { parsePosDay, posZSchema, type PosDayZ } from "../src/lib/lafpos/day";
 import { lafposDayDetail } from "../src/lib/lafpos/gun-ayrinti";
 import { autoValuesOf, dayEndNotes, dayEndSections, dayHash, mergeAuto, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
 import { lafposDayOf } from "../src/lib/lafpos/prefill";
+import { monthSummary } from "../src/lib/mcp/answers/month";
 import { lafposMonthNotes, lafposMonthStatus, mergeSalesSources } from "../src/lib/lafpos/sales";
 import { IPTAL_ZAYI_REASON, iptalWasteLines, lafposCompKind, lafposIkramCheck, lafposLineKind, lafposListByKind, lafposReasonText, lafposZKinds, recordedOffRevenue } from "../src/lib/lafpos/ikram";
 import { okcReconcile } from "../src/lib/okc-z";
@@ -473,6 +474,20 @@ test("KDV hariç cironun açıklaması gün gün hesabı söyler (Genel bakış 
   assert.match(plain(hint), /LafPOS'un şubesinin günleri gün gün: LafPOS gününün KDV'si kendi dökümünden, öteki günler günün oranıyla; ay günlerin toplamı/);
   const tuzla = novemberModel(marinaRows(undefined, "tuzla"), null).model;
   assert.equal(sub(tuzla, "2026-11"), "POS cirosu 33.634 ₺ ÷ (1 + KDV %10)");
+});
+
+test("KDV hariç cironun açıklaması: MCP'nin ay cevabı gün gün hesabı yazar (ay toplamından 33.633,75 ÷ 1,10 = 30.576,14 olurdu, günlerin toplamı 30.576,15)", () => {
+  const { model } = novemberModel(marinaRows());
+  const summary = (m: typeof model) => monthSummary(m, "2026-11", { base: "https://ladmin.laffogato.net" });
+  const line = (m: typeof model) => plain(summary(m).hesap.find((l) => l.startsWith("KDV hariç ciro =")));
+  assert.equal(summary(model).gerceklesen?.ciroKdvHaric, 30576.15);
+  const marina = line(model);
+  assert.match(marina, /^KDV hariç ciro = 33\.634 ₺ gün gün \(LafPOS günü kendi KDV dökümüyle, öteki günler ÷ 1,10; ay günlerin toplamı\) = 30\.576 ₺ /);
+  assert.doesNotMatch(marina, /33\.634 ₺ ÷ 1,10 =/, "ay toplamının formülü bu rakamı vermez");
+  // LafPOS'un şubesi olmayan ay: ay toplamından, eski metin
+  const tuzla = novemberModel(marinaRows(undefined, "tuzla"), null).model;
+  assert.equal(summary(tuzla).gerceklesen?.ciroKdvHaric, 30576.14);
+  assert.match(line(tuzla), /^KDV hariç ciro = 33\.634 ₺ ÷ 1,10 = 30\.576 ₺ /);
 });
 
 test("KDV hariç ciro: LafPOS'un şubesi olmayan ay (Tuzla, eski satırlar) bugünkü gibi ay toplamından", () => {

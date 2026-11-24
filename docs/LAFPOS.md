@@ -146,7 +146,7 @@ bugünkü gibi davranır.
 | Alan | Nerede kullanılır |
 |------|-------------------|
 | `lines[].gross`, `isAddon` | `pos_daily_sales.gross`, `is_addon`. Satışlar'da **Brüt** (indirimden önce) ve **İndirimli** (indirimden sonra) ayrı sütun (`src/app/panel/satislar/sales-logic.ts` › `discountColumns`; "net" orada KDV hariç demek, bu değil): ModPOS listesinin satırı indirimden öncedir (İndirimli "–"), LafPOS satırı ikisini de taşır. Ek parçası olan LafPOS satırı "· ek" der |
-| `z.vat[]` | LafPOS gününün KDV'si buradan, yeniden hesaplanmaz: Gelir-gider'in AYLIK CİRO (KDV hariç)'i ve KDV tahmini (`engine.ts` › `posNet`). LafPOS'un şubesinin ayında KDV gün gün: dökümü günün cirosunu tutan LafPOS günü dökümüyle, öteki günler (ModPOS günleri, dökümsüz eski LafPOS günü, raporu elle değişmiş gün) günün oranıyla (satış KDV'si, %10) ayrı ayrı yuvarlanır, ay günlerin toplamıdır (Marina Kasım: 30.576,15; ay toplamından 30.576,14 olurdu). Öteki şubelerin günleri ve elle yazılan ciro bugünkü gibi ay toplamından (`src/lib/cash-month.ts` › `dayVatOf`, `TillMonth.dayVat`) |
+| `z.vat[]` | LafPOS gününün KDV'si buradan, yeniden hesaplanmaz: Gelir-gider'in AYLIK CİRO (KDV hariç)'i ve KDV tahmini (`engine.ts` › `posNet`). LafPOS'un şubesinin ayında KDV gün gün: dökümü günün cirosunu tutan LafPOS günü dökümüyle, öteki günler (ModPOS günleri, dökümsüz eski LafPOS günü, raporu elle değişmiş gün) günün oranıyla (satış KDV'si, %10) ayrı ayrı yuvarlanır, ay günlerin toplamıdır (Marina Kasım: 30.576,15; ay toplamından 30.576,14 olurdu). Öteki şubelerin günleri ve elle yazılan ciro bugünkü gibi ay toplamından (`src/lib/cash-month.ts` › `dayVatOf`, `TillMonth.dayVat`). Açıklamalar da gün gün hesabı yazar: Genel bakış dökümü, Gelir-gider satırının ipucu ve MCP'nin ay cevabı (`src/lib/mcp/answers/month.ts`) |
 | `z.listValue`, `ikramTotal`, `odenmezTotal`, `zayiTotal` | Kasa e-postasının ikram denetimi (`lafposIkramCheck`, girdisi `lafposZKinds`): tür tür (LafPOS'un Z'sindeki toplam ikram listesindekiyle; ikram, ödenmez, zayi ayrı), LafPOS'un kendi toplamları ödenmez tutarıyla, `listValue` geldiyse Z'nin kendi eşitliği (toplam satış = liste − indirim − ikram − ödenmez; tutmuyorsa "LafPOS'un Z'si kendi içinde tutmuyor: liste 7.425 ₺ − … = 6.270 ₺, toplam satış 6.285 ₺ (15 ₺ fazla)."). Türe göre toplamları yollamayan LafPOS'ta tek karşılaştırma |
 | `z.okcZNo` | Kasa raporunun **Yazarkasa Z no**'suna otomatik yazılır (`AUTO_FIELDS`; LafPOS'un Z no'sundan ayrı alan, `okc_z_no`). Elle ya da fotoğrafla girilen Z no ezilmez; gelmezse (`null`: Pavo satış sonucunda Z yok) kayıtlı değer kalır. Değişince yazarkasa kümülatifi yeniden hesaplanır |
 | `z.openedAt`, `closedAt` | Saklanır (`z` jsonb); bugün okuyan yok |
@@ -453,10 +453,12 @@ günler (en çok 7 gün geriye) yakalanır.
 
 - Rapor yoksa ve LafPOS'ta sayım varsa: "LafPOS'tan doldur"un eşlemesiyle (Z, ödemeler, ödenmez, indirim, açılış, gün
   içinde giren, gün içinde çıkan: panelin Kasadan çıkanlar'ı girildiyse o, yoksa LafPOS'un harcama + teslimi; teslim
-  edilen 0, sayılan nakit LafPOS'un sayımı). Gönderen "LafPOS (otomatik)". Not: "LafPOS gün sonundan otomatik yazıldı.
+  edilen 0, sayılan nakit LafPOS'un sayımı; Faz 2'de gövdede varsa yazarkasa Z no'su). Gönderen "LafPOS (otomatik)". Not: "LafPOS gün sonundan otomatik yazıldı.
   Eksik: Banka POS Z (yazarkasa); panelden ekleyin." Açılış önceki raporun devrinden farklıysa nota yazılır, LafPOS'taki
   açılış kalır. Rapor kapalı gün işaretini kaldırır ve günün bekleyen geç rapor isteğini kapatır (elle girilen rapor gibi).
-- **Uydurma değer yok:** Banka POS ve yazarkasa alanları boş kalır (fotoğrafla ya da elle girilir). LafPOS'ta sayım
+- **Uydurma değer yok:** Banka POS ve yazarkasa alanları boş kalır (fotoğrafla ya da elle girilir). Tek istisna
+  yazarkasa Z no'su (Faz 2, `AUTO_FIELDS` `okcZNo`): LafPOS'un gönderdiği `z.okcZNo` (günün son tamamlanan mali fişinin
+  Z'si) yazılır; `null` gelirse ya da hiç gelmezse alan boş kalır, elle ya da fotoğrafla girilen ezilmez. LafPOS'ta sayım
   yoksa rapor hiç yazılmaz ("sayım yok"); LafPOS sayımla yeniden gönderince yazılır.
 - **Düzeltme:** LafPOS aynı günü yeniden gönderirse yalnız elle değişmemiş alanlar güncellenir (kayıtlı değer son
   otomatik değere eşitse); personelin ya da yöneticinin düzelttiği alan ve Banka POS korunur. Önceki sürüm geçmişe
@@ -470,7 +472,10 @@ bildirim adreslerine (Hatırlatıcılar, bildirim e-postası açıksa); personel
 türleri ve LafPOS'un ödeme dökümü, ödenmez / ikram ve ikram edilenlerin adedi ve menü değeri, kasa (açılış, olması
 gereken, sayılan, fark), dün ve geçen haftanın aynı günüyle kıyas (satış; LafPOS günü yoksa o günün kasa raporu),
 Marina'nın laffogato.net online satışı (`&branch=marina`), raporun durumu ve eksikler, "Panelde aç". Maliyet ve kâr
-yok. İptal sözleşmede ayrı alan değil (yazılmaz).
+yok. Faz 2 alanlarıyla gelen günde ayrıca gün görünümünün bölümleri (`lafposDayDetail`): LafPOS'un ödeme ayrıntısı
+(yazarkasadan geçmeyen kart ve nakit, ödeme iptalleri), **İptal edilen kalemler** (`iptal[]`: hazırlanmış olanlar zayi,
+hazırlanmamışlar "tüketim değil"), yazarkasa Z no ve KDV dökümü, gönderim sırası; eski LafPOS'un gününde bu bölümler
+yok.
 
 - Gün başına içerik başına bir kez: günün özeti (`dayHash`: Z, ödemeler, ikram) gönderilenle aynıysa gitmez. LafPOS
   düzeltip farklı rakamla yeniden gönderirse konu "· düzeltildi" ile ve başta "Düzeltildi: …" notuyla bir kez daha gider
