@@ -132,8 +132,14 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
     admin ? Promise.resolve([]) : myWasteRequests(user.id, now),
     // Tek şube seçiliyken o şubenin istekleri (şube kapsamı C P1-1)
     admin ? pendingWasteSummary({ day: date, scope }) : Promise.resolve(null),
-    // LafPOS gününde (geçiş gününden itibaren) ürün ikramı LafPOS'tan; geçiş günü boşken null, ekran bugünkü gibi
-    loadDayLafposIkram(date),
+    // LafPOS gününde (geçiş gününden itibaren) ürün ikramı LafPOS'tan; geçiş günü boşken null, ekran bugünkü gibi. Şube
+    // şube (şube kapsamı C P2-7): seçili kasanınki; "Tümü"de LafPOS günü olan ilk kasanınki, adıyla (önceden "Tümü"de
+    // Tuzla'nınki okunuyordu: LafPOS Marina'daysa liste hiç görünmüyordu)
+    chosen
+      ? loadDayLafposIkram(date, undefined, chosen.id).then((d) => (d ? { ...d, branchId: chosen.id, branchName: null } : null))
+      : Promise.all(tills.map((t) => loadDayLafposIkram(date, undefined, t.id).then((d) => (d ? { ...d, branchId: t.id, branchName: t.name } : null)))).then(
+          (all) => all.find((d) => d !== null) ?? null,
+        ),
   ]);
   // LafPOS'un ikram ve zayi satırları salt okunur: personele ad ve adet, yöneticiye nedeni, menü değeri ve ürüne bağlı
   // olmayanlar da. Ürün ikramı gün sonu geldiyse ya da gün bugünse panelden kapalı (gün sonu gelmeyen geçmiş günde açık)
@@ -154,9 +160,10 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
           unmatched: admin && l.productId === null && !l.isService,
           service: admin && l.isService,
         })),
-        notCounted: laf.received ? entries.filter((e) => !panelWasteCounts(e, new Set([date]))).map((e) => e.id) : [],
+        notCounted: laf.received ? entries.filter((e) => e.branchId === laf.branchId && !panelWasteCounts(e, new Set([date]))).map((e) => e.id) : [],
         // Paneldeki ürün zayisi, aynı gün aynı ürün LafPOS'ta da zayi yazıldıysa: ikisi de sayılır, aynıysa biri silinir
-        maybeTwice: entries.filter((e) => e.kind === "zayi" && e.productId !== null && lafposZayi.has(e.productId)).map((e) => e.id),
+        maybeTwice: entries.filter((e) => e.branchId === laf.branchId && e.kind === "zayi" && e.productId !== null && lafposZayi.has(e.productId)).map((e) => e.id),
+        branchName: laf.branchName,
       }
     : null;
   // Satırın silme kipi kaydın kendi şubesinin kilidiyle (removeWaste gibi): "Tümü"deki şubesiz personel öteki şubenin

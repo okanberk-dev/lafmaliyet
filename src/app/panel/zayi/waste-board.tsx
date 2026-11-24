@@ -54,6 +54,8 @@ export interface LafposDayView {
   notCounted: number[];
   /** Paneldeki ürün zayisi, aynı gün aynı ürün LafPOS'ta da zayi yazıldı (ikisi de sayılır) */
   maybeTwice: number[];
+  /** "Tümü"de birden çok kasa açıkken LafPOS'un şubesi (listenin başlığında; şube kapsamı C P2-7); yoksa null */
+  branchName?: string | null;
 }
 
 /**
@@ -406,6 +408,12 @@ export function WasteBoard({
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium break-words text-ink">
                       {e.name} <span className="font-normal text-ink-mute tabular">· {qtyText(e.qty, e.unit)}</span>
+                      {/* "Tümü"de birden çok kasa açıkken kaydın şubesi (şube kapsamı C P2-7) */}
+                      {branches.length > 1 ? (
+                        <Badge tone="gray" className="ml-1.5 align-middle">
+                          {branches.find((b) => b.id === e.branchId)?.name ?? e.branchId}
+                        </Badge>
+                      ) : null}
                     </p>
                     <p className="text-xs break-words text-ink-mute">
                       {[e.reason, e.note, e.createdByName, new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(new Date(e.createdAt))]
@@ -457,7 +465,10 @@ export function WasteBoard({
         {lafpos ? (
           // LafPOS'un ikram ve zayi satırları salt okunur: kasada işaretlendi, tüketime oradan girer
           <section aria-label={LAFPOS_IKRAM_TEXT.listTitle} className="border-t border-line px-5 py-4">
-            <h3 className="text-sm font-semibold text-ink">{LAFPOS_IKRAM_TEXT.listTitle}</h3>
+            <h3 className="text-sm font-semibold text-ink">
+              {LAFPOS_IKRAM_TEXT.listTitle}
+              {lafpos.branchName ? ` · ${lafpos.branchName}` : ""}
+            </h3>
             {!lafpos.received ? (
               <p className="mt-1 text-sm text-ink-mute">{lafpos.past ? LAFPOS_IKRAM_TEXT.waitingPast : LAFPOS_IKRAM_TEXT.waiting}</p>
             ) : lafpos.lines.length ? (
