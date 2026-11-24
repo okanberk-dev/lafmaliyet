@@ -175,7 +175,8 @@ staffCost); testleri `tests/personel-part-time.test.ts`, `tests/personel-baglant
   günlük tutar × çağrıldığı gün) ve ek ödeme (brütleştirilmez). Günlük ücret ve yemek kartı maaşla birlikte "şu aydan
   itibaren" sürümlenir. Yemek kartı bir aydan itibaren açılıp kapanınca önceden girilmiş sonraki sürümlere (ör. planlı
   zam) de işlenir; sahibin ayrıca değiştirdiği ilk sürümde durur (`mealCardCarry`, inceleme bulgusu 8). Kayıt mesajı
-  hangi aylara işlendiğini yazar; sürüm etiketi "… net + yemek kartı" olur. **Çağrıldığı gün** = kişinin Vardiya anahtarıyla, kendi şubesinde, o aydaki çalışma (`work`)
+  hangi aylara işlendiğini yazar. O değişiklik Maaşlar'da "Geri al" ile silinince taşıma da aynı kuralla geri alınır
+  (`deleteStaffVersion`; mesaj hangi aylardan geri alındığını yazar; inceleme bulgusu LM-4 2. tur, 3); sürüm etiketi "… net + yemek kartı" olur. **Çağrıldığı gün** = kişinin Vardiya anahtarıyla, kendi şubesinde, o aydaki çalışma (`work`)
   vardiyaları; izin sayılmaz, başka şubedeki vardiya o şubenin satırına aittir. Kişiye o şubede bağlı satır yoksa o
   günler hiçbir yere girmez: Genel bakış ve Maaşlar "Part-time'ın başka şubedeki günleri sayılmıyor" diye uyarır ("Tümü"de;
   `strayPartTimeShifts`). Gelir-gider'de süren ayda bugüne kadarki vardiyalar (ileri günlerin planı değil), maaş satırının

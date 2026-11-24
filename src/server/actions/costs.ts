@@ -455,19 +455,35 @@ export async function endStaff(id: number, lastMonth: string | null) {
   });
 }
 
-/** Bir maaş değişikliğini geri alır (o aydan itibaren bir önceki tutar geçerli olur) */
+/**
+ * Bir maaş değişikliğini geri alır (o aydan itibaren bir önceki tutar geçerli olur). Değişiklik yemek kartını açıp
+ * kapattıysa saveStaff'ın sonraki sürümlere taşıdığı işaret de geri alınır (inceleme bulgusu LM-4 2. tur, 3): taşımanın
+ * tersi aynı kuralla (mealCardCarry), sahibin işareti ayrıca değiştirdiği ilk sürümde durur
+ */
 export async function deleteStaffVersion(versionId: number) {
   return attempt(async () => {
     const me = await requireAdmin();
     const vid = z.number().int().positive().parse(versionId);
     const db = getDb();
-    const [v] = await db.select().from(s.staffVersions).where(eq(s.staffVersions.id, vid));
-    if (!v) throw new UserError("Değişiklik bulunamadı (sayfayı yenileyin)");
-    const [row] = await db.select().from(s.staff).where(eq(s.staff.id, v.staffId));
-    const others = (await db.select().from(s.staffVersions).where(eq(s.staffVersions.staffId, v.staffId))).filter((x) => x.id !== vid);
-    const prev = latestBefore(others, v.fromMonth) ?? row;
-    await db.delete(s.staffVersions).where(eq(s.staffVersions.id, vid));
-    const message = `${row?.name ?? "Personel"}: ${monthLabel(v.fromMonth)} değişikliği geri alındı; o aydan itibaren ${tl(prev?.netSalary ?? 0)} net maaş geçerli.`;
+    const { v, row, prev, uncarried } = await db.transaction(async (tx) => {
+      const [v] = await tx.select().from(s.staffVersions).where(eq(s.staffVersions.id, vid));
+      if (!v) throw new UserError("Değişiklik bulunamadı (sayfayı yenileyin)");
+      const [row] = await tx.select().from(s.staff).where(eq(s.staff.id, v.staffId));
+      const others = (await tx.select().from(s.staffVersions).where(eq(s.staffVersions.staffId, v.staffId))).filter((x) => x.id !== vid);
+      const prev = latestBefore(others, v.fromMonth) ?? row;
+      const uncarried = prev ? mealCardCarry(others, v.fromMonth, v.mealCard, prev.mealCard) : [];
+      await tx.delete(s.staffVersions).where(eq(s.staffVersions.id, vid));
+      if (uncarried.length) await tx.update(s.staffVersions).set({ mealCard: prev!.mealCard }).where(inArray(s.staffVersions.id, uncarried.map((x) => x.id)));
+      return { v, row, prev, uncarried };
+    });
+    const message = [
+      `${row?.name ?? "Personel"}: ${monthLabel(v.fromMonth)} değişikliği geri alındı; o aydan itibaren ${tl(prev?.netSalary ?? 0)} net maaş geçerli.`,
+      uncarried.length
+        ? `Yemek kartı sonraki maaş ${uncarried.length > 1 ? "değişikliklerinden" : "değişikliğinden"} de geri alındı: ${uncarried.map((x) => monthLabel(x.fromMonth)).join(", ")}.`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
     await logActivity(me, "Maaş değişikliği geri alındı", message);
     refresh();
     return { message };

@@ -223,6 +223,20 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
     // Maaşlar'ın sürüm etiketi ("Ocak 2027 itibarıyla 40.000 ₺ net + yemek kartı") sürümün işaretinden
     const hist = model.staffList.find((x) => x.name === "Alper")!.history.find((h) => h.fromMonth === "2027-01")!;
     assert.deepEqual([hist.netSalary, hist.mealCard], [40_000, true]);
+
+    // İnceleme bulgusu (LM-4, 2. tur, 3): Aralık değişikliğini "Geri al" taşımayı da geri alır; Ocak zammı kartsız kalır
+    const [decVersion] = await db.select().from(s.staffVersions).where(eq(s.staffVersions.fromMonth, "2026-12"));
+    const undo = await costs.deleteStaffVersion(decVersion.id);
+    assert.ok(undo.ok, undo.ok ? "" : undo.error);
+    const left = await db.select().from(s.staffVersions).orderBy(s.staffVersions.fromMonth);
+    assert.deepEqual(
+      left.map((v) => [v.fromMonth, v.netSalary, v.mealCard]),
+      [["2027-01", 40_000, false]],
+      "Ocak 2027 sürümü yemek kartı taşımasından da geri döner",
+    );
+    assert.match(undo.ok ? (undo.data.message ?? "") : "", /Yemek kartı sonraki maaş değişikliğinden de geri alındı: Ocak 2027/);
+    const back = await dataset.loadModel({ scope: "marina" });
+    assert.equal(back.personnelFor("2027-01").mealCard, 0, "Ocak'ta sahibin seçmediği kart kalmaz");
   });
 
   test("şubeye kilitli olmayan hesap iki şubenin part-time satırına bağlanabilir (aynı şubede iki satıra değil)", async () => {
