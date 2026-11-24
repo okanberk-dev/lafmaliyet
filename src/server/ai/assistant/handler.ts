@@ -8,12 +8,17 @@
  * kapı (anahtar, Ayarlar › Fotoğraftan okuma, yönetici başına günlük sınır; 503 / 429) → ai_calls'a "running" satırı →
  * akış. Akış satır satır JSON'dur (src/lib/assistant/protocol.ts); bitince satır maliyetle kapanır. Sorunun ve yanıtın
  * METNİ hiçbir yere yazılmaz; sunucu günlüğüne yalnız hata kodu ve Anthropic'in istek kimliği düşer.
+ *
+ * İşlem araçları (docs/ASISTAN-ISLEMLER.md) bu uçta yalnız onay kartı hazırlar (`card` olayı): hiçbir eylem burada
+ * çağrılmaz (eylemler refresh() çağırır, Route Handler'da hata fırlatır). Yazım kartın Onayla düğmesinin sunucu
+ * eyleminde.
  */
 
 import { ASSISTANT_LIMITS, assistantRequest, encodeEvent, type AssistantEvent } from "@/lib/assistant/protocol";
 
 import type { AiErrorCode } from "../run";
 import { assistantErrorText, runAssistant, type AssistantClient, type AssistantOutcome, type AssistantTiming } from "./loop";
+import type { OpToolContext } from "./op-tools";
 import { SYSTEM_PROMPT } from "./prompt";
 import type { AssistantTool, ToolContext } from "./tool-adapter";
 
@@ -144,13 +149,15 @@ export async function handleAssistantPost(request: Request, deps: AssistantDeps)
         }
       };
       let outcome: AssistantOutcome | null = null;
+      // İşlem araçlarının bağlamı: soran yönetici, kartı akışa koyan işlev, bu yanıtın kart sayacı (yanıtta en çok bir kart)
+      const toolCtx: OpToolContext = { ...setup.toolCtx, user: { id: me.id, role: me.role }, emitCard: (card) => send({ type: "card", card }), cards: { count: 0 } };
       try {
         outcome = await setup.scoped(() =>
           runAssistant(setup.client, {
             system: SYSTEM_PROMPT,
             context: setup.context,
             tools: setup.tools,
-            toolCtx: setup.toolCtx,
+            toolCtx,
             history: parsed.data.history,
             message: parsed.data.message,
             emit: send,

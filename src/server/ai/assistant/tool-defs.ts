@@ -1,8 +1,9 @@
 /**
  * Panel asistanının araç listesi (saf; veri okuyucuları dışarıdan verilir, tests/panel-asistani.test.ts; docs/ASISTAN.md):
  * Claude bağlantısının yedi aracı olduğu gibi (src/server/mcp/tools.ts: aynı şema, aynı hesap, kopya yok) ve asistana
- * özgü iki salt okunur araç. Gerçek okuyucularla liste src/server/ai/assistant/tools.ts'te. Hiçbir araç yazmaz,
- * eşitlemez, ödeme işaretlemez.
+ * özgü iki salt okunur araç. Gerçek okuyucularla liste src/server/ai/assistant/tools.ts'te. Bu araçların hiçbiri
+ * yazmaz, eşitlemez, ödeme işaretlemez. İşlem araçları (onay kartı hazırlar, kendileri de yazmaz) ve işlem rehberi
+ * op-tools.ts'te; hepsi birlikte `allAssistantTools`.
  */
 
 import { z } from "zod";
@@ -12,6 +13,7 @@ import { cleanName, panelUrl, r2 } from "@/lib/mcp/answers/common";
 import { zLimit } from "@/lib/mcp/schemas";
 import type { ToolDef } from "@/server/mcp/tools";
 
+import { islemRehberi, opTools, type OpToolDeps } from "./op-tools";
 import type { AssistantTool } from "./tool-adapter";
 
 /** Her açıklamanın sonu (MCP'deki DESCRIPTION_TAIL ile aynı): Claude araç çıktısındaki adları talimat sanmasın */
@@ -117,4 +119,12 @@ export function assistantTools(mcp: readonly ToolDef[], deps: AssistantToolDeps)
     panelRehberi as unknown as AssistantTool,
     parasutBekleyenler(deps) as unknown as AssistantTool,
   ];
+}
+
+/**
+ * Bütün liste, sabit sırada: okuma araçları, işlem rehberi, sonra işlem araçları (onay kartı). Yapılandırılmış girdinin
+ * karmaşıklık sınırına sığan önek strict gider (toolParams): okuma araçları önce.
+ */
+export function allAssistantTools(mcp: readonly ToolDef[], deps: AssistantToolDeps & OpToolDeps): AssistantTool[] {
+  return [...assistantTools(mcp, deps), islemRehberi as unknown as AssistantTool, ...opTools(deps)];
 }

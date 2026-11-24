@@ -9,6 +9,8 @@
 
 import { z } from "zod";
 
+import { cardHistoryLine, isOpCard, isOpStatus, type OpCard, type OpCardState } from "./ops";
+
 export const ASSISTANT_LIMITS = {
   /** Kullanıcının bir mesajı (karakter) */
   message: 4000,
@@ -81,18 +83,20 @@ export type AssistantDone =
  * Akışın olayları (application/x-ndjson, satır başına bir JSON):
  * - `text`: yanıt metninin parçası (sırayla eklenir)
  * - `tool`: bir araç çalışıyor ("Tedarikçi özeti"); ekranda durum satırı
+ * - `card`: onay kartı (sunucunun yazdığı; docs/ASISTAN-ISLEMLER.md); kullanıcı Onayla'ya basmadıkça hiçbir şey değişmez
  * - `done`: bitti; `left` bugün kalan soru hakkı
  * - `error`: hata; `message` ekranda gösterilecek Türkçe metin (yanıt metni o ana kadar gelenlerdir)
  */
 export type AssistantEvent =
   | { type: "text"; text: string }
   | { type: "tool"; name: string; label: string }
+  | { type: "card"; card: OpCard }
   | { type: "done"; reason: AssistantDone; left: number | null }
   | { type: "error"; code: string; message: string; left?: number | null };
 
 export const encodeEvent = (e: AssistantEvent): string => `${JSON.stringify(e)}\n`;
 
-const KNOWN = new Set(["text", "tool", "done", "error"]);
+const KNOWN = new Set(["text", "tool", "card", "done", "error"]);
 
 /** Satır satır JSON okuyucu: gelen parçaları biriktirir, tamamlanan satırların olaylarını verir (bozuk satır atlanır) */
 export function eventReader(): { push(chunk: string): AssistantEvent[]; end(): AssistantEvent[] } {
@@ -100,8 +104,9 @@ export function eventReader(): { push(chunk: string): AssistantEvent[]; end(): A
   const parse = (line: string): AssistantEvent | null => {
     if (!line.trim()) return null;
     try {
-      const v = JSON.parse(line) as { type?: unknown };
-      return v && typeof v === "object" && typeof v.type === "string" && KNOWN.has(v.type) ? (v as AssistantEvent) : null;
+      const v = JSON.parse(line) as { type?: unknown; card?: unknown };
+      if (!v || typeof v !== "object" || typeof v.type !== "string" || !KNOWN.has(v.type)) return null;
+      return v.type === "card" && !isOpCard(v.card) ? null : (v as AssistantEvent);
     } catch {
       return null;
     }
@@ -131,6 +136,25 @@ export interface ChatMessage {
   failed?: boolean;
   /** Yanıtın altındaki küçük not ("Durduruldu", "Süre doldu") */
   note?: string;
+  /** Yanıttaki onay kartları ve son durumları */
+  cards?: OpCardState[];
+}
+
+/** sessionStorage'dan okunan kartlar: biçimi bozuk olan düşer */
+export function restoreCards(v: unknown): OpCardState[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.flatMap((x): OpCardState[] => {
+    const c = x as Partial<OpCardState> | null;
+    if (!c || !isOpCard(c.card) || !isOpStatus(c.status)) return [];
+    return [{ card: c.card, status: c.status, ...(typeof c.message === "string" ? { message: c.message } : {}), ...(typeof c.undoUntil === "string" ? { undoUntil: c.undoUntil } : {}) }];
+  });
+  return out.length ? out : undefined;
+}
+
+/** Yanıtın geçmişe giden metni: görünen metin + kartların kısa satırı (asistan sonraki turda kartın ne olduğunu bilsin) */
+export function replyText(m: Pick<ChatMessage, "text" | "cards">): string {
+  const lines = (m.cards ?? []).map(cardHistoryLine);
+  return [m.text.trim(), ...lines].filter(Boolean).join("\n\n");
 }
 
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text);
@@ -146,10 +170,11 @@ export function historyForRequest(messages: readonly ChatMessage[], max: number 
     const a = messages[i + 1];
     if (q.role !== "user" || a.role !== "assistant") continue;
     i++;
-    if (a.failed || !q.text.trim() || !a.text.trim()) continue;
+    const reply = replyText(a);
+    if (a.failed || !q.text.trim() || !reply) continue;
     pairs.push([
       { role: "user", text: clip(q.text.trim(), ASSISTANT_LIMITS.message) },
-      { role: "assistant", text: clip(a.text.trim(), ASSISTANT_LIMITS.reply) },
+      { role: "assistant", text: clip(reply, ASSISTANT_LIMITS.reply) },
     ]);
   }
   return pairs.slice(-Math.floor(max / 2)).flat();

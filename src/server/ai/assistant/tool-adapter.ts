@@ -4,8 +4,8 @@
  * (fitOutput); kopya yok. Burada yalnız:
  *
  * - zod şeması → araç tanımı (`input_schema`, `strict: true`; claudeToolSchema). Yapılandırılmış çıktının karmaşıklık
- *   sınırı istekteki bütün şemaların toplamına uygulanır: toplam sığmazsa `strict` hiçbir araçta gönderilmez (istek 400
- *   almasın), girdi yine zod'dan geçer.
+ *   sınırı istekteki strict şemaların toplamına uygulanır: sınıra sığan önek strict gider, kalanlar strict'siz (istek
+ *   400 almasın), girdi her durumda zod'dan geçer.
  * - `tool_use` bloğu → `tool_result`: ad (büyük / küçük harf farkı tek bir araca çıkıyorsa kabul), girdi zod'dan geçer,
  *   araç süre sınırıyla çalışır. Girdi hatası, aracın kendi uyarısı (ToolInputError) ve beklenmeyen hata `is_error: true`
  *   ile döner; Claude hatayı görüp düzeltir ya da kullanıcıya söyler. Beklenmeyen hatanın ayrıntısı Claude'a gitmez.
@@ -32,15 +32,20 @@ export const TOOL_TIMEOUT_MS = 15_000;
 
 export const TOOL_FAILED = "Panel verisi şu an okunamadı. Biraz sonra yeniden deneyin.";
 
-/** Claude'a giden araç tanımları (sıra sabit: önbellek araçların baytlarına bakar) */
+/**
+ * Claude'a giden araç tanımları (sıra sabit: önbellek araçların baytlarına bakar). Yapılandırılmış girdinin karmaşıklık
+ * sınırı istekteki strict şemaların TOPLAMINA uygulanır: sınıra sığan en uzun önek strict gider, kalanlar strict'siz
+ * (istek 400 almasın; girdileri yine zod'dan geçer). Okuma araçları listenin başında olduğu için strict kalır.
+ */
 export function toolParams(tools: readonly AssistantTool[]): Anthropic.Beta.BetaTool[] {
   const schemas = tools.map((t) => claudeToolSchema(t.inputSchema));
-  const strict = fitsStructuredOutputs(schemas);
+  let strict = 0;
+  while (strict < schemas.length && fitsStructuredOutputs(schemas.slice(0, strict + 1))) strict++;
   return tools.map((t, i) => ({
     name: t.name,
     description: t.description,
     input_schema: schemas[i] as Anthropic.Beta.BetaTool.InputSchema,
-    ...(strict ? { strict: true } : {}),
+    ...(i < strict ? { strict: true } : {}),
   }));
 }
 

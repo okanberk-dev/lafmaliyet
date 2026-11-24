@@ -5,10 +5,12 @@ import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } f
 
 import { useHideOnScrollDown } from "@/components/ui/fab";
 import { useMediaQuery } from "@/components/ui/use-media";
-import { ASSISTANT_LIMITS, eventReader, historyForRequest, type AssistantDone, type AssistantEvent, type ChatMessage } from "@/lib/assistant/protocol";
+import type { OpCardState } from "@/lib/assistant/ops";
+import { ASSISTANT_LIMITS, eventReader, historyForRequest, restoreCards, type AssistantDone, type AssistantEvent, type ChatMessage } from "@/lib/assistant/protocol";
 import { cn } from "@/lib/utils";
 
 import { MarkdownView } from "./markdown-view";
+import { OpCardView } from "./op-card";
 
 /**
  * Panel asistanı (docs/ASISTAN.md): sağ altta küçük yuvarlak düğme, tıklayınca masaüstünde 400×560'lık pencere,
@@ -22,6 +24,9 @@ import { MarkdownView } from "./markdown-view";
  * - Yanıt akarak gelir (satır satır JSON): metin parça parça, araç çalışırken durum satırı ("Tedarikçi özeti…"),
  *   "Durdur" isteği keser. Yanıt güvenli markdown'la çizilir (markdown-view.tsx; HTML yok).
  * - Klavye: Esc kapatır, Tab pencerenin içinde döner, Enter gönderir, Shift+Enter yeni satır.
+ * - İşlemler (docs/ASISTAN-ISLEMLER.md): asistan risksiz bir işi onay kartıyla önerir (`card` olayı; op-card.tsx).
+ *   Kart yanıtın altında durur; Onayla'ya basılmadıkça hiçbir şey değişmez. Kartların son durumu da sekmede saklanır ve
+ *   sonraki sorunun geçmişine kısa bir satır olarak gider.
  */
 
 const SAMPLES = ["Bu ay nasıl gidiyor?", "En çok kime borcumuz var?", "Hangi ürünler hammaddeye bağlanmayı bekliyor?", "Süt zammı kârı nasıl etkiledi?"];
@@ -53,7 +58,10 @@ function loadMessages(userId: number): ChatMessage[] {
     if (!Array.isArray(v)) return [];
     return v
       .filter((m): m is ChatMessage => !!m && (m.role === "user" || m.role === "assistant") && typeof m.text === "string")
-      .map((m) => ({ role: m.role, text: m.text, ...(m.failed ? { failed: true } : {}), ...(typeof m.note === "string" ? { note: m.note } : {}) }));
+      .map((m) => {
+        const cards = m.role === "assistant" ? restoreCards(m.cards) : undefined;
+        return { role: m.role, text: m.text, ...(m.failed ? { failed: true } : {}), ...(typeof m.note === "string" ? { note: m.note } : {}), ...(cards ? { cards } : {}) };
+      });
   } catch {
     return [];
   }
@@ -133,6 +141,13 @@ export function PanelAssistant({ userId }: { userId: number }) {
       return [...list.slice(0, -1), fn(list[list.length - 1])];
     });
 
+  /** Bir kartın durumunu değiştirir (hangi mesajda olursa olsun) */
+  const patchCard = useCallback(
+    (next: OpCardState) =>
+      setMessages((list) => list.map((m) => (m.cards?.some((c) => c.card.id === next.card.id) ? { ...m, cards: m.cards.map((c) => (c.card.id === next.card.id ? next : c)) } : m))),
+    [],
+  );
+
   const send = async (text: string) => {
     const question = text.trim();
     if (!question || busy || (gate && gate.state !== "on")) return;
@@ -153,11 +168,15 @@ export function PanelAssistant({ userId }: { userId: number }) {
     const handle = (e: AssistantEvent) => {
       if (e.type === "text") patchLast((m) => ({ ...m, text: m.text + e.text }));
       else if (e.type === "tool") setTool(e.label);
+      else if (e.type === "card") {
+        patchLast((m) => ({ ...m, cards: [...(m.cards ?? []), { card: e.card, status: "pending" }] }));
+        setAnnounce("Onay kartı hazır: kontrol edip Onayla'ya basın");
+      }
       else if (e.type === "done") {
         ended = true;
         setTool(null);
         const note = DONE_NOTE[e.reason];
-        patchLast((m) => ({ ...m, ...(note ? { note } : {}), ...(m.text.trim() ? {} : { failed: true, note: note ?? "Yanıt boş geldi." }) }));
+        patchLast((m) => ({ ...m, ...(note ? { note } : {}), ...(m.text.trim() || m.cards?.length ? {} : { failed: true, note: note ?? "Yanıt boş geldi." }) }));
         if (e.left !== null) setGate((g) => (g ? { ...g, left: e.left!, state: e.left! <= 0 ? "cap" : g.state } : g));
         setAnnounce("Yanıt hazır");
       } else if (e.type === "error") {
@@ -290,7 +309,7 @@ export function PanelAssistant({ userId }: { userId: number }) {
               <h2 id={titleId} className="text-[15px] leading-5 font-semibold">
                 Panel asistanı
               </h2>
-              <p className="truncate text-[12px] leading-4 text-ink-mute">Panelin verisine bakar, değiştirmez</p>
+              <p className="truncate text-[12px] leading-4 text-ink-mute">Panelin verisine bakar; onayınızla küçük işleri yapar</p>
             </div>
             {messages.length ? (
               <button
@@ -315,8 +334,9 @@ export function PanelAssistant({ userId }: { userId: number }) {
             {!messages.length ? (
               <div className="space-y-4">
                 <p className="text-[14px] leading-6 text-ink-soft">
-                  Merhaba! Ciro, kâr, tedarikçi borçları, ödemeler, kasa raporları ve panelin nasıl kullanıldığı hakkında sorabilirsiniz. Rakamları panelden okurum;
-                  hiçbir şeyi değiştirmem.
+                  Merhaba! Ciro, kâr, tedarikçi borçları, ödemeler, kasa raporları ve panelin nasıl kullanıldığı hakkında sorabilirsiniz. Tükendi, fiyat, ödendi
+                  işareti, hatırlatıcı, vardiya gibi küçük işleri onay kartıyla hazırlarım: siz Onayla&apos;ya basmadan hiçbir şey değişmez. Silme ve toplu işlem
+                  yapmam; onlarda ekranı gösteririm.
                 </p>
                 {!blocked ? (
                   <div className="flex flex-wrap gap-2">
@@ -344,6 +364,7 @@ export function PanelAssistant({ userId }: { userId: number }) {
               ) : (
                 <div key={i} className="space-y-1.5">
                   {m.text ? <MarkdownView text={m.text} onNavigate={sheet ? close : undefined} className={cn(m.failed && "text-ink-mute")} /> : null}
+                  {m.cards?.map((c) => <OpCardView key={c.card.id} state={c} onChange={patchCard} />)}
                   {m.note ? <p className={cn("text-[12.5px] leading-5", m.failed ? "text-warn-ink dark:text-brass-300" : "text-ink-mute")}>{m.note}</p> : null}
                 </div>
               ),
