@@ -2294,6 +2294,12 @@ export const posDailySales = pgTable(
      * onu değiştiremez (resolvePosLine). isService bunu ve HİZMET eşleştirmesini birlikte taşır
      */
     lafposService: boolean("lafpos_service").notNull().default(false),
+    /**
+     * Satılan parçaların dondurulan liste birim fiyatları (TL) ve adetleri (LafPOS `lines[].listPrices`, şube fiyatı;
+     * 24 Kasım 2026). "Eski fiyattan satılanlar" ve fiyat değişikliğinin durumu buradan (src/lib/prices/branch.ts). Eski
+     * LafPOS ve hizmet satırı: null ("Bilinmiyor"; ciro / adetten çıkarılmaz)
+     */
+    listPrices: jsonb("list_prices").$type<{ price: number; qty: number }[]>(),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("pos_daily_sales_date_pos_name_uq").on(t.date, t.branchId, t.posName)],

@@ -45,6 +45,8 @@ const slot = z.enum(["M", "L"]).nullable();
  * kalıcıdır. Saklanan jsonb aynı şemayla yeniden okunur; zorunlu bir alan eski günleri sessizce düşürürdü
  */
 const soft = <T extends z.ZodType>(schema: T) => schema.optional().catch(undefined);
+/** `lines[].listPrices` en çok bu kadar fiyat (LafPOS docs/03-ENTEGRASYON.md §4) */
+export const LIST_PRICES_MAX = 20;
 /** Serbest metin neden: kırpılır, en çok 200 karakter, boşsa null (KVKK: LafPOS da 200'de keser) */
 const reasonText = z
   .string()
@@ -150,6 +152,13 @@ const lineSchema = z.object({
   gross: soft(tl),
   /** Faz 2: birleşen satırda içeceğin seçeneğinden ayrılan ek parçası var (EXTRA SHOT, SYRUP, ALTERNATIF SÜT) */
   isAddon: soft(z.boolean()),
+  /**
+   * Şube fiyatı (LP-E, 24 Kasım 2026): satılan parçaların dondurulan liste birim fiyatları (TL; ana parçada kalemin
+   * `basePrice`'ı, ekte seçeneğin fiyatı) ve adetleri, en çok 20. Hizmet satırında ve eski LafPOS'ta yok. "Eski fiyattan
+   * satılanlar" ve fiyat değişikliğinin durumu yalnız buradan okunur (src/lib/prices/branch.ts); `revenue / qty` liste
+   * fiyatı değildir. Bozuksa yok sayılır, gün reddedilmez
+   */
+  listPrices: soft(z.array(z.object({ price: tl, qty })).max(LIST_PRICES_MAX)),
 });
 
 const ikramSchema = z.object({

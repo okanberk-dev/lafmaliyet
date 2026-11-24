@@ -4,7 +4,9 @@ import { z } from "zod";
  * laffogato.net menüsünün panele görünen biçimi (sitedeki karşılığı src/lib/panel/menu-link-core.ts, sözleşme
  * sitenin docs/PANEL-MENU.md'si; panel tarafı docs/SITE-MENU.md). Saf modül: sunucu ve testler paylaşır.
  *
- * Okuma (GET /api/panel/menu): { version: 1, now, items: [...], writes? }, bütün kalemler, satışta olmayanlar da.
+ * Okuma (GET /api/panel/menu): { version: 1, now, items: [...], writes?, branchPrices? }, bütün kalemler, satışta
+ * olmayanlar da. `branchPrices` (23 Kas 2026, sitenin "Şube fiyatı"): bütün şubelerin kendi fiyat satırları, eskiden
+ * yeniye; panelin okumasında gelir (taban okumada da), kalemlerin fiyatı tabandır (Tuzla). Bozuksa yok sayılır.
  * `writes` sitenin yazma ucunun yeni isteğe bağlı alanları kabul ettiğinin duyurusudur (`{ expect: true }`;
  * docs/planlar/senkron.md §3.1 › Yetenek bayrağı): panel `expect`'i yalnız son çekmede bunu gördüyse gönderir.
  * Yazma (POST /api/panel/menu) yanıtı: { item } aynı biçimde; 409 `stale` yanıtı da güncel kalemi taşır.
@@ -66,9 +68,40 @@ export const siteMenuItemSchema = z.object({
     .transform((v) => (Number.isFinite(Date.parse(v)) ? v.slice(0, 40) : "")),
 });
 
+/**
+ * Şubenin kendi fiyat satırı (sitenin `menu_item_branch_prices`'ı; src/lib/prices/branch.ts): `priceMinor` M ya da tek
+ * boy, null = o andan sonra yine taban; `priceMinorL` 0 = taban L; `effectiveFrom` UTC ISO an (sitenin saklayışı)
+ */
+export interface SiteBranchPrice {
+  /** Kalem kimliği (mnu-0011) */
+  id: string;
+  branch: string;
+  priceMinor: number | null;
+  priceMinorL: number;
+  effectiveFrom: string;
+  createdAt: string;
+}
+
+export const siteBranchPriceSchema = z.object({
+  id: z.string().regex(SITE_MENU_ID),
+  branch: z.string().regex(/^[a-z][a-z0-9-]{1,23}$/),
+  priceMinor: z.number().int().min(1).max(SITE_MONEY_MAX_MINOR).nullable(),
+  priceMinorL: minor,
+  effectiveFrom: isoTime,
+  createdAt: z
+    .string()
+    .catch("")
+    .transform((v) => (Number.isFinite(Date.parse(v)) ? v.slice(0, 40) : "")),
+});
+
+/** Sitenin şube fiyatı satırları en çok bu kadar (fazlası bozuk sayılır, satırlar yok sayılır) */
+export const SITE_BRANCH_PRICES_MAX = 20_000;
+/** Bozuk ya da yoksa null: liste yine kabul edilir (fiyat listesi şube satırlarından önemlidir) */
+const branchPricesSchema = z.array(siteBranchPriceSchema).max(SITE_BRANCH_PRICES_MAX).optional().catch(undefined);
+
 /** Yetenek bayrağı: yoksa ya da bozuksa hiçbir yeni alan duyurulmamış sayılır (eski site) */
 const writesSchema = z
-  .object({ expect: z.boolean().catch(false) })
+  .object({ expect: z.boolean().catch(false), branchPrice: z.boolean().catch(false) })
   .partial()
   .optional()
   .catch(undefined);
@@ -78,6 +111,7 @@ const listSchema = z.object({
   now: isoTime,
   items: z.array(siteMenuItemSchema).max(SITE_MENU_MAX_ITEMS),
   writes: writesSchema,
+  branchPrices: branchPricesSchema,
 });
 
 /** Sitenin yanıtı beklenen biçimde değil: yöneticiye gösterilecek açıklamayla */
@@ -95,6 +129,10 @@ export interface SiteMenuList {
   items: SiteMenuItem[];
   /** Site yazma ucunda `expect`'i kabul ediyor (GET'in `writes.expect` bayrağı); yoksa false */
   writesExpect: boolean;
+  /** Site yazma ucunda şube fiyatını (`branchPrice`) kabul ediyor (`writes.branchPrice`); yoksa false: panel önermez */
+  writesBranchPrice: boolean;
+  /** Bütün şubelerin fiyat satırları; site göndermediyse (eski site) ya da bozuksa null */
+  branchPrices: SiteBranchPrice[] | null;
 }
 
 /** Okuma ucunun yanıtı. Tanınmayan sürüm, bozuk fiyat / durum alanı ya da iki kez geçen kimlik: hata */
@@ -112,7 +150,13 @@ export function parseSiteMenuList(json: unknown): SiteMenuList {
     if (seen.has(item.id)) throw new SiteMenuFormatError(`Sitenin menü listesinde ${item.id} iki kez geçiyor`);
     seen.add(item.id);
   }
-  return { now: parsed.data.now, items: parsed.data.items, writesExpect: parsed.data.writes?.expect === true };
+  return {
+    now: parsed.data.now,
+    items: parsed.data.items,
+    writesExpect: parsed.data.writes?.expect === true,
+    writesBranchPrice: parsed.data.writes?.branchPrice === true,
+    branchPrices: parsed.data.branchPrices ?? null,
+  };
 }
 
 /** Yazma ucunun yanıtındaki kalem ({ item }); okunamazsa null (site yine de kabul etmiştir) */
@@ -121,9 +165,18 @@ export function parseSiteMenuAnswer(json: unknown): SiteMenuItem | null {
   return parsed.success ? parsed.data.item : null;
 }
 
+/**
+ * Şube fiyatı yazımının yanıtı (200 ya da 409 `stale`): kalemin o şubedeki satırları (`branchPrices`). Yanıttaki `item`
+ * şubenin görünümüdür (şubenin şu anki fiyatı): panelin taban kopyasına yazılmaz (sitenin docs/PANEL-MENU.md'si).
+ */
+export function parseBranchPriceAnswer(json: unknown): { branchPrices: SiteBranchPrice[] | null } {
+  const parsed = z.object({ branchPrices: z.array(siteBranchPriceSchema).max(SITE_BRANCH_PRICES_MAX) }).safeParse(json);
+  return { branchPrices: parsed.success ? parsed.data.branchPrices : null };
+}
+
 /** Hata yanıtındaki alan ({"error":"invalid","field":"priceMinor"}); yoksa null */
 export function errorField(json: unknown): string | null {
-  const parsed = z.object({ field: z.string().max(40) }).safeParse(json);
+  const parsed = z.object({ field: z.string().max(60) }).safeParse(json);
   return parsed.success ? parsed.data.field : null;
 }
 
