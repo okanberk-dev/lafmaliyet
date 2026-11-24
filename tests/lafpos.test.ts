@@ -744,7 +744,8 @@ test("altın gövde: LafPOS'un buildDayPayload biçimi (şube, iki boy, ekler, h
     ],
   );
   // 23 Kasım 2026'dan (LafPOS kasa zinciri, Faz 3): günde teslim (200) ve giriş (50) var; sayılan teslimden sonradır
-  assert.deepEqual([r.data.z.countedCash, r.data.z.handedOver, r.data.z.cashIn, r.data.z.expectedCash], [1685, 200, 50, 1695]);
+  // 24 Kasım 2026'dan (gün sonu tam): günde 5 ₺ nakit bahşiş da var (z.cashIn'in içinde: giriş 50 + bahşiş 5)
+  assert.deepEqual([r.data.z.countedCash, r.data.z.handedOver, r.data.z.cashIn, r.data.z.expectedCash, r.data.z.cashTips], [1690, 200, 55, 1700, 5]);
   assert.equal(r.data.z.cardTips, 25);
   assert.equal(r.data.z.cardCollections, 400);
   // Faz 3: açılışın beklenen tutarı, farkı ve nedeni; kasa hareketleri satır satır (Σ harcama = cashOut, Σ teslim =

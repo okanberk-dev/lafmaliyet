@@ -44,6 +44,7 @@ import { loadDueReminders, type UserReminderDTO } from "@/server/data/user-remin
 import { dayWaste } from "@/server/data/waste";
 import { countProgress } from "@/server/data/count-progress";
 import { getDb, schema as s } from "@/server/db";
+import { lafposPhotoMarks } from "@/server/lafpos/foto";
 import { isProductionRuntime, loadJobsOverview } from "@/server/jobs/alerts";
 import { lastParasutSyncOkAt } from "@/server/jobs/runs";
 import { loadSessions } from "@/server/karaoke/board";
@@ -324,12 +325,16 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     safe(Promise.all([loadLafposSwitchDay(), currentTillBranch()]).then(([d, b]) => branchSwitchDay(d, b))),
   ]);
 
+  // Personel: LafPOS'un otomatik raporunda tek iş gün sonu fotoğrafı (gün sonu tam; src/server/lafpos/foto.ts)
+  const photoMarks = !admin && reports?.length ? await safe(lafposPhotoMarks(getDb(), reports.map((r) => r.id))) : null;
   // Günün raporu; şube verilince o şubenin (işaretler de branchDayKey'le)
   const lite = (date: string, branchId?: string): CashLite | null => {
     const r = reports?.find((x) => x.date === date && (branchId === undefined || x.branchId === branchId));
     if (!r) return null;
     const flags = own.cashFlags?.get(branchId === undefined ? date : branchDayKey(branchId, date));
-    return flags?.length ? { ...toLite(r), flags } : toLite(r);
+    const mark = photoMarks?.get(r.id);
+    const base = mark ? { ...toLite(r), lafposPhoto: mark } : toLite(r);
+    return flags?.length ? { ...base, flags } : base;
   };
   const tills = view?.tills
     ? view.tills.map((b, i) => ({

@@ -313,7 +313,8 @@ test("G11: LafPOS'un kartla bahşişi ve cari tahsilatı kart farkından her oku
   const page = read("src/app/panel/kasa/page.tsx");
   assert.doesNotMatch(page, /lafposForStaff/);
   assert.equal(page.match(/lafpos=\{lafposState\.day\}/g)?.length, 2, "kasa formu ve geç rapor");
-  assert.match(page, /\.\.\.extrasFrom\(photoInfo, outs, report, lafposState\)/, "WhatsApp aynı özetle");
+  // WhatsApp aynı özetle (LafPOS'un otomatik gününde personelden yalnız fotoğraf farkı süzülür: staffPhotoDiffs)
+  assert.match(page, /const extras = extrasFrom\(photoInfo, outs, report, lafposState\);[\s\S]*\.\.\.extras,/, "WhatsApp aynı özetle");
   // WhatsApp metni de (personel): kart aynı, tutar yok, düşüldüğü yazar
   const wa = whatsappText(okc, { by: "Ayşe", kasa: "LafPOS", cardExtra: 520 });
   // LafPOS gününde karşılaştırma LafPOS'un adıyla (denetim E-39)

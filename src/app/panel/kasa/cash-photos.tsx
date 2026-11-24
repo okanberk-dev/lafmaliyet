@@ -112,7 +112,20 @@ export function CardPhotos({
  * gün saklanır): raporun tek Z fotoğrafında ve fotoğraftan farklı yazılan alanda düğme yok, bekleyende "Kaldırma
  * istendi". Kayıtlı değerler net okunmuş bir değerden farklıysa uyarı kutusu.
  */
-export function SavedPhotos({ photos, diffs, admin, removal }: { photos: CashPhotoDTO[]; diffs: PhotoDiff[]; admin: boolean; removal?: Record<number, "ok" | "pending" | "blocked"> }) {
+export function SavedPhotos({
+  photos,
+  diffs,
+  admin,
+  removal,
+  dayEndLabel,
+}: {
+  photos: CashPhotoDTO[];
+  diffs: PhotoDiff[];
+  admin: boolean;
+  removal?: Record<number, "ok" | "pending" | "blocked">;
+  /** LafPOS gününde yazarkasa bölümünün fotoğrafının adı ("Pavo gün sonu fişi"; "Banka POS Z" yerine) */
+  dayEndLabel?: string;
+}) {
   const [viewer, setViewer] = useState<{ id: number; caption: string } | null>(null);
   const [confirm, setConfirm] = useState<CashPhotoDTO | null>(null);
   const [ask, setAsk] = useState<CashPhotoDTO | null>(null);
@@ -149,7 +162,7 @@ export function SavedPhotos({ photos, diffs, admin, removal }: { photos: CashPho
           <h3 className="mb-2 text-[13px] font-semibold text-ink-soft">Fotoğraflar</h3>
           <div className="grid gap-2.5 sm:grid-cols-2">
             {photos.map((p) => {
-              const caption = photoCaption(p.kind, p.createdAt, p.byName);
+              const caption = photoCaption(p.kind, p.createdAt, p.byName, p.kind === "kasa-okc" || p.kind === "kasa-pos" ? dayEndLabel : undefined);
               const state = removal?.[p.id];
               return (
                 <div key={p.id} className="flex min-w-0 items-center gap-2">

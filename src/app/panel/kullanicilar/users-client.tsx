@@ -903,6 +903,7 @@ function NewUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated:
                 hint="En az 8 karakter. Hazır gelen güçlü parolayı kullanabilir ya da kendiniz yazabilirsiniz."
                 error={errors.password}
                 value={password}
+                email={email}
                 initiallyVisible
                 onChange={(v) => {
                   setPassword(v);
@@ -1177,6 +1178,7 @@ function UserDialog({
               }
               error={errors.password}
               value={password}
+              email={email}
               onChange={(v) => {
                 setPassword(v);
                 setErrors((x) => ({ ...x, password: undefined }));

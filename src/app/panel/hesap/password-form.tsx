@@ -12,6 +12,7 @@ import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
+import { PasswordInput } from "@/components/ui/password-input";
 import { PASSWORD_MIN, passwordProblem } from "@/lib/password-rules";
 import { changePasswordAction, updateProfile, type PasswordState } from "@/server/actions/auth";
 
@@ -74,27 +75,26 @@ export function PasswordForm({ email }: { email: string }) {
       className="space-y-4"
     >
       <Field label="Mevcut parola" htmlFor="pw-c">
-        <Input id="pw-c" name="current" type="password" autoComplete="current-password" required />
+        <PasswordInput id="pw-c" name="current" autoComplete="current-password" required />
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Yeni parola" hint="En az 8 karakter" error={tooShort ? `En az ${PASSWORD_MIN} karakter (şu an ${next.length})` : (weak ?? undefined)} htmlFor="pw-n">
-          <Input
+          <PasswordInput
             id="pw-n"
             name="next"
-            type="password"
             autoComplete="new-password"
             required
             minLength={8}
             value={next}
             onChange={(e) => setNext(e.target.value)}
             aria-invalid={tooShort || Boolean(weak) || undefined}
+            strength={{ email }}
           />
         </Field>
         <Field label="Yeni parola (tekrar)" error={mismatch ? "İki parola aynı değil" : undefined} htmlFor="pw-r">
-          <Input
+          <PasswordInput
             id="pw-r"
             name="repeat"
-            type="password"
             autoComplete="new-password"
             required
             minLength={8}
@@ -148,7 +148,7 @@ export function ProfileForm({ name: initialName, email: initialEmail }: { name: 
       </div>
       {dirty ? (
         <Field label="Parolanız (onay için)" htmlFor="pr-p" hint="Değişikliği kaydetmek için mevcut parolanızı girin">
-          <Input id="pr-p" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
+          <PasswordInput id="pr-p" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
         </Field>
       ) : null}
       {error ? (

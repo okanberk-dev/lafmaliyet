@@ -519,6 +519,13 @@
       "when": 1795499072687,
       "tag": "0073_kira_ev_sahibi",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1795528624054,
+      "tag": "0074_gun_sonu_tam",
+      "breakpoints": true
     }
   ]
 }

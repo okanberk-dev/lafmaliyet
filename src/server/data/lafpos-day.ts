@@ -6,7 +6,7 @@ import { branchDayKey } from "@/lib/cash-report";
 
 import type { KasaEvidence } from "@/lib/cash-out-requests";
 import { readLafposSwitchDay } from "@/lib/constants";
-import { bankPosSchema, posDaySchema, posZSchema, type BankPos, type PosOffDevice } from "@/lib/lafpos/day";
+import { bankPosSchema, posDaySchema, posZSchema, type BankPos, type PosOffDevice, type PosOkc } from "@/lib/lafpos/day";
 import { lafposDayDetail, type LafposDayDetail } from "@/lib/lafpos/gun-ayrinti";
 import { lafposDayOf, type LafposDay } from "@/lib/lafpos/prefill";
 import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
@@ -78,12 +78,12 @@ export async function loadKasaLafposDays(
   if (switchDay === null || to < switchDay) return of;
   const start = from > switchDay ? from : switchDay;
   const rows = await db
-    .select({ date: s.posDayReports.date, branchId: s.posDayReports.branchId, z: s.posDayReports.z, offDevice: s.posDayReports.offDevice, receivedAt: s.posDayReports.receivedAt })
+    .select({ date: s.posDayReports.date, branchId: s.posDayReports.branchId, z: s.posDayReports.z, offDevice: s.posDayReports.offDevice, okc: s.posDayReports.okc, receivedAt: s.posDayReports.receivedAt })
     .from(s.posDayReports)
     .where(and(gte(s.posDayReports.date, start), lte(s.posDayReports.date, to)));
   for (const r of rows) {
     const z = posZSchema.safeParse(r.z);
-    if (z.success) out.set(branchDayKey(r.branchId, r.date), lafposDayOf(z.data, r.receivedAt, offDeviceOf(r.offDevice)));
+    if (z.success) out.set(branchDayKey(r.branchId, r.date), lafposDayOf(z.data, r.receivedAt, offDeviceOf(r.offDevice), okcOf(r.okc)));
   }
   return of;
 }
@@ -97,13 +97,13 @@ export async function loadLafposDay(date: string, db: DB = getDb(), branchId?: s
   // Tek kasanın günü: verilen şube, yoksa kasanın şubesi (seçili fiziksel şube, "Tümü"de Tuzla)
   const sube = branchId ?? (await currentTillBranch());
   const [row] = await db
-    .select({ z: s.posDayReports.z, offDevice: s.posDayReports.offDevice, receivedAt: s.posDayReports.receivedAt })
+    .select({ z: s.posDayReports.z, offDevice: s.posDayReports.offDevice, okc: s.posDayReports.okc, receivedAt: s.posDayReports.receivedAt })
     .from(s.posDayReports)
     .where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, sube)))
     .limit(1);
   if (!row) return null;
   const z = posZSchema.safeParse(row.z);
-  return z.success ? lafposDayOf(z.data, row.receivedAt, offDeviceOf(row.offDevice)) : null;
+  return z.success ? lafposDayOf(z.data, row.receivedAt, offDeviceOf(row.offDevice), okcOf(row.okc)) : null;
 }
 
 /**
@@ -113,6 +113,15 @@ export async function loadLafposDay(date: string, db: DB = getDb(), branchId?: s
 function offDeviceOf(raw: unknown): PosOffDevice | null {
   if (raw === null || raw === undefined) return null;
   return posDaySchema.shape.offDevice.parse(raw) ?? null;
+}
+
+/**
+ * Saklı `okc` sütunu (gün sonu tam): yazarkasanın cihaz belgeleri; cihazda iptal edilen belge karşılaştırmalardan düşer
+ * (lafposDayOf). Yoksa ya da okunamıyorsa null
+ */
+function okcOf(raw: unknown): PosOkc | null {
+  if (raw === null || raw === undefined) return null;
+  return posDaySchema.shape.okc.parse(raw) ?? null;
 }
 
 /**
@@ -150,6 +159,10 @@ export async function loadLafposDayDetail(date: string, db: DB = getDb(), branch
         revision: s.posDayReports.revision,
         correction: s.posDayReports.correction,
         cashMoves: s.posDayReports.cashMoves,
+        okc: s.posDayReports.okc,
+        collections: s.posDayReports.collections,
+        shiftCounts: s.posDayReports.shiftCounts,
+        discountLines: s.posDayReports.discountLines,
       })
       .from(s.posDayReports)
       .where(where)
@@ -168,6 +181,10 @@ export async function loadLafposDayDetail(date: string, db: DB = getDb(), branch
     revision: row.revision ?? undefined,
     correction: row.correction ? sh.correction.parse(row.correction) : undefined,
     cashMoves: row.cashMoves ? sh.cashMoves.parse(row.cashMoves) : undefined,
+    okc: okcOf(row.okc) ?? undefined,
+    collections: row.collections ? sh.collections.parse(row.collections) : undefined,
+    shiftCounts: row.shiftCounts ? sh.shiftCounts.parse(row.shiftCounts) : undefined,
+    discountLines: row.discountLines ? sh.discountLines.parse(row.discountLines) : undefined,
   });
   return { ...detail, sends: Number(sends[0]?.n ?? 0) };
 }

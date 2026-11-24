@@ -200,7 +200,9 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
     assert.equal(rep.countedCash, 9_350);
     assert.equal(rep.cashDiff, 0);
     assert.equal(rep.bankPos, null, "Banka POS uydurulmaz");
-    assert.match(rep.note ?? "", /Eksik: Banka POS Z \(yazarkasa\)/);
+    // Gün sonu tam: not cihazın boşluğunu tam söyler, "panelden ekleyin" yok
+    assert.match(rep.note ?? "", /Eksik: Banka POS: LafPOS'tan Pavo gün sonu gelmedi/);
+    assert.doesNotMatch(rep.note ?? "", /panelden/);
     assert.equal(sent.length, 1);
     assert.equal(sent[0].subject, "Marina gün sonu · 22 Kasım Pazar");
     assert.deepEqual(sent[0].to, ["sahip@ornek.com"]);
@@ -293,7 +295,7 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
     const r = await gun.runLafposDayEnd(db, DAY, NOW);
     assert.deepEqual([r.report, r.email], ["no-count", "sent"]);
     assert.equal(await marinaReport(), null);
-    assert.deepEqual((await state())?.missing, ["bankPos", "countedCash"]);
+    assert.deepEqual((await state())?.missing, ["bankPos", "okc", "countedCash"]);
     assert.match(sent[0].text, /Kasa raporu yazılmadı/);
   });
 
@@ -384,7 +386,9 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
     // Aynı gün Pavo sonucuyla ikinci kez gelir
     assert.ok((await push(DAY, 14, {}, { bankPos: bankPos(8_120) })).ok);
     const second = await gun.runLafposDayEnd(db, DAY, NOW);
-    assert.deepEqual([second.report, second.email, second.pavo], ["unchanged", "same", "sent"]);
+    // Gün sonu tam: Pavo sonucu raporun boş Banka POS'unu doldurur (rapor güncellenir), gün sonu e-postası yinelenmez
+    assert.deepEqual([second.report, second.email, second.pavo], ["updated", "same", "sent"]);
+    assert.equal((await marinaReport())?.bankPos, 8_120, "Banka POS Pavo'nun sonucundan");
     assert.equal(sent.length, 2, "gün sonu yeniden gitmez, yalnız Pavo e-postası");
     assert.equal(sent[1].subject, "Marina · Pavo karşılaştırması · 22 Kasım Pazar · FARK VAR");
     assert.match(sent[1].text.replace(/[\u00a0\u202f]/g, " "), /Pavo kart toplamı: 8\.120 ₺/);

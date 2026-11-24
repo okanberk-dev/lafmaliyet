@@ -1,12 +1,12 @@
 "use client";
 
-import { Check, Copy, Eye, EyeOff, Sparkles } from "lucide-react";
+import { Check, Copy, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/form";
-import { cn } from "@/lib/utils";
+import { Field } from "@/components/ui/form";
+import { PasswordInput } from "@/components/ui/password-input";
 
 import { generatePassword } from "./access";
 
@@ -58,7 +58,8 @@ export function useCopied({ quiet = false }: { quiet?: boolean } = {}) {
 
 /**
  * Parola alanı: göster/gizle, "Güçlü parola oluştur" (okunur 12 karakter, karışan harf ve rakam yok) ve kopyala.
- * Telefonda 44px dokunma alanı, 16px yazı (iOS yakınlaştırmaz).
+ * Telefonda 44px dokunma alanı, 16px yazı (iOS yakınlaştırmaz). Kutu panelin parola kutusu (ui/password-input.tsx):
+ * gizliyken karakterler DOM'a yazılmaz, altında parola gücü.
  */
 export function PasswordField({
   id,
@@ -68,6 +69,7 @@ export function PasswordField({
   value,
   onChange,
   initiallyVisible = false,
+  email,
 }: {
   id: string;
   label: string;
@@ -76,36 +78,25 @@ export function PasswordField({
   value: string;
   onChange: (v: string) => void;
   initiallyVisible?: boolean;
+  /** Kişinin e-postası: parola gücü sunucu gibi e-postayı içeren parolayı da "Zayıf" sayar */
+  email?: string | null;
 }) {
   const [visible, setVisible] = useState(initiallyVisible);
   // Sonuç düğmede yazar ("Kopyalandı"); telefonda üstteki bildirim pencerenin başlığını örtmesin
   const { copied, copy } = useCopied({ quiet: true });
   return (
     <Field label={label} hint={hint} error={error} htmlFor={id}>
-      <div className="relative">
-        <Input
-          id={id}
-          type={visible ? "text" : "password"}
-          autoComplete="new-password"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          aria-invalid={error ? true : undefined}
-          className={cn("h-11 pr-12 pointer-coarse:h-11", visible && value && "font-mono tracking-wide")}
-        />
-        <button
-          type="button"
-          onClick={() => setVisible((v) => !v)}
-          className="absolute top-1/2 right-0 flex size-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-ink-mute hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none"
-          aria-label={visible ? "Parolayı gizle" : "Parolayı göster"}
-          aria-pressed={visible}
-          aria-controls={id}
-        >
-          {visible ? <EyeOff size={17} /> : <Eye size={17} />}
-        </button>
-      </div>
+      <PasswordInput
+        id={id}
+        autoComplete="new-password"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-invalid={error ? true : undefined}
+        className="h-11 pointer-coarse:h-11"
+        visible={visible}
+        onVisibleChange={setVisible}
+        strength={{ email }}
+      />
       <div className="flex flex-wrap gap-2">
         <Button
           variant="secondary"

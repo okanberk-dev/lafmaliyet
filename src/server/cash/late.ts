@@ -112,6 +112,9 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
     // Kanıt (G8, docs/LAFPOS.md › Kasa raporu): ModPOS gününde Z raporunun fotoğrafı; LafPOS gününde LafPOS'un gün sonu
     // (geldiyse fotoğraf gerekmez), gelmediyse yazarkasa (Banka POS) Z'sinin fotoğrafı
     const evidence = await kasaEvidence(tx, date, branchId);
+    // Gün sonu tam (24 Kasım 2026): LafPOS gününün gün sonu geldiyse rapor LafPOS'tan yazılır; personel yalnız gün sonu
+    // fotoğrafını ekler (src/server/lafpos/foto.ts), geç rapor isteği açılmaz
+    if (evidence === "lafpos") throw new UserError(CASH_REQUEST_TEXT.lateLafpos);
     if (evidence === "modpos-z" && !photos.some((p) => p.kind === "kasa-z")) throw new UserError(CASH_REQUEST_TEXT.lateZPhoto);
     if (evidence === "okc-z" && !photos.some((p) => p.kind === "kasa-okc")) throw new UserError(CASH_REQUEST_TEXT.lateOkcPhoto);
     if (photos.filter((p) => p.kind === "kasa-okc").length > MAX_OKC_PHOTOS) throw new UserError(OKC_PHOTOS_TEXT);
