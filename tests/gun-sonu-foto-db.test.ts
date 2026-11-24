@@ -230,6 +230,22 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     assert.deepEqual([check?.state, check?.source, check?.model], ["uyumlu", "ai", "claude-opus-5-5"]);
   });
 
+  test("Ucuz okunuş kendi içinde tutarlı ama LafPOS'tan farklıysa yöneticiye 'fark' gitmeden bir kez güçlü model okur", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test-sahte";
+    assert.ok((await push()).ok);
+    await gun.writeAutoReport(db, DAY, NOW);
+    const id = await newPhoto();
+    const models: string[] = [];
+    // Haiku: nakit + kart = toplam (tutarlı), kart LafPOS'tan farklı; Opus LafPOS'u tutan okunuş
+    const cheap = detailed({ card: 4_000, cash: 1_215 });
+    const client = fakeClient({ "claude-haiku-5-5": cheap, "claude-opus-5-5": detailed() }, models);
+    const r = await okuma.readLafposDayPhoto(db, { photoId: id, bytes: slipPng(["X"]), contentType: "image/png", day: DAY, userId: ayse.id, branchId: LAFPOS_SUBE }, { client });
+    assert.deepEqual(models, ["claude-haiku-5-5", "claude-opus-5-5"], "farklı okunan ucuz okunuş güçlü modelle yeniden okunur");
+    assert.equal(r?.model, "claude-opus-5-5");
+    await foto.attachLafposDayPhotoCore(db, ayse, { date: DAY, branchId: LAFPOS_SUBE, photoId: id }, NOW);
+    assert.equal((await state())?.photoCheck?.state, "uyumlu", "yanlış 'fark' yöneticiye gitmedi");
+  });
+
   test("Ucuz okuma tam ve LafPOS'u tutuyorsa tek çağrı (Haiku)", async () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-test-sahte";
     assert.ok((await push()).ok);

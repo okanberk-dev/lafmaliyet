@@ -23,6 +23,8 @@ import type { KasaOkc } from "./schemas";
 
 /** Bir okuma adımının sonucu (yapay zekâ ya da kod) */
 export type ReadStep = { ok: true; data: KasaOkc; model: string } | { ok: false; code: AiErrorCode | "ocr"; message: string };
+/** Okuma hatası (yapay zekânın kodu ya da kodla okumanın "ocr"u) */
+export type ReadFailure = { code: AiErrorCode | "ocr"; message: string };
 
 /** Model yanıt verdi ama okunuş yok: güçlü model bir kez denenir */
 const RETRY_STRONG: readonly string[] = ["refusal", "incomplete", "invalid"];
@@ -45,14 +47,16 @@ export interface LafposReadResult {
   /** Atılan adımlar (günlük): "reuse", "cheap", "strong", "ocr", "reuse-ocr" */
   steps: string[];
   /** Okunuş yoksa yapay zekânın (yoksa kodun) hatası */
-  error: { code: string; message: string } | null;
+  error: ReadFailure | null;
+  /** Kodla okumaya götüren yapay zekâ hatası (kod okuduysa da; yapay zekâ okuduysa yok) */
+  aiError?: ReadFailure | null;
 }
 
 export async function runLafposRead(d: LafposReadDeps): Promise<LafposReadResult> {
   const steps: string[] = [];
   const ai = (raw: KasaOkc, model: string): LafposReadResult => ({ raw, source: "ai", model, steps, error: null });
   let first: { raw: KasaOkc; model: string } | null = null;
-  let failure: { code: string; message: string } | null = null;
+  let failure: ReadFailure | null = null;
   if (d.previous.reading) {
     steps.push("reuse");
     const model = d.previous.model ?? d.strongModel;
@@ -76,15 +80,26 @@ export async function runLafposRead(d: LafposReadDeps): Promise<LafposReadResult
   return code(d, steps, failure ?? { code: s.code, message: s.message });
 }
 
-async function code(d: LafposReadDeps, steps: string[], failure: { code: string; message: string }): Promise<LafposReadResult> {
+async function code(d: LafposReadDeps, steps: string[], failure: ReadFailure): Promise<LafposReadResult> {
   if (d.previous.ocr) {
     steps.push("reuse-ocr");
-    return { raw: d.previous.ocr, source: "kod", model: OCR_MODEL, steps, error: null };
+    return { raw: d.previous.ocr, source: "kod", model: OCR_MODEL, steps, error: null, aiError: failure };
   }
   const o = await d.ocr();
   steps.push("ocr");
-  if (o.ok) return { raw: o.data, source: "kod", model: o.model, steps, error: null };
-  return { raw: null, source: null, model: null, steps, error: failure };
+  if (o.ok) return { raw: o.data, source: "kod", model: o.model, steps, error: null, aiError: failure };
+  return { raw: null, source: null, model: null, steps, error: failure, aiError: failure };
+}
+
+/**
+ * Elle girilen raporun kasa formu (yazarkasa bölümü; LafPOS gününde de aynı okuma yolu): alanları yalnız yapay zekâ
+ * okunuşu doldurur. Kodla okunduysa (OCR rakamının kaynağı formda görünmez, güveni ayrı) ya da hiç okunamadıysa form
+ * yapay zekânın hatasını eskisi gibi gösterir ("rakamları elle yazın", gerekirse "Yeniden dene"); kod okunuşu yine
+ * yöneticinin karşılaştırmasına gider. Gün sonu fotoğrafı kartı bu metni göstermez (personelden rakam istenmez)
+ */
+export function formFailureOf(r: LafposReadResult): ReadFailure | null {
+  if (r.source === "ai" && r.raw) return null;
+  return r.aiError ?? r.error ?? { code: "ocr", message: "Fotoğraf okunamadı; rakamları elle yazın." };
 }
 
 const TOL = 0.01;

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
 import { money } from "@/lib/format";
-import { LAFPOS_PHOTO_TEXT, photoSourceText, type LafposPhotoCheck, type LafposPhotoNeed } from "@/lib/lafpos/foto";
+import { LAFPOS_PHOTO_TEXT, photoSourceText, photoUnsureText, type LafposPhotoCheck, type LafposPhotoNeed } from "@/lib/lafpos/foto";
 import { MAX_OKC_PHOTOS, type ReadingState } from "@/lib/photo-rules";
 import { attachLafposDayPhoto, setLafposBankPos } from "@/server/actions/cash-report";
 
@@ -100,8 +100,8 @@ function AdminCheck({ check, bankPos, onWrite, busy }: { check: LafposPhotoCheck
         : check.state === "okunamadi"
           ? "Fotoğraf okunamadı ya da yanlış belge"
           : check.state === "belirsiz"
-            ? "Fotoğraf kodla okundu ama bir satır güvenle seçilmedi: yönetici baksın"
-            : "Fotoğraf okunmadı (henüz okunmadı)";
+            ? `${photoUnsureText(check)}: yönetici baksın`
+            : "Fotoğraf henüz okunmadı";
   return (
     <section aria-label="Fotoğraf ↔ LafPOS" className="space-y-2">
       <Notice tone={check.state === "fark" ? "bad" : check.state === "uyumlu" ? "good" : "warn"} size="sm" title={head} text={check.state === "okunmadi" ? undefined : `Okuyan: ${photoSourceText(check)}`} />

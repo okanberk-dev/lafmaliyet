@@ -359,24 +359,28 @@ export function lafposPhotoCheck(
       });
     }
     // Ödeme bölümü hiç okunmadıysa (kadrajın dışında) bu Z'nin ödeme satırları karşılaştırılmaz (undefined); okunduysa
-    // basılmayan satır 0 sayılır (cihaz sıfır satırı basmaz)
-    const sumOf = (z: KasaOkc, kinds: readonly string[]) => {
+    // basılmayan satır 0 sayılır (cihaz sıfır satırı basmaz). Kodla okunan Z'de tanınmayan satır 0 uydurulmaz (OCR satırı
+    // kaçırmış ya da etiketini yanlış okumuş olabilir): LafPOS'ta da 0 ise tutar, değilse okunamadı
+    const kodRaws = new Set(reads.flatMap((r) => (r.source === "kod" && r.raw ? [r.raw] : [])));
+    const sumOf = (z: KasaOkc, kinds: readonly string[], lafpos: number) => {
       if (!z.payments.length) return undefined;
-      const xs = z.payments.filter((p) => kinds.includes(p.kind)).map((p) => printedAmount(p.amount).value);
+      const lines = z.payments.filter((p) => kinds.includes(p.kind));
+      if (!lines.length && kodRaws.has(z)) return near(lafpos, 0) ? 0 : null;
+      const xs = lines.map((p) => printedAmount(p.amount).value);
       return xs.some((x) => x === null) ? null : round2((xs as number[]).reduce((a, x) => a + x, 0));
     };
     // Kart satırı basmayan cihaz kartı yalnız banka adlarıyla basar (OKC_TASK): o zaman banka satırları kart sayılır
-    const cardOf = (z: KasaOkc) => (z.payments.some((p) => p.kind === "card") ? sumOf(z, ["card"]) : sumOf(z, ["bank_subline"]));
-    const pairs: [string, (z: KasaOkc) => number | null | undefined, number | null | undefined][] = [
+    const cardOf = (z: KasaOkc, lafpos: number) => (z.payments.some((p) => p.kind === "card") ? sumOf(z, ["card"], lafpos) : sumOf(z, ["bank_subline"], lafpos));
+    const pairs: [string, (z: KasaOkc, lafpos: number) => number | null | undefined, number | null | undefined][] = [
       ["Yazarkasa toplamı", (z) => printedAmount(z.dailyTotal).value, i.report.okcTotal],
-      ["Yazarkasa nakdi", (z) => sumOf(z, ["cash"]), i.report.okcCash],
+      ["Yazarkasa nakdi", (z, l) => sumOf(z, ["cash"], l), i.report.okcCash],
       ["Yazarkasa kartı", cardOf, i.report.okcCard],
-      ["Yazarkasa yemek kartı", (z) => sumOf(z, ["meal_card"]), i.report.okcMealCard],
-      ["Yazarkasa diğer", (z) => sumOf(z, ["other"]), i.report.okcOther],
+      ["Yazarkasa yemek kartı", (z, l) => sumOf(z, ["meal_card"], l), i.report.okcMealCard],
+      ["Yazarkasa diğer", (z, l) => sumOf(z, ["other"], l), i.report.okcOther],
     ];
     for (const [label, read, lafpos] of pairs) {
       if (lafpos === null || lafpos === undefined) continue;
-      const photo = zs.map(read).filter((v): v is number | null => v !== undefined);
+      const photo = zs.map((z) => read(z, lafpos)).filter((v): v is number | null => v !== undefined);
       if (!photo.length) continue;
       rows.push({ label, photo: uniq(photo.map(amountOf)), lafpos: money(lafpos), ok: photo.every((v) => v !== null && near(v, lafpos)), ...(photo.some((v) => v === null) ? { unread: true } : {}) });
     }
@@ -418,7 +422,7 @@ export function lafposPhotoCheck(
  * şüpheli bir rakamla "uyumlu" ya da "fark" demesin; okunmayan satır "okunamadı — yönetici baksın"a gider
  */
 function strictView(raw: KasaOkc): KasaOkc {
-  const a = (x: AmountRaw): AmountRaw => (x.confidence === "high" ? x : { text: null, value: null, confidence: "low" });
+  const a = (x: AmountRaw): AmountRaw => (x.confidence === "high" ? x : NONE);
   return {
     ...raw,
     date: raw.dateConfidence === "high" ? raw.date : null,
@@ -428,14 +432,32 @@ function strictView(raw: KasaOkc): KasaOkc {
     totalVat: a(raw.totalVat),
     kdvGroups: raw.kdvGroups.map((g) => ({ ...g, total: a(g.total), vat: a(g.vat) })),
     payments: raw.payments.map((p) => ({ ...p, amount: a(p.amount) })),
-    batches: raw.batches.map((b) => ({ ...b, salesTotal: a(b.salesTotal), refundTotal: b.refundTotal.text === null ? b.refundTotal : a(b.refundTotal), netTotal: a(b.netTotal) })),
+    // Batch'in tutarı NET'tir, NET basılmadıysa satış − iade (netOf). Basılmış ama güvenle okunmamış NET ya da İADE varsa
+    // satıştan tutar hesaplanmaz (satış − 0 uydurma olur): satış da okunmamış sayılır, batch'in tutarı "okunamadı"
+    batches: raw.batches.map((b) => {
+      const unsure = (x: AmountRaw) => printed(x) && x.confidence !== "high";
+      const noFallback = unsure(b.netTotal) || unsure(b.refundTotal);
+      return { ...b, salesTotal: noFallback ? NONE : a(b.salesTotal), refundTotal: printed(b.refundTotal) ? a(b.refundTotal) : b.refundTotal, netTotal: a(b.netTotal) };
+    }),
   };
 }
+
+const NONE: AmountRaw = { text: null, value: null, confidence: "low" };
+/** Tutar fişte basılmış mı (okunduysa metni ya da değeri var) */
+const printed = (x: AmountRaw) => x.text !== null || x.value !== null;
 
 /** Okuyanın adı (yöneticinin kartı, e-posta): "Yapay zekâ (Claude Haiku 5.5)" ya da "Kodla okundu" */
 export function photoSourceText(check: Pick<LafposPhotoCheck, "source" | "model"> | null): string {
   if (check?.source === "kod") return "Kodla okundu";
   return check?.model ? `Yapay zekâ (${modelName(check.model)})` : "Yapay zekâ";
+}
+
+/**
+ * "Yönetici baksın"ın (belirsiz) nedeni: kodla okunan satırlardan biri güvenle seçilmediyse o; OCR düştüyse (hata, süre)
+ * ya da fişte hiçbir şey seçilmediyse karşılaştırılan satır yoktur, "kodla okundu" denmez
+ */
+export function photoUnsureText(check: Pick<LafposPhotoCheck, "rows">): string {
+  return check.rows.length ? "Yapay zekâ kullanılamadı; fotoğraf kodla okundu ama bir satır güvenle seçilmedi" : "Yapay zekâ kullanılamadı ve fotoğraf kodla da okunamadı";
 }
 
 /**

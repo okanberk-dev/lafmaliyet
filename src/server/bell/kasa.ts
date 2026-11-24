@@ -20,6 +20,7 @@ import {
 import { closedFollowUp, CLOSED_FOLLOW_UP_TEXT, staffResultBell } from "@/lib/cash-requests";
 import { dateTR, money } from "@/lib/format";
 import { lafposDiffs, lafposDiffText } from "@/lib/lafpos/diffs";
+import { photoUnsureText } from "@/lib/lafpos/foto";
 import { branchSwitchDay, kasaName } from "@/lib/lafpos/switch";
 import { modposMismatchBell, modposMismatches } from "@/lib/modpos/zil";
 import { addDays, longDateTR, todayTR } from "@/lib/reminders";
@@ -264,7 +265,7 @@ async function cashIntegrityNotifications(reports: CashReportDTO[], day: string,
     // Kodla okunup bir satırı güvenle seçilmeyen fotoğraf da yöneticinin (yapay zekâ yokken; "yönetici baksın")
     if (!r || (check?.state !== "fark" && check?.state !== "belirsiz")) continue;
     const t = tills.of(r.branchId);
-    const body = check.state === "fark" ? check.issues.join("; ") : "Yapay zekâ kullanılamadı, fotoğraf kodla okundu ama bir satır güvenle seçilmedi; fotoğrafa bakın.";
+    const body = check.state === "fark" ? check.issues.join("; ") : `${photoUnsureText(check)}; fotoğrafa bakın.`;
     out.push({
       id: `kasa-foto-${r.date}${idPart(t)}-${Date.parse(check.at)}`,
       kind: "warning",

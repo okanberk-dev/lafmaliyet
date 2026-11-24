@@ -213,7 +213,22 @@ satış − iade ≠ net) hep birlikte "low" olur. Karşılaştırma kodla okuna
 yalnız her karşılaştırılan satır yüksek güvenle okunduysa ve en az bir tutar (Banka POS ya da yazarkasa toplamı, batch)
 karşılaştırıldıysa; değilse durum **"okunamadı — yönetici baksın"** (`belirsiz`). Personel için iş bitmiştir ("Fotoğraf
 alındı"; yeniden çekmesi istenmez), yönetici zilde, e-postada ve ay satırında ("Gün sonu fotoğrafına bakın") görür.
-Yöneticinin kartı ve e-posta okuyanı yazar: "Yapay zekâ (Claude Haiku 5.5)" ya da "Kodla okundu".
+Yöneticinin kartı ve e-posta okuyanı yazar: "Yapay zekâ (Claude Haiku 5.5)" ya da "Kodla okundu". Nedeni de doğru yazılır
+(`photoUnsureText`): bir satır okunup güvenle seçilmediyse "Yapay zekâ kullanılamadı; fotoğraf kodla okundu ama bir satır
+güvenle seçilmedi", OCR düştüyse (hata, süre) ya da fişte hiçbir şey seçilmediyse "Yapay zekâ kullanılamadı ve fotoğraf
+kodla da okunamadı".
+
+Kodla okunan fişte hiçbir rakam tahminle doldurulmaz:
+- Batch'in tutarı NET'tir; NET basılmadıysa satış − iade. NET ya da İADE basılmış ama güvenle okunmamışsa satıştan tutar
+  hesaplanmaz (iade 0 sayılmaz): batch'in tutarı ve Banka POS toplamı "okunamadı", "Banka POS'a yaz" önerisi yok.
+- Ödeme satırı (nakit, kart, yemek kartı, diğer) tanınmadıysa 0 sayılmaz (OCR etiketi kaçırmış olabilir): LafPOS'ta da 0
+  ise tutar (cihaz sıfır satırını basmaz), değilse "okunamadı". Yapay zekâ okunuşunda basılmayan satır 0 sayılmaya devam
+  eder.
+
+**Elle girilen raporun formu** (LafPOS gününde Düzenle, yazarkasa bölümü) aynı okuma yolunu kullanır, alanları yalnız yapay
+zekâ okunuşu doldurur (`formFailureOf`). Kodla okunduysa ya da hiç okunamadıysa form yapay zekânın hatasını eskisi gibi
+gösterir ("Fotoğraftan okuma kapalı; rakamları elle yazın.", gerekirse "Yeniden dene"); OCR'ın rakamları kaynağı görünmeden
+forma yazılmaz, kod okunuşu yine yöneticinin karşılaştırmasına gider.
 
 **Modeller ayardan** (`integration_state` › `ai.settings` › `photoModels: { cheap, strong }`; `photoModelsOf`): yalnız
 `claude-haiku-5-5` ve `claude-opus-5-5` kabul edilir, eksik ya da bilinmeyen değer sabite döner. Ayarlar kartı hangi

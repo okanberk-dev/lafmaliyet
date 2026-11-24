@@ -786,8 +786,10 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   okunuş eksik / tutarsız ya da LafPOS'tan farklıysa bir kez güçlü model (Claude Opus 5.5); yapay zekâ yoksa (anahtar,
   kapalı, sınır, kredi, hata) kodla (OCR + Pavo fişinin ayrıştırıcısı): [FOTOGRAF.md › LafPOS gününün
   fotoğrafı](FOTOGRAF.md#lafpos-gününün-fotoğrafı-önce-ucuz-model-gerekirse-güçlü-yapay-zekâ-yoksa-kod-24-kasım-2026).
-  Kodla okunan bir satır güvenle seçilmediyse durum "okunamadı — yönetici baksın" (`belirsiz`; personelin işi bitti,
-  zilde "Kasa fotoğrafı okunamadı, yönetici baksın", ay satırında "Gün sonu fotoğrafına bakın"). Yöneticinin kartı
+  Kodla okunan bir satır güvenle seçilmediyse ya da OCR hiç okuyamadıysa durum "okunamadı — yönetici baksın" (`belirsiz`;
+  personelin işi bitti, zilde "Kasa fotoğrafı okunamadı, yönetici baksın" ve nedeni: "fotoğraf kodla okundu ama bir satır
+  güvenle seçilmedi" ya da "fotoğraf kodla da okunamadı"; ay satırında "Gün sonu fotoğrafına bakın"). Kodla okunan fişte
+  güvenle okunmamış NET / İADE batch tutarı ve tanınmayan ödeme satırı uydurulmaz ("okunamadı"). Yöneticinin kartı
   okuyanı yazar ("Yapay zekâ (Claude Haiku 5.5)" / "Kodla okundu").
 
 **Gün sonu e-postası** (`sendDayEndEmail`): kasa raporu alıcılarına (Kasa › Rapor alıcıları, e-posta açıksa) ve etkin

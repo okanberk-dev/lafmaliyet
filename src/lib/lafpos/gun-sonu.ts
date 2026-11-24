@@ -5,7 +5,7 @@ import { addDays, longDateTR } from "@/lib/reminders";
 
 import { pavoSectionHtml, pavoSectionText, pavoState } from "./bank-pos";
 import type { BankPos, PosDayZ, PosIkram, PosOffDevice, PosOkc, PosPayment } from "./day";
-import { lafposPhotoDone, lafposPhotoNeed, photoCheckText, photoSourceText, type LafposPhotoCheck, type LafposPhotoNeed } from "./foto";
+import { lafposPhotoDone, lafposPhotoNeed, photoCheckText, photoSourceText, photoUnsureText, type LafposPhotoCheck, type LafposPhotoNeed } from "./foto";
 import type { LafposDayDetail } from "./gun-ayrinti";
 
 /**
@@ -467,7 +467,7 @@ export function photoCheckHash(check: LafposPhotoCheck): string {
 export function renderPhotoMail(m: { branchName: string; date: string; check: LafposPhotoCheck; link: string }): { subject: string; html: string; text: string } {
   const subject = `${m.branchName} gün sonu fotoğrafı · ${longDateTR(m.date)} · ${m.check.state === "fark" ? "LafPOS'tan FARKLI" : "okunamadı, yönetici baksın"}`;
   const rows = photoRows(m.check);
-  const headline = m.check.state === "fark" ? "Fotoğraf LafPOS'un rakamlarından farklı okundu" : "Fotoğraf kodla okundu ama bir satır güvenle seçilmedi: fotoğrafa bakın";
+  const headline = m.check.state === "fark" ? "Fotoğraf LafPOS'un rakamlarından farklı okundu" : `${photoUnsureText(m.check)}: fotoğrafa bakın`;
   const rowHtml = ([label, value]: [string, string]) =>
     `<tr><td style="padding:6px 0;font-family:${FONT};font-size:14px;color:#3f3f46;vertical-align:top">${esc(label)}</td><td align="right" style="padding:6px 0 6px 12px;font-family:${FONT};font-size:14px;font-weight:${/· FARK$/.test(value) ? 700 : 600};color:${/· FARK$/.test(value) ? "#b91c1c" : "#171717"}">${esc(value)}</td></tr>`;
   const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(subject)}</title></head>

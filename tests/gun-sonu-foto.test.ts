@@ -10,10 +10,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { lafposPhotoCheck, lafposPhotoDone, photoSourceText, staffPhotoLine, type LafposPhotoCheck } from "../src/lib/lafpos/foto";
+import { lafposPhotoCheck, lafposPhotoDone, photoSourceText, photoUnsureText, staffPhotoLine, type LafposPhotoCheck } from "../src/lib/lafpos/foto";
 import { photoCheckHash, photoMailNeeded, renderPhotoMail } from "../src/lib/lafpos/gun-sonu";
 import type { BankPos, PosOkc } from "../src/lib/lafpos/day";
-import { cheapReadingProblems, runLafposRead, type ReadStep } from "../src/lib/photo-read/lafpos-read";
+import { cheapReadingProblems, formFailureOf, runLafposRead, type ReadStep } from "../src/lib/photo-read/lafpos-read";
 import { OCR_MODEL, PHOTO_CHEAP_MODEL, PHOTO_STRONG_MODEL, photoModelsOf, readingSourceOf } from "../src/lib/photo-read/models";
 import { parseAmountTR, parsePavoOcr, type OcrLine } from "../src/lib/photo-read/pavo-ocr";
 import { OKC_SHORT_TASK, OKC_TASK } from "../src/lib/photo-read/prompts";
@@ -215,6 +215,22 @@ test("Kodla okumaya düşme: yapay zekâ olmayınca her hata türünde (anahtar,
   assert.deepEqual([r.raw, r.source, r.error?.code], [null, null, "nokey"]);
 });
 
+test("Kasa formu (elle girilen raporun yazarkasa bölümü): yalnız yapay zekâ okunuşu alanları doldurur; kodla okunduysa ya da okunamadıysa yapay zekânın hatası eskisi gibi görünür", async () => {
+  // Yapay zekâ okudu: form doldurulur
+  const ok = await runLafposRead(fakeDeps({}).deps);
+  assert.equal(formFailureOf(ok), null);
+  // Yapay zekâ yok, kodla okundu: rakamlar forma yazılmaz (kaynağı görünmeyen OCR rakamı yok); yapay zekânın metni ve kodu
+  const kod = await runLafposRead(fakeDeps({ cheap: { ok: false, code: "billing", message: "Yapay zekâ kredisi bitti; rakamları elle yazın." } }).deps);
+  assert.equal(kod.source, "kod");
+  assert.deepEqual(formFailureOf(kod), { code: "billing", message: "Yapay zekâ kredisi bitti; rakamları elle yazın." });
+  // Kayıtlı kod okunuşu yeniden kullanıldıysa da aynı
+  const reuse = await runLafposRead(fakeDeps({ previous: { reading: null, model: null, strongTried: false, ocr: detailedZ() }, cheap: { ok: false, code: "timeout", message: "Zaman aşımı" } }).deps);
+  assert.deepEqual(formFailureOf(reuse), { code: "timeout", message: "Zaman aşımı" });
+  // Hiç okunuş yok (OCR da düştü): yapay zekânın hatası, sessiz boşluk değil
+  const none = await runLafposRead(fakeDeps({ cheap: { ok: false, code: "nokey", message: "Fotoğraftan okuma kapalı; rakamları elle yazın." }, ocr: { ok: false, code: "ocr", message: "OCR süresi doldu" } }).deps);
+  assert.deepEqual(formFailureOf(none), { code: "nokey", message: "Fotoğraftan okuma kapalı; rakamları elle yazın." });
+});
+
 // ——— Pavo fişinin kural tabanlı ayrıştırıcısı (OCR satırlarından) ———
 
 test("Türkçe tutar: 1.234,56 ve *4160,00 okunur; şüpheli biçim okunmaz", () => {
@@ -330,6 +346,61 @@ test("Kodla okuma: fişte hiçbir şey seçilmediyse personelden yeniden çekmes
     JSON.stringify(k.kdvGroups),
   );
   assert.equal(check([{ photoId: 1, raw: k, error: null, source: "kod" }]).state, "belirsiz");
+});
+
+test("Kodla okuma: basılmış ama güvenle okunmamış İADE ya da NET batch tutarı uydurulmaz (satış − 0 sayılmaz); 'fark' değil 'yönetici baksın'", () => {
+  const bank: BankPos = { ...BANK, batchNo: "000279", batches: [batch("000279", 755)], dayCard: 755, acquirers: [{ name: "Garanti BBVA", count: 3, total: 755 }] };
+  const slip = (refund: string, net: string) =>
+    parsePavoOcr(["PAVO", "TARİH: 24.11.2026 SAAT: 23:10", "BANKA GÜN SONU", "GARANTİ BBVA", "BATCH NO: 000279", "SATIŞ TOPLAMI 800,00", refund, net].map((l) => line(l))).raw;
+  const run = (raw: KasaOkc, bankPos: number | null) => lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw, error: null, source: "kod" }], bankPos: bank, okc: OKC, report: { ...REPORT, bankPos } }, NOW);
+  // İADE ve NET basılmış, ikisi de düşük güvenle okunmuş
+  const both = run(slip("İADE TOPLAMI 45,00(50)", "NET TOPLAM 755,00(50)"), 755);
+  assert.equal(both.state, "belirsiz", JSON.stringify(both.rows));
+  assert.ok(!both.rows.some((r) => r.photo.includes("800")), "satış tutarı batch neti sayılmaz");
+  assert.ok(both.rows.some((r) => r.label === "Banka POS toplamı" && r.unread && r.photo === "okunamadı"), JSON.stringify(both.rows));
+  // Yalnız NET düşük güvenli (İADE yüksek): satış − iade hesaplanmaz, NET basılmış
+  const net = run(slip("İADE TOPLAMI 45,00", "NET TOPLAM 755,00(50)"), 755);
+  assert.equal(net.state, "belirsiz", JSON.stringify(net.rows));
+  // Yalnız İADE düşük güvenli, NET basılmamış: satış − 0 değil
+  const refund = run(slip("İADE TOPLAMI 45,00(50)", "PAVO"), 755);
+  assert.equal(refund.state, "belirsiz", JSON.stringify(refund.rows));
+  // Banka POS boşken uydurma tutar "Banka POS'a yaz" diye önerilmez
+  assert.equal(run(slip("İADE TOPLAMI 45,00(50)", "NET TOPLAM 755,00(50)"), null).readBankPos, null);
+  // NET basılmamış, İADE basılmamış: satış neti (cihaz iadesiz günde NET'i basmayabilir) güvenle hesaplanır
+  const plainSlip = run(slip("PAVO", "PAVO"), 755);
+  assert.ok(plainSlip.rows.some((r) => r.label === "Banka POS toplamı" && plain(r.photo) === "800 ₺" && !r.unread), JSON.stringify(plainSlip.rows));
+});
+
+test("Kodla okuma: ödeme satırı OCR'da tanınmadıysa '0 ₺' uydurulmaz, okunamadı sayılır; LafPOS'ta 0 olan basılmamış satır tutar", () => {
+  const lines = PAVO_LINES.map((l) => (l.text === "KREDİ KARTI *800,00" ? line("KREDl KARTl *800,00") : l));
+  const c = check([{ photoId: 1, raw: parsePavoOcr(lines).raw, error: null, source: "kod" }]);
+  assert.equal(c.state, "belirsiz", JSON.stringify(c.rows));
+  const card = c.rows.find((r) => r.label === "Yazarkasa kartı");
+  assert.ok(card, JSON.stringify(c.rows));
+  assert.deepEqual([card.photo, card.unread], ["okunamadı", true]);
+  assert.ok(!c.rows.some((r) => plain(r.photo) === "0 ₺" && !r.ok), JSON.stringify(c.rows));
+  // Cihaz sıfır satırını basmaz: YEMEK satırı yok, LafPOS'ta yemek kartı 0 → tutar (uyumlu kalır)
+  const noMeal = check([{ photoId: 1, raw: parsePavoOcr(PAVO_LINES.filter((l) => !l.text.startsWith("YEMEK"))).raw, error: null, source: "kod" }]);
+  assert.equal(noMeal.state, "uyumlu", JSON.stringify(noMeal.rows));
+  // Yapay zekâ okunuşunda basılmayan satır 0 sayılmaya devam eder (cihaz sıfırı basmaz)
+  const ai = detailedZ();
+  assert.equal(check([{ photoId: 1, raw: ai, error: null, source: "ai" }]).state, "uyumlu");
+});
+
+test("'Yönetici baksın' metni doğru: satır okunup güvenle seçilmediyse ayrı, kodla hiçbir şey okunamadıysa ya da OCR düştüyse ayrı", () => {
+  const rows = check([{ photoId: 1, raw: parsePavoOcr(PAVO_LINES.map((l) => (l.text === "KREDİ KARTI *800,00" ? line("KREDİ KARTI *800,00(41)") : l))).raw, error: null, source: "kod" }]);
+  assert.equal(rows.state, "belirsiz");
+  assert.match(photoUnsureText(rows), /kodla okundu ama bir satır güvenle seçilmedi/);
+  // OCR hata verdi (okunuş yok) ya da fişte hiçbir şey seçilmedi: "kodla okundu" denmez
+  const failed = check([{ photoId: 1, raw: null, error: "OCR süresi doldu", source: "kod", model: OCR_MODEL }]);
+  assert.equal(failed.state, "belirsiz");
+  assert.doesNotMatch(photoUnsureText(failed), /kodla okundu/);
+  assert.match(photoUnsureText(failed), /kodla da okunamadı/);
+  const nothing = check([{ photoId: 1, raw: parsePavoOcr([line("~~~(20)")]).raw, error: null, source: "kod" }]);
+  assert.match(photoUnsureText(nothing), /kodla da okunamadı/);
+  const mail = renderPhotoMail({ branchName: "Marina", date: DAY, check: failed, link: "x" });
+  assert.match(plain(mail.text), /kodla da okunamadı/);
+  assert.doesNotMatch(plain(mail.text), /kodla okundu ama/);
 });
 
 // ——— E-posta: yalnız yöneticinin; fark satır satır ———

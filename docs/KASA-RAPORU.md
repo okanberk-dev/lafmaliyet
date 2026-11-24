@@ -449,8 +449,9 @@ okunan Z no boş alana yazılır, yöneticiye "fotoğraftan okundu"): okunuşu, 
 toplam, nakit, kart, yemek kartı / diğer, KDV) yazarkasa alanlarıyla karşılaştırılır; fark yalnız yöneticinin uyarısıdır
 (Kasa gün görünümü, zil, gün sonu e-postasında satır satır, fotoğraf gün sonu e-postasından sonra eklendiyse ayrı kısa
 fotoğraf e-postası, ay satırının rozeti). Fotoğraf önce ucuz modelle, gerekirse bir kez güçlü modelle, yapay zekâ yoksa
-kodla (OCR) okunur; kodla okunan bir satır güvenle seçilmediyse "okunamadı — yönetici baksın" (rakam uydurulmaz; okuyan
-yöneticiye "Yapay zekâ" / "Kodla okundu" diye yazar; [FOTOGRAF.md](FOTOGRAF.md)). Personel farkı görmez: eski "Fotoğraftan farklı
+kodla (OCR) okunur; kodla okunan bir satır güvenle seçilmediyse ya da OCR okuyamadıysa "okunamadı — yönetici baksın"
+(rakam uydurulmaz; okuyan yöneticiye "Yapay zekâ" / "Kodla okundu" diye yazar; [FOTOGRAF.md](FOTOGRAF.md)). Elle girilen
+raporun formunu yalnız yapay zekâ okunuşu doldurur; kodla okunduysa ya da okunamadıysa form "rakamları elle yazın" der. Personel farkı görmez: eski "Fotoğraftan farklı
 yazılan" kutusu ve WhatsApp satırı LafPOS'un otomatik gününde personelden süzülür, notun yönetici yönergesi yerine "Banka
 POS henüz gelmedi; yönetici ilgileniyor" yazar. Pavo'nun gün sonu alınamadıysa Banka POS boş kalır, föyde personelin
 yazdığı kart sayımı onu doldurmaz. Ayrıntı:
