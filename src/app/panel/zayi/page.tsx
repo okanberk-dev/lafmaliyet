@@ -130,7 +130,8 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
     wasteEntriesBetween(date, date),
     wasteDayMarks(date),
     admin ? Promise.resolve([]) : myWasteRequests(user.id, now),
-    admin ? pendingWasteSummary({ day: date }) : Promise.resolve(null),
+    // Tek şube seçiliyken o şubenin istekleri (şube kapsamı C P1-1)
+    admin ? pendingWasteSummary({ day: date, scope }) : Promise.resolve(null),
     // LafPOS gününde (geçiş gününden itibaren) ürün ikramı LafPOS'tan; geçiş günü boşken null, ekran bugünkü gibi
     loadDayLafposIkram(date),
   ]);

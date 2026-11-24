@@ -5,7 +5,7 @@ import { and, asc, count, desc, eq, gt, gte, isNotNull, isNull, lt, lte, ne, or,
 import type { DayFacts } from "@/app/panel/bugun/logic";
 import { businessDate, DAY_TURN_HOUR } from "@/lib/cash-report";
 import { cashDaySubject } from "@/lib/cash-requests";
-import { KARAOKE_BRANCH_ID } from "@/lib/branches";
+import { ALL_BRANCHES, type BranchScope, KARAOKE_BRANCH_ID, requestInScope } from "@/lib/branches";
 import {
   branchChecklistRuns,
   branchStaffWrites,
@@ -660,14 +660,27 @@ export async function closedDayCards(): Promise<ClosedDayCard[]> {
 
 // ---------------------------------------------------------------- Zil (yönetici)
 
-/** Bekleyen kapalı gün bildirimleri (yöneticinin zili; tutar yok) */
-export async function pendingClosedRows(): Promise<{ id: number; day: string; requestedByName: string; bumpedAt: Date; createdAt: Date }[]> {
+/**
+ * Bekleyen kapalı gün bildirimleri (yöneticinin zili; tutar yok). `scope`: tek şube seçiliyken yalnız o şubenin
+ * bildirimleri (şube kapsamı C P1-1; `closedRequestBranch`)
+ */
+export async function pendingClosedRows(scope: BranchScope = ALL_BRANCHES): Promise<{ id: number; day: string; requestedByName: string; bumpedAt: Date; createdAt: Date; branchId: string }[]> {
   const rows = await getDb()
-    .select({ id: s.staffRequests.id, day: s.staffRequests.day, requestedByName: s.staffRequests.requestedByName, bumpedAt: s.staffRequests.bumpedAt, createdAt: s.staffRequests.createdAt })
+    .select({
+      id: s.staffRequests.id,
+      day: s.staffRequests.day,
+      subject: s.staffRequests.subject,
+      payload: s.staffRequests.payload,
+      requestedByName: s.staffRequests.requestedByName,
+      bumpedAt: s.staffRequests.bumpedAt,
+      createdAt: s.staffRequests.createdAt,
+    })
     .from(s.staffRequests)
     .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.status, "pending"), isNotNull(s.staffRequests.day)))
     .orderBy(asc(s.staffRequests.createdAt));
-  return rows.map((r) => ({ ...r, day: r.day! }));
+  return rows
+    .map(({ subject, payload, ...r }) => ({ ...r, day: r.day!, branchId: closedRequestBranch({ subject, payload }) }))
+    .filter((r) => requestInScope(r.branchId, scope));
 }
 
 /** Kapalı işaretin kanıtla kalkması, kapalı aralığa gelen rapor ve açılış uyarısı (işlem geçmişinden; yöneticinin zili) */

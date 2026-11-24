@@ -62,7 +62,7 @@ test("#13 kaynak: wasteLock şubeyle süzer; çağıranlar kaydın şubesini ver
 test("#28 kaynak: zayi kartının bağlamı isteğin şubesinden, model şube başına", () => {
   const loader = read("src/server/data/waste-requests.ts");
   const queue = loader.slice(loader.indexOf("export async function loadWasteRequestQueue"));
-  assert.match(queue, /^export async function loadWasteRequestQueue\(modelOf: \(branchId: string\) => Promise<Model>, now: Date = new Date\(\)\)/);
+  assert.match(queue, /^export async function loadWasteRequestQueue\(modelOf: \(branchId: string\) => Promise<Model>, now: Date = new Date\(\), scope: BranchScope = ALL_BRANCHES\)/);
   // Rapor şubenin günüyle; geç kayıtta isteğin şubesi, silmede kaydın şubesi
   assert.match(queue, /branchId: s\.cashReports\.branchId/);
   assert.match(queue, /const reportOf = new Map\(reports\.map\(\(r\) => \[`\$\{r\.date\}\|\$\{r\.branchId\}`, r\]\)\);/);
@@ -79,7 +79,7 @@ test("#28 kaynak: zayi kartının bağlamı isteğin şubesinden, model şube ba
   // Onaylar: yöneticinin seçimiyle kurulan model değil, şubenin modeli (istek başına şube başına bir kez)
   assert.match(read("src/server/data/model-once.ts"), /export const loadBranchModelOnce = cache\(\(branchId: string\) => loadModel\(\{ scope: branchId \}\)\);/);
   const section = read("src/app/panel/onaylar/ops-section.tsx");
-  assert.match(section, /loadWasteRequestQueue\(loadBranchModelOnce, now\)/);
+  assert.match(section, /loadWasteRequestQueue\(loadBranchModelOnce, now, await currentBranchScope\(\)\)/);
   assert.doesNotMatch(section, /loadModelOnce/);
   // Kart şubeyi adıyla yazar, "Günü aç" o şubenin zayi gününü açar
   const cards = read("src/app/panel/onaylar/ops-cards.tsx");

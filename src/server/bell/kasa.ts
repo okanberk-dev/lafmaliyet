@@ -301,10 +301,12 @@ async function carryOf(reports: CashReportDTO[], oldest: string, tills: BellTill
 async function requestNotifications(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
   if (user.role === "admin") {
+    // Tek şube seçiliyken yalnız o şubenin istekleri (şube kapsamı C P1-1; Onaylar da öyle süzer)
+    const scope = await currentBranchScope();
     const [rows, outs, closedRows, info] = await Promise.all([
-      pendingCashBellRows(),
-      cashOutBellRow(now),
-      pendingClosedRows(),
+      pendingCashBellRows(scope),
+      cashOutBellRow(now, scope),
+      pendingClosedRows(scope),
       closedInfoRows(new Date(now.getTime() - 3 * 86_400_000)).catch(() => []),
     ]);
     const out: PanelNotification[] = rows.map((r) => ({

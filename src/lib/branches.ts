@@ -173,6 +173,15 @@ export function tillRowsInScope<T extends { branchId: string }>(
   return rows.map((r) => ({ ...r, tillName: namedTill(known, r.branchId)?.name ?? null, inScope: scope === ALL_BRANCHES || r.branchId === scope }));
 }
 
+/**
+ * Personel isteğinin (Onaylar kartı, zil satırı, sabah e-postasının "Onay bekleyenler"i) seçili kapsamda olup olmadığı
+ * (docs/SUBE.md › Onaylar): "Tümü"de hepsi; tek şube seçiliyken yalnız o şubenin istekleri. Şubesi bilinmeyen istek
+ * (mal taslağı, kaydı silinmiş eski istek) her kapsamda görünür: onay bekleyen bir iş gizlenmesin
+ */
+export function requestInScope(branchId: string | null, scope: BranchScope): boolean {
+  return scope === ALL_BRANCHES || branchId === null || branchId === scope;
+}
+
 /** Kasadan ödemenin kasası belirsizken (Tümü ya da online kanal, birden çok kasa) eylemin ve formun metni */
 export const TILL_REQUIRED = "Kasadan ödeme hangi şubenin kasasından çıktı? Şubeyi seçin";
 

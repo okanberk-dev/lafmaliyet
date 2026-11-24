@@ -1,7 +1,7 @@
 import "server-only";
 
 import { pastCountReminder, pastCountReminders, staffLateEditNotice, unpricedExtrasNotice } from "@/app/panel/sayim/logic";
-import { ALL_BRANCHES, BRANCH_PARAM } from "@/lib/branches";
+import { ALL_BRANCHES, BRANCH_PARAM, KARAOKE_BRANCH_ID, requestInScope } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { shiftMonth } from "@/lib/calc/engine";
 import { dateTR, num } from "@/lib/format";
@@ -67,7 +67,8 @@ function withBranchParam(href: string, branchId: string): string {
  */
 async function wasteRequestNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
   if (user.role === "admin") {
-    const w = await pendingWasteSummary();
+    // Tek şube seçiliyken yalnız o şubenin istekleri (şube kapsamı C P1-1)
+    const w = await pendingWasteSummary({ scope: await currentBranchScope() });
     if (!w.count) return [];
     return [
       {
@@ -123,6 +124,8 @@ async function wasteRequestNotifications(user: CurrentUser, now: Date): Promise<
  */
 async function karaokeRequestNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
   if (user.role === "admin") {
+    // Karaoke yalnız kendi şubesinde: başka şube seçiliyken satır yok (şube kapsamı C P1-1)
+    if (!requestInScope(KARAOKE_BRANCH_ID, await currentBranchScope())) return [];
     const k = await pendingKaraokeSummary();
     if (!k.count) return [];
     return [

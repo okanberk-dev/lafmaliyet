@@ -244,7 +244,9 @@ test("/panel/onaylar: adı Onaylar; bölümler sırasıyla kendi Suspense'inde, 
   const order = ["<KasaRequests />", "<OpsRequests />", "<KaraokeRequests />", "<ApprovalsContent />", "<RecentDecisions />"].map((tag) => page.indexOf(tag));
   for (const [i, at] of order.entries()) assert.ok(at > 0, `bölüm ${i + 1} yok`);
   assert.deepEqual([...order].sort((a, b) => a - b), order, "bölüm sırası");
-  assert.equal(page.match(/<Suspense /g)?.length, 5);
+  // Beş bölüm ve tek şube seçiliyken "öbür şubelerde N istek daha" notu (şube kapsamı C P1-1)
+  assert.equal(page.match(/<Suspense /g)?.length, 6);
+  assert.ok(page.indexOf("<OtherBranchRequests />") < order[0], "şube notu bölümlerden önce");
   assert.match(page.slice(page.indexOf("async function ApprovalsContent")), /^async function ApprovalsContent\(\) \{\s+await requireAdmin\(\);/);
   for (const [file, fn] of [
     ["src/app/panel/onaylar/kasa-section.tsx", "KasaRequests"],
