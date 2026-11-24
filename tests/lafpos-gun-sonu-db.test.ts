@@ -329,6 +329,17 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
     assert.ok(admin.every((m) => !m.to.includes("kasa@ornek.com")));
   });
 
+  test("sayımsız gün Bugün ve zil için bulunur (lafposNoCountDays); sayım gelince ya da rapor girilince kalkar", async () => {
+    const { lafposNoCountDays } = await import("../src/server/data/lafpos-day");
+    assert.ok((await push(DAY, 14, { countedCash: null, cashDiff: null })).ok);
+    await gun.runLafposDayEnd(db, DAY, NOW);
+    assert.deepEqual([...(await lafposNoCountDays(["2026-11-21", DAY], LAFPOS_SUBE, db))], [DAY]);
+    assert.deepEqual([...(await lafposNoCountDays([DAY], MODPOS_SUBE, db))], [], "Tuzla'nın günü LafPOS günü değil");
+    assert.ok((await push(DAY, 14)).ok);
+    await gun.runLafposDayEnd(db, DAY, NOW);
+    assert.deepEqual([...(await lafposNoCountDays([DAY], LAFPOS_SUBE, db))], [], "rapor yazıldı");
+  });
+
   test("çalışanların e-postası düşerse kaydı kalır ve sabah işi yeniden dener", async () => {
     await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: true, whatsapp: null, staffRecipients: ["kasa@ornek.com"], staffAmounts: false });
     assert.ok((await push(DAY, 14)).ok);

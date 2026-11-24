@@ -612,8 +612,10 @@ export function renderDayEnd(m: DayEndMail): { subject: string; html: string; te
   return { subject, html, text };
 }
 
-/** Çalışanların sayımsız gün uyarısının ne yapılacağı (Kasa sayfasının ve zilin metniyle aynı iş) */
+/** Çalışanların sayımsız gün uyarısı (e-posta, Bugün ve zil aynı cümle): ne oldu, ne yapılacak */
 export const STAFF_NO_COUNT_TEXT = "LafPOS'ta gün sonu sayımı yok, kasa raporu yazılmadı. Çekmeceyi LafPOS'ta Kasa › Geçmiş günler › Kasa föyü'nden sayın; LafPOS günü yeniden gönderir.";
+/** Yöneticinin aynı durumu (Bugün ve zil): rapor neden yok, ne zaman gelir */
+export const LAFPOS_NO_COUNT_ADMIN_TEXT = "LafPOS gün sonu geldi, çekmece sayılmadı. Rapor sayım gelince kendiliğinden yazılır; LafPOS'ta Kasa › Geçmiş günler › Kasa föyü'nden sayılır.";
 
 /**
  * Çalışanların kısa e-postası (saf): sayım varsa "Marina · gün sonu alındı" (Z no, fiş sayısı; `amounts` açıksa ciro ve

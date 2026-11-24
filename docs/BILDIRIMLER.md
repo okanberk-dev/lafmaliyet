@@ -46,7 +46,9 @@ silindi: Süt 1,5 LT (15 Eki) · Ayşe istedi" ([ZAYI-IKRAM.md](ZAYI-IKRAM.md)).
 yöneticide tek satırdır ("1 karaoke sayacı silme isteği onay bekliyor", ilk karta); personelde sonucu "Silme onaylandı:
 karaoke sayacı 24 Eki 21:00–23:00", Karaoke ekranına ([KARAOKE.md](KARAOKE.md) › Sayacı silmek). Personel
 kapalıydık dediyse yöneticinin "Dünkü kasa raporu girilmedi" satırının gövdesine "· Personel: kapalıydık dedi (onay
-bekliyor)" eklenir; dün onaylı kapalıysa satır çıkmaz. LafPOS'a geçildiyse (geçiş gününden sonraki günler) yöneticinin
+bekliyor)" eklenir; dün onaylı kapalıysa satır çıkmaz. LafPOS gün sonu gelip çekmece sayılmadıysa satır "Dünkü kasa
+sayılmadı" der ve nedenini yazar; personelin zilinde "Kasa sayılmadı" (LafPOS'ta nereden sayılacağı) ve otomatik raporun
+fotoğrafı eklenene kadar "Gün sonu fotoğrafı bekliyor" durur ([LAFPOS.md](LAFPOS.md)). LafPOS'a geçildiyse (geçiş gününden sonraki günler) yöneticinin
 kasa başlığında son 7 günün LafPOS'un gün sonundan farklı yazılan raporları da durur: "Kasa raporu LafPOS'tan farklı ·
 11 Kasım · Sayılan nakit 9.350 ₺ (LafPOS'ta 9.000 ₺)"; LafPOS günü rapordan sonra farklı rakamla yeniden gönderdiyse
 "LafPOS rapordan sonra farklı rakamla geldi" (yeniden gönderim ya da düzeltme satırı yeniden okunmamış yapar;

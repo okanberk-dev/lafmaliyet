@@ -784,7 +784,13 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   (`CASH_REQUEST_TEXT.lateLafpos`). LafPOS'un gönderimi olmayan günde eski yol (yazarkasa Z fotoğrafıyla geç rapor).
 - Gün, otomatik rapor ve istenen fotoğraflar eklenince tamamdır (`lafpos_day_ends.missing`: cihaz boşlukları ve fotoğraf
   eklenene kadar `photo`). Bugün'de personelin satırı fotoğraf eklenene kadar "Gün sonu fotoğrafı" (dünkü de "Dünkü gün
-  sonu fotoğrafı"); "Raporu gönder" yok.
+  sonu fotoğrafı"); "Raporu gönder" yok. Personelin zilinde de aynı iş: "Gün sonu fotoğrafı bekliyor" (bugün ve dün;
+  fotoğraf eklenince kalkar).
+- **Sayımsız gün** (gün sonu geldi, çekmece sayılmadı, rapor yazılmadı; `lafposNoCountDays`): personelin Bugün satırı ve
+  zili "Kasa sayılmadı": çekmeceyi LafPOS'ta Kasa › Geçmiş günler › Kasa föyü'nden sayın, LafPOS günü yeniden gönderir
+  ("Dünü gir" ya da "Günü kapat'a basın" değil). Yöneticinin satırı "Sayım yok", zilinde "Dünkü kasa sayılmadı · Marina"
+  ve nedeni. Sayım gelince rapor yazılır, satırlar kalkar. Yöneticinin bugünkü satırı LafPOS gününde "LafPOS gün sonu
+  gelince kendiliğinden yazılır" der ("personel kapanışta girer" değil).
 - **Fotoğraf ↔ LafPOS** (`lafposPhotoCheck`, `lafpos_day_ends.photo_check`): okuma LafPOS gününde hiçbir alanı yazmaz.
   Bağlanınca (ve LafPOS yeniden gönderince) sunucu okunuşu karşılaştırır: Pavo fişinde okunan her batch no LafPOS'un
   batch'lerinde, batch sayısı aynı, okunan netlerin toplamı raporun Banka POS'u (±0,01), fişin günü raporun günü (ertesi
