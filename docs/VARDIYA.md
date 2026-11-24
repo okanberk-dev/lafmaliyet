@@ -171,7 +171,9 @@ staffCost); testleri `tests/personel-part-time.test.ts`, `tests/personel-baglant
 - **Part-time** (Maaşlar › Çalışma: Part-time; tür yalnız yeni kişide seçilir, maaş hesabına girmiş satırın türü
   değişmez): günlük ücret (işletmenin çağrılan gün başına maliyeti; **SGK brütleştirmesi yok**), yemek kartı (Ayarlar'daki
   günlük tutar × çağrıldığı gün) ve ek ödeme (brütleştirilmez). Günlük ücret ve yemek kartı maaşla birlikte "şu aydan
-  itibaren" sürümlenir. **Çağrıldığı gün** = kişinin Vardiya anahtarıyla, kendi şubesinde, o aydaki çalışma (`work`)
+  itibaren" sürümlenir. Yemek kartı bir aydan itibaren açılıp kapanınca önceden girilmiş sonraki sürümlere (ör. planlı
+  zam) de işlenir; sahibin ayrıca değiştirdiği ilk sürümde durur (`mealCardCarry`, inceleme bulgusu 8). Kayıt mesajı
+  hangi aylara işlendiğini yazar; sürüm etiketi "… net + yemek kartı" olur. **Çağrıldığı gün** = kişinin Vardiya anahtarıyla, kendi şubesinde, o aydaki çalışma (`work`)
   vardiyaları; izin sayılmaz, başka şubedeki vardiya o şubenin satırına aittir. Gelir-gider'de süren ayda kasa
   raporlarının son gününe kadarki vardiyalar (ileri günlerin planı değil); vergi bordrosu ve nakit planı ayın bütün planı.
   Gelir-gider'de "PART-TIME (GÜNLÜK ÜCRET)" satırı (ücret + ek; gün oranı yok), yemek kartı "PERSONEL YEMEK KARTI"

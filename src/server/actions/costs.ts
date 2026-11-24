@@ -4,7 +4,7 @@ import { and, asc, eq, gt, inArray, lt, ne, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { activeFromRange, currentMonthTR, inRange, planVersionChange, shiftMonth } from "@/lib/calc/engine";
+import { activeFromRange, currentMonthTR, inRange, mealCardCarry, planVersionChange, shiftMonth } from "@/lib/calc/engine";
 import { resolveMonths, tillMonths } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { FIXED_VAT_RATES, MONTH_NAMES } from "@/lib/constants";
@@ -165,6 +165,8 @@ export async function saveStaff(
     const cur = currentMonthTR();
     const db = getDb();
     const changes: StaffChange[] = [];
+    /** Yemek kartı işaretinin taşındığı sonraki sürümler (kişi adı, aylar; inceleme bulgusu 8) */
+    const carried: { name: string; months: string[] }[] = [];
     // Şubeler işlemden önce doğrulanır; yeni kişinin şubesi verilmezse seçili fiziksel şube
     const branchOf = new Map<number, string>();
     for (const [i, r] of data.entries()) {
@@ -284,6 +286,15 @@ export async function saveStaff(
           mode = "version";
           fromMonth = plan.fromMonth;
         }
+        // Yemek kartı "şu aydan itibaren" açılıp kapanınca önceden girilmiş sonraki sürümler (ör. planlı zam) eski işareti
+        // taşıyordu: kart o ayda sessizce düşerdi. İşaret, sahibin ayrıca değiştirdiği ilk sürüme kadar taşınır
+        if (eff !== "all") {
+          const carry = mealCardCarry(versions, eff, atEff.mealCard, next.mealCard);
+          if (carry.length) {
+            await tx.update(s.staffVersions).set({ mealCard: next.mealCard }).where(inArray(s.staffVersions.id, carry.map((v) => v.id)));
+            carried.push({ name: r.name, months: carry.map((v) => v.fromMonth) });
+          }
+        }
         await tx.update(s.staff).set(set).where(eq(s.staff.id, r.id));
         if (mode !== "none") changes.push({ id: r.id, name: r.name, mode, fromMonth });
       }
@@ -294,6 +305,10 @@ export async function saveStaff(
       [
         changed.length ? `Maaş değişikliği ${spanText(changed.map((c) => c.fromMonth!))} itibarıyla geçerli; önceki aylar eski tutarla kaldı.` : "",
         added.length ? `${added.map((c) => c.name).join(", ")} ${spanText(added.map((c) => c.fromMonth!))} itibarıyla maaş hesabına girer.` : "",
+        ...carried.map(
+          (c) =>
+            `${carried.length > 1 ? `${c.name}: ` : ""}Yemek kartı sonraki maaş ${c.months.length > 1 ? "değişikliklerine" : "değişikliğine"} de işlendi: ${c.months.map(monthLabel).join(", ")}.`,
+        ),
       ]
         .filter(Boolean)
         .join(" ") || null;

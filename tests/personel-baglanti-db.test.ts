@@ -194,6 +194,35 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
     );
   });
 
+  test("yemek kartı bir aydan itibaren açılınca önceden girilmiş sonraki maaş sürümüne de işlenir (sessizce düşmez)", async () => {
+    // İnceleme bulgusu 8: Alper'in Ocak 2027 zammı önceden girilmiş (yemek kartı yok). Sahip Aralık 2026'dan yemek kartını
+    // açınca Ocak sürümü kartsız kalıyor, Ocak'ta 8.580 ₺ uyarısız düşüyordu
+    await db.insert(s.months).values({ month: "2026-10", branchId: "marina", openDays: 30 });
+    const alper = (p: Record<string, unknown>) => ({ id: null as number | null, name: "Alper", netSalary: 35_000, extras: 0, mealCard: false, branchId: "marina", ...p });
+    assert.ok((await costs.saveStaff([alper({ effectiveFrom: "2026-10" })])).ok);
+    const [row] = await db.select().from(s.staff);
+    const raise = await costs.saveStaff([alper({ id: row.id, netSalary: 40_000, effectiveFrom: "2027-01" })]);
+    assert.ok(raise.ok, raise.ok ? "" : raise.error);
+    const on = await costs.saveStaff([alper({ id: row.id, mealCard: true, effectiveFrom: "2026-12" })]);
+    assert.ok(on.ok, on.ok ? "" : on.error);
+    const versions = await db.select().from(s.staffVersions).orderBy(s.staffVersions.fromMonth);
+    assert.deepEqual(
+      versions.map((v) => [v.fromMonth, v.netSalary, v.mealCard]),
+      [
+        ["2026-12", 35_000, true],
+        ["2027-01", 40_000, true],
+      ],
+      "Ocak 2027 sürümü yemek kartını taşır; zam yerinde",
+    );
+    assert.match(on.ok ? (on.data.message ?? "") : "", /Yemek kartı sonraki maaş değişikliğine de işlendi: Ocak 2027/);
+    const model = await dataset.loadModel({ scope: "marina" });
+    assert.equal(model.personnelFor("2026-11").mealCard, 0, "Aralık'tan önce kart yok");
+    assert.equal(model.personnelFor("2027-01").mealCard, 330 * 26, "Ocak'ta kart düşmez");
+    // Maaşlar'ın sürüm etiketi ("Ocak 2027 itibarıyla 40.000 ₺ net + yemek kartı") sürümün işaretinden
+    const hist = model.staffList.find((x) => x.name === "Alper")!.history.find((h) => h.fromMonth === "2027-01")!;
+    assert.deepEqual([hist.netSalary, hist.mealCard], [40_000, true]);
+  });
+
   /** Kayıtlı satırlar, eylemin "değişmeden kalanlar" biçiminde */
   async function current() {
     return (await db.select().from(s.staff)).map((x) => ({

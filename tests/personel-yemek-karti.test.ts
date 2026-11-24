@@ -11,7 +11,7 @@ import { test } from "node:test";
 
 import { planInputFromModel } from "../src/lib/cash-plan";
 import { alerts } from "../src/lib/calc/insights";
-import { createModel, staffCost } from "../src/lib/calc/engine";
+import { createModel, mealCardCarry, staffCost } from "../src/lib/calc/engine";
 import { MEAL_CARD_LABEL, staffWarnings } from "../src/lib/calc/personnel";
 import type { Dataset, Settings, Staff } from "../src/lib/calc/types";
 import { DEFAULT_SETTINGS, settingsFromRows } from "../src/lib/constants";
@@ -144,4 +144,22 @@ test("Ayarlar ve Maaşlar: alanlar, eylem şeması, düzenleyicinin ipucu", () =
   assert.match(editor, /id="st-meal"/);
   const costs = read("src/server/actions/costs.ts");
   assert.match(costs, /mealCard: z\.boolean\(\)/);
+});
+
+test("yemek kartı işareti sonraki sürümlere taşınır: eski işareti taşıyanlar çevrilir, sahibin ayrıca değiştirdiği ilk sürümde durulur", () => {
+  // İnceleme bulgusu 8 (eylem: saveStaff; veritabanı testi tests/personel-baglanti-db.test.ts)
+  const v = (fromMonth: string, mealCard: boolean) => ({ fromMonth, mealCard });
+  const versions = [v("2027-06", true), v("2027-01", false), v("2027-03", false), v("2026-12", false)];
+  assert.deepEqual(
+    mealCardCarry(versions, "2026-12", false, true).map((x) => x.fromMonth),
+    ["2027-01", "2027-03"],
+    "Aralık'tan açıldı: Ocak ve Mart zamları kartı taşır; Haziran'da sahip zaten açmış, orada durulur",
+  );
+  assert.deepEqual(mealCardCarry(versions, "2027-06", true, false).map((x) => x.fromMonth), [], "sonrası yok");
+  assert.deepEqual(mealCardCarry(versions, "2026-12", false, false), [], "işaret değişmedi: hiçbir şey");
+  assert.deepEqual(
+    mealCardCarry([v("2027-01", true), v("2027-02", false)], "2026-12", true, false).map((x) => x.fromMonth),
+    ["2027-01"],
+    "kapatma da taşınır; Şubat'ta sahip zaten kapatmış",
+  );
 });

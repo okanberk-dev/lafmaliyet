@@ -322,6 +322,22 @@ export function planVersionChange<T>(opts: {
   return equal(prev, next) ? { action: "delete", fromMonth: from } : { action: "upsert", fromMonth: from };
 }
 
+/**
+ * Yemek kartı işareti "şu aydan itibaren" değişince sonraki sürümlere taşınır (inceleme bulgusu 8). Sürüm maaşın tam
+ * anlık görüntüsüdür: önceden girilmiş bir zam sürümü eski işareti taşır ve kart o ayda sessizce düşerdi. `from` ayından
+ * sonraki sürümler sırayla, eski işareti (`before`) taşıdıkça yeni işarete (`after`) çevrilir; eski işaretten farklı
+ * işaretli ilk sürümde (sahibin o aydaki ayrı kararı) durulur. Döner: güncellenecek sürümler (sıralı)
+ */
+export function mealCardCarry<V extends { fromMonth: string; mealCard: boolean }>(versions: readonly V[], from: string, before: boolean, after: boolean): V[] {
+  if (before === after) return [];
+  const out: V[] = [];
+  for (const v of [...versions].filter((x) => x.fromMonth > from).sort((a, b) => a.fromMonth.localeCompare(b.fromMonth))) {
+    if (v.mealCard !== before) break;
+    out.push(v);
+  }
+  return out;
+}
+
 /** Listelerde gösterilecek ay: bu ay; kalem bitmişse son ayı, henüz başlamadıysa ilk ayı */
 export function valueMonthFor(item: MonthRange, currentMonth: string): string {
   if (item.endMonth && item.endMonth < currentMonth) return item.endMonth;
