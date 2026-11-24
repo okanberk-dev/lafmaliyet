@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
     jobStart + MODPOS_CAP_MS - Date.now(),
     { status: "error", days: [], left: null, error: "süre doldu" },
   );
-  const configured = isParasutConfigured();
+  const configured = await isParasutConfigured();
   let alreadySynced = false;
   let sync: { ok: boolean; summary?: string; error?: string } | null = null;
   let syncStep: StepResult = { code: configured ? "today" : "off" };

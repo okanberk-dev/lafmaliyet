@@ -102,7 +102,7 @@ export function parasutErrorText(status: number, body: string): string {
   if (status === 401) return `Paraşüt girişi reddedildi (istemci bilgileri hatalı ya da erişim iptal edilmiş). ${detail}`.trim();
   // Yeni altyapıda 403'ün en sık nedeni: bağlantıyı kuran kullanıcıda "Uygulama Entegrasyonları" yetkisi yok
   if (status === 403) return `Bu kullanıcının bu firmaya ya da kaynağa erişim yetkisi yok (Paraşüt'te Ayarlar › Kullanıcılar › Düzenle › Uygulama Entegrasyonları yetkisi açık mı?). ${detail}`.trim();
-  if (status === 404) return `Kayıt ya da firma bulunamadı (PARASUT_COMPANY_ID doğru mu?). ${detail}`.trim();
+  if (status === 404) return `Kayıt ya da firma bulunamadı (firma numarası doğru mu?). ${detail}`.trim();
   if (status === 429) return "Paraşüt istek sınırına takıldı; biraz sonra yeniden denenecek.";
   if (status >= 500) return "Paraşüt şu an yanıt vermiyor; biraz sonra yeniden deneyin.";
   return `Paraşüt isteği kabul etmedi (HTTP ${status}). ${detail}`.trim();
@@ -207,13 +207,16 @@ export interface ParasutConnection {
 
 /**
  * Panelde gösterilecek bağlantı durumu. Belirteçlerin kendisi hiçbir zaman dışarı verilmez; yalnız "bağlı mı" ve son
- * yenilenme anı döner. Ayarlar eksikse ya da mühür açılamıyorsa (AUTH_SECRET değişmiş) bağlı değil sayılır.
+ * yenilenme anı döner. Ayarlar eksikse, kayıtlı oturum başka bir client_id'ninse ya da mühür açılamıyorsa (AUTH_SECRET
+ * değişmiş) bağlı değil sayılır.
  */
-export async function parasutConnection(now = Date.now()): Promise<ParasutConnection> {
+export async function parasutConnection(now = Date.now(), config?: ParasutConfig | null): Promise<ParasutConnection> {
   const none: ParasutConnection = { connected: false, refreshedAt: null, stale: false };
+  // `config`: çağıran ayarları zaten okuduysa (null: ayarlar eksik); verilmezse burada okunur
+  if (config === null) return none;
   let cfg: ParasutConfig;
   try {
-    cfg = readParasutConfig();
+    cfg = config ?? (await readParasutConfig());
   } catch {
     return none;
   }
@@ -230,7 +233,8 @@ export class ParasutClient {
   /** epoch ms; bu andan sonra beklenecek bir istek başlatılmaz */
   private deadlineAt = Number.POSITIVE_INFINITY;
 
-  constructor(private readonly cfg: ParasutConfig = readParasutConfig()) {}
+  /** Ayarlar çağırandan gelir (`await readParasutConfig()`): panelden girilenler veritabanında */
+  constructor(private readonly cfg: ParasutConfig) {}
 
   setDeadline(at: number) {
     this.deadlineAt = at;
@@ -429,8 +433,8 @@ export class ParasutClient {
   }
 }
 
-/** Kayıtlı belirteci siler (ayarlar değişince ya da bağlantı kesilince) */
-export async function forgetParasutToken() {
-  await getDb().delete(s.integrationState).where(eq(s.integrationState.key, TOKEN_KEY));
+/** Kayıtlı belirteci siler (istemci ayarları değişince ya da bağlantı kesilince) */
+export async function forgetParasutToken(db: Pick<Exec, "delete"> = getDb()) {
+  await db.delete(s.integrationState).where(eq(s.integrationState.key, TOKEN_KEY));
 }
 

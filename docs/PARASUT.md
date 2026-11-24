@@ -30,18 +30,16 @@ Adımlar bilgisayardan, tek oturuşta yapılır; 5. ve 6. adımın arasını uza
    Böylece kayıtlı adres `https://ladmin.laffogato.net/panel/parasut/baglan/geri` olur. *Paraşüt bağlantısı nereden
    yapılacak?* sorusunda **“Bir sunucudan” (confidential client)** seçili kalsın; panel client_secret'ı sunucuda tutar.
 
-   Panelde **Ayarlar › Paraşüt entegrasyonu → Kurulum** kartı da aynı adresi yazar; oradan kopyalayabilirsiniz.
+   Panelde **Ayarlar › Paraşüt entegrasyonu → Bağlantı** kartı da aynı adresi yazar; **Kopyala** onu `https://` olmadan
+   kopyalar.
 3. **İki değeri not edin.** DevHub size bir **client_id** ve bir **client_secret** verir. client_secret bir şifre
-   gibidir: e-postaya, mesaja ya da sohbete yazmayın, kimseyle paylaşmayın. Yalnız 5. adımda Vercel'e yapıştıracaksınız.
+   gibidir: e-postaya, mesaja ya da sohbete yazmayın, kimseyle paylaşmayın. Yalnız 5. adımda panele yapıştıracaksınız.
 4. **Paraşüt'te izin verin.** Paraşüt'e girin: **Ayarlar › Kullanıcılar › (bağlantıyı kuracak kişi, genelde siz) ›
    Düzenle › Uygulama Entegrasyonları** kutusunu açıp kaydedin. Bu izin şirket sahibi dahil herkeste **kapalı** gelir;
    açılmazsa Paraşüt panele “yetkiniz yok” (403) der.
-5. **Vercel'de iki değeri değiştirin.** vercel.com › **lafmaliyet** › **Settings** › **Environment Variables**:
-   - `PARASUT_CLIENT_ID` → düzenleyin, 3. adımdaki **client_id**'yi yapıştırın, kaydedin.
-   - `PARASUT_CLIENT_SECRET` → düzenleyin, 3. adımdaki **client_secret**'ı yapıştırın, kaydedin.
-   - `PARASUT_COMPANY_ID` değişmez.
-
-   Sonra **Deployments** › en üstteki yayının **⋯** menüsü › **Redeploy**. Birkaç dakika sürer; 6. adımı hemen yapın.
+5. **Panelde ayarları girin.** **Ayarlar › Paraşüt entegrasyonu → Bağlantı** kartında **Client ID**, **Client Secret**
+   ve **Firma numarası**nı (Paraşüt'e girince adres çubuğundaki sayı, `uygulama.parasut.com/123456/…`) yazıp
+   **Kaydet**'e basın. İsteğe bağlı **İlk eşitleme başlangıcı** boşsa bu yılın başından alınır. Deploy gerekmez.
 6. **Panelde bağlayın.** Panelde **Ayarlar › Paraşüt entegrasyonu** ekranında **“Paraşüt hesabını bağla”**ya basın.
    Paraşüt'ün kendi giriş ekranı açılır: Paraşüt e-posta ve parolanızla girip izin verin. Panel parolanızı hiçbir zaman
    görmez. Panele dönünce “Paraşüt hesabı bağlandı” yazar ve sarı uyarı kalkar.
@@ -49,9 +47,8 @@ Adımlar bilgisayardan, tek oturuşta yapılır; 5. ve 6. adımın arasını uza
 
 **Takılırsanız**
 
-- *“Paraşüt hesabını bağla”ya basınca Paraşüt hata sayfası açılıyor:* Vercel'deki `PARASUT_CLIENT_ID` hâlâ eskisi
-  olabilir ya da 5. adımdan sonra Redeploy yapılmamıştır. Ya da DevHub'daki dönüş adresi yukarıdakiyle harfi harfine
-  aynı değildir.
+- *“Paraşüt hesabını bağla”ya basınca Paraşüt hata sayfası açılıyor:* Bağlantı kartındaki Client ID yanlış olabilir ya
+  da DevHub'daki dönüş adresi yukarıdakiyle harfi harfine aynı değildir.
 - *“Paraşüt keşif belgesi okunamadı (HTTP 403, …/.well-known/openid-configuration)”:* Paraşüt'ün önündeki Cloudflare
   bu belgeyi sunuculardan gelen isteğe kapatıyor (yetki ve belirteç adresleri açık). Panel bu durumda Keycloak'ın
   standart adreslerine kendiliğinden döner; Vercel'de ayrıca `PARASUT_AUTHORIZE_URL` ve `PARASUT_TOKEN_URL` tanımlı
@@ -61,9 +58,22 @@ Adımlar bilgisayardan, tek oturuşta yapılır; 5. ve 6. adımın arasını uza
 - *Paraşüt'te izni durdurdum ya da uzun süre eşitleme yapılmadı:* ekranda “yeniden bağlayın” yazar; 6. adımı tekrarlayın.
 - Paraşüt'ün geçiş desteği: `devhubdestek@parasut.com`.
 
-### Ortam değişkenleri (teknik)
+### Ayarların nerede durduğu (teknik)
 
-Vercel → lafmaliyet → Settings → Environment Variables, Production:
+Client ID, Client Secret, firma numarası ve ilk eşitleme başlangıcı panelden girilir (`integration_state` ›
+`parasut.settings`; client_secret `AUTH_SECRET`'tan türetilen anahtarla AES-256-GCM şifreli, ekrana hiç gelmez, yedeğe
+girmez). Her alanda **paneldeki değer önce gelir**; panelde yoksa aşağıdaki ortam değişkeni okunur. Kart her alanın
+yanında kaynağını yazar: *panelde kayıtlı*, *Vercel'den* ya da *eksik* (`src/lib/parasut/settings.ts`).
+
+- Client ID ya da Client Secret değişince kayıtlı Paraşüt oturumu (eski istemcinin) ve yarım bağlanma isteği silinir;
+  hesap yeniden bağlanır. Client ID yeni secret'sız değiştirilemez. Eşitleme sürerken kaydedilmez.
+- Firma numarası: Paraşüt'ten fatura gelmişse panelden değiştirilemez (başka firmaya geçilirse eşitleme eski firmanın
+  faturalarını silinmiş sayıp kaldırırdı); gerçekten değişecekse yazılımcı `PARASUT_COMPANY_ID` ile yapar. Faturası
+  olmayan kurulumda değişir ve eşitleme imleci sıfırlanır.
+- Değişiklik işlem geçmişine “Paraşüt bağlantı ayarları” olarak düşer; secret'ın değeri yazılmaz.
+
+Ortam değişkenleri (Vercel → lafmaliyet → Settings → Environment Variables, Production); adres ve izin ayarları yalnız
+burada:
 
 | Değişken | Değer |
 |----------|-------|
@@ -78,7 +88,7 @@ Vercel → lafmaliyet → Settings → Environment Variables, Production:
 | `PARASUT_BASE_URL` | (isteğe bağlı) Veri API'si; varsayılan `https://api.parasut.com` |
 | `CRON_SECRET` | Günlük işin anahtarı: `openssl rand -hex 32` |
 
-Zorunlu olanlar yalnız ilk üçü (ve `CRON_SECRET`). İsteğe bağlı adreslerden biri https değilse uygulama durmaz: değer
+İlk üçü panelde girilmediyse zorunludur (ve `CRON_SECRET`). İsteğe bağlı adreslerden biri https değilse uygulama durmaz: değer
 yok sayılır, eşitleme sürer, yalnız “Paraşüt hesabını bağla” hangi değişkenin yanlış olduğunu söyleyerek başlamaz.
 
 Komut satırından eklemek için (değeri siz yazarsınız, ekrana basılmaz):

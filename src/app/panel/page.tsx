@@ -159,8 +159,8 @@ async function loadPayments(branch?: BranchScope): Promise<Awaited<ReturnType<ty
 
 /** Paraşüt bağlıysa son eşitleme; bağlı değilse null */
 async function loadParasut(): Promise<ParasutFacts | null> {
-  if (!isParasutConfigured()) return null;
   try {
+    if (!(await isParasutConfigured())) return null;
     const db = getDb();
     const runs = s.parasutSyncRuns;
     const [[last], [ok]] = await Promise.all([

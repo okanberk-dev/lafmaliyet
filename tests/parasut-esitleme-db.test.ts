@@ -324,7 +324,7 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
    * Kayıtlı Paraşüt yetkisi (Authorization Code + PKCE akışının sonucu). Paraşüt grant_type=password'ü kaldırdığı
    * için istemci kendi başına giriş yapamaz: oturum her testte hazır bulunur.
    */
-  async function seedToken(over: Partial<{ access: string; refresh: string | null; expiresAt: number }> = {}) {
+  async function seedToken(over: Partial<{ access: string; refresh: string | null; expiresAt: number; clientId: string }> = {}) {
     const { seal } = await import("../src/server/secret-box");
     const token = { access: "t0", refresh: "r0", expiresAt: Date.now() + 3_600_000, clientId: "test-istemci", issuer: BASE, refreshedAt: Date.now(), ...over };
     const value = { sealed: seal(JSON.stringify(token)) };
@@ -1003,5 +1003,56 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     } finally {
       delete process.env.PARASUT_REDIRECT_URI;
     }
+  });
+
+  // ---------------------------------------------------------------- Bağlantı ayarları (panelden)
+
+  test("bağlantı ayarları: panel ortamı ezer; istemci değişince oturum silinir; faturalı kurulumda firma değişmez", async () => {
+    const client = await import("../src/server/parasut/client");
+    const config = await import("../src/server/parasut/config");
+    const actions = await import("../src/server/actions/parasut");
+    // Yalnız ortam: eşitleme bugünkü gibi
+    assert.equal((await config.readParasutConfig()).clientId, "test-istemci");
+    assert.equal((await client.parasutConnection()).connected, true);
+
+    // Yeni client_id ve secret panelden: kayıtlı oturum ve yarım bağlanma isteği silinir, secret şifreli durur
+    await db.insert(s.integrationState).values({ key: "parasut.connect", value: { sealed: "x" } });
+    const saved = await actions.saveParasutSettings({ clientId: "panel-istemci", clientSecret: "panel-GIZLI-sir", companyId: COMPANY, syncFrom: "" });
+    assert.ok(saved.ok && saved.data.forgotSession, JSON.stringify(saved));
+    assert.equal(await stateRow("parasut.token"), undefined, "eski istemcinin oturumu silindi");
+    assert.equal(await stateRow("parasut.connect"), undefined);
+    const cfg = await config.readParasutConfig();
+    assert.equal(cfg.clientId, "panel-istemci");
+    assert.equal(cfg.clientSecret, "panel-GIZLI-sir");
+    assert.equal(cfg.companyId, COMPANY, "firma ortamdan");
+    assert.equal(JSON.stringify((await stateRow("parasut.settings"))?.value).includes("panel-GIZLI-sir"), false, "secret şifreli");
+    const [log] = await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Paraşüt bağlantı ayarları"));
+    assert.ok(log?.detail && !log.detail.includes("panel-GIZLI-sir"), "işlem geçmişinde secret yok");
+    assert.deepEqual(await client.parasutConnection(), { connected: false, refreshedAt: null, stale: false });
+    const view = await config.parasutSettingsView();
+    assert.equal(JSON.stringify(view).includes("panel-GIZLI-sir"), false);
+    assert.equal(view.clientSecret.source, "panel");
+
+    // Paraşüt'ten fatura geldi: firma numarası değişmez, imleç kalır
+    fake.bills.set("601", bill("601"));
+    await seedToken({ clientId: "panel-istemci" });
+    await run();
+    const cursor = await stateRow("parasut.cursor");
+    assert.ok(cursor, "imleç yazıldı");
+    const blocked = await actions.saveParasutSettings({ clientId: "panel-istemci", clientSecret: "", companyId: "111111", syncFrom: "" });
+    assert.equal(blocked.ok, false);
+    assert.match(!blocked.ok ? blocked.error : "", /firma numarası panelden değiştirilemez/);
+    assert.ok(await stateRow("parasut.cursor"), "imleç duruyor");
+  });
+
+  test("bağlantı ayarları: Paraşüt faturası yokken firma değişir ve eşitleme imleci sıfırlanır, oturum kalır", async () => {
+    const config = await import("../src/server/parasut/config");
+    const actions = await import("../src/server/actions/parasut");
+    await db.insert(s.integrationState).values({ key: "parasut.cursor", value: { lastIssueDate: daysAgo(3) } });
+    const r = await actions.saveParasutSettings({ clientId: "test-istemci", clientSecret: "", companyId: "111111", syncFrom: "" });
+    assert.ok(r.ok && r.data.resetCursor && !r.data.forgotSession, JSON.stringify(r));
+    assert.equal(await stateRow("parasut.cursor"), undefined, "imleç sıfırlandı");
+    assert.ok(await stateRow("parasut.token"), "oturum kaldı");
+    assert.equal((await config.readParasutConfig()).companyId, "111111");
   });
 });

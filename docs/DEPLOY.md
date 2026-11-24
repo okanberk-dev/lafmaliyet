@@ -121,8 +121,8 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `WEATHER_CONTACT` | (isteğe bağlı) Satış tahmininin hava durumu isteğinde (MET Norway, ücretsiz, anahtarsız, günde bir istek) kimliğe eklenen iletişim: e-posta ya da adres. Yoksa yalnız uygulamanın adı ve `APP_URL` gider. Panel `api.met.no`'ya bağlanabilmeli; bağlanamazsa tahmin havasız hesaplanır ([SATIS-TAHMINI.md](SATIS-TAHMINI.md)) |
 | `DATABASE_SSL` | (isteğe bağlı, yalnız acil durumda) `require`: veritabanı sunucusunun sertifikası doğrulanmaz. Varsayılan doğrulamalı bağlantıdır (`verify-full`; Neon'un sertifikası Let's Encrypt'ten, Node tanır): şifreli ama sertifikası denetlenmeyen bağlantıda araya giren biri kendi sertifikasıyla bütün veriyi okuyabilirdi. Canlı derleme önce havuzlu adresi, sonra migration için doğrudan adresi doğrulamalı açar; biri açılmazsa derleme migration'dan önce durur, ne veritabanı ne yayındaki sürüm değişir. Neon sertifikasını değiştirdiği için derleme durursa geçici olarak `require` yazılır |
 
-`DATABASE_URL` / `DATABASE_URL_UNPOOLED` Neon entegrasyonundan gelir. Paraşüt değişkenleri (`PARASUT_*`) için
-[PARASUT.md](PARASUT.md) § 1.
+`DATABASE_URL` / `DATABASE_URL_UNPOOLED` Neon entegrasyonundan gelir. Paraşüt değişkenleri (`PARASUT_*`; istemci
+bilgileri ve firma numarası panelden de girilebilir) için [PARASUT.md](PARASUT.md) § 1.
 
 İki günlük iş `vercel.json`'da tanımlı (Vercel Cron, Türkiye saatiyle): `/api/cron/parasut` 07:00–08:00 arasında
 Paraşüt'ü eşitler, `/api/cron/gunluk` 08:00–09:00 arasında sabah e-postasını gönderir (anahtar varsa önce dünün ModPOS kasa föyünü çeker;

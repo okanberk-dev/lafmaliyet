@@ -80,11 +80,12 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
     if (moved) redirect(supplierHref(moved.slug));
     notFound();
   }
-  const [docs, data, scope, branches] = await Promise.all([
+  const [docs, data, scope, branches, parasut] = await Promise.all([
     listInvoiceDocuments(g.invoices.map((i) => i.id)),
     loadSupplierCari(g, { today, termDays: g.termDays }),
     currentBranchScope(),
     listBranches(),
+    isParasutConfigured(),
   ]);
   const documents: Record<number, DocumentMeta[]> = {};
   for (const d of docs) (documents[d.invoiceId] ??= []).push(d);
@@ -214,8 +215,8 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
       documents={documents}
       defaultTermDays={defaultTermDays}
       suggestions={aliasCandidates(g, groups, sameSupplier)}
-      canFill={isParasutConfigured() && g.invoices.some((i) => i.eInvoiceId || i.externalId)}
-      canImport={isParasutConfigured()}
+      canFill={parasut && g.invoices.some((i) => i.eInvoiceId || i.externalId)}
+      canImport={parasut}
       hidden={isHiddenSupplier(g.card, g.summary, { ...g.account, lastEntry: g.lastEntry })}
       stats={stats}
       cari={cariData}

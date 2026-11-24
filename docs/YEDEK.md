@@ -42,6 +42,7 @@ Yalnız şunlar dosyaya girmez (`src/lib/backup/format.ts` › `TABLE_RULES`, `E
 | Çıkışta kapatılan oturumlar (`revoked_sessions`) | geçici; çerezin süresiyle gereksizleşir | geri yükleme herkesin oturum sürümünü artırır, eski oturumların hepsi zaten düşer |
 | Bildirim abonelikleri (`push_subscriptions`) | cihaz anahtarları | cihazlar panel açılınca yeniden abone olur |
 | Paraşüt oturumu (`integration_state` › `parasut.token`) | şifreli belirteç, her yenilemede değişir | geri yüklemeden sonra panelden **“Paraşüt hesabını bağla”** ile yeniden bağlanır |
+| Paraşüt bağlantı ayarları (`parasut.settings`: client_id, şifreli client_secret, firma numarası, ilk eşitleme başlangıcı) | şifreli değer başka `AUTH_SECRET`'la açılmaz | Paraşüt ekranındaki **Bağlantı** kartından yeniden girilir (Vercel'de tanımlıysa onlar kullanılır), sonra hesap bağlanır |
 | Bildirim (VAPID) anahtarı (`webpush_vapid`) | şifreli anahtar | yenisi üretilir |
 | Bar ekranındaki uygulama siparişlerinin kopyası (`site_orders`) | müşteri adları (KVKK); site bu listeyi bilerek geçmişsiz tutar | bar ekranı açılınca siteden yeniden çekilir |
 | Paraşüt'ten alınan e-fatura PDF'leri | önbellek | ilk açılışta Paraşüt'ten yeniden indirilir |
@@ -66,7 +67,7 @@ UTF-8 JSON satırlarının (her satır bir JSON değeri, `\n` ile biter) gzip'i:
 {"format":"laffogato-yedek","version":1,"createdAt":"2026-10-22T06:15:03.120Z","createdBy":"Okan","app":"981692e",
  "documents":false,"migrations":[{"hash":"…","createdAt":1792413340966},…],
  "excluded":{"tables":["invoice_documents","push_subscriptions","user_tokens"],"columns":{"users":[…]},
-             "stateKeys":["parasut.token","webpush_vapid","site_orders"],"documents":"hepsi"}}
+             "stateKeys":["parasut.token","parasut.settings","webpush_vapid","site_orders"],"documents":"hepsi"}}
 {"table":"activity_log","columns":["id","at","user_name","action","detail"]}
 {"r":{"id":1,"at":"2026-10-17T09:00:00+00:00","user_name":"Sistem","action":"Excel'den aktarım","detail":"…"}}
 …

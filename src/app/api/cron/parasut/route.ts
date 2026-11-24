@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
   const started = Date.now();
   const runId = await startJobRun("parasut");
   const watch = await watchdog();
-  const configured = isParasutConfigured();
+  const configured = await isParasutConfigured();
   let outcome: JobOutcome = parasutOutcome({ configured, watchdog: watch });
   try {
     if (!configured) return NextResponse.json({ status: "skipped", reason: "Paraşüt bağlantısı tanımlı değil" });

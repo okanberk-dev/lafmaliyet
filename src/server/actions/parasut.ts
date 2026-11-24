@@ -5,11 +5,12 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { INVOICE_CATEGORIES } from "@/lib/constants";
+import { PARASUT_SETTING_KEYS, parasutSettingsInput, planParasutSettings, settingsLogText, type ParasutSettingKey } from "@/lib/parasut/settings";
 import { addIgnored, removeIgnored } from "@/lib/product-ignore";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { forgetParasutToken, ParasutClient } from "@/server/parasut/client";
-import { isParasutConfigured } from "@/server/parasut/config";
+import { configFrom, hasParasutInvoices, loadPanelSettings, loadParasutSettings, writePanelSettings, type ParasutConfig } from "@/server/parasut/config";
 import { forgetParasutConnect } from "@/server/parasut/connect";
 import { readEInvoiceLines } from "@/server/parasut/lines";
 import { applyProductLinks, PARASUT_STATE_KEYS, parasutSyncRunning, syncParasut, updateIgnoredProducts } from "@/server/parasut/sync";
@@ -17,16 +18,22 @@ import { applyProductLinks, PARASUT_STATE_KEYS, parasutSyncRunning, syncParasut,
 import { logActivity } from "./log";
 import { attempt, UserError, zDate, zText } from "./util";
 
-function ensureConfigured() {
-  if (!isParasutConfigured()) throw new UserError("Paraşüt bağlantı bilgileri tanımlı değil (ortam değişkenleri). Kurulum adımlarına bakın.");
+/** Bağlantı ayarları (panel + ortam); eksikse kullanıcıya hangisinin eksik olduğu söylenir */
+async function configured(): Promise<ParasutConfig> {
+  const { resolved } = await loadParasutSettings();
+  try {
+    return configFrom(resolved);
+  } catch (e) {
+    throw new UserError((e as Error).message);
+  }
 }
 
 export async function testParasutConnection() {
   return attempt(async () => {
     await requireAdmin();
-    ensureConfigured();
+    const cfg = await configured();
     try {
-      const r = await new ParasutClient().ping();
+      const r = await new ParasutClient(cfg).ping();
       return r;
     } catch (e) {
       throw new UserError((e as Error).message);
@@ -37,7 +44,7 @@ export async function testParasutConnection() {
 export async function runParasutSync(from: string | null) {
   return attempt(async () => {
     await requireAdmin();
-    ensureConfigured();
+    await configured();
     const r = await syncParasut("manual", from ? { from: zDate.parse(from) } : {});
     if (!r.ok) throw new UserError(r.error);
     refresh();
@@ -52,11 +59,11 @@ export async function runParasutSync(from: string | null) {
 export async function readParasutLines() {
   return attempt(async () => {
     const me = await requireAdmin();
-    ensureConfigured();
+    const cfg = await configured();
     // Eşitleme de aynı kalemleri ve alım miktarlarını yazar: ikisi aynı anda çalışmasın
     if (await parasutSyncRunning()) throw new UserError("Paraşüt eşitlemesi sürüyor; bitince yeniden deneyin.");
     const started = Date.now();
-    const client = new ParasutClient();
+    const client = new ParasutClient(cfg);
     // Sayfanın süre sınırı 60 sn: son istek en geç 43. saniyede başlar (istek başına 15 sn pay)
     client.setDeadline(started + 58_000);
     const r = await readEInvoiceLines(client, { until: started + 45_000 });
@@ -87,6 +94,41 @@ export async function disconnectParasut() {
     await logActivity(me, "Paraşüt bağlantısı sıfırlandı", "Kayıtlı oturum ve eşitleme imleci silindi; yeniden bağlanması gerekir");
     refresh();
     return null;
+  });
+}
+
+/**
+ * Bağlantı kartındaki ayarlar (client_id, client_secret, firma numarası, ilk eşitleme başlangıcı; kurallar
+ * src/lib/parasut/settings.ts). Panelde şifreli saklanır; boş bırakılan client_secret değişmez. Sonuçları tek işlemde:
+ * istemci değişince kayıtlı oturum ve yarım bağlanma isteği silinir (eski istemcinindi, hesap yeniden bağlanır), firma
+ * değişince eşitleme imleci sıfırlanır ("Oturumu sıfırla" gibi). Paraşüt'ten fatura gelmişse firma değiştirilemez;
+ * bu ikisi eşitleme sürerken yapılmaz. İşlem geçmişine secret'ın değeri yazılmaz.
+ */
+export async function saveParasutSettings(input: z.input<typeof parasutSettingsInput>) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const data = parasutSettingsInput.parse(input);
+    const db = getDb();
+    const [{ values, secretUnreadable }, invoices] = await Promise.all([loadPanelSettings(db), hasParasutInvoices(db)]);
+    const plan = planParasutSettings(values, process.env, data, { hasParasutInvoices: invoices });
+    if (!plan.ok) throw new UserError(plan.error);
+    const panelChanged = secretUnreadable || PARASUT_SETTING_KEYS.some((k) => (plan.next[k] ?? "") !== (values[k] ?? ""));
+    if (!panelChanged) return { saved: false, changed: [] as ParasutSettingKey[], forgotSession: false, resetCursor: false };
+    if ((plan.forgetSession || plan.resetCursor) && (await parasutSyncRunning())) {
+      throw new UserError("Paraşüt eşitlemesi sürüyor; bitince yeniden kaydedin.");
+    }
+    await db.transaction(async (tx) => {
+      await writePanelSettings(plan.next, me.name, tx);
+      if (plan.forgetSession) {
+        await forgetParasutToken(tx);
+        await forgetParasutConnect(tx);
+      }
+      if (plan.resetCursor) await tx.delete(s.integrationState).where(inArray(s.integrationState.key, PARASUT_STATE_KEYS));
+    });
+    const detail = settingsLogText(plan);
+    await logActivity(me, "Paraşüt bağlantı ayarları", detail || "panel kaydı yenilendi");
+    refresh();
+    return { saved: true, changed: plan.changed, forgotSession: plan.forgetSession, resetCursor: plan.resetCursor };
   });
 }
 

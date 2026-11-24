@@ -556,7 +556,7 @@ test("inceleme B2: cari şeritleri yazıldığı sırada, eylemli uyarıların e
   assert.match(strips, /\{strips\.map\(\(\{ key, \.\.\.p \}\) => \(\s*<Notice key=\{key\} \{\.\.\.p\} \/>/);
   // R3: iade uyarısının yapılacağı ve bağlantısı Ayrıntı'nın dışında (§4.3: warn'da eylem ya da text zorunlu)
   const parasut = read("src/app/panel/parasut/parasut-client.tsx");
-  const returns = parasut.slice(parasut.indexOf("function ReturnsNotice"), parasut.indexOf("function Step("));
+  const returns = parasut.slice(parasut.indexOf("function ReturnsNotice"), parasut.indexOf("// ---------------------------------------------------------------- ürün → hammadde bağlantıları"));
   assert.match(returns, /text="Faturalar'da aynı tedarikçiye eksi tutarlı fatura ekleyin; eklenince buradan kalkar\."/);
   assert.match(returns, /action=\{<NoticeLink href="\/panel\/faturalar">Faturalara git<\/NoticeLink>\}/);
   assert.doesNotMatch(returns, /Faturalara git →/);
