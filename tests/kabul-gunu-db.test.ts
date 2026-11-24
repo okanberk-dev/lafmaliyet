@@ -23,6 +23,7 @@ import postgres from "postgres";
 
 import { lafposMonthNotes } from "../src/lib/lafpos/sales";
 import { computeCash } from "../src/lib/cash-report";
+import { money } from "../src/lib/format";
 import { signedHeaders } from "../src/lib/karaoke/signature";
 import { vatMonthInputs } from "../src/lib/kdv";
 import type { DB } from "../src/server/db";
@@ -255,5 +256,41 @@ describe("kabul: Marina Kasım 2026 (ModPOS 13–21 + LafPOS 22 Kasım)", { skip
     assert.equal(computeCash(withCardExtra(report, laf!.cardExtra, laf!.offDevice)).cardDiff, 0, "Kart'tan 870 eksik demez");
     const days = await inMarina(() => kasa.loadKasaLafposDays(S, S, db));
     assert.deepEqual(days(S, LAFPOS_SUBE).day?.offDevice, { card: 870, cash: 200 }, "ay görünümünün okuyucusu da");
+  });
+
+  test("22 Kasım kasa zinciri (Faz 3): 23 Kasım'ın beklenen açılışı 1.279,50 (gün sonu yanıtı ve devir ucu); 800,00 'Diğer fatura dışı' fişsiz harcama Kasadan çıkanlar'da bir kez", async () => {
+    const devir = await import("../src/server/lafpos/devir");
+    const status = await import("../src/server/lafpos/status");
+    const kasa = await import("../src/server/data/lafpos-day");
+    assert.deepEqual(await devir.lafposNextOpening(db, S), { amount: 1_279.5, source: "kasa_raporu" }, "otomatik rapor: sayılan − teslim");
+    // Aynı gün yeniden gelir (ör. Pavo sonucu): yanıt aynı devri söyler, harcama ikinci kez yazılmaz
+    const raw = kabul();
+    const h = signedHeaders(SECRET, "POST", GUN, raw, PUSHED.getTime());
+    const again = await status.handlePosDay(db, { secret: SECRET, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, PUSHED);
+    assert.equal(again.status, 200, JSON.stringify(again.body));
+    assert.deepEqual([again.body.counted, again.body.nextOpening], [true, { amount: 1_279.5, source: "kasa_raporu" }]);
+    const devirUrl = new URL(`https://ladmin.laffogato.net/api/panel/pos/devir?date=${S}`);
+    const g = signedHeaders(SECRET, "GET", devirUrl, "", PUSHED.getTime());
+    assert.deepEqual(await devir.servePosDevir(db, { secret: SECRET, url: devirUrl, timestamp: g["x-laf-timestamp"], signature: g["x-laf-signature"], now: PUSHED }), {
+      status: 200,
+      body: { version: 1, date: S, nextOpening: { amount: 1_279.5, source: "kasa_raporu" } },
+    });
+    const outs = await db.select().from(s.cashOuts).where(and(eq(s.cashOuts.date, S), eq(s.cashOuts.branchId, LAFPOS_SUBE)));
+    assert.equal(outs.length, 1, "tek satır");
+    assert.deepEqual(
+      [outs[0].kind, outs[0].amount, outs[0].lafposId, outs[0].docType, outs[0].photoId, outs[0].description, outs[0].createdByName],
+      ["harcama", 800, "01M81R1GV0K7Q2W9X4Y6Z8A0B2", "yok", null, "Fişsiz", "LafPOS"],
+    );
+    const expenses = await db
+      .select({ amount: s.expenseEntries.amount, category: s.expenseCategories.name, branchId: s.expenseEntries.branchId })
+      .from(s.expenseEntries)
+      .innerJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
+      .where(eq(s.expenseEntries.cashOutId, outs[0].id));
+    assert.deepEqual(expenses, [{ amount: 800, category: "Diğer fatura dışı", branchId: LAFPOS_SUBE }], "Aylık harcamalar'da bir kez");
+    const [rep] = await db.select().from(s.cashReports).where(and(eq(s.cashReports.date, S), eq(s.cashReports.branchId, LAFPOS_SUBE)));
+    assert.equal(rep.cashOut, 800, "Gün içinde çıkan satırlardan, iki kez değil");
+    const detail = await kasa.loadLafposDayDetail(S, db, LAFPOS_SUBE);
+    const rows = Object.fromEntries(detail?.sections.flatMap((x) => x.rows) ?? []);
+    assert.deepEqual([rows["Beklenen açılış"], rows.Harcama, rows.Teslim], ["bilinmiyor", `1 · ${money(800)}`, "yok"]);
   });
 });

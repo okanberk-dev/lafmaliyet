@@ -67,10 +67,11 @@ export function autoMissing(z: Pick<PosDayZ, "countedCash">): string[] {
   return ["bankPos", ...(z.countedCash === null ? ["countedCash"] : [])];
 }
 
-/** Raporun otomatik notu: kaynağı, açılışın önceki devirden farkı ve eksikler */
-export function autoNote(o: { missing: readonly string[]; carry: string | null }): string {
+/** Raporun otomatik notu: kaynağı, açılışın önceki devirden farkı (ve LafPOS'ta yazılan nedeni) ve eksikler */
+export function autoNote(o: { missing: readonly string[]; carry: string | null; opening?: string | null }): string {
   const parts = ["LafPOS gün sonundan otomatik yazıldı."];
   if (o.carry) parts.push(o.carry);
+  if (o.opening) parts.push(o.opening);
   const missing = o.missing.map((m) => MISSING_LABEL[m] ?? m);
   if (missing.length) parts.push(`Eksik: ${missing.join(", ")}; panelden ekleyin.`);
   return parts.join(" ");
@@ -88,6 +89,7 @@ export function autoValuesOf(date: string, z: PosDayZ, outs: DayOuts, prevCarry:
     check && openingNeedsNote({ check, openingCash: z.openingCash, prevOpening: null, note: null })
       ? `Açılış önceki raporun devrinden ${carryDiffText(check)}; LafPOS'taki açılış yazıldı.`
       : null;
+  const opening = lafposOpeningNote(z, carry !== null);
   return {
     zNo: String(z.zNo),
     okcZNo: z.okcZNo ?? null,
@@ -106,8 +108,25 @@ export function autoValuesOf(date: string, z: PosDayZ, outs: DayOuts, prevCarry:
     cashOutNote: outs.count ? outs.note : null,
     countedCash: z.countedCash,
     handedOver: 0,
-    note: autoNote({ missing: autoMissing(z), carry }),
+    note: autoNote({ missing: autoMissing(z), carry, opening }),
   };
+}
+
+/**
+ * Kasa zinciri (Faz 3; docs/LAFPOS.md › Kasa zinciri): LafPOS'un açılışta beklediği (önceki günün devri), fark ve
+ * kasiyerin yazdığı neden raporun notuna. Panelin kendi devir denetimi (önceki raporun devri) tutmadıysa onun cümlesi
+ * zaten yazılır: yalnız neden eklenir ("Neden (LafPOS): …"). Panelde önceki rapor yoksa LafPOS'un farkı (kuruştan
+ * büyükse) ve nedeni: "Açılış LafPOS'ta beklenenden 20,50 ₺ fazla (beklenen 1.279,50 ₺); neden: …". Alanları
+ * göndermeyen eski LafPOS'ta ve farksız, nedensiz açılışta null
+ */
+export function lafposOpeningNote(z: Pick<PosDayZ, "expectedOpening" | "openingDiff" | "openingReason">, carryNoted: boolean): string | null {
+  const reason = z.openingReason ?? null;
+  if (carryNoted) return reason ? `Neden (LafPOS): ${reason}.` : null;
+  const diff = z.openingDiff ?? null;
+  if (diff !== null && z.expectedOpening != null && Math.abs(diff) >= 0.01) {
+    return `Açılış LafPOS'ta beklenenden ${money(Math.abs(diff))} ${diff < 0 ? "az" : "fazla"} (beklenen ${money(z.expectedOpening)})${reason ? `; neden: ${reason}` : ""}.`;
+  }
+  return reason ? `Açılış notu (LafPOS): ${reason}.` : null;
 }
 
 const same = (a: number | string | null | undefined, b: number | string | null | undefined) =>
@@ -143,17 +162,21 @@ export function autoValuesOfReport(r: Pick<CashReportFields, Exclude<AutoField, 
   return Object.fromEntries(AUTO_FIELDS.map((f) => [f, (r as Record<string, unknown>)[f] ?? null])) as AutoValues;
 }
 
-/** Z'nin ve ikram satırının Faz 2 anahtarları (23 Kasım 2026): günün özetine girmez */
-const FAZ2_Z_KEYS: ReadonlySet<string> = new Set(["listValue", "ikramTotal", "odenmezTotal", "zayiTotal", "vat", "openedAt", "closedAt", "okcZNo"]);
+/**
+ * Z'nin ve ikram satırının Faz 2 anahtarları (23 Kasım 2026) ve Z'nin Faz 3 açılış anahtarları (kasa zinciri): günün
+ * özetine girmez
+ */
+const FAZ2_Z_KEYS: ReadonlySet<string> = new Set(["listValue", "ikramTotal", "odenmezTotal", "zayiTotal", "vat", "openedAt", "closedAt", "okcZNo", "expectedOpening", "openingDiff", "openingReason"]);
 const FAZ2_IKRAM_KEYS: ReadonlySet<string> = new Set(["kind", "personKind"]);
 const withoutKeys = (v: unknown, keys: ReadonlySet<string>): unknown =>
   v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([k]) => !keys.has(k))) : v;
 
 /**
  * Günün içerik özeti (FNV-1a, 32 bit): aynı içerik yeniden gelirse e-posta yinelenmez. Faz 2 anahtarları (Z'nin liste ve
- * tür toplamları, KDV dökümü, açılış / kapanış anı, yazarkasa Z no'su; ikramın türü ve kişi türü) özete girmez: aynı
+ * tür toplamları, KDV dökümü, açılış / kapanış anı, yazarkasa Z no'su; ikramın türü ve kişi türü) ve Faz 3'ün açılış
+ * anahtarları (beklenen, fark, neden: gün açılırken bir kez yazılır, sonra değişmez) özete girmez: aynı
  * rakamlarla yalnız onları ekleyen gönderim (yükseltmeden önce saklanıp sonra yeniden gönderilen gün) düzeltme değildir,
- * "Düzeltildi" e-postası yollamaz. Bu anahtarlar öteki alanlardan türer: rakam değişince özet zaten değişir
+ * "Düzeltildi" e-postası yollamaz. Faz 2 anahtarları öteki alanlardan türer: rakam değişince özet zaten değişir
  */
 export function dayHash(day: { z: unknown; payments: unknown; ikram: unknown }): string {
   const ikram = Array.isArray(day.ikram) ? day.ikram.map((l) => withoutKeys(l, FAZ2_IKRAM_KEYS)) : day.ikram;

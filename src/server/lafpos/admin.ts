@@ -4,9 +4,11 @@ import { and, eq, sql } from "drizzle-orm";
 
 import { readLafposSwitchDay } from "@/lib/constants";
 import { LAFPOS_STATE_KEY } from "@/lib/lafpos/status";
-import { dayMonthYearTR, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY, switchDayProblem } from "@/lib/lafpos/switch";
+import { branchSwitchDay, dayMonthYearTR, isLafposDay, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY, switchDayProblem } from "@/lib/lafpos/switch";
 import { schema as s, type DB } from "@/server/db";
 import { UserError } from "@/server/user-error";
+
+import { detachLafposCashOuts } from "./cash-moves";
 
 /**
  * Ayarlar › LafPOS (kasa) kartının iki yazımı (docs/LAFPOS.md › Geçiş günü, Durum ve onarım), eylemlerden ayrı ve
@@ -52,7 +54,10 @@ export async function writeLafposSwitchDay(db: DB, me: Actor, day: string | null
  * arada gün başka bir Z ile yeniden yazıldıysa silinmez. Durum satırındaki o günün reddi yalnız bu silmenin çözdüğü
  * çakışmaysa (409, aynı Z) "silindi" olur (kart kırmızı yerine "Gönder bekleniyor" der); aynı günün 400'ü olduğu gibi
  * kalır (alanı ve nedeni görünmeye devam eder). Sürüm geçmişi (pos_day_revisions) silinmez: silinen Z'nin gövdeleri
- * denetim için kalır, sonra gelen yeni Z'nin gövdeleri aynı güne eklenir (docs/LAFPOS.md › Sürüm geçmişi).
+ * denetim için kalır, sonra gelen yeni Z'nin gövdeleri aynı güne eklenir (docs/LAFPOS.md › Sürüm geçmişi). Kasadan
+ * çıkanlar'daki günün LafPOS satırları LafPOS'tan ayrılır (cash-moves.ts detachLafposCashOuts; inceleme LM-3): gün
+ * sayılmıyorsa (deneme günü) LafPOS'un açtığı satırlar kalkar, sahiplenilen elle satır ve tedarikçi ödemesine bağlı satır
+ * kalır; sayılan günde (409'un çözümü) satırların hepsi kalır, yeni Z gelince yeniden sahiplenilir.
  */
 export async function removeLafposDay(db: DB, me: Actor, date: string, zNo: number, now: Date = new Date()): Promise<{ zNo: number; lines: number }> {
   if (me.role !== "admin") throw new UserError(ADMIN_ONLY);
@@ -64,6 +69,9 @@ export async function removeLafposDay(db: DB, me: Actor, date: string, zNo: numb
     if (rep.z.zNo !== zNo) throw new UserError(`Bu gün bu arada Z ${rep.z.zNo} ile yeniden gönderildi; sayfayı yenileyip yeniden bakın`);
     const lines = await tx.delete(s.posDailySales).where(and(eq(s.posDailySales.date, date), eq(s.posDailySales.branchId, LAFPOS_BRANCH_ID))).returning({ id: s.posDailySales.id });
     await tx.delete(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, LAFPOS_BRANCH_ID)));
+    const [setting] = await tx.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
+    const counted = isLafposDay(date, branchSwitchDay(readLafposSwitchDay(setting?.value), LAFPOS_BRANCH_ID));
+    await detachLafposCashOuts(tx, date, counted ? "release" : "drop", { id: me.id, name: me.name });
     await tx.execute(sql`
       update integration_state
          set value = jsonb_set(value, array['rejections', ${date}::text, 'clearedAt'], to_jsonb(${now.toISOString()}::text)), updated_at = now()

@@ -118,6 +118,14 @@ export const posZSchema = z.object({
   closedAt: soft(isoInstant),
   /** Yazarkasanın (ÖKC) mali Z no'su, günün son tamamlanan cihaz fişinden; metin (LafPOS'un `zNo`'sundan ayrı); yoksa null */
   okcZNo: soft(shortText(30)),
+  /**
+   * Faz 3, kasa zinciri (23 Kasım 2026; docs/LAFPOS.md › Kasa zinciri; isteğe bağlı, bozuksa yok sayılır): açılışta
+   * beklenen nakit (önceki gerçek günün devri; bilinmiyorsa null), açılış − beklenen (işaretli: eksik açılış eksi;
+   * beklenen yoksa null) ve farkın nedeni (en çok 200 karakter; fark ₺1,00 ve üstündeyse LafPOS'ta zorunlu)
+   */
+  expectedOpening: soft(tl.nullable()),
+  openingDiff: soft(signedTl.nullable()),
+  openingReason: soft(reasonText),
 });
 
 const lineSchema = z.object({
@@ -178,6 +186,39 @@ const iptalSchema = z.object({
   reason: reasonText,
   refund: z.boolean(),
 });
+
+/**
+ * Faz 3: günün bir kasa hareketi (LafPOS `cash_movements`; docs/LAFPOS.md › Kasadan çıkanlar LafPOS'tan). Kimlik
+ * hareketin ULID'i (26 karakter Crockford base32; değişmez, aynı gün yeniden gönderilince aynı satır). Harcama ve teslim
+ * panelin "Kasadan çıkanlar"ına satır olur (src/server/lafpos/cash-moves.ts), giriş olmaz (Kasa raporunun "Gün içinde
+ * kasaya giren"i `z.cashIn`'den). Kişi gelmez; açıklama personelin yazdığı serbest metin (en çok 200, boş olabilir).
+ * `categoryId` harcamanın panel gider kategorisi (expense_categories.id) ya da null
+ */
+export const LAFPOS_MOVE_KINDS = ["harcama", "teslim", "giris"] as const;
+export const cashMoveSchema = z.object({
+  id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/),
+  kind: z.enum(LAFPOS_MOVE_KINDS),
+  amount: tl.refine((v) => v > 0),
+  description: z
+    .string()
+    .max(1000)
+    .nullable()
+    .transform((v) => v?.trim().slice(0, 200) ?? ""),
+  // Takvimde olan an: biçime uyan ama olmayan an ("…T25:99") satırın saatine Invalid Date yazdırır, yazım düşer ve gün
+  // 500 alır (LafPOS yeniden dener, gün hiç yazılmaz). Okunamayan an listeyi düşürür (soft; gün yine yazılır)
+  at: z
+    .string()
+    .max(40)
+    .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/)
+    .refine((v) => Number.isFinite(Date.parse(v))),
+  categoryId: z.number().int().positive().max(2_147_483_647).nullable(),
+});
+
+/** Hareketlerin listesi: aynı kimlik iki kez geçmez (geçerse liste okunamaz sayılır, satırlara dokunulmaz) */
+const cashMovesSchema = z
+  .array(cashMoveSchema)
+  .max(2000)
+  .refine((ms) => new Set(ms.map((m) => m.id)).size === ms.length);
 
 const paymentSchema = z.object({
   name: z.string().trim().min(1).max(60),
@@ -261,6 +302,11 @@ export const posDaySchema = z.object({
   refunds: soft(z.array(refundSchema).max(2000)),
   /** Günün iptal edilen kalemleri (en çok 2000 parça) */
   iptal: soft(z.array(iptalSchema).max(2000)),
+  /**
+   * Faz 3: günün kasa hareketleri yazıldığı sırayla (harcama, teslim, giriş). Yeni LafPOS hep gönderir, hareketsiz günde
+   * `[]`: "hareket yok" eski LafPOS'tan (alan yok) ayrılır. Bozuk tek hareket bütün listeyi düşürür (satırlara dokunulmaz)
+   */
+  cashMoves: soft(cashMovesSchema),
 });
 
 export type PosDayPush = z.output<typeof posDaySchema>;
@@ -272,6 +318,7 @@ export type PosRefund = NonNullable<PosDayPush["refunds"]>[number];
 export type PosIptal = NonNullable<PosDayPush["iptal"]>[number];
 export type PosCorrection = NonNullable<PosDayPush["correction"]>;
 export type PosOffDevice = NonNullable<PosDayPush["offDevice"]>;
+export type PosCashMove = NonNullable<PosDayPush["cashMoves"]>[number];
 
 /** Takvimde olan gün (2026-02-30 değil), 2020'den sonra */
 function realDate(v: string): boolean {
@@ -304,7 +351,7 @@ export function parsePosDay(body: string, now: Date = new Date()): PosDayParse {
     const issue = bankPosSchema.safeParse(sentBank).error?.issues[0];
     console.warn("[lafpos] bankPos okunamadı, karşılaştırma yazılmadı:", issue ? `${issue.path.map(String).join(".") || "bankPos"}: ${issue.code}` : "bankPos");
   }
-  // Okunamayan Faz 2 alanları: gün yazılır, alan yazılmaz; günlükte görünür (LafPOS'un sürümü ile panelin şeması ayrıştı)
+  // Okunamayan Faz 2 ve Faz 3 alanları: gün yazılır, alan yazılmaz; günlükte görünür (LafPOS'un sürümü ile panelin şeması ayrıştı)
   const dropped = droppedSoftFields(json, r.data);
   if (dropped.length) console.warn("[lafpos] okunamayan alanlar yazılmadı:", r.data.date, dropped.join(", "));
   const seen = new Set<string>();
@@ -315,10 +362,10 @@ export function parsePosDay(body: string, now: Date = new Date()): PosDayParse {
   return { ok: true, data: r.data };
 }
 
-const TOP_SOFT = ["revision", "correction", "offDevice", "refunds", "iptal"] as const;
-const Z_SOFT = ["listValue", "ikramTotal", "odenmezTotal", "zayiTotal", "vat", "openedAt", "closedAt", "okcZNo"] as const;
+const TOP_SOFT = ["revision", "correction", "offDevice", "refunds", "iptal", "cashMoves"] as const;
+const Z_SOFT = ["listValue", "ikramTotal", "odenmezTotal", "zayiTotal", "vat", "openedAt", "closedAt", "okcZNo", "expectedOpening", "openingDiff", "openingReason"] as const;
 
-/** Gönderilip okunamayan Faz 2 alanlarının yolları ("z.vat", "lines.3.gross", "bankPos.errorCode") */
+/** Gönderilip okunamayan Faz 2 ve Faz 3 alanlarının yolları ("z.vat", "lines.3.gross", "bankPos.errorCode", "cashMoves") */
 function droppedSoftFields(json: unknown, data: PosDayPush): string[] {
   const raw = json as Record<string, unknown> & { z?: Record<string, unknown>; lines?: Record<string, unknown>[]; ikram?: Record<string, unknown>[]; bankPos?: Record<string, unknown> | null };
   const sent = (o: Record<string, unknown> | null | undefined, k: string) => !!o && typeof o === "object" && k in o && o[k] !== undefined;

@@ -125,12 +125,20 @@ export function cashOutWritesExpense(o: {
    * bilir; pencere bilmez (verilmezse bekliyor sayılır: kategori alanı görünür, kararı sunucu verir)
    */
   awaitingInvoice?: boolean;
+  /**
+   * Satır kategorisini bekleyen LafPOS harcaması (Faz 3; src/lib/lafpos/cash-moves.ts lafposAwaitingCategory: LafPOS'un
+   * açtığı, kaydı olmayan, LafPOS'un personelin kategorisiyle göndermediği harcama). Sunucu saklı gövdeden bilir, pencereye
+   * satırla gelir. Personelin düzeltmesi yeni satırın kuralıyla: kategori seçilince kayıt açılır. Kaydı yöneticinin
+   * kaldırdığı LafPOS satırında ve sahiplenilen elle girilmiş satırda verilmez: kayıt geri gelmez (inceleme LM-3)
+   */
+  lafposAwaitingCategory?: boolean;
 }): boolean {
   if (o.kind !== "harcama") return false;
   if (o.admin || o.mode === "restore") return o.requested;
   if (o.mode === "edit") {
     const leftInvoice = o.prevDocType != null && isInvoiceDoc(o.prevDocType) && staffToExpenses(o.kind, o.docType) && o.awaitingInvoice !== false;
-    return o.hasExpense || leftInvoice;
+    const lafposCategory = o.lafposAwaitingCategory === true && staffToExpenses(o.kind, o.docType);
+    return o.hasExpense || leftInvoice || lafposCategory;
   }
   return staffToExpenses(o.kind, o.docType);
 }
@@ -245,6 +253,10 @@ export const STAFF_CASH_OUT_FIELDS = [
   "expenseEntryId",
   "categoryId",
   "categoryName",
+  // Faz 3: satır LafPOS'un kasa hareketinden geldi (kimlik ULID; kişisel değil): tutar, tür ve gün kilitli
+  "lafposId",
+  // Faz 3: LafPOS'un kategorisiz yazdığı harcama, kategori seçilince Aylık harcamalar'a yazılır (yalnız işaret)
+  "lafposAwaitingCategory",
 ] as const;
 
 export type StaffCashOutField = (typeof STAFF_CASH_OUT_FIELDS)[number];
