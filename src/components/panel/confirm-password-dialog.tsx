@@ -5,8 +5,9 @@ import { useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { actionErrorText } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Input } from "@/components/ui/form";
+import { Field } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
+import { PasswordInput } from "@/components/ui/password-input";
 
 /**
  * Kendi parolanızı isteyen eylemlerin penceresi: Hesabım (iki adımlı doğrulamayı aç / kapat, kurtarma kodları, diğer
@@ -76,7 +77,7 @@ export function ConfirmPasswordDialog({
       <form id="confirm-password" onSubmit={submit} className="space-y-3 pb-2">
         {children}
         <Field label="Parolanız" htmlFor="confirm-pw" error={error}>
-          <Input id="confirm-pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={error ? true : undefined} data-autofocus className="h-11 pointer-coarse:h-11" />
+          <PasswordInput id="confirm-pw" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={error ? true : undefined} data-autofocus className="h-11 pointer-coarse:h-11" />
         </Field>
         {notice ? (
           <Notice tone="warn" size="sm" live="polite" title={notice} />
