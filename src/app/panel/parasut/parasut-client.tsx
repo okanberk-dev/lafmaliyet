@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useId, useMemo, useOptimistic, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useOptimistic, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/panel/page-header";
@@ -216,7 +216,10 @@ export function ParasutClient({
   checks = [],
   readState = "nokey",
   returns = null,
+  scopeNotice = null,
 }: {
+  /** Şube seçiliyken "bu ekran firma geneli" notu (sunucu bileşeni; "Tümü"de boş çizer) */
+  scopeNotice?: ReactNode;
   configured: boolean;
   /** Paraşüt hesabı tarayıcıdan yetkilendirildi mi; refresh_token'ın yaşı (30 gün geçerli) */
   connection: { connected: boolean; refreshedAt: string | null; stale: boolean };
@@ -365,6 +368,7 @@ export function ParasutClient({
           </>
         }
       />
+      {scopeNotice}
 
       <div className="mb-6 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatBreakdown

@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { MonthPicker, MonthPickerSkeleton } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { SalesSourceLine } from "@/components/panel/sales-source-line";
@@ -154,6 +155,8 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
         actions={<MonthPicker months={availableMonths(model)} value={month} />}
         tabs={<SectionTabs section="stok" current="/panel/tutarlilik" role="admin" />}
       />
+      {/* Şube seçiliyken: tutarlılık işletme geneli (şube kapsamı C P2-1) */}
+      <CompanyWideNotice screen="tutarlilik" className="mb-4" />
 
       {waiting?.count ? (
         <Notice

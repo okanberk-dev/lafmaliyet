@@ -4,12 +4,13 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
-import { ALL_BRANCHES } from "@/lib/branches";
+import { ALL_BRANCHES, companyWideNote } from "@/lib/branches";
 import { planNotes } from "@/lib/cash-plan";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadCashPlan } from "@/server/data/cash-plan";
 import { loadModel } from "@/server/data/dataset";
-import { withBranchScope } from "@/server/branch-scope";
+import { currentBranchScope, withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 
 import { CashPlanClient } from "./cash-plan-client";
 
@@ -42,5 +43,8 @@ async function CashPlanContent() {
     return { model, ...(await loadCashPlan(model)) };
   });
   const notes = planNotes(plan, { komisyon: model.settings.komisyon, acikGun: model.settings.acikGun, invoiceTermDays });
-  return <CashPlanClient title={TITLE} description={DESCRIPTION} plan={plan} state={state} carry={carry} notes={notes} />;
+  // Şube seçiliyken ekran yine firmanın: not bunu söyler (şube kapsamı C P1-12, P2-1)
+  const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+  const scopeNote = companyWideNote("nakit", scope, branches);
+  return <CashPlanClient title={TITLE} description={DESCRIPTION} plan={plan} state={state} carry={carry} notes={notes} scopeNote={scopeNote} />;
 }

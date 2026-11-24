@@ -48,6 +48,7 @@ export function CashPlanClient({
   state,
   carry,
   notes,
+  scopeNote = null,
 }: {
   title: string;
   description: string;
@@ -55,6 +56,8 @@ export function CashPlanClient({
   state: CashPlanState;
   carry: { date: string; amount: number; tills?: number } | null;
   notes: { key: string; title: string; text: string }[];
+  /** Şube seçiliyken "bu ekran firma geneli" notu (companyWideNote); "Tümü"de null */
+  scopeNote?: { title: string; text: string } | null;
 }) {
   const [ask, setAsk] = useQueryState("bakiye", "");
   const [balanceOpen, setBalanceOpen] = useState(false);
@@ -156,6 +159,7 @@ export function CashPlanClient({
             )}
           </div>
 
+          {scopeNote ? <Notice tone="neutral" size="sm" className="mb-4" title={scopeNote.title} text={scopeNote.text} /> : null}
           {/* Tek uyarı şeridi (docs/planlar/ux-sade.md U2): para yetmiyorsa kırmızı (katlanmaz), bakiye girilmediyse nötr
               (giriş başlıktaki "Bakiyeyi gir"), yetiyorsa yeşil */}
           {firstNegative ? (

@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, isNotNull, isNull, lt, max, sql } from "driz
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { HashScroll } from "@/components/panel/hash-scroll";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
@@ -165,6 +166,8 @@ async function ParasutContent() {
       {/* ⌘K "Fatura kalemini hammaddeye bağla" ve Hammaddeler'in bağlantıları (#urun-baglantilari) içerik akınca iner */}
       <HashScroll />
       <ParasutScreen
+        // Şube seçiliyken: Paraşüt hesabı şubeler arasında ortak (şube kapsamı C P2-1)
+        scopeNotice={<CompanyWideNotice screen="parasut" className="mb-4" />}
         configured={configured}
         connection={connection}
         redirectUri={redirectUri}

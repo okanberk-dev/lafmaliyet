@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { PageHeader } from "@/components/panel/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, InfoTip, PageSkeleton, Stat } from "@/components/ui/misc";
@@ -158,6 +159,8 @@ async function InvoicesContent() {
   return (
     <>
       <PageHeader path="/panel/faturalar" title="Faturalar" description={DESCRIPTION} more={MORE} />
+      {/* Şube seçiliyken: faturalar işletme geneli (şube kapsamı C P2-1) */}
+      <CompanyWideNotice screen="faturalar" className="mb-4" />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown

@@ -2,6 +2,7 @@ import { AlarmClock, CalendarClock, CircleCheck, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
@@ -138,6 +139,8 @@ async function SuppliersContent() {
   return (
     <>
       <PageHeader path="/panel/tedarikciler" title="Tedarikçiler" description={DESCRIPTION} more={MORE} />
+      {/* Şube seçiliyken: cari firmanın (şube kapsamı C P1-12, P2-1) */}
+      <CompanyWideNotice screen="tedarikciler" className="mb-4" />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown title="Kalan borç" description="Ödenmemiş faturaların kalan tutarı (KDV dahil), tedarikçi tedarikçi. Tedarikçiye dokununca sayfası açılır." groups={breakdown.open} total={open} totalLabel="Kalan borç" exact empty="Ödenmemiş fatura yok.">
