@@ -811,7 +811,7 @@ LafPOS'un gününde bu bölümler yok.
 
 Durum tablosu `lafpos_day_ends` (gün, şube): otomatik rapor, son otomatik değerler, eksikler, gönderilen içerik, gönderim
 sayısı ve hatası (`drizzle/0061_lafpos_gun_sonu.sql`); gün sonu tamda fotoğrafın karşılaştırması (`photo_check`) ve rapor
-yokken bekleyen fotoğraflar (`pending_photos`; `drizzle/0072_gun_sonu_tam.sql`). Testler: `tests/lafpos-gun-sonu.test.ts`,
+yokken bekleyen fotoğraflar (`pending_photos`; `drizzle/0074_gun_sonu_tam.sql`). Testler: `tests/lafpos-gun-sonu.test.ts`,
 `tests/lafpos-gun-sonu-db.test.ts`, `tests/lafpos-gun-sonu-tam.test.ts`, `tests/lafpos-gun-sonu-tam-db.test.ts`.
 
 ### Gün sonu tam alanları (24 Kasım 2026)
