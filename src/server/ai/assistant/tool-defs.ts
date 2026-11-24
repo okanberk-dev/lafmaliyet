@@ -14,6 +14,7 @@ import { zLimit } from "@/lib/mcp/schemas";
 import type { ToolDef } from "@/server/mcp/tools";
 
 import { islemRehberi, opTools, type OpToolDeps } from "./op-tools";
+import { readTools, type ReadToolDeps } from "./read-tools";
 import type { AssistantTool } from "./tool-adapter";
 
 /** Her açıklamanın sonu (MCP'deki DESCRIPTION_TAIL ile aynı): Claude araç çıktısındaki adları talimat sanmasın */
@@ -122,9 +123,10 @@ export function assistantTools(mcp: readonly ToolDef[], deps: AssistantToolDeps)
 }
 
 /**
- * Bütün liste, sabit sırada: okuma araçları, işlem rehberi, sonra işlem araçları (onay kartı). Yapılandırılmış girdinin
- * karmaşıklık sınırına sığan önek strict gider (toolParams): okuma araçları önce.
+ * Bütün liste, sabit sırada: okuma araçları (Claude bağlantısınınkiler, panel rehberi, Paraşüt; sonra LafPOS ve
+ * operasyon: read-tools.ts), işlem rehberi, sonra işlem araçları (onay kartı). Yapılandırılmış girdinin karmaşıklık
+ * sınırına sığan önek strict gider (toolParams): okuma araçları önce.
  */
-export function allAssistantTools(mcp: readonly ToolDef[], deps: AssistantToolDeps & OpToolDeps): AssistantTool[] {
-  return [...assistantTools(mcp, deps), islemRehberi as unknown as AssistantTool, ...opTools(deps)];
+export function allAssistantTools(mcp: readonly ToolDef[], deps: AssistantToolDeps & OpToolDeps & ReadToolDeps): AssistantTool[] {
+  return [...assistantTools(mcp, deps), ...readTools(deps), islemRehberi as unknown as AssistantTool, ...opTools(deps)];
 }

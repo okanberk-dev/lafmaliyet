@@ -175,7 +175,16 @@ export function replayClient(feature: Exclude<AiFeature, "asistan">): AiClient {
 const shiftDay = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
 /** Sorudaki sözcüğe göre kayıtlı yanıtın çağıracağı araç ve girdisi (sıra önemli: ilk eşleşen) */
-const ASSISTANT_ROUTES: [RegExp, string, (today: string) => Record<string, unknown>][] = [
+const ASSISTANT_ROUTES: [RegExp, string, (today: string, question: string) => Record<string, unknown>][] = [
+  [/\bsil\b|silmek|toplu|parolamı|şifremi/i, "islem_rehberi", (_t, q) => ({ konu: q.slice(0, 200) })],
+  [/gün sonu|gun sonu|kasa tuttu/i, "gun_sonu", () => ({})],
+  [/lafpos/i, "lafpos_durumu", () => ({})],
+  [/en çok ne sat|kaç .*sattı|sattık/i, "gunluk_satislar", () => ({})],
+  [/tüken|tuken/i, "menu_durumu", () => ({})],
+  [/kim çalışıyor|vardiya/i, "vardiya", () => ({})],
+  [/bitmek üzere|stok/i, "stok_tahmini", () => ({})],
+  [/bekleyen (ne|iş)|onay bekleyen/i, "bekleyen_isler", () => ({})],
+  [/bugün ne|günün özeti/i, "bugun_ozeti", () => ({})],
   [/bağlan|bekle|paraşüt|parasut/i, "parasut_bekleyenler", () => ({ limit: 10 })],
   [/borç|borc|tedarikçi|tedarikci/i, "tedarikci_ozeti", () => ({ siralama: "borc", limit: 5 })],
   [/zam/i, "zam_etkisi", () => ({ limit: 5 })],
@@ -220,7 +229,7 @@ export function replayAssistantMessage(params: AssistantParams) {
   const question = last ? textOf(last.content) : "";
   const route = ASSISTANT_ROUTES.find(([re]) => re.test(question));
   const name = route ? route[1] : "panel_rehberi";
-  const input = route ? route[2](new Date().toISOString().slice(0, 10)) : { soru: question.slice(0, 200) || "panel" };
+  const input = route ? route[2](new Date().toISOString().slice(0, 10), question) : { soru: question.slice(0, 200) || "panel" };
   return scriptedMessage({
     content: [
       { type: "text", text: "Panelden bakıyorum.", citations: null },
