@@ -19,7 +19,10 @@ import {
   type FieldChange,
 } from "@/lib/cash-report";
 import { CASH_REQUEST_TEXT, cashDaySubject } from "@/lib/cash-requests";
+import { readLafposSwitchDay } from "@/lib/constants";
 import { money } from "@/lib/format";
+import { LAFPOS_STAFF_WRITE_TEXT } from "@/lib/lafpos/foto";
+import { branchSwitchDay, isLafposDay, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { normalizeVat, OKC_KNOWN_RATES, okcCumulativeToStore, okcFormError, type OkcVatInput, type OkcVatLine } from "@/lib/okc-z";
 import { DELETED_REPORT_DAYS, linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
 import { longDateTR, todayTR } from "@/lib/reminders";
@@ -159,6 +162,22 @@ export async function lockCashReport(tx: CashTx, date: string, branchId: string)
     .for("update")
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Personelin LafPOS gününde formdan yazımı (son denetim, 24 Kasım 2026; docs/LAFPOS.md › Gün sonu otomasyonu): LafPOS'un
+ * şubesinde geçiş gününden itibaren rapor LafPOS'un gün sonundan kendiliğinden yazılır. Personel yeni rapor girmez (gün
+ * sonundan önce de: girseydi otomasyon raporu "elle girildi" sayıp Banka POS'u ve yazarkasa alanlarını hiç yazmazdı) ve
+ * otomatik raporu değiştirmez (salt okunur yalnız arayüzde değil). Elle girilmiş rapor (yönetici yedek yolla girdi ya da
+ * eski kayıt) kendi kapısıyla açık kalır. Red metni; yazılabilirse null
+ */
+async function staffLafposRefusal(tx: CashTx, date: string, branchId: string, prev: CashReportRow | null): Promise<string | null> {
+  if (branchId !== LAFPOS_BRANCH_ID) return null;
+  const [setting] = await tx.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
+  if (!isLafposDay(date, branchSwitchDay(readLafposSwitchDay(setting?.value), branchId))) return null;
+  if (!prev) return LAFPOS_STAFF_WRITE_TEXT.fresh;
+  const [state] = await tx.select({ autoValues: s.lafposDayEnds.autoValues }).from(s.lafposDayEnds).where(eq(s.lafposDayEnds.reportId, prev.id)).limit(1);
+  return state?.autoValues ? LAFPOS_STAFF_WRITE_TEXT.auto : null;
 }
 
 /** Bu günden sonra girilmiş bir rapor var mı (varsa bu raporun devri ertesi günün açılışına dayanak olmuştur) */
@@ -482,6 +501,10 @@ export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, 
   return db.transaction(async (tx) => {
     await lockLateDay(tx, data.date, branchId);
     const prev = await lockCashReport(tx, data.date, branchId);
+    if (me.role !== "admin") {
+      const lafpos = await staffLafposRefusal(tx, data.date, branchId, prev);
+      if (lafpos) throw new UserError(lafpos);
+    }
     if (prev && me.role !== "admin") {
       assertRevision(prev, revision);
       if (await ownDeletePending(tx, me.id, data.date, branchId)) throw new UserError(CASH_REQUEST_TEXT.deletePending);
