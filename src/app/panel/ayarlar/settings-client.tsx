@@ -770,6 +770,8 @@ export type LogEntry = {
   userName: string | null;
   /** Kayıttaki ad; ad tek başına yanıltabiliyorsa hesabın e-postası (src/lib/activity-person.ts) */
   person: { name: string; email: string | null; label: string };
+  /** Panel asistanının onay kartından yapıldı (docs/ASISTAN-ISLEMLER.md › İşlem geçmişi) */
+  viaAssistant?: boolean;
   action: string;
   detail: string | null;
 };
@@ -820,7 +822,7 @@ export function ActivityLog({ entries }: { entries: LogEntry[] }) {
   const person = people.includes(personRaw) ? personRaw : "";
 
   const shown = withKind.filter(
-    (l) => (!kind || l.meta.kind === kind) && (!person || l.who === person) && matches(`${l.action} ${l.detail ?? ""} ${l.who}`, q),
+    (l) => (!kind || l.meta.kind === kind) && (!person || l.who === person) && matches(`${l.action} ${l.detail ?? ""} ${l.who}${l.viaAssistant ? " asistan" : ""}`, q),
   );
   const filterActive = Boolean(q.trim()) || Boolean(kind) || Boolean(person);
   const paged = usePaged(shown, 10, `${q}|${kind}|${person}`);
@@ -897,6 +899,7 @@ export function ActivityLog({ entries }: { entries: LogEntry[] }) {
                             <span title={l.detail ?? undefined}>
                               <span className="font-medium text-ink-soft">{l.person.name}</span>
                               {l.person.email ? <span className="break-all text-ink-mute"> ({l.person.email})</span> : null}
+                              {l.viaAssistant ? <span className="text-ink-mute"> (asistan aracılığıyla)</span> : null}
                               {l.detail ? ` · ${l.detail}` : null}
                             </span>
                           }

@@ -33,6 +33,7 @@ import { assertNotHeld, supersede } from "@/server/staff-requests/core";
 import { sendableRecipients } from "@/server/notify/recipients";
 import { getPhoto, keepPhoto, linkable, releasePhoto } from "@/server/storage/photos";
 import { UserError } from "@/server/user-error";
+import { currentVia } from "@/server/activity-via";
 
 /*
  * Kasa raporunun yazım yolu (docs/KASA-RAPORU.md): formun şeması, raporun kaydı (yeni ya da yeni sürüm) ve silinmesi.
@@ -439,7 +440,7 @@ export async function clearOkcCumulativeCore(db: DB, me: CashActor, reportId: nu
     ]
       .filter(Boolean)
       .join(" · ");
-    await tx.insert(s.activityLog).values({ userName: me.name, userId: me.id, action: "Yazarkasa kümülatifi temizlendi", detail });
+    await tx.insert(s.activityLog).values({ userName: me.name, userId: me.id, action: "Yazarkasa kümülatifi temizlendi", detail, via: currentVia() });
     return { date: row.date, cumTotal: row.okcCumTotal, cumVat: row.okcCumVat };
   });
 }

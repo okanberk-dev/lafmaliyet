@@ -526,6 +526,13 @@
       "when": 1795528624054,
       "tag": "0074_gun_sonu_tam",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1795537450175,
+      "tag": "0075_asistan_islemleri",
+      "breakpoints": true
     }
   ]
 }

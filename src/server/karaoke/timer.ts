@@ -22,6 +22,7 @@ import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede,
 import { UserError } from "@/server/user-error";
 
 import { bumpKaraokeVersion } from "./board";
+import { currentVia } from "@/server/activity-via";
 
 /*
  * Karaoke oturumunun bitirilmesi, geri açılması ve sayacın silinmesi (denetim E-15, E-65; docs/KARAOKE.md › Sayacı
@@ -46,7 +47,7 @@ export type KaraokeSessionRow = typeof s.karaokeSessions.$inferSelect;
 
 /** İşlem geçmişine, yazımla aynı işlemde (kişinin adı ve hesabı) */
 async function logIn(tx: Tx, me: KaraokeActor, action: string, detail: string): Promise<void> {
-  await tx.insert(s.activityLog).values({ userName: me.name, userId: me.id, action, detail: detail.slice(0, 500) });
+  await tx.insert(s.activityLog).values({ userName: me.name, userId: me.id, action, detail: detail.slice(0, 500), via: currentVia() });
 }
 
 /** Oturum satırı kilitli (FOR UPDATE); yoksa null */
