@@ -21,7 +21,17 @@ import {
   legacyTokenUrl,
   PARASUT_LEGACY,
 } from "../src/lib/parasut/legacy";
-import { authorizeRequestUrl, challengeOf, createState, createVerifier, endpointUrl, readDiscovery, sameSite, sameToken } from "../src/lib/parasut/oidc";
+import {
+  authorizeRequestUrl,
+  challengeOf,
+  createState,
+  createVerifier,
+  endpointUrl,
+  keycloakEndpoints,
+  readDiscovery,
+  sameSite,
+  sameToken,
+} from "../src/lib/parasut/oidc";
 
 const root = join(__dirname, "..");
 const read = (p: string) => readFileSync(join(root, p), "utf8");
@@ -253,6 +263,28 @@ test("varsayılan yayıncı Paraşüt'ün Keycloak alanı; kök adreste keşif b
   );
   assert.equal(live.issuer, realm);
   assert.equal(live.tokenUrl, `${realm}/protocol/openid-connect/token`);
+  // Keşif belgesi okunamazsa dönülen standart uçlar canlı belgedekilerle birebir aynı
+  assert.deepEqual(keycloakEndpoints(realm), live);
+});
+
+test("keşif belgesi engellenirse Keycloak'ın standart uçları; yalnız https Keycloak alanında", () => {
+  const realm = "https://id.parasut.com/realms/parasut";
+  const std = keycloakEndpoints(realm);
+  assert.equal(std?.authorizeUrl, `${realm}/protocol/openid-connect/auth`);
+  assert.equal(std?.tokenUrl, `${realm}/protocol/openid-connect/token`);
+  // Sondaki eğik çizgi çift yazılmaz
+  assert.deepEqual(keycloakEndpoints(`${realm}/`), std);
+  // Keycloak alanı olmayan, https olmayan ya da süslü adreste tahmin yürütülmez: keşif hatası gösterilir
+  assert.equal(keycloakEndpoints("https://id.parasut.com"), null);
+  assert.equal(keycloakEndpoints("https://id.parasut.com/realms/parasut/protocol"), null);
+  assert.equal(keycloakEndpoints("http://id.parasut.com/realms/parasut"), null);
+  assert.equal(keycloakEndpoints("https://k:p@id.parasut.com/realms/parasut"), null);
+  assert.equal(keycloakEndpoints("https://id.parasut.com/realms/parasut?x=1"), null);
+  assert.equal(keycloakEndpoints("adres değil"), null);
+  // Sunucu tarafı: keşif hatasında standart uçlara döner; elle verilen iki adres varsa keşif hiç denenmez
+  const server = read("src/server/parasut/oidc.ts");
+  assert.match(server, /catch \(e\) \{\s*const standard = keycloakEndpoints\(cfg\.issuer\);\s*if \(!standard\) throw e;/);
+  assert.match(server, /if \(cfg\.authorizeUrl && cfg\.tokenUrl\) return/);
 });
 
 test("varsayılan izinler offline_access içerir; client_secret iki yöntemde de kırpılır", () => {
