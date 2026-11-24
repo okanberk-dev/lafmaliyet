@@ -140,7 +140,9 @@ test("gönderim yolları ortak süzgeçten: kasa e-postası ve denemesi, sabah e
   assert.match(fnBody(cash, "sendCashTestEmail"), /sendableRecipients\(getDb\(\), settings\.recipients\)/);
   const digest = read("src/server/notify/digest.ts");
   const run = fnBody(digest, "runReminderDigest");
-  assert.match(run, /const \{ to, dropped \} = await sendableRecipients\(db, await activeDigestEmails\(db\)\);/);
+  // Alıcı grupları (şube kapsamı C P1-11): her grubun adresleri ortak süzgeçten
+  assert.match(run, /const \[recipientRows, branchRows\] = await Promise\.all\(\[activeDigestRecipients\(db\), listBranches\(db\)\]\);/);
+  assert.match(run, /const \{ to, dropped \} = await sendableRecipients\(db, g\.emails\);/);
   assert.ok(run.indexOf("sendableRecipients(") < run.indexOf("await sendEmail("), "süzgeç gönderimden önce");
   assert.match(run, /off: "norecipient"/);
   assert.match(run, /\$\{droppedLogSuffix\(dropped\)\}/, "işlem geçmişinde atlanan sayısı");

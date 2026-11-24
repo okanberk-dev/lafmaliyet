@@ -5,6 +5,7 @@
  * (`emailLayout`, `esc`, `FONT`) öteki e-postalar için dışa açık.
  */
 
+import type { BranchScope } from "@/lib/branches";
 import { CASH_OUT_INVOICES_HREF } from "@/lib/cash-outs";
 import { dateTR, money, monthLabel, tl } from "@/lib/format";
 import { SYSTEM_ALERT_HELP } from "@/lib/job-health";
@@ -176,9 +177,14 @@ export interface DigestExtraLoad {
   logKeys: string[];
 }
 
-/** Yükleyiciye: önizlemede (`preview`) hiçbir şey yazmaz (okuyan yol), gönderimde ilk kayıt gibi yazımlar serbest */
+/**
+ * Yükleyiciye: önizlemede (`preview`) hiçbir şey yazmaz (okuyan yol), gönderimde ilk kayıt gibi yazımlar serbest.
+ * `scope`: şubeye bağlı alıcının e-postası (şube kapsamı C P1-11); kontrol listeleri ve onay bekleyenler yalnız o şubenin.
+ * Verilmezse bütün şubeler
+ */
 export interface DigestExtraCtx {
   preview: boolean;
+  scope?: BranchScope;
 }
 
 /**
@@ -313,6 +319,11 @@ export function emailLayout(o: { subject: string; preheader: string; brandSub: s
 </body></html>`;
 }
 
+/** Şubeye bağlı alıcının e-postasında kapsam notu (renderDigest `branch`) */
+export function branchDigestNote(branch: string): string {
+  return `${branch} ve işletme geneli: ödemeler, onay bekleyen istekler ve kontrol listeleri yalnız bu şubenin. Faturalar, zam ve komisyon firma geneli.`;
+}
+
 /**
  * Günlük sabah e-postası: AkmanOS açık teması, satır içi stiller ve tablolarla (e-posta istemcileri flex ve
  * dış CSS tanımaz). Telefonda tek sütun: üstte L'Af başlığı, varsa sistem uyarıları, aşamalara göre ödemeler, sağa
@@ -328,6 +339,9 @@ export function emailLayout(o: { subject: string; preheader: string; brandSub: s
  * `headline`'ı fiyat onayından sonra, zamdan önce; başlıksız kutu en sonda konu parçası ya da adıyla). Bölüm ve kutu
  * ekleyenler konuya yalnız kendi parçasını katar; sırayı burası belirler. Tahmin kutusu konuya, başlığa ve düğmeye hiç
  * girmez. `extras` verilmezse (ya da kutusuzsa) e-posta eskisiyle birebir aynı.
+ *
+ * `branch` (şube kapsamı C P1-11): adresi tek şubeye bağlı alıcının e-postası; konu şubenin adıyla başlar ("Marina:
+ * Ödeme hatırlatması: …"), kartın üstü şubeyi ve kapsamı söyler. Verilmezse (bütün şubeler) e-posta eskisiyle aynı.
  */
 export function renderDigest(
   rows: { item: UpcomingItem; stage: NotifyStage }[],
@@ -336,6 +350,7 @@ export function renderDigest(
   prices?: DigestPrices | null,
   system?: DigestSystem | null,
   extras?: DigestExtras | null,
+  branch?: string | null,
 ) {
   const counts = { overdue: 0, due: 0, before: 0 };
   for (const r of rows) counts[r.stage]++;
@@ -369,7 +384,7 @@ export function renderDigest(
   // parçası (başlıkta ilk harfi büyük), o da yoksa adı. Konunun son dalında parça zaten yoktur (varsa `lead` olurdu)
   const boxPart = comPart || konPart || apvPart;
   const boxLast = boxPart ? upperFirst(boxPart) : com?.title || kon?.title || apv?.title || null;
-  const subject = rows.length
+  const subjectOf = rows.length
     ? `Ödeme hatırlatması: ${parts.join(", ")}${extra ? ` · ${extra}` : ""}`
     : sys
       ? `Sistem uyarısı: ${sys.items[0].title}${sysExtra ? ` · ${sysExtra}` : ""}`
@@ -378,6 +393,7 @@ export function renderDigest(
         : lead
           ? `Sabah özeti: ${[lead[0], ...tail.filter((_, i) => i !== lead[1])].filter(Boolean).join(" · ")}`
           : `Sabah özeti: ${zamPart ?? boxLast ?? "bugün yeni bir şey yok"}`;
+  const subject = branch ? `${branch}: ${subjectOf}` : subjectOf;
   const total = rows.reduce((a, r) => a + (r.item.amount ?? 0), 0);
   const link = `${APP_URL}/panel/hatirlaticilar`;
   const boxHeadline = com?.headline || kon?.headline || apv?.headline || null;
@@ -554,8 +570,8 @@ export function renderDigest(
     preheader,
     brandSub: rows.length ? "Ödemeler &amp; hatırlatıcılar" : "Sabah özeti",
     today,
-    card: `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#71717a">${rows.length ? "Günlük ödeme hatırlatması" : "Günlük sabah özeti"}</div>
-    <h1 style="margin:4px 0 10px;font-family:${FONT};font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.02em;color:#171717">${esc(headline)}</h1>
+    card: `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#71717a">${rows.length ? "Günlük ödeme hatırlatması" : "Günlük sabah özeti"}${branch ? ` · ${esc(branch)}` : ""}</div>
+    <h1 style="margin:4px 0 10px;font-family:${FONT};font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.02em;color:#171717">${esc(headline)}</h1>${branch ? `<p style="margin:0 0 10px;font-family:${FONT};font-size:13px;line-height:18px;color:#71717a">${esc(branchDigestNote(branch))}</p>` : ""}
     <div>${pills}</div>
     ${systemSection}
     ${sections}
@@ -582,6 +598,7 @@ export function renderDigest(
   const text = [
     `L'Affogato · ${dateTR(today)}`,
     subject,
+    ...(branch ? [branchDigestNote(branch)] : []),
     ...(rows.length ? [`Toplam ${money(total)}`] : []),
     ...(sys ? ["", `Sistem uyarıları (${sys.items.length})`, ...sys.items.map((i) => `- ${i.title}: ${i.body}`), `Günlük işler: ${JOBS_LINK}`] : []),
     ...STAGE_ORDER.filter((st) => counts[st]).flatMap((st) => [

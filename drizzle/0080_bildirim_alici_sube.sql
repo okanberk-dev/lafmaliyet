@@ -1,0 +1,1 @@
+ALTER TABLE "notification_recipients" ADD COLUMN "branch_ids" text[] DEFAULT '{}'::text[] NOT NULL;

@@ -14,6 +14,7 @@ import { countLogBranch, countLogDetail, loggedItems } from "../src/app/panel/sa
 import { ALL_BRANCHES, requestInScope } from "../src/lib/branches";
 import { createModel } from "../src/lib/calc/engine";
 import type { Dataset, ExpenseCategory, ExpenseEntry, Invoice } from "../src/lib/calc/types";
+import { digestGroups, digestItemInGroup } from "../src/lib/notify-recipients";
 import { soldOutAllBranchesText } from "../src/lib/site-menu/sold-out";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -102,4 +103,40 @@ test("kaynak: Excel düğmesi ekranın şubesini gönderir; dosya kapsamı yazar
   assert.match(read("src/app/api/export/workbook.ts"), /Kapsam: \$\{scope\?\.label \?\? "Tümü"\}/);
   // Ayarlar'daki tam yedek seçicisiz ("Tümü")
   assert.match(read("src/app/panel/ayarlar/page.tsx"), /<a href="\/api\/export" download/);
+});
+
+test("sabah e-postası alıcı grupları: şubesiz ve bütün kasaları seçen adres tek e-posta; şubeye bağlı adres ayrı", () => {
+  const tills = [{ id: "tuzla" }, { id: "marina" }];
+  const groups = digestGroups(
+    [
+      { email: "patron@x", branchIds: [] },
+      { email: "ikisi@x", branchIds: ["marina", "tuzla"] },
+      { email: "marina@x", branchIds: ["marina"] },
+      { email: "tuzla@x", branchIds: ["tuzla"] },
+      { email: "kapali@x", branchIds: ["eski"] },
+      { email: "marina2@x", branchIds: ["marina", "eski"] },
+    ],
+    tills,
+  );
+  assert.deepEqual(groups, [
+    { branchIds: [], emails: ["patron@x", "ikisi@x", "kapali@x"] },
+    { branchIds: ["tuzla"], emails: ["tuzla@x"] },
+    { branchIds: ["marina"], emails: ["marina@x", "marina2@x"] },
+  ]);
+  // Ödeme kalemi: şubenin ve işletme genelinin; bütün şubelerde hepsi
+  assert.equal(digestItemInGroup("tuzla", ["marina"]), false, "Marina'nın e-postasına Tuzla'nın kirası girmez");
+  assert.equal(digestItemInGroup(null, ["marina"]), true);
+  assert.equal(digestItemInGroup("marina", ["marina"]), true);
+  assert.equal(digestItemInGroup("tuzla", []), true);
+});
+
+test("sabah e-postası şubenin başlığıyla: konu şubenin adıyla başlar, gövde kapsamı söyler; şubesiz e-posta değişmez", async () => {
+  const { renderDigest, branchDigestNote } = await import("../src/server/notify/digest-template");
+  const plain = renderDigest([], "2026-11-24");
+  const marina = renderDigest([], "2026-11-24", null, null, null, null, "Marina");
+  assert.equal(marina.subject, `Marina: ${plain.subject}`);
+  assert.ok(marina.html.includes("Günlük sabah özeti · Marina"));
+  assert.ok(marina.html.includes(branchDigestNote("Marina")));
+  assert.ok(marina.text.includes(branchDigestNote("Marina")));
+  assert.deepEqual(renderDigest([], "2026-11-24", null, null, null, null, null), plain, "şube yoksa birebir aynı");
 });

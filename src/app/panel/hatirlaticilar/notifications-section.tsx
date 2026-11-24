@@ -1,14 +1,14 @@
 "use client";
 
 import { BellRing, ChevronDown, Eye, Mail, Plus, Send, Trash2 } from "lucide-react";
-import { useEffect, useId, useOptimistic, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useId, useOptimistic, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Field, Input, NumberInput } from "@/components/ui/form";
+import { Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { Avatar } from "@/components/ui/icon-tile";
 import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
@@ -18,10 +18,20 @@ import { BLOCK_ROW_TEXT, type BlockReason } from "@/lib/notify-recipients";
 import { digestSummary } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { weeklyLogText } from "@/lib/weekly/text";
-import { addRecipient, deleteRecipient, previewDigest, runDigestNow, saveNotificationSettings, sendTestNotification, setRecipientActive } from "@/server/actions/reminders";
+import {
+  addRecipient,
+  deleteRecipient,
+  previewDigest,
+  runDigestNow,
+  saveNotificationSettings,
+  sendTestNotification,
+  setRecipientActive,
+  setRecipientBranches,
+} from "@/server/actions/reminders";
 import type { NotifySettings } from "@/server/notify/settings";
 
 import { FAB_AVOID } from "./fab-clear";
+import { PaymentBranchesContext } from "./reminder-sheet";
 import { Sheet, SHEET_BTN } from "./sheet";
 
 export interface Recipient {
@@ -31,6 +41,8 @@ export interface Recipient {
   active: boolean;
   /** Adres personel ya da pasif bir hesabın: listede durur, e-posta almaz (E-53) */
   blocked?: BlockReason | null;
+  /** Adresin şubeleri; boş = bütün şubeler (şube kapsamı C P1-11: sabah e-postası şubenin başlığıyla ayrı gider) */
+  branchIds?: string[];
 }
 
 /** Zilden gelen bağlantının çapası: bölüm açılır */
@@ -95,9 +107,11 @@ export function NotificationsSection({
     if (window.location.hash === `#${SECTION_ID}` && detailsRef.current) detailsRef.current.open = true;
   }, []);
   const [enabled, setEnabled] = useOptimistic(settings.emailEnabled);
-  const [shownRecipients, patchRecipients] = useOptimistic(recipients, (state, p: { id: number; active?: boolean; remove?: boolean }) =>
-    p.remove ? state.filter((r) => r.id !== p.id) : state.map((r) => (r.id === p.id ? { ...r, active: p.active ?? r.active } : r)),
+  const [shownRecipients, patchRecipients] = useOptimistic(recipients, (state, p: { id: number; active?: boolean; remove?: boolean; branchIds?: string[] }) =>
+    p.remove ? state.filter((r) => r.id !== p.id) : state.map((r) => (r.id === p.id ? { ...r, active: p.active ?? r.active, branchIds: p.branchIds ?? r.branchIds } : r)),
   );
+  // Birden çok şube açıkken adres başına şube: "Bütün şubeler" ya da tek şube (sabah e-postası şubenin başlığıyla)
+  const branchOptions = useContext(PaymentBranchesContext).options;
 
   const dirty = from !== (settings.from ?? "") || daysBefore !== String(settings.invoiceDaysBefore) || term !== String(settings.invoiceTermDays);
   const daysN = parseNumberTR(daysBefore);
@@ -220,6 +234,29 @@ export function NotificationsSection({
                         <p className="text-sm font-medium break-all text-ink">{r.name || r.email}</p>
                         <p className="text-xs break-all text-ink-mute">{r.name ? r.email : r.blocked ? null : r.active ? "Hatırlatma alır" : "Duraklatıldı"}</p>
                         {r.blocked ? <p className="text-xs font-medium text-bad">{BLOCK_ROW_TEXT[r.blocked]}</p> : null}
+                        {branchOptions.length > 1 ? (
+                          <Select
+                            aria-label={`${r.email} hangi şubenin e-postasını alsın`}
+                            value={r.branchIds?.[0] ?? ""}
+                            disabled={pending}
+                            className="mt-1 h-9 w-auto max-w-full text-xs pointer-coarse:h-11"
+                            onChange={(e) => {
+                              const ids = e.target.value ? [e.target.value] : [];
+                              start(async () => {
+                                patchRecipients({ id: r.id, branchIds: ids });
+                                const res = await setRecipientBranches(r.id, ids);
+                                if (!res.ok) toast.error(res.error);
+                              });
+                            }}
+                          >
+                            <option value="">Bütün şubeler</option>
+                            {branchOptions.map((b) => (
+                              <option key={b.id} value={b.id}>
+                                Yalnız {b.name}
+                              </option>
+                            ))}
+                          </Select>
+                        ) : null}
                       </div>
                       <Switch
                         checked={r.active}

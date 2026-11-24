@@ -820,7 +820,8 @@ test("kaynak: kontrol listelerinde para ve maliyet modeli yok; istemci bileşenl
   }
   // Sabah e-postasının kutusu kayıt defterinden, günde bir kez
   const extras = read("src/server/notify/digest-extras.ts");
-  assert.match(extras, /\{ key: "kontrol", news: true, load: \(\) => loadKontrolDigest\(\) \}/);
+  // Şubeye bağlı alıcının e-postasında yalnız o şubenin listeleri (şube kapsamı C P1-11)
+  assert.match(extras, /\{ key: "kontrol", news: true, load: \(_today, ctx\) => loadKontrolDigest\(undefined, ctx\.scope\) \}/);
   const data = read("src/server/data/checklists.ts");
   assert.match(data, /const key = `kontrol:\$\{day\}`;/);
   assert.match(data, /return box \? \{ box, logKeys: \[key\] \} : null;/);

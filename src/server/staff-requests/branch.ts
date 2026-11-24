@@ -112,3 +112,18 @@ export async function pendingOutOfScope(db: Reader, scope: BranchScope, now: Dat
   const branchOf = await requestBranches(db, rows);
   return rows.filter((x) => !requestInScope(branchOf.get(x.id) ?? null, scope)).length;
 }
+
+/**
+ * Kimliği bilinen isteklerden seçili kapsamdakiler (sabah e-postasının "Onay bekleyenler"i, şubeye bağlı alıcı): konu ve
+ * yük yalnız şube için okunur; çağıranın satırları (başlık, ad) olduğu gibi döner
+ */
+export async function requestsInScope<T extends { id: number }>(db: Reader, rows: T[], scope: BranchScope): Promise<T[]> {
+  if (scope === ALL_BRANCHES || !rows.length) return rows;
+  const r = s.staffRequests;
+  const full = await db
+    .select({ id: r.id, kind: r.kind, subject: r.subject, payload: r.payload })
+    .from(r)
+    .where(inArray(r.id, rows.map((x) => x.id)));
+  const branchOf = await requestBranches(db, full);
+  return rows.filter((x) => requestInScope(branchOf.get(x.id) ?? null, scope));
+}

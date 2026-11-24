@@ -1156,6 +1156,13 @@ export const notificationRecipients = pgTable("notification_recipients", {
   email: text("email").notNull().unique(),
   name: text("name"),
   active: boolean("active").notNull().default(true),
+  /**
+   * Adresin şubeleri (şube kapsamı C P1-11; docs/BILDIRIMLER.md › Sabah e-postası): boş = bütün şubeler (bugünkü gibi
+   * tek e-posta). Doluysa sabah e-postası bu şubelerin başlığıyla ayrı gider: şubenin ve işletme genelinin ödemeleri,
+   * şubenin onay bekleyen istekleri ve kontrol listeleri; öbür şubenin satırı girmez. Yabancı anahtar yok (dizi): silinen
+   * şube kimliği gönderimde yok sayılır
+   */
+  branchIds: text("branch_ids").array().notNull().default(sql`'{}'::text[]`),
   createdAt: createdAt(),
 });
 

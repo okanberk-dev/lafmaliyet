@@ -312,7 +312,7 @@ test("sabah e-postası: Onay bekleyenler kutusu haberdir (konu, başlık, düğm
   assert.deepEqual(renderDigest([], "2026-10-24", null, null, null, { approvals: null }), renderDigest([], "2026-10-24", null, null, null, {}));
   // Kaynak listede, haber olarak; yükleyici yalnız başlık ve ad yazar (yük okumaz)
   const extras = read("src/server/notify/digest-extras.ts");
-  assert.match(extras, /\{ key: "approvals", news: true, load: \(\) => loadApprovalsDigest\(\) \}/);
+  assert.match(extras, /\{ key: "approvals", news: true, load: \(_today, ctx\) => loadApprovalsDigest\(undefined, ctx\.scope\) \}/);
   const digest = read("src/server/staff-requests/digest.ts");
   assert.match(digest, /pendingRequests\(getDb\(\), \{ now \}\)/);
   assert.doesNotMatch(digest, /payload/);

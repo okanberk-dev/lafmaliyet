@@ -4,12 +4,12 @@ import { createHash } from "node:crypto";
 
 import { and, asc, count, desc, eq, gt, inArray, isNull, like, ne, or } from "drizzle-orm";
 
-import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
+import { ALL_BRANCHES, type BranchScope, tillBranches } from "@/lib/branches";
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { priceLoss } from "@/lib/calc/price-loss";
 import { cariHints, upcomingWithCari } from "@/lib/cari/upcoming";
 import { pendingCashOutSummary } from "@/lib/cash-outs";
-import { allDroppedSentence, droppedListText, droppedLogSuffix } from "@/lib/notify-recipients";
+import { allDroppedSentence, digestGroups, digestItemInGroup, droppedListText, droppedLogSuffix, type DroppedRecipient } from "@/lib/notify-recipients";
 import { dueNotifications, todayTR, type UpcomingItem } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import { loadModel } from "@/server/data/dataset";
@@ -25,7 +25,7 @@ import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
 
 import { loadDigestExtras } from "./digest-extras";
 import { invoiceNewsOf, renderDigest, type DigestInvoices, type DigestPrices } from "./digest-template";
-import { activeDigestEmails, sendableRecipients } from "./recipients";
+import { activeDigestEmails, activeDigestRecipients, sendableRecipients } from "./recipients";
 import { isEmailConfigured, resolveFrom, sendEmail, sendFailureText } from "./resend";
 import { loadNotifySettings } from "./settings";
 
@@ -263,7 +263,7 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
 
 async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday?: boolean; sendDeadlineAt?: number }): Promise<DigestResult> {
   const db = getDb();
-  const { today, settings, items } = await loadUpcoming();
+  const { today, settings, items, reminders } = await loadUpcoming();
   if (!settings.emailEnabled) return { status: "skipped", reason: "Hatırlatma e-postaları kapalı.", off: "disabled" };
   if (!isEmailConfigured()) return { status: "skipped", reason: "RESEND_API_KEY tanımlı değil.", off: "nokey" };
 
@@ -289,7 +289,27 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
   // Kontrol bekleyen ve eski onay bekleyen sayısı tek başına her gün e-posta göndermez; yeni fatura, hata ya da yeni
   // onaya düşen fiyat varsa bölümde yer alır. Ek kutulardan yalnız haber olanlar (tahmin değil) e-postayı gönderir
   const invoiceNews = invoiceNewsOf(invoices);
-  if (!fresh.length && !invoiceNews && !prices && !system.length && !extras.news) {
+
+  // Alıcı grupları (şube kapsamı C P1-11): şubesi seçilmemiş adresler bugünkü tek e-postayı alır; şubeye bağlı adresler o
+  // şubenin başlığıyla ayrı e-posta (şubenin ve işletme genelinin ödemeleri, şubenin kontrol listeleri ve onay bekleyen
+  // istekleri). Bütün grupların içeriği gönderimden ÖNCE kurulur: bir grubun günlüğe yazdığı anahtar ("kontrol:<gün>")
+  // öbür grubun kutusunu düşürmesin. Şube grubunun kutuları yalnız okunur (önizleme gibi)
+  const [recipientRows, branchRows] = await Promise.all([activeDigestRecipients(db), listBranches(db)]);
+  const tills = tillBranches(branchRows);
+  const reminderBranch = new Map(reminders.map((r) => [r.id, r.branchId ?? null]));
+  const itemBranch = (item: UpcomingItem) => (item.source === "reminder" ? (reminderBranch.get(item.sourceId) ?? null) : null);
+  const groups = await Promise.all(
+    digestGroups(recipientRows, tills).map(async (g) => {
+      const branch = g.branchIds.length ? g.branchIds.map((id) => tills.find((b) => b.id === id)?.name ?? id).join(", ") : null;
+      const groupExtras = g.branchIds.length === 1 ? await loadDigestExtras(today, { preview: true, scope: g.branchIds[0] }) : extras;
+      const groupFresh = g.branchIds.length ? fresh.filter((f) => digestItemInGroup(itemBranch(f.item), g.branchIds)) : fresh;
+      const news = groupFresh.length > 0 || invoiceNews || !!prices || system.length > 0 || groupExtras.news;
+      return { ...g, branch, extras: groupExtras, fresh: groupFresh, news };
+    }),
+  );
+  // Adres yokken de "gönderilecek bir şey var mı" bütün şubelerin içeriğiyle (bugünkü sıra: önce içerik, sonra adres)
+  const anyNews = groups.length ? groups.some((g) => g.news) : fresh.length > 0 || invoiceNews || !!prices || system.length > 0 || extras.news;
+  if (!anyNews) {
     return {
       status: "skipped",
       reason: due.length ? "Bugünkü hatırlatmalar zaten gönderildi; yeni fatura ya da zam yok." : "Bugün haber verilecek bir ödeme, yeni fatura ya da zam yok.",
@@ -298,66 +318,82 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
 
   // Personel hesabının ya da pasif hesabın adresi düşer (E-53): özette ödemeler, fatura tutarları, zam ve kâr rakamları
   // var. Düşen adres yöneticinin zilinde ve Bildirim adresleri listesinde görünür
-  const { to, dropped } = await sendableRecipients(db, await activeDigestEmails(db));
-  if (!to.length) {
-    if (!dropped.length) return { status: "skipped", reason: "Etkin bildirim adresi yok.", off: "norecipient" };
-    return { status: "skipped", reason: allDroppedSentence("Etkin bildirim adreslerinin", dropped), off: "norecipient", blocked: droppedListText(dropped) };
+  const allDropped: DroppedRecipient[] = [];
+  let recipients = 0;
+  let error: string | null = null;
+  const sentFresh = new Set<string>();
+  const boxes = new Set<string>();
+  for (const g of groups) {
+    if (!g.news) continue;
+    const { to, dropped } = await sendableRecipients(db, g.emails);
+    allDropped.push(...dropped);
+    if (!to.length) continue;
+    const { subject, html, text } = renderDigest(
+      g.fresh,
+      today,
+      invoiceNews || invoices.reviewCount || invoices.priceHolds || invoices.cashOuts ? invoices : null,
+      prices,
+      system.length ? { items: system } : null,
+      g.extras.extras,
+      g.branch,
+    );
+    // Tekil anahtar içerikten: yeniden deneme ve eşzamanlı gönderim tek e-posta olur. Fatura bölümü son gönderimin
+    // anını da taşır; yoksa aynı gün aynı sayıda, aynı tarihli yeni fatura gelince anahtar tutar, Resend 409 döner
+    const keySeed = [
+      ...g.fresh.map((f) => f.key),
+      `inv:${sinceKey}:${invoices.items.length}:${invoices.items[0]?.date ?? ""}${invoices.priceHolds?.fresh ? `:h${invoices.priceHolds.fresh}` : ""}`,
+      failedRunKey ?? "",
+      prices ? `zam:${prices.changes.map((c) => `${c.name}:${c.after}`).join(",")}` : "",
+      system.length ? `sys:${system.map((p) => p.key).join(",")}` : "",
+      // Ek kutuların anahtarları yalnız varsa (yoksa tohum eskisiyle aynı)
+      ...(g.extras.logKeys.length ? [`ek:${g.extras.logKeys.join(",")}`] : []),
+      // Şubeye bağlı grubun e-postası ayrı ileti (bütün şubelerinkinin tohumu eskisiyle aynı)
+      ...(g.branchIds.length ? [`sube:${g.branchIds.join(",")}`] : []),
+    ].join("|");
+    const res = await sendEmail(
+      { from: resolveFrom(settings.from), to, subject, html, text, idempotencyKey: `digest-${today}-${createHash("sha256").update(keySeed).digest("hex").slice(0, 40)}` },
+      ctx.sendDeadlineAt === undefined ? undefined : { deadlineAt: ctx.sendDeadlineAt },
+    );
+    if (!res.ok) {
+      // Belirsiz gönderimde (zaman aşımı, ör. sabah işinin 48. saniyesi; ağ hatası; 409) ileti gitmiş olabilir: Son
+      // gönderimler, bildirim ve Günlük işler bunu Türkçe söyler; ham hata yalnız sunucu günlüğünde
+      error = sendFailureText(res);
+      if (res.uncertain) console.error("Sabah e-postası gönderimi belirsiz:", res.error);
+      await db
+        .insert(s.notificationLog)
+        .values({ key: `error:${today}:${Date.now()}`, subject, recipients: to.join(", "), ok: false, error })
+        .onConflictDoNothing();
+      continue;
+    }
+    const logRows = [
+      ...g.fresh.map((f) => ({ key: f.key, subject, recipients: to.join(", "), ok: true })),
+      ...(invoiceNews ? [{ key: `${INVOICE_LOG_PREFIX}${today}:${Date.now()}`, subject, recipients: to.join(", "), ok: true }] : []),
+      ...(failedRunKey ? [{ key: failedRunKey, subject, recipients: to.join(", "), ok: true }] : []),
+      ...(prices ? [{ key: `${PRICE_LOG_PREFIX}${today}:${Date.now()}`, subject, recipients: to.join(", "), ok: true }] : []),
+      ...system.map((p) => ({ key: p.key, subject, recipients: to.join(", "), ok: true })),
+      ...g.extras.logKeys.map((key) => ({ key, subject, recipients: to.join(", "), ok: true })),
+    ];
+    if (logRows.length) await db.insert(s.notificationLog).values(logRows).onConflictDoNothing();
+    await logActivity(null, trigger === "cron" ? "Sabah e-postası (otomatik)" : "Sabah e-postası", `${subject} → ${to.length} adres${droppedLogSuffix(dropped)}`);
+    recipients += to.length;
+    for (const f of g.fresh) sentFresh.add(f.key);
+    for (const b of g.extras.parts) boxes.add(b);
   }
-
-  const { subject, html, text } = renderDigest(
-    fresh,
-    today,
-    invoiceNews || invoices.reviewCount || invoices.priceHolds || invoices.cashOuts ? invoices : null,
-    prices,
-    system.length ? { items: system } : null,
-    extras.extras,
-  );
-  // Tekil anahtar içerikten: yeniden deneme ve eşzamanlı gönderim tek e-posta olur. Fatura bölümü son gönderimin
-  // anını da taşır; yoksa aynı gün aynı sayıda, aynı tarihli yeni fatura gelince anahtar tutar, Resend 409 döner
-  const keySeed = [
-    ...fresh.map((f) => f.key),
-    `inv:${sinceKey}:${invoices.items.length}:${invoices.items[0]?.date ?? ""}${invoices.priceHolds?.fresh ? `:h${invoices.priceHolds.fresh}` : ""}`,
-    failedRunKey ?? "",
-    prices ? `zam:${prices.changes.map((c) => `${c.name}:${c.after}`).join(",")}` : "",
-    system.length ? `sys:${system.map((p) => p.key).join(",")}` : "",
-    // Ek kutuların anahtarları yalnız varsa (yoksa tohum eskisiyle aynı)
-    ...(extras.logKeys.length ? [`ek:${extras.logKeys.join(",")}`] : []),
-  ].join("|");
-  const res = await sendEmail(
-    { from: resolveFrom(settings.from), to, subject, html, text, idempotencyKey: `digest-${today}-${createHash("sha256").update(keySeed).digest("hex").slice(0, 40)}` },
-    ctx.sendDeadlineAt === undefined ? undefined : { deadlineAt: ctx.sendDeadlineAt },
-  );
-  if (!res.ok) {
-    // Belirsiz gönderimde (zaman aşımı, ör. sabah işinin 48. saniyesi; ağ hatası; 409) ileti gitmiş olabilir: Son
-    // gönderimler, bildirim ve Günlük işler bunu Türkçe söyler; ham hata yalnız sunucu günlüğünde
-    const error = sendFailureText(res);
-    if (res.uncertain) console.error("Sabah e-postası gönderimi belirsiz:", res.error);
-    await db
-      .insert(s.notificationLog)
-      .values({ key: `error:${today}:${Date.now()}`, subject, recipients: to.join(", "), ok: false, error })
-      .onConflictDoNothing();
-    return { status: "error", error };
+  if (!recipients) {
+    if (error) return { status: "error", error };
+    if (!allDropped.length) return { status: "skipped", reason: "Etkin bildirim adresi yok.", off: "norecipient" };
+    return { status: "skipped", reason: allDroppedSentence("Etkin bildirim adreslerinin", allDropped), off: "norecipient", blocked: droppedListText(allDropped) };
   }
-  const logRows = [
-    ...fresh.map((f) => ({ key: f.key, subject, recipients: to.join(", "), ok: true })),
-    ...(invoiceNews ? [{ key: `${INVOICE_LOG_PREFIX}${today}:${Date.now()}`, subject, recipients: to.join(", "), ok: true }] : []),
-    ...(failedRunKey ? [{ key: failedRunKey, subject, recipients: to.join(", "), ok: true }] : []),
-    ...(prices ? [{ key: `${PRICE_LOG_PREFIX}${today}:${Date.now()}`, subject, recipients: to.join(", "), ok: true }] : []),
-    ...system.map((p) => ({ key: p.key, subject, recipients: to.join(", "), ok: true })),
-    ...extras.logKeys.map((key) => ({ key, subject, recipients: to.join(", "), ok: true })),
-  ];
-  if (logRows.length) await db.insert(s.notificationLog).values(logRows).onConflictDoNothing();
-  await logActivity(null, trigger === "cron" ? "Sabah e-postası (otomatik)" : "Sabah e-postası", `${subject} → ${to.length} adres${droppedLogSuffix(dropped)}`);
   return {
     status: "sent",
-    count: fresh.length,
-    recipients: to.length,
+    count: sentFresh.size,
+    recipients,
     invoices: invoices.items.length,
     prices: prices?.changes.length ?? 0,
     syncError: Boolean(invoices.syncError),
     system: system.length,
     holds: invoices.priceHolds?.fresh ?? 0,
-    ...(extras.parts.length ? { boxes: extras.parts } : {}),
+    ...(boxes.size ? { boxes: [...boxes] } : {}),
   };
 }
 

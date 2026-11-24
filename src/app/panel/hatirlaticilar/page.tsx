@@ -102,7 +102,7 @@ async function RemindersContent() {
       laterInvoices={laterInvoices}
       covered={covered}
       reminders={reminders.map((r) => ({ ...r, lastDoneAt: r.lastDoneAt?.toISOString() ?? null, createdAt: r.createdAt.toISOString() }))}
-      recipients={recipients.map((r) => ({ id: r.id, email: r.email, name: r.name, active: r.active, blocked: blocked.get(emailKey(r.email)) ?? null }))}
+      recipients={recipients.map((r) => ({ id: r.id, email: r.email, name: r.name, active: r.active, blocked: blocked.get(emailKey(r.email)) ?? null, branchIds: r.branchIds }))}
       log={log.map((l) => ({ id: l.id, key: l.key, subject: l.subject, recipients: l.recipients, ok: l.ok, error: l.error, sentAt: l.sentAt.toISOString() }))}
       fixedExpenses={fixed}
       // Sabit gidere bağlı tutarlı hatırlatıcının tutarı Giderler'deki sürümden farklı (E-46): nakit planı eski tutarı öderdi

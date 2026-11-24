@@ -146,10 +146,11 @@ test("belirsiz gönderimin metni Türkçe ve 'gitmiş olabilir' der (ham hata ye
   // runReminderDigest: Son gönderimler satırı ve sonuç (bildirim, iş kaydı) bu metni taşır; ham hata yalnız sunucu günlüğünde
   const digest = read("src/server/notify/digest.ts");
   const fail = digest.slice(digest.indexOf("if (!res.ok) {"), digest.indexOf("const logRows"));
-  assert.match(fail, /const error = sendFailureText\(res\);/);
+  // Alıcı grupları (şube kapsamı C P1-11): grubun hatası saklanır, hiçbir grup gitmediyse sonuç hata
+  assert.match(fail, /error = sendFailureText\(res\);/);
   assert.match(fail, /if \(res\.uncertain\) console\.error\(/);
   assert.match(fail, /ok: false, error \}\)/);
-  assert.match(fail, /return \{ status: "error", error \};/);
+  assert.match(digest, /if \(!recipients\) \{\s+if \(error\) return \{ status: "error", error \};/);
   assert.doesNotMatch(fail, /error: res\.error/);
 });
 

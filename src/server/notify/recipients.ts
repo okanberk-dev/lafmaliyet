@@ -43,8 +43,16 @@ export async function sendableRecipients(db: Reader, emails: readonly string[]):
 
 /** Etkin bildirim adresleri (sabah e-postası, bekçi uyarısı, deneme): eklenme sırasıyla */
 export async function activeDigestEmails(db: Reader = getDb()): Promise<string[]> {
-  const rows = await db.select({ email: s.notificationRecipients.email }).from(s.notificationRecipients).where(eq(s.notificationRecipients.active, true)).orderBy(s.notificationRecipients.createdAt);
-  return rows.map((r) => r.email);
+  return (await activeDigestRecipients(db)).map((r) => r.email);
+}
+
+/** Etkin bildirim adresleri ve şubeleri (boş = bütün şubeler; sabah e-postası şubeye bağlı adrese ayrı gider) */
+export async function activeDigestRecipients(db: Reader = getDb()): Promise<{ email: string; branchIds: string[] }[]> {
+  return db
+    .select({ email: s.notificationRecipients.email, branchIds: s.notificationRecipients.branchIds })
+    .from(s.notificationRecipients)
+    .where(eq(s.notificationRecipients.active, true))
+    .orderBy(s.notificationRecipients.createdAt);
 }
 
 /**
