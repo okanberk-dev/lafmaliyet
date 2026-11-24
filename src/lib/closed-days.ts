@@ -75,6 +75,46 @@ export function isEvidenceAction(action: string): boolean {
   return !EVIDENCE_IGNORED_ACTIONS.some((p) => action.startsWith(p));
 }
 
+/**
+ * Kendi tablosunda şube şube sayılan işlemler (adın başıyla): kasa raporu, kasadan çıkan, zayi ve ikram. Şubenin kanıtı
+ * bunları işlem geçmişinden değil kaydın şubesinden sayar: şubesiz personelin Tuzla'ya girdiği rapor Marina'nın kapalı
+ * gününe iz sayılmasın (docs/SUBE.md › Kapalı gün). Silme kaydı ("Kasadan çıkan silindi") sayılır: satır tablodan gitti
+ */
+export const BRANCH_COUNTED_ACTIONS: readonly string[] = ["Kasa raporu", "Kasadan çıkan", "Zayi", "İkram"];
+
+/** İşlem kendi tablosunda şube şube sayılıyor mu (`BRANCH_COUNTED_ACTIONS`; silme kaydı değil) */
+export function isBranchCountedAction(action: string): boolean {
+  return BRANCH_COUNTED_ACTIONS.some((p) => action.startsWith(p)) && !action.includes("silindi");
+}
+
+/**
+ * Şubenin kapalı günü için personelin işlem geçmişi (saf; closedDayEvidence okur, docs/SUBE.md › Kapalı gün):
+ * - `own`: o şubenin personelinin (hesabı o şubeye bağlı) kanıt sayılan yazımları: kırmızı;
+ * - `shared`: şubesiz personelin yazımları: hangi şubede çalıştığı belli değil, uyarı;
+ * - başka şubenin personeli sayılmaz; kendi tablosunda şube şube sayılan işlemler (`isBranchCountedAction`) hiç sayılmaz.
+ */
+export function branchStaffWrites(logs: readonly { action: string; userBranchId: string | null }[], branchId: string): { own: number; shared: number } {
+  let own = 0;
+  let shared = 0;
+  for (const l of logs) {
+    if (!isEvidenceAction(l.action) || isBranchCountedAction(l.action)) continue;
+    if (l.userBranchId === branchId) own++;
+    else if (l.userBranchId === null) shared++;
+  }
+  return { own, shared };
+}
+
+/**
+ * Şubenin kapalı günü için açılan kontrol listeleri (saf; docs/SUBE.md › Kapalı gün): şablonu o şubenin listesi kırmızı
+ * (`own`), bütün şubelerin listesi (şablonun şubesi boş) uyarı (`shared`), başka şubenin listesi sayılmaz
+ */
+export function branchChecklistRuns(runs: readonly { templateBranchId: string | null }[], branchId: string): { own: number; shared: number } {
+  return {
+    own: runs.filter((r) => r.templateBranchId === branchId).length,
+    shared: runs.filter((r) => r.templateBranchId === null).length,
+  };
+}
+
 /** Bir günün panelde ve sitede bıraktığı izler (closedDayEvidence sayar; tutar yok) */
 export interface ClosedEvidence {
   /** Kasa raporu var */
@@ -87,6 +127,11 @@ export interface ClosedEvidence {
   karaoke: number;
   /** Personelin İşlem geçmişindeki yazımları (iş günü penceresinde; hesap ve hatırlatıcı hariç) */
   staffWrites: number;
+  /**
+   * Şubenin kanıtında hangi şubede bırakıldığı belli olmayan izler (yalnız şube verilince; closedDayEvidence): bütün
+   * şubelerin kontrol listesinin koşusu ve şubesiz personelin işlem geçmişi. Uyarıdır, onayı kapatmaz
+   */
+  sharedTraces?: number;
   /**
    * Aynı şubenin önceki ve sonraki raporunun Z no'ları arasında bu güne düşen boşluk (şube başına, mergeBranchContinuity):
    * "red" kesin, "warn" arada başka raporsuz gün var
@@ -116,7 +161,7 @@ export interface EvidenceLines {
  * Kanıtın yönetici kartındaki satırları. Kırmızı (onay kapalı): kasa raporu, LafPOS'ta satışlı gün sonu, kasadan
  * çıkan, zayi / ikram, açılan kontrol listesi, karaoke, personelin işlem geçmişi yazımı, Z no boşluğu, sitede kafe, elle
  * girilen ya da kasada ödenen sipariş. Uyarı: açılış devri, arada başka raporsuz gün varken Z boşluğu, LafPOS'ta satışsız
- * gün sonu. Bilgi: mağaza kolisi. Tutar yazılmaz (LafPOS'ta yalnız Z no ve fiş sayısı).
+ * gün sonu, şubesi belli olmayan izler (`sharedTraces`). Bilgi: mağaza kolisi. Tutar yazılmaz (LafPOS'ta yalnız Z no ve fiş sayısı).
  */
 export function closedEvidenceText(e: ClosedEvidence): EvidenceLines {
   const red: string[] = [];
@@ -129,6 +174,7 @@ export function closedEvidenceText(e: ClosedEvidence): EvidenceLines {
   if (e.checklists) red.push(`${e.checklists} kontrol listesi açılmış`);
   if (e.karaoke) red.push(`${e.karaoke} karaoke oturumu`);
   if (e.staffWrites) red.push(`İşlem geçmişinde personelin ${e.staffWrites} kaydı`);
+  if (e.sharedTraces) warn.push(`Şubesi belli olmayan ${e.sharedTraces} iz (bütün şubelerin kontrol listesi ya da şubesiz personel)`);
   if (e.zGap) (e.zGap.level === "red" ? red : warn).push(e.zGap.text);
   if (e.opening && !e.opening.ok) warn.push(e.opening.text);
   else if (e.opening) info.push(e.opening.text);
@@ -153,7 +199,8 @@ export function lafposEvidenceText(z: NonNullable<ClosedEvidence["lafpos"]>): st
 
 /**
  * Panelde iz var mı (personelin isteği yalnız iz yokken açılır; site sayılmaz, yönetici kartında ayrı). LafPOS'un
- * satışlı gün sonu da iz sayılır (yalnız LafPOS günlerinde gelir; E-36)
+ * satışlı gün sonu da iz sayılır (yalnız LafPOS günlerinde gelir; E-36). Şubesi belli olmayan izler (`sharedTraces`)
+ * sayılmaz: yalnız yöneticinin kartında uyarıdır
  */
 export function hasPanelEvidence(e: ClosedEvidence): boolean {
   return e.report || (e.lafpos ? lafposSold(e.lafpos) : false) || e.cashOuts > 0 || e.waste > 0 || e.checklists > 0 || e.karaoke > 0 || e.staffWrites > 0 || e.zGap?.level === "red";

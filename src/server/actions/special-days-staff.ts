@@ -7,6 +7,7 @@ import { STAFF_SPECIAL_TEXT } from "@/lib/closed-days";
 import { specialSummary } from "@/lib/ozel-gun";
 import { isCalendarDate } from "@/lib/reminders";
 import { requireUser } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
 import { getDb } from "@/server/db";
 import { deleteStaffSpecialCore, saveStaffSpecialCore } from "@/server/staff-special";
 
@@ -39,7 +40,13 @@ export async function saveStaffSpecialDay(input: z.input<typeof saveInput>) {
     const me = await requireUser();
     if (me.role === "admin") throw new UserError(STAFF_SPECIAL_TEXT.adminDirect);
     const d = saveInput.parse(input);
-    const out = await saveStaffSpecialCore(getDb(), me, { id: d.id ?? null, kind: d.kind, title: d.title, dateFrom: d.dateFrom, dateTo: d.dateTo || d.dateFrom, effect: d.effect, note: d.note ?? null });
+    const out = await saveStaffSpecialCore(
+      getDb(),
+      me,
+      { id: d.id ?? null, kind: d.kind, title: d.title, dateFrom: d.dateFrom, dateTo: d.dateTo || d.dateFrom, effect: d.effect, note: d.note ?? null },
+      undefined,
+      await currentBranchScope(),
+    );
     await logActivity(me, out.created ? "Özel gün" : "Özel gün güncellendi", specialSummary(out.values));
     refresh();
     return { id: out.id };

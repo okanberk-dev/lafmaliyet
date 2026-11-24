@@ -26,7 +26,7 @@ export async function KasaRequests() {
             [
               c.id,
               <Suspense key={c.id} fallback={<p className="text-ink-mute">Sitenin o günkü siparişleri soruluyor…</p>}>
-                <ClosedDaySite day={c.date} />
+                <ClosedDaySite day={c.date} branchId={c.branchId} />
               </Suspense>,
             ],
           ]
@@ -36,10 +36,10 @@ export async function KasaRequests() {
   return <KasaRequestCards cards={cards} counters={counters} categories={categories.map((c) => ({ id: c.id, name: c.name }))} siteSlots={siteSlots} />;
 }
 
-/** Sitenin o günkü sipariş sayıları (tutar yok); site okunamazsa bilgi satırı */
-async function ClosedDaySite({ day }: { day: string }) {
+/** Sitenin o günkü, bildirilen şubenin sipariş sayıları (tutar yok); site okunamazsa bilgi satırı */
+async function ClosedDaySite({ day, branchId }: { day: string; branchId: string }) {
   await requireAdmin();
-  const site = await fetchSiteDayCounts(day);
+  const site = await fetchSiteDayCounts(day, branchId);
   if (!site) return <p className="text-ink-mute">Sitenin o günkü siparişleri okunamadı (bağlantı kapalı ya da site yanıt vermedi).</p>;
   const lines = closedEvidenceText({ report: false, cashOuts: 0, waste: 0, checklists: 0, karaoke: 0, staffWrites: 0, zGap: null, opening: null, site });
   if (!lines.red.length && !lines.info.length) return <p className="text-ink-soft">Sitede o gün kafe siparişi yok.</p>;
