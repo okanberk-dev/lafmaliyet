@@ -263,8 +263,8 @@ export function CashHistory({
                 </li>
               );
             }
-            // LafPOS gününde kart farkı kartla bahşiş ve cari tahsilatını düşer (G11)
-            const c = computeCash(withCardExtra(report, photos[report.id]?.extras.cardExtra));
+            // LafPOS gününde kart farkı kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen kartı (Faz 2) düşer
+            const c = computeCash(withCardExtra(report, photos[report.id]?.extras.cardExtra, photos[report.id]?.extras.offDevice));
             const cardOff = c.cardDiff !== null && Math.abs(c.cardDiff) >= CASH_TOLERANCE;
             // Yazarkasa Z'si: kayıtlı değerlerde kendi içinde tutmuyor ya da (ilk girildiği günden sonra) hiç girilmemiş
             const okcOff = okcHasFigures(report) && okcReconcile(report, "admin").some((l) => l.key === "okc-self");
@@ -351,6 +351,7 @@ export function CashHistory({
             report={open}
             kasa={openPhotos?.extras.kasa}
             cardExtra={openPhotos?.extras.cardExtra}
+            offDevice={openPhotos?.extras.offDevice}
             cashOuts={cashOuts[open.date] ?? []}
             carry={openCarry}
             next={openNext}

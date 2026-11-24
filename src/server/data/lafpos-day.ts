@@ -6,7 +6,7 @@ import { branchDayKey } from "@/lib/cash-report";
 
 import type { KasaEvidence } from "@/lib/cash-out-requests";
 import { readLafposSwitchDay } from "@/lib/constants";
-import { bankPosSchema, posDaySchema, posZSchema, type BankPos } from "@/lib/lafpos/day";
+import { bankPosSchema, posDaySchema, posZSchema, type BankPos, type PosOffDevice } from "@/lib/lafpos/day";
 import { lafposDayDetail, type LafposDayDetail } from "@/lib/lafpos/gun-ayrinti";
 import { lafposDayOf, type LafposDay } from "@/lib/lafpos/prefill";
 import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
@@ -78,12 +78,12 @@ export async function loadKasaLafposDays(
   if (switchDay === null || to < switchDay) return of;
   const start = from > switchDay ? from : switchDay;
   const rows = await db
-    .select({ date: s.posDayReports.date, branchId: s.posDayReports.branchId, z: s.posDayReports.z, receivedAt: s.posDayReports.receivedAt })
+    .select({ date: s.posDayReports.date, branchId: s.posDayReports.branchId, z: s.posDayReports.z, offDevice: s.posDayReports.offDevice, receivedAt: s.posDayReports.receivedAt })
     .from(s.posDayReports)
     .where(and(gte(s.posDayReports.date, start), lte(s.posDayReports.date, to)));
   for (const r of rows) {
     const z = posZSchema.safeParse(r.z);
-    if (z.success) out.set(branchDayKey(r.branchId, r.date), lafposDayOf(z.data, r.receivedAt));
+    if (z.success) out.set(branchDayKey(r.branchId, r.date), lafposDayOf(z.data, r.receivedAt, offDeviceOf(r.offDevice)));
   }
   return of;
 }
@@ -97,13 +97,22 @@ export async function loadLafposDay(date: string, db: DB = getDb(), branchId?: s
   // Tek kasanın günü: verilen şube, yoksa kasanın şubesi (seçili fiziksel şube, "Tümü"de Tuzla)
   const sube = branchId ?? (await currentTillBranch());
   const [row] = await db
-    .select({ z: s.posDayReports.z, receivedAt: s.posDayReports.receivedAt })
+    .select({ z: s.posDayReports.z, offDevice: s.posDayReports.offDevice, receivedAt: s.posDayReports.receivedAt })
     .from(s.posDayReports)
     .where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, sube)))
     .limit(1);
   if (!row) return null;
   const z = posZSchema.safeParse(row.z);
-  return z.success ? lafposDayOf(z.data, row.receivedAt) : null;
+  return z.success ? lafposDayOf(z.data, row.receivedAt, offDeviceOf(row.offDevice)) : null;
+}
+
+/**
+ * Saklı `off_device` sütunu (Faz 2): gövdenin şemasıyla yeniden okunur; yoksa (eski gövde) ya da okunamıyorsa null.
+ * Kasa raporunun kart, nakit ve toplam karşılaştırmaları bunu düşer (src/lib/lafpos/prefill.ts LafposDay.offDevice)
+ */
+function offDeviceOf(raw: unknown): PosOffDevice | null {
+  if (raw === null || raw === undefined) return null;
+  return posDaySchema.shape.offDevice.parse(raw) ?? null;
 }
 
 /**

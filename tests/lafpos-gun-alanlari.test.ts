@@ -16,14 +16,19 @@ import { createModel } from "../src/lib/calc/engine";
 import { dashboard } from "../src/lib/calc/insights";
 import type { Dataset } from "../src/lib/calc/types";
 import { resolveMonth, tillMonths, type TillRow } from "../src/lib/cash-month";
+import { computeCash, whatsappText, withCardExtra, type CashReportFields } from "../src/lib/cash-report";
+import { reportChecks } from "../src/lib/cash-report-checks";
 import { vatMonthInputs } from "../src/lib/kdv";
 import { pavoView } from "../src/lib/lafpos/bank-pos";
 import { parsePosDay, posZSchema, type PosDayZ } from "../src/lib/lafpos/day";
 import { lafposDayDetail } from "../src/lib/lafpos/gun-ayrinti";
 import { autoValuesOf, dayEndNotes, dayEndSections, dayHash, mergeAuto, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
+import { lafposDayOf } from "../src/lib/lafpos/prefill";
 import { lafposMonthNotes, lafposMonthStatus, mergeSalesSources } from "../src/lib/lafpos/sales";
 import { IPTAL_ZAYI_REASON, iptalWasteLines, lafposCompKind, lafposIkramCheck, lafposLineKind, lafposListByKind, lafposReasonText, recordedOffRevenue } from "../src/lib/lafpos/ikram";
+import { okcReconcile } from "../src/lib/okc-z";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { renderCashReport } from "../src/server/notify/cash-report-template";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -277,6 +282,94 @@ test("Pavo: cihazın hata kodu karşılaştırmada görünür", () => {
   assert.deepEqual(v.rows.at(-1), ["Hata kodu", "5085"]);
   const ok = pavoView({ ...r.data.bankPos, errorCode: null });
   assert.equal(ok.rows.some(([l]) => l === "Hata kodu"), false);
+});
+
+test("kasa raporunun kart karşılaştırması yazarkasadan geçmeyen kartı yazarkasada ve banka gün sonunda beklemez (kabul günü: 5.030 − 870 = 4.160)", () => {
+  const r = parsePosDay(kabul(), NOW);
+  assert.ok(r.ok, r.ok ? "" : r.field);
+  const z = r.data.z;
+  const day = lafposDayOf(z, "2026-11-22T21:30:00.000Z", r.data.offDevice);
+  assert.deepEqual(day.offDevice, { card: 870, cash: 200 });
+  assert.equal(lafposDayOf(z, "2026-11-22T21:30:00.000Z").offDevice, null, "eski gövde: alan yok");
+  const f: CashReportFields = {
+    date: "2026-11-22",
+    zNo: "11",
+    receipts: z.receipts,
+    zTotal: z.zTotal,
+    cash: z.cash,
+    card: z.card,
+    mealCard: z.mealCard,
+    online: z.online,
+    other: z.other,
+    openingCash: z.openingCash,
+    cashIn: 0,
+    cashOut: z.cashOut,
+    cashOutNote: null,
+    countedCash: 1279.5,
+    handedOver: 0,
+    bankPos: null,
+    offRevenue: z.offRevenue,
+    discounts: z.discounts,
+    note: null,
+  };
+  // Banka gün sonu: Pavo'nun batch'i 4.160 (LafPOS'un kendi kıyası da uyumlu)
+  const bank = { ...f, bankPos: 4160 };
+  assert.equal(computeCash(bank).cardDiff, -870, "LafPOS'un özeti verilmezse eski kural");
+  assert.equal(computeCash(withCardExtra(bank, day.cardExtra, day.offDevice)).cardDiff, 0);
+  // Yazarkasa Z'si: kart 4.160, nakit 1.055 (200 yazarkasadan geçmedi), toplam 5.215
+  const okc = { ...f, okcZNo: "11", okcReceipts: 26, okcTotal: 5215, okcCash: 1055, okcCard: 4160 };
+  const withDay = withCardExtra(okc, day.cardExtra, day.offDevice);
+  assert.equal(computeCash(withDay).cardDiff, 0);
+  assert.equal(computeCash(withDay).cardSource, "okc");
+  const staff = okcReconcile(withDay, "staff", "LafPOS");
+  assert.equal(staff[0].key, "okc-card");
+  assert.equal(staff[0].tone, "good", staff[0].text);
+  assert.equal(plain(staff[0].text), "Kart: yazarkasa ile LafPOS aynı. LafPOS'ta yazarkasadan geçmeyen kart düşüldü.");
+  const admin = okcReconcile(withDay, "admin", "LafPOS");
+  const line = (key: string) => admin.find((l) => l.key === key);
+  assert.equal(plain(line("okc-card")?.text), "Kart: yazarkasa ile LafPOS aynı. LafPOS'ta yazarkasadan geçmeyen kart (870 ₺) düşüldü.");
+  assert.equal(line("okc-cash")?.tone, "good", line("okc-cash")?.text);
+  assert.equal(plain(line("okc-cash")?.text), "Nakit: yazarkasa ile LafPOS aynı. LafPOS'ta yazarkasadan geçmeyen nakit (200 ₺) düşüldü.");
+  assert.equal(plain(line("okc-total")?.text), "LafPOS toplamı 1.070 ₺ fazla; yazarkasadan geçmeyen satışlar kadar.");
+  assert.deepEqual(
+    reportChecks({ report: okc, cardExtra: day.cardExtra, offDevice: day.offDevice, kasa: "LafPOS" }).map((c) => c.key),
+    [],
+    "kayıtlı raporun kontrol listesinde kart uyarısı yok",
+  );
+  assert.deepEqual(
+    reportChecks({ report: okc, cardExtra: day.cardExtra, kasa: "LafPOS" }).map((c) => c.key),
+    ["okc-card"],
+    "yazarkasadan geçmeyen kart verilmezse eski kural (870 eksik)",
+  );
+  // WhatsApp (personel): kart aynı, tutar yok
+  const wa = plain(whatsappText(okc, { by: "Ayşe", kasa: "LafPOS", cardExtra: day.cardExtra, offDevice: day.offDevice }));
+  assert.match(wa, /✅ Kart LafPOS ile aynı \(yazarkasadan geçmeyen kart düşüldü\)/);
+  assert.doesNotMatch(wa, /870/);
+  // Yöneticinin e-postası (yalnız banka gün sonu yazılmış): satır tutarıyla, fark yok
+  const mail = renderCashReport(bank, { by: "Ayşe", revision: 1, submittedAt: new Date("2026-11-22T21:40:00Z"), kasa: "LafPOS", cardExtra: day.cardExtra, offDevice: day.offDevice });
+  const html = plain(mail.html);
+  assert.match(html, /− Yazarkasadan geçmeyen kart[\s\S]{0,400}870 ₺/);
+  assert.match(html, /Fark[\s\S]{0,400}Yok/);
+  assert.doesNotMatch(html, /Banka POS LafPOS&#39;taki karttan/);
+  assert.match(plain(mail.text), /Banka POS: 4\.160 ₺ ✅ LafPOS ile aynı \(LafPOS'ta yazarkasadan geçmeyen kart 870 ₺ düşüldü\)/);
+  // Bahşiş ve yazarkasadan geçmeyen kart birlikte: ikisi de düşer, ikisi de yazılır
+  const both = withCardExtra(bank, 150, day.offDevice);
+  assert.equal(computeCash({ ...both, bankPos: 4310 }).cardDiff, 0);
+  assert.match(
+    plain(whatsappText({ ...bank, bankPos: 4310 }, { by: "Ayşe", kasa: "LafPOS", cardExtra: 150, offDevice: day.offDevice })),
+    /Banka POS: 4\.310 ₺ ✅ LafPOS ile aynı \(bahşiş \/ cari tahsilatı ve yazarkasadan geçmeyen kart düşüldü\)/,
+  );
+  // Her okur aynı özeti alır: formun kartı, kayıtlı görünüm, yöneticinin penceresi, Onaylar, günden güne, metinler
+  assert.match(read("src/server/data/cash-photos.ts"), /offDevice: lafpos\.day\?\.offDevice \?\? null/);
+  assert.equal(read("src/server/data/lafpos-day.ts").match(/lafposDayOf\(z\.data, r(ow)?\.receivedAt, offDeviceOf\(r(ow)?\.offDevice\)\)/g)?.length, 2);
+  const form = read("src/app/panel/kasa/cash-form.tsx");
+  assert.match(form, /offDevice=\{lafpos\?\.offDevice \?\? null\}/);
+  assert.match(form, /cardExtra: lafpos\?\.cardExtra \?\? null, offDevice: lafpos\?\.offDevice \?\? null/);
+  assert.match(read("src/app/panel/onaylar/kasa-cards.tsx"), /offDevice=\{card\.lafpos\.day\?\.offDevice \?\? null\}/);
+  const history = read("src/app/panel/kasa/cash-history.tsx");
+  assert.match(history, /withCardExtra\(report, photos\[report\.id\]\?\.extras\.cardExtra, photos\[report\.id\]\?\.extras\.offDevice\)/);
+  assert.match(history, /offDevice=\{openPhotos\?\.extras\.offDevice\}/);
+  assert.match(read("src/app/panel/kasa/report-sheet.tsx"), /reportChecks\(\{ report, cardExtra, offDevice,/);
 });
 
 test("Kasa raporu: yazarkasanın Z no'su (okcZNo) otomatik alan; elle ya da fotoğrafla girilen korunur, LafPOS'un Z no'sundan ayrı", () => {

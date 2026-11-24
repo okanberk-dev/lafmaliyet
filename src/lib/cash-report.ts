@@ -71,6 +71,15 @@ export interface CashReportFields {
 export const OKC_FORM_KEYS = ["okcZNo", "okcReceipts", "okcTotal", "okcVatTotal", "okcVat", "okcCash", "okcCard", "okcMealCard", "okcOther"] as const satisfies readonly (keyof CashReportFields)[];
 export type OkcFormKey = (typeof OKC_FORM_KEYS)[number];
 
+/**
+ * LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2; gövdenin `offDevice`'ı, src/lib/lafpos/prefill.ts
+ * LafposDay): mali fişi yazarkasada kesilmedi, yazarkasanın Z'sinde ve Pavo'nun banka gün sonunda yok. Kaydedilmez
+ */
+export interface CashOffDevice {
+  card: number;
+  cash: number;
+}
+
 /** Günün zayi ve ikram özeti (src/lib/waste.ts summarize): "2× Latte M, Süt 1 LT" */
 export interface DayWaste {
   zayi: string | null;
@@ -130,6 +139,11 @@ export function computeCash(
   f: Pick<CashReportFields, "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "openingCash" | "cashIn" | "cashOut" | "countedCash" | "handedOver" | "bankPos" | "okcCard"> & {
     /** LafPOS gününde kartla bahşiş + kartla cari tahsilatı (G11): banka POS'unda var, Z'nin kartında yok; kart farkı düşer */
     cardExtra?: number | null;
+    /**
+     * LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2; withCardExtra): kartı Z'nin kartında var, yazarkasanın
+     * kartında ve Pavo'nun banka gün sonunda yok; kart farkı Z'nin kartından düşerek ölçülür
+     */
+    offDevice?: CashOffDevice | null;
     /** Ödenmez / ikram (ciro dışı); verilmezse ciro = Z toplamı (eski kayıt, kısmi test nesnesi) */
     offRevenue?: number | null;
   },
@@ -151,7 +165,7 @@ export function computeCash(
     cashDiff,
     kind: diffKind(cashDiff),
     carryOver: r2(f.countedCash - f.handedOver),
-    cardDiff: cardRef === null ? null : r2(cardRef - f.card - (f.cardExtra ?? 0)),
+    cardDiff: cardRef === null ? null : r2(cardRef - (f.card - (f.offDevice?.card ?? 0)) - (f.cardExtra ?? 0)),
     cardSource: okcCard !== null ? "okc" : bankPos !== null ? "bank" : null,
   };
 }
@@ -708,11 +722,24 @@ export interface CashReportExtras {
   lafposDiffs?: LafposDiff[] | null;
   /** LafPOS gününde kartla bahşiş + kartla cari tahsilatı (G11): kart karşılaştırmaları bunu düşer (withCardExtra) */
   cardExtra?: number | null;
+  /** LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): yazarkasa ve banka karşılaştırmaları bunu düşer */
+  offDevice?: CashOffDevice | null;
 }
 
-/** Kart karşılaştırmasının girdisi: LafPOS'un kartla bahşiş ve cari tahsilatı varsa rapor alanlarına eklenir (kaydedilmez) */
-export function withCardExtra<T extends object>(f: T, cardExtra: number | null | undefined): T & { cardExtra?: number } {
-  return cardExtra && cardExtra > 0 ? { ...f, cardExtra } : f;
+/**
+ * Kart karşılaştırmasının girdisi (kaydedilmez): LafPOS'un kartla bahşiş ve cari tahsilatı (banka POS'unda var, Z'nin
+ * kartında yok) ve yazarkasadan geçmeyen ödemeler (Z'nin kartında var, yazarkasanın Z'sinde ve banka gün sonunda yok)
+ * varsa rapor alanlarına eklenir. Form, kayıtlı görünüm, yöneticinin penceresi, Onaylar, günden güne listesi, WhatsApp
+ * ve e-posta aynı özeti bununla alır
+ */
+export function withCardExtra<T extends object>(
+  f: T,
+  cardExtra: number | null | undefined,
+  offDevice?: CashOffDevice | null,
+): T & { cardExtra?: number; offDevice?: CashOffDevice } {
+  const extra = cardExtra && cardExtra > 0 ? { cardExtra } : null;
+  const off = offDevice && (offDevice.card > 0 || offDevice.cash > 0) ? { offDevice } : null;
+  return extra || off ? { ...f, ...extra, ...off } : f;
 }
 
 /**
@@ -721,10 +748,25 @@ export function withCardExtra<T extends object>(f: T, cardExtra: number | null |
  */
 export const CARD_EXTRA_LABEL = "− LafPOS kartla bahşiş + cari tahsilatı";
 
-/** WhatsApp ve e-posta metninin kart satırının eki: " (bahşiş / cari tahsilatı düşüldü)"; yöneticide tutarıyla; yoksa "" */
-export function cardExtraSuffix(extra: number | null | undefined, audience: CashTextAudience): string {
-  if (!extra || extra <= 0) return "";
-  return audience === "admin" ? ` (LafPOS kartla bahşiş + cari tahsilatı ${money(extra)} düşüldü)` : " (bahşiş / cari tahsilatı düşüldü)";
+/**
+ * Kart bölümünde LafPOS'un kartından düşülen yazarkasadan geçmeyen kart (Faz 2): kayıtlı görünümün ve e-postanın satır
+ * adı. LafPOS kartı − bu = yazarkasanın ya da banka gün sonunun beklenen kartı; tutarı yöneticiye, personele "düşüldü"
+ */
+export const OFF_DEVICE_CARD_LABEL = "− Yazarkasadan geçmeyen kart";
+
+/**
+ * WhatsApp ve e-posta metninin kart satırının eki: " (bahşiş / cari tahsilatı düşüldü)", " (yazarkasadan geçmeyen kart
+ * düşüldü)" ya da ikisi birden; yöneticide tutarıyla; yoksa ""
+ */
+export function cardExtraSuffix(extra: number | null | undefined, audience: CashTextAudience, offDeviceCard?: number | null): string {
+  const tips = extra && extra > 0 ? extra : 0;
+  const off = offDeviceCard && offDeviceCard > 0 ? offDeviceCard : 0;
+  if (!tips && !off) return "";
+  if (audience === "admin") {
+    const parts = [tips ? `LafPOS kartla bahşiş + cari tahsilatı ${money(tips)}` : null, off ? `${tips ? "" : "LafPOS'ta "}yazarkasadan geçmeyen kart ${money(off)}` : null];
+    return ` (${parts.filter(Boolean).join(" ve ")} düşüldü)`;
+  }
+  return ` (${[tips ? "bahşiş / cari tahsilatı" : null, off ? "yazarkasadan geçmeyen kart" : null].filter(Boolean).join(" ve ")} düşüldü)`;
 }
 
 /** Z bölümünün adı: "ModPOS Z raporu", LafPOS günlerinde "LafPOS gün sonu (Z)" */
@@ -827,12 +869,17 @@ const moreLess = (d: number) => `${money(Math.abs(d))} ${d > 0 ? "fazla" : "az"}
  * eski günlerde alan banka gün sonunu da yazarkasanın kart satırını da tutabilir, anlam iddia edilmez). `kasa` günün
  * kasası (geçiş gününden itibaren LafPOS; denetim E-39), karşılaştırmalar onun adıyla
  */
-export function okcTextBlock(f: CashTextFields & { cardExtra?: number | null }, audience: CashTextAudience, kasa: CashReportExtras["kasa"] = "ModPOS"): string[] {
+export function okcTextBlock(
+  f: CashTextFields & { cardExtra?: number | null; offDevice?: CashOffDevice | null },
+  audience: CashTextAudience,
+  kasa: CashReportExtras["kasa"] = "ModPOS",
+): string[] {
   const k = kasa ?? "ModPOS";
   const c = computeCash(f);
   const same = (d: number) => Math.abs(d) < CASH_TOLERANCE;
-  // LafPOS'un kartla bahşiş ve cari tahsilatı düşüldüyse kart satırı söyler (G11; personelde tutarsız)
-  const extra = cardExtraSuffix(f.cardExtra, audience);
+  // LafPOS'un kartla bahşiş ve cari tahsilatı (G11) ya da yazarkasadan geçmeyen kartı (Faz 2) düşüldüyse kart satırı
+  // söyler (personelde tutarsız)
+  const extra = cardExtraSuffix(f.cardExtra, audience, f.offDevice?.card);
   if (!okcHasFigures(f)) {
     if (c.cardDiff === null) return [];
     return ["*Kart*", `Banka POS: ${money(f.bankPos)} ${same(c.cardDiff) ? `✅ ${k} ile aynı` : `⚠️ ${k}'tan ${moreLess(c.cardDiff)}`}${extra}`];
@@ -891,8 +938,8 @@ export function cashReportText(
   meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity & CashTextBranch,
   audience: CashTextAudience,
 ): string {
-  // LafPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını düşer (G11)
-  f = withCardExtra(f, meta.cardExtra);
+  // LafPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen ödemeyi (Faz 2) düşer
+  f = withCardExtra(f, meta.cardExtra, meta.offDevice);
   const c = computeCash(f);
   const head = [
     `*L'Affogato · Gün sonu kasa raporu ${reportNo(f.date)}${branchPart(meta.branchName)}*${meta.revision && meta.revision > 1 ? " (güncellendi)" : ""}`,

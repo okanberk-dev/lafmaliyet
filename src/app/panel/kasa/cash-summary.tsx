@@ -16,10 +16,12 @@ import {
   computeCash,
   diffKind,
   diffText,
+  OFF_DEVICE_CARD_LABEL,
   paymentLines,
   withCardExtra,
   zSectionTitle,
   type CarryCheck,
+  type CashOffDevice,
   type CashReportFields,
   revenueWord,
 } from "@/lib/cash-report";
@@ -118,6 +120,7 @@ export function CashBreakdown({
   okcAdmin = null,
   kasa = "ModPOS",
   cardExtra = null,
+  offDevice = null,
 }: {
   report: CashReportFields;
   cashOuts?: (CashOutLine & { id: number; photoId: number | null })[];
@@ -131,9 +134,12 @@ export function CashBreakdown({
   kasa?: "ModPOS" | "LafPOS";
   /** LafPOS gününde kartla bahşiş + cari tahsilatı (G11): kart karşılaştırması düşer */
   cardExtra?: number | null;
+  /** LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): kart karşılaştırması düşer */
+  offDevice?: CashOffDevice | null;
 }) {
-  // Kart karşılaştırması LafPOS'un kartla bahşiş ve cari tahsilatını düşer (G11; kaydedilmez)
-  report = withCardExtra(report, cardExtra);
+  // Kart karşılaştırması LafPOS'un kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen ödemeyi (Faz 2)
+  // düşer (kaydedilmez)
+  report = withCardExtra(report, cardExtra, offDevice);
   const c = computeCash(report);
   const paymentsOff = Math.abs(c.paymentsDiff) >= CASH_TOLERANCE;
   const okc = okcHasFigures(report);
@@ -197,7 +203,7 @@ export function CashBreakdown({
           subWarn
         />
       </section>
-      <CardDetail report={report} audience={audience} okcAdmin={okcAdmin} kasa={kasa} cardExtra={cardExtra} />
+      <CardDetail report={report} audience={audience} okcAdmin={okcAdmin} kasa={kasa} cardExtra={cardExtra} offDevice={offDevice} />
       {report.note ? (
         <section aria-label="Not" className={c.cardDiff === null && !okc ? "sm:col-span-2" : undefined}>
           <h3 className="border-b border-line pb-1 text-[13px] font-semibold text-ink-soft">Not</h3>
@@ -219,12 +225,14 @@ export function CardDetail({
   okcAdmin,
   kasa,
   cardExtra,
+  offDevice = null,
 }: {
   report: CashReportFields;
   audience: "staff" | "admin";
   okcAdmin: OkcAdminView | null;
   kasa: "ModPOS" | "LafPOS";
   cardExtra: number | null;
+  offDevice?: CashOffDevice | null;
 }) {
   if (okcHasFigures(report)) return <OkcBreakdown report={report} audience={audience} okcAdmin={okcAdmin} kasa={kasa} />;
   const c = computeCash(report);
@@ -235,6 +243,8 @@ export function CardDetail({
     <section aria-label="Kart">
       <h3 className="border-b border-line pb-1 text-[13px] font-semibold text-ink-soft">Kart</h3>
       <Line label={`${kasa} kart`} value={money(report.card)} />
+      {/* Faz 2: yazarkasadan geçmeyen kart banka gün sonunda yok, LafPOS kartından düşülür; yöneticiye tutarıyla */}
+      {offDevice && offDevice.card > 0 ? <Line label={OFF_DEVICE_CARD_LABEL} value={audience === "admin" ? money(offDevice.card) : "düşüldü"} /> : null}
       <Line label="Banka POS" value={money(report.bankPos)} />
       {/* Fark bunu düşerek (G11): yöneticiye tutarıyla, personele "düşüldü" */}
       {cardExtra && cardExtra > 0 ? <Line label={CARD_EXTRA_LABEL} value={audience === "admin" ? money(cardExtra) : "düşüldü"} /> : null}

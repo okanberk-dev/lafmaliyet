@@ -152,7 +152,7 @@ bugünkü gibi davranır.
 | `z.openedAt`, `closedAt` | Saklanır (`z` jsonb); bugün okuyan yok |
 | `ikram[].kind`, `personKind` | Tür nedenin ön ekinden önce gelir (`lafposLineKind`, `lafposCompKind`); ödenmezin kişi türü Zayi & ikram'da yöneticiye parantezde ("Ödenmez: Deneme (patron)"). "Deneme" ödenmezi sahibin kararıyla ürün denemesidir: tüketimdir, raporda kalır |
 | `iptal[]` | **Hazırlanmış iptal zayi tüketimidir**: LafPOS'un ikram / zayi okuma yolundan (`loadLafposIkram` → `iptalWasteLines`, neden "İptal (hazırlanmıştı)", iptal nedeni ayrıca), Tutarlılık'ın kayıtlı tüketimine, Tahmini stoğa ve Zayi'nin gününe girer; `waste_entries`'e yazılmaz (gün her gönderimde yeniden okunur, yeniden gönderim çift saymaz). Ödenmez tutarına girmez: kasa e-postasının ikram denetimine ve Onaylar'daki geç ikram kartının Z kıyasına katılmaz (`recordedOffRevenue`). Hazırlanmamış iptal yalnız bilgi (kasa e-postası, gün görünümü). Kalem iadesi (`refund`) hazırlanmışsa o da zayidir |
-| `offDevice`, `refunds[]` | Yöneticinin Kasa gün görünümü (**LafPOS gün sonu ayrıntısı** kartı, `src/app/panel/kasa/lafpos-day-card.tsx`) ve gün sonu e-postası: yazarkasadan geçmeyen kart ve nakit, iptal edilen ödemeler (sayı, toplam, tek tek tür ve neden) |
+| `offDevice`, `refunds[]` | Yöneticinin Kasa gün görünümü (**LafPOS gün sonu ayrıntısı** kartı, `src/app/panel/kasa/lafpos-day-card.tsx`) ve gün sonu e-postası: yazarkasadan geçmeyen kart ve nakit, iptal edilen ödemeler (sayı, toplam, tek tek tür ve neden). `offDevice` (`pos_day_reports.off_device`) kasa raporunun yazarkasa ve banka karşılaştırmalarına da girer: aşağıda "Kart: yazarkasadan geçmeyen ödeme" |
 | `bankPos.errorCode` | Pavo kartında ve e-postasında "Hata kodu" satırı ve başlığın parantezi (`pavoView`) |
 | `revision`, `correction` | `pos_day_reports.revision`, `correction` ve sürüm geçmişi; gün görünümü kaç kez gönderildiğini ve düzeltmenin nedenini, gün sonu e-postası "Düzeltildi: gün yeniden açıldı (…)" yazar |
 
@@ -319,6 +319,23 @@ sonucu verir (personelin ekranı "fark var", gönderdiği WhatsApp "aynı" demez
 raporun Kart bölümünde ve e-postasında ayrı satır: "− LafPOS kartla bahşiş + cari tahsilatı 150 ₺" (personelde
 "düşüldü"), böylece 10.150 ile 10.000 arasında "Fark yok" okunur; WhatsApp'ın kart satırı "(bahşiş / cari tahsilatı
 düşüldü)" ekler. Kaydedilmez; eski gövdede yoksa 0.
+
+#### Kart: yazarkasadan geçmeyen ödeme (Faz 2)
+
+Gövdenin `offDevice`'ı (`{ card, cash }`; mali fişi yazarkasada kesilmeyen satış ödemeleri: başka POS, "Başka yoldan
+aldım") Z'nin kartında ve nakdinde vardır, yazarkasanın Z'sinde ve Pavo'nun banka gün sonunda yoktur (LafPOS'un kendi
+Pavo kıyası da düşer, `cardBasis`). Kasa raporu LafPOS gününde aynı kuralla karşılaştırır (`LafposDay.offDevice`,
+`withCardExtra(rapor, cardExtra, offDevice)`; form, kayıtlı görünüm, yöneticinin penceresi, Onaylar, günden güne rozeti,
+e-posta, WhatsApp): yazarkasa kartı ya da banka gün sonu **Z'nin kartı − yazarkasadan geçmeyen kart** (+ kartla bahşiş
+ve cari tahsilatı) ile, yazarkasa nakdi Z'nin nakdi − yazarkasadan geçmeyen nakit ile karşılaştırılır; yazarkasanın
+toplamından fark yazarkasadan geçmeyen satışlar kadarsa bilgi satırı onu söyler. 22.11 (kabul günü): kart 5.030, Pavo ve
+yazarkasa kartı 4.160, yazarkasadan geçmeyen kart 870: "Kart: yazarkasa ile LafPOS aynı. LafPOS'ta yazarkasadan geçmeyen
+kart (870 ₺) düşüldü." (personelde tutarsız). Yalnız Banka POS yazılan raporun Kart bölümünde ve e-postasında ayrı satır
+"− Yazarkasadan geçmeyen kart 870 ₺" (personelde "düşüldü"); WhatsApp'ın kart satırı "(yazarkasadan geçmeyen kart
+düşüldü)" ekler. Kaydedilmez; eski gövdede yoksa hiçbir şey düşülmez. İki sınır: yazarkasadan geçmeyen ödemenin kartla
+bahşişi `cardTips`'in içindedir ve ayrı gelmez (LafPOS'un Pavo kıyası onu da düşer, panel düşemez: öyle bir günde kart
+o bahşiş kadar "az" görünür), gün kapandıktan sonra yazarkasada fişi iptal edilen ödemenin kartı (`fis_iptal`) gövdede
+yoktur.
 
 #### Geç rapor, fotoğraf kaldırma, kapalı gün, ay rakamı (G8, E-36, G6)
 
@@ -711,7 +728,7 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
 | `src/lib/lafpos/day.ts` | Gövdenin şeması (beyaz liste; Faz 2 alanları bozuksa yok sayılır), okunması ve hata alanı, ürünün bulunma sırası (saf) |
 | `src/lib/lafpos/gun-ayrinti.ts`, `src/app/panel/kasa/lafpos-day-card.tsx` | Faz 2 ayrıntısı: yazarkasadan geçmeyen, ödeme iptalleri, iptal edilen kalemler, yazarkasa Z no, KDV, gönderim ve düzeltme (gün görünümü kartı ve gün sonu e-postası; saf) |
 | `src/lib/lafpos/request.ts` | Anahtar ve imzalı isteğin denetimi (saf) |
-| `src/lib/lafpos/prefill.ts` | Z → Kasa formunun alanları (`CashPrefill`), bandın metni, harcama ve teslimin bilgi satırı, kartla bahşiş ve cari tahsilatı (saf) |
+| `src/lib/lafpos/prefill.ts` | Z → Kasa formunun alanları (`CashPrefill`), bandın metni, harcama ve teslimin bilgi satırı, kartla bahşiş ve cari tahsilatı, yazarkasadan geçmeyen ödeme (`LafposDay.offDevice`; saf) |
 | `src/lib/lafpos/diffs.ts` | Gönderilmiş raporun LafPOS'tan farklı yazılanları ve metni (saf) |
 | `src/lib/lafpos/costs.ts` | Maliyet listesinin beyaz listesi (saf) |
 | `src/lib/lafpos/switch.ts` | Geçiş gününün kuralları (saf): LafPOS günü mü, ayın kaynağı, ModPOS listesi sayılır mı, LafPOS'un sayıldığı ilk gün, değişen aylar, onay penceresinin listesi |

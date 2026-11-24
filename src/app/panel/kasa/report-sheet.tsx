@@ -6,7 +6,7 @@ import { useId, useState, type ReactNode } from "react";
 import { Notice } from "@/components/ui/notice";
 import { cashOutLabel, type CashOutLine } from "@/lib/cash-outs";
 import { reportChecks } from "@/lib/cash-report-checks";
-import { computeCash, diffKind, diffText, paymentLines, withCardExtra, zSectionTitle, type CarryCheck, type CashReportFields, type CashRevisionRow } from "@/lib/cash-report";
+import { computeCash, diffKind, diffText, paymentLines, withCardExtra, zSectionTitle, type CarryCheck, type CashOffDevice, type CashReportFields, type CashRevisionRow } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import type { LafposDiff } from "@/lib/lafpos/diffs";
 import type { ModposDiff } from "@/lib/modpos/compare";
@@ -28,6 +28,7 @@ export function ReportSheet({
   report,
   kasa = "ModPOS",
   cardExtra = null,
+  offDevice = null,
   cashOuts = [],
   carry = null,
   next = null,
@@ -43,6 +44,8 @@ export function ReportSheet({
   report: CashReportFields & { revision: number; cashDiff: number; countedByName: string | null; submittedByName: string; createdAt: string; updatedAt: string };
   kasa?: "ModPOS" | "LafPOS";
   cardExtra?: number | null;
+  /** LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): kart karşılaştırması düşer */
+  offDevice?: CashOffDevice | null;
   cashOuts?: (CashOutLine & { id: number; photoId: number | null })[];
   carry?: CarryCheck | null;
   next?: CarryCheck | null;
@@ -55,12 +58,12 @@ export function ReportSheet({
   revisions?: CashRevisionRow[];
   proposedBy?: Record<number, string>;
 }) {
-  const f = withCardExtra(report, cardExtra);
+  const f = withCardExtra(report, cardExtra, offDevice);
   const c = computeCash(f);
   const kind = diffKind(report.cashDiff);
-  const checks = reportChecks({ report, cardExtra, kasa, carry, next, modposDiffs, lafposDiffs, photoDiffs, emailError });
+  const checks = reportChecks({ report, cardExtra, offDevice, kasa, carry, next, modposDiffs, lafposDiffs, photoDiffs, emailError });
   const zMeta = [report.zNo ? `Z no ${report.zNo}` : null, report.receipts ? `${report.receipts} fiş` : null].filter(Boolean).join(" · ");
-  const card = <CardDetail report={f} audience="admin" okcAdmin={okcAdmin} kasa={kasa} cardExtra={cardExtra} />;
+  const card = <CardDetail report={f} audience="admin" okcAdmin={okcAdmin} kasa={kasa} cardExtra={cardExtra} offDevice={offDevice} />;
   const edits = Math.max(0, report.revision - 1);
   const more = [photos.length ? `${photos.length} fotoğraf` : null, edits && revisions.length ? `${edits} düzeltme` : null].filter(Boolean).join(" · ");
 

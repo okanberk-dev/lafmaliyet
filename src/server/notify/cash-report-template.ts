@@ -10,6 +10,7 @@ import {
   branchPart,
   byLine,
   CARD_EXTRA_LABEL,
+  OFF_DEVICE_CARD_LABEL,
   carryWarning,
   CASH_TOLERANCE,
   cashOutLines,
@@ -136,8 +137,8 @@ export function renderCashReport(
   } & CashReportExtras &
     CashReportIntegrity,
 ) {
-  // LafPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını düşer (G11)
-  f = withCardExtra(f, meta.cardExtra);
+  // LafPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen ödemeyi (Faz 2) düşer
+  f = withCardExtra(f, meta.cardExtra, meta.offDevice);
   const c = computeCash(f);
   const tone = TONE[c.kind];
   const branchName = meta.branch?.name ?? null;
@@ -209,6 +210,8 @@ export function renderCashReport(
       ? ""
       : [
           row(`${kasa} kart`, money(f.card)),
+          // Faz 2: yazarkasadan geçmeyen kart banka gün sonunda yok; LafPOS kartından düşülür (5.030 − 870 = 4.160)
+          ...(meta.offDevice && meta.offDevice.card > 0 ? [row(OFF_DEVICE_CARD_LABEL, money(meta.offDevice.card))] : []),
           row("Banka POS", money(f.bankPos)),
           // Fark bunu düşerek (G11): 10.150 − 150 = 10.000 okunur
           ...(meta.cardExtra && meta.cardExtra > 0 ? [row(CARD_EXTRA_LABEL, money(meta.cardExtra))] : []),

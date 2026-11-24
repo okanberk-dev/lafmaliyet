@@ -2,7 +2,7 @@ import { computeCash } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import type { CashPrefill, PrefillField, PrefillPlan, ReadCheck, ReadValue } from "@/lib/photo-read/kasa";
 
-import type { PosDayZ } from "./day";
+import type { PosDayZ, PosOffDevice } from "./day";
 
 /**
  * Kasa raporunun "LafPOS'tan doldur"u (saf; docs/LAFPOS.md › Kasa raporu): LafPOS'un gün sonu Z özeti formun ModPOS Z
@@ -30,6 +30,12 @@ export interface LafposDay {
    * personelin yazdığı Banka POS ile kartın farkından zaten çıkar; metinlerde tutarı yalnız yöneticinin metni yazar
    */
   cardExtra: number;
+  /**
+   * Faz 2: yazarkasadan geçmeyen satış ödemeleri (gövdenin `offDevice`'ı; eski gövdede null). Mali fişi yazarkasada
+   * kesilmediği için yazarkasanın kartında ve nakdinde, Pavo'nun banka gün sonunda yoktur; kart karşılaştırması kartı,
+   * yazarkasanın nakit ve toplam satırları ikisini düşer (withCardExtra). Tutarı yalnız yöneticinin metni yazar
+   */
+  offDevice: PosOffDevice | null;
 }
 
 /**
@@ -104,13 +110,17 @@ export function lafposCardExtra(z: PosDayZ): number {
   return round2((z.cardTips ?? 0) + (z.cardCollections ?? 0));
 }
 
-/** Saklanan Z özetinden günün LafPOS özeti (Kasa raporunun okuyucusu: src/server/data/lafpos-day.ts) */
-export function lafposDayOf(z: PosDayZ, receivedAt: Date | string): LafposDay {
+/**
+ * Saklanan Z özetinden günün LafPOS özeti (Kasa raporunun okuyucusu: src/server/data/lafpos-day.ts). `offDevice`
+ * gövdenin üst düzey alanıdır (Z'nin değil): ayrı sütundan gelir, yoksa (eski gövde) null
+ */
+export function lafposDayOf(z: PosDayZ, receivedAt: Date | string, offDevice?: PosOffDevice | null): LafposDay {
   return {
     receivedAt: typeof receivedAt === "string" ? receivedAt : receivedAt.toISOString(),
     prefill: lafposPrefill(z),
     till: { spent: z.cashOut, handed: z.handedOver },
     cardExtra: lafposCardExtra(z),
+    offDevice: offDevice && (offDevice.card > 0 || offDevice.cash > 0) ? { card: offDevice.card, cash: offDevice.cash } : null,
   };
 }
 
