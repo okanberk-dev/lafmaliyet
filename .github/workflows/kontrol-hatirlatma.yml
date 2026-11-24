@@ -7,7 +7,9 @@
 # bildirim saatinin ilk saatinde gönderir, başka saatte çağrılırsa bir şey yapmaz. GitHub zamanlanmış işleri birkaç dakika (yoğunlukta 15–20 dk) geç
 # başlatabilir; panel durumu her çalışmada yeniden hesapladığı için geç çalışma yanlış e-posta göndermez.
 # Gerekenler: depo sırrı CRON_SECRET (Vercel'deki CRON_SECRET'ın aynısı; GitHub › Settings › Secrets and variables ›
-# Actions). Sır yoksa iş uyarı yazıp yeşil biter. Panelin adresi başka ise depo değişkeni PANEL_URL.
+# Actions). Sır yoksa iş hata yazıp kırmızı biter (hatırlatmalar bu yoldan gitmiyor demektir). Panel bir e-postayı
+# gönderemezse 500 döner, iş yine kırmızı biter; her çalışma panelde job_runs'a yazılır (Ayarlar › Günlük işler ›
+# Personel e-postaları). Panelin adresi başka ise depo değişkeni PANEL_URL.
 # Maliyet: günde 8 çalışma × 1 dk ≈ ayda 240 Actions dakikası (özel depoda ücretsiz kota 2000 dk).
 name: Kontrol listesi hatırlatmaları
 
@@ -33,8 +35,8 @@ jobs:
           PANEL_URL: ${{ vars.PANEL_URL || 'https://ladmin.laffogato.net' }}
         run: |
           if [ -z "$CRON_SECRET" ]; then
-            echo "::warning::CRON_SECRET depo sırrı yok; hatırlatmalar gönderilmedi."
-            exit 0
+            echo "::error::CRON_SECRET depo sırrı yok; hatırlatmalar gönderilmedi."
+            exit 1
           fi
           curl -fsS --retry 2 --retry-delay 10 --max-time 70 \
             -H "Authorization: Bearer $CRON_SECRET" \

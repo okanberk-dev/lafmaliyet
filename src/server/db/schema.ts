@@ -1185,7 +1185,8 @@ export const jobRuns = pgTable(
   "job_runs",
   {
     id: serial("id").primaryKey(),
-    job: text("job", { enum: ["parasut", "gunluk"] }).notNull(),
+    /** "kontrol": kontrol listesi ve karaoke personel e-postaları (src/lib/job-health.ts RunJobKey); düz metin sütun, göç yok */
+    job: text("job", { enum: ["parasut", "gunluk", "kontrol"] }).notNull(),
     status: text("status", { enum: ["running", "ok", "partial", "error", "skipped"] }).notNull().default("running"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),

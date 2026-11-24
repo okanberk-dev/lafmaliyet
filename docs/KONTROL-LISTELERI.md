@@ -235,8 +235,13 @@ Aynı uyarı iki tetikleyiciden de bir kez gider (aşağıda: sahiplenme).
   listeler kuralı, 21 Kasım denetimi #25).
 - **Yedek tetikleyici:** Vercel Hobby'de cron günde bir kez çalıştığı için bildirim saatlerindeki çağrı GitHub Actions'tan gelir
   (`.github/workflows/kontrol-hatirlatma.yml`, `7,37 7,11,15,19 * * *` UTC). Depoda **`CRON_SECRET` sırrı** (Vercel'deki
-  `CRON_SECRET`'ın aynısı) gerekir; yoksa iş uyarı yazıp hiçbir şey göndermez. Elle denemek için Actions › Kontrol
+  `CRON_SECRET`'ın aynısı) gerekir; yoksa iş hata yazıp kırmızı biter. Elle denemek için Actions › Kontrol
   listesi hatırlatmaları › Run workflow.
+- **İzleme** (25 Kasım 2026): her çağrı `job_runs`'a `kontrol` satırı yazar (canlı yoklama yalnız bir şey gönderdiyse ya
+  da gidemediyse); Ayarlar › Günlük işler › Personel e-postaları son çalışmayı ve adımlarını gösterir. Bir e-posta
+  gidemediyse (kontrol listesi ya da karaoke) zilde "Personel e-postası gidemedi" uyarısı çıkar ve uç 500 döner: GitHub
+  işi kırmızı biter. Dilimi kaçırmak uyarı vermez (asıl tetik açık sekme). Her çağrı Vercel günlüğüne tek satır özet
+  yazar (`[cron] kontrol`); sabah işi ve Paraşüt işi de (`[cron] gunluk`, `[cron] parasut`).
 
 **İşlem geçmişi:** liste tamamlandı, aralık dışı değer, sorun bildirildi, ölçüm değişti; listelerin ve maddelerin
 eklenmesi, düzenlenmesi, kaldırılması. Düz "Tamam" işaretleri ve fotoğraflar yazılmaz (yanıtın kendisi kimin ne zaman

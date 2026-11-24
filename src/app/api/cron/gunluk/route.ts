@@ -203,5 +203,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ status: "error", error: (e as Error).message, sync, modpos: modpos.status, ...ex.body, weekly: ex.weekly }, { status: 500 });
   } finally {
     await finishJobRun(runId, outcome);
+    // Başarıda da tek satır: Vercel günlüğünden işin çalıştığı görülür (job_runs'a bakmadan)
+    console.info("[cron] gunluk", { status: outcome.status, ...outcome.steps, ms: Date.now() - jobStart });
   }
 }

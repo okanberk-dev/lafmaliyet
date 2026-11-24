@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, desc, eq, gte, lt, ne } from "drizzle-orm";
 
-import { CUT_OFF_MESSAGE, RUNS_KEEP_DAYS, STUCK_MS, type JobKey, type JobOutcome, type JobRunLite } from "@/lib/job-health";
+import { CUT_OFF_MESSAGE, RUNS_KEEP_DAYS, STUCK_MS, type JobOutcome, type JobRunLite, type RunJobKey } from "@/lib/job-health";
 import { getDb, schema as s } from "@/server/db";
 
 import { markWatchSince, WATCH_SINCE_KEY } from "./watch";
@@ -12,7 +12,7 @@ import { markWatchSince, WATCH_SINCE_KEY } from "./watch";
  * CUT_OFF_MESSAGE; durumu yine "yarıda kesildi" sayılır), 90 günden eski kayıtlar silinir, izleme başlangıcı yoksa
  * yazılır. Kayıt yazılamazsa (veritabanı yok) iş yine çalışır: null.
  */
-export async function startJobRun(job: JobKey): Promise<number | null> {
+export async function startJobRun(job: RunJobKey): Promise<number | null> {
   try {
     const db = getDb();
     const now = Date.now();
@@ -40,6 +40,20 @@ export async function finishJobRun(id: number | null, outcome: JobOutcome): Prom
       .update(s.jobRuns)
       .set({ status: outcome.status, finishedAt: new Date(), steps: outcome.steps, message: outcome.message?.slice(0, 500) ?? null })
       .where(eq(s.jobRuns.id, id));
+  } catch (e) {
+    console.error("[cron] çalışma sonucu yazılamadı", e);
+  }
+}
+
+/**
+ * Bitmiş bir çalışmayı tek satırda yazar (canlı yoklamanın kontrol listesi e-postası gibi kısa işler: başlarken satır
+ * açılmaz). Yazılamazsa iş etkilenmez
+ */
+export async function recordJobRun(job: RunJobKey, startedAt: Date, outcome: JobOutcome): Promise<void> {
+  try {
+    await getDb()
+      .insert(s.jobRuns)
+      .values({ job, startedAt, finishedAt: new Date(), status: outcome.status, steps: outcome.steps, message: outcome.message?.slice(0, 500) ?? null });
   } catch (e) {
     console.error("[cron] çalışma sonucu yazılamadı", e);
   }

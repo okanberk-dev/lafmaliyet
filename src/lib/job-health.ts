@@ -11,6 +11,13 @@ import { addDays, longDateTR } from "@/lib/reminders";
 
 export type JobKey = "parasut" | "gunluk";
 export const JOB_KEYS: JobKey[] = ["parasut", "gunluk"];
+/**
+ * job_runs'a yazan bütün işler: iki günlük iş ve kontrol listesi / karaoke personel e-postaları (`kontrol`:
+ * /api/cron/kontrol, GitHub Actions'ın yedek tetiği, ve canlı yoklamanın bir şey gönderen çalışması). `kontrol` günlük
+ * işlerin sağlığına ("çalışmadı" uyarısı) girmez: asıl tetik açık sekme olduğu için dilimi kaçırması sorun değildir;
+ * yalnız e-postası gidemediyse uyarır (systemAlerts)
+ */
+export type RunJobKey = JobKey | "kontrol";
 
 export const JOBS: Record<JobKey, { label: string; window: string; startMin: number; endMin: number; href: string }> = {
   parasut: { label: "Paraşüt eşitlemesi", window: "07:00–08:00", startMin: 7 * 60, endMin: 8 * 60, href: "/panel/parasut" },
@@ -33,7 +40,7 @@ export const JOBS_HREF = "/panel/ayarlar#isler";
 export type RunStatus = "running" | "ok" | "partial" | "error" | "skipped";
 export interface JobRunLite {
   id: number;
-  job: JobKey;
+  job: RunJobKey;
   status: RunStatus;
   startedAt: string;
   finishedAt: string | null;
@@ -155,6 +162,8 @@ const STEP_NAMES: Record<string, string> = {
   requests: "Personel istekleri",
   gunSonu: "LafPOS gün sonu",
   watchdog: "Sistem uyarısı e-postası",
+  checklist: "Kontrol listesi e-postası",
+  karaokeMail: "Karaoke e-postası",
 };
 
 /** Adım kodlarının ekrandaki karşılığı (Ayarlar › Günlük işler); sıra da buradan */
@@ -193,6 +202,8 @@ export const STEP_LABELS: Record<string, Record<string, string>> = {
   requests: { ok: "Süresi dolan personel istekleri kapandı", error: "Personel istekleri hata" },
   gunSonu: { ok: "LafPOS gün sonu: eksik rapor ya da e-posta tamamlandı", error: "LafPOS gün sonu hata" },
   watchdog: { sent: "Sistem uyarısı e-postası gitti", error: "Sistem uyarısı e-postası gönderilemedi" },
+  checklist: { sent: "Kontrol listesi e-postaları gitti", none: "Kontrol listesi: gönderilecek yok", failed: "Kontrol listesi e-postası bir kısmına gidemedi", error: "Kontrol listesi hata" },
+  karaokeMail: { sent: "Karaoke e-postaları gitti", none: "Karaoke e-postası: gönderilecek yok", failed: "Karaoke e-postası bir kısmına gidemedi", error: "Karaoke e-postası hata" },
 };
 
 /** Adımların ekrandaki sözcükleri, STEP_LABELS sırasıyla */
@@ -344,6 +355,28 @@ export function parasutOutcome(r: {
   return { status: "ok", steps: { sync: "ok", ...watch }, message: null };
 }
 
+/** Bir e-posta işinin sonucu (kontrol listesi, karaoke): gönderilen ve gidemeyen sayısı ya da hata */
+type MailRun = { skipped?: string; sent: number; failed: number } | { error: string };
+
+/**
+ * Kontrol listesi ve karaoke e-postalarının çalışması (/api/cron/kontrol ve canlı yoklama; job_runs `kontrol`). Bir
+ * e-posta gidemediyse "partial", hepsi düştüyse ya da iş hata verdiyse "error", hiçbir şey gönderilecek değilse
+ * "skipped". Mesaj gidemeyenlerin sayısı: "Kontrol listesi e-postası: 2 kişiye gidemedi"
+ */
+export function kontrolOutcome(r: { checklist: MailRun; karaoke: MailRun[] }): JobOutcome {
+  const code = (m: MailRun) => ("error" in m ? "error" : m.failed ? "failed" : m.sent ? "sent" : "none");
+  const karaokeRun: MailRun = r.karaoke.find((m) => "error" in m) ?? {
+    sent: r.karaoke.reduce((a, m) => a + ("sent" in m ? m.sent : 0), 0),
+    failed: r.karaoke.reduce((a, m) => a + ("failed" in m ? m.failed : 0), 0),
+  };
+  const steps = { checklist: code(r.checklist), karaokeMail: code(karaokeRun) };
+  const why = (name: string, m: MailRun) => ("error" in m ? `${name}: ${m.error || "bilinmeyen hata"}` : m.failed ? `${name}: ${m.failed} kişiye gidemedi` : null);
+  const problems = [why(STEP_NAMES.checklist, r.checklist), why(STEP_NAMES.karaokeMail, karaokeRun)].filter((x): x is string => x !== null);
+  const sent = ("sent" in r.checklist ? r.checklist.sent : 0) + ("sent" in karaokeRun ? karaokeRun.sent : 0);
+  const status = !problems.length ? (sent ? "ok" : "skipped") : sent ? "partial" : "error";
+  return { status, steps, message: problems.length ? cut(problems.join(" · "), 500) : null };
+}
+
 // ---------------------------------------------------------------- Uyarılar
 
 export interface SystemAlert {
@@ -388,6 +421,8 @@ export function systemAlerts(i: {
   parasutSyncErrorAt: string | null;
   /** Son yedeğin anı (integration_state › backup.last); hiç yoksa null, verilmezse yedek hatırlatılmaz */
   lastBackupAt?: string | null;
+  /** job_runs'un bütün satırları (yeni önce); verilirse bugünün son `kontrol` çalışması e-postası gidemediyse uyarır */
+  runs?: JobRunLite[];
 }): SystemAlert[] {
   if (!i.production) return [];
   const today = trClock(i.now).day;
@@ -446,6 +481,11 @@ export function systemAlerts(i: {
           : { id: `is-parasut-stuck-${p.run.id}`, level: "danger", title: "Paraşüt işi yarıda kesildi", body: "İşlev süresi doldu; eşitleme sonraki çalışmada kaldığı yerden sürer.", day: p.day },
       );
     }
+  }
+  // Kontrol listesi / karaoke personel e-postası gidemedi (bugünün son çalışması; sonraki başarılı çalışma uyarıyı kaldırır)
+  const k = i.runs?.find((r) => r.job === "kontrol" && r.status !== "running" && r.status !== "skipped" && trDay(r.startedAt) === today);
+  if (k && (k.status === "error" || k.status === "partial")) {
+    out.push({ id: `is-kontrol-${k.id}`, level: "warning", title: "Personel e-postası gidemedi", body: cut(k.message || "Bilinmeyen hata", 200), href: JOBS_HREF, day: today });
   }
   return [...out, ...backup].sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
 }

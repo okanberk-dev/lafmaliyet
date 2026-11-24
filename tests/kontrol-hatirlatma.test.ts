@@ -221,8 +221,14 @@ test("kaynak: saatlik tetikleyici, yetki, tek tek gönderim ve sahiplenme", () =
   assert.match(wf, /cron: "7,37 7,11,15,19 \* \* \*"/);
   assert.match(wf, /secrets\.CRON_SECRET/);
   assert.match(wf, /\/api\/cron\/kontrol/);
+  // Sır yoksa iş kırmızı biter (yeşil bitip hatırlatmaların gitmediğini saklamaz)
+  assert.match(wf, /if \[ -z "\$CRON_SECRET" \]; then\n\s+echo "::error::[^"]+"\n\s+exit 1/);
   const route = read("src/app/api/cron/kontrol/route.ts");
   assert.match(route, /rejectUnlessCron\(request\)/);
+  // Her çalışma job_runs'a; gidemeyen e-posta 500 (GitHub işi kırmızı)
+  assert.match(route, /startJobRun\("kontrol"\)/);
+  assert.match(route, /finishJobRun\(runId, outcome\)/);
+  assert.match(route, /status: ok \? 200 : 500/);
   const run = read("src/server/notify/checklist-alerts.ts");
   // Her kişiye kendi adresine (adresler birbirine görünmez); etkin hesap, alıcılar vardiya planından (alertRecipients)
   assert.match(run, /to: \[u\.email\]/);
@@ -251,7 +257,9 @@ test("kaynak: /api/canli hatırlatma işini yanıttan sonra, 304'ten önce, giri
   assert.ok(auth > 0 && claim > auth, "girişsiz istek tetiklemez");
   assert.ok(notModified > claim, "değişiklik yoksa (304) da tetikler");
   // after() içinde: yanıt beklemez; hata yanıtı bozmaz
-  assert.match(route.slice(claim, notModified), /after\(async \(\) => \{\s*try \{\s*const r = await runChecklistAlerts\(/);
+  assert.match(route.slice(claim, notModified), /after\(async \(\) => \{\s*const startedAt = new Date\(\);\s*try \{\s*const r = await runChecklistAlerts\(/);
+  // Bir şey gönderdiyse ya da gidemediyse job_runs'a (izleme); hata da
+  assert.match(route.slice(claim, notModified), /if \(r\.sent \|\| r\.failed\) await recordJobRun\("kontrol"/);
   const run = read("src/server/notify/checklist-alerts.ts");
   assert.match(run, /export function claimChecklistAlertPoll[\s\S]*isEmailConfigured\(\)[\s\S]*alertPollDue\(/);
 });

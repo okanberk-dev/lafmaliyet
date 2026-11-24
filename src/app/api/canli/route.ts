@@ -5,9 +5,11 @@ import type { LiveResponse } from "@/lib/live";
 import { todayTR } from "@/lib/reminders";
 import { awaitingUntil } from "@/lib/site-orders/follow";
 import { siteErrorFor } from "@/lib/staff-errors";
+import { kontrolOutcome } from "@/lib/job-health";
 import { getCurrentUser } from "@/server/auth/dal";
 import { pendingKaraokeAsks } from "@/server/data/karaoke-requests";
 import { loadDueReminders, remindersMarker } from "@/server/data/user-reminders";
+import { recordJobRun } from "@/server/jobs/runs";
 import { liveWindow, loadSessions } from "@/server/karaoke/board";
 import { claimKaraokeMailPoll, runKaraokeMails } from "@/server/karaoke/staff-mail";
 import { ensureKaraokeFresh, karaokeSecret, readKaraokeLive } from "@/server/karaoke/sync";
@@ -52,11 +54,15 @@ export async function GET(request: NextRequest) {
   // GitHub işi yoğunlukta saatlerce gecikebildiği için asıl tetikleyici bu
   if (claimChecklistAlertPoll()) {
     after(async () => {
+      const startedAt = new Date();
       try {
         const r = await runChecklistAlerts(new Date(), Date.now() + 20_000);
         if (r.failed) console.warn(`[kontrol] hatırlatma: ${r.failed} e-posta gidemedi`);
+        // Bir şey gönderildiyse ya da gidemediyse job_runs'a (zil ve Ayarlar › Günlük işler; çoğu yoklama hiçbir şey yazmaz)
+        if (r.sent || r.failed) await recordJobRun("kontrol", startedAt, kontrolOutcome({ checklist: r, karaoke: [] }));
       } catch (e) {
         console.error("[kontrol] hatırlatma", e);
+        await recordJobRun("kontrol", startedAt, kontrolOutcome({ checklist: { error: (e as Error).message }, karaoke: [] }));
       }
     });
   }
