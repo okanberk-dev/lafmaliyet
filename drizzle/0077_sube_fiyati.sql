@@ -1,0 +1,1 @@
+ALTER TABLE "pos_daily_sales" ADD COLUMN "list_prices" jsonb;

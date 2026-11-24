@@ -82,6 +82,8 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
         // Faz 2: indirimden önceki liste değeri ve ek işareti (eski LafPOS göndermez: brüt boş, ek değil)
         gross: l.gross ?? null,
         isAddon: l.isAddon ?? false,
+        // Şube fiyatı: dondurulan liste fiyatları (eski LafPOS göndermez: null, durum "Bilinmiyor")
+        listPrices: l.listPrices ?? null,
         isService: m.isService,
         // LafPOS'un hizmet işareti ayrıca: Satışlar'daki eşleştirme bu satırı ürüne bağlayamaz (sonraki gün sonu geri alırdı)
         lafposService: l.isService,

@@ -16,7 +16,7 @@ import {
   type UnlinkedRow,
 } from "@/lib/site-menu/plan";
 import { pullFailureMessage, type PushFailure } from "@/lib/site-menu/push";
-import { parseSiteMenuList, SiteMenuFormatError, type SiteMenuItem, type SiteMenuList } from "@/lib/site-menu/schema";
+import { parseSiteMenuList, SiteMenuFormatError, type SiteBranchPrice, type SiteMenuItem, type SiteMenuList } from "@/lib/site-menu/schema";
 import type { SiteMenuSlot } from "@/lib/site-menu/slot";
 import { logActivity } from "@/server/actions/log";
 import { withPassiveRelist } from "@/server/data/ingredient-usage";
@@ -29,8 +29,9 @@ import { signedSiteFetch, siteLinkSecret, siteUrl } from "@/server/site-link";
  * uygular (src/lib/site-menu/plan.ts). Ne zaman: sitenin pingi (/api/menu/ping), Ürünler sayfası açılınca (son
  * denemeden 5 dakika geçtiyse), günlük iş ve "Siteyle eşitle". Karaoke eşitlemesi gibi tek işlemde ve danışma
  * kilidiyle yazar; eski bir yanıt yenisinin (ya da sonraki bir panel yazımının) üstüne yazılmaz. Sonuç
- * integration_state'te: `menu_sync` (durum) ve `menu_site_items` (son listenin kopyası; ekranlar siteye gitmeden
- * kalemin adını, fiyatını ve durumunu gösterir). Ayrıntı: docs/SITE-MENU.md.
+ * integration_state'te: `menu_sync` (durum), `menu_site_items` (son listenin kopyası; ekranlar siteye gitmeden
+ * kalemin adını, fiyatını ve durumunu gösterir) ve `menu_site_branch_prices` (sitenin şube fiyatı satırları; Fiyatlar ›
+ * Şube fiyatı ve Eski fiyattan satılanlar okur, src/lib/prices/branch.ts). Ayrıntı: docs/SITE-MENU.md.
  */
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
@@ -38,6 +39,7 @@ type Exec = { execute: (query: SQL) => Promise<unknown> };
 
 const STATE_KEY = "menu_sync";
 const ITEMS_KEY = "menu_site_items";
+const BRANCH_PRICES_KEY = "menu_site_branch_prices";
 /** Sayfa açılışında site en çok bu kadar sürede bir sorulur (ping kaçtıysa) */
 const PAGE_SYNC_INTERVAL_MS = 5 * 60_000;
 /** Sitede silindiği için bağlantısı kaldırılan satırların raporu en çok bu kadar tutulur */
@@ -73,6 +75,11 @@ export interface MenuSyncState {
    * gönderir (src/server/site-menu/push.ts). Eski sitede false: yazım bugünkü gibi `expect`'siz
    */
   writesExpect: boolean;
+  /**
+   * Son başarılı çekmede site yazma ucunda şube fiyatını duyurdu (`writes.branchPrice`): Fiyatlar şube fiyatı yazımını
+   * önerir (src/server/prices/branch-write.ts). Eski sitede false: Şube seçimi ve yazımı yok
+   */
+  writesBranchPrice: boolean;
 }
 
 const EMPTY: MenuSyncState = {
@@ -87,6 +94,7 @@ const EMPTY: MenuSyncState = {
   broken: [],
   unlinked: [],
   itemCount: null,
+  writesBranchPrice: false,
   pushed: {},
   writesExpect: false,
 };
@@ -97,6 +105,15 @@ export interface SiteItemsSnapshot {
   /** Panelin listeyi aldığı an */
   at: string | null;
   items: SiteMenuItem[];
+}
+
+/** Sitenin şube fiyatı satırlarının kopyası (bütün şubeler, eskiden yeniye) */
+export interface BranchPricesSnapshot {
+  /** Satırların alındığı listenin site saati */
+  now: string | null;
+  /** Panelin satırları aldığı an; hiç alınmadıysa null (eski site ya da henüz çekilmedi) */
+  at: string | null;
+  rows: SiteBranchPrice[];
 }
 
 async function readKey<T>(key: string, db: Pick<ReturnType<typeof getDb>, "select"> = getDb()): Promise<Partial<T> | undefined> {
@@ -111,6 +128,28 @@ export async function readMenuSyncState(db?: Pick<ReturnType<typeof getDb>, "sel
 export async function readSiteSnapshot(db?: Pick<ReturnType<typeof getDb>, "select">): Promise<SiteItemsSnapshot> {
   const v = await readKey<SiteItemsSnapshot>(ITEMS_KEY, db);
   return { now: v?.now ?? null, at: v?.at ?? null, items: Array.isArray(v?.items) ? v.items : [] };
+}
+
+export async function readBranchPrices(db?: Pick<ReturnType<typeof getDb>, "select">): Promise<BranchPricesSnapshot> {
+  const v = await readKey<BranchPricesSnapshot>(BRANCH_PRICES_KEY, db);
+  return { now: v?.now ?? null, at: v?.at ?? null, rows: Array.isArray(v?.rows) ? v.rows : [] };
+}
+
+async function writeBranchPrices(snapshot: BranchPricesSnapshot, db: Exec): Promise<void> {
+  await db.execute(sql`
+    insert into integration_state (key, value) values (${BRANCH_PRICES_KEY}, ${JSON.stringify(snapshot)}::jsonb)
+    on conflict (key) do update set value = ${JSON.stringify(snapshot)}::jsonb, updated_at = now()`);
+}
+
+/**
+ * Şube fiyatı yazımından sonra (yanıtın ya da 409 `stale`'in `branchPrices`'ı) kopyada bir kalemin bir şubedeki
+ * satırlarını yeniler; sıra eskiden yeniye. Kilit altında (lockMenu) çağrılır.
+ */
+export async function replaceBranchRows(tx: Tx, id: string, branch: string, rows: readonly SiteBranchPrice[]): Promise<void> {
+  const cur = await readBranchPrices(tx);
+  const kept = cur.rows.filter((r) => !(r.id === id && r.branch === branch));
+  const next = [...kept, ...rows.filter((r) => r.id === id && r.branch === branch)].sort((a, b) => Date.parse(a.effectiveFrom) - Date.parse(b.effectiveFrom));
+  await writeBranchPrices({ now: cur.now, at: cur.at ?? new Date().toISOString(), rows: next }, tx);
 }
 
 /** Durumu birleştirerek yazar (verilen alanlar değişir, ötekiler kalır) */
@@ -261,6 +300,8 @@ export async function applySiteList(tx: Tx, list: SiteMenuList, at: Date, tryAt:
   const kept = stale.size ? new Map((await readSiteSnapshot(tx)).items.map((i) => [i.id, i])) : null;
   const items = kept ? list.items.map((i) => (stale.has(i.id) ? (kept.get(i.id) ?? i) : i)) : list.items;
   await writeSnapshot({ now: list.now, at: at.toISOString(), items }, tx);
+  // Şube fiyatı satırları: site gönderdiyse (eski site göndermez; kopya olduğu gibi kalır)
+  if (list.branchPrices) await writeBranchPrices({ now: list.now, at: at.toISOString(), rows: list.branchPrices }, tx);
   const iso = at.toISOString();
   const key = (b: BrokenLink) => `${b.productId}:${b.siteMenuId}:${b.slot}`;
   const known = new Set(cur.broken.map(key));
@@ -277,6 +318,7 @@ export async function applySiteList(tx: Tx, list: SiteMenuList, at: Date, tryAt:
       itemCount: list.items.length,
       pushed,
       writesExpect: list.writesExpect,
+      writesBranchPrice: list.writesBranchPrice,
       ...(changed
         ? {
             lastChangedAt: iso,
@@ -352,7 +394,7 @@ export async function syncSiteMenu(trigger: "ping" | "page" | "manual" | "cron")
   const applied = await getDb().transaction((tx) => applySiteList(tx, list, at, tryAt));
   if (!applied) {
     // Arada daha yeni bir liste ya da panel yazımı uygulandı: panel zaten güncel (sitenin yetenek bayrağı yine yazılır)
-    await patchMenuState({ lastPullAt: tryAt, lastOkAt: at.toISOString(), lastError: null, writesExpect: list.writesExpect });
+    await patchMenuState({ lastPullAt: tryAt, lastOkAt: at.toISOString(), lastError: null, writesExpect: list.writesExpect, writesBranchPrice: list.writesBranchPrice });
     return { status: "fresh" };
   }
   await logApplied(applied);
