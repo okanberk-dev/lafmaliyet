@@ -319,8 +319,9 @@ test("ürün silme: satışı (ModPOS ya da LafPOS), zayi kaydı, fiyat geçmiş
   // Reçete kartı da aynı sayaçları veritabanından okur: aylık modelin satırları LafPOS ayına yüklenmiş (sayılmayan) listeyi
   // içermez, LafPOS'un ay toplamlarını da içerir (denetim B08 incelemesi)
   const card = readFileSync(join(process.cwd(), "src/app/panel/urunler/[id]/page.tsx"), "utf8");
-  assert.match(card, /posDailySalesCount\(product\.id\)/);
-  assert.match(card, /salesLinesCount\(product\.id\)/);
+  // Şube kapsamı C P2-6: kart eylemin sayacının kendisini okur (bütün şubelerden; zayi de)
+  assert.match(card, /productHistoryCounts\(\{ id: product\.id, siteMenuId: link\?\.siteMenuId \?\? null, siteMenuSlot: link\?\.slot \?\? null \}\)/);
+  assert.doesNotMatch(card, /model\.ds\.wasteEntries/);
   assert.doesNotMatch(card, /model\.ds\.salesLines\.filter\(\(l\) => l\.productId === product\.id/);
   assert.match(history, /from\(s\.salesLines\)\.where\(eq\(s\.salesLines\.productId, productId\)\)/);
   // "Menüde pasif yap" siteye bağlı, sitede satışta üründe laffogato.net'teki kalemi de "Tükendi" yapar: pencere önceden söyler

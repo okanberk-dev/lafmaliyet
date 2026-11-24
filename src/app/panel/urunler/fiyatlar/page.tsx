@@ -1,13 +1,15 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Store } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense, type ReactNode } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { PosChecklist } from "@/components/panel/pos-checklist";
 import { ButtonLink } from "@/components/ui/button";
+import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { latestSalesMonth } from "@/lib/calc/insights";
+import { dateTimeTR, money } from "@/lib/format";
 import { salesBasis } from "@/lib/calc/price-loss";
 import type { KasaName } from "@/lib/lafpos/kasa";
 import type { BulkRow } from "@/lib/prices/bulk";
@@ -15,8 +17,9 @@ import { todayTR } from "@/lib/reminders";
 import { salesSourceOf } from "@/lib/sales-source";
 import { siteMarker } from "@/lib/site-menu/view";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
 import { loadModel } from "@/server/data/dataset";
-import { loadBranchBulk, loadBranchPrices, loadOldPriceReport, pickBranch } from "@/server/data/branch-prices";
+import { loadBranchBulk, loadBranchPriceHistory, loadBranchPrices, loadOldPriceReport, pickBranch, type BranchPriceHistoryRow } from "@/server/data/branch-prices";
 import { loadPosChecklist, loadPriceHistory, loadRecentPosMarks, posPendingSummary } from "@/server/data/prices";
 import { loadTillScopes } from "@/server/data/till-scope";
 import { loadSiteLinks } from "@/server/site-menu/view";
@@ -121,11 +124,15 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
   }
   if (tab === "sube" || tab === "eski") {
     const now = new Date();
-    const data = tab === "sube" ? await loadBranchPrices(sp.sube, now) : null;
-    const report = tab === "eski" ? await loadOldPriceReport(sp.sube, now) : null;
+    // Şube panelin seçicisinden (şube kapsamı C P2-5): seçici `?sube=`'yi çereze benimsetip adresten düşürür, sayfa adresi
+    // okumaz; önceden sekmenin `&sube=` bağlantısı bir an sonra ilk şubeye geri dönüyordu. Seçili şube yazılabilen bir şube
+    // değilse ("Tümü", Tuzla) ilki
+    const chosen = await currentBranchScope();
+    const data = tab === "sube" ? await loadBranchPrices(chosen, now) : null;
+    const report = tab === "eski" ? await loadOldPriceReport(chosen, now) : null;
     const ctx = data?.ctx ?? report!.ctx;
-    const branch = pickBranch(ctx.branches, sp.sube);
-    // İki şube olunca seçici (bugün yalnız Marina)
+    const branch = pickBranch(ctx.branches, chosen);
+    // İki şube olunca seçici (bugün yalnız Marina): bağlantı panelin seçimini değiştirir
     const picker =
       ctx.branches.length > 1 && branch ? (
         <SegmentedLinks label="Şube" value={branch.id} options={ctx.branches.map((b) => ({ value: b.id, label: b.name, href: `${tabHref(tab)}&sube=${b.id}` }))} />
@@ -149,11 +156,16 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
     );
   }
   if (tab === "gecmis") {
-    const history = await loadPriceHistory({ limit: 500 });
+    // Şube fiyatları ürün fiyatı geçmişinde yok (sitede): ayrı kartta, seçili şubenin (Tümü'de hepsi; şube kapsamı C P2-8).
+    // Okunamazsa kart görünmez
+    const [history, branchRows] = await Promise.all([loadPriceHistory({ limit: 500 }), currentBranchScope().then((b) => loadBranchPriceHistory(b).catch(() => []))]);
     return (
       <>
         {header}
-        <PriceHistory rows={history.rows} products={history.products} kasa={scope.kasa} />
+        <div className="space-y-4">
+          <PriceHistory rows={history.rows} products={history.products} kasa={scope.kasa} />
+          {branchRows.length ? <BranchPriceHistory rows={branchRows} /> : null}
+        </div>
       </>
     );
   }
@@ -203,5 +215,29 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
         branchPrice={branchBulk}
       />
     </>
+  );
+}
+
+/** Fiyatlar › Geçmiş'in şube fiyatı kartı (sitedeki şube fiyatı satırları, yeni önce; şube kapsamı C P2-8) */
+function BranchPriceHistory({ rows }: { rows: BranchPriceHistoryRow[] }) {
+  return (
+    <Card>
+      <CardHeader icon={<Store />} title="Şube fiyatları" description="Sitedeki şube fiyatı kayıtları, yeni önce; geçerlilik anından itibaren o şubede uygulanır." />
+      <ul className="divide-y divide-line border-t border-line">
+        {rows.map((r) => (
+          <li key={r.key} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-5 py-2.5">
+            <span className="min-w-0 text-sm text-ink">
+              <span className="font-medium break-words">{r.name}</span>
+              <span className="text-ink-mute"> · {r.branch}</span>
+            </span>
+            <span className="text-sm text-ink tabular">
+              {r.price === null ? "M tabandan" : money(r.price)}
+              {r.priceL ? ` · L ${money(r.priceL)}` : ""}
+            </span>
+            <span className="w-full text-xs text-ink-mute">{dateTimeTR(r.effectiveFrom)} itibarıyla</span>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
