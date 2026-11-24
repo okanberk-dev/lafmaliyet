@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CircleCheck, Eye, EyeOff, KeyRound, Loader2, Mail, ShieldCheck } from "lucide-react";
+import { ArrowLeft, CircleCheck, KeyRound, Loader2, Mail, ShieldCheck } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
 
@@ -9,7 +9,7 @@ import { catchingFormAction } from "@/components/ui/action-error";
 import { cancelLoginCodeAction, loginAction, verifyLoginCodeAction, type LoginState, type TotpState } from "@/server/actions/auth";
 import { requestPasswordReset, type ForgotState } from "@/server/actions/invites";
 
-import { AuthError, AuthHeading, authButton, authCard, authInput, authLink, FloatingField } from "./auth-ui";
+import { AuthError, AuthHeading, authButton, authCard, authInput, authLink, FloatingField, FloatingPasswordField } from "./auth-ui";
 
 /**
  * Ağ kesilirse ya da panel güncellendiyse form hata ekranına düşmez; nedeni formun hata satırında (E-51). Yazılan
@@ -181,7 +181,6 @@ export function LoginForm({ emailConfigured = true }: { emailConfigured?: boolea
     }
   }, []);
   const [state, action, pending] = useActionState<LoginState, FormData>(login, {});
-  const [show, setShow] = useState(false);
   // Parola yazarken Caps Lock açıksa uyar (en sık "parola yanlış" sebebi)
   const [caps, setCaps] = useState(false);
   // Kod adımından "Geri" denince aynı sonuç yeniden kod adımı açmasın
@@ -237,11 +236,11 @@ export function LoginForm({ emailConfigured = true }: { emailConfigured?: boolea
               defaultValue={state.email}
             />
             <div className="flex flex-col gap-1.5">
-              <FloatingField
+              {/* Parola kutusu (ui/password-input.tsx): göz düğmesi kendi içinde, gizliyken karakterler DOM'a yazılmaz */}
+              <FloatingPasswordField
                 ref={passwordRef}
                 id="login-password"
                 label="* Parola"
-                type={show ? "text" : "password"}
                 name="password"
                 autoComplete="current-password"
                 autoFocus={Boolean(state.email)}
@@ -249,16 +248,6 @@ export function LoginForm({ emailConfigured = true }: { emailConfigured?: boolea
                 onBlur={() => setCaps(false)}
                 aria-describedby={caps ? "caps-warning" : undefined}
                 required
-                trailing={
-                  <button
-                    type="button"
-                    onClick={() => setShow((v) => !v)}
-                    className="flex size-11 cursor-pointer items-center justify-center rounded-full text-black/60 hover:bg-black/[0.04] hover:text-black"
-                    aria-label={show ? "Parolayı gizle" : "Parolayı göster"}
-                  >
-                    {show ? <EyeOff className="size-5" strokeWidth={1.75} /> : <Eye className="size-5" strokeWidth={1.75} />}
-                  </button>
-                }
               />
               {caps ? (
                 <span id="caps-warning" role="status" className="text-sm font-semibold text-[#c82014] dark:text-bad">

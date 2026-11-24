@@ -1,23 +1,12 @@
 "use client";
 
-import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
-import { tl } from "@/lib/format";
-
-const formatTl = (v: number) => tl(v);
+import { TlCounter } from "@/components/ui/animated-counter";
 
 /**
- * Genel bakış rakamları için AkmanOS sayaç (charts/animated-number): değer açılışta ve ay değişince
- * yumuşakça sayılır, biçim her karede `tl()` ile Türkçe kalır. Ekran okuyucu yalnızca son değeri duyar;
- * hareket azaltma tercihinde sayaç doğrudan son değeri yazar.
+ * Genel bakış rakamları için kayan rakamlı sayaç (components/ui/animated-counter): değer değişince (ay, şube)
+ * her basamak kendi çarkında döner; yazı `tl()` ile aynı ("12.500 ₺"). Ekran okuyucu yalnızca son değeri duyar;
+ * sunucu HTML'i ve hareket azaltma tercihinde rakam hareketsiz yazılır. Değer yoksa "–".
  */
 export function CountUp({ value }: { value: number | null | undefined }) {
-  if (value === null || value === undefined || !Number.isFinite(value)) return <>{tl(value)}</>;
-  return (
-    <>
-      <span className="sr-only">{tl(value)}</span>
-      <span aria-hidden="true">
-        <AnimatedNumber value={value} format={formatTl} />
-      </span>
-    </>
-  );
+  return <TlCounter value={value} />;
 }
