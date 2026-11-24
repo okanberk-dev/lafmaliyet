@@ -440,7 +440,11 @@ birleşik tutarı farklıysa alanın altında "LafPOS'ta 5.450 ₺" görünür a
 (`lafposCard`: Z'nin kartı + kartla bahşiş + kartla cari tahsilatı). LafPOS onu yalnız gün sonu bittiğinde yollar
 (`status` `ok`, `failed`, `unknown`); bilinmeyen bir durum (eski LafPOS'un `running`'i) `unknown` okunur, karşılaştırma
 düşmez. Okunamayan `bankPos` günü reddetmez: gün yazılır, önceki karşılaştırma yerinde kalır, günlüğe
-"bankPos okunamadı" yazılır (`parsePosDay`).
+"bankPos okunamadı" yazılır (`parsePosDay`). Gün sonu tamda (`batches`, `dayCard`) yöneticinin Pavo kartı günü
+karşılaştırır: Pavo'nun günü (bütün batch'lerin toplamı, gün ortasında elle alınan da) ↔ LafPOS'un bütün gün kartı;
+her batch ayrı satırda, son batch'in Pavo / LafPOS kartı ayrıntı olarak kalır (eski kart yalnız son batch'e bakıp
+"Uyumlu 755 = 755" diyordu, günün 995'ini görmüyordu). Farkta metin kartla cari tahsilatının başka bir POS'tan çekilmiş
+olabileceğini de söyler (LafPOS'un tabanı onu Pavo'da sayar).
 
 #### Kart: kartla bahşiş ve cari tahsilatı (G11)
 
@@ -469,7 +473,12 @@ kart (870 ₺) düşüldü." (personelde tutarsız). Yalnız Banka POS yazılan 
 düşüldü)" ekler. Kaydedilmez; eski gövdede yoksa hiçbir şey düşülmez. İki sınır: yazarkasadan geçmeyen ödemenin kartla
 bahşişi `cardTips`'in içindedir ve ayrı gelmez (LafPOS'un Pavo kıyası onu da düşer, panel düşemez: öyle bir günde kart
 o bahşiş kadar "az" görünür), gün kapandıktan sonra yazarkasada fişi iptal edilen ödemenin kartı (`fis_iptal`) gövdede
-yoktur.
+yoktur. Gün sonu tamda ikisi de kapandı: `offDevice.cardTips` kartla bahşişten düşer (`lafposCardExtra`), cihazda iptal
+(`okc.voided`) yazarkasadan geçmeyene eklenir (`lafposDayOf`). LafPOS gününde kart farkı önce Pavo'nun banka gün
+sonuyla ölçülür (`withCardExtra(…, "LafPOS")`, `computeCash` `cardBank`); yazarkasa alanları LafPOS'un kendi
+belgelerinden geldiği için yazarkasa ↔ LafPOS satırı (`okcReconcile`) Z − yazarkasadan geçmeyen − cihazda iptal ile,
+banka gün sonu yazarkasa kartı + bahşiş + tahsilatla karşılaştırılır. Uçtan uca gün (24.11): kart 1.088, yazarkasadan
+geçmeyen 288 (+20 bahşiş), kartla cari tahsilatı 195, Pavo 240 + 755 = 995: "Kart: banka gün sonu ile LafPOS aynı".
 
 #### Geç rapor, fotoğraf kaldırma, kapalı gün, ay rakamı (G8, E-36, G6)
 
@@ -682,26 +691,76 @@ günler (en çok 7 gün geriye) yakalanır.
 
 - Rapor yoksa ve LafPOS'ta sayım varsa: "LafPOS'tan doldur"un eşlemesiyle (Z, ödemeler, ödenmez, indirim, açılış, gün
   içinde giren, gün içinde çıkan: panelin Kasadan çıkanlar'ı girildiyse o, yoksa LafPOS'un harcama + teslimi; teslim
-  edilen 0, sayılan nakit LafPOS'un sayımı; Faz 2'de gövdede varsa yazarkasa Z no'su). Gönderen "LafPOS (otomatik)". Not: "LafPOS gün sonundan otomatik yazıldı.
-  Eksik: Banka POS Z (yazarkasa); panelden ekleyin." Açılış önceki raporun devrinden farklıysa nota yazılır, LafPOS'taki
+  edilen 0, sayılan nakit LafPOS'un sayımı; Faz 2'de gövdede varsa yazarkasa Z no'su; gün sonu tamda Banka POS ve
+  yazarkasa alanları, aşağıda). Gönderen "LafPOS (otomatik)". Not: "LafPOS gün sonundan otomatik yazıldı." ve yalnız
+  cihazların boşlukları, tam metniyle ("Eksik: Banka POS: Pavo gün sonu alınamadı (hata 5085: …); LafPOS'ta Yönetim ›
+  Yazarkasa POS › Cihazda gün sonu al."); "panelden ekleyin" yok. LafPOS'un kapanış notu (`z.closeNote`) da nota
+  eklenir. Açılış önceki raporun devrinden farklıysa nota yazılır, LafPOS'taki
   açılış kalır; Faz 3'te LafPOS'ta yazılan açılış farkının nedeni de (yukarıda "Faz 3: kasa zinciri"). Gün içinde çıkan,
   LafPOS'un kasa hareketleri satır satır geldiyse o satırların toplamıdır. Rapor kapalı gün işaretini kaldırır ve günün bekleyen geç rapor isteğini kapatır (elle girilen rapor gibi).
-- **Uydurma değer yok:** Banka POS ve yazarkasa alanları boş kalır (fotoğrafla ya da elle girilir). Tek istisna
-  yazarkasa Z no'su (Faz 2, `AUTO_FIELDS` `okcZNo`): LafPOS'un gönderdiği `z.okcZNo` (günün son tamamlanan mali fişinin
-  Z'si) yazılır; `null` gelirse ya da hiç gelmezse alan boş kalır, elle ya da fotoğrafla girilen ezilmez. LafPOS'ta sayım
-  yoksa rapor hiç yazılmaz ("sayım yok"); LafPOS sayımla yeniden gönderince yazılır.
+- **Cihaz rakamları cihazdan, uydurma değer yok (gün sonu tam, 24 Kasım 2026; yalnız LafPOS günleri, Tuzla / ModPOS
+  değişmedi):** Banka POS, Pavo'nun kendi gün sonlarından yazılır (`bankPosAuto`): bu LafPOS gününün başarılı bütün
+  gün sonlarının toplamı (`bankPos.batches[].total`; gün ortasında elle alınan da), batch listesi olmayan eski gövdede son
+  sonucun `pavoCard`'ı. Yazarkasa alanları LafPOS'un cihaz belgelerinden (`okc`; `okcAuto`): fiş sayısı ← `docs`,
+  günlük toplam, nakit, kart, yemek kartı, diğer, KDV dökümü (`{rate, total, vat}`) ve KDV toplamı (döküm hesaplanamadıysa
+  boş). Yazarkasa Z no'su LafPOS'un `z.okcZNo`'su (Pavo e-Arşiv basar, Z basmaz: `okc.zReport` false iken boş Z no eksik
+  sayılmaz). Kümülatif, KDV kümülatifi ve yazarkasa dışı tahsilat yalnız fotoğraftan (yönetici). **Cihazın rakamı yoksa
+  alan boş kalır** ve not tam olarak nedenini söyler: Pavo alınamadı ("Banka POS: Pavo gün sonu alınamadı (hata {kod}:
+  {mesaj}); LafPOS'ta Yönetim › Yazarkasa POS › Cihazda gün sonu al"), sonuç belirsiz ("Banka POS: Pavo gün sonunun sonucu belirsiz;
+  LafPOS'ta Yönetim › Yazarkasa POS › Doğrula"), Pavo sonucu gelmedi ("Banka POS: LafPOS'tan Pavo gün sonu gelmedi"),
+  batch'in tutarı okunamadı ("Banka POS: Pavo gün sonunda tutar okunamadı"), cihaz belgesi yok ("Yazarkasa: LafPOS'ta
+  cihaz belgesi yok"). Son sonuç başarılı değilse önceki batch'lerin toplamı da yazılmaz (kapanıştan sonraki kart henüz
+  hiçbir batch'te değil); başarılı sonuç yalnız gün içinde alınmışsa da (hiçbir batch `dayClosed` değil) boş kalır: "Banka POS:
+  Pavo'nun kapanış gün sonu gelmedi (yalnız gün içinde alınan var); LafPOS'ta Yönetim › Yazarkasa POS › Cihazda gün sonu
+  al" (uçtan uca günde kapanıştaki son başarılı sonuç gün ortasındaki 000278 = 240'tı). Föyde personelin yazdığı kart sayımı (`z.methodCounts`) Banka POS'u doldurmaz (yalnız bilgi;
+  sahibin sorusu (b)). Rapor kapanışta, Pavo sonucundan önce yazılır; Pavo sonucu aynı günün ikinci gönderimiyle gelince
+  boş Banka POS dolar (birleştirme). Boş gelen değer kayıtlı değeri hiç silmez: sonradan alınamayan bir gün sonu, elle
+  ya da önceki sonuçla yazılmış Banka POS'u boşaltmaz. LafPOS'ta sayım yoksa rapor hiç yazılmaz ("sayım yok"); LafPOS
+  sayımla yeniden gönderince yazılır.
 - **Düzeltme:** LafPOS aynı günü yeniden gönderirse yalnız elle değişmemiş alanlar güncellenir (kayıtlı değer son
   otomatik değere eşitse); personelin ya da yöneticinin düzelttiği alan ve Banka POS korunur. Önceki sürüm geçmişe
   yazılır, işlem geçmişine "Kasa raporu güncellendi (LafPOS otomatik)" düşer.
 - Rapor personel tarafından girildiyse dokunulmaz (LafPOS'tan farklı yazılanları mevcut uzlaşma gösterir). Yönetici
   otomatik raporu silerse yeniden yazılmaz. Geçiş gününden 7 günden eski güne rapor yazılmaz (geç rapor yöneticinin işi).
 
+**Personelin tek işi: gün sonu fotoğrafı** (sahibin isteği, 24 Kasım 2026: "sadece gün sonu ladmine personel foto
+atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
+
+- Otomatik raporlu LafPOS gününde personelin Kasa sayfası raporu salt okunur gösterir (Düzenle, Silinmesini iste,
+  Düzeltme öner, WhatsApp ile gönder ve Metni kopyala yok; düzeltme LafPOS'ta yapılır, LafPOS yeniden gönderir) ve tek bir
+  "Gün sonu fotoğrafı" kartı: Pavo gün sonu fişi (Pavo sonucu geldiyse), mali Z basan cihazda (`okc.zReport`) yazarkasa Z
+  raporu da. Metin yalnız "Pavo gün sonu fişinin fotoğrafını ekleyin" (+ "Yazarkasa Z raporunun fotoğrafını ekleyin"),
+  eklenince "Fotoğraf alındı", okunamadı ya da yanlış belgeyse "Fotoğraf okunamadı / yanlış belge, yeniden çekin".
+  Yönetici Düzenle'yi görür; elle düzelttiği alanı sonraki otomatik güncelleme ezmez.
+- Fotoğraf `attachLafposDayPhoto` ile rapora bağlanır (yazarkasa bölümü, `kasa-okc`, en çok 3): kaydetme yolu
+  (`saveCashReport`) yok, sürüm yok, gönderen ve sayan değişmez, onay yok (rakam değişmiyor). Personel günden 14 gün
+  (`LATE_REPORT_DAYS`) içinde, ertesi günün raporu girilmiş olsa da ekler; yalnız kendi yüklediğini; işlem geçmişine
+  "Gün sonu fotoğrafı (LafPOS günü)" düşer. Fotoğraf kaldırma kuralı aynı. Rapor yokken (LafPOS'ta sayım yok) fotoğraf
+  günün kaydında bekler (`lafpos_day_ends.pending_photos`), rapor yazılınca bağlanır. Dünden eski LafPOS gününde de
+  personel geç rapor değil yalnız bu kartı görür; LafPOS'un gün sonu gelmiş güne geç rapor isteği açılmaz
+  (`CASH_REQUEST_TEXT.lateLafpos`). LafPOS'un gönderimi olmayan günde eski yol (yazarkasa Z fotoğrafıyla geç rapor).
+- Gün, otomatik rapor ve istenen fotoğraflar eklenince tamamdır (`lafpos_day_ends.missing`: cihaz boşlukları ve fotoğraf
+  eklenene kadar `photo`). Bugün'de personelin satırı fotoğraf eklenene kadar "Gün sonu fotoğrafı" (dünkü de "Dünkü gün
+  sonu fotoğrafı"); "Raporu gönder" yok.
+- **Fotoğraf ↔ LafPOS** (`lafposPhotoCheck`, `lafpos_day_ends.photo_check`): okuma LafPOS gününde hiçbir alanı yazmaz.
+  Bağlanınca (ve LafPOS yeniden gönderince) sunucu okunuşu karşılaştırır: Pavo fişinde okunan her batch no LafPOS'un
+  batch'lerinde, batch sayısı aynı, okunan netlerin toplamı raporun Banka POS'u (±0,01), fişin günü raporun günü (ertesi
+  gün 05:00'ten önce basılan da), son batch'in banka dökümü Pavo'nunkiyle aynı; yazarkasa Z'si (yalnız `zReport`) Z no,
+  günlük toplam, nakit, kart, yemek kartı ve KDV dökümü. Fark yöneticinin uyarısıdır: Kasa gün görünümünde Pavo kartının
+  altındaki "Gün sonu fotoğrafı" kartında satır satır, zilde "Kasa fotoğrafı LafPOS'tan farklı · Marina <gün>" (son 7
+  gün, yalnız yönetici), gün sonu e-postasında ve ay satırında rozet ("Fotoğraf ↔ LafPOS farklı"). Banka POS boşken (Pavo
+  alınamadı) okunan toplam "Fotoğrafta 995 ₺" olarak yöneticiye gösterilir, "Banka POS'a yaz" onu rapora yazar
+  (`setLafposBankPos`; önceki sürüm geçmişe, sonraki otomatik değer ezmez). Okuma kapalıysa (anahtar yok) fotoğraf yine
+  alınır, karşılaştırma "okunmadı".
+
 **Gün sonu e-postası** (`sendDayEndEmail`): kasa raporu alıcılarına (Kasa › Rapor alıcıları, e-posta açıksa) ve etkin
 bildirim adreslerine (Hatırlatıcılar, bildirim e-postası açıksa); personel ve pasif hesabın adresi gönderimde düşer
 (`sendableRecipients`). Konu "Marina gün sonu · 22 Kasım Pazar". İçerik: toplam satış, Z no ve fiş, indirim, ödeme
 türleri ve LafPOS'un ödeme dökümü, ödenmez / ikram ve ikram edilenlerin adedi ve menü değeri, kasa (açılış, olması
 gereken, sayılan, fark), dün ve geçen haftanın aynı günüyle kıyas (satış; LafPOS günü yoksa o günün kasa raporu),
-Marina'nın laffogato.net online satışı (`&branch=marina`), raporun durumu ve eksikler, "Panelde aç". Maliyet ve kâr
+Marina'nın laffogato.net online satışı (`&branch=marina`), raporun durumu ve eksikler, **Cihazlar ve fotoğraf** (Banka
+POS: Σ batch, batch numaralarıyla, ya da boşsa tam neden; yazarkasa: "LafPOS cihaz belgeleri · N belge · tutar"; gün sonu
+fotoğrafı: bekleniyor / alındı / LafPOS'tan farklı), "Panelde aç". Fotoğraf için ayrıca e-posta gitmez. Maliyet ve kâr
 yok. Faz 2 alanlarıyla gelen günde ayrıca gün görünümünün bölümleri (`lafposDayDetail`): LafPOS'un ödeme ayrıntısı
 (yazarkasadan geçmeyen kart ve nakit, ödeme iptalleri), **İptal edilen kalemler** (`iptal[]`: hazırlanmış olanlar zayi,
 hazırlanmamışlar "tüketim değil"), yazarkasa Z no ve KDV dökümü, gönderim sırası; Faz 3 alanlarıyla gelen günde
@@ -719,8 +778,32 @@ LafPOS'un gününde bu bölümler yok.
 - Geçiş gününden önceki gün (deneme) e-posta almaz, rapor yazılmaz.
 
 Durum tablosu `lafpos_day_ends` (gün, şube): otomatik rapor, son otomatik değerler, eksikler, gönderilen içerik, gönderim
-sayısı ve hatası (`drizzle/0061_lafpos_gun_sonu.sql`). Testler: `tests/lafpos-gun-sonu.test.ts`,
-`tests/lafpos-gun-sonu-db.test.ts`.
+sayısı ve hatası (`drizzle/0061_lafpos_gun_sonu.sql`); gün sonu tamda fotoğrafın karşılaştırması (`photo_check`) ve rapor
+yokken bekleyen fotoğraflar (`pending_photos`; `drizzle/0072_gun_sonu_tam.sql`). Testler: `tests/lafpos-gun-sonu.test.ts`,
+`tests/lafpos-gun-sonu-db.test.ts`, `tests/lafpos-gun-sonu-tam.test.ts`, `tests/lafpos-gun-sonu-tam-db.test.ts`.
+
+### Gün sonu tam alanları (24 Kasım 2026)
+
+LafPOS'un gövdesine eklenen, hepsi isteğe bağlı (`.optional().catch(undefined)`; bozuksa yalnız alan düşer, günlüğe yazılır)
+alanlar. Kişi adı yok (KVKK). Günün özetine (`dayHash`) girmezler: yalnız onları ekleyen gönderim "Düzeltildi" e-postası
+yollamaz.
+
+| Alan | Ne | Nerede kullanılır |
+|------|----|-------------------|
+| `bankPos.batches[]` | `{ batchNo, at, total, trigger: "otomatik"\|"elle", dayClosed }`: günün başarılı Pavo gün sonları, eskiden yeniye (en çok 20) | Banka POS = Σ total; Pavo kartı her batch'i listeler |
+| `bankPos.dayCard` | LafPOS'un bütün gün kıyas tabanı (Z kartı + kart bahşişi + kart tahsilatı − yazarkasadan geçmeyen − cihazda iptal) | Pavo kartı: Pavo'nun günü (Σ batch) ↔ bu; son batch satırı ayrıntı |
+| `okc` | `{ provider, zReport, docs, cash, card, mealCard, other, total, voided{count, cash, card}, vat[]\|null }` | Raporun yazarkasa alanları; cihazda iptal karşılaştırmalardan düşer |
+| `offDevice.cardTips` | Yazarkasadan geçmeyen kart ödemelerinin bahşişi | Kart karşılaştırmasında kartla bahşişten düşer (yanlış bahşiş farkı yok) |
+| `z.cashTips` | Nakit bahşiş (`z.cashIn`'in içinde) | Gün görünümü: kasaya giren nakdin parçası |
+| `collections[]` | Siparişsiz tahsilat (cari), ödeme türü başına `{ name, zField, channel, kind, count, amount }` | Gün görünümü: nakit / kartla tahsilat |
+| `payments[].kind` | Ödeme türünün cinsi (`nakit`, `kart`, `yemek`, `havale`, `cari`, `online`, `diger`) | Saklanır (Diğer'in içinde cari / havale) |
+| `z.closeNote` | LafPOS'ta kapanış / föy notu (en çok 200) | Otomatik raporun notu, gün görünümü |
+| `z.methodCounts[]` | Föyde ödeme türü başına sayılan `{ name, zField, channel, counted }` | Yalnız bilgi (gün görünümü); Banka POS'u doldurmaz |
+| `shiftCounts[]` | Vardiya devri sayımları `{ at, counted, expected, diff, confirmed }` | Gün görünümü |
+| `discountLines[]` | İndirim satırları `{ scope, posName, type, value, amount, reason }` (Σ amount = z.discounts) | Gün görünümü (sayı, toplam, nedenler) |
+
+Saklama: `okc`, `collections`, `shift_counts`, `discount_lines` `pos_day_reports`'ta ayrı sütun (son gövdeninkiler; eski
+LafPOS'ta boş), ötekiler `z`, `payments`, `bank_pos` ve `off_device` jsonb'sinde.
 
 ## Geçiş günü
 
@@ -995,7 +1078,9 @@ Anahtar yokken beş uç da `503` döner; panelin geri kalanı ve Kasa raporu esk
 | `src/lib/lafpos/modpos-gunler.ts`, `src/server/lafpos/modpos-gunler.ts` | ModPOS dönemi ucu: isteğin denetimi, günün ve ürün bloğunun biçimi (saf); kasa raporu, föy ve ModPOS listesinin okunması |
 | `src/server/data/daily-sales.ts` | `loadDailyProductSales` (gün gün; bugün okuyan yok) |
 | `src/app/panel/satislar/page.tsx`, `sales-client.tsx`, `product-picker.tsx` | Satışlar'ın bandı, LafPOS satırları ve eşleştirmesi, geçiş ayının yüklemesi |
-| `src/lib/lafpos/gun-sonu.ts`, `src/server/lafpos/gun-sonu.ts` | Gün sonu otomasyonu: Kasa raporuna otomatik yazım ve birleştirme, gün sonu e-postası, günlük işin yakalaması |
+| `src/lib/lafpos/gun-sonu.ts`, `src/server/lafpos/gun-sonu.ts` | Gün sonu otomasyonu: Kasa raporuna otomatik yazım ve birleştirme, gün sonu e-postası, günlük işin yakalaması; gün sonu tamda Banka POS (`bankPosAuto`) ve yazarkasa alanları (`okcAuto`), cihaz boşluklarının tam metni (`autoGaps`) |
+| `src/lib/lafpos/foto.ts`, `src/server/lafpos/foto.ts`, `src/app/panel/kasa/lafpos-photo.tsx` | Gün sonu tam: personelin gün sonu fotoğrafı (istenen fotoğraflar, rapora bağlama, rapor yokken bekleme, Bugün'ün ve ay satırının durumu), fotoğraf ↔ LafPOS karşılaştırması ve yöneticinin "Banka POS'a yaz"ı |
+| `tests/lafpos-gun-sonu-tam.test.ts`, `tests/lafpos-gun-sonu-tam-db.test.ts` | Gün sonu tam: alanların okunması, Banka POS ve yazarkasanın otomatik değerleri ve eksiklerin metni, birleştirme, Pavo kartı, kart karşılaştırması, fotoğraf ↔ LafPOS, Bugün, gün görünümü, e-posta; veritabanında 22.11 kabul günü, personelin fotoğrafı (sürüm ve sayan değişmez), Pavo'nun sonradan gelişi ve elle yazılan alanın korunması, "Banka POS'a yaz", sayımsız günün bekleyen fotoğrafı |
 | `src/server/data/lafpos-day.ts` | Kasa raporunun okuyucusu (yalnız Z; `loadKasaLafpos` ve ay görünümünün `loadKasaLafposDays` yalnız geçiş gününden sonra), günün kanıtı (`kasaEvidence`) |
 | `src/app/api/pos/gun/route.ts`, `src/app/api/panel/pos/urunler/route.ts`, `src/app/api/panel/pos/modpos-gunler/route.ts`, `src/app/api/panel/pos/devir/route.ts`, `src/app/api/panel/pos/gider-kategorileri/route.ts` | Uçlar |
 | `src/lib/lafpos/devir.ts`, `src/server/lafpos/devir.ts` | Kasa zinciri (Faz 3): bir günün devri (`nextOpening`; 200 yanıtı ve devir ucu) |

@@ -435,8 +435,16 @@ kasası `&branch=tuzla`, Marina'nınki `&branch=marina` ile sorar; Marina'nın m
 Ayrıntı: [SITE-SATIS.md](SITE-SATIS.md).
 
 **Marina (LafPOS) gün sonu:** geçiş gününden itibaren Marina'nın raporu LafPOS'un gün sonu gelince kendiliğinden yazılır
-(gönderen "LafPOS (otomatik)"; Banka POS Z eksik kalır, sayım yoksa rapor yazılmaz) ve gün sonu e-postası gider;
-personel yalnız eksikleri (Banka POS Z) ekler. Ayrıntı: [LAFPOS.md › Gün sonu otomasyonu](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026).
+(gönderen "LafPOS (otomatik)"; sayım yoksa rapor yazılmaz) ve gün sonu e-postası gider. **Gün sonu tam (24 Kasım 2026):**
+Banka POS Pavo'nun kendi gün sonlarından (günün bütün batch'lerinin toplamı), yazarkasa alanları LafPOS'un cihaz
+belgelerinden kendiliğinden yazılır; eski "Uydurma değer yok: Banka POS ve yazarkasa alanları boş kalır" kuralı LafPOS
+günlerinde bunun yerine geçti (Tuzla / ModPOS günleri değişmedi). Cihazın rakamı yoksa (Pavo alınamadı ya da belirsiz,
+cihaz yok) alan boş kalır ve not tam nedenini yazar, "panelden ekleyin" demez. **Personelin tek işi gün sonu
+fotoğrafıdır:** rapor personelde salt okunur (Düzenle, silme isteği, WhatsApp ve metin yok; düzeltme LafPOS'ta), "Gün
+sonu fotoğrafı" kartından Pavo'nun gün sonu fişi (mali Z basan cihazda yazarkasa Z'si de) eklenir; kayıt, sürüm, sayan ve
+onay yok, günden 14 gün içinde. Fotoğraf hiçbir alanı yazmaz: okunuşu LafPOS'la karşılaştırılır, fark yöneticinin
+uyarısıdır (Kasa gün görünümü, zil, gün sonu e-postası, ay satırının rozeti). Ayrıntı:
+[LAFPOS.md › Gün sonu otomasyonu](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026).
 
 ## Düzeltmeler
 
@@ -562,7 +570,9 @@ değişmez. Karar: dalga 10 ([planlar/personel-yetki.md](planlar/personel-yetki.
   günleri yöneticiye yazın.").
 - **`/panel/kasa?gun=D`** geç rapor kipinde açılır: ModPOS Z no'su ve en az bir ModPOS Z fotoğrafı zorunlu (Banka POS Z
   raporu kartı da görünür; fotoğrafı ve rakamları isteğe bağlı). **LafPOS gününde** (geçiş gününden sonra; B09, G8)
-  kanıt LafPOS'un gün sonudur: geldiyse form ondan dolar ve fotoğraf gerekmez; gelmediyse yazarkasa (Banka POS) Z
+  kanıt LafPOS'un gün sonudur: geldiyse (gün sonu tam, 24 Kasım 2026) geç rapor yoktur, rapor LafPOS'tan yazılır ve
+  sayfa yalnız "Gün sonu fotoğrafı" kartını açar; geç rapor isteği reddedilir ("LafPOS'un bu günün sonu geldi: rapor
+  LafPOS'tan yazılır…"). Gelmediyse yazarkasa (Banka POS) Z
   raporunun fotoğrafı zorunlu ("LafPOS'un bu günün sonu gelmedi: …"). Kural istemcide ve sunucuda aynı
   (`kasaEvidence`, `src/server/data/lafpos-day.ts`); fotoğraf kaldırma isteği de ona bakar (LafPOS gününde ModPOS Z
   fotoğrafı kanıt değildir, gün sonu gelmediyse tek yazarkasa Z fotoğrafı kaldırılamaz). Yöneticinin kartı LafPOS'un

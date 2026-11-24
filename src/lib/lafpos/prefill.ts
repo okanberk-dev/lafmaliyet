@@ -2,7 +2,7 @@ import { computeCash } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import type { CashPrefill, PrefillField, PrefillPlan, ReadCheck, ReadValue } from "@/lib/photo-read/kasa";
 
-import type { PosDayZ, PosOffDevice } from "./day";
+import type { PosDayZ, PosOffDevice, PosOkc } from "./day";
 
 /**
  * Kasa raporunun "LafPOS'tan doldur"u (saf; docs/LAFPOS.md › Kasa raporu): LafPOS'un gün sonu Z özeti formun ModPOS Z
@@ -105,22 +105,30 @@ export function lafposPrefill(z: PosDayZ): CashPrefill {
   return { source: "lafpos", values, checks: till.checks, missing: z.countedCash === null ? ["countedCash"] : [] };
 }
 
-/** Kartla bahşiş + kartla cari tahsilatı: banka POS'unun gördüğü, Z'nin kartına girmeyen (eski gövdede 0) */
-export function lafposCardExtra(z: PosDayZ): number {
-  return round2((z.cardTips ?? 0) + (z.cardCollections ?? 0));
+/**
+ * Kartla bahşiş + kartla cari tahsilatı: banka POS'unun gördüğü, Z'nin kartına girmeyen (eski gövdede 0). Gün sonu tam:
+ * yazarkasadan geçmeyen kart ödemelerinin bahşişi (offDevice.cardTips) Pavo'nun batch'inde de yoktur, düşer (LafPOS'un
+ * cardBasis'iyle aynı; yoksa Banka POS dolunca her kart satırı yanlış bir bahşiş farkı gösterirdi)
+ */
+export function lafposCardExtra(z: PosDayZ, offDevice?: Pick<PosOffDevice, "cardTips"> | null): number {
+  return round2(Math.max(0, (z.cardTips ?? 0) + (z.cardCollections ?? 0) - (offDevice?.cardTips ?? 0)));
 }
 
 /**
  * Saklanan Z özetinden günün LafPOS özeti (Kasa raporunun okuyucusu: src/server/data/lafpos-day.ts). `offDevice`
  * gövdenin üst düzey alanıdır (Z'nin değil): ayrı sütundan gelir, yoksa (eski gövde) null
  */
-export function lafposDayOf(z: PosDayZ, receivedAt: Date | string, offDevice?: PosOffDevice | null): LafposDay {
+export function lafposDayOf(z: PosDayZ, receivedAt: Date | string, offDevice?: PosOffDevice | null, okc?: Pick<PosOkc, "voided"> | null): LafposDay {
+  // Gün sonu tam: cihazda iptal edilen belgenin ödemesi Z'de kalır, yazarkasanın ve Pavo'nun toplamında yoktur
+  // (okc.cash = z.cash − offDevice.cash − voided.cash): karşılaştırmalar onu da düşer
+  const card = round2((offDevice?.card ?? 0) + (okc?.voided.card ?? 0));
+  const cash = round2((offDevice?.cash ?? 0) + (okc?.voided.cash ?? 0));
   return {
     receivedAt: typeof receivedAt === "string" ? receivedAt : receivedAt.toISOString(),
     prefill: lafposPrefill(z),
     till: { spent: z.cashOut, handed: z.handedOver },
-    cardExtra: lafposCardExtra(z),
-    offDevice: offDevice && (offDevice.card > 0 || offDevice.cash > 0) ? { card: offDevice.card, cash: offDevice.cash } : null,
+    cardExtra: lafposCardExtra(z, offDevice),
+    offDevice: card > 0 || cash > 0 ? { card, cash } : null,
   };
 }
 

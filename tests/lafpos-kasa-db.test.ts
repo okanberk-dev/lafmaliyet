@@ -376,23 +376,27 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     await refused(propose("2026-11-07", [await photo("kasa-z")]), CASH_REQUEST_TEXT.lateOkcPhoto);
     const okc = await propose("2026-11-07", [await photo("kasa-okc")]);
     assert.equal(okc.row.status, "pending");
-    // LafPOS günü geldi: fotoğraf gerekmez
+    // LafPOS günü geldi (gün sonu tam, 24 Kasım 2026): geç rapor yok, rapor LafPOS'tan yazılır, personel yalnız gün
+    // sonu fotoğrafı ekler
     await push("2026-11-08", 13);
     assert.equal(await lafposDay.kasaEvidence(db, "2026-11-08"), "lafpos");
     assert.equal(await lafposDay.kasaEvidence(db, "2026-11-08", MODPOS_SUBE), "modpos-z", "Marina'nın gün sonu Tuzla'nın kanıtı değil");
-    const free = await propose("2026-11-08", []);
-    assert.equal(free.row.status, "pending");
-    assert.deepEqual(free.row.photoIds, []);
+    await refused(propose("2026-11-08", []), CASH_REQUEST_TEXT.lateLafpos);
   });
 
   kasaTest("E-35 + E-09: yöneticinin geç rapor kartı LafPOS'un Z'sini ve farkları gösterir, LafPOS'taki teslimi fişsiz saymaz", async () => {
     await report("2026-10-30", { openingCash: 0 });
     await setSwitch(S);
     const D = "2026-11-08";
-    await push(D, 13, { countedCash: 9_000 });
-    // Panelde yalnız 450 ₺'lik fiş; personel LafPOS'un birleşik çıkanını (5.450) yazdı
+    // Panelde yalnız 450 ₺'lik fiş; personel LafPOS'un birleşik çıkanını (5.450) yazdı. Geç rapor LafPOS'un gün sonundan
+    // önce açıldı (yazarkasa Z'siyle; gün sonu geldikten sonra geç rapor açılmaz, gün sonu tam), sonra gün sonu geldi
     await db.insert(s.cashOuts).values({ date: D, branchId: LAFPOS_SUBE, kind: "harcama", amount: 450, store: "Migros", description: "süt", createdBy: users.ayse.id, createdByName: users.ayse.name });
-    await late.proposeLateReport(db, users.ayse, { fields: fields(D, { zNo: "13" }), reason: "Akşam internet yoktu", requestVersion: 0, photoIds: [], handedTo: null, clientKey: null }, NOW);
+    const [dPhoto] = await db
+      .insert(s.photos)
+      .values({ kind: "kasa-okc", storageKey: `kasa/2026/11/${randomUUID()}.jpg`, contentType: "image/jpeg", sizeBytes: 100, createdBy: users.ayse.id, createdByName: users.ayse.name, expiresAt: new Date("2100-01-01T00:00:00Z") })
+      .returning({ id: s.photos.id });
+    await late.proposeLateReport(db, users.ayse, { fields: fields(D, { zNo: "13" }), reason: "Akşam internet yoktu", requestVersion: 0, photoIds: [dPhoto.id], handedTo: null, clientKey: null }, NOW);
+    await push(D, 13, { countedCash: 9_000 });
     // LafPOS'u gelmeyen gün (yazarkasa Z fotoğrafıyla)
     const [okcPhoto] = await db
       .insert(s.photos)

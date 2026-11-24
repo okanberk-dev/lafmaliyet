@@ -144,6 +144,12 @@ export function computeCash(
      * kartında ve Pavo'nun banka gün sonunda yok; kart farkı Z'nin kartından düşerek ölçülür
      */
     offDevice?: CashOffDevice | null;
+    /**
+     * LafPOS günü (gün sonu tam, 24 Kasım 2026; withCardExtra): kart farkı önce Pavo'nun banka gün sonuyla ölçülür.
+     * Yazarkasa alanları LafPOS'un kendi belgelerinden (kartı Z'nin kartından türer, bahşiş ve tahsilat içermez): banka
+     * yoksa yazarkasa kartı bahşiş / tahsilat düşülmeden karşılaştırılır
+     */
+    cardBank?: boolean;
     /** Ödenmez / ikram (ciro dışı); verilmezse ciro = Z toplamı (eski kayıt, kısmi test nesnesi) */
     offRevenue?: number | null;
   },
@@ -155,7 +161,10 @@ export function computeCash(
   const cashDiff = r2(f.countedCash - expectedCash);
   const okcCard = f.okcCard ?? null;
   const bankPos = f.bankPos ?? null;
-  const cardRef = okcCard ?? bankPos;
+  const useBank = f.cardBank ? bankPos !== null : okcCard === null && bankPos !== null;
+  const cardRef = useBank ? bankPos : okcCard;
+  // Bahşiş ve cari tahsilatı bankadadır; ModPOS gününün yazarkasa kartında da (entegre POS), LafPOS gününün belge kartında değil
+  const extra = useBank || !f.cardBank ? (f.cardExtra ?? 0) : 0;
   return {
     paymentsTotal,
     paymentsDiff: r2(paymentsTotal - revenue),
@@ -165,8 +174,8 @@ export function computeCash(
     cashDiff,
     kind: diffKind(cashDiff),
     carryOver: r2(f.countedCash - f.handedOver),
-    cardDiff: cardRef === null ? null : r2(cardRef - (f.card - (f.offDevice?.card ?? 0)) - (f.cardExtra ?? 0)),
-    cardSource: okcCard !== null ? "okc" : bankPos !== null ? "bank" : null,
+    cardDiff: cardRef === null ? null : r2(cardRef - (f.card - (f.offDevice?.card ?? 0)) - extra),
+    cardSource: cardRef === null ? null : useBank ? "bank" : "okc",
   };
 }
 
@@ -736,10 +745,13 @@ export function withCardExtra<T extends object>(
   f: T,
   cardExtra: number | null | undefined,
   offDevice?: CashOffDevice | null,
-): T & { cardExtra?: number; offDevice?: CashOffDevice } {
+  kasa?: "ModPOS" | "LafPOS",
+): T & { cardExtra?: number; offDevice?: CashOffDevice; cardBank?: boolean } {
   const extra = cardExtra && cardExtra > 0 ? { cardExtra } : null;
   const off = offDevice && (offDevice.card > 0 || offDevice.cash > 0) ? { offDevice } : null;
-  return extra || off ? { ...f, ...extra, ...off } : f;
+  // LafPOS gününde kart farkı Pavo'nun banka gün sonuyla (computeCash cardBank)
+  const bank = kasa === "LafPOS" ? { cardBank: true } : null;
+  return extra || off || bank ? { ...f, ...extra, ...off, ...bank } : f;
 }
 
 /**
@@ -939,7 +951,7 @@ export function cashReportText(
   audience: CashTextAudience,
 ): string {
   // LafPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen ödemeyi (Faz 2) düşer
-  f = withCardExtra(f, meta.cardExtra, meta.offDevice);
+  f = withCardExtra(f, meta.cardExtra, meta.offDevice, meta.kasa);
   const c = computeCash(f);
   const head = [
     `*L'Affogato · Gün sonu kasa raporu ${reportNo(f.date)}${branchPart(meta.branchName)}*${meta.revision && meta.revision > 1 ? " (güncellendi)" : ""}`,

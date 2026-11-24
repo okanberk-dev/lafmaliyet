@@ -203,12 +203,22 @@ describe("kabul: Marina Kasım 2026 (ModPOS 13–21 + LafPOS 22 Kasım)", { skip
       [1_120, 1_255, 800, 1_575, 1_279.5, -295.5, 1_279.5, 0],
     );
     assert.deepEqual([rep.zNo, rep.okcZNo, rep.zTotal, rep.card, rep.receipts, rep.discounts, rep.offRevenue], ["11", "11", 6_285, 5_030, 26, 90, 1_065]);
+    // Gün sonu tam (24 Kasım 2026): Banka POS Pavo'nun gün sonundan (Σ batch = 5.030 − 870 = 4.160), yazarkasa alanları
+    // LafPOS'un cihaz belgelerinden; not eksik söylemez (cihazların rakamı tam)
+    const body = JSON.parse(kabul()) as { okc: { docs: number; total: number; cash: number; card: number; mealCard: number; other: number } };
+    assert.equal(rep.bankPos, 4_160);
+    assert.deepEqual(
+      [rep.okcReceipts, rep.okcTotal, rep.okcCash, rep.okcCard, rep.okcMealCard, rep.okcOther],
+      [body.okc.docs, body.okc.total, body.okc.cash, body.okc.card, body.okc.mealCard, body.okc.other],
+    );
+    assert.deepEqual([rep.okcTotal, rep.okcCash, rep.okcCard], [5_215, 1_055, 4_160], "Z − yazarkasadan geçmeyen");
+    assert.equal(rep.note, "LafPOS gün sonundan otomatik yazıldı.");
   });
 
   test("22 Kasım: yazarkasadan geçmeyen kart 870 / nakit 200, iki ödeme iptali (50 + 45), 12 iptal parçası 2.395,00; hazırlanmışlar zayi tüketimi", async () => {
     const [day] = await db.select().from(s.posDayReports).where(and(eq(s.posDayReports.date, S), eq(s.posDayReports.branchId, LAFPOS_SUBE)));
     assert.ok(day, "gün sonu");
-    assert.deepEqual(day.offDevice, { card: 870, cash: 200 });
+    assert.deepEqual(day.offDevice, { card: 870, cash: 200, cardTips: 0 });
     assert.deepEqual(
       day.refunds?.map((x) => x.amount),
       [50, 45],

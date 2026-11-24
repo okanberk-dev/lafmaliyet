@@ -139,7 +139,7 @@ export function CashBreakdown({
 }) {
   // Kart karşılaştırması LafPOS'un kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen ödemeyi (Faz 2)
   // düşer (kaydedilmez)
-  report = withCardExtra(report, cardExtra, offDevice);
+  report = withCardExtra(report, cardExtra, offDevice, kasa);
   const c = computeCash(report);
   const paymentsOff = Math.abs(c.paymentsDiff) >= CASH_TOLERANCE;
   const okc = okcHasFigures(report);

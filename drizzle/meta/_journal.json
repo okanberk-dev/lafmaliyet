@@ -505,6 +505,13 @@
       "when": 1795494664844,
       "tag": "0071_kasa_zinciri",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1795509352447,
+      "tag": "0072_gun_sonu_tam",
+      "breakpoints": true
     }
   ]
 }
