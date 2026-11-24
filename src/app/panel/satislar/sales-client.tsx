@@ -1783,7 +1783,8 @@ export function ImportCard({
   const [busy, setBusy] = useState(false);
   /** Listenin şubesi: tek seçenekte o, birden çoksa seçilene kadar boş */
   const [branchPick, setBranchPick] = useState<string | null>(null);
-  const branchId = branches.length === 1 ? branches[0].id : branchPick;
+  // Ay değişince (kart yeniden kurulmaz) seçilen şube o ayın seçeneklerinde değilse yeniden sorulur
+  const branchId = branches.length === 1 ? branches[0].id : branches.some((b) => b.id === branchPick) ? branchPick : null;
   const askBranch = branches.length > 1;
   const target = branches.find((b) => b.id === branchId) ?? null;
   const [confirmClear, setConfirmClear] = useState(false);
