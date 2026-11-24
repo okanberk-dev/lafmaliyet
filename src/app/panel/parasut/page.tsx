@@ -11,6 +11,7 @@ import { packEvidence, sameFactor } from "@/lib/product-match";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { invoiceReadingState } from "@/server/invoice-reading/read";
+import { aiMatchPage } from "@/server/parasut/ai-match";
 import { parasutConnection } from "@/server/parasut/client";
 import { configFrom, hasParasutInvoices, loadParasutSettings, parasutRedirectUri } from "@/server/parasut/config";
 import { parseReturnLog, RETURNS_KEY, supplierReturnEntered } from "@/server/parasut/returns";
@@ -145,8 +146,12 @@ async function ParasutContent() {
   }));
   const pending = pendingRow[0]?.value as { count: number; total?: number; ingested?: boolean; sample?: { from: string | null; date: string | null }[]; at: string } | undefined;
   const configured = missingSettings(settings.resolved).length === 0;
-  // Paraşüt hesabı tarayıcıdan yetkilendirildi mi (belirteçlerin kendisi panele hiç gelmez)
-  const connection = await parasutConnection(undefined, configured ? configFrom(settings.resolved) : null);
+  const [connection, aiMatch] = await Promise.all([
+    // Paraşüt hesabı tarayıcıdan yetkilendirildi mi (belirteçlerin kendisi panele hiç gelmez)
+    parasutConnection(undefined, configured ? configFrom(settings.resolved) : null),
+    // "AI ile öner": düğmenin durumu ve saklı öneriler (sayfa açılınca servise istek gitmez; docs/PARASUT.md § 5e)
+    aiMatchPage(unlinked.items, links),
+  ]);
   // DevHub'a kaydedilecek dönüş adresi; PARASUT_REDIRECT_URI yanlış yazıldıysa ekran yine açılır
   let redirectUri: string | null = null;
   try {
@@ -177,6 +182,7 @@ async function ParasutContent() {
         ingredients={ingredients.map(({ packagePrice, packageSize, ...i }) => ({ ...i, unitCost: packageSize ? packagePrice / packageSize : 0 }))}
         unlinked={unlinked.items}
         unlinkedTotal={unlinked.total}
+        aiMatch={aiMatch}
         ignored={ignored}
         lineReads={{ read: lineReads?.read ?? 0, pending: lineReads?.pending ?? 0 }}
         categories={INVOICE_CATEGORIES}
