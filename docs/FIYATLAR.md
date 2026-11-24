@@ -283,7 +283,8 @@ fiyatı"); panel yazar ve okur, LafPOS siteden alır.
   aynı, `runSiteGroups`); sonuçta geri alma yok, "Şube fiyatı'nda gör (iptal)".
 - **Şube fiyatı** (`?sekme=sube`, iki şube olunca `&sube=`): kalemler (seçenekler hariç), taban, şubede şu an geçerli
   fiyat ve anı, planlanan değişiklikler (İptal). **Değiştir**: M, L (kalem iki boyluysa), Geçerlilik, "Taban fiyata
-  dön".
+  dön". Alanlar şubenin Geçerlilik anındaki fiyatını gösterir (arada planlı satır olabilir); yalnız kullanıcının yazdığı
+  boy gönderilir, dokunulmayan boy yukarıdaki kuralla kalır (taban L'yi izleyen L sabitlenmez, planlı L ezilmez).
 - **Eski fiyattan satılanlar** (`?sekme=eski`): şubenin fiyat değişiklikleri, boy boy (yalnız değişen boy), durumuyla;
   altında son 90 günde o gün geçerli fiyattan farklı liste fiyatıyla satılanlar (gün, kalem, satılan, olması gereken,
   adet, fark).
@@ -301,7 +302,8 @@ hiçbir şey çıkarılmaz. İş günü [D 05:00, D+1 05:00) İstanbul.
 | **Uygulanmadı** | Yeni fiyatla satış yok; anından sonra başlayan tam bir günde yalnız başka fiyat (anı içeren günün eski fiyatı sayılmaz: andan önce satılmış olabilir) |
 | **Bilinmiyor** | Yalnız liste fiyatı taşımayan gün sonu (eski LafPOS) |
 
-Değişikliğin penceresi kalemin sonraki satırının anında biter. **Eski fiyattan satılan**: günün başında geçerli
+Değişikliğin penceresi o boyun fiyatını değiştiren sonraki anda biter (şube satırı ya da izlenen tabanın
+değişikliği); yalnız öteki boyu değiştiren satır kesmez. **Eski fiyattan satılan**: günün başında geçerli
 fiyattan farklı liste fiyatı; gün içinde fiyat değiştiyse (şube satırı ya da tabanın değişikliği) iki fiyat da
 doğrudur. Tabanın geçmişi siteye bağlı ürünün `product_prices`'ından (siteden gelen değişiklik panelin çektiği anla
 kayıtlıdır, birkaç dakika geç düşebilir). Kasada gün 05:00'ten sonra kapanırsa o gecenin satırları ertesi günün

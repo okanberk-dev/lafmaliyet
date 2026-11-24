@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 
 import { tabOf } from "../src/app/panel/urunler/fiyatlar/logic";
 import { parsePosDay } from "../src/lib/lafpos/day";
@@ -18,9 +18,12 @@ import {
   branchBulkRows,
   branchChangeReports,
   branchFailureMessage,
+  branchDialogSeed,
+  branchDialogSet,
   branchPriceAt,
   cancelBranchBody,
   defaultEffectiveFrom,
+  effectiveFromText,
   effectiveLocalValue,
   oldPriceSales,
   parseEffectiveLocal,
@@ -31,6 +34,7 @@ import {
 } from "../src/lib/prices/branch";
 import { parseBranchPriceAnswer, parseSiteMenuList, type SiteBranchPrice, type SiteMenuItem } from "../src/lib/site-menu/schema";
 import { DEFAULT_SETTINGS } from "../src/lib/constants";
+import { ablativeTR, locativeTR } from "../src/lib/format";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 
@@ -99,6 +103,23 @@ test("gün sonu: lines[].listPrices okunur (altın gövde LafPOS claude/sube-fiy
   const bad = parsePosDay(JSON.stringify(body), NOW);
   assert.ok(bad.ok, bad.ok ? "" : bad.field);
   assert.deepEqual([bad.data.lines[0].listPrices, bad.data.lines[1].listPrices, bad.data.lines[2].listPrices], [undefined, undefined, undefined]);
+});
+
+test("gün sonu: okunamayan lines[].listPrices günlüğe yazılır (öteki Faz 2 satır alanları gibi)", () => {
+  const body = JSON.parse(read("tests/fixtures/lafpos-gun.golden.json")) as { lines: Record<string, unknown>[] };
+  body.lines[0].listPrices = [{ price: -1, qty: 2 }];
+  body.lines[1].listPrices = Array.from({ length: 21 }, (_, i) => ({ price: i, qty: 1 }));
+  const warn = mock.method(console, "warn", () => {});
+  try {
+    const r = parsePosDay(JSON.stringify(body), NOW);
+    assert.ok(r.ok, r.ok ? "" : r.field);
+    const lines = warn.mock.calls.map((c) => c.arguments.map(String).join(" "));
+    const dropped = lines.find((l) => l.includes("okunamayan alanlar yazılmadı"));
+    assert.ok(dropped, "uyarı yazıldı");
+    assert.match(dropped!, /lines\.0\.listPrices, lines\.1\.listPrices/);
+  } finally {
+    warn.mock.restore();
+  }
 });
 
 test("kabul günü: listPrices okunur; Σ price × qty = gross (mutlu saat yok)", () => {
@@ -173,6 +194,44 @@ test("gövde: değişmeyen fiyat gönderilmez; tek boya L, 0 fiyat, Tuzla ve se�
   assert.match(refuse(planBranchPrice({ item: item(), rows: [], branch: "marina", effectiveFrom: AT, set: { M: 0 }, actor: "Selin" })), /0/);
   assert.match(refuse(planBranchPrice({ item: item(), rows: [], branch: "tuzla", effectiveFrom: AT, set: { M: 205 }, actor: "Selin" })), /Tuzla/);
   assert.match(refuse(planBranchPrice({ item: item({ id: "mnu-0081" }), rows: [], branch: "marina", effectiveFrom: AT, set: { M: 30 }, actor: "Selin" })), /Seçenek/);
+});
+
+test("Değiştir penceresi: yalnız dokunulan boy gider; alanlar Geçerlilik anındaki fiyatla dolar (bugünkü değil)", () => {
+  // Latte taban 195 / 210, Marina'nın satırı yok: yalnız M 205 yapılır → L gönderilmez, taban L (0) olarak kalır
+  const onlyM = branchDialogSet({ toBase: false, hasL: true, M: 205, L: null });
+  assert.deepEqual(onlyM, { M: 205 });
+  const p = planBranchPrice({ item: item(), rows: [], branch: "marina", effectiveFrom: AT, set: onlyM, actor: "Selin" });
+  assert.deepEqual(p.kind === "push" && p.body.branchPrice, { priceMinor: 20_500, priceMinorL: 0, effectiveFrom: AT }, "L taban L'yi izler, 210'da sabitlenmez");
+  // 26 Kas'tan L 230 planlı; 30 Kas için yalnız M 210 → planlı L 230 korunur
+  const planned = [row({ priceMinor: 20_500, priceMinorL: 23_000, effectiveFrom: "2026-11-26T02:00:00.000Z" })];
+  const at30 = "2026-11-30T05:00:00+03:00";
+  const seed = branchDialogSeed({ base: { M: 195, L: 210 }, rows: planned }, at30);
+  assert.deepEqual(seed, { M: 205, L: 230 }, "alanlar 30 Kas'taki fiyatla dolar");
+  const m210 = planBranchPrice({ item: item(), rows: planned, branch: "marina", effectiveFrom: at30, set: branchDialogSet({ toBase: false, hasL: true, M: 210, L: null }), actor: "Selin" });
+  assert.deepEqual(m210.kind === "push" && [m210.body.branchPrice, m210.after], [{ priceMinor: 21_000, priceMinorL: 23_000, effectiveFrom: at30 }, { M: 210, L: 230 }]);
+  // Elle aynı değer yazılan boy gönderilir; tek boyda L hiç gitmez; tabana dön tek başına
+  assert.deepEqual(branchDialogSet({ toBase: false, hasL: true, M: null, L: 210 }), { L: 210 });
+  assert.deepEqual(branchDialogSet({ toBase: false, hasL: false, M: 200, L: 250 }), { M: 200 });
+  assert.deepEqual(branchDialogSet({ toBase: true, hasL: true, M: 200, L: 250 }), { base: true });
+  assert.deepEqual(branchDialogSet({ toBase: false, hasL: true, M: null, L: null }), {});
+  assert.deepEqual(branchDialogSeed({ base: { M: 195, L: 0 }, rows: [] }, "bozuk"), { M: 195, L: 0 });
+});
+
+test("Türkçe ekler: saatin okunuşuna göre 'ten / 'dan, şubenin adına göre 'da / 'de", () => {
+  const ab = (hhmm: string) => effectiveFromText(`2026-11-25T${hhmm}:00+03:00`).replace("25\u00a0Kasım ", "");
+  assert.deepEqual(
+    ["05:00", "10:00", "06:00", "09:30", "13:15", "00:00", "14:40", "12:00", "07:00", "08:00", "03:00", "04:00", "05:50", "11:20"].map(ab),
+    ["05:00'ten", "10:00'dan", "06:00'dan", "09:30'dan", "13:15'ten", "00:00'dan", "14:40'tan", "12:00'den", "07:00'den", "08:00'den", "03:00'ten", "04:00'ten", "05:50'den", "11:20'den"],
+  );
+  assert.equal(effectiveFromText("2026-11-25T05:00:00+03:00"), "25\u00a0Kasım 05:00'ten");
+  assert.deepEqual(
+    ["Marina", "Kadıköy", "Tuzla", "Moda Sahil", "Beşiktaş", "Ataşehir", "Göztepe", "Bostancı", "Kalamış"].map(locativeTR),
+    ["Marina'da", "Kadıköy'de", "Tuzla'da", "Moda Sahil'de", "Beşiktaş'ta", "Ataşehir'de", "Göztepe'de", "Bostancı'da", "Kalamış'ta"],
+  );
+  assert.deepEqual(
+    ["Marina", "Kadıköy", "Beşiktaş", "25\u00a0Kasım", "1\u00a0Eylül", "3\u00a0Ağustos", "9\u00a0Ocak"].map(ablativeTR),
+    ["Marina'dan", "Kadıköy'den", "Beşiktaş'tan", "25\u00a0Kasım'dan", "1\u00a0Eylül'den", "3\u00a0Ağustos'tan", "9\u00a0Ocak'tan"],
+  );
 });
 
 test("iptal gövdesi ve sitenin hataları Türkçe", () => {
@@ -274,6 +333,44 @@ test("durum: yalnız değişen boy raporlanır; sonraki değişiklik öncekinin 
       ["2026-11-25T02:00:00.000Z", "M", "bekliyor"],
     ],
     "yeniden eskiye; ilk değişikliğin penceresi ikincinin anında biter, L değişmediği için yok",
+  );
+});
+
+test("durum: gün ortasındaki değişiklikte geçiş gününün eski fiyatı Uygulanmadı sayılmaz; ertesi tam gün sayılır", () => {
+  // 25 Kas 14:00'te M 205: 25'i geçiş günü, sabah 195'ten satılanlar değişiklikten önce satılmış olabilir
+  const midday = [row({ effectiveFrom: "2026-11-25T11:00:00.000Z" })];
+  const status = (sales: BranchSaleRow[]) => branchChangeReports({ rows: midday, sources: sources(midday), sales, now: NOW_MS })[0].status;
+  assert.deepEqual(status([sale("2026-11-25", [[195, 6]])]), { kind: "bekliyor" }, "yalnız geçiş günü, yalnız eski fiyat");
+  assert.deepEqual(status([sale("2026-11-25", [[195, 6]]), sale("2026-11-26", [[195, 2]])]), { kind: "uygulanmadi", day: "2026-11-26" });
+  assert.deepEqual(status([sale("2026-11-25", [[195, 6], [205, 1]])]), { kind: "uygulandi", day: "2026-11-25" });
+});
+
+test("durum: değişikliğin penceresi o boyu değiştiren sonraki satırda biter (yalnız L'yi değiştiren satır M'yi kesmez)", () => {
+  // 25 Kas M 205 / L taban, 26 Kas M 205 / L 230 (yalnız L değişti)
+  const rows = [row(), row({ priceMinor: 20_500, priceMinorL: 23_000, effectiveFrom: "2026-11-26T02:00:00.000Z" })];
+  const sales = [sale("2026-11-26", [[205, 5]]), sale("2026-11-27", [[205, 3]]), sale("2026-11-27", [[230, 2]], "L")];
+  const r = branchChangeReports({ rows, sources: sources(rows), sales, now: NOW_MS });
+  assert.deepEqual(
+    r.map((c) => [c.effectiveFrom, c.slot, c.before, c.after, c.status]),
+    [
+      ["2026-11-26T02:00:00.000Z", "L", 210, 230, { kind: "uygulandi", day: "2026-11-27" }],
+      ["2026-11-25T02:00:00.000Z", "M", 195, 205, { kind: "uygulandi", day: "2026-11-26" }],
+    ],
+  );
+  // Tabanı izleyen boyun penceresi tabanın değişikliğinde biter: 25 Kas M 205 / L taban, 27 Kas taban L 210 → 220
+  const base = new Map<string, PriceSources>([
+    ["mnu-0011", { base: { M: { current: 195, changes: [] }, L: { current: 220, changes: [{ at: Date.parse("2026-11-27T05:00:00+03:00"), before: 210, after: 220 }] } }, rows: [row({ priceMinorL: 22_500 })] }],
+  ]);
+  const own = [row({ priceMinorL: 22_500 }), row({ priceMinor: 20_500, priceMinorL: 0, effectiveFrom: "2026-11-26T02:00:00.000Z" })];
+  base.get("mnu-0011")!.rows = own;
+  const lr = branchChangeReports({ rows: own, sources: base, sales: [sale("2026-11-27", [[210, 4]], "L")], now: NOW_MS });
+  assert.deepEqual(
+    lr.filter((c) => c.slot === "L").map((c) => [c.effectiveFrom, c.after, c.status]),
+    [
+      ["2026-11-26T02:00:00.000Z", 210, { kind: "bekliyor" }],
+      ["2026-11-25T02:00:00.000Z", 225, { kind: "bekliyor" }],
+    ],
+    "26 Kas L tabana (210) döndü; 27 Kas taban 220 olunca pencere biter, 27'sinin 210'u ne uygulandı ne uygulanmadı",
   );
 });
 

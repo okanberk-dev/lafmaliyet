@@ -513,7 +513,7 @@ const Z_SOFT = [
 ] as const;
 
 /**
- * Gönderilip okunamayan Faz 2, Faz 3 ve gün sonu tam alanlarının yolları ("z.vat", "lines.3.gross", "bankPos.errorCode",
+ * Gönderilip okunamayan Faz 2, Faz 3, gün sonu tam ve şube fiyatı alanlarının yolları ("z.vat", "lines.3.gross", "lines.3.listPrices", "bankPos.errorCode",
  * "bankPos.batches", "offDevice.cardTips", "payments.0.kind", "cashMoves")
  */
 function droppedSoftFields(json: unknown, data: PosDayPush): string[] {
@@ -530,7 +530,7 @@ function droppedSoftFields(json: unknown, data: PosDayPush): string[] {
   for (const k of TOP_SOFT) if (sent(raw, k) && data[k] === undefined) out.push(k);
   for (const k of Z_SOFT) if (sent(raw.z, k) && data.z[k] === undefined) out.push(`z.${k}`);
   data.lines.forEach((l, i) => {
-    for (const k of ["gross", "isAddon"] as const) if (sent(raw.lines?.[i], k) && l[k] === undefined) out.push(`lines.${i}.${k}`);
+    for (const k of ["gross", "isAddon", "listPrices"] as const) if (sent(raw.lines?.[i], k) && l[k] === undefined) out.push(`lines.${i}.${k}`);
   });
   data.ikram.forEach((l, i) => {
     for (const k of ["kind", "personKind"] as const) if (sent(raw.ikram?.[i], k) && l[k] === undefined) out.push(`ikram.${i}.${k}`);

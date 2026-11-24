@@ -20,7 +20,7 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import { basisText, type SalesBasis } from "@/lib/calc/price-loss";
 import type { Size } from "@/lib/calc/types";
 import { SIZE_LABELS, SIZES } from "@/lib/constants";
-import { money, num, numPossessive, pct } from "@/lib/format";
+import { locativeTR, money, num, numPossessive, pct } from "@/lib/format";
 import {
   bulkSummary,
   defaultRounding,
@@ -39,7 +39,7 @@ import {
   type RoundingId,
 } from "@/lib/prices/bulk";
 import type { KasaName } from "@/lib/lafpos/kasa";
-import { branchBulkRows, effectiveLocalValue, effectiveText, parseEffectiveLocal } from "@/lib/prices/branch";
+import { branchBulkRows, effectiveFromText, effectiveLocalValue, parseEffectiveLocal } from "@/lib/prices/branch";
 import { batchPosNote } from "@/lib/prices/pos";
 import type { SiteBranchPrice } from "@/lib/site-menu/schema";
 import { toMinor } from "@/lib/site-menu/slot";
@@ -278,11 +278,11 @@ export function BulkEditor({
         const r = await applyBranchPrices({ ...target, ...sent });
         if (!r.ok) return void toast.error(r.error);
         const res = r.data;
-        const label = `${branch.name} · ${effectiveText(target.effectiveFrom)}'ten · ${sent.note}`;
+        const label = `${branch.name} · ${effectiveFromText(target.effectiveFrom)} · ${sent.note}`;
         setOutcome({ kind: "branch", batchId: "", note: label, applied: res.applied.map((a) => ({ ...a, site: true, posPending: false })), failed: res.failed, skipped: [], target });
         setShowApplied(false);
         resetRule();
-        if (res.applied.length) toast.success(`${num(res.applied.length)} şube fiyatı yazıldı`, { description: `${branch.name}, ${effectiveText(target.effectiveFrom)}'ten; LafPOS o anda siteden alır` });
+        if (res.applied.length) toast.success(`${num(res.applied.length)} şube fiyatı yazıldı`, { description: `${branch.name}, ${effectiveFromText(target.effectiveFrom)}; LafPOS o anda siteden alır` });
         else toast.error("Hiçbir şube fiyatı yazılmadı", { description: res.failed[0]?.reason });
       });
     }
@@ -673,7 +673,7 @@ export function BulkEditor({
       <FloatingBar open={!outcome && summary.count > 0}>
         <div className="min-w-0 flex-1 text-sm">
           <p className="font-semibold text-ink tabular">
-            {branch ? `${num(summary.count)} fiyat ${branch.name}'da değişecek` : `${num(summary.count)} fiyat değişecek${summary.linked ? ` · ${numPossessive(summary.linked)} sitede de` : ""}`}
+            {branch ? `${num(summary.count)} fiyat ${locativeTR(branch.name)} değişecek` : `${num(summary.count)} fiyat değişecek${summary.linked ? ` · ${numPossessive(summary.linked)} sitede de` : ""}`}
           </p>
           {pending ? <p className="text-xs text-ink-mute">{linkedRun ? "Siteye yazılıyor…" : "Kaydediliyor…"}</p> : null}
         </div>
@@ -692,7 +692,7 @@ export function BulkEditor({
         description={(branch && effective.ok
           ? [
               `${note}.`,
-              `${branch.name}'da ${effectiveText(effective.iso)}'ten geçerli; taban (Tuzla) değişmez. Fiyatlar siteye kalem kalem yazılır, LafPOS o anda siteden alır.`,
+              `${locativeTR(branch.name)} ${effectiveFromText(effective.iso)} geçerli; taban (Tuzla) değişmez. Fiyatlar siteye kalem kalem yazılır, LafPOS o anda siteden alır.`,
               "Anı gelmeden Şube fiyatı sekmesinden iptal edebilirsiniz.",
             ]
           : [

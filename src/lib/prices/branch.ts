@@ -1,6 +1,6 @@
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { businessDate, DAY_TURN_HOUR } from "@/lib/cash-report";
-import { money } from "@/lib/format";
+import { ablativeTR, money, timeAblative } from "@/lib/format";
 import { addDays, dayMonthTR, isCalendarDate } from "@/lib/reminders";
 import { pushActor, pushFailureMessage, type PushFailure } from "@/lib/site-menu/push";
 import { SITE_MONEY_MAX_MINOR, type SiteBranchPrice, type SiteMenuItem } from "@/lib/site-menu/schema";
@@ -12,7 +12,7 @@ import type { SiteMarkerKind } from "@/lib/site-menu/view";
  * docs/FIYATLAR.md › Şube fiyatı). Saf modül: Fiyatlar ekranı, sunucu yazımı ve testler paylaşır.
  *
  * Sitenin kalemindeki fiyat **tabandır** (Tuzla'nın ve kendi fiyatı olmayan her şubenin). Bir şubenin kendi fiyatı
- * sitede eklenen, silinmeyen bir satırdır: "25 Kas 05:00'ten Marina'da latte 205 / 225 ₺". Satır kendi anından sonraki
+ * sitede eklenen, silinmeyen bir satırdır: "25 Kasım 05:00'ten Marina'da latte 205 / 225 ₺". Satır kendi anından sonraki
  * satırın anına dek geçerlidir; `priceMinor: null` "o andan sonra yine taban", `priceMinorL: 0` "taban L". Anı
  * gelmemiş satır geri alınabilir (iptal). Panel satırları sitenin okumasından (`branchPrices`) alır, yazımı tek tek
  * gönderir (bir kalemin M ve L'si tek gövdede); site `writes.branchPrice` duyurmadıysa önermez.
@@ -104,6 +104,12 @@ export function effectiveText(iso: string): string {
   return local ? `${dayMonthTR(local.slice(0, 10))} ${local.slice(11, 16)}` : iso;
 }
 
+/** "25 Kasım 05:00'ten", "25 Kasım 10:00'dan" (İstanbul; ek saatin okunuşuna göre) */
+export function effectiveFromText(iso: string): string {
+  const local = effectiveLocalValue(iso);
+  return local ? `${dayMonthTR(local.slice(0, 10))} ${timeAblative(local.slice(11, 16))}` : ablativeTR(iso);
+}
+
 /**
  * Ekrandaki "Geçerlilik" (yerel saat, "2026-11-25T05:00") → siteye giden an (`+03:00` ile; site UTC saklar). Yeni satır
  * en çok 5 dakika geçmişte (saat farkı), en çok 90 gün ileride olabilir (sitenin kuralı).
@@ -190,6 +196,25 @@ export function planBranchPrice(input: {
     before,
     after,
   };
+}
+
+/**
+ * "Değiştir" penceresinin alanları: şubenin Geçerlilik anındaki fiyatı (TL; bugünkü değil, arada planlı satır olabilir).
+ * Geçerlilik okunamazsa bugünkü fiyat.
+ */
+export function branchDialogSeed(item: { base: SlotPrices; rows: readonly BranchPriceRule[] }, effectiveFrom: string): SlotPrices {
+  const t = Date.parse(effectiveFrom);
+  return slotsOf(branchPriceAt({ priceMinor: toMinor(item.base.M), priceMinorL: toMinor(item.base.L) }, item.rows, Number.isFinite(t) ? t : Date.now()));
+}
+
+/**
+ * "Değiştir" penceresinin gönderdiği değişiklik: yalnız kullanıcının yazdığı boy (null: alana dokunulmadı). Dokunulmayan
+ * boy gönderilmez; planBranchPrice onu şubenin o andaki kendi değeriyle (kendi L'si yoksa taban L) taşır. Önceden dolu
+ * değer gönderilseydi taban L'yi izleyen boy sabitlenir, planlı satırın L'si ezilirdi.
+ */
+export function branchDialogSet(input: { toBase: boolean; hasL: boolean; M: number | null; L: number | null }): BranchPriceSet {
+  if (input.toBase) return { base: true };
+  return { ...(input.M !== null ? { M: input.M } : {}), ...(input.hasL && input.L !== null ? { L: input.L } : {}) };
 }
 
 /** Anı gelmemiş satırın geri alınması (iptal) */
@@ -314,7 +339,8 @@ export interface BranchChangeReport {
 
 /**
  * Şubenin fiyat değişikliklerinin durumu, boy boy (yalnız değişen boy), yeniden eskiye. Değişikliğin penceresi kendi
- * anından kalemin sonraki satırının anına dek; içine düşen gün sonu satırları (anı içeren geçiş günü dahil) sırayla:
+ * anından o boyun fiyatını değiştiren sonraki ana dek (şube satırı ya da izlenen tabanın değişikliği; yalnız öteki boyu
+ * değiştiren satır kesmez); içine düşen gün sonu satırları (anı içeren geçiş günü dahil) sırayla:
  * - yeni fiyatla satılan ilk gün: **Uygulandı · gün**
  * - yoksa, anından sonra başlayan tam bir günde yalnız başka fiyat: **Uygulanmadı** (gün: ilk böyle gün). Geçiş
  *   gününün eski fiyatı sayılmaz (anından önce satılmış olabilir)
@@ -333,12 +359,15 @@ export function branchChangeReports(input: {
     const src = input.sources.get(r.id);
     if (!src) continue;
     const t = at(r.effectiveFrom);
-    const next = src.rows.map((x) => at(x.effectiveFrom)).filter((x) => x > t);
-    const end = next.length ? Math.min(...next) : Number.POSITIVE_INFINITY;
     for (const slot of ["M", "L"] as const) {
       const before = slotPriceAt(src, slot, t - 1);
       const after = slotPriceAt(src, slot, t);
       if (sameTl(before, after) || !(after > 0)) continue;
+      // Pencere bu boyun fiyatını değiştiren sonraki anda biter (öteki boyu değiştiren satır kesmez)
+      const end =
+        changesBetween(src, slot, t, Number.POSITIVE_INFINITY)
+          .sort((a, b) => a - b)
+          .find((x) => !sameTl(slotPriceAt(src, slot, x - 1), slotPriceAt(src, slot, x))) ?? Number.POSITIVE_INFINITY;
       const days = input.sales
         .filter((s) => s.siteMenuId === r.id && s.slot === slot && dayStartMs(addDays(s.date, 1)) > t && dayStartMs(s.date) < end)
         .sort((a, b) => a.date.localeCompare(b.date));

@@ -5,7 +5,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
-import { money, num } from "@/lib/format";
+import { ablativeTR, money, num } from "@/lib/format";
 import { effectiveText, statusText, type ChangeStatus } from "@/lib/prices/branch";
 import { dayMonthTR } from "@/lib/reminders";
 import { OLD_PRICE_DAYS, type OldPriceReport } from "@/server/data/branch-prices";
@@ -78,7 +78,7 @@ export function OldPriceReportView({ report }: { report: OldPriceReport }) {
         <CardHeader
           icon={<Tag />}
           title="Eski fiyattan satılanlar"
-          description={`Son ${num(OLD_PRICE_DAYS)} gün (${dayMonthTR(report.from)}'dan): o gün geçerli fiyattan farklı liste fiyatıyla satılanlar. Gün içinde fiyat değiştiyse iki fiyat da doğru sayılır.`}
+          description={`Son ${num(OLD_PRICE_DAYS)} gün (${ablativeTR(dayMonthTR(report.from))}): o gün geçerli fiyattan farklı liste fiyatıyla satılanlar. Gün içinde fiyat değiştiyse iki fiyat da doğru sayılır.`}
           meta={sales.length ? <span className="tabular">{loss > 0 ? `${money(loss)} eksik` : `${num(sales.length)} satır`}</span> : null}
         />
         {sales.length ? (

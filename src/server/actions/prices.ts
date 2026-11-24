@@ -4,7 +4,7 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { money, numPossessive } from "@/lib/format";
-import { branchPriceTargets, effectiveText, type SlotPrices } from "@/lib/prices/branch";
+import { branchPriceTargets, effectiveFromText, effectiveText, type SlotPrices } from "@/lib/prices/branch";
 import { nothingToUndoText, undoPlan } from "@/lib/prices/history";
 import { toMinor } from "@/lib/site-menu/slot";
 import { requireAdmin } from "@/server/auth/dal";
@@ -129,7 +129,7 @@ export async function setBranchPrice(input: z.input<typeof branchSetSchema>) {
     const set = data.base ? ({ base: true } as const) : { ...(data.M !== undefined ? { M: data.M } : {}), ...(data.L !== undefined ? { L: data.L } : {}) };
     const w = await writeBranchPrice(me, { siteMenuId: data.siteMenuId, branch: branch.id, effectiveFrom: data.effectiveFrom, set });
     if (w.kind === "none") throw new UserError("Şubenin o andaki fiyatı zaten bu");
-    await logActivity(me, "Şube fiyatı", `${branch.name} · ${w.name} · ${effectiveText(data.effectiveFrom)}'ten ${priceText(w.before)} → ${priceText(w.after)}`);
+    await logActivity(me, "Şube fiyatı", `${branch.name} · ${w.name} · ${effectiveFromText(data.effectiveFrom)} ${priceText(w.before)} → ${priceText(w.after)}`);
     refresh();
     return { before: w.before, after: w.after };
   });
@@ -170,7 +170,7 @@ export async function applyBranchPrices(input: z.input<typeof branchBulkSchema>)
     await logActivity(
       me,
       "Toplu şube fiyatı",
-      [`${branch.name} · ${effectiveText(data.effectiveFrom)}'ten`, data.note, `${result.applied.length} ürün${result.failed.length ? `; ${result.failed.length} değişmedi` : ""}`]
+      [`${branch.name} · ${effectiveFromText(data.effectiveFrom)}`, data.note, `${result.applied.length} ürün${result.failed.length ? `; ${result.failed.length} değişmedi` : ""}`]
         .filter(Boolean)
         .join(" · "),
     );

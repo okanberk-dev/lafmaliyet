@@ -15,8 +15,8 @@ import { EmptyState } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { parseNumberTR } from "@/lib/calc/expr";
-import { money, num } from "@/lib/format";
-import { effectiveLocalValue, effectiveText, parseEffectiveLocal } from "@/lib/prices/branch";
+import { locativeTR, money, num } from "@/lib/format";
+import { branchDialogSeed, branchDialogSet, effectiveFromText, effectiveLocalValue, effectiveText, parseEffectiveLocal } from "@/lib/prices/branch";
 import type { SiteBranchPrice } from "@/lib/site-menu/schema";
 import { fromMinor } from "@/lib/site-menu/slot";
 import { cancelBranchPriceRow, setBranchPrice } from "@/server/actions/prices";
@@ -105,7 +105,7 @@ export function BranchPrices({ ctx, branch, items, now }: { ctx: BranchPriceCont
                       </TD>
                       <TD numeric>
                         <span className="font-semibold">{pair(i.current)}</span>
-                        {own ? <span className="block text-xs text-ink-mute">{effectiveText(i.current.from!)}&apos;ten</span> : <span className="block text-xs text-ink-mute">taban</span>}
+                        {own ? <span className="block text-xs text-ink-mute">{effectiveFromText(i.current.from!)}</span> : <span className="block text-xs text-ink-mute">taban</span>}
                       </TD>
                       <TD>
                         {future.length ? (
@@ -148,31 +148,34 @@ export function BranchPrices({ ctx, branch, items, now }: { ctx: BranchPriceCont
   );
 }
 
-/** Bir kalemin şube fiyatı: M, L (kalem iki boyluysa), Geçerlilik; ya da tabana dön */
+/**
+ * Bir kalemin şube fiyatı: M, L (kalem iki boyluysa), Geçerlilik; ya da tabana dön. Alanlar şubenin Geçerlilik anındaki
+ * fiyatını gösterir; yalnız kullanıcının yazdığı boy gönderilir (dokunulmayan boy şubenin o andaki kendi değeriyle kalır,
+ * kendi L'si yoksa taban L'yi izler; branchDialogSet).
+ */
 function EditDialog({ item, branch, defaultEffective, onClose }: { item: BranchPriceItem; branch: BranchTarget; defaultEffective: string; onClose: () => void }) {
   const hasL = item.base.L > 0;
-  const [m, setM] = useState(priceText(item.current.M));
-  const [l, setL] = useState(hasL ? priceText(item.current.L) : "");
+  // null: alana dokunulmadı (Geçerlilik anındaki fiyat gösterilir, gönderilmez)
+  const [m, setM] = useState<string | null>(null);
+  const [l, setL] = useState<string | null>(null);
   const [when, setWhen] = useState(effectiveLocalValue(defaultEffective));
   const [toBase, setToBase] = useState(false);
   const [pending, start] = useActionTransition();
-  const mValue = parseNumberTR(m);
-  const lValue = hasL ? parseNumberTR(l) : null;
   const effective = parseEffectiveLocal(when);
-  const mError = !toBase && !(mValue !== null && mValue > 0) ? "Fiyat 0'dan büyük olmalı" : null;
-  const lError = !toBase && hasL && !(lValue !== null && lValue > 0) ? "Fiyat 0'dan büyük olmalı" : null;
+  const seed = branchDialogSeed(item, effective.ok ? effective.iso : defaultEffective);
+  const mValue = m === null ? null : parseNumberTR(m);
+  const lValue = hasL && l !== null ? parseNumberTR(l) : null;
+  const mError = !toBase && m !== null && !(mValue !== null && mValue > 0) ? "Fiyat 0'dan büyük olmalı" : null;
+  const lError = !toBase && hasL && l !== null && !(lValue !== null && lValue > 0) ? "Fiyat 0'dan büyük olmalı" : null;
+  const set = branchDialogSet({ toBase, hasL, M: mValue, L: lValue });
+  const empty = !("base" in set) && set.M === undefined && set.L === undefined;
 
   function save() {
-    if (!effective.ok || mError || lError) return;
+    if (!effective.ok || mError || lError || empty) return;
     start(async () => {
-      const res = await setBranchPrice({
-        branch: branch.id,
-        siteMenuId: item.id,
-        effectiveFrom: effective.iso,
-        ...(toBase ? { base: true } : { M: mValue!, ...(hasL ? { L: lValue! } : {}) }),
-      });
+      const res = await setBranchPrice({ branch: branch.id, siteMenuId: item.id, effectiveFrom: effective.iso, ...set });
       if (!res.ok) return void toast.error(res.error);
-      toast.success(`${item.name}: ${branch.name}'da ${effectiveText(effective.iso)}'ten ${pair(res.data.after)}`);
+      toast.success(`${item.name}: ${locativeTR(branch.name)} ${effectiveFromText(effective.iso)} ${pair(res.data.after)}`);
       onClose();
     });
   }
@@ -188,7 +191,7 @@ function EditDialog({ item, branch, defaultEffective, onClose }: { item: BranchP
           <Button variant="ghost" onClick={onClose}>
             Vazgeç
           </Button>
-          <Button onClick={save} disabled={pending || !effective.ok || !!mError || !!lError}>
+          <Button onClick={save} disabled={pending || !effective.ok || !!mError || !!lError || empty}>
             {pending ? "Siteye yazılıyor…" : "Kaydet"}
           </Button>
         </>
@@ -198,16 +201,16 @@ function EditDialog({ item, branch, defaultEffective, onClose }: { item: BranchP
         {!toBase ? (
           <div className="grid grid-cols-2 gap-3">
             <Field label={hasL ? "M fiyatı" : "Fiyat"} htmlFor="sube-m" error={mError}>
-              <NumberInput id="sube-m" inputMode="decimal" value={m} onChange={(e) => setM(e.target.value)} className="h-11 sm:h-10" />
+              <NumberInput id="sube-m" inputMode="decimal" value={m ?? priceText(seed.M)} onChange={(e) => setM(e.target.value)} className="h-11 sm:h-10" />
             </Field>
             {hasL ? (
               <Field label="L fiyatı" htmlFor="sube-l" error={lError}>
-                <NumberInput id="sube-l" inputMode="decimal" value={l} onChange={(e) => setL(e.target.value)} className="h-11 sm:h-10" />
+                <NumberInput id="sube-l" inputMode="decimal" value={l ?? priceText(seed.L)} onChange={(e) => setL(e.target.value)} className="h-11 sm:h-10" />
               </Field>
             ) : null}
           </div>
         ) : null}
-        <Field label="Geçerlilik" htmlFor="sube-gecerlilik" error={effective.ok ? null : effective.error} hint="Varsayılan sonraki iş günü 05:00 (İstanbul). Bu andan önce satılanlar eski fiyatıyla kalır.">
+        <Field label="Geçerlilik" htmlFor="sube-gecerlilik" error={effective.ok ? null : effective.error} hint="Varsayılan sonraki iş günü 05:00 (İstanbul). Alanlar şubenin bu andaki fiyatını gösterir; yalnız değiştirdiğiniz boy yazılır. Bu andan önce satılanlar eski fiyatıyla kalır.">
           <Input id="sube-gecerlilik" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className="h-11 sm:h-10" />
         </Field>
         <Checkbox label="Taban fiyata dön (şubenin kendi fiyatı biter)" checked={toBase} onChange={(e) => setToBase(e.target.checked)} />
