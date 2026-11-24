@@ -62,7 +62,8 @@ ana eylem `bg-primary text-on-primary` (açıkta ikisi de eski siyah / beyaz).
 - İçerik beyaz zeminde, `max-w-[1400px]`.
 - **Telefon ve tablet kabuğu (lg altı, `bottom-nav.tsx`, `sidebar.tsx`):** üstte 56px yapışkan çubuk (L'Af karosu →
   ana sayfa, sayfa başlığı, arama, zil), altta 64px + güvenli alan **alt menü**, beş öğe (`BOTTOM_NAV`; yönetici:
-  Genel bakış · Bugün · Kasa · Ödemeler (gecikmiş sayısı rozeti) · **Tümü**; personel: Bugün · Karaoke · Kasa · Zayi ·
+  Genel bakış · Bugün · Kasa · Ödemeler (gecikmiş sayısı rozeti) · **Tümü**, panel asistanı açıkken Bugün · Kasa ·
+  **Asistan** · Ödemeler · Tümü (Genel bakış üst çubuğun L'Af karosunda ve çekmecede; docs/ASISTAN.md › Telefonda); personel: Bugün · Karaoke · Kasa · Zayi ·
   Reçeteler, öteki ekranları üst çubuktaki menü düğmesiyle açılan çekmecede). "Tümü" kenar çubuğunun içeriğini yaylı
   çekmecede açar (odak çekmecede döner, Esc kapatır; yalnız etkin grup açık gelir, etkin satır kutunun içine kayar). Ekran klavyesi açıkken alt menü gizlenir.
 - Kabuk değişkenleri (`globals.css`): `--mobile-nav-h` alt menünün yüksekliği (güvenli alan dahil; lg ve üstünde ve

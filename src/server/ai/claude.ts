@@ -12,7 +12,7 @@ import { todayTR } from "@/lib/reminders";
 import { SHIFT_DRAFT_DAILY_CAP } from "@/lib/vardiya-taslak";
 import { getDb, schema as s, type DB } from "@/server/db";
 
-import { ASSISTANT_EFFORT, ASSISTANT_MODEL, type AssistantClient, type AssistantOutcome } from "./assistant/loop";
+import { ASSISTANT_DEEP, ASSISTANT_EFFORT, ASSISTANT_MODEL, type AssistantClient, type AssistantOutcome } from "./assistant/loop";
 import { costUsd } from "./pricing";
 import { replayAssistantClient, replayClient, replayEnabled } from "./replay";
 import {
@@ -157,13 +157,19 @@ export async function shiftDraftStatus(now = new Date()): Promise<{ state: AiSta
   return { state, usedToday, cap: SHIFT_DRAFT_DAILY_CAP };
 }
 
-/** Yöneticinin bugünkü asistan soruları (hata ve ret dahil: her soru bir satır) */
+/**
+ * Asistan satırının günlük sınırdaki ağırlığı: derin analiz (satırın eforu ASSISTANT_DEEP.effort, "high") 2 soru, öteki
+ * her satır 1 (loop.ts ASSISTANT_DEEP; olağan efor "medium", eski satırlar ve eforu boş satırlar 1)
+ */
+const assistantWeight = () => sql<number>`coalesce(sum(case when ${s.aiCalls.effort} = ${ASSISTANT_DEEP.effort} then ${ASSISTANT_DEEP.weight} else 1 end), 0)::int`;
+
+/** Yöneticinin bugünkü asistan soruları (hata ve ret dahil: her soru bir satır; derin analiz 2 sayılır) */
 async function assistantCallsSince(userId: number, since: Date): Promise<number> {
   const [row] = await getDb()
-    .select({ n: count() })
+    .select({ n: assistantWeight() })
     .from(s.aiCalls)
     .where(and(gte(s.aiCalls.at, since), eq(s.aiCalls.feature, ASSISTANT_FEATURE), eq(s.aiCalls.userId, userId)));
-  return row?.n ?? 0;
+  return Number(row?.n ?? 0);
 }
 
 /**
@@ -192,18 +198,20 @@ export function assistantClient(): AssistantClient {
 /**
  * Sorunun satırı ("running"; çökme de kalır): sayım ve ekleme tek işlemde, yönetici başına danışma kilidiyle
  * (pg_advisory_xact_lock): aynı anda gelen sorular günlük sınırı aşamaz. Sınır dolduysa satır açılmaz, null döner.
+ * Derin analiz (`deep`) satırı eforu "high" ile açılır ve sınıra 2 sayılır: 2 hak kalmadıysa açılmaz.
  */
-export async function startAssistantCall(userId: number, cap: number = ASSISTANT_DAILY_CAP, now: Date = new Date()): Promise<number | null> {
+export async function startAssistantCall(userId: number, cap: number = ASSISTANT_DAILY_CAP, now: Date = new Date(), opts: { deep?: boolean } = {}): Promise<number | null> {
+  const weight = opts.deep ? ASSISTANT_DEEP.weight : 1;
   return getDb().transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('ai_calls.asistan'), ${userId})`);
     const [row] = await tx
-      .select({ n: count() })
+      .select({ n: assistantWeight() })
       .from(s.aiCalls)
       .where(and(gte(s.aiCalls.at, dayStart(now)), eq(s.aiCalls.feature, ASSISTANT_FEATURE), eq(s.aiCalls.userId, userId)));
-    if ((row?.n ?? 0) >= cap) return null;
+    if (Number(row?.n ?? 0) + weight > cap) return null;
     const [call] = await tx
       .insert(s.aiCalls)
-      .values({ feature: ASSISTANT_FEATURE, model: ASSISTANT_MODEL, effort: ASSISTANT_EFFORT, status: "running", userId, photoId: null })
+      .values({ feature: ASSISTANT_FEATURE, model: ASSISTANT_MODEL, effort: opts.deep ? ASSISTANT_DEEP.effort : ASSISTANT_EFFORT, status: "running", userId, photoId: null })
       .returning({ id: s.aiCalls.id });
     return call.id;
   });

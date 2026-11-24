@@ -28,7 +28,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 
-import type { AssistantDone, AssistantEvent, AssistantTurn } from "@/lib/assistant/protocol";
+import { ASSISTANT_DEEP_WEIGHT, type AssistantDone, type AssistantEvent, type AssistantTurn } from "@/lib/assistant/protocol";
 
 import { costUsd, type UsageLike } from "../pricing";
 import { AI_FALLBACK_BETA, aiErrorText, mapAiError, type AiErrorCode } from "../run";
@@ -45,6 +45,23 @@ export const ASSISTANT_MODEL = "claude-sonnet-5-5";
 export const ASSISTANT_EFFORT = "medium" as const;
 /** Düşünme + yanıt (düşünme de bu sınıra sayılır); yanıtlar istemde kısa tutulur */
 export const ASSISTANT_MAX_TOKENS = 8000;
+
+/**
+ * "Derin analiz" (docs/ASISTAN.md › Derin analiz; varsayılan kapalı, yönetici sorunun yanındaki anahtarla açar): efor
+ * "high", araç turu sınırı 8 yerine 12, çıktı sınırı (düşünme dahil) 16.000. Süre bütçesi de biraz geniş: yeni araç
+ * turu 42 sn'ye dek açılır (olağan 35), akış 55 sn'de kesilir (olağan 50). Rotanın maxDuration'ı 60 sn (Vercel):
+ * kesinti ile kayıt (ai_calls satırını kapatma) arasında 5 sn pay kalır; son, araçsız çağrıya 13 sn (olağanda 15).
+ * High eforda her tur daha uzun sürdüğünden 12 tur bir TAVANDIR: pratikte sınırı çoğu zaman süre koyar (42 sn'de
+ * model eldeki bilgiyle toparlar, `limit`). Canlı denemeden sonra derin soruların tur ve süre dağılımı belgeye yazılır.
+ *
+ * Maliyet notu: high eforda model daha uzun düşünür ve daha çok araç turu açar; çıktı tokeni (10 $ / M) birkaç katına
+ * çıkabilir. Üst düzey `effort` değişimi mesajların önbelleğini (bu modelde araç + sistem önekini de) geçersiz kılar:
+ * derin soru öneki bir kez yeniden önbelleğe yazar (≈0,035–0,04 $), sonraki olağan soru medium önbelleğini (5 dk içinde
+ * yazılmışsa) okur. Tahmini derin soru ≈ 0,06–0,15 $ (olağan ≈ 0,01–0,05 $). Bu yüzden günlük sınıra 2 soru sayılır
+ * (`weight`; src/server/ai/claude.ts satırın eforundan sayar). Mesaj içi efor (beta mid-conversation-output-config)
+ * önbelleği korurdu; anahtarsız ortamda denenemediği için kullanılmadı (docs/ASISTAN.md › Açık kalanlar).
+ */
+export const ASSISTANT_DEEP = { effort: "high" as const, maxToolRounds: 12, maxTokens: 16_000, softMs: 42_000, hardMs: 55_000, weight: ASSISTANT_DEEP_WEIGHT };
 
 export interface AssistantTiming {
   /** Bir istekte en çok araç turu */
@@ -77,14 +94,17 @@ export interface AssistantClient {
   beta: { messages: { stream(params: AssistantParams, options: AssistantStreamOptions): AssistantStream } };
 }
 
-/** İsteğin kendisi (testte biçimi sınanır). `final`: araç turu bitti, yalnız yanıt (`tool_choice: none`) */
-export function assistantParams(opts: { system: string; context: string; tools: Anthropic.Beta.Messages.BetaTool[]; messages: BetaMessageParam[]; final?: boolean }): AssistantParams {
+/**
+ * İsteğin kendisi (testte biçimi sınanır). `final`: araç turu bitti, yalnız yanıt (`tool_choice: none`). `deep`: derin
+ * analiz (efor high, çıktı sınırı yüksek; ASSISTANT_DEEP)
+ */
+export function assistantParams(opts: { system: string; context: string; tools: Anthropic.Beta.Messages.BetaTool[]; messages: BetaMessageParam[]; final?: boolean; deep?: boolean }): AssistantParams {
   return {
     model: ASSISTANT_MODEL,
-    max_tokens: ASSISTANT_MAX_TOKENS,
+    max_tokens: opts.deep ? ASSISTANT_DEEP.maxTokens : ASSISTANT_MAX_TOKENS,
     betas: [AI_FALLBACK_BETA],
     fallbacks: "default",
-    output_config: { effort: ASSISTANT_EFFORT },
+    output_config: { effort: opts.deep ? ASSISTANT_DEEP.effort : ASSISTANT_EFFORT },
     // Konuşmanın büyüyen kuyruğu (araç turları): otomatik önbellek işareti son bloğa
     cache_control: { type: "ephemeral" },
     tools: opts.tools,
@@ -141,6 +161,8 @@ export interface AssistantRun {
   toolCtx: ToolContext;
   history: readonly AssistantTurn[];
   message: string;
+  /** Derin analiz (ASSISTANT_DEEP): efor high, araç turu sınırı 12, süre 42 / 55 sn */
+  deep?: boolean;
   emit: (e: AssistantEvent) => void;
   /** Kullanıcı durdurdu (tarayıcı isteği kesti) */
   signal?: AbortSignal;
@@ -158,7 +180,8 @@ function mergeUsage(prev: UsageLike | null, next: Partial<Record<keyof UsageLike
 }
 
 export async function runAssistant(client: AssistantClient, run: AssistantRun): Promise<AssistantOutcome> {
-  const timing = { ...ASSISTANT_TIMING, ...run.timing };
+  const deepTiming = { maxToolRounds: ASSISTANT_DEEP.maxToolRounds, softMs: ASSISTANT_DEEP.softMs, hardMs: ASSISTANT_DEEP.hardMs };
+  const timing = { ...ASSISTANT_TIMING, ...(run.deep ? deepTiming : {}), ...run.timing };
   const clock = run.clock ?? Date.now;
   const t0 = clock();
   const deadline = new AbortController();
@@ -206,7 +229,7 @@ export async function runAssistant(client: AssistantClient, run: AssistantRun): 
     let rounds = 0;
     for (;;) {
       const final = rounds >= timing.maxToolRounds || clock() - t0 > timing.softMs;
-      const params = assistantParams({ system: run.system, context: run.context, tools, messages, final });
+      const params = assistantParams({ system: run.system, context: run.context, tools, messages, final, deep: run.deep });
       out.apiCalls++;
       let usage: UsageLike | null = null;
       let model: string | null = null;

@@ -5,7 +5,8 @@
  * olduğu gibi yazı olarak görünür.
  *
  * Desteklenen alt küme: paragraf, satır sonu, başlık (#–###), madde ve numaralı liste, tablo (| a | b |), kod bloğu,
- * **kalın**, *eğik*, `kod`, [bağlantı](adres). Bağlantı yalnız panelin kendi ekranlarına (`/panel`, `/panel/...`) ya da
+ * **kalın**, *eğik*, `kod`, [bağlantı](adres). Düz yazıdaki tutar (12.450,50 ₺, ₺85) ve yüzde (%12,5, -3,2%) ayrı düğüm
+ * olur (`num`): ekranda vurgulanır, satır sonunda bölünmez. Bağlantı yalnız panelin kendi ekranlarına (`/panel`, `/panel/...`) ya da
  * izin listesindeki sitelerin https adresine olur (EXTERNAL_HOSTS: laffogato.net, Paraşüt, Claude); başka her adres
  * (javascript:, data:, http:, //başka-site, göreli yol, listede olmayan site) bağlantısız yazı kalır (yalnız etiketi).
  * Neden liste: araç çıktılarında dışarıdan gelen metin var (Paraşüt kalem adları, LafPOS adları); onlarla yapılan istem
@@ -18,6 +19,8 @@ export type Inline =
   | { t: "strong"; c: Inline[] }
   | { t: "em"; c: Inline[] }
   | { t: "code"; v: string }
+  /** Tutar (₺) ya da yüzde: ekranda vurgulu, bölünmeden (tabular rakam) */
+  | { t: "num"; v: string }
   | { t: "link"; href: string; external: boolean; c: Inline[] }
   | { t: "br" };
 
@@ -65,11 +68,32 @@ function closing(src: string, from: number, mark: string): number {
   return i > from ? i : -1;
 }
 
+/**
+ * Tutar ve yüzde: "12.450,50 ₺", "85 ₺", "₺85", "%12,5", "% 12", "-3,2%", "−1.200 ₺". Sayının başı bir harfe ya da
+ * rakama yapışık değilse (ör. "A4" değil).
+ */
+const NUMBER = String.raw`[-−+]?\d{1,3}(?:\.\d{3})+(?:,\d+)?|[-−+]?\d+(?:,\d+)?`;
+const AMOUNT = new RegExp(String.raw`(?<![\p{L}\p{N}.,])(?:(?:${NUMBER})\s?(?:₺|TL\b)|₺\s?(?:${NUMBER})|%\s?(?:${NUMBER})|(?:${NUMBER})\s?%)`, "gu");
+
+/** Düz yazıyı tutar / yüzde düğümleriyle böler */
+export function splitAmounts(text: string): Inline[] {
+  const out: Inline[] = [];
+  let last = 0;
+  for (const m of text.matchAll(AMOUNT)) {
+    const at = m.index ?? 0;
+    if (at > last) out.push({ t: "text", v: text.slice(last, at) });
+    out.push({ t: "num", v: m[0] });
+    last = at + m[0].length;
+  }
+  if (last < text.length) out.push({ t: "text", v: text.slice(last) });
+  return out;
+}
+
 export function parseInline(src: string): Inline[] {
   const out: Inline[] = [];
   let text = "";
   const flush = () => {
-    if (text) out.push({ t: "text", v: text });
+    if (text) out.push(...splitAmounts(text));
     text = "";
   };
   let i = 0;
@@ -231,5 +255,32 @@ export function parseMarkdown(src: string): Block[] {
 
 /** Düğümlerin düz yazısı (ekran okuyucu özeti, testler) */
 export function plainText(nodes: Inline[]): string {
-  return nodes.map((n) => (n.t === "text" || n.t === "code" ? n.v : n.t === "br" ? "\n" : plainText(n.c))).join("");
+  return nodes.map((n) => (n.t === "text" || n.t === "code" || n.t === "num" ? n.v : n.t === "br" ? "\n" : plainText(n.c))).join("");
+}
+
+/**
+ * Yanıtın panoya kopyalanan düz metni ("Kopyala"): bağlantının yalnız etiketi, işaretsiz; madde "• ", numaralı "1. ",
+ * tablo satırı hücreler " | " ile, başlık ve paragraf arasında boş satır.
+ */
+export function markdownToPlain(src: string): string {
+  return parseMarkdown(src)
+    .map((b) => {
+      switch (b.t) {
+        case "p":
+        case "h":
+          return plainText(b.c);
+        case "ul":
+          return b.items.map((it) => `• ${plainText(it)}`).join("\n");
+        case "ol":
+          return b.items.map((it, i) => `${b.start + i}. ${plainText(it)}`).join("\n");
+        case "table":
+          return [b.head, ...b.rows].map((r) => r.map(plainText).join(" | ")).join("\n");
+        case "pre":
+          return b.v;
+        case "hr":
+          return "—";
+      }
+    })
+    .join("\n\n")
+    .trim();
 }

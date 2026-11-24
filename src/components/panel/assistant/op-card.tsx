@@ -15,6 +15,7 @@ import { cancelAssistantOp, confirmAssistantOp, readAssistantOp, undoAssistantOp
  * hiçbir şey değişmez; Onayla ve Vazgeç sunucu eylemleridir (src/server/actions/assistant-ops.ts). Sonuçtan sonra
  * yalnız katalogda geri alması tanımlı işlemde "Geri al" (1 saat). Tek sütun; düğmeler en az 44 px (dokunmatikte 48),
  * yerleri sabit. Telefonda (sm altı) yazılar bir boy büyük, satırların etiketi üstte değeri altta: 360 px'te de okunur.
+ * Sakin: telefonda kenar çizgisi bir ton açık, dış etki rozetleri renksiz (gri); renk yalnız uyarıda ve sonuçta.
  */
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Istanbul" });
@@ -94,7 +95,7 @@ export function OpCardView({ state, onChange }: { state: OpCardState; onChange: 
   const shownStatus = expired ? "expired" : status;
 
   return (
-    <section aria-label={`Onay kartı: ${card.title}`} className="rounded-2xl bg-surface p-3.5 text-[13.5px] leading-5 ring-1 ring-line-strong max-sm:p-3 max-sm:text-[14px]" data-component="op-card">
+    <section aria-label={`Onay kartı: ${card.title}`} className="rounded-2xl bg-surface p-3.5 text-[13.5px] leading-5 ring-1 ring-line-strong max-lg:ring-line max-sm:p-3.5 max-sm:text-[14px]" data-component="op-card">
       <div className="flex items-start gap-2">
         <ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand-500" aria-hidden="true" />
         <div className="min-w-0 flex-1">
@@ -130,7 +131,7 @@ export function OpCardView({ state, onChange }: { state: OpCardState; onChange: 
         <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Dış etkiler">
           {card.effects.map((e) => (
             <li key={e}>
-              <Badge tone="blue">{OP_EFFECTS[e] ?? e}</Badge>
+              <Badge tone="gray">{OP_EFFECTS[e] ?? e}</Badge>
             </li>
           ))}
         </ul>

@@ -10,6 +10,7 @@ import { ProfileDropdown, type ProfileDropdownItem } from "@/components/akmanos/
 import { SPRING_PANEL } from "@/components/akmanos/lib/motion-ease";
 import { LafTile } from "@/components/brand";
 import { actionFailure, toastUnreachable } from "@/components/ui/action-error";
+import { forgetAssistantData } from "@/lib/assistant/history";
 import { ROLES } from "@/lib/constants";
 import { ALERTS_REFRESH_EVENT } from "@/lib/live-poll";
 import { homeFor } from "@/lib/roles";
@@ -31,6 +32,15 @@ import { ThemeChoice } from "./theme-choice";
 
 type User = { id: number; name: string; email: string; role: "admin" | "staff" };
 
+/** Tarayıcı deposu (kapalıysa null: gizli sekme, engelli site verisi) */
+function safeStore(kind: "localStorage" | "sessionStorage"): Storage | null {
+  try {
+    return window[kind];
+  } catch {
+    return null;
+  }
+}
+
 const iconButton =
   "flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-border bg-background text-foreground outline-none transition-colors hover:bg-chart-bg focus-visible:ring-2 focus-visible:ring-foreground/30";
 
@@ -51,7 +61,11 @@ interface BranchPick {
   locked?: boolean;
 }
 
-export function Sidebar({ user, index = [], branch }: { user: User; index?: SearchEntry[]; branch?: BranchPick }) {
+/**
+ * `assistant`: alt menüde panel asistanının sekmesi (yalnız yönetici ve asistan açıkken; panel düzeni sunucuda verir,
+ * docs/ASISTAN.md)
+ */
+export function Sidebar({ user, index = [], branch, assistant = false }: { user: User; index?: SearchEntry[]; branch?: BranchPick; assistant?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const reduce = useReducedMotion();
@@ -211,7 +225,11 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
           accountItems={accountItems}
           workspaceItems={cafeItems}
           appearance={<ThemeChoice inMenu className="dark:bg-panel" />}
-          onSignOut={() => void forgetDeviceOnSignOut().finally(() => logoutAction().catch(toastUnreachable))}
+          onSignOut={() => {
+            // Asistanın cihazdaki sohbet geçmişi bu kullanıcıyla gider (docs/ASISTAN.md › Sohbet geçmişi)
+            forgetAssistantData(user.id, [safeStore("localStorage"), safeStore("sessionStorage")]);
+            void forgetDeviceOnSignOut().finally(() => logoutAction().catch(toastUnreachable));
+          }}
           className="w-full max-w-none"
         />
       </footer>
@@ -258,7 +276,8 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
       {/* Telefon ve tablet üst çubuğu: logo (ana sayfa), sayfa başlığı, arama ve zil (personelde menü düğmesi). Karaoke
           şeridi varken onun altında yapışır (--alarm-h, globals.css). Zil açıkken sayfanın yüzen düğmelerinin (z-30)
           üstüne çıkar: listenin alt bağlantıları "Yeni" düğmesinin altında kalmaz; çekmece (z-40/50) yine üstte */}
-      <header className="no-print sticky top-(--alarm-h) z-30 flex h-14 items-center gap-1.5 border-b border-border bg-background/90 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(0.625rem,env(safe-area-inset-left))] backdrop-blur-md has-[[data-component=notification-dropdown][data-open]]:z-[35] lg:hidden">
+      {/* data-mobile-top: telefonda asistanın tam ekran sayfası açıkken etkisiz (inert) yapılır (panel-assistant.tsx) */}
+      <header className="no-print sticky top-(--alarm-h) z-30 flex h-14 items-center gap-1.5 border-b border-border bg-background/90 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(0.625rem,env(safe-area-inset-left))] backdrop-blur-md has-[[data-component=notification-dropdown][data-open]]:z-[35] lg:hidden" data-mobile-top>
         <Link
           href={home}
           className="flex size-11 shrink-0 items-center justify-center rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
@@ -337,7 +356,7 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
         ) : null}
       </AnimatePresence>
 
-      <BottomNav role={user.role} pathname={pathname} overdue={overdue} menuOpen={mobileOpen} onMenu={openDrawer} menuButtonRef={navMenuRef} />
+      <BottomNav role={user.role} pathname={pathname} overdue={overdue} menuOpen={mobileOpen} onMenu={openDrawer} menuButtonRef={navMenuRef} assistant={isAdmin && assistant} />
 
       <AlertCenter role={user.role} userId={user.id} branchScope={branch?.scope ?? null} />
 
