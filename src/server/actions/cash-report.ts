@@ -5,7 +5,7 @@ import { refresh } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
 
-import { BRANCH_ID_MAX, namedTill } from "@/lib/branches";
+import { BRANCH_ID_MAX, namedTill, zFormBranch } from "@/lib/branches";
 import { businessDate, carryCheck, changesText, diffText, parseEmails, staffCanReport, waPhone, whatsappLink, whatsappText, type CashReportFields } from "@/lib/cash-report";
 import type { Role } from "@/lib/constants";
 import { money } from "@/lib/format";
@@ -270,13 +270,18 @@ export async function sendCashTestEmail() {
   });
 }
 
-/** Ekranda kayıtlı raporun WhatsApp metni (rapor zaten gönderilmişken "WhatsApp ile gönder" için) */
-export async function cashReportWhatsapp(date: string) {
+/**
+ * Ekranda kayıtlı raporun WhatsApp metni (rapor zaten gönderilmişken "WhatsApp ile gönder" için). Rapor formun
+ * gösterdiği kasanın (`branchId`, formTillBranch; şubesine kilitli personelde kendi şubesi), gönderim anındaki seçimin
+ * değil: başka sekmede seçici değişince Tuzla'nın ekranı Marina'nın raporunu paylaşırdı. Göndermeyen eski sekmede seçili kasa
+ */
+export async function cashReportWhatsapp(date: string, branchId?: string | null) {
   return attempt(async () => {
     const me = await requireUser();
     const d = zDate.parse(date);
     if (me.role !== "admin" && !staffCanReport(d)) throw new UserError("Bu raporu yalnız yönetici görebilir");
-    const r = await getCashReport(d);
+    const till = await formTillBranch(zFormBranch.parse(branchId));
+    const r = await getCashReport(d, "staff", till);
     if (!r) throw new UserError("Bu günün raporu yok");
     const [settings, waste, extras, integrity, branches] = await Promise.all([
       loadCashSettings(),
