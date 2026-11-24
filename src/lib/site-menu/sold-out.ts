@@ -34,6 +34,17 @@ export const SOLD_OUT_ALERT_MS = 24 * HOUR_MS;
 const SOLD_OUT_BURST = 3;
 
 /** İşlem geçmişindeki eylem adları (hız sınırı da bunları sayar) */
+/**
+ * Birden çok şube açıkken Tükendi'nin kapsamı (şube kapsamı C P1-7; docs/SITE-MENU.md): sitede şube başına "Satışta /
+ * Tükendi" yok, ürün bütün şubelerin menüsünde kapanır. Pencere bunu söyler; şubesine kilitli personelin dokunuşu önce
+ * onay ister (öbür şubeyi de etkiler). Şube başına durum site sözleşmesi gelince (laffogato) eklenir. Tek şubede null
+ */
+export function soldOutAllBranchesText(branchNames: readonly string[]): string | null {
+  if (branchNames.length < 2) return null;
+  const list = branchNames.length === 2 ? branchNames.join(" ve ") : `${branchNames.slice(0, -1).join(", ")} ve ${branchNames.at(-1)}`;
+  return `Bütün şubelerde kapanır (${list}): sitede şube başına durum yok.`;
+}
+
 export const SOLD_OUT_ACTIONS = { close: "Tükendi", open: "Satışa açıldı", hold: "Tükendi: kapalı tutuldu" } as const;
 
 export const SOLD_OUT_TEXT = {

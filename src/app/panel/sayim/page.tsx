@@ -3,18 +3,20 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 
+import { BranchChooser } from "@/components/panel/branch-chooser";
 import { MonthPickerSkeleton } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
+import { tillBranches } from "@/lib/branches";
 import { countFactor, shiftMonth } from "@/lib/calc/engine";
 import { stockVatSummary } from "@/lib/calc/insights";
 import { countGroupOptions } from "@/lib/count-item";
 import { monthLabel, monthShort } from "@/lib/format";
 import { STOCK_ESTIMATE_BRANCH, STOCK_ESTIMATE_PATH } from "@/lib/stock-estimate";
 import { requireUser } from "@/server/auth/dal";
-import { currentPhysicalBranch } from "@/server/branch-scope";
+import { currentBranchScope, currentPhysicalBranch } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { availableMonths, loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
@@ -75,8 +77,26 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
   const sp = await searchParams;
   // Sayım şube başına (docs/SUBE.md): seçili fiziksel şubenin sayımı gösterilir ve ona yazılır ("Tümü" ya da online
   // kanal seçiliyken Tuzla). Birden çok açık şube varken başlık hangi şubenin sayıldığını söyler
-  const [branch, branches] = await Promise.all([currentPhysicalBranch(), listBranches()]);
-  const branchLabel = branches.filter((b) => b.active && b.kind === "fiziksel").length > 1 ? branch.name : null;
+  const [branch, branches, scope] = await Promise.all([currentPhysicalBranch(), listBranches(), currentBranchScope()]);
+  const tills = tillBranches(branches);
+  const branchLabel = tills.length > 1 ? branch.name : null;
+  // "Tümü" ya da online kanal seçiliyken birden çok kasa açıksa sayım formu çizilmeden önce şube sorulur (şube kapsamı C
+  // P1-6): önceden sessizce Tuzla'nın sayımı açılıyordu. Kilitli personelin seçimi zaten kendi şubesidir
+  if (tills.length > 1 && !tills.some((b) => b.id === scope)) {
+    const ay = Array.isArray(sp.ay) ? sp.ay[0] : sp.ay;
+    return (
+      <>
+        <PageHeader path="/panel/sayim" role={user.role} title="Stok sayımı" description={`${COUNT_RULE.charAt(0).toLocaleUpperCase("tr-TR")}${COUNT_RULE.slice(1)}`} tabs={<SectionTabs section="stok" current="/panel/sayim" role={user.role} />} />
+        <BranchChooser
+          title="Hangi şubeyi sayıyorsunuz?"
+          description="Stok sayımı şube başına tutulur. Şubeyi seçin; sayım o şubenin listesiyle açılır."
+          path="/panel/sayim"
+          params={{ ay }}
+          branches={tills}
+        />
+      </>
+    );
+  }
   const model = await loadModel({ scope: branch.id });
   const ay = Array.isArray(sp.ay) ? sp.ay[0] : sp.ay;
   const isAdmin = user.role === "admin";

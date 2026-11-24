@@ -8,7 +8,10 @@ import { PageHeader } from "@/components/panel/page-header";
 import { buttonClass } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
+import { tillBranches } from "@/lib/branches";
 import { requireUser } from "@/server/auth/dal";
+import { staffBranchLock } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { loadSoldOut } from "@/server/data/menu-status";
 import { getDb, schema as s } from "@/server/db";
 import { siteLinkSecret, siteUrl } from "@/server/site-link";
@@ -81,6 +84,11 @@ async function SiparislerContent() {
       return null;
     }),
   ]);
+  // Tükendi bütün şubelerde kapanır (sitede şube başına durum yok): birden çok şube açıkken pencere söyler, şubesine
+  // kilitli personel onaylar (şube kapsamı C P1-7)
+  const [branchRows, lock] = await Promise.all([listBranches(), staffBranchLock()]);
+  const branchNames = tillBranches(branchRows).map((b) => b.name);
+  const locked = lock !== null && branchNames.length > 1;
   const recipes = Object.fromEntries(linked.filter((p) => p.siteMenuId && p.siteMenuSlot).map((p) => [`${p.siteMenuId}|${p.siteMenuSlot}`, p.name]));
   return (
     <>
@@ -100,7 +108,7 @@ async function SiparislerContent() {
           )
         ) : null}
         <OrdersBoard role={user.role} siteBase={siteUrl()} recipes={recipes} serverNow={now} />
-        {soldOut?.configured ? <SoldOutCard role={user.role} entries={soldOut.entries} serverNow={now} /> : null}
+        {soldOut?.configured ? <SoldOutCard role={user.role} entries={soldOut.entries} serverNow={now} branches={branchNames} lockedStaff={locked} /> : null}
         <div className="max-w-xl">
           <DeviceAlerts role={user.role} karaoke />
         </div>

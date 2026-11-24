@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { BranchChooser } from "@/components/panel/branch-chooser";
 import { KasaText } from "@/components/panel/kasa-text";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -255,6 +256,20 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
           </section>
         ))}
       </div>
+    );
+  }
+  // "Tümü" ya da online kanal seçiliyken birden çok kasa açıksa (personel ya da yöneticinin günü) form çizilmeden önce
+  // şube sorulur: önceden form sessizce Tuzla'nın kasasını açıyordu (şube kapsamı C P1-5). Şubesine kilitli personelin
+  // seçimi zaten kendi şubesidir
+  if (many && !tills.some((b) => b.id === scope)) {
+    return (
+      <BranchChooser
+        title="Hangi şubenin kasası?"
+        description="Kasa raporu şube başına girilir. Şubeyi seçin; sayfa o şubenin kasasıyla açılır."
+        path="/panel/kasa"
+        params={{ gun: pick(sp.gun) }}
+        branches={tills}
+      />
     );
   }
   const till = await currentTillBranch();
