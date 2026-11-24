@@ -230,7 +230,8 @@ export async function extractText<T>(req: Omit<ExtractCall<T>, "feature" | "phot
  * Paraşüt'te bekleyen ürünlerin bir partisi için hammadde önerisi (Claude Sonnet 5.5, yalnız metin; src/lib/product-match-ai.ts,
  * src/server/parasut/ai-match.ts). Kapılar okumayla aynı (anahtar, Ayarlar › Fotoğraftan okuma), günlük sınır ayrı
  * (MATCH_DAILY_CAP, parti başına bir çağrı). Sistem istemi (hammadde listesi, örnekler) önbelleğe yazılır. Günlüğe yalnız
- * maliyet satırı düşer: istem ve yanıt ai_calls'a yazılmaz (doğrulanmış öneriler integration_state'te)
+ * maliyet satırı düşer (efor, süre, token, tutar): istem ve yanıt ai_calls'a yazılmaz (doğrulanmış öneriler
+ * integration_state'te). Zaman aşımı sunucu günlüğüne eforla yazılır
  */
 export async function extractMatch<T>(
   req: Omit<ExtractCall<T>, "feature" | "photoId" | "effort" | "timeouts" | "maxTokens" | "cacheSystem" | "exclusiveMs"> & {
@@ -273,8 +274,9 @@ async function extract<T>(req: ExtractCall<T> & AiInput & { model: AiModel; tota
         .where(and(eq(s.aiCalls.feature, req.feature), eq(s.aiCalls.status, "running"), gte(s.aiCalls.at, new Date(Date.now() - req.exclusiveMs))));
       if ((row?.n ?? 0) > 0) return gate("busy");
     }
-    // Efor yalnız açıkça seçilen okumada yazılır (yazarkasa Z'si; docs/planlar/okc-z.md §6.2): canlıda hangi okumanın
-    // hangi eforla yapıldığı ve tutarı görülsün. Ötekilerde boş (modelin varsayılanı)
+    // Efor yalnız açıkça seçilen istekte yazılır (yazarkasa Z'si, docs/planlar/okc-z.md §6.2; ürün önerisi, run.ts
+    // MATCH_EFFORT): canlıda hangi isteğin hangi eforla yapıldığı, ne kadar sürdüğü ve tutarı görülsün. Ötekilerde boş
+    // (modelin varsayılanı)
     const [row] = await tx
       .insert(s.aiCalls)
       .values({ feature: req.feature, model: req.model, effort: req.effort ?? null, status: "running", userId: req.userId, photoId: req.photoId })

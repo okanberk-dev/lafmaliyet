@@ -1,8 +1,9 @@
 // Paraşüt › AI ile öneri gerçek Postgres'te (docs/PARASUT.md § 5e), kayıtlı yanıtlarla (AI_REPLAY; canlı istek yok),
 // oturum ve next/cache taklit edilerek: "AI ile öner" yalnız sezgiselin "aynı ürün bağlı" diyemediği ürünleri sorar,
 // doğrulanmış önerileri integration_state'e yazar ve bağlantı kurmaz; ai_calls'a yalnız maliyet satırı düşer (istem ve
-// yanıt yok); ikinci basış yeniden sormaz (sayfa yenilenince API yemez); hammadde listesi değişince öneriler geçersiz
-// olur, bağlanan ürünün önerisi düşer; okuma sınırına sayılmaz, kendi günlük sınırı ve aynı anda tek istek kuralı var.
+// yanıt yok); ikinci basış yeniden sormaz (sayfa yenilenince API yemez); hammadde listesi değişince yalnız geçerliliğini
+// yitiren öneriler ("emin değil") yeniden sorulur, bağlanan ürünün önerisi düşer; bir basışın partileri bayt bayt aynı
+// sistem istemini gönderir (önbellek); okuma sınırına sayılmaz, kendi günlük sınırı ve aynı anda tek istek kuralı var.
 //
 // ESLESTIRME_TEST_DATABASE_URL (yoksa PARASUT_TEST_DATABASE_URL) verilmezse atlanır. Bir Postgres sunucusunun adresi
 // (veritabanı oluşturabilen kullanıcı): test kendi geçici veritabanını açar, migration'ları uygular, sonunda siler.
@@ -29,6 +30,8 @@ describe("AI ile ürün → hammadde önerisi: veritabanında", { skip: !SERVER_
   let sync: typeof import("../src/server/parasut/sync");
   let claude: typeof import("../src/server/ai/claude");
   let userId = 0;
+  /** Ürün önerisi isteklerinin sistem istemi (kayıtlı yanıt istemcisinin önünde yakalanır) */
+  const systems: unknown[] = [];
 
   before(async () => {
     admin = postgres(SERVER_URL!, { max: 1, onnotice: () => {} });
@@ -52,6 +55,18 @@ describe("AI ile ürün → hammadde önerisi: veritabanında", { skip: !SERVER_
     const [u] = await db.insert(s.users).values({ email: "ali@laffogato.net", name: "Ali", passwordHash: "x", role: "admin" }).returning();
     userId = u.id;
     stub(require.resolve("../src/server/auth/dal"), { requireAdmin: async () => ({ ...u, role: "admin" }), requireUser: async () => ({ ...u, role: "admin" }) });
+    const replay = require("../src/server/ai/replay") as typeof import("../src/server/ai/replay");
+    stub(require.resolve("../src/server/ai/replay"), {
+      ...replay,
+      replayClient: (feature: Parameters<typeof replay.replayClient>[0]) => {
+        const inner = replay.replayClient(feature);
+        const create: typeof inner.beta.messages.create = (params, options) => {
+          if (feature === "eslestirme") systems.push(params.system);
+          return inner.beta.messages.create(params, options);
+        };
+        return { beta: { messages: { create } } };
+      },
+    });
     actions = await import("../src/server/actions/parasut");
     aiMatch = await import("../src/server/parasut/ai-match");
     sync = await import("../src/server/parasut/sync");
@@ -141,22 +156,43 @@ describe("AI ile ürün → hammadde önerisi: veritabanında", { skip: !SERVER_
     assert.equal((await claude.aiStatus()).usedToday, 0, "fotoğraf ve fatura okumasının sınırı etkilenmez");
   });
 
-  test("hammadde listesi değişince öneriler geçersiz; bağlanan ürünün önerisi düşer", async () => {
+  test("hammadde listesi değişince yalnız 'emin değil' yeniden sorulur; bağlanan ürünün önerisi düşer", async () => {
+    // AI "listede yok" dedi, sahip şurubu ekledi: öteki öneriler (bağla, hammadde değil) geçerli kalır
     await db.insert(s.ingredients).values({ name: "Vanilya şurubu", category: "Şurup", unit: "ml", packagePrice: 400, packageSize: 700 });
     const p = await page();
-    assert.deepEqual(p.items, {}, "eski liste için verilen öneriler gösterilmez");
-    assert.equal(p.askable, 4);
+    assert.deepEqual(Object.keys(p.items).sort(), ["p:bardak", "p:kakao", "p:kargo"], "yalnız 'emin değil' (şurup) düşer");
+    assert.equal(p.askable, 1);
     // Sahip bardağı kendisi bağlar (bağlantının tek yolu); sonra öneri yeniden istenir
     const saved = await actions.saveProductLink({ productKey: "p:bardak", productName: "LİVİ YENİLEBİLİR BARDAK 150 AD.", ingredientId: 2, factor: 150, updatePrice: true });
     assert.equal(saved.ok, true, JSON.stringify(saved));
     // Okuma sınırı dolu olsa da (fotoğraf, fatura) ürün önerisi kendi sınırıyla çalışır
     await db.insert(s.aiCalls).values(Array.from({ length: 40 }, () => ({ feature: "fis", model: "claude-opus-5-5", status: "ok" as const })));
     const r = await actions.suggestProductLinksAi();
-    assert.deepEqual(r.ok && [r.data.asked, r.data.remaining], [3, 0]);
+    assert.deepEqual(r.ok && [r.data.asked, r.data.remaining], [1, 0], "yalnız şurup soruldu");
     const st = await store();
     assert.deepEqual(Object.keys(st?.items ?? {}).sort(), ["p:kakao", "p:kargo", "p:surup"]);
     // Yeni hammadde listede: kayıtlı yanıt şurubu artık ona bağlar
     assert.equal(st?.items["p:surup"].decision, "bagla");
+  });
+
+  test("bir basışın partileri bayt bayt aynı sistem istemini gönderir (önbellek okuması buna bağlı)", async () => {
+    // Listede karşılığı olmayan 12 ürün: iki parti (10 + 2), ikisi de "emin değil"
+    for (let i = 1; i <= 12; i++) {
+      const key = `p:bal-${i}`;
+      const [inv] = await db
+        .insert(s.invoices)
+        .values({ date: "2026-11-21", supplier: "Arı", category: "Hammadde & İçecek", amount: 100 + i, payable: (100 + i) * 1.2, source: "parasut", origin: "parasut" })
+        .returning();
+      await db.insert(s.parasutBillLines).values({ invoiceId: inv.id, externalId: `l-${key}`, productKey: key, productName: `ÇİÇEK BALI ${i} KAVANOZ`, unit: "Adet", quantity: 1, unitPrice: 100 + i, netTotal: 100 + i });
+    }
+    systems.length = 0;
+    const first = await actions.suggestProductLinksAi();
+    assert.deepEqual(first.ok && [first.data.asked, first.data.remaining], [10, 2]);
+    const second = await actions.suggestProductLinksAi();
+    assert.deepEqual(second.ok && [second.data.asked, second.data.remaining], [2, 0]);
+    assert.equal(systems.length, 2);
+    assert.equal(JSON.stringify(systems[1]), JSON.stringify(systems[0]));
+    assert.deepEqual((systems[0] as { cache_control?: unknown }[]).at(-1)?.cache_control, { type: "ephemeral" });
   });
 
   test("aynı anda tek istek; sınıra bir parti kala aynı anda iki basıştan yalnız biri gider; sınır dolunca istek gitmez, nedeni Türkçe", async () => {
@@ -170,23 +206,24 @@ describe("AI ile ürün → hammadde önerisi: veritabanında", { skip: !SERVER_
 
     // İki sekme aynı anda: sınır denetimi ve "running" satırı tek işlemde, danışma kilidiyle (ikincisi ilkini görür)
     const matchCalls = async () => (await calls()).filter((c) => c.feature === "eslestirme").length;
-    await db.insert(s.aiCalls).values(Array.from({ length: 19 - (await matchCalls()) }, () => ({ feature: "eslestirme", model: "claude-sonnet-5-5", status: "ok" as const })));
+    await db.insert(s.aiCalls).values(Array.from({ length: 39 - (await matchCalls()) }, () => ({ feature: "eslestirme", model: "claude-sonnet-5-5", status: "ok" as const })));
     const both = await Promise.all([actions.suggestProductLinksAi(), actions.suggestProductLinksAi()]);
     assert.equal(both.filter((r) => r.ok && r.data.asked > 0).length, 1, JSON.stringify(both));
     for (const r of both.filter((x) => !x.ok)) {
       assert.ok(
-        ["AI önerisi başka bir sekmede sürüyor; bitince sayfayı yenileyin.", "AI önerisinin bugünkü sınırı doldu (20 parti); hammaddeyi elle seçin."].includes(!r.ok ? r.error : ""),
+        ["AI önerisi başka bir sekmede sürüyor; bitince sayfayı yenileyin.", "AI önerisinin bugünkü sınırı doldu (40 parti); hammaddeyi elle seçin."].includes(!r.ok ? r.error : ""),
         JSON.stringify(r),
       );
     }
-    assert.equal(await matchCalls(), 20, "sınır aşılmaz: yalnız bir parti daha soruldu");
+    assert.equal(await matchCalls(), 40, "sınır aşılmaz: yalnız bir parti daha soruldu");
 
-    // Liste yine değişir (sorulacak ürün var), ama bugünkü sınır dolu
+    // Liste yine değişir ("emin değil" bal kavanozları yeniden sorulacak), ama bugünkü sınır dolu
     await db.insert(s.ingredients).values({ name: "Fındık şurubu", category: "Şurup", unit: "ml", packagePrice: 400, packageSize: 700 });
     const before = (await calls()).length;
     assert.equal((await page()).state, "cap");
     const capped = await actions.suggestProductLinksAi();
-    assert.equal(!capped.ok && capped.error, "AI önerisinin bugünkü sınırı doldu (20 parti); hammaddeyi elle seçin.");
+    assert.ok((await page()).askable > 0, "sorulacak ürün var");
+    assert.equal(!capped.ok && capped.error, "AI önerisinin bugünkü sınırı doldu (40 parti); hammaddeyi elle seçin.");
     assert.equal((await calls()).length, before, "sınır dolunca günlüğe satır da yazılmaz");
   });
 });

@@ -70,8 +70,17 @@ export function matchSummary(view: MatchView, ingredient: { name: string; unit: 
 }
 
 /**
+ * Kısa öneri mi: uyarısız ad benzerliği ve uyarısız, yüksek güvenli "aynı ürün bağlı" tek satır (rozet, özet, Uygula).
+ * AI önerisi ve uyarılı öneri tam kutu (gerekçe, uyarılar, Yoksay): AI'den önce 25 bekleyenin 17'si aynı kalıp
+ * gerekçeli kutuyla listeyi uzatıyor, asıl incelenecek öneriler arada kayboluyordu
+ */
+export const compactSuggestion = (view: Pick<MatchView, "source" | "confidence" | "warnings">): boolean =>
+  view.warnings.length === 0 && (view.source === "name" || (view.source === "link" && view.confidence === "yuksek"));
+
+/**
  * Bekleyen ürün satırındaki öneri. "Uygula" formu doldurur (hammadde ve çarpan; kaydetmez), "Yoksay" öneriyi bu
- * oturumda gizler, AI "hammadde değil" dediyse "Hammadde değil olarak işaretle" bugünkü işaretlemeyi yapar (geri alınır)
+ * oturumda gizler, AI "hammadde değil" dediyse "Hammadde değil olarak işaretle" bugünkü işaretlemeyi yapar (geri alınır).
+ * Kısa öneride (compactSuggestion) gerekçe yalnız ipucunda, Yoksay yok (hammaddeyi seçmek yeter)
  */
 export function SuggestionBox({
   view,
@@ -97,6 +106,27 @@ export function SuggestionBox({
   className?: string;
 }) {
   const canApply = view.decision !== "hammadde_degil" && Boolean(ingredient);
+  const applyButton = canApply ? (
+    <Button
+      size="xs"
+      variant={applied ? "ghost" : "secondary"}
+      disabled={applied}
+      onClick={onApply}
+      aria-label={applied ? `${productName}: öneri forma uygulandı` : `${productName}: öneriyi forma uygula`}
+      title="Hammaddeyi ve çarpanı forma yazar; bağlamak için Bağla'ya basın"
+    >
+      <Check size={13} aria-hidden="true" /> {applied ? "Uygulandı" : "Uygula"}
+    </Button>
+  ) : null;
+  if (compactSuggestion(view))
+    return (
+      <div className={cn("flex min-w-0 flex-wrap items-center gap-1.5 text-xs", className)} title={view.reason || undefined}>
+        <span className="sr-only">Öneri:</span>
+        <MatchBadges view={view} />
+        <span className="min-w-0 font-medium break-words text-ink-soft">{matchSummary(view, ingredient, lineUnit)}</span>
+        {applyButton}
+      </div>
+    );
   return (
     <div className={cn("flex min-w-0 flex-col gap-1.5 rounded-xl bg-panel px-3 py-2 text-xs ring-1 ring-line", className)}>
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -112,18 +142,7 @@ export function SuggestionBox({
         <Notice key={w.text} tone={w.kind === "ai" ? "neutral" : "warn"} size="line" className="min-w-0" title={w.text} />
       ))}
       <div className="flex flex-wrap items-center gap-1.5">
-        {canApply ? (
-          <Button
-            size="xs"
-            variant={applied ? "ghost" : "secondary"}
-            disabled={applied}
-            onClick={onApply}
-            aria-label={applied ? `${productName}: öneri forma uygulandı` : `${productName}: öneriyi forma uygula`}
-            title="Hammaddeyi ve çarpanı forma yazar; bağlamak için Bağla'ya basın"
-          >
-            <Check size={13} aria-hidden="true" /> {applied ? "Uygulandı" : "Uygula"}
-          </Button>
-        ) : null}
+        {applyButton}
         {view.decision === "hammadde_degil" ? (
           <Button size="xs" variant="secondary" disabled={pending} onClick={onIgnore} aria-label={`${productName}: hammadde değil olarak işaretle`}>
             <PackageX size={13} aria-hidden="true" /> Hammadde değil olarak işaretle

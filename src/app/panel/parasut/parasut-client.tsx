@@ -837,6 +837,8 @@ function ProductLinks({
     return v && ing && v.factor && v.factor > 0 ? [{ u, ing, factor: v.factor, updatePrice: true, view: v, preselect: preselected(v) }] : [];
   });
   const chosen = proposals.filter((p) => picked.has(p.u.productKey));
+  // Düğmede işaretli gelecek sayı da yazar: ad benzerliği (düşük güven) işaretsiz gelir, "(6 / 18)" ne bekleneceğini söyler
+  const preCount = proposals.filter((p) => p.preselect).length;
   const linkAll = () =>
     start(async () => {
       if (!chosen.length) return;
@@ -1002,12 +1004,13 @@ function ProductLinks({
                     variant="secondary"
                     className="ml-auto normal-case tracking-normal"
                     disabled={pending}
+                    title={preCount < proposals.length ? `${num(proposals.length)} öneri; ${num(preCount)} tanesi (yüksek güvenli ya da sizin seçtiğiniz) işaretli gelir` : undefined}
                     onClick={() => {
                       setPicked(new Set(proposals.filter((p) => p.preselect).map((p) => p.u.productKey)));
                       setBulkOpen(true);
                     }}
                   >
-                    <Sparkles size={14} /> Hazır olanları bağla ({num(proposals.length)})
+                    <Sparkles size={14} /> Hazır olanları bağla ({preCount < proposals.length ? `${num(preCount)} / ${num(proposals.length)}` : num(proposals.length)})
                   </Button>
                 ) : null}
               </p>
@@ -1045,7 +1048,8 @@ function ProductLinks({
                           </IconTile>
                           <div className="min-w-0">
                             {/* Telefonda uzun ürün ve tedarikçi adı alt satıra geçer: son birim fiyat kesilmez */}
-                            <p className="text-sm font-semibold break-words text-ink lg:truncate" title={u.productName}>
+                            {/* Öneri varken geniş ekranda da tam ad: önerinin çarpanı addaki paketle karşılaştırılır ("1,89 LT", "50'Lİ X 20") */}
+                            <p className={cn("text-sm font-semibold break-words text-ink", !showSuggestion && "lg:truncate")} title={u.productName}>
                               {u.productName}
                             </p>
                             <p className="text-xs break-words text-ink-mute lg:truncate" title={u.supplier}>
@@ -1358,6 +1362,22 @@ function ProductLinks({
           <span className="font-medium text-ink-soft">yüksek güvenli</span> öneriler işaretli gelir: orta ve düşük güvenlileri kontrol edip işaretleyin. Fiyatı
           bugünkünden çok farklı çıkan (turuncu) öneride çarpanı ya da hammaddeyi kontrol edin. Bağlantıyı sonradan düzenleyebilir ya da silebilirsiniz.
         </p>
+        {proposals.length > 1 ? (
+          // Anahtarsız ortamda (yalnız ad benzerliği) hiçbiri işaretli gelmez: tek tek tıklamak yerine hepsi bir basışta
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-mute">
+            <span aria-live="polite">
+              {num(chosen.length)} / {num(proposals.length)} işaretli
+            </span>
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={pending}
+              onClick={() => setPicked(chosen.length === proposals.length ? new Set() : new Set(proposals.map((p) => p.u.productKey)))}
+            >
+              {chosen.length === proposals.length ? "İşaretleri kaldır" : "Tümünü işaretle"}
+            </Button>
+          </div>
+        ) : null}
         <ul className="mt-3 max-h-[50dvh] divide-y divide-ink/[0.06] overflow-y-auto rounded-2xl bg-surface px-3">
           {proposals.map((p, i) => {
             const checked = picked.has(p.u.productKey);

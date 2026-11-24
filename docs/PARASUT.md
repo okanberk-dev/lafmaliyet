@@ -527,15 +527,21 @@ ad benzerliği tahmindir, adında hammaddenin adı geçmeyen ürüne ("PINAR TAM
 - **Kime sorulur:** sayfadaki bekleyenlerden (en sık 40) sezgiselin "aynı ürün bağlı" diyemediği ve geçerli saklı önerisi
   olmayanlar. Aynı ürün bağlıysa o öneri AI'den önce gelir, AI'ye sorulmaz (API tasarrufu).
 - **İstek:** `claude-sonnet-5-5`, efor `medium` (yanlış çarpan birim fiyatı ve reçete maliyetini bozar; düşünme payı
-  tasarruftan değerli), JSON şemalı çıktı (`output_config.format`), reddedilirse sunucu tarafında yedek model
-  (`fallbacks: "default"`). `thinking`, sıcaklık ve ön doldurma gönderilmez. Partide en çok **20 ürün**, tek istek:
-  sayfanın süresi 60 sn (Vercel Hobby) ve 40'lık parti buna sığmayabilirdi; ekran kalan bitene kadar partileri sırayla
-  ister. (İsteğin ilk hâli "40'lık partiler" diyordu; 20 bilinçli sapma: 40 ürün iki istek ve iki günlük sınır hakkı
-  yer. Canlı ölçüm 40'lık partinin 45 sn'ye sığdığını gösterirse `MATCH_BATCH_SIZE` büyütülür.) Servis çağrısı en çok
-  45 sn sürer ve eylemin başından en geç 48 sn'de kesilir (önündeki okumalar uzarsa çağrının süresi kısalır); kalan
-  süre doğrulama, saklama ve günlüğe. Eylem sayfayı kendisi yenilemez; ekran partiler bitince ayrı istekte yeniler.
-  Sistem istemi (talimat, etkin hammaddeler, örnekler) önbelleğe yazılır: aynı oturumdaki ikinci parti onu
-  önbellekten okur (milyon token 0,10 $).
+  tasarruftan değerli; efor açıkça gönderilir ve `ai_calls.effort`'a yazılır), JSON şemalı çıktı
+  (`output_config.format`), reddedilirse sunucu tarafında yedek model (`fallbacks: "default"`). `thinking`, sıcaklık ve
+  ön doldurma gönderilmez. Partide en çok **10 ürün**, tek istek; ekran kalan bitene kadar partileri sırayla ister.
+  (İsteğin ilk hâli "40'lık partiler" diyordu; 10 bilinçli sapma: süreyi belirleyen çıktı, "medium" eforda Sonnet 5.5
+  hemen her yanıttan önce düşünür. Ürün başına JSON ~50–60 token, parti başına tahmin 1,5–4 bin token çıktı; canlıda
+  **ölçülmedi**. 20'lik parti bu tahminin üst ucunda 45 sn'ye dayanabilirdi; kesilen parti öneri döndürmez, yeniden
+  basış aynı partiyi gönderir. İlk canlı partilerde `ai_calls`'taki `ms`, `output_tokens`, `cache_read_tokens` ve
+  `cache_write_tokens`'a bakılır: 10'luk parti 20 sn'nin çok altındaysa `MATCH_BATCH_SIZE` büyütülür, 45 sn'ye yakınsa
+  efor `low`a iner.) Servis çağrısı en çok 45 sn sürer ve eylemin başından en geç 48 sn'de kesilir (önündeki okumalar
+  uzarsa çağrının süresi kısalır); kalan süre doğrulama, saklama ve günlüğe. Kesilen çağrı sunucu günlüğüne eforla
+  yazılır (`[eslestirme] öneri … efor medium timeout`); kullanım bilgisi gelmediği için `ai_calls`'ta 0 $ görünür ama
+  günlük sınırdan bir parti yer. Eylem sayfayı kendisi yenilemez; ekran partiler bitince ayrı istekte yeniler. Sistem
+  istemi (talimat, etkin hammaddeler, örnekler) önbelleğe yazılır: aynı basıştaki sonraki partiler onu önbellekten okur
+  (milyon token 0,10 $). Kazancı küçük: önek ~3–7 bin token, okuması parti başına birkaç kuruş; maliyetin çoğu çıktı.
+  Örnekler ve fiyatlar hemen her bağlantıda değiştiği için önbellek bir basıştan ötekine nadiren tutar.
 - **Ne gönderilir:** etkin hammaddelerin kimliği, adı, birimi, kategorisi, paket açıklaması ve birim maliyeti; sistemin
   kendi bağlantılarından en çok **60 örnek** (ürün adı, faturadaki birim, hammadde, çarpan; önce her hammaddeden biri):
   model bu işletmenin geçmiş kararlarından öğrenir. Partideki ürünlerin adı, açıklaması, faturadaki birimi, son birim
@@ -548,20 +554,28 @@ ad benzerliği tahmindir, adında hammaddenin adı geçmeyen ürüne ("PINAR TAM
   biri güveni bir basamak düşürür. Yanıtta olmayan ürün "emin değil" saklanır (yeniden sorulmaz).
 - **Ekran:** her bekleyen satırda öneri kutusu: kaynak rozeti (**Aynı ürün bağlı** / **Ad benzerliği** / **AI**),
   hammadde ve çarpan ("1 Adet = 1.000 ml"), güven rozeti (yüksek yeşil, orta sarı, düşük gri), tek satır gerekçe,
-  uyarılar, **Uygula** (formu doldurur, kaydetmez) ve **Yoksay** (bu sayfada gizler). AI "hammadde değil" derse **Hammadde
-  değil olarak işaretle** (bugünkü işaretleme, geri alınır). **Hazır olanları bağla** penceresine AI önerileri de girer;
-  yalnız yüksek güvenliler ve sizin seçtikleriniz işaretli gelir. **Bağlantı yalnız "Bağla" ya da penceredeki onayla
+  uyarılar, **Uygula** (formu doldurur, kaydetmez) ve **Yoksay** (bu sayfada gizler). Uyarısız ad benzerliği ve uyarısız
+  yüksek güvenli "aynı ürün bağlı" önerisi tek satırdır (rozetler, özet, **Uygula**; gerekçe ipucunda): AI'den önce liste
+  aynı kalıp kutularla uzamasın. Öneri varken ürünün adı geniş ekranda da kesilmez (çarpan addaki paketle
+  karşılaştırılır). AI "hammadde değil" derse **Hammadde değil olarak işaretle** (bugünkü işaretleme, geri alınır).
+  **Hazır olanları bağla** penceresine AI önerileri de girer; yalnız yüksek güvenliler ve sizin seçtikleriniz işaretli
+  gelir. Düğme işaretli gelecek sayıyı da yazar ("Hazır olanları bağla (6 / 18)"); pencerede **Tümünü işaretle** /
+  **İşaretleri kaldır** var (anahtarsız ortamda ad benzerliği önerileri işaretsiz gelir). **Bağlantı yalnız "Bağla" ya da penceredeki onayla
   kurulur**; AI'nin söylediği hiçbir şey kendiliğinden yazılmaz.
 - **Saklama:** doğrulanmış öneriler `integration_state` › `parasut.aiSuggestions`'ta: hammadde listesinin özeti (kimlik,
-  ad, birim; fiyat değil) ve ürün anahtarı → öneri. Liste değişmediyse ve ürün hâlâ bekliyorsa sayfa yenilenince yeniden
-  sorulmadan gösterilir; hammadde eklenince, adı ya da birimi değişince öneriler geçersiz olur. Bağlanan ya da "hammadde
-  değil" denen ürünün önerisi sonraki yazımda düşer. İstem ve modelin ham yanıtı saklanmaz; `ai_calls`'a yalnız maliyet
+  ad, birim; fiyat değil) ve ürün anahtarı → öneri (önerilen hammaddenin o anki birimiyle). Ürün hâlâ bekliyorsa sayfa
+  yenilenince yeniden sorulmadan gösterilir. Liste değişince (hammadde eklenince, adı, birimi ya da etkinliği değişince)
+  öneriler tek tek denetlenir: "hammadde değil" ve hammaddesi hâlâ etkin, birimi aynı "bağla" önerisi kalır; "emin değil"
+  (çoğu "listede yok" dediği ürün; eksik hammadde yeni eklenmiştir) ve hammaddesi kalkan ya da birimi değişen öneri
+  yeniden sorulur. Bir hammadde eklemek bütün önerileri yeniden sordurmaz. İstemin sürümü (`MATCH_PROMPT_VERSION`)
+  değişince hepsi geçersiz. Bağlanan ya da "hammadde değil" denen ürünün önerisi sonraki yazımda düşer. İstem ve modelin ham yanıtı saklanmaz; `ai_calls`'a yalnız maliyet
   satırı yazılır (zaman, kişi, token, tutar). **Tam yedeğe girer** (`src/lib/backup/format.ts`'in dışarıda bıraktıkları
   yalnız şifreli ya da kişisel değerler; bu kayıt ürün adı, hammadde kimliği, çarpan ve gerekçe taşır, gizli değildir;
   geri yüklemede hammadde kimlikleri de aynı döner, öneriler geçerli kalır).
-- **Maliyet ve sınır:** girdi 2 $, çıktı 10 $ / milyon token; önbellek okuma 0,10 $, 5 dakikalık yazma 2,50 $. 20 ürünlük
-  parti ~5 bin token sistem + ~1 bin token ürün + 2–5 bin token yanıt (düşünme dahil): parti başına yaklaşık 0,03–0,06 $.
-  Günde en çok **20 parti** (`MATCH_DAILY_CAP`, işletme için); fotoğraf ve fatura okumasının sınırına sayılmaz. Aynı
+- **Maliyet ve sınır:** girdi 2 $, çıktı 10 $ / milyon token; önbellek okuma 0,10 $, 5 dakikalık yazma 2,50 $. 10 ürünlük
+  parti ~3–7 bin token sistem (önbellek) + ~0,5 bin token ürün + 1,5–4 bin token yanıt (düşünme dahil; tahmin, canlıda
+  ölçülecek): parti başına yaklaşık 0,02–0,06 $. Günde en çok **40 parti** (`MATCH_DAILY_CAP`, 400 ürün, işletme için;
+  en kötü gün ~1–2,5 $); fotoğraf ve fatura okumasının sınırına sayılmaz. Aynı
   anda tek istek (başka sekmede sürüyorsa "başka bir sekmede sürüyor" der). Sınır ve tek istek denetimi `ai_calls`'ın
   "running" satırıyla aynı işlemde, danışma kilidiyle yapılır (`src/server/ai/claude.ts`): iki sekme ya da çift basış
   aynı anda gelse de yalnız biri gider, sınır aşılmaz. 70 sn'den eski "running" satırı (çöken istek) engellemez. Özetteki

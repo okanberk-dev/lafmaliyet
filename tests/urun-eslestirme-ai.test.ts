@@ -256,9 +256,11 @@ test("ekran: AI 'hammadde değil' derse işaretleme önerilir; emin değilse ad 
 
 // ------------------------------------------------------------------ partiler, örnekler, istem
 
-test("parti: 20'lik partilere bölünür; sorulacaklar sezgiselin 'aynı ürün bağlı' dediklerini ve saklı önerisi olanları atlar", () => {
-  assert.equal(MATCH_BATCH_SIZE, 20);
-  assert.equal(MATCH_DAILY_CAP, 20);
+test("parti: 10'luk partilere bölünür (günde 40 parti, 400 ürün); sorulacaklar sezgiselin 'aynı ürün bağlı' dediklerini ve saklı önerisi olanları atlar", () => {
+  // Süre ölçülmedi: 10'luk parti 45 sn'lik çağrıya rahat sığsın (src/lib/product-match-ai.ts MATCH_BATCH_SIZE)
+  assert.equal(MATCH_BATCH_SIZE, 10);
+  assert.equal(MATCH_DAILY_CAP, 40);
+  assert.equal(MATCH_BATCH_SIZE * MATCH_DAILY_CAP, 400);
   const items = Array.from({ length: 45 }, (_, i) => i);
   assert.deepEqual(chunk(items, 20).map((c) => c.length), [20, 20, 5]);
   assert.deepEqual(chunk([], 20), []);
@@ -337,6 +339,53 @@ test("saklama: liste değişmediyse ve ürün hâlâ bekliyorsa öneri geçerli;
   assert.equal(parseMatchStore({ items: {} }), null);
 });
 
+test("saklama: liste değişince öneriler tek tek denetlenir; hammadde eklemek bütün önerileri yeniden sordurmaz", () => {
+  const h = ingredientsHash(INGS);
+  const store = {
+    hash: h,
+    items: {
+      a: ai({ unit: "ml" }),
+      b: ai({ decision: "hammadde_degil", ingredientId: null, factor: null }),
+      c: ai({ decision: "emin_degil", ingredientId: null, factor: null, confidence: "dusuk", reason: "Vanilya şurubu listede yok" }),
+      d: ai({ ingredientId: 3, unit: "gr" }),
+      e: ai({ ingredientId: 2, unit: "adet", factor: 150 }),
+      f: ai({ decision: "emin_degil", ingredientId: 3, factor: 1000, confidence: "dusuk" }),
+    },
+  };
+  const all = ["a", "b", "c", "d", "e", "f"];
+  const keys = (o: Record<string, unknown>) => Object.keys(o).sort();
+  // Liste aynıysa hepsi (emin değil dahil)
+  assert.deepEqual(keys(freshItems(store, h, all, INGS)), all);
+
+  // "Listede yok" denen ürün için hammadde eklendi: yalnız "emin değil"ler yeniden sorulur
+  const VANILLA: MatchIngredientInfo = { id: 4, name: "Vanilya şurubu", unit: "ml", category: "Şurup" };
+  const added = [...INGS, VANILLA];
+  assert.deepEqual(keys(freshItems(store, ingredientsHash(added), all, added)), ["a", "b", "d", "e"]);
+
+  // Kakao'nun birimi değişti (çarpan ona göreydi), bardak etkin değil: ikisinin önerisi yeniden sorulur
+  const changed = [SUT, { ...COCOA, unit: "ml" }];
+  assert.deepEqual(keys(freshItems(store, ingredientsHash(changed), all, changed)), ["a", "b"]);
+  // Hammaddenin adının değişmesi öneriyi bozmaz (çoğu yazım düzeltmesi)
+  const renamed = INGS.map((i) => (i.id === 1 ? { ...i, name: "Süt (tam yağlı)" } : i));
+  assert.deepEqual(keys(freshItems(store, ingredientsHash(renamed), all, renamed)), ["a", "b", "d", "e"]);
+  // Birimi bilinmeyen eski öneri: hammaddesi etkinse kalır
+  assert.ok(freshItems({ hash: h, items: { a: ai({}) } }, ingredientsHash(added), ["a"], added).a);
+  // İstemin sürümü değişince hiçbiri
+  assert.deepEqual(freshItems(store, h.replace(/^v1-/, "v2-"), all, INGS), {});
+
+  // Birleştirme: geçerliler kalır, yeni öneri eklenir, özet yenilenir
+  const merged = mergeMatchStore(store, ingredientsHash(added), { c: ai({ ingredientId: 4, unit: "ml", factor: 700 }) }, all, added);
+  assert.equal(merged.hash, ingredientsHash(added));
+  assert.deepEqual(keys(merged.items), ["a", "b", "c", "d", "e"]);
+  assert.equal(merged.items.c.ingredientId, 4);
+
+  // Doğrulama önerilen hammaddenin birimini saklar; veritabanından okurken korunur
+  const out = validateAnswer({ oneriler: [raw({ hammadde_id: 3, carpan: 1000 })] }, { keys: { u1: "k" }, ingredientIds: IDS, units: new Map(INGS.map((i) => [i.id, i.unit])), at: "t" });
+  assert.equal(out.k.unit, "gr");
+  assert.equal(parseMatchStore({ hash: h, items: out })?.items.k.unit, "gr");
+  assert.equal(validateAnswer({ oneriler: [raw({})] }, { keys: { u1: "k" }, ingredientIds: IDS, at: "t" }).k.unit, undefined);
+});
+
 // ------------------------------------------------------------------ istek (sahte istemci)
 
 function fake(answer: Partial<AiMessage>) {
@@ -367,6 +416,8 @@ test("istek: Sonnet 5.5, efor medium, JSON şeması, yedek model 'default', sist
   assert.equal(params.model, "claude-sonnet-5-5");
   assert.ok(params.max_tokens >= 8000, `max_tokens ${params.max_tokens}`);
   assert.equal(params.output_config?.effort, "medium");
+  // Efor istekte açıkça: ai_calls.effort'a yazılır, zaman aşımı sunucu günlüğüne eforla düşer (claude.ts)
+  assert.equal(MATCH_REQUEST.effort, "medium");
   assert.equal(params.output_config?.format?.type, "json_schema");
   assert.deepEqual(params.betas, [AI_FALLBACK_BETA]);
   assert.equal((params as unknown as Record<string, unknown>).fallbacks, "default");
@@ -495,12 +546,17 @@ test("kaynak: ekranda AI yalnız düğmeyle çağrılır; Uygula formu doldurur;
   assert.match(client, /setPicked\(new Set\(proposals\.filter\(\(p\) => p\.preselect\)\.map\(\(p\) => p\.u\.productKey\)\)\)/);
   assert.match(client, /preselect: preselected\(v\)/);
   assert.match(client, /const chosen = proposals\.filter\(\(p\) => picked\.has\(p\.u\.productKey\)\);/);
+  // Düğme işaretli gelecek sayıyı da yazar ("6 / 18"); pencerede hepsini bir basışta işaretleme (anahtarsız ortamda hiçbiri işaretli gelmez)
+  assert.match(client, /Hazır olanları bağla \(\{preCount < proposals\.length \? `\$\{num\(preCount\)\} \/ \$\{num\(proposals\.length\)\}`/);
+  assert.match(client, /"İşaretleri kaldır" : "Tümünü işaretle"/);
 
   const box = code("src/app/panel/parasut/match-suggestions.tsx");
   assert.match(box, /^"use client";/);
   assert.doesNotMatch(box, /@\/server\/actions/, "öneri kutusu eylem çağırmaz");
   assert.match(box, /disabled=\{running \|\| ai\.state !== "on" \|\| !ai\.askable\}/);
   assert.match(box, /CONFIDENCE_TONE: Record<MatchConfidence, Tone> = \{ yuksek: "green", orta: "amber", dusuk: "gray" \}/);
+  // Uyarısız ad benzerliği ve uyarısız yüksek güvenli "aynı ürün bağlı" tek satır; AI önerisi ve uyarılı öneri tam kutu
+  assert.match(box, /view\.warnings\.length === 0 && \(view\.source === "name" \|\| \(view\.source === "link" && view\.confidence === "yuksek"\)\)/);
 });
 
 test("kaynak: ürün önerisi okuma sınırına sayılmaz, kendi sınırı var; istem ve yanıt ai_calls'a yazılmaz; öneriler yedeğe girer", () => {

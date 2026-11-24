@@ -91,10 +91,10 @@ async function loadStore(db: DB) {
 }
 
 /** Yeni önerileri ekler (iki sekme aynı anda yazınca biri ötekini ezmesin: satır kilitlenir) */
-async function saveSuggestions(db: DB, hash: string, items: Record<string, StoredAiMatch>, pendingKeys: string[]): Promise<void> {
+async function saveSuggestions(db: DB, hash: string, items: Record<string, StoredAiMatch>, pendingKeys: string[], active: readonly Ingredient[]): Promise<void> {
   await db.transaction(async (tx) => {
     const [row] = await tx.select().from(s.integrationState).where(eq(s.integrationState.key, AI_SUGGESTIONS_KEY)).for("update").limit(1);
-    const value = mergeMatchStore(parseMatchStore(row?.value), hash, items, pendingKeys);
+    const value = mergeMatchStore(parseMatchStore(row?.value), hash, items, pendingKeys, active);
     await tx
       .insert(s.integrationState)
       .values({ key: AI_SUGGESTIONS_KEY, value })
@@ -109,8 +109,8 @@ async function saveSuggestions(db: DB, hash: string, items: Record<string, Store
 export async function aiMatchPage(products: readonly MatchProduct[], links: readonly { productName: string; ingredientId: number; factor: number }[], now = new Date()): Promise<AiMatchState> {
   const db = getDb();
   const [status, ingredients, store] = await Promise.all([matchSuggestStatus(now), matchIngredients(db), loadStore(db)]);
-  const hash = ingredientsHash(ingredients.filter((i) => i.active));
-  const items = freshItems(store, hash, products.map((p) => p.productKey));
+  const active = ingredients.filter((i) => i.active);
+  const items = freshItems(store, ingredientsHash(active), products.map((p) => p.productKey), active);
   return { ...status, items, askable: aiCandidates(products, ingredients, links, items).length, batchSize: MATCH_BATCH_SIZE };
 }
 
@@ -142,7 +142,7 @@ export async function suggestNextBatch(me: { id: number }, now = new Date(), sta
   if (!active.length) throw new UserError("Önce hammadde ekleyin: AI yalnız listedeki hammaddelerden önerir.");
   const hash = ingredientsHash(active);
   const pendingKeys = products.map((p) => p.productKey);
-  const candidates = aiCandidates(products, ingredients, links, freshItems(store, hash, pendingKeys));
+  const candidates = aiCandidates(products, ingredients, links, freshItems(store, hash, pendingKeys, active));
   const empty = { asked: 0, remaining: 0, link: 0, notIngredient: 0, unsure: 0, rejected: 0, costUsd: 0 };
   if (!candidates.length) return empty;
   const batch = candidates.slice(0, MATCH_BATCH_SIZE);
@@ -150,8 +150,8 @@ export async function suggestNextBatch(me: { id: number }, now = new Date(), sta
   const totalMs = Math.max(MIN_CALL_MS, Math.min(MATCH_TIMEOUTS.totalMs, MATCH_BUDGET_MS - (Date.now() - startedAt)));
   const res = await extractMatch({ userId: me.id, system: matchSystemPrompt(active, pickExamples(links, ids)), task: matchTask(batch), schema: MatchAiRaw, totalMs });
   if (!res.ok) throw new UserError(res.message);
-  const items = validateAnswer(res.data, { keys: shortKeys(batch), ingredientIds: ids, at: now.toISOString() });
-  await saveSuggestions(db, hash, items, pendingKeys);
+  const items = validateAnswer(res.data, { keys: shortKeys(batch), ingredientIds: ids, units: new Map(active.map((i) => [i.id, i.unit])), at: now.toISOString() });
+  await saveSuggestions(db, hash, items, pendingKeys, active);
   const list = Object.values(items);
   return {
     asked: batch.length,

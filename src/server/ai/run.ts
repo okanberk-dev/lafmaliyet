@@ -39,7 +39,8 @@ export const AI_FALLBACK_BETA = "server-side-fallback-2026-07-01";
  * yedek modelli ("default": cyber ve frontier_llm retlerini Claude Sonnet 5'te yeniden dener; dizi biçimi burada yalnız
  * claude-sonnet-5'i alırdı) ve efor "medium": modelin varsayılanı "high", sınıflandırma için önerilen başlangıç "low";
  * ama yanlış çarpan birim fiyatı ve bütün reçete maliyetlerini bozar, düşünme payı (paket × boyut hesabı, 150 küsur
- * hammadde arasında seçim) API tasarrufundan değerli. "high" partiyi 60 sn'lik sayfa süresine sığmaz hâle getirir
+ * hammadde arasında seçim) API tasarrufundan değerli. "high" daha uzun düşünür; 60 sn'lik sayfa süresine sığması
+ * ölçülmedi, denenmez
  */
 const MODEL_REQUEST: Record<AiModel, { fallback: boolean; effort: "low" | "medium" }> = {
   "claude-opus-5-5": { fallback: true, effort: "low" },
@@ -71,12 +72,20 @@ export const OKC_MAX_TOKENS = 8000;
 export const OKC_TIMEOUTS: AiTimeouts = { timeout: 50_000, maxRetries: 1, totalMs: 50_000 };
 
 /**
- * Ürün → hammadde önerisinin bir partisi (src/lib/product-match-ai.ts): yanıt ürün başına ~60 token + düşünme; 16 000
- * token sığmazsa yarım kalır ("incomplete"). Tek 45 sn'lik deneme (yazarkasa Z'si gibi): hızlı dönen hata kalan sürede
- * bir kez yeniden denenir; en geç 45 sn'de kesilir. Eylem ayrıca kendi başından geçen süreyi düşer (ai-match.ts
- * MATCH_BUDGET_MS): öncesindeki okumalar ve sonrasındaki saklama, günlük ve yanıt sayfanın 60 sn'sine sığar
+ * Ürün → hammadde önerisinin bir partisi (src/lib/product-match-ai.ts, 10 ürün): yanıt ürün başına ~50–60 token JSON +
+ * düşünme; tahmin parti başına 1,5–4 bin token (canlıda ölçülmedi; ilk partilerde ai_calls'taki ms ve çıktı tokenına
+ * bakılır). 16 000 token sığmazsa yarım kalır ("incomplete"). Tek 45 sn'lik deneme (yazarkasa Z'si gibi): hızlı dönen
+ * hata kalan sürede bir kez yeniden denenir; en geç 45 sn'de kesilir. Kesilen çağrının kullanım bilgisi gelmez:
+ * ai_calls'ta 0 $ görünür ama günlük sınırdan bir parti yer (servis yine ücretlendirebilir). Eylem ayrıca kendi
+ * başından geçen süreyi düşer (ai-match.ts MATCH_BUDGET_MS): öncesindeki okumalar ve sonrasındaki saklama, günlük ve
+ * yanıt sayfanın 60 sn'sine sığar
  */
 export const MATCH_MAX_TOKENS = 16_000;
+/**
+ * Efor açıkça yazılır (MODEL_REQUEST'teki Sonnet 5.5 eforuyla aynı): ai_calls.effort'a düşer, zaman aşımı sunucu
+ * günlüğüne eforla yazılır (claude.ts); canlıda partinin hangi eforla ne kadar sürdüğü görülür
+ */
+export const MATCH_EFFORT: AiEffort = "medium";
 export const MATCH_TIMEOUTS: AiTimeouts = { timeout: 45_000, maxRetries: 1, totalMs: 45_000 };
 /**
  * Ürün önerisinde "aynı anda tek istek" penceresi (claude.ts exclusiveMs): bundan yeni "running" satırı varsa başka
@@ -85,7 +94,7 @@ export const MATCH_TIMEOUTS: AiTimeouts = { timeout: 45_000, maxRetries: 1, tota
  */
 export const MATCH_RUNNING_MS = 70_000;
 /** Ürün önerisi isteğinin sabit kısmı (claude.ts extractMatch; testte buildRequest'le biçimi sınanır) */
-export const MATCH_REQUEST = { model: AI_MATCH_MODEL, maxTokens: MATCH_MAX_TOKENS, timeouts: MATCH_TIMEOUTS, cacheSystem: true } as const;
+export const MATCH_REQUEST = { model: AI_MATCH_MODEL, effort: MATCH_EFFORT, maxTokens: MATCH_MAX_TOKENS, timeouts: MATCH_TIMEOUTS, cacheSystem: true } as const;
 
 /** "eslestirme": Paraşüt'te ürün → hammadde önerisi (okuma sınırına sayılmaz, kendi günlük sınırı var) */
 export type AiFeature = "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya" | "eslestirme";

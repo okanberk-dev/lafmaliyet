@@ -18,13 +18,20 @@ import { guessLinkFactor, packEvidence, parsePack, sameFactor, suggestIngredient
  */
 
 /**
- * Bir istekte en çok bu kadar ürün. Paraşüt sayfasının süresi 60 sn (Vercel Hobby) ve Sonnet 5.5 "medium" eforda ürün
- * başına ~60 token yazar ve düşünür: 40'lık parti 60 sn'yi aşabilirdi, 20'lik parti ~25–40 sn sürer. Hammadde listesi ve
- * örnekler önbellekten okunduğu için (0,10 $ / milyon token) ikinci partinin ek maliyeti bir kuruşun altında
+ * Bir istekte en çok bu kadar ürün. Süre canlıda ölçülmedi (24 Kasım 2026, anahtarsız geliştirme): Paraşüt sayfasının
+ * süresi 60 sn (Vercel Hobby), servis çağrısı en çok 45 sn (src/server/ai/run.ts MATCH_TIMEOUTS) ve süreyi belirleyen
+ * çıktı. Ürün başına JSON ~50–60 token (Türkçe gerekçeyle), "medium" eforda Sonnet 5.5 hemen her yanıttan önce düşünür
+ * (paket × boyut hesabı); tahmin parti başına 1,5–4 bin token çıktı. 20'lik parti bu tahminin üst ucunda 45 sn'ye
+ * dayanabilirdi, kesilen parti öneri döndürmez ve yeniden basış aynı partiyi gönderir: 10'luk parti yarı sürede biter.
+ * İlk canlı partilerde ai_calls'taki süre (ms), çıktı ve önbellek tokenlarına bakılır; çok altındaysa büyütülür
+ * (docs/PARASUT.md § 5e)
  */
-export const MATCH_BATCH_SIZE = 20;
-/** Günde en çok bu kadar parti (işletme için; fotoğraf okumanın sınırından ayrı). 20 × 20 = 400 ürün */
-export const MATCH_DAILY_CAP = 20;
+export const MATCH_BATCH_SIZE = 10;
+/**
+ * Günde en çok bu kadar parti (işletme için; fotoğraf okumanın sınırından ayrı). 40 × 10 = 400 ürün; parti başına
+ * maliyet çoğunlukla çıktı olduğundan 20'lik partilerin 20 sınırıyla aşağı yukarı aynı tavan
+ */
+export const MATCH_DAILY_CAP = 40;
 /** Az örnekli öğretici: sistemin kendi bağlantılarından en çok bu kadar örnek */
 export const MATCH_EXAMPLES_MAX = 60;
 /** Gerekçe tek satır: en çok bu kadar karakter */
@@ -124,13 +131,17 @@ function cyrb53(text: string): string {
 }
 
 /**
- * Hammadde listesinin özeti: saklanan öneri yalnız bu tutarsa gösterilir. Kimlik, ad ve birim girer (sıra önemsiz); fiyat
- * girmez (her faturada değişir, öneriyi geçersiz kılmaz). İstemin sürümü de girer
+ * Hammadde listesinin özeti: tutarsa saklanan bütün öneriler olduğu gibi gösterilir; tutmazsa her öneri tek tek
+ * denetlenir (freshItems). Kimlik, ad ve birim girer (sıra önemsiz); fiyat girmez (her faturada değişir, öneriyi
+ * geçersiz kılmaz). İstemin sürümü de girer: sürüm değişince bütün öneriler geçersiz
  */
 export function ingredientsHash(ingredients: readonly Pick<MatchIngredientInfo, "id" | "name" | "unit">[]): string {
   const rows = [...ingredients].sort((a, b) => a.id - b.id).map((i) => `${i.id}\t${i.name}\t${i.unit}`);
   return `v${MATCH_PROMPT_VERSION}-${cyrb53(rows.join("\n"))}`;
 }
+
+/** Özetin istem sürümü kısmı ("v1") */
+const hashVersion = (hash: string) => hash.split("-")[0];
 
 // ------------------------------------------------------------------ istem
 
@@ -203,8 +214,13 @@ function ingredientLine(i: MatchIngredientInfo): string {
 
 /**
  * Sistem istemi: yönerge, hammadde listesi (kimliğe göre sıralı) ve örnek bağlantılar. Partiden partiye değişmez:
- * önbelleğe yazılır (src/server/ai/run.ts `cacheSystem`), aynı oturumdaki ikinci parti okur. Tarih, saat ya da ürünler
- * burada yer almaz (önbelleği bozar); onlar görev metninde
+ * önbelleğe yazılır (src/server/ai/run.ts `cacheSystem`), aynı basıştaki sonraki partiler okur. Tarih, saat ya da
+ * ürünler burada yer almaz (önbelleği bozar); onlar görev metninde.
+ *
+ * Kazancı küçük: önek ~3–7 bin token. Bir basışta en çok 4 parti (40 ürün, 10'ar): ilki yazar (girdinin 1,25 katı, en
+ * çok ~0,4 sent fazla), sonrakiler okur (0,10 $ / milyon token, parti başına ~0,07 sent, birkaç kuruş). Partinin
+ * maliyetinin çoğu çıktı ve düşünme. Örnekler ve fiyatlar hemen her bağlantıda ya da "Fiyatı güncelle"de değiştiği için
+ * önbellek bir basıştan ötekine nadiren tutar; tek partilik basışta yazma payı boşa gider
  */
 export function matchSystemPrompt(ingredients: readonly MatchIngredientInfo[], examples: readonly MatchExample[]): string {
   const byId = new Map(ingredients.map((i) => [i.id, i]));
@@ -268,6 +284,11 @@ export type MatchAiRaw = z.infer<typeof MatchAiRaw>;
 export interface StoredAiMatch {
   decision: MatchDecision;
   ingredientId: number | null;
+  /**
+   * Önerilen hammaddenin öneri anındaki birimi (gr, ml, adet): çarpan ona göredir. Hammadde listesi değişince öneri
+   * yalnız birim aynıysa geçerli kalır (freshItems)
+   */
+  unit?: string;
   factor: number | null;
   confidence: MatchConfidence;
   reason: string;
@@ -303,7 +324,16 @@ const validFactor = (f: number | null): f is number => f !== null && Number.isFi
  * güvenlidir; partide olup yanıtta olmayan ürün "emin değil" diye saklanır (yeniden sorulup döngüye girmesin). Bilinmeyen
  * ve tekrarlanan anahtarlar yok sayılır
  */
-export function validateAnswer(raw: MatchAiRaw, ctx: { keys: Readonly<Record<string, string>>; ingredientIds: ReadonlySet<number>; at: string }): Record<string, StoredAiMatch> {
+export function validateAnswer(
+  raw: MatchAiRaw,
+  ctx: {
+    keys: Readonly<Record<string, string>>;
+    ingredientIds: ReadonlySet<number>;
+    at: string;
+    /** Hammadde kimliği → birim: verilirse önerinin hammaddesinin birimi saklanır (liste değişince denetlenir) */
+    units?: ReadonlyMap<number, string>;
+  },
+): Record<string, StoredAiMatch> {
   const out: Record<string, StoredAiMatch> = {};
   const unsure = (reason: string, rejected: string): StoredAiMatch => ({ decision: "emin_degil", ingredientId: null, factor: null, confidence: "dusuk", reason, rejected, at: ctx.at });
   for (const o of raw.oneriler) {
@@ -324,9 +354,11 @@ export function validateAnswer(raw: MatchAiRaw, ctx: { keys: Readonly<Record<str
     }
     const factorOk = validFactor(o.carpan);
     const confidence = o.karar === "emin_degil" || !factorOk ? "dusuk" : o.guven;
+    const unit = ctx.units?.get(o.hammadde_id);
     out[key] = {
       decision: o.karar,
       ingredientId: o.hammadde_id,
+      ...(unit ? { unit } : {}),
       factor: factorOk ? o.carpan : null,
       confidence,
       reason,
@@ -361,6 +393,7 @@ export function parseMatchStore(value: unknown): MatchStore | null {
     items[key] = {
       decision: r.decision,
       ingredientId: typeof r.ingredientId === "number" ? r.ingredientId : null,
+      ...(typeof r.unit === "string" ? { unit: r.unit } : {}),
       factor: typeof r.factor === "number" && validFactor(r.factor) ? r.factor : null,
       confidence: r.confidence,
       reason: typeof r.reason === "string" ? clipReason(r.reason) : "",
@@ -372,20 +405,52 @@ export function parseMatchStore(value: unknown): MatchStore | null {
 }
 
 /**
- * Hâlâ geçerli öneriler: hammadde listesi (özeti) değişmediyse ve ürün hâlâ bağlanmayı bekliyorsa. Sayfa yenilenince
- * bunlar yeniden sorulmadan gösterilir
+ * Hammadde listesi değiştiyse öneri hâlâ geçerli mi: "hammadde değil" geçerli (listeye bağlı değil); "bağla" önerisinin
+ * hammaddesi hâlâ etkinse ve birimi (çarpan ona göre) değişmediyse geçerli. "Emin değil" geçersiz: çoğu "listede yok"
+ * dediği ürün için hammadde eklenmiştir, yeniden sorulur. Hammaddenin adının değişmesi öneriyi bozmaz (çoğu yazım düzeltmesi)
  */
-export function freshItems(store: MatchStore | null, hash: string, pendingKeys: Iterable<string>): Record<string, StoredAiMatch> {
-  if (!store || store.hash !== hash) return {};
+export function stillValid(item: StoredAiMatch, units: ReadonlyMap<number, string>): boolean {
+  if (item.decision === "hammadde_degil") return true;
+  if (item.decision !== "bagla" || item.ingredientId === null) return false;
+  const unit = units.get(item.ingredientId);
+  return unit !== undefined && (item.unit === undefined || item.unit === unit);
+}
+
+/**
+ * Hâlâ geçerli öneriler (ürün hâlâ bağlanmayı bekliyorsa). Hammadde listesi (özeti) değişmediyse hepsi; değiştiyse
+ * yalnız tek tek geçerli olanlar (stillValid; `active` etkin hammaddeler): bir hammadde eklenince bütün öneriler yeniden
+ * sorulmasın. İstemin sürümü değiştiyse hiçbiri. Sayfa yenilenince bunlar yeniden sorulmadan gösterilir
+ */
+export function freshItems(
+  store: MatchStore | null,
+  hash: string,
+  pendingKeys: Iterable<string>,
+  active: readonly Pick<MatchIngredientInfo, "id" | "unit">[] = [],
+): Record<string, StoredAiMatch> {
+  if (!store || hashVersion(store.hash) !== hashVersion(hash)) return {};
+  const same = store.hash === hash;
+  const units = new Map(active.map((i) => [i.id, i.unit]));
   const out: Record<string, StoredAiMatch> = {};
-  for (const k of pendingKeys) if (store.items[k]) out[k] = store.items[k];
+  for (const k of pendingKeys) {
+    const item = store.items[k];
+    if (item && (same || stillValid(item, units))) out[k] = item;
+  }
   return out;
 }
 
-/** Yeni öneriler eklenir; liste değiştiyse eskiler atılır, bağlanan ya da "hammadde değil" denen ürünlerinki düşer */
-export function mergeMatchStore(prev: MatchStore | null, hash: string, items: Readonly<Record<string, StoredAiMatch>>, pendingKeys: Iterable<string>): MatchStore {
+/**
+ * Yeni öneriler eklenir; liste değiştiyse eskilerin yalnız geçerli olanları kalır (freshItems), bağlanan ya da
+ * "hammadde değil" denen ürünlerinki düşer
+ */
+export function mergeMatchStore(
+  prev: MatchStore | null,
+  hash: string,
+  items: Readonly<Record<string, StoredAiMatch>>,
+  pendingKeys: Iterable<string>,
+  active: readonly Pick<MatchIngredientInfo, "id" | "unit">[] = [],
+): MatchStore {
   const pending = new Set(pendingKeys);
-  const kept = freshItems(prev, hash, pending);
+  const kept = freshItems(prev, hash, pending, active);
   for (const [k, v] of Object.entries(items)) if (pending.has(k)) kept[k] = v;
   return { hash, items: kept };
 }

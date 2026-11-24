@@ -198,7 +198,7 @@ Hepsi aynı kapılardan geçer (`src/server/ai/claude.ts`: anahtar, **Ayarlar �
 | Fotoğraftan okuma (Z, POS, fiş, yazarkasa Z'si; [FOTOGRAF.md](FOTOGRAF.md)) | `claude-opus-5-5` | low | `fallbacks: "default"` | okuma sınırı (varsayılan 40) |
 | Faturayı oku (bu belge) | `claude-haiku-5-5` | medium | yok (Haiku 5.5'te sunucu tarafı yedek yok) | okuma sınırı (fotoğraflarla ortak) |
 | Vardiyayı yazarak doldurma ([VARDIYA.md](VARDIYA.md)) | `claude-opus-5-5` | low | `fallbacks: "default"` | kendi sınırı (40) |
-| Ürün → hammadde AI önerisi ([PARASUT.md](PARASUT.md) 5e) | `claude-sonnet-5-5` | medium | `fallbacks: "default"` (Claude Sonnet 5) | kendi sınırı (20 parti) |
+| Ürün → hammadde AI önerisi ([PARASUT.md](PARASUT.md) 5e) | `claude-sonnet-5-5` | medium | `fallbacks: "default"` (Claude Sonnet 5) | kendi sınırı (40 parti, 10 ürünlük) |
 
 Ürün önerisi faturayı okumaz: yalnız kalemin adını, birimini ve fiyatını hammadde listesiyle karşılaştırır. Çarpan
 ondan sonra da emin değilse bağlama formundaki **Faturadan oku** bu belgedeki okumayı yapar.
