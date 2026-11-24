@@ -19,7 +19,7 @@ import { z } from "zod";
 import { MarkdownView } from "../src/components/panel/assistant/markdown-view";
 import { NAV_FOOTER, NAV_GROUPS } from "../src/components/panel/nav";
 import { EXCERPT_MAX, foldText, queryWords, searchKnowledge } from "../src/lib/assistant/knowledge";
-import { compileKnowledge, EXCLUDED_DOCS, SECTION_MAX } from "../src/lib/assistant/knowledge-build";
+import { compileKnowledge, EXCLUDED_DOCS, plainDoc, SECTION_MAX, stripHtmlComments } from "../src/lib/assistant/knowledge-build";
 import { KNOWLEDGE } from "../src/lib/assistant/knowledge-data";
 import { errorTag } from "../src/lib/assistant/error-tag";
 import { EXTERNAL_HOSTS, parseInline, parseMarkdown, plainText, safeHref } from "../src/lib/assistant/markdown";
@@ -856,4 +856,16 @@ test("kaynak: araçlar yalnız izinli okuyucuları çağırır; istemci dosyalar
   const css = read("src/app/globals.css");
   assert.match(css, /--assistant-bottom: calc\(var\(--mobile-nav-h\) \+ 1\.5rem\);/);
   assert.doesNotMatch(css, /:has\(\[data-fab\]\)/);
+});
+
+test("bilgi tabanı: iç içe, yarım ya da --!> ile kapanan HTML yorumu metinde yorum açılışı bırakmaz", () => {
+  const cases = ["a <!-<!-- x -->- b", "a <!-- açık kaldı", "<!<!---->-- c", "son -->", "a <!-- x --!> b", "<!<!-- y --!>-- d"];
+  for (const md of cases) {
+    assert.equal(stripHtmlComments(md).includes("<!--"), false, md);
+    assert.equal(plainDoc(md).includes("<!--"), false, md);
+  }
+  assert.equal(stripHtmlComments("önce <!-- not --> sonra"), "önce  sonra");
+  assert.equal(stripHtmlComments("a <!-- x --!> b"), "a  b");
+  assert.equal(stripHtmlComments("a <!-- kapanmadı"), "a ");
+  assert.equal(plainDoc("önce <!-- not --> sonra").trim(), "önce sonra");
 });
