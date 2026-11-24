@@ -98,7 +98,11 @@ export function assistantParams(opts: { system: string; context: string; tools: 
   };
 }
 
-/** Önceki turlar (yalnız görünen metin) + yeni soru */
+/**
+ * Önceki turlar (yalnız görünen metin) + yeni soru. Sonnet 5.5'in korunan düşünme kuralına uygun: geçmişte hiç düşünme
+ * bloğu yoktur (tarayıcı yalnız metni tutar), API'nin "önceki mesajlar değişmedi mi" denetimi bağlanacak blok bulmaz;
+ * düşünme blokları yalnız bu isteğin araç döngüsünde, değiştirilmeden geri gider (yukarıdaki dosya açıklaması).
+ */
 export function assistantMessages(history: readonly AssistantTurn[], message: string): BetaMessageParam[] {
   return [...history.map((t) => ({ role: t.role, content: t.text })), { role: "user" as const, content: message }];
 }

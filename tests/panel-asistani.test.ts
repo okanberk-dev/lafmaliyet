@@ -18,7 +18,7 @@ import { z } from "zod";
 
 import { MarkdownView } from "../src/components/panel/assistant/markdown-view";
 import { NAV_FOOTER, NAV_GROUPS } from "../src/components/panel/nav";
-import { EXCERPT_MAX, queryWords, searchKnowledge } from "../src/lib/assistant/knowledge";
+import { EXCERPT_MAX, foldText, queryWords, searchKnowledge } from "../src/lib/assistant/knowledge";
 import { compileKnowledge, EXCLUDED_DOCS, SECTION_MAX } from "../src/lib/assistant/knowledge-build";
 import { KNOWLEDGE } from "../src/lib/assistant/knowledge-data";
 import { parseInline, parseMarkdown, plainText, safeHref } from "../src/lib/assistant/markdown";
@@ -658,6 +658,9 @@ test("markdown: bağlantı yalnız /panel ve https; javascript:, data:, //, gör
     "//evil.example",
     "/panel//evil.example",
     "/panel/../api/yedek",
+    "/panel/%2e%2e/api/yedek",
+    "/panel/%2E%2E%2Fapi/yedek",
+    "/panel/x%5c..%5capi",
     "/panel\\evil",
     "/panelx",
     "/api/yedek",
@@ -702,7 +705,7 @@ test("markdown: bağlantı yalnız /panel ve https; javascript:, data:, //, gör
 
 // ---------------------------------------------------------------- Bilgi tabanı
 
-test("bilgi tabanı: docs/*.md'den güncel (npm run asistan:bilgi), geliştirici belgeleri yok; arama ilgili bölümü bulur", () => {
+test("bilgi tabanı: docs/*.md'den güncel (npm run asistan:bilgi), geliştirici belgeleri ve kaldırılan ekranlar yok; arama ilgili bölümü bulur", () => {
   const docs = readdirSync(join(ROOT, "docs"))
     .filter((f) => f.endsWith(".md"))
     .map((name) => ({ name, text: read(`docs/${name}`) }));
@@ -714,6 +717,8 @@ test("bilgi tabanı: docs/*.md'den güncel (npm run asistan:bilgi), geliştirici
     assert.ok(s.text.length <= SECTION_MAX, `${s.doc} › ${s.title}`);
     assert.doesNotMatch(s.text, /```|src\/server|\.ts\b/, `${s.doc} › ${s.title}`);
     if (s.path) assert.ok(safeHref(s.path), `${s.doc}: ${s.path}`);
+    // Kaldırılan ekranlar (hızlı sayım, mal siparişi; docs/MAL-SIPARISI.md) anlatılmaz, bölümün ekranı olmaz
+    assert.doesNotMatch(foldText(`${s.title}\n${s.text}\n${s.path ?? ""}`), /hizli[ -]sayim|mal[ -]siparis|siparis taslag/, `${s.doc} › ${s.title}`);
   }
   assert.deepEqual(queryWords("Paraşüt ürününü hammaddeye NASIL bağlarım?"), ["parasut", "urununu", "hammaddeye", "baglarim"]);
   const top = (q: string) => searchKnowledge(q, 4).map((h) => `${h.doc} › ${h.title}`);

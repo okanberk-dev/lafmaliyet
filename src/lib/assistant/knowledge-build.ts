@@ -32,10 +32,28 @@ export const EXCLUDED_DOCS = [
   "hesap-sozlesmesi.md",
   "YAZARKASA-Z.md",
   "SENKRON.md",
+  // Panelden kaldırılan özelliğin belgesi (26 Ekim 2026): asistan kalkmış ekranı anlatmasın
+  "MAL-SIPARISI.md",
 ] as const;
 
+/**
+ * Panelden kaldırılan ekranlar (docs/MAL-SIPARISI.md; tests/hizli-siparis-kaldirildi.test.ts): öteki belgelerde bunları
+ * anan satır ve başlığında "kaldırıldı" yazan bölüm bilgi tabanına girmez, böyle bir yol bölümün ekranı olmaz. Asistan
+ * kalkmış ekranı anlatmaz, ona bağlantı vermez. Katlanmış metinde (küçük harf, aksansız; fold) aranır.
+ */
+const REMOVED = /hizli[ -]sayim|mal[ -]siparis|siparis taslag/;
+const REMOVED_SECTION = /\(kaldirildi\)|; kaldirildi\)/;
+
+/** Küçük harf, ı → i, aksansız (knowledge.ts foldText ile aynı) */
+const fold = (s: string) =>
+  s
+    .toLocaleLowerCase("tr-TR")
+    .replace(/ı/g, "i")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "");
+
 /** Geliştiriciye yönelik bölümler (başlığa göre) */
-const DEV_SECTION = /\(teknik\)|^test|^dosyalar|^kod\b|geliştirici|migration|^uç(lar)?\b|^api\b|^ortam değişken|\(prompt\)|\bprompt\b/i;
+const DEV_SECTION = /\(teknik\)|^test|^dosyalar|^kod\b|geliştirici|migration|^uç(lar)?\b|^api\b|^ortam değişken|\(prompt\)|\bprompt\b|^(npm run )?db:/i;
 
 export const SECTION_MAX = 1500;
 /** Bölüm başına en çok parça (uzun teknik bölümlerin sonu düşer) */
@@ -137,7 +155,22 @@ export function chunkText(text: string, max = SECTION_MAX, limit = SECTION_CHUNK
   return out.filter(Boolean).slice(0, limit);
 }
 
-const firstPanelPath = (text: string): string | null => /`(\/panel[\w/#?=&-]*)`/.exec(text)?.[1] ?? /\((\/panel[\w/#-]*)\)/.exec(text)?.[1] ?? null;
+/** Metinde geçen ilk panel yolu (önce satır içi kod, sonra bağlantı); kaldırılan ekranın yolu sayılmaz */
+function firstPanelPath(text: string): string | null {
+  for (const re of [/`(\/panel[\w/#?=&-]*)`/g, /\((\/panel[\w/#-]*)\)/g]) {
+    for (const m of text.matchAll(re)) if (!REMOVED.test(fold(m[1]))) return m[1];
+  }
+  return null;
+}
+
+/** Kaldırılan ekranı anan satırlar düşer (madde, tablo satırı ya da paragraf) */
+const withoutRemoved = (plain: string) =>
+  plain
+    .split("\n")
+    .filter((line) => !REMOVED.test(fold(line)))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 
 /** Tek belgenin bölümleri */
 export function sectionsOf(doc: string, md: string): KnowledgeSection[] {
@@ -160,9 +193,9 @@ export function sectionsOf(doc: string, md: string): KnowledgeSection[] {
   const docPath = firstPanelPath(parts[0].body.join("\n"));
   const out: KnowledgeSection[] = [];
   for (const p of parts) {
-    if (DEV_SECTION.test(p.title)) continue;
+    if (DEV_SECTION.test(p.title) || REMOVED_SECTION.test(fold(p.title))) continue;
     const raw = p.body.join("\n");
-    const plain = plainDoc(raw);
+    const plain = withoutRemoved(plainDoc(raw));
     if (plain.length < 40) continue;
     const title = plainDoc(p.title);
     chunkText(plain).forEach((text, i) =>

@@ -33,7 +33,8 @@ export function safeHref(raw: string): { href: string; external: boolean } | nul
   // Görünmeyen ve denetim karakterleri, ters bölü ve boşluk: tarayıcıların farklı okuduğu adresler
   if (!href || /[\u0000-\u001f\u007f\s\\]/.test(href)) return null;
   if (/^\/panel(?:[/?#]|$)/.test(href)) {
-    if (href.includes("//") || /(^|\/)\.\.?(\/|$|[?#])/.test(href)) return null;
+    // Nokta bölütü (../) ve kodlanmış hâli (%2e%2e, %2f, %5c): tarayıcı yolu çözünce panelin dışına çıkmasın
+    if (href.includes("//") || /(^|\/)\.\.?(\/|$|[?#])/.test(href) || /%(2e|2f|5c)/i.test(href)) return null;
     return { href, external: false };
   }
   if (/^https:\/\//i.test(href)) {

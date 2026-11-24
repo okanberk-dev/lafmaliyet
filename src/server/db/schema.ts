@@ -1796,7 +1796,10 @@ export const aiCalls = pgTable(
   {
     id: serial("id").primaryKey(),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-    /** "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya" (yazarak doldurma; okuma sınırına sayılmaz) */
+    /**
+     * "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya" (yazarak doldurma; okuma sınırına sayılmaz) |
+     * "asistan" (panel asistanının sorusu, docs/ASISTAN.md; okuma sınırına sayılmaz, yönetici başına kendi sınırı var)
+     */
     feature: text("feature").notNull(),
     /** İstenen model */
     model: text("model").notNull(),
@@ -1814,7 +1817,7 @@ export const aiCalls = pgTable(
     costUsd: doublePrecision("cost_usd").notNull().default(0),
     /** Yedek model (server-side fallback) çalıştı */
     fallback: boolean("fallback").notNull().default(false),
-    /** İstenen efor ("low" | "medium"); yalnız eforu açıkça seçilen okumalarda (yazarkasa Z'si), ötekilerde boş */
+    /** İstenen efor ("low" | "medium"); eforu açıkça seçilen okumalarda (yazarkasa Z'si) ve asistanda, ötekilerde boş */
     effort: text("effort"),
     ms: integer("ms"),
     stopReason: text("stop_reason"),

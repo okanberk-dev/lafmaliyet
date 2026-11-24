@@ -20,7 +20,8 @@ işareti, fatura, fiyat, reçete, kayıt yok). Değişiklik gereken yerde ilgili
   görünür ("Tedarikçi özeti hazırlanıyor…"). **Durdur** yanıtı keser.
 - **Yeni sohbet** konuşmayı siler. Konuşma yalnız bu sekmede durur: sekme kapanınca gider, başka cihaza geçmez.
 - Yanıttaki panel bağlantıları aynı sekmede açılır (telefonda pencere kapanır, sayfa görünsün); başka sitelere bağlantı
-  yalnız https ve yeni sekmede.
+  yalnız https ve yeni sekmede. Başka her adres (javascript:, http:, panelin dışına çıkan yol) bağlantısız yazı kalır;
+  yanıtta HTML çizilmez.
 - **Esc** pencereyi kapatır; pencere açıkken Tab pencerenin içinde döner. Baskıda görünmez.
 - Düğmenin yeri: telefonda alt menünün üstünde; sayfada yüzen ekleme düğmesi (ör. Hatırlatıcılarım'daki "Yeni") varsa
   onun, kaydetme çubuğu açıksa çubuğun üstünde; masaüstünde köşede, yapılmamış hatırlatma kartı açıkken kartın üstünde.
@@ -90,7 +91,8 @@ Asistan yalnız okuyan araçlarla çalışır; araçlar Claude bağlantısının
 
 "Nasıl yapılır" soruları panelin belgelerinden (`docs/*.md`) yanıtlanır. Belgeler bölümlere ayrılır, sadeleştirilir
 (kod, dosya yolu, işlev adı atılır) ve sunucunun koduna gömülür. Kurulum, tasarım dili ve API ayrıntısı belgeleri
-girmez. Belge değişince `npm run asistan:bilgi` ile yeniden yazılır; unutulursa test düşer.
+girmez; panelden kaldırılmış ekranlar da girmez (26 Ekim 2026'da kalkan sayım ve sipariş ekranları): onları anan
+satırlar düşer, asistan bu ekranlara bağlantı vermez. Belge değişince `npm run asistan:bilgi` ile yeniden yazılır; unutulursa test düşer.
 
 ## Dosyalar (teknik)
 
