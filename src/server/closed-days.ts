@@ -30,6 +30,7 @@ import type { StaffRequestStatus } from "@/lib/staff-requests";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentTillBranch } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
+import { currentVia } from "@/server/activity-via";
 
 /*
  * Kapalı gün (plan docs/planlar/personel-yetki.md §2.9; docs/KASA-RAPORU.md › Kafe kapalıydı): Dalga 9'un özel
@@ -239,7 +240,7 @@ export async function closedDayEvidence(db: Db | Tx, date: string, branchId?: st
 
 /** İşlem geçmişine (işlemin içinde; sistemin ya da yazanın adıyla) */
 async function logIn(tx: Tx, who: { id: number | null; name: string } | null, action: string, detail: string) {
-  await tx.insert(s.activityLog).values({ userName: who?.name ?? "Sistem", userId: who?.id ?? null, action, detail: detail.slice(0, 500) });
+  await tx.insert(s.activityLog).values({ userName: who?.name ?? "Sistem", userId: who?.id ?? null, action, detail: detail.slice(0, 500), via: currentVia() });
 }
 
 /** Satırı onaylayan isteği kaldırıldı yapar (`revoked`, not personele görünür) */

@@ -432,6 +432,7 @@ async function SettingsContent() {
             time: l.at.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", timeZone: TZ }),
             userName: l.userName,
             person: logPerson(l.userName, (l.userId !== null && accountById.get(l.userId)) || null, accounts),
+            viaAssistant: l.via === "asistan",
             action: l.action,
             detail: l.detail,
           }))}

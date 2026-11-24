@@ -96,8 +96,11 @@ export const MATCH_RUNNING_MS = 70_000;
 /** Ürün önerisi isteğinin sabit kısmı (claude.ts extractMatch; testte buildRequest'le biçimi sınanır) */
 export const MATCH_REQUEST = { model: AI_MATCH_MODEL, effort: MATCH_EFFORT, maxTokens: MATCH_MAX_TOKENS, timeouts: MATCH_TIMEOUTS, cacheSystem: true } as const;
 
-/** "eslestirme": Paraşüt'te ürün → hammadde önerisi (okuma sınırına sayılmaz, kendi günlük sınırı var) */
-export type AiFeature = "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya" | "eslestirme";
+/**
+ * ai_calls.feature: okumalar, vardiya taslağı, "eslestirme" (Paraşüt'te ürün → hammadde önerisi) ve "asistan" (panel
+ * asistanı, src/server/ai/assistant); son ikisi okuma sınırına sayılmaz, kendi günlük sınırları var
+ */
+export type AiFeature = "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya" | "eslestirme" | "asistan";
 export type AiErrorCode =
   | "nokey"
   | "off"
@@ -144,6 +147,23 @@ const SHIFT_TEXT: Partial<Record<AiErrorCode, string>> = {
   invalid: "Yanıt anlaşılamadı. Yeniden deneyin ya da kutuları seçerek doldurun.",
 };
 
+/** Panel asistanında yöneticinin göreceği metinler (docs/ASISTAN.md): yanıtın yerine ya da yarım yanıtın altında */
+const ASSISTANT_TEXT: Partial<Record<AiErrorCode, string>> = {
+  nokey: "Asistan bu ortamda kurulu değil (ANTHROPIC_API_KEY yok).",
+  off: "Asistan kapalı: Ayarlar › Fotoğraftan okuma kapalıyken Claude'a hiçbir istek gitmez.",
+  timeout: "Yanıt çok uzun sürdü. Soruyu daraltıp yeniden deneyin.",
+  connection: "Servise ulaşılamadı. İnterneti kontrol edip yeniden deneyin.",
+  rate: "Servis şu an yoğun. Biraz sonra yeniden deneyin.",
+  overloaded: "Servis şu an yanıt vermiyor. Biraz sonra yeniden deneyin.",
+  auth: "Servisin anahtarı geçersiz (ANTHROPIC_API_KEY); Vercel'deki anahtarı kontrol edin.",
+  billing: "Servisin kredisi bitmiş; Anthropic hesabını kontrol edin.",
+  toolarge: "Konuşma çok uzadı; Yeni sohbet başlatıp yeniden sorun.",
+  badrequest: "Servis isteği kabul etmedi; Yeni sohbet başlatıp yeniden deneyin.",
+  refusal: "Bu soruyu yanıtlayamıyorum; başka sözcüklerle sorabilirsiniz.",
+  incomplete: "Yanıt yarım kaldı. Yeniden deneyin.",
+  invalid: "Yanıt anlaşılamadı. Yeniden deneyin.",
+};
+
 /** Ürün → hammadde önerisinde yöneticinin göreceği metinler: her biri bugünkü sezgisel öneriye ve elle seçime yollar */
 const MATCH_TEXT: Partial<Record<AiErrorCode, string>> = {
   nokey: "AI önerisi bu ortamda kurulu değil; hammaddeyi elle seçin.",
@@ -162,13 +182,18 @@ const MATCH_TEXT: Partial<Record<AiErrorCode, string>> = {
   busy: "AI önerisi başka bir sekmede sürüyor; bitince sayfayı yenileyin.",
 };
 
-export type AiSubject = "foto" | "fatura" | "vardiya" | "eslestirme";
+export type AiSubject = "foto" | "fatura" | "vardiya" | "eslestirme" | "asistan";
 
 /**
  * Personelin göreceği metinler (ayrıntı günlüğe gider, ekrana değil); fatura okumasında, vardiyada ve ürün önerisinde
- * yöneticinin göreceği
+ * yöneticinin göreceği; panel asistanında da yöneticinin
  */
 export function aiErrorText(code: AiErrorCode, cap?: number, subject: AiSubject = "foto"): string {
+  if (subject === "asistan") {
+    if (code === "cap") return `Bugünkü soru sınırı doldu (${cap ?? "?"}); yarın yeniden açılır.`;
+    const t = ASSISTANT_TEXT[code];
+    if (t) return t;
+  }
   if (subject === "fatura") {
     if (code === "cap") return `Bugünkü okuma sınırı doldu (${cap ?? "?"}); faturayı açıp bakın.`;
     const t = INVOICE_TEXT[code];
