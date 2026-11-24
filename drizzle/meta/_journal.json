@@ -530,8 +530,15 @@
     {
       "idx": 75,
       "version": "7",
-      "when": 1795537450175,
-      "tag": "0075_asistan_islemleri",
+      "when": 1795532383149,
+      "tag": "0075_lafpos_personel",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1795542175290,
+      "tag": "0076_asistan_islemleri",
       "breakpoints": true
     }
   ]

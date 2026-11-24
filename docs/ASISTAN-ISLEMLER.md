@@ -43,7 +43,7 @@ Doğrulanan dayanaklar:
 | Kartın düğmelerinin sunucu eylemleri | `src/server/actions/assistant-ops.ts` |
 | "Asistan aracılığıyla" bağlamı | `src/server/activity-via.ts` (`runViaAssistant`, `currentVia`) |
 | Kartın ekranı | `src/components/panel/assistant/op-card.tsx` |
-| Tablo | `assistant_ops`, `activity_log.via` (migration `0075_asistan_islemleri`) |
+| Tablo | `assistant_ops`, `activity_log.via` (migration `0076_asistan_islemleri`) |
 | Testler | `tests/asistan-islemleri.test.ts` (saf, kaynak taraması), `tests/asistan-islemleri-db.test.ts` (Postgres); okuma araçları ve rehber `tests/asistan-okuma.test.ts`, `tests/asistan-okuma-db.test.ts` |
 
 ---

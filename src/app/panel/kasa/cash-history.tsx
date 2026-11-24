@@ -48,8 +48,11 @@ export type CashHistoryPhotos = Record<
     diffs: PhotoDiff[];
     suspicious: PhotoDiff[];
     extras: CashReportExtras;
-    /** LafPOS gününün otomatik raporunda gün sonu fotoğrafı (gün sonu tam): LafPOS'tan farklı, bekleniyor ya da okunamadı */
-    lafposPhoto?: "fark" | "bekliyor" | "okunamadi" | null;
+    /**
+     * LafPOS gününün otomatik raporunda gün sonu fotoğrafı (gün sonu tam): LafPOS'tan farklı, bekleniyor, okunamadı ya da
+     * kodla okunup güvenle seçilmedi (yönetici baksın)
+     */
+    lafposPhoto?: "fark" | "bekliyor" | "okunamadi" | "bakin" | null;
   }
 >;
 
@@ -306,6 +309,7 @@ export function CashHistory({
                     {photos[report.id]?.extras.lafposDiffs?.length ? <Badge tone="amber">LafPOS&apos;tan farklı</Badge> : null}
                     {photos[report.id]?.lafposPhoto === "fark" ? <Badge tone="amber">Fotoğraf ↔ LafPOS farklı</Badge> : null}
                     {photos[report.id]?.lafposPhoto === "okunamadi" ? <Badge tone="amber">Gün sonu fotoğrafı okunamadı</Badge> : null}
+                    {photos[report.id]?.lafposPhoto === "bakin" ? <Badge tone="amber">Gün sonu fotoğrafına bakın</Badge> : null}
                     {photos[report.id]?.lafposPhoto === "bekliyor" ? <Badge tone="gray">Gün sonu fotoğrafı yok</Badge> : null}
                     {modposDays[date]?.diffs.length ? <Badge tone="amber">ModPOS API&apos;den farklı</Badge> : null}
                     {carry[report.date] ? <Badge tone="amber">Açılış ≠ devir</Badge> : null}

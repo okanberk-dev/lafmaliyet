@@ -299,7 +299,7 @@ export function firstSalesMonth(model: Pick<Model, "monthInfo">): string | null 
  * `sgk.isverenOran` uygulanmış; Ayarlar'daki SGK oranları kullanılmaz.
  */
 export function taxPayrollFromModel(
-  model: Pick<Model, "ds" | "monthInfo" | "staffAtMonth"> & Partial<Pick<Model, "calledDaysOf">>,
+  model: Pick<Model, "ds" | "monthInfo" | "staffAtMonth"> & Partial<Pick<Model, "calledDaysOf" | "lafposMealDaysOf">>,
   year: number,
   settings: Pick<TaxSettings, "periodStart" | "minWageSupport" | "overrides">,
   overrides: TaxOverrides = settings.overrides,
@@ -322,8 +322,10 @@ export function taxPayrollFromModel(
         months.push({ month: m, net: 0, extras: staffCost(at, model.ds.settings, { calledDays: days }).total });
         continue;
       }
-      // Yemek kartı (Faz 5) ek ödeme gibi: vergisiz, brütleştirilmeden maliyete (Ayarlar'daki günlük tutar × gün)
-      months.push({ month: m, net: at.netSalary, extras: at.extras + mealCardOf(at, model.ds.settings) });
+      // Yemek kartı (Faz 5) ek ödeme gibi: vergisiz, brütleştirilmeden maliyete (Ayarlar'daki günlük tutar × gün; biten
+      // ayda LafPOS'ta çalıştığı gün biliniyorsa o gün, Gelir-gider ve Maaşlar gibi: LM-4b, model.lafposMealDaysOf)
+      const lafposDays = model.lafposMealDaysOf?.(at, m) ?? null;
+      months.push({ month: m, net: at.netSalary, extras: at.extras + mealCardOf(at, model.ds.settings, lafposDays ?? undefined) });
     }
     return { id: s.id, name: s.name, months };
   });

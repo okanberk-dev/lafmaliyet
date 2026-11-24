@@ -18,7 +18,9 @@ import {
   type LafposRejection,
   type LafposState,
 } from "@/lib/lafpos/status";
+import { sentWorkedStaffRefs } from "@/lib/lafpos/day";
 import type { NextOpening } from "@/lib/lafpos/devir";
+import type { WorkedStaffAnswer } from "@/lib/lafpos/personel";
 import { isLafposDay, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { addDays } from "@/lib/reminders";
 import { closedDaysBetween } from "@/server/closed-days";
@@ -26,6 +28,7 @@ import { loadLafposIkram } from "@/server/data/lafpos-ikram";
 import { getDb, schema as s, type DB } from "@/server/db";
 
 import { lafposNextOpening } from "./devir";
+import { workedStaffAnswer } from "./personel";
 import { receivePosDay, type EndpointResult } from "./ingest";
 
 /**
@@ -135,8 +138,9 @@ type PosDayInput = Parameters<typeof receivePosDay>[1];
 /**
  * `POST /api/pos/gun`'un sonucu (uç bunu çağırır): gün sonunu receivePosDay'e verir, sonucu durum satırına yazar.
  * 200'e `counted` (gün geçiş gününden önce değil: hesaplara giriyor), `switchDay` ve kasa zincirinin `nextOpening`'i
- * (ertesi günün beklenen açılışı; sayılmayan günde null, src/server/lafpos/devir.ts) eklenir; eski LafPOS bilmediği
- * alanları atar; o günün açık reddi kapanır. 400 ve 409 son ret olarak (alan, gün, iki Z
+ * (ertesi günün beklenen açılışı; sayılmayan günde null, src/server/lafpos/devir.ts) eklenir; gövde `workedStaffRefs`
+ * taşıdıysa `staff: { counted, unknown, otherBranch }` (personel kimliklerinin sınıfı, src/lib/lafpos/personel.ts); eski
+ * LafPOS bilmediği alanları atar; o günün açık reddi kapanır. 400 ve 409 son ret olarak (alan, gün, iki Z
  * no) ve günü okunduysa güne göre yazılır, gövdesiz günlüğe düşer; 401 ve 413 yalnız sayaçtır; 503'te (anahtar yok)
  * hiçbir şey yazılmaz. Veritabanı hatası son ret olarak yazılmaya çalışılır ve yeniden fırlar (uç 500 döner, LafPOS
  * yeniden dener).
@@ -178,7 +182,18 @@ export async function handlePosDay(db: DB, input: PosDayInput, now: Date = new D
     } catch (e) {
       console.error("[lafpos] devir okunamadı:", e instanceof Error ? e.message : e);
     }
-    return { status: 200, body: { ...r.body, counted, switchDay, ...(nextOpening !== undefined ? { nextOpening } : {}) } };
+    // Personel bağlantısı (LM-4b): gövde çalışanların kimliklerini taşıdıysa her birinin lafmaliyet'teki karşılığı
+    // (sayılan / bilinmeyen / başka şube; personel.ts). Okunamazsa alan yazılmaz; yanıt yine 200
+    const refs = sentWorkedStaffRefs(input.body);
+    let staff: WorkedStaffAnswer | undefined;
+    if (refs !== undefined) {
+      try {
+        staff = await workedStaffAnswer(db, refs, date);
+      } catch (e) {
+        console.error("[lafpos] personel kimlikleri okunamadı:", e instanceof Error ? e.message : e);
+      }
+    }
+    return { status: 200, body: { ...r.body, counted, switchDay, ...(nextOpening !== undefined ? { nextOpening } : {}), ...(staff ? { staff } : {}) } };
   }
   const error = String(r.body.error ?? "unknown");
   const date = typeof r.body.date === "string" ? r.body.date : sent.date;

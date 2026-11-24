@@ -4,6 +4,7 @@ import { and, desc, eq, gte, lt, lte } from "drizzle-orm";
 
 import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { normalizeZ } from "@/lib/photo-read/kasa";
+import { formFailureOf } from "@/lib/photo-read/lafpos-read";
 import { normalizeOkc, okcReadingOnLafposDay, okcToLegacyPos, toStaffReading } from "@/lib/photo-read/okc";
 import { OKC_TASK, RECEIPT_TASK, SYSTEM, Z_TASK } from "@/lib/photo-read/prompts";
 import type { PhotoReading } from "@/lib/photo-read/reading";
@@ -18,6 +19,8 @@ import { cashOutCategories } from "@/server/data/cash-outs";
 import { previousOkc } from "@/server/data/cash-reports";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { getDb, schema as s } from "@/server/db";
+
+import { readLafposDayPhoto } from "./lafpos";
 
 export interface ReadOutcome {
   reading: PhotoReading | null;
@@ -108,6 +111,23 @@ export async function readPhotoFor(
     return { reading: normalizeZ(res.data, { day: input.day, prevZNo }), readError: null, readCode: null, canRetry: false };
   }
   if (kind === "kasa-okc" || kind === "kasa-pos") {
+    // LafPOS gününün kasa fotoğrafı (Pavo'nun detaylı Z'si): önce ucuz model, gerekirse bir kez güçlü model, yapay zekâ
+    // yoksa kodla (src/server/photo-read/lafpos.ts). Gün sonu fotoğrafı kartı yanıtın okunuşunu ve hatasını göstermez
+    // (karşılaştırma yöneticinin); elle girilen raporun formu (OkcCard) alanları yalnız yapay zekâ okunuşuyla doldurur,
+    // kodla okunduysa ya da okunamadıysa yapay zekânın hatası eskisi gibi (formFailureOf)
+    const till = await currentTillBranch();
+    const lafpos = await readLafposDayPhoto(getDb(), { photoId: input.photoId, bytes: input.bytes, contentType: input.contentType, day: input.day, userId: input.me.id, branchId: till });
+    if (lafpos) {
+      const failure = formFailureOf(lafpos);
+      if (failure || !lafpos.raw) {
+        const code = failure && failure.code !== "ocr" ? failure.code : null;
+        return { reading: null, readError: failure?.message ?? "Fotoğraf okunamadı; rakamları elle yazın.", readCode: code, canRetry: code !== null && RETRYABLE.includes(code) };
+      }
+      const [prev, recentTotals] = await Promise.all([previousOkc(input.day), okcTypical(input.day)]);
+      const full = okcReadingOnLafposDay(normalizeOkc(lafpos.raw, { day: input.day, prev, recentTotals }));
+      const reading = input.me.role === "admin" ? full : toStaffReading(full);
+      return { reading: kind === "kasa-pos" ? okcToLegacyPos(reading) : reading, readError: null, readCode: null, canRetry: false };
+    }
     const [prev, recentTotals, switchDay, res] = await Promise.all([
       previousOkc(input.day),
       okcTypical(input.day),

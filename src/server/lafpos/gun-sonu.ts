@@ -7,7 +7,7 @@ import { cashDaySubject } from "@/lib/cash-requests";
 import { cashOutNoteOf, cashOutsTotal, type CashOutKind } from "@/lib/cash-outs";
 import { bankPosHash, renderPavoMail } from "@/lib/lafpos/bank-pos";
 import { bankPosSchema, posDaySchema, posZSchema, type BankPos, type PosIkram, type PosOffDevice, type PosOkc, type PosPayment } from "@/lib/lafpos/day";
-import { lafposPhotoNeed } from "@/lib/lafpos/foto";
+import { lafposPhotoNeed, type LafposPhotoCheck } from "@/lib/lafpos/foto";
 import { lafposDayDetail, type LafposDayDetail } from "@/lib/lafpos/gun-ayrinti";
 import {
   AUTO_FIELDS,
@@ -18,7 +18,10 @@ import {
   dayHash,
   LAFPOS_AUTO_BY,
   mergeAuto,
+  photoCheckHash,
+  photoMailNeeded,
   renderDayEnd,
+  renderPhotoMail,
   type AutoValues,
   type ReportState,
 } from "@/lib/lafpos/gun-sonu";
@@ -62,6 +65,14 @@ export type AutoReportResult = "written" | "updated" | "unchanged" | "human" | "
 export type DayEndEmailResult = "sent" | "failed" | "off" | "same" | "busy" | "skipped";
 /** Kısa Pavo e-postası: "included" karşılaştırma gün sonu e-postasıyla gitti; "waiting" gün sonu e-postası henüz gitmedi (onunla gider) */
 export type PavoEmailResult = "sent" | "failed" | "off" | "same" | "busy" | "skipped" | "waiting";
+/**
+ * Fotoğraf e-postası: "skipped" fotoğraf yok ya da LafPOS'u tutuyor; "waiting" gün sonu e-postası henüz gitmedi (fark onunla
+ * gider); "same" bu karşılaştırma daha önce gitti (gün sonu e-postasıyla ya da kendisi)
+ */
+export type PhotoEmailResult = "sent" | "failed" | "off" | "same" | "busy" | "skipped" | "waiting";
+
+/** Fotoğraf karşılaştırmasının gittiğinin kaydı (notification_log): içerik başına bir anahtar */
+const photoMailKey = (branchId: string, date: string, check: LafposPhotoCheck) => `lafpos-foto:${branchId}:${date}:${photoCheckHash(check)}`;
 
 interface StoredDay {
   z: ReturnType<typeof posZSchema.parse>;
@@ -470,6 +481,13 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
     }
     // Pavo karşılaştırması bu e-postayla gittiyse kısa Pavo e-postası ayrıca gitmez
     await finish({ emailedHash: day.hash, emailCount: st.emailCount + 1, emailedAt: new Date(), emailError: null, ...(day.bankPos ? { pavoEmailedHash: bankPosHash(day.bankPos) } : {}) });
+    // Fotoğraf farkı bu e-postada satır satır gitti: aynı karşılaştırma için fotoğraf e-postası ayrıca gitmez
+    if (photo?.check && photoMailNeeded(photo.check)) {
+      await db
+        .insert(s.notificationLog)
+        .values({ key: photoMailKey(branchId, date, photo.check), channel: "email", subject: msg.subject, recipients: to.join(", "), ok: true, error: null })
+        .onConflictDoNothing();
+    }
     // Çalışanlara kısa e-posta (yönetim e-postasından sonra, içerik başına bir kez; düşmesi yönetim e-postasını etkilemez)
     await sendStaffDayEnd(date, branch?.name ?? "Marina", day.z, day.hash, notify.from, opts).catch(() => undefined);
     return "sent";
@@ -547,6 +565,56 @@ export async function sendPavoEmail(db: DB, date: string, now = new Date(), opts
   }
 }
 
+/**
+ * Fotoğraf e-postası (yalnız yöneticinin alıcıları; sahibin isteği, 24 Kasım 2026: "mail olarak vs. bilgilerde de farklı
+ * olunca belirsin"): gün sonu e-postası gittikten sonra eklenen fotoğraf LafPOS'tan farklı okunduysa ya da kodla okunup bir
+ * satırı güvenle seçilmediyse ("yönetici baksın") karşılaştırma satır satır gider. Aynı karşılaştırma bir kez gider (gün
+ * sonu e-postasıyla gittiyse de); uyumlu fotoğraf göndermez. Çalışanların kısa e-postasına fotoğraf hiç girmez. Fotoğraf
+ * eklenince (attachLafposDayPhoto, after) ve günlük işte (runLafposDayEnd) çağrılır; düşerse günlük iş yeniden dener
+ */
+export async function sendPhotoEmail(db: DB, date: string, now = new Date(), opts?: SendOptions): Promise<PhotoEmailResult> {
+  const branchId = LAFPOS_BRANCH_ID;
+  if (!isLafposDay(date, branchSwitchDay(await loadLafposSwitchDay(db), branchId))) return "skipped";
+  const [st] = await db
+    .select({ emailedHash: s.lafposDayEnds.emailedHash, photoCheck: s.lafposDayEnds.photoCheck, reportId: s.lafposDayEnds.reportId, autoValues: s.lafposDayEnds.autoValues })
+    .from(s.lafposDayEnds)
+    .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
+  const check = st?.photoCheck ?? null;
+  if (!st || !st.reportId || !st.autoValues || !photoMailNeeded(check)) return "skipped";
+  if (!st.emailedHash) return "waiting";
+  const key = photoMailKey(branchId, date, check!);
+  const [already] = await db.select({ ok: s.notificationLog.ok }).from(s.notificationLog).where(eq(s.notificationLog.key, key)).limit(1);
+  if (already?.ok) return "same";
+  const stale = new Date(now.getTime() - SENDING_STALE_MS);
+  const claimed = await db
+    .update(s.lafposDayEnds)
+    .set({ sendingAt: now })
+    .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId), or(isNull(s.lafposDayEnds.sendingAt), lt(s.lafposDayEnds.sendingAt, stale))))
+    .returning({ date: s.lafposDayEnds.date });
+  if (!claimed.length) return "busy";
+  const release = () =>
+    db
+      .update(s.lafposDayEnds)
+      .set({ sendingAt: null })
+      .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
+  try {
+    const to = await dayEndRecipients(db);
+    if (!to.length) return "off";
+    if (!isEmailConfigured()) return "failed";
+    const [branch] = await db.select({ name: s.branches.name }).from(s.branches).where(eq(s.branches.id, branchId)).limit(1);
+    const msg = renderPhotoMail({ branchName: branch?.name ?? "Marina", date, check: check!, link: `${APP_URL}/panel/kasa?gun=${date}&sube=${encodeURIComponent(branchId)}` });
+    const notify = await loadNotifySettings();
+    const res = await sendEmail({ from: resolveFrom(notify.from), to, ...msg, idempotencyKey: key.replace(/:/g, "-") }, opts);
+    await db
+      .insert(s.notificationLog)
+      .values({ key, channel: "email", subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error })
+      .onConflictDoUpdate({ target: s.notificationLog.key, set: { subject: msg.subject, ok: res.ok, error: res.ok ? null : res.error, sentAt: new Date() } });
+    return res.ok ? "sent" : "failed";
+  } finally {
+    await release().catch(() => {});
+  }
+}
+
 /** Raporun e-postadaki durumu: otomatik yazımın sonucundan ve kayıttan */
 async function reportStateOf(db: DB, date: string, auto: AutoReportResult): Promise<ReportState> {
   if (auto === "written") return "auto";
@@ -575,7 +643,7 @@ export async function runLafposDayEnd(
   date: string,
   now = new Date(),
   opts?: SendOptions,
-): Promise<{ date: string; report: AutoReportResult | "error"; email: DayEndEmailResult | "error"; pavo: PavoEmailResult | "error"; error?: string }> {
+): Promise<{ date: string; report: AutoReportResult | "error"; email: DayEndEmailResult | "error"; pavo: PavoEmailResult | "error"; photo: PhotoEmailResult | "error"; error?: string }> {
   let report: AutoReportResult | "error";
   let error: string | undefined;
   try {
@@ -602,7 +670,16 @@ export async function runLafposDayEnd(
     pavo = "error";
     error = error ?? (e instanceof Error ? e.message : String(e));
   }
-  return { date, report, email, pavo, ...(error ? { error } : {}) };
+  // Fotoğraf ↔ LafPOS farkı: gün sonu e-postasından sonra eklenen fotoğrafın karşılaştırması (gitmediyse)
+  let photo: PhotoEmailResult | "error";
+  try {
+    photo = report === "skipped" || email === "error" ? "skipped" : await sendPhotoEmail(db, date, now, opts);
+  } catch (e) {
+    console.error("[lafpos] fotoğraf e-postası gönderilemedi:", date, e);
+    photo = "error";
+    error = error ?? (e instanceof Error ? e.message : String(e));
+  }
+  return { date, report, email, pavo, photo, ...(error ? { error } : {}) };
 }
 
 /**
@@ -622,5 +699,5 @@ export async function catchUpLafposDayEnds(db: DB, now = new Date(), opts?: Send
     .orderBy(s.posDayReports.date);
   const days = [];
   for (const r of rows) days.push(await runLafposDayEnd(db, r.date, now, opts));
-  return { status: days.some((d) => d.report === "error" || d.email === "error" || d.email === "failed" || d.pavo === "error" || d.pavo === "failed") ? "error" : "ok", days };
+  return { status: days.some((d) => d.report === "error" || d.email === "error" || d.email === "failed" || d.pavo === "error" || d.pavo === "failed" || d.photo === "error" || d.photo === "failed") ? "error" : "ok", days };
 }

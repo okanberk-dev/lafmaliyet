@@ -7,6 +7,7 @@ import { bankPosSchema, okcSchema, posZSchema, type BankPos, type PosDayZ, type 
 import { lafposPhotoCheck, lafposPhotoDone, lafposPhotoNeed, staffPhotoLine, type LafposPhotoCheck, type LafposPhotoNeed, type LafposPhotoRead } from "@/lib/lafpos/foto";
 import { autoMissing } from "@/lib/lafpos/gun-sonu";
 import { isLafposDay, LAFPOS_BRANCH_ID, branchSwitchDay } from "@/lib/lafpos/switch";
+import { OCR_MODEL, readingSourceOf } from "@/lib/photo-read/models";
 import { KasaOkcRaw } from "@/lib/photo-read/schemas";
 import { linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
 import { addDays, longDateTR, todayTR } from "@/lib/reminders";
@@ -53,23 +54,26 @@ export async function dayPhotoIds(db: Reader, reportId: number): Promise<number[
   return rows.map((r) => r.id);
 }
 
-/** Fotoğrafların okunuşu: son başarılı okuma (ai_calls), yoksa son hatası; hiç okunmadıysa ikisi de boş */
+/**
+ * Fotoğrafların okunuşu: son başarılı yapay zekâ okunuşu (ai_calls; güçlü model ucuzdan sonra okuduysa onunki), yoksa son
+ * başarılı kod okunuşu (OCR_MODEL), yoksa son hatası; hiç okunmadıysa ikisi de boş. Kaynak ve model okunuşla birlikte
+ */
 export async function photoReads(db: Reader, ids: readonly number[]): Promise<LafposPhotoRead[]> {
   if (!ids.length) return [];
   const calls = await db
-    .select({ photoId: s.aiCalls.photoId, status: s.aiCalls.status, result: s.aiCalls.result, error: s.aiCalls.error })
+    .select({ photoId: s.aiCalls.photoId, model: s.aiCalls.model, status: s.aiCalls.status, result: s.aiCalls.result, error: s.aiCalls.error })
     .from(s.aiCalls)
     .where(and(inArray(s.aiCalls.photoId, [...ids]), inArray(s.aiCalls.feature, ["kasa-okc", "kasa-pos"])))
     .orderBy(desc(s.aiCalls.at), desc(s.aiCalls.id));
   return ids.map((id) => {
     const mine = calls.filter((c) => c.photoId === id);
-    const ok = mine.find((c) => c.status === "ok");
+    const ok = mine.find((c) => c.status === "ok" && c.model !== OCR_MODEL) ?? mine.find((c) => c.status === "ok");
     if (ok) {
       const raw = KasaOkcRaw.safeParse(ok.result);
-      return { photoId: id, raw: raw.success ? raw.data : null, error: raw.success ? null : "okunamadı" };
+      return { photoId: id, raw: raw.success ? raw.data : null, error: raw.success ? null : "okunamadı", source: readingSourceOf(ok.model), model: ok.model };
     }
     const failed = mine.find((c) => c.status !== "running");
-    return { photoId: id, raw: null, error: failed ? (failed.error ?? "okunamadı") : null };
+    return { photoId: id, raw: null, error: failed ? (failed.error ?? "okunamadı") : null, ...(failed ? { source: readingSourceOf(failed.model), model: failed.model } : {}) };
   });
 }
 
@@ -377,10 +381,11 @@ export async function lafposPhotoMarks(db: DB, reportIds: readonly number[]): Pr
 
 /**
  * Yöneticinin ay satırının rozeti (Kasa › günden güne): otomatik LafPOS raporunda fotoğraf ↔ LafPOS farklı ("fark"),
- * fotoğraf bekleniyor ("bekliyor") ya da okunamadı ("okunamadi"); tamam ve elle girilen raporda yok
+ * fotoğraf bekleniyor ("bekliyor"), okunamadı ("okunamadi") ya da kodla okunup güvenle seçilmedi ("bakin": yönetici
+ * baksın); tamam ve elle girilen raporda yok
  */
-export async function lafposPhotoBadges(db: DB, reportIds: readonly number[]): Promise<Map<number, "fark" | "bekliyor" | "okunamadi">> {
-  const out = new Map<number, "fark" | "bekliyor" | "okunamadi">();
+export async function lafposPhotoBadges(db: DB, reportIds: readonly number[]): Promise<Map<number, "fark" | "bekliyor" | "okunamadi" | "bakin">> {
+  const out = new Map<number, "fark" | "bekliyor" | "okunamadi" | "bakin">();
   if (!reportIds.length) return out;
   const rows = await db
     .select({ reportId: s.lafposDayEnds.reportId, missing: s.lafposDayEnds.missing, autoValues: s.lafposDayEnds.autoValues, photoCheck: s.lafposDayEnds.photoCheck })
@@ -390,6 +395,7 @@ export async function lafposPhotoBadges(db: DB, reportIds: readonly number[]): P
     if (r.reportId === null || !r.autoValues) continue;
     if (r.photoCheck?.state === "fark") out.set(r.reportId, "fark");
     else if (r.photoCheck?.state === "okunamadi") out.set(r.reportId, "okunamadi");
+    else if (r.photoCheck?.state === "belirsiz") out.set(r.reportId, "bakin");
     else if (r.missing.includes("photo")) out.set(r.reportId, "bekliyor");
   }
   return out;

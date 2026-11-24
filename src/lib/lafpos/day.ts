@@ -4,6 +4,8 @@ import { businessDate } from "@/lib/cash-report";
 import { isCalendarDate } from "@/lib/reminders";
 import { SITE_MENU_ID } from "@/lib/site-menu/schema";
 
+import { sortStaffRefs, STAFF_REF, STAFF_REFS_MAX } from "./personel";
+
 /**
  * LafPOS'un gün sonu (docs/LAFPOS.md; sözleşme LafPOS deposunda docs/03-ENTEGRASYON.md §4). Kafedeki kasa internetten
  * erişilemediği için panel çekmez: LafPOS her iş gününü kapanışta bir kez, düzeltmede yeniden `POST /api/pos/gun` ile
@@ -373,6 +375,9 @@ export const bankPosSchema = z.object({
 
 export type BankPos = z.output<typeof bankPosSchema>;
 
+/** Gövdenin `workedStaffRefs`'i: en çok 500 kimlik; okunurken tekil ve sayı sırasıyla (src/lib/lafpos/personel.ts) */
+const workedStaffRefsSchema = z.array(z.string().regex(STAFF_REF)).max(STAFF_REFS_MAX).transform(sortStaffRefs);
+
 export const posDaySchema = z.object({
   version: z.literal(LAFPOS_VERSION),
   source: z.literal("lafpos"),
@@ -416,6 +421,12 @@ export const posDaySchema = z.object({
   shiftCounts: soft(z.array(shiftCountSchema).max(50)),
   /** İndirim satırları (en çok 2000; yoksa `[]`) */
   discountLines: soft(z.array(discountLineSchema).max(2000)),
+  /**
+   * LM-4b (personel bağlantısı; docs/LAFPOS.md › Personel bağlantısı): o gün çalışanların lafmaliyet personel kimlikleri
+   * (`s:<staff.id>`), tekil, sayı sırasıyla. Yalnız en az bir LafPOS kullanıcısı bağlıyken gelir (yoksa bilinmiyor); `[]`
+   * "bağlı var, o gün kimse çalışmadı". Ad ve kullanıcı kimliği gitmez. Bozuksa yok sayılır, gün reddedilmez
+   */
+  workedStaffRefs: soft(workedStaffRefsSchema),
 });
 
 export type PosDayPush = z.output<typeof posDaySchema>;
@@ -474,7 +485,7 @@ export function parsePosDay(body: string, now: Date = new Date()): PosDayParse {
   return { ok: true, data: r.data };
 }
 
-const TOP_SOFT = ["revision", "correction", "offDevice", "refunds", "iptal", "cashMoves", "okc", "collections", "shiftCounts", "discountLines"] as const;
+const TOP_SOFT = ["revision", "correction", "offDevice", "refunds", "iptal", "cashMoves", "okc", "collections", "shiftCounts", "discountLines", "workedStaffRefs"] as const;
 const Z_SOFT = [
   "listValue",
   "ikramTotal",
@@ -521,6 +532,22 @@ function droppedSoftFields(json: unknown, data: PosDayPush): string[] {
   for (const k of ["errorCode", "batches", "dayCard"] as const) if (data.bankPos && sent(raw.bankPos, k) && data.bankPos[k] === undefined) out.push(`bankPos.${k}`);
   if (data.offDevice && sent(raw.offDevice, "cardTips") && data.offDevice.cardTips === undefined) out.push("offDevice.cardTips");
   return out.slice(0, 20);
+}
+
+/**
+ * Gövde `workedStaffRefs`'i taşıyor ve okunuyor mu (uç 200 yanıtına `staff`'ı yalnız o zaman koyar; src/server/lafpos/
+ * status.ts handlePosDay): okunmuş liste ya da undefined (alan yok, bozuk ya da gövde JSON değil). Gövdenin kendisi
+ * receivePosDay'de denetlenir; bu yalnız alanı yeniden okur
+ */
+export function sentWorkedStaffRefs(body: string): string[] | undefined {
+  try {
+    const json = JSON.parse(body) as { workedStaffRefs?: unknown } | null;
+    if (!json || typeof json !== "object" || json.workedStaffRefs === undefined) return undefined;
+    const r = workedStaffRefsSchema.safeParse(json.workedStaffRefs);
+    return r.success ? r.data : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Sitenin kalemi ve boyu → panel ürünü aramasının anahtarı */
