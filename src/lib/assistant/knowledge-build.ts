@@ -69,17 +69,39 @@ function inlineCode(code: string): string {
 }
 
 /**
+ * HTML yorumlarını atar. Düzenli ifade değil, tarayıcının kuralı: yorum "<!--" ile açılır, ilk "-->" ya da "--!>" ile
+ * kapanır, kapanmayan yorum metnin sonuna kadar sürer. Silme iki parçayı birleştirip yeni bir "<!--" oluşturabilir
+ * ("<!<!-- x -->--"): metinde "<!--" kalmayana kadar tekrarlanır (her geçiş en az 4 karakter siler, biter).
+ */
+export function stripHtmlComments(text: string): string {
+  let s = text;
+  while (s.includes("<!--")) {
+    let out = "";
+    let i = 0;
+    for (;;) {
+      const open = s.indexOf("<!--", i);
+      if (open < 0) {
+        out += s.slice(i);
+        break;
+      }
+      out += s.slice(i, open);
+      const ends = [s.indexOf("-->", open + 4), s.indexOf("--!>", open + 4)].filter((n) => n >= 0);
+      if (!ends.length) break;
+      const end = Math.min(...ends);
+      i = end + (s.startsWith("--!>", end) ? 4 : 3);
+    }
+    s = out;
+  }
+  return s;
+}
+
+/**
  * Markdown → düz metin. Belgeler ~120 karakterde satır kırar: paragrafın satırları birleşir; madde, tablo satırı (" · "
  * ile hücreler, başında "- ") ve ara başlık ayrı satırda kalır, paragraflar boş satırla ayrılır.
  */
 export function plainDoc(md: string): string {
   let s = md.replace(/\r\n?/g, "\n");
-  // HTML yorumları: iç içe ya da yarım kalmış olanlar ("<!-<!-- -->-") tek geçişte yeni bir "<!--" bırakabilir;
-  // değişmeyene kadar silinir, sonra kalan açılış ve kapanış parçaları da atılır (CodeQL: eksik çok karakterli temizlik)
-  for (let prev = ""; prev !== s; ) {
-    prev = s;
-    s = s.replace(/<!--[\s\S]*?-->/g, "").replace(/<!--|-->/g, "");
-  }
+  s = stripHtmlComments(s);
   s = s.replace(/^\s*```[\s\S]*?^\s*```\s*$/gm, "");
   s = s.replace(/\*\*/g, "");
   const out: string[] = [];
