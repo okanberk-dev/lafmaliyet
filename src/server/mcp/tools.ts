@@ -2,7 +2,7 @@ import "server-only";
 
 import type { z } from "zod";
 
-import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
+import { ALL_BRANCHES, branchScopeLabel, mcpBranchScope, type BranchScope, tillBranches } from "@/lib/branches";
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { PRICE_ALERT_DAYS } from "@/lib/calc/price-impact";
 import { businessDate } from "@/lib/cash-report";
@@ -16,7 +16,7 @@ import { searchResults } from "@/lib/mcp/answers/search";
 import { supplierSummary } from "@/lib/mcp/answers/suppliers";
 import { araInput, ayOzetiInput, kasaRaporlariInput, odemelerInput, tedarikciOzetiInput, urunKarliligiInput, zamEtkisiInput } from "@/lib/mcp/schemas";
 import { addDays, daysBetween, todayTR } from "@/lib/reminders";
-import { currentBranchScope, withBranchScope } from "@/server/branch-scope";
+import { currentBranchScope, staffBranchLock, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadCashPlan } from "@/server/data/cash-plan";
 import { cashReportsBetween, firstCashReportDate, previousCarryOver, previousCarryOverByBranch } from "@/server/data/cash-reports";
@@ -67,6 +67,23 @@ async function kasaTills(from: string): Promise<{ id: string; name: string; firs
   return tills.map((b, i) => ({ id: b.id, name: b.name, firstReport: firsts[i], before: beforeOf(b.id) }));
 }
 
+/**
+ * Aracın şube kapsamı (şube kapsamı C P2-13): `sube` verilirse o şube (adı ya da kimliği; "hepsi" bütün şubeler),
+ * verilmezse panelin seçimi (Claude bağlantısında çerez yok: "Tümü"). Şubesine kilitli hesap başka şubeyi isteyemez.
+ * Araç `fn`'i o kapsamda çalıştırır; çıktının başına `kapsam` ("Tümü", "Marina") yazılır
+ */
+async function scoped(raw: string | undefined, fn: () => Promise<Record<string, unknown>>): Promise<Record<string, unknown>> {
+  const [branches, lock, current] = await Promise.all([listBranches(), staffBranchLock(), currentBranchScope()]);
+  const picked = raw === undefined ? { scope: current } : mcpBranchScope(raw, branches);
+  if ("error" in picked) throw new ToolInputError(picked.error);
+  const scope: BranchScope = picked.scope;
+  if (lock !== null && scope !== lock) throw new ToolInputError(`Hesabınız ${branchScopeLabel(lock, branches)} şubesinde; başka şubenin verisi okunamaz`);
+  return { kapsam: branchScopeLabel(scope, branches), ...(await withBranchScope(scope, fn)) };
+}
+
+/** Firma geneli araçların kapsamı (tedarikçiler, arama): şubeye bölünmez */
+const COMPANY_WIDE = "Firma geneli";
+
 export const TOOLS = [
   tool({
     name: "ay_ozeti",
@@ -77,9 +94,11 @@ export const TOOLS = [
     inputSchema: ayOzetiInput,
     run: async (args, ctx) => {
       if (args.ay && args.yil !== undefined) throw new ToolInputError("Ay ya da yıldan yalnız birini verin");
-      const model = await loadModel();
-      if (args.yil !== undefined) return { ...yearSummary(model, args.yil, ctx) };
-      return { ...monthSummary(model, args.ay ?? model.currentMonth, ctx) };
+      return scoped(args.sube, async () => {
+        const model = await loadModel();
+        if (args.yil !== undefined) return { ...yearSummary(model, args.yil, ctx) };
+        return { ...monthSummary(model, args.ay ?? model.currentMonth, ctx) };
+      });
     },
   }),
   tool({
@@ -89,10 +108,11 @@ export const TOOLS = [
       "Ürünlerin birim maliyeti, birim kârı, marjı, satış adedi, toplam kârı ve menü mühendisliği sınıfı (Yıldız, Beygir, Bilmece, Zayıf). Sıralama: toplam_kar, birim_kar, marj, adet, zarar (en az kâr bırakan önce). Hammadde zamlarının götürdüğü kâr için zam_etkisi'ni kullan. Örnek: 'En az kazandıran 5 ürün?', 'Latte M'nin maliyeti ne?'" +
       DESCRIPTION_TAIL,
     inputSchema: urunKarliligiInput,
-    run: async (args, ctx) => {
-      const model = await loadModel();
-      return { ...productProfitability(model, { ...args, ay: args.ay ?? model.currentMonth }, ctx) };
-    },
+    run: async ({ sube, ...args }, ctx) =>
+      scoped(sube, async () => {
+        const model = await loadModel();
+        return { ...productProfitability(model, { ...args, ay: args.ay ?? model.currentMonth }, ctx) };
+      }),
   }),
   tool({
     name: "zam_etkisi",
@@ -106,12 +126,14 @@ export const TOOLS = [
       const baslangic = args.baslangic ?? addDays(today, -PRICE_ALERT_DAYS);
       if (baslangic > today) throw new ToolInputError("Başlangıç tarihi bugünden sonra olamaz");
       if (daysBetween(baslangic, today) > 366) throw new ToolInputError("En çok 366 gün geriye bakılabilir");
-      const model = await loadModel();
-      // Varsayılan pencere ekrandakiyle aynı (son 30 gün); verilen başlangıçta pencere o günün başından (İstanbul,
-      // UTC+3) başlar: önceki günün zammı girmez
-      const days = args.baslangic ? (ctx.now.getTime() - Date.parse(`${baslangic}T00:00:00+03:00`)) / 86_400_000 : PRICE_ALERT_DAYS;
-      const alerts = await loadPriceAlerts(model, days, latestSalesMonth(model));
-      return { ...priceRiseImpact(model, alerts, { baslangic, bitis: today, limit: args.limit }, ctx) };
+      return scoped(args.sube, async () => {
+        const model = await loadModel();
+        // Varsayılan pencere ekrandakiyle aynı (son 30 gün); verilen başlangıçta pencere o günün başından (İstanbul,
+        // UTC+3) başlar: önceki günün zammı girmez
+        const days = args.baslangic ? (ctx.now.getTime() - Date.parse(`${baslangic}T00:00:00+03:00`)) / 86_400_000 : PRICE_ALERT_DAYS;
+        const alerts = await loadPriceAlerts(model, days, latestSalesMonth(model));
+        return { ...priceRiseImpact(model, alerts, { baslangic, bitis: today, limit: args.limit }, ctx) };
+      });
     },
   }),
   tool({
@@ -125,7 +147,7 @@ export const TOOLS = [
       const ledger = await loadSupplierLedger();
       const baslangic = args.baslangic ?? `${ledger.today.slice(0, 4)}-01-01`;
       const bitis = args.bitis ?? ledger.today;
-      return { ...supplierSummary(ledger, { tedarikci: args.tedarikci, baslangic, bitis, limit: args.limit, siralama: args.siralama }, ctx) };
+      return { kapsam: COMPANY_WIDE, ...supplierSummary(ledger, { tedarikci: args.tedarikci, baslangic, bitis, limit: args.limit, siralama: args.siralama }, ctx) };
     },
   }),
   tool({
@@ -135,20 +157,23 @@ export const TOOLS = [
       "Ödemeler ekranındaki liste: geciken, bu hafta, bu ay ve 45 gün içindeki fatura, faturasız borç (cari) ve hatırlatıcı ödemeleri; istenirse 6 haftalık nakit planının haftalık özeti. Örnek: 'Bu hafta ne ödeyeceğiz?', 'Geciken ödeme var mı?'" +
       DESCRIPTION_TAIL,
     inputSchema: odemelerInput,
-    run: async (args, ctx) => {
-      const up = await loadUpcoming();
-      const plan = args.nakitPlani
-        ? await (async () => {
-            const model = await loadModel();
-            const view = await loadCashPlan(model, up);
-            return { plan: view.plan, komisyon: model.settings.komisyon, acikGun: model.settings.acikGun };
-          })().catch((e: Error) => {
-            console.error("[mcp] nakit planı", e);
-            return null;
-          })
-        : null;
-      return { ...upcomingPayments({ today: up.today, items: up.items, invoiceTermDays: up.settings.invoiceTermDays }, args, plan, ctx) };
-    },
+    run: async ({ sube, ...args }, ctx) =>
+      scoped(sube, async () => {
+        // Şube seçiliyken o şubenin ve işletme genelinin hatırlatıcıları (Ödemeler gibi); faturalar ve cari firma geneli
+        const up = await loadUpcoming(undefined, { branch: await currentBranchScope() });
+        // Nakit planı firmanın: şube seçiliyken de bütün şubelerle (Nakit planı ekranı gibi)
+        const plan = args.nakitPlani
+          ? await withBranchScope(ALL_BRANCHES, async () => {
+              const model = await loadModel();
+              const view = await loadCashPlan(model, await loadUpcoming());
+              return { plan: view.plan, komisyon: model.settings.komisyon, acikGun: model.settings.acikGun };
+            }).catch((e: Error) => {
+              console.error("[mcp] nakit planı", e);
+              return null;
+            })
+          : null;
+        return { ...upcomingPayments({ today: up.today, items: up.items, invoiceTermDays: up.settings.invoiceTermDays }, args, plan, ctx) };
+      }),
   }),
   tool({
     name: "kasa_raporlari",
@@ -159,14 +184,16 @@ export const TOOLS = [
     inputSchema: kasaRaporlariInput,
     run: async (args, ctx) => {
       checkRange(args.baslangic, args.bitis, { maxDays: 92, today: todayTR(ctx.now) });
-      const [reports, firstReport, before, tills] = await Promise.all([
-        cashReportsBetween(args.baslangic, args.bitis),
-        firstCashReportDate(),
-        previousCarryOver(args.baslangic),
-        kasaTills(args.baslangic),
-      ]);
-      const through = addDays(businessDate(ctx.now), -1);
-      return { ...cashReportSummary(reports, { from: args.baslangic, to: args.bitis, through, firstReport, before, base: ctx.base, tills: tills ?? undefined }) };
+      return scoped(args.sube, async () => {
+        const [reports, firstReport, before, tills] = await Promise.all([
+          cashReportsBetween(args.baslangic, args.bitis),
+          firstCashReportDate(),
+          previousCarryOver(args.baslangic),
+          kasaTills(args.baslangic),
+        ]);
+        const through = addDays(businessDate(ctx.now), -1);
+        return { ...cashReportSummary(reports, { from: args.baslangic, to: args.bitis, through, firstReport, before, base: ctx.base, tills: tills ?? undefined }) };
+      });
     },
   }),
   tool({
@@ -174,7 +201,7 @@ export const TOOLS = [
     title: "Ürün, hammadde, tedarikçi ara",
     description: "Ürün, hammadde ve tedarikçi adlarında arar; ad, tür ve panel bağlantısı döner (tutar yok). Örnek: 'Latte hangi boylarda var?', 'Süt adlı hammaddeler hangileri?'" + DESCRIPTION_TAIL,
     inputSchema: araInput,
-    run: async (args, ctx) => ({ ...searchResults(await loadSearchIndex(), args.metin, ctx) }),
+    run: async (args, ctx) => ({ kapsam: COMPANY_WIDE, ...searchResults(await loadSearchIndex(), args.metin, ctx) }),
   }),
 ] as const;
 

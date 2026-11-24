@@ -406,6 +406,20 @@ export function branchLinkStep(o: {
   return { key, adopt: { scope: istenen === o.scope ? null : istenen, href: qs ? `${o.pathname}?${qs}` : o.pathname } };
 }
 
+/**
+ * Claude bağlantısının ve panel asistanının `sube` girdisi (şube kapsamı C P2-13): şubenin kimliği ya da adı (büyük-küçük
+ * harf ve Türkçe harfler fark etmez) ya da "hepsi" / "tümü". Kapalı ya da bilinmeyen şube Claude'a seçenekleriyle söylenir
+ */
+export function mcpBranchScope(raw: string, known: readonly BranchRow[]): { scope: BranchScope } | { error: string } {
+  const fold = (v: string) => v.trim().toLocaleLowerCase("tr-TR");
+  const want = fold(raw);
+  if (want === ALL_BRANCHES || want === "tümü" || want === "tumu") return { scope: ALL_BRANCHES };
+  const open = sortBranches(known.filter((b) => b.active));
+  const hit = open.find((b) => b.id === want || fold(b.name) === want);
+  if (hit) return { scope: hit.id };
+  return { error: `Şube bulunamadı: "${raw}". Seçenekler: ${[...open.map((b) => b.name), "hepsi"].join(", ")}` };
+}
+
 /** Seçimin ekrandaki adı ("Tümü", "Marina") */
 export function branchScopeLabel(scope: BranchScope, known: readonly BranchRow[]): string {
   if (scope === ALL_BRANCHES) return "Tümü";

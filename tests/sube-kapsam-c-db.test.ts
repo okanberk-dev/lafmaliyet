@@ -212,6 +212,32 @@ describe("şube kapsamı C: veritabanında", { skip: !SERVER_URL && "SUBE_C_TEST
     assert.deepEqual(list.map((r) => `${r.title}:${r.branchId ?? "-"}`).sort(), ["AVM konseri:marina", "Black Friday:-", "Derbi:marina"]);
   });
 
+  test("kasayı sayan, silme engeli ve vardiya önerisi: şubenin kişileri; geçmiş bütün şubelerden", async () => {
+    const { cashCounters } = await import("../src/server/data/cash-reports");
+    const { ingredientHistoryCounts } = await import("../src/server/data/product-history");
+    const { loadShiftWeek } = await import("../src/server/vardiya/store");
+    const [tuzlaStaff] = await db
+      .insert(s.users)
+      .values({ email: "tuzla-personel@test.local", name: "Tuncay", passwordHash: "x", role: "staff", branchId: TUZLA })
+      .returning({ id: s.users.id });
+    const names = async (b?: string) => (await cashCounters(b)).map((u) => u.name).sort();
+    // Marina'nın kasası: yönetici, şubesiz ve Marina'nın personeli; Tuzla'ya kilitli Tuncay yok
+    assert.deepEqual(await names(MARINA), ["Ali", "Ayşe", "Deniz"]);
+    assert.deepEqual(await names(TUZLA), ["Ali", "Deniz", "Tuncay"]);
+    assert.deepEqual(await names(), ["Ali", "Ayşe", "Deniz", "Tuncay"], "Onaylar: herkes");
+    // Hammaddenin geçmişi bütün şubelerden (Marina seçiliyken Tuzla'nın sayımı da silmeyi engeller)
+    const [ing] = await db.insert(s.ingredients).values({ name: "Süt", category: "Süt", unit: "ml", packagePrice: 40, packageSize: 1000 }).returning({ id: s.ingredients.id });
+    await db.insert(s.stockCounts).values({ month: "2026-10", branchId: TUZLA, ingredientId: ing.id, qty: 3, factor: 1 });
+    await db.insert(s.wasteEntries).values({ date: "2026-11-20", branchId: MARINA, kind: "zayi", ingredientId: ing.id, name: "Süt", qty: 1, unit: "ml", createdByName: "Ayşe" });
+    assert.deepEqual((await ingredientHistoryCounts(db)).get(ing.id), { counts: 1, purchases: 0, waste: 1 });
+    // Vardiya "Kişi ekle": Marina'nın ızgarasına Tuzla'ya kilitli Tuncay önerilmez
+    const week = await loadShiftWeek(db, { id: MARINA, name: "Marina" }, "2026-11-23", { roster: true });
+    const offered = [...week.rows.map((r) => r.name), ...week.others.map((o) => o.name)];
+    assert.ok(!offered.includes("Tuncay"), offered.join(", "));
+    assert.ok(offered.includes("Ali") && offered.includes("Deniz") && offered.includes("Ayşe"), offered.join(", "));
+    await db.delete(s.users).where(eq(s.users.id, tuzlaStaff.id));
+  });
+
   test("bildirim adresinin şubesi: bütün kasalar boş yazılır, kapalı şube reddedilir; sabah e-postasının grupları", async () => {
     const { setRecipientBranches } = await import("../src/server/actions/reminders");
     const { activeDigestRecipients } = await import("../src/server/notify/recipients");

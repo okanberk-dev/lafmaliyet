@@ -11,7 +11,7 @@ import { test } from "node:test";
 
 import { expenseSplit } from "../src/app/panel/harcamalar/summary";
 import { countLogBranch, countLogDetail, loggedItems } from "../src/app/panel/sayim/logic";
-import { ALL_BRANCHES, requestInScope } from "../src/lib/branches";
+import { ALL_BRANCHES, companyWideNote, mcpBranchScope, requestInScope } from "../src/lib/branches";
 import { createModel } from "../src/lib/calc/engine";
 import type { Dataset, ExpenseCategory, ExpenseEntry, Invoice } from "../src/lib/calc/types";
 import { digestGroups, digestItemInGroup } from "../src/lib/notify-recipients";
@@ -139,4 +139,43 @@ test("sabah e-postası şubenin başlığıyla: konu şubenin adıyla başlar, g
   assert.ok(marina.html.includes(branchDigestNote("Marina")));
   assert.ok(marina.text.includes(branchDigestNote("Marina")));
   assert.deepEqual(renderDigest([], "2026-11-24", null, null, null, null, null), plain, "şube yoksa birebir aynı");
+});
+
+test("firma geneli ekranların notu: tek şube seçiliyken söylenir, Tümü'de yok", () => {
+  const known = [
+    { id: "tuzla", name: "Tuzla", kind: "fiziksel" as const, posSource: "modpos" as const, active: true, openedOn: null, sortOrder: 1 },
+    { id: "marina", name: "Marina", kind: "fiziksel" as const, posSource: "lafpos" as const, active: true, openedOn: null, sortOrder: 2 },
+  ];
+  assert.equal(companyWideNote("vergi", ALL_BRANCHES, known), null);
+  const note = companyWideNote("faturalar", "marina", known);
+  assert.equal(note?.title, "Marina seçili: bu ekran firma geneli");
+  assert.match(note!.text, /Paraşüt hesabı şubeler arasında ortak/);
+  // Ekranlar notu çizer (şube kapsamı C P1-12, P2-1)
+  for (const [file, screen] of [
+    ["src/app/panel/vergi/page.tsx", "vergi"],
+    ["src/app/panel/faturalar/page.tsx", "faturalar"],
+    ["src/app/panel/tedarikciler/page.tsx", "tedarikciler"],
+    ["src/app/panel/tutarlilik/page.tsx", "tutarlilik"],
+    ["src/app/panel/parasut/page.tsx", "parasut"],
+  ] as const)
+    assert.match(read(file), new RegExp(`<CompanyWideNotice screen="${screen}"`), file);
+  assert.match(read("src/app/panel/hatirlaticilar/nakit/page.tsx"), /companyWideNote\("nakit", scope, branches\)/);
+});
+
+test("Claude araçlarının `sube` girdisi: ad ya da kimlik, 'hepsi'; kapalı ve bilinmeyen şube seçenekleriyle reddedilir", () => {
+  const known = [
+    { id: "tuzla", name: "Tuzla", kind: "fiziksel" as const, posSource: "modpos" as const, active: true, openedOn: null, sortOrder: 1 },
+    { id: "marina", name: "Marina", kind: "fiziksel" as const, posSource: "lafpos" as const, active: true, openedOn: null, sortOrder: 2 },
+    { id: "eski", name: "Eski", kind: "fiziksel" as const, posSource: "modpos" as const, active: false, openedOn: null, sortOrder: 9 },
+  ];
+  assert.deepEqual(mcpBranchScope("Marina", known), { scope: "marina" });
+  assert.deepEqual(mcpBranchScope(" tuzla ", known), { scope: "tuzla" });
+  assert.deepEqual(mcpBranchScope("TÜMÜ", known), { scope: ALL_BRANCHES });
+  assert.deepEqual(mcpBranchScope("hepsi", known), { scope: ALL_BRANCHES });
+  assert.deepEqual(mcpBranchScope("Eski", known), { error: 'Şube bulunamadı: "Eski". Seçenekler: Tuzla, Marina, hepsi' });
+  const tools = read("src/server/mcp/tools.ts");
+  // Satış, kasa ve ödemeler şubeyle; tedarikçi ve arama firma geneli
+  assert.equal((tools.match(/scoped\((?:args\.)?sube, async \(\) => \{/g) ?? []).length, 5);
+  assert.equal((tools.match(/kapsam: COMPANY_WIDE/g) ?? []).length, 2);
+  assert.match(tools, /if \(lock !== null && scope !== lock\) throw new ToolInputError/);
 });
