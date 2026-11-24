@@ -196,6 +196,21 @@ sessizce Tuzla'ya inmez. Kapsamla silen yazım (Ayı temizle) pencerenin kapsam�
 Karaokenin şubesi tek sabittedir (`KARAOKE_BRANCH_ID`, bugün Tuzla); kitlesi yönetici, şubesiz personel ve o şubenin
 personeli (`karaokeAudience`).
 
+### Karaoke yalnız kendi şubesinde (24 Kasım 2026)
+
+Karaoke odası tek şubededir (`KARAOKE_BRANCH_ID`). Başka şubeye kilitli personel:
+
+- Karaoke sayfasında rezervasyon ve sayaç görmez, "Karaoke bu şubede kullanılmıyor" yazar (Siparişler satırı kalır);
+- sayaç açamaz, uzatamaz, bitiremez, geri açamaz, silemez, silinmesini isteyemez, köşk rezervasyonu ekleyip kaldıramaz,
+  "Şimdi eşitle"ye basamaz: eylem kimliği istemci paketinde olduğu için uç da reddeder (`assertKaraokeBranch`,
+  `src/server/actions/karaoke.ts`);
+- canlı uçtan (`/api/canli`) oturum ve silme isteği almaz (misafir adı, alarm); kilit ETag'tedir;
+- karaoke Web Push bildirimini almaz (`announce` › `karaokeAudience`).
+
+Bugün'ün karaoke satırı "Tümü"de ve karaokenin şubesi seçiliyken görünür; başka şube seçiliyken (kilitli personelde hep
+kendi şubesi) yoktur. Kapalı gün kanıtında karaoke birden çok kasa açıkken yalnız karaokenin şubesinin kanıtıdır.
+Yönetici, şubesiz personel ve şubesi pasife alınmış personel serbesttir.
+
 Stok sayımı kaydının çakışma hedefi `(ay, şube, malzeme)`: dalga 2'de tek şubesiz hedef kaldığı için sayım kaydı
 "no unique or exclusion constraint" hatasıyla düşüyordu; `tests/sube-maliyet.test.ts` artık bütün kaynak dosyalarını
 tarar.
@@ -275,8 +290,16 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
   kapalı şubede günün izi varsa (şubenin raporu ya da başlamış listesi) eksikler yine yazılır. Önceden ikisi de herhangi
   bir şubenin işaretine bakıyordu: Marina dün kapalıyken Tuzla'nın eksik listesi zile düşmüyor, Tuzla'nın kapalı
   gününün listesi Marina'nın raporu yüzünden e-postada eksik yazılıyordu. LafPOS'un gün sonu kanıtı şube verilmeyen
-  okumada da yalnız LafPOS'un şubesinindir (Tuzla'nın eski deneme satırı sayılmaz). Kontrol listesi, karaoke ve
-  personelin işlem geçmişi şubesiz kanıttır. Z no ve
+  okumada da yalnız LafPOS'un şubesinindir (Tuzla'nın eski deneme satırı sayılmaz). Birden çok kasa açıkken kontrol
+  listesi ve işlem geçmişi de şube şubedir (24 Kasım 2026 şube kapsamı; `branchChecklistRuns`, `branchStaffWrites`,
+  `src/lib/closed-days.ts`): şubenin listesi (şablonun şubesi) ve şubenin personelinin yazımı kırmızı; bütün şubelerin
+  listesi ve şubesiz personelin yazımı yalnız uyarıdır ("Şubesi belli olmayan N iz", `sharedTraces`; onayı ve personelin
+  bildirimini kapatmaz), öbür şubeninki sayılmaz. Kendi tablosunda şube şube sayılan işlemler (kasa raporu, kasadan
+  çıkan, zayi ve ikram) işlem geçmişinden ikinci kez sayılmaz; silme kaydı sayılır (satır tablodan gitti). Karaoke
+  yalnız karaokenin şubesinde sayılır. Sitenin sipariş sayıları da bildirilen şubenin (`fetchSiteDayCounts(gün, şube)`,
+  `&branch=`); şubesiz eski site Marina için "okunamadı" sayılır (onayı kapatmaz). Tek kasada liste, işlem geçmişi ve
+  karaoke bugünkü gibi o kasanın kanıtıdır. Önceden Tuzla'nın listesi, Tuzla'ya kilitli personelin kaydı ya da karaoke
+  Marina'nın kapalı gün bildirimini kapatıyordu. Z no ve
   açılış sürekliliği şube başına bakılır (`closedDayEvidence`, `onNextReport`; denetim 21 Kasım #1): Tuzla'nın ertesi
   günkü Z'si Marina'nın önceki Z'siyle karşılaştırılıp onaylı işaret silinmez, onay "kafe açık görünüyor" diye
   engellenmez, Marina'nın açılışı Tuzla'nın devriyle tutmuyor diye zile yazılmaz. Fotoğraftan okunan ModPOS Z'sinin
@@ -328,9 +351,16 @@ geneli**: vergi, SGK, muhasebe gibi). Sabit giderdeki kuralın aynısı:
 | Sabit giderden ekle | Kalemin şubesi (Marina'nın kirası Marina'nın ödemesi) |
 | Ertele (tekrar eden) | Ertelenen dönemin tek seferlik kopyası serinin şubesinde kalır; önceden kopya işletme geneli iniyor, Marina'nın kirası Tuzla'nın Ödemeler'inde görünüyordu (denetim 21 Kasım #17) |
 | Ödenmemiş faturalar ve cari | İşletme geneli (mal alımı şubeye bölünmez), her görünümde |
+| Kasadan tedarikçiye işlenmemiş ödemeler (Teslim, fişsiz alışveriş) | Cari işletme genelidir, **kasa satırı şubenindir** (24 Kasım 2026): zilin sayısı, Tedarikçiler'in uyarısı ve tedarikçinin şeritleri tek şube seçiliyken yalnız o şubenin kasasınınkini gösterir, öbürlerini "Öbür şubenin kasasında N satır daha" diye söyler; birden çok kasa açıkken satır kasasının adını yazar. Liste süzülmez: Tuzla'nın kasasından ödenmiş fatura Marina'da da "kasadan ödenmiş olabilir" diye sessizdir (`cariHints`) |
+| Kasadan faturalı alımlar (e-Arşiv, fatura) | Kasanın şubesinde: zil, Bugün, Genel bakış'ın ayın işleri ve Faturalar › Kontrol bekleyen seçili şubenin kasasından çıkanları gösterir (`scopeCashOutInvoiceState`); birden çok kasa açıkken satır "Kasa 24 Kas · Marina" yazar. Eşleştirme işletme geneli (fatura şubesizdir); Vergi ve sabah e-postası bütün şubeler |
 | Sabah e-postası, Nakit planı, Vergi, haftalık özet | Bütün ödemeler: para işletmenindir (`loadUpcoming` şubesiz çağrılır) |
 
 Var olan hatırlatıcılar işletme geneli kaldı; şubeye ait olanı yönetici formdan taşır.
+
+Personelin **Özel günler** listesi (Yaklaşan) kişinin şubesinin kapalı günlerini gösterir (kilitli personelde kendi
+şubesi, değilse seçici; maç, AVM etkinliği ve kampanya her şubede): Tuzla'nın kapalı günü Marina'nın listesine girmez,
+Marina'nın personelinin maçını "Bu günlerde zaten bir özel gün var" diye reddetmez. "Tümü"de birden çok kasa açıkken
+kapalı günün satırı şubesini yazar (`staffSpecialList`, `saveStaffSpecialCore`; 24 Kasım 2026).
 
 ## Uyarı sesleri şubeye göre (22 Kasım 2026)
 
