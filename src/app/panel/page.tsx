@@ -34,7 +34,7 @@ import { EmptyState, GrowthPill, InfoTip, KeyValue, PageSkeleton, Progress, Segm
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
-import { ALL_BRANCHES, branchViewNote, type BranchScope } from "@/lib/branches";
+import { ALL_BRANCHES, BRANCH_PARAM, branchViewNote, type BranchScope } from "@/lib/branches";
 import { posCommissionNote, shiftMonth, type ProductStatus } from "@/lib/calc/engine";
 import {
   alerts,
@@ -444,8 +444,9 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           <>
             <MonthPicker months={months} value={month} />
             {/* Dosya indiren rota: düz bağlantı (istemci yönlendirmesi rotayı iki kez istemesin) */}
-            {/* Telefonda kısa ad: ay seçici ile aynı satıra sığar */}
-            <a href={`/api/export?ay=${month}`} download className={buttonClass("secondary")} aria-label={`${monthLabel(month)} Excel'e aktar`}>
+            {/* Telefonda kısa ad: ay seçici ile aynı satıra sığar. Dosya ekranın şube seçimiyle (şube kapsamı C P1-9; Ayarlar'daki
+                tam yedek seçicisiz, Tümü) */}
+            <a href={`/api/export?ay=${month}&${BRANCH_PARAM}=${encodeURIComponent(scope)}`} download className={buttonClass("secondary")} aria-label={`${monthLabel(month)} Excel'e aktar`}>
               <Download size={16} aria-hidden="true" />
               <span className="max-[420px]:hidden">Excel&apos;e aktar</span>
               <span className="min-[421px]:hidden">Excel</span>
