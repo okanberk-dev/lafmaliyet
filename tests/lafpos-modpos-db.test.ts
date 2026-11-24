@@ -368,7 +368,7 @@ describe("LafPOS ModPOS dönemi ucu: veritabanında", { skip: !SERVER_URL && "LA
       assert.deepEqual([p.from, p.to], ["2026-11-13", "2026-11-21"], "Marina'nın listesi 13–21 Kasım (Tuzla'nın 1–10'u değil)");
       assert.equal(sumK(p.rows.map((x) => x.tutar)), 2_941_500, "yalnız Marina'nın satırları");
       // Marina'nın listesi temizlenince kendi kaydı da gider; Tuzla'nınki kalır
-      const cleared = await withBranchScope(LAFPOS_SUBE, () => sales.clearMonthSales("2026-11"));
+      const cleared = await withBranchScope(LAFPOS_SUBE, () => sales.clearMonthSales("2026-11", { scope: LAFPOS_SUBE, count: list.length }));
       assert.ok(cleared.ok, JSON.stringify(cleared));
       const [own] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, "sales.coverage.sube"));
       assert.deepEqual(own.value, { [LAFPOS_SUBE]: {}, [MODPOS_SUBE]: { "2026-11": "2026-11-10" } });

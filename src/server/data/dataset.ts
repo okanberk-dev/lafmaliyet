@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, eq, gte, inArray } from "drizzle-orm";
 
 import { channelNameResolver } from "@/app/panel/tedarikciler/logic";
-import { ALL_BRANCHES, branchPnlEntry, DEFAULT_POS_RATE, monthTotalsLocked, type BranchScope } from "@/lib/branches";
+import { ALL_BRANCHES, branchPnlEntry, DEFAULT_POS_RATE, monthWriteLock, type BranchScope } from "@/lib/branches";
 import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, SalesLine, Settings } from "@/lib/calc/types";
@@ -296,7 +296,9 @@ async function readDataset(): Promise<Dataset> {
     settings,
     currentMonth,
     branchView: branch ? { id: branch.id, name: branch.name, kind: branch.kind } : null,
-    monthTotalsLocked: monthTotalsLocked(scope, branches),
+    // Ay hücreleri yazılmaz: "Tümü"de birden çok kasanın toplamı, online kanalda kasa satışı yok (monthWriteLock)
+    monthTotalsLocked: monthWriteLock(scope, branches) !== null,
+    monthLockText: monthWriteLock(scope, branches),
     ...(waterSales ? { waterSales } : {}),
     salesCoverage,
     writeCoverage: coverageOf(writeBranch),

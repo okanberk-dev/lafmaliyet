@@ -430,15 +430,36 @@ export function monthTotalsLocked(scope: BranchScope, known: readonly BranchRow[
 export const MONTH_TOTALS_LOCKED_TEXT = "Tümü'de şubelerin toplamı görünür: ciro ve açık günü yazmak için soldan şubeyi seçin.";
 
 /**
- * Gelir-gider'de "Tümü" seçiliyken ay bilgisinin notu (docs/SUBE.md › Yazarken hangi şube): ciro ve açık gün şubelerin
- * toplamıdır, yazılmaz (monthTotalsLocked); ay notu şube başınadır, "Tümü"nde varsayılan şubeye (Tuzla) iner, Satışlar'daki
- * ay bilgisi gibi. Yalnız birden çok kasa açıkken; tek şube seçiliyken ya da tek kasa varken null (yazılan zaten
- * gösterilen satırdır)
+ * Ay bilgisi (ciro, açık gün, ay notu) bu seçimde yazılamıyorsa nedeni: "Tümü"de birden çok kasa açıkken şubelerin
+ * toplamıdır (`monthTotalsLocked`); online kanalın kasa satışı yoktur (ay "online" şubesine inmesin; sunucu da reddeder,
+ * `formBranch(…, "sales")`). Yazılabiliyorsa null
+ */
+export function monthWriteLock(scope: BranchScope, known: readonly BranchRow[]): string | null {
+  if (monthTotalsLocked(scope, known)) return MONTH_TOTALS_LOCKED_TEXT;
+  const b = known.find((x) => x.id === scope);
+  if (b && b.kind !== "fiziksel") return `${b.name} kanalının kasa satışı yok: ciro, açık gün ve ay notu şubelerde yazılır; soldan şubeyi seçin.`;
+  return null;
+}
+
+/**
+ * Gelir-gider'in ay hücrelerinin (ciro, açık gün, ay notu) yazdığı şube: tek şube seçiliyken o şube, "Tümü"de tek kasa
+ * açıkken o kasa. Yazılamıyorsa (`monthWriteLock`) null: form şube göndermez, sunucu reddeder
+ */
+export function monthWriteBranch(scope: BranchScope, known: readonly BranchRow[]): string | null {
+  if (monthWriteLock(scope, known)) return null;
+  if (scope !== ALL_BRANCHES) return scope;
+  return tillBranches(known)[0]?.id ?? DEFAULT_BRANCH_ID;
+}
+
+/**
+ * Gelir-gider'de "Tümü" seçiliyken ay bilgisinin notu (docs/SUBE.md › Yazarken hangi şube): ciro, açık gün ve ay notu
+ * şube başınadır; "Tümü" şubelerin toplamıdır, yazılmaz (monthTotalsLocked). Önceden ay notu "Tümü"nde sessizce Tuzla'nın
+ * ay satırına iniyordu (24 Kasım şube kapsamı). Yalnız birden çok kasa açıkken; tek şube seçiliyken ya da tek kasa varken
+ * null (yazılan zaten gösterilen satırdır)
  */
 export function monthWriteNote(scope: BranchScope, known: readonly BranchRow[]): string | null {
   if (!monthTotalsLocked(scope, known)) return null;
-  const name = known.find((b) => b.id === DEFAULT_BRANCH_ID)?.name ?? "Tuzla";
-  return `Tümü seçili: aylık ciro ve açık gün şubelerin toplamıdır, burada yazılmaz; yazmak için soldan şubeyi seçin. Ay notu ${name} şubesinin ay satırına yazılır.`;
+  return "Tümü seçili: aylık ciro, açık gün ve ay notu şubelerin toplamıdır, burada yazılmaz; yazmak için soldan şubeyi seçin.";
 }
 
 /**

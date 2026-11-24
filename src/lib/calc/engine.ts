@@ -3176,7 +3176,7 @@ export function createModel(ds: Dataset) {
       kind: "manual",
       // "Tümü" birden çok kasanın toplamıyken yazılmaz: yazılan tek şubenin ay satırına inerdi (monthTotalsLocked)
       editable: !ds.monthTotalsLocked,
-      hint: `Patron > Raporlar > Ciro (indirimler düşülmüş, ödenmezler hariç). Satışlar sayfasındaki ay bilgisiyle aynıdır. Boşsa kasa raporlarının Z toplamı kullanılır.${ds.monthTotalsLocked ? ` ${MONTH_TOTALS_LOCKED_TEXT}` : ""}`,
+      hint: `Patron > Raporlar > Ciro (indirimler düşülmüş, ödenmezler hariç). Satışlar sayfasındaki ay bilgisiyle aynıdır. Boşsa kasa raporlarının Z toplamı kullanılır.${ds.monthTotalsLocked ? ` ${ds.monthLockText ?? MONTH_TOTALS_LOCKED_TEXT}` : ""}`,
     });
     sonuc({
       key: "revenueNet",

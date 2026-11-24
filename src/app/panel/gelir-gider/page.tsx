@@ -13,7 +13,7 @@ import { Notice, NoticeLink } from "@/components/ui/notice";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { branchBreakdown, type BranchBreakdown } from "@/lib/branch-breakdown";
-import { branchViewNote, MONTH_TOTALS_LOCKED_TEXT, monthWriteNote } from "@/lib/branches";
+import { branchViewNote, monthWriteBranch, monthWriteLock, monthWriteNote } from "@/lib/branches";
 import { daysInMonth, uncountedCogsSummary, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
 import { manualOf } from "@/lib/cash-month";
 import { missingRevenueText, yearTotals } from "@/lib/calc/insights";
@@ -82,18 +82,19 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   await requireAdmin();
   const sp = await searchParams;
   // Vergi ayarları yalnız SGK oranı uyarısı için (K19); okunamazsa uyarı çıkmaz, tablo etkilenmez
-  const [model, salesState, taxSettings, writeNote, branchList] = await Promise.all([
+  const [model, salesState, taxSettings, monthWrite, branchList] = await Promise.all([
     loadModel(),
     readSalesState(),
     loadTaxSettings().catch((e) => {
       console.error("[gelir-gider] vergi ayarları", e);
       return null;
     }),
-    // "Tümü"de (birden çok kasa açıkken) ciro ve açık gün şubelerin toplamıdır, yazılmaz; ay notu hangi şubenin ay satırına
-    // iner; okunamazsa not yok
+    // Ay hücrelerinin (ciro, açık gün, ay notu) yazdığı şube ve yazılamıyorsa nedeni: "Tümü"de (birden çok kasa açıkken)
+    // şubelerin toplamıdır, online kanalın kasa satışı yok. Hücre şubeyi gönderir (gönderim anındaki seçime değil);
+    // okunamazsa hücreler kilitli
     Promise.all([currentBranchScope(), listBranches()])
-      .then(([scope, branches]) => monthWriteNote(scope, branches))
-      .catch(() => null),
+      .then(([scope, branches]) => ({ note: monthWriteNote(scope, branches), lock: monthWriteLock(scope, branches), branch: monthWriteBranch(scope, branches) }))
+      .catch(() => ({ note: null, lock: "Şube seçimi okunamadı; sayfayı yenileyin.", branch: null })),
     // Tümü'nün şube kırılımı (Faz 5): açık fiziksel şubeler; okunamazsa kart yok
     listBranches().catch(() => []),
   ]);
@@ -413,7 +414,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         </Notice>
       ) : null}
       {/* "Tümü"de birden çok kasa açıkken: elle yazılan ay bilgisi Tuzla'nın ay satırına iner (docs/SUBE.md › Yazarken hangi şube) */}
-      {writeNote ? <Notice tone="neutral" size="line" className="-mt-2 mb-4" title={writeNote} /> : null}
+      {monthWrite.note ? <Notice tone="neutral" size="line" className="-mt-2 mb-4" title={monthWrite.note} /> : null}
       {yt.missingRevenue.length ? (
         <p className="-mt-2 mb-6 text-xs text-pretty text-ink-mute" role="note">
           Yıl kartları POS cirosu girilmiş {yt.counted.length} ayın toplamı. {yt.missingRevenue.map(missingRevenueText).join(" · ")}.
@@ -442,7 +443,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         latestMonth={latestMonth}
         expectedDebts={expected}
         lafposSwitch={model.settings.lafposGecisGunu}
-        openDaysLocked={model.ds.monthTotalsLocked ? MONTH_TOTALS_LOCKED_TEXT : null}
+        openDaysLocked={monthWrite.lock}
+        writeBranch={monthWrite.branch}
         yearNote={
           yt.counted.length < activeMonths.length
             ? { short: `cirosu girilmiş ${yt.counted.length} ay`, long: [`${year} yılı: bu aya kadar, POS cirosu girilmiş ${yt.counted.length} ay (yıl kartları gibi)`, ...yearNotes].join(". ") }

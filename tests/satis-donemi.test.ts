@@ -133,7 +133,7 @@ test("kapsam kaydı: yükleme süren ayda günü yazar, biten aya yükleme ve 'A
   assert.match(dataset, /r\.date\.slice\(0, 7\) === month && r\.date <= upto/);
   // İçe aktarma kartı süren ayda günü sorar
   const client = read("src/app/panel/satislar/sales-client.tsx");
-  assert.match(client, /importSales\(\{ month, lines: rows, mode, through: running \? through : null \}\)/);
+  assert.match(client, /importSales\(\{ month, lines: rows, mode, through: running \? through : null, branchId \}\)/);
   assert.match(client, /Liste hangi güne kadar\?/);
 });
 
