@@ -6,6 +6,9 @@
 // - Panel hesabı (staff.userId) Vardiya'da "u:<id>"; hesabı olmayan çalışan adıyla "n:<küçük harfli ad>" (personRef).
 // - Bir hesap (ya da bir şubedeki bir ad) aynı ayda tek maaş satırına bağlanır: aralığı çakışan iki satır aynı kişiyi
 //   gösteremez. "Devam ettir"in açtığı yeni kayıttan önceki satır kendi geçmişiyle bağlı kalabilir (aralıkları ayrık).
+//   Bu yüzden bir hesaba birden çok (aralığı ayrık) satır düşebilir: hesap başına liste verenler (LM-4b'nin
+//   /api/panel/pos/personel'i) hesap başına tek öğe vermelidir. Veritabanında tekil indeks yok (kural aralığa bağlı); eylem
+//   denetimi ve yazımı bir işlem kilidi altında yapar (src/server/actions/costs.ts lockStaffLinks).
 
 import type { MonthRange } from "./calc/types";
 

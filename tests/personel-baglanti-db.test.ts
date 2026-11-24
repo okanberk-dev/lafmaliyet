@@ -27,6 +27,7 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
   let costs: typeof import("../src/server/actions/costs");
   let dataset: typeof import("../src/server/data/dataset");
   let users: { admin: number; ayse: number; tuzlaKilitli: number };
+  let dbUrl: string;
 
   before(async () => {
     admin = postgres(SERVER_URL!, { max: 1, onnotice: () => {} });
@@ -34,6 +35,7 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
     await admin.unsafe(`CREATE DATABASE ${DB_NAME}`);
     const url = new URL(SERVER_URL!);
     url.pathname = `/${DB_NAME}`;
+    dbUrl = url.href;
     Object.assign(process.env, { DATABASE_URL: url.href, AUTH_SECRET: "personel-testi-icin-en-az-otuz-iki-karakterlik-anahtar-x" });
     const require = createRequire(import.meta.url);
     const stub = (id: string, exports: unknown) => {
@@ -159,6 +161,37 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
     const kind = await costs.saveStaff([{ id: alper.id, name: "Alper", netSalary: 35_000, extras: 0, kind: "part_time", effectiveFrom: "2026-12" }]);
     assert.equal(kind.ok, false);
     assert.match(kind.ok ? "" : kind.error, /çalışma türü değişmez/);
+  });
+
+  test("bağlantı denetimi eşzamanlı kayda dayanıklı: aynı hesabı bağlayan ikinci kayıt öbürünün bitmesini bekler ve reddedilir", async () => {
+    // İnceleme bulgusu 6: denetim (checkStaffLinks) ile yazım aynı işlemde ama kilitsizdi; iki yönetici aynı anda kaydedince
+    // ikisi de denetimden geçip aynı hesabı iki satıra bağlayabiliyordu. Burada öteki kayıt ayrı bir bağlantıda, aynı
+    // kilidi (personel bağlantısı) tutarak Ayşe'nin hesabını bir satıra bağlıyor ve henüz bitmedi
+    const other = postgres(dbUrl, { max: 1, onnotice: () => {} });
+    let settledEarly = false;
+    let pending: ReturnType<typeof costs.saveStaff> | null = null;
+    try {
+      await other.begin(async (tx) => {
+        await tx`select pg_advisory_xact_lock(hashtext('personel-baglanti'))`;
+        await tx`insert into staff (name, net_salary, extras, kind, daily_wage, meal_card, user_id, start_month, branch_id, sort_order, active)
+                 values ('Ayşe (öteki yönetici)', 0, 0, 'part_time', 1500, false, ${users.ayse}, '2026-12', 'marina', 1, true)`;
+        pending = costs.saveStaff([part({ name: "Ayşe (bu yönetici)" })]);
+        void pending.then(() => (settledEarly = true));
+        await new Promise((r) => setTimeout(r, 500));
+      });
+    } finally {
+      await other.end();
+    }
+    assert.equal(settledEarly, false, "ikinci kayıt öteki işlem bitene kadar bekler");
+    const res = await pending!;
+    assert.equal(res.ok, false, "ikinci kayıt reddedilir (aynı hesap aynı aylarda iki satıra bağlanmaz)");
+    assert.match(res.ok ? "" : res.error, /aynı aylarda "Ayşe \(öteki yönetici\)" maaş satırına bağlı/);
+    const linked = await db.select().from(s.staff).where(eq(s.staff.userId, users.ayse));
+    assert.deepEqual(
+      linked.map((x) => x.name),
+      ["Ayşe (öteki yönetici)"],
+      "hesap tek satıra bağlı",
+    );
   });
 
   /** Kayıtlı satırlar, eylemin "değişmeden kalanlar" biçiminde */

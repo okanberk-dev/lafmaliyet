@@ -1,6 +1,6 @@
 "use server";
 
-import { and, asc, eq, gt, inArray, lt, ne } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lt, ne, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -176,6 +176,8 @@ export async function saveStaff(
       if (r.userId && r.personRef) throw new UserError(`${r.name}: hem panel hesabı hem Vardiya adı seçilemez`);
     }
     await db.transaction(async (tx) => {
+      // Bağlantı denetimi ve yazım aynı kilit altında: eşzamanlı ikinci kayıt öbürünün yazdığını görür (inceleme bulgusu 6)
+      await lockStaffLinks(tx);
       const past = await dataMonths(tx, cur);
       const firstData = (await dataMonths(tx))[0] ?? null;
       // Bağlantılar (Faz 5): hesap var mı, hesabın şubesi satırın şubesi mi, aynı kişi aynı ayda iki satırda mı
@@ -314,6 +316,21 @@ export async function saveStaff(
 }
 
 /**
+ * Maaş satırı bağlantılarının işlem kilidi (inceleme bulgusu 6). staff.user_id'de veritabanı tekilliği yok: kural "bir hesap
+ * aynı ayda tek satıra" (aralığı çakışan iki satır aynı kişiyi gösteremez), aralığa bağlı olduğundan bir indeksle
+ * yazılamaz. Denetim (checkStaffLinks, linkConflict) ve yazım bu kilidi tutan işlemde yapılır; kilidi tutan öteki kayıt
+ * (saveStaff, endStaff) bitene kadar beklenir ve READ COMMITTED'da sonraki okuma onun yazdığını görür. Böylece iki
+ * yöneticinin aynı anda kaydı aynı hesabı aralığı çakışan iki satıra bağlayamaz.
+ *
+ * Biten satır ile "Devam ettir"in açtığı yeni satır (aralıkları ayrık) aynı hesaba bağlı kalabilir: eski satırın geçmiş
+ * ayları kendi bağlantısıyla sayılır. Bu yüzden bir hesaba birden çok satır düşebilir; LM-4b'nin personel listesi
+ * (GET /api/panel/pos/personel, "bu ay ve geçen ay aralıktaki satırlar") hesap başına TEK öğe vermelidir (docs/VARDIYA.md).
+ */
+async function lockStaffLinks(tx: Tx): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext('personel-baglanti'))`);
+}
+
+/**
  * Maaş satırlarının Vardiya / hesap bağlantısı (Faz 5; src/lib/staff-link.ts): seçilen hesap var mı ve şubesine kilitliyse
  * satırın şubesi mi; aynı hesap (ya da bir şubede aynı Vardiya adı) aralığı çakışan iki satıra bağlanmış mı. Kayıttaki
  * yeni değerlerle (silinenler hariç) denetlenir. Dışa açılmaz ("use server" dosyasının her dışa verdiği bir uçtur)
@@ -396,18 +413,23 @@ export async function endStaff(id: number, lastMonth: string | null) {
     const last = lastMonth === null ? null : zMonth.parse(lastMonth);
     const cur = currentMonthTR();
     const db = getDb();
-    const [row] = await db.select().from(s.staff).where(eq(s.staff.id, sid));
-    if (!row) throw new UserError("Personel bulunamadı");
-    if (last && row.startMonth && last < row.startMonth) {
-      throw new UserError(`Bitiş ayı başlangıç ayından (${monthLabel(row.startMonth)}) önce olamaz`);
-    }
-    // Bağlı satırın aralığı uzayınca aynı kişiye bağlı başka bir satırla çakışmasın (Faz 5; src/lib/staff-link.ts)
-    if (row.userId !== null || row.personRef !== null) {
-      const others = await db.select().from(s.staff).where(ne(s.staff.id, sid));
-      const conflict = linkConflict({ ...row, endMonth: last }, others);
-      if (conflict) throw new UserError(conflict);
-    }
-    await db.update(s.staff).set({ endMonth: last, active: activeFromRange(last, cur) }).where(eq(s.staff.id, sid));
+    const row = await db.transaction(async (tx) => {
+      // Bağlantı denetimi ve yazım saveStaff'la aynı kilit altında (lockStaffLinks, inceleme bulgusu 6)
+      await lockStaffLinks(tx);
+      const [row] = await tx.select().from(s.staff).where(eq(s.staff.id, sid));
+      if (!row) throw new UserError("Personel bulunamadı");
+      if (last && row.startMonth && last < row.startMonth) {
+        throw new UserError(`Bitiş ayı başlangıç ayından (${monthLabel(row.startMonth)}) önce olamaz`);
+      }
+      // Bağlı satırın aralığı uzayınca aynı kişiye bağlı başka bir satırla çakışmasın (Faz 5; src/lib/staff-link.ts)
+      if (row.userId !== null || row.personRef !== null) {
+        const others = await tx.select().from(s.staff).where(ne(s.staff.id, sid));
+        const conflict = linkConflict({ ...row, endMonth: last }, others);
+        if (conflict) throw new UserError(conflict);
+      }
+      await tx.update(s.staff).set({ endMonth: last, active: activeFromRange(last, cur) }).where(eq(s.staff.id, sid));
+      return row;
+    });
     const message = last
       ? `${row.name} ${monthLabel(last)} sonunda ayrıldı; ${monthLabel(shiftMonth(last, 1))} ve sonrasında maaş hesabına girmez. Önceki aylar değişmedi.`
       : `${row.name} yeniden aktif; bitiş ayı kaldırıldı.`;

@@ -161,6 +161,13 @@ staffCost); testleri `tests/personel-part-time.test.ts`, `tests/personel-baglant
   hesap bir şubeye kilitliyse satırın şubesi mi, aynı hesap (ya da bir şubede aynı ad) **aynı ayda** başka bir maaş
   satırına bağlı mı (aralıkları çakışan iki satır aynı kişiyi gösteremez; "Devam ettir"in açtığı yeni kayıttan önceki satır
   kendi aylarıyla bağlı kalabilir, yeni kayıt kendiliğinden bağlanmaz). Bitiş ayını kaldırmak çakışma yaratıyorsa reddedilir.
+  `staff.user_id`'de veritabanı tekilliği yok (kural aralığa bağlı); denetim ve yazım bir işlem kilidi altında yapılır
+  (`pg_advisory_xact_lock`, `saveStaff` ve `endStaff`; `lockStaffLinks`): iki yönetici aynı anda kaydederse ikincisi
+  öncekini bekler ve onun bağladığını görür (inceleme bulgusu 6).
+- **LM-4b notu (personel listesi):** biten satır ile "Devam ettir"in açtığı yeni satır aynı hesaba bağlı olabilir (aralıkları
+  ayrık). `GET /api/panel/pos/personel` "bu ay ve geçen ay aralıktaki satırlar"ı okurken bir hesaba iki satır düşebilir;
+  liste **hesap başına tek öğe** vermelidir (o ayın satırı, yoksa en yeni satır). Aksi hâlde LafPOS'un seçicisi aynı
+  hesabı iki kez gösterir.
 - **Part-time** (Maaşlar › Çalışma: Part-time; tür yalnız yeni kişide seçilir, maaş hesabına girmiş satırın türü
   değişmez): günlük ücret (işletmenin çağrılan gün başına maliyeti; **SGK brütleştirmesi yok**), yemek kartı (Ayarlar'daki
   günlük tutar × çağrıldığı gün) ve ek ödeme (brütleştirilmez). Günlük ücret ve yemek kartı maaşla birlikte "şu aydan
