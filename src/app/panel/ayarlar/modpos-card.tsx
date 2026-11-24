@@ -3,7 +3,6 @@ import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { CardContent } from "@/components/ui/card";
-import { InfoTip } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { DEFAULT_BRANCH_ID, type BranchRow } from "@/lib/branches";
 import { modposDayBadges, modposDayLine } from "@/lib/modpos/ayarlar";
@@ -15,9 +14,6 @@ import { loadModposCard, type ModposCardData } from "@/server/modpos/status";
 
 import { ModposFallbackSwitch, ModposFetchForm } from "./modpos-client";
 import { SectionCard } from "./section-card";
-
-const SETUP_TIP =
-  "Kurulum: 1) Gafdigi'nin her şube için verdiği anahtarı Vercel › lafmaliyet › Settings › Environment Variables'a yalnız Production olarak ekleyip yeniden yayınlayın: Tuzla MODPOS_API_KEY, Marina MODPOS_API_KEY_MARINA (şube kimliği büyük harfle). Şubenin anahtarı yoksa o şube çekilmez, başka şubenin anahtarı kullanılmaz. Tek anahtar birden çok şubenin kasasını verirse her kasa ModPOS'taki şube adına göre kendi şubesine yazılır; ad panelin şube adını içermiyorsa MODPOS_SUBELER'e \"ModPOS adı=şube kimliği\" yazın (önizlemeler canlının veritabanını paylaşır, çekmez); 2) anahtara IP kısıtı koydurmayın, Vercel'in sabit çıkış IP'si yok; 3) ilk veri ertesi sabah 08:00'de gelir ya da aşağıdan Bu günü çek ile hemen alınır. Günde 2 çekim hakkı var (Türkiye saatiyle gece yarısı yenilenir): sabah işi önce dünün verisini, kalan hakla en yeni eksik günden geriye bir günü çeker. İsteğe bağlı: MODPOS_SYNC_FROM (geçmişin tamamlanacağı ilk gün, YYYY-MM-DD) ve MODPOS_API_URL. Ayrıntı docs/MODPOS-API.md.";
 
 /**
  * Ayarlar › ModPOS (kasa föyü) (docs/MODPOS-API.md › Nerede görünür, Kota ve çekme sırası, Ay rakamına yedek):
@@ -62,8 +58,7 @@ export async function ModposCard() {
       description={
         <>
           ModPOS API&apos;den kasa verisi her sabah buraya gelir: ciro, ödeme yöntemleri, açılış ve sayım, giderler ve kasa farkı. Kasa ekranında yöneticinin
-          gördüğü raporla yan yana durur; personelin ekranı değişmez.{many ? " Her şube kendi anahtarı ve günlük hakkıyla çekilir, verisi yalnız kendi şubesine yazılır." : ""}{" "}
-          <InfoTip text={SETUP_TIP} />
+          gördüğü raporla yan yana durur; personelin ekranı değişmez.{many ? " Her şube kendi anahtarı ve günlük hakkıyla çekilir, verisi yalnız kendi şubesine yazılır." : ""}
         </>
       }
     >

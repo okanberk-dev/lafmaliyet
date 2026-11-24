@@ -55,12 +55,11 @@ export async function LafposCard({ products }: { products: ProductOption[] }) {
       icon={<Store />}
       title="LafPOS (kasa)"
       summary={sum.short}
+      // Geçiş günü seçildiyse "ModPOS sayılır" cümlesi geçmişi anlatır: yalnız seçilmeden önce (sahibin isteği 24.11.2026)
       description={
-        <>
-          Kafenin kasası LafPOS her iş gününü kapanışta buraya gönderir. Geçiş günü seçilene kadar kasa ModPOS sayılır: LafPOS&apos;un gönderdiği günler
-          yalnız burada görünür, hiçbir hesaba girmez.{" "}
-          <InfoTip text="Açılış sırası: 1) anahtarlar (Vercel'de bu panele LAFPOS_SYNC_SECRET; LafPOS'a aynı değerle LAFMALIYET_SYNC_SECRET ve LAFMALIYET_URL; sitenin LAFPOS_SYNC_SECRET'ı ayrı bir değerdir), 2) deneme gönderimi (LafPOS'ta bir gün kapatılır, burada 'deneme' görünür), 3) geçiş günü. Ayrıntı docs/LAFPOS.md." />
-        </>
+        data.switchDay
+          ? "Kafenin kasası LafPOS her iş gününü kapanışta buraya gönderir."
+          : "Kafenin kasası LafPOS her iş gününü kapanışta buraya gönderir. Geçiş günü seçilene kadar kasa ModPOS sayılır: LafPOS'un gönderdiği günler yalnız burada görünür, hiçbir hesaba girmez."
       }
     >
       <CardContent className="space-y-4">

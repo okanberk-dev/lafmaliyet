@@ -93,23 +93,22 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     title: "Ay sonu stok sayımı",
     body: (
       <>
-        Ayın son günü kapanıştan sonra <Path href="/panel/sayim" /> ekranında miktarları sayım biriminde (KG, LT, ADET, DİLİM) girin. Personel hesabıyla telefondan da yapılabilir;
-        personel listede olmayan kalemleri de yazabilir ya da her ay sayılacaksa Listeye ekle ile listeye ekler (paket fiyatını biliyorsa yazar, yoksa yönetici girer). &quot;Geçen aydan doldur&quot; ek
-        kalemleri de taşır. Ayın ilk 10 gününde ekran, geçen ayın sayımı tamamlanmamışsa (yarım sayım da) geçen ayı açar; açılan ay adreste
-        durur. Personel geçen ayın sayımını ayın 10&apos;una kadar düzeltebilir, sonrasında yalnız siz. Tutarlılık&apos;ta sayım sapması için o ayın alım miktarı da gerekir: Paraşüt faturaları kendiliğinden yazar, hiç alınmadıysa &quot;Alım yok (0)&quot;a dokunun (faturası olmayan bağlı malzemelere tek seferde de yazılır). Çarpanı onay bekleyen fatura alınana girmez, malzeme &quot;Fiyat onayı bekliyor&quot; olur.
+        Ayın son günü kapanıştan sonra <Path href="/panel/sayim" /> ekranında miktarları sayım biriminde (KG, LT, ADET, DİLİM) girin; personel telefondan da
+        sayabilir. Ayın ilk 10 gününde ekran, bitmemişse geçen ayın sayımını açar; personel geçen ayı ayın 10&apos;una kadar düzeltir, sonrasında yalnız siz.
+        Tutarlılık&apos;taki sayım sapması o ayın alım miktarını da ister: Paraşüt faturaları kendiliğinden yazar, hiç alınmadıysa &quot;Alım yok (0)&quot;a
+        dokunun.
       </>
     ),
     href: "/panel/sayim",
     icon: ClipboardList,
   },
   {
-    title: "Satış raporunu yükleyin (ModPOS raporuyla çalışan aylarda)",
+    title: "Satış raporunu yükleyin (ModPOS'lu şube)",
     body: (
       <>
-        Patron › Raporlar › Satış ekranından ürün listesini (ad, adet, ciro) kopyalayıp <Path href="/panel/satislar" /> ekranındaki İçe aktar kartında Yapıştır&apos;ı seçip
-        yapıştırın ya da Dosya ile dosyayı seçin. Daha önce eşleştirilen ürünler otomatik tanınır; eşleşmeyen satırları bir kez eşleştirin. LafPOS&apos;a
-        geçiş günü seçildiyse (<Path href="/panel/ayarlar" /> › LafPOS) o günden itibaren satışlar her gün sonunda LafPOS&apos;tan gelir: geçiş ayında
-        liste yalnız geçiş gününden önceki günleri kapsar, sonraki aylara liste yüklenmez.
+        ModPOS Patron › Raporlar › Satış ekranındaki ürün listesini <Path href="/panel/satislar" /> ekranındaki İçe aktar kartına yapıştırın ya da dosyasını
+        seçin; eşleşmeyen satırları bir kez eşleştirin, sonraki aylar hatırlanır. LafPOS&apos;lu şubenin satışları her gün sonunda LafPOS&apos;tan gelir, ona
+        liste yüklenmez.
       </>
     ),
     href: "/panel/satislar",
@@ -119,9 +118,9 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     title: "Ay bilgilerini girin",
     body: (
       <>
-        <Path href="/panel/satislar" /> ekranında POS cirosunu (KDV dahil), açık gün sayısını, yönetici indirimlerini ve ödenmez/ikram tutarını yazın. Devam eden ayda
-        açık gün sayısını bugüne kadar olarak yazın: ay sonu tahmini bununla yapılır. Kasa raporu girilen aylarda boş bıraktığınız alanlar kasa raporlarından
-        kendiliğinden dolar; elle yazdığınız her zaman geçerlidir.
+        <Path href="/panel/satislar" /> ekranında POS cirosunu (KDV dahil), açık gün sayısını, yönetici indirimlerini ve ödenmez/ikram tutarını yazın; süren ayda
+        açık günü bugüne kadar olarak yazın, ay sonu tahmini bununla yapılır. Boş bıraktığınız alanlar kasa raporlarından dolar; elle yazdığınız her zaman
+        geçerlidir.
       </>
     ),
     href: "/panel/satislar",
@@ -131,14 +130,10 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     title: "Faturaları gözden geçirin",
     body: (
       <>
-        Paraşüt&apos;e gelen e-faturalar ve gider faturaları her sabah <Path href="/panel/faturalar" /> ekranına kendiliğinden gelir; elle girmeyin. Kategorisi tahminle
-        yazılanları Kontrol bekleyen süzgecinde onaylayın; “Mal alışı sayılmıyor” yazanın kalemi hammaddeye bağlı, kategorisini mal alışı yapın (bilerek öyleyse
-        Kalsın). Yeni gelen ürünü <Path href="/panel/parasut" /> ekranında bir kez hammaddeye bağlayın (çarpan, &quot;Fiyatı
-        güncelle&quot;): alınan miktar ve paket fiyatı sonraki faturalardan güncellenir, ürün maliyetleri kendiliğinden değişir. Yalnızca Paraşüt&apos;te olmayan
-        faturaları (kâğıt, e-Arşiv) Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin. Personelin Kasa&apos;ya girdiği e-Arşiv ve faturalı alımlar
-        faturası gelene kadar Kontrol bekleyen&apos;in üstündeki Kasadan faturalı alımlar kartında durur: Faturalar&apos;a ekle (kasadan dolu, fiş belge olur) ya
-        da Aylık harcamalar&apos;a yaz. Aylık harcamalar&apos;a yazdığınızın faturası sonra gelirse aynı kartta &quot;İki kez sayılıyor&quot; der: Gider
-        kaydını sil.
+        Paraşüt&apos;teki faturalar her sabah <Path href="/panel/faturalar" /> ekranına kendiliğinden gelir. Kontrol bekleyen süzgecinde tahminle yazılan
+        kategorileri onaylayın; yeni gelen ürünü <Path href="/panel/parasut" /> ekranında bir kez hammaddeye bağlayın, sonraki faturalar miktarı ve fiyatı
+        kendisi günceller. Yalnız Paraşüt&apos;te olmayan faturayı (kâğıt, e-Arşiv) Fatura ekle ile girin. Personelin kasadan yaptığı faturalı alımlar
+        Kasadan faturalı alımlar kartında bekler.
       </>
     ),
     href: "/panel/faturalar?durum=kontrol",
@@ -148,11 +143,9 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     title: "Değişken giderleri yazın",
     body: (
       <>
-        Su faturasını <Path href="/panel/gelir-gider" /> tablosundaki SU GİDERİ satırına KDV hariç yazın: su + buzun litre maliyeti buradan reçetelere dağıtılır, reçeteye göre
-        kârda sabit gider olarak ikinci kez sayılmaz. Reklam, influencer gibi her ay farklı olan giderleri ve fatura dışı harcamaları (nakit alım, bakım){" "}
-        <Path href="/panel/harcamalar" /> ekranına girin: kategori ekleyebilirsiniz, her kategori Gelir-gider&apos;de kendi satırında sayılır; sabit giderdeki
-        &quot;Instagram reklamı&quot; gibi kalemleri oradan tek dokunuşla aylık girişe çevirirsiniz. Elektrik gibi sabit görünen ama değişen kalemlerin gerçek tutarını hücrenin
-        üzerine yazabilirsiniz.
+        Su faturasını <Path href="/panel/gelir-gider" /> tablosundaki SU GİDERİ satırına KDV hariç yazın (reçetelere su + buz maliyeti olarak dağılır). Reklam,
+        influencer, nakit alım ve bakım gibi her ay değişen giderleri <Path href="/panel/harcamalar" /> ekranına girin. Elektrik gibi değişen bir sabit giderin
+        gerçek tutarını hücrenin üzerine yazabilirsiniz.
       </>
     ),
     href: "/panel/gelir-gider",
@@ -181,12 +174,10 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Menüye zam yaptım",
         a: (
           <>
-            <Path href="/panel/urunler" /> ekranında satış fiyatı hücresini değiştirip Enter&apos;a basın ya da ürün kartında fiyatı değiştirin. Kartta fiyat simülatörü ile önce
-            deneyebilirsiniz. Birçok ürüne birden zam için <Path href="/panel/urunler" /> › Fiyatlar › Toplu değiştir: kategoriyi ve boyu seçin, yüzde ya da tutar
-            yazın (ör. %10, 5 ₺&apos;ye yukarı yuvarlanır); önizlemede her ürünün yeni fiyatı, maliyet oranı ve ayda kâra etkisi görünür, istemediğinizi çıkarın ya da
-            fiyatını elle yazın. Toplu değişiklik Fiyatlar › Geçmiş&apos;ten geri alınabilir (sonradan değişen ürüne dokunulmaz). Ürün laffogato.net menüsüne bağlıysa
-            (adın yanındaki küre) fiyat önce sitede değişir; sonra sitede Ayarlar › Vergi&apos;den fiyat listesinin tarihini güncelleyin. Kasadaki (ModPOS) fiyatı elle
-            değiştirin: değişen her fiyat Fiyatlar › Kasaya işle listesine girer.
+            <Path href="/panel/urunler" /> ekranında satış fiyatı hücresini değiştirip Enter&apos;a basın ya da ürün kartında değiştirin (kartta fiyat simülatörü
+            var). Birçok ürüne birden: Fiyatlar › Toplu değiştir; önizleme her ürünün yeni fiyatını, maliyet oranını ve aylık kâra etkisini gösterir, Fiyatlar ›
+            Geçmiş&apos;ten geri alınır. Siteye bağlı ürünün (adın yanındaki küre) fiyatı önce laffogato.net&apos;te değişir; sonra sitede Ayarlar ›
+            Vergi&apos;den fiyat listesinin tarihini güncelleyin. Kasada elle değişmesi gerekenler Fiyatlar › Kasaya işle listesine girer.
           </>
         ),
         icon: Tag,
@@ -197,20 +188,14 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
       },
       {
         id: "kasa-fiyat",
-        q: "Kasadaki (ModPOS) fiyatlar",
+        q: "Kasadaki fiyatlar (Kasaya işle)",
         a: (
           <>
-            Panelde, toplu ya da laffogato.net&apos;te değişen satış fiyatı ModPOS&apos;a kendiliğinden geçmez. Panel bunu unutmaz: fiyatı değişen her ürün{" "}
-            <Path href="/panel/urunler" /> › Fiyatlar › Kasaya işle listesine kasadaki adı, eski ve yeni fiyatıyla girer; zil de &quot;Kasada değişecek N
-            fiyat&quot; der. Kasada değiştirdikçe işaretleyin, işaretlenen listeden düşer (bildirimdeki Geri al geri getirir); liste açıkken fiyat yeniden
-            değiştiyse işaretlenmez, yeni fiyatıyla listede kalır. Metni kopyala ile listeyi
-            WhatsApp&apos;a yapıştırabilirsiniz. Fiyat kasadaki fiyata geri dönerse (ör. toplu değişiklik geri alındı) kendiliğinden düşer. Yeni ürün listeye girmez;
-            kasaya zaten elle eklenir. Ürün kartının Fiyat geçmişi kartı da kasadaki eski fiyatı gösterir. LafPOS&apos;a geçiş gününden itibaren (Ayarlar › LafPOS)
-            siteye bağlı ürünlerin fiyatını LafPOS siteden kendisi alır (gün açıkken 15 dakikada bir): onlar listede görünmez. ModPOS için kayıt sürer, geçiş
-            günü kaldırılır ya da ileri alınırsa ModPOS&apos;ta değişecek fiyatlar eksiksiz geri gelir. Listede yalnız siteye bağlı olmayan ve fiyatı LafPOS
-            başladıktan sonra değişen ürünler çıkar: LafPOS ürünü siteden alıyorsa (orada fiyatı değiştirilemez) Ürünler › Site
-            menüsü&apos;nde bağlayın ya da fiyatı sitede değiştirin; LafPOS&apos;ta yerel ürünse orada elle değiştirip işaretleyin.
-            LafPOS&apos;ta ürün fiyatını kasiyer değiştiremez: bu iş yöneticide, personelin Bugün&apos;ünde ve zilinde çıkmaz.
+            Panelde, toplu ya da laffogato.net&apos;te değişen satış fiyatı <Path href="/panel/urunler" /> › Fiyatlar › Kasaya işle listesine kasadaki adı, eski
+            ve yeni fiyatıyla girer; zil de söyler. ModPOS&apos;lu şubede fiyatı ModPOS&apos;ta elle değiştirip işaretleyin (personel de Bugün&apos;den işaretler,
+            bildirimdeki Geri al geri getirir); Metni kopyala listeyi WhatsApp&apos;a hazırlar. LafPOS&apos;lu şubede siteye bağlı ürünlerin fiyatını LafPOS
+            siteden kendisi alır: listede yalnız siteye bağlı olmayanlar kalır, onları Ürünler › Site menüsü&apos;nde bağlayın ya da LafPOS&apos;ta elle
+            değiştirip işaretleyin. LafPOS&apos;ta fiyatı kasiyer değiştiremez.
           </>
         ),
         icon: Receipt,
@@ -224,13 +209,10 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Site menüsüyle bağlantı (fiyat ve Tükendi)",
         a: (
           <>
-            Bir ürün laffogato.net menüsündeki kalemine bağlıysa satış fiyatı ve menü durumu iki yerde aynı kalır, doğru kaynak sitedir: sitede fiyat değişince ya da kalem
-            “Tükendi” olunca panel birkaç saniyede alır; panelde fiyatı, “Menüde aktif”i ya da “QR menüde görünür / gizli” anahtarını değiştirince önce siteye yazılır, site ulaşılamazsa
-            kaydedilmez. Eşleştirme <Path href="/panel/urunler" /> › Site menüsü ekranında: ada göre öneriler seçilip bağlanır (hiçbiri kendiliğinden bağlanmaz), bağlanan
-            ürün sitenin fiyatını alır. Ad, kategori, reçete ve maliyet eşitlenmez. Sitede yeni açılan kalem &quot;Yalnız sitede&quot; sekmesinde görünür: Panelde aç ve
-            bağla onu her fiyatı bir boy olarak sitenin adı ve fiyatıyla panelde açar, bağlar ve reçete kartına götürür. Ürün kartı açıkken fiyat sitede ya da
-            başka bir yerde değişirse kartın kaydı onu geri almaz: fiyata dokunmadıysanız yeni fiyat kalır; dokunduysanız kart fiyatın altında hangisinin
-            kalacağını sorar.
+            laffogato.net menüsündeki kalemine bağlı ürünün satış fiyatı ve menü durumu iki yerde aynı kalır, doğru kaynak sitedir: sitede fiyat değişince ya da
+            kalem “Tükendi” olunca panel birkaç saniyede alır; panelde fiyatı, “Menüde aktif”i ya da QR menü anahtarını değiştirince önce siteye yazılır, site
+            ulaşılamazsa kaydedilmez. Eşleştirme <Path href="/panel/urunler" /> › Site menüsü&apos;nde: öneriyi seçip bağlayın, hiçbiri kendiliğinden bağlanmaz.
+            Ad, kategori, reçete ve maliyet eşitlenmez. Sitede yeni açılan kalem &quot;Yalnız sitede&quot; sekmesinde: Panelde aç ve bağla onu panelde açar.
           </>
         ),
         icon: Globe,
@@ -253,11 +235,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Yeni ürün eklemek",
         a: (
           <>
-            <Path href="/panel/urunler" /> › Yeni ürün (Reçete defterindeki Yeni ürün de bu pencereyi açar). İsterseniz benzer bir ürünün reçetesini kopyalayarak başlayın.
-            Ürün laffogato.net menüsünde zaten varsa Site menüsü › Yalnız sitede › Panelde aç ve bağla daha kısadır: ad, boylar ve fiyat siteden gelir, ürün
-            siteye bağlı açılır. Excel&apos;deki gibi &quot;bana söyleyin&quot; demeye gerek
-            yok. Satışı, zayi kaydı ya da fiyat geçmişi olan ürün silinmez (geçmiş ayların maliyeti değişirdi): menüden kaldırmak için reçete kartında Menüde aktif
-            anahtarını kapatın.
+            <Path href="/panel/urunler" /> › Yeni ürün; isterseniz benzer bir ürünün reçetesini kopyalayarak başlayın. Ürün laffogato.net menüsünde zaten varsa Site
+            menüsü › Yalnız sitede › Panelde aç ve bağla daha kısadır: ad, boylar ve fiyat siteden gelir. Satışı, zayi kaydı ya da fiyat geçmişi olan ürün
+            silinmez (geçmiş ayların maliyeti değişirdi): menüden kaldırmak için reçete kartında Menüde aktif anahtarını kapatın.
           </>
         ),
         icon: Coffee,
@@ -268,18 +248,11 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Personel yeni ürünü nasıl ekler?",
         a: (
           <>
-            Personel <Path href="/panel/receteler" /> ekranında Yeni ürün öner&apos;e dokunur: adı, kategoriyi, boyları ve her boyun reçetesini yazar; biliyorsa boy
-            başına satış fiyatını da yazar, maliyet görmez. Reçetedeki malzeme listede yoksa aramada &quot;Listede yok: … ekle&quot; ile formdan çıkmadan açar (Listeye
-            ekle&apos;nin kuralıyla, sayım listesine de girer; paket fiyatı yazıldıysa Tahmini). Değişiklik önerisinde de tahmini fiyatlı malzeme onay kartında
-            &quot;Tahmini fiyatlı&quot; diye yazar. Öneri <Path href="/panel/onaylar" /> ekranına ve zile düşer. Orada
-            malzemelerin maliyetini satır satır görün (tahmini fiyatlı malzeme işaretli); satış fiyatı personelin önerisiyle dolu gelir, değiştirebilirsiniz, kâr marjı
-            hemen hesaplanır; gerekirse adı ve kategoriyi düzeltin. Aynı önerinin boyları (M ve L) adı ve kategoriyi birlikte değiştirir; bir boyu onayladıysanız
-            öteki boy o adla eklenir (iki boy tek ürün olarak eşleşsin). &quot;Onayla ve ürünü ekle&quot; ürünü reçetesiyle Yeni ürün&apos;deki kuralla açar (zayi oranı
-            kategoriden). Öneriden sonra pasife alınan malzeme ya da bugünkü ölçülerle eksiye düşen formül varsa kart söyler ve onay olmaz: malzemeyi yeniden açın,
-            ölçüyü düzeltin ya da reddedin (reçete değişikliği önerisinde de eksiye düşen formül böyle). Öneri beklerken aynı ad ve boyda ürün Ürünler&apos;de ya da Site
-            menüsü&apos;nde açılmaz: önce öneriyi onaylayın ya da reddedin. Aynı ad ve boyda ürün zaten varsa kart onaylatmaz; öneriyi reddedip reçeteyi o ürünün kartına
-            girin. Reddederseniz notunuz personelin Önerilerim listesinde görünür. Yeni ürün laffogato.net menüsüne kendiliğinden bağlanmaz: Site menüsü&apos;nde aynı
-            adlı kalem öneri olarak çıkar.
+            Personel <Path href="/panel/receteler" /> ekranında Yeni ürün öner&apos;e dokunur: adı, kategoriyi, boyları ve her boyun reçetesini yazar; biliyorsa
+            satış fiyatını da yazar, maliyet görmez. Listede olmayan malzemeyi formdan çıkmadan ekleyebilir. Öneri <Path href="/panel/onaylar" /> ekranına ve
+            zile düşer: malzemelerin maliyetini satır satır görürsünüz, satış fiyatını ve adı değiştirebilirsiniz, kâr marjı hemen hesaplanır. &quot;Onayla ve
+            ürünü ekle&quot; ürünü reçetesiyle açar; onaylanamayan durumu kart kendisi söyler. Reddederseniz notunuz personelin Önerilerim listesinde görünür.
+            Yeni ürün laffogato.net menüsüne kendiliğinden bağlanmaz.
           </>
         ),
         icon: Lightbulb,
@@ -294,9 +267,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             <Path href="/panel/ayarlar" /> › Reçete ölçüleri. Formülle bağlı bütün reçeteler (ShotTek, Pompa, PurePompa …) birlikte güncellenir. Şurup pompası
-            (Pompa) ve püre pompası (PurePompa) ayrı yazılır: başta 10 ml ve 30 ml; sizinkiler farklıysa ölçüp yazın. <Path href="/panel/receteler" /> şurup, sos ve
-            püre satırlarında miktarın altında kaç pompa olduğunu gösterir (45 ml püre: 1,5 pompa). Miktarı ml yazılı satır pompa değişince aynı kalır, yalnız
-            pompa sayısı değişir; pompayla birlikte değişsin isterseniz ürünün reçete kartında miktara 1,5*PurePompa yazın.
+            (Pompa) ve püre pompası (PurePompa) ayrı yazılır; sizinkiler başlangıçtaki 10 ml ve 30 ml&apos;den farklıysa ölçüp yazın. Miktarı ml yazılı satır
+            pompa değişince aynı kalır; pompayla birlikte değişsin isterseniz reçete kartında miktara 1,5*PurePompa gibi yazın.
           </>
         ),
         icon: Ruler,
@@ -315,18 +287,11 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Yeni fatura geldi",
         a: (
           <>
-            Paraşüt&apos;e gelen fatura ertesi sabah <Path href="/panel/faturalar" /> ekranına kendiliğinden düşer; beklemek istemezseniz <Path href="/panel/parasut" /> › Şimdi
-            eşitle. Fatura “ödenmedi” gelir; ödediğinizde <Path href="/panel/tedarikciler" /> ya da Faturalar ekranında ödendi işaretleyin. Kontrol bekleyen varsa kategorisini onaylayın (“Mal alışı sayılmıyor” diyorsa kategorisini Hammadde &amp; İçecek, Tatlı &amp; Hazır Ürün ya da Ambalaj yapın: kalemi stoğa giriyor, gelir-gidere girmiyor). Yeni bir ürün geldiyse Paraşüt entegrasyonu ekranındaki Bağlanmayı bekleyenler listesinde hammaddeye
-            bağlayın: alınan miktar ve (&quot;Fiyatı güncelle&quot; açıksa) paket fiyatı oradan güncellenir. Faturadaki fiyat şimdikinden %40&apos;tan fazla farklıysa
-            ya da fiyatı olmayan hammaddenin ilk fiyatıysa ve çarpanı faturanın kg / lt biriminden gelmiyorsa (addan, açıklamadan ya da elle yazıldıysa)
-            uygulanmaz: <Path href="/panel/hammaddeler" /> › Onay bekleyen fiyatlar&apos;da onaylayın ya da reddedin (çoğu zaman çarpan yanlıştır, oradan düzeltilir).
-            Reddedilen faturanın miktarı alınana girmez; Tutarlılık o ayın alımını elle yazdırır.
-            Paraşüt&apos;te olmayan (kâğıt, e-Arşiv) faturayı Faturalar ›
-            Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin; sonradan Paraşüt&apos;e girilirse aynı kayda bağlanır, iki kez sayılmaz. Kasadan ödenmiş
-            olanı Kontrol bekleyen&apos;deki Kasadan faturalı alımlar kartından Faturalar&apos;a ekle ile açın: pencere kasadan dolar, fişin fotoğrafı belge olur. Bağlı olmayan bir malzemenin fiyatını{" "}
-            <Path href="/panel/hammaddeler" /> ekranında elle değiştirin (fiyat geçmişi saklanır). Satışın iadesi (site ya da müşteri iadesi) Paraşüt&apos;te gider
-            listesine düşse de gider sayılmaz; tedarikçiye iadeniz panele kendiliğinden girmez: ikisi de <Path href="/panel/parasut" /> ekranının başında yazar,
-            tedarikçiye iadeyi Faturalar&apos;a aynı tedarikçiye eksi tutarla girin.
+            Paraşüt&apos;e gelen fatura ertesi sabah <Path href="/panel/faturalar" /> ekranına düşer; beklemek istemezseniz <Path href="/panel/parasut" /> › Şimdi
+            eşitle. Fatura “ödenmedi” gelir; ödeyince Tedarikçiler ya da Faturalar&apos;da ödendi işaretleyin. “Mal alışı sayılmıyor” diyorsa kategorisini bir mal
+            kategorisi yapın. Yeni bir ürünü Bağlanmayı bekleyenler listesinde hammaddeye bağlayın. Fiyatı %40&apos;tan fazla değişen ya da çarpanı kesin olmayan
+            ilk fiyat uygulanmaz, <Path href="/panel/hammaddeler" /> › Onay bekleyen fiyatlar&apos;da bekler. Tedarikçiye iadenizi Faturalar&apos;a aynı
+            tedarikçiye eksi tutarla girin.
           </>
         ),
         icon: FileText,
@@ -343,11 +308,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             Çarpan, faturadaki 1 birimin kaç hammadde birimi ettiğidir: 1 koli = 12 adet, adında “150 AD.” yazan 1 adet bardak = 150 adet. Yanlışsa fiyat da
-            alınan miktar da yanlış çıkar. <Path href="/panel/hammaddeler" /> › Onay bekleyen fiyatlar öneriyi kanıtla yapar: kalemin adında yazan paket
-            boyu, yoksa faturanın kendisi (Claude okur, kartta “Faturada: …” yazar), yoksa aynı ürünün eski faturaları. Önerinin yanında o çarpanla çıkan
-            birim fiyat ve şimdikine göre farkı yazar; fiyat gerçekten değiştiyse çarpanı değiştirmeden onaylayın. Şimdiki fiyat tahminiyse kart söyler,
-            onaylayınca Tahmini kalkar. <Path href="/panel/parasut" /> ekranındaki Kontrol edilecek bağlantılar, adında yazan paket boyuyla tutmayan
-            bağlantıları gösterir; hiçbir şey kendiliğinden değişmez.
+            alınan miktar da yanlış çıkar. <Path href="/panel/hammaddeler" /> › Onay bekleyen fiyatlar öneriyi kalemin adındaki paket boyundan, faturanın
+            kendisinden (kartta “Faturada: …”) ya da aynı ürünün eski faturalarından yapar; yanında o çarpanla çıkan birim fiyat yazar. Fiyat gerçekten
+            değiştiyse çarpanı değiştirmeden onaylayın. Hiçbir şey kendiliğinden değişmez.
           </>
         ),
         icon: ScanText,
@@ -389,14 +352,10 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Sayım listesine nasıl kalem eklenir?",
         a: (
           <>
-            <Path href="/panel/sayim" /> ekranında Listeye ekle: ad, grup, sayım birimi, isteğe bağlı paket ve paket fiyatı. Personel de ekleyebilir; kalem hemen
-            listeye girer ve bu aydan itibaren her ay sayılır. Paket fiyatı yazıldıysa o fiyatla Tahmini açılır (yönetici KDV hariç yazar; personel fişteki gibi KDV dahil
-            yazar, KDV düşülüp kaydedilir; Hammaddeler&apos;in Tahmini süzgecinde doğrulayın);
-            yazılmadıysa 0 ve Tahmini açılır, zil &quot;Fiyatı girilmemiş&quot; der:{" "}
-            <Path href="/panel/hammaddeler" /> ekranındaki Fiyat yok süzgecinden paket fiyatını girin (ilk fiyat zam sayılmaz). Kalem Paraşüt&apos;teki bir ürüne bağlıysa
-            ve ilk faturası fiyatı girilmeden gelirse bu hatırlatma kalkar: faturanın fiyatı kg ya da lt biriminden geldiyse kendiliğinden yazılır, değilse
-            Hammaddeler › Onay bekleyen fiyatlar&apos;da &quot;İlk fiyat&quot; olarak onay bekler (onaylanana kadar maliyette 0 ₺ sayılır). Yalnız bu ay rafta duran
-            tek seferlik bir şey için sayımdaki Listede olmayanlar yeter.
+            <Path href="/panel/sayim" /> ekranında Listeye ekle: ad, grup, sayım birimi, isteğe bağlı paket ve paket fiyatı. Personel de ekleyebilir; kalem bu aydan
+            itibaren her ay sayılır. Paket fiyatı yazıldıysa Tahmini açılır (personel KDV dahil yazar, KDV düşülür), yazılmadıysa zil &quot;Fiyatı
+            girilmemiş&quot; der: <Path href="/panel/hammaddeler" /> ekranındaki Fiyat yok süzgecinden girin. Yalnız bu ay rafta duran tek seferlik bir şey için
+            sayımdaki Listede olmayanlar yeter.
           </>
         ),
         icon: ClipboardList,
@@ -437,9 +396,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             <Path href="/panel/giderler" /> ekranında: Maaşlar sekmesinde net maaşı, Sabit giderler sekmesinde kirayı değiştirin. Kaydederken &quot;Hangi aydan
-            itibaren?&quot; sorusunda ayı seçin (varsayılan bu ay); önceki aylar eski tutarla kalır. Yanlış girilmiş bir tutarı bütün aylarda düzeltmek için Gelişmiş ›
-            Tüm aylar. Biten bir gider ya da ayrılan personel için Durdur ile son ayı verin (eski &quot;Pasif&quot; yerine); geçmiş aylar etkilenmez. Silme yalnızca hiçbir
-            kapanmış ayın hesabına girmemiş kayıtta açıktır.
+            itibaren?&quot; sorusunda ayı seçin; önceki aylar eski tutarla kalır. Yanlış girilmiş bir tutarı bütün aylarda düzeltmek için Gelişmiş › Tüm aylar.
+            Biten bir gider ya da ayrılan personel için Durdur ile son ayı verin; geçmiş aylar etkilenmez.
           </>
         ),
         icon: Wallet,
@@ -454,9 +412,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             <Path href="/panel/harcamalar" /> ekranında ayı seçip Harcama ekle kartını doldurun: kategori, tutar (KDV ayrılmaz), tarih, açıklama ve ödeme şekli. Her
-            kategori Gelir-gider&apos;de kendi satırında ve Genel bakış&apos;taki &quot;Para nereye gitti?&quot; kartında sayılır; ＋ Yeni kategori ile kategori
-            açabilirsiniz. Faturası Paraşüt&apos;ten gelen gideri buraya ayrıca yazmayın, iki kez sayılır. Tutarı aydan aya değişen sabit gideri (ör. Instagram reklamı)
-            aynı ekranda aylık girişe çevirin.
+            kategori Gelir-gider&apos;de kendi satırında sayılır; ＋ Yeni kategori ile kategori açabilirsiniz. Faturası Paraşüt&apos;ten gelen gideri buraya ayrıca
+            yazmayın, iki kez sayılır. Tutarı aydan aya değişen sabit gideri (ör. Instagram reklamı) aynı ekranda aylık girişe çevirin.
           </>
         ),
         icon: Wallet,
@@ -467,17 +424,15 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Fiş ve Z raporunu fotoğraftan doldurmak",
         a: (
           <>
-            <Path href="/panel/kasa" /> ekranında ModPOS Z raporunun ve banka POS Z raporunun (yazarkasa) fotoğrafını çekin. ModPOS&apos;un rakamları forma
-            dolar;{" "}
+            ModPOS&apos;lu şubede <Path href="/panel/kasa" /> ekranında ModPOS Z&apos;nin ve banka POS Z raporunun (yazarkasa) fotoğrafı çekilir; ModPOS
+            Z&apos;nin rakamları forma dolar.{" "}
             {OKC_PREFILL_ENABLED
-              ? "banka POS Z'sinde yalnız birbirini tutan ve net okunan rakamlar dolar, tutmayan rakam altında nedeniyle öneri olur."
-              : "banka POS Z'sinin rakamları şimdilik forma yazılmaz, her alanın altında öneri olarak çıkar (aşağıdaki iki soru)."}{" "}
-            Turuncu alanları fişle karşılaştırıp gönderin; hiçbir şey kendiliğinden kaydedilmez. Gün içinde kasadan para çıkınca aynı ekranda Fiş ekle ile fişin
-            fotoğrafını çekin: tutar, KDV ve ne alındığı okunur, kaydedince <Path href="/panel/harcamalar" />&apos;a da yazılır. Okuma Claude ile yapılır (fotoğraf
-            başına yaklaşık 0,03 $; banka POS Z&apos;si için tahmini 0,05–0,10 $, henüz ölçülmedi); aç / kapat ve bu ayın tutarı Ayarlar › Fotoğraftan
-            okuma&apos;da. Fotoğraflar kasa için 6 ay (banka POS Z 400 gün), fiş için 13 ay saklanır. Kasada LafPOS&apos;a geçildiyse (Ayarlar › LafPOS ›
-            geçiş günü) o günden itibaren LafPOS&apos;ta Günü kapat&apos;a basılır: form LafPOS&apos;un gün sonundan dolar (bölümün adı &quot;LafPOS gün sonu
-            (Z)&quot;), ModPOS Z fotoğrafı istenmez; banka POS Z&apos;si yine çekilir.
+              ? "Banka POS Z'sinde yalnız birbirini tutan ve net okunan rakamlar dolar."
+              : "Banka POS Z'sinin rakamları şimdilik forma yazılmaz, her alanın altında öneri olarak çıkar."}{" "}
+            Turuncu alanları fişle karşılaştırıp gönderin; hiçbir şey kendiliğinden kaydedilmez. LafPOS&apos;lu şubede rapor LafPOS&apos;un gün sonundan
+            kendisi yazılır; personel yalnız Pavo&apos;nun gün sonu fişinin (detaylı Z) fotoğrafını Gün sonu fotoğrafı kartına ekler. Kasadan çıkan paranın fişini aynı ekranda Fiş ekle ile çekin;
+            kaydedince Harcamalar&apos;a da yazılır. Okuma Claude ile yapılır (fotoğraf başına birkaç sent); aç / kapat ve bu ayın tutarı Ayarlar › Fotoğraftan
+            okuma&apos;da.
           </>
         ),
         icon: Receipt,
@@ -491,17 +446,13 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "ModPOS Z ve banka POS Z raporu (yazarkasa)",
         a: (
           <>
-            İki ayrı sayaçtır: ModPOS Z raporu adisyon programınındır, banka POS Z raporu yazarkasanın mali Z&apos;sidir (üstünde Z RAPORU ve KDV dökümü yazar;
-            banka gün sonu fişi değil). <Path href="/panel/kasa" /> ekranında ikisi ayrı bölümdür; banka POS Z&apos;si isteğe bağlıdır, girilince Z no, günlük
-            toplam, oran oran KDV, nakit, kart ve fiş sayısı saklanır. Kayıtlı raporda ve e-postada yazarkasa ModPOS&apos;la karşılaştırılır: kart, nakit, toplam
-            (fark online ve diğer satışlar kadarsa açıklanır), yemek kartı, banka gün sonu ve yazarkasanın kendi içindeki denetimleri (oranlar ve ödemeler günlük
-            toplamı, oranların KDV&apos;si toplam KDV&apos;yi tutuyor mu; Z no önceki Z&apos;den bir fazla mı). Toplam ve nakit farkı kendiliğinden hata değildir
-            (online satış, faturalı satış, Z&apos;nin alındığı saat): personelin ekranına ve WhatsApp metnine girmez, yalnız sizde ve seçtiğiniz e-posta
-            adreslerinde. Personel yalnız kart satırını ve yazarkasanın kendi içinde tutmadığını görür. Günden güne&apos;de Yazarkasa tutmuyor ve Yazarkasa Z yok
-            rozetleri; ayın satırında yazarkasa (mali) toplamı ve KDV&apos;si (yalnız bilgi, hiçbir hesaba girmez). Kümülatif (cihaz açılışından beri) fotoğraftan
-            okunur ve yalnız önceki Z&apos;yle tutuyorsa saklanır; yanlış saklandıysa gün ayrıntısında Kümülatifi temizle&apos;ye basın. LafPOS&apos;a
-            geçildiyse o günden itibaren ModPOS Z bölümünün yerinde LafPOS&apos;un gün sonu durur ve yazarkasa LafPOS&apos;la karşılaştırılır (karşılaştırmalar
-            &quot;LafPOS&quot; der); ModPOS bölümüne okutma yoktur.
+            İki ayrı sayaçtır: kasanın Z&apos;si (ModPOS ya da LafPOS gün sonu) satış programınındır, banka POS Z raporu yazarkasanın mali Z&apos;sidir
+            (üstünde Z RAPORU ve KDV dökümü yazar; banka gün sonu fişi değil). ModPOS&apos;lu şubede banka POS Z&apos;si isteğe bağlıdır; raporda
+            yazarkasa kasayla karşılaştırılır: kart, nakit, toplam, yemek kartı ve yazarkasanın kendi içindeki denetimleri. Toplam ve nakit farkı
+            kendiliğinden hata değildir (online satış, faturalı satış, Z&apos;nin saati); personel yalnız kart satırını görür. LafPOS&apos;lu şubede
+            Pavo&apos;nun gün sonu fişi istenir ve LafPOS&apos;la batch batch karşılaştırılır; fark yalnız size görünür (Gün sonu fotoğrafı kartı ve
+            zil). Günden güne&apos;de Yazarkasa tutmuyor ve Yazarkasa Z yok rozetleri çıkar. Yanlış saklanan kümülatifi gün
+            ayrıntısındaki Kümülatifi temizle siler.
           </>
         ),
         icon: ScanText,
@@ -519,12 +470,10 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
               </>
             ) : (
               <>
-                Banka POS Z&apos;sinin fotoğrafı okunur ama rakamları şimdilik forma yazılmaz: her alanın altında okunan rakam ve Fotoğraftakini yaz çıkar,
-                personel fişle karşılaştırıp yazar. Okuma kafenin gerçek fişleriyle henüz denenmedi; yanlış okunan bir rakamın sessizce forma yazılmaması için
-                deneme geçene kadar böyle kalır. Denemek için geliştiriciye 5–8 günün banka POS Z fotoğrafını (2–3&apos;ü ardışık günler, biri uzun ve soluk, en
-                az biri üst ve alt yarı olarak da; asıl çözünürlükte: WhatsApp&apos;tan belge olarak ya da Drive / e-postayla) ve aynı günlerin kâğıttan doğru
-                rakamlarını verin; cihazın markasını, Z&apos;yi kimin saat kaçta aldığını ve ModPOS raporunun hangi yazıcıdan çıktığını da yazın. Deneme Claude
-                anahtarıyla canlı çalıştırılır (birkaç dolar); yanlış dolan rakam çıkmazsa doldurma açılır.
+                Banka POS Z&apos;sinin rakamları şimdilik forma yazılmaz: okuma kafenin gerçek fişleriyle denenene kadar her alanın altında öneri olarak çıkar,
+                personel fişle karşılaştırıp yazar. Denemek için geliştiriciye 5–8 günün banka POS Z fotoğrafını (asıl çözünürlükte: WhatsApp&apos;tan belge
+                olarak ya da e-postayla; 2–3&apos;ü ardışık günler) ve aynı günlerin kâğıttaki doğru rakamlarını verin. Yanlış dolan rakam çıkmazsa doldurma
+                açılır.
               </>
             )}
           </>
@@ -538,10 +487,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             Personel sabah açılışta ve gece kapanışta listeyi telefondan <Path href="/panel/kontrol" /> ekranında doldurur: maddeyi işaretler, buzdolabı
-            sıcaklığını yazar, istenen yerde fotoğraf çeker. Her dokunuş hemen kaydedilir; geçmiş bir gün sonradan doldurulamaz (gün 05:00&apos;te döner). Sıcaklık aralık
-            dışındaysa not ister ve size bildirilir. Listeler Bugün ekranında görünür; yapılmayan liste ertesi sabah e-postada çıkar. Maddeleri ve saatleri
-            Kontrol listeleri › Listeler&apos;den, geçmişi Kontrol listeleri › Geçmiş&apos;ten görürsünüz. Personel de son 7 günü Geçmiş&apos;ten görür; geçmiş gün
-            doldurulamaz. Fotoğraflar 60 gün saklanır.
+            sıcaklığını yazar, istenen yerde fotoğraf çeker. Geçmiş bir gün sonradan doldurulamaz (gün 05:00&apos;te döner). Aralık dışı sıcaklık not ister ve
+            size bildirilir; yapılmayan liste ertesi sabah e-postada çıkar. Maddeleri ve saatleri Kontrol listeleri › Listeler&apos;den düzenlersiniz. Fotoğraflar
+            60 gün saklanır.
           </>
         ),
         icon: ListChecks,
@@ -556,12 +504,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Vardiya planını yazmak ve PDF'ini almak",
         a: (
           <>
-            <Path href="/panel/vardiya" /> ekranında haftayı (Pazartesi–Pazar) kişi kişi yazın: günün kutusuna saatleri (“10-18”, “10:30-18”, gece yarısını geçen
-            vardiyada “18-02”), isterseniz ardına görevi (“10-18 kasa”), izin için “izin”; boş kutu planlanmadı demek. Kutudan çıkınca metin kendiliğinden biçimlenir,
-            okunamayan kutu kırmızı olur. Kaydet bütün haftayı yazar; PDF her açılışta kaydedilen plandan çizilir (A4 yatay, asmak ya da göndermek için),
-            ayrıca dosya saklanmaz. Plan sonradan aynı ekranda düzenlenir: kutuyu değiştirip yeniden kaydedin. Geçen haftayı kopyala boş kutuları geçen haftanın
-            planıyla doldurur. Hesabı olmayan çalışanı Kişi ekle ile adıyla yazarsınız. Personel planı kendi ekranında görür (değiştiremez). Birden çok şube
-            açıkken plan şube şubedir.
+            <Path href="/panel/vardiya" /> ekranında haftayı kişi kişi yazın: günün kutusuna saatleri (“10-18”, gece yarısını geçen vardiyada “18-02”), isterseniz
+            görevi (“10-18 kasa”), izin için “izin”. Okunamayan kutu kırmızı olur. Kaydet bütün haftayı yazar; PDF kaydedilen plandan çizilir. Geçen haftayı
+            kopyala boş kutuları doldurur, hesabı olmayan çalışanı Kişi ekle ile yazarsınız. Personel planı görür, değiştiremez. Plan şube şubedir.
           </>
         ),
         icon: CalendarClock,
@@ -572,16 +517,11 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Tedarikçinin bilgileri ve ödemesi",
         a: (
           <>
-            <Path href="/panel/tedarikciler" /> ekranında her tedarikçi faturalarından kendiliğinden listelenir: kalan borç, vadesi geçen ve en yakın vade. Tedarikçiye
-            dokunup Düzenle&apos;den unvanı, vergi no ve dairesini, IBAN&apos;ı (kontrol hanesi denetlenir), telefon ve e-postayı, vade gününü yazın; Faturadan doldur unvan,
-            vergi no, adres, iletişim ve IBAN&apos;ı en yeni Paraşüt faturasından okur. Geçmiş faturaları al, tedarikçinin Paraşüt&apos;teki eski faturalarını da getirir.
-            Aynı vergi numarasıyla farklı adla gelen faturalar (“Kaldi” ile “KALDI KAHVE TİC. A.Ş.”) tek tedarikçide toplanır; kartta yazdığınız ad ve diğer adlar hep
-            önce gelir. Aynı numara iki tedarikçide duruyorsa sayfasının üstünde yazar. Sil: faturası olmayan tedarikçi silinir; faturası olan listeden kalkar (faturaları ve giderler yerinde kalır, borcu olan kaldırılamaz). Paraşüt&apos;ten gelen fatura “ödenmedi” gelir: ödediğinizde durum hapına dokunup
-            Ödendi&apos;yi seçin (ödeme günü ve şekliyle), birden çok faturayı seçip toplu işaretleyin. Ödeme talebi seçtiğiniz faturaların tutarını, IBAN&apos;ı ve havale
-            açıklamasını hazır metin yapar (son iade faturaları seçilirse düşülür); kopyalayın ya da WhatsApp&apos;la gönderin, Talep edildi işaretle ile faturalar “talep
-            edildi” olur. Komisyon faturaları (Trendyol, Yemek Sepeti, yemek kartları) hakedişten düşüldüğü için ödendi gelir; hakedişin gelip gelmediğini Komisyon
-            &amp; hakediş&apos;te işaretleyin. Peşin ya da kartla otomatik ödediğiniz tedarikçinin bilgilerinde Faturaları ödendi gelsin&apos;i açın. IBAN değişikliğini
-            tedarikçiyi arayarak teyit edin.
+            <Path href="/panel/tedarikciler" /> faturalardan kendiliğinden listelenir: kalan borç, vadesi geçen ve en yakın vade. Düzenle&apos;den unvanı, vergi
+            no&apos;yu, IBAN&apos;ı, iletişimi ve vade gününü yazın; Faturadan doldur bunları en yeni Paraşüt faturasından okur. Aynı vergi numarasıyla gelen
+            faturalar tek tedarikçide toplanır. Ödediğiniz faturanın durum hapından Ödendi&apos;yi seçin (birden çoğunu toplu); Ödeme talebi tutarı, IBAN&apos;ı
+            ve açıklamayı hazır metin yapar. Peşin ya da kartla ödediğiniz tedarikçide Faturaları ödendi gelsin&apos;i açın. IBAN değişikliğini tedarikçiyi
+            arayarak teyit edin.
           </>
         ),
         icon: Wallet,
@@ -593,12 +533,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             <Path href="/panel/komisyonlar" /> ekranında her kart ve platformun o ay kestiği her şey (komisyon, erken ödeme, diğer ücretler; KDV hariç) satışa
-            bölünür: gerçek oran. Yemek kartında %6&apos;yı aşan oran, kira / cihaz / destek gibi komisyon dışı ücret ve erken ödeme ücreti işaretlenir;
-            platformda sipariş ve ödeme altyapısı ücreti. Uyarılar faturadaki kalem adlarına bakar, kesin hüküm değildir. Satış, o ay tek yemek kartı (ya da tek
-            platform) faturası varsa kasa raporlarındaki Z toplamından gelir; birden çoksa Z&apos;de tek toplam olduğu için kanalın aylık ekstresindeki satışı
-            Satışı yaz ile girin. LafPOS&apos;a geçildiyse (Ayarlar › LafPOS › geçiş günü) o günden itibaren satış LafPOS&apos;un ödeme türlerinden kart kart gelir
-            (ödeme türünün kanalı LafPOS&apos;ta seçili olmalı); yazdığınız ekstre yine önce gelir. Hakediş bankaya gelince Hakediş geldi&apos;ye dokunup günü ve
-            tutarı yazın; son gün (ayın son faturası + Kanallar&apos;daki süre, yemek kartında en çok 30 gün) geçerse zil çalar ve sabah e-postasında yazar.
+            bölünür: gerçek oran. Yemek kartında %6&apos;yı aşan oran ve komisyon dışı ücretler işaretlenir; uyarılar kalem adlarına bakar, kesin hüküm değildir.
+            Satış Z toplamından gelir; aynı ay birden çok yemek kartı varsa kanalın ekstresindeki satışı Satışı yaz ile girin. LafPOS&apos;lu şubede satış
+            LafPOS&apos;un ödeme türlerinden kart kart gelir. Hakediş bankaya gelince Hakediş geldi&apos;ye dokunun; son gün geçerse zil çalar.
           </>
         ),
         icon: Percent,
@@ -625,15 +562,11 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Önümüzdeki haftalarda param yeter mi?",
         a: (
           <>
-            <Path href="/panel/hatirlaticilar" /> ekranının başındaki Nakit planı önümüzdeki 6 haftayı hafta hafta gösterir: gelecek para (son 4 haftanın kasa
-            raporlarından günlük satış, laffogato.net online), vade gününde ödenmemiş faturalar, hatırlatıcılar, maaş, SGK, KDV ve hatırlatıcısı olmayan sabit
-            giderler (faturadaki KDV&apos;siyle: kira ve faturalar %20, personel KDV&apos;siz; oran Giderler&apos;de kalemin Faturadaki KDV alanında). Önce Bakiyeyi gir ile bankadaki ve kasadaki paranın bugünkü toplamını yazın; plan bu tutardan başlar, en sıkışık günü ve para
-            yetmeyecekse hangi gün yetmeyeceğini söyler. Bakiye girilmezse bugün elinizde olması gereken en az parayı yazar. Tutarı belli olanlar (fatura,
-            tutarı girilmiş hatırlatıcı) kesindir, ötekiler “tahmini” yazar: bir tahmini kesinleştirmek için Ödemeler&apos;e tutarıyla hatırlatıcı ekleyin, plan
-            onun gününü ve tutarını kullanır. Faturası ayrıca gelen bir sabit gideri Tahmine katılanlar&apos;dan kapatın, iki kez sayılmasın. Aylık
-            harcamalar&apos;da her ay girilen giderler (reklam, influencer) o ay girilen tutarla, daha azsa geçen ayınkiyle ayın kalan günlerine yayılır.
-            Özel günler&apos;de kafe kapalı işaretli günlerde satış ve online girişi yazılmaz. Sabit giderlerden eklenen hatırlatıcı gideri izler: zam girilince
-            plan zamlı aydan yeni tutarı öder; gider bittiyse hatırlatıcıyı kapatın. Her varsayım ekrandaki Nasıl hesaplandı kartında rakamlarıyla yazar.
+            <Path href="/panel/hatirlaticilar" /> ekranının başındaki Nakit planı önümüzdeki 6 haftayı hafta hafta gösterir: gelecek para (son 4 haftanın günlük
+            satışı, laffogato.net online) ve ödenecekler (vadesi gelen faturalar, hatırlatıcılar, maaş, SGK, KDV, sabit giderler). Önce Bakiyeyi gir ile bankadaki
+            ve kasadaki parayı yazın; plan en sıkışık günü ve para yetmeyecekse hangi gün yetmeyeceğini söyler. Tutarı belli olanlar kesin, ötekiler “tahmini”
+            yazar: kesinleştirmek için Ödemeler&apos;e tutarıyla hatırlatıcı ekleyin. Faturası ayrıca gelen sabit gideri Tahmine katılanlar&apos;dan kapatın.
+            Varsayımların hepsi ekrandaki Nasıl hesaplandı kartında.
           </>
         ),
         icon: ChartNoAxesColumn,
@@ -644,12 +577,10 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Bu ay ne kadar KDV ödeyeceğim?",
         a: (
           <>
-            Kısa cevap <Path href="/panel/vergi" /> ekranında, takvimin KDV satırında: tahmini tutar ve son gün; ödeme yoksa satır kapalıyken
-            &quot;Ödeme yok&quot; ve sonraki aya geçen KDV&apos;yi yazar. Satırı açınca &quot;Döküm ve devreden KDV&quot; Nakit planındaki KDV tahmini
-            kartına iner: önceki ayın satışlarındaki KDV&apos;den (kafe %10, karaoke %20, laffogato.net) alış faturalarındaki KDV&apos;yi düşer;
-            sonuç ayın 28&apos;inde plana girer. Eksi çıkarsa ödeme beklenmez, fark sonraki aya devreder. Bu bir tahmindir; kesin tutar muhasebecinizin
-            beyannamesindedir. Muhasebeciniz tutarı söyleyince{" "}
-            <Path href="/panel/hatirlaticilar" /> ekranındaki KDV hatırlatıcısına yazın, plan onu kullanır; ödendi deyince tutar silinir, çünkü her ay farklıdır.
+            Kısa cevap <Path href="/panel/vergi" /> ekranında, takvimin KDV satırında: tahmini tutar ve son gün. Döküm Nakit planındaki KDV tahmini kartında:
+            önceki ayın satışlarındaki KDV&apos;den (kafe %10, karaoke %20, laffogato.net) alış faturalarındaki KDV düşülür; sonuç ayın 28&apos;inde plana girer.
+            Eksi çıkarsa ödeme beklenmez, fark sonraki aya devreder. Bu bir tahmindir; kesin tutar muhasebecinizin beyannamesindedir. Muhasebeciniz tutarı
+            söyleyince Ödemeler&apos;deki KDV hatırlatıcısına yazın, plan onu kullanır.
           </>
         ),
         icon: Percent,
@@ -668,10 +599,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             <Path href="/panel/vergi" /> sayfası satışlardan, faturalardan ve bordrodan muhtasarı, SGK&apos;yı, damga vergisini ve kafenin geçici ve kurumlar
             vergisine katkısını Türkiye&apos;nin 2026 kurallarıyla tahmin eder; her rakamın yanında nasıl hesaplandığı ve dayanağı yazar. Geçici ve kurumlar
             vergisi şirketin tamamının beyannamesidir: tutarı muhasebecinizden isteyin ve Vergi&apos;ye girin. Muhasebeci sekmesindeki &apos;Muhasebeciye
-            sorulacaklar&apos; listesini muhasebecinizle bir kez gözden geçirin. Ekranda önce sade söz, resmî terim parantezde yazar (Maaş vergileri ve
-            stopaj (muhtasar), Kâr vergisi peşinatı (geçici vergi)); &quot;Eksik bilgi&quot; rozeti hesabın neden kesinleşmediğini yanında söyler.
-            Ödemeler&apos;de günü geçmiş bir vergi ya da SGK ödemesi varsa Özet&apos;in başında tek turuncu satır olur; ödeme Ödemeler&apos;de
-            &quot;Ödedim&quot; ile kapanır.
+            sorulacaklar&apos; listesini muhasebecinizle bir kez gözden geçirin. Günü geçmiş bir vergi ya da SGK ödemesi Özet&apos;in başında turuncu satır olur;
+            Ödemeler&apos;de &quot;Ödedim&quot; ile kapanır.
           </>
         ),
         icon: Landmark,
@@ -687,8 +616,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             <Path href="/panel/urunler" /> ekranındaki Hammadde zamları kartı, son 30 günde fiyatı artan malzemelerin ayda kaç lira kâr götürdüğünü yazar: her ürünün
             maliyet artışı (fire payı dahil; Zayi &amp; ikram kayıtları sayılmaz) son satış ayındaki adediyle çarpılır; adetler Ayarlar&apos;daki ayda açık gün
-            sayısına çevrilir. Toplamı Genel bakış&apos;taki uyarıda, zilde ve sabah e-postasında da yazar; ürün kartı o ürünün payını gösterir. Satışlar&apos;a ürün
-            satış raporu yüklenmemişse yalnız birim maliyet farkı görünür; ürüne eşleşmeyen satışlar sayılmaz. Ucuzlayan malzemenin aylık kazancı yeşil yazar.
+            sayısına çevrilir. Toplamı Genel bakış&apos;taki uyarıda, zilde ve sabah e-postasında da yazar. Ürün satış raporu yüklenmemişse yalnız birim maliyet
+            farkı görünür. Ucuzlayan malzemenin aylık kazancı yeşil yazar.
           </>
         ),
         icon: TrendingUp,
@@ -699,19 +628,12 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Personele hesap açmak",
         a: (
           <>
-            <Path href="/panel/kullanicilar" /> › Kullanıcı ekle: giriş e-postasını siz yazarsınız, rol: Personel. Parolayı siz belirleyebilir ya da davet bağlantısı
-            gönderebilirsiniz: kişi parolasını 72 saat geçerli bağlantıdan kendisi belirler; bağlantıyı kopyalayın, WhatsApp&apos;ta ya da e-postayla paylaşın. Personel
-            Bugün, Siparişler (uygulama siparişleri, masa çağrıları, Tükendi / Satışa aç), Karaoke (oda sayacı), Kasa raporu (Z raporu ve fişler fotoğraftan, kasadaki satış
-            fiyatları), Kontrol listeleri (son 7 günün geçmişiyle), Vardiya (planı görür, PDF&apos;ini alır), Zayi &amp; ikram, Reçete defteri (değişiklik ve yeni ürün önerir, önerirken satış fiyatı
-            yazabilir), Stok sayımı (Listeye ekle ile kalem ekler), Özel
-            günler, Hatırlatıcılarım, kendi Yardım&apos;ı ve Hesabım ekranlarını görür; maliyet, maaş, kâr ve karaoke tutarlarını görmez. Geçmiş kasa, silme, geç
-            kayıt ve kapalı gün gibi önemli işler isteğe döner, kararı siz <Path href="/panel/onaylar" /> ekranında verirsiniz. Personelin
-            Yardım&apos;ı (bu sayfanın başlığındaki düğme) yalnız onun ekranlarını anlatır; hesabı açınca ona gösterin. Her kullanıcı Hesabım&apos;dan parolasını
-            değiştirip iki adımlı doğrulamayı (Google Authenticator vb.) açabilir. Yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirirken kendi parolanız sorulur.
-            Kasa raporu ve sabah e-postası personel hesabının ve pasif hesabın adresine gitmez: bir yöneticiyi personele indirir ya da pasif yaparsanız adresi
-            listelerden de kaldırın (kaydederken uyarı çıkar, zil de söyler); personel giriş e-postasını bir alıcının adresine çeviremez, kendi adresi listedeyken
-            de değiştiremez. Böyle bir hesabın e-postasını değiştirir ya da hesabı silerseniz eski adres hesapsız kalır ve e-posta ona yeniden gider: uyarı çıkar,
-            gerekmiyorsa listeden kaldırın.
+            <Path href="/panel/kullanicilar" /> › Kullanıcı ekle: giriş e-postası, rol Personel; parolayı siz belirleyin ya da 72 saat geçerli davet bağlantısı
+            gönderin. Personel Bugün, Siparişler, Karaoke, Kasa raporu, Kontrol listeleri, Vardiya, Zayi &amp; ikram, Reçete defteri (öneri ve satış fiyatı),
+            Stok sayımı (Listeye ekle), Özel günler, Hatırlatıcılarım, kendi Yardım&apos;ı ve Hesabım ekranlarını görür; maliyet, maaş, kâr ve karaoke tutarlarını
+            görmez. Geçmiş kasa, silme ve geç kayıt gibi işler isteğe döner, kararı <Path href="/panel/onaylar" /> ekranında verirsiniz. Her kullanıcı
+            Hesabım&apos;dan iki adımlı doğrulamayı açabilir; yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirirken kendi parolanız
+            sorulur.
           </>
         ),
         icon: UserPlus,
@@ -792,9 +714,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Ay sonu tahmini ne zaman çıkar?",
         a: (
           <>
-            Yalnızca devam eden ay için: POS cirosu ÷ açık gün × ayın gün sayısı × son satış ayının brüt kâr oranı + online satışın brüt kârı (aynı tempoyla) −
-            standart aylık sabit gider (Excel&apos;deki &quot;Ekim tahmini&quot;). Bitmiş bir ayda tahmin yapılmaz; yerine Gelir-gider&apos;deki gerçek sonuç (faturaya göre
-            kâr/zarar) görünür.
+            Yalnızca devam eden ay için; formülü bu sayfanın Formüller kartında. Bitmiş bir ayda tahmin yapılmaz, yerine Gelir-gider&apos;deki gerçek sonuç
+            (faturaya göre kâr/zarar) görünür.
           </>
         ),
         icon: CalendarCheck,
@@ -805,13 +726,10 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Ay bitmeden satış listesi yüklemek",
         a: (
           <>
-            Ay sürerken Patron&apos;un satış raporunu <Path href="/panel/satislar" /> ekranına yüklerken Liste hangi güne kadar? alanına raporun son gününü yazın
-            (varsayılan dün). Kasa raporları her akşam ilerler; Genel bakış günlük ortalamayı, POS cirosuyla karşılaştırmayı, indirimi ve reçeteye göre kârın sabit
-            giderini listenin günleriyle hesaplar, &quot;POS cirosu tutmuyor&quot; uyarısı yanlış yere çıkmaz. Ay bitince ayın tamamının listesini Yenisiyle değiştir ile
-            yükleyin; biten aya yüklenen liste ayın tamamı sayılır. LafPOS&apos;a geçildiyse (Ayarlar › LafPOS › geçiş günü) o günden itibaren satışlar her gün
-            sonunda LafPOS&apos;tan gelir: geçiş ayında liste ay bittikten sonra da yalnız geçiş gününden önceki günleri sayar (Patron&apos;dan yalnız o günlerin
-            raporunu alın; fazlası LafPOS günleriyle iki kez sayılırdı), sonraki aylara liste yüklenmez ve İçe aktar kartı yerine &quot;LafPOS&apos;tan geliyor&quot;
-            kartı çıkar.
+            Ay sürerken ModPOS&apos;un satış raporunu <Path href="/panel/satislar" /> ekranına yüklerken Liste hangi güne kadar? alanına raporun son gününü yazın
+            (varsayılan dün); Genel bakış günlük ortalamayı, indirimi ve sabit gideri listenin günleriyle hesaplar. Ay bitince ayın tamamının listesini Yenisiyle
+            değiştir ile yükleyin. LafPOS&apos;lu şubenin satışları her gün sonunda LafPOS&apos;tan gelir; geçiş ayında ModPOS listesi yalnız geçiş gününden
+            önceki günleri sayar (fazlası iki kez sayılırdı).
           </>
         ),
         icon: CalendarCheck,
@@ -825,13 +743,10 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Sabah e-postası ya da Paraşüt faturaları gelmedi",
         a: (
           <>
-            Her sabah iki iş kendiliğinden çalışır: 07:00–08:00 Paraşüt eşitlemesi, 08:00–09:00 sabah işi (sabah e-postası, hatırlatıcı bildirimi, laffogato.net
-            eşitlemeleri). Biri çalışmazsa ya da hata verirse zilde <strong className="font-semibold text-ink">Sistem</strong> başlığında,{" "}
-            <Path href="/panel" />&apos;ta kırmızı şeritle ve <Path href="/panel/bugun" />&apos;de ilk satırda görünür, ertesi sabah e-postayla
-            da gelir. Son çalışmalar ve hataları Ayarlar › Günlük işler&apos;de.
-            Beklemek istemezseniz <Path href="/panel/parasut" /> › Şimdi eşitle ya da <Path href="/panel/hatirlaticilar" /> › Bugünküleri şimdi gönder.
-            Bir adrese gelmiyorsa: personel hesabının ya da pasif hesabın adresine e-posta gitmez; zil &quot;Sabah e-postası … adrese gitmiyor&quot; der, adresin satırında
-            da yazar.
+            Her sabah iki iş kendiliğinden çalışır: 07:00–08:00 Paraşüt eşitlemesi, 08:00–09:00 sabah işi (sabah e-postası, hatırlatıcılar, laffogato.net
+            eşitlemeleri). Biri çalışmazsa zilde <strong className="font-semibold text-ink">Sistem</strong> başlığında ve <Path href="/panel" />&apos;ta kırmızı
+            şeritle görünür; son çalışmalar Ayarlar › Günlük işler&apos;de. Beklemek istemezseniz <Path href="/panel/parasut" /> › Şimdi eşitle ya da{" "}
+            <Path href="/panel/hatirlaticilar" /> › Bugünküleri şimdi gönder. Personel hesabının ve pasif hesabın adresine e-posta gitmez.
           </>
         ),
         icon: Timer,
@@ -842,12 +757,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Pazartesi gelen haftalık özet nedir?",
         a: (
           <>
-            Her pazartesi sabah 08:00–09:00 arasında yöneticilere kısa bir e-posta gider: geçen haftanın ve bekleyen işlerin en
-            önemli en çok 5 maddesi, kasanıza etkisine göre sıralı (zam, nakit planı, kasa farkı, komisyon, ModPOS fiyatları,
-            zayi, stok farkı; karaoke doluluğu ve kontrol listeleri sonda). Her madde ilgili ekranı açar. Maddelerin üstünde geçen
-            haftanın kasa cirosu ve satış tahmini kendi verisiyle çalışıyorsa önümüzdeki 7 günün beklenen satışı yazar. Bir bilgi
-            okunamazsa o madde atlanır, e-posta yine gider. Açıp kapatmak, önizlemek ve kendinize örnek göndermek için{" "}
-            <Path href="/panel/hatirlaticilar" /> › E-posta bildirimleri › Haftalık özet.
+            Her pazartesi sabah yöneticilere kısa bir e-posta gider: geçen haftanın ve bekleyen işlerin kasanıza etkisine göre sıralı en çok 5 maddesi (zam, nakit
+            planı, kasa farkı, komisyon, kasa fiyatları, zayi, stok farkı …), geçen haftanın cirosu ve önümüzdeki 7 günün beklenen satışı. Her madde ilgili
+            ekranı açar. Açıp kapatmak ve önizlemek için <Path href="/panel/hatirlaticilar" /> › E-posta bildirimleri › Haftalık özet.
           </>
         ),
         icon: Newspaper,
@@ -859,9 +771,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             <Path href="/panel/siparisler" /> ekranı uygulama siparişlerini ve masa çağrılarını, <Path href="/panel/karaoke" /> ekranı rezervasyonları
-            laffogato.net&apos;ten alır. Site ulaşılamazsa sarı satırda son başarılı kontrolün saati yazar; ekran açık kaldıkça panel kendisi yeniden dener
-            (karaokede iki dakikada, siparişlerde dakikada bir), o arada yenileri sitenin panelinde de kontrol edin (Siparişler › laffogato.net&apos;te aç). Personel bu satırda hatanın ayrıntısı yerine size haber vermesini söyleyen kısa sözü görür. Barın tabletinde ekrandaki Bu cihazda uyarılar kartından bildirimlere izin verin: yeni rezervasyon
-            ve sipariş anında gelir, ekran panelin veritabanını daha seyrek sorar (ücretsiz planın aylık süresi bitmesin).
+            laffogato.net&apos;ten alır. Site ulaşılamazsa sarı satırda son başarılı kontrolün saati yazar; ekran açık kaldıkça panel kendisi yeniden dener, o
+            arada yenileri sitenin panelinde kontrol edin (Siparişler › laffogato.net&apos;te aç). Barın tabletinde Bu cihazda uyarılar kartından bildirimlere izin
+            verin: yeni rezervasyon ve sipariş anında gelir.
           </>
         ),
         icon: Wifi,
@@ -876,9 +788,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             <Path href="/panel/siparisler" /> ekranında: laffogato.net&apos;te (uygulama ve web) ödenmiş açık kafe siparişleri ve masadaki QR menüden gelen
-            &quot;Garson çağır&quot; (garson, su, peçete). Personel siparişin aşamasını tek dokunuşla ilerletir, çağrıda Gördüm&apos;e basar; ikisi de
-            sitenin ucuna gider, kaydı sitede kalır. Yeni siparişte ve çağrıda zil çalar (çağrı ayrı sesle), menüdeki Siparişler satırında açık sayısı
-            görünür. İade, iptal ve geçmiş sitenin panelinde (başlıktaki laffogato.net&apos;te aç). Karaoke ekranında açık olanların sayısı tek satırda.
+            &quot;Garson çağır&quot; (garson, su, peçete). Personel siparişin aşamasını tek dokunuşla ilerletir, çağrıda Gördüm&apos;e basar. Yeni siparişte ve
+            çağrıda zil çalar (çağrı ayrı sesle). İade, iptal ve geçmiş sitenin panelinde (başlıktaki laffogato.net&apos;te aç).
           </>
         ),
         icon: ShoppingBag,
@@ -891,8 +802,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             <Path href="/panel/ayarlar" /> › Yedek › Yedeği indir: parolanızı girince paneldeki bütün veri tek dosyada iner. Ayda bir indirip bilgisayarınızda ya
             da Google Drive&apos;da saklayın; son yedek 30 günü geçince zil hatırlatır. Dosyada ciro, maaş ve IBAN&apos;lar var (parolalar yok), kimseyle
-            paylaşmayın. Geri yükleme panelden yapılmaz: gerekirse dosyayı geliştiriciye verin, bilgisayardan bir komutla yükler (docs/YEDEK.md). Aynı
-            karttaki Excel kopyası okumak içindir, geri yüklenmez.
+            paylaşmayın. Geri yükleme panelden yapılmaz: gerekirse dosyayı geliştiriciye verin. Aynı karttaki Excel kopyası okumak içindir, geri yüklenmez.
           </>
         ),
         icon: HardDriveDownload,
@@ -903,11 +813,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Karaoke odası ne zaman boş?",
         a: (
           <>
-            Karaoke doluluğu ekranı (<Path href="/panel/karaoke" /> › Bu ay › Doluluk haritası) odanın hangi gün ve saatte dolu olduğunu gösterir: son 4 hafta,
-            son 12 hafta ya da bir ay. Hücreye dokununca o saatin ayrıntısı çıkar; üstte doluluk, saat başına gelir, uzatma, son dakika iptal ve rezervasyonların
-            kaç gün önceden yapıldığı, altta ay ay karşılaştırma var. Doluluk oda saatlerine göre hesaplanır (ekranın altındaki Oda saatleri; başta her gün
-            12:00–24:00, sitedeki karaoke saatleri). İlk kullanımda Geçmişi siteden al ile laffogato.net&apos;teki eski rezervasyonları alın (ad ve not
-            alınmaz); rezervasyonsuz gruplar yalnız bar ekranındaki hızlı sayaçla sayılır. Yalnız yönetici görür.
+            <Path href="/panel/karaoke" /> › Bu ay › Doluluk haritası odanın hangi gün ve saatte dolu olduğunu gösterir (son 4 hafta, son 12 hafta ya da bir ay);
+            hücreye dokununca o saatin ayrıntısı çıkar. Doluluk ekranın altındaki Oda saatlerine göre hesaplanır. İlk kullanımda Geçmişi siteden al ile eski
+            rezervasyonları alın (ad ve not alınmaz). Yalnız yönetici görür.
           </>
         ),
         icon: Grid3x3,
@@ -918,11 +826,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Karaoke sayacını kim bitirdi, kim sildi?",
         a: (
           <>
-            Karaoke ekranındaki Haber verdim, Erken bitir, Geri aç ve sayaç silme <Path href="/panel/ayarlar" /> › İşlem geçmişi&apos;ne kimin yaptığıyla ve
-            planlanan bitişle yazılır (erken bitirme doluluğu kısaltır). İptal edilmiş ya da süresi dolmuş
-            oturum yeniden açılmaz. Personel panelden açılan sayacı ilk 10 dakikada silebilir (yanlış açılan sayaç); sonrası{" "}
-            <Path href="/panel/onaylar" /> › Karaoke&apos;ye istek olarak gelir: sayacın saati, kimin açtığı, bugünkü durumu ve neden. Onaylarsanız sayaç karaoke
-            geçmişinden ve doluluktan çıkar; oda kullanıldıysa reddedin. Siz her sayacı doğrudan silersiniz, bekleyen istek kendiliğinden kapanır.
+            Karaoke ekranındaki Haber verdim, Erken bitir, Geri aç ve sayaç silme <Path href="/panel/ayarlar" /> › İşlem geçmişi&apos;ne kimin yaptığıyla
+            yazılır. Personel panelden açılan sayacı ilk 10 dakikada silebilir; sonrası <Path href="/panel/onaylar" /> › Karaoke&apos;ye istek olarak gelir.
+            Onaylarsanız sayaç karaoke geçmişinden ve doluluktan çıkar; oda kullanıldıysa reddedin.
           </>
         ),
         icon: Timer,
@@ -936,13 +842,11 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Karaoke rezervasyonunda kime, ne zaman e-posta gider?",
         a: (
           <>
-            <Path href="/panel/karaoke" /> › Elle ekle&apos;de e-posta yazarsanız misafire sitenin onay e-postası gider; rezervasyona bir günden fazla varsa
-            bir gün kala bu panel de bir hatırlatma gönderir (&quot;Yarın görüşüyoruz&quot;, gün, saat, ödeme kafede, Takvime ekle). Satırdaki zarf rozeti ne
-            zaman gideceğini, gidince gönderildiğini söyler; rezervasyonu kaldırır ya da sitede iptal ederseniz gitmez. Misafirin adresi yalnız bu e-posta
-            gidene kadar şifreli tutulur, sonra silinir. Personele iki e-posta gider: rezervasyon günü sabah o günün listesi ve her rezervasyondan 3 saat
-            önce o rezervasyon. Sitede ödenmemiş rezervasyon (elle eklenen, kasada ödenecek) kırmızıyla öne çıkar: &quot;Ödeme alınmadı: ücreti misafir odaya
-            girmeden önce, kasada alın&quot;; tutar yazmaz. Bu e-postalar o gün <Path href="/panel/vardiya" /> planında çalışanlara, plan yoksa Tuzla&apos;nın bütün
-            personeline gider; <Path href="/panel/hatirlaticilar" /> › E-posta bildirimleri kapalıysa personele gitmez.
+            <Path href="/panel/karaoke" /> › Elle ekle&apos;de e-posta yazarsanız misafire onay e-postası, rezervasyona bir günden fazla varsa bir gün kala
+            hatırlatma gider; satırdaki zarf rozeti durumunu söyler. Misafirin adresi yalnız bu e-posta gidene kadar şifreli tutulur, sonra silinir. Personele
+            rezervasyon günü sabah o günün listesi ve her rezervasyondan 3 saat önce o rezervasyon gider; sitede ödenmemiş rezervasyon kırmızıyla öne çıkar, tutar
+            yazmaz. Alıcılar o gün <Path href="/panel/vardiya" /> planında çalışanlardır, plan yoksa Tuzla&apos;nın bütün personeli; E-posta bildirimleri
+            kapalıysa personele gitmez.
           </>
         ),
         icon: Bell,
@@ -961,10 +865,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Bugün ekranında ne var?",
         a: (
           <>
-            <Path href="/panel/bugun" /> günün işlerini tek listede toplar: dünkü ve bugünkü kasa raporu, açılış ve kapanış listeleri, gecikmiş ve bugünkü ödemeler, kontrol bekleyen
-            faturalar, onay bekleyen reçete ve fiyatlar, kasada değişecek fiyatlar, ay sonu sayımı, hatırlatıcılarınız. Her satır ilgili ekranı açar;
-            sıradaki iş siyah çerçeveyle öne çıkar, biten işler Tamamlananlar&apos;da. Personel girişte bu ekranda açılır ve yalnız kendi işlerini (kasa
-            raporu, kontrol listeleri, zayi, sayım) görür. Telefonda alt menüde Genel bakış, Bugün, Kasa, Ödemeler ve Menü var; Satışlar ve Faturalar Menü&apos;de.
+            <Path href="/panel/bugun" /> günün işlerini tek listede toplar: kasa raporları, açılış ve kapanış listeleri, ödemeler, kontrol bekleyen faturalar,
+            onaylar, kasada değişecek fiyatlar, ay sonu sayımı ve hatırlatıcılarınız. Her satır ilgili ekranı açar; sıradaki iş öne çıkar, bitenler
+            Tamamlananlar&apos;da. Personel girişte bu ekranda açılır ve yalnız kendi işlerini görür.
           </>
         ),
         icon: ListTodo,
@@ -999,15 +902,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Bildirim zili",
         a: (
           <>
-            Sol üstte L&apos;Affogato adının yanındaki zil (telefonda üst çubukta) bildirimleri başlıklar altında toplar, örneğin{" "}
-            <strong className="font-semibold text-ink">Onaylar</strong> (personelin reçete değişiklikleri ve yeni ürün önerileri, faturada şimdikinden %40&apos;tan fazla farklı gelen hammadde fiyatları ve çarpanı kesin olmayan ilk fiyatlar), <strong className="font-semibold text-ink">Kontrol listeleri</strong>{" "}
-            (geciken ve dünden eksik listeler, aralık dışı değerler), <strong className="font-semibold text-ink">Ödemeler</strong>{" "}
-            (gecikmiş, bugün ve yakında ödenecekler), <strong className="font-semibold text-ink">Faturalar</strong> (başarısız Paraşüt eşitlemesi, son 24 saatte gelen
-            faturalar, kontrol bekleyenler, hammaddeye bağlanmayı bekleyen ürünler) ve <strong className="font-semibold text-ink">Uyarılar</strong> (hammadde zammı, fiyatı girilmemiş hammaddeler ve son
-            satış ayının <Path href="/panel" />&apos;taki &quot;Dikkat edilmesi gerekenler&quot; uyarıları). Günlük işlerden biri (Paraşüt eşitlemesi, sabah
-            e-postası) çalışmadıysa ya da hata verdiyse, ya da son yedek 30 günden eskiyse en üstte <strong className="font-semibold text-ink">Sistem</strong>{" "}
-            başlığı çıkar. Bir bildirime dokununca
-            ilgili ekran açılır; alttaki &quot;Ödemeler&quot; ve &quot;Genel bakış&quot; düğmeleri o ekranlara gider.
+            Sol üstte L&apos;Affogato adının yanındaki zil (telefonda üst çubukta) bildirimleri başlıklar altında toplar: Onaylar, Kontrol listeleri, Ödemeler,
+            Faturalar ve Uyarılar. Günlük işlerden biri çalışmadıysa ya da son yedek 30 günden eskiyse en üstte{" "}
+            <strong className="font-semibold text-ink">Sistem</strong> başlığı çıkar. Bir bildirime dokununca ilgili ekran açılır.
           </>
         ),
         icon: Bell,
@@ -1027,8 +924,8 @@ const FORMULAS = [
   ["Birim maliyet", "Paket fiyatı ÷ paket içeriği"],
   ["Ürün maliyeti", "Σ (miktar × birim maliyet) × (1 + fire oranı)"],
   ["Net satış", "Satış fiyatı ÷ (1 + KDV)"],
-  ["POS komisyonu", "Satış fiyatı × komisyon × kartlı satış oranı"],
-  ["Birim kâr", "Net satış − ürün maliyeti − POS komisyonu"],
+  ["POS komisyonu (ürün başına)", "Satış fiyatı × komisyon × kartlı satış oranı"],
+  ["Birim kâr", "Net satış − ürün maliyeti − POS komisyonu (ürün başına)"],
   ["Maliyet oranı", "Ürün maliyeti ÷ net satış (hedef: Ayarlar › Oranlar, ör. %30)"],
   ["Önerilen fiyat", "TAVAN(maliyet ÷ hedef oran × (1 + KDV); 5\u00a0₺)"],
   ["Durum", "İyi ≤ hedef · Dikkat ≤ hedef + 10 puan · Düşük kâr > hedef + 10 puan"],
@@ -1037,7 +934,11 @@ const FORMULAS = [
     "Reçetesi boş ürün",
     "Satışı eşleşmeyen satır gibi: net ciro × ortalama maliyet oranı (orana girmez). Kâr sıralamalarına, Analiz'deki gruplara ve Ürünler'in brüt kâr kartına girmez",
   ],
-  ["Brüt kâr", "Net satış − malzeme/ambalaj (reçeteye göre) − POS komisyonu; Genel bakış'ta laffogato.net online satışı da dahil"],
+  [
+    "Banka POS komisyonu (ay)",
+    "Σ şube (kasa raporlarındaki banka kartı, yemek kartı hariç × şubenin POS oranı, Şubeler). Satışlar satırlara ciro payıyla dağıtır. Kasa kartı olmayan ayda: ciro × komisyon × kart payı",
+  ],
+  ["Brüt kâr", "Net satış − malzeme/ambalaj (reçeteye göre) − banka POS komisyonu (ay); Genel bakış'ta laffogato.net online satışı da dahil"],
   [
     "Net kâr / zarar (reçeteye göre)",
     "Brüt kâr (laffogato.net online dahil) − indirimler ÷ (1 + KDV) − o ayın sabit giderleri (Gelir-gider: gün oranı + bu aya özel giderler). Satış listesi ayın bir kısmını kapsıyorsa indirim o günlerin kasa raporlarından, sabit gider ve online satış o günlere düşen payla. Excel temeli: standart aylık sabit gider",
@@ -1120,8 +1021,11 @@ async function HelpContent() {
             title="Her ay ne yapmalı?"
             description={
               <>
-                Bu altı adımı her ay sonunda yaptığınızda bütün raporlar doğru olur. Hangilerinin yapıldığını <Link href="/panel" className="font-medium text-ink hover:underline">Genel bakış</Link>
-                &apos;taki &quot;Bu ayın işleri&quot; kartı ay ay gösterir.
+                Bu adımlar her ay sonunda yapılınca raporlar doğru olur; hangilerinin yapıldığını{" "}
+                <Link href="/panel" className="font-medium text-ink hover:underline">
+                  Genel bakış
+                </Link>
+                &apos;taki &quot;Bu ayın işleri&quot; kartı gösterir.
               </>
             }
           />
@@ -1143,7 +1047,7 @@ async function HelpContent() {
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
           <Card>
-            <CardHeader icon={<Info />} title="Nasıl yapılır?" description="Sık yapılan değişiklikler ve bilinmesi gerekenler. Açmak için soruya dokunun ya da arayın." />
+            <CardHeader icon={<Info />} title="Nasıl yapılır?" description="Sık yapılan değişiklikler ve bilinmesi gerekenler" />
             <CardContent>
               <Suspense fallback={<HelpFaqFallback groups={FAQ} />}>
                 <HelpFaq groups={FAQ} />
@@ -1185,7 +1089,7 @@ async function HelpContent() {
               <CardHeader
                 icon={<Sigma />}
                 title="Formüller"
-                description="Hesaplama motoru Excel'deki formüllerin karşılığıdır ve otomatik testlerle Excel'in Eylül rakamlarına karşı doğrulanır. Bilerek yapılan farklar (ör. net kârda o ayın sabit giderleri) Nasıl yapılır? listesinde."
+                description="Excel'deki formüllerin karşılığı; bilerek yapılan farklar (ör. net kârda o ayın sabit giderleri) Nasıl yapılır? listesinde."
               />
               <CardContent>
                 <Well className="px-4 py-0 ring-1 ring-line">

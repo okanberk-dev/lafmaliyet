@@ -590,8 +590,7 @@ function StatusCard({
               </Notice>
             ) : null}
             <p className="text-[13px] leading-5 text-ink-mute">
-              Sitede bir kalem değişince site panele imzalı bir ping atar, panel bütün menüyü hemen çeker. Ayrıca Ürünler açılınca en çok beş dakikada
-              bir ve her sabah bir kez sorulur. Fiyat panelde değişince önce siteye yazılır;{" "}
+              Sitede bir kalem değişince panel birkaç saniyede alır. Fiyat panelde değişince önce siteye yazılır;{" "}
               {kasa === "LafPOS" ? "LafPOS yeni fiyatı siteden kendisi alır." : "kasadaki (ModPOS) fiyat elle değişir."}
             </p>
           </>
