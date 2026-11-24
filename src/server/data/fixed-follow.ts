@@ -2,10 +2,9 @@ import "server-only";
 
 import { and, eq, like } from "drizzle-orm";
 
-import { foldName } from "@/lib/cash-plan";
+import { foldName, paidFixedRatesOf } from "@/lib/cash-plan";
 import { monthLabel, tl } from "@/lib/format";
 import { FIXED_REMINDER_NOTE, fixedReminderFollow } from "@/lib/reminders";
-import { paidFixedRates } from "@/lib/tax/rules";
 import { schema as s, type DB } from "@/server/db";
 
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
@@ -39,7 +38,7 @@ export async function followFixedReminders(
     // Stopajlı kalemde hatırlatıcının tutarı bankadan çıkan nettir (stopaj muhtasarda); yurt dışı hizmette KDV yok
     // (KDV-2'de; docs/VERGI.md)
     const year = Number(r.dueDate.slice(0, 4));
-    const rated = (x: typeof before) => paidFixedRates(x, year);
+    const rated = (x: typeof before) => paidFixedRatesOf(x, year);
     const f = fixedReminderFollow(r, rated(before), beforeVersions, rated(after), afterVersions);
     if (f.kind === "update") {
       await tx.update(s.reminders).set({ amount: f.amount }).where(eq(s.reminders.id, r.id));

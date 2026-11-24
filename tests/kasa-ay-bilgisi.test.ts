@@ -363,7 +363,9 @@ test("yükleyici: etkin ay bilgisi kasa raporlarıyla birleşir; saat okumalarda
   // LafPOS satışlarının ilk günüyle: LafPOS günlerinin indirimi ayrı (TillMonth.lafposDiscounts; −90 ₺, 23 Kasım 2026)
   assert.match(src, /tillMonths\(rows, through, undefined, lateDays, closed, undefined, undefined, openedOn, lafposFrom\)/);
   assert.match(src, /const lafposFrom = sales\.lafposSales\?\.countFrom \?\? null;/);
-  assert.match(src, /branch !== null\s*\? resolveMonths\(entriesOf\(months\), monthsOf\(till, opened\)\)\s*: resolveBranchMonths\(/);
+  // "Tümü"nün çözümü allBranchMonths'ta (Faz 5: şube seçiliyken işletme geneli giderin günü için de, companyMonths)
+  assert.match(src, /branch !== null \? resolveMonths\(entriesOf\(months\), monthsOf\(till, opened\)\) : allBranchMonths\(months, till, closedPast\)/);
+  assert.match(src, /const allBranchMonths = \([\s\S]{0,400}?return resolveBranchMonths\(/);
   assert.match(src, /months: monthInfo,/);
 });
 

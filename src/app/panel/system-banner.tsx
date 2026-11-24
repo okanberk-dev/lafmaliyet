@@ -7,8 +7,8 @@ import { loadSystemAlerts } from "@/server/jobs/alerts";
  * kesildi, Paraşüt işi hata verdi, CRON_SECRET yok; yalnız canlıda). Kendi Suspense'inde yüklenir: panoyu bekletmez,
  * okunamazsa hiçbir şey göstermez. Daha hafif uyarılar (Paraşüt işi çalışmadı, bir adım hata verdi) yalnız zilde.
  *
- * `banner` işaretli uyarılar "danger" olmasa da buraya çıkar: günü gelmiş ama henüz bir şeyi bozmamış işler
- * (Paraşüt kimlik geçişi) şeritte görünür, /api/health'in 503'ünü tetiklemez.
+ * `banner` işaretli uyarılar "danger" olmasa da buraya çıkar: günü gelmiş ama henüz bir şeyi bozmamış işler şeritte
+ * görünür, /api/health'in 503'ünü tetiklemez.
  */
 export async function SystemBanner() {
   const items = (await loadSystemAlerts().catch(() => [])).filter((a) => a.level === "danger" || a.banner);

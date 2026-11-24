@@ -18,20 +18,19 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
-  Unplug,
   Wand2,
   X,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useId, useMemo, useOptimistic, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useOptimistic, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonClass, IconButton } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
@@ -47,6 +46,7 @@ import { SortButton, Table, TableWrap, TD, TH, THead, TR } from "@/components/ui
 import type { BreakdownGroup } from "@/lib/breakdown";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTimeTR, dateTR, num, tl, tl2 } from "@/lib/format";
+import type { ParasutSettingsView } from "@/lib/parasut/settings";
 import type { ReadingState } from "@/lib/photo-rules";
 import { evidenceLead, factorText, HOLDS_HREF } from "@/lib/price-hold";
 import { guessLinkFactor, packEvidence, packPairChoices, sameFactor, suggestIngredient, type PackEvidence } from "@/lib/product-match";
@@ -57,7 +57,6 @@ import { readProductInvoice } from "@/server/actions/invoice-readings";
 import {
   deleteCategoryRule,
   deleteProductLink,
-  disconnectParasut,
   readParasutLines,
   runParasutSync,
   saveCategoryRule,
@@ -68,7 +67,8 @@ import {
   unignoreProduct,
 } from "@/server/actions/parasut";
 
-import { connectionBreakdown, connectionHeadline, type LegacyState, linkedBreakdown, LINKS_ID, runsBreakdown } from "./breakdowns";
+import { connectionBreakdown, connectionHeadline, linkedBreakdown, LINKS_ID, runsBreakdown } from "./breakdowns";
+import { ConnectionCard } from "./connection-card";
 
 type MatchType = "supplier" | "parasut_category" | "keyword";
 const MATCH_LABEL: Record<MatchType, string> = { supplier: "Tedarikçi adı", parasut_category: "Paraşüt kategorisi", keyword: "Açıklama / kalemde geçen" };
@@ -79,7 +79,7 @@ const MATCH_HELP: Record<MatchType, { placeholder: string; hint: string }> = {
   keyword: { placeholder: "Ör. kira, elektrik", hint: "Tedarikçi, açıklama ya da kalem adlarında geçerse." },
 };
 const UNIT_LABEL: Record<string, string> = { gr: "gr", ml: "ml", adet: "adet", dilim: "dilim" };
-const NOT_CONFIGURED = "Önce kurulumdaki ortam değişkenlerini tanımlayın";
+const NOT_CONFIGURED = "Önce Bağlantı kartından Paraşüt ayarlarını girin";
 
 /** Eşitleme kaydının kaynağı (listede) */
 const TRIGGER_LABEL: Record<Run["trigger"], string> = { cron: "otomatik", manual: "elle", history: "tedarikçi geçmişi" };
@@ -197,9 +197,8 @@ export function ParasutClient({
   configured,
   connection,
   redirectUri,
-  env,
+  settings,
   cronSet,
-  syncFrom,
   cursor,
   pendingEInvoices,
   stats,
@@ -218,17 +217,13 @@ export function ParasutClient({
   returns = null,
 }: {
   configured: boolean;
-  /**
-   * Paraşüt hesabı tarayıcıdan yetkilendirildi mi; refresh_token'ın yaşı (30 gün geçerli). `legacy`: hesap bağlı
-   * değilken eski kullanıcı adı/parola yöntemi geçici yedek olarak çalışıyor mu ("active") ya da kapandı mı ("closed");
-   * `legacyEnv`: eski kullanıcı adı/parola Vercel'de hâlâ duruyor mu.
-   */
-  connection: { connected: boolean; refreshedAt: string | null; stale: boolean; legacy?: LegacyState; legacyEnv?: boolean };
+  /** Paraşüt hesabı tarayıcıdan yetkilendirildi mi; refresh_token'ın yaşı (30 gün geçerli) */
+  connection: { connected: boolean; refreshedAt: string | null; stale: boolean };
   /** DevHub'a kaydedilmesi gereken dönüş adresi (PARASUT_REDIRECT_URI yanlışsa null) */
   redirectUri: string | null;
-  env: { name: string; set: boolean }[];
+  /** Bağlantı ayarları ve kaynakları (panel / Vercel / eksik); client_secret'ın değeri yok */
+  settings: ParasutSettingsView;
   cronSet: boolean;
-  syncFrom: string | null;
   cursor: string | null;
   /** Son eşitlemede Paraşüt'te içeri alınmamış gelen e-faturalar (`ingested`: panele doğrudan alındılar) */
   pendingEInvoices: { count: number; total?: number; ingested?: boolean; sample?: { from: string | null; date: string | null }[]; at: string } | null;
@@ -260,13 +255,11 @@ export function ParasutClient({
   // Her eylemin kendi bekleme durumu: "Bağlantıyı dene" sürerken eşitleme düğmesi dönmez
   const [testing, startTest] = useActionTransition();
   const [syncing, startSync] = useActionTransition();
-  const [resetting, startReset] = useActionTransition();
   const [reading, startRead] = useActionTransition();
   const router = useRouter();
   const [readProgress, setReadProgress] = useState<{ done: number; left: number } | null>(null);
-  const busy = testing || syncing || resetting || reading;
+  const busy = testing || syncing || reading;
   const [from, setFrom] = useState("");
-  const [confirmReset, setConfirmReset] = useState(false);
   // "Paraşüt hesabını bağla" dönüşü (baglan/geri rotası buraya yönlendirir): sonucu bir kez göster, adresi temizle
   const search = useSearchParams();
   const connectResult = search.get("baglanti");
@@ -283,19 +276,15 @@ export function ParasutClient({
   // Kartların dökümü (karta dokununca açılan pencere): sayfanın zaten aldığı verilerden, breakdowns.ts
   const connectionGroups = connectionBreakdown({
     configured,
-    env,
+    settings,
     cronSet,
-    syncFrom,
     cursor,
     connected: connection.connected,
     refreshedAt: connection.refreshedAt,
     stale: connection.stale,
-    legacy: connection.legacy ?? null,
     lastOk: syncRuns.find((r) => r.status === "ok") ?? null,
   });
-  const headline = connectionHeadline({ configured, connected: connection.connected, stale: connection.stale, legacy: connection.legacy ?? null, cronSet });
-  // Eski yöntem geçici yedek olarak çalışıyor: Vercel'deki client_id / client_secret büyük olasılıkla hâlâ eski istemcinin
-  const legacyActive = !connection.connected && connection.legacy === "active";
+  const headline = connectionHeadline({ configured, connected: connection.connected, stale: connection.stale, cronSet });
   const linkGroups = linkedBreakdown(links, ingredients, unlinkedTotal, ignored.length);
   const runGroups = runsBreakdown(runs, { lastSyncedAt: stats.lastSyncedAt, lineReads, pendingEInvoices });
 
@@ -361,8 +350,7 @@ export function ParasutClient({
                 startTest(async () => {
                   const r = await testParasutConnection();
                   if (!r.ok) return void toast.error(r.error);
-                  const via = r.data.legacy ? " (eski yöntemle, 10 Aralık'a kadar)" : "";
-                  toast.success(r.data.total !== null ? `Bağlantı tamam${via} · Paraşüt'te ${num(r.data.total)} gider faturası var` : `Bağlantı tamam${via}`);
+                  toast.success(r.data.total !== null ? `Bağlantı tamam · Paraşüt'te ${num(r.data.total)} gider faturası var` : "Bağlantı tamam");
                 })
               }
             >
@@ -378,7 +366,7 @@ export function ParasutClient({
       <div className="mb-6 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatBreakdown
           title="Bağlantı"
-          description="Paraşüt bağlantısının ayarları ve eşitlemenin zamanı. Değerler Vercel'de saklanır; burada yalnız tanımlı olup olmadıkları görünür."
+          description="Paraşüt bağlantısının ayarları (nereden geldikleri; Client Secret gösterilmez) ve eşitlemenin zamanı."
           groups={connectionGroups}
           order="given"
           shares={false}
@@ -493,26 +481,12 @@ export function ParasutClient({
         )
       ) : null}
 
-      {configured && legacyActive ? (
-        <Notice
-          tone="warn"
-          className="mb-4"
-          title="Eski bağlantı 10 Aralık'ta kapanacak, Paraşüt hesabını bağlayın"
-          text="Eşitleme şimdilik eski kullanıcı adı ve parolayla sürüyor. Yeni client_id ve client_secret'ı Vercel'e girip “Paraşüt hesabını bağla”ya basın."
-        />
-      ) : configured && !connection.connected && connection.legacy === "closed" ? (
-        <Notice
-          tone="bad"
-          className="mb-4"
-          title="Eski bağlantı kapandı, Paraşüt hesabını yeniden bağlayın"
-          text="Paraşüt eski yöntemi 10 Aralık 2026'da kapattı; faturalar gelmiyor. Kurulum kartından “Paraşüt hesabını bağla”ya basın."
-        />
-      ) : configured && !connection.connected ? (
+      {configured && !connection.connected ? (
         <Notice
           tone="warn"
           className="mb-4"
           title="Paraşüt hesabı bağlı değil"
-          text="Her sabahki eşitleme çalışmaz. Aşağıdaki Kurulum kartından “Paraşüt hesabını bağla”ya basıp Paraşüt'ün onay ekranından geçin."
+          text="Her sabahki eşitleme çalışmaz. Aşağıdaki Bağlantı kartından “Paraşüt hesabını bağla”ya basıp Paraşüt'ün onay ekranından geçin."
         />
       ) : connection.connected && connection.stale ? (
         <Notice
@@ -521,111 +495,22 @@ export function ParasutClient({
           title="Paraşüt yetkisi yenilenmeli"
           text="Paraşüt'ün verdiği yenileme hakkı 30 gün geçerli ve son yenileme eskidi. Eşitleme durduysa “Yeniden bağla” ile yetkiyi tazeleyin."
         />
-      ) : connection.connected && connection.legacyEnv ? (
-        <Notice
-          tone="neutral"
-          className="mb-4"
-          title="Eski kullanıcı adı ve parola artık gerekmiyor"
-          text="Hesap yeni yöntemle bağlı. Vercel'deki PARASUT_USERNAME ve PARASUT_PASSWORD'ü silebilirsiniz; panel onları artık kullanmıyor."
-        />
       ) : null}
 
       {returns ? <ReturnsNotice returns={returns} /> : null}
 
-      {/* Yan yana yalnız geniş ekranda: 1024'te kenar çubuğuyla içerik ~660 px kalır, "Yeniden eşitleme" formu sıkışırdı */}
+      {/* Yan yana yalnız geniş ekranda: 1024'te kenar çubuğuyla içerik ~660 px kalır, ayar formu sıkışırdı */}
       <div className="grid gap-4 xl:grid-cols-12">
-        <Card className="xl:col-span-7">
-          <CardHeader icon={<PlugZap />} title="Kurulum" description="Bir kez yapılır. Değerler Vercel'de saklanır, panelde gösterilmez." />
-          <CardContent className="space-y-4">
-            <ol className="space-y-3 text-sm text-ink-soft">
-              {/* Eski yöntem sürerken Vercel'deki değerler eski istemcinin: yenisi ancak bağlanınca doğrulanmış olur */}
-              <Step n={1} done={env.slice(0, 2).every((e) => e.set) && !legacyActive}>
-                Paraşüt <b>DevHub</b>&apos;a Paraşüt hesabınızla girip <i>“Paraşüt Kullanıcısıyım”</i> ile başvurun. İstemci hemen oluşur (inceleme beklenmez) ve size bir{" "}
-                <code className="rounded bg-surface px-1">client_id</code> ile <code className="rounded bg-surface px-1">client_secret</code> verilir.
-                {legacyActive ? " Vercel'deki şimdiki değerler eski istemcinin; yenileriyle değiştirin." : null}
-              </Step>
-              <Step n={2} done={connection.connected}>
-                Başvuruda <b>dönüş adresi (redirect URI)</b> olarak tam olarak şunu kaydedin:{" "}
-                {redirectUri ? (
-                  <code className="rounded bg-surface px-1 break-all">{redirectUri}</code>
-                ) : (
-                  <span className="text-bad">PARASUT_REDIRECT_URI geçerli bir https adresi değil.</span>
-                )}
-              </Step>
-              <Step n={3} done={env[2]?.set}>
-                Firma numarasını alın: Paraşüt&apos;e girince adres çubuğundaki <code className="rounded bg-surface px-1 break-words">uygulama.parasut.com/<b>123456</b>/…</code> sayısı.
-              </Step>
-              <Step n={4} done={configured && cronSet}>
-                Vercel → lafmaliyet → Settings → Environment Variables&apos;a ekleyip yeniden deploy edin.
-              </Step>
-              <Step n={5} done={connection.connected}>
-                Paraşüt&apos;te bağlantıyı kuracak kullanıcıya <b>Uygulama Entegrasyonları</b> yetkisini açın (Paraşüt → Ayarlar › Kullanıcılar › Düzenle), sonra aşağıdaki{" "}
-                <b>Paraşüt hesabını bağla</b>&apos;ya basıp onay ekranından geçin. Panel Paraşüt parolanızı hiçbir zaman görmez; yetkiyi Paraşüt&apos;ten dilediğiniz zaman
-                durdurabilirsiniz.
-              </Step>
-            </ol>
-            <ul className="flex flex-wrap gap-1.5" aria-label="Ortam değişkenleri">
-              {[...env, { name: "CRON_SECRET", set: cronSet }].map((e) => (
-                <li key={e.name}>
-                  <Badge tone={e.set ? "green" : "gray"} dot title={e.set ? "Tanımlı" : "Eksik"}>
-                    <span className="font-mono">{e.name}</span>
-                    <span className="sr-only">{e.set ? " tanımlı" : " eksik"}</span>
-                  </Badge>
-                </li>
-              ))}
-            </ul>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line-strong pt-4">
-              {configured ? (
-                /* Tam sayfa gidiş: rota Paraşüt'ün onay ekranına 302 verir (Next yönlendirmesi değil, önden yüklenmez) */
-                <a href="/panel/parasut/baglan" className={buttonClass(connection.connected ? "secondary" : "primary")}>
-                  <PlugZap size={16} /> {connection.connected ? "Yeniden bağla" : "Paraşüt hesabını bağla"}
-                </a>
-              ) : (
-                <Button disabled title={NOT_CONFIGURED}>
-                  <PlugZap size={16} /> Paraşüt hesabını bağla
-                </Button>
-              )}
-              <span className="min-w-0 flex-1 text-xs leading-5 text-ink-mute">
-                {connection.connected
-                  ? connection.stale
-                    ? "Yetki uzun süre yenilenmedi: refresh_token 30 gün geçerli. Eşitleme bir süre çalışmadıysa yeniden bağlayın."
-                    : connection.refreshedAt
-                      ? `Bağlı · yetki en son ${dateTimeTR(connection.refreshedAt)} yenilendi (her eşitlemede kendiliğinden yenilenir).`
-                      : "Bağlı."
-                  : legacyActive
-                    ? "Önce Vercel'e DevHub'daki yeni client_id ve client_secret'ı girip yeniden deploy edin; eski istemciyle Paraşüt onay ekranı açılmaz."
-                    : "Paraşüt'ün giriş ve onay ekranına gidilir; dönüşte yetki şifreli olarak burada saklanır."}
-              </span>
-            </div>
-            <p className="text-xs leading-5 text-ink-mute">
-              İlk eşitleme {syncFrom ? dateTR(syncFrom) : "bu yılın başından"} itibaren alır
-              {cursor ? `; sonrakiler son faturadan (${dateTR(cursor)}) 75 gün geriye bakar` : ""}. Panelde elle ya da Excel&apos;den girilmiş aynı fatura bulunursa
-              yenisi açılmaz, mevcut kayıt Paraşüt&apos;e bağlanır; kategorisi ve tedarikçi adı korunur.
-            </p>
-            <form
-              className="grid gap-2 border-t border-line-strong pt-4 sm:grid-cols-[minmax(0,15rem)_auto_auto] sm:items-end"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (configured && from && !busy) sync(from);
-              }}
-            >
-              <Field
-                label="Yeniden eşitleme başlangıcı"
-                htmlFor="psync-from"
-                tip="Seçtiğiniz tarihten bugüne kadarki gider faturaları yeniden okunur. Mevcut faturalar çoğalmaz; tutar ve vade güncellenir. Ödeme durumu değişmez: Paraşüt'teki ödeme yalnız “Paraşüt'te ödendi” ipucu olur (adı okunamadan açılan fatura peşin çalışılan tedarikçiye düşerse ödendi olur)."
-              >
-                {/* Bugün Türkiye saatiyle (UTC gece 00–03 arasında bugünü seçtirmezdi) */}
-                <Input id="psync-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} max={todayTR()} />
-              </Field>
-              <Button type="submit" variant="secondary" disabled={!configured || busy || !from} title={configured ? undefined : NOT_CONFIGURED}>
-                <RefreshCw size={16} className={cn(syncing && from && "animate-spin")} /> Tarihten eşitle
-              </Button>
-              <Button variant="ghost" disabled={busy} onClick={() => setConfirmReset(true)}>
-                <Unplug size={16} /> Oturumu sıfırla
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+        <ConnectionCard
+          className="xl:col-span-7"
+          configured={configured}
+          connection={connection}
+          redirectUri={redirectUri}
+          settings={settings}
+          cronSet={cronSet}
+          busy={busy}
+          hasSynced={Boolean(cursor)}
+        />
 
         <Card className="xl:col-span-5">
           <CardHeader icon={<RefreshCw />} title="Eşitleme geçmişi" description="Otomatik (her sabah) ve elle yapılan son 8 eşitleme." />
@@ -637,7 +522,7 @@ export function ParasutClient({
                 description={
                   configured
                     ? "Her sabah 07:00–08:00 arasında kendiliğinden çalışır (gelen e-faturalar ve gider faturaları); beklemeden “Şimdi eşitle” ile de başlatabilirsiniz."
-                    : "Kurulum tamamlanınca her sabah kendiliğinden çalışır ve sonuçları burada görünür."
+                    : "Bağlantı kurulunca her sabah kendiliğinden çalışır ve sonuçları burada görünür."
                 }
               />
             ) : (
@@ -660,6 +545,32 @@ export function ParasutClient({
               </ul>
             )}
           </CardContent>
+          <CardContent className="space-y-3 border-t border-line-strong pt-4">
+            <p className="text-xs leading-5 text-ink-mute">
+              İlk eşitleme {settings.syncFrom.value ? dateTR(settings.syncFrom.value) : "bu yılın başından"} itibaren alır
+              {cursor ? `; sonrakiler son faturadan (${dateTR(cursor)}) 75 gün geriye bakar` : ""}. Panelde elle ya da Excel&apos;den girilmiş aynı fatura
+              bulunursa yenisi açılmaz, mevcut kayıt Paraşüt&apos;e bağlanır; kategorisi ve tedarikçi adı korunur.
+            </p>
+            <form
+              className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (configured && from && !busy) sync(from);
+              }}
+            >
+              <Field
+                label="Yeniden eşitleme başlangıcı"
+                htmlFor="psync-from"
+                tip="Seçtiğiniz tarihten bugüne kadarki gider faturaları yeniden okunur. Mevcut faturalar çoğalmaz; tutar ve vade güncellenir. Ödeme durumu değişmez: Paraşüt'teki ödeme yalnız “Paraşüt'te ödendi” ipucu olur (adı okunamadan açılan fatura peşin çalışılan tedarikçiye düşerse ödendi olur)."
+              >
+                {/* Bugün Türkiye saatiyle (UTC gece 00–03 arasında bugünü seçtirmezdi) */}
+                <Input id="psync-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} max={todayTR()} />
+              </Field>
+              <Button type="submit" variant="secondary" disabled={!configured || busy || !from} title={configured ? undefined : NOT_CONFIGURED}>
+                <RefreshCw size={16} className={cn(syncing && from && "animate-spin")} /> Tarihten eşitle
+              </Button>
+            </form>
+          </CardContent>
         </Card>
       </div>
 
@@ -679,27 +590,6 @@ export function ParasutClient({
       />
       <CategoryRules rules={rules} categories={categories} />
 
-      <ConfirmDialog
-        open={confirmReset}
-        onClose={() => setConfirmReset(false)}
-        tone="primary"
-        confirmLabel="Oturumu sıfırla"
-        title="Paraşüt oturumu sıfırlansın mı?"
-        description={`Kayıtlı Paraşüt yetkisi ve eşitleme imleci silinir. ${
-          legacyActive
-            ? "Bir sonraki eşitlemede eski yöntemle yeniden giriş yapılır (10 Aralık'a kadar)"
-            : "Sonra “Paraşüt hesabını bağla” ile yeniden bağlamanız gerekir"
-        } ve faturalar başlangıç tarihinden itibaren tekrar okunur; mevcut faturalar çoğalmaz, bağlantılar ve kurallar kalır.`}
-        pending={resetting}
-        onConfirm={() =>
-          startReset(async () => {
-            const r = await disconnectParasut();
-            if (!r.ok) return void toast.error(r.error);
-            toast.success("Oturum sıfırlandı");
-            setConfirmReset(false);
-          })
-        }
-      />
     </>
   );
 }
@@ -746,20 +636,6 @@ function ReturnsNotice({ returns }: { returns: NonNullable<Parameters<typeof Par
         </Notice>
       ) : null}
     </>
-  );
-}
-
-function Step({ n, done, children }: { n: number; done?: boolean; children: ReactNode }) {
-  return (
-    <li className="flex gap-3">
-      <span
-        className={cn("flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular", done ? "bg-lime text-good-ink" : "bg-surface text-ink-mute ring-1 ring-line-strong")}
-        aria-label={done ? `Adım ${n}: tamam` : `Adım ${n}`}
-      >
-        {done ? "✓" : n}
-      </span>
-      <span className="min-w-0 pt-0.5">{children}</span>
-    </li>
   );
 }
 

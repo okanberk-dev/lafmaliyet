@@ -25,6 +25,7 @@ import {
   Trash2,
   Undo2,
   UserRound,
+  Utensils,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -53,14 +54,14 @@ import { cn } from "@/lib/utils";
 import { deleteCategory, saveCategories } from "@/server/actions/products";
 import { saveSettings } from "@/server/actions/settings";
 
-import { ALL_FIELDS, isClean, MEASURE_FIELDS, parseField, problemOf, RATE_FIELDS, shown, textsOf, toText, waterText, type FieldDef, type NumericKey } from "./fields";
+import { ALL_FIELDS, isClean, MEASURE_FIELDS, parseField, PERSONNEL_FIELDS, problemOf, RATE_FIELDS, shown, textsOf, toText, waterText, type FieldDef, type NumericKey } from "./fields";
 import { changed, impactModel, settingsImpact, type Change, type ImpactData, type SettingsImpact } from "./impact";
 import { revealSettingsField, SectionCard } from "./section-card";
-import { categoriesSummary, logSummary, measuresSummary, ratesSummary, waterSummary } from "./summaries";
+import { categoriesSummary, logSummary, mealCardSummary, measuresSummary, ratesSummary, waterSummary } from "./summaries";
 import { waterSource } from "./water-text";
 
 /** Alanın bulunduğu bölüm (telefonda kapalı bölümdeki hatalı alana gitmek için) */
-const sectionOf = (key: NumericKey) => (RATE_FIELDS.some((f) => f.key === key) ? "oranlar" : "olculer");
+const sectionOf = (key: NumericKey) => (RATE_FIELDS.some((f) => f.key === key) ? "oranlar" : PERSONNEL_FIELDS.some((f) => f.key === key) ? "personel" : "olculer");
 
 
 // ---------------------------------------------------------------- Hesap ayarları
@@ -284,6 +285,17 @@ export function SettingsForm({ settings, water, data, menuUrls }: { settings: Se
         dirty={dirtyIn(MEASURE_FIELDS)}
       >
         <CardContent className="grid gap-4 @lg:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-4">{MEASURE_FIELDS.map(field)}</CardContent>
+      </SectionCard>
+
+      <SectionCard
+        id="personel"
+        icon={<Utensils />}
+        title="Personel yemek kartı"
+        description="Maaşlar'da yemek kartı işaretli kişinin işveren maliyetine günlük tutar × gün eklenir; brütleştirilmez, SGK'ya girmez. Gelir-gider'de kendi satırında (Personel yemek kartı). İşletme geneli Personel yemeği sabit gideri de duruyorsa aynı yemek iki kez sayılabilir: Genel bakış uyarır."
+        summary={mealCardSummary(settings)}
+        dirty={dirtyIn(PERSONNEL_FIELDS)}
+      >
+        <CardContent className="grid gap-4 @lg:grid-cols-2 @3xl:grid-cols-3">{PERSONNEL_FIELDS.map(field)}</CardContent>
       </SectionCard>
 
       <div className="grid gap-4 @3xl:grid-cols-2">

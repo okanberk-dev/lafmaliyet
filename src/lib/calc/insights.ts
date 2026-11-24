@@ -9,10 +9,11 @@ import {
 import { coveredByAllocations, isPartiallyPaid, openBalance, type BalanceInvoice } from "../cari/balance";
 import { isUnpriced } from "../count-item";
 import { DUPLICATE_ALERT_TITLE, duplicateAlertDetail } from "./duplicate-expense";
-import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, uncountedCogsText, type ListPeriod, type Model, type MonthlyExpensePlan, type OnlineMonthCalc, type ProductCalc, type StockSheet } from "./engine";
+import { currentMonthTR, daysInMonth, fixedMonthly, MEAL_CARD_KEY, PART_TIME_KEY, RENT_STOPAJ_TWIN_TITLE, shiftMonth, uncountedCogsText, type ListPeriod, type Model, type MonthlyExpensePlan, type OnlineMonthCalc, type ProductCalc, type StockSheet } from "./engine";
 import { monthLabel, num, tl } from "../format";
 import { OPTION_PRODUCTS } from "../site-sales/calc";
 import { isSummaryRow } from "./pos-paste";
+import { staffWarnings } from "./personnel";
 import { MANAGED_QTY_NOTE, NO_PURCHASE_NOTE } from "../purchase-notes";
 import { HOLDS_HREF } from "../price-hold";
 import type { FixedSection, Ingredient } from "./types";
@@ -252,6 +253,11 @@ export interface FixedMonthBreakdown {
   overrideRows: (FixedLine & { delta: number })[];
   /** "Para nereye gitti?" için Excel Panel'deki 4 grup + varsa "Bu aya özel giderler"; Σ amount = total */
   flow: FixedFlowLine[];
+  /**
+   * Şube seçiliyken işletme geneli giderlerin toplamı (Faz 5; bilgi, `total`a girmez: engine PnlMonthCalc.shared). "Tümü"de
+   * 0 (işletme geneli kalemler satırlarda ve toplamda)
+   */
+  shared: number;
 }
 
 /**
@@ -272,11 +278,21 @@ export function fixedCostsForMonth(model: Model, month: string): FixedMonthBreak
   const basis: FixedMonthBreakdown["basis"] = openDays > 0 ? "month" : "standard";
   // O ay çalışan personel ve o ay geçerli sabit giderler, o ayın tutarlarıyla
   const p = model.personnelFor(month);
+  // Şube seçiliyken işletme geneli kalemler (Faz 5) şubenin sabit giderine girmez: Gelir-gider'in bölümleri gibi
+  const branchView = Boolean(model.ds.branchView);
+  const own = (key: string) => !branchView || !pm.shared.keys.has(key);
 
   const defs: Omit<FixedLine, "computed" | "value" | "overridden">[] = [
     { key: "personnel:net", label: "Personel maaş (net)", section: "personel", group: "personel", standard: p.net },
-    { key: "personnel:employer", label: "Personel SGK, kesintiler + ek ödemeler (maliyet − net)", section: "personel", group: "personel", standard: p.total - p.net },
-    ...model.fixedInMonth(month).flatMap((fe) => [
+    { key: "personnel:employer", label: "Personel SGK, kesintiler + ek ödemeler (maliyet − net)", section: "personel", group: "personel", standard: p.total - p.partTime.total - p.net - p.mealCard },
+    // Yemek kartı ve part-time (Faz 5): kendi satırları, Gelir-gider'deki gibi
+    ...(p.mealCard + p.partTime.mealCard > 0 || pm.cells.has(MEAL_CARD_KEY)
+      ? [{ key: MEAL_CARD_KEY, label: "Personel yemek kartı", section: "personel" as const, group: "personel" as const, standard: p.mealCard + p.partTime.mealCard }]
+      : []),
+    ...(p.partTime.people > 0 || pm.cells.has(PART_TIME_KEY)
+      ? [{ key: PART_TIME_KEY, label: "Part-time (günlük ücret)", section: "personel" as const, group: "personel" as const, standard: p.partTime.wages + p.partTime.extras }]
+      : []),
+    ...model.fixedInMonth(month).filter((fe) => own(`fixed:${fe.id}`)).flatMap((fe) => [
       {
         key: `fixed:${fe.id}`,
         label: fe.name,
@@ -294,13 +310,20 @@ export function fixedCostsForMonth(model: Model, month: string): FixedMonthBreak
     ...model
       .expenseAmounts(month)
       .filter((x) => x.cat.section !== "mal" && (x.total || x.cat.active))
-      .map((x) => ({ key: `expense:${x.cat.id}`, label: x.cat.name, section: x.cat.section as FixedSection, group: x.cat.panelGroup, standard: x.total })),
+      // Şube seçiliyken şubenin kendi kayıtları (hücrenin değeri); işletme geneli kısmı bilgi satırında
+      .map((x) => ({
+        key: `expense:${x.cat.id}`,
+        label: x.cat.name,
+        section: x.cat.section as FixedSection,
+        group: x.cat.panelGroup,
+        standard: branchView ? ((pm.cells.get(`expense:${x.cat.id}`)?.value as number | null) ?? 0) : x.total,
+      })),
   ];
   // Aralık dışındaki (bitmiş / başlamamış / silinmiş) kalemin o aya elle girilmiş tutarı da sayılır
   const byId = new Map(model.ds.fixedExpenses.map((fe) => [`fixed:${fe.id}`, fe]));
   const inMonth = new Set(defs.map((d) => d.key));
   for (const [key, cell] of pm.cells) {
-    if (!key.startsWith("fixed:") || inMonth.has(key) || !cell.overridden || cell.value === null) continue;
+    if (!key.startsWith("fixed:") || inMonth.has(key) || !cell.overridden || cell.value === null || !own(key)) continue;
     const fe = byId.get(key);
     defs.push({
       key,
@@ -319,7 +342,8 @@ export function fixedCostsForMonth(model: Model, month: string): FixedMonthBreak
   });
 
   const waterInRecipes = model.water.perLiter > 0;
-  const known = MANUAL_PNL_ROWS.filter((r) => r.section !== "mal").map((r) => ({
+  // Elle hücreler işletme genelidir: şube seçiliyken yok (Faz 5)
+  const known = MANUAL_PNL_ROWS.filter((r) => r.section !== "mal" && own(r.key)).map((r) => ({
     key: r.key,
     label: r.label,
     section: r.section as FixedSection,
@@ -411,6 +435,7 @@ export function fixedCostsForMonth(model: Model, month: string): FixedMonthBreak
     manualRows,
     overrideRows,
     flow,
+    shared: branchView ? pm.shared.total : 0,
   };
 }
 
@@ -566,6 +591,11 @@ export interface BreakEven {
   onlineCover: { month: string; grossProfit: number } | null;
   /** Kasanın karşılaması gereken: max(0, fixed − online brüt kâr) */
   toCover: number;
+  /**
+   * Şube seçiliyken başabaşa girmeyen işletme geneli standart sabit gider (bilgi; model.fixedStandardSharedFor). Şubenin
+   * kârı gibi başabaşı da işletme genelini saymaz (sahibin kararı 4); "Tümü"de 0
+   */
+  shared: number;
   /** Başabaş aylık ciro (KDV dahil); brüt kâr oranı sıfır ya da eksiyse null */
   monthly: number | null;
   /** Başabaş günlük ciro (KDV dahil): aylık ÷ Ayarlar'daki ayda açık gün */
@@ -599,6 +629,7 @@ export function breakEvenOf(model: Model, month: string): BreakEven {
     fixed,
     onlineCover,
     toCover,
+    shared: model.fixedStandardSharedFor(month),
     monthly,
     daily: monthly === null ? null : monthly / acikGun,
     acikGun,
@@ -754,7 +785,7 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   // Başabaşın sabit gideriyle aynı kalemler: personel, sabit giderler ve her ay girilen harcamalar (toplam breakEven.fixed)
   const topExpenses = [
     { name: "Personel (maaş + SGK)", amount: model.personnelFor(month).total },
-    ...model.fixedInMonth(month).flatMap((f) => [
+    ...model.fixedOwnInMonth(month).flatMap((f) => [
       { name: f.name, amount: fixedMonthly(f, st) },
       ...(model.rentStopajMonthly(f, month) > 0 ? [{ name: `${f.name} stopajı`, amount: model.rentStopajMonthly(f, month) }] : []),
     ]),
@@ -1124,6 +1155,12 @@ export function alerts(model: Model, month: string): Alert[] {
     const q = new URLSearchParams({ yil: month.slice(0, 4), ay: month, ...(duplicates.length === 1 ? { ara: duplicates[0].fixedName } : {}) });
     out.push({ level: "warning", title: DUPLICATE_ALERT_TITLE, detail: duplicateAlertDetail(duplicates, month), href: `/panel/gelir-gider?${q}` });
   }
+  // Personel (Faz 5): yemek kartı ile "Personel yemeği" sabit gideri, ekte yemek kartı; part-time'ın Vardiya bağlantısı
+  // ve haftalık part-time kalemiyle çift sayım (personnel.ts; tutarlar değişmez)
+  for (const w of staffWarnings(model, month)) out.push({ level: w.level, title: w.title, detail: w.detail, href: w.href });
+  // Kira stopajı tek kaynak (Faz 5): resmi kiradan hesaplanan stopaj + ayrıca girilmiş "Kira stopajı" sabit gideri
+  const stopajWarn = [...model.pnlMonth(month).cells].find(([k, c]) => k.startsWith("stopaj:") && c.warn)?.[1].warn;
+  if (stopajWarn) out.push({ level: "warning", title: RENT_STOPAJ_TWIN_TITLE, detail: stopajWarn, href: `/panel/gelir-gider?yil=${month.slice(0, 4)}&ara=stopaj` });
   const unpaid = model.ds.invoices.filter(isOpenInvoice);
   if (unpaid.length) {
     out.push({

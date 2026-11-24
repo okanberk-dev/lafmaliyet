@@ -23,6 +23,7 @@ import { stockOnlyIds } from "@/server/data/stock-only-invoices";
 import { loadSupplierCards } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { listInvoiceDocuments } from "@/server/documents";
+import { loadParasutSettings } from "@/server/parasut/config";
 import { IGNORE_KEY } from "@/server/parasut/sync";
 
 import { groupSuppliers, supplierPairKey } from "../tedarikciler/logic";
@@ -81,7 +82,7 @@ export default function InvoicesPage() {
 async function InvoicesContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, state, docs, cards, taxRows, cariLinks, stockOnly, cashOuts, cashOutCats] = await Promise.all([
+  const [model, state, docs, cards, taxRows, cariLinks, stockOnly, cashOuts, cashOutCats, parasutSettings] = await Promise.all([
     loadModel(),
     db
       .select()
@@ -103,6 +104,8 @@ async function InvoicesContent() {
       return { pending: [], duplicates: [] };
     }),
     cashOutCategories("admin"),
+    // Paraşüt'teki faturanın bağlantısı için firma numarası (panelde ya da ortamda); okunamazsa bağlantı çıkmaz
+    loadParasutSettings().catch(() => null),
   ]);
   const taxOf = new Map(taxRows.map((r) => [r.id, r.supplierTaxNumber]));
   // Kalan borç (kısmen ödenmiş Paraşüt faturası) çekirdek veriyle gelir: Invoice.outstanding
@@ -214,7 +217,7 @@ async function InvoicesContent() {
         documents={groupDocuments(docs)}
         months={months}
         suppliers={[...new Set(invoices.map((i) => i.supplier))].sort((a, b) => a.localeCompare(b, "tr"))}
-        parasutCompanyId={process.env.PARASUT_COMPANY_ID?.trim() || null}
+        parasutCompanyId={parasutSettings?.resolved.companyId.value ?? null}
         ignoredCount={ignored.length}
         expenseLinks={expenseLinks}
         supplierSlugs={supplierSlugs}

@@ -24,8 +24,8 @@ import { Segmented } from "@/components/ui/segmented";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { shiftMonth, type FixedHistoryEntry, type RangeStatus } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
-import type { FixedPeriod, FixedSection } from "@/lib/calc/types";
-import { FIXED_PERIODS, FIXED_SECTION_VAT, FIXED_SECTIONS, FIXED_VAT_RATES, fixedVatRate } from "@/lib/constants";
+import type { FixedPeriod, FixedSection, LandlordType } from "@/lib/calc/types";
+import { FIXED_PERIODS, FIXED_SECTION_VAT, FIXED_SECTIONS, FIXED_VAT_RATES, fixedVatRate, LANDLORD_TYPES } from "@/lib/constants";
 
 /** Kira stopajı oranı (formun önizlemesi; hesap yılın vergi kuralından: engine.ts rentWithholdingRate) */
 const KIRA_STOPAJ = 0.2;
@@ -52,6 +52,7 @@ import {
   type MonthChoice,
 } from "./history-text";
 import { Disclosure, HistoryList, MonthChoiceField, RangeBadge, ResumeDialog, StopDialog } from "./history-ui";
+import { rentSaveFields } from "./rent-fields";
 
 /** Sunucu eyleminin sonucu (server/actions/util ActionResult ile aynı biçim) */
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -255,6 +256,7 @@ export function FixedSummary({
   breakEvenOnline = null,
   monthlyExpenses = [],
   next,
+  shared = null,
 }: {
   total: number;
   /** Toplamın ayı, ör. "Ekim 2026" */
@@ -271,6 +273,8 @@ export function FixedSummary({
   monthlyExpenses?: { name: string; amount: number; from: string }[];
   /** Gelecek ay toplam değişiyorsa (planlı zam, biten kalem): o ayın toplamı */
   next: { month: string; total: number } | null;
+  /** Şube seçiliyken toplama ve başabaşa girmeyen işletme geneli kalemler (sahibin kararı 4); "Tümü"de null */
+  shared?: { branch: string; amount: number } | null;
 }) {
   return (
     <Card className="mb-6 p-5">
@@ -286,6 +290,12 @@ export function FixedSummary({
             <CountUp value={total} />
           </p>
           <p className="mt-1 text-[13px] text-ink-mute">{acikGun} açık gün varsayımıyla · KDV hariç</p>
+          {shared && shared.amount > 0 ? (
+            <p className="mt-1.5 max-w-xl text-[13px] text-pretty text-ink-soft">
+              {shared.branch} seçili: işletme geneli kalemler (<span className="font-medium whitespace-nowrap text-ink tabular">{tl(shared.amount)}</span>, bilgi) bu
+              toplama ve başabaşa girmez; Tümü&apos;de bir kez sayılır.
+            </p>
+          ) : null}
           {monthlyExpenses.length ? (
             <p className="mt-1.5 max-w-xl text-[13px] text-pretty text-ink-soft">
               Başabaşa ayrıca her ay girilen harcamalar girer:{" "}
@@ -367,6 +377,8 @@ export type FixedRow = {
   /** Kira: resmi (sözleşmedeki) aylık kira ve brüt / net; stopaj bundan (Gelir-gider "Kira stopajı") */
   officialAmount: number | null;
   officialBasis: "brut" | "net" | null;
+  /** Kira: ev sahibi şahıs mı şirket mi (Faz 5; boş = seçilmedi) */
+  landlordType: LandlordType | null;
   /** Açık güne göre oranla (false: biten ayda tam ay) */
   prorate: boolean;
   monthly: number;
@@ -1119,6 +1131,8 @@ function FixedDialog({
     vatRate: row?.vatRate ?? null,
     official: row?.officialAmount ? num(row.officialAmount, 2) : "",
     basis: (row?.officialBasis ?? "brut") as "brut" | "net",
+    // Kira: ev sahibi türü ("" = seçilmedi; Faz 5)
+    landlord: (row?.landlordType ?? "") as LandlordType | "",
     // Yeni kira kalemi tam ay (sahibin kararı); öteki kalemler açık güne göre
     prorate: row ? row.prorate : null,
     // Şube: "" = işletme geneli (yeni kalemde seçili şube, Tümü'nde işletme geneli)
@@ -1128,7 +1142,8 @@ function FixedDialog({
   const official = f.official.trim() === "" ? null : parseNumberTR(f.official);
   const officialError = official !== null && official < 0 ? "Geçerli bir tutar yazın" : f.official.trim() !== "" && official === null ? "Geçerli bir tutar yazın, ör. 100.000" : null;
   const officialGross = official && official > 0 ? (f.basis === "net" ? official / (1 - KIRA_STOPAJ) : official) : null;
-  const vatRate = fixedVatRate({ section: f.section, vatRate: f.vatRate });
+  const landlordType = f.section === "kira" && f.landlord ? f.landlord : null;
+  const vatRate = fixedVatRate({ section: f.section, vatRate: f.vatRate, landlordType });
   // Biten kalemde tutar değişikliği kalemin kendi ayları için anlamlı: varsayılan olarak son ayı
   const [choice, setChoice] = useState<MonthChoice>(() =>
     row?.status === "ended" ? { mode: "month", month: row.valueMonth } : { mode: "current", month: row?.status === "upcoming" ? row.valueMonth : currentMonth },
@@ -1172,10 +1187,9 @@ function FixedDialog({
         period: f.period,
         amount,
         note: f.note,
-        vatRate,
-        // Resmi kira yalnız kira bölümünde; başka bölüme taşınınca silinir
-        officialAmount: f.section === "kira" && official && official > 0 ? official : null,
-        officialBasis: f.section === "kira" && official && official > 0 ? f.basis : null,
+        // Kira alanları (rentSaveFields): resmi kira yalnız kira bölümünde (başka bölüme taşınınca silinir); ev sahibi türü
+        // kalemin KDV seçimini ve kayıtlı resmi kirayı ezmez (şirkette motor resmi kirayı saymaz)
+        ...rentSaveFields({ section: f.section, landlord: f.landlord, vatRate: f.vatRate, official, basis: f.basis }),
         prorate,
         // Seçim yoksa (tek şube) şube değişmez
         ...(branches.options.length > 1 ? { branchId: f.branch || null } : {}),
@@ -1347,13 +1361,39 @@ function FixedDialog({
           />
         </Field>
 
+        {f.section === "kira" ? (
+          <Field
+            label="Ev sahibi"
+            htmlFor="fx-landlord"
+            tip="Şahsa kira: KDV yok, stopaj %20 resmi kiradan (muhtasarla ödenir; resmi kira yoksa tutardan, ödemeden kesilir). Şirkete kira: faturalı, %20 KDV, stopaj yok. Seçilmezse KDV aşağıdaki seçimden, stopaj Vergi'deki profilden."
+            hint={`${LANDLORD_TYPES.find((t) => t.value === f.landlord)?.hint ?? "Seçilmedi: KDV ve stopaj eski kuralla."}${
+              landlordType === "sirket" && officialGross ? ` Kayıtlı resmi kira (${money(official ?? 0)}) saklanır; şirkette stopaja girmez, şahsa dönülünce yine kullanılır.` : ""
+            }`}
+          >
+            <Select id="fx-landlord" value={f.landlord} onChange={(e) => setF({ ...f, landlord: e.target.value as LandlordType | "" })}>
+              <option value="">Seçilmedi</option>
+              {LANDLORD_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
+
         <Field
           label="Faturadaki KDV"
           htmlFor="fx-v"
           tip="Gelir-gider KDV hariç tutarla hesaplanır. Nakit planı gideri faturadaki KDV'siyle öder: kira 10.000 ₺ + %20 KDV ise bankadan 12.000 ₺ çıkar."
-          hint={vatRate ? `Nakit planı aylık ${money(monthly * (1 + vatRate))} öder (KDV dahil).` : "Nakit planı KDV eklemeden öder."}
+          hint={
+            landlordType
+              ? `Ev sahibi ${landlordType === "sahis" ? "şahıs: KDV yok" : "şirket: %20 KDV"}. Nakit planı aylık ${money(monthly * (1 + vatRate))} öder.`
+              : vatRate
+                ? `Nakit planı aylık ${money(monthly * (1 + vatRate))} öder (KDV dahil).`
+                : "Nakit planı KDV eklemeden öder."
+          }
         >
-          <Select id="fx-v" value={String(vatRate)} onChange={(e) => setF({ ...f, vatRate: Number(e.target.value) })}>
+          <Select id="fx-v" value={String(vatRate)} disabled={landlordType !== null} onChange={(e) => setF({ ...f, vatRate: Number(e.target.value) })}>
             {FIXED_VAT_RATES.map((r) => (
               <option key={r.value} value={String(r.value)}>
                 {r.label}
@@ -1378,7 +1418,7 @@ function FixedDialog({
           />
         ) : null}
 
-        {f.section === "kira" ? (
+        {f.section === "kira" && landlordType !== "sirket" ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <Field
               label="Resmi (sözleşme) kira, aylık"
