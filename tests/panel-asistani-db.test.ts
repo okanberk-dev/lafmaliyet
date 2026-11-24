@@ -138,6 +138,21 @@ describe("Panel asistanı: veritabanında sınır ve kayıt", { skip: !SERVER_UR
     assert.notEqual(await claude.startAssistantCall(ids.admin), null);
   });
 
+  test("derin analiz: satır eforu high ile açılır ve sınıra 2 sayılır; 2 hak kalmadıysa açılmaz, olağan soru açılır", async () => {
+    await db.delete(s.aiCalls).where(eq(s.aiCalls.userId, ids.other));
+    const deep = (await claude.startAssistantCall(ids.other, undefined, undefined, { deep: true }))!;
+    const [row] = await db.select().from(s.aiCalls).where(eq(s.aiCalls.id, deep));
+    assert.equal(row.effort, "high");
+    assert.equal((await claude.assistantStatus(ids.other)).usedToday, 2);
+    await rows(ids.other, "asistan", ASSISTANT_DAILY_CAP - 3);
+    assert.equal((await claude.assistantStatus(ids.other)).usedToday, ASSISTANT_DAILY_CAP - 1);
+    // Tek hak: derin analiz açılmaz, olağan soru açılır; sonra sınır dolu
+    assert.equal(await claude.startAssistantCall(ids.other, undefined, undefined, { deep: true }), null);
+    const normal = (await claude.startAssistantCall(ids.other))!;
+    assert.equal((await db.select().from(s.aiCalls).where(eq(s.aiCalls.id, normal)))[0].effort, "medium");
+    assert.equal((await claude.assistantStatus(ids.other)).state, "cap");
+  });
+
   test("parasut_bekleyenler: Paraşüt sayfasının listesini okur (bağlanmamış ürün, ekran bağlantısı)", async () => {
     const [inv] = await db.insert(s.invoices).values({ date: "2026-11-20", supplier: `Test Tedarikçi ${tag}`, category: "Diğer", amount: 100, source: "parasut" }).returning();
     ids.invoice = inv.id;

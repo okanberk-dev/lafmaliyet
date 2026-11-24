@@ -157,9 +157,10 @@ Katalogdaki öteki "tamamlanmadı" yanıtları (`saveSupplierDebt` `needs`, `sav
   sekmede saklanır; sonraki sorunun geçmişine "[Onay kartı: … — yapıldı]" satırı gider, asistan sonucu bilir.
 - Rehber yanıtında panel yolu tıklanabilir bağlantıdır.
 - Telefonda (390 ve 360 px) sayfa görünür alana oturur (`--vvh` yüksekliği, `--vv-top` üstü; `bottom-nav.tsx` yazar):
-  klavye açıkken giriş kutusu klavyenin üstünde, güvenli alan üstte, yanlarda ve klavye kapalıyken altta. Sayfa alt
-  menünün ve Fab'ın üstündedir (z-60); kapalıyken düğmenin yeri `--assistant-bottom`. Dokunulan her düğme ≥ 44 px
-  (kartın Onayla / Vazgeç'i dokunmatikte 48 px); kartın satırları dar ekranda etiket üstte, değer altta.
+  klavye açıkken giriş kutusu klavyenin üstünde, güvenli alan üstte ve yanlarda; alt menü görünür kalır, sayfa onun
+  üstünde biter (`--assistant-nav`). Telefonda yüzen düğme yok, asistan alt menünün "Asistan" sekmesinden açılır
+  ([ASISTAN.md](ASISTAN.md) › Telefonda). Dokunulan her düğme ≥ 44 px (kartın Onayla / Vazgeç'i dokunmatikte 48 px);
+  kartın satırları dar ekranda etiket üstte, değer altta; telefonda kartın çizgisi bir ton açık, rozetleri gri.
 
 ---
 

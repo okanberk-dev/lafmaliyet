@@ -10,6 +10,7 @@
 import { z } from "zod";
 
 import { cardHistoryLine, isOpCard, isOpStatus, type OpCard, type OpCardState } from "./ops";
+import { assistantPage } from "./page-context";
 
 export const ASSISTANT_LIMITS = {
   /** Kullanıcının bir mesajı (karakter) */
@@ -24,6 +25,9 @@ export const ASSISTANT_LIMITS = {
 
 /** Yönetici başına günde en çok bu kadar soru (src/server/ai/claude.ts assistantStatus; ai_calls feature "asistan") */
 export const ASSISTANT_DAILY_CAP = 60;
+
+/** Derin analiz sorusu günlük sınıra bu kadar soru sayılır (src/server/ai/assistant/loop.ts ASSISTANT_DEEP.weight) */
+export const ASSISTANT_DEEP_WEIGHT = 2;
 
 /**
  * Asistan bu kurulumda açık mı: ASISTAN_KAPALI=1 ise düğme çizilmez, uç 404 döner (yalnız asistanı kapatır; fotoğraftan
@@ -43,13 +47,17 @@ const turn = z
 export type AssistantTurn = z.output<typeof turn>;
 
 /**
- * İsteğin gövdesi: yeni soru ve önceki turlar. Geçmiş soruyla başlar, soru ve yanıt sırayla gelir, yanıtla biter
+ * İsteğin gövdesi: yeni soru, önceki turlar ve açık ekran (yol, seçili ay / gün; isteğe bağlı). Geçmiş soruyla başlar, soru ve yanıt sırayla gelir, yanıtla biter
  * (yeni soru ayrı alanda). Soru en çok 4000, yanıt en çok 8000 karakter, geçmiş en çok 20 mesaj.
  */
 export const assistantRequest = z
   .object({
     message: z.string().trim().min(1, "Soru boş").max(ASSISTANT_LIMITS.message, `Soru en çok ${ASSISTANT_LIMITS.message} karakter olabilir`),
     history: z.array(turn).max(ASSISTANT_LIMITS.history, `Geçmiş en çok ${ASSISTANT_LIMITS.history} mesaj olabilir`).default([]),
+    /** Açık ekran (page-context.ts): bozuksa soru reddedilmez, alan düşer */
+    page: assistantPage.optional().catch(undefined),
+    /** Derin analiz (efor high, daha çok araç turu; günlük sınıra 2 soru sayılır; loop.ts ASSISTANT_DEEP) */
+    deep: z.boolean().default(false),
   })
   .strict()
   .superRefine((v, ctx) => {
@@ -138,6 +146,10 @@ export interface ChatMessage {
   note?: string;
   /** Yanıttaki onay kartları ve son durumları */
   cards?: OpCardState[];
+  /** Soru derin analizle soruldu (ekranda küçük işaret; geçmişe gitmez) */
+  deep?: boolean;
+  /** Yanıtın sonundaki takip önerileri (followups.ts; metinden ayrılmış, yalnız ekranda) */
+  followups?: string[];
 }
 
 /** Sayfa işlem sürerken yenilendiyse kartın iletisi (durum sunucudan yeniden okunana kadar) */

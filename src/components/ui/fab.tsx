@@ -35,8 +35,8 @@ export function useHideOnScrollDown(threshold = 80): boolean {
 /**
  * Telefon ve tabletin yüzen ekleme düğmesi (lg altında): sağ altta, alt menünün (--mobile-nav-h) üstünde,
  * başparmak hizasında. Aşağı kaydırırken kaybolur: altındaki satırların anahtarı, tutarı ya da düğmesi örtülmez;
- * yukarı kaydırınca geri gelir. Ekran klavyesi açıkken gizlidir. Panel asistanının düğmesi Fab varken onun üstünde
- * durur (`data-fab`; globals.css › --assistant-bottom).
+ * yukarı kaydırınca geri gelir. Ekran klavyesi açıkken gizlidir. Telefonda panel asistanının yüzen düğmesi yoktur
+ * (alt menünün sekmesi; docs/ASISTAN.md): Fab'ın köşesi ona ayrılmaz.
  */
 export function Fab({ className, children, type = "button", ...props }: ComponentProps<"button">) {
   const hidden = useHideOnScrollDown();
@@ -44,8 +44,6 @@ export function Fab({ className, children, type = "button", ...props }: Componen
     <button
       type={type}
       {...props}
-      // Panel asistanının düğmesi bunu görünce Fab'ın üstüne çıkar (globals.css, --assistant-bottom)
-      data-fab
       data-hidden={hidden || undefined}
       className={cn(
         "no-print fixed right-4 bottom-[calc(var(--mobile-nav-h,0px)+0.75rem)] z-30 flex h-14 cursor-pointer items-center gap-2 rounded-full bg-primary pr-5 pl-4 text-[15px] font-semibold text-on-primary shadow-[0_10px_30px_rgba(0,0,0,0.25)] lg:hidden in-data-[keyboard=open]:hidden",

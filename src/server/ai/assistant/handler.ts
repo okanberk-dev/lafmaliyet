@@ -4,7 +4,7 @@
  * src/app/api/asistan/route.ts'te.
  *
  * Sıra (POST): açık mı (ASISTAN_KAPALI) → aynı köken (tarayıcı POST'ta Origin'i hep yollar) → oturum (401) → yalnız
- * yönetici (403; personel düğmeyi hiç görmez) → gövde (en çok 256 KB, şema: soru ≤ 4000, geçmiş ≤ 20 mesaj; 400) →
+ * yönetici (403; personel düğmeyi hiç görmez) → gövde (en çok 256 KB, şema: soru ≤ 4000, geçmiş ≤ 20 mesaj, açık ekran; 400) →
  * kapı (anahtar, Ayarlar › Fotoğraftan okuma, yönetici başına günlük sınır; 503 / 429) → ai_calls'a "running" satırı →
  * akış. Akış satır satır JSON'dur (src/lib/assistant/protocol.ts); bitince satır maliyetle kapanır. Sorunun ve yanıtın
  * METNİ hiçbir yere yazılmaz; sunucu günlüğüne yalnız hata kodu ve Anthropic'in istek kimliği düşer.
@@ -15,10 +15,11 @@
  */
 
 import { errorTag } from "@/lib/assistant/error-tag";
+import { pageContextLine } from "@/lib/assistant/page-context";
 import { ASSISTANT_LIMITS, assistantRequest, encodeEvent, type AssistantEvent } from "@/lib/assistant/protocol";
 
 import type { AiErrorCode } from "../run";
-import { assistantErrorText, runAssistant, type AssistantClient, type AssistantOutcome, type AssistantTiming } from "./loop";
+import { ASSISTANT_DEEP, assistantErrorText, runAssistant, type AssistantClient, type AssistantOutcome, type AssistantTiming } from "./loop";
 import type { OpToolContext } from "./op-tools";
 import { SYSTEM_PROMPT } from "./prompt";
 import type { AssistantTool, ToolContext } from "./tool-adapter";
@@ -52,8 +53,11 @@ export interface AssistantDeps {
   sameOrigin(request: Request): boolean;
   user(): Promise<AssistantUser | null>;
   status(userId: number): Promise<AssistantStatus>;
-  /** ai_calls'a "running" satırı; kimliği. Sayım ve ekleme atomik: günlük sınır dolduysa satır açılmaz, null */
-  start(userId: number): Promise<number | null>;
+  /**
+   * ai_calls'a "running" satırı; kimliği. Sayım ve ekleme atomik: günlük sınır dolduysa (derin analizde 2 hak
+   * kalmadıysa) satır açılmaz, null
+   */
+  start(userId: number, opts: { deep: boolean }): Promise<number | null>;
   /** Satırı sonuçla kapatır (maliyet, token, süre; metin yok) */
   finish(callId: number, outcome: AssistantOutcome, ms: number): Promise<void>;
   setup(): Promise<AssistantSetup>;
@@ -84,6 +88,12 @@ function gateRefusal(s: AssistantStatus): Response | null {
   if (s.state === "on") return null;
   const code = s.state as AiErrorCode;
   return json(s.state === "cap" ? 429 : 503, { error: assistantErrorText(code, s.cap), code: s.state, left: Math.max(0, s.cap - s.usedToday) });
+}
+
+/** Derin analize hak yetmiyor (2 soru sayılır): olağan soru yine sorulabilir; kapının durumu değişmez */
+function deepRefusal(s: AssistantStatus): Response {
+  const left = Math.max(0, s.cap - s.usedToday);
+  return json(429, { error: `Derin analiz ${ASSISTANT_DEEP.weight} soru sayılır; bugün ${left} soru hakkı kaldı. Derin analizi kapatıp sorun.`, code: "deep_cap", left });
 }
 
 /** Kimlik ve rol: yanıt (hata) ya da yönetici */
@@ -129,13 +139,23 @@ export async function handleAssistantPost(request: Request, deps: AssistantDeps)
   const status = await deps.status(me.id);
   const refused = gateRefusal(status);
   if (refused) return refused;
+  // Derin analiz günlük sınıra 2 soru sayılır: tek hak kaldıysa yalnız olağan soru sorulabilir (kapı kapanmaz)
+  const { deep } = parsed.data;
+  const weight = deep ? ASSISTANT_DEEP.weight : 1;
+  if (deep && status.cap - status.usedToday < weight) return deepRefusal(status);
 
   const setup = await deps.setup();
-  const callId = await deps.start(me.id);
+  const callId = await deps.start(me.id, { deep });
   // Kapıdan sonra aynı anda gelen başka bir soru sınırı doldurduysa (sayım ve ekleme start'ta atomik)
-  if (callId === null) return gateRefusal({ state: "cap", usedToday: status.cap, cap: status.cap })!;
+  if (callId === null) {
+    if (deep) {
+      const now = await deps.status(me.id);
+      if (now.state === "on") return deepRefusal(now);
+    }
+    return gateRefusal({ state: "cap", usedToday: status.cap, cap: status.cap })!;
+  }
   // Bu soru sayıldı: bugün kalan hak
-  const left = Math.max(0, status.cap - status.usedToday - 1);
+  const left = Math.max(0, status.cap - status.usedToday - weight);
   const stop = new AbortController();
   const onClientAbort = () => stop.abort();
   request.signal?.addEventListener("abort", onClientAbort, { once: true });
@@ -158,11 +178,13 @@ export async function handleAssistantPost(request: Request, deps: AssistantDeps)
         outcome = await setup.scoped(() =>
           runAssistant(setup.client, {
             system: SYSTEM_PROMPT,
-            context: setup.context,
+            // Değişken blok (önbellek işaretinden sonra): tarih, şube ve açık ekranın tek satırı
+            context: [setup.context, pageContextLine(parsed.data.page)].filter(Boolean).join("\n"),
             tools: setup.tools,
             toolCtx,
             history: parsed.data.history,
             message: parsed.data.message,
+            deep,
             emit: send,
             signal: stop.signal,
             timing: deps.timing,

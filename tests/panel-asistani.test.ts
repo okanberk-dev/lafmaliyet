@@ -432,8 +432,10 @@ test("döngü: süre (softMs) geçince yeni araç turu açılmaz; kesin süre (h
     [null, null, "none"],
   );
 
-  const slow = fakeClient(() => scriptedMessage({ content: [text("Uzun uzun yazan bir yanıt ".repeat(20))], stop_reason: "end_turn" }), { delayMs: 15 });
-  const r = run(slow.client, { timing: { hardMs: 60 } });
+  const slow = fakeClient(() => scriptedMessage({ content: [text("Uzun uzun yazan bir yanıt ".repeat(60))], stop_reason: "end_turn" }), { delayMs: 15 });
+  // Gerçek saat: 1560 karakter 24'lük parçalarla ~70 olay × 15 ms ≈ 1 sn; 400 ms yük altında da ilk parçalar
+  // geldikten sonra, yanıt bitmeden dolar (eskiden 60 ms: yüklü makinede ilk parça gelmeden doluyordu)
+  const r = run(slow.client, { timing: { hardMs: 400 } });
   const hard = await r.promise;
   assert.equal(hard.done, "deadline");
   assert.equal(hard.error, null);
@@ -850,12 +852,12 @@ test("kaynak: araçlar yalnız izinli okuyucuları çağırır; istemci dosyalar
   assert.match(widget, /no-print/);
   assert.match(widget, /e\.key === "Escape"/);
   assert.match(widget, /e\.key === "Enter" && !e\.shiftKey/);
-  for (const s of ["Dünkü gün sonu nasıldı?", "Dün en çok ne sattı?", "Bugün kim çalışıyor?", "Ne bitmek üzere?", "Bu ay nasıl gidiyor?", "En çok kime borcumuz var?", "Hangi ürünler hammaddeye bağlanmayı bekliyor?"]) {
-    assert.ok(widget.includes(`"${s}"`), s);
-  }
+  // Boşken çipler açık ekranın önerileri (src/lib/assistant/page-context.ts; tests/asistan-gelismis.test.ts)
+  assert.match(widget, /suggestionsFor\(pathname\)\.map/);
+  // Masaüstünün düğmesi köşede; telefonda düğme yok (alt menünün sekmesi), Fab'ın köşesi ona ayrılmaz
   const css = read("src/app/globals.css");
-  assert.match(css, /:has\(\[data-fab\]\)/);
-  assert.match(read("src/components/ui/fab.tsx"), /data-fab\n/);
+  assert.match(css, /--assistant-bottom: calc\(var\(--mobile-nav-h\) \+ 1\.5rem\);/);
+  assert.doesNotMatch(css, /:has\(\[data-fab\]\)/);
 });
 
 test("bilgi tabanı: iç içe, yarım ya da --!> ile kapanan HTML yorumu metinde yorum açılışı bırakmaz", () => {

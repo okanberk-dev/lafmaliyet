@@ -8,7 +8,8 @@ import { Icon } from "@/components/akmanos/icons/icon";
 import { SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
 import { cn } from "@/lib/utils";
 
-import { badgeText, BOTTOM_NAV, bottomNavActive } from "./nav";
+import { setAssistantOpen, toggleAssistant, useAssistantOpen } from "./assistant/assistant-open";
+import { badgeText, bottomNavActive, bottomNavFor } from "./nav";
 import { useOpenOrdersCount } from "./orders-badge";
 
 /** Ekran klavyesi açıyor sayılan alanlar (onay kutusu, düğme, kaydırıcı değil) */
@@ -129,6 +130,11 @@ function PendingPill() {
  * Telefon ve tabletin alt menüsü (lg altında): 64px + güvenli alan, her öğe hücrenin tamamı kadar dokunma alanı.
  * Etkin öğenin ikonunun arkasında zinc-100 hap yaylı kayar (kenar çubuğundaki vurgu gibi). Yönetici için son öğe
  * "Tümü": çekmeceyi açar. "Ödemeler" öğesinde gecikmiş ödeme sayısı kırmızı rozetle görünür.
+ *
+ * Panel asistanı (`assistant`: yönetici ve asistan açık; docs/ASISTAN.md): ortadaki "Asistan" sekmesi asistanı açıp
+ * kapatır (nav.ts › bottomNavFor). Asistan açıkken alt menü görünür kalır, sekme etkin görünür; asistanın tam ekran
+ * sayfası alt menünün üstünde biter. Başka bir öğeye dokununca asistan kapanır (bağlantı o ekrana gider, "Tümü"
+ * çekmeceyi açar).
  */
 export function BottomNav({
   role,
@@ -137,6 +143,7 @@ export function BottomNav({
   menuOpen = false,
   onMenu,
   menuButtonRef,
+  assistant = false,
 }: {
   role: "admin" | "staff";
   pathname: string;
@@ -144,11 +151,14 @@ export function BottomNav({
   menuOpen?: boolean;
   onMenu?: () => void;
   menuButtonRef?: Ref<HTMLButtonElement>;
+  /** Asistan sekmesi (yalnız yönetici ve asistan açıkken; panel düzeni sunucuda belirler) */
+  assistant?: boolean;
 }) {
   const reduce = useReducedMotion();
   useViewportState();
-  const items = BOTTOM_NAV[role];
-  const active = bottomNavActive(items, pathname, menuOpen);
+  const items = bottomNavFor(role, { assistant });
+  const assistantOpen = useAssistantOpen();
+  const active = bottomNavActive(items, pathname, menuOpen, assistant && assistantOpen);
   const badge = badgeText(overdue);
   // Siparişler öğesinin sayısı: açık uygulama siparişi ve masa çağrısı (kabuğun canlı verisinden; ek istek yok)
   const openOrders = useOpenOrdersCount();
@@ -180,7 +190,8 @@ export function BottomNav({
                     />
                   ) : null}
                   {/* Koyu temada etkin sekme beyaz hap, ikonu koyu (docs/KOYU-TEMA.md) */}
-                  <span className={cn("relative z-10", on && "dark:text-on-solid")}>
+                  {/* Asistan sekmesi: parıltı simgesi marka renginde (masaüstündeki düğmeyle aynı), başka süs yok */}
+                  <span className={cn("relative z-10", item.action === "assistant" && "text-brand-500", on && item.action !== "assistant" && "dark:text-on-solid")}>
                     <Icon icon={item.icon} size="lg" />
                   </span>
                   {showBadge ? (
@@ -210,12 +221,27 @@ export function BottomNav({
             const label = showBadge ? `${item.label}, ${overdue} gecikmiş ödeme` : showOrders ? `${item.label}, ${openOrders} açık` : item.label;
             return (
               <li key={item.id} className="min-w-0">
-                {item.href ? (
-                  <Link href={item.href} aria-current={on && !menuOpen ? "page" : undefined} aria-label={label} className={cls}>
+                {item.action === "assistant" ? (
+                  <button type="button" onClick={toggleAssistant} aria-label="Panel asistanı" aria-haspopup="dialog" aria-expanded={assistantOpen} data-assistant-tab className={cls}>
+                    {body}
+                  </button>
+                ) : item.href ? (
+                  <Link href={item.href} onClick={() => setAssistantOpen(false)} aria-current={on && !menuOpen && !assistantOpen ? "page" : undefined} aria-label={label} className={cls}>
                     {body}
                   </Link>
                 ) : (
-                  <button ref={menuButtonRef} type="button" onClick={onMenu} aria-label={label} aria-haspopup="dialog" aria-expanded={menuOpen} className={cls}>
+                  <button
+                    ref={menuButtonRef}
+                    type="button"
+                    onClick={() => {
+                      setAssistantOpen(false);
+                      onMenu?.();
+                    }}
+                    aria-label={label}
+                    aria-haspopup="dialog"
+                    aria-expanded={menuOpen}
+                    className={cls}
+                  >
                     {body}
                   </button>
                 )}

@@ -746,53 +746,89 @@ test("sistem istemi: riskli iş kuralı, LafPOS'un ne olduğu, araç seçimi ve 
   assert.ok(SYSTEM_PROMPT.length < 30_000, String(SYSTEM_PROMPT.length));
 });
 
-test("arayüz (telefon 390 / 360 px): tam ekran alt sayfa görünür alana oturur, klavye ve güvenli alan, 44 px, alt menü ve Fab ile çakışmaz", () => {
+test("arayüz (telefon 390 / 360 px): yüzen düğme yok, alt menünün üstünde biten sade tam ekran sayfa, klavye ve güvenli alan, 44 px", () => {
   const w = code("src/components/panel/assistant/panel-assistant.tsx");
-  // Görünür alan: yükseklik --vvh, üst --vv-top (bottom-nav.tsx yazar); klavye açıkken alt güvenli alan payı yok
+  // Görünür alan: yükseklik --vvh, üst --vv-top (bottom-nav.tsx yazar); alt menünün üstünde biter (--assistant-nav:
+  // alt menü + alt güvenli alan, klavye açıkken 0); alttaki güvenli alan payı alt menünün içinde
   for (const cls of [
     "max-lg:inset-x-0",
     // Karaoke şeridi (--alarm-h) varken onun altından başlar
     "max-lg:top-[calc(var(--vv-top,0px)+var(--alarm-h,0px))]",
     "max-lg:bottom-auto",
-    "max-lg:h-[calc(var(--vvh,100dvh)-var(--alarm-h,0px))]",
+    "max-lg:h-[calc(var(--vvh,100dvh)-var(--alarm-h,0px)-var(--assistant-nav,0px))]",
     "max-lg:pt-[env(safe-area-inset-top)]",
     "max-lg:pr-[env(safe-area-inset-right)]",
-    "max-lg:pb-[env(safe-area-inset-bottom)]",
     "max-lg:pl-[env(safe-area-inset-left)]",
-    "max-lg:in-data-[keyboard=open]:pb-0",
+    // Göz yormasın: sayfa zemini, başlıkta ve yazı kutusunun üstünde çizgi yok
+    "max-lg:bg-background",
+    "max-lg:border-b-0",
+    "max-lg:border-t-0",
   ]) {
     assert.ok(w.includes(cls), cls);
   }
-  // Sayfa alt menünün (mobile-nav) ve Fab'ın (z-30) üstünde; açıkken düğme yok, kapalıyken klavye açıksa gizli
+  assert.ok(!w.includes("max-lg:pb-[env(safe-area-inset-bottom)]"), "alt güvenli alan alt menünün içinde");
+  const css = read("src/app/globals.css");
+  assert.match(css, /--assistant-nav: var\(--mobile-nav-space\);/);
+  assert.match(css, /html\[data-keyboard="open"\] \[data-component="app-shell"\] \{\s*--assistant-nav: 0px;/);
+  // Sayfa alt menünün (mobile-nav) ve Fab'ın (z-30) üstünde
   assert.match(w, /no-print fixed z-\[60\]/);
-  assert.match(w, /\{!open \? \(\s*<button/);
-  assert.match(w, /lg:right-6 in-data-\[keyboard=open\]:hidden/);
+  // Telefonda yüzen düğme hiç çizilmez: yalnız açık değilken VE masaüstündeyken; sınıfta da telefonda gizli
+  assert.match(w, /\{!open && !sheet \? \(\s*<button/);
+  const trigger = w.slice(w.indexOf("{!open && !sheet ? ("), w.indexOf("</button>", w.indexOf("{!open && !sheet ? (")));
+  assert.match(trigger, /max-lg:hidden/);
+  assert.doesNotMatch(trigger, /useHideOnScrollDown|data-hidden|max-lg:data-hidden/);
+  assert.doesNotMatch(w, /useHideOnScrollDown/);
+  // Soru hafif zeminli düz blok, yanıt düz metin: balon yok (sağa yaslı, köşesi kesik kabarcık kalmadı)
+  assert.doesNotMatch(w, /rounded-br-md|justify-end/);
+  assert.match(w, /data-turn="user" className="rounded-xl bg-panel [^"]*max-lg:text-\[16px\] max-lg:leading-7 dark:text-ink-soft/);
+  // Yanıt telefonda 16 px, geniş satır; koyu temada saf beyaz yerine bir ton kısık (parlama yok)
+  assert.match(w, /<MarkdownView\s[^/]*?max-lg:text-\[16px\] max-lg:leading-7 dark:text-ink-soft/);
   // Yazı kutusu 16 px (iOS yakınlaştırmasın), 44 px; gönder ve durdur 44 px; başlık düğmeleri telefonda 44 px; çipler 44 px
   assert.match(w, /min-h-11 min-w-0 flex-1 resize-none [^"]*text-\[16px\]/);
   assert.equal((w.match(/inline-flex size-11 shrink-0/g) ?? []).length, 2);
   assert.match(w, /max-lg:size-11 pointer-coarse:size-11/);
-  assert.match(w, /max-lg:h-11 pointer-coarse:h-11/);
+  assert.match(w, /max-lg:h-11 [^"]*pointer-coarse:h-11/);
   assert.match(w, /max-lg:min-h-11 [^"]*pointer-coarse:min-h-11/);
   assert.match(w, /<span className="max-\[400px\]:sr-only">Yeni sohbet<\/span>/);
-  // Telefonda açılışta yazı alanına değil başlığa odak (klavye kendiliğinden açılmaz, alt güvenli alan düşmez);
-  // aria-modal ve odak tuzağı yalnız telefonda, masaüstünde Esc belge düzeyinde
+  // Telefonda açılışta yazı alanına değil başlığa odak (klavye kendiliğinden açılmaz)
   assert.match(w, /sheet \? headingRef\.current\?\.focus\(\) : inputRef\.current\?\.focus\(\)/);
-  assert.match(w, /aria-modal=\{sheet \|\| undefined\}/);
-  assert.match(w, /if \(e\.key !== "Tab" \|\| !sheet \|\| !panelRef\.current\) return;/);
+  // Alt menü görünür ve kullanılabilir: sayfa modal değil, arkadaki içerik ve üst çubuk etkisiz (inert)
+  assert.doesNotMatch(w, /aria-modal=\{/);
+  assert.doesNotMatch(w, /e\.key !== "Tab"/);
+  assert.match(w, /document\.getElementById\("icerik"\), document\.querySelector<HTMLElement>\("\[data-mobile-top\]"\)/);
+  assert.match(w, /el\.inert = true/);
+  assert.match(read("src/components/panel/sidebar.tsx"), /<header className="no-print sticky [^"]*lg:hidden" data-mobile-top>/);
+  // Başka ekrana geçince telefondaki sayfa kapanır
+  assert.match(w, /if \(sheet\) setAssistantOpen\(false\);/);
   assert.match(w, /document\.addEventListener\("keydown", onKey\)/);
   // Günün son sorusu: kapı sınır metnini gösterir; kapalı ya da sınırdaysa her açılışta yeniden sorulur
   assert.match(w, /state: "cap", message: capText\(g\.cap\)/);
-  assert.match(w, /if \(!gate \|\| gate\.state !== "on"\) void loadGate\(\);/);
+  assert.match(w, /if \(!gateRef\.current \|\| gateRef\.current\.state !== "on"\) void loadGate\(\);/);
   // Klavye açılınca son mesaj görünür kalsın
   assert.match(w, /vv\.addEventListener\("resize", onResize\)/);
   const nav = code("src/components/panel/bottom-nav.tsx");
   assert.match(nav, /root\.style\.setProperty\("--vv-top", `\$\{Math\.max\(0, Math\.round\(vv\.offsetTop\)\)\}px`\)/);
   assert.match(nav, /root\.style\.removeProperty\("--vv-top"\)/);
-  // Onay kartı: telefonda etiket üstte değer altta, yazılar bir boy büyük, düğmeler ≥ 44 px (dokunmatikte 48)
+  // Onay kartı: telefonda etiket üstte değer altta, yazılar bir boy büyük, düğmeler ≥ 44 px (dokunmatikte 48); sakin:
+  // telefonda çizgi bir ton açık, rozetler gri
   const c = code("src/components/panel/assistant/op-card.tsx");
   assert.match(c, /max-sm:grid-cols-1/);
   assert.match(c, /max-sm:text-\[14px\]/);
+  assert.match(c, /max-lg:ring-line /);
+  assert.match(c, /<Badge tone="gray">/);
   assert.equal((c.match(/min-h-11/g) ?? []).length, 3);
   assert.equal((c.match(/pointer-coarse:min-h-12/g) ?? []).length, 2);
   assert.match(c, /grid grid-cols-2 gap-2/);
+});
+
+test("alt menü: Asistan sekmesi yalnız yöneticide ve asistan açıkken; açıp kapatır, açıkken etkin, başka öğe kapatır", () => {
+  const nav = code("src/components/panel/bottom-nav.tsx");
+  assert.match(nav, /const items = bottomNavFor\(role, \{ assistant \}\);/);
+  assert.match(nav, /onClick=\{toggleAssistant\}/);
+  assert.match(nav, /aria-expanded=\{assistantOpen\}/);
+  assert.match(nav, /onClick=\{\(\) => setAssistantOpen\(false\)\}/);
+  assert.match(nav, /bottomNavActive\(items, pathname, menuOpen, assistant && assistantOpen\)/);
+  // Kenar çubuğu yalnız yöneticide geçirir; düzen sunucuda asistanın kapısıyla aynı koşulu verir
+  assert.match(code("src/components/panel/sidebar.tsx"), /assistant=\{isAdmin && assistant\}/);
+  assert.match(code("src/app/panel/layout.tsx"), /assistant=\{user\.role === "admin" && assistantEnabled\(\)\}/);
 });

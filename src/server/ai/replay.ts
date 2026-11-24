@@ -271,6 +271,11 @@ export function replayAssistantMessage(params: AssistantParams) {
       ...lines,
       "",
       "Gerçek yanıt için ortamda `ANTHROPIC_API_KEY` gerekir. Ekranlar: [Genel bakış](/panel), [Tedarikçiler](/panel/tedarikciler).",
+      // Takip önerileri (src/lib/assistant/followups.ts): ekranın çipleri anahtarsız da denensin
+      "<takip>",
+      "- Dünkü gün sonu nasıldı?",
+      "- Bu ay nasıl gidiyor?",
+      "</takip>",
     ].join("\n");
     return scriptedMessage({ content: [{ type: "text", text, citations: null }], stop_reason: "end_turn", usage });
   }
