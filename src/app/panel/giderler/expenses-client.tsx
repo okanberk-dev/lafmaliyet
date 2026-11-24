@@ -52,6 +52,7 @@ import {
   type MonthChoice,
 } from "./history-text";
 import { Disclosure, HistoryList, MonthChoiceField, RangeBadge, ResumeDialog, StopDialog } from "./history-ui";
+import { rentSaveFields } from "./rent-fields";
 
 /** Sunucu eyleminin sonucu (server/actions/util ActionResult ile aynı biçim) */
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -1186,11 +1187,9 @@ function FixedDialog({
         period: f.period,
         amount,
         note: f.note,
-        vatRate,
-        // Resmi kira yalnız kira bölümünde; başka bölüme taşınınca silinir. Şirkete kirada stopaj yok: resmi kira gitmez
-        officialAmount: f.section === "kira" && landlordType !== "sirket" && official && official > 0 ? official : null,
-        officialBasis: f.section === "kira" && landlordType !== "sirket" && official && official > 0 ? f.basis : null,
-        landlordType,
+        // Kira alanları (rentSaveFields): resmi kira yalnız kira bölümünde (başka bölüme taşınınca silinir); ev sahibi türü
+        // kalemin KDV seçimini ve kayıtlı resmi kirayı ezmez (şirkette motor resmi kirayı saymaz)
+        ...rentSaveFields({ section: f.section, landlord: f.landlord, vatRate: f.vatRate, official, basis: f.basis }),
         prorate,
         // Seçim yoksa (tek şube) şube değişmez
         ...(branches.options.length > 1 ? { branchId: f.branch || null } : {}),
@@ -1367,7 +1366,9 @@ function FixedDialog({
             label="Ev sahibi"
             htmlFor="fx-landlord"
             tip="Şahsa kira: KDV yok, stopaj %20 resmi kiradan (muhtasarla ödenir; resmi kira yoksa tutardan, ödemeden kesilir). Şirkete kira: faturalı, %20 KDV, stopaj yok. Seçilmezse KDV aşağıdaki seçimden, stopaj Vergi'deki profilden."
-            hint={LANDLORD_TYPES.find((t) => t.value === f.landlord)?.hint ?? "Seçilmedi: KDV ve stopaj eski kuralla."}
+            hint={`${LANDLORD_TYPES.find((t) => t.value === f.landlord)?.hint ?? "Seçilmedi: KDV ve stopaj eski kuralla."}${
+              landlordType === "sirket" && officialGross ? ` Kayıtlı resmi kira (${money(official ?? 0)}) saklanır; şirkette stopaja girmez, şahsa dönülünce yine kullanılır.` : ""
+            }`}
           >
             <Select id="fx-landlord" value={f.landlord} onChange={(e) => setF({ ...f, landlord: e.target.value as LandlordType | "" })}>
               <option value="">Seçilmedi</option>

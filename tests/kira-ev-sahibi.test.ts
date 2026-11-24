@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { rentSaveFields } from "../src/app/panel/giderler/rent-fields";
 import { planInputFromModel } from "../src/lib/cash-plan";
 import { createModel, stopajKey } from "../src/lib/calc/engine";
 import { alerts } from "../src/lib/calc/insights";
@@ -148,4 +149,31 @@ test("Ödemeler: 'Sabit giderlerden ekle', izleme ve tutarsızlık denetimi ev s
   }
   const loader = read("src/server/data/fixed-reminders.ts");
   for (const c of ["landlordType", "officialAmount", "officialBasis"]) assert.match(loader, new RegExp(`${c}: s\\.fixedExpenses\\.${c}`), c);
+});
+
+test("ev sahibi türü seçmek kayıtlı resmi kirayı ve KDV seçimini silmez; tür geri alınınca eski davranış döner", () => {
+  // İnceleme bulgusu 7: Tuzla'nın kirası (resmi 100.000 brüt) yanlışlıkla Şirket seçilip kaydedilince resmi kira siliniyor,
+  // Şahıs / Şirket seçimi kalemin KDV'sini 0 / 0,2 diye eziyordu. Motor türe uymayan alanları zaten saymaz
+  const stored = { section: "kira" as const, vatRate: null, official: 100_000, basis: "brut" as const };
+  const sirket = rentSaveFields({ ...stored, landlord: "sirket" });
+  assert.equal(sirket.landlordType, "sirket");
+  assert.equal(sirket.officialAmount, 100_000, "şirket: resmi kira saklı kalır (stopaja girmez: officialRentGross)");
+  assert.equal(sirket.officialBasis, "brut");
+  assert.equal(sirket.vatRate, 0.2, "şirket: kalemin KDV seçimi (bölümün varsayılanı) yazılır, türün oranı değil");
+  // Motor şirkette resmi kirayı saymaz: stopaj satırı yok, KDV %20
+  const m = createModel(withKira({ landlordType: "sirket", officialAmount: sirket.officialAmount, officialBasis: sirket.officialBasis, vatRate: sirket.vatRate }));
+  assert.equal(m.pnlMonth("2026-11").cells.get(stopajKey(kira.id)), undefined, "şirkette stopaj satırı yok");
+  // Şahsa geri dönülünce resmi kira yine stopajın kaynağı
+  const back = rentSaveFields({ ...stored, official: sirket.officialAmount, landlord: "sahis" });
+  assert.equal(back.officialAmount, 100_000);
+  close(createModel(withKira({ ...back, prorate: false })).pnlMonth("2026-11").cells.get(stopajKey(kira.id))!.value!, 20_000, "şahıs: stopaj resmi kiradan");
+  // Sahibin KDV seçimi (%10) ezilmez; tür kaldırılınca o oran geçerli
+  const sahis = rentSaveFields({ ...stored, vatRate: 0.1, landlord: "sahis" });
+  assert.equal(sahis.vatRate, 0.1, "şahıs: kalemin KDV seçimi saklı (nakit planı yine KDV'siz öder: fixedVatRate)");
+  assert.equal(fixedVatRate({ section: "kira", vatRate: sahis.vatRate, landlordType: "sahis" }), 0);
+  assert.equal(rentSaveFields({ ...stored, vatRate: 0.1, landlord: "" }).vatRate, 0.1, "tür yok: kalemin oranı");
+  assert.equal(rentSaveFields({ ...stored, landlord: "" }).vatRate, 0.2, "tür yok, seçim yok: bölümün varsayılanı %20 (0 değil)");
+  // Kira dışı bölümde resmi kira ve tür gitmez (bugünkü kural)
+  const genel = rentSaveFields({ ...stored, section: "genel", landlord: "sahis" });
+  assert.deepEqual([genel.officialAmount, genel.officialBasis, genel.landlordType], [null, null, null]);
 });

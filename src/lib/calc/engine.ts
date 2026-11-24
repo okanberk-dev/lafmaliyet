@@ -2975,7 +2975,8 @@ export function createModel(ds: Dataset) {
           add({
             key: stopajKey(fe.id),
             fixedId: fe.id,
-            label: allFixed.filter((f) => f.officialAmount).length > 1 ? `${fe.name.toLocaleUpperCase("tr-TR")} STOPAJI` : "KİRA STOPAJI",
+            // Şirkete kirada saklı resmi kira stopaja girmez (officialRentGross): ad yalnız stopajlı kalemler sayılarak
+            label: allFixed.filter((f) => officialRentGross(f, 0.2) !== null).length > 1 ? `${fe.name.toLocaleUpperCase("tr-TR")} STOPAJI` : "KİRA STOPAJI",
             kind: "auto",
             editable: true,
             hint: "Resmi (sözleşmedeki) brüt kira × kira stopajı oranı (%20); net girildiyse brüt = net ÷ 0,8. Sabit giderler'de kira kaleminin resmi kirasından. Muhtasarla izleyen ayın 26'sında ödenir (Ödemeler ve nakit planı).",
