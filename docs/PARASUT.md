@@ -28,12 +28,16 @@ adımın arasını uzatmayın.
    *“Paraşüt Kullanıcısıyım”* seçeneğiyle başvurun (kendi firmamız için; *“İş Ortağı Olmak İstiyorum”* değil).
    Uygulama hemen oluşur, onay beklenmez. **Uygulama adı** Paraşüt'te görünür; “L'Affogato Panel” gibi anlaşılır bir
    ad verin.
-2. **Dönüş adresini yazın.** Başvuruda *dönüş adresi* (redirect URI) diye bir kutu var. İçine **tam olarak** şunu
-   yapıştırın; başında ya da sonunda boşluk, sonunda eğik çizgi olmasın:
+2. **Başvuru formunu doldurun.** *Talep Oluşturulan Müşteri No (Company ID)* listesinden L'Affogato'nun şirketini
+   seçin. *Redirect URL* kutusunun başında `https://` sabit yazar; kutuya **tam olarak** şunu yapıştırın (başında ya da
+   sonunda boşluk, sonunda eğik çizgi olmasın; ikinci adres eklemeyin, sonradan değiştirilemez):
 
    ```
-   https://ladmin.laffogato.net/panel/parasut/baglan/geri
+   ladmin.laffogato.net/panel/parasut/baglan/geri
    ```
+
+   Böylece kayıtlı adres `https://ladmin.laffogato.net/panel/parasut/baglan/geri` olur. *Paraşüt bağlantısı nereden
+   yapılacak?* sorusunda **“Bir sunucudan” (confidential client)** seçili kalsın; panel client_secret'ı sunucuda tutar.
 
    Panelde **Ayarlar › Paraşüt entegrasyonu → Kurulum** kartı da aynı adresi yazar; oradan kopyalayabilirsiniz.
 3. **İki değeri not edin.** DevHub size bir **client_id** ve bir **client_secret** verir. client_secret bir şifre
@@ -61,6 +65,12 @@ adımın arasını uzatmayın.
 - *“Paraşüt hesabını bağla”ya basınca Paraşüt hata sayfası açılıyor:* Vercel'deki `PARASUT_CLIENT_ID` hâlâ eskisi
   olabilir ya da 5. adımdan sonra Redeploy yapılmamıştır. Ya da DevHub'daki dönüş adresi yukarıdakiyle harfi harfine
   aynı değildir.
+- *“Paraşüt keşif belgesi okunamadı (HTTP 403, …/.well-known/openid-configuration)”:* Paraşüt'ün önündeki Cloudflare
+  bu belgeyi sunuculardan gelen isteğe kapatıyor (yetki ve belirteç adresleri açık). Panel bu durumda Keycloak'ın
+  standart adreslerine kendiliğinden döner; Vercel'de ayrıca `PARASUT_AUTHORIZE_URL` ve `PARASUT_TOKEN_URL` tanımlı
+  (aşağıdaki tablo), keşif hiç denenmez.
+- *Hesap bağlanmadan “Bağlantıyı dene”: “Paraşüt eski kullanıcı adı ve parola yöntemini artık kabul etmiyor (Client
+  authentication failed …)”:* beklenen durum. 5. adımdan sonra eski yöntem yeni client_id ile çalışmaz; 6. adımı yapın.
 - *Bağlandı ama eşitleme “yetkiniz yok” (403) diyor:* 4. adımdaki **Uygulama Entegrasyonları** izni kapalı.
 - *5. adımı yaptım, 6. adımı yapamadım:* sabah eşitlemesi “yeniden bağlayın” der; 6. adımı yapınca düzelir. Acil
   geri dönmek isterseniz `PARASUT_CLIENT_ID` / `PARASUT_CLIENT_SECRET`'a eski değerleri geri yazıp Redeploy edin
@@ -82,7 +92,7 @@ Vercel → lafmaliyet → Settings → Environment Variables, Production:
 | `PARASUT_REDIRECT_URI` | (isteğe bağlı) DevHub'a kaydedilen dönüş adresi; boşsa `APP_URL` + `/panel/parasut/baglan/geri` |
 | `PARASUT_ISSUER` | (isteğe bağlı) Kimlik sunucusu; varsayılan `https://id.parasut.com/realms/parasut` |
 | `PARASUT_SCOPE` | (isteğe bağlı) İstenen izinler; varsayılan `openid offline_access` |
-| `PARASUT_AUTHORIZE_URL`, `PARASUT_TOKEN_URL` | (isteğe bağlı) Keşif belgesi okunamazsa uçları elle vermek için |
+| `PARASUT_AUTHORIZE_URL`, `PARASUT_TOKEN_URL` | (isteğe bağlı) Uçları elle vermek için; ikisi de tanımlıysa keşif belgesi okunmaz. **Canlıda tanımlı** (24.11.2026): `https://id.parasut.com/realms/parasut/protocol/openid-connect/auth` ve `…/token`, çünkü Cloudflare keşif belgesini sunuculara 403 ile kapatıyor. Silinirse panel aynı standart uçlara kendiliğinden döner |
 | `PARASUT_BASE_URL` | (isteğe bağlı) Veri API'si; varsayılan `https://api.parasut.com` |
 | `CRON_SECRET` | Günlük işin anahtarı: `openssl rand -hex 32` |
 
@@ -104,7 +114,10 @@ der.
 - **Kimlik:** OAuth 2.0 **Authorization Code + PKCE** (S256), kimlik sunucusu `https://id.parasut.com/realms/parasut`. Yetki adresi
   ve belirteç adresi koda yazılmaz: `{issuer}/.well-known/openid-configuration` keşif belgesinden okunur ve 6 saat
   bellekte tutulur (`src/server/parasut/oidc.ts`; saf kurallar ve güvenlik denetimleri `src/lib/parasut/oidc.ts`).
-  Keşif belgesi yalnız **https** ve yayıncıyla **aynı alan adındaki** uçları kabul eder.
+  Keşif belgesi yalnız **https** ve yayıncıyla **aynı alan adındaki** uçları kabul eder. Belge okunamazsa (id.parasut.com
+  önündeki Cloudflare `.well-known` isteğini sunuculardan 403 ile engelliyor; 24 Kasım 2026'da Vercel'den görüldü) ve
+  yayıncı bir Keycloak alanıysa (`/realms/<ad>`) standart uçlar kullanılır: `{issuer}/protocol/openid-connect/auth` ve
+  `…/token` (`keycloakEndpoints`). Canlıda bu iki adres ayrıca `PARASUT_AUTHORIZE_URL` / `PARASUT_TOKEN_URL` ile verili.
   Yetkilendirme bir kez tarayıcıdan yapılır (`/panel/parasut/baglan` → Paraşüt onayı → `/panel/parasut/baglan/geri`,
   `src/server/parasut/connect.ts`); `state` ve `code_verifier` 10 dakika geçerli, tek kullanımlık ve şifreli durur.
   Dönen `refresh_token` **30 gün** geçerlidir ve her eşitlemede yenilenir (her yenilemede yenisi döner, hemen
