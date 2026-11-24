@@ -293,7 +293,8 @@ export function branchScopeIds(scope: BranchScope, known: readonly BranchRow[]):
 
 /**
  * Elle girilmiş Gelir-gider hücrelerinden şube görünümünde kalanlar (pnl_entries şubesiz, işletmenin tutarlarıdır):
- * - `manual:*` (su, doğalgaz, harici…) işletme geneli gider gibi her şubede görünür;
+ * - `manual:*` (su, doğalgaz, harici…) işletme genelidir: şube görünümünde kâra girmez, "İşletme geneli payı (bilgi)"
+ *   satırının toplamındadır (Faz 5; su litresinin fiyatı için de okunur);
  * - `fixed:` / `stopaj:` yalnız şubenin ya da işletme genelinin kalemiyse (silinmiş kalemin girişi işletme geneli);
  * - `personnel:*`, `commission:pos`, `stock:*` işletmenin toplamıdır: şubede hesaplanan değer geçer.
  */
@@ -345,10 +346,11 @@ export function monthWriteNote(scope: BranchScope, known: readonly BranchRow[]):
 export function branchViewNote(b: { name: string; kind: BranchKind }): { title: string; text: string } {
   const [what, to, of] = b.kind === "online" ? ["kanal", "kanala", "kanalın"] : ["şube", "şubeye", "şubenin"];
   return {
-    title: `${b.name} seçili: yalnız bu ${what} ve işletme geneli giderler`,
+    title: `${b.name} seçili: yalnız bu ${what}; işletme geneli giderler bilgi olarak`,
     text:
       `Ciro, kasa, personel ve bu ${to} bağlı giderler yalnız bu ${of}. İşletme geneli giderler (şubesi seçilmemiş harcama ve sabit ` +
-      `gider, Gelir-gider'e elle yazılan tutarlar) her şubede sayılır; faturalar ortaktır. Mal maliyeti ${of} satışından reçeteye göre ` +
-      `(stok devri işletme genelinde). İşletmenin toplamı ve sayımlı mal maliyeti için soldan Tümü'nü seçin.`,
+      `gider, Gelir-gider'e elle yazılan tutarlar, komisyon faturaları) ${of} kârına girmez: "İşletme geneli payı (bilgi)" satırında ` +
+      `toplamı görünür, Tümü'de bir kez sayılır (bölüştürme yok). Mal maliyeti ${of} satışından reçeteye göre (faturalar ve stok devri ` +
+      `işletme genelinde). İşletmenin toplamı, sayımlı mal maliyeti ve elle yazılan tutarlar için soldan Tümü'nü seçin.`,
   };
 }

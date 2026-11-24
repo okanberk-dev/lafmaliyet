@@ -45,6 +45,12 @@ export interface Settings {
   isciIssizlik: number;
   isverenSgk: number;
   isverenIssizlik: number;
+  /**
+   * Personel yemek kartı (Faz 5, sahibin kararı 11): yemek kartı işaretli kişinin günlük tutarı (₺) ve ayda kaç gün
+   * (Ayarlar). İşveren maliyetine günlük × gün eklenir, brütleştirilmez (engine.ts staffCost; docs/VARDIYA.md › Maaş satırının bağlantısı ve part-time)
+   */
+  mealCardDaily: number;
+  mealCardDays: number;
   /** true: fire payı ambalaj (bardak, kapak, peçete) hariç malzemelere uygulanır */
   fireExcludesPackaging: boolean;
   /** Su + buz birim maliyeti (₺/litre). null = su faturasından otomatik hesapla */
@@ -341,10 +347,43 @@ export interface Staff extends MonthRange {
   /** Taban değer: ilk maaş değişikliğinden (StaffVersion) önceki aylarda geçerli */
   netSalary: number;
   extras: number;
+  /**
+   * Yemek kartı (Faz 5): işaretliyse işveren maliyetine Ayarlar'daki günlük tutar × gün eklenir, brütleştirilmez. Taban
+   * değer (sürümle değişir). Yoksa false
+   */
+  mealCard?: boolean;
+  /**
+   * Çalışma biçimi (Faz 5, sahibin kararı 12): tam zamanlı (net maaştan brüt, SGK) ya da part-time (günlük ücret ×
+   * Vardiya'da çağrıldığı gün; brütleştirme yok). Yoksa tam zamanlı
+   */
+  kind?: StaffKind;
+  /** Part-time: işletmenin çağrılan gün başına maliyeti (₺; SGK brütleştirmesi yok). Taban değer (sürümle değişir) */
+  dailyWage?: number;
+  /**
+   * Vardiya bağlantısı (Faz 5): panel hesabı (yalnız yönetici bağlar; bir hesap tek satıra). Vardiya anahtarı "u:<id>".
+   * Kendiliğinden bağlanmaz
+   */
+  userId?: number | null;
+  /** Hesabı olmayan Vardiya kişisi: "n:<küçük harfli ad>" (src/lib/vardiya.ts nameRef); userId varken boş */
+  personRef?: string | null;
   /** Geriye dönük uyumluluk: endMonth boş ya da bu aydan sonra → true. Hesap aralığa (MonthRange) bakar. */
   active: boolean;
   /** Çalıştığı şube (docs/SUBE.md): maaşı o şubenin gideri */
   branchId?: string;
+}
+
+/** Kira kaleminin ev sahibi (Faz 5): şahıs ya da şirket */
+export type LandlordType = "sahis" | "sirket";
+
+/** Tam zamanlı ya da part-time (Faz 5) */
+export type StaffKind = "full_time" | "part_time";
+
+/** Vardiya planında bir çalışma günü (shifts.kind = work): şube, kişinin anahtarı ("u:<id>" / "n:<ad>"), gün */
+export interface ShiftDay {
+  branchId: string;
+  personRef: string;
+  /** YYYY-MM-DD */
+  date: string;
 }
 
 /** "fromMonth ayından itibaren" geçerli maaş (bir sonraki sürüme kadar) */
@@ -354,6 +393,10 @@ export interface StaffVersion {
   fromMonth: string;
   netSalary: number;
   extras: number;
+  /** Yemek kartı (yoksa false) */
+  mealCard?: boolean;
+  /** Part-time günlük ücret (yoksa 0) */
+  dailyWage?: number;
 }
 
 export interface FixedExpense extends MonthRange {
@@ -377,6 +420,12 @@ export interface FixedExpense extends MonthRange {
   officialAmount?: number | null;
   /** Resmi kira brüt mü net mi; net ise brüt = net ÷ (1 − stopaj oranı) */
   officialBasis?: "brut" | "net" | null;
+  /**
+   * Kira: ev sahibi şahıs mı şirket mi (Faz 5; boş = bugünkü kural). Şahıs: KDV yok, stopaj %20 resmi kiradan (resmi
+   * kira yoksa tutardan, ödemeden kesilir). Şirket: %20 KDV, stopaj yok, belgesi fatura (src/lib/constants.ts
+   * fixedVatRate, engine.ts officialRentGross, cash-plan.ts, tax/muhtasar.ts)
+   */
+  landlordType?: LandlordType | null;
   /** Açık güne göre oranla (varsayılan); false: biten ayda tam ay (süren ayda bugüne kadarki pay) */
   prorate?: boolean;
   /** Şube; null = işletme geneli (docs/SUBE.md, dalga 3) */
@@ -536,6 +585,11 @@ export interface Dataset {
   staff: Staff[];
   /** Maaş değişiklikleri (yoksa her ay taban değer) */
   staffVersions?: StaffVersion[];
+  /**
+   * Vardiya planının çalışma günleri (shifts.kind = work; Faz 5): part-time kişinin çağrıldığı gün bunlardan sayılır
+   * (şube + kişi anahtarı + ay). Şube seçiliyken o şubenin. Yoksa boş
+   */
+  shifts?: ShiftDay[];
   fixedExpenses: FixedExpense[];
   /** Sabit gider tutar değişiklikleri (yoksa her ay taban değer) */
   fixedExpenseVersions?: FixedExpenseVersion[];
@@ -574,6 +628,11 @@ export interface Dataset {
    * mal maliyeti şubenin satışından reçeteye göredir (faturalar ve sayım işletme geneli; engine.ts stockFlow)
    */
   branchView?: { id: string; name: string; kind: "fiziksel" | "online" } | null;
+  /**
+   * Şube görünümünde "Tümü"nün ay bilgisi (Faz 5; src/server/data/dataset.ts): işletme geneli giderlerin günü
+   * işletmeninkidir, "İşletme geneli payı (bilgi)" satırı Tümü'nün saydığı tutarı gösterir. "Tümü"de ve testlerde yok
+   */
+  companyMonths?: Month[];
   /**
    * "Tümü" birden çok kasanın (etkin fiziksel şubenin) toplamı: Gelir-gider'in aylık ciro ve açık gün hücresi yazılmaz
    * (src/lib/branches.ts monthTotalsLocked). Yoksa yazılır

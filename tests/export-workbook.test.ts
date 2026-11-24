@@ -283,7 +283,10 @@ test("Personel: TOPLAM satırı ve Oranlar bloğu (Excel Personel B4:B7, satır 
   close(val(t.getCell(5)), 11117.64706, "işveren SGK");
   close(val(t.getCell(6)), 1411.764706, "işveren işsizlik");
   close(val(t.getCell(7)), 0, "yemek / yol");
-  close(val(t.getCell(8)), 83117.64706, "toplam işveren maliyeti");
+  // Yemek kartı ve part-time ücreti sütunları (Faz 5): Excel'in verisinde ikisi de yok
+  close(val(t.getCell(8)), 0, "yemek kartı");
+  close(val(t.getCell(9)), 0, "part-time ücreti");
+  close(val(t.getCell(10)), 83117.64706, "toplam işveren maliyeti");
   close(val(rowOf(ws, "İşçi SGK primi payı").getCell(2)), 0.14, "B4");
   close(val(rowOf(ws, "İşçi işsizlik sigortası payı").getCell(2)), 0.01, "B5");
   close(val(rowOf(ws, "İşveren SGK primi").getCell(2)), 0.1575, "B6");

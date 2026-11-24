@@ -89,7 +89,8 @@ export function scenarioBreakEvenItems(model: Model, month: string): BreakdownRo
       amount: p.total,
       href: "/panel/personel",
     },
-    ...model.fixedInMonth(month).map((fe) => {
+    // Şube seçiliyken işletme geneli kalemler başabaşa girmez (model.fixedOwnInMonth)
+    ...model.fixedOwnInMonth(month).map((fe) => {
       const sub = periodText(fe, st.acikGun);
       return { key: `fixed:${fe.id}`, label: fe.name, ...(sub ? { sub } : {}), amount: fixedMonthly(fe, st), href: "/panel/giderler" };
     }),

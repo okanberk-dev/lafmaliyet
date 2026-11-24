@@ -28,6 +28,7 @@ export type ImpactData = Pick<
   | "pnlEntries"
   | "staff"
   | "staffVersions"
+  | "shifts"
   | "fixedExpenses"
   | "fixedExpenseVersions"
   | "currentMonth"
@@ -79,6 +80,8 @@ export function impactData(model: Model): ImpactData {
     ...(ds.waterSales ? { waterSales: companyWaterSales(ds.waterSales, model.water.month) } : {}),
     staff: ds.staff,
     staffVersions: ds.staffVersions,
+    // Part-time'ın çağrıldığı günler (Faz 5): yemek kartı tutarı önizlemede de günle (geçen aydan bu aya)
+    shifts: (ds.shifts ?? []).filter((d) => d.date.slice(0, 7) >= from),
     fixedExpenses: ds.fixedExpenses,
     fixedExpenseVersions: ds.fixedExpenseVersions,
     currentMonth: cur,

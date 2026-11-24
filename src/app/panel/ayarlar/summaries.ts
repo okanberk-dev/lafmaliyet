@@ -5,10 +5,10 @@ import type { WaterCost } from "@/lib/calc/engine";
 import type { Settings } from "@/lib/calc/types";
 import { num, tl } from "@/lib/format";
 
-import { MEASURE_FIELDS, RATE_FIELDS, shown, type FieldDef, type NumericKey } from "./fields";
+import { MEASURE_FIELDS, PERSONNEL_FIELDS, RATE_FIELDS, shown, type FieldDef, type NumericKey } from "./fields";
 import { waterSource } from "./water-text";
 
-const field = (key: NumericKey): FieldDef => [...RATE_FIELDS, ...MEASURE_FIELDS].find((f) => f.key === key)!;
+const field = (key: NumericKey): FieldDef => [...RATE_FIELDS, ...MEASURE_FIELDS, ...PERSONNEL_FIELDS].find((f) => f.key === key)!;
 /** Bölünmez boşluk: dar ekranda "püre 30" bir satırda, "ml" alt satırda kalmasın */
 const NBSP = "\u00a0";
 const value = (s: Settings, key: NumericKey) => shown(Number(s[key]), field(key));
@@ -33,6 +33,11 @@ export function measuresSummary(s: Settings): string {
     `${num(Number(s.acikGun))} açık gün`,
     ...(assumptions ? [`${num(assumptions)} varsayım`] : []),
   ].join(" · ");
+}
+
+/** Personel yemek kartı: "330 ₺ × 26 gün = 8.580 ₺ / kişi" */
+export function mealCardSummary(s: Settings): string {
+  return `${tl(Number(s.mealCardDaily))} × ${num(Number(s.mealCardDays))} gün = ${tl(Number(s.mealCardDaily) * Number(s.mealCardDays))} / kişi`;
 }
 
 /**

@@ -6,10 +6,13 @@ import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
 import { staffDeleteBlockers } from "@/server/actions/costs";
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
+import { staffWarnings } from "@/lib/calc/personnel";
 import { requireAdmin } from "@/server/auth/dal";
 import { currentPhysicalBranch } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
+import { loadStaffLinkOptions } from "@/server/data/staff-links";
+import type { StaffLinkOptions } from "@/lib/staff-link";
 
 import { choiceMonths, closedDataMonths, staffDeleteBlocker } from "../giderler/history-text";
 import { StaffEditor, type StaffBranches, type StaffRow } from "./staff-editor";
@@ -51,7 +54,16 @@ export default function StaffPage() {
 async function StaffContent() {
   await requireAdmin();
   // Şube seçiliyken o şubenin personeli (docs/SUBE.md); yeni kişi seçili şubeye ("Tümü"de Tuzla) eklenir
-  const [model, all, here] = await Promise.all([loadModel(), listBranches(), currentPhysicalBranch()]);
+  const [model, all, here, links] = await Promise.all([
+    loadModel(),
+    listBranches(),
+    currentPhysicalBranch(),
+    // Vardiya / hesap seçicisi (Faz 5): okunamazsa seçici yalnız var olan bağlantıyı gösterir
+    loadStaffLinkOptions().catch((e) => {
+      console.error("[personel] bağlantı seçenekleri", e);
+      return { users: [], names: [] } satisfies StaffLinkOptions;
+    }),
+  ]);
   const physical = all.filter((b) => b.active && b.kind === "fiziksel");
   const branches: StaffBranches = { options: physical.map((b) => ({ id: b.id, name: b.name })), fallback: here.id };
   const nameOf = new Map(all.map((b) => [b.id, b.name]));
@@ -66,6 +78,12 @@ async function StaffContent() {
     name: x.name,
     netSalary: x.netSalary,
     extras: x.extras,
+    mealCard: x.mealCard ?? false,
+    kind: x.kind ?? "full_time",
+    dailyWage: x.dailyWage ?? 0,
+    userId: x.userId ?? null,
+    personRef: x.personRef ?? null,
+    calledDays: x.cost.calledDays,
     startMonth: x.startMonth ?? null,
     endMonth: x.endMonth ?? null,
     status: x.status,
@@ -87,6 +105,8 @@ async function StaffContent() {
         closed={closed}
         months={choiceMonths(cur, model.firstDataMonth)}
         branches={branches}
+        links={links}
+        warnings={staffWarnings(model, cur)}
       />
     </>
   );

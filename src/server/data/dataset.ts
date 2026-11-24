@@ -80,6 +80,7 @@ async function readDataset(): Promise<Dataset> {
     expenseCategories,
     expenseEntries,
     wasteEntries,
+    shiftDays,
     siteSales,
     coverageRows,
     till,
@@ -143,6 +144,11 @@ async function readDataset(): Promise<Dataset> {
       })
       .from(s.wasteEntries)
       .where(branchWhere(s.wasteEntries.branchId, scope)),
+    // Vardiya'nın çalışma günleri (Faz 5): part-time kişinin çağrıldığı gün (şubenin; "Tümü"de bütün şubelerin)
+    db
+      .select({ branchId: s.shifts.branchId, personRef: s.shifts.personRef, date: s.shifts.date })
+      .from(s.shifts)
+      .where(and(eq(s.shifts.kind, "work"), branchWhere(s.shifts.branchId, scope))),
     // laffogato.net online satışları (ay başına kayıt; docs/SITE-SATIS.md): işletmenin cirosu, şubelerin değil. "Tümü"de
     // ve online kanal seçiliyken okunur; fiziksel şube seçiliyken yok
     scope === ALL_BRANCHES || branch?.kind === "online" ? loadSiteSales() : Promise.resolve([]),
@@ -250,27 +256,37 @@ async function readDataset(): Promise<Dataset> {
     const first = rows.reduce<TillRow | null>((a, r) => (a === null || r.date < a.date ? r : a), null);
     return first?.branchId ? tillOpenedOn(branches.find((b) => b.id === first.branchId)) : null;
   };
-  const rowsOf = (ids: readonly string[]) => till.filter((r) => r.branchId !== undefined && ids.includes(r.branchId));
-  const branchIds = [...new Set([...months.map((m) => m.branchId), ...till.flatMap((r) => (r.branchId ? [r.branchId] : []))])];
-  const monthInfo =
-    branch !== null
-      ? resolveMonths(entriesOf(months), monthsOf(till, opened))
-      : resolveBranchMonths(
-          branchIds.map((id) => ({
-            branchId: id,
-            entries: entriesOf(months.filter((m) => m.branchId === id)),
-            tills: monthsOf(
-              rowsOf([id]),
-              tillOpenedOn(branches.find((b) => b.id === id)),
-              closedFor(closedRows.filter((r) => closedRowApplies(r, id)), rowsOf([id])),
-            ),
-          })),
-          monthsOf(till, openedOfFirst(till)),
-          (ids) => {
-            const rows = rowsOf(ids);
-            return monthsOf(rows, openedOfFirst(rows));
-          },
-        );
+  /** "Tümü"nün ay bilgisi: şubeler kendi elle yazdığı ve kasasıyla çözülür, sonra toplanır (yukarıdaki kural) */
+  const allBranchMonths = (ms: typeof months, rowsAll: TillRow[], closedAll: string[]) => {
+    const rowsOf = (ids: readonly string[]) => rowsAll.filter((r) => r.branchId !== undefined && ids.includes(r.branchId));
+    const branchIds = [...new Set([...ms.map((m) => m.branchId), ...rowsAll.flatMap((r) => (r.branchId ? [r.branchId] : []))])];
+    return resolveBranchMonths(
+      branchIds.map((id) => ({
+        branchId: id,
+        entries: entriesOf(ms.filter((m) => m.branchId === id)),
+        tills: monthsOf(
+          rowsOf([id]),
+          tillOpenedOn(branches.find((b) => b.id === id)),
+          closedFor(closedRows.filter((r) => closedRowApplies(r, id)), rowsOf([id])),
+        ),
+      })),
+      monthsOf(rowsAll, openedOfFirst(rowsAll), closedAll),
+      (ids) => {
+        const rows = rowsOf(ids);
+        return monthsOf(rows, openedOfFirst(rows), closedAll);
+      },
+    );
+  };
+  const monthInfo = branch !== null ? resolveMonths(entriesOf(months), monthsOf(till, opened)) : allBranchMonths(months, till, closedPast);
+  // Şube seçiliyken "Tümü"nün ay bilgisi (Faz 5, sahibin kararı 4): işletme geneli giderler işletmenin günüyle
+  // oranlanır, "İşletme geneli payı (bilgi)" satırı Tümü'nün saydığı tutarı gösterir (engine.ts companyDays)
+  const companyMonths =
+    branch === null
+      ? null
+      : await withBranchScope(ALL_BRANCHES, async () => {
+          const [allMonths, allTill] = await Promise.all([db.select().from(s.months).orderBy(asc(s.months.month)), tillRows()]);
+          return allBranchMonths(allMonths, allTill, closedFor(closedRows, allTill));
+        });
 
   return {
     settings,
@@ -316,6 +332,7 @@ async function readDataset(): Promise<Dataset> {
     })),
     recipeItems,
     months: monthInfo,
+    ...(companyMonths ? { companyMonths } : {}),
     salesLines: sales.salesLines,
     ...(sales.lafposSales ? { lafposSales: sales.lafposSales } : {}),
     ...(lafposIkram ? { lafposIkram } : {}),
@@ -363,12 +380,18 @@ async function readDataset(): Promise<Dataset> {
       name: x.name,
       netSalary: x.netSalary,
       extras: x.extras,
+      mealCard: x.mealCard,
+      kind: x.kind,
+      dailyWage: x.dailyWage,
+      userId: x.userId,
+      personRef: x.personRef,
       active: activeFromRange(x.endMonth, currentMonth),
       startMonth: x.startMonth,
       endMonth: x.endMonth,
       branchId: x.branchId,
     })),
-    staffVersions: staffVersions.map((v) => ({ id: v.id, staffId: v.staffId, fromMonth: v.fromMonth, netSalary: v.netSalary, extras: v.extras })),
+    shifts: shiftDays,
+    staffVersions: staffVersions.map((v) => ({ id: v.id, staffId: v.staffId, fromMonth: v.fromMonth, netSalary: v.netSalary, extras: v.extras, mealCard: v.mealCard, dailyWage: v.dailyWage })),
     fixedExpenses: fixedInScope.map((f) => ({
       id: f.id,
       name: f.name,
@@ -385,6 +408,7 @@ async function readDataset(): Promise<Dataset> {
       taxWithholding: f.taxWithholding,
       officialAmount: f.officialAmount,
       officialBasis: f.officialBasis,
+      landlordType: f.landlordType,
       prorate: f.prorate,
       branchId: f.branchId,
     })),

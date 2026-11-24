@@ -578,7 +578,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
               // Toplam paranteze alınır: (A + B − C) ÷ oran ÷ gün (dökümle aynı)
               info={`Zarar etmemek için gereken günlük ciro (KDV dahil): ${d.breakEven.expensesTotal || d.onlineCover ? "(" : ""}standart aylık sabit gider ${tl(d.fixedStandardTotal)}${
                 d.breakEven.expensesTotal ? ` + her ay girilen harcamalar ${tl(d.breakEven.expensesTotal)}` : ""
-              }${d.onlineCover ? ` − ${monthLabel(d.onlineCover.month)} laffogato.net online satışının brüt kârı ${tl(d.onlineCover.grossProfit)}` : ""}${d.breakEven.expensesTotal || d.onlineCover ? ")" : ""} ÷ ${d.refMonth ? `${monthLabel(d.refMonth)} ` : ""}brüt kâr oranı (brüt kâr ÷ ciro, ${pct(d.grossRatio)}) ÷ ayda açık gün (${st.acikGun}, Ayarlar).`}
+              }${d.onlineCover ? ` − ${monthLabel(d.onlineCover.month)} laffogato.net online satışının brüt kârı ${tl(d.onlineCover.grossProfit)}` : ""}${d.breakEven.expensesTotal || d.onlineCover ? ")" : ""} ÷ ${d.refMonth ? `${monthLabel(d.refMonth)} ` : ""}brüt kâr oranı (brüt kâr ÷ ciro, ${pct(d.grossRatio)}) ÷ ayda açık gün (${st.acikGun}, Ayarlar).${d.breakEven.shared > 0 ? ` İşletme geneli sabit giderler (${tl(d.breakEven.shared)}) şubenin başabaşına girmez; Tümü'de bir kez sayılır.` : ""}`}
               value={<CountUp value={d.breakEvenDaily} />}
               sub={
                 showBreakEven ? (

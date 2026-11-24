@@ -3,12 +3,13 @@
  * vergisi, asgari ücret gelir ve damga vergisi istisnası, ücret damgası, prime esas kazancın alt ve üst sınırı; SGK
  * oranları kural tablosundan (yasal 2026: işçi %14 + %1, işveren %19,75 + %2; `sgk.isverenOran` elle değişebilir).
  * Ayarlar'daki oranlar yalnız Gelir-gider'de kalır (engine.ts staffCost değişmez, K17). Aylar tam sayılır (personelin
- * giriş günü panelde yok). Ek ödemeler vergisiz, brütleştirilmeden maliyete eklenir. Saf modül;
+ * giriş günü panelde yok). Ek ödemeler ve yemek kartı (Faz 5) vergisiz, brütleştirilmeden maliyete eklenir; part-time'ın
+ * günlük ücreti (Faz 5) brütleştirilmez, bütün maliyeti ek ödeme gibi girer (brüt 0, asgari ücret desteği yok). Saf modül;
  * tests/vergi-bordro.test.ts.
  */
 
 import type { Model } from "../calc/engine";
-import { inRange, shiftMonth } from "../calc/engine";
+import { inRange, isPartTime, mealCardOf, shiftMonth, staffCost } from "../calc/engine";
 
 import { type Bracket, r2, rulesFor, type TaxOverrides, type TaxYearRules } from "./rules";
 import type { TaxSettings } from "./settings";
@@ -298,7 +299,7 @@ export function firstSalesMonth(model: Pick<Model, "monthInfo">): string | null 
  * `sgk.isverenOran` uygulanmış; Ayarlar'daki SGK oranları kullanılmaz.
  */
 export function taxPayrollFromModel(
-  model: Pick<Model, "ds" | "monthInfo" | "staffAtMonth">,
+  model: Pick<Model, "ds" | "monthInfo" | "staffAtMonth"> & Partial<Pick<Model, "calledDaysOf">>,
   year: number,
   settings: Pick<TaxSettings, "periodStart" | "minWageSupport" | "overrides">,
   overrides: TaxOverrides = settings.overrides,
@@ -314,7 +315,15 @@ export function taxPayrollFromModel(
     for (let m = first; m <= `${year}-12`; m = shiftMonth(m, 1)) {
       if (!inRange(s, m)) continue;
       const at = model.staffAtMonth(s, m);
-      months.push({ month: m, net: at.netSalary, extras: at.extras });
+      if (isPartTime(at)) {
+        // Part-time (Faz 5): günlük ücret işletmenin gün başına maliyetidir, yasal bordroda brütleştirilmez; ayın Vardiya
+        // planındaki bütün çalışma günleriyle (ücret + yemek kartı + ek) ek ödeme gibi maliyete. Bağlantısızsa yalnız ek
+        const days = model.calledDaysOf?.(at, m, { planned: true }) ?? null;
+        months.push({ month: m, net: 0, extras: staffCost(at, model.ds.settings, { calledDays: days }).total });
+        continue;
+      }
+      // Yemek kartı (Faz 5) ek ödeme gibi: vergisiz, brütleştirilmeden maliyete (Ayarlar'daki günlük tutar × gün)
+      months.push({ month: m, net: at.netSalary, extras: at.extras + mealCardOf(at, model.ds.settings) });
     }
     return { id: s.id, name: s.name, months };
   });

@@ -55,12 +55,15 @@ export function FixedReconcile({ f }: { f: FixedMonthBreakdown }) {
       .slice(0, 3)
       .map((x) => x.label)
       .join(", ") + (xs.length > 3 ? "…" : "");
+  // Şube seçiliyken işletme geneli giderler (Faz 5): şubenin kârına girmez, bilgi olarak toplamı
+  const shared = f.shared > 0 ? ` İşletme geneli payı (bilgi): ${tl(f.shared)}; şubenin kârına girmez, Tümü'de bir kez sayılır.` : "";
   if (!proration && !overrides && !manual && !expenses && !listShare) {
     return (
       <p className="text-xs leading-5 text-ink-mute">
         Sabit giderler bu ay standart aylık tutarlarla düşüldü ({tl(f.standard)}, Excel Panel ile aynı temel).
         {water ? ` SU GİDERİ (${tl(f.waterExcluded)}) reçetelerde su + buz maliyeti olarak sayıldığı için burada ikinci kez düşülmedi.` : ""}
         {f.basis === "standard" ? " Açık gün sayısı girilmedi; girilince sabit giderler açık gün oranıyla hesaplanır." : ""}
+        {shared}
       </p>
     );
   }
@@ -96,6 +99,7 @@ export function FixedReconcile({ f }: { f: FixedMonthBreakdown }) {
           SU GİDERİ ({tl(f.waterExcluded)}) reçetelerde su + buz maliyeti olarak sayıldığı için burada ikinci kez düşülmedi.
         </p>
       ) : null}
+      {shared ? <p className="pb-1 text-xs leading-5 text-ink-mute">{shared.trim()}</p> : null}
     </Well>
   );
 }

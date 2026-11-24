@@ -56,7 +56,7 @@ kasa kaynağı uyar. Her değişiklik işlem geçmişine yazılır.
 | Stok ve sayım | Şube başına ayrı; tutarlılık ve FIFO değerleme şube içinde (faturalar bölünmez: şube tutarları aynı faturaları paylaşır, toplamları Tümü'yle tutmaz; stok kartında not, denetim 13 Kasım ST-06) |
 
 "Tümü" seçiliyken işletme geneli giderler toplama girer ama şube kırılımında ayrı sütunda durur: bir şubenin
-kârı ortak giderle şişirilmez.
+kârı ortak giderle şişirilmez. **Kuruldu (Faz 5, 23 Kasım 2026; sahibin kararı 4):** aşağıda "İşletme geneli payı".
 
 ## Seçici
 
@@ -138,13 +138,30 @@ Soldan bir şube seçilince Genel bakış ve Gelir-gider **o şubenin** gelir-gi
 | Ürün ve reçete maliyeti | Şubeye göre değişmez. Su + buz litre fiyatı işletme geneli: SU GİDERİ (işletmenin faturası) ÷ **bütün şubelerin** ve laffogato.net'in o ayki su + buz litresi (`Dataset.waterSales`, `engine.ts` `waterUsage`; denetim 21 Kasım #4). Önceden fatura yalnız seçili şubenin litresine bölünüyordu: Marina seçiliyken Americano M'nin maliyeti şişiyor, iki şubenin mal maliyeti faturayı iki kez sayıyordu |
 | Mal alımı (faturalar) | Bilgi olarak görünür, "işletme geneli"; mal maliyetine girmez |
 | Personel | Şubeye bağlı kişilerin maaşı (Maaşlar'da kişinin **Şube** alanı) |
-| Sabit gider | Şubeye bağlı kalemler + işletme geneli kalemler (Sabit giderler'de kalemin **Şube** alanı; boş = işletme geneli). Var olan kalemler işletme geneli kaldı |
-| Harcama | Şubenin + şubesi boş (işletme geneli) harcamalar |
-| Elle yazılan Gelir-gider hücresi | `manual:*` her şubede; `fixed:` / `stopaj:` kalemin şubesindeyse; **devir, personel, POS komisyonu** işletmenin toplamıdır, şubede yazılamaz (ekran kilitler, sunucu reddeder) |
+| Sabit gider | Şubeye bağlı kalemler (Sabit giderler'de kalemin **Şube** alanı). İşletme geneli kalemler (şube boş; var olan kalemler işletme geneli kaldı) Faz 5'ten beri **şubenin kârına girmez**: "İşletme geneli payı (bilgi)" satırında |
+| Harcama | Şubenin kendi harcamaları. Şubesi boş (işletme geneli) harcamalar ve kategoriye bağlı faturalar bilgi satırında (Faz 5) |
+| Komisyon faturaları | İşletme geneli (faturalar şubeye bölünmez): bilgi satırında (Faz 5); banka POS komisyonu şubenin kartıyla |
+| Elle yazılan Gelir-gider hücresi | `manual:*` işletme genelidir: şubede satırı yok, bilgi satırında sayılır, Tümü'de yazılır (Faz 5); `fixed:` / `stopaj:` kalemin şubesindeyse; **devir, personel, POS komisyonu** işletmenin toplamıdır, şubede yazılamaz (ekran kilitler, sunucu reddeder) |
 | "Sayım yok" uyarısı | Yok: şubenin mal maliyeti sayıma bağlı değil |
 
 "Tümü" eskisi gibi: sayımlı mal maliyeti (sayım, sayım aralığına dağıtım, tahmin). Aynı ayın aynı malzemesi iki şubede
 sayıldıysa işletmenin stoğu toplamdır (birimi farklıysa ilk satırın birimine çevrilir).
+
+### İşletme geneli payı (Faz 5, 23 Kasım 2026)
+
+Sahibin kararı 4: şube ekranlarında işletme geneli giderler **açıkça etiketli bir bilgi satırı**dır, şubenin kârını
+düşürmez; "Tümü" onları bir kez sayar. Bölüştürme anahtarı seçilmedi: satır işletme genelinin dönemdeki **tamamını**
+gösterir, şubeye düşen bir pay değildir (`src/lib/calc/engine.ts` pnlMonth › `shared`, `SHARED_KEY`; testleri
+`tests/isletme-geneli.test.ts`, `tests/isletme-geneli-db.test.ts`).
+
+| Ne | Kural |
+|---|---|
+| İşletme geneli sayılanlar | Şubesi boş sabit gider ve stopajı, silinmiş kalemin elle girişi, Gelir-gider'e elle yazılan hücreler (`manual:*`; pnl_entries şubesiz), şubesi boş harcamalar ve harcama kategorisine bağlı faturalar, komisyon faturaları (Komisyon kategorisi) |
+| Tek şube seçiliyken | Bunlar bölümlere, giderlere ve kâra girmez; satırları çizilmez. Gelir-gider'de "İşletme geneli (bilgi)" bölümünde tek satır **İŞLETME GENELİ PAYI (bilgi)**: ipucu "Şubenin kârına girmez; Tümü'de bir kez sayılır", hücresi en büyük kalemleri yazar. Genel bakış'ın sabit gider dökümü de onları saymaz, altında bilgi olarak toplamı yazar. Harcama satırı şubenin kendi kayıtlarıdır |
+| Günü | İşletmenin günü: şube seçiliyken veri kümesi "Tümü"nün ay bilgisini de taşır (`Dataset.companyMonths`), oranlanan kalem Tümü'deki tutarla görünür (Marina'nın açılış ayında da) |
+| "Tümü" | Bölümlerinde bir kez sayılır (bilgi satırı yok). Gelir-gider'de birden çok fiziksel şube açıkken **Şube kırılımı** kartı (`src/lib/branch-breakdown.ts`): her şubenin ciro, gider ve kârı kendi görünümündeki gibi; fiziksel şube olmayan kanala (online) yazılan sabit gider, harcama ve personel varsa kendi sütununda (`PnlMonthCalc.byBranch`; tek kanalsa onun adıyla, yoksa **Diğer kanallar**; inceleme bulgusu 5: önceden farka düşüyordu); **İşletme geneli** sütunu (giderler: işletme geneli toplamı; ciro: laffogato.net online satışı) ve Tümü. Kabul: Marina kârı + Tuzla kârı − işletme geneli = Tümü kârı. Mal maliyetinin yöntemi farklı olduğundan (Tümü sayımla, şube satışından reçeteye göre) ya da Tümü'de elle yazılan personel / POS komisyonu şubeye bölünmediğinden kalan fark kartın altında yazılır; hiçbir gider iki kez sayılmaz |
+| Başabaş ve "Excel temeli" | Şube seçiliyken kârın temeliyle aynı kalemlerden (inceleme bulgusu 3, sahibin kararı 4): standart sabit gider (`fixedStandardTotalFor`), Genel bakış'ın "Excel temeli" net kârı, başabaş (`breakEvenOf`; Genel bakış, Sabit giderler, Analiz) ve her ay girilen harcamaların payı (`monthlyExpensePlan`: şubenin kendi kayıtları) işletme genelini saymaz. Dışarıda kalan toplam (`fixedStandardSharedFor`) Sabit giderler'in özetinde ve başabaş dökümünde bilgi olarak yazılır. "Tümü" değişmez |
+| Değişmeyenler | İşletme geneli ekranlar (Vergi, Nakit planı, Tutarlılık, Excel'e aktar) hep "Tümü"yle okur |
 
 **Stok sayımı sayfası** hep bir şubenin sayımını gösterir ([Yazarken hangi şube](#yazarken-hangi-şube)). Gelir-giderde ("Tümü") elle yazılan devir
 ("SONRAKİ AYA DEVREDEN MAL", "ÖNCEKİ AYDAN DEVİR") işletme genelidir ve şubenin modeli onu görmez; sayfa bu hücreleri

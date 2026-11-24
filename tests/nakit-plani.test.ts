@@ -2064,6 +2064,34 @@ test("VG-02: sabit tutarlı 'Kira stopajı' muhtasarın yalnız kira stopajını
   ]);
 });
 
+test("Faz 5: şahsa kira (ev sahibi türü) KDV'siz ödenir, stopaj resmi kiradan tek kaynak; 'Kira stopajı' hatırlatıcısı iki kez saymaz", () => {
+  // Kalemin KDV'si boş (bölümün varsayılanı %20): ev sahibi şahıs olunca nakit planı KDV eklemez (192.000 değil 160.000)
+  const sahis = createModel({
+    ...ds,
+    fixedExpenses: ds.fixedExpenses.map((f) => (f.name === "Kira" ? { ...f, vatRate: null, landlordType: "sahis" as const, officialAmount: 100_000, officialBasis: "brut" as const } : f)),
+  });
+  const kiraId = ds.fixedExpenses.find((f) => f.name === "Kira")!.id;
+  const base = planInputFromModel(sahis, TODAY);
+  const kiraFixed = base.months["2026-11"].fixed.find((f) => f.id === kiraId)!;
+  assert.deepEqual([kiraFixed.vatRate, kiraFixed.withholding ?? null], [0, null]);
+  const plan = buildCashPlan(input({ months: base.months, fixedNames: base.fixedNames }));
+  close(plan.estimates.find((e) => e.key === `fixed:${kiraId}`)!.monthly, 160_000, "aylık ödenen (KDV yok)");
+  // Stopaj muhtasarda resmi brütten 20.000: hatırlatıcı yokken ayrı satır, sabit tutarlı hatırlatıcı varken onun yerine
+  const feed = taxFeed(sahis);
+  const muhtasarLines = (p: CashPlan) => taxLines(p).filter((l) => l.key.startsWith("vergi:muhtasar")).map((l) => [l.title, l.date, l.amount]);
+  assert.deepEqual(muhtasarLines(buildCashPlan(input({ tax: feed }))).slice(0, 2), [
+    ["Muhtasar – kira stopajı (Eylül)", "2026-10-26", 20_000],
+    ["Muhtasar (Eylül)", "2026-10-26", 974.38],
+  ]);
+  const kira = rem({ title: "Kira stopajı", kind: "vergi", amount: 20_000, dueDate: "2026-10-26" });
+  const p = buildCashPlan(input({ tax: feed, reminders: [kira] }));
+  assert.deepEqual(muhtasarLines(p), [
+    ["Muhtasar (Eylül)", "2026-10-26", 974.38],
+    ["Muhtasar (Ekim)", "2026-11-26", 974.38],
+  ]);
+  assert.deepEqual(lineAt(p, `reminder:${kira.id}@`).map((l) => l.amount), [20_000, 20_000], "stopaj bir kez: hatırlatıcının satırında");
+});
+
 test("VG-02: 'Muhtasar' hatırlatıcısında muhtasarın tamamı varken 'Kira stopajı' iki kez sayılmaz; 26 Kasım toplamı takvimdeki gibi", () => {
   // Muhasebecinin Ekim muhtasarı 21.000 + damga 939,70 (kira stopajı dahil) "Muhtasar" hatırlatıcısına da yazıldı
   const today = "2026-11-13";

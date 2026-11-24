@@ -9,7 +9,7 @@
 
 import ExcelJS from "exceljs";
 
-import { fixedMonthly, inRange, monthOfDate, shiftMonth, yearMonths, type Model, type PnlMonthCalc } from "../../../lib/calc/engine";
+import { fixedMonthly, inRange, isPartTime, monthOfDate, shiftMonth, yearMonths, type Model, type PnlMonthCalc } from "../../../lib/calc/engine";
 import { layerText } from "../../../lib/calc/fifo";
 import { consistency, dashboard, forecastMonthOf, missingRevenueText, openBalance, soldWithOnline, stockVatSummary, yearTotals } from "../../../lib/calc/insights";
 import type { FixedPeriod, MonthField, MonthRange } from "../../../lib/calc/types";
@@ -508,7 +508,7 @@ function sheetPurpose(name: string, label: string, kasa: MonthKasa["both"] = "Mo
     "Aylık Alımlar": "Excel Faturalar'daki 'Aylara göre net alımlar': kategori × ay (formülle Faturalar'dan), TOPLAM ve mal maliyeti.",
     Vergi: "Tahmin, beyanname değil: vergiye göre gelir-gider (yalnız geliri mali belgeden gelen aylar), kafenin geçici ve kurumlar vergisine katkısı, vergi takvimi, kullanılan kurallar ve sahibin notları.",
     "Cari hareketleri": "Tedarikçilere elle girilen faturasız alımlar, eski borçlar ve ödemeler: tutar, şekil, ödemenin sayıldığı kalemler ve bağlandığı fatura. Ödeme gider değildir.",
-    Personel: `${label} maaş + SGK işveren maliyeti, TOPLAM, SGK oranları; varsa başlangıç / bitiş ve maaş geçmişi.`,
+    Personel: `${label} maaş + SGK işveren maliyeti, yemek kartı ve part-time ücreti (sütunlar toplamı verir), TOPLAM, SGK oranları; varsa başlangıç / bitiş ve maaş geçmişi.`,
     "Sabit Giderler": `${label} sabit giderleri, aylık karşılığı ve TOPLAM; tek seferlik yatırımlar; varsa tutar geçmişi.`,
     Ayarlar: "KDV, komisyon, kartlı satış, hedef maliyet, fire, gramajlar, SGK oranları ve su + buz birim maliyeti.",
     "Satış Kayıtları": "Yedek: bütün ayların POS satış satırları (eşleşen ürün, hizmet, not).",
@@ -1524,16 +1524,46 @@ function addPeople(wb: ExcelJS.Workbook, model: Model, month: string, investment
       { key: "e", header: "İşveren SGK primi", width: 15, fmt: MONEY0 },
       { key: "u", header: "İşveren işsizlik primi", width: 15, fmt: MONEY0 },
       { key: "x", header: "Yemek / yol / prim", width: 15, fmt: MONEY0 },
+      { key: "meal", header: "Yemek kartı", width: 13, fmt: MONEY0 },
+      { key: "pt", header: "Part-time ücreti (günlük × gün)", width: 17, fmt: MONEY0 },
       { key: "t", header: "Toplam işveren maliyeti", width: 18, fmt: MONEY0 },
     ],
     { y: 1, landscape: true },
   );
   headerRow(pr, colHeaders(pr));
+  // Satır tutar (inceleme bulgusu 4): brüt + işveren payları + ek + yemek kartı + part-time ücreti = toplam (brüt = net +
+  // kesintiler). Part-time kişinin neti ve brütü yok (SGK brütleştirmesi yok); yemek kartı brütleştirilmez
   for (const r of pers.rows) {
-    pr.addRow({ n: r.staff.name, net: r.staff.netSalary, g: r.gross, d: r.deductions, e: r.employerSgk, u: r.employerUnemployment, x: r.staff.extras, t: r.total });
+    const part = isPartTime(r.staff);
+    const row = pr.addRow({
+      n: r.staff.name,
+      net: part ? 0 : r.staff.netSalary,
+      g: r.gross,
+      d: r.deductions,
+      e: r.employerSgk,
+      u: r.employerUnemployment,
+      x: r.staff.extras,
+      meal: r.mealCard,
+      pt: r.dailyWages,
+      t: r.total,
+    });
+    if (part) row.getCell("pt").note = r.calledDays === null ? "Vardiya bağlantısı yok: çağrıldığı gün bilinmiyor, ücret sayılmadı." : `${num(r.calledDays)} gün × ${tl(r.staff.dailyWage ?? 0)}`;
+    if (r.mealCard) row.getCell("meal").note = `${num(r.mealDays)} gün × ${tl(st.mealCardDaily)}`;
   }
   if (!pers.rows.length) pr.addRow({ n: `${label} ayında çalışan personel yok.` });
-  const pt = pr.addRow({ n: "TOPLAM", net: pers.net, g: pers.gross, d: pers.deductions, e: pers.employerSgk, u: pers.employerUnemployment, x: pers.extras, t: pers.total });
+  // TOPLAM herkesi kapsar: tam zamanlıların net, brüt ve payları; ek ve yemek kartı part-time dahil
+  const pt = pr.addRow({
+    n: "TOPLAM",
+    net: pers.net,
+    g: pers.gross,
+    d: pers.deductions,
+    e: pers.employerSgk,
+    u: pers.employerUnemployment,
+    x: pers.extras + pers.partTime.extras,
+    meal: pers.mealCard + pers.partTime.mealCard,
+    pt: pers.partTime.wages,
+    t: pers.total,
+  });
   pt.font = { bold: true };
   pr.addRow({});
   // Excel Personel B4:B7
