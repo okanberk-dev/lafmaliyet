@@ -13,7 +13,8 @@ import { cancelAssistantOp, confirmAssistantOp, undoAssistantOp } from "@/server
  * Panel asistanının onay kartı (docs/ASISTAN-ISLEMLER.md › Onay kartı). İçeriği sunucu yazar: ne yapılacak, eski → yeni,
  * şube, gün, kişi / ürün, dış etki rozetleri, geri alma yolu, son geçerlilik (10 dk). Kullanıcı Onayla'ya basmadan
  * hiçbir şey değişmez; Onayla ve Vazgeç sunucu eylemleridir (src/server/actions/assistant-ops.ts). Sonuçtan sonra
- * yalnız katalogda geri alması tanımlı işlemde "Geri al" (1 saat). Tek sütun; düğmeler en az 44 px, yerleri sabit.
+ * yalnız katalogda geri alması tanımlı işlemde "Geri al" (1 saat). Tek sütun; düğmeler en az 44 px (dokunmatikte 48),
+ * yerleri sabit. Telefonda (sm altı) yazılar bir boy büyük, satırların etiketi üstte değeri altta: 360 px'te de okunur.
  */
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Istanbul" });
@@ -64,12 +65,12 @@ export function OpCardView({ state, onChange }: { state: OpCardState; onChange: 
   const shownStatus = expired ? "expired" : status;
 
   return (
-    <section aria-label={`Onay kartı: ${card.title}`} className="rounded-2xl bg-surface p-3.5 text-[13.5px] leading-5 ring-1 ring-line-strong" data-component="op-card">
+    <section aria-label={`Onay kartı: ${card.title}`} className="rounded-2xl bg-surface p-3.5 text-[13.5px] leading-5 ring-1 ring-line-strong max-sm:p-3 max-sm:text-[14px]" data-component="op-card">
       <div className="flex items-start gap-2">
         <ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand-500" aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <h3 className="text-[14px] leading-5 font-semibold break-words text-ink">{card.title}</h3>
-          <p className="mt-0.5 text-[12px] leading-4 break-words text-ink-mute">
+          <h3 className="text-[14px] leading-5 font-semibold break-words text-ink max-sm:text-[15px] max-sm:leading-[22px]">{card.title}</h3>
+          <p className="mt-0.5 text-[12px] leading-4 break-words text-ink-mute max-sm:text-[13px] max-sm:leading-[18px]">
             {[card.subject, card.branch, card.day].filter(Boolean).join(" · ")}
           </p>
         </div>
@@ -77,8 +78,9 @@ export function OpCardView({ state, onChange }: { state: OpCardState; onChange: 
 
       <dl className="mt-3 space-y-1.5">
         {card.lines.map((l, i) => (
-          <div key={i} className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] gap-2">
-            <dt className="text-ink-mute">{l.label}</dt>
+          // Dar telefonda (360–390 px) etiket üstte, değer altta: "eski → yeni" sıkışmasın
+          <div key={i} className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] gap-2 max-sm:grid-cols-1 max-sm:gap-0 max-sm:border-b max-sm:border-line max-sm:pb-1.5 max-sm:last:border-b-0 max-sm:last:pb-0">
+            <dt className="text-ink-mute max-sm:text-[12.5px] max-sm:leading-[18px]">{l.label}</dt>
             <dd className={cn("break-words", l.danger ? "font-medium text-bad-ink" : "text-ink")}>
               {l.from === undefined || l.from === null ? (
                 l.to
@@ -106,7 +108,7 @@ export function OpCardView({ state, onChange }: { state: OpCardState; onChange: 
       ) : null}
 
       {card.warnings.length ? (
-        <ul className="mt-3 space-y-1 text-[12.5px] leading-[18px] text-warn-ink dark:text-brass-300">
+        <ul className="mt-3 space-y-1 text-[12.5px] leading-[18px] text-warn-ink max-sm:text-[13.5px] max-sm:leading-5 dark:text-brass-300">
           {card.warnings.map((w, i) => (
             <li key={i}>{w}</li>
           ))}
@@ -114,24 +116,24 @@ export function OpCardView({ state, onChange }: { state: OpCardState; onChange: 
       ) : null}
 
       {card.note ? (
-        <p className="mt-3 rounded-lg bg-panel px-2.5 py-1.5 text-[12.5px] leading-[18px] text-ink-soft">
+        <p className="mt-3 rounded-lg bg-panel px-2.5 py-1.5 text-[12.5px] leading-[18px] text-ink-soft max-sm:text-[13.5px] max-sm:leading-5">
           <span className="font-medium">Asistanın notu:</span> {card.note}
         </p>
       ) : null}
 
-      <p className="mt-3 text-[12px] leading-4 text-ink-mute">
+      <p className="mt-3 text-[12px] leading-4 text-ink-mute max-sm:text-[13px] max-sm:leading-[18px]">
         <span className="font-medium text-ink-soft">Geri alma:</span> {card.undo}
       </p>
 
       {pending || status === "running" ? (
         <>
-          <p className="mt-2 text-[12px] leading-4 text-ink-mute">Onaylamadıkça hiçbir şey değişmez · son geçerlilik {time(card.expiresAt)} (10 dk)</p>
+          <p className="mt-2 text-[12px] leading-4 text-ink-mute max-sm:text-[13px] max-sm:leading-[18px]">Onaylamadıkça hiçbir şey değişmez · son geçerlilik {time(card.expiresAt)} (10 dk)</p>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => void run("cancel")}
               disabled={busy !== null || status === "running"}
-              className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-panel px-3 text-[14px] font-medium text-ink ring-1 ring-line-strong hover:bg-panel-deep focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none disabled:opacity-50"
+              className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-panel px-3 text-[14px] font-medium text-ink pointer-coarse:min-h-12 ring-1 ring-line-strong hover:bg-panel-deep focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none disabled:opacity-50"
             >
               <X className="size-4" aria-hidden="true" /> Vazgeç
             </button>
@@ -139,7 +141,7 @@ export function OpCardView({ state, onChange }: { state: OpCardState; onChange: 
               type="button"
               onClick={() => void run("confirm")}
               disabled={busy !== null || status === "running"}
-              className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-primary px-3 text-[14px] font-semibold text-on-primary hover:bg-primary/85 focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-60"
+              className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-primary px-3 pointer-coarse:min-h-12 text-[14px] font-semibold text-on-primary hover:bg-primary/85 focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-60"
             >
               {status === "running" ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Check className="size-4" aria-hidden="true" />}
               {status === "running" ? "İşleniyor…" : "Onayla"}

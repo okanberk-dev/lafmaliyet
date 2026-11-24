@@ -13,7 +13,9 @@ Katman kararları 273 eylemin taramasına dayanıyor; "uygula" denen her eylem k
 
 Şu an çalışan 13 işlem aracı: `urun_tukendi_yap`, `urun_satisa_ac`, `parasut_urun_bagla`, `hatirlatici_ekle`,
 `hatirlatici_odendi`, `fatura_odendi`, `tedarikci_odemesi_ekle`, `hammadde_fiyati_degistir`, `urun_fiyati_degistir`, `kasadan_cikan_ekle`,
-`harcama_ekle`, `zayi_ikram_ekle`, `vardiya_hucre_yaz`. Bunlara ek olarak salt okunur `islem_rehberi` (§ 3).
+`harcama_ekle`, `zayi_ikram_ekle`, `vardiya_hucre_yaz`. Bunlara ek olarak salt okunur `islem_rehberi` (§ 3 ve § 4) ve
+LafPOS ile operasyonun 8 okuma aracı (§ 5.2): `gun_sonu`, `gunluk_satislar`, `lafpos_durumu`, `menu_durumu`, `vardiya`,
+`bugun_ozeti`, `bekleyen_isler`, `stok_tahmini`.
 
 Doğrulanan dayanaklar:
 - **Next sürümü ve refresh():** Next 16.4.6. `refresh()` Route Handler'da ya da Server Action dışında hata fırlatıyor
@@ -30,7 +32,9 @@ Doğrulanan dayanaklar:
 |---|---|
 | Araçların adı, açıklaması, girdi şeması (zod) | `src/lib/assistant/op-specs.ts` |
 | Onay kartının biçimi, durumlar, süreler, rozetler | `src/lib/assistant/ops.ts` |
-| Rehber konuları (`islem_rehberi`) | `src/lib/assistant/guides.ts` |
+| Rehber konuları (`islem_rehberi`): yapılandırılmış girdiler (konu, tür, neden, yol, adımlar, eylemler) | `src/lib/assistant/guides.ts` |
+| LafPOS ve operasyon okuma araçları (saf) | `src/server/ai/assistant/read-tools.ts` |
+| Onların gerçek okuyucuları (yalnız okur) | `src/server/assistant-reads/index.ts` |
 | Sohbetin araçları (kart açar, yazmaz) | `src/server/ai/assistant/op-tools.ts`, bağlanışı `tools.ts` |
 | Önizleme: salt okur, kartı yazar, bayatlığı denetler | `src/server/assistant-ops/preview.ts` (+ `resolve.ts`) |
 | Plan satırı (kart açma) | `src/server/assistant-ops/plan.ts`, `store.ts` |
@@ -40,7 +44,7 @@ Doğrulanan dayanaklar:
 | "Asistan aracılığıyla" bağlamı | `src/server/activity-via.ts` (`runViaAssistant`, `currentVia`) |
 | Kartın ekranı | `src/components/panel/assistant/op-card.tsx` |
 | Tablo | `assistant_ops`, `activity_log.via` (migration `0075_asistan_islemleri`) |
-| Testler | `tests/asistan-islemleri.test.ts` (saf, kaynak taraması), `tests/asistan-islemleri-db.test.ts` (Postgres) |
+| Testler | `tests/asistan-islemleri.test.ts` (saf, kaynak taraması), `tests/asistan-islemleri-db.test.ts` (Postgres); okuma araçları ve rehber `tests/asistan-okuma.test.ts`, `tests/asistan-okuma-db.test.ts` |
 
 ---
 
@@ -150,6 +154,10 @@ Katalogdaki öteki "tamamlanmadı" yanıtları (`saveSupplierDebt` `needs`, `sav
 - Sonuç kartın içinde yazılır (yapıldı, yapılamadı + neden, süresi doldu, vazgeçildi, geri alındı). Kartların durumu
   sekmede saklanır; sonraki sorunun geçmişine "[Onay kartı: … — yapıldı]" satırı gider, asistan sonucu bilir.
 - Rehber yanıtında panel yolu tıklanabilir bağlantıdır.
+- Telefonda (390 ve 360 px) sayfa görünür alana oturur (`--vvh` yüksekliği, `--vv-top` üstü; `bottom-nav.tsx` yazar):
+  klavye açıkken giriş kutusu klavyenin üstünde, güvenli alan üstte, yanlarda ve klavye kapalıyken altta. Sayfa alt
+  menünün ve Fab'ın üstündedir (z-60); kapalıyken düğmenin yeri `--assistant-bottom`. Dokunulan her düğme ≥ 44 px
+  (kartın Onayla / Vazgeç'i dokunmatikte 48 px); kartın satırları dar ekranda etiket üstte, değer altta.
 
 ---
 
@@ -303,8 +311,12 @@ Vardiyada boşaltma silme sayılmaz, hücre değişikliğidir. Ama kullanıcı a
 ## 3) "Rehber" konuları
 
 Asistan bunları yapmaz. "Şu ekrana gidin, şunu yapın" diye yol gösterir, bağlantı verir. Asistanın aracı
-`islem_rehberi` (`src/lib/assistant/guides.ts`) bu bölümün kısa hâlidir: konu, neden, ekran yolu, adımlar; şifre onayı
-isteyende "asistan parola istemez" notu.
+`islem_rehberi` (`src/lib/assistant/guides.ts`) bu bölümün ve § 4'ün yapılandırılmış hâlidir: her girdide kimlik, tür
+(`rehber` ya da `haric`), konu, asistanın neden yapmadığı, ekran yolu, numaralı adımlar, varsa asistanın yapabildiği
+güvenli yol ve kapsadığı eylemler; şifre onayı isteyende "asistan parola istemez" notu. Sistem isteminin kuralı:
+"Yapamadığın ya da riskli bir işlem istenirse rehberi kullan, adımları ver, işlemi kendin yapmaya çalışma". Test
+(`tests/asistan-okuma.test.ts`) her yolun `src/app/panel` altında gerçek bir sayfa, her `#` bölümünün kaynakta bir kimlik
+olduğunu ve bu iki tablodaki her eylemin bir girdide (§ 4'tekilerin `haric` girdide) bulunduğunu denetler.
 
 ### 3.1 Tarayıcıların "uygula" dediği ama indirilenler
 
@@ -361,6 +373,9 @@ isteyende "asistan parola istemez" notu.
 
 ## 4) "Hariç": asistan hiç önermez
 
+Asistan bunları kendiliğinden önermez; kullanıcı açıkça sorarsa `islem_rehberi` yalnız ekranın bağlantısını ve adımları
+verir (türü `haric`).
+
 | Eylem(ler) | Neden |
 |---|---|
 | loginAction, verifyLoginCodeAction, cancelLoginCodeAction, logoutAction, setPasswordWithToken, requestPasswordReset | Oturumsuz giriş ve parola akışları; asistan oturumun içinde çalışır. Çıkış sohbeti koparır. |
@@ -371,7 +386,7 @@ isteyende "asistan parola istemez" notu.
 | disconnectParasut, saveParasutSettings | Gizli anahtar ve entegrasyon ayarı. |
 | updateCashSettings, sendCashTestEmail | Kasa e-posta alıcıları kimin göreceğini belirler (e-postada karaoke ön ödeme bilgisi var); deneme e-postası. |
 | addRecipient, setRecipientActive, deleteRecipient, saveNotificationSettings, sendTestNotification, saveWeeklyEnabled, sendWeeklySample, previewWeekly, previewDigest | Bildirim ayarları ve testleri. Alıcı eklemek veri sızdırma yolu olur. Önizlemeler büyük HTML; okuma araçları zaten daha uygun. |
-| saveCommissionSettings, saveStaffRates, setEmployerSgkRate, saveTaxSettings, saveTaxOverride, saveKarAokeHours (saveKaraokeHours), updatePhotoReading | Sistem geneli oran, kural ve AI maliyet ayarları; geçmiş dahil bütün hesapları etkiler. |
+| saveCommissionSettings, saveStaffRates, setEmployerSgkRate, saveTaxSettings, saveTaxOverride, saveKaraokeHours, updatePhotoReading | Sistem geneli oran, kural ve AI maliyet ayarları; geçmiş dahil bütün hesapları etkiler. |
 | savePushSubscription, deletePushSubscription, sendTestPush | Cihaz ve tarayıcı anahtarları; asistan bilemez. |
 | draftShiftWeekAction | AI içinde AI çağrısı (maliyet). Asistan taslağı kendisi hazırlar ve vardiya_hucre_yaz kartıyla önerir. |
 | requestCashOutChange, requestPhotoRemoval, requestCashCorrection, requestCashDelete, requestLateCashReport, requestClosedDay, requestLateWaste, requestWasteDelete, requestKaraokeTimerDelete, saveStaffSpecialDay, deleteStaffSpecialDay, withdrawStaffRequest | Yalnız personel çağırabiliyor (yöneticide adminDirect ya da "kendisinin değil" hatası). Asistan ileride personele açılırsa bu istekler en güvenli "uygula" adaylarıdır (hiçbir şey yazmaz, onaya gider); yeniden değerlendirilmeli. |
@@ -401,25 +416,32 @@ Okuma araçları onay kartı istemez ve sohbet rotasında doğrudan çalışır:
 
 Panelde bu araçlar çerez yüzünden **seçili şubeye göre** okur; MCP'de "Tümü" okunuyordu. Bu fark araç açıklamasına yazılmalı.
 
-### 5.2 Yeni LafPOS ve operasyon okuma araçları (henüz yok)
+### 5.2 Yeni LafPOS ve operasyon okuma araçları
 
-Aşağıdaki okuma araçlarının hiçbiri henüz yok; asistan bugün § 5.1'deki araçlarla ve `panel_rehberi`,
-`parasut_bekleyenler` ile okur.
+İlk sekizi **var** (`src/server/ai/assistant/read-tools.ts`, okuyucular `src/server/assistant-reads/index.ts`);
+`kasadan_cikanlar`, `zayi_ikram`, `komisyon_kanallari` ve `gunluk_ciro_kiyas` **henüz yok**. Uygulananlarda:
+- Yeni yönetici okuyucu modülü `src/server/data/lafpos-day-end.ts`: salt okunur `loadLafposDayEnd(date, branchId)` (Z, ödeme türleri, Pavo, gönderim sırası,
+  `lafpos_day_ends`'in rapor ve eksikleri) ve kıyas için `loadLafposZTotals` eklendi; `daily-sales.ts`'e şube koşullu
+  `dailyBranchSalesFrom` (gross ve isAddon ile). Var olan okuyucuların imzası değişmedi.
+- Gün sonu ModPOS gününde föy okumaz: "ModPOS günü, kasa_raporlari'na bak" der (Z, fark ve ödemeler orada).
+- İkram ve iptal gerekçesi, vardiya notu, hatırlatıcı notu ve karaoke misafirinin adı okuyucuda atılır; araca gelmez.
+- Okuyucu modülü yalnız izin listesindeki okuyucuları içe aktarır (test); LafPOS yazıcıları yok. Veritabanı testi
+  bütün araçları çalıştırıp hiçbir tablonun satır sayısının değişmediğini denetler.
 
 | Araç | Ne verir | Yeniden kullanılacaklar | Not |
 |---|---|---|---|
-| gun_sonu | Bir gün (en çok 14) için: LafPOS Z, ödeme türleri, kasa zinciri, ikram/ödenmez/zayi, iptaller, Pavo–LafPOS kart karşılaştırması, rapor ile LafPOS farkı, otomatik raporun eksikleri, dün ve geçen haftaya kıyas. ModPOS gününde föy ve kasa raporu. | `src/server/data/lafpos-day.ts` (loadKasaLafpos, loadLafposDayDetail, loadLafposBankPos), `src/lib/lafpos/bank-pos.ts` (pavoView, pavoDiff), `src/server/data/cash-reports.ts` (getCashReport(date,"admin",branch), previousCarryOver), `src/lib/lafpos/diffs.ts`, `src/server/data/lafpos-ikram.ts` (loadDayLafposIkram), `src/server/data/waste.ts` (dayWaste), `src/lib/lafpos/gun-sonu.ts` (dayEndSections, compareDays), `src/server/data/modpos-day.ts` | Ödeme türleri ve lafpos_day_ends satırı için dışa açık okuyucu yok: `loadStoredDay` (`src/server/lafpos/gun-sonu.ts:74`) dışa açık değil. `lafpos-day.ts`'e salt okunur `loadLafposDayEnd(date, branchId)` eklenmeli. "Tümü"de kasa kasa okunur. LafPOS yalnız Marina'dır (`LAFPOS_BRANCH_ID`); geçiş gününden önceki deneme günleri gösterilmez. Gerekçe metinleri ve kişi adları gönderilmez. |
-| gunluk_satislar | LafPOS gün gün ürün satışı: en çok satanlar, tek ürünün gün gün adedi, gün ve hafta günü toplamları, eşleşmeyen adlar, satırlar ile Z karşılaştırması | `src/server/data/daily-sales.ts` dailyProductSalesFrom, `src/lib/lafpos/sales.ts` lafposSalesCountFrom, isLafposDay/branchSwitchDay, `src/lib/waste.ts` productLabel, `lafpos-sales.ts` linesVsZ mantığı | **dailyProductSalesFrom şubeye göre süzmüyor ve deneme günlerini ayırmıyor** (doğrulandı: yalnız tarih koşulu var). Şube parametresi, gross/isAddon ve isLafposDay süzgeci eklenmeli. Bugün dahil edilmez. Aylık soru için urun_karliligi'ye yönlendirir. |
-| lafpos_durumu | Bağlantı sağlığı: rozet, geçiş günü, son gün sonu, retler (400/409), imzasız istekler, gelmeyen günler, eşleşmeyen adlar, isteğe bağlı ay bandı. Onarım rehberi. | `src/server/lafpos/status.ts` loadLafposCard, loadLafposSwitchDay; `src/lib/lafpos/status.ts` lafposCardSummary, rejectionText, LAFPOS_RESEND_HINT; loadModel().lafposSales.months | status.ts'te yazıcı da var (handlePosDay, noteUnverified): izin listesine yalnız iki okuyucu adı girer. Anahtar, imza ve gövde dönmez. 409 onarımı şifre onaylı olduğu için rehberdir. |
-| menu_durumu | Tükendi olanlar (kim, ne zaman), kopuk site bağlantıları, kasaya işlenmeyi bekleyen fiyatlar, günün kasası (LafPOS ya da ModPOS) | `src/server/data/menu-status.ts` soldOutFacts, loadSoldOut; till-scope loadTillScope; `src/server/data/prices.ts` posPendingSummary; `src/lib/lafpos/switch.ts` kasaName | Siteye ağ isteği atılmaz, yerel kopya okunur. Tükendi ve fiyat araçlarının önizlemesi de bunu kullanır. |
-| vardiya | Bugün ya da bir gün kim çalışıyor; bir haftanın planı kişi kişi, saatler, son değişiklik | `src/server/vardiya/store.ts` todayShifts, shiftsOn, loadShiftWeek, loadShiftEntries; `src/lib/vardiya.ts` | vardiya_hucre_yaz önizlemesinin okuyucusu. Not alanı serbest metin. |
-| bugun_ozeti | Bugün ekranının birebir özeti: sıradaki iş, Şimdi, Sonra, Tamamlanan, Bugün kafede | `src/server/data/today.ts` loadToday; `src/app/panel/bugun/logic.ts` dayTasks, splitTasks, daySummary, cafeLines; `src/server/data/branch-day.ts` loadBranchDay; loadStockAlert | `loadBranchDay` ve `loadKiyas` içeride `requireAdmin()` çağırır. Satırların href'i rehber bağlantısı olur. |
-| bekleyen_isler | Zil satırları, kişinin hatırlatıcıları, Onaylar'da bekleyenler, geç raporlar | `src/server/actions/notifications.ts` loadPanelNotifications (refresh yok, rotada güvenli), `src/server/data/user-reminders.ts`, `src/server/staff-requests/core.ts` countPendingByKind, `src/server/data/cash-late.ts` lateCards, `src/server/data/checklists.ts` loadChecklistDay | Hatırlatıcı notu gönderilmez. |
-| stok_tahmini | Marina'nın kritik kalemleri, kalemin tahmini, gelmeyen günler, atlanan satırlar | `src/server/data/stock-estimate.ts` loadStockEstimate, loadStockAlert; `src/lib/stock-estimate.ts` | Tutar, tedarikçi ve fatura döndürmez. "Yaklaşık" der. Tuzla seçiliyse "yalnız Marina" der. |
-| kasadan_cikanlar | Gün ya da en çok 31 gün: tür, tutar, kategori, belge, fotoğraf var mı, LafPOS'tan mı (kilitli), kategorisi bekleyen LafPOS harcaması, faturası gelmeyenler | `src/server/data/cash-outs.ts` cashOutsBetween, cashOutsOn; `src/server/data/cash-out-invoices.ts` loadCashOutInvoiceState | description ve kişi adı gönderilmez. LafPOS satırının tutarı, türü ve günü kilitlidir; asistan düzeltme önermez. |
-| zayi_ikram | Panel zayisi ve ikramı + LafPOS ikram/ödenmez/zayi satırları, iptaller, Z ile karşılaştırma | `waste.ts` dayWaste, wasteEntriesBetween; `lafpos-ikram.ts` loadLafposIkram; `src/lib/lafpos/ikram.ts` lafposIkramCheck | Neden metinleri gönderilmez. |
-| komisyon_kanallari | Kanal kanal satış, gerçek oran, beklenen hakediş ve vadesi, gecikenler | `src/server/data/commission.ts` loadCommissionReports, loadOverduePayouts, loadCommissionAlerts | hakedis_ay_kaydi önizlemesinin okuyucusu. |
-| gunluk_ciro_kiyas | Gün gün Z ve kaynağı (rapor, LafPOS ya da ModPOS), kıyas, şubeler yan yana | `cash-reports.ts` tillRows, lafposTillRows; `src/server/data/kiyas.ts` loadKiyas; loadBranchDay | Raporsuz LafPOS günü "LafPOS Z'si, rapor yok" diye görünür. |
+| gun_sonu (var) | Bir gün (en çok 14) için: LafPOS Z, ödeme türleri, kasa zinciri, ikram/ödenmez/zayi, iptaller, Pavo–LafPOS kart karşılaştırması, rapor ile LafPOS farkı, otomatik raporun eksikleri, dün ve geçen haftaya kıyas. ModPOS gününde föy ve kasa raporu. | `src/server/data/lafpos-day.ts` (loadKasaLafpos, loadLafposDayDetail, loadLafposBankPos), `src/lib/lafpos/bank-pos.ts` (pavoView, pavoDiff), `src/server/data/cash-reports.ts` (getCashReport(date,"admin",branch), previousCarryOver), `src/lib/lafpos/diffs.ts`, `src/server/data/lafpos-ikram.ts` (loadDayLafposIkram), `src/server/data/waste.ts` (dayWaste), `src/lib/lafpos/gun-sonu.ts` (dayEndSections, compareDays), `src/server/data/modpos-day.ts` | Ödeme türleri ve lafpos_day_ends satırı için dışa açık okuyucu yok: `loadStoredDay` (`src/server/lafpos/gun-sonu.ts:74`) dışa açık değil. `lafpos-day.ts`'e salt okunur `loadLafposDayEnd(date, branchId)` eklenmeli. "Tümü"de kasa kasa okunur. LafPOS yalnız Marina'dır (`LAFPOS_BRANCH_ID`); geçiş gününden önceki deneme günleri gösterilmez. Gerekçe metinleri ve kişi adları gönderilmez. |
+| gunluk_satislar (var) | LafPOS gün gün ürün satışı: en çok satanlar, tek ürünün gün gün adedi, gün ve hafta günü toplamları, eşleşmeyen adlar, satırlar ile Z karşılaştırması | `src/server/data/daily-sales.ts` dailyProductSalesFrom, `src/lib/lafpos/sales.ts` lafposSalesCountFrom, isLafposDay/branchSwitchDay, `src/lib/waste.ts` productLabel, `lafpos-sales.ts` linesVsZ mantığı | **dailyProductSalesFrom şubeye göre süzmüyor ve deneme günlerini ayırmıyor** (doğrulandı: yalnız tarih koşulu var). Şube parametresi, gross/isAddon ve isLafposDay süzgeci eklenmeli. Bugün dahil edilmez. Aylık soru için urun_karliligi'ye yönlendirir. |
+| lafpos_durumu (var) | Bağlantı sağlığı: rozet, geçiş günü, son gün sonu, retler (400/409), imzasız istekler, gelmeyen günler, eşleşmeyen adlar, isteğe bağlı ay bandı. Onarım rehberi. | `src/server/lafpos/status.ts` loadLafposCard, loadLafposSwitchDay; `src/lib/lafpos/status.ts` lafposCardSummary, rejectionText, LAFPOS_RESEND_HINT; loadModel().lafposSales.months | status.ts'te yazıcı da var (handlePosDay, noteUnverified): izin listesine yalnız iki okuyucu adı girer. Anahtar, imza ve gövde dönmez. 409 onarımı şifre onaylı olduğu için rehberdir. |
+| menu_durumu (var) | Tükendi olanlar (kim, ne zaman), kopuk site bağlantıları, kasaya işlenmeyi bekleyen fiyatlar, günün kasası (LafPOS ya da ModPOS) | `src/server/data/menu-status.ts` soldOutFacts, loadSoldOut; till-scope loadTillScope; `src/server/data/prices.ts` posPendingSummary; `src/lib/lafpos/switch.ts` kasaName | Siteye ağ isteği atılmaz, yerel kopya okunur. Tükendi ve fiyat araçlarının önizlemesi de bunu kullanır. |
+| vardiya (var) | Bugün ya da bir gün kim çalışıyor; bir haftanın planı kişi kişi, saatler, son değişiklik | `src/server/vardiya/store.ts` todayShifts, shiftsOn, loadShiftWeek, loadShiftEntries; `src/lib/vardiya.ts` | vardiya_hucre_yaz önizlemesinin okuyucusu. Not alanı serbest metin. |
+| bugun_ozeti (var) | Bugün ekranının birebir özeti: sıradaki iş, Şimdi, Sonra, Tamamlanan, Bugün kafede | `src/server/data/today.ts` loadToday; `src/app/panel/bugun/logic.ts` dayTasks, splitTasks, daySummary, cafeLines; `src/server/data/branch-day.ts` loadBranchDay; loadStockAlert | `loadBranchDay` ve `loadKiyas` içeride `requireAdmin()` çağırır. Satırların href'i rehber bağlantısı olur. |
+| bekleyen_isler (var) | Zil satırları, kişinin hatırlatıcıları, Onaylar'da bekleyenler, geç raporlar | `src/server/actions/notifications.ts` loadPanelNotifications (refresh yok, rotada güvenli), `src/server/data/user-reminders.ts`, `src/server/staff-requests/core.ts` countPendingByKind, `src/server/data/cash-late.ts` lateCards, `src/server/data/checklists.ts` loadChecklistDay | Hatırlatıcı notu gönderilmez. |
+| stok_tahmini (var) | Marina'nın kritik kalemleri, kalemin tahmini, gelmeyen günler, atlanan satırlar | `src/server/data/stock-estimate.ts` loadStockEstimate, loadStockAlert; `src/lib/stock-estimate.ts` | Tutar, tedarikçi ve fatura döndürmez. "Yaklaşık" der. Tuzla seçiliyse "yalnız Marina" der. |
+| kasadan_cikanlar (henüz yok) | Gün ya da en çok 31 gün: tür, tutar, kategori, belge, fotoğraf var mı, LafPOS'tan mı (kilitli), kategorisi bekleyen LafPOS harcaması, faturası gelmeyenler | `src/server/data/cash-outs.ts` cashOutsBetween, cashOutsOn; `src/server/data/cash-out-invoices.ts` loadCashOutInvoiceState | description ve kişi adı gönderilmez. LafPOS satırının tutarı, türü ve günü kilitlidir; asistan düzeltme önermez. |
+| zayi_ikram (henüz yok) | Panel zayisi ve ikramı + LafPOS ikram/ödenmez/zayi satırları, iptaller, Z ile karşılaştırma | `waste.ts` dayWaste, wasteEntriesBetween; `lafpos-ikram.ts` loadLafposIkram; `src/lib/lafpos/ikram.ts` lafposIkramCheck | Neden metinleri gönderilmez. |
+| komisyon_kanallari (henüz yok) | Kanal kanal satış, gerçek oran, beklenen hakediş ve vadesi, gecikenler | `src/server/data/commission.ts` loadCommissionReports, loadOverduePayouts, loadCommissionAlerts | hakedis_ay_kaydi önizlemesinin okuyucusu. |
+| gunluk_ciro_kiyas (henüz yok) | Gün gün Z ve kaynağı (rapor, LafPOS ya da ModPOS), kıyas, şubeler yan yana | `cash-reports.ts` tillRows, lafposTillRows; `src/server/data/kiyas.ts` loadKiyas; loadBranchDay | Raporsuz LafPOS günü "LafPOS Z'si, rapor yok" diye görünür. |
 
 ### 5.3 Okuma olarak kullanılacak mevcut eylemler (refresh çağırmıyor, doğrulandı)
 

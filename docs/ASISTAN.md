@@ -2,13 +2,20 @@
 
 Ekran: her panel sayfasında sağ altta küçük yuvarlak düğme (parıltı simgesi, "Panel asistanı"); **yalnız yöneticide**.
 Tıklayınca masaüstünde sağ altta 400 × 560'lık bir pencere, telefon ve tablette tam ekran bir sayfa açılır. Panelin
-verisine bakarak soruları yanıtlar ve panelin nasıl kullanılacağını gösterir. **Kendisi hiçbir şeyi değiştirmez:**
+verisine (LafPOS'un gün sonları ve günlük satışları dahil) bakarak soruları yanıtlar ve panelin nasıl kullanılacağını
+gösterir. **Kendisi hiçbir şeyi değiştirmez:**
 birkaç risksiz işi (Tükendi, fiyat, ödendi işareti, hatırlatıcı, kasadan çıkan, vardiya…) bir **onay kartıyla** hazırlar;
-siz karttaki **Onayla**'ya basmadan hiçbir şey değişmez (aşağıda İşlemler). Silme, toplu işlem ve şifre isteyen işleri
-yapmaz; ilgili ekranın bağlantısını ve adımları verir.
+siz karttaki **Onayla**'ya basmadan hiçbir şey değişmez (aşağıda İşlemler). Silme, toplu işlem, şifre isteyen ve riskli
+işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları verir (aşağıda Yapmadığı işler).
 
-Örnek sorular (pencere boşken çip olarak da durur):
+Örnek sorular (pencere boşken ilk yedisi çip olarak da durur):
 
+- "Dünkü gün sonu nasıldı?", "Dün kasa tuttu mu?" → LafPOS'un gün sonu: Z, ödeme türleri, kasa farkı, ikram, Pavo,
+  dün ve geçen haftayla kıyas
+- "Dün en çok ne sattı?", "Bu hafta kaç San Sebastian sattık?" → LafPOS'un gün gün ürün satışı
+- "Bugün kim çalışıyor?" → vardiya
+- "Ne bitmek üzere?" → Marina'nın tahmini stoğu, kritik malzemeler
+- "LafPOS bağlantısı çalışıyor mu?", "Ne tükendi?", "Bekleyen ne var?", "Bugün ne yapmam lazım?"
 - "Bu ay nasıl gidiyor?" → ayın cirosu, gideri, kârı, ay sonu tahmini
 - "En çok kime borcumuz var?" → tedarikçilerin kalan borcu, büyükten küçüğe
 - "Hangi ürünler hammaddeye bağlanmayı bekliyor?" → Paraşüt'ten gelip bağlanmamış ürünler ve **Ürün → hammadde
@@ -25,6 +32,12 @@ yapmaz; ilgili ekranın bağlantısını ve adımları verir.
   yalnız https ve yeni sekmede. Başka her adres (javascript:, http:, panelin dışına çıkan yol) bağlantısız yazı kalır;
   yanıtta HTML çizilmez.
 - **Esc** pencereyi kapatır; pencere açıkken Tab pencerenin içinde döner. Baskıda görünmez.
+- **Telefonda** (390 ve 360 px genişlikte denendi) sayfa ekranın tamamını kaplar ve görünür alana oturur: ekran klavyesi
+  açıkken yazı kutusu klavyenin hemen üstünde kalır, son mesaj görünür kalır, alttaki ipucu satırı gizlenir. Üstte,
+  yanlarda ve klavye kapalıyken altta güvenli alan (çentik, ana ekran çubuğu) boş bırakılır. Alt menü ve sayfanın
+  yüzen düğmesi sayfanın altında kalır. Bütün düğmeler (Gönder, Durdur, Kapat, Yeni sohbet, örnek çipler, kartın
+  Onayla / Vazgeç'i) en az 44 px; yazı kutusu 16 px (iPhone odakta yakınlaştırmaz). Dar ekranda "Yeni sohbet" yalnız
+  simgedir. Onay kartında satırların etiketi üstte, değeri altta durur ve yazılar bir boy büyüktür.
 - Düğmenin yeri: telefonda alt menünün üstünde; sayfada yüzen ekleme düğmesi (ör. Hatırlatıcılarım'daki "Yeni") varsa
   onun, kaydetme çubuğu açıksa çubuğun üstünde; masaüstünde köşede, yapılmamış hatırlatma kartı açıkken kartın üstünde.
   Telefonda aşağı kaydırırken kaybolur, yukarı kaydırınca gelir; ekran klavyesi açıkken gizlidir.
@@ -68,12 +81,27 @@ Asistanın onay kartıyla hazırlayabildiği işler:
 - **Bir yanıtta tek kart:** toplu işlem yapılmaz; birden çok kayıt istenirse birer birer, her biri ayrı onayla.
 - **Yapmadıkları:** silme, toplu işlem (toplu fiyat, toplu bağlama, çok dönemi birden ödendi), faturayı ödenmedi yapma,
   fatura ekleme / düzenleme, reçete, kasa raporu, ayarlar, kullanıcılar, yedek, parola ve iki adımlı doğrulama. Bunlarda
-  ekranın bağlantısını ve adımları verir; şifre isteyen işlerde parolayı sohbette istemez.
+  ekranın bağlantısını ve adımları verir; şifre isteyen işlerde parolayı sohbette istemez (aşağıda Yapmadığı işler).
+
+## Yapmadığı işler (rehber)
+
+Riskli ya da yapamadığı bir iş istenince asistan işi kendisi yapmaya çalışmaz: **İşlem rehberi**'ne bakar, ekranın
+bağlantısını (**Ekranı aç**) ve kısa, numaralı adımları verir; varsa kendisinin yapabildiği güvenli yolu da söyler
+(ör. "bütün ürünlere %10 zam" → Fiyatlar ekranı ve toplu değişikliğin adımları; tek ürünün fiyatını ise kartla
+hazırlayabilir). Rehberin her girdisinde konu, asistanın neden yapmadığı, ekranın yolu ve adımlar yazılıdır.
+
+| Tür | Örnekler |
+|---|---|
+| Rehber (riskli; yol gösterir) | Her türlü silme ve bildirimdeki Geri al, toplu fiyat, faturayı ödenmedi yapma, çok dönemi birden ödendi, kasadan tedarikçi ödemesi ve elle dağıtım, tedarikçi kartı ve IBAN, fatura ekleme / düzenleme, geçmiş günün kasası, kasa raporu ve onaylar, kapalı gün, reçete, siteye bağlama, satış eşleştirme, personelin isteklerine karar, Paraşüt eşitleme, hammadde birimi, vergi, karaoke rezervasyonu, ayarlar, LafPOS gününü silme (409 onarımı), şube, kullanıcılar, Hesabım |
+| Hariç (hiç önermez; sorulursa yalnız ekran) | Giriş, çıkış ve parola sıfırlama, iki adımlı doğrulama kurulumu ve sıfırlama, davet bağlantısı, yedek, uygulama bağlama onayı, Paraşüt bağlantı ayarları, kasa e-posta alıcıları, bildirim alıcıları ve testleri, sistem geneli oranlar, cihaz bildirimleri, vardiya taslağı, personelin kendi istekleri |
+
+Şifre isteyen işlerde (LafPOS gününü silme, kullanıcılar, Hesabım, yedek, davet) parola yalnız ekrandaki alana girilir;
+asistan sohbette parola, kod ya da anahtar istemez.
 
 ## Hangi verilere bakar
 
-Okuma araçları Claude bağlantısınınkilerle aynıdır
-([CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md): aynı hesap, aynı rakam):
+Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
+([CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md): aynı hesap, aynı rakam); sonrakiler asistana özgüdür:
 
 | Araç | Ne okur |
 |---|---|
@@ -86,12 +114,25 @@ Okuma araçları Claude bağlantısınınkilerle aynıdır
 | Arama | Ürün, hammadde, tedarikçi adları |
 | Panel rehberi | Panelin belgelerinde arama (aşağıda Bilgi tabanı) |
 | Paraşüt'te bekleyen ürünler | Hammaddeye bağlanmayı bekleyen Paraşüt ürünleri (Paraşüt sayfasındaki liste) |
-| İşlem rehberi | Asistanın yapmadığı işlerde (silme, toplu, şifreli, riskli) ekran ve adımlar |
+| Gün sonu | LafPOS'un gün sonu (en çok 14 gün, varsayılan dün): Z no, fiş, Z toplamı, nakit / kart / yemek kartı / online, indirim, ödeme türleri, kasa sayımı ve kasa farkı, ikram / ödenmez / zayi ve iptaller, Pavo kart karşılaştırması, otomatik raporun eksikleri, dün ve geçen haftayla kıyas |
+| Günlük satışlar | LafPOS'un gün gün ürün satışı (en çok 31 gün, bugün hariç): en çok satanlar, tek ürünün günlük adedi, hafta günleri, ürüne bağlanamayan adlar |
+| LafPOS durumu | Bağlantı: geçiş günü, son gün sonu, reddedilen gönderimler ve onarımı, gelmeyen günler, eşleşmeyen adlar |
+| Menü durumu | Tükendi ürünler (kim, ne zaman), sitede kapalı olanlar, kasada eski fiyatı duran ürün sayısı |
+| Vardiya | Bir gün kim çalışıyor; bir haftanın planı kişi kişi |
+| Bugün | Bugün ekranının özeti: sıradaki iş, Şimdi, Sonra, Tamamlananlar, Bugün kafede |
+| Bekleyen işler | Zildeki bekleyen işler başlık başlık ve bugünkü hatırlatıcılarınız |
+| Stok tahmini | Marina'nın tahmini stoğu, kritik malzemeler, tek malzemenin ayrıntısı (yaklaşık) |
+| İşlem rehberi | Asistanın yapmadığı işlerde (silme, toplu, şifreli, riskli, ayar, güvenlik) ekran ve adımlar |
 
 - **Şube:** araçlar panelde seçili şubeyle okur (üstteki seçici). "Tümü" işletme genelidir. Asistan yanıtında hangi
-  şubeye baktığını söyler.
-- Personel adı, kasa notu, parola, anahtar, iki adımlı kod gibi bilgiler araçların çıktısında yoktur; asistan gizli
-  bilgi vermez.
+  şubeye baktığını söyler. Soruda şube adı geçerse ("Marina'da bugün kim var?") o şubeye bakar.
+- **LafPOS:** kafedeki kasa programıdır (Marina). Ürün ve fiyatı siteden alır, her gün kapanınca gün sonunu (Z, ödeme
+  türleri, kasa sayımı, ikram, satış listesi) panele iter; maliyet, reçete ve kâr panelde hesaplanır. Gün sonu ve günlük
+  satışlar yalnız LafPOS'a geçilen günden sonrası içindir; öncesi denemedir. ModPOS'ta kalan şubenin (Tuzla) günleri
+  Kasa raporları aracındadır.
+- **Salt okur:** okuma araçları hiçbir şey yazmaz, eşitlemez, e-posta göndermez; onay kartı istemez.
+- Kasa notu, ikram ve iptal gerekçesi, vardiya notu, hatırlatıcı notu, misafir adı, parola, anahtar, iki adımlı kod
+  gibi bilgiler araçların çıktısında yoktur; adlar kısaltılır. Asistan gizli bilgi vermez.
 - Araçların çıktısındaki adlar (ürün, tedarikçi, not) veri sayılır, talimat sayılmaz: faturadaki bir ürün adına "şunu
   yap" yazılsa da asistan uygulamaz.
 
@@ -148,8 +189,17 @@ satırlar düşer, asistan bu ekranlara bağlantı vermez. Belge değişince `np
   değiştirilmeden geri gönderilir; bütün araç sonuçları tek mesajda, hata `is_error: true` ile. Önceki turlar yalnız
   görünen metin olarak gider: düşünme bloğu taşımadıkları için Sonnet 5.5'in geçmiş denetimi sorun çıkarmaz.
 - Araçlar: `src/server/ai/assistant/tool-defs.ts` (MCP'nin yedi aracı aynen + `panel_rehberi`, `parasut_bekleyenler`),
-  `tool-adapter.ts` (zod → `strict: true` araç tanımı, girdi doğrulama, süre sınırı, hata sonucu), `tools.ts`
-  (gerçek okuyucular).
+  `read-tools.ts` (saf: `gun_sonu`, `gunluk_satislar`, `lafpos_durumu`, `menu_durumu`, `vardiya`, `bugun_ozeti`,
+  `bekleyen_isler`, `stok_tahmini`; okuyucular dışarıdan verilir), `op-tools.ts` (işlem araçları ve `islem_rehberi`;
+  rehberin girdileri `src/lib/assistant/guides.ts`), `tool-adapter.ts` (zod → `strict: true` araç tanımı, girdi
+  doğrulama, süre sınırı, hata sonucu), `tools.ts` (gerçek okuyucular).
+- LafPOS ve operasyon okuyucuları: `src/server/assistant-reads/index.ts`. Yalnız panelin mevcut okuma işlevleri
+  (`loadLafposDayEnd`, `loadLafposZTotals`, `loadDayLafposIkram`, `dailyBranchSalesFrom`, `loadLafposCard`,
+  `loadSoldOut`, `posPendingSummary`, `shiftsOn`, `loadShiftWeek`, `loadToday` ve Bugün'ün kuralları,
+  `loadPanelNotifications`, `loadDueReminders`, `loadStockEstimate`); LafPOS'un yazıcıları (`gun-sonu.ts`, `ingest.ts`,
+  `handlePosDay`) içe aktarılmaz. Serbest metinler burada atılır. Strict araç tanımları yapılandırılmış girdinin
+  karmaşıklık sınırına sığan önektir; isteğe bağlı alanı çok olan okuma araçları (vardiya, günlük satışlar, stok) sınırın
+  dışında kalır, girdileri yine zod'dan geçer.
 - Sistem istemi: `src/server/ai/assistant/prompt.ts` (ekranlar `src/components/panel/nav.ts`'ten).
 - Kapı ve kayıt: `src/server/ai/claude.ts` (`assistantStatus`, `startAssistantCall`, `finishAssistantCall`).
 - Ekran: `src/components/panel/assistant/` (düğme ve pencere, güvenli markdown; panel düzenine bir kez eklenir,
@@ -161,7 +211,10 @@ satırlar düşer, asistan bu ekranlara bağlantı vermez. Belge değişince `np
   gerçekten çalışır, yanıt aracın sonucunun kısa özetidir; Claude'a istek gitmez.
 - İşlemler: [ASISTAN-ISLEMLER.md](ASISTAN-ISLEMLER.md) › Dosyalar (`src/server/assistant-ops/`, onay eylemi
   `src/server/actions/assistant-ops.ts`, kart `src/components/panel/assistant/op-card.tsx`).
-- Testler: `tests/panel-asistani.test.ts` (sahte istemciyle istek, döngü, uç, markdown, bilgi tabanı) ve
+- Testler: `tests/asistan-okuma.test.ts` (okuma araçları sahte okuyucularla, işlem rehberinin yolları src/app/panel
+  altında gerçek sayfa ve bölüm mü, kataloğun Rehber ve Hariç eylemleri, okuyucu modülünün izin listesi, istem ve
+  telefon arayüzü) ve `tests/asistan-okuma-db.test.ts` (`ASISTAN_TEST_DATABASE_URL`: gerçek okuyucular, hiçbir tablo
+  değişmez); `tests/panel-asistani.test.ts` (sahte istemciyle istek, döngü, uç, markdown, bilgi tabanı) ve
   `tests/panel-asistani-db.test.ts` (`ASISTAN_TEST_DATABASE_URL`: günlük sınır, kayıt, bekleyen ürünler); işlemler
   `tests/asistan-islemleri.test.ts` (şemalar, kaynak taraması, kart olayı) ve `tests/asistan-islemleri-db.test.ts`
   (`ASISTAN_TEST_DATABASE_URL`: plan → onay → tek kullanım, süre, başka kullanıcı, bayatlık, geri al, her uyarlayıcı).

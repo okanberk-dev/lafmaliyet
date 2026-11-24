@@ -24,12 +24,25 @@ import { OpCardView } from "./op-card";
  * - Yanıt akarak gelir (satır satır JSON): metin parça parça, araç çalışırken durum satırı ("Tedarikçi özeti…"),
  *   "Durdur" isteği keser. Yanıt güvenli markdown'la çizilir (markdown-view.tsx; HTML yok).
  * - Klavye: Esc kapatır, Tab pencerenin içinde döner, Enter gönderir, Shift+Enter yeni satır.
+ * - Telefon (390 ve 360 px): tam ekran alt sayfa, görünür alana oturur (--vvh yüksekliği, --vv-top üstü; bottom-nav.tsx
+ *   yazar): ekran klavyesi açıkken giriş kutusu klavyenin hemen üstünde kalır, alttaki güvenli alan payı klavye
+ *   kapalıyken eklenir; üstte, solda ve sağda güvenli alan (çentik). Alt menü ve sayfanın yüzen düğmesi (Fab) sayfanın
+ *   altında kalır (z-60). Dokunulan her düğme en az 44 px; yazı kutusu 16 px (iOS odakta yakınlaştırmasın).
  * - İşlemler (docs/ASISTAN-ISLEMLER.md): asistan risksiz bir işi onay kartıyla önerir (`card` olayı; op-card.tsx).
  *   Kart yanıtın altında durur; Onayla'ya basılmadıkça hiçbir şey değişmez. Kartların son durumu da sekmede saklanır ve
  *   sonraki sorunun geçmişine kısa bir satır olarak gider.
  */
 
-const SAMPLES = ["Bu ay nasıl gidiyor?", "En çok kime borcumuz var?", "Hangi ürünler hammaddeye bağlanmayı bekliyor?", "Süt zammı kârı nasıl etkiledi?"];
+/** Örnek sorular (çipler): LafPOS ve operasyon önce, sonra maliyet ve ödemeler */
+const SAMPLES = [
+  "Dünkü gün sonu nasıldı?",
+  "Dün en çok ne sattı?",
+  "Bugün kim çalışıyor?",
+  "Ne bitmek üzere?",
+  "Bu ay nasıl gidiyor?",
+  "En çok kime borcumuz var?",
+  "Hangi ürünler hammaddeye bağlanmayı bekliyor?",
+];
 
 /** Sekmede en çok bu kadar mesaj saklanır (sunucuya yalnız son 20'si gider) */
 const KEEP = 40;
@@ -133,6 +146,19 @@ export function PanelAssistant({ userId }: { userId: number }) {
   }, [messages, tool, open]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  // Telefonda klavye açılınca (görünür alan küçülür) son mesaj giriş kutusunun üstünde görünür kalsın
+  useEffect(() => {
+    if (!open || !sheet) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => {
+      const el = listRef.current;
+      if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 240) el.scrollTop = el.scrollHeight;
+    };
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, [open, sheet]);
 
   /** Son (asistanın) mesajını değiştirir */
   const patchLast = (fn: (m: ChatMessage) => ChatMessage) =>
@@ -295,13 +321,15 @@ export function PanelAssistant({ userId }: { userId: number }) {
           data-component="panel-assistant"
           className={cn(
             "no-print fixed z-[60] flex flex-col overflow-hidden bg-surface text-ink",
-            // Telefon ve tablet: tam ekran sayfa (iOS klavyesi örtmesin: --keyboard-inset)
-            "max-lg:inset-0 max-lg:pt-[env(safe-area-inset-top)] max-lg:pb-[max(env(safe-area-inset-bottom),var(--keyboard-inset,0px))]",
+            // Telefon ve tablet: tam ekran sayfa, görünür alana oturur (klavye açıkken klavyenin üstünde biter: --vvh,
+            // --vv-top); güvenli alan üstte, yanlarda ve klavye kapalıyken altta
+            "max-lg:inset-x-0 max-lg:top-(--vv-top,0px) max-lg:bottom-auto max-lg:h-(--vvh,100dvh)",
+            "max-lg:pt-[env(safe-area-inset-top)] max-lg:pr-[env(safe-area-inset-right)] max-lg:pb-[env(safe-area-inset-bottom)] max-lg:pl-[env(safe-area-inset-left)] max-lg:in-data-[keyboard=open]:pb-0",
             // Masaüstü: sağ altta 400 × 560 pencere
             "lg:right-6 lg:bottom-6 lg:h-[min(560px,calc(100dvh-3rem))] lg:w-[400px] lg:rounded-2xl lg:shadow-[0_16px_48px_rgba(0,0,0,0.22)] lg:ring-1 lg:ring-line-strong",
           )}
         >
-          <header className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-3">
+          <header className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-3 max-lg:gap-2 max-lg:py-2 max-lg:pr-2">
             <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-panel">
               <Sparkles className="size-4 text-brand-500" aria-hidden="true" />
             </span>
@@ -315,18 +343,21 @@ export function PanelAssistant({ userId }: { userId: number }) {
               <button
                 type="button"
                 onClick={reset}
-                className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-ink-mute hover:bg-panel hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none pointer-coarse:h-11"
+                title="Yeni sohbet"
+                className="inline-flex h-8 min-w-11 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-ink-mute hover:bg-panel hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none max-lg:h-11 pointer-coarse:h-11"
               >
-                <RotateCcw className="size-3.5" aria-hidden="true" /> Yeni sohbet
+                <RotateCcw className="size-3.5 max-lg:size-4" aria-hidden="true" />
+                {/* Dar telefonda (360 px) yalnız simge: başlık sığsın */}
+                <span className="max-[400px]:sr-only">Yeni sohbet</span>
               </button>
             ) : null}
             <button
               type="button"
               onClick={close}
               aria-label="Kapat"
-              className="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-ink-mute hover:bg-panel hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none pointer-coarse:size-11"
+              className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-ink-mute hover:bg-panel hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none max-lg:size-11 pointer-coarse:size-11"
             >
-              <X className="size-4" aria-hidden="true" />
+              <X className="size-4 max-lg:size-5" aria-hidden="true" />
             </button>
           </header>
 
@@ -334,9 +365,9 @@ export function PanelAssistant({ userId }: { userId: number }) {
             {!messages.length ? (
               <div className="space-y-4">
                 <p className="text-[14px] leading-6 text-ink-soft">
-                  Merhaba! Ciro, kâr, tedarikçi borçları, ödemeler, kasa raporları ve panelin nasıl kullanıldığı hakkında sorabilirsiniz. Tükendi, fiyat, ödendi
-                  işareti, hatırlatıcı, vardiya gibi küçük işleri onay kartıyla hazırlarım: siz Onayla&apos;ya basmadan hiçbir şey değişmez. Silme ve toplu işlem
-                  yapmam; onlarda ekranı gösteririm.
+                  Merhaba! LafPOS gün sonları ve günlük satışlar, kasa, vardiya, Tükendi, bekleyen işler, ciro, kâr, tedarikçi borçları, ödemeler ve panelin
+                  nasıl kullanıldığı hakkında sorabilirsiniz. Tükendi, fiyat, ödendi işareti, hatırlatıcı, vardiya gibi küçük işleri onay kartıyla hazırlarım:
+                  siz Onayla&apos;ya basmadan hiçbir şey değişmez. Silme, toplu ve riskli işleri yapmam; onlarda ekranın bağlantısını ve adımları veririm.
                 </p>
                 {!blocked ? (
                   <div className="flex flex-wrap gap-2">
@@ -346,7 +377,7 @@ export function PanelAssistant({ userId }: { userId: number }) {
                         type="button"
                         onClick={() => void send(s)}
                         disabled={busy}
-                        className="cursor-pointer rounded-full bg-panel px-3 py-1.5 text-left text-[13px] leading-5 text-ink-soft ring-1 ring-line hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none disabled:opacity-50"
+                        className="min-h-9 cursor-pointer rounded-full bg-panel px-3 py-1.5 text-left text-[13px] leading-5 text-ink-soft ring-1 ring-line hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none disabled:opacity-50 max-lg:min-h-11 max-lg:px-3.5 max-lg:text-[14px] pointer-coarse:min-h-11"
                       >
                         {s}
                       </button>
@@ -392,7 +423,7 @@ export function PanelAssistant({ userId }: { userId: number }) {
             {announce}
           </p>
 
-          <div className="shrink-0 border-t border-line px-3 pt-2.5 pb-3">
+          <div className="shrink-0 border-t border-line px-3 pt-2.5 pb-3 max-lg:in-data-[keyboard=open]:pb-2">
             {blocked ? (
               <p className="mb-2 rounded-xl bg-panel px-3 py-2 text-[13px] leading-5 text-ink-soft">{gate?.message ?? "Asistan şu an kapalı."}</p>
             ) : null}
@@ -417,7 +448,7 @@ export function PanelAssistant({ userId }: { userId: number }) {
                 disabled={blocked}
                 placeholder={blocked ? "" : "Sorunuzu yazın…"}
                 aria-invalid={tooLong || undefined}
-                className="field-sizing-content max-h-36 min-h-11 flex-1 resize-none rounded-xl bg-panel px-3.5 py-2.5 text-[15px] leading-6 text-ink placeholder:text-ink-mute focus:ring-2 focus:ring-ink/25 focus:outline-none disabled:opacity-60 lg:text-[14px]"
+                className="field-sizing-content max-h-36 min-h-11 min-w-0 flex-1 resize-none rounded-xl bg-panel px-3.5 py-2.5 text-[16px] leading-6 text-ink placeholder:text-ink-mute focus:ring-2 focus:ring-ink/25 focus:outline-none disabled:opacity-60 max-lg:in-data-[keyboard=open]:max-h-28 lg:text-[14px]"
               />
               {busy ? (
                 <button
@@ -441,7 +472,8 @@ export function PanelAssistant({ userId }: { userId: number }) {
                 </button>
               )}
             </form>
-            <p className="mt-1.5 px-1 text-[11.5px] leading-4 text-ink-mute">
+            {/* Klavye açıkken telefonda gizli: yazı alanına yer kalsın (sınır uyarısı yine görünür) */}
+            <p className={cn("mt-1.5 px-1 text-[11.5px] leading-4 text-ink-mute", !tooLong && "max-lg:in-data-[keyboard=open]:hidden")}>
               {tooLong
                 ? `Soru en çok ${ASSISTANT_LIMITS.message.toLocaleString("tr-TR")} karakter olabilir (${input.length.toLocaleString("tr-TR")}).`
                 : gate && gate.state === "on" && gate.left <= 10
