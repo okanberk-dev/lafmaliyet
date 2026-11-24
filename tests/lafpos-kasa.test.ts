@@ -268,7 +268,8 @@ test("G7: LafPOS gününde form açılışta LafPOS'tan dolar (kaydetmez), Z bö
   assert.match(fn, /if \(mode === "compare"\) \{[\s\S]*?return \{ values: v, marks: /);
   assert.match(form, /withLafpos\(initialValues\(report, carry, cashOuts\), lafpos, "compare"\)/);
   assert.match(form, /title=\{lafposMode \? "LafPOS gün sonu \(Z\)" : "ModPOS Z raporu"\}/);
-  assert.match(form, /\{lafposMode \? null : photoBlock\("kasa-z"\)\}/);
+  // Fiş fotoğrafları kartında LafPOS gününde ModPOS Z bölümü yok; gün sonu geldiyse yazarkasa fişi Gün sonu fotoğrafı kartında
+  assert.match(form, /\[\.\.\.\(lafposMode \? \[\] : \(\["kasa-z"\] as const\)\), \.\.\.\(dayPhotoCard \? \[\] : \(\["kasa-okc"\] as const\)\)\]/);
   // Fişler varken "Gün içinde çıkan"a LafPOS'takini yazdırmaz (panelin Kasadan çıkanlar'ı kaynak, E-35)
   assert.match(form, /m\.suggest && !\(k === "cashOut" && m\.suggest\.from === "lafpos" && cashOuts\.length\)/);
 });

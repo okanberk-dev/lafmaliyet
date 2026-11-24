@@ -20,7 +20,8 @@ const read = (p: string) => readFileSync(join(root, p), "utf8");
 
 test("kasa formu: Diğer'in ipucu ikram demez (ikram Ödenmez / ikram alanına yazılır, ciroya girmez)", () => {
   const form = read("src/app/panel/kasa/cash-form.tsx");
-  const other = /field\("other", "Diğer", \{ hint: "([^"]*)" \}\)/.exec(form);
+  // İpucu etiketin parantezinde (katlı alanların altında ayrı satır yok)
+  const other = /field\("other", "Diğer \(([^)]*)\)"\)/.exec(form);
   assert.ok(other, "Diğer alanı bulunamadı");
   assert.doesNotMatch(other[1], /ikram/i, `Diğer'in ipucu: "${other[1]}"`);
   assert.equal(other[1], "havale, cari…");

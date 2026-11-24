@@ -144,7 +144,7 @@ export function CashHistory({
   const lateEdited = (r: CashReportDTO) => r.revision > 1 && historyOf(r, revisions[r.id] ?? []).entries.some((e) => e.late);
   const reported = days.flatMap((d) => (d.report ? [d.report] : []));
   const flags = { carry: reported.filter((r) => carry[r.date]).length, late: reported.filter(lateEdited).length };
-  const flagText = [flags.carry ? `${flags.carry} gün açılış ≠ devir` : null, flags.late ? `${flags.late} sonradan düzeltme` : null].filter(Boolean).join(" · ");
+  const flagText = [flags.carry ? `${flags.carry} gün açılış devirden farklı` : null, flags.late ? `${flags.late} sonradan düzeltme` : null].filter(Boolean).join(" · ");
 
   function remove() {
     if (!open) return;
@@ -307,12 +307,12 @@ export function CashHistory({
                     {lateApproved[report.id] ? <Badge tone="gray">Geç girildi</Badge> : null}
                     {photos[report.id]?.suspicious.length ? <Badge tone="amber">Fotoğraftan farklı</Badge> : null}
                     {photos[report.id]?.extras.lafposDiffs?.length ? <Badge tone="amber">LafPOS&apos;tan farklı</Badge> : null}
-                    {photos[report.id]?.lafposPhoto === "fark" ? <Badge tone="amber">Fotoğraf ↔ LafPOS farklı</Badge> : null}
+                    {photos[report.id]?.lafposPhoto === "fark" ? <Badge tone="amber">Fiş LafPOS&apos;tan farklı</Badge> : null}
                     {photos[report.id]?.lafposPhoto === "okunamadi" ? <Badge tone="amber">Gün sonu fotoğrafı okunamadı</Badge> : null}
                     {photos[report.id]?.lafposPhoto === "bakin" ? <Badge tone="amber">Gün sonu fotoğrafına bakın</Badge> : null}
                     {photos[report.id]?.lafposPhoto === "bekliyor" ? <Badge tone="gray">Gün sonu fotoğrafı yok</Badge> : null}
                     {modposDays[date]?.diffs.length ? <Badge tone="amber">ModPOS API&apos;den farklı</Badge> : null}
-                    {carry[report.date] ? <Badge tone="amber">Açılış ≠ devir</Badge> : null}
+                    {carry[report.date] ? <Badge tone="amber">Açılış devirden farklı</Badge> : null}
                     {lateEdited(report) ? <Badge tone="amber">Ertesi gün düzeltildi</Badge> : null}
                     {paymentsOff ? <Badge tone="amber">Z tutmuyor</Badge> : null}
                     {cardOff ? <Badge tone="amber">Kart {c.cardDiff! > 0 ? "+" : "−"}{money(Math.abs(c.cardDiff!))}</Badge> : null}

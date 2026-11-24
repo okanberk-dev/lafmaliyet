@@ -44,6 +44,15 @@ export const LAFPOS_STAFF_WAITING_DESCRIPTION = "Kasa raporu LafPOS'tan gelecek;
  * personelin gördüğü (son denetim, 24 Kasım 2026): form yok, rapor LafPOS'tan gelir. Bugün'ün akşam satırı da bunu söyler
  */
 export const LAFPOS_STAFF_BEFORE_DAY_END_TEXT = "Kapanışta LafPOS'ta Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin (detaylı Z) fotoğrafını eklersiniz.";
+/**
+ * Gün sonu geldi ama LafPOS'ta sayım yok (rapor bekleniyor): personelin Kasa sayfasındaki tek uyarı. Alt başlık "Kasa
+ * raporu LafPOS'tan gelecek" dediği için başlık onu tekrarlamaz; yalnız ne yapılacağı (aynı mesaj dört yerde
+ * okunuyordu: alt başlık, uyarı, kart açıklaması, bilgi kutusu)
+ */
+export const LAFPOS_STAFF_NO_COUNT = {
+  title: "LafPOS'ta kasa sayılmadı",
+  text: "Çekmeceyi LafPOS'ta sayın (Kasa › Geçmiş günler › Kasa föyü); rapor sonra kendiliğinden gelir.",
+} as const;
 /** Aynı günün alt başlığı */
 export const LAFPOS_STAFF_BEFORE_DAY_END_DESCRIPTION = "Kasa raporu LafPOS'tan gelecek: kapanışta LafPOS'ta Günü kapat'a basın.";
 

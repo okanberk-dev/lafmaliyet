@@ -11,13 +11,17 @@ import { cn } from "@/lib/utils";
 import { amountOf, OKC_RATES_SHOWN, okcFigures, okcTKey, okcVKey, type OkcKey, type OkcMoneyKey, type OkcValues } from "./okc-form";
 
 /*
- * Banka POS Z raporu (yazarkasa) kartı (dalga 13 PR-b; docs/planlar/okc-z.md §3.2–§3.6, §8, D16, D18). Bugünkü "Kart"
- * kartının yerine: fotoğraf + dört alan (Günlük toplam, Z no, Nakit, Kredi kartı), gerisi Ayrıntılar'da (KDV dökümü,
+ * Yazarkasa Z raporu kartı (dalga 13 PR-b; docs/planlar/okc-z.md §3.2–§3.6, §8, D16, D18; eski adı "Banka POS Z raporu
+ * (yazarkasa)": aynı cihaz üç adla anılıyordu). Dört alan (Günlük toplam, Z no, Nakit, Kredi kartı; fişteki satırın
+ * adı yer tutucuda, alan altında satır yok), gerisi Ayrıntılar'da (KDV dökümü,
  * fiş sayısı, yemek kartı, diğer, banka gün sonu yedeği). Değerler ve fotoğraf işaretleri cash-form.tsx'te kalır (köprü:
  * `field` / `textField` / `marked`); bu kart düzeni, canlı denetimi (okcFormChecks: alan başına tek turuncu neden, tek
  * özet satırı) ve kart satırını (okcReconcile) çizer. Kümülatif formda yoktur (D17): personelin denetimi yalnız önceki
  * Z'nin numarasıyla. Personel yalnız kendi düzeltebileceği satırları görür (kart ve kendi içinde); yöneticinin
  * satırları (toplam, nakit, yemek kartı, banka) yalnız yönetici formu düzenlerken (İlke 8).
+ *
+ * Fotoğraf seçicisi formun başındaki "Fiş fotoğrafları" kartında (cash-form.tsx). Ayrıntılar yöneticide de kapalı
+ * gelir; turuncu, hata ya da banka fişinin sorusu varsa kendiliğinden açılır.
  *
  * Doldurma kapısı (OKC_PREFILL_ENABLED, src/lib/okc-z.ts) bu kartı değiştirmez: kapalıyken okunan her rakam alanın
  * altında öneri ("Fotoğraftakini yaz"), açıkken prefillPlan alanı doldurur; ikisi de cash-form'un işaretleriyle çizilir.
@@ -56,14 +60,12 @@ export function OkcCard({
   textField,
   marked,
   failed,
-  photoBlock,
   posPrompt,
   description,
   prevZ,
   extraTakings,
   day,
   audience,
-  forceDetails,
   modpos,
   kasa = "ModPOS",
 }: {
@@ -76,7 +78,6 @@ export function OkcCard({
   marked: (k: CardKey) => boolean;
   /** Alanda gönderim hatası var (Ayrıntılar açılır) */
   failed: (k: CardKey) => boolean;
-  photoBlock: ReactNode;
   posPrompt: ReactNode;
   description: string;
   /** Önceki yazarkasa Z'si (yalnız gün ve numara; kümülatif personele gitmez, D17) */
@@ -86,8 +87,6 @@ export function OkcCard({
   day: string;
   /** Kim bakıyor: yönetici karşılaştırma satırlarının hepsini görür */
   audience: "staff" | "admin";
-  /** Yönetici düzenliyor: Ayrıntılar açık gelir */
-  forceDetails: boolean;
   modpos: ModposFigures | null;
   /** Günün kasası (karşılaştırma satırları onun adıyla; geçiş gününden itibaren LafPOS, denetim E-39) */
   kasa?: "ModPOS" | "LafPOS";
@@ -103,8 +102,8 @@ export function OkcCard({
     return { hint: reason ? <span className="text-warn">{reason}</span> : hint, warn: reason !== null, placeholder };
   };
 
-  // Ayrıntılar: fotoğraftan dolunca açılmaz; içinde turuncu alan, hata, ikinci banka fişinin sorusu ya da yönetici
-  // düzenliyorsa açık gelir. Kendiliğinden açılan kutu açık kalır: turuncu yazarken kaybolunca kapanmaz (odak ve
+  // Ayrıntılar: fotoğraftan dolunca açılmaz; içinde turuncu alan, hata ya da ikinci banka fişinin sorusu varsa açık gelir
+  // (yöneticide de: her zaman açık gelince yöneticinin formu 12 ekrana çıkıyordu). Kendiliğinden açılan kutu açık kalır: turuncu yazarken kaybolunca kapanmaz (odak ve
   // tuşlar kaybolurdu); yalnız kişi düğmeye basınca kapanır
   const orange = DETAIL_KEYS.filter((k) => marked(k) || reasonOf(k) !== null || failed(k)).length;
   const attention = orange + (posPrompt ? 1 : 0);
@@ -118,7 +117,7 @@ export function OkcCard({
   // Yazarkasa bölümünden önceki rapor (yalnız banka POS yazılı): değer Ayrıntılar'da gizli kalmasın
   const [legacy] = useState(() => Boolean(values.bankPos.trim()) && !any);
   // Banka fişinin sorusu bekliyorsa kutu kapatılamaz (soru içinde)
-  const open = Boolean(posPrompt) || (chosen ?? (orange > 0 || forceDetails || legacy));
+  const open = Boolean(posPrompt) || (chosen ?? (orange > 0 || legacy));
   const showRate1 = Boolean(values.okcT1.trim() || values.okcV1.trim() || marked("okcT1") || marked("okcV1"));
 
   // Kart satırı ve (yöneticide) öteki karşılaştırmalar; kendi içindeki denetim özet satırında
@@ -129,13 +128,13 @@ export function OkcCard({
 
   return (
     <Card>
-      <CardHeader icon={<ScrollText />} title="Banka POS Z raporu (yazarkasa)" description={description} />
+      <CardHeader icon={<ScrollText />} title="Yazarkasa Z raporu" description={description} />
       <div className="grid gap-3 px-5 pb-5 sm:grid-cols-2">
-        {photoBlock}
-        {field("okcTotal", "Günlük toplam", opts("okcTotal", "NET SATIŞ ya da TOPLAM satırı; en büyük rakam değil", "isteğe bağlı"))}
-        {textField("okcZNo", "Z no", opts("okcZNo", "Z NO / Z SAYAÇ (fiş no değil)"))}
+        {/* Fişteki satırın adı yer tutucuda (alanın altında ayrı satır yerine); turuncu nedeni yine alanın altında */}
+        {field("okcTotal", "Günlük toplam", opts("okcTotal", undefined, "NET SATIŞ / TOPLAM satırı"))}
+        {textField("okcZNo", "Z no", opts("okcZNo", undefined, "Z NO (fiş no değil)"))}
         {field("okcCash", "Nakit", opts("okcCash", undefined, "isteğe bağlı"))}
-        {field("okcCard", "Kredi kartı", opts("okcCard", "K.KARTI satırı; altındaki banka satırları değil", "isteğe bağlı"))}
+        {field("okcCard", "Kredi kartı", opts("okcCard", undefined, "K.KARTI satırı"))}
         <div className="sm:col-span-2">
           <button
             type="button"

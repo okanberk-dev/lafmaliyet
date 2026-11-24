@@ -236,13 +236,14 @@ export function CashOutsCard({
       <CardHeader
         icon={<Receipt />}
         title="Gün içinde kasadan çıkanlar"
-        description={
+        // Bugünün kartında tarih yok (sayfanın gün düğmesi söyler); başka günde başta
+        description={`${today ? "" : `${longDateTR(date)} · `}${
           lafposEntryClosed
-            ? `${longDateTR(date)} · LafPOS'un kasa hareketlerinden; gelen satıra fişin fotoğrafını ekleyin`
+            ? "LafPOS'un kasa hareketlerinden; gelen satıra fişin fotoğrafını ekleyin"
             : storage && read
-              ? `${longDateTR(date)} · fişin fotoğrafını çekin; tutar ve KDV kendiliğinden dolar`
-              : `${longDateTR(date)} · market, buz, tamir… kasadan ödenenleri ekleyin`
-        }
+              ? "Market, buz, tamir: fişin fotoğrafını çekin, tutar ve KDV dolar"
+              : "Market, buz, tamir… kasadan ödenenleri ekleyin"
+        }`}
         meta={lines.length ? <span className="font-semibold text-ink tabular">{money(total)}</span> : undefined}
       />
       {!admin && locked ? (
@@ -342,7 +343,8 @@ export function CashOutsCard({
             );
           })}
         </ul>
-      ) : (
+      ) : reported?.amount || !canEdit || lafposEntryClosed ? (
+        // Boş bugünde satır yok: düğmeler hemen başlığın altında (telefonda "çıkmadı" satırı bir ekranın onda birini alıyordu)
         <p className="border-t border-line px-5 py-4 text-sm text-ink-mute">
           {reported && reported.amount > 0
             ? `Fişi eklenmiş çıkış yok; raporda ${money(reported.amount)}${reported.note ? ` (${reported.note})` : ""} yazılı.`
@@ -350,7 +352,7 @@ export function CashOutsCard({
               ? "Bugün kasadan para çıkmadı."
               : "Bu gün kasadan para çıkmadı."}
         </p>
-      )}
+      ) : null}
       {ownAdds.length ? (
         <ul className="divide-y divide-line border-t border-line" aria-label="Onay bekleyen eklemeler">
           {ownAdds.map((r) => (

@@ -814,7 +814,7 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   işlem geçmişine "Yazarkasa Z no fotoğraftan yazıldı"), yönetici kartta "fotoğraftan okundu (LafPOS göndermedi)" görür;
   LafPOS sonradan gönderirse onunki geçer ve fotoğraftaki farklıysa fark olur. Fark yöneticinin uyarısıdır: Kasa gün görünümünde Pavo kartının
   altındaki "Gün sonu fotoğrafı" kartında satır satır, zilde "Kasa fotoğrafı LafPOS'tan farklı · Marina <gün>" (son 7
-  gün, yalnız yönetici), gün sonu e-postasında ve ay satırında rozet ("Fotoğraf ↔ LafPOS farklı"). Banka POS boşken (Pavo
+  gün, yalnız yönetici), gün sonu e-postasında ve ay satırında rozet ("Fiş LafPOS'tan farklı"). Banka POS boşken (Pavo
   alınamadı) okunan toplam "Fotoğrafta 995 ₺" olarak yöneticiye gösterilir, "Banka POS'a yaz" onu rapora yazar
   (`setLafposBankPos`; önceki sürüm geçmişe, sonraki otomatik değer ezmez). Okuma: önce ucuz model (Claude Haiku 5.5),
   okunuş eksik / tutarsız ya da LafPOS'tan farklıysa bir kez güçlü model (Claude Opus 5.5); yapay zekâ yoksa (anahtar,
