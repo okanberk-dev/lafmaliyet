@@ -717,7 +717,7 @@ testler `tests/fatura-kalem.test.ts`, `tests/fatura-sube-db.test.ts`):
 - **"Mal alışı sayılmıyor" kontrolü** (E-07, `stock-only-invoices.ts`): kalemi hammaddeye bağlı Diğer / Hizmet /
   Temizlik & Sarf faturası artık mal alışını sayar; elle düzeltme ("Kalsın", kategoriyi mal alışı yapmak) gerekmez.
   Kontrol yalnız komisyon faturasında kalır. Önceden bu yüzden kontrole düşmüş faturalar kontrol bekleyen kalır ama
-  rozeti düşer; **Onayla** artık onaylar. "Kalsın" kararları (`invoices.stockOnlyAccepted`) yalnız komisyon faturasında
+  rozeti düşer; **Onayla** artık onaylar (ekranın uyarısı da `stockOnlyCategory` ile yalnız komisyonda). "Kalsın" kararları (`invoices.stockOnlyAccepted`) yalnız komisyon faturasında
   anlam taşır.
 - **Davranış değişikliği** (sahibe söylenecek): kategorisi mal alışı olmayan ve kalemi hammaddeye bağlı faturaların o
   kalemleri geçmiş aylarda da mal alışına geçer (önceden "Kalsın" denmiş temizlik faturasındaki süt dahil): o ayların mal
@@ -830,15 +830,16 @@ için yalnız **komisyon** faturası, 5f) da kontrol bekleyene düşer: ürün b
 kalemler okununca ya da eşitlemede (`flagStockOnlyInvoices`, `src/server/data/stock-only-invoices.ts`; işlem geçmişine
 "Sistem · Fatura mal alışı sayılmıyor"). Satırda **Mal alışı sayılmıyor** rozeti, listenin üstünde ayrı bir satır,
 zilde ayrı bir bildirim ve Bugün'de kendi cümlesi. **Onayla** da faturayı kaydetmek de böyle faturayı onaylamaz
-(`confirmInvoices` → `kept`); kategoriyi mal alışı yapmak onaylar. Kategori bilerek öyle kalacaksa (temizlik
-malzemesi faturasında bir kalem süt) **Kalsın** faturayı onaylar ve kararı `integration_state`'e
-(`invoices.stockOnlyAccepted`) yazar: fatura yeniden kontrole düşmez, rozeti gri **Stoğa giriyor** olur; kategorisi
-değişince karar düşer, **Geri al** kararı da geri alır. Kalsın dört yerde: "kontrolde kaldı" uyarısında (birden çok
-faturada **Hepsi kalsın**), fatura penceresinin altında, satırın kategori sayfasında ("Diğer kalsın") ve "Kontrol
-bekleyen" süzgecinin alt çubuğunda (yalnız mal alışı sayılmayanlar kaldıysa **Hepsi kalsın**, onaylı pencereyle). Alt
-çubuğun **Hepsini onayla**'sı yalnız kategorisi tahminle yazılanları sayar ve onaylar. Kategorisi Aylık harcamalar'da
-bir gidere bağlıysa uyarı faturanın gelir-giderde o giderde sayıldığını, yalnız mal maliyetine girmediğini söyler
-(deterjanlı market faturasının tamamı mal alışına taşınmasın). Sabah e-postası iki nedeni ayrı yazar.
+(`confirmInvoices` → `kept`); kategoriyi mal alışı (ya da kalem kalem sayılan "Diğer", "Hizmet"…) yapmak onaylar.
+Kategori bilerek öyle kalacaksa (komisyon faturasında bağlanmış bir kalem) **Kalsın** faturayı onaylar ve kararı
+`integration_state`'e (`invoices.stockOnlyAccepted`) yazar: fatura yeniden kontrole düşmez, rozeti gri **Stoğa giriyor**
+olur; kategorisi değişince karar düşer, **Geri al** kararı da geri alır. Kalsın dört yerde: "kontrolde kaldı" uyarısında
+(birden çok faturada **Hepsi kalsın**), fatura penceresinin altında, satırın kategori sayfasında ("Komisyon kalsın") ve
+"Kontrol bekleyen" süzgecinin alt çubuğunda (yalnız mal alışı sayılmayanlar kaldıysa **Hepsi kalsın**, onaylı
+pencereyle). Alt çubuğun **Hepsini onayla**'sı yalnız kategorisi tahminle yazılanları sayar ve onaylar. Uyarı ve
+"Kalsın" ekranda da aynı kuralla yalnız komisyon faturasında çıkar (`stockOnlyCategory`, `src/lib/invoice-linking.ts`).
+Sabah e-postası iki nedeni ayrı yazar. 25 Kasım 2026'ya kadar "Diğer" ve "Hizmet" faturaları da bu kontrole düşüyordu;
+o kararların ("Kalsın") yerini kalem kalem sayma aldı (`tests/fatura-stok-db.test.ts`).
 
 ## 7. Elle çalıştırma ve sıfırlama
 

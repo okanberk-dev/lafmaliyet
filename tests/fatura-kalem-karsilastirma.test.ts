@@ -23,7 +23,9 @@ import type { InvoiceRow } from "../src/app/panel/faturalar/rules";
 import { supplierMatchKey } from "../src/app/panel/faturalar/rules";
 import { createModel, monthOfDate } from "../src/lib/calc/engine";
 import type { Dataset, ExpenseCategory, Invoice } from "../src/lib/calc/types";
+import { INVOICE_CATEGORIES } from "../src/lib/constants";
 import { invoiceInScope } from "../src/lib/invoice-branch";
+import { stockOnlyCategory } from "../src/lib/invoice-linking";
 import { lineTarget, splitLinesFor, SUPPLIES_CATEGORY } from "../src/lib/invoice-split";
 import { monthNumbers, numberChanges, oldRuleDataset, taxNumbers } from "../src/lib/invoice-split-compare";
 import { notIngredientOf, type IgnoredProduct, type IgnoredSupplier } from "../src/lib/product-ignore";
@@ -230,4 +232,8 @@ test("Vergi köprüsü: hesap döneminden önceki karışık fatura da Gelir-gid
   const pre = rows.find((r) => r.key === "prePeriod")?.amount ?? 0;
   const prePlain = excel.invoices.filter((i) => i.date >= "2026-09-01" && i.date < "2026-09-15" && ["Hammadde & İçecek", "Tatlı & Hazır Ürün", "Ambalaj", "Komisyon"].includes(i.category)).reduce((a, i) => a + i.amount - i.discount, 0);
   assert.ok(Math.abs(-pre - prePlain - 360) < 0.01, `dönem öncesi: ${-pre} ≠ ${prePlain} + 360`);
+});
+
+test("'Mal alışı sayılmıyor' uyarısı ekranda da sunucudaki kuralla: yalnız bölünmeyen komisyon faturası", () => {
+  for (const c of INVOICE_CATEGORIES) assert.equal(stockOnlyCategory(c), c === "Komisyon", `${c}: stoğa girip gelir-gidere girmeyen kategori mi`);
 });
