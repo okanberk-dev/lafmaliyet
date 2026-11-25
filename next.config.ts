@@ -53,7 +53,6 @@ const nextConfig: NextConfig = {
   // tesseract.js worker_threads ile kendi işçi dosyasını açar: paketlenmez, Node'un require'ıyla yüklenir
   serverExternalPackages: ["tesseract.js", "tesseract.js-core"],
   turbopack: {
-    root: "/workspace/lafmaliyet/.claude/worktrees",
     rules: {
       "*.css": {
         // CSS modülleri (Arc UI grafikleri, src/components/arc) Tailwind'den geçmez: `as: "*.css"` onları
