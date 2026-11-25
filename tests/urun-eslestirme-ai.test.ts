@@ -563,7 +563,7 @@ test("kaynak: ürün önerisi okuma sınırına sayılmaz, kendi sınırı var; 
   const claude = code("src/server/ai/claude.ts");
   assert.match(claude, /const MATCH_FEATURE = "eslestirme" satisfies AiFeature;/);
   assert.match(claude, /const OWN_CAP: Partial<Record<AiFeature, number>> = \{ \[SHIFT_FEATURE\]: SHIFT_DRAFT_DAILY_CAP, \[MATCH_FEATURE\]: MATCH_DAILY_CAP \};/);
-  assert.match(claude, /notInArray\(s\.aiCalls\.feature, \[\.\.\.OWN_CAP_FEATURES, ASSISTANT_FEATURE\]\)/);
+  assert.match(claude, /notInArray\(s\.aiCalls\.feature, \[\.\.\.OWN_CAP_FEATURES, ASSISTANT_FEATURE, INVOICE_FEATURE\]\)/);
   const extractMatch = claude.slice(claude.indexOf("export async function extractMatch"), claude.indexOf("const SUBJECT"));
   assert.match(extractMatch, /\.\.\.MATCH_REQUEST, feature: MATCH_FEATURE, photoId: null, keepResult: false, exclusiveMs: MATCH_RUNNING_MS/);
   // Kapılar (sınır, aynı anda tek istek) ve "running" satırı tek işlemde, danışma kilidiyle

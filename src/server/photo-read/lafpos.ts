@@ -1,9 +1,9 @@
 import "server-only";
 
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray, ne } from "drizzle-orm";
 
 import { lafposPhotoCheck, type LafposPhotoReport } from "@/lib/lafpos/foto";
-import { bankPosAuto } from "@/lib/lafpos/gun-sonu";
+import { deviceCompareReport } from "@/lib/lafpos/gun-sonu";
 import { isLafposDay } from "@/lib/lafpos/switch";
 import { cheapReadingProblems, runLafposRead, type LafposReadResult, type ReadStep } from "@/lib/photo-read/lafpos-read";
 import { OCR_MODEL } from "@/lib/photo-read/models";
@@ -77,18 +77,7 @@ async function compareReport(db: DB, day: string, branchId: string, device: NonN
     };
   }
   // Otomatik raporun yazacağı yazarkasa alanları (src/lib/lafpos/gun-sonu.ts okcAuto ile aynı eşleme)
-  const okc = device.okc;
-  return {
-    bankPos: bankPosAuto(device.bankPos).value,
-    okcZNo: lafposZNo,
-    okcTotal: okc?.total ?? null,
-    okcCash: okc?.cash ?? null,
-    okcCard: okc?.card ?? null,
-    okcMealCard: okc?.mealCard ?? null,
-    okcOther: okc?.other ?? null,
-    okcVat: okc?.vat?.length ? okc.vat : null,
-    lafposZNo,
-  };
+  return deviceCompareReport({ bankPos: device.bankPos, okc: device.okc, lafposZNo });
 }
 
 /** Fotoğrafın kayıtlı okunuşları (yazarkasa bölümü): son başarılı yapay zekâ okunuşu, güçlü model denendi mi, kod okunuşu */
@@ -167,6 +156,50 @@ export async function readLafposDayPhoto(
   });
   logPhotoRead({ photoId, kind: "kasa-okc", steps: result.steps, model: result.model, documentType: result.raw?.documentType ?? null, ok: result.raw !== null });
   return { ...result, device: device.okc ? { provider: device.okc.provider, zReport: device.okc.zReport } : null };
+}
+
+/** Okunmamış fotoğrafın yeniden okunması için en az kalan süre (ucuz + güçlü + kod okumaya ve e-postaya yetsin) */
+const UNREAD_MIN_MS = 30_000;
+/** Okunmamış fotoğrafın ai_calls satırı bu kadarsa (yükleme + iki yeniden okuma) bir daha denenmez */
+const UNREAD_MAX_ATTEMPTS = 6;
+
+/**
+ * Okunmamış gün sonu fotoğraflarını okur (sahibin isteği, 25 Kasım 2026: "rapor ve z raporları okunmuyor"). Fotoğraf
+ * yüklenirken okuma düştüyse (zaman aşımı, yoğunluk, bağlantı, işlev süresi) fotoğraf okunmadan bağlanıyor ve hiçbir yol
+ * onu yeniden okumuyordu: karşılaştırma "okunmadı" kalıyor, yöneticiye rakam gitmiyordu. Rapora bağlı ya da bekleyen
+ * her fotoğraf için ne yapay zekâ ne kod okunuşu varsa readLafposDayPhoto (önce ucuz model, gerekirse güçlü, yapay zekâ
+ * yoksa kod) bir kez daha dener. Okunan fotoğraf sayısı döner; çağıran karşılaştırmayı yeniler. Fotoğraf eklenince
+ * (after) ve gün sonu otomasyonunda (günlük iş) çağrılır
+ */
+export async function readUnreadDayPhotos(db: DB, date: string, deps: StrongRecheckDeps = {}): Promise<number> {
+  const branchId = await lafposBranchId(db);
+  if (!isLafposDay(date, await loadLafposSwitchDay(db))) return 0;
+  const [st] = await db
+    .select({ reportId: s.lafposDayEnds.reportId, autoValues: s.lafposDayEnds.autoValues, pendingPhotos: s.lafposDayEnds.pendingPhotos })
+    .from(s.lafposDayEnds)
+    .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)))
+    .limit(1);
+  if (!st) return 0;
+  const ids = st.reportId && st.autoValues ? await dayPhotoIds(db, st.reportId) : st.reportId ? [] : st.pendingPhotos;
+  let read = 0;
+  for (const photoId of ids) {
+    if (deps.deadlineAt !== undefined && deps.deadlineAt - Date.now() < UNREAD_MIN_MS) break;
+    const prev = await previousReads(db, photoId, "");
+    if (prev.reading || prev.ocr) continue;
+    // Sınırlı deneme: yükleme ve en çok iki yeniden okuma (her biri yapay zekâ + kod satırı bırakır)
+    const [tries] = await db
+      .select({ n: count() })
+      .from(s.aiCalls)
+      .where(and(eq(s.aiCalls.photoId, photoId), inArray(s.aiCalls.feature, ["kasa-okc", "kasa-pos"]), ne(s.aiCalls.status, "running")));
+    if ((tries?.n ?? 0) >= UNREAD_MAX_ATTEMPTS) continue;
+    const photo = await getPhoto(photoId);
+    if (!photo?.createdBy) continue;
+    const file = await (deps.read ?? readPhoto)(photoId).catch(() => null);
+    if (!file) continue;
+    const r = await readLafposDayPhoto(db, { photoId, bytes: file.bytes, contentType: file.contentType as AiImageType, day: date, userId: photo.createdBy, branchId }, deps.client ? { client: deps.client } : {});
+    if (r?.raw) read++;
+  }
+  return read;
 }
 
 export interface StrongRecheckDeps {

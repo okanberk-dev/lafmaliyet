@@ -42,11 +42,11 @@ import { APP_URL } from "@/server/notify/digest-template";
 import { activeDigestRecipients, sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail, type SendOptions } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
-import { strongRecheckDayPhotos, type StrongRecheckDeps } from "@/server/photo-read/lafpos";
+import { readUnreadDayPhotos, strongRecheckDayPhotos, type StrongRecheckDeps } from "@/server/photo-read/lafpos";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 import { supersede } from "@/server/staff-requests/core";
 
-import { applyPhotoZNo, dayPhotoIds, linkPendingPhotos, photoCheckOf, refreshDayPhotoCheck } from "./foto";
+import { applyPhotoZNo, dayPhotoIds, linkPendingPhotos, pendingPhotoCheck, photoCheckOf, photoMailParts, refreshDayPhotoCheck } from "./foto";
 
 /*
  * LafPOS gün sonunun otomasyonu (docs/LAFPOS.md › Gün sonu otomasyonu): LafPOS'un şubesinin (Marina; kütükten türetilir, lafposBranchId)
@@ -598,10 +598,12 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
     const values = rep[0] ? autoValuesOfReport(rep[0]) : null;
     // Gün sonu fotoğrafı: otomatik raporda (ya da rapor yokken bekleyen) eklenen; elle girilen raporda bölüm yok
     const auto = rep[0] && st.reportId === rep[0].id && st.autoValues;
-    const photo =
-      auto || !rep[0]
-        ? { need: lafposPhotoNeed(day), attached: rep[0] ? (await dayPhotoIds(db, rep[0].id)).length : st.pendingPhotos.length, check: st.photoCheck ?? null }
-        : null;
+    const photoIds = auto ? await dayPhotoIds(db, rep[0].id) : !rep[0] ? st.pendingPhotos : [];
+    // Rapor yokken bekleyen fotoğraf otomatik raporun yazacağı değerlerle karşılaştırılır (fotoğraf e-postasıyla aynı)
+    const photoCheck = auto ? (st.photoCheck ?? null) : !rep[0] ? await pendingPhotoCheck(db, date, branchId, photoIds, now) : null;
+    // Fotoğrafta okunan ve fotoğrafın kendisi (ek): yönetici gün sonu e-postasında da görür
+    const parts = photoIds.length ? await photoMailParts(db, date, photoIds) : null;
+    const photo = auto || !rep[0] ? { need: lafposPhotoNeed(day), attached: photoIds.length, check: photoCheck, reads: parts?.reads ?? [] } : null;
     const msg = renderDayEnd({
       branchName: branch?.name ?? "Marina",
       date,
@@ -624,7 +626,7 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
       detail: day.detail,
     });
     const notify = await loadNotifySettings();
-    const res = await sendEmail({ from: resolveFrom(notify.from), to, ...msg, idempotencyKey: `lafpos-gun-${branchId}-${date}-${day.hash}` }, opts);
+    const res = await sendEmail({ from: resolveFrom(notify.from), to, ...msg, ...(parts?.attachments.length ? { attachments: parts.attachments } : {}), idempotencyKey: `lafpos-gun-${branchId}-${date}-${day.hash}` }, opts);
     await db
       .insert(s.notificationLog)
       .values({ key: `lafpos-gun:${branchId}:${date}`, channel: "email", subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error })
@@ -719,21 +721,35 @@ export async function sendPavoEmail(db: DB, date: string, now = new Date(), opts
 }
 
 /**
- * Fotoğraf e-postası (yalnız yöneticinin alıcıları; sahibin isteği, 24 Kasım 2026: "mail olarak vs. bilgilerde de farklı
- * olunca belirsin"): gün sonu e-postası gittikten sonra eklenen fotoğraf LafPOS'tan farklı okunduysa ya da kodla okunup bir
- * satırı güvenle seçilmediyse ("yönetici baksın") karşılaştırma satır satır gider. Aynı karşılaştırma bir kez gider (gün
- * sonu e-postasıyla gittiyse de); uyumlu fotoğraf göndermez. Çalışanların kısa e-postasına fotoğraf hiç girmez. Fotoğraf
- * eklenince (attachLafposDayPhoto, after) ve günlük işte (runLafposDayEnd) çağrılır; düşerse günlük iş yeniden dener
+ * Fotoğraf e-postası (yalnız yöneticinin alıcıları). Sahibin istekleri: 24 Kasım 2026 "mail olarak vs. bilgilerde de farklı
+ * olunca belirsin"; 25 Kasım 2026 "gün sonu alınca admine z raporu yükleyince mail gelmedi". Gün sonu e-postası gittikten
+ * sonra eklenen her gün sonu fotoğrafı bildirilir (photoMailNeeded): durum (LafPOS'la aynı / FARKLI / okunamadı / yönetici
+ * baksın), karşılaştırma satır satır, fotoğrafta okunan rakamlar, ekleyen ve fotoğrafın kendisi (ek). Rapor yokken
+ * (LafPOS'ta sayım yok) bekleyen fotoğraf otomatik raporun yazacağı değerlerle karşılaştırılır (pendingPhotoCheck). Aynı
+ * karşılaştırma bir kez gider (gün sonu e-postasıyla gittiyse de). Çalışanların kısa e-postasına fotoğraf hiç girmez.
+ * Fotoğraf eklenince (attachLafposDayPhoto, after) ve günlük işte (runLafposDayEnd) çağrılır; düşerse günlük iş yeniden
+ * dener. Elle girilmiş raporun fotoğrafı bu yoldan geçmez (raporun kendi e-postası)
  */
 export async function sendPhotoEmail(db: DB, date: string, now = new Date(), opts?: SendOptions): Promise<PhotoEmailResult> {
   const branchId = await lafposBranchId(db);
   if (!isLafposDay(date, await loadLafposSwitchDay(db))) return "skipped";
   const [st] = await db
-    .select({ emailedHash: s.lafposDayEnds.emailedHash, photoCheck: s.lafposDayEnds.photoCheck, reportId: s.lafposDayEnds.reportId, autoValues: s.lafposDayEnds.autoValues })
+    .select({
+      emailedHash: s.lafposDayEnds.emailedHash,
+      photoCheck: s.lafposDayEnds.photoCheck,
+      reportId: s.lafposDayEnds.reportId,
+      autoValues: s.lafposDayEnds.autoValues,
+      pendingPhotos: s.lafposDayEnds.pendingPhotos,
+    })
     .from(s.lafposDayEnds)
     .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
-  const check = st?.photoCheck ?? null;
-  if (!st || !st.reportId || !st.autoValues || !photoMailNeeded(check)) return "skipped";
+  if (!st) return "skipped";
+  const auto = Boolean(st.reportId && st.autoValues);
+  // Elle girilmiş rapor (bekleyen fotoğraf o rapora bağlandı): bu yol değil
+  if (!auto && st.reportId) return "skipped";
+  const ids = auto ? await dayPhotoIds(db, st.reportId!) : st.pendingPhotos;
+  const check = auto ? (st.photoCheck ?? null) : await pendingPhotoCheck(db, date, branchId, ids, now);
+  if (!ids.length || !photoMailNeeded(check)) return "skipped";
   if (!st.emailedHash) return "waiting";
   const key = photoMailKey(branchId, date, check!);
   const [already] = await db.select({ ok: s.notificationLog.ok }).from(s.notificationLog).where(eq(s.notificationLog.key, key)).limit(1);
@@ -754,14 +770,23 @@ export async function sendPhotoEmail(db: DB, date: string, now = new Date(), opt
     const to = await dayEndRecipients(db, branchId);
     if (!to.length) return "off";
     if (!isEmailConfigured()) return "failed";
-    const [branch] = await db.select({ name: s.branches.name }).from(s.branches).where(eq(s.branches.id, branchId)).limit(1);
-    const msg = renderPhotoMail({ branchName: branch?.name ?? "Marina", date, check: check!, link: `${APP_URL}/panel/kasa?gun=${date}&sube=${encodeURIComponent(branchId)}` });
+    const [[branch], parts] = await Promise.all([db.select({ name: s.branches.name }).from(s.branches).where(eq(s.branches.id, branchId)).limit(1), photoMailParts(db, date, ids)]);
+    const msg = renderPhotoMail({
+      branchName: branch?.name ?? "Marina",
+      date,
+      check: check!,
+      link: `${APP_URL}/panel/kasa?gun=${date}&sube=${encodeURIComponent(branchId)}`,
+      reads: parts.reads,
+      by: parts.by,
+      attachments: parts.attachments.length,
+    });
     const notify = await loadNotifySettings();
-    const res = await sendEmail({ from: resolveFrom(notify.from), to, ...msg, idempotencyKey: key.replace(/:/g, "-") }, opts);
+    const res = await sendEmail({ from: resolveFrom(notify.from), to, ...msg, attachments: parts.attachments, idempotencyKey: key.replace(/:/g, "-") }, opts);
     await db
       .insert(s.notificationLog)
       .values({ key, channel: "email", subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error })
       .onConflictDoUpdate({ target: s.notificationLog.key, set: { subject: msg.subject, ok: res.ok, error: res.ok ? null : res.error, sentAt: new Date() } });
+    if (!res.ok) console.error("[lafpos] fotoğraf e-postası gitmedi:", date, res.error);
     return res.ok ? "sent" : "failed";
   } finally {
     await release().catch(() => {});
@@ -815,6 +840,12 @@ export async function runLafposDayEnd(
     console.error("[lafpos] gün sonu raporu yazılamadı:", date, e);
     report = "error";
     error = e instanceof Error ? e.message : String(e);
+  }
+  // Yüklenirken okunamayan fotoğraf bir kez daha okunur (readUnreadDayPhotos): e-postalar ve zil rakamı görsün
+  try {
+    if ((await readUnreadDayPhotos(db, date, { deadlineAt: opts?.deadlineAt, ...recheck })) > 0) await refreshDayPhotoCheck(db, date, await lafposBranchId(db), now);
+  } catch (e) {
+    console.error("[lafpos] okunmamış gün sonu fotoğrafı:", date, e instanceof Error ? e.message : e);
   }
   // LafPOS'un yeni rakamları ucuz okunuşu "fark"a çevirdiyse e-postalardan ve zilden önce bir kez güçlü model bakar
   // (strongRecheckDayPhotos); düşerse kayıtlı karşılaştırma kalır

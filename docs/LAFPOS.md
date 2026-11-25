@@ -943,17 +943,30 @@ LafPOS'un gününde bu bölümler yok.
 - Gönderim başarısızsa hata `lafpos_day_ends.email_error`'a ve işlem kaydına (`notification_log`, anahtar
   `lafpos-gun:marina:GÜN`) yazılır; günlük iş yeniden dener. Aynı anda iki gönderim olmaz (`sending_at`).
 - Geçiş gününden önceki gün (deneme) e-posta almaz, rapor yazılmaz.
-- **Fotoğraf e-postası** (`sendPhotoEmail`; sahibin isteği, 24 Kasım 2026: "mail olarak vs. bilgilerde de farklı olunca
-  belirsin"): fotoğraf çoğu gün gün sonu e-postasından sonra eklenir. Fotoğraf LafPOS'tan farklı okunduysa ya da kodla
-  okunup "yönetici baksın" ise aynı alıcılara (kasa raporu alıcıları) kısa e-posta gider: konu "Kasa raporu KR-20261122 ·
-  Marina · 22 Kasım Pazar · gün sonu fotoğrafı LafPOS'tan FARKLI" (ya da "… okunamadı, yönetici baksın"), okuyan ve
-  satır satır karşılaştırma, "Panelde aç". Uyumlu fotoğraf e-posta göndermez. Aynı karşılaştırma bir kez gider
-  (`notification_log` anahtarı `lafpos-foto:marina:GÜN:<özet>`; özet durum, okuyan ve satırlardan, `photoCheckHash`):
-  gün sonu e-postası farkla birlikte gittiyse fotoğraf e-postası gitmez; yeni fotoğraf ya da LafPOS'un düzeltmesi
-  karşılaştırmayı değiştirirse yeniden gider. Fotoğraf bağlanınca (`attachLafposDayPhoto`, yanıttan sonra) ve günlük işte
-  (`runLafposDayEnd` › `photo`) denenir; gün sonu e-postası henüz gitmediyse beklenir (fark onunla gider). **Çalışanların
-  kısa gün sonu e-postasına fotoğraf ve fark hiç girmez.** Sabah e-postası kasa sorunlarını listelemez (fotoğraf farkı
-  orada yok).
+- **Fotoğraf e-postası** (`sendPhotoEmail`; sahibin istekleri, 24 Kasım 2026: "mail olarak vs. bilgilerde de farklı
+  olunca belirsin"; 25 Kasım 2026: "gün sonu alınca admine z raporu yükleyince mail gelmedi"): fotoğraf çoğu gün gün
+  sonu e-postasından sonra eklenir. **Eklenen her gün sonu fotoğrafı** aynı alıcılara (kasa raporu alıcıları) kısa
+  e-postayla bildirilir; eskiden yalnız fark ya da "yönetici baksın"da gidiyordu, uyumlu fotoğrafta sahip fotoğrafın
+  geldiğini ve okunduğunu göremiyordu. Konu durumu söyler: "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · gün sonu
+  fotoğrafı alındı · LafPOS'la aynı", "… LafPOS'tan FARKLI", "… okunamadı" (yanlış belge, personel yeniden çeker), "…
+  okunamadı, yönetici baksın" ya da "… alındı · okunmadı". İçerik: ekleyen, okuyan (yapay zekâ ve modeli ya da kod),
+  satır satır karşılaştırma, **Fotoğrafta okunan** (belge türü, tarih, Z no, fiş sayısı, günün toplamı, ödemeler, KDV
+  dökümü, toplam KDV, batch'ler; yalnız basılı ve okunmuş rakamlar, güveni düşük olanın yanında "(belirsiz)", kümülatif
+  yok; `okcReadRows`), "Panelde aç" ve **fotoğrafın kendisi ek olarak** (en çok 3 fotoğraf, toplam 8 MB; depo
+  okunamazsa ek düşer, e-posta yine gider). Rapor yokken (LafPOS'ta sayım yok) bekleyen fotoğraf otomatik raporun
+  yazacağı değerlerle karşılaştırılır (`pendingPhotoCheck`). Aynı karşılaştırma bir kez gider (`notification_log`
+  anahtarı `lafpos-foto:marina:GÜN:<özet>`; özet durum, okuyan, satırlar ve fotoğraf sayısından, `photoCheckHash`):
+  gün sonu e-postası fotoğrafla birlikte gittiyse (fotoğraf bölümü, okunanlar ve ek onun içinde) fotoğraf e-postası
+  gitmez; yeni fotoğraf ya da LafPOS'un düzeltmesi karşılaştırmayı değiştirirse yeniden gider. Fotoğraf bağlanınca
+  (`attachLafposDayPhoto`, yanıttan sonra) ve günlük işte (`runLafposDayEnd` › `photo`) denenir; gün sonu e-postası
+  henüz gitmediyse beklenir (fotoğraf onunla gider). **Çalışanların kısa gün sonu e-postasına fotoğraf ve fark hiç
+  girmez.** Sabah e-postası kasa sorunlarını listelemez (fotoğraf farkı orada yok). Elle girilmiş raporun fotoğrafı bu
+  yoldan geçmez (raporun kendi e-postası).
+- **Okunmamış fotoğraf yeniden okunur** (`readUnreadDayPhotos`; 25 Kasım 2026, "rapor ve z raporları okunmuyor"):
+  fotoğraf yüklenirken okuma düştüyse (zaman aşımı, yoğunluk, bağlantı) fotoğraf okunmadan bağlanıyor, hiçbir yol onu
+  yeniden okumuyordu. Şimdi fotoğraf bağlanınca (yanıttan sonra, e-postadan önce) ve gün sonu otomasyonunda ne yapay
+  zekâ ne kod okunuşu olan her fotoğraf aynı sırayla (ucuz → güçlü → kod) bir kez daha okunur, karşılaştırma yenilenir.
+  Fotoğraf başına sınırlı: `ai_calls`'ta 6 deneme satırı olan fotoğraf bir daha denenmez.
 - **Çalışanların kısa e-postası** (`sendStaffDayEnd`; Kasa › Rapor alıcıları › Çalışanlar): yöneticinin e-postasıyla
   aynı tetikte, ondan ayrı gönderilir; yöneticininki düşse ya da alıcısı olmasa da gider (Pavo beklenirken beklenir). Sayım varsa (rapor yazıldı ya da elle girildi) "Marina · gün sonu alındı · 22 Kasım Pazar": Z no, fiş
   sayısı, "tutarlar" açıksa ciro ve ödeme türleri, "Emeğiniz için teşekkürler". **Günde bir kez**: LafPOS düzeltip

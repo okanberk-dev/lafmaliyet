@@ -5,7 +5,7 @@ import { addDays, longDateTR } from "@/lib/reminders";
 
 import { pavoSectionHtml, pavoSectionText, pavoState } from "./bank-pos";
 import type { BankPos, PosDayZ, PosIkram, PosOffDevice, PosOkc, PosPayment } from "./day";
-import { lafposPhotoDone, lafposPhotoNeed, photoCheckText, photoSourceText, photoUnsureText, type LafposPhotoCheck, type LafposPhotoNeed } from "./foto";
+import { lafposPhotoDone, lafposPhotoNeed, photoCheckText, photoSourceText, photoUnsureText, type LafposPhotoCheck, type LafposPhotoNeed, type LafposPhotoReport } from "./foto";
 import type { LafposDayDetail } from "./gun-ayrinti";
 
 /**
@@ -89,6 +89,26 @@ export const GAP_TEXT = {
 export function bankFailedText(b: Pick<BankPos, "errorCode" | "message">): string {
   const why = [b.errorCode ? `hata ${b.errorCode}` : null, b.message].filter(Boolean).join(": ");
   return `Banka POS: Pavo gün sonu alınamadı${why ? ` (${why})` : ""}; LafPOS'ta Yönetim › Yazarkasa POS › Cihazda gün sonu al`;
+}
+
+/**
+ * Rapor yokken (LafPOS'ta sayım yok, fotoğraf bekliyor) ya da rapor yazılmadan önce fotoğrafın karşılaştırılacağı
+ * alanlar: otomatik raporun yazacağı değerler (Banka POS = Pavo'nun gün sonları, yazarkasa alanları cihaz belgelerinden;
+ * okcAuto ile aynı eşleme). `lafposZNo` LafPOS'un yazarkasa Z no'su (yoksa null)
+ */
+export function deviceCompareReport(d: { bankPos: BankPos | null; okc: PosOkc | null; lafposZNo: string | null }): LafposPhotoReport {
+  const okc = d.okc;
+  return {
+    bankPos: bankPosAuto(d.bankPos).value,
+    okcZNo: d.lafposZNo,
+    okcTotal: okc?.total ?? null,
+    okcCash: okc?.cash ?? null,
+    okcCard: okc?.card ?? null,
+    okcMealCard: okc?.mealCard ?? null,
+    okcOther: okc?.other ?? null,
+    okcVat: okc?.vat?.length ? okc.vat : null,
+    lafposZNo: d.lafposZNo,
+  };
 }
 
 /**
@@ -377,7 +397,8 @@ export interface DayEndMail {
   /** Gün sonu tam: yazarkasanın cihaz belgeleri (gövdenin okc'si; yoksa null) */
   okc?: PosOkc | null;
   /** Gün sonu tam: istenen gün sonu fotoğrafı, eklenen sayı ve fotoğraf ↔ LafPOS karşılaştırması (verilmezse bölüm yok) */
-  photo?: { need: LafposPhotoNeed; attached: number; check: LafposPhotoCheck | null } | null;
+  /** `reads`: fotoğraf başına okunan satırlar (okcReadRows); yoksa bölüm yok */
+  photo?: { need: LafposPhotoNeed; attached: number; check: LafposPhotoCheck | null; reads?: readonly (readonly [string, string])[][] } | null;
   /**
    * Faz 2 ayrıntısı (src/lib/lafpos/gun-ayrinti.ts): yazarkasadan geçmeyen, ödeme iptalleri, iptal edilen kalemler,
    * yazarkasa Z no, KDV dökümü, düzeltmenin nedeni. Eski LafPOS'un gününde bölümleri boş
@@ -482,12 +503,20 @@ export function dayEndSections(m: DayEndMail): { title: string; rows: [string, s
     ...(m.bankPos !== undefined || m.okc !== undefined || m.photo ? [{ title: "Cihazlar ve fotoğraf", rows: deviceRows(m) }] : []),
     // Fotoğraf ↔ LafPOS satır satır (yalnız yönetici e-postası; sahibin isteği, 24 Kasım 2026: "farklı olunca belirsin")
     ...(m.photo?.check && (m.photo.check.rows.length || m.photo.check.state === "belirsiz") ? [{ title: PHOTO_TITLE, rows: photoRows(m.photo.check) }] : []),
+    // Fotoğrafta okunan rakamlar (karşılaştırmadan bağımsız; sahibin isteği, 25 Kasım 2026)
+    ...photoReadSections(m.photo?.reads),
     // Faz 2: yazarkasadan geçmeyen, ödeme iptalleri, iptal edilen kalemler, yazarkasa Z no ve KDV (gönderim sırası yazılmaz)
     ...(m.detail?.sections.filter((x) => x.title !== "Gönderim") ?? []),
   ];
 }
 
 const PHOTO_TITLE = "Fotoğraf ↔ LafPOS";
+
+/** "Fotoğrafta okunan" bölümleri: fotoğraf başına bir bölüm, birden çok fotoğrafta sırasıyla */
+function photoReadSections(reads: readonly (readonly [string, string])[][] | undefined): { title: string; rows: [string, string][] }[] {
+  const list = (reads ?? []).filter((r) => r.length);
+  return list.map((rows, i) => ({ title: list.length > 1 ? `Fotoğrafta okunan (${i + 1}. fotoğraf)` : "Fotoğrafta okunan", rows: rows.map(([a, b]) => [a, b] as [string, string]) }));
+}
 
 /**
  * Fotoğraf ↔ LafPOS satırları (gün sonu ve fotoğraf e-postası): okuyan (yapay zekâ / kod), "okunamadı — yönetici baksın"
@@ -501,11 +530,13 @@ export function photoRows(check: LafposPhotoCheck): [string, string][] {
 }
 
 /**
- * Fotoğraf e-postası gerekir mi: fotoğraf LafPOS'tan farklı ya da kodla okunup "yönetici baksın". Uyumlu fotoğraf e-posta
- * göndermez (gün sonu e-postasında satırları yine görünür)
+ * Fotoğraf e-postası gerekir mi: gün sonu e-postası gittikten sonra eklenen her gün sonu fotoğrafı yöneticiye bildirilir
+ * (sahibin isteği, 25 Kasım 2026: "gün sonu alınca admine z raporu yükleyince mail gelmedi"). Eskiden yalnız fark ya da
+ * "yönetici baksın"da gidiyordu; uyumlu fotoğraf sessiz kalıyor, sahip fotoğrafın geldiğini ve okunduğunu göremiyordu.
+ * Karşılaştırma yoksa (henüz kurulmadı) e-posta yok
  */
 export function photoMailNeeded(check: Pick<LafposPhotoCheck, "state"> | null | undefined): boolean {
-  return check?.state === "fark" || check?.state === "belirsiz";
+  return Boolean(check);
 }
 
 /**
@@ -513,7 +544,8 @@ export function photoMailNeeded(check: Pick<LafposPhotoCheck, "state"> | null | 
  * girmez (bilgi satırı eklenince gönderilmiş fark e-postası yeniden gitmez)
  */
 export function photoCheckHash(check: LafposPhotoCheck): string {
-  const text = JSON.stringify([check.state, check.source ?? "ai", check.model ?? null, check.rows.filter((r) => !r.info).map((r) => [r.label, r.photo, r.lafpos, r.ok])]);
+  // Fotoğraf sayısı da girer: aynı okunuşlu ikinci fotoğraf da yöneticiye bildirilir
+  const text = JSON.stringify([check.state, check.source ?? "ai", check.model ?? null, check.rows.filter((r) => !r.info).map((r) => [r.label, r.photo, r.lafpos, r.ok]), check.photos]);
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
     h ^= text.charCodeAt(i);
@@ -522,31 +554,81 @@ export function photoCheckHash(check: LafposPhotoCheck): string {
   return h.toString(16).padStart(8, "0");
 }
 
+/** Fotoğraf e-postasının konu sonu ve üst satırı, karşılaştırmanın durumuna göre */
+const PHOTO_MAIL_STATE: Record<LafposPhotoCheck["state"], { subject: string; headline: string; tone: "ok" | "bad" | "warn" }> = {
+  uyumlu: { subject: "gün sonu fotoğrafı alındı · LafPOS'la aynı", headline: "Gün sonu fotoğrafı alındı ve okundu: rakamlar LafPOS'la aynı", tone: "ok" },
+  fark: { subject: "gün sonu fotoğrafı LafPOS'tan FARKLI", headline: "Fotoğraf LafPOS'un rakamlarından farklı okundu", tone: "bad" },
+  okunamadi: { subject: "gün sonu fotoğrafı okunamadı", headline: "Fotoğraf okunamadı ya da yanlış belge; personelden yeniden çekmesi istendi", tone: "warn" },
+  okunmadi: { subject: "gün sonu fotoğrafı alındı · okunmadı", headline: "Gün sonu fotoğrafı alındı ama henüz okunmadı; fotoğrafa bakın", tone: "warn" },
+  belirsiz: { subject: "gün sonu fotoğrafı okunamadı, yönetici baksın", headline: "", tone: "warn" },
+};
+
+const TONE = { ok: { bg: "#f0fdf4", fg: "#166534" }, bad: { bg: "#fef2f2", fg: "#991b1b" }, warn: { bg: "#fff7ed", fg: "#9a3412" } } as const;
+
+/** Fotoğrafta okunanın başlığı (e-postanın ikinci bölümü) */
+const READ_TITLE = "Fotoğrafta okunan";
+
 /**
- * Fotoğraf e-postası (yalnız yöneticinin alıcıları): gün sonu e-postası gittikten sonra eklenen fotoğraf LafPOS'tan farklı
- * okunduysa ya da kodla okunup güvenle seçilmediyse, karşılaştırma satır satır. Personele hiçbir zaman gitmez
+ * Fotoğraf e-postası (yalnız yöneticinin alıcıları): gün sonu e-postası gittikten sonra eklenen her gün sonu fotoğrafı
+ * (photoMailNeeded). Üstte durum (aynı / FARKLI / okunamadı / yönetici baksın), altında karşılaştırma satır satır,
+ * fotoğrafta okunan rakamlar (`reads`, okcReadRows) ve ekleyen; fotoğrafın kendisi e-postaya eklenir (sunucu,
+ * sendPhotoEmail). Personele hiçbir zaman gitmez
  */
-export function renderPhotoMail(m: { branchName: string; date: string; check: LafposPhotoCheck; link: string }): { subject: string; html: string; text: string } {
-  const subject = `${dayEndSubjectHead(m.branchName, m.date)} · gün sonu fotoğrafı ${m.check.state === "fark" ? "LafPOS'tan FARKLI" : "okunamadı, yönetici baksın"}`;
+export function renderPhotoMail(m: {
+  branchName: string;
+  date: string;
+  check: LafposPhotoCheck;
+  link: string;
+  /** Fotoğrafta okunanlar (fotoğraf başına satırlar); yoksa bölüm yok */
+  reads?: readonly (readonly [string, string])[][];
+  /** Ekleyen(ler)in adı */
+  by?: string | null;
+  /** E-postaya eklenen fotoğraf sayısı */
+  attachments?: number;
+}): { subject: string; html: string; text: string } {
+  const st = PHOTO_MAIL_STATE[m.check.state];
+  const subject = `${dayEndSubjectHead(m.branchName, m.date)} · ${st.subject}`;
   const rows = photoRows(m.check);
-  const headline = m.check.state === "fark" ? "Fotoğraf LafPOS'un rakamlarından farklı okundu" : `${photoUnsureText(m.check)}: fotoğrafa bakın`;
-  const rowHtml = ([label, value]: [string, string]) =>
+  const headline = m.check.state === "belirsiz" ? `${photoUnsureText(m.check)}: fotoğrafa bakın` : st.headline;
+  const tone = TONE[st.tone];
+  const reads = (m.reads ?? []).filter((r) => r.length);
+  const readSections = reads.map((r, i) => ({ title: reads.length > 1 ? `${READ_TITLE} (${i + 1}. fotoğraf)` : READ_TITLE, rows: r }));
+  const meta = [
+    m.by ? `Ekleyen: ${m.by}` : null,
+    m.attachments ? `Fotoğraf ${m.attachments > 1 ? `${m.attachments} ek olarak` : "ek olarak"} bu e-postada.` : null,
+  ].filter((x): x is string => Boolean(x));
+  const rowHtml = ([label, value]: readonly [string, string]) =>
     `<tr><td style="padding:6px 0;font-family:${FONT};font-size:14px;color:#3f3f46;vertical-align:top">${esc(label)}</td><td align="right" style="padding:6px 0 6px 12px;font-family:${FONT};font-size:14px;font-weight:${/· FARK$/.test(value) ? 700 : 600};color:${/· FARK$/.test(value) ? "#b91c1c" : "#171717"}">${esc(value)}</td></tr>`;
+  const sectionHtml = (title: string, list: readonly (readonly [string, string])[]) =>
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:18px"><tr><td colspan="2" style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT};font-size:13px;font-weight:600;color:#3f3f46">${esc(title)}</td></tr>${list.map(rowHtml).join("")}</table>`;
   const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(subject)}</title></head>
 <body style="margin:0;padding:0;background:#f4f4f5;font-family:${FONT}">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4f4f5"><tr><td align="center" style="padding:20px 12px 28px">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px">
   <tr><td style="padding:0 4px 14px;font-family:${FONT}"><div style="font-size:16px;font-weight:600;color:#171717">L'Affogato ${esc(m.branchName)}</div><div style="font-size:12px;color:#71717a">Gün sonu fotoğrafı · ${esc(longDateTR(m.date))} ${m.date.slice(0, 4)} · gün sonu e-postası daha önce gitti</div></td></tr>
   <tr><td style="background:#ffffff;border-radius:24px;padding:22px 20px">
-    <div style="background:${m.check.state === "fark" ? "#fef2f2" : "#fff7ed"};border-radius:12px;padding:10px 12px;font-family:${FONT};font-size:15px;line-height:20px;font-weight:700;color:${m.check.state === "fark" ? "#991b1b" : "#9a3412"}">${esc(headline)}</div>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:18px"><tr><td colspan="2" style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT};font-size:13px;font-weight:600;color:#3f3f46">${esc(PHOTO_TITLE)}</td></tr>${rows.map(rowHtml).join("")}</table>
+    <div style="background:${tone.bg};border-radius:12px;padding:10px 12px;font-family:${FONT};font-size:15px;line-height:20px;font-weight:700;color:${tone.fg}">${esc(headline)}</div>
+    ${meta.length ? `<div style="margin-top:10px;font-family:${FONT};font-size:13px;line-height:18px;color:#52525b">${meta.map(esc).join("<br>")}</div>` : ""}
+    ${sectionHtml(PHOTO_TITLE, rows)}
+    ${readSections.map((x) => sectionHtml(x.title, x.rows)).join("")}
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px"><tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717"><a href="${esc(m.link)}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Panelde aç</a></td></tr></table>
   </td></tr>
   <tr><td style="padding:16px 12px 0;font-family:${FONT};font-size:12px;color:#a1a1aa;text-align:center">Bu e-posta kasa raporu alıcılarına gönderildi.</td></tr>
 </table>
 </td></tr></table>
 </body></html>`;
-  const text = [subject, "", headline, "", PHOTO_TITLE, ...rows.map(([l, v]) => `${l}: ${v}`), "", `Panelde aç: ${m.link}`].join("\n");
+  const text = [
+    subject,
+    "",
+    headline,
+    ...meta,
+    "",
+    PHOTO_TITLE,
+    ...rows.map(([l, v]) => `${l}: ${v}`),
+    ...readSections.flatMap((x) => ["", x.title, ...x.rows.map(([l, v]) => `${l}: ${v}`)]),
+    "",
+    `Panelde aç: ${m.link}`,
+  ].join("\n");
   return { subject, html, text };
 }
 

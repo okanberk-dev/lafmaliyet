@@ -409,11 +409,17 @@ test("'Yönetici baksın' metni doğru: satır okunup güvenle seçilmediyse ayr
 
 const farkCheck = (): LafposPhotoCheck => ({ ...check([{ photoId: 1, raw: detailedZ({ card: 850, cash: 340 }), error: null, source: "ai", model: PHOTO_STRONG_MODEL }]) });
 
-test("Fotoğraf e-postası (gün sonu e-postasından sonra eklenen fotoğraf): yalnız fark ya da 'yönetici baksın'da, satır satır, içerik başına bir kez", () => {
+test("Fotoğraf e-postası (gün sonu e-postasından sonra eklenen fotoğraf): her fotoğrafta (uyumlu da), satır satır, içerik başına bir kez", () => {
   const c = farkCheck();
   assert.equal(photoMailNeeded(c), true);
-  assert.equal(photoMailNeeded(check([{ photoId: 1, raw: detailedZ(), error: null }])), false, "uyumlu fotoğraf e-posta göndermez");
+  // Sahibin isteği (25 Kasım 2026): "z raporu yükleyince mail gelmedi" — uyumlu fotoğraf da bildirilir
+  const ok = check([{ photoId: 1, raw: detailedZ(), error: null }]);
+  assert.equal(ok.state, "uyumlu");
+  assert.equal(photoMailNeeded(ok), true, "uyumlu fotoğraf da e-posta gönderir");
+  assert.equal(plain(renderPhotoMail({ branchName: "Marina", date: DAY, check: ok, link: "x" }).subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · gün sonu fotoğrafı alındı · LafPOS'la aynı");
   assert.equal(photoMailNeeded(null), false);
+  // İkinci fotoğraf (aynı okunuş) da yeni içeriktir
+  assert.notEqual(photoCheckHash(ok), photoCheckHash({ ...ok, photos: ok.photos + 1 }));
   const mail = renderPhotoMail({ branchName: "Marina", date: DAY, check: c, link: "https://ladmin.test/panel/kasa?gun=2026-11-24" });
   assert.equal(plain(mail.subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · gün sonu fotoğrafı LafPOS'tan FARKLI");
   const t = plain(mail.text);
