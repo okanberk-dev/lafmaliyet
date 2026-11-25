@@ -345,7 +345,7 @@ export interface Invoice {
   /**
    * Faturanın şubesi (docs/SUBE.md › Faturanın şubesi): şube, bilinçli işletme geneli (`companyWide`) ya da ikisi de
    * boş (şubesi seçilmemiş; tek şube görünümüne gelmez). Ayrı Paraşüt hesabına bağlı şubenin faturası o şubenindir.
-   * `companyWide` yoksa (Excel, testler) şubesiz fatura işletme geneli sayılır
+   * `companyWide` yoksa (içe aktarılmış veri, testler) şubesiz fatura işletme geneli sayılır
    */
   branchId?: string | null;
   companyWide?: boolean;

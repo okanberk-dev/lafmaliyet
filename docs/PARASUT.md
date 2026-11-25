@@ -697,21 +697,56 @@ testler `tests/fatura-kalem.test.ts`, `tests/fatura-sube-db.test.ts`):
   bölünür; fatura altı iskonto (ör. 500 ₺) da böylece kalemlere oranla düşer. Kuruş yuvarlaması en büyük kalan
   yöntemiyle: payların toplamı faturanın tutarını kuruşu kuruşuna tutar. Kalem tutarı da fatura tutarı da KDV hariç;
   ödenecek (KDV dahil) tutar harcama satırının nakit planı için aynı oranla bölünür. İade (eksi) faturada paylar eksi.
-- **Bölünmeyenler**: kafe dışı (karaoke box, Alp Koç) ve komisyon faturaları; kalemi olmayan (elle, Excel) faturalar;
+- **Bölünmeyenler**: kafe dışı (karaoke box, Alp Koç) ve komisyon faturaları; kalemi olmayan (elle girilmiş, içe aktarılmış) faturalar;
   hiçbir kalemi faturanın kendi payından ayrılmayan faturalar (mal faturasının bağlı kalemi zaten mal alışı). Bunların
   rakamı **değişmez**.
+- **Kalemin nedeni ve tedarikçi kuralı** nereden gelir: "Hammadde değil" penceresi (Sarf, Demirbaş, Hizmet, Deneme) ve
+  "hep hammadde değil" tedarikçi kuralı (yukarıda, 5). Ürünün kendi nedeni kuraldan önce gelir; hammaddeye bağlı kalem
+  ikisinden de etkilenmez. Neden ya da kural değişince eşitleme beklenmez: paylar her okumada yeniden hesaplanır
+  (`loadSplitLines`; alınan miktar, FIFO ve hammadde fiyatı değişmez).
 - **Okuyanlar** aynı payları kullanır: Gelir-gider (mal alışı, tedarikçi satırları, harcamaya bağlı fatura kategorileri,
-  "aynı gider iki kez" denetimi), Genel bakış ve mal maliyeti (`goodsPurchases`), Faturalar'ın "Mal maliyeti" satırı,
-  Vergi (SMM'nin mal faturaları ve fatura giderleri; demirbaş nedenli kalem varlık listesine eklenene kadar gider),
-  dışa aktarımın "Alımlar" sayfası (kategori satırları faturanın kategorisiyle kalır, fark "Kalem kalem: mal alışına
-  geçen" satırında; mal maliyeti panelinkiyle aynı).
+  "aynı gider iki kez" denetimi), Genel bakış ve mal maliyeti (`goodsPurchases`), Faturalar'ın "Mal maliyeti" satırı ve
+  ayın **mal alımı kartının dökümü** (mal kategorileri faturanın mal payıyla, öbür kategorideki faturaların hammadde
+  kalemleri "Öbür faturaların hammadde kalemleri" grubunda; döküm kartın rakamını tutar), Ayarlar önizlemesinin başabaşı
+  (harcamaya bağlı kategoriye payı düşen faturalar kalemleriyle gider), Vergi (SMM'nin mal faturaları ve fatura
+  giderleri; demirbaş nedenli kalem varlık listesine eklenene kadar gider; köprünün "hesap döneminden önceki faturalar"
+  satırı da faturanın mal payıyla), dışa aktarımın "Aylık Alımlar" sayfası (kategori satırları faturanın kategorisiyle
+  kalır, fark "Kalem kalem: mal alışına geçen" satırında; mal maliyeti panelinkiyle aynı).
+- **Okumayanlar** (bilerek): nakit planı ve ödemeler (fatura bütün ödenir), KDV (indirilecek KDV kalemden bağımsız),
+  Faturalar'ın kategori tablosu ve süzgeci (faturanın kategorisi), alınan miktar ve FIFO (zaten kalemden).
 - **"Mal alışı sayılmıyor" kontrolü** (E-07, `stock-only-invoices.ts`): kalemi hammaddeye bağlı Diğer / Hizmet /
   Temizlik & Sarf faturası artık mal alışını sayar; elle düzeltme ("Kalsın", kategoriyi mal alışı yapmak) gerekmez.
-  Kontrol yalnız komisyon faturasında kalır.
+  Kontrol yalnız komisyon faturasında kalır. Önceden bu yüzden kontrole düşmüş faturalar kontrol bekleyen kalır ama
+  rozeti düşer; **Onayla** artık onaylar. "Kalsın" kararları (`invoices.stockOnlyAccepted`) yalnız komisyon faturasında
+  anlam taşır.
 - **Davranış değişikliği** (sahibe söylenecek): kategorisi mal alışı olmayan ve kalemi hammaddeye bağlı faturaların o
   kalemleri geçmiş aylarda da mal alışına geçer (önceden "Kalsın" denmiş temizlik faturasındaki süt dahil): o ayların mal
   alışı artar, ilgili harcama satırı (bağlıysa) aynı tutar azalır; harcamaya bağlı değilse (ör. "Diğer" bağlı değilken)
-  gider toplamı o kadar artar. Nedeni seçilmiş "hammadde değil" kalem yalnız neden seçildikten sonra yer değiştirir.
+  gider toplamı o kadar artar. Nedeni seçilmiş "hammadde değil" kalem yalnız neden seçildikten sonra yer değiştirir:
+  mal faturasındaki "Demirbaş" denmiş kalem mal alışından çıkar (Kuruluş & Demirbaş harcamaya bağlı değilse Gelir-gider'e
+  hiç girmez, bütün demirbaş faturası gibi), "Sarf" denmiş kalem sarf giderine geçer.
+
+**Eski kuralla karşılaştırma** (25 Kasım 2026; `scripts/fatura-kalem-karsilastir.ts`, kural
+`src/lib/invoice-split-compare.ts`, kilit `tests/fatura-kalem-karsilastirma.test.ts`). Aynı veride eski kural (fatura
+bütün, kategorisine göre; şube seçiliyken şubesi boş fatura işletme geneli) ile yeni kural ay ay karşılaştırılır; eski
+kuralın sonucu main'in kendi motoruyla birebir denendi (424 rakam, fark yok). Yerel bir veritabanında:
+`DATABASE_URL=postgres://localhost/<yerel> npx tsx scripts/fatura-kalem-karsilastir.ts [--ornek]` (canlıya bağlanmaz;
+gerçek veri için yedek yerel veritabanına geri yüklenir). Sonuç:
+
+- **Başlangıç verisi** (`npm run db:seed`; kalemi olmayan faturalar): Tümü'de, Vergi'de hiçbir rakam değişmez. Şube seçiliyken faturaların
+  hepsi "şubesi seçilmemiş" olduğu için şubenin mal alışı (bilgi) 0'a, "İşletme geneli payı" komisyon faturaları kadar
+  iner; şubenin kârı değişmez ([SUBE.md › Faturanın şubesi](SUBE.md#faturanın-şubesi-25-kasım-2026)).
+- **Örnek faturalar** (`--ornek`; Tümü): hizmet faturasındaki bağlı süt (Ağustos +200 mal alışı, kâr −200); Diğer
+  faturasında bağlı çay 360 mal, "Sarf" çöp torbası 315 sarf (100 ₺ iskonto oranla düştü), mal faturasında "Demirbaş"
+  ısıtıcı 10.000 ve "Sarf" deterjan 500 mal alışından çıkar (Eylül mal alışı −10.140, sarf +815, kâr +9.325); kuralı açık
+  tedarikçinin bağlı sodası 500 sarftan mal alışına (Ekim; gider toplamı aynı). Sarf payları faturanın şubesine yazılır
+  (Tümü'nün şube kırılımı). Vergi'de yalnız SMM alışı ile fatura giderleri arasında yer değiştirir; gider toplamı ve
+  sonuç aynı. Her rakam testte kilitli.
+- Karşılaştırmanın yakaladığı ve düzeltilenler: Faturalar'ın mal alımı dökümü kartı tutmuyordu (kategoriyle topluyordu),
+  Ayarlar önizlemesinin başabaşı kalemleri görmüyordu, Vergi köprüsü dönem öncesindeki karışık faturada tutmuyordu.
+
+**Bilinen sınırlar**: pay kalemin KDV hariç net tutarıyla orantılıdır; kalemde ÖTV gibi başka bir vergi ya da eksi
+(iskonto) kalemi varsa oran yaklaşıktır (kalemler mutlak değerle tartılır). Kalemi okunmamış e-fatura bölünmez.
 
 ## 6. Gelen e-faturalar ("içeri al" gerekmez)
 
@@ -790,7 +825,8 @@ dayanmıyorsa (ipucu ya da "Diğer") fatura **kontrol bekleyen** olur (`invoices
 "Kontrol bekleyen" süzgeci, satırda tek dokunuşla **Onayla**, toplu onay; kategori değiştirmek ya da faturayı
 kaydetmek de onaylar. Sayısı zilde, sabah e-postasında ve Genel bakış › Bu ayın işleri'nde görünür.
 
-Kalemi hammaddeye bağlı ama kategorisi mal alışı olmayan fatura (5, E-07) da kontrol bekleyene düşer: ürün bağlanınca,
+Kalemi hammaddeye bağlı ama o kalemi mal alışı sayılmayan fatura (5, E-07; 25 Kasım 2026'dan beri kalem kalem sayıldığı
+için yalnız **komisyon** faturası, 5f) da kontrol bekleyene düşer: ürün bağlanınca,
 kalemler okununca ya da eşitlemede (`flagStockOnlyInvoices`, `src/server/data/stock-only-invoices.ts`; işlem geçmişine
 "Sistem · Fatura mal alışı sayılmıyor"). Satırda **Mal alışı sayılmıyor** rozeti, listenin üstünde ayrı bir satır,
 zilde ayrı bir bildirim ve Bugün'de kendi cümlesi. **Onayla** da faturayı kaydetmek de böyle faturayı onaylamaz

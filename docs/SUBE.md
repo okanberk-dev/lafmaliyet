@@ -150,7 +150,7 @@ Soldan bir şube seçilince Genel bakış ve Gelir-gider **o şubenin** gelir-gi
 | Personel | Şubeye bağlı kişilerin maaşı (Maaşlar'da kişinin **Şube** alanı) |
 | Sabit gider | Şubeye bağlı kalemler (Sabit giderler'de kalemin **Şube** alanı). İşletme geneli kalemler (şube boş; var olan kalemler işletme geneli kaldı) Faz 5'ten beri **şubenin kârına girmez**: "İşletme geneli payı (bilgi)" satırında |
 | Harcama | Şubenin kendi harcamaları ve şubesi bu şube olan, harcamaya bağlı faturalar (25 Kasım 2026). Şubesi boş (işletme geneli) harcamalar ve işletme geneli seçilmiş faturalar bilgi satırında (Faz 5) |
-| Komisyon faturaları | İşletme geneli (faturalar şubeye bölünmez): bilgi satırında (Faz 5); banka POS komisyonu şubenin kartıyla |
+| Komisyon faturaları | Şubenin kârına girmez: bilgi satırında (Faz 5). Tek şubede yalnız o şubeye ya da İşletme geneli seçilmiş komisyon faturası görünür ([Faturanın şubesi](#faturanın-şubesi-25-kasım-2026)); banka POS komisyonu şubenin kartıyla |
 | Elle yazılan Gelir-gider hücresi | `manual:*` işletme genelidir: şubede satırı yok, bilgi satırında sayılır, Tümü'de yazılır (Faz 5); `fixed:` / `stopaj:` kalemin şubesindeyse; **devir, personel, POS komisyonu** işletmenin toplamıdır, şubede yazılamaz (ekran kilitler, sunucu reddeder) |
 | "Sayım yok" uyarısı | Yok: şubenin mal maliyeti sayıma bağlı değil |
 
@@ -431,7 +431,10 @@ veritabanı `tests/fatura-sube-db.test.ts`):
   (bugüne kadarki bütün ortak hesap faturaları) **şubesi seçilmemiş**: kutuda öneriyle bekler.
 - **Davranış değişikliği** (sahibe söylenecek): geçişten sonra tek şube seçiliyken Faturalar ve Gelir-gider'de eski
   faturalar görünmez, ta ki şubeleri seçilene kadar; "Tümü"nün rakamları değişmez. Şubesi seçilen harcamaya bağlı fatura
-  (ör. Temizlik & Sarf) o şubenin kârına girer (önceden her şubede bilgi satırındaydı).
+  (ör. Temizlik & Sarf) o şubenin kârına girer (önceden her şubede bilgi satırındaydı). Aynı veride eski kuralla
+  karşılaştırma (`scripts/fatura-kalem-karsilastir.ts`, [PARASUT.md › 5f](PARASUT.md)): başlangıç verisinde şube
+  seçiliyken şubenin mal alışı (bilgi) 0'a, "İşletme geneli payı (bilgi)" şubesi seçilmemiş komisyon faturaları kadar
+  iner; şubenin kârı değişmez. Rakamlar `tests/fatura-kalem-karsilastirma.test.ts`'te kilitli.
 - Şubenin varsayılanı olarak seçilmiş şube silinemez (verisi var sayılır; `branchUsageCount`).
 
 ## "Tümü"nün ay bilgisi (denetim 13 Kasım 2026, P02)
