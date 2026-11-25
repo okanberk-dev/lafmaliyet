@@ -1,7 +1,8 @@
 "use client";
 
 import { Calculator, Camera, ChevronDown, Copy, MessageCircle, Pencil, Plus, ReceiptText, RotateCw, Send, Wallet } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
 
@@ -10,12 +11,16 @@ import { SEND_OFFLINE_TEXT, tryAction, useActionTransition } from "@/components/
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
+import { BRANCH_LEAVE, useLeaveGuard } from "@/components/ui/leave-guard";
 import { Notice } from "@/components/ui/notice";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { reportAttention, reportFlags } from "@/lib/cash-attention";
+import { cashDraftJson, cashDraftKey, leaveDropsDraft, parseCashDraft, staleCashDraftKeys, type CashDraft } from "@/lib/cash-draft";
 import { CASH_OUT_NOTE_REQUIRED, cashOutCheck, cashOutNoteMissing, cashOutNoteOf, cashOutNoteVisible, cashOutsTotal } from "@/lib/cash-outs";
 import {
+  businessDate,
   CASH_TOLERANCE,
   carryCheck,
   carryDiffText,
@@ -138,6 +143,16 @@ const MARK_FIELDS = [...READ_FIELDS, ...(["openingCash", "cashIn", "cashOut", "c
 type MarkField = (typeof MARK_FIELDS)[number];
 
 const input = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(Math.round(v * 100) / 100).replace(".", ","));
+
+/** Taslağın okunuşu (useSyncExternalStore: sunucuda ve hidrasyonda null, sonra bu cihazdaki taslak) */
+const noopSubscribe = () => () => {};
+function readDraft(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
 
 function initialValues(report: CashReportFields | null, carry: { amount: number } | null, outs: CashOutView[]): Values {
   if (report) {
@@ -537,6 +552,8 @@ export function CashForm({
   const [values, setValues] = useState<Values>(opening.values);
   const initialCounter = report?.countedBy ?? report?.submittedBy ?? me?.id ?? null;
   const [counter, setCounter] = useState<number | null>(initialCounter);
+  // Formun açıldığı hâl (taslak ve ayrılma uyarısı yalnız bundan farklı yazılanlara bakar; Düzenle ve öneri yeniden kurar)
+  const [baseline, setBaseline] = useState<{ values: Values; counter: number | null }>(() => ({ values: opening.values, counter: initialCounter }));
   const [errors, setErrors] = useState<Partial<Record<Key, string>>>({});
   const [pending, start] = useActionTransition();
   const [resending, setResending] = useState(false);
@@ -603,12 +620,85 @@ export function CashForm({
   const [autoSeen, setAutoSeen] = useState(auto);
   if (!report && (autoSeen.cashOut !== auto.cashOut || autoSeen.note !== auto.note)) {
     setAutoSeen(auto);
-    setValues((v) => ({
+    const follow = (v: Values): Values => ({
       ...v,
       cashOut: v.cashOut === autoSeen.cashOut ? auto.cashOut : v.cashOut,
       cashOutNote: v.cashOutNote === autoSeen.note ? auto.note : v.cashOutNote,
-    }));
+    });
+    setValues(follow);
+    // Kendiliğinden gelen değişiklik yazılmış sayılmaz (taslak ve ayrılma uyarısı yalnız kişinin yazdığına bakar)
+    setBaseline((b) => ({ ...b, values: follow(b.values) }));
   }
+
+  // ---------------------------------------------------------------- Taslak ve ayrılma uyarısı (bulgu 87)
+  // Yazılanlar bu cihazda taslak olarak durur (src/lib/cash-draft.ts): telefon Z fişini çekerken sekmeyi yeniden yüklese,
+  // sayfa kapansa da kaybolmaz; form yeniden açılınca "Geri yükle" önerilir. Taslak şube ve gün başına (başka şubenin ya da
+  // günün formunda önerilmez) ve raporun sürümüne bağlı (arada başkası gönderdiyse önerilmez); yalnız kişinin değiştirdiği
+  // alanlar, kasayı sayan ve formda yüklenen fotoğraflar. Gönderilince, "Sil"le ve başka güne ya da şubeye geçerken silinir.
+  // Yazılanlar varken sayfadan çıkmak önce sorar (useLeaveGuard). "Düzeltip onayla" (Onaylar) taslak tutmaz
+  const draftOn = mode !== "review" && branchId !== null && canEdit;
+  const draftKey = cashDraftKey(branchId ?? "", date);
+  const keptPhotos = late?.kept?.length ?? 0;
+  const changed = (Object.keys(values) as Key[]).filter((k) => values[k] !== baseline.values[k]);
+  const dirty = draftOn && editing && (changed.length > 0 || counter !== baseline.counter || photos.length !== keptPhotos);
+  const draftBody = dirty
+    ? JSON.stringify({
+        values: Object.fromEntries(changed.map((k) => [k, values[k]])),
+        counter,
+        photos: photos.map((p) => ({ id: p.id, kind: p.kind, createdAt: p.createdAt, byName: p.byName })),
+        revision: report?.revision ?? 0,
+        branch: branchId ?? "",
+        date,
+        by: me?.name ?? photoUi.me,
+      } satisfies Omit<CashDraft, "at">)
+    : "";
+  const wroteDraft = useRef(false);
+  useEffect(() => {
+    try {
+      if (draftBody) {
+        window.localStorage.setItem(draftKey, cashDraftJson({ ...(JSON.parse(draftBody) as Omit<CashDraft, "at">), at: new Date().toISOString() }));
+        wroteDraft.current = true;
+      } else if (wroteDraft.current) {
+        window.localStorage.removeItem(draftKey);
+        wroteDraft.current = false;
+      }
+    } catch {
+      // Gizli pencere ya da dolu depolama: taslaksız devam
+    }
+  }, [draftBody, draftKey]);
+  // Artık açılamayacak günlerin taslakları (14 günden eski) bir kez temizlenir
+  useEffect(() => {
+    if (!draftOn) return;
+    try {
+      const keys = Array.from({ length: window.localStorage.length }, (_, i) => window.localStorage.key(i) ?? "");
+      for (const k of staleCashDraftKeys(keys, businessDate())) window.localStorage.removeItem(k);
+    } catch {
+      // yok sayılır
+    }
+  }, [draftOn]);
+  // Bant yalnız açılışta var olan taslak için (bu açılışta yazılan, yazılanlar geri alınınca bant olarak çıkmasın)
+  const openingDraft = useRef<{ key: string; json: string | null } | null>(null);
+  const storedDraft = useSyncExternalStore(
+    noopSubscribe,
+    () => {
+      if (openingDraft.current?.key !== draftKey) openingDraft.current = { key: draftKey, json: readDraft(draftKey) };
+      return openingDraft.current.json;
+    },
+    () => null,
+  );
+  const [draftGone, setDraftGone] = useState(false);
+  const draft = draftOn && !dirty && !draftGone ? parseCashDraft(storedDraft, { branch: branchId ?? "", date, revision: report?.revision ?? 0, keys: Object.keys(opening.values) }) : null;
+  function forgetDraft() {
+    try {
+      window.localStorage.removeItem(draftKey);
+    } catch {
+      // yok sayılır
+    }
+    wroteDraft.current = false;
+    setDraftGone(true);
+  }
+  const router = useRouter();
+  const [leaveHref, setLeaveHref] = useLeaveGuard(dirty, BRANCH_LEAVE);
 
   const set = (k: Key) => (e: { target: { value: string } }) => {
     setValues((v) => ({ ...v, [k]: e.target.value }));
@@ -620,6 +710,7 @@ export function CashForm({
   function edit() {
     const s = withLafpos(initialValues(report, carry, cashOuts), lafpos, "compare");
     setValues(s.values);
+    setBaseline({ values: s.values, counter: initialCounter });
     setCounter(initialCounter);
     setErrors({});
     setPhotos([]);
@@ -643,6 +734,7 @@ export function CashForm({
     if (from) {
       const s = withLafpos(initialValues({ ...report, ...from.proposed }, carry, cashOuts), lafpos, "compare");
       setValues(s.values);
+      setBaseline({ values: s.values, counter: from.proposed.countedBy });
       setMarks(s.marks);
       setLafposFilled(s.filled);
       setCounter(from.proposed.countedBy);
@@ -770,6 +862,20 @@ export function CashForm({
     setPosPrompt(null);
   }
 
+  /** Taslağı forma geri yükler (kayıtlı raporda önce Düzenle açılır): yazılanlar, kasayı sayan, yüklenen fotoğraflar */
+  function restoreDraft() {
+    if (!draft) return;
+    if (!editing) edit();
+    setValues((v) => ({ ...v, ...draft.values }));
+    if (draft.counter !== null) setCounter(draft.counter);
+    if (draft.values.cashIn?.trim()) setCashInOpen(true);
+    if (draft.photos.length) {
+      const back: FormPhoto[] = draft.photos.map((p) => ({ ...p, reading: null, error: null, switchTo: null, canRetry: false, summary: null }));
+      setPhotos((ps) => [...ps.filter((p) => !back.some((b) => b.id === p.id)), ...back]);
+    }
+    toast.success("Taslak geri yüklendi", { description: "Rakamları kontrol edip gönderin." });
+  }
+
   /**
    * Personelin fişsiz çıkışının açıklaması eksik mi (cashOutNoteMissing): yeni raporda ya da çıkış veya açıklaması
    * değiştiyse (eski raporun dokunulmayan satırı yeniden sorulmaz). Yönetici, geç rapor ve "Düzeltip onayla" değil
@@ -859,6 +965,7 @@ export function CashForm({
         if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
         toast.success(`Onaya gönderildi · ${diffText(res.data.cashDiff)}`, { description: "Yönetici onaylayınca kayda geçer; sonucu zilde görürsünüz." });
         setClientKey(newClientKey());
+        forgetDraft();
         onSent?.();
       });
       return;
@@ -881,6 +988,7 @@ export function CashForm({
         toast.success("Düzeltme onaya gönderildi", { description: "Yönetici onaylayınca rapora işlenir; sonucu zilde görürsünüz." });
         setProposal(null);
         setClientKey(newClientKey());
+        forgetDraft();
         setEditing(false);
       });
       return;
@@ -933,6 +1041,7 @@ export function CashForm({
           duration: 12_000,
         });
       }
+      forgetDraft();
       setEditing(false);
     });
   }
@@ -955,6 +1064,27 @@ export function CashForm({
     if (await copyText(whatsapp.text)) toast.success("Rapor metni kopyalandı");
     else toast.error("Kopyalanamadı");
   }
+
+  // Bu cihazdaki taslağın bandı (form açılınca; kayıtlı raporda "Geri yükle" Düzenle'yi açar)
+  const draftTime = draft?.at ? new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(draft.at)) : null;
+  const draftBanner = draft ? (
+    <Notice
+      tone="neutral"
+      live="polite"
+      title={`${draft.by && draft.by !== (me?.name ?? photoUi.me) ? `${draft.by} bu cihazda` : "Bu cihazda"} gönderilmemiş kasa raporu var`}
+      text={`${draftTime ? `${draftTime} · ` : ""}${longDateTR(date)} raporu; sayfa kapanmış ya da bağlantı gitmiş olabilir.`}
+      action={
+        <span className="flex flex-wrap gap-1.5">
+          <Button size="xs" onClick={restoreDraft}>
+            Geri yükle
+          </Button>
+          <Button size="xs" variant="ghost" onClick={forgetDraft}>
+            Sil
+          </Button>
+        </span>
+      }
+    />
+  ) : null;
 
   if (report && !editing) {
     // LafPOS'un otomatik raporu personelde salt okunur (yalnız fotoğraf; sayfanın kartı). Kör kasa (bulgu 0): personelin
@@ -994,6 +1124,7 @@ export function CashForm({
         <div className="space-y-4 px-5 pb-5">
           {/* Kör kasa: personel farkı görmez (LafPOS'ta da görmedi); büyük satır yalnız günün alındığını söyler */}
           {blind ? <p className="text-2xl font-semibold tracking-tight text-ink">{BLIND_TEXT.headline}</p> : <DiffHeadline diff={report.cashDiff} />}
+          {draftBanner}
           {mail ? (
             <Notice
               tone={mail.tone === "red" ? "bad" : mail.tone === "green" ? "good" : "neutral"}
@@ -1326,6 +1457,7 @@ export function CashForm({
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 space-y-4">
+        {draftBanner}
         {isLate && !review ? (
           <Notice
             tone="neutral"
@@ -1700,7 +1832,16 @@ export function CashForm({
                 Vazgeç
               </Button>
             ) : onCancel ? (
-              <Button variant="ghost" className="w-full" onClick={onCancel} disabled={pending || reviewPending}>
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  // Vazgeç yazılanları bırakır: taslak da silinir
+                  forgetDraft();
+                  onCancel();
+                }}
+                disabled={pending || reviewPending}
+              >
                 Vazgeç
               </Button>
             ) : null}
@@ -1730,6 +1871,22 @@ export function CashForm({
           </div>
         </div>
       ) : null}
+      {/* Gönderilmemiş rapordan çıkış (menü, alt çubuk, gün çipi, şube seçici): önce sorulur. Başka güne ya da şubeye
+          geçilince taslak silinir, başka sayfaya gidilince bu cihazda kalır (dönünce geri yüklenir) */}
+      <ConfirmDialog
+        open={leaveHref !== null}
+        onClose={() => setLeaveHref(null)}
+        onConfirm={() => {
+          const href = leaveHref;
+          setLeaveHref(null);
+          if (!href) return;
+          if (leaveDropsDraft(href, date, businessDate())) forgetDraft();
+          router.push(href);
+        }}
+        title="Gönderilmemiş kasa raporu var"
+        confirmLabel="Göndermeden geç"
+        description="Yazdığınız rakamlar henüz gönderilmedi. Başka güne ya da şubeye geçerseniz bu taslak silinir; başka bir sayfaya giderseniz bu cihazda kalır, dönünce geri yükleyebilirsiniz."
+      />
     </div>
   );
 }
