@@ -269,6 +269,30 @@ export function autoValuesOfReport(r: Pick<CashReportFields, Exclude<AutoField, 
   return Object.fromEntries(AUTO_FIELDS.map((f) => [f, (r as Record<string, unknown>)[f] ?? null])) as AutoValues;
 }
 
+/** Yazarkasa alanları (LafPOS'un cihaz belgeleri ve yazarkasa Z no'su): elle girilmiş raporda grup olarak dolar */
+export const OKC_DEVICE_FIELDS = ["okcZNo", "okcReceipts", "okcTotal", "okcCash", "okcCard", "okcMealCard", "okcOther", "okcVat", "okcVatTotal"] as const;
+export type DeviceField = "bankPos" | (typeof OKC_DEVICE_FIELDS)[number];
+
+const isBlank = (v: unknown) => v === null || v === undefined || v === "" || (Array.isArray(v) && v.length === 0);
+
+/**
+ * Elle girilmiş LafPOS günü raporunun boş cihaz alanları (denetim 25 Kasım 2026, bulgu 6): yönetici raporu gün sonundan
+ * önce (ya da sayımsız gün sonundan sonra) girdiyse LafPOS'un gönderimi raporu "elle girildi" sayar, Z'ye ve kasaya
+ * dokunmaz; yalnız boş cihaz alanları dolar. Banka POS boşsa Pavo'nun gün sonundan (bankPosAuto); yazarkasa alanlarının
+ * hiçbiri yazılı değilse LafPOS'un cihaz belgelerinden ve yazarkasa Z no'sundan, grup olarak (bir yazarkasa alanı elle
+ * yazılmışsa hiçbiri yazılmaz: iki kaynağın rakamı bir raporda karışıp "Yazarkasa tutmuyor" demesin). Elle girilen değer
+ * hiç ezilmez; cihazın rakamı yoksa alan boş kalır. Yazılacak alan yoksa boş nesne. Doldurulan alan artık boş olmadığı
+ * için sonraki gönderimler ona dokunmaz (bir kez dolar)
+ */
+export function humanDeviceFill(saved: Partial<Pick<CashReportFields, DeviceField>>, next: Pick<AutoValues, DeviceField>): Partial<Pick<AutoValues, DeviceField>> {
+  const out: Partial<Pick<AutoValues, DeviceField>> = {};
+  if (isBlank(saved.bankPos) && typeof next.bankPos === "number") out.bankPos = next.bankPos;
+  if (OKC_DEVICE_FIELDS.every((f) => isBlank(saved[f]))) {
+    for (const f of OKC_DEVICE_FIELDS) if (!isBlank(next[f])) out[f] = next[f];
+  }
+  return out;
+}
+
 /**
  * Z'nin ve ikram satırının Faz 2 anahtarları (23 Kasım 2026) ve Z'nin Faz 3 açılış anahtarları (kasa zinciri): günün
  * özetine girmez

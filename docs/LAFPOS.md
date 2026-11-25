@@ -738,8 +738,16 @@ günler (en çok 7 gün geriye) yakalanır.
 - **Düzeltme:** LafPOS aynı günü yeniden gönderirse yalnız elle değişmemiş alanlar güncellenir (kayıtlı değer son
   otomatik değere eşitse); personelin ya da yöneticinin düzelttiği alan ve Banka POS korunur. Önceki sürüm geçmişe
   yazılır, işlem geçmişine "Kasa raporu güncellendi (LafPOS otomatik)" düşer.
-- Rapor personel tarafından girildiyse dokunulmaz (LafPOS'tan farklı yazılanları mevcut uzlaşma gösterir). Yönetici
-  otomatik raporu silerse yeniden yazılmaz. Geçiş gününden 7 günden eski güne rapor yazılmaz (geç rapor yöneticinin işi).
+- Rapor elle girildiyse (yönetici gün sonundan önce, sayımsız günde ya da LafPOS göndermezken yedek yolla girdi; eski
+  kayıtta personel) Z'sine, kasasına ve notuna dokunulmaz (LafPOS'tan farklı yazılanları mevcut uzlaşma gösterir); **yalnız
+  boş cihaz alanları dolar** (denetim 25 Kasım 2026, bulgu 6; `humanDeviceFill`): Banka POS boşsa Pavo'nun gün sonundan,
+  yazarkasa alanlarının hiçbiri yazılı değilse LafPOS'un cihaz belgelerinden ve yazarkasa Z no'sundan, grup olarak (bir
+  yazarkasa alanı elle yazılmışsa hiçbiri yazılmaz: iki kaynağın rakamı karışmaz). Elle yazılan alan ezilmez, cihazın
+  rakamı yoksa alan boş kalır; dolan alan bir daha yazılmaz (Pavo'nun sonucu ikinci gönderimle gelince boş Banka POS o
+  zaman dolar). Önceki sürüm geçmişe, gönderen "LafPOS (otomatik)" (sayan değişmez), işlem geçmişine "Kasa raporu
+  güncellendi (LafPOS otomatik)"; rapor yeniden e-postalanmaz. Önceden yöneticinin akşam girdiği LafPOS gününde Pavo
+  karşılaştırması ve yazarkasa KDV dökümü sessizce kayboluyordu. Yönetici otomatik raporu silerse yeniden yazılmaz.
+  Geçiş gününden 7 günden eski güne rapor yazılmaz (geç rapor yöneticinin işi).
 
 **Personelin tek işi: gün sonu fotoğrafı** (sahibin isteği, 24 Kasım 2026: "sadece gün sonu ladmine personel foto
 atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
@@ -767,7 +775,7 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   gelmeden ve rapor yokken personel kasa formunu görmez; yerinde "Kasa raporu LafPOS'tan gelecek: Kapanışta LafPOS'ta
   Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin (detaylı Z) fotoğrafını eklersiniz." yazar
   (alt başlık, Bugün'ün akşam satırı ve zil de aynı işi söyler; "kasadaki nakdi sayıp girin" denmez). Personel girseydi
-  otomasyon raporu "elle girildi" sayar, Banka POS'u ve yazarkasa alanlarını hiç yazmazdı. Sunucu da reddeder
+  otomasyon raporu "elle girildi" sayar, Z'yi ve kasayı LafPOS'tan yazmazdı (yalnız boş cihaz alanları dolardı). Sunucu da reddeder
   (`saveCashReport`): personel LafPOS gününde yeni rapor yazmaz, otomatik raporu değiştirmez ("rakamlarını yalnız yönetici
   düzeltir"); yöneticinin yedek yolla elle girdiği rapor personelin kendi kapısıyla açık kalır. LafPOS hiç göndermezse
   raporu yönetici girer; dünden eski gün personelin geç rapor yolundan girilir.

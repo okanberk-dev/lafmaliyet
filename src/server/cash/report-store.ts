@@ -167,7 +167,7 @@ export async function lockCashReport(tx: CashTx, date: string, branchId: string)
 /**
  * Personelin LafPOS gününde formdan yazımı (son denetim, 24 Kasım 2026; docs/LAFPOS.md › Gün sonu otomasyonu): LafPOS'un
  * şubesinde geçiş gününden itibaren rapor LafPOS'un gün sonundan kendiliğinden yazılır. Personel yeni rapor girmez (gün
- * sonundan önce de: girseydi otomasyon raporu "elle girildi" sayıp Banka POS'u ve yazarkasa alanlarını hiç yazmazdı) ve
+ * sonundan önce de: girseydi otomasyon raporu "elle girildi" sayar, Z'si ve kasası LafPOS'tan yazılmazdı) ve
  * otomatik raporu değiştirmez (salt okunur yalnız arayüzde değil). Elle girilmiş rapor (yönetici yedek yolla girdi ya da
  * eski kayıt) kendi kapısıyla açık kalır. Red metni; yazılabilirse null
  */

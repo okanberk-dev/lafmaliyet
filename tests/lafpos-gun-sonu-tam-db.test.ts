@@ -477,6 +477,62 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DA
     await refused(foto.attachLafposDayPhotoCore(db, ayse, { date: DAY, branchId: LAFPOS_SUBE, photoId: await photo(null) }, NOW), /elle girildi/);
   });
 
+  test("Yönetici gün sonundan önce girdiyse (bulgu 6): gün sonu gelince boş Banka POS ve yazarkasa alanları dolar; Z, kasa ve elle yazılan alan kalır", async () => {
+    const manual = (o: Record<string, unknown> = {}, revision = 0) =>
+      scope.withBranchScope(LAFPOS_SUBE, () =>
+        store.saveCashReport(
+          db,
+          ali,
+          { date: DAY, zNo: "11", receipts: 26, zTotal: 6_300, cash: 1_255, card: 5_030, mealCard: 0, online: 0, other: 0, openingCash: 1_120, cashIn: 0, cashOut: 800, cashOutNote: null, countedCash: 1_300, handedOver: 0, bankPos: null, offRevenue: 1_065, discounts: 90, note: "Yönetici girdi", countedBy: null, revision, photos: [], ...o },
+          NOW,
+        ),
+      );
+    // Akşam, LafPOS'un gün sonundan önce: yönetici raporu kendisi girer (Banka POS ve yazarkasa boş)
+    assert.equal((await manual()).kind, "saved");
+    const before = (await report())!;
+    // Kapanış: Pavo'nun sonucu henüz yok; yazarkasa alanları cihaz belgelerinden dolar, Z ve kasa yöneticininki kalır
+    assert.ok((await push({ bankPos: undefined })).ok);
+    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    let r = (await report())!;
+    assert.deepEqual([r.okcReceipts, r.okcTotal, r.okcCash, r.okcCard, r.okcVatTotal], [19, 5_215, 1_055, 4_160, 474.09]);
+    assert.deepEqual(r.okcVat, [{ rate: 10, total: 5_215, vat: 474.09 }]);
+    assert.equal(r.bankPos, null, "Pavo gelmedi: uydurulmaz");
+    assert.deepEqual([r.zTotal, r.countedCash, r.cashDiff, r.note, r.countedByName], [before.zTotal, before.countedCash, before.cashDiff, "Yönetici girdi", "Ali"]);
+    assert.equal(r.revision, before.revision + 1, "önceki sürüm geçmişte");
+    assert.equal(r.submittedByName, "LafPOS (otomatik)");
+    assert.equal((await db.select().from(s.cashReportRevisions).where(eq(s.cashReportRevisions.reportId, r.id))).length, 1);
+    // Pavo'nun sonucu ikinci gönderimle gelir: boş Banka POS dolar; aynı gönderim yeniden işlenince bir şey yazılmaz
+    assert.ok((await push()).ok);
+    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    r = (await report())!;
+    assert.equal(r.bankPos, 4_160);
+    const rev = r.revision;
+    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    assert.equal((await report())?.revision, rev, "dolan alan yeniden yazılmaz");
+    // Pavo düzeltip başka bir toplam gönderse de bir kez dolan alan kalır; otomatik rapora dönülmez
+    assert.ok((await push({ bankPos: okBank(4_150) })).ok);
+    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    assert.equal((await report())?.bankPos, 4_160);
+    assert.equal((await state())?.autoValues, null, "rapor elle girilmiş kalır");
+  });
+
+  test("Yönetici Banka POS'u ya da bir yazarkasa alanını elle yazdıysa (bulgu 6): o alan ezilmez, yazarkasa grubu karışmaz", async () => {
+    await scope.withBranchScope(LAFPOS_SUBE, () =>
+      store.saveCashReport(
+        db,
+        ali,
+        { date: DAY, zNo: "11", receipts: 26, zTotal: 6_300, cash: 1_255, card: 5_030, mealCard: 0, online: 0, other: 0, openingCash: 1_120, cashIn: 0, cashOut: 800, cashOutNote: null, countedCash: 1_300, handedOver: 0, bankPos: 4_200, offRevenue: 1_065, discounts: 90, note: null, countedBy: null, revision: 0, photos: [], okcTotal: 5_000, okcCash: 1_000, okcCard: 4_000 },
+        NOW,
+      ),
+    );
+    const before = (await report())!;
+    assert.ok((await push()).ok);
+    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    const r = (await report())!;
+    assert.deepEqual([r.bankPos, r.okcTotal, r.okcCash, r.okcCard, r.okcReceipts, r.okcVat], [4_200, 5_000, 1_000, 4_000, null, null]);
+    assert.equal(r.revision, before.revision, "yazılacak alan yok: sürüm de yok");
+  });
+
   test("Personel LafPOS gününde raporu formdan yazamaz (son denetim): gün sonundan önce, sayım bekleyen günde ve otomatik raporda reddedilir; elle girilen rapor ve Tuzla açık", async () => {
     const fields = (revision: number, branchNote: string | null = null) => ({
       date: DAY, zNo: "11", receipts: 26, zTotal: 6_285, cash: 1_255, card: 5_030, mealCard: 0, online: 0, other: 0, openingCash: 1_120, cashIn: 0, cashOut: 800, cashOutNote: null,
