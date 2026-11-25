@@ -91,6 +91,15 @@ Sunucuda seçim, oturum gibi istek kapsamlı okunur (`src/server/branch-scope.ts
 `cache` ile istek başına bir kez): okuma işlevlerinin imzasına şube parametresi eklenmez. **İstek dışında** (göç
 betiği, arka plan işi, test) `cookies()` fırlar ve "Tümü"ye düşülür — betik bütün şubeleri görür.
 
+### Telefonda üst çubuk
+
+Sahibin isteği (Dalga 2, 25 Kasım 2026): "Telefonda üst çubukta hangi şubenin görüldüğü yazsın." Seçici telefonda
+çekmecenin içinde kaldığı için hangi şubenin rakamlarına bakıldığı ekranda görünmüyordu. Artık telefon ve tablette
+üst çubukta sayfa başlığının altında seçili kapsamın adı durur (dükkân simgesiyle): "Tümü", "Tuzla", "Marina". Şubeye
+dokununca seçicinin durduğu çekmece açılır. Şubesi kilitli personelde yalnız şubenin adı yazar (dokunulmaz). Tek şube
+açıkken satır yoktur (seçici de çizilmez). Kural `topBarBranchLabel` (src/lib/branches.ts), çizim
+`src/components/panel/sidebar.tsx`; test `tests/ust-cubuk-sube.test.ts`. Masaüstünde seçici zaten kenar çubuğunda görünür.
+
 ### Neyi süzer, neyi süzmez
 
 Süzülen (dalga 3 ile hepsi): kasa raporu, gün özeti, ModPOS föyü, LafPOS gün sonu, ay satırı, satış satırı, personel,
