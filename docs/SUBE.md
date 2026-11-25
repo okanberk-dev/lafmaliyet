@@ -432,7 +432,7 @@ veritabanı `tests/fatura-sube-db.test.ts`):
 - **Davranış değişikliği** (sahibe söylenecek): geçişten sonra tek şube seçiliyken Faturalar ve Gelir-gider'de eski
   faturalar görünmez, ta ki şubeleri seçilene kadar; "Tümü"nün rakamları değişmez. Şubesi seçilen harcamaya bağlı fatura
   (ör. Temizlik & Sarf) o şubenin kârına girer (önceden her şubede bilgi satırındaydı).
-- Şubenin varsayılanı olarak seçilmiş şube silinemez (verisi var sayılır; `branchHasData`).
+- Şubenin varsayılanı olarak seçilmiş şube silinemez (verisi var sayılır; `branchUsageCount`).
 
 ## "Tümü"nün ay bilgisi (denetim 13 Kasım 2026, P02)
 

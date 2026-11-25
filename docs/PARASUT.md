@@ -133,21 +133,24 @@ Her şube kendi Paraşüt hesabına (firmasına) bağlanabilir; şubeler aynı f
   örtmez. Ödeme takibinin başlangıcı (`payments.since`) da hesap başına: sonradan bağlanan hesabın son 30 günden eski
   faturaları Paraşüt'teki ödeme durumuyla gelir, "ödenmedi" yığılmaz.
 - **Faturanın hesabı ve şubesi** (`invoices.parasut_account`, `invoices.branch_id`; göç 0082–0083 var olan Paraşüt
-  faturalarına varsayılan hesabı yazdı, şubelerine dokunmadı). Paraşüt kimlikleri hesap içinde benzersizdir
+  faturalarına varsayılan hesabı yazdı). Paraşüt kimlikleri hesap içinde benzersizdir
   (`(parasut_account, external_id)`, `(parasut_account, e_invoice_id)`; göç 0086: hesabı boş satır varsayılan hesabın
-  sayılır, eski yedekten gelen hesapsız kopya Tuzla'nın aynı kimlikli faturasının yanına yazılamaz). Sahibin kararı (25 Kasım 2026): şubeler aynı
-  hesaptaysa faturalar **işletme geneli** (bugünkü kural); hesabı yalnız bir şube kullanıyorsa (ayrı hesap) o hesaptan
-  gelen **yeni** faturalar **o şubenin**. Ayarlanabilir: Paraşüt › Bağlantı kartındaki "Faturalar Marina şubesinin"
-  anahtarı kapatılınca ayrı hesabın faturaları da işletme geneli kalır. Şube yalnız yeni açılan faturaya yazılır; var
-  olanınki eşitlemede değişmez. Faturalar'da birden çok kasa açıkken şubeli faturada şube rozeti çıkar; "Paraşüt'te
-  aç" bağlantısı faturanın hesabının firma numarasıyla kurulur. **Okumada** (25 Kasım 2026): tek şube seçiliyken öbür
-  şubenin faturası modele girmez (`loadDataset`, `branchWhereWithShared`): Faturalar'ın listesi ve toplamları,
-  Gelir-gider'in işletme geneli satırları ve Maliyet o şubenin ve işletme genelinin faturalarıyla; "Tümü"de hepsi. Vergi,
-  Nakit planı ve Ödemeler firma genelidir (bütün faturalar). Şubenin mal maliyeti tek şubede yine reçeteden
-  hesaplanır; şubenin kendi faturası da Gelir-gider'de "işletme geneli" satırında durur (şubenin kendi hücresine
-  bölünmez; [SUBE.md](SUBE.md)).
+  sayılır, eski yedekten gelen hesapsız kopya Tuzla'nın aynı kimlikli faturasının yanına yazılamaz). Yeni faturanın
+  şubesi (sahibin kararları, 25 Kasım 2026; [SUBE.md › Faturanın şubesi](SUBE.md#faturanın-şubesi-25-kasım-2026)):
+  hesabı yalnız bir şube kullanıyorsa (ayrı hesap) **o şube**; değilse (ortak hesap ya da Bağlantı kartındaki "Faturalar
+  Marina şubesinin" anahtarı kapalı) **tedarikçinin varsayılan şubesi** (Tedarikçiler › Düzenle; şube ya da İşletme
+  geneli), o da yoksa **şubesi seçilmemiş** (Faturalar › Tümü'deki kutuda öneriyle bekler; tahminle şube yazılmaz).
+  Şube yalnız yeni açılan faturaya yazılır; var olanınki eşitlemede değişmez, Faturalar'dan değişir. Faturalar'da
+  birden çok kasa açıkken her faturada şube rozeti çıkar; "Paraşüt'te aç" bağlantısı faturanın hesabının firma
+  numarasıyla kurulur. **Okumada**: tek şube seçiliyken o şubenin ve işletme geneli seçilmiş faturalar modele girer
+  (`loadDataset`, `invoiceScopeWhere`); şubesi seçilmemiş ve öbür şubenin faturası girmez; "Tümü"de hepsi. Vergi, Nakit
+  planı ve Ödemeler firma genelidir (bütün faturalar). Şubenin mal maliyeti tek şubede yine reçeteden hesaplanır;
+  şubenin harcamaya bağlı faturası şubenin hücresinde, işletme geneli olanı bilgi satırında ([SUBE.md](SUBE.md)).
 - **Paraşüt ekranı** seçili şubenin hesabını gösterir ("Tümü": Tuzla'nınki ve "Marina ayrı Paraşüt hesabı kullanıyor"
-  notu): bağlantı, ayarlar, eşitleme geçmişi, imleçler, gelen fatura sayıları, iadeler ve kalem okuma o hesabın.
+  notu): bağlantı, ayarlar, eşitleme geçmişi, imleçler, iadeler ve kalem okuma o hesabın. Gelen fatura sayıları ve
+  bağlanmayı bekleyen ürünler ayrıca **faturanın şubesine** göre süzülür (tek şubede o şubenin ve işletme genelinin
+  faturaları; 25 Kasım 2026); şubesi seçilmemiş fatura varsa ekran "N faturanın şubesi seçilmemiş" der ve Faturalar'daki
+  kutuya götürür. Zildeki "bağlanmayı bekleyen" sayısı işletme geneli kalır.
   Hesabı başka şubeden kullanan şube seçiliyken ("Tuzla ile aynı") Bağlantı kartı salt okunurdur: durum ve "Tuzla'da
   düzenle" (ayar formu ve oturum düğmeleri yalnız hesabın sahibi şube seçiliyken).
   Kategori kuralları, ürün bağlantıları, "hammadde değil" listesi, yok sayılan ve silinen faturalar (anahtar hesapla
