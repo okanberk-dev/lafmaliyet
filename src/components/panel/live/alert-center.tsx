@@ -269,18 +269,19 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
         (msg.kind === "test" || (msg.kind === "karaoke" && (prefs.karaokeAlarms || role === "admin")) || (msg.kind === "orders" && prefs.orderAlerts));
       // "Yalnız bu bilgisayar": sistem bildirimi her durumda sessiz (sesi genel hoparlörden çalardı)
       e.ports[0]?.postMessage({ willRing, quiet: onlyComputerActive() });
-      if (msg.kind === "approvals") {
-        // Onay bildirimi (yöneticiye personelin yeni isteği; src/server/staff-requests/push.ts): canlı veride yok. Sekme öndeyken sistem bildirimi çıkmaz
-        // (sw.js): bildirim burada, zil ve açık ekran yenilenir
+      if (msg.kind === "approvals" || msg.kind === "shifts") {
+        // Onay bildirimi (yöneticiye personelin yeni isteği; src/server/staff-requests/push.ts) ve vardiya bildirimi
+        // (vardiyası değişen kişiye, planı yazılmamış haftada yöneticiye; src/server/vardiya/notify.ts): canlı veride yok.
+        // Sekme öndeyken sistem bildirimi çıkmaz (sw.js): bildirim burada, zil ve açık ekran yenilenir
         refreshScreen(msg.kind);
         window.dispatchEvent(new Event(ALERTS_REFRESH_EVENT));
         if (document.visibilityState === "visible" && msg.title) {
           const url = msg.url;
           toast.info(msg.title, {
-            id: `onay-${url ?? msg.title}`,
+            id: `${msg.kind === "shifts" ? "vardiya" : "onay"}-${url ?? msg.title}`,
             description: msg.body,
             duration: 10_000,
-            action: url && pathRef.current !== url.split("#")[0] ? { label: "Gör", onClick: () => router.push(url) } : undefined,
+            action: url && pathRef.current !== url.split(/[?#]/)[0] ? { label: "Gör", onClick: () => router.push(url) } : undefined,
           });
         }
         return;

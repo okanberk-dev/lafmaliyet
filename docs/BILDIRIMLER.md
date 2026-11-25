@@ -406,6 +406,9 @@ Pencere sonundan 30 dakika sonra (Hobby planında saat esnek) o günün çalış
   sayılır). Perşembe–pazar ve haftanın özeti gittikten sonra adım yok.
 - Personel isteklerinin adımı (`requests`, [ONAYLAR.md](ONAYLAR.md)) yalnız süresi dolan bir istek kapandığında ("Süresi
   dolan personel istekleri kapandı") ya da adım hata verdiğinde yazılır ("Personel istekleri hata"; iş "Kısmen").
+- Vardiya hatırlatmasının adımı (`vardiya`, [VARDIYA.md](VARDIYA.md) › Bildirimler) yalnız Cuma–Pazar sabahı gelecek
+  haftanın planı yazılmamış bir şube için yöneticilere bildirim denendiğinde yazılır: "… yöneticilere bildirim gitti",
+  bildirim açık yönetici cihazı yoksa bilgi; hiçbir cihaza gidemediyse "Vardiya hatırlatması hata" (iş "Kısmen").
 
 **İki iş birden durursa** (Vercel Cron hiç tetiklemiyor) e-posta da gidemez; panel zil ve Genel bakış'ta yine söyler
 ama panel açılmazsa kimse görmez. Bunun için isteğe bağlı dış izleme: ücretsiz bir uptime servisine (ör. UptimeRobot,
@@ -479,6 +482,9 @@ siparişi; [SITE-SIPARIS.md](SITE-SIPARIS.md)), sabah özeti, sesli uyarı, saat
 güvenliği [KARAOKE.md](KARAOKE.md)'de. **Onay bildirimleri** (`approvals`, varsayılan açık; anahtar yalnız
 yöneticide): personel onaya yeni bir istek gönderince yöneticinin telefonuna "Onay isteği · Kasa düzeltmesi" /
 "Mehmet: 22 Ekim kasa düzeltmesi · Tuzla" gider, istek başına bir kez, tutarsız ([ONAYLAR.md](ONAYLAR.md) › Bildirimler).
+**Vardiya bildirimleri** (konu `shifts`, cihaz anahtarı yok, kişiye özel): vardiyası değişen kişiye "Vardiyanız değişti"
+(bildirim açık cihazı yoksa e-posta), gelecek haftanın planı yazılmadıysa Cuma–Pazar sabahı yöneticilere
+([VARDIYA.md](VARDIYA.md) › Bildirimler).
 
 ## Uyarı sesleri yalnız bu bilgisayardan (22 Kasım 2026)
 

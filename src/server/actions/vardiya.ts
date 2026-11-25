@@ -7,6 +7,7 @@ import type { DraftResult, DraftWeekInput } from "@/lib/vardiya-taslak";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb } from "@/server/db";
 import { draftShiftWeek } from "@/server/vardiya/draft";
+import { notifyShiftChanges } from "@/server/vardiya/notify";
 import { saveShiftWeek, shiftLogDetail } from "@/server/vardiya/store";
 
 import { logActivity } from "./log";
@@ -34,6 +35,8 @@ export async function saveShiftWeekAction(input: SaveWeekInput): Promise<ActionR
     const r = await saveShiftWeek(getDb(), me, input);
     if (r.written || r.removed) {
       await logActivity(me, "Vardiya planı kaydedildi", shiftLogDetail(r));
+      // Vardiyası değişen kişilere bildirim (yanıttan sonra; kaydı yapan kendine almaz; docs/VARDIYA.md › Bildirimler)
+      notifyShiftChanges(r.changes.filter((c) => c.userId !== me.id), r.branch);
       refresh();
     }
     return { written: r.written, removed: r.removed, summary: r.summary, pdf: pdfHref(r.branch.id, r.monday) };

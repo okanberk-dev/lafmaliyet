@@ -29,6 +29,7 @@ const PARTS = {
   fiyat: { group: "uyari", what: "kasada değişecek fiyatlar", href: { admin: "/panel/urunler/fiyatlar?sekme=kasa", staff: "/panel/kasa/fiyatlar" } },
   tukendi: { group: "uyari", what: "tükenen ürünler", href: "/panel/urunler" },
   sayim: { group: "uyari", what: "stok sayımı", href: "/panel/sayim" },
+  vardiya: { group: "uyari", what: "vardiya planı", href: "/panel/vardiya" },
   operasyon: { group: "uyari", what: "operasyon uyarıları", href: "/panel" },
 } as const;
 

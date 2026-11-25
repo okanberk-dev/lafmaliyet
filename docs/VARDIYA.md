@@ -201,6 +201,53 @@ staffCost); testleri `tests/personel-part-time.test.ts`, `tests/personel-baglant
   Hiç geçmeyen kişi 0 gün sayılmaz: 26 kalır, Maaşlar ve Genel bakış uyarır. Maaşlar kişinin altında "LafPOS'ta çalıştığı
   gün" yazar. LafPOS'un `GET /api/panel/pos/personel` listesi yukarıdaki notla hesap başına tek öğe verir.
 
+## Bildirimler (Dalga 2, 25 Kasım 2026)
+
+Sahibin isteği: "Vardiyası değişen personele bildirim gitsin. Gelecek haftanın planı yazılmadıysa hatırlatılsın."
+
+### Vardiyası değişen kişiye
+
+Plan kaydedilince yalnız vardiyası değişen kişilere tek bir bildirim gider:
+"Vardiyanız değişti" / "1 Aralık Salı: 10:00–18:00 → 12:00–20:00". Birden çok gün değiştiyse en çok üçü yazılır, kalanı
+"ve 2 gün daha". Birden çok şube açıkken başlıkta şube de yazar ("Vardiyanız değişti · Marina"). Dokununca o haftanın
+planı o şubede açılır (`/panel/vardiya?hafta=…&sube=…`).
+
+- **Ne değişiklik sayılır:** kaydedilmiş bir kutunun saati, notu ya da izni değişince; kutu silinince ("… kaldırıldı");
+  kişinin o haftada zaten kayıtlı vardiyası varken yeni bir gün eklenince ("… (yeni)").
+- **Ne sayılmaz:** haftanın ilk yazımı (kişinin o haftada hiç kaydı yokken yazılan günler; plan parça parça
+  yazılırken herkese ileti gitmesin), yalnız adın değişmesi, bugünden önceki günler, hesabı olmayan çalışan (adıyla
+  yazılan kişiye gidecek adres yok), kaydı yapan yöneticinin kendi satırı.
+- **Nasıl:** önce kişinin bildirimi açık cihazlarına push (Bu cihazda uyarılar; cihaz başına ayrı bir anahtar yok).
+  Hiçbir cihaza gidemezse (bildirim açık cihazı yoksa) hesabın e-posta adresine "Vardiyanız değişti" e-postası: gün gün
+  eski → yeni ve **Vardiyayı aç** düğmesi. E-posta, Ödemeler › E-posta bildirimleri'ndeki **Hatırlatma e-postaları**
+  açıksa ve Resend kuruluysa gider (öteki personel e-postaları gibi). Tutar yok.
+- Bildirim kayıttan ve yanıttan sonra gider: Kaydet beklemez, bildirim servisi düşse de plan yazılmıştır. Aynı hafta
+  ve şubenin bildirimi telefonda öncekinin yerine geçer (etiket `vardiya-<şube>-<Pazartesi>`). Asistanın vardiya kartı
+  da aynı eylemden geçtiği için onun değişikliği de bildirilir.
+- Kayıt mantığı değişmedi (`saveShiftWeek` yalnız kayıttan önceki hâlle farkı da döndürür: `changes`).
+
+### Gelecek haftanın planı yazılmadıysa
+
+Perşembe 18:00'den Pazar sonuna kadar gelecek haftanın planında bir şubenin hiç kutusu yoksa:
+
+- **Zil (yönetici, Uyarılar):** "Gelecek haftanın vardiyası yazılmadı" (birden çok şube açıkken "Marina: gelecek
+  haftanın vardiyası yazılmadı"), gövdesi haftayı söyler, o haftanın o şubesine götürür. Tek şube seçiliyken yalnız o
+  şubeninki; "Tümü"de hepsi. Plan yazılınca kalkar. Okunamazsa Uyarılar'da "Vardiya planı" yüklenemedi satırı.
+- **Günlük iş (Cuma, Cumartesi, Pazar sabahı):** aynı metin etkin yöneticilerin bildirimi açık cihazlarına push, şube,
+  hafta ve gün başına bir kez (`notification_log` anahtarı `vardiya-plan:<şube>:<Pazartesi>:<gün>`). Ayarlar › Günlük
+  işler'de adım yalnız bildirim denenince yazılır: "… yöneticilere bildirim gitti", bildirim açık yönetici cihazı
+  yoksa bilgi olarak "(bildirim açık yönetici cihazı yok)", hiçbir cihaza gidemediyse "Vardiya hatırlatması hata".
+
+### Kod
+
+| Dosya | Görev |
+|---|---|
+| `src/lib/vardiya-bildirim.ts` | Saf kurallar: değişikliklerin seçimi (`shiftChanges`), satırlar ve bildirim metni, hatırlatma zamanı (`planReminderWeek`), eksik plan |
+| `src/server/vardiya/notify.ts` | Gönderim: `notifyShiftChanges` (eylem, yanıttan sonra), `sendShiftChangeNotices` (push, yoksa e-posta), `missingNextWeekPlans`, `pushPlanReminders` (günlük iş) |
+| `src/server/notify/vardiya-template.ts` | "Vardiyanız değişti" e-postası |
+| `src/server/bell/vardiya.ts` | Yöneticinin zil satırı |
+| `tests/vardiya-bildirim.test.ts` | Değişiklik kuralları, metinler, e-posta, hatırlatma zamanı, günlük işin adımı, kaynak bağlantıları |
+
 ## Veri
 
 `shifts` tablosu (migration `0067_karaoke_hatirlatma_vardiya.sql`): şube, gün ve kişi başına **tek satır**

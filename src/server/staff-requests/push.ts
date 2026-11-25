@@ -25,11 +25,15 @@ import type { StaffRequestRow } from "./core";
 export function pushNewRequest(out: { row: Pick<StaffRequestRow, "id">; created: boolean }): void {
   if (!out.created) return;
   const id = out.row.id;
-  after(() =>
-    sendRequestPush(getDb(), id).catch((e: unknown) => {
-      console.error("[push] onay isteği", (e as Error).message);
-    }),
-  );
+  try {
+    after(() =>
+      sendRequestPush(getDb(), id).catch((e: unknown) => {
+        console.error("[push] onay isteği", (e as Error).message);
+      }),
+    );
+  } catch {
+    // İstek dışında (betik, test) bildirim gönderilmez
+  }
 }
 
 /**
