@@ -106,8 +106,11 @@ describe("kasada bekleyen fiyat şube başına: veritabanında", { skip: !SERVER
     journal.entries = journal.entries.slice(0, cut);
     writeFileSync(journalPath, JSON.stringify(journal));
     await migrate(db, { migrationsFolder: join(tmp, "drizzle") });
-    await db.insert(s.branches).values(DEFAULT_BRANCHES.map((b) => ({ ...b }))).onConflictDoNothing();
-    await db.insert(s.branches).values({ id: "eski", name: "Eski", kind: "fiziksel", posSource: "modpos", active: false, sortOrder: 9 });
+    // Şube satırları düz SQL ile: 0077'de `branches.features` yok (0084), Drizzle'ın insert'ü şemanın her sütununu adlandırır
+    for (const b of DEFAULT_BRANCHES) {
+      await db.execute(sql`INSERT INTO branches (id, name, kind, pos_source, sort_order) VALUES (${b.id}, ${b.name}, ${b.kind}, ${b.posSource}, ${b.sortOrder}) ON CONFLICT DO NOTHING`);
+    }
+    await db.execute(sql`INSERT INTO branches (id, name, kind, pos_source, active, sort_order) VALUES ('eski', 'Eski', 'fiziksel', 'modpos', false, 9)`);
     for (const k of Object.keys(users) as (keyof typeof users)[]) {
       const [u] = await db
         .insert(s.users)
