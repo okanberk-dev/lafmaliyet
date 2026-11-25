@@ -918,8 +918,10 @@ LafPOS'ta boş), ötekiler `z`, `payments`, `bank_pos` ve `off_device` jsonb'sin
 
 ## Geçiş günü
 
-**Ayarlar › LafPOS (kasa) › LafPOS'a geçiş günü** (`settings.lafposGecisGunu`; `Settings` tipinde ve
-`DEFAULT_SETTINGS`'te `null`): Marina'nın kasasında LafPOS'un kullanılmaya başlandığı ilk iş günü (YYYY-MM-DD, 05:00
+**Ayarlar › LafPOS (kasa) › LafPOS'a geçiş günü** (25 Kasım 2026'dan beri LafPOS'un şubesinin şube ayarı, grup
+`pos.lafpos`, [SUBE.md](SUBE.md) › Şube başına ayarlar; eski genel kayıt `settings.lafposGecisGunu` yalnız satırı
+olmayan Marina'nındır, kasa kaynağı başka şubeye geçerse o şube kendi gününü alır; okuyan her yer
+`lafposSwitchDay`, `src/server/lafpos/branch.ts`; `Settings` tipinde ve `DEFAULT_SETTINGS`'te `null`): Marina'nın kasasında LafPOS'un kullanılmaya başlandığı ilk iş günü (YYYY-MM-DD, 05:00
 kuralı; Tuzla ModPOS'ta kalır, aşağıda "Şubeler"). Canlıda 22 Kasım 2026.
 
 - **Boş (varsayılan):** kasa ModPOS. Her şey bugünkü gibi çalışır; LafPOS'un gönderdiği günler deneme sayılır.
@@ -941,7 +943,12 @@ kuralı; Tuzla ModPOS'ta kalır, aşağıda "Şubeler"). Canlıda 22 Kasım 2026
 - **Kim, nasıl:** yalnız yönetici (`saveLafposSwitchDay`, `src/server/actions/lafpos.ts`; rol çekirdekte de denetlenir,
   `src/server/lafpos/admin.ts`). Kaydetmeden önce onay penceresi: neyin değiştiği ve kaynağı değişen günlerin ayları.
   En erken 1 Ekim 2026, en çok 90 gün ileride. FIFO başlangıcı gibi parola istemez; işlem geçmişine "LafPOS'a geçiş
-  günü: yok (kasa ModPOS) → 10 Kasım 2026" düşer. Boşaltmak satırı siler.
+  günü: yok (kasa ModPOS) → 10 Kasım 2026" düşer. Boşaltmak günü siler (şube ayarına `null`; eski kayıt yazılmaz).
+- **Anahtar panelde de saklanabilir** (25 Kasım 2026): Şube ayarları › LafPOS bağlantısı'nda (yalnız LafPOS'un şubesi,
+  yalnız yönetici) `secret-box` ile şifreli; ortamdaki `LAFPOS_SYNC_SECRET`'ın önüne geçer, en az 32 karakter, sitenin
+  anahtarı (`KARAOKE_SYNC_SECRET`) reddedilir. Tarayıcıya, işlem geçmişine ve yedeğe gitmez; ekran yalnız "Panelde
+  kayıtlı / Sunucuda kayıtlı / Anahtar yok" der. Silinince ortamdaki kullanılır. İmzalı uçların hepsi
+  `await lafposSecret()` ile okur.
 - **Hiçbir veri yazılmaz ya da silinmez:** ayar yalnız okuyanları değiştirir; geri almak günü değiştirmek ya da
   boşaltmaktır. Tercihen ayın 1'i (ModPOS'un o ayki ürün listesi bölünmez).
 - **LafPOS kendi tarihini tutmaz:** bütün gerçek günleri gönderir; neyin sayıldığına panel karar verir ve yanıtta söyler

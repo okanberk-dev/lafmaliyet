@@ -26,7 +26,7 @@ import { productLabel } from "@/lib/waste";
 import { currentBranchScope } from "@/server/branch-scope";
 import { closedDaysBetween } from "@/server/closed-days";
 import { getDb, schema as s, type DB } from "@/server/db";
-import { lafposBranchId } from "@/server/lafpos/branch";
+import { lafposBranchId, lafposSwitchDay } from "@/server/lafpos/branch";
 
 import { loadLafposIkram } from "./lafpos-ikram";
 import { suspectFactorLine } from "./purchase-lots-query";
@@ -79,7 +79,8 @@ export async function loadStockEstimate(db: DB = getDb(), now: Date = new Date()
   const settings = settingsFromRows(settingRows);
   // Tahmin LafPOS'un gün sonlarıyla: tahminin şubesi LafPOS'un şubesi değilse (kasa kaynağı başka şubeye geçti) tahmin
   // yok (stok_tahmini özelliği ayrı dilim; docs/SUBE.md › Sırada ne var)
-  const switchDay = branchSwitchDay(settings.lafposGecisGunu, STOCK_ESTIMATE_BRANCH, await lafposBranchId(db));
+  // Geçiş günü LafPOS'un şubesinin şube ayarından (pos.lafpos; settings tablosundaki eski kayıt yalnız satırı yokken)
+  const switchDay = branchSwitchDay(await lafposSwitchDay(db), STOCK_ESTIMATE_BRANCH, await lafposBranchId(db));
   if (!switchDay) return null;
 
   // LafPOS'un sayıldığı ilk gün: geçiş ayında Marina'nın ModPOS listesi varsa onun son gününden sonra (veri kümesiyle

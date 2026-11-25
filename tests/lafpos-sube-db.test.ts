@@ -152,6 +152,11 @@ describe("LafPOS'un şubesi kütükten: veritabanında", { skip: !SERVER_URL && 
     // Eski kasa şube göndermez: kütüğün şubesine yazılır
     const old = await send({ ...body(), z: { ...body().z } });
     assert.equal(old.status, 200);
+    // Geçiş günü LafPOS'un şubesinin şube ayarı (grup pos.lafpos; eski kayıt Marina'nın): Marina'nın günü Tuzla'ya geçmez,
+    // Tuzla kendi gününü Ayarlar › LafPOS'tan alır (docs/SUBE.md › Şube başına ayarlar)
+    assert.equal(await branch.loadBranchSwitchDay("tuzla", db), null, "Marina'nın günü Tuzla'ya geçmez");
+    const { writeLafposSwitchDay } = await import("../src/server/lafpos/admin");
+    assert.ok(await writeLafposSwitchDay(db, { id: me.id, name: me.name, role: "admin" }, SWITCH, D), "Tuzla'nın günü yazılır");
     assert.equal(await branch.loadBranchSwitchDay("tuzla", db), SWITCH);
     assert.equal(await branch.loadBranchSwitchDay("marina", db), null, "Marina artık ModPOS günü");
     const { loadKasaLafpos } = await import("../src/server/data/lafpos-day");

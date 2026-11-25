@@ -26,7 +26,7 @@ export const maxDuration = 60;
  */
 export async function POST(request: NextRequest) {
   await connection();
-  const secret = lafposSecret();
+  const secret = await lafposSecret();
   if (!secret) return Response.json({ error: "not_configured" }, { status: 503, headers: NO_STORE });
   const length = Number(request.headers.get("content-length") ?? 0);
   if (length > POS_DAY_MAX_BYTES) {

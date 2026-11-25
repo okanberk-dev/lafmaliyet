@@ -15,10 +15,8 @@ import {
   type CashRevisionData,
   type CashRevisionRow,
 } from "@/lib/cash-report";
-import { readLafposSwitchDay } from "@/lib/constants";
 import { posZSchema } from "@/lib/lafpos/day";
-import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
-import { MODPOS_FALLBACK_KEY, readModposFallback } from "@/lib/modpos/status";
+import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { foyZ } from "@/lib/modpos/z";
 import type { OkcPrev, OkcRow, OkcVatLine } from "@/lib/okc-z";
 import { addDays } from "@/lib/reminders";
@@ -26,7 +24,8 @@ import { emailErrorFor } from "@/lib/staff-errors";
 import { andWhere, currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
 import { putBranchSetting, resolveBranchSetting } from "@/server/branch-settings";
 import { getDb, schema as s } from "@/server/db";
-import { lafposBranchId } from "@/server/lafpos/branch";
+import { lafposBranchId, lafposSwitchDay } from "@/server/lafpos/branch";
+import { modposFallbackBranches } from "@/server/modpos/fallback";
 import { loadModposSheets, type ModposSheet } from "@/server/modpos/store";
 
 /**
@@ -400,8 +399,7 @@ function modposRunStarts(modpos: readonly TillRow[], reports: readonly TillRow[]
  * boşken boş (deneme günleri hiçbir hesaba girmez). Raporu olan günü süzmez: tillRows ve tillMonths raporu öne alır
  */
 export async function lafposTillRows(db: Db | Tx = getDb(), from?: string, to?: string): Promise<TillRow[]> {
-  const [setting] = await db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
-  const switchDay = readLafposSwitchDay(setting?.value);
+  const switchDay = await lafposSwitchDay(db);
   if (switchDay === null || (to !== undefined && to < switchDay)) return [];
   const start = from !== undefined && from > switchDay ? from : switchDay;
   const rows = await db
@@ -437,19 +435,17 @@ const MODPOS_FIRST_DAY = "2000-01-01";
 const MODPOS_LAST_DAY = "9999-12-31";
 
 /**
- * Ay rakamına yedeğin kapsamı (docs/MODPOS-API.md › Ay rakamına yedek): anahtar kapalıysa null (föy tablosu hiç
- * okunmaz); açıksa LafPOS'a geçiş günü (boşsa null: föyün her günü sayılır). Geçiş gününden itibaren LafPOS'un şubesinin
+ * Ay rakamına yedeğin kapsamı (docs/MODPOS-API.md › Ay rakamına yedek): anahtar hiçbir şubede açık değilse null (föy
+ * tablosu hiç okunmaz); açıksa anahtarı açık şubeler (şube ayarı `modpos`; öbür şubeler "aynı" başlar, bugünkü tek
+ * anahtar) ve LafPOS'a geçiş günü (boşsa null: föyün her günü sayılır). Geçiş gününden itibaren LafPOS'un şubesinin
  * kasası LafPOS'tur, o şubenin föyü aya girmez (docs/MODPOS-API.md › Nerede görünür); ModPOS'ta kalan şubenin föyü
  * girmeye devam eder (branchSwitchDay; denetim 21 Kasım #5)
  */
-async function modposFallbackSwitch(db: Db | Tx): Promise<{ switchDay: string | null; lafposBranch: string } | null> {
-  const rows = await db
-    .select({ key: s.settings.key, value: s.settings.value })
-    .from(s.settings)
-    .where(inArray(s.settings.key, [MODPOS_FALLBACK_KEY, LAFPOS_SWITCH_KEY]));
-  const value = (key: string) => rows.find((r) => r.key === key)?.value;
-  if (!readModposFallback(value(MODPOS_FALLBACK_KEY))) return null;
-  return { switchDay: readLafposSwitchDay(value(LAFPOS_SWITCH_KEY)), lafposBranch: await lafposBranchId(db) };
+async function modposFallbackSwitch(db: Db | Tx): Promise<{ switchDay: string | null; lafposBranch: string; branches: Set<string> } | null> {
+  const branches = await modposFallbackBranches(db);
+  if (!branches.size) return null;
+  const [switchDay, lafposBranch] = await Promise.all([lafposSwitchDay(db), lafposBranchId(db)]);
+  return { switchDay, lafposBranch, branches };
 }
 
 /**
@@ -505,7 +501,7 @@ export async function modposFallbackSheets(db: Db | Tx = getDb(), from?: string,
   const start = from ?? MODPOS_FIRST_DAY;
   if (upto < start) return [];
   const sheets = await loadModposSheets(start, upto, db);
-  return sheets.filter((sh) => !isLafposDay(sh.day, branchSwitchDay(fallback.switchDay, sh.branchId, fallback.lafposBranch)));
+  return sheets.filter((sh) => fallback.branches.has(sh.branchId) && !isLafposDay(sh.day, branchSwitchDay(fallback.switchDay, sh.branchId, fallback.lafposBranch)));
 }
 
 /**

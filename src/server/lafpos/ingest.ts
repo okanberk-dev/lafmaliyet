@@ -3,14 +3,13 @@ import "server-only";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 
 import { createPosMappingIndex } from "@/lib/calc/pos-paste";
-import { readLafposSwitchDay } from "@/lib/constants";
 import { parsePosDay, POS_DAY_MAX_BYTES, resolvePosLine, siteSlotKey, type PosDayPush } from "@/lib/lafpos/day";
-import { checkLafposRequest, lafposSecretFrom } from "@/lib/lafpos/request";
-import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { checkLafposRequest } from "@/lib/lafpos/request";
+import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { onLafposDaySaved } from "@/server/closed-days";
 import { schema as s, type DB } from "@/server/db";
 
-import { lafposBranchId } from "./branch";
+import { lafposBranchId, lafposSwitchDay } from "./branch";
 import { detachLafposCashOuts, syncLafposCashOuts } from "./cash-moves";
 
 /**
@@ -20,10 +19,11 @@ import { detachLafposCashOuts, syncLafposCashOuts } from "./cash-moves";
  * (tests/lafpos-db.test.ts doğrudan çalıştırır).
  */
 
-/** LafPOS'un anahtarı (LAFPOS_SYNC_SECRET, en az 32 karakter); yoksa uçların hepsi 503 */
-export function lafposSecret(): string | null {
-  return lafposSecretFrom(process.env);
-}
+/**
+ * LafPOS'un anahtarı (Şube ayarları'nda saklanan, yoksa LAFPOS_SYNC_SECRET; en az 32 karakter); yoksa uçların hepsi 503
+ * (src/server/lafpos/branch.ts lafposSecret)
+ */
+export { lafposSecret } from "./branch";
 
 export interface EndpointResult {
   status: number;
@@ -144,8 +144,7 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
     // listeyi taşıyorsa (eski LafPOS ya da okunamayan liste satırlara dokunmaz). Deneme günü (geçişten önce) yazmaz; gün
     // sayılan iken yazılmış satırları varsa (geçiş günü sonradan sonraya alındı) onları LafPOS'tan ayırır: LafPOS'un
     // açtığı satır kalkar, sahiplenilen elle satır ve tedarikçi ödemesine bağlı satır kalır (inceleme LM-3)
-    const [setting] = await tx.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
-    if (isLafposDay(day.date, branchSwitchDay(readLafposSwitchDay(setting?.value), branchId, branchId))) {
+    if (isLafposDay(day.date, branchSwitchDay(await lafposSwitchDay(tx), branchId, branchId))) {
       if (day.cashMoves !== undefined) await syncLafposCashOuts(tx, day.date, day.cashMoves, branchId);
     } else await detachLafposCashOuts(tx, day.date, "drop", { branchId });
     const unmatched = rows

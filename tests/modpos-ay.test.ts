@@ -315,13 +315,14 @@ test("kaynak: yedek kapalıyken föy tablosu okunmaz; yükleyici rapor > LafPOS 
   assert.ok(fn.indexOf("if (fallback === null) return [];") > 0);
   assert.ok(fn.indexOf("if (fallback === null) return [];") < fn.indexOf("await loadModposSheets("), "ayar okunmadan föy okunmaz");
   // Geçiş gününden önce; geçiş günü yalnız LafPOS'un şubesinin föyünü keser (ModPOS'ta kalan şube sayılmaya devam eder)
-  assert.match(fn, /sheets\.filter\(\(sh\) => !isLafposDay\(sh\.day, branchSwitchDay\(fallback\.switchDay, sh\.branchId, fallback\.lafposBranch\)\)\)/, "geçiş gününden önce, şube şube");
+  assert.match(fn, /sheets\.filter\(\(sh\) => fallback\.branches\.has\(sh\.branchId\) && !isLafposDay\(sh\.day, branchSwitchDay\(fallback\.switchDay, sh\.branchId, fallback\.lafposBranch\)\)\)/, "anahtarı açık şubenin, geçiş gününden önce, şube şube");
   const first = loader.slice(loader.indexOf("export async function firstModposTillDay("));
   assert.ok(first.indexOf("if ((await modposFallbackSwitch(db)) === null) return null;") > 0);
   assert.ok(first.indexOf("if ((await modposFallbackSwitch(db)) === null) return null;") < first.indexOf("modposTillRows(db)"), "ayar okunmadan föy okunmaz");
   const scope = loader.slice(loader.indexOf("async function modposFallbackSwitch("));
-  assert.match(scope, /if \(!readModposFallback\(value\(MODPOS_FALLBACK_KEY\)\)\) return null;/);
-  assert.match(scope, /return \{ switchDay: readLafposSwitchDay\(value\(LAFPOS_SWITCH_KEY\)\), lafposBranch: await lafposBranchId\(db\) \};/);
+  // Anahtar şube başına (şube ayarı modpos): hiçbir şubede açık değilse föy tablosu okunmaz
+  assert.match(scope, /const branches = await modposFallbackBranches\(db\);\s+if \(!branches\.size\) return null;/);
+  assert.match(scope, /const \[switchDay, lafposBranch\] = await Promise\.all\(\[lafposSwitchDay\(db\), lafposBranchId\(db\)\]\);/);
   assert.match(loader, /if \(sheet\.state === "ACIK"\) return null;/);
   assert.match(loader, /sheet\.state === "BOS" && !\(z && z\.foysuz && z\.zTotal > 0\)/);
   // Kesinleşmiş satışsız gün sıfır satır (kesintisiz sayımda kapalı gün boşluk değil)

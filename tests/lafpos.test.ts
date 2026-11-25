@@ -511,7 +511,7 @@ test("maliyet listesi: yalnız siteye bağlı ürünler, yalnız altı alan; mal
 
 test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; maliyet ucu yalnız imzayla", () => {
   const gun = read("src/app/api/pos/gun/route.ts");
-  const order = ["await connection()", "lafposSecret()", "content-length", "request.text()", "handlePosDay("];
+  const order = ["await connection()", "await lafposSecret()", "content-length", "request.text()", "handlePosDay("];
   const at = order.map((s) => gun.indexOf(s));
   assert.ok(at.every((i, k) => i > 0 && (k === 0 || i > at[k - 1])), `sıra: ${order.join(" → ")}`);
   assert.match(gun, /"Cache-Control": "no-store"/);
@@ -536,13 +536,13 @@ test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; 
   const urunler = read("src/app/api/panel/pos/urunler/route.ts");
   assert.match(urunler, /export async function GET\(request: NextRequest\) \{\s*await connection\(\);/);
   assert.match(urunler, /"Cache-Control": "no-store"/);
-  assert.match(urunler, /servePosProducts\(\{\s*secret: lafposSecret\(\),/);
+  assert.match(urunler, /servePosProducts\(\{\s*secret: await lafposSecret\(\),/);
   assert.doesNotMatch(urunler, /getCurrentUser|requireUser|requireAdmin/, "oturumla açılmaz");
   // ModPOS dönemi ucu: aynı kalıp (bağlantı, imza, önbelleksiz, oturumsuz); denetim sırası imza → şube → okuma
   const modpos = read("src/app/api/panel/pos/modpos-gunler/route.ts");
   assert.match(modpos, /export async function GET\(request: NextRequest\) \{\s*await connection\(\);/);
   assert.match(modpos, /"Cache-Control": "no-store"/);
-  assert.match(modpos, /serveModposDays\(\{\s*secret: lafposSecret\(\),/);
+  assert.match(modpos, /serveModposDays\(\{\s*secret: await lafposSecret\(\),/);
   assert.doesNotMatch(modpos, /getCurrentUser|requireUser|requireAdmin/, "oturumla açılmaz");
   const serve = read("src/server/lafpos/modpos-gunler.ts");
   const handler = serve.slice(serve.indexOf("export async function serveModposDays"));
@@ -558,7 +558,7 @@ test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; 
     const route = read(file);
     assert.match(route, /export async function GET\(request: NextRequest\) \{\s*await connection\(\);/, file);
     assert.match(route, /"Cache-Control": "no-store"/, file);
-    assert.match(route, new RegExp(`${fn}\\(getDb\\(\\), \\{\\s*secret: lafposSecret\\(\\),`), file);
+    assert.match(route, new RegExp(`${fn}\\(getDb\\(\\), \\{\\s*secret: await lafposSecret\\(\\),`), file);
     assert.doesNotMatch(route, /getCurrentUser|requireUser|requireAdmin/, `${file}: oturumla açılmaz`);
   }
   // Oturum ara katmanı bu uçlara dokunmaz (imza tek kapı)
@@ -657,7 +657,7 @@ test("kaynak: tek kasanın gününe bakan okuyucular geçiş gününü kasanın 
   const day = read("src/server/data/lafpos-day.ts");
   // Kasa raporunun LafPOS bandı, geç raporun kanıtı ve günden güne liste
   assert.match(day, /if \(!isLafposDay\(date, branchSwitchDay\(switchDay, sube, lafposBranch\)\)\) return \{ lafpos: false, day: null \};/);
-  assert.match(day, /if \(!isLafposDay\(date, branchSwitchDay\(readLafposSwitchDay\(setting\?\.value\), sube, lafposBranch\)\)\) return "modpos-z";/);
+  assert.match(day, /if \(!isLafposDay\(date, branchSwitchDay\(switchDay, sube, lafposBranch\)\)\) return "modpos-z";/);
   assert.ok(day.indexOf("const sube = branchId ?? (await currentTillBranch());") < day.indexOf('return "modpos-z"'), "kanıtın şubesi önce");
   assert.match(day, /return isLafposDay\(date, branchSwitchDay\(switchDay, b, lafposBranch\)\) \?/);
   // Geç rapor kartı, zayi reddi, günün LafPOS ikramı, kasadaki fiyatlar, föy yedeği, fotoğraf okuma, metinler

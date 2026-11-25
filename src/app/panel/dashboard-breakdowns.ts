@@ -713,7 +713,7 @@ export function breakEvenBreakdown(model: Model, d: DashboardData): CardBreakdow
             display: tl(monthly),
             amount: 0,
           },
-          { key: "gun", label: "Ayda açık gün", sub: "Ayarlar", display: `${num(st.acikGun)} gün`, amount: 0, href: "/panel/ayarlar" },
+          { key: "gun", label: "Ayda açık gün", sub: "Şube ayarları", display: `${num(st.acikGun)} gün`, amount: 0, href: "/panel/ayarlar#sube-ayarlari" },
         ],
       },
       { key: "tempo", label: `${monthLabel(d.month)} temposu`, apart: true, noSubtotal: true, rows: tempo },

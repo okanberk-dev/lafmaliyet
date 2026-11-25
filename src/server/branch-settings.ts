@@ -22,8 +22,8 @@ import { open, seal } from "@/server/secret-box";
  * bağlanıp döngü kurmasın. Yetki çağıranda (yalnız yönetici; src/server/actions/branch-settings.ts, cash-report.ts).
  */
 
-/** Okuma yapan her şey: veritabanı ya da açık bir işlem */
-type Reader = DB | Parameters<Parameters<DB["transaction"]>[0]>[0];
+/** Okuma yapan her şey: veritabanı ya da açık bir işlem (yalnız select) */
+type Reader = Pick<DB, "select">;
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
 
 type Row = typeof s.branchSettings.$inferSelect;
@@ -61,10 +61,20 @@ async function rowsOf(db: Reader, grp: string): Promise<Row[]> {
   return db.select().from(s.branchSettings).where(eq(s.branchSettings.grp, grp));
 }
 
-async function legacyRaw(db: Reader, key: string): Promise<Record<string, unknown>> {
-  const [row] = await db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, key)).limit(1);
-  const v = row?.value;
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+/** Eski genel kayıt: integration_state'teki anahtar ve (varsa) settings tablosundaki alanlar */
+async function legacyRaw(db: Reader, group: Pick<BranchSettingGroup, "legacyKey" | "legacySettings">): Promise<Record<string, unknown>> {
+  const fields = Object.entries(group.legacySettings ?? {});
+  const [state, settings] = await Promise.all([
+    group.legacyKey ? db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, group.legacyKey)).limit(1) : Promise.resolve([]),
+    fields.length ? db.select({ key: s.settings.key, value: s.settings.value }).from(s.settings).where(inArray(s.settings.key, fields.map(([, k]) => k))) : Promise.resolve([]),
+  ]);
+  const v = state[0]?.value;
+  const out: Record<string, unknown> = v && typeof v === "object" && !Array.isArray(v) ? { ...(v as Record<string, unknown>) } : {};
+  for (const [field, key] of fields) {
+    const row = settings.find((r) => r.key === key);
+    if (row) out[field] = row.value;
+  }
+  return out;
 }
 
 const asObject = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
@@ -108,7 +118,7 @@ async function resolveWith<T extends Record<string, unknown>>(
     secrets = opened.state;
   } else if (from === legacyOwnerId(group)) {
     // Eski genel kayıt (geçiş): yalnız sahibi şube ve ona bağlı şubeler okur. Eski kaydın gizli alanı yok sayılır
-    raw = plainFields(group, await legacyRaw(db, group.legacyKey));
+    raw = plainFields(group, await legacyRaw(db, group));
   }
   return { value: group.read(raw, process.env), mode, from, secrets };
 }
@@ -119,11 +129,14 @@ export async function resolveBranchSetting<T extends Record<string, unknown>>(gr
   return resolveWith(db, group, branchId, rows, branches);
 }
 
-/** Grubun açık şubelerdeki değerleri (ekranlar, "bu adres hangi listede"): şube kimliği → çözüm */
-export async function resolveForTills<T extends Record<string, unknown>>(group: BranchSettingGroup<T>, db: Reader = getDb()): Promise<Map<string, ResolvedSetting<T>>> {
+/**
+ * Grubun açık şubelerdeki değerleri (ekranlar, "bu adres hangi listede"): şube kimliği → çözüm. `closed`: kapalı
+ * fiziksel şubeler de (eski kayıtları okuyan hesaplar, ör. ModPOS föyünün ay yedeği)
+ */
+export async function resolveForTills<T extends Record<string, unknown>>(group: BranchSettingGroup<T>, db: Reader = getDb(), opts: { closed?: boolean } = {}): Promise<Map<string, ResolvedSetting<T>>> {
   const [rows, branches] = await Promise.all([rowsOf(db, group.id), branchesOf(db)]);
   const out = new Map<string, ResolvedSetting<T>>();
-  for (const b of branches.filter((x) => x.kind === "fiziksel" && x.active)) out.set(b.id, await resolveWith(db, group, b.id, rows, branches));
+  for (const b of branches.filter((x) => x.kind === "fiziksel" && (x.active || opts.closed))) out.set(b.id, await resolveWith(db, group, b.id, rows, branches));
   return out;
 }
 
@@ -132,8 +145,12 @@ export async function settingLinks(grp: string, db: Reader = getDb()): Promise<S
   return (await rowsOf(db, grp)).map((r) => ({ branchId: r.branchId, sameAs: r.sameAs }));
 }
 
-/** Yazımın öncesi: grubun yazımları sıraya girer (iki sekme aynı anda bağlayıp döngü kurmasın) */
-async function lockGroup(tx: Tx, grp: string) {
+/**
+ * Yazımın öncesi: grubun yazımları sıraya girer (iki sekme aynı anda bağlayıp döngü kurmasın). Önceki değeri kilit
+ * altında okumak isteyen yazım (işlem geçmişinin "eski → yeni" metni) bunu önce kendisi çağırır; aynı işlemde ikinci
+ * kez almak serbesttir
+ */
+export async function lockGroup(tx: Tx, grp: string) {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`branch_settings:${grp}`}))`);
 }
 

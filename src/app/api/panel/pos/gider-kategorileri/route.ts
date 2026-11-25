@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
   await connection();
   try {
     const r = await servePosExpenseCategories(getDb(), {
-      secret: lafposSecret(),
+      secret: await lafposSecret(),
       url: new URL(request.url),
       timestamp: request.headers.get(TIMESTAMP_HEADER),
       signature: request.headers.get(SIGNATURE_HEADER),

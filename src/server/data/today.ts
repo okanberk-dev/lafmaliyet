@@ -16,6 +16,7 @@ import {
   type OrdersLite,
 } from "@/app/panel/bugun/logic";
 import { featureInScope, karaokeBranchOf } from "@/lib/branch-features";
+import { CALENDAR_GROUP } from "@/lib/branch-settings/groups";
 import { ALL_BRANCHES, requestInScope, tillBranches } from "@/lib/branches";
 import { shiftMonth } from "@/lib/calc/engine";
 import { priceAlert } from "@/lib/calc/price-impact";
@@ -28,6 +29,7 @@ import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentBranchScope, currentPhysicalBranch, currentTillBranch, withBranchScope } from "@/server/branch-scope";
+import { resolveBranchSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, previousCarryOverByBranch, type CashReportDTO } from "@/server/data/cash-reports";
 import { closedYesterday } from "@/server/closed-days";
@@ -315,6 +317,8 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const viewP = safe(cashView(admin));
   const tillScoped = <T>(fn: () => Promise<T>) => viewP.then((v) => (v?.till ? withBranchScope(v.till, fn) : fn()));
   const cashP = safe(tillScoped(() => cashReportsBetween(c.yesterday, c.day)));
+  // Kasa raporunun beklendiği saat seçili şubenin (şube ayarı isletme.takvim; "Tümü"de ve online kanalda varsayılan şubenin)
+  const eveningHourP = safe(resolveBranchSetting(CALENDAR_GROUP, karaokeScope).then((r) => r.value.eveningHour));
   const [reports, firstDate, view, tillFirsts, tillClosed, stock, due, sessions, orders, checklists, closed, ops, own, lafposSwitch, switchRaw, noCounts, lafposBranch] = await Promise.all([
     cashP,
     safe(tillScoped(() => firstCashReportDate())),
@@ -366,11 +370,13 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
         ...(switchRaw !== null ? { lafposSwitch: branchSwitchDay(switchRaw, b.id, lafposBranch ?? undefined) } : {}),
       }))
     : null;
+  const eveningHour = (await eveningHourP) ?? undefined;
   const facts: DayFacts = {
     ...own.facts,
     ...ops,
     role: user.role,
     now,
+    eveningHour,
     lafposSwitch,
     cash: reports
       ? {

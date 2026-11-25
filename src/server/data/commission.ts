@@ -3,6 +3,7 @@ import "server-only";
 import { and, asc, eq, gte, inArray, min } from "drizzle-orm";
 
 import { channelNameResolver, type SupplierRef } from "@/app/panel/tedarikciler/logic";
+import { COMMISSION_GROUP } from "@/lib/branch-settings/groups";
 import { ALL_BRANCHES } from "@/lib/branches";
 import { tillOpenedOn } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
@@ -17,7 +18,6 @@ import {
   freshAlerts,
   groupInvoiceRows,
   overduePayouts,
-  parseCommissionSettings,
   reportWindow,
   type ChannelMonthIn,
   type CommissionAlert,
@@ -26,15 +26,15 @@ import {
   type LafposDayIn,
   type ModposBrandDay,
 } from "@/lib/commission/report";
-import { COMMISSION_CATEGORY, readLafposSwitchDay } from "@/lib/constants";
+import { COMMISSION_CATEGORY } from "@/lib/constants";
 import { posDaySchema, posZSchema } from "@/lib/lafpos/day";
-import { LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { modposChannels } from "@/lib/modpos/z";
 import { addDays, todayTR } from "@/lib/reminders";
 import { andWhere, branchWhere, currentBranchScope, withBranchScope } from "@/server/branch-scope";
+import { resolveBranchSetting } from "@/server/branch-settings";
 import { loadSupplierRefs } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
-import { lafposBranchId } from "@/server/lafpos/branch";
+import { lafposBranchId, lafposSwitchDay } from "@/server/lafpos/branch";
 import { loadModposSheets } from "@/server/modpos/store";
 import type { DigestExtraCtx, DigestExtraLoad } from "@/server/notify/digest-template";
 
@@ -57,7 +57,11 @@ import type { DigestExtraCtx, DigestExtraLoad } from "@/server/notify/digest-tem
  * e-postası ve haftalık özet her zaman işletme geneli ("Tümü"; seçiciden bağımsız).
  */
 
-/** Kanal ayarları (ödeme süresi): { channels: { pluxee: { payDays: 30 }, … } } */
+/**
+ * Kanal ayarlarının eski genel kaydı (ödeme süresi): { channels: { pluxee: { payDays: 30 }, … } }. 25 Kasım 2026'dan
+ * beri şube başına (şube ayarı `komisyon`, COMMISSION_GROUP; docs/SUBE.md › Şube başına ayarlar): bu kayıt Tuzla'nın
+ * satırı yokken okunur, öbür şubeler "aynı" başlar
+ */
 export const COMMISSION_SETTINGS_KEY = "komisyon.ayar";
 /** Hakediş takibinin başladığı gün (YYYY-MM-DD): öncesinde son günü geçen hakediş gecikme sayılmaz */
 export const COMMISSION_SINCE_KEY = "komisyon.since";
@@ -70,14 +74,14 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
  * adı bir kanala bağlanmayan fatura varsa bakılır. `today` verilmezse Türkiye'de bugün (çağıran oturumu ya da isteği
  * okuduktan sonra).
  */
-export async function loadCommissionInput(opts: { resolveNames: boolean; today?: string }): Promise<CommissionInput> {
+export async function loadCommissionInput(opts: { resolveNames: boolean; today?: string; settingsBranch?: string }): Promise<CommissionInput> {
   const db = getDb();
   const today = opts.today ?? todayTR();
   const { fromMonth, fromDay } = reportWindow(today);
   // Seçili şube: satış (kasa raporları, LafPOS) onun; "Tümü"de koşul yok
   const scope = await currentBranchScope();
   const branchOnly = scope === ALL_BRANCHES ? null : scope;
-  const [invoiceRows, marks, state, till, firstRow, pageNames, closedRows, switchRow, branchRow] = await Promise.all([
+  const [invoiceRows, marks, state, till, firstRow, pageNames, closedRows, switchRow, branchRow, channelSettings] = await Promise.all([
     // Komisyon faturaları ve kalemleri tek sorguda (kalemsiz fatura bir satır)
     db
       .select({
@@ -112,7 +116,7 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
     db
       .select({ key: s.integrationState.key, value: s.integrationState.value })
       .from(s.integrationState)
-      .where(inArray(s.integrationState.key, [COMMISSION_SETTINGS_KEY, COMMISSION_SINCE_KEY])),
+      .where(inArray(s.integrationState.key, [COMMISSION_SINCE_KEY])),
     // Z'deki yemek kartı ve online, seçili şubenin
     db
       .select({
@@ -134,16 +138,18 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
       .from(s.specialDays)
       .where(and(eq(s.specialDays.kind, "kapali"), gte(s.specialDays.dateTo, fromDay))),
     // LafPOS'a geçiş günü (yoksa LafPOS okunmaz)
-    db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1),
+    lafposSwitchDay(db),
     // Seçili şubenin açılışı: sonradan açılan şubenin açılış ayı "kasa raporları ay ortasında başladı" sayılmaz
     branchOnly
       ? db.select({ id: s.branches.id, openedOn: s.branches.openedOn }).from(s.branches).where(eq(s.branches.id, branchOnly)).limit(1)
       : Promise.resolve([]),
+    // Kanalların ödeme süresi şubenin (şube ayarı komisyon; "Tümü"de ve online kanalda varsayılan şubeninki, Tuzla)
+    resolveBranchSetting(COMMISSION_GROUP, opts.settingsBranch ?? scope, db),
   ]);
   // Geçiş günü seçili şubenin kasasınınki: ModPOS'ta kalan şube (Tuzla) seçiliyken LafPOS hiç okunmaz, Z'si geçiş ayından
   // itibaren föyün markasıyla (modposScope)
   const lafposBranch = await lafposBranchId(db);
-  const { lafpos: switchDay, modpos: modposFrom } = commissionScopeDays(readLafposSwitchDay(switchRow[0]?.value), scope, lafposBranch);
+  const { lafpos: switchDay, modpos: modposFrom } = commissionScopeDays(switchRow, scope, lafposBranch);
   const lafposFrom = switchDay ? (switchDay > fromDay ? switchDay : fromDay) : null;
   // Föyün markası geçiş ayının başından (geçiş gününden önceki günler de kasa raporu kuralıyla sayılır)
   const brandsFrom = switchDay ?? modposFrom;
@@ -174,7 +180,7 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
       till.map((r) => r.date),
     ),
     marks: marks.filter((m): m is ChannelMonthIn => isChannelKey(m.channel)),
-    settings: parseCommissionSettings(stored.get(COMMISSION_SETTINGS_KEY)),
+    settings: channelSettings.value.channels,
     lafpos: switchDay ? { switchDay, days: lafposDays } : null,
     ...(modposBrands.length ? { modposBrands } : {}),
     ...(branchOnly ? { openedOn: tillOpenedOn(branchRow[0] ?? null) } : {}),
@@ -248,9 +254,9 @@ async function supplierNames(withRefs: boolean): Promise<(supplier: string, taxN
   );
 }
 
-/** Ekranın raporu: kanal tedarikçi kartının adlarıyla da aranır */
-export async function loadCommissionReport(): Promise<CommissionReport> {
-  return buildCommissionReport(await loadCommissionInput({ resolveNames: true }));
+/** Ekranın raporu: kanal tedarikçi kartının adlarıyla da aranır. `settingsBranch`: ödeme sürelerinin şubesi (yoksa seçili kapsamınki) */
+export async function loadCommissionReport(settingsBranch?: string): Promise<CommissionReport> {
+  return buildCommissionReport(await loadCommissionInput({ resolveNames: true, settingsBranch }));
 }
 
 /**
@@ -268,7 +274,8 @@ async function loadLightReport(today?: string): Promise<CommissionReport> {
 export async function loadCommissionReports(): Promise<{ all: CommissionReport; branch: CommissionReport | null; scope: string }> {
   const scope = await currentBranchScope();
   if (scope === ALL_BRANCHES) return { all: await loadCommissionReport(), branch: null, scope };
-  const [all, branch] = await Promise.all([withBranchScope(ALL_BRANCHES, loadCommissionReport), withBranchScope(scope, loadCommissionReport)]);
+  // İşletmenin raporu da seçili şubenin ödeme süreleriyle (şube ayarı komisyon): ekrandaki son günler şubenin sözleşmesinin
+  const [all, branch] = await Promise.all([withBranchScope(ALL_BRANCHES, () => loadCommissionReport(scope)), withBranchScope(scope, () => loadCommissionReport(scope))]);
   return { all, branch, scope };
 }
 

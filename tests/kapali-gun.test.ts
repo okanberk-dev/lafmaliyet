@@ -229,9 +229,10 @@ test("kaynak: zil, sabah e-postası ve LafPOS kanıtı şubesiz okumaz", () => {
   assert.match(ev, /const branch = branchId \?\? lafposBranch;/);
   assert.match(ev, /lafposBranchId\(db\)/, "LafPOS'un şubesi kütükten (lafposBranchId)");
   assert.match(ev, /\.where\(and\(eq\(s\.posDayReports\.date, date\), eq\(s\.posDayReports\.branchId, branch\)\)\)/);
-  assert.match(ev, /branchSwitchDay\(readLafposSwitchDay\(setting\?\.value\), branch, lafposBranch\)/);
+  assert.match(ev, /branchSwitchDay\(switchDay, branch, lafposBranch\)/);
+  assert.match(ev, /lafposSwitchDay\(db\)/, "geçiş günü LafPOS'un şubesinin şube ayarından");
   const saved = closed.slice(closed.indexOf("export async function onLafposDaySaved"), closed.indexOf("export async function onNextReport"));
-  assert.match(saved, /branchSwitchDay\(readLafposSwitchDay\(setting\?\.value\), branchId, lafposBranch\)/);
+  assert.match(saved, /branchSwitchDay\(switchDay, branchId, lafposBranch\)/);
 });
 
 // ---------------------------------------------------------------- Personelin özel günleri

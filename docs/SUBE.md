@@ -291,7 +291,8 @@ veri). Kurallar saf dosyada (`src/lib/branch-features.ts`), okuma `src/server/br
   şubede karaoke yoksa), online kanalı boşaltır. Yeni şube karaokesiz başlar. Özelliği okunmamış satır (eski okuyucu)
   bugünkü davranışı alır (`branchFeatures`). `KARAOKE_BRANCH_ID` sabiti kalktı (`tests/sube-ozellik.test.ts`).
 - **Henüz özellik değil**: tahmini stok LafPOS'un şubesine bağlı kalır (`STOCK_ESTIMATE_BRANCH`; LafPOS şubesinin
-  türetilmesiyle birlikte taşınacak). Komisyon kanallarının ayarı (ödeme süreleri) işletme genelidir ("Şimdilik ortak").
+  türetilmesiyle birlikte taşınacak). Komisyon kanallarının ödeme süreleri 25 Kasım 2026'dan beri şube başına (aşağıda,
+  Şube başına ayarlar; varsayılan "Tuzla ile aynı").
 
 ## Şube başına ayarlar (25 Kasım 2026)
 
@@ -304,16 +305,22 @@ yazma `src/server/branch-settings.ts`.
 | `kasa.rapor` Kasa raporu alıcıları | e-posta adresleri, e-posta açık / kapalı, WhatsApp numarası | evet | Tuzla (varsayılan şube) |
 | `kasa.calisan` Çalışanların gün sonu e-postası | çalışan adresleri, tutarlar görünsün mü | hayır: liste şubenin kendisinin | Marina (LafPOS'un şubesi) |
 | `parasut` Paraşüt hesabı | yalnız bağ; hesabın ayarları ve oturumu Paraşüt ekranında, hesap adıyla ([PARASUT.md](PARASUT.md#şube-başına-paraşüt-hesabı)) | evet (= aynı hesap, tek eşitleme); kapatılınca **kopyalanmaz**, boş hesapla başlar | Tuzla (varsayılan şube; `parasut.settings` ve `PARASUT_*`) |
+| `komisyon` Komisyon ve yemek kartı kanalları | kanal başına ödeme süresi ([KOMISYON.md](KOMISYON.md)) | evet; sahibin varsayılanı "aynı" | Tuzla (`integration_state` › `komisyon.ayar`) |
+| `pos.lafpos` LafPOS bağlantısı ve geçiş günü | geçiş günü; LafPOS'un imza anahtarı (**şifreli**, isteğe bağlı; yoksa `LAFPOS_SYNC_SECRET`) | hayır: geçiş günü şubenin kendi kasasının, LafPOS en çok bir şubenin kasası | Marina (`settings` › `lafposGecisGunu`; değeri yalnız LafPOS'un şubesininki okunur) |
+| `modpos` ModPOS ay yedeği | ay rakamına yedek ([MODPOS-API.md](MODPOS-API.md) › Ay rakamına yedek); anahtar şube başına ortamda kalır | evet | Tuzla (`settings` › `modposAyYedegi`) |
+| `isletme.takvim` Çalışma takvimi | ayda açık gün (başabaş, günlük giderler); kasa raporunun beklendiği saat (zil ve Bugün; 12:00–23:00, varsayılan 20:00) | evet | Tuzla (`settings` › `acikGun`; saat bugün sabitti) |
+| `kasa.cihaz` Banka POS ve yazarkasa | cihaz (Pavo, TokenX, başka), yazarkasa sicil no, bankası | hayır: cihaz şubenin kendisinin | yok (boşken her şey bugünkü gibi) |
 
 - **"Diğer şubeyle aynı"**: açıkken şube kendi değerini tutmaz (satırda `same_as`), bağlandığı şubenin değerini kullanır;
   değer tek yerden düzenlenir. Kapatılınca o anki değer şubeye kopyalanır, sonra ayrı düzenlenir. Gizli alanlar
-  (şifreli, `secrets` sütunu) kopyalanmaz, yeniden girilir; istemciye yalnız "kayıtlı mı" gider. Bugünkü iki grupta
-  gizli alan yok.
+  (şifreli, `secrets` sütunu) kopyalanmaz, yeniden girilir; istemciye yalnız "kayıtlı mı" gider. Bugün yalnız LafPOS'un
+  anahtarı gizli alan.
 - **Bağ tek adımlıdır**: hedef başka şubeye bağlı olamaz, kendine bağ ve döngü yok (sunucu ve veritabanı denetler).
   Varsayılan şube (Tuzla) öbürlerinin örtük hedefidir, kendisi bağlanamaz. Başka şube bir şubenin ayarını kullanıyorsa o
   şube kapatılamaz ve silinemez ("Marina, kasa raporu alıcıları için Bodrum şubesinin ayarını kullanıyor; önce ayırın").
 - **Geçiş: veri göçü yok, hiçbir şey yapmadan çalışır.** Satırı olmayan şube eski genel kayıttan (`integration_state` ›
-  `cash.settings`) okur, ama yalnız kaydın sahibi şube: alıcılar Tuzla'nın, çalışan listesi Marina'nın. "Aynı" sunulan
+  `cash.settings`, `komisyon.ayar`; `settings` tablosunun alanları grubun `legacySettings`'iyle: `lafposGecisGunu`,
+  `modposAyYedegi`, `acikGun`) okur, ama yalnız kaydın sahibi şube: alıcılar Tuzla'nın, çalışan listesi Marina'nın. "Aynı" sunulan
   grupta öbür şubeler örtük olarak Tuzla'ya bağlı başlar (bugünkü tek liste). Kayıt yoksa ortamın alıcıları
   (`CASH_REPORT_RECIPIENTS`). İlk kayıtta satır yazılır, eski kayıt bırakılır (geri dönüş güvenli).
 - **Okuyanlar şubeyi verir** (`loadCashSettings(şube)`; şubesiz çağrı kalmadı, `tests/branch-settings.test.ts`): kasa
@@ -323,7 +330,8 @@ yazma `src/server/branch-settings.ts`.
   gün sonunun şubesinin çalışan listesine. Zil ve "bu adres hangi listede" (Hesabım, Kullanıcılar) bütün açık
   şubelerin listelerine bakar.
 - **Ekran**: Ayarlar › Şube ayarları (tek şube seçiliyken doğrudan o şubenin ekranı, "Tümü"de Şubeler listesi; özet
-  satırı alıcıların kaynağını, karaokenin şubesini ve kullanılmayan özellikleri söyler; her fiziksel şubenin satırında
+  satırı alıcıların, Paraşüt'ün ve birden çok kasada komisyon ile takvimin kaynağını, karaokenin şubesini ve kullanılmayan
+  özellikleri söyler; her fiziksel şubenin satırında
   "Alıcılar: Tuzla ile aynı" çipi ve **Ayarlar**). Şube ayarları ekranının en üstünde Özellikler kartı (yukarıda). Şube ayarları ekranı
   (`/panel/subeler/[id]`, yalnız yönetici) şubeyi adresten alır, panelin seçicisini değiştirmez. Kasa sayfasının Rapor
   alıcıları kartı aynı bileşen (`src/app/panel/kasa/cash-settings.tsx`, verisi `src/server/cash/settings-card.ts`);
@@ -341,10 +349,32 @@ yazma `src/server/branch-settings.ts`.
   seçiliyken öbür şubenin faturası Faturalar'a, Gelir-gider'e ve Maliyet'e girmez (Vergi, Nakit ve Ödemeler firma
   geneli; [PARASUT.md](PARASUT.md)). Şubeler
   listesinde "Paraşüt: Tuzla ile aynı" çipi. Şubenin hesabından fatura gelmişse şube silinemez.
-- **Şimdilik ortak** (sıradaki dilimler; ekran adıyla söyler): LafPOS bağlantısı ve geçiş günü,
-  çalışma ve uyarı saatleri, komisyon ve yemek kartı kanalları, ModPOS ay yedeği. Şube başına olmayacaklar: KDV, reçete
-  parametreleri, fire, hedef maliyet, FIFO başlangıcı, kategori ve POS eşlemeleri, site bağlantı sırrı, bildirim
-  gönderen ve vade günleri.
+- **İkinci tur (25 Kasım 2026): komisyon, LafPOS, ModPOS, çalışma takvimi, banka POS.** Hepsi Şube ayarları ekranında
+  birer kart (`src/app/panel/subeler/[id]/`; "Diğer şubeyle aynı" anahtarı tek bileşen,
+  `src/components/panel/same-as-toggle.tsx`; kart verisi `branchSettingView`, `src/server/branch-settings-view.ts`, gizli
+  alan değerden çıkarılır). Okuyanlar şubeyi verir:
+  - **Komisyon**: Komisyon & hakediş seçili şubenin ödeme süreleriyle hesaplar (işletmenin raporu da); "Tümü"de, online
+    kanalda, zilde, Bugün'de ve sabah e-postasında Tuzla'nınkiyle. Kanallar kartı iki ekranda aynı bileşen
+    (`ChannelSettingsCard`); kartın kaydı kartın şubesine, bağlı şubeye yazılmaz. Kart yemek kartı özelliği açık şubede.
+  - **LafPOS**: geçiş günü yalnız LafPOS'un şubesinin değeri (`lafposSwitchDay`, `src/server/lafpos/branch.ts`; panelin
+    geçiş gününü okuyan her yer buna iner, eski kayıt doğrudan okunmaz: `tests/sube-ayarlari-2.test.ts`). Ayarlar ›
+    LafPOS geçiş gününü bu satıra yazar; kasa kaynağı başka şubeye geçerse Marina'nın günü ona geçmez, o şube kendi gününü
+    alır. Anahtar panelde şifreli saklanabilir: ortamdakinin önüne geçer (`lafposSecret`), tarayıcıya, işlem geçmişine ve
+    yedeğe gitmez. Kart yalnız kasası LafPOS olan şubede; geçiş günü orada gösterilir, Ayarlar › LafPOS'ta değişir.
+  - **ModPOS**: ay rakamına yedek şube başına; föy yalnız anahtarı açık şubenin föyüyse aya girer, hiçbir şubede açık
+    değilse föy tablosu okunmaz. Ayarlar › ModPOS API'de her şube bölümünün kendi anahtarı (bağlıysa salt okunur). Kart
+    yalnız ModPOS'tan çekilen şubede; anahtarın yalnız durumu.
+  - **Çalışma takvimi**: ayda açık gün veri kümesine seçili şubenin değeriyle girer (Genel bakış ve Analiz'in başabaşı,
+    günlük sabit giderler; "Tümü"de Tuzla'nınki); Ayarlar › Reçete ölçüleri'nden kaldırıldı (eski sekmenin gönderdiği
+    alan yok sayılır). Kasa raporunun beklendiği saat: zil kasa kasa (şubenin saatinden sonra "Bugünün kasa raporu
+    bekliyor"), Bugün seçili şubenin saatiyle (o saatte kendini yeniler).
+  - **Banka POS ve yazarkasa**: kasa raporu e-postasının yazarkasa başlığı ("Pavo · sicil AB123 · Z no 12"), akşam
+    hatırlatmasının fişi ("TokenX'in gün sonu fişi"; belirtilmediyse Pavo, bugünkü metin) ve LafPOS cihazı henüz
+    göndermediyse gün sonu fotoğrafının okunması (TokenX ayrı mali Z basar, Pavo basmaz).
+- **Şimdilik ortak** (ekran adıyla söyler): uyarı sesi saatleri (10:00–01:00; tarayıcıda ve bildirim işçisinde,
+  `public/sw.js`, sabit), kontrol listesi hatırlatma saatleri (tek dilim takvimi), hazır vardiya saatleri (#120 vardiya
+  PR'ı birleştikten sonra). Şube başına olmayacaklar: KDV, reçete parametreleri, fire, hedef maliyet, FIFO başlangıcı,
+  kategori ve POS eşlemeleri, site bağlantı sırrı, bildirim gönderen ve vade günleri.
 
 ## "Tümü"nün ay bilgisi (denetim 13 Kasım 2026, P02)
 
@@ -527,11 +557,14 @@ süzülmesini ve şube görünümünde maliyeti kurdu. Şube başına ModPOS ana
 
 **Şube kapsamı ve şube başına ayarlar (24–25 Kasım 2026): bilerek sonraya kalanlar** (gerekçeleriyle):
 
-- **Şube başına ayar grupları**: yalnız `kasa.rapor`, `kasa.calisan` ve `parasut` kuruldu. Sıradakiler aynı desenle
-  (`src/lib/branch-settings/groups.ts`): `komisyon` (`komisyon.ayar`, `komisyon.since`; sahibin varsayılanı "aynı"),
-  `pos.lafpos` (geçiş günü ve LafPOS sırrı), `isletme.takvim` (açık gün, uyarı ve hatırlatma saatleri, hazır vardiya
-  saatleri; #120 vardiya PR'ı birleştikten sonra), `modpos` (ay yedeği), banka POS / yazarkasa bilgileri. Şimdilik
-  ortaklar Şube ayarları ekranında "Şimdilik bütün şubelerde ortak" diye adıyla yazılı.
+- **Şube başına ayar grupları**: `kasa.rapor`, `kasa.calisan`, `parasut`, `komisyon`, `pos.lafpos`, `modpos`,
+  `isletme.takvim` ve `kasa.cihaz` kuruldu (yukarıda). Kalanlar: **uyarı sesi saatleri** (tarayıcıda ve `public/sw.js`'te
+  sabit; şube başına olması bildirim işçisine şubenin saatini taşımayı ister), **kontrol listesi hatırlatma saatleri**
+  (e-posta işi tek dilim takvimiyle çalışır), **hazır vardiya saatleri** (`SHIFT_PRESETS`; #120 vardiya PR'ı
+  birleştikten sonra), **"yalnız bu bilgisayar" varsayılanı** (`ONLY_COMPUTER_BRANCHES`; "aynı" Marina'nın varsayılanını
+  değiştirirdi, ayrı alan ister), komisyon takibinin başladığı gün (`komisyon.since`; hakediş işletmenin, bilerek ortak).
+  Ekran "Şimdilik bütün şubelerde ortak" kartında adıyla yazar. Bilinen sınır: "Tümü"de Bugün'ün kasa satırları
+  varsayılan şubenin saatine bakar (zil kasa kasa bakar).
 - **LafPOS'un şubesi** kütükten türetildi (yukarıda, [LAFPOS.md › Şubeler](LAFPOS.md#şubeler-denetim-21-kasım-5)) ve
   Ayarlar'daki kasa kartları seçime göre (yukarıda, "Ayarlar'da kasa kartları"). Kalanlar: **iki şube birden LafPOS'ta**
   (gün sonu otomasyonu, sabah işi ve Ayarlar kartı tek şubeye göre; ikinci şube şimdilik kaydedilmez), `stok_tahmini`

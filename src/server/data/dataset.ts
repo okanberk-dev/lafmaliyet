@@ -3,7 +3,8 @@ import "server-only";
 import { and, asc, eq, gte, inArray } from "drizzle-orm";
 
 import { channelNameResolver } from "@/app/panel/tedarikciler/logic";
-import { ALL_BRANCHES, branchPnlEntry, DEFAULT_POS_RATE, monthWriteLock, type BranchScope } from "@/lib/branches";
+import { CALENDAR_GROUP } from "@/lib/branch-settings/groups";
+import { ALL_BRANCHES, branchPnlEntry, DEFAULT_BRANCH_ID, DEFAULT_POS_RATE, monthWriteLock, type BranchScope } from "@/lib/branches";
 import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, SalesLine, Settings } from "@/lib/calc/types";
@@ -19,8 +20,10 @@ import { addDays } from "@/lib/reminders";
 import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import type { SiteSalesMonth } from "@/lib/site-sales/schema";
 import { branchWhere, branchWhereWithShared, currentBranchScope, currentWriteBranch, withBranchScope } from "@/server/branch-scope";
+import { resolveBranchSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s, type DB } from "@/server/db";
+import { lafposSwitchDay } from "@/server/lafpos/branch";
 import { loadSiteSales } from "@/server/site-sales/sync";
 
 import { tillRows } from "./cash-reports";
@@ -28,9 +31,15 @@ import { loadLafposIkram } from "./lafpos-ikram";
 import { mergeWithLafpos } from "./lafpos-sales";
 import { loadHeldPurchases, loadPurchaseLots } from "./purchase-lots";
 
-/** Kaydı olmayan ayar varsayılanı okur (settingsFromRows): yeni bir ayar için veri taşıması gerekmez */
+/**
+ * Kaydı olmayan ayar varsayılanı okur (settingsFromRows): yeni bir ayar için veri taşıması gerekmez. Şube başına
+ * tutulan iki alan şube ayarından gelir (docs/SUBE.md › Şube başına ayarlar): LafPOS'a geçiş günü LafPOS'un şubesinin
+ * (grup pos.lafpos), ayda açık gün varsayılan şubenin (grup isletme.takvim; veri kümesi seçili şubeninkini koyar)
+ */
 export async function loadSettings(): Promise<Settings> {
-  return settingsFromRows(await getDb().select().from(s.settings));
+  const db = getDb();
+  const [rows, switchDay, calendar] = await Promise.all([db.select().from(s.settings), lafposSwitchDay(db), resolveBranchSetting(CALENDAR_GROUP, DEFAULT_BRANCH_ID, db)]);
+  return { ...settingsFromRows(rows), lafposGecisGunu: switchDay, acikGun: calendar.value.openDays };
 }
 
 /** Veri kümesinin şube kapsamı: verilmezse seçicinin seçimi (docs/SUBE.md › Seçici) */
@@ -87,6 +96,7 @@ async function readDataset(): Promise<Dataset> {
     till,
     lateWaiting,
     closedRows,
+    calendar,
   ] = await Promise.all([
     loadSettings(),
     db.select().from(s.ingredients).orderBy(asc(s.ingredients.sortOrder), asc(s.ingredients.id)),
@@ -173,6 +183,8 @@ async function readDataset(): Promise<Dataset> {
       .select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo, branchId: s.specialDays.branchId })
       .from(s.specialDays)
       .where(eq(s.specialDays.kind, "kapali")),
+    // Çalışma takvimi seçili şubenin (şube ayarı isletme.takvim; "Tümü"de ve online kanalda varsayılan şubenin)
+    resolveBranchSetting(CALENDAR_GROUP, scope, db),
   ]);
 
   // LafPOS'a geçiş günü görünümün kasasınınki (scopeSwitchDay; denetim 21 Kasım #5): ModPOS'ta kalan şube (Tuzla) ya da
@@ -180,7 +192,8 @@ async function readDataset(): Promise<Dataset> {
   // kümesini okuyan her ekran (Satışlar, Genel bakış, Gelir-gider, Ürünler, Analiz, Zayi) bunu görür
   // LafPOS'un şubesi kütükten (lafposBranchOf; kasa kaynağı LafPOS olan şube, yoksa Marina): okunan şube listesinden
   const lafposBranch = lafposBranchOf(branches);
-  const settings = { ...storedSettings, lafposGecisGunu: scopeSwitchDay(storedSettings.lafposGecisGunu, scope, lafposBranch) };
+  // Ayda açık gün seçili şubenin (şube ayarı isletme.takvim; "Tümü"de ve online kanalda varsayılan şubenin)
+  const settings = { ...storedSettings, lafposGecisGunu: scopeSwitchDay(storedSettings.lafposGecisGunu, scope, lafposBranch), acikGun: calendar.value.openDays };
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
   const currentMonth = currentMonthTR();
   // Sabit giderler küçük tablo: hepsi okunur, şubeninkiler ve işletme genelinkiler burada ayrılır (silinmiş ya da

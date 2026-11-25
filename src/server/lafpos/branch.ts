@@ -1,9 +1,9 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
-
-import { readLafposSwitchDay } from "@/lib/constants";
-import { branchSwitchDay, LAFPOS_SWITCH_KEY, lafposBranchOf } from "@/lib/lafpos/switch";
+import { LAFPOS_GROUP } from "@/lib/branch-settings/groups";
+import { lafposSecretFrom, lafposSecretProblem } from "@/lib/lafpos/request";
+import { branchSwitchDay, lafposBranchOf } from "@/lib/lafpos/switch";
+import { resolveBranchSetting } from "@/server/branch-settings";
 
 import { getDb, schema as s, type DB } from "../db";
 
@@ -43,14 +43,46 @@ export function forgetLafposBranch(): void {
 }
 
 /**
- * Bir şubenin kasasının geçiş günü (branchSwitchDay, türetilmiş LafPOS şubesiyle): geçiş günü ayarı ve LafPOS'un şubesi
+ * LafPOS'a geçiş günü: LafPOS'un şubesinin şube ayarı (grup `pos.lafpos`; docs/SUBE.md › Şube başına ayarlar). Satırı
+ * yokken eski genel kayıt (settings › lafposGecisGunu) yalnız Marina'nındır: kasa kaynağı başka şubeye geçerse o şube
+ * kendi gününü alır, Marina'nın günü ona geçmez. Panelin geçiş gününü okuyan her yer bunu çağırır (status.ts
+ * loadLafposSwitchDay ve lafpos-ikram.ts lafposSwitchDayOf da buna iner; tests/sube-ayarlari-2.test.ts kilitler)
+ */
+export async function lafposSwitchDay(db: Reader = getDb()): Promise<string | null> {
+  const branch = await lafposBranchId(db);
+  return (await resolveBranchSetting(LAFPOS_GROUP, branch, db)).value.switchDay;
+}
+
+/**
+ * Bir şubenin kasasının geçiş günü (branchSwitchDay, türetilmiş LafPOS şubesiyle): geçiş günü ve LafPOS'un şubesi
  * birlikte okunur. Tek kasanın gününe bakan sunucu okumaları bunu çağırır
  */
 export async function loadBranchSwitchDay(branchId: string | null | undefined, db: Reader = getDb()): Promise<string | null> {
-  // Ayar status.ts loadLafposSwitchDay ile aynı okunur (o dosya bunu içe aktarır; döngü olmasın diye burada yeniden)
-  const [[setting], lafposBranch] = await Promise.all([
-    db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1),
-    lafposBranchId(db),
-  ]);
-  return branchSwitchDay(readLafposSwitchDay(setting?.value), branchId, lafposBranch);
+  const [day, lafposBranch] = await Promise.all([lafposSwitchDay(db), lafposBranchId(db)]);
+  return branchSwitchDay(day, branchId, lafposBranch);
+}
+
+type Env = Record<string, string | undefined>;
+
+/**
+ * LafPOS'un anahtarının ortamı: LafPOS'un şubesinin Şube ayarları'nda saklanan anahtar (şifreli; açılamıyorsa yok
+ * sayılır) ortamdaki LAFPOS_SYNC_SECRET'ın önüne geçer. Yoksa ortam olduğu gibi (bugünkü kurulum hiçbir şey yapmadan
+ * çalışır). `source`: kullanılan anahtar nereden ("panel", "ortam"; anahtar yoksa null)
+ */
+export async function lafposSecretEnv(db: Reader = getDb(), env: Env = process.env): Promise<{ env: Env; source: "panel" | "ortam" | null }> {
+  const branch = await lafposBranchId(db);
+  const stored = (await resolveBranchSetting(LAFPOS_GROUP, branch, db)).value.secret;
+  if (stored) return { env: { ...env, LAFPOS_SYNC_SECRET: stored }, source: "panel" };
+  return { env, source: env.LAFPOS_SYNC_SECRET?.trim() ? "ortam" : null };
+}
+
+/** LafPOS'un anahtarı (panelde saklanan, yoksa ortamdaki; en az 32 karakter, sitenin anahtarından ayrı); yoksa null (uçlar 503) */
+export async function lafposSecret(db: Reader = getDb()): Promise<string | null> {
+  return lafposSecretFrom((await lafposSecretEnv(db)).env);
+}
+
+/** Anahtarın sorunu (Ayarlar'daki LafPOS kartı ve Şube ayarları söyler; lafposSecretProblem) */
+export async function lafposSecretState(db: Reader = getDb()): Promise<{ problem: ReturnType<typeof lafposSecretProblem>; source: "panel" | "ortam" | null }> {
+  const { env, source } = await lafposSecretEnv(db);
+  return { problem: lafposSecretProblem(env), source };
 }

@@ -104,6 +104,12 @@ test("gruplar: alıcılar 'aynı' sunulur ve Tuzla'nın, çalışan listesi şub
       ["kasa.calisan", false, "marina", "cash.settings"],
       // Paraşüt hesabı (B4): satır yalnız bağı tutar; eski kayıt varsayılan şubenin tek hesabı
       ["parasut", true, "tuzla", "parasut.settings"],
+      // Şube ayarları 2. tur (25 Kasım 2026): sahibin varsayılanı komisyonda "aynı"; LafPOS ve cihaz şubenin kendisinin
+      ["komisyon", true, "tuzla", "komisyon.ayar"],
+      ["pos.lafpos", false, "marina", null],
+      ["modpos", true, "tuzla", null],
+      ["isletme.takvim", true, "tuzla", null],
+      ["kasa.cihaz", false, "tuzla", null],
     ],
   );
   assert.equal(branchSettingGroup("kasa.rapor"), CASH_REPORT_GROUP);
@@ -118,8 +124,10 @@ test("gruplar: alıcılar 'aynı' sunulur ve Tuzla'nın, çalışan listesi şub
   assert.deepEqual(CASH_STAFF_GROUP.read({ recipients: ["a@b.c"], staffRecipients: ["k@o.com", 3], staffAmounts: "evet" }, {}), { staffRecipients: ["k@o.com"], staffAmounts: false });
   // Gizli alan satırın değerine yazılmaz (secrets sütununda şifreli)
   assert.deepEqual(plainFields({ secretFields: ["secret"] }, { id: "x", secret: "gizli" }), { id: "x" });
-  for (const g of BRANCH_SETTING_GROUPS) assert.deepEqual(g.secretFields, [], `${g.id}: bugün şifreli alan yok`);
-  assert.ok(SHARED_FOR_NOW.some((g) => g.id === "pos.lafpos") && SHARED_FOR_NOW.every((g) => !branchSettingGroup(g.id)), "henüz ortak olanlar ayrı listede");
+  // Şifreli alan yalnız LafPOS'un anahtarı
+  for (const g of BRANCH_SETTING_GROUPS) assert.deepEqual(g.secretFields, g.id === "pos.lafpos" ? ["secret"] : [], `${g.id}: şifreli alanlar`);
+  assert.ok(SHARED_FOR_NOW.length > 0 && SHARED_FOR_NOW.every((g) => !branchSettingGroup(g.id)), "henüz ortak olanlar ayrı listede");
+  for (const id of ["pos.lafpos", "komisyon", "modpos", "isletme.takvim"]) assert.ok(!SHARED_FOR_NOW.some((g) => g.id === id), `${id} artık şube başına`);
   assert.equal(branchSettingGroup("parasut"), PARASUT_GROUP, "Paraşüt hesabı şube başına (B4)");
 });
 

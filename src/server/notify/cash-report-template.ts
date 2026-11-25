@@ -134,6 +134,11 @@ export function renderCashReport(
      * yanında adı, "Panelde aç"ta `&sube=` (zilin bağlantısı gibi; o şubenin raporu açılır). Tek kasada null: bugünkü gibi
      */
     branch?: { id: string; name: string } | null;
+    /**
+     * Şubenin banka POS'u ve yazarkasanın sicil numarası (Şube ayarları › Banka POS ve yazarkasa; şube ayarı kasa.cihaz):
+     * yazarkasa bölümünün başlığında ("Pavo · sicil AB123"). Belirtilmediyse yazılmaz (bugünkü gibi)
+     */
+    device?: { label: string | null; registerNo: string | null } | null;
   } & CashReportExtras &
     CashReportIntegrity,
 ) {
@@ -233,7 +238,14 @@ export function renderCashReport(
   const changesBox = meta.revision > 1 && meta.changes?.length ? warnBox([`Değişen: ${changesText(meta.changes)}`], 14) : "";
   // Banka POS Z (yazarkasa) bölümü: kayıtlı raporun görünümüyle aynı satırlar (cash-summary.tsx), altında yöneticinin
   // bütün karşılaştırma satırları (kart, kendi içinde, nakit, toplam, yemek kartı, banka)
-  const okcHead = [f.okcZNo ? `Z no\u00a0${f.okcZNo}` : null, f.okcReceipts ? `${f.okcReceipts}\u00a0fiş` : null].filter(Boolean).join(" · ");
+  const okcHead = [
+    meta.device?.label ?? null,
+    meta.device?.registerNo ? `sicil\u00a0${meta.device.registerNo}` : null,
+    f.okcZNo ? `Z no\u00a0${f.okcZNo}` : null,
+    f.okcReceipts ? `${f.okcReceipts}\u00a0fiş` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const okcRows = okc
     ? [
         ...(f.okcTotal != null ? [row("Günlük toplam", money(f.okcTotal), { strong: true, sub: f.okcVatTotal != null ? `KDV ${money(f.okcVatTotal)}` : undefined })] : []),

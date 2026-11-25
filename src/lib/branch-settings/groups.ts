@@ -14,7 +14,10 @@
  */
 
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
-import { defaultCashRecipients } from "@/lib/cash-report";
+import { CASH_EVENING_HOUR, defaultCashRecipients } from "@/lib/cash-report";
+import type { ChannelKey } from "@/lib/commission/channels";
+import { effectiveSettings, parseCommissionSettings, type ChannelSettings } from "@/lib/commission/report";
+import { DEFAULT_SETTINGS, readLafposSwitchDay } from "@/lib/constants";
 import { LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
 
 type Env = Record<string, string | undefined>;
@@ -32,8 +35,13 @@ export interface BranchSettingGroup<T extends Record<string, unknown> = Record<s
   linkable: boolean;
   /** Eski genel kaydın sahibi şube: satırı yokken yalnız o şube eski kayıttan okur */
   legacy: LegacyOwner;
-  /** Eski genel kaydın anahtarı (integration_state) */
-  legacyKey: string;
+  /** Eski genel kaydın anahtarı (integration_state); yoksa null */
+  legacyKey: string | null;
+  /**
+   * Eski genel kaydın settings tablosundaki alanları (alan → settings anahtarı; ör. geçiş günü `lafposGecisGunu`):
+   * satırı yokken sahibi şube bunları da okur
+   */
+  legacySettings?: Readonly<Record<string, string>>;
   /** Şifreli tutulan alanlar: istemciye yalnız "kayıtlı mı" gider, "aynı" kapatılınca kopyalanmaz, yedeğe girmez */
   secretFields: readonly string[];
   /** Kayıttan (satır ya da eski kayıt; eksik ya da bozuk alan varsayılana düşer) grubun değeri; `raw` boşsa varsayılan */
@@ -110,8 +118,188 @@ export const PARASUT_GROUP: BranchSettingGroup<Record<string, never>> = {
   summary: () => "",
 };
 
+/** Komisyon ve yemek kartı kanallarının ayarı: kanal başına ödeme süresi (docs/KOMISYON.md) */
+export interface CommissionSetting extends Record<string, unknown> {
+  /** Kaydedilmiş süreler (eksik kanal varsayılan 30 gün; effectiveSettings) */
+  channels: Partial<Record<ChannelKey, ChannelSettings>>;
+}
+
+/**
+ * Komisyon ve yemek kartı kanalları (docs/KOMISYON.md › Şube). Sözleşme şube başına olabilir: Marina'nın Multinet'i
+ * başka ödeme süresiyle çalışabilir. Sahibin varsayılanı "aynı": öbür şubeler örtük olarak Tuzla'ya bağlı başlar, eski
+ * kayıt (integration_state › komisyon.ayar) Tuzla'nındır. Hakedişin takibinin başladığı gün (komisyon.since) ve
+ * hakediş işaretleri işletme geneli kalır: faturalar ve banka işletmenindir
+ */
+export const COMMISSION_GROUP: BranchSettingGroup<CommissionSetting> = {
+  id: "komisyon",
+  label: "Komisyon ve yemek kartı kanalları",
+  description: "Kanalların ödeme süresi: hakedişin, ayın son faturasından sonra kaç gün içinde gelmesi gerektiği.",
+  linkable: true,
+  legacy: "default",
+  legacyKey: "komisyon.ayar",
+  secretFields: [],
+  read: (raw) => ({ channels: parseCommissionSettings(raw) }),
+  summary: (v) => {
+    const days = [...new Set(Object.values(effectiveSettings(v.channels)).map((c) => c.payDays))].sort((a, b) => a - b);
+    return days.length === 1 ? `ödeme süresi ${days[0]} gün` : `ödeme süreleri ${days[0]}–${days[days.length - 1]} gün`;
+  },
+};
+
+/** LafPOS'un kasası olan şubenin ayarı: geçiş günü ve (isteğe bağlı) panelde saklanan anahtar */
+export interface LafposSetting extends Record<string, unknown> {
+  /** LafPOS'a geçiş günü (YYYY-MM-DD); boşsa kasa ModPOS sayılır (docs/LAFPOS.md › Geçiş günü) */
+  switchDay: string | null;
+  /** LafPOS'un imza anahtarı (şifreli; yalnız sunucuda açılır). Yoksa ortamdaki LAFPOS_SYNC_SECRET */
+  secret?: string;
+}
+
+/**
+ * LafPOS bağlantısı ve geçiş günü (docs/LAFPOS.md › Şubeler). Değeri yalnız LafPOS'un şubesinin (kütükte kasa kaynağı
+ * LafPOS olan şube, en çok bir) değeri okunur. "Diğer şubeyle aynı" sunulmaz: geçiş günü şubenin kendi kasasının
+ * günüdür, LafPOS da en çok bir şubenin kasasıdır; kaynak başka şubeye geçerse o şube kendi gününü ve anahtarını alır.
+ * Eski kayıt (settings › lafposGecisGunu) Marina'nın (geçildiği gün LafPOS'un şubesi); anahtar yoksa ortamınki
+ */
+export const LAFPOS_GROUP: BranchSettingGroup<LafposSetting> = {
+  id: "pos.lafpos",
+  label: "LafPOS bağlantısı ve geçiş günü",
+  description: "Kasası LafPOS olan şubenin geçiş günü ve LafPOS'un imza anahtarı.",
+  linkable: false,
+  legacy: "lafpos",
+  legacyKey: null,
+  legacySettings: { switchDay: "lafposGecisGunu" },
+  secretFields: ["secret"],
+  read: (raw) => ({
+    switchDay: readLafposSwitchDay(raw.switchDay),
+    ...(typeof raw.secret === "string" && raw.secret.trim() ? { secret: raw.secret.trim() } : {}),
+  }),
+  summary: (v) => (v.switchDay ? `geçiş günü ${v.switchDay.split("-").reverse().join(".")}` : "geçiş günü yok"),
+};
+
+/** ModPOS kasa föyünün şubeye göre ayarı */
+export interface ModposSetting extends Record<string, unknown> {
+  /** Ay rakamına yedek (docs/MODPOS-API.md › Ay rakamına yedek): raporsuz günün cirosu föyden */
+  monthFallback: boolean;
+}
+
+/**
+ * ModPOS (docs/MODPOS-API.md › Şubeler). Anahtar zaten şube başına ortamda (MODPOS_API_KEY, MODPOS_API_KEY_<ŞUBE>);
+ * burada ay rakamına yedek. Eski kayıt (settings › modposAyYedegi) Tuzla'nın, öbür şubeler örtük olarak "aynı" başlar
+ * (bugünkü tek anahtar bütün föylere uygulanıyordu)
+ */
+export const MODPOS_GROUP: BranchSettingGroup<ModposSetting> = {
+  id: "modpos",
+  label: "ModPOS ay yedeği",
+  description: "Kasa raporu olmayan günün cirosu kapanmış ModPOS föyünden aya girsin mi.",
+  linkable: true,
+  legacy: "default",
+  legacyKey: null,
+  legacySettings: { monthFallback: "modposAyYedegi" },
+  secretFields: [],
+  read: (raw) => ({ monthFallback: raw.monthFallback === true }),
+  summary: (v) => (v.monthFallback ? "ay yedeği açık" : "ay yedeği kapalı"),
+};
+
+/** Kasa raporunun beklendiği saatin sınırları (Türkiye saati; 05:00'ten önce gün döner) */
+export const EVENING_HOUR_MIN = 12;
+export const EVENING_HOUR_MAX = 23;
+
+/** Şubenin çalışma takvimi */
+export interface CalendarSetting extends Record<string, unknown> {
+  /** Ayda kaç gün açık: başabaş ve günlük giderler (motorun acikGun'u) */
+  openDays: number;
+  /** Kasa raporunun beklendiği saat: bundan sonra zil ve Bugün bugünün raporunu sorar */
+  eveningHour: number;
+}
+
+const intIn = (v: unknown, min: number, max: number): number | null => (typeof v === "number" && Number.isInteger(v) && v >= min && v <= max ? v : null);
+
+/**
+ * Çalışma takvimi (docs/SUBE.md › Şube başına ayarlar): ayda açık gün ve kasa raporunun beklendiği saat. Eski kayıt
+ * (settings › acikGun) Tuzla'nın; öbür şubeler örtük olarak "aynı" başlar. Saat bugün sabitti (20:00)
+ */
+export const CALENDAR_GROUP: BranchSettingGroup<CalendarSetting> = {
+  id: "isletme.takvim",
+  label: "Çalışma takvimi",
+  description: "Ayda kaç gün açık (başabaş ve günlük giderler) ve kasa raporunun hangi saatten sonra beklendiği.",
+  linkable: true,
+  legacy: "default",
+  legacyKey: null,
+  legacySettings: { openDays: "acikGun" },
+  secretFields: [],
+  read: (raw) => ({
+    openDays: intIn(raw.openDays, 1, 31) ?? DEFAULT_SETTINGS.acikGun,
+    eveningHour: intIn(raw.eveningHour, EVENING_HOUR_MIN, EVENING_HOUR_MAX) ?? CASH_EVENING_HOUR,
+  }),
+  summary: (v) => `ayda ${v.openDays} gün · rapor ${String(v.eveningHour).padStart(2, "0")}:00'den sonra`,
+};
+
+/** Banka POS'unun (yazarkasa) türü */
+export const TILL_DEVICES = [
+  { id: "pavo", label: "Pavo" },
+  { id: "tokenx", label: "TokenX" },
+  { id: "diger", label: "Başka bir cihaz" },
+] as const;
+
+export type TillDevice = (typeof TILL_DEVICES)[number]["id"];
+
+/** Şubenin banka POS'u ve yazarkasası */
+export interface TillDeviceSetting extends Record<string, unknown> {
+  /** Cihazın türü; boşsa bilinmiyor (LafPOS'lu şubede LafPOS'un gönderdiği) */
+  device: TillDevice | null;
+  /** Yazarkasanın sicil (seri) numarası: e-postada ve Kasa'da hangi cihazın Z'si olduğu */
+  registerNo: string | null;
+  /** Banka POS'unun bankası */
+  bank: string | null;
+}
+
+const text = (v: unknown, max: number): string | null => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+
+/**
+ * Banka POS ve yazarkasa (docs/SUBE.md › Şube başına ayarlar): cihaz şubenin kendisinin, "aynı" sunulmaz. Eski kayıt
+ * yok: boşken her şey bugünkü gibi (LafPOS'lu şubede cihaz LafPOS'un gönderdiğinden, yoksa Pavo)
+ */
+export const TILL_DEVICE_GROUP: BranchSettingGroup<TillDeviceSetting> = {
+  id: "kasa.cihaz",
+  label: "Banka POS ve yazarkasa",
+  description: "Şubenin banka POS'u (Pavo, TokenX…), yazarkasanın sicil numarası ve bankası.",
+  linkable: false,
+  legacy: "default",
+  legacyKey: null,
+  secretFields: [],
+  read: (raw) => ({
+    device: TILL_DEVICES.some((d) => d.id === raw.device) ? (raw.device as TillDevice) : null,
+    registerNo: text(raw.registerNo, 40),
+    bank: text(raw.bank, 60),
+  }),
+  summary: (v) => [v.device ? tillDeviceLabel(v.device) : "cihaz belirtilmedi", v.registerNo ? `sicil ${v.registerNo}` : null].filter(Boolean).join(" · "),
+};
+
+/** Cihazın adı ("Pavo") */
+export function tillDeviceLabel(device: TillDevice): string {
+  return TILL_DEVICES.find((d) => d.id === device)?.label ?? device;
+}
+
+/**
+ * Gün sonu fişinin sahibi, ilgi ekiyle ("Pavo'nun", "TokenX'in", "banka POS'unun"): akşam hatırlatmasının metni. Cihaz
+ * belirtilmediyse bugünkü metin (LafPOS'lu şubenin cihazı Pavo)
+ */
+export function tillDeviceGenitive(device: TillDevice | null): string {
+  if (device === "tokenx") return "TokenX'in";
+  if (device === "diger") return "banka POS'unun";
+  return "Pavo'nun";
+}
+
 /** Şube başına tutulan gruplar (sıra Şube ayarları ekranının sırası) */
-export const BRANCH_SETTING_GROUPS = [CASH_REPORT_GROUP, CASH_STAFF_GROUP, PARASUT_GROUP] as const;
+export const BRANCH_SETTING_GROUPS = [
+  CASH_REPORT_GROUP,
+  CASH_STAFF_GROUP,
+  PARASUT_GROUP,
+  COMMISSION_GROUP,
+  LAFPOS_GROUP,
+  MODPOS_GROUP,
+  CALENDAR_GROUP,
+  TILL_DEVICE_GROUP,
+] as const;
 
 export type BranchSettingGroupId = (typeof BRANCH_SETTING_GROUPS)[number]["id"];
 
@@ -120,14 +308,15 @@ export function branchSettingGroup(id: string): BranchSettingGroup | null {
 }
 
 /**
- * Şube başına geçecek ama henüz bütün şubelerde ortak olan ayarlar (plan B2; sıradaki dilimler). Şube ayarları ekranı
- * bunları "şimdilik ortak" diye adıyla söyler: sahip hangisinin şubeye göre değişmediğini bilir.
+ * Henüz bütün şubelerde ortak olan ama şubeye göre değişebilecek ayarlar. Şube ayarları ekranı bunları "şimdilik ortak"
+ * diye adıyla söyler: sahip hangisinin şubeye göre değişmediğini bilir. Uyarı sesi saatleri tarayıcıda ve bildirim
+ * işçisinde (public/sw.js) sabit, kontrol listesi hatırlatmaları tek bir dilim takvimiyle gider; hazır vardiya saatleri
+ * vardiya PR'ı (#120) birleştikten sonra
  */
-export const SHARED_FOR_NOW: readonly { id: string; label: string; linkable: boolean; legacy: LegacyOwner }[] = [
-  { id: "pos.lafpos", label: "LafPOS bağlantısı ve geçiş günü", linkable: true, legacy: "lafpos" },
-  { id: "isletme.takvim", label: "Çalışma saatleri ve uyarı saatleri", linkable: true, legacy: "default" },
-  { id: "komisyon", label: "Komisyon ve yemek kartı kanalları", linkable: true, legacy: "default" },
-  { id: "modpos", label: "ModPOS ay yedeği", linkable: true, legacy: "default" },
+export const SHARED_FOR_NOW: readonly { id: string; label: string }[] = [
+  { id: "uyari.saatleri", label: "Uyarı sesi saatleri (10:00–01:00)" },
+  { id: "kontrol.saatleri", label: "Kontrol listesi hatırlatma saatleri" },
+  { id: "vardiya.hazir", label: "Hazır vardiya saatleri" },
 ];
 
 /**

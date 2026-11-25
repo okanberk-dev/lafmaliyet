@@ -4,20 +4,23 @@ import { and, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { COMMISSION_GROUP } from "@/lib/branch-settings/groups";
+import { BRANCH_ID_MAX, DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
 import { CHANNEL_KEYS, CHANNELS, channelDef } from "@/lib/commission/channels";
 import {
   channelMonthChange,
   effectiveSettings,
   markValues,
   MEAL_MAX_PAY_DAYS,
-  parseCommissionSettings,
   PLATFORM_MAX_PAY_DAYS,
   type ChannelMonthChange,
 } from "@/lib/commission/report";
 import { monthLabel } from "@/lib/format";
 import { addDays, isCalendarDate, todayTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
-import { COMMISSION_SETTINGS_KEY, ensureCommissionSince } from "@/server/data/commission";
+import { lockGroup, logSetting, putBranchSetting, resolveBranchSetting } from "@/server/branch-settings";
+import { listBranches } from "@/server/branches";
+import { ensureCommissionSince } from "@/server/data/commission";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -89,6 +92,8 @@ export async function saveChannelMonth(input: ChannelMonthInput): Promise<Action
 }
 
 const settingsInput = z.object({
+  /** Sürelerin şubesi (şube ayarı komisyon); verilmezse varsayılan şube (eski sekme) */
+  branchId: z.string().trim().min(1).max(BRANCH_ID_MAX).optional(),
   channels: z.partialRecord(
     z.enum(CHANNEL_KEYS),
     z.object({
@@ -101,7 +106,11 @@ const settingsInput = z.object({
   ),
 });
 
-/** Kanalların ödeme süresi (hakedişin son günü = ayın son faturası + süre); yemek kartında en çok 30 gün */
+/**
+ * Kanalların ödeme süresi (hakedişin son günü = ayın son faturası + süre); yemek kartında en çok 30 gün. Şube başına
+ * (şube ayarı komisyon; docs/SUBE.md › Şube başına ayarlar): şube başka şubenin sürelerini kullanıyorsa yazılmaz, önce
+ * "aynı" kapatılır. Tek işlem; işlem geçmişine şubenin adıyla
+ */
 export async function saveCommissionSettings(input: z.input<typeof settingsInput>): Promise<ActionResult<{ changed: number }>> {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -111,22 +120,22 @@ export async function saveCommissionSettings(input: z.input<typeof settingsInput
         throw new UserError(`Yemek kartında ödeme süresi en çok ${MEAL_MAX_PAY_DAYS} gün olabilir (yönetmelik)`);
       }
     }
-    const { before, next } = await getDb().transaction(async (tx) => {
-      const [row] = await tx.select().from(s.integrationState).where(eq(s.integrationState.key, COMMISSION_SETTINGS_KEY)).for("update");
-      const before = effectiveSettings(parseCommissionSettings(row?.value));
+    const branchId = data.branchId ?? DEFAULT_BRANCH_ID;
+    const branches = await listBranches();
+    const many = tillBranches(branches).length > 1;
+    const where = many ? ` (${branches.find((b) => b.id === branchId)?.name ?? branchId})` : "";
+    const changed = await getDb().transaction(async (tx) => {
+      await lockGroup(tx, COMMISSION_GROUP.id);
+      const before = effectiveSettings((await resolveBranchSetting(COMMISSION_GROUP, branchId, tx)).value.channels);
       const next = effectiveSettings({ ...before, ...data.channels });
-      const value = { channels: Object.fromEntries(CHANNELS.map((c) => [c.key, { payDays: next[c.key].payDays }])) };
-      await tx
-        .insert(s.integrationState)
-        .values({ key: COMMISSION_SETTINGS_KEY, value })
-        .onConflictDoUpdate({ target: s.integrationState.key, set: { value, updatedAt: new Date() } });
-      return { before, next };
+      const changed = CHANNELS.filter((c) => before[c.key].payDays !== next[c.key].payDays);
+      if (changed.length) {
+        await putBranchSetting(tx, COMMISSION_GROUP, branchId, { channels: Object.fromEntries(CHANNELS.map((c) => [c.key, { payDays: next[c.key].payDays }])) }, me.name);
+        await logSetting(tx, me, ACTION, `Kanallar${where}: ${changed.map((c) => `${c.label} ödeme süresi ${before[c.key].payDays} → ${next[c.key].payDays} gün`).join(" · ")}`);
+      }
+      return changed;
     });
     await ensureCommissionSince();
-    const changed = CHANNELS.filter((c) => before[c.key].payDays !== next[c.key].payDays);
-    if (changed.length) {
-      await logActivity(me, ACTION, `Kanallar: ${changed.map((c) => `${c.label} ödeme süresi ${before[c.key].payDays} → ${next[c.key].payDays} gün`).join(" · ")}`);
-    }
     refresh();
     return { changed: changed.length };
   });

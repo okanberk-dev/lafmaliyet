@@ -5,14 +5,13 @@ import { and, count, eq, gte, inArray, lte } from "drizzle-orm";
 import { branchDayKey } from "@/lib/cash-report";
 
 import type { KasaEvidence } from "@/lib/cash-out-requests";
-import { readLafposSwitchDay } from "@/lib/constants";
 import { bankPosSchema, posDaySchema, posZSchema, type BankPos, type PosOffDevice, type PosOkc } from "@/lib/lafpos/day";
 import { lafposDayDetail, type LafposDayDetail } from "@/lib/lafpos/gun-ayrinti";
 import { lafposDayOf, type LafposDay } from "@/lib/lafpos/prefill";
-import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { currentTillBranch } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
-import { lafposBranchId, loadBranchSwitchDay } from "@/server/lafpos/branch";
+import { lafposBranchId, lafposSwitchDay, loadBranchSwitchDay } from "@/server/lafpos/branch";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 
 /**
@@ -77,11 +76,8 @@ type Reader = Pick<DB, "select">;
 export async function kasaEvidence(db: Reader, date: string, branchId?: string): Promise<KasaEvidence> {
   // Gün sonu şubenin kasasınındır: başka şubenin LafPOS günü bu kasanın kanıtı sayılmaz
   const sube = branchId ?? (await currentTillBranch());
-  const [[setting], lafposBranch] = await Promise.all([
-    db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1),
-    lafposBranchId(db),
-  ]);
-  if (!isLafposDay(date, branchSwitchDay(readLafposSwitchDay(setting?.value), sube, lafposBranch))) return "modpos-z";
+  const [switchDay, lafposBranch] = await Promise.all([lafposSwitchDay(db), lafposBranchId(db)]);
+  if (!isLafposDay(date, branchSwitchDay(switchDay, sube, lafposBranch))) return "modpos-z";
   const [day] = await db
     .select({ date: s.posDayReports.date })
     .from(s.posDayReports)

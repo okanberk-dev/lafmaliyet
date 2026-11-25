@@ -70,10 +70,12 @@ export async function ModposCard({ scope, branches }: { scope: string; branches:
     >
       <CardContent className="space-y-4">
         {data.cards.map((c) => (
-          <ModposBranchSection key={c.branchId} data={c} now={now} branch={many ? data.branches.find((b) => b.id === c.branchId) ?? null : null} />
+          <div key={c.branchId} className="space-y-4">
+            <ModposBranchSection data={c} now={now} branch={many ? data.branches.find((b) => b.id === c.branchId) ?? null : null} />
+            {/* Ay yedeği şube başına (şube ayarı modpos; docs/SUBE.md › Şube başına ayarlar) */}
+            <ModposFallbackSwitch on={c.fallback} branchId={c.branchId} branchName={many ? nameOf(c.branchId) : null} from={c.fallbackFrom ?? null} />
+          </div>
         ))}
-
-        <ModposFallbackSwitch on={data.cards[0].fallback} />
       </CardContent>
     </SectionCard>
   );

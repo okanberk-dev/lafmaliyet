@@ -18,7 +18,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { after, before, beforeEach, describe, test } from "node:test";
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
@@ -234,13 +234,14 @@ describe("ModPOS Ayarlar kartı ve eylemleri: veritabanında", { skip: !SERVER_U
   test("ay rakamına yedek: açılır ve kapanır (eski → yeni işlem geçmişine), aynı değer yazılmaz; personel değiştiremez", async () => {
     const on = await actions.saveModposFallback(true);
     assert.deepEqual(on, { ok: true, data: { on: true, change: "ModPOS ay rakamına yedek: kapalı → açık" } });
-    const [row] = await db.select().from(s.settings).where(eq(s.settings.key, "modposAyYedegi"));
-    assert.equal(row.value, true);
+    // Şube ayarına (grup modpos; docs/SUBE.md › Şube başına ayarlar), varsayılan şube Tuzla'nın satırı
+    const tuzlaRow = async () => (await db.select().from(s.branchSettings).where(and(eq(s.branchSettings.grp, "modpos"), eq(s.branchSettings.branchId, "tuzla"))))[0];
+    assert.deepEqual((await tuzlaRow()).value, { monthFallback: true });
     assert.equal(await status.loadModposFallback(db), true);
     assert.equal((await status.loadModposCard(db, new Date(), keyEnv())).fallback, true);
     assert.deepEqual(
       (await logs()).map((l) => [l.action, l.detail]),
-      [["Ayarlar", "ModPOS ay rakamına yedek: kapalı → açık"]],
+      [["Ayarlar", "Tuzla · ModPOS ay rakamına yedek: kapalı → açık"]],
     );
     assert.equal(refreshes, 1);
 
@@ -249,15 +250,16 @@ describe("ModPOS Ayarlar kartı ve eylemleri: veritabanında", { skip: !SERVER_U
     assert.equal(refreshes, 1, "değişiklik yok: yenilenmez");
 
     assert.deepEqual(await actions.saveModposFallback(false), { ok: true, data: { on: false, change: "ModPOS ay rakamına yedek: açık → kapalı" } });
-    assert.equal((await db.select().from(s.settings).where(eq(s.settings.key, "modposAyYedegi")))[0].value, false);
+    assert.deepEqual((await tuzlaRow()).value, { monthFallback: false });
     assert.equal(await status.loadModposFallback(db), false);
 
     assert.deepEqual(await actions.saveModposFallback("evet" as unknown as boolean), { ok: false, error: "Geçersiz değer" });
-    // Bozuk değer kapalı okunur; kapatmak onu temizler (görünür değişiklik yok)
-    await db.update(s.settings).set({ value: "evet" }).where(eq(s.settings.key, "modposAyYedegi"));
+    // Bozuk değer kapalı okunur; kapatmak görünür değişiklik değildir
+    await db.update(s.branchSettings).set({ value: { monthFallback: "evet" } }).where(and(eq(s.branchSettings.grp, "modpos"), eq(s.branchSettings.branchId, "tuzla")));
     assert.equal(await status.loadModposFallback(db), false);
     assert.equal(await core.writeModposFallback(db, users.admin, false), null);
-    assert.equal((await db.select().from(s.settings).where(eq(s.settings.key, "modposAyYedegi")))[0].value, false);
+    // Eski genel kayıt (settings › modposAyYedegi) yazılmaz: satırı olan şube onu bir daha okumaz
+    assert.equal((await db.select().from(s.settings).where(eq(s.settings.key, "modposAyYedegi"))).length, 0);
 
     await assert.rejects(core.writeModposFallback(db, users.staff, true), (e: unknown) => e instanceof UserError && e.message === core.MODPOS_ADMIN_ONLY);
     assert.equal(await status.loadModposFallback(db), false);

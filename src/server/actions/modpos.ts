@@ -3,7 +3,7 @@
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { DEFAULT_BRANCH_ID } from "@/lib/branches";
+import { BRANCH_ID_MAX, DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { MODPOS_DAY_INVALID, MODPOS_KEY_BROKEN, MODPOS_NOT_CONFIGURED, MODPOS_PREVIEW, modposFetchOutcome } from "@/lib/modpos/ayarlar";
 import { modposKeyProblem, quotaLeft, quotaRenewsAt, renewText, requestableDay } from "@/lib/modpos/request";
 import { modposBranchIds, modposKeyEnv } from "@/lib/modpos/sube";
@@ -74,13 +74,15 @@ export async function fetchModposDay(input: string, branchInput: string = DEFAUL
  * Ay rakamına yedek (docs/MODPOS-API.md › Ay rakamına yedek): açıkken kasa raporu olmayan günün kapanmış föyü ayın
  * rakamına girer. Ayarlar'daki onay penceresinden sonra; işlem geçmişine eski → yeni düşer.
  */
-export async function saveModposFallback(input: boolean) {
+export async function saveModposFallback(input: boolean, branchInput: string = DEFAULT_BRANCH_ID) {
   return attempt(async () => {
     const me = await requireAdmin();
     const on = z.boolean({ message: "Geçersiz değer" }).parse(input);
-    const change = await writeModposFallback(getDb(), me, on);
+    const branchId = z.string().trim().min(1).max(BRANCH_ID_MAX).parse(branchInput);
+    const change = await writeModposFallback(getDb(), me, on, branchId);
     if (change) {
-      await logActivity(me, "Ayarlar", change);
+      const name = (await listBranches()).find((b) => b.id === branchId)?.name ?? branchId;
+      await logActivity(me, "Ayarlar", `${name} · ${change}`);
       refresh();
     }
     return { on, change };

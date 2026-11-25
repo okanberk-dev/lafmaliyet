@@ -11,12 +11,15 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton, SectionTitle, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { featureBranches, featureInScope } from "@/lib/branch-features";
+import { COMMISSION_GROUP } from "@/lib/branch-settings/groups";
+import { DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
 import { branchCommissionShare, groupOf, shownChannels } from "@/lib/commission/report";
 import { COMMISSION_CATEGORY } from "@/lib/constants";
 import { dateTR, money, monthLabel, num, pct } from "@/lib/format";
 import { dayAblativeTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { branchScope } from "@/server/branch-scope";
+import { branchSettingView } from "@/server/branch-settings-view";
 import { listBranches } from "@/server/branches";
 import { loadCommissionReports } from "@/server/data/commission";
 
@@ -74,7 +77,9 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
     );
   }
   // Faturalar, oran ve hakediş işletmenin (`report`); şube seçiliyken şubenin satışı ayrıca (`branch`; docs/KOMISYON.md › Şube)
-  const { all: report, branch, scope } = await loadCommissionReports();
+  // Kanalların ödeme süresi şube başına (şube ayarı komisyon): seçili şubenin, "Tümü"de ve online kanalda varsayılan şubenin
+  const settingsBranch = tillBranches(view.branches).find((b) => b.id === view.scope)?.id ?? DEFAULT_BRANCH_ID;
+  const [{ all: report, branch, scope }, channelView] = await Promise.all([loadCommissionReports(), branchSettingView(COMMISSION_GROUP, settingsBranch)]);
   const branchName = branch ? ((await listBranches()).find((b) => b.id === scope)?.name ?? scope) : null;
   const raw = pick(sp.ay);
   const month = raw && report.months.includes(raw) ? raw : report.defaultMonth;
@@ -215,7 +220,7 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
           </Card>
         ) : null}
 
-        <ChannelSettingsCard settings={report.settings} />
+        <ChannelSettingsCard settings={report.settings} branchId={settingsBranch} branchName={channelView.branchName} link={channelView.link} />
 
         <RulesCard switchDay={report.switchDay} />
       </div>

@@ -3,14 +3,13 @@ import "server-only";
 import { and, asc, eq, gte, isNotNull, lte } from "drizzle-orm";
 
 import { createPosMappingIndex } from "@/lib/calc/pos-paste";
-import { readLafposSwitchDay } from "@/lib/constants";
 import { posDaySchema, posZSchema, resolvePosLine, siteSlotKey, type PosIptal } from "@/lib/lafpos/day";
 import { iptalWasteLines, lafposCompKind, lafposLineKind, lafposZKinds, type LafposIkramData, type LafposIkramLine, type LafposZKinds } from "@/lib/lafpos/ikram";
-import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { productLabel } from "@/lib/waste";
 import { currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
-import { lafposBranchId } from "@/server/lafpos/branch";
+import { lafposBranchId, lafposSwitchDay } from "@/server/lafpos/branch";
 
 /**
  * LafPOS'un ikramları (denetim E-38; kural src/lib/lafpos/ikram.ts, docs/LAFPOS.md › İkram). Yalnız geçiş günü
@@ -28,8 +27,7 @@ type Reader = Pick<DB, "select">;
 
 /** Geçiş günü (yoksa null); işlem içinden de okunur (zayi kaydının reddi) */
 export async function lafposSwitchDayOf(db: Reader): Promise<string | null> {
-  const [setting] = await db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
-  return readLafposSwitchDay(setting?.value);
+  return lafposSwitchDay(db);
 }
 
 /**

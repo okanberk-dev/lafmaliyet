@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
+import { TILL_DEVICE_GROUP } from "@/lib/branch-settings/groups";
 import { businessDate, LATE_REPORT_DAYS, revisionDataOf } from "@/lib/cash-report";
 import { bankPosSchema, okcSchema, posZSchema, type BankPos, type PosDayZ, type PosOkc } from "@/lib/lafpos/day";
 import { lafposPhotoCheck, lafposPhotoDone, lafposPhotoNeed, staffPhotoLine, type LafposPhotoCheck, type LafposPhotoNeed, type LafposPhotoRead } from "@/lib/lafpos/foto";
@@ -11,6 +12,7 @@ import { OCR_MODEL, readingSourceOf } from "@/lib/photo-read/models";
 import { KasaOkcRaw } from "@/lib/photo-read/schemas";
 import { linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
 import { addDays, longDateTR, todayTR } from "@/lib/reminders";
+import { resolveBranchSetting } from "@/server/branch-settings";
 import { lockCashReport, lockLateDay, okcServerColumns, type CashActor, type CashReportRow, type CashTx } from "@/server/cash/report-store";
 import { schema as s, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
@@ -47,17 +49,24 @@ export async function lafposDayDevice(db: Reader, date: string, branchId: string
 
 /**
  * Şubenin yazarkasa cihazı (LafPOS'un son gönderdiği `okc`'den: sağlayıcı ve ayrı mali Z basıyor mu); gün sonu henüz
- * gelmediyse fotoğrafın metni için (Pavo ayrı mali Z basmaz). Hiç gelmediyse null
+ * gelmediyse fotoğrafın metni için (Pavo ayrı mali Z basmaz). LafPOS hiç göndermediyse Şube ayarları › Banka POS ve
+ * yazarkasa'daki cihaz (şube ayarı kasa.cihaz; TokenX ayrı mali Z basar, Pavo basmaz); o da yoksa ya da "başka bir
+ * cihaz"sa null
  */
 export async function lafposOkcDeviceOf(db: Reader, branchId: string): Promise<{ provider: "pavo" | "tokenx"; zReport: boolean } | null> {
-  const rows = await db
-    .select({ okc: s.posDayReports.okc })
-    .from(s.posDayReports)
-    .where(and(eq(s.posDayReports.branchId, branchId), isNotNull(s.posDayReports.okc)))
-    .orderBy(desc(s.posDayReports.date))
-    .limit(1);
+  const [rows, setting] = await Promise.all([
+    db
+      .select({ okc: s.posDayReports.okc })
+      .from(s.posDayReports)
+      .where(and(eq(s.posDayReports.branchId, branchId), isNotNull(s.posDayReports.okc)))
+      .orderBy(desc(s.posDayReports.date))
+      .limit(1),
+    resolveBranchSetting(TILL_DEVICE_GROUP, branchId, db),
+  ]);
   const okc = rows[0]?.okc ? okcSchema.safeParse(rows[0].okc) : null;
-  return okc?.success ? { provider: okc.data.provider, zReport: okc.data.zReport } : null;
+  if (okc?.success) return { provider: okc.data.provider, zReport: okc.data.zReport };
+  const device = setting.value.device;
+  return device === "pavo" || device === "tokenx" ? { provider: device, zReport: device === "tokenx" } : null;
 }
 
 /** Rapora bağlı gün sonu fotoğrafları (yazarkasa bölümü: kasa-okc, eski kasa-pos), eklenme sırasıyla */

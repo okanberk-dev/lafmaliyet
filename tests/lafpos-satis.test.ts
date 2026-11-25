@@ -385,7 +385,7 @@ test("kaynak: veri kümesi geçiş günü yokken LafPOS'u hiç okumaz; Satışla
   assert.match(dataset, /const reportRows = input\.till\.filter\(\(r\) => isReportRow\(r\) && isLafposBranch\(r\.branchId, input\.lafposBranch\)\);/);
   assert.match(dataset, /lastTillDay: reportRows\.at\(-1\)\?\.date \?\? null/);
   // Görünümün geçiş günü: ModPOS'ta kalan şube seçiliyken yok (denetim 21 Kasım #5)
-  assert.match(dataset, /const settings = \{ \.\.\.storedSettings, lafposGecisGunu: scopeSwitchDay\(storedSettings\.lafposGecisGunu, scope, lafposBranch\) \};/);
+  assert.match(dataset, /const settings = \{ \.\.\.storedSettings, lafposGecisGunu: scopeSwitchDay\(storedSettings\.lafposGecisGunu, scope, lafposBranch\), acikGun: calendar\.value\.openDays \};/);
   // Tahmin: kullanılmayan günlük satır okunmaz, istek başına uyarı yazılmaz (denetim E-08 hız kısmı)
   for (const f of ["src/server/data/dataset.ts"]) {
     const src = read(f);

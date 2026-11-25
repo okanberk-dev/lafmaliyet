@@ -136,6 +136,11 @@ export interface DayFacts {
   role: "admin" | "staff";
   now: Date;
   /**
+   * Kasa raporunun beklendiği saat (şube ayarı isletme.takvim; seçili şubenin, "Tümü"de varsayılan şubenin). Yoksa
+   * 20:00 (CASH_EVENING_HOUR)
+   */
+  eveningHour?: number;
+  /**
    * LafPOS'a geçiş günü (iki rol; yalnız metinler: günün kasası "ModPOS" ya da "LafPOS", src/lib/lafpos/switch.ts
    * kasaName). Yoksa ya da null her metin bugünkü gibi ModPOS der
    */
@@ -229,7 +234,7 @@ export interface DayContext {
   prevMonth: string;
 }
 
-export function dayContext(now: Date): DayContext {
+export function dayContext(now: Date, eveningHour: number = CASH_EVENING_HOUR): DayContext {
   const today = todayTR(now);
   const day = businessDate(now);
   const month = today.slice(0, 7);
@@ -237,7 +242,7 @@ export function dayContext(now: Date): DayContext {
     today,
     day,
     yesterday: addDays(day, -1),
-    evening: isCashEvening(now),
+    evening: isCashEvening(now, eveningHour),
     dayOfMonth: Number(today.slice(8, 10)),
     lastDay: addDays(today, 1).slice(0, 7) !== month,
     month,
@@ -946,7 +951,7 @@ const STAFF_ROWS: Row[] = [
 
 /** Günün işleri, rolün sırasıyla */
 export function dayTasks(f: DayFacts): DayTask[] {
-  const c = dayContext(f.now);
+  const c = dayContext(f.now, f.eveningHour);
   return (f.role === "admin" ? ADMIN_ROWS : STAFF_ROWS).flatMap((row) => row(f, c) ?? []);
 }
 
@@ -1089,12 +1094,14 @@ export function cafeLines(
 const REFRESH_HOURS = [0, DAY_TURN_HOUR, CASH_EVENING_HOUR];
 
 /**
- * Ekranın kendiliğinden yenileneceği an (epoch ms): sıradaki 00:00, 05:00 ya da 20:00 (Türkiye); `extra` verilirse
- * (ör. karaoke oturumunun başlaması / bitmesi, ikinci paketin kontrol listelerinin saatleri) ondan önceyse o.
+ * Ekranın kendiliğinden yenileneceği an (epoch ms): sıradaki 00:00, 05:00 ya da 20:00 (Türkiye; şubenin kasa raporu saati
+ * başkaysa o da, `eveningHour`); `extra` verilirse (ör. karaoke oturumunun başlaması / bitmesi, ikinci paketin kontrol
+ * listelerinin saatleri) ondan önceyse o.
  */
-export function nextRefreshAt(now: Date, extra: number[] = []): number {
+export function nextRefreshAt(now: Date, extra: number[] = [], eveningHour: number = CASH_EVENING_HOUR): number {
   const t = now.getTime();
   const midnight = Math.floor((t + TR_OFFSET_MS) / DAY_MS) * DAY_MS - TR_OFFSET_MS;
-  const marks = [0, 1].flatMap((d) => REFRESH_HOURS.map((h) => midnight + d * DAY_MS + h * HOUR_MS));
+  const hours = REFRESH_HOURS.includes(eveningHour) ? REFRESH_HOURS : [...REFRESH_HOURS, eveningHour];
+  const marks = [0, 1].flatMap((d) => hours.map((h) => midnight + d * DAY_MS + h * HOUR_MS));
   return Math.min(...[...marks, ...extra].filter((x) => Number.isFinite(x) && x > t));
 }

@@ -19,10 +19,9 @@ import {
   type FieldChange,
 } from "@/lib/cash-report";
 import { CASH_REQUEST_TEXT, cashDaySubject } from "@/lib/cash-requests";
-import { readLafposSwitchDay } from "@/lib/constants";
 import { money } from "@/lib/format";
 import { LAFPOS_STAFF_WRITE_TEXT } from "@/lib/lafpos/foto";
-import { isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { isLafposDay } from "@/lib/lafpos/switch";
 import { normalizeVat, OKC_KNOWN_RATES, okcCumulativeToStore, okcFormError, type OkcVatInput, type OkcVatLine } from "@/lib/okc-z";
 import { DELETED_REPORT_DAYS, linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
 import { longDateTR, todayTR } from "@/lib/reminders";
@@ -32,7 +31,7 @@ import { okcReadOfReport } from "@/server/data/cash-photos";
 import { previousOkc } from "@/server/data/cash-reports";
 import { currentTillBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
-import { lafposBranchId } from "@/server/lafpos/branch";
+import { lafposBranchId, lafposSwitchDay } from "@/server/lafpos/branch";
 import { assertNotHeld, supersede } from "@/server/staff-requests/core";
 import { sendableRecipients } from "@/server/notify/recipients";
 import { getPhoto, keepPhoto, linkable, releasePhoto } from "@/server/storage/photos";
@@ -175,8 +174,7 @@ export async function lockCashReport(tx: CashTx, date: string, branchId: string)
 async function staffLafposRefusal(tx: CashTx, date: string, branchId: string, prev: CashReportRow | null): Promise<string | null> {
   // LafPOS'un şubesi kütükten (lafposBranchId); onun geçiş günü ayarın kendisidir (branchSwitchDay)
   if (branchId !== (await lafposBranchId(tx))) return null;
-  const [setting] = await tx.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
-  if (!isLafposDay(date, readLafposSwitchDay(setting?.value))) return null;
+  if (!isLafposDay(date, await lafposSwitchDay(tx))) return null;
   if (!prev) return LAFPOS_STAFF_WRITE_TEXT.fresh;
   const [state] = await tx.select({ autoValues: s.lafposDayEnds.autoValues }).from(s.lafposDayEnds).where(eq(s.lafposDayEnds.reportId, prev.id)).limit(1);
   return state?.autoValues ? LAFPOS_STAFF_WRITE_TEXT.auto : null;

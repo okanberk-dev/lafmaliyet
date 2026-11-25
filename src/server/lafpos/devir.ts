@@ -2,16 +2,15 @@ import "server-only";
 
 import { and, eq } from "drizzle-orm";
 
-import { readLafposSwitchDay } from "@/lib/constants";
 import { LAFPOS_VERSION, posZSchema } from "@/lib/lafpos/day";
 import { nextOpeningOf, type NextOpening } from "@/lib/lafpos/devir";
 import type { AutoValues } from "@/lib/lafpos/gun-sonu";
 import { checkLafposRequest } from "@/lib/lafpos/request";
-import { isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { isLafposDay } from "@/lib/lafpos/switch";
 import { isCalendarDate } from "@/lib/reminders";
 import { schema as s, type DB } from "@/server/db";
 
-import { lafposBranchId } from "./branch";
+import { lafposBranchId, lafposSwitchDay } from "./branch";
 import type { EndpointResult } from "./ingest";
 
 /**
@@ -29,8 +28,8 @@ import type { EndpointResult } from "./ingest";
 export async function lafposNextOpening(db: DB, date: string): Promise<NextOpening | null> {
   // LafPOS'un şubesi kütükten (lafposBranchId); onun geçiş günü ayarın kendisidir (branchSwitchDay)
   const branchId = await lafposBranchId(db);
-  const [[setting], [day], [report], [auto]] = await Promise.all([
-    db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1),
+  const [switchDay, [day], [report], [auto]] = await Promise.all([
+    lafposSwitchDay(db),
     db
       .select({ z: s.posDayReports.z })
       .from(s.posDayReports)
@@ -47,7 +46,7 @@ export async function lafposNextOpening(db: DB, date: string): Promise<NextOpeni
       .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)))
       .limit(1),
   ]);
-  const counted = isLafposDay(date, readLafposSwitchDay(setting?.value));
+  const counted = isLafposDay(date, switchDay);
   const z = day ? posZSchema.safeParse(day.z) : null;
   return nextOpeningOf({
     counted,

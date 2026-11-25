@@ -280,7 +280,7 @@ export function SettingsForm({ settings, water, data, menuUrls }: { settings: Se
         id="olculer"
         icon={<Ruler />}
         title="Reçete ölçüleri"
-        description="Reçetelerde formülle bağlı miktarlar (ShotTek, Pompa …) ve ayda açık gün sayısı. Değiştirince bağlı bütün reçeteler ve hesaplar güncellenir. Varsayım işaretli değerleri ölçüp yazın."
+        description="Reçetelerde formülle bağlı miktarlar (ShotTek, Pompa …); ayda açık gün şube başına, Şube ayarları › Çalışma takvimi'nde. Değiştirince bağlı bütün reçeteler ve hesaplar güncellenir. Varsayım işaretli değerleri ölçüp yazın."
         summary={measuresSummary(settings)}
         dirty={dirtyIn(MEASURE_FIELDS)}
       >

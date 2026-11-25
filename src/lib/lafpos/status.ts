@@ -195,6 +195,11 @@ export function isUnverifiedAfterOk(state: LafposState): boolean {
 export interface LafposCardInput {
   /** Anahtarın sorunu (src/lib/lafpos/request.ts › lafposSecretProblem); null: bağlantı açık */
   secretProblem: "missing" | "short" | "same_as_site" | null;
+  /**
+   * Kullanılan anahtar nereden: Şube ayarları'nda saklanan ("panel", şifreli) ya da ortamdaki LAFPOS_SYNC_SECRET
+   * ("ortam"); anahtar yoksa null. Eski çağıranlar vermeyebilir
+   */
+  secretSource?: "panel" | "ortam" | null;
   switchDay: string | null;
   /** İş günü */
   today: string;

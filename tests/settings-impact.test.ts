@@ -87,8 +87,10 @@ test("'0,1' yazılan KDV binde bir okunur ve alan hatası verir (Excel'de %0,1);
   assert.match(problemOf(field("kdv"), "120")!, /%100/);
   // Fire binde bir olabilir: kısıt yok
   assert.equal(problemOf(field("fire"), "0,4"), null);
-  assert.match(problemOf(field("acikGun"), "30,5")!, /Tam sayı/);
-  assert.match(problemOf(field("acikGun"), "32")!, /En fazla 31/);
+  // Ayda açık gün Ayarlar'ın formunda değil: şube başına (Şube ayarları › Çalışma takvimi; tests/sube-ayarlari-2.test.ts)
+  assert.equal(ALL_FIELDS.some((f) => (f.key as string) === "acikGun"), false);
+  assert.match(problemOf(field("mealCardDays"), "30,5")!, /Tam sayı/);
+  assert.match(problemOf(field("mealCardDays"), "32")!, /En fazla 31/);
   assert.match(problemOf(field("potMl"), "0")!, /0'dan büyük/);
   assert.match(problemOf(field("shotTek"), "abc")!, /sayı/);
 });

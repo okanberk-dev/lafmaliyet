@@ -337,7 +337,13 @@ metni mevzuat.gov.tr'den denetleyin; "Kurallar ve hesap" kartındaki cümleler o
 - `commission_months`: kanal ve satış ayı başına bir satır (`channel`, `month`, `sales`, `received_on`, `received`,
   `note`, kim, ne zaman). Yalnız yönetici bir şey yazınca açılır, her şey boşalınca silinir; gün ve tutar birlikte dolu ya
   da boş (`commission_months_received_pair`). Faturalara değil kanal ve aya bağlıdır.
-- `integration_state`: `komisyon.ayar` (`{ channels: { pluxee: { payDays: 30 }, … } }`) ve `komisyon.since`.
+- Kanalların ödeme süresi **şube başına** (25 Kasım 2026; şube ayarı `komisyon`, `branch_settings`, [SUBE.md](SUBE.md) ›
+  Şube başına ayarlar): `{ channels: { pluxee: { payDays: 30 }, … } }`. Sahibin varsayılanı "aynı": satırı olmayan
+  şube Tuzla'nın sürelerini kullanır; eski genel kayıt (`integration_state` › `komisyon.ayar`) Tuzla'nındır, hiçbir şey
+  yapmadan bugünkü gibi. Ekran seçili şubenin süreleriyle hesaplar (işletmenin raporu da), "Tümü"de, online kanalda,
+  zilde, Bugün'de ve sabah e-postasında Tuzla'nınkiyle. Kanallar kartı (Komisyon & hakediş ve Şube ayarları aynı bileşen)
+  birden çok kasa açıkken şubenin adını ve "Diğer şubeyle aynı"yı taşır; bağlı şubede süreler salt okunur. Takibin
+  başladığı gün `integration_state` › `komisyon.since` ve hakediş işaretleri işletme geneli kalır.
 - Yedek: tablo ve anahtarlar kendiliğinden girer (gizli bilgi yok; [YEDEK.md](YEDEK.md)).
 - `npm run db:reset` hakediş işaretlerini ve kanal ayarlarını silmez (faturalar yeniden yüklense de kanal ve ay aynı);
   bildirim günlüğü silindiği için bir uyarı bir kez daha e-postalanabilir.
