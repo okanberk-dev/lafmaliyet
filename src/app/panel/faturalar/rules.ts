@@ -18,6 +18,10 @@ export type InvoiceRow = Invoice & {
    * bekliyorsa onaylanamaz (kategori değişmeli ya da "kalsın" denmeli); "kalsın" denmişse yalnız bilgi
    */
   stockOnly?: boolean;
+  /** Faturanın geldiği Paraşüt hesabı yalnız varsayılan hesap değilse (şube başına Paraşüt hesabı; bağlantının firması) */
+  parasutAccount?: string | null;
+  /** Faturanın şubesinin adı (ayrı Paraşüt hesabından gelen fatura; birden çok kasa açıkken rozet); işletme genelinde yok */
+  branchName?: string | null;
 };
 
 // ---------------------------------------------------------------- Paraşüt kilidi

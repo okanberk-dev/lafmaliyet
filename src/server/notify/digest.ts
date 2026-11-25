@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { and, asc, count, desc, eq, gt, inArray, isNull, like, ne, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull, like, or } from "drizzle-orm";
 
 import { ALL_BRANCHES, type BranchScope, tillBranches } from "@/lib/branches";
 import { latestSalesMonth } from "@/lib/calc/insights";
@@ -21,6 +21,7 @@ import { loadCariIndex, type CariIndex } from "@/server/data/cari";
 import { withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
+import { latestParasutRun } from "@/server/jobs/runs";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
 
 import { loadDigestExtras } from "./digest-extras";
@@ -167,8 +168,8 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
       .where(and(eq(s.invoices.origin, "parasut"), gt(s.invoices.createdAt, since)))
       .orderBy(desc(s.invoices.date), desc(s.invoices.id)),
     db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
-    // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz
-    db.select().from(s.parasutSyncRuns).where(ne(s.parasutSyncRuns.trigger, "history")).orderBy(desc(s.parasutSyncRuns.startedAt)).limit(1),
+    // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz; hesap başına son çalışma, hatalı önce
+    latestParasutRun(db).then((r) => (r ? [r] : [])),
     pendingHoldSummary().catch((e) => {
       console.error("Sabah e-postası fiyat onayları", e);
       return null;

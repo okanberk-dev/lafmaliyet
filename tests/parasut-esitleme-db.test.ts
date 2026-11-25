@@ -961,7 +961,7 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     fake.bills.set("502", bill("502"));
 
     // Yönetici "Paraşüt hesabını bağla"ya basar; Paraşüt onay verip yetki koduyla döner
-    const to = new URL(await connect.startParasutConnect("Patron"));
+    const to = new URL(await connect.startParasutConnect("tuzla", "Patron"));
     assert.equal(to.origin + to.pathname, `${BASE}/oauth/authorize`);
     await connect.finishParasutConnect({ code: "kod-1", state: to.searchParams.get("state") });
     assert.deepEqual(fake.grants, ["authorization_code"]);
@@ -993,7 +993,7 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     process.env.PARASUT_REDIRECT_URI = "http://ladmin.laffogato.net/geri";
     try {
       fake.bills.set("505", bill("505"));
-      await assert.rejects(connect.startParasutConnect("Patron"), /PARASUT_REDIRECT_URI geçerli bir https adresi değil/);
+      await assert.rejects(connect.startParasutConnect("tuzla", "Patron"), /PARASUT_REDIRECT_URI geçerli bir https adresi değil/);
       // Kayıtlı oturumun yenilenmesi dönüş adresine bakmaz: eşitleme sürer
       await seedToken({ access: "eski", refresh: "eski-yenileme", expiresAt: Date.now() - 60_000 });
       fake.grants = [];
@@ -1012,7 +1012,7 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     const config = await import("../src/server/parasut/config");
     const actions = await import("../src/server/actions/parasut");
     // Yalnız ortam: eşitleme bugünkü gibi
-    assert.equal((await config.readParasutConfig()).clientId, "test-istemci");
+    assert.equal((await config.readParasutConfig("tuzla")).clientId, "test-istemci");
     assert.equal((await client.parasutConnection()).connected, true);
 
     // Yeni client_id ve secret panelden: kayıtlı oturum ve yarım bağlanma isteği silinir, secret şifreli durur
@@ -1021,7 +1021,7 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     assert.ok(saved.ok && saved.data.forgotSession, JSON.stringify(saved));
     assert.equal(await stateRow("parasut.token"), undefined, "eski istemcinin oturumu silindi");
     assert.equal(await stateRow("parasut.connect"), undefined);
-    const cfg = await config.readParasutConfig();
+    const cfg = await config.readParasutConfig("tuzla");
     assert.equal(cfg.clientId, "panel-istemci");
     assert.equal(cfg.clientSecret, "panel-GIZLI-sir");
     assert.equal(cfg.companyId, COMPANY, "firma ortamdan");
@@ -1029,7 +1029,7 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     const [log] = await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Paraşüt bağlantı ayarları"));
     assert.ok(log?.detail && !log.detail.includes("panel-GIZLI-sir"), "işlem geçmişinde secret yok");
     assert.deepEqual(await client.parasutConnection(), { connected: false, refreshedAt: null, stale: false });
-    const view = await config.parasutSettingsView();
+    const view = await config.parasutSettingsView("tuzla");
     assert.equal(JSON.stringify(view).includes("panel-GIZLI-sir"), false);
     assert.equal(view.clientSecret.source, "panel");
 
@@ -1053,6 +1053,6 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     assert.ok(r.ok && r.data.resetCursor && !r.data.forgotSession, JSON.stringify(r));
     assert.equal(await stateRow("parasut.cursor"), undefined, "imleç sıfırlandı");
     assert.ok(await stateRow("parasut.token"), "oturum kaldı");
-    assert.equal((await config.readParasutConfig()).companyId, "111111");
+    assert.equal((await config.readParasutConfig("tuzla")).companyId, "111111");
   });
 });

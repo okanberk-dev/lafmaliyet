@@ -14,8 +14,8 @@ import { syncModposAll, type ModposSyncResult } from "@/server/modpos/sync";
 import { pushMonthEndCount } from "@/server/notify/count-push";
 import { runReminderDigest } from "@/server/notify/digest";
 import { pushReminderSummaries } from "@/server/notify/reminder-push";
-import { isParasutConfigured } from "@/server/parasut/config";
-import { syncParasut } from "@/server/parasut/sync";
+import { configuredParasutAccounts } from "@/server/parasut/accounts";
+import { syncParasutAccounts } from "@/server/parasut/sync";
 import { syncSiteMenu } from "@/server/site-menu/sync";
 import { syncSiteSales } from "@/server/site-sales/sync";
 import { expireStaffRequests } from "@/server/staff-requests/core";
@@ -77,15 +77,18 @@ export async function GET(request: NextRequest) {
     jobStart + MODPOS_CAP_MS - Date.now(),
     { status: "error", days: [], left: null, error: "süre doldu" },
   );
-  const configured = await isParasutConfigured();
+  // Şube başına Paraşüt hesabı: bugün eşitlenmemiş her hesap yeniden denenir (aynı firma iki kez çekilmez)
+  const accounts = await configuredParasutAccounts();
+  const configured = accounts.length > 0;
   let alreadySynced = false;
   let sync: { ok: boolean; summary?: string; error?: string } | null = null;
   let syncStep: StepResult = { code: configured ? "today" : "off" };
   try {
     if (configured) {
-      alreadySynced = await parasutSyncedToday();
+      alreadySynced = await parasutSyncedToday(accounts.map((a) => a.id));
       if (!alreadySynced) {
-        const r = await syncParasut("cron", { deadlineMs: 35_000 });
+        const synced = new Set((await Promise.all(accounts.map(async (a) => ((await parasutSyncedToday([a.id])) ? a.id : null)))).filter(Boolean));
+        const r = await syncParasutAccounts("cron", { accounts, deadlineMs: 35_000, skip: (a) => synced.has(a) });
         sync = r.ok ? { ok: true, summary: r.summary } : { ok: false, error: r.error };
         syncStep = r.ok ? { code: "ok" } : "busy" in r && r.busy ? { code: "busy" } : { code: "error", error: r.error };
       }

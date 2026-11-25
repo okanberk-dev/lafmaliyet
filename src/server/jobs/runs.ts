@@ -1,9 +1,10 @@
 import "server-only";
 
-import { and, desc, eq, gte, lt, ne } from "drizzle-orm";
+import { and, desc, eq, gte, lt, max, ne } from "drizzle-orm";
 
 import { CUT_OFF_MESSAGE, RUNS_KEEP_DAYS, STUCK_MS, type JobKey, type JobOutcome, type JobRunLite } from "@/lib/job-health";
 import { getDb, schema as s } from "@/server/db";
+import { configuredParasutAccounts } from "@/server/parasut/accounts";
 
 import { markWatchSince, WATCH_SINCE_KEY } from "./watch";
 
@@ -70,19 +71,32 @@ export async function readWatchSince(): Promise<string | null> {
   return typeof row?.value === "string" ? row.value : null;
 }
 
-/** Bugün (İstanbul) başarılı bir Paraşüt eşitlemesi var mı (tedarikçi geçmişi sayılmaz) */
-export async function parasutSyncedToday(): Promise<boolean> {
+/** İstanbul'da bugünün başı (UTC+3, yaz saati yok) */
+function todayStartTR(): Date {
   const start = new Date();
-  // İstanbul gece yarısı (UTC+3, yaz saati yok)
   start.setUTCHours(-3, 0, 0, 0);
   if (start.getTime() > Date.now()) start.setUTCDate(start.getUTCDate() - 1);
-  const [run] = await getDb()
-    .select({ id: s.parasutSyncRuns.id })
+  return start;
+}
+
+/** Hesap başına son başarılı günlük eşitlemenin (tedarikçi geçmişi hariç) başlangıcı */
+async function lastOkByAccount(since?: Date): Promise<Map<string, Date>> {
+  const rows = await getDb()
+    .select({ account: s.parasutSyncRuns.account, at: max(s.parasutSyncRuns.startedAt) })
     .from(s.parasutSyncRuns)
-    .where(and(eq(s.parasutSyncRuns.status, "ok"), ne(s.parasutSyncRuns.trigger, "history"), gte(s.parasutSyncRuns.startedAt, start)))
-    .orderBy(desc(s.parasutSyncRuns.startedAt))
-    .limit(1);
-  return Boolean(run);
+    .where(and(eq(s.parasutSyncRuns.status, "ok"), ne(s.parasutSyncRuns.trigger, "history"), since ? gte(s.parasutSyncRuns.startedAt, since) : undefined))
+    .groupBy(s.parasutSyncRuns.account);
+  return new Map(rows.flatMap((r) => (r.at ? [[r.account, new Date(r.at)] as const] : [])));
+}
+
+/**
+ * Bugün (İstanbul) başarılı bir Paraşüt eşitlemesi var mı (tedarikçi geçmişi sayılmaz). `accounts` verilirse
+ * (şube başına Paraşüt hesabı) her biri bugün eşitlenmiş olmalı: Tuzla'nın eşitlemesi Marina'nın yapılmadığını örtmez
+ */
+export async function parasutSyncedToday(accounts?: readonly string[]): Promise<boolean> {
+  const ok = await lastOkByAccount(todayStartTR());
+  if (accounts?.length) return accounts.every((a) => ok.has(a));
+  return ok.size > 0;
 }
 
 /** Günlük eşitlemenin (tedarikçi geçmişi hariç) son hatalı çalışmasının başlangıcı */
@@ -99,14 +113,29 @@ export async function lastParasutSyncErrorAt(): Promise<string | null> {
 /**
  * Günlük eşitlemenin (tedarikçi geçmişi hariç) son başarılı çalışmasının başlangıcı (cron, sabah işinin yeniden
  * denemesi ya da "Şimdi eşitle"). Bugün ekranı, Paraşüt işinin hatasından sonra başarılı bir eşitleme olduysa o hatayı
- * göstermez (src/app/panel/bugun/logic.ts systemIssues).
+ * göstermez (src/app/panel/bugun/logic.ts systemIssues). Şube başına Paraşüt hesabı: ayarı tamam hesapların (ya da
+ * verilen `accounts`ın) en geride kalanınki; bir hesabın başarısı öbürünün hatasını örtmesin, hiç başarılı eşitlemesi
+ * olmayan hesap varsa null.
  */
-export async function lastParasutSyncOkAt(): Promise<string | null> {
-  const [run] = await getDb()
-    .select({ startedAt: s.parasutSyncRuns.startedAt })
+export async function lastParasutSyncOkAt(accounts?: readonly string[]): Promise<string | null> {
+  const [ok, list] = await Promise.all([lastOkByAccount(), accounts ?? configuredParasutAccounts().then((x) => x.map((a) => a.id))]);
+  const times = list.length ? list.map((a) => ok.get(a) ?? null) : [[...ok.values()].sort((x, y) => y.getTime() - x.getTime())[0] ?? null];
+  if (times.some((t) => t === null)) return null;
+  const at = (times as Date[]).reduce((a, t) => (t < a ? t : a));
+  return at.toISOString();
+}
+
+/**
+ * Günlük eşitlemenin (tedarikçi geçmişi hariç) son çalışması, zil ve sabah e-postasının "eşitleme başarısız" uyarısı
+ * için. Şube başına Paraşüt hesabı: her hesabın son çalışmasına bakılır, birinin son çalışması hatalıysa o döner
+ * (Tuzla'nın sonraki başarısı Marina'nın hatasını örtmesin); yoksa en yenisi
+ */
+export async function latestParasutRun(db = getDb()): Promise<typeof s.parasutSyncRuns.$inferSelect | null> {
+  const rows = await db
+    .selectDistinctOn([s.parasutSyncRuns.account])
     .from(s.parasutSyncRuns)
-    .where(and(eq(s.parasutSyncRuns.status, "ok"), ne(s.parasutSyncRuns.trigger, "history")))
-    .orderBy(desc(s.parasutSyncRuns.startedAt))
-    .limit(1);
-  return run?.startedAt.toISOString() ?? null;
+    .where(ne(s.parasutSyncRuns.trigger, "history"))
+    .orderBy(s.parasutSyncRuns.account, desc(s.parasutSyncRuns.startedAt));
+  const newest = [...rows].sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+  return newest.find((r) => r.status === "error") ?? newest[0] ?? null;
 }

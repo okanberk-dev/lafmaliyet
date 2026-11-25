@@ -129,7 +129,7 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
       INSERT INTO user_tokens (user_id, kind, token_hash, expires_at) SELECT id, 'invite', 'ozet', now() + interval '1 day' FROM users WHERE email = 'ayse@ornek.com';
       INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, session_version) SELECT id, 'https://push.example/1', 'p', 'a', 1 FROM users WHERE email = 'ayse@ornek.com';
       INSERT INTO integration_state (key, value) VALUES
-        ('parasut.token', '{"sealed":"x"}'), ('webpush_vapid', '{"publicKey":"p","privateKey":"q"}'),
+        ('parasut.token', '{"sealed":"x"}'), ('parasut.token:marina', '{"sealed":"y"}'), ('parasut.settings:marina', '{"clientId":"m"}'), ('webpush_vapid', '{"publicKey":"p","privateKey":"q"}'),
         ('site_orders', '{"orders":[{"customerName":"Ali"}]}'), ('notify.settings', '{"emailEnabled":true,"from":null}'),
         ('menu_sync', '{"lastOkAt":null}');
       INSERT INTO settings (key, value) VALUES ('yedek_json_null', 'null'::jsonb);
@@ -223,6 +223,8 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
     assert.equal((await sqlB.unsafe(`SELECT 1 FROM karaoke_sessions WHERE customer_name = 'Zeynep'`)).length, 1);
     const keys = (await sqlB.unsafe<{ key: string }[]>(`SELECT key FROM integration_state`)).map((k) => k.key);
     for (const k of Object.keys(EXCLUDED_STATE_KEYS)) assert.ok(!keys.includes(k), `${k} yedeğe girmemeli`);
+    // Şube başına Paraşüt hesabı: öbür hesabın oturumu ve ayarları da (önekiyle) girmez
+    for (const k of ["parasut.token:marina", "parasut.settings:marina"]) assert.ok(!keys.includes(k), `${k} yedeğe girmemeli`);
     assert.ok(keys.includes("notify.settings") && keys.includes("menu_sync"));
     // Şube başına ayarlar: değer ve "aynı" bağı gelir, şifreli alanlar gelmez (docs/SUBE.md › Şube başına ayarlar)
     const bs = await sqlB.unsafe<{ branch_id: string; value: unknown; secrets: unknown; same_as: string | null }[]>(

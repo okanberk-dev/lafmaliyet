@@ -33,6 +33,7 @@ import {
   documentsTooBigText,
   encodeLine,
   EXCLUDED_STATE_KEYS,
+  EXCLUDED_STATE_PREFIXES,
   excludedFor,
   lastBackupText,
   mergeUserRows,
@@ -253,7 +254,13 @@ test("yedek dışı: adı gizli görünen her durum anahtarı (integration_state
 
 test("yedek dışı: Paraşüt belirteci ve bağlantı ayarları, bildirim anahtarı ve uygulama siparişlerinin müşteri adları dosyaya yazılmaz", () => {
   assert.deepEqual(Object.keys(EXCLUDED_STATE_KEYS).sort(), ["parasut.settings", "parasut.token", "site_orders", "webpush_vapid"]);
-  assert.equal(TABLE_RULES.integration_state.where, "key NOT IN ('parasut.token', 'parasut.settings', 'webpush_vapid', 'site_orders')");
+  // Şube başına Paraşüt hesabı: öbür hesapların oturumu ve ayarları hesap adıyla ("parasut.token:marina"), önekiyle dışarıda
+  assert.equal(
+    TABLE_RULES.integration_state.where,
+    "key NOT IN ('parasut.token', 'parasut.settings', 'webpush_vapid', 'site_orders') AND key NOT LIKE 'parasut.token:%' AND key NOT LIKE 'parasut.settings:%' AND key NOT LIKE 'parasut.connect%'",
+  );
+  assert.deepEqual(Object.keys(EXCLUDED_STATE_PREFIXES).sort(), ["parasut.connect", "parasut.settings:", "parasut.token:"]);
+  assert.deepEqual(excludedFor(["integration_state"], false).stateKeys.slice(-3), ["parasut.token:*", "parasut.settings:*", "parasut.connect*"]);
   // Paraşüt'ün PDF'i önbellek: yalnız yüklenenler, onlar da yalnız istenince
   assert.equal(TABLE_RULES.invoice_documents.where, "source = 'upload'");
   assert.equal(TABLE_RULES.invoice_documents.documents, true);
@@ -264,7 +271,7 @@ test("yedek dışı: Paraşüt belirteci ve bağlantı ayarları, bildirim anaht
   assert.deepEqual(noDocs.tables, ["invoice_documents", "push_subscriptions", "user_tokens"]);
   assert.equal(noDocs.documents, "hepsi");
   assert.deepEqual(Object.keys(noDocs.columns), ["users"]);
-  assert.deepEqual(noDocs.stateKeys, ["parasut.token", "parasut.settings", "webpush_vapid", "site_orders"]);
+  assert.deepEqual(noDocs.stateKeys, ["parasut.token", "parasut.settings", "webpush_vapid", "site_orders", "parasut.token:*", "parasut.settings:*", "parasut.connect*"]);
 });
 
 test("panelden belgeli yedek en çok 4 MB (Vercel'in yanıt sınırı canlıda doğrulanana kadar)", () => {

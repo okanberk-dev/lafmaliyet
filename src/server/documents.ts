@@ -5,6 +5,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { documentFileName, type DocumentMime } from "@/lib/documents";
 import { getDb, schema as s } from "@/server/db";
 import { ParasutClient } from "@/server/parasut/client";
+import { invoiceAccountOf } from "@/server/parasut/accounts";
 import { isParasutConfigured, readParasutConfig } from "@/server/parasut/config";
 import { fetchBillDocument, fetchEInvoicePdf } from "@/server/parasut/documents";
 
@@ -68,7 +69,7 @@ export async function getInvoiceDocument(invoiceId: number, documentId?: number 
     return { bytes: doc.data, mime: doc.mime, fileName: doc.fileName, source: doc.source };
   }
   const [inv] = await db
-    .select({ id: s.invoices.id, supplier: s.invoices.supplier, date: s.invoices.date, invoiceNo: s.invoices.invoiceNo, externalId: s.invoices.externalId, eInvoiceId: s.invoices.eInvoiceId })
+    .select({ id: s.invoices.id, supplier: s.invoices.supplier, date: s.invoices.date, invoiceNo: s.invoices.invoiceNo, externalId: s.invoices.externalId, eInvoiceId: s.invoices.eInvoiceId, parasutAccount: s.invoices.parasutAccount })
     .from(s.invoices)
     .where(eq(s.invoices.id, invoiceId))
     .limit(1);
@@ -77,8 +78,10 @@ export async function getInvoiceDocument(invoiceId: number, documentId?: number 
   const cached = docs.find((d) => d.source === "parasut");
   if (cached) return { bytes: cached.data, mime: cached.mime, fileName: cached.fileName, source: "parasut" };
 
-  if ((inv.eInvoiceId || inv.externalId) && (await isParasutConfigured())) {
-    const client = new ParasutClient(await readParasutConfig());
+  // Belge faturanın geldiği Paraşüt hesabından istenir (şube başına hesap; öbür firmanın kimliği orada yok)
+  const account = invoiceAccountOf(inv);
+  if ((inv.eInvoiceId || inv.externalId) && (await isParasutConfigured(account))) {
+    const client = new ParasutClient(await readParasutConfig(account));
     const file = inv.eInvoiceId ? await fetchEInvoicePdf(client, inv.eInvoiceId) : await fetchBillDocument(client, inv.externalId!);
     if (file) {
       const fileName = documentFileName({ supplier: inv.supplier, date: inv.date, invoiceNo: inv.invoiceNo, mime: file.mime });

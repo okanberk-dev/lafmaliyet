@@ -84,6 +84,8 @@ export async function branchUsageCount(db: DB, id: string): Promise<number> {
     s.shifts,
     // Kasaya işle işaretleri (şube kapsamı A3). Kasada bekleyen fiyat (pos_stale) sayılmaz: durumdur, şubeyle silinir
     s.posMarks,
+    // Ayrı Paraşüt hesabından gelen faturanın şubesi (docs/PARASUT.md › Şube başına Paraşüt hesabı)
+    s.invoices,
   ];
   const counts = await Promise.all(
     tables.map(async (table) => {
@@ -91,5 +93,7 @@ export async function branchUsageCount(db: DB, id: string): Promise<number> {
       return Number(row?.n ?? 0);
     }),
   );
-  return counts.reduce((a, b) => a + b, 0);
+  // Şubenin Paraşüt hesabından gelmiş faturalar (hesap şubenin kimliğiyle adlanır)
+  const [acc] = await db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.parasutAccount, id));
+  return counts.reduce((a, b) => a + b, 0) + Number(acc?.n ?? 0);
 }

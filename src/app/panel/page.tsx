@@ -69,6 +69,7 @@ import { loadStockAlert } from "@/server/data/stock-estimate";
 import { getDb, schema as s } from "@/server/db";
 import { cariAlerts } from "@/lib/cari/match";
 import { loadUpcoming } from "@/server/notify/digest";
+import { parasutAccountForScope } from "@/server/parasut/accounts";
 import { isParasutConfigured } from "@/server/parasut/config";
 
 import { DashboardAlerts } from "./dashboard-alerts";
@@ -157,19 +158,28 @@ async function loadPayments(branch?: BranchScope): Promise<Awaited<ReturnType<ty
   }
 }
 
-/** Paraşüt bağlıysa son eşitleme; bağlı değilse null */
+/**
+ * Paraşüt bağlıysa son eşitleme; bağlı değilse null. Seçili şubenin Paraşüt hesabının (şube başına hesap; "Tümü":
+ * varsayılan hesap) eşitlemesi
+ */
 async function loadParasut(): Promise<ParasutFacts | null> {
   try {
-    if (!(await isParasutConfigured())) return null;
+    const account = await parasutAccountForScope();
+    if (!(await isParasutConfigured(account))) return null;
     const db = getDb();
     const runs = s.parasutSyncRuns;
     const [[last], [ok]] = await Promise.all([
       // Tedarikçi geçmişi (tek tedarikçi, elle) eşitleme sayılmaz
-      db.select({ status: runs.status, startedAt: runs.startedAt, message: runs.message }).from(runs).where(ne(runs.trigger, "history")).orderBy(desc(runs.startedAt)).limit(1),
+      db
+        .select({ status: runs.status, startedAt: runs.startedAt, message: runs.message })
+        .from(runs)
+        .where(and(ne(runs.trigger, "history"), eq(runs.account, account)))
+        .orderBy(desc(runs.startedAt))
+        .limit(1),
       db
         .select({ startedAt: runs.startedAt, finishedAt: runs.finishedAt })
         .from(runs)
-        .where(and(eq(runs.status, "ok"), ne(runs.trigger, "history")))
+        .where(and(eq(runs.status, "ok"), ne(runs.trigger, "history"), eq(runs.account, account)))
         .orderBy(desc(runs.startedAt))
         .limit(1),
     ]);

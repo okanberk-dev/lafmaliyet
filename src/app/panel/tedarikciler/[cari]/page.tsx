@@ -18,7 +18,7 @@ import { listBranches } from "@/server/branches";
 import { loadSupplierCari } from "@/server/data/cari";
 import { loadSupplierLedger } from "@/server/data/suppliers";
 import { listInvoiceDocuments, type DocumentMeta } from "@/server/documents";
-import { isParasutConfigured } from "@/server/parasut/config";
+import { anyParasutConfigured } from "@/server/parasut/accounts";
 import { sameSupplier } from "@/server/parasut/mapping";
 
 import { accountBreakdowns } from "../breakdowns";
@@ -85,7 +85,7 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
     loadSupplierCari(g, { today, termDays: g.termDays }),
     currentBranchScope(),
     listBranches(),
-    isParasutConfigured(),
+    anyParasutConfigured(),
   ]);
   const documents: Record<number, DocumentMeta[]> = {};
   for (const d of docs) (documents[d.invoiceId] ??= []).push(d);

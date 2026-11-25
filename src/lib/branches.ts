@@ -502,21 +502,21 @@ export function monthWriteNote(scope: BranchScope, known: readonly BranchRow[]):
 }
 
 /** Firma geneli ekranlar (şube kapsamı C P1-12, P2-1): şube seçiliyken de bütün şubelerin verisini gösterir */
-export type CompanyWideScreen = "vergi" | "nakit" | "faturalar" | "tedarikciler" | "parasut" | "tutarlilik";
+export type CompanyWideScreen = "vergi" | "nakit" | "faturalar" | "tedarikciler" | "tutarlilik";
 
 const COMPANY_WIDE_TEXT: Record<CompanyWideScreen, string> = {
   vergi: "Vergi ve KDV firmanın: bütün şubelerin satışı, faturaları ve giderleri birlikte hesaplanır (tek vergi numarası).",
   nakit: "Nakit planı firmanın: bütün şubelerin kasası, ödemeleri ve faturaları birlikte.",
-  faturalar: "Faturalar işletme genelidir: Paraşüt hesabı şubeler arasında ortak, faturalar şubeye bölünmez. Kasadan ödenen faturalar kasanın şubesiyle ayrılır.",
+  faturalar:
+    "Faturalar firmanındır, hepsi burada. Şubeler aynı Paraşüt hesabındaysa faturalar işletme genelidir; ayrı Paraşüt hesabından gelen fatura şubesinin adıyla işaretlidir. Kasadan ödenen faturalar kasanın şubesiyle ayrılır.",
   tedarikciler: "Tedarikçilerin cari hesabı firmanındır; borç ve ödemeler şubeye bölünmez. Kasadan yapılan ödemeler kasanın şubesiyle ayrılır.",
-  parasut: "Paraşüt bağlantısı ve eşitlemesi şubeler arasında ortak (aynı hesap); gelen faturalar işletme genelidir.",
   tutarlilik: "Tutarlılık işletme geneli: alınan mal şubeye bölünmez; sayım, satış ve zayi bütün şubelerden birlikte karşılaştırılır.",
 };
 
 /**
  * Firma geneli ekranın notu (şube kapsamı C P1-12, P2-1; sahibin varsayılanı 24 Kasım 2026: tek firma, Paraşüt hesabı
- * ortak): tek şube seçiliyken ekran yine bütün şubeleri gösterir ve bunu söyler; "Tümü"de not yok (null). Şube başına
- * firma ya da ayrı Paraşüt hesabı gelince (B4) bu ekranlar şubeyle süzülür
+ * ortak): tek şube seçiliyken ekran yine bütün şubeleri gösterir ve bunu söyler; "Tümü"de not yok (null). Paraşüt ekranı
+ * bu listede değil: seçili şubenin Paraşüt hesabını gösterir (B4, docs/PARASUT.md › Şube başına Paraşüt hesabı)
  */
 export function companyWideNote(screen: CompanyWideScreen, scope: BranchScope, known: readonly BranchRow[]): { title: string; text: string } | null {
   if (scope === ALL_BRANCHES) return null;

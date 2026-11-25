@@ -1,6 +1,6 @@
 "use server";
 
-import { and, count, desc, eq, gt, ne } from "drizzle-orm";
+import { and, count, eq, gt } from "drizzle-orm";
 
 import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
@@ -33,6 +33,7 @@ import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders } from "@/server/data/user-reminders";
 import { getDb, schema as s } from "@/server/db";
+import { latestParasutRun } from "@/server/jobs/runs";
 import { loadSystemAlerts } from "@/server/jobs/alerts";
 import { loadUpcoming } from "@/server/notify/digest";
 import { blockedRecipientsNow } from "@/server/notify/recipients";
@@ -253,8 +254,8 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
   const [[review], [fresh], [lastRun], unlinked, stockOnly, cashState] = await Promise.all([
     db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
     db.select({ n: count() }).from(s.invoices).where(and(eq(s.invoices.origin, "parasut"), gt(s.invoices.createdAt, dayAgo))),
-    // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz
-    db.select().from(s.parasutSyncRuns).where(ne(s.parasutSyncRuns.trigger, "history")).orderBy(desc(s.parasutSyncRuns.startedAt)).limit(1),
+    // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz; hesap başına son çalışma, hatalı önce
+    latestParasutRun(db).then((r) => (r ? [r] : [])),
     countUnlinkedProducts().catch(() => 0),
     // Kalemi hammaddeye bağlı ama mal alışı sayılmayan, kontrol bekleyen faturalar (E-07)
     countStockOnlyReview(db).catch(() => 0),

@@ -13,6 +13,7 @@ import {
   BRANCH_SETTING_GROUPS,
   CASH_REPORT_GROUP,
   CASH_STAFF_GROUP,
+  PARASUT_GROUP,
   branchSettingGroup,
   legacyOwnerId,
   plainFields,
@@ -101,6 +102,8 @@ test("gruplar: alıcılar 'aynı' sunulur ve Tuzla'nın, çalışan listesi şub
     [
       ["kasa.rapor", true, "tuzla", "cash.settings"],
       ["kasa.calisan", false, "marina", "cash.settings"],
+      // Paraşüt hesabı (B4): satır yalnız bağı tutar; eski kayıt varsayılan şubenin tek hesabı
+      ["parasut", true, "tuzla", "parasut.settings"],
     ],
   );
   assert.equal(branchSettingGroup("kasa.rapor"), CASH_REPORT_GROUP);
@@ -116,7 +119,8 @@ test("gruplar: alıcılar 'aynı' sunulur ve Tuzla'nın, çalışan listesi şub
   // Gizli alan satırın değerine yazılmaz (secrets sütununda şifreli)
   assert.deepEqual(plainFields({ secretFields: ["secret"] }, { id: "x", secret: "gizli" }), { id: "x" });
   for (const g of BRANCH_SETTING_GROUPS) assert.deepEqual(g.secretFields, [], `${g.id}: bugün şifreli alan yok`);
-  assert.ok(SHARED_FOR_NOW.some((g) => g.id === "parasut") && SHARED_FOR_NOW.every((g) => !branchSettingGroup(g.id)), "henüz ortak olanlar ayrı listede");
+  assert.ok(SHARED_FOR_NOW.some((g) => g.id === "pos.lafpos") && SHARED_FOR_NOW.every((g) => !branchSettingGroup(g.id)), "henüz ortak olanlar ayrı listede");
+  assert.equal(branchSettingGroup("parasut"), PARASUT_GROUP, "Paraşüt hesabı şube başına (B4)");
 });
 
 /** src altındaki .ts/.tsx dosyaları */
