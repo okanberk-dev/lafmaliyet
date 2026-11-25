@@ -1,6 +1,7 @@
 import "server-only";
 
-import type { BranchScope } from "@/lib/branches";
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
+import { featureHere } from "@/server/branches";
 import { loadKontrolDigest } from "@/server/data/checklists";
 import { loadCommissionDigest } from "@/server/data/commission";
 import { loadApprovalsDigest } from "@/server/staff-requests/digest";
@@ -25,8 +26,13 @@ import { collectDigestExtras, type DigestExtrasResult, type DigestExtraSource } 
 export const DIGEST_EXTRA_SOURCES: DigestExtraSource[] = [
   // Dünkü kontrol listeleri: eksik liste ve sorunlar, günde bir kez (kontrol:<gün>; docs/KONTROL-LISTELERI.md)
   { key: "kontrol", news: true, load: (_today, ctx) => loadKontrolDigest(undefined, ctx.scope) },
-  // Komisyon ve hakediş: geciken hakediş, %6 aşımı, komisyon dışı ücret; her uyarı bir kez (komisyon:<uyarı>; docs/KOMISYON.md)
-  { key: "commission", news: true, load: (today, ctx) => loadCommissionDigest(today, ctx) },
+  // Komisyon ve hakediş: geciken hakediş, %6 aşımı, komisyon dışı ücret; her uyarı bir kez (komisyon:<uyarı>; docs/KOMISYON.md).
+  // Şubeye bağlı alıcının şubesinde yemek kartı kullanılmıyorsa kutu yok (şube özelliği; docs/SUBE.md › Şube özellikleri)
+  {
+    key: "commission",
+    news: true,
+    load: async (today, ctx) => ((await featureHere("yemek_karti", ctx.scope ?? ALL_BRANCHES)) ? loadCommissionDigest(today, ctx) : null),
+  },
   // Satış tahmini: bugünün tahmini, dünün tutturması, haftanın en yoğun günü; hiçbir zaman haber değil (docs/SATIS-TAHMINI.md)
   // Onay bekleyenler: personel istekleri (başlık ve isteyenin adı, tutarsız) ve operasyonun bilgi satırları (Tükendi);
   // karar verilene kadar her sabah (docs/ONAYLAR.md)

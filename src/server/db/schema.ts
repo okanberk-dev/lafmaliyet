@@ -173,6 +173,12 @@ export const branches = pgTable(
      * yalnız kasa kartı olmayan eski aylarda
      */
     posRate: doublePrecision("pos_rate").notNull().default(0.02),
+    /**
+     * Şubenin açık özellikleri (şube kapsamı B6; src/lib/branch-features.ts): "karaoke", "siparis" (uygulama siparişi),
+     * "garson" (masa çağrısı), "yemek_karti" (komisyon & hakediş). Yeni şube bugünkü davranışla, karaokesiz başlar
+     * (karaoke tek şubede); Tuzla'ya karaoke migration 0085'te. Online kanalda anlamı yok (boş)
+     */
+    features: text("features").array().notNull().default(sql`'{siparis,garson,yemek_karti}'::text[]`),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

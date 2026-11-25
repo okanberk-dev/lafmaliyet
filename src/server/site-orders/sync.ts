@@ -6,6 +6,7 @@ import { callRingMessage, callsFingerprint, newCallIds, openCalls } from "@/lib/
 import { newOrderIds, ordersFingerprint, ringMessage, sortForScreen } from "@/lib/site-orders/feed";
 import { awaitingUntil, missedPing, nextAwaiting, pullDue, type OrdersTrigger } from "@/lib/site-orders/follow";
 import { parseSiteOrders, SiteOrdersFormatError, type SiteCall, type SiteOrder, type SiteOrderList } from "@/lib/site-orders/schema";
+import { featureAudienceIds } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { sendPush } from "@/server/push/send";
 import { salesFailureMessage } from "@/server/site-sales/sync";
@@ -312,31 +313,46 @@ export async function ensureOrdersFresh(maxAgeMs: number, opts: { manual?: boole
   return syncSiteOrders(opts.manual ? "manual" : "screen");
 }
 
-/** Yeni siparişi cihazlara bildirir (masa siparişi önce); müşterinin adı bildirime yazılmaz (kilit ekranı) */
+/**
+ * Yeni siparişi cihazlara bildirir (masa siparişi önce); müşterinin adı bildirime yazılmaz (kilit ekranı). Yalnız uygulama
+ * siparişinin kitlesine (şube özelliği `siparis`, `featureAudience`; docs/SUBE.md › Şube özellikleri): yönetici, şubesiz
+ * personel ve siparişi açık şubenin personeli. Site siparişin şubesini söylemez: sipariş, siparişi açık her şubenindir
+ */
 async function announce(orders: SiteOrder[], nowMs: number): Promise<void> {
   if (!orders.length) return;
   const { title, body } = ringMessage(sortForScreen(orders));
-  await sendPush("orders", {
-    kind: "orders",
-    title,
-    body,
-    url: "/panel/siparisler",
-    tag: orders.length === 1 ? `siparis-${orders[0].id}` : `siparis-${nowMs}`,
-    ring: true,
-  });
+  await sendPush(
+    "orders",
+    {
+      kind: "orders",
+      title,
+      body,
+      url: "/panel/siparisler",
+      tag: orders.length === 1 ? `siparis-${orders[0].id}` : `siparis-${nowMs}`,
+      ring: true,
+    },
+    { userIds: await featureAudienceIds("siparis") },
+  );
 }
 
-/** Yeni masa çağrısını cihazlara bildirir ("Masa 4 · Su istiyor"); müşteriye dair bir şey yok. Süresi dolmuş çağrı bildirilmez */
+/**
+ * Yeni masa çağrısını cihazlara bildirir ("Masa 4 · Su istiyor"); müşteriye dair bir şey yok. Süresi dolmuş çağrı
+ * bildirilmez. Kitle garson çağırın açık olduğu şubelerin (şube özelliği `garson`, `featureAudience`)
+ */
 async function announceCalls(calls: SiteCall[], nowMs: number): Promise<void> {
   const open = openCalls(calls, nowMs);
   if (!open.length) return;
   const { title, body } = callRingMessage(open);
-  await sendPush("orders", {
-    kind: "orders",
-    title,
-    body,
-    url: "/panel/siparisler",
-    tag: open.length === 1 ? `cagri-${open[0].id}` : `cagri-${nowMs}`,
-    ring: true,
-  });
+  await sendPush(
+    "orders",
+    {
+      kind: "orders",
+      title,
+      body,
+      url: "/panel/siparisler",
+      tag: open.length === 1 ? `cagri-${open[0].id}` : `cagri-${nowMs}`,
+      ring: true,
+    },
+    { userIds: await featureAudienceIds("garson") },
+  );
 }

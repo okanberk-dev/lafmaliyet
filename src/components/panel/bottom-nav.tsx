@@ -6,6 +6,7 @@ import { useEffect, type Ref } from "react";
 
 import { Icon } from "@/components/akmanos/icons/icon";
 import { SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
+import type { BranchFeature } from "@/lib/branch-features";
 import { cn } from "@/lib/utils";
 
 import { setAssistantOpen, toggleAssistant, useAssistantOpen } from "./assistant/assistant-open";
@@ -144,6 +145,7 @@ export function BottomNav({
   onMenu,
   menuButtonRef,
   assistant = false,
+  features,
 }: {
   role: "admin" | "staff";
   pathname: string;
@@ -153,10 +155,12 @@ export function BottomNav({
   menuButtonRef?: Ref<HTMLButtonElement>;
   /** Asistan sekmesi (yalnız yönetici ve asistan açıkken; panel düzeni sunucuda belirler) */
   assistant?: boolean;
+  /** Seçili kapsamda açık şube özellikleri: kapalı özelliğin öğesi yedeğiyle değişir (nav.ts › withSpares) */
+  features?: readonly BranchFeature[];
 }) {
   const reduce = useReducedMotion();
   useViewportState();
-  const items = bottomNavFor(role, { assistant });
+  const items = bottomNavFor(role, { assistant, features });
   const assistantOpen = useAssistantOpen();
   const active = bottomNavActive(items, pathname, menuOpen, assistant && assistantOpen);
   const badge = badgeText(overdue);

@@ -77,12 +77,12 @@ test("Tükendi: birden çok şube açıkken bütün şubelerde kapandığı söy
 
 test("kaynak: Onaylar ve zil tek şubede şubenin istekleri; karaoke yalnız kendi şubesinde", () => {
   assert.match(read("src/app/panel/onaylar/kasa-section.tsx"), /loadCashRequestQueue\(undefined, await currentBranchScope\(\)\)/);
-  assert.match(read("src/app/panel/onaylar/karaoke-section.tsx"), /if \(!requestInScope\(KARAOKE_BRANCH_ID, await currentBranchScope\(\)\)\) return null;/);
+  assert.match(read("src/app/panel/onaylar/karaoke-section.tsx"), /if \(!\(await featureHere\("karaoke", await currentBranchScope\(\)\)\)\) return null;/);
   const kasa = read("src/server/bell/kasa.ts");
   assert.match(kasa, /pendingCashBellRows\(scope\),\s+cashOutBellRow\(now, scope\),\s+pendingClosedRows\(scope\),/);
   const ops = read("src/server/bell/ops.ts");
   assert.match(ops, /pendingWasteSummary\(\{ scope: await currentBranchScope\(\) \}\)/);
-  assert.match(ops, /if \(!requestInScope\(KARAOKE_BRANCH_ID, await currentBranchScope\(\)\)\) return \[\];/);
+  assert.match(ops, /if \(!featureInScope\("karaoke", await currentBranchScope\(\), await listBranches\(\)\)\) return \[\];/);
 });
 
 test("kaynak: kasa ve sayım 'Tümü'de birden çok kasa açıkken formdan önce şubeyi sorar", () => {

@@ -200,23 +200,25 @@ Kimlik türüne uymalı (kasa, sayım, zayi ve satışta etkin fiziksel şube; g
 kilitli personelde kendi şubesi; değilse yazım reddedilir. Kimliği göndermeyen eski sekme bugünkü kurala düşer;
 `requireExplicit` ile (satış, zayi) "Tümü"de birden çok kasa açıkken reddedilir ("Hangi şubeye yazılsın? Şubeyi seçin"),
 sessizce Tuzla'ya inmez. Kapsamla silen yazım (Ayı temizle) pencerenin kapsamını gönderir (`assertShownScope`).
-Karaokenin şubesi tek sabittedir (`KARAOKE_BRANCH_ID`, bugün Tuzla); kitlesi yönetici, şubesiz personel ve o şubenin
-personeli (`karaokeAudience`).
+Karaokenin şubesi şube özelliğinden okunur (`karaokeBranchOf`, sahibin varsayılanı Tuzla; aşağıda "Şube özellikleri");
+kitlesi yönetici, şubesiz personel ve o şubenin personeli (`featureAudience`).
 
 ### Karaoke yalnız kendi şubesinde (24 Kasım 2026)
 
-Karaoke odası tek şubededir (`KARAOKE_BRANCH_ID`). Başka şubeye kilitli personel:
+Karaoke odası tek şubededir: karaoke özelliği açık şube (25 Kasım 2026'dan beri Şube ayarları › Özellikler'den seçilir;
+aşağıda "Şube özellikleri"). Başka şubeye kilitli personel:
 
 - Karaoke sayfasında rezervasyon ve sayaç görmez, "Karaoke bu şubede kullanılmıyor" yazar (Siparişler satırı kalır);
 - sayaç açamaz, uzatamaz, bitiremez, geri açamaz, silemez, silinmesini isteyemez, köşk rezervasyonu ekleyip kaldıramaz,
   "Şimdi eşitle"ye basamaz: eylem kimliği istemci paketinde olduğu için uç da reddeder (`assertKaraokeBranch`,
   `src/server/actions/karaoke.ts`);
 - canlı uçtan (`/api/canli`) oturum ve silme isteği almaz (misafir adı, alarm); kilit ETag'tedir;
-- karaoke Web Push bildirimini almaz (`announce` › `karaokeAudience`).
+- karaoke Web Push bildirimini almaz (`announce` › `featureAudienceIds("karaoke")`).
 
-Bugün'ün karaoke satırı "Tümü"de ve karaokenin şubesi seçiliyken görünür; başka şube seçiliyken (kilitli personelde hep
-kendi şubesi) yoktur. Kapalı gün kanıtında karaoke birden çok kasa açıkken yalnız karaokenin şubesinin kanıtıdır.
-Yönetici, şubesiz personel ve şubesi pasife alınmış personel serbesttir.
+Bugün'ün karaoke satırı, karaoke sayfası ve canlı uç "Tümü"de ve karaokenin şubesi seçiliyken karaokeyi gösterir; başka
+şube seçiliyken (kilitli personelde hep kendi şubesi) yoktur. Karaoke hiçbir şubede açık değilse personel (şubesiz de)
+karaoke eylemi çağıramaz, bildirim kimseye gitmez. Kapalı gün kanıtında karaoke birden çok kasa açıkken yalnız karaokenin şubesinin kanıtıdır.
+Yönetici serbesttir; şubesiz personel ve şubesi pasife alınmış personel karaoke bir şubede açıkken serbesttir.
 
 Stok sayımı kaydının çakışma hedefi `(ay, şube, malzeme)`: dalga 2'de tek şubesiz hedef kaldığı için sayım kaydı
 "no unique or exclusion constraint" hatasıyla düşüyordu; `tests/sube-maliyet.test.ts` artık bütün kaynak dosyalarını
@@ -246,7 +248,41 @@ birden çok kasa açıkken şubenin adıyla.
 
 Sahibin varsayılanları (24 Kasım 2026, sonra Ayarlar'dan şube başına değiştirilebilir olacak): tek firma (Vergi, Nakit,
 cari firma geneli, etiketli); Paraşüt hesabı ortak (faturalar işletme geneli; 25 Kasım'dan beri şube başına seçilebilir:
-ayrı hesabın faturaları o şubenin, aşağıda); karaoke Tuzla'da; komisyon ve yemek kartı şubeler arasında aynı.
+ayrı hesabın faturaları o şubenin, aşağıda); karaoke Tuzla'da; komisyon ve yemek kartı şubeler arasında aynı. Karaoke,
+uygulama siparişi, garson çağır ve yemek kartı 25 Kasım'dan beri şube başına açılıp kapanır ("Şube özellikleri").
+
+## Şube özellikleri (25 Kasım 2026)
+
+Bir şubede hangi iş yapılıyor: şube başına açık / kapalı (`branches.features`, metin dizisi; migration 0084 sütun, 0085
+veri). Kurallar saf dosyada (`src/lib/branch-features.ts`), okuma `src/server/branches.ts` (`karaokeBranchId`,
+`featureHere`, `featureAudienceIds`), yazım `src/server/branch-features.ts`.
+
+| Özellik | Kapalıyken o şube seçiliyken (kilitli personelde hep) | Varsayılan |
+|---|---|---|
+| `karaoke` Karaoke | Menüde Karaoke ve Doluluk yok; sayfa "Karaoke bu şubede kullanılmıyor" ve açık olduğu şube; canlı uç oturum, silme isteği ve çekme hatası göndermez (alarm yok); Bugün'ün karaoke satırı, Onaylar'ın karaoke bölümü ve zilin karaoke isteği yok. Eylemler, personel e-postası, sayaç silme isteğinin şubesi ve kapalı günün kanıtı karaokenin şubesiyle. **Yalnız bir şubede açık olabilir** | Tuzla |
+| `siparis` Uygulama siparişleri | Canlı uç siparişleri göndermez (zil yok); Siparişler kartı "Uygulama siparişleri bu şubede kullanılmıyor"; Bugün'ün sipariş satırı yok | her şube |
+| `garson` Garson çağır | Canlı uç masa çağrılarını göndermez (kapı zili yok) | her şube |
+| `yemek_karti` Yemek kartı ve platformlar | Menüde Komisyon & hakediş yok, sayfa "bu şubede kullanılmıyor"; zilin ve Bugün'ün komisyon satırları, şubeye bağlı alıcının sabah e-postasındaki komisyon kutusu yok. Hiçbir şubede açık değilse haftalık özette de yok | her şube |
+
+- **Siparişler** sipariş ya da garson çağırdan biri açıkken görünür; ikisi de kapalıysa menüde yoktur, sayfa "Siparişler
+  bu şubede kullanılmıyor" der (Tükenenler kartı kalır: Tükendi sitenin menüsünde, bütün şubelerde).
+- **Site siparişin şubesini söylemez** (laffogato.net'in sözleşmesi değişmedi): sipariş ve çağrı, özelliği açık her
+  şubenindir. Web Push kitlesi (`featureAudience`): yönetici, şubesiz personel ve özelliği açık şubenin personeli;
+  özellik hiçbir şubede açık değilse kimse. Şubesi pasif ya da kütükte olmayan personel şubesiz sayılır.
+- **"Tümü"** özelliği herhangi bir etkin şubede açıksa gösterir; online kanal seçiliyken hiçbir şube özelliği görünmez.
+- **Menü** (`src/components/panel/nav.ts` › `FEATURE_SCREENS`, `screenFeatureOn`): kenar çubuğu, çekmece, komut paleti
+  ve alt menü seçili kapsamın özellikleriyle süzülür. Personelin alt menüsü beş hücre kalır: boşalan hücreye sırayla
+  Zayi ve Kontrol girer (`withSpares`). Şube seçimi değişince kabuk canlı veriyi hemen yeniden ister.
+- **Ekran**: Şube ayarları › Özellikler (yalnız yönetici; her dokunuş hemen kaydedilir, tek işlem, özellik kilidiyle,
+  işlem geçmişine "Şube özelliği"). Karaoke başka şubede açıksa anahtar kapalıdır ve nerede açık olduğunu söyler: önce
+  oradan kapatılır. Şubeler listesinde karaokeli şubede "Karaoke", kapalı özellik varsa "Kullanılmıyor: …" çipi.
+- **Kapanan şube** tek şubelik özelliğini (karaoke) bırakır: başka şubede açılabilir, şube yeniden açılınca iki şubede
+  birden açık kalmaz.
+- **Geçiş**: sütun eklenince her şube sipariş, garson ve yemek kartıyla başlar; veri adımı Tuzla'ya karaoke ekler (başka
+  şubede karaoke yoksa), online kanalı boşaltır. Yeni şube karaokesiz başlar. Özelliği okunmamış satır (eski okuyucu)
+  bugünkü davranışı alır (`branchFeatures`). `KARAOKE_BRANCH_ID` sabiti kalktı (`tests/sube-ozellik.test.ts`).
+- **Henüz özellik değil**: tahmini stok LafPOS'un şubesine bağlı kalır (`STOCK_ESTIMATE_BRANCH`; LafPOS şubesinin
+  türetilmesiyle birlikte taşınacak). Komisyon kanallarının ayarı (ödeme süreleri) işletme genelidir ("Şimdilik ortak").
 
 ## Şube başına ayarlar (25 Kasım 2026)
 
@@ -277,7 +313,7 @@ yazma `src/server/branch-settings.ts`.
   adreslerine (bütün şubeler ya da o şube; `dayEndRecipients(db, şube)`, şube zorunlu), çalışanların kısa e-postası
   gün sonunun şubesinin çalışan listesine. Zil ve "bu adres hangi listede" (Hesabım, Kullanıcılar) bütün açık
   şubelerin listelerine bakar.
-- **Ekran**: Ayarlar › Şube ayarları (tek şube seçiliyken doğrudan o şubenin ekranı, "Tümü"de Şubeler listesi; her
+- **Ekran**: Ayarlar › Şube ayarları (en üstte Özellikler kartı, yukarıda; tek şube seçiliyken doğrudan o şubenin ekranı, "Tümü"de Şubeler listesi; her
   fiziksel şubenin satırında "Alıcılar: Tuzla ile aynı" çipi ve **Ayarlar**). Şube ayarları ekranı
   (`/panel/subeler/[id]`, yalnız yönetici) şubeyi adresten alır, panelin seçicisini değiştirmez. Kasa sayfasının Rapor
   alıcıları kartı aynı bileşen (`src/app/panel/kasa/cash-settings.tsx`, verisi `src/server/cash/settings-card.ts`);

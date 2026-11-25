@@ -589,6 +589,20 @@
       "when": 1795566737538,
       "tag": "0083_parasut_hesap_veri",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1795568840888,
+      "tag": "0084_sube_ozellik",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1795568844248,
+      "tag": "0085_sube_ozellik_veri",
+      "breakpoints": true
     }
   ]
 }

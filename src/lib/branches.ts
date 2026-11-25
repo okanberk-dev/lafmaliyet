@@ -15,11 +15,9 @@ export const ONLINE_BRANCH_ID = "online";
 /** Silinemeyen, pasife alınamayan kayıtlar: panel bunlar olmadan ciroyu bölemez */
 export const FIXED_BRANCH_IDS: readonly string[] = [DEFAULT_BRANCH_ID, ONLINE_BRANCH_ID];
 /**
- * Karaoke odasının şubesi (docs/KARAOKE.md): personel e-postası, vardiya ve bildirim hedefi bu şubenin. Sahibin varsayılanı
- * (24 Kasım 2026): Tuzla. Şube özellikleri (`branches.features`) gelince oradan okunur
+ * Karaokenin şubesi dışındaki şubeye kilitli personelin karaoke ekranı ve eylemleri. Karaokenin şubesi sabit değil, şube
+ * özelliğinden okunur (`branches.features`, src/lib/branch-features.ts › karaokeBranchOf; sahibin varsayılanı Tuzla)
  */
-export const KARAOKE_BRANCH_ID = DEFAULT_BRANCH_ID;
-/** Karaokenin şubesi dışındaki şubeye kilitli personelin karaoke ekranı ve eylemleri */
 export const KARAOKE_ELSEWHERE = "Karaoke bu şubede kullanılmıyor";
 
 export const BRANCH_ID_MAX = 24;
@@ -54,13 +52,19 @@ export interface BranchRow {
    * (engine.ts posCommission). Tohum ve eski okuyucular vermez (veritabanının varsayılanı)
    */
   posRate?: number;
+  /**
+   * Şubenin açık özellikleri (branches.features: karaoke, uygulama siparişi, garson çağır, yemek kartı; şube kapsamı B6,
+   * src/lib/branch-features.ts). Okunmamışsa (eski okuyucu, test verisi) bugünkü davranış: `branchFeatures`
+   */
+  features?: string[];
 }
 
 /** İlk kurulumda ve boş veritabanında yazılan kayıtlar (idempotent; scripts/seed.ts) */
 export const DEFAULT_BRANCHES: readonly Omit<BranchRow, "active">[] = [
-  { id: DEFAULT_BRANCH_ID, name: "Tuzla", kind: "fiziksel", posSource: "modpos", openedOn: null, sortOrder: 1 },
-  { id: "marina", name: "Marina", kind: "fiziksel", posSource: "modpos", openedOn: null, sortOrder: 2 },
-  { id: ONLINE_BRANCH_ID, name: "laffogato.net", kind: "online", posSource: "yok", openedOn: null, sortOrder: 3 },
+  // Özellikler sahibin varsayılanı (src/lib/branch-features.ts): karaoke Tuzla'da, sipariş, garson ve yemek kartı her şubede
+  { id: DEFAULT_BRANCH_ID, name: "Tuzla", kind: "fiziksel", posSource: "modpos", openedOn: null, sortOrder: 1, features: ["karaoke", "siparis", "garson", "yemek_karti"] },
+  { id: "marina", name: "Marina", kind: "fiziksel", posSource: "modpos", openedOn: null, sortOrder: 2, features: ["siparis", "garson", "yemek_karti"] },
+  { id: ONLINE_BRANCH_ID, name: "laffogato.net", kind: "online", posSource: "yok", openedOn: null, sortOrder: 3, features: [] },
 ];
 /** Tohumun bir kez çalıştığının işareti (integration_state) */
 export const BRANCH_SEED_KEY = "branches_seeded";

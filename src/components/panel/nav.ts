@@ -45,6 +45,8 @@ import {
   Wallet,
 } from "lucide-react";
 
+import type { BranchFeature } from "@/lib/branch-features";
+
 export interface NavItem {
   href: string;
   label: string;
@@ -516,11 +518,34 @@ export function sectionTabsFor(section: keyof typeof SECTION_TABS, role: "admin"
   return tabs.length > 1 ? tabs : [];
 }
 
-/** Ağacı role göre süzer; tek alt sayfası kalan grup doğrudan o sayfaya bağlanır */
-export function navTreeFor(role: "admin" | "staff"): NavNode[] {
-  return NAV_TREE.filter((n) => n.roles.includes(role))
+/**
+ * Şube özelliğine bağlı ekranlar (şube kapsamı B6; src/lib/branch-features.ts, docs/SUBE.md › Şube özellikleri): seçili
+ * kapsamda özelliklerinden hiçbiri açık değilse ekran menüde (kenar çubuğu, çekmece, alt menü, komut paleti) yoktur;
+ * adresiyle açılırsa "Bu şubede kullanılmıyor" der. Alt sayfalar da (Karaoke › Doluluk) aynı kurala uyar. Siparişler
+ * uygulama siparişi ya da garson çağırdan biri açıkken görünür (ikisi tek ekranda)
+ */
+export const FEATURE_SCREENS: readonly { href: string; any: readonly BranchFeature[] }[] = [
+  { href: "/panel/siparisler", any: ["siparis", "garson"] },
+  { href: "/panel/karaoke", any: ["karaoke"] },
+  { href: "/panel/komisyonlar", any: ["yemek_karti"] },
+];
+
+/** Ekran seçili kapsamın özellikleriyle (`on`) görünür mü; `on` verilmezse süzme yok (Yardım, asistanın ekran listesi) */
+export function screenFeatureOn(href: string, on?: readonly BranchFeature[]): boolean {
+  if (!on) return true;
+  const path = href.split(/[?#]/)[0];
+  const rule = FEATURE_SCREENS.find((r) => path === r.href || path.startsWith(`${r.href}/`));
+  return !rule || rule.any.some((f) => on.includes(f));
+}
+
+/**
+ * Ağacı role (ve verilirse seçili kapsamın şube özelliklerine, `screenFeatureOn`) göre süzer; tek alt sayfası kalan grup
+ * doğrudan o sayfaya bağlanır
+ */
+export function navTreeFor(role: "admin" | "staff", features?: readonly BranchFeature[]): NavNode[] {
+  return NAV_TREE.filter((n) => n.roles.includes(role) && (!n.href || screenFeatureOn(n.href, features)))
     .map((n) => (n.labelFor?.[role] ? { ...n, label: n.labelFor[role] } : n))
-    .map((n) => (n.children ? { ...n, children: n.children.filter((c) => c.roles.includes(role)) } : n))
+    .map((n) => (n.children ? { ...n, children: n.children.filter((c) => c.roles.includes(role) && screenFeatureOn(c.href, features)) } : n))
     .map((n) => (n.children && n.children.length === 1 ? { ...n, label: n.children[0].label, href: n.children[0].href, children: undefined } : n))
     .filter((n) => n.href || n.children?.length);
 }
@@ -648,6 +673,24 @@ export const BOTTOM_NAV: Record<"admin" | "staff", BottomNavItem[]> = {
 };
 
 /**
+ * Seçili şubede kullanılmayan ekranın (Siparişler, Karaoke; `screenFeatureOn`) alt menüdeki yedeği: personelin beş
+ * hücresi beş kalır, boşalan hücreye çekmecedeki günlük ekranlar sırayla girer (Zayi & ikram, Kontrol listeleri)
+ */
+export const BOTTOM_SPARES: Record<"admin" | "staff", BottomNavItem[]> = {
+  admin: [],
+  staff: [
+    { id: "zayi", label: "Zayi", icon: Gift, href: "/panel/zayi" },
+    { id: "kontrol", label: "Kontrol", icon: ListChecks, href: "/panel/kontrol" },
+  ],
+};
+
+/** Özelliği kapalı ekranın öğesi yerinde yedekle değişir (yedek kalmazsa öğe düşer); `features` yoksa süzme yok */
+export function withSpares(items: readonly BottomNavItem[], spares: readonly BottomNavItem[], features?: readonly BranchFeature[]): BottomNavItem[] {
+  const queue = spares.filter((sp) => !items.some((i) => i.href === sp.href));
+  return items.flatMap((i) => (!i.href || screenFeatureOn(i.href, features) ? [i] : queue.length ? [queue.shift()!] : []));
+}
+
+/**
  * Panel asistanının alt menü sekmesi (docs/ASISTAN.md › Telefonda). Telefonda sağ alttaki yüzen düğme yoktur; asistan
  * alt menünün ortasındaki bu sekmeden açılır. Yalnız yöneticide ve asistan bu kurulumda açıkken (ASISTAN_KAPALI değil):
  * bottomNavFor.
@@ -661,8 +704,8 @@ export const ASSISTANT_TAB: BottomNavItem = { id: "asistan", label: "Asistan", i
  * bakış'a gider; çekmecede de durur); Bugün, Kasa ve Ödemeler'in (gecikmiş rozeti) başka tek dokunuşluk yolu yok.
  * Giriş de zaten Genel bakış'ta açılır. Personelin alt menüsü değişmez.
  */
-export function bottomNavFor(role: "admin" | "staff", opts: { assistant?: boolean } = {}): BottomNavItem[] {
-  const items = BOTTOM_NAV[role];
+export function bottomNavFor(role: "admin" | "staff", opts: { assistant?: boolean; features?: readonly BranchFeature[] } = {}): BottomNavItem[] {
+  const items = withSpares(BOTTOM_NAV[role], BOTTOM_SPARES[role], opts.features);
   if (role !== "admin" || !opts.assistant) return items;
   const rest = items.filter((i) => i.id !== "genel");
   return [...rest.slice(0, 2), ASSISTANT_TAB, ...rest.slice(2)];

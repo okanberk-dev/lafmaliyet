@@ -3,15 +3,16 @@ import { ExternalLink } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense, type ReactNode } from "react";
 
+import { FeatureOff } from "@/components/panel/feature-off";
 import { DeviceAlerts } from "@/components/panel/live/device-alerts";
 import { PageHeader } from "@/components/panel/page-header";
 import { buttonClass } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
+import { featureBranches, featureInScope } from "@/lib/branch-features";
 import { tillBranches } from "@/lib/branches";
 import { requireUser } from "@/server/auth/dal";
-import { staffBranchLock } from "@/server/branch-scope";
-import { listBranches } from "@/server/branches";
+import { branchScope } from "@/server/branch-scope";
 import { loadSoldOut } from "@/server/data/menu-status";
 import { getDb, schema as s } from "@/server/db";
 import { siteLinkSecret, siteUrl } from "@/server/site-link";
@@ -86,9 +87,15 @@ async function SiparislerContent() {
   ]);
   // Tükendi bütün şubelerde kapanır (sitede şube başına durum yok): birden çok şube açıkken pencere söyler, şubesine
   // kilitli personel onaylar (şube kapsamı C P1-7)
-  const [branchRows, lock] = await Promise.all([listBranches(), staffBranchLock()]);
-  const branchNames = tillBranches(branchRows).map((b) => b.name);
-  const locked = lock !== null && branchNames.length > 1;
+  const view = await branchScope();
+  const branchNames = tillBranches(view.branches).map((b) => b.name);
+  const locked = view.locked && branchNames.length > 1;
+  // Şube özellikleri (docs/SUBE.md › Şube özellikleri; şube kapsamı C P1-8): uygulama siparişi ve garson çağır seçili
+  // şubede kullanılmıyorsa liste gelmez (canlı uç süzer); ikisi de kapalıysa bar ekranı yerine "Bu şubede kullanılmıyor".
+  // Tükenenler kartı kalır: Tükendi sitenin menüsünde, bütün şubelerde
+  const ordersHere = featureInScope("siparis", view.scope, view.branches);
+  const callsHere = featureInScope("garson", view.scope, view.branches);
+  const on = [...featureBranches(view.branches, "siparis"), ...featureBranches(view.branches, "garson")].filter((b, i, all) => all.findIndex((x) => x.id === b.id) === i);
   const recipes = Object.fromEntries(linked.filter((p) => p.siteMenuId && p.siteMenuSlot).map((p) => [`${p.siteMenuId}|${p.siteMenuSlot}`, p.name]));
   return (
     <>
@@ -107,7 +114,11 @@ async function SiparislerContent() {
             <Notice tone="neutral" title="Site bağlı değil: sipariş ve masa çağrısı buraya gelmez" text="Yöneticiye haber verin." />
           )
         ) : null}
-        <OrdersBoard role={user.role} siteBase={siteUrl()} recipes={recipes} serverNow={now} />
+        {ordersHere || callsHere ? (
+          <OrdersBoard role={user.role} siteBase={siteUrl()} recipes={recipes} serverNow={now} ordersOff={ordersHere ? null : "Uygulama siparişleri bu şubede kullanılmıyor; burada yalnız masa çağrıları görünür."} />
+        ) : (
+          <FeatureOff title="Siparişler bu şubede kullanılmıyor" path="/panel/siparisler" on={on} locked={view.locked} admin={user.role === "admin"} />
+        )}
         {soldOut?.configured ? <SoldOutCard role={user.role} entries={soldOut.entries} serverNow={now} branches={branchNames} lockedStaff={locked} /> : null}
         <div className="max-w-xl">
           <DeviceAlerts role={user.role} karaoke />

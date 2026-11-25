@@ -1,7 +1,8 @@
 import "server-only";
 
 import { pastCountReminder, pastCountReminders, staffLateEditNotice, unpricedExtrasNotice } from "@/app/panel/sayim/logic";
-import { ALL_BRANCHES, BRANCH_PARAM, KARAOKE_BRANCH_ID, requestInScope } from "@/lib/branches";
+import { featureInScope } from "@/lib/branch-features";
+import { ALL_BRANCHES, BRANCH_PARAM } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { shiftMonth } from "@/lib/calc/engine";
 import { dateTR, num } from "@/lib/format";
@@ -14,6 +15,7 @@ import { LATE_WINDOW_DAYS, staffWasteResult, wasteDeletedNotice, wasteItemText }
 import type { PanelNotification } from "@/server/actions/notifications";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { soldOutFacts } from "@/server/data/menu-status";
 import { staffPosSummary } from "@/server/data/pos-staff";
 import { posPendingSummary } from "@/server/data/prices";
@@ -124,8 +126,9 @@ async function wasteRequestNotifications(user: CurrentUser, now: Date): Promise<
  */
 async function karaokeRequestNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
   if (user.role === "admin") {
-    // Karaoke yalnız kendi şubesinde: başka şube seçiliyken satır yok (şube kapsamı C P1-1)
-    if (!requestInScope(KARAOKE_BRANCH_ID, await currentBranchScope())) return [];
+    // Karaoke yalnız kendi şubesinde: başka şube seçiliyken ya da karaoke hiçbir şubede açık değilken satır yok (şube
+    // kapsamı C P1-1, şube özelliği B6)
+    if (!featureInScope("karaoke", await currentBranchScope(), await listBranches())) return [];
     const k = await pendingKaraokeSummary();
     if (!k.count) return [];
     return [

@@ -301,6 +301,14 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
   // bildirimi hep sessiz (servis çalışanı da işareti okur)
   const { outputId, outputLabel } = prefs;
   useEffect(() => setBranchScope(branchScope), [branchScope]);
+  // Şube seçimi değişince canlı veri hemen yeniden istenir: karaoke, sipariş ve masa çağrısı seçili şubenin özelliğine
+  // göre gelir (docs/SUBE.md › Şube özellikleri); eski şubenin listesi bir sonraki yoklamaya dek kalmasın
+  const shownScope = useRef(branchScope);
+  useEffect(() => {
+    if (shownScope.current === branchScope) return;
+    shownScope.current = branchScope;
+    void refreshLive();
+  }, [branchScope]);
   useEffect(() => {
     setOnlyComputer(onlyComputer);
     void syncQuietFlag(onlyComputerActive());

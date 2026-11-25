@@ -824,7 +824,7 @@ test("arayüz (telefon 390 / 360 px): yüzen düğme yok, alt menünün üstünd
 
 test("alt menü: Asistan sekmesi yalnız yöneticide ve asistan açıkken; açıp kapatır, açıkken etkin, başka öğe kapatır", () => {
   const nav = code("src/components/panel/bottom-nav.tsx");
-  assert.match(nav, /const items = bottomNavFor\(role, \{ assistant \}\);/);
+  assert.match(nav, /const items = bottomNavFor\(role, \{ assistant, features \}\);/);
   assert.match(nav, /onClick=\{toggleAssistant\}/);
   assert.match(nav, /aria-expanded=\{assistantOpen\}/);
   assert.match(nav, /onClick=\{\(\) => setAssistantOpen\(false\)\}/);

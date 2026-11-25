@@ -2,6 +2,7 @@ import { ArrowLeft, Lightbulb, MicVocal, Settings2 } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense, type ReactNode } from "react";
 
+import { FeatureOff } from "@/components/panel/feature-off";
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +11,8 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, InfoTip, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { SegmentedLinks } from "@/components/ui/segmented";
+import { featureBranches, featureInScope } from "@/lib/branch-features";
+import { KARAOKE_ELSEWHERE } from "@/lib/branches";
 import { dateTimeTR } from "@/lib/format";
 import { historyProgress } from "@/lib/karaoke/history";
 import {
@@ -41,6 +44,7 @@ import {
 } from "@/lib/karaoke/occupancy-text";
 import { todayTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
+import { branchScope } from "@/server/branch-scope";
 import { loadTillScope } from "@/server/data/till-scope";
 import { readHistoryState } from "@/server/karaoke/history";
 import { karaokeCoverage, loadOccupancySessions, readKaraokeHours } from "@/server/karaoke/occupancy";
@@ -111,6 +115,16 @@ const INFO = {
 async function OccupancyContent({ searchParams }: { searchParams: PageProps<"/panel/karaoke/doluluk">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
+  // Karaoke seçili şubede kullanılmıyorsa (şube özelliği; docs/SUBE.md › Şube özellikleri) harita yok, karaokenin şubesi
+  const view = await branchScope();
+  if (!featureInScope("karaoke", view.scope, view.branches)) {
+    return (
+      <>
+        <Header />
+        <FeatureOff title={KARAOKE_ELSEWHERE} path="/panel/karaoke/doluluk" on={featureBranches(view.branches, "karaoke")} locked={false} admin />
+      </>
+    );
+  }
   // Çerez okunduktan sonra (istek anı): önbelleğe alınan kabukta saat okunmaz
   const now = new Date().getTime();
   // Bugünün kasası (bilgi metni; geçiş günü boşken ve öncesinde ModPOS; denetim E-39)

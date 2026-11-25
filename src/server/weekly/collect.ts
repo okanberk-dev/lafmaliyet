@@ -20,6 +20,7 @@ import { productLabel } from "@/lib/waste";
 import { parseWeeklyHistory, selectItems, weekInfo, WEEKLY_HISTORY_KEY, type WeekInfo, type WeeklyItem, type WeeklySource, type WeeklySummary } from "@/lib/weekly/core";
 import { cashItem, checklistDayOf, checklistItem, commissionItems, karaokeItem, kasaItem, posPriceItem, salesLine, stockItem, wasteCost, wasteItem, zamItem, type KomisyonCand } from "@/lib/weekly/items";
 import { withBranchScope } from "@/server/branch-scope";
+import { featureHere } from "@/server/branches";
 import { loadCashPlan } from "@/server/data/cash-plan";
 import { cashReportPhotoInfo } from "@/server/data/cash-photos";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, type CashReportDTO } from "@/server/data/cash-reports";
@@ -178,6 +179,8 @@ const komisyon: Collector = {
   source: "komisyon",
   timeoutMs: 3_000,
   async run(ctx) {
+    // Yemek kartı hiçbir şubede kullanılmıyorsa madde yok (şube özelliği; docs/SUBE.md › Şube özellikleri)
+    if (!(await featureHere("yemek_karti", ALL_BRANCHES))) return one(null);
     // İşletme geneli (haftalık özet seçiciden bağımsız; docs/SUBE.md)
     const report = buildCommissionReport(await withBranchScope(ALL_BRANCHES, () => loadCommissionInput({ resolveNames: false, today: ctx.today })));
     const cands = commissionAlerts(report, ctx.today, Infinity)
@@ -261,6 +264,8 @@ const karaoke: Collector = {
   source: "karaoke",
   timeoutMs: 3_000,
   async run(ctx) {
+    // Karaoke hiçbir şubede açık değilse madde yok (şube özelliği; docs/SUBE.md › Şube özellikleri)
+    if (!(await featureHere("karaoke", ALL_BRANCHES))) return one(null);
     const { hours } = await readKaraokeHours();
     const period = resolvePeriod("4h", undefined, ctx.now.getTime());
     const { start, end } = periodBounds(period);

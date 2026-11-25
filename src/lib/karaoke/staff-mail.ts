@@ -1,4 +1,3 @@
-import { KARAOKE_BRANCH_ID } from "@/lib/branches";
 
 import { holdsRoom } from "./overlap";
 import { isBlock, trClock, type KaraokeSessionDTO } from "./session";
@@ -80,10 +79,11 @@ export const staffSoonKey = (s: Pick<StaffMailSession, "id" | "startsAt">) => `k
 
 /**
  * Karaokenin kitlesi (e-posta ve bildirim; docs/KARAOKE.md): yönetici, şubesiz personel (bütün şubelerde çalışır) ve
- * karaoke odasının şubesinin personeli (`KARAOKE_BRANCH_ID`, src/lib/branches.ts). Başka şubeye kilitli personel karaoke
- * haberini almaz: o şubede karaoke yok
+ * karaoke odasının şubesinin personeli (şube özelliği, src/lib/branch-features.ts › karaokeBranchOf). Başka şubeye kilitli
+ * personel karaoke haberini almaz: o şubede karaoke yok. Karaoke hiçbir şubede açık değilse (`branchId` null) kimse
  */
-export function karaokeAudience<U extends { role: "admin" | "staff"; branchId: string | null }>(users: readonly U[], branchId: string = KARAOKE_BRANCH_ID): U[] {
+export function karaokeAudience<U extends { role: "admin" | "staff"; branchId: string | null }>(users: readonly U[], branchId: string | null): U[] {
+  if (branchId === null) return [];
   return users.filter((u) => u.role === "admin" || u.branchId === null || u.branchId === branchId);
 }
 
@@ -95,7 +95,7 @@ export function karaokeAudience<U extends { role: "admin" | "staff"; branchId: s
 export function staffMailRecipients<U extends { id: number; email: string; role: "admin" | "staff"; branchId: string | null }>(
   users: readonly U[],
   onShiftIds: readonly number[],
-  branchId: string = KARAOKE_BRANCH_ID,
+  branchId: string | null,
 ): U[] {
   const withMail = users.filter((u) => u.email.trim());
   const planned = withMail.filter((u) => onShiftIds.includes(u.id));

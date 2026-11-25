@@ -9,6 +9,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
+import { BRANCH_FEATURES, type BranchFeature, branchFeatures, featureBranches } from "@/lib/branch-features";
 import { SHARED_FOR_NOW } from "@/lib/branch-settings/groups";
 import { BRANCH_ID_PATTERN, tillBranches } from "@/lib/branches";
 import { requireAdmin } from "@/server/auth/dal";
@@ -18,6 +19,7 @@ import { isEmailConfigured } from "@/server/notify/resend";
 import { parasutLinkCardData } from "@/server/parasut/link-card";
 
 import { CashSettingsCard } from "../../kasa/cash-settings";
+import { BranchFeaturesCard } from "./features-card";
 import { ParasutLinkCard } from "./parasut-card";
 
 export const metadata: Metadata = { title: "Şube ayarları" };
@@ -54,7 +56,7 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
     <PageHeader
       path="/panel/subeler"
       title="Şube ayarları"
-      description={`${branch.name}: şubeye göre değişen ayarlar. "Diğer şubeyle aynı" açıkken değer tek yerden düzenlenir.`}
+      description={`${branch.name}: şubede kullanılan özellikler ve şubeye göre değişen ayarlar. "Diğer şubeyle aynı" açıkken değer tek yerden düzenlenir.`}
       actions={
         <ButtonLink href="/panel/subeler" variant="ghost" size="sm">
           <ArrowLeft size={14} aria-hidden="true" /> Şubeler
@@ -71,6 +73,12 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
     );
   }
   const [cash, parasut] = await Promise.all([cashSettingsCardData(branch.id), parasutLinkCardData(branch.id)]);
+  // Tek şubelik özelliğin (karaoke) öbür şubedeki sahibi: kartta anahtar kapalı, "Marina şubesinde açık"
+  const heldBy: Partial<Record<BranchFeature, string>> = {};
+  for (const f of BRANCH_FEATURES.filter((x) => x.single)) {
+    const holder = featureBranches(branches, f.id).find((b) => b.id !== branch.id);
+    if (holder) heldBy[f.id] = holder.name;
+  }
   return (
     <>
       {header}
@@ -86,6 +94,7 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
           </nav>
         ) : null}
         {branch.active ? null : <Notice tone="warn" size="sm" title={`${branch.name} kapalı`} text="Ayarları durur; şube yeniden açılınca kullanılır." />}
+        <BranchFeaturesCard branchId={branch.id} branchName={branch.name} features={branchFeatures(branch)} heldBy={heldBy} />
         <CashSettingsCard {...cash} emailConfigured={isEmailConfigured()} />
         <ParasutLinkCard data={parasut} />
         <Card>

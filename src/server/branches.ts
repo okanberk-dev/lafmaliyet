@@ -2,7 +2,8 @@ import "server-only";
 
 import { asc, count, eq } from "drizzle-orm";
 
-import { type BranchRow, sortBranches } from "@/lib/branches";
+import { type BranchFeature, featureAudience, featureInScope, karaokeBranchOf } from "@/lib/branch-features";
+import { type BranchRow, type BranchScope, sortBranches } from "@/lib/branches";
 
 import { getDb, schema as s, type DB } from "./db";
 
@@ -22,6 +23,7 @@ export async function listBranches(db: DB = getDb()): Promise<BranchRow[]> {
       openedOn: s.branches.openedOn,
       sortOrder: s.branches.sortOrder,
       posRate: s.branches.posRate,
+      features: s.branches.features,
     })
     .from(s.branches)
     .orderBy(asc(s.branches.sortOrder), asc(s.branches.name));
@@ -39,11 +41,42 @@ export async function getBranch(db: DB, id: string): Promise<BranchRow | null> {
       openedOn: s.branches.openedOn,
       sortOrder: s.branches.sortOrder,
       posRate: s.branches.posRate,
+      features: s.branches.features,
     })
     .from(s.branches)
     .where(eq(s.branches.id, id))
     .limit(1);
   return row ?? null;
+}
+
+type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
+
+/**
+ * Karaoke odasının şubesi (şube özelliği; src/lib/branch-features.ts › karaokeBranchOf): karaokesi açık etkin şube,
+ * yoksa null (karaoke hiçbir şubede gösterilmez). İşlemin içinden de okunur (kapalı günün kanıtı)
+ */
+export async function karaokeBranchId(db: DB | Tx = getDb()): Promise<string | null> {
+  const rows = await db
+    .select({ id: s.branches.id, kind: s.branches.kind, active: s.branches.active, sortOrder: s.branches.sortOrder, name: s.branches.name, features: s.branches.features })
+    .from(s.branches);
+  return karaokeBranchOf(sortBranches(rows));
+}
+
+/** Seçili kapsamda özellik açık mı (tek şubede o şubede, "Tümü"de herhangi birinde; `featureInScope`) */
+export async function featureHere(feature: BranchFeature, scope: BranchScope, db: DB = getDb()): Promise<boolean> {
+  return featureInScope(feature, scope, await listBranches(db));
+}
+
+/**
+ * Özelliğin bildirim kitlesinin kullanıcı kimlikleri (Web Push `userIds`; `featureAudience`): yönetici, şubesiz personel
+ * ve özelliğin açık olduğu şubenin personeli. Özellik hiçbir şubede açık değilse boş (bildirim gitmez)
+ */
+export async function featureAudienceIds(feature: BranchFeature, db: DB = getDb()): Promise<number[]> {
+  const [branches, users] = await Promise.all([
+    listBranches(db),
+    db.select({ id: s.users.id, role: s.users.role, branchId: s.users.branchId }).from(s.users).where(eq(s.users.active, true)),
+  ]);
+  return featureAudience(users, branches, feature).map((u) => u.id);
 }
 
 /**

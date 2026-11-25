@@ -2,10 +2,11 @@ import "server-only";
 
 import { and, eq, gt, inArray, isNull, notInArray, or } from "drizzle-orm";
 
-import { ALL_BRANCHES, type BranchScope, DEFAULT_BRANCH_ID, KARAOKE_BRANCH_ID, requestInScope } from "@/lib/branches";
+import { ALL_BRANCHES, type BranchScope, DEFAULT_BRANCH_ID, requestInScope } from "@/lib/branches";
 import { cashSubjectBranch } from "@/lib/cash-requests";
 import { closedRequestBranch } from "@/lib/closed-days";
 import { RETIRED_REQUEST_KINDS } from "@/lib/staff-requests";
+import { karaokeBranchId } from "@/server/branches";
 import { schema as s, type DB } from "@/server/db";
 
 /*
@@ -17,7 +18,8 @@ import { schema as s, type DB } from "@/server/db";
  *   yoksa Tuzla (onay da oraya yazar);
  * - kapalı gün: yük ya da konu (`closedRequestBranch`);
  * - fotoğraf kaldırma: fotoğrafın raporunun şubesi; zayi silme: silinecek kaydın şubesi (kayıt gitmişse bilinmez);
- * - karaoke sayacı: karaokenin şubesi; mal taslağı: işletme geneli (null).
+ * - karaoke sayacı: karaokenin şubesi (şube özelliği; karaoke hiçbir şubede açık değilse bilinmez); mal taslağı: işletme
+ *   geneli (null).
  */
 
 type Reader = DB | Parameters<Parameters<DB["transaction"]>[0]>[0];
@@ -50,22 +52,23 @@ export async function requestBranches(db: Reader, rows: readonly RequestBranchRo
       if (id) outIds.add(id);
     }
   }
-  const [reports, wastes, outs] = await Promise.all([
+  const [reports, wastes, outs, karaoke] = await Promise.all([
     reportIds.size ? db.select({ id: s.cashReports.id, b: s.cashReports.branchId }).from(s.cashReports).where(inArray(s.cashReports.id, [...reportIds])) : [],
     wasteIds.size ? db.select({ id: s.wasteEntries.id, b: s.wasteEntries.branchId }).from(s.wasteEntries).where(inArray(s.wasteEntries.id, [...wasteIds])) : [],
     outIds.size ? db.select({ id: s.cashOuts.id, b: s.cashOuts.branchId }).from(s.cashOuts).where(inArray(s.cashOuts.id, [...outIds])) : [],
+    rows.some((r) => r.kind === "karaoke-sil") ? karaokeBranchId(db) : null,
   ]);
   const reportOf = new Map(reports.map((x) => [x.id, x.b]));
   const wasteOf = new Map(wastes.map((x) => [x.id, x.b]));
   const outOf = new Map(outs.map((x) => [x.id, x.b]));
   const out = new Map<number, string | null>();
-  for (const r of rows) out.set(r.id, branchOf(r, { reportOf, wasteOf, outOf }));
+  for (const r of rows) out.set(r.id, branchOf(r, { reportOf, wasteOf, outOf, karaoke }));
   return out;
 }
 
 function branchOf(
   r: RequestBranchRow,
-  m: { reportOf: Map<number, string>; wasteOf: Map<number, string>; outOf: Map<number, string> },
+  m: { reportOf: Map<number, string>; wasteOf: Map<number, string>; outOf: Map<number, string>; karaoke: string | null },
 ): string | null {
   switch (r.kind) {
     case "kasa-duzeltme":
@@ -91,7 +94,7 @@ function branchOf(
       return (id ? m.wasteOf.get(id) : undefined) ?? null;
     }
     case "karaoke-sil":
-      return KARAOKE_BRANCH_ID;
+      return m.karaoke;
     default:
       return null;
   }

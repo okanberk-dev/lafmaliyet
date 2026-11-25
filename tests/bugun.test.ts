@@ -1237,7 +1237,9 @@ test("kafe satırları: ek satırlar (tükendi) sonda, bağlantılı satır kend
   assert.deepEqual(cafeLines({ karaoke: null, orders: null, configured: false }, now), []);
   const cafe = read("src/app/panel/bugun/today-cafe.tsx");
   // Satırın kendi adresi önce (yoğunluk satırının Özel günler'i de); tahmin satırı adressizse bağlantısız
-  assert.match(cafe, /href=\{l\.href \?\? \(forecast \? undefined : "\/panel\/karaoke"\)\}/);
+  assert.match(cafe, /href=\{l\.href \?\? \(forecast \? undefined : barHref\)\}/);
+  // Karaoke seçili şubede kullanılmıyorsa (şube özelliği) bar ekranı Siparişler
+  assert.match(read("src/app/panel/bugun/page.tsx"), /barHref=\{data\.cafe\.karaokeHere \? "\/panel\/karaoke" : "\/panel\/siparisler"\}/);
 });
 
 test("kaynak: operasyon ve kapalı gün olguları iki rolde; kasa fiyatı okuması operasyonun yükleyicisinde", () => {

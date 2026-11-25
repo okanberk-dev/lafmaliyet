@@ -31,6 +31,9 @@ ve hakediş işletmenin" notu ve **Marina payı** kartı (kanal kanal şubenin s
   bilinmiyor" çıkıyordu.
 - **Elle yazılan ekstre satışı işletmenindir** (`commission_months` şubesiz): şubenin payı şubenin kendi kaynağından
   (LafPOS, föy, Z) gelir, ekstreden değil; yoksa ekstrenin tamamı her şubenin payına girerdi.
+- **Yemek kartı kullanılmayan şube** (şube özelliği `yemek_karti`, Şube ayarları › Özellikler; [SUBE.md › Şube
+  özellikleri](SUBE.md#şube-özellikleri-25-kasım-2026)) seçiliyken menüde Komisyon & hakediş yoktur, sayfa "bu şubede
+  kullanılmıyor" der; zilin ve Bugün'ün komisyon satırları ile o şubeye bağlı alıcının sabah e-postasındaki kutu çıkmaz.
 - Kartın altında şubenin markası belirsiz satışı yazar ("Şubenin markası belirsiz satışı: yemek kartı 1.000 ₺. Hiçbir
   kanala yazılmaz, paya girmez …").
 

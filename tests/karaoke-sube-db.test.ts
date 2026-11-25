@@ -1,5 +1,5 @@
 // Karaoke şube şube, gerçek Postgres'te (24 Kasım şube kapsamı; docs/SUBE.md › Karaoke): karaoke odası tek şubede
-// (KARAOKE_BRANCH_ID, Tuzla). Başka şubeye kilitli personel karaoke eylemlerini (sayaç, uzatma, bitirme, köşk, eşitleme)
+// (şube özelliği, sahibin varsayılanı Tuzla). Başka şubeye kilitli personel karaoke eylemlerini (sayaç, uzatma, bitirme, köşk, eşitleme)
 // çağıramaz: sayfa "Bu şubede kullanılmıyor" der, eylem kimliği istemci paketinde olduğu için uç da reddeder. Yönetici,
 // şubesiz personel ve karaokenin şubesinin personeli serbest; kişinin şubesi pasife alınınca kilit kalkar.
 //

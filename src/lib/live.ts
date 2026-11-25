@@ -82,4 +82,10 @@ export interface LiveOrders {
   calls?: SiteCall[];
   /** Okunamayıp atlanan masa çağrısı sayısı */
   callsSkipped?: number;
+  /**
+   * Seçili şubede kullanılmayan özellik (şube özellikleri, src/lib/branch-features.ts): uygulama siparişi ya da garson
+   * çağır kapalıysa liste boş gelir ve ekran "Bu şubede kullanılmıyor" der. Yayın sırasında eski sunucunun yanıtında
+   * olmayabilir (yoksa ikisi de açık)
+   */
+  off?: { orders: boolean; calls: boolean };
 }

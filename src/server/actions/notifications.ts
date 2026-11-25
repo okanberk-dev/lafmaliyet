@@ -2,6 +2,7 @@
 
 import { and, count, eq, gt } from "drizzle-orm";
 
+import { featureInScope } from "@/lib/branch-features";
 import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { businessDate } from "@/lib/cash-report";
@@ -21,6 +22,7 @@ import { kasaBell } from "@/server/bell/kasa";
 import { modposKeyBell } from "@/server/bell/modpos";
 import { opsBell } from "@/server/bell/ops";
 import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { closedMarksOn } from "@/server/closed-days";
 import { loadChecklistDays } from "@/server/data/checklists";
 import { loadCommissionAlerts } from "@/server/data/commission";
@@ -366,6 +368,8 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
  * okunmamış olur.
  */
 async function commissionNotifications(): Promise<PanelNotification[]> {
+  // Yemek kartı seçili şubede kullanılmıyorsa komisyon satırı yok (şube özelliği; docs/SUBE.md › Şube özellikleri)
+  if (!featureInScope("yemek_karti", await currentBranchScope(), await listBranches())) return [];
   const idOf = (key: string) => `komisyon-${key.replace(/:/g, "-")}`;
   return (await loadCommissionAlerts()).map((a) => ({
     id: idOf(a.key),

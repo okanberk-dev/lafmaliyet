@@ -23,9 +23,10 @@ import {
 import { extensionWindow, overlapConflict, siteOverlaps, type OverlapAction, type OverlapConflict } from "@/lib/karaoke/overlap";
 import { reminderPlanned } from "@/lib/karaoke/reminder";
 import { DESK_BLOCK_CHANNEL, durationLabel, trClock } from "@/lib/karaoke/session";
-import { KARAOKE_ELSEWHERE, KARAOKE_BRANCH_ID } from "@/lib/branches";
+import { KARAOKE_ELSEWHERE } from "@/lib/branches";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { staffBranchRefusal } from "@/server/branch-scope";
+import { karaokeBranchId } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { bumpKaraokeVersion, getSession, toSessionDTO } from "@/server/karaoke/board";
 import { cancelDeskBooking, createDeskBooking } from "@/server/karaoke/desk";
@@ -104,12 +105,15 @@ async function siteConflict(window: { start: number; end: number }, action: Over
 }
 
 /**
- * Karaoke yalnız karaokenin şubesinde (KARAOKE_BRANCH_ID; docs/SUBE.md › Karaoke): başka şubeye kilitli personel sayaç
- * başlatamaz, uzatamaz, bitiremez, silemez, köşk rezervasyonu ekleyemez ve eşitleyemez. Sayfa ona "Bu şubede
- * kullanılmıyor" der; eylem kimliği istemci paketinde olduğu için uç da reddeder. Yönetici ve şubesiz personel serbest
+ * Karaoke yalnız karaokenin şubesinde (şube özelliği, src/lib/branch-features.ts; docs/SUBE.md › Karaoke): başka şubeye
+ * kilitli personel sayaç başlatamaz, uzatamaz, bitiremez, silemez, köşk rezervasyonu ekleyemez ve eşitleyemez. Sayfa ona
+ * "Bu şubede kullanılmıyor" der; eylem kimliği istemci paketinde olduğu için uç da reddeder. Karaoke hiçbir şubede açık
+ * değilse bütün personel reddedilir. Yönetici serbest, şubesiz personel karaoke bir şubede açıkken serbest
  */
 async function assertKaraokeBranch(me: { role: string }) {
-  if (await staffBranchRefusal(me, KARAOKE_BRANCH_ID)) throw new UserError(KARAOKE_ELSEWHERE);
+  if (me.role === "admin") return;
+  const at = await karaokeBranchId();
+  if (at === null || (await staffBranchRefusal(me, at))) throw new UserError(KARAOKE_ELSEWHERE);
 }
 
 /**

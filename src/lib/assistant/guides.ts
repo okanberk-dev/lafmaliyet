@@ -544,6 +544,19 @@ export const OP_GUIDES: readonly OpGuide[] = [
     actions: ["updateCashSettings", "sendCashTestEmail", "setBranchSettingLink"],
   },
   {
+    id: "sube-ozellik",
+    kind: "haric",
+    topic: "Şube özellikleri: karaoke, uygulama siparişi, garson çağır, yemek kartı",
+    keywords: ["şube özelliği", "bu şubede kullanılmıyor", "karaoke hangi şubede", "karaokeyi taşı", "garson çağır kapat", "sipariş gelmesin", "yemek kartı yok"],
+    why: "Kapalı özelliğin menüsü, ekranı ve bildirimi o şubede kaybolur; şubenin bütün personelini etkiler.",
+    path: "/panel/subeler",
+    steps: [
+      "Ayarlar › Şube ayarları › şubeyi açın › Özellikler kartı.",
+      "Anahtarı açın ya da kapatın (hemen kaydedilir). Karaoke yalnız bir şubede açık olabilir: önce açık olduğu şubeden kapatın.",
+    ],
+    actions: ["setBranchFeature"],
+  },
+  {
     id: "bildirim-ayarlari",
     kind: "haric",
     topic: "E-posta bildirimi alıcıları, haftalık özet ve bildirim testleri",

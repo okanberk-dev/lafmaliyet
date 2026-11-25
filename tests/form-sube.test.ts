@@ -5,7 +5,8 @@
 //             `pickFormBranch` (src/lib/branches.ts). "Tümü"de şubeye özgü yazım şubeyi sorar, sessizce Tuzla'ya inmez;
 //             online kanal seçiliyken satış yazılmaz; gider "İşletme geneli"ni açıkça seçebilir.
 // kapsam      Kapsamla silen yazım formun gösterdiği kapsamı gönderir; seçim başka sekmede değiştiyse red.
-// karaoke     Karaokenin şubesi tek sabitte (`KARAOKE_BRANCH_ID`); kitlesi yönetici, şubesiz personel ve o şubenin personeli.
+// karaoke     Karaokenin şubesi şube özelliğinden (`karaokeBranchOf`, src/lib/branch-features.ts; sahibin varsayılanı Tuzla);
+//             kitlesi yönetici, şubesiz personel ve o şubenin personeli.
 //
 // Çalıştırma: npx tsx --test tests/form-sube.test.ts
 
@@ -21,7 +22,6 @@ import {
   DEFAULT_BRANCHES,
   EXPENSE_SHARED,
   formBranchError,
-  KARAOKE_BRANCH_ID,
   pickFormBranch,
   SCOPE_CHANGED,
   shownScopeError,
@@ -29,6 +29,7 @@ import {
   type BranchRow,
   type FormBranchKind,
 } from "../src/lib/branches";
+import { karaokeBranchOf } from "../src/lib/branch-features";
 import { karaokeAudience, staffMailRecipients } from "../src/lib/karaoke/staff-mail";
 
 const root = join(__dirname, "..");
@@ -119,7 +120,7 @@ test("form-sube ortak kapı: kasa ve sayım formBranch'ten geçer; zFormBranch t
 });
 
 test("karaoke kitlesi: yönetici, şubesiz personel ve karaoke şubesinin personeli; e-posta planı yoksa yalnız personel", () => {
-  assert.equal(KARAOKE_BRANCH_ID, DEFAULT_BRANCH_ID);
+  assert.equal(karaokeBranchOf(BRANCHES), DEFAULT_BRANCH_ID, "sahibin varsayılanı: karaoke Tuzla'da");
   const users = [
     { id: 1, email: "y@x", role: "admin" as const, branchId: null },
     { id: 2, email: "a@x", role: "staff" as const, branchId: null },
@@ -127,11 +128,13 @@ test("karaoke kitlesi: yönetici, şubesiz personel ve karaoke şubesinin person
     { id: 4, email: "m@x", role: "staff" as const, branchId: "marina" },
     { id: 5, email: "ym@x", role: "admin" as const, branchId: "marina" },
   ];
-  assert.deepEqual(karaokeAudience(users).map((u) => u.id), [1, 2, 3, 5]);
+  assert.deepEqual(karaokeAudience(users, "tuzla").map((u) => u.id), [1, 2, 3, 5]);
   assert.deepEqual(karaokeAudience(users, "marina").map((u) => u.id), [1, 2, 4, 5]);
-  assert.deepEqual(staffMailRecipients(users, []).map((u) => u.id), [2, 3], "varsayılan karaoke şubesi");
+  assert.deepEqual(karaokeAudience(users, null), [], "karaoke hiçbir şubede açık değil: kimse");
+  assert.deepEqual(staffMailRecipients(users, [], "tuzla").map((u) => u.id), [2, 3], "karaoke şubesi");
   const mail = read("src/server/karaoke/staff-mail.ts");
-  assert.doesNotMatch(mail, /DEFAULT_BRANCH_ID/);
-  assert.match(mail, /eq\(s\.shifts\.branchId, KARAOKE_BRANCH_ID\)/);
-  assert.match(mail, /staffMailRecipients\(users, onShift, KARAOKE_BRANCH_ID\)/);
+  assert.doesNotMatch(mail, /DEFAULT_BRANCH_ID|KARAOKE_BRANCH_ID/);
+  assert.match(mail, /const karaokeAt = await karaokeBranchId\(\);\n\s+if \(karaokeAt === null\) return none\(/);
+  assert.match(mail, /eq\(s\.shifts\.branchId, branchId\)/);
+  assert.match(mail, /staffMailRecipients\(users, onShift, karaokeAt\)/);
 });

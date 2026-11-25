@@ -88,7 +88,7 @@ async function TodayContent() {
           {stockAlert ? <StockAlertCard data={stockAlert} /> : null}
           <TodayReminders items={data.reminders} renderedAt={data.renderedAt} />
           {data.payments ? <DashboardPayments items={data.payments} /> : null}
-          {cafe.length ? <TodayCafe lines={cafe} /> : null}
+          {cafe.length ? <TodayCafe lines={cafe} barHref={data.cafe.karaokeHere ? "/panel/karaoke" : "/panel/siparisler"} /> : null}
         </div>
       </div>
     </>

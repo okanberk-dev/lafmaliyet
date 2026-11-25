@@ -3,9 +3,11 @@
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { BRANCH_FEATURE_IDS } from "@/lib/branch-features";
 import { branchSettingGroup, PARASUT_GROUP } from "@/lib/branch-settings/groups";
 import { BRANCH_ID_MAX } from "@/lib/branches";
 import { requireAdmin } from "@/server/auth/dal";
+import { setBranchFeatureTx } from "@/server/branch-features";
 import { linkBranchSetting, logSetting, unlinkBranchSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { getDb } from "@/server/db";
@@ -53,6 +55,27 @@ export async function setBranchSettingLink(input: z.input<typeof linkInput>) {
       await logSetting(tx, me, "Şube ayarı", `${name(d.branchId)} · ${group.label}: ${what}`);
       return r;
     });
+    refresh();
+    return out;
+  });
+}
+
+const featureInput = z.object({
+  branchId: z.string().trim().min(1).max(BRANCH_ID_MAX),
+  feature: z.enum(BRANCH_FEATURE_IDS),
+  on: z.boolean(),
+});
+
+/**
+ * Şube özelliğini (karaoke, uygulama siparişi, garson çağır, yemek kartı; docs/SUBE.md › Şube özellikleri) açar ya da
+ * kapatır. Yalnız yönetici; tek işlem, özellik kilidiyle (karaoke iki şubede açılamaz); işlem geçmişine yazılır. Kapalı
+ * özelliğin menüsü, ekranı ve bildirimi o şubede gizlenir.
+ */
+export async function setBranchFeature(input: z.input<typeof featureInput>) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const d = featureInput.parse(input);
+    const out = await getDb().transaction((tx) => setBranchFeatureTx(tx, d, me));
     refresh();
     return out;
   });

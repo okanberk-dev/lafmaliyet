@@ -182,7 +182,20 @@ export function OrdersRefreshButton({ role, configured }: { role: Role; configur
  * siparişi sitenin panelinde açan "Sitede aç" (iade ve iptal orada). Zil kabuktaki uyarı motorunda çalar
  * (alert-center.tsx; planlı sipariş vaktine 15 dakika kala bir kez daha, masa çağrısı kapı zili).
  */
-export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role; siteBase: string; recipes: Record<string, string>; serverNow: number }) {
+export function OrdersBoard({
+  role,
+  siteBase,
+  recipes,
+  serverNow,
+  ordersOff = null,
+}: {
+  role: Role;
+  siteBase: string;
+  recipes: Record<string, string>;
+  serverNow: number;
+  /** Uygulama siparişi seçili şubede kullanılmıyorsa kartın tek satırı (şube özelliği; masa çağrıları açık kalabilir) */
+  ordersOff?: string | null;
+}) {
   const { data, list, calls, now, prefs } = useOrdersFeed(role, serverNow);
   // Bar ekranı: cihazın "Ekran açık kalsın" tercihiyle ekran kararmaz (Karaoke ekranı gibi)
   useWakeLock(prefs.wakeLock);
@@ -229,7 +242,9 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
             söylüyor) */}
         {data?.configured ? (
           <div className="space-y-3 px-5 pb-5">
-            {list.length ? (
+            {ordersOff ? (
+              <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-mute ring-1 ring-line">{ordersOff}</p>
+            ) : list.length ? (
               <ul className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3" aria-label="Açık uygulama siparişleri">
                 {list.map((o) => (
                   <OrderCard key={o.id} order={o} now={now} siteBase={siteBase} recipes={recipes} />

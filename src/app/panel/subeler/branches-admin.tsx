@@ -29,10 +29,18 @@ import {
   type BranchPosSource,
   type BranchRow,
 } from "@/lib/branches";
+import { BRANCH_FEATURES, hasFeature } from "@/lib/branch-features";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { num } from "@/lib/format";
 import { shortDateTR } from "@/lib/takvim";
 import type { ActionResult } from "@/server/actions/util";
+
+/** Fiziksel şubede kapalı özelliklerin adları ("Garson çağır, Yemek kartı ve platformlar"; karaoke tek şubede, sayılmaz) */
+function offFeatures(b: BranchRow): string | null {
+  if (b.kind !== "fiziksel") return null;
+  const off = BRANCH_FEATURES.filter((f) => !f.single && !hasFeature(b, f.id)).map((f) => f.label);
+  return off.length ? off.join(", ") : null;
+}
 
 /*
  * Şubeler ve kanallar (/panel/subeler; docs/SUBE.md). Liste + tek pencere: "Şube ekle" ve satıra dokununca
@@ -153,6 +161,9 @@ export function BranchesAdmin({
                   <code className="text-[12px] text-ink-mute">{b.id}</code>
                   {settingsText[b.id] ? <Badge tone="gray">Alıcılar: {settingsText[b.id]}</Badge> : null}
                   {parasutText[b.id] ? <Badge tone="gray">Paraşüt: {parasutText[b.id]}</Badge> : null}
+                  {/* Şube özellikleri (docs/SUBE.md › Şube özellikleri): karaoke tek şubede; kapalı özellikler ayrı çipte */}
+                  {hasFeature(b, "karaoke") ? <Badge tone="violet">Karaoke</Badge> : null}
+                  {offFeatures(b) ? <Badge tone="gray">Kullanılmıyor: {offFeatures(b)}</Badge> : null}
                 </button>
                 {b.kind === "fiziksel" ? (
                   <ButtonLink href={`/panel/subeler/${encodeURIComponent(b.id)}`} variant="secondary" size="sm" className="shrink-0" aria-label={`${b.name} şube ayarları`}>

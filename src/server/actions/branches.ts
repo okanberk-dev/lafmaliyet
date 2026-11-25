@@ -5,6 +5,7 @@ import { refresh } from "next/cache";
 import { cookies } from "next/headers";
 import { z } from "zod";
 
+import { BRANCH_FEATURES, branchFeatures, withFeature } from "@/lib/branch-features";
 import { BRANCH_SETTING_GROUPS } from "@/lib/branch-settings/groups";
 import {
   BRANCH_KINDS,
@@ -122,6 +123,10 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
     if (hepsi.some((b) => b.id !== d.id && b.name.localeCompare(d.name, "tr", { sensitivity: "base" }) === 0)) {
       throw new UserError("Bu adda bir şube zaten var");
     }
+    // Kapatılan şubenin tek şubelik özelliği (karaoke) düşer: başka şubede açılabilsin, şube yeniden açılınca iki şubede
+    // birden açık kalmasın (src/lib/branch-features.ts featureChangeError)
+    const closing = mevcut.active && !d.active;
+    const kept = closing ? BRANCH_FEATURES.filter((f) => f.single).reduce((acc, f) => withFeature(acc, f.id, false), branchFeatures(mevcut)) : null;
     await db
       .update(s.branches)
       .set({
@@ -130,6 +135,7 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
         posSource: d.posSource,
         openedOn: d.openedOn,
         active: d.active,
+        ...(kept ? { features: kept } : {}),
         ...(d.posRate !== undefined ? { posRate: d.posRate } : {}),
         updatedAt: new Date(),
       })

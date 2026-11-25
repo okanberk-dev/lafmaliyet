@@ -15,7 +15,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { ALL_BRANCHES, DEFAULT_BRANCHES, KARAOKE_BRANCH_ID, tillRowsInScope, type BranchRow } from "../src/lib/branches";
+import { karaokeBranchOf } from "../src/lib/branch-features";
+import { ALL_BRANCHES, DEFAULT_BRANCHES, tillRowsInScope, type BranchRow } from "../src/lib/branches";
 import { branchChecklistRuns, branchStaffWrites, closedEvidenceText, EMPTY_EVIDENCE, hasPanelEvidence, isBranchCountedAction } from "../src/lib/closed-days";
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
@@ -57,7 +58,7 @@ test("kapalı gün: şubesi belli olmayan iz uyarıdır, onayı ve personelin bi
   // Kanıt şube şube yalnız birden çok kasa açıkken; tek kasada liste ve personel o kasanın kanıtı (kaynak)
   const src = read("src/server/closed-days.ts");
   assert.match(src, /const split = branchId \? await manyTills\(db\) : false;/);
-  assert.match(src, /const karaokeHere = !split \|\| branchId === KARAOKE_BRANCH_ID;/);
+  assert.match(src, /const karaokeHere = !split \|\| branchId === \(await karaokeBranchId\(db\)\);/);
   assert.match(src, /innerJoin\(s\.checklistTemplates, eq\(s\.checklistTemplates\.id, s\.checklistRuns\.templateId\)\)/);
   assert.match(src, /select\(\{ action: s\.activityLog\.action, userBranchId: s\.users\.branchId \}\)/);
 });
@@ -111,23 +112,24 @@ test("cari: zil sayısı şubeyi sayar, liste süzülmez", () => {
 });
 
 test("karaoke: kilitli personelin eylemleri, canlı uç, Bugün ve bildirim karaokenin şubesine bağlı", () => {
-  assert.equal(KARAOKE_BRANCH_ID, "tuzla");
+  assert.equal(karaokeBranchOf(DEFAULT_BRANCHES.map((b) => ({ ...b, active: true }))), "tuzla");
   const actions = read("src/server/actions/karaoke.ts");
   // requireUser çağıran her uç hemen ardından karaokenin şubesini sorar
   const users = actions.match(/const me = await requireUser\(\);\n\s+await assertKaraokeBranch\(me\);/g) ?? [];
   const all = actions.match(/const me = await requireUser\(\);/g) ?? [];
   assert.equal(users.length, all.length);
   assert.equal(all.length, 9);
-  assert.match(actions, /if \(await staffBranchRefusal\(me, KARAOKE_BRANCH_ID\)\) throw new UserError\(KARAOKE_ELSEWHERE\);/);
+  assert.match(actions, /if \(at === null \|\| \(await staffBranchRefusal\(me, at\)\)\) throw new UserError\(KARAOKE_ELSEWHERE\);/);
   const live = read("src/app/api/canli/route.ts");
-  assert.match(live, /const karaokeHere = !\(await staffBranchRefusal\(me, KARAOKE_BRANCH_ID\)\);/);
+  assert.match(live, /const karaokeHere = featureInScope\("karaoke", scope, branchRows\);/);
   assert.match(live, /karaokeHere \? loadSessions\(from, to, \{ admin: me\.role === "admin" \}\) : Promise\.resolve\(\[\]\)/);
   assert.match(live, /const deleteAsks = karaokeHere \? asks : \[\];/);
-  assert.match(live, /\.k\$\{karaokeHere \? 1 : 0\}\./, "kilit ETag'te");
+  assert.match(live, /const here = `k\$\{karaokeHere \? 1 : 0\}\$\{ordersHere \? 1 : 0\}\$\{callsHere \? 1 : 0\}`;/, "özellik ETag'te");
+  assert.match(live, /\.\$\{here\}\./);
   assert.match(read("src/server/data/today.ts"), /karaokeHere \? safe\(loadSessions\(range\.from, range\.to, \{ admin \}\)\) : Promise\.resolve\(null\)/);
-  assert.match(read("src/app/panel/karaoke/page.tsx"), /if \(await staffBranchRefusal\(user, KARAOKE_BRANCH_ID\)\) \{/);
+  assert.match(read("src/app/panel/karaoke/page.tsx"), /if \(!featureInScope\("karaoke", view\.scope, view\.branches\)\) \{/);
   const sync = read("src/server/karaoke/sync.ts");
-  assert.match(sync, /const userIds = karaokeAudience\(users\)\.map\(\(u\) => u\.id\);/);
+  assert.match(sync, /const userIds = await featureAudienceIds\("karaoke"\);/);
   assert.match(sync, /\{ userIds \}\);/);
 });
 

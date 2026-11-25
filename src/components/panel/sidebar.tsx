@@ -11,6 +11,7 @@ import { SPRING_PANEL } from "@/components/akmanos/lib/motion-ease";
 import { LafTile } from "@/components/brand";
 import { actionFailure, toastUnreachable } from "@/components/ui/action-error";
 import { forgetAssistantData } from "@/lib/assistant/history";
+import { BRANCH_FEATURE_IDS, featureInScope } from "@/lib/branch-features";
 import { ROLES } from "@/lib/constants";
 import { ALERTS_REFRESH_EVENT } from "@/lib/live-poll";
 import { homeFor } from "@/lib/roles";
@@ -25,7 +26,7 @@ import { BranchPicker } from "./branch-picker";
 import { AlertCenter } from "./live/alert-center";
 import { forgetDeviceOnSignOut } from "./live/push-client";
 import { PanelSearch, SearchTrigger } from "./command-palette";
-import { isSamePage, mobileTitleFor, NAV_FOOTER, NAV_GROUPS, navTreeFor, overdueCount, type NavItem } from "./nav";
+import { isSamePage, mobileTitleFor, NAV_FOOTER, NAV_GROUPS, navTreeFor, overdueCount, screenFeatureOn, type NavItem } from "./nav";
 import { NotificationMenu } from "./notifications";
 import { SidebarNav } from "./sidebar-nav";
 import { ThemeChoice } from "./theme-choice";
@@ -139,9 +140,12 @@ export function Sidebar({ user, index = [], branch, assistant = false }: { user:
   }, [pathname, refreshAlerts]);
   const overdue = overdueCount(alerts);
 
-  const tree = navTreeFor(user.role);
+  // Seçili kapsamda açık şube özellikleri (karaoke, uygulama siparişi, garson çağır, yemek kartı; docs/SUBE.md › Şube
+  // özellikleri): kapalı özelliğin ekranı kenar çubuğunda, çekmecede, alt menüde ve paletde yok
+  const features = branch ? BRANCH_FEATURE_IDS.filter((f) => featureInScope(f, branch.scope, branch.branches)) : undefined;
+  const tree = navTreeFor(user.role, features);
   const title = mobileTitleFor(pathname);
-  const allowed = (i: NavItem) => i.roles.includes(user.role);
+  const allowed = (i: NavItem) => i.roles.includes(user.role) && screenFeatureOn(i.href, features);
   const pages = [...NAV_GROUPS.flatMap((g) => g.items.filter(allowed)), ...NAV_FOOTER.filter(allowed)];
 
   // Yardım iki rolde: her rol kendi sayfasına (personelinkinde yönetici bölümleri yok)
@@ -356,7 +360,16 @@ export function Sidebar({ user, index = [], branch, assistant = false }: { user:
         ) : null}
       </AnimatePresence>
 
-      <BottomNav role={user.role} pathname={pathname} overdue={overdue} menuOpen={mobileOpen} onMenu={openDrawer} menuButtonRef={navMenuRef} assistant={isAdmin && assistant} />
+      <BottomNav
+        role={user.role}
+        pathname={pathname}
+        overdue={overdue}
+        menuOpen={mobileOpen}
+        onMenu={openDrawer}
+        menuButtonRef={navMenuRef}
+        assistant={isAdmin && assistant}
+        features={features}
+      />
 
       <AlertCenter role={user.role} userId={user.id} branchScope={branch?.scope ?? null} />
 

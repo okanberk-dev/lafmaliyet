@@ -5,7 +5,7 @@ import { and, asc, count, desc, eq, gt, gte, isNotNull, isNull, lt, lte, ne, or,
 import type { DayFacts } from "@/app/panel/bugun/logic";
 import { businessDate, DAY_TURN_HOUR } from "@/lib/cash-report";
 import { cashDaySubject } from "@/lib/cash-requests";
-import { ALL_BRANCHES, type BranchScope, KARAOKE_BRANCH_ID, requestInScope } from "@/lib/branches";
+import { ALL_BRANCHES, type BranchScope, requestInScope } from "@/lib/branches";
 import {
   branchChecklistRuns,
   branchStaffWrites,
@@ -32,6 +32,7 @@ import { addDays, longDateTR } from "@/lib/reminders";
 import type { StaffRequestStatus } from "@/lib/staff-requests";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentTillBranch } from "@/server/branch-scope";
+import { karaokeBranchId } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { currentVia } from "@/server/activity-via";
 
@@ -51,7 +52,8 @@ import { currentVia } from "@/server/activity-via";
  * geneli tek günlük satırı yalnız o şube için kaldırır: satır öteki açık fiziksel şubelere şubeli kalır (clearClosedMark).
  * Birden çok kasa açıkken kontrol listesi ve işlem geçmişi şubeyi kayıttan değil şablondan ve kişiden alır: şubenin listesi
  * ve şubenin personeli kanıttır, bütün şubelerin listesi ve şubesiz personel yalnız uyarıdır (`sharedTraces`), öbür
- * şubeninki sayılmaz; karaoke yalnız karaokenin şubesinde (KARAOKE_BRANCH_ID) sayılır. Tek kasada hepsi o kasanındır.
+ * şubeninki sayılmaz; karaoke yalnız karaokenin şubesinde (şube özelliği, src/lib/branch-features.ts) sayılır. Tek kasada
+ * hepsi o kasanındır.
  */
 
 type Db = ReturnType<typeof getDb>;
@@ -193,7 +195,7 @@ export async function closedDayEvidence(db: Db | Tx, date: string, branchId?: st
   // Şube şube ayrım yalnız birden çok kasa açıkken: tek kasada bütün şubelerin listesi ve şubesiz personel o kasanındır
   // (önceki gibi kırmızı). Karaoke yalnız karaokenin şubesinde: öbür şubenin kapalı gününe karaoke oturumu kanıt değil
   const split = branchId ? await manyTills(db) : false;
-  const karaokeHere = !split || branchId === KARAOKE_BRANCH_ID;
+  const karaokeHere = !split || branchId === (await karaokeBranchId(db));
   const [[report], [outs], [waste], lists, [karaoke], logs, prevs, nexts, lafpos] = await Promise.all([
     db.select({ id: s.cashReports.id }).from(s.cashReports).where(and(eq(s.cashReports.date, date), own(s.cashReports.branchId))).limit(1),
     db.select({ n: count() }).from(s.cashOuts).where(and(eq(s.cashOuts.date, date), own(s.cashOuts.branchId))),
