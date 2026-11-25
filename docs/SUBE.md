@@ -333,7 +333,9 @@ yazma `src/server/branch-settings.ts`.
 - **Yedek**: değerler ve bağ dosyaya girer, `secrets` sütunu girmez ([YEDEK.md](YEDEK.md)).
 - **Paraşüt hesabı**: Şube ayarları ekranındaki Paraşüt kartı "Tuzla ile aynı" anahtarını ve kullanılan hesabın
   durumunu gösterir; hesabın bilgileri Paraşüt ekranında o şube seçiliyken girilir. Ayrı hesabın faturaları o şubenin
-  (`invoices.branch_id`; Bağlantı kartından "işletme geneli" seçilebilir), ortak hesabınki işletme geneli. Şubeler
+  (`invoices.branch_id`; Bağlantı kartından "işletme geneli" seçilebilir), ortak hesabınki işletme geneli. Tek şube
+  seçiliyken öbür şubenin faturası Faturalar'a, Gelir-gider'e ve Maliyet'e girmez (Vergi, Nakit ve Ödemeler firma
+  geneli; [PARASUT.md](PARASUT.md)). Şubeler
   listesinde "Paraşüt: Tuzla ile aynı" çipi. Şubenin hesabından fatura gelmişse şube silinemez.
 - **Şimdilik ortak** (sıradaki dilimler; ekran adıyla söyler): LafPOS bağlantısı ve geçiş günü,
   çalışma ve uyarı saatleri, komisyon ve yemek kartı kanalları, ModPOS ay yedeği. Şube başına olmayacaklar: KDV, reçete

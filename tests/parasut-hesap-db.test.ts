@@ -327,6 +327,31 @@ describe("Şube başına Paraşüt hesabı: veritabanında (iki firmalı sahte P
     );
     // Seçim kayıtlı secret'a dokunmaz
     assert.equal((await (await import("../src/server/parasut/config")).loadParasutSettings("marina")).resolved.clientSecret.value, "marina-GIZLI");
+
+    // Faturanın şubesi okumada (sahibin kararı 2): Tuzla seçiliyken Marina'nın ayrı hesabının faturası modele (Maliyet,
+    // Gelir-gider, Faturalar) girmez; işletme geneli (şubesi boş) fatura her şubede, "Tümü"de hepsi
+    const { loadModel } = await import("../src/server/data/dataset");
+    const ids = async (scope: string) =>
+      (await loadModel({ scope })).ds.invoices
+        .filter((i) => i.source === "parasut")
+        .map((i) => `${i.externalId}:${i.supplier}`)
+        .sort();
+    assert.deepEqual(await ids("tuzla"), ["700:Sütaş", "702:Pınar"]);
+    assert.deepEqual(await ids("marina"), ["700:Pınar", "701:Pınar", "702:Pınar"]);
+    assert.deepEqual(await ids("hepsi"), ["700:Pınar", "700:Sütaş", "701:Pınar", "702:Pınar"]);
+
+    // Süre ikinci hesaba yetmezse hata değil "kısmen": hesap sonraki eşitlemeye kalır (tek hesapta süre dolması gibi)
+    const list = await accounts.configuredParasutAccounts();
+    const short = await sync.syncParasutAccounts("cron", { accounts: list, deadlineMs: 15_000 });
+    assert.ok(short.ok, JSON.stringify(short));
+    assert.ok(short.ok && short.partial, "kısmen");
+    assert.deepEqual(
+      short.accounts.map((a) => [a.account, a.ok, a.deferred ?? false]),
+      [
+        ["tuzla", true, false],
+        ["marina", false, true],
+      ],
+    );
   });
 
   test("iki hesap art arda eşitlenince öbürünün faturası silinmez, cari bağı çözülmez; silinen yalnız kendi hesabından kalkar", async () => {

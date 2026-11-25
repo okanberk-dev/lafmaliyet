@@ -490,8 +490,11 @@ export const invoices = pgTable(
   },
   (t) => [
     index("invoices_date_idx").on(t.date),
-    uniqueIndex("invoices_external_id_uq").on(t.parasutAccount, t.externalId),
-    uniqueIndex("invoices_e_invoice_id_uq").on(t.parasutAccount, t.eInvoiceId),
+    // Paraşüt kimlikleri hesap içinde benzersiz. Hesabı boş Paraşüt faturası varsayılan hesabındır (invoiceAccountWhere;
+    // eski yedekten ya da "Geri al" kopyasından gelebilir): boş hesap "tuzla" sayılır, aynı kimlik iki kez yazılamaz.
+    // Elle girilen faturanın kimlikleri boş: çakışmaz
+    uniqueIndex("invoices_external_id_uq").on(sql`coalesce(${t.parasutAccount}, 'tuzla')`, t.externalId),
+    uniqueIndex("invoices_e_invoice_id_uq").on(sql`coalesce(${t.parasutAccount}, 'tuzla')`, t.eInvoiceId),
     uniqueIndex("invoices_client_key_uq").on(t.clientKey),
     index("invoices_branch_idx").on(t.branchId),
   ],

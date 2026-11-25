@@ -29,6 +29,7 @@ import { crossesSeparate, separateMoveMonths } from "@/lib/invoice-linking";
 import { parseBillKey, qualifyBillKey } from "@/lib/parasut/accounts";
 import { addDays, todayTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
+import { listBranches } from "@/server/branches";
 import {
   assertNotCovered,
   cardResolver,
@@ -1040,9 +1041,13 @@ export async function restoreInvoice(snapshot: z.input<typeof snapshotSchema> & 
     const links = snapshot.cari ? cariLinksSchema.parse(snapshot.cari) : null;
     const cashOutIds = cashOutIdsSchema.parse(snapshot.cashOutIds ?? []);
     if (row.externalId || row.eInvoiceId) throw new UserError("Paraşüt faturası “Silinen Paraşüt faturaları” listesinden geri alınır.");
+    // Kopya istemciden gelir: elle girilen faturanın Paraşüt hesabı yoktur; şubesi bilinen bir şube değilse işletme
+    // geneli yazılır (yabancı anahtar hatası yerine)
+    const branchId = row.branchId && (await listBranches()).some((b) => b.id === row.branchId) ? row.branchId : null;
+    const values = { ...row, parasutAccount: null, branchId };
     const db = getDb();
     const out = await db.transaction(async (tx) => {
-      const [r] = await tx.insert(s.invoices).values(row).returning({ id: s.invoices.id });
+      const [r] = await tx.insert(s.invoices).values(values).returning({ id: s.invoices.id });
       await relinkCashOuts(tx, cashOutIds, r.id, me.name);
       if (!links) return { id: r.id, lost: 0, missed: 0 };
       const res = await reattachInvoiceLinks(tx, r.id, links, me.name, { supplier: row.supplier, taxNumber: row.supplierTaxNumber ?? null });

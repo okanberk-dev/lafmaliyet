@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, isNotNull, or } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 
 import { DEFAULT_PARASUT_ACCOUNT, parasutKey, parseInvoiceScope, type ParasutInvoiceScope } from "@/lib/parasut/accounts";
 import {
@@ -140,7 +140,14 @@ export async function hasParasutInvoices(account: string, db: Pick<Exec, "select
   const [row] = await db
     .select({ id: s.invoices.id })
     .from(s.invoices)
-    .where(and(eq(s.invoices.parasutAccount, account), or(eq(s.invoices.source, "parasut"), isNotNull(s.invoices.externalId), isNotNull(s.invoices.eInvoiceId))))
+    .where(
+      and(
+        // Hesabı boş Paraşüt faturası varsayılan hesabındır (accounts.ts invoiceAccountWhere ile aynı kural): eski yedekten
+        // gelen hesapsız satır varken Tuzla'nın firması değiştirilemez
+        account === DEFAULT_PARASUT_ACCOUNT ? or(eq(s.invoices.parasutAccount, account), isNull(s.invoices.parasutAccount)) : eq(s.invoices.parasutAccount, account),
+        or(eq(s.invoices.source, "parasut"), isNotNull(s.invoices.externalId), isNotNull(s.invoices.eInvoiceId)),
+      ),
+    )
     .limit(1);
   return Boolean(row);
 }

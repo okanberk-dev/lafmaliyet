@@ -603,6 +603,13 @@
       "when": 1795568844248,
       "tag": "0085_sube_ozellik_veri",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1795575564098,
+      "tag": "0086_parasut_kimlik_bos_hesap",
+      "breakpoints": true
     }
   ]
 }

@@ -1001,6 +1001,11 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     const r = ok(await invoices.restoreInvoice(del.snapshot!));
     assert.equal(await linkedTo(d1), f3.id);
     assert.match(r.message ?? "", /1 faturasız alım yeniden bağlanamadı/);
+    // Kopya istemciden gelir: elle faturaya Paraşüt hesabı yazılmaz, bilinmeyen şube işletme geneli olur (ham DB hatası değil)
+    const del2 = ok(await invoices.deleteInvoice(r.id));
+    const forged = ok(await invoices.restoreInvoice({ ...del2.snapshot!, parasutAccount: "tuzla", branchId: "yok-boyle-sube" }));
+    const [row] = await db.select({ parasutAccount: s.invoices.parasutAccount, branchId: s.invoices.branchId }).from(s.invoices).where(eq(s.invoices.id, forged.id));
+    assert.deepEqual([row.parasutAccount, row.branchId], [null, null]);
   });
 
   test("nakit planı K19: faturası gelecek borcun kartı vergi noyla bağlanan tüzel addaki faturaların tahminini de düşürür", async () => {

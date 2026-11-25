@@ -973,7 +973,10 @@ export async function syncParasut(
 }
 
 /** Bütün hesapların eşitlemesinin sonucu: tek hesapta o hesabınki aynen; `accounts` hesap başına */
-export type SyncAllResult = (SyncOk | SyncErr) & { accounts: { account: string; name: string; ok: boolean; busy?: boolean; summary?: string; error?: string }[] };
+export type SyncAllResult = (SyncOk | SyncErr) & {
+  /** `deferred`: süre kalmadığı için bu çalışmada denenmedi (hata değil, "kısmen"; sonraki eşitleme alır) */
+  accounts: { account: string; name: string; ok: boolean; busy?: boolean; deferred?: boolean; summary?: string; error?: string }[];
+};
 
 /**
  * Ayarları tamam her Paraşüt hesabının eşitlemesi (cron işleri; docs/PARASUT.md › Şube başına Paraşüt hesabı): farklı
@@ -995,7 +998,7 @@ export async function syncParasutAccounts(
     const left = opts.deadlineMs - (Date.now() - started);
     // Her hesaba en az 15 sn (bir sayfa ve yazımı); kalmadıysa sonraki çalışmaya kalır
     if (left < 15_000) {
-      out.push({ account: todo[i].id, name: todo[i].name, ok: false, error: "süre kalmadı; sonraki eşitlemede" });
+      out.push({ account: todo[i].id, name: todo[i].name, ok: false, deferred: true, error: "süre kalmadı; sonraki eşitlemede" });
       continue;
     }
     const r = await syncParasut(trigger, { account: todo[i].id, deadlineMs: Math.max(15_000, Math.floor(left / (todo.length - i))) });
@@ -1004,10 +1007,12 @@ export async function syncParasutAccounts(
     out.push(r.ok ? { account: todo[i].id, name: todo[i].name, ok: true, summary: r.summary } : { account: todo[i].id, name: todo[i].name, ok: false, error: r.error, ...(r.busy ? { busy: true } : {}) });
   }
   if (opts.accounts.length <= 1 && last) return { ...last, accounts: out };
-  const failed = out.filter((a) => !a.ok && !a.busy);
+  // Süresi kalmayan hesap hata değil (tek hesapta süre dolan eşitleme gibi "kısmen"); hiçbir hesap denenmediyse hata
+  const failed = out.filter((a) => !a.ok && !a.busy && !a.deferred);
   const busy = out.some((a) => a.busy);
   if (failed.length) return { ok: false, error: failed.map((a) => `${a.name}: ${a.error}`).join(" · "), runId: null, accounts: out };
   if (busy && !out.some((a) => a.ok)) return { ok: false, error: SYNC_BUSY, runId: null, busy: true, accounts: out };
+  if (out.length && out.every((a) => a.deferred)) return { ok: false, error: out.map((a) => `${a.name}: ${a.error}`).join(" · "), runId: null, accounts: out };
   const oks = out.filter((a) => a.ok);
   return {
     ok: true,

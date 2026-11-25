@@ -134,13 +134,18 @@ Her şube kendi Paraşüt hesabına (firmasına) bağlanabilir; şubeler aynı f
   faturaları Paraşüt'teki ödeme durumuyla gelir, "ödenmedi" yığılmaz.
 - **Faturanın hesabı ve şubesi** (`invoices.parasut_account`, `invoices.branch_id`; göç 0082–0083 var olan Paraşüt
   faturalarına varsayılan hesabı yazdı, şubelerine dokunmadı). Paraşüt kimlikleri hesap içinde benzersizdir
-  (`(parasut_account, external_id)`, `(parasut_account, e_invoice_id)`). Sahibin kararı (25 Kasım 2026): şubeler aynı
+  (`(parasut_account, external_id)`, `(parasut_account, e_invoice_id)`; göç 0086: hesabı boş satır varsayılan hesabın
+  sayılır, eski yedekten gelen hesapsız kopya Tuzla'nın aynı kimlikli faturasının yanına yazılamaz). Sahibin kararı (25 Kasım 2026): şubeler aynı
   hesaptaysa faturalar **işletme geneli** (bugünkü kural); hesabı yalnız bir şube kullanıyorsa (ayrı hesap) o hesaptan
   gelen **yeni** faturalar **o şubenin**. Ayarlanabilir: Paraşüt › Bağlantı kartındaki "Faturalar Marina şubesinin"
   anahtarı kapatılınca ayrı hesabın faturaları da işletme geneli kalır. Şube yalnız yeni açılan faturaya yazılır; var
   olanınki eşitlemede değişmez. Faturalar'da birden çok kasa açıkken şubeli faturada şube rozeti çıkar; "Paraşüt'te
-  aç" bağlantısı faturanın hesabının firma numarasıyla kurulur. Mal maliyeti ve Faturalar'ın toplamları şimdilik
-  şubeye bölünmez (firma geneli; [SUBE.md](SUBE.md)).
+  aç" bağlantısı faturanın hesabının firma numarasıyla kurulur. **Okumada** (25 Kasım 2026): tek şube seçiliyken öbür
+  şubenin faturası modele girmez (`loadDataset`, `branchWhereWithShared`): Faturalar'ın listesi ve toplamları,
+  Gelir-gider'in işletme geneli satırları ve Maliyet o şubenin ve işletme genelinin faturalarıyla; "Tümü"de hepsi. Vergi,
+  Nakit planı ve Ödemeler firma genelidir (bütün faturalar). Şubenin mal maliyeti tek şubede yine reçeteden
+  hesaplanır; şubenin kendi faturası da Gelir-gider'de "işletme geneli" satırında durur (şubenin kendi hücresine
+  bölünmez; [SUBE.md](SUBE.md)).
 - **Paraşüt ekranı** seçili şubenin hesabını gösterir ("Tümü": Tuzla'nınki ve "Marina ayrı Paraşüt hesabı kullanıyor"
   notu): bağlantı, ayarlar, eşitleme geçmişi, imleçler, gelen fatura sayıları, iadeler ve kalem okuma o hesabın.
   Kategori kuralları, ürün bağlantıları, "hammadde değil" listesi, yok sayılan ve silinen faturalar (anahtar hesapla

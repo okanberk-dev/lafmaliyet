@@ -95,7 +95,9 @@ async function readDataset(): Promise<Dataset> {
     db.select().from(s.recipeItems).orderBy(asc(s.recipeItems.sortOrder), asc(s.recipeItems.id)),
     db.select().from(s.months).where(branchWhere(s.months.branchId, scope)).orderBy(asc(s.months.month)),
     db.select().from(s.salesLines).where(branchWhere(s.salesLines.branchId, scope)).orderBy(asc(s.salesLines.sortOrder), asc(s.salesLines.id)),
-    db.select().from(s.invoices).orderBy(asc(s.invoices.date), asc(s.invoices.id)),
+    // Faturalar işletme genelidir (şubesi boş); ayrı Paraşüt hesabına bağlı şubenin faturası o şubenin (sahibin kararı,
+    // 25 Kasım 2026; docs/SUBE.md › Paraşüt): tek şube seçiliyken öbür şubenin faturası okunmaz. Vergi ve Nakit "Tümü"yle okur
+    db.select().from(s.invoices).where(branchWhereWithShared(s.invoices.branchId, scope)).orderBy(asc(s.invoices.date), asc(s.invoices.id)),
     // Tedarikçi kartlarının adları ve vergi no: komisyon faturasının kanalı Komisyon & hakediş'teki gibi bulunur
     db.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, taxNumber: s.suppliers.taxNumber }).from(s.suppliers),
     db.select().from(s.staff).where(branchWhere(s.staff.branchId, scope)).orderBy(asc(s.staff.sortOrder), asc(s.staff.id)),
