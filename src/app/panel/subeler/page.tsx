@@ -3,7 +3,7 @@ import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
-import { CASH_REPORT_GROUP } from "@/lib/branch-settings/groups";
+import { CASH_REPORT_GROUP, PARASUT_GROUP } from "@/lib/branch-settings/groups";
 import { settingMode, settingModeText } from "@/lib/branch-settings/rules";
 import { tillBranches } from "@/lib/branches";
 import { createBranch, deleteBranch, updateBranch } from "@/server/actions/branches";
@@ -39,11 +39,11 @@ export default function BranchesPage() {
 
 async function BranchesContent() {
   await requireAdmin();
-  const [rows, links] = await Promise.all([listBranches(getDb()), settingLinks(CASH_REPORT_GROUP.id)]);
-  // Birden çok kasa açıkken her fiziksel şubenin satırında kasa raporu alıcılarının durumu ("Tuzla ile aynı")
-  const settingsText =
-    tillBranches(rows).length > 1
-      ? Object.fromEntries(tillBranches(rows).map((b) => [b.id, settingModeText(settingMode(CASH_REPORT_GROUP, b.id, links), rows)]))
-      : {};
-  return <BranchesAdmin rows={rows} settingsText={settingsText} createAction={createBranch} updateAction={updateBranch} deleteAction={deleteBranch} />;
+  const [rows, links, parasutLinks] = await Promise.all([listBranches(getDb()), settingLinks(CASH_REPORT_GROUP.id), settingLinks(PARASUT_GROUP.id)]);
+  // Birden çok kasa açıkken her fiziksel şubenin satırında kasa raporu alıcılarının ve Paraşüt hesabının durumu
+  // ("Tuzla ile aynı")
+  const many = tillBranches(rows).length > 1;
+  const settingsText = many ? Object.fromEntries(tillBranches(rows).map((b) => [b.id, settingModeText(settingMode(CASH_REPORT_GROUP, b.id, links), rows)])) : {};
+  const parasutText = many ? Object.fromEntries(tillBranches(rows).map((b) => [b.id, settingModeText(settingMode(PARASUT_GROUP, b.id, parasutLinks), rows)])) : {};
+  return <BranchesAdmin rows={rows} settingsText={settingsText} parasutText={parasutText} createAction={createBranch} updateAction={updateBranch} deleteAction={deleteBranch} />;
 }

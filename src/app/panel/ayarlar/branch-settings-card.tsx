@@ -30,7 +30,7 @@ export async function BranchSettingsLinkCard() {
       icon={<Building2 />}
       title="Şube ayarları"
       summary={summary}
-      description="Şubeye göre değişen ayarlar: kasa raporu alıcıları ve çalışanların gün sonu e-postası. Bir şube öbürüyle aynı ayarı kullanabilir; değer tek yerden düzenlenir."
+      description="Şubeye göre değişen ayarlar: kasa raporu alıcıları, çalışanların gün sonu e-postası ve Paraşüt hesabı. Bir şube öbürüyle aynı ayarı kullanabilir; değer tek yerden düzenlenir."
       actions={
         <ButtonLink href={href} variant="primary">
           {selected ? `${selected.name} ayarları` : "Şubeleri aç"} <ChevronRight size={16} />

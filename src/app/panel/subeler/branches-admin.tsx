@@ -69,10 +69,18 @@ export interface BranchActions {
 const BOS: Taslak = { id: "", name: "", kind: "fiziksel", posSource: "modpos", openedOn: "", active: true, posRate: oranMetni(DEFAULT_POS_RATE) };
 
 /**
- * `settingsText`: fiziksel şubenin şube ayarlarının durumu ("Kendi ayarı", "Tuzla ile aynı"; kasa raporu alıcıları);
+ * `settingsText`, `parasutText`: fiziksel şubenin şube ayarlarının durumu ("Kendi ayarı", "Tuzla ile aynı"; kasa raporu
+ * alıcıları ve Paraşüt hesabı);
  * satırda çip ve "Ayarlar" bağlantısı (docs/SUBE.md › Şube başına ayarlar)
  */
-export function BranchesAdmin({ rows, settingsText = {}, createAction, updateAction, deleteAction }: { rows: BranchRow[]; settingsText?: Record<string, string> } & BranchActions) {
+export function BranchesAdmin({
+  rows,
+  settingsText = {},
+  parasutText = {},
+  createAction,
+  updateAction,
+  deleteAction,
+}: { rows: BranchRow[]; settingsText?: Record<string, string>; parasutText?: Record<string, string> } & BranchActions) {
   const [acik, setAcik] = useState<Taslak | null>(null);
   const [yeni, setYeni] = useState(false);
   const [silinecek, setSilinecek] = useState<BranchRow | null>(null);
@@ -144,6 +152,7 @@ export function BranchesAdmin({ rows, settingsText = {}, createAction, updateAct
                   {b.active ? null : <Badge tone="amber">Kapalı</Badge>}
                   <code className="text-[12px] text-ink-mute">{b.id}</code>
                   {settingsText[b.id] ? <Badge tone="gray">Alıcılar: {settingsText[b.id]}</Badge> : null}
+                  {parasutText[b.id] ? <Badge tone="gray">Paraşüt: {parasutText[b.id]}</Badge> : null}
                 </button>
                 {b.kind === "fiziksel" ? (
                   <ButtonLink href={`/panel/subeler/${encodeURIComponent(b.id)}`} variant="secondary" size="sm" className="shrink-0" aria-label={`${b.name} şube ayarları`}>

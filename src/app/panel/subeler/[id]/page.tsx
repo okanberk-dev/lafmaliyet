@@ -15,8 +15,10 @@ import { requireAdmin } from "@/server/auth/dal";
 import { listBranches } from "@/server/branches";
 import { cashSettingsCardData } from "@/server/cash/settings-card";
 import { isEmailConfigured } from "@/server/notify/resend";
+import { parasutLinkCardData } from "@/server/parasut/link-card";
 
 import { CashSettingsCard } from "../../kasa/cash-settings";
+import { ParasutLinkCard } from "./parasut-card";
 
 export const metadata: Metadata = { title: "Şube ayarları" };
 
@@ -68,7 +70,7 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
       </>
     );
   }
-  const cash = await cashSettingsCardData(branch.id);
+  const [cash, parasut] = await Promise.all([cashSettingsCardData(branch.id), parasutLinkCardData(branch.id)]);
   return (
     <>
       {header}
@@ -85,6 +87,7 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
         ) : null}
         {branch.active ? null : <Notice tone="warn" size="sm" title={`${branch.name} kapalı`} text="Ayarları durur; şube yeniden açılınca kullanılır." />}
         <CashSettingsCard {...cash} emailConfigured={isEmailConfigured()} />
+        <ParasutLinkCard data={parasut} />
         <Card>
           <CardHeader icon={<Layers />} title="Şimdilik bütün şubelerde ortak" description="Bu ayarlar şubeye göre değişmez; tek yerden düzenlenir." />
           <ul className="flex flex-wrap gap-2 px-5 pb-5">
