@@ -227,7 +227,7 @@ test("soundRow: satır ilk dokunuşta kalkmaz, sayfa değişene kadar \"açık\"
   // Bileşen satırı needsSound'a değil bu karara bağlar; "açık" satırı düğmenin görünmez eşiyle aynı yükseklikte
   const center = read("src/components/panel/live/alert-center.tsx");
   assert.match(center, /const sound = soundRow\(\{ needsSound, audioReady: audio === "ready", pathname, shownOn: soundShownOn \}\);/);
-  assert.match(center, /\{sound\.row && soundSlot\s*\?/);
+  assert.match(center, /\{pageRows && sound\.row && soundSlot\s*\?/);
   assert.match(center, /title="Sesli uyarılar açık"/);
   assert.match(center, /<span aria-hidden="true" className="invisible">\s*<Button size="xs" variant="secondary" tabIndex=\{-1\}>/);
   assert.doesNotMatch(center, /\{needsSound && soundSlot/);

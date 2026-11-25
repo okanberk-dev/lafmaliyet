@@ -482,7 +482,8 @@ Sahibin isteği: Tuzla Köyiçi'nde panel ötünce kafenin genel hoparlörü (m�
   Köyiçi'nde (açıkça Tuzla seçiliyken) varsayılan açık; "Tümü"de ve Marina'da bilgisayarın kendi seçimi, seçilmediyse
   kapalı (docs/SUBE.md › Uyarı sesleri şubeye göre). Açıkken sesler yalnız
   seçilen hoparlörden çıkar. Hoparlör seçilmemişse, çıkarıldıysa ya da izni düştüyse ses **susar**, genel hoparlöre
-  geçmez; kartta ve sayfanın başında "Uyarı sesleri susturuldu" uyarısı çıkar. Ekrandaki pencereler ve kartlar
+  geçmez; kartta ve (personelde) sayfanın başında "Uyarı sesleri susturuldu" uyarısı çıkar. Sayfanın başındaki ses
+satırları ("Uyarı sesleri susturuldu", "Sesli uyarılar kapalı", karaoke uyarıları) yöneticide çıkmaz (25 Kasım 2026). Ekrandaki pencereler ve kartlar
   aynen çıkar. Sistem bildirimleri her zaman sessiz gelir (panel kapalıyken bile: işaret tarayıcının Cache
   deposunda, servis çalışanı okur).
 - **Hoparlör seçimi**: "Bu bilgisayarın hoparlörü · Hoparlör (Realtek(R) Audio)" gibi işaretli olanı seçin. Adlar için
