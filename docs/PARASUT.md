@@ -127,7 +127,7 @@ Her şube kendi Paraşüt hesabına (firmasına) bağlanabilir; şubeler aynı f
   sıfırla"sı öbür hesabın süren bağlanmasına dokunmaz.
 - **Eşitleme**: sabah işi ve e-posta işinin yeniden denemesi ayarı tamam her farklı hesabı **bir kez, sırayla**
   eşitler (`syncParasutAccounts`; süre hesaplara bölünür, aynı anda tek eşitleme). Bir hesabın eşitlemesi yalnız kendi
-  faturalarını ve Paraşüt'e bağlanmamış elle/Excel kayıtlarını görür (`invoiceAccountWhere`): öbür hesabın faturasını
+  faturalarını ve Paraşüt'e bağlanmamış elle girilmiş / içe aktarılmış kayıtları görür (`invoiceAccountWhere`): öbür hesabın faturasını
   eşleştirmez, güncellemez, **kaldırmaz**. `parasut_sync_runs.account` hangi hesabın çalıştığını yazar; e-posta işi
   bugün eşitlenmemiş hesapları yeniden dener. Zil, Bugün ve sabah e-postası bir hesabın hatasını öbürünün başarısıyla
   örtmez. Ödeme takibinin başlangıcı (`payments.since`) da hesap başına: sonradan bağlanan hesabın son 30 günden eski
@@ -245,7 +245,7 @@ iki yol da panelin okuduğu listelere değer:
   `TEVKIFATIADE`) ya da iade faturasının kişisi **müşteri kartı** (`account_type: customer`). Gelen iade e-faturası da
   (içeri alınmamış) gider olarak açılmaz: GİB kuralıyla iadeyi malı geri veren alıcı keser, gelen iade kafenin sattığı
   bir malın iadesidir (sitenin e-Fatura kestiği şirket müşterisi). Daha önce gider olarak alınmış böyle bir kayıt
-  eşitlemede kalkar (elle/Excel'le girilmiş kayda bağlıysa bağı çözülür, notuna "Paraşüt'te satış iadesi — kontrol
+  eşitlemede kalkar (elle girilmiş ya da içe aktarılmış kayda bağlıysa bağı çözülür, notuna "Paraşüt'te satış iadesi — kontrol
   edin" düşer). Online satış sitenin dökümünde zaten iadesi düşülmüş gelir; iade bir de gider sayılsaydı iki kez
   düşerdi, müşterinin tam adı tedarikçi olur, KDV tahmini kayardı.
 - Müşteri kartıyla girilmiş **normal** (iade türünde olmayan) gider faturası sessizce atılmaz: gerçek bir alış da
@@ -264,7 +264,7 @@ iki yol da panelin okuduğu listelere değer:
 
 ## 3. Çift sayım olmaz
 
-Panelde elle ya da Excel'den girilmiş aynı fatura bulunursa yenisi açılmaz, mevcut kayıt Paraşüt'e bağlanır:
+Panelde elle girilmiş ya da içe aktarılmış (ilk kurulumdaki aktarım; ekranda "İçe aktarılmış (eski)") aynı fatura bulunursa yenisi açılmaz, mevcut kayıt Paraşüt'e bağlanır:
 
 1. Paraşüt kimliği (daha önce bağlandıysa),
 2. tam e-fatura / e-Arşiv numarası (3 harf ya da rakam + 13 rakam): tedarikçi adı farklı yazılmış olsa da (Yemek Sepeti
@@ -283,7 +283,7 @@ Panelde elle ya da Excel'den girilmiş aynı fatura bulunursa yenisi açılmaz, 
 
 Bağlanan kaydın **kategorisi, tedarikçi adı ve ödeme durumu korunur**; tutar, KDV ve tarih Paraşüt'ten gelir.
 Paraşüt'te vade yoksa paneldeki vade korunur. Paraşüt'te **iptal edilen ya da silinen** fatura, panelde Paraşüt'ten açılmışsa
-kaldırılır; elle/Excel'le girilmiş bir kayda bağlıysa silinmez, bağı çözülür ve notuna "Paraşüt'te iptal — kontrol
+kaldırılır; elle girilmiş ya da içe aktarılmış bir kayda bağlıysa silinmez, bağı çözülür ve notuna "Paraşüt'te iptal — kontrol
 edin" düşülür. Bağı çözülen kaydın tutarları yeniden düzenlenebilir; tutar, iskonto ya da ödenecek değişince
 eşitlemeden kalan KDV toplamı silinir, KDV tahmini ödenecek − net'i sayar ([NAKIT-PLANI.md](NAKIT-PLANI.md)).
 Kayıt **gelen bir e-faturaya da bağlıysa** silinmez (e-fatura duruyor, borç da): yalnız gider
@@ -299,7 +299,7 @@ tablosundaki tedarikçi satırları dağılmaz.
 
 **Elle eklenen fatura** (Faturalar › Fatura ekle) aynı tedarikçinin aynı numaralı faturasıyla karşılaşırsa eklenmez,
 pencere sorar (denetim UI-02): "Bu numarayla Kaldi faturası zaten var" altında öteki kaydın numarası, tarihi, tutarı
-ve nereden geldiği (Paraşüt, elle, Excel). Eşitlemeden sonra kâğıt faturanın elle girilmesi ya da iki kişinin aynı
+ve nereden geldiği (Paraşüt'ten gelmiş, elle girilmiş, içe aktarılmış (eski)). Eşitlemeden sonra kâğıt faturanın elle girilmesi ya da iki kişinin aynı
 faturayı girmesi mal alımını, borcu ve KDV indirimini iki kez sayardı (eşitleme yalnız kendinden önce girilen kaydı
 bağlar). Numara harf ve rakam dışı karakterler yok sayılıp büyük harfle karşılaştırılır; tedarikçi yukarıdaki gibi adla
 ya da Tedarikçiler kartıyla aynı sayılır; tarih ve tutara bakılmaz. Gerçekten ayrı faturaysa **Yine de ekle** ekler.
@@ -330,7 +330,7 @@ Paraşüt'ten gelen her faturaya tedarikçinin VKN / TCKN'si yazılır (`invoice
   kesiliyor, giden belgedeki `from_vkn` işletmenin kendi numarasıdır.
 - **Öncelik** (`nextTaxNumber`, `mapping.ts`): boş kayda gelen numara yazılır; e-belgedeki numara her zaman geçer;
   kişi kartındaki numara e-faturaya bağlı kaydın numarasını ezmez, e-faturasız kayıtta yazılır (kişi kartı Paraşüt'te
-  düzeltilmiş olabilir). Elle ve Excel'den girilen faturada numara yoktur.
+  düzeltilmiş olabilir). Elle girilen ve içe aktarılmış faturada numara yoktur.
 - Kontrol hanesi tutmayan ve örnek numaralar (1234567890 …) saklanır, faturada görünür ama eşleşmede kullanılmaz.
 - **Eski faturalar:** her eşitleme son 75 günü yeniden okuduğu için yeni ve yakın tarihli faturalar numarasını
   hemen alır. Daha eskiler bir kerelik tamamlamayla dolar (`src/server/parasut/tax-backfill.ts`): her eşitlemenin
@@ -362,7 +362,7 @@ yok" kalan ve hâlâ kontrol bekleyen kaydın kategorisi kalemler okununca kural
 
 Kalemler iki yerden gelir ve aynı tabloda (`parasut_bill_lines`) durur:
 
-- **Gelen e-faturalar** (içeri alınmamış olanlar ve e-faturaya bağlanan Excel kayıtları): kalemler e-faturanın imzalı
+- **Gelen e-faturalar** (içeri alınmamış olanlar ve e-faturaya bağlanan içe aktarılmış kayıtlar): kalemler e-faturanın imzalı
   UBL belgesinden okunur (`GET /v4/{firma}/e_invoices/{id}/signed_ubl` → tek XML'li ZIP; `ubl.ts`, `lines.ts`).
   Ürün adı, satıcı ürün kodu, miktar ve birim (UN/ECE kodu: C62 = Adet, NPL = Koli, KGM = kg…), birim fiyat,
   iskonto, KDV oranı ve KDV hariç net tutar yazılır. Bazı sağlayıcılar kalem tutarını brüt yazıp iskontoyu ayrıca
@@ -433,7 +433,7 @@ iki ayın stok sayımı girilince gerçek tüketim (devir + alınan − devreden
 
 ### 5a. Zam uyarısı
 
-Hammadde fiyatı her değiştiğinde fiyat geçmişine yazılır (elle, Excel, Paraşüt faturası). Stok sayımının "Listeye
+Hammadde fiyatı her değiştiğinde fiyat geçmişine yazılır (elle, ilk aktarım, Paraşüt faturası). Stok sayımının "Listeye
 ekle"si ve reçete önerisinin "Yeni malzeme"si de yazılan (tahmini) paket fiyatını geçmişin başlangıcı olarak yazar:
 kapanmış ay o fiyatla değerlenir, sonraki zam onu değiştirmez; zam uyarısı bu başlangıç satırını saymaz. Tahmin
 yanlışsa (fiyat ya da paket içeriği) yönetici Hammaddeler'den düzeltir: kalem hâlâ **Tahmini** ve geçmişinde yalnız
@@ -484,7 +484,7 @@ Bağlı ürünün en yeni faturasındaki birim fiyat hammaddenin **şimdiki** bi
 - Şimdiki fiyatı olmayan (0 ₺; personelin sayımdan fiyatsız eklediği kalem) hammaddenin **ilk fiyatı** yalnız çarpan
   faturanın ölçü biriminden geliyorsa (KG, LT, düzine: `firstPriceCertain`) doğrudan yazılır. Çarpan addan, açıklamadan
   ya da elle geldiyse ilk fiyat da onaya düşer (denetim 26 Eki, E-06: "KARTON BARDAK 8 OZ 50'Lİ X 20" 1 Koli = 50 adet
-  bağlanmıştı, adet 8 ₺ onaysız yazılıyordu). Kart "İlk fiyat" der. Excel'den gelen tahmini ("Tahmini") fiyat da
+  bağlanmıştı, adet 8 ₺ onaysız yazılıyordu). Kart "İlk fiyat" der. İlk aktarımdan gelen tahmini ("Tahmini") fiyat da
   şimdiki fiyattır: ilk Paraşüt fiyatı ondan %40'tan fazla farklıysa onaya düşer.
 - Su ve buz (fiyatı su faturasından) hiç onaya düşmez.
 
@@ -671,13 +671,13 @@ listesini her eşitlemede okur ve gelen her e-faturayı doğrudan fatura olarak 
   fatura günü peşin sayılır. E-faturada ödeme bilgisi yoktur: e-faturadan açılan kayıt **ödenmedi** gelir ve
   belgedeki vadesiyle Ödemeler & hatırlatıcılar'a düşer; ödendiğini siz işaretlersiniz. Takip başlamadan önceki tarihli
   e-fatura (geçmişi yeniden alırken) ödendi açılır, belgedeki vadesi henüz gelmemişse ödenmedi olur (notta "vade
-  e-faturadan"). Excel/elle girilmiş kaydın ödeme durumuna dokunulmaz, yalnız boş vadesi doldurulur.
-- **Çift sayım olmaz:** e-fatura önce kendi kimliğiyle (`invoices.e_invoice_id`), sonra Excel'den/elle girilmiş aynı
+  e-faturadan"). İçe aktarılmış / elle girilmiş kaydın ödeme durumuna dokunulmaz, yalnız boş vadesi doldurulur.
+- **Çift sayım olmaz:** e-fatura önce kendi kimliğiyle (`invoices.e_invoice_id`), sonra içe aktarılmış / elle girilmiş aynı
   faturayla § 3'ün kurallarıyla (tam numara ±31 gün, aynı tarih ya da tutar ±1 ₺; GİB portalı numarasında aynı
-  tedarikçi) eşleşir; eşleşen kayda bağlanır. Excel kaydının tutarı ve tarihi aynıysa dokunulmaz, farklıysa
+  tedarikçi) eşleşir; eşleşen kayda bağlanır. İçe aktarılmış kaydın tutarı ve tarihi aynıysa dokunulmaz, farklıysa
   e-faturadaki yazılır ve kayıt "kontrol bekleyen" olur; not değişen alanı söyler: "tutar e-faturaya göre güncellendi
   (önce 1.100 ₺)", "tarih … (önce 07.11.2026)" ya da ikisi birden (denetim FC-X1). E-fatura Paraşüt'te reddedilir ya
-  da arşivlenirse Excel/elle kaydın e-fatura bağı çözülür, kaynağı eskisine döner ("Paraşüt'te e-fatura reddedildi —
+  da arşivlenirse içe aktarılmış / elle kaydın e-fatura bağı çözülür, kaynağı eskisine döner ("Paraşüt'te e-fatura reddedildi —
   kontrol edin"): tarih, no ve tutarlar yeniden düzenlenir (denetim FC-02; bozulmuş eski kayıtları
   `0064_fatura_kaynagi_onarimi` bir kez onardı). Fatura sonradan Paraşüt'te
   içeri alınırsa gider faturası (`active_e_document` bağıyla) **aynı kayda** bağlanır; o zaman Paraşüt'teki ödeme
@@ -704,7 +704,7 @@ listesini her eşitlemede okur ve gelen her e-faturayı doğrudan fatura olarak 
   kayıtta `GET /v4/{firma}/e_invoices/{id}/pdf` 1 saatlik bir indirme adresi döner (Paraşüt hazırlarken 204);
   gider faturasında `active_e_document` e-faturası, yoksa Paraşüt'teki `photo` görseli kullanılır. PDF ilk açılışta
   indirilir ve `invoice_documents` tablosunda saklanır; sonraki açılışlar anında gelir. `?indir=1` indirir.
-- Paraşüt'te belgesi olmayan faturaya (elle girilmiş, Excel'den gelmiş) panelden **PDF ya da fotoğraf** eklenir
+- Paraşüt'te belgesi olmayan faturaya (elle girilmiş, içe aktarılmış) panelden **PDF ya da fotoğraf** eklenir
   (`POST` aynı adres, form alanı `dosya`, en çok 4 MB; tür içerikten denetlenir; fotoğraflar telefonda küçültülür).
 
 ## 6a-1. Kafe dışı faturalar (karaoke box, Alp Koç)

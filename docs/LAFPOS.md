@@ -1083,7 +1083,7 @@ Tuzla'da (ModPOS) işaretlenen ürün Marina'nın LafPOS listesinde kalır, Mari
 Denetimin önerdiği ayrı "kasa kipi" ayarı (ya da "son günlerde LafPOS günü geldiyse LafPOS" sezgisi) yerine geçiş günü
 kullanılır: deneme günleri hiçbir metni değiştirmez. Günün kasası `kasaName(gün, geçiş günü)`, ayın kasası
 `monthKasa(ay, geçiş günü)` (`src/lib/lafpos/kasa.ts`; geçiş ayında "Kasa (ModPOS 1–9 Kasım · LafPOS 10–30 Kasım)").
-Ürün satışlarının etiketi (Genel bakış'ın net satışı, Excel'in Özet'i, Claude'un ürün kârlılığı) geçiş ayında modelin
+Ürün satışlarının etiketi (Genel bakış'ın net satışı, dışa aktarımın Özet'i, Claude'un ürün kârlılığı) geçiş ayında modelin
 saydığı bölünmeyi yazar (`salesMonthKasa`: ModPOS listesinin son günü, LafPOS'un sayılan günleri; liste yoksa "ModPOS
 listesi yok"); Z ve ciro etiketleri geçiş gününde böler. Geçiş günü boşken her metin bugünkünün aynısıdır.
 
@@ -1099,7 +1099,7 @@ listesi yok"); Z ve ciro etiketleri geçiş gününde böler. Geçiş günü bo�
   "LafPOS kart"), günün online satış satırı, kapalı gün kartı ve Bugün'ün kapalı gün satırı ("o günün LafPOS / banka
   POS'una bakın"). LafPOS gününde yazarkasa bölümüne çekilen kasa çıktısına "ModPOS bölümüne okut" önerilmez.
 - **Ayın kasası:** Genel bakış (net satış, POS cirosu, döküm), Gelir-gider (online kartı, yıl dökümü, telefon görünümü,
-  tablo ipuçları), Tutarlılık, Ürünler, Analiz'in senaryosu, KDV tahmini, Excel ve Claude'un yanıtları.
+  tablo ipuçları), Tutarlılık, Ürünler, Analiz'in senaryosu, KDV tahmini, dışa aktarım ve Claude'un yanıtları.
 - **Ayın satış kaynağı** (`salesSourceOf`, `src/lib/sales-source.ts`; 29 Eki 2026, [planlar/ux-sade.md](planlar/ux-sade.md)
   §10): `salesMonthKasa`'nın üstünde tek kaynak. Dört tür: **ModPOS raporu** (geçiş günü yok ya da ay geçişten önce;
   "Satışlar: ModPOS raporu (ay sonunda elle yüklenir)"), **LafPOS** ("Satışlar: LafPOS (her gece kendiliğinden)"),
@@ -1236,7 +1236,7 @@ Personel'de iki tarafı gösteren onayla, elle bağlanır; hiçbir şey kendili�
   330 × 26 kalır); ayın en az bir sayılan LafPOS günü var ve **her biri** çalışan listesini taşıyor (bir gün listesizse ay
   varsayılanla); kişinin kimliği ayın **en az bir** gününde geçiyor. Gün = ayın gün sonlarından kişinin kimliğinin geçtiği
   gün. Bu gün gerçek gündür: Gelir-gider'in "PERSONEL YEMEK KARTI" satırında maaş gibi gün oranıyla bir daha oranlanmaz
-  (hücre notu oranı yalnız varsayılanlılara yazar, LafPOS'luları adı ve günüyle ayrı). Excel'in Personel sekmesi ve vergi
+  (hücre notu oranı yalnız varsayılanlılara yazar, LafPOS'luları adı ve günüyle ayrı). Dışa aktarımın Personel sekmesi ve vergi
   bordrosu (nakit planı dahil) biten ayda aynı günle; süren ve ileri ayda Ayarlar'daki günle.
 - **Görünmeyen kişi:** LafPOS listeyi bir kullanıcı bağlanınca her güne yazar. Ay biliniyor ama kişinin kimliği hiçbir
   günde yoksa (LafPOS'ta bağlı değil, ortak kasa; ya da "Devam ettir"den önceki satıra bağlı) bu "0 gün" sayılmaz:

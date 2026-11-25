@@ -22,7 +22,7 @@ varken "Kasa 12" der ve doğrudan o listeyi açar; ürün listesinin **Toplu fiy
 >   değişiklik oradan geri alınabilsin.
 > - **Kapsam dışı:** sitede toplu yazma ucu (kalem kalem kalır), kasanın fiyatını satış raporundan denetlemek (indirim
 >   ciroyu bozar), bir değişiklikte kategoriye göre farklı kural (iki değişiklik yapılır), sitedeki fiyat listesinin
->   tarihi (hatırlatma olarak kalır), Excel aktarımında fiyat geçmişi.
+>   tarihi (hatırlatma olarak kalır), dışa aktarımda fiyat geçmişi.
 
 ## Toplu değiştir
 
@@ -56,7 +56,7 @@ elle değiştirilmediyse eksi yazınca kendiliğinden döner; D4), **10 ₺'ye y
 
 - Satır: şimdiki ve yeni fiyat, fark (₺ ve %), maliyet oranı önce → sonra (ürün listesinin renkleriyle), birim kâr önce
   → sonra, durum değişimi ("Dikkat → İyi"), aylık etki. Ekonomi `priceProduct`'ın formülleriyle hesaplanır
-  (`economicsAt`; test bütün Excel ürünlerinde eşitliği sınar).
+  (`economicsAt`; test tohum verisinin bütün ürünlerinde eşitliği sınar).
 - Özet: **Değişecek** (kaçı sitede de), **Ortalama değişim**, **Maliyet oranı (ort.)** (reçeteli satırların basit
   ortalaması, ürün listesinin ORTALAMA satırıyla aynı kural), **Aylık brüt kâr**.
 - **Aylık etki** = (yeni birim kâr − bugünkü) × ayda satılan adet. Adet zam etkisiyle aynı dayanaktan gelir

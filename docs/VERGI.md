@@ -18,7 +18,7 @@ damga, hepsini Türkiye'ye göre hesaplasın ama dikkatli yap." Ekran **Vergi, K
 - Beyanname hazırlanmaz, e-beyanname gönderilmez; danışmanlık yapılmaz. Belgesi olmayan ödemelerin kalem kalem
   listesi dışa aktarılmaz, işlem geçmişine yazılmaz.
 - Eksik veriyle hesaplanan geçici ve kurumlar vergisi **Taslak**'tır; taslak tutar nakit planına ve takvimin tutar
-  sütununa yazılmaz. (Ekranda rozeti "Eksik bilgi"; veri, Excel ve bu kural aynı, §3.3.)
+  sütununa yazılmaz. (Ekranda rozeti "Eksik bilgi"; veri, dışa aktarım ve bu kural aynı, §3.3.)
 
 ## 2. Gelirin kaynağı (K11)
 
@@ -32,11 +32,11 @@ Vergi matrahı mali belgeye dayanır. Ay ay sıra:
    belge · Z".
 3. **Yönetim verisi:** ikisi de yoksa kasa cirosu (Gelir-gider'deki ModPOS ya da LafPOS cirosu, KDV hariç) +
    laffogato.net, rozeti "Yönetim verisi (ModPOS), mali belge değil" (geçiş ayında "ModPOS ve LafPOS"). O çeyrek
-   Taslak'tır ve Excel'e yazılmaz.
+   Taslak'tır ve dışa aktarıma yazılmaz.
 
 laffogato.net: sitenin KDV hariç toplamından iadesi bekleyen karaoke KDV hariç düşülür (`refundPendingMinor` KDV dahil,
 karaokenin oranıyla bölünür), rozeti "yaklaşık; e-Arşiv tarihinden farklı olabilir". Kasa cirosu ile mali belge
-arasındaki fark Vergi sayfasında, Excel'in Vergi sayfasında ve köprü kartında **hiç yazılmaz**; kasa cirosuna hiçbir
+arasındaki fark Vergi sayfasında, dışa aktarımın Vergi sayfasında ve köprü kartında **hiç yazılmaz**; kasa cirosuna hiçbir
 yerde "vergi esasında gelir" denmez.
 
 ## 3. Ekranlar
@@ -56,7 +56,7 @@ alt öğe ve aynı dört sekme (`SECTION_TABS.vergi`, ağaçtan türer). Özet'i
 | **Muhasebeci** (`/panel/vergi/kurallar`) | Sıra: **Muhasebeciye sorulacaklar** (`#sorular`; "Muhasebecimle konuştum" işareti ve not), **Şirketin vergi ayarları** (şirket nasıl kuruldu, muhtasar dönemi, asgari ücret desteği), **Kural tablosu** (`#kurallar`; kapalı açılır "Kural tablosunu göster (n kural)", adres `#kurallar` ise açık gelir; güven, dayanak, kaynak, "Elle değer"), "Bu kafede hesaplanmayanlar" (`#bilgi`, açık), tam feragat (`#feragat`) | vergi ayarları ve Ayarlar (işveren SGK oranı) |
 
 Ekranda "varlık" sözcüğü yok: Demirbaş sekmesi "demirbaş" der ("Demirbaş ekle", "Demirbaş listesi", "listede değil");
-kayıt ve Excel'in yöntem adı (`ASSET_METHOD_LABELS`, "Doğrudan gider") aynı, ekranda "Bu yıl gider yazıldı".
+kayıt ve dışa aktarımın yöntem adı (`ASSET_METHOD_LABELS`, "Doğrudan gider") aynı, ekranda "Bu yıl gider yazıldı".
 İşaretler sahibindir; hiçbir yerde muhasebecinin tabloyu onayladığı yazmaz.
 
 ### 3.1 Özet'in düzeni
@@ -93,7 +93,7 @@ Kart **"Vergi ve SGK ödemeleri"**, açıklaması "Önümüzdeki 100 gün, yasal
 Satırın adı sözlükten (`calendarTitle`, §3.6): "KDV (Ekim satışları)", "SGK primi (Eylül maaşları)", "Maaş vergileri
 ve stopaj (muhtasar, Ekim)", "Kâr vergisi peşinatı: 3. çeyrek 2026 (geçici vergi)", "Yıllık kâr vergisi 2026
 (kurumlar vergisi)", "Çevre temizlik vergisi (ÇTV) 2026, 2. taksit", "Tabela vergisi (ilan ve reklam vergisi)"; KDV-2
-aynı. Veri (`titleOfKind`) ve Excel resmî adla kalır.
+aynı. Veri (`titleOfKind`) ve dışa aktarım resmî adla kalır.
 
 - **Rozetler (K16):** tahminde rozet yok (`≈` yeter); "Muhasebeciden" (yeşil), "Eksik bilgi" (turuncu; veride
   "Taslak"), "yalnız damga" (gri; veride "sabit tutar", beyanname damgası). "Ödemeler'de" ve "2026 kuralları" (tablosu
@@ -154,7 +154,7 @@ beri kâr (kurum kazancı)" · Amortisman → "Demirbaş payı (amortisman)" · 
 ömür)" · Özel maliyet → "Kiralık yere yapılan tadilat (özel maliyet)" · Tevkifat → "Faturadaki KDV'nin sizin
 ödediğiniz kısmı (tevkifat)" · Sınıflandırılmamış gider → "Belgesi seçilmemiş gider" · Yönetim verisi (ModPOS) →
 "Kasa programının rakamı (ModPOS)" (gri kaynak rozeti, uyarı değil) · Taslak → "Eksik bilgi". Yardımcılar
-`calendarTitle`, `plainLabel`, `badgeLabel`, `badgeNote`, `plainBadge`. Yalnız çizimdir: veri, Excel dışa aktarımı ve
+`calendarTitle`, `plainLabel`, `badgeLabel`, `badgeNote`, `plainBadge`. Yalnız çizimdir: veri, dışa aktarım ve
 kayıtlar resmî adla kalır (muhasebeciye o gider). "Eksik bilgi: …" sebepleri (`stateReasons`, ör. "Sınıflandırılmamış
 gider var", "Faydalı ömrü girilmemiş varlık var") resmî sözle kalır (`docs/planlar/ux-sade.md` §7.6, §7.7 aynen ister);
 takvimin "Tahakkuk fişindeki tutarı girin"i (`ASK_TAHAKKUK`) de henüz sözlükten geçmiyor. Yalnız yöneticinin vergi ekranları içe aktarır (takvim, kâr vergisi kartı, Vergi kârı tablosu); Nakit planı KDV
@@ -204,7 +204,7 @@ Diğer ekranlara dokunuşlar:
   Geri al"); sabit tutarlı "Kira stopajı"nın tutarı kalır. Geçici vergi hatırlatıcısının Ödendi'si kalıcı kayda yazılır
   (`payments.vat-paid`, tür `gecici`, dönem `2026-Q3`): yıllık kurumlar vergisinde yalnız ödendi işaretli geçici
   vergi mahsup edilir.
-- **Excel:** "Vergi" sekmesi (§8).
+- **Dışa aktarım:** "Vergi" sekmesi (§8).
 - **Yardım:** "Vergi sayfasındaki rakamlar beyanname mi?" (Gider, ödeme ve ekip).
 
 ## 4. Hesaplar (kısaca; formüller planın §3'ünde)
@@ -225,7 +225,7 @@ Diğer ekranlara dokunuşlar:
   uyarı; varsayılan ömür uydurulmaz. 12.000 ₺'yi aşmayan varlık doğrudan gider seçilebilir (VUK 313).
 - **Bordro (K16):** netten brüt (kümülatif gelir vergisi matrahı, asgari ücret istisnası, ücret damgası, PEK alt ve üst
   sınırı), 2026 yasal SGK oranlarıyla (işçi %14 + %1, işveren %19,75 + %2; teşvik varsa Muhasebeci'den elle). Gelir-gider
-  Ayarlar'daki oranla kalır (Excel eşitliği). "Asgari ücret desteği SGK'dan düşülsün" açıksa destek ödenen SGK'dan
+  Ayarlar'daki oranla kalır (tohum verisinin değerleriyle eşitlik). "Asgari ücret desteği SGK'dan düşülsün" açıksa destek ödenen SGK'dan
   düştüğü kadar Vergi kârı'nın "Personel (bordro)" giderinden de düşer (satırın notu; denetim VG-08).
   **Faz 5 (23 Kasım 2026):** yemek kartı işaretli kişinin yemek kartı (Ayarlar › Personel yemek kartı: günlük 330 ₺ × 26
   gün) bordroda **ek ödeme gibi** girer: vergisiz, brütleştirilmeden maliyete; yasal brüt, SGK, GV ve DV değişmez
@@ -328,7 +328,7 @@ değerle; Ayarlar'daki oran farklıysa söyler), amortismanın dağıtımı, kaf
 
 Migration `drizzle/0045_vergi.sql` (yalnız ekleme). Yedek yeni tabloları kendiliğinden alır. **`npm run db:reset`:**
 demirbaş listesi faturalara bağlı olduğu için faturalarla silinir (komut silmeden önce kaç varlık olduğunu yazar;
-yedekte durur); sabit giderler Excel'den sınıflandırmasız gelir, `invoices.tax_not_asset` faturalarla gider.
+yedekte durur); sabit giderler tohum verisinden sınıflandırmasız gelir, `invoices.tax_not_asset` faturalarla gider.
 Muhasebecinin rakamları, düzeltmeler, aylık harcama kategorilerinin belgesi ve vergi ayarları kalır.
 
 ## 8. Nakit planıyla ilişki ve nakit planını okuyan yüzeyler (K25, K29)
@@ -344,7 +344,7 @@ maddesi ([HAFTALIK-OZET.md](HAFTALIK-OZET.md)), Claude'un nakit planı aracı. Z
 değişmedi. Besleme hesaplanamazsa plan vergisiz, bugünkü gibi çalışır (`console.error`): stopajlı ve yurt dışı sabit
 gider de bugünkü gibi brüt, faturasının KDV'siyle ödenir (muhtasar ve KDV-2 satırı olmadığı için stopaj kaybolmaz).
 
-**Excel "Vergi" sekmesi** (`src/app/api/export/workbook.ts` › `addTax`): ilk satır "Tahmin; beyanname değildir.
+**Dışa aktarımın "Vergi" sekmesi** (`src/app/api/export/workbook.ts` › `addTax`): ilk satır "Tahmin; beyanname değildir.
 Kafenin payı; şirketin beyannamesi muhasebecidedir." Bloklar: ay ay vergiye göre gelir-gider ve çeyrek toplamı
 (yalnız geliri mali belgeden gelen aylar; diğerlerinin yerine "Gelir mali belgeden girilmedi; hesap ekranda
 (taslak)"), geçici ve kurumlar vergisi satır satır formülüyle (hesap döneminin başından ya da çapadan beri her ay mali
@@ -376,7 +376,7 @@ kadar geçen yıl); hazırlanamazsa sekme yok, dosya iner.
 | `src/lib/cash-plan.ts` | Vergi beslemesi, muhtasar ve geçici vergi sınıfları, damga satırları, stopajlı sabit gider |
 
 Saf vergi kodu sunucuya ve veritabanına uzanmaz. Testler `tests/vergi-*.test.ts` (kurallar, bordro, takvim, damga,
-gelir-gider, demirbaş, muhtasar, kurumlar, eylemler ve veritabanı, migration, ekran kaynağı ve Excel sekmesi);
+gelir-gider, demirbaş, muhtasar, kurumlar, eylemler ve veritabanı, migration, ekran kaynağı ve dışa aktarım sekmesi);
 nakit planı `tests/nakit-plani.test.ts`, hatırlatıcılar `tests/reminders.test.ts`, haftalık özet
 `tests/haftalik-ozet.test.ts`. Personel sızıntı betiği (`scripts/personel-sizinti.ts`) dört adresi de dener: personel
 çereziyle HTML ve RSC isteği Bugün'e döner.

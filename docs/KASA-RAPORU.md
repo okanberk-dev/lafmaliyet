@@ -759,7 +759,7 @@ silinen rapor ayın rakamını hemen değiştirir.
 - **Sabit giderin günü:** açık gün kasadan geldiğinde kira, maaş ve öteki aylık kalemler Gelir-gider'de açık gün
   sayısıyla değil, raporların kapsadığı takvim günüyle bölünür (biten ayda ayın tamamı, süren ayda dünün sonuna kadar):
   bayramda kapalı gün ya da raporu girilmemiş gün kirayı ve maaşı düşürmez (`prorationDays`, engine.ts). Günlük
-  kalemler (personel yemeği) açık günle çarpılır. Açık gün elle yazıldıysa Excel'deki gibi açık gün ÷ ayın gün sayısı.
+  kalemler (personel yemeği) açık günle çarpılır. Açık gün elle yazıldıysa açık gün ÷ ayın gün sayısı.
   Oran hiçbir zaman 1'i aşmaz (iki şube aynı gün açıkken de). Biten ay ayın sonuna kadar sayılır: ayın 1'inde 00:00 ile
   05:00 arasında son günün raporu daha beklenirken de kira ve maaş tam ay (denetim 13 Kasım HM-10). Genel bakış'ta "Bu ay düşülen sabit gider" kutusu "Ayın geçen günü (16 / 31 gün)" yazar.
 - **Ay ortasında yüklenen satış listesi:** Satışlar'da liste yüklerken süren ayda "Liste hangi güne kadar?" sorulur
@@ -776,7 +776,7 @@ silinen rapor ayın rakamını hemen değiştirir.
   liste ay bittikten sonra da en çok geçiş gününden önceki güne kadar sayılır, sonraki aylara liste yüklenmez (satışlar
   her gün sonunda LafPOS'tan gelir). Ayrıntı: [LAFPOS.md › Günlük satış](LAFPOS.md#günlük-satış-aylık-model).
 - Kasa sayfasının ay görünümünde tek satır: "Bu ayın açık gün ve cirosu kasa raporlarından → Satışlar". Genel
-  bakış'ta POS cirosu "· kasa raporlarından"; Excel kopyasının Ay Bilgileri sayfasında "Kartlı satış oranı" ve "Kasa
+  bakış'ta POS cirosu "· kasa raporlarından"; dışa aktarımın (.xlsx) Ay Bilgileri sayfasında "Kartlı satış oranı" ve "Kasa
   raporundan" sütunları.
 
 ## Ciro ve ödenmez

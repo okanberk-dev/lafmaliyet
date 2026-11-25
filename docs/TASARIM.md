@@ -102,7 +102,7 @@ ana eylem `bg-primary text-on-primary` (açıkta ikisi de eski siyah / beyaz).
   `metadata.title` H1'le aynı. `tests/sayfa-basligi.test.ts` tutar.
 - **Bağlam satırı** (H1'in üstündeki küçük satır): elle yazılmaz, ağaçtan türer (`groupLabelOf(path, role)`: bu adresi
   açan grubun adı); üst düzey ekranda ve grubun adını taşıyan giriş ekranında çizilmez, telefonda hiç yok (üst çubuk
-  adı yazıyor). Başlıklarda "Excel: …" yok; Excel karşılığı Yardım'ın "Ekranlar" tablosunda ve ⌘K alt satırında.
+  adı yazıyor). Başlıklarda ve ⌘K'da eski hesap tablosunun sayfa adı yok; menüdeki ekranların listesi Yardım'ın "Ekranlar" kartında.
   `tests/kenar-cubugu.test.ts` iki ağacı, tek tıkla açılan ekranları, `src/app/panel` altındaki her ekranın menüden
   açıldığını ve paletin her ekranının rolünün ağacında da olduğunu sabitler.
   Bölüm sekmeleri (`SECTION_TABS`, sayfa başında): Giderler & maaşlar → Sabit giderler, Aylık harcamalar, Maaşlar
@@ -197,7 +197,7 @@ kendi hata satırı (`Field`), rozetler, toast'lar, `ErrorView` ve `ConfirmDialo
 
 ## 5. Sadeleştirme ilkeleri
 
-1. **Her şey kalır, gürültü gider.** Excel'deki her alan, hesap ve eylem yerinde kalır; tekrar eden açıklamalar
+1. **Her şey kalır, gürültü gider.** Her alan, hesap ve eylem yerinde kalır; tekrar eden açıklamalar
    `InfoTip`'e, nadir ayrıntı sekmeye ya da `<details>`'e.
 2. **Bir ekranda bir soru**: en üstte o ekranın asıl cevabı.
 3. **Liste = AkmanOS tablosu**: başlıkta ikon + ad + sayaç, sağda küçük düğmeler, tek satır arama/filtre, satır sonu

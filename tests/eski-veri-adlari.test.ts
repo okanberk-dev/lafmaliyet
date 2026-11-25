@@ -176,3 +176,9 @@ test("ekran, e-posta, asistan ve dışa aktarım kodunda 'Excel' metni kalmadı 
   }
   assert.deepEqual(bad, []);
 });
+
+test("asistanın bilgi tabanında eski tablonun adı yok", () => {
+  const kb = readFileSync(join(root, "src/lib/assistant/knowledge-data.ts"), "utf8");
+  const hits = [...kb.matchAll(/[^"]{0,60}Excel[^"]{0,60}/g)].map((m) => m[0]);
+  assert.deepEqual(hits, []);
+});

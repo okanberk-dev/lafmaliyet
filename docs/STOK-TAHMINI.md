@@ -59,7 +59,7 @@ Başlıktaki fatura sayısı ve "şubesi seçilmedi" sayacı liste kesilse de d�
 kesilince altında kaç faturanın gizlendiği ve bunların kaçının şubesinin seçilmediği yazar (25 Kasım 2026'ya kadar liste
 en yeni 100 faturada sessizce kesiliyordu, sayaç da yalnız onları sayıyordu: dönemin başındaki seçilmemiş fatura ne
 görünüyor ne sayılıyordu).
-Faturası olmayan alım (elle ya da Excel'den girilen fatura, market alımı, Tuzla'dan getirilen mal) tahmine girmez:
+Faturası olmayan alım (elle girilen ya da içe aktarılmış fatura, market alımı, Tuzla'dan getirilen mal) tahmine girmez:
 tahmini stok olduğundan az görünür, sayım düzeltir.
 
 ## 4. Kritik eşik
