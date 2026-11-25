@@ -2255,18 +2255,20 @@ export function ImportCard({
             <Button variant="ghost" onClick={() => setConfirmClear(false)} disabled={clearing} data-autofocus>
               Vazgeç
             </Button>
-            <Button variant="danger" onClick={clearMonth} disabled={clearing || (!hasLines && !withInfo)}>
-              {clearing ? "Siliniyor…" : hasLines ? `${num(lineCount)} satırı${withInfo ? " ve bilgileri" : ""} sil` : "Ay bilgilerini sil"}
+            <Button variant="danger" onClick={clearMonth} disabled={clearing || (!clearCount && !withInfo)}>
+              {clearing ? "Siliniyor…" : clearCount ? `${num(clearCount)} satırı${withInfo ? " ve bilgileri" : ""} sil` : "Ay bilgilerini sil"}
             </Button>
           </>
         }
       >
         <div className="space-y-3 pb-2 text-sm text-ink-mute">
           <p>
-            {hasLines ? (
+            {/* Sayı sunucunun sileceği ve denetlediği satırlar (clearCount: kapsamdaki bütün liste satırları, sayılmayan
+                eski ModPOS listesi dahil); LafPOS'un satırları ayrı tabloda, silinmez */}
+            {clearCount ? (
               <>
                 <span className="font-medium text-ink">
-                  {num(lineCount)} {lafpos ? "ModPOS" : "satış"} satırı silinecek.
+                  {num(clearCount)} {lafpos ? "ModPOS" : "satış"} satırı silinecek.
                 </span>{" "}
                 Eşleştirme hafızası ve Gelir-gider girişleri silinmez{lafpos ? "; LafPOS'tan gelen satırlar kalır" : ""}.
               </>

@@ -97,6 +97,15 @@ test("kaynak: kasa ve sayım 'Tümü'de birden çok kasa açıkken formdan önce
   assert.match(sayim, /title="Hangi şubeyi sayıyorsunuz\?"/);
 });
 
+test("kaynak: Satışlar'ın ay bilgisi 'Tümü'de birden çok kasa açıkken şubeyi sorar (Gelir-gider gibi Tuzla'ya yazmaz)", () => {
+  const page = read("src/app/panel/satislar/page.tsx");
+  const ask = page.indexOf("{model.ds.monthTotalsLocked && tills.length > 1 ? (");
+  assert.ok(ask > 0 && ask < page.indexOf("<MonthInfoForm"), "soru formdan önce");
+  assert.match(page, /title="Hangi şubenin ay bilgisi\?"/);
+  // Ayı temizle onayı sunucunun denetlediği sayıyı gösterir
+  assert.match(read("src/app/panel/satislar/sales-client.tsx"), /\{num\(clearCount\)\} \{lafpos \? "ModPOS" : "satış"\} satırı silinecek\./);
+});
+
 test("kaynak: Excel düğmesi ekranın şubesini gönderir; dosya kapsamı yazar, Vergi ve Cari firma geneli", () => {
   assert.match(read("src/app/panel/page.tsx"), /href=\{`\/api\/export\?ay=\$\{month\}&\$\{BRANCH_PARAM\}=\$\{encodeURIComponent\(scope\)\}`\}/);
   const route = read("src/app/api/export/route.ts");
