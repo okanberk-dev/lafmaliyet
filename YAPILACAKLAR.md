@@ -13,65 +13,11 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 - **Dalga 1** (#146): kör kasa, fişsiz çıkış, kasa formu taslağı, vardiya çakışması, part-time silme koruması, 09:00 zili, "Tümü" kâr dönemi, şube oranı, zil ve rozetler, büyüme gösterimi, eski Excel kalıntılarının kaldırılması, dışa aktarımın profesyonelleşmesi.
 - **Uyarı satırları yalnız personelde** (#145).
-
-## Yarım kalan: dal `ai/fatura-sube` (main'e GİTMEDİ)
-
-Haftalık kullanım limiti dolduğu için yarım kaldı. Son hali `ai/fatura-sube` dalında "ARA KAYIT (yarım)" commit'leriyle duruyor.
-
-- Henüz doğrulanmadı: testler, `npm run ci:yerel` ve derleme koşulmadı.
-- Göçler (0087–0089) var.
-- Sürdürmeden önce dalı origin/main ile birleştir (#145 ve #146 sonrası). Göç numaraları çakışırsa göçleri yeniden üret.
-
-Dalda yazılanlar (DOĞRULANMADI). Son commit 37df6643:
-- 13348b4d: Faturanın şubesi. Şube, işletme geneli ya da seçilmemiş olabilir. Tedarikçinin varsayılan şubesi, öneri kutusu ve şubeye göre süzme.
-- 00076018: Fatura sınıflandırma. Kalem kalem mal alışı ve sarf ayrımı, Temizlik & Sarf kategorisi, "hammadde değil" için neden etiketi, tedarikçi kuralı.
-- fbd02e1d: Paraşüt sayfasında bekleyen kartlar için aranabilir tek hammadde seçici.
-- 37df6643: AI eşleştirme isteminde faturanın bağlamı ve kısaltma yönergesi.
-
-Sürdürürken yapılacaklar:
-1. Dalı origin/main ile birleştir. 25 Kasım'da denendi; 10 dosya çakışıyor: engine.ts, types.ts, dataset.ts, stock-estimate.ts (sunucu), workbook.ts, sync.ts, sayim/tahmini/page.tsx, SUBE.md, STOK-TAHMINI.md ve bilgi tabanı. Dalga 1 aynı dosyalara dokundu; iki tarafın amacını koruyarak çöz. Göç numaralarını (0087–0089) gerekirse yeniden üret.
-2. Ardından şunları çalıştır:
-   - `npm test`
-   - `npm run ci:yerel -- fatura-sube`
-   - `npx tsc --noEmit`
-   - eslint
-   - `npm run build`
-3. Kalem kalem sayma geçmiş ayların mal alışını ve giderini değiştirir. main ile aynı veride rakam karşılaştırması yap; değişen her rakamı bilinçli kabul et ve testle kilitle.
-4. Ajanın son notu: "Docs for B4, then commit." Paraşüt belgesinin ilgili bölümü (B4) eksik kalmış olabilir.
-
-- **Şube kapsamı: faturalar ve Paraşüt şubeye göre.** İstenen davranış:
-  - Tuzla seçiliyken yalnız Tuzla'nın, Marina seçiliyken yalnız Marina'nın bilgileri görünür.
-  - "Tümü"de ikisi birlikte görünür.
-
-  Bugün iki şube aynı Paraşüt hesabını kullandığı için faturalar "işletme geneli" sayılıyor ve iki şubede de görünüyor. Yapılacaklar:
-  - Her faturaya şube atanacak: tedarikçinin varsayılan şubesi, faturada elle değiştirme ve toplu seçim.
-  - Paraşüt sayfası, Faturalar, Gelir-gider ve Maliyet bu şubeye göre süzülecek.
-  - Şubesi belirsiz faturalar "Şubesi seçilmemiş" kutusunda bekleyecek.
-- **Faturaları sınıflandırma** (dal `ai/fatura-sube`):
-  1. **Karışık fatura kalem kalem sayılacak (en önemlisi).**
-     - Bugün bir fatura ya tamamen mal alışı ya tamamen gider sayılıyor.
-     - Hammaddeye bağlı kalemler mal alışına, kalanı sarf giderine yazılacak.
-     - Faturadaki toplam iskonto kalemlere tutarlarıyla orantılı dağıtılacak.
-     - "Stoğa giriyor, gelir-gidere girmiyor" kontrolü, vergi hesabı, dışa aktarım ve çifte gider kontrolü aynı mantığa geçecek.
-     - En riskli kısım bu; en çok test burada.
-  2. **Tedarikçi bazlı "hep hammadde değil" kuralı.**
-     - Kural açık tedarikçinin yeni kalemleri bekleyenlere düşmeyecek. Örnek: Avansas'ın ofis ve temizlik kalemleri.
-     - Zaten bir hammaddeye bağlı kalemler (çay, soda) bu kuraldan etkilenmeyecek.
-  3. **"Temizlik & Sarf" kategorisi.**
-     - Gelir-giderde sarf gideri olarak sayılacak.
-     - Kategori kuralı temizlik firmasını (Hizmet) temizlik malzemesinden (Sarf) ayıracak.
-     - "Diğer" yalnız sınıflanmamış faturaların bekleme kutusu olacak.
-  4. **AI eşleştirme istemi.** İsteme şunlar da verilecek:
-     - tedarikçi
-     - faturadaki diğer kalemler ve faturanın açıklaması
-     - bilinen kısaltmalar
-     - tedarikçide geçmişte "hammadde değil" denen kalemler
-
-     Örnek hata: "KRP END KONTY" çöp torbasıydı, AI toner sandı.
-  5. **Paraşüt sayfası hafifleyecek.** Bekleyen her kartta 108 seçenekli tam liste var ve sayfa yaklaşık 90 bin karakter. Yerine aranabilir tek bir seçici gelecek.
-  6. **"Hammadde değil" için neden etiketi.**
-     - Seçenekler: Sarf, Demirbaş, Hizmet, Deneme. Kalem seçilen yere yazılacak.
-     - Demirbaş seçilince Vergi › Demirbaş'a eklenmesi önerilecek. Örnek: 10.000 ₺'lik tüplü ısıtıcı.
+- **Faturanın şubesi ve fatura sınıflandırma** (dal `wip/fatura-sube`, `ai/fatura-sube`'nin devamı; güncel main dala alındı, doğrulandı; main'e PR'la gidecek):
+  - Her faturanın şubesi: şube, İşletme geneli ya da Şubesi seçilmemiş. Tedarikçinin varsayılan şubesi, Faturalar › Tümü'de öneri kutusu, toplu seçim. Faturalar, Gelir-gider, Maliyet ve Paraşüt şubeye göre süzülür.
+  - Karışık fatura kalem kalem: hammaddeye bağlı kalem mal alışı, "hammadde değil" kalem nedeninin yerine (Sarf, Demirbaş, Hizmet, Deneme). Tedarikçi kuralı, Temizlik & Sarf kategorisi, aranabilir hammadde seçici, AI isteminde faturanın bağlamı.
+  - Eski kuralla rakam karşılaştırması: `scripts/fatura-kalem-karsilastir.ts`; değişen rakamlar `tests/fatura-kalem-karsilastirma.test.ts`'te kilitli (docs/PARASUT.md › 5f).
+  - Sahibe söylenecek: geçişten sonra tek şube seçiliyken eski faturalar görünmez, ta ki şubeleri seçilene kadar (Tümü değişmez). Hammaddeye bağlı kalemi olan mal dışı faturaların o kalemleri geçmiş aylarda da mal alışına geçer.
 
 ## Sahibin tarafında (kod değil)
 
