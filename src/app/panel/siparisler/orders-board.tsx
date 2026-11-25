@@ -197,6 +197,8 @@ export function OrdersBoard({
   ordersOff?: string | null;
 }) {
   const { data, list, calls, now, prefs } = useOrdersFeed(role, serverNow);
+  // Sayfanın çizdiği metin ya da canlı ucun işareti (seçim başka sekmede değişince sayfa yenilenene dek de doğru söyler)
+  const offText = ordersOff ?? (data?.off?.orders ? "Uygulama siparişleri bu şubede kullanılmıyor." : null);
   // Bar ekranı: cihazın "Ekran açık kalsın" tercihiyle ekran kararmaz (Karaoke ekranı gibi)
   useWakeLock(prefs.wakeLock);
   const tables = list.filter((o) => o.fulfillment === "table" && o.stage !== "ready").length;
@@ -242,8 +244,8 @@ export function OrdersBoard({
             söylüyor) */}
         {data?.configured ? (
           <div className="space-y-3 px-5 pb-5">
-            {ordersOff ? (
-              <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-mute ring-1 ring-line">{ordersOff}</p>
+            {offText ? (
+              <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-mute ring-1 ring-line">{offText}</p>
             ) : list.length ? (
               <ul className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3" aria-label="Açık uygulama siparişleri">
                 {list.map((o) => (

@@ -6,6 +6,7 @@ import { SITE_ORDER_ID } from "@/lib/site-orders/schema";
 import { canAdvance, STAGE_PATH, staleMessage, stageDoneMessage, stageFailureMessage, UNREADABLE_MESSAGE } from "@/lib/site-orders/stage";
 import { buildStageBody, readStageAnswer } from "@/lib/site-orders/stage-request";
 import { requireUser } from "@/server/auth/dal";
+import { assertStaffFeature } from "@/server/branch-features";
 import { siteLinkSecret } from "@/server/site-link";
 import { callSite, SiteRequestError } from "@/server/site-menu/sync";
 import { readOrdersSnapshot, syncSiteOrders } from "@/server/site-orders/sync";
@@ -54,6 +55,8 @@ async function resync(): Promise<boolean> {
 export async function advanceSiteOrder(input: z.input<typeof zStage>) {
   return attempt<StageResult>(async () => {
     const me = await requireUser();
+    // Şube özelliği (docs/SUBE.md › Şube özellikleri): uygulama siparişi kapalı şubeye kilitli personel çağıramaz
+    await assertStaffFeature(me, "siparis");
     const data = zStage.parse(input);
     const secret = siteLinkSecret();
     // Kurulum ayrıntısı (anahtar adı, imza, sitenin sürümü) yalnız yöneticiye; personel sabit metni görür (E-64)

@@ -4,6 +4,7 @@
 //            Sahibin varsayılanı: karaoke Tuzla'da, öbürleri her şubede; okunmamış satır bugünkü davranışı alır. Karaoke
 //            tek şubede; online kanalın özelliği yok. Kitle: yönetici, şubesiz personel ve özelliği açık şubenin personeli.
 // menü       Kapalı özelliğin ekranı kenar çubuğunda, çekmecede ve paletde yok; personelin alt menüsü beş hücre kalır.
+// eylem      Sipariş aşaması ve masa çağrısında "Gördüm": özelliği kapalı şubeye kilitli personel reddedilir.
 // kaynak     KARAOKE_BRANCH_ID sabiti kalktı: karaokenin şubesi her yerde özellikten; canlı uç, push ve Bugün özelliğe göre.
 //
 // Çalıştırma: npx tsx --test tests/sube-ozellik.test.ts
@@ -23,7 +24,9 @@ import {
   featureInScope,
   karaokeBranchOf,
   NEW_BRANCH_FEATURES,
+  offFeatureLabels,
   parseFeatures,
+  staffFeatureError,
   withFeature,
 } from "../src/lib/branch-features";
 import { ALL_BRANCHES, DEFAULT_BRANCHES, type BranchRow } from "../src/lib/branches";
@@ -121,6 +124,31 @@ test("menü: kapalı özelliğin ekranı ağaçta, paletde ve alt menüde yok; p
   assert.deepEqual(bottomNavFor("staff", { features: ["siparis"] }).map((i) => i.id), ["bugun", "siparisler", "zayi", "kasa", "receteler"]);
   assert.deepEqual(bottomNavFor("staff", { features: [] }).map((i) => i.id), ["bugun", "zayi", "kontrol", "kasa", "receteler"]);
   assert.deepEqual(bottomNavFor("admin", { features: [] }).map((i) => i.id), bottomNavFor("admin").map((i) => i.id), "yöneticinin alt menüsünde özellikli ekran yok");
+});
+
+test("eylem: özelliği kapalı şubeye kilitli personel reddedilir; yönetici serbest; hiçbir şubede yoksa bütün personel", () => {
+  const staff = { role: "staff" };
+  const noCalls = withRow("marina", { features: ["siparis", "yemek_karti"] });
+  assert.equal(staffFeatureError({ role: "admin" }, "marina", noCalls, "garson"), null);
+  assert.equal(staffFeatureError(staff, "marina", noCalls, "garson"), "Garson çağır bu şubede kullanılmıyor");
+  assert.equal(staffFeatureError(staff, "tuzla", noCalls, "garson"), null);
+  assert.equal(staffFeatureError(staff, null, noCalls, "garson"), null, "şubesiz personel özellik bir şubede açıkken serbest");
+  assert.equal(staffFeatureError(staff, "marina", noCalls, "siparis"), null);
+  const nowhere = BRANCHES.map((b) => ({ ...b, features: b.features?.filter((f) => f !== "siparis") }));
+  assert.equal(staffFeatureError(staff, null, nowhere, "siparis"), "Uygulama siparişleri bu şubede kullanılmıyor");
+  assert.equal(staffFeatureError({ role: "admin" }, null, nowhere, "siparis"), null);
+  // Uçlar sorar (eylem kimliği istemci paketinde)
+  assert.match(read("src/server/actions/site-orders.ts"), /const me = await requireUser\(\);\n.*\n\s+await assertStaffFeature\(me, "siparis"\);/);
+  assert.match(read("src/server/actions/table-calls.ts"), /const me = await requireUser\(\);\n.*\n\s+await assertStaffFeature\(me, "garson"\);/);
+});
+
+test("çip: kapalı özelliklerin adları; karaoke ve online kanal sayılmaz", () => {
+  assert.deepEqual(offFeatureLabels(BRANCHES[1]), []);
+  assert.deepEqual(offFeatureLabels({ ...BRANCHES[1], features: ["siparis"] }), ["Garson çağır", "Yemek kartı ve platformlar"]);
+  assert.deepEqual(offFeatureLabels(BRANCHES[2]), []);
+  const card = read("src/app/panel/ayarlar/branch-settings-card.tsx");
+  assert.match(card, /offFeatureLabels\(b\)/);
+  assert.match(card, /hasFeature\(b, "karaoke"\) \? "karaoke" : null/);
 });
 
 /** src altındaki bütün .ts / .tsx dosyaları */

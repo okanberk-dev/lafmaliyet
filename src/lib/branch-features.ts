@@ -118,6 +118,37 @@ export function featureAudience<U extends { role: "admin" | "staff"; branchId: s
 }
 
 /**
+ * Fiziksel şubede kapalı özelliklerin adları (Şubeler listesinin ve Ayarlar'ın çipi: "Garson çağır, Yemek kartı ve
+ * platformlar"). Tek şubelik özellik (karaoke) sayılmaz: bir şubede açık, öbürlerinde kapalı olması olağan
+ */
+export function offFeatureLabels(b: FeatureBranch): string[] {
+  if (b.kind !== "fiziksel") return [];
+  return BRANCH_FEATURES.filter((f) => !f.single && !hasFeature(b, f.id)).map((f) => f.label);
+}
+
+/** Kapalı özelliğin eylem metni ("Garson çağır bu şubede kullanılmıyor") */
+export function featureOffText(feature: BranchFeature): string {
+  return `${featureLabel(feature)} ${FEATURE_ELSEWHERE.toLocaleLowerCase("tr-TR")}`;
+}
+
+/**
+ * Personelin özelliğin eylemini (sipariş aşaması, masa çağrısında "Gördüm") çağırıp çağıramayacağı; sorun yoksa null.
+ * Ekran zaten gizler, eylem kimliği istemci paketinde olduğu için uç da sorar. Yönetici serbest; özellik hiçbir şubede
+ * açık değilse personel reddedilir; şubesine kilitli personel (`lock`, etkin şubesi) yalnız kendi şubesinde açıksa
+ */
+export function staffFeatureError(
+  me: { role: string },
+  lock: string | null,
+  branches: readonly FeatureBranch[],
+  feature: BranchFeature,
+): string | null {
+  if (me.role === "admin") return null;
+  const on = featureBranches(branches, feature);
+  if (!on.length || (lock !== null && !on.some((b) => b.id === lock))) return featureOffText(feature);
+  return null;
+}
+
+/**
  * Özelliği açıp kapatmanın kuralı; sorun yoksa null. Online kanalın özelliği olmaz; tek şubelik özellik (karaoke) başka
  * bir etkin şubede açıksa açılamaz (önce oradan kapatılır: sitenin tek odası iki şubede görünmesin)
  */

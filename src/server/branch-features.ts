@@ -2,9 +2,11 @@ import "server-only";
 
 import { eq, sql } from "drizzle-orm";
 
-import { type BranchFeature, branchFeatures, featureChangeError, featureLabel, withFeature } from "@/lib/branch-features";
+import { type BranchFeature, branchFeatures, featureChangeError, featureLabel, staffFeatureError, withFeature } from "@/lib/branch-features";
 import { sortBranches } from "@/lib/branches";
+import { staffBranchLock } from "@/server/branch-scope";
 import { logSetting } from "@/server/branch-settings";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { UserError } from "@/server/user-error";
 
@@ -37,4 +39,15 @@ export async function setBranchFeatureTx(
   await tx.update(s.branches).set({ features: next, updatedAt: new Date() }).where(eq(s.branches.id, d.branchId));
   await logSetting(tx, me, "Şube özelliği", `${branch.name} · ${featureLabel(d.feature)}: ${d.on ? "açıldı" : "kapatıldı"}`);
   return { features: next, changed: true };
+}
+
+/**
+ * Özelliğin eylemi personel için kapalıysa reddeder (`staffFeatureError`): uygulama siparişi kapalı şubeye kilitli
+ * personel sipariş aşaması işaretleyemez, garson çağır kapalıysa masa çağrısını "Gördüm" diye kapatamaz
+ */
+export async function assertStaffFeature(me: { role: string }, feature: BranchFeature): Promise<void> {
+  if (me.role === "admin") return;
+  const [branches, lock] = await Promise.all([listBranches(), staffBranchLock()]);
+  const error = staffFeatureError(me, lock, branches, feature);
+  if (error) throw new UserError(error);
 }

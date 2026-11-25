@@ -29,16 +29,15 @@ import {
   type BranchPosSource,
   type BranchRow,
 } from "@/lib/branches";
-import { BRANCH_FEATURES, hasFeature } from "@/lib/branch-features";
+import { hasFeature, offFeatureLabels } from "@/lib/branch-features";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { num } from "@/lib/format";
 import { shortDateTR } from "@/lib/takvim";
 import type { ActionResult } from "@/server/actions/util";
 
-/** Fiziksel şubede kapalı özelliklerin adları ("Garson çağır, Yemek kartı ve platformlar"; karaoke tek şubede, sayılmaz) */
+/** Kapalı özelliklerin çip metni (yoksa null; `offFeatureLabels`) */
 function offFeatures(b: BranchRow): string | null {
-  if (b.kind !== "fiziksel") return null;
-  const off = BRANCH_FEATURES.filter((f) => !f.single && !hasFeature(b, f.id)).map((f) => f.label);
+  const off = offFeatureLabels(b);
   return off.length ? off.join(", ") : null;
 }
 

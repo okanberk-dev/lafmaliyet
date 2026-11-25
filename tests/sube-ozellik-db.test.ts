@@ -180,6 +180,24 @@ describe("Şube özellikleri", { skip: !SERVER_URL && "SUBE_OZELLIK_TEST_DATABAS
     // Kapsam: Marina seçiliyken sipariş yok, Tümü'de var
     assert.equal(await server.featureHere("siparis", "marina"), false);
     assert.equal(await server.featureHere("siparis", "hepsi"), true);
+    // Eylem: Marina'ya kilitli personel sipariş aşamasını ilerletemez (siteye istek gitmeden); Tuzla'nınki ve yönetici
+    // özellik kapısından geçer (sonra site bağlı değil hatası)
+    const { advanceSiteOrder } = await import("../src/server/actions/site-orders");
+    const { ackTableCall } = await import("../src/server/actions/table-calls");
+    const order = { id: "ord_1", action: "preparing", from: "new" } as Parameters<typeof advanceSiteOrder>[0];
+    me = users.marina;
+    assert.deepEqual(await advanceSiteOrder(order), { ok: false, error: "Uygulama siparişleri bu şubede kullanılmıyor" });
+    for (const who of [users.tuzla, users.ali]) {
+      me = who;
+      const res = await advanceSiteOrder(order);
+      assert.ok(!res.ok && res.error !== "Uygulama siparişleri bu şubede kullanılmıyor", `${who.name}: özellik kapısından geçer`);
+    }
+    me = users.ali;
+    assert.ok((await setFeature("marina", "garson", false)).ok);
+    me = users.marina;
+    assert.deepEqual(await ackTableCall({ id: "call_1" }), { ok: false, error: "Garson çağır bu şubede kullanılmıyor" });
+    me = users.ali;
+    assert.ok((await setFeature("marina", "garson", true)).ok);
     assert.ok((await setFeature("marina", "siparis", true)).ok);
   });
 

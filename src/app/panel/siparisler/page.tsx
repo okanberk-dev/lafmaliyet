@@ -121,7 +121,8 @@ async function SiparislerContent() {
         )}
         {soldOut?.configured ? <SoldOutCard role={user.role} entries={soldOut.entries} serverNow={now} branches={branchNames} lockedStaff={locked} /> : null}
         <div className="max-w-xl">
-          <DeviceAlerts role={user.role} karaoke />
+          {/* Karaoke alarmlarının satırları yalnız karaoke bu kapsamda açıkken (şube özelliği) */}
+          <DeviceAlerts role={user.role} karaoke={featureInScope("karaoke", view.scope, view.branches)} />
         </div>
       </div>
     </>
