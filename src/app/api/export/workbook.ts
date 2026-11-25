@@ -44,12 +44,24 @@ const DATE = "dd.mm.yyyy";
 const MONTH_SHORT = "[$-41F]mmm yyyy";
 const MONTH_LONG = "[$-41F]mmmm yyyy";
 
-const HEADER_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF33211A" } };
+/** Tablo başlığının zemini (koyu kahve, beyaz kalın yazı); testler de bu rengi arar */
+export const HEADER_ARGB = "FF33211A";
+const HEADER_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_ARGB } };
 const SUBHEADER_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF4F4F5" } };
+/** Toplam satırının zemini (açık kahve) ve üst çizgisi */
+export const TOTAL_ARGB = "FFF3ECE6";
+const TOTAL_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: TOTAL_ARGB } };
+const TOTAL_BORDER: Partial<ExcelJS.Borders> = { top: { style: "thin", color: { argb: "FF64412A" } } };
 const SECTION_FONT: Partial<ExcelJS.Font> = { bold: true, color: { argb: "FF64412A" } };
+const TITLE_FONT: Partial<ExcelJS.Font> = { bold: true, size: 16, color: { argb: HEADER_ARGB } };
+const MUTED_FONT: Partial<ExcelJS.Font> = { color: { argb: "FF71717A" } };
 /** Ham kayıt (yedek) sekmelerinin rengi: asıl sekmelerden ayrılsın */
 const RAW_TAB: Partial<ExcelJS.Color> = { argb: "FFA1A1AA" };
 const BRAND_TAB: Partial<ExcelJS.Color> = { argb: "FF64412A" };
+/** Kendiliğinden genişleyen sütunun en çok genişliği (karakter): uzun açıklamalar sarılır ya da taşar */
+const MAX_AUTO_WIDTH = 48;
+/** Raporun adı (kapak, dosya özellikleri, sayfa üst bilgisi) */
+export const REPORT_TITLE = "L'Affogato – Maliyet ve Kârlılık Raporu";
 
 /** Gelir-gider bölüm başlıkları (ekrandaki SECTION_LABELS'ın büyük harfi) */
 export const PNL_SECTION_LABELS: Record<string, string> = {
@@ -129,6 +141,11 @@ interface Col {
 
 /** Sayfanın sütun başlıkları (addSheet'e verilen sırayla), headerRow(ws, colHeaders(ws)) için */
 const HEADERS = new WeakMap<ExcelJS.Worksheet, Record<string, string>>();
+/** Sayfanın ilk tablo başlığının satırı: yazdırmada her sayfada tekrarlanır */
+const HEADER_ROW = new WeakMap<ExcelJS.Worksheet, number>();
+
+/** Sayfanın tanımlı sütun sayısı (addSheet) */
+const colCount = (ws: ExcelJS.Worksheet) => ws.columns?.length ?? ws.columnCount;
 
 function addSheet(wb: ExcelJS.Workbook, name: string, cols: Col[], opts: { x?: number; y?: number; landscape?: boolean; raw?: boolean } = {}) {
   const ws = wb.addWorksheet(name, {
@@ -145,26 +162,54 @@ function colHeaders(ws: ExcelJS.Worksheet): Record<string, string> {
   return HEADERS.get(ws) ?? {};
 }
 
-/** Koyu başlık satırı (tablonun sütun adları) */
+/**
+ * Koyu başlık satırı (tablonun sütun adları): sayfanın bütün sütunlarında koyu zemin, beyaz kalın yazı, alt çizgi;
+ * sayı sütununun başlığı sağa yaslı. Satırın kendisine değil hücrelere uygulanır (zemin tablonun sağına taşmasın).
+ */
 function headerRow(ws: ExcelJS.Worksheet, values: Record<string, ExcelJS.CellValue>) {
   const r = ws.addRow(values);
-  r.font = { bold: true, color: { argb: "FFFFFFFF" } };
-  r.fill = HEADER_FILL;
-  r.alignment = { vertical: "middle", wrapText: true };
   r.height = 30;
+  for (let c = 1; c <= colCount(ws); c++) {
+    const cell = r.getCell(c);
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = HEADER_FILL;
+    cell.alignment = { vertical: "middle", wrapText: true, horizontal: ws.getColumn(c).numFmt ? "right" : "left" };
+    cell.border = { bottom: { style: "thin", color: { argb: "FF64412A" } } };
+  }
+  if (!HEADER_ROW.has(ws)) HEADER_ROW.set(ws, r.number);
   return r;
 }
 
-/** Sayfa içindeki ikinci tablonun açık renkli başlığı */
+/** Sayfa içindeki ikinci tablonun açık renkli başlığı (sayfanın bütün sütunlarında) */
 function subHeaderRow(ws: ExcelJS.Worksheet, values: Record<string, ExcelJS.CellValue>) {
   const r = ws.addRow(values);
-  r.font = { bold: true };
-  r.alignment = { vertical: "middle", wrapText: true };
-  r.eachCell((c) => {
-    c.fill = SUBHEADER_FILL;
-    c.border = { bottom: { style: "thin", color: { argb: "FFE4E4E7" } } };
-  });
+  for (let c = 1; c <= colCount(ws); c++) {
+    const cell = r.getCell(c);
+    cell.font = { bold: true };
+    cell.alignment = { vertical: "middle", wrapText: true };
+    cell.fill = SUBHEADER_FILL;
+    cell.border = { bottom: { style: "thin", color: { argb: "FFE4E4E7" } } };
+  }
   return r;
+}
+
+/** Toplam satırı: kalın, açık kahve zemin, üstte ince çizgi (sayfanın bütün sütunlarında); yazı rengi korunur */
+function totalRow(ws: ExcelJS.Worksheet, r: ExcelJS.Row) {
+  for (let c = 1; c <= colCount(ws); c++) {
+    const cell = r.getCell(c);
+    cell.font = { ...cell.font, bold: true };
+    cell.fill = TOTAL_FILL;
+    cell.border = TOTAL_BORDER;
+  }
+  return r;
+}
+
+/**
+ * Süzgeçle birlikte çalışan toplam: SUBTOTAL(109; aralık) yalnız görünen satırları toplar. Sonuç (dosya açılınca
+ * yeniden hesaplanır) panelin toplamıdır; aralık boşsa 0
+ */
+function subtotal(col: string, from: number, to: number, result: number): ExcelJS.CellFormulaValue {
+  return { formula: `SUBTOTAL(109,${col}${from}:${col}${to})`, result: round2(result) };
 }
 
 function sectionRow(ws: ExcelJS.Worksheet, key: string, text: string) {
@@ -175,6 +220,63 @@ function sectionRow(ws: ExcelJS.Worksheet, key: string, text: string) {
 
 function setFmt(row: ExcelJS.Row, keys: string[], fmt: string) {
   for (const k of keys) row.getCell(k).numFmt = fmt;
+}
+
+/**
+ * Hücrenin ekranda kapladığı yaklaşık karakter sayısı (sütun genişliği için). Sayı biçimiyle: binlik ayraç, ondalık,
+ * "₺" ve "%" dahil; tarih 10 karakter. 40 karakterden uzun metin sayılmaz (açıklama, bölüm başlığı: sarılır ya da yan
+ * hücreye taşar); sarılan başlık iki satıra bölünür.
+ */
+export function cellWidth(cell: ExcelJS.Cell): number {
+  let v = cell.value as unknown;
+  if (v && typeof v === "object" && "formula" in (v as object)) v = (v as ExcelJS.CellFormulaValue).result;
+  if (v && typeof v === "object" && "result" in (v as object)) v = (v as { result: unknown }).result;
+  const fmt = cell.numFmt ?? "";
+  if (typeof v === "number") {
+    const pct = fmt.includes("%");
+    const int = Math.floor(Math.abs(pct ? v * 100 : v)).toString().length;
+    const decimals = (fmt.match(/\.(0+)/)?.[1].length ?? 0) + (fmt.match(/\.(#+)/)?.[1].length ?? 0);
+    return int + Math.floor((int - 1) / 3) + (decimals ? decimals + 1 : 0) + (v < 0 ? 1 : 0) + (fmt.includes("₺") ? 2 : 0) + (pct ? 1 : 0);
+  }
+  if (v instanceof Date) return fmt.includes("mmmm") ? 14 : 10;
+  if (typeof v !== "string") return 0;
+  if (cell.alignment?.wrapText) return Math.ceil(Math.max(...v.split(/\s+/).map((w) => w.length), v.length / 2));
+  return v.length <= 40 ? v.length : 0;
+}
+
+/** Sütunu içeriğine göre genişletir (daraltmaz): rakam "####" görünmesin, kısa metin kesilmesin; en çok MAX_AUTO_WIDTH */
+function fitColumns(ws: ExcelJS.Worksheet) {
+  for (let c = 1; c <= colCount(ws); c++) {
+    const col = ws.getColumn(c);
+    let need = 0;
+    col.eachCell({ includeEmpty: false }, (cell) => {
+      need = Math.max(need, cellWidth(cell));
+    });
+    const cur = col.width ?? 10;
+    const want = Math.min(need + 2, MAX_AUTO_WIDTH);
+    if (want > cur) col.width = want;
+  }
+}
+
+/** Otomatik süzgeç: başlık satırından son veri satırına, sayfanın bütün sütunları (toplam satırı dışarıda) */
+function filterRows(ws: ExcelJS.Worksheet, head: number, last: number) {
+  ws.autoFilter = { from: { row: head, column: 1 }, to: { row: Math.max(head, last), column: colCount(ws) } };
+}
+
+/** Üst ve alt bilgideki metin: "&" denetim karakteri, ikilenir */
+const hfText = (s: string) => s.replace(/&/g, "&&");
+
+/**
+ * Yazdırma ve son biçim: A4, sayfaya sığdır, kenar boşlukları, üst bilgi (rapor · sayfa · dönem ve kapsam), alt bilgi
+ * (oluşturulma, sayfa numarası), tablo başlığı her sayfada tekrar; sütun genişlikleri içeriğe göre
+ */
+function finishSheet(ws: ExcelJS.Worksheet, period: string, created: string) {
+  ws.pageSetup.margins = { left: 0.5, right: 0.5, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 };
+  ws.headerFooter.oddHeader = `&L&B${hfText("L'Affogato")}&B&C${hfText(ws.name)}&R${hfText(period)}`;
+  ws.headerFooter.oddFooter = `&L${hfText(`Oluşturulma: ${created}`)}&RSayfa &P / &N`;
+  const head = HEADER_ROW.get(ws);
+  if (head && !ws.pageSetup.printTitlesRow) ws.pageSetup.printTitlesRow = `${head}:${head}`;
+  fitColumns(ws);
 }
 
 /** Sütun harfi (1 → A, 27 → AA) */
@@ -288,8 +390,16 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
   const st = model.settings;
   const now = extras.now ?? new Date();
   const wb = new ExcelJS.Workbook();
+  // Dosya özellikleri (Dosya › Bilgi): rapor adı, dönem, kapsam
   wb.creator = "L'Affogato Panel";
+  wb.lastModifiedBy = "L'Affogato Panel";
   wb.created = now;
+  wb.modified = now;
+  wb.company = "L'Affogato";
+  wb.title = `${REPORT_TITLE} · ${monthLabel(month)}`;
+  wb.subject = `${monthLabel(month)} · ${extras.scope?.label ?? "Tümü"}`;
+  wb.keywords = "maliyet, kârlılık, gelir-gider, faturalar, sayım";
+  wb.description = "Yönetim paneli dışa aktarımı. Rakamlar paneldeki hesapla aynıdır; dosyadaki değişiklik panele geri gitmez.";
   // Faturalar'daki Net / KDV / Ay ve Aylık Alımlar formülleri dosya açılınca yeniden hesaplansın
   wb.calcProperties.fullCalcOnLoad = true;
 
@@ -327,7 +437,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
       { key: "ratio", header: "Maliyet oranı %", fmt: PCT },
       { key: "sug", header: "Önerilen fiyat (KDV dahil)", fmt: MONEY0 },
       { key: "status", header: "Durum", width: 12 },
-      { key: "qty", header: `${label} satış adedi` },
+      { key: "qty", header: `${label} satış adedi`, fmt: "#,##0" },
       { key: "mp", header: `${label} brüt kâr`, fmt: MONEY0 },
       { key: "mn", header: `${label} net ciro`, fmt: MONEY0 },
       { key: "fire", header: "Fire oranı", fmt: PCT },
@@ -365,7 +475,22 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
       active: p.product.active ? "Evet" : "Pasif",
     });
   }
-  uk.autoFilter = { from: "A1", to: `${colLetter(uk.columnCount)}1` };
+  // Süzgeç yalnız ürün satırlarında; toplam bir boş satır altta ve süzülen ürünleri toplar (SUBTOTAL)
+  const ukLast = uk.rowCount;
+  filterRows(uk, 1, ukLast);
+  if (model.products.length) {
+    const col = (k: string) => colLetter(uk.getColumn(k).number);
+    const qtys = model.products.map((p) => sold.get(p.product.id) ?? 0);
+    uk.addRow({});
+    const ut = uk.addRow({
+      cat: "TOPLAM",
+      qty: { formula: `SUBTOTAL(109,${col("qty")}2:${col("qty")}${ukLast})`, result: sum(qtys) },
+      mp: subtotal(col("mp"), 2, ukLast, sum(model.products.map((p, i) => (p.status === "Reçete yok" ? 0 : p.unitProfit * qtys[i])))),
+      mn: subtotal(col("mn"), 2, ukLast, sum(model.products.map((p, i) => p.net * qtys[i]))),
+    });
+    ut.getCell("cat").note = "Süzgeçte görünen ürünlerin satış adedi, brüt kârı ve net cirosu. Reçetesi boş ürünün brüt kârı toplama girmez.";
+    totalRow(uk, ut);
+  }
 
   // ---------------------------------------------------------------- Reçete Kartları
   const rc = addSheet(
@@ -394,8 +519,10 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
       if (l.qtyError) r.getCell("f").note = `Formül hatası: ${l.qtyError}`;
     }
     const r = rc.addRow({ p: p.product.name, s: p.product.size, i: `ÜRÜN MALİYETİ (fire %${num(p.fireRate * 100, 1)} dahil)`, t: p.cost });
-    r.font = { bold: true };
+    totalRow(rc, r);
   }
+  // Süzgeç (ürüne, malzemeye göre): ürünün bütün satırları ve maliyet satırı aynı adla süzülür
+  filterRows(rc, 1, rc.rowCount);
 
   addSales(wb, model, month);
 
@@ -440,7 +567,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
       note: i.priceSource === "water" ? [`Su + buz: ${waterExplanation(model.water)}`, i.note].filter(Boolean).join(" · ") : i.note,
     });
   }
-  hm.autoFilter = { from: "A1", to: `${colLetter(hm.columnCount)}1` };
+  filterRows(hm, 1, hm.rowCount);
 
   addInvoices(wb, model, extras.outstanding, extras.branchNames);
   if (extras.cari?.length) addCari(wb, extras.cari);
@@ -468,6 +595,8 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
     ["Hedef maliyet oranı (food cost)", st.hedefMaliyet, PCT, "Önerilen fiyat bu orana göre hesaplanır."],
     ["Fire / kayıp payı", st.fire, PCT, "Malzeme maliyetine eklenen dökülen / atılan mal payı (ürün kartında ayrı oran verilebilir)."],
     ["Fire ambalaja uygulanmaz", st.fireExcludesPackaging ? "Evet" : "Hayır", null, "Evet: fire payı bardak, kapak, peçete hariç malzemelere uygulanır."],
+    ["Ambalajın alış KDV'si", st.alisKdvAmbalaj, PCT, "Sayımın Ambalaj grubunun olağan oranı: Hammaddeler'de yeni malzemeye önerilir; malzemenin kendi Alış KDV'si geçer."],
+    ["Gıdanın alış KDV'si", st.alisKdvGida, PCT, "Sayımın öteki gruplarının olağan oranı; sayımda listede olmayan kalemlerin KDV dahil değeri bununla."],
     ["Tek shot kahve (gr)", st.shotTek, null, "Reçetelerdeki ShotTek formülü."],
     ["Çift shot kahve (gr)", st.shotCift, null, "Reçetelerdeki ShotCift formülü."],
     ["1 pompa şurup (ml)", st.pompa, null, "Reçetelerdeki Pompa formülü."],
@@ -491,6 +620,14 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
   addRawRecords(wb, model);
   addRawStock(wb, model);
   fillGuide(guide, wb, model, month, now, extras.scope);
+  // Son biçim: yazdırma düzeni, üst / alt bilgi, sütun genişlikleri (kapakta açıklama sütunu sabit)
+  const period = `${label} · ${extras.scope?.label ?? "Tümü"}`;
+  for (const ws of wb.worksheets) {
+    if (ws === guide) {
+      ws.pageSetup.margins = { left: 0.5, right: 0.5, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 };
+      ws.headerFooter.oddFooter = `&L${hfText(`Oluşturulma: ${dateTimeTR(now)}`)}&RSayfa &P / &N`;
+    } else finishSheet(ws, period, dateTimeTR(now));
+  }
   // Dosya Özet'te açılsın (rehber hemen solunda)
   wb.views = [{ x: 0, y: 0, width: 28800, height: 17000, firstSheet: 0, activeTab: 1, visibility: "visible" }];
   return wb;
@@ -532,9 +669,10 @@ function fillGuide(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook, model: Model, mo
   const label = monthLabel(month);
   ws.properties.tabColor = BRAND_TAB;
   ws.pageSetup.fitToPage = true;
-  const t = ws.addRow({ a: "L'Affogato – Maliyet & Kârlılık" });
-  t.font = { bold: true, size: 14 };
-  ws.addRow({ a: `Panelden alındı: ${dateTimeTR(now)} · Seçili ay: ${label} · Kapsam: ${scope?.label ?? "Tümü"} · Tutarlar Türk lirası` }).font = { color: { argb: "FF71717A" } };
+  const t = ws.addRow({ a: REPORT_TITLE });
+  t.font = TITLE_FONT;
+  t.height = 26;
+  ws.addRow({ a: "Yönetim paneli dışa aktarımı · tutarlar Türk lirası (₺)" }).font = MUTED_FONT;
 
   const block = (title: string, rows: [string | ExcelJS.CellValue, string][]) => {
     ws.addRow({});
@@ -543,17 +681,27 @@ function fillGuide(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook, model: Model, mo
       const r = ws.addRow({ a, b });
       r.getCell("b").alignment = { wrapText: true, vertical: "top" };
       r.getCell("a").alignment = { vertical: "top" };
+      r.getCell("a").font = { bold: true };
     }
   };
 
-  block("BU DOSYA", [
-    ["Panelin kopyası", "Rakamlar paneldeki hesapla aynıdır. Bu dosyada yaptığınız değişiklik panele geri gitmez: fiyatı, reçeteyi, faturayı ve gideri panelde değiştirip dosyayı yeniden indirin."],
+  // Kapak: dönem, kapsam, oluşturulma, sayfa sayısı
+  const sheets = wb.worksheets.filter((w) => w.name !== ws.name);
+  const raw = sheets.filter((w) => w.properties.tabColor?.argb === RAW_TAB.argb).length;
+  block("RAPOR BİLGİLERİ", [
+    ["Dönem", `${label} · Gelir-Gider sayfası ${month.slice(0, 4)} yılının 12 ayı`],
     [
       "Kapsam",
       scope?.branch
-        ? `${scope.label}: satış, kasa, personel ve ${scope.label} şubesine bağlı giderler yalnız bu şubenin; işletme geneli giderler (şubesi seçilmemiş) "İşletme geneli payı" olarak bilgi. Faturalar, Vergi ve Cari hareketleri firma geneli. Bütün şubeler için panelde soldan Tümü'nü seçip yeniden indirin.`
+        ? `${scope.label} şubesi: satış, kasa, personel ve ${scope.label} şubesine bağlı giderler yalnız bu şubenin; işletme geneli giderler (şubesi seçilmemiş) "İşletme geneli payı" olarak bilgi. Faturalar, Vergi ve Cari hareketleri firma geneli. Bütün şubeler için panelde soldan Tümü'nü seçip yeniden indirin.`
         : "Tümü: bütün şubeler ve laffogato.net birlikte; işletme geneli giderler bir kez sayılır.",
     ],
+    ["Oluşturulma", dateTimeTR(now)],
+    ["Kaynak", "L'Affogato yönetim paneli (paneldeki kayıtların o anki hâli)"],
+    ["Sayfalar", `${num(sheets.length)} sayfa${raw ? ` (${num(raw)} tanesi gri sekmede ham kayıt)` : ""}; liste aşağıda`],
+  ]);
+  block("BU DOSYA", [
+    ["Panelin kopyası", "Rakamlar paneldeki hesapla aynıdır. Bu dosyada yaptığınız değişiklik panele geri gitmez: fiyatı, reçeteyi, faturayı ve gideri panelde değiştirip dosyayı yeniden indirin."],
     ["Seçili ay", `Özet, Sayım, Tutarlılık, Satış, Personel, Sabit Giderler ve Ürün Kârlılık'taki satış adetleri ${label} içindir. Başka bir ay için panelin Genel bakış ekranında ayı seçip 'Dışa aktar'a basın.`],
     ["Yedek", "Gri sekmeler bütün ayların ham kayıtlarıdır (satış, ay bilgisi, gelir-gider düzeltmeleri, sayım, alım miktarı). Seçili ay dışındaki veriler de buradadır."],
   ]);
@@ -567,16 +715,19 @@ function fillGuide(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook, model: Model, mo
       `Menü fiyatları KDV dahil (%${num(model.settings.kdv * 100, 1)}; karaoke gibi hizmet satışları %${num(model.settings.kdvHizmet * 100, 1)}); malzeme ve gider tutarları KDV hariçtir (alışta ödenen KDV indirilebildiği için).`,
     ],
   ]);
-  block(
-    "SEKMELER (adına tıklayınca açılır)",
-    // Ayın kasası (geçiş günü boşken ve öncesinde ModPOS; denetim E-39)
-    wb.worksheets.filter((w) => w.name !== ws.name).map((w) => [sheetLink(w.name), sheetPurpose(w.name, label, monthKasa(month, model.settings.lafposGecisGunu).both)]),
-  );
-  // Bağlantılar mavi ve altı çizili görünsün
-  ws.eachRow((r) => {
-    const c = r.getCell("a");
-    if (c.type === ExcelJS.ValueType.Formula) c.font = { color: { argb: "FF1D4ED8" }, underline: true };
-  });
+  // Sayfa listesi: başlıklı tablo, adına tıklayınca sayfa açılır
+  ws.addRow({});
+  sectionRow(ws, "a", "SAYFALAR (adına tıklayınca açılır)");
+  subHeaderRow(ws, { a: "Sayfa", b: "İçerik" });
+  // Ayın kasası (geçiş günü boşken ve öncesinde ModPOS; denetim E-39)
+  const kasa = monthKasa(month, model.settings.lafposGecisGunu).both;
+  for (const w of sheets) {
+    const r = ws.addRow({ a: sheetLink(w.name), b: sheetPurpose(w.name, label, kasa) });
+    r.getCell("b").alignment = { wrapText: true, vertical: "top" };
+    r.getCell("a").alignment = { vertical: "top" };
+    // Bağlantılar mavi ve altı çizili görünsün
+    r.getCell("a").font = { color: { argb: "FF1D4ED8" }, underline: true };
+  }
 }
 
 // ---------------------------------------------------------------------------- Özet
@@ -719,7 +870,14 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
     const r = ws.addRow({ k: l.k, v: l.v ?? null });
     if (l.fmt) r.getCell("v").numFmt = l.fmt;
     if (typeof l.v === "string") r.getCell("v").alignment = { horizontal: "right" };
-    if (l.strong) r.font = { bold: true };
+    if (l.strong) {
+      r.getCell("k").font = { bold: true };
+      r.getCell("v").font = { bold: true };
+      for (const k of ["k", "v"]) {
+        r.getCell(k).fill = TOTAL_FILL;
+        r.getCell(k).border = TOTAL_BORDER;
+      }
+    }
     if (l.note) r.getCell("k").note = l.note;
   }
 
@@ -796,10 +954,8 @@ function addPnl(wb: ExcelJS.Workbook, model: Model, month: string) {
       [yearKey]: total,
     });
     if (first) r.getCell("sec").font = SECTION_FONT;
-    if (def.strong) {
-      r.getCell("l").font = { bold: true };
-      for (const k of [...months, yearKey]) r.getCell(k).font = { bold: true };
-    }
+    // Toplam satırları (mal alımı, bölüm toplamları, kâr / zarar): kalın, açık zemin, üst çizgi
+    if (def.strong) totalRow(ws, r);
     if (def.format === "percent") setFmt(r, [...months, yearKey], PCTZ);
     // Yıl içinde başlayan ya da biten sabit gider: hangi aylarda sayıldığı (ekrandaki alt yazı gibi)
     const range = def.fixedId !== undefined ? fixedRangeInYear(fixedById.get(def.fixedId), months, model.firstDataMonth) : null;
@@ -847,7 +1003,7 @@ function addStock(wb: ExcelJS.Workbook, model: Model, month: string) {
   sheet.groups.forEach((g, gi) => {
     const r = ws.addRow({ g: g.name, a: g.total, av: g.totalVatIncl });
     r.font = { bold: true };
-    r.eachCell((c) => (c.fill = SUBHEADER_FILL));
+    for (let c = 1; c <= colCount(ws); c++) r.getCell(c).fill = SUBHEADER_FILL;
     const mismatch = vat.groups[gi]?.mismatches ?? [];
     if (mismatch.length) {
       r.getCell("av").note = `KDV her malzemenin Alış KDV'siyle hesaplandı. Bu grubun olağan alış KDV'si %${num(vat.groups[gi].rate * 100)} (Ayarlar); farklı olanlar: ${mismatch
@@ -866,13 +1022,13 @@ function addStock(wb: ExcelJS.Workbook, model: Model, month: string) {
   // Listede olmayanlar: malzeme kaydı yok, KDV'si gıdanın alış KDV'si (Ayarlar, %1)
   const er = ws.addRow({ g: "LİSTEDE OLMAYANLAR", a: sheet.extrasTotal, av: vat.extras.totalVatIncl });
   er.font = { bold: true };
-  er.eachCell((c) => (c.fill = SUBHEADER_FILL));
+  for (let c = 1; c <= colCount(ws); c++) er.getCell(c).fill = SUBHEADER_FILL;
   for (const e of sheet.extras) {
     ws.addRow({ n: e.name, u: e.unit, q: e.qty, p: e.unitPrice, a: e.amount, v: vat.extras.rate, av: e.amount * (1 + vat.extras.rate) });
   }
   ws.addRow({});
   const t = ws.addRow({ g: `AY TOPLAMI – ${label.toLocaleUpperCase("tr-TR")}`, a: sheet.total, av: sheet.totalVatIncl });
-  t.font = { bold: true };
+  totalRow(ws, t);
   t.getCell("g").note = "Gelir-gider sekmesindeki 'SONRAKİ AYA DEVREDEN MAL' bu ayın KDV hariç toplamıdır (elle düzeltilmediyse).";
   if (!sheet.hasData) ws.addRow({ g: "Bu ay sayım girilmemiş. Sayfayı boş sayım formu olarak yazdırabilirsiniz." });
 }
@@ -900,10 +1056,10 @@ function addConsistency(wb: ExcelJS.Workbook, model: Model, month: string, findi
       { key: "l", width: 34 },
       { key: "m", width: 50 },
     ],
-    { landscape: true },
+    { y: 1, landscape: true },
   );
   const title = ws.addRow({ a: `Tutarlılık kontrolü – ${label}` });
-  title.font = { bold: true, size: 13 };
+  title.font = { ...TITLE_FONT, size: 13 };
 
   // 1) Satış kaynakları
   ws.addRow({});
@@ -989,10 +1145,11 @@ function addConsistency(wb: ExcelJS.Workbook, model: Model, month: string, findi
     r.getCell("e").numFmt = '0.00"×"';
   }
   if (!c.rows.length) ws.addRow({ a: "Bu ay satış listesi, alım miktarı ya da iki aylık sayım yok." });
+  const lastRow = ws.rowCount;
   const tot = ws.addRow({ a: "TOPLAM fark (alınan – reçeteye göre kullanılan)", f: c.totalDiff, k: c.hasStockComparison ? c.totalVariance : null });
-  tot.font = { bold: true };
+  totalRow(ws, tot);
   setFmt(tot, ["f", "k"], MONEY0);
-  if (c.rows.length) ws.autoFilter = { from: { row: firstRow - 1, column: 1 }, to: { row: firstRow - 1, column: 13 } };
+  if (c.rows.length) filterRows(ws, firstRow - 1, lastRow);
   if (c.needsPurchaseCount) ws.addRow({ a: `${c.needsPurchaseCount} malzemenin iki ayı sayıldı ama alım miktarı girilmedi; sapma hesaplanmadı.` });
   if (c.heldCount) ws.addRow({ a: `${c.heldCount} malzemenin bu ayki faturasının çarpanı onay bekliyor; o faturalar alınana girmedi, sapma onaydan sonra.` });
   if (c.rejectedCount) ws.addRow({ a: `${c.rejectedCount} malzemenin bu ayki fiyatı reddedilen faturası alınana girmedi; sapma için ayın alımı Tutarlılık'ta elle yazılmalı.` });
@@ -1034,7 +1191,7 @@ function addSales(wb: ExcelJS.Workbook, model: Model, month: string) {
     { landscape: true },
   );
   const title = ws.addRow({ n: `Satış raporu – ${label}` });
-  title.font = { bold: true, size: 13 };
+  title.font = { ...TITLE_FONT, size: 13 };
   // Ayın özeti: POS cirosu, ciro dışı, indirim, açık gün, ortalama maliyet oranı, liste farkı
   const summary: [string, number | null, string, string?][] = [
     ["POS toplam ciro (KDV dahil)", info?.posRevenue ?? null, MONEY0, "POS > Raporlar > Ciro: indirimler düşülmüş, ödenmezler hariç."],
@@ -1082,8 +1239,8 @@ function addSales(wb: ExcelJS.Workbook, model: Model, month: string) {
   const tot = sales.lines.length
     ? ws.addRow({ n: "TOPLAM", q: sales.qty, r: sales.revenue, net: sales.net, c: sales.cost, k: sales.commission, g: sales.grossProfit, mg: sales.margin })
     : ws.addRow({ n: "TOPLAM" });
-  tot.font = { bold: true };
-  ws.autoFilter = { from: { row: head.number, column: 1 }, to: { row: head.number, column: 12 } };
+  totalRow(ws, tot);
+  filterRows(ws, head.number, tot.number - 1);
 }
 
 // ---------------------------------------------------------------------------- Faturalar + Aylık Alımlar
@@ -1124,7 +1281,16 @@ function addCari(wb: ExcelJS.Workbook, rows: readonly CariExportRow[]) {
       n: r.note,
     });
   }
-  ws.autoFilter = { from: "A1", to: `${colLetter(ws.columnCount)}1` };
+  const last = ws.rowCount;
+  filterRows(ws, 1, last);
+  // Toplam bir boş satır altta: süzgeçte görünen hareketlerin borcu ve ödemesi (SUBTOTAL)
+  ws.addRow({});
+  const tot = ws.addRow({
+    d: "TOPLAM",
+    b: subtotal("E", 2, last, sum(rows.map((r) => r.debt ?? 0))),
+    o: subtotal("F", 2, last, sum(rows.map((r) => r.payment ?? 0))),
+  });
+  totalRow(ws, tot);
 }
 
 // ---------------------------------------------------------------------------- Vergi (dalga 12, docs/VERGI.md)
@@ -1171,11 +1337,11 @@ function addTax(wb: ExcelJS.Workbook, tax: TaxExport) {
       { key: "e", width: 16 },
       { key: "f", width: 80 },
     ],
-    { landscape: true },
+    { y: 1, landscape: true },
   );
-  const grey = { color: { argb: "FF71717A" } };
+  const grey = MUTED_FONT;
   const first = ws.addRow({ a: TAX_SHEET_FIRST_LINE });
-  first.font = { bold: true, size: 13 };
+  first.font = { ...TITLE_FONT, size: 13 };
   ws.addRow({ a: `${view.year} hesap dönemi · tutarlar KDV hariç, Türk lirası · ${rulesCompiledText(fromYear)}` }).font = grey;
   const money = (r: ExcelJS.Row, keys: string[]) => setFmt(r, keys, MONEY);
   const wrap = (r: ExcelJS.Row) => (r.getCell("f").alignment = { wrapText: true, vertical: "top" });
@@ -1229,7 +1395,7 @@ function addTax(wb: ExcelJS.Workbook, tax: TaxExport) {
     };
     const total = (a: string, vals: number[], quarter: number) => {
       const r = ws.addRow({ a, ...Object.fromEntries(vals.map((v, i) => [cols[i], v])), ...(whole ? { e: quarter } : {}) });
-      r.font = { bold: true };
+      totalRow(ws, r);
       money(r, [...cols, "e"]);
       return r;
     };
@@ -1464,7 +1630,34 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
     });
   }
   const last = ws.rowCount;
-  ws.autoFilter = { from: "A1", to: `${colLetter(ws.columnCount)}1` };
+  filterRows(ws, 1, last);
+  // Toplam bir boş satır altta: süzgeçte görünen faturaların tutarları (SUBTOTAL; Aylık Alımlar'ın aralığı dışında)
+  if (invoices.length) {
+    const nets = invoices.map((i) => round2(i.amount - i.discount));
+    const cell = (key: string, result: number) => subtotal(colLetter(ws.getColumn(key).number), 2, last, result);
+    ws.addRow({});
+    const tot = ws.addRow({
+      d: "TOPLAM",
+      a: cell("a", sum(invoices.map((i) => i.amount))),
+      i: cell("i", sum(invoices.map((i) => i.discount))),
+      n: cell("n", sum(nets)),
+      v: cell("v", sum(invoices.map((i) => round2(purchaseVat(i))))),
+      p: cell("p", sum(invoices.map((i) => i.payable))),
+      ob: cell(
+        "ob",
+        sum(
+          invoices.map((i) =>
+            i.unpaid ? (openBalance({ payable: i.payable, unpaid: i.unpaid, outstanding: outstanding?.get(i.id) ?? i.outstanding ?? null, allocated: i.allocated, ledgerBase: i.ledgerBase }) ?? 0) : 0,
+          ),
+        ),
+      ),
+      pp: cell("pp", sum(invoices.map((i) => (i.allocated && i.allocated > 0.005 ? round2(i.allocated) : 0)))),
+      w: cell("w", sum(invoices.map((i) => (purchaseWithheld(i) > 0 ? round2(purchaseWithheld(i)) : 0)))),
+      pv: cell("pv", sum(invoices.map((i) => round2(i.payable - (i.amount - i.discount))))),
+    });
+    tot.getCell("d").note = "Süzgeçte görünen faturaların toplamı. Aylık Alımlar bu satırı saymaz.";
+    totalRow(ws, tot);
+  }
 
   // "Aylara göre net alımlar": ayrı sekmede, süzgeç satırları gizlemesin diye
   const months = [...new Set(invoices.map((i) => monthOfDate(i.date)))].sort();
@@ -1512,7 +1705,7 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
     ...Object.fromEntries(months.map((m, j) => [m, { formula: `SUM(${mCol(j)}${firstCatRow}:${mCol(j)}${lastCatRow})`, result: round2(colTotal(j)) }])),
     t: months.length ? { formula: `SUM(${tCol}${firstCatRow}:${tCol}${lastCatRow})`, result: round2(sum(months.map((_, j) => colTotal(j)))) } : 0,
   });
-  tr.font = { bold: true };
+  totalRow(al, tr);
   const goodsRows = GOODS_CATEGORIES.map((g) => rowOf.get(g)!).filter(Boolean);
   const goodsVal = (j: number) => sum(GOODS_CATEGORIES.map((g) => byCat.get(g)?.[j] ?? 0));
   const gr = al.addRow({
@@ -1591,7 +1784,8 @@ function addPeople(wb: ExcelJS.Workbook, model: Model, month: string, investment
     pt: pers.partTime.wages,
     t: pers.total,
   });
-  pt.font = { bold: true };
+  totalRow(pr, pt);
+  filterRows(pr, 1, pt.number - 1);
   pr.addRow({});
   // SGK oranları (Ayarlar)
   sectionRow(pr, "n", "Oranlar");
@@ -1644,7 +1838,8 @@ function addPeople(wb: ExcelJS.Workbook, model: Model, month: string, investment
     sg.addRow({ n: f.name, s: FIXED_SECTIONS.find((x) => x.key === f.section)?.label, a: f.amount, p: FIXED_PERIODS.find((x) => x.key === f.period)?.label, m: fixedMonthly(f, st), note: f.note });
   }
   const sgt = sg.addRow({ n: "TOPLAM", m: model.fixedStandardTotalFor(month) });
-  sgt.font = { bold: true };
+  totalRow(sg, sgt);
+  filterRows(sg, 1, sgt.number - 1);
   sgt.getCell("n").note = "Standart aylık sabit gider: standart bir ayın sabit gider toplamı (personel dahil). Gelir-gider her ayı gün oranıyla hesaplar (Gelir-Gider sekmesinde AÇIK GÜN SAYISI notu).";
 
   sg.addRow({});
@@ -1653,7 +1848,7 @@ function addPeople(wb: ExcelJS.Workbook, model: Model, month: string, investment
   for (const i of investments) sg.addRow({ n: i.name, s: investmentDate(i.date), a: i.amount, note: i.note });
   if (!investments.length) sg.addRow({ n: "Kayıtlı yatırım yok." });
   const it = sg.addRow({ n: "YATIRIM TOPLAMI", a: sum(investments.map((i) => i.amount)) });
-  it.font = { bold: true };
+  totalRow(sg, it);
 
   // Yalnızca bu ayın listesinde görünmeyen bilgi varsa: bitmiş / başlamamış kalem, aralık ya da tutar değişikliği
   const fixedMore = model.fixedList.filter((f) => f.history.length > 1 || f.startMonth || f.endMonth || !inRange(f, month));
@@ -1708,7 +1903,7 @@ function addRawRecords(wb: ExcelJS.Workbook, model: Model) {
     });
   }
   if (!lines.length) sl.addRow({ n: "Kayıtlı satış satırı yok." });
-  sl.autoFilter = { from: "A1", to: `${colLetter(sl.columnCount)}1` };
+  filterRows(sl, 1, sl.rowCount);
 
   // ---------------------------------------------------------------- Ay Bilgileri
   const ai = addSheet(
@@ -1735,6 +1930,7 @@ function addRawRecords(wb: ExcelJS.Workbook, model: Model) {
     ai.addRow({ m: excelDate(`${m.month}-01`), o: m.openDays, r: m.posRevenue, d: m.discounts, x: m.offRevenue, c: m.cardShare ?? null, k: fromKasa.join(", ") || null, note: m.note });
   }
   if (!months.length) ai.addRow({ note: "Kayıtlı ay bilgisi yok." });
+  filterRows(ai, 1, ai.rowCount);
 
   // ---------------------------------------------------------------- Gelir-Gider Kayıtları
   const gk = addSheet(
@@ -1788,7 +1984,7 @@ function addRawRecords(wb: ExcelJS.Workbook, model: Model) {
     });
   }
   if (!entries.length) gk.addRow({ l: "Gelir-gider tablosunda elle girilen hücre yok." });
-  gk.autoFilter = { from: "A1", to: `${colLetter(gk.columnCount)}1` };
+  filterRows(gk, 1, gk.rowCount);
 }
 
 function addRawStock(wb: ExcelJS.Workbook, model: Model) {
@@ -1824,7 +2020,7 @@ function addRawStock(wb: ExcelJS.Workbook, model: Model) {
     for (const e of sheet.extras) sk.addRow({ m: excelDate(`${m}-01`), t: "Listede olmayan", n: e.name, q: e.qty, u: e.unit, p: e.unitPrice, a: e.amount });
   }
   if (!months.length) sk.addRow({ t: "Kayıtlı sayım yok." });
-  sk.autoFilter = { from: "A1", to: `${colLetter(sk.columnCount)}1` };
+  filterRows(sk, 1, sk.rowCount);
 
   const pq = addSheet(
     wb,
@@ -1846,5 +2042,5 @@ function addRawStock(wb: ExcelJS.Workbook, model: Model) {
     pq.addRow({ m: excelDate(`${p.month}-01`), n: ing?.name ?? `#${p.ingredientId}`, q: p.qty, u: ing?.unit, note: p.note });
   }
   if (!rows.length) pq.addRow({ n: "Kayıtlı alım miktarı yok." });
-  pq.autoFilter = { from: "A1", to: `${colLetter(pq.columnCount)}1` };
+  filterRows(pq, 1, pq.rowCount);
 }
