@@ -630,7 +630,12 @@ ad benzerliği tahmindir, adında hammaddenin adı geçmeyen ürüne ("PINAR TAM
 - **Ne gönderilir:** etkin hammaddelerin kimliği, adı, birimi, kategorisi, paket açıklaması ve birim maliyeti; sistemin
   kendi bağlantılarından en çok **60 örnek** (ürün adı, faturadaki birim, hammadde, çarpan; önce her hammaddeden biri):
   model bu işletmenin geçmiş kararlarından öğrenir. Partideki ürünlerin adı, açıklaması, faturadaki birimi, son birim
-  fiyatı (KDV hariç), son miktarı ve tedarikçinin adı. Fatura no, vergi no, kişi adı ve belge gitmez.
+  fiyatı (KDV hariç), son miktarı ve tedarikçinin adı. **Bağlam** (25 Kasım 2026; AI "KRP END KONTY"yi toner sandı,
+  aslında çöp torbası): ürünün en yeni faturasının açıklaması ve kategorisi, aynı faturadaki öteki kalemlerin adları (en
+  çok 8) ve tedarikçinin "hammadde değil" denmiş kalemlerinin adları (en çok 6; `matchContext`, `contextParts`).
+  Yönerge bağlamı okumayı ve sık kısaltmaları (END endüstriyel, KONTY konteyner, TRB torba, PŞT poşet, DTRJ deterjan…)
+  söyler; bağlam kısaltmayı çözmüyorsa "emin değil". İstemin sürümü 2: eski saklı öneriler bir kez yeniden sorulur. Fatura
+  no, vergi no, kişi adı, **faturanın notu** (elle yazılır, kişisel bilgi taşıyabilir) ve belge gitmez.
 - **Ne döner:** her ürün için karar (bağla / hammadde değil / emin değil), hammadde kimliği, çarpan, güven (yüksek /
   orta / düşük) ve en çok 120 karakterlik Türkçe gerekçe.
 - **Doğrulama** (`src/lib/product-match-ai.ts`): listede olmayan hammadde kimliği (uydurma) reddedilir, öneri "emin

@@ -298,5 +298,16 @@ describe("faturanın şubesi: veritabanında", { skip: !SERVER_URL && "FATURA_SU
     assert.ok(!after.items.some((u) => u.productKey === "p:deterjan"), "kural bekleyenden çıkardı");
     assert.ok(after.items.some((u) => u.productKey === "p:peynir"), "başka tedarikçi etkilenmez");
     assert.equal(await sync.countUnlinkedProducts(), 1);
+    // AI istemine giden bağlam (B4): faturanın açıklaması ve kategorisi, aynı faturadaki kalemler, tedarikçinin
+    // "hammadde değil"leri (Metro'nun ısıtıcısı)
+    await db.update(s.invoices).set({ description: "Temizlik malzemeleri", note: "Ahmet Bey'e sor" }).where(eq(s.invoices.id, a.id));
+    const { matchContext } = await import("../src/server/parasut/ai-match");
+    const ctx = await matchContext(db, [
+      { productKey: "p:deterjan", supplier: "Avansas" },
+      { productKey: "p:peynir", supplier: "Metro" },
+    ]);
+    assert.deepEqual(ctx.get("p:deterjan"), { invoiceDescription: "Temizlik malzemeleri", invoiceCategory: "Temizlik & Sarf", otherLines: ["p:sut"], supplierNotIngredient: [] });
+    assert.deepEqual(ctx.get("p:peynir")?.supplierNotIngredient, ["p:isitici"]);
+    assert.ok(!JSON.stringify([...ctx.values()]).includes("Ahmet"), "faturanın notu gitmez");
   });
 });
