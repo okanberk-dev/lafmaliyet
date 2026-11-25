@@ -8,6 +8,7 @@ import { linkAccessInfo, type AccessInfo } from "@/app/panel/kullanicilar/access
 import { DEFAULT_SETTINGS, FIFO_OFF, settingsFromRows } from "@/lib/constants";
 import { monthLabel } from "@/lib/format";
 import { blockReasonOf, oldAddressNotice, userListNotice } from "@/lib/notify-recipients";
+import { linkedDeleteText } from "@/lib/staff-link";
 import { needsStepUp, stepUpWhat, type StepUpCase, type StepUpConfirm } from "@/lib/step-up";
 import { accessMailHandle } from "@/server/auth/access-handle";
 import { hashPassword, passwordProblem } from "@/server/auth/password";
@@ -16,6 +17,7 @@ import { requireStepUp } from "@/server/auth/step-up";
 import { appUrl, INVITE_PASSWORD_HASH, TOKEN_HOURS } from "@/server/auth/tokens";
 import { expireUserTokens, issueUserToken } from "@/server/auth/user-tokens";
 import { listBranches } from "@/server/branches";
+import { lockStaffLinks, staffLinkedTo } from "@/server/data/staff-links";
 import { getDb, schema as s } from "@/server/db";
 import { listsWithEmail } from "@/server/notify/recipients";
 
@@ -413,7 +415,9 @@ export async function createUser(input: z.input<typeof createSchema>, confirm?: 
 /**
  * Kullanıcıyı kalıcı olarak siler (yanlış e-postayla eklenen ya da daveti hiç kabul edilmeyen kişi için).
  * İşlem geçmişindeki satırları adıyla durur. Kendinizi ve son aktif yöneticiyi silemezsiniz. Yönetici silmek (davetli
- * ve pasif de) işlemi yapanın kendi parolasını ister.
+ * ve pasif de) işlemi yapanın kendi parolasını ister. Maaşlar'da bir satıra bağlı hesap (biten satır da) silinmez, pasif
+ * yapılır (denetim bulgusu 47: bağlantı boşalınca part-time'ın geçmiş ücreti 0'a düşerdi); denetim ve silme maaş satırı
+ * bağlantılarının kilidi altında, tek işlemde.
  */
 export async function deleteUser(id: number, confirm?: StepUpConfirm) {
   return attempt(async () => {
@@ -430,9 +434,18 @@ export async function deleteUser(id: number, confirm?: StepUpConfirm) {
         .where(and(eq(s.users.role, "admin"), eq(s.users.active, true), ne(s.users.id, userId)));
       if (n === 0) throw new UserError("En az bir aktif yönetici kalmalı");
     }
+    // Parola sorulmadan önce (yönetici hesabında); kesin denetim aşağıda kilit altında
+    const linked = await staffLinkedTo(db, userId);
+    if (linked.length) throw new UserError(linkedDeleteText(linked));
     const change: StepUpCase = { kind: "delete", targetRole: u.role };
     if (needsStepUp(change)) await requireStepUp(me, confirm, `${stepUpWhat(change)}: ${u.email}`);
-    await db.delete(s.users).where(eq(s.users.id, userId));
+    await db.transaction(async (tx) => {
+      // Bağlanmakta olan hesap da görülür: saveStaff aynı kilidi tutar (lockStaffLinks)
+      await lockStaffLinks(tx);
+      const now = await staffLinkedTo(tx, userId);
+      if (now.length) throw new UserError(linkedDeleteText(now));
+      await tx.delete(s.users).where(eq(s.users.id, userId));
+    });
     await logActivity(me, "Kullanıcı silindi", `${u.name} (${u.email})`);
     refresh();
     // Personel ya da pasif hesabın adresi listede kaldıysa artık hesabı yok: e-posta ona gider, yönetici uyarılır

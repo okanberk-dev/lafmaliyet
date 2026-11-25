@@ -167,6 +167,13 @@ staffCost); testleri `tests/personel-part-time.test.ts`, `tests/personel-baglant
   `staff.user_id`'de veritabanı tekilliği yok (kural aralığa bağlı); denetim ve yazım bir işlem kilidi altında yapılır
   (`pg_advisory_xact_lock`, `saveStaff` ve `endStaff`; `lockStaffLinks`): iki yönetici aynı anda kaydederse ikincisi
   öncekini bekler ve onun bağladığını görür (inceleme bulgusu 6).
+- **Bağlı hesap silinmez** (denetim bulgusu 47, 25 Kasım 2026): `staff.user_id` hesap silinince boşalır (ON DELETE SET
+  NULL); part-time'ın günü Vardiya'dan sayılamaz, ücreti bütün aylarda 0'a düşer, tam zamanlının LafPOS yemek kartı günü
+  de bağlantıyı kaybederdi. Kullanıcılar › Sil, Maaşlar'da bir satıra (biten satır da) bağlı hesabı reddeder: "Bu hesap
+  Maaşlar'da “Ayşe” satırına bağlı; … Silmek yerine hesabı pasif yapın." Pasif hesapla giriş yapılamaz, bağlantı ve
+  geçmiş aylar kalır. Denetim ve silme aynı kilit altında, tek işlemde (`deleteUser`; o an bağlanan hesap da silinmez).
+  Bu kuraldan önce silinmiş hesapların satırları dokunulmadan kalır: geriye dönük onarım yok (silinen hesabın vardiyaları
+  `u:<id>` anahtarıyla durur, bağlanacak hesap kalmadı); bağlantısız part-time'ı Maaşlar uyarır.
 - **LM-4b notu (personel listesi):** biten satır ile "Devam ettir"in açtığı yeni satır aynı hesaba bağlı olabilir (aralıkları
   ayrık). `GET /api/panel/pos/personel?sube=…` "bu ay ve geçen ay aralıktaki satırlar"ı okurken o şubede bir hesaba iki satır
   düşebilir; liste **şubede hesap başına tek öğe** vermelidir (o ayın satırı, yoksa en yeni satır). Aksi hâlde LafPOS'un seçicisi aynı
