@@ -501,7 +501,10 @@ function monthCalc(ctx: Ctx, month: string): TaxMonth {
   for (const inv of invs) {
     const n = net(inv);
     if (inv.date < from) {
-      if (GOODS_CATEGORIES.includes(inv.category) || inv.category === COMMISSION_CATEGORY) prePeriod = r2(prePeriod + n);
+      // Gelir-gider'in mal alışına ve komisyonuna giren payı (kalem kalem: öbür kategorideki faturanın hammadde kalemi
+      // de; mal faturasının sarf kalemi bağlı harcamada, köprünün "Gelir-gider'e girmeyen faturalar" satırında)
+      const parts = invoiceParts(inv);
+      prePeriod = r2(prePeriod + (parts.get(GOODS_PART) ?? 0) + (parts.get(COMMISSION_CATEGORY) ?? 0));
       continue;
     }
     const a = ctx.linkedCost.get(inv.id) ?? 0;

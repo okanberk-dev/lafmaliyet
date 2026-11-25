@@ -228,7 +228,7 @@ async function InvoicesContent() {
           months={months}
           goodsByMonth={goodsByMonth}
           commissionByMonth={commissionByMonth}
-          goodsInfo={`KDV hariç, iskonto düşülmüş. Mal maliyeti = ${GOODS_CATEGORIES.join(" + ")}.`}
+          goodsInfo={`KDV hariç, iskonto düşülmüş. Mal maliyeti = ${GOODS_CATEGORIES.join(" + ")}; karışık faturada kalem kalem (hammaddeye bağlı kalem mal alışı).`}
           goods={breakdown.goods}
           commission={breakdown.commission}
         />
@@ -443,7 +443,7 @@ async function InvoicesContent() {
                     <span className="inline-flex items-center gap-2">
                       <span className="size-2 shrink-0 rounded-full bg-good" aria-hidden="true" />
                       Mal maliyeti
-                      <InfoTip text={`Gelir-gider tablosuna giden mal alışı: ${GOODS_CATEGORIES.join(" + ")}.`} />
+                      <InfoTip text={`Gelir-gider tablosuna giden mal alışı: ${GOODS_CATEGORIES.join(" + ")}; karışık faturada kalem kalem (öbür kategorideki faturanın hammaddeye bağlı kalemi de, mal faturasının Sarf / Demirbaş / Hizmet denmiş kalemi hariç). Kategori satırları faturanın kategorisiyle.`} />
                     </span>
                   </TD>
                   {goodsByMonth.map((v, i) => (

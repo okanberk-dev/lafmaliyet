@@ -56,7 +56,8 @@ export interface DatasetOptions {
 /**
  * Hesaplama motorunun ihtiyaç duyduğu bütün veriyi tek seferde, paralel okur. Şube seçiliyken (ya da `scope` bir
  * şubeyse) ciro, kasa, satış, personel, sayım, zayi o şubenin; gider ve sabit gider şubenin + işletme genelinin
- * (docs/SUBE.md › Neyi süzer). Menü, reçete, hammadde, fatura ortak: hiç süzülmez.
+ * (docs/SUBE.md › Neyi süzer); fatura şubenin + işletme genelinin (şubesi seçilmemiş fatura yalnız "Tümü"de; docs/SUBE.md ›
+ * Faturanın şubesi). Menü, reçete ve hammadde ortak: hiç süzülmez.
  */
 export async function loadDataset(opts: DatasetOptions = {}): Promise<Dataset> {
   return opts.scope === undefined ? readDataset() : withBranchScope(opts.scope, readDataset);
