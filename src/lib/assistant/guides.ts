@@ -529,12 +529,15 @@ export const OP_GUIDES: readonly OpGuide[] = [
   {
     id: "kasa-eposta",
     kind: "haric",
-    topic: "Kasa raporu e-posta alıcıları ve deneme e-postası",
-    keywords: ["kasa e-postası", "kasa alıcıları", "rapor kime gidiyor", "deneme e-postası"],
-    why: "Alıcılar kasa ve ön ödeme bilgisini kimin göreceğini belirler.",
-    path: "/panel/kasa",
-    steps: ["Kasa › Ayarlar (dişli).", "Alıcıları düzenleyin › Kaydet; Deneme e-postası ile sınayın."],
-    actions: ["updateCashSettings", "sendCashTestEmail"],
+    topic: "Kasa raporu e-posta alıcıları, deneme e-postası ve şube ayarları (diğer şubeyle aynı)",
+    keywords: ["kasa e-postası", "kasa alıcıları", "rapor kime gidiyor", "deneme e-postası", "şube ayarları", "diğer şubeyle aynı", "tuzla ile aynı"],
+    why: "Alıcılar kasa ve ön ödeme bilgisini kimin göreceğini belirler; şube başına tutulur.",
+    path: "/panel/subeler",
+    steps: [
+      "Ayarlar › Şube ayarları (ya da Kasa › Rapor alıcıları kartı).",
+      "Şubeyi açın; “Tuzla ile aynı”yı açık bırakın ya da kapatıp alıcıları ayrı düzenleyin › Kaydet; Deneme e-postası ile sınayın.",
+    ],
+    actions: ["updateCashSettings", "sendCashTestEmail", "setBranchSettingLink"],
   },
   {
     id: "bildirim-ayarlari",
