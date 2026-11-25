@@ -13,16 +13,17 @@ import {
   DAY_NAMES,
   nameRef,
   parseShiftCell,
-  plannedRows,
   refUserId,
   saveWeekSchema,
   SHIFT_NAME_MAX,
+  staleText,
   userRef,
-  weekDiff,
   weekLabel,
+  weekSaveDiff,
   weekStart,
   weekSummary,
   type SaveWeekInput,
+  type ShiftCell,
   type ShiftEntry,
   type ShiftRow,
 } from "@/lib/vardiya";
@@ -33,8 +34,8 @@ import { UserError } from "@/server/user-error";
 
 /**
  * Vardiya planının veritabanı tarafı (kurallar ve metinler src/lib/vardiya.ts; docs/VARDIYA.md). Plan şube, gün ve kişi
- * başına tek satırdır (`shifts`); ekran haftayı okur, yönetici haftayı bütün olarak kaydeder (yalnız değişen hücre
- * yazılır, boşaltılan silinir). PDF ve personelin görünümü aynı okuyucudan beslenir: her zaman kaydedilen plan.
+ * başına tek satırdır (`shifts`); ekran haftayı okur, yönetici haftayı bütün olarak kaydeder (yalnız ekranda değişen
+ * hücre yazılır, boşaltılan silinir). PDF ve personelin görünümü aynı okuyucudan beslenir: her zaman kaydedilen plan.
  */
 
 export interface ShiftWeek {
@@ -132,9 +133,11 @@ export interface SaveWeekResult {
 
 /**
  * Haftayı kaydeder (yalnız yönetici çağırır; yetkiyi eylem denetler). Hücreler ekrandaki metinle gelir ve aynı okuyucudan
- * geçer; kişi kullanıcıysa adı hesabından alınır, hesabı olmayan çalışan adıyla yazılır. Tek işlemde: değişen hücre
- * yazılır (aynı gün ve kişide üstüne), boşaltılan silinir; girdide olmayan kişinin satırına dokunulmaz. Aynı haftayı
- * iki sekme birden kaydederse sırayla yazar (danışma kilidi), son yazan kazanır.
+ * geçer; kişi kullanıcıysa adı hesabından alınır, hesabı olmayan çalışan adıyla yazılır. Tek işlemde: yalnız ekranda
+ * değiştirilen hücre (`seen`'den farklı) yazılır (aynı gün ve kişide üstüne) ya da boşaltılınca silinir; dokunulmayan
+ * hücreye ve girdide olmayan kişinin satırına dokunulmaz. Aynı haftayı iki sekme birden kaydederse sırayla yazar (danışma
+ * kilidi); değiştirilen hücreyi ekran açıldıktan sonra başkası da değiştirdiyse kayıt bütünüyle reddedilir ("Plan siz
+ * bakarken değişti"; bulgu 46). Özet kayıttan sonraki planındır.
  */
 export async function saveShiftWeek(db: DB, me: { name: string }, raw: SaveWeekInput): Promise<SaveWeekResult> {
   const data = saveWeekSchema.parse(raw);
@@ -146,6 +149,8 @@ export async function saveShiftWeek(db: DB, me: { name: string }, raw: SaveWeekI
   const userName = new Map(users.map((u) => [u.id, u.name]));
   const next: ShiftRow[] = [];
   const seen = new Set<string>();
+  // Ekranın gördüğü (kayıtlı metin her zaman okunur; okunamazsa boş sayılır, o kutu değiştirilmiş görünür)
+  const saw = new Map<string, (ShiftCell | null)[]>();
   for (const r of data.rows) {
     const uid = refUserId(r.ref);
     const typed = cleanName(r.name);
@@ -168,11 +173,19 @@ export async function saveShiftWeek(db: DB, me: { name: string }, raw: SaveWeekI
     if (seen.has(row.ref)) throw new UserError(`${row.name} planda iki kez var; satırlardan birini kaldırın.`);
     seen.add(row.ref);
     next.push(row);
+    saw.set(
+      row.ref,
+      r.seen.map((text) => {
+        const parsed = parseShiftCell(text);
+        return parsed.ok ? parsed.cell : null;
+      }),
+    );
   }
   const result = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`vardiya:${branch.id}:${monday}`}))`);
     const { entries } = await loadShiftEntries(tx, branch.id, monday);
-    const diff = weekDiff(entries, next, monday);
+    const diff = weekSaveDiff(entries, next, saw, monday);
+    if (diff.stale.length) throw new UserError(staleText(diff.stale));
     const now = new Date();
     if (diff.upserts.length) {
       await tx
@@ -212,9 +225,11 @@ export async function saveShiftWeek(db: DB, me: { name: string }, raw: SaveWeekI
     for (const [ref, dates] of gone) {
       await tx.delete(s.shifts).where(and(eq(s.shifts.branchId, branch.id), eq(s.shifts.personRef, ref), inArray(s.shifts.date, dates)));
     }
-    return { written: diff.upserts.length, removed: diff.deletes.length };
+    // Özet kayıttan sonraki plandan: dokunulmayan hücre ekrandaki eski hâliyle değil, veritabanındaki hâliyle sayılır
+    const after = await loadShiftEntries(tx, branch.id, monday);
+    return { written: diff.upserts.length, removed: diff.deletes.length, summary: weekSummary(buildRows(monday, [], after.entries)) };
   });
-  return { ...result, branch: { id: branch.id, name: branch.name }, monday, summary: weekSummary(plannedRows(next)) };
+  return { ...result, branch: { id: branch.id, name: branch.name }, monday };
 }
 
 /** İşlem geçmişinin satırı: "Tuzla · 23–29 Kasım 2026 · 5 kişi · 28 vardiya" */

@@ -216,7 +216,7 @@ Bütün araçlarda geçerli olanlar: yönetici, tek kayıt, şifre onayı yok, s
 
 | Araç | Eylem | Girdi ve sınır | K | GA | DE |
 |---|---|---|---|---|---|
-| `vardiya_hucre_yaz` (**var**) | vardiya.ts:saveShiftWeekAction | Plan **hücre işlemleri** olarak saklanır: {branchId, week, değişiklikler:[{ref 'u:<id>' ya da 'n:<ad>', gün, metin ya da boş}]}. Onayda hafta `loadShiftEntries` ile yeniden okunur. Yalnız değişen kişilerin satırları `buildRows`/`formatShiftCell` ile **taze** hücrelerden kurulur, istenen hücreler uygulanır. `weekDiff` yalnız istenen hücreleri vermelidir; başka bir hücre yazılacak ya da silinecekse reddedilir. Metin `parseShiftCell` ve `expandShiftAbbr` ile denetlenir. | Şube, hafta, kişi kişi gün gün eski → yeni, silinecek (boşaltılacak) hücreler ayrıca kırmızı, haftalık saat toplamı eski → yeni | Eski hücrelerle aynı eylem (`undo` = önceki hücreler) | Personel planı `/panel/vardiya`'da görür, PDF kayıttan çizilir. Push yok. |
+| `vardiya_hucre_yaz` (**var**) | vardiya.ts:saveShiftWeekAction | Plan **hücre işlemleri** olarak saklanır: {branchId, week, değişiklikler:[{ref 'u:<id>' ya da 'n:<ad>', gün, metin ya da boş}]}. Onayda hafta `loadShiftEntries` ile yeniden okunur. Yalnız değişen kişilerin satırları `buildRows`/`formatShiftCell` ile **taze** hücrelerden kurulur, istenen hücreler uygulanır. Kayıt kartın gördüğü haftayı `seen` olarak taşır: yalnız ondan farklı günler yazılır, o günü arada başkası değiştirdiyse reddedilir (`weekSaveDiff`, bulgu 46). Metin `parseShiftCell` ve `expandShiftAbbr` ile denetlenir. | Şube, hafta, kişi kişi gün gün eski → yeni, silinecek (boşaltılacak) hücreler ayrıca kırmızı, haftalık saat toplamı eski → yeni | Eski hücrelerle aynı eylem (`undo` = önceki hücreler) | Personel planı `/panel/vardiya`'da görür, PDF kayıttan çizilir. Push yok. |
 
 Vardiyada boşaltma silme sayılmaz, hücre değişikliğidir. Ama kullanıcı açıkça "boşalt" ya da "izinli yap" demedikçe asistan boşaltma önermez.
 
@@ -483,8 +483,10 @@ Panelde bu araçlar çerez yüzünden **seçili şubeye göre** okur; MCP'de "T�
    Teslim harcamalara yazılmaz; harcamalara yazılacaksa kategori zorunlu.
 7. **Vardiya.** Kişi şubenin ızgarasından (personel ve o hafta planı olanlar) ya da öteki etkin hesaplardan, adla. Metin
    `expandShiftAbbr` + `parseShiftCell` ile okunur, kartta biçimlenmiş hâliyle. Önizleme kişinin yedi hücresini saklar;
-   onayda taze hücrelere yalnız istenen günler uygulanır, `weekDiff` yalnız o günleri değiştirmiyorsa (kişinin adı
-   değişmiş gibi) reddedilir. Boşaltılan gün kartta kırmızı.
+   onayda taze hücrelere yalnız istenen günler uygulanır. Kayıt önizlemenin hücrelerini `seen` olarak gönderir: sunucu
+   yalnız ondan farklı günlere dokunur (kişinin adı değişmiş olsa da öteki günleri yeniden yazılmaz), o günü arada
+   başkası değiştirdiyse reddeder (`weekSaveDiff`, bulgu 46). Geri al da uygulanan hücreleri `seen` olarak gönderir.
+   Boşaltılan gün kartta kırmızı.
 8. **Hatırlatıcı.** `saveReminder` kimlik döndürmez: önizlemede okunan en büyük kimlikten sonra aynı başlık ve günle
    eklenen satır bulunur. Geri al `setReminderActive(id, false)` + kendi işlem geçmişi satırı.
 9. **Paraşüt bağlantısı.** `saveProductLink` bütün bağlantıları yeniden uygular. Yeni bağlantıda geri al yok (kaldırmak
