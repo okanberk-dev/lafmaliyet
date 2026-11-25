@@ -132,11 +132,17 @@ export function systemDefaultLabel(devices: readonly { kind: string; deviceId: s
 }
 
 /**
- * Uyarı sesi saatleri (İstanbul, UTC+3): sabah 10:00'dan gece 01:00'a kadar. Bu saatlerin dışında (01:00–10:00) hiçbir
+ * Uyarı sesi saatleri (İstanbul, UTC+3): sabah 09:00'dan gece 01:00'a kadar. Bu saatlerin dışında (01:00–09:00) hiçbir
  * uyarı ve hatırlatma sesi çalmaz, sistem bildirimi de sessiz gelir; ekrandaki pencere ve kartlar aynen çıkar. Deneme
- * sesi (test) bu kurala bakmaz. public/sw.js aynı kuralın kopyasını taşır (tests/ses-cikisi.test.ts ikisini denetler).
+ * sesi (test) bu kurala bakmaz. public/sw.js aynı kuralın kopyasını taşır (tests/uyari-sesi-saatleri.test.ts ikisini
+ * denetler).
+ *
+ * Alt sınır en erken açılan şubenin açılışıdır (denetim bulguları 45 ve 99, 25 Kasım 2026): Tuzla 09:00'da, Marina
+ * 09:30'da açılır (hazır vardiyalar, src/lib/vardiya.ts SHIFT_PRESETS). Önceden 10:00'dı; açılıştaki ilk saatte gelen
+ * uygulama siparişi ve masa çağrısı sessiz kalıyordu. Şube ayarlarında açılış saati yok: sınır şube başına değil, bütün
+ * şubelerin en erken açılışı. Bir şube daha erken açılırsa test düşer, sınır birlikte çekilir.
  */
-export const ALERT_SOUND_FROM_MIN = 10 * 60;
+export const ALERT_SOUND_FROM_MIN = 9 * 60;
 export const ALERT_SOUND_UNTIL_MIN = 60;
 
 export function alertHoursOpen(atMs: number): boolean {

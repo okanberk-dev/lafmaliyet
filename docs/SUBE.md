@@ -387,9 +387,9 @@ yazma `src/server/branch-settings.ts`.
     e-postanın başlığına girer; "Başka bir cihaz" başlığa yazılmaz, yalnız sicil no.
   - **Tek kasa açıkken** (ör. kapalı şubenin sayfası) şube başka şubeye bağlıysa "aynı" anahtarı yine çizilir: form
     düzenlenebilir görünüp kayıt reddedilmesin.
-- **Şimdilik ortak** (ekran adıyla söyler): uyarı sesi saatleri (10:00–01:00; tarayıcıda ve bildirim işçisinde,
-  `public/sw.js`, sabit), kontrol listesi hatırlatma saatleri (tek dilim takvimi), hazır vardiya saatleri (#120 vardiya
-  PR'ı birleştikten sonra). Şube başına olmayacaklar: KDV, reçete parametreleri, fire, hedef maliyet, FIFO başlangıcı,
+- **Şimdilik ortak** (ekran adıyla söyler): uyarı sesi saatleri (09:00–01:00, alt sınır en erken açılan şubenin,
+  Tuzla'nın açılışı; tarayıcıda ve bildirim işçisinde, `public/sw.js`, sabit), kontrol listesi hatırlatma saatleri (tek
+  dilim takvimi), hazır vardiya saatleri (#120 vardiya PR'ı birleştikten sonra). Şube başına olmayacaklar: KDV, reçete parametreleri, fire, hedef maliyet, FIFO başlangıcı,
   kategori ve POS eşlemeleri, site bağlantı sırrı, bildirim gönderen ve vade günleri.
 
 ## "Tümü"nün ay bilgisi (denetim 13 Kasım 2026, P02)
@@ -575,7 +575,9 @@ süzülmesini ve şube görünümünde maliyeti kurdu. Şube başına ModPOS ana
 
 - **Şube başına ayar grupları**: `kasa.rapor`, `kasa.calisan`, `parasut`, `komisyon`, `pos.lafpos`, `modpos`,
   `isletme.takvim` ve `kasa.cihaz` kuruldu (yukarıda). Kalanlar: **uyarı sesi saatleri** (tarayıcıda ve `public/sw.js`'te
-  sabit; şube başına olması bildirim işçisine şubenin saatini taşımayı ister), **kontrol listesi hatırlatma saatleri**
+  sabit, 09:00–01:00: alt sınır 25 Kasım'da en erken açılışa çekildi, denetim bulguları 45 ve 99,
+  [HATIRLATICILAR.md](HATIRLATICILAR.md#uyarı-seslerinin-sınırı-23-kasım-2026); şube başına olması Çalışma takvimine
+  açılış ve kapanış saatini eklemeyi ve bildirim işçisine şubenin saatini taşımayı ister), **kontrol listesi hatırlatma saatleri**
   (e-posta işi tek dilim takvimiyle çalışır), **hazır vardiya saatleri** (`SHIFT_PRESETS`; #120 vardiya PR'ı
   birleştikten sonra), **"yalnız bu bilgisayar" varsayılanı** (`ONLY_COMPUTER_BRANCHES`; "aynı" Marina'nın varsayılanını
   değiştirirdi, ayrı alan ister), komisyon takibinin başladığı gün (`komisyon.since`; hakediş işletmenin, bilerek ortak).
