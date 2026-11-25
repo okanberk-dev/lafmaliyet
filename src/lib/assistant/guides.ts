@@ -519,12 +519,16 @@ export const OP_GUIDES: readonly OpGuide[] = [
   {
     id: "parasut-ayarlari",
     kind: "haric",
-    topic: "Paraşüt bağlantı ayarları (anahtar, firma, bağlantıyı kesmek)",
-    keywords: ["paraşüt anahtarı", "paraşüt bağlantısını kes", "client secret", "paraşüt ayarları"],
-    why: "Gizli anahtar ve entegrasyon ayarı.",
+    topic: "Paraşüt bağlantı ayarları (anahtar, firma, bağlantıyı kesmek; şube başına Paraşüt hesabı)",
+    keywords: ["paraşüt anahtarı", "paraşüt bağlantısını kes", "client secret", "paraşüt ayarları", "marina paraşüt", "ayrı paraşüt hesabı", "paraşüt tuzla ile aynı"],
+    why: "Gizli anahtar ve entegrasyon ayarı; ayrı hesabın faturaları o şubenin olur.",
     path: "/panel/parasut",
-    steps: ["Paraşüt › Bağlantı kartı.", "Alanları girin › Kaydet ya da Bağlantıyı kes."],
-    actions: ["disconnectParasut", "saveParasutSettings"],
+    steps: [
+      "Şubeler aynı Paraşüt firmasındaysa bir şey yapmayın (Tuzla ile aynı). Ayrı firma için Ayarlar › Şube ayarları › şube › Paraşüt hesabı › “Tuzla ile aynı”yı kapatın.",
+      "Paraşüt ekranında o şubeyi seçin › Bağlantı kartı › bilgileri girin › Kaydet › Paraşüt hesabını bağla.",
+      "Ayrı hesabın faturaları şubenin olsun mu: Bağlantı kartındaki “Faturalar … şubesinin” anahtarı.",
+    ],
+    actions: ["disconnectParasut", "saveParasutSettings", "setParasutInvoiceScope"],
   },
   {
     id: "kasa-eposta",

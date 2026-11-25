@@ -97,9 +97,10 @@ satışı "Tümü"de ve online kanal seçiliyken okunur, fiziksel şubede yoktur
 `loadModel({ scope: ALL_BRANCHES })`): Vergi (özet, gelir-gider, demirbaş), Ödemeler › Nakit planı ve Genel bakış'ın
 nakit planı kartı, Tutarlılık (alınan mal şubeye bölünmez; tek şubenin tüketimiyle karşılaştırılmaz), Ayarlar'daki
 tam yedek (Excel'e aktar, seçicisiz) ve Ayarlar › Stok değerleme önizlemesi (ayar "Tümü"nün kâr-zararını değiştirir;
-denetim 21 Kasım #32). Para ve beyan işletmenindir. Şube seçiliyken bu ekranlar ve Faturalar, Tedarikçiler, Paraşüt
+denetim 21 Kasım #32). Para ve beyan işletmenindir. Şube seçiliyken bu ekranlar ve Faturalar, Tedarikçiler
 başlığın altında **"Marina seçili: bu ekran firma geneli"** notunu gösterir (`companyWideNote`, `CompanyWideNotice`;
-şube kapsamı C, sahibin varsayılanı: tek firma, Paraşüt hesabı ortak). Genel bakış'ın **Excel'e aktar** düğmesi ise
+şube kapsamı C, sahibin varsayılanı: tek firma). Paraşüt ekranı firma geneli değildir: seçili şubenin Paraşüt hesabını
+gösterir ([PARASUT.md](PARASUT.md#şube-başına-paraşüt-hesabı)). Genel bakış'ın **Excel'e aktar** düğmesi ise
 ekranın şubesini gönderir (`?sube=`): satış, kasa, personel ve giderler o şubenin, Vergi ve Cari hareketleri firma
 geneli; dosyanın ilk sayfası (Nasıl Okunur) kapsamı yazar, dosya adı şubeyle biter.
 
@@ -244,8 +245,8 @@ birden çok kasa açıkken şubenin adıyla.
 | Kasa raporu silindi (işlem geçmişi) | Birden çok kasa açıkken kasanın adı |
 
 Sahibin varsayılanları (24 Kasım 2026, sonra Ayarlar'dan şube başına değiştirilebilir olacak): tek firma (Vergi, Nakit,
-cari firma geneli, etiketli); Paraşüt hesabı ortak (faturalar işletme geneli); karaoke Tuzla'da; komisyon ve yemek kartı
-şubeler arasında aynı.
+cari firma geneli, etiketli); Paraşüt hesabı ortak (faturalar işletme geneli; 25 Kasım'dan beri şube başına seçilebilir:
+ayrı hesabın faturaları o şubenin, aşağıda); karaoke Tuzla'da; komisyon ve yemek kartı şubeler arasında aynı.
 
 ## Şube başına ayarlar (25 Kasım 2026)
 
@@ -257,6 +258,7 @@ yazma `src/server/branch-settings.ts`.
 |---|---|---|---|
 | `kasa.rapor` Kasa raporu alıcıları | e-posta adresleri, e-posta açık / kapalı, WhatsApp numarası | evet | Tuzla (varsayılan şube) |
 | `kasa.calisan` Çalışanların gün sonu e-postası | çalışan adresleri, tutarlar görünsün mü | hayır: liste şubenin kendisinin | Marina (LafPOS'un şubesi) |
+| `parasut` Paraşüt hesabı | yalnız bağ; hesabın ayarları ve oturumu Paraşüt ekranında, hesap adıyla ([PARASUT.md](PARASUT.md#şube-başına-paraşüt-hesabı)) | evet (= aynı hesap, tek eşitleme); kapatılınca **kopyalanmaz**, boş hesapla başlar | Tuzla (varsayılan şube; `parasut.settings` ve `PARASUT_*`) |
 
 - **"Diğer şubeyle aynı"**: açıkken şube kendi değerini tutmaz (satırda `same_as`), bağlandığı şubenin değerini kullanır;
   değer tek yerden düzenlenir. Kapatılınca o anki değer şubeye kopyalanır, sonra ayrı düzenlenir. Gizli alanlar
@@ -287,7 +289,11 @@ yazma `src/server/branch-settings.ts`.
   işlem kilidi). Başka şubenin alıcılarını kullanan şubeye alıcı yazılmaz (eski sekme bağlı şubenin değerini sessizce
   ayırmasın): önce "aynı" kapatılır.
 - **Yedek**: değerler ve bağ dosyaya girer, `secrets` sütunu girmez ([YEDEK.md](YEDEK.md)).
-- **Şimdilik ortak** (sıradaki dilimler; ekran adıyla söyler): Paraşüt hesabı, LafPOS bağlantısı ve geçiş günü,
+- **Paraşüt hesabı**: Şube ayarları ekranındaki Paraşüt kartı "Tuzla ile aynı" anahtarını ve kullanılan hesabın
+  durumunu gösterir; hesabın bilgileri Paraşüt ekranında o şube seçiliyken girilir. Ayrı hesabın faturaları o şubenin
+  (`invoices.branch_id`; Bağlantı kartından "işletme geneli" seçilebilir), ortak hesabınki işletme geneli. Şubeler
+  listesinde "Paraşüt: Tuzla ile aynı" çipi. Şubenin hesabından fatura gelmişse şube silinemez.
+- **Şimdilik ortak** (sıradaki dilimler; ekran adıyla söyler): LafPOS bağlantısı ve geçiş günü,
   çalışma ve uyarı saatleri, komisyon ve yemek kartı kanalları, ModPOS ay yedeği. Şube başına olmayacaklar: KDV, reçete
   parametreleri, fire, hedef maliyet, FIFO başlangıcı, kategori ve POS eşlemeleri, site bağlantı sırrı, bildirim
   gönderen ve vade günleri.

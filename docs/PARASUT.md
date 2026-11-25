@@ -61,7 +61,7 @@ Adımlar bilgisayardan, tek oturuşta yapılır; 5. ve 6. adımın arasını uza
 ### Ayarların nerede durduğu (teknik)
 
 Client ID, Client Secret, firma numarası ve ilk eşitleme başlangıcı panelden girilir (`integration_state` ›
-`parasut.settings`; client_secret `AUTH_SECRET`'tan türetilen anahtarla AES-256-GCM şifreli, ekrana hiç gelmez, yedeğe
+`parasut.settings`, öbür şubelerin hesabında `parasut.settings:<şube>`; client_secret `AUTH_SECRET`'tan türetilen anahtarla AES-256-GCM şifreli, ekrana hiç gelmez, yedeğe
 girmez). Her alanda **paneldeki değer önce gelir**; panelde yoksa aşağıdaki ortam değişkeni okunur. Kart her alanın
 yanında kaynağını yazar: *panelde kayıtlı*, *Vercel'den* ya da *eksik* (`src/lib/parasut/settings.ts`).
 
@@ -100,6 +100,57 @@ vercel env add PARASUT_CLIENT_SECRET production
 Yetkiyi Paraşüt'ten dilediğiniz zaman durdurabilirsiniz (Paraşüt → Profilim › Uygulama Entegrasyonları → **DURDUR**).
 Durdurulduğunda panel bir sonraki eşitlemede `invalid_grant` alır, kayıtlı oturumu siler ve ekranda “yeniden bağlayın”
 der.
+
+### Şube başına Paraşüt hesabı
+
+Her şube kendi Paraşüt hesabına (firmasına) bağlanabilir; şubeler aynı firmadaysa **"Diğer şubeyle aynı"** seçilir
+(Ayarlar › Şube ayarları › Paraşüt hesabı). Kurallar `src/lib/parasut/accounts.ts`, okuma ve doğrulama
+`src/server/parasut/accounts.ts`, şube ayarı grubu `parasut` (`branch_settings`; [SUBE.md](SUBE.md#şube-başına-ayarlar-25-kasım-2026)).
+
+- **Hesap = kendi Paraşüt ayarı olan şube**; hesabın kimliği o şubenin kimliğidir (`tuzla`, `marina`). "Aynı" açık şube
+  bağlandığı şubenin hesabını kullanır: **tek bağlantı, tek eşitleme**, aynı firma iki kez çekilmez. Satırı olmayan şube
+  Tuzla'ya (varsayılan şube) örtük bağlıdır.
+- **Geçiş: hiçbir şey yapmadan çalışır.** Bugünkü kurulum (panelden girilmiş ya da `PARASUT_*` ortam değişkenleri)
+  varsayılan şubenin hesabıdır ve **eski adları korur**: `parasut.settings`, `parasut.token`, `parasut.cursor`, ürün
+  anahtarı `p:<kimlik>`, kalem kimliği. Öbür hesaplar hesap adıyla: `parasut.token:marina`, `parasut.cursor:marina`,
+  `p:marina:<kimlik>`, kalem `marina:<kimlik>` (iki firmanın Paraşüt kimlikleri çakışsa da karışmasın). Ortam
+  değişkenleri **yalnız varsayılan hesabın** yedeğidir: ikinci şubenin hesabı Vercel'deki istemciyi devralmaz.
+- **Ayrılmak** ("aynı" kapatılır) **hiçbir şey kopyalamaz** (şube ayarlarının kopyalama kuralına bilinçli istisna):
+  aynı firma iki hesaptan iki kez eşitlenirse faturalar çiftlenir. Şube boş bir hesapla başlar; Paraşüt ekranında o
+  şube seçiliyken DevHub bilgileri girilir ve **Paraşüt hesabını bağla**'ya basılır. İki hesap aynı firma numarasını
+  alamaz (kayıt reddedilir). DevHub'daki dönüş adresi bütün hesaplarda aynıdır; aynı DevHub uygulaması da kullanılabilir.
+- **Yeniden "aynı" yapmak**: şubenin kendi hesabından fatura geldiyse reddedilir (faturalar sahipsiz kalır, eşitlemesi
+  durur). Gelmediyse hesabın ayarları, oturumu, yarım bağlanma isteği ve eşitleme durumu aynı işlemde silinir.
+- **Bağlanma (OAuth)**: `/panel/parasut/baglan?hesap=<şube>`; hesap sunucuda doğrulanır ve bekleyen istekle (state,
+  PKCE doğrulayıcısı) mühürlü saklanır. Dönüşte belirteç isteğin başlatıldığı hesaba, o hesabın ayarlarıyla yazılır;
+  şube bu arada başka şubenin hesabına bağlandıysa reddedilir. Aynı anda tek bağlanma isteği; bir hesabın "Oturumu
+  sıfırla"sı öbür hesabın süren bağlanmasına dokunmaz.
+- **Eşitleme**: sabah işi ve e-posta işinin yeniden denemesi ayarı tamam her farklı hesabı **bir kez, sırayla**
+  eşitler (`syncParasutAccounts`; süre hesaplara bölünür, aynı anda tek eşitleme). Bir hesabın eşitlemesi yalnız kendi
+  faturalarını ve Paraşüt'e bağlanmamış elle/Excel kayıtlarını görür (`invoiceAccountWhere`): öbür hesabın faturasını
+  eşleştirmez, güncellemez, **kaldırmaz**. `parasut_sync_runs.account` hangi hesabın çalıştığını yazar; e-posta işi
+  bugün eşitlenmemiş hesapları yeniden dener. Zil, Bugün ve sabah e-postası bir hesabın hatasını öbürünün başarısıyla
+  örtmez. Ödeme takibinin başlangıcı (`payments.since`) da hesap başına: sonradan bağlanan hesabın son 30 günden eski
+  faturaları Paraşüt'teki ödeme durumuyla gelir, "ödenmedi" yığılmaz.
+- **Faturanın hesabı ve şubesi** (`invoices.parasut_account`, `invoices.branch_id`; göç 0082–0083 var olan Paraşüt
+  faturalarına varsayılan hesabı yazdı, şubelerine dokunmadı). Paraşüt kimlikleri hesap içinde benzersizdir
+  (`(parasut_account, external_id)`, `(parasut_account, e_invoice_id)`). Sahibin kararı (25 Kasım 2026): şubeler aynı
+  hesaptaysa faturalar **işletme geneli** (bugünkü kural); hesabı yalnız bir şube kullanıyorsa (ayrı hesap) o hesaptan
+  gelen **yeni** faturalar **o şubenin**. Ayarlanabilir: Paraşüt › Bağlantı kartındaki "Faturalar Marina şubesinin"
+  anahtarı kapatılınca ayrı hesabın faturaları da işletme geneli kalır. Şube yalnız yeni açılan faturaya yazılır; var
+  olanınki eşitlemede değişmez. Faturalar'da birden çok kasa açıkken şubeli faturada şube rozeti çıkar; "Paraşüt'te
+  aç" bağlantısı faturanın hesabının firma numarasıyla kurulur. Mal maliyeti ve Faturalar'ın toplamları şimdilik
+  şubeye bölünmez (firma geneli; [SUBE.md](SUBE.md)).
+- **Paraşüt ekranı** seçili şubenin hesabını gösterir ("Tümü": Tuzla'nınki ve "Marina ayrı Paraşüt hesabı kullanıyor"
+  notu): bağlantı, ayarlar, eşitleme geçmişi, imleçler, gelen fatura sayıları, iadeler ve kalem okuma o hesabın.
+  Kategori kuralları, ürün bağlantıları, "hammadde değil" listesi, yok sayılan ve silinen faturalar (anahtar hesapla
+  önekli: `marina/123`) bütün hesaplarda ortaktır. Genel bakış'ın Paraşüt kartı da seçili şubenin hesabının eşitlemesi.
+- **Tedarikçi sayfası**: "Geçmiş faturaları al" seçili şubenin hesabından; "Faturadan doldur" her faturayı kendi
+  hesabından okur. Fatura belgesi (PDF) faturanın hesabından indirilir.
+- **Yedek**: öbür hesapların oturumu ve ayarları önekiyle dışarıda (`parasut.token:*`, `parasut.settings:*`,
+  `parasut.connect*`; [YEDEK.md](YEDEK.md)).
+- **Deneme**: `tests/parasut-hesap.test.ts` (kurallar, kaynak), `tests/parasut-hesap-db.test.ts` (iki firmalı sahte
+  Paraşüt: tek eşitleme, aynı kimlik iki satır, öbür hesabın faturası ve cari bağı korunur, bağlanma doğru hesaba).
 
 ## 2. Nasıl çalışır
 
@@ -686,7 +737,7 @@ bir gidere bağlıysa uyarı faturanın gelir-giderde o giderde sayıldığını
 - Tek bir tedarikçinin bütün geçmişi için tedarikçi sayfasındaki **Geçmiş faturaları al** ([TEDARIKCILER.md](TEDARIKCILER.md#geçmiş-faturalar)):
   kişiye göre süzülür, listede görünmeyeni kaldırmaz (Paraşüt'te iptal edileni kaldırır), imleci değiştirmez;
   eşitleme geçmişinde "tedarikçi geçmişi" diye görünür, son eşitleme sayılmaz.
-- **Oturumu sıfırla:** kayıtlı oturumu ve eşitleme imlecini siler (eski faturaların vergi no tamamlaması ve geç
+- **Oturumu sıfırla:** ekranın gösterdiği hesabın (seçili şubenin) kayıtlı oturumunu ve eşitleme imlecini siler (eski faturaların vergi no tamamlaması ve geç
   girilen faturaların kimliği de baştan başlar); mevcut faturalar çoğalmaz. Sonra hesabı **“Paraşüt hesabını bağla”**
   ile yeniden bağlamak gerekir.
 - **Deneme:** `tests/parasut-esitleme-db.test.ts` eşitlemeyi sahte bir Paraşüt'e karşı gerçek Postgres'te çalıştırır
@@ -695,7 +746,7 @@ bir gidere bağlıysa uyarı faturanın gelir-giderde o giderde sayıldığını
   bağlı değilken istek atılmaması ve hesabı bağlama).
   Taramanın kuralları ayrıca Paraşüt'süz `tests/parasut-gec-fatura.test.ts`'te. Kendi geçici veritabanını açıp siler:
   `PARASUT_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx tsx --test tests/parasut-esitleme-db.test.ts`.
-- Aynı anda tek eşitleme çalışır (Postgres danışma kilidi, `SYNC_LOCK`): sabah işi sürerken "Şimdi eşitle" ya da
+- Aynı anda tek eşitleme çalışır (Postgres danışma kilidi, `SYNC_LOCK`; birden çok Paraşüt hesabı da sırayla): sabah işi sürerken "Şimdi eşitle" ya da
   e-posta işinin yeniden denemesi başlamaz, "Paraşüt eşitlemesi zaten sürüyor" yanıtı döner. İki dakikadan eski
   "sürüyor" kaydı yarıda kesilmiş sayılır.
 - Günlük işler (Vercel Cron, `Authorization: Bearer $CRON_SECRET`; Hobby planında her iş kendi saatinin bir
