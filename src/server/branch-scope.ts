@@ -200,7 +200,7 @@ export async function formBranch(raw: string | null | undefined, kind: FormBranc
   // (kasa, sayım, kasadan çıkan; sayfalar artık şubeyi sorar), ama izi kalsın. Eski sekmeler bitince requireExplicit
   // açılabilir (docs/SUBE.md › Yazarken hangi şube)
   if (!raw && kind !== "expense" && !known.some((b) => b.id === scope && b.kind === "fiziksel") && tillBranches(known).length > 1) {
-    console.warn(`[şube] ${kind} yazımı şube göndermedi; "${scope}" seçiliyken ${picked.id} şubesine yazıldı (eski sekme?)`);
+    console.warn("[şube] yazım şube göndermedi; varsayılan şubeye yazıldı (eski sekme?)", { kind, scope: scope.replace(/[\r\n]/g, " ").slice(0, 40), to: picked.id });
   }
   return picked.id;
 }
