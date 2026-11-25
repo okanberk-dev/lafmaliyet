@@ -33,7 +33,15 @@ gününden sonra kasadan o tedarikçiye işlenmemiş bir çıkış varsa "Kasada
 en çok max(1 ₺, %2) farkla tutan, gününe en yakın kalem. Tutarı hiçbir kalemi tutmayan çıkış (ör. 300 ₺ fişsiz Metro
 alışverişi) yalnız ipucudur; e-posta kalemleri yine hatırlatır.
 
-Gecikmiş ve yaklaşan ödemeler kenar çubuğundaki **zilde** de görünür. Zilin **Onaylar** başlığında yöneticiye onay
+Gecikmiş ve yaklaşan ödemeler kenar çubuğundaki **zilde** de görünür, vadeye göre en çok 8 satır: sığmayanlar
+(ay başında kira, SGK, KDV, muhtasar ve tedarikçi vadeleri birikince) tek bir **"N ödeme daha"** satırında toplanır;
+satır kaçının gecikmiş, bugün ve yakında olduğunu ve ilk üçünün adını söyler ("5 gecikmiş: SGK, KDV, Muhtasar ve 2
+ödeme daha. Hepsi Ödemeler'de."), okununca içindekiler de okunmuş sayılır. Telefonun alt menüsündeki **Ödemeler**
+rozeti gecikmiş ödemelerin hepsini sayar, özetin içindekiler dahil (10 gecikmiş ödeme "9+"; önceden zilin ilk 8
+satırından sayıldığı için 8'de takılıyordu; bulgu 96, `src/lib/bell-payments.ts`). Kişinin hatırlatıcıları da en çok 8
+satır: fazlası "N hatırlatıcı daha · Hepsi Hatırlatıcılarım'da". Zil ve rozet seçili şubenin ödemelerini sayar (şubenin
+ve işletme genelinin); şube seçici değişince zil kendiliğinden yeniden okunur, rozet eski şubenin sayısında kalmaz
+(bulgu 89). Zilin **Onaylar** başlığında yöneticiye onay
 bekleyen reçete önerileri, onay bekleyen hammadde fiyatları (`docs/PARASUT.md` 5b) ve personelin onay bekleyen
 istekleri durur (istek başına bir satır, `/panel/onaylar#istek-<id>`'e götürür; satır istek güncellenince en çok 10
 dakikada bir yeniden okunmamış olur; [ONAYLAR.md](ONAYLAR.md)). Personelde aynı başlığın adı **İsteklerim**: reçete

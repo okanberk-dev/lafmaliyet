@@ -74,7 +74,8 @@ test("zil: maliyet modeli düşünce öbür maddeler gelir; menü okuma hatasın
   assert.match(menu, /list\.length \? "Hepsi okundu" : failure \? "Okunamadı" : "Dikkat isteyen bir şey yok"/);
   const shell = read("src/components/panel/sidebar.tsx");
   assert.doesNotMatch(shell, /setAlerts\(\[\]\)|setAlerts\(\(a\) => a \?\? \[\]\)/);
-  assert.match(shell, /\.catch\(\(e: unknown\) => setAlertsFailure\(actionFailure\(e\)\)\)/);
+  // Yalnız en son okumanın hatası yazılır (şube değişince eski okuma yenisini ezmesin; bulgu 89)
+  assert.match(shell, /\.catch\(\(e: unknown\) => seq === alertsSeq\.current && setAlertsFailure\(actionFailure\(e\)\)\)/);
 });
 
 test("tryAction: atan eylem bildirim çıkarır ve undefined döner; yanıt olduğu gibi geçer; yönlendirme geri atılır (E-51)", async () => {

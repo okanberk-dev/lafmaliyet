@@ -3,6 +3,7 @@
 import { and, count, eq, gt } from "drizzle-orm";
 
 import { failedBellRows, logBellFailed, type BellFailed, type BellPart } from "@/lib/bell-failed";
+import { paymentBellRows } from "@/lib/bell-payments";
 import { featureInScope } from "@/lib/branch-features";
 import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
@@ -16,7 +17,7 @@ import { dateTR, dayTR, monthShort, num, tl } from "@/lib/format";
 import { blockedBell } from "@/lib/notify-recipients";
 import { holdReason, holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
 import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
-import { addDays, daysLeftLabel, todayTR } from "@/lib/reminders";
+import { addDays, todayTR } from "@/lib/reminders";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { kasaBell } from "@/server/bell/kasa";
@@ -54,6 +55,8 @@ export interface PanelNotification {
   group?: "sistem" | "hatirlatici" | "onay" | "kasa" | "kontrol" | "odeme" | "fatura" | "uyari";
   /** Özet satırı: okununca bu kimlikler de okundu sayılır (içine aldığı satırlar sonra tek tek çıkınca okunmuş kalır) */
   covers?: string[];
+  /** Ödemelerin özet satırı: içine aldığı gecikmiş ödeme sayısı (alt menünün rozeti; src/lib/bell-payments.ts) */
+  overdue?: number;
 }
 
 /**
@@ -113,13 +116,15 @@ async function checklistNotifications(user: CurrentUser): Promise<PanelNotificat
   }).map((b) => ({ ...b, group: "kontrol" as const }));
 }
 
-/** Kişinin gecikmiş ve bugünkü (saati gelmiş ya da gelecek) hatırlatıcıları */
+/**
+ * Kişinin gecikmiş ve bugünkü (saati gelmiş ya da gelecek) hatırlatıcıları; 8'den fazlaysa ilk 7'si ve kalanı tek bir
+ * "N hatırlatıcı daha" satırında (okununca içindekiler de okunur; bulgu 96)
+ */
 async function reminderNotifications(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
-  return (await loadDueReminders(user.id))
+  const rows: PanelNotification[] = (await loadDueReminders(user.id))
     .map((r) => ({ r, group: dueGroup(r, now) }))
     .filter((x) => x.group === "overdue" || x.group === "today")
-    .slice(0, 8)
     .map(({ r, group }) => ({
       // Tarih / saat değişince (tamamlandı, ertelendi) yeniden okunmamış olur
       id: `hatirlatici-${r.id}-${r.dueDate}-${r.dueTime ?? ""}`,
@@ -131,6 +136,22 @@ async function reminderNotifications(user: CurrentUser): Promise<PanelNotificati
       href: "/panel/hatirlaticilarim",
       group: "hatirlatici" as const,
     }));
+  if (rows.length <= 8) return rows;
+  const hidden = rows.slice(7);
+  return [
+    ...rows.slice(0, 7),
+    {
+      id: `hatirlatici-diger-${hidden[hidden.length - 1].id}`,
+      kind: hidden.some((r) => r.kind === "warning") ? "warning" : "info",
+      title: `${num(hidden.length)} hatırlatıcı daha`,
+      body: "Hepsi Hatırlatıcılarım'da.",
+      timeLabel: "",
+      unread: hidden.some((r) => r.unread),
+      href: "/panel/hatirlaticilarim",
+      group: "hatirlatici",
+      covers: hidden.map((r) => r.id),
+    },
+  ];
 }
 
 /**
@@ -521,19 +542,8 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   ]);
   const lost = failedBellRows(failed, user.role, todayTR());
 
-  const payments: PanelNotification[] = (upcoming?.items ?? [])
-    .filter((i) => i.status !== "later")
-    .slice(0, 8)
-    .map((i) => ({
-      id: `odeme-${i.ref}-${i.dueDate}`,
-      kind: i.status === "overdue" ? "danger" : i.status === "today" ? "warning" : "info",
-      title: `${i.title}${i.amount !== null ? ` · ${tl(i.amount)}` : ""}`,
-      body: [`Son ödeme ${dateTR(i.dueDate)}`, i.detail, i.hint?.text].filter(Boolean).join(" · "),
-      timeLabel: daysLeftLabel(i.daysLeft),
-      unread: i.status !== "soon",
-      href: "/panel/hatirlaticilar",
-      group: "odeme" as const,
-    }));
+  // En çok 8 satır; sığmayanlar "N ödeme daha" özetinde, gecikmiş sayısıyla (rozet; src/lib/bell-payments.ts, bulgu 96)
+  const payments: PanelNotification[] = paymentBellRows(upcoming?.items ?? []);
   if (!upcoming) payments.push(paymentsFailedRow());
   // Personelin kasadan tedarikçiye verdiği, hesaba işlenmemiş paralar (Teslim · ödeme; yalnız yönetici). Kimlik sayı ve
   // toplamdan: yeni satır gelince yeniden okunmamış olur

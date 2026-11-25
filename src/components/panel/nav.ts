@@ -729,8 +729,9 @@ export function bottomNavActive(items: BottomNavItem[], pathname: string, menuOp
 }
 
 /** Alt menüdeki "Ödemeler" rozeti: zildeki ödeme bildirimlerinden gecikmiş olanlar */
-export function overdueCount(items: { group?: string; kind: string }[] | null | undefined): number {
-  return (items ?? []).filter((n) => n.group === "odeme" && n.kind === "danger").length;
+export function overdueCount(items: { group?: string; kind: string; overdue?: number }[] | null | undefined): number {
+  // Zile sığmayan ödemelerin özet satırı içindeki gecikmiş sayısını taşır (src/lib/bell-payments.ts; bulgu 96)
+  return (items ?? []).reduce((n, i) => n + (i.group === "odeme" && i.kind === "danger" ? (i.overdue ?? 1) : 0), 0);
 }
 
 /** Rozette gösterilecek metin (9'dan fazlası "9+") */

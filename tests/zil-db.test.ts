@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { after, before, describe, test } from "node:test";
 
+import { inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
@@ -216,6 +217,30 @@ describe("Zil: maliyet modeli okunamayınca öbür maddeler", { skip: !SERVER_UR
     // Okunabilince satır yok
     const back = await bell.loadPanelNotifications();
     assert.equal(back.filter((i) => i.id.startsWith("okunamadi-")).length, 0);
+  });
+
+  test("10 gecikmiş ödeme: zil 7 satır ve '3 ödeme daha' özeti; rozet 10 sayar (bulgu 96)", async () => {
+    me = users.ali;
+    const today = todayTR();
+    const extra = await db
+      .insert(s.reminders)
+      .values(Array.from({ length: 9 }, (_, i) => ({ title: `Vergi ${i + 1}`, kind: "vergi" as const, amount: 1000, dueDate: addDays(today, -3 - i), anchorDate: addDays(today, -3 - i) })))
+      .returning({ id: s.reminders.id });
+    try {
+      const items = await bell.loadPanelNotifications();
+      const pay = items.filter((i) => i.group === "odeme");
+      assert.equal(pay.length, 8, JSON.stringify(pay.map((i) => i.title)));
+      const sum = pay.at(-1)!;
+      assert.equal(sum.title, "3 ödeme daha");
+      assert.equal(sum.kind, "danger");
+      assert.equal(sum.overdue, 3);
+      assert.equal(sum.covers?.length, 3);
+      const { overdueCount, badgeText } = await import("../src/components/panel/nav");
+      assert.equal(overdueCount(items), 10);
+      assert.equal(badgeText(overdueCount(items)), "9+");
+    } finally {
+      await db.delete(s.reminders).where(inArray(s.reminders.id, extra.map((r) => r.id)));
+    }
   });
 
   test("personelin zili modele hiç dokunmaz: model düşse de aynı", async () => {
