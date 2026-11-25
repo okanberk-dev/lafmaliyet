@@ -170,7 +170,9 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
     );
   }
 
-  const [model, site, branchBulk] = await Promise.all([loadModel(), loadSiteLinks(), loadBranchBulk()]);
+  const [model, site, bulk, chosenBranch] = await Promise.all([loadModel(), loadSiteLinks(), loadBranchBulk(), currentBranchScope()]);
+  // Toplu değiştir'in Şube seçimi panelin seçimiyle açılır (Marina seçiliyken Marina'nın fiyatı; "Tümü"de taban)
+  const branchBulk = bulk ? { ...bulk, defaultBranch: bulk.branches.some((b) => b.id === chosenBranch) ? chosenBranch : "" } : null;
   // "Aylık etki": zam etkisiyle aynı dayanak (son satış ayı, standart aya ölçekli; price-loss.ts salesBasis)
   const month = latestSalesMonth(model);
   const sb = month ? salesBasis(model, month) : null;

@@ -510,3 +510,30 @@ Dalga 1 kütüğü ve ekranı, dalga 2 şube sütununu, seçiciyi ve para yolunu
 süzülmesini ve şube görünümünde maliyeti kurdu. Şube başına ModPOS anahtarı ve föyün şube şube ayrılması kuruldu
 ([MODPOS-API.md › Şubeler](MODPOS-API.md#1a-şubeler-16-kasım-2026)). Şube sekmeleri, karşılaştırma kartı ve şubeye
 özel fiyat `docs/planlar/sube.md`'de.
+
+**Şube kapsamı ve şube başına ayarlar (24–25 Kasım 2026): bilerek sonraya kalanlar** (gerekçeleriyle):
+
+- **Şube başına ayar grupları**: yalnız `kasa.rapor`, `kasa.calisan` ve `parasut` kuruldu. Sıradakiler aynı desenle
+  (`src/lib/branch-settings/groups.ts`): `komisyon` (`komisyon.ayar`, `komisyon.since`; sahibin varsayılanı "aynı"),
+  `pos.lafpos` (geçiş günü ve LafPOS sırrı), `isletme.takvim` (açık gün, uyarı ve hatırlatma saatleri, hazır vardiya
+  saatleri; #120 vardiya PR'ı birleştikten sonra), `modpos` (ay yedeği), banka POS / yazarkasa bilgileri. Şimdilik
+  ortaklar Şube ayarları ekranında "Şimdilik bütün şubelerde ortak" diye adıyla yazılı.
+- **`LAFPOS_BRANCH_ID` türetmesi** (`branches.pos_source`'tan; 66 kullanım) ve `stok_tahmini` özelliği
+  (`STOCK_ESTIMATE_BRANCH`): ayrı PR; bugün tek LafPOS şubesi var, davranış doğru.
+- **Ayarlar'da LafPOS ve ModPOS kartları seçime göre** ("bu şubede kullanılmıyor"): #138 aynı kartlara dokunuyordu;
+  birleşti, sıradaki dilimde yapılır.
+- **`checklist_runs.branch_id`** (ortak kontrol listesinin şube başına koşusu): davranış değişikliği; bugün şubesiz
+  şablonun koşusu kapalı gün kanıtında "uyarı" sayılır.
+- **Faturanın şubesi okumada** kuruldu (tek şubede öbür şubenin ayrı hesap faturası okunmaz), ama şubenin kendi faturası
+  Gelir-gider'de yine "işletme geneli" satırında ve mal maliyeti tek şubede reçeteden; şubenin hücresine bölmek sahibin
+  kararıdır.
+- **Kasa, sayım, kasadan çıkan ve kapalı gün** şube göndermeyen yazımda (eski sekme) "Tümü"de hâlâ Tuzla'ya iner; her
+  biri sunucu günlüğüne uyarı yazar (`[şube] … şube göndermedi`). Eski sekmeler bitince `requireExplicit` açılabilir.
+- **Tükendi** sitenin sözleşmesinde şubesiz: şubeye kilitli personelin Tükendi'si bütün şubelerde kapanır. Bu, "kilitli
+  hesap başka şubeye yazamaz" kuralının bilinen istisnasıdır; pencere önce onay ister, işlem geçmişi yeri
+  ("laffogato.net, uygulama ve QR menü") yazar. Site şube başına durum tutunca kapanır.
+
+**Sahibe söylenecek davranış değişiklikleri**: ikiden fazla kasa açıkken şubesiz personelin izi kapalı günde kırmızı
+değil uyarı sayılır; kasa, sayım ve Satışlar'ın ay bilgisi "Tümü"de formu açmadan şubeyi sorar; bir şube ayrı Paraşüt
+hesabına geçince kalan hesabın (Tuzla) yeni faturaları da `branch_id='tuzla'` alır (hesabı yalnız o kullanıyor);
+gün sonu e-postası yalnız Rapor alıcılarına gider, liste boş ya da kapalıysa o şubeye açık bildirim adreslerine.

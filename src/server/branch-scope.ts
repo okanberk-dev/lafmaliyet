@@ -20,6 +20,7 @@ import {
   parseBranchScope,
   pickFormBranch,
   shownScopeError,
+  tillBranches,
 } from "@/lib/branches";
 
 import { getCurrentUser } from "./auth/dal";
@@ -195,6 +196,12 @@ export async function formBranch(raw: string | null | undefined, kind: FormBranc
   const [scope, known, lock] = await Promise.all([currentBranchScope(), listBranches(), staffBranchLock()]);
   const picked = pickFormBranch({ raw, kind, scope, known, lock, requireExplicit: opts?.requireExplicit });
   if ("error" in picked) throw new UserError(picked.error);
+  // Şube göndermeyen yazım (eski sekme) "Tümü"de birden çok kasa açıkken varsayılan şubeye iner: bugün izin verilir
+  // (kasa, sayım, kasadan çıkan; sayfalar artık şubeyi sorar), ama izi kalsın. Eski sekmeler bitince requireExplicit
+  // açılabilir (docs/SUBE.md › Yazarken hangi şube)
+  if (!raw && kind !== "expense" && !known.some((b) => b.id === scope && b.kind === "fiziksel") && tillBranches(known).length > 1) {
+    console.warn(`[şube] ${kind} yazımı şube göndermedi; "${scope}" seçiliyken ${picked.id} şubesine yazıldı (eski sekme?)`);
+  }
   return picked.id;
 }
 

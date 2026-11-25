@@ -683,6 +683,33 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         icon: CupSoda,
       },
       {
+        id: "sube-secimi",
+        q: "Şube seçimi: Tuzla, Marina, Tümü",
+        a: (
+          <>
+            Şube seçiliyken ekranlar, zil, Bugün ve Claude yalnız o şubenin verisini gösterir; Vergi, Nakit planı, Ödemeler ve cari firma geneli kalır,
+            ekran bunu söyler. Tümü seçiliyken şubeye ait bir kayıt (kasa raporu, sayım, zayi, ay bilgisi, satış listesi) yazacaksanız ekran önce şubeyi
+            sorar; sessizce Tuzla&apos;ya yazılmaz. Şubeye kilitli personel yalnız kendi şubesini görür ve yazar.
+          </>
+        ),
+        icon: Globe,
+        links: [{ href: "/panel/subeler", label: "Şubeler" }],
+      },
+      {
+        id: "sube-ayarlari",
+        q: "Şube ayarları ve “Tuzla ile aynı”",
+        a: (
+          <>
+            <Path href="/panel/subeler" /> ekranında şubeye dokunun: kasa raporu alıcıları, çalışanların gün sonu e-postası ve Paraşüt hesabı şube başınadır.
+            “Tuzla ile aynı” açıkken şube Tuzla&apos;nın ayarını kullanır, değer tek yerden düzenlenir; kapatınca o anki değerler kopyalanır (şifreler
+            kopyalanmaz, yeniden girilir). Ayrı Paraşüt hesabına bağlanan şubenin faturaları o şubenindir; aynı hesaptaysa faturalar işletme geneli.
+            Aynı ekranda şubede kullanılan özellikler açılıp kapanır: karaoke, uygulama siparişleri, garson çağır, yemek kartı.
+          </>
+        ),
+        icon: Landmark,
+        links: [{ href: "/panel/subeler", label: "Şubeler" }],
+      },
+      {
         id: "iki-kar",
         q: "İki kâr hesabı: neden iki farklı kâr görüyorum?",
         a: (

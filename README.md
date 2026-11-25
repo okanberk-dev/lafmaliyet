@@ -74,6 +74,7 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Analiz & senaryo | `/panel/analiz` | — (yeni) |
 | Ayarlar, işlem geçmişi, günlük işlerin son çalışması, laffogato.net bağlantılarının durumu (karaoke, menü, siparişler, online satışlar), fotoğraftan okuma (aç / kapat, günlük sınır, aylık tutar), yedek: paneldeki bütün verinin tek dosyası (parolayla iner; geri yükleme bilgisayardan, [docs/YEDEK.md](docs/YEDEK.md)) ve Excel kopyası | `/panel/ayarlar` | Ayarlar |
 | Kullanıcılar & roller | `/panel/kullanicilar` | — (yeni) |
+| Şubeler ve Şube ayarları (yönetici): şube kütüğü (açılış günü, POS oranı, LafPOS / ModPOS), şube özellikleri (karaoke, uygulama siparişleri, garson çağır, yemek kartı) ve şube başına ayarlar (kasa raporu alıcıları, çalışanların gün sonu e-postası, Paraşüt hesabı; "Tuzla ile aynı" seçeneği) ([docs/SUBE.md](docs/SUBE.md)) | `/panel/subeler`, `/panel/subeler/[id]` | — (yeni) |
 | Paraşüt entegrasyonu (eşitleme, ürün → hammadde bağlantıları ve kontrol edilecekleri, faturadan çarpan okuma, kategori kuralları) | `/panel/parasut` | — (yeni) |
 | Hesabım (profil menüsü; yöneticide Bağlı uygulamalar) | `/panel/hesap` | — (yeni) |
 | Claude bağlantısı: Claude uygulamalarından panele soru (salt okunur, yalnız yönetici; onay ekranı, Hesabım › Bağlı uygulamalar) ([docs/CLAUDE-BAGLANTISI.md](docs/CLAUDE-BAGLANTISI.md)) | `/api/mcp`, `/baglan`, `/oauth/*`, `/.well-known/*` | — (yeni) |
