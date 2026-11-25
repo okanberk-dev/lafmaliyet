@@ -24,7 +24,8 @@ LafPOS, site (laffogato) ve bu panel tek işletme sisteminin üç parçasıdır 
 `docs/06-TEK-SISTEM.md`): ürünlerin tek kaynağı sitenin yönetim paneli, satışın ve kasanın kaynağı LafPOS,
 **maliyet, reçete, stok ve muhasebenin kaynağı bu panel**. LafPOS maliyeti buradan okur
 (`GET /api/panel/pos/urunler`), gün sonunu buraya iter (`POST /api/pos/gun`). Kasiyer LafPOS'ta kör kasa
-sayar (`kasa.rakam` yetkisi kapalı): beklenen tutarı ve farkı görmez; fark ve Z bu panelin Kasa raporuna gelir.
+sayar (`kasa.rakam` yetkisi kapalı): beklenen tutarı ve farkı görmez; fark ve Z bu panelin Kasa raporuna gelir, orada
+da yalnız yöneticiye görünür (personele kör; aşağıda "Gün sonu otomasyonu" › Kör kasa).
 
 ## Neden
 
@@ -759,7 +760,8 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   (detaylı Z) alın ve fotoğrafını ekleyin" (birden çok fotoğraf da alınır, iki ayrı fotoğraf istenmez). Yalnız ayrı mali Z
   basan cihazda (TokenX, `zReport`) yazarkasa Z'si ayrıca istenir.
 - Otomatik raporlu LafPOS gününde personelin Kasa sayfası raporu salt okunur gösterir (Düzenle, Silinmesini iste,
-  Düzeltme öner, WhatsApp ile gönder ve Metni kopyala yok; düzeltme LafPOS'ta yapılır, LafPOS yeniden gönderir) ve tek bir
+  Düzeltme öner, WhatsApp ile gönder ve Metni kopyala yok; altında "Rakamlar LafPOS'tan geldi; kasayı yönetici kontrol
+  eder.", farkı ima eden "LafPOS'ta düzeltin" değil; sayım personele kör, aşağıda "Kör kasa") ve tek bir
   "Gün sonu fotoğrafı" kartı. Sayfanın alt başlığı "Rakamlar LafPOS'tan geldi; Pavo'dan gün sonu fişini (detaylı Z) alıp
   fotoğrafını ekleyin." ("Kapanışta Z raporunu alın, kasadaki nakdi sayın…" değil). Kart eklenince "Fotoğraf alındı",
   okunamadı ya da yanlış belgeyse "Fotoğraf okunamadı / yanlış belge, yeniden çekin" der; Pavo'nun sonucu LafPOS'a henüz
@@ -777,8 +779,33 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   (alt başlık, Bugün'ün akşam satırı ve zil de aynı işi söyler; "kasadaki nakdi sayıp girin" denmez). Personel girseydi
   otomasyon raporu "elle girildi" sayar, Z'yi ve kasayı LafPOS'tan yazmazdı (yalnız boş cihaz alanları dolardı). Sunucu da reddeder
   (`saveCashReport`): personel LafPOS gününde yeni rapor yazmaz, otomatik raporu değiştirmez ("rakamlarını yalnız yönetici
-  düzeltir"); yöneticinin yedek yolla elle girdiği rapor personelin kendi kapısıyla açık kalır. LafPOS hiç göndermezse
-  raporu yönetici girer; dünden eski gün personelin geç rapor yolundan girilir.
+  düzeltir"), yöneticinin yedek yolla elle girdiği raporu da değiştirmez (kör kasa, 25 Kasım 2026; aşağıda). LafPOS hiç
+  göndermezse raporu yönetici girer; dünden eski gün personelin geç rapor yolundan girilir.
+- **Kör kasa** (denetim 25 Kasım 2026, bulgu 0; `src/lib/lafpos/kor-kasa.ts`): kasiyer LafPOS'ta çekmeceyi kör sayar
+  (`kasa.rakam` yok); panel de LafPOS'un şubesinde geçiş gününden itibaren personele **açılışı, sayılan nakdi, teslimi,
+  olması gerekeni, kasa farkını ve ertesi güne devri göstermez**. Önceden kasiyer kapanıştan saniyeler sonra panelde ve
+  Bugün'de "750 ₺ eksik" görüyor, ekran ona LafPOS'ta düzeltip yeniden göndermesini söylüyordu. Kurallar:
+  - Personelin yükü (`blindForStaff`, `blindReport`): raporun açılışı, sayılanı, teslimi ve farkı sıfır, `blind`
+    işaretli; notun açılış cümleleri ("Açılış önceki raporun devrinden …", "Açılış LafPOS'ta beklenenden … (beklenen …)",
+    "Neden (LafPOS): …") çıkar. LafPOS'un gün sonundan forma giden açılış, sayılan ve teslim alanları ve LafPOS'un olması
+    gerekeni satırı (`blindLafposDay`), önceki raporun devri, ertesi günün açılışı, sürümler ve bekleyen istekler hiç
+    gitmez. Otomatik rapor da yöneticinin elle girdiği rapor da böyle.
+  - Kayıtlı rapor kartı farkın yerine "Gün sonu alındı" der, döküm özetinde "sayılan" yok; dökümün kasa bölümünde yalnız
+    nakit satış, gün içinde giren ve çıkan, altında "Kör sayım: açılış, sayılan nakit ve kasa farkı yalnız yöneticide."
+    Rapor salt okunur (Düzenle, Silinmesini iste, Düzeltme öner, WhatsApp ve Metni kopyala yok). Eski LafPOS günü kartı
+    (dünden eski 14 gün) da aynı dökümü gösterir.
+  - Bugün: "LafPOS gün sonu · Fotoğraf alındı" ve elle girilmiş raporda "Ali gönderdi" (fark yok). Kasa sayfasının
+    **Son 7 gün** listesinde LafPOS gününün farkının yerinde gri "Sayım LafPOS'ta" rozeti. Personelin zili zaten farkı
+    söylemez; çalışanların gün sonu e-postası da (`sendStaffDayEnd`).
+  - Sunucu: personel LafPOS gününün raporunu formdan yazamaz (yöneticinin elle girdiği de: "LafPOS gününün kasa raporunu
+    yalnız yönetici düzeltir; yanlışlık varsa yöneticinize yazın."), düzeltme öneremez (`proposeCashCorrection`) ve
+    WhatsApp metnini istemez (`cashReportWhatsapp`): ikisinin yanıtı farkı taşırdı.
+  - Yönetici (rakam yetkisi) her şeyi eskisi gibi görür: kart, Kontrol listesi, e-posta, zil. Tuzla (ModPOS) ve geçiş
+    gününden önceki gün değişmedi.
+  - Kapsam dışı (bilinçli): LafPOS'un hiç göndermediği güne personelin geç raporu (yazarkasa Z fotoğrafıyla, yöneticinin
+    onayına) eski yoldur: sayımı panelde kendisi yazar, form sonucu gösterir (o gün LafPOS'ta kör sayım yoktur).
+    LafPOS sayımı rapordan sonra değiştirirse yöneticiye ayrı bir uyarı ve "Personel kasa farkını görsün" şube ayarı
+    henüz yok.
 - Otomatik raporlu LafPOS gününde personelin "Kaldırılmasını iste" düğmesi ve isteği fotoğrafın okuma farkına bakmaz
   (fark fotoğraf ↔ LafPOS karşılaştırmasıdır, yalnız yöneticinin; düğmenin kaybolması farkı ele verirdi). Yöneticinin
   onayı farka yine bakar (`readingBlocksRemoval`).

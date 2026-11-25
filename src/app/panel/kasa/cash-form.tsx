@@ -31,6 +31,7 @@ import {
 import { money } from "@/lib/format";
 import { lafposDiffs } from "@/lib/lafpos/diffs";
 import { staffAutoNote, staffPhotoDiffs } from "@/lib/lafpos/foto";
+import { BLIND_TEXT } from "@/lib/lafpos/kor-kasa";
 import { LAFPOS_NO_COUNT_TEXT, lafposOutsCheck, lafposSummary, unreceiptedCashOut, type LafposDay } from "@/lib/lafpos/prefill";
 import { OKC_PREFILL_ENABLED } from "@/lib/okc-z";
 import { OKC_HALVES_TEXT, okcNeedsHalves } from "@/lib/photo-read/okc";
@@ -956,14 +957,16 @@ export function CashForm({
   }
 
   if (report && !editing) {
-    // LafPOS'un otomatik raporu personelde salt okunur (yalnız fotoğraf; sayfanın kartı)
-    const staffAuto = lafposAuto && !photoUi.admin;
+    // LafPOS'un otomatik raporu personelde salt okunur (yalnız fotoğraf; sayfanın kartı). Kör kasa (bulgu 0): personelin
+    // LafPOS günü raporu (otomatik ya da yöneticinin elle girdiği) sayımsız gelir (blindReport), o da salt okunur
+    const blind = report.blind === true && !photoUi.admin;
+    const staffAuto = (lafposAuto || blind) && !photoUi.admin;
     const mail = emailLine(report.emailStatus, report.emailError, recipients);
     const sentAt = new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(new Date(report.updatedAt));
     // Sayan gönderenden farklıysa ikisi de; eski raporlarda sayan yok (gönderen saymış sayılır)
     const who = report.countedByName && report.countedByName !== report.submittedByName ? `Sayan ${report.countedByName} · gönderen ${report.submittedByName}` : report.submittedByName;
-    const savedCarry = carryCheck(date, report.openingCash, carry);
-    const savedNext = next ? carryCheck(next.date, next.openingCash, { date, amount: computeCash(report).carryOver }) : null;
+    const savedCarry = blind ? null : carryCheck(date, report.openingCash, carry);
+    const savedNext = next && !blind ? carryCheck(next.date, next.openingCash, { date, amount: computeCash(report).carryOver }) : null;
     // LafPOS'un otomatik gününde fotoğraf ↔ rapor farkı yalnız yöneticinin (sayfanın "Fotoğraf ↔ LafPOS"u); personel görmez
     const diffs = staffPhotoDiffs(saved ? photoDiffs(saved.readings, savedFields(report)) : [], { admin: photoUi.admin, lafposAuto }) ?? [];
     // LafPOS'un gün sonundan farklı yazılanlar (E-09; yalnız LafPOS gününde, gönderimi geldiyse)
@@ -989,7 +992,8 @@ export function CashForm({
           description={`${longDateTR(date)} · ${who} · ${sentAt}${report.revision > 1 ? " · güncellendi" : ""}`}
         />
         <div className="space-y-4 px-5 pb-5">
-          <DiffHeadline diff={report.cashDiff} />
+          {/* Kör kasa: personel farkı görmez (LafPOS'ta da görmedi); büyük satır yalnız günün alındığını söyler */}
+          {blind ? <p className="text-2xl font-semibold tracking-tight text-ink">{BLIND_TEXT.headline}</p> : <DiffHeadline diff={report.cashDiff} />}
           {mail ? (
             <Notice
               tone={mail.tone === "red" ? "bad" : mail.tone === "green" ? "good" : "neutral"}
@@ -1009,7 +1013,8 @@ export function CashForm({
           {lafposOuts ? <Notice tone="neutral" size="sm" title={lafposOuts.text} /> : null}
           {laterNote ? <Notice tone="neutral" size="sm" title={laterNote} /> : null}
           {staffAuto ? (
-            <p className="text-[13px] leading-5 text-ink-mute">Yanlışlık varsa LafPOS&apos;ta düzeltin; gün yeniden gönderilir.</p>
+            // "LafPOS'ta düzeltin" değil: farkı görmeyen kasiyere düzeltmeyi istemek açığı ima ederdi (bulgu 0)
+            <p className="text-[13px] leading-5 text-ink-mute">{BLIND_TEXT.line}</p>
           ) : (
           <div className="flex flex-wrap gap-2">
             {whatsapp ? (
@@ -1055,7 +1060,8 @@ export function CashForm({
             <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm text-ink-soft select-none [&::-webkit-details-marker]:hidden">
               <ChevronDown size={16} aria-hidden="true" className="shrink-0 motion-safe:transition-transform group-open/r:rotate-180" />
               <span className="min-w-0 flex-1">
-                <span className="font-medium text-ink">Rapor dökümü</span> · Z {money(report.zTotal)} · nakit {money(report.cash)} · sayılan {money(report.countedCash)}
+                <span className="font-medium text-ink">Rapor dökümü</span> · Z {money(report.zTotal)} · nakit {money(report.cash)}
+                {blind ? null : ` · sayılan ${money(report.countedCash)}`}
                 {attention.length ? <span className="font-medium text-warn"> · {attention.join(" · ")}</span> : null}
               </span>
             </summary>
@@ -1071,8 +1077,10 @@ export function CashForm({
                 kasa={lafposMode ? "LafPOS" : "ModPOS"}
                 cardExtra={lafpos?.cardExtra ?? null}
                 offDevice={lafpos?.offDevice ?? null}
+                blind={blind}
               />
-              <CashRevisions report={report} revisions={revisions} proposedBy={proposedBy} />
+              {/* Sürümler sayılanı ve farkı taşır: kör kasada personele gelmez (sayfa boş verir) */}
+              {blind ? null : <CashRevisions report={report} revisions={revisions} proposedBy={proposedBy} />}
             </div>
           </details>
         </div>

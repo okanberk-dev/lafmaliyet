@@ -167,19 +167,28 @@ export async function lockCashReport(tx: CashTx, date: string, branchId: string)
 }
 
 /**
- * Personelin LafPOS gününde formdan yazımı (son denetim, 24 Kasım 2026; docs/LAFPOS.md › Gün sonu otomasyonu): LafPOS'un
- * şubesinde geçiş gününden itibaren rapor LafPOS'un gün sonundan kendiliğinden yazılır. Personel yeni rapor girmez (gün
- * sonundan önce de: girseydi otomasyon raporu "elle girildi" sayar, Z'si ve kasası LafPOS'tan yazılmazdı) ve
- * otomatik raporu değiştirmez (salt okunur yalnız arayüzde değil). Elle girilmiş rapor (yönetici yedek yolla girdi ya da
- * eski kayıt) kendi kapısıyla açık kalır. Red metni; yazılabilirse null
+ * Gün LafPOS'un şubesinin LafPOS günü mü (geçiş gününden itibaren; LafPOS'un şubesi kütükten, lafposBranchId; onun geçiş
+ * günü ayarın kendisidir). Personele kör kasa günüdür (src/lib/lafpos/kor-kasa.ts): yazım, düzeltme önerisi ve WhatsApp
+ * metni reddedilir
+ */
+export async function isLafposTillDay(db: Pick<DB, "select"> | CashTx, date: string, branchId: string): Promise<boolean> {
+  if (branchId !== (await lafposBranchId(db))) return false;
+  return isLafposDay(date, await lafposSwitchDay(db));
+}
+
+/**
+ * Personelin LafPOS gününde formdan yazımı (son denetim, 24 Kasım 2026; docs/LAFPOS.md › Gün sonu otomasyonu ve Kör
+ * kasa): LafPOS'un şubesinde geçiş gününden itibaren rapor LafPOS'un gün sonundan kendiliğinden yazılır. Personel yeni
+ * rapor girmez (gün sonundan önce de: girseydi otomasyon raporu "elle girildi" sayar, Z'si ve kasası LafPOS'tan
+ * yazılmazdı), otomatik raporu değiştirmez (salt okunur yalnız arayüzde değil) ve yöneticinin elle girdiği raporu da
+ * değiştirmez (kör kasa, bulgu 0: düzenleme sayılanı, açılışı ve farkı gösterirdi; yanıt da farkı söylerdi). Red metni;
+ * yazılabilirse null
  */
 async function staffLafposRefusal(tx: CashTx, date: string, branchId: string, prev: CashReportRow | null): Promise<string | null> {
-  // LafPOS'un şubesi kütükten (lafposBranchId); onun geçiş günü ayarın kendisidir (branchSwitchDay)
-  if (branchId !== (await lafposBranchId(tx))) return null;
-  if (!isLafposDay(date, await lafposSwitchDay(tx))) return null;
+  if (!(await isLafposTillDay(tx, date, branchId))) return null;
   if (!prev) return LAFPOS_STAFF_WRITE_TEXT.fresh;
   const [state] = await tx.select({ autoValues: s.lafposDayEnds.autoValues }).from(s.lafposDayEnds).where(eq(s.lafposDayEnds.reportId, prev.id)).limit(1);
-  return state?.autoValues ? LAFPOS_STAFF_WRITE_TEXT.auto : null;
+  return state?.autoValues ? LAFPOS_STAFF_WRITE_TEXT.auto : LAFPOS_STAFF_WRITE_TEXT.manual;
 }
 
 /**

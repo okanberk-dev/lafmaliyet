@@ -46,7 +46,8 @@ yalnız düzen ve metin sadeleşti (`src/app/panel/kasa/cash-form.tsx`, `page.ts
   ve geç raporda **Onaya gönder**, gönderilmiş raporun düzenlenmesinde **Güncelle**); klavye açıkken ve Sonuç kartı
   göründüğünde gizlenir. Çubuk varken bildirimler üstte çıkar (çubuğu örtmez). Fark varken not boşsa ilk gönderim nota götürür ("750 ₺ eksik:
   nedenini nota yazın"); not zorunlu değil, yeniden basınca gönderir. Açılış devirle tutmuyorsa not eskisi gibi zorunlu.
-- **Gönderilmiş rapor.** Kartın üstünde fark (bir kez; başlıktaki rozet kalktı), e-posta durumu ve eylemler; satır
+- **Gönderilmiş rapor.** Kartın üstünde fark (bir kez; başlıktaki rozet kalktı; LafPOS gününde personele fark yerine
+  "Gün sonu alındı", açılış ve sayılan da yok: [kör kasa](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026)), e-posta durumu ve eylemler; satır
   satır döküm **Rapor dökümü** altında katlı ("Z 18.450 ₺ · nakit 6.200 ₺ · sayılan 6.400 ₺"). Açılış ya da ertesi
   günün açılışı devirle tutmuyorsa ya da yöneticinin dikkat etmesi gereken bir şey varsa açık gelir ve özet onu söyler
   ("… · Z tutmuyor · Yazarkasa tutmuyor"): ay listesinin rozetleriyle aynı kural (`src/lib/cash-attention.ts`;
