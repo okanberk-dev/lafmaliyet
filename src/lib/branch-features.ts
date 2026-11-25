@@ -92,12 +92,21 @@ export function karaokeBranchOf(branches: readonly FeatureBranch[]): string | nu
 }
 
 /**
+ * Online kanal seçiliyken "Tümü" gibi davranan özellikler: sitenin siparişi ve masa çağrısı siteden gelir; kanal
+ * görünümünde susarsa siparişin zili ve alarmı kesilirdi (inceleme bulgusu, 25 Kasım 2026). Karaoke ve yemek kartı
+ * kanalda yok
+ */
+const CHANNEL_FEATURES: readonly BranchFeature[] = ["siparis", "garson"];
+
+/**
  * Seçili kapsamda özellik var mı: tek şube seçiliyse o şubede açık mı; "Tümü"de herhangi bir etkin şubede açık mı.
- * Online kanal seçiliyken hiçbir şube özelliği görünmez (kanalın kasası, karaokesi, masası yok)
+ * Online kanal seçiliyken kanalın kasası, karaokesi ve yemek kartı yok; site siparişi ve masa çağrısı "Tümü"deki gibi
+ * (herhangi bir şubede açıksa; CHANNEL_FEATURES)
  */
 export function featureInScope(feature: BranchFeature, scope: BranchScope, branches: readonly FeatureBranch[]): boolean {
   if (scope === ALL_BRANCHES) return featureBranches(branches, feature).length > 0;
   const b = branches.find((x) => x.id === scope);
+  if (b && b.kind !== "fiziksel") return CHANNEL_FEATURES.includes(feature) && featureBranches(branches, feature).length > 0;
   return Boolean(b?.active && hasFeature(b, feature));
 }
 

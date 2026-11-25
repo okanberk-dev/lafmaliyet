@@ -180,6 +180,10 @@ describe("Şube özellikleri", { skip: !SERVER_URL && "SUBE_OZELLIK_TEST_DATABAS
     // Kapsam: Marina seçiliyken sipariş yok, Tümü'de var
     assert.equal(await server.featureHere("siparis", "marina"), false);
     assert.equal(await server.featureHere("siparis", "hepsi"), true);
+    // Online kanal seçiliyken siparişler ve masa çağrıları "Tümü" gibi (siteden gelir; zil ve alarm susmaz), karaoke yok
+    assert.equal(await server.featureHere("siparis", "online"), true);
+    assert.equal(await server.featureHere("garson", "online"), true);
+    assert.equal(await server.featureHere("karaoke", "online"), false);
     // Eylem: Marina'ya kilitli personel sipariş aşamasını ilerletemez (siteye istek gitmeden); Tuzla'nınki ve yönetici
     // özellik kapısından geçer (sonra site bağlı değil hatası)
     const { advanceSiteOrder } = await import("../src/server/actions/site-orders");

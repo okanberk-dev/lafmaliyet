@@ -269,7 +269,9 @@ veri). Kurallar saf dosyada (`src/lib/branch-features.ts`), okuma `src/server/br
 - **Site siparişin şubesini söylemez** (laffogato.net'in sözleşmesi değişmedi): sipariş ve çağrı, özelliği açık her
   şubenindir. Web Push kitlesi (`featureAudience`): yönetici, şubesiz personel ve özelliği açık şubenin personeli;
   özellik hiçbir şubede açık değilse kimse. Şubesi pasif ya da kütükte olmayan personel şubesiz sayılır.
-- **"Tümü"** özelliği herhangi bir etkin şubede açıksa gösterir; online kanal seçiliyken hiçbir şube özelliği görünmez.
+- **"Tümü"** özelliği herhangi bir etkin şubede açıksa gösterir. Online kanal seçiliyken karaoke ve yemek kartı
+  görünmez; uygulama siparişleri ve garson çağır "Tümü"deki gibi (siteden gelirler; kanal görünümündeki cihazın zili ve
+  alarmı susmaz; inceleme bulgusu, 25 Kasım 2026).
 - **Eylemler sunucuda da reddedilir** (`staffFeatureError`, `assertStaffFeature`): sipariş kapalı şubeye kilitli
   personel sipariş aşamasını ilerletemez, garson çağır kapalıysa masa çağrısını "Gördüm" diye kapatamaz ("Garson çağır
   bu şubede kullanılmıyor"); özellik hiçbir şubede açık değilse hiçbir personel. Yönetici serbest. Karaoke eylemleri

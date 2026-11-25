@@ -57,11 +57,19 @@ test("varsayılanlar: karaoke Tuzla'da, sipariş, garson ve yemek kartı her şu
   );
 });
 
-test("kapsam: tek şubede o şubenin özelliği, Tümü'de herhangi bir etkin şubede; online kanal ve kapalı şube hiçbiri", () => {
+test("kapsam: tek şubede o şubenin özelliği, Tümü'de herhangi bir etkin şubede; online kanalda yalnız sipariş ve masa çağrısı; kapalı şube hiçbiri", () => {
   assert.equal(featureInScope("karaoke", "tuzla", BRANCHES), true);
   assert.equal(featureInScope("karaoke", "marina", BRANCHES), false);
   assert.equal(featureInScope("karaoke", ALL_BRANCHES, BRANCHES), true);
-  assert.equal(featureInScope("siparis", "online", BRANCHES), false);
+  // Online kanal: siparişler ve masa çağrıları siteden gelir, "Tümü" gibi (kanal görünümünde zil ve alarm susmaz);
+  // karaoke ve yemek kartı kanalda yok
+  assert.equal(featureInScope("siparis", "online", BRANCHES), featureInScope("siparis", ALL_BRANCHES, BRANCHES));
+  assert.equal(featureInScope("garson", "online", BRANCHES), featureInScope("garson", ALL_BRANCHES, BRANCHES));
+  assert.equal(featureInScope("karaoke", "online", BRANCHES), false);
+  assert.equal(featureInScope("yemek_karti", "online", BRANCHES), false);
+  const noOrders = BRANCHES.map((b) => ({ ...b, features: [] as string[] }));
+  assert.equal(featureInScope("siparis", "online", BRANCHES), true);
+  assert.equal(featureInScope("siparis", "online", noOrders), false, "hiçbir şubede açık değilse kanalda da yok");
   const noKaraoke = withRow("tuzla", { features: ["siparis"] });
   assert.equal(featureInScope("karaoke", ALL_BRANCHES, noKaraoke), false, "hiçbir şubede yok");
   assert.equal(karaokeBranchOf(noKaraoke), null);
