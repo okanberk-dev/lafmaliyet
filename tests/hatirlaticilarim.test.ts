@@ -22,6 +22,7 @@ import {
   REMINDER_ALERT,
   reminderAlarm,
   reminderAlertKey,
+  reminderPushText,
   ringingReminders,
   sinceLabel,
   trParts,
@@ -358,4 +359,13 @@ test("ekran: sürekli ses ve kimin kurduğu listede rozetle görünür", () => {
   // Sayfa listeyi yalnız yöneticide yükler
   const page = readFileSync(join(process.cwd(), "src/app/panel/hatirlaticilarim/page.tsx"), "utf8");
   assert.match(page, /user\.role === "admin" \? assignablePeople\(user\.id\) : Promise\.resolve\(\[\]\)/);
+});
+
+test("sabah bildirimi: gecikmiş 'bugün' sayılmaz; başlık ayırır, gövdede önce bugünküler", () => {
+  const T = "2026-11-24";
+  const r = (title: string, dueDate: string, dueTime: string | null = null) => ({ title, dueDate, dueTime });
+  assert.deepEqual(reminderPushText([r("Kira", T, "15:00"), r("Su", T)], T), { title: "Bugün 2 hatırlatıcınız var", body: "15:00 Kira · Su" });
+  assert.deepEqual(reminderPushText([r("Eski", "2026-11-20"), r("Kira", T, "15:00"), r("Su", T)], T), { title: "2 bugün · 1 gecikmiş hatırlatıcı", body: "15:00 Kira · Su · Eski" });
+  assert.equal(reminderPushText([r("Eski", "2026-11-20")], T).title, "1 gecikmiş hatırlatıcınız var");
+  assert.match(reminderPushText([r("a", T), r("b", T), r("c", T), r("d", T)], T).body, / …$/);
 });

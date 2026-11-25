@@ -115,7 +115,7 @@ export interface KasaIn {
    * Son beş haftanın raporları (geçen hafta ve önceki dört): Z toplamı, günün cirosu (ödenmez / ikram hariç;
    * src/lib/cash-revenue.ts dayRevenue, verilmezse Z toplamı) ve kasa farkı (eksi eksik)
    */
-  reports: { date: string; zTotal: number; revenue?: number; cashDiff: number }[];
+  reports: { date: string; zTotal: number; revenue?: number; cashDiff: number; branch?: { id: string; name: string } }[];
   /** Geçen hafta açılışı önceki devirle tutmayan gün; null = bilinmiyor (gösterilmez) */
   carryMismatch: number | null;
   /** Geçen hafta iş günü kapandıktan sonra kasa alanı düzeltilen rapor */
@@ -152,25 +152,34 @@ function byDay(rs: readonly { date: string; cashDiff: number }[]): { date: strin
  */
 export function kasaItem(i: KasaIn): WeeklyItem | null {
   const last = i.reports.filter((r) => inLastWeek(i.week, r.date));
-  const short = byDay(last.filter((r) => r.cashDiff <= -CASH_TOLERANCE)).sort((a, b) => a.cashDiff - b.cashDiff || a.date.localeCompare(b.date));
+  const shortReports = last.filter((r) => r.cashDiff <= -CASH_TOLERANCE);
+  const short = byDay(shortReports).sort((a, b) => a.cashDiff - b.cashDiff || a.date.localeCompare(b.date));
   const over = byDay(last.filter((r) => r.cashDiff >= CASH_TOLERANCE));
   const total = sum(short.map((r) => -r.cashDiff));
   const flags = kasaFlags(i);
   const action = "Kasa raporlarına bak";
   if (short.length && total >= WEEKLY_MIN_TL) {
     const worst = short[0];
+    // Birden çok kasa açıkken (raporda şube var): eksik tek şubedeyse başlıkta şubesi, iki şubedeyse ayrıntıda şube
+    // şube toplam; bağlantı en çok eksik günün en çok eksik şubesine (&sube=: kasa sayfası tarayıcının seçimine düşmez)
+    const byBranch = new Map<string, { name: string; total: number }>();
+    for (const r of shortReports) if (r.branch) byBranch.set(r.branch.id, { name: r.branch.name, total: (byBranch.get(r.branch.id)?.total ?? 0) - r.cashDiff });
+    const branches = [...byBranch.values()];
+    const only = branches.length === 1 ? `${branches[0].name} · ` : "";
+    const worstBranch = shortReports.filter((r) => r.date === worst.date && r.branch).sort((a, b) => a.cashDiff - b.cashDiff)[0]?.branch;
     const parts = [
       short.length >= 2 ? `en çok ${longDateTR(worst.date)}: ${tl(-worst.cashDiff)}` : null,
+      branches.length > 1 ? branches.map((b) => `${b.name} ${tl(b.total)}`).join(", ") : null,
       over.length ? `${over.length} gün fazla: ${tl(sum(over.map((r) => r.cashDiff)))}` : null,
       ...flags,
     ].filter((p): p is string => p !== null);
     return {
       key: `kasa:eksik:${i.week.id}`,
       source: "kasa",
-      title: short.length === 1 ? `${longDateTR(worst.date)} kasası ${tl(total)} eksik` : `Kasa geçen hafta ${short.length} gün eksik: toplam ${tl(total)}`,
+      title: short.length === 1 ? `${only}${longDateTR(worst.date)} kasası ${tl(total)} eksik` : `${only}Kasa geçen hafta ${short.length} gün eksik: toplam ${tl(total)}`,
       detail: parts.length ? upperFirst(parts.join(" · ")) : null,
       tl: total,
-      href: `/panel/kasa?ay=${worst.date.slice(0, 7)}`,
+      href: `/panel/kasa?ay=${worst.date.slice(0, 7)}${worstBranch ? `&sube=${encodeURIComponent(worstBranch.id)}` : ""}`,
       action,
     };
   }

@@ -118,7 +118,6 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `PHOTO_DIR` | (yalnız yerel, isteğe bağlı) Fotoğrafların yerel klasörü; yoksa `.data/photos` |
 | `MCP_DISABLED` | (isteğe bağlı) `1` ise Claude bağlantısı kapalı (bütün uçlar 404, verilmiş anahtarlar çalışmaz). Önizlemelerde zaten kapalı ([CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md)) |
 | `MCP_ALLOW_LOCALHOST` | (isteğe bağlı) `1` ise Claude Code / MCP Inspector'ın localhost dönüş adresine canlıda da izin verilir; varsayılan kapalı |
-| `WEATHER_CONTACT` | (isteğe bağlı) Satış tahmininin hava durumu isteğinde (MET Norway, ücretsiz, anahtarsız, günde bir istek) kimliğe eklenen iletişim: e-posta ya da adres. Yoksa yalnız uygulamanın adı ve `APP_URL` gider. Panel `api.met.no`'ya bağlanabilmeli; bağlanamazsa tahmin havasız hesaplanır ([SATIS-TAHMINI.md](SATIS-TAHMINI.md)) |
 | `DATABASE_SSL` | (isteğe bağlı, yalnız acil durumda) `require`: veritabanı sunucusunun sertifikası doğrulanmaz. Varsayılan doğrulamalı bağlantıdır (`verify-full`; Neon'un sertifikası Let's Encrypt'ten, Node tanır): şifreli ama sertifikası denetlenmeyen bağlantıda araya giren biri kendi sertifikasıyla bütün veriyi okuyabilirdi. Canlı derleme önce havuzlu adresi, sonra migration için doğrudan adresi doğrulamalı açar; biri açılmazsa derleme migration'dan önce durur, ne veritabanı ne yayındaki sürüm değişir. Neon sertifikasını değiştirdiği için derleme durursa geçici olarak `require` yazılır |
 
 `DATABASE_URL` / `DATABASE_URL_UNPOOLED` Neon entegrasyonundan gelir. Paraşüt değişkenleri (`PARASUT_*`; istemci
@@ -362,8 +361,8 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
     günler işletme geneli kalır (geri doldurma yok). Geriye Instant Rollback yapılırsa eski kod sütuna bakmaz: şubeli
     kapalı günler bütün şubelerde kapalı sayılır.
   - **satis_tahmini** (satış tahmini: `special_days`, `weather_days`, `forecast_snapshots`): yalnız yeni tablolar,
-    eklemeli; eski kod onlara dokunmaz. Sabah işi her gün `api.met.no`'ya bir istek atar (ücretsiz, anahtarsız;
-    `WEATHER_CONTACT` isteğe bağlı, § 4); önizlemeler tahmin kaydı ve hava durumu yazmaz.
+    eklemeli; eski kod onlara dokunmaz. Satış tahmini 4 Kasım 2026'da kalktı: `special_days` (Özel günler) kullanılıyor,
+    hava durumu isteği ve `WEATHER_CONTACT` artık yok.
 - **"Migration uygulanmadı" hatası.** Canlı derleme (ve `npm run db:migrate`) migration'dan sonra günlükteki her
   girdinin `drizzle.__drizzle_migrations`'ta kaydını arar (`scripts/migration-check.ts`). Eksik varsa derleme
   `Migration uygulanmadı: 0021_x … (sıra bozuk)` diye durur ve yayındaki sürüm değişmez. Çözüm: yukarıdaki gibi

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { CardContent } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
-import { JOB_KEYS, JOBS, jobsSummary, stepTexts, trClock, type JobHealth, type JobRunLite, type JobState } from "@/lib/job-health";
+import { JOB_KEYS, JOBS, jobsSummary, stepTexts, trClock, todaysKontrolRun, type JobHealth, type JobRunLite, type JobState } from "@/lib/job-health";
 import { addDays } from "@/lib/reminders";
 import { loadJobsOverview } from "@/server/jobs/alerts";
 
@@ -68,6 +68,42 @@ function JobRow({ health: h, job, now }: { health: JobHealth; job: (typeof JOB_K
   );
 }
 
+const KONTROL_BADGE: Record<JobRunLite["status"], { tone: Tone; text: string }> = {
+  ok: { tone: "green", text: "Gitti" },
+  skipped: { tone: "gray", text: "Gönderilecek yok" },
+  running: { tone: "amber", text: "Sürüyor" },
+  partial: { tone: "amber", text: "Kısmen" },
+  error: { tone: "red", text: "Hata" },
+};
+
+/**
+ * Personelin kontrol listesi ve karaoke e-postaları (job_runs `kontrol`): son çalışma, adımları, gidemediyse nedeni. Bu iş
+ * "çalışmadı" uyarısı vermez (asıl tetik açık sekme, GitHub yedek); yalnız gidemeyen e-posta uyarır
+ */
+function KontrolRow({ runs, now }: { runs: JobRunLite[]; now: Date }) {
+  // Bugün bir şey gönderen ya da gidemeyen çalışma (zilin uyarısıyla aynı); yoksa son çalışma ("Gönderilecek yok")
+  const run = todaysKontrolRun(runs, now) ?? runs.find((r) => r.job === "kontrol") ?? null;
+  const badge = run ? KONTROL_BADGE[run.status] : null;
+  const steps = stepTexts(run?.steps ?? null);
+  return (
+    <li className="px-4 py-3 text-sm">
+      <p className="flex flex-wrap items-center gap-2">
+        <span className="font-medium text-ink">Personel e-postaları</span>
+        {badge ? (
+          <Badge tone={badge.tone} dot>
+            {badge.text}
+          </Badge>
+        ) : null}
+      </p>
+      <p className="mt-0.5 text-[13px] text-pretty text-ink-mute">
+        Kontrol listesi ve karaoke · 10:00, 14:00, 18:00, 22:00 · {run ? `son çalışma ${runWhen(run, run.status === "running" ? "running" : "ok", now)}` : "son 8 günde kayıt yok"}
+      </p>
+      {steps.length ? <p className="mt-0.5 text-[13px] text-pretty text-ink-mute">{steps.join(" · ")}</p> : null}
+      {run?.message && (run.status === "error" || run.status === "partial") ? <Notice tone="bad" size="sm" title={run.message} className="mt-1" /> : null}
+    </li>
+  );
+}
+
 /**
  * Ayarlar › Günlük işler: iki zamanlanmış işin (Paraşüt eşitlemesi, sabah işi) son çalışması, adımları ve hatası.
  * Çalışmayan ya da hata veren iş zil, Genel bakış ve e-postayla da bildirilir (src/lib/job-health.ts); uyarılar
@@ -105,6 +141,7 @@ export async function JobsCard() {
             {JOB_KEYS.map((job) => (
               <JobRow key={job} job={job} health={o.health[job]} now={now} />
             ))}
+            <KontrolRow runs={o.runs} now={now} />
           </ul>
         ) : (
           <Notice tone="bad" size="sm" title="İşlerin durumu okunamadı; sayfayı yenileyin" />

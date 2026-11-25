@@ -67,10 +67,11 @@ export function LafposPhotoCard({
   const check = admin?.check ?? null;
   return (
     <Card>
+      {/* Personelde açıklama yok: sayfanın alt başlığı ve kartın satırı ne yapılacağını söylüyor (aynı cümle üç kez okunuyordu) */}
       <CardHeader
         icon={<Camera />}
         title="Gün sonu fotoğrafı"
-        description={state.auto || state.pending ? `Rakamlar LafPOS'tan geldi; yalnız fotoğraf: ${what}` : "LafPOS'ta sayım yok: rapor gelince fotoğraf bağlanır"}
+        description={admin ? (state.auto || state.pending ? `Rakamlar LafPOS'tan; personel yalnız fotoğraf ekler: ${what}` : "LafPOS'ta sayım yok: rapor gelince fotoğraf bağlanır") : undefined}
       />
       <div className="space-y-3 px-5 pb-5 text-sm">
         <Notice tone={tone} size="sm" title={state.line} text={state.attached ? `${state.attached} fotoğraf${state.pending && !state.auto ? " (rapor bekleniyor)" : ""}` : undefined} />
@@ -89,21 +90,21 @@ export function LafposPhotoCard({
   );
 }
 
-/** Yöneticinin "Fotoğraf ↔ LafPOS" satırları; Banka POS boşken okunan toplam ve "Banka POS'a yaz" */
+/** Yöneticinin fiş ↔ LafPOS satırları (düz Türkçe: "Fiş LafPOS'la aynı"); Banka POS boşken okunan toplam ve "Banka POS'a yaz" */
 function AdminCheck({ check, bankPos, onWrite, busy }: { check: LafposPhotoCheck | null; bankPos: number | null; onWrite: (amount: number) => void; busy: boolean }) {
-  if (!check) return <p className="text-[13px] text-ink-mute">Fotoğraf ↔ LafPOS: fotoğraf yok.</p>;
+  if (!check) return <p className="text-[13px] text-ink-mute">Fiş fotoğrafı yok.</p>;
   const head =
     check.state === "uyumlu"
-      ? "Fotoğraf ↔ LafPOS: aynı"
+      ? "Fiş LafPOS'la aynı"
       : check.state === "fark"
-        ? "Fotoğraf ↔ LafPOS: farklı"
+        ? "Fiş LafPOS'tan farklı"
         : check.state === "okunamadi"
           ? "Fotoğraf okunamadı ya da yanlış belge"
           : check.state === "belirsiz"
             ? `${photoUnsureText(check)}: yönetici baksın`
             : "Fotoğraf henüz okunmadı";
   return (
-    <section aria-label="Fotoğraf ↔ LafPOS" className="space-y-2">
+    <section aria-label="Fiş ve LafPOS" className="space-y-2">
       <Notice tone={check.state === "fark" ? "bad" : check.state === "uyumlu" ? "good" : "warn"} size="sm" title={head} text={check.state === "okunmadi" ? undefined : `Okuyan: ${photoSourceText(check)}`} />
       {check.rows.length ? (
         <ul className="divide-y divide-line">

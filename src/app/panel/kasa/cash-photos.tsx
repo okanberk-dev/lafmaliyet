@@ -46,7 +46,7 @@ export function ReadChecks({ checks, className }: { checks: ReadCheck[]; classNa
 }
 
 // "kasa-pos": ModPOS bölümünün yazarkasa düğmesi (form onu Banka POS Z bölümüne okutur; kasa.ts wrongDocument)
-const SWITCH_LABEL: Record<CashPhotoKind, string> = { "kasa-pos": "Banka POS Z bölümüne okut", "kasa-okc": "Banka POS Z bölümüne okut", "kasa-z": "ModPOS bölümüne okut" };
+const SWITCH_LABEL: Record<CashPhotoKind, string> = { "kasa-pos": "Yazarkasa Z bölümüne okut", "kasa-okc": "Yazarkasa Z bölümüne okut", "kasa-z": "ModPOS bölümüne okut" };
 
 /**
  * Bir kartın (ModPOS Z raporu ya da Banka POS Z raporu) fotoğrafları: rapora bağlı olanlar salt okunur, formdakiler

@@ -173,14 +173,19 @@ export interface AlertShift {
   endMin: number;
 }
 
+/** O an vardiyada kimse yoksa: vardiyası bu kadar dakika içinde biten ya da başlayan alır */
+export const ALERT_NEAR_MIN = 120;
+
 const dayBefore = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) - 24 * 60 * MIN_MS).toISOString().slice(0, 10);
 
 /**
  * Uyarı kime gider, vardiya planıyla (22 Kasım 2026: "kişinin vardiyasında ... temizlik checklist varsa hatırlatıcıları
  * ayarla"). Hatırlatma, listenin şubesinde **o an vardiyada olan** hesaplara gider (dün başlayıp gece yarısını geçen
- * vardiya da sayılır; vardiyaya yazılan yönetici dahil). O an kimse vardiyada değilse o gün o şubede çalışacak
- * herkese; o gün için plan hiç yazılmadıysa eskisi gibi listeyi doldurabilen bütün personele (`alertReaches`). Şubesiz
- * listede bütün şubelerin planına bakılır. `at`: bildirim anının Türkiye günü ve günün dakikası.
+ * vardiya da sayılır; vardiyaya yazılan yönetici dahil). O an kimse vardiyada değilse vardiyası son 2 saatte biten ya
+ * da önümüzdeki 2 saatte başlayana (ALERT_NEAR_MIN; 22:00 kapanış hatırlatması 14–22 vardiyasında az önce çıkana gider,
+ * sabahçıya değil); o da yoksa o gün o şubede çalışacak herkese; o gün için plan hiç yazılmadıysa eskisi gibi listeyi
+ * doldurabilen bütün personele (`alertReaches`). Şubesiz listede bütün şubelerin planına bakılır. `at`: bildirim anının
+ * Türkiye günü ve günün dakikası.
  */
 export function alertRecipients<U extends { id: number; role: "admin" | "staff"; branchId: string | null }>(
   listBranch: string | null,
@@ -191,8 +196,14 @@ export function alertRecipients<U extends { id: number; role: "admin" | "staff";
   const plan = shifts.filter((s) => listBranch === null || s.branchId === listBranch);
   const yesterday = dayBefore(at.date);
   const onNow = plan.filter((s) => (s.date === at.date && s.startMin <= at.minute && at.minute < s.endMin) || (s.date === yesterday && at.minute + 24 * 60 < s.endMin));
+  // Vardiyanın bildirim anına göre başı ve sonu (dün başlayan: bir gün geri)
+  const rel = (s: AlertShift) => (s.date === at.date ? { start: s.startMin, end: s.endMin } : s.date === yesterday ? { start: s.startMin - 24 * 60, end: s.endMin - 24 * 60 } : null);
+  const near = plan.filter((s) => {
+    const r = rel(s);
+    return r !== null && ((r.end <= at.minute && at.minute - r.end <= ALERT_NEAR_MIN) || (r.start > at.minute && r.start - at.minute <= ALERT_NEAR_MIN));
+  });
   const today = plan.filter((s) => s.date === at.date);
-  for (const group of [onNow, today]) {
+  for (const group of [onNow, near, today]) {
     const ids = new Set(group.map((s) => s.userId));
     const hit = users.filter((u) => ids.has(u.id));
     if (hit.length) return hit;

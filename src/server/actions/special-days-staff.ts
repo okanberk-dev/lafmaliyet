@@ -13,8 +13,8 @@ import { deleteStaffSpecialCore, saveStaffSpecialCore } from "@/server/staff-spe
 import { logActivity } from "./log";
 import { attempt, UserError } from "./util";
 
-// Personelin özel günleri (/panel/ozel-gunler; docs/SATIS-TAHMINI.md › Personelin özel günleri): onaysız, sınırlı;
-// yönetici bilgi alır (zil) ve Satış tahmini'nde düzenleyebilir. Kuralların çekirdeği src/server/forecast/staff-special.ts.
+// Personelin özel günleri (/panel/ozel-gunler; docs/OZEL-GUNLER.md): onaysız, sınırlı;
+// yönetici bilgi alır (zil) ve Özel günler'de düzenleyebilir. Kuralların çekirdeği src/server/staff-special.ts.
 // "use server" dosyasındaki her dışa açık işlev bir uçtur: her biri kendi oturum ve rol denetimini yapar.
 
 /** Takvimde var olan gün (2027-02-30 değil) */

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import { businessDate, LATE_REPORT_DAYS, revisionDataOf } from "@/lib/cash-report";
 import { bankPosSchema, okcSchema, posZSchema, type BankPos, type PosDayZ, type PosOkc } from "@/lib/lafpos/day";
@@ -42,6 +42,21 @@ export async function lafposDayDevice(db: Reader, date: string, branchId: string
   const bank = row.bankPos ? bankPosSchema.safeParse(row.bankPos) : null;
   const okc = row.okc ? okcSchema.safeParse(row.okc) : null;
   return { z: z.data, bankPos: bank?.success ? bank.data : null, okc: okc?.success ? okc.data : null };
+}
+
+/**
+ * Şubenin yazarkasa cihazı (LafPOS'un son gönderdiği `okc`'den: sağlayıcı ve ayrı mali Z basıyor mu); gün sonu henüz
+ * gelmediyse fotoğrafın metni için (Pavo ayrı mali Z basmaz). Hiç gelmediyse null
+ */
+export async function lafposOkcDeviceOf(db: Reader, branchId: string): Promise<{ provider: "pavo" | "tokenx"; zReport: boolean } | null> {
+  const rows = await db
+    .select({ okc: s.posDayReports.okc })
+    .from(s.posDayReports)
+    .where(and(eq(s.posDayReports.branchId, branchId), isNotNull(s.posDayReports.okc)))
+    .orderBy(desc(s.posDayReports.date))
+    .limit(1);
+  const okc = rows[0]?.okc ? okcSchema.safeParse(rows[0].okc) : null;
+  return okc?.success ? { provider: okc.data.provider, zReport: okc.data.zReport } : null;
 }
 
 /** Rapora bağlı gün sonu fotoğrafları (yazarkasa bölümü: kasa-okc, eski kasa-pos), eklenme sırasıyla */

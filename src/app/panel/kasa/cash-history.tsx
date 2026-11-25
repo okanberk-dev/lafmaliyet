@@ -13,7 +13,6 @@ import { Dialog } from "@/components/ui/dialog";
 import { Stat } from "@/components/ui/misc";
 import {
   CASH_TOLERANCE,
-  computeCash,
   diffKind,
   diffText,
   historyOf,
@@ -22,14 +21,14 @@ import {
   reportNo,
   whatsappLink,
   whatsappText,
-  withCardExtra,
   type CarryCheck,
   type CashReportExtras,
   type CashRevisionRow,
 } from "@/lib/cash-report";
 import type { ModposDayView } from "@/lib/cash-modpos";
 import { money } from "@/lib/format";
-import { okcHasFigures, okcReconcile } from "@/lib/okc-z";
+import { cardDiffLabel, reportFlags } from "@/lib/cash-attention";
+import { okcHasFigures } from "@/lib/okc-z";
 import { longDateTR } from "@/lib/reminders";
 import { deleteCashReport, resendCashReportEmail } from "@/server/actions/cash-report";
 import type { PhotoDiff } from "@/lib/photo-read/kasa";
@@ -144,7 +143,7 @@ export function CashHistory({
   const lateEdited = (r: CashReportDTO) => r.revision > 1 && historyOf(r, revisions[r.id] ?? []).entries.some((e) => e.late);
   const reported = days.flatMap((d) => (d.report ? [d.report] : []));
   const flags = { carry: reported.filter((r) => carry[r.date]).length, late: reported.filter(lateEdited).length };
-  const flagText = [flags.carry ? `${flags.carry} gün açılış ≠ devir` : null, flags.late ? `${flags.late} sonradan düzeltme` : null].filter(Boolean).join(" · ");
+  const flagText = [flags.carry ? `${flags.carry} gün açılış devirden farklı` : null, flags.late ? `${flags.late} sonradan düzeltme` : null].filter(Boolean).join(" · ");
 
   function remove() {
     if (!open) return;
@@ -276,13 +275,10 @@ export function CashHistory({
                 </li>
               );
             }
-            // LafPOS gününde kart farkı kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen kartı (Faz 2) düşer
-            const c = computeCash(withCardExtra(report, photos[report.id]?.extras.cardExtra, photos[report.id]?.extras.offDevice, photos[report.id]?.extras.kasa));
-            const cardOff = c.cardDiff !== null && Math.abs(c.cardDiff) >= CASH_TOLERANCE;
-            // Yazarkasa Z'si: kayıtlı değerlerde kendi içinde tutmuyor ya da (ilk girildiği günden sonra) hiç girilmemiş
-            const okcOff = okcHasFigures(report) && okcReconcile(report, "admin").some((l) => l.key === "okc-self");
+            // Z tutmuyor, kart farkı, yazarkasa tutmuyor: tek gün görünümünün döküm özetiyle aynı kural (cash-attention.ts)
+            const { paymentsOff, cardDiff, okcOff } = reportFlags(report, photos[report.id]?.extras ?? {});
+            // Yazarkasa Z'si (ilk girildiği günden sonra) hiç girilmemiş
             const okcMissing = !okcHasFigures(report) && report.zTotal > 0 && okcFirst !== null && date > okcFirst;
-            const paymentsOff = Math.abs(c.paymentsDiff) >= CASH_TOLERANCE;
             return (
               <li key={date}>
                 <button type="button" onClick={() => setOpen(report)} className="flex w-full cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 text-left hover:bg-panel/60">
@@ -307,15 +303,15 @@ export function CashHistory({
                     {lateApproved[report.id] ? <Badge tone="gray">Geç girildi</Badge> : null}
                     {photos[report.id]?.suspicious.length ? <Badge tone="amber">Fotoğraftan farklı</Badge> : null}
                     {photos[report.id]?.extras.lafposDiffs?.length ? <Badge tone="amber">LafPOS&apos;tan farklı</Badge> : null}
-                    {photos[report.id]?.lafposPhoto === "fark" ? <Badge tone="amber">Fotoğraf ↔ LafPOS farklı</Badge> : null}
+                    {photos[report.id]?.lafposPhoto === "fark" ? <Badge tone="amber">Fiş LafPOS&apos;tan farklı</Badge> : null}
                     {photos[report.id]?.lafposPhoto === "okunamadi" ? <Badge tone="amber">Gün sonu fotoğrafı okunamadı</Badge> : null}
                     {photos[report.id]?.lafposPhoto === "bakin" ? <Badge tone="amber">Gün sonu fotoğrafına bakın</Badge> : null}
                     {photos[report.id]?.lafposPhoto === "bekliyor" ? <Badge tone="gray">Gün sonu fotoğrafı yok</Badge> : null}
                     {modposDays[date]?.diffs.length ? <Badge tone="amber">ModPOS API&apos;den farklı</Badge> : null}
-                    {carry[report.date] ? <Badge tone="amber">Açılış ≠ devir</Badge> : null}
+                    {carry[report.date] ? <Badge tone="amber">Açılış devirden farklı</Badge> : null}
                     {lateEdited(report) ? <Badge tone="amber">Ertesi gün düzeltildi</Badge> : null}
                     {paymentsOff ? <Badge tone="amber">Z tutmuyor</Badge> : null}
-                    {cardOff ? <Badge tone="amber">Kart {c.cardDiff! > 0 ? "+" : "−"}{money(Math.abs(c.cardDiff!))}</Badge> : null}
+                    {cardDiff !== null ? <Badge tone="amber">{cardDiffLabel(cardDiff)}</Badge> : null}
                     {okcOff ? <Badge tone="amber">Yazarkasa tutmuyor</Badge> : null}
                     {okcMissing ? <Badge tone="gray">Yazarkasa Z yok</Badge> : null}
                     <Badge tone={DIFF_TONE[diffKind(report.cashDiff)]} dot>

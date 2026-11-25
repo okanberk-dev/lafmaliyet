@@ -52,7 +52,7 @@ export async function loadJobsOverview(now = new Date()): Promise<JobsOverview> 
     cronSecret,
     runs,
     health,
-    alerts: systemAlerts({ production, cronSecret, now, health, parasutSyncErrorAt, lastBackupAt }),
+    alerts: systemAlerts({ production, cronSecret, now, health, parasutSyncErrorAt, lastBackupAt, runs }),
   };
 }
 

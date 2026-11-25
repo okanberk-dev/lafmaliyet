@@ -416,7 +416,7 @@ test("uploadRule: yönetici her güne; personel Z / POS'u açık güne ya da ge�
 test("yazarkasa Z'si (kasa-okc, dalga 13): tür listesinde, 400 gün saklanır, etiketi, bölüme en çok 3 fotoğraf; erişimi kasanın kuralı", () => {
   assert.ok(PHOTO_KINDS.includes("kasa-okc") && isPhotoKind("kasa-okc"));
   assert.equal(KEEP_DAYS["kasa-okc"], 400);
-  assert.equal(PHOTO_KIND_LABEL["kasa-okc"], "Banka POS Z");
+  assert.equal(PHOTO_KIND_LABEL["kasa-okc"], "Yazarkasa Z");
   assert.equal(keepUntil("kasa-okc", "2026-10-22").toISOString(), new Date("2027-11-26T00:00:00+03:00").toISOString());
   assert.equal(linkedUntil("kasa-okc", "2026-01-05", "2026-10-22").toISOString(), keepUntil("kasa-okc", "2026-10-22").toISOString());
   assert.equal(MAX_OKC_PHOTOS, 3);

@@ -1,6 +1,6 @@
 # Yazarkasa (banka POS) Z raporu: biçim, kimlikler, tuzaklar
 
-Kasa raporunun **Banka POS Z raporu (yazarkasa)** bölümü bu kâğıdı okur ([KASA-RAPORU.md](KASA-RAPORU.md) › Banka POS Z
+Kasa raporunun **Yazarkasa Z raporu** bölümü bu kâğıdı okur ([KASA-RAPORU.md](KASA-RAPORU.md) › Yazarkasa Z
 raporu). Burada kâğıdın ne olduğu, üstünde ne yazdığı, rakamlarının birbirini nasıl tutması gerektiği ve okurken nerede
 yanılındığı anlatılır; panelin denetimleri de bunlara dayanır. Ayırt edici cümle her yerde aynı: **üstünde Z RAPORU ve
 KDV dökümü yazar; banka gün sonu fişi değil.**

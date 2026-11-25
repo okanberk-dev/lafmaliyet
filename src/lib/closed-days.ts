@@ -5,8 +5,8 @@ import { money } from "./format";
 import { addDays, dayMonthTR, daysBetween, isCalendarDate, longDateTR } from "./reminders";
 
 /**
- * Kapalı gün ve personelin özel günleri (saf; plan docs/planlar/personel-yetki.md §2.9; docs/SATIS-TAHMINI.md ›
- * Personelin özel günleri, docs/KASA-RAPORU.md › Kafe kapalıydı). Tek kavram: özel günlerin `kapali` satırı. Personel
+ * Kapalı gün ve personelin özel günleri (saf; plan docs/planlar/personel-yetki.md §2.9; docs/OZEL-GUNLER.md ›
+ * Ekran, docs/KASA-RAPORU.md › Kafe kapalıydı). Tek kavram: özel günlerin `kapali` satırı. Personel
  * yalnız dün için "Kafe kapalıydı" der (yöneticinin onayıyla, kanıta karşı); ileri tarihli maç, AVM etkinliği,
  * kampanya ve diğerini onaysız ekler (sınırlı). Kanıt sayıları, kırmızı kural, sınırlar ve metinler burada; testler
  * tests/kapali-gun.test.ts.

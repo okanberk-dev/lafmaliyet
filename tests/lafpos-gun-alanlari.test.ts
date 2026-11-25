@@ -395,7 +395,9 @@ test("kasa raporunun kart karşılaştırması yazarkasadan geçmeyen kartı yaz
   assert.match(form, /cardExtra: lafpos\?\.cardExtra \?\? null, offDevice: lafpos\?\.offDevice \?\? null/);
   assert.match(read("src/app/panel/onaylar/kasa-cards.tsx"), /offDevice=\{card\.lafpos\.day\?\.offDevice \?\? null\}/);
   const history = read("src/app/panel/kasa/cash-history.tsx");
-  assert.match(history, /withCardExtra\(report, photos\[report\.id\]\?\.extras\.cardExtra, photos\[report\.id\]\?\.extras\.offDevice, photos\[report\.id\]\?\.extras\.kasa\)/);
+  // Ay listesinin rozetleri (ve gün görünümünün döküm özeti) cash-attention.ts'ten: kart farkı yazarkasadan geçmeyeni düşer
+  assert.match(history, /reportFlags\(report, photos\[report\.id\]\?\.extras \?\? \{\}\)/);
+  assert.match(read("src/lib/cash-attention.ts"), /computeCash\(withCardExtra\(report, extras\.cardExtra, extras\.offDevice, extras\.kasa\)\)/);
   assert.match(history, /offDevice=\{openPhotos\?\.extras\.offDevice\}/);
   assert.match(read("src/app/panel/kasa/report-sheet.tsx"), /reportChecks\(\{ report, cardExtra, offDevice,/);
 });

@@ -1,7 +1,7 @@
-import { ArrowLeft, Gift, ReceiptText } from "lucide-react";
+import { ArrowLeft, ChevronDown, Gift, ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import { KasaText } from "@/components/panel/kasa-text";
 import { PageHeader } from "@/components/panel/page-header";
@@ -11,6 +11,8 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { InfoTip } from "@/components/ui/info-tip";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
+import { pavoView } from "@/lib/lafpos/bank-pos";
+import { dayDetailNotes } from "@/lib/lafpos/gun-ayrinti";
 import { kasaMonthLine, resolveMonth, tillMonths, tillOpenedOn } from "@/lib/cash-month";
 import {
   businessDate,
@@ -40,6 +42,7 @@ import { okcReadFigures } from "@/lib/photo-read/okc";
 import {
   LAFPOS_STAFF_BEFORE_DAY_END_DESCRIPTION,
   LAFPOS_STAFF_BEFORE_DAY_END_TEXT,
+  LAFPOS_STAFF_NO_COUNT,
   lafposPhotoLabel,
   staffAutoNote,
   staffBeforeLafposDayEnd,
@@ -48,7 +51,6 @@ import {
   staffPhotoDiffs,
 } from "@/lib/lafpos/foto";
 import { LAFPOS_STAFF_ENTRY_LINE, staffLafposEntryClosed } from "@/lib/lafpos/cash-moves";
-import { LAFPOS_NO_COUNT_TEXT } from "@/lib/lafpos/prefill";
 import { addDays, dayLocativeTR, isCalendarDate, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { ALL_BRANCHES, branchScopeLabel, sortBranches } from "@/lib/branches";
@@ -408,49 +410,41 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   // LafPOS gününde personel Kasa sayfasından kasadan çıkan ve zayi / ikram eklemez (sahibin kararı, 24 Kasım 2026): harcama
   // LafPOS'un kasa hareketlerinden, ikram / zayi / iptal gün sonundan gelir. Yönetici ekler; sunucu personelin eklemesini reddeder
   const entryClosed = staffLafposEntryClosed({ admin, branchId: view.till, lafposDay: lafposState.lafpos });
-  // Günün zayi ve ikramı: kasa raporuyla birlikte gider (ModPOS'ta ödenmez görünen ikramla karşılaştırılır)
+  // Günün zayi ve ikramı: kasa raporuyla birlikte gider (ModPOS'ta ödenmez görünen ikramla karşılaştırılır). Tek satır,
+  // personelde formdan ÖNCE: metni "kasa raporundan önce girin" derken kart Gönder'in altında duruyordu (inceleme).
+  // LafPOS gününde personelin satırı yok (Kasadan çıkanlar kartı söyler), yalnız gelenler
+  const wasteItems = waste ? [waste.ikram ? { label: "İkram", text: waste.ikram } : null, waste.zayi ? { label: "Zayi", text: waste.zayi } : null].filter((x) => x !== null) : [];
   const wasteCard = waste ? (
     <Card>
-      <CardHeader icon={<Gift />} title="Günün zayi & ikramı" description="Rapora, e-postaya ve WhatsApp metnine eklenir" />
-      <div className="space-y-2 px-5 pb-5 text-sm">
-        {waste.ikram || waste.zayi ? (
-          <>
-            {waste.ikram ? (
-              <p className="break-words">
-                <span className="font-medium text-ink">İkram:</span> <span className="text-ink-soft">{waste.ikram}</span>
-              </p>
-            ) : null}
-            {waste.zayi ? (
-              <p className="break-words">
-                <span className="font-medium text-ink">Zayi:</span> <span className="text-ink-soft">{waste.zayi}</span>
-              </p>
-            ) : null}
-          </>
-        ) : (
-          <p className="text-ink-mute">
-            {entryClosed
-              ? "Bu gün zayi ya da ikram yok."
-              : waste.lafpos
-                ? "Bu gün zayi ya da ikram yok. Atılan bir şey ya da hammadde ikramı olduysa kasa raporundan önce girin; ürün ikramı LafPOS'ta işaretlenir."
-                : "Bu gün zayi ya da ikram girilmedi. Ödenmeden verilen ya da atılan bir şey olduysa kasa raporundan önce girin."}
+      <div className="space-y-2 px-5 py-4 text-sm">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-line-strong bg-surface text-ink" aria-hidden="true">
+            <Gift size={18} strokeWidth={1.75} />
+          </span>
+          <p className="min-w-0 flex-1">
+            <span className="font-semibold text-ink">Zayi &amp; ikram</span>
+            {wasteItems.length ? null : <span className="text-ink-mute"> · {entryClosed || waste.lafpos?.received ? "yok" : "girilmedi"}</span>}
           </p>
-        )}
-        {waste.lafpos ? (
-          // LafPOS gününde (geçiş gününden itibaren) ürün ikramı LafPOS'tan; panele girilen ürün ikramı sayılmaz
-          <p className="text-[13px] text-ink-mute">
-            {waste.lafpos.received
-              ? "Ürün ikramı ve LafPOS'ta zayi yazılanlar LafPOS'un gün sonundan."
-              : "Ürün ikramı LafPOS'ta işaretlenir, gün sonuyla gelir."}
-            {waste.lafpos.received && waste.lafpos.notCounted ? ` Panele girilen ${waste.lafpos.notCounted} ürün ikramı sayılmıyor: LafPOS'taki sayılıyor.` : ""}
+          {entryClosed ? null : (
+            <ButtonLink href={`/panel/zayi?gun=${date}`} variant="secondary" size="sm">
+              <Gift size={14} /> Ekle
+            </ButtonLink>
+          )}
+        </div>
+        {wasteItems.map((w) => (
+          <p key={w.label} className="break-words">
+            <span className="font-medium text-ink">{w.label}:</span> <span className="text-ink-soft">{w.text}</span>
+          </p>
+        ))}
+        {!wasteItems.length && !entryClosed ? (
+          <p className="text-[13px] leading-5 text-ink-mute">
+            {waste.lafpos ? "Atılan ya da hammadde ikramı olduysa ekleyin; ürün ikramı LafPOS'ta işaretlenir." : "Ödenmeden verilen ya da atılan bir şey olduysa raporu göndermeden ekleyin."}
           </p>
         ) : null}
-        {entryClosed ? (
-          <p className="text-[13px] text-ink-mute">{LAFPOS_STAFF_ENTRY_LINE}</p>
-        ) : (
-          <ButtonLink href={`/panel/zayi?gun=${date}`} variant="secondary" size="sm">
-            <Gift size={14} /> Zayi / ikram ekle
-          </ButtonLink>
-        )}
+        {/* LafPOS gününde (geçiş gününden itibaren) ürün ikramı LafPOS'tan; panele girilen ürün ikramı sayılmaz */}
+        {waste.lafpos?.received && waste.lafpos.notCounted ? (
+          <p className="text-[13px] leading-5 text-warn">Panele girilen {waste.lafpos.notCounted} ürün ikramı sayılmıyor: LafPOS&apos;taki sayılıyor.</p>
+        ) : null}
       </div>
     </Card>
   ) : null;
@@ -489,6 +483,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
       lafposAuto={admin ? (lafposPhoto?.auto ?? false) : staffLafposAuto}
       // LafPOS gününün gün sonu fotoğrafının adı ("Banka POS Z" yerine "Pavo gün sonu fişi")
       lafposPhotoLabel={lafposPhoto ? lafposPhotoLabel(lafposPhoto.need) : undefined}
+      // Gün sonu geldiyse yazarkasanın fişi "Gün sonu fotoğrafı" kartından (formda ikinci seçici yok)
+      dayPhotoCard={photoCard !== null}
       // Kümülatif ve yazarkasa dışı tahsilat yalnız yöneticiye: personelin yükünde anahtarı da yok
       {...(admin && report ? { okcAdmin: okcAdminView(report, photoInfo?.readings ?? [], prevOkc.cum ?? null) } : {})}
     />
@@ -566,25 +562,44 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
         <ScopeNote view={view} />
         {dayChips}
         {closedBar}
-        {outsCard}
-        {waitingLafpos ? (
-          <Notice tone="warn" title="Kasa raporu LafPOS'tan gelecek" text={LAFPOS_NO_COUNT_TEXT} />
-        ) : beforeDayEnd ? <Notice tone="neutral" title="Kasa raporu LafPOS'tan gelecek" text={LAFPOS_STAFF_BEFORE_DAY_END_TEXT} /> : form}
-        {photoCard}
+        {/* LafPOS günü: personelin tek işi gün sonu fotoğrafı, en üstte; rakamlar LafPOS'tan (alt başlık söyler) */}
+        {lafposState.lafpos ? (
+          <>
+            {photoCard}
+            {waitingLafpos ? (
+              <Notice tone="warn" title={LAFPOS_STAFF_NO_COUNT.title} text={LAFPOS_STAFF_NO_COUNT.text} />
+            ) : beforeDayEnd ? (
+              <Notice tone="neutral" title="Kasa raporu LafPOS'tan gelecek" text={LAFPOS_STAFF_BEFORE_DAY_END_TEXT} />
+            ) : (
+              form
+            )}
+            {outsCard}
+            {wasteCard}
+          </>
+        ) : (
+          // ModPOS günü: yeni raporda gün içinde kasadan çıkanlar ve zayi / ikram formdan önce (raporla birlikte giderler);
+          // gönderilmiş raporun özeti en üstte
+          <>
+            {report ? form : null}
+            {outsCard}
+            {wasteCard}
+            {report ? null : form}
+          </>
+        )}
         {siteRow}
-        {wasteCard}
         <LateDaysCard days={lateDays} storage={storage.available} />
         <Card>
           <CardHeader icon={<ReceiptText />} title="Son 7 gün" description="Gönderilen raporlar" />
           <ul className="divide-y divide-line border-t border-line">
             {recent.length ? (
               recent.map((r) => (
-                <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm">
-                  <span className="w-[8.5rem] shrink-0 font-medium text-ink">{longDateTR(r.date)}</span>
-                  <span className="min-w-0 flex-1 text-ink-mute">
+                // Telefonda iki satır: üstte gün ve fark, altta gönderen ve Z (dar sütunda 4 satıra kırılıyordu)
+                <li key={r.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 px-5 py-2.5 text-sm sm:grid-cols-[9rem_minmax(0,1fr)_auto]">
+                  <span className="font-medium text-ink">{shortDayTR(r.date)}</span>
+                  <span className="col-span-2 row-start-2 min-w-0 truncate text-ink-mute sm:col-span-1 sm:row-start-1">
                     {r.submittedByName} · Z {money(r.zTotal)}
                   </span>
-                  <Badge tone={DIFF_TONE[diffKind(r.cashDiff)]} dot>
+                  <Badge tone={DIFF_TONE[diffKind(r.cashDiff)]} dot className="col-start-2 row-start-1 justify-self-end sm:col-start-3">
                     {diffText(r.cashDiff)}
                   </Badge>
                 </li>
@@ -714,15 +729,21 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
           {adminBand}
           {closedBar}
           {outsCard}
+          {/* Gün sonu fotoğrafı formdan önce (personeldeki gibi): Yazarkasa kartı fotoğrafın bu karttan eklendiğini söyler */}
+          {photoCard}
           {form}
           {modposDay?.modpos ? <ModposSections date={date} today={today} sheet={modposDay.sheet} z={modposDay.z} report={report} ladmin={ladmin} keySet={modposKeySet(process.env, modposDay.sheet?.branchId ?? report?.branchId)} now={new Date()} /> : null}
-          {siteRow}
-          {bankPos ? <PavoCard bankPos={bankPos} /> : null}
-          {photoCard}
-          {lafposDetail ? <LafposDayCard detail={lafposDetail} /> : null}
           {wasteCard}
+          {siteRow}
+          {bankPos || lafposDetail ? (
+            <DayDetails pavo={bankPos ? pavoView(bankPos).state : null} lafpos={lafposDetail !== null} notes={dayDetailNotes(lafposDetail)}>
+              {bankPos ? <PavoCard bankPos={bankPos} /> : null}
+              {lafposDetail ? <LafposDayCard detail={lafposDetail} /> : null}
+            </DayDetails>
+          ) : null}
         </>
-      ) : null}
+      ) : (
+      // Gün açıkken ayın listesi ve ayarlar yok ("Günden güne" düğmesiyle dönülür): tek günün ekranı 12 ekrana çıkıyordu
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
           <CashHistory
@@ -782,7 +803,29 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
           {view.settings ? <CashSettingsCard settings={settings} emailConfigured={isEmailConfigured()} blocked={blockedRecipients} /> : null}
         </div>
       </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * Yöneticinin gün görünümünde LafPOS gününün ayrıntı kartları (Pavo kart karşılaştırması, LafPOS gün sonu dökümü) katlı:
+ * özet ve form üstte, döküm istenince. Pavo farkı varsa, karşılaştırılamadıysa ya da LafPOS'un dökümünde hassas işlem
+ * varsa (`notes`: günü düzeltti, ödeme iptali) açık gelir ve özet söyler (para riski ve hassas işlem gizlenmez)
+ */
+function DayDetails({ pavo, lafpos, notes, children }: { pavo: "uyumlu" | "fark" | "yok" | null; lafpos: boolean; notes: string[]; children: ReactNode }) {
+  const parts = [pavo ? `Pavo kart: ${pavo === "uyumlu" ? "uyumlu" : pavo === "fark" ? "FARK VAR" : "karşılaştırılamadı"}` : null, lafpos ? "LafPOS gün sonu dökümü" : null].filter(Boolean).join(" · ");
+  return (
+    <details open={(pavo !== null && pavo !== "uyumlu") || notes.length > 0} className="group/d space-y-4">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-2xl bg-panel px-5 py-3 text-sm text-ink-soft select-none [&::-webkit-details-marker]:hidden">
+        <ChevronDown size={16} aria-hidden="true" className="shrink-0 motion-safe:transition-transform group-open/d:rotate-180" />
+        <span className="min-w-0 flex-1">
+          <span className="font-medium text-ink">Ayrıntı</span> · <span className={pavo === "fark" ? "font-semibold text-bad-ink" : undefined}>{parts}</span>
+          {notes.length ? <span className="font-medium text-warn"> · {notes.join(" · ")}</span> : null}
+        </span>
+      </summary>
+      <div className="space-y-4">{children}</div>
+    </details>
   );
 }
 
@@ -877,6 +920,7 @@ async function StaffLafposDay({ date, view, photo }: { date: string; view: KasaV
         </ButtonLink>
         <TillBadge view={view} />
       </div>
+      <LafposPhotoCard date={date} branchId={view.till} state={photo} storage={storage.available} reading={ai.state} />
       {report ? (
         <Card>
           <CardHeader icon={<ReceiptText />} title={`Kasa raporu · ${longDateTR(date)}`} description="LafPOS'un gün sonundan" />
@@ -885,9 +929,8 @@ async function StaffLafposDay({ date, view, photo }: { date: string; view: KasaV
           </div>
         </Card>
       ) : (
-        <Notice tone="warn" title="Kasa raporu LafPOS'tan gelecek" text={LAFPOS_NO_COUNT_TEXT} />
+        <Notice tone="warn" title={LAFPOS_STAFF_NO_COUNT.title} text={LAFPOS_STAFF_NO_COUNT.text} />
       )}
-      <LafposPhotoCard date={date} branchId={view.till} state={photo} storage={storage.available} reading={ai.state} />
     </div>
   );
 }
@@ -975,7 +1018,7 @@ function okcAdminView(r: CashReportDTO, readings: CashReading[], prevCum: OkcPre
     });
     if (res.rejected !== null) note = cumulativeRejectedText(res.rejected);
     // Temizlenmiş de olabilir, yazıldığı an önceki bir kümülatifle tutmamış da: hangisi olduğu kayıtlı değil
-    else if (res.cumTotal !== null) note = `Kümülatif saklı değil (okunan ${money(res.cumTotal)}). Yeni bir Banka POS Z fotoğrafı okununca yeniden yazılır.`;
+    else if (res.cumTotal !== null) note = `Kümülatif saklı değil (okunan ${money(res.cumTotal)}). Yeni bir yazarkasa Z fotoğrafı okununca yeniden yazılır.`;
   }
   return { reportId: r.id, cumTotal: r.okcCumTotal ?? null, cumVat: r.okcCumVat ?? null, outside: r.okcOutside ?? null, note };
 }

@@ -13,8 +13,7 @@ import type { Actor } from "@/server/staff-requests/core";
 import { UserError } from "@/server/user-error";
 
 /*
- * Personelin özel günleri (onaysız; plan docs/planlar/personel-yetki.md §2.9; docs/SATIS-TAHMINI.md › Personelin özel
- * günleri): yarından 60 gün ileriye, en çok 3 günlük maç, AVM etkinliği, kampanya ya da diğer; kişinin gelecekte
+ * Personelin özel günleri (onaysız; plan docs/planlar/personel-yetki.md §2.9; docs/OZEL-GUNLER.md › Ekran): yarından 60 gün ileriye, en çok 3 günlük maç, AVM etkinliği, kampanya ya da diğer; kişinin gelecekte
  * kapsadığı günler en çok 14, iş gününde en çok 20 yazım. Kişi yalnız kendi girdiği, başlamamış ve yöneticinin
  * dokunmadığı satırı değiştirir ya da siler. Yazımlar özel günlerin danışma kilidi altında (yöneticinin yazımıyla
  * sıraya girer). Sunucu eylemi değil: src/server/actions/special-days-staff.ts (tests/kapali-gun-db.test.ts).

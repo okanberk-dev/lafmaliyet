@@ -72,10 +72,11 @@ export interface OkcAdminView {
 /** Kasa farkının rengi: eksik kırmızı, fazla turuncu, tutuyor yeşil */
 export const DIFF_TONE = { short: "red", over: "amber", even: "green" } as const;
 
-export function DiffHeadline({ diff, className }: { diff: number; className?: string }) {
+/** Kasa farkının büyük satırı; `live`: yazarken değişen (formun Sonuç'u) ekran okuyucuya kibarca okunur */
+export function DiffHeadline({ diff, className, live }: { diff: number; className?: string; live?: boolean }) {
   const kind = diffKind(diff);
   return (
-    <p className={cn("text-3xl font-semibold tracking-tight tabular", kind === "short" ? "text-bad" : kind === "over" ? "text-warn" : "text-good", className)}>{diffText(diff)}</p>
+    <p aria-live={live ? "polite" : undefined} className={cn("text-3xl font-semibold tracking-tight tabular", kind === "short" ? "text-bad" : kind === "over" ? "text-warn" : "text-good", className)}>{diffText(diff)}</p>
   );
 }
 
@@ -278,9 +279,9 @@ function OkcBreakdown({
   const lines = okcReconcile({ ...f, bankPos: f.bankPos ?? null }, audience, kasa);
   const head = [f.okcZNo ? `Z no ${f.okcZNo}` : null, f.okcReceipts ? `${f.okcReceipts} fiş` : null].filter(Boolean).join(" · ");
   return (
-    <section aria-label="Banka POS Z (yazarkasa)">
+    <section aria-label="Yazarkasa Z raporu">
       <h3 className="border-b border-line pb-1 text-[13px] font-semibold text-ink-soft">
-        Banka POS Z (yazarkasa){head ? ` · ${head}` : ""}
+        Yazarkasa Z raporu{head ? ` · ${head}` : ""}
       </h3>
       {f.okcTotal != null ? <Line label="Günlük toplam" value={money(f.okcTotal)} strong /> : null}
       {f.okcVatTotal != null ? <Line label="Toplam KDV" value={money(f.okcVatTotal)} /> : null}
@@ -314,7 +315,7 @@ function OkcCumulative({ view }: { view: OkcAdminView }) {
     start(async () => {
       const res = await clearOkcCumulative(view.reportId);
       if (!res.ok) return void toast.error(res.error);
-      toast.success("Kümülatif temizlendi", { description: "Yeni bir Banka POS Z fotoğrafı okununca yeniden yazılır." });
+      toast.success("Kümülatif temizlendi", { description: "Yeni bir yazarkasa Z fotoğrafı okununca yeniden yazılır." });
       setConfirm(false);
     });
   }

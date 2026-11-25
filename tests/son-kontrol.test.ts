@@ -42,7 +42,9 @@ test("personel: LafPOS'un şubesinde, LafPOS gününde, gün sonu gelmeden ve ra
 test("Kasa sayfası: personelin bugünü / dünü gün sonundan önce form değil bilgi; alt başlık da aynı işi söyler", () => {
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /staffBeforeLafposDayEnd\(\{/);
-  assert.match(page, /beforeDayEnd \? <Notice tone="neutral" title="Kasa raporu LafPOS'tan gelecek" text=\{LAFPOS_STAFF_BEFORE_DAY_END_TEXT\} \/> : form/);
+  assert.match(page, /\) : beforeDayEnd \? \(\n\s+<Notice tone="neutral" title="Kasa raporu LafPOS'tan gelecek" text=\{LAFPOS_STAFF_BEFORE_DAY_END_TEXT\} \/>\n\s+\) : \(\n\s+form\n/);
+  // LafPOS gününde personelin tek işi en üstte: gün sonu fotoğrafı kartı, sonra bilgi ya da rapor (inceleme: aynı mesaj dört kez)
+  assert.match(page, /\{lafposState\.lafpos \? \(\n\s+<>\n\s+\{photoCard\}\n\s+\{waitingLafpos \? \(\n\s+<Notice tone="warn" title=\{LAFPOS_STAFF_NO_COUNT\.title\} text=\{LAFPOS_STAFF_NO_COUNT\.text\} \/>/);
   assert.match(page, /LAFPOS_STAFF_BEFORE_DAY_END_DESCRIPTION/);
   assert.doesNotMatch(page, /form ondan dolar\. Kasadaki nakdi sayıp girin/, "yöneticinin Nasıl çalışır?'ı da otomatik raporu anlatır");
 });
@@ -147,7 +149,8 @@ test("Kasa sayfası: LafPOS gününde personel ekle düğmeleri yerine kısa sat
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /const entryClosed = staffLafposEntryClosed\(\{ admin, branchId: view\.till, lafposDay: lafposState\.lafpos \}\);/);
   assert.match(page, /lafposEntryClosed=\{entryClosed\}/, "kasadan çıkanlar kartı");
-  assert.match(page, /\{entryClosed \? \(\n\s+<p className="text-\[13px\] text-ink-mute">\{LAFPOS_STAFF_ENTRY_LINE\}<\/p>\n\s+\) : \(\n\s+<ButtonLink href=\{`\/panel\/zayi\?gun=\$\{date\}`\}/, "zayi / ikram kartı");
+  // Zayi / ikram satırı: LafPOS gününde personelde Ekle yok (kısa satır Kasadan çıkanlar kartında, iki kez yazılmaz)
+  assert.match(page, /\{entryClosed \? null : \(\n\s+<ButtonLink href=\{`\/panel\/zayi\?gun=\$\{date\}`\}/, "zayi / ikram kartı");
   // Geç rapor görünümü de aynı kuralla
   assert.match(page, /staffLafposEntryClosed\(\{ admin: false, branchId: view\.till, lafposDay: lafposState\.lafpos \}\)/);
   const outs = read("src/app/panel/kasa/cash-outs.tsx");

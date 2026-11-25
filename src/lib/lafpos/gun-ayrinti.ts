@@ -45,6 +45,18 @@ const rateLabel = (rate: number) => `KDV %${Number.isInteger(rate) ? rate : rate
 /** İşaretli tutar: "+100 ₺", "−20,50 ₺", "0 ₺" */
 const signedMoney = (v: number) => (v > 0 ? `+${money(v)}` : v < 0 ? `−${money(-v)}` : money(0));
 
+/**
+ * Yöneticinin gün görünümündeki "Ayrıntı" katının özetine giren hassas işlemler (kat bunlardan biri varken açık gelir;
+ * Pavo uyumlu olsa da): LafPOS günü düzeltti (yeniden açma, gönderim sonrası değişiklik) ve ödeme iptalleri
+ */
+export function dayDetailNotes(detail: Pick<LafposDayDetail, "correction" | "refunds"> | null): string[] {
+  if (!detail) return [];
+  const out: string[] = [];
+  if (detail.correction) out.push("LafPOS düzeltti");
+  if (detail.refunds.length) out.push(`${detail.refunds.length} ödeme iptali`);
+  return out;
+}
+
 /** Tahsilatın satır adı ödeme alanına göre */
 const COLLECTION_LABEL: Record<string, string> = {
   cash: "Nakit tahsilat (cari)",
