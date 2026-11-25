@@ -20,7 +20,8 @@ import {
 import { closedFollowUp, CLOSED_FOLLOW_UP_TEXT, staffResultBell } from "@/lib/cash-requests";
 import { dateTR, money } from "@/lib/format";
 import { lafposDiffs, lafposDiffText } from "@/lib/lafpos/diffs";
-import { photoUnsureText } from "@/lib/lafpos/foto";
+import { LAFPOS_PHOTO_TEXT, photoUnsureText } from "@/lib/lafpos/foto";
+import { LAFPOS_NO_COUNT_ADMIN_TEXT, STAFF_NO_COUNT_TEXT } from "@/lib/lafpos/gun-sonu";
 import { branchSwitchDay, kasaName } from "@/lib/lafpos/switch";
 import { modposMismatchBell, modposMismatches } from "@/lib/modpos/zil";
 import { addDays, longDateTR, todayTR } from "@/lib/reminders";
@@ -32,7 +33,8 @@ import { listBranches } from "@/server/branches";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, previousCarryOverByBranch, reportedDays, type CashReportDTO } from "@/server/data/cash-reports";
 import { closedInfoRows, closedYesterday, pendingClosedRows } from "@/server/closed-days";
 import { cashOutBellRow } from "@/server/data/cash-out-requests";
-import { loadKasaLafposDays } from "@/server/data/lafpos-day";
+import { lafposNoCountDays, loadKasaLafposDays } from "@/server/data/lafpos-day";
+import { lafposPhotoMarks } from "@/server/lafpos/foto";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { getDb, schema as s } from "@/server/db";
 import { loadModposSheets } from "@/server/modpos/store";
@@ -83,8 +85,9 @@ const titleOf = (title: string, t: TillOf) => (t.named ? `${title} · ${t.name}`
 const kasaHref = (date: string, t: TillOf) => `/panel/kasa?gun=${date}${t.named ? `&sube=${encodeURIComponent(t.id)}` : ""}`;
 
 /**
- * Gün sonu kasa raporu: personele akşam (20:00'den sonra) bugünün raporu girilmediyse hatırlatma (kendi kasasının:
- * kilitli şube, seçili fiziksel şube, "Tümü"de Tuzla; formu o kasaya yazar); yöneticiye dünün raporu girilmediyse, son
+ * Gün sonu kasa raporu: personele akşam (20:00'den sonra) bugünün raporu girilmediyse hatırlatma, LafPOS gününde gün sonu
+ * fotoğrafı ve sayılmayan çekmece (staffCashNotifications; kendi kasasının: kilitli şube, seçili fiziksel şube, "Tümü"de
+ * Tuzla; formu o kasaya yazar); yöneticiye dünün raporu girilmediyse, son
  * raporda kasa farkı varsa (eksik kırmızı, fazla turuncu), açılış devirle tutmuyorsa ve rapor ertesi gün kasa alanı
  * değiştirilerek düzeltildiyse. "Tümü"de birden çok kasa açıkken yöneticiye her şubenin kasası ayrı.
  */
@@ -97,28 +100,7 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
   const till = tills ? (tills.many ? null : tills.till) : await currentTillBranch();
   const inTill = <T>(fn: () => Promise<T>) => (till ? withBranchScope(till, fn) : fn());
   const reports = await inTill(() => cashReportsBetween(addDays(day, -6), day));
-  if (user.role !== "admin") {
-    if (!isCashEvening(now)) return [];
-    // Şubesiz personel "Tümü"de birden çok kasa açıkken: raporu girilmemiş her kasa ayrı satır (şube kapsamı C P2-10)
-    const perTill = await staffTillsWaiting(day);
-    if (perTill) return perTill;
-    if (reports.some((r) => r.date === day)) return [];
-    // Günün kasası (denetim E-39): geçiş gününden itibaren LafPOS'ta "Günü kapat"; okunamazsa bugünkü gibi ModPOS. Geçiş
-    // günü yalnız LafPOS'un şubesinin kasasınındır (branchSwitchDay): ModPOS'ta kalan şubenin personeli ModPOS'u okur
-    const lafpos = kasaName(day, branchSwitchDay(await loadLafposSwitchDay().catch(() => null), till ?? (await currentTillBranch()))) === "LafPOS";
-    return [
-      {
-        id: `kasa-bekliyor-${day}`,
-        kind: "warning",
-        title: "Bugünün kasa raporu bekliyor",
-        body: lafpos ? "Kapanışta LafPOS'ta Günü kapat'a basın, kasayı girin" : "Kapanışta ModPOS'un Z raporunu ve kasayı girin",
-        timeLabel: "Bugün",
-        unread: true,
-        href: "/panel/kasa",
-        group: "kasa",
-      },
-    ];
-  }
+  if (user.role !== "admin") return staffCashNotifications(now, day, reports, till ?? (await currentTillBranch()));
   if (!tills) return [];
   const out: PanelNotification[] = [];
   const yesterday = addDays(day, -1);
@@ -136,17 +118,20 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
   const missing = groups.filter((g) => g.expects && !g.reports.some((r) => r.date === yesterday));
   // Dün onaylı kapalıysa zil yok; personel kapalıydık dediyse (onay bekliyor) gövdesine eklenir (dalga 10 §2.9). Kapalı
   // gün şubenin: her kasanın eksiği kendi şubesinin işaretine ve bildirimine bakar (Tuzla kapalıyken Marina'nınki kalır)
-  const closedOf = new Map(
-    await Promise.all(missing.map(async (g) => [g.till.id, (await closedYesterday(user, now, g.till.id).catch(() => null))?.yesterday ?? null] as const)),
-  );
+  const [closedOf, noCountOf] = await Promise.all([
+    Promise.all(missing.map(async (g) => [g.till.id, (await closedYesterday(user, now, g.till.id).catch(() => null))?.yesterday ?? null] as const)).then((x) => new Map(x)),
+    // LafPOS gün sonu geldi ama çekmece sayılmadı: "girilmedi"nin nedeni gövdede (rapor sayım gelince yazılır)
+    Promise.all(missing.map(async (g) => [g.till.id, (await lafposNoCountDays([yesterday], g.till.id).catch(() => new Set<string>())).has(yesterday)] as const)).then((x) => new Map(x)),
+  ]);
   for (const g of missing) {
     const closed = closedOf.get(g.till.id) ?? null;
     if (closed?.state === "approved") continue;
+    const noCount = noCountOf.get(g.till.id) === true;
     out.push({
       id: `kasa-yok-${yesterday}${idPart(g.till)}`,
       kind: "warning",
-      title: titleOf("Dünkü kasa raporu girilmedi", g.till),
-      body: `${longDateTR(yesterday)}${closed?.state === "pending" ? " · Personel: kapalıydık dedi (onay bekliyor)" : ""}`,
+      title: titleOf(noCount ? "Dünkü kasa sayılmadı" : "Dünkü kasa raporu girilmedi", g.till),
+      body: `${longDateTR(yesterday)}${noCount ? ` · ${LAFPOS_NO_COUNT_ADMIN_TEXT}` : ""}${closed?.state === "pending" ? " · Personel: kapalıydık dedi (onay bekliyor)" : ""}`,
       timeLabel: "Dün",
       unread: true,
       href: kasaHref(yesterday, g.till),
@@ -171,6 +156,62 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
   }
   // Bütünlük uyarıları ayrı: okunamazsa yukarıdaki kasa bildirimleri yine görünür
   out.push(...(await inTill(() => cashIntegrityNotifications(reports, day, user.id, tills)).catch(() => [])));
+  return out;
+}
+
+/** Akşam hatırlatmasının gövdesi: günün kasası LafPOS'taysa "Günü kapat" ve Pavo fişi, değilse ModPOS'un Z'si */
+const eveningText = (lafpos: boolean) =>
+  lafpos ? "Kapanışta LafPOS'ta Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin fotoğrafını ekleyin" : "Kapanışta ModPOS'un Z raporunu ve kasayı girin";
+
+/**
+ * Personelin kasa satırları (kendi kasası): LafPOS gününde (Marina) gün sonu fotoğrafı bekleyen otomatik rapor (bugün ve
+ * dün; Bugün'ün satırıyla aynı iş, fotoğraf eklenince kalkar), gün sonu gelip çekmecesi sayılmayan gün ("LafPOS'ta sayın";
+ * rapor yazılınca kalkar) ve akşam (20:00'den sonra) bugünün raporu yoksa hatırlatma. Tutar yok
+ */
+async function staffCashNotifications(now: Date, day: string, reports: CashReportDTO[], till: string): Promise<PanelNotification[]> {
+  const yesterday = addDays(day, -1);
+  const label = (d: string) => (d === day ? "Bugün" : "Dün");
+  const recent = reports.filter((r) => r.date === day || r.date === yesterday);
+  const [marks, noCount] = await Promise.all([
+    recent.length ? lafposPhotoMarks(getDb(), recent.map((r) => r.id)).catch(() => null) : null,
+    lafposNoCountDays([yesterday, day], till).catch(() => new Set<string>()),
+  ]);
+  const out: PanelNotification[] = [];
+  for (const r of recent) {
+    if (marks?.get(r.id) !== "pending") continue;
+    out.push({
+      id: `lafpos-foto-${r.date}`,
+      kind: "warning",
+      title: "Gün sonu fotoğrafı bekliyor",
+      body: LAFPOS_PHOTO_TEXT.slip,
+      timeLabel: label(r.date),
+      unread: true,
+      href: `/panel/kasa?gun=${r.date}`,
+      group: "kasa",
+    });
+  }
+  for (const d of [day, yesterday]) {
+    if (!noCount.has(d)) continue;
+    out.push({ id: `kasa-sayim-${d}`, kind: "warning", title: "Kasa sayılmadı", body: STAFF_NO_COUNT_TEXT, timeLabel: label(d), unread: true, href: `/panel/kasa?gun=${d}`, group: "kasa" });
+  }
+  if (!isCashEvening(now)) return out;
+  // Şubesiz personel "Tümü"de birden çok kasa açıkken: raporu girilmemiş her kasa ayrı satır (şube kapsamı C P2-10)
+  const perTill = await staffTillsWaiting(day);
+  if (perTill) return [...out, ...perTill];
+  if (reports.some((r) => r.date === day) || noCount.has(day)) return out;
+  // Günün kasası (denetim E-39): geçiş gününden itibaren LafPOS'ta "Günü kapat"; okunamazsa bugünkü gibi ModPOS. Geçiş
+  // günü yalnız LafPOS'un şubesinin kasasınındır (branchSwitchDay): ModPOS'ta kalan şubenin personeli ModPOS'u okur
+  const lafpos = kasaName(day, branchSwitchDay(await loadLafposSwitchDay().catch(() => null), till)) === "LafPOS";
+  out.push({
+    id: `kasa-bekliyor-${day}`,
+    kind: "warning",
+    title: "Bugünün kasa raporu bekliyor",
+    body: eveningText(lafpos),
+    timeLabel: "Bugün",
+    unread: true,
+    href: "/panel/kasa",
+    group: "kasa",
+  });
   return out;
 }
 
@@ -414,7 +455,7 @@ async function staffTillsWaiting(day: string): Promise<PanelNotification[] | nul
         id: `kasa-bekliyor-${day}-${b.id}`,
         kind: "warning" as const,
         title: `${b.name}: Bugünün kasa raporu bekliyor`,
-        body: lafpos ? "Kapanışta LafPOS'ta Günü kapat'a basın, kasayı girin" : "Kapanışta ModPOS'un Z raporunu ve kasayı girin",
+        body: eveningText(lafpos),
         timeLabel: "Bugün",
         unread: true,
         href: `/panel/kasa?sube=${encodeURIComponent(b.id)}`,

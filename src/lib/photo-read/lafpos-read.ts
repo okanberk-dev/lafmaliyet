@@ -19,6 +19,7 @@ import type { AiErrorCode } from "@/server/ai/run";
 
 import { printedAmount, round2 } from "./common";
 import { OCR_MODEL } from "./models";
+import { okcPaperView, slipWithZTraces } from "./okc";
 import type { KasaOkc } from "./schemas";
 
 /** Bir okuma adımının sonucu (yapay zekâ ya da kod) */
@@ -107,10 +108,15 @@ const TOL = 0.01;
 /**
  * Ucuz okunuşun eksikleri ve iç tutarsızlıkları (boşsa okunuş tam): belge türü, Z'nin toplamı ve Z no'su, ödemelerin
  * toplamı = günün toplamı, KDV gruplarının toplamı = günün toplamı, batch'ler (Pavo'nun sonucu geldiyse beklenir), her
- * batch'te satış − iade = net, karşılaştırılan rakamlardan biri "low" güvenle okunduysa
+ * batch'te satış − iade = net, karşılaştırılan rakamlardan biri "low" güvenle okunduysa. Okunuş karşılaştırmadaki hâliyle
+ * denetlenir (okcPaperView): LafPOS'un kendi kâğıdı banka kısmıyla banka gün sonu fişidir, Z no'su ve NET CİRO'su
+ * aranmaz (kör kasa kâğıdı için güçlü model çağrılmaz). Yalnız banka fişi okunup Z'nin izleri görüldüyse (Pavo'nun
+ * detaylı Z'si banka fişi sanılmış olabilir) "Z izi"
  */
-export function cheapReadingProblems(raw: KasaOkc, o: { expectBatches: boolean }): string[] {
+export function cheapReadingProblems(read: KasaOkc, o: { expectBatches: boolean }): string[] {
   const out: string[] = [];
+  const raw = okcPaperView(read);
+  if (slipWithZTraces(read)) out.push("Z izi");
   const v = (a: KasaOkc["dailyTotal"]) => printedAmount(a);
   if (!raw.readable) out.push("okunamadı");
   if (raw.documentType !== "z_report" && raw.documentType !== "batch_slip") out.push("belge türü");

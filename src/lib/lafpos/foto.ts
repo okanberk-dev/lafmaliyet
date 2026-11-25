@@ -2,10 +2,12 @@ import { dateTR, money } from "@/lib/format";
 import { normalizeVat, sameVat, zNoNumber, type OkcVatLine } from "@/lib/okc-z";
 import { businessDayOf, printedAmount, round2 } from "@/lib/photo-read/common";
 import { modelName, type ReadingSource } from "@/lib/photo-read/models";
+import { okcPaperView } from "@/lib/photo-read/okc";
 import type { AmountRaw, KasaOkc } from "@/lib/photo-read/schemas";
 import { addDays } from "@/lib/reminders";
 
 import type { BankPos, PosOkc } from "./day";
+import { LAFPOS_BRANCH_ID } from "./switch";
 
 /**
  * LafPOS gününün gün sonu fotoğrafı (sahibin isteği, 24 Kasım 2026: "sadece gün sonu ladmine personel foto atsın";
@@ -36,6 +38,40 @@ export const LAFPOS_PHOTO_TEXT = {
 export const LAFPOS_STAFF_DESCRIPTION = "Rakamlar LafPOS'tan geldi; Pavo'dan gün sonu fişini (detaylı Z) alıp fotoğrafını ekleyin.";
 /** Sayım bekleyen LafPOS günü (gün sonu geldi, rapor yok): rakam henüz yok, rapor LafPOS'tan gelecek */
 export const LAFPOS_STAFF_WAITING_DESCRIPTION = "Kasa raporu LafPOS'tan gelecek; Pavo'dan gün sonu fişini (detaylı Z) alıp fotoğrafını ekleyin.";
+
+/**
+ * LafPOS gününde gün sonundan önce (LafPOS'un şubesi, geçiş gününden itibaren, LafPOS'un gün sonu gelmedi, rapor yok)
+ * personelin gördüğü (son denetim, 24 Kasım 2026): form yok, rapor LafPOS'tan gelir. Bugün'ün akşam satırı da bunu söyler
+ */
+export const LAFPOS_STAFF_BEFORE_DAY_END_TEXT = "Kapanışta LafPOS'ta Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin (detaylı Z) fotoğrafını eklersiniz.";
+/**
+ * Gün sonu geldi ama LafPOS'ta sayım yok (rapor bekleniyor): personelin Kasa sayfasındaki tek uyarı. Alt başlık "Kasa
+ * raporu LafPOS'tan gelecek" dediği için başlık onu tekrarlamaz; yalnız ne yapılacağı (aynı mesaj dört yerde
+ * okunuyordu: alt başlık, uyarı, kart açıklaması, bilgi kutusu)
+ */
+export const LAFPOS_STAFF_NO_COUNT = {
+  title: "LafPOS'ta kasa sayılmadı",
+  text: "Çekmeceyi LafPOS'ta sayın (Kasa › Geçmiş günler › Kasa föyü); rapor sonra kendiliğinden gelir.",
+} as const;
+/** Aynı günün alt başlığı */
+export const LAFPOS_STAFF_BEFORE_DAY_END_DESCRIPTION = "Kasa raporu LafPOS'tan gelecek: kapanışta LafPOS'ta Günü kapat'a basın.";
+
+/**
+ * Personelin kasa formu yerine bilgi mi görür: LafPOS'un şubesinde LafPOS günü, gün sonu gelmedi ve rapor yok. Yönetici
+ * formu görür (LafPOS hiç göndermezse yedek yol); dünden eski gün geç rapor yolundan girer. Elle girilmiş rapor eski yolla
+ */
+export function staffBeforeLafposDayEnd(o: { admin: boolean; branchId: string; lafposDay: boolean; dayEnd: boolean; hasReport: boolean }): boolean {
+  return !o.admin && o.branchId === LAFPOS_BRANCH_ID && o.lafposDay && !o.dayEnd && !o.hasReport;
+}
+
+/**
+ * Personelin LafPOS gününde formdan yazımını sunucu reddeder (saveCashReport): rapor LafPOS'tan gelir, otomatik raporun
+ * rakamlarını yalnız yönetici düzeltir. Personelin elle girilmiş raporu (eski yol) kendi kapısıyla açık kalır
+ */
+export const LAFPOS_STAFF_WRITE_TEXT = {
+  fresh: "LafPOS gününün kasa raporu LafPOS'tan gelir: kapanışta LafPOS'ta Günü kapat'a basın. LafPOS göndermezse yöneticinize yazın.",
+  auto: "Bu rapor LafPOS'tan yazıldı; rakamlarını yalnız yönetici düzeltir. Gün sonu fotoğrafını Kasa sayfasından ekleyin.",
+} as const;
 
 /** Personelin alt başlığı: LafPOS günü değilse null (eski metin); otomatik raporlu gün ya da sayım bekleyen gün */
 export function staffLafposDescriptionOf(state: { auto: boolean } | null): string | null {
@@ -122,6 +158,11 @@ export interface LafposPhotoRow {
   ok: boolean;
   /** Fotoğraftaki rakam okunmadı (kodla okunan günde "okunamadı — yönetici baksın"; yapay zekâda fark) */
   unread?: boolean;
+  /**
+   * Yalnız bilgi (karşılaştırma değil, fark sayılmaz; e-postada "aynı" yerine "bilgi"; karşılaştırmanın özetine girmez):
+   * ör. Pavo gününde fotoğrafta Z'nin rakamları yok, onlar LafPOS'tan geldi
+   */
+  info?: boolean;
 }
 
 export interface LafposPhotoCheck {
@@ -188,8 +229,15 @@ export function lafposPhotoCheck(
   i: { day: string; reads: readonly LafposPhotoRead[]; bankPos: BankPos | null; okc: PosOkc | null; report: LafposPhotoReport },
   now: Date = new Date(),
 ): LafposPhotoCheck {
-  // Kodla okunan fotoğrafta "low" güvenli rakam okunmamış sayılır (strictView); kaynak: biri kodla okunduysa "kod"
-  const reads = i.reads.map((r) => (r.source === "kod" && r.raw ? { ...r, raw: strictView(r.raw) } : r));
+  // Okunuşun karşılaştırılan hâli (okcPaperView): LafPOS'un kendi kâğıdı ("GÜN SONU · Z n" / "BANKA GÜN SONU · PAVO")
+  // yalnız banka gün sonudur, Z no'su ve NET CİRO'su Z sayılmaz (zNoFromPhoto olmaz); banka kısmı okunmuş yazılım Z'si
+  // de banka gün sonu fişidir. Kodla okunan fotoğrafta "low" güvenli rakam okunmamış sayılır (strictView); kaynak: biri
+  // kodla okunduysa "kod"
+  const reads = i.reads.map((r) => {
+    if (!r.raw) return r;
+    const raw = okcPaperView(r.raw);
+    return { ...r, raw: r.source === "kod" ? strictView(raw) : raw };
+  });
   const kod = reads.some((r) => r.source === "kod");
   const lead = reads.find((r) => r.source === "kod") ?? reads.find((r) => r.raw) ?? reads[0];
   const base = {
@@ -302,7 +350,10 @@ export function lafposPhotoCheck(
     const acq = i.bankPos.acquirers.map((a) => a.total).filter((t): t is number => t !== null);
     const last = i.bankPos.batchNo ? batchKey(i.bankPos.batchNo) : null;
     const lastRead = slips.filter((x) => last !== null && x.no !== null && batchKey(x.no) === last);
-    if (acq.length && lastRead.length) {
+    // Son batch'in yalnız toplamı okunduysa (banka adı yok, tek satır; ör. LafPOS kâğıdının TOPLAM'ı) döküm okunmamıştır:
+    // birden çok bankalı dökümle karşılaştırılmaz (toplamı Banka POS satırı karşılaştırır)
+    const totalOnly = lastRead.length === 1 && lastRead[0].bank === "" && acq.length > 1;
+    if (acq.length && lastRead.length && !totalOnly) {
       const a = [...acq].sort((x, y) => x - y);
       const r = lastRead.map((x) => x.net).filter((n): n is number => n !== null).sort((x, y) => x - y);
       const ok = a.length === r.length && a.every((v, k) => near(v, r[k]));
@@ -404,6 +455,9 @@ export function lafposPhotoCheck(
   // Karşılaştırılan hiçbir satır yoksa "uyumlu" denmez: Pavo fişi okundu ama LafPOS'ta karşılığı henüz yok (Pavo'nun sonucu
   // gelmedi) ise okunmadı, öteki durumda (ör. Pavo cihazında Z fotoğrafı, fiş yok) okunamadı / yanlış belge
   if (!rows.length) return { ...base, state: slips.length && !i.bankPos ? "okunmadi" : kod ? "belirsiz" : "okunamadi" };
+  // Pavo gününde (ayrı mali Z yok) fotoğrafta Z'nin rakamları yoksa (yalnız banka gün sonu: Pavo'nun fişi ya da LafPOS'un
+  // kâğıdı) yöneticiye bilgi: Z rakamları LafPOS'tan geldi, fotoğrafla karşılaştırılmadı. Fark değildir, alarm gitmez
+  if (!zs.length && i.okc?.provider === "pavo") rows.push({ label: "Pavo detaylı Z", photo: "yok", lafpos: "Z rakamları geldi", ok: true, info: true });
   const issues = rows.filter((r) => !r.ok).map((r) => `${r.label}: fotoğrafta ${r.photo}; LafPOS'ta ${r.lafpos}`);
   // Kodla okunan günde "uyumlu" / "fark" yalnız her karşılaştırılan satır yüksek güvenle okunduysa ve en az bir tutar
   // (Banka POS ya da yazarkasa toplamı, batch tutarı) karşılaştırıldıysa; değilse "okunamadı — yönetici baksın"

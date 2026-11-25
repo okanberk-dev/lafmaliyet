@@ -88,7 +88,9 @@ test("kaynak: Onaylar ve zil tek şubede şubenin istekleri; karaoke yalnız ken
 test("kaynak: kasa ve sayım 'Tümü'de birden çok kasa açıkken formdan önce şubeyi sorar", () => {
   const kasa = read("src/app/panel/kasa/page.tsx");
   const at = kasa.indexOf("if (many && !tills.some((b) => b.id === scope)) {");
-  assert.ok(at > 0 && at < kasa.indexOf("const till = await currentTillBranch();"), "kasa: soru formdan önce");
+  // CashContent içinde: soru, formun kasasını (currentTillBranch) okumadan önce
+  const fn = kasa.indexOf("async function CashContent(");
+  assert.ok(fn > 0 && at > fn && at < kasa.indexOf("const till = await currentTillBranch();", fn), "kasa: soru formdan önce");
   assert.match(kasa, /title="Hangi şubenin kasası\?"/);
   const sayim = read("src/app/panel/sayim/page.tsx");
   assert.ok(sayim.indexOf("if (tills.length > 1 && !tills.some((b) => b.id === scope)) {") < sayim.indexOf("const model = await loadModel({ scope: branch.id });"), "sayım: soru modelden önce");

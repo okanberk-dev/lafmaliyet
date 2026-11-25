@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import { businessDate, LATE_REPORT_DAYS, revisionDataOf } from "@/lib/cash-report";
 import { bankPosSchema, okcSchema, posZSchema, type BankPos, type PosDayZ, type PosOkc } from "@/lib/lafpos/day";
@@ -42,6 +42,21 @@ export async function lafposDayDevice(db: Reader, date: string, branchId: string
   const bank = row.bankPos ? bankPosSchema.safeParse(row.bankPos) : null;
   const okc = row.okc ? okcSchema.safeParse(row.okc) : null;
   return { z: z.data, bankPos: bank?.success ? bank.data : null, okc: okc?.success ? okc.data : null };
+}
+
+/**
+ * Şubenin yazarkasa cihazı (LafPOS'un son gönderdiği `okc`'den: sağlayıcı ve ayrı mali Z basıyor mu); gün sonu henüz
+ * gelmediyse fotoğrafın metni için (Pavo ayrı mali Z basmaz). Hiç gelmediyse null
+ */
+export async function lafposOkcDeviceOf(db: Reader, branchId: string): Promise<{ provider: "pavo" | "tokenx"; zReport: boolean } | null> {
+  const rows = await db
+    .select({ okc: s.posDayReports.okc })
+    .from(s.posDayReports)
+    .where(and(eq(s.posDayReports.branchId, branchId), isNotNull(s.posDayReports.okc)))
+    .orderBy(desc(s.posDayReports.date))
+    .limit(1);
+  const okc = rows[0]?.okc ? okcSchema.safeParse(rows[0].okc) : null;
+  return okc?.success ? { provider: okc.data.provider, zReport: okc.data.zReport } : null;
 }
 
 /** Rapora bağlı gün sonu fotoğrafları (yazarkasa bölümü: kasa-okc, eski kasa-pos), eklenme sırasıyla */
@@ -271,6 +286,32 @@ export async function attachLafposDayPhotoCore(db: DB, me: CashActor, input: { d
       });
     }
     return { status: report ? "linked" : "pending", attached, need, line: staffPhotoLine(need, attached, check) };
+  });
+}
+
+/**
+ * Otomatik raporun fotoğraf karşılaştırmasını kayıtlı okunuşlarla yeniden kurar (güçlü modelin sonradan bakışından sonra,
+ * gun-sonu.ts runLafposDayEnd): karşılaştırma, eksikler ve fotoğraftan Z no. Otomatik rapor yoksa null
+ */
+export async function refreshDayPhotoCheck(db: DB, date: string, branchId: string, now = new Date()): Promise<LafposPhotoCheck | null> {
+  return db.transaction(async (tx) => {
+    const device = await lafposDayDevice(tx, date, branchId);
+    const report = await lockCashReport(tx, date, branchId);
+    const [state] = await tx
+      .select()
+      .from(s.lafposDayEnds)
+      .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)))
+      .for("update")
+      .limit(1);
+    if (!device || !report || !state || state.reportId !== report.id || !state.autoValues) return null;
+    const check = await photoCheckOf(tx, report, device, now);
+    const attached = (await dayPhotoIds(tx, report.id)).length;
+    await tx
+      .update(s.lafposDayEnds)
+      .set({ photoCheck: check, missing: autoMissing(device.z, device, { attached, check }), updatedAt: now })
+      .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
+    await applyPhotoZNo(tx, report, check, now);
+    return check;
   });
 }
 

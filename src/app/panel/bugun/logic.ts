@@ -24,7 +24,8 @@ import { unpricedNotice } from "@/lib/count-item";
 import { money, monthLabel, num } from "@/lib/format";
 import { JOBS_HREF, systemAlerts, type JobHealth, type JobKey } from "@/lib/job-health";
 import { isPlayable, phase, sessionEnd, sessionStart, trClock, type KaraokeSessionDTO } from "@/lib/karaoke/session";
-import { LAFPOS_PHOTO_TEXT } from "@/lib/lafpos/foto";
+import { LAFPOS_PHOTO_TEXT, LAFPOS_STAFF_BEFORE_DAY_END_TEXT } from "@/lib/lafpos/foto";
+import { LAFPOS_NO_COUNT_ADMIN_TEXT, STAFF_NO_COUNT_TEXT } from "@/lib/lafpos/gun-sonu";
 import type { KasaName } from "@/lib/lafpos/kasa";
 import { kasaName } from "@/lib/lafpos/switch";
 import { holdAlert, HOLDS_HREF } from "@/lib/price-hold";
@@ -114,6 +115,13 @@ export interface CashTill {
    * Marina'nın "girilmedi" satırını gizlemez. Verilmezse işletmenin olgusuna (`closed`) bakılır
    */
   closed?: NonNullable<DayFacts["closed"]>["yesterday"];
+  /**
+   * LafPOS gününde gün sonu geldi ama çekmece sayılmadı, rapor yazılmadı (dün ve bugünden; lafposNoCountDays): "girilmedi"
+   * yerine "Sayım yok" ve LafPOS'ta nereden sayılacağı
+   */
+  noCount?: string[];
+  /** Şubenin LafPOS'a geçiş günü (yalnız metinler); verilmezse DayFacts.lafposSwitch */
+  lafposSwitch?: string | null;
 }
 
 /**
@@ -137,7 +145,7 @@ export interface DayFacts {
    * şube). `tills`: yalnız yönetici, "Tümü"de birden çok kasa açıkken her şubenin kasası; verilince kasa satırları şube
    * başına çıkar (tek şubede yok, satırlar bugünkü gibi)
    */
-  cash: { today: CashLite | null; yesterday: CashLite | null; firstDate: string | null; tills?: CashTill[] } | null;
+  cash: { today: CashLite | null; yesterday: CashLite | null; firstDate: string | null; tills?: CashTill[]; noCount?: string[] } | null;
   /**
    * Yalnız personel: iş gününün zayi / ikram kayıtları (src/lib/waste.ts summarize özeti); `lafpos`: iş günü LafPOS
    * günü (ürün ikramı LafPOS'ta işaretlenir; yoksa ya da false bugünkü gibi)
@@ -340,7 +348,10 @@ function cashDetail(r: CashLite, full: boolean): string {
 }
 
 /** Bir kasanın günleri (DayFacts.cash ya da "Tümü"de şubenin kasası CashTill) */
-type TillDays = Pick<CashTill, "today" | "yesterday" | "firstDate" | "closed">;
+type TillDays = Pick<CashTill, "today" | "yesterday" | "firstDate" | "closed" | "noCount" | "lafposSwitch">;
+
+/** Kasanın günü LafPOS günü mü (şubenin geçiş günü; verilmezse işletmenin olgusu) */
+const tillKasa = (f: DayFacts, till: TillDays | null, day: string) => kasaName(day, till?.lafposSwitch !== undefined ? till.lafposSwitch : (f.lafposSwitch ?? null));
 
 /** "Tümü"de birden çok kasa açıkken yöneticinin kasaları (şube başına satır); yoksa null (tek kasa, bugünkü gibi) */
 function tillsOf(f: DayFacts): CashTill[] | null {
@@ -388,6 +399,12 @@ function cashYesterdayOf(f: DayFacts, c: DayContext, till: TillDays | null): Day
   // LafPOS gününün otomatik raporu: personele yalnız gün sonu fotoğrafı (sayılar LafPOS'tan)
   if (r && !admin && r.lafposPhoto === "pending") return { key: "kasa-dun", title: "Dünkü gün sonu fotoğrafı", status: "todo", detail: LAFPOS_PHOTO_TEXT.slip, href, action: "Fotoğraf ekle" };
   if (r) return admin ? { key: "kasa-dun", title, status: cashStatus(r), badge: cashBadge(r), detail: dated(c, r.date, cashDetail(r, true)), href, action: "Rapora bak" } : null;
+  // LafPOS gün sonu geldi, çekmece sayılmadı: rapor sayım gelince kendiliğinden yazılır; iş LafPOS'ta saymak
+  if (till.noCount?.includes(c.yesterday)) {
+    return admin
+      ? { key: "kasa-dun", title, status: "todo", badge: "Sayım yok", detail: `${longDateTR(c.yesterday)}: ${LAFPOS_NO_COUNT_ADMIN_TEXT}`, href, action: "Rapora bak" }
+      : { key: "kasa-dun", title, status: "todo", badge: "Sayım yok", detail: STAFF_NO_COUNT_TEXT, href, action: "Kasa raporu" };
+  }
   // Kasa hiç kullanılmadıysa ya da ilk rapor dünden sonraysa dünün raporu beklenmez (kurulum sakin açılır)
   if (!till.firstDate || c.yesterday < till.firstDate) return null;
   // Dün kafe kapalıydı (dalga 10 §2.9): onaylıysa satır yok; bildirim bekliyorsa yöneticiye "Onaya bak", personele
@@ -453,9 +470,8 @@ function cashYesterdayOf(f: DayFacts, c: DayContext, till: TillDays | null): Day
  * gününde (geçiş gününden itibaren) LafPOS'ta "Günü kapat" gün sonunu panele gönderir, form ondan dolar
  */
 export function eveningCashText(kasa: KasaName): string {
-  return kasa === "LafPOS"
-    ? "Kapanışta LafPOS'ta Günü kapat'a basın (gün sonu panele gönderilir), kasadaki nakdi sayıp girin."
-    : "Kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayıp girin.";
+  // LafPOS gününde rapor LafPOS'un gün sonundan kendiliğinden yazılır; personel rakam girmez (son denetim, 24 Kasım 2026)
+  return kasa === "LafPOS" ? LAFPOS_STAFF_BEFORE_DAY_END_TEXT : "Kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayıp girin.";
 }
 
 /**
@@ -482,8 +498,11 @@ function cashTodayOf(f: DayFacts, c: DayContext, till: TillDays | null): DayTask
     if (!till) return null;
     const r = till.today;
     if (r) return { key: "kasa", title, status: cashStatus(r), badge: cashBadge(r), detail: dated(c, r.date, cashDetail(r, false)), href, action: "Raporu aç" };
-    if (c.evening) return { key: "kasa", title, status: "todo", badge: "Girilmedi", detail: dated(c, c.day, "Henüz girilmedi; personel kapanışta girer."), href, action: "Kasa raporu" };
-    return { key: "kasa", title, status: "later", badge: "Akşam", detail: "Personel kapanışta girer.", href, action: "Kasa raporu" };
+    if (till.noCount?.includes(c.day)) return { key: "kasa", title, status: "todo", badge: "Sayım yok", detail: dated(c, c.day, LAFPOS_NO_COUNT_ADMIN_TEXT), href, action: "Kasa raporu" };
+    // LafPOS gününde rapor LafPOS'un gün sonundan kendiliğinden yazılır; personel girmez
+    const lafpos = tillKasa(f, till, c.day) === "LafPOS";
+    if (c.evening) return { key: "kasa", title, status: "todo", badge: "Girilmedi", detail: dated(c, c.day, lafpos ? "Henüz gelmedi; LafPOS gün sonu gelince kendiliğinden yazılır." : "Henüz girilmedi; personel kapanışta girer."), href, action: "Kasa raporu" };
+    return { key: "kasa", title, status: "later", badge: "Akşam", detail: lafpos ? "LafPOS gün sonu gelince kendiliğinden yazılır." : "Personel kapanışta girer.", href, action: "Kasa raporu" };
   }
   const title = "Kasa raporu";
   if (!till) return { key: "kasa", title, status: "later", badge: "Okunamadı", detail: "Kasa raporları şu an okunamadı.", href: "/panel/kasa", action: "Kasa raporu" };
@@ -492,8 +511,12 @@ function cashTodayOf(f: DayFacts, c: DayContext, till: TillDays | null): DayTask
   if (r?.lafposPhoto === "pending") return { key: "kasa", title: "Gün sonu fotoğrafı", status: "todo", detail: LAFPOS_PHOTO_TEXT.slip, href, action: "Fotoğraf ekle" };
   if (r?.lafposPhoto === "done") return { key: "kasa", title, status: "done", badge: "Tamam", detail: dated(c, r.date, `LafPOS gün sonu · ${LAFPOS_PHOTO_TEXT.done} · ${diffText(r.cashDiff)}`), href, action: "Raporu aç" };
   if (r) return { key: "kasa", title, status: "done", badge: "Gönderildi", detail: dated(c, r.date, `${r.submittedByName} gönderdi · ${diffText(r.cashDiff)}`), href, action: "Raporu aç" };
-  if (c.evening) return { key: "kasa", title, status: "todo", detail: dated(c, c.day, eveningCashText(kasaName(c.day, f.lafposSwitch ?? null))), href: "/panel/kasa", action: "Raporu gir" };
-  return { key: "kasa", title, status: "later", badge: "Akşam", detail: "Kapanışta girilir: Z raporu ve kasa sayımı.", href: "/panel/kasa", action: "Kasa raporu" };
+  // Gün sonu geldi ama çekmece sayılmadı: "Günü kapat"a yeniden değil, LafPOS'ta sayıma
+  if (till.noCount?.includes(c.day)) return { key: "kasa", title, status: "todo", badge: "Sayım yok", detail: dated(c, c.day, STAFF_NO_COUNT_TEXT), href, action: "Kasa raporu" };
+  const kasa = tillKasa(f, till, c.day);
+  if (c.evening) return { key: "kasa", title, status: "todo", detail: dated(c, c.day, eveningCashText(kasa)), href: "/panel/kasa", action: kasa === "LafPOS" ? "Kasa raporu" : "Raporu gir" };
+  const later = kasa === "LafPOS" ? "Kapanışta LafPOS'ta Günü kapat'a basılır; rapor LafPOS'tan gelir." : "Kapanışta girilir: Z raporu ve kasa sayımı.";
+  return { key: "kasa", title, status: "later", badge: "Akşam", detail: later, href: "/panel/kasa", action: "Kasa raporu" };
 }
 
 // ---------------------------------------------------------------- Zayi (personel)

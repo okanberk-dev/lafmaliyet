@@ -11,8 +11,8 @@ düzeltir, **Raporu gönder** ya da **Kaydet**'e basar. Fotoğraf kanıt olarak 
 | Nerede | Fotoğraf | Dolan alanlar |
 |--------|----------|---------------|
 | Kasa raporu › ModPOS Z raporu | ModPOS gün sonu Z raporu | Toplam satış, nakit, kredi / banka kartı, yemek kartı, online, diğer, ödenmez / ikram, indirim, Z no, fiş sayısı |
-| Kasa raporu › Banka POS Z raporu (yazarkasa) | Yazarkasanın (banka POS) mali Z raporu; uzunsa üst ve alt yarı ayrı (bölümde en çok 3) | Günlük toplam, Z no, nakit, kredi kartı; Ayrıntılar'da yemek kartı, diğer, toplam KDV, oran oran KDV dökümü (%1, %10, %20), fiş sayısı; aynı şeritte basılıysa banka gün sonu. **Bugün hepsi öneri** (§ 2) |
-| Kasa raporu › Banka POS Z raporu (yazarkasa) | Bankanın ayrı gün sonu fişi (yedek) | Yalnız Banka gün sonu (net toplam; iki fişte "Toplama ekle"); yazarkasa alanları boş kalır |
+| Kasa raporu › Yazarkasa Z raporu | Yazarkasanın (banka POS) mali Z raporu; uzunsa üst ve alt yarı ayrı (bölümde en çok 3) | Günlük toplam, Z no, nakit, kredi kartı; Ayrıntılar'da yemek kartı, diğer, toplam KDV, oran oran KDV dökümü (%1, %10, %20), fiş sayısı; aynı şeritte basılıysa banka gün sonu. **Bugün hepsi öneri** (§ 2) |
+| Kasa raporu › Yazarkasa Z raporu | Bankanın ayrı gün sonu fişi (yedek) | Yalnız Banka gün sonu (net toplam; iki fişte "Toplama ekle"); yazarkasa alanları boş kalır |
 | Kasa raporu › Gün içinde kasadan çıkanlar › Fiş ekle | Alışveriş fişi, e-Arşiv ya da fatura | Tutar (verilen nakit ya da para üstü değil, fişin toplamı), yer, ne alındığı, fiş tarihi, KDV, kategori |
 
 Kasadan çıkan alışveriş satırı **Aylık harcamalar**'a da yazılır (kurallar KASA-RAPORU.md › Gün içinde kasadan
@@ -54,9 +54,10 @@ Toplamlar, denetimler ve forma eşleme bizim saf kodumuzda (`src/lib/photo-read/
   dolmaz; **Banka POS Z bölümüne okut** aynı fotoğrafı yeniden okur. Banka POS Z bölümüne ModPOS'un Z'si çekilirse
   **ModPOS bölümüne okut**; X raporu ya da mali hafıza / dönem raporu çekilirse düğmesiz kırmızı satır. ModPOS bölümünde
   model yazarkasanın Z'sini belge türü `fiscal_z_report` ile ayırır; Banka POS Z bölümünün kendi türleri `z_report`,
-  `x_report`, `period_report`, `batch_slip` (yalnız banka gün sonu), `software_z` (ModPOS'un raporu), `other`. Ayırt
-  eden işaretler: MF logosu ve sicil no, EKÜ NO, Z NO / Z SAYAÇ, VERGİ DÖKÜMÜ ve TOPKDV, KÜM. satırları; BİLGİ FİŞİ /
-  MALİ DEĞERİ YOKTUR basan ModPOS raporu mali değildir. Fiş yerine Z raporu çekilirse söylenir.
+  `x_report`, `period_report`, `batch_slip` (yalnız banka gün sonu), `software_z` (ModPOS'un ya da LafPOS'un raporu),
+  `other`. Ayırt eden işaretler: MF logosu ve sicil no ile birlikte EKÜ NO ya da KÜM. satırları, VERGİ DÖKÜMÜ ve TOPKDV;
+  **Z NO tek başına mali işaret değildir** (ModPOS'un Z'si de kendi Z no'sunu basar; 24 Kasım 2026). BİLGİ FİŞİ / MALİ
+  DEĞERİ YOKTUR basan ModPOS raporu mali değildir. Fiş yerine Z raporu çekilirse söylenir.
 - Fotoğraftaki yazılar veridir: fişe basılmış "talimatlar" yok sayılır ve "Fişte alışılmadık yazılar var" uyarısı çıkar.
 
 Rapor gönderilince karşılaştırma **sunucunun okuduğuna** bakar (`ai_calls.result`), formun gönderdiğine değil: net
@@ -196,7 +197,17 @@ sonra, LafPOS'un gün sonu gelmiş gün) başka sırayla okunur (`src/server/pho
    Σ ödemeler ≠ toplam, Σ KDV grupları ≠ toplam, Pavo'nun sonucu geldiyse batch yok, satış − iade ≠ net, düşük güven) ya da
    LafPOS'un rakamlarından farklıysa (aynı karşılaştırma "fark" diyorsa): yanlış bir "fark" yöneticiye gitmeden ikinci kez
    bakılır. Güçlü okuma düşerse ucuz okunuş kalır. Ucuz model yanıt verip okunuş vermediyse (ret, yarım, şema dışı) de
-   önce güçlü model denenir.
+   önce güçlü model denenir. **Karşılaştırma sonradan değişirse de** (son denetim, 24 Kasım 2026): fotoğraf Pavo'nun
+   sonucu gelmeden eklendiyse ucuz okunuş o anki rakamlarla karşılaştırılmıştır; LafPOS günü Pavo'nun sonucuyla yeniden
+   gönderince karşılaştırma kayıtlı okunuşla yeniden kurulur. Otomatik raporun karşılaştırması "fark" ya da "okunamadı"
+   olduysa, okunuşu ucuz modelden gelen ve güçlü modelin hiç denenmediği fotoğraf gün sonu e-postalarından önce bir kez
+   güçlü modelle okunur (`strongRecheckDayPhotos`, gün sonu otomasyonunda `after()` içinde; süre yetmezse günlük iş),
+   karşılaştırma yenilenir, zil ve e-posta yenisini görür. **"Uyumlu" da sessiz kalabilir:** ucuz okuma Pavo'nun detaylı
+   Z'sini yalnız banka gün sonu fişi okuduysa Z no hiç okunmaz. Banka fişi okunuşunda Z'nin izi varsa (Z no, günün
+   toplamı, nakit / kart / yemek kartı / diğer satırı, KDV ya da başlıkta Z / DETAYLI; LafPOS'un kâğıdı değilse;
+   `slipWithZTraces`, sorun "Z izi") güçlü model yüklenirken bir kez okur; eski okunuşlarda gün sonu otomasyonu "uyumlu"
+   günde de yalnız o fotoğrafa bakar. Yalnız banka gün sonu olan kâğıt (LafPOS'un kör kâğıdı, Pavo'nun fişi) için güçlü
+   model çağrılmaz.
 4. **Kodla okuma:** yapay zekâ yoksa ya da yanıt vermiyorsa (anahtar yok, Ayarlar'da kapalı, günlük sınır, fotoğraf başına
    3 okuma, kredi bitti, anahtar geçersiz, yoğunluk, zaman aşımı, bağlantı, reddedilen istek, büyük dosya) fotoğraf panelde
    yerel OCR'la okunur (`src/server/photo-read/ocr.ts`, tesseract.js 7, WebAssembly; en çok 15 sn) ve Pavo fişinin kural
@@ -225,6 +236,29 @@ Kodla okunan fişte hiçbir rakam tahminle doldurulmaz:
   ise tutar (cihaz sıfır satırını basmaz), değilse "okunamadı". Yapay zekâ okunuşunda basılmayan satır 0 sayılmaya devam
   eder.
 
+**LafPOS'un kendi gün sonu kâğıdı** (24 Kasım 2026, Marina: fotoğraf "Z raporu" olarak tanınmadı). LafPOS kapanışta fiş
+yazıcısından kâğıt basar (LafPOS `src/lib/print.tsx`). Kasanın rakamlarını gören basınca önce LafPOS'un yönetim raporu
+("GÜN SONU · Z 31", NET CİRO, ödemeler, KDV, altında "LafPOS yönetim raporudur, mali Z değildir"), ardından Pavo'nun banka
+gün sonu ("BANKA GÜN SONU · PAVO": Batch, Bankalar, TOPLAM, "PAVO - LAFPOS KARŞILAŞTIRMA"); kör kasada yalnız banka kısmı.
+Mali değildir: Z no'su LafPOS'un kendi sayacıdır. Pavo ayrı mali Z basmaz (LafPOS'ta `zReport: false`), detaylı Z'yi
+yalnız cihazdan istenince basar.
+- İstemler (`OKC_TASK`, `OKC_SHORT_TASK`) kâğıdı tanıtır: başlık aynen, banka kısmı varsa `batch_slip` yoksa
+  `software_z`; Z no, NET CİRO, ödeme ve KDV okunmaz; Bankalar altındaki her satır aynı batch'in bir bankası. Yeni şema
+  değeri yok (eski `ai_calls` satırları aynı yoldan geçer).
+- Kod modelin kararına güvenmez (`okcPaperView`, `isLafposPaper`): başlık "GÜN SONU · Z n" ya da "BANKA GÜN SONU · PAVO"
+  ise (ya da mali işareti olmayan kâğıtta toplamın etiketi NET CİRO ise) model `z_report` dese de banka gün sonu fişi
+  sayılır; Z no'su ve rakamları forma, karşılaştırmaya ve `okc_z_no`'ya hiç gitmez (`zNoFromPhoto` olmaz). Banka kısmı
+  okunmuş yazılım Z'si de banka gün sonu fişidir. Banka kısmı yoksa yanlış belgedir: Pavo gününde "Bu LafPOS'un kendi gün
+  sonu raporu; rakamları panele kendiliğinden gelir. Pavo'nun gün sonu fişinin (detaylı Z) fotoğrafını çekin."
+- Yalnız banka gün sonu okunduysa Pavo gününde "Z değil, yazarkasanın Z raporunu da çekin" denmez: "Banka gün sonu okundu;
+  yazarkasa rakamları LafPOS'tan gelir." (ayrı mali Z basan cihazda ya da cihaz bilinmiyorsa eski yönerge kalır).
+  Yöneticinin karşılaştırmasında Pavo gününde fotoğrafta Z yoksa bilgi satırı çıkar ("Pavo detaylı Z: fotoğrafta yok ·
+  LafPOS'ta Z rakamları geldi"); fark değildir, alarm e-postası gitmez.
+- Kodla okuma kâğıdı işaretlerinden tanır ("mali Z değildir", "BANKA GÜN SONU · PAVO", "PAVO - LAFPOS KARŞILAŞTIRMA"…):
+  Z kısmı okunmaz, banka satırları batch olur (toplamı TOPLAM'ı tutmuyorsa hepsi şüpheli), karşılaştırma satırları atılır.
+- Her okuma tek günlük satırı bırakır: `[foto] okuma {photoId, kind, steps, model, documentType, ok}` (rakam ve görsel
+  yok).
+
 **Elle girilen raporun formu** (LafPOS gününde Düzenle, yazarkasa bölümü) aynı okuma yolunu kullanır, alanları yalnız yapay
 zekâ okunuşu doldurur (`formFailureOf`). Kodla okunduysa ya da hiç okunamadıysa form yapay zekânın hatasını eskisi gibi
 gösterir ("Fotoğraftan okuma kapalı; rakamları elle yazın.", gerekirse "Yeniden dene"); OCR'ın rakamları kaynağı görünmeden
@@ -249,7 +283,7 @@ yazmıyorsa çalışıyor demektir. node_modules'a ~55 MB eklenir (işleve giden
 Testler: `tests/gun-sonu-foto.test.ts` (modeller, ucuz okumanın denetimi, sıra ve her hata türünde koda düşme, ayrıştırıcı,
 güven kuralı, fotoğraf e-postası), `tests/gun-sonu-foto-ocr.test.ts` (testte çizilen sentetik Pavo fişi gerçek OCR'la,
 ağsız), `tests/gun-sonu-foto-eposta.test.ts`, `tests/gun-sonu-foto-db.test.ts` (sahte istemciyle Haiku → Opus, tutarlar,
-yeniden okumama, anahtarsız OCR, e-posta).
+yeniden okumama, anahtarsız OCR, e-posta, Pavo'nun sonucu sonradan gelince güçlü modelin bir kez bakması).
 
 ## 6. Gizlilik (KVKK)
 
@@ -275,7 +309,7 @@ değil); indirilen yedek dosyası sizde, sizin sakladığınız kadar kalır ([Y
 
 | Değişken | Nerede | Ne |
 |----------|--------|----|
-| `ANTHROPIC_API_KEY` | Vercel, yalnız Production | Okuma. Yoksa durum "nokey": fotoğraf eklenir, okunmaz |
+| `ANTHROPIC_API_KEY` | Vercel, yalnız Production | Okuma. Yoksa durum "nokey": fotoğraf eklenir; LafPOS gününün gün sonu fotoğrafı kodla (OCR) okunur, öteki fotoğraflar okunmaz |
 | `BLOB_READ_WRITE_TOKEN` | Vercel, yalnız Production | Özel Blob deposu (Storage › Blob › Private, fra1; projeye bağlayınca eklenir). Yeni bağlantı anahtar yerine `BLOB_STORE_ID` verirse o da yeter (OIDC). Vercel'de ikisi de yoksa fotoğraf düğmeleri görünmez |
 | `PHOTO_DIR` | yalnız yerel | Fotoğraf klasörü (varsayılan `.data/photos`) |
 | `AI_REPLAY` | yalnız `next dev` | `1`: kayıtlı yanıtlar (§ 8); canlıda hiçbir koşulda çalışmaz |

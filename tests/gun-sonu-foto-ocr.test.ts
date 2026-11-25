@@ -107,6 +107,43 @@ test("Gerçek OCR'ın şüphelendiği satır (ör. '%10' işareti) 'fark' üretm
   }
 });
 
+/** LafPOS'un kör kasada bastığı kâğıt (24 Kasım, Marina): yalnız "BANKA GÜN SONU · PAVO"; Garanti 3.000 + Akbank 1.160 */
+const LAFPOS_KOR = [
+  "L'AFFOGATO",
+  "BANKA GÜN SONU · PAVO",
+  "Batch|0001",
+  "Cihaz saati|22.11.2026 23:58",
+  "Bankalar",
+  "Garanti BBVA (3)|3.000,00",
+  "Akbank (2)|1.160,00",
+  "TOPLAM|4.160,00 TL",
+  "PAVO - LAFPOS KARŞILAŞTIRMA",
+  "Pavo kart toplamı|4.160,00",
+  "LafPOS kart toplamı|4.160,00",
+  "FARK|0,00",
+  "Pavo cihazının banka gün sonu özetidir",
+];
+
+test("Sentetik LafPOS kör kâğıdı kodla okunur: banka gün sonu fişi, iki banka satırı; Z yok, karşılaştırma satırları batch değil", { timeout: 60_000 }, async () => {
+  const lines = await ocrImage(slipPng(LAFPOS_KOR, { size: 36, width: 980 }), { timeoutMs: 45_000 });
+  const { raw } = parsePavoOcr(lines);
+  const seen = lines.map((l) => l.text).join("\n");
+  assert.equal(raw.documentType, "batch_slip", seen);
+  assert.deepEqual([raw.zNo.text, raw.dailyTotal.value, raw.payments.length], [null, null, 0], seen);
+  assert.deepEqual(
+    raw.batches.map((b) => [b.batchNo, b.netTotal.value]),
+    [
+      ["0001", 3_000],
+      ["0001", 1_160],
+    ],
+    seen,
+  );
+  const bank = { ...BANK, acquirers: [{ name: "Garanti BBVA", count: 3, total: 3_000 }, { name: "Akbank", count: 2, total: 1_160 }] };
+  const c = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw, error: null, source: "kod" }], bankPos: bank, okc: OKC, report: { ...REPORT, lafposZNo: null, okcZNo: null } });
+  assert.equal(c.state, "uyumlu", JSON.stringify(c.rows));
+  assert.equal(c.zNoFromPhoto, null);
+});
+
 test("OCR süresi sınırlı: süre dolunca hata (yarım okunuş yok)", { timeout: 30_000 }, async () => {
   await assert.rejects(ocrImage(slipPng(SLIP), { timeoutMs: 1 }), /süre/);
 });

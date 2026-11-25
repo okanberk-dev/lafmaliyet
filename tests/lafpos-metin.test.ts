@@ -17,7 +17,7 @@ import { monthKasa, periodKasa, salesMonthKasa, tillPriceManual, tillScope } fro
 import { kasaName } from "../src/lib/lafpos/switch";
 import { okcReconcile } from "../src/lib/okc-z";
 import { failed } from "../src/lib/photo-read/kasa";
-import { OKC_SOFTWARE_Z_LAFPOS_TEXT, okcReadingOnLafposDay } from "../src/lib/photo-read/okc";
+import { OKC_SOFTWARE_Z_LAFPOS_TEXT, OKC_SOFTWARE_Z_PAVO_TEXT, okcReadingOnLafposDay } from "../src/lib/photo-read/okc";
 import { batchPosNote, POS_PRICE_REMINDER, POS_PRICE_REMINDER_LAFPOS, posBell, posChecklistText, priceReminder, type PosItem } from "../src/lib/prices/pos";
 import { PRICE_PUSH_REMINDER } from "../src/lib/site-menu/push";
 import { posPriceItem } from "../src/lib/weekly/items";
@@ -181,7 +181,8 @@ test("Bugün: personelin akşam kasa satırı günün kasasıyla (geçiş günü
   assert.equal(byKey(dayTasks(staffFacts(evening))).kasa.detail, "Kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayıp girin.");
   assert.equal(byKey(dayTasks(staffFacts(evening, { lafposSwitch: "2026-11-13" }))).kasa.detail, eveningCashText("ModPOS"), "geçiş günü yarın");
   const laf = byKey(dayTasks(staffFacts(evening, { lafposSwitch: S }))).kasa.detail;
-  assert.equal(laf, "Kapanışta LafPOS'ta Günü kapat'a basın (gün sonu panele gönderilir), kasadaki nakdi sayıp girin.");
+  // LafPOS gününde rapor LafPOS'tan gelir; personel rakam girmez (son denetim, 24 Kasım 2026; tests/son-kontrol.test.ts)
+  assert.equal(laf, "Kapanışta LafPOS'ta Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin (detaylı Z) fotoğrafını eklersiniz.");
   assert.equal(eveningCashText("LafPOS"), laf);
 });
 
@@ -294,9 +295,15 @@ test("yazarkasa bölümüne çekilen kasa çıktısı: LafPOS gününde ModPOS b
   assert.equal(okcReadingOnLafposDay(x), x);
   const z = failed("kasa-z", "…", "kasa-pos");
   assert.equal(okcReadingOnLafposDay(z), z);
-  // Okuyucu yalnız LafPOS gününde uygular
+  // Pavo gününde (ayrı mali Z yok) yazarkasanın Z'si istenmez, Pavo'nun gün sonu fişi istenir
+  const pavo = okcReadingOnLafposDay(wrong, { provider: "pavo", zReport: false });
+  assert.equal(pavo.error, OKC_SOFTWARE_Z_PAVO_TEXT);
+  assert.doesNotMatch(OKC_SOFTWARE_Z_PAVO_TEXT, /ModPOS|yazarkasa/i);
+  assert.equal(okcReadingOnLafposDay(wrong, { provider: "tokenx", zReport: true }).error, OKC_SOFTWARE_Z_LAFPOS_TEXT);
+  // Okuyucu yalnız LafPOS gününde uygular (cihazla)
   const src = read("src/server/photo-read/read.ts");
-  assert.match(src, /const full = isLafposDay\(input\.day, switchDay\) \? okcReadingOnLafposDay\(normalized\) : normalized;/);
+  assert.match(src, /const full = isLafposDay\(input\.day, lafposDay\.switchDay\) \? okcReadingOnLafposDay\(normalized, lafposDay\.device\) : normalized;/);
+  assert.match(src, /okcReadingOnLafposDay\(normalizeOkc\(lafpos\.raw, \{ day: input\.day, prev, recentTotals \}\), lafpos\.device\)/);
 });
 
 // ---------------------------------------------------------------- Kaynak: okuyucular geçiş gününe bakar

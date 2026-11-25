@@ -47,6 +47,16 @@ export function cashOutNoteOf(lines: CashOutLine[]): string | null {
   return cut(lines.map(noteWord).join(", "), 200);
 }
 
+/**
+ * Formdaki "Neye çıktı" alanı görünsün mü: çıkış yazıldıysa ve fişlerden gelen kalemler yoksa, adlar değiştirildiyse ya
+ * da elle yazılan tutar fişlerin toplamından farklıysa (fişlerin üstüne eklenen kısmın ne için çıktığı yazılabilsin)
+ */
+export function cashOutNoteVisible(i: { cashOut: number | null; outs: { amount: number }[]; note: string; outsNote: string }): boolean {
+  const amount = i.cashOut ?? 0;
+  if (amount <= 0) return false;
+  return !i.outs.length || i.note !== i.outsNote || Math.abs(amount - cashOutsTotal(i.outs)) >= 0.005;
+}
+
 /** Satırların toplamı (kuruş hassasiyetinde) */
 export function cashOutsTotal(lines: { amount: number }[]): number {
   return Math.round(lines.reduce((a, l) => a + l.amount, 0) * 100) / 100;

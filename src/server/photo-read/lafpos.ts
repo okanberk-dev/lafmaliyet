@@ -7,14 +7,16 @@ import { bankPosAuto } from "@/lib/lafpos/gun-sonu";
 import { branchSwitchDay, isLafposDay, LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
 import { cheapReadingProblems, runLafposRead, type LafposReadResult, type ReadStep } from "@/lib/photo-read/lafpos-read";
 import { OCR_MODEL } from "@/lib/photo-read/models";
+import { slipWithZTraces, type LafposOkcDevice } from "@/lib/photo-read/okc";
 import { parsePavoOcr } from "@/lib/photo-read/pavo-ocr";
 import { OKC_SHORT_TASK, OKC_TASK, SYSTEM } from "@/lib/photo-read/prompts";
 import { KasaOkcRaw, type KasaOkc } from "@/lib/photo-read/schemas";
-import { extractImage, loadAiSettings, type AiResult } from "@/server/ai/claude";
+import { aiConfigured, extractImage, loadAiSettings, type AiResult } from "@/server/ai/claude";
 import { OKC_EFFORT, OKC_MAX_TOKENS, type AiClient, type AiImageType, type AiTimeouts } from "@/server/ai/run";
 import { schema as s, type DB } from "@/server/db";
-import { lafposDayDevice } from "@/server/lafpos/foto";
+import { dayPhotoIds, lafposDayDevice } from "@/server/lafpos/foto";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
+import { getPhoto, readPhoto } from "@/server/storage/photos";
 
 import { ocrImage, OCR_TIMEOUT_MS } from "./ocr";
 
@@ -109,15 +111,21 @@ async function previousReads(db: DB, photoId: number, strongModel: string): Prom
   };
 }
 
+/** Okumanın tek günlük satırı (başarılı okuma da iz bıraksın): adımlar, model, belge türü; rakam ve görsel yazılmaz */
+export function logPhotoRead(o: { photoId: number; kind: string; steps: readonly string[]; model: string | null; documentType: string | null; ok: boolean }): void {
+  console.info("[foto] okuma", { photoId: o.photoId, kind: o.kind, steps: o.steps.join(">"), model: o.model, documentType: o.documentType, ok: o.ok });
+}
+
 /**
  * LafPOS gününün gün sonu fotoğrafını okur (yazarkasa bölümü). LafPOS günü değilse (şube, geçiş günü, LafPOS'un gün sonu
- * gelmedi) null: çağıran eski yolla okur. `client` ve `ocr` yalnız testte
+ * gelmedi) null: çağıran eski yolla okur. Günün yazarkasa cihazı (`device`; Pavo ayrı mali Z basmaz) okumanın metni için
+ * döner. `client` ve `ocr` yalnız testte
  */
 export async function readLafposDayPhoto(
   db: DB,
   input: LafposPhotoInput,
   o: { client?: AiClient; ocr?: (bytes: Uint8Array) => Promise<Awaited<ReturnType<typeof ocrImage>>> } = {},
-): Promise<LafposReadResult | null> {
+): Promise<(LafposReadResult & { device: LafposOkcDevice | null }) | null> {
   const { photoId, day, branchId, userId } = input;
   if (branchId !== LAFPOS_BRANCH_ID) return null;
   if (!isLafposDay(day, branchSwitchDay(await loadLafposSwitchDay(db), branchId))) return null;
@@ -155,5 +163,60 @@ export async function readLafposDayPhoto(
     },
     needsSecond: (raw) => cheapReadingProblems(raw, { expectBatches: Boolean(device.bankPos?.batches?.length || device.bankPos?.batchNo) }).length > 0 || differs(raw),
   });
-  return result;
+  logPhotoRead({ photoId, kind: "kasa-okc", steps: result.steps, model: result.model, documentType: result.raw?.documentType ?? null, ok: result.raw !== null });
+  return { ...result, device: device.okc ? { provider: device.okc.provider, zReport: device.okc.zReport } : null };
+}
+
+export interface StrongRecheckDeps {
+  /** Yalnız testte */
+  client?: AiClient;
+  /** Fotoğrafın baytları (testte); verilmezse depodan */
+  read?: (photoId: number) => Promise<{ bytes: Uint8Array; contentType: string } | null>;
+  /** Bu andan önce bitmeli (after(): e-postalara süre kalsın); kalan süre güçlü okumaya yetmezse denenmez */
+  deadlineAt?: number;
+}
+
+/** Güçlü okumadan sonra e-postalara kalması gereken süre */
+const AFTER_STRONG_MS = 10_000;
+
+/**
+ * Sonradan değişen karşılaştırmanın güçlü model bakışı (son denetim, 24 Kasım 2026; docs/FOTOGRAF.md › LafPOS gününün
+ * fotoğrafı). Fotoğraf yüklenirken ucuz okunuş o anki LafPOS rakamlarıyla karşılaştırılır; Pavo'nun sonucu sonra gelirse
+ * (LafPOS günü yeniden gönderir) karşılaştırma kayıtlı ucuz okunuşla yeniden kurulur ve yalnız ucuzun gördüğü bir "fark"
+ * ikinci bakış olmadan yöneticiye giderdi. Otomatik raporun karşılaştırması "fark" ya da "okunamadı" ise, okunuşu ucuz
+ * modelden gelen ve güçlü modelin hiç denenmediği her fotoğraf bir kez güçlü modelle okunur (readLafposDayPhoto: kayıtlı
+ * okunuş yeniden kullanılır, LafPOS'un şimdiki rakamlarıyla farklıysa güçlü model). "Uyumlu" da sessiz kalabilir: ucuz
+ * okuma Pavo'nun detaylı Z'sini yalnız banka gün sonu fişi okuduysa (Z'nin izleri var, LafPOS'un kâğıdı değil;
+ * slipWithZTraces) Z no hiç okunmaz; o fotoğraf da bir kez güçlü modelle okunur. Yapay zekâ kapalıysa hiçbir şey
+ * yapılmaz. Güçlü okuma denenen fotoğraf sayısı döner (çağıran karşılaştırmayı yeniler, sonra e-postaları gönderir)
+ */
+export async function strongRecheckDayPhotos(db: DB, date: string, deps: StrongRecheckDeps = {}): Promise<number> {
+  const branchId = LAFPOS_BRANCH_ID;
+  const [st] = await db
+    .select({ reportId: s.lafposDayEnds.reportId, autoValues: s.lafposDayEnds.autoValues, photoCheck: s.lafposDayEnds.photoCheck })
+    .from(s.lafposDayEnds)
+    .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)))
+    .limit(1);
+  const state = st?.photoCheck?.state;
+  if (!st?.reportId || !st.autoValues || (state !== "fark" && state !== "okunamadi" && state !== "uyumlu")) return 0;
+  // Uyumlu günde yalnız Z izi olan banka fişi okunuşu (öteki fotoğraflara bakılmaz)
+  const quiet = state === "uyumlu";
+  if (!aiConfigured()) return 0;
+  const settings = await loadAiSettings();
+  if (!settings.enabled) return 0;
+  const strong = settings.photoModels.strong;
+  let tried = 0;
+  for (const photoId of await dayPhotoIds(db, st.reportId)) {
+    if (deps.deadlineAt !== undefined && deps.deadlineAt - Date.now() < STRONG_TIMEOUTS.totalMs + AFTER_STRONG_MS) break;
+    const prev = await previousReads(db, photoId, strong);
+    if (!prev.reading || prev.model === strong || prev.strongTried) continue;
+    if (quiet && !slipWithZTraces(prev.reading)) continue;
+    const photo = await getPhoto(photoId);
+    if (!photo?.createdBy) continue;
+    const file = await (deps.read ?? readPhoto)(photoId).catch(() => null);
+    if (!file) continue;
+    const r = await readLafposDayPhoto(db, { photoId, bytes: file.bytes, contentType: file.contentType as AiImageType, day: date, userId: photo.createdBy, branchId }, deps.client ? { client: deps.client } : {});
+    if (r?.steps.includes("strong")) tried++;
+  }
+  return tried;
 }

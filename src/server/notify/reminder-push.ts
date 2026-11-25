@@ -3,6 +3,7 @@ import "server-only";
 import { and, asc, eq, lte } from "drizzle-orm";
 
 import { todayTR } from "@/lib/reminders";
+import { reminderPushText } from "@/lib/user-reminders";
 import { getDb, schema as s } from "@/server/db";
 import { sendPush } from "@/server/push/send";
 
@@ -22,14 +23,12 @@ export async function pushReminderSummaries(today = todayTR()): Promise<{ users:
   let sent = 0;
   let failed = 0;
   for (const [userId, list] of byUser) {
-    const late = list.filter((r) => r.dueDate < today).length;
-    const titles = list.slice(0, 3).map((r) => (r.dueTime && r.dueDate === today ? `${r.dueTime} ${r.title}` : r.title));
+    const text = reminderPushText(list, today);
     const res = await sendPush(
       "reminders",
       {
         kind: "reminders",
-        title: `Bugün ${list.length} hatırlatıcınız var`,
-        body: `${titles.join(" · ")}${list.length > 3 ? " …" : ""}${late ? ` (${late} tanesi gecikmiş)` : ""}`,
+        ...text,
         url: "/panel/hatirlaticilarim",
         tag: `hatirlatici-ozet-${today}`,
       },

@@ -42,7 +42,7 @@ import { currentVia } from "@/server/activity-via";
  * günlerin okuyucuları (geç rapor, eksik günler, ay bilgisi, komisyon), personelin kapalı güne yazamaması
  * (closedDayRefusal; kasadan çıkan ve zayi), günün kanıtı (closedDayEvidence), raporun gelişiyle işaretin kalkması
  * (onReportSaved, onNextReport) ve Bugün'ün olgusu (closedYesterday). Bir `kapali` satırı yalnız yöneticinin yazımıdır
- * (Satış tahmini, Kasa'daki "Kafe kapalıydı", bildirimin onayı): satırın varlığı onaydır.
+ * (Özel günler, Kasa'daki "Kafe kapalıydı", bildirimin onayı): satırın varlığı onaydır.
  *
  * Şube (denetim 13 Kasım KP-05; docs/SUBE.md › Kapalı gün): kasa raporu şube başına, kapalı gün de. Kasa'daki "Kafe
  * kapalıydı" ve bildirimin onayı kasanın şubesini yazar (`special_days.branch_id`); şubesi boş satır işletme genelidir
@@ -285,8 +285,8 @@ async function revokeFor(tx: Tx, specialId: number, note: string, now: Date) {
 }
 
 /**
- * Kapalı satırı silinince (Satış tahmini'nde yönetici sildi ya da kanıt geldi): onu onaylayan istek `revoked` olur,
- * uyarılar geri gelir. Satış tahmini'nin silme eylemi çağırır.
+ * Kapalı satırı silinince (Özel günler'de yönetici sildi ya da kanıt geldi): onu onaylayan istek `revoked` olur,
+ * uyarılar geri gelir. Özel günlerin silme eylemi çağırır.
  */
 export async function revokeClosedRequests(tx: Tx, specialId: number, note: string, now = new Date()): Promise<void> {
   await revokeFor(tx, specialId, note, now);

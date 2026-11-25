@@ -469,7 +469,7 @@ export function posPromptMarks(reading: CashReading): { warn: string | null; uns
 
 /** Okumadan sonraki yeşil satır */
 export function prefillSummary(kind: CashReadKind, plan: PrefillPlan): string {
-  const doc = kind === "kasa-z" ? "Z raporu" : kind === "kasa-okc" ? "Banka POS Z raporu" : "Banka POS fişi";
+  const doc = kind === "kasa-z" ? "Z raporu" : kind === "kasa-okc" ? "Yazarkasa Z raporu" : "Banka POS fişi";
   const orange = plan.fill.some((f) => f.warn) || plan.unsure.length > 0 || plan.missing.length > 0 || plan.differs.length > 0;
   // Yalnız banka gün sonu (fişi): Z raporu denmez; doldurma kapısı kapalıyken alan dolmaz, öneri olur
   const planned = [...plan.fill, ...plan.differs, ...plan.unsure];

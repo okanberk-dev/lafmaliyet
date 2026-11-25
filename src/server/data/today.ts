@@ -42,6 +42,7 @@ import { loadCashOutInvoiceState, scopeCashOutInvoiceState } from "@/server/data
 import { countPendingRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders, type UserReminderDTO } from "@/server/data/user-reminders";
+import { lafposNoCountDays } from "@/server/data/lafpos-day";
 import { dayWaste } from "@/server/data/waste";
 import { countProgress } from "@/server/data/count-progress";
 import { getDb, schema as s } from "@/server/db";
@@ -76,10 +77,6 @@ export interface TodayData {
   payments: UpcomingItem[] | null;
   /** `karaokeHere`: karaoke seçili kapsamda açık (şube özelliği); değilse kartın "Bar ekranı" Siparişler'i açar */
   cafe: { karaoke: KaraokeToday | null; orders: OrdersLite | null; configured: boolean; karaokeHere: boolean };
-  /**
-   * Satış tahmini (docs/SATIS-TAHMINI.md): yöneticinin kartı (tutar, aralık, kişi, 7 gün) ve personelin satırı
-   * (yalnız yoğunluk ve tatlı sayısı); her rol yalnız kendininkini yükler
-   */
   renderedAt: string;
 }
 
@@ -166,11 +163,9 @@ async function cashView(admin: boolean): Promise<CashView> {
 }
 
 /**
- * Yalnız personel: iş gününün zayi / ikram özeti (ikramın menü fiyatıyla değeri gösterilmez) ve satış tahmininin
- * satırı (maliyet modeli verilmez)
+ * Yalnız personel: iş gününün zayi / ikram özeti (ikramın menü fiyatıyla değeri gösterilmez; maliyet modeli verilmez)
  */
 async function staffFacts(c: DayContext): Promise<RoleFacts> {
-  // Satış tahmini: yalnız yoğunluk ve tatlı sayısı (tutar, aralık, kişi önerisi yok; ayar kapalıysa null)
   const [waste] = await Promise.all([safe(dayWaste(c.day))]);
   return {
     // LafPOS günü (geçiş günü seçili ve iş günü ondan önce değil): ürün ikramı kasada işaretlenir, satırın metni söyler
@@ -284,7 +279,6 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     // Geciken hakedişler (hafif okuma: ekranın 13 ayının Komisyon faturaları ve işaretler; docs/KOMISYON.md). Yemek kartı
     // seçili şubede kullanılmıyorsa satır yok (şube özelliği; docs/SUBE.md › Şube özellikleri)
     commissionHere.then((on) => (on ? safe(loadOverduePayouts()) : null)),
-    // Satış tahmini kartı: bugünün tahmini, aralık, kişi, tatlı ve 7 günün şeridi (docs/SATIS-TAHMINI.md)
     // Sayımın uyarıları (zil ile aynı; src/server/data/count-alerts.ts): fiyatsız ek kalemler, personelin geç kaydı
     safe(
       Promise.all([loadUnpricedExtras([month, prevMonth]), loadStaffLateEdits(prevMonth)]).then(([extras, edits]) => ({ extras, late: { month: prevMonth, edits } })),
@@ -318,7 +312,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const viewP = safe(cashView(admin));
   const tillScoped = <T>(fn: () => Promise<T>) => viewP.then((v) => (v?.till ? withBranchScope(v.till, fn) : fn()));
   const cashP = safe(tillScoped(() => cashReportsBetween(c.yesterday, c.day)));
-  const [reports, firstDate, view, tillFirsts, tillClosed, stock, due, sessions, orders, checklists, closed, ops, own, lafposSwitch] = await Promise.all([
+  const [reports, firstDate, view, tillFirsts, tillClosed, stock, due, sessions, orders, checklists, closed, ops, own, lafposSwitch, switchRaw, noCounts] = await Promise.all([
     cashP,
     safe(tillScoped(() => firstCashReportDate())),
     viewP,
@@ -339,6 +333,10 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     // LafPOS'a geçiş günü: yalnız metinler (günün kasası; okunamazsa ModPOS, bugünkü gibi). Kasanın şubesinin geçiş
     // günü (branchSwitchDay): ModPOS'ta kalan şubede metinler ModPOS der
     safe(Promise.all([loadLafposSwitchDay(), currentTillBranch()]).then(([d, b]) => branchSwitchDay(d, b))),
+    // "Tümü"de her şubenin kendi geçiş günü (metinler şubenin kasasına göre)
+    safe(loadLafposSwitchDay()),
+    // LafPOS gün sonu geldi ama çekmece sayılmadı (rapor yok): dün ve bugün, kasa başına (tek kasada view.till)
+    safe(viewP.then((v) => Promise.all((v?.tills ?? (v?.till ? [{ id: v.till }] : [])).map((b) => lafposNoCountDays([c.yesterday, c.day], b.id).then((d) => [...d]))))),
   ]);
 
   // Personel: LafPOS'un otomatik raporunda tek iş gün sonu fotoğrafı (gün sonu tam; src/server/lafpos/foto.ts)
@@ -359,6 +357,8 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
         yesterday: lite(c.yesterday, b.id),
         firstDate: tillFirsts ? (tillFirsts[i] ?? null) : firstDate,
         ...(tillClosed ? { closed: tillClosed[i]?.yesterday ?? null } : {}),
+        ...(noCounts ? { noCount: noCounts[i] ?? [] } : {}),
+        ...(switchRaw !== null ? { lafposSwitch: branchSwitchDay(switchRaw, b.id) } : {}),
       }))
     : null;
   const facts: DayFacts = {
@@ -367,7 +367,15 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     role: user.role,
     now,
     lafposSwitch,
-    cash: reports ? { today: tills ? (tills[0]?.today ?? null) : lite(c.day), yesterday: tills ? (tills[0]?.yesterday ?? null) : lite(c.yesterday), firstDate, ...(tills ? { tills } : {}) } : null,
+    cash: reports
+      ? {
+          today: tills ? (tills[0]?.today ?? null) : lite(c.day),
+          yesterday: tills ? (tills[0]?.yesterday ?? null) : lite(c.yesterday),
+          firstDate,
+          ...(tills ? { tills } : {}),
+          ...(!tills && noCounts?.[0]?.length ? { noCount: noCounts[0] } : {}),
+        }
+      : null,
     stock,
     checklists: checklists ? { day: c.day, lists: checklists.get(c.day) ?? [] } : null,
     checklistsYesterday: checklists ? { day: c.yesterday, lists: checklists.get(c.yesterday) ?? [] } : null,

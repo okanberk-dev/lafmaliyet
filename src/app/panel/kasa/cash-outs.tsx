@@ -15,6 +15,7 @@ import { CASH_OUT_REQUEST_TEXT, CASH_OUT_OP_LABEL } from "@/lib/cash-out-request
 import { cashOutLabel, cashOutShortLabel, cashOutsTotal } from "@/lib/cash-outs";
 import { shortDayTR } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
+import { LAFPOS_STAFF_ENTRY_LINE } from "@/lib/lafpos/cash-moves";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import { photoCaption, photoUrl, type ReadingState } from "@/lib/photo-rules";
 import { genitive } from "@/lib/recipe-change";
@@ -75,8 +76,15 @@ export function CashOutsCard({
   supplierNames = [],
   hints = {},
   branchId = null,
+  lafposEntryClosed = false,
 }: {
   date: string;
+  /**
+   * Personel, LafPOS gününde (staffLafposEntryClosed): satır eklemez, kasadan çıkanlar LafPOS'un kasa hareketlerinden
+   * gelir; ekleme düğmeleri yerine kısa satır. Gelen satıra fiş fotoğrafı ve kategori eklenir (satıra dokunma ve "Fiş
+   * fotoğrafı ekle" açık kalır); sunucu da eklemeyi reddeder (staffCashOutGate)
+   */
+  lafposEntryClosed?: boolean;
   /**
    * Kartın kasası (docs/SUBE.md › Yazarken hangi şube): yeni satır ve ekleme isteği bu şubeye gider, gönderim anındaki
    * seçime değil (başka sekmede seçici değişmiş olabilir). Yoksa sunucu seçili kasayı kullanır
@@ -228,7 +236,14 @@ export function CashOutsCard({
       <CardHeader
         icon={<Receipt />}
         title="Gün içinde kasadan çıkanlar"
-        description={storage && read ? `${longDateTR(date)} · fişin fotoğrafını çekin; tutar ve KDV kendiliğinden dolar` : `${longDateTR(date)} · market, buz, tamir… kasadan ödenenleri ekleyin`}
+        // Bugünün kartında tarih yok (sayfanın gün düğmesi söyler); başka günde başta
+        description={`${today ? "" : `${longDateTR(date)} · `}${
+          lafposEntryClosed
+            ? "LafPOS'un kasa hareketlerinden; gelen satıra fişin fotoğrafını ekleyin"
+            : storage && read
+              ? "Market, buz, tamir: fişin fotoğrafını çekin, tutar ve KDV dolar"
+              : "Market, buz, tamir… kasadan ödenenleri ekleyin"
+        }`}
         meta={lines.length ? <span className="font-semibold text-ink tabular">{money(total)}</span> : undefined}
       />
       {!admin && locked ? (
@@ -328,7 +343,8 @@ export function CashOutsCard({
             );
           })}
         </ul>
-      ) : (
+      ) : reported?.amount || !canEdit || lafposEntryClosed ? (
+        // Boş bugünde satır yok: düğmeler hemen başlığın altında (telefonda "çıkmadı" satırı bir ekranın onda birini alıyordu)
         <p className="border-t border-line px-5 py-4 text-sm text-ink-mute">
           {reported && reported.amount > 0
             ? `Fişi eklenmiş çıkış yok; raporda ${money(reported.amount)}${reported.note ? ` (${reported.note})` : ""} yazılı.`
@@ -336,7 +352,7 @@ export function CashOutsCard({
               ? "Bugün kasadan para çıkmadı."
               : "Bu gün kasadan para çıkmadı."}
         </p>
-      )}
+      ) : null}
       {ownAdds.length ? (
         <ul className="divide-y divide-line border-t border-line" aria-label="Onay bekleyen eklemeler">
           {ownAdds.map((r) => (
@@ -355,7 +371,12 @@ export function CashOutsCard({
           ))}
         </ul>
       ) : null}
-      {canEdit || (staffActs && locked) ? (
+      {lafposEntryClosed ? (
+        <p className="flex items-start gap-2 border-t border-line px-5 py-3 text-[13px] leading-5 text-ink-mute">
+          <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+          {LAFPOS_STAFF_ENTRY_LINE}
+        </p>
+      ) : canEdit || (staffActs && locked) ? (
         <div className={cn("flex gap-2 border-t border-line px-5 py-4", !admin && locked ? "flex-col" : "flex-wrap")}>{addButtons(date, !admin && locked)}</div>
       ) : null}
       {!admin && oldDays.length ? (

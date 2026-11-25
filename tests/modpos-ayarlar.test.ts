@@ -243,7 +243,8 @@ test("sayfa açılışı ModPOS'a istek göndermez: kart ve yükleyici yalnız o
   assert.match(card, /<Notice tone="bad" size="sm" title="ModPOS API'nin durumu okunamadı; sayfayı yenileyin" \/>/);
   assert.equal((card.match(/<SectionCard\s+id="modpos"/g) ?? []).length, 2);
   assert.match(card, /<Badge tone=\{sum\.tone\} dot>/);
-  assert.match(card, /<InfoTip text=\{SETUP_TIP\} \/>/);
+  // Kurulum talimatı her zaman görünen ⓘ'de değil: anahtar yokken durum satırı söyler (tests/sade-metinler.test.ts)
+  assert.doesNotMatch(card, /SETUP_TIP/);
   // Birden çok şubede günün bağlantısı şubeyi de taşır (?sube= panelin seçimine geçer)
   assert.match(card, /href=\{`\/panel\/kasa\?gun=\$\{d\.day\}\$\{sube\}`\}/);
   assert.match(card, /const sube = branch \? `&sube=\$\{branch\.id\}` : "";/);

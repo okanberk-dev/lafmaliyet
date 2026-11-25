@@ -46,13 +46,15 @@ silindi: Süt 1,5 LT (15 Eki) · Ayşe istedi" ([ZAYI-IKRAM.md](ZAYI-IKRAM.md)).
 yöneticide tek satırdır ("1 karaoke sayacı silme isteği onay bekliyor", ilk karta); personelde sonucu "Silme onaylandı:
 karaoke sayacı 24 Eki 21:00–23:00", Karaoke ekranına ([KARAOKE.md](KARAOKE.md) › Sayacı silmek). Personel
 kapalıydık dediyse yöneticinin "Dünkü kasa raporu girilmedi" satırının gövdesine "· Personel: kapalıydık dedi (onay
-bekliyor)" eklenir; dün onaylı kapalıysa satır çıkmaz. LafPOS'a geçildiyse (geçiş gününden sonraki günler) yöneticinin
+bekliyor)" eklenir; dün onaylı kapalıysa satır çıkmaz. LafPOS gün sonu gelip çekmece sayılmadıysa satır "Dünkü kasa
+sayılmadı" der ve nedenini yazar; personelin zilinde "Kasa sayılmadı" (LafPOS'ta nereden sayılacağı) ve otomatik raporun
+fotoğrafı eklenene kadar "Gün sonu fotoğrafı bekliyor" durur ([LAFPOS.md](LAFPOS.md)). LafPOS'a geçildiyse (geçiş gününden sonraki günler) yöneticinin
 kasa başlığında son 7 günün LafPOS'un gün sonundan farklı yazılan raporları da durur: "Kasa raporu LafPOS'tan farklı ·
 11 Kasım · Sayılan nakit 9.350 ₺ (LafPOS'ta 9.000 ₺)"; LafPOS günü rapordan sonra farklı rakamla yeniden gönderdiyse
 "LafPOS rapordan sonra farklı rakamla geldi" (yeniden gönderim ya da düzeltme satırı yeniden okunmamış yapar;
 [LAFPOS.md](LAFPOS.md) › Kasa raporu). ModPOS günlerinde (geçiş günü boşken ya da ondan önce) aynı başlıkta son 7
-günün saklanan ModPOS kasa föyünden farklı yazılan raporları durur, "Kasa raporu ModPOS föyünden farklı · 2 Kasım
-Pazartesi · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)" (kasası açıkken çekilen föy karşılaştırılmaz; rapor ya da föy
+günün saklanan ModPOS kasa föyünden farklı yazılan raporları durur, "Kasa raporu ModPOS API'den farklı · 2 Kasım
+Pazartesi · Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺)" (kasası açıkken çekilen föy karşılaştırılmaz; rapor ya da föy
 değişince yeniden okunmamış olur), ModPOS anahtarı tanımlı ama çalışmıyorsa da **Sistem** başlığında "ModPOS kasa föyü
 çekilemiyor" ve hatanın metni, Ayarlar › ModPOS (kasa föyü)'ne götürür ([MODPOS-API.md](MODPOS-API.md) › Nerede
 görünür). Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
@@ -65,8 +67,8 @@ fiyatlar'da işaretleyin" diye **Kasadaki fiyatlar**'a götürür (dalga 10 §2.
 satır yalnız yöneticide ve yalnız siteye bağlı olmayan, fiyatı LafPOS günü panelde değişen ürünleri sayar ("Siteye
 bağlı olmayan ürün: LafPOS'ta yerelse orada elle değiştirip …; LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde
 bağlayın"); siteye bağlı ürünün fiyatını LafPOS siteden alır, zil çıkmaz. Personelde satır yok: LafPOS'ta ürün fiyatını
-kasiyer değiştiremez (denetim B11). Personelin akşam kasa zili o günden itibaren "Kapanışta LafPOS'ta Günü kapat'a
-basın, kasayı girin" der. Yöneticinin **Uyarılar** başlığında
+kasiyer değiştiremez (denetim B11). Personelin akşam kasa zili o günden itibaren (yalnız Marina) "Kapanışta LafPOS'ta
+Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin fotoğrafını ekleyin" der. Yöneticinin **Uyarılar** başlığında
 personelin Siparişler ekranında tükendi yaptığı ve hâlâ satışta olmayan ürünler: "Tükendi: Tiramisu, Cheesecake" (en çok 3
 ad), gövdesi "Personel kapattı: Selin 21:40 · Ali 22:05. Sitede, uygulamada ve QR menüde satışta değil.", Siparişler
 ekranının Tükenenler kartına (`/panel/siparisler#tukenenler`) götürür; bir kayıt 24 saatten eskiyse ya da son bir saatte personel 3 ya da daha çok ürün
@@ -133,6 +135,10 @@ altındaki **Son ödenenler** bölümünden (kapalı açılır kutu; `#son-odene
 
 ## E-posta
 
+Ödemeler › E-posta bildirimleri'ndeki **Hatırlatma e-postaları** anahtarı tek başına birden çok e-postayı açıp kapatır:
+sabah e-postası, sistem uyarısı e-postası ve personelin kontrol listesi ve karaoke e-postaları (ekranda anahtarın altında
+yazar). Kasa e-postaları (iki şubenin de) Kasa › Rapor alıcıları'ndan, haftalık özet kendi anahtarından açılıp kapanır.
+
 Her sabah 08:00–09:00 arasında (Vercel Cron, `/api/cron/gunluk`; Hobby planında saat esnek) tek bir **sabah
 e-postası**, bildirim adreslerine gider. İçinde:
 
@@ -165,11 +171,6 @@ e-postası**, bildirim adreslerine gider. İçinde:
   maliyet artışına fire payı dahildir, Zayi & ikram kayıtları sayılmaz (`src/lib/calc/price-loss.ts`). Satış ayı
   yoksa ya da tutar 1 ₺'den azsa yazılmaz. Genel bakış'taki ve zildeki "Hammadde zammı" uyarısının sonuna da aynı
   toplam eklenir ("Bu zamlar ayda ≈ 1.240 ₺ kâr götürüyor."; orada son 30 günün bütün zamları);
-- **satış tahmini** (en altta, düğmeden önce; Satış tahmini › Tahmin ayarları'nda "Sabah e-postasına tahmin satırı"
-  açıkken): bugünün tahmini, aralığı, yoğunluğu, kaç kişi ve nedenleri ("Bugün ≈ 18.500 ₺ (16.000–21.000) · yoğunluk
-  yüksek · 2 kişi · Cumhuriyet Bayramı arifesi, yağmur"), dünün tahmini ve gerçekleşeni, haftanın en yoğun günü ve
-  7 günün tatlısı, MET Norway kaynağı; Satış tahmini bağlantısıyla. **Yalnız zaten giden e-postaya eklenir**: tahmin
-  için ayrıca e-posta gitmez, konu, başlık ve düğme değişmez ([SATIS-TAHMINI.md](SATIS-TAHMINI.md));
 - **onay bekleyenler** (kontrol listelerinden sonra): personelin onay bekleyen istekleri, "2 istek onay bekliyor" ve en
   eskisinin ne zamandan beri beklediği, istek başına yalnız başlık ve isteyenin adı ("22 Ekim kasa düzeltmesi
   (Mehmet)", "Latte M ×2 · 15 Eki (Ayşe)"; en çok 8), Onaylar bağlantısıyla; tutar yok. Karar verilene kadar her sabah
@@ -177,8 +178,8 @@ e-postası**, bildirim adreslerine gider. İçinde:
   (yalnız ad, kişi ve süre); ilk 10 günde geçen ayın stok sayımı yarımsa ya da yoksa onun satırı. Bekleyen istek yokken
   bu satırlar kutuyu tek başına açar: yalnız tükendi satırı "Personelden", yalnız sayım satırı "Stok sayımı" (o ayın
   sayımına götürür), ikisi birden "Operasyon" başlığıyla. ModPOS kasa föyünün satırları da bu kutudadır: anahtar
-  çalışmıyorsa "ModPOS kasa föyü çekilemiyor. …", dünün raporu föyden farklıysa "Kasa raporu ModPOS föyünden farklı. 2
-  Kasım · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)"; yalnız bunlar varsa başlık "ModPOS kasa föyü" (o güne ya da Ayarlar'a
+  çalışmıyorsa "ModPOS API'den veri çekilemiyor. …", dünün raporu föyden farklıysa "Kasa raporu ModPOS API'den farklı.
+  2 Kasım · Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺)"; yalnız bunlar varsa başlık "ModPOS kasa föyü" (o güne ya da Ayarlar'a
   götürür). Konuya "2 istek onay bekliyor" eklenir ([ONAYLAR.md](ONAYLAR.md));
 - en üstte **Sistem uyarıları**: dünkü sabah işi çalışmadıysa ya da hata verdiyse, bu sabahki Paraşüt işi
   çalışmadıysa (aşağıda "Sistem uyarıları"; yalnız canlıda).
@@ -221,15 +222,15 @@ yalnız Vercel günlüğündedir. Aynı gün **Bugünküleri şimdi gönder** ay
 Resend ikinci kez göndermez.
 
 **Ek kutular (geliştirici notu).** Başka ekranların sabah e-postasına eklediği kutular (komisyon ve hakediş, dünkü
-kontrol listeleri, onay bekleyenler, satış tahmini) `src/server/notify/digest-extras.ts` › `DIGEST_EXTRA_SOURCES` listesinde birer
+kontrol listeleri, onay bekleyenler) `src/server/notify/digest-extras.ts` › `DIGEST_EXTRA_SOURCES` listesinde birer
 satırdır: `{ key, news, load(today, { preview }) }`; kutunun kendisi (`DigestBox`: başlık, satırlar, panel yolu,
 bağlantı metni, konu parçası, başlık) grubun kendi saf modülünde kurulur ve sınanır. Kaynaklar ötekilerle aynı anda,
 her biri en çok 4 saniye yüklenir; hata veren ya da geciken kutu düşer, e-postayı bozmaz. `news: true` kutu e-postayı
-tek başına gönderir; satış tahmini hiçbir zaman haber değildir (yalnız zaten giden e-postaya eklenir; konuya, başlığa ve
-düğmeye girmez). Kutunun anahtarları (`komisyon:<uyarı>`, `kontrol:<gün>`) tekil anahtara girer ve yalnız başarılı
+tek başına gönderir; `news: false` kutu yalnız zaten giden e-postaya eklenir (konuya, başlığa ve düğmeye girmez; bugün
+böyle bir kaynak yok, satış tahmini 4 Kasım 2026'da kalktı). Kutunun anahtarları (`komisyon:<uyarı>`, `kontrol:<gün>`) tekil anahtara girer ve yalnız başarılı
 gönderimden sonra `notification_log`'a yazılır; daha önce bildirileni kaynak kendisi eler (onay bekleyenlerin anahtarı
 yok: karar verilene kadar her sabah). Gövdedeki sıra: sistem uyarıları, ödemeler, faturalar, kontrol bekleyen, fiyat
-onayı, komisyon, kontrol, onay bekleyenler, zam, tahmin, düğme. Konuda kutunun
+onayı, komisyon, kontrol, onay bekleyenler, zam, düğme. Konuda kutunun
 parçası zamdan sonra eklenir ("Ödeme hatırlatması: 1 bugün · 1 hammaddeye zam · dünkü kapanış listesi eksik"); ödeme,
 sistem uyarısı, fatura ve fiyat onayı yoksa konu "Sabah özeti: <kutunun parçası>" olur, başlık ve düğme kutunun.
 Konu parçası ya da başlığı olmayan kutu e-postanın tek içeriğiyse konu ve başlık kutunun parçasını, o da yoksa adını
@@ -307,11 +308,16 @@ grubun kutusunu düşürmez); bir grubun gönderimi düşerse öbürleri gider, 
 
 ## Marina gün sonu e-postası (22 Kasım 2026)
 
-LafPOS'un şubesinin (Marina) gün sonu geçiş gününden itibaren geldiğinde Marina'nın kasa raporu alıcılarına (şube başına;
-"Tuzla ile aynı"ysa Tuzla'nınkine) ve o şubeye açık etkin bildirim adreslerine (yeni liste yok; personel ve pasif hesap düşer) "Marina gün sonu · 22 Kasım Pazar" gider: satış, ödemeler,
-ikram / ödenmez, kasa farkı, Z no, dün ve geçen haftayla kıyas, panele bağlantı; maliyet ve kâr yok. İçerik başına bir
-kez; LafPOS düzeltip yeniden gönderirse "· düzeltildi" ile bir kez daha. Gidemezse sabahki günlük iş yeniden dener
-(adım "LafPOS gün sonu"). Tuzla'nın e-postaları değişmez. Ayrıntı:
+LafPOS'un şubesinin (Marina) gün sonu geçiş gününden itibaren geldiğinde o şubenin kasa raporu alıcılarına (şube başına;
+"Tuzla ile aynı"ysa Tuzla'nınkine; personel ve pasif hesap düşer) "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar ·
+120 ₺ eksik" gider: satış, ödemeler, ikram / ödenmez, kasa farkı, Z no, dün ve geçen haftayla kıyas, Pavo
+karşılaştırması, panele bağlantı; maliyet ve kâr yok. Rapor alıcıları boş ya da kapalıysa e-posta susmasın diye o şubeye
+açık etkin bildirim adreslerine gider ("Bütün şubeler" ya da "Yalnız Marina"; "Yalnız Tuzla" adresi almaz). Pavo'nun
+sonucu birkaç dakika içinde bekleniyorsa onu bekler (tek e-posta). İçerik başına bir kez; LafPOS düzeltip yeniden
+gönderirse "· düzeltildi", sayımsız giden gün sayılınca "· kasa sayıldı" ile bir kez daha. Pavo ya da fotoğraf sonradan
+farklı gelirse kısa e-posta aynı konu başıyla gider. Çalışanlara (o şubenin Kasa › Rapor alıcıları › Çalışanlar) "gün
+sonu alındı" günde bir kez; sayım yoksa teşekkür değil "kasa sayılmadı" uyarısı. Gidemezse sabahki günlük iş yeniden
+dener (adım "LafPOS gün sonu"). Ayrıntı:
 [LAFPOS.md › Gün sonu otomasyonu](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026).
 
 ## Karaoke e-postaları (22 Kasım 2026)
@@ -332,8 +338,7 @@ Tetikleyiciler kontrol listesi hatırlatmalarınınki (açık sekmenin canlı yo
 Her pazartesi 08:00–09:00 (gönderilemezse salı, sonra çarşamba) **yöneticilere** (etkin yönetici hesaplarının giriş
 e-postaları; bildirim adresleri almaz) kısa bir e-posta gider: kasanıza etkisine göre sıralı en çok 5 madde (nakit
 planında para yetmeyecek gün, zam etkisi, kasa eksikleri, komisyon ve hakediş, ModPOS'ta eski fiyat, zayi ve ikram, stok
-farkı; karaoke doluluğu ve kontrol listeleri sonda), her biri ilgili ekranı açar; üstte geçen haftanın kasa cirosu ve
-satış tahmini kendi verisiyle çalışıyorsa önümüzdeki 7 günün beklenen satışı ([SATIS-TAHMINI.md](SATIS-TAHMINI.md)).
+farkı; karaoke doluluğu ve kontrol listeleri sonda), her biri ilgili ekranı açar; üstte geçen haftanın kasa cirosu.
 Sabah e-postasıyla aynı kabuk, ayrı anahtar: E-posta bildirimleri › **Haftalık özet** (aç / kapa, önizle, örneği bana
 gönder). Haftada en çok bir kez (`haftalik:<hafta>`). Ayrıntı: [HAFTALIK-OZET.md](HAFTALIK-OZET.md).
 
@@ -436,7 +441,8 @@ görür ve değiştirir (yönetici de başkasınınkini görmez); ödemeler ve s
 - **Saatli** hatırlatma, panel hangi ekranda açık olursa olsun saatinde ses ve kartla çalar; bildirim izni verilmiş
   cihazda sekme arka plandayken sistem bildirimi olarak gelir. Zil, bugünkü ve gecikmiş hatırlatıcıları gösterir.
 - **Sabah özeti:** günlük iş (`/api/cron/gunluk`, 08:00–09:00), bugün ya da önceden kalmış açık hatırlatıcısı olan
-  her kişinin bildirim açık cihazlarına tek bir Web Push gönderir ("Bugün 3 hatırlatıcınız var"). Ayın son günü aynı
+  her kişinin bildirim açık cihazlarına tek bir Web Push gönderir ("Bugün 3 hatırlatıcınız var"; gecikmiş varsa ayrı
+  sayılır: "2 bugün · 1 gecikmiş hatırlatıcı", gövdede önce bugünküler). Ayın son günü aynı
   iş, sayım listesi doluysa ve ayın sayımı tamamlanmadıysa sabah özeti açık bütün cihazlara bir de "Bugün ay sonu stok
   sayımı" gönderir (o ayın Stok sayımı'nı açar; `src/server/notify/count-push.ts`, Günlük işler'de adımı "Sayım
   bildirimi"). Sayım şube başınadır: her açık şubenin sayımına ayrı bakılır. Birden çok şube açıkken sayımı bitmeyen

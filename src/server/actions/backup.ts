@@ -26,7 +26,7 @@ export async function prepareBackupDownload(input: z.input<typeof schema>) {
       const [{ bytes }, last] = await Promise.all([uploadsTotal(), readLastBackup()]);
       const estimate = documentsDownloadBytes(bytes, last);
       if (estimate > PANEL_DOCUMENTS_MAX_BYTES) {
-        throw new UserError(`${documentsTooBigText(estimate)}. Belgeli yedeği bilgisayardan alın: docs/YEDEK.md › Belgeler.`);
+        throw new UserError(`${documentsTooBigText(estimate)}. Belgeli yedeği geliştiriciden isteyin.`);
       }
     }
     const fileName = backupFileName(new Date());

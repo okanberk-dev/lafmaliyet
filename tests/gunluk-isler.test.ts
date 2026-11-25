@@ -15,16 +15,19 @@ import {
   expectedDay,
   jobHealth,
   jobsSummary,
+  kontrolOutcome,
   parasutOutcome,
   photosStep,
   reminderStep,
   stepTexts,
   systemAlerts,
+  todaysKontrolRun,
   trClock,
   watchRestarts,
   type JobHealth,
   type JobKey,
   type JobRunLite,
+  type RunJobKey,
   type RunStatus,
 } from "../src/lib/job-health";
 import { capped, JOB_SEND_DEADLINE_MS, JOB_TAIL_DEADLINE_MS, TAIL_STEP_MS, tailStepDeadline } from "../src/server/jobs/capped";
@@ -33,7 +36,7 @@ import { capped, JOB_SEND_DEADLINE_MS, JOB_TAIL_DEADLINE_MS, TAIL_STEP_MS, tailS
 const tr = (s: string) => new Date(`${s.replace(" ", "T")}:00+03:00`);
 
 let nextId = 1;
-const run = (job: JobKey, startedTR: string, status: RunStatus, over: Partial<JobRunLite> = {}): JobRunLite => ({
+const run = (job: RunJobKey, startedTR: string, status: RunStatus, over: Partial<JobRunLite> = {}): JobRunLite => ({
   id: nextId++,
   job,
   status,
@@ -504,3 +507,50 @@ test("sabah işi: e-postanın gönderimi en geç jobStart + 48 sn'de kesilir; el
   assert.match(actions, /runReminderDigest\("manual"\)/);
 });
 
+
+test("kontrol listesi / karaoke e-postaları (job_runs 'kontrol'): gidemeyen kısmen, hepsi düşerse hata, gönderilecek yoksa atlandı", () => {
+  const none = { skipped: "gönderilecek hatırlatma yok", sent: 0, failed: 0 };
+  assert.deepEqual(kontrolOutcome({ checklist: none, karaoke: [none, none] }), { status: "skipped", steps: { checklist: "none", karaokeMail: "none" }, message: null });
+  assert.equal(kontrolOutcome({ checklist: { sent: 3, failed: 0 }, karaoke: [] }).status, "ok");
+  const partial = kontrolOutcome({ checklist: { sent: 3, failed: 2 }, karaoke: [none] });
+  assert.equal(partial.status, "partial");
+  assert.equal(partial.steps.checklist, "failed");
+  assert.equal(partial.message, "Kontrol listesi e-postası: 2 kişiye gidemedi");
+  const down = kontrolOutcome({ checklist: { error: "zaman aşımı" }, karaoke: [{ sent: 0, failed: 1 }] });
+  assert.equal(down.status, "error");
+  assert.equal(down.message, "Kontrol listesi e-postası: zaman aşımı · Karaoke e-postası: 1 kişiye gidemedi");
+  assert.deepEqual(stepTexts(partial.steps), ["Kontrol listesi e-postası bir kısmına gidemedi", "Karaoke e-postası: gönderilecek yok"]);
+});
+
+test("canlı yoklamanın karaoke çalışması (kontrol listesi yok): gidemeyen karaoke e-postası 'partial', zil uyarır; sonra gelen boş çalışma onu saklamaz", () => {
+  const none = { sent: 0, failed: 0 };
+  const k = kontrolOutcome({ checklist: none, karaoke: [{ sent: 2, failed: 1 }, none] });
+  assert.deepEqual([k.status, k.steps.checklist, k.steps.karaokeMail, k.message], ["partial", "none", "failed", "Karaoke e-postası: 1 kişiye gidemedi"]);
+  const now = tr("2026-10-22 18:50");
+  const failed = run("kontrol", "2026-10-22 18:05", "partial", { message: "Karaoke e-postası: 1 kişiye gidemedi" });
+  // GitHub'ın sonraki çalışması "gönderilecek yok" (anahtar sahiplenilmiş): zil de Günlük işler de gidemeyeni gösterir
+  const empty = run("kontrol", "2026-10-22 18:37", "skipped");
+  assert.equal(todaysKontrolRun([empty, failed], now), failed);
+  const a = systemAlerts({ production: true, cronSecret: true, now, parasutSyncErrorAt: null, health: health(now, [run("gunluk", "2026-10-22 08:10", "ok"), run("parasut", "2026-10-22 07:20", "ok")]), runs: [empty, failed] });
+  assert.deepEqual(a.map((x) => x.title), ["Personel e-postası gidemedi"]);
+  assert.equal(todaysKontrolRun([empty], now), null, "yalnız boş çalışma varsa Günlük işler son çalışmayı gösterir");
+  const card = readFileSync(join(process.cwd(), "src/app/panel/ayarlar/jobs-card.tsx"), "utf8");
+  assert.match(card, /todaysKontrolRun\(runs, now\) \?\? runs\.find/);
+  const live = readFileSync(join(process.cwd(), "src/app/api/canli/route.ts"), "utf8");
+  assert.match(live, /if \(sent \|\| failed \|\| error\) await recordJobRun\("kontrol", startedAt, kontrolOutcome\(\{ checklist: none, karaoke: \[r\.guest, r\.staff\] \}\)\)/);
+});
+
+test("sistem uyarısı: bugünün son kontrol çalışması e-postası gidemediyse; sonraki başarılı çalışma kaldırır; günlük işlerin sağlığına girmez", () => {
+  const now = tr("2026-10-22 18:20");
+  const base = { production: true, cronSecret: true, now, parasutSyncErrorAt: null };
+  const okRuns = [run("gunluk", "2026-10-22 08:10", "ok"), run("parasut", "2026-10-22 07:20", "ok")];
+  const failed = run("kontrol", "2026-10-22 18:07", "partial", { message: "Kontrol listesi e-postası: 2 kişiye gidemedi" });
+  const a = systemAlerts({ ...base, health: health(now, okRuns), runs: [failed, ...okRuns] });
+  assert.deepEqual(a.map((x) => [x.title, x.body, x.level]), [["Personel e-postası gidemedi", "Kontrol listesi e-postası: 2 kişiye gidemedi", "warning"]]);
+  const later = run("kontrol", "2026-10-22 18:37", "ok");
+  assert.deepEqual(systemAlerts({ ...base, health: health(now, okRuns), runs: [later, failed, ...okRuns] }), []);
+  // Dünkü hata bugün uyarı değil; kontrol satırı sabah işinin "çalışmadı"sını örtmez
+  const yesterday = run("kontrol", "2026-10-21 22:07", "error", { message: "x" });
+  assert.deepEqual(systemAlerts({ ...base, health: health(now, okRuns), runs: [yesterday, ...okRuns] }), []);
+  assert.equal(jobHealth("gunluk", [run("kontrol", "2026-10-22 10:07", "ok")], now, { watchSince: OLD_WATCH }).state, "late");
+});

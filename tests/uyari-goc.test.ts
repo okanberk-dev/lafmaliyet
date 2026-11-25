@@ -82,6 +82,7 @@ const D_EXPR_ALLOW: readonly [string, string][] = [
   ["src/app/panel/hatirlaticilar/reminders-client.tsx", "flex min-h-[6.5rem] cursor-pointer flex-col justify-between"], // süzgeç kartı (gecikmiş)
   ["src/app/panel/siparisler/orders-board.tsx", "flex min-w-0 flex-col gap-2.5 rounded-2xl bg-surface p-3.5"], // yeni masa siparişinin kartı
   ["src/app/panel/kasa/okc-card.tsx", "flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2.5"], // "Ayrıntılar" açma düğmesi
+  ["src/app/panel/kasa/fold.tsx", "flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2.5"], // Z'nin katlı alanlarının açma düğmesi (Ayrıntılar'la aynı)
   ["src/app/panel/satislar/sales-client.tsx", "flex items-start gap-2 py-2 pr-1.5 pl-3"], // şüpheli önizleme satırı
   ["src/app/panel/vergi/gelir-gider/classify-list.tsx", "grid gap-2 px-4 py-3 md:grid-cols"], // kaydedilmemiş liste satırı
   ["src/app/panel/faturalar/invoices-client.tsx", "h-7 max-w-full cursor-pointer appearance-none truncate rounded-full"], // kategori hapı (PILL_TONE)

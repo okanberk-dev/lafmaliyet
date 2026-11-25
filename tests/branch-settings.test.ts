@@ -148,7 +148,7 @@ test("kaynak: kasa raporu ayarını okuyan her yer şubeyi verir; eski kayda yal
   const dayEnd = read("src/server/lafpos/gun-sonu.ts");
   assert.match(dayEnd, /dayEndRecipients\(db: DB, branchId: string\)/, "şube zorunlu: varsayılan Marina'ya düşmez");
   assert.doesNotMatch(dayEnd, /dayEndRecipients\(db\)/, "gün sonu, Pavo ve fotoğraf e-postası kendi şubesinin alıcılarına");
-  assert.match(dayEnd, /async function sendStaffDayEnd\(branchId: string,[\s\S]*?loadCashSettings\(branchId\)/, "çalışan listesi gün sonunun şubesinin");
+  assert.match(dayEnd, /async function sendStaffDayEnd\([\s\S]*?const branchId = LAFPOS_BRANCH_ID;[\s\S]*?loadCashSettings\(branchId, db\)/, "çalışan listesi gün sonunun şubesinin");
   assert.match(read("src/server/lafpos/gun-sonu.ts"), /r\.branchIds\.includes\(branchId\)/, "gün sonu yalnız o şubeye açık bildirim adreslerine");
   assert.match(read("src/app/panel/kasa/page.tsx"), /loadCashSettings\(view\.till\)/);
   // "Tümü"de her şube bölümünde kendi kartı (eskiden yalnız ilkinde)

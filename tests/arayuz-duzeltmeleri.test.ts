@@ -453,8 +453,9 @@ test("çekmece (UI-04): adres değişince açıldığı yol unutulur; o sayfaya 
 
 test("kasa formu (UI-05): e-posta kapalıyken ya da gönderim kurulmamışken 'e-posta gider' demez", () => {
   const form = read("src/app/panel/kasa/cash-form.tsx");
-  assert.match(form, /const sendHint = recipients \? "gönderince yöneticiye e-posta gider" : "e-posta kapalı; gönderdikten sonra WhatsApp ile paylaşın";/);
-  assert.match(form, /: `\$\{longDateTR\(date\)\} · \$\{sendHint\}`/);
+  assert.match(form, /const sendHint = recipients \? "Gönderince yöneticiye e-posta gider" : "E-posta kapalı; gönderdikten sonra WhatsApp ile paylaşın";/);
+  // Sonuç kartının açıklaması yalnız bu (tarih gün düğmesinde; telefonda iki satır yer kazanılır)
+  assert.match(form, /\n\s+: sendHint\n/);
   assert.doesNotMatch(form, /`\$\{longDateTR\(date\)\} · gönderince yöneticiye e-posta gider`/);
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /if \(!settings\.emailEnabled \|\| !isEmailConfigured\(\)\) return 0;/);

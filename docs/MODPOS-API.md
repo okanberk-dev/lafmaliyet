@@ -207,8 +207,9 @@ alanları boştur. Kod: `src/lib/modpos/z.ts` (`foyZ`, `modposBucket`).
     açılmadan alınan (kesin olmayan) boş föy "kasa açılmadan alındı" der ve ertesi sabahın sabah işi bitene kadar
     (09:00) akşamki raporla uyarı vermez: kesin föy beklenir. Sonrasında (o sabah alınamadı) para uyarısı yine çıkar. Ödemelerin toplamında ladmin formun kuralını kullanır (1 ₺'tan küçük fark tutuyor sayılır).
   - Günden güne listede rozet **ModPOS'tan farklı**; raporu girilmemiş günde föyün cirosu.
-- **Zil** (yönetici): son 7 günde "Kasa raporu ModPOS föyünden farklı" (gün · farklı alanlar); anahtar çalışmıyorsa
-  "ModPOS kasa föyü çekilemiyor". **Bugün**: dünün kasa satırı "ModPOS föyünden farklı" işaretiyle "Sorun var" olur.
+- **Zil** (yönetici): son 7 günde "Kasa raporu ModPOS API'den farklı" (gün · farklı alanlar); anahtar çalışmıyorsa
+  "ModPOS API'den veri çekilemiyor". **Bugün**: dünün kasa satırı "ModPOS API'den farklı" işaretiyle "Sorun var" olur.
+  Sabah e-postası ve kasa raporunun e-postası aynı metni kullanır (`MODPOS_MISMATCH_TITLE`, `modposDiffsLine`).
 - **Sabah işi** (Ayarlar › Günlük işler): adım "ModPOS kasa föyü" (alındı / çekilecek gün yok / hak doldu / hata).
   Yalnız anahtar varken yazılır; hata "Sabah işinde bir adım hata verdi" uyarısına gider.
 

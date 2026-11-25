@@ -2,7 +2,7 @@
  * Satış tahmininin Türkiye takvimi (saf; tests/satis-tahmini.test.ts). Resmî tatiller, bayramlar ve arifeler, Ramazan
  * ayı ve MEB okul tatilleri; tarihler "YYYY-MM-DD", hafta günü Date.UTC ile (saat dilimi ve yaz saati yok). Tablo
  * elle tutulur: resmî tatiller ve bayramlar 2028 sonuna, okul tatilleri 2026–2027 öğretim yılına kadar. Yeni yıl ve MEB
- * takvimi nasıl eklenir: docs/SATIS-TAHMINI.md › Takvim. Kaynaklar CALENDAR_SOURCES'ta.
+ * takvimi nasıl eklenir: docs/OZEL-GUNLER.md › Kod. Kaynaklar CALENDAR_SOURCES'ta.
  */
 
 import { addDays, daysBetween } from "@/lib/reminders";
@@ -156,7 +156,7 @@ export function upcomingCalendar(today: string, days: number): { from: string; t
 /** Tablonun bitmesine yaklaşınca ekrandaki not; yoksa null */
 export function coverageNote(today: string): string | null {
   const notes: string[] = [];
-  if (today >= "2027-08-01") notes.push("Okul takvimi 2027–2028 için henüz eklenmedi (docs/SATIS-TAHMINI.md).");
+  if (today >= "2027-08-01") notes.push("Okul takvimi 2027–2028 için henüz eklenmedi.");
   if (today >= "2028-11-01") notes.push("Takvim tablosu 2028 sonunda bitiyor; 2029 eklenmeli.");
   return notes.length ? notes.join(" ") : null;
 }

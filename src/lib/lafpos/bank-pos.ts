@@ -1,3 +1,4 @@
+import { reportNo } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
 
@@ -93,10 +94,12 @@ export function pavoView(b: BankPos): PavoView {
         ["Günün farkı", diffText(day.diff)],
       ]
     : [];
-  // Son batch'in ayrıntısı (gün sonu tam gövdesinde ayrıntı; eski gövdede karşılaştırmanın kendisi)
+  // Son batch'in ayrıntısı (gün sonu tam gövdesinde ayrıntı; eski gövdede karşılaştırmanın kendisi). Gün sonu alınamadıysa
+  // (batch yok) LafPOS'un kart toplamı yine bilinir: bütün gün kartı (dayCard; son denetim, 24 Kasım 2026)
+  const lafposCard = b.lafposCard ?? (b.status !== "ok" ? (b.dayCard ?? null) : null);
   rows.push(
     ["Pavo kart toplamı", b.pavoCard === null ? "yok" : money(b.pavoCard)],
-    ["LafPOS kart toplamı", b.lafposCard === null ? "yok" : money(b.lafposCard)],
+    ["LafPOS kart toplamı", lafposCard === null ? "yok" : money(lafposCard)],
     [day ? "Son gün sonunun farkı" : "Fark", diffText(pavoDiff(b))],
   );
   if (b.batchNo) rows.push(["Batch no", b.batchNo]);
@@ -121,10 +124,13 @@ export function bankPosHash(b: BankPos): string {
   return h.toString(16).padStart(8, "0");
 }
 
-/** Kısa Pavo e-postasının konusu: "Marina · Pavo karşılaştırması · 22 Kasım Pazar" (farkta sonda "· FARK VAR") */
+/**
+ * Kısa Pavo e-postasının konusu, gün sonu e-postasıyla aynı baş: "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar ·
+ * Pavo karşılaştırması" (farkta sonda "· FARK VAR")
+ */
 export function pavoSubject(branchName: string, date: string, b: BankPos): string {
   const state = pavoState(b);
-  return `${branchName} · Pavo karşılaştırması · ${longDateTR(date)}${state === "fark" ? " · FARK VAR" : state === "yok" ? " · alınamadı" : ""}`;
+  return `Kasa raporu ${reportNo(date)} · ${branchName} · ${longDateTR(date)} · Pavo karşılaştırması${state === "fark" ? " · FARK VAR" : state === "yok" ? " · alınamadı" : ""}`;
 }
 
 const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);

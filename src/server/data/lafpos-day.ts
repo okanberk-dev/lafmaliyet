@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, eq, gte, lte } from "drizzle-orm";
+import { and, count, eq, gte, inArray, lte } from "drizzle-orm";
 
 import { branchDayKey } from "@/lib/cash-report";
 
@@ -36,6 +36,34 @@ export async function loadKasaLafpos(date: string, db: DB = getDb(), branchId?: 
   return { lafpos: true, day: await loadLafposDay(date, db, sube) };
 }
 
+/**
+ * Gün sonu geldi ama çekmece sayılmadı (LafPOS'ta sayım yok, kasa raporu yazılmadı; src/server/lafpos/gun-sonu.ts
+ * "no-count"): Bugün ve zil "Kasa sayılmadı, LafPOS'ta sayın" der, yönetici "girilmedi"nin nedenini görür. Yalnız şubenin
+ * LafPOS günleri; rapor girildiyse (elle ya da sayım gelince) gün listede yok
+ */
+export async function lafposNoCountDays(dates: readonly string[], branchId: string, db: DB = getDb()): Promise<Set<string>> {
+  const out = new Set<string>();
+  const switchDay = branchSwitchDay(await loadLafposSwitchDay(db), branchId);
+  const days = dates.filter((d) => isLafposDay(d, switchDay));
+  if (!days.length) return out;
+  const [pos, reports] = await Promise.all([
+    db
+      .select({ date: s.posDayReports.date, z: s.posDayReports.z })
+      .from(s.posDayReports)
+      .where(and(eq(s.posDayReports.branchId, branchId), inArray(s.posDayReports.date, days))),
+    db
+      .select({ date: s.cashReports.date })
+      .from(s.cashReports)
+      .where(and(eq(s.cashReports.branchId, branchId), inArray(s.cashReports.date, days))),
+  ]);
+  const reported = new Set(reports.map((r) => r.date));
+  for (const p of pos) {
+    const z = posZSchema.safeParse(p.z);
+    if (z.success && z.data.countedCash === null && !reported.has(p.date)) out.add(p.date);
+  }
+  return out;
+}
+
 /** Okuyucu: veritabanı ya da işlem (yalnız select) */
 type Reader = Pick<DB, "select">;
 
@@ -56,6 +84,15 @@ export async function kasaEvidence(db: Reader, date: string, branchId?: string):
     .where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, sube)))
     .limit(1);
   return day ? "lafpos" : "okc-z";
+}
+
+/**
+ * Rapor LafPOS'un otomatik raporu mu (lafpos_day_ends.report_id bu rapor, otomatik değerler kayıtlı). İşlem içinden de
+ * okunur (fotoğraf kaldırma isteği, src/server/cash-outs/requests.ts)
+ */
+export async function lafposAutoReportOf(db: Reader, reportId: number): Promise<boolean> {
+  const [row] = await db.select({ autoValues: s.lafposDayEnds.autoValues }).from(s.lafposDayEnds).where(eq(s.lafposDayEnds.reportId, reportId)).limit(1);
+  return Boolean(row?.autoValues);
 }
 
 /**

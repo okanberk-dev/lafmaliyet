@@ -132,7 +132,7 @@ describe("şube başına ayarlar: veritabanında", { skip: !SERVER_URL && "BRANC
     assert.match(log.map((l) => l.detail).join(" | "), /Tuzla · yeni@ornek\.com/);
   });
 
-  test("'aynı' kapatılınca değerler kopyalanır, sonra ayrı; gün sonu şubenin alıcılarına ve o şubeye açık adreslere", async () => {
+  test("'aynı' kapatılınca değerler kopyalanır, sonra ayrı; gün sonu şubenin alıcılarına (boşsa o şubeye açık adreslere)", async () => {
     const link = await import("../src/server/actions/branch-settings");
     const actions = await import("../src/server/actions/cash-report");
     const { loadCashSettingsView } = await import("../src/server/data/cash-reports");
@@ -142,7 +142,7 @@ describe("şube başına ayarlar: veritabanında", { skip: !SERVER_URL && "BRANC
       { email: "tuzlaci@ornek.com", active: true, branchIds: ["tuzla"] },
       { email: "marinaci@ornek.com", active: true, branchIds: ["marina"] },
     ]);
-    assert.deepEqual((await dayEndRecipients(db, "marina")).sort(), ["herkes@ornek.com", "marinaci@ornek.com", "yeni@ornek.com"], "aynı iken Tuzla'nın alıcıları");
+    assert.deepEqual(await dayEndRecipients(db, "marina"), ["yeni@ornek.com"], "aynı iken Tuzla'nın alıcıları; liste kuruluyken bildirim adresleri girmez");
 
     const r = await link.setBranchSettingLink({ branchId: "marina", group: "kasa.rapor", sameAs: null });
     assert.ok(r.ok, r.ok ? "" : r.error);
@@ -151,8 +151,14 @@ describe("şube başına ayarlar: veritabanında", { skip: !SERVER_URL && "BRANC
     assert.deepEqual((await loadCashSettingsView("marina")).mode, { kind: "own" });
     const own = await actions.updateCashSettings({ branchId: "marina", recipients: "marina@ornek.com", emailEnabled: true, whatsapp: "0532 111 22 33", staffRecipients: "garson@ornek.com" });
     assert.ok(own.ok, own.ok ? "" : own.error);
-    assert.deepEqual((await dayEndRecipients(db, "marina")).sort(), ["herkes@ornek.com", "marina@ornek.com", "marinaci@ornek.com"]);
-    assert.deepEqual((await dayEndRecipients(db, "tuzla")).sort(), ["herkes@ornek.com", "tuzlaci@ornek.com", "yeni@ornek.com"], "Tuzla'nınki değişmedi");
+    assert.deepEqual(await dayEndRecipients(db, "marina"), ["marina@ornek.com"]);
+    assert.deepEqual(await dayEndRecipients(db, "tuzla"), ["yeni@ornek.com"], "Tuzla'nınki değişmedi");
+    // Marina'nın listesi kapatılınca yedek: o şubeye açık bildirim adresleri ("Yalnız Tuzla" almaz)
+    const empty = await actions.updateCashSettings({ branchId: "marina", recipients: "", emailEnabled: false, whatsapp: "", staffRecipients: "garson@ornek.com" });
+    assert.ok(empty.ok, empty.ok ? "" : empty.error);
+    assert.deepEqual((await dayEndRecipients(db, "marina")).sort(), ["herkes@ornek.com", "marinaci@ornek.com"]);
+    const refill = await actions.updateCashSettings({ branchId: "marina", recipients: "marina@ornek.com", emailEnabled: true, whatsapp: "0532 111 22 33", staffRecipients: "garson@ornek.com" });
+    assert.ok(refill.ok, refill.ok ? "" : refill.error);
     // Zil ve "bu adres hangi listede": bütün şubelerin listeleri
     const { listsWithEmail } = await import("../src/server/notify/recipients");
     assert.deepEqual(await listsWithEmail("Marina@Ornek.com"), ["cash"]);

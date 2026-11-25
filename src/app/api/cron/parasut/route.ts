@@ -58,5 +58,7 @@ export async function GET(request: NextRequest) {
     throw e;
   } finally {
     await finishJobRun(runId, outcome);
+    // Başarıda da tek satır: Vercel günlüğünden işin çalıştığı görülür (job_runs'a bakmadan)
+    console.info("[cron] parasut", { status: outcome.status, ...outcome.steps, ms: Date.now() - started });
   }
 }

@@ -297,6 +297,24 @@ test("kasa: geçen haftanın eksikleri, fazla gün ve bütünlük işaretleri; b
   assert.equal(kasaItem({ week: wk, reports: [rep("2026-10-30", -500), rep("2026-11-01", -100)], carryMismatch: 0, lateEdits: 0, photoDiffs: 0 })!.href, "/panel/kasa?ay=2026-10");
 });
 
+test("kasa: birden çok kasa açıkken eksik tek şubedeyse başlıkta şube; iki şubedeyse ayrıntıda şube şube; bağlantı şubeye", () => {
+  const T = { id: "tuzla", name: "Tuzla" };
+  const M = { id: "marina", name: "Marina" };
+  const one = kasaItem({ week: W44, reports: [{ ...rep("2026-10-20", -640), branch: M }], carryMismatch: 0, lateEdits: 0, photoDiffs: 0 })!;
+  assert.equal(one.title, `Marina · 20 Ekim Salı kasası 640${NB}₺ eksik`);
+  assert.equal(one.href, "/panel/kasa?ay=2026-10&sube=marina");
+  const both = kasaItem({
+    week: W44,
+    reports: [{ ...rep("2026-10-20", -300), branch: T }, { ...rep("2026-10-20", -340), branch: M }, { ...rep("2026-10-23", -100), branch: T }],
+    carryMismatch: 0,
+    lateEdits: 0,
+    photoDiffs: 0,
+  })!;
+  assert.equal(both.title, `Kasa geçen hafta 2 gün eksik: toplam 740${NB}₺`);
+  assert.equal(both.detail, `En çok 20 Ekim Salı: 640${NB}₺ · Tuzla 400${NB}₺, Marina 340${NB}₺`);
+  assert.equal(both.href, "/panel/kasa?ay=2026-10&sube=marina", "en çok eksik günün en çok eksik şubesi");
+});
+
 /** `from`'dan başlayan `n` günün raporları, toplamı `total` */
 const weekReports = (from: string, n: number, total: number) => Array.from({ length: n }, (_, i) => rep(new Date(Date.parse(`${from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10), 0, total / n));
 

@@ -113,12 +113,11 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `MIGRATE_ON_PREVIEW` | (yalnız Preview, isteğe bağlı) `1`: önizlemelerin **kendi** veritabanı varsa (Neon önizleme dalları) önizleme derlemesi de migration uygular. Önizleme canlının veritabanını kullanıyorsa tanımlamayın (§ 3) |
 | `ALLOW_BRANCH_PRODUCTION` | (yalnız acil durumda, tek derleme için) `1`: `main` dışındaki bir dalın Production derlemesine bilerek izin verir; derleme günlüğüne uyarı yazılır. Proje ayarlarına **eklemeyin**: `vercel deploy --prod --build-env ALLOW_BRANCH_PRODUCTION=1` ile yalnız o derlemeye verilir (§ 7, "Production yalnız main'den") |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | (isteğe bağlı) Web Push anahtarları; yoksa ilk kullanımda üretilip veritabanında şifreli saklanır |
-| `ANTHROPIC_API_KEY` | (isteğe bağlı, **yalnız Production**) Fotoğraftan okuma (Claude): kasa raporunda Z raporu, banka POS fişi ve kasadan çıkan fişler. Yoksa fotoğraf yine eklenir, rakamlar elle yazılır. Aynı anahtar Vardiya'daki **Yazarak doldur**u da çalıştırır ([VARDIYA.md](VARDIYA.md) › Yazarak doldurma); yoksa kutular elle doldurulur. Ayrıntı [FOTOGRAF.md](FOTOGRAF.md) |
+| `ANTHROPIC_API_KEY` | (isteğe bağlı, **yalnız Production**) Fotoğraftan okuma (Claude): kasa raporunda Z raporu, banka POS fişi ve kasadan çıkan fişler. Yoksa fotoğraf yine eklenir, rakamlar elle yazılır; LafPOS gününün gün sonu fotoğrafı (Pavo'nun detaylı Z'si) anahtarsız da kodla (OCR) okunur, öteki fotoğraflar okunmaz. Aynı anahtar Vardiya'daki **Yazarak doldur**u da çalıştırır ([VARDIYA.md](VARDIYA.md) › Yazarak doldurma); yoksa kutular elle doldurulur. Ayrıntı [FOTOGRAF.md](FOTOGRAF.md) |
 | `BLOB_READ_WRITE_TOKEN` | (isteğe bağlı, **yalnız Production**) Fotoğraf deposu: Vercel › Storage › Blob, erişim **Private**, bölge Frankfurt (fra1). Depoyu projeye bağlayınca kendiliğinden eklenir (yeni bağlantı anahtar yerine `BLOB_STORE_ID` verirse o da yeter). Yoksa fotoğraf düğmeleri görünmez ([FOTOGRAF.md](FOTOGRAF.md)) |
 | `PHOTO_DIR` | (yalnız yerel, isteğe bağlı) Fotoğrafların yerel klasörü; yoksa `.data/photos` |
 | `MCP_DISABLED` | (isteğe bağlı) `1` ise Claude bağlantısı kapalı (bütün uçlar 404, verilmiş anahtarlar çalışmaz). Önizlemelerde zaten kapalı ([CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md)) |
 | `MCP_ALLOW_LOCALHOST` | (isteğe bağlı) `1` ise Claude Code / MCP Inspector'ın localhost dönüş adresine canlıda da izin verilir; varsayılan kapalı |
-| `WEATHER_CONTACT` | (isteğe bağlı) Satış tahmininin hava durumu isteğinde (MET Norway, ücretsiz, anahtarsız, günde bir istek) kimliğe eklenen iletişim: e-posta ya da adres. Yoksa yalnız uygulamanın adı ve `APP_URL` gider. Panel `api.met.no`'ya bağlanabilmeli; bağlanamazsa tahmin havasız hesaplanır ([SATIS-TAHMINI.md](SATIS-TAHMINI.md)) |
 | `DATABASE_SSL` | (isteğe bağlı, yalnız acil durumda) `require`: veritabanı sunucusunun sertifikası doğrulanmaz. Varsayılan doğrulamalı bağlantıdır (`verify-full`; Neon'un sertifikası Let's Encrypt'ten, Node tanır): şifreli ama sertifikası denetlenmeyen bağlantıda araya giren biri kendi sertifikasıyla bütün veriyi okuyabilirdi. Canlı derleme önce havuzlu adresi, sonra migration için doğrudan adresi doğrulamalı açar; biri açılmazsa derleme migration'dan önce durur, ne veritabanı ne yayındaki sürüm değişir. Neon sertifikasını değiştirdiği için derleme durursa geçici olarak `require` yazılır |
 
 `DATABASE_URL` / `DATABASE_URL_UNPOOLED` Neon entegrasyonundan gelir. Paraşüt değişkenleri (`PARASUT_*`; istemci
@@ -140,6 +139,14 @@ uyarıları; iki iş birden durursa diye isteğe bağlı dış izleme: `/api/hea
 ✓ Excel verisi yüklendi: 74 hammadde, 129 ürün, 699 reçete satırı, 125 satış satırı, 81 fatura
 ✓ Yönetici hesabı oluşturuldu: …
 ```
+
+**Kodla okuma (OCR):** LafPOS gününün gün sonu fotoğrafı yapay zekâ yokken panelin içinde okunur (tesseract.js). Dil
+verisi (`@tesseract.js-data/tur`) ve çekirdek (`tesseract.js-core`, WebAssembly) paketle gelir: ortam değişkeni yok, ağ
+isteği yok. `next.config.ts` bunları fotoğrafı okuyan iki yola (`/api/foto`, `/api/foto/[id]/oku`) ekler
+(`outputFileTracingIncludes`, `serverExternalPackages`). Denetim: yerelde `npx next build`, sonra
+`.next/server/app/api/foto/route.js.nft.json` içinde `tur.traineddata.gz` ve `tesseract-core-*lstm.wasm` geçmeli; canlıda
+ilk kodla okumada sunucu günlüğünde "[foto] kodla okuma" hatası yoksa çalışıyor ([FOTOGRAF.md](FOTOGRAF.md) › LafPOS
+gününün fotoğrafı).
 
 Önizleme derlemesinde bunların yerine `! Önizleme dağıtımı …: migration ve seed atlandı` yazar. Bekçiyi içeren bir
 commit'te `main` dışındaki bir dal Production'a derlenirse derleme `✗ Production derlemesi yalnız main dalından yapılır;
@@ -354,8 +361,8 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
     günler işletme geneli kalır (geri doldurma yok). Geriye Instant Rollback yapılırsa eski kod sütuna bakmaz: şubeli
     kapalı günler bütün şubelerde kapalı sayılır.
   - **satis_tahmini** (satış tahmini: `special_days`, `weather_days`, `forecast_snapshots`): yalnız yeni tablolar,
-    eklemeli; eski kod onlara dokunmaz. Sabah işi her gün `api.met.no`'ya bir istek atar (ücretsiz, anahtarsız;
-    `WEATHER_CONTACT` isteğe bağlı, § 4); önizlemeler tahmin kaydı ve hava durumu yazmaz.
+    eklemeli; eski kod onlara dokunmaz. Satış tahmini 4 Kasım 2026'da kalktı: `special_days` (Özel günler) kullanılıyor,
+    hava durumu isteği ve `WEATHER_CONTACT` artık yok.
 - **"Migration uygulanmadı" hatası.** Canlı derleme (ve `npm run db:migrate`) migration'dan sonra günlükteki her
   girdinin `drizzle.__drizzle_migrations`'ta kaydını arar (`scripts/migration-check.ts`). Eksik varsa derleme
   `Migration uygulanmadı: 0021_x … (sıra bozuk)` diye durur ve yayındaki sürüm değişmez. Çözüm: yukarıdaki gibi

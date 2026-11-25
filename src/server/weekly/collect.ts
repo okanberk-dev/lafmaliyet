@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, eq, gte, inArray } from "drizzle-orm";
 
-import { ALL_BRANCHES } from "@/lib/branches";
+import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
 import type { Model } from "@/lib/calc/engine";
 import { consistency, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
@@ -20,7 +20,7 @@ import { productLabel } from "@/lib/waste";
 import { parseWeeklyHistory, selectItems, weekInfo, WEEKLY_HISTORY_KEY, type WeekInfo, type WeeklyItem, type WeeklySource, type WeeklySummary } from "@/lib/weekly/core";
 import { cashItem, checklistDayOf, checklistItem, commissionItems, karaokeItem, kasaItem, posPriceItem, salesLine, stockItem, wasteCost, wasteItem, zamItem, type KomisyonCand } from "@/lib/weekly/items";
 import { withBranchScope } from "@/server/branch-scope";
-import { featureHere } from "@/server/branches";
+import { featureHere, listBranches } from "@/server/branches";
 import { loadCashPlan } from "@/server/data/cash-plan";
 import { cashReportPhotoInfo } from "@/server/data/cash-photos";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, type CashReportDTO } from "@/server/data/cash-reports";
@@ -141,8 +141,14 @@ const kasa: Collector = {
         "fotoğraf",
       ),
     ]);
+    // Birden çok kasa açıkken eksik maddesi şubeyi yazar ve o şubenin kasasına bağlanır (tek kasada şube yazılmaz)
+    const tills = await listBranches()
+      .then(tillBranches)
+      .catch(() => []);
+    const branchOf = (id: string) => (tills.length > 1 ? tills.find((b) => b.id === id) : undefined);
     // Ciro ay bilgisinin kuralıyla: Z toplamının içindeki ödenmez / ikram düşer (dayRevenue; denetim 13 Kasım HM-08)
     const rows = reports.map((r) => ({
+      ...(branchOf(r.branchId) ? { branch: { id: r.branchId, name: branchOf(r.branchId)!.name } } : {}),
       date: r.date,
       zTotal: r.zTotal,
       revenue: dayRevenue({ zTotal: r.zTotal, offRevenue: r.offRevenue, payments: Math.round((r.cash + r.card + r.mealCard + r.online + r.other) * 100) / 100 }).revenue,

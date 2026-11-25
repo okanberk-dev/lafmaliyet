@@ -298,6 +298,32 @@ test("kasa bütünlüğü (yönetici): ModPOS API'den farklı dünkü rapor 'sor
   assert.equal(byKey(dayTasks(staff(EVENING, { cash: { today: null, yesterday: report("2026-10-21", { flags: [CASH_FLAGS.modpos] }), firstDate: "2026-10-01" } })))["kasa-dun"], undefined);
 });
 
+test("LafPOS günü: yöneticiye 'personel girer' değil 'LafPOS gün sonu gelince yazılır'; sayımsız gün 'Sayım yok' ve LafPOS'ta nereden sayılacağı", () => {
+  const S = "2026-10-01";
+  // Yönetici, rapor gelmeden: gündüz ve akşam metni LafPOS'u söyler
+  assert.equal(byKey(dayTasks(admin(NOON, { lafposSwitch: S }))).kasa.detail, "LafPOS gün sonu gelince kendiliğinden yazılır.");
+  assert.match(byKey(dayTasks(admin(EVENING, { lafposSwitch: S }))).kasa.detail, /Henüz gelmedi; LafPOS gün sonu gelince kendiliğinden yazılır\.$/);
+  // "Tümü"de şubenin kendi geçiş günü: Tuzla (ModPOS) eski metin, Marina LafPOS metni
+  const tills = [
+    { id: "tuzla", name: "Tuzla", today: null, yesterday: null, firstDate: S, lafposSwitch: null },
+    { id: "marina", name: "Marina", today: null, yesterday: null, firstDate: S, lafposSwitch: S },
+  ];
+  const many = byKey(dayTasks(admin(NOON, { cash: { today: null, yesterday: null, firstDate: S, tills } })));
+  assert.equal(many["kasa:tuzla"].detail, "Personel kapanışta girer.");
+  assert.equal(many["kasa:marina"].detail, "LafPOS gün sonu gelince kendiliğinden yazılır.");
+  // Gün sonu geldi, sayım yok: bugünün ve dünün satırı "Sayım yok"; personele LafPOS'ta sayma yolu, "Dünü gir" değil
+  const noCount = ["2026-10-21", "2026-10-22"];
+  const st = byKey(dayTasks(staff(EVENING, { lafposSwitch: S, cash: { today: null, yesterday: null, firstDate: S, noCount } })));
+  assert.equal(st.kasa.badge, "Sayım yok");
+  assert.match(st.kasa.detail, /Kasa › Geçmiş günler › Kasa föyü/);
+  assert.equal(st["kasa-dun"].badge, "Sayım yok");
+  assert.notEqual(st["kasa-dun"].action, "Dünü gir");
+  const ad = byKey(dayTasks(admin(EVENING, { lafposSwitch: S, cash: { today: null, yesterday: null, firstDate: S, noCount } })));
+  assert.equal(ad["kasa-dun"].badge, "Sayım yok");
+  assert.match(ad["kasa-dun"].detail, /çekmece sayılmadı/);
+  assert.equal(ad.kasa.badge, "Sayım yok");
+});
+
 test("yönetici bugünkü kasa: gündüz 'Akşam', 20:00'den sonra girilmedi; okunamazsa dün satırı söyler, bugünkü çıkmaz", () => {
   const day = byKey(dayTasks(admin(NOON))).kasa;
   assert.equal(day.status, "later");
@@ -1118,7 +1144,7 @@ test("kaynak: zil Bugün ile aynı akşam kuralına bakar; Bugün canlı veride 
   const bell = read("src/server/bell/kasa.ts");
   assert.match(read("src/server/actions/notifications.ts"), /kasaBell\(user\)\.catch\(\(\) => \[\]\)/);
   // Şubesiz personel "Tümü"de birden çok kasa açıkken kasa başına satır (şube kapsamı C P2-10), yoksa tek satır
-  assert.match(bell, /if \(!isCashEvening\(now\)\) return \[\];\s+\/\/[^\n]*\n\s+const perTill = await staffTillsWaiting\(day\);\s+if \(perTill\) return perTill;\s+if \(reports\.some\(\(r\) => r\.date === day\)\) return \[\];/);
+  assert.match(bell, /if \(!isCashEvening\(now\)\) return out;\s+\/\/[^\n]*\n\s+const perTill = await staffTillsWaiting\(day\);\s+if \(perTill\) return \[\.\.\.out, \.\.\.perTill\];\s+if \(reports\.some\(\(r\) => r\.date === day\) \|\| noCount\.has\(day\)\) return out;/);
   assert.doesNotMatch(bell, /hour < 20/);
   // Bildirim gelince Bugün yenilenir (kural src/lib/live-poll.ts › refreshesScreen)
   assert.match(read("src/components/panel/live/alert-center.tsx"), /if \(refreshesScreen\(pathRef\.current, kind\)\) router\.refresh\(\)/);
