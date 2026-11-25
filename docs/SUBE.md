@@ -270,9 +270,10 @@ yazma `src/server/branch-settings.ts`.
   grupta öbür şubeler örtük olarak Tuzla'ya bağlı başlar (bugünkü tek liste). Kayıt yoksa ortamın alıcıları
   (`CASH_REPORT_RECIPIENTS`). İlk kayıtta satır yazılır, eski kayıt bırakılır (geri dönüş güvenli).
 - **Okuyanlar şubeyi verir** (`loadCashSettings(şube)`; şubesiz çağrı kalmadı, `tests/branch-settings.test.ts`): kasa
-  raporu e-postası raporun şubesinin alıcılarına, WhatsApp metni raporun şubesinin numarasına, LafPOS gün sonu e-postası
-  gün sonunun şubesinin alıcılarına ve o şubeye açık bildirim adreslerine (bütün şubeler ya da o şube), çalışanların
-  kısa e-postası şubenin çalışan listesine. Zil ve "bu adres hangi listede" (Hesabım, Kullanıcılar) bütün açık
+  raporu e-postası raporun şubesinin alıcılarına, deneme e-postası kartın şubesininkine, WhatsApp metni raporun şubesinin
+  numarasına; LafPOS gün sonu, Pavo ve fotoğraf e-postaları gün sonunun şubesinin alıcılarına ve o şubeye açık bildirim
+  adreslerine (bütün şubeler ya da o şube; `dayEndRecipients(db, şube)`, şube zorunlu), çalışanların kısa e-postası
+  gün sonunun şubesinin çalışan listesine. Zil ve "bu adres hangi listede" (Hesabım, Kullanıcılar) bütün açık
   şubelerin listelerine bakar.
 - **Ekran**: Ayarlar › Şube ayarları (tek şube seçiliyken doğrudan o şubenin ekranı, "Tümü"de Şubeler listesi; her
   fiziksel şubenin satırında "Alıcılar: Tuzla ile aynı" çipi ve **Ayarlar**). Şube ayarları ekranı
@@ -280,7 +281,8 @@ yazma `src/server/branch-settings.ts`.
   alıcıları kartı aynı bileşen (`src/app/panel/kasa/cash-settings.tsx`, verisi `src/server/cash/settings-card.ts`);
   "Tümü"de her şube bölümünde kendi kartı. Birden çok kasa açıkken kartın ilk satırı "Tuzla ile aynı" anahtarı; açıkken
   form çizilmez, Tuzla'nın alıcıları salt okunur görünür ve "Tuzla şubesinde düzenle" bağlantısı çıkar. Tuzla'nın
-  kartı "Marina şubesi de bu alıcıları kullanıyor" der. Çalışan listesi alanı LafPOS'lu şubede (ya da listesi doluysa).
+  kartı "Marina şubesi de bu alıcıları kullanıyor" der. Çalışan listesi alanı LafPOS'lu şubede (ya da listesi doluysa);
+  alanı olmayan kartın kaydı çalışan listesini göndermez, liste değişmez.
 - **Yazım**: yalnız yönetici; değer, bağ ve işlem geçmişi tek işlemde, aynı grubun yazımları sıraya girer (grup başına
   işlem kilidi). Başka şubenin alıcılarını kullanan şubeye alıcı yazılmaz (eski sekme bağlı şubenin değerini sessizce
   ayırmasın): önce "aynı" kapatılır.

@@ -307,8 +307,8 @@ grubun kutusunu düşürmez); bir grubun gönderimi düşerse öbürleri gider, 
 
 ## Marina gün sonu e-postası (22 Kasım 2026)
 
-LafPOS'un şubesinin (Marina) gün sonu geçiş gününden itibaren geldiğinde kasa raporu alıcılarına ve etkin bildirim
-adreslerine (yeni liste yok; personel ve pasif hesap düşer) "Marina gün sonu · 22 Kasım Pazar" gider: satış, ödemeler,
+LafPOS'un şubesinin (Marina) gün sonu geçiş gününden itibaren geldiğinde Marina'nın kasa raporu alıcılarına (şube başına;
+"Tuzla ile aynı"ysa Tuzla'nınkine) ve o şubeye açık etkin bildirim adreslerine (yeni liste yok; personel ve pasif hesap düşer) "Marina gün sonu · 22 Kasım Pazar" gider: satış, ödemeler,
 ikram / ödenmez, kasa farkı, Z no, dün ve geçen haftayla kıyas, panele bağlantı; maliyet ve kâr yok. İçerik başına bir
 kez; LafPOS düzeltip yeniden gönderirse "· düzeltildi" ile bir kez daha. Gidemezse sabahki günlük iş yeniden dener
 (adım "LafPOS gün sonu"). Tuzla'nın e-postaları değişmez. Ayrıntı:

@@ -797,8 +797,9 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   güvenle okunmamış NET / İADE batch tutarı ve tanınmayan ödeme satırı uydurulmaz ("okunamadı"). Yöneticinin kartı
   okuyanı yazar ("Yapay zekâ (Claude Haiku 5.5)" / "Kodla okundu").
 
-**Gün sonu e-postası** (`sendDayEndEmail`): kasa raporu alıcılarına (Kasa › Rapor alıcıları, e-posta açıksa) ve etkin
-bildirim adreslerine (Hatırlatıcılar, bildirim e-postası açıksa); personel ve pasif hesabın adresi gönderimde düşer
+**Gün sonu e-postası** (`sendDayEndEmail`): gün sonunun şubesinin kasa raporu alıcılarına (Kasa › Rapor alıcıları ya da
+Şube ayarları, e-posta açıksa; "Tuzla ile aynı"ysa Tuzla'nınkine, [SUBE.md](SUBE.md) › Şube başına ayarlar) ve o şubeye
+açık etkin bildirim adreslerine (Hatırlatıcılar, bildirim e-postası açıksa); personel ve pasif hesabın adresi gönderimde düşer
 (`sendableRecipients`). Konu "Marina gün sonu · 22 Kasım Pazar". İçerik: toplam satış, Z no ve fiş, indirim, ödeme
 türleri ve LafPOS'un ödeme dökümü, ödenmez / ikram ve ikram edilenlerin adedi ve menü değeri, kasa (açılış, olması
 gereken, sayılan, fark), dün ve geçen haftanın aynı günüyle kıyas (satış; LafPOS günü yoksa o günün kasa raporu),
