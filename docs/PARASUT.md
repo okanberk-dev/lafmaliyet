@@ -148,6 +148,8 @@ Her şube kendi Paraşüt hesabına (firmasına) bağlanabilir; şubeler aynı f
   bölünmez; [SUBE.md](SUBE.md)).
 - **Paraşüt ekranı** seçili şubenin hesabını gösterir ("Tümü": Tuzla'nınki ve "Marina ayrı Paraşüt hesabı kullanıyor"
   notu): bağlantı, ayarlar, eşitleme geçmişi, imleçler, gelen fatura sayıları, iadeler ve kalem okuma o hesabın.
+  Hesabı başka şubeden kullanan şube seçiliyken ("Tuzla ile aynı") Bağlantı kartı salt okunurdur: durum ve "Tuzla'da
+  düzenle" (ayar formu ve oturum düğmeleri yalnız hesabın sahibi şube seçiliyken).
   Kategori kuralları, ürün bağlantıları, "hammadde değil" listesi, yok sayılan ve silinen faturalar (anahtar hesapla
   önekli: `marina/123`) bütün hesaplarda ortaktır. Genel bakış'ın Paraşüt kartı da seçili şubenin hesabının eşitlemesi.
 - **Tedarikçi sayfası**: "Geçmiş faturaları al" seçili şubenin hesabından; "Faturadan doldur" her faturayı kendi

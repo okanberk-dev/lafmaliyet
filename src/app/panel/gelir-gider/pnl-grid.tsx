@@ -593,7 +593,7 @@ function MonthNoteDialog({
         </>
       }
     >
-      {readOnly ? <Notice tone="neutral" size="sm" className="mb-3" title="Ay notu şube başına yazılır" text={locked ?? "Yazmak için soldan şubeyi seçin."} /> : null}
+      {readOnly ? <Notice tone="neutral" size="sm" className="mb-3" title="Ay notu şube başına yazılır" text={locked ?? "Yazmak için şube seçiciden şubeyi seçin."} /> : null}
       <form
         id={formId}
         noValidate

@@ -12,7 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
 import { PasswordInput } from "@/components/ui/password-input";
-import { dateTimeTR } from "@/lib/format";
+import { dateTimeTR, locativeTR } from "@/lib/format";
 import { COMPANY_LOCKED_TEXT, sourceText, type ParasutSettingsView, type SettingSource } from "@/lib/parasut/settings";
 import { todayTR } from "@/lib/reminders";
 import { ToggleRow } from "@/components/ui/toggle-row";
@@ -47,7 +47,13 @@ export function ConnectionCard({
   account,
   accountName = null,
   invoiceScope = null,
+  linkedFrom = null,
 }: {
+  /**
+   * Seçili şube bu hesabı başka şubeden kullanıyor ("Tuzla ile aynı"): kart salt okunur durum ve hesabın sahibi şubede
+   * düzenleme bağlantısı; ayar formu ve oturum düğmeleri çizilmez (bağlı şubenin görünümünden Tuzla'nın ayarı değişmesin)
+   */
+  linkedFrom?: { branchName: string; ownerName: string; href: string } | null;
   /** Kartın Paraşüt hesabı (sahibi şube); verilmezse sunucu seçili şubeninkini kullanır */
   account?: string;
   /** Birden çok kasa açıkken hesabın adı (başlıkta) */
@@ -83,6 +89,29 @@ export function ConnectionCard({
     : configured
       ? { tone: "amber" as const, label: "Bağlı değil", text: "Paraşüt'ün giriş ve onay ekranından bir kez geçin; yetki burada şifreli saklanır." }
       : { tone: "gray" as const, label: "Bağlı değil", text: "Önce aşağıdaki ayarları girip kaydedin." };
+
+  if (linkedFrom) {
+    return (
+      <Card className={className}>
+        <CardHeader
+          icon={<PlugZap />}
+          title={`Bağlantı · ${linkedFrom.ownerName}`}
+          description={`${linkedFrom.branchName}, ${linkedFrom.ownerName} şubesinin Paraşüt hesabını kullanıyor. Bağlantı ve ayarlar ${linkedFrom.ownerName} seçiliyken düzenlenir.`}
+        />
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-surface px-4 py-3 ring-1 ring-line">
+            <Badge tone={status.tone} dot>
+              {status.label}
+            </Badge>
+            <span className="min-w-0 flex-1 basis-56 text-[13px] leading-5 text-pretty text-ink-mute">{status.text}</span>
+            <a href={linkedFrom.href} className={buttonClass("secondary", "md", "max-sm:w-full")}>
+              {locativeTR(linkedFrom.ownerName)} düzenle
+            </a>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className={className}>

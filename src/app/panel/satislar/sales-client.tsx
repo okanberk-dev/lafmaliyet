@@ -429,7 +429,7 @@ export function MonthInfoForm({
         title={branchName ? `${label} bilgileri · ${branchName}` : `${label} bilgileri`}
         description={
           branchName
-            ? `Tümü seçiliyken form ${genitive(branchName)} ay bilgisini gösterir ve yazar; öteki şube için soldan şubeyi seçin.`
+            ? `Tümü seçiliyken form ${genitive(branchName)} ay bilgisini gösterir ve yazar; öteki şube için şube seçiciden şubeyi seçin.`
             : "Patron > Raporlar > Ciro ekranından ya da kasa raporlarından. Gelir-gider tablosu bu ciroyu kullanır."
         }
       />

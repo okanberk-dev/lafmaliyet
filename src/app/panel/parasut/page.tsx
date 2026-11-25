@@ -4,10 +4,9 @@ import { Suspense } from "react";
 
 import { HashScroll } from "@/components/panel/hash-scroll";
 import { PageHeader } from "@/components/panel/page-header";
-import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
-import { Notice } from "@/components/ui/notice";
-import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
+import { Notice, NoticeLink } from "@/components/ui/notice";
+import { ALL_BRANCHES, BRANCH_PARAM, tillBranches } from "@/lib/branches";
 import { INVOICE_CATEGORIES } from "@/lib/constants";
 import { parasutKey, type ParasutAccountInfo } from "@/lib/parasut/accounts";
 import { missingSettings, settingsView } from "@/lib/parasut/settings";
@@ -77,21 +76,21 @@ function AccountNotice({
       ? `Paraşüt hesabı ortak: ${userNames}`
       : `${account.name} şubesinin kendi Paraşüt hesabı`;
   const text = all && others.length
-    ? `${others.map((o) => o.name).join(", ")} ayrı Paraşüt hesabı kullanıyor; onun bağlantısı ve eşitlemesi için soldan şubeyi seçin. Kategori kuralları ve ürün bağlantıları bütün hesaplarda ortak.`
+    ? `${others.map((o) => o.name).join(", ")} ayrı Paraşüt hesabı kullanıyor; onun bağlantısı ve eşitlemesi için şube seçiciden şubeyi seçin. Kategori kuralları ve ürün bağlantıları bütün hesaplarda ortak.`
     : shared
       ? "Tek bağlantı, tek eşitleme; gelen faturalar işletme geneli. Şubeyi ayrı bir Paraşüt firmasına bağlamak için Şube ayarları'nda “aynı” seçimini kapatın."
       : `Bağlantı ve eşitleme yalnız ${account.name} için${scopeName && scopeName !== account.name ? ` (${scopeName} bu hesabı kullanıyor)` : ""}. Kategori kuralları ve ürün bağlantıları bütün hesaplarda ortak.`;
+  // Bağlantı metnin sonunda: başlık, açıklama, eylem sırası telefonda da bozulmaz (düğme başlıkla metnin arasına düşüyordu)
   return (
     <Notice
       tone="neutral"
       size="sm"
       className="mb-4"
       title={title}
-      text={text}
-      action={
-        <ButtonLink href={`/panel/subeler/${encodeURIComponent(account.id)}#parasut`} variant="secondary" size="sm">
-          Şube ayarları
-        </ButtonLink>
+      text={
+        <>
+          {text} <NoticeLink href={`/panel/subeler/${encodeURIComponent(account.id)}#parasut`}>Şube ayarları</NoticeLink>
+        </>
       }
     />
   );
@@ -235,6 +234,12 @@ async function ParasutContent() {
         scopeNotice={accountView ? <AccountNotice account={accountView} accounts={accounts} all={scope === ALL_BRANCHES} scopeName={scopeName} /> : null}
         account={account}
         accountName={many ? info.name : null}
+        // Seçili şube hesabı başka şubeden kullanıyor ("Tuzla ile aynı"): bağlantı kartı salt okunur, düzenleme sahibinde
+        linkedFrom={
+          many && scope !== ALL_BRANCHES && scope !== account
+            ? { branchName: nameOf(scope), ownerName: info.name, href: `/panel/parasut?${BRANCH_PARAM}=${encodeURIComponent(account)}` }
+            : null
+        }
         invoiceScope={ownAccount ? { value: invoiceScope, branchName: info.name } : null}
         configured={configured}
         connection={connection}

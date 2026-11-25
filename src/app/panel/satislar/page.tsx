@@ -311,7 +311,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           tone="neutral"
           className="mt-4"
           title={`${channel.name} kanalında kasa satışı yok`}
-          text="ModPOS listesi ve ay bilgisi şubelerde yazılır; yüklemek için soldan şubeyi seçin."
+          text="ModPOS listesi ve ay bilgisi şubelerde yazılır; yüklemek için şube seçiciden şubeyi seçin."
         />
       ) : (
         <div className="mt-4 grid gap-4 xl:grid-cols-12">

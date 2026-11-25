@@ -52,7 +52,7 @@ test("form-sube formBranchError: türün şubesi; kilitli personel yalnız kendi
   assert.equal(formBranchError("marina", "waste", BRANCHES, "tuzla"), "Hesabınız Tuzla şubesinde; Marina zayisine yazamazsınız");
   // Satış: kanalın kasa satışı yok
   assert.equal(formBranchError("marina", "sales", BRANCHES, null), null);
-  assert.equal(formBranchError("online", "sales", BRANCHES, null), "laffogato.net kanalının kasa satışı yok; soldan şubeyi seçin");
+  assert.equal(formBranchError("online", "sales", BRANCHES, null), "laffogato.net kanalının kasa satışı yok; şube seçiciden şubeyi seçin");
   assert.equal(formBranchError("marina", "sales", ONLY_TUZLA, null), GONE);
   // Gider: kanal da bir şubedir; işletme geneli açık seçim, kilitli personele kapalı
   assert.equal(formBranchError("online", "expense", BRANCHES, null), null);
@@ -70,7 +70,7 @@ test("form-sube pickFormBranch: form şubeyi gönderdiyse seçim ne olursa olsun
   assert.deepEqual(pick({ raw: "marina", kind: "till", scope: ALL_BRANCHES, requireExplicit: true }), { id: "marina" });
   assert.deepEqual(pick({ raw: EXPENSE_SHARED, kind: "expense", scope: "marina" }), { id: null });
   assert.deepEqual(pick({ raw: "marina", kind: "expense", scope: ALL_BRANCHES }), { id: "marina" });
-  assert.deepEqual(pick({ raw: "online", kind: "sales", scope: "online" }), { error: "laffogato.net kanalının kasa satışı yok; soldan şubeyi seçin" });
+  assert.deepEqual(pick({ raw: "online", kind: "sales", scope: "online" }), { error: "laffogato.net kanalının kasa satışı yok; şube seçiciden şubeyi seçin" });
   assert.deepEqual(pick({ raw: "marina", kind: "waste", lock: "tuzla" }), { error: "Hesabınız Tuzla şubesinde; Marina zayisine yazamazsınız" });
 });
 
@@ -89,7 +89,7 @@ test("form-sube pickFormBranch: şubeyi göndermeyen eski sekme bugünkü kurall
   // Satış: seçili şube; kanal seçiliyken red (ay "online" şubesine inmez)
   assert.deepEqual(pick({ kind: "sales", scope: "marina" }), { id: "marina" });
   assert.deepEqual(pick({ kind: "sales", scope: ALL_BRANCHES }), { id: DEFAULT_BRANCH_ID });
-  assert.deepEqual(pick({ kind: "sales", scope: "online" }), { error: "laffogato.net kanalının kasa satışı yok; soldan şubeyi seçin" });
+  assert.deepEqual(pick({ kind: "sales", scope: "online" }), { error: "laffogato.net kanalının kasa satışı yok; şube seçiciden şubeyi seçin" });
   assert.deepEqual(pick({ kind: "sales", scope: ALL_BRANCHES, requireExplicit: true }), { error: BRANCH_REQUIRED });
   assert.deepEqual(pick({ kind: "sales", scope: ALL_BRANCHES, known: ONLY_TUZLA, requireExplicit: true }), { id: DEFAULT_BRANCH_ID });
   // Gider: seçili şube, "Tümü"de işletme geneli (requireExplicit gideri etkilemez)

@@ -52,9 +52,9 @@ test("#6 Gelir-gider: 'Tümü'de birden çok kasa açıkken ciro, açık gün ve
   // Denetim 13 Kasım HM-02: "Tümü" şubelerin toplamı; ciro ve açık gün hücresi kilitli (monthTotalsLocked). 24 Kasım şube
   // kapsamı: ay notu da artık sessizce Tuzla'ya inmez; online kanalın kasa satışı yok
   const text = monthWriteNote(ALL_BRANCHES, branches);
-  assert.equal(text, "Tümü seçili: aylık ciro, açık gün ve ay notu şubelerin toplamıdır, burada yazılmaz; yazmak için soldan şubeyi seçin.");
+  assert.equal(text, "Tümü seçili: aylık ciro, açık gün ve ay notu şubelerin toplamıdır, burada yazılmaz; yazmak için şube seçiciden şubeyi seçin.");
   assert.equal(monthWriteLock(ALL_BRANCHES, branches), MONTH_TOTALS_LOCKED_TEXT);
-  assert.equal(monthWriteLock("online", branches), "laffogato.net kanalının kasa satışı yok: ciro, açık gün ve ay notu şubelerde yazılır; soldan şubeyi seçin.");
+  assert.equal(monthWriteLock("online", branches), "laffogato.net kanalının kasa satışı yok: ciro, açık gün ve ay notu şubelerde yazılır; şube seçiciden şubeyi seçin.");
   assert.equal(monthWriteLock("marina", branches), null);
   assert.equal(monthWriteBranch("marina", branches), "marina");
   assert.equal(monthWriteBranch(ALL_BRANCHES, branches), null);

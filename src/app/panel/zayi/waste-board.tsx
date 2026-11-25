@@ -107,6 +107,8 @@ export function WasteBoard({
   const [message, setMessage] = useState("");
   const [pending, start] = useActionTransition();
   const [branchPick, setBranchPick] = useState<string | null>(null);
+  // Şube seçimi açılışta nötr; yalnız şubesiz kayıt denenince hatalı görünür (Satışlar'ın "Satır ekle"si gibi)
+  const [branchTried, setBranchTried] = useState(false);
   const branchId = branches.length === 1 ? branches[0].id : branchPick;
   const [removing, setRemoving] = useState<WasteEntryDTO | null>(null);
   const [asking, setAsking] = useState<WasteEntryDTO | null>(null);
@@ -146,7 +148,7 @@ export function WasteBoard({
     const n = parseNumberTR(qty);
     if (n === null || n <= 0) return void (toast.error("Miktarı yazın (ör. 1 ya da 0,5)"), document.getElementById("zi-miktar")?.focus());
     if (late && message.trim().length < 3) return void (toast.error(T.messageShort), document.getElementById("zi-aciklama")?.focus());
-    if (!branchId) return void (toast.error(BRANCH_REQUIRED), document.getElementById("zi-sube")?.focus());
+    if (!branchId) return void (setBranchTried(true), toast.error(BRANCH_REQUIRED), document.getElementById("zi-sube")?.focus());
     const input = {
       branchId,
       date,
@@ -230,7 +232,7 @@ export function WasteBoard({
           {branches.length > 1 ? (
             // "Tümü" seçili ve birden çok kasa açık: kayıt hangi şubenin, varsayılan yok (sessizce Tuzla'ya inmez)
             <Field label="Şube" htmlFor="zi-sube">
-              <Select id="zi-sube" value={branchId ?? ""} onChange={(e) => setBranchPick(e.target.value || null)} aria-invalid={!branchId || undefined}>
+              <Select id="zi-sube" value={branchId ?? ""} onChange={(e) => setBranchPick(e.target.value || null)} aria-invalid={(branchTried && !branchId) || undefined}>
                 {branchId ? null : <option value="">Şube seçin</option>}
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>

@@ -37,7 +37,7 @@ export async function setPnlCell(month: string, rowKey: string, amount: number |
     const key = zKey.parse(rowKey);
     // Devir, personel ve POS komisyonu işletmenin toplamıdır (pnl_entries şubesiz): şube seçiliyken yazılan tutar
     // "Tümü"ye girerdi, şubede görünmezdi (docs/SUBE.md › Şube görünümünde maliyet)
-    if (companyPnlKey(key) && (await currentBranchScope()) !== ALL_BRANCHES) throw new UserError("Bu satır işletmenin toplamıdır: yazmak için soldan şubeyi Tümü yapın");
+    if (companyPnlKey(key) && (await currentBranchScope()) !== ALL_BRANCHES) throw new UserError("Bu satır işletmenin toplamıdır: yazmak için şube seçiciden Tümü'yü seçin");
     const n = note === undefined ? undefined : zNote.parse(note);
     const db = getDb();
     const fixedId = fixedIdOfKey(key);

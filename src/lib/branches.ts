@@ -276,7 +276,7 @@ export const SCOPE_CHANGED = "Şube seçimi başka sekmede değişti; sayfayı y
 
 /** Online kanal seçiliyken satış yazımı (kanalın kasa satışı yok) */
 export function salesChannelError(name: string): string {
-  return `${name} kanalının kasa satışı yok; soldan şubeyi seçin`;
+  return `${name} kanalının kasa satışı yok; şube seçiciden şubeyi seçin`;
 }
 
 /**
@@ -470,7 +470,7 @@ export function monthTotalsLocked(scope: BranchScope, known: readonly BranchRow[
 }
 
 /** Kilitli ciro ve açık gün hücresinin açıklaması (monthTotalsLocked) */
-export const MONTH_TOTALS_LOCKED_TEXT = "Tümü'de şubelerin toplamı görünür: ciro ve açık günü yazmak için soldan şubeyi seçin.";
+export const MONTH_TOTALS_LOCKED_TEXT = "Tümü'de şubelerin toplamı görünür: ciro ve açık günü yazmak için şube seçiciden şubeyi seçin.";
 
 /**
  * Ay bilgisi (ciro, açık gün, ay notu) bu seçimde yazılamıyorsa nedeni: "Tümü"de birden çok kasa açıkken şubelerin
@@ -480,7 +480,7 @@ export const MONTH_TOTALS_LOCKED_TEXT = "Tümü'de şubelerin toplamı görünü
 export function monthWriteLock(scope: BranchScope, known: readonly BranchRow[]): string | null {
   if (monthTotalsLocked(scope, known)) return MONTH_TOTALS_LOCKED_TEXT;
   const b = known.find((x) => x.id === scope);
-  if (b && b.kind !== "fiziksel") return `${b.name} kanalının kasa satışı yok: ciro, açık gün ve ay notu şubelerde yazılır; soldan şubeyi seçin.`;
+  if (b && b.kind !== "fiziksel") return `${b.name} kanalının kasa satışı yok: ciro, açık gün ve ay notu şubelerde yazılır; şube seçiciden şubeyi seçin.`;
   return null;
 }
 
@@ -502,7 +502,7 @@ export function monthWriteBranch(scope: BranchScope, known: readonly BranchRow[]
  */
 export function monthWriteNote(scope: BranchScope, known: readonly BranchRow[]): string | null {
   if (!monthTotalsLocked(scope, known)) return null;
-  return "Tümü seçili: aylık ciro, açık gün ve ay notu şubelerin toplamıdır, burada yazılmaz; yazmak için soldan şubeyi seçin.";
+  return "Tümü seçili: aylık ciro, açık gün ve ay notu şubelerin toplamıdır, burada yazılmaz; yazmak için şube seçiciden şubeyi seçin.";
 }
 
 /** Firma geneli ekranlar (şube kapsamı C P1-12, P2-1): şube seçiliyken de bütün şubelerin verisini gösterir */

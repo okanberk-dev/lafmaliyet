@@ -220,7 +220,10 @@ export function ParasutClient({
   account,
   accountName = null,
   invoiceScope = null,
+  linkedFrom = null,
 }: {
+  /** Seçili şube hesabı başka şubeden kullanıyor: Bağlantı kartı salt okunur (ConnectionCard › linkedFrom) */
+  linkedFrom?: { branchName: string; ownerName: string; href: string } | null;
   /** Birden çok kasa açıkken gösterilen Paraşüt hesabının notu (sunucuda çizilir; tek kasada boş) */
   scopeNotice?: ReactNode;
   /** Gösterilen Paraşüt hesabı (sahibi şube; docs/PARASUT.md › Şube başına Paraşüt hesabı): eylemler bu hesaba gider */
@@ -529,6 +532,7 @@ export function ParasutClient({
           account={account}
           accountName={accountName}
           invoiceScope={invoiceScope}
+          linkedFrom={linkedFrom}
         />
 
         <Card className="xl:col-span-5">

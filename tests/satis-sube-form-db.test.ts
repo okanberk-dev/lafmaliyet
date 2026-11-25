@@ -29,7 +29,7 @@ import { seedBranches } from "./helpers/subeler";
 const SERVER_URL = process.env.SATIS_SUBE_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_satis_sube_${process.pid}`;
 const MONTH = "2025-10";
-const ONLINE_SALES = "laffogato.net kanalının kasa satışı yok; soldan şubeyi seçin";
+const ONLINE_SALES = "laffogato.net kanalının kasa satışı yok; şube seçiciden şubeyi seçin";
 
 describe("Satışlar ve Gelir-gider: formun şubesi (veritabanında)", { skip: !SERVER_URL && "SATIS_SUBE_TEST_DATABASE_URL yok" }, () => {
   let admin: postgres.Sql;
