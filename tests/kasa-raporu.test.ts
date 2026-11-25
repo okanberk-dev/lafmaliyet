@@ -239,6 +239,7 @@ test("e-posta: konu, sonuç, döküm; not kaçışlı, metin sürümü yıldızs
   assert.match(plain(m.html), /120 ₺ eksik/);
   assert.match(m.html, /23:15/, "saat Türkiye saatiyle");
   assert.match(m.html, /\/panel\/kasa\?gun=2026-10-21/);
+  assert.match(m.html, /<a href="[^"]*\/panel\/kasa\?gun=2026-10-21"[^>]*>Panelde aç<\/a>/, "ana eylem düğmesi raporu açar");
   assert.doesNotMatch(m.html, /<script\b/i);
   assert.match(m.html, /&lt;script&gt;/);
   assert.doesNotMatch(m.text, /\*/);
@@ -319,8 +320,9 @@ test("WhatsApp: banka POS Z bloğu yalnız Z no, nakit, kart, kart satırı ve b
 test("e-posta: banka POS Z bölümü yöneticinin bütün satırlarıyla; metin sürümünde günlük toplam, KDV ve karşılaştırmalar", () => {
   const m = renderCashReport(okcDay, { by: "Ayşe", revision: 1, submittedAt: new Date("2026-10-21T20:15:00Z"), photos: { z: true, okc: true, pos: false } });
   const html = plain(m.html);
-  assert.match(html, /ModPOS Z raporu<\/td>/);
-  assert.match(html, /Banka POS Z raporu \(yazarkasa\) · Z no 0188 · 143 fiş<\/td>/);
+  // Bölüm başlıkları (email-kit sectionTitle: başlık kendi <span>'ında, hücrenin tek metni)
+  assert.match(html, />ModPOS Z raporu<\/span><\/td>/);
+  assert.match(html, />Banka POS Z raporu \(yazarkasa\) · Z no 0188 · 143 fiş<\/span><\/td>/);
   assert.match(html, />Günlük toplam<div[^>]*>KDV 1\.049,09 ₺<\/div><\/td>\s*<td[^>]*>11\.540 ₺</);
   assert.match(html, />%10<div[^>]*>KDV 1\.049,09 ₺<\/div><\/td>\s*<td[^>]*>11\.540 ₺</);
   assert.match(html, />Kredi kartı<\/td>\s*<td[^>]*>8\.915 ₺</);
@@ -346,7 +348,7 @@ test("e-posta: banka POS Z bölümü yöneticinin bütün satırlarıyla; metin 
   assert.match(plain(selfOff.html), /Yazarkasa Z&#39;si kendi içinde tutmuyor: /);
   // Eski rapor (yazarkasa alanı yok): bugünkü "Kart" bölümü, etiket "Banka POS"; banka POS Z bölümü yok
   const old = renderCashReport({ ...day, bankPos: 8_050 }, { by: "Zeynep", revision: 1, submittedAt: new Date() });
-  assert.match(plain(old.html), />Kart<\/td>/);
+  assert.match(plain(old.html), />Kart<\/span><\/td>/);
   assert.match(plain(old.html), />Banka POS<\/td>\s*<td[^>]*>8\.050 ₺</);
   assert.match(plain(old.html), /Banka POS ModPOS&#39;taki karttan 100 ₺ az\./);
   assert.doesNotMatch(old.html, /Banka POS Z raporu|Günlük toplam|Banka gün sonu/);
@@ -643,7 +645,8 @@ test("WhatsApp ve e-posta: sayan, değişenler, açılış ↔ devir, ertesi gü
   assert.match(html, /Mehmet · sayan Ayşe · 23:15 · güncellendi/);
   assert.match(html, /Değişen: Sayılan nakit 3\.430 ₺ → 3\.530 ₺; Not değişti/);
   assert.match(html, />İndirim</);
-  assert.match(html, /Önceki devir 620 ₺ \(20 Ekim\): açılış 120 ₺ az<br>22 Ekim açılışı \(1\.200 ₺\) bu devirle tutmuyor/);
+  // Aynı uyarı kutusunda alt alta (email-kit callout: her uyarı kendi satırında)
+  assert.match(html, /Önceki devir 620 ₺ \(20 Ekim\): açılış 120 ₺ az<\/div><div[^>]*>22 Ekim açılışı \(1\.200 ₺\) bu devirle tutmuyor<\/div>/);
   assert.doesNotMatch(m.html, /<b>x<\/b>/);
   assert.equal(m.subject, renderCashReport(f, { by: "Mehmet", revision: 2, submittedAt: new Date() }).subject, "konu değişmez");
   assert.match(plain(m.text), /⚠️ 22 Ekim açılışı/);

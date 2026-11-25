@@ -221,8 +221,29 @@ test("e-posta: konu, gecikme önce, eksik maddeler, listeyi aç bağlantısı; �
   assert.match(m.text, /\/panel\/kontrol\/5/);
   assert.match(m.html, /Listeyi aç/);
   assert.doesNotMatch(m.html, /₺|TL\b/);
+  // HTML: her uyarının rozeti (kelimeyle), başlığı, açıklaması, eksik maddeleri ve kendi "Listeyi aç" bağlantısı; tek h1
+  assert.equal(m.html.split(">Listeyi aç</a>").length - 1, 2);
+  assert.equal(m.html.split(/href="[^"]*\/panel\/kontrol\/5"/).length - 1, 2);
+  assert.match(m.html, />Gecikti<\/span>/);
+  assert.match(m.html, />Zamanı geldi<\/span>/);
+  assert.match(m.html, /<h1[^>]*>Tuvalet çizelgesi · 10:00 gecikti<\/h1>/);
+  assert.match(m.html, /<h2[^>]*>Tuvalet çizelgesi · 11:00 zamanı geldi<\/h2>/);
+  assert.equal(m.html.split("<h1").length - 1, 1);
+  assert.match(m.html, /Son saat 11:00 geçti; 3 madde yapılmadı/);
+  assert.match(m.html, />10:00 Tuvalet fotoğrafı</);
   const one = renderChecklistAlert(checklistAlerts(DAY, tr(`${DAY}T08:07`), [listOf(DEFAULT_CHECKLISTS[0], 1)]), DAY);
   assert.equal(one.subject, "Açılış listesi zamanı geldi");
+  // En çok ALERT_MISSING_MAX madde, fazlası "ve N madde daha"; madde adı HTML'e kaçışla girer
+  const many = renderChecklistAlert(
+    [{ key: "k", kind: "late", templateId: 2, listName: "Kapanış", branchId: null, slot: null, until: "23:30", missing: ["<b>Kasa</b> sayıldı", "a", "b", "c", "d", "e", "f", "g"] }],
+    DAY,
+  );
+  assert.match(many.html, /&lt;b&gt;Kasa&lt;\/b&gt; sayıldı/);
+  assert.doesNotMatch(many.html, /<b>Kasa<\/b>/);
+  assert.match(many.html, />e</);
+  assert.doesNotMatch(many.html, />f</);
+  assert.match(many.html, />ve 2 madde daha</);
+  assert.match(many.text, /\nve 2 madde daha\nListeyi aç: .*\/panel\/kontrol\/2\n/);
 });
 
 test("kaynak: saatlik tetikleyici, yetki, tek tek gönderim ve sahiplenme", () => {

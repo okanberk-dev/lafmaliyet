@@ -583,6 +583,14 @@ test("e-posta: konu, başlık, bağlantılar, kaçış, alt not, düz metin, oku
   assert.ok(r.html.includes("Kasa &lt;script&gt;alert(1)&lt;/script&gt;"));
   assert.ok(!r.html.includes("<script>"));
   assert.ok(r.html.includes(">Bu hafta bakmanız gereken 5 konu</h1>"));
+  // Tek başlık (email-kit'in heading()'i); haftanın satırı ve sıra numaraları HTML'de
+  assert.equal(r.html.split("<h1").length - 1, 1);
+  assert.ok(r.html.includes('class="em-h1"'));
+  assert.ok(r.html.includes(">Geçen hafta kasa cirosu 68.900 ₺ · önceki 4 haftaya göre %12 az</div>"));
+  for (const [i, x] of five.entries()) {
+    assert.ok(r.html.includes(`>${x.action.replace("&", "&amp;")} →</a>`), x.action);
+    assert.ok(r.html.includes(`>${i + 1}</td>`), String(i + 1));
+  }
   assert.ok(r.html.includes("Haftalık özet · 19–25 Ekim"));
   assert.ok(r.html.includes(WEEKLY_FOOTER.replace("&", "&amp;")));
   assert.ok(!r.html.includes("bildirim adreslerine gönderildi"));
@@ -601,6 +609,11 @@ test("e-posta: konu, başlık, bağlantılar, kaçış, alt not, düz metin, oku
   assert.ok(sample.subject.startsWith("Örnek · Haftalık özet: "));
   assert.ok(sample.html.includes("Örnek · Haftalık özet · 19–25 Ekim"));
   assert.ok(sample.html.includes("Bu bir örnektir; asıl özet pazartesi sabahı gider."));
+  // Okunamayan kaynak maddeli haftada da HTML'de (not ve okunamayan ayrı kutularda, düz metinde tek satır)
+  const partial = renderWeekly(summary(five.slice(0, 1), { failed: ["nakit"] }), { today: "2026-10-26" });
+  assert.ok(partial.html.includes("Maddeler kasanıza etkisine göre sıralandı; ≈ işaretli tutarlar tahmindir."));
+  assert.ok(partial.html.includes("Bu hafta okunamadı: nakit planı."));
+  assert.ok(partial.text.includes("\nMaddeler kasanıza etkisine göre sıralandı; ≈ işaretli tutarlar tahmindir. Bu hafta okunamadı: nakit planı.\n"));
   // Sakin hafta ve okunamayanlar
   const quiet = renderWeekly(summary([], { failed: ["nakit", "karaoke"] }), { today: "2026-10-26" });
   assert.equal(quiet.subject, "Haftalık özet: bu hafta dikkat isteyen bir şey yok");
