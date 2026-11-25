@@ -340,7 +340,16 @@ function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () =
   );
 }
 
-export function IngredientsClient({ rows, categories }: { rows: IngredientRow[]; categories: string[] }) {
+export function IngredientsClient({
+  rows,
+  categories,
+  usageScope = null,
+}: {
+  rows: IngredientRow[];
+  categories: string[];
+  /** Şube seçiliyken kullanımın kaynağı ("Marina satışı"; şube kapsamı C P2-8); "Tümü"de null */
+  usageScope?: string | null;
+}) {
   const reduce = useCalmMotion();
   // Süzgeçler adreste: ?ara=süt&durum=tahmini&kategori=Süt&sirala=unitCost.desc
   // (genel bakıştaki uyarılar ve ⌘K paleti aynı adları kullanır)
@@ -701,7 +710,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
                       </SortButton>
                       <InfoTip text="Son satış ayında reçetelere göre harcanan miktar (satış adedi × reçete miktarı, fire hariç)." />
                     </span>
-                    <span className="block text-xs leading-4 font-normal text-ink-mute">son ay</span>
+                    <span className="block text-xs leading-4 font-normal text-ink-mute">son ay{usageScope ? ` · ${usageScope}` : ""}</span>
                   </TH>
                   <TH className="w-px">
                     <span className="sr-only">Eylemler</span>
@@ -828,7 +837,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
           <p className="mx-5 mb-1 flex flex-wrap justify-between gap-x-3 border-t border-line-strong pt-3 text-[13px] text-ink-mute sm:hidden">
             <span>Görünen {num(visible.length)} malzeme</span>
             <span className="tabular">
-              Son ay tüketim ≈ <span className="font-semibold text-ink">{tl(usageCost)}</span>
+              Son ay tüketim{usageScope ? ` (${usageScope})` : ""} ≈ <span className="font-semibold text-ink">{tl(usageCost)}</span>
             </span>
           </p>
 

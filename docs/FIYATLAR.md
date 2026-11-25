@@ -109,11 +109,15 @@ Her site yazımı sitenin pingini ve panelin bir çekmesini doğurur; site saati
 
 ## Kasaya işle (ModPOS)
 
-Panelde ya da sitede değişen fiyat ModPOS'a kendiliğinden geçmez; kasada elle değiştirilir. Panel bunu ürün satırında
-tutar (`src/lib/prices/pos.ts`, `posAfterPriceChange`):
+Panelde ya da sitede değişen fiyat ModPOS'a kendiliğinden geçmez; kasada elle değiştirilir. Panel bunu **şube başına**
+tutar (`pos_stale`, kural `src/lib/prices/pos.ts` `posAfterPriceChange`; şube kapsamı A3, 24 Kasım 2026): satır varsa
+o şubenin kasasında ürünün eski fiyatı duruyor, yoksa kasa panelle aynı.
 
-- `products.pos_stale_price`: kasada hâlâ duran eski fiyat; boşsa kasa panelle aynı sayılır.
-- `products.pos_stale_since`: kasanın geri kaldığı ilk an.
+- `pos_stale.stale_price`: o kasada hâlâ duran eski fiyat.
+- `pos_stale.stale_since`: kasanın geri kaldığı ilk an.
+
+Fiyat değişince her etkin fiziksel şubenin satırı aynı kuralla açılır ya da güncellenir (online kanalın kasası yok,
+pasif şubeye yazılmaz); kasalar birbirinden bağımsız ilerler: Tuzla'da işaretlenen fiyat Marina'nın listesinde kalır.
 
 | Olay | Kasanın durumu |
 |------|----------------|
@@ -121,7 +125,7 @@ tutar (`src/lib/prices/pos.ts`, `posAfterPriceChange`):
 | Fiyat kasadaki fiyata geri döndü (ör. toplu değişiklik kasa değişmeden geri alındı) | Kendiliğinden boşalır |
 | Kuruşu aynı fiyat | Hiçbir şey |
 | Yeni ürün | Listeye girmez (kasaya zaten elle eklenir; D3) |
-| İşaretlendi ("Kasada değiştirdim", satırdaki kutu, Hepsini işaretle; personelde Kasadaki fiyatlar'daki kutu) | Boşalır ve bir işaret kaydı (`pos_marks`) yazılır; bildirimdeki **Geri al** ya da Son işaretlenenler eski hâline getirir (geri alma kuralları aşağıda). Yalnız fiyatı hâlâ listede (kartta) görülen fiyatsa: liste açıldıktan sonra fiyat yeniden değiştiyse kasaya eskimiş fiyat yazılmıştır, ürün işaretlenmez, bugünkü fiyatıyla listede kalır ("… işaretlenmedi: fiyatı bu sırada 280 ₺ oldu") |
+| İşaretlendi ("Kasada değiştirdim", satırdaki kutu, Hepsini işaretle; personelde Kasadaki fiyatlar'daki kutu) | Yalnız o şubenin satırı silinir ve bir işaret kaydı (`pos_marks`, şubesiyle) yazılır; bildirimdeki **Geri al** ya da Son işaretlenenler eski hâline getirir (geri alma kuralları aşağıda). Yalnız fiyatı hâlâ listede (kartta) görülen fiyatsa: liste açıldıktan sonra fiyat yeniden değiştiyse kasaya eskimiş fiyat yazılmıştır, ürün işaretlenmez, bugünkü fiyatıyla listede kalır ("… işaretlenmedi: fiyatı bu sırada 280 ₺ oldu") |
 | Ürün silindi | Satırla birlikte gider |
 
 Yayından önce bütün fiyatların kasayla aynı olduğu varsayılır; eski işlem geçmişinden geriye dönük doldurma yok (D6).
@@ -144,8 +148,36 @@ Fiyatlar › Kasaya işle listesine eklendi.", bağlı üründe sitenin hatırla
 kasa yazılmaz. **Zil** (iki rolde): "Kasada değişecek N fiyat"; yöneticide Uyarılar'da, Kasaya işle'ye götürür,
 personelde Kasa grubunda, Kasadaki fiyatlar'a. Kimlik iki rolde `kasa-fiyat-<en yeni geri kalış>`: bir fiyatın
 işaretlenmesi zili yeniden okunmamış yapmaz, listeye yeni bir fiyat girmesi yapar. Sabah e-postasına girmez (D2). Sayı
-ve en eski / en yeni an tek sorguyla `posPendingSummary()`'den (Ürünler başlığı, sekme, zil ve Bugün ekranının
-"Kasadaki fiyatlar" satırı); personelinki `staffPosSummary()`'den (yalnız etkin ürünler).
+ve en eski / en yeni an kasa başına tek sorguyla `posPendingSummary(kasa)`'dan (Ürünler başlığı, sekme, zil ve Bugün
+ekranının "Kasadaki fiyatlar" satırı); personelinki `staffPosSummary(kasa)`'dan (yalnız etkin ürünler).
+
+### Şube başına kasa (şube kapsamı A3, 24 Kasım 2026)
+
+Her okuma bir şubenin kasasına bakar (`BranchTill`, `src/server/data/till-scope.ts`): tek şube seçiliyken (şubesine
+kilitli personelde kendi şubesi) onunki, online kanal seçiliyken Tuzla'nınki. **"Tümü"de** birden çok kasa açıkken
+seçimin kasaları ayrı okunur (`loadTillScopes`):
+
+| Yer | "Tümü", iki kasa |
+|-----|------------------|
+| Fiyatlar › Kasaya işle, Kasadaki fiyatlar | Her kasa ayrı liste, başlıkta şube ("Marina · Kasaya işle"); kutu ve Hepsini işaretle yalnız o kasayı işaretler |
+| Son işaretlenenler | Seçimin kasalarının işaretleri; satır şubeyle başlar ("Marina · Ayşe · 14:05") |
+| Zil | Kasa başına satır: "Marina: Kasada değişecek 2 fiyat", kimlik şubeyi taşır, bağlantı o şubeyi seçer (`&sube=`) |
+| Bugün, asistan | Toplam ve kasa başına sayı: "Kasada değişecek 4 fiyat (Tuzla 3, Marina 1)" (`combineTillPos`) |
+| Ürün kartı | Eski fiyatı duran her kasa için ayrı uyarı ("Marina kasasında (LafPOS) hâlâ …") |
+| Haftalık özet | Kasa başına madde ("Marina: LafPOS'ta 2 fiyat değişecek"); aylık adet işletmenin toplamı |
+| Ürünler'in "Kasa N"si, sekme sayısı | Kasaların toplamı |
+
+İşaret eylemi (`markPosDone(ürünler, şube)`) listenin kasasını gönderir; yazım `formBranch(…, "till", { requireExplicit })`
+ile o kasaya iner: "Tümü"de birden çok kasa açıkken kasası gelmeyen istek (eski sekme) "Hangi şubeye yazılsın?" der,
+şubesine kilitli personel başka şubenin kasasını işaretleyemez. Geri alma işaretin şubesine yazar; "son işaret" kuralı
+şube başınadır (Tuzla'nın sonraki işareti Marina'nın işaretini geri almayı engellemez). İşlem geçmişi birden çok kasa
+açıkken şubeyi yazar ("Marina: Latte M 205 ₺").
+
+Göç (`0078_kasa_fiyat_sube`, veri adımı `0079_kasa_fiyat_sube_veri`): şubeler öncesi tek kasanın durumu
+(`products.pos_stale_*`) Tuzla'ya ve kasası ModPOS olan öbür etkin fiziksel şubelere olduğu gibi, Marina'ya (LafPOS'un
+şubesi) okuyucunun süzgeciyle (geçiş günü gelmişse yalnız siteye bağlı olmayan ve fiyatı LafPOS başladıktan sonra
+panelde değişen ürünler) kopyalandı; eski işaretler Tuzla'nın oldu. Ürünün `pos_stale_*` sütunları bir sürüm geri
+dönüş güvenliği için durur, hiçbir kod okumaz ya da yazmaz (`tests/fiyatlar.test.ts`), sonraki göçle kalkar.
 
 ### LafPOS'a geçiş gününden itibaren (denetim B11, E-39)
 
@@ -165,16 +197,15 @@ okuyucu `src/server/data/till-scope.ts` `tillProductFilter`, `tillSince`):
 | "Kasada: …" adı | ModPOS listelerinde geçen ad | LafPOS'un gün sonlarında geçen ad |
 
 LafPOS gününde listede görünme kuralı: ürün siteye bağlı değil **ve** geçmişinde geçiş gününün 05:00'inden sonra
-yalnız panelde (`on_site` olmayan) bir fiyat değişikliği var. Kasanın durumu tektir (`products.pos_stale_*`, ModPOS
-için tutulur); LafPOS'un yerel ürünü kurulurken fiyat panelden alındığı varsayılır. Bilinen sınır: geçiş gününden önce
+yalnız panelde (`on_site` olmayan) bir fiyat değişikliği var. Marina'nın kasasının durumu da her fiyat değişikliğinde
+yazılır (`pos_stale`, şube başına); LafPOS'un yerel ürünü kurulurken fiyat panelden alındığı varsayılır. Bilinen sınır: geçiş gününden önce
 ModPOS'ta kalmış bir işaretin üstüne LafPOS günü fiyat yeniden değişirse listede ModPOS'un eski fiyatı yazar (yapılacak
 iş doğrudur: LafPOS'ta yeni fiyat); fiyat LafPOS günü ModPOS'taki eski fiyata geri dönerse işaret kalkar.
 
 **Şube:** kasa, kasanın şubesinindir (seçili fiziksel şube; "Tümü"de ve istek dışında, ör. haftalık özette, Tuzla):
 geçiş günü yalnız Marina'nın (LafPOS) kasasınındır, Tuzla seçiliyken ya da Tuzla'ya bağlı personelde liste ModPOS'a
-göredir (`loadTillScope`; denetim 21 Kasım #5). İşaret (`pos_marks`, `products.pos_stale_*`) şubesizdir: siteye bağlı
-olmayan, fiyatı geçiş gününden sonra değişen ürün bir şubede işaretlenince öbürünün listesinden de düşer (şube başına
-işaret açık iş).
+göredir (`loadTillScope`; denetim 21 Kasım #5). Kasanın durumu ve işaret şube başınadır (`pos_stale`, `pos_marks.branch_id`;
+yukarıda "Şube başına kasa"): bir şubede işaretlenen ürün öbürünün listesinde kalır.
 
 Geçiş günü değişince hiçbir kayıt yazılmaz ya da silinmez; yalnız okuyucular değişir. Fiyat yazımı da geçiş gününe göre
 farklı bir şey saklamaz (yalnız bildirimin metni değişir). Metinlerin hepsi geçiş günü boşken bugünkünün aynısıdır
@@ -317,7 +348,9 @@ cirosuyla zaten girer. Marina'nın basılı fiyat listesinin tarihi sitede tek (
 | Yer | İçerik |
 |-----|--------|
 | `product_prices` | Ekleme yalnız: `product_id` (ürünle silinir), `price_before` (yeni üründe boş), `price`, `source`, `on_site` (panelin değişikliği sitede de yapıldı), `batch_id` (toplu değişiklik ve Tekrar dene'si; geri almanın kendi kimliği), `note` (kuralın özeti, en çok 200 karakter), `changed_by`, `changed_at` |
-| `products.pos_stale_price`, `pos_stale_since` | Kasanın durumu (yukarıda); hesaplama modeli bu sütunları okumaz |
+| `pos_stale` | Kasanın durumu şube başına (yukarıda): `branch_id` (şubeyle silinir), `product_id` (ürünle silinir), `stale_price`, `stale_since`; birincil anahtar (şube, ürün). Hesaplama modeli okumaz; yedeğe girer |
+| `pos_marks.branch_id` | İşaretin kasası (şubeler öncesi işaretler Tuzla'nın); şube silme sayımına girer |
+| `products.pos_stale_price`, `pos_stale_since` | ESKİ (göç 0079'a kadar kasanın durumu); okunmaz, yazılmaz, sonraki göçle kalkar |
 | `integration_state.menu_site_branch_prices` | Sitenin şube fiyatı satırları (`now`, `at`, `rows`), menü çekmesinde ve şube fiyatı yazımının yanıtıyla ([SITE-MENU.md](SITE-MENU.md)) |
 | `pos_daily_sales.list_prices` | LafPOS gün sonu satırının liste fiyatları (`[{price, qty}]`, eski LafPOS'ta null); migration `0077_sube_fiyati` |
 

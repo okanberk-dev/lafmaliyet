@@ -361,6 +361,9 @@ describe("stok sayımı eylemleri: veritabanında", { skip: !SERVER_URL && "SAYI
       lines: [{ text: "Marina: Ekim 2026 sayımı girilmedi. Kalanların stoğu 0 sayılır; Ekim 2026 mal maliyeti yüksek çıkar. Ayın 10'una kadar personel de girebilir.", tone: "warn" }],
       href: "/panel/sayim?ay=2026-10&sube=marina",
     });
+    // Şubeye bağlı alıcının e-postası (şube kapsamı C P1-11): Tuzla'nın adresi Marina'nın yarım sayımını almaz
+    assert.deepEqual(await pastCountDigestLines(new Date("2026-11-03T09:00:00Z"), "tuzla"), { lines: [], href: null });
+    assert.equal((await pastCountDigestLines(new Date("2026-11-03T09:00:00Z"), "marina")).lines.length, 1);
     // Ayın son günü: Marina yarım, bildirim gider (abonelik yok, sayı 0); ikisi de tamamsa gitmez
     assert.deepEqual(await pushMonthEndCount(new Date("2026-10-31T09:00:00Z")), { status: "sent", sent: 0, failed: 0 });
     await db.insert(s.stockCounts).values({ month: "2026-10", branchId: "marina", ingredientId: milk, qty: 12, factor: 1000, countedBy: "Selin" });

@@ -3,8 +3,10 @@
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { zFormBranch } from "@/lib/branches";
 import { qtyText, WASTE_KIND_LABEL } from "@/lib/waste";
 import { requireUser } from "@/server/auth/dal";
+import { formBranch, withBranchScope } from "@/server/branch-scope";
 import { getDb } from "@/server/db";
 import { addWaste, removeWaste } from "@/server/waste/core";
 
@@ -28,14 +30,26 @@ const entrySchema = z
     note: zOptText(300),
     /** Formun anahtarı: aynı anahtarla ikinci istek yeni kayıt açmaz (UI-01) */
     clientKey: zClientKey,
+    /** Formun şubesi (wasteBranch); göndermeyen eski sekmede seçili fiziksel şube */
+    branchId: zFormBranch,
   })
   .refine((d) => (d.productId === null) !== (d.ingredientId === null), "Bir ürün ya da bir hammadde seçin");
+
+/**
+ * Zayi ve ikramın şubesi (docs/SUBE.md › Yazarken hangi şube): formun gösterdiği şube (`formBranch(raw, "waste")`;
+ * etkin fiziksel şube, şubesine kilitli personelde kendi şubesi), gönderim anındaki seçim değil. "Tümü"de birden çok
+ * kasa açıkken şubeyi göndermeyen form reddedilir (sessizce Tuzla'ya inmez). Asistan planın şubesiyle çağırır
+ * (withBranchScope; tek şube kapsamında eski kural geçerli)
+ */
+const wasteBranch = (raw: string | null | undefined) => formBranch(raw, "waste", { requireExplicit: true });
 
 export async function addWasteEntry(input: z.input<typeof entrySchema>) {
   return attempt(async () => {
     const me = await requireUser();
-    const data = entrySchema.parse(input);
-    const target = await addWaste(getDb(), me, data);
+    const { branchId, ...data } = entrySchema.parse(input);
+    const sube = await wasteBranch(branchId);
+    // Yazım formun şubesinin kapsamında: kilit, kapalı gün ve LafPOS okumaları da o şubenin
+    const target = await withBranchScope(sube, () => addWaste(getDb(), me, data, undefined, sube));
     // Aynı anahtarın tekrarı: kayıt zaten yazılmış ve işlem geçmişinde; ikinci satır yazılmaz
     if (!target.repeated) await logActivity(me, `${WASTE_KIND_LABEL[data.kind]} kaydı`, `${target.name} ${qtyText(data.qty, target.unit)}${data.reason ? ` · ${data.reason}` : ""}`);
     refresh();

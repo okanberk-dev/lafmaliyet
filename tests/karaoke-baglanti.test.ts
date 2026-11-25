@@ -135,8 +135,8 @@ test("canlı uç: bayat kopyayı yanıttan sonra tazeler (304'ten önce kurulur)
   assert.match(live, /after\(async \(\) => \{\s*try \{\s*const r = await ensureKaraokeFresh\(\{ state: karaoke\.sync \}\);/);
   assert.match(live, /okAt: linked \? karaoke\.sync\.lastOkAt : null,/);
   // Hatanın ayrıntısı yalnız yöneticiye; personele sabit metin (E-64, src/lib/staff-errors.ts)
-  assert.match(live, /error: linked \? siteErrorFor\(me\.role, karaoke\.sync\.lastError\) : null,/);
-  assert.match(live, /error: siteErrorFor\(me\.role, ordersState\.lastError\),/);
+  assert.match(live, /error: linked && karaokeHere \? siteErrorFor\(me\.role, karaoke\.sync\.lastError\) : null,/);
+  assert.match(live, /error: ordersHere \|\| callsHere \? siteErrorFor\(me\.role, ordersState\.lastError\) : null,/);
   // Karaoke işaretleri tek sorguda (sürüm ve eşitleme durumu): canlı ucun sorgu sayısı artmaz
   assert.match(live, /readKaraokeLive\(\), remindersMarker\(me\.id\), ordersVersion\(\)/);
   const sync = read("src/server/karaoke/sync.ts");

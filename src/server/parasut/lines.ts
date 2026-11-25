@@ -7,11 +7,15 @@ import { COMMISSION_CATEGORY, INVOICE_CATEGORIES } from "@/lib/constants";
 import { dateTR, money } from "@/lib/format";
 import { todayTR } from "@/lib/reminders";
 import { loadPaymentsSince } from "@/server/data/suppliers";
+import { accountNs, parasutKey } from "@/lib/parasut/accounts";
 import { getDb, schema as s } from "@/server/db";
+
+import { invoiceAccountWhere } from "./accounts";
 
 import { ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "./client";
 import { afterTransientFailure, orderLineReads, type UblRetries } from "./line-queue";
 import { categoryNeedsReview } from "./einvoice";
+import { UBL_RETRY_KEY } from "./keys";
 import { recategorizeFromLines } from "./mapping";
 import { extractUblXml, parseUbl, ublLinesToDrafts, withholdingCorrection, type UblInvoice } from "./ubl";
 
@@ -43,14 +47,14 @@ export interface LineReadStats {
   stoppedBy: string | null;
 }
 
-/** Kalemi okunacak kayıtlar: e-faturaya bağlı, kendi kalemleri olan gider faturası olmayan, henüz okunmamış */
-const pendingWhere = () => and(isNotNull(s.invoices.eInvoiceId), isNull(s.invoices.externalId), isNull(s.invoices.ublReadAt));
+/**
+ * Kalemi okunacak kayıtlar: e-faturaya bağlı, kendi kalemleri olan gider faturası olmayan, henüz okunmamış. Hesabın
+ * belgesi yalnız o hesabın istemcisiyle alınır (şube başına Paraşüt hesabı): öbür hesabın e-faturası sorulmaz
+ */
+const pendingWhere = (account: string) => and(isNotNull(s.invoices.eInvoiceId), isNull(s.invoices.externalId), isNull(s.invoices.ublReadAt), invoiceAccountWhere(account));
 
-/** Belgesi geçici bir hatayla alınamayan faturaların deneme sayısı (line-queue.ts) */
-const RETRY_KEY = "parasut.ublRetries";
-
-export async function pendingLineReads(): Promise<number> {
-  const [{ n }] = await getDb().select({ n: count() }).from(s.invoices).where(pendingWhere());
+export async function pendingLineReads(account: string): Promise<number> {
+  const [{ n }] = await getDb().select({ n: count() }).from(s.invoices).where(pendingWhere(account));
   return n;
 }
 
@@ -100,16 +104,18 @@ export async function readEInvoiceLines(client: ParasutClient, opts: { until: nu
       supplierTaxNumber: s.invoices.supplierTaxNumber,
     })
     .from(s.invoices)
-    .where(pendingWhere())
+    .where(pendingWhere(client.account))
     .orderBy(desc(s.invoices.date), desc(s.invoices.id))
     .limit(opts.limit ?? 500);
-  const [retryRow] = rows.length ? await db.select().from(s.integrationState).where(eq(s.integrationState.key, RETRY_KEY)).limit(1) : [];
+  // Belgesi geçici bir hatayla alınamayan faturaların deneme sayısı (line-queue.ts), hesap başına
+  const retryKey = parasutKey(UBL_RETRY_KEY, client.account);
+  const [retryRow] = rows.length ? await db.select().from(s.integrationState).where(eq(s.integrationState.key, retryKey)).limit(1) : [];
   const stored = (retryRow?.value as UblRetries | undefined) ?? {};
   // Sıradan çıkmış (okunmuş, silinmiş) faturaların sayısı tutulmaz
   const retries: UblRetries = Object.fromEntries(rows.filter((r) => stored[r.id]).map((r) => [r.id, stored[r.id]]));
   let retriesDirty = Object.keys(retries).length !== Object.keys(stored).length;
   const rules = rows.length ? await db.select().from(s.parasutCategoryRules) : [];
-  const since = rows.length ? await loadPaymentsSince() : "";
+  const since = rows.length ? await loadPaymentsSince(client.account) : "";
 
   let streak = 0;
   for (const row of orderLineReads(rows, retries)) {
@@ -151,7 +157,8 @@ export async function readEInvoiceLines(client: ParasutClient, opts: { until: nu
       continue;
     }
 
-    const drafts = ublLinesToDrafts(inv, row.eInvoiceId!, row.supplier);
+    // Kalem kimliği hesap önekli (ubl:marina:…; varsayılan hesapta eski biçim): iki firmanın e-fatura kimliği çakışmasın
+    const drafts = ublLinesToDrafts(inv, `${accountNs(client.account)}${row.eInvoiceId!}`, row.supplier);
     const patch: Partial<typeof s.invoices.$inferInsert> = { ublReadAt: new Date() };
     let note = row.note;
     // Ödeme (vade, valör) tarihi boş vadeye yazılır; ödenmemiş fatura vadesiyle Ödemeler & hatırlatıcılar'a düşer
@@ -224,10 +231,10 @@ export async function readEInvoiceLines(client: ParasutClient, opts: { until: nu
   if (retriesDirty) {
     await db
       .insert(s.integrationState)
-      .values({ key: RETRY_KEY, value: retries })
+      .values({ key: retryKey, value: retries })
       .onConflictDoUpdate({ target: s.integrationState.key, set: { value: retries, updatedAt: new Date() } });
   }
   stats.months = [...months];
-  stats.remaining = await pendingLineReads();
+  stats.remaining = await pendingLineReads(client.account);
   return stats;
 }

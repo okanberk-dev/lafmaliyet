@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadChecklistTemplates } from "@/server/data/checklists";
 import { photoStorage } from "@/server/storage/photos";
@@ -35,7 +36,7 @@ export default function ChecklistTemplatesPage() {
 
 async function TemplatesContent() {
   await requireAdmin();
-  const [templates, all] = await Promise.all([loadChecklistTemplates(), listBranches()]);
+  const [templates, all, scope] = await Promise.all([loadChecklistTemplates(), listBranches(), currentBranchScope()]);
   const branches = all.filter((b) => b.kind === "fiziksel" && b.active).map((b) => ({ id: b.id, name: b.name }));
   const nameOf = new Map(all.map((b) => [b.id, b.name]));
   const storage = photoStorage();
@@ -66,6 +67,8 @@ async function TemplatesContent() {
           numbers: t.items.filter((i) => i.type === "number").length,
         }))}
         branches={branches}
+        // Yeni liste seçili şubeyle başlar (şube kapsamı C P2-12); "Tümü"de bütün şubeler
+        defaultBranchId={branches.some((b) => b.id === scope) ? scope : ""}
       />
     </>
   );

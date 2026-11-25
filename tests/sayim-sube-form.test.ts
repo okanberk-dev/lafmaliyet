@@ -46,10 +46,8 @@ test("sayim-sube formCountError: sayım etkin fiziksel şubeye; kilitli personel
 
 test("sayim-sube formCountBranch: kimlik yoksa seçili fiziksel şube, varsa doğrulanır (kilit dahil)", () => {
   const fn = fnBody(read("src/server/branch-scope.ts"), "formCountBranch");
-  assert.match(fn, /if \(!raw\) return \(await currentPhysicalBranch\(\)\)\.id;/);
-  assert.match(fn, /staffBranchLock\(\)/);
-  assert.match(fn, /formCountError\(raw, branches, lock\)/);
-  assert.match(fn, /throw new UserError\(error\)/);
+  // Ortak kapı (formBranch; kural tablosu tests/form-sube.test.ts): kimlik yoksa seçili fiziksel şube, kilit dahil
+  assert.match(fn, /return formBranch\(raw, "count"\);/);
 });
 
 test("sayim-sube kayıtlar formun şubesinin kapsamında: sayım, ek kalemler (yönetici, personel), Listeye ekle", () => {

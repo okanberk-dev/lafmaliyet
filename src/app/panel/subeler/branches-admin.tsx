@@ -1,12 +1,12 @@
 "use client";
 
-import { Building2, Globe, Plus } from "lucide-react";
+import { Building2, Globe, Plus, Settings2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
@@ -29,10 +29,17 @@ import {
   type BranchPosSource,
   type BranchRow,
 } from "@/lib/branches";
+import { hasFeature, offFeatureLabels } from "@/lib/branch-features";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { num } from "@/lib/format";
 import { shortDateTR } from "@/lib/takvim";
 import type { ActionResult } from "@/server/actions/util";
+
+/** Kapalı özelliklerin çip metni (yoksa null; `offFeatureLabels`) */
+function offFeatures(b: BranchRow): string | null {
+  const off = offFeatureLabels(b);
+  return off.length ? off.join(", ") : null;
+}
 
 /*
  * Şubeler ve kanallar (/panel/subeler; docs/SUBE.md). Liste + tek pencere: "Şube ekle" ve satıra dokununca
@@ -68,7 +75,19 @@ export interface BranchActions {
 
 const BOS: Taslak = { id: "", name: "", kind: "fiziksel", posSource: "modpos", openedOn: "", active: true, posRate: oranMetni(DEFAULT_POS_RATE) };
 
-export function BranchesAdmin({ rows, createAction, updateAction, deleteAction }: { rows: BranchRow[] } & BranchActions) {
+/**
+ * `settingsText`, `parasutText`: fiziksel şubenin şube ayarlarının durumu ("Kendi ayarı", "Tuzla ile aynı"; kasa raporu
+ * alıcıları ve Paraşüt hesabı);
+ * satırda çip ve "Ayarlar" bağlantısı (docs/SUBE.md › Şube başına ayarlar)
+ */
+export function BranchesAdmin({
+  rows,
+  settingsText = {},
+  parasutText = {},
+  createAction,
+  updateAction,
+  deleteAction,
+}: { rows: BranchRow[]; settingsText?: Record<string, string>; parasutText?: Record<string, string> } & BranchActions) {
   const [acik, setAcik] = useState<Taslak | null>(null);
   const [yeni, setYeni] = useState(false);
   const [silinecek, setSilinecek] = useState<BranchRow | null>(null);
@@ -129,8 +148,8 @@ export function BranchesAdmin({ rows, createAction, updateAction, deleteAction }
         {rows.length ? (
           <ul className="divide-y divide-line border-t border-line">
             {rows.map((b) => (
-              <li key={b.id}>
-                <button type="button" onClick={() => duzenle(b)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 text-left text-sm hover:bg-surface-soft">
+              <li key={b.id} className="flex items-center gap-2 pr-3 hover:bg-surface-soft">
+                <button type="button" onClick={() => duzenle(b)} className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 py-3 pl-5 text-left text-sm">
                   <span className="shrink-0 text-ink-mute">{b.kind === "online" ? <Globe className="size-4" /> : <Building2 className="size-4" />}</span>
                   <span className="min-w-0 flex-1 basis-40 font-medium text-ink">{b.name}</span>
                   <Badge tone={b.kind === "online" ? "blue" : "gray"}>{BRANCH_KIND_LABEL[b.kind]}</Badge>
@@ -139,7 +158,17 @@ export function BranchesAdmin({ rows, createAction, updateAction, deleteAction }
                   {b.openedOn ? <span className="text-[13px] text-ink-mute tabular">{shortDateTR(b.openedOn)} açıldı</span> : null}
                   {b.active ? null : <Badge tone="amber">Kapalı</Badge>}
                   <code className="text-[12px] text-ink-mute">{b.id}</code>
+                  {settingsText[b.id] ? <Badge tone="gray">Alıcılar: {settingsText[b.id]}</Badge> : null}
+                  {parasutText[b.id] ? <Badge tone="gray">Paraşüt: {parasutText[b.id]}</Badge> : null}
+                  {/* Şube özellikleri (docs/SUBE.md › Şube özellikleri): karaoke tek şubede; kapalı özellikler ayrı çipte */}
+                  {hasFeature(b, "karaoke") ? <Badge tone="violet">Karaoke</Badge> : null}
+                  {offFeatures(b) ? <Badge tone="gray">Kullanılmıyor: {offFeatures(b)}</Badge> : null}
                 </button>
+                {b.kind === "fiziksel" ? (
+                  <ButtonLink href={`/panel/subeler/${encodeURIComponent(b.id)}`} variant="secondary" size="sm" className="shrink-0" aria-label={`${b.name} şube ayarları`}>
+                    <Settings2 className="size-4" aria-hidden="true" /> Ayarlar
+                  </ButtonLink>
+                ) : null}
               </li>
             ))}
           </ul>

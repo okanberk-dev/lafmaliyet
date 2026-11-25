@@ -34,16 +34,17 @@ function look(line: CafeLine): { icon: React.ReactNode; tone: PastelTone } {
  * Bugün · "Bugün kafede": personelde önce satış tahmininin yoğunluğu ve tatlı sayısı (tutarsız), karaoke odası (süren
  * oturum, günün rezervasyonları, sıradaki), açık uygulama siparişleri ve tükenen ürünler.
  * Statik özet: sayaç, alarm ve siparişin aşaması bar ekranında kalır; satırlar oraya (ya da satırın kendi adresine,
- * ör. Tükenenler) götürür. Tutar yok.
+ * ör. Tükenenler) götürür. Tutar yok. Karaoke seçili şubede kullanılmıyorsa (şube özelliği) bar ekranı Siparişler
+ * (`barHref`).
  */
-export function TodayCafe({ lines }: { lines: CafeLine[] }) {
+export function TodayCafe({ lines, barHref = "/panel/karaoke" }: { lines: CafeLine[]; barHref?: string }) {
   return (
     <Card>
       <CardHeader
         icon={<MicVocal />}
         title="Bugün kafede"
         actions={
-          <ButtonLink href="/panel/karaoke" variant="secondary" size="sm" className="pointer-coarse:h-11">
+          <ButtonLink href={barHref} variant="secondary" size="sm" className="pointer-coarse:h-11">
             Bar ekranı
           </ButtonLink>
         }
@@ -61,7 +62,7 @@ export function TodayCafe({ lines }: { lines: CafeLine[] }) {
                 icon={icon}
                 tone={tone}
                 title={l.text}
-                href={l.href ?? (forecast ? undefined : "/panel/karaoke")}
+                href={l.href ?? (forecast ? undefined : barHref)}
                 dot={l.tone === "warn" && !forecast ? "danger" : undefined}
                 wrap
               />

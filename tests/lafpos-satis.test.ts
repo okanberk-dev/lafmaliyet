@@ -375,7 +375,8 @@ test("kaynak: veri kümesi geçiş günü yokken LafPOS'u hiç okumaz; Satışla
   assert.match(dataset, /writeCoverage: coverageOf\(writeBranch\),/);
   const salesPage = read("src/app/panel/satislar/page.tsx");
   assert.match(salesPage, /const writeHasList = sales\.lines\.some\(\(l\) => !l\.line\.lafpos && \(l\.line\.branchId \?\? DEFAULT_BRANCH_ID\) === writeId\);/);
-  assert.match(salesPage, /const coveredThrough = writeHasList\n\s+\? \(model\.ds\.writeCoverage\?\.\[month\] \?\? null\)/);
+  // "Tümü"de birden çok şubeye yüklenebiliyorsa tek gün yazılmaz (kart şubeyi sorar); yoksa yazılan şubenin kaydı
+  assert.match(salesPage, /const coveredThrough =\s+writable\.length > 1\s+\? null\s+: writeHasList\s+\? \(model\.ds\.writeCoverage\?\.\[month\] \?\? null\)/);
   assert.match(salesPage, /coveredThrough=\{coveredThrough\}/);
   // Süren ayın kasa raporundan sonraki LafPOS günleri bekler (kasa raporlarının son günü; LafPOS'un yedek ay satırları,
   // B09 G6, rapor sayılmaz)

@@ -25,6 +25,7 @@ import {
 } from "@/lib/price-hold";
 import { packEvidence } from "@/lib/product-match";
 import { requireAdmin } from "@/server/auth/dal";
+import { ingredientHistoryCounts } from "@/server/data/product-history";
 import { loadModel } from "@/server/data/dataset";
 import { priceWindowStart } from "@/server/data/price-alerts";
 import { loadHoldLines, loadPriceHolds } from "@/server/data/price-holds";
@@ -66,12 +67,14 @@ export default function IngredientsPage() {
 async function IngredientsContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, history, links, holds, readState] = await Promise.all([
+  const [model, history, links, holds, readState, deps] = await Promise.all([
     loadModel(),
     db.select().from(s.ingredientPrices).orderBy(asc(s.ingredientPrices.changedAt), asc(s.ingredientPrices.id)),
     db.select({ id: s.parasutProductLinks.ingredientId, n: count() }).from(s.parasutProductLinks).groupBy(s.parasutProductLinks.ingredientId),
     loadPriceHolds(),
     holdReadingState(),
+    // Silme engeli bütün şubelerden (eylemle aynı tablolar; şube kapsamı C P2-6)
+    ingredientHistoryCounts(db),
   ]);
   // Bekleyen önerilerin kalemleri (açıklama, aynı ürünün geçmişi) ve saklanan fatura okumaları
   const [holdLines, readings] = holds.pending.length
@@ -86,16 +89,8 @@ async function IngredientsContent() {
     histBy.set(h.ingredientId, list);
   }
   // Silmeyi engelleyen geçmiş: sayım, alım miktarı, Paraşüt eşleştirmesi, zayi / ikram (silinirse geçmiş ayların stok
-  // değeri ve zayi maliyeti değişir)
-  const tally = (ids: number[]) => {
-    const m = new Map<number, number>();
-    for (const id of ids) m.set(id, (m.get(id) ?? 0) + 1);
-    return m;
-  };
-  const countsBy = tally(model.ds.stockCounts.map((c) => c.ingredientId));
-  const purchasesBy = tally(model.ds.purchaseQuantities.map((p) => p.ingredientId));
+  // değeri ve zayi maliyeti değişir). Bütün şubelerden, eylemin saydığı gibi (ingredientHistoryCounts)
   const linksBy = new Map(links.map((l) => [l.id, l.n]));
-  const wasteBy = tally((model.ds.wasteEntries ?? []).flatMap((w) => (w.ingredientId !== null ? [w.ingredientId] : [])));
   // Son 30 günün fiyat değişimleri (zam uyarısıyla aynı hesap: pencereden önceki son fiyata göre)
   const since = priceWindowStart();
   const recent = new Map(
@@ -191,7 +186,7 @@ async function IngredientsContent() {
     }),
     monthUsage: usage.get(i.id) ?? 0,
     history: histBy.get(i.id) ?? [],
-    deps: { counts: countsBy.get(i.id) ?? 0, purchases: purchasesBy.get(i.id) ?? 0, links: linksBy.get(i.id) ?? 0, waste: wasteBy.get(i.id) ?? 0 },
+    deps: { counts: deps.get(i.id)?.counts ?? 0, purchases: deps.get(i.id)?.purchases ?? 0, links: linksBy.get(i.id) ?? 0, waste: deps.get(i.id)?.waste ?? 0 },
     recentChange: recent.get(i.id) ?? null,
     pendingHold: holdBy.get(i.id) ?? null,
   }));
@@ -299,7 +294,8 @@ async function IngredientsContent() {
       )}
       {/* Dökümdeki bağlantıların çapası (#hammadde-listesi): süzülmüş listeye kayar */}
       <ListAnchor>
-        <IngredientsClient rows={rows} categories={categories} />
+        {/* Şube seçiliyken kullanım o şubenin satışından (şube kapsamı C P2-8) */}
+        <IngredientsClient rows={rows} categories={categories} usageScope={model.ds.branchView ? `${model.ds.branchView.name} satışı` : null} />
       </ListAnchor>
     </>
   );

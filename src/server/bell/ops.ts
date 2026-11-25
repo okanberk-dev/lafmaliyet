@@ -1,7 +1,8 @@
 import "server-only";
 
 import { pastCountReminder, pastCountReminders, staffLateEditNotice, unpricedExtrasNotice } from "@/app/panel/sayim/logic";
-import { ALL_BRANCHES } from "@/lib/branches";
+import { featureInScope } from "@/lib/branch-features";
+import { ALL_BRANCHES, BRANCH_PARAM, type BranchScope } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { shiftMonth } from "@/lib/calc/engine";
 import { dateTR, num } from "@/lib/format";
@@ -14,10 +15,11 @@ import { LATE_WINDOW_DAYS, staffWasteResult, wasteDeletedNotice, wasteItemText }
 import type { PanelNotification } from "@/server/actions/notifications";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { soldOutFacts } from "@/server/data/menu-status";
 import { staffPosSummary } from "@/server/data/pos-staff";
 import { posPendingSummary } from "@/server/data/prices";
-import { loadTillScope } from "@/server/data/till-scope";
+import { loadTillScopes } from "@/server/data/till-scope";
 import { loadStaffLateEdits, loadUnpricedExtras } from "@/server/data/count-alerts";
 import { countProgress, countProgressByBranch } from "@/server/data/count-progress";
 import { myKaraokeRequests, pendingKaraokeSummary } from "@/server/data/karaoke-requests";
@@ -36,15 +38,28 @@ import type { DigestBox } from "@/server/notify/digest-template";
  * Kasaya işle'ye (Uyarılar); personel kendi sabit sütunlu özetinden (yalnız etkin ürünler), Kasadaki fiyatlar'a (Kasa).
  * Kimlik en yeni geri kalıştan: işaret zili yeniden okunmamış yapmaz, listeye yeni bir fiyat girmesi yapar. LafPOS
  * gününde (geçiş gününden itibaren) yalnız siteye bağlı olmayan ürünler ve yalnız yöneticide; siteye bağlınınkini LafPOS
- * siteden alır, öbürünü LafPOS'ta menüyü yöneten değiştirir (E-39).
+ * siteden alır, öbürünü LafPOS'ta menüyü yöneten değiştirir (E-39). Kasa şube başınadır (şube kapsamı A3): seçimin her
+ * kasası ayrı satır; "Tümü"de birden çok kasa açıkken başlık şubeyle başlar ("Marina: Kasada değişecek 2 fiyat"),
+ * kimlik şubeyi taşır ve bağlantı o şubeyi seçer.
  */
 async function posNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
-  const scope = await loadTillScope(undefined, now);
-  // LafPOS gününde personele fiyat görevi yok (LafPOS'ta ürün fiyatını kasiyer değiştiremez; posBell)
-  if (user.role !== "admin" && scope.lafpos) return [];
-  const summary = user.role === "admin" ? await posPendingSummary(scope) : await staffPosSummary(scope);
-  const item = posBell(user.role, summary, now, scope.kasa);
-  return item ? [item] : [];
+  const tills = await loadTillScopes(undefined, now);
+  const out: PanelNotification[] = [];
+  for (const scope of tills) {
+    // LafPOS gününde personele fiyat görevi yok (LafPOS'ta ürün fiyatını kasiyer değiştiremez; posBell)
+    if (user.role !== "admin" && scope.lafpos) continue;
+    const summary = user.role === "admin" ? await posPendingSummary(scope) : await staffPosSummary(scope);
+    const item = posBell(user.role, summary, now, scope.kasa);
+    if (!item) continue;
+    out.push(scope.name ? { ...item, id: `${item.id}-${scope.branchId}`, title: `${scope.name}: ${item.title}`, href: withBranchParam(item.href, scope.branchId) } : item);
+  }
+  return out;
+}
+
+/** Bağlantıya şube seçimi: seçici `?sube=`'yi çereze benimsetir (src/components/panel/branch-picker.tsx) */
+function withBranchParam(href: string, branchId: string): string {
+  const [path, hash] = href.split("#");
+  return `${path}${path.includes("?") ? "&" : "?"}${BRANCH_PARAM}=${encodeURIComponent(branchId)}${hash ? `#${hash}` : ""}`;
 }
 
 /**
@@ -54,7 +69,8 @@ async function posNotifications(user: CurrentUser, now: Date): Promise<PanelNoti
  */
 async function wasteRequestNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
   if (user.role === "admin") {
-    const w = await pendingWasteSummary();
+    // Tek şube seçiliyken yalnız o şubenin istekleri (şube kapsamı C P1-1)
+    const w = await pendingWasteSummary({ scope: await currentBranchScope() });
     if (!w.count) return [];
     return [
       {
@@ -110,6 +126,9 @@ async function wasteRequestNotifications(user: CurrentUser, now: Date): Promise<
  */
 async function karaokeRequestNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
   if (user.role === "admin") {
+    // Karaoke yalnız kendi şubesinde: başka şube seçiliyken ya da karaoke hiçbir şubede açık değilken satır yok (şube
+    // kapsamı C P1-1, şube özelliği B6)
+    if (!featureInScope("karaoke", await currentBranchScope(), await listBranches())) return [];
     const k = await pendingKaraokeSummary();
     if (!k.count) return [];
     return [
@@ -237,12 +256,13 @@ export async function opsDigestLines(now: Date): Promise<DigestBox["lines"]> {
  * birden çoğunda ayın sayımı. Önceden e-postada şube seçimi olmadığı için yalnız Tuzla'nın sayımına bakılıyordu
  * (denetim 21 Kasım #16).
  */
-export async function pastCountDigestLines(now: Date): Promise<{ lines: DigestBox["lines"]; href: string | null }> {
+export async function pastCountDigestLines(now: Date, scope: BranchScope = ALL_BRANCHES): Promise<{ lines: DigestBox["lines"]; href: string | null }> {
   const day = businessDate(now);
   if (Number(day.slice(8, 10)) > 10) return { lines: [], href: null };
   const month = shiftMonth(day.slice(0, 7), -1);
   const prev = await countProgressByBranch(month).catch(() => null);
-  const counts = prev ? pastCountReminders(day, prev.counts, prev.named) : [];
+  // Şubeye bağlı alıcının e-postası (şube kapsamı C P1-11): yalnız o şubenin sayımı (satır yine şubenin adıyla)
+  const counts = prev ? pastCountReminders(day, scope === ALL_BRANCHES ? prev.counts : prev.counts.filter((c) => c.id === scope), prev.named) : [];
   if (!counts.length) return { lines: [], href: null };
   return {
     lines: counts.map((c) => ({ text: `${c.title}. ${c.body}`, tone: "warn" as const })),

@@ -3,17 +3,20 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
+import { FeatureOff } from "@/components/panel/feature-off";
 import { HashScroll } from "@/components/panel/hash-scroll";
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton, SectionTitle, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
+import { featureBranches, featureInScope } from "@/lib/branch-features";
 import { branchCommissionShare, groupOf, shownChannels } from "@/lib/commission/report";
 import { COMMISSION_CATEGORY } from "@/lib/constants";
 import { dateTR, money, monthLabel, num, pct } from "@/lib/format";
 import { dayAblativeTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
+import { branchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadCommissionReports } from "@/server/data/commission";
 
@@ -57,6 +60,19 @@ const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
 async function CommissionContent({ searchParams }: { searchParams: PageProps<"/panel/komisyonlar">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
+  // Yemek kartı ve platformlar seçili şubede kullanılmıyorsa (şube özelliği; docs/SUBE.md › Şube özellikleri) rapor yok:
+  // işletmenin faturaları ve hakedişi "Tümü"de ya da yemek kartı açık şubede görünür
+  const view = await branchScope();
+  if (!featureInScope("yemek_karti", view.scope, view.branches)) {
+    return (
+      <>
+        <Header />
+        <Card>
+          <FeatureOff title="Yemek kartı ve platformlar bu şubede kullanılmıyor" path="/panel/komisyonlar" on={featureBranches(view.branches, "yemek_karti")} locked={false} admin />
+        </Card>
+      </>
+    );
+  }
   // Faturalar, oran ve hakediş işletmenin (`report`); şube seçiliyken şubenin satışı ayrıca (`branch`; docs/KOMISYON.md › Şube)
   const { all: report, branch, scope } = await loadCommissionReports();
   const branchName = branch ? ((await listBranches()).find((b) => b.id === scope)?.name ?? scope) : null;

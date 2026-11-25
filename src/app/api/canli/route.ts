@@ -1,5 +1,6 @@
 import { after, connection, type NextRequest } from "next/server";
 
+import { featureInScope } from "@/lib/branch-features";
 import { needsCatchUp } from "@/lib/karaoke/freshness";
 import type { LiveResponse } from "@/lib/live";
 import { todayTR } from "@/lib/reminders";
@@ -7,6 +8,8 @@ import { awaitingUntil } from "@/lib/site-orders/follow";
 import { siteErrorFor } from "@/lib/staff-errors";
 import { kontrolOutcome } from "@/lib/job-health";
 import { getCurrentUser } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { pendingKaraokeAsks } from "@/server/data/karaoke-requests";
 import { getDb } from "@/server/db";
 import { loadDueReminders, remindersMarker } from "@/server/data/user-reminders";
@@ -101,12 +104,21 @@ export async function GET(request: NextRequest) {
     });
   }
   const version = karaoke.version;
+  // Şube özellikleri (docs/SUBE.md › Şube özellikleri; şube kapsamı B6, C P1-8): karaoke, uygulama siparişi ve masa çağrısı
+  // yalnız seçili kapsamda açıksa gelir (şubesine kilitli personelde hep kendi şubesi; "Tümü"de herhangi bir şubede açıksa).
+  // Kapalıysa oturum, silme isteği, sipariş ve çağrı gitmez (misafir adı, alarm, zil). Üç işaret ETag'te: seçim, kişinin
+  // şubesi ya da şubenin özelliği değişince eski yanıt 304 ile onaylanmaz
+  const [scope, branchRows] = await Promise.all([currentBranchScope(), listBranches()]);
+  const karaokeHere = featureInScope("karaoke", scope, branchRows);
+  const ordersHere = featureInScope("siparis", scope, branchRows);
+  const callsHere = featureInScope("garson", scope, branchRows);
+  const here = `k${karaokeHere ? 1 : 0}${ordersHere ? 1 : 0}${callsHere ? 1 : 0}`;
   // Kişi de ETag'te: aynı tarayıcıda başka hesapla girilince önceki kişinin yanıtı 304 ile onaylanmaz
-  const etag = `W/"${version}.o${orders}.${marker}.${today}.u${me.id}.${me.role}"`;
+  const etag = `W/"${version}.o${orders}.${marker}.${here}.${today}.u${me.id}.${me.role}"`;
   if (request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: { ...headers, ETag: etag } });
   const { from, to } = liveWindow();
-  const [sessions, deleteAsks, reminders, publicKey, snapshot, ordersState] = await Promise.all([
-    loadSessions(from, to, { admin: me.role === "admin" }),
+  const [sessions, asks, reminders, publicKey, snapshot, ordersState] = await Promise.all([
+    karaokeHere ? loadSessions(from, to, { admin: me.role === "admin" }) : Promise.resolve([]),
     // Sayaç silme istekleri (E-15): istek açılınca, geri çekilince ve karara bağlanınca karaoke sayacı artar (ETag)
     pendingKaraokeAsks(),
     loadDueReminders(me.id, today),
@@ -114,6 +126,7 @@ export async function GET(request: NextRequest) {
     readOrdersSnapshot(),
     readOrdersState(),
   ]);
+  const deleteAsks = karaokeHere ? asks : [];
   const body: LiveResponse = {
     serverNow: new Date().toISOString(),
     me: { id: me.id, role: me.role },
@@ -122,27 +135,31 @@ export async function GET(request: NextRequest) {
       sessions,
       // Son çekme düştüyse ekran uyarır (ping kaçmış olabilir; rezervasyonlar sitenin panelinde de kontrol edilsin).
       // Hatanın ayrıntısı (anahtar adı, imza, sitenin sürümü) yalnız yöneticiye; personele sabit metin (E-64)
+      // Karaoke bu kapsamda yoksa çekmenin hatası da yok (sarı satır öbür şubenin işi)
       okAt: linked ? karaoke.sync.lastOkAt : null,
-      error: linked ? siteErrorFor(me.role, karaoke.sync.lastError) : null,
+      error: linked && karaokeHere ? siteErrorFor(me.role, karaoke.sync.lastError) : null,
       deleteAsks,
     },
     orders: {
       configured: linked,
-      // Bağlantı kaldırıldıysa eski listenin kopyası gösterilmez (ekran "kurulmadı" der, zil çalmaz)
-      list: linked ? snapshot.orders : [],
-      complete: snapshot.complete,
-      skipped: snapshot.skipped,
+      // Bağlantı kaldırıldıysa eski listenin kopyası gösterilmez (ekran "kurulmadı" der, zil çalmaz); uygulama siparişi
+      // seçili şubede kullanılmıyorsa da liste boş (zil çalmaz)
+      list: linked && ordersHere ? snapshot.orders : [],
+      complete: ordersHere ? snapshot.complete : true,
+      skipped: ordersHere ? snapshot.skipped : 0,
       at: snapshot.at,
       pulledAt: ordersState.lastPullAt,
       okAt: ordersState.lastOkAt,
-      error: siteErrorFor(me.role, ordersState.lastError),
+      error: ordersHere || callsHere ? siteErrorFor(me.role, ordersState.lastError) : null,
       pingAt: ordersState.lastPingAt,
       changeAt: ordersState.lastChangeAt,
       // Ödeme bekleniyor: ekran bu ana kadar yoğun (üç dakikada bir çeker); takibin başlaması ve bitmesi sürümü artırır
       awaitingUntil: linked ? awaitingUntil(ordersState) : null,
       // Masa çağrıları ("Garson çağır"): son listenin kopyasıyla aynı sürümde (ETag), müşteriye dair bir şey yok
-      calls: linked ? snapshot.calls : [],
-      callsSkipped: snapshot.callsSkipped,
+      calls: linked && callsHere ? snapshot.calls : [],
+      callsSkipped: callsHere ? snapshot.callsSkipped : 0,
+      // Seçili şubede kullanılmayan özellik: ekran "Bu şubede kullanılmıyor" der, boş listeyi "sipariş yok" saymaz
+      off: { orders: !ordersHere, calls: !callsHere },
     },
     reminders,
     push: { publicKey },

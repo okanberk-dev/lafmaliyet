@@ -88,7 +88,9 @@ test("#14 zayi: doğrudan silme ve silme isteği kaydın şubesine sorar; yeni k
     assert.ok(at > 0, head);
     assert.ok(at > fn.indexOf('if (!row) throw new UserError("Kayıt bulunamadı");') && at < fn.indexOf("staffDeleteMode("), head);
   }
-  assert.match(body(core, "export async function addWaste("), /const branchId = \(await currentPhysicalBranch\(\)\)\.id;/);
+  // Yeni kayıt formun şubesine (eylem formBranch "waste" ile doğrular: kilitli personelde kendi şubesi); verilmezse seçili
+  assert.match(body(core, "export async function addWaste("), /const branchId = branch \?\? \(await currentPhysicalBranch\(\)\)\.id;/);
+  assert.match(read("src/server/actions/waste.ts"), /const wasteBranch = \(raw: string \| null \| undefined\) => formBranch\(raw, "waste", \{ requireExplicit: true \}\);/);
 });
 
 test("#14 kasa raporu e-postasını yeniden gönderme: personel yalnız kendi şubesinin raporunu", () => {

@@ -5,10 +5,14 @@ import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { DEFAULT_ROOM_HOURS } from "@/lib/karaoke/occupancy";
+import { FeatureOff } from "@/components/panel/feature-off";
 import { PageSkeleton } from "@/components/ui/misc";
+import { featureBranches, featureInScope } from "@/lib/branch-features";
+import { KARAOKE_ELSEWHERE } from "@/lib/branches";
 import { monthStats } from "@/lib/karaoke/month";
 import { isBlock, sessionEnd, trClock } from "@/lib/karaoke/session";
 import { requireUser } from "@/server/auth/dal";
+import { branchScope } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 import { loadSessions } from "@/server/karaoke/board";
 import { readKaraokeHours } from "@/server/karaoke/occupancy";
@@ -56,6 +60,22 @@ const DAY_MS = 86_400_000;
 async function KaraokeContent() {
   const user = await requireUser();
   const admin = user.role === "admin";
+  // Karaoke yalnız karaokesi açık şubede (şube özelliği; docs/SUBE.md › Şube özellikleri): başka şube seçiliyken (şubesine
+  // kilitli personelde hep kendi şubesi) rezervasyonlar ve misafir adları görünmez, eşitleme de tetiklenmez. Siparişlerin
+  // satırı kalır (Siparişler ekranının kısayolu)
+  const view = await branchScope();
+  if (!featureInScope("karaoke", view.scope, view.branches)) {
+    const at = new Date().getTime();
+    return (
+      <>
+        <KaraokeHeader role={user.role} />
+        <div className="space-y-6">
+          <OrdersSummary role={user.role} serverNow={at} />
+          <FeatureOff title={KARAOKE_ELSEWHERE} path="/panel/karaoke" on={featureBranches(view.branches, "karaoke")} locked={view.locked} admin={admin} />
+        </div>
+      </>
+    );
+  }
   // Ping kaçtıysa diye site en çok beş dakikada bir sorulur; sayfa beklemez, yeni bir şey gelirse sekme alır
   after(async () => {
     try {

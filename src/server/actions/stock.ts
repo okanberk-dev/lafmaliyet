@@ -4,24 +4,21 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { planAdminExtras, staffCountIssue } from "@/app/panel/sayim/logic";
+import { countLogDetail, planAdminExtras, staffCountIssue } from "@/app/panel/sayim/logic";
 import { countFactor } from "@/lib/calc/engine";
-import { BRANCH_ID_MAX } from "@/lib/branches";
+import { zFormBranch } from "@/lib/branches";
 import { monthRowEmpty } from "@/lib/cash-month";
-import { monthLabel } from "@/lib/format";
 import { isCountable } from "@/lib/ingredient-usage";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { hasTillRowsIn } from "@/server/data/cash-reports";
 import { activeProductsUsing } from "@/server/data/ingredient-usage";
 import { lockExtras } from "@/server/data/stock-extras";
 import { formCountBranch, withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zMonth, zText } from "./util";
-
-/** Formun gösterdiği sayım şubesi (docs/SUBE.md › Yazarken hangi şube); göndermeyen eski sekmede seçili fiziksel şube */
-const zFormBranch = z.string().max(BRANCH_ID_MAX).nullish();
 
 /**
  * Sayım sonuçlarını kaydeder. Personel de kullanabilir (bu ay; geçen ay yalnız ayın ilk 10 gününde: staffCountIssue).
@@ -149,7 +146,7 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
       });
       // İşlem geçmişi silinen sayımları da söyler ("2 sayım silindi"); hiçbir şey değişmediyse kayıt yazılmaz
       const parts = [filled.length ? `${filled.length} kalem` : "", removed ? `${removed} sayım silindi` : ""].filter(Boolean);
-      if (parts.length) await logActivity(me, "Stok sayımı", `${monthLabel(m)}: ${parts.join(", ")}`);
+      if (parts.length) await logActivity(me, "Stok sayımı", countLogDetail(m, parts.join(", "), await branchName(sube)));
       refresh();
       return { saved: filled.length, removed };
     });
@@ -157,6 +154,11 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
 }
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
+
+/** Sayımın şubesinin adı (işlem geçmişinin ayrıntısı, `countLogDetail`) */
+async function branchName(id: string): Promise<string> {
+  return (await listBranches()).find((b) => b.id === id)?.name ?? id;
+}
 
 /**
  * Sayımı silinen ayda başka hiçbir kayıt kalmadıysa (ay bilgisi, satış, gelir-gider, sayım, ek kalem) içi boş ay
@@ -222,7 +224,7 @@ export async function saveStockExtras(
         return updates.length + deletes.length + inserts.length;
       });
       // "N kalem" değişen satır sayısı (personelin kaydıyla aynı anlam); değişiklik yoksa kayıt yazılmaz
-      if (changed) await logActivity(me, "Sayım ek kalemleri", `${monthLabel(m)}: ${changed} kalem`);
+      if (changed) await logActivity(me, "Sayım ek kalemleri", countLogDetail(m, `${changed} kalem`, await branchName(sube)));
       refresh();
       return null;
     });

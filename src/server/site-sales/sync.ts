@@ -181,14 +181,17 @@ export async function fetchTillOnlineRow(day: string, branchId?: string | null):
 
 /**
  * Kapalı gün kanıtı (docs/KASA-RAPORU.md › Kafe kapalıydı): sitenin o günkü kafe, elle girilen, kasada ödenen ve mağaza
- * sipariş sayıları (tutar yok; sitenin günü gece yarısında biter). Saklanmaz; bağlantı kapalı, site düşük ya da yavaş
- * (8 sn) ise null: yönetici kartı "site okunamadı" der, onayı kapatmaz.
+ * sipariş sayıları (tutar yok; sitenin günü gece yarısında biter), kapalı bildirilen şubenin (`&branch=tuzla|marina`;
+ * verilmezse Tuzla, siteBranchOf; docs/SUBE.md › Kapalı gün): Tuzla'nın siparişleri Marina'nın kapalı gününü kapatmasın.
+ * Saklanmaz; bağlantı kapalı, site düşük ya da yavaş (8 sn) ise, yanıt başka şubenin rakamıysa (şubesiz eski site Marina
+ * için) ya da şubenin sitede karşılığı yoksa null: yönetici kartı "site okunamadı" der, onayı kapatmaz.
  */
-export async function fetchSiteDayCounts(day: string): Promise<{ cafe: number; manual: number; counter: number; shop: number } | null> {
+export async function fetchSiteDayCounts(day: string, branchId?: string | null): Promise<{ cafe: number; manual: number; counter: number; shop: number } | null> {
   const secret = siteLinkSecret();
-  if (!secret || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const branch = siteBranchOf(branchId);
+  if (!secret || !branch || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
   try {
-    const sales = await fetchSales(secret, { from: day, to: day }, { from: day, to: day });
+    const sales = await fetchSales(secret, { from: day, to: day }, { from: day, to: day }, branch);
     return { cafe: sales.cafe.orders, manual: sales.manual.orders, counter: sales.counter?.orders ?? 0, shop: sales.shop.orders };
   } catch (e) {
     console.warn("[satis] kapalı gün için site sayıları alınamadı:", e instanceof Error ? e.message : "bilinmeyen hata");

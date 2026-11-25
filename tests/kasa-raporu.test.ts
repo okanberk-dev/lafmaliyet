@@ -239,7 +239,7 @@ test("e-posta: konu, sonuç, döküm; not kaçışlı, metin sürümü yıldızs
   assert.match(plain(m.html), /120 ₺ eksik/);
   assert.match(m.html, /23:15/, "saat Türkiye saatiyle");
   assert.match(m.html, /\/panel\/kasa\?gun=2026-10-21/);
-  assert.doesNotMatch(m.html, /<script>/);
+  assert.doesNotMatch(m.html, /<script\b/i);
   assert.match(m.html, /&lt;script&gt;/);
   assert.doesNotMatch(m.text, /\*/);
   assert.match(plain(m.text), /120 ₺ EKSİK/);
@@ -423,9 +423,12 @@ test("yetki: personel bugünü ve dünü gönderir, silme ve ayarlar yöneticini
     assert.match(src, new RegExp(`export async function ${fn}[\\s\\S]*?requireAdmin\\(\\)`), fn);
   }
   // Varsayılan alıcılar kodda değil, ortamda (CASH_REPORT_RECIPIENTS): yerel kurulum gerçek kişilere rapor göndermez
+  // (ayarlar şube başına: src/lib/branch-settings/groups.ts, kayıt yokken ortamın alıcıları)
   const data = readFileSync(join(process.cwd(), "src/server/data/cash-reports.ts"), "utf8");
   assert.doesNotMatch(data, /[a-z0-9._-]+@[a-z0-9-]+\.[a-z]{2,}/i);
-  assert.match(data, /: defaultCashRecipients\(process\.env\)/);
+  const groups = readFileSync(join(process.cwd(), "src/lib/branch-settings/groups.ts"), "utf8");
+  assert.doesNotMatch(groups, /[a-z0-9._-]+@[a-z0-9-]+\.[a-z]{2,}/i);
+  assert.match(groups, /\?\? defaultCashRecipients\(env\)/);
   // Personel alıcı adreslerini görmez (yalnız sayısı gider)
   const page = readFileSync(join(process.cwd(), "src/app/panel/kasa/page.tsx"), "utf8");
   assert.match(page, /const mailTo = showForm \? await cashMailTo\(settings\) : 0;/);

@@ -16,6 +16,7 @@ import { eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import { DEFAULT_BRANCHES } from "../src/lib/branches";
 import { businessDate } from "../src/lib/cash-report";
 import { addDays } from "../src/lib/reminders";
 import * as s from "../src/server/db/schema";
@@ -144,6 +145,30 @@ describe("kasadan faturalı alımlar: veritabanında", { skip: !SERVER_URL && "K
       [[arsiv.id, "Migros", 2400, "e_arsiv", "Ayşe"]],
     );
     assert.equal(rows[0].suggestedCategoryId, null, "aynı yerin önceki kasa harcaması yok");
+  });
+
+  test("şube kapsamı (24 Kasım): satır kasasının şubesini taşır, ekran seçili şubeyle süzer; eşleştirme havuzu işletme geneli", async () => {
+    const { scopeCashOutInvoiceState } = await import("../src/server/data/cash-out-invoices");
+    await db
+      .insert(s.branches)
+      .values(DEFAULT_BRANCHES.map((b) => ({ ...b, active: true })))
+      .onConflictDoNothing();
+    const tuzla = await out();
+    const marina = await out({ branchId: "marina", store: "Metro", amount: 500 });
+    const state = await stateOf();
+    assert.deepEqual(Object.fromEntries(state.pending.map((r) => [r.id, r.branchId])), { [tuzla.id]: "tuzla", [marina.id]: "marina" });
+    const ids = (scope: string) => scopeCashOutInvoiceState(state, scope).pending.map((r) => r.id);
+    assert.deepEqual(ids("marina"), [marina.id], "Tuzla'nın e-Arşiv satırı Marina'da yok");
+    assert.deepEqual(ids("tuzla"), [tuzla.id]);
+    assert.deepEqual(ids("hepsi").sort((a, b) => a - b), [tuzla.id, marina.id]);
+    // Fatura şubesizdir: Marina'nın kasasından alınan malın faturası (Paraşüt'ten) satırı her görünümde kapatır
+    await invoice({ supplier: "Metro", payable: 500 });
+    const after = await stateOf();
+    assert.deepEqual(scopeCashOutInvoiceState(after, "marina").pending, []);
+    assert.deepEqual(
+      scopeCashOutInvoiceState(after, "hepsi").pending.map((r) => r.id),
+      [tuzla.id],
+    );
   });
 
   test("eşleşen fatura gelince kalkar: aynı ad, baştan kelimeler, kartın diğer adı; pencere ve tutar dışı kalır", async () => {

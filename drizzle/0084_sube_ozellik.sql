@@ -1,0 +1,1 @@
+ALTER TABLE "branches" ADD COLUMN "features" text[] DEFAULT '{siparis,garson,yemek_karti}'::text[] NOT NULL;

@@ -85,11 +85,24 @@ export function SpecialDayProvider({
   saveAction,
   deleteAction,
   branches,
+  defaultBranchId = "",
   children,
-}: { today: string; minDate: string; maxDate: string; mode?: "admin" | "staff"; branches?: { id: string; name: string }[]; children: ReactNode } & SpecialDayActions) {
+}: {
+  today: string;
+  minDate: string;
+  maxDate: string;
+  mode?: "admin" | "staff";
+  branches?: { id: string; name: string }[];
+  /** Yeni günün varsayılan şubesi: seçili şube; "Tümü"de boş (bütün şubeler) */
+  defaultBranchId?: string;
+  children: ReactNode;
+} & SpecialDayActions) {
   const [draft, setDraft] = useState<Draft | null>(null);
   // Personel yarından itibaren girer (minDate yarın)
-  const openNew = useCallback((date?: string) => setDraft({ kind: "derbi", title: "", dateFrom: date ?? (mode === "staff" ? minDate : today), dateTo: "", effect: 0.15, note: "", branchId: "" }), [today, minDate, mode]);
+  const openNew = useCallback(
+    (date?: string) => setDraft({ kind: "derbi", title: "", dateFrom: date ?? (mode === "staff" ? minDate : today), dateTo: "", effect: 0.15, note: "", branchId: defaultBranchId }),
+    [today, minDate, mode, defaultBranchId],
+  );
   const openEdit = useCallback(
     (d: SpecialDayItem) =>
       setDraft({ id: d.id, kind: d.kind, title: d.title, dateFrom: d.dateFrom, dateTo: d.dateTo === d.dateFrom ? "" : d.dateTo, effect: effectOf(d.effect), note: d.note ?? "", branchId: d.branchId ?? "" }),
@@ -147,7 +160,7 @@ function SpecialDayDialog({
     if (!v.title.trim()) return setError("Ad gerekli");
     if (!v.dateFrom) return setError("Başlangıç gününü seçin");
     // Şube yalnız seçilebildiği yerde gönderilir (yönetici, birden çok şube); gönderilmezse kayıtlı şube kalır
-    const branchPart = branches ? { branchId: v.kind === "kapali" ? v.branchId || null : null } : {};
+    const branchPart = branches ? { branchId: v.branchId || null } : {};
     start(async () => {
       const r = await saveAction({ id: v.id, kind: v.kind, title: v.title, dateFrom: v.dateFrom, dateTo: v.dateTo || null, effect: v.kind === "kapali" ? 0 : v.effect, note: v.note, ...branchPart });
       if (!r.ok) return void setError(r.error);
@@ -247,8 +260,8 @@ function SpecialDayDialog({
             <Input id="ozel-bit" type="date" value={v.dateTo} min={v.dateFrom || minDate} max={maxDate} onChange={(e) => set("dateTo", e.target.value)} className="pointer-coarse:h-12" />
           </Field>
         </div>
-        {v.kind === "kapali" && branches ? (
-          <Field label="Şube" htmlFor="ozel-sube" hint="Yalnız seçilen şubenin eksik rapor uyarıları kalkar">
+        {branches ? (
+          <Field label="Şube" htmlFor="ozel-sube" hint={v.kind === "kapali" ? "Yalnız seçilen şubenin eksik rapor uyarıları kalkar" : "Gün yalnız o şubenin listesinde görünür"}>
             <Select id="ozel-sube" value={v.branchId} onChange={(e) => set("branchId", e.target.value)} className="pointer-coarse:h-12">
               <option value="">Bütün şubeler</option>
               {branches.map((b) => (

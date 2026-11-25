@@ -1,13 +1,13 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, max, min } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull, max, min, notExists } from "drizzle-orm";
 
 import { posMatchKey } from "@/lib/calc/pos-paste";
-import type { KasaName, TillScope } from "@/lib/lafpos/kasa";
+import type { KasaName } from "@/lib/lafpos/kasa";
 import { POS_UNDO_WINDOW_MS, type MyPosMark, type PosSummaryLite, type StaffPosItem } from "@/lib/prices/pos";
 import { getDb, schema as s, type DB } from "@/server/db";
 
-import { loadTillScope, tillProductFilter, tillSince } from "./till-scope";
+import { type BranchTill, loadTillScope, posStaleJoin, tillProductFilter, tillSince } from "./till-scope";
 
 /*
  * Personelin Kasadaki fiyatlar okumaları (/panel/kasa/fiyatlar, Bugün, zil; plan docs/planlar/personel-yetki.md §2.2).
@@ -15,7 +15,8 @@ import { loadTillScope, tillProductFilter, tillSince } from "./till-scope";
  * eski satış fiyatı ve ne zamandan beri, sırası ve etkinliği; kategorinin adı ve sırası; kasadaki (ModPOS) ad;
  * personelin kendi işaretlerinin kimliği, fiyatı ve anı. Yalnız etkin ürünler. Fiyat geçmişi, değişikliğin kaynağı ve
  * kimin yaptığı, not, site alanları ve maliyet okunmaz (geçiş gününden itibaren siteye bağlı ürünler yalnız süzgeçte
- * ayrılır, LafPOS onların fiyatını siteden alır: till-scope.ts; site alanı satıra okunmaz).
+ * ayrılır, LafPOS onların fiyatını siteden alır: till-scope.ts; site alanı satıra okunmaz). Kasa şube başınadır
+ * (pos_stale; şube kapsamı A3): her okuma bir şubenin kasasına bakar.
  */
 
 /**
@@ -49,10 +50,10 @@ export async function kasaNameFilter(db: DB, kasa: KasaName): Promise<(posName: 
 }
 
 /**
- * Kasada (ModPOS) değişecek satış fiyatları, kategori ve ürün sırasıyla gruplanmak üzere (yalnız etkin ürünler; LafPOS
- * gününde yalnız siteye bağlı olmayanlar)
+ * Şubenin kasasında (ModPOS) değişecek satış fiyatları, kategori ve ürün sırasıyla gruplanmak üzere (yalnız etkin
+ * ürünler; LafPOS gününde yalnız siteye bağlı olmayanlar)
  */
-export async function loadStaffPosList(scope?: TillScope): Promise<StaffPosItem[]> {
+export async function loadStaffPosList(scope?: BranchTill): Promise<StaffPosItem[]> {
   const db = getDb();
   const sc = scope ?? (await loadTillScope(db));
   const rows = await db
@@ -61,15 +62,16 @@ export async function loadStaffPosList(scope?: TillScope): Promise<StaffPosItem[
       name: s.products.name,
       size: s.products.size,
       price: s.products.price,
-      stalePrice: s.products.posStalePrice,
-      since: s.products.posStaleSince,
+      stalePrice: s.posStale.stalePrice,
+      since: s.posStale.staleSince,
       sortOrder: s.products.sortOrder,
       category: s.categories.name,
       categoryOrder: s.categories.sortOrder,
     })
     .from(s.products)
+    .innerJoin(s.posStale, posStaleJoin(sc))
     .innerJoin(s.categories, eq(s.categories.id, s.products.categoryId))
-    .where(and(isNotNull(s.products.posStalePrice), eq(s.products.active, true), tillProductFilter(sc, db)));
+    .where(and(eq(s.products.active, true), tillProductFilter(sc, db)));
   if (!rows.length) return [];
   const [names, inModpos] = await Promise.all([
     db
@@ -89,18 +91,21 @@ export async function loadStaffPosList(scope?: TillScope): Promise<StaffPosItem[
     categoryOrder: r.categoryOrder,
     sortOrder: r.sortOrder,
     posNames: namesOf.get(r.id) ?? [],
-    stalePrice: r.stalePrice!,
+    stalePrice: r.stalePrice,
     price: r.price,
-    since: tillSince(sc, r.since ?? new Date(0)).toISOString(),
+    since: tillSince(sc, r.since).toISOString(),
   }));
 }
 
 /**
- * Kişinin son 30 dakikada işaretledikleri ("Son işaretledikleriniz", en yeni önce): geri alınmamış, ürün listeye
- * yeniden girmemiş (yeni fiyat listede) ve etkin. Geri alma kuralının kalanını eylem denetler (posUndoRefusal).
+ * Kişinin son 30 dakikada `branchId` şubesinin kasasında işaretledikleri ("Son işaretledikleriniz", en yeni önce): geri
+ * alınmamış, ürün o şubenin listesine yeniden girmemiş (yeni fiyat listede) ve etkin. Geri alma kuralının kalanını eylem
+ * denetler (posUndoRefusal).
  */
-export async function loadMyPosMarks(userId: number, now: Date): Promise<MyPosMark[]> {
-  const rows = await getDb()
+export async function loadMyPosMarks(userId: number, now: Date, branchId: string): Promise<MyPosMark[]> {
+  const db = getDb();
+  const ps = s.posStale;
+  const rows = await db
     .select({
       markId: s.posMarks.id,
       productId: s.posMarks.productId,
@@ -114,9 +119,15 @@ export async function loadMyPosMarks(userId: number, now: Date): Promise<MyPosMa
     .where(
       and(
         eq(s.posMarks.markedBy, userId),
+        eq(s.posMarks.branchId, branchId),
         gt(s.posMarks.markedAt, new Date(now.getTime() - POS_UNDO_WINDOW_MS)),
         isNull(s.posMarks.undoneAt),
-        isNull(s.products.posStalePrice),
+        notExists(
+          db
+            .select({ id: ps.productId })
+            .from(ps)
+            .where(and(eq(ps.productId, s.posMarks.productId), eq(ps.branchId, s.posMarks.branchId))),
+        ),
         eq(s.products.active, true),
       ),
     )
@@ -126,15 +137,16 @@ export async function loadMyPosMarks(userId: number, now: Date): Promise<MyPosMa
 }
 
 /**
- * Bugün ve zil: kasada değişecek fiyat sayısı, en eski ve en yeni geri kalış (yalnız etkin ürünler; tek sorgu ve geçiş
- * günü) ve bugünün kasası
+ * Bugün ve zil: şubenin kasasında değişecek fiyat sayısı, en eski ve en yeni geri kalış (yalnız etkin ürünler; tek
+ * sorgu ve geçiş günü) ve bugünün kasası
  */
-export async function staffPosSummary(scope?: TillScope): Promise<PosSummaryLite & { kasa: KasaName }> {
+export async function staffPosSummary(scope?: BranchTill): Promise<PosSummaryLite & { kasa: KasaName; branchId: string; name: string | null }> {
   const db = getDb();
   const sc = scope ?? (await loadTillScope(db));
   const [r] = await db
-    .select({ n: count(), oldest: min(s.products.posStaleSince), newest: max(s.products.posStaleSince) })
+    .select({ n: count(), oldest: min(s.posStale.staleSince), newest: max(s.posStale.staleSince) })
     .from(s.products)
-    .where(and(isNotNull(s.products.posStalePrice), eq(s.products.active, true), tillProductFilter(sc, db)));
-  return { count: r?.n ?? 0, oldest: tillSince(sc, r?.oldest ?? null), newest: tillSince(sc, r?.newest ?? null), kasa: sc.kasa };
+    .innerJoin(s.posStale, posStaleJoin(sc))
+    .where(and(eq(s.products.active, true), tillProductFilter(sc, db)));
+  return { count: r?.n ?? 0, oldest: tillSince(sc, r?.oldest ?? null), newest: tillSince(sc, r?.newest ?? null), kasa: sc.kasa, branchId: sc.branchId, name: sc.name };
 }

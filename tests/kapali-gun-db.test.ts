@@ -17,8 +17,9 @@ import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { after, before, describe, test } from "node:test";
 
-import { and, eq, gt, inArray, max } from "drizzle-orm";
+import { and, eq, gt, inArray, max, ne } from "drizzle-orm";
 
+import { DEFAULT_BRANCHES } from "../src/lib/branches";
 import type { CashReportFields } from "../src/lib/cash-report";
 import { CLOSED_TEXT, closedEvidenceText, STAFF_SPECIAL_TEXT } from "../src/lib/closed-days";
 import type { DB } from "../src/server/db";
@@ -130,7 +131,17 @@ describe("Kapalı gün ve personelin özel günleri: veritabanında", { skip: !U
     await getDb().$client.end();
   });
 
-  test("her kanıt türü bildirimi reddeder (silme kaydı ve karaoke dahil); hesap işlemi reddetmez; dün dışı gün kapalı", async () => {
+  test("her kanıt türü bildirimi reddeder (silme kaydı ve karaoke dahil); hesap işlemi reddetmez; dün dışı gün kapalı", async (t) => {
+    // Tek kasa: şubesiz personelin yazımı ve bütün şubelerin listesi o kasanın kanıtıdır (birden çok kasada şube şube;
+    // tests/sube-kapali-gun-db.test.ts)
+    const others = await db
+      .update(s.branches)
+      .set({ active: false })
+      .where(and(eq(s.branches.kind, "fiziksel"), eq(s.branches.active, true), ne(s.branches.id, "tuzla")))
+      .returning({ id: s.branches.id });
+    t.after(async () => {
+      if (others.length) await db.update(s.branches).set({ active: true }).where(inArray(s.branches.id, others.map((b) => b.id)));
+    });
     const D = "2027-02-10";
     dates.push(D);
     await report("2027-02-09");
@@ -403,6 +414,41 @@ describe("Kapalı gün ve personelin özel günleri: veritabanında", { skip: !U
     assert.equal(mine.editable, false);
     assert.equal(mine.addedBy, "Ayşe");
     await db.delete(s.specialDays).where(eq(s.specialDays.id, mark.id));
+  });
+
+  test("personelin özel günleri şube şube (24 Kasım şube kapsamı): Marina'nın listesi Tuzla'nın kapalı gününü almaz, çakışma onunla reddetmez", async () => {
+    const now = tr("2027-09-01T12:00");
+    await db
+      .insert(s.branches)
+      .values(DEFAULT_BRANCHES.map((b) => ({ ...b, active: true })))
+      .onConflictDoNothing();
+    const rows = await db
+      .insert(s.specialDays)
+      .values([
+        { dateFrom: "2027-09-10", dateTo: "2027-09-10", kind: "kapali", title: "Tuzla tadilat", effect: -1, branchId: "tuzla", createdBy: users.ali.id, createdByName: "Ali" },
+        { dateFrom: "2027-09-12", dateTo: "2027-09-12", kind: "kapali", title: "Bayram", effect: -1, branchId: null, createdBy: users.ali.id, createdByName: "Ali" },
+      ])
+      .returning({ id: s.specialDays.id });
+    const mine = new Set(["Tuzla tadilat", "Bayram"]);
+    const titles = async (scope: string) => (await special.staffSpecialList(db, users.mehmet, now, scope)).filter((r) => mine.has(r.title)).map((r) => [r.title, r.branchId]);
+    assert.deepEqual(await titles("marina"), [["Bayram", null]], "Tuzla'nın kapalı günü Marina'nın listesinde yok");
+    assert.deepEqual(await titles("tuzla"), [
+      ["Tuzla tadilat", "tuzla"],
+      ["Bayram", null],
+    ]);
+    assert.equal((await titles("hepsi")).length, 2);
+    const save = (scope: string, title: string) =>
+      special.saveStaffSpecialCore(db, users.mehmet, { id: null, kind: "derbi", title, dateFrom: "2027-09-10", dateTo: "2027-09-10", effect: 0.15, note: null }, now, scope);
+    // Tuzla seçiliyken (ya da Tuzla'ya kilitliyken) çakışır; Marina'da çakışmaz
+    await refused(save("tuzla", "Derbi"), /Bu günlerde zaten bir özel gün var: Tuzla tadilat/);
+    const ok = await save("marina", "Derbi");
+    assert.equal(ok.created, true);
+    // İşletme geneli kapalı gün her şubede çakışır
+    await refused(
+      special.saveStaffSpecialCore(db, users.mehmet, { id: null, kind: "derbi", title: "Maç", dateFrom: "2027-09-12", dateTo: "2027-09-12", effect: 0.15, note: null }, now, "marina"),
+      /Bu günlerde zaten bir özel gün var: Bayram/,
+    );
+    await db.delete(s.specialDays).where(inArray(s.specialDays.id, [...rows.map((r) => r.id), ok.id]));
   });
 
   test("kilit sırası: yöneticinin doğrudan işareti, aynı anda verilen onayla kilitlenmez (günün kilidi, sonra istek)", async () => {

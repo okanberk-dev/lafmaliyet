@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, asc, eq } from "drizzle-orm";
 
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { activeFromRange } from "@/lib/calc/engine";
 import { paidFixedRatesOf } from "@/lib/cash-plan";
 import { schema as s, type DB } from "@/server/db";
@@ -14,9 +15,10 @@ import { schema as s, type DB } from "@/server/db";
  * (src/lib/cash-plan.ts fixedReminderDrifts). Stopajlı kalemin (Vergi › sınıflandırma) `withholdingRate`'i bu yılın
  * kuralından: hatırlatıcının tutarı bankadan çıkan nettir, stopaj muhtasarda; yurt dışı hizmette KDV oranı 0, KDV'si
  * KDV-2'de; kira kaleminde ev sahibi türü KDV'yi ve stopajı belirler (paidFixedRatesOf, nakit planıyla aynı kural;
- * docs/VERGI.md).
+ * docs/VERGI.md). `scope`: "Sabit giderlerden ekle" adayları tek şube seçiliyken o şubenin ve işletme genelinin kalemleri
+ * (şube kapsamı C P1-3; öbür şubenin kirası Marina'nın ödemelerine önerilmez); tutar karşılaştırması bütün kalemlerle.
  */
-export async function loadFixedForReminders(db: DB, currentMonth: string) {
+export async function loadFixedForReminders(db: DB, currentMonth: string, scope: BranchScope = ALL_BRANCHES) {
   const [rows, versions, monthly] = await Promise.all([
     db
       .select({
@@ -32,6 +34,7 @@ export async function loadFixedForReminders(db: DB, currentMonth: string) {
         landlordType: s.fixedExpenses.landlordType,
         startMonth: s.fixedExpenses.startMonth,
         endMonth: s.fixedExpenses.endMonth,
+        branchId: s.fixedExpenses.branchId,
       })
       .from(s.fixedExpenses)
       .orderBy(asc(s.fixedExpenses.sortOrder), asc(s.fixedExpenses.id))
@@ -47,7 +50,7 @@ export async function loadFixedForReminders(db: DB, currentMonth: string) {
   return {
     all: rows,
     /** "Sabit giderlerden ekle" adayları: bitmemiş (bitiş ayı yok ya da bu ay ve sonrası) kalemler, Giderler'deki kuralla */
-    candidates: rows.filter((r) => activeFromRange(r.endMonth, currentMonth)),
+    candidates: rows.filter((r) => activeFromRange(r.endMonth, currentMonth) && (scope === ALL_BRANCHES || r.branchId === null || r.branchId === scope)),
     versions,
     /** Her ay girilen harcama kategorileri: aylık girişe çevrilmiş gider "bitti" diye uyarılmaz (fixedReminderDrifts) */
     monthlyExpenseNames: monthly.map((c) => c.name),

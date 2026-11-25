@@ -1,11 +1,14 @@
 import "server-only";
 
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, like, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, like, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 
+import { CASH_REPORT_GROUP, CASH_STAFF_GROUP } from "@/lib/branch-settings/groups";
+import type { SettingMode } from "@/lib/branch-settings/rules";
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { modposRunStart, tillKey, type MonthEntry, type TillRow } from "@/lib/cash-month";
 import {
-  defaultCashRecipients,
+  businessDate,
   integrityOf,
   type CashReportFields,
   type CashReportIntegrity,
@@ -14,16 +17,22 @@ import {
 } from "@/lib/cash-report";
 import { readLafposSwitchDay } from "@/lib/constants";
 import { posZSchema } from "@/lib/lafpos/day";
-import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposDay, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { MODPOS_FALLBACK_KEY, readModposFallback } from "@/lib/modpos/status";
 import { foyZ } from "@/lib/modpos/z";
 import type { OkcPrev, OkcRow, OkcVatLine } from "@/lib/okc-z";
+import { addDays } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
 import { andWhere, currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
+import { putBranchSetting, resolveBranchSetting } from "@/server/branch-settings";
 import { getDb, schema as s } from "@/server/db";
 import { loadModposSheets, type ModposSheet } from "@/server/modpos/store";
 
-/** Kasa raporunun gideceği adresler ve WhatsApp (integration_state, anahtar "cash.settings"; yönetici değiştirir) */
+/**
+ * Kasa raporunun gideceği adresler, WhatsApp ve çalışanların kısa gün sonu e-postası: şube başına (docs/SUBE.md › Şube
+ * başına ayarlar; iki grup, src/lib/branch-settings/groups.ts). Alıcılar "aynı" sunulur (Marina Tuzla'nınkini kullanır,
+ * geçişte böyle başlar); çalışan listesi şubenin kendisinin. Yönetici değiştirir.
+ */
 export interface CashSettings {
   recipients: string[];
   emailEnabled: boolean;
@@ -40,25 +49,39 @@ export const DEFAULT_CASH_SETTINGS: Omit<CashSettings, "recipients"> = {
   emailEnabled: true,
   whatsapp: null,
 };
-const KEY = "cash.settings";
 
-export async function loadCashSettings(): Promise<CashSettings> {
-  const [row] = await getDb().select().from(s.integrationState).where(eq(s.integrationState.key, KEY)).limit(1);
-  const v = (row?.value as Partial<CashSettings> | undefined) ?? {};
-  return {
-    recipients: Array.isArray(v.recipients) ? v.recipients.filter((x): x is string => typeof x === "string") : defaultCashRecipients(process.env),
-    emailEnabled: typeof v.emailEnabled === "boolean" ? v.emailEnabled : DEFAULT_CASH_SETTINGS.emailEnabled,
-    whatsapp: typeof v.whatsapp === "string" && v.whatsapp ? v.whatsapp : null,
-    staffRecipients: Array.isArray(v.staffRecipients) ? v.staffRecipients.filter((x): x is string => typeof x === "string") : [],
-    staffAmounts: v.staffAmounts === true,
-  };
+type SettingsReader = Parameters<typeof resolveBranchSetting>[2];
+type SettingsTx = Parameters<typeof putBranchSetting>[0];
+
+/** Kasanın (şubenin) kasa raporu ayarları: alıcılar (bağlıysa bağlandığı şubenin) ve şubenin çalışan listesi */
+export async function loadCashSettings(branchId: string, db?: SettingsReader): Promise<CashSettings> {
+  return (await loadCashSettingsView(branchId, db)).settings;
 }
 
-export async function saveCashSettings(value: CashSettings): Promise<void> {
-  await getDb()
-    .insert(s.integrationState)
-    .values({ key: KEY, value })
-    .onConflictDoUpdate({ target: s.integrationState.key, set: { value, updatedAt: new Date() } });
+/** Ekran için: ayarlar ve alıcıların "aynı" durumu (kendi ayarı ya da hangi şubeninkini kullanıyor) */
+export async function loadCashSettingsView(branchId: string, db?: SettingsReader): Promise<{ settings: CashSettings; mode: SettingMode; from: string }> {
+  const [report, staff] = await Promise.all([resolveBranchSetting(CASH_REPORT_GROUP, branchId, db), resolveBranchSetting(CASH_STAFF_GROUP, branchId, db)]);
+  return { settings: { ...report.value, ...staff.value }, mode: report.mode, from: report.from };
+}
+
+/**
+ * Yazar; verilen alanların grubu yazılır (alıcılar ya da çalışanlar). Şube verilmezse eski kaydın sahipleri: alıcılar
+ * varsayılan şubenin (öbürleri "aynı"ysa onlar da kullanır), çalışan listesi LafPOS'un şubesinin; tek kasalı eski
+ * çağrının anlamı. Alıcıları başka şubeninkini kullanan şubeye yazmaz (putBranchSetting). `tx`: çağıranın işlemi (işlem
+ * geçmişi aynı işlemde), `by`: yazanın adı
+ */
+export async function saveCashSettings(value: Partial<CashSettings>, branchId?: string, o: { tx?: SettingsTx; by?: string } = {}): Promise<void> {
+  const by = o.by ?? "Sistem";
+  const run = async (t: SettingsTx) => {
+    if (value.recipients !== undefined || value.emailEnabled !== undefined || value.whatsapp !== undefined) {
+      await putBranchSetting(t, CASH_REPORT_GROUP, branchId ?? DEFAULT_BRANCH_ID, { recipients: value.recipients, emailEnabled: value.emailEnabled, whatsapp: value.whatsapp }, by);
+    }
+    if (value.staffRecipients !== undefined || value.staffAmounts !== undefined) {
+      await putBranchSetting(t, CASH_STAFF_GROUP, branchId ?? LAFPOS_BRANCH_ID, { staffRecipients: value.staffRecipients, staffAmounts: value.staffAmounts }, by);
+    }
+  };
+  if (o.tx) await run(o.tx);
+  else await getDb().transaction(run);
 }
 
 export interface CashReportDTO extends CashReportFields {
@@ -546,9 +569,24 @@ export async function nextReportAfter(date: string, branchId?: string): Promise<
   return row ?? null;
 }
 
-/** "Kasayı sayan" seçeneği: etkin kullanıcılar, ada göre */
-export async function cashCounters(): Promise<{ id: number; name: string }[]> {
-  return getDb().select({ id: s.users.id, name: s.users.name }).from(s.users).where(eq(s.users.active, true)).orderBy(asc(s.users.name));
+/**
+ * "Kasayı sayan" seçeneği: etkin kullanıcılar, ada göre. `branchId` verilirse (kasa formu; şube kapsamı C P2-3) o kasayı
+ * sayabilecekler: yöneticiler, şubesiz personel, o şubenin personeli ve son 60 günde o kasayı saymış olan (başka şubeye
+ * geçmiş kişinin eski raporu formda boş görünmesin). Verilmezse (Onaylar: kartlar birden çok kasanın) herkes
+ */
+export async function cashCounters(branchId?: string): Promise<{ id: number; name: string }[]> {
+  const u = s.users;
+  const recent = branchId
+    ? getDb()
+        .select({ id: s.cashReports.countedBy })
+        .from(s.cashReports)
+        .where(and(eq(s.cashReports.branchId, branchId), isNotNull(s.cashReports.countedBy), gte(s.cashReports.date, addDays(businessDate(), -60))))
+    : null;
+  return getDb()
+    .select({ id: u.id, name: u.name })
+    .from(u)
+    .where(and(eq(u.active, true), branchId && recent ? or(eq(u.role, "admin"), isNull(u.branchId), eq(u.branchId, branchId), inArray(u.id, recent)) : undefined))
+    .orderBy(asc(u.name));
 }
 
 /** Kayıtlı raporun bütünlük bilgisi (WhatsApp metni ve e-posta; src/lib/cash-report.ts integrityOf). Üç küçük sorgu */

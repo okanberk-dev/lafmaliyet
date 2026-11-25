@@ -30,6 +30,7 @@ import { readSalesState, syncSiteSales } from "@/server/site-sales/sync";
 
 import { AppearanceCard } from "./appearance-card";
 import { BackupDownload } from "./backup-client";
+import { BranchSettingsLinkCard } from "./branch-settings-card";
 import { impactData } from "./impact";
 import { JobsCard } from "./jobs-card";
 import { LafposCard } from "./lafpos-card";
@@ -412,6 +413,7 @@ async function SettingsContent() {
   return (
     <SettingsLayout nav={<SettingsNav />}>
       <UsersLinkCard />
+      <BranchSettingsLinkCard />
       <AppearanceCard />
       <SettingsForm settings={model.settings} water={model.water} data={impactData(model)} menuUrls={{ panel: `${appUrl()}/menu`, site: `${siteUrl()}/menu` }} />
       <StockValuationCard

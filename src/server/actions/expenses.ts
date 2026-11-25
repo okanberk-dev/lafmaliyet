@@ -7,9 +7,10 @@ import { z } from "zod";
 import { activeFromRange, currentMonthTR, fixedMonthly, shiftMonth } from "@/lib/calc/engine";
 import { panelGroupOf } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY, FIXED_ESTIMATE_DESCRIPTION, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
+import { EXPENSE_SHARED, zFormBranch } from "@/lib/branches";
 import { dateTR, monthLabel, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
-import { currentExpenseBranch } from "@/server/branch-scope";
+import { currentExpenseBranch, formBranch } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
 import { linkedUntil } from "@/lib/photo-rules";
@@ -32,6 +33,11 @@ const entrySchema = z.object({
   amount: zSignedAmount.refine((v) => v !== 0, "Tutar girin"),
   paymentMethod: z.enum(["nakit", "kart", "havale", "diger"]).nullable(),
   note: zOptText(500),
+  /**
+   * Formda seçilen şube: şube kimliği ya da "isletme" (işletme geneli; EXPENSE_SHARED). Gönderilmezse (eski sekme, asistan)
+   * seçili şube, "Tümü"de işletme geneli; düzeltmede şube değişmez
+   */
+  branchId: zFormBranch,
 });
 
 /** Harcamanın en ileri tarihi: bugünden bu kadar gün sonrası (gelecek ayın ödemesi önceden girilebilir; 2030 girilemez) */
@@ -51,8 +57,9 @@ async function ownerName(supplierEntryId: number): Promise<string> {
 export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const { id, ...data } = entrySchema.parse(input);
+    const { id, branchId: rawBranch, ...data } = entrySchema.parse(input);
     if (data.date > addDays(todayTR(), EXPENSE_AHEAD_DAYS)) throw new UserError("Tarih bir aydan daha ileri olamaz");
+
     const db = getDb();
     const [cat] = await db.select().from(s.expenseCategories).where(eq(s.expenseCategories.id, data.categoryId)).limit(1);
     if (!cat) throw new UserError("Kategori bulunamadı; sayfayı yenileyin");
@@ -60,6 +67,8 @@ export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
     if (!id && !cat.active) throw new UserError(`${cat.name} pasif; yeni harcama yazılmaz. Başka kategori seçin ya da kategoriyi etkinleştirin`);
     const values = { ...data, description: data.description || null, note: data.note || null };
     let saved: { id: number };
+    /** Yazılan şube (yeni kayıt ya da şubesi değişen düzeltme); null işletme geneli */
+    let moved: { branch: string | null } | null = null;
     if (id) {
       // Kasadan çıkan bir fişten yazılan kaydın tutarı ve tarihi kasada düzeltilir (iki yer ayrışmasın)
       const [prev] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, id)).limit(1);
@@ -70,6 +79,13 @@ export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
       if (prev?.supplierEntryId && (Math.abs(prev.amount - data.amount) >= 0.005 || prev.date !== data.date || prev.categoryId !== data.categoryId)) {
         throw new UserError(`Bu harcama ${await ownerName(prev.supplierEntryId)} faturasız alımından; tutarını, gününü ve kategorisini Tedarikçiler'de düzeltin`);
       }
+      // Şube formda değiştiyse (gönderilmediyse ya da aynıysa dokunulmaz: kapanmış şubenin eski kaydı da düzeltilir).
+      // Kaynağa bağlı kaydın şubesi kaynağın şubesidir: kasadan çıkanınki o kasanın, cari giderinki Tedarikçiler'de seçilen
+      if (prev && rawBranch && rawBranch !== (prev.branchId ?? EXPENSE_SHARED)) {
+        if (prev.cashOutId) throw new UserError("Bu harcama kasadan çıkan bir fişten; şubesi o kasanın şubesidir, değiştirilemez");
+        if (prev.supplierEntryId) throw new UserError(`Bu harcama ${await ownerName(prev.supplierEntryId)} faturasız alımından; şubesini Tedarikçiler'de düzeltin`);
+        moved = { branch: await formBranch(rawBranch, "expense") };
+      }
       // Çevirmenin tahmini kaydı: tutarı ya da günü düzeltilince ödenen tutar olur (nakit planı ödenmiş sayar; E-13)
       if (
         prev?.description === FIXED_ESTIMATE_DESCRIPTION &&
@@ -78,14 +94,21 @@ export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
       ) {
         values.description = null;
       }
-      const [row] = await db.update(s.expenseEntries).set({ ...values, updatedAt: new Date() }).where(eq(s.expenseEntries.id, id)).returning({ id: s.expenseEntries.id });
+      const [row] = await db
+        .update(s.expenseEntries)
+        .set({ ...values, ...(moved ? { branchId: moved.branch } : {}), updatedAt: new Date() })
+        .where(eq(s.expenseEntries.id, id))
+        .returning({ id: s.expenseEntries.id });
       if (!row) throw new UserError("Harcama bulunamadı; silinmiş olabilir");
       saved = row;
     } else {
-      // Yeni harcama seçili şubeye; "Tümü"nde işletme geneli (docs/SUBE.md)
-      [saved] = await db.insert(s.expenseEntries).values({ ...values, branchId: await currentExpenseBranch(), createdBy: me.name }).returning({ id: s.expenseEntries.id });
+      // Yeni harcama formun şubesine (docs/SUBE.md › Yazarken hangi şube): gönderim anındaki seçim değil. Şube
+      // göndermeyen eski sekmede ve asistanda seçili şube, "Tümü"nde işletme geneli
+      moved = { branch: await formBranch(rawBranch, "expense") };
+      [saved] = await db.insert(s.expenseEntries).values({ ...values, branchId: moved.branch, createdBy: me.name }).returning({ id: s.expenseEntries.id });
     }
-    await logActivity(me, id ? "Harcama düzeltildi" : "Harcama eklendi", `${cat.name} · ${dateTR(data.date)} · ${tl(data.amount, 2)}${data.description ? ` · ${data.description}` : ""}`);
+    const where = moved ? ` · ${moved.branch ? ((await listBranches()).find((b) => b.id === moved.branch)?.name ?? moved.branch) : "İşletme geneli"}` : "";
+    await logActivity(me, id ? "Harcama düzeltildi" : "Harcama eklendi", `${cat.name} · ${dateTR(data.date)} · ${tl(data.amount, 2)}${where}${data.description ? ` · ${data.description}` : ""}`);
     refresh();
     return { id: saved.id };
   });

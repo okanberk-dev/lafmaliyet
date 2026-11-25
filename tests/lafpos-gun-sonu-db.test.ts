@@ -169,7 +169,7 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
   });
 
   beforeEach(async () => {
-    await db.execute(sql`TRUNCATE lafpos_day_ends, pos_daily_sales, pos_day_reports, activity_log, staff_requests, cash_reports, cash_outs, notification_log, integration_state RESTART IDENTITY CASCADE`);
+    await db.execute(sql`TRUNCATE lafpos_day_ends, pos_daily_sales, pos_day_reports, activity_log, staff_requests, cash_reports, cash_outs, notification_log, integration_state, branch_settings RESTART IDENTITY CASCADE`);
     await setSwitch(SWITCH);
     await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: true, whatsapp: null });
     sent.length = 0;
@@ -630,13 +630,17 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
     await db.insert(s.notificationRecipients).values([
       { email: "muhasebe@ornek.com", active: true },
       { email: "eski@ornek.com", active: false },
+      // Yalnız Tuzla'ya bağlı adres Marina'nın gün sonunu yedek olarak da almaz (şube kapsamı C P1-11)
+      { email: "tuzlaci@ornek.com", active: true, branchIds: [MODPOS_SUBE] },
+      { email: "marinaci@ornek.com", active: true, branchIds: [LAFPOS_SUBE] },
     ]);
     try {
-      assert.deepEqual(await gun.dayEndRecipients(db), ["sahip@ornek.com"], "liste kuruluysa yalnız o");
+      assert.deepEqual(await gun.dayEndRecipients(db, LAFPOS_SUBE), ["sahip@ornek.com"], "liste kuruluysa yalnız o");
       await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: false, whatsapp: null });
-      assert.deepEqual(await gun.dayEndRecipients(db), ["muhasebe@ornek.com"]);
+      assert.deepEqual((await gun.dayEndRecipients(db, LAFPOS_SUBE)).sort(), ["marinaci@ornek.com", "muhasebe@ornek.com"]);
       await reports.saveCashSettings({ recipients: [], emailEnabled: true, whatsapp: null });
-      assert.deepEqual(await gun.dayEndRecipients(db), ["muhasebe@ornek.com"]);
+      assert.deepEqual((await gun.dayEndRecipients(db, LAFPOS_SUBE)).sort(), ["marinaci@ornek.com", "muhasebe@ornek.com"]);
+      assert.deepEqual((await gun.dayEndRecipients(db, MODPOS_SUBE)).sort(), ["muhasebe@ornek.com", "tuzlaci@ornek.com"]);
     } finally {
       await db.execute(sql`TRUNCATE notification_recipients RESTART IDENTITY CASCADE`);
     }

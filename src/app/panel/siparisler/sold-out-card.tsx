@@ -9,11 +9,12 @@ import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { SearchInput } from "@/components/ui/form";
 import type { Role } from "@/lib/constants";
 import { num } from "@/lib/format";
-import { SOLD_OUT_TEXT, STAFF_TOGGLE_LIMIT, soldOutMeta, soldOutWhen, type SoldOutEntry } from "@/lib/site-menu/sold-out";
+import { SOLD_OUT_TEXT, STAFF_TOGGLE_LIMIT, soldOutAllBranchesText, soldOutMeta, soldOutWhen, type SoldOutEntry } from "@/lib/site-menu/sold-out";
 import { holdSoldOut, setSoldOut } from "@/server/actions/menu-status";
 
 import { siteNameDiffers, soldOutHits } from "./sold-out-search";
@@ -27,10 +28,28 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * 2026'da Karaoke ekranından buraya taşındı: tükenen ürün uygulama siparişinin işi, karaokenin değil). Biten ürün
  * sitede, uygulamada ve QR menüde "Tükendi" yapılır (M ve L birlikte), gelince "Satışa aç". Kartta yalnız bu kartla
  * kapatılıp kaydı hâlâ geçerli ürünler durur; "Tükendi işaretle" penceresi yalnız kapatır. Personel yöneticinin
- * kapattığını açamaz; yönetici her kapalıyı açar ve "Kapalı tut" ile kaydı düşürür. Onay sorulmaz; fiyat yok.
+ * kapattığını açamaz; yönetici her kapalıyı açar ve "Kapalı tut" ile kaydı düşürür. Onay sorulmaz; fiyat yok. Birden çok
+ * şube açıkken pencere ürünün bütün şubelerde kapandığını söyler (sitede şube başına durum yok); şubesine kilitli
+ * personelin "Tükendi"si önce onay ister (`lockedStaff`; şube kapsamı C P1-7).
  */
-export function SoldOutCard({ role, entries, serverNow }: { role: Role; entries: SoldOutEntry[]; serverNow: number }) {
+export function SoldOutCard({
+  role,
+  entries,
+  serverNow,
+  branches = [],
+  lockedStaff = false,
+}: {
+  role: Role;
+  entries: SoldOutEntry[];
+  serverNow: number;
+  /** Açık şubelerin adları (birden çoksa "Bütün şubelerde kapanır") */
+  branches?: string[];
+  /** Şubesine kilitli personel ve birden çok şube açık: Tükendi önce onay ister */
+  lockedStaff?: boolean;
+}) {
   const admin = role === "admin";
+  const allText = soldOutAllBranchesText(branches);
+  const [confirming, setConfirming] = useState<Pick<SoldOutEntry, "id" | "name"> | null>(null);
   const clock = useClock(60_000);
   const now = new Date(clock || serverNow);
   const [open, setOpen] = useState(false);
@@ -147,7 +166,30 @@ export function SoldOutCard({ role, entries, serverNow }: { role: Role; entries:
           ))}
         </ul>
       ) : null}
-      <SoldOutDialog open={open} onClose={() => setOpen(false)} entries={entries} admin={admin} now={now} busy={busy} locked={locked} onToggle={toggle} />
+      <SoldOutDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        entries={entries}
+        admin={admin}
+        now={now}
+        busy={busy}
+        locked={locked}
+        allText={allText}
+        onToggle={(e, soldOut) => (soldOut && lockedStaff && allText ? setConfirming(e) : toggle(e, soldOut))}
+      />
+      <ConfirmDialog
+        open={confirming !== null}
+        onClose={() => setConfirming(null)}
+        onConfirm={() => {
+          const e = confirming;
+          setConfirming(null);
+          if (e) toggle(e, true);
+        }}
+        title={confirming ? `${confirming.name} tükendi yapılsın mı?` : ""}
+        description={allText}
+        confirmLabel="Tükendi"
+        tone="primary"
+      />
     </Card>
   );
 }
@@ -172,6 +214,7 @@ function SoldOutDialog({
   now,
   busy,
   locked,
+  allText,
   onToggle,
 }: {
   open: boolean;
@@ -181,6 +224,8 @@ function SoldOutDialog({
   now: Date;
   busy: string | null;
   locked: ReadonlySet<string>;
+  /** Birden çok şube açıkken "Bütün şubelerde kapanır" */
+  allText: string | null;
   onToggle: (e: SoldOutEntry, soldOut: boolean) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -192,7 +237,7 @@ function SoldOutDialog({
   }, [entries, query]);
 
   return (
-    <Dialog open={open} onClose={onClose} title="Tükendi işaretle" description={SOLD_OUT_TEXT.sizesTogether} size="lg">
+    <Dialog open={open} onClose={onClose} title="Tükendi işaretle" description={allText ? `${SOLD_OUT_TEXT.sizesTogether} ${allText}` : SOLD_OUT_TEXT.sizesTogether} size="lg">
       <div className="space-y-4">
         <SearchInput placeholder="Ürün ara" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Ürün ara" />
         {groups.length ? (

@@ -4,7 +4,6 @@ import { createHash } from "node:crypto";
 
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 
-import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { reminderPollDue } from "@/lib/karaoke/reminder";
 import { trClock } from "@/lib/karaoke/session";
 import {
@@ -17,6 +16,7 @@ import {
   staffSoonKey,
   type StaffMailSession,
 } from "@/lib/karaoke/staff-mail";
+import { karaokeBranchId } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { renderStaffMorning, renderStaffSoon } from "@/server/notify/karaoke-staff-template";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
@@ -46,12 +46,12 @@ export interface StaffMailRun {
 
 const DAY_MS = 86_400_000;
 
-/** O gün Vardiya planında çalışan olarak yazılmış hesaplar (karaoke odasının şubesi) */
-async function onShiftUserIds(date: string): Promise<number[]> {
+/** O gün Vardiya planında çalışan olarak yazılmış hesaplar (karaoke odasının şubesi; şube özelliği) */
+async function onShiftUserIds(date: string, branchId: string): Promise<number[]> {
   const rows = await getDb()
     .select({ userId: s.shifts.userId })
     .from(s.shifts)
-    .where(and(eq(s.shifts.branchId, DEFAULT_BRANCH_ID), eq(s.shifts.date, date), eq(s.shifts.kind, "work"), isNotNull(s.shifts.userId)));
+    .where(and(eq(s.shifts.branchId, branchId), eq(s.shifts.date, date), eq(s.shifts.kind, "work"), isNotNull(s.shifts.userId)));
   return rows.flatMap((r) => (r.userId === null ? [] : [r.userId]));
 }
 
@@ -66,6 +66,9 @@ export async function runStaffKaraokeMails(now: Date = new Date(), deadlineAt: n
   const morning = staffMorningWindow(nowMs) ? morningSessions(sessions, nowMs) : [];
   const soon = soonSessions(sessions, nowMs);
   if (!morning.length && !soon.length) return none();
+  // Karaokenin şubesi şube özelliğinden (src/lib/branch-features.ts): hiçbir şubede açık değilse personele e-posta gitmez
+  const karaokeAt = await karaokeBranchId();
+  if (karaokeAt === null) return none("karaoke hiçbir şubede açık değil");
   const settings = await loadNotifySettings();
   if (!settings.emailEnabled) return none("e-posta hatırlatmaları kapalı");
 
@@ -101,9 +104,9 @@ export async function runStaffKaraokeMails(now: Date = new Date(), deadlineAt: n
 
   const [users, onShift] = await Promise.all([
     db.select({ id: s.users.id, email: s.users.email, role: s.users.role, branchId: s.users.branchId }).from(s.users).where(eq(s.users.active, true)),
-    onShiftUserIds(today),
+    onShiftUserIds(today, karaokeAt),
   ]);
-  const recipients = staffMailRecipients(users, onShift, DEFAULT_BRANCH_ID);
+  const recipients = staffMailRecipients(users, onShift, karaokeAt);
   const from = resolveFrom(settings.from);
   let sent = 0;
   let failed = 0;

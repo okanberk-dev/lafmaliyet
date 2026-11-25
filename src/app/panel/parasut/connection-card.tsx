@@ -12,10 +12,11 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
 import { PasswordInput } from "@/components/ui/password-input";
-import { dateTimeTR } from "@/lib/format";
+import { dateTimeTR, locativeTR } from "@/lib/format";
 import { COMPANY_LOCKED_TEXT, sourceText, type ParasutSettingsView, type SettingSource } from "@/lib/parasut/settings";
 import { todayTR } from "@/lib/reminders";
-import { disconnectParasut, saveParasutSettings } from "@/server/actions/parasut";
+import { ToggleRow } from "@/components/ui/toggle-row";
+import { disconnectParasut, saveParasutSettings, setParasutInvoiceScope } from "@/server/actions/parasut";
 
 import { useCopied } from "../kullanicilar/password-field";
 
@@ -30,6 +31,9 @@ function SourceBadge({ source }: { source: SettingSource }) {
  * bağlantı ayarlarının formu (client_id, client_secret, firma numarası, ilk eşitleme başlangıcı; her alanda değerin
  * nereden geldiği), DevHub'a kaydedilecek dönüş adresi ve kısa "Nasıl alınır?". client_secret ekrana hiç gelmez:
  * yalnız kayıtlı olup olmadığı görünür, boş bırakılırsa kayıtlı olan kalır (src/lib/parasut/settings.ts).
+ *
+ * Şube başına Paraşüt hesabı (docs/PARASUT.md): kart ekranın gösterdiği hesabındır (`account`); bağlama, sıfırlama ve
+ * kayıt o hesaba gider. Ayrı hesapta (yalnız sahibi şube kullanıyor) "Faturalar … şubesinin" seçimi de burada.
  */
 export function ConnectionCard({
   configured,
@@ -40,7 +44,22 @@ export function ConnectionCard({
   busy,
   hasSynced,
   className,
+  account,
+  accountName = null,
+  invoiceScope = null,
+  linkedFrom = null,
 }: {
+  /**
+   * Seçili şube bu hesabı başka şubeden kullanıyor ("Tuzla ile aynı"): kart salt okunur durum ve hesabın sahibi şubede
+   * düzenleme bağlantısı; ayar formu ve oturum düğmeleri çizilmez (bağlı şubenin görünümünden Tuzla'nın ayarı değişmesin)
+   */
+  linkedFrom?: { branchName: string; ownerName: string; href: string } | null;
+  /** Kartın Paraşüt hesabı (sahibi şube); verilmezse sunucu seçili şubeninkini kullanır */
+  account?: string;
+  /** Birden çok kasa açıkken hesabın adı (başlıkta) */
+  accountName?: string | null;
+  /** Ayrı hesabın faturalarının şubesi seçimi (yalnız sahibi şube kullanıyorsa) */
+  invoiceScope?: { value: "branch" | "shared"; branchName: string } | null;
   configured: boolean;
   connection: { connected: boolean; refreshedAt: string | null; stale: boolean };
   /** DevHub'a kaydedilmesi gereken dönüş adresi (PARASUT_REDIRECT_URI yanlışsa null) */
@@ -54,6 +73,8 @@ export function ConnectionCard({
   className?: string;
 }) {
   const [resetting, startReset] = useActionTransition();
+  const [scoping, startScope] = useActionTransition();
+  const connectHref = account ? `/panel/parasut/baglan?hesap=${encodeURIComponent(account)}` : "/panel/parasut/baglan";
   const [confirmReset, setConfirmReset] = useState(false);
   const { copied, copy } = useCopied();
 
@@ -69,9 +90,36 @@ export function ConnectionCard({
       ? { tone: "amber" as const, label: "Bağlı değil", text: "Paraşüt'ün giriş ve onay ekranından bir kez geçin; yetki burada şifreli saklanır." }
       : { tone: "gray" as const, label: "Bağlı değil", text: "Önce aşağıdaki ayarları girip kaydedin." };
 
+  if (linkedFrom) {
+    return (
+      <Card className={className}>
+        <CardHeader
+          icon={<PlugZap />}
+          title={`Bağlantı · ${linkedFrom.ownerName}`}
+          description={`${linkedFrom.branchName}, ${linkedFrom.ownerName} şubesinin Paraşüt hesabını kullanıyor. Bağlantı ve ayarlar ${linkedFrom.ownerName} seçiliyken düzenlenir.`}
+        />
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-surface px-4 py-3 ring-1 ring-line">
+            <Badge tone={status.tone} dot>
+              {status.label}
+            </Badge>
+            <span className="min-w-0 flex-1 basis-56 text-[13px] leading-5 text-pretty text-ink-mute">{status.text}</span>
+            <a href={linkedFrom.href} className={buttonClass("secondary", "md", "max-sm:w-full")}>
+              {locativeTR(linkedFrom.ownerName)} düzenle
+            </a>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className={className}>
-      <CardHeader icon={<PlugZap />} title="Bağlantı" description="DevHub'daki uygulamanın bilgileri ve Paraşüt hesabının yetkisi." />
+      <CardHeader
+        icon={<PlugZap />}
+        title={accountName ? `Bağlantı · ${accountName}` : "Bağlantı"}
+        description={accountName ? `${accountName} şubesinin Paraşüt hesabı: DevHub'daki uygulamanın bilgileri ve hesabın yetkisi.` : "DevHub'daki uygulamanın bilgileri ve Paraşüt hesabının yetkisi."}
+      />
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-surface px-4 py-3 ring-1 ring-line">
           <Badge tone={status.tone} dot>
@@ -81,7 +129,7 @@ export function ConnectionCard({
           <span className="flex flex-wrap gap-2 max-sm:w-full">
             {configured ? (
               /* Tam sayfa gidiş: rota Paraşüt'ün onay ekranına 302 verir (Next yönlendirmesi değil, önden yüklenmez) */
-              <a href="/panel/parasut/baglan" className={buttonClass(connection.connected ? "secondary" : "primary", "md", "max-sm:flex-1")}>
+              <a href={connectHref} className={buttonClass(connection.connected ? "secondary" : "primary", "md", "max-sm:flex-1")}>
                 <PlugZap size={16} aria-hidden="true" /> {connection.connected ? "Yeniden bağla" : "Paraşüt hesabını bağla"}
               </a>
             ) : (
@@ -98,6 +146,26 @@ export function ConnectionCard({
         {!cronSet ? (
           <Notice tone="warn" size="sm" title="Her sabahki otomatik eşitleme kapalı" text="CRON_SECRET tanımlı değil; faturalar yalnız “Şimdi eşitle” ile gelir." />
         ) : null}
+        {invoiceScope ? (
+          <ToggleRow
+            title={`Faturalar ${invoiceScope.branchName} şubesinin`}
+            description={
+              invoiceScope.value === "branch"
+                ? `Bu hesaptan gelen yeni faturalar ${invoiceScope.branchName} şubesine yazılır. Kapalıyken işletme geneli kalır.`
+                : "Bu hesaptan gelen yeni faturalar işletme geneli kalır (şubeye yazılmaz). Var olan faturaların şubesi değişmez."
+            }
+            label={`Faturalar ${invoiceScope.branchName} şubesinin`}
+            checked={invoiceScope.value === "branch"}
+            disabled={scoping}
+            onChange={(v) =>
+              startScope(async () => {
+                const r = await setParasutInvoiceScope(v ? "branch" : "shared", account);
+                if (!r.ok) return void toast.error(r.error);
+                toast.success(v ? `Yeni faturalar ${invoiceScope.branchName} şubesinin` : "Yeni faturalar işletme geneli");
+              })
+            }
+          />
+        ) : null}
         {settings.secretUnreadable ? (
           <Notice tone="warn" size="sm" title="Kayıtlı Client Secret okunamadı" text="Sunucunun anahtarı (AUTH_SECRET) değişmiş olabilir; Client Secret'ı yeniden girip kaydedin." />
         ) : null}
@@ -108,6 +176,7 @@ export function ConnectionCard({
           settings={settings}
           connected={connection.connected}
           hasSynced={hasSynced}
+          account={account}
         />
 
         <div className="space-y-1.5 border-t border-line-strong pt-4">
@@ -164,7 +233,7 @@ export function ConnectionCard({
         pending={resetting}
         onConfirm={() =>
           startReset(async () => {
-            const r = await disconnectParasut();
+            const r = await disconnectParasut(account);
             if (!r.ok) return void toast.error(r.error);
             toast.success("Oturum sıfırlandı");
             setConfirmReset(false);
@@ -176,7 +245,7 @@ export function ConnectionCard({
 }
 
 /** Bağlantı ayarlarının formu; istemci ya da firma değişecekse önce sonucu sorar */
-function SettingsForm({ settings, connected, hasSynced }: { settings: ParasutSettingsView; connected: boolean; hasSynced: boolean }) {
+function SettingsForm({ settings, connected, hasSynced, account }: { settings: ParasutSettingsView; connected: boolean; hasSynced: boolean; account?: string }) {
   const [saving, startSave] = useActionTransition();
   const [clientId, setClientId] = useState(settings.clientId.value ?? "");
   const [secret, setSecret] = useState("");
@@ -189,7 +258,7 @@ function SettingsForm({ settings, connected, hasSynced }: { settings: ParasutSet
 
   const save = () =>
     startSave(async () => {
-      const r = await saveParasutSettings({ clientId, clientSecret: secret, companyId, syncFrom });
+      const r = await saveParasutSettings({ clientId, clientSecret: secret, companyId, syncFrom }, account);
       setConfirm(null);
       if (!r.ok) return void toast.error(r.error);
       if (!r.data.saved) return void toast("Değişiklik yok", { description: "Değerler zaten kayıtlıydı." });

@@ -161,7 +161,7 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
   });
 
   beforeEach(async () => {
-    await db.execute(sql`TRUNCATE notification_recipients, notification_log, cash_reports, reminders, activity_log, integration_state RESTART IDENTITY CASCADE`);
+    await db.execute(sql`TRUNCATE notification_recipients, notification_log, cash_reports, reminders, activity_log, integration_state, branch_settings RESTART IDENTITY CASCADE`);
     await db.update(s.users).set({ role: "admin", active: true }).where(inArray(s.users.id, [users.ali.id, users.veli.id]));
     await db.update(s.users).set({ role: "admin", active: false }).where(eq(s.users.id, users.eski.id));
     await db.update(s.users).set({ role: "staff", active: true }).where(inArray(s.users.id, [users.ayse.id, users.mehmet.id]));
@@ -260,9 +260,9 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     const inactive = await save(users.eski.email);
     assert.equal(inactive.ok, false);
     assert.match(inactive.ok ? "" : inactive.error, /^eski@laffogato\.net pasif bir hesabın adresi; pasif hesaba e-posta gitmez\./);
-    assert.deepEqual(await reports.loadCashSettings().then((c) => c.recipients), [], "hiçbiri yazılmadı");
+    assert.deepEqual(await reports.loadCashSettings("tuzla").then((c) => c.recipients), [], "hiçbiri yazılmadı");
     const ok = await save(`${ACCOUNTANT}\n${users.ali.email}`);
-    assert.ok(ok.ok);
+    assert.ok(ok.ok, ok.ok ? "" : ok.error);
     // Sonradan Ali pasif: deneme e-postası yalnız muhasebeciye, düşen söylenir
     await db.update(s.users).set({ active: false }).where(eq(s.users.id, users.ali.id));
     const t = await cashActions.sendCashTestEmail();

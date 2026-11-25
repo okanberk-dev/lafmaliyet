@@ -113,12 +113,14 @@ export async function addWaste(
   me: WasteActor,
   data: WasteInput & { clientKey?: string | null },
   now = new Date(),
+  branch?: string,
 ): Promise<{ id: number; name: string; unit: string; qty: number; repeated: boolean }> {
   const { clientKey = null, ...fields } = data;
   if (fields.date > businessDate(now)) throw new UserError("İleri bir güne kayıt girilemez");
-  // Zayi şube başına (stok gibi): seçili fiziksel şubeye ("Tümü" ya da online kanal seçiliyken Tuzla; docs/SUBE.md).
-  // Kilit, kapalı gün ve LafPOS reddi de o şubenin
-  const branchId = (await currentPhysicalBranch()).id;
+  // Zayi şube başına (stok gibi): formun şubesine (`branch`; eylem formBranch(…, "waste") ile doğrular). Verilmezse
+  // seçili fiziksel şube ("Tümü" ya da online kanal seçiliyken Tuzla; docs/SUBE.md). Kilit, kapalı gün ve LafPOS reddi de
+  // o şubenin
+  const branchId = branch ?? (await currentPhysicalBranch()).id;
   return db.transaction(async (tx) => {
     if (clientKey) {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`zayi-anahtar:${clientKey}`}))`);
@@ -182,14 +184,20 @@ export interface LateWasteInput extends WasteInput {
  * Personel: geç kayıt isteği (kilitli dün ve dünden önceki 14 gün). Hiçbir şey yazılmaz; yönetici onaylayınca kayıt
  * isteyenin adıyla girer. Kalem istek anında etkin olmalı; aynı gün, tür, kalem ve miktarda bekleyen istek varsa ret.
  */
-export async function proposeLateWaste(db: DB, me: WasteActor, input: LateWasteInput, now = new Date()): Promise<{ row: StaffRequestRow; created: boolean; payload: LateWastePayloadT }> {
+export async function proposeLateWaste(
+  db: DB,
+  me: WasteActor,
+  input: LateWasteInput,
+  now = new Date(),
+  branch?: string,
+): Promise<{ row: StaffRequestRow; created: boolean; payload: LateWastePayloadT }> {
   if (me.role === "admin") throw new UserError(REQUEST_TEXT.adminDirect);
   const message = input.message.trim();
   if (message.length < 3) throw new UserError(WASTE_REQUEST_TEXT.messageShort);
   return db.transaction(async (tx) => {
-    // addWaste ile aynı kural: zayi fiziksel şubeye yazılır; istek anında kaydedilir ki onay onu bozmasın. Günün kilidi
-    // de o şubenin kasasından
-    const branchId = (await currentPhysicalBranch()).id;
+    // addWaste ile aynı kural: zayi formun şubesine (verilmezse seçili fiziksel şube) yazılır; istek anında kaydedilir
+    // ki onay onu bozmasın. Günün kilidi de o şubenin kasasından
+    const branchId = branch ?? (await currentPhysicalBranch()).id;
     const mode = staffWasteMode(input.date, now, await wasteLock(tx, input.date, branchId));
     if (mode === "direct") throw new UserError(WASTE_REQUEST_TEXT.useDirect);
     if (mode === "closed") throw new UserError(WASTE_REQUEST_TEXT.windowOld);

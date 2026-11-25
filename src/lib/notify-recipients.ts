@@ -133,3 +133,35 @@ export function blockedBell(list: RecipientList, dropped: readonly DroppedRecipi
     href: list === "cash" ? "/panel/kasa#rapor-alicilari" : "/panel/hatirlaticilar#e-posta-bildirimleri",
   };
 }
+
+/**
+ * Sabah e-postasının alıcı grupları (şube kapsamı C P1-11; docs/BILDIRIMLER.md › Sabah e-postası): adresin şubeleri boşsa
+ * ya da bütün kasaları kapsıyorsa bütün şubelerin e-postası (bugünkü tek e-posta, `branchIds` boş); değilse aynı şube
+ * kümesindeki adresler bir e-posta alır. Kapanmış ya da silinmiş şube yok sayılır; seçili şubelerinin hiçbiri açık
+ * değilse adres hiçbir gruba girmez (kapsamı sessizce "bütün şubeler"e genişlemez; Hatırlatıcılar'daki satırı bunu
+ * söyler, branchesClosed). Sıra: bütün şubeler önce, sonra kasaların sırası
+ */
+export function digestGroups(rows: readonly { email: string; branchIds: readonly string[] }[], tills: readonly { id: string }[]): { branchIds: string[]; emails: string[] }[] {
+  const groups = new Map<string, { branchIds: string[]; emails: string[] }>();
+  for (const r of rows) {
+    if (branchesClosed(r.branchIds, tills)) continue;
+    const ids = tills.filter((t) => r.branchIds.includes(t.id)).map((t) => t.id);
+    const branchIds = ids.length === 0 || ids.length === tills.length ? [] : ids;
+    const key = branchIds.join(",");
+    const g = groups.get(key) ?? { branchIds, emails: [] };
+    g.emails.push(r.email);
+    groups.set(key, g);
+  }
+  const rank = (g: { branchIds: string[] }) => (g.branchIds.length ? tills.findIndex((t) => t.id === g.branchIds[0]) + 1 : 0);
+  return [...groups.values()].sort((a, b) => rank(a) - rank(b));
+}
+
+/** Adres şubeye bağlı ama seçili şubelerinin hiçbiri açık kasa değil: sabah e-postasını ve gün sonu yedeğini almaz */
+export function branchesClosed(branchIds: readonly string[] | undefined, tills: readonly { id: string }[]): boolean {
+  return !!branchIds?.length && !branchIds.some((id) => tills.some((t) => t.id === id));
+}
+
+/** Ödeme kalemi grubun e-postasına girer mi: bütün şubelerde hepsi; şubeye bağlı grupta şubenin ve işletme genelinin (şubesiz) */
+export function digestItemInGroup(branchId: string | null, groupBranchIds: readonly string[]): boolean {
+  return groupBranchIds.length === 0 || branchId === null || groupBranchIds.includes(branchId);
+}

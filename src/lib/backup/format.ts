@@ -74,7 +74,20 @@ export const EXCLUDED_STATE_KEYS: Readonly<Record<string, string>> = {
   site_orders: "uygulama siparişlerinin müşteri adları (sitenin geçmişsiz kopyası; bar ekranı yeniden çeker)",
 };
 
+/**
+ * Önekiyle dışarıda kalan durum anahtarları: şube başına Paraşüt hesabının oturumu ve ayarları hesap adıyla saklanır
+ * ("parasut.token:marina", "parasut.settings:marina"; docs/PARASUT.md › Şube başına Paraşüt hesabı). Varsayılan hesabın
+ * eski adlı kayıtları EXCLUDED_STATE_KEYS'te. Yarım bağlanma isteği (parasut.connect) de şifreli ve 10 dakikalık: girmez
+ */
+export const EXCLUDED_STATE_PREFIXES: Readonly<Record<string, string>> = {
+  "parasut.token:": "öbür şubelerin Paraşüt oturumu (şifreli); geri yüklemeden sonra Paraşüt ekranında o şube seçiliyken yeniden bağlanır",
+  "parasut.settings:": "öbür şubelerin Paraşüt bağlantı ayarları (client_secret şifreli); geri yüklemeden sonra yeniden girilir",
+  "parasut.connect": "yarım kalmış Paraşüt bağlanma isteği (şifreli, 10 dakika geçerli)",
+};
+
 const sqlList = (keys: string[]) => keys.map((k) => `'${k.replace(/'/g, "''")}'`).join(", ");
+/** LIKE kalıbı: önekteki % ve _ harfi harfine */
+const likePrefix = (p: string) => `'${p.replace(/['\\%_]/g, (c) => (c === "'" ? "''" : `\\${c}`))}%'`;
 
 const MCP_SKIP = "Claude bağlantıları; geri yüklemeden sonra Claude'da yeniden bağlanılır";
 
@@ -88,7 +101,12 @@ export const TABLE_RULES: Record<string, TableRule> = {
   // Elle karaoke rezervasyonunun hatırlatması: misafirin adresi (şifreli) yalnız e-posta gidene kadar durur
   karaoke_reminders: { skip: "karaoke hatırlatmasını bekleyen misafir adresleri (geçici; e-posta gidince silinir)" },
   users: { dropColumns: USER_CREDENTIAL_COLUMNS },
-  integration_state: { where: `key NOT IN (${sqlList(Object.keys(EXCLUDED_STATE_KEYS))})` },
+  // Şube başına ayarlar (docs/SUBE.md › Şube başına ayarlar): değerler ve "aynı" bağı yedeğe girer, şifreli alanlar
+  // girmez (başka AUTH_SECRET'la açılmaz); geri yüklemeden sonra Şube ayarları'ndan yeniden girilir
+  branch_settings: { dropColumns: ["secrets"] },
+  integration_state: {
+    where: [`key NOT IN (${sqlList(Object.keys(EXCLUDED_STATE_KEYS))})`, ...Object.keys(EXCLUDED_STATE_PREFIXES).map((p) => `key NOT LIKE ${likePrefix(p)}`)].join(" AND "),
+  },
   // Paraşüt'ün e-fatura PDF'i önbellektir (ilk açılışta yeniden indirilir); yalnız panelden yüklenenler
   invoice_documents: { where: `source = 'upload'`, documents: true },
   // Claude bağlantısı (docs/CLAUDE-BAGLANTISI.md): anahtar özetleri ve bağlantılar; beşi birden dışarıda kalır, atlanan
@@ -133,7 +151,12 @@ export function excludedFor(tables: string[], documents: boolean): BackupHeader[
   const skipped = tables.filter((t) => TABLE_RULES[t]?.skip || (TABLE_RULES[t]?.documents && !documents));
   const columns: Record<string, string[]> = {};
   for (const t of tables) if (TABLE_RULES[t]?.dropColumns) columns[t] = [...TABLE_RULES[t].dropColumns!];
-  return { tables: skipped, columns, stateKeys: Object.keys(EXCLUDED_STATE_KEYS), documents: documents ? "parasut-onbellek" : "hepsi" };
+  return {
+    tables: skipped,
+    columns,
+    stateKeys: [...Object.keys(EXCLUDED_STATE_KEYS), ...Object.keys(EXCLUDED_STATE_PREFIXES).map((p) => `${p}*`)],
+    documents: documents ? "parasut-onbellek" : "hepsi",
+  };
 }
 
 /** Bir satır: JSON + "\n" */

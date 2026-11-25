@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { ExpenseBranchField, expenseBranchName, type ExpenseBranchChoice } from "@/components/panel/expense-branch-field";
 import { PhotoThumb } from "@/components/panel/photo-picker";
 import { PhotoViewer } from "@/components/panel/photo-viewer";
 import { useActionTransition } from "@/components/ui/action-error";
@@ -20,9 +21,11 @@ import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Switch } from "@/components/ui/switch";
+import { EXPENSE_SHARED } from "@/lib/branches";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { PANEL_FIXED_GROUPS } from "@/lib/constants";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
+import { genitive } from "@/lib/recipe-change";
 import { cn } from "@/lib/utils";
 import {
   convertFixedToMonthly,
@@ -53,8 +56,11 @@ export interface CategoryRow {
   entryCount: number;
   monthEntries: number;
   monthInvoices: number;
+  /** Ayın toplamı: "Tümü"de girilenler + bağlı faturalar; şube seçiliyken yalnız şubenin kendi kayıtları (`expenseSplit`) */
   monthTotal: number;
   prevTotal: number;
+  /** Şube seçiliyken işletme geneli kısım (şubesi boş kayıtlar ve bağlı faturalar; toplama girmez); "Tümü"de 0 */
+  sharedTotal: number;
 }
 export interface EntryRow {
   id: number;
@@ -73,7 +79,12 @@ export interface EntryRow {
   cashOutDate?: string | null;
   /** Sahibi bir cari borç (faturasız alımın gideri): tedarikçi ve sayfası; tutar, gün ve kategori orada düzeltilir */
   cari?: { name: string; href: string | null } | null;
+  /** Giderin şubesi; null = işletme geneli */
+  branchId?: string | null;
+  /** Şube seçiliyken işletme geneli kayıt (şubesi boş): satırda rozet, şubenin toplamına girmez */
+  shared?: boolean;
 }
+
 export interface InvoiceItem {
   id: number;
   date: string;
@@ -127,6 +138,8 @@ type EntryDraft = {
   cashOutDate?: string | null;
   /** Cari borcun gideri: tutar, tarih ve kategori Tedarikçiler'de düzeltilir */
   cari?: { name: string; href: string | null } | null;
+  /** Şube kimliği ya da "isletme" (işletme geneli) */
+  branchId: string;
 };
 
 /**
@@ -141,19 +154,34 @@ export function MonthlyExpenses({
   invoices,
   fixed,
   invoiceCategories,
+  branches,
+  branchName: viewBranch = null,
 }: {
   month: string;
   isCurrent: boolean;
+  /** Seçili şube (şube görünümü); "Tümü"de null. Toplam şubenin kendi kayıtları, işletme geneli ayrı (expenseSplit) */
+  branchName?: string | null;
   categories: CategoryRow[];
   entries: EntryRow[];
   invoices: InvoiceItem[];
   fixed: FixedCandidate[];
   invoiceCategories: string[];
+  branches: ExpenseBranchChoice;
 }) {
   const [pending, start] = useActionTransition();
   const defaultDate = isCurrent ? localToday() : `${month}-01`;
   const active = categories.filter((c) => c.active);
-  const blank = (categoryId = ""): EntryDraft => ({ id: null, date: defaultDate, categoryId, description: "", amount: "", paymentMethod: null, note: "" });
+  const blank = (categoryId = ""): EntryDraft => ({
+    id: null,
+    date: defaultDate,
+    categoryId,
+    description: "",
+    amount: "",
+    paymentMethod: null,
+    note: "",
+    branchId: branches.defaultId,
+  });
+  const branchName = (id: string) => expenseBranchName(branches, id);
   const [draft, setDraft] = useState<EntryDraft>(() => blank(active[0] ? String(active[0].id) : ""));
   const [editing, setEditing] = useState<EntryDraft | null>(null);
   const [catEdit, setCatEdit] = useState<CategoryRow | "new" | null>(null);
@@ -165,9 +193,10 @@ export function MonthlyExpenses({
   const ads = categories.filter((c) => c.panelGroup === "reklam").reduce((a, c) => a + c.monthTotal, 0);
   const offInvoice = categories.reduce((a, c) => a + c.monthEntries, 0);
   const fromInvoices = categories.reduce((a, c) => a + c.monthInvoices, 0);
+  const shared = categories.reduce((a, c) => a + c.sharedTotal, 0);
   const missing = missingCategories(categories);
   const shownFixed = showAllFixed ? fixed : fixed.filter((f) => f.group === "reklam");
-  const breakdown = expenseBreakdowns(month, categories, entries, invoices);
+  const breakdown = expenseBreakdowns(month, categories, entries, invoices, viewBranch !== null);
 
   const save = (d: EntryDraft, done: () => void) => {
     const amount = parseNumberTR(d.amount);
@@ -184,10 +213,11 @@ export function MonthlyExpenses({
         amount,
         paymentMethod: d.paymentMethod,
         note: d.note,
+        branchId: d.branchId,
       });
       if (!r.ok) return void toast.error(r.error);
       const cat = categories.find((c) => c.id === Number(d.categoryId));
-      toast.success(`${d.id ? "Düzeltildi" : "Eklendi"}: ${cat?.name ?? "harcama"} · ${tl(amount, 2)}`);
+      toast.success(`${d.id ? "Düzeltildi" : "Eklendi"}: ${cat?.name ?? "harcama"} · ${tl(amount, 2)}${branches.ask ? ` · ${branchName(d.branchId)}` : ""}`);
       done();
     });
   };
@@ -211,7 +241,7 @@ export function MonthlyExpenses({
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    save(draft, () => setDraft((d) => ({ ...blank(d.categoryId), date: d.date, paymentMethod: d.paymentMethod })));
+    save(draft, () => setDraft((d) => ({ ...blank(d.categoryId), date: d.date, paymentMethod: d.paymentMethod, branchId: d.branchId })));
   };
 
   return (
@@ -231,7 +261,7 @@ export function MonthlyExpenses({
             icon={<Wallet />}
             label={`${monthLabel(month)} toplamı`}
             value={tl(total)}
-            sub={prevTotal ? `Geçen ay ${tl(prevTotal)}` : "Geçen ay kayıt yok"}
+            sub={shared ? `İşletme geneli ${tl(shared)} ayrı` : prevTotal ? `Geçen ay ${tl(prevTotal)}` : "Geçen ay kayıt yok"}
             info="Bu sayfadaki bütün kategoriler: girilen harcamalar (ödenen tutar, KDV dahil; fişin KDV'si ayrılmaz) ve kategoriye bağlı faturalar (KDV hariç). Gelir-gider'de her kategori kendi satırında bu tutarla sayılır."
           />
         </StatBreakdown>
@@ -263,10 +293,25 @@ export function MonthlyExpenses({
           exact
           empty="Bu ay bağlı kategorilerden fatura yok."
         >
-          <Stat compact icon={<Tags />} label="Faturadan" value={tl(fromInvoices)} sub={fromInvoices ? "Bağlı fatura kategorilerinden" : "Bağlı fatura yok"} />
+          <Stat
+            compact
+            icon={<Tags />}
+            label="Faturadan"
+            value={tl(fromInvoices)}
+            sub={fromInvoices ? (viewBranch ? "İşletme geneli; şubenin toplamına girmez" : "Bağlı fatura kategorilerinden") : "Bağlı fatura yok"}
+          />
         </StatBreakdown>
       </div>
 
+      {viewBranch && shared ? (
+        <Notice
+          tone="neutral"
+          size="sm"
+          className="mb-4"
+          title={`${viewBranch} seçili: toplam yalnız ${genitive(viewBranch)} harcamaları`}
+          text={`Şubesi seçilmemiş harcamalar ve kategoriye bağlı faturalar işletme genelidir (${tl(shared)}): satırlarda “İşletme geneli” rozetiyle görünür, Gelir-gider'de “İşletme geneli payı (bilgi)” satırındadır. Hepsi için soldan Tümü'nü seçin.`}
+        />
+      ) : null}
       {missing.length ? (
         <Notice
           tone="warn"
@@ -322,6 +367,15 @@ export function MonthlyExpenses({
                     options={METHODS}
                   />
                 </Field>
+                {branches.ask ? (
+                  <ExpenseBranchField
+                    id="x-branch"
+                    className="sm:col-span-2"
+                    choice={branches}
+                    value={draft.branchId}
+                    onChange={(v) => setDraft((d) => ({ ...d, branchId: v }))}
+                  />
+                ) : null}
                 <div className="sm:col-span-2">
                   <Button type="submit" disabled={pending} className="w-full sm:w-auto">
                     <Plus size={16} /> {pending ? "Kaydediliyor…" : "Ekle"}
@@ -350,11 +404,11 @@ export function MonthlyExpenses({
             meta={<span className="font-semibold text-ink tabular">{tl(total)}</span>}
           />
           <CardContent className="space-y-3">
-            {categories.filter((c) => c.monthTotal || c.expected).length === 0 ? (
+            {categories.filter((c) => c.monthTotal || c.sharedTotal || c.expected).length === 0 ? (
               <EmptyState title="Bu ay harcama yok" description="Soldan ekledikçe burada kategori kategori listelenir." />
             ) : (
               categories
-                .filter((c) => c.monthTotal || c.expected)
+                .filter((c) => c.monthTotal || c.sharedTotal || c.expected)
                 .map((c) => {
                   const rows = entries.filter((e) => e.categoryId === c.id);
                   const invs = invoices.filter((i) => i.categoryId === c.id);
@@ -370,6 +424,7 @@ export function MonthlyExpenses({
                         </h3>
                         <p className="text-sm text-ink tabular">
                           <span className="font-semibold">{tl(c.monthTotal)}</span>
+                          {c.sharedTotal ? <span className="ml-1.5 text-xs text-ink-mute">+ işletme geneli {tl(c.sharedTotal)}</span> : null}
                           {c.prevTotal ? <span className="ml-1.5 text-xs text-ink-mute">geçen ay {tl(c.prevTotal)}</span> : null}
                         </p>
                       </div>
@@ -390,6 +445,7 @@ export function MonthlyExpenses({
                                   photoId: e.photoId ?? null,
                                   cashOutDate: e.cashOutId ? (e.cashOutDate ?? e.date) : null,
                                   cari: e.cari ?? null,
+                                  branchId: e.branchId ?? EXPENSE_SHARED,
                                 })
                               }
                               className="flex w-full cursor-pointer items-start justify-between gap-3 py-2 text-left hover:bg-ink/[0.02] pointer-coarse:min-h-11"
@@ -400,9 +456,11 @@ export function MonthlyExpenses({
                                   {e.photoId ? <Camera size={13} className="shrink-0 text-ink-mute" aria-label="Fişli" role="img" /> : null}
                                   {e.cashOutId ? <Badge tone="gray">Kasadan</Badge> : null}
                                   {e.cari ? <Badge tone="amber">Cari · {e.cari.name}</Badge> : null}
+                                  {e.shared ? <Badge tone="gray">İşletme geneli</Badge> : null}
                                 </span>
                                 <span className="block text-xs text-ink-mute">
                                   {dateTR(e.date)}
+                                  {branches.ask ? ` · ${branchName(e.branchId ?? EXPENSE_SHARED)}` : ""}
                                   {e.paymentMethod ? ` · ${METHOD_LABEL[e.paymentMethod]}` : ""}
                                   {e.note ? ` · ${e.note}` : ""}
                                 </span>
@@ -421,7 +479,7 @@ export function MonthlyExpenses({
                                 {i.supplier}
                               </Link>
                               <span className="block text-xs text-ink-mute">
-                                {dateTR(i.date)} · faturadan ({i.invoiceCategory}, KDV hariç)
+                                {dateTR(i.date)} · faturadan ({i.invoiceCategory}, KDV hariç){viewBranch ? " · işletme geneli" : ""}
                               </span>
                             </span>
                             <span className="shrink-0 text-sm text-ink-soft tabular">{tl(i.net, 2)}</span>
@@ -509,6 +567,7 @@ export function MonthlyExpenses({
         <EntryDialog
           draft={editing}
           categories={categories}
+          branches={branches}
           pending={pending}
           onChange={setEditing}
           onClose={() => setEditing(null)}
@@ -563,6 +622,7 @@ export function MonthlyExpenses({
 function EntryDialog({
   draft,
   categories,
+  branches,
   pending,
   onChange,
   onClose,
@@ -571,6 +631,7 @@ function EntryDialog({
 }: {
   draft: EntryDraft;
   categories: CategoryRow[];
+  branches: ExpenseBranchChoice;
   pending: boolean;
   onChange: (d: EntryDraft) => void;
   onClose: () => void;
@@ -678,6 +739,17 @@ function EntryDialog({
             options={METHODS}
           />
         </Field>
+        {branches.ask ? (
+          <ExpenseBranchField
+            id="e-branch"
+            className="sm:col-span-2"
+            choice={branches}
+            value={draft.branchId}
+            onChange={(v) => set({ branchId: v })}
+            // Kaynağa bağlı kaydın şubesi kaynağın: kasadan çıkanınki o kasanın, cari giderinki Tedarikçiler'de
+            locked={cari ? "Şubesi Tedarikçiler'deki faturasız alımda seçilir." : draft.cashOutDate ? "Şubesi fişin çıktığı kasanın şubesidir." : null}
+          />
+        ) : null}
         <Field label="Not" htmlFor="e-note" className="sm:col-span-2">
           <Textarea id="e-note" rows={2} value={draft.note} onChange={(e) => set({ note: e.target.value })} />
         </Field>

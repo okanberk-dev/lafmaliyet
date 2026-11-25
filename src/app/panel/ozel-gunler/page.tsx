@@ -3,13 +3,14 @@ import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
-import { tillBranches } from "@/lib/branches";
+import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { STAFF_SPECIAL_LIMITS } from "@/lib/closed-days";
 import { addDays } from "@/lib/reminders";
 import { deleteSpecialDay, saveSpecialDay } from "@/server/actions/special-days";
 import { deleteStaffSpecialDay, saveStaffSpecialDay } from "@/server/actions/special-days-staff";
 import { requireUser } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { ownClosedRequests } from "@/server/closed-days";
 import { getDb } from "@/server/db";
@@ -73,8 +74,10 @@ export default function SpecialDaysPage() {
 }
 
 async function AdminContent() {
-  const [rows, branches] = await Promise.all([loadSpecialDays(), listBranches()]);
-  // Kapalı günün şubesi yalnız birden çok kasa açıkken seçilir ve listede yazılır (docs/SUBE.md › Kapalı gün)
+  // Tek şube seçiliyken o şubenin ve işletme genelinin günleri (şube kapsamı C P1-10)
+  const scope = await currentBranchScope();
+  const [rows, branches] = await Promise.all([loadSpecialDays(undefined, scope), listBranches()]);
+  // Günün şubesi yalnız birden çok kasa açıkken seçilir ve listede yazılır (docs/SUBE.md › Özel günlerin şubesi)
   const tills = tillBranches(branches);
   const many = tills.length > 1;
   // Saat okumalardan sonra (Cache Components)
@@ -88,8 +91,9 @@ async function AdminContent() {
     effect: d.effect,
     note: d.note ?? null,
     addedBy: d.addedBy ?? null,
-    branchId: d.kind === "kapali" ? (d.branchId ?? null) : null,
-    branchName: d.kind === "kapali" && many ? (d.branchId ? (branches.find((b) => b.id === d.branchId)?.name ?? d.branchId) : "Bütün şubeler") : null,
+    branchId: d.branchId ?? null,
+    // "Tümü"de her günün şubesi; tek şube seçiliyken yalnız işletme geneli günler etiketlenir
+    branchName: many && (scope === ALL_BRANCHES || !d.branchId) ? (d.branchId ? (branches.find((b) => b.id === d.branchId)?.name ?? d.branchId) : "Bütün şubeler") : null,
   });
   const upcoming = rows.filter((d) => d.dateTo >= today).map(item);
   const past = rows.filter((d) => d.dateTo < today).map(item);
@@ -101,6 +105,7 @@ async function AdminContent() {
       saveAction={saveSpecialDay}
       deleteAction={deleteSpecialDay}
       branches={many ? tills.map((b) => ({ id: b.id, name: b.name })) : undefined}
+      defaultBranchId={many && tills.some((b) => b.id === scope) ? scope : ""}
     >
       <SpecialDaysCard upcoming={upcoming} past={past} />
     </SpecialDayProvider>
@@ -109,7 +114,15 @@ async function AdminContent() {
 
 async function StaffContent() {
   const user = await requireUser();
-  const [rows, closed] = await Promise.all([staffSpecialList(getDb(), user), ownClosedRequests(user)]);
+  // Kişinin şubesinin kapalı günleri (kilitli personelde kendi şubesi, değilse seçici; docs/SUBE.md › Kapalı gün). "Tümü"de
+  // birden çok kasa açıkken kapalı günün şubesi satırda yazar
+  const scope = await currentBranchScope();
+  const [listed, closed, branches] = await Promise.all([staffSpecialList(getDb(), user, undefined, scope), ownClosedRequests(user), listBranches()]);
+  const many = scope === ALL_BRANCHES && tillBranches(branches).length > 1;
+  const rows = listed.map((r) => ({
+    ...r,
+    branchName: many ? (r.branchId ? (branches.find((b) => b.id === r.branchId)?.name ?? r.branchId) : "Bütün şubeler") : null,
+  }));
   const today = businessDate();
   return (
     <StaffSpecialDays

@@ -140,8 +140,8 @@ test("tryAction: yeni kayıt açan eylemde kopan bağlantı 'Kaydedilemedi' deme
 
 test("tekrarı ikinci kayıt yazan eylemler maybeSaved ile, gönderen ve çeken eylemler kendi metniyle çağrılır (B20 inceleme)", () => {
   const sites: [string, RegExp][] = [
-    ["src/app/panel/satislar/sales-client.tsx", /importSales\(\{ month, lines: rows, mode, through: running \? through : null \}\), \{ maybeSaved: mode === "append" \}\)/],
-    ["src/app/panel/satislar/sales-client.tsx", /saveLine\(\{ id: line\.id \?\? null, month, posName, qty: qtyNum, revenue: revNum, note \}\), \{ maybeSaved: !line\.id \}\)/],
+    ["src/app/panel/satislar/sales-client.tsx", /importSales\(\{ month, lines: rows, mode, through: running \? through : null, branchId \}\), \{ maybeSaved: mode === "append" \}\)/],
+    ["src/app/panel/satislar/sales-client.tsx", /saveLine\(\{ id: line\.id \?\? null, month, posName, qty: qtyNum, revenue: revNum, note, branchId: line\.id \? null : branchId \}\), \{\s+maybeSaved: !line\.id,\s+\}\)/],
     ["src/app/panel/personel/staff-editor.tsx", /tryAction\(\(\) => saveStaff\(list\), \{ maybeSaved: !row \}\)/],
     ["src/app/panel/personel/staff-editor.tsx", /itibarıyla devam ediyor`,\s+true,\s+\);/],
     ["src/app/panel/giderler/expenses-client.tsx", /effectiveFrom: !row \|\| amountChanged \? eff : row\.valueMonth,\s+\}\),\s+\/\/[^\n]*\n\s+\{ maybeSaved: !row \},/],

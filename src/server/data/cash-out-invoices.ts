@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, notExists, notInAr
 import { z } from "zod";
 
 import { supplierResolver } from "@/app/panel/tedarikciler/logic";
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { CASH_OUT_INVOICE_WINDOW, cashOutInvoiceDay, matchCashOutInvoices, nameKey, sameStoreName, type CashOutDocType } from "@/lib/cash-outs";
 import { addDays, todayTR } from "@/lib/reminders";
 import { getDb, schema as s, type DB } from "@/server/db";
@@ -71,6 +72,8 @@ export interface PendingCashOutInvoice {
   receiptNo: string | null;
   photoId: number | null;
   createdByName: string;
+  /** Kasanın şubesi (ekranlar seçili şubeyle süzer: `scopeCashOutInvoiceState`; eşleştirme havuzu işletme geneli) */
+  branchId: string;
   /** Aynı yerin son Kasa harcamasının kategorisi ("Aylık harcamalar'a yaz"ın önerisi); yoksa null */
   suggestedCategoryId: number | null;
 }
@@ -101,6 +104,15 @@ export interface CashOutInvoiceState {
 }
 
 /**
+ * Seçili şubenin kasadan faturalı alımları (docs/SUBE.md › Ödemeler): tek şube seçiliyken yalnız o şubenin kasasından
+ * çıkanlar; "Tümü"de hepsi. Eşleştirme süzmeden önce, bütün şubelerin satırlarıyla yapılmıştır (`loadCashOutInvoiceState`).
+ */
+export function scopeCashOutInvoiceState<S extends { pending: readonly { branchId: string }[]; duplicates: readonly { branchId: string }[] }>(state: S, scope: BranchScope): S {
+  if (scope === ALL_BRANCHES) return state;
+  return { ...state, pending: state.pending.filter((r) => r.branchId === scope), duplicates: state.duplicates.filter((r) => r.branchId === scope) };
+}
+
+/**
  * Bakılan en eski kasa günü: bugünden bu kadar gün önce (daha eskisi kapanmış yıldadır). Kapatılan satırlar sorguda
  * dışarıda kalır; sınır olmasa yıllar içinde biriken eşleşmiş satırlar her zil açılışında okunurdu.
  */
@@ -121,6 +133,10 @@ export async function loadPendingCashOutInvoices(db: DB | Tx = getDb(), opts: { 
  * hiçbir zaman bekleyen değildir. "Faturalar'a ekle" ile faturasına bağlanmış satırın sonradan gider kaydı olduysa (fatura
  * silinip geri alınırken yazılmış ya da Kasa'da yöneticinin anahtarıyla) o da iki kez sayılıyordur. `ids` verilirse
  * eşleştirmeden sonra yalnız onlar döner.
+ *
+ * Yükleyici şubeyle SÜZMEZ: fatura işletme genelidir, Marina'nın kasasından alınan malın faturası Tuzla'nın satırını da
+ * kapatabilir; havuz bölünse eşleşme şubeye göre değişirdi. Ekranlar (zil, Bugün, Genel bakış, Faturalar) sonucu seçili
+ * şubeyle süzer (`scopeCashOutInvoiceState`); vergi ve e-posta özeti işletme genelidir, süzmez.
  */
 export async function loadCashOutInvoiceState(db: DB | Tx = getDb(), opts: { ids?: readonly number[] } = {}): Promise<CashOutInvoiceState> {
   if (opts.ids && !opts.ids.length) return { pending: [], duplicates: [] };
@@ -148,6 +164,7 @@ export async function loadCashOutInvoiceState(db: DB | Tx = getDb(), opts: { ids
     receiptNo: co.receiptNo,
     photoId: co.photoId,
     createdByName: co.createdByName,
+    branchId: co.branchId,
     // Aylık harcamalar'daki kaydı (personel kuralı dışında yöneticinin anahtarıyla ya da buradan yazılmış)
     expenseId: s.expenseEntries.id,
     expenseCategory: s.expenseCategories.name,
@@ -244,6 +261,7 @@ export async function loadCashOutInvoiceState(db: DB | Tx = getDb(), opts: { ids
     receiptNo: r.receiptNo,
     photoId: r.photoId,
     createdByName: r.createdByName,
+    branchId: r.branchId,
   });
   const duplicate = (r: (typeof rows)[number], expenseId: number, inv: (typeof invoices)[number], adopted: boolean): DuplicateCashOutInvoice => ({
     ...rowOf(r),

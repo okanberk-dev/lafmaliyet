@@ -929,6 +929,26 @@ export interface StaffLateEdit {
   lastId: number;
 }
 
+/**
+ * Sayım kaydının işlem geçmişindeki ayrıntısı (stok sayımı, "Listede olmayanlar"): "Ekim 2026: 3 kalem · Marina". Şube
+ * sonda adıyla yazılır (şube kapsamı C P1-2): yöneticinin "personel geçen ayın sayımını değiştirdi" uyarısı tek şube
+ * seçiliyken yalnız o şubenin sayımını sayar (`countLogBranch`). Ay başta kalır (uyarı ayı önekle arar)
+ */
+export function countLogDetail(month: string, body: string, branchName: string): string {
+  return `${monthLabel(month)}: ${body} · ${branchName}`;
+}
+
+/**
+ * Sayım kaydının şubesi (`countLogDetail`'in tersi): sondaki adın şubesi; şubesi yazılmamış eski kayıt ya da tanınmayan ad
+ * (şube sonradan yeniden adlandırıldı) null: her şubede sayılır
+ */
+export function countLogBranch(detail: string | null, branches: readonly { id: string; name: string }[]): string | null {
+  const i = detail?.lastIndexOf(" · ") ?? -1;
+  if (!detail || i < 0) return null;
+  const name = detail.slice(i + 3).trim();
+  return branches.find((b) => b.name === name)?.id ?? null;
+}
+
 /** İşlem geçmişinin ayrıntısından kalem sayısı: "Ekim 2026: 3 kalem, 1 sayım silindi" → 4 */
 export function loggedItems(detail: string | null): number {
   if (!detail) return 0;

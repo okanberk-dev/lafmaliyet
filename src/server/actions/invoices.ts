@@ -18,6 +18,7 @@ import {
   type LockedField,
 } from "@/app/panel/faturalar/rules";
 import { cleanTaxNumber, methodLabel, PAYMENT_METHOD_VALUES } from "@/app/panel/tedarikciler/logic";
+import { BRANCH_ID_MAX } from "@/lib/branches";
 import { INVOICE_CATEGORIES } from "@/lib/constants";
 import { debtLabel, invoiceLabel, payableFloorProblem } from "@/lib/cari/account";
 import { round2 } from "@/lib/cari/balance";
@@ -25,8 +26,10 @@ import { linkedInvoiceProblem, linkedInvoiceRefusal } from "@/lib/cari/match";
 import { sniffMime } from "@/lib/documents";
 import { dateTR, tl } from "@/lib/format";
 import { crossesSeparate, separateMoveMonths } from "@/lib/invoice-linking";
+import { parseBillKey, qualifyBillKey } from "@/lib/parasut/accounts";
 import { addDays, todayTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
+import { listBranches } from "@/server/branches";
 import {
   assertNotCovered,
   cardResolver,
@@ -45,6 +48,7 @@ import { forgetPaid, rememberPaid } from "@/server/data/recent-paid";
 import { acceptedStockOnly, flagStockOnlyInvoices, stockOnlyIds, updateAcceptedStockOnly } from "@/server/data/stock-only-invoices";
 import { getDb, schema as s } from "@/server/db";
 import { storeUpload } from "@/server/documents";
+import { invoiceAccountOf, invoiceAccountWhere } from "@/server/parasut/accounts";
 import { findSameInvoiceNo, invoiceNoKey } from "@/server/parasut/mapping";
 import { applyProductLinks, IGNORE_KEY } from "@/server/parasut/sync";
 import { readPhoto } from "@/server/storage/photos";
@@ -824,6 +828,8 @@ function snapshotOf(r: InvoiceRow) {
     supplierTaxNumber: r.supplierTaxNumber,
     ledgerBase: r.ledgerBase,
     paidByLedger: r.paidByLedger,
+    parasutAccount: r.parasutAccount,
+    branchId: r.branchId,
   };
 }
 
@@ -867,6 +873,9 @@ const snapshotSchema = z.object({
   // kopyada durmaz, dağıtımlar yeniden yazılınca hesaplanır
   ledgerBase: z.number().finite().min(0).nullable().optional(),
   paidByLedger: z.boolean().optional(),
+  // Şube başına Paraşüt hesabı (sonradan eklendi; eski kopyada yok: kopyanın anahtarındaki hesap, yoksa varsayılan)
+  parasutAccount: z.string().max(BRANCH_ID_MAX).nullable().optional(),
+  branchId: z.string().max(BRANCH_ID_MAX).nullable().optional(),
 });
 
 /** Silinen faturanın cari bağları (releaseInvoiceLinks): geri alınınca yeniden kurulur, sığmayan para hesapta kalır */
@@ -971,7 +980,9 @@ export async function deleteInvoice(id: number) {
       if (!d) return null;
       // Kaydın bütün anahtarları yok sayılır: elle girilmiş gider faturasına bağlı e-fatura (ikisi birden) yalnız gider
       // faturası yok sayılınca e-fatura eşitlemesinden yeni kayıt olarak geri gelirdi (denetim 21 Kasım #3)
-      const [key, ...also] = parasutKeysOf(d);
+      // Anahtarlar faturanın Paraşüt hesabıyla öneklenir (şube başına hesap; varsayılan hesapta eski biçim)
+      const account = invoiceAccountOf(d);
+      const [key, ...also] = parasutKeysOf(d).map((k) => qualifyBillKey(account, k));
       if (key) {
         const ignore = (await readStateForUpdate<string[]>(tx, IGNORE_KEY)) ?? [];
         const add = [key, ...also].filter((k) => !ignore.includes(k));
@@ -1008,8 +1019,9 @@ export async function deleteInvoice(id: number) {
       : "";
     await logActivity(me, "Fatura silindi", `${dateTR(d.date)} ${d.supplier} ${d.invoiceNo ?? ""}`.trim() + cari);
     refresh();
+    const ownKey = parasutKeyOf(d);
     return {
-      externalId: parasutKeyOf(d),
+      externalId: ownKey ? qualifyBillKey(invoiceAccountOf(d), ownKey) : null,
       /** Elle/Excel faturası için geri alma kopyası (cari bağlarıyla); Paraşüt faturası sunucuda saklanır */
       snapshot: parasutKeyOf(d) ? null : { ...snapshotOf(d), ...(result.links ? { cari: result.links } : {}), ...(result.cashOutIds.length ? { cashOutIds: result.cashOutIds } : {}) },
       quantitiesRecomputed: result.lines > 0,
@@ -1029,9 +1041,13 @@ export async function restoreInvoice(snapshot: z.input<typeof snapshotSchema> & 
     const links = snapshot.cari ? cariLinksSchema.parse(snapshot.cari) : null;
     const cashOutIds = cashOutIdsSchema.parse(snapshot.cashOutIds ?? []);
     if (row.externalId || row.eInvoiceId) throw new UserError("Paraşüt faturası “Silinen Paraşüt faturaları” listesinden geri alınır.");
+    // Kopya istemciden gelir: elle girilen faturanın Paraşüt hesabı yoktur; şubesi bilinen bir şube değilse işletme
+    // geneli yazılır (yabancı anahtar hatası yerine)
+    const branchId = row.branchId && (await listBranches()).some((b) => b.id === row.branchId) ? row.branchId : null;
+    const values = { ...row, parasutAccount: null, branchId };
     const db = getDb();
     const out = await db.transaction(async (tx) => {
-      const [r] = await tx.insert(s.invoices).values(row).returning({ id: s.invoices.id });
+      const [r] = await tx.insert(s.invoices).values(values).returning({ id: s.invoices.id });
       await relinkCashOuts(tx, cashOutIds, r.id, me.name);
       if (!links) return { id: r.id, lost: 0, missed: 0 };
       const res = await reattachInvoiceLinks(tx, r.id, links, me.name, { supplier: row.supplier, taxNumber: row.supplierTaxNumber ?? null });
@@ -1054,7 +1070,9 @@ export async function restoreInvoice(snapshot: z.input<typeof snapshotSchema> & 
 export async function unignoreParasutBill(externalId: string) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const ext = z.string().trim().min(1, "Paraşüt kimliği gerekli").max(64).parse(externalId);
+    // Listedeki anahtar: hesap önekli olabilir ("marina/123"; qualifyBillKey)
+    const ext = z.string().trim().min(1, "Paraşüt kimliği gerekli").max(100).parse(externalId);
+    const { account, key: billKey } = parseBillKey(ext);
     const db = getDb();
     const out = await db.transaction(async (tx) => {
       const ignore = (await readStateForUpdate<string[]>(tx, IGNORE_KEY)) ?? [];
@@ -1068,18 +1086,25 @@ export async function unignoreParasutBill(externalId: string) {
       if (!entry) return { status: "unignored" as const, entry: null, lines: 0 };
       // Fatura bu arada başka yoldan geri gelmiş olabilir (aynı gider faturası ya da aynı e-fatura; e-fatura kimliği
       // benzersiz): kopya yazılmaz
-      const eInvoiceId = ext.startsWith("ei:") ? ext.slice(3) : (entry.row.eInvoiceId ?? null);
+      const eInvoiceId = billKey.startsWith("ei:") ? billKey.slice(3) : (entry.row.eInvoiceId ?? null);
       const [existing] = await tx
         .select({ id: s.invoices.id })
         .from(s.invoices)
-        .where(or(ext.startsWith("ei:") ? undefined : eq(s.invoices.externalId, ext), eInvoiceId !== null ? eq(s.invoices.eInvoiceId, eInvoiceId) : undefined))
+        .where(
+          and(
+            invoiceAccountWhere(account),
+            or(billKey.startsWith("ei:") ? undefined : eq(s.invoices.externalId, billKey), eInvoiceId !== null ? eq(s.invoices.eInvoiceId, eInvoiceId) : undefined),
+          ),
+        )
         .limit(1);
       if (existing) return { status: "exists" as const, entry, lines: 0 };
       // Silinirken faturaya sayılan ödemeler restoreInvoice'taki gibi yeniden sayılır (FC-01): hesapta hâlâ duran kadarı;
       // sığmayan hesapta kalır, defterin kapattığı fatura karşılanmıyorsa yeniden açılır. Eski kopyada dağıtım listesi
       // yok: ödeme hesapta kalır, ödeme sayılmış fatura ödenmemiş döner ("Borçlara say" onu kapatabilsin; ✓'li kalsaydı
       // tedarikçi alacaklı görünür, açık kalem olmadığı için para hiçbir yere sayılamazdı)
-      const parsed = snapshotSchema.parse(entry.row);
+      const snap = snapshotSchema.parse(entry.row);
+      // Eski kopyada hesap yok: kopyanın anahtarındaki hesap (Paraşüt kimliği olan kayıt hesapsız kalmasın)
+      const parsed = { ...snap, parasutAccount: snap.parasutAccount ?? (snap.externalId || snap.eInvoiceId ? account : null) };
       const stored = entry.cari ? cariLinksSchema.shape.allocations.safeParse(entry.cari.allocations) : null;
       const allocations = stored?.success ? stored.data : [];
       const unpaidBack = !stored?.success && (parsed.paidByLedger || (entry.cari?.paid ?? 0) > 0.005);

@@ -7,7 +7,7 @@
 
 import { isStarted } from "@/lib/checklists";
 import { num } from "@/lib/format";
-import { posMarksText, staleForText } from "@/lib/prices/pos";
+import { posMarksText, staleForText, tillPosCounts } from "@/lib/prices/pos";
 import { soldOutLineText, type SoldOutFact } from "@/lib/site-menu/sold-out";
 
 import { clip, type CafeLine, type DayFacts, type DayRow } from "./logic";
@@ -33,13 +33,17 @@ export interface OpsDayFacts {
  * işaretlenenler kartına götürür (işaret onaysızdır; yönetici oradan geri alır). LafPOS gününde (geçiş gününden
  * itibaren; denetim E-39) sayıda yalnız siteye bağlı olmayan ve fiyatı LafPOS başladıktan sonra değişen ürünler var:
  * siteye bağlınınkini LafPOS siteden alır, satır çoğu gün hiç çıkmaz; çıkarsa yalnız yöneticide: LafPOS'ta ürün fiyatını
- * yalnız menüyü yöneten (patron, müdür) değiştirir, kasiyer değiştiremez. Personelde satır yok.
+ * yalnız menüyü yöneten (patron, müdür) değiştirir, kasiyer değiştiremez. Personelde satır yok. "Tümü"de birden çok
+ * kasa açıkken sayı kasaların toplamıdır, ardından kasa başına: "Kasada değişecek 4 fiyat (Tuzla 3, Marina 1)".
  */
 export const posRow: DayRow = (f) => {
   const p = f.pos;
   const pending = p && p.count > 0 ? p : null;
   const lafpos = p?.kasa === "LafPOS";
   const oldest = pending?.oldest ? ` En eskisi ${staleForText(pending.oldest, f.now)} bekliyor.` : "";
+  // "Tümü"de birden çok kasa açıkken kasa başına sayı: " (Tuzla 3, Marina 1)" (şube kapsamı A3)
+  const counts = tillPosCounts(pending?.byBranch);
+  const per = counts ? ` (${counts})` : "";
   if (f.role !== "admin") {
     if (!pending || lafpos) return null;
     return {
@@ -47,7 +51,7 @@ export const posRow: DayRow = (f) => {
       title: "Kasadaki fiyatlar",
       status: "todo",
       badge: `${num(pending.count)} fiyat`,
-      detail: `ModPOS'ta değişecek ${num(pending.count)} fiyat; değiştirdikçe işaretleyin.${oldest}`,
+      detail: `ModPOS'ta değişecek ${num(pending.count)} fiyat${per}; değiştirdikçe işaretleyin.${oldest}`,
       href: "/panel/kasa/fiyatlar",
       action: "Listeyi aç",
     };
@@ -63,8 +67,8 @@ export const posRow: DayRow = (f) => {
     status: "todo",
     badge: `${num(pending.count)} fiyat`,
     detail: lafpos
-      ? `Kasada değişecek ${num(pending.count)} fiyat (siteye bağlı olmayan ürünler): LafPOS'ta yerel ürünse orada elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin; LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde bağlayın.${oldest}${marks ? ` ${marks}` : ""}`
-      : `Kasada değişecek ${num(pending.count)} fiyat: ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin.${oldest}${marks ? ` ${marks}` : ""}`,
+      ? `Kasada değişecek ${num(pending.count)} fiyat${per} (siteye bağlı olmayan ürünler): LafPOS'ta yerel ürünse orada elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin; LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde bağlayın.${oldest}${marks ? ` ${marks}` : ""}`
+      : `Kasada değişecek ${num(pending.count)} fiyat${per}: ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin.${oldest}${marks ? ` ${marks}` : ""}`,
     href: "/panel/urunler/fiyatlar?sekme=kasa",
     action: "Kasaya işle",
   };

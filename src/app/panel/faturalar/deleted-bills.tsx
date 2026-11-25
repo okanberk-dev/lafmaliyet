@@ -11,6 +11,7 @@ import { keepScroll } from "@/components/ui/filters";
 import { Avatar } from "@/components/ui/icon-tile";
 import { InfoTip } from "@/components/ui/misc";
 import { dateTimeTR, dateTR, tl } from "@/lib/format";
+import { parseBillKey } from "@/lib/parasut/accounts";
 import { unignoreParasutBill } from "@/server/actions/invoices";
 
 import { splitSupplier, type IgnoredBill } from "./rules";
@@ -61,7 +62,7 @@ export function DeletedBills({ bills }: { bills: IgnoredBill[] }) {
       {open ? (
         <ul id="silinen-parasut" className="divide-y divide-line-strong/70 border-t border-line">
           {list.map((b) => {
-            const name = b.supplier ? splitSupplier(b.supplier).base : `Paraşüt faturası #${b.externalId}`;
+            const name = b.supplier ? splitSupplier(b.supplier).base : `Paraşüt faturası #${parseBillKey(b.externalId).key}`;
             return (
               <li key={b.externalId} className="flex flex-wrap items-center gap-3 px-5 py-3">
                 <Avatar name={name} />

@@ -5,6 +5,8 @@ import { refresh } from "next/cache";
 import { cookies } from "next/headers";
 import { z } from "zod";
 
+import { BRANCH_FEATURES, branchFeatures, withFeature } from "@/lib/branch-features";
+import { BRANCH_SETTING_GROUPS } from "@/lib/branch-settings/groups";
 import {
   BRANCH_KINDS,
   BRANCH_NAME_MAX,
@@ -21,6 +23,7 @@ import {
 } from "@/lib/branches";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { staffBranchLock } from "@/server/branch-scope";
+import { branchSettingsCloseError } from "@/server/branch-settings";
 import { branchUsageCount, getBranch, listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 
@@ -112,9 +115,18 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
       hepsi.filter((b) => b.id !== d.id),
     );
     if (hata) throw new UserError(hata);
+    // Başka şube bu şubenin ayarını kullanıyorsa ("Marina ile aynı") kapatılmaz: bağ tek adımlı, bağlı şube değersiz kalırdı
+    if (mevcut.active && !d.active) {
+      const bagli = await branchSettingsCloseError(db, mevcut, BRANCH_SETTING_GROUPS);
+      if (bagli) throw new UserError(bagli);
+    }
     if (hepsi.some((b) => b.id !== d.id && b.name.localeCompare(d.name, "tr", { sensitivity: "base" }) === 0)) {
       throw new UserError("Bu adda bir şube zaten var");
     }
+    // Kapatılan şubenin tek şubelik özelliği (karaoke) düşer: başka şubede açılabilsin, şube yeniden açılınca iki şubede
+    // birden açık kalmasın (src/lib/branch-features.ts featureChangeError)
+    const closing = mevcut.active && !d.active;
+    const kept = closing ? BRANCH_FEATURES.filter((f) => f.single).reduce((acc, f) => withFeature(acc, f.id, false), branchFeatures(mevcut)) : null;
     await db
       .update(s.branches)
       .set({
@@ -123,6 +135,7 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
         posSource: d.posSource,
         openedOn: d.openedOn,
         active: d.active,
+        ...(kept ? { features: kept } : {}),
         ...(d.posRate !== undefined ? { posRate: d.posRate } : {}),
         updatedAt: new Date(),
       })
@@ -151,7 +164,7 @@ export async function deleteBranch(input: z.input<typeof deleteInput>) {
     if (!mevcut) throw new UserError("Şube bulunamadı");
     // Şube sütunu taşıyan her tabloda bağlı kayıt aranır (src/server/branches.ts): bir kuruş bile yazılmışsa
     // şube silinmez, pasife alınır — yoksa ciro kütükten düşer
-    const hata = branchDeleteError(mevcut, await branchUsageCount(db, id));
+    const hata = branchDeleteError(mevcut, await branchUsageCount(db, id)) ?? (await branchSettingsCloseError(db, mevcut, BRANCH_SETTING_GROUPS));
     if (hata) throw new UserError(hata);
     await db.delete(s.branches).where(eq(s.branches.id, id));
     await logActivity(me, "Şube silindi", `${mevcut.name} (${id})`);

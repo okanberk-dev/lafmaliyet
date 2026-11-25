@@ -236,7 +236,7 @@ test("kaynak: saf modül sunucuya bağlı değil; sunucu modülü yalnız okur (
   // E-postanın satırı yalnız dün (sabah işi föyü e-postadan önce çeker); okunamayan kaynak satırsız düşer
   assert.match(srv, /const yesterday = addDays\(businessDate\(now\), -1\);/);
   assert.match(srv, /loadModposSheets\(yesterday, yesterday\)/);
-  assert.match(srv, /\.catch\(\(\) => null\),\s+loadKeyAlerts\(\)\.catch\(\(\) => \[\]\),/);
+  assert.match(srv, /\.catch\(\(\) => null\),\s+loadKeyAlerts\(\)\s+\.then\([^\n]*\)\s+\.catch\(\(\) => \[\]\),/);
 });
 
 test("kaynak: zilin föy satırı kasa modülünün yönetici yolunda; personelin dalında ModPOS yok", () => {
@@ -269,7 +269,11 @@ test("kaynak: anahtarın zil satırı yalnız yönetici dalında, Sistem başlı
   assert.match(srv, /href: MODPOS_SETTINGS_HREF,\s+group: "sistem",/);
   assert.match(srv, /export const MODPOS_SETTINGS_HREF = "\/panel\/ayarlar#modpos";/);
   const digest = read("src/server/staff-requests/digest.ts");
-  assert.match(digest, /pastCountDigestLines\(now\), modposDigestLines\(now\)\]\)/);
+  assert.match(digest, /pastCountDigestLines\(now, scope\), modposDigestLines\(now, scope\)\]\)/);
+  // Şubeye bağlı alıcının e-postası: ModPOS föy farkı ve anahtar uyarısı yalnız o şubenin (şube kapsamı C P1-11)
+  const mp = read("src/server/bell/modpos.ts");
+  assert.match(mp, /modposMismatches\(reports, sheets, switchDay\)\.filter\(\(m\) => inScope\(m\.report\.branchId\)\)/);
+  assert.match(mp, /\.then\(\(all\) => all\.filter\(\(k\) => inScope\(k\.branchId\)\)\)/);
   assert.match(digest, /\.\.\.count\.lines, \.\.\.modpos\.lines\]/);
   assert.match(digest, /\{ title: "ModPOS API", lines, href: modpos\.href \?\? "\/panel\/kasa"/);
 });

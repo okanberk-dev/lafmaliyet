@@ -4,7 +4,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { ALL_BRANCHES } from "@/lib/branches";
+import { ALL_BRANCHES, BRANCH_ID_MAX, tillBranches } from "@/lib/branches";
 import { foldName, paidFixedRatesOf } from "@/lib/cash-plan";
 import { dateTR, monthLabel, tl } from "@/lib/format";
 import {
@@ -594,6 +594,28 @@ export async function setRecipientActive(id: number, active: boolean) {
   });
 }
 
+/**
+ * Bildirim adresinin şubeleri (şube kapsamı C P1-11; docs/BILDIRIMLER.md › Sabah e-postası): boş = bütün şubeler. Şubeler
+ * kasası olan etkin şubeler olmalı; bütün kasalar seçildiyse boş yazılır (bütün şubeler, tek e-posta)
+ */
+export async function setRecipientBranches(id: number, branchIds: string[]) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const rid = zId.parse(id);
+    const wanted = [...new Set(z.array(z.string().max(BRANCH_ID_MAX)).max(20).parse(branchIds))];
+    const tills = tillBranches(await listBranches());
+    const unknown = wanted.find((b) => !tills.some((t) => t.id === b));
+    if (unknown) throw new UserError("Şube bulunamadı ya da kapalı (sayfayı yenileyin)");
+    const ids = tills.every((t) => wanted.includes(t.id)) ? [] : tills.filter((t) => wanted.includes(t.id)).map((t) => t.id);
+    const [r] = await getDb().update(s.notificationRecipients).set({ branchIds: ids }).where(eq(s.notificationRecipients.id, rid)).returning({ email: s.notificationRecipients.email });
+    if (!r) throw new UserError("Adres bulunamadı (sayfayı yenileyin)");
+    const names = ids.map((b) => tills.find((t) => t.id === b)?.name ?? b);
+    await logActivity(me, "Bildirim adresinin şubesi", `${r.email} · ${names.length ? names.join(", ") : "Bütün şubeler"}`);
+    refresh();
+    return null;
+  });
+}
+
 export async function deleteRecipient(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -715,6 +737,11 @@ export async function runDigestNow() {
     await requireAdmin();
     const r = await runReminderDigest("manual");
     if (r.status === "error") throw new UserError(r.error);
+    // Bir alıcı grubu düştü: gidenler gitti; yeniden gönderim yalnız düşen gruba yeni iletidir (gidenlere aynı içerik gitmez)
+    if (r.status === "sent" && r.partialError) {
+      refresh();
+      throw new UserError(`Bazı adreslere gidemedi (${r.partialError}). Yeniden gönderebilirsiniz; giden adreslere ikinci kez gitmez.`);
+    }
     refresh();
     return r;
   });

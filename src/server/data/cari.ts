@@ -72,8 +72,12 @@ export interface CariIndex {
    */
   strong: (LinkCandidate & { cardId: number; debts: { id: number; date: string; description: string | null }[] })[];
   weak: (LinkCandidate & { cardId: number; debts: { id: number; date: string; description: string | null }[] })[];
-  /** Son 60 günün işlenmemiş, bir kartın adıyla eşleşen Kasa satırları (Teslim ve fişsiz Alışveriş) */
-  kasaPending: (KasaLine & { cardId: number })[];
+  /**
+   * Son 60 günün işlenmemiş, bir kartın adıyla eşleşen Kasa satırları (Teslim ve fişsiz Alışveriş), kasanın şubesiyle.
+   * Cari işletme genelidir, kasa satırı şubenindir (docs/SUBE.md › Ödemeler): liste süzülmez (`cariHints` işletme geneli
+   * faturaları bununla sessize alır); yalnız zil ve özet sayısı seçili şubeyi sayar (digest.ts `cariSummary`)
+   */
+  kasaPending: (KasaLine & { cardId: number; branchId: string })[];
   /**
    * Fatura → faturaya bağlı borçlarda Borç ekle'nin Kasa denetiminde "Ayrı alım" denmiş Teslim satırları (borcun
    * `dismissedCashOutIds` birleşimi): alım faturasına bağlanınca fatura da o satırla sessize alınmaz
@@ -198,7 +202,7 @@ export async function loadCariIndex(today = todayTR(), opts: { unpaid?: Promise<
   const since = addDays(today, -KASA_LOOKBACK_DAYS);
   const [lines, handled, unpaid] = await Promise.all([
     db
-      .select({ id: s.cashOuts.id, date: s.cashOuts.date, kind: s.cashOuts.kind, store: s.cashOuts.store, docType: s.cashOuts.docType, amount: s.cashOuts.amount })
+      .select({ id: s.cashOuts.id, date: s.cashOuts.date, kind: s.cashOuts.kind, store: s.cashOuts.store, docType: s.cashOuts.docType, amount: s.cashOuts.amount, branchId: s.cashOuts.branchId })
       .from(s.cashOuts)
       .where(gte(s.cashOuts.date, since)),
     loadKasaHandled(),
@@ -258,13 +262,13 @@ export interface SupplierCari {
   /** Faturası 45 gündür gelmeyen alımlar */
   late: number[];
   /** Kasadan bu tedarikçiye çıkan, hesaba işlenmemiş satırlar (son 60 gün) */
-  kasa: (KasaLine & { createdByName: string })[];
+  kasa: (KasaLine & { createdByName: string; branchId: string })[];
   /** Kartın ödemelerinden başka tedarikçide görünen faturalara sayılan (eski veri; "Ödemeden çıkar") */
   foreign: { paymentId: number; allocationIds: number[]; amount: number }[];
   /** Başka kartların ödemelerinden bu grubun faturalarına sayılanlar (ekstrenin ödeme satırları) */
   foreignIn: ForeignCredit[];
   /** Borçların gider kayıtları ("gider" ve "mevcut") */
-  expenses: Record<number, { id: number; date: string; amount: number; categoryId: number; categoryName: string }>;
+  expenses: Record<number, { id: number; date: string; amount: number; categoryId: number; categoryName: string; branchId: string | null }>;
   categories: DebtCategory[];
   /** Gelir-gider'de bir harcama kalemine bağlı fatura kategorileri (mal dışı faturanın gideri orada sayılır) */
   countedCategories: string[];
@@ -352,11 +356,20 @@ export async function loadSupplierCari<I extends AccountInvoice & { category: st
   const debtIds = entries.debts.map((d) => d.id);
   if (debtIds.length) {
     const rows = await db
-      .select({ id: s.expenseEntries.id, owner: s.expenseEntries.supplierEntryId, date: s.expenseEntries.date, amount: s.expenseEntries.amount, categoryId: s.expenseEntries.categoryId, categoryName: s.expenseCategories.name })
+      .select({
+        id: s.expenseEntries.id,
+        owner: s.expenseEntries.supplierEntryId,
+        date: s.expenseEntries.date,
+        amount: s.expenseEntries.amount,
+        categoryId: s.expenseEntries.categoryId,
+        categoryName: s.expenseCategories.name,
+        branchId: s.expenseEntries.branchId,
+      })
       .from(s.expenseEntries)
       .innerJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
       .where(inArray(s.expenseEntries.supplierEntryId, debtIds));
-    for (const r of rows) if (r.owner !== null) expenses[r.owner] = { id: r.id, date: r.date, amount: r.amount, categoryId: r.categoryId, categoryName: r.categoryName };
+    for (const r of rows)
+      if (r.owner !== null) expenses[r.owner] = { id: r.id, date: r.date, amount: r.amount, categoryId: r.categoryId, categoryName: r.categoryName, branchId: r.branchId };
   }
 
   // İşlenmemiş Kasa satırları: Teslim ve (grubun o gün açık kalemi varken) fişsiz Alışveriş
@@ -365,7 +378,16 @@ export async function loadSupplierCari<I extends AccountInvoice & { category: st
     const since = addDays(opts.today, -KASA_LOOKBACK_DAYS);
     const [lines, handled] = await Promise.all([
       db
-        .select({ id: s.cashOuts.id, date: s.cashOuts.date, kind: s.cashOuts.kind, store: s.cashOuts.store, docType: s.cashOuts.docType, amount: s.cashOuts.amount, createdByName: s.cashOuts.createdByName })
+        .select({
+          id: s.cashOuts.id,
+          date: s.cashOuts.date,
+          kind: s.cashOuts.kind,
+          store: s.cashOuts.store,
+          docType: s.cashOuts.docType,
+          amount: s.cashOuts.amount,
+          createdByName: s.cashOuts.createdByName,
+          branchId: s.cashOuts.branchId,
+        })
         .from(s.cashOuts)
         .where(gte(s.cashOuts.date, since)),
       loadKasaHandled(),

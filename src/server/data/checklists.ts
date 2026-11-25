@@ -2,7 +2,7 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 
-import { ALL_BRANCHES } from "@/lib/branches";
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { kontrolDigestBox, photoAccess, rangeText, valueText, whoText } from "@/lib/checklists";
 import { closedDayDigestLists } from "@/lib/closed-days";
@@ -136,13 +136,14 @@ export const kontrolPhotoRules: PhotoKindRules = {
  * önizleme de aynısını gösterir. O gün kasa raporu da yoksa (kasa kullanılmaya başlandıysa) "kafe kapalıysa
  * önemsemeyin" notu.
  */
-export async function loadKontrolDigest(now: Date = new Date()): Promise<DigestExtraLoad | null> {
+export async function loadKontrolDigest(now: Date = new Date(), scope: BranchScope = ALL_BRANCHES): Promise<DigestExtraLoad | null> {
   const day = addDays(businessDate(now), -1);
   const key = `kontrol:${day}`;
   const [sent] = await getDb().select({ key: s.notificationLog.key }).from(s.notificationLog).where(eq(s.notificationLog.key, key)).limit(1);
   if (sent) return null;
-  // E-posta işletmenin tamamı içindir: bütün şubelerin listeleri, kasa raporları ve kapalı işaretleri
-  const [lists, reports, first, marks] = await withBranchScope(ALL_BRANCHES, () =>
+  // E-posta işletmenin tamamı içindir: bütün şubelerin listeleri, kasa raporları ve kapalı işaretleri. Şubeye bağlı
+  // alıcının e-postasında (şube kapsamı C P1-11) yalnız o şubenin
+  const [lists, reports, first, marks] = await withBranchScope(scope, () =>
     Promise.all([loadChecklistDay(day, "admin", now), cashReportsBetween(day, day), firstCashReportDate(), closedMarksOn(day)]),
   );
   const cashMissing = !reports.length && first !== null && first <= day;

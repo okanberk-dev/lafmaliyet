@@ -2,6 +2,7 @@ import { CalendarClock, Hourglass } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { HashScroll } from "@/components/panel/hash-scroll";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -122,6 +123,8 @@ async function TaxContent({ searchParams }: { searchParams: PageProps<"/panel/ve
       <HashScroll key={`capa-${year}`} />
       <TaxBanner data={banner} />
       <div className="space-y-6">
+        {/* Şube seçiliyken: vergi firmanın (şube kapsamı C P1-12) */}
+        <CompanyWideNotice screen="vergi" />
         {/* İki rakam her genişlikte yan yana; Başlarken'in ilerlemesi kendi satırında (§7.1, §9 #1) */}
         <div className="grid grid-cols-2 gap-2">
           <Stat compact icon={<CalendarClock />} label={s.next.label} value={s.next.value} sub={s.next.sub} />

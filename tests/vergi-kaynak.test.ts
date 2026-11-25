@@ -278,7 +278,8 @@ test("Excel 'Vergi' sayfası: beyannameli aylar ve çeyrek yazılır; belgesi yo
 
 test("Excel 'Vergi' sayfasının kaynağı: route vergi görünümünü okur, hata dosyayı durdurmaz; sayfa yönetim verisini ve belgesiz kalemi yazmaz", () => {
   const route = read("src/app/api/export/route.ts");
-  assert.match(route, /const tax = await loadTaxView\(model\)/);
+  // Vergi firma geneli: şube dosyasında da bütün şubelerin modeliyle (şube kapsamı C P1-9)
+  assert.match(route, /const tax = await withBranchScope\(ALL_BRANCHES, async \(\) => loadTaxView\(whole \? model : await loadModel\(\{ scope: ALL_BRANCHES \}\)\)\)/);
   assert.match(route, /console\.error\("\[export\] Vergi sekmesi hazırlanamadı", e\);\n\s+return null;/);
   const wbSrc = read("src/app/api/export/workbook.ts");
   const body = wbSrc.slice(wbSrc.indexOf("function addTax("), wbSrc.indexOf("export function invoiceCategories("));

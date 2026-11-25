@@ -15,10 +15,12 @@ import {
   type BranchScope,
   DEFAULT_BRANCH_ID,
   DEFAULT_BRANCHES,
-  formCountError,
-  formTillError,
+  type FormBranchKind,
   otherBranchError,
   parseBranchScope,
+  pickFormBranch,
+  shownScopeError,
+  tillBranches,
 } from "@/lib/branches";
 
 import { getCurrentUser } from "./auth/dal";
@@ -177,35 +179,58 @@ export async function currentTillBranch(): Promise<string> {
 }
 
 /**
- * Formun gösterdiği kasa (kasa raporu, geç rapor, düzeltme ve silme isteği, kasadan çıkan; docs/SUBE.md › Yazarken
- * hangi şube). Sayfa formu `currentTillBranch` ile çizer ve kasanın kimliğini forma koyar; yazım gönderim anındaki
- * çereze değil bu kimliğe iner: çerez sekmeler arasında ortaktır, başka sekmede seçici değişince eski sekmenin Tuzla
- * formu Marina'ya yazıyordu (21 Kasım denetimi #12). Kimlik etkin bir fiziksel şube olmalı, şubesine kilitli personelde
- * kendi şubesi (`formTillError`); değilse UserError. Kimliği göndermeyen eski sekme bugünkü gibi seçili kasaya yazar.
- * Eylem yazımı `withBranchScope(kasa, …)` içinde çalıştırır: kapı, kilit ve okumalar da aynı kasaya bakar.
+ * Formun gösterdiği şube (docs/SUBE.md › Yazarken hangi şube): kasa, sayım, zayi, satış ve ay bilgisi, gider. Sayfa formu
+ * çizerken şubenin kimliğini forma koyar; yazım gönderim anındaki çereze değil bu kimliğe iner: çerez sekmeler arasında
+ * ortaktır, başka sekmede seçici değişince eski sekmenin Tuzla formu Marina'ya yazıyordu (21 Kasım denetimi #12; 24 Kasım
+ * şube kapsamı taraması). Kural saf dosyada (`pickFormBranch`, src/lib/branches.ts):
+ * - kimlik türüne uymalı (kasa, sayım, zayi ve satışta etkin fiziksel şube; giderde etkin şube ya da "isletme"), şubesine
+ *   kilitli personelde kendi şubesi; değilse UserError;
+ * - kimliği göndermeyen eski sekme bugünkü gibi seçime göre yazar; online kanal seçiliyken satış reddedilir;
+ * - `requireExplicit`: "Tümü"de birden çok kasa açıkken kimlik gelmediyse UserError ("Şubeyi seçin"), Tuzla'ya düşülmez.
+ * Eylem yazımı `withBranchScope(şube, …)` içinde çalıştırır: kapı, kilit ve okumalar da aynı şubeye bakar. Giderde null
+ * işletme genelidir.
  */
-export async function formTillBranch(raw: string | null | undefined): Promise<string> {
-  if (!raw) return currentTillBranch();
-  const [branches, lock] = await Promise.all([listBranches(), staffBranchLock()]);
-  const error = formTillError(raw, branches, lock);
-  if (error) throw new UserError(error);
-  return raw;
+export async function formBranch(raw: string | null | undefined, kind: "expense", opts?: { requireExplicit?: boolean }): Promise<string | null>;
+export async function formBranch(raw: string | null | undefined, kind: Exclude<FormBranchKind, "expense">, opts?: { requireExplicit?: boolean }): Promise<string>;
+export async function formBranch(raw: string | null | undefined, kind: FormBranchKind, opts?: { requireExplicit?: boolean }): Promise<string | null> {
+  const [scope, known, lock] = await Promise.all([currentBranchScope(), listBranches(), staffBranchLock()]);
+  const picked = pickFormBranch({ raw, kind, scope, known, lock, requireExplicit: opts?.requireExplicit });
+  if ("error" in picked) throw new UserError(picked.error);
+  // Şube göndermeyen yazım (eski sekme) "Tümü"de birden çok kasa açıkken varsayılan şubeye iner: bugün izin verilir
+  // (kasa, sayım, kasadan çıkan; sayfalar artık şubeyi sorar), ama izi kalsın. Eski sekmeler bitince requireExplicit
+  // açılabilir (docs/SUBE.md › Yazarken hangi şube)
+  if (!raw && kind !== "expense" && !known.some((b) => b.id === scope && b.kind === "fiziksel") && tillBranches(known).length > 1) {
+    console.warn("[şube] yazım şube göndermedi; varsayılan şubeye yazıldı (eski sekme?)", { kind, scope: scope.replace(/[\r\n]/g, " ").slice(0, 40), to: picked.id });
+  }
+  return picked.id;
 }
 
 /**
- * Formun gösterdiği sayımın şubesi (stok sayımı, "Listede olmayanlar", "Listeye ekle"; docs/SUBE.md › Yazarken hangi
- * şube): `formTillBranch`'in sayım karşılığı. Sayfa formu `currentPhysicalBranch` ile çizer ve şubenin kimliğini forma
- * koyar; kayıt gönderim anındaki çereze değil bu kimliğe iner: başka sekmede seçici değişince açık kalan Tuzla sayımı
- * Marina'ya yazıyordu. Kimlik etkin bir fiziksel şube olmalı, şubesine kilitli personelde kendi şubesi
- * (`formCountError`); değilse UserError. Kimliği göndermeyen eski sekme bugünkü gibi seçili fiziksel şubeye yazar.
- * Eylem yazımı `withBranchScope(şube, …)` içinde çalıştırır: okumalar da aynı şubeye bakar.
+ * Formun gösterdiği kasa (kasa raporu, geç rapor, düzeltme ve silme isteği, kasadan çıkan; docs/SUBE.md › Yazarken
+ * hangi şube): `formBranch(raw, "till")`. Sayfa formu `currentTillBranch` ile çizer ve kasanın kimliğini forma koyar.
+ * Kimliği göndermeyen eski sekme bugünkü gibi seçili kasaya yazar.
+ */
+export async function formTillBranch(raw: string | null | undefined): Promise<string> {
+  return formBranch(raw, "till");
+}
+
+/**
+ * Formun gösterdiği sayımın şubesi (stok sayımı, "Listede olmayanlar", "Listeye ekle"): `formBranch(raw, "count")`.
+ * Sayfa formu `currentPhysicalBranch` ile çizer ve şubenin kimliğini forma koyar. Öbür şubenin kalemi eşlenmez, ezilmez.
  */
 export async function formCountBranch(raw: string | null | undefined): Promise<string> {
-  if (!raw) return (await currentPhysicalBranch()).id;
-  const [branches, lock] = await Promise.all([listBranches(), staffBranchLock()]);
-  const error = formCountError(raw, branches, lock);
+  return formBranch(raw, "count");
+}
+
+/**
+ * Formun gösterdiği kapsam ile eylem anındaki seçim tutmalı (kapsamla silen yazımlar; `shownScopeError`). Tutmazsa
+ * UserError "Şube seçimi başka sekmede değişti; sayfayı yenileyin"
+ */
+export async function assertShownScope(shown: unknown): Promise<BranchScope> {
+  const current = await currentBranchScope();
+  const error = shownScopeError(shown, current);
   if (error) throw new UserError(error);
-  return raw;
+  return current;
 }
 
 /**

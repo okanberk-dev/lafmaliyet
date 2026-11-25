@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
-import type { BranchRow } from "@/lib/branches";
+import { ALL_BRANCHES, type BranchRow } from "@/lib/branches";
 import { dateTR, monthLabel, monthShort, num } from "@/lib/format";
 import { addDays, dayAblativeTR, dayMonthTR, shiftMonth } from "@/lib/reminders";
 import {
@@ -20,9 +20,10 @@ import {
   type SkippedRows,
   type StockEstimateLine,
 } from "@/lib/stock-estimate";
+import { genitive } from "@/lib/recipe-change";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth/dal";
-import { staffBranchLock } from "@/server/branch-scope";
+import { currentBranchScope, staffBranchLock } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadReceiptInvoices, loadStockEstimate, unassignedCount, type ReceiptInvoice } from "@/server/data/stock-estimate";
 
@@ -94,10 +95,13 @@ async function StockEstimateContent() {
   }
   const { estimate, today, lafposFrom } = data;
   // Faturanın şubesi kartı yalnız yöneticide ve tahmin başladıysa (dönemin faturaları)
-  const [receipts, branches] = await Promise.all([
+  const [receipts, branches, scope] = await Promise.all([
     admin && estimate.from ? loadReceiptInvoices(estimate.from, today) : Promise.resolve<ReceiptInvoice[]>([]),
     admin ? listBranches() : Promise.resolve<BranchRow[]>([]),
+    currentBranchScope(),
   ]);
+  // Başka şube seçiliyken (ör. Tuzla) ekran yine Marina'nın tahminidir: söylenir (şube kapsamı tarama #78)
+  const otherScope = scope !== ALL_BRANCHES && scope !== STOCK_ESTIMATE_BRANCH ? (branches.find((b) => b.id === STOCK_ESTIMATE_BRANCH)?.name ?? "Marina") : null;
   const physical = branches.filter((b) => b.active && b.kind === "fiziksel").map((b) => ({ id: b.id, name: b.name }));
   const unassigned = unassignedCount(receipts);
   const meta =
@@ -114,6 +118,7 @@ async function StockEstimateContent() {
     <>
       <Header role={user.role} meta={meta} />
       <div className="space-y-4">
+        {otherScope ? <Notice tone="neutral" size="sm" title={`Tahmini stok yalnız ${otherScope} için tutulur`} text={`Seçili şubenin değil, ${genitive(otherScope)} tahmini görünüyor.`} /> : null}
         {estimate.counts.tahmin === 0 ? (
           <Notice
             tone="neutral"

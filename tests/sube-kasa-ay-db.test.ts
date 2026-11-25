@@ -283,10 +283,11 @@ describe("iki şubeli ay: veritabanında", { skip: !SERVER_URL && "SUBE_TEST_DAT
     const revenueDef = (x: Awaited<ReturnType<typeof model>>) => x.pnlRowDefs(["2026-09"]).find((d) => d.key === "revenue")!;
     assert.equal(revenueDef(all).editable, false);
     assert.equal(revenueDef(marina).editable, true);
-    // Satışlar'ın ay formu Tümü'de Tuzla'nın satırını yazar: Tümü = Tuzla'nın elle yazdığı + Marina'nın kasası
-    const saved = await withBranchScope(ALL_BRANCHES, () =>
-      sales.saveMonthInfo({ month: "2026-09", openDays: null, posRevenue: 250_000, discounts: null, offRevenue: null, cardShare: null, note: null }),
-    );
+    // Satışlar'ın ay formu Tümü'de Tuzla'nın satırını gösterir ve şubeyi gönderir: Tümü = Tuzla'nın elle yazdığı + Marina'nın
+    // kasası. Şubeyi göndermeyen eski sekme Tümü'de reddedilir (sessizce Tuzla'ya inmez; tests/form-sube.test.ts)
+    const info = { month: "2026-09", openDays: null, posRevenue: 250_000, discounts: null, offRevenue: null, cardShare: null, note: null };
+    assert.deepEqual(await withBranchScope(ALL_BRANCHES, () => sales.saveMonthInfo(info)), { ok: false, error: "Hangi şubeye yazılsın? Şubeyi seçin" });
+    const saved = await withBranchScope(ALL_BRANCHES, () => sales.saveMonthInfo({ ...info, branchId: "tuzla" }));
     assert.equal(saved.ok, true, JSON.stringify(saved));
     const rows = await db.select({ branchId: s.months.branchId, pos: s.months.posRevenue }).from(s.months);
     assert.deepEqual(rows, [{ branchId: "tuzla", pos: 250_000 }]);

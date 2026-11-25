@@ -34,9 +34,15 @@ const clock = (iso: string) => new Date(iso).toLocaleTimeString("tr-TR", { hour:
  * kimliği). Liste düz metin olarak kopyalanıp WhatsApp'a yapıştırılabilir (posChecklistText).
  * `kasa` bugünün kasası (src/lib/lafpos/kasa.ts; verilmezse ModPOS): LafPOS gününde listede yalnız siteye bağlı olmayan
  * ürünler var, LafPOS öbürlerinin fiyatını siteden alır; metinler bunu söyler (denetim E-39).
+ * `branchId` listenin kasası (şube kapsamı A3): işaret yalnız o şubenin kasasından düşer (markPosDone). `branchName`
+ * yalnız "Tümü"de birden çok kasa yan yanayken başlığa girer ("Marina · Kasaya işle").
  */
 export function PosChecklist(
-  props: ({ staff?: false; items: PosChecklistItem[] } | { staff: true; items: StaffPosItem[]; mine: MyPosMark[] }) & { kasa?: KasaName },
+  props: ({ staff?: false; items: PosChecklistItem[] } | { staff: true; items: StaffPosItem[]; mine: MyPosMark[] }) & {
+    kasa?: KasaName;
+    branchId?: string;
+    branchName?: string | null;
+  },
 ) {
   const { items } = props;
   const staff = props.staff === true;
@@ -99,7 +105,7 @@ export function PosChecklist(
       // işaretlemek "zaten işaretlenmiş" der.
       let r: Awaited<ReturnType<typeof markPosDone>>;
       try {
-        r = await markPosDone(list.map((i) => ({ productId: i.productId, price: i.price })));
+        r = await markPosDone(list.map((i) => ({ productId: i.productId, price: i.price })), props.branchId);
       } catch (e) {
         forget(ids);
         throw e;
@@ -146,7 +152,7 @@ export function PosChecklist(
     <Card>
       <CardHeader
         icon={<Store />}
-        title={staff ? (lafpos ? "LafPOS'taki fiyatlar" : "ModPOS'ta değişecek fiyatlar") : "Kasaya işle"}
+        title={`${props.branchName ? `${props.branchName} · ` : ""}${staff ? (lafpos ? "LafPOS'taki fiyatlar" : "ModPOS'ta değişecek fiyatlar") : "Kasaya işle"}`}
         description={
           staff
             ? lafpos
@@ -259,7 +265,7 @@ export function PosChecklist(
           }}
           tone="primary"
           confirmLabel="İşaretle"
-          title={`${num(visible.length)} fiyatın hepsi kasada değişti mi?`}
+          title={`${num(visible.length)} fiyatın hepsi ${props.branchName ? `${props.branchName} kasasında` : "kasada"} değişti mi?`}
           description="İşaretlenen fiyatlar listeden düşer; bildirimdeki Geri al ile ya da Son işaretlenenler'den geri alabilirsiniz."
         />
       )}

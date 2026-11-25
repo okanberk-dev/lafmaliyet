@@ -7,6 +7,7 @@ import { detectEvent, pushMessages, type KaraokeEvent, type SiteReservation } fr
 import { cancelledAtFor, goneSiteRows, parseSiteResponse, sessionChannel, siteTime, type SiteSnapshot } from "@/lib/karaoke/site";
 import { fetchFailure, karaokePullError, siteErrorCode } from "@/lib/karaoke/sync-text";
 import { addDays, todayTR } from "@/lib/reminders";
+import { featureAudienceIds } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { sendPush } from "@/server/push/send";
 import { signedSiteFetch, siteLinkSecret, siteUrl } from "@/server/site-link";
@@ -258,9 +259,15 @@ export async function ensureKaraokeFresh(opts: { maxAgeMs?: number; state?: Sync
   return syncKaraoke("screen");
 }
 
-/** Olayları cihazlara bildirir: üçten fazlaysa tek özet bildirim; misafirin adı bildirime yazılmaz (kilit ekranı) */
+/**
+ * Olayları cihazlara bildirir: üçten fazlaysa tek özet bildirim; misafirin adı bildirime yazılmaz (kilit ekranı). Yalnız
+ * karaokenin kitlesine (`featureAudience`: yönetici, şubesiz personel ve karaokesi açık şubenin personeli; docs/SUBE.md ›
+ * Şube özellikleri): başka şubeye kilitli personelin cihazı karaoke zili çalmaz; karaoke hiçbir şubede açık değilse kimse
+ */
 async function announce(events: { event: KaraokeEvent; r: SiteReservation }[], nowMs: number) {
   const fresh = events.some((e) => e.event === "created");
+  if (!events.length) return;
+  const userIds = await featureAudienceIds("karaoke");
   for (const m of pushMessages(events, nowMs)) {
     await sendPush("karaoke", {
       kind: "karaoke",
@@ -270,6 +277,6 @@ async function announce(events: { event: KaraokeEvent; r: SiteReservation }[], n
       tag: `karaoke-${m.event}-${nowMs}`,
       requireInteraction: m.event === "created",
       ring: fresh,
-    });
+    }, { userIds });
   }
 }

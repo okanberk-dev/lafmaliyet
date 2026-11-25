@@ -20,7 +20,7 @@ import { productLabel } from "@/lib/waste";
 import { parseWeeklyHistory, selectItems, weekInfo, WEEKLY_HISTORY_KEY, type WeekInfo, type WeeklyItem, type WeeklySource, type WeeklySummary } from "@/lib/weekly/core";
 import { cashItem, checklistDayOf, checklistItem, commissionItems, karaokeItem, kasaItem, posPriceItem, salesLine, stockItem, wasteCost, wasteItem, zamItem, type KomisyonCand } from "@/lib/weekly/items";
 import { withBranchScope } from "@/server/branch-scope";
-import { listBranches } from "@/server/branches";
+import { featureHere, listBranches } from "@/server/branches";
 import { loadCashPlan } from "@/server/data/cash-plan";
 import { cashReportPhotoInfo } from "@/server/data/cash-photos";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, type CashReportDTO } from "@/server/data/cash-reports";
@@ -29,7 +29,7 @@ import { loadCommissionInput } from "@/server/data/commission";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { loadPosChecklist } from "@/server/data/prices";
-import { loadTillScope } from "@/server/data/till-scope";
+import { loadTillScopes } from "@/server/data/till-scope";
 import { getDb, schema as s } from "@/server/db";
 import { capped } from "@/server/jobs/capped";
 import { loadOccupancySessions, readKaraokeHours } from "@/server/karaoke/occupancy";
@@ -185,6 +185,8 @@ const komisyon: Collector = {
   source: "komisyon",
   timeoutMs: 3_000,
   async run(ctx) {
+    // Yemek kartı hiçbir şubede kullanılmıyorsa madde yok (şube özelliği; docs/SUBE.md › Şube özellikleri)
+    if (!(await featureHere("yemek_karti", ALL_BRANCHES))) return one(null);
     // İşletme geneli (haftalık özet seçiciden bağımsız; docs/SUBE.md)
     const report = buildCommissionReport(await withBranchScope(ALL_BRANCHES, () => loadCommissionInput({ resolveNames: false, today: ctx.today })));
     const cands = commissionAlerts(report, ctx.today, Infinity)
@@ -196,24 +198,25 @@ const komisyon: Collector = {
 
 /**
  * Kasada eski fiyat (menu, insight dayanağı): ayda ModPOS'ta satılan adet salesBasis'in ölçeğiyle; online kafe
- * siparişi sitenin fiyatını öder, sayılmaz
+ * siparişi sitenin fiyatını öder, sayılmaz. Kasa şube başınadır (şube kapsamı A3): özet "Tümü"yle okur, birden çok kasa
+ * açıkken her kasa ayrı madde ("Marina: …"; anahtar şubeyi taşır). Aylık adet işletmenin toplamıdır (şubeye bölünmez)
  */
 const kasaFiyat: Collector = {
   source: "kasa-fiyat",
   timeoutMs: 4_000,
   async run(ctx) {
-    // Bugünün kasası: LafPOS gününde liste yalnız siteye bağlı olmayan ürünler (denetim E-39)
-    const scope = await loadTillScope();
-    const [model, pending] = await Promise.all([ctx.model(), loadPosChecklist(scope)]);
-    if (!pending.length) return {};
+    // Bugünün kasaları: LafPOS gününde liste yalnız siteye bağlı olmayan ürünler (denetim E-39)
+    const tills = await loadTillScopes();
+    const [model, lists] = await Promise.all([ctx.model(), Promise.all(tills.map((t) => loadPosChecklist(t)))]);
+    if (!lists.some((l) => l.length)) return {};
     const month = latestSalesMonth(model);
     const basis = month ? salesBasis(model, month) : null;
     const sold = month ? model.soldByProduct(month) : new Map<number, number>();
-    return one(
-      posPriceItem({
+    const items = tills.flatMap((scope, i) => {
+      const item = posPriceItem({
         today: ctx.today,
         kdv: model.settings.kdv,
-        rows: pending.map((p) => ({
+        rows: lists[i].map((p) => ({
           label: productLabel(p),
           price: p.price,
           posPrice: p.stalePrice,
@@ -221,8 +224,11 @@ const kasaFiyat: Collector = {
           perMonth: basis ? (sold.get(p.productId) ?? 0) * basis.basis.scale : null,
         })),
         kasa: scope.kasa,
-      }),
-    );
+      });
+      if (!item) return [];
+      return [scope.name ? { ...item, key: `${item.key}-${scope.branchId}`, title: `${scope.name}: ${item.title}` } : item];
+    });
+    return { items };
   },
 };
 
@@ -264,6 +270,8 @@ const karaoke: Collector = {
   source: "karaoke",
   timeoutMs: 3_000,
   async run(ctx) {
+    // Karaoke hiçbir şubede açık değilse madde yok (şube özelliği; docs/SUBE.md › Şube özellikleri)
+    if (!(await featureHere("karaoke", ALL_BRANCHES))) return one(null);
     const { hours } = await readKaraokeHours();
     const period = resolvePeriod("4h", undefined, ctx.now.getTime());
     const { start, end } = periodBounds(period);

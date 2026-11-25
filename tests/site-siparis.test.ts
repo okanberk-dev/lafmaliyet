@@ -388,7 +388,7 @@ test("bildirim: sipariş konusu, tercihi seçilmemiş cihazda personele açık, 
   assert.match(migration, /ADD COLUMN IF NOT EXISTS "orders" boolean;/, "önizleme dağıtımları canlının veritabanında da çalışır: idempotent");
   assert.doesNotMatch(migration, /NOT NULL|DEFAULT/);
   const sync = read("src/server/site-orders/sync.ts");
-  assert.match(sync, /sendPush\("orders"/);
+  assert.match(sync, /sendPush\(\s*"orders"/);
   assert.match(sync, /ringMessage\(sortForScreen\(orders\)\)/);
 });
 

@@ -2,12 +2,16 @@ import { AlarmClock, CalendarClock, CircleCheck, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
+import { tillRowsInScope } from "@/lib/branches";
 import { paidInMonthOf, type CariAccount } from "@/lib/cari/account";
+import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { loadCariIndex } from "@/server/data/cari";
 import { loadSupplierLedger } from "@/server/data/suppliers";
 
@@ -64,7 +68,7 @@ export default function SuppliersPage() {
 async function SuppliersContent() {
   await requireAdmin();
   const { today, termDays, groups } = await loadSupplierLedger();
-  const index = await loadCariIndex(today);
+  const [index, scope, branches] = await Promise.all([loadCariIndex(today), currentBranchScope(), listBranches()]);
   const month = today.slice(0, 7);
   const isHidden = (g: (typeof groups)[number]) => isHiddenSupplier(g.card, g.summary, { ...g.account, lastEntry: g.lastEntry });
   // Listeden kaldırılanlar listede görünmez (borçları yok; isHiddenSupplier); ödemeleri "Bu ay ödenen"de sayılır
@@ -73,8 +77,13 @@ async function SuppliersContent() {
     g.card?.hiddenOn && isHidden(g) ? [{ cardId: g.card.id, slug: g.slug, name: g.name, hiddenOn: g.card.hiddenOn, count: g.summary.count }] : [],
   );
   // Cari hesap (docs/TEDARIKCILER.md "Hesap hareketleri"): satırın Kalan borcu bakiyedir (açık − hesaptaki para)
+  // İşlenmemiş kasa satırları: cari işletme genelidir, kasa satırı şubenindir (docs/SUBE.md › Ödemeler). Tek şube seçiliyken
+  // yalnız o şubenin kasasından çıkanlar gösterilir ve sayılır; öbür şubelerinki yalnız "N satır daha" olarak söylenir
+  const kasaLines = tillRowsInScope(index.kasaPending, scope, branches);
+  const kasaShown = kasaLines.filter((l) => l.inScope);
+  const kasaElsewhere = kasaLines.length - kasaShown.length;
   const kasaBy = new Map<number, number>();
-  for (const l of index.kasaPending) kasaBy.set(l.cardId, (kasaBy.get(l.cardId) ?? 0) + 1);
+  for (const l of kasaShown) kasaBy.set(l.cardId, (kasaBy.get(l.cardId) ?? 0) + 1);
   const bySlug = new Map(groups.map((g) => [g.card?.id ?? -1, g]));
   const rows: SupplierListRow[] = shown.map((g) => ({
     key: g.key,
@@ -111,9 +120,9 @@ async function SuppliersContent() {
   const creditRows = rows.filter((r) => (r.credit ?? 0) > 0.005);
   const creditTotal = creditRows.reduce((a, r) => a + (r.credit ?? 0), 0);
   const debtCount = sum((r) => r.debtOpenCount ?? 0);
-  const kasa = index.kasaPending.flatMap((l) => {
+  const kasa = kasaShown.flatMap((l) => {
     const g = bySlug.get(l.cardId);
-    return g ? [{ id: l.id, date: l.date, kind: l.kind, amount: l.amount, store: l.store, slug: g.slug, name: g.name }] : [];
+    return g ? [{ id: l.id, date: l.date, kind: l.kind, amount: l.amount, store: l.store, slug: g.slug, name: g.name, tillName: l.tillName }] : [];
   });
   const overdue = sum((r) => r.summary.overdue);
   const overdueCount = sum((r) => r.summary.overdueCount);
@@ -130,6 +139,8 @@ async function SuppliersContent() {
   return (
     <>
       <PageHeader path="/panel/tedarikciler" title="Tedarikçiler" description={DESCRIPTION} more={MORE} />
+      {/* Şube seçiliyken: cari firmanın (şube kapsamı C P1-12, P2-1) */}
+      <CompanyWideNotice screen="tedarikciler" className="mb-4" />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown title="Kalan borç" description="Ödenmemiş faturaların kalan tutarı (KDV dahil), tedarikçi tedarikçi. Tedarikçiye dokununca sayfası açılır." groups={breakdown.open} total={open} totalLabel="Kalan borç" exact empty="Ödenmemiş fatura yok.">
@@ -185,7 +196,7 @@ async function SuppliersContent() {
         </StatBreakdown>
       </div>
 
-      <SuppliersClient rows={rows} hidden={hidden} today={today} defaultTermDays={termDays} taxIndex={taxNameIndex(groups)} kasa={kasa} />
+      <SuppliersClient rows={rows} hidden={hidden} today={today} defaultTermDays={termDays} taxIndex={taxNameIndex(groups)} kasa={kasa} kasaElsewhere={kasaElsewhere} />
     </>
   );
 }

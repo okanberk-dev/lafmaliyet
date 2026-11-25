@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useId, useMemo, useOptimistic, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useOptimistic, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/panel/page-header";
@@ -216,7 +216,22 @@ export function ParasutClient({
   checks = [],
   readState = "nokey",
   returns = null,
+  scopeNotice = null,
+  account,
+  accountName = null,
+  invoiceScope = null,
+  linkedFrom = null,
 }: {
+  /** Seçili şube hesabı başka şubeden kullanıyor: Bağlantı kartı salt okunur (ConnectionCard › linkedFrom) */
+  linkedFrom?: { branchName: string; ownerName: string; href: string } | null;
+  /** Birden çok kasa açıkken gösterilen Paraşüt hesabının notu (sunucuda çizilir; tek kasada boş) */
+  scopeNotice?: ReactNode;
+  /** Gösterilen Paraşüt hesabı (sahibi şube; docs/PARASUT.md › Şube başına Paraşüt hesabı): eylemler bu hesaba gider */
+  account?: string;
+  /** Birden çok kasa açıkken hesabın adı (Bağlantı kartının başlığında); tek kasada null */
+  accountName?: string | null;
+  /** Ayrı hesabın (yalnız sahibi şube kullanıyor) faturalarının şubesi seçimi; değilse null */
+  invoiceScope?: { value: "branch" | "shared"; branchName: string } | null;
   configured: boolean;
   /** Paraşüt hesabı tarayıcıdan yetkilendirildi mi; refresh_token'ın yaşı (30 gün geçerli) */
   connection: { connected: boolean; refreshedAt: string | null; stale: boolean };
@@ -301,7 +316,7 @@ export function ParasutClient({
       let held = 0;
       let flagged = 0;
       for (let round = 0; round < 12; round++) {
-        const r = await readParasutLines();
+        const r = await readParasutLines(account);
         if (!r.ok) {
           setReadProgress(null);
           return void toast.error(r.error, { id: t });
@@ -330,7 +345,7 @@ export function ParasutClient({
   const sync = (since: string | null) =>
     startSync(async () => {
       const t = toast.loading(since ? `${dateTR(since)} tarihinden itibaren eşitleniyor…` : "Paraşüt'ten faturalar alınıyor…");
-      const r = await runParasutSync(since);
+      const r = await runParasutSync(since, account);
       if (!r.ok) return void toast.error(r.error, { id: t });
       toast.success(r.data.summary, { id: t });
     });
@@ -351,7 +366,7 @@ export function ParasutClient({
              
               onClick={() =>
                 startTest(async () => {
-                  const r = await testParasutConnection();
+                  const r = await testParasutConnection(account);
                   if (!r.ok) return void toast.error(r.error);
                   toast.success(r.data.total !== null ? `Bağlantı tamam · Paraşüt'te ${num(r.data.total)} gider faturası var` : "Bağlantı tamam");
                 })
@@ -365,6 +380,7 @@ export function ParasutClient({
           </>
         }
       />
+      {scopeNotice}
 
       <div className="mb-6 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatBreakdown
@@ -513,6 +529,10 @@ export function ParasutClient({
           cronSet={cronSet}
           busy={busy}
           hasSynced={Boolean(cursor)}
+          account={account}
+          accountName={accountName}
+          invoiceScope={invoiceScope}
+          linkedFrom={linkedFrom}
         />
 
         <Card className="xl:col-span-5">

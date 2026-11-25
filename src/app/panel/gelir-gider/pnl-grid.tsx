@@ -534,7 +534,21 @@ function CellNoteDialog({ target, onClose }: { target: NoteTarget; onClose: () =
 }
 
 /** Ay notu penceresi (Satışlar sayfasındaki ay notuyla aynı alan) */
-function MonthNoteDialog({ month, note, onClose }: { month: string; note: string | null; onClose: () => void }) {
+function MonthNoteDialog({
+  month,
+  note,
+  branchId,
+  locked,
+  onClose,
+}: {
+  month: string;
+  note: string | null;
+  /** Notun yazılacağı şube (sayfanın gösterdiği); null: bu seçimde ay notu yazılmaz (`locked` nedeni söyler) */
+  branchId: string | null;
+  locked: string | null;
+  onClose: () => void;
+}) {
+  const readOnly = branchId === null;
   const formId = useId();
   const [text, setText] = useState(note ?? "");
   const [busy, setBusy] = useState(false);
@@ -543,7 +557,7 @@ function MonthNoteDialog({ month, note, onClose }: { month: string; note: string
     setBusy(true);
     let res: Awaited<ReturnType<typeof setMonthNote>>;
     try {
-      res = await setMonthNote(month, next);
+      res = await setMonthNote(month, next, branchId);
     } catch (e) {
       return toastUnreachable(e, "pnl-month-note");
     } finally {
@@ -562,7 +576,7 @@ function MonthNoteDialog({ month, note, onClose }: { month: string; note: string
       title={`${monthLabel(month)} notu`}
       description="Ayın durumu, ör. “1-16 Ekim, ay bitince güncelleyin”. Satışlar sayfasında da görünür."
       footerStart={
-        note ? (
+        note && !readOnly ? (
           <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-11" disabled={busy} onClick={() => void run(null)}>
             Notu sil
           </Button>
@@ -573,12 +587,13 @@ function MonthNoteDialog({ month, note, onClose }: { month: string; note: string
           <Button variant="ghost" onClick={onClose} disabled={busy} className="pointer-coarse:h-11">
             Vazgeç
           </Button>
-          <Button type="submit" form={formId} disabled={busy} className="pointer-coarse:h-11">
+          <Button type="submit" form={formId} disabled={busy || readOnly} className="pointer-coarse:h-11">
             {busy ? "Kaydediliyor…" : "Kaydet"}
           </Button>
         </>
       }
     >
+      {readOnly ? <Notice tone="neutral" size="sm" className="mb-3" title="Ay notu şube başına yazılır" text={locked ?? "Yazmak için şube seçiciden şubeyi seçin."} /> : null}
       <form
         id={formId}
         noValidate
@@ -589,7 +604,15 @@ function MonthNoteDialog({ month, note, onClose }: { month: string; note: string
         }}
       >
         <Field label="Not" htmlFor={`${formId}-n`} hint={`${text.trim().length} / ${MONTH_NOTE_MAX}`}>
-          <Textarea id={`${formId}-n`} data-autofocus="always" value={text} onChange={(e) => setText(e.target.value)} rows={4} maxLength={MONTH_NOTE_MAX} />
+          <Textarea
+            id={`${formId}-n`}
+            data-autofocus="always"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={4}
+            maxLength={MONTH_NOTE_MAX}
+            readOnly={readOnly}
+          />
         </Field>
       </form>
     </Dialog>
@@ -662,6 +685,7 @@ export function PnlGrid({
   yearNote = null,
   lafposSwitch = null,
   openDaysLocked = null,
+  writeBranch = null,
 }: {
   year: number;
   months: string[];
@@ -691,6 +715,11 @@ export function PnlGrid({
   lafposSwitch?: string | null;
   /** Açık gün yazılmıyorsa nedeni ("Tümü" birden çok şubenin toplamı; src/lib/branches.ts monthTotalsLocked) */
   openDaysLocked?: string | null;
+  /**
+   * Ay hücrelerinin (ciro, açık gün, ay notu) yazdığı şube (src/lib/branches.ts monthWriteBranch): sayfanın gösterdiği,
+   * gönderim anındaki seçim değil. Yazılamıyorsa null (sunucu reddeder)
+   */
+  writeBranch?: string | null;
 }) {
   const reduce = useCalmMotion();
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
@@ -763,9 +792,9 @@ export function PnlGrid({
     try {
       const res =
         field === "revenue"
-          ? await setMonthField(month, "posRevenue", amount)
+          ? await setMonthField(month, "posRevenue", amount, writeBranch)
           : field === "openDays"
-            ? await setMonthField(month, "openDays", amount)
+            ? await setMonthField(month, "openDays", amount, writeBranch)
             : await setPnlCell(month, rowKey, amount, plan.action === "save" ? plan.note : undefined);
       return res.ok ? null : res.error;
     } catch (e) {
@@ -778,9 +807,9 @@ export function PnlGrid({
     try {
       res =
         key === "revenue"
-          ? await setMonthField(month, "posRevenue", v)
+          ? await setMonthField(month, "posRevenue", v, writeBranch)
           : key === "openDays"
-            ? await setMonthField(month, "openDays", v)
+            ? await setMonthField(month, "openDays", v, writeBranch)
             : await setPnlCell(month, key, v);
     } catch (e) {
       // Hücre eski değerine döner; yazılanın kaydedilmediği söylenir (E-51)
@@ -1131,7 +1160,7 @@ export function PnlGrid({
       )}
 
       {noteTarget ? <CellNoteDialog key={`${noteTarget.month}-${noteTarget.rowKey}`} target={noteTarget} onClose={() => setNoteTarget(null)} /> : null}
-      {monthNoteFor !== null ? <MonthNoteDialog month={months[monthNoteFor]} note={monthNotes[monthNoteFor]} onClose={() => setMonthNoteFor(null)} /> : null}
+      {monthNoteFor !== null ? <MonthNoteDialog month={months[monthNoteFor]} note={monthNotes[monthNoteFor]} branchId={writeBranch} locked={openDaysLocked} onClose={() => setMonthNoteFor(null)} /> : null}
 
       <CardFooter className="justify-start gap-2 max-md:hidden">
         <RotateCcw size={14} className="shrink-0 text-ink-quiet" aria-hidden="true" />

@@ -19,6 +19,7 @@ import { after, before, beforeEach, describe, test } from "node:test";
 
 import { inArray, like } from "drizzle-orm";
 
+import { DEFAULT_BRANCHES } from "../src/lib/branches";
 import { cancelledBadgeText, eventMessage, sessionEnd, sessionStart, type SiteReservation } from "../src/lib/karaoke/session";
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifySignature } from "../src/lib/karaoke/signature";
 import type { DB } from "../src/server/db";
@@ -37,7 +38,7 @@ describe("Karaoke bildirimi: Web Push'ta ad yok, ekranda var (sitenin sahte ucuy
   let keys: string[] = [];
   const saved: { key: string; value: unknown }[] = [];
   const realFetch = globalThis.fetch;
-  const pushes: { topic: string; msg: { title: string; body: string; kind: string; requireInteraction?: boolean; ring?: boolean } }[] = [];
+  const pushes: { topic: string; msg: { title: string; body: string; kind: string; requireInteraction?: boolean; ring?: boolean }; userIds?: number[] }[] = [];
 
   // ------------------------------------------------ Sahte site
   const site: { reservations: SiteReservation[] } = { reservations: [] };
@@ -101,8 +102,8 @@ describe("Karaoke bildirimi: Web Push'ta ad yok, ekranda var (sitenin sahte ucuy
     stub("server-only", {});
     // Bildirim gönderilmez, yalnız yakalanır (paylaşılan veritabanında gerçek abonelik olabilir)
     stub(require.resolve("../src/server/push/send"), {
-      sendPush: async (topic: string, msg: (typeof pushes)[number]["msg"]) => {
-        pushes.push({ topic, msg });
+      sendPush: async (topic: string, msg: (typeof pushes)[number]["msg"], opts: { userIds?: number[] } = {}) => {
+        pushes.push({ topic, msg, userIds: opts.userIds });
         return { sent: 0, failed: 0, removed: 0 };
       },
       vapidPublicKey: async () => null,
@@ -165,6 +166,30 @@ describe("Karaoke bildirimi: Web Push'ta ad yok, ekranda var (sitenin sahte ucuy
     const ring = eventMessage(dto.lastEvent!, { startsAt: sessionStart(dto), endsAt: sessionEnd(dto), guests: dto.guests, name: dto.customerName, status: dto.status, paymentStatus: dto.paymentStatus }, Date.now());
     assert.equal(ring.title, push.msg.title);
     assert.equal(ring.body, push.msg.body.replace(" · onay bekliyor", " · Ayşe · onay bekliyor"));
+  });
+
+  test("bildirim yalnız karaokenin kitlesine (24 Kasım şube kapsamı): başka şubeye kilitli personelin cihazına gitmez", async () => {
+    await db
+      .insert(s.branches)
+      .values(DEFAULT_BRANCHES.map((b) => ({ ...b, active: true })))
+      .onConflictDoNothing();
+    const mk = (name: string, role: "admin" | "staff", branchId: string | null) =>
+      db
+        .insert(s.users)
+        .values({ email: `${PREFIX}${name}@laffogato.net`, name, passwordHash: "x", role, branchId })
+        .returning({ id: s.users.id })
+        .then(([u]) => u.id);
+    const ids = { admin: await mk("yonetici", "admin", null), free: await mk("serbest", "staff", null), tuzla: await mk("tuzla", "staff", "tuzla"), marina: await mk("marina", "staff", "marina") };
+    try {
+      site.reservations = [reservation(9, "Ayşe")];
+      await ping();
+      assert.equal(pushes.length, 1);
+      const to = new Set(pushes[0].userIds);
+      assert.ok(to.has(ids.admin) && to.has(ids.free) && to.has(ids.tuzla), "yönetici, şubesiz ve Tuzla'nın personeli");
+      assert.equal(to.has(ids.marina), false, "Marina'ya kilitli personel karaoke bildirimi almaz");
+    } finally {
+      await db.delete(s.users).where(inArray(s.users.id, Object.values(ids)));
+    }
   });
 
   test("üçten fazla olay tek özet bildirim; özette de ad yok", async () => {

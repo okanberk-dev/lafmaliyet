@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, count, desc, eq, gt, gte, inArray, lte, max, min, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { DEFAULT_BRANCH_ID, namedTill } from "@/lib/branches";
+import { ALL_BRANCHES, type BranchScope, DEFAULT_BRANCH_ID, namedTill, requestInScope } from "@/lib/branches";
 import type { Model } from "@/lib/calc/engine";
 import { businessDate, stampTR } from "@/lib/cash-report";
 import { productIkramRefusal, recordedOffRevenue } from "@/lib/lafpos/ikram";
@@ -14,6 +14,7 @@ import { LateWastePayload, WasteDeletePayload, wasteEntryMatches, wasteItemText,
 import { listBranches } from "@/server/branches";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { getDb, schema as s } from "@/server/db";
+import { requestBranches } from "@/server/staff-requests/branch";
 
 /*
  * Geç zayi / ikram ve silme isteklerinin okumaları (docs/ZAYI-IKRAM.md › Geç kayıt ve silme isteği; plan
@@ -162,8 +163,13 @@ export async function wasteDayMarks(date: string): Promise<{
 
 // ---------------------------------------------------------------- Yönetici
 
-/** Bekleyen zayi istekleri: sayı, en eski, ilk kart ve zil kimliği (en yeni bump); gün ya da ay süzgeciyle */
-export async function pendingWasteSummary(f: { day?: string; month?: string } = {}): Promise<{ count: number; oldestAt: Date | null; firstId: number | null; bumped: Date | null }> {
+/**
+ * Bekleyen zayi istekleri: sayı, en eski, ilk kart ve zil kimliği (en yeni bump); gün ya da ay süzgeciyle. `scope`: tek
+ * şube seçiliyken yalnız o şubenin istekleri (şube kapsamı C P1-1; geç kaydın yükteki şubesi, silmenin kaydının şubesi)
+ */
+export async function pendingWasteSummary(
+  f: { day?: string; month?: string; scope?: BranchScope } = {},
+): Promise<{ count: number; oldestAt: Date | null; firstId: number | null; bumped: Date | null }> {
   const r = s.staffRequests;
   const where = and(
     inArray(r.kind, [...WASTE_KINDS]),
@@ -171,6 +177,24 @@ export async function pendingWasteSummary(f: { day?: string; month?: string } = 
     f.day ? eq(r.day, f.day) : undefined,
     f.month ? and(gte(r.day, `${f.month}-01`), lte(r.day, addDays(`${shiftMonth(f.month, 1)}-01`, -1))) : undefined,
   );
+  if (f.scope && f.scope !== ALL_BRANCHES) {
+    // Şube yükte ya da kaydın kendisinde: satırlar okunup şubeyle süzülür (bekleyen istek az)
+    const scope = f.scope;
+    const db = getDb();
+    const rows = await db
+      .select({ id: r.id, kind: r.kind, subject: r.subject, payload: r.payload, createdAt: r.createdAt, bumpedAt: r.bumpedAt })
+      .from(r)
+      .where(where)
+      .orderBy(asc(r.createdAt), asc(r.id));
+    const branchOf = rows.length ? await requestBranches(db, rows) : new Map<number, string | null>();
+    const kept = rows.filter((x) => requestInScope(branchOf.get(x.id) ?? null, scope));
+    return {
+      count: kept.length,
+      oldestAt: kept[0]?.createdAt ?? null,
+      firstId: kept[0]?.id ?? null,
+      bumped: kept.length ? new Date(Math.max(...kept.map((x) => x.bumpedAt.getTime()))) : null,
+    };
+  }
   const [[agg], [first]] = await Promise.all([
     getDb()
       .select({ n: count(), oldest: min(r.createdAt), bumped: max(r.bumpedAt) })
@@ -205,6 +229,8 @@ interface CardBase {
    * o günün kayıtları, kayıtlı ikram) bu şubeden okunur, onay da buraya yazar
    */
   branch: { id: string; name: string } | null;
+  /** İsteğin şubesi (Onaylar tek şube seçiliyken bununla süzer); silinecek kayıt gitmişse null */
+  branchId: string | null;
 }
 
 export interface LateWasteCard extends CardBase {
@@ -256,13 +282,21 @@ export type WasteRequestCard = LateWasteCard | WasteDeleteCard;
  * günleri o şubenin; maliyet modeli de şubenin kapsamıyla (`modelOf`; Onaylar'da istek başına şube başına bir kez,
  * loadBranchModelOnce). Önceden günle okunuyordu: Marina'nın isteği Tuzla'nın raporunu ve iki şubenin ikramını gösteriyordu.
  */
-export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promise<Model>, now: Date = new Date()): Promise<WasteRequestCard[]> {
+export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promise<Model>, now: Date = new Date(), scope: BranchScope = ALL_BRANCHES): Promise<WasteRequestCard[]> {
   const db = getDb();
-  const rows = await db
-    .select()
-    .from(s.staffRequests)
-    .where(and(inArray(s.staffRequests.kind, [...WASTE_KINDS]), eq(s.staffRequests.status, "pending")))
-    .orderBy(asc(s.staffRequests.day), asc(s.staffRequests.createdAt), asc(s.staffRequests.id));
+  // Tek şube seçiliyken öbür şubenin geç kayıt istekleri baştan düşer (modeli de yüklenmez); silme isteği kaydın şubesiyle
+  // sonda süzülür (şube kapsamı C P1-1)
+  const rows = (
+    await db
+      .select()
+      .from(s.staffRequests)
+      .where(and(inArray(s.staffRequests.kind, [...WASTE_KINDS]), eq(s.staffRequests.status, "pending")))
+      .orderBy(asc(s.staffRequests.day), asc(s.staffRequests.createdAt), asc(s.staffRequests.id))
+  ).filter((r) => {
+    if (r.kind !== "zayi-gec") return true;
+    const p = LateWastePayload.safeParse(r.payload);
+    return !p.success || requestInScope(p.data.branchId ?? DEFAULT_BRANCH_ID, scope);
+  });
   if (!rows.length) return [];
   const days = [...new Set(rows.map((r) => r.day).filter((d): d is string => !!d))];
   const months = [...new Set(days.map((d) => d.slice(0, 7)))];
@@ -308,7 +342,7 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
       (id) => productPrice(model, id),
     );
 
-  return rows.flatMap((r): WasteRequestCard[] => {
+  const cards = rows.flatMap((r): WasteRequestCard[] => {
     const base = {
       id: r.id,
       version: r.version,
@@ -343,6 +377,7 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
           dayLong: longDateTR(p.date),
           item: wasteItemText(p),
           branch: namedTill(branches, sube),
+          branchId: sube,
           p,
           cost: Math.round(model.wasteCost(p) * 100) / 100,
           menuValue: menu !== null ? Math.round(menu * p.qty * 100) / 100 : null,
@@ -372,6 +407,7 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
         dayLong: longDateTR(p.entry.date),
         item: wasteItemText(p.entry),
         branch: current ? namedTill(branches, current.branchId) : null,
+        branchId: current?.branchId ?? null,
         entry: p.entry,
         entryId: p.entryId,
         gone,
@@ -380,4 +416,5 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
       },
     ];
   });
+  return cards.filter((c) => requestInScope(c.branchId, scope));
 }

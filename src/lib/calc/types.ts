@@ -635,10 +635,12 @@ export interface Dataset {
    */
   companyMonths?: Month[];
   /**
-   * "Tümü" birden çok kasanın (etkin fiziksel şubenin) toplamı: Gelir-gider'in aylık ciro ve açık gün hücresi yazılmaz
-   * (src/lib/branches.ts monthTotalsLocked). Yoksa yazılır
+   * "Tümü" birden çok kasanın (etkin fiziksel şubenin) toplamı ya da online kanal seçili: Gelir-gider'in aylık ciro ve
+   * açık gün hücresi yazılmaz (src/lib/branches.ts monthWriteLock). Yoksa yazılır
    */
   monthTotalsLocked?: boolean;
+  /** Ay hücreleri yazılamıyorsa nedeni (src/lib/branches.ts monthWriteLock; online kanalda kanalın metni) */
+  monthLockText?: string | null;
   /**
    * Su + buz litre fiyatının işletme geneli satışı (denetim 21 Kasım #4): tek şube seçiliyken SU GİDERİ girilmiş ayların
    * bütün şubelerdeki satış satırları (LafPOS dahil, "Tümü"deki gibi) ve laffogato.net online satışları. SU GİDERİ

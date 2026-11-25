@@ -22,6 +22,7 @@ const clock = (iso: string) => new Date(iso).toLocaleTimeString("tr-TR", { hour:
  * Fiyatlar › Kasaya işle › "Son işaretlenenler" (dalga 10 §2.2): son 14 günün işaretleri, kişi ve gün başına
  * ("Ayşe · dün · 34 fiyat", açılır). Personel kasada onaysız işaretler; yanlış işaret buradan geri alınır (ürün listeye
  * işaretten önceki hâliyle döner). Geri alınamıyorsa nedeni yazar, geri alınmış satır soluk. Telefonda kapalı gelir.
+ * "Tümü"de birden çok kasa açıkken satır kasasının adıyla başlar ("Marina · Ayşe · 14:05").
  */
 export function RecentPosMarks({ marks, now }: { marks: RecentPosMark[]; now: string }) {
   const phone = useIsPhone();
@@ -36,7 +37,7 @@ export function RecentPosMarks({ marks, now }: { marks: RecentPosMark[]; now: st
       const r = await undoPosMarks([m.markId]);
       if (!r.ok) return void toast.error(r.error);
       if (r.data.refused.length) return void toast.warning(r.data.refused[0].reason);
-      toast.success(`${m.name} ${sizeLabel(m.size)} listeye döndü; kasada ${money(m.stalePrice)} duruyor`);
+      toast.success(`${m.name} ${sizeLabel(m.size)} listeye döndü; ${m.tillName ? `${m.tillName} kasasında` : "kasada"} ${money(m.stalePrice)} duruyor`);
     });
   }
 
@@ -93,6 +94,7 @@ export function RecentPosMarks({ marks, now }: { marks: RecentPosMark[]; now: st
                               </span>
                             </span>
                             <span className="block text-xs text-ink-mute">
+                              {m.tillName ? `${m.tillName} · ` : ""}
                               {m.by} · <span className="tabular">{clock(m.markedAt)}</span>
                               {m.undoneAt ? ` · Geri alındı${m.undoneBy ? ` · ${m.undoneBy}` : ""}` : m.refusal ? ` · ${m.refusal}` : ""}
                             </span>

@@ -42,10 +42,10 @@ test("#13 kaynak: wasteLock şubeyle süzer; çağıranlar kaydın şubesini ver
   assert.match(core, /\.where\(and\(gte\(s\.cashReports\.date, date\), eq\(s\.cashReports\.branchId, branchId\)\)\)/);
   // Yeni kayıt: kilit yazılacak şubeyle, şube kipten önce
   const add = core.slice(core.indexOf("export async function addWaste"), core.indexOf("async function closeDeleteRequests"));
-  assert.ok(add.indexOf("const branchId = (await currentPhysicalBranch()).id;") < add.indexOf("wasteLock(tx, data.date, branchId)"));
+  assert.ok(add.indexOf("const branchId = branch ?? (await currentPhysicalBranch()).id;") < add.indexOf("wasteLock(tx, data.date, branchId)"));
   // Geç kayıt isteği: kilit ve yükteki şube aynı
   const late = core.slice(core.indexOf("export async function proposeLateWaste"), core.indexOf("export async function proposeWasteDelete"));
-  assert.ok(late.indexOf("const branchId = (await currentPhysicalBranch()).id;") < late.indexOf("wasteLock(tx, input.date, branchId)"));
+  assert.ok(late.indexOf("const branchId = branch ?? (await currentPhysicalBranch()).id;") < late.indexOf("wasteLock(tx, input.date, branchId)"));
   assert.match(late, /\n\s+branchId,\n\s+\}\);/);
   // Silme ve silme isteği: kaydın kendi şubesi
   assert.match(core, /staffDeleteMode\(row, me, now, await wasteLock\(tx, row\.date, row\.branchId\)\) !== "direct"/);
@@ -53,7 +53,7 @@ test("#13 kaynak: wasteLock şubeyle süzer; çağıranlar kaydın şubesini ver
   assert.doesNotMatch(core, /wasteLock\(tx, [\w.]+\)/, "şubesiz çağrı kalmadı");
   // Zayi sayfası: formun kipi yazılacak şubenin, satırın silme kipi kaydın şubesinin kilidiyle
   const page = read("src/app/panel/zayi/page.tsx");
-  assert.match(page, /const branchId = admin \? null : \(await currentPhysicalBranch\(\)\)\.id;/);
+  assert.match(page, /const branchId = admin \? null : \(chosen\?\.id \?\? DEFAULT_BRANCH_ID\);/);
   assert.match(page, /const lock = branchId \? await wasteLock\(getDb\(\), date, branchId\) : null;/);
   assert.match(page, /locks\.set\(b, await wasteLock\(getDb\(\), date, b\)\)/);
   assert.match(page, /staffDeleteMode\(e, user, now, locks\.get\(e\.branchId\) \?\? lock\)/);
@@ -62,7 +62,7 @@ test("#13 kaynak: wasteLock şubeyle süzer; çağıranlar kaydın şubesini ver
 test("#28 kaynak: zayi kartının bağlamı isteğin şubesinden, model şube başına", () => {
   const loader = read("src/server/data/waste-requests.ts");
   const queue = loader.slice(loader.indexOf("export async function loadWasteRequestQueue"));
-  assert.match(queue, /^export async function loadWasteRequestQueue\(modelOf: \(branchId: string\) => Promise<Model>, now: Date = new Date\(\)\)/);
+  assert.match(queue, /^export async function loadWasteRequestQueue\(modelOf: \(branchId: string\) => Promise<Model>, now: Date = new Date\(\), scope: BranchScope = ALL_BRANCHES\)/);
   // Rapor şubenin günüyle; geç kayıtta isteğin şubesi, silmede kaydın şubesi
   assert.match(queue, /branchId: s\.cashReports\.branchId/);
   assert.match(queue, /const reportOf = new Map\(reports\.map\(\(r\) => \[`\$\{r\.date\}\|\$\{r\.branchId\}`, r\]\)\);/);
@@ -79,7 +79,7 @@ test("#28 kaynak: zayi kartının bağlamı isteğin şubesinden, model şube ba
   // Onaylar: yöneticinin seçimiyle kurulan model değil, şubenin modeli (istek başına şube başına bir kez)
   assert.match(read("src/server/data/model-once.ts"), /export const loadBranchModelOnce = cache\(\(branchId: string\) => loadModel\(\{ scope: branchId \}\)\);/);
   const section = read("src/app/panel/onaylar/ops-section.tsx");
-  assert.match(section, /loadWasteRequestQueue\(loadBranchModelOnce, now\)/);
+  assert.match(section, /loadWasteRequestQueue\(loadBranchModelOnce, now, await currentBranchScope\(\)\)/);
   assert.doesNotMatch(section, /loadModelOnce/);
   // Kart şubeyi adıyla yazar, "Günü aç" o şubenin zayi gününü açar
   const cards = read("src/app/panel/onaylar/ops-cards.tsx");

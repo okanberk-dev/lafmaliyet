@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { EPS, openBalance, paidViaOf, round2, type BalanceInvoice, type CariMethod } from "@/lib/cari/balance";
 import { businessDate } from "@/lib/cash-report";
+import { tillBranches } from "@/lib/branches";
 import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { dateTR, num, pct, tl, tlUnit } from "@/lib/format";
 import { cleanName, foldName, ToolInputError } from "@/lib/mcp/answers/common";
@@ -29,7 +30,7 @@ import { loadModel } from "@/server/data/dataset";
 import { cardResolver, paymentCredits } from "@/server/cari/settle";
 import { activeProductsUsing } from "@/server/data/ingredient-usage";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
-import { loadTillScope } from "@/server/data/till-scope";
+import { branchTill } from "@/server/data/till-scope";
 import { soldOutNoteFor } from "@/server/data/menu-status";
 import { getDb, schema as s } from "@/server/db";
 import { siteLinkSecret } from "@/server/site-link";
@@ -623,9 +624,13 @@ const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof prod
     };
     const change = p.price > 0 ? (input.yeniFiyat - p.price) / p.price : null;
     const linked = p.siteMenuId !== null;
-    // Seçili şubenin bugünkü kasası (Fiyatlar › Kasaya işle ile aynı kural): LafPOS gününde bağlı olmayan ürün de
-    // listeye düşer, LafPOS'ta yerel ürünse fiyat orada elle değişir
-    const lafposTill = (await loadTillScope(db(), ctx.now)).lafpos;
+    // Menü ortak, kasa şube başına (şube kapsamı A3): değişiklik her açık kasanın Kasaya işle listesine düşer. Kasaların
+    // bugünkü türü (Fiyatlar › Kasaya işle ile aynı kural): LafPOS gününde bağlı olmayan ürün de listeye düşer, LafPOS'ta
+    // yerel ürünse fiyat orada elle değişir
+    const switchDay = await lafposSwitchDayOf(db());
+    const tills = tillBranches(ctx.branches).map((b) => branchTill(switchDay, b.id, ctx.now));
+    const lafposTill = tills.some((t) => t.lafpos);
+    const modposTill = !tills.length || tills.some((t) => !t.lafpos);
     const lines: OpCardLine[] = [
       { label: "Satış fiyatı", from: tl(p.price, 2), to: `${tl(input.yeniFiyat, 2)}${change !== null ? ` (${change >= 0 ? "+" : ""}${pct(change)})` : ""}` },
       { label: "Birim maliyet", to: calc?.cost ? tl(calc.cost, 2) : "Reçete yok" },
@@ -639,7 +644,9 @@ const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof prod
         ]
       : lafposTill
         ? [
-            "Sitede değişmez. LafPOS ürünü siteden alıyorsa fiyat LafPOS'ta da değişmez: Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; LafPOS'ta yerel ürünse orada elle değiştirin. Fiyatlar › Kasaya işle listesine düşer.",
+            modposTill
+              ? "Sitede değişmez. ModPOS kullanan kasada elle değiştirin; LafPOS ürünü siteden alıyorsa fiyat LafPOS'ta da değişmez: Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; LafPOS'ta yerel ürünse orada elle değiştirin. Her kasanın Kasaya işle listesine düşer."
+              : "Sitede değişmez. LafPOS ürünü siteden alıyorsa fiyat LafPOS'ta da değişmez: Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; LafPOS'ta yerel ürünse orada elle değiştirin. Fiyatlar › Kasaya işle listesine düşer.",
           ]
         : ["Sitede değişmez. Kasada elle değiştirilecek: Fiyatlar › Kasaya işle listesine düşer."];
     if (change !== null && Math.abs(change) > 0.3) warnings.unshift(`Fiyat ${pct(change)} değişiyor: tutarı kontrol edin.`);
@@ -650,7 +657,7 @@ const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof prod
         branch: "Bütün şubeler (menü ortak)",
         day: dayText(today(ctx)),
         lines,
-        effects: linked ? ["site", "lafpos", "modpos"] : lafposTill ? ["lafpos"] : ["modpos"],
+        effects: linked ? ["site", "lafpos", "modpos"] : [...(lafposTill ? (["lafpos"] as const) : []), ...(modposTill ? (["modpos"] as const) : [])],
         undo: "Sonuç kartındaki Geri al eski fiyatı geri yazar (fiyat bu arada başka yerde değişmediyse).",
         undoable: true,
         warnings,

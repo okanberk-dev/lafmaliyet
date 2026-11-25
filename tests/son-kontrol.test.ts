@@ -71,7 +71,7 @@ test("Bugün: LafPOS gününde akşam satırı Günü kapat'ı ve fotoğrafı s�
 
 test("zil: LafPOS gününde personelin akşam hatırlatması 'kasayı girin' demez", () => {
   const bell = read("src/server/bell/kasa.ts");
-  assert.match(bell, /body: lafpos \? "Kapanışta LafPOS'ta Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin fotoğrafını ekleyin"/);
+  assert.match(bell, /lafpos \? "Kapanışta LafPOS'ta Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin fotoğrafını ekleyin"/);
   assert.doesNotMatch(bell, /Günü kapat'a basın, kasayı girin/);
 });
 

@@ -182,7 +182,8 @@ test("ignoredBills: silinen faturanın ikinci anahtarı (alsoIgnored) ayrı sat�
 test("deleteInvoice / unignoreParasutBill kaydın bütün anahtarlarını yazar ve birlikte çıkarır (kaynak)", () => {
   const src = readFileSync(join(root, "src/server/actions/invoices.ts"), "utf8");
   const del = src.slice(src.indexOf("export async function deleteInvoice("), src.indexOf("export async function restoreInvoice("));
-  assert.match(del, /const \[key, \.\.\.also\] = parasutKeysOf\(d\);/);
+  // Şube başına Paraşüt hesabı: anahtarlar faturanın hesabıyla öneklenir (varsayılan hesapta eski biçim)
+  assert.match(del, /const \[key, \.\.\.also\] = parasutKeysOf\(d\)\.map\(\(k\) => qualifyBillKey\(account, k\)\);/);
   assert.match(del, /const add = \[key, \.\.\.also\]\.filter\(\(k\) => !ignore\.includes\(k\)\);/);
   assert.match(del, /\.\.\.\(also\.length \? \{ alsoIgnored: also \} : \{\}\)/);
   const un = src.slice(src.indexOf("export async function unignoreParasutBill("));

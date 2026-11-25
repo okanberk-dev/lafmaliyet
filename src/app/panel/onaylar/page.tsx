@@ -5,15 +5,21 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
+import { Notice, NoticeLink } from "@/components/ui/notice";
+import { ALL_BRANCHES, BRANCH_PARAM, branchScopeLabel } from "@/lib/branches";
 import { priceProduct } from "@/lib/calc/engine";
 import { evaluateExpression } from "@/lib/calc/expr";
 import { PACKAGING_CATEGORY } from "@/lib/constants";
+import { num } from "@/lib/format";
 import { isUnpriced } from "@/lib/count-item";
 import { estimateNames, negativeQtyIssue, proposalGroupKey, qtyLabel, sameRecipe, type RecipeSnapshot } from "@/lib/recipe-change";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { loadModelOnce } from "@/server/data/model-once";
 import { approvedNewPairs, loadReviewQueue } from "@/server/data/recipe-requests";
 import { getDb } from "@/server/db";
+import { pendingOutOfScope } from "@/server/staff-requests/branch";
 
 import { categoryFireDefault } from "../urunler/logic";
 
@@ -46,6 +52,9 @@ export default function ApprovalsPage() {
       />
       <div className="space-y-6">
         <Suspense fallback={null}>
+          <OtherBranchRequests />
+        </Suspense>
+        <Suspense fallback={null}>
           <KasaRequests />
         </Suspense>
         <Suspense fallback={null}>
@@ -62,6 +71,25 @@ export default function ApprovalsPage() {
         </Suspense>
       </div>
     </>
+  );
+}
+
+/**
+ * Tek şube seçiliyken Onaylar yalnız o şubenin isteklerini gösterir (şube kapsamı C P1-1); öbür şubelerde bekleyen
+ * istek varsa sayısı ve "Tümü"nü açan bağlantı (seçici `?sube=`'yi benimser). Reçete önerileri işletme genelidir, sayılmaz
+ */
+async function OtherBranchRequests() {
+  await requireAdmin();
+  const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+  const n = await pendingOutOfScope(getDb(), scope);
+  if (!n) return null;
+  return (
+    <Notice
+      tone="neutral"
+      size="sm"
+      title={`${branchScopeLabel(scope, branches)} seçili: öbür şubelerde ${num(n)} istek daha onay bekliyor`}
+      action={<NoticeLink href={`/panel/onaylar?${BRANCH_PARAM}=${ALL_BRANCHES}`}>Tümünü göster</NoticeLink>}
+    />
   );
 }
 

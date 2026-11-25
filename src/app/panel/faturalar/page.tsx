@@ -1,9 +1,10 @@
-import { inArray, isNotNull } from "drizzle-orm";
+import { and, inArray, isNotNull, ne, or } from "drizzle-orm";
 import { ChevronDown, CircleAlert, FileText, Table2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { PageHeader } from "@/components/panel/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, InfoTip, PageSkeleton, Stat } from "@/components/ui/misc";
@@ -14,15 +15,20 @@ import { unpaidSummary } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { monthLabel, monthShort, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { namedTill, tillBranches } from "@/lib/branches";
+import { DEFAULT_PARASUT_ACCOUNT } from "@/lib/parasut/accounts";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { loadInvoiceCariLinks } from "@/server/data/cari";
-import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
+import { loadCashOutInvoiceState, scopeCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { cashOutCategories } from "@/server/data/cash-outs";
 import { loadModel } from "@/server/data/dataset";
 import { stockOnlyIds } from "@/server/data/stock-only-invoices";
 import { loadSupplierCards } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { listInvoiceDocuments } from "@/server/documents";
+import { loadParasutAccounts } from "@/server/parasut/accounts";
 import { loadParasutSettings } from "@/server/parasut/config";
 import { IGNORE_KEY } from "@/server/parasut/sync";
 
@@ -82,7 +88,7 @@ export default function InvoicesPage() {
 async function InvoicesContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, state, docs, cards, taxRows, cariLinks, stockOnly, cashOuts, cashOutCats, parasutSettings] = await Promise.all([
+  const [model, state, docs, cards, taxRows, cariLinks, stockOnly, cashOutState, cashOutCats, parasutCompanies, scope, branches, accountRows] = await Promise.all([
     loadModel(),
     db
       .select()
@@ -104,13 +110,45 @@ async function InvoicesContent() {
       return { pending: [], duplicates: [] };
     }),
     cashOutCategories("admin"),
-    // Paraşüt'teki faturanın bağlantısı için firma numarası (panelde ya da ortamda); okunamazsa bağlantı çıkmaz
-    loadParasutSettings().catch(() => null),
+    // Paraşüt'teki faturanın bağlantısı için hesapların firma numaraları (panelde ya da varsayılan hesapta ortamda);
+    // okunamazsa bağlantı çıkmaz
+    loadParasutAccounts()
+      .then((accounts) => Promise.all(accounts.map(async (a) => [a.id, (await loadParasutSettings(a.id)).resolved.companyId.value] as const)))
+      .catch(() => [] as (readonly [string, string | null])[]),
+    currentBranchScope(),
+    listBranches(),
+    // Varsayılan hesabın dışındaki Paraşüt hesabı ve şubesi olan faturalar (şube başına Paraşüt hesabı; çoğu kurulumda yok)
+    db
+      .select({ id: s.invoices.id, parasutAccount: s.invoices.parasutAccount, branchId: s.invoices.branchId })
+      .from(s.invoices)
+      .where(or(isNotNull(s.invoices.branchId), and(isNotNull(s.invoices.parasutAccount), ne(s.invoices.parasutAccount, DEFAULT_PARASUT_ACCOUNT)))),
   ]);
+  // Kasadan faturalı alımlar seçili şubenin kasasından (docs/SUBE.md › Ödemeler; faturalar işletme geneli kalır); birden çok
+  // kasa açıkken satır hangi kasadan çıktığını söyler ("Kasa 24 Kas · Marina")
+  const tillName = (id: string) => namedTill(branches, id)?.name ?? null;
+  const scopedCashOuts = scopeCashOutInvoiceState(cashOutState, scope);
+  const cashOuts = {
+    pending: scopedCashOuts.pending.map((r) => ({ ...r, tillName: tillName(r.branchId) })),
+    duplicates: scopedCashOuts.duplicates.map((r) => ({ ...r, tillName: tillName(r.branchId) })),
+  };
   const taxOf = new Map(taxRows.map((r) => [r.id, r.supplierTaxNumber]));
+  // Faturanın Paraşüt hesabı ve şubesi: şube adı yalnız birden çok kasa açıkken rozette
+  const manyTills = tillBranches(branches).length > 1;
+  const accountOf = new Map(accountRows.map((r) => [r.id, r]));
+  const companies = Object.fromEntries(parasutCompanies.flatMap(([id, c]) => (c ? [[id, c]] : [])));
   // Kalan borç (kısmen ödenmiş Paraşüt faturası) çekirdek veriyle gelir: Invoice.outstanding
   const invoices: InvoiceRow[] = model.ds.invoices
-    .map((i) => ({ ...i, outstanding: i.outstanding ?? null, supplierTaxNumber: taxOf.get(i.id) ?? null, stockOnly: stockOnly.has(i.id) }))
+    .map((i) => {
+      const acc = accountOf.get(i.id);
+      return {
+        ...i,
+        outstanding: i.outstanding ?? null,
+        supplierTaxNumber: taxOf.get(i.id) ?? null,
+        stockOnly: stockOnly.has(i.id),
+        ...(acc?.parasutAccount && acc.parasutAccount !== DEFAULT_PARASUT_ACCOUNT ? { parasutAccount: acc.parasutAccount } : {}),
+        ...(acc?.branchId && manyTills ? { branchName: tillName(acc.branchId) ?? acc.branchId } : {}),
+      };
+    })
     .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   const ignored = ignoredBills(state.find((r) => r.key === IGNORE_KEY)?.value, state.find((r) => r.key === DELETED_BILLS_KEY)?.value);
   const months = [...new Set(invoices.map((i) => monthOfDate(i.date)))].sort();
@@ -145,6 +183,8 @@ async function InvoicesContent() {
   return (
     <>
       <PageHeader path="/panel/faturalar" title="Faturalar" description={DESCRIPTION} more={MORE} />
+      {/* Şube seçiliyken: faturalar işletme geneli (şube kapsamı C P2-1) */}
+      <CompanyWideNotice screen="faturalar" className="mb-4" />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown
@@ -217,7 +257,8 @@ async function InvoicesContent() {
         documents={groupDocuments(docs)}
         months={months}
         suppliers={[...new Set(invoices.map((i) => i.supplier))].sort((a, b) => a.localeCompare(b, "tr"))}
-        parasutCompanyId={parasutSettings?.resolved.companyId.value ?? null}
+        parasutCompanyId={companies[DEFAULT_PARASUT_ACCOUNT] ?? null}
+        parasutCompanies={companies}
         ignoredCount={ignored.length}
         expenseLinks={expenseLinks}
         supplierSlugs={supplierSlugs}

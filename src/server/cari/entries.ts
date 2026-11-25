@@ -359,6 +359,12 @@ export interface DebtWrite {
   confirmPast: readonly string[];
   /** Yeni borçta Kasa denetiminin "Ayrı alım"ı: bu alımın ödemesi olmayan Teslim satırları */
   kasaApart?: readonly number[];
+  /**
+   * "Faturası yok · gider yaz"da gider kaydının şubesi (çağıran formBranch ile doğrular; null işletme geneli). Verilmezse
+   * düzeltmede kaydın şubesi kalır, yeni kayıtta önceki gider kaydının şubesi, o da yoksa seçili şube ("Tümü"de işletme
+   * geneli)
+   */
+  expenseBranch?: string | null;
 }
 
 export interface DebtResult {
@@ -489,7 +495,14 @@ export async function writeDebt(tx: Tx, me: Actor, card: Card, input: DebtWrite,
     else if (o.op === "update")
       await tx
         .update(s.expenseEntries)
-        .set({ date: input.date, amount, categoryId: category!.id, description: expenseDescription, updatedAt: now })
+        .set({
+          date: input.date,
+          amount,
+          categoryId: category!.id,
+          description: expenseDescription,
+          ...(input.expenseBranch !== undefined ? { branchId: input.expenseBranch } : {}),
+          updatedAt: now,
+        })
         .where(eq(s.expenseEntries.id, o.row.id));
     else if (o.op === "adopt") await tx.update(s.expenseEntries).set({ date: input.date, amount, supplierEntryId: row.id, updatedAt: now }).where(eq(s.expenseEntries.id, o.row.id));
     else
@@ -498,8 +511,9 @@ export async function writeDebt(tx: Tx, me: Actor, card: Card, input: DebtWrite,
         categoryId: category!.id,
         description: expenseDescription,
         amount,
-        // Tek şube seçiliyse borcun gideri o şubenin, "Tümü"de işletme geneli
-        branchId: await currentExpenseBranch(),
+        // Formda seçilen şube; seçilmediyse (eski sekme) mod değişiminde önceki gider kaydının şubesi, o da yoksa seçili
+        // şube ("Tümü"de işletme geneli)
+        branchId: input.expenseBranch !== undefined ? input.expenseBranch : owned ? owned.branchId : await currentExpenseBranch(),
         paymentMethod: null,
         note: "Cari · faturasız",
         createdBy: me.name,

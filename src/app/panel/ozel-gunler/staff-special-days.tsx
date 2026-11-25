@@ -75,7 +75,7 @@ function Upcoming({ rows }: { rows: StaffSpecialRow[] }) {
         {rows.length ? (
           <ul className="-mx-1 rounded-2xl bg-surface p-1 ring-1 ring-line">
             {rows.map((r) => {
-              const line = staffSpecialLine(shortRangeTR(r.dateFrom, r.dateTo), specialTail(r), r.addedBy);
+              const line = [staffSpecialLine(shortRangeTR(r.dateFrom, r.dateTo), specialTail(r), r.addedBy), r.branchName].filter(Boolean).join(" · ");
               const inner = (
                 <>
                   <span className="text-sm font-medium break-words text-ink">{r.title}</span>

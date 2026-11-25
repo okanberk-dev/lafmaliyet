@@ -1,7 +1,8 @@
 import "server-only";
 
-import { and, count, eq, gte, lte, ne, sql } from "drizzle-orm";
+import { and, count, eq, gte, isNull, lte, ne, or, sql } from "drizzle-orm";
 
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { STAFF_SPECIAL_LIMITS, STAFF_SPECIAL_TEXT, staffSpecialCheck, type StaffSpecialInput } from "@/lib/closed-days";
 import type { SpecialKind } from "@/lib/takvim";
@@ -20,6 +21,14 @@ import { UserError } from "@/server/user-error";
  */
 
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
+
+/**
+ * Kişinin şubesinin özel günleri (docs/SUBE.md › Özel günlerin şubesi; şube kapsamı C P1-10): her türün şubesi olabilir
+ * (boş = işletme geneli, her şubede görünür). Tek şube seçiliyken (personelin kilitli şubesi ya da seçicisi) o şubenin ve
+ * işletme genelinin günleri; "Tümü"de koşul yok. Liste ve çakışma denetimi aynı koşulu kullanır: Tuzla'nın kapalı günü ya
+ * da kampanyası Marina'nın personelinin maçını "çakışıyor" diye reddetmesin
+ */
+const specialScopeWhere = (scope: BranchScope) => (scope === ALL_BRANCHES ? undefined : or(isNull(s.specialDays.branchId), eq(s.specialDays.branchId, scope)));
 
 export interface StaffSpecialSave extends StaffSpecialInput {
   id?: number | null;
@@ -70,8 +79,20 @@ async function editable(tx: Tx, me: Actor, id: number, today: string) {
   };
 }
 
-/** Personelin özel günü: ekler ya da (id ile) kendi satırını düzenler. Dönüşte satırın kimliği ve önceki değerler */
-export async function saveStaffSpecialCore(db: DB, me: Actor, input: StaffSpecialSave, now = new Date()): Promise<{ id: number; created: boolean; values: StaffSpecialValues }> {
+/**
+ * Personelin özel günü: ekler ya da (id ile) kendi satırını düzenler. Dönüşte satırın kimliği ve önceki değerler.
+ * `scope`: kişinin şube seçimi; çakışma yalnız o şubenin ve işletme genelinin günleriyle aranır. `branchId`: yeni satırın
+ * şubesi, şubesine kilitli personelde kendi şubesi (şube kapsamı C P1-10); şubesiz personelde işletme geneli. Düzenleme
+ * satırın şubesini değiştirmez
+ */
+export async function saveStaffSpecialCore(
+  db: DB,
+  me: Actor,
+  input: StaffSpecialSave,
+  now = new Date(),
+  scope: BranchScope = ALL_BRANCHES,
+  branchId: string | null = null,
+): Promise<{ id: number; created: boolean; values: StaffSpecialValues }> {
   if (me.role === "admin") throw new UserError(STAFF_SPECIAL_TEXT.adminDirect);
   const dateTo = input.dateTo || input.dateFrom;
   const title = input.title.trim();
@@ -82,7 +103,7 @@ export async function saveStaffSpecialCore(db: DB, me: Actor, input: StaffSpecia
     const overlapping = await tx
       .select({ id: s.specialDays.id, title: s.specialDays.title })
       .from(s.specialDays)
-      .where(and(lte(s.specialDays.dateFrom, dateTo), gte(s.specialDays.dateTo, input.dateFrom), input.id ? ne(s.specialDays.id, input.id) : undefined));
+      .where(and(lte(s.specialDays.dateFrom, dateTo), gte(s.specialDays.dateTo, input.dateFrom), input.id ? ne(s.specialDays.id, input.id) : undefined, specialScopeWhere(scope)));
     const refusal = staffSpecialCheck(
       { kind: input.kind, title, dateFrom: input.dateFrom, dateTo, effect: input.effect },
       { today, ownFutureDays: await ownFutureDays(tx, me, today, input.id ?? null), overlapping: overlapping.map((o) => o.title), writesToday: await writesToday(tx, me, now), editing },
@@ -98,7 +119,7 @@ export async function saveStaffSpecialCore(db: DB, me: Actor, input: StaffSpecia
     }
     const [row] = await tx
       .insert(s.specialDays)
-      .values({ ...values, byStaff: true, createdBy: me.id, createdByName: me.name })
+      .values({ ...values, branchId, byStaff: true, createdBy: me.id, createdByName: me.name })
       .returning({ id: s.specialDays.id });
     return { id: row.id, created: true, values };
   });
@@ -132,13 +153,18 @@ export interface StaffSpecialRow {
   addedBy: string | null;
   /** Kişi bu satırı değiştirebilir: kendi girdiği, başlamamış, yöneticinin dokunmadığı */
   editable: boolean;
+  /** Günün şubesi (boş: bütün şubeler). Sayfa "Tümü"de şubenin adını yazar */
+  branchId: string | null;
+  /** "Tümü"de birden çok kasa açıkken günün şubesi ("Marina", "Bütün şubeler"); sayfa doldurur */
+  branchName?: string | null;
 }
 
 /**
  * Personelin "Yaklaşan" listesi: bugün ile 60 gün ilerisi arasındaki özel günler. Yalnız special_days okunur, sabit
- * sütunlarla (tests/personel-sizinti-kasa.test.ts).
+ * sütunlarla (tests/personel-sizinti-kasa.test.ts). `scope`: kişinin şube seçimi (kilitli personelde kendi şubesi);
+ * öbür şubenin kapalı günü listeye girmez (`specialScopeWhere`)
  */
-export async function staffSpecialList(db: DB, me: { id: number }, now = new Date()): Promise<StaffSpecialRow[]> {
+export async function staffSpecialList(db: DB, me: { id: number }, now = new Date(), scope: BranchScope = ALL_BRANCHES): Promise<StaffSpecialRow[]> {
   const today = businessDate(now);
   const rows = await db
     .select({
@@ -153,9 +179,10 @@ export async function staffSpecialList(db: DB, me: { id: number }, now = new Dat
       createdBy: s.specialDays.createdBy,
       createdByName: s.specialDays.createdByName,
       updatedBy: s.specialDays.updatedBy,
+      branchId: s.specialDays.branchId,
     })
     .from(s.specialDays)
-    .where(and(gte(s.specialDays.dateTo, today), lte(s.specialDays.dateFrom, addDays(today, 60))))
+    .where(and(gte(s.specialDays.dateTo, today), lte(s.specialDays.dateFrom, addDays(today, 60)), specialScopeWhere(scope)))
     .orderBy(s.specialDays.dateFrom, s.specialDays.id);
   return rows.map((r) => {
     const own = r.createdBy === me.id && r.byStaff && r.kind !== "kapali";
@@ -169,6 +196,7 @@ export async function staffSpecialList(db: DB, me: { id: number }, now = new Dat
       note: own ? r.note : null,
       addedBy: r.byStaff ? r.createdByName : null,
       editable: own && r.dateFrom > today && (r.updatedBy === null || r.updatedBy === me.id),
+      branchId: r.branchId,
     };
   });
 }

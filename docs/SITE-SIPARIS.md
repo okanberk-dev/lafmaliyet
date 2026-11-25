@@ -53,6 +53,14 @@ sitenin kuralı `src/lib/panel/orders-feed-core.ts`). Kartın aşama düğmeleri
 >   eklenir; Siparişler'in üstünde kart, siparişten ayrı zil, tek dokunuşla **Gördüm** (sitede de kapanır). Müşteriye
 >   dair bir şey yok.
 
+## Şube
+
+Site siparişin ve masa çağrısının şubesini söylemez. Panel şube özelliğine bakar ([SUBE.md › Şube
+özellikleri](SUBE.md#şube-özellikleri-25-kasım-2026)): "Uygulama siparişleri" (`siparis`) ve "Garson çağır" (`garson`)
+şube başına açılıp kapanır (varsayılan her şubede açık). Kapalı şube seçiliyken (şubesine kilitli personelde hep) canlı
+uç o listeyi göndermez, zil çalmaz; ikisi de kapalıysa Siparişler menüde yoktur. Web Push yalnız yöneticiye, şubesiz
+personele ve özelliği açık şubenin personeline gider.
+
 ## Nasıl çalışır
 
 ```

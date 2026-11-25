@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { CLOSED_REASON_MAX, CLOSED_TEXT } from "@/lib/closed-days";
+import { CLOSED_REASON_MAX, CLOSED_TEXT, closedRequestBranch } from "@/lib/closed-days";
 import { longDateTR } from "@/lib/reminders";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { formTillBranch, withBranchScope } from "@/server/branch-scope";
@@ -74,10 +74,14 @@ export async function reviewClosedDay(input: z.input<typeof reviewInput>) {
   });
 }
 
-/** İsteğin gününün site sayıları (onaydan önce; işlemin dışında, 8 sn sınırlı) */
+/** İsteğin gününün, bildirilen şubenin site sayıları (onaydan önce; işlemin dışında, 8 sn sınırlı) */
 async function fetchSiteDayCountsFor(id: number) {
-  const [row] = await getDb().select({ day: s.staffRequests.day }).from(s.staffRequests).where(eq(s.staffRequests.id, id)).limit(1);
-  return row?.day ? fetchSiteDayCounts(row.day) : null;
+  const [row] = await getDb()
+    .select({ day: s.staffRequests.day, subject: s.staffRequests.subject, payload: s.staffRequests.payload })
+    .from(s.staffRequests)
+    .where(eq(s.staffRequests.id, id))
+    .limit(1);
+  return row?.day ? fetchSiteDayCounts(row.day, closedRequestBranch(row)) : null;
 }
 
 const markInput = z.object({ date: zDate, note: zOptText(CLOSED_REASON_MAX), branchId: tillId });

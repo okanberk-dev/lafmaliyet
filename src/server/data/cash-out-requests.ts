@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, asc, count, eq, gt, gte, inArray, isNull, lte, or } from "drizzle-orm";
 
-import { DEFAULT_BRANCH_ID } from "@/lib/branches";
+import { ALL_BRANCHES, type BranchScope, DEFAULT_BRANCH_ID, requestInScope } from "@/lib/branches";
 import { businessDate, staffCanReport } from "@/lib/cash-report";
 import {
   cashOutChanged,
@@ -31,6 +31,7 @@ import { addDays, dayMonthTR, monthGenitiveTR } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
 import { currentTillBranch } from "@/server/branch-scope";
 import { closedDaysBetween } from "@/server/closed-days";
+import { requestBranches } from "@/server/staff-requests/branch";
 import { cashOutsOn } from "@/server/data/cash-outs";
 import { photoReadingOf, type CashPhotoDTO } from "@/server/data/cash-photos";
 import { kasaEvidence, lafposAutoReportOf } from "@/server/data/lafpos-day";
@@ -383,14 +384,19 @@ async function expenseUpdatedAt(id: number): Promise<string | null> {
 
 // ---------------------------------------------------------------- Zil (yönetici)
 
-/** Yöneticinin zilinde bekleyen kasadan çıkan ve fotoğraf kaldırma istekleri: tek satır ("3 kasa isteği onay bekliyor") */
-export async function cashOutBellRow(now = new Date()): Promise<{ id: string; count: number; firstId: number; oldestAt: Date; text: string } | null> {
-  const rows = await getDb()
-    .select({ id: r.id, kind: r.kind, title: r.title, bumpedAt: r.bumpedAt, createdAt: r.createdAt, requestedByName: r.requestedByName })
+/**
+ * Yöneticinin zilinde bekleyen kasadan çıkan ve fotoğraf kaldırma istekleri: tek satır ("3 kasa isteği onay bekliyor").
+ * `scope`: tek şube seçiliyken yalnız o şubenin istekleri (şube kapsamı C P1-1; `requestBranches`)
+ */
+export async function cashOutBellRow(now = new Date(), scope: BranchScope = ALL_BRANCHES): Promise<{ id: string; count: number; firstId: number; oldestAt: Date; text: string } | null> {
+  const db = getDb();
+  const rows = await db
+    .select({ id: r.id, kind: r.kind, subject: r.subject, payload: r.payload, title: r.title, bumpedAt: r.bumpedAt, createdAt: r.createdAt, requestedByName: r.requestedByName })
     .from(r)
     .where(and(eq(r.status, "pending"), inArray(r.kind, ["kasa-cikan", "foto-kaldir"]), or(isNull(r.expiresAt), gt(r.expiresAt, now))))
     .orderBy(asc(r.createdAt));
-  const live = rows;
+  const branchOf = scope === ALL_BRANCHES || !rows.length ? null : await requestBranches(db, rows);
+  const live = branchOf ? rows.filter((x) => requestInScope(branchOf.get(x.id) ?? null, scope)) : rows;
   if (!live.length) return null;
   const newest = Math.max(...live.map((x) => x.bumpedAt.getTime()));
   return {

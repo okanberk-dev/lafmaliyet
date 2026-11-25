@@ -1,26 +1,28 @@
+import { eq, sql } from "drizzle-orm";
 import { Banknote, ShoppingBag, TrendingUp, Unlink } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { BranchChooser } from "@/components/panel/branch-chooser";
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { SalesSourceLine } from "@/components/panel/sales-source-line";
 import { GrowthPill, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
-import { DEFAULT_BRANCH_ID } from "@/lib/branches";
+import { ALL_BRANCHES, DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
 import { listDaysText } from "@/lib/calc/insights";
 import { lafposListPart, manualOf, MONTH_FIELDS } from "@/lib/cash-month";
 import { RECIPE_COST_NOTE } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { dayRangeTR, lafposMonthNotes, lafposMonthStatus, type LafposMonthNotes } from "@/lib/lafpos/sales";
-import { isLafposBranch } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposBranch, monthSource } from "@/lib/lafpos/switch";
 import { addDays, dayAblativeTR, todayTR } from "@/lib/reminders";
 import { coverageFor } from "@/lib/sales-coverage";
 import { salesSourceOf, type SalesSourceKind } from "@/lib/sales-source";
 import { requireAdmin } from "@/server/auth/dal";
-import { currentWriteBranch } from "@/server/branch-scope";
+import { andWhere, branchWhere, currentBranchScope, currentWriteBranch } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
@@ -129,14 +131,30 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   }));
   const unmatched = sales.unmatched.length;
   const mappingList = mappings.map((m) => ({ posName: m.posName, productId: m.productId, isService: m.isService, updatedAt: m.updatedAt }));
-  // Formda yalnız elle yazılanlar; kasa raporlarından gelenler formda "Kasadan" olarak ayrıca gösterilir. "Tümü"de form
-  // yazdığı şubenin (Tuzla) ay satırını düzenler: elle yazılanlar ve kasanın değerleri o şubenin, Tümü'nün toplamı değil
-  // (toplam forma yazılıp kaydedilseydi öteki şubenin cirosu iki kez sayılırdı; denetim 13 Kasım HM-02)
-  const writeId = await currentWriteBranch();
+  // Formda yalnız elle yazılanlar; kasa raporlarından gelenler formda "Kasadan" olarak ayrıca gösterilir. Form şubenin ay
+  // satırını düzenler, Tümü'nün toplamını değil (toplam forma yazılıp kaydedilseydi öteki şubenin cirosu iki kez
+  // sayılırdı; denetim 13 Kasım HM-02). "Tümü"de birden çok kasa açıkken form çizilmez, şube sorulur (aşağıda); tek kasada
+  // o kasanın
+  const [writeId, scope, branches] = await Promise.all([currentWriteBranch(), currentBranchScope(), listBranches()]);
   const formInfo = info?.byBranch ? info.byBranch[writeId] : info;
   // Birden çok kasanın toplamıyken form hangi şubeye yazdığını adıyla söyler; liste ↔ POS kutusu çıkmaz (liste bütün
   // şubelerin, POS cirosu yalnız yazılan şubenin olurdu)
-  const formBranch = model.ds.monthTotalsLocked ? ((await listBranches()).find((b) => b.id === writeId)?.name ?? writeId) : null;
+  const formBranch = model.ds.monthTotalsLocked ? (branches.find((b) => b.id === writeId)?.name ?? writeId) : null;
+  // Online kanal seçili: kanalın kasa satışı yok, liste ve ay bilgisi yazılmaz (sunucu da reddeder, formBranch "sales")
+  const channel = branches.find((b) => b.id === scope && b.kind !== "fiziksel") ?? null;
+  // Listenin ve elle satırın yazılabileceği şubeler (docs/SUBE.md › Yazarken hangi şube): tek şubede o şube; "Tümü"de
+  // açık kasalar, ayı LafPOS'tan gelen şube hariç. Birden çoksa form şubeyi sorar, varsayılan yok. Her şubenin bu ayki
+  // ModPOS satırları "Yenisiyle değiştir"in onayı için
+  const tills = channel ? [] : scope === ALL_BRANCHES ? tillBranches(branches) : branches.filter((b) => b.id === scope);
+  const linesOf = (id: string) => sales.lines.filter((l) => !l.line.lafpos && (l.line.branchId ?? DEFAULT_BRANCH_ID) === id).length;
+  const writable = tills
+    .filter((b) => monthSource(month, branchSwitchDay(model.settings.lafposGecisGunu, b.id)) !== "lafpos")
+    .map((b) => ({ id: b.id, name: b.name, lines: linesOf(b.id) }));
+  // "Ayı temizle"nin sileceği satırlar (pencerenin kapsamı; sunucu aynı sayımla karşılaştırır)
+  const [{ n: clearCount }] = await getDb()
+    .select({ n: sql<number>`count(*)::int` })
+    .from(s.salesLines)
+    .where(andWhere(eq(s.salesLines.month, month), branchWhere(s.salesLines.branchId, scope)));
   const infoValues = {
     openDays: manualOf(formInfo, "openDays"),
     posRevenue: manualOf(formInfo, "posRevenue"),
@@ -160,16 +178,19 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   // Tablodaki LafPOS satırları (geçiş ayında kartın metinleri iki kaynağı ayrı söyler)
   const lafposLines = rows.filter((r) => r.lafposDays !== null).length;
   // Yüklü listenin son günü (kartın "… tarihine kadar"ı): yeni yüklemenin değiştireceği ya da ekleneceği liste, yani
-  // yazılan şubeninki. "Tümü"de içe aktarma Tuzla'ya yazar ("Değiştir" yalnız onun listesini değiştirir): Tuzla'nın ayda
-  // listesi varsa onun kendi kaydı (writeCoverage; ay yoksa ayın tamamı), Marina'nın listesinin günü (lafpos.modpos) ya
+  // yazılan şubeninki: kendi kaydı (writeCoverage; ay yoksa ayın tamamı), Marina'nın listesinin günü (lafpos.modpos) ya
   // da son yükleyenin ortak kaydı değil. Yazılan şubenin listesi yoksa geçiş gününden sonra LafPOS'un şubesinin listesi,
-  // öncesinde görünümün kapsamı
+  // öncesinde görünümün kapsamı. "Tümü"de birden çok şubeye yüklenebiliyorsa kart şubeyi sorar: tek bir gün (Tuzla'nınki)
+  // yazılmaz, satır sayısı bütün şubelerin
   const writeHasList = sales.lines.some((l) => !l.line.lafpos && (l.line.branchId ?? DEFAULT_BRANCH_ID) === writeId);
-  const coveredThrough = writeHasList
-    ? (model.ds.writeCoverage?.[month] ?? null)
-    : lafpos
-      ? (lafpos.modpos?.through ?? null)
-      : (model.ds.salesCoverage?.find((c) => c.month === month)?.through ?? null);
+  const coveredThrough =
+    writable.length > 1
+      ? null
+      : writeHasList
+        ? (model.ds.writeCoverage?.[month] ?? null)
+        : lafpos
+          ? (lafpos.modpos?.through ?? null)
+          : (model.ds.salesCoverage?.find((c) => c.month === month)?.through ?? null);
 
   return (
     <>
@@ -284,52 +305,81 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
         </StatBreakdown>
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-12">
-        <ImportCard
-          className="xl:col-span-7"
-          month={month}
-          label={monthLabel(month)}
-          lineCount={modposLines}
-          lafposLines={lafposLines}
-          mappings={mappingList}
-          products={products}
-          hasInfo={hasInfo}
-          running={runningImport}
-          coveredThrough={coveredThrough}
-          listDays={listPeriod ? listDaysText(listPeriod) : null}
-          lafpos={
-            lafpos?.source === "lafpos"
-              ? { source: "lafpos", days: lafpos.lafpos?.days ?? 0, last: lafpos.lafpos?.last ?? null }
-              : lafpos?.source === "gecis" && switchDay && lastModpos
-                ? {
-                    source: "gecis",
-                    throughHint: `Geçiş ayı: ModPOS listesi en çok ${dayRangeTR(`${month}-01`, lastModpos)} günlerini kapsar, LafPOS ${dayAblativeTR(switchDay)} itibaren sayılır. Liste daha kısaysa son gününü seçin; aradaki günler hiçbir kaynakta olmaz.`,
-                  }
-                : null
-          }
+      {channel ? (
+        // Online kanal: kasa satışı yok; liste ve ay bilgisi şubelerde yazılır (formBranch "sales" reddeder)
+        <Notice
+          tone="neutral"
+          className="mt-4"
+          title={`${channel.name} kanalında kasa satışı yok`}
+          text="ModPOS listesi ve ay bilgisi şubelerde yazılır; yüklemek için şube seçiciden şubeyi seçin."
         />
-        <MonthInfoForm
-          // Ay bilgisi başka yerden değişince (Ayı temizle, Gelir-gider, yeni kasa raporu) form yeni değerlerle açılsın
-          key={`${month}|${JSON.stringify(infoValues)}|${JSON.stringify(formInfo?.kasa?.values ?? null)}`}
-          className="xl:col-span-5"
-          month={month}
-          label={monthLabel(month)}
-          branchName={formBranch}
-          info={infoValues}
-          kasa={formInfo?.kasa ?? null}
-          settingsCardShare={model.settings.kartOrani}
-          listTotal={formBranch ? null : sales.revenue}
-          listPeriod={
-            !formBranch && listPeriod ? { label: listDaysText(listPeriod), posRevenue: listPeriod.posRevenue, discounts: listPeriod.discounts } : null
-          }
-          // LafPOS günlerinin indirimi satırlarda zaten düşülmüş (engine listDiscounts); "Tümü"de yalnız formun şubesi LafPOS'unsa
-          lafposList={
-            !formBranch && formInfo && (!info?.byBranch || isLafposBranch(writeId)) ? lafposListPart(formInfo, model.ds.lafposSales?.countFrom ?? null) : null
-          }
-          currentMonth={model.currentMonth}
-          recordedIkram={model.wasteSummary(month).ikram}
-        />
-      </div>
+      ) : (
+        <div className="mt-4 grid gap-4 xl:grid-cols-12">
+          <ImportCard
+            className="xl:col-span-7"
+            month={month}
+            label={monthLabel(month)}
+            branches={writable}
+            scope={scope}
+            clearCount={clearCount}
+            lineCount={modposLines}
+            lafposLines={lafposLines}
+            mappings={mappingList}
+            products={products}
+            hasInfo={hasInfo}
+            running={runningImport}
+            coveredThrough={coveredThrough}
+            listDays={listPeriod ? listDaysText(listPeriod) : null}
+            lafpos={
+              lafpos?.source === "lafpos"
+                ? { source: "lafpos", days: lafpos.lafpos?.days ?? 0, last: lafpos.lafpos?.last ?? null }
+                : lafpos?.source === "gecis" && switchDay && lastModpos
+                  ? {
+                      source: "gecis",
+                      throughHint: `Geçiş ayı: ModPOS listesi en çok ${dayRangeTR(`${month}-01`, lastModpos)} günlerini kapsar, LafPOS ${dayAblativeTR(switchDay)} itibaren sayılır. Liste daha kısaysa son gününü seçin; aradaki günler hiçbir kaynakta olmaz.`,
+                    }
+                  : null
+            }
+          />
+          {model.ds.monthTotalsLocked && tills.length > 1 ? (
+            // "Tümü"de birden çok kasa: ay bilgisi (ciro, açık gün, indirim, ödenmez, not) şube başınadır, Tümü toplamdır.
+            // Gelir-gider gibi yazılmaz, şube sorulur (önceden form sessizce Tuzla'nınkini açıp yazıyordu; şube kapsamı
+            // inceleme bulgusu). Düğme sayfayı o şubeyle açar
+            <div className="xl:col-span-5">
+              <BranchChooser
+                title="Hangi şubenin ay bilgisi?"
+                description="Ciro, açık gün, indirim, ödenmez ve ay notu şube başına girilir; Tümü şubelerin toplamıdır. Şubeyi seçin, form o şubenin bilgisiyle açılır."
+                path="/panel/satislar"
+                params={{ ay: month }}
+                branches={tills}
+              />
+            </div>
+          ) : (
+            <MonthInfoForm
+              // Ay bilgisi başka yerden değişince (Ayı temizle, Gelir-gider, yeni kasa raporu) form yeni değerlerle açılsın
+              key={`${month}|${JSON.stringify(infoValues)}|${JSON.stringify(formInfo?.kasa?.values ?? null)}`}
+              className="xl:col-span-5"
+              month={month}
+              label={monthLabel(month)}
+              branchId={writeId}
+              branchName={formBranch}
+              info={infoValues}
+              kasa={formInfo?.kasa ?? null}
+              settingsCardShare={model.settings.kartOrani}
+              listTotal={formBranch ? null : sales.revenue}
+              listPeriod={
+                !formBranch && listPeriod ? { label: listDaysText(listPeriod), posRevenue: listPeriod.posRevenue, discounts: listPeriod.discounts } : null
+              }
+              // LafPOS günlerinin indirimi satırlarda zaten düşülmüş (engine listDiscounts); "Tümü"de yalnız formun şubesi LafPOS'unsa
+              lafposList={
+                !formBranch && formInfo && (!info?.byBranch || isLafposBranch(writeId)) ? lafposListPart(formInfo, model.ds.lafposSales?.countFrom ?? null) : null
+              }
+              currentMonth={model.currentMonth}
+              recordedIkram={model.wasteSummary(month).ikram}
+            />
+          )}
+        </div>
+      )}
 
       <div className="mt-4">
         {/* Süzgeçler (?durum=eslesmeyen, ?ara, ?sirala) adreste; tablo istemcide okur, sunucuya istek gitmez */}
@@ -339,6 +389,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           mappings={mappingList}
           month={month}
           lafposMonth={lafpos?.source === "lafpos"}
+          lineBranches={writable.map((b) => ({ id: b.id, name: b.name }))}
           totals={{
             qty: sales.qty,
             revenue: sales.revenue,

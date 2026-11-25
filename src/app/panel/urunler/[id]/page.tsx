@@ -17,7 +17,7 @@ import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset"
 import { soldOutNoteFor } from "@/server/data/menu-status";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { loadProductPriceHistory } from "@/server/data/prices";
-import { posDailySalesCount, salesLinesCount } from "@/server/data/product-history";
+import { productHistoryCounts } from "@/server/data/product-history";
 import { syncSiteMenu } from "@/server/site-menu/sync";
 import { loadSiteLinks } from "@/server/site-menu/view";
 
@@ -109,13 +109,13 @@ async function RecipeContent({
   const month = resolveMonth(sp.ay, model);
   // Fiyat geçmişi kartı (son 20 değişiklik ve kasanın durumu) okunamazsa kart görünmez, reçete kartı açılır
   // Siparişler ekranının Tükenenler kartıyla kapatıldıysa kim ve ne zaman (dalga 10 §2.1; okunamazsa not yok)
-  const [prices, priceHistory, soldOut, posDailySales, salesLines] = await Promise.all([
+  const [prices, priceHistory, soldOut, counts] = await Promise.all([
     loadPriceAlerts(model).catch(() => null),
     loadProductPriceHistory(product.id).catch(() => null),
     soldOutNoteFor(link?.siteMenuId ?? null).catch(() => null),
-    // LafPOS'un günlük satış satırı ve ModPOS satış satırı (silme engeli; okunamazsa 0, eylem yine veritabanından sayar)
-    posDailySalesCount(product.id).catch(() => 0),
-    salesLinesCount(product.id).catch(() => 0),
+    // Silme engelinin sayıları eylemin sayacından, bütün şubelerden (şube kapsamı C P2-6): şubenin modeli Marina
+    // seçiliyken Tuzla'nın zayisini görmüyordu. Okunamazsa kart düğmeyi açık bırakır, eylem yine veritabanından sayar
+    productHistoryCounts({ id: product.id, siteMenuId: link?.siteMenuId ?? null, siteMenuSlot: link?.slot ?? null }).catch(() => null),
   ]);
   const impact = prices?.impacts.find((i) => i.productId === product.id) ?? null;
 
@@ -123,15 +123,7 @@ async function RecipeContent({
   const history = productSalesHistory(model, product.id).map((h) => ({ ...h, label: monthLabel(h.month) }));
   // Silme engeli (src/lib/product-delete.ts; eylem aynı kuralı veritabanından yeniden sayar): kart silmek yerine pasif
   // yapmayı önerir. Fiyat geçmişinin ilk 20 satırı yeter: bir değişiklik bile engeldir
-  const deleteBlocker = productDeleteBlocker({
-    // Satışlar'a yüklenen ModPOS satırları veritabanından (eylemle aynı sayı): aylık modelin satırları LafPOS'a geçilen
-    // ayın sayılmayan listesini içermez; LafPOS'un ay toplamları ayrıca, günlük satırlarıyla sayılır
-    salesLines,
-    posDailySales,
-    waste: (model.ds.wasteEntries ?? []).filter((w) => w.productId === product.id).length,
-    priceChanges: priceHistory?.rows.filter((r) => r.source !== "create").length ?? 0,
-    onlineMonths: model.siteMonths.filter((m) => model.siteLines(m).mapped.some((x) => x.product.id === product.id)).length,
-  });
+  const deleteBlocker = counts ? productDeleteBlocker(counts) : null;
   const siblings = model.products
     .filter((p) => p.product.name === product.name)
     .map((p) => ({ id: p.product.id, size: p.product.size }));

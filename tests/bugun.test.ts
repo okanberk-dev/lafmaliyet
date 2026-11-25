@@ -1143,7 +1143,8 @@ test("kaynak: zil Bugün ile aynı akşam kuralına bakar; Bugün canlı veride 
   // Kasa satırları kasa modülünde (src/server/bell/kasa.ts), toplayıcı iki rolde çağırır
   const bell = read("src/server/bell/kasa.ts");
   assert.match(read("src/server/actions/notifications.ts"), /kasaBell\(user\)\.catch\(\(\) => \[\]\)/);
-  assert.match(bell, /if \(!isCashEvening\(now\) \|\| reports\.some\(\(r\) => r\.date === day\) \|\| noCount\.has\(day\)\) return out;/);
+  // Şubesiz personel "Tümü"de birden çok kasa açıkken kasa başına satır (şube kapsamı C P2-10), yoksa tek satır
+  assert.match(bell, /if \(!isCashEvening\(now\)\) return out;\s+\/\/[^\n]*\n\s+const perTill = await staffTillsWaiting\(day\);\s+if \(perTill\) return \[\.\.\.out, \.\.\.perTill\];\s+if \(reports\.some\(\(r\) => r\.date === day\) \|\| noCount\.has\(day\)\) return out;/);
   assert.doesNotMatch(bell, /hour < 20/);
   // Bildirim gelince Bugün yenilenir (kural src/lib/live-poll.ts › refreshesScreen)
   assert.match(read("src/components/panel/live/alert-center.tsx"), /if \(refreshesScreen\(pathRef\.current, kind\)\) router\.refresh\(\)/);
@@ -1262,7 +1263,9 @@ test("kafe satırları: ek satırlar (tükendi) sonda, bağlantılı satır kend
   assert.deepEqual(cafeLines({ karaoke: null, orders: null, configured: false }, now), []);
   const cafe = read("src/app/panel/bugun/today-cafe.tsx");
   // Satırın kendi adresi önce (yoğunluk satırının Özel günler'i de); tahmin satırı adressizse bağlantısız
-  assert.match(cafe, /href=\{l\.href \?\? \(forecast \? undefined : "\/panel\/karaoke"\)\}/);
+  assert.match(cafe, /href=\{l\.href \?\? \(forecast \? undefined : barHref\)\}/);
+  // Karaoke seçili şubede kullanılmıyorsa (şube özelliği) bar ekranı Siparişler
+  assert.match(read("src/app/panel/bugun/page.tsx"), /barHref=\{data\.cafe\.karaokeHere \? "\/panel\/karaoke" : "\/panel\/siparisler"\}/);
 });
 
 test("kaynak: operasyon ve kapalı gün olguları iki rolde; kasa fiyatı okuması operasyonun yükleyicisinde", () => {
@@ -1273,13 +1276,14 @@ test("kaynak: operasyon ve kapalı gün olguları iki rolde; kasa fiyatı okumas
   assert.doesNotMatch(src, /posPendingSummary/);
   const ops = read("src/server/data/today-ops.ts");
   assert.match(ops, /^import "server-only";/);
-  // Bugünün kasası bir kez okunur (geçiş gününden itibaren LafPOS: siteye bağlı ürün sayılmaz; denetim E-39)
-  assert.match(ops, /const scope = loadTillScope\(undefined, now\);/);
-  assert.match(ops, /safe\(scope\.then\(posPendingSummary\)/);
-  // Personel dalı yönetici olgusu yüklemez: kasa fiyatları personelin sabit sütunlu özetinden (§2.2)
+  // Bugünün kasaları bir kez okunur (geçiş gününden itibaren LafPOS: siteye bağlı ürün sayılmaz; denetim E-39; kasa şube
+  // başına, şube kapsamı A3)
+  assert.match(ops, /const scope = loadTillScopes\(undefined, now\);/);
+  assert.match(ops, /safe\(scope\.then\(\(t\) => each\(t, posPendingSummary\)\)\)/);
+  // Personel dalı yönetici olgusu yüklemez: kasa fiyatları personelin sabit sütunlu özetinden (§2.2), yalnız ModPOS kasaları
   const staffAt = ops.indexOf('if (user.role !== "admin")');
-  assert.ok(staffAt > 0 && staffAt < ops.indexOf("then(posPendingSummary)"));
-  assert.match(ops.slice(staffAt, ops.indexOf("then(posPendingSummary)")), /safe\(scope\.then\(staffPosSummary\)/);
+  assert.ok(staffAt > 0 && staffAt < ops.indexOf("each(t, posPendingSummary)"));
+  assert.match(ops.slice(staffAt, ops.indexOf("each(t, posPendingSummary)")), /each\(t\.filter\(\(x\) => !x\.lafpos\), staffPosSummary\)/);
 });
 
 test("Tümü, iki kasa (yönetici): dünün ve bugünün satırı şube başına, adında şube, adresinde ?sube=; tek kasada bugünkü gibi", () => {

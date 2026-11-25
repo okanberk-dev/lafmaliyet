@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
+import { BranchChooser } from "@/components/panel/branch-chooser";
 import { KasaText } from "@/components/panel/kasa-text";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -53,7 +54,7 @@ import {
 import { LAFPOS_STAFF_ENTRY_LINE, staffLafposEntryClosed } from "@/lib/lafpos/cash-moves";
 import { addDays, dayLocativeTR, isCalendarDate, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
-import { ALL_BRANCHES, branchScopeLabel, sortBranches } from "@/lib/branches";
+import { ALL_BRANCHES, branchScopeLabel, sortBranches, tillBranches } from "@/lib/branches";
 import { closedEvidenceText } from "@/lib/closed-days";
 import { modposDayView, type ModposDayView } from "@/lib/cash-modpos";
 import { aiStatus } from "@/server/ai/claude";
@@ -62,6 +63,7 @@ import { currentBranchScope, currentTillBranch, withBranchScope } from "@/server
 import { listBranches } from "@/server/branches";
 import { chainNeighbours } from "@/server/cash/late-chain";
 import { cashEmailRecipients } from "@/server/cash/report-store";
+import { cashSettingsCardData } from "@/server/cash/settings-card";
 import { closedDayEvidence, isClosedDay, staffClosedState } from "@/server/closed-days";
 import { loadKasaCariHints, loadLinkedCashOuts, loadSupplierNames } from "@/server/data/cari";
 import { lateRequestFor, lateRequestsByReport, pendingLateByDay, staffLateDays } from "@/server/data/cash-late";
@@ -92,7 +94,6 @@ import { lafposAutoReport, lafposPhotoBadges, lafposPhotoState, type LafposPhoto
 import { loadKasaModpos, loadKasaModposDays, modposKeySet, NO_MODPOS } from "@/server/data/modpos-day";
 import { dayWaste } from "@/server/data/waste";
 import { getDb } from "@/server/db";
-import { sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured } from "@/server/notify/resend";
 import { staffLateDayOpen } from "@/server/photo-read/rules";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
@@ -144,7 +145,12 @@ function more(email: boolean) {
 async function CashDescription({ searchParams }: { searchParams: PageProps<"/panel/kasa">["searchParams"] }) {
   const user = await requireUser();
   if (user.role !== "admin") return (await staffLafposDescription(searchParams)) ?? STAFF_DESCRIPTION;
-  const mailTo = await cashMailTo(await loadCashSettings());
+  // Açıklamanın kasası: tek şubede o şube; "Tümü"de birden çok kasa açıkken herhangi birinin e-postası gidiyorsa "e-posta
+  // gider" (her şubenin kartı kendi alıcılarını ayrıca söyler; yalnız Tuzla'nınkine bakılmaz)
+  const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+  const tills = tillBranches(branches);
+  const read = scope === ALL_BRANCHES && tills.length > 1 ? tills.map((b) => b.id) : [await currentTillBranch()];
+  const mailTo = Math.max(0, ...(await Promise.all(read.map(async (id) => cashMailTo(await loadCashSettings(id))))));
   return (
     <>
       {ADMIN_DESCRIPTION} <InfoTip text={more(mailTo > 0)} label="Nasıl çalışır?" />
@@ -231,8 +237,11 @@ interface KasaView {
   branch: { id: string; name: string } | null;
   /** Seçili kapsamın adı kasanın şubesi değilse ("Tümü", "laffogato.net"): form hangi şubeye yazdığını söyler */
   scopeLabel: string | null;
-  /** Kasa raporu ayarları kartı ("Tümü"nün şube bölümlerinde yalnız ilkinde) */
-  settings: boolean;
+  /**
+   * Kasa raporu ayarları kartının çapası: ayarlar şube başına (docs/SUBE.md › Şube başına ayarlar), "Tümü"de her şube
+   * bölümünde kendi kartı. Zilin bağlantısı (#rapor-alicilari) ilk bölüme iner
+   */
+  settings: string;
 }
 
 /**
@@ -253,7 +262,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const many = tills.length > 1;
   if (user.role === "admin" && scope === ALL_BRANCHES && many && !isDay(pick(sp.gun))) {
     const parts = await Promise.all(
-      tills.map((b, i) => withBranchScope(b.id, () => cashContentFor(user, sp, { till: b.id, branch: { id: b.id, name: b.name }, scopeLabel: null, settings: i === 0 }))),
+      tills.map((b, i) => withBranchScope(b.id, () => cashContentFor(user, sp, { till: b.id, branch: { id: b.id, name: b.name }, scopeLabel: null, settings: i === 0 ? "rapor-alicilari" : `rapor-alicilari-${b.id}` }))),
     );
     return (
       <div className="space-y-8">
@@ -273,13 +282,27 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       </div>
     );
   }
+  // "Tümü" ya da online kanal seçiliyken birden çok kasa açıksa (personel ya da yöneticinin günü) form çizilmeden önce
+  // şube sorulur: önceden form sessizce Tuzla'nın kasasını açıyordu (şube kapsamı C P1-5). Şubesine kilitli personelin
+  // seçimi zaten kendi şubesidir
+  if (many && !tills.some((b) => b.id === scope)) {
+    return (
+      <BranchChooser
+        title="Hangi şubenin kasası?"
+        description="Kasa raporu şube başına girilir. Şubeyi seçin; sayfa o şubenin kasasıyla açılır."
+        path="/panel/kasa"
+        params={{ gun: pick(sp.gun) }}
+        branches={tills}
+      />
+    );
+  }
   const till = await currentTillBranch();
   const own = branches.find((b) => b.id === till);
   const view: KasaView = {
     till,
     branch: many && own ? { id: own.id, name: own.name } : null,
     scopeLabel: many && scope !== till ? branchScopeLabel(scope, branches) : null,
-    settings: true,
+    settings: "rapor-alicilari",
   };
   return withBranchScope(till, () => cashContentFor(user, sp, view));
 }
@@ -303,7 +326,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   if (!admin && !staffCanReport(date)) date = today;
   const showForm = !admin || isDay(gun);
 
-  const settings = await loadCashSettings();
+  const settings = await loadCashSettings(view.till);
   // E-postanın gittiği adres sayısı: personel hesabına ait adres gönderimde düşer, gönderim kurulmamışsa hiç gitmez
   // (report-email.ts); formun Sonuç kartı buna göre "e-posta gider" ya da "WhatsApp ile paylaşın" der (UI-05)
   const mailTo = showForm ? await cashMailTo(settings) : 0;
@@ -319,7 +342,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
     showForm ? cashOutCategories(user.role) : Promise.resolve([]),
     // Sonraki günün raporu: açılışı bu raporun devriyle karşılaştırılır; varsa personel bu raporu düzeltemez
     showForm ? nextReportAfter(date) : Promise.resolve(null),
-    showForm ? cashCounters() : Promise.resolve([]),
+    // Kasayı sayan: bu kasayı sayabilecekler (şube kapsamı C P2-3)
+    showForm ? cashCounters(view.till) : Promise.resolve([]),
     // Önceki yazarkasa Z'si: forma yalnız gün ve numara gider (Z no denetimi); kümülatif yalnız yöneticinin satırında
     showForm ? previousOkc(date) : Promise.resolve<OkcPrev>({ z: null, cum: null }),
     // Günün kasası ve LafPOS'un bu günün sonu ("LafPOS'tan doldur", docs/LAFPOS.md): yalnız geçiş gününden sonraki
@@ -635,8 +659,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
     // Raporsuz LafPOS günlerinin yedek ay satırları (G6; yalnız geçiş gününden sonra): Gelir-gider'deki ay rakamıyla aynı
     lafposTillRows(getDb(), `${month}-01`, monthEnd),
   ]);
-  // Rapor alıcılarından personel ya da pasif hesabın olanlar (E-53): gönderimde düşer, kartta söylenir
-  const { dropped: blockedRecipients } = await sendableRecipients(getDb(), settings.recipients);
+  // Kasanın rapor ayarları kartı (yalnız yönetici; düşen adresler E-53 kartta söylenir, "aynı" durumu şube başına)
+  const settingsCard = admin ? await cashSettingsCardData(view.till) : null;
   const days = monthDays(month, today, monthReports);
   const revised = monthReports.filter((r) => r.revision > 1).map((r) => r.id);
   const [monthRevisions, monthProposed, lateApproved, latePending, modposDay, modposOf, bankPos, lafposDetail] = await Promise.all([
@@ -800,7 +824,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
               </div>
             </Card>
           ) : null}
-          {view.settings ? <CashSettingsCard settings={settings} emailConfigured={isEmailConfigured()} blocked={blockedRecipients} /> : null}
+          {settingsCard ? <CashSettingsCard {...settingsCard} anchor={view.settings} emailConfigured={isEmailConfigured()} /> : null}
         </div>
       </div>
       )}
@@ -840,7 +864,7 @@ async function StaffLateDay({ date, user, view }: { date: string; user: { id: nu
   const [request, chain, counters, ai, myRequests, prevOkc, lafposState] = await Promise.all([
     lateRequestFor(date, user),
     chainNeighbours(getDb(), date, { prefer: user.id, branchId: view.till }),
-    cashCounters(),
+    cashCounters(view.till),
     aiStatus(),
     myCashRequests(user.id),
     previousOkc(date),

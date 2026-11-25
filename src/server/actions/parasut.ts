@@ -9,30 +9,46 @@ import { PARASUT_SETTING_KEYS, parasutSettingsInput, planParasutSettings, settin
 import { addIgnored, removeIgnored } from "@/lib/product-ignore";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
+import { companyClash, type ParasutInvoiceScope } from "@/lib/parasut/accounts";
+import { listBranches } from "@/server/branches";
+import { loadParasutAccounts, parasutAccountInput } from "@/server/parasut/accounts";
 import { forgetParasutToken, ParasutClient } from "@/server/parasut/client";
-import { configFrom, hasParasutInvoices, loadPanelSettings, loadParasutSettings, writePanelSettings, type ParasutConfig } from "@/server/parasut/config";
+import { configFrom, envOf, hasParasutInvoices, loadInvoiceScope, loadPanelSettings, loadParasutSettings, writeInvoiceScope, writePanelSettings, type ParasutConfig } from "@/server/parasut/config";
 import { forgetParasutConnect } from "@/server/parasut/connect";
 import { suggestNextBatch } from "@/server/parasut/ai-match";
 import { readEInvoiceLines } from "@/server/parasut/lines";
-import { applyProductLinks, PARASUT_STATE_KEYS, parasutSyncRunning, syncParasut, updateIgnoredProducts } from "@/server/parasut/sync";
+import { applyProductLinks, parasutStateKeys, parasutSyncRunning, syncParasut, updateIgnoredProducts } from "@/server/parasut/sync";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zDate, zText } from "./util";
 
-/** Bağlantı ayarları (panel + ortam); eksikse kullanıcıya hangisinin eksik olduğu söylenir */
-async function configured(): Promise<ParasutConfig> {
-  const { resolved } = await loadParasutSettings();
+/*
+ * Şube başına Paraşüt hesabı (docs/PARASUT.md › Şube başına Paraşüt hesabı): bağlantı eylemleri ekranın gösterdiği
+ * hesabı (`account`: sahibi şubenin kimliği) alır; verilmezse seçili şubenin hesabı. Hesap sunucuda doğrulanır
+ * (parasutAccountInput): açık şubelerin kullandığı hesaplardan biri olmalı.
+ */
+
+/** Hesabın bağlantı ayarları (panel + varsayılanda ortam); eksikse kullanıcıya hangisinin eksik olduğu söylenir */
+async function configured(account: string): Promise<ParasutConfig> {
+  const { resolved } = await loadParasutSettings(account);
   try {
-    return configFrom(resolved);
+    return configFrom(resolved, account);
   } catch (e) {
     throw new UserError((e as Error).message);
   }
 }
 
-export async function testParasutConnection() {
+/** İşlem geçmişine hesabın adı (birden çok hesap varken; tek hesapta boş) */
+async function accountLabel(account: string): Promise<string> {
+  const accounts = await loadParasutAccounts();
+  if (accounts.length < 2) return "";
+  return `${accounts.find((a) => a.id === account)?.name ?? account} hesabı · `;
+}
+
+export async function testParasutConnection(accountRaw?: string) {
   return attempt(async () => {
     await requireAdmin();
-    const cfg = await configured();
+    const cfg = await configured(await parasutAccountInput(accountRaw));
     try {
       const r = await new ParasutClient(cfg).ping();
       return r;
@@ -42,11 +58,12 @@ export async function testParasutConnection() {
   });
 }
 
-export async function runParasutSync(from: string | null) {
+export async function runParasutSync(from: string | null, accountRaw?: string) {
   return attempt(async () => {
     await requireAdmin();
-    await configured();
-    const r = await syncParasut("manual", from ? { from: zDate.parse(from) } : {});
+    const account = await parasutAccountInput(accountRaw);
+    await configured(account);
+    const r = await syncParasut("manual", { account, ...(from ? { from: zDate.parse(from) } : {}) });
     if (!r.ok) throw new UserError(r.error);
     refresh();
     return { summary: r.summary, partial: r.partial };
@@ -57,10 +74,10 @@ export async function runParasutSync(from: string | null) {
  * E-fatura kalemlerini beklemeden okur (eşitleme her seferinde kalan süre kadarını okur; ilk kurulumda 80 küsur
  * fatura birkaç sabah sürerdi). Bir çağrı ~45 saniye çalışır; ekran `remaining` bitene kadar yeniden çağırır.
  */
-export async function readParasutLines() {
+export async function readParasutLines(accountRaw?: string) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const cfg = await configured();
+    const cfg = await configured(await parasutAccountInput(accountRaw));
     // Eşitleme de aynı kalemleri ve alım miktarlarını yazar: ikisi aynı anda çalışmasın
     if (await parasutSyncRunning()) throw new UserError("Paraşüt eşitlemesi sürüyor; bitince yeniden deneyin.");
     const started = Date.now();
@@ -77,7 +94,7 @@ export async function readParasutLines() {
       await logActivity(
         me,
         "E-fatura kalemleri okundu",
-        `${r.read} fatura, ${r.lines} kalem${r.corrected ? ` · ${r.corrected} tevkifatlı tutar düzeltildi` : ""}${r.remaining ? ` · ${r.remaining} sırada` : ""}${held ? ` · ${held} fiyat onayda` : ""}`,
+        `${await accountLabel(cfg.account)}${r.read} fatura, ${r.lines} kalem${r.corrected ? ` · ${r.corrected} tevkifatlı tutar düzeltildi` : ""}${r.remaining ? ` · ${r.remaining} sırada` : ""}${held ? ` · ${held} fiyat onayda` : ""}`,
       );
     }
     refresh();
@@ -85,14 +102,17 @@ export async function readParasutLines() {
   });
 }
 
-export async function disconnectParasut() {
+export async function disconnectParasut(accountRaw?: string) {
   return attempt(async () => {
     const me = await requireAdmin();
-    await forgetParasutToken();
-    // Yarıda kalmış bir "bağla" isteği de kalmasın
-    await forgetParasutConnect();
-    await getDb().delete(s.integrationState).where(inArray(s.integrationState.key, PARASUT_STATE_KEYS));
-    await logActivity(me, "Paraşüt bağlantısı sıfırlandı", "Kayıtlı oturum ve eşitleme imleci silindi; yeniden bağlanması gerekir");
+    const account = await parasutAccountInput(accountRaw);
+    // Oturum, yarıda kalmış "bağla" isteği ve eşitleme durumu tek işlemde (yalnız bu hesabınkiler)
+    await getDb().transaction(async (tx) => {
+      await forgetParasutToken(account, tx);
+      await forgetParasutConnect(account, tx);
+      await tx.delete(s.integrationState).where(inArray(s.integrationState.key, parasutStateKeys(account)));
+    });
+    await logActivity(me, "Paraşüt bağlantısı sıfırlandı", `${await accountLabel(account)}Kayıtlı oturum ve eşitleme imleci silindi; yeniden bağlanması gerekir`);
     refresh();
     return null;
   });
@@ -104,32 +124,65 @@ export async function disconnectParasut() {
  * istemci değişince kayıtlı oturum ve yarım bağlanma isteği silinir (eski istemcinindi, hesap yeniden bağlanır), firma
  * değişince eşitleme imleci sıfırlanır ("Oturumu sıfırla" gibi). Paraşüt'ten fatura gelmişse firma değiştirilemez;
  * bu ikisi eşitleme sürerken yapılmaz. İşlem geçmişine secret'ın değeri yazılmaz.
+ *
+ * Hesap başına (`account`): ortam değişkenleri yalnız varsayılan hesabın yedeği. Başka hesabın firma numarası
+ * girilemez (aynı firma iki hesaptan iki kez eşitlenip faturaları çiftlerdi; companyClash).
  */
-export async function saveParasutSettings(input: z.input<typeof parasutSettingsInput>) {
+export async function saveParasutSettings(input: z.input<typeof parasutSettingsInput>, accountRaw?: string) {
   return attempt(async () => {
     const me = await requireAdmin();
     const data = parasutSettingsInput.parse(input);
+    const account = await parasutAccountInput(accountRaw);
     const db = getDb();
-    const [{ values, secretUnreadable }, invoices] = await Promise.all([loadPanelSettings(db), hasParasutInvoices(db)]);
-    const plan = planParasutSettings(values, process.env, data, { hasParasutInvoices: invoices });
+    const [{ values, secretUnreadable }, invoices] = await Promise.all([loadPanelSettings(account, db), hasParasutInvoices(account, db)]);
+    const plan = planParasutSettings(values, envOf(account), data, { hasParasutInvoices: invoices });
     if (!plan.ok) throw new UserError(plan.error);
+    if (plan.changed.includes("companyId")) {
+      const others = await Promise.all(
+        (await loadParasutAccounts()).filter((a) => a.id !== account).map(async (a) => ({ id: a.id, name: a.name, companyId: (await loadParasutSettings(a.id)).resolved.companyId.value })),
+      );
+      const clash = companyClash(account, plan.after.companyId.value, others);
+      if (clash) throw new UserError(clash);
+    }
     const panelChanged = secretUnreadable || PARASUT_SETTING_KEYS.some((k) => (plan.next[k] ?? "") !== (values[k] ?? ""));
     if (!panelChanged) return { saved: false, changed: [] as ParasutSettingKey[], forgotSession: false, resetCursor: false };
     if ((plan.forgetSession || plan.resetCursor) && (await parasutSyncRunning())) {
       throw new UserError("Paraşüt eşitlemesi sürüyor; bitince yeniden kaydedin.");
     }
     await db.transaction(async (tx) => {
-      await writePanelSettings(plan.next, me.name, tx);
+      await writePanelSettings(account, plan.next, me.name, tx);
       if (plan.forgetSession) {
-        await forgetParasutToken(tx);
-        await forgetParasutConnect(tx);
+        await forgetParasutToken(account, tx);
+        await forgetParasutConnect(account, tx);
       }
-      if (plan.resetCursor) await tx.delete(s.integrationState).where(inArray(s.integrationState.key, PARASUT_STATE_KEYS));
+      if (plan.resetCursor) await tx.delete(s.integrationState).where(inArray(s.integrationState.key, parasutStateKeys(account)));
     });
     const detail = settingsLogText(plan);
-    await logActivity(me, "Paraşüt bağlantı ayarları", detail || "panel kaydı yenilendi");
+    await logActivity(me, "Paraşüt bağlantı ayarları", `${await accountLabel(account)}${detail || "panel kaydı yenilendi"}`);
     refresh();
     return { saved: true, changed: plan.changed, forgotSession: plan.forgetSession, resetCursor: plan.resetCursor };
+  });
+}
+
+const invoiceScopeInput = z.enum(["branch", "shared"]);
+
+/**
+ * Ayrı Paraşüt hesabının faturaları şubenin mi, işletme geneli mi (sahibin kararı: ayrı hesabın faturaları o şubenin;
+ * ayarlanabilir). Yalnız bundan sonra açılan faturaya uygulanır; var olan faturaların şubesi değişmez. Yalnız yönetici
+ */
+export async function setParasutInvoiceScope(scopeRaw: ParasutInvoiceScope, accountRaw?: string) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const scope = invoiceScopeInput.parse(scopeRaw);
+    const account = await parasutAccountInput(accountRaw);
+    const db = getDb();
+    if ((await loadInvoiceScope(account, db)) === scope) return { changed: false };
+    await writeInvoiceScope(account, scope, me.name, db);
+    const branches = await listBranches();
+    const name = branches.find((b) => b.id === account)?.name ?? account;
+    await logActivity(me, "Paraşüt faturalarının şubesi", `${name} hesabı: yeni faturalar ${scope === "shared" ? "işletme geneli" : `${name} şubesinin`}`);
+    refresh();
+    return { changed: true };
   });
 }
 

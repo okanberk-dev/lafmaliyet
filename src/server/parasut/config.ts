@@ -1,7 +1,8 @@
 import "server-only";
 
-import { eq, isNotNull, or } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 
+import { DEFAULT_PARASUT_ACCOUNT, parasutKey, parseInvoiceScope, type ParasutInvoiceScope } from "@/lib/parasut/accounts";
 import {
   missingSettings,
   PARASUT_SETTING_KEYS,
@@ -32,8 +33,13 @@ import { open, seal } from "@/server/secret-box";
 
 /**
  * Panelden girilen ayarlar. client_secret şifreli (amaç "parasut-settings"); öteki alanlar düz metin. Yedeğe girmez
- * (src/lib/backup/format.ts › EXCLUDED_STATE_KEYS): şifreli değer başka AUTH_SECRET'la açılmaz, geri yüklemeden sonra
- * oturum da yeniden bağlanır; ayarlar o sırada panelden yeniden girilir (ortamda varsa onlar kullanılır).
+ * (src/lib/backup/format.ts › EXCLUDED_STATE_PREFIXES): şifreli değer başka AUTH_SECRET'la açılmaz, geri yüklemeden
+ * sonra oturum da yeniden bağlanır; ayarlar o sırada panelden yeniden girilir (ortamda varsa onlar kullanılır).
+ *
+ * Şube başına Paraşüt hesabı (docs/PARASUT.md › Şube başına Paraşüt hesabı; src/lib/parasut/accounts.ts): her hesabın
+ * kaydı ayrı (`parasutKey`): varsayılan şubeninki eski adla ("parasut.settings"), öbürleri "parasut.settings:<hesap>".
+ * Ortam değişkenleri (PARASUT_CLIENT_ID, …) yalnız varsayılan hesabın yedeğidir: ikinci şubenin hesabı Vercel'deki
+ * istemciyi sessizce devralmasın.
  */
 const SETTINGS_KEY = "parasut.settings";
 
@@ -43,16 +49,27 @@ interface StoredSettings {
   clientSecret?: string;
   companyId?: string;
   syncFrom?: string;
+  /** Hesabın faturaları: "shared" işletme geneli (yoksa tek şubenin hesabıysa o şubenin; invoiceBranchOf) */
+  invoices?: ParasutInvoiceScope;
   updatedAt?: string;
   updatedBy?: string;
 }
 
 type Exec = Pick<ReturnType<typeof getDb>, "select" | "insert" | "delete">;
 
+const settingsKey = (account: string) => parasutKey(SETTINGS_KEY, account);
+
+async function storedSettings(account: string, db: Pick<Exec, "select">): Promise<StoredSettings> {
+  const [row] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, settingsKey(account))).limit(1);
+  return (row?.value ?? {}) as StoredSettings;
+}
+
+/** Hesabın ortam değişkenleri: yalnız varsayılan hesap ortamdan okur */
+export const envOf = (account: string): Record<string, string | undefined> => (account === DEFAULT_PARASUT_ACCOUNT ? process.env : {});
+
 /** Panelde kayıtlı değerler; şifreli client_secret açılamazsa (AUTH_SECRET değişmiş) yok sayılır ve söylenir */
-export async function loadPanelSettings(db: Pick<Exec, "select"> = getDb()): Promise<{ values: PanelValues; secretUnreadable: boolean }> {
-  const [row] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, SETTINGS_KEY)).limit(1);
-  const v = (row?.value ?? {}) as StoredSettings;
+export async function loadPanelSettings(account: string, db: Pick<Exec, "select"> = getDb()): Promise<{ values: PanelValues; secretUnreadable: boolean }> {
+  const v = await storedSettings(account, db);
   const values: PanelValues = {};
   for (const key of PARASUT_SETTING_KEYS) {
     if (key === "clientSecret" || typeof v[key] !== "string" || !v[key]) continue;
@@ -63,43 +80,81 @@ export async function loadPanelSettings(db: Pick<Exec, "select"> = getDb()): Pro
   return { values, secretUnreadable: Boolean(v.clientSecret) && !secret };
 }
 
-/** Panel ayarlarını yazar (client_secret şifrelenir); boş kalan kayıt silinir */
-export async function writePanelSettings(values: PanelValues, by: string, db: Exec = getDb()) {
+/** Hesabın faturalarının kapsam seçimi (Paraşüt ekranı; yoksa "branch") */
+export async function loadInvoiceScope(account: string, db: Pick<Exec, "select"> = getDb()): Promise<ParasutInvoiceScope> {
+  return parseInvoiceScope((await storedSettings(account, db)).invoices);
+}
+
+/**
+ * Panel ayarlarını yazar (client_secret şifrelenir); boş kalan kayıt silinir. Faturaların kapsam seçimi
+ * (`invoices`) verilmezse kayıttaki kalır
+ */
+export async function writePanelSettings(account: string, values: PanelValues, by: string, db: Exec = getDb(), invoices?: ParasutInvoiceScope) {
+  const before = await storedSettings(account, db);
   const value: StoredSettings = {};
   for (const key of PARASUT_SETTING_KEYS) {
     const v = values[key]?.trim();
     if (v) value[key] = key === "clientSecret" ? seal(v, "parasut-settings") : v;
   }
+  const scope = invoices ?? parseInvoiceScope(before.invoices);
+  if (scope === "shared") value.invoices = "shared";
+  const key = settingsKey(account);
   if (!Object.keys(value).length) {
-    await db.delete(s.integrationState).where(eq(s.integrationState.key, SETTINGS_KEY));
+    await db.delete(s.integrationState).where(eq(s.integrationState.key, key));
     return;
   }
   Object.assign(value, { updatedAt: new Date().toISOString(), updatedBy: by });
   await db
     .insert(s.integrationState)
-    .values({ key: SETTINGS_KEY, value })
+    .values({ key, value })
     .onConflictDoUpdate({ target: s.integrationState.key, set: { value, updatedAt: new Date() } });
 }
 
-/** Kullanılacak ayarlar: alan alan önce panel, yoksa ortam değişkeni */
-export async function loadParasutSettings(db: Pick<Exec, "select"> = getDb()): Promise<{ resolved: ResolvedSettings; secretUnreadable: boolean }> {
-  const { values, secretUnreadable } = await loadPanelSettings(db);
-  return { resolved: resolveParasutSettings(values, process.env), secretUnreadable };
+/**
+ * Hesabın faturalarının kapsam seçimini yazar; kayıttaki öbür alanlara (şifreli client_secret dahil, açılamasa bile)
+ * dokunmaz
+ */
+export async function writeInvoiceScope(account: string, scope: ParasutInvoiceScope, by: string, db: Exec = getDb()) {
+  const value: StoredSettings = { ...(await storedSettings(account, db)), updatedAt: new Date().toISOString(), updatedBy: by };
+  if (scope === "shared") value.invoices = "shared";
+  else delete value.invoices;
+  const key = settingsKey(account);
+  await db
+    .insert(s.integrationState)
+    .values({ key, value })
+    .onConflictDoUpdate({ target: s.integrationState.key, set: { value, updatedAt: new Date() } });
 }
 
-/** Paraşüt'ten gelmiş (ya da Paraşüt'e bağlanmış) fatura var mı: varsa firma numarası panelden değiştirilemez */
-export async function hasParasutInvoices(db: Pick<Exec, "select"> = getDb()): Promise<boolean> {
+/** Kullanılacak ayarlar: alan alan önce panel, yoksa (yalnız varsayılan hesapta) ortam değişkeni */
+export async function loadParasutSettings(account: string, db: Pick<Exec, "select"> = getDb()): Promise<{ resolved: ResolvedSettings; secretUnreadable: boolean }> {
+  const { values, secretUnreadable } = await loadPanelSettings(account, db);
+  return { resolved: resolveParasutSettings(values, envOf(account)), secretUnreadable };
+}
+
+/**
+ * Hesaptan gelmiş (ya da hesaba bağlanmış) fatura var mı: varsa firma numarası panelden değiştirilemez, şube başka
+ * şubenin hesabına bağlanamaz. Eski kayıtlarda hesap yok sayılmaz: göç (0083) Paraşüt'e bağlı her faturaya varsayılan
+ * hesabı yazdı
+ */
+export async function hasParasutInvoices(account: string, db: Pick<Exec, "select"> = getDb()): Promise<boolean> {
   const [row] = await db
     .select({ id: s.invoices.id })
     .from(s.invoices)
-    .where(or(eq(s.invoices.source, "parasut"), isNotNull(s.invoices.externalId), isNotNull(s.invoices.eInvoiceId)))
+    .where(
+      and(
+        // Hesabı boş Paraşüt faturası varsayılan hesabındır (accounts.ts invoiceAccountWhere ile aynı kural): eski yedekten
+        // gelen hesapsız satır varken Tuzla'nın firması değiştirilemez
+        account === DEFAULT_PARASUT_ACCOUNT ? or(eq(s.invoices.parasutAccount, account), isNull(s.invoices.parasutAccount)) : eq(s.invoices.parasutAccount, account),
+        or(eq(s.invoices.source, "parasut"), isNotNull(s.invoices.externalId), isNotNull(s.invoices.eInvoiceId)),
+      ),
+    )
     .limit(1);
   return Boolean(row);
 }
 
 /** Bağlantı kartının ayar görünümü (client_secret'ın değeri yok) */
-export async function parasutSettingsView(): Promise<ParasutSettingsView> {
-  const [{ resolved, secretUnreadable }, invoices] = await Promise.all([loadParasutSettings(), hasParasutInvoices()]);
+export async function parasutSettingsView(account: string): Promise<ParasutSettingsView> {
+  const [{ resolved, secretUnreadable }, invoices] = await Promise.all([loadParasutSettings(account), hasParasutInvoices(account)]);
   return settingsView(resolved, { secretUnreadable, hasParasutInvoices: invoices });
 }
 
@@ -119,6 +174,8 @@ export const DEFAULT_SCOPE = "openid offline_access";
 export const PARASUT_CALLBACK_PATH = "/panel/parasut/baglan/geri";
 
 export interface ParasutConfig {
+  /** Hesap (sahibi şube; src/lib/parasut/accounts.ts): oturum ve eşitleme durumu bu adla saklanır */
+  account: string;
   clientId: string;
   clientSecret: string;
   companyId: string;
@@ -139,9 +196,9 @@ export interface ParasutConfig {
   syncFrom: string | null;
 }
 
-/** Zorunlu üç ayar (client_id, client_secret, firma numarası) panelde ya da ortamda var mı */
-export async function isParasutConfigured(): Promise<boolean> {
-  const { resolved } = await loadParasutSettings();
+/** Hesabın zorunlu üç ayarı (client_id, client_secret, firma numarası) panelde ya da (varsayılanda) ortamda var mı */
+export async function isParasutConfigured(account: string): Promise<boolean> {
+  const { resolved } = await loadParasutSettings(account);
   return missingSettings(resolved).length === 0;
 }
 
@@ -180,7 +237,7 @@ export function assertOidcSettings(cfg: Pick<ParasutConfig, "invalid">, only?: r
  * Kullanılacak ayarlardan bağlantı yapılandırması. Yalnız zorunlu üç ayar eksikse hata atar; isteğe bağlı
  * değişkenlerin yanlışı uygulamayı durdurmaz.
  */
-export function configFrom(r: ResolvedSettings): ParasutConfig {
+export function configFrom(r: ResolvedSettings, account: string = DEFAULT_PARASUT_ACCOUNT): ParasutConfig {
   const missing = missingSettings(r);
   if (missing.length) {
     throw new Error(`Paraşüt bağlantı ayarları eksik: ${missing.map((k) => PARASUT_SETTINGS[k].label).join(", ")}. Paraşüt entegrasyonu › Bağlantı kartından girin.`);
@@ -192,6 +249,7 @@ export function configFrom(r: ResolvedSettings): ParasutConfig {
     return x.value;
   };
   return {
+    account,
     clientId: r.clientId.value!,
     clientSecret: r.clientSecret.value!,
     companyId: r.companyId.value!,
@@ -206,7 +264,7 @@ export function configFrom(r: ResolvedSettings): ParasutConfig {
   };
 }
 
-/** Bağlantı yapılandırması (panel ayarları + ortam); zorunlu ayar eksikse hata */
-export async function readParasutConfig(): Promise<ParasutConfig> {
-  return configFrom((await loadParasutSettings()).resolved);
+/** Hesabın bağlantı yapılandırması (panel ayarları + varsayılanda ortam); zorunlu ayar eksikse hata */
+export async function readParasutConfig(account: string): Promise<ParasutConfig> {
+  return configFrom((await loadParasutSettings(account)).resolved, account);
 }

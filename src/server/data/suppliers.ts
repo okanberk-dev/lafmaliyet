@@ -6,6 +6,7 @@ import { groupSuppliers, supplierResolver, type PaymentMethod, type SupplierCard
 import { addDays, todayTR } from "@/lib/reminders";
 import { accountOf } from "@/lib/cari/account";
 import { candidateOf, linkCandidates } from "@/lib/cari/match";
+import { DEFAULT_PARASUT_ACCOUNT, parasutKey } from "@/lib/parasut/accounts";
 import { getDb, schema as s } from "@/server/db";
 import { loadNotifySettings } from "@/server/notify/settings";
 
@@ -104,14 +105,16 @@ const PAYMENTS_LOOKBACK_DAYS = 30;
 /**
  * Ödeme takibinin başlangıcı (YYYY-MM-DD). Paraşüt'ten bu günden eski bir fatura yeni gelirse (geçmişi yeniden alırken:
  * Tarihten eşitle) "ödenmedi" yığılmasın diye Paraşüt'teki durumuyla açılır
- * (newInvoicePayment). İlk çağrıda bugünden PAYMENTS_LOOKBACK_DAYS gün önce olarak kaydedilir.
+ * (newInvoicePayment). İlk çağrıda bugünden PAYMENTS_LOOKBACK_DAYS gün önce olarak kaydedilir. Şube başına Paraşüt
+ * hesabı: hesap başına (varsayılan hesapta eski ad); sonradan bağlanan hesabın eski faturaları "ödenmedi" yığılmaz
  */
-export async function loadPaymentsSince(): Promise<string> {
+export async function loadPaymentsSince(account: string = DEFAULT_PARASUT_ACCOUNT): Promise<string> {
   const db = getDb();
-  const [row] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, PAYMENTS_SINCE_KEY)).limit(1);
+  const key = parasutKey(PAYMENTS_SINCE_KEY, account);
+  const [row] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, key)).limit(1);
   if (typeof row?.value === "string") return row.value;
   const since = addDays(todayTR(), -PAYMENTS_LOOKBACK_DAYS);
-  await db.insert(s.integrationState).values({ key: PAYMENTS_SINCE_KEY, value: since }).onConflictDoNothing();
+  await db.insert(s.integrationState).values({ key, value: since }).onConflictDoNothing();
   return since;
 }
 

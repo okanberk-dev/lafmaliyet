@@ -191,9 +191,10 @@ test("kaynak: ekran secret'ın değerini almaz; eylem yönetici ister; ayarlar �
   assert.match(save, /const me = await requireAdmin\(\);/);
   assert.match(save, /parasutSettingsInput\.parse\(input\)/);
   assert.match(save, /await parasutSyncRunning\(\)/, "istemci ya da firma eşitleme sürerken değişmez");
-  assert.match(save, /forgetParasutToken\(tx\);\s*await forgetParasutConnect\(tx\);/);
-  assert.match(save, /inArray\(s\.integrationState\.key, PARASUT_STATE_KEYS\)/);
-  assert.match(save, /logActivity\(me, "Paraşüt bağlantı ayarları", detail/);
+  // Şube başına Paraşüt hesabı: oturum, bağlanma isteği ve eşitleme durumu yalnız bu hesabınki
+  assert.match(save, /forgetParasutToken\(account, tx\);\s*await forgetParasutConnect\(account, tx\);/);
+  assert.match(save, /inArray\(s\.integrationState\.key, parasutStateKeys\(account\)\)/);
+  assert.match(save, /logActivity\(me, "Paraşüt bağlantı ayarları", `\$\{await accountLabel\(account\)\}\$\{detail/);
 
   const cfg = read("src/server/parasut/config.ts");
   assert.match(cfg, /const SETTINGS_KEY = "parasut\.settings";/);

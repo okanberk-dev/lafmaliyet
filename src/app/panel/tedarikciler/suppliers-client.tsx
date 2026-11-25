@@ -59,6 +59,8 @@ export interface KasaPendingRow {
   store: string | null;
   slug: string;
   name: string;
+  /** Kasanın şubesi; birden çok kasa açıkken (`namedTill`), tek kasada null */
+  tillName: string | null;
 }
 
 /** Sunucu sayfasının özet rakamları (kayan rakamlı sayaç); biçim işlevi sunucudan geçemediği için adıyla */
@@ -92,6 +94,7 @@ export function SuppliersClient({
   defaultTermDays,
   taxIndex,
   kasa = [],
+  kasaElsewhere = 0,
 }: {
   rows: SupplierListRow[];
   hidden: HiddenSupplierRow[];
@@ -101,6 +104,8 @@ export function SuppliersClient({
   taxIndex?: TaxIndex;
   /** Kasadan tedarikçilere çıkan, hesaba işlenmemiş satırlar (son 60 gün) */
   kasa?: KasaPendingRow[];
+  /** Tek şube seçiliyken öbür şubelerin kasasından çıkan işlenmemiş satır sayısı (gösterilmez, yalnız söylenir) */
+  kasaElsewhere?: number;
 }) {
   const router = useRouter();
   const [q, setQ] = useQueryText("ara");
@@ -245,12 +250,15 @@ export function SuppliersClient({
           live="polite"
           className="mx-5 mb-3 max-sm:mx-4"
           title={`Kasadan tedarikçiye ${num(kasa.length)} ödeme hesaba işlenmedi (${money(kasa.reduce((a, l) => a + l.amount, 0))})`}
+          text={kasaElsewhere ? `Öbür şubenin kasasında ${num(kasaElsewhere)} satır daha var; Tümü'nde görünür.` : undefined}
           action={
             <Button size="xs" variant="secondary" onClick={() => setKasaOpen(true)}>
               İşle
             </Button>
           }
         />
+      ) : kasaElsewhere ? (
+        <Notice tone="neutral" size="sm" className="mx-5 mb-3 max-sm:mx-4" title={`Öbür şubenin kasasında ${num(kasaElsewhere)} işlenmemiş tedarikçi ödemesi var; Tümü'nde görünür`} />
       ) : null}
       <Dialog
         open={showKasa}
@@ -269,7 +277,7 @@ export function SuppliersClient({
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium break-words text-ink">{l.name}</p>
                 <p className="text-xs text-ink-mute tabular">
-                  {dateTR(l.date)} · {l.kind === "teslim" ? "Teslim" : "fişsiz alışveriş"} · {l.store} · {money(l.amount)}
+                  {[dateTR(l.date), l.tillName, l.kind === "teslim" ? "Teslim" : "fişsiz alışveriş", l.store, money(l.amount)].filter(Boolean).join(" · ")}
                 </p>
               </div>
               <Link href={`${supplierHref(l.slug)}?kasa=${l.id}`} onClick={closeKasa} className={buttonClass("secondary", "sm", "text-ink")}>

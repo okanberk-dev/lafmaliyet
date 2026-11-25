@@ -11,9 +11,10 @@ import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Input, NumberInput, Textarea } from "@/components/ui/form";
+import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
+import { BRANCH_REQUIRED } from "@/lib/branches";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { tl } from "@/lib/format";
 import { LAFPOS_IKRAM_TEXT } from "@/lib/lafpos/ikram";
@@ -53,6 +54,8 @@ export interface LafposDayView {
   notCounted: number[];
   /** Paneldeki ürün zayisi, aynı gün aynı ürün LafPOS'ta da zayi yazıldı (ikisi de sayılır) */
   maybeTwice: number[];
+  /** "Tümü"de birden çok kasa açıkken LafPOS'un şubesi (listenin başlığında; şube kapsamı C P2-7); yoksa null */
+  branchName?: string | null;
 }
 
 /**
@@ -74,6 +77,7 @@ export function WasteBoard({
   lateBadges,
   pendingLate,
   lafpos = null,
+  branches,
 }: {
   date: string;
   choices: WasteChoice[];
@@ -88,6 +92,11 @@ export function WasteBoard({
   pendingLate: PendingLate[];
   /** LafPOS günü (geçiş gününden itibaren); değilse null: bugünkü gibi */
   lafpos?: LafposDayView | null;
+  /**
+   * Kaydın ineceği şube (docs/SUBE.md › Yazarken hangi şube): tekse o; "Tümü"de birden çoksa form sorar, varsayılan yok.
+   * Sunucu doğrular (formBranch "waste"); gönderim anındaki seçim değil bu yazılır
+   */
+  branches: { id: string; name: string }[];
 }) {
   const [kind, setKind] = useState<WasteKind>("zayi");
   const [query, setQuery] = useState("");
@@ -97,6 +106,10 @@ export function WasteBoard({
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
   const [pending, start] = useActionTransition();
+  const [branchPick, setBranchPick] = useState<string | null>(null);
+  // Şube seçimi açılışta nötr; yalnız şubesiz kayıt denenince hatalı görünür (Satışlar'ın "Satır ekle"si gibi)
+  const [branchTried, setBranchTried] = useState(false);
+  const branchId = branches.length === 1 ? branches[0].id : branchPick;
   const [removing, setRemoving] = useState<WasteEntryDTO | null>(null);
   const [asking, setAsking] = useState<WasteEntryDTO | null>(null);
   const [askReason, setAskReason] = useState("");
@@ -135,7 +148,9 @@ export function WasteBoard({
     const n = parseNumberTR(qty);
     if (n === null || n <= 0) return void (toast.error("Miktarı yazın (ör. 1 ya da 0,5)"), document.getElementById("zi-miktar")?.focus());
     if (late && message.trim().length < 3) return void (toast.error(T.messageShort), document.getElementById("zi-aciklama")?.focus());
+    if (!branchId) return void (setBranchTried(true), toast.error(BRANCH_REQUIRED), document.getElementById("zi-sube")?.focus());
     const input = {
+      branchId,
       date,
       kind,
       productId: picked.type === "product" ? picked.id : null,
@@ -214,6 +229,19 @@ export function WasteBoard({
           description={late ? `${longDateTR(date)} · ${T.lateHint}` : `${longDateTR(date)} · ödenmeyen ve atılan her şey`}
         />
         <div className="space-y-4 px-5 pb-5">
+          {branches.length > 1 ? (
+            // "Tümü" seçili ve birden çok kasa açık: kayıt hangi şubenin, varsayılan yok (sessizce Tuzla'ya inmez)
+            <Field label="Şube" htmlFor="zi-sube">
+              <Select id="zi-sube" value={branchId ?? ""} onChange={(e) => setBranchPick(e.target.value || null)} aria-invalid={(branchTried && !branchId) || undefined}>
+                {branchId ? null : <option value="">Şube seçin</option>}
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
           <Segmented<WasteKind>
             label="Kayıt türü"
             value={kind}
@@ -382,6 +410,12 @@ export function WasteBoard({
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium break-words text-ink">
                       {e.name} <span className="font-normal text-ink-mute tabular">· {qtyText(e.qty, e.unit)}</span>
+                      {/* "Tümü"de birden çok kasa açıkken kaydın şubesi (şube kapsamı C P2-7) */}
+                      {branches.length > 1 ? (
+                        <Badge tone="gray" className="ml-1.5 align-middle">
+                          {branches.find((b) => b.id === e.branchId)?.name ?? e.branchId}
+                        </Badge>
+                      ) : null}
                     </p>
                     <p className="text-xs break-words text-ink-mute">
                       {[e.reason, e.note, e.createdByName, new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(new Date(e.createdAt))]
@@ -433,7 +467,10 @@ export function WasteBoard({
         {lafpos ? (
           // LafPOS'un ikram ve zayi satırları salt okunur: kasada işaretlendi, tüketime oradan girer
           <section aria-label={LAFPOS_IKRAM_TEXT.listTitle} className="border-t border-line px-5 py-4">
-            <h3 className="text-sm font-semibold text-ink">{LAFPOS_IKRAM_TEXT.listTitle}</h3>
+            <h3 className="text-sm font-semibold text-ink">
+              {LAFPOS_IKRAM_TEXT.listTitle}
+              {lafpos.branchName ? ` · ${lafpos.branchName}` : ""}
+            </h3>
             {!lafpos.received ? (
               <p className="mt-1 text-sm text-ink-mute">{lafpos.past ? LAFPOS_IKRAM_TEXT.waitingPast : LAFPOS_IKRAM_TEXT.waiting}</p>
             ) : lafpos.lines.length ? (

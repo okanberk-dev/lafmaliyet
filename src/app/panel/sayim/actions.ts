@@ -4,21 +4,19 @@ import { and, asc, eq, inArray, lt } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { BRANCH_ID_MAX } from "@/lib/branches";
+import { zFormBranch } from "@/lib/branches";
 import { countItemLogDetail } from "@/lib/count-item";
-import { monthLabel } from "@/lib/format";
 import { logActivity } from "@/server/actions/log";
 import { attempt, UserError, zMonth, zText } from "@/server/actions/util";
 import { requireUser } from "@/server/auth/dal";
 import { formCountBranch, withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { countItemSchema, createCountItem } from "@/server/data/count-item";
 import { lockExtras } from "@/server/data/stock-extras";
 import { getDb, schema as s } from "@/server/db";
 
-import { planStaffExtras, staffCountIssue } from "./logic";
+import { countLogDetail, planStaffExtras, staffCountIssue } from "./logic";
 
-/** Formun gösterdiği sayım şubesi (docs/SUBE.md › Yazarken hangi şube); göndermeyen eski sekmede seçili fiziksel şube */
-const zFormBranch = z.string().max(BRANCH_ID_MAX).nullish();
 const addSchema = countItemSchema.extend({ branchId: zFormBranch });
 
 /**
@@ -93,7 +91,7 @@ export async function saveStaffStockExtras(month: string, extras: { name: string
       });
       // "N kalem" değişen satır sayısıdır (yöneticinin geç kayıt uyarısı bunu toplar; listenin tamamı değil). Değişiklik
       // yoksa kayıt yazılmaz
-      if (changed) await logActivity(me, "Sayım ek kalemleri", `${monthLabel(m)}: ${changed} kalem`);
+      if (changed) await logActivity(me, "Sayım ek kalemleri", countLogDetail(m, `${changed} kalem`, (await listBranches()).find((b) => b.id === sube)?.name ?? sube));
       refresh();
       return saved.map((e) => ({ name: e.name, unit: e.unit, qty: e.qty, priced: e.unitPrice > 0 }));
     });

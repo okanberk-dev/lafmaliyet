@@ -46,8 +46,8 @@ const specialInput = z.object({
     .nullish()
     .transform((v) => v || null),
   /**
-   * Kapalı günün şubesi (yalnız "kapali"; docs/SUBE.md › Kapalı gün): boş = bütün şubeler (işletme geneli). Gönderilmezse
-   * (eski sekme, personelin formu) düzenlemede kayıtlı şube kalır, yeni kayıt işletme geneli olur
+   * Günün şubesi (her tür; docs/SUBE.md › Özel günlerin şubesi, şube kapsamı C P1-10): boş = bütün şubeler (işletme
+   * geneli). Gönderilmezse (eski sekme) düzenlemede kayıtlı şube kalır, yeni kayıt işletme geneli olur
    */
   branchId: z.string().max(24).nullish(),
 });
@@ -60,7 +60,7 @@ export interface SpecialDayValues {
   dateTo: string;
   effect: 0.3 | 0.15 | 0 | -0.15 | -0.3;
   note: string | null;
-  /** Kapalı günün şubesi (boş = bütün şubeler): "Geri al" aynı şubeye geri yazar */
+  /** Günün şubesi (boş = bütün şubeler): "Geri al" aynı şubeye geri yazar */
   branchId?: string | null;
 }
 
@@ -81,8 +81,8 @@ export async function saveSpecialDay(input: SpecialDayInput): Promise<ActionResu
     if (dateTo > addDays(today, SPECIAL_MAX_AHEAD_DAYS)) throw new UserError("En çok 1 yıl ileriye girilebilir");
     const effect = d.kind === "kapali" ? -1 : d.effect;
     const values = { kind: d.kind, title: d.title, dateFrom: d.dateFrom, dateTo, effect, note: d.note };
-    // Kapalı günün şubesi kasası olan (etkin, fiziksel) bir şube olmalı; öteki özel günler şubesizdir
-    const sentBranch = d.kind === "kapali" ? d.branchId : null;
+    // Günün şubesi kasası olan (etkin, fiziksel) bir şube olmalı; boş = işletme geneli (bütün şubeler)
+    const sentBranch = d.branchId;
     if (sentBranch && !tillBranches(await listBranches()).some((b) => b.id === sentBranch)) throw new UserError("Şube bulunamadı (sayfayı yenileyin)");
     // Personelin yazımlarıyla aynı danışma kilidi (src/server/closed-days.ts lockSpecialDays): çakışma ve sınırlar yarışmaz
     const id = await getDb().transaction(async (tx) => {
@@ -92,11 +92,11 @@ export async function saveSpecialDay(input: SpecialDayInput): Promise<ActionResu
         .select({ id: s.specialDays.id, kind: s.specialDays.kind, title: s.specialDays.title, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo, branchId: s.specialDays.branchId })
         .from(s.specialDays)
         .where(and(lte(s.specialDays.dateFrom, dateTo), gte(s.specialDays.dateTo, d.dateFrom)));
-      // Şube gönderilmediyse düzenlemede kayıtlı şube kalır (tür kapalı kaldıysa); yeni kayıtta işletme geneli
-      const [stored] = d.id && sentBranch === undefined ? await tx.select({ kind: s.specialDays.kind, branchId: s.specialDays.branchId }).from(s.specialDays).where(eq(s.specialDays.id, d.id)).limit(1) : [];
-      const branchId = d.kind !== "kapali" ? null : sentBranch !== undefined ? sentBranch || null : stored?.kind === "kapali" ? stored.branchId : null;
-      // Aynı adlı kapalı gün başka şubedeyse ikiz değil (Tuzla ve Marina aynı gün "Tadilat" olabilir)
-      const sameBranch = (r: { kind: string; branchId: string | null }) => d.kind !== "kapali" || r.kind !== "kapali" || r.branchId === branchId;
+      // Şube gönderilmediyse düzenlemede kayıtlı şube kalır; yeni kayıtta işletme geneli
+      const [stored] = d.id && sentBranch === undefined ? await tx.select({ branchId: s.specialDays.branchId }).from(s.specialDays).where(eq(s.specialDays.id, d.id)).limit(1) : [];
+      const branchId = sentBranch !== undefined ? sentBranch || null : (stored?.branchId ?? null);
+      // Aynı adlı gün başka şubedeyse ikiz değil (Tuzla ve Marina aynı gün "Tadilat" ya da ayrı kampanya olabilir)
+      const sameBranch = (r: { branchId: string | null }) => r.branchId === branchId;
       const twin = overlapping.find((r) => r.id !== d.id && foldTR(r.title) === foldTR(d.title) && sameBranch(r));
       if (twin) throw new UserError(`Bu günlerde aynı adla bir özel gün var (${rangeTR(twin.dateFrom, twin.dateTo)}); onu düzenleyin`);
       if (d.id) {

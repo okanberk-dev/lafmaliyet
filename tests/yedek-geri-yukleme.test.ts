@@ -129,10 +129,12 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
       INSERT INTO user_tokens (user_id, kind, token_hash, expires_at) SELECT id, 'invite', 'ozet', now() + interval '1 day' FROM users WHERE email = 'ayse@ornek.com';
       INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, session_version) SELECT id, 'https://push.example/1', 'p', 'a', 1 FROM users WHERE email = 'ayse@ornek.com';
       INSERT INTO integration_state (key, value) VALUES
-        ('parasut.token', '{"sealed":"x"}'), ('webpush_vapid', '{"publicKey":"p","privateKey":"q"}'),
+        ('parasut.token', '{"sealed":"x"}'), ('parasut.token:marina', '{"sealed":"y"}'), ('parasut.settings:marina', '{"clientId":"m"}'), ('webpush_vapid', '{"publicKey":"p","privateKey":"q"}'),
         ('site_orders', '{"orders":[{"customerName":"Ali"}]}'), ('notify.settings', '{"emailEnabled":true,"from":null}'),
         ('menu_sync', '{"lastOkAt":null}');
       INSERT INTO settings (key, value) VALUES ('yedek_json_null', 'null'::jsonb);
+      INSERT INTO branch_settings (branch_id, grp, value, secrets) VALUES ('tuzla', 'kasa.rapor', '{"recipients":["sahip@ornek.com"]}', '{"gizli":"mühürlü"}');
+      INSERT INTO branch_settings (branch_id, grp, same_as) VALUES ('marina', 'kasa.rapor', 'tuzla');
       INSERT INTO invoice_documents (invoice_id, source, file_name, mime, size, data, uploaded_by) VALUES
         ((SELECT min(id) FROM invoices), 'upload', 'fis.jpg', 'image/jpeg', 6, '\\x00ff10ffd8ff'::bytea, 'Okan'),
         ((SELECT min(id) FROM invoices), 'parasut', 'e-fatura.pdf', 'application/pdf', 5, '\\x255044462d'::bytea, NULL);
@@ -221,7 +223,20 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
     assert.equal((await sqlB.unsafe(`SELECT 1 FROM karaoke_sessions WHERE customer_name = 'Zeynep'`)).length, 1);
     const keys = (await sqlB.unsafe<{ key: string }[]>(`SELECT key FROM integration_state`)).map((k) => k.key);
     for (const k of Object.keys(EXCLUDED_STATE_KEYS)) assert.ok(!keys.includes(k), `${k} yedeğe girmemeli`);
+    // Şube başına Paraşüt hesabı: öbür hesabın oturumu ve ayarları da (önekiyle) girmez
+    for (const k of ["parasut.token:marina", "parasut.settings:marina"]) assert.ok(!keys.includes(k), `${k} yedeğe girmemeli`);
     assert.ok(keys.includes("notify.settings") && keys.includes("menu_sync"));
+    // Şube başına ayarlar: değer ve "aynı" bağı gelir, şifreli alanlar gelmez (docs/SUBE.md › Şube başına ayarlar)
+    const bs = await sqlB.unsafe<{ branch_id: string; value: unknown; secrets: unknown; same_as: string | null }[]>(
+      `SELECT branch_id, value, secrets, same_as FROM branch_settings ORDER BY branch_id`,
+    );
+    assert.deepEqual(
+      bs.map((r) => ({ ...r })),
+      [
+        { branch_id: "marina", value: {}, secrets: null, same_as: "tuzla" },
+        { branch_id: "tuzla", value: { recipients: ["sahip@ornek.com"] }, secrets: null, same_as: null },
+      ],
+    );
     // Günlük işlerin izlenmesi geri yükleme anından başlar (eski çalışma kayıtlarıyla yanlış "çalışmadı" alarmı olmasın)
     const [watch] = await sqlB.unsafe<{ v: string }[]>(`SELECT value #>> '{}' AS v FROM integration_state WHERE key = 'jobs.watchSince'`);
     assert.ok(Math.abs(Date.parse(watch.v) - Date.now()) < 120_000, watch.v);

@@ -232,7 +232,9 @@ export type StepResult = { code: string; error?: string | null };
  * `blocked`: etkin adresler vardı ama hepsi personel ya da pasif hesabın (E-53); neden adresleriyle yazılır, ekranda
  * etkin bir adres görünürken "adres yok" denmesin.
  */
-export function digestStep(r: { status: "sent" | "skipped" | "error"; off?: "disabled" | "nokey" | "norecipient"; error?: string; blocked?: string }): StepResult {
+export function digestStep(r: { status: "sent" | "skipped" | "error"; off?: "disabled" | "nokey" | "norecipient"; error?: string; blocked?: string; partialError?: string }): StepResult {
+  // Birden çok alıcı grubundan biri gidemedi (şubeye bağlı adresler; docs/BILDIRIMLER.md): gidenler gitti, iş hata söyler
+  if (r.status === "sent" && r.partialError) return { code: "error", error: `bir alıcı grubuna gidemedi: ${r.partialError}` };
   if (r.status === "sent") return { code: "sent" };
   if (r.status === "error") return { code: "error", error: r.error };
   if (r.off === "norecipient") {

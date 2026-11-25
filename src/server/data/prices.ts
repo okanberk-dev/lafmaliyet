@@ -1,22 +1,24 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, max, min, notInArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull, max, min, notInArray } from "drizzle-orm";
 
 import { logPerson } from "@/lib/activity-person";
-import type { KasaName, TillScope } from "@/lib/lafpos/kasa";
+import type { KasaName } from "@/lib/lafpos/kasa";
 import type { HistoryRow, PriceSource } from "@/lib/prices/history";
 import { POS_MARKS_RECENT_MS, posUndoRefusal, type PosItem, type RecentPosMark } from "@/lib/prices/pos";
 import { todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
 
 import { kasaNameFilter } from "./pos-staff";
-import { loadTillScope, tillProductFilter, tillSince } from "./till-scope";
+import { type BranchTill, loadTillScope, loadTillScopes, posStaleJoin, tillProductFilter, tillSince } from "./till-scope";
 
 /**
  * Fiyatlar ekranının, ürün kartının, zilin ve (sonra) Bugün ekranının okumaları: kasada (ModPOS) değişecek fiyatlar,
  * satış fiyatı geçmişi (docs/FIYATLAR.md). Hepsi yalnız okur. Kasa listesi bugünün kasasına göre (till-scope.ts):
  * geçiş gününden itibaren (LafPOS) siteye bağlı ürünler sayılmaz, LafPOS onların fiyatını siteden alır; bağlı olmayan
- * da yalnız fiyatı LafPOS başladıktan sonra değiştiyse sayılır (denetim E-39).
+ * da yalnız fiyatı LafPOS başladıktan sonra değiştiyse sayılır (denetim E-39). Kasa şube başınadır (pos_stale; şube
+ * kapsamı A3): her okuma bir şubenin kasasına bakar (`BranchTill`), "Tümü"de birden çok kasa açıkken çağıran her kasayı
+ * ayrı okur (loadTillScopes).
  */
 
 export interface PosPendingSummary {
@@ -26,17 +28,26 @@ export interface PosPendingSummary {
   newest: Date | null;
   /** Bugünün kasası (metinler: "ModPOS'ta" / "LafPOS'ta") */
   kasa: KasaName;
+  /** Kasanın şubesi; `name` yalnız "Tümü"de birden çok kasa yan yanayken (BranchTill) */
+  branchId: string;
+  name: string | null;
 }
 
-/** Kasada değişecek fiyat sayısı (tek sorgu ve geçiş günü): Ürünler başlığı, sekme rozeti, zil ve Bugün ekranı */
-export async function posPendingSummary(scope?: TillScope): Promise<PosPendingSummary> {
+/** Bir şubenin kasasında değişecek fiyat sayısı (tek sorgu ve geçiş günü): Ürünler başlığı, sekme rozeti, zil ve Bugün */
+export async function posPendingSummary(scope?: BranchTill): Promise<PosPendingSummary> {
   const db = getDb();
   const sc = scope ?? (await loadTillScope(db));
   const [r] = await db
-    .select({ n: count(), oldest: min(s.products.posStaleSince), newest: max(s.products.posStaleSince) })
+    .select({ n: count(), oldest: min(s.posStale.staleSince), newest: max(s.posStale.staleSince) })
     .from(s.products)
-    .where(and(isNotNull(s.products.posStalePrice), tillProductFilter(sc, db)));
-  return { count: r?.n ?? 0, oldest: tillSince(sc, r?.oldest ?? null), newest: tillSince(sc, r?.newest ?? null), kasa: sc.kasa };
+    .innerJoin(s.posStale, posStaleJoin(sc))
+    .where(tillProductFilter(sc, db));
+  return { count: r?.n ?? 0, oldest: tillSince(sc, r?.oldest ?? null), newest: tillSince(sc, r?.newest ?? null), kasa: sc.kasa, branchId: sc.branchId, name: sc.name };
+}
+
+/** Seçimin her kasası için posPendingSummary (tek şubede bir, "Tümü"de birden çok kasa açıkken her kasa) */
+export async function posPendingSummaries(now: Date = new Date()): Promise<PosPendingSummary[]> {
+  return Promise.all((await loadTillScopes(undefined, now)).map((t) => posPendingSummary(t)));
 }
 
 export interface PosChecklistItem extends PosItem {
@@ -49,10 +60,10 @@ export interface PosChecklistItem extends PosItem {
 }
 
 /**
- * Kasaya işle listesi: kasada eski fiyatı duran ürünler, ModPOS adları ve son değişikliğin kaynağı. LafPOS gününde
- * yalnız siteye bağlı olmayan ve fiyatı LafPOS başladıktan sonra değişenler (till-scope.ts tillProductFilter)
+ * Kasaya işle listesi: şubenin kasasında eski fiyatı duran ürünler, ModPOS adları ve son değişikliğin kaynağı. LafPOS
+ * gününde yalnız siteye bağlı olmayan ve fiyatı LafPOS başladıktan sonra değişenler (till-scope.ts tillProductFilter)
  */
-export async function loadPosChecklist(scope?: TillScope): Promise<PosChecklistItem[]> {
+export async function loadPosChecklist(scope?: BranchTill): Promise<PosChecklistItem[]> {
   const db = getDb();
   const sc = scope ?? (await loadTillScope(db));
   const rows = await db
@@ -61,15 +72,16 @@ export async function loadPosChecklist(scope?: TillScope): Promise<PosChecklistI
       name: s.products.name,
       size: s.products.size,
       price: s.products.price,
-      stalePrice: s.products.posStalePrice,
-      since: s.products.posStaleSince,
+      stalePrice: s.posStale.stalePrice,
+      since: s.posStale.staleSince,
       sortOrder: s.products.sortOrder,
       category: s.categories.name,
       categoryOrder: s.categories.sortOrder,
     })
     .from(s.products)
+    .innerJoin(s.posStale, posStaleJoin(sc))
     .innerJoin(s.categories, eq(s.categories.id, s.products.categoryId))
-    .where(and(isNotNull(s.products.posStalePrice), tillProductFilter(sc, db)));
+    .where(tillProductFilter(sc, db));
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
   const [names, latest, inModpos] = await Promise.all([
@@ -104,9 +116,9 @@ export async function loadPosChecklist(scope?: TillScope): Promise<PosChecklistI
       categoryOrder: r.categoryOrder,
       sortOrder: r.sortOrder,
       posNames: namesOf.get(r.id) ?? [],
-      stalePrice: r.stalePrice!,
+      stalePrice: r.stalePrice,
       price: r.price,
-      since: tillSince(sc, r.since ?? new Date()).toISOString(),
+      since: tillSince(sc, r.since).toISOString(),
       source: last?.source ?? null,
       changedBy: last?.changedBy ?? null,
       changedAt: last?.changedAt.toISOString() ?? null,
@@ -117,46 +129,56 @@ export async function loadPosChecklist(scope?: TillScope): Promise<PosChecklistI
 /**
  * Yönetici: Fiyatlar › Kasaya işle › "Son işaretlenenler" (son `days` gün, en yeni önce, en çok 500). Herkesin işareti
  * (yöneticininki de); kişi İşlem geçmişindeki gibi (logPerson). Geri alınamayanın nedeni yöneticinin kuralıyla
- * (posUndoRefusal): ürünün son işareti değilse, ürün listeye yeniden girdiyse ya da fiyat kasadakine döndüyse.
+ * (posUndoRefusal): ürünün o şubedeki son işareti değilse, ürün o şubenin listesine yeniden girdiyse ya da fiyat
+ * kasadakine döndüyse. Yalnız seçimin kasalarının işaretleri (`tills`; "Tümü"de birden çok kasa açıkken hepsi, satır
+ * kasasının adını taşır).
  */
-export async function loadRecentPosMarks({ days = 14, now }: { days?: number; now: Date }): Promise<RecentPosMark[]> {
+export async function loadRecentPosMarks({ days = 14, now, tills }: { days?: number; now: Date; tills?: readonly BranchTill[] }): Promise<RecentPosMark[]> {
   const db = getDb();
+  const scopeTills = tills ?? (await loadTillScopes(db, now));
+  const branchIds = scopeTills.map((t) => t.branchId);
+  const m = s.posMarks;
   const rows = await db
     .select({
-      id: s.posMarks.id,
-      productId: s.posMarks.productId,
-      price: s.posMarks.price,
-      stalePrice: s.posMarks.stalePrice,
-      markedBy: s.posMarks.markedBy,
-      markedByName: s.posMarks.markedByName,
-      markedAt: s.posMarks.markedAt,
-      undoneAt: s.posMarks.undoneAt,
-      undoneByName: s.posMarks.undoneByName,
+      id: m.id,
+      productId: m.productId,
+      branchId: m.branchId,
+      price: m.price,
+      stalePrice: m.stalePrice,
+      markedBy: m.markedBy,
+      markedByName: m.markedByName,
+      markedAt: m.markedAt,
+      undoneAt: m.undoneAt,
+      undoneByName: m.undoneByName,
       name: s.products.name,
       size: s.products.size,
       current: s.products.price,
-      currentStale: s.products.posStalePrice,
+      currentStale: s.posStale.stalePrice,
     })
-    .from(s.posMarks)
-    .innerJoin(s.products, eq(s.products.id, s.posMarks.productId))
-    .where(gt(s.posMarks.markedAt, new Date(now.getTime() - days * 86_400_000)))
-    .orderBy(desc(s.posMarks.markedAt), desc(s.posMarks.id))
+    .from(m)
+    .innerJoin(s.products, eq(s.products.id, m.productId))
+    .leftJoin(s.posStale, and(eq(s.posStale.productId, m.productId), eq(s.posStale.branchId, m.branchId)))
+    .where(and(gt(m.markedAt, new Date(now.getTime() - days * 86_400_000)), inArray(m.branchId, branchIds)))
+    .orderBy(desc(m.markedAt), desc(m.id))
     .limit(500);
   if (!rows.length) return [];
   const ids = [...new Set(rows.map((r) => r.productId))];
   const [latest, accounts] = await Promise.all([
     db
-      .selectDistinctOn([s.posMarks.productId], { productId: s.posMarks.productId, id: s.posMarks.id })
-      .from(s.posMarks)
-      .where(inArray(s.posMarks.productId, ids))
-      .orderBy(s.posMarks.productId, desc(s.posMarks.id)),
+      .selectDistinctOn([m.productId, m.branchId], { productId: m.productId, branchId: m.branchId, id: m.id })
+      .from(m)
+      .where(and(inArray(m.productId, ids), inArray(m.branchId, branchIds)))
+      .orderBy(m.productId, m.branchId, desc(m.id)),
     db.select({ id: s.users.id, name: s.users.name, email: s.users.email }).from(s.users),
   ]);
-  const latestOf = new Map(latest.map((l) => [l.productId, l.id]));
+  const latestOf = new Map(latest.map((l) => [`${l.branchId}|${l.productId}`, l.id]));
   const accountOf = new Map(accounts.map((a) => [a.id, a]));
+  const nameOf = new Map(scopeTills.map((t) => [t.branchId, t.name]));
   return rows.map((r) => {
     const mark = { id: r.id, markedBy: r.markedBy, markedAt: r.markedAt, undoneAt: r.undoneAt, price: r.price, stalePrice: r.stalePrice };
-    const refusal = r.undoneAt ? null : posUndoRefusal({ role: "admin", meId: 0, now }, mark, { price: r.current, posStalePrice: r.currentStale }, latestOf.get(r.productId) ?? null);
+    const refusal = r.undoneAt
+      ? null
+      : posUndoRefusal({ role: "admin", meId: 0, now }, mark, { price: r.current, posStalePrice: r.currentStale }, latestOf.get(`${r.branchId}|${r.productId}`) ?? null);
     return {
       markId: r.id,
       productId: r.productId,
@@ -170,20 +192,30 @@ export async function loadRecentPosMarks({ days = 14, now }: { days?: number; no
       undoneAt: r.undoneAt?.toISOString() ?? null,
       undoneBy: r.undoneByName,
       refusal,
+      tillName: nameOf.get(r.branchId) ?? null,
     };
   });
 }
 
 /**
  * Yöneticinin Bugün satırı: personelin son 48 saatte kasada işaretledikleri, kişi ve Türkiye günü başına (en yeni önce;
- * `at` o günün son işareti). Geri alınanlar ve yöneticilerin işaretleri sayılmaz. Ad işaretin anındaki ad.
+ * `at` o günün son işareti). Geri alınanlar ve yöneticilerin işaretleri sayılmaz. Ad işaretin anındaki ad. Yalnız
+ * seçimin kasalarınınkiler (`branchIds`).
  */
-export async function staffPosMarksRecent(now: Date): Promise<{ by: string; count: number; at: string }[]> {
+export async function staffPosMarksRecent(now: Date, branchIds: readonly string[]): Promise<{ by: string; count: number; at: string }[]> {
+  if (!branchIds.length) return [];
   const rows = await getDb()
     .select({ by: s.posMarks.markedBy, name: s.posMarks.markedByName, at: s.posMarks.markedAt })
     .from(s.posMarks)
     .innerJoin(s.users, eq(s.users.id, s.posMarks.markedBy))
-    .where(and(eq(s.users.role, "staff"), gt(s.posMarks.markedAt, new Date(now.getTime() - POS_MARKS_RECENT_MS)), isNull(s.posMarks.undoneAt)))
+    .where(
+      and(
+        eq(s.users.role, "staff"),
+        gt(s.posMarks.markedAt, new Date(now.getTime() - POS_MARKS_RECENT_MS)),
+        isNull(s.posMarks.undoneAt),
+        inArray(s.posMarks.branchId, [...branchIds]),
+      ),
+    )
     .orderBy(desc(s.posMarks.markedAt))
     .limit(500);
   const groups = new Map<string, { by: string; count: number; at: string }>();
@@ -248,26 +280,35 @@ export async function loadPriceHistory({ limit = 500 }: { limit?: number } = {})
   return { rows, products: products.map((p) => ({ id: p.id, price: p.price, linked: !!p.siteMenuId })) };
 }
 
+/** Bir kasada ürünün bekleyen fiyatı (ürün kartı) */
+export interface ProductPosState {
+  branchId: string;
+  /** Yalnız "Tümü"de birden çok kasa yan yanayken şubenin adı */
+  name: string | null;
+  kasa: KasaName;
+  /** Kasada duran eski fiyat ve ne zamandan beri (ISO) */
+  stalePrice: number;
+  since: string;
+}
+
 export interface ProductPriceHistory {
   rows: HistoryRow[];
   /** Panelin bugünkü fiyatı ("Kasada değiştirdim" kasaya bunun yazıldığını söyler); ürün yoksa null */
   price: number | null;
   /**
-   * Kasada duran eski fiyat ve ne zamandan beri (ISO); kasa güncelse null. LafPOS gününde kasa listesindeki gibi
-   * (till-scope.ts tillProductFilter): siteye bağlı üründe ve ModPOS'tan kalan işarette null (silinmez, gösterilmez)
+   * Ürünün eski fiyatı duran kasaları (seçimin kasaları; kasa güncelse yok). LafPOS gününde kasa listesindeki gibi
+   * (till-scope.ts tillProductFilter): siteye bağlı üründe ve ModPOS'tan kalan işarette yok (silinmez, gösterilmez)
    */
-  posStalePrice: number | null;
-  posStaleSince: string | null;
-  /** Bugünün kasası ("Kasada (ModPOS) hâlâ …") */
+  pos: ProductPosState[];
+  /** Bugünün kasası ("Kasada (ModPOS) hâlâ …"; "Tümü"de ilk kasanınki) */
   kasa: KasaName;
 }
 
-/** Ürün kartındaki "Fiyat geçmişi": son `limit` değişiklik ve kasanın durumu */
+/** Ürün kartındaki "Fiyat geçmişi": son `limit` değişiklik ve seçimin kasalarının durumu */
 export async function loadProductPriceHistory(productId: number, limit = 20): Promise<ProductPriceHistory> {
   const db = getDb();
-  const scope = await loadTillScope(db);
-  const filter = tillProductFilter(scope, db);
-  const [rows, [p], listed] = await Promise.all([
+  const tills = await loadTillScopes(db);
+  const [rows, [p], pos] = await Promise.all([
     db
       .select(historyColumns)
       .from(s.productPrices)
@@ -275,28 +316,25 @@ export async function loadProductPriceHistory(productId: number, limit = 20): Pr
       .where(eq(s.productPrices.productId, productId))
       .orderBy(desc(s.productPrices.changedAt), desc(s.productPrices.id))
       .limit(limit),
-    db
-      .select({ price: s.products.price, stalePrice: s.products.posStalePrice, since: s.products.posStaleSince })
-      .from(s.products)
-      .where(eq(s.products.id, productId))
-      .limit(1),
-    // LafPOS gününde ürün kasa listesinde mi (ModPOS gününde süzgeç yok)
-    filter
-      ? db
-          .select({ id: s.products.id })
+    db.select({ price: s.products.price }).from(s.products).where(eq(s.products.id, productId)).limit(1),
+    // Her kasada ürün listede mi (LafPOS gününde süzgeçle; ModPOS gününde süzgeç yok)
+    Promise.all(
+      tills.map(async (t): Promise<ProductPosState | null> => {
+        const [r] = await db
+          .select({ stalePrice: s.posStale.stalePrice, since: s.posStale.staleSince })
           .from(s.products)
-          .where(and(eq(s.products.id, productId), filter))
-          .limit(1)
-          .then((r) => r.length > 0)
-      : true,
+          .innerJoin(s.posStale, posStaleJoin(t))
+          .where(and(eq(s.products.id, productId), tillProductFilter(t, db)))
+          .limit(1);
+        return r ? { branchId: t.branchId, name: t.name, kasa: t.kasa, stalePrice: r.stalePrice, since: tillSince(t, r.since).toISOString() } : null;
+      }),
+    ),
   ]);
-  const stale = p && listed ? p : null;
   return {
     rows: rows.map(toHistoryRow),
     price: p?.price ?? null,
-    posStalePrice: stale?.stalePrice ?? null,
-    posStaleSince: stale?.since ? tillSince(scope, stale.since).toISOString() : null,
-    kasa: scope.kasa,
+    pos: p ? pos.filter((x): x is ProductPosState => x !== null) : [],
+    kasa: tills[0].kasa,
   };
 }
 

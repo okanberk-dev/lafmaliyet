@@ -1,7 +1,8 @@
 "use server";
 
-import { and, count, desc, eq, gt, ne } from "drizzle-orm";
+import { and, count, eq, gt } from "drizzle-orm";
 
+import { featureInScope } from "@/lib/branch-features";
 import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { businessDate } from "@/lib/cash-report";
@@ -21,6 +22,7 @@ import { kasaBell } from "@/server/bell/kasa";
 import { modposKeyBell } from "@/server/bell/modpos";
 import { opsBell } from "@/server/bell/ops";
 import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { closedMarksOn } from "@/server/closed-days";
 import { loadChecklistDays } from "@/server/data/checklists";
 import { loadCommissionAlerts } from "@/server/data/commission";
@@ -28,11 +30,12 @@ import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
-import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
+import { loadCashOutInvoiceState, scopeCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders } from "@/server/data/user-reminders";
 import { getDb, schema as s } from "@/server/db";
+import { latestParasutRun } from "@/server/jobs/runs";
 import { loadSystemAlerts } from "@/server/jobs/alerts";
 import { loadUpcoming } from "@/server/notify/digest";
 import { blockedRecipientsNow } from "@/server/notify/recipients";
@@ -253,14 +256,17 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
   const [[review], [fresh], [lastRun], unlinked, stockOnly, cashState] = await Promise.all([
     db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
     db.select({ n: count() }).from(s.invoices).where(and(eq(s.invoices.origin, "parasut"), gt(s.invoices.createdAt, dayAgo))),
-    // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz
-    db.select().from(s.parasutSyncRuns).where(ne(s.parasutSyncRuns.trigger, "history")).orderBy(desc(s.parasutSyncRuns.startedAt)).limit(1),
+    // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz; hesap başına son çalışma, hatalı önce
+    latestParasutRun(db).then((r) => (r ? [r] : [])),
     countUnlinkedProducts().catch(() => 0),
     // Kalemi hammaddeye bağlı ama mal alışı sayılmayan, kontrol bekleyen faturalar (E-07)
     countStockOnlyReview(db).catch(() => 0),
     // Kasadan faturalı alımlar: faturası Faturalar'da yok, Aylık harcamalar'a da yazılmadı (E-42); yazılmışken
-    // faturası sonradan gelenler (iki kez sayılıyor)
-    loadCashOutInvoiceState(db).catch(() => ({ pending: [], duplicates: [] })),
+    // faturası sonradan gelenler (iki kez sayılıyor). Seçili şubenin kasasından çıkanlar (docs/SUBE.md › Ödemeler); zilin
+    // kimliği süzülmüş listeden üretilir, öbür şubenin yeni satırı bu şubenin zilini yeniden okunmamış yapmaz
+    Promise.all([loadCashOutInvoiceState(db), currentBranchScope()])
+      .then(([state, scope]) => scopeCashOutInvoiceState(state, scope))
+      .catch(() => ({ pending: [], duplicates: [] })),
   ]);
   const cashOuts = cashState.pending;
   const twice = cashState.duplicates;
@@ -362,6 +368,8 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
  * okunmamış olur.
  */
 async function commissionNotifications(): Promise<PanelNotification[]> {
+  // Yemek kartı seçili şubede kullanılmıyorsa komisyon satırı yok (şube özelliği; docs/SUBE.md › Şube özellikleri)
+  if (!featureInScope("yemek_karti", await currentBranchScope(), await listBranches())) return [];
   const idOf = (key: string) => `komisyon-${key.replace(/:/g, "-")}`;
   return (await loadCommissionAlerts()).map((a) => ({
     id: idOf(a.key),

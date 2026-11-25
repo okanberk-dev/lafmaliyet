@@ -1,8 +1,8 @@
 /**
  * Kasanın (ModPOS) fiyatı: panelde ya da sitede değişen fiyat ModPOS'a kendiliğinden geçmez, kasada elle değiştirilir.
- * Panel bunu ürün satırında tutar (products.pos_stale_price / pos_stale_since): kasada hâlâ duran eski fiyat ve
- * kasanın ne zamandan beri geride olduğu. "Fiyatlar › Kasaya işle" listesi bunlardan; işaretlenince boşalır, fiyat
- * kasadaki fiyata geri dönerse kendiliğinden boşalır. Saf modül; tests/fiyatlar.test.ts sınar (docs/FIYATLAR.md).
+ * Panel bunu şube başına tutar (pos_stale; şube kapsamı A3, 24 Kasım 2026): her kasada hâlâ duran eski fiyat ve
+ * kasanın ne zamandan beri geride olduğu. "Fiyatlar › Kasaya işle" listesi bunlardan; işaretlenince yalnız o şubenin
+ * satırı silinir, fiyat kasadaki fiyata geri dönerse kendiliğinden silinir. Saf modül; tests/fiyatlar.test.ts sınar (docs/FIYATLAR.md).
  *
  * LafPOS'a geçiş gününden itibaren (src/lib/lafpos/kasa.ts tillScope; denetim E-39) siteye bağlı ürünün fiyatını LafPOS
  * siteden kendisi alır: listede yalnız siteye bağlı olmayan ürünler görünür ve metinler `kasa` ile "LafPOS" der. Bağlı
@@ -269,6 +269,37 @@ export interface PosSummaryLite {
   newest: Date | null;
 }
 
+/** Bir kasanın özeti, şubesiyle (`name` yalnız "Tümü"de birden çok kasa yan yanayken) */
+export interface TillPosSummary extends PosSummaryLite {
+  kasa: KasaName;
+  name: string | null;
+}
+
+/**
+ * Bugün satırı ve asistan için seçimin kasalarının toplamı (şube kapsamı A3): sayı toplanır, en eski ve en yeni geri
+ * kalış kasalar arasında; günün kasası bekleyen fiyatı olan bir ModPOS kasası varsa ModPOS (elle işlenecek iş orada),
+ * yoksa bekleyeninki. Birden çok kasada `byBranch` bekleyen fiyatı olan kasaların adı ve sayısı ("Tuzla 3, Marina 1"),
+ * tek kasada null.
+ */
+export function combineTillPos(list: readonly TillPosSummary[]): PosSummaryLite & { kasa: KasaName; byBranch: { name: string; count: number }[] | null } {
+  const pending = list.filter((t) => t.count > 0);
+  const times = (pick: (t: TillPosSummary) => Date | null) => pending.map(pick).filter((d): d is Date => d !== null).map((d) => d.getTime());
+  const oldest = times((t) => t.oldest);
+  const newest = times((t) => t.newest);
+  return {
+    count: pending.reduce((n, t) => n + t.count, 0),
+    oldest: oldest.length ? new Date(Math.min(...oldest)) : null,
+    newest: newest.length ? new Date(Math.max(...newest)) : null,
+    kasa: pending.some((t) => t.kasa === "ModPOS") ? "ModPOS" : (pending[0]?.kasa ?? list[0]?.kasa ?? "ModPOS"),
+    byBranch: list.length > 1 ? pending.map((t) => ({ name: t.name ?? "", count: t.count })) : null,
+  };
+}
+
+/** "Tuzla 3, Marina 1" (Bugün satırı; boşsa boş metin) */
+export function tillPosCounts(byBranch: readonly { name: string; count: number }[] | null | undefined): string {
+  return (byBranch ?? []).map((b) => `${b.name} ${num(b.count)}`).join(", ");
+}
+
 /** Zilin kasaya işle satırı (src/server/bell/ops.ts PanelNotification'a olduğu gibi gider) */
 export interface PosBellItem {
   id: string;
@@ -330,6 +361,8 @@ export interface RecentPosMark {
   undoneBy: string | null;
   /** Yönetici geri alamıyorsa nedeni (posUndoRefusal); geri alınmışta null ("Geri alındı · Ali" yazılır) */
   refusal: string | null;
+  /** İşaretin kasası, yalnız "Tümü"de birden çok kasa yan yanayken ("Marina"); öbür hâllerde null (şube kapsamı A3) */
+  tillName?: string | null;
 }
 
 export interface PosMarkGroup {

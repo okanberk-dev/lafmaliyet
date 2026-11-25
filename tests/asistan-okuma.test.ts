@@ -682,6 +682,7 @@ test("kaynak: okuyucu modülü yalnız izinli okuyucuları içe aktarır; LafPOS
     "@/app/panel/bugun/logic": ["DayTask", "cafeLines", "dayTasks", "daySummary", "splitTasks"].sort(),
     "@/app/panel/bugun/rows-ops": ["soldOutLine"],
     "@/lib/vardiya": ["VARDIYA_PATH", "todayShiftText"],
+    "@/lib/prices/pos": ["combineTillPos"],
     "@/lib/user-reminders": ["dueGroup"],
     "@/lib/waste": ["productLabel"],
     "@/server/ai/assistant/read-tools": ["DayIkramRead", "ReadToolDeps", "TaskRead"],
@@ -693,7 +694,7 @@ test("kaynak: okuyucu modülü yalnız izinli okuyucuları içe aktarır; LafPOS
     "@/server/data/lafpos-ikram": ["loadDayLafposIkram"],
     "@/server/data/lafpos-day-end": ["loadLafposDayEnd", "loadLafposZTotals"],
     "@/server/data/menu-status": ["loadSoldOut"],
-    "@/server/data/prices": ["posPendingSummary"],
+    "@/server/data/prices": ["posPendingSummaries"],
     "@/server/data/stock-estimate": ["loadStockEstimate"],
     "@/server/data/today": ["loadToday"],
     "@/server/data/today-safe": ["safe"],
@@ -823,7 +824,7 @@ test("arayüz (telefon 390 / 360 px): yüzen düğme yok, alt menünün üstünd
 
 test("alt menü: Asistan sekmesi yalnız yöneticide ve asistan açıkken; açıp kapatır, açıkken etkin, başka öğe kapatır", () => {
   const nav = code("src/components/panel/bottom-nav.tsx");
-  assert.match(nav, /const items = bottomNavFor\(role, \{ assistant \}\);/);
+  assert.match(nav, /const items = bottomNavFor\(role, \{ assistant, features \}\);/);
   assert.match(nav, /onClick=\{toggleAssistant\}/);
   assert.match(nav, /aria-expanded=\{assistantOpen\}/);
   assert.match(nav, /onClick=\{\(\) => setAssistantOpen\(false\)\}/);

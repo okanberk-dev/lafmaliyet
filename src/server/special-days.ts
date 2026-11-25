@@ -2,10 +2,13 @@ import "server-only";
 
 import { and, gte, lte } from "drizzle-orm";
 
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
+
 import { businessDate } from "@/lib/cash-report";
 import { addDays } from "@/lib/reminders";
 import { SPECIAL_AHEAD_DAYS, SPECIAL_PAST_DAYS, type SpecialDay } from "@/lib/ozel-gun";
 
+import { branchWhereWithShared } from "./branch-scope";
 import { getDb, schema as s } from "./db";
 
 /**
@@ -22,13 +25,16 @@ export function specialWindow(today = businessDate()): { from: string; to: strin
   return { from: addDays(today, -SPECIAL_PAST_DAYS), to: addDays(today, SPECIAL_AHEAD_DAYS) };
 }
 
-/** Penceredeki özel günler (en yakın başta) */
-export async function loadSpecialDays(today = businessDate()): Promise<SpecialDay[]> {
+/**
+ * Penceredeki özel günler (en yakın başta). `scope`: tek şube seçiliyken o şubenin ve işletme genelinin (şubesi boş)
+ * günleri (şube kapsamı C P1-10; docs/SUBE.md › Özel günlerin şubesi)
+ */
+export async function loadSpecialDays(today = businessDate(), scope: BranchScope = ALL_BRANCHES): Promise<SpecialDay[]> {
   const { from, to } = specialWindow(today);
   const rows = await getDb()
     .select()
     .from(s.specialDays)
-    .where(and(gte(s.specialDays.dateTo, from), lte(s.specialDays.dateFrom, to)))
+    .where(and(gte(s.specialDays.dateTo, from), lte(s.specialDays.dateFrom, to), branchWhereWithShared(s.specialDays.branchId, scope)))
     .orderBy(s.specialDays.dateFrom);
   return rows.map((r) => ({
     id: r.id,

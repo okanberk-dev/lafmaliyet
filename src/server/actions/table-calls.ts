@@ -6,6 +6,7 @@ import { callAckDoneMessage, callAckFailureMessage, callGoneMessage, CALL_ACK_PA
 import { buildCallAckBody, readCallAckAnswer } from "@/lib/site-orders/call-request";
 import { SITE_ORDER_ID } from "@/lib/site-orders/schema";
 import { requireUser } from "@/server/auth/dal";
+import { assertStaffFeature } from "@/server/branch-features";
 import { siteLinkSecret } from "@/server/site-link";
 import { callSite, SiteRequestError } from "@/server/site-menu/sync";
 import { readOrdersSnapshot, syncSiteOrders } from "@/server/site-orders/sync";
@@ -45,6 +46,8 @@ async function resync(): Promise<boolean> {
 export async function ackTableCall(input: z.input<typeof zAck>) {
   return attempt<CallAckResult>(async () => {
     const me = await requireUser();
+    // Şube özelliği (docs/SUBE.md › Şube özellikleri): garson çağır kapalı şubeye kilitli personel çağıramaz
+    await assertStaffFeature(me, "garson");
     const data = zAck.parse(input);
     const secret = siteLinkSecret();
     // Kurulum ayrıntısı (anahtar adı, imza, sitenin sürümü) yalnız yöneticiye; personel sabit metni görür (E-64)

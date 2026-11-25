@@ -74,3 +74,19 @@ test("pencereler kasayı sorar ve gönderir: Ödeme ekle ve Borç ekle › Öden
   assert.match(options, /branchId: s\.cashOuts\.branchId,/);
   assert.match(options, /branch: branchName\.get\(branchId\) \?\? branchId,/);
 });
+
+test("'Faturası yok · gider yaz': gider kaydının şubesi pencerede seçilir (24 Kasım şube kapsamı; tests/harcama-sube-form-db.test.ts)", () => {
+  // Eylem şubeyi formBranch ile doğrular; gönderim anındaki seçime bakmaz
+  const action = read("src/server/actions/cari.ts");
+  assert.match(action, /expenseBranch: zFormBranch,/);
+  assert.match(action, /const expenseBranch = d\.costMode === "gider" && d\.expenseBranch \? await formBranch\(d\.expenseBranch, "expense"\) : undefined;/);
+  // Yazım: seçilen şube; seçilmediyse mod değişiminde önceki gider kaydının şubesi, o da yoksa seçili şube
+  const entries = read("src/server/cari/entries.ts");
+  assert.match(entries, /branchId: input\.expenseBranch !== undefined \? input\.expenseBranch : owned \? owned\.branchId : await currentExpenseBranch\(\),/);
+  assert.match(entries, /\.\.\.\(input\.expenseBranch !== undefined \? \{ branchId: input\.expenseBranch \} : \{\}\),/);
+  // Pencere seçimi gönderir, Geri al eski şubeyi geri yazar
+  const dialog = read("src/app/panel/tedarikciler/[cari]/debt-dialog.tsx");
+  assert.match(dialog, /expenseBranch: mode === "gider" \? expenseBranch : null,/);
+  assert.match(dialog, /expenseBranch: prev\.costMode === "gider" \? \(prev\.expenseBranch \?\? null\) : null,/);
+  assert.match(dialog, /<ExpenseBranchField id="db-branch" choice=\{expenseBranches\} value=\{expenseBranch\} onChange=\{setExpenseBranch\} \/>/);
+});

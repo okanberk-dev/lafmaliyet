@@ -84,6 +84,11 @@ export interface ExportExtras {
   tax?: TaxExport | null;
   /** Dosyanın hazırlandığı an (testte sabitlenir) */
   now?: Date;
+  /**
+   * Dosyanın şube kapsamı (şube kapsamı C P1-9): Genel bakış'ın düğmesi ekranın seçimini gönderir, Ayarlar'daki tam yedek
+   * seçicisizdir ("Tümü"). İlk sayfa (Nasıl Okunur) kapsamı yazar. Verilmezse "Tümü"
+   */
+  scope?: { label: string; branch: boolean };
 }
 
 /** "Vergi" sekmesinin girdisi (src/app/api/export/route.ts kurar: loadTaxView, vergi ayarları) */
@@ -482,7 +487,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
 
   addRawRecords(wb, model);
   addRawStock(wb, model);
-  fillGuide(guide, wb, model, month, now);
+  fillGuide(guide, wb, model, month, now, extras.scope);
   // Dosya Özet'te açılsın (rehber hemen solunda)
   wb.views = [{ x: 0, y: 0, width: 28800, height: 17000, firstSheet: 0, activeTab: 1, visibility: "visible" }];
   return wb;
@@ -520,13 +525,13 @@ function sheetPurpose(name: string, label: string, kasa: MonthKasa["both"] = "Mo
   return fixed[name] ?? "";
 }
 
-function fillGuide(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook, model: Model, month: string, now: Date) {
+function fillGuide(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook, model: Model, month: string, now: Date, scope: ExportExtras["scope"]) {
   const label = monthLabel(month);
   ws.properties.tabColor = BRAND_TAB;
   ws.pageSetup.fitToPage = true;
   const t = ws.addRow({ a: "L'Affogato – Maliyet & Kârlılık" });
   t.font = { bold: true, size: 14 };
-  ws.addRow({ a: `Panelden alındı: ${dateTimeTR(now)} · Seçili ay: ${label} · Tutarlar Türk lirası` }).font = { color: { argb: "FF71717A" } };
+  ws.addRow({ a: `Panelden alındı: ${dateTimeTR(now)} · Seçili ay: ${label} · Kapsam: ${scope?.label ?? "Tümü"} · Tutarlar Türk lirası` }).font = { color: { argb: "FF71717A" } };
 
   const block = (title: string, rows: [string | ExcelJS.CellValue, string][]) => {
     ws.addRow({});
@@ -540,6 +545,12 @@ function fillGuide(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook, model: Model, mo
 
   block("BU DOSYA", [
     ["Panelin kopyası", "Rakamlar paneldeki hesapla aynıdır. Bu dosyada yaptığınız değişiklik panele geri gitmez: fiyatı, reçeteyi, faturayı ve gideri panelde değiştirip dosyayı yeniden indirin."],
+    [
+      "Kapsam",
+      scope?.branch
+        ? `${scope.label}: satış, kasa, personel ve ${scope.label} şubesine bağlı giderler yalnız bu şubenin; işletme geneli giderler (şubesi seçilmemiş) "İşletme geneli payı" olarak bilgi. Faturalar, Vergi ve Cari hareketleri firma geneli. Bütün şubeler için panelde soldan Tümü'nü seçip yeniden indirin.`
+        : "Tümü: bütün şubeler ve laffogato.net birlikte; işletme geneli giderler bir kez sayılır.",
+    ],
     ["Seçili ay", `Özet, Sayım, Tutarlılık, Satış, Personel, Sabit Giderler ve Ürün Kârlılık'taki satış adetleri ${label} içindir. Başka bir ay için panelin ana sayfasında ayı seçip 'Excel'e aktar'a basın.`],
     ["Yedek", "Gri sekmeler bütün ayların ham kayıtlarıdır (satış, ay bilgisi, gelir-gider düzeltmeleri, sayım, alım miktarı). Seçili ay dışındaki veriler de buradadır."],
   ]);

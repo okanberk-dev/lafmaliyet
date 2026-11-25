@@ -249,7 +249,8 @@ test("geçen ayın sayımı sabah e-postasında şube şube: yarım her şubenin
   const ops = read("src/server/bell/ops.ts");
   const lines = ops.slice(ops.indexOf("export async function pastCountDigestLines"));
   assert.match(lines, /const prev = await countProgressByBranch\(month\)\.catch\(\(\) => null\);/);
-  assert.match(lines, /const counts = prev \? pastCountReminders\(day, prev\.counts, prev\.named\) : \[\];/);
+  // Şubeye bağlı alıcının e-postası yalnız o şubenin sayımı (şube kapsamı C P1-11); "Tümü"de hepsi, satır adıyla
+  assert.match(lines, /const counts = prev \? pastCountReminders\(day, scope === ALL_BRANCHES \? prev\.counts : prev\.counts\.filter\(\(c\) => c\.id === scope\), prev\.named\) : \[\];/);
   // Tek yarım şubede o şubenin sayımı, birden çoğunda ayın sayımı
   assert.match(lines, /href: counts\.length === 1 \? counts\[0\]\.href : `\/panel\/sayim\?ay=\$\{month\}`/);
 });
@@ -276,7 +277,7 @@ test("geçen ayın sayımı yarım: yöneticinin zil ve sabah e-postası satır�
   assert.match(bell, /const month = shiftMonth\(day\.slice\(0, 7\), -1\);/);
   // Sabah e-postası: personelden gelmeyen satır "Personelden" başlığıyla açılmaz (inceleme notu)
   const digest = read("src/server/staff-requests/digest.ts");
-  assert.match(digest, /pastCountDigestLines\(now\)/);
+  assert.match(digest, /pastCountDigestLines\(now, scope\)/);
   assert.match(digest, /\{ title: "Stok sayımı", lines, href: count\.href \?\? "\/panel\/sayim", link: "Sayımı aç"/);
   // ModPOS kasa föyünün satırları da personelden değil (src/server/bell/modpos.ts modposDigestLines)
   assert.match(digest, /title: count\.lines\.length \|\| modpos\.lines\.length \? "Operasyon" : "Personelden"/);

@@ -173,6 +173,12 @@ export const branches = pgTable(
      * yalnız kasa kartı olmayan eski aylarda
      */
     posRate: doublePrecision("pos_rate").notNull().default(0.02),
+    /**
+     * Şubenin açık özellikleri (şube kapsamı B6; src/lib/branch-features.ts): "karaoke", "siparis" (uygulama siparişi),
+     * "garson" (masa çağrısı), "yemek_karti" (komisyon & hakediş). Yeni şube bugünkü davranışla, karaokesiz başlar
+     * (karaoke tek şubede); Tuzla'ya karaoke migration 0085'te. Online kanalda anlamı yok (boş)
+     */
+    features: text("features").array().notNull().default(sql`'{siparis,garson,yemek_karti}'::text[]`),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -262,11 +268,11 @@ export const products = pgTable(
     /** Bu satır sitedeki hangi fiyat: M = priceMinor (tek boyda tek fiyat), L = priceMinorL */
     siteMenuSlot: text("site_menu_slot", { enum: ["M", "L"] }),
     /**
-     * Kasada (ModPOS) hâlâ duran eski fiyat: panelde ya da sitede fiyat değişince kasa elle güncellenene kadar dolu kalır
-     * ("Fiyatlar › Kasaya işle"). Boşsa kasa panelle aynı sayılır. Fiyat kasadaki fiyata geri dönerse kendiliğinden boşalır.
+     * ESKİ: kasada duran eski fiyat ve kasanın geri kaldığı an, şubeler öncesi tek kasa. 24 Kasım 2026'dan beri kasanın
+     * durumu şube başına `pos_stale`'de (göç 0079 bu değerleri oraya kopyaladı); bu iki sütun ne okunur ne yazılır, bir
+     * sürüm geri dönüş güvenliği için durur, sonraki göçle kalkar (tests/fiyatlar.test.ts kaynakta arar).
      */
     posStalePrice: doublePrecision("pos_stale_price"),
-    /** Kasanın panelden geri kaldığı an (işlenmemiş ilk değişiklik) */
     posStaleSince: timestamp("pos_stale_since", { withTimezone: true }),
     updatedAt: updatedAt(),
   },
@@ -469,13 +475,28 @@ export const invoices = pgTable(
      * yanıtı yolda kalan isteğin tekrarı ikinci fatura açmaz, var olan döner (denetim UI-03). Eşitleme ve Excel yazmaz
      */
     clientKey: text("client_key"),
+    /**
+     * Faturanın geldiği Paraşüt hesabı (sahibi şube; docs/PARASUT.md › Şube başına Paraşüt hesabı): Paraşüt'e bağlı her
+     * kayıtta dolu (gider faturası ya da e-fatura kimliği varsa), elle ve Excel'le girilende boş. Paraşüt kimlikleri hesap
+     * içinde benzersizdir; eşitleme yalnız kendi hesabının faturalarını görür, kaldırır
+     */
+    parasutAccount: text("parasut_account").references(() => branches.id),
+    /**
+     * Faturanın şubesi: ayrı Paraşüt hesabından gelen faturada o şube (sahibin kararı, 25 Kasım 2026); boş = işletme
+     * geneli (şubeler aynı Paraşüt hesabındayken bugünkü kural). Eşitleme yalnız yeni açtığı faturaya yazar
+     */
+    branchId: branchIdNullable(),
     createdAt: createdAt(),
   },
   (t) => [
     index("invoices_date_idx").on(t.date),
-    uniqueIndex("invoices_external_id_uq").on(t.externalId),
-    uniqueIndex("invoices_e_invoice_id_uq").on(t.eInvoiceId),
+    // Paraşüt kimlikleri hesap içinde benzersiz. Hesabı boş Paraşüt faturası varsayılan hesabındır (invoiceAccountWhere;
+    // eski yedekten ya da "Geri al" kopyasından gelebilir): boş hesap "tuzla" sayılır, aynı kimlik iki kez yazılamaz.
+    // Elle girilen faturanın kimlikleri boş: çakışmaz
+    uniqueIndex("invoices_external_id_uq").on(sql`coalesce(${t.parasutAccount}, 'tuzla')`, t.externalId),
+    uniqueIndex("invoices_e_invoice_id_uq").on(sql`coalesce(${t.parasutAccount}, 'tuzla')`, t.eInvoiceId),
     uniqueIndex("invoices_client_key_uq").on(t.clientKey),
+    index("invoices_branch_idx").on(t.branchId),
   ],
 );
 
@@ -1014,8 +1035,10 @@ export const parasutSyncRuns = pgTable(
     updated: integer("updated").notNull().default(0),
     removed: integer("removed").notNull().default(0),
     message: text("message"),
+    /** Eşitlenen Paraşüt hesabı (sahibi şube; eski kayıtlar varsayılan şubenin tek hesabı) */
+    account: text("account").notNull().default(DEFAULT_BRANCH_ID),
   },
-  (t) => [index("parasut_sync_runs_started_idx").on(t.startedAt)],
+  (t) => [index("parasut_sync_runs_started_idx").on(t.startedAt), index("parasut_sync_runs_account_idx").on(t.account, t.startedAt)],
 );
 
 /** Paraşüt faturasının kalemleri (purchase_bill_details); hammaddeye bağlanınca alınan miktar ve fiyat buradan hesaplanır */
@@ -1156,6 +1179,13 @@ export const notificationRecipients = pgTable("notification_recipients", {
   email: text("email").notNull().unique(),
   name: text("name"),
   active: boolean("active").notNull().default(true),
+  /**
+   * Adresin şubeleri (şube kapsamı C P1-11; docs/BILDIRIMLER.md › Sabah e-postası): boş = bütün şubeler (bugünkü gibi
+   * tek e-posta). Doluysa sabah e-postası bu şubelerin başlığıyla ayrı gider: şubenin ve işletme genelinin ödemeleri,
+   * şubenin onay bekleyen istekleri ve kontrol listeleri; öbür şubenin satırı girmez. Yabancı anahtar yok (dizi): silinen
+   * şube kimliği gönderimde yok sayılır
+   */
+  branchIds: text("branch_ids").array().notNull().default(sql`'{}'::text[]`),
   createdAt: createdAt(),
 });
 
@@ -2209,6 +2239,31 @@ export const specialDays = pgTable(
   ],
 );
 
+/**
+ * Kasada bekleyen fiyat, şube başına (docs/FIYATLAR.md › Kasaya işle; şube kapsamı A3, 24 Kasım 2026): satır varsa o
+ * şubenin kasasında ürünün eski fiyatı duruyor ("Fiyatlar › Kasaya işle"), yoksa kasa panelle aynı. Fiyat değişince
+ * her etkin fiziksel şubenin satırı açılır ya da güncellenir (src/server/prices/record.ts), kasada işaretlenince yalnız o
+ * şubeninki silinir (src/server/prices/pos-marks.ts); fiyat kasadaki fiyata geri dönerse kendiliğinden silinir. Tuzla'da
+ * işaretlemek Marina'nın listesini değiştirmez. Okuyucular seçili şubenin kasasına bakar (src/server/data/till-scope.ts).
+ * Şube silinince satırları da gider (durumdur, geçmiş değil; geçmiş pos_marks'ta): bu yüzden şube silme sayımına girmez.
+ */
+export const posStale = pgTable(
+  "pos_stale",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "cascade" }),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    /** Kasada duran eski fiyat (TL, KDV dahil) */
+    stalePrice: doublePrecision("stale_price").notNull(),
+    /** Kasanın panelden geri kaldığı an (işlenmemiş ilk değişiklik) */
+    staleSince: timestamp("stale_since", { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.branchId, t.productId] }), index("pos_stale_product_idx").on(t.productId)],
+);
+
 export const posMarks = pgTable(
   "pos_marks",
   {
@@ -2216,6 +2271,8 @@ export const posMarks = pgTable(
     productId: integer("product_id")
       .notNull()
       .references(() => products.id, { onDelete: "cascade" }),
+    /** İşaretin kasası (şube); şubeler öncesi işaretler Tuzla'nındır */
+    branchId: branchId(),
     /** Kasada işlenen fiyat (TL, KDV dahil) */
     price: doublePrecision("price").notNull(),
     /** İşaretlenmeden önce kasada duran fiyat ve kasanın geri kaldığı an (geri almada ürüne yazılır) */
@@ -2231,6 +2288,7 @@ export const posMarks = pgTable(
     index("pos_marks_marked_idx").on(t.markedAt),
     index("pos_marks_user_idx").on(t.markedBy, t.markedAt),
     index("pos_marks_product_idx").on(t.productId, t.markedAt),
+    index("pos_marks_branch_product_idx").on(t.branchId, t.productId),
   ],
 );
 
@@ -2633,5 +2691,39 @@ export const shifts = pgTable(
     uniqueIndex("shifts_branch_date_person_uq").on(t.branchId, t.date, t.personRef),
     index("shifts_date_idx").on(t.date),
     check("shifts_time_ck", sql`(${t.kind} = 'off' and ${t.startMin} is null and ${t.endMin} is null) or (${t.kind} = 'work' and ${t.startMin} >= 0 and ${t.startMin} < 1440 and ${t.endMin} > ${t.startMin} and ${t.endMin} <= 1800)`),
+  ],
+);
+
+// ---------------------------------------------------------------- Şube başına ayarlar
+/**
+ * Şube başına ayarlar (docs/SUBE.md › Şube başına ayarlar; gruplar src/lib/branch-settings/groups.ts): şube başına
+ * grup başına bir satır. `same_as` doluysa şube kendi değerini tutmaz (`value` boş, `secrets` yok), bağlandığı şubenin
+ * değerini kullanır ("Tuzla ile aynı"). Bağ tek adımlıdır: hedef başka şubeye bağlı olamaz (sunucu denetler,
+ * src/server/branch-settings.ts). Satırı olmayan şube eski genel kayıttan (integration_state) ya da varsayılandan okur;
+ * "aynı" sunulan grupta varsayılan şube dışındaki şube örtük olarak varsayılan şubeye bağlıdır. Şifreli alanlar
+ * `secrets`'ta (alan → secret-box mühürü); yedeğe girmez (src/lib/backup/format.ts).
+ */
+export const branchSettings = pgTable(
+  "branch_settings",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "cascade" }),
+    /** Grup kimliği ("kasa.rapor", "kasa.calisan") */
+    grp: text("grp").notNull(),
+    /** Grubun şifresiz alanları; bağlı satırda boş */
+    value: jsonb("value").notNull().default({}),
+    /** Şifreli alanlar (alan → mühür); yedeğe girmez, bağlı satırda boş */
+    secrets: jsonb("secrets"),
+    /** Değerin okunduğu şube ("diğer şubeyle aynı"); bağlı şubeler varken o şube kapatılamaz, silinemez */
+    sameAs: text("same_as").references(() => branches.id, { onDelete: "restrict" }),
+    updatedBy: text("updated_by"),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.branchId, t.grp] }),
+    index("branch_settings_same_as_idx").on(t.sameAs),
+    check("branch_settings_not_self_ck", sql`${t.sameAs} is null or ${t.sameAs} <> ${t.branchId}`),
+    check("branch_settings_linked_empty_ck", sql`${t.sameAs} is null or (${t.value} = '{}'::jsonb and ${t.secrets} is null)`),
   ],
 );

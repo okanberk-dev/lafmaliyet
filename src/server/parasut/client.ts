@@ -2,6 +2,7 @@ import "server-only";
 
 import { eq, sql } from "drizzle-orm";
 
+import { DEFAULT_PARASUT_ACCOUNT, parasutKey } from "@/lib/parasut/accounts";
 import { getDb, schema as s } from "@/server/db";
 import { open, seal } from "@/server/secret-box";
 
@@ -20,9 +21,15 @@ import { parasutEndpoints } from "./oidc";
  * - Her yenilemede yeni bir refresh_token döner (döndürmeli); en son gelen hemen veritabanına yazılır.
  */
 
+/** Hesabın oturumu: varsayılan hesapta "parasut.token", öbürlerinde "parasut.token:<hesap>" (src/lib/parasut/accounts.ts) */
 const TOKEN_KEY = "parasut.token";
-/** Yenilemeleri sıraya sokan Postgres danışma kilidi (iki eşitleme aynı refresh_token'ı harcamasın) */
+/**
+ * Yenilemeleri sıraya sokan Postgres danışma kilidi (iki eşitleme aynı refresh_token'ı harcamasın). Varsayılan hesap
+ * eski kilidi kullanır; öbür hesaplar kendi adlarıyla (birinin yenilemesi öbürünü beklemez)
+ */
 const TOKEN_LOCK = 7_340_211;
+const tokenLock = (account: string) =>
+  account === DEFAULT_PARASUT_ACCOUNT ? sql`select pg_advisory_xact_lock(${TOKEN_LOCK})` : sql`select pg_advisory_xact_lock(hashtext(${parasutKey(TOKEN_KEY, account)}))`;
 
 type Exec = Pick<ReturnType<typeof getDb>, "select" | "insert" | "delete">;
 /**
@@ -151,18 +158,18 @@ export async function postParasutToken(cfg: ParasutConfig, params: Record<string
   return JSON.parse(body) as ParasutTokenResponse;
 }
 
-/** Belirteci şifreleyip integration_state'e yazar */
-async function writeToken(t: StoredToken, db: Exec) {
+/** Belirteci şifreleyip integration_state'e yazar (hesabın adıyla) */
+async function writeToken(account: string, t: StoredToken, db: Exec) {
   const value = { sealed: seal(JSON.stringify(t)) };
   await db
     .insert(s.integrationState)
-    .values({ key: TOKEN_KEY, value })
+    .values({ key: parasutKey(TOKEN_KEY, account), value })
     .onConflictDoUpdate({ target: s.integrationState.key, set: { value, updatedAt: new Date() } });
 }
 
 /** Şifreli belirteci okur; yoksa, mühür açılamıyorsa (AUTH_SECRET değişmiş) ya da bozuksa null */
-async function readToken(db: Pick<Exec, "select">): Promise<StoredToken | null> {
-  const [row] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, TOKEN_KEY)).limit(1);
+async function readToken(account: string, db: Pick<Exec, "select">): Promise<StoredToken | null> {
+  const [row] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, parasutKey(TOKEN_KEY, account))).limit(1);
   const sealed = (row?.value as { sealed?: string } | undefined)?.sealed;
   const plain = sealed ? open(sealed) : null;
   if (!plain) return null;
@@ -188,7 +195,7 @@ function tokenFrom(j: ParasutTokenResponse, owner: Pick<StoredToken, "clientId" 
 /** Paraşüt'ün verdiği belirteç yanıtını saklanacak biçime çevirir ve yazar */
 export async function saveParasutToken(cfg: ParasutConfig, j: ParasutTokenResponse, db: Exec = getDb()): Promise<StoredToken> {
   const t = tokenFrom(j, { clientId: cfg.clientId, issuer: cfg.issuer });
-  await writeToken(t, db);
+  await writeToken(cfg.account, t, db);
   return t;
 }
 
@@ -206,21 +213,21 @@ export interface ParasutConnection {
 }
 
 /**
- * Panelde gösterilecek bağlantı durumu. Belirteçlerin kendisi hiçbir zaman dışarı verilmez; yalnız "bağlı mı" ve son
+ * Panelde gösterilecek bağlantı durumu (hesabın; `account` verilmezse `config`in, o da yoksa varsayılan hesap). Belirteçlerin kendisi hiçbir zaman dışarı verilmez; yalnız "bağlı mı" ve son
  * yenilenme anı döner. Ayarlar eksikse, kayıtlı oturum başka bir client_id'ninse ya da mühür açılamıyorsa (AUTH_SECRET
  * değişmiş) bağlı değil sayılır.
  */
-export async function parasutConnection(now = Date.now(), config?: ParasutConfig | null): Promise<ParasutConnection> {
+export async function parasutConnection(now = Date.now(), config?: ParasutConfig | null, account: string = config?.account ?? DEFAULT_PARASUT_ACCOUNT): Promise<ParasutConnection> {
   const none: ParasutConnection = { connected: false, refreshedAt: null, stale: false };
   // `config`: çağıran ayarları zaten okuduysa (null: ayarlar eksik); verilmezse burada okunur
   if (config === null) return none;
   let cfg: ParasutConfig;
   try {
-    cfg = config ?? (await readParasutConfig());
+    cfg = config ?? (await readParasutConfig(account));
   } catch {
     return none;
   }
-  const t = await readToken(getDb());
+  const t = await readToken(cfg.account, getDb());
   if (!isSessionOf(t, cfg) || !t.refresh) return none;
   const refreshedAt = t.refreshedAt ? new Date(t.refreshedAt) : null;
   const ageDays = refreshedAt ? (now - refreshedAt.getTime()) / 86_400_000 : Number.POSITIVE_INFINITY;
@@ -233,7 +240,7 @@ export class ParasutClient {
   /** epoch ms; bu andan sonra beklenecek bir istek başlatılmaz */
   private deadlineAt = Number.POSITIVE_INFINITY;
 
-  /** Ayarlar çağırandan gelir (`await readParasutConfig()`): panelden girilenler veritabanında */
+  /** Ayarlar çağırandan gelir (`await readParasutConfig(hesap)`): panelden girilenler veritabanında */
   constructor(private readonly cfg: ParasutConfig) {}
 
   setDeadline(at: number) {
@@ -249,9 +256,14 @@ export class ParasutClient {
     return this.cfg.companyId;
   }
 
+  /** İstemcinin Paraşüt hesabı (sahibi şube): eşitleme durumu ve faturalar bu hesabın adıyla */
+  get account() {
+    return this.cfg.account;
+  }
+
   // ------------------------------------------------------------ belirteç
   private async loadStored(db: Pick<Exec, "select"> = getDb()): Promise<StoredToken | null> {
-    const t = await readToken(db);
+    const t = await readToken(this.cfg.account, db);
     // Başka bir istemci ya da kimlik sunucusu için alınmış belirteç kullanılmaz (client_id değişince eski oturum
     // kendiliğinden düşer)
     return isSessionOf(t, this.cfg) ? t : null;
@@ -272,7 +284,7 @@ export class ParasutClient {
     // yenilediyse onunki kullanılır. Silme ve hata işlemin **dışında**: içeriden atılan hata yenilemenin yazdığını
     // da geri alırdı, iptal edilen belirteç de silinmiş sayılmazdı.
     const outcome = await getDb().transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(${TOKEN_LOCK})`);
+      await tx.execute(tokenLock(this.cfg.account));
       const current = await this.loadStored(tx);
       if (current && current.access !== stale && current.expiresAt - Date.now() > 120_000) {
         this.token = current;
@@ -293,7 +305,7 @@ export class ParasutClient {
     });
     if (outcome.kind === "ok") return outcome.access;
     if (outcome.kind === "none") throw new ParasutNotConnectedError();
-    await forgetParasutToken();
+    await forgetParasutToken(this.cfg.account);
     this.token = null;
     throw new ParasutNotConnectedError(
       "Paraşüt erişimi sona ermiş (izin kaldırılmış, client_secret yenilenmiş ya da 30 günlük yenileme süresi dolmuş). Ayarlar › Paraşüt entegrasyonu ekranından yeniden bağlayın.",
@@ -433,8 +445,8 @@ export class ParasutClient {
   }
 }
 
-/** Kayıtlı belirteci siler (istemci ayarları değişince ya da bağlantı kesilince) */
-export async function forgetParasutToken(db: Pick<Exec, "delete"> = getDb()) {
-  await db.delete(s.integrationState).where(eq(s.integrationState.key, TOKEN_KEY));
+/** Hesabın kayıtlı belirtecini siler (istemci ayarları değişince ya da bağlantı kesilince) */
+export async function forgetParasutToken(account: string, db: Pick<Exec, "delete"> = getDb()) {
+  await db.delete(s.integrationState).where(eq(s.integrationState.key, parasutKey(TOKEN_KEY, account)));
 }
 

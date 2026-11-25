@@ -25,6 +25,12 @@ Bölümler sırasıyla, her biri kendi yükleme alanında (biri düşerse öteki
    kararlar").
 5. **Son kararlar:** personel isteklerinin son 30 günü: tür, başlık, isteyen, karar veren, not, durum.
 
+Tek şube seçiliyken (şube kapsamı C, 24 Kasım 2026; [SUBE.md](SUBE.md)) Kasa, Zayi ve ikram ve Karaoke bölümleri
+yalnız o şubenin isteklerini gösterir (isteğin şubesi konudan, yükten ya da kaydından; şubesi bilinmeyen her yerde);
+üstte "öbür şubelerde N istek daha onay bekliyor" ve "Tümünü göster" çıkar. Yöneticinin zili aynı kuralla sayar;
+şubeye bağlı bildirim adresinin sabah e-postası da. "Tümü"de kart şubesini adıyla söyler. Reçete önerileri işletme
+genelidir.
+
 Kartların çapası `#istek-<id>` (reçete kartlarınınki `#oneri-<id>`); zil ve sabah e-postası doğrudan karta götürür.
 Reddederken yazılan not personele görünür: **tutar yazmayın**. Onayla / Reddet parola sormaz (parola onayı yalnız hesap
 işlemlerinde). Maliyet modeli istek başına bir kez kurulur (`loadModelOnce`).

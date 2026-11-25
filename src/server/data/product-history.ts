@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, eq, ne } from "drizzle-orm";
+import { and, count, eq, isNotNull, ne } from "drizzle-orm";
 
 import type { ProductHistoryCounts } from "@/lib/product-delete";
 import { buildSiteLinkIndex, productForLine } from "@/lib/site-sales/calc";
@@ -40,4 +40,24 @@ export async function salesLinesCount(productId: number, db: DB = getDb()): Prom
 export async function posDailySalesCount(productId: number, db: DB = getDb()): Promise<number> {
   const [r] = await db.select({ n: count() }).from(s.posDailySales).where(eq(s.posDailySales.productId, productId));
   return r?.n ?? 0;
+}
+
+/**
+ * Hammaddelerin silmeyi engelleyen geçmişi (deleteIngredient'ın saydığı tablolar; şube kapsamı C P2-6): sayım, alım
+ * miktarı ve zayi / ikram, BÜTÜN ŞUBELERDEN. Hammaddeler ekranı önceden şubenin modelinden sayıyordu: Marina seçiliyken
+ * yalnız Tuzla'da sayılmış malzeme "silinebilir" görünüp eylemde reddediliyordu. Paraşüt eşleştirmesi sayfanın kendi
+ * sorgusunda
+ */
+export async function ingredientHistoryCounts(db: DB = getDb()): Promise<Map<number, { counts: number; purchases: number; waste: number }>> {
+  const [counts, purchases, waste] = await Promise.all([
+    db.select({ id: s.stockCounts.ingredientId, n: count() }).from(s.stockCounts).groupBy(s.stockCounts.ingredientId),
+    db.select({ id: s.purchaseQuantities.ingredientId, n: count() }).from(s.purchaseQuantities).groupBy(s.purchaseQuantities.ingredientId),
+    db.select({ id: s.wasteEntries.ingredientId, n: count() }).from(s.wasteEntries).where(isNotNull(s.wasteEntries.ingredientId)).groupBy(s.wasteEntries.ingredientId),
+  ]);
+  const out = new Map<number, { counts: number; purchases: number; waste: number }>();
+  const at = (id: number) => out.get(id) ?? out.set(id, { counts: 0, purchases: 0, waste: 0 }).get(id)!;
+  for (const r of counts) at(r.id).counts = r.n;
+  for (const r of purchases) at(r.id).purchases = r.n;
+  for (const r of waste) if (r.id !== null) at(r.id).waste = r.n;
+  return out;
 }

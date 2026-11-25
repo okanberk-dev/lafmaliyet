@@ -389,6 +389,6 @@ test("vergi no kaynağı: eşitleme numarayı yeni ve var olan faturaya yazar, v
   assert.equal(sync.match(/await fillTaxNumber\(ctx, /g)?.length, 4);
   // Eski faturaların tamamlaması eşitlemenin artan süresinde, sıfırlamada baştan
   assert.match(sync, /backfillSupplierTaxNumbers\(client, \{ until: started \+ deadline - 3_000 \}\)/);
-  assert.match(sync, /PARASUT_STATE_KEYS = \[[^\]]*TAX_BACKFILL_KEY\]/);
+  assert.match(readFileSync(join(process.cwd(), "src/server/parasut/keys.ts"), "utf8"), /PARASUT_STATE_KEYS = \[[^\]]*TAX_BACKFILL_KEY\]/);
   assert.match(sync, /`\$\{taxFilled\} faturaya vergi no yazıldı`/);
 });

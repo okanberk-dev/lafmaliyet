@@ -5,7 +5,10 @@ import { and, asc, count, desc, eq, gt, gte, isNotNull, isNull, lt, lte, ne, or,
 import type { DayFacts } from "@/app/panel/bugun/logic";
 import { businessDate, DAY_TURN_HOUR } from "@/lib/cash-report";
 import { cashDaySubject } from "@/lib/cash-requests";
+import { ALL_BRANCHES, type BranchScope, requestInScope } from "@/lib/branches";
 import {
+  branchChecklistRuns,
+  branchStaffWrites,
   CLOSED_TEXT,
   ClosedDayPayload,
   closedDaysIn,
@@ -29,6 +32,7 @@ import { addDays, longDateTR } from "@/lib/reminders";
 import type { StaffRequestStatus } from "@/lib/staff-requests";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentTillBranch } from "@/server/branch-scope";
+import { karaokeBranchId } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { currentVia } from "@/server/activity-via";
 
@@ -45,7 +49,11 @@ import { currentVia } from "@/server/activity-via";
  * (Özel günler'de "Bütün şubeler", eski satırlar) ve her şubede kapalı sayılır. Şube verilen okuyucular o şubenin ve
  * işletme genelinin satırlarına, kanıt o şubenin kayıtlarına bakar: Marina'nın raporu Tuzla'nın işaretini kaldırmaz,
  * Tuzla'nın bildirimini engellemez. Şube verilmezse (işletme geneli okuma) bütün satırlar. Bir şubenin kanıtı işletme
- * geneli tek günlük satırı yalnız o şube için kaldırır: satır öteki açık fiziksel şubelere şubeli kalır (clearClosedMark). Kontrol listesi, karaoke ve personelin işlem geçmişi şubesiz kayıtlardır: kanıtta işletme geneli kalır.
+ * geneli tek günlük satırı yalnız o şube için kaldırır: satır öteki açık fiziksel şubelere şubeli kalır (clearClosedMark).
+ * Birden çok kasa açıkken kontrol listesi ve işlem geçmişi şubeyi kayıttan değil şablondan ve kişiden alır: şubenin listesi
+ * ve şubenin personeli kanıttır, bütün şubelerin listesi ve şubesiz personel yalnız uyarıdır (`sharedTraces`), öbür
+ * şubeninki sayılmaz; karaoke yalnız karaokenin şubesinde (şube özelliği, src/lib/branch-features.ts) sayılır. Tek kasada
+ * hepsi o kasanındır.
  */
 
 type Db = ReturnType<typeof getDb>;
@@ -170,9 +178,13 @@ async function branchContinuity(
  * çıkan, zayi / ikram, açılan kontrol listesi, karaoke (iş günü penceresinde başlayan, iptal edilmemiş; köşkün kapattığı
  * saatler değil), personelin
  * işlem geçmişi yazımları (aynı pencerede; hesap ve hatırlatıcı hariç, silme kayıtları dahil), Z no sürekliliği ve
- * açılış sürekliliği. Site ayrı (siteDayCounts). `branchId` verilirse (kapalı gün şubenindir; denetim 13 Kasım KP-05)
- * rapor, LafPOS, kasadan çıkan, zayi, Z no ve açılış o şubenin kayıtlarından: Marina'nın raporu Tuzla'nın kapalı günü
- * için kanıt değil. Kontrol listesi, karaoke ve işlem geçmişi şubesiz sayılır (işletme geneli). Şube verilmezse günün
+ * açılış sürekliliği. Site ayrı (fetchSiteDayCounts, şubenin siparişleri). `branchId` verilirse (kapalı gün şubenindir;
+ * denetim 13 Kasım KP-05; 24 Kasım şube kapsamı) rapor, LafPOS, kasadan çıkan, zayi, Z no ve açılış o şubenin
+ * kayıtlarından: Marina'nın raporu Tuzla'nın kapalı günü için kanıt değil. Birden çok kasa açıkken kontrol listesi şablonun
+ * şubesinden, işlem geçmişi personelin şubesinden: şubenin kendisi kırmızı, şubesiz olan uyarı (`sharedTraces`), öbür
+ * şubeninki yok; kendi tablosunda sayılan işlemler (kasa raporu, kasadan çıkan, zayi) işlem geçmişinden ikinci kez
+ * sayılmaz; karaoke yalnız karaokenin şubesinde. Tek kasada liste, işlem geçmişi ve karaoke bugünkü gibi o kasanın
+ * kanıtıdır. Şube verilmezse günün
  * herhangi bir şubedeki izi kanıttır (LafPOS'un gün sonu yine yalnız LafPOS'un şubesininki, lafposEvidence). Z no ve
  * açılış sürekliliği her durumda şube başınadır (her şubenin kendi kasası, kendi Z sayacı; docs/SUBE.md): önceki ve
  * sonraki rapor aynı şubenin, şubelerin sonucu mergeBranchContinuity ile birleşir.
@@ -180,25 +192,36 @@ async function branchContinuity(
 export async function closedDayEvidence(db: Db | Tx, date: string, branchId?: string | null): Promise<ClosedEvidence> {
   const w = dayWindow(date);
   const own = (col: typeof s.cashReports.branchId | typeof s.cashOuts.branchId | typeof s.wasteEntries.branchId) => (branchId ? eq(col, branchId) : undefined);
-  const [[report], [outs], [waste], [lists], [karaoke], logs, prevs, nexts, lafpos] = await Promise.all([
+  // Şube şube ayrım yalnız birden çok kasa açıkken: tek kasada bütün şubelerin listesi ve şubesiz personel o kasanındır
+  // (önceki gibi kırmızı). Karaoke yalnız karaokenin şubesinde: öbür şubenin kapalı gününe karaoke oturumu kanıt değil
+  const split = branchId ? await manyTills(db) : false;
+  const karaokeHere = !split || branchId === (await karaokeBranchId(db));
+  const [[report], [outs], [waste], lists, [karaoke], logs, prevs, nexts, lafpos] = await Promise.all([
     db.select({ id: s.cashReports.id }).from(s.cashReports).where(and(eq(s.cashReports.date, date), own(s.cashReports.branchId))).limit(1),
     db.select({ n: count() }).from(s.cashOuts).where(and(eq(s.cashOuts.date, date), own(s.cashOuts.branchId))),
     db.select({ n: count() }).from(s.wasteEntries).where(and(eq(s.wasteEntries.date, date), own(s.wasteEntries.branchId))),
-    db.select({ n: count() }).from(s.checklistRuns).where(eq(s.checklistRuns.date, date)),
+    // Koşunun şubesi şablonundan (bütün şubelerin listesinde boş)
     db
-      .select({ n: count() })
-      .from(s.karaokeSessions)
-      // Köşkün kapattığı saatler açık olunduğunun kanıtı değil (kapalı günde bütün gün kapatılmış olabilir)
-      .where(
-        and(
-          gte(s.karaokeSessions.startsAt, w.from),
-          lt(s.karaokeSessions.startsAt, w.to),
-          ne(s.karaokeSessions.status, "cancelled"),
-          sql`${s.karaokeSessions.channel} is distinct from ${DESK_BLOCK_CHANNEL}`,
-        ),
-      ),
+      .select({ templateBranchId: s.checklistTemplates.branchId })
+      .from(s.checklistRuns)
+      .innerJoin(s.checklistTemplates, eq(s.checklistTemplates.id, s.checklistRuns.templateId))
+      .where(eq(s.checklistRuns.date, date)),
+    karaokeHere
+      ? db
+          .select({ n: count() })
+          .from(s.karaokeSessions)
+          // Köşkün kapattığı saatler açık olunduğunun kanıtı değil (kapalı günde bütün gün kapatılmış olabilir)
+          .where(
+            and(
+              gte(s.karaokeSessions.startsAt, w.from),
+              lt(s.karaokeSessions.startsAt, w.to),
+              ne(s.karaokeSessions.status, "cancelled"),
+              sql`${s.karaokeSessions.channel} is distinct from ${DESK_BLOCK_CHANNEL}`,
+            ),
+          )
+      : Promise.resolve([{ n: 0 }]),
     db
-      .select({ action: s.activityLog.action })
+      .select({ action: s.activityLog.action, userBranchId: s.users.branchId })
       .from(s.activityLog)
       .innerJoin(s.users, eq(s.users.id, s.activityLog.userId))
       .where(and(gte(s.activityLog.at, w.from), lt(s.activityLog.at, w.to), eq(s.users.role, "staff"))),
@@ -225,17 +248,27 @@ export async function closedDayEvidence(db: Db | Tx, date: string, branchId?: st
   const continuity = mergeBranchContinuity(
     await Promise.all(prevs.flatMap((prev) => (nextOf.has(prev.branchId) ? [branchContinuity(db, date, prev, nextOf.get(prev.branchId)!)] : []))),
   );
+  // Şube verilince liste ve işlem geçmişi şube şube: şubenin kendisi kırmızı, şubesi belli olmayan uyarı
+  const runs = split && branchId ? branchChecklistRuns(lists, branchId) : { own: lists.length, shared: 0 };
+  const writes = split && branchId ? branchStaffWrites(logs, branchId) : { own: logs.filter((l) => isEvidenceAction(l.action)).length, shared: 0 };
   return {
     report: Boolean(report),
     cashOuts: outs?.n ?? 0,
     waste: waste?.n ?? 0,
-    checklists: lists?.n ?? 0,
+    checklists: runs.own,
     karaoke: karaoke?.n ?? 0,
-    staffWrites: logs.filter((l) => isEvidenceAction(l.action)).length,
+    staffWrites: writes.own,
+    sharedTraces: runs.shared + writes.shared,
     zGap: continuity.zGap,
     opening: continuity.opening,
     lafpos,
   };
+}
+
+/** Birden çok kasa açık mı (etkin fiziksel şube; işlem içinden de okunur) */
+async function manyTills(db: Db | Tx): Promise<boolean> {
+  const [row] = await db.select({ n: count() }).from(s.branches).where(and(eq(s.branches.kind, "fiziksel"), eq(s.branches.active, true)));
+  return (row?.n ?? 0) > 1;
 }
 
 /** İşlem geçmişine (işlemin içinde; sistemin ya da yazanın adıyla) */
@@ -629,14 +662,27 @@ export async function closedDayCards(): Promise<ClosedDayCard[]> {
 
 // ---------------------------------------------------------------- Zil (yönetici)
 
-/** Bekleyen kapalı gün bildirimleri (yöneticinin zili; tutar yok) */
-export async function pendingClosedRows(): Promise<{ id: number; day: string; requestedByName: string; bumpedAt: Date; createdAt: Date }[]> {
+/**
+ * Bekleyen kapalı gün bildirimleri (yöneticinin zili; tutar yok). `scope`: tek şube seçiliyken yalnız o şubenin
+ * bildirimleri (şube kapsamı C P1-1; `closedRequestBranch`)
+ */
+export async function pendingClosedRows(scope: BranchScope = ALL_BRANCHES): Promise<{ id: number; day: string; requestedByName: string; bumpedAt: Date; createdAt: Date; branchId: string }[]> {
   const rows = await getDb()
-    .select({ id: s.staffRequests.id, day: s.staffRequests.day, requestedByName: s.staffRequests.requestedByName, bumpedAt: s.staffRequests.bumpedAt, createdAt: s.staffRequests.createdAt })
+    .select({
+      id: s.staffRequests.id,
+      day: s.staffRequests.day,
+      subject: s.staffRequests.subject,
+      payload: s.staffRequests.payload,
+      requestedByName: s.staffRequests.requestedByName,
+      bumpedAt: s.staffRequests.bumpedAt,
+      createdAt: s.staffRequests.createdAt,
+    })
     .from(s.staffRequests)
     .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.status, "pending"), isNotNull(s.staffRequests.day)))
     .orderBy(asc(s.staffRequests.createdAt));
-  return rows.map((r) => ({ ...r, day: r.day! }));
+  return rows
+    .map(({ subject, payload, ...r }) => ({ ...r, day: r.day!, branchId: closedRequestBranch({ subject, payload }) }))
+    .filter((r) => requestInScope(r.branchId, scope));
 }
 
 /** Kapalı işaretin kanıtla kalkması, kapalı aralığa gelen rapor ve açılış uyarısı (işlem geçmişinden; yöneticinin zili) */

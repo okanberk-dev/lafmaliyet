@@ -159,6 +159,10 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
   return out;
 }
 
+/** Akşam hatırlatmasının gövdesi: günün kasası LafPOS'taysa "Günü kapat" ve Pavo fişi, değilse ModPOS'un Z'si */
+const eveningText = (lafpos: boolean) =>
+  lafpos ? "Kapanışta LafPOS'ta Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin fotoğrafını ekleyin" : "Kapanışta ModPOS'un Z raporunu ve kasayı girin";
+
 /**
  * Personelin kasa satırları (kendi kasası): LafPOS gününde (Marina) gün sonu fotoğrafı bekleyen otomatik rapor (bugün ve
  * dün; Bugün'ün satırıyla aynı iş, fotoğraf eklenince kalkar), gün sonu gelip çekmecesi sayılmayan gün ("LafPOS'ta sayın";
@@ -190,7 +194,11 @@ async function staffCashNotifications(now: Date, day: string, reports: CashRepor
     if (!noCount.has(d)) continue;
     out.push({ id: `kasa-sayim-${d}`, kind: "warning", title: "Kasa sayılmadı", body: STAFF_NO_COUNT_TEXT, timeLabel: label(d), unread: true, href: `/panel/kasa?gun=${d}`, group: "kasa" });
   }
-  if (!isCashEvening(now) || reports.some((r) => r.date === day) || noCount.has(day)) return out;
+  if (!isCashEvening(now)) return out;
+  // Şubesiz personel "Tümü"de birden çok kasa açıkken: raporu girilmemiş her kasa ayrı satır (şube kapsamı C P2-10)
+  const perTill = await staffTillsWaiting(day);
+  if (perTill) return [...out, ...perTill];
+  if (reports.some((r) => r.date === day) || noCount.has(day)) return out;
   // Günün kasası (denetim E-39): geçiş gününden itibaren LafPOS'ta "Günü kapat"; okunamazsa bugünkü gibi ModPOS. Geçiş
   // günü yalnız LafPOS'un şubesinin kasasınındır (branchSwitchDay): ModPOS'ta kalan şubenin personeli ModPOS'u okur
   const lafpos = kasaName(day, branchSwitchDay(await loadLafposSwitchDay().catch(() => null), till)) === "LafPOS";
@@ -198,7 +206,7 @@ async function staffCashNotifications(now: Date, day: string, reports: CashRepor
     id: `kasa-bekliyor-${day}`,
     kind: "warning",
     title: "Bugünün kasa raporu bekliyor",
-    body: lafpos ? "Kapanışta LafPOS'ta Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin fotoğrafını ekleyin" : "Kapanışta ModPOS'un Z raporunu ve kasayı girin",
+    body: eveningText(lafpos),
     timeLabel: "Bugün",
     unread: true,
     href: "/panel/kasa",
@@ -338,10 +346,12 @@ async function carryOf(reports: CashReportDTO[], oldest: string, tills: BellTill
 async function requestNotifications(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
   if (user.role === "admin") {
+    // Tek şube seçiliyken yalnız o şubenin istekleri (şube kapsamı C P1-1; Onaylar da öyle süzer)
+    const scope = await currentBranchScope();
     const [rows, outs, closedRows, info] = await Promise.all([
-      pendingCashBellRows(),
-      cashOutBellRow(now),
-      pendingClosedRows(),
+      pendingCashBellRows(scope),
+      cashOutBellRow(now, scope),
+      pendingClosedRows(scope),
       closedInfoRows(new Date(now.getTime() - 3 * 86_400_000)).catch(() => []),
     ]);
     const out: PanelNotification[] = rows.map((r) => ({
@@ -424,6 +434,34 @@ async function requestNotifications(user: CurrentUser): Promise<PanelNotificatio
       group: "onay" as const,
     };
   });
+}
+
+/**
+ * Şubesiz personelin akşam satırları "Tümü"de (ya da online kanal seçiliyken) birden çok kasa açıkken (şube kapsamı C
+ * P2-10): önceden tek satır Tuzla'nın kasasına bakıyordu; Marina'nın raporu girilmemişken susuyordu. Raporu girilmemiş
+ * her kasa "Marina: Bugünün kasa raporu bekliyor", bağlantı o şubeyi seçer. Tek kasada ya da seçim bir kasaysa null
+ * (bugünkü tek satır)
+ */
+async function staffTillsWaiting(day: string): Promise<PanelNotification[] | null> {
+  const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+  const tills = tillBranches(branches);
+  if (tills.length < 2 || tills.some((b) => b.id === scope)) return null;
+  const [reports, switchDay] = await Promise.all([withBranchScope(ALL_BRANCHES, () => cashReportsBetween(day, day)), loadLafposSwitchDay().catch(() => null)]);
+  return tills
+    .filter((b) => !reports.some((r) => r.branchId === b.id && r.date === day))
+    .map((b) => {
+      const lafpos = kasaName(day, branchSwitchDay(switchDay, b.id)) === "LafPOS";
+      return {
+        id: `kasa-bekliyor-${day}-${b.id}`,
+        kind: "warning" as const,
+        title: `${b.name}: Bugünün kasa raporu bekliyor`,
+        body: eveningText(lafpos),
+        timeLabel: "Bugün",
+        unread: true,
+        href: `/panel/kasa?sube=${encodeURIComponent(b.id)}`,
+        group: "kasa" as const,
+      };
+    });
 }
 
 /** Zilin kasa satırları, iki rolde (loadPanelNotifications iki dalda çağırır) */

@@ -8,7 +8,7 @@ import { listBranches } from "@/server/branches";
 import { schema as s, type DB } from "@/server/db";
 import { UserError } from "@/server/user-error";
 
-import { shiftBranches } from "./store";
+import { shiftBranches, shiftCandidate } from "./store";
 
 /** Vardiya ekranı için: yazarak doldurma kullanılabilir mi ("on" | "nokey" | "off" | "cap"); anahtarın kendisi dönmez */
 export const shiftDraftState = async (now: Date = new Date()) => (await shiftDraftStatus(now)).state;
@@ -27,7 +27,7 @@ export async function draftShiftWeek(db: DB, me: { id: number }, raw: DraftWeekI
   const monday = weekStart(data.week);
   const branch = shiftBranches(await listBranches(db)).find((b) => b.id === data.branchId);
   if (!branch) throw new UserError("Şube bulunamadı ya da kapalı; sayfayı yenileyin.");
-  const users = await db.select({ id: s.users.id, name: s.users.name, active: s.users.active }).from(s.users);
+  const users = await db.select({ id: s.users.id, name: s.users.name, active: s.users.active, role: s.users.role, branchId: s.users.branchId }).from(s.users);
   const byId = new Map(users.map((u) => [u.id, u]));
   const seen = new Set<string>();
   const rows = data.rows.flatMap((r) => {
@@ -49,6 +49,7 @@ export async function draftShiftWeek(db: DB, me: { id: number }, raw: DraftWeekI
   const res = await extractText({ userId: me.id, system: SHIFT_DRAFT_SYSTEM, task: shiftDraftTask(ctx, data.prompt), schema: ShiftDraftRaw });
   if (!res.ok) throw new UserError(res.message);
   // Yeni kişi adı ızgarada olmayan etkin bir hesabınkiyse o hesabın satırı olur ("Kişi ekle" ile aynı)
-  const accounts = users.filter((u) => u.active && !seen.has(userRef(u.id))).map((u) => ({ id: u.id, name: u.name }));
+  // Başka şubeye kilitli hesap önerilmez (şube kapsamı C P2-11; shiftCandidate)
+  const accounts = users.filter((u) => u.active && !seen.has(userRef(u.id)) && shiftCandidate(u, branch.id)).map((u) => ({ id: u.id, name: u.name }));
   return draftToCells(res.data, ctx, accounts);
 }

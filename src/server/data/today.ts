@@ -15,7 +15,8 @@ import {
   type KaraokeToday,
   type OrdersLite,
 } from "@/app/panel/bugun/logic";
-import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
+import { featureInScope, karaokeBranchOf } from "@/lib/branch-features";
+import { ALL_BRANCHES, requestInScope, tillBranches } from "@/lib/branches";
 import { shiftMonth } from "@/lib/calc/engine";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { branchDayKey, businessDate } from "@/lib/cash-report";
@@ -37,7 +38,7 @@ import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
-import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
+import { loadCashOutInvoiceState, scopeCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { countPendingRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders, type UserReminderDTO } from "@/server/data/user-reminders";
@@ -74,7 +75,8 @@ export interface TodayData {
   reminders: UserReminderDTO[] | null;
   /** Yalnız yönetici: Yaklaşan ödemeler kartının listesi (DashboardPayments) */
   payments: UpcomingItem[] | null;
-  cafe: { karaoke: KaraokeToday | null; orders: OrdersLite | null; configured: boolean };
+  /** `karaokeHere`: karaoke seçili kapsamda açık (şube özelliği); değilse kartın "Bar ekranı" Siparişler'i açar */
+  cafe: { karaoke: KaraokeToday | null; orders: OrdersLite | null; configured: boolean; karaokeHere: boolean };
   renderedAt: string;
 }
 
@@ -178,6 +180,10 @@ async function staffFacts(c: DayContext): Promise<RoleFacts> {
  * görünümü ("Tümü"de birden çok kasa: zincir ve işaretler şube şube).
  */
 async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO[] | null>, view: Promise<CashView | null>): Promise<RoleFacts> {
+  // Yemek kartı seçili kapsamda kullanılıyor mu (şube özelliği; okunamazsa bugünkü gibi var sayılır)
+  const commissionHere = Promise.all([currentBranchScope(), listBranches()])
+    .then(([scope, branches]) => featureInScope("yemek_karti", scope, branches))
+    .catch(() => true);
   const db = getDb();
   // Maliyet modeli yalnız zam uyarısı için (personelde hiç kurulmaz)
   const modelP = loadModel();
@@ -197,8 +203,10 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
         db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
         countStockOnlyReview(db),
         // Kasadan faturalı alımlar, faturası yok (E-42) ve faturası sonradan gelip iki kez sayılanlar; okunamazsa satır
-        // yalnız faturaları söyler
-        loadCashOutInvoiceState(db).catch(() => ({ pending: [], duplicates: [] })),
+        // yalnız faturaları söyler. Seçili şubenin kasasından çıkanlar (docs/SUBE.md › Ödemeler)
+        Promise.all([loadCashOutInvoiceState(db), currentBranchScope()])
+          .then(([state, scope]) => scopeCashOutInvoiceState(state, scope))
+          .catch(() => ({ pending: [], duplicates: [] })),
       ]).then(([[r], stockOnly, { pending, duplicates }]) => ({
         review: r?.n ?? 0,
         stockOnly,
@@ -268,8 +276,9 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
         return beforeOf ? cashFlagsByBranch(reports, beforeOf, revisions, viewer, modpos) : cashFlags(reports, before, revisions, viewer, modpos);
       }),
     ),
-    // Geciken hakedişler (hafif okuma: ekranın 13 ayının Komisyon faturaları ve işaretler; docs/KOMISYON.md)
-    safe(loadOverduePayouts()),
+    // Geciken hakedişler (hafif okuma: ekranın 13 ayının Komisyon faturaları ve işaretler; docs/KOMISYON.md). Yemek kartı
+    // seçili şubede kullanılmıyorsa satır yok (şube özelliği; docs/SUBE.md › Şube özellikleri)
+    commissionHere.then((on) => (on ? safe(loadOverduePayouts()) : null)),
     // Sayımın uyarıları (zil ile aynı; src/server/data/count-alerts.ts): fiyatsız ek kalemler, personelin geç kaydı
     safe(
       Promise.all([loadUnpricedExtras([month, prevMonth]), loadStaffLateEdits(prevMonth)]).then(([extras, edits]) => ({ extras, late: { month: prevMonth, edits } })),
@@ -291,6 +300,13 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const admin = user.role === "admin";
   const range = businessDayRange(c.day);
   const configured = Boolean(karaokeSecret());
+  // Karaoke yalnız karaokenin şubesinde (docs/SUBE.md › Şube özellikleri): "Tümü" ya da karaokenin şubesi seçiliyken;
+  // başka şube seçiliyken (şubesine kilitli personelde hep kendi şubesi) ya da karaoke hiçbir şubede açık değilken
+  // karaoke satırı yok. Uygulama siparişlerinin satırı da yalnız siparişi açık şubede (ya da "Tümü"de biri açıkken)
+  const [karaokeScope, featureRows] = await Promise.all([currentBranchScope(), listBranches()]);
+  const karaokeAt = karaokeBranchOf(featureRows);
+  const karaokeHere = karaokeAt !== null && requestInScope(karaokeAt, karaokeScope);
+  const ordersHere = featureInScope("siparis", karaokeScope, featureRows);
   // Kasa satırlarının kasası (CashView): personel kendi kasasını okur; yönetici "Tümü"de iki şubenin raporunu birlikte
   // okur, satırlar şube şube kurulur (ilk raporun günü de şubenin); değilse tek kasanın (online kanalda Tuzla'nın)
   const viewP = safe(cashView(admin));
@@ -305,8 +321,8 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     safe(viewP.then((v) => Promise.all((v?.tills ?? []).map((b) => closedYesterday(user, now, b.id))))),
     safe(stockProgress(c.month, c.prevMonth)),
     safe(loadDueReminders(user.id, c.today)),
-    safe(loadSessions(range.from, range.to, { admin })),
-    configured ? safe(Promise.all([readOrdersSnapshot(), readOrdersState()]).then(([snapshot, state]) => ordersLite(snapshot, state))) : Promise.resolve(null),
+    karaokeHere ? safe(loadSessions(range.from, range.to, { admin })) : Promise.resolve(null),
+    configured && ordersHere ? safe(Promise.all([readOrdersSnapshot(), readOrdersState()]).then(([snapshot, state]) => ordersLite(snapshot, state))) : Promise.resolve(null),
     // Bugünün ve dünün kontrol listeleri tek okumada (iki rol; personel yalnız kendi doldurabildiklerini alır)
     safe(loadChecklistDays([c.day, c.yesterday], user.role, now)),
     // Dün kafe kapalı mıydı (onaylı ya da onay bekleyen bildirim; kasa ve liste satırları buna bakar)
@@ -380,6 +396,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
       karaoke: sessions ? karaokeToday(sessions, c.day, now.getTime()) : null,
       orders,
       configured,
+      karaokeHere,
     },
     renderedAt: now.toISOString(),
   };

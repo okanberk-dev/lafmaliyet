@@ -5,15 +5,17 @@ import { refresh } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
 
-import { BRANCH_ID_MAX, namedTill } from "@/lib/branches";
+import { BRANCH_ID_MAX, DEFAULT_BRANCH_ID, namedTill, tillBranches, zFormBranch } from "@/lib/branches";
 import { businessDate, carryCheck, changesText, diffText, parseEmails, staffCanReport, waPhone, whatsappLink, whatsappText, type CashReportFields } from "@/lib/cash-report";
 import type { Role } from "@/lib/constants";
 import { money } from "@/lib/format";
+import { LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
 import { allDroppedSentence, droppedListText, recipientRefusal } from "@/lib/notify-recipients";
 import { longDateTR } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { formTillBranch, staffBranchRefusal, withBranchScope } from "@/server/branch-scope";
+import { logSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { emailReport, type CashEmailOutcome } from "@/server/cash/report-email";
 import { clearOkcCumulativeCore, removeCashReport, reportSchema, saveCashReport } from "@/server/cash/report-store";
@@ -76,7 +78,7 @@ export async function submitCashReport(input: z.input<typeof submitSchema>) {
     refresh();
     const dto = toCashDTO(saved);
     const [settings, waste, extras, integrity, nextReport, branches] = await Promise.all([
-      loadCashSettings(),
+      loadCashSettings(saved.branchId),
       dayWaste(data.date, saved.branchId),
       cashReportExtras(dto),
       cashReportIntegrity(dto),
@@ -126,10 +128,12 @@ export async function deleteCashReport(id: number) {
     const reportId = z.number().int().positive().parse(id);
     // Yanlışlıkla silinen raporun fotoğrafları 30 gün daha saklanır (bağları raporla birlikte silinir)
     const { row, photos } = await getDb().transaction((tx) => removeCashReport(tx, reportId));
+    // Birden çok kasa açıkken kaydın kasası adıyla (şube kapsamı C P2-4): "24 Kasım Pazartesi · Marina · Z …"
+    const till = namedTill(await listBranches(), row.branchId)?.name ?? null;
     await logActivity(
       me,
       "Kasa raporu silindi",
-      [longDateTR(row.date), `Z ${money(row.zTotal)}`, `sayılan ${money(row.countedCash)}`, diffText(row.cashDiff), row.countedByName ?? row.by, photos ? `${photos} fotoğraf` : null]
+      [longDateTR(row.date), till, `Z ${money(row.zTotal)}`, `sayılan ${money(row.countedCash)}`, diffText(row.cashDiff), row.countedByName ?? row.by, photos ? `${photos} fotoğraf` : null]
         .filter(Boolean)
         .join(" · "),
     );
@@ -185,50 +189,85 @@ export async function setLafposBankPos(input: z.input<typeof lafposBankSchema>) 
 }
 
 const settingsSchema = z.object({
-  recipients: z.string().max(2000),
-  emailEnabled: z.boolean(),
-  whatsapp: z.string().max(40),
-  staffRecipients: z.string().max(2000).default(""),
-  staffAmounts: z.boolean().default(false),
+  /**
+   * Ayarın şubesi (şube başına ayar; docs/SUBE.md › Şube başına ayarlar). Göndermeyen eski sekme eski kaydın sahiplerine
+   * yazar: alıcılar varsayılan şubenin ("aynı" şubeler de kullanır), çalışan listesi LafPOS'un şubesinin
+   */
+  branchId: z.string().max(BRANCH_ID_MAX).nullish(),
+  /** Alıcılar: şube başka şubeninkini kullanıyorsa ("Tuzla ile aynı") gönderilmez, yalnız çalışan listesi yazılır */
+  recipients: z.string().max(2000).optional(),
+  emailEnabled: z.boolean().optional(),
+  whatsapp: z.string().max(40).optional(),
+  /**
+   * Çalışan listesi: kartta alanı olan şubede (LafPOS'lu ya da listesi dolu) gönderilir; gönderilmezse dokunulmaz (ModPOS'lu
+   * şubenin kartı, eski kaydın sahibi olmayan tek şubeli kurulum)
+   */
+  staffRecipients: z.string().max(2000).optional(),
+  staffAmounts: z.boolean().optional(),
 });
 
 export async function updateCashSettings(input: z.input<typeof settingsSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const data = settingsSchema.parse(input);
-    const { valid, invalid } = parseEmails(data.recipients);
+    const branchId = data.branchId || undefined;
+    const report = data.recipients !== undefined;
+    const { valid, invalid } = parseEmails(data.recipients ?? "");
     if (invalid.length) throw new UserError(`Geçersiz e-posta: ${invalid.slice(0, 3).join(", ")}`);
     if (valid.length > 10) throw new UserError("En çok 10 adres girilebilir");
-    if (data.emailEnabled && !valid.length) throw new UserError("E-posta açıkken en az bir adres girin");
+    const emailEnabled = data.emailEnabled ?? true;
+    if (report && emailEnabled && !valid.length) throw new UserError("E-posta açıkken en az bir adres girin");
     // Kasa e-postasında karaoke ön ödemesi var: personel hesabının adresi alıcı olamaz; pasif hesaba e-posta gitmez (E-53).
     // Gönderim aynı kuralla süzer (kayıttan sonra personele indirilen ya da pasif yapılan hesap da düşer)
     const blocked = await blockedAccounts(getDb(), valid);
     const first = valid.find((e) => blocked.has(e));
     if (first) throw new UserError(recipientRefusal("cash", { email: first, reason: blocked.get(first)! }));
-    const whatsapp = data.whatsapp.trim() ? waPhone(data.whatsapp) : null;
-    if (data.whatsapp.trim() && !whatsapp) throw new UserError("WhatsApp numarası geçersiz (ör. 0532 123 45 67)");
+    const whatsapp = data.whatsapp?.trim() ? waPhone(data.whatsapp) : null;
+    if (data.whatsapp?.trim() && !whatsapp) throw new UserError("WhatsApp numarası geçersiz (ör. 0532 123 45 67)");
     // Çalışan listesi (LafPOS gün sonunun kısa e-postası): personel hesabı olabilir, rapor ayrıntısı ve karaoke ödemesi gitmez
-    const staff = parseEmails(data.staffRecipients);
+    const staffGiven = data.staffRecipients !== undefined;
+    if (!report && !staffGiven) throw new UserError("Kaydedilecek bir şey yok");
+    const staff = parseEmails(data.staffRecipients ?? "");
     if (staff.invalid.length) throw new UserError(`Geçersiz çalışan e-postası: ${staff.invalid.slice(0, 3).join(", ")}`);
     if (staff.valid.length > 20) throw new UserError("Çalışan listesine en çok 20 adres girilebilir");
-    await saveCashSettings({ recipients: valid, emailEnabled: data.emailEnabled, whatsapp, staffRecipients: staff.valid, staffAmounts: data.staffAmounts });
-    await logActivity(me, "Kasa raporu alıcıları", valid.join(", ") || "e-posta kapalı");
+    const branches = await listBranches();
+    // Birden çok kasa açıkken işlem geçmişinde ayarın şubesi
+    const branchName = branchId && tillBranches(branches).length > 1 ? (namedTill(branches, branchId)?.name ?? branchId) : null;
+    // Ayar ve işlem geçmişi tek işlemde (şube başına ayar; alıcılar bağlı şubeye yazılmaz, putBranchSetting reddeder)
+    await getDb().transaction(async (tx) => {
+      await saveCashSettings(
+        {
+          ...(report ? { recipients: valid, emailEnabled, whatsapp } : {}),
+          ...(staffGiven ? { staffRecipients: staff.valid, staffAmounts: data.staffAmounts ?? false } : {}),
+        },
+        branchId,
+        { tx, by: me.name },
+      );
+      const what = report ? valid.join(", ") || "e-posta kapalı" : `çalışanlar: ${staff.valid.join(", ") || "yok"}`;
+      await logSetting(tx, me, "Kasa raporu alıcıları", branchName ? `${branchName} · ${what}` : what);
+    });
     refresh();
-    return { recipients: valid, whatsapp, staffRecipients: staff.valid };
+    // Şubesiz (eski sekme) kayıtta alıcılar varsayılan şubenin, çalışan listesi LafPOS'un şubesinin (saveCashSettings)
+    const now = await loadCashSettings(branchId ?? DEFAULT_BRANCH_ID);
+    const staffNow = branchId || !staffGiven ? now : await loadCashSettings(LAFPOS_BRANCH_ID);
+    return { recipients: now.recipients, whatsapp: now.whatsapp, staffRecipients: staffNow.staffRecipients ?? [] };
   });
 }
 
 /** Alıcılara deneme e-postası: son raporla (yoksa örnek bir raporla), konusu "[Deneme]" */
-export async function sendCashTestEmail() {
+export async function sendCashTestEmail(branchId?: string | null) {
   return attempt(async () => {
     await requireAdmin();
-    const settings = await loadCashSettings();
+    // Kartın şubesinin alıcıları ("aynı"ysa bağlandığı şubeninki); göndermeyen eski sekmede varsayılan şube
+    const till = zFormBranch.parse(branchId) || DEFAULT_BRANCH_ID;
+    if (!tillBranches(await listBranches()).some((b) => b.id === till)) throw new UserError("Şube bulunamadı; sayfayı yenileyin");
+    const settings = await loadCashSettings(till);
     if (!settings.recipients.length) throw new UserError("Önce bir adres girin");
     // Personel hesabının ya da pasif hesabın adresi (ayar kaydedildikten sonra değişen) deneme e-postasını da almaz
     const { to: recipients, dropped } = await sendableRecipients(getDb(), settings.recipients);
     if (!recipients.length) throw new UserError(`${allDroppedSentence("Alıcıların", dropped)} Yöneticinin ya da muhasebecinin adresini girin.`);
     if (!isEmailConfigured()) throw new UserError("E-posta kurulmamış: Vercel'de RESEND_API_KEY tanımlı değil");
-    const [last] = await cashReportsBetween("2000-01-01", businessDate());
+    const [last] = await withBranchScope(till, () => cashReportsBetween("2000-01-01", businessDate()));
     const sample: CashReportFields = last ?? {
       date: businessDate(),
       zNo: "0001",
@@ -270,16 +309,21 @@ export async function sendCashTestEmail() {
   });
 }
 
-/** Ekranda kayıtlı raporun WhatsApp metni (rapor zaten gönderilmişken "WhatsApp ile gönder" için) */
-export async function cashReportWhatsapp(date: string) {
+/**
+ * Ekranda kayıtlı raporun WhatsApp metni (rapor zaten gönderilmişken "WhatsApp ile gönder" için). Rapor formun
+ * gösterdiği kasanın (`branchId`, formTillBranch; şubesine kilitli personelde kendi şubesi), gönderim anındaki seçimin
+ * değil: başka sekmede seçici değişince Tuzla'nın ekranı Marina'nın raporunu paylaşırdı. Göndermeyen eski sekmede seçili kasa
+ */
+export async function cashReportWhatsapp(date: string, branchId?: string | null) {
   return attempt(async () => {
     const me = await requireUser();
     const d = zDate.parse(date);
     if (me.role !== "admin" && !staffCanReport(d)) throw new UserError("Bu raporu yalnız yönetici görebilir");
-    const r = await getCashReport(d);
+    const till = await formTillBranch(zFormBranch.parse(branchId));
+    const r = await getCashReport(d, "staff", till);
     if (!r) throw new UserError("Bu günün raporu yok");
     const [settings, waste, extras, integrity, branches] = await Promise.all([
-      loadCashSettings(),
+      loadCashSettings(r.branchId),
       dayWaste(d, r.branchId),
       cashReportExtras(r),
       cashReportIntegrity(r),

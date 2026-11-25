@@ -89,7 +89,7 @@ test("tükendi: Siparişler ekranının kartı ve okuyucusu fiyatsız, kartta �
   for (const m of actions.matchAll(/return \{([^}]*)\};/g)) assert.equal(m[1].trim(), "changed: r.changed, message: r.message, name: r.name");
   // Sayfa kartı okuyucunun fiyatsız görünümüyle çizer
   const page = read("src/app/panel/siparisler/page.tsx");
-  assert.match(page, /<SoldOutCard role=\{user\.role\} entries=\{soldOut\.entries\} serverNow=\{now\} \/>/);
+  assert.match(page, /<SoldOutCard role=\{user\.role\} entries=\{soldOut\.entries\} serverNow=\{now\} branches=\{branchNames\} lockedStaff=\{locked\} \/>/);
   // 22 Kasım 2026: kart Karaoke ekranından Siparişler'e taşındı; Karaoke sayfası onu ne yükler ne çizer
   assert.doesNotMatch(read("src/app/panel/karaoke/page.tsx"), /SoldOutCard|loadSoldOut/);
 });

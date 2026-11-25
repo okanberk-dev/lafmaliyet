@@ -18,7 +18,9 @@ import { addDays, isCalendarDate, longDateTR, monthShortTR, monthTitleTR, shiftM
 import { productLabel, qtyText, WASTE_KIND_LABEL, type WasteKind } from "@/lib/waste";
 import { lateWasteDays, staffDeleteMode, staffWasteMode, WASTE_REQUEST_TEXT, wasteDayLabel, wasteItemText, type WasteDeleteMode, type WasteLock } from "@/lib/waste-requests";
 import { requireUser } from "@/server/auth/dal";
-import { currentPhysicalBranch } from "@/server/branch-scope";
+import { DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
+import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
 import { loadDayLafposIkram } from "@/server/data/lafpos-ikram";
 import { wasteChoices, wasteEntriesBetween } from "@/server/data/waste";
@@ -35,10 +37,11 @@ export const metadata: Metadata = { title: "Zayi & ikram" };
  * Başlık ve Stok sekmeleri (Sayım, Zayi & ikram, yöneticide Tutarlılık; nav.ts SECTION_TABS). Rol bilinmeden (yükleniyor)
  * iki rolün de gördüğü sekmeler çizilir; yöneticinin Tutarlılık'ı içerik gelince eklenir, sekme satırı yer değiştirmez.
  */
-function WasteHeader({ role }: { role: "admin" | "staff" }) {
+function WasteHeader({ role, branch = null }: { role: "admin" | "staff"; branch?: string | null }) {
   return (
     <PageHeader
-      title="Zayi & ikram"
+      // Birden çok kasa açıkken formun şubesi başlıkta ("Tuzla · Zayi & ikram"); "Tümü"de form şubeyi sorar
+      title={branch ? `${branch} · Zayi & ikram` : "Zayi & ikram"}
       path="/panel/zayi"
       role={role}
       // İki rolde tek cümle (docs/planlar/ux-sade.md §8): yöneticinin karşılaştırma ekranı anılmaz, personel açamaz. LafPOS gününde
@@ -72,7 +75,13 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
   const sp = await searchParams;
   const now = new Date();
   const today = businessDate(now);
-  const header = <WasteHeader role={user.role} />;
+  // Formun şubesi bir kez çözülür; kilit ve form aynı değeri kullanır (docs/SUBE.md › Yazarken hangi şube). Seçili fiziksel
+  // şube; "Tümü" ya da online kanal seçiliyken birden çok kasa açıksa form şubeyi sorar (varsayılan yok), tek kasada o kasa
+  const [scope, branchRows] = await Promise.all([currentBranchScope(), listBranches()]);
+  const tills = tillBranches(branchRows);
+  const chosen = tills.find((b) => b.id === scope) ?? (tills.length === 1 ? tills[0] : null);
+  const formBranches = (chosen ? [chosen] : tills).map((b) => ({ id: b.id, name: b.name }));
+  const header = <WasteHeader role={user.role} branch={chosen && tills.length > 1 ? chosen.name : null} />;
   const gun = pick(sp.gun);
   // Takvimde olmayan gün (2026-02-30, ay 00) bugüne düşer (KP-09'daki kasa sayfası gibi)
   const date = gun && isCalendarDate(gun) && gun <= today ? gun : today;
@@ -93,8 +102,9 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
     </div>
   );
   // Personel: günün kipi (doğrudan / istek / kapalı) ve satırların silme kipi sunucuda (kasanın kilidiyle). Kilit şube
-  // başına (denetim 21 Kasım #13): formun kipi kaydın ineceği şubenin kasasından (addWaste gibi seçili fiziksel şube)
-  const branchId = admin ? null : (await currentPhysicalBranch()).id;
+  // başına (denetim 21 Kasım #13): formun kipi kaydın ineceği şubenin kasasından (formun şubesi; "Tümü"de şube seçilene
+  // kadar Tuzla'nınki gösterilir, kayıt anında sunucu seçilen şubenin kilidine bakar)
+  const branchId = admin ? null : (chosen?.id ?? DEFAULT_BRANCH_ID);
   const lock = branchId ? await wasteLock(getDb(), date, branchId) : null;
   const mode = lock ? staffWasteMode(date, now, lock) : "direct";
   if (mode === "closed") {
@@ -120,9 +130,16 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
     wasteEntriesBetween(date, date),
     wasteDayMarks(date),
     admin ? Promise.resolve([]) : myWasteRequests(user.id, now),
-    admin ? pendingWasteSummary({ day: date }) : Promise.resolve(null),
-    // LafPOS gününde (geçiş gününden itibaren) ürün ikramı LafPOS'tan; geçiş günü boşken null, ekran bugünkü gibi
-    loadDayLafposIkram(date),
+    // Tek şube seçiliyken o şubenin istekleri (şube kapsamı C P1-1)
+    admin ? pendingWasteSummary({ day: date, scope }) : Promise.resolve(null),
+    // LafPOS gününde (geçiş gününden itibaren) ürün ikramı LafPOS'tan; geçiş günü boşken null, ekran bugünkü gibi. Şube
+    // şube (şube kapsamı C P2-7): seçili kasanınki; "Tümü"de LafPOS günü olan ilk kasanınki, adıyla (önceden "Tümü"de
+    // Tuzla'nınki okunuyordu: LafPOS Marina'daysa liste hiç görünmüyordu)
+    chosen
+      ? loadDayLafposIkram(date, undefined, chosen.id).then((d) => (d ? { ...d, branchId: chosen.id, branchName: null } : null))
+      : Promise.all(tills.map((t) => loadDayLafposIkram(date, undefined, t.id).then((d) => (d ? { ...d, branchId: t.id, branchName: t.name } : null)))).then(
+          (all) => all.find((d) => d !== null) ?? null,
+        ),
   ]);
   // LafPOS'un ikram ve zayi satırları salt okunur: personele ad ve adet, yöneticiye nedeni, menü değeri ve ürüne bağlı
   // olmayanlar da. Ürün ikramı gün sonu geldiyse ya da gün bugünse panelden kapalı (gün sonu gelmeyen geçmiş günde açık)
@@ -143,9 +160,10 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
           unmatched: admin && l.productId === null && !l.isService,
           service: admin && l.isService,
         })),
-        notCounted: laf.received ? entries.filter((e) => !panelWasteCounts(e, new Set([date]))).map((e) => e.id) : [],
+        notCounted: laf.received ? entries.filter((e) => e.branchId === laf.branchId && !panelWasteCounts(e, new Set([date]))).map((e) => e.id) : [],
         // Paneldeki ürün zayisi, aynı gün aynı ürün LafPOS'ta da zayi yazıldıysa: ikisi de sayılır, aynıysa biri silinir
-        maybeTwice: entries.filter((e) => e.kind === "zayi" && e.productId !== null && lafposZayi.has(e.productId)).map((e) => e.id),
+        maybeTwice: entries.filter((e) => e.branchId === laf.branchId && e.kind === "zayi" && e.productId !== null && lafposZayi.has(e.productId)).map((e) => e.id),
+        branchName: laf.branchName,
       }
     : null;
   // Satırın silme kipi kaydın kendi şubesinin kilidiyle (removeWaste gibi): "Tümü"deki şubesiz personel öteki şubenin
@@ -176,6 +194,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
       lateBadges={lateBadges}
       pendingLate={pendingLate}
       lafpos={lafpos}
+      branches={formBranches}
     />
   );
   if (!admin) {

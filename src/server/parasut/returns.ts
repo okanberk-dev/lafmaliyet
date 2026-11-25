@@ -32,8 +32,8 @@ export interface ReturnLog {
   supplier: ReturnEntry[];
 }
 
-/** integration_state anahtarı */
-export const RETURNS_KEY = "parasut.returns";
+/** integration_state anahtarı (hesap başına: parasutKey; src/server/parasut/keys.ts) */
+export { RETURNS_KEY } from "./keys";
 /** Bundan eski iade listeden düşer */
 export const RETURN_KEEP_DAYS = 120;
 /** Türüne göre en çok bu kadar iade saklanır */

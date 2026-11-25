@@ -179,6 +179,7 @@ export function InvoicesClient({
   months,
   suppliers,
   parasutCompanyId,
+  parasutCompanies = {},
   ignoredCount = 0,
   expenseLinks,
   supplierSlugs,
@@ -192,6 +193,8 @@ export function InvoicesClient({
   documents?: Record<number, DocumentMeta[]>;
   /** Paraşüt firma numarası; varsa Paraşüt'ten gelen faturada "Paraşüt'te aç" bağlantısı çıkar */
   parasutCompanyId?: string | null;
+  /** Öbür Paraşüt hesaplarının firma numaraları (hesap → firma; şube başına hesap): faturanın bağlantısı kendi firmasıyla */
+  parasutCompanies?: Record<string, string>;
   months: string[];
   suppliers: string[];
   /** Silinip yok sayılan Paraşüt faturası sayısı (silme onayında geri alma yolunu söylemek için) */
@@ -623,6 +626,11 @@ export function InvoicesClient({
         {i.source === "parasut" ? (
           <Badge tone="blue" title="Paraşüt'ten otomatik alındı; tutar ve tarih Paraşüt'ten gelir">
             Paraşüt
+          </Badge>
+        ) : null}
+        {i.branchName ? (
+          <Badge tone="gray" title={`${i.branchName} şubesinin ayrı Paraşüt hesabından geldi: bu şubenin faturası`}>
+            {i.branchName}
           </Badge>
         ) : null}
         {isEInvoiceOnly(i) ? (
@@ -1527,7 +1535,7 @@ export function InvoicesClient({
             setFromCashOut(null);
           }}
           onDelete={(i) => setDeleting(i)}
-          parasutCompanyId={parasutCompanyId ?? null}
+          parasutCompanyId={editing !== "new" && editing.parasutAccount ? (parasutCompanies[editing.parasutAccount] ?? null) : (parasutCompanyId ?? null)}
           documents={editing === "new" ? NO_DOCS : docsOf(editing.id)}
           onOpenDocuments={editing === "new" ? undefined : () => setDocFor(editing.id)}
           expenseLinks={expenseLinks}

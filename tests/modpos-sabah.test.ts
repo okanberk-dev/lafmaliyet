@@ -101,7 +101,7 @@ test("sabah işi: ModPOS yalnız bir kez başlar (Paraşüt'ten önce, extras() 
   assert.equal([...route.matchAll(/const modposP = /g)].length, 1);
   const start = route.indexOf("const modposP = capped<ModposSyncResult>(");
   assert.ok(start > route.indexOf('startJobRun("gunluk")'), "iş kaydından sonra");
-  assert.ok(start < route.indexOf("syncParasut("), "Paraşüt'ün yeniden denemesinden önce (onunla aynı anda sürer)");
+  assert.ok(start < route.indexOf("syncParasutAccounts("), "Paraşüt'ün yeniden denemesinden önce (onunla aynı anda sürer)");
   const extras = route.slice(route.indexOf("const extras = async () => {"), route.indexOf("const modpos = await modposP;"));
   assert.ok(extras.length > 0);
   assert.doesNotMatch(extras, /modpos/i, "extras() ModPOS'a dokunmaz");

@@ -2,11 +2,12 @@ import "server-only";
 
 import { and, asc, count, eq, inArray } from "drizzle-orm";
 
-import { tillBranches } from "@/lib/branches";
+import { ALL_BRANCHES, type BranchScope, requestInScope, tillBranches } from "@/lib/branches";
 import { businessDate, carryCheck, CHANGE_LABELS, computeCash, diffText, revisionChanges, type CashRevisionData, type FieldChange } from "@/lib/cash-report";
 import { cashOutsTotal, teslimTotalOf } from "@/lib/cash-outs";
 import {
   cashDaySubject,
+  cashSubjectBranch,
   correctionBell,
   CorrectionPayload,
   deleteBell,
@@ -286,7 +287,7 @@ export type CashRequestCard = CorrectionCard | DeleteCard | LateCard | CashOutCa
  * Bekleyen kasa isteklerinin kartları (düzeltme, silme, geç rapor, kasadan çıkan, fotoğraf kaldırma), en eski gün önce
  * (yalnız yönetici)
  */
-export async function loadCashRequestQueue(now = new Date()): Promise<CashRequestCard[]> {
+export async function loadCashRequestQueue(now = new Date(), scope: BranchScope = ALL_BRANCHES): Promise<CashRequestCard[]> {
   const [day, late, outs, closed, branches] = await Promise.all([dayRequestCards(now), lateCards(now), cashOutCards(now), closedDayCards(), listBranches()]);
   // Birden çok kasa açıkken kasa günü kartları şubesini adıyla söyler; kasadan çıkan ve fotoğraf kaldırma kartları da
   // (önceden şubesizdi, "Günü aç" yöneticinin seçili kasasını açıyordu; denetim 21 Kasım #29)
@@ -295,7 +296,10 @@ export async function loadCashRequestQueue(now = new Date()): Promise<CashReques
     const b = branches.find((x) => x.id === c.branchId);
     return { ...c, branch: many && b ? { id: b.id, name: b.name } : null };
   };
-  return [...day.map(named), ...late.map(named), ...outs.map(named), ...closed.map(named)].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+  // Tek şube seçiliyken yalnız o şubenin kartları (şube kapsamı C P1-1); "Tümü"de hepsi, şube adıyla
+  return [...day.map(named), ...late.map(named), ...outs.map(named), ...closed.map(named)]
+    .filter((c) => requestInScope(c.branchId, scope))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
 }
 
 /** Kayıtlı raporun düzeltme ve silme isteklerinin kartları */
@@ -416,18 +420,22 @@ function threeColumns(atProposal: CashRevisionData, now: CashRevisionData, after
 
 // ---------------------------------------------------------------- Zil (yönetici)
 
-/** Yöneticinin zilinde bekleyen kasa istekleri (düzeltme, silme, geç rapor): istek başına satır (başlık ve gövde yükten) */
-export async function pendingCashBellRows(): Promise<{ id: number; bumpedAt: Date; createdAt: Date; title: string; body: string }[]> {
+/**
+ * Yöneticinin zilinde bekleyen kasa istekleri (düzeltme, silme, geç rapor): istek başına satır (başlık ve gövde yükten).
+ * `scope`: tek şube seçiliyken yalnız o şubenin kasasının istekleri (şube kapsamı C P1-1; konudaki ya da yükteki şube)
+ */
+export async function pendingCashBellRows(scope: BranchScope = ALL_BRANCHES): Promise<{ id: number; bumpedAt: Date; createdAt: Date; title: string; body: string; branchId: string }[]> {
   const [day, late] = await Promise.all([dayBellRows(), lateBellRows()]);
-  return [...day, ...late].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  return [...day, ...late].filter((r) => requestInScope(r.branchId, scope)).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 }
 
-async function dayBellRows(): Promise<{ id: number; bumpedAt: Date; createdAt: Date; title: string; body: string }[]> {
+async function dayBellRows(): Promise<{ id: number; bumpedAt: Date; createdAt: Date; title: string; body: string; branchId: string }[]> {
   const rows = await getDb()
     .select({
       id: s.staffRequests.id,
       kind: s.staffRequests.kind,
       day: s.staffRequests.day,
+      subject: s.staffRequests.subject,
       payload: s.staffRequests.payload,
       message: s.staffRequests.message,
       requestedByName: s.staffRequests.requestedByName,
@@ -439,11 +447,12 @@ async function dayBellRows(): Promise<{ id: number; bumpedAt: Date; createdAt: D
     .orderBy(asc(s.staffRequests.createdAt));
   return rows.flatMap((r) => {
     if (!r.day) return [];
-    if (r.kind === "kasa-silme") return [{ id: r.id, bumpedAt: r.bumpedAt, createdAt: r.createdAt, ...deleteBell({ date: r.day, by: r.requestedByName, reason: r.message }) }];
+    const branchId = cashSubjectBranch(r.subject);
+    if (r.kind === "kasa-silme") return [{ id: r.id, bumpedAt: r.bumpedAt, createdAt: r.createdAt, branchId, ...deleteBell({ date: r.day, by: r.requestedByName, reason: r.message }) }];
     const p = CorrectionPayload.safeParse(r.payload);
     if (!p.success) return [];
     const changes = proposalChanges(p.data.base, p.data.proposed);
     const after = computeCash({ ...p.data.proposed }).cashDiff;
-    return [{ id: r.id, bumpedAt: r.bumpedAt, createdAt: r.createdAt, ...correctionBell({ date: r.day, by: r.requestedByName, changes, before: computeCash(p.data.base).cashDiff, after }) }];
+    return [{ id: r.id, bumpedAt: r.bumpedAt, createdAt: r.createdAt, branchId, ...correctionBell({ date: r.day, by: r.requestedByName, changes, before: computeCash(p.data.base).cashDiff, after }) }];
   });
 }

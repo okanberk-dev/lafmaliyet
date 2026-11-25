@@ -34,7 +34,7 @@ import { EmptyState, GrowthPill, InfoTip, KeyValue, PageSkeleton, Progress, Segm
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
-import { ALL_BRANCHES, branchViewNote, type BranchScope } from "@/lib/branches";
+import { ALL_BRANCHES, BRANCH_PARAM, branchViewNote, type BranchScope } from "@/lib/branches";
 import { posCommissionNote, shiftMonth, type ProductStatus } from "@/lib/calc/engine";
 import {
   alerts,
@@ -60,7 +60,7 @@ import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { currentBranchScope, withBranchScope } from "@/server/branch-scope";
 import { availableMonths, loadModel, monthParam, resolveMonth } from "@/server/data/dataset";
-import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
+import { loadCashOutInvoiceState, scopeCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCashPlan } from "@/server/data/cash-plan";
 import { tillRows } from "@/server/data/cash-reports";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
@@ -69,6 +69,7 @@ import { loadStockAlert } from "@/server/data/stock-estimate";
 import { getDb, schema as s } from "@/server/db";
 import { cariAlerts } from "@/lib/cari/match";
 import { loadUpcoming } from "@/server/notify/digest";
+import { parasutAccountForScope } from "@/server/parasut/accounts";
 import { isParasutConfigured } from "@/server/parasut/config";
 
 import { DashboardAlerts } from "./dashboard-alerts";
@@ -157,19 +158,28 @@ async function loadPayments(branch?: BranchScope): Promise<Awaited<ReturnType<ty
   }
 }
 
-/** Paraşüt bağlıysa son eşitleme; bağlı değilse null */
+/**
+ * Paraşüt bağlıysa son eşitleme; bağlı değilse null. Seçili şubenin Paraşüt hesabının (şube başına hesap; "Tümü":
+ * varsayılan hesap) eşitlemesi
+ */
 async function loadParasut(): Promise<ParasutFacts | null> {
   try {
-    if (!(await isParasutConfigured())) return null;
+    const account = await parasutAccountForScope();
+    if (!(await isParasutConfigured(account))) return null;
     const db = getDb();
     const runs = s.parasutSyncRuns;
     const [[last], [ok]] = await Promise.all([
       // Tedarikçi geçmişi (tek tedarikçi, elle) eşitleme sayılmaz
-      db.select({ status: runs.status, startedAt: runs.startedAt, message: runs.message }).from(runs).where(ne(runs.trigger, "history")).orderBy(desc(runs.startedAt)).limit(1),
+      db
+        .select({ status: runs.status, startedAt: runs.startedAt, message: runs.message })
+        .from(runs)
+        .where(and(ne(runs.trigger, "history"), eq(runs.account, account)))
+        .orderBy(desc(runs.startedAt))
+        .limit(1),
       db
         .select({ startedAt: runs.startedAt, finishedAt: runs.finishedAt })
         .from(runs)
-        .where(and(eq(runs.status, "ok"), ne(runs.trigger, "history")))
+        .where(and(eq(runs.status, "ok"), ne(runs.trigger, "history"), eq(runs.account, account)))
         .orderBy(desc(runs.startedAt))
         .limit(1),
     ]);
@@ -195,8 +205,11 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
     // denetim 21 Kasım #27): tek şube seçiliyken o şubenin ve işletme genelinin ödemeleri. "Tümü"nde aynı liste
     scope === ALL_BRANCHES ? Promise.resolve(null) : loadPayments(scope),
     loadParasut(),
-    // Kasadan faturalı alımlar (E-42): ayın işlerinde Faturalar'ı açık tutar; okunamazsa liste onsuz
-    loadCashOutInvoiceState().catch(() => null),
+    // Kasadan faturalı alımlar (E-42): ayın işlerinde Faturalar'ı açık tutar; seçili şubenin kasasından çıkanlar
+    // (docs/SUBE.md › Ödemeler). Okunamazsa liste onsuz
+    loadCashOutInvoiceState()
+      .then((state) => scopeCashOutInvoiceState(state, scope))
+      .catch(() => null),
     // Günlük ciro grafiği: ay bilgisinin okuduğu kasa satırları (seçili şubeyle; okunamazsa kart çizilmez)
     tillRows().catch(() => null),
   ]);
@@ -441,8 +454,9 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           <>
             <MonthPicker months={months} value={month} />
             {/* Dosya indiren rota: düz bağlantı (istemci yönlendirmesi rotayı iki kez istemesin) */}
-            {/* Telefonda kısa ad: ay seçici ile aynı satıra sığar */}
-            <a href={`/api/export?ay=${month}`} download className={buttonClass("secondary")} aria-label={`${monthLabel(month)} Excel'e aktar`}>
+            {/* Telefonda kısa ad: ay seçici ile aynı satıra sığar. Dosya ekranın şube seçimiyle (şube kapsamı C P1-9; Ayarlar'daki
+                tam yedek seçicisiz, Tümü) */}
+            <a href={`/api/export?ay=${month}&${BRANCH_PARAM}=${encodeURIComponent(scope)}`} download className={buttonClass("secondary")} aria-label={`${monthLabel(month)} Excel'e aktar`}>
               <Download size={16} aria-hidden="true" />
               <span className="max-[420px]:hidden">Excel&apos;e aktar</span>
               <span className="min-[421px]:hidden">Excel</span>

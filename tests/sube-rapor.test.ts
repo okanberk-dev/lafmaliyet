@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { ALL_BRANCHES, DEFAULT_BRANCHES, monthWriteNote, type BranchRow } from "../src/lib/branches";
+import { ALL_BRANCHES, DEFAULT_BRANCHES, MONTH_TOTALS_LOCKED_TEXT, monthWriteBranch, monthWriteLock, monthWriteNote, type BranchRow } from "../src/lib/branches";
 
 const root = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -27,42 +27,60 @@ const branches: BranchRow[] = DEFAULT_BRANCHES.map((b) => ({ ...b, active: true 
 
 // ---------------------------------------------------------------- #6 Gelir-gider ay satırı
 
-test("#6 Gelir-gider: ciro, açık gün ve ay notu seçili şubenin ay satırına yazılır (Satışlar'daki ay bilgisiyle aynı kural)", () => {
+test("#6 Gelir-gider: ciro, açık gün ve ay notu formun şubesinin ay satırına yazılır (Satışlar'daki ay bilgisiyle aynı kural)", () => {
   const src = read("src/server/actions/pnl.ts");
-  assert.match(src, /import \{ currentBranchScope, currentWriteBranch \} from "@\/server\/branch-scope";/);
+  // Formun şubesi (24 Kasım şube kapsamı): gönderim anındaki seçim değil; göndermeyen eski sekmede seçim, Tümü'de red
+  assert.doesNotMatch(src, /currentWriteBranch/);
+  const gate = body(src, "monthCellBranch");
+  assert.match(gate, /if \(!branchId\) \{\s*const lock = monthWriteLock\(await currentBranchScope\(\), await listBranches\(\)\);\s*if \(lock\) throw new UserError\(lock\);/);
+  assert.match(gate, /return formBranch\(branchId, "sales", \{ requireExplicit: true \}\);/);
   const note = body(src, "setMonthNote");
-  assert.match(note, /\.values\(\{ month: m, branchId: await currentWriteBranch\(\), note: n \}\)/);
+  assert.match(note, /const sube = await monthCellBranch\(branchId\);/);
+  assert.match(note, /\.values\(\{ month: m, branchId: sube, note: n \}\)/);
   assert.match(note, /onConflictDoUpdate\(\{ target: \[s\.months\.month, s\.months\.branchId\]/);
   const field = body(src, "setMonthField");
-  assert.match(field, /\.values\(\{ month: m, branchId: await currentWriteBranch\(\), \[field\]: v \}\)/);
+  assert.match(field, /const sube = await monthCellBranch\(branchId\);/);
+  assert.match(field, /\.values\(\{ month: m, branchId: sube, \.\.\.cell \}\)/);
   assert.match(field, /onConflictDoUpdate\(\{ target: \[s\.months\.month, s\.months\.branchId\]/);
   // Ay satırına şubesiz (sütunun varsayılanı Tuzla) yazan kalmadı
   assert.doesNotMatch(src, /insert\(s\.months\)\s*\.values\(\{ month: m, (?!branchId)/);
   // Satışlar'ın ay bilgisi de aynı şubeye yazar
-  assert.match(read("src/server/actions/sales.ts"), /\.values\(\{ \.\.\.data, branchId: await currentWriteBranch\(\), updatedAt: new Date\(\) \}\)/);
+  assert.match(read("src/server/actions/sales.ts"), /\.values\(\{ \.\.\.data, branchId: sube, updatedAt: new Date\(\) \}\)/);
 });
 
-test("#6 Gelir-gider: 'Tümü'de birden çok kasa açıkken ciro ve açık gün yazılmaz, ay notunun Tuzla'nın ay satırına indiği yazar", () => {
-  // Denetim 13 Kasım HM-02: "Tümü" şubelerin toplamı; ciro ve açık gün hücresi kilitli (monthTotalsLocked)
+test("#6 Gelir-gider: 'Tümü'de birden çok kasa açıkken ciro, açık gün ve ay notu yazılmaz; online kanalda da", () => {
+  // Denetim 13 Kasım HM-02: "Tümü" şubelerin toplamı; ciro ve açık gün hücresi kilitli (monthTotalsLocked). 24 Kasım şube
+  // kapsamı: ay notu da artık sessizce Tuzla'ya inmez; online kanalın kasa satışı yok
   const text = monthWriteNote(ALL_BRANCHES, branches);
-  assert.equal(
-    text,
-    "Tümü seçili: aylık ciro ve açık gün şubelerin toplamıdır, burada yazılmaz; yazmak için soldan şubeyi seçin. Ay notu Tuzla şubesinin ay satırına yazılır.",
-  );
+  assert.equal(text, "Tümü seçili: aylık ciro, açık gün ve ay notu şubelerin toplamıdır, burada yazılmaz; yazmak için şube seçiciden şubeyi seçin.");
+  assert.equal(monthWriteLock(ALL_BRANCHES, branches), MONTH_TOTALS_LOCKED_TEXT);
+  assert.equal(monthWriteLock("online", branches), "laffogato.net kanalının kasa satışı yok: ciro, açık gün ve ay notu şubelerde yazılır; şube seçiciden şubeyi seçin.");
+  assert.equal(monthWriteLock("marina", branches), null);
+  assert.equal(monthWriteBranch("marina", branches), "marina");
+  assert.equal(monthWriteBranch(ALL_BRANCHES, branches), null);
+  assert.equal(monthWriteBranch("online", branches), null);
+  assert.equal(monthWriteBranch(ALL_BRANCHES, branches.map((b) => (b.id === "marina" ? { ...b, active: false } : b))), "tuzla", "tek kasada Tümü o kasa");
   // Tek şube seçiliyken ya da tek kasa varken (Marina kapalı) not yok: yazılan gösterilen satırdır
   assert.equal(monthWriteNote("marina", branches), null);
   assert.equal(monthWriteNote("online", branches), null);
   assert.equal(monthWriteNote(ALL_BRANCHES, branches.map((b) => (b.id === "marina" ? { ...b, active: false } : b))), null);
   const page = read("src/app/panel/gelir-gider/page.tsx");
-  assert.match(page, /Promise\.all\(\[currentBranchScope\(\), listBranches\(\)\]\)\s*\.then\(\(\[scope, branches\]\) => monthWriteNote\(scope, branches\)\)/);
-  assert.match(page, /\{writeNote \? <Notice tone="neutral" size="line" className="-mt-2 mb-4" title=\{writeNote\} \/> : null\}/);
+  assert.match(page, /\.then\(\(\[scope, branches\]\) => \(\{ note: monthWriteNote\(scope, branches\), lock: monthWriteLock\(scope, branches\), branch: monthWriteBranch\(scope, branches\) \}\)\)/);
+  assert.match(page, /\{monthWrite\.note \? <Notice tone="neutral" size="line" className="-mt-2 mb-4" title=\{monthWrite\.note\} \/> : null\}/);
+  assert.match(page, /openDaysLocked=\{monthWrite\.lock\}\s+writeBranch=\{monthWrite\.branch\}/);
+  // Hücreler ve ay notu sayfanın şubesini gönderir
+  const grid = read("src/app/panel/gelir-gider/pnl-grid.tsx");
+  assert.equal(grid.match(/setMonthField\(month, "(?:posRevenue|openDays)", (?:amount|v), writeBranch\)/g)?.length, 4);
+  assert.match(grid, /setMonthNote\(month, next, branchId\)/);
 });
 
 // ---------------------------------------------------------------- #7 Satışlar › Ayı temizle
 
 test("#7 Ayı temizle: yalnız gösterilen şubenin satırları ve ay bilgisi; kapsam kaydı ayda liste kalmadıysa silinir", () => {
   const fn = body(read("src/server/actions/sales.ts"), "clearMonthSales");
-  assert.match(fn, /currentBranchWhere\(s\.salesLines\.branchId\), currentBranchWhere\(s\.months\.branchId\)/);
+  // Kapsam pencerenin gösterdiğinden (assertShownScope), çerezden değil (24 Kasım şube kapsamı)
+  assert.match(fn, /const scope = await assertShownScope\(opts\?\.scope\);/);
+  assert.match(fn, /const lines = branchWhere\(s\.salesLines\.branchId, scope\);\s*const info = branchWhere\(s\.months\.branchId, scope\);/);
   assert.match(fn, /\.delete\(s\.salesLines\)\s*\.where\(andWhere\(eq\(s\.salesLines\.month, m\), lines\)\)/);
   assert.match(fn, /\.where\(andWhere\(eq\(s\.months\.month, m\), info\)\)/);
   // Kapsam (listenin son günü) ayın tek kaydı: başka şubenin listesi kaldıysa silinmez
@@ -72,7 +90,7 @@ test("#7 Ayı temizle: yalnız gösterilen şubenin satırları ve ay bilgisi; k
   assert.doesNotMatch(fn, /\.update\(s\.months\)[\s\S]*?\.where\(eq\(s\.months\.month, m\)\)/);
   // Tek işlem: satırlar, kapsam ve ay bilgisi birlikte
   assert.match(fn, /await db\.transaction\(async \(tx\) => \{/);
-  assert.match(fn, /monthRemoved: await dropEmptyMonth\(tx, m\)/);
+  assert.match(fn, /for \(const r of rows\) if \(await dropEmptyMonth\(tx, m, r\.branchId\)\) monthRemoved = true;/);
 });
 
 // ---------------------------------------------------------------- #26 Bugün'ün kasası

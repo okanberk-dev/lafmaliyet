@@ -328,8 +328,9 @@ son günü, aşağıda "Şubenin kendi kaydı") belirleyicidir:
   (`readCoverage`, `src/lib/sales-coverage.ts`): LafPOS'un sayıldığı ilk gün, geçiş ayının çakışması ve liste ↔ Z her
   görünümde ("Tümü" dahil) ve tahmini stokta Marina'nın kaydından; şube seçiliyken listeye dayanan hesapların dönemi
   (`listPeriod`, "… tarihine kadar") şubenin kaydından. Satışlar'ın içe aktarma kartındaki "… tarihine kadar" yazılan
-  şubenin listesinin günüdür (`writeCoverage`): "Tümü"de içe aktarma Tuzla'ya yazar ve "Değiştir" yalnız onun listesini
-  değiştirir, kart Tuzla'nın gününü gösterir (Tuzla'nın o ayda listesi yoksa geçiş ayından itibaren Marina'nın listesinin
+  şubenin listesinin günüdür (`writeCoverage`): "Tümü"de içe aktarma şubeyi sorar (ayı LafPOS'tan gelen şube listede yok,
+  bugün yalnız Tuzla kalır; docs/SUBE.md › Yazarken hangi şube) ve "Değiştir" yalnız onun listesini değiştirir, kart
+  Tuzla'nın gününü gösterir (Tuzla'nın o ayda listesi yoksa geçiş ayından itibaren Marina'nın listesinin
   gününü). Ortak kayıt yalnız "Tümü"nün liste dönemi içindir. Marina 21 Kasım'a kadar yükledi, Tuzla aynı aya 27 Kasım'a
   kadar ya da Aralık'ta ayın tamamını yükledi: Marina'nın LafPOS'u yine 22 Kasım'dan sayılır. Şube kaydı olmayan ayda
   (bu kayıttan önce yüklenmiş liste) ortak kayıt okunur; Satışlar ortak kaydı ezmeden önce o ayda listesi olup kendi
@@ -826,13 +827,14 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   güvenle okunmamış NET / İADE batch tutarı ve tanınmayan ödeme satırı uydurulmaz ("okunamadı"). Yöneticinin kartı
   okuyanı yazar ("Yapay zekâ (Claude Haiku 5.5)" / "Kodla okundu").
 
-**Gün sonu e-postası** (`sendDayEndEmail`): kasa raporu alıcılarına (Kasa › Rapor alıcıları, e-posta açıksa), Tuzla'nın
-kasa e-postasıyla aynı liste; sabah e-postasının adresleri girmez (25 Kasım 2026'ya kadar girerdi: yalnız sabah e-postasını
-alan adres Marina'nın kasa farkını alıp Tuzla'nınkini almıyordu). Rapor alıcıları boş ya da kapalıysa e-posta susmasın
-diye etkin bildirim adreslerine gider (`dayEndRecipients`). Personel ve pasif hesabın adresi gönderimde düşer
-(`sendableRecipients`). Konu Tuzla'nın kasa e-postasının biçiminde: "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar ·
-120 ₺ eksik" (sonuç "kasa tutuyor", "120 ₺ eksik", "sayım yok"); Pavo ve fotoğraf e-postası da aynı başla başlar, gelen
-kutusunda günün e-postaları yan yana durur. İçerik: toplam satış, Z no ve fiş, indirim, ödeme
+**Gün sonu e-postası** (`sendDayEndEmail`): gün sonunun şubesinin kasa raporu alıcılarına (Kasa › Rapor alıcıları ya da
+Şube ayarları, e-posta açıksa; "Tuzla ile aynı"ysa Tuzla'nınkine, [SUBE.md](SUBE.md) › Şube başına ayarlar); sabah
+e-postasının adresleri girmez (25 Kasım 2026'ya kadar girerdi: yalnız sabah e-postasını alan adres Marina'nın kasa
+farkını alıp Tuzla'nınkini almıyordu). Rapor alıcıları boş ya da kapalıysa e-posta susmasın diye o şubeye açık etkin
+bildirim adreslerine gider (`dayEndRecipients`; "Bütün şubeler" ya da bu şube seçili adresler). Personel ve pasif
+hesabın adresi gönderimde düşer (`sendableRecipients`). Konu Tuzla'nın kasa e-postasının biçiminde: "Kasa raporu
+KR-20261122 · Marina · 22 Kasım Pazar · 120 ₺ eksik" (sonuç "kasa tutuyor", "120 ₺ eksik", "sayım yok"); Pavo ve
+fotoğraf e-postası da aynı başla başlar, gelen kutusunda günün e-postaları yan yana durur. İçerik: toplam satış, Z no ve fiş, indirim, ödeme
 türleri ve LafPOS'un ödeme dökümü, ödenmez / ikram ve ikram edilenlerin adedi ve menü değeri, kasa (açılış, olması
 gereken, sayılan, fark), dün ve geçen haftanın aynı günüyle kıyas (satış; LafPOS günü yoksa o günün kasa raporu),
 Marina'nın laffogato.net online satışı (`&branch=marina`), raporun durumu ve eksikler, **Cihazlar ve fotoğraf** (Banka
@@ -987,10 +989,9 @@ yazılmaz (23 Kasım 2026; `lafposMonth`, [KOMISYON.md](KOMISYON.md) › Şube v
 "Kafe kapalıydı" şubenindir ([SUBE.md › Kasa raporu "Tümü"de › Kapalı gün](SUBE.md#kasa-raporu-tümüde-20-kasım-2026)): Marina'nın satışlı
 LafPOS gün sonu Marina'nın kapalı gününün kanıtıdır, Tuzla'nınkinin değil. Şube verilmeyen okuma da LafPOS kanıtı olarak
 yalnız LafPOS'un şubesinin gün sonunu okur (`lafposEvidence`, 22 Kasım 2026): Tuzla'nın eski deneme satırı kanıt sayılmaz.
-Kasadaki fiyatların
-işareti (`pos_marks`, ürünün kasadaki eski fiyatı) şubesizdir: Tuzla'da (ModPOS) işaretlenen ürün Marina'nın LafPOS
-listesinden de düşer, Marina'da işaretlenen Tuzla'nınkinden (yalnız siteye bağlı olmayan, fiyatı geçiş gününden sonra
-değişen üründe). Şube başına işaret ayrı bir iş (Tuzla'nın akışını da değiştirir; açık).
+Kasadaki fiyatlar
+şube başınadır (`pos_stale`, `pos_marks.branch_id`; 24 Kasım 2026, [FIYATLAR.md › Şube başına kasa](FIYATLAR.md#şube-başına-kasa-şube-kapsamı-a3-24-kasım-2026)):
+Tuzla'da (ModPOS) işaretlenen ürün Marina'nın LafPOS listesinde kalır, Marina'da işaretlenen Tuzla'nınkinde.
 
 İleride Tuzla da LafPOS'a geçerse geçiş günü şube başına tutulur (okuyucular zaten `branchSwitchDay` /
 `scopeSwitchDay`'den geçer).

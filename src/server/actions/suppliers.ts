@@ -32,6 +32,7 @@ import { loadCardEntries } from "@/server/data/cari";
 import { loadSupplierLedger, loadSupplierRefs, supplierSlugOf, supplierSlugOfKey } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "@/server/parasut/client";
+import { anyParasutConfigured, invoiceAccountOf, invoiceAccountWhere, parasutAccountForScope } from "@/server/parasut/accounts";
 import { isParasutConfigured, readParasutConfig } from "@/server/parasut/config";
 import { contactInfo, sameSupplier } from "@/server/parasut/mapping";
 import { syncSupplierHistory } from "@/server/parasut/sync";
@@ -335,11 +336,14 @@ export async function restoreSupplier(snapshot: CardInput) {
  * Eşitlemenin bu faturalara verdiği ad (Paraşüt'teki kişi adı, ör. vergi nosuyla bulunan tam unvan) tedarikçinin
  * adlarından değilse kartın diğer adlarına eklenir: faturaları bu sayfada toplanır. O ad başka bir tedarikçide
  * kayıtlıysa eklenmez, söylenir. Kartsız tedarikçide ad eklenemez; aynı vergi noyla buraya gelmediyse söylenir.
+ * Şube başına Paraşüt hesabı: geçmiş seçili şubenin hesabından alınır ("Tümü": varsayılan hesap); kişi yalnız o
+ * hesabın faturalarıyla aranır.
  */
 export async function importSupplierHistory(input: z.input<typeof targetSchema> & { confirmDevir?: boolean }) {
   return attempt(async () => {
     const me = await requireAdmin();
-    if (!(await isParasutConfigured())) throw new UserError("Paraşüt bağlantısı kurulu değil.");
+    const account = await parasutAccountForScope();
+    if (!(await isParasutConfigured(account))) throw new UserError("Paraşüt bağlantısı kurulu değil.");
     const { g } = await findGroup(input);
     if (g.key === supplierMatchKey(PLACEHOLDER_SUPPLIER_NAME)) throw new UserError("Bunlar Paraşüt'te adı okunamayan faturalar; geçmişi tedarikçinin kendi sayfasından alın.");
     // Eski borç (devir) girilmiş kartta (K22): o günden eski faturalar gelirse aynı borç iki kez sayılır; önce sorulur
@@ -354,14 +358,22 @@ export async function importSupplierHistory(input: z.input<typeof targetSchema> 
     }
     const own = g.card ? [g.card.name, ...g.card.aliases] : g.names;
     const keys = new Set([g.key, ...own, ...g.names].map(supplierMatchKey));
+    // Kişi bu hesabın faturalarından bulunur (öbür firmanın fatura kimliği bu hesapta yok)
+    const ids = g.invoices.flatMap((i) => (i.externalId ? [i.id] : []));
+    const bills = ids.length
+      ? await getDb()
+          .select({ externalId: s.invoices.externalId })
+          .from(s.invoices)
+          .where(and(inArray(s.invoices.id, ids), invoiceAccountWhere(account)))
+      : [];
     const r = await syncSupplierHistory({
       label: g.name,
-      billIds: g.invoices.flatMap((i) => (i.externalId ? [i.externalId] : [])),
+      billIds: bills.flatMap((i) => (i.externalId ? [i.externalId] : [])),
       // Kartta yoksa faturalardaki tek vergi no: kişi bununla da bulunur
       taxNumber: g.taxNumber,
       names: own,
       match: (name) => (keys.has(supplierMatchKey(name)) ? "same" : own.some((n) => sameSupplier(n, name)) ? "similar" : null),
-    });
+    }, { account });
     if (!r.ok) throw new UserError(r.error);
 
     const fresh = r.names.filter((n) => !keys.has(supplierMatchKey(n)));
@@ -415,23 +427,42 @@ const INFO_TRIES = 3;
 export async function supplierInfoFromParasut(names: string[]) {
   return attempt(async () => {
     await requireAdmin();
-    if (!(await isParasutConfigured())) throw new UserError("Paraşüt bağlantısı kurulu değil; bilgileri faturadan bakıp elle girin.");
+    if (!(await anyParasutConfigured())) throw new UserError("Paraşüt bağlantısı kurulu değil; bilgileri faturadan bakıp elle girin.");
     const keys = new Set(z.array(z.string().max(300)).min(1).max(40).parse(names).map(supplierMatchKey));
     const rows = await getDb()
-      .select({ id: s.invoices.id, supplier: s.invoices.supplier, date: s.invoices.date, invoiceNo: s.invoices.invoiceNo, eInvoiceId: s.invoices.eInvoiceId, externalId: s.invoices.externalId })
+      .select({
+        id: s.invoices.id,
+        supplier: s.invoices.supplier,
+        date: s.invoices.date,
+        invoiceNo: s.invoices.invoiceNo,
+        eInvoiceId: s.invoices.eInvoiceId,
+        externalId: s.invoices.externalId,
+        parasutAccount: s.invoices.parasutAccount,
+      })
       .from(s.invoices)
       .where(or(isNotNull(s.invoices.eInvoiceId), isNotNull(s.invoices.externalId)))
       .orderBy(desc(s.invoices.date), desc(s.invoices.id));
     const mine = rows.filter((r) => keys.has(supplierMatchKey(r.supplier))).slice(0, INFO_TRIES);
     if (!mine.length) throw new UserError("Bu tedarikçinin Paraşüt'ten gelen faturası yok; bilgileri elle girin.");
-    const client = new ParasutClient(await readParasutConfig());
-    client.setDeadline(Date.now() + 40_000);
+    // Her fatura kendi Paraşüt hesabından okunur (şube başına hesap); ayarı eksik hesabın faturası atlanır
+    const deadline = Date.now() + 40_000;
+    const clients = new Map<string, ParasutClient | null>();
+    const clientOf = async (account: string): Promise<ParasutClient | null> => {
+      if (!clients.has(account)) {
+        const c = (await isParasutConfigured(account)) ? new ParasutClient(await readParasutConfig(account)) : null;
+        c?.setDeadline(deadline);
+        clients.set(account, c);
+      }
+      return clients.get(account) ?? null;
+    };
     const parts: Partial<SupplierInfo>[] = [];
     let source: string | null = null;
     // Paraşüt'e ulaşılamadıysa "bilgi yok" denmez: kullanıcı sonra yeniden dener
     let unreachable: string | null = null;
     for (const r of mine) {
       const label = r.invoiceNo ?? `${dateTR(r.date)} tarihli fatura`;
+      const client = await clientOf(invoiceAccountOf(r));
+      if (!client) continue;
       try {
         if (r.eInvoiceId) {
           const file = await client.getBytes(`e_invoices/${encodeURIComponent(r.eInvoiceId)}/signed_ubl`);

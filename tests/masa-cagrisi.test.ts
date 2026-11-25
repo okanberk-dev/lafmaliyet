@@ -192,7 +192,7 @@ test("son listenin kopyası: çağrı değişince liste değişir; ilk çekmede 
   assert.doesNotMatch(sync, /\/panel\/karaoke/);
   // Canlı uç: çağrılar son listenin kopyasıyla aynı sürümde (ETag), bağlantı yoksa boş
   const live = read("src/app/api/canli/route.ts");
-  assert.match(live, /calls: linked \? snapshot\.calls : \[\]/);
+  assert.match(live, /calls: linked && callsHere \? snapshot\.calls : \[\]/);
   assert.ok(live.indexOf("status: 304") < live.indexOf("snapshot.calls"));
 });
 

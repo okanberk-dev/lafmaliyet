@@ -547,6 +547,69 @@
       "when": 1795546012109,
       "tag": "0077_sube_fiyati",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1795559515945,
+      "tag": "0078_kasa_fiyat_sube",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1795559519867,
+      "tag": "0079_kasa_fiyat_sube_veri",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1795561986445,
+      "tag": "0080_bildirim_alici_sube",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1795564016509,
+      "tag": "0081_sube_ayarlari",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1795566732301,
+      "tag": "0082_parasut_hesap",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1795566737538,
+      "tag": "0083_parasut_hesap_veri",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1795568840888,
+      "tag": "0084_sube_ozellik",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1795568844248,
+      "tag": "0085_sube_ozellik_veri",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1795575564098,
+      "tag": "0086_parasut_kimlik_bos_hesap",
+      "breakpoints": true
     }
   ]
 }

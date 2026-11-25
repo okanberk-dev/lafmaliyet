@@ -1,6 +1,6 @@
 import "server-only";
 
-import { DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
+import { ALL_BRANCHES, DEFAULT_BRANCH_ID, tillBranches, type BranchScope } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { dateTR } from "@/lib/format";
 import { modposKeyProblem } from "@/lib/modpos/request";
@@ -29,7 +29,7 @@ export const MODPOS_SETTINGS_HREF = "/panel/ayarlar#modpos";
  * Anahtarların uyarıları, şube şube (docs/MODPOS-API.md › Şubeler): her ModPOS şubesinin kendi anahtarı ve durumu var.
  * Anahtarı olmayan şubede sorgu yok; biçimi bozuk ya da başka şubeyle ortaksa durum okunmaz.
  */
-async function loadKeyAlerts(env: Record<string, string | undefined> = process.env): Promise<ModposKeyAlert[]> {
+async function loadKeyAlerts(env: Record<string, string | undefined> = process.env): Promise<(ModposKeyAlert & { branchId: string })[]> {
   // Hiçbir şubenin anahtarı yoksa (Tuzla'nınki de) kütük de okunmaz
   if (!Object.keys(env).some((k) => k === "MODPOS_API_KEY" || k.startsWith("MODPOS_API_KEY_"))) return [];
   const branches = await listBranches();
@@ -40,10 +40,11 @@ async function loadKeyAlerts(env: Record<string, string | undefined> = process.e
       if (keyProblem === "missing") return null;
       const state = keyProblem ? null : await readModposState(undefined, id);
       const branch = { id, name: branches.find((b) => b.id === id)?.name ?? id };
-      return modposKeyAlert({ keyProblem, preview: !canFetchModpos(env), state, branch, keyEnv: modposKeyEnv(id), sharedText: sharedKeyText(id, branches) });
+      const alert = modposKeyAlert({ keyProblem, preview: !canFetchModpos(env), state, branch, keyEnv: modposKeyEnv(id), sharedText: sharedKeyText(id, branches) });
+      return alert ? { ...alert, branchId: id } : null;
     }),
   );
-  return alerts.filter((a): a is ModposKeyAlert => a !== null);
+  return alerts.filter((a) => a !== null);
 }
 
 /**
@@ -78,13 +79,17 @@ export async function modposKeyBell(now = new Date()): Promise<PanelNotification
  * Şubeler (docs/MODPOS-API.md › Şubeler): her şubenin raporu kendi föyüyle karşılaştırılır, farklı olan her şube bir
  * satır; birden çok kasa açıkken satırda şubenin adı, adreste ilk farkın şubesi (`&sube=`; seçici onu seçer).
  */
-export async function modposDigestLines(now = new Date()): Promise<{ lines: DigestBox["lines"]; href: string | null; link: string | null }> {
+export async function modposDigestLines(now = new Date(), scope: BranchScope = ALL_BRANCHES): Promise<{ lines: DigestBox["lines"]; href: string | null; link: string | null }> {
   const yesterday = addDays(businessDate(now), -1);
+  // Şubeye bağlı alıcının e-postası (şube kapsamı C P1-11): yalnız o şubenin raporu ve anahtarı
+  const inScope = (id: string | null | undefined) => scope === ALL_BRANCHES || (id ?? DEFAULT_BRANCH_ID) === scope;
   const [found, key] = await Promise.all([
     Promise.all([cashReportsBetween(yesterday, yesterday), loadModposSheets(yesterday, yesterday), loadLafposSwitchDay(), listBranches()])
-      .then(([reports, sheets, switchDay, branches]) => ({ mismatches: modposMismatches(reports, sheets, switchDay), branches }))
+      .then(([reports, sheets, switchDay, branches]) => ({ mismatches: modposMismatches(reports, sheets, switchDay).filter((m) => inScope(m.report.branchId)), branches }))
       .catch(() => null),
-    loadKeyAlerts().catch(() => []),
+    loadKeyAlerts()
+      .then((all) => all.filter((k) => inScope(k.branchId)))
+      .catch(() => []),
   ]);
   const lines: DigestBox["lines"] = [];
   for (const k of key) lines.push({ text: modposKeyDigestText(k), tone: "bad" });

@@ -24,12 +24,25 @@ export const zGun = z
 /** Aranan ad (ürün, kategori, tedarikçi) */
 export const zAd = z.string().trim().min(2, "En az 2 harf").max(60, "En çok 60 harf");
 
+/**
+ * Şube (şube kapsamı C P2-13): kimliği ya da adı ya da "hepsi". Verilmezse panelin seçimi (Claude bağlantısında bütün
+ * şubeler, panel asistanında yöneticinin seçimi). Satış, kasa, gider ve ödemeler bu şubenin; çıktı `kapsam` yazar
+ */
+export const zSube = z
+  .string()
+  .trim()
+  .min(1)
+  .max(60)
+  .optional()
+  .describe("Şube: adı ya da kimliği (ör. Marina, tuzla) ya da 'hepsi' (bütün şubeler); verilmezse panelde seçili kapsam");
+
 export const zLimit = (def: number, max: number) => z.number().int().min(1).max(max).default(def).describe(`En çok kaç satır (varsayılan ${def}, en çok ${max})`);
 
 export const ayOzetiInput = z
   .object({
     ay: zAy.optional().describe("Ay, YYYY-MM; verilmezse bu ay"),
     yil: z.number().int().min(2020).max(2100).optional().describe("Yıl (ör. 2026): verilirse yılın ayları tek tek; ay ile birlikte verilmez"),
+    sube: zSube,
   })
   .strict();
 
@@ -45,6 +58,7 @@ export const urunKarliligiInput = z
     kategori: zAd.optional().describe("Kategori adı (ör. Soğuk kahveler)"),
     urun: zAd.optional().describe("Ürün adı ya da bir parçası (ör. latte)"),
     limit: zLimit(10, 50),
+    sube: zSube,
   })
   .strict();
 
@@ -52,6 +66,7 @@ export const zamEtkisiInput = z
   .object({
     baslangic: zGun.optional().describe("Bu tarihten bu yana olan zamlar, YYYY-MM-DD; verilmezse son 30 gün (en çok 366 gün geriye)"),
     limit: zLimit(10, 30),
+    sube: zSube,
   })
   .strict();
 
@@ -75,6 +90,7 @@ export const odemelerInput = z
     aralik: z.enum(ODEME_ARALIKLARI).default("45gun").describe("gecikmis (vadesi geçmiş), hafta (bu hafta), ay (bu ay), 45gun (gecikenler hariç 45 gün)"),
     kaynak: z.enum(["hepsi", "fatura", "hatirlatici", "cari"]).default("hepsi").describe("hepsi, fatura, hatirlatici ya da cari (tedarikçiye faturasız borç)"),
     nakitPlani: z.boolean().default(false).describe("true: 6 haftalık nakit planının haftalık özeti de"),
+    sube: zSube,
   })
   .strict();
 
@@ -82,6 +98,7 @@ export const kasaRaporlariInput = z
   .object({
     baslangic: zGun.describe("İlk gün, YYYY-MM-DD"),
     bitis: zGun.describe("Son gün, YYYY-MM-DD (en çok 92 gün; bugünden sonra olamaz)"),
+    sube: zSube,
   })
   .strict();
 

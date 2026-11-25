@@ -1,5 +1,7 @@
 import "server-only";
 
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
+import { featureHere } from "@/server/branches";
 import { loadKontrolDigest } from "@/server/data/checklists";
 import { loadCommissionDigest } from "@/server/data/commission";
 import { loadApprovalsDigest } from "@/server/staff-requests/digest";
@@ -24,15 +26,23 @@ import { collectDigestExtras, type DigestExtrasResult, type DigestExtraSource } 
  */
 export const DIGEST_EXTRA_SOURCES: DigestExtraSource[] = [
   // Dünkü kontrol listeleri: eksik liste ve sorunlar, günde bir kez (kontrol:<gün>; docs/KONTROL-LISTELERI.md)
-  { key: "kontrol", news: true, load: () => loadKontrolDigest() },
-  // Komisyon ve hakediş: geciken hakediş, %6 aşımı, komisyon dışı ücret; her uyarı bir kez (komisyon:<uyarı>; docs/KOMISYON.md)
-  { key: "commission", news: true, load: (today, ctx) => loadCommissionDigest(today, ctx) },
+  { key: "kontrol", news: true, load: (_today, ctx) => loadKontrolDigest(undefined, ctx.scope) },
+  // Komisyon ve hakediş: geciken hakediş, %6 aşımı, komisyon dışı ücret; her uyarı bir kez (komisyon:<uyarı>; docs/KOMISYON.md).
+  // Şubeye bağlı alıcının şubesinde yemek kartı kullanılmıyorsa kutu yok (şube özelliği; docs/SUBE.md › Şube özellikleri)
+  {
+    key: "commission",
+    news: true,
+    load: async (today, ctx) => ((await featureHere("yemek_karti", ctx.scope ?? ALL_BRANCHES)) ? loadCommissionDigest(today, ctx) : null),
+  },
   // Onay bekleyenler: personel istekleri (başlık ve isteyenin adı, tutarsız) ve operasyonun bilgi satırları (Tükendi);
   // karar verilene kadar her sabah (docs/ONAYLAR.md)
-  { key: "approvals", news: true, load: () => loadApprovalsDigest() },
+  { key: "approvals", news: true, load: (_today, ctx) => loadApprovalsDigest(undefined, ctx.scope) },
 ];
 
-/** Ek kutuları aynı anda yükler (her biri en çok 4 sn); asla hata fırlatmaz. `preview`: yalnız okuyan önizleme */
-export function loadDigestExtras(today: string, o: { preview?: boolean } = {}): Promise<DigestExtrasResult> {
-  return collectDigestExtras(DIGEST_EXTRA_SOURCES, today, { preview: o.preview ?? false });
+/**
+ * Ek kutuları aynı anda yükler (her biri en çok 4 sn); asla hata fırlatmaz. `preview`: yalnız okuyan önizleme. `scope`:
+ * şubeye bağlı alıcının e-postası (kontrol listeleri ve onay bekleyenler yalnız o şubenin; şube kapsamı C P1-11)
+ */
+export function loadDigestExtras(today: string, o: { preview?: boolean; scope?: BranchScope } = {}): Promise<DigestExtrasResult> {
+  return collectDigestExtras(DIGEST_EXTRA_SOURCES, today, { preview: o.preview ?? false, scope: o.scope });
 }

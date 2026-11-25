@@ -303,9 +303,11 @@ Operatör: "elle karaoke eklediğimizde kişinin mailine 1 gün kalan mail hatı
   ÖNCE, kasada alın."; satırı kırmızı zeminli ve aynı cümleyi yineler. Sitede ödenen "Ödendi (sitede)" (yeşil). Tutar
   hiçbir yerde yazmaz (personel tutar görmez; ücret kasada).
 - **Ad:** konu ve ön izleme misafirin adını taşımaz (telefonun kilit ekranında görünür); ad ve not yalnız gövdede.
-- **Kime:** o gün [Vardiya planında](VARDIYA.md) Tuzla'da çalışan olarak yazılmış, hesabı etkin herkes (vardiyaya
-  yazılan yönetici dahil). O gün için plan yoksa (ya da plandakilerin hesabı yoksa) Tuzla'nın bütün etkin personeli ve
-  şubesi boş personel. Her kişiye kendi adresine ayrı e-posta.
+- **Kime:** o gün [Vardiya planında](VARDIYA.md) karaokenin şubesinde (karaoke özelliği açık şube, sahibin varsayılanı
+  Tuzla; [SUBE.md › Şube özellikleri](SUBE.md#şube-özellikleri-25-kasım-2026)) çalışan olarak yazılmış, hesabı etkin herkes
+  (vardiyaya yazılan yönetici dahil). O gün için plan yoksa (ya da plandakilerin hesabı yoksa) o şubenin bütün etkin
+  personeli ve şubesi boş personel. Karaoke hiçbir şubede açık değilse e-posta gitmez. Her kişiye kendi adresine ayrı
+  e-posta.
 - **Sabah listesi** 08:00–12:00 arasında gider; o saatlerde ilk rezervasyon eklenirse o an gider. Öğleden sonra eklenen
   ilk rezervasyon liste doğurmaz, yalnız "3 saat kala"sı gider.
 - **3 saat kala:** başlangıca 3 saatten az, 30 dakikadan çok kaldıysa (tetikleyici geç çalışırsa konu gerçek süreyi

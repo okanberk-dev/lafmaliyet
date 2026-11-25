@@ -72,7 +72,7 @@ async function context(now: Date) {
   return { ctx, items: snapshot.items, rows: prices.rows };
 }
 
-/** Seçilen şube: adresteki (?sube=) yazılabilen şubeyse o, değilse ilki */
+/** Seçilen şube: panelin seçimi (şube kapsamı C P2-5) yazılabilen şubeyse o, değilse ilki ("Tümü", Tuzla) */
 export function pickBranch(branches: readonly BranchTarget[], wanted: string | string[] | undefined): BranchTarget | null {
   return branches.find((b) => b.id === wanted) ?? branches[0] ?? null;
 }
@@ -202,4 +202,43 @@ export async function loadOldPriceReport(wanted: string | string[] | undefined, 
     from,
     hasListPrices: sales.some((x) => x.listPrices),
   };
+}
+
+/** Fiyatlar › Geçmiş'in şube fiyatı satırı (şube kapsamı C P2-8): sitedeki şube fiyatı kaydı, kalemin adıyla */
+export interface BranchPriceHistoryRow {
+  key: string;
+  branch: string;
+  name: string;
+  /** TL, KDV dahil (M ya da tek fiyat; null: şube bu boyu tabandan alır) */
+  price: number | null;
+  /** TL; 0 = tek boy ya da tabandan */
+  priceL: number;
+  effectiveFrom: string;
+  createdAt: string;
+}
+
+/**
+ * Şube fiyatlarının geçmişi (Fiyatlar › Geçmiş; şube kapsamı C P2-8): panelin ürün fiyatı geçmişi (product_prices) şube
+ * fiyatını taşımaz; sitenin şube fiyatı satırları burada, yeni önce, en çok `limit`. Seçili şube yazılabilen bir şubeyse
+ * yalnız onunkiler, değilse ("Tümü", Tuzla) bütün şubelerin. Bağlantı kurulmamışsa ya da satır yoksa boş
+ */
+export async function loadBranchPriceHistory(wanted: string, limit = 100, now: Date = new Date()): Promise<BranchPriceHistoryRow[]> {
+  const { ctx, items, rows } = await context(now);
+  if (!ctx.configured || !rows.length) return [];
+  const only = ctx.branches.some((b) => b.id === wanted) ? wanted : null;
+  const nameOf = new Map(items.map((i) => [i.id, i.name]));
+  const branchName = new Map((await listBranches()).map((b) => [b.id, b.name]));
+  return rows
+    .filter((r) => only === null || r.branch === only)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.effectiveFrom.localeCompare(a.effectiveFrom))
+    .slice(0, limit)
+    .map((r) => ({
+      key: `${r.branch}|${r.id}|${r.effectiveFrom}|${r.createdAt}`,
+      branch: branchName.get(r.branch) ?? r.branch,
+      name: nameOf.get(r.id) ?? r.id,
+      price: r.priceMinor === null ? null : fromMinor(r.priceMinor),
+      priceL: fromMinor(r.priceMinorL),
+      effectiveFrom: r.effectiveFrom,
+      createdAt: r.createdAt,
+    }));
 }

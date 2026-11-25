@@ -45,6 +45,7 @@ import { Notice, NoticeLink } from "@/components/ui/notice";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Segmented } from "@/components/ui/segmented";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
+import { BRANCH_REQUIRED } from "@/lib/branches";
 import { daysInMonth } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import {
@@ -106,6 +107,12 @@ import {
 import { ProductPicker, type ProductOption } from "./product-picker";
 
 export type { ProductOption } from "./product-picker";
+
+/** Yazımın seçilebilen şubesi (Satır ekle, İçe aktar) */
+export interface BranchOption {
+  id: string;
+  name: string;
+}
 
 export interface SalesRow {
   id: number;
@@ -211,6 +218,7 @@ const INFO_IDS: Record<MonthField, string> = { posRevenue: "m-pos", openDays: "m
 export function MonthInfoForm({
   month,
   label,
+  branchId,
   branchName = null,
   info,
   kasa = null,
@@ -224,6 +232,11 @@ export function MonthInfoForm({
 }: {
   month: string;
   label: string;
+  /**
+   * Formun gösterdiği ve yazdığı şube (sunucu doğrular, formBranch): kayıt gönderim anındaki seçime değil buna iner
+   * (seçim başka sekmede değişmiş olabilir)
+   */
+  branchId: string;
   /**
    * "Tümü" birden çok kasanın toplamıyken formun yazdığı şube (Tuzla): başlıkta adıyla, değerler o şubenin. Tek şube
    * seçiliyken ya da tek kasa açıkken null
@@ -326,7 +339,7 @@ export function MonthInfoForm({
     if (invalid) return toast.error(daysError ?? cardError ?? "Tutarları kontrol edin (ör. 429.698 ya da 11.997,50)");
     setBusy(true);
     keepScroll();
-    const res = await tryAction(() => saveMonthInfo({ month, ...payloads, note }));
+    const res = await tryAction(() => saveMonthInfo({ month, ...payloads, note, branchId }));
     setBusy(false);
     // Atılan eylem (E-51): bildirim çıktı, yazılanlar yerinde
     if (!res) return;
@@ -416,7 +429,7 @@ export function MonthInfoForm({
         title={branchName ? `${label} bilgileri · ${branchName}` : `${label} bilgileri`}
         description={
           branchName
-            ? `Tümü seçiliyken form ${genitive(branchName)} ay bilgisini gösterir ve yazar; öteki şube için soldan şubeyi seçin.`
+            ? `Tümü seçiliyken form ${genitive(branchName)} ay bilgisini gösterir ve yazar; öteki şube için şube seçiciden şubeyi seçin.`
             : "Patron > Raporlar > Ciro ekranından ya da kasa raporlarından. Gelir-gider tablosu bu ciroyu kullanır."
         }
       />
@@ -684,6 +697,7 @@ export function SalesTable({
   mappings,
   month,
   lafposMonth = false,
+  lineBranches,
   totals,
 }: {
   rows: SalesRow[];
@@ -693,6 +707,11 @@ export function SalesTable({
   month: string;
   /** Ayın tamamı LafPOS'tan (geçiş gününden sonra): elle ModPOS satırı eklenmez */
   lafposMonth?: boolean;
+  /**
+   * "Satır ekle"nin yazabileceği şubeler (docs/SUBE.md › Yazarken hangi şube): tek şubede o şube; "Tümü"de birden
+   * çoksa pencere şubeyi sorar (varsayılan yok). Boşsa satır eklenmez (online kanal; ayı LafPOS'tan gelen şube)
+   */
+  lineBranches: BranchOption[];
   totals: Totals;
 }) {
   const reduce = useCalmMotion();
@@ -726,6 +745,8 @@ export function SalesTable({
   /** Rapora yanlışlıkla girmiş toplam satırları ("TOPLAM 2.543 441.955"): ciroyu iki kez sayar (yalnız ModPOS listesi) */
   const summaryRows = rows.filter((r) => r.lafposDays === null && isSummaryRow(r.posName));
   const hasLafpos = rows.some((r) => r.lafposDays !== null);
+  // Elle satır yalnız ModPOS listesi tutan şubeye (ayı LafPOS'tan gelen şube lineBranches'ta yok)
+  const canAdd = lineBranches.length > 0;
 
   // Durum çiplerinin sayaçları aramaya göre (arama yazılıyken "kaç eşleşmeyen var" görünsün)
   const searched = rows.filter((r) => matches(`${r.posName} ${r.productLabel ?? ""} ${r.note ?? ""}`, q));
@@ -975,11 +996,11 @@ export function SalesTable({
               </Button>
             ) : null}
             {/* Asıl yol içe aktarma; elle satır ikincil eylem (LafPOS ayında yok: satırlar gün sonlarından) */}
-            {lafposMonth ? null : (
+            {canAdd ? (
               <Button size="sm" variant="secondary" onClick={() => setEditing({ posName: "", qty: 1, revenue: 0 })} className="pointer-coarse:h-11">
                 <Plus size={16} /> Satır ekle
               </Button>
-            )}
+            ) : null}
           </>
         }
       />
@@ -1381,11 +1402,17 @@ export function SalesTable({
         <EmptyState
           icon={<Upload />}
           title="Bu ay için satış raporu yok"
-          description="Patron > Raporlar > Satış ekranındaki ürün listesini yukarıdaki İçe aktar bölümüne dosya olarak bırakın ya da yapıştırın. Tek tek eklemek için “Satır ekle”."
+          description={
+            canAdd
+              ? "Patron > Raporlar > Satış ekranındaki ürün listesini yukarıdaki İçe aktar bölümüne dosya olarak bırakın ya da yapıştırın. Tek tek eklemek için “Satır ekle”."
+              : "Bu ayda bu seçimde ModPOS satırı yok."
+          }
           action={
-            <Button variant="secondary" onClick={() => setEditing({ posName: "", qty: 1, revenue: 0 })}>
-              <Plus size={16} /> Satır ekle
-            </Button>
+            canAdd ? (
+              <Button variant="secondary" onClick={() => setEditing({ posName: "", qty: 1, revenue: 0 })}>
+                <Plus size={16} /> Satır ekle
+              </Button>
+            ) : undefined
           }
         />
       )}
@@ -1401,7 +1428,7 @@ export function SalesTable({
           onPick={(v) => pick(picking, v)}
         />
       ) : null}
-      {editing ? <LineDialog line={editing} month={month} mappings={mappings} products={products} onClose={() => setEditing(null)} /> : null}
+      {editing ? <LineDialog line={editing} month={month} mappings={mappings} products={products} branches={lineBranches} onClose={() => setEditing(null)} /> : null}
       <Dialog
         open={bulkOpen}
         onClose={() => {
@@ -1466,14 +1493,19 @@ function LineDialog({
   month,
   mappings,
   products,
+  branches,
   onClose,
 }: {
   line: Partial<SalesRow>;
   month: string;
   mappings: MappingLite[];
   products: ProductOption[];
+  /** Yeni satırın şubesi: tekse o, birden çoksa pencere sorar (varsayılan yok); düzeltilen satır kendi şubesinde kalır */
+  branches: BranchOption[];
   onClose: () => void;
 }) {
+  const [branchId, setBranchId] = useState<string | null>(branches.length === 1 ? branches[0].id : null);
+  const askBranch = !line.id && branches.length > 1;
   const [posName, setPosName] = useState(line.posName ?? "");
   const index = useMemo(() => createPosMappingIndex(mappings), [mappings]);
   const [qty, setQty] = useState(num(line.qty ?? 1, 2));
@@ -1497,15 +1529,19 @@ function LineDialog({
     if (!posName.trim()) return toast.error("POS ürün adını girin");
     if (isTotal) return toast.error("Toplam satırı ürün satırı olarak eklenmez (ciro iki kez sayılır)");
     if (qtyNum === null || bad.revenue) return toast.error("Adet ve ciroyu kontrol edin");
+    if (!line.id && !branchId) return toast.error(BRANCH_REQUIRED);
     setBusy(true);
     keepScroll();
     // Yeni satırda yanıt yolda kaybolursa satır yazılmış olabilir: "Kaydedilemedi" denmez, yenileyip bakması söylenir
-    const res = await tryAction(() => saveLine({ id: line.id ?? null, month, posName, qty: qtyNum, revenue: revNum, note }), { maybeSaved: !line.id });
+    const res = await tryAction(() => saveLine({ id: line.id ?? null, month, posName, qty: qtyNum, revenue: revNum, note, branchId: line.id ? null : branchId }), {
+      maybeSaved: !line.id,
+    });
     setBusy(false);
     if (!res) return;
     if (!res.ok) return toast.error(res.error);
+    const where = askBranch ? ` · ${branches.find((b) => b.id === branchId)?.name ?? ""}` : "";
     toast.success(line.id ? "Satır güncellendi" : "Satır eklendi", {
-      description: `${posName.trim()} · ${num(qtyNum)} adet · ${tl(revNum, 2)}${res.data.linked && linkLabel ? ` · ${linkLabel} ile eşleşti` : ""}`,
+      description: `${posName.trim()} · ${num(qtyNum)} adet · ${tl(revNum, 2)}${where}${res.data.linked && linkLabel ? ` · ${linkLabel} ile eşleşti` : ""}`,
     });
     onClose();
   }
@@ -1529,6 +1565,19 @@ function LineDialog({
     >
       {/* Enter kaydeder, Esc kapatır; dokunmatikte alanlar 40px */}
       <form id="sales-line-form" onSubmit={submit} noValidate className={cn("space-y-4 pb-2", BIG_FIELDS)}>
+        {askBranch ? (
+          // "Tümü" seçili: satır hangi şubenin listesine yazılsın, varsayılan yok (sessizce Tuzla'ya inmez)
+          <Field label="Hangi şubenin listesi" htmlFor="l-branch" error={tried && !branchId ? "Şube seçin" : undefined}>
+            <Select id="l-branch" value={branchId ?? ""} onChange={(e) => setBranchId(e.target.value || null)} aria-invalid={(tried && !branchId) || undefined}>
+              {branchId ? null : <option value="">Şube seçin</option>}
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
         <Field
           label="POS ürün adı"
           htmlFor="l-name"
@@ -1679,11 +1728,26 @@ export function ImportCard({
   coveredThrough,
   listDays,
   lafpos = null,
+  branches,
+  scope,
+  clearCount,
   className,
 }: {
   month: string;
   /** Hedef ayın adı, ör. "Eylül 2026" (önizleme açıkken ay değiştirilirse hedef görünür kalsın) */
   label: string;
+  /**
+   * Listenin yüklenebileceği şubeler ve her birinin bu ayki ModPOS satırları ("Yenisiyle değiştir" yalnız o şubenin
+   * listesini değiştirir). Tek şubede o şube; "Tümü"de birden çoksa kart şubeyi sorar (varsayılan yok). Ayı LafPOS'tan
+   * gelen şube listede yok
+   */
+  branches: (BranchOption & { lines: number })[];
+  /**
+   * Sayfanın kapsamı (şube kimliği ya da "hepsi") ve o kapsamda silinecek satır sayısı: "Ayı temizle" ikisini gönderir,
+   * seçim başka sekmede değiştiyse ya da liste bu arada değiştiyse sunucu reddeder (clearMonthSales)
+   */
+  scope: string;
+  clearCount: number;
   /** Ayın ModPOS (Satışlar'a yüklenen) satırları; yükleme ve "Ayı temizle" yalnız bunlara dokunur */
   lineCount: number;
   /** Tablodaki LafPOS satırları (geçiş ayı): metinler iki kaynağı ayrı söyler, yükleme ve temizleme onlara dokunmaz */
@@ -1717,6 +1781,12 @@ export function ImportCard({
   const [parsed, setParsed] = useState<Parsed | null>(null);
   const [mode, setMode] = useState<"replace" | "append">("replace");
   const [busy, setBusy] = useState(false);
+  /** Listenin şubesi: tek seçenekte o, birden çoksa seçilene kadar boş */
+  const [branchPick, setBranchPick] = useState<string | null>(null);
+  // Ay değişince (kart yeniden kurulmaz) seçilen şube o ayın seçeneklerinde değilse yeniden sorulur
+  const branchId = branches.length === 1 ? branches[0].id : branches.some((b) => b.id === branchPick) ? branchPick : null;
+  const askBranch = branches.length > 1;
+  const target = branches.find((b) => b.id === branchId) ?? null;
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [withInfo, setWithInfo] = useState(false);
@@ -1794,13 +1864,15 @@ export function ImportCard({
     setParsed(null);
   }
 
-  const replaceAsk = hasLines ? replaceConfirm({ mode, lineCount, newCount: rows.length, label }) : null;
+  // "Yenisiyle değiştir" yalnız seçilen şubenin listesini değiştirir: onay onun satırlarını sayar
+  const targetLines = askBranch ? (target?.lines ?? 0) : lineCount;
+  const replaceAsk = targetLines > 0 ? replaceConfirm({ mode, lineCount: targetLines, newCount: rows.length, label: askBranch && target ? `${label} · ${target.name}` : label }) : null;
 
   async function submit() {
     setBusy(true);
     keepScroll();
     // Ekleme kipinde yanıt yolda kaybolursa satırlar yazılmış olabilir; ikinci "Yükle" hepsini iki kez ekler
-    const res = await tryAction(() => importSales({ month, lines: rows, mode, through: running ? through : null }), { maybeSaved: mode === "append" });
+    const res = await tryAction(() => importSales({ month, lines: rows, mode, through: running ? through : null, branchId }), { maybeSaved: mode === "append" });
     setBusy(false);
     setConfirmingReplace(false);
     // Atılan eylem (E-51): düğme bırakılır, yapıştırılan liste yerinde kalır
@@ -1810,7 +1882,7 @@ export function ImportCard({
     // Geçiş ayı: liste toplamı listenin günlerinin Z toplamını aşıyor (sonraki günleri de içeriyor olabilir)
     if (d.warning) toast.warning("Liste kasa raporlarından büyük", { description: d.warning, duration: 15_000 });
     const left = d.count - d.matched;
-    toast.success(`${num(d.count)} satır ${label} ayına yüklendi`, {
+    toast.success(`${num(d.count)} satır ${label} ayına yüklendi${askBranch && target ? ` (${target.name})` : ""}`, {
       description: [
         `${num(d.matched)} tanesi hafızadan eşleşti${left ? `, ${num(left)} satırı aşağıdan eşleştirin` : ""}.`,
         d.replaced ? `Önceki ${num(d.replaced)} satır değiştirildi.` : null,
@@ -1827,7 +1899,7 @@ export function ImportCard({
   async function clearMonth() {
     setClearing(true);
     keepScroll();
-    const res = await tryAction(() => clearMonthSales(month, { withInfo }));
+    const res = await tryAction(() => clearMonthSales(month, { withInfo, scope, count: clearCount }));
     setClearing(false);
     if (!res) return;
     setConfirmClear(false);
@@ -2079,11 +2151,24 @@ export function ImportCard({
                 </tbody>
               </Table>
             </div>
+            {askBranch ? (
+              // "Tümü" seçili ve birden çok kasa açık: liste hangi şubenin, varsayılan yok (sessizce Tuzla'ya inmez)
+              <Field label="Hangi şubenin listesi" htmlFor="sales-branch" hint="Liste ve “Yenisiyle değiştir” yalnız bu şubenin satırlarına dokunur.">
+                <Select id="sales-branch" value={branchId ?? ""} onChange={(e) => setBranchPick(e.target.value || null)} aria-invalid={!branchId || undefined}>
+                  {branchId ? null : <option value="">Şube seçin</option>}
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            ) : null}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-              {hasLines ? (
+              {targetLines > 0 ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[13px] text-ink-mute">
-                    Bu aydaki {num(lineCount)} {lafposLines ? "ModPOS satırı (LafPOS'unkiler kalır)" : "satır"}:
+                    {askBranch && target ? `${target.name} şubesinin bu aydaki` : "Bu aydaki"} {num(targetLines)} {lafposLines ? "ModPOS satırı (LafPOS'unkiler kalır)" : "satır"}:
                   </span>
                   <Segmented
                     label="Mevcut satırlar"
@@ -2097,9 +2182,13 @@ export function ImportCard({
                 </div>
               ) : (
                 <span className="text-[13px] text-ink-mute">
-                  {lafposLines
-                    ? `Bu ayda ModPOS listesi yok; satırlar doğrudan yüklenir (LafPOS'un ${num(lafposLines)} satırına dokunulmaz).`
-                    : "Bu ay boş; satırlar doğrudan yüklenir."}
+                  {askBranch && !target
+                    ? "Önce şubeyi seçin."
+                    : askBranch && target
+                      ? `${target.name} şubesinin bu ay listesi yok; satırlar doğrudan yüklenir.`
+                      : lafposLines
+                        ? `Bu ayda ModPOS listesi yok; satırlar doğrudan yüklenir (LafPOS'un ${num(lafposLines)} satırına dokunulmaz).`
+                        : "Bu ay boş; satırlar doğrudan yüklenir."}
                 </span>
               )}
               {running ? (
@@ -2132,7 +2221,7 @@ export function ImportCard({
               ) : null}
               <Button
                 onClick={() => (replaceAsk ? setConfirmingReplace(true) : void submit())}
-                disabled={busy || !rows.length || throughBad}
+                disabled={busy || !rows.length || throughBad || !branchId}
                 className="max-sm:min-h-12 max-sm:w-full"
               >
                 {busy ? "Yükleniyor…" : `${num(rows.length)} satırı yükle`}
@@ -2166,18 +2255,20 @@ export function ImportCard({
             <Button variant="ghost" onClick={() => setConfirmClear(false)} disabled={clearing} data-autofocus>
               Vazgeç
             </Button>
-            <Button variant="danger" onClick={clearMonth} disabled={clearing || (!hasLines && !withInfo)}>
-              {clearing ? "Siliniyor…" : hasLines ? `${num(lineCount)} satırı${withInfo ? " ve bilgileri" : ""} sil` : "Ay bilgilerini sil"}
+            <Button variant="danger" onClick={clearMonth} disabled={clearing || (!clearCount && !withInfo)}>
+              {clearing ? "Siliniyor…" : clearCount ? `${num(clearCount)} satırı${withInfo ? " ve bilgileri" : ""} sil` : "Ay bilgilerini sil"}
             </Button>
           </>
         }
       >
         <div className="space-y-3 pb-2 text-sm text-ink-mute">
           <p>
-            {hasLines ? (
+            {/* Sayı sunucunun sileceği ve denetlediği satırlar (clearCount: kapsamdaki bütün liste satırları, sayılmayan
+                eski ModPOS listesi dahil); LafPOS'un satırları ayrı tabloda, silinmez */}
+            {clearCount ? (
               <>
                 <span className="font-medium text-ink">
-                  {num(lineCount)} {lafpos ? "ModPOS" : "satış"} satırı silinecek.
+                  {num(clearCount)} {lafpos ? "ModPOS" : "satış"} satırı silinecek.
                 </span>{" "}
                 Eşleştirme hafızası ve Gelir-gider girişleri silinmez{lafpos ? "; LafPOS'tan gelen satırlar kalır" : ""}.
               </>

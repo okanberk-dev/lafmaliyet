@@ -402,7 +402,7 @@ export async function lateCards(now = new Date()): Promise<(LateCard & { branchI
 }
 
 /** Yöneticinin zilinde bekleyen geç raporlar: istek başına satır ("Geç kasa raporu onay bekliyor") */
-export async function lateBellRows(): Promise<{ id: number; bumpedAt: Date; createdAt: Date; title: string; body: string }[]> {
+export async function lateBellRows(): Promise<{ id: number; bumpedAt: Date; createdAt: Date; title: string; body: string; branchId: string }[]> {
   const rows = await getDb()
     .select({ id: r.id, day: r.day, payload: r.payload, requestedByName: r.requestedByName, bumpedAt: r.bumpedAt, createdAt: r.createdAt })
     .from(r)
@@ -411,6 +411,6 @@ export async function lateBellRows(): Promise<{ id: number; bumpedAt: Date; crea
   return rows.flatMap((x) => {
     const p = LatePayload.safeParse(x.payload);
     if (!x.day || !p.success) return [];
-    return [{ id: x.id, bumpedAt: x.bumpedAt, createdAt: x.createdAt, ...lateBell({ date: x.day, by: x.requestedByName, zTotal: p.data.zTotal, cashDiff: p.data.cashDiff }) }];
+    return [{ id: x.id, bumpedAt: x.bumpedAt, createdAt: x.createdAt, branchId: lateBranchOf(p.data), ...lateBell({ date: x.day, by: x.requestedByName, zTotal: p.data.zTotal, cashDiff: p.data.cashDiff }) }];
   });
 }

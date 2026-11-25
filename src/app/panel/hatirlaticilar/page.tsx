@@ -5,9 +5,10 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
+import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
 import { currentMonthTR, shiftMonth } from "@/lib/calc/engine";
 import { fixedReminderDrifts, reminderDriftText } from "@/lib/cash-plan";
-import { emailKey } from "@/lib/notify-recipients";
+import { branchesClosed, emailKey } from "@/lib/notify-recipients";
 import { liveRecentPaid } from "@/lib/recent-paid";
 import { fixedReminderAt } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
@@ -53,7 +54,8 @@ async function RemindersContent() {
     db.select().from(s.notificationRecipients).orderBy(asc(s.notificationRecipients.createdAt)),
     recentNotifications(10),
     // Bitiş ayına göre (saklı `active` bayatlayabilir; E-62): biten kalem "Sabit giderlerden ekle"de önerilmez
-    loadFixedForReminders(db, currentMonthTR(now)),
+    // Şube seçiliyken adaylar o şubenin ve işletme genelinin kalemleri (şube kapsamı C P1-3)
+    loadFixedForReminders(db, currentMonthTR(now), scope.scope),
     // Kaynak etiketi için ("Paraşüt faturası"): yalnız ödenmemiş faturaların kimliği ve kaynağı
     db.select({ id: s.invoices.id, source: s.invoices.source }).from(s.invoices).where(eq(s.invoices.unpaid, true)),
     loadRecentPaid(),
@@ -83,7 +85,9 @@ async function RemindersContent() {
   const versions = fixedData.versions;
   const fixed = fixedData.candidates.map((f) => {
     const own = versions.filter((v) => v.fixedExpenseId === f.id).map((v) => ({ fromMonth: v.fromMonth, period: v.period, amount: v.amount }));
-    return { id: f.id, name: f.name, amount: f.amount, basePeriod: f.period, period: fixedReminderAt(f, own, firstMonth).period, section: f.section, vatRate: f.vatRate, withholdingRate: f.withholdingRate, versions: own, endMonth: f.endMonth };
+    // "Tümü"de birden çok kasa açıkken kalemin şubesi adıyla ("Marina", "İşletme geneli"); hatırlatıcı kalemin şubesini alır
+    const branchName = scope.scope === ALL_BRANCHES && tillBranches(allBranches).length > 1 ? (f.branchId ? (allBranches.find((b) => b.id === f.branchId)?.name ?? f.branchId) : "İşletme geneli") : null;
+    return { id: f.id, name: f.name, amount: f.amount, basePeriod: f.period, period: fixedReminderAt(f, own, firstMonth).period, section: f.section, vatRate: f.vatRate, withholdingRate: f.withholdingRate, versions: own, endMonth: f.endMonth, branchName };
   });
 
   return (
@@ -98,7 +102,7 @@ async function RemindersContent() {
       laterInvoices={laterInvoices}
       covered={covered}
       reminders={reminders.map((r) => ({ ...r, lastDoneAt: r.lastDoneAt?.toISOString() ?? null, createdAt: r.createdAt.toISOString() }))}
-      recipients={recipients.map((r) => ({ id: r.id, email: r.email, name: r.name, active: r.active, blocked: blocked.get(emailKey(r.email)) ?? null }))}
+      recipients={recipients.map((r) => ({ id: r.id, email: r.email, name: r.name, active: r.active, blocked: blocked.get(emailKey(r.email)) ?? null, branchIds: r.branchIds, branchClosed: branchesClosed(r.branchIds, tillBranches(allBranches)) }))}
       log={log.map((l) => ({ id: l.id, key: l.key, subject: l.subject, recipients: l.recipients, ok: l.ok, error: l.error, sentAt: l.sentAt.toISOString() }))}
       fixedExpenses={fixed}
       // Sabit gidere bağlı tutarlı hatırlatıcının tutarı Giderler'deki sürümden farklı (E-46): nakit planı eski tutarı öderdi

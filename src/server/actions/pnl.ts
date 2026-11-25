@@ -4,12 +4,12 @@ import { and, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { ALL_BRANCHES, companyPnlKey, MONTH_TOTALS_LOCKED_TEXT, monthTotalsLocked } from "@/lib/branches";
+import { ALL_BRANCHES, companyPnlKey, monthWriteLock, zFormBranch } from "@/lib/branches";
 import { daysInMonth } from "@/lib/calc/engine";
 import { fixedCellRefusal, fixedIdOfKey } from "@/lib/fixed-expense-rules";
 import { monthLabel, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
-import { currentBranchScope, currentWriteBranch } from "@/server/branch-scope";
+import { currentBranchScope, formBranch } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 
@@ -37,7 +37,7 @@ export async function setPnlCell(month: string, rowKey: string, amount: number |
     const key = zKey.parse(rowKey);
     // Devir, personel ve POS komisyonu işletmenin toplamıdır (pnl_entries şubesiz): şube seçiliyken yazılan tutar
     // "Tümü"ye girerdi, şubede görünmezdi (docs/SUBE.md › Şube görünümünde maliyet)
-    if (companyPnlKey(key) && (await currentBranchScope()) !== ALL_BRANCHES) throw new UserError("Bu satır işletmenin toplamıdır: yazmak için soldan şubeyi Tümü yapın");
+    if (companyPnlKey(key) && (await currentBranchScope()) !== ALL_BRANCHES) throw new UserError("Bu satır işletmenin toplamıdır: yazmak için şube seçiciden Tümü'yü seçin");
     const n = note === undefined ? undefined : zNote.parse(note);
     const db = getDb();
     const fixedId = fixedIdOfKey(key);
@@ -76,15 +76,31 @@ export async function setPnlCell(month: string, rowKey: string, amount: number |
 }
 
 /**
- * Ayın notu (ör. "1-16 Ekim, ay bitince güncelleyin"); Satışlar ve Gelir-gider sayfası aynı alanı kullanır. Ay satırı
- * şube başınadır (anahtar ay + şube): not seçili şubenin satırına yazılır, "Tümü"nde Tuzla'nınkine (Satışlar'daki
- * saveMonthInfo ile aynı kural, docs/SUBE.md › Yazarken hangi şube). Şubesiz yazılsaydı sütunun varsayılanı Tuzla'yı
- * ezerdi (denetim 21 Kasım #6)
+ * Gelir-gider'in ay hücresinin şubesi (ciro, açık gün, ay notu; docs/SUBE.md › Yazarken hangi şube): formun gösterdiği
+ * şube (`branchId`; sayfa `monthWriteBranch` ile verir), gönderim anındaki seçime değil. Şubeyi göndermeyen eski sekmede
+ * seçim: "Tümü"de birden çok kasa açıkken şubelerin toplamıdır, yazılmaz (monthTotalsLocked; denetim 13 Kasım HM-02);
+ * online kanalın kasa satışı yok (formBranch "sales" reddeder)
  */
-export async function setMonthNote(month: string, note: string | null) {
+async function monthCellBranch(raw: unknown): Promise<string> {
+  const branchId = zFormBranch.parse(raw);
+  if (!branchId) {
+    const lock = monthWriteLock(await currentBranchScope(), await listBranches());
+    if (lock) throw new UserError(lock);
+  }
+  return formBranch(branchId, "sales", { requireExplicit: true });
+}
+
+/**
+ * Ayın notu (ör. "1-16 Ekim, ay bitince güncelleyin"); Satışlar ve Gelir-gider sayfası aynı alanı kullanır. Ay satırı
+ * şube başınadır (anahtar ay + şube): not formun şubesinin satırına yazılır (monthCellBranch; Satışlar'daki saveMonthInfo
+ * ile aynı kural). Şubesiz yazılsaydı sütunun varsayılanı Tuzla'yı ezerdi (denetim 21 Kasım #6); "Tümü"nde sessizce
+ * Tuzla'ya inmesi de kalktı (24 Kasım şube kapsamı)
+ */
+export async function setMonthNote(month: string, note: string | null, branchId?: string | null) {
   return attempt(async () => {
     const me = await requireAdmin();
     const m = zMonth.parse(month);
+    const sube = await monthCellBranch(branchId);
     const n = z
       .string()
       .trim()
@@ -94,31 +110,32 @@ export async function setMonthNote(month: string, note: string | null) {
       .parse(note);
     await getDb()
       .insert(s.months)
-      .values({ month: m, branchId: await currentWriteBranch(), note: n })
+      .values({ month: m, branchId: sube, note: n })
       .onConflictDoUpdate({ target: [s.months.month, s.months.branchId], set: { note: n, updatedAt: new Date() } });
-    await logActivity(me, "Ay notu", `${monthLabel(m)}: ${n ?? "silindi"}`);
+    await logActivity(me, "Ay notu", `${monthLabel(m)} · ${await branchName(sube)}: ${n ?? "silindi"}`);
     refresh();
     return null;
   });
 }
 
 /**
- * Ayın cirosu (KDV dahil) ya da açık gün sayısı; boş (null): kasa raporlarından (varsa). Seçili şubenin ay satırına,
- * "Tümü"nde (yalnız tek kasa açıkken) Tuzla'nınkine yazılır (setMonthNote gibi; okuma da şubenin satırını okur,
- * dataset.ts). Birden çok kasa açıkken "Tümü" şubelerin toplamıdır, yazılmaz (monthTotalsLocked; denetim 13 Kasım HM-02)
+ * Ayın cirosu (KDV dahil) ya da açık gün sayısı; boş (null): kasa raporlarından (varsa). Formun şubesinin ay satırına
+ * yazılır (monthCellBranch; setMonthNote gibi; okuma da şubenin satırını okur, dataset.ts). Birden çok kasa açıkken
+ * "Tümü" şubelerin toplamıdır, yazılmaz (monthTotalsLocked; denetim 13 Kasım HM-02): yazılan (ya da "kasaya dön") yalnız
+ * Tuzla'nın ay satırına inerdi, öteki şubenin cirosu iki kez sayılırdı. Ekran hücreyi kilitler
  */
-export async function setMonthField(month: string, field: "posRevenue" | "openDays", value: number | null) {
+export async function setMonthField(month: string, field: "posRevenue" | "openDays", value: number | null, branchId?: string | null) {
   return attempt(async () => {
     const me = await requireAdmin();
     const m = zMonth.parse(month);
-    // "Tümü" birden çok şubenin toplamını gösterir: yazılan (ya da "kasaya dön") yalnız Tuzla'nın ay satırına inerdi,
-    // öteki şubenin cirosu iki kez sayılırdı. Ekran hücreyi kilitler; Satışlar'ın formu "Tümü"de Tuzla'yı adıyla yazar
-    if (monthTotalsLocked(await currentBranchScope(), await listBranches())) throw new UserError(MONTH_TOTALS_LOCKED_TEXT);
+    // Alan adı istemciden gelir: tür yalnız derlemede denetlenir, burada da doğrulanır (başka sütuna yazılamaz)
+    const openDays = z.enum(["posRevenue", "openDays"]).parse(field) === "openDays";
+    const sube = await monthCellBranch(branchId);
     const dim = daysInMonth(m);
     const v =
       value === null
         ? null
-        : field === "openDays"
+        : openDays
           ? z
               .number()
               .int()
@@ -126,12 +143,18 @@ export async function setMonthField(month: string, field: "posRevenue" | "openDa
               .max(dim, `En fazla ${dim} gün (${monthLabel(m)} ${dim} gün çeker)`)
               .parse(Math.round(value))
           : z.number().finite().min(0).parse(value);
+    const cell = openDays ? { openDays: v } : { posRevenue: v };
     await getDb()
       .insert(s.months)
-      .values({ month: m, branchId: await currentWriteBranch(), [field]: v })
-      .onConflictDoUpdate({ target: [s.months.month, s.months.branchId], set: { [field]: v, updatedAt: new Date() } });
-    await logActivity(me, field === "openDays" ? "Açık gün" : "Aylık ciro", `${monthLabel(m)}: ${v === null ? "boş (kasa raporu varsa oradan)" : field === "openDays" ? `${v} gün` : tl(v)}`);
+      .values({ month: m, branchId: sube, ...cell })
+      .onConflictDoUpdate({ target: [s.months.month, s.months.branchId], set: { ...cell, updatedAt: new Date() } });
+    await logActivity(me, openDays ? "Açık gün" : "Aylık ciro", `${monthLabel(m)} · ${await branchName(sube)}: ${v === null ? "boş (kasa raporu varsa oradan)" : openDays ? `${v} gün` : tl(v)}`);
     refresh();
     return null;
   });
+}
+
+/** İşlem geçmişinde şubenin adı */
+async function branchName(id: string): Promise<string> {
+  return (await listBranches()).find((b) => b.id === id)?.name ?? id;
 }

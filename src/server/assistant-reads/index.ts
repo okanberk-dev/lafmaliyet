@@ -4,6 +4,7 @@ import { cafeLines, dayTasks, daySummary, splitTasks, type DayTask } from "@/app
 import { soldOutLine } from "@/app/panel/bugun/rows-ops";
 import { todayShiftText, VARDIYA_PATH } from "@/lib/vardiya";
 import { dueGroup } from "@/lib/user-reminders";
+import { combineTillPos } from "@/lib/prices/pos";
 import { productLabel } from "@/lib/waste";
 import type { DayIkramRead, ReadToolDeps, TaskRead } from "@/server/ai/assistant/read-tools";
 import { loadPanelNotifications } from "@/server/actions/notifications";
@@ -14,7 +15,7 @@ import { dailyBranchSalesFrom } from "@/server/data/daily-sales";
 import { loadDayLafposIkram } from "@/server/data/lafpos-ikram";
 import { loadLafposDayEnd, loadLafposZTotals } from "@/server/data/lafpos-day-end";
 import { loadSoldOut } from "@/server/data/menu-status";
-import { posPendingSummary } from "@/server/data/prices";
+import { posPendingSummaries } from "@/server/data/prices";
 import { loadStockEstimate } from "@/server/data/stock-estimate";
 import { loadToday } from "@/server/data/today";
 import { safe } from "@/server/data/today-safe";
@@ -68,11 +69,13 @@ export const assistantReads: ReadToolDeps = {
   },
   lafposCard: () => loadLafposCard(),
   menu: async () => {
-    const [soldOut, pos] = await Promise.all([loadSoldOut(), posPendingSummary()]);
+    // Seçimin kasaları (şube kapsamı A3): tek şubede onunki, "Tümü"de birden çok kasa açıkken toplam ve kasa başına
+    const [soldOut, tills] = await Promise.all([loadSoldOut(), posPendingSummaries()]);
+    const pos = combineTillPos(tills);
     return {
       configured: soldOut.configured,
       entries: soldOut.entries.map((e) => ({ name: e.name, category: e.category, sizes: e.sizes, state: e.state, marker: e.marker })),
-      pos: { count: pos.count, oldest: pos.oldest ? pos.oldest.toISOString() : null, kasa: pos.kasa },
+      pos: { count: pos.count, oldest: pos.oldest ? pos.oldest.toISOString() : null, kasa: pos.kasa, byBranch: pos.byBranch },
     };
   },
   shiftsOn: async (date, branchId) => (await shiftsOn(getDb(), branchId, date)).map((x) => ({ name: x.name, startMin: x.startMin, endMin: x.endMin })),

@@ -662,7 +662,7 @@ test("kaynak: tek kasanın gününe bakan okuyucular geçiş gününü kasanın 
   assert.match(read("src/server/waste/core.ts"), /const switchDay = branchSwitchDay\(await lafposSwitchDayOf\(tx\), branchId\);/);
   assert.match(read("src/server/waste/core.ts"), /eq\(s\.posDayReports\.date, data\.date\), eq\(s\.posDayReports\.branchId, branchId\)/);
   assert.match(read("src/server/data/lafpos-ikram.ts"), /const switchDay = branchSwitchDay\(await lafposSwitchDayOf\(db\), sube\);/);
-  assert.match(read("src/server/data/till-scope.ts"), /return tillScope\(businessDate\(now\), branchSwitchDay\(switchDay, sube\)\);/);
+  assert.match(read("src/server/data/till-scope.ts"), /\.\.\.tillScope\(businessDate\(now\), branchSwitchDay\(switchDay, branchId\)\)/);
   assert.match(read("src/server/data/cash-reports.ts"), /isLafposDay\(sh\.day, branchSwitchDay\(fallback\.switchDay, sh\.branchId\)\)/);
   assert.match(read("src/server/photo-read/read.ts"), /const switchDay = branchSwitchDay\(d, b\);/);
   assert.match(read("src/server/data/today.ts"), /\.then\(\(\[d, b\]\) => branchSwitchDay\(d, b\)\)/);

@@ -4,7 +4,9 @@ import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { Skeleton } from "@/components/ui/misc";
-import { dateTimeTR } from "@/lib/format";
+import { Notice } from "@/components/ui/notice";
+import { tillBranches } from "@/lib/branches";
+import { dateTimeTR, num } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { appUrl, isPendingInvite, MAX_TOKEN_ATTEMPTS } from "@/server/auth/tokens";
 import { listBranches } from "@/server/branches";
@@ -78,8 +80,22 @@ async function UsersContent() {
   const branches = all.filter((b) => b.kind === "fiziksel" && (b.active || branchIds.has(b.id))).map((b) => ({ id: b.id, name: b.name }));
   const live = new Map(links.map((l) => [l.userId, { kind: l.kind, until: dateTimeTR(l.until) }]));
   const deviceLocked = new Set(deviceLocks.map((l) => l.userId));
+  // Birden çok kasa açıkken şubesi seçilmemiş etkin personel (şube kapsamı C P2-10): bütün şubeleri görür, kasa ve sayım
+  // formu "Tümü"de şubeyi sorar, akşam zili her kasa için ayrı satır verir
+  const unbound = tillBranches(all).length > 1 ? rows.filter((u) => u.role === "staff" && u.active && !u.branchId) : [];
   return (
     <div className="space-y-4">
+      {unbound.length ? (
+        <Notice
+          tone="neutral"
+          size="sm"
+          title={`${num(unbound.length)} personelin şubesi seçilmemiş: ${unbound
+            .slice(0, 3)
+            .map((u) => u.name)
+            .join(", ")}${unbound.length > 3 ? " …" : ""}`}
+          text="Bütün şubeleri görür, kasa ve sayımda şubeyi her seferinde seçer. Tek şubedeyse satırından şubesini seçin."
+        />
+      ) : null}
       <UsersEditor
         meId={me.id}
         emailConfigured={isEmailConfigured()}

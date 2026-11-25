@@ -8,7 +8,7 @@ import { staffDeleteBlockers } from "@/server/actions/costs";
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { staffWarnings } from "@/lib/calc/personnel";
 import { requireAdmin } from "@/server/auth/dal";
-import { currentPhysicalBranch } from "@/server/branch-scope";
+import { currentBranchScope, currentPhysicalBranch } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
 import { loadStaffLinkOptions } from "@/server/data/staff-links";
@@ -53,7 +53,8 @@ export default function StaffPage() {
 
 async function StaffContent() {
   await requireAdmin();
-  // Şube seçiliyken o şubenin personeli (docs/SUBE.md); yeni kişi seçili şubeye ("Tümü"de Tuzla) eklenir
+  // Şube seçiliyken o şubenin personeli (docs/SUBE.md); yeni kişi seçili şubeye eklenir. "Tümü"de birden çok şube açıkken
+  // şube boş başlar, form sorar (şube kapsamı C P2-12; önceden sessizce Tuzla)
   const [model, all, here, links] = await Promise.all([
     loadModel(),
     listBranches(),
@@ -65,7 +66,9 @@ async function StaffContent() {
     }),
   ]);
   const physical = all.filter((b) => b.active && b.kind === "fiziksel");
-  const branches: StaffBranches = { options: physical.map((b) => ({ id: b.id, name: b.name })), fallback: here.id };
+  const scope = await currentBranchScope();
+  const fallback = physical.some((b) => b.id === scope) ? scope : physical.length > 1 ? "" : here.id;
+  const branches: StaffBranches = { options: physical.map((b) => ({ id: b.id, name: b.name })), fallback };
   const nameOf = new Map(all.map((b) => [b.id, b.name]));
   const st = model.settings;
   const cur = model.currentMonth;

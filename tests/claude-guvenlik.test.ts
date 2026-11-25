@@ -59,7 +59,8 @@ test("araçlar yalnız izinli okuyucuları çağırır; hiçbiri yazmaz, eşitle
   const src = read("src/server/mcp/tools.ts");
   const ALLOWED: Record<string, string[]> = {
     // Şube kütüğü ve isteğin şube seçimi (kasa raporlarını şube şube okumak için; salt okunur)
-    "@/server/branch-scope": ["currentBranchScope", "withBranchScope"],
+    // Şubesine kilitli hesap `sube` ile başka şubeyi isteyemez (şube kapsamı C P2-13)
+    "@/server/branch-scope": ["currentBranchScope", "staffBranchLock", "withBranchScope"],
     "@/server/branches": ["listBranches"],
     "@/server/data/cash-plan": ["loadCashPlan"],
     "@/server/data/cash-reports": ["cashReportsBetween", "firstCashReportDate", "previousCarryOver", "previousCarryOverByBranch"],

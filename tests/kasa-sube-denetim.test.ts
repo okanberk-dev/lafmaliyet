@@ -111,10 +111,12 @@ test("#12 formTillError: formun kasası etkin fiziksel şube; kilitli personel y
 test("#12 formTillBranch: kimlik yoksa seçili kasa, varsa doğrulanır (kilit dahil)", () => {
   const scope = read("src/server/branch-scope.ts");
   const fn = scope.slice(scope.indexOf("export async function formTillBranch"));
-  assert.match(fn, /if \(!raw\) return currentTillBranch\(\);/);
-  assert.match(fn, /staffBranchLock\(\)/);
-  assert.match(fn, /formTillError\(raw, branches, lock\)/);
-  assert.match(fn, /throw new UserError\(error\)/);
+  // Ortak kapı (formBranch; kural tablosu tests/form-sube.test.ts): kimlik yoksa seçili fiziksel şube
+  assert.match(fn, /return formBranch\(raw, "till"\);/);
+  const gate = scope.slice(scope.indexOf("export async function formBranch(raw: string | null | undefined, kind: FormBranchKind"));
+  assert.match(gate, /staffBranchLock\(\)/);
+  assert.match(gate, /pickFormBranch\(\{ raw, kind, scope, known, lock/);
+  assert.match(gate, /throw new UserError\(picked\.error\)/);
 });
 
 test("#12 yazımlar formun kasasının kapsamında: rapor, istekler, geç rapor ve kasadan çıkan", () => {
@@ -147,4 +149,12 @@ test("#12 sayfa formlara kasayı koyar, formlar gönderir; form anahtarı kasay�
   const dialog = read("src/app/panel/kasa/cash-out-dialog.tsx");
   assert.match(dialog, /saveCashOut\(\{[\s\S]*?photoId,\n\s*branchId,\n\s*\}\)/);
   assert.match(dialog, /requestCashOutChange\(\{ op: line \? "duzelt" : "ekle"[^}]*branchId,/);
+});
+
+test("WhatsApp metni formun kasasının raporundan (24 Kasım şube kapsamı, plan A1.5): gönderim anındaki seçim değil", () => {
+  const src = read("src/server/actions/cash-report.ts");
+  const fn = src.slice(src.indexOf("export async function cashReportWhatsapp("));
+  assert.match(fn, /export async function cashReportWhatsapp\(date: string, branchId\?: string \| null\)/);
+  assert.match(fn, /const till = await formTillBranch\(zFormBranch\.parse\(branchId\)\);\s*const r = await getCashReport\(d, "staff", till\);/);
+  assert.doesNotMatch(fn.slice(0, fn.indexOf("\n}\n")), /getCashReport\(d\)/, "şubesiz okuma kalmadı");
 });

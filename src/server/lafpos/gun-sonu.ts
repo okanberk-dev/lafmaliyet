@@ -37,7 +37,7 @@ import { loadCashSettings } from "@/server/data/cash-reports";
 import { schema as s, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { APP_URL } from "@/server/notify/digest-template";
-import { activeDigestEmails, sendableRecipients } from "@/server/notify/recipients";
+import { activeDigestRecipients, sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail, type SendOptions } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
 import { strongRecheckDayPhotos, type StrongRecheckDeps } from "@/server/photo-read/lafpos";
@@ -395,19 +395,22 @@ async function dayTotal(db: DB, date: string, branchId: string, switchDay: strin
 }
 
 /**
- * Gün sonu e-postasının alıcıları: Kasa › Rapor alıcıları (açıksa), Tuzla'nın kasa e-postasıyla aynı (src/server/cash/
- * report-email.ts). Sabah e-postasının adresleri girmez: yalnız sabah e-postasını alan adres (ör. muhasebeci) iki şubenin
- * kasa sonucunu da ya alır ya almaz. Personel ve pasif hesabın adresi düşer.
+ * Gün sonu e-postasının alıcıları: gün sonunun şubesinin kasa raporu alıcıları (açıksa; şube başına ayar, "aynı"ysa
+ * bağlandığı şubeninki), kasa e-postasıyla aynı (src/server/cash/report-email.ts). Sabah e-postasının adresleri girmez:
+ * yalnız sabah e-postasını alan adres (ör. muhasebeci) şubelerin kasa sonucunu da ya alır ya almaz. Personel ve pasif
+ * hesabın adresi düşer.
  *
- * Rapor alıcıları boş ya da kapalıysa (bu dal yayına girmeden önce Marina'nın e-postası sabah adreslerine de gidiyordu)
- * e-posta susmasın diye etkin bildirim adreslerine gider; alıcı listesi kurulunca yalnız ona döner.
+ * Rapor alıcıları boş ya da kapalıysa e-posta susmasın diye o şubeye açık etkin bildirim adreslerine gider (bütün
+ * şubeler ya da bu şube seçili olanlar; "Yalnız Tuzla" adresi Marina'nın gün sonunu almaz); alıcı listesi kurulunca
+ * yalnız ona döner.
  */
-export async function dayEndRecipients(db: DB): Promise<string[]> {
-  const [cash, notify] = await Promise.all([loadCashSettings(), loadNotifySettings()]);
+export async function dayEndRecipients(db: DB, branchId: string): Promise<string[]> {
+  const [cash, notify] = await Promise.all([loadCashSettings(branchId, db), loadNotifySettings()]);
   const own = cash.emailEnabled ? (await sendableRecipients(db, dedupe(cash.recipients))).to : [];
   if (own.length) return own;
   if (!notify.emailEnabled) return [];
-  return (await sendableRecipients(db, dedupe(await activeDigestEmails(db)))).to;
+  const digest = (await activeDigestRecipients(db)).filter((r) => !r.branchIds.length || r.branchIds.includes(branchId)).map((r) => r.email);
+  return (await sendableRecipients(db, dedupe(digest))).to;
 }
 
 function dedupe(list: string[]): string[] {
@@ -435,7 +438,7 @@ const staffMailKey = (branchId: string, date: string, kind: StaffMailKind) => `l
 export async function sendStaffDayEnd(db: DB, date: string, now = new Date(), opts?: SendOptions & { retryOnly?: boolean }): Promise<StaffEmailResult> {
   const branchId = LAFPOS_BRANCH_ID;
   if (date < addDays(businessDate(now), -1)) return "skipped";
-  const cash = await loadCashSettings();
+  const cash = await loadCashSettings(branchId, db);
   // Çalışanların adresleri personelin kendisi: yöneticinin listesindeki gibi personel adresi düşürülmez
   const to = [...new Map((cash.staffRecipients ?? []).map((e) => [emailKey(e), e])).values()];
   if (!to.length) return "skipped";
@@ -520,7 +523,7 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
       .set({ sendingAt: null, updatedAt: new Date(), ...patch })
       .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
   try {
-    const to = await dayEndRecipients(db);
+    const to = await dayEndRecipients(db, branchId);
     if (!to.length) {
       await finish({ emailError: "Alıcı yok: Kasa › Rapor alıcıları ve bildirim e-postaları boş ya da kapalı" });
       return "off";
@@ -636,7 +639,7 @@ export async function sendPavoEmail(db: DB, date: string, now = new Date(), opts
       .set({ sendingAt: null, updatedAt: new Date(), ...patch })
       .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
   try {
-    const to = await dayEndRecipients(db);
+    const to = await dayEndRecipients(db, branchId);
     if (!to.length) {
       await finish({});
       return "off";
@@ -698,7 +701,7 @@ export async function sendPhotoEmail(db: DB, date: string, now = new Date(), opt
       .set({ sendingAt: null })
       .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
   try {
-    const to = await dayEndRecipients(db);
+    const to = await dayEndRecipients(db, branchId);
     if (!to.length) return "off";
     if (!isEmailConfigured()) return "failed";
     const [branch] = await db.select({ name: s.branches.name }).from(s.branches).where(eq(s.branches.id, branchId)).limit(1);

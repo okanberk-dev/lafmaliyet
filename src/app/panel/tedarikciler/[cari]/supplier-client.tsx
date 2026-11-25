@@ -25,6 +25,7 @@ import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useOptimistic, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import type { ExpenseBranchChoice } from "@/components/panel/expense-branch-field";
 import { PageHeader } from "@/components/panel/page-header";
 import { toastUnreachable, tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +40,7 @@ import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Segmented } from "@/components/ui/segmented";
 import { PRODUCT_NAME } from "@/components/akmanos/lib/brand";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
+import { EXPENSE_SHARED } from "@/lib/branches";
 import { openBalance, isPartiallyPaid } from "@/lib/calc/insights";
 import { allocateFifo, allocationPreview, compareOpenItems, debtLabel, debtRemaining, invoiceLabel, type CariAllocation, type CostMode, type OpenItem } from "@/lib/cari/account";
 import { coveredByAllocations, EPS, METHOD_LABEL, methodFromCard, round2 } from "@/lib/cari/balance";
@@ -155,7 +157,7 @@ export interface CariData {
   foreignIn: ForeignCredit[];
   /** `allocated` toplamı tutmayan fatura sayısı */
   drift: number;
-  expenses: Record<number, { id: number; date: string; amount: number; categoryId: number; categoryName: string }>;
+  expenses: Record<number, { id: number; date: string; amount: number; categoryId: number; categoryName: string; branchId: string | null }>;
   categories: { id: number; name: string; section: string }[];
   /** Gelir-gider'de bir harcama kalemine bağlı fatura kategorileri (Faturası geldi önizlemesi) */
   countedCategories: string[];
@@ -165,6 +167,8 @@ export interface CariData {
   businessDay: string;
   /** Kasadan ödemenin yeni satırının kasaları (birden çoksa pencere sorar; "Tümü"de varsayılan yok) */
   tills: TillOptions;
+  /** "Faturası yok · gider yaz"ın gider kaydının şubesi */
+  expenseBranches: ExpenseBranchChoice;
 }
 
 type Tab = "faturalar" | "hareketler";
@@ -255,6 +259,8 @@ export function SupplierClient({
     note: d.note ?? null,
     counted: debtCounted(d.id),
     adoptedExpenseId: d.costMode === "mevcut" ? (cari.expenses[d.id]?.id ?? null) : null,
+    // Borcun gider kaydının şubesi (mod değişip yeni kayıt açılsa da varsayılan bu)
+    expenseBranch: cari.expenses[d.id] ? (cari.expenses[d.id].branchId ?? EXPENSE_SHARED) : null,
     photoId: d.photoId,
   });
   const toEditPayment = (p: CardPayment): EditPayment => ({
@@ -270,7 +276,7 @@ export function SupplierClient({
     photoId: p.photoId,
   });
   // Ödeme ekle: o gün kasada bu tedarikçiye işlenmemiş Teslim satırı varsa Kasadan, satır seçili gelir (R1b)
-  const todayKasa = cari.kasa.find((l) => l.kind === "teslim" && l.date === cari.businessDay);
+  const todayKasa = cari.kasa.find((l) => l.inScope && l.kind === "teslim" && l.date === cari.businessDay);
   const openPayment = (initial?: CariPaymentInitial) =>
     setPayFor({ initial: initial ?? (todayKasa ? { method: "kasa", cashOutId: todayKasa.id, amount: todayKasa.amount, date: todayKasa.date } : undefined) });
   // Listeden ya da Kasa'dan gelen "İşle" / "Ödemeye çevir" (?kasa=<satır>): Ödeme ekle Kasadan ve o satırla açılır
@@ -1265,6 +1271,7 @@ export function SupplierClient({
           debt={debtFor.debt ?? null}
           initialMode={debtFor.mode}
           tills={cari.tills}
+          expenseBranches={cari.expenseBranches}
           onClose={() => {
             setDebtFor(null);
             clearParams();

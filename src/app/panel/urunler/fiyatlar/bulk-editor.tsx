@@ -139,6 +139,8 @@ export function BulkEditor({
    */
   branchPrice?: {
     branches: { id: string; name: string }[];
+    /** Açılıştaki şube: panelin seçili şubesi (yazılabilense); boş taban */
+    defaultBranch?: string;
     defaultEffective: string;
     items: Record<string, { priceMinor: number; priceMinorL: number }>;
     rows: SiteBranchPrice[];
@@ -155,7 +157,7 @@ export function BulkEditor({
   const includeInactive = pasif === "1";
   // Şube: boşsa taban (Tümü: sitenin fiyatı ve kendi fiyatı olmayan her şube); seçilince bugünkü fiyat şubenin Geçerlilik
   // anındaki fiyatıdır ve yalnız siteye bağlı ürünler değişir
-  const [branchId, setBranchId] = useState("");
+  const [branchId, setBranchId] = useState(branchPrice?.defaultBranch ?? "");
   const [when, setWhen] = useState(() => (branchPrice ? effectiveLocalValue(branchPrice.defaultEffective) : ""));
   const branch = branchPrice?.branches.find((b) => b.id === branchId) ?? null;
   const effective = parseEffectiveLocal(when);
