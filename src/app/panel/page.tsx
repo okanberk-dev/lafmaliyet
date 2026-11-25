@@ -56,11 +56,13 @@ import { monthLabel, monthShort, num, numPossessive, pct, tl } from "@/lib/forma
 import { salesMonthKasa } from "@/lib/lafpos/kasa";
 import { commonListText } from "@/lib/lafpos/sales";
 import { longDateTR } from "@/lib/reminders";
+import { sameBranchBasis } from "@/lib/same-branches";
 import { salesSourceOf } from "@/lib/sales-source";
 import { holdAlert } from "@/lib/price-hold";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { currentBranchScope, withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { availableMonths, loadModel, monthParam, resolveMonth } from "@/server/data/dataset";
 import { loadCashOutInvoiceState, scopeCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCashPlan } from "@/server/data/cash-plan";
@@ -200,7 +202,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   await requireAdmin();
   const sp = await searchParams;
   const scope = await currentBranchScope();
-  const [model, upcoming, branchPayments, parasut, cashOutState, till] = await Promise.all([
+  const [model, upcoming, branchPayments, parasut, cashOutState, till, branchRows] = await Promise.all([
     loadModel(),
     loadPayments(),
     // "Yaklaşan ödemeler" kartı ve ayın işlerinin ödeme olguları şube seçimine uyar (Bugün, zil ve Ödemeler gibi;
@@ -214,6 +216,8 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
       .catch(() => null),
     // Günlük ciro grafiği: ay bilgisinin okuduğu kasa satırları (seçili şubeyle; okunamazsa kart çizilmez)
     tillRows().catch(() => null),
+    // Aydan aya rozetler "Tümü"de aynı şubelerle: şubelerin açılış günleri (src/lib/same-branches.ts; okunamazsa ilk verisi)
+    listBranches().catch(() => []),
   ]);
   // Ekrandaki ödeme listesi (kart, gecikme satırı, ayın işleri): seçili şubenin; nakit planı ve cari uyarıları işletmenin
   const shownPayments = scope === ALL_BRANCHES ? upcoming : branchPayments;
@@ -325,15 +329,35 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const pt = prev.theoretical;
   const fullMonths = d.monthState === "closed";
   const daily = dailyChange(d, prev);
-  const g = {
-    netSales: t && pt && fullMonths ? growthOf(t.netSales, pt.netSales) : null,
-    gross: t && pt && fullMonths ? growthOf(t.grossProfit, pt.grossProfit) : null,
-    net: t && pt && fullMonths ? growthOf(t.netProfit, pt.netProfit) : null,
-    pos: fullMonths ? growthOf(d.info?.posRevenue, prev.info?.posRevenue) : null,
-    daily: daily.growth,
-  };
-  const changeNote = (x: number | null) => (x !== null ? ` Rozet: ${monthLabel(prevMonth)} ayına göre değişim.` : "");
-  const dailyBasis = daily.basis === "pos" ? "POS cirosu ÷ açık gün" : daily.basis === "list" ? "satış listesi ÷ açık gün" : undefined;
+  // "Tümü"de önceki ayın 1'inden sonra açılan şube büyüme sayılmaz (bulgu 65): POS cirosu ve günlük ortalama iki ayda da
+  // açık şubelerle, şubeye bölünemeyen rakamların (net satış, brüt ve net kâr) rozeti yok; ipucu yeni şubeyi söyler
+  const same = model.ds.branchView ? null : sameBranchBasis(model.monthInfo, month, branchRows);
+  const g = same
+    ? {
+        netSales: null,
+        gross: null,
+        net: null,
+        pos: fullMonths ? (same.pos?.growth ?? null) : null,
+        daily: same.daily?.growth ?? null,
+      }
+    : {
+        netSales: t && pt && fullMonths ? growthOf(t.netSales, pt.netSales) : null,
+        gross: t && pt && fullMonths ? growthOf(t.grossProfit, pt.grossProfit) : null,
+        net: t && pt && fullMonths ? growthOf(t.netProfit, pt.netProfit) : null,
+        pos: fullMonths ? growthOf(d.info?.posRevenue, prev.info?.posRevenue) : null,
+        daily: daily.growth,
+      };
+  // Rozetin önceki ay değeri (aynı şubelerle kıyasta o şubelerin)
+  const prevPos = same ? same.pos?.prev : prev.info?.posRevenue;
+  const prevDaily = same ? same.daily?.prev : daily.previous;
+  const changeNote = (x: number | null) => (x !== null ? (same ? same.note : ` Rozet: ${monthLabel(prevMonth)} ayına göre değişim.`) : (same?.noBadge ?? ""));
+  const dailyBasis = same
+    ? `POS cirosu ÷ açık gün, yalnız ${same.kept.join(", ")}`
+    : daily.basis === "pos"
+      ? "POS cirosu ÷ açık gün"
+      : daily.basis === "list"
+        ? "satış listesi ÷ açık gün"
+        : undefined;
 
   // Ayın işleri: satış raporu, ay bilgileri, faturalar, su, sayım (ödemeler işi listeden çıkar, K22: gecikme varsa
   // sayfanın başında tek kırmızı satır; ödemeler zaten Bugün'de, alt menü rozetinde ve "Yaklaşan ödemeler"de)
@@ -576,25 +600,25 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             </>
           ) : (
             <>
-              <StatBreakdown {...withComparison(posRevenueBreakdown(model, d), { month: prevMonth, value: prev.info?.posRevenue, growth: g.pos })}>
+              <StatBreakdown {...withComparison(posRevenueBreakdown(model, d), { month: prevMonth, value: prevPos, growth: g.pos, basis: same ? `yalnız ${same.kept.join(", ")}` : undefined })}>
                 <Stat
                   compact
                   icon={<Receipt />}
                   label="POS cirosu (KDV dahil)"
                   info={g.pos !== null ? changeNote(g.pos).trim() : undefined}
                   value={<CountUp value={d.info?.posRevenue ?? null} />}
-                  badge={<Change g={g.pos} prevMonth={prevMonth} prevValue={prev.info?.posRevenue} />}
+                  badge={<Change g={g.pos} prevMonth={prevMonth} prevValue={prevPos} basis={same ? `yalnız ${same.kept.join(", ")}` : undefined} />}
                   sub={d.info?.openDays ? `${d.info.openDays} günde${d.info.sources?.posRevenue === "kasa" ? " · kasa raporlarından" : ""}` : null}
                 />
               </StatBreakdown>
-              <StatBreakdown {...withComparison(dailyAvgBreakdown(d), { month: prevMonth, value: daily.previous, growth: g.daily, basis: dailyBasis })}>
+              <StatBreakdown {...withComparison(dailyAvgBreakdown(d), { month: prevMonth, value: prevDaily, growth: g.daily, basis: dailyBasis })}>
                 <Stat
                   compact
                   icon={<CalendarDays />}
                   label="Günlük ortalama ciro"
-                  info={`POS cirosu ÷ açık gün (KDV dahil).${g.daily !== null ? ` Rozet: ${monthLabel(prevMonth)} ayına göre, iki ayda da ${dailyBasis}.` : ""}`}
+                  info={`POS cirosu ÷ açık gün (KDV dahil).${g.daily !== null ? (same ? same.note : ` Rozet: ${monthLabel(prevMonth)} ayına göre, iki ayda da ${dailyBasis}.`) : (same?.noBadge ?? "")}`}
                   value={<CountUp value={d.dailyAvg} />}
-                  badge={<Change g={g.daily} prevMonth={prevMonth} prevValue={daily.previous} basis={dailyBasis} />}
+                  badge={<Change g={g.daily} prevMonth={prevMonth} prevValue={prevDaily} basis={dailyBasis} />}
                   sub="KDV dahil"
                 />
               </StatBreakdown>

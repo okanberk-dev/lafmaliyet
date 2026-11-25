@@ -410,6 +410,19 @@ yazma `src/server/branch-settings.ts`.
 Aynı kuralla: Genel bakış'ın günlük ciro grafiği günün şubelerini tek çubukta toplar; nakit planının ve haftalık özetin
 satışı ödenmez / ikram hariç ciroyla (`dayRevenue`); Bugün'ün şube kartı föyden sayılan günü de çizer.
 
+### Aydan aya rozetler ve haftalık kıyas aynı şubelerle (25 Kasım 2026, denetim bulgusu 65)
+
+"Tümü"nün toplamı yeni açılan şubeyi de içerdiği için toplamları kıyaslamak açılışı büyüme gibi gösteriyordu: Marina 13
+Kasım'da açıldı, Genel bakış'ın Kasım rozeti Ekim'e göre, Aralık rozeti Marina'nın yarım Kasım'ına göre artış diyordu;
+30 Kasım'ın haftalık özeti iki şubeli haftayı tek şubeli dört haftayla kıyaslayıp "önceki 4 haftaya göre %X fazla"
+diyecekti.
+
+| Ne | Kural |
+|---|---|
+| Yeni şube | Açılış günü (Şube ayarları) önceki ayın 1'inden sonra olan şube; açılış günü yazılmamışsa ilk verisi önceki ayda ya da bu ayda başlayan şube (Tuzla hep eski) (`sameBranchBasis`, `src/lib/same-branches.ts`) |
+| Genel bakış, "Tümü" | Yeni şube varsa POS cirosu ve günlük ortalama rozeti iki ayda da açık şubelerin ay bilgisiyle (`Month.byBranch`; günlük ortalama şube şube POS ÷ açık gün, toplanır); ipucu "Rozet: Ekim 2026 ayına göre yalnız iki ayda da açık şubelerle (Tuzla); Marina 13 Kasım'da açıldı, kıyas dışı." der. Şubeye bölünemeyen rakamların (net satış, brüt ve net kâr) rozeti çizilmez, ipucu nedenini söyler. Yeni şube yoksa ve şube seçiliyken rozetler eskisi gibi |
+| Haftalık özet, kasa cirosu satırı | Kaynak Genel bakış'ın ay rakamıyla aynı kasa satırları (`tillRows`: raporu olmayan LafPOS günü gün sonundan; önceden yalnız kasa raporları). Geçen haftanın her günü önceki dört haftanın aynı günüyle şube şube eşlenir (Kıyas kartının şube-gün eşlemesi, `comparePairs`; [KIYAS.md](KIYAS.md#şube-eşleme)); iki günü de bilinen şube-gün iki tarafa girer. Önceki bir haftada hiç günü olmayan şube adıyla söylenir: "… önceki 4 haftayla aynı (aynı şubelerle: Marina önceki haftalarda yoktu)" ([HAFTALIK-OZET.md](HAFTALIK-OZET.md)) |
+
 ## Kasa raporu "Tümü"de (20 Kasım 2026)
 
 Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sırası, ModPOS föyü, LafPOS gün sonu, kasadan

@@ -59,8 +59,14 @@ maddeyi düşer (komisyonda sıradaki uyarı geçer). Ertesi pazartesi hâlâ a�
 
 - `Geçen hafta kasa cirosu 68.900 ₺ · önceki 4 haftaya göre %12 az` (KDV dahil, Z toplamının içindeki ödenmez /
   ikram düşülür: Genel bakış ve Bugün'ün cirosuyla aynı kural, denetim 13 Kasım HM-08; laffogato.net online kasadan
-  geçmez). Geçen hafta ve önceki dört haftanın en az ikisi tam (6+ raporlu gün) ise karşılaştırılır, %2'den az farkta
-  "önceki 4 haftayla aynı"; değilse `(5 gün raporlu)`; rapor yoksa satır yok.
+  geçmez). Kaynak Genel bakış'ın ay rakamıyla aynı kasa satırları (`tillRows`): kasa raporu, raporu olmayan LafPOS
+  gününde gün sonu (geçiş gününden önceki deneme günü sayılmaz). Karşılaştırma **aynı şube ve günlerle** (25 Kasım 2026,
+  denetim bulgusu 65; `salesLine`, Kıyas kartının `comparePairs`'ı): geçen haftanın her günü önceki dört haftanın aynı
+  günüyle şube şube eşlenir, iki günü de bilinen şube-gün iki tarafa girer. Geçen hafta en az 6 gün raporlu ve önceki dört
+  haftanın en az ikisinde en az 6 gün eşleştiyse karşılaştırılır, %2'den az farkta "önceki 4 haftayla aynı"; değilse
+  `(5 gün raporlu)`; satır yoksa satır yok. Geçen hafta satan ama kıyaslanan bir haftada hiç günü olmayan şube (yeni
+  açılan Marina) büyüme sayılmaz, satır söyler: `… · önceki 4 haftayla aynı (aynı şubelerle: Marina önceki haftalarda
+  yoktu)`. Önceden yalnız kasa raporları okunuyor, haftaların toplamları şube ayrımı yapmadan kıyaslanıyordu.
 
 Kişi adı yazılmaz: kasa raporunu giren ya da sayan, kontrol listesini dolduran, "Sorun var" notu (serbest metin)
 e-postaya girmez; yalnız ürün, hammadde, kanal, liste ve madde adları.
