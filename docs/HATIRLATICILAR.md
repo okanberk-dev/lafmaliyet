@@ -102,7 +102,15 @@ hafifçe sallanır (hareket azaltılmışsa ikisi de durur). Ekran okuyucuya öz
 
 Hiçbir uyarı sesi sürekli çalmaz: karaoke süresi dolma alarmı ve "Sürekli" hatırlatma 3 kez (2,2 sn arayla) çalıp
 kendiliğinden susar (`ALARM_RINGS`, `src/components/panel/live/sounds.ts`); yeni rezervasyon, uygulama siparişi ve masa
-çağrısı zili de en çok 3 çandır (masa zili önceden 5'ti). Ses yalnız **10:00 ile 01:00 arasında** çalar
-(`src/lib/audio-output.ts › alertHoursOpen`, İstanbul saati): 01:00–10:00 arasında ses çalmaz ve sistem bildirimi
+çağrısı zili de en çok 3 çandır (masa zili önceden 5'ti). Ses yalnız **09:00 ile 01:00 arasında** çalar
+(`src/lib/audio-output.ts › alertHoursOpen`, İstanbul saati): 01:00–09:00 arasında ses çalmaz ve sistem bildirimi
 sessiz gelir (`public/sw.js`; sabah 08:00 hatırlatıcı özeti de sessiz görünür). Ekrandaki pencere ve kartlar aynen
 çıkar; **Deneme sesi** saat kuralına bakmaz. Sınırı `tests/uyari-sesi-saatleri.test.ts` sınar.
+
+Alt sınır en erken açılan şubenin açılışıdır (denetim bulguları 45 ve 99, 25 Kasım 2026): Tuzla 09:00'da, Marina
+09:30'da açılır (hazır vardiyalar, [VARDIYA.md](VARDIYA.md)). Önceden 10:00'dı; açılıştaki ilk saatte gelen uygulama
+siparişi ve QR "Garson çağır" ekranda çıkıyor ama zil çalmıyor, telefondaki bildirim de sessiz geliyordu. Şube
+ayarlarında açılış saati olmadığı için pencere şube başına değil, iki şubede ortaktır; test her şubenin açılışından
+kapanışına kadar her dakikanın pencerede olduğunu sınar (bir şube daha erken açılırsa düşer). Bildirim işçisinde önbellek
+sürümü yoktur (sayfa önbelleklemez): `sw.js` değişince tarayıcı yeni sürümü kendisi kurar ve hemen etkinleştirir
+(`skipWaiting`, `clients.claim`).

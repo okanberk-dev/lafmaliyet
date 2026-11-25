@@ -316,9 +316,14 @@ export function pdfHref(branchId: string, monday: string): string {
 
 // ---------------------------------------------------------------- Kaydetme
 
+/** Kaydedilen kutuyu ekran açıldıktan sonra başka biri (başka yönetici, başka sekme, asistan) değiştirmiş */
+export const SHIFT_STALE = "Plan siz bakarken değişti, sayfayı yenileyin.";
+
 /**
  * Sunucu eyleminin girdisi: ızgaradaki her satır, hücreler ekrandaki metniyle. Metin sunucuda aynı okuyucudan geçer
- * (tek kural); kişi kullanıcıysa adı sunucuda hesabından alınır.
+ * (tek kural); kişi kullanıcıysa adı sunucuda hesabından alınır. `seen`: ekran açıldığında (son yenilemede) kutuların
+ * kayıtlı metni, bu oturumda eklenen satırda boş; yalnız bundan farklı kutular yazılır (weekSaveDiff, bulgu 46). Eski
+ * sekme `seen` göndermez: kayıt "sayfayı yenileyin" diye reddedilir.
  */
 export const saveWeekSchema = z.object({
   branchId: z.string().min(2).max(24),
@@ -329,6 +334,7 @@ export const saveWeekSchema = z.object({
         ref: z.string().min(3).max(SHIFT_NAME_MAX + 2),
         name: z.string().max(SHIFT_NAME_MAX + 20).default(""),
         cells: z.array(z.string().max(120)).length(7),
+        seen: z.array(z.string().max(120), { error: SHIFT_STALE }).length(7, SHIFT_STALE),
       }),
     )
     .max(SHIFT_PEOPLE_MAX, `Bir haftada en çok ${SHIFT_PEOPLE_MAX} kişi planlanır`),
@@ -362,6 +368,55 @@ export function weekDiff(existing: readonly ShiftEntry[], next: readonly ShiftRo
     });
   }
   return { upserts, deletes };
+}
+
+/** Arada başkasının değiştirdiği kutu: kişinin adı ve gün sırası (0 = Pazartesi) */
+export interface StaleCell {
+  name: string;
+  day: number;
+}
+
+/**
+ * Ekranın gördüğüne göre kaydın farkı (bulgu 46: eski ekrandan kaydetmek başka yöneticinin değişikliğini siliyordu).
+ * Yalnız kullanıcının değiştirdiği kutular (`seen`'den farklı olanlar) yazılır ya da silinir; dokunmadığı kutu
+ * veritabanında ne varsa öyle kalır (arada başkasının yazdığı da). Değiştirdiği kutuyu arada başkası da değiştirdiyse
+ * (veritabanı ne gördüğü ne yazdığı) `stale`'e düşer: kayıt bütünüyle reddedilir, kimsenin yazdığı sessizce ezilmez.
+ * `seen`'de olmayan satır (bu oturumda eklenen) boş görülmüş sayılır.
+ */
+export function weekSaveDiff(
+  existing: readonly ShiftEntry[],
+  next: readonly ShiftRow[],
+  seen: ReadonlyMap<string, readonly (ShiftCell | null)[]>,
+  monday: string,
+): { upserts: ShiftEntry[]; deletes: { date: string; ref: string }[]; stale: StaleCell[] } {
+  const days = weekDays(monday);
+  const now = new Map(existing.map((e) => [cellKey(e.date, e.ref), e.cell]));
+  const untouched = new Set<string>();
+  const stale: StaleCell[] = [];
+  for (const row of next) {
+    const saw = seen.get(row.ref);
+    row.cells.forEach((cell, i) => {
+      const key = cellKey(days[i], row.ref);
+      const was = saw?.[i] ?? null;
+      if (sameCell(was, cell)) return void untouched.add(key);
+      const current = now.get(key) ?? null;
+      if (!sameCell(current, was) && !sameCell(current, cell)) stale.push({ name: row.name, day: i });
+    });
+  }
+  const diff = weekDiff(existing, next, monday);
+  return {
+    upserts: diff.upserts.filter((e) => !untouched.has(cellKey(e.date, e.ref))),
+    deletes: diff.deletes.filter((d) => !untouched.has(cellKey(d.date, d.ref))),
+    stale,
+  };
+}
+
+/** Reddin metni: "Plan siz bakarken değişti (Ayşe, Salı), sayfayı yenileyin." */
+export function staleText(stale: readonly StaleCell[]): string {
+  const first = stale[0];
+  if (!first) return SHIFT_STALE;
+  const more = stale.length > 1 ? ` ve ${stale.length - 1} kutu daha` : "";
+  return SHIFT_STALE.replace(",", ` (${first.name}, ${DAY_NAMES[first.day]}${more}),`);
 }
 
 /** Bugün'ün "Bugün kafede" satırında en çok bu kadar kişi adıyla yazılır (kalanı "ve 2 kişi") */

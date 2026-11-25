@@ -178,7 +178,7 @@ export interface NewProductDraft {
  * Yeni ürün önerisinin denetimi (öneri penceresi ve sunucu aynı kural): ad 2–120 harf, kategori, en az bir boy, her
  * boyda en az bir malzeme; aynı ad + boyda ürün (pasif de olsa) ya da bekleyen yeni ürün önerisi yok. Ad Türkçe büyük /
  * küçük harf ve boşluk farkı gözetmeden karşılaştırılır (nameKey). Ad =, +, - ya da @ ile başlamaz (Ürünler'in CSV'si
- * Excel'de formül çalıştırmasın). İlk sorunun metni döner, sorun yoksa null.
+ * tablo programında formül çalıştırmasın). İlk sorunun metni döner, sorun yoksa null.
  */
 export function newProductIssue(
   draft: NewProductDraft,

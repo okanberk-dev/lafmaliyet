@@ -1445,7 +1445,7 @@ function FixedDialog({
         {!row || amountChanged ? (
           <MonthChoiceField
             legend={row ? "Yeni tutar hangi aydan itibaren?" : "Hangi aydan itibaren?"}
-            tip="Excel'deki gibi her ay kendi tutarını taşır: seçtiğiniz aydan önceki aylar değişmez."
+            tip="Her ay kendi tutarını taşır: seçtiğiniz aydan önceki aylar değişmez."
             value={choice}
             onChange={setChoice}
             currentMonth={currentMonth}

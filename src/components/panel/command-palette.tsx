@@ -79,12 +79,12 @@ function buildEntries(pages: NavItem[], index: SearchEntry[]): Entry[] {
       id: `ekran:${p.href}`,
       group: "ekran",
       title: p.label,
-      subtitle: p.excel ? `Ekran · Excel: ${p.excel}` : "Ekran",
+      subtitle: "Ekran",
       href: p.href,
       icon: p.icon,
       t: fold(p.label),
       raw: p.label.toLocaleLowerCase("tr-TR"),
-      hay: fold([p.label, p.excel, p.keywords].filter(Boolean).join(" ")),
+      hay: fold([p.label, p.keywords].filter(Boolean).join(" ")),
     });
   }
   for (const e of index) {

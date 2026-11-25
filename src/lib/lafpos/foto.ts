@@ -67,11 +67,13 @@ export function staffBeforeLafposDayEnd(o: { admin: boolean; branchId: string; l
 
 /**
  * Personelin LafPOS gününde formdan yazımını sunucu reddeder (saveCashReport): rapor LafPOS'tan gelir, otomatik raporun
- * rakamlarını yalnız yönetici düzeltir. Personelin elle girilmiş raporu (eski yol) kendi kapısıyla açık kalır
+ * rakamlarını yalnız yönetici düzeltir. Kör kasa (bulgu 0, src/lib/lafpos/kor-kasa.ts): yöneticinin elle girdiği LafPOS
+ * günü raporunu da personel değiştirmez, düzeltme önermez, WhatsApp metnini almaz (`manual`)
  */
 export const LAFPOS_STAFF_WRITE_TEXT = {
   fresh: "LafPOS gününün kasa raporu LafPOS'tan gelir: kapanışta LafPOS'ta Günü kapat'a basın. LafPOS göndermezse yöneticinize yazın.",
   auto: "Bu rapor LafPOS'tan yazıldı; rakamlarını yalnız yönetici düzeltir. Gün sonu fotoğrafını Kasa sayfasından ekleyin.",
+  manual: "LafPOS gününün kasa raporunu yalnız yönetici düzeltir; yanlışlık varsa yöneticinize yazın.",
 } as const;
 
 /** Personelin alt başlığı: LafPOS günü değilse null (eski metin); otomatik raporlu gün ya da sayım bekleyen gün */

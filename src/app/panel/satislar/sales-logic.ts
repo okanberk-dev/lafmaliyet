@@ -1,5 +1,5 @@
 // Satışlar ekranının saf yardımcıları (tarayıcıda ve testlerde çalışır; sunucu ya da React gerekmez).
-// Açık gün sınırı, kâr marjı renk ölçeği (Excel Satış Raporu J sütunu), içe aktarma önizlemesi ve
+// Açık gün sınırı, kâr marjı renk ölçeği (en düşük, ortanca, en yüksek), içe aktarma önizlemesi ve
 // eşleştirme önerileri burada; sales-client.tsx yalnızca bunları gösterir.
 
 import { daysInMonth } from "@/lib/calc/engine";
@@ -169,7 +169,7 @@ export function kasaHint(f: MonthField, kasa: { values: Record<MonthField, numbe
 
 // ---------------------------------------------------------------- Kâr marjı renk ölçeği
 
-/** Excel'deki PERCENTILE / YÜZDEBİRLİK (dahil, doğrusal ara değer); sıralı dizi bekler */
+/** Yüzdebirlik (uçlar dahil, doğrusal ara değer; PERCENTILE.INC); sıralı dizi bekler */
 export function percentileInc(sorted: number[], p: number): number {
   if (!sorted.length) return 0;
   const rank = Math.min(1, Math.max(0, p)) * (sorted.length - 1);
@@ -194,8 +194,8 @@ export function inMarginScale(r: { matched: boolean; isService: boolean; net: nu
 }
 
 /**
- * Excel Satış Raporu J10:J134 üç renkli ölçeği: en düşük kırmızı, ortanca (50. yüzdebirlik) sarı,
- * en yüksek yeşil. Ölçek ayın satırlarından kurulur.
+ * Kâr marjının üç renkli ölçeği: en düşük kırmızı, ortanca (50. yüzdebirlik) sarı, en yüksek yeşil. Ölçek ayın
+ * satırlarından kurulur.
  */
 export function marginScale(values: number[]): MarginScale | null {
   const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
@@ -211,7 +211,7 @@ export function marginScale(values: number[]): MarginScale | null {
  */
 const atDisplay = (v: number) => Math.round(v * 1000) / 1000;
 
-/** Ölçekteki yer: en düşük 0, ortanca 0,5, en yüksek 1 (Excel'in renk geçişi gibi iki parçalı doğrusal) */
+/** Ölçekteki yer: en düşük 0, ortanca 0,5, en yüksek 1 (iki parçalı doğrusal renk geçişi) */
 export function marginPosition(v: number, s: MarginScale): number {
   if (!Number.isFinite(v)) return 0.5;
   const x = atDisplay(v);
@@ -224,7 +224,7 @@ export function marginPosition(v: number, s: MarginScale): number {
   return max > mid ? 0.5 + ((x - mid) / (max - mid)) * 0.5 : 0.5;
 }
 
-// Excel'in F8696B / FFEB84 / 63BE7B renklerinin panel için yumuşatılmış hâlleri (koyu yazı okunur kalsın)
+// Kırmızı / sarı / yeşil uçların yumuşak tonları (koyu yazı okunur kalsın)
 const LOW = [253, 205, 205];
 const MID = [254, 238, 166];
 const HIGH = [196, 239, 206];

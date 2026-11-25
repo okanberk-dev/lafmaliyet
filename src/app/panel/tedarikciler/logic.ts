@@ -352,7 +352,7 @@ export interface LedgerInvoice {
   dueDate?: string | null;
   paidAt?: string | null;
   paymentRequestedAt?: string | null;
-  /** Paraşüt'ten gelen tedarikçi vergi nosu (elle ve Excel'den girilende yok) */
+  /** Paraşüt'ten gelen tedarikçi vergi nosu (elle girilende ve içe aktarılmış kayıtta yok) */
   supplierTaxNumber?: string | null;
   /** Faturanın şubesi (docs/SUBE.md › Faturanın şubesi; bakiye firma genelidir, şube yalnız gösterim) */
   branchId?: string | null;

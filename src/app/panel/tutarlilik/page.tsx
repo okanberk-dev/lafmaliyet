@@ -35,7 +35,7 @@ import { severityOf } from "./severity";
 
 export const metadata: Metadata = { title: "Tutarlılık" };
 
-// Bir ekran bir ad (docs/planlar/ux-sade.md §3.6): kenar çubuğu, sekme ve başlık aynı; Excel'deki adı Yardım'da
+// Bir ekran bir ad (docs/planlar/ux-sade.md §3.6): kenar çubuğu, sekme ve başlık aynı
 const TITLE = "Tutarlılık";
 const DESCRIPTION = "Satış, alış ve reçete tutuyor mu: hangi malzeme fazla gidiyor.";
 // Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)

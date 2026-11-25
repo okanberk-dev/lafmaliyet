@@ -41,7 +41,7 @@ export const COUNT_ITEM_NAME_MAX = 120;
 
 /**
  * Elektronik tablonun formül ya da bağlantı diye çalıştırdığı başlangıç (=, +, -, @). Personelin yazdığı ad ve paket
- * bilgisi Hammaddeler'in ve Ürünler'in CSV'sine olduğu gibi gider; Excel böyle başlayan hücreyi açınca çalıştırır.
+ * bilgisi Hammaddeler'in ve Ürünler'in CSV'sine olduğu gibi gider; tablo programı böyle başlayan hücreyi açınca formül diye çalıştırır.
  * Sayımda "Listeye ekle" ve yeni ürün önerisi bunu kabul etmez.
  */
 export function startsLikeFormula(text: string): boolean {

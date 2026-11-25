@@ -74,7 +74,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
   const month = resolveMonth(sp.ay, model);
   // Hammadde zamları (son 30 gün) ve kârı düşen ürünler; genel bakış, zil ve sabah e-postası buraya getirir
   const prices = await loadPriceAlerts(model).catch(() => null);
-  // Satılan adet ModPOS + laffogato.net online: Genel bakış, Analiz, ürün kartı, Excel ve Claude aracıyla aynı sayı
+  // Satılan adet ModPOS + laffogato.net online: Genel bakış, Analiz, ürün kartı, dışa aktarım ve Claude aracıyla aynı sayı
   const sold = soldWithOnline(model, month);
   const st = model.settings;
   // Ayın kasası (metinler; geçiş günü boşken ve öncesinde "ModPOS", sonra "LafPOS"; denetim E-39)
@@ -128,7 +128,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
   const categories = model.categories.map((c) => ({ id: c.id, name: c.name }));
   const ml = monthLabel(month);
   const target = num(st.hedefMaliyet * 100);
-  // Excel Ürün Kârlılık satır 134: menünün basit ortalaması (her ürün bir oy)
+  // Menünün basit ortalaması (her ürün bir oy)
   const avg = menuAverages(active);
   // Kartlara dokununca açılan dökümler: aynı satırlardan, kartla aynı ay ve sayılar
   const bd = productBreakdowns(rows, categories, month, st.hedefMaliyet);
@@ -214,7 +214,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
             label="Hedefin dışında"
             value={<CountUp value={warn + low} />}
             tone={low ? "bad" : warn ? "warn" : "good"}
-            info={`Hedef maliyet oranı %${target}. İyi = hedefin altında, Dikkat = hedefin 10 puan üstüne kadar, Düşük kâr = daha fazlası. Menü ortalaması: maliyet oranı ${pct(avg.costRatio)}, kâr marjı ${pct(avg.margin)} (Excel'deki ORTALAMA satırı, her ürün bir oy).`}
+            info={`Hedef maliyet oranı %${target}. İyi = hedefin altında, Dikkat = hedefin 10 puan üstüne kadar, Düşük kâr = daha fazlası. Menü ortalaması: maliyet oranı ${pct(avg.costRatio)}, kâr marjı ${pct(avg.margin)} (basit ortalama, her ürün bir oy).`}
             sub={`Hedef %${target} · menü ort. ${pct(avg.costRatio)}`}
           >
             <StatusShare

@@ -11,7 +11,6 @@ import { lineUnit, stockBreakdown, type StockBreakdownLine } from "../src/app/pa
 import { liveTotals, type CountLineValue } from "../src/app/panel/sayim/logic";
 import { prepareBreakdown, type BreakdownGroup } from "../src/lib/breakdown";
 import { countFactor, createModel, type Model } from "../src/lib/calc/engine";
-import { stockVatSummary } from "../src/lib/calc/insights";
 import type { Dataset } from "../src/lib/calc/types";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -24,10 +23,8 @@ const close = (a: number, b: number, eps = 1e-6) => assert.ok(Math.abs(a - b) < 
 /** sayim/page.tsx ile aynı eşleme (yönetici): StockSheet → formun satırları */
 function formGroups(model: Model, month: string) {
   const sheet = model.stockSheet(month);
-  const vat = stockVatSummary(sheet);
-  return sheet.groups.map((g, gi) => ({
+  return sheet.groups.map((g) => ({
     name: g.name,
-    excelRate: vat.groups[gi].excelRate,
     lines: g.lines.map(
       (l): StockBreakdownLine => ({
         id: l.ingredient.id,
@@ -119,7 +116,7 @@ test("Sayım dökümü: formda değişen miktar bugünkü birimle; arşiv satır
     { name: "Boş satır", unit: "ADET", qty: null, unitPrice: null },
   ];
   const b = stockBreakdown(groups, valueOf, extras);
-  const live = liveTotals(groups.map((g) => ({ ...g, excelRate: 0.01 })), valueOf, extras);
+  const live = liveTotals(groups, valueOf, extras);
   close(groupsSum(b), live.total);
   close(live.total, 3000 * 0.8 + 1.5 * 600 + 10 * 30 + 2 * 5);
 

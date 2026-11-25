@@ -59,7 +59,7 @@ import { requireAdmin } from "@/server/auth/dal";
 
 import { buildFaq, type FaqItem, type PathText } from "./faq-build";
 import { HelpFaq, HelpFaqFallback, type FaqGroup } from "./faq-search";
-import { excelFor, pathOf, tabsOf } from "./nav-paths";
+import { pathOf, tabsOf } from "./nav-paths";
 import { RoutineSteps } from "./routine-steps";
 
 export const metadata: Metadata = { title: "Yardım" };
@@ -722,15 +722,15 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         icon: Scale,
       },
       {
-        id: "excel-fark",
-        q: "Net kâr Excel'deki Panel'den neden farklı olabilir?",
+        id: "sabit-gider-farki",
+        q: "Net kârdaki sabit gider neden standart aylık tutardan farklı olabilir?",
         a: (
           <>
-            Excel Panel&apos;i her ay standart aylık sabit gideri (Sabit Giderler + Personel) düşer. <Path href="/panel" /> o ayın <Path href="/panel/gelir-gider" /> tutarlarını
-            kullanır: kalemler gün oranıyla bölünür (açık günü kasa raporlarından gelen ayda takvim günüyle: kapalı bir gün kirayı ve maaşı düşürmez), elle düzeltilen hücreler ve yalnızca o aya yazılan giderler (doğalgaz, ciro kirası, harici…) eklenir. Fark varsa net
-            kârın altında &quot;Excel temeli&quot; ayrıca yazar; &quot;Para nereye gitti?&quot; kartındaki &quot;Bu ay düşülen sabit gider&quot; kutusu farkı satır satır gösterir.
-            SU GİDERİ reçetelerde su + buz maliyeti olarak sayıldığı için sabit giderde ikinci kez düşülmez. Panel kâra laffogato.net online satışının brüt kârını da
-            katar; Excel&apos;de online satış yoktu.
+            Standart aylık sabit gider, Sabit giderler ve Maaşlar&apos;daki kalemlerin bir aylık tutarıdır. <Path href="/panel" /> net kârda o ayın{" "}
+            <Path href="/panel/gelir-gider" /> tutarlarını kullanır: kalemler gün oranıyla bölünür (açık günü kasa raporlarından gelen ayda takvim günüyle: kapalı bir
+            gün kirayı ve maaşı düşürmez), elle düzeltilen hücreler ve yalnızca o aya yazılan giderler (doğalgaz, ciro kirası, harici…) eklenir. &quot;Para nereye
+            gitti?&quot; kartındaki &quot;Bu ay düşülen sabit gider&quot; kutusu farkı satır satır gösterir; net kârın ipucu da aynı ayrımı yazar. SU GİDERİ
+            reçetelerde su + buz maliyeti olarak sayıldığı için sabit giderde ikinci kez düşülmez. Net kâr laffogato.net online satışının brüt kârını da içerir.
           </>
         ),
         icon: Sigma,
@@ -829,7 +829,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             <Path href="/panel/ayarlar" /> › Yedek › Yedeği indir: parolanızı girince paneldeki bütün veri tek dosyada iner. Ayda bir indirip bilgisayarınızda ya
             da Google Drive&apos;da saklayın; son yedek 30 günü geçince zil hatırlatır. Dosyada ciro, maaş ve IBAN&apos;lar var (parolalar yok), kimseyle
-            paylaşmayın. Geri yükleme panelden yapılmaz: gerekirse dosyayı geliştiriciye verin. Aynı karttaki Excel kopyası okumak içindir, geri yüklenmez.
+            paylaşmayın. Geri yükleme panelden yapılmaz: gerekirse dosyayı geliştiriciye verin. Aynı karttaki Dışa aktar (.xlsx) çalışma kitabı okumak içindir, geri yüklenmez.
           </>
         ),
         icon: HardDriveDownload,
@@ -954,7 +954,7 @@ const FORMULAS = [
   ["POS komisyonu (ürün başına)", "Satış fiyatı × komisyon × kartlı satış oranı"],
   ["Birim kâr", "Net satış − ürün maliyeti − POS komisyonu (ürün başına)"],
   ["Maliyet oranı", "Ürün maliyeti ÷ net satış (hedef: Ayarlar › Oranlar, ör. %30)"],
-  ["Önerilen fiyat", "TAVAN(maliyet ÷ hedef oran × (1 + KDV); 5\u00a0₺)"],
+  ["Önerilen fiyat", "Maliyet ÷ hedef oran × (1 + KDV), 5\u00a0₺'ye yukarı yuvarlanır"],
   ["Durum", "İyi ≤ hedef · Dikkat ≤ hedef + 10 puan · Düşük kâr > hedef + 10 puan"],
   ["Eşleşmeyen POS ürünü", "Net ciro × reçeteli eşleşen ürünlerin ortalama maliyet oranı"],
   [
@@ -968,13 +968,13 @@ const FORMULAS = [
   ["Brüt kâr", "Net satış − malzeme/ambalaj (reçeteye göre) − banka POS komisyonu (ay); Genel bakış'ta laffogato.net online satışı da dahil"],
   [
     "Net kâr / zarar (reçeteye göre)",
-    "Brüt kâr (laffogato.net online dahil) − indirimler ÷ (1 + KDV) − o ayın sabit giderleri (Gelir-gider: gün oranı + bu aya özel giderler). Satış listesi ayın bir kısmını kapsıyorsa indirim o günlerin kasa raporlarından, sabit gider ve online satış o günlere düşen payla. Excel temeli: standart aylık sabit gider",
+    "Brüt kâr (laffogato.net online dahil) − indirimler ÷ (1 + KDV) − o ayın sabit giderleri (Gelir-gider: gün oranı + bu aya özel giderler). Satış listesi ayın bir kısmını kapsıyorsa indirim o günlerin kasa raporlarından, sabit gider ve online satış o günlere düşen payla",
   ],
   [
     "Kâr / zarar (faturaya göre)",
-    "Ciro ÷ (1 + KDV) − satılan malın maliyeti − giderler (Gelir-gider tablosu). Satışlar'daki HİZMET satırları (karaoke) kadarı hizmet KDV'siyle (%20) ayrılır",
+    "Ciro ÷ (1 + KDV) − satılan malın maliyeti − giderler (Gelir-gider tablosu). Satışlar'daki HİZMET satırları (karaoke) kadarı hizmet KDV'siyle (%20) ayrılır. Şube seçiliyken adı “Gelir-gider'e göre”: mal maliyeti şubenin satışından reçeteye göre",
   ],
-  ["Faturaya göre maliyet oranı", "Faturayla alınan mal (KDV hariç) ÷ net satış (laffogato.net online dahil)"],
+  ["Faturaya göre maliyet oranı", "Faturayla alınan mal (KDV hariç) ÷ net satış (laffogato.net online dahil). Yalnız Tümü'de: faturalar işletme genelinde, şubeye bölünmez"],
   ["Günlük ortalama ciro", "Satış listesi toplamı (yoksa POS cirosu) ÷ açık gün; liste ayın bir kısmını kapsıyorsa listenin kendi açık günü"],
   [
     "Başabaş günlük ciro",
@@ -1006,10 +1006,6 @@ const adminPathText: PathText = (el) => (el.type === Path && el.props.href ? pat
 
 const FAQ: FaqGroup[] = buildFaq(FAQ_GROUPS, adminPathText);
 
-function ExcelValue({ value }: { value: string | undefined }) {
-  return value ? <span className="text-right text-xs text-ink-mute">{value}</span> : <Badge tone="blue">yeni</Badge>;
-}
-
 /**
  * Yöneticinin Yardım'ı. Başlık hemen çizilir; içerik (FAQ, FAQ_GROUPS, ROUTINE, FORMULAS, MENU_LAYOUT) yalnız iç
  * bileşende, yönetici denetiminden sonra: personel bu adrese gelse de (proxy zaten Bugün'e döndürür) yöneticinin
@@ -1021,7 +1017,7 @@ export default function HelpPage() {
       <PageHeader
         title="Yardım"
         path="/panel/yardim"
-        description="Ne zaman ne yapılır, sık sorular ve Excel'deki sayfaların karşılıkları."
+        description="Ne zaman ne yapılır, sık sorular, formüller ve menüdeki ekranlar."
         actions={
           <ButtonLink href="/panel/yardim/personel" variant="secondary">
             <UsersRound size={16} aria-hidden="true" /> Personelin Yardım&apos;ı
@@ -1106,7 +1102,7 @@ async function HelpContent() {
                   </li>
                   <li>
                     <Info size={14} className="inline align-[-2px] text-ink-quiet" aria-hidden="true" />
-                    <span className="sr-only">Bilgi</span> simgesinin üzerine gelince ya da dokununca Excel&apos;deki hücre notlarının karşılığı olan açıklama çıkar.
+                    <span className="sr-only">Bilgi</span> simgesinin üzerine gelince ya da dokununca rakamın nasıl hesaplandığını anlatan açıklama çıkar.
                   </li>
                 </ul>
               </CardContent>
@@ -1116,7 +1112,7 @@ async function HelpContent() {
               <CardHeader
                 icon={<Sigma />}
                 title="Formüller"
-                description="Excel'deki formüllerin karşılığı; bilerek yapılan farklar (ör. net kârda o ayın sabit giderleri) Nasıl yapılır? listesinde."
+                description="Paneldeki hesapların kuralı; ayrıntılar (ör. net kârda o ayın sabit giderleri) Nasıl yapılır? listesinde."
               />
               <CardContent>
                 <Well className="px-4 py-0 ring-1 ring-line">
@@ -1135,7 +1131,7 @@ async function HelpContent() {
         </div>
 
         <Card>
-          <CardHeader icon={<Table2 />} title="Excel sayfalarının karşılıkları" description="Menüdeki her ekran ve Excel'deki karşılığı." />
+          <CardHeader icon={<Table2 />} title="Ekranlar" description="Menüdeki her ekran ve sekmeleri; adına dokununca açılır." />
           <CardContent>
             <ul className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
               {navTreeFor("admin").map((n) => (
@@ -1153,7 +1149,6 @@ async function HelpContent() {
                       ) : (
                         <span className="min-w-0 flex-1 text-sm font-semibold text-ink">{n.label}</span>
                       )}
-                      {n.href ? <ExcelValue value={excelFor(n.href)} /> : null}
                     </div>
                     {n.children ? (
                       <ul className="mb-1 ml-[13px] border-l border-line-strong pl-[25px]" aria-label={`${n.label} sayfaları`}>
@@ -1165,7 +1160,6 @@ async function HelpContent() {
                                 <Link href={c.href} className="inline-flex min-h-9 items-center pointer-coarse:min-h-11 gap-1 text-[13px] text-ink-soft hover:text-ink hover:underline">
                                   {c.label}
                                 </Link>
-                                {tabs ? null : <ExcelValue value={excelFor(c.href)} />}
                               </div>
                               {tabs ? (
                                 <ul className="ml-1 border-l border-line pl-3" aria-label={`${c.label} sekmeleri`}>
@@ -1174,7 +1168,6 @@ async function HelpContent() {
                                       <Link href={t.href} className="inline-flex min-h-9 items-center pointer-coarse:min-h-11 text-[13px] text-ink-mute hover:text-ink hover:underline">
                                         {t.label}
                                       </Link>
-                                      <ExcelValue value={excelFor(t.href)} />
                                     </li>
                                   ))}
                                 </ul>
@@ -1199,7 +1192,6 @@ async function HelpContent() {
                         <ArrowUpRight size={13} className="shrink-0 text-ink-quiet" aria-hidden="true" />
                       </Link>
                       <span className="text-xs text-ink-mute">Profil menüsü</span>
-                      <ExcelValue value={account.excel} />
                     </div>
                   </Well>
                 </li>

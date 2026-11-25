@@ -806,7 +806,7 @@ body {
   scrollbar-color: var(--border) transparent;
 }
 
-/* Excel'deki "mavi = sizin girdiğiniz değer" geleneği */
+/* Mavi = sizin girdiğiniz değer */
 .cell-input {
   color: var(--color-info);
 }

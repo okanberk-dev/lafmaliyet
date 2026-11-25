@@ -9,7 +9,7 @@ import { closingLayers, layersValue, type StockLayer } from "@/lib/calc/fifo";
 export { invoiceLayer, layerText } from "@/lib/calc/fifo";
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
-import { COUNT_GROUP_VAT_DEFAULT } from "@/lib/constants";
+import { DEFAULT_SETTINGS } from "@/lib/constants";
 import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
 import { isLastDayOfMonth } from "@/lib/reminders";
 
@@ -159,8 +159,6 @@ export interface GroupTotals {
   total: number;
   /** Her malzemenin Hammaddeler'deki Alış KDV'siyle */
   totalVat: number;
-  /** Excel Sayım usulü: grubun tek KDV oranıyla (N = L × M + L) */
-  totalVatExcel: number;
 }
 
 export interface LiveTotals {
@@ -168,18 +166,17 @@ export interface LiveTotals {
   extrasTotal: number;
   total: number;
   totalVat: number;
-  totalVatExcel: number;
 }
 
 /**
  * Formda yazılan miktarlarla stok toplamı. Hiçbir şey değişmemişken `model.stockSheet(month)` ile aynı sonucu verir
- * (engine: miktar × birim fiyat, KDV dahil = × (1 + Alış KDV), ek kalemler × 1,01).
+ * (engine: miktar × birim fiyat, KDV dahil = × (1 + Alış KDV), ek kalemler × (1 + gıdanın alış KDV'si; Ayarlar, %1)).
  */
 export function liveTotals(
-  groups: { name: string; excelRate: number; lines: CountLineValue[] }[],
+  groups: { name: string; lines: CountLineValue[] }[],
   valueOf: (line: CountLineValue) => number | null,
   extras: { qty: number | null; unitPrice: number | null }[],
-  extrasRate = COUNT_GROUP_VAT_DEFAULT,
+  extrasRate = DEFAULT_SETTINGS.alisKdvGida,
 ): LiveTotals {
   const gs = groups.map((g) => {
     let total = 0;
@@ -191,7 +188,7 @@ export function liveTotals(
       total += amount;
       totalVat += amount * (1 + l.vatRate);
     }
-    return { name: g.name, total, totalVat, totalVatExcel: total * (1 + g.excelRate) };
+    return { name: g.name, total, totalVat };
   });
   const extrasTotal = extras.reduce((a, e) => a + (e.qty ?? 0) * (e.unitPrice ?? 0), 0);
   const sumOf = (k: keyof Omit<GroupTotals, "name">) => gs.reduce((a, g) => a + g[k], 0);
@@ -200,7 +197,6 @@ export function liveTotals(
     extrasTotal,
     total: sumOf("total") + extrasTotal,
     totalVat: sumOf("totalVat") + extrasTotal * (1 + extrasRate),
-    totalVatExcel: sumOf("totalVatExcel") + extrasTotal * (1 + extrasRate),
   };
 }
 

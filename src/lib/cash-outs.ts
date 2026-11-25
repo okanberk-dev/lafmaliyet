@@ -69,13 +69,29 @@ export function teslimTotalOf(lines: { kind: CashOutKind; amount: number }[]): n
 
 /**
  * Raporun "Gün içinde kasadan çıkan" tutarı satırların toplamından 1 ₺'den fazla azsa uyarı (engellemez: fişin parası
- * kasadan çıkmamış olabilir). Fazlası uyarılmaz: fişsiz çıkan para da olur.
+ * kasadan çıkmamış olabilir). Fazlası burada uyarılmaz (fişsiz çıkan para da olur): personel neye çıktığını yazar
+ * (cashOutNoteMissing), yöneticiye "Fişsiz çıkış" işaretlenir (src/lib/lafpos/prefill.ts unreceiptedCashOut).
  */
 export function cashOutCheck(cashOut: number, lines: number[]): string | null {
   if (!lines.length) return null;
   const sum = cashOutsTotal(lines.map((amount) => ({ amount })));
   if (cashOut >= sum - 1) return null;
   return `Kasadan çıkanların toplamı ${money(sum)}; burada ${money(cashOut)} yazılı. Fişler kasadan ödendiyse tutarı düzeltin.`;
+}
+
+/** Fişsiz çıkışın açıklaması yokken formun ve sunucunun iletisi */
+export const CASH_OUT_NOTE_REQUIRED = "Fişlerden fazla çıkan tutarın neye çıktığını yazın";
+
+/**
+ * Personelin fişsiz çıkışının "Neye çıktı"sı eksik mi (denetim 25 Kasım 2026, bulgu 2): rapordaki "Gün içinde kasadan
+ * çıkan" satırların toplamından fazlaysa (`unreceipted`, unreceiptedCashOut) açıklama zorunlu. Satır varken kendiliğinden
+ * yazılan adlar ("Migros, buz") fişsiz kısmı açıklamaz: not onlardan farklı olmalı. Fişsiz kısım yoksa ya da açıklama
+ * yazıldıysa false. Form ve sunucu (saveCashReport, geç rapor, düzeltme önerisi) aynı kuralla; yönetici serbest
+ */
+export function cashOutNoteMissing(i: { unreceipted: number; note: string | null | undefined; outsNote: string | null }): boolean {
+  if (i.unreceipted < 1) return false;
+  const note = (i.note ?? "").trim();
+  return !note || (i.outsNote !== null && note === i.outsNote.trim());
 }
 
 /** WhatsApp ve e-postadaki satır: "Migros (süt, beyaz peynir) 412,50 ₺" */

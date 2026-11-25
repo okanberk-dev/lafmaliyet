@@ -73,7 +73,7 @@ test("Paraşüt faturaları: dökümü türüne göre, ay ay; toplam kartın say
   );
   assert.equal(bills.rows[0].href, "/panel/faturalar?kaynak=parasut&ay=2026-10#fatura-listesi");
   assert.equal(g.find((x) => x.key === "einvoice")!.rows[1].sub, "2 kontrol bekliyor");
-  assert.equal(g.find((x) => x.key === "matched")!.rows[0].sub, "5 Excel · 1 elle");
+  assert.equal(g.find((x) => x.key === "matched")!.rows[0].sub, "5 içe aktarılmış (eski) · 1 elle");
   const review = g.find((x) => x.key === "kontrol")!;
   assert.equal(review.apart, true);
   assert.equal(review.rows[0].amount, 3);

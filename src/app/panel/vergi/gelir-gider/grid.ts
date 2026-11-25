@@ -6,7 +6,7 @@ import type { QuarterView } from "@/lib/tax/view";
 /*
  * Vergi kârı tablosunun satırları ve sütunları (plan docs/planlar/vergi.md §4.2; docs/planlar/ux-sade.md §7.7):
  * seçilen çeyreğin ayları, "Çeyrek toplamı" ve "Yılbaşından beri". Etiketler sade sözle, resmî terim parantezde
- * (glossary.ts); Excel dışa aktarımı resmî adla kalır. Masaüstü tablosu ve telefonun tek kartı aynı veriyi çizer. Saf.
+ * (glossary.ts); dışa aktarım resmî adla kalır. Masaüstü tablosu ve telefonun tek kartı aynı veriyi çizer. Saf.
  */
 
 export interface GridCol {

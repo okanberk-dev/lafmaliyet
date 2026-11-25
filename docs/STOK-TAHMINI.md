@@ -57,10 +57,16 @@ Tuzla, Marina, İşletme geneli); seçim faturanın şubesini yazar, Faturalar'd
 kaynağı). Seçilmeyen ve işletme geneli fatura tahmine girmez, kart "şubesi seçilmedi" der. Tutar, ödeme, cari, FIFO ve
 mal maliyeti değişmez; fatura seçilen şubenin Faturalar, Gelir-gider ve Maliyet görünümüne geçer.
 
+Kart önce şubesi seçilmeyenleri, sonra seçilmişleri (şube ya da işletme geneli) listeler, ikisi de en yeni önce, ve en
+çok 100 fatura gösterir. Başlıktaki fatura sayısı ve "şubesi seçilmedi" sayacı liste kesilse de dönemin bütün
+faturalarından sayılır. Liste kesilince altında kaç faturanın gizlendiği ve bunların kaçının şubesinin seçilmediği yazar
+(25 Kasım 2026'ya kadar liste en yeni 100 faturada sessizce kesiliyordu, sayaç da yalnız onları sayıyordu: dönemin
+başındaki seçilmemiş fatura ne görünüyor ne sayılıyordu).
+
 25 Kasım 2026'ya kadar bu seçim ayrı bir tabloda (`stock_receipts`) duruyordu; göç `0088_fatura_sube_veri` seçimleri
 şubesi boş faturalara taşıdı, `0089` tabloyu kaldırdı.
 
-Faturası olmayan alım (elle ya da Excel'den girilen fatura, market alımı, Tuzla'dan getirilen mal) tahmine girmez:
+Faturası olmayan alım (elle girilen ya da içe aktarılmış fatura, market alımı, Tuzla'dan getirilen mal) tahmine girmez:
 tahmini stok olduğundan az görünür, sayım düzeltir.
 
 ## 4. Kritik eşik

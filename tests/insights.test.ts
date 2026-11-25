@@ -276,18 +276,24 @@ test("Sayım sapması yalnızca alım miktarı girilmiş satırlarda; reçetesiz
 
 // ---------------------------------------------------------------- Sayım KDV'si
 
-test("Sayım: grup bazında KDV dahil tutar ve Excel grup oranından ayrılan malzeme", () => {
+test("Sayım: grup bazında KDV dahil tutar ve grubun olağan alış KDV'sinden (Ayarlar) ayrılan malzeme", () => {
   const counts = ds.ingredients.filter((i) => i.countUnit && i.active).map((i) => ({ month: "2026-09", ingredientId: i.id, qty: 1 }));
   const m = createModel({ ...ds, stockCounts: counts });
-  const v = stockVatSummary(m.stockSheet("2026-09"));
+  const v = stockVatSummary(m.stockSheet("2026-09"), m.settings);
   const amb = v.groups.find((g) => g.name === "AMBALAJ MALZEMELERİ")!;
-  assert.equal(amb.excelRate, 0.2);
+  assert.equal(amb.rate, 0.2);
   assert.deepEqual(
     amb.mismatches.map((x) => x.ingredient.name),
     ["Yenilebilir bardak"],
   );
   for (const g of v.groups) close(g.totalVatIncl - g.total, g.vat, `${g.name} KDV`);
-  assert.ok(v.excelTotalVatIncl > v.totalVatIncl, "Excel grup oranı Yenilebilir bardakta daha yüksek");
+  assert.equal("excelTotalVatIncl" in v, false, "grup oranıyla ikinci toplam yok");
+  // Olağan oran Ayarlar'dan: ambalaj %10 olunca Yenilebilir bardak uyumlu, öteki ambalajlar ayrılır
+  const v10 = stockVatSummary(m.stockSheet("2026-09"), { ...m.settings, alisKdvAmbalaj: 0.1 });
+  const amb10 = v10.groups.find((g) => g.name === "AMBALAJ MALZEMELERİ")!;
+  assert.equal(amb10.rate, 0.1);
+  assert.ok(!amb10.mismatches.some((x) => x.ingredient.name === "Yenilebilir bardak"));
+  close(v10.totalVatIncl, v.totalVatIncl, "KDV dahil toplam her malzemenin kendi KDV'siyle: ayar değiştirmez");
   close(v.total, m.stockSheet("2026-09").total, "KDV hariç toplam aynı");
 });
 

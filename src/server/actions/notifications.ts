@@ -2,6 +2,8 @@
 
 import { and, count, eq, gt } from "drizzle-orm";
 
+import { failedBellRows, logBellFailed, type BellFailed, type BellPart } from "@/lib/bell-failed";
+import { paymentBellRows } from "@/lib/bell-payments";
 import { featureInScope } from "@/lib/branch-features";
 import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
@@ -15,7 +17,7 @@ import { dateTR, dayTR, monthShort, num, tl } from "@/lib/format";
 import { blockedBell } from "@/lib/notify-recipients";
 import { holdReason, holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
 import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
-import { addDays, daysLeftLabel, todayTR } from "@/lib/reminders";
+import { addDays, todayTR } from "@/lib/reminders";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { kasaBell } from "@/server/bell/kasa";
@@ -53,6 +55,8 @@ export interface PanelNotification {
   group?: "sistem" | "hatirlatici" | "onay" | "kasa" | "kontrol" | "odeme" | "fatura" | "uyari";
   /** Özet satırı: okununca bu kimlikler de okundu sayılır (içine aldığı satırlar sonra tek tek çıkınca okunmuş kalır) */
   covers?: string[];
+  /** Ödemelerin özet satırı: içine aldığı gecikmiş ödeme sayısı (alt menünün rozeti; src/lib/bell-payments.ts) */
+  overdue?: number;
 }
 
 /**
@@ -112,13 +116,15 @@ async function checklistNotifications(user: CurrentUser): Promise<PanelNotificat
   }).map((b) => ({ ...b, group: "kontrol" as const }));
 }
 
-/** Kişinin gecikmiş ve bugünkü (saati gelmiş ya da gelecek) hatırlatıcıları */
+/**
+ * Kişinin gecikmiş ve bugünkü (saati gelmiş ya da gelecek) hatırlatıcıları; 8'den fazlaysa ilk 7'si ve kalanı tek bir
+ * "N hatırlatıcı daha" satırında (okununca içindekiler de okunur; bulgu 96)
+ */
 async function reminderNotifications(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
-  return (await loadDueReminders(user.id))
+  const rows: PanelNotification[] = (await loadDueReminders(user.id))
     .map((r) => ({ r, group: dueGroup(r, now) }))
     .filter((x) => x.group === "overdue" || x.group === "today")
-    .slice(0, 8)
     .map(({ r, group }) => ({
       // Tarih / saat değişince (tamamlandı, ertelendi) yeniden okunmamış olur
       id: `hatirlatici-${r.id}-${r.dueDate}-${r.dueTime ?? ""}`,
@@ -130,6 +136,22 @@ async function reminderNotifications(user: CurrentUser): Promise<PanelNotificati
       href: "/panel/hatirlaticilarim",
       group: "hatirlatici" as const,
     }));
+  if (rows.length <= 8) return rows;
+  const hidden = rows.slice(7);
+  return [
+    ...rows.slice(0, 7),
+    {
+      id: `hatirlatici-diger-${hidden[hidden.length - 1].id}`,
+      kind: hidden.some((r) => r.kind === "warning") ? "warning" : "info",
+      title: `${num(hidden.length)} hatırlatıcı daha`,
+      body: "Hepsi Hatırlatıcılarım'da.",
+      timeLabel: "",
+      unread: hidden.some((r) => r.unread),
+      href: "/panel/hatirlaticilarim",
+      group: "hatirlatici",
+      covers: hidden.map((r) => r.id),
+    },
+  ];
 }
 
 /**
@@ -479,19 +501,28 @@ async function modelNotifications(): Promise<{ priceNote: PanelNotification[]; w
  * Kontrol listeleri kasanın hemen ardından, iki rolde. Alanların satırlarını kendi modülleri üretir ve iki rol dalında
  * da çağrılır: kasa (src/server/bell/kasa.ts) ve operasyon (src/server/bell/ops.ts). Personel kendi hatırlatıcılarını,
  * önerilerinin ve isteklerinin sonucunu ("İsteklerim"), akşam bekleyen kasa raporunu ve bekleyen kontrol listesini
- * görür; maliyet, ödeme, fatura ve sistem bilgisi ona gitmez.
+ * görür; maliyet, ödeme, fatura ve sistem bilgisi ona gitmez. Okunamayan bölüm kendi grubunda "… yüklenemedi" satırı
+ * bırakır (failedBellRows; bulgu 88).
  */
 export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   const user = await getCurrentUser();
   if (!user) return [];
+  // Bir bölüm okunamazsa (Neon uyanırken zaman aşımı) sessizce boş görünmez: günlüğe yazılır ve kendi grubunda
+  // "{Grup} yüklenemedi" satırı olur (src/lib/bell-failed.ts; bulgu 88). Satır okunmamış sayılmaz
+  const failed: BellPart[] = [];
+  const onFailed: BellFailed = (part, e) => {
+    logBellFailed(part, e);
+    failed.push(part);
+  };
+  const safe = (part: BellPart, p: Promise<PanelNotification[]>) => p.catch((e: unknown) => (onFailed(part, e), [] as PanelNotification[]));
   const [mine, recipes, cash, kontrol, ops] = await Promise.all([
-    reminderNotifications(user).catch(() => []),
-    recipeNotifications(user).catch(() => []),
-    kasaBell(user).catch(() => []),
-    checklistNotifications(user).catch(() => []),
-    opsBell(user).catch(() => []),
+    safe("hatirlatici", reminderNotifications(user)),
+    safe("recete", recipeNotifications(user)),
+    safe("kasa", kasaBell(user, onFailed)),
+    safe("kontrol", checklistNotifications(user)),
+    safe("operasyon", opsBell(user, onFailed)),
   ]);
-  if (user.role !== "admin") return [...cash, ...kontrol, ...mine, ...recipes, ...ops];
+  if (user.role !== "admin") return [...failedBellRows(failed, user.role, todayTR()), ...cash, ...kontrol, ...mine, ...recipes, ...ops];
   // Maliyet modeli zilin en ağır okuması: düşerse (E-49) öbür maddeler yine gelir, modelNotifications kendi satırını
   // koyar. Ödemeler de öyle: okunamazsa "Ödemeler yüklenemedi" satırı (upcomingFailed). ModPOS kasa föyünün anahtarı
   // çalışmıyorsa Sistem başlığında (src/server/bell/modpos.ts)
@@ -501,28 +532,18 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     currentBranchScope()
       .then((branch) => loadUpcoming(undefined, { branch }))
       .catch(upcomingFailed),
-    invoiceNotifications().catch(() => []),
-    systemNotifications().catch(() => []),
-    unpricedNotifications().catch(() => []),
-    holdNotifications().catch(() => []),
-    commissionNotifications().catch(() => []),
-    recipientNotifications().catch(() => []),
-    modposKeyBell().catch(() => []),
+    safe("fatura", invoiceNotifications()),
+    safe("sistem", systemNotifications()),
+    safe("fiyatsiz", unpricedNotifications()),
+    safe("bekletme", holdNotifications()),
+    safe("komisyon", commissionNotifications()),
+    safe("alici", recipientNotifications()),
+    safe("modpos", modposKeyBell()),
   ]);
+  const lost = failedBellRows(failed, user.role, todayTR());
 
-  const payments: PanelNotification[] = (upcoming?.items ?? [])
-    .filter((i) => i.status !== "later")
-    .slice(0, 8)
-    .map((i) => ({
-      id: `odeme-${i.ref}-${i.dueDate}`,
-      kind: i.status === "overdue" ? "danger" : i.status === "today" ? "warning" : "info",
-      title: `${i.title}${i.amount !== null ? ` · ${tl(i.amount)}` : ""}`,
-      body: [`Son ödeme ${dateTR(i.dueDate)}`, i.detail, i.hint?.text].filter(Boolean).join(" · "),
-      timeLabel: daysLeftLabel(i.daysLeft),
-      unread: i.status !== "soon",
-      href: "/panel/hatirlaticilar",
-      group: "odeme" as const,
-    }));
+  // En çok 8 satır; sığmayanlar "N ödeme daha" özetinde, gecikmiş sayısıyla (rozet; src/lib/bell-payments.ts, bulgu 96)
+  const payments: PanelNotification[] = paymentBellRows(upcoming?.items ?? []);
   if (!upcoming) payments.push(paymentsFailedRow());
   // Personelin kasadan tedarikçiye verdiği, hesaba işlenmemiş paralar (Teslim · ödeme; yalnız yönetici). Kimlik sayı ve
   // toplamdan: yeni satır gelince yeniden okunmamış olur
@@ -540,5 +561,5 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     });
   }
 
-  return [...system, ...recipients, ...modpos, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
+  return [...lost, ...system, ...recipients, ...modpos, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
 }

@@ -1,6 +1,8 @@
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import type { LafposSalesMonth, SalesLine } from "@/lib/calc/types";
 import { missingText } from "@/lib/cash-month";
 import { monthLabel, money, pct, tl } from "@/lib/format";
+import { genitive } from "@/lib/recipe-change";
 import { coverageFor } from "@/lib/sales-coverage";
 import { addDays, dayAblativeTR, dayMonthTR, monthEnd } from "@/lib/reminders";
 
@@ -68,6 +70,83 @@ export function lafposSalesCountFrom(
   return lafposCountFrom(switchDay, hasList ? modposThroughOf(month, coverage) : null);
 }
 
+/**
+ * "Tümü"de ModPOS'ta kalan bir şubenin (Tuzla) bir aydaki satış listesi (bulgu 62): son günü (şubenin kendi kaydı, yoksa
+ * ayın son günü); o ay kasa raporu var ama listesi yoksa null
+ */
+export interface OtherBranchList {
+  branchId: string;
+  month: string;
+  through: string | null;
+}
+
+/**
+ * "Tümü"nün ortak döneminin girdisi (bulgu 62): geçiş ayından itibaren ModPOS'ta kalan her şubenin (LafPOS'un şubesi
+ * dışındakiler; şubesiz satır ve rapor Tuzla'nın) listesi ya da kasa raporu olan her ayı. Listesi olan ayda son günü
+ * şubenin kendi kaydından (`coverageOf`: readCoverage(…, şube); kayıt yoksa ayın tamamı), listesi olmayıp kasa raporu
+ * olan ayda null. Geçiş günü yoksa boş: ortak dönem LafPOS'la birlikte gelir (ModPOS listeleri öncesi bugünkü gibi).
+ */
+export function otherBranchLists(i: {
+  switchDay: string | null;
+  lafposBranch?: string;
+  salesLines: readonly Pick<SalesLine, "month" | "branchId">[];
+  /** Kasa raporu olan günler, şubesiyle (yalnız rapor satırları: yedek ay satırları ve föy değil) */
+  reportDays: readonly { branchId?: string | null; date: string }[];
+  coverageOf: (branchId: string) => Readonly<Record<string, string>>;
+}): OtherBranchList[] {
+  if (i.switchDay === null) return [];
+  const from = i.switchDay.slice(0, 7);
+  const withList = new Set<string>();
+  const keys = new Map<string, { branchId: string; month: string }>();
+  const add = (branchId: string, month: string) => {
+    if (month < from || isLafposBranch(branchId, i.lafposBranch)) return false;
+    keys.set(`${month}|${branchId}`, { branchId, month });
+    return true;
+  };
+  for (const l of i.salesLines) {
+    const b = l.branchId ?? DEFAULT_BRANCH_ID;
+    if (add(b, l.month)) withList.add(`${l.month}|${b}`);
+  }
+  for (const r of i.reportDays) add(r.branchId ?? DEFAULT_BRANCH_ID, r.date.slice(0, 7));
+  return [...keys.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, { branchId, month }]) => ({
+      branchId,
+      month,
+      through: withList.has(key) ? (i.coverageOf(branchId)[month] ?? monthEnd(`${month}-01`)) : null,
+    }));
+}
+
+/** "Tümü"nün ortak döneminin bir ayı: listesi en kısa (ya da hiç olmayan) şube ve son günü */
+export interface CommonListCut {
+  month: string;
+  branchId: string;
+  /** Listenin son günü; null: listesi yok (ayın hiçbir günü ortak dönemde değil) */
+  through: string | null;
+  /** LafPOS'un bu günden sonraki günleri bu ayda sayılmaz (listesi yoksa ayın başından önceki gün) */
+  after: string;
+}
+
+/**
+ * "Tümü"de LafPOS'un günlerinin kesildiği gün, ay ay (bulgu 62): ModPOS'ta kalan şubelerin o ayki en kısa listesinin son
+ * günü (listesi olmayan şube en kısasıdır). Bütün listeler ayın sonuna kadarsa ay yok. LafPOS gün gün okunur, kesilir;
+ * ModPOS listesi aylık toplamdır, kesilemez: "Tümü"nün dönemi en kısa listeyle biter, sabit gider ve kasa o günlerle.
+ */
+export function commonListCuts(others: readonly OtherBranchList[]): CommonListCut[] {
+  const byMonth = new Map<string, OtherBranchList>();
+  for (const o of others) {
+    const cur = byMonth.get(o.month);
+    const end = (x: OtherBranchList) => x.through ?? "";
+    if (!cur || end(o) < end(cur)) byMonth.set(o.month, o);
+  }
+  const out: CommonListCut[] = [];
+  for (const o of [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month))) {
+    if (o.through !== null && o.through >= monthEnd(`${o.month}-01`)) continue;
+    out.push({ month: o.month, branchId: o.branchId, through: o.through, after: o.through ?? addDays(`${o.month}-01`, -1) });
+  }
+  return out;
+}
+
 export interface SalesSourcesInput {
   switchDay: string | null;
   /** Satışlar'a yüklenmiş ModPOS listeleri (sales_lines), veritabanındaki sırayla */
@@ -83,6 +162,11 @@ export interface SalesSourcesInput {
   lafposDays: readonly LafposDaysOfMonth[];
   /** LafPOS'un şubesi (kütükten türetilmiş, lafposBranchOf); verilmezse LAFPOS_BRANCH_ID */
   lafposBranch?: string;
+  /**
+   * Yalnız "Tümü": ModPOS'ta kalan şubelerin listeleri (otherBranchLists; bulgu 62). Verilince ayın dönemi şubelerin en
+   * kısasıdır; LafPOS satırları o güne kadar kesilmiş gelmelidir (mergeWithLafpos, commonListCuts)
+   */
+  others?: readonly OtherBranchList[];
 }
 
 export interface SalesSources {
@@ -90,9 +174,15 @@ export interface SalesSources {
   salesLines: SalesLine[];
   /**
    * Satırların kapsadığı son gün, ay ay (engine listPeriod): ModPOS listesinin kaydı; LafPOS satırı olan ayda son gelen
-   * LafPOS günü (ayın son günüyse kayıt yok: ayın tamamı). Sayılmayan listenin kaydı düşer.
+   * LafPOS günü (ayın son günüyse kayıt yok: ayın tamamı). Sayılmayan listenin kaydı düşer. "Tümü"de (`others`) en kısa
+   * liste.
    */
   coverage: Record<string, string>;
+  /**
+   * "Tümü"de dönemi kısaltan şube, ay ay (bulgu 62): listesi ayın öteki satırlarından önce biten (`through`) ya da hiç
+   * olmayan (`through` null: ayın satırları sayılmaz) ModPOS şubesi. Yalnız `others` verilince; yoksa boş
+   */
+  short: Record<string, { branchId: string; through: string | null }>;
 }
 
 /**
@@ -102,7 +192,7 @@ export interface SalesSources {
  */
 export function mergeSalesSources(input: SalesSourcesInput): SalesSources {
   const S = input.switchDay;
-  if (S === null) return { salesLines: input.salesLines, coverage: { ...input.coverage } };
+  if (S === null) return { salesLines: input.salesLines, coverage: { ...input.coverage }, short: {} };
   const switchMonth = S.slice(0, 7);
   const kept = input.salesLines.filter((l) => modposListCounts(l.month, branchSwitchDay(S, l.branchId, input.lafposBranch)));
   const lafpos = input.lafposLines
@@ -129,7 +219,53 @@ export function mergeSalesSources(input: SalesSourcesInput): SalesSources {
     if (d.last >= monthEnd(`${d.month}-01`)) delete coverage[d.month];
     else coverage[d.month] = d.last;
   }
-  return { salesLines: [...kept, ...synthetic], coverage };
+  // "Tümü": ayın dönemi şubelerin en kısa listesiyle biter (bulgu 62). ModPOS'ta kalan şubenin listesi LafPOS'un son
+  // gününden önce bitiyorsa dönem onun son günü; listesi hiç yoksa ayın satırları sayılmaz (ortak dönem yok). Önceden
+  // dönem Marina'nın son LafPOS günüydü: Tuzla'nın 15 günlük listesi iki şubenin 24 günlük sabit gideriyle düşülüyordu
+  let salesLines = [...kept, ...synthetic];
+  const short: SalesSources["short"] = {};
+  for (const cut of commonListCuts(input.others ?? [])) {
+    if (cut.through === null) {
+      salesLines = salesLines.filter((l) => l.month !== cut.month);
+      delete coverage[cut.month];
+      short[cut.month] = { branchId: cut.branchId, through: null };
+      continue;
+    }
+    const current = coverage[cut.month] ?? monthEnd(`${cut.month}-01`);
+    if (cut.through > current) continue;
+    coverage[cut.month] = cut.through;
+    short[cut.month] = { branchId: cut.branchId, through: cut.through };
+  }
+  return { salesLines, coverage, short };
+}
+
+/**
+ * "Tümü"nün kısa dönemi metni (bulgu 62), cümle (sonda nokta): "Tuzla'nın satış listesinin son günü 15 Aralık: öteki
+ * şubelerin satışı da o güne kadar sayılır." Listesi yoksa: "Tuzla'nın Aralık 2026 satış listesi yok: öteki şubelerin bu
+ * ayki satışı da sayılmaz (şubeyi seçince görünür)."
+ */
+export function commonListText(month: string, branchName: string, through: string | null): string {
+  const owner = genitive(branchName);
+  return through === null
+    ? `${owner} ${monthLabel(month)} satış listesi yok: öteki şubelerin bu ayki satışı da sayılmaz (şubeyi seçince görünür).`
+    : `${owner} satış listesinin son günü ${dayMonthTR(through)}: öteki şubelerin satışı da o güne kadar sayılır.`;
+}
+
+/**
+ * "Tümü"de ortak dönemi olmayan ay (bir ModPOS şubesinin listesi yok; bulgu 62 inceleme): Genel bakış'ın "Satış raporu" işi
+ * ve başlığın kaynak satırı "LafPOS … sayılıyor" demez, satırların liste gelince sayıldığını söyler (bant da öyle).
+ * `running`: süren ay (liste ay sonunda yüklenir) ya da bitmiş ay (yüklenmedi). Cümle, sonda nokta
+ */
+export function commonListWaitText(month: string, branchName: string, running: boolean): string {
+  const owner = genitive(branchName);
+  return running
+    ? `Tümü'de bu ayın satışları ${owner} listesi gelince sayılır; şubeyi seçince gün gün görünür.`
+    : `${owner} ${monthLabel(month)} satış listesi yüklenmedi: Tümü'de bu ayın satışları sayılmıyor (şubeyi seçince görünür).`;
+}
+
+/** Başlığın altındaki kaynak satırı, ortak dönemi olmayan ayda ("Tümü"; commonListWaitText) */
+export function commonListSourceLine(branchName: string): string {
+  return `Satışlar: Tümü'de ${genitive(branchName)} listesi gelince (şube seçiliyken gün gün)`;
 }
 
 /**

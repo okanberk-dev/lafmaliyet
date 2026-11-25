@@ -32,7 +32,7 @@ import {
   staffPhotoLine,
 } from "../src/lib/lafpos/foto";
 import { lafposDayDetail } from "../src/lib/lafpos/gun-ayrinti";
-import { autoMissing, autoValuesOf, bankPosAuto, dayHash, mergeAuto, renderDayEnd, type AutoValues, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
+import { autoMissing, autoValuesOf, bankPosAuto, dayHash, humanDeviceFill, mergeAuto, renderDayEnd, type AutoValues, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
 import { lafposDayOf } from "../src/lib/lafpos/prefill";
 import { okcReconcile } from "../src/lib/okc-z";
 import type { KasaOkc } from "../src/lib/photo-read/schemas";
@@ -249,6 +249,24 @@ test("Birleştirme: sonradan gelen Pavo boş alanı doldurur; alınamayan gün s
   const m3 = mergeAuto(edited, m1.auto, { ...withPavo, bankPos: 990 });
   assert.equal(m3.values.bankPos, 1_000);
   assert.deepEqual(m3.kept, ["bankPos"]);
+});
+
+test("Elle girilmiş rapor (bulgu 6): yalnız boş cihaz alanları dolar; yazarkasa grubu elle yazılmışsa hiçbiri", () => {
+  const next = autoValuesOf(DAY, Z, NO_OUTS, null, { bankPos: OK, okc: OKC, offDevice: OFF });
+  const empty = { bankPos: null, okcZNo: null, okcReceipts: null, okcTotal: null, okcCash: null, okcCard: null, okcMealCard: null, okcOther: null, okcVat: null, okcVatTotal: null };
+  const all = humanDeviceFill(empty, next);
+  assert.equal(all.bankPos, 995);
+  assert.equal(all.okcTotal, next.okcTotal);
+  assert.deepEqual(all.okcVat, next.okcVat);
+  // Z ve kasa alanları hiçbir zaman yazılmaz
+  assert.deepEqual(Object.keys(all).filter((k) => !k.startsWith("okc") && k !== "bankPos"), []);
+  // Elle yazılan Banka POS ezilmez; yazarkasa yine dolar
+  assert.deepEqual(Object.keys(humanDeviceFill({ ...empty, bankPos: 1_000 }, next)).includes("bankPos"), false);
+  // Bir yazarkasa alanı elle yazıldıysa (Z no bile) yazarkasa grubu dokunulmaz, iki kaynak karışmaz
+  assert.deepEqual(humanDeviceFill({ ...empty, okcZNo: "0042" }, next), { bankPos: 995 });
+  // Cihazın rakamı yoksa uydurulmaz; elle yazılmış her şeyde boş nesne
+  assert.deepEqual(humanDeviceFill(empty, autoValuesOf(DAY, Z, NO_OUTS, null, { bankPos: FAILED, okc: null })), {});
+  assert.deepEqual(humanDeviceFill({ ...empty, bankPos: 1, okcTotal: 2 }, next), {});
 });
 
 test("Pavo kartı: günün toplamı (Σ batch) LafPOS'un bütün gün kartıyla karşılaştırılır, her batch listelenir", () => {

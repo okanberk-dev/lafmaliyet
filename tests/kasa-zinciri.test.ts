@@ -18,8 +18,11 @@ import {
   lafposAwaitingCategory,
   lafposCashOutChange,
   lafposInsertedRow,
+  LAFPOS_RECIPIENT_MAX,
+  lafposRecipient,
   planLafposCashOuts,
   planLafposDetach,
+  planLafposRecipientFill,
   type LafposCashOutRow,
 } from "../src/lib/lafpos/cash-moves";
 import { parsePosDay, type PosCashMove } from "../src/lib/lafpos/day";
@@ -72,6 +75,52 @@ test("gövde: Faz 3 alanları isteğe bağlı (eski LafPOS göndermez); gelince 
   assert.deepEqual(parse({ ...golden(), cashMoves: [] }).cashMoves, [], "hareketsiz gün boş dizi (eski LafPOS'tan ayrı)");
   const m = parse(golden()).cashMoves!;
   assert.deepEqual(m[0], { id: "01M5WDWP40S3V9J8M2N4P6Q8T0", kind: "harcama", amount: 120, description: "Buz", at: "2026-10-26T15:40:00.000Z", categoryId: 1 });
+  // Teslimin alıcısı (LafPOS 25 Kasım 2026): yalnız teslimde gelir; harcamada alan hiç yok
+  assert.equal(m[1].kind, "teslim");
+  assert.equal(m[1].recipient, "Patron");
+  assert.ok(!("recipient" in m[0]) && !("recipient" in m[2]));
+});
+
+test("gövde: teslimin alıcısı bozuk gelirse yalnız alıcı düşer, liste ve gün kalır", () => {
+  for (const bad of [5, null, { ad: "Okan" }, "x".repeat(1001)]) {
+    const b = golden();
+    b.cashMoves[1].recipient = bad;
+    const r = parsePosDay(JSON.stringify(b), NOW);
+    assert.ok(r.ok, `${JSON.stringify(bad)}: gün reddedilmez`);
+    assert.equal(r.data.cashMoves?.length, 3, `${JSON.stringify(bad)}: liste düşmez`);
+    assert.equal(r.data.cashMoves?.[1].recipient, undefined);
+    assert.equal(lafposRecipient(r.data.cashMoves![1]), null);
+  }
+});
+
+test("Kime: LafPOS teslimin alıcısı satırın Kime'si olur (yalnız teslimde, sadeleşir, en çok 60)", () => {
+  const t = (recipient: unknown, kind: PosCashMove["kind"] = "teslim") => lafposRecipient({ ...move("01K", kind, 100), recipient } as PosCashMove);
+  assert.equal(t("Patron"), "Patron");
+  assert.equal(t("  Okan   Bey  "), "Okan Bey");
+  assert.equal(t("Ç".repeat(100))?.length, LAFPOS_RECIPIENT_MAX);
+  assert.equal(t("   "), null, "boş ad Kime yazmaz");
+  assert.equal(t(undefined), null, "eski LafPOS: alıcı yok");
+  assert.equal(t("Patron", "harcama"), null, "harcamada alıcı Kime olmaz (yer panelden)");
+  assert.equal(t("Patron", "giris"), null);
+});
+
+test("Kime: boş Kime'li sahiplenilen ve önceden yazılmış LafPOS teslimi dolar; panelde yazılmış Kime ve yeniden yazılan satır dokunulmaz", () => {
+  const withTo = (id: string, amount: number, recipient?: string): PosCashMove => ({ ...move(id, "teslim", amount), ...(recipient ? { recipient } : {}) });
+  const moves = [withTo("01A", 200, "Patron"), withTo("01B", 300, "Banka"), withTo("01C", 400, "Okan"), withTo("01D", 50), move("01E", "harcama", 80)];
+  const rows = [
+    { id: 1, lafposId: moves[0].id, store: null }, // eski sürümün yazdığı satır: dolar
+    { id: 2, lafposId: moves[1].id, store: "Patrona (elle)" }, // panelde yazılmış Kime: dokunulmaz
+    { id: 3, lafposId: null, store: "" }, // elle girilmiş eş, sahiplenilecek: dolar
+    { id: 4, lafposId: moves[3].id, store: null }, // alıcısız teslim: boş kalır
+    { id: 5, lafposId: moves[4].id, store: null }, // harcama: Kime değil
+    { id: 6, lafposId: "01Z".padEnd(26, "0"), store: null }, // gövdede olmayan satır
+  ];
+  assert.deepEqual(planLafposRecipientFill(moves, rows, [{ rowId: 3, move: moves[2] }]), [
+    { rowId: 3, store: "Okan" },
+    { rowId: 1, store: "Patron" },
+  ]);
+  // Tutarı ya da türü değişip yeniden yazılan satır (plan.update) yazımda dolar, burada atlanır
+  assert.deepEqual(planLafposRecipientFill(moves, rows, [], new Set([1])), []);
 });
 
 test("gövde: bozuk Faz 3 alanı günü reddetmez (400 LafPOS'ta kalıcı): alan düşer, günlüğe yazılır; bozuk tek hareket bütün listeyi düşürür", () => {
@@ -328,7 +377,8 @@ test("gün görünümü: açılışın beklenen tutarı, farkı ve nedeni; harek
   const detail = lafposDayDetail(d);
   const sec = (t: string) => Object.fromEntries(detail.sections.find((x) => x.title === t)?.rows ?? []);
   assert.deepEqual(sec("Kasa açılışı (LafPOS)"), { "Beklenen açılış": money(1_400), "Açılış farkı": `+${money(100)}`, "Farkın nedeni": "Sabah bozuk para eklendi" });
-  assert.deepEqual(sec("Kasa hareketleri (LafPOS)"), { Harcama: `1 · ${money(120)}`, Teslim: `1 · ${money(200)}`, "Kasaya giren (giriş)": `1 · ${money(50)}` });
+  // 25 Kasım 2026'dan altın gövdenin teslimi alıcısıyla (`recipient: "Patron"`): teslim kime gittiğiyle de dökülür
+  assert.deepEqual(sec("Kasa hareketleri (LafPOS)"), { Harcama: `1 · ${money(120)}`, Teslim: `1 · ${money(200)}`, "Teslim · Patron": `1 · ${money(200)}`, "Kasaya giren (giriş)": `1 · ${money(50)}` });
   const kabul = parse(JSON.parse(read("tests/fixtures/kabul-gunu-2026-11-22.json")));
   const k = lafposDayDetail(kabul);
   const ks = (t: string) => Object.fromEntries(k.sections.find((x) => x.title === t)?.rows ?? []);

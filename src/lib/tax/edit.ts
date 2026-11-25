@@ -344,7 +344,7 @@ export interface EmployerRateNotice {
 }
 
 /**
- * Ayarlar'daki işveren SGK oranı (Gelir-gider ve Excel'in oranı, K17) vergi ve nakit planının oranından farklıysa
+ * Ayarlar'daki işveren SGK oranı (Gelir-gider ve dışa aktarımın oranı, K17) vergi ve nakit planının oranından farklıysa
  * Gelir-gider'deki uyarı satırı; aynıysa null. Oran kendiliğinden değişmez (K19): sahip muhasebecisine sorup M2'yi
  * işaretleyince düğme çıkar, düğme yalnız `isverenSgk`'yi yazar (`setEmployerSgkRate`)
  */

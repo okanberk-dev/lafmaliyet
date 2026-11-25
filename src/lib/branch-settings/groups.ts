@@ -315,7 +315,7 @@ export function branchSettingGroup(id: string): BranchSettingGroup | null {
  * vardiya PR'ı (#120) birleştikten sonra
  */
 export const SHARED_FOR_NOW: readonly { id: string; label: string }[] = [
-  { id: "uyari.saatleri", label: "Uyarı sesi saatleri (10:00–01:00)" },
+  { id: "uyari.saatleri", label: "Uyarı sesi saatleri (09:00–01:00)" },
   { id: "kontrol.saatleri", label: "Kontrol listesi hatırlatma saatleri" },
   { id: "vardiya.hazir", label: "Hazır vardiya saatleri" },
 ];

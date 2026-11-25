@@ -1,4 +1,4 @@
-// Yardım: menü yolları ve Excel karşılıkları kenar çubuğu ağacından (src/app/panel/yardim/nav-paths.ts); sayfadaki
+// Yardım: menü yolları ve sekmeler kenar çubuğu ağacından (src/app/panel/yardim/nav-paths.ts); sayfadaki
 // her ekran yolu çözülür, her bağlantı var olan bir ekrana gider.
 // Çalıştırma: npx tsx --test tests/yardim.test.ts
 
@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { excelFor, pathOf, tabsOf } from "../src/app/panel/yardim/nav-paths";
+import { pathOf, tabsOf } from "../src/app/panel/yardim/nav-paths";
 import { NAV_TREE, SECTION_TABS } from "../src/components/panel/nav";
 
 const PAGE = readFileSync(join(process.cwd(), "src/app/panel/yardim/page.tsx"), "utf8");
@@ -37,16 +37,7 @@ test("menüde ayrı öğesi olmayan sekme, menü öğesinin altında (Aylık har
   for (const tabs of Object.values(SECTION_TABS)) for (const t of tabs) assert.ok(pathOf(t.href).length >= 2, t.href);
 });
 
-test("Excel karşılığı sekme adından: sekme eklenince ötekiler kaymaz, yeni sekme 'yeni'", () => {
-  assert.equal(excelFor("/panel/giderler"), "Sabit Giderler");
-  assert.equal(excelFor("/panel/harcamalar"), undefined);
-  // "Maaşlar" sekmesinin parçası yok: kaydın kendi Excel adına düşer
-  assert.equal(excelFor("/panel/personel"), "Personel");
-  assert.equal(excelFor("/panel/sayim"), "Sayım");
-  assert.equal(excelFor("/panel/tutarlilik"), "Tutarlılık Kontrolü");
-  assert.equal(excelFor("/panel"), "Panel");
-  assert.equal(excelFor("/panel/faturalar"), "Faturalar");
-  assert.equal(excelFor("/panel/hatirlaticilar"), undefined);
+test("Giderler & maaşlar sekmeleri Yardım'ın Ekranlar kartında sırasıyla", () => {
   assert.deepEqual(
     tabsOf("/panel/giderler")?.map((t) => t.label),
     ["Sabit giderler", "Aylık harcamalar", "Maaşlar"],

@@ -25,21 +25,21 @@ export function listShareLabel(ls: NonNullable<FixedMonthBreakdown["listShare"]>
   return `Satış listesinin günleri (${ls.days} / ${ls.of} gün)`;
 }
 
-/** Net kâr ipucu: Excel temeli (standart) ile bu ayın sabit gideri arasındaki fark nereden geliyor */
+/** Net kâr ipucu: standart aylık sabit gider ile bu ay düşülen sabit gider arasındaki fark nereden geliyor */
 export function fixedBreakdownText(f: FixedMonthBreakdown): string {
   const parts = [`Standart aylık sabit gider ${tl(f.standard)}`];
   if (differs(f.proration, 0)) parts.push(`${prorationLabel(f).toLocaleLowerCase("tr-TR")} ${signedTl(f.proration)}`);
   // Kutudaki satırlarla aynı adlar: düzeltilen hücreler ve yalnızca bu aya yazılan satırlar ayrı
   if (differs(f.overrides, 0)) parts.push(`Gelir-gider'de düzeltilen tutarlar ${signedTl(f.overrides)}`);
   if (differs(f.manual, 0)) parts.push(`bu aya özel giderler (Gelir-gider) ${signedTl(f.manual)}`);
-  // Harcamalar Excel'de yok: standarda değil, ayrı satıra (yoksa "Excel temeli" ile standart çelişir)
+  // Aylık harcamalar standart sabit gidere girmez: ayrı satırda
   if (differs(f.expenses, 0)) parts.push(`aylık harcamalar ${signedTl(f.expenses)}`);
   if (f.listShare && differs(f.listShare.amount, 0)) parts.push(`${listShareLabel(f.listShare).toLocaleLowerCase("tr-TR")} ${signedTl(f.listShare.amount)}`);
-  return `${parts.join(" · ")} = bu ay düşülen ${tl(f.total)}. Excel Panel'i her ay standart tutarı düşer; "Excel temeli" o hesaptır.`;
+  return `${parts.join(" · ")} = bu ay düşülen ${tl(f.total)}.`;
 }
 
 /**
- * Bu ay düşülen sabit giderin kaynağı, ayrı satırlarda: standart aylık tutar (Excel SabitGiderToplam),
+ * Bu ay düşülen sabit giderin kaynağı, ayrı satırlarda: standart aylık tutar (Sabit giderler + Maaşlar),
  * açık gün etkisi, Gelir-gider'de düzeltilen hücreler, bu aya özel satırlar ve aylık harcamalar. Standarttan fark yoksa
  * tek satırlık not; SU GİDERİ reçetelere dağıtıldıysa ikinci kez düşülmediği yazılır.
  */
@@ -60,7 +60,7 @@ export function FixedReconcile({ f }: { f: FixedMonthBreakdown }) {
   if (!proration && !overrides && !manual && !expenses && !listShare) {
     return (
       <p className="text-xs leading-5 text-ink-mute">
-        Sabit giderler bu ay standart aylık tutarlarla düşüldü ({tl(f.standard)}, Excel Panel ile aynı temel).
+        Sabit giderler bu ay standart aylık tutarlarla düşüldü ({tl(f.standard)}).
         {water ? ` SU GİDERİ (${tl(f.waterExcluded)}) reçetelerde su + buz maliyeti olarak sayıldığı için burada ikinci kez düşülmedi.` : ""}
         {f.basis === "standard" ? " Açık gün sayısı girilmedi; girilince sabit giderler açık gün oranıyla hesaplanır." : ""}
         {shared}
@@ -80,11 +80,11 @@ export function FixedReconcile({ f }: { f: FixedMonthBreakdown }) {
     <Well className="px-4 py-2">
       <h3 className="flex items-center gap-1.5 pt-1 text-[13px] font-semibold text-ink">
         Bu ay düşülen sabit gider
-        <InfoTip text="Excel Panel'i her ay standart aylık sabit gideri (Sabit Giderler + Personel) düşer. Panel o ayın Gelir-gider tutarlarını kullanır: kalemler açık gün oranıyla bölünür (açık günü kasa raporlarından gelen ayda ayın geçen günüyle: kapalı gün kira ve maaşı düşürmez), Gelir-gider'de elle düzeltilen hücreler, yalnızca bu aya yazılan satırlar (doğalgaz, ciro kirası, harici…) ve Harcamalar sayfasındaki aylık harcamalar eklenir. Fark aşağıda ayrı satırlarda." />
+        <InfoTip text="Standart aylık sabit gider: Sabit giderler ve Maaşlar'daki kalemlerin bir aylık tutarı. Net kâr o ayın Gelir-gider tutarlarını kullanır: kalemler açık gün oranıyla bölünür (açık günü kasa raporlarından gelen ayda ayın geçen günüyle: kapalı gün kira ve maaşı düşürmez), Gelir-gider'de elle düzeltilen hücreler, yalnızca bu aya yazılan satırlar (doğalgaz, ciro kirası, harici…) ve Harcamalar sayfasındaki aylık harcamalar eklenir. Fark aşağıda ayrı satırlarda." />
       </h3>
       <div className="divide-y divide-line">
         <div className="flex items-baseline justify-between gap-4 py-1.5 text-[13px]">
-          <span className="text-ink-mute">Standart aylık sabit gider (Excel)</span>
+          <span className="text-ink-mute">Standart aylık sabit gider</span>
           <span className="text-ink tabular">{tl(f.standard)}</span>
         </div>
         {proration ? row(prorationLabel(f), f.proration) : null}

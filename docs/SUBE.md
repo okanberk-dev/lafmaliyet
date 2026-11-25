@@ -101,11 +101,11 @@ satışı "Tümü"de ve online kanal seçiliyken okunur, fiziksel şubede yoktur
 **İşletme geneli ekranlar** seçiciden bağımsız, hep "Tümü"yle okur (`withBranchScope(ALL_BRANCHES, …)` ya da
 `loadModel({ scope: ALL_BRANCHES })`): Vergi (özet, gelir-gider, demirbaş), Ödemeler › Nakit planı ve Genel bakış'ın
 nakit planı kartı, Tutarlılık (alınan mal şubeye bölünmez; tek şubenin tüketimiyle karşılaştırılmaz), Ayarlar'daki
-tam yedek (Excel'e aktar, seçicisiz) ve Ayarlar › Stok değerleme önizlemesi (ayar "Tümü"nün kâr-zararını değiştirir;
+tam yedek (Dışa aktar, seçicisiz) ve Ayarlar › Stok değerleme önizlemesi (ayar "Tümü"nün kâr-zararını değiştirir;
 denetim 21 Kasım #32). Para ve beyan işletmenindir. Şube seçiliyken bu ekranlar ve Tedarikçiler başlığın altında
 **"Marina seçili: bu ekran firma geneli"** notunu gösterir (`companyWideNote`, `CompanyWideNotice`; şube kapsamı C,
 sahibin varsayılanı: tek firma). Paraşüt ekranı ve Faturalar firma geneli değildir (25 Kasım 2026): seçili şubenin
-Paraşüt hesabını ve faturalarını gösterir ([Faturanın şubesi](#faturanın-şubesi-25-kasım-2026)). Genel bakış'ın **Excel'e aktar** düğmesi ise
+Paraşüt hesabını ve faturalarını gösterir ([Faturanın şubesi](#faturanın-şubesi-25-kasım-2026)). Genel bakış'ın **Dışa aktar** düğmesi ise
 ekranın şubesini gönderir (`?sube=`): satış, kasa, personel ve giderler o şubenin, Vergi ve Cari hareketleri firma
 geneli; dosyanın ilk sayfası (Nasıl Okunur) kapsamı yazar, dosya adı şubeyle biter.
 
@@ -144,9 +144,9 @@ Soldan bir şube seçilince Genel bakış ve Gelir-gider **o şubenin** gelir-gi
 | Satır | Tek şube seçiliyken |
 |---|---|
 | Ciro, kasa, ödenmez | Şubenin kasa raporları / ay satırı |
-| Mal maliyeti | **Şubenin satışından reçeteye göre**: tüketim (fire hariç) × (1 + genel fire) + ödenmezlerin malzeme maliyeti (`engine.ts` `stockFlow`, yöntem `sube`). Faturalar ve stok devri işletme genelinde, şubeye bölünmez |
+| Mal maliyeti | **Şubenin satışından reçeteye göre**: tüketim (fire hariç) × (1 + genel fire) + ödenmezlerin malzeme maliyeti (`engine.ts` `stockFlow`, yöntem `sube`). Mal faturaları (şubesi seçilmiş olsa da) ve stok devri şubenin mal maliyetine girmez |
 | Ürün ve reçete maliyeti | Şubeye göre değişmez. Su + buz litre fiyatı işletme geneli: SU GİDERİ (işletmenin faturası) ÷ **bütün şubelerin** ve laffogato.net'in o ayki su + buz litresi (`Dataset.waterSales`, `engine.ts` `waterUsage`; denetim 21 Kasım #4). Önceden fatura yalnız seçili şubenin litresine bölünüyordu: Marina seçiliyken Americano M'nin maliyeti şişiyor, iki şubenin mal maliyeti faturayı iki kez sayıyordu |
-| Mal alımı (faturalar) | Bilgi olarak görünür: şubenin ve işletme geneli seçilmiş mal faturaları ([Faturanın şubesi](#faturanın-şubesi-25-kasım-2026)); mal maliyetine girmez |
+| Mal alımı (faturalar) | Bilgi olarak görünür: şubenin ve işletme geneli seçilmiş mal faturaları ([Faturanın şubesi](#faturanın-şubesi-25-kasım-2026)); mal maliyetine girmez. Genel bakış'ta faturaya göre maliyet oranı, "Faturaya göre alım" ve "Fark (alınan − harcanan)" çizilmez, yerinde "Tümü'nde" yazar; Gelir-gider'in kârı "faturaya göre" değil **"Gelir-gider'e göre"** adıyla, bitmiş ayın dökümünde mal maliyeti tek satır (reçeteye göre); dışa aktarımda da öyle (`profitBasisOf`, `src/lib/calc/insights.ts`). 25 Kasım 2026'ya kadar işletmenin bütün mal alımı şubenin satışına bölünüyor, büyük bir oran ve fark kaçak gibi görünüyordu (denetim bulgusu 64). Şubesi seçilmiş mal faturası da şubenin mal maliyetine girmez: bunun için sayım ve devir şube başına olmalı (aşağıda, Kalanlar) |
 | Personel | Şubeye bağlı kişilerin maaşı (Maaşlar'da kişinin **Şube** alanı) |
 | Sabit gider | Şubeye bağlı kalemler (Sabit giderler'de kalemin **Şube** alanı). İşletme geneli kalemler (şube boş; var olan kalemler işletme geneli kaldı) Faz 5'ten beri **şubenin kârına girmez**: "İşletme geneli payı (bilgi)" satırında |
 | Harcama | Şubenin kendi harcamaları ve şubesi bu şube olan, harcamaya bağlı faturalar (25 Kasım 2026). Şubesi boş (işletme geneli) harcamalar ve işletme geneli seçilmiş faturalar bilgi satırında (Faz 5) |
@@ -170,8 +170,8 @@ gösterir, şubeye düşen bir pay değildir (`src/lib/calc/engine.ts` pnlMonth 
 | Tek şube seçiliyken | Bunlar bölümlere, giderlere ve kâra girmez; satırları çizilmez. Gelir-gider'de "İşletme geneli (bilgi)" bölümünde tek satır **İŞLETME GENELİ PAYI (bilgi)**: ipucu "Şubenin kârına girmez; Tümü'de bir kez sayılır", hücresi en büyük kalemleri yazar. Genel bakış'ın sabit gider dökümü de onları saymaz, altında bilgi olarak toplamı yazar. Harcama satırı şubenin kendi kayıtlarıdır |
 | Günü | İşletmenin günü: şube seçiliyken veri kümesi "Tümü"nün ay bilgisini de taşır (`Dataset.companyMonths`), oranlanan kalem Tümü'deki tutarla görünür (Marina'nın açılış ayında da) |
 | "Tümü" | Bölümlerinde bir kez sayılır (bilgi satırı yok). Gelir-gider'de birden çok fiziksel şube açıkken **Şube kırılımı** kartı (`src/lib/branch-breakdown.ts`): her şubenin ciro, gider ve kârı kendi görünümündeki gibi; fiziksel şube olmayan kanala (online) yazılan sabit gider, harcama ve personel varsa kendi sütununda (`PnlMonthCalc.byBranch`; tek kanalsa onun adıyla, yoksa **Diğer kanallar**; inceleme bulgusu 5: önceden farka düşüyordu); **İşletme geneli** sütunu (giderler: işletme geneli toplamı; ciro: laffogato.net online satışı) ve Tümü. Kabul: Marina kârı + Tuzla kârı − işletme geneli = Tümü kârı. Mal maliyetinin yöntemi farklı olduğundan (Tümü sayımla, şube satışından reçeteye göre) ya da Tümü'de elle yazılan personel / POS komisyonu şubeye bölünmediğinden kalan fark kartın altında yazılır; hiçbir gider iki kez sayılmaz |
-| Başabaş ve "Excel temeli" | Şube seçiliyken kârın temeliyle aynı kalemlerden (inceleme bulgusu 3, sahibin kararı 4): standart sabit gider (`fixedStandardTotalFor`), Genel bakış'ın "Excel temeli" net kârı, başabaş (`breakEvenOf`; Genel bakış, Sabit giderler, Analiz) ve her ay girilen harcamaların payı (`monthlyExpensePlan`: şubenin kendi kayıtları) işletme genelini saymaz. Dışarıda kalan toplam (`fixedStandardSharedFor`) Sabit giderler'in özetinde ve başabaş dökümünde bilgi olarak yazılır. "Tümü" değişmez |
-| Değişmeyenler | İşletme geneli ekranlar (Vergi, Nakit planı, Tutarlılık, Excel'e aktar) hep "Tümü"yle okur |
+| Başabaş ve standart aylık sabit gider | Şube seçiliyken kârın temeliyle aynı kalemlerden (inceleme bulgusu 3, sahibin kararı 4): standart sabit gider (`fixedStandardTotalFor`), Genel bakış'ın ve dışa aktarımın "standart sabit giderle" net kârı, başabaş (`breakEvenOf`; Genel bakış, Sabit giderler, Analiz) ve her ay girilen harcamaların payı (`monthlyExpensePlan`: şubenin kendi kayıtları) işletme genelini saymaz. Dışarıda kalan toplam (`fixedStandardSharedFor`) Sabit giderler'in özetinde ve başabaş dökümünde bilgi olarak yazılır. "Tümü" değişmez |
+| Değişmeyenler | İşletme geneli ekranlar (Vergi, Nakit planı, Tutarlılık, Dışa aktar'ın Vergi ve Cari sekmeleri) hep "Tümü"yle okur |
 
 **Stok sayımı sayfası** hep bir şubenin sayımını gösterir ([Yazarken hangi şube](#yazarken-hangi-şube)). Gelir-giderde ("Tümü") elle yazılan devir
 ("SONRAKİ AYA DEVREDEN MAL", "ÖNCEKİ AYDAN DEVİR") işletme genelidir ve şubenin modeli onu görmez; sayfa bu hücreleri
@@ -387,9 +387,9 @@ yazma `src/server/branch-settings.ts`.
     e-postanın başlığına girer; "Başka bir cihaz" başlığa yazılmaz, yalnız sicil no.
   - **Tek kasa açıkken** (ör. kapalı şubenin sayfası) şube başka şubeye bağlıysa "aynı" anahtarı yine çizilir: form
     düzenlenebilir görünüp kayıt reddedilmesin.
-- **Şimdilik ortak** (ekran adıyla söyler): uyarı sesi saatleri (10:00–01:00; tarayıcıda ve bildirim işçisinde,
-  `public/sw.js`, sabit), kontrol listesi hatırlatma saatleri (tek dilim takvimi), hazır vardiya saatleri (#120 vardiya
-  PR'ı birleştikten sonra). Şube başına olmayacaklar: KDV, reçete parametreleri, fire, hedef maliyet, FIFO başlangıcı,
+- **Şimdilik ortak** (ekran adıyla söyler): uyarı sesi saatleri (09:00–01:00, alt sınır en erken açılan şubenin,
+  Tuzla'nın açılışı; tarayıcıda ve bildirim işçisinde, `public/sw.js`, sabit), kontrol listesi hatırlatma saatleri (tek
+  dilim takvimi), hazır vardiya saatleri (#120 vardiya PR'ı birleştikten sonra). Şube başına olmayacaklar: KDV, reçete parametreleri, fire, hedef maliyet, FIFO başlangıcı,
   kategori ve POS eşlemeleri, site bağlantı sırrı, bildirim gönderen ve vade günleri.
 
 ## Faturanın şubesi (25 Kasım 2026)
@@ -451,6 +451,19 @@ veritabanı `tests/fatura-sube-db.test.ts`):
 
 Aynı kuralla: Genel bakış'ın günlük ciro grafiği günün şubelerini tek çubukta toplar; nakit planının ve haftalık özetin
 satışı ödenmez / ikram hariç ciroyla (`dayRevenue`); Bugün'ün şube kartı föyden sayılan günü de çizer.
+
+### Aydan aya rozetler ve haftalık kıyas aynı şubelerle (25 Kasım 2026, denetim bulgusu 65)
+
+"Tümü"nün toplamı yeni açılan şubeyi de içerdiği için toplamları kıyaslamak açılışı büyüme gibi gösteriyordu: Marina 13
+Kasım'da açıldı, Genel bakış'ın Kasım rozeti Ekim'e göre, Aralık rozeti Marina'nın yarım Kasım'ına göre artış diyordu;
+30 Kasım'ın haftalık özeti iki şubeli haftayı tek şubeli dört haftayla kıyaslayıp "önceki 4 haftaya göre %X fazla"
+diyecekti.
+
+| Ne | Kural |
+|---|---|
+| Yeni şube | Açılış günü (Şube ayarları) önceki ayın 1'inden sonra olan şube; açılış günü yazılmamışsa ilk verisi önceki ayda ya da bu ayda başlayan şube (Tuzla hep eski) (`sameBranchBasis`, `src/lib/same-branches.ts`) |
+| Genel bakış, "Tümü" | Yeni şube varsa POS cirosu ve günlük ortalama rozeti iki ayda da açık şubelerin ay bilgisiyle (`Month.byBranch`; günlük ortalama şube şube POS ÷ açık gün, toplanır); ipucu "Rozet: Ekim 2026 ayına göre yalnız iki ayda da açık şubelerle (Tuzla); Marina 13 Kasım'da açıldı, kıyas dışı." der. Şubeye bölünemeyen rakamların (net satış, brüt ve net kâr) rozeti çizilmez, ipucu nedenini söyler. Yeni şube yoksa ve şube seçiliyken rozetler eskisi gibi |
+| Haftalık özet, kasa cirosu satırı | Kaynak Genel bakış'ın ay rakamıyla aynı kasa satırları (`tillRows`: raporu olmayan LafPOS günü gün sonundan; önceden yalnız kasa raporları). Geçen haftanın her günü önceki dört haftanın aynı günüyle şube şube eşlenir (Kıyas kartının şube-gün eşlemesi, `comparePairs`; [KIYAS.md](KIYAS.md#şube-eşleme)); iki günü de bilinen şube-gün iki tarafa girer. Önceki bir haftada hiç günü olmayan şube adıyla söylenir: "… önceki 4 haftayla aynı (aynı şubelerle: Marina önceki haftalarda yoktu)" ([HAFTALIK-OZET.md](HAFTALIK-OZET.md)) |
 
 ## Kasa raporu "Tümü"de (20 Kasım 2026)
 
@@ -617,7 +630,9 @@ süzülmesini ve şube görünümünde maliyeti kurdu. Şube başına ModPOS ana
 
 - **Şube başına ayar grupları**: `kasa.rapor`, `kasa.calisan`, `parasut`, `komisyon`, `pos.lafpos`, `modpos`,
   `isletme.takvim` ve `kasa.cihaz` kuruldu (yukarıda). Kalanlar: **uyarı sesi saatleri** (tarayıcıda ve `public/sw.js`'te
-  sabit; şube başına olması bildirim işçisine şubenin saatini taşımayı ister), **kontrol listesi hatırlatma saatleri**
+  sabit, 09:00–01:00: alt sınır 25 Kasım'da en erken açılışa çekildi, denetim bulguları 45 ve 99,
+  [HATIRLATICILAR.md](HATIRLATICILAR.md#uyarı-seslerinin-sınırı-23-kasım-2026); şube başına olması Çalışma takvimine
+  açılış ve kapanış saatini eklemeyi ve bildirim işçisine şubenin saatini taşımayı ister), **kontrol listesi hatırlatma saatleri**
   (e-posta işi tek dilim takvimiyle çalışır), **hazır vardiya saatleri** (`SHIFT_PRESETS`; #120 vardiya PR'ı
   birleştikten sonra), **"yalnız bu bilgisayar" varsayılanı** (`ONLY_COMPUTER_BRANCHES`; "aynı" Marina'nın varsayılanını
   değiştirirdi, ayrı alan ister), komisyon takibinin başladığı gün (`komisyon.since`; hakediş işletmenin, bilerek ortak).

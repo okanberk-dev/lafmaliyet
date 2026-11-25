@@ -77,7 +77,7 @@ export async function accountInvoiceBranch(account: string, db: Reader = getDb()
 }
 
 /**
- * Hesabın gördüğü faturalar: kendi hesabındakiler ve Paraşüt'e bağlanmamış elle/Excel kayıtları (eşitleme onlarla
+ * Hesabın gördüğü faturalar: kendi hesabındakiler ve Paraşüt'e bağlanmamış elle girilmiş ve içe aktarılmış kayıtlar (eşitleme onlarla
  * eşleşip bağlayabilir). Hesabı boş ama Paraşüt kimliği olan eski kayıt varsayılan hesabındır (göç 0083 hepsine yazdı;
  * testlerin ve yedekten dönen eski kayıtların hesabı boş olabilir): öbür hesaplar onu görmez, kaldıramaz
  */

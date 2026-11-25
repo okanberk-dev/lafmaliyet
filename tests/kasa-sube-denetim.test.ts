@@ -155,6 +155,7 @@ test("WhatsApp metni formun kasasının raporundan (24 Kasım şube kapsamı, pl
   const src = read("src/server/actions/cash-report.ts");
   const fn = src.slice(src.indexOf("export async function cashReportWhatsapp("));
   assert.match(fn, /export async function cashReportWhatsapp\(date: string, branchId\?: string \| null\)/);
-  assert.match(fn, /const till = await formTillBranch\(zFormBranch\.parse\(branchId\)\);\s*const r = await getCashReport\(d, "staff", till\);/);
+  // Arada yalnız kör kasanın reddi (bulgu 0: personele LafPOS gününün metni verilmez)
+  assert.match(fn, /const till = await formTillBranch\(zFormBranch\.parse\(branchId\)\);\s*(?:\/\/[^\n]*\n\s*)?if \(me\.role !== "admin" && \(await isLafposTillDay\(getDb\(\), d, till\)\)\) throw new UserError\(BLIND_TEXT\.whatsapp\);\s*const r = await getCashReport\(d, "staff", till\);/);
   assert.doesNotMatch(fn.slice(0, fn.indexOf("\n}\n")), /getCashReport\(d\)/, "şubesiz okuma kalmadı");
 });

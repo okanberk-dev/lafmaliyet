@@ -1,4 +1,4 @@
-import { asc, count } from "drizzle-orm";
+import { and, asc, count, gte, isNotNull } from "drizzle-orm";
 import { Droplets, Package, TriangleAlert, Unlink } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
@@ -11,6 +11,7 @@ import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { ingredientChanges } from "@/lib/calc/price-impact";
 import { num, pct } from "@/lib/format";
+import { UNIT_WASTE_DAYS } from "@/lib/ingredient-unit";
 import { readingFits, readingText } from "@/lib/invoice-reading";
 import {
   conflictSuggestionText,
@@ -24,6 +25,8 @@ import {
   type HoldSuggestion,
 } from "@/lib/price-hold";
 import { packEvidence } from "@/lib/product-match";
+import { addDays, todayTR } from "@/lib/reminders";
+import { importedPriceRow } from "@/lib/import-labels";
 import { requireAdmin } from "@/server/auth/dal";
 import { ingredientHistoryCounts } from "@/server/data/product-history";
 import { loadModel } from "@/server/data/dataset";
@@ -67,7 +70,7 @@ export default function IngredientsPage() {
 async function IngredientsContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, history, links, holds, readState, deps] = await Promise.all([
+  const [model, history, links, holds, readState, deps, thresholds, recentWaste] = await Promise.all([
     loadModel(),
     db.select().from(s.ingredientPrices).orderBy(asc(s.ingredientPrices.changedAt), asc(s.ingredientPrices.id)),
     db.select({ id: s.parasutProductLinks.ingredientId, n: count() }).from(s.parasutProductLinks).groupBy(s.parasutProductLinks.ingredientId),
@@ -75,7 +78,16 @@ async function IngredientsContent() {
     holdReadingState(),
     // Silme engeli bütün şubelerden (eylemle aynı tablolar; şube kapsamı C P2-6)
     ingredientHistoryCounts(db),
+    // Birim değişince söylenecekler (bulgu 41): şubelerin kritik eşikleri ve son 90 günün zayi / ikram kayıtları
+    db.select({ id: s.stockThresholds.ingredientId, n: count() }).from(s.stockThresholds).groupBy(s.stockThresholds.ingredientId),
+    db
+      .select({ id: s.wasteEntries.ingredientId, n: count() })
+      .from(s.wasteEntries)
+      .where(and(isNotNull(s.wasteEntries.ingredientId), gte(s.wasteEntries.date, addDays(todayTR(), -UNIT_WASTE_DAYS))))
+      .groupBy(s.wasteEntries.ingredientId),
   ]);
+  const thresholdsBy = new Map(thresholds.map((r) => [r.id, r.n]));
+  const recentWasteBy = new Map(recentWaste.map((r) => [r.id, r.n]));
   // Bekleyen önerilerin kalemleri (açıklama, aynı ürünün geçmişi) ve saklanan fatura okumaları
   const [holdLines, readings] = holds.pending.length
     ? await Promise.all([loadHoldLines([...new Set(holds.pending.map((h) => h.productKey))]), loadInvoiceReadings(holds.pending)])
@@ -83,7 +95,9 @@ async function IngredientsContent() {
   const usageMonth = latestSalesMonth(model);
   const usage = usageMonth ? model.ingredientUsage(usageMonth) : new Map<number, number>();
   const histBy = new Map<number, IngredientRow["history"]>();
-  for (const h of history) {
+  for (const row of history) {
+    // İlk aktarım satırı "İçe aktarım" adıyla (veri değişmez)
+    const h = importedPriceRow(row);
     const list = histBy.get(h.ingredientId) ?? [];
     list.push({ at: h.changedAt.toISOString(), price: h.packagePrice, size: h.packageSize, by: h.changedBy, note: h.note });
     histBy.set(h.ingredientId, list);
@@ -186,7 +200,14 @@ async function IngredientsContent() {
     }),
     monthUsage: usage.get(i.id) ?? 0,
     history: histBy.get(i.id) ?? [],
-    deps: { counts: deps.get(i.id)?.counts ?? 0, purchases: deps.get(i.id)?.purchases ?? 0, links: linksBy.get(i.id) ?? 0, waste: deps.get(i.id)?.waste ?? 0 },
+    deps: {
+      counts: deps.get(i.id)?.counts ?? 0,
+      purchases: deps.get(i.id)?.purchases ?? 0,
+      links: linksBy.get(i.id) ?? 0,
+      waste: deps.get(i.id)?.waste ?? 0,
+      thresholds: thresholdsBy.get(i.id) ?? 0,
+      recentWaste: recentWasteBy.get(i.id) ?? 0,
+    },
     recentChange: recent.get(i.id) ?? null,
     pendingHold: holdBy.get(i.id) ?? null,
   }));
@@ -203,6 +224,8 @@ async function IngredientsContent() {
   const waterDokum = waterBreakdown(model.water, rows, waterUse?.list ?? new Map<number, number>(), waterUse?.online);
   const categoryCount = new Set(active.map((r) => r.category)).size;
   const estimateShare = active.length ? pct(estimates / active.length, 0) : null;
+  // Yeni malzemeye önerilen Alış KDV'si: sayım grubunun olağan oranı (Ayarlar › Oranlar)
+  const groupVat = { alisKdvAmbalaj: model.settings.alisKdvAmbalaj, alisKdvGida: model.settings.alisKdvGida };
 
   return (
     <>
@@ -211,7 +234,7 @@ async function IngredientsContent() {
         title="Hammaddeler"
         description={DESCRIPTION}
         more={MORE}
-        actions={<NewIngredientButton categories={categories} rows={rows} />}
+        actions={<NewIngredientButton categories={categories} rows={rows} groupVat={groupVat} />}
       />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown
@@ -295,7 +318,7 @@ async function IngredientsContent() {
       {/* Dökümdeki bağlantıların çapası (#hammadde-listesi): süzülmüş listeye kayar */}
       <ListAnchor>
         {/* Şube seçiliyken kullanım o şubenin satışından (şube kapsamı C P2-8) */}
-        <IngredientsClient rows={rows} categories={categories} usageScope={model.ds.branchView ? `${model.ds.branchView.name} satışı` : null} />
+        <IngredientsClient rows={rows} categories={categories} groupVat={groupVat} usageScope={model.ds.branchView ? `${model.ds.branchView.name} satışı` : null} />
       </ListAnchor>
     </>
   );

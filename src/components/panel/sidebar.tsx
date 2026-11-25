@@ -94,24 +94,30 @@ export function Sidebar({ user, index = [], branch, assistant = false }: { user:
   const [alertsFailure, setAlertsFailure] = useState<"stale" | "failed" | null>(null);
   const [alertsLoading, setAlertsLoading] = useState(true);
   const fetchedAt = useRef(0);
+  // Okumaların sırası: şube değişince gelen yeni okuma, ondan önce başlamış eski okumanın yanıtıyla ezilmesin
+  const alertsSeq = useRef(0);
   const refreshAlerts = useCallback(() => {
+    const seq = ++alertsSeq.current;
     fetchedAt.current = Date.now();
     setAlertsLoading(true);
     loadPanelNotifications()
       .then((n) => {
+        if (seq !== alertsSeq.current) return;
         setAlerts(n);
         setAlertsFailure(null);
       })
-      .catch((e: unknown) => setAlertsFailure(actionFailure(e)))
-      .finally(() => setAlertsLoading(false));
+      .catch((e: unknown) => seq === alertsSeq.current && setAlertsFailure(actionFailure(e)))
+      .finally(() => seq === alertsSeq.current && setAlertsLoading(false));
   }, []);
   useEffect(() => {
     let alive = true;
+    const seq = ++alertsSeq.current;
+    const current = () => alive && seq === alertsSeq.current;
     fetchedAt.current = Date.now();
     loadPanelNotifications()
-      .then((n) => alive && setAlerts(n))
-      .catch((e: unknown) => alive && setAlertsFailure(actionFailure(e)))
-      .finally(() => alive && setAlertsLoading(false));
+      .then((n) => current() && setAlerts(n))
+      .catch((e: unknown) => current() && setAlertsFailure(actionFailure(e)))
+      .finally(() => current() && setAlertsLoading(false));
     // Telefonda panel çoğunlukla arka plandan geri açılır: görünür olunca (en çok dakikada bir) tazelenir
     const onVisible = () => {
       if (document.visibilityState === "visible" && Date.now() - fetchedAt.current > ALERTS_STALE_MS) refreshAlerts();
@@ -125,6 +131,16 @@ export function Sidebar({ user, index = [], branch, assistant = false }: { user:
       window.removeEventListener(ALERTS_REFRESH_EVENT, refreshAlerts);
     };
   }, [refreshAlerts]);
+
+  // Şube değişince (seçici ya da ?sube= bağlantısı) zil ve alt menünün Ödemeler rozeti yeni kapsamı göstersin: sunucu
+  // ödemeleri, komisyonu, kasayı ve kontrol listelerini seçili şubeye göre süzer (bulgu 89). İlk okuma yukarıda
+  const branchScope = branch?.scope;
+  const prevScope = useRef(branchScope);
+  useEffect(() => {
+    if (prevScope.current === branchScope) return;
+    prevScope.current = branchScope;
+    refreshAlerts();
+  }, [branchScope, refreshAlerts]);
 
   // Ödemeler ekranında (ya da Bugün'ün ödeme kartında) ödenen kayıtlar alt menüdeki rozete yansısın: o ekrandan çıkınca
   // liste tazelenir

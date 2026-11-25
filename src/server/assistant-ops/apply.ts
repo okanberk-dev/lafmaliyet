@@ -6,7 +6,7 @@ import { z } from "zod";
 import { dateTR, tl } from "@/lib/format";
 import { priceReminder } from "@/lib/prices/pos";
 import type { OpName } from "@/lib/assistant/op-specs";
-import { formatShiftCell, parseShiftCell, refUserId, weekDays, weekDiff, type ShiftEntry } from "@/lib/vardiya";
+import { formatShiftCell, parseShiftCell, refUserId, weekDays } from "@/lib/vardiya";
 import { saveSupplierPayment } from "@/server/actions/cari";
 import { saveCashOut } from "@/server/actions/cash-outs";
 import { saveExpenseEntry } from "@/server/actions/expenses";
@@ -21,7 +21,6 @@ import type { ActionResult } from "@/server/actions/util";
 import { saveShiftWeekAction } from "@/server/actions/vardiya";
 import { addWasteEntry } from "@/server/actions/waste";
 import { getDb, schema as s } from "@/server/db";
-import { loadShiftEntries } from "@/server/vardiya/store";
 
 import { createdReminderId, ingredientPrice, invoicePaymentState, personCells, productPrice, reminderState } from "./preview";
 import type { ApplyResult, OpApplier, UndoResult } from "./types";
@@ -307,23 +306,16 @@ const wasteAdd: OpApplier<WasteArgs, Record<string, never>> = {
 type ShiftArgs = { branchId: string; monday: string; ref: string; name: string; changes: { date: string; text: string }[] };
 const shiftUndo = z.object({ cells: z.array(z.string()).length(7) });
 
-/** Kişinin bütün haftası metin olarak yazılır (eylem kişinin yedi hücresini birden alır); yalnız istenen günler değişmeli */
-async function writeWeek(args: ShiftArgs, cells: string[]): Promise<ActionResult<{ written: number; removed: number }>> {
-  const days = weekDays(args.monday);
-  const { entries } = await loadShiftEntries(getDb(), args.branchId, args.monday);
+/**
+ * Kişinin bütün haftası metin olarak yazılır (eylem kişinin yedi hücresini birden alır). `seen` kartın gördüğü hafta:
+ * kayıt yalnız ondan farklı günlere dokunur, o günü arada başkası değiştirdiyse reddedilir (bulgu 46)
+ */
+async function writeWeek(args: ShiftArgs, cells: string[], seen: string[]): Promise<ActionResult<{ written: number; removed: number }>> {
   const uid = refUserId(args.ref);
   const [u] = uid ? await getDb().select({ id: s.users.id, name: s.users.name }).from(s.users).where(eq(s.users.id, uid)).limit(1) : [];
   const name = u?.name ?? args.name;
-  const parsed = cells.map((t) => parseShiftCell(t));
-  if (parsed.some((p) => !p.ok)) return { ok: false, error: "Hücre okunamadı; Vardiya ekranından kaydedin." };
-  const row = { ref: args.ref, userId: u ? u.id : null, name, cells: parsed.map((p) => (p.ok ? p.cell : null)) };
-  // Kaydın farkı yalnız bu kişinin değişen günlerini içermeli (ad değiştiyse bütün günleri yeniden yazılırdı)
-  const diff = weekDiff(entries as ShiftEntry[], [row], args.monday);
-  const current = days.map((d) => formatShiftCell(entries.find((e) => e.ref === args.ref && e.date === d)?.cell ?? null));
-  const wanted = new Set(days.filter((d, i) => current[i] !== cells[i]));
-  const touched = [...diff.upserts.map((x) => x.date), ...diff.deletes.map((x) => x.date)];
-  if (touched.some((d) => !wanted.has(d))) return { ok: false, error: "Kişinin başka günleri de yeniden yazılacaktı (adı değişmiş olabilir); Vardiya ekranından kaydedin." };
-  const r = await saveShiftWeekAction({ branchId: args.branchId, week: args.monday, rows: [{ ref: args.ref, name, cells }] });
+  if (cells.some((t) => !parseShiftCell(t).ok)) return { ok: false, error: "Hücre okunamadı; Vardiya ekranından kaydedin." };
+  const r = await saveShiftWeekAction({ branchId: args.branchId, week: args.monday, rows: [{ ref: args.ref, name, cells, seen }] });
   return notOk(r) ? r : { ok: true, data: { written: r.data.written, removed: r.data.removed } };
 }
 
@@ -332,7 +324,7 @@ const shiftCells: OpApplier<ShiftArgs, { cells: string[] }> = {
     const days = weekDays(args.monday);
     const next = [...before.cells];
     for (const c of args.changes) next[days.indexOf(c.date)] = c.text;
-    const r = await writeWeek(args, next);
+    const r = await writeWeek(args, next, before.cells);
     if (notOk(r)) return r;
     if (!r.data.written && !r.data.removed) return fail("Değişiklik olmadı; hücreler zaten böyle.");
     return { ok: true, message: `Vardiya kaydedildi (${r.data.written} hücre yazıldı${r.data.removed ? `, ${r.data.removed} boşaltıldı` : ""}).`, undo: { cells: next } };
@@ -341,7 +333,7 @@ const shiftCells: OpApplier<ShiftArgs, { cells: string[] }> = {
     const { cells } = shiftUndo.parse(data);
     const now = (await personCells(args.branchId, args.monday, args.ref)).map(formatShiftCell);
     if (now.some((c, i) => c !== cells[i])) return fail("Bu kişinin vardiyası bu arada değişmiş; Vardiya ekranında bakın.");
-    const r = await writeWeek(args, before.cells);
+    const r = await writeWeek(args, before.cells, cells);
     return notOk(r) ? r : { ok: true, message: "Eski vardiya geri yazıldı." };
   },
 };

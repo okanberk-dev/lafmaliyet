@@ -20,7 +20,9 @@ export type NumericKey =
   | "potGr"
   | "potMl"
   | "mealCardDaily"
-  | "mealCardDays";
+  | "mealCardDays"
+  | "alisKdvAmbalaj"
+  | "alisKdvGida";
 
 export type FieldDef = {
   key: NumericKey;
@@ -29,7 +31,7 @@ export type FieldDef = {
   kind: "pct" | "num" | "int";
   /** Reçete formüllerindeki adı (ShotTek …) */
   formula?: string;
-  /** Excel'de sarı "VARSAYIM" hücresi: ölçülüp yazılması gereken tahmini değer */
+  /** Varsayım: ölçülüp yazılması gereken tahmini değer (alanda "Varsayım" rozeti) */
   assumption?: boolean;
   /** %0,5'in altı (0 hariç) gerçekçi değil: "0,1" yanlışlıkla binde bir olarak yazılmış olabilir */
   sane?: boolean;
@@ -50,6 +52,18 @@ export const RATE_FIELDS: FieldDef[] = [
   },
   { key: "hedefMaliyet", label: "Hedef maliyet oranı (food cost)", hint: "Kafeler için ideal %25–35", kind: "pct", sane: true, positive: true },
   { key: "fire", label: "Fire / kayıp payı", hint: "Dökülen süt, atılan kahve; yalnız ürün kartında zayi oranı boş ürünlere uygulanır", kind: "pct" },
+  {
+    key: "alisKdvAmbalaj",
+    label: "Ambalajın alış KDV'si",
+    hint: "Sayımın Ambalaj grubu (bardak, kapak, peçete): Hammaddeler'de yeni malzemeye önerilen KDV, %20",
+    kind: "pct",
+  },
+  {
+    key: "alisKdvGida",
+    label: "Gıdanın alış KDV'si",
+    hint: "Sayımın öteki grupları ve listede olmayan kalemler: yeni malzemeye önerilen KDV, %1",
+    kind: "pct",
+  },
 ];
 
 export const MEASURE_FIELDS: FieldDef[] = [

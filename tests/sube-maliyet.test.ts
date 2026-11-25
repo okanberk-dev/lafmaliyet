@@ -9,6 +9,8 @@ import { test } from "node:test";
 
 import { branchPnlEntry, companyPnlKey } from "../src/lib/branches";
 import { COGS_METHOD_LABELS, createModel, uncountedCogsText } from "../src/lib/calc/engine";
+import { dashboard, profitBasisOf } from "../src/lib/calc/insights";
+import { actualProfitBreakdown, netProfitBreakdown } from "../src/app/panel/dashboard-breakdowns";
 import type { Dataset } from "../src/lib/calc/types";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -172,4 +174,46 @@ test("çakışma hedefi: anahtarı şubeyi içeren tabloya yazan her ON CONFLICT
     }
   }
   assert.ok(seen >= 4, "bekçi gerçekten hedef buldu");
+});
+
+test("şube görünümü: faturaya göre oran ve alınan − harcanan yok, kârın adı Gelir-gider'e göre (bulgu 64)", () => {
+  const month = "2026-09";
+  // Tümü: işletmenin mal alımı ÷ işletmenin net satışı
+  const tumModel = createModel(ds);
+  const tum = dashboard(tumModel, month);
+  assert.ok(tum.theoretical, "Eylül'ün satış listesi var");
+  close(tum.invoiceCostRatio!, tumModel.goodsPurchases(month) / tum.theoretical.netSales, "Tümü faturaya göre oran", 1e-9);
+  assert.deepEqual(tum.profitBasis, profitBasisOf(null));
+  assert.equal(tum.profitBasis.invoices, true);
+  assert.equal(tum.profitBasis.label, "faturaya göre");
+
+  // Tuzla seçili: faturalar (şubesiz) okunsa da şubenin satışına bölünmez
+  const tekModel = createModel(sube);
+  assert.ok(tekModel.goodsPurchases(month) > 0, "işletme geneli faturalar şube görünümünde de okunur");
+  const tek = dashboard(tekModel, month);
+  assert.equal(tek.invoiceCostRatio, null, "faturaya göre oran yok");
+  assert.equal(tek.profitBasis.invoices, false);
+  assert.equal(tek.profitBasis.label, "Gelir-gider'e göre");
+  assert.match(tek.profitBasis.sharedNote!, /^Tuzla seçili: faturalar işletme genelinde, şubeye bölünmez/);
+  // Reçeteye göre oran şubede de var
+  assert.ok(tek.recipeCostRatio !== null && tek.recipeCostRatio > 0);
+
+  // Bitmiş ayın kâr dökümü: şubede mal maliyeti tek satır, işletmenin faturaları satır satır yazılmaz, "Diğer" kalanı yok
+  const cogs = (d: typeof tek, m: typeof tekModel) => actualProfitBreakdown(m, d).groups!.find((g) => g.key === "cogs")!.rows;
+  const tekRows = cogs(tek, tekModel);
+  assert.equal(tekRows.length, 1);
+  assert.equal(tekRows[0].label, "Mal maliyeti (reçeteye göre)");
+  close(tekRows[0].amount, -tekModel.pnlMonth(month).cogs, "şubenin mal maliyeti");
+  assert.match(tekRows[0].sub!, /^Tuzla: şubenin satışından reçeteye göre/);
+  assert.equal(actualProfitBreakdown(tekModel, tek).title, "Eylül 2026 kâr / zarar (Gelir-gider'e göre)");
+  const tumRows = cogs(tum, tumModel);
+  assert.ok(tumRows.length > 1, "Tümü'de tedarikçi satırları");
+  assert.equal(actualProfitBreakdown(tumModel, tum).title, "Eylül 2026 kâr / zarar (faturaya göre)");
+  // Net kâr dökümünün karşılaştırma satırı da aynı adla
+  const compare = (d: typeof tek, m: typeof tekModel) =>
+    netProfitBreakdown(m, d)
+      .groups?.find((g) => g.key === "karsilastirma")
+      ?.rows.find((r) => r.key === "fatura")?.label;
+  assert.equal(compare(tek, tekModel), "Gelir-gider'e göre");
+  assert.equal(compare(tum, tumModel), "Faturaya göre (Gelir-gider)");
 });

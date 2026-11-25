@@ -39,17 +39,35 @@ yalnız düzen ve metin sadeleşti (`src/app/panel/kasa/cash-form.tsx`, `page.ts
   "İsteğe bağlı; altındaki banka satırları değil"): yer tutucu alan dolunca kaybolur. LafPOS'tan dolan alanlara rozet basılmaz
   (bant söyler); fotoğraftan dolan alan "Fotoğraftan" rozetini taşır, LafPOS'tan farklı olan turuncu kalır.
 - **Kasa (nakit).** "Neye çıktı" fişlerden gelen kalemlerle yetinildiğinde gizli (adları kendiliğinden yazılır); elle
-  yazılan çıkışta, adlar değiştirildiyse ya da fişlerin toplamının üstüne elle tutar eklendiyse görünür. Sayımdan sonraki alanın adı **Sayımdan sonra teslim** ("Gün içinde çıkan"ın ipucunda "teslim" geçmez).
+  yazılan çıkışta, adlar değiştirildiyse ya da fişlerin toplamının üstüne elle tutar eklendiyse görünür; fişlerden
+  fazlası varken personelde zorunlu ([fişsiz çıkış](#gün-içinde-kasadan-çıkanlar)). Sayımdan sonraki alanın adı **Sayımdan sonra teslim** ("Gün içinde çıkan"ın ipucunda "teslim" geçmez).
   **Kasayı sayan** tek satır: "Kasayı sayan: Ayşe (siz) · Değiştir"; başkası saydıysa seçici açık.
 - **Sonuç çubuğu.** Telefonda Sonuç kartı ekranın altındayken alt menünün üstünde fark ve **Gönder** durur (öneride
   ve geç raporda **Onaya gönder**, gönderilmiş raporun düzenlenmesinde **Güncelle**); klavye açıkken ve Sonuç kartı
   göründüğünde gizlenir. Çubuk varken bildirimler üstte çıkar (çubuğu örtmez). Fark varken not boşsa ilk gönderim nota götürür ("750 ₺ eksik:
   nedenini nota yazın"); not zorunlu değil, yeniden basınca gönderir. Açılış devirle tutmuyorsa not eskisi gibi zorunlu.
-- **Gönderilmiş rapor.** Kartın üstünde fark (bir kez; başlıktaki rozet kalktı), e-posta durumu ve eylemler; satır
+- **Taslak ve ayrılma uyarısı** (denetim 25 Kasım 2026, bulgu 87; `src/lib/cash-draft.ts`, stok sayımının deseni):
+  yazılanlar bu cihazda taslak olarak durur (`laf:kasa-taslak:{şube}:{gün}`; yalnız değiştirilen alanlar, kasayı sayan ve
+  formda yüklenen fotoğrafların kimlikleri). Z fişi çekilirken telefon sekmeyi yeniden yüklese, sayfa kapansa ya da
+  bağlantı gitse form yeniden açılınca bant çıkar: "Bu cihazda gönderilmemiş kasa raporu var" · **Geri yükle** / **Sil**
+  (başkası yazdıysa adı: "Ayşe bu cihazda …"; kayıtlı raporda Geri yükle Düzenle'yi açar). Ortak telefonda personel
+  yalnız kendi yüklediği fotoğrafı geri alır (sunucu başkasınınkini bağlamaz); başkasının fotoğrafı varsa bant ve
+  bildirim "Başkasının yüklediği 2 fotoğraf geri yüklenmez; yeniden çekin." der (`restorableDraftPhotos`; yönetici
+  hepsini alır). Taslak şube ve gün başınadır
+  (Tuzla'nın taslağı Marina'nın, dünkü bugünkü formda önerilmez) ve raporun sürümüne bağlıdır (arada rapor gönderildiyse
+  ya da düzeltildiyse önerilmez, eski rakam yenisinin üstüne yüklenmez). Gönderilince (rapor, düzeltme önerisi, geç
+  rapor), **Sil**'le, Düzenle'den **Vazgeç**'le ve başka güne ya da şubeye geçerken silinir; 14 günden eski günlerin
+  taslakları form açılınca temizlenir. Yazılanlar varken sayfadan çıkmak (menü, alt çubuk, gün çipi, şube seçici,
+  sayfayı kapatma) önce sorar: "Gönderilmemiş kasa raporu var". Pencerenin metni hedefe göredir (`leaveDialogText`):
+  başka güne ya da şubeye geçerken "… bu taslak silinir" ve kırmızı **Taslağı silip geç**; Zayi & ikram, Bugün gibi başka
+  bir sayfaya giderken "Bu cihazda kalır; sayfaya dönünce geri yükleyebilirsiniz" ve nötr **Sayfadan çık**. Yöneticinin
+  Onaylar'daki "Düzeltip onayla"sı taslak tutmaz; düzenlenemeyen raporda (kör kasa, kilitli gün) taslak yok.
+- **Gönderilmiş rapor.** Kartın üstünde fark (bir kez; başlıktaki rozet kalktı; LafPOS gününde personele fark yerine
+  "Gün sonu alındı", açılış ve sayılan da yok: [kör kasa](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026)), e-posta durumu ve eylemler; satır
   satır döküm **Rapor dökümü** altında katlı ("Z 18.450 ₺ · nakit 6.200 ₺ · sayılan 6.400 ₺"). Açılış ya da ertesi
   günün açılışı devirle tutmuyorsa ya da yöneticinin dikkat etmesi gereken bir şey varsa açık gelir ve özet onu söyler
   ("… · Z tutmuyor · Yazarkasa tutmuyor"): ay listesinin rozetleriyle aynı kural (`src/lib/cash-attention.ts`;
-  fotoğraftan ya da LafPOS'tan farklı, Z tutmuyor, kart farkı, yazarkasa tutmuyor).
+  fotoğraftan ya da LafPOS'tan farklı, fişsiz çıkış, Z tutmuyor, kart farkı, yazarkasa tutmuyor).
 - **Yöneticinin gün görünümü** (`?gun=`): ayın listesi ve rapor ayarları yok (**Günden güne** ile dönülür). LafPOS
   gününün Pavo kart karşılaştırması ve LafPOS gün sonu dökümü **Ayrıntı** altında katlı; Pavo farkı varsa,
   karşılaştırılamadıysa ya da LafPOS'un dökümünde hassas işlem varsa (günü düzeltti, ödeme iptali) açık gelir ve özet
@@ -97,7 +115,7 @@ birden çok kasa açıkken e-postanın konusu ve başlığı, WhatsApp metninin 
 
 Yöneticinin rapor penceresi sadedir (`src/app/panel/kasa/report-sheet.tsx`): üç rakam (toplam satış, sayılan nakit,
 kasa), tek **Kontrol** listesi (`src/lib/cash-report-checks.ts` `reportChecks`: e-posta hatası, ödeme türleri ↔ Z,
-açılış ↔ devir, kart / yazarkasa, ModPOS API, LafPOS ve fotoğraftan farklı yazılanlar; her biri tek satır, yoksa
+fişsiz çıkış, açılış ↔ devir, kart / yazarkasa, ModPOS API, LafPOS ve fotoğraftan farklı yazılanlar; her biri tek satır, yoksa
 "Kontroller tamam"), satış ve nakit kasa dökümü (satır içi uyarı yok), not ve kapalı **Ayrıntılar** (kart ve
 yazarkasa, fotoğraflar, değişiklikler). Personelin kayıtlı rapor kartı ve Onaylar'daki döküm aynı kalır.
 
@@ -313,6 +331,25 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
   harcamalar'a yazılır (kategori sorulur); faturası geldiyse ya da yönetici listeden çıkardıysa yazılmaz (inceleme D5).
 - Akşam raporunun **Gün içinde kasadan çıkan** tutarı ve **Neye çıktı** notu satırlardan dolar ("Fişlerden: 2 kalem ·
   …"). Yazılan tutar satırların toplamından azsa uyarı çıkar (engellemez).
+- **Fişsiz çıkış** (denetim 25 Kasım 2026, bulgu 2): yazılan tutar satırların toplamından 1 ₺ ya da daha fazlaysa fark
+  fişsizdir. Satır girmeden alana yazılan çıkış olması gereken nakdi düşürür ve açığı örtebilir; bu yüzden:
+  - Personel **Neye çıktı**'yı yazmadan gönderemez (form alanın altında "Kasadan çıkanlar'dan 500 ₺ fazla: neye çıktığını
+    yazın" der; sunucu da reddeder: "Fişlerden fazla çıkan tutarın neye çıktığını yazın"). Satırların kendiliğinden
+    yazılan adları ("Migros, buz") fişsiz kısmı açıklamaz, not onlardan farklı olmalı. Kural yeni raporda ve çıkış ya da
+    açıklaması değişince uygulanır (dokunulmayan eski satır yeniden sorulmaz); düzeltme önerisi ve geç rapor da aynı
+    kuralla (geç rapor formunda günün satırları olmadığı için kararı sunucu verir). Yönetici serbest.
+  - Yöneticiye her yerde aynı hesapla (`src/lib/lafpos/prefill.ts` › `unreceiptedCashOut`; onay kartlarındaki "Fişsiz
+    çıkış" da bu): rapor penceresinin **Kontrol** listesinde "Fişsiz çıkış: 500 ₺ (kasadan çıkan satırlarından fazla);
+    neye çıktı: …", ay listesinde ve tek gün görünümünün döküm özetinde **Fişsiz çıkış: 500 ₺** rozeti, kasa
+    e-postasında kasanın altında turuncu kutu (metin sürümünde satır), zilde dünün ve bugünün raporu için "Fişsiz çıkış:
+    500 ₺" (gövdede gün, çıkan ve satırların toplamı, neye çıktığı, gönderen; rapor düzeltilince yeniden okunmamış olur).
+    Personelin WhatsApp metninde yok. LafPOS gününde farkın Kasadan çıkanlar'a girilmemiş LafPOS teslimi kadarı fişsiz
+    sayılmaz (aşağıda, E-35).
+  - **Ne zamandan** (inceleme, 25 Kasım 2026): yalnız 23 Ekim 2026'dan (`UNRECEIPTED_SINCE`; Kasadan çıkanlar o gün
+    geldi) itibaren. Önceki günlerde satır girilemezdi; eski aylar rozetle dolmaz.
+  - **LafPOS gün sonu gelmeden** girilmiş raporda (yönetici LafPOS gününde erken girdi) hesaplanmaz: LafPOS'un
+    harcamaları Kasadan çıkanlar'a gün sonuyla düşer, o arada her çıkış fişsiz görünürdü (`lafposMovesPending`; zil,
+    Kontrol, ay listesi, e-posta). Gün sonu gelince hesaplanır.
 - **LafPOS gününde de kaynak bu satırlardır** (denetim E-35): Aylık harcamalar ve tedarikçi ödemeleri buradan
   okunur. **Sahip sorusu 5 yanıtlandı (23 Kasım 2026, Faz 3):** kasadan çıkan para LafPOS'ta girilir, harcama ve
   teslim gün sonunda buraya satır satır gelir ("LafPOS" rozetli; tutar, tür ve gün LafPOS'tan, satır silinmez; fiş
@@ -731,7 +768,7 @@ silinen rapor ayın rakamını hemen değiştirir.
 - **Sabit giderin günü:** açık gün kasadan geldiğinde kira, maaş ve öteki aylık kalemler Gelir-gider'de açık gün
   sayısıyla değil, raporların kapsadığı takvim günüyle bölünür (biten ayda ayın tamamı, süren ayda dünün sonuna kadar):
   bayramda kapalı gün ya da raporu girilmemiş gün kirayı ve maaşı düşürmez (`prorationDays`, engine.ts). Günlük
-  kalemler (personel yemeği) açık günle çarpılır. Açık gün elle yazıldıysa Excel'deki gibi açık gün ÷ ayın gün sayısı.
+  kalemler (personel yemeği) açık günle çarpılır. Açık gün elle yazıldıysa açık gün ÷ ayın gün sayısı.
   Oran hiçbir zaman 1'i aşmaz (iki şube aynı gün açıkken de). Biten ay ayın sonuna kadar sayılır: ayın 1'inde 00:00 ile
   05:00 arasında son günün raporu daha beklenirken de kira ve maaş tam ay (denetim 13 Kasım HM-10). Genel bakış'ta "Bu ay düşülen sabit gider" kutusu "Ayın geçen günü (16 / 31 gün)" yazar.
 - **Ay ortasında yüklenen satış listesi:** Satışlar'da liste yüklerken süren ayda "Liste hangi güne kadar?" sorulur
@@ -748,7 +785,7 @@ silinen rapor ayın rakamını hemen değiştirir.
   liste ay bittikten sonra da en çok geçiş gününden önceki güne kadar sayılır, sonraki aylara liste yüklenmez (satışlar
   her gün sonunda LafPOS'tan gelir). Ayrıntı: [LAFPOS.md › Günlük satış](LAFPOS.md#günlük-satış-aylık-model).
 - Kasa sayfasının ay görünümünde tek satır: "Bu ayın açık gün ve cirosu kasa raporlarından → Satışlar". Genel
-  bakış'ta POS cirosu "· kasa raporlarından"; Excel kopyasının Ay Bilgileri sayfasında "Kartlı satış oranı" ve "Kasa
+  bakış'ta POS cirosu "· kasa raporlarından"; dışa aktarımın (.xlsx) Ay Bilgileri sayfasında "Kartlı satış oranı" ve "Kasa
   raporundan" sütunları.
 
 ## Ciro ve ödenmez

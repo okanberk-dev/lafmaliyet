@@ -58,13 +58,13 @@ panelde yalnız L boyu olan "Esp. Macchiato" sitedeki tek fiyata (`M` yuvası) b
 
 **Öneriler** (`src/lib/site-menu/names.ts`): önce aynı ad (büyük/küçük harf, ı/İ, aksan ve noktalama sayılmaz: "Çay" =
 "ÇAY", "Caffè" = "Caffe"), sonra sitenin eski İngilizce adı (laffogato `db/migrations/20260922120000_turkish_catalogue_names.sql`
-ve `20260922130000_turkish_menu_names_pass2.sql` kimliği eski adın yanında yazar; panelin Excel adları bunlar:
+ve `20260922130000_turkish_menu_names_pass2.sql` kimliği eski adın yanında yazar; panelin ilk aktarılan adları bunlar:
 "Ice Latte" → `mnu-0023` Buzlu Caffè Latte), sonra benzer ad (ek almış sözcük "Çilekli Magnolia" ~ "Çilek Magnolia",
 tek harf yazım farkı "Tiramusu" ~ "Tiramisu"). Güven sözcüğü: **Aynı ad**, **Eski adı**, **Benzer ad**. Her ürün en
 çok bir öneri, her (kalem, yuva) en çok bir ürün alır; çakışmada güven, sonra fiyatın yakınlığı kazanır (sitede tek
 boy "Protein Shake" 270 ₺, panelde 270 ₺'lik L satırına önerilir). Önce aktif ürünler. Eşleştirme ekranında aynı ad
 ve eski ad önerileri seçili gelir, benzer adlar elle seçilir; **hiçbiri "Önerileri bağla"ya basılmadan bağlanmaz.**
-Sitenin tohum menüsüyle Excel'in 129 ürününden 115'i öneri alır (`tests/site-menusu.test.ts`).
+Sitenin tohum menüsüyle panelin tohum verisindeki 129 üründen 115'i öneri alır (`tests/site-menusu.test.ts`).
 
 **Bağlama** sitenin listesini imzalı yeniden çeker, bağlantıyı yazar ve listeyi bütün bağlı satırlara uygular: yeni
 bağlanan ürün sitenin fiyatını ve menü durumunu alır (pencere bunu önceden gösterir: "Bağlanınca: fiyat 300 ₺ → 280 ₺").
@@ -323,5 +323,5 @@ de sayfa açılışı ve günlük iş eşitler).
 | `src/app/api/menu/ping/route.ts` | Sitenin pingi |
 | `src/app/panel/urunler/site/` | Eşleştirme ekranı |
 | `src/app/panel/urunler/site-link-dialog.tsx`, `[id]/site-menu-card.tsx` | Bağlama penceresi, ürün kartındaki Site menüsü |
-| `tests/site-menusu.test.ts` | Şemalar, yuvalar, plan, öneriler (sitenin tohumu × Excel), yazma gövdesi ve `expect`, `writes` bayrağı, hata metinleri, imza vektörleri, ping |
+| `tests/site-menusu.test.ts` | Şemalar, yuvalar, plan, öneriler (sitenin tohumu × panelin tohumu), yazma gövdesi ve `expect`, `writes` bayrağı, hata metinleri, imza vektörleri, ping |
 | `tests/fiyat-cakisma.test.ts`, `tests/tukendi-db.test.ts` | Görülen fiyat kuralı; sahte siteyle ve gerçek Postgres'le kart, hücre, `expect`, 409 `stale`, 400 `body` (katı şemalı eski site), zaman aşımı, 404 |

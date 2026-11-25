@@ -262,7 +262,7 @@ test("FC-03: adı tutmayan aynı tedarikçi Tedarikçiler kartıyla tanınır; t
   // Bağlanmayan GİB adayı: yeni kayıt kontrol bekler, notu elle kaydı söyler
   assert.equal(gibNoClash(yilmaz, [manual])?.id, 41);
   assert.equal(gibNoClashNote({ ...manual, origin: "manual" }), "aynı numaralı elle girilmiş fatura var (Ahmet Usta, 08.11.2026); aynı faturaysa birini silin");
-  assert.match(gibNoClashNote({ ...manual, origin: "excel" }), /^aynı numaralı Excel'den alınmış fatura var/);
+  assert.match(gibNoClashNote({ ...manual, origin: "excel" }), /^aynı numaralı içe aktarılmış \(eski\) fatura var/);
   // Paraşüt'e bağlı kayıt, ±31 gün dışı ya da tarih ve tutar ikisi farklıysa, GİB dışı numarada aday yok
   assert.equal(gibNoClash(yilmaz, [{ ...manual, externalId: "455" }]), null);
   assert.equal(gibNoClash({ ...yilmaz, date: "2026-12-20" }, [manual]), null);

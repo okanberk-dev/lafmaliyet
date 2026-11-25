@@ -13,6 +13,7 @@ import { ALL_BRANCHES, type BranchRow } from "@/lib/branches";
 import { dateTR, monthLabel, monthShort, num } from "@/lib/format";
 import { addDays, dayAblativeTR, dayMonthTR, shiftMonth } from "@/lib/reminders";
 import {
+  receiptListNote,
   STOCK_ESTIMATE_BRANCH,
   STOCK_ESTIMATE_PATH,
   stockQty,
@@ -26,7 +27,7 @@ import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth/dal";
 import { currentBranchScope, staffBranchLock } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
-import { loadReceiptInvoices, loadStockEstimate, unassignedCount, type ReceiptInvoice } from "@/server/data/stock-estimate";
+import { loadReceiptInvoices, loadStockEstimate, type ReceiptList } from "@/server/data/stock-estimate";
 
 import { ReceiptChoice } from "./receipt-choice";
 import { ThresholdInput } from "./threshold-input";
@@ -97,14 +98,16 @@ async function StockEstimateContent() {
   const { estimate, today, lafposFrom } = data;
   // Faturanın şubesi kartı yalnız yöneticide ve tahmin başladıysa (dönemin faturaları)
   const [receipts, branches, scope] = await Promise.all([
-    admin && estimate.from ? loadReceiptInvoices(estimate.from, today) : Promise.resolve<ReceiptInvoice[]>([]),
+    admin && estimate.from ? loadReceiptInvoices(estimate.from, today) : Promise.resolve<ReceiptList>({ invoices: [], total: 0, unassigned: 0 }),
     admin ? listBranches() : Promise.resolve<BranchRow[]>([]),
     currentBranchScope(),
   ]);
   // Başka şube seçiliyken (ör. Tuzla) ekran yine Marina'nın tahminidir: söylenir (şube kapsamı tarama #78)
   const otherScope = scope !== ALL_BRANCHES && scope !== STOCK_ESTIMATE_BRANCH ? (branches.find((b) => b.id === STOCK_ESTIMATE_BRANCH)?.name ?? "Marina") : null;
   const physical = branches.filter((b) => b.active && b.kind === "fiziksel").map((b) => ({ id: b.id, name: b.name }));
-  const unassigned = unassignedCount(receipts);
+  // Sayaç bütün dönemden (liste en çok 100 faturayı gösterir; bulgu 42)
+  const unassigned = receipts.unassigned;
+  const listNote = receiptListNote(receipts.invoices.length, receipts.total, receipts.unassigned);
   const meta =
     estimate.from !== null
       ? `${estimate.lastDay ? `Son gün sonu ${dayMonthTR(estimate.lastDay)}` : "Henüz gün sonu gelmedi"} · bugünün satışı gün sonuyla gelir`
@@ -240,31 +243,31 @@ async function StockEstimateContent() {
               icon={<ReceiptText />}
               title="Marina'ya gelen faturalar"
               description="Faturanın şubesi: Marina'ya geleni seçin. Seçim Faturalar'daki şubeyle aynıdır; fatura o şubenin görünümüne geçer."
-              meta={<span className="tabular">{`${dayAblativeTR(estimate.from)} bugüne · ${num(receipts.length)} fatura`}</span>}
+              meta={<span className="tabular">{`${dayAblativeTR(estimate.from)} bugüne · ${num(receipts.total)} fatura`}</span>}
             />
             <CardContent className="px-3 sm:px-5">
-              {receipts.length ? (
+              {receipts.invoices.length ? (
                 <ul className="divide-y divide-line-strong/70">
-                  {[...receipts]
-                    .sort((a, b) => Number(a.branchId !== null || a.companyWide) - Number(b.branchId !== null || b.companyWide))
-                    .map((inv) => (
-                      <li key={inv.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
-                        <span className="min-w-0">
-                          <span className="block font-medium text-ink">
-                            {inv.supplier} <span className="font-normal text-ink-mute tabular">· {dateTR(inv.date)}</span>
-                          </span>
-                          <span className="block text-[13px] text-ink-mute">
-                            {inv.items.join(", ")}
-                            {inv.more ? ` ve ${num(inv.more)} kalem daha` : ""}
-                          </span>
+                  {/* Şubesi seçilmeyenler önce (sunucu sıralar), sonra şubesi ya da işletme geneli seçilmişler; ikisi de en yeni önce */}
+                  {receipts.invoices.map((inv) => (
+                    <li key={inv.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
+                      <span className="min-w-0">
+                        <span className="block font-medium text-ink">
+                          {inv.supplier} <span className="font-normal text-ink-mute tabular">· {dateTR(inv.date)}</span>
                         </span>
-                        <ReceiptChoice invoiceId={inv.id} label={`${inv.supplier} ${dateTR(inv.date)}`} value={inv.companyWide ? INVOICE_SHARED : inv.branchId} branches={physical} />
-                      </li>
-                    ))}
+                        <span className="block text-[13px] text-ink-mute">
+                          {inv.items.join(", ")}
+                          {inv.more ? ` ve ${num(inv.more)} kalem daha` : ""}
+                        </span>
+                      </span>
+                      <ReceiptChoice invoiceId={inv.id} label={`${inv.supplier} ${dateTR(inv.date)}`} value={inv.companyWide ? INVOICE_SHARED : inv.branchId} branches={physical} />
+                    </li>
+                  ))}
                 </ul>
               ) : (
                 <p className="pb-1 text-[13px] text-ink-mute">Bu dönemde hammaddeye bağlı kalemi olan fatura yok.</p>
               )}
+              {listNote ? <p className="border-t border-line-strong/70 pt-3 pb-1 text-[13px] text-ink-mute">{listNote}</p> : null}
             </CardContent>
           </Card>
         ) : null}

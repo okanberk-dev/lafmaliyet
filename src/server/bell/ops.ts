@@ -1,6 +1,7 @@
 import "server-only";
 
 import { pastCountReminder, pastCountReminders, staffLateEditNotice, unpricedExtrasNotice } from "@/app/panel/sayim/logic";
+import { logBellFailed, type BellFailed, type BellPart } from "@/lib/bell-failed";
 import { featureInScope } from "@/lib/branch-features";
 import { ALL_BRANCHES, BRANCH_PARAM, type BranchScope } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
@@ -221,16 +222,20 @@ async function countAlertNotifications(user: CurrentUser, now: Date): Promise<Pa
   return out;
 }
 
-/** Zilin operasyon satırları, iki rolde (loadPanelNotifications iki dalda çağırır); bir kaynak düşerse ötekiler kalır */
-export async function opsBell(user: CurrentUser): Promise<PanelNotification[]> {
+/**
+ * Zilin operasyon satırları, iki rolde (loadPanelNotifications iki dalda çağırır); bir kaynak düşerse ötekiler kalır,
+ * düşen kaynak `onFailed` ile bildirilir ve zilde "… yüklenemedi" satırı olur (src/lib/bell-failed.ts; bulgu 88)
+ */
+export async function opsBell(user: CurrentUser, onFailed: BellFailed = logBellFailed): Promise<PanelNotification[]> {
   const now = new Date();
+  const safe = (part: BellPart, p: Promise<PanelNotification[]>) => p.catch((e: unknown) => (onFailed(part, e), [] as PanelNotification[]));
   const [pos, waste, karaoke, soldOut, count, countAlerts] = await Promise.all([
-    posNotifications(user, now).catch(() => []),
-    wasteRequestNotifications(user, now).catch(() => []),
-    karaokeRequestNotifications(user, now).catch(() => []),
-    soldOutNotifications(user, now).catch(() => []),
-    pastCountNotifications(user, now).catch(() => []),
-    countAlertNotifications(user, now).catch(() => []),
+    safe("fiyat", posNotifications(user, now)),
+    safe("zayi", wasteRequestNotifications(user, now)),
+    safe("karaoke", karaokeRequestNotifications(user, now)),
+    safe("tukendi", soldOutNotifications(user, now)),
+    safe("sayim", pastCountNotifications(user, now)),
+    safe("sayim", countAlertNotifications(user, now)),
   ]);
   return [...waste, ...karaoke, ...soldOut, ...count, ...countAlerts, ...pos];
 }

@@ -38,6 +38,7 @@ import {
   type SeedTemplate,
 } from "../src/lib/checklist-seed";
 import { withFireDefaults } from "../src/lib/fire-defaults";
+import { IMPORT_ACTIVITY_LABEL, IMPORTED_LABEL, IMPORT_AUTHOR_LABEL } from "../src/lib/import-labels";
 import { relinkWaste } from "../src/lib/waste";
 import { hashPassword } from "../src/server/auth/password";
 import { appVersion, writeBackupFile } from "../src/server/backup/core";
@@ -421,8 +422,8 @@ export async function runSeed({
             ingredientId: i.id,
             packagePrice: i.packagePrice,
             packageSize: i.packageSize,
-            note: "Excel'den aktarıldı",
-            changedBy: "Excel",
+            note: IMPORTED_LABEL,
+            changedBy: IMPORT_AUTHOR_LABEL,
             changedAt: new Date("2026-10-17T12:00:00+03:00"),
           })),
       );
@@ -455,7 +456,7 @@ export async function runSeed({
       );
       await tx.insert(s.activityLog).values({
         userName: "Sistem",
-        action: "Excel'den aktarım",
+        action: IMPORT_ACTIVITY_LABEL,
         detail: `${raw.meta.source}: ${ds.ingredients.length} hammadde, ${ds.products.length} ürün, ${ds.salesLines.length} satış satırı, ${ds.invoices.length} fatura`,
       });
       // Kalan zayi / ikram kayıtları: aynı kimlikte aynı adla geri gelen ürüne ya da hammaddeye bağlı kalır, yoksa adıyla

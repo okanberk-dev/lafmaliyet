@@ -210,8 +210,11 @@ const iptalSchema = z.object({
  * Faz 3: günün bir kasa hareketi (LafPOS `cash_movements`; docs/LAFPOS.md › Kasadan çıkanlar LafPOS'tan). Kimlik
  * hareketin ULID'i (26 karakter Crockford base32; değişmez, aynı gün yeniden gönderilince aynı satır). Harcama ve teslim
  * panelin "Kasadan çıkanlar"ına satır olur (src/server/lafpos/cash-moves.ts), giriş olmaz (Kasa raporunun "Gün içinde
- * kasaya giren"i `z.cashIn`'den). Kişi gelmez; açıklama personelin yazdığı serbest metin (en çok 200, boş olabilir).
- * `categoryId` harcamanın panel gider kategorisi (expense_categories.id) ya da null
+ * kasaya giren"i `z.cashIn`'den). Hareketi yazan kişi gelmez; açıklama personelin yazdığı serbest metin (en çok 200, boş
+ * olabilir). `categoryId` harcamanın panel gider kategorisi (expense_categories.id) ya da null. `recipient` (LafPOS 25
+ * Kasım 2026, sahibin isteği "teslim edilirken kime olduğu yazılsın"): yalnız teslimde, paranın verildiği kişi ya da yer
+ * (yalnız ad, kimlik yok; en çok 60); satırın "Kime"si olur (cash_outs.store; src/lib/lafpos/cash-moves.ts lafposRecipient).
+ * Yoksa alan yoktur (eski LafPOS, harcama, giriş); bozuk gelen yalnız bu alanı düşürür, listeyi değil
  */
 export const LAFPOS_MOVE_KINDS = ["harcama", "teslim", "giris"] as const;
 export const cashMoveSchema = z.object({
@@ -231,6 +234,7 @@ export const cashMoveSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/)
     .refine((v) => Number.isFinite(Date.parse(v))),
   categoryId: z.number().int().positive().max(2_147_483_647).nullable(),
+  recipient: z.string().max(1000).optional().catch(undefined),
 });
 
 /** Hareketlerin listesi: aynı kimlik iki kez geçmez (geçerse liste okunamaz sayılır, satırlara dokunulmaz) */

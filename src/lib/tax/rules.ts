@@ -200,7 +200,7 @@ export function rulesFor(year: number, overrides?: TaxOverrides): RulesFor {
   return { rules, year, fromYear, estimated };
 }
 
-/** Tablodaki bütün kurallar sırasıyla (ekran, Excel ve testler); `bilgi` listesi hariç */
+/** Tablodaki bütün kurallar sırasıyla (ekran, dışa aktarım ve testler); `bilgi` listesi hariç */
 export function allRules(r: TaxYearRules): Rule[] {
   const out: Rule[] = [];
   const walk = (x: unknown) => {

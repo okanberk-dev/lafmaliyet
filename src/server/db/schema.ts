@@ -405,7 +405,7 @@ export const invoices = pgTable(
     payable: doublePrecision("payable").notNull().default(0),
     unpaid: boolean("unpaid").notNull().default(false),
     note: text("note"),
-    /** Faturanın nereden geldiği: elle, Excel aktarımı ya da Paraşüt eşitlemesi */
+    /** Faturanın nereden geldiği: elle, ilk kurulumdaki içe aktarım (`excel`; ekranda "İçe aktarılmış (eski)") ya da Paraşüt eşitlemesi */
     source: text("source", { enum: ["manual", "excel", "parasut"] }).notNull().default("manual"),
     /** Kaydı ilk kim açtı; Paraşüt'e bağlanınca source "parasut" olur ama origin değişmez (iptalde silinip silinmeyeceğine bakılır) */
     origin: text("origin", { enum: ["manual", "excel", "parasut"] }).notNull().default("manual"),
@@ -447,7 +447,7 @@ export const invoices = pgTable(
     paymentRequestedAt: text("payment_requested_at"),
     /**
      * Tedarikçinin VKN / TCKN'si (yalnız rakam, 10 ya da 11 hane): Paraşüt gider faturasında e-belgenin `from_vkn`'i ya da
-     * kişi kartının `tax_number`'ı, gelen e-faturada `from_vkn`, UBL'de satıcının kimliği. Elle ve Excel'den girilen
+     * kişi kartının `tax_number`'ı, gelen e-faturada `from_vkn`, UBL'de satıcının kimliği. Elle girilen ve içe aktarılmış
      * faturada boş. Tedarikçiler aynı (geçerli) vergi nolu faturaları tek tedarikçide toplar (logic.ts supplierResolver).
      * Kontrol hanesi tutmayan ya da yer tutucu numara saklanır ama eşleşmede kullanılmaz (taxKey).
      */
@@ -472,12 +472,12 @@ export const invoices = pgTable(
     taxNotAsset: boolean("tax_not_asset").notNull().default(false),
     /**
      * Elle eklenen faturanın istemci anahtarı (Fatura ekle penceresinin ürettiği UUID): kısayolun ikinci basışı ya da
-     * yanıtı yolda kalan isteğin tekrarı ikinci fatura açmaz, var olan döner (denetim UI-03). Eşitleme ve Excel yazmaz
+     * yanıtı yolda kalan isteğin tekrarı ikinci fatura açmaz, var olan döner (denetim UI-03). Eşitleme ve içe aktarım yazmaz
      */
     clientKey: text("client_key"),
     /**
      * Faturanın geldiği Paraşüt hesabı (sahibi şube; docs/PARASUT.md › Şube başına Paraşüt hesabı): Paraşüt'e bağlı her
-     * kayıtta dolu (gider faturası ya da e-fatura kimliği varsa), elle ve Excel'le girilende boş. Paraşüt kimlikleri hesap
+     * kayıtta dolu (gider faturası ya da e-fatura kimliği varsa), elle girilende ve içe aktarılmışta boş. Paraşüt kimlikleri hesap
      * içinde benzersizdir; eşitleme yalnız kendi hesabının faturalarını görür, kaldırır
      */
     parasutAccount: text("parasut_account").references(() => branches.id),
@@ -900,7 +900,7 @@ export const pnlEntries = pgTable(
     month: text("month").notNull(),
     rowKey: text("row_key").notNull(),
     amount: doublePrecision("amount").notNull(),
-    /** Hücre notu (ör. "makine servisi"); Excel'deki hücre açıklamasının karşılığı */
+    /** Hücre notu (ör. "makine servisi"): elle düzeltmenin açıklaması */
     note: text("note"),
     updatedAt: updatedAt(),
   },

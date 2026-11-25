@@ -106,12 +106,15 @@ test("kaynak: Satışlar'ın ay bilgisi 'Tümü'de birden çok kasa açıkken ş
   assert.match(read("src/app/panel/satislar/sales-client.tsx"), /\{num\(clearCount\)\} \{lafpos \? "ModPOS" : "satış"\} satırı silinecek\./);
 });
 
-test("kaynak: Excel düğmesi ekranın şubesini gönderir; dosya kapsamı yazar, Vergi ve Cari firma geneli", () => {
+test("kaynak: Dışa aktar düğmesi ekranın şubesini gönderir; dosya kapsamı yazar, Vergi ve Cari firma geneli", () => {
   assert.match(read("src/app/panel/page.tsx"), /href=\{`\/api\/export\?ay=\$\{month\}&\$\{BRANCH_PARAM\}=\$\{encodeURIComponent\(scope\)\}`\}/);
   const route = read("src/app/api/export/route.ts");
   assert.match(route, /const scope = raw \? parseBranchScope\(raw, await listBranches\(\)\) : ALL_BRANCHES;/);
   assert.match(route, /withBranchScope\(ALL_BRANCHES, \(\) => loadCariExport\(\)\)/);
-  assert.match(read("src/app/api/export/workbook.ts"), /Kapsam: \$\{scope\?\.label \?\? "Tümü"\}/);
+  // Kapak "Kapsam" satırı ve sayfaların üst bilgisi (davranışı tests/export-bicim.test.ts sınar)
+  const wbSrc = read("src/app/api/export/workbook.ts");
+  assert.match(wbSrc, /scope\?\.branch\s*\? `\$\{scope\.label\} şubesi: /);
+  assert.match(wbSrc, /const period = `\$\{label\} · \$\{extras\.scope\?\.label \?\? "Tümü"\}`;/);
   // Ayarlar'daki tam yedek seçicisiz ("Tümü")
   assert.match(read("src/app/panel/ayarlar/page.tsx"), /<a href="\/api\/export" download/);
 });

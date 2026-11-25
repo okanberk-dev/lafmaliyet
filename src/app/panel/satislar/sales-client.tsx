@@ -461,7 +461,7 @@ export function MonthInfoForm({
               aside={chipOf("openDays")}
               tip={
                 <>
-                  Sabit giderler açık gün ÷ ayın gün sayısı oranıyla bölünür (Excel Genel Maliyet, 2. satır). Devam eden ayda bu sayı
+                  Sabit giderler açık gün ÷ ayın gün sayısı oranıyla bölünür (Gelir-gider tablosu). Devam eden ayda bu sayı
                   &quot;bugüne kadar geçen gün&quot; olarak da kullanılır: Genel bakış&apos;taki ay sonu tahmini POS cirosu ÷ açık gün × ayın
                   gün sayısıdır. Ay bitince gerçek açık gün sayısını yazın; kapanmış aylarda tahmin yapılmaz. Kasa raporu girilen aylarda boşsa
                   rapor girilen (satış olan) gün sayılır; o aylarda kira ve maaş gibi aylık giderler ayın geçen takvim günüyle bölünür,
@@ -659,7 +659,7 @@ function NameSize({ name, size }: { name: string; size?: string }) {
 }
 
 /**
- * Kâr marjı (Excel Satış Raporu J sütunu, 0,0%) ve üç renkli ölçek: ayın en düşük marjı kırmızı, ortancası
+ * Kâr marjı (bir ondalıklı yüzde) ve üç renkli ölçek: ayın en düşük marjı kırmızı, ortancası
  * sarı, en yükseği yeşil. Ölçeğe yalnızca reçeteli ürüne bağlı satırlar girer; HİZMET ve eşleşmeyen
  * (maliyeti tahmini) satırlar renksiz gösterilir.
  */
@@ -1207,7 +1207,7 @@ export function SalesTable({
                   <TH numeric>
                     <HeadLabel sub="malzeme + ambalaj" wrap>
                       <span className="inline-flex items-center gap-1.5">
-                        <InfoTip text="Eşleşenlerde adet × birim maliyet; eşleşmeyenlerde ve reçetesi boş ürüne bağlı satırlarda net ciro × ortalama maliyet oranı (turuncu, tahmini). Birim maliyet bugünkü reçete ve hammadde fiyatlarıyla hesaplanır (Excel'deki gibi): geçmiş bir ayda da bugünün maliyetidir. Gelir-gider'in mal maliyeti faturalardan ve ay sonu sayımından gelir, sonraki zamla değişmez." />
+                        <InfoTip text="Eşleşenlerde adet × birim maliyet; eşleşmeyenlerde ve reçetesi boş ürüne bağlı satırlarda net ciro × ortalama maliyet oranı (turuncu, tahmini). Birim maliyet bugünkü reçete ve hammadde fiyatlarıyla hesaplanır (yenileme maliyeti): geçmiş bir ayda da bugünün maliyetidir. Gelir-gider'in mal maliyeti faturalardan ve ay sonu sayımından gelir, sonraki zamla değişmez." />
                         <SortButton numeric dir={dirOf("maliyet")} onClick={() => toggleSort("maliyet")}>
                           Maliyet
                         </SortButton>
@@ -1229,7 +1229,7 @@ export function SalesTable({
                   <TH numeric>
                     <HeadLabel sub="kâr ÷ net">
                       <span className="inline-flex items-center gap-1.5">
-                        <InfoTip text="Excel'deki 'Kâr marjı %' sütunu ve renk ölçeği: bu ayın en düşük marjı kırmızı, ortancası sarı, en yükseği yeşil. Ölçeğe reçeteli ürünler girer; HİZMET, eşleşmeyen ve reçetesi boş ürüne bağlı (maliyeti tahmini) satırlar renksizdir." />
+                        <InfoTip text="Kâr marjı renk ölçeği: bu ayın en düşük marjı kırmızı, ortancası sarı, en yükseği yeşil. Ölçeğe reçeteli ürünler girer; HİZMET, eşleşmeyen ve reçetesi boş ürüne bağlı (maliyeti tahmini) satırlar renksizdir." />
                         <SortButton numeric dir={dirOf("marj")} onClick={() => toggleSort("marj")}>
                           Marj
                         </SortButton>

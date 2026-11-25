@@ -468,7 +468,9 @@ test("Kasa formu: LafPOS düğmesi aynı uygulama kuralından (prefillPlan) geç
   // Sayfa: yalnız formun günü için ve yalnız geçiş gününden sonraki günlerde (loadKasaLafpos); okunamazsa form ModPOS'a
   // göre açılır. Geçiş gününe bakmayan okuyucu sayfada çağrılmaz
   const page = read("src/app/panel/kasa/page.tsx");
-  assert.match(page, /showForm \? loadKasaLafpos\(date\)\.catch\(\(\) => NO_LAFPOS\) : Promise\.resolve\(NO_LAFPOS\)/);
+  // Okunamazsa null: form ModPOS'a göre açılır, kör kasa kapalı kalır (staffBlindView)
+  assert.match(page, /showForm \? loadKasaLafpos\(date\)\.catch\(\(\) => null\) : Promise\.resolve\(NO_LAFPOS\)/);
+  assert.match(page, /const lafposState = lafposRead \?\? NO_LAFPOS;/);
   assert.match(page, /const NO_LAFPOS = \{ lafpos: false, day: null \} as const;/);
   assert.doesNotMatch(page, /\bloadLafposDay\(/);
   assert.match(page, /lafpos=\{lafposState\.day\}/);

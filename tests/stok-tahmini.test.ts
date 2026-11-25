@@ -11,6 +11,7 @@ import { DEFAULT_SETTINGS } from "../src/lib/constants";
 import {
   estimateStock,
   parseThresholdInput,
+  receiptListNote,
   stockQty,
   recipePerUnit,
   showsStockEstimate,
@@ -305,4 +306,13 @@ test("Tuzla etkilenmez: tahmin yalnız Marina'nın; Tuzla ve online kanal seçil
   // Genel bakış ve Bugün kartı okuyucunun kapısından geçer (Tuzla'da null)
   assert.match(read("src/app/panel/page.tsx"), /loadStockAlert\(\)/);
   assert.match(read("src/app/panel/bugun/page.tsx"), /loadStockAlert\(\)/);
+});
+
+test("Marina'ya gelen faturalar: liste kesilince not, kesilmezse yok (bulgu 42)", () => {
+  assert.equal(receiptListNote(12, 12, 3), null, "kesilmedi");
+  assert.equal(receiptListNote(0, 0, 0), null);
+  // 100 gösteriliyor, 130 var; 120 açık: listede 100 açık, gizlenen 30'un 20'si açık
+  assert.equal(receiptListNote(100, 130, 120), "100 fatura gösteriliyor (şubesi seçilmeyenler önce), 30 fatura daha var: 20 tanesinin şubesi seçilmedi, seçtikçe listede yerini alır.");
+  // Açıkların hepsi listede: gizlenenler seçilmiş
+  assert.equal(receiptListNote(100, 1_250, 7), "100 fatura gösteriliyor (şubesi seçilmeyenler önce), 1.150 fatura daha var; hepsinin şubesi seçildi.");
 });

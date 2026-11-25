@@ -10,7 +10,7 @@ import { missingText } from "@/lib/cash-month";
 import { CASH_OUT_INVOICES_HREF, cashOutInvoiceDay, pendingCashOutSummary, type InvoiceCashOut } from "@/lib/cash-outs";
 import { SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTimeTR, money, monthLabel, num, tl } from "@/lib/format";
-import { lafposMonthNotes } from "@/lib/lafpos/sales";
+import { commonListWaitText, lafposMonthNotes } from "@/lib/lafpos/sales";
 import { salesSourceOf, type SalesSource } from "@/lib/sales-source";
 import type { UpcomingItem } from "@/lib/reminders";
 import { unreachable } from "@/lib/unreachable";
@@ -85,6 +85,11 @@ export interface MonthTaskFacts {
      * (LafPOS, ileride ModPOS bağlantısı) iş "yükle" demez. Yoksa eski kural (LafPOS ayı elle değil)
      */
     source?: Pick<SalesSource, "kind" | "manual" | "missing">;
+    /**
+     * "Tümü"de ortak dönemi olmayan ay (bulgu 62): ModPOS'ta kalan bu şubenin listesi yok, ayın satırları liste gelince
+     * sayılır (Dataset.commonLists `through` null). İş "LafPOS … sayılıyor" demez
+     */
+    commonMissing?: { branch: string };
   };
   /**
    * Ayın etkin açık günü ve cirosu. `source`: elle mi kasa raporlarından mı (yoksa elle sayılır); `till`: ayın kasa
@@ -221,6 +226,10 @@ export function monthTaskFacts(
       refMonth,
       ...(lp && st ? { lafpos: { source: st.source, days: st.lafpos?.days ?? 0, warning: lafposMonthNotes(st, lp.switchDay).warnings[0] ?? null } } : {}),
       source: (({ kind, manual, missing }) => ({ kind, manual, missing }))(salesSourceOf(month, lp?.switchDay ?? model.settings.lafposGecisGunu, lp)),
+      ...(() => {
+        const c = model.ds.commonLists?.find((x) => x.month === month && x.through === null);
+        return c ? { commonMissing: { branch: c.branch } } : {};
+      })(),
     },
     info: {
       openDays: info?.openDays ?? null,
@@ -285,6 +294,16 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         detail: `Listede ${s.summaryRows} toplam satırı ürün gibi sayılıyor; ciro ve kâr şişiyor. Satırı silin.`,
         href: `${href}#satirlar`,
         action: "Satırı sil",
+      });
+    } else if (s.commonMissing && !s.lines && !notStarted) {
+      // "Tümü"de ortak dönem yok (bulgu 62): Marina'nın LafPOS satırları da ModPOS şubesinin listesi gelince sayılır
+      out.push({
+        key: "satis",
+        title: "Satış raporu",
+        status: f.state === "running" ? "later" : "todo",
+        detail: commonListWaitText(m, s.commonMissing.branch, f.state === "running"),
+        href,
+        action: f.state === "running" ? "Satışları aç" : "Satış raporu yükle",
       });
     } else if (s.lafpos?.warning && !notStarted) {
       // LafPOS'a geçilen ayda eksik ya da sayılmayan gün, liste ↔ Z farkı: satırlar olsa da ay tamam değil

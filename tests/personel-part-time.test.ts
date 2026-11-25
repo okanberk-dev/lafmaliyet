@@ -18,7 +18,7 @@ import { planInputFromModel } from "../src/lib/cash-plan";
 import { createModel, staffCost, staffShiftRef } from "../src/lib/calc/engine";
 import { alerts } from "../src/lib/calc/insights";
 import { staffWarnings } from "../src/lib/calc/personnel";
-import { linkConflict, type LinkRow } from "../src/lib/staff-link";
+import { linkConflict, linkedDeleteText, type LinkRow } from "../src/lib/staff-link";
 import type { Dataset, Staff } from "../src/lib/calc/types";
 import { DEFAULT_SETTINGS } from "../src/lib/constants";
 import { taxPayrollFromModel } from "../src/lib/tax/payroll";
@@ -263,4 +263,12 @@ test("Excel 'Personel' sekmesi tutar: satırın sütunları (yemek kartı ve par
   const total = rowOf("TOPLAM");
   for (const k of Object.keys(c) as (keyof typeof c)[]) close(n(total, k), n(alper, k) + n(ayse, k), `TOPLAM ${k}: herkes`);
   reconciles(total, "TOPLAM");
+});
+
+test("maaş satırına bağlı hesabın silinmesinin reddi: satır adları ve pasif önerisi (denetim bulgusu 47)", () => {
+  assert.equal(
+    linkedDeleteText(["Ayşe"]),
+    "Bu hesap Maaşlar'da “Ayşe” satırına bağlı; silinirse Vardiya günleri o satıra sayılmaz, part-time ücreti geçmiş aylarda da 0'a düşer. Silmek yerine hesabı pasif yapın.",
+  );
+  assert.match(linkedDeleteText(["Ayşe", "Ayşe (Tuzla)"]), /“Ayşe”, “Ayşe \(Tuzla\)” satırlarına bağlı;.*pasif yapın\.$/);
 });

@@ -1,7 +1,7 @@
 /**
  * Vergi sayfasının bütün sayıları (plan docs/planlar/vergi.md §3.12, §4, §6.10, §8.1): üç rakam, Başlarken, önümüzdeki
  * 100 günün vergi takvimi (her satırda tek tutar ve kaynağı), geçici ve kurumlar vergisi kartları, Vergi kârı
- * çeyrek görünümü ve nakit planının vergi beslemesi. Ekran, Excel ve nakit planı aynı hesabı okur. Kaynakların önceliği
+ * çeyrek görünümü ve nakit planının vergi beslemesi. Ekran, dışa aktarım ve nakit planı aynı hesabı okur. Kaynakların önceliği
  * Vergi sayfasında muhasebeci › Ödemeler › tahmin (K4); geçici ve kurumlar vergisinin tahmini takvimin tutar sütununa
  * yazılmaz (K21). Saf modül; tests/vergi-gorunum.test.ts.
  */
@@ -179,7 +179,7 @@ export const ASK_TAHAKKUK = "Tahakkuk fişindeki tutarı girin";
 export const NOTE_LATER = "Tutar yaklaşınca nakit planında";
 export const NOTE_UNKNOWN = "Tutarı bilinmiyor · şirketin beyannamesi; muhasebecinizden isteyin";
 export const NOTE_MUNICIPAL = "tutar belediyeden";
-/** KDV-1 satırı: ödeme yok, yalnız damga. Satırın notunda kalır (Excel, test); ekranda satır kapalıyken "Ödeme yok" yazar (§7.5) */
+/** KDV-1 satırı: ödeme yok, yalnız damga. Satırın notunda kalır (dışa aktarım, test); ekranda satır kapalıyken "Ödeme yok" yazar (§7.5) */
 export const NOTE_VAT_NONE = "Ödeme beklenmez (devreden); yalnız damga.";
 /** K4: muhasebecinin rakamı ile Ödemeler'deki tutar farklı (takvim satırında ve Özet'in uyarılarında sarı) */
 export const isMismatchNote = (n: string) => n.startsWith("Ödemeler'deki tutar (");
@@ -384,7 +384,7 @@ export interface ClassifyView {
   unclassifiedCount: number;
   candidates: AssetCandidate[];
   unlisted: { invoiceId: number; supplier: string; date: string; remaining: number }[];
-  /** Belgesi yok: yalnız sayı ve toplam (kalemler Excel'e ve işlem geçmişine gitmez) */
+  /** Belgesi yok: yalnız sayı ve toplam (kalemler dışa aktarıma ve işlem geçmişine gitmez) */
   noDoc: { count: number; total: number; text: string | null };
   /** Kartın başlığı: "Bu çeyrekte 808.610 ₺ gider sayılmadı (24 kalem) · 69.780 ₺ demirbaş olabilir (2 fatura)" */
   header: string;

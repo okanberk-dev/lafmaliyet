@@ -314,7 +314,8 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
   function save() {
     if (problems.length) return void toast.error(problems[0].text);
     run(async () => {
-      const res = await saveShiftWeekAction({ branchId: branch.id, week: monday, rows: rows.map((r) => ({ ref: r.ref, name: r.name, cells: r.texts.map(norm) })) });
+      // `seen`: kutuların ekran açıldığındaki metni; sunucu yalnız bundan farklı kutuları yazar (bulgu 46)
+      const res = await saveShiftWeekAction({ branchId: branch.id, week: monday, rows: rows.map((r) => ({ ref: r.ref, name: r.name, cells: r.texts.map(norm), seen: before.get(r.ref) ?? Array<string>(7).fill("") })) });
       if (!res.ok) return void toast.error(res.error);
       const r = res.data;
       setSavedNote(r.summary);

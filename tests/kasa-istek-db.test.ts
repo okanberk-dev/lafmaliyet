@@ -16,6 +16,8 @@ import { after, before, describe, test } from "node:test";
 
 import { eq, inArray, sql } from "drizzle-orm";
 
+import { DEFAULT_BRANCH_ID } from "../src/lib/branches";
+import { CASH_OUT_NOTE_REQUIRED } from "../src/lib/cash-outs";
 import { historyOf, type CashReportFields } from "../src/lib/cash-report";
 import { CASH_REQUEST_TEXT } from "../src/lib/cash-requests";
 import { REQUEST_TEXT } from "../src/lib/staff-requests";
@@ -115,6 +117,7 @@ describe("Kasa istekleri: veritabanında düzeltme ve silme isteği, karar", { s
     if (!db) return;
     const ids = Object.values(users).map((u) => u.id);
     await db.delete(s.staffRequests).where(inArray(s.staffRequests.requestedBy, ids));
+    if (dates.length) await db.delete(s.cashOuts).where(inArray(s.cashOuts.date, dates));
     if (dates.length) await db.delete(s.cashReports).where(inArray(s.cashReports.date, dates));
     await db.delete(s.users).where(inArray(s.users.id, ids));
     await db.$client.end();
@@ -380,5 +383,37 @@ describe("Kasa istekleri: veritabanında düzeltme ve silme isteği, karar", { s
     assert.equal(out.status, "approved");
     const after = await reportOf(day);
     assert.deepEqual([after.cashIn, after.cashDiff, after.revision], [0, 300, 3], "500 + 3.000 − 0 = 3.500 beklenir, 3.800 sayıldı: 300 fazla");
+  });
+
+  test("fişsiz çıkış (bulgu 2): personel satırlardan fazlasını yazarsa neye çıktığını yazar; yönetici serbest ve uyarıyı görür; düzeltme önerisi de aynı kuralla", async () => {
+    // En geç günler: başka testin sonraki raporu bu günü kilitlemesin
+    const day = "2040-03-03";
+    const next = "2040-03-04";
+    dates.push(day, next);
+    const at = tr(`${day}T22:00`);
+    await db.insert(s.cashOuts).values({ date: day, branchId: DEFAULT_BRANCH_ID, kind: "harcama", amount: 150, store: "Migros", description: "süt", createdBy: users.ayse.id, createdByName: "Ayşe" });
+    const save = (who: Who, o: Partial<CashReportFields>, revision = 0) => store.saveCashReport(db, who, { ...fields(day, o), countedBy: null, revision, photos: [] }, at);
+    // Satır girmeden fazlası yazıldı: açıklamasız ya da satırın kendi adıyla gönderilmez, hiçbir şey yazılmaz
+    await refused(save(users.ayse, { cashOut: 650 }), CASH_OUT_NOTE_REQUIRED);
+    await refused(save(users.ayse, { cashOut: 650, cashOutNote: "Migros" }), CASH_OUT_NOTE_REQUIRED);
+    assert.equal(await reportOf(day), undefined);
+    // Fişler kadar yazılınca açıklama gerekmez
+    assert.equal((await save(users.ayse, { cashOut: 150 })).kind, "saved");
+    // Aynı gece çıkış artırıldı: neye çıktığı yazılınca kaydedilir
+    await refused(save(users.ayse, { cashOut: 650 }, 1), CASH_OUT_NOTE_REQUIRED);
+    assert.equal((await save(users.ayse, { cashOut: 650, cashOutNote: "Migros, bozuk para" }, 1)).kind, "saved");
+    // Yönetici açıklamasız da yazar (yönetici serbest); personel çıkışa dokunmadan notu düzeltince yeniden sorulmaz
+    assert.equal((await save(users.ali, { cashOut: 650, cashOutNote: null }, 2)).kind, "saved");
+    assert.equal((await save(users.ayse, { cashOut: 650, cashOutNote: null, note: "bozuk para bankadan" }, 3)).kind, "saved");
+    // Yöneticinin uyarısı: e-postanın ve listenin ekleri onay kartıyla aynı hesapla (650 − 150 = 500)
+    const { cashReportExtras } = await import("../src/server/data/cash-photos");
+    const dto = reports.toCashDTO(await reportOf(day), "admin");
+    assert.equal((await cashReportExtras(dto)).unreceipted, 500);
+    // Ertesi günün raporu girildi (gün kilitli): düzeltme önerisi de açıklamasız fazlayı göndermez
+    await report(next, { openingCash: 1_100 });
+    const later = tr(`${next}T10:00`);
+    await refused(propose(users.ayse, day, 4, { cashOut: 900, cashOutNote: null }, later), CASH_OUT_NOTE_REQUIRED);
+    const ok = await propose(users.ayse, day, 4, { cashOut: 900, cashOutNote: "Migros, bozuk para, buz" }, later);
+    assert.equal(ok.row.status, "pending");
   });
 });

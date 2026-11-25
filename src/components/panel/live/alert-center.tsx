@@ -667,6 +667,10 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
   const alarmsOff = !prefs.karaokeAlarms && (pathname === KARAOKE_PATH || karaokeNear);
   const [alarmsShownOn, setAlarmsShownOn] = useState<string | null>(null);
   const alarmsRow = soundRow({ needsSound: alarmsOff, audioReady: prefs.karaokeAlarms, pathname, shownOn: alarmsShownOn });
+  // Sayfanın başındaki ses satırları ("Uyarı sesleri susturuldu", "Sesli uyarılar kapalı", karaoke uyarıları) yalnız
+  // personelde: yönetici her sayfada sürekli uyarı görmesin (sahibin isteği, 25 Kasım 2026); ayarı Siparişler › Bu
+  // cihazda uyarılar kartında durur, alarmlar ve pencereler yine çıkar
+  const pageRows = role !== "admin";
   if (alarmsRow.shownOn !== alarmsShownOn) setAlarmsShownOn(alarmsRow.shownOn);
 
   return (
@@ -727,7 +731,7 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
           şey çizilmez. İlk dokunuşta ses açılır; satır kalkmaz, aynı yükseklikte "Sesli uyarılar açık"a döner (düğmenin
           görünmez eşi yeri tutar) ve sayfa değişince kalkar (soundRow) */}
       {/* "Yalnız bu bilgisayar" açık ama hoparlör seçilmemiş ya da bağlı değil: sesler genel hoparlöre gitmesin diye susar */}
-      {prefs.sound && !audible && soundSlot
+      {pageRows && prefs.sound && !audible && soundSlot
         ? createPortal(
             <Notice
               tone="warn"
@@ -744,7 +748,7 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
             soundSlot,
           )
         : null}
-      {alarmsRow.row && soundSlot
+      {pageRows && alarmsRow.row && soundSlot
         ? createPortal(
             alarmsRow.row === "locked" ? (
               <Notice
@@ -778,7 +782,7 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
             soundSlot,
           )
         : null}
-      {sound.row && soundSlot
+      {pageRows && sound.row && soundSlot
         ? createPortal(
             sound.row === "locked" ? (
               <Notice

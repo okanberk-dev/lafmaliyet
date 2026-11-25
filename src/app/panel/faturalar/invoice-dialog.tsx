@@ -28,6 +28,7 @@ import { stockOnlyCategory, stockOnlyText } from "@/lib/invoice-linking";
 import { formatBytes } from "@/lib/documents";
 import { dateTR, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { INVOICE_SOURCE_PHRASE } from "@/lib/import-labels";
 import { confirmInvoices, saveInvoice, type SameNumberInvoice } from "@/server/actions/invoices";
 import type { DocumentMeta } from "@/server/documents";
 
@@ -99,7 +100,7 @@ function cashOutForm(o: CashOutInvoiceSource, defaults: Map<string, SupplierDefa
 const CASH_DOC: Record<CashOutInvoiceSource["docType"], string> = { e_arsiv: "e-Arşiv", fatura: "fatura", fis: "fiş", yok: "belgesiz" };
 
 /** Aynı numaralı faturanın kaynağı (UI-02 sorusu) */
-const TWIN_SOURCE: Record<SameNumberInvoice["source"], string> = { manual: "elle girilmiş", excel: "Excel'den alınmış", parasut: "Paraşüt'ten gelmiş" };
+const TWIN_SOURCE: Record<SameNumberInvoice["source"], string> = INVOICE_SOURCE_PHRASE;
 
 /**
  * Kategorinin gelir-giderde nereye gittiği (pencere ve toplu değiştirme ipucu). `links`: fatura kategorisi → bağlı
@@ -780,7 +781,7 @@ export function InvoiceDialog({
 
 /**
  * Formdaki "Belge" alanı. Belgesi olan (Paraşüt e-fatura PDF'i ya da yüklenmiş dosya) kayıtlı faturada "Belgeyi
- * aç"; belgesi yoksa (elle ya da Excel'le girilmiş) kâğıt faturanın fotoğrafı buradan hemen eklenir. Yeni faturada
+ * aç"; belgesi yoksa (elle girilmiş ya da içe aktarılmış) kâğıt faturanın fotoğrafı buradan hemen eklenir. Yeni faturada
  * seçilen dosya hazırlanır (fotoğraf küçültülür) ve "Kaydet"ten sonra yüklenir.
  */
 function DocumentField({

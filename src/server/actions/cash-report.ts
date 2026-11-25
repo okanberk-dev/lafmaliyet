@@ -9,6 +9,7 @@ import { BRANCH_ID_MAX, DEFAULT_BRANCH_ID, namedTill, tillBranches, zFormBranch 
 import { businessDate, carryCheck, changesText, diffText, parseEmails, staffCanReport, waPhone, whatsappLink, whatsappText, type CashReportFields } from "@/lib/cash-report";
 import type { Role } from "@/lib/constants";
 import { money } from "@/lib/format";
+import { BLIND_TEXT } from "@/lib/lafpos/kor-kasa";
 import { allDroppedSentence, droppedListText, recipientRefusal } from "@/lib/notify-recipients";
 import { longDateTR } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
@@ -17,7 +18,7 @@ import { formTillBranch, staffBranchRefusal, withBranchScope } from "@/server/br
 import { logSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { emailReport, type CashEmailOutcome } from "@/server/cash/report-email";
-import { clearOkcCumulativeCore, removeCashReport, reportSchema, saveCashReport } from "@/server/cash/report-store";
+import { clearOkcCumulativeCore, isLafposTillDay, removeCashReport, reportSchema, saveCashReport } from "@/server/cash/report-store";
 import { cashReportExtras } from "@/server/data/cash-photos";
 import { cashReportIntegrity, cashReportsBetween, getCashReport, loadCashSettings, nextReportAfter, saveCashSettings, toCashDTO } from "@/server/data/cash-reports";
 import { dayWaste } from "@/server/data/waste";
@@ -320,6 +321,8 @@ export async function cashReportWhatsapp(date: string, branchId?: string | null)
     const d = zDate.parse(date);
     if (me.role !== "admin" && !staffCanReport(d)) throw new UserError("Bu raporu yalnız yönetici görebilir");
     const till = await formTillBranch(zFormBranch.parse(branchId));
+    // Kör kasa (bulgu 0): LafPOS gününün metni sayılanı ve farkı taşır; personele verilmez
+    if (me.role !== "admin" && (await isLafposTillDay(getDb(), d, till))) throw new UserError(BLIND_TEXT.whatsapp);
     const r = await getCashReport(d, "staff", till);
     if (!r) throw new UserError("Bu günün raporu yok");
     const [settings, waste, extras, integrity, branches] = await Promise.all([

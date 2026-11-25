@@ -204,8 +204,8 @@ test("Hesabım: personel giriş e-postasını bir listedeki adrese çeviremez, k
 test("zil: yalnız yöneticiye, sistem başlığında; durum okunamazsa zil yine açılır", () => {
   const src = read("src/server/actions/notifications.ts");
   const load = src.slice(src.indexOf("export async function loadPanelNotifications"));
-  assert.ok(load.indexOf("recipientNotifications().catch(() => [])") > load.indexOf('if (user.role !== "admin") return'), "personel dalında yok");
-  assert.match(load, /return \[\.\.\.system, \.\.\.recipients, /);
+  assert.ok(load.indexOf('safe("alici", recipientNotifications())') > load.indexOf('if (user.role !== "admin") return'), "personel dalında yok");
+  assert.match(load, /return \[\.\.\.lost, \.\.\.system, \.\.\.recipients, /);
   assert.match(src, /group: "sistem" as const \}\]/);
 });
 

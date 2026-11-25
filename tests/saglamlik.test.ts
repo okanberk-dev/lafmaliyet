@@ -63,7 +63,8 @@ test("zil: maliyet modeli düşünce öbür maddeler gelir; menü okuma hatasın
   assert.match(action, /modelNotifications\(\)\.catch\(modelFailed\),/);
   assert.doesNotMatch(action, /\bloadModel\(\)/);
   const all = action.slice(action.indexOf("await Promise.all(["), action.indexOf("]);", action.indexOf("await Promise.all([")));
-  for (const line of all.split("\n").slice(1).filter((l) => l.trim())) assert.match(line, /\.catch\(/, line);
+  // Her üye ya kendi catch'iyle ya da safe(…) ile (düşen bölüm "… yüklenemedi" satırı olur; bulgu 88)
+  for (const line of all.split("\n").slice(1).filter((l) => l.trim())) assert.match(line, /\.catch\(|^\s+safe\("[a-z]+", /, line);
   const menu = read("src/components/panel/notifications.tsx");
   assert.match(menu, /failure === "stale"\s+\? "Panel güncellendi; bildirimler için sayfayı yenileyin\."/);
   // Son okuma boş döndüyse "son okunan liste gösteriliyor" denmez (altında liste yok)
@@ -73,7 +74,8 @@ test("zil: maliyet modeli düşünce öbür maddeler gelir; menü okuma hatasın
   assert.match(menu, /list\.length \? "Hepsi okundu" : failure \? "Okunamadı" : "Dikkat isteyen bir şey yok"/);
   const shell = read("src/components/panel/sidebar.tsx");
   assert.doesNotMatch(shell, /setAlerts\(\[\]\)|setAlerts\(\(a\) => a \?\? \[\]\)/);
-  assert.match(shell, /\.catch\(\(e: unknown\) => setAlertsFailure\(actionFailure\(e\)\)\)/);
+  // Yalnız en son okumanın hatası yazılır (şube değişince eski okuma yenisini ezmesin; bulgu 89)
+  assert.match(shell, /\.catch\(\(e: unknown\) => seq === alertsSeq\.current && setAlertsFailure\(actionFailure\(e\)\)\)/);
 });
 
 test("tryAction: atan eylem bildirim çıkarır ve undefined döner; yanıt olduğu gibi geçer; yönlendirme geri atılır (E-51)", async () => {

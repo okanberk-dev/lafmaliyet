@@ -41,7 +41,8 @@ Sahibin isteği (22 Kasım 2026): "ladmine de vardiya ayarlama diye ayrı sekme 
   Okunamayan kutu kırmızı olur, üstte nedeni yazar ("Ayşe, Salı: Saat 00–23 arasında olmalı…"), **Kaydet** kapanır.
   Bir vardiya en çok 16 saat sürer ("18-17" gibi yazım hatası 23 saatlik vardiya olmasın). Kişi ve gün başına tek
   vardiya (bölünmüş vardiya notla yazılır).
-- **Kaydet** bütün haftayı tek eylemle yazar: değişen kutu yazılır, boşaltılan silinir, değişmeyene dokunulmaz.
+- **Kaydet** bütün haftayı tek eylemle yazar: yalnız bu ekranda değiştirilen kutu yazılır, boşaltılan silinir,
+  dokunulmayana dokunulmaz (ekran açıldıktan sonra başkasının yazdığı yerinde kalır; aşağıda "Veri").
   Değişiklik varken altta kaydetme çubuğu durur ("3 değişiklik · Kaydedilmedi"); başka haftaya, şubeye ya da sayfaya
   geçerken "Kaydedilmemiş vardiya var" diye sorulur. Kayıttan sonra "Plan kayıtlı; PDF güncel" satırı ve bildirimde
   **PDF'i aç**.
@@ -166,6 +167,13 @@ staffCost); testleri `tests/personel-part-time.test.ts`, `tests/personel-baglant
   `staff.user_id`'de veritabanı tekilliği yok (kural aralığa bağlı); denetim ve yazım bir işlem kilidi altında yapılır
   (`pg_advisory_xact_lock`, `saveStaff` ve `endStaff`; `lockStaffLinks`): iki yönetici aynı anda kaydederse ikincisi
   öncekini bekler ve onun bağladığını görür (inceleme bulgusu 6).
+- **Bağlı hesap silinmez** (denetim bulgusu 47, 25 Kasım 2026): `staff.user_id` hesap silinince boşalır (ON DELETE SET
+  NULL); part-time'ın günü Vardiya'dan sayılamaz, ücreti bütün aylarda 0'a düşer, tam zamanlının LafPOS yemek kartı günü
+  de bağlantıyı kaybederdi. Kullanıcılar › Sil, Maaşlar'da bir satıra (biten satır da) bağlı hesabı reddeder: "Bu hesap
+  Maaşlar'da “Ayşe” satırına bağlı; … Silmek yerine hesabı pasif yapın." Pasif hesapla giriş yapılamaz, bağlantı ve
+  geçmiş aylar kalır. Denetim ve silme aynı kilit altında, tek işlemde (`deleteUser`; o an bağlanan hesap da silinmez).
+  Bu kuraldan önce silinmiş hesapların satırları dokunulmadan kalır: geriye dönük onarım yok (silinen hesabın vardiyaları
+  `u:<id>` anahtarıyla durur, bağlanacak hesap kalmadı); bağlantısız part-time'ı Maaşlar uyarır.
 - **LM-4b notu (personel listesi):** biten satır ile "Devam ettir"in açtığı yeni satır aynı hesaba bağlı olabilir (aralıkları
   ayrık). `GET /api/panel/pos/personel?sube=…` "bu ay ve geçen ay aralıktaki satırlar"ı okurken o şubede bir hesaba iki satır
   düşebilir; liste **şubede hesap başına tek öğe** vermelidir (o ayın satırı, yoksa en yeni satır). Aksi hâlde LafPOS'un seçicisi aynı
@@ -211,7 +219,17 @@ staffCost); testleri `tests/personel-part-time.test.ts`, `tests/personel-baglant
 | `updated_by_name`, `updated_at` | Hücreye en son kim, ne zaman dokundu |
 
 Satır yoksa kişi o gün planlanmamıştır. Aynı haftayı iki sekme birden kaydederse sırayla yazar (hafta başına danışma
-kilidi), aynı kutuda son yazan kalır; bir sekmenin bilmediği kişinin satırına dokunulmaz.
+kilidi); bir sekmenin bilmediği kişinin satırına dokunulmaz.
+
+**Eski ekrandan kaydetme (denetim bulgusu 46, 25 Kasım 2026):** Kaydet her kutunun ekran açıldığındaki (son
+yenilemedeki) metnini de gönderir (`seen`). Sunucu yalnız bundan farklı kutuları yazar ya da siler (`weekSaveDiff`);
+dokunulmayan kutu veritabanında ne varsa öyle kalır. Önceden bütün hafta gönderiliyordu: A haftayı açıp beklerken B
+Ayşe'nin Salı'sını değiştirirse, A başka bir kutuyu kaydedince Salı eski hâline dönüyor, B'nin eklediği kutular
+siliniyordu. Değiştirilen kutuyu arada başkası da değiştirdiyse (veritabanındaki ne görülen ne yazılan) kayıt
+bütünüyle reddedilir: "Plan siz bakarken değişti (Ayşe, Salı), sayfayı yenileyin." Hiçbir kutu yazılmaz; ikisi aynı
+şeyi yazdıysa çakışma sayılmaz. `seen` göndermeyen eski sekmenin kaydı da aynı metinle reddedilir. Asistanın vardiya
+kartı da önizlemede gördüğü haftayı `seen` olarak gönderir (docs/ASISTAN-ISLEMLER.md). Kayıttan sonraki özet ("5 kişi ·
+28 vardiya") veritabanındaki plandan sayılır.
 
 ## Dosyalar
 
@@ -227,3 +245,4 @@ kilidi), aynı kutuda son yazan kalır; bir sekmenin bilmediği kişinin satır�
 | `src/app/panel/vardiya/page.tsx`, `shift-grid.tsx` | Ekran: hafta ve şube, yöneticinin ızgarası (telefonda gün gün), personelin salt okunur görünümü |
 | `tests/vardiya-taslak.test.ts` | Yazarak doldurma: atamaların çevrilmesi (hazır vardiya, izin, saat, herkes, yeni kişi, sıra, işlenemeyenler), taslağın uygulanması, isteğin biçimi ve şeması, sahte istemciyle okuma, hata metinleri, bağlantılar |
 | `tests/vardiya.test.ts` | Kutunun okunuşu (gece yarısı, izin, hatalar), biçim, hafta, toplamlar, kayıt farkı, rol ve menü, PDF (yazı tipinde Türkçe harfler, `%PDF`, A4 yatay, sayfalama) |
+| `tests/vardiya-kayit.test.ts`, `tests/vardiya-kayit-db.test.ts` | Eski ekrandan kaydetme: yalnız değiştirilen kutu yazılır, arada başkasının değiştirdiği kutuda red (saf fark ve gerçek Postgres) |

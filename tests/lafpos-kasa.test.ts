@@ -313,7 +313,9 @@ test("G11: LafPOS'un kartla bahşişi ve cari tahsilatı kart farkından her oku
   // ekranında sahte kart farkı, WhatsApp'ta "aynı" olmaz
   const page = read("src/app/panel/kasa/page.tsx");
   assert.doesNotMatch(page, /lafposForStaff/);
-  assert.equal(page.match(/lafpos=\{lafposState\.day\}/g)?.length, 2, "kasa formu ve geç rapor");
+  assert.equal(page.match(/lafpos=\{lafposState\.day\}/g)?.length, 1, "geç rapor");
+  // Kasa formu da aynı özetle; kör kasada (bulgu 0) yalnız açılış ve sayım alanları süzülür, kart ekleri aynı kalır
+  assert.match(page, /lafpos=\{blind && lafposState\.day \? blindLafposDay\(lafposState\.day\) : lafposState\.day\}/, "kasa formu");
   // WhatsApp aynı özetle (LafPOS'un otomatik gününde personelden yalnız fotoğraf farkı süzülür: staffPhotoDiffs)
   assert.match(page, /const extras = extrasFrom\(photoInfo, outs, report, lafposState\);[\s\S]*\.\.\.extras,/, "WhatsApp aynı özetle");
   // WhatsApp metni de (personel): kart aynı, tutar yok, düşüldüğü yazar

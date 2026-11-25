@@ -713,7 +713,7 @@ export function InvoicesClient({
           </Badge>
         ) : null}
         {estimate ? (
-          <Badge tone="amber" dot title="Notta tahmin / varsayım var (Excel'de sarı satır): tutarı faturayla karşılaştırın">
+          <Badge tone="amber" dot title="Notta tahmin / varsayım var: tutarı faturayla karşılaştırın">
             tahmini
           </Badge>
         ) : null}
@@ -721,7 +721,7 @@ export function InvoicesClient({
     );
   };
 
-  /** Faturanın notu (Excel hücre notu, elle not); Paraşüt'ün otomatik notu gösterilmez */
+  /** Faturanın notu (elle ya da içe aktarılmış kaydın notu); Paraşüt'ün otomatik notu gösterilmez */
   const noteLine = (i: InvoiceRow, className?: string) => {
     const n = visibleNote(i.note);
     if (!n) return null;
@@ -1202,7 +1202,7 @@ export function InvoicesClient({
                   <TH>
                     <span className="inline-flex items-center gap-1.5">
                       Kategori
-                      <InfoTip text={`Excel'deki açılır liste gibi satırdan değiştirin. ${CATEGORY_LEGEND} Paraşüt eşitlemesi kategoriyi korur.`} />
+                      <InfoTip text={`Kategoriyi satırdaki listeden değiştirin. ${CATEGORY_LEGEND} Paraşüt eşitlemesi kategoriyi korur.`} />
                     </span>
                   </TH>
                   <TH numeric>

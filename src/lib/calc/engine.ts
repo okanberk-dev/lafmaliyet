@@ -75,7 +75,7 @@ export function yearMonths(year: number): string[] {
   return Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
 }
 
-/** Excel'deki TAVAN(x; adım) — kayan nokta gürültüsüne karşı toleranslı */
+/** x'i adımın katına yukarı yuvarlar (önerilen fiyat 5 ₺'ye) — kayan nokta gürültüsüne karşı toleranslı */
 export function ceilTo(x: number, step: number): number {
   if (!Number.isFinite(x) || step <= 0) return 0;
   const q = x / step;
@@ -186,7 +186,6 @@ export function priceProduct(
     costRatio,
     suggestedPrice,
     // Reçeteli ürünün fiyatı 0 (fiyatı sonra girilecek, editörde boş alan): oran 0 ("İyi") değil, zararına satış.
-    // Excel'de #SAYI/0! olurdu; golden veride fiyatı 0 ürün yok, sonuç aynı
     status: cost > 0 && !(net > 0) ? "Düşük kâr" : statusFor(cost, costRatio, st.hedefMaliyet),
   };
 }
@@ -200,8 +199,8 @@ export function priceForMargin(cost: number, targetCostRatio: number, st: Settin
 // Geçerlilik aralığı ve "şu aydan itibaren" sürümler (personel, sabit giderler)
 // ============================================================================
 //
-// Excel'de Genel Maliyet'in her ay sütunu kendi sabit tutarını taşır (J40 =(160000)*J$2/31); kira
-// değişince geçmiş aylar değişmez. Panelde aynı sonucu iki şey verir:
+// Kural: her ay kendi sabit tutarını taşır (ör. kira 160.000 × açık gün ÷ 31); kira değişince geçmiş aylar
+// değişmez. Bunu iki şey sağlar:
 //  - startMonth / endMonth: kalem yalnızca bu aralıktaki aylarda hesaba girer (null = sınırsız)
 //  - sürümler: tutar "X ayından itibaren" değişir; ilk sürümden önceki aylarda taban değer geçerlidir.
 
@@ -531,8 +530,8 @@ export function fixedMonthly(fe: Pick<FixedExpense, "period" | "amount">, st: Se
 }
 
 /**
- * Belirli bir ay için tutar (Genel Maliyet sayfası): günlük kalem × açık gün; ötekiler aylık karşılık × gün ÷ ayın gün
- * sayısı. `days` aylık kalemlerin günü (prorationDays): açık gün elle girildiyse o (Excel), kasa raporlarından geliyorsa
+ * Belirli bir ay için tutar (Gelir-gider tablosu): günlük kalem × açık gün; ötekiler aylık karşılık × gün ÷ ayın gün
+ * sayısı. `days` aylık kalemlerin günü (prorationDays): açık gün elle girildiyse o, kasa raporlarından geliyorsa
  * raporların kapsadığı takvim günü
  */
 export function fixedForMonth(fe: Pick<FixedExpense, "period" | "amount">, st: Settings, openDays: number, dim: number, days = openDays): number {
@@ -573,7 +572,7 @@ export const stopajKey = (fixedId: number) => `stopaj:${fixedId}`;
 
 /**
  * Aylık kalemlerin (aylık, haftalık, yıllık sabit giderler ve personel) ayın kaçta kaçına düştüğü gün sayısı. Açık gün
- * elle girildiyse (Excel: açılış ayı Temmuz 23 gün) o gün; kasa raporlarından geliyorsa raporların kapsadığı takvim
+ * elle girildiyse (ör. açılış ayı Temmuz 23 gün) o gün; kasa raporlarından geliyorsa raporların kapsadığı takvim
  * günü (biten ayda ayın tamamı, süren ayda bugüne kadar). Kapalı bir gün (bayram, raporu hiç girilmemiş gün) kira ve
  * maaşı düşürmez: cirosu zaten 0'dır, gider ise tam ödenir. Günlük kalemler yine açık günle çarpılır.
  *
@@ -1147,6 +1146,8 @@ export interface ListPeriod {
   discounts: number;
   /** Takvim günü (ilk günden son güne) */
   days: number;
+  /** "Tümü"de dönemi kısaltan şubenin adı (listesi bu gün biten ModPOS şubesi; Dataset.commonLists, bulgu 62) */
+  short?: string;
 }
 
 export type Model = ReturnType<typeof createModel>;
@@ -1256,7 +1257,7 @@ export function createModel(ds: Dataset) {
   }
   /**
    * Şubenin banka POS oranı (Şubeler › POS oranı; sahibin kararı 23 Kasım 2026: iki şube %2). Kütükte olmayan şube
-   * (testler, Excel verisi) Ayarlar'daki eski genel oranla (`komisyon`)
+   * (testler, ilk aktarımın verisi) Ayarlar'daki eski genel oranla (`komisyon`)
    */
   const branchRateById = new Map((ds.branchRates ?? []).map((b) => [b.id, b]));
   const posRateOf = (branchId: string | null): number => (branchId !== null ? branchRateById.get(branchId)?.posRate : undefined) ?? st.komisyon;
@@ -1272,7 +1273,7 @@ export function createModel(ds: Dataset) {
    * `commission:pos` hücresi bu tutardır, Satışlar onu satırlara ciro payıyla dağıtır: iki sayfa aynı rakamı gösterir.
    * "Tümü"de şube şube (Month.byBranch); şubenin kasa kartı yoksa (elle yazılmış ciro) o şube ciro × oran × banka kartı
    * payıyla. Ayın hiçbir şubesinde kasa kartı yoksa null: eski formüller (Satışlar satır × komisyon × kartlı oran,
-   * Gelir-gider ciro × komisyon × banka kartı payı; Excel'in değerleri, tests/calc.test.ts)
+   * Gelir-gider ciro × komisyon × banka kartı payı; tests/calc.test.ts)
    */
   function posCommission(month: string): PosCommission | null {
     const info = monthInfo.get(month);
@@ -1434,11 +1435,12 @@ export function createModel(ds: Dataset) {
 
   // --- Satış listesinin dönemi (src/lib/sales-coverage.ts) --------------------------
   const coverageByMonth = new Map((ds.salesCoverage ?? []).map((c) => [c.month, c]));
+  const commonByMonth = new Map((ds.commonLists ?? []).map((c) => [c.month, c]));
   /**
    * Süren ayda yapıştırılan satış listesi kasa raporlarından kısa bir dönemi kapsıyorsa o dönem: liste ↔ POS cirosu
    * karşılaştırması, günlük ortalama, "ayda …" adetleri ve reçeteye göre kârın sabit gideri listenin günleriyle yapılır.
    * Liste kasayla aynı dönemi kapsıyorsa (ay bitince yüklenen liste) ya da ayın açık günü ve cirosu kasadan gelmiyorsa
-   * (elle yazıldı: Excel'deki gibi listeye göre yazılmıştır) null.
+   * (elle yazıldı: listeye göre yazılmıştır) null.
    */
   function listPeriod(month: string): ListPeriod | null {
     const c = coverageByMonth.get(month);
@@ -1459,6 +1461,7 @@ export function createModel(ds: Dataset) {
           ? Math.max(0, Math.round(((c.till.discounts ?? 0) - (c.till.lafposDiscounts ?? 0)) * 100) / 100)
           : listDiscounts(month),
       days: Math.max(1, days),
+      ...(commonByMonth.get(month)?.through === c.through ? { short: commonByMonth.get(month)!.branch } : {}),
     };
   }
 
@@ -1552,9 +1555,9 @@ export function createModel(ds: Dataset) {
     return r ? { ...siteRevenue(r, st.kdv, st.kdvHizmet), pulledAt: r.pulledAt, closed: r.closed } : null;
   }
 
-  // --- Su + buz birim maliyeti (Ayarlar!B17) -----------------------------------
-  // Excel her zaman Eylül SU GİDERİ ÷ Eylül su + buz litresini kullanır. Panel SU GİDERİ girilmiş ve
-  // satış listesinden (reçeteye göre) su kullanımı çıkan en son ayı alır; Excel verisinde ikisi aynı sonucu verir.
+  // --- Su + buz birim maliyeti (Ayarlar) ------------------------------------------
+  // SU GİDERİ girilmiş ve satış listesinden (reçeteye göre) su kullanımı çıkan en son ay: o ayın faturası ÷ o ayın
+  // su + buz litresi.
   // Fatura kafede harcanan bütün suyu kapsar: litreye aynı ayın laffogato.net / uygulama siparişlerinin su ve buzu da
   // girer (denetim E-57; LafPOS'un satırları satış listesinin içinde). Ay yine satış listesiyle seçilir: listesi
   // yüklenmemiş ayın faturası yalnız online litreye bölünürse litre fiyatı katlarca şişerdi.
@@ -1619,7 +1622,7 @@ export function createModel(ds: Dataset) {
   // --- Ay sonunda geçerli birim fiyat (sayımın değeri) ---------------------------
   // Kapanmış ayın devreden malı o ayın sonundaki fiyatla değerlenir: sonraki bir zam (Paraşüt faturası, elle) geçmiş
   // ayın kârını değiştirmez. Fiyat geçmişindeki ay sonundan önceki son kayıt geçerlidir; ondan sonra değişiklik yoksa
-  // bugünkü fiyat (aynısı). İlk kayıttan önceki ay (Excel aktarımı ya da fiyatsız eklenen kalem, kayıt sonradan) bilinen
+  // bugünkü fiyat (aynısı). İlk kayıttan önceki ay (ilk aktarım ya da fiyatsız eklenen kalem, kayıt sonradan) bilinen
   // ilk fiyatla. Sayımdan fiyatıyla eklenen kalemin geçmişi eklendiği anki fiyatla başlar (count-item.ts
   // countItemPriceRow); kalem Tahmini iken yöneticinin düzeltmesi o satırın yerine geçer (correctsCountItemStart), yani
   // eklendiği ay da düzeltilen fiyatla değerlenir. Su ve buz su faturasından gelir (geçmişi yok).
@@ -1753,7 +1756,7 @@ export function createModel(ds: Dataset) {
     return { amount, month: pc, period: { from: lp.from, through: lp.through } };
   }
 
-  // --- Aylık satış analizi (Satış Raporu) ------------------------------------
+  // --- Aylık satış analizi (Satışlar) ----------------------------------------
   const salesCache = new Map<string, MonthSales>();
   function monthSales(month: string): MonthSales {
     let ms = salesCache.get(month);
@@ -1762,7 +1765,7 @@ export function createModel(ds: Dataset) {
     const cardShare = cardShareOf(month).rate;
     // Banka POS komisyonu Gelir-gider'in kuralıyla (salesPosCommission: ay bitince aynı tutar, süren ayda liste kısaysa
     // listenin günleriyle), satırlara ciro payıyla; kasa kartı olmayan ayda eski formül (satır cirosu × komisyon × kartlı
-    // oran; Excel)
+    // oran)
     const pos = salesPosCommission(month)?.amount ?? null;
     const listRevenue = raw.reduce((a, l) => a + l.revenue, 0);
     const base = raw.map((line) => {
@@ -1985,7 +1988,7 @@ export function createModel(ds: Dataset) {
   /**
    * Yemek kartının LafPOS günü: yalnız biten ayda lafposDaysOf; süren ve ileri ayda null (Ayarlar'daki gün). Süren ayın
    * aylık / standart rakamları (başa baş, sabit gider standardı, Maaşlar'ın "Size maliyeti") bugüne kadar gelen günle
-   * küçülmesin. Gelir-gider, Maaşlar, Excel ve vergi bordrosu bunu okur
+   * küçülmesin. Gelir-gider, Maaşlar, dışa aktarım ve vergi bordrosu bunu okur
    */
   function lafposMealDaysOf(x: Pick<Staff, "id" | "branchId">, month: string): number | null {
     return month < currentMonth ? lafposDaysOf(x, month) : null;
@@ -2017,14 +2020,14 @@ export function createModel(ds: Dataset) {
   const sharedInView = (f: Pick<FixedExpense, "branchId">) => Boolean(ds.branchView) && (f.branchId ?? null) === null;
   /**
    * O ayda şubenin hesabına giren sabit giderler: "Tümü"de hepsi, şube seçiliyken işletme geneli kalemler hariç
-   * (Gelir-gider'in bölümleri gibi; başabaş, "Excel temeli", Analiz ve Sabit giderler'in özeti bunlarla)
+   * (Gelir-gider'in bölümleri gibi; başabaş, standart aylık sabit gider, Analiz ve Sabit giderler'in özeti bunlarla)
    */
   function fixedOwnInMonth(month: string): FixedExpense[] {
     return ds.branchView ? fixedInMonth(month).filter((f) => !sharedInView(f)) : fixedInMonth(month);
   }
   /**
-   * Standart bir ayın sabit gider toplamı (personel dahil), o ayın kalemleri ve tutarlarıyla (Excel SabitGiderToplam).
-   * Şube seçiliyken işletme geneli kalemler girmez (sahibin kararı 4, inceleme bulgusu 3): şubenin "Excel temeli" net
+   * Standart bir ayın sabit gider toplamı (personel dahil), o ayın kalemleri ve tutarlarıyla (standart aylık sabit gider).
+   * Şube seçiliyken işletme geneli kalemler girmez (sahibin kararı 4, inceleme bulgusu 3): şubenin standart sabit giderli net
    * kârı ve başabaşı kârın temeliyle aynı kalemlerden; dışarıda kalan fixedStandardSharedFor
    */
   function fixedStandardTotalFor(month: string): number {
@@ -2287,7 +2290,8 @@ export function createModel(ds: Dataset) {
       extras,
       extrasTotal,
       total: sum(groups.map((g) => g.total)) + extrasTotal,
-      totalVatIncl: sum(groups.map((g) => g.totalVatIncl)) + extrasTotal * 1.01,
+      // Listede olmayan kalemin malzeme kaydı (Alış KDV'si) yok: gıda grubunun olağan oranıyla (Ayarlar, %1)
+      totalVatIncl: sum(groups.map((g) => g.totalVatIncl)) + extrasTotal * (1 + st.alisKdvGida),
       hasData: counts.size > 0 || extras.length > 0,
     };
     stockCache.set(month, s);
@@ -2411,7 +2415,7 @@ export function createModel(ds: Dataset) {
         invoicesOwn += part;
         invoicesByBranch.set(i.branchId, (invoicesByBranch.get(i.branchId) ?? 0) + part);
       }
-      // Ödenecek tutar (KDV dahil; payı kadar); Excel'den gelen ödenecek tutarı boş faturada KDV hariç tutar
+      // Ödenecek tutar (KDV dahil; payı kadar); içe aktarılmış, ödenecek tutarı boş faturada KDV hariç tutar
       const invoicesPayable = sum(linked.map(({ i, part }) => (i.payable > 0 ? (invoiceNet(i) ? (i.payable * part) / invoiceNet(i) : 0) : part)));
       return { cat, entries, invoices, invoicesOwn, invoicesShared: invoices - invoicesOwn, invoicesByBranch, invoicesPayable, total: entries + invoices };
     });
@@ -2420,7 +2424,7 @@ export function createModel(ds: Dataset) {
   /**
    * Her ay girilen harcamaların (Aylık harcamalar'da "her ay girilir", mal dışı kategori: reklam, influencer…) bir ayın
    * hesabına giren tutarı (denetim E-13). Sabit gider "aylık girişe çevrilince" başabaştan, ay sonu tahmininden ve
-   * nakit planından düşmesin diye bunlar Excel temeline (fixedStandardTotalFor) ek olarak sayılır:
+   * nakit planından düşmesin diye bunlar standart aylık sabit gidere (fixedStandardTotalFor) ek olarak sayılır:
    * - biten ay: o ayın girilen tutarı;
    * - süren ve gelecek ay: geçen aydan o aya kadarki ayların en büyüğü (süren ay girildiyse ve daha büyükse o; değilse
    *   geçen ayın gerçekleşeni taşınır). Pasif kategori yalnız kendi ayının tutarıyla.
@@ -2473,14 +2477,14 @@ export function createModel(ds: Dataset) {
   const closedDaysOf = (month: string): string[] => closedByMonth.get(month) ?? [];
 
   /**
-   * Başabaşın ve ay sonu tahmininin sabit gideri: standart aylık sabit gider (Excel temeli, personel dahil) + her ay
+   * Başabaşın ve ay sonu tahmininin sabit gideri: standart aylık sabit gider (personel dahil) + her ay
    * girilen harcamalar (monthlyExpensePlan). Genel bakış, Sabit giderler, Analiz ve Ayarlar aynı toplamı kullanır
    */
   function breakEvenFixedFor(month: string): number {
     return fixedStandardTotalFor(month) + sum(monthlyExpensePlan(month).map((x) => x.amount));
   }
 
-  // --- Genel Maliyet (aylık gelir-gider) --------------------------------------
+  // --- Gelir-gider (aylık) ---------------------------------------------------
   function closingStock(month: string): { value: number; computed: number; overridden: boolean } {
     const computed = stockSheet(month).total;
     const ov = pnlByMonth.get(month)?.get("stock:closing");
@@ -2569,7 +2573,7 @@ export function createModel(ds: Dataset) {
    *   açılış + alınan − dağıtılan maliyet. Tüketim yoksa alınan mal oranında, o da yoksa hepsi aralığın son ayına.
    * - Ardından kapanışı henüz bilinmeyen aylar (şu an süren ay): reçeteye göre tahmini; tahmini kapanış açılış + alınan −
    *   tahmini maliyet. Ay sonu sayımı girilince aralık dağıtımına döner.
-   * Bu aydan sonraki aylarda, verisi olan ilk aydan önce ve hiç bilinen kapanış yokken eski kural (sayım ya da 0; Excel'den
+   * Bu aydan sonraki aylarda, verisi olan ilk aydan önce ve hiç bilinen kapanış yokken eski kural (sayım ya da 0; ilk aktarımdan
  * aktarılan veri). Vergi bu hesabı kullanmaz
    * (countOpening / countClosing: yalnız sayım).
    */
@@ -2593,7 +2597,7 @@ export function createModel(ds: Dataset) {
     }
     const first = firstDataMonth;
     // Hiç bilinen kapanış (sayım ya da elle yazılan devir) yoksa dağıtılacak aralık da tahminin dayanağı da yok: eski
-    // kural (devreden 0; Excel'den aktarılan veri böyledir). İlk sayımla yeni hesap başlar
+    // kural (devreden 0; ilk aktarılan veri böyledir). İlk sayımla yeni hesap başlar
     if (!first || month < first || month > currentMonth || !hasKnownClosing()) {
       const opening = pnlByMonth.get(month)?.get("stock:opening") ?? closingStock(shiftMonth(month, -1)).value;
       const closing = closingStock(month).value;
@@ -3045,7 +3049,7 @@ export function createModel(ds: Dataset) {
   const companyFirstDataMonth =
     ds.branchView && ds.companyMonths ? ([...(firstDataMonth ? [firstDataMonth] : []), ...ds.companyMonths.map((x) => x.month)].sort()[0] ?? null) : firstDataMonth;
 
-  /** Tedarikçinin sattığı ürünler (Hammaddeler'deki tedarikçi adından): Excel'deki "SÜTAŞ (süt)" açıklaması */
+  /** Tedarikçinin sattığı ürünler (Hammaddeler'deki tedarikçi adından): Gelir-gider'deki "SÜTAŞ (süt)" açıklaması */
   const firstWord = (x: string) => x.trim().split(/\s+/)[0]?.toLocaleLowerCase("tr-TR") ?? "";
   function supplierProducts(supplier: string): string | undefined {
     const key = firstWord(supplier);
@@ -3063,7 +3067,7 @@ export function createModel(ds: Dataset) {
     return parts.length ? parts.slice(0, 4).join(", ") : undefined;
   }
 
-  /** Genel Maliyet yıllık tablo satır tanımları (aylardan bağımsız sabit sıra) */
+  /** Gelir-gider yıllık tablo satır tanımları (aylardan bağımsız sabit sıra) */
   function pnlRowDefs(months: string[]): PnlRowDef[] {
     const monthsCalc = months.map(pnlMonth);
     const suppliers = new Set<string>();

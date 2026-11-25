@@ -223,11 +223,25 @@ export interface ReceiptInvoice {
   more: number;
 }
 
+/** Kartta en çok kaç fatura listelenir */
+export const RECEIPT_LIMIT = 100;
+
+/** Faturanın şubesi kartı: listelenen faturalar ve dönemin bütün sayıları (liste kesilse de) */
+export interface ReceiptList {
+  invoices: ReceiptInvoice[];
+  /** Dönemin hammaddeye bağlı kalemi olan bütün faturaları */
+  total: number;
+  /** Bunlardan şubesi seçilmemiş olanlar (hiçbir şubenin tahminine girmez) */
+  unassigned: number;
+}
+
 /**
- * Dönemin (`from` – `to`) hammaddeye bağlı kalemi olan faturaları ve seçilmiş şubeleri, en yeni önce (yönetici; Tahmini
- * stok › Marina'ya gelen faturalar). Süzgeç stok değerlemenin partileriyle aynı.
+ * Dönemin (`from` – `to`) hammaddeye bağlı kalemi olan faturaları ve seçilmiş şubeleri (yönetici; Tahmini stok ›
+ * Marina'ya gelen faturalar). Süzgeç stok değerlemenin partileriyle aynı. Önce şubesi seçilmeyenler (iş bekleyen), sonra
+ * seçilmişler, ikisi de en yeni önce; en çok RECEIPT_LIMIT. Sayılar kesilmeden önce bütün dönemden (bulgu 42: liste
+ * 100'de sessizce kesiliyor, sayaç da yalnız ilk 100'ü sayıyordu; dönem uzunsa eski seçilmeyen fatura görünmüyordu).
  */
-export async function loadReceiptInvoices(from: string, to: string, db: DB = getDb()): Promise<ReceiptInvoice[]> {
+export async function loadReceiptInvoices(from: string, to: string, db: DB = getDb(), limit = RECEIPT_LIMIT): Promise<ReceiptList> {
   const bl = s.parasutBillLines;
   const inv = s.invoices;
   const ln = s.parasutProductLinks;
@@ -260,13 +274,17 @@ export async function loadReceiptInvoices(from: string, to: string, db: DB = get
     cur.all.push(`${ing.name} ${stockQty(r.qty, displayUnit(ing))}`);
     out.set(r.id, cur);
   }
-  return [...out.values()].slice(0, 100).map(({ all, ...x }) => {
-    const sorted = all.sort((a, b) => a.localeCompare(b, "tr"));
-    return { ...x, items: sorted.slice(0, 3), more: Math.max(0, sorted.length - 3) };
-  });
-}
-
-/** Şubesi seçilmemiş fatura sayısı (dönemin içinde; işletme geneli seçilmiş sayılır) */
-export function unassignedCount(invoices: readonly ReceiptInvoice[]): number {
-  return invoices.filter((i) => i.branchId === null && !i.companyWide).length;
+  const list = [...out.values()];
+  // Şubesi seçilmemiş: ne şube ne işletme geneli (işletme geneli bilinçli bir seçimdir, iş beklemez)
+  const isOpen = (i: { branchId: string | null; companyWide: boolean }) => i.branchId === null && !i.companyWide;
+  const open = list.filter(isOpen);
+  const ordered = [...open, ...list.filter((i) => !isOpen(i))];
+  return {
+    invoices: ordered.slice(0, Math.max(0, limit)).map(({ all, ...x }) => {
+      const sorted = all.sort((a, b) => a.localeCompare(b, "tr"));
+      return { ...x, items: sorted.slice(0, 3), more: Math.max(0, sorted.length - 3) };
+    }),
+    total: list.length,
+    unassigned: open.length,
+  };
 }

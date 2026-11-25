@@ -59,7 +59,7 @@ Mal alışı sayılmayan kategorideki ("Diğer", "Hizmet"…) faturanın hammadd
 miktarı ay sonu fiyatına iter. Eksik olan gelir-giderin mal alışıdır: böyle fatura Faturalar'da kontrol bekler ("Mal
 alışı sayılmıyor"), kategorisi mal alışı yapılınca gelir-gider de onu sayar (docs/PARASUT.md 6b).
 
-Faturası olmayan alım (elle / Excel girilen fatura, nakit / market alımı, bağlanmamış Paraşüt ürünü) havuzda
+Faturası olmayan alım (elle girilen ya da içe aktarılmış fatura, nakit / market alımı, bağlanmamış Paraşüt ürünü) havuzda
 görünmez: havuz yettiği sürece sayılan miktar eski faturalara dağılır, yalnız havuzun karşılamadığı kalan ay sonu
 fiyatıyla. Tedarikçiye iade panele yalnız Faturalar'da elle girilmiş, kalemsiz eksi fatura olarak geldiyse (Paraşüt'te
 giden iade e-faturası satış faturasıdır, eşitlemeye girmez; `src/server/parasut/returns.ts`) partiden düşülmez: iade
@@ -107,9 +107,16 @@ Başlangıç **Ekim** olsaydı Eylül eski yöntemle 5 × 450 = 2.250 ₺ kapan�
   (`yearTotals`, src/lib/calc/insights.ts; Genel bakış'ın yıl toplamı ve Claude'un yıl özeti aynı): bu ay sayılınca
   sonraki ayın açılış stoğu, ay başlamadan onun gideri gibi yıla girmez (denetim E-16). Cirosu girilmemiş ayın gideri
   ve ay sonu sayımı olmayan ay (mal maliyeti tahmini; yöntemiyle, §5) kartların altında not olarak yazılır. Tablonun yıl
-  sütunu ve Excel'in yıl sütunu aynı ayları toplar (inceleme B02-D4): cirosu girilmemiş ay tabloda kendi sütununda
-  görünür ama yıla girmez; öyle bir ay varsa yıl sütununun başlığı "cirosu girilmiş N ay" der, Excel'de başlık notu
+  sütunu ve dışa aktarımın yıl sütunu aynı ayları toplar (inceleme B02-D4): cirosu girilmemiş ay tabloda kendi sütununda
+  görünür ama yıla girmez; öyle bir ay varsa yıl sütununun başlığı "cirosu girilmiş N ay" der, dışa aktarımda başlık notu
   toplanmayan ayları sayar.
+- **Sayımın KDV dahil değeri**: her malzeme Hammaddeler'deki kendi Alış KDV'siyle; listede olmayan kalemin malzeme
+  kaydı yok, **gıdanın alış KDV'si**yle. Grupların olağan alış KDV'si Ayarlar › Oranlar'da: **Ambalajın alış KDV'si**
+  (%20, sayımın Ambalaj grubu) ve **Gıdanın alış KDV'si** (%1, öteki gruplar; `alisKdvAmbalaj`, `alisKdvGida`,
+  `groupVatRate`). Hammaddeler yeni malzemeye rafının oranını önerir; Alış KDV'si grubun oranından ayrılan malzeme
+  (ör. Yenilebilir bardak %10) grubun başlığındaki ipucunda "faturasını kontrol edin" diye yazılır. Kodda gömülü olan bu
+  iki oran 25 Kasım 2026'da ayara taşındı; varsayılan aynı (göç yok, satırı olmayan veritabanı varsayılanı okur), sayım
+  tutarları değişmedi. Eskiden sayımın altında grup oranıyla ikinci bir "KDV dahil" satırı vardı; kaldırıldı.
 - **Sayım listesi**: sayım birimi olan aktif malzemeler ve pasif olup aktif bir ürünün reçetesinde geçenler ("Pasif ·
   reçetede"; satıldıkça tüketilir, listeden düşse kalan stoğu 0 sayılırdı). Aktif ürünün reçetesindeki malzeme pasif
   yapılamaz (Hammaddeler önce reçetelerden çıkarılmasını ister, ürünleri listeler); kural `isCountable`
@@ -121,7 +128,7 @@ Başlangıç **Ekim** olsaydı Eylül eski yöntemle 5 × 450 = 2.250 ₺ kapan�
   yapar (B02-U2). Personel formunda bu kalemde "Pasif" yazmaz, "Satışta kullanılıyor, sayın" yazar. Sayımı, alımı, Paraşüt
   bağlantısı ya da zayi / ikram kaydı olan malzeme silinmez, pasif yapılır (E-28). Fiyatı girilmemiş ek kalem ("Listede
   olmayanlar") yöneticinin zilinde ve Bugün'de söylenir: kapanış stoğuna 0 ₺ girer (E-22).
-- **Excel dışa aktarımı**: Sayım sekmesinin Not sütununda FIFO katmanları, Sayım Kayıtları'nda "Değerleme" sütunu.
+- **Dışa aktarım (.xlsx)**: Sayım sekmesinin Not sütununda FIFO katmanları, Sayım Kayıtları'nda "Değerleme" sütunu.
 - **Satışlar, Ürünler, reçete kartı**: "Reçete maliyeti son alış fiyatıyla (yenileme maliyeti): fiyat kararı için.
   Kâr-zararın mal maliyeti FIFO ile değerlenen sayımdan."
 
@@ -157,7 +164,7 @@ uygulanmalıdır; değiştirmeden önce muhasebeciye danışın.
 
 - Saf çekirdek: `src/lib/calc/fifo.ts` (`buildLots`, `takeNewestFirst`, `closingLayers`, `layersValue`, `valuationFor`,
   `openingLayer` ve `invoiceLayer`: başlangıçtan önceki sayımdan taşınan parça)
-- Yükleyici: `src/server/data/purchase-lots.ts` → `loadDataset` (`Dataset.purchaseLots`, isteğe bağlı: Excel tohumu ve
+- Yükleyici: `src/server/data/purchase-lots.ts` → `loadDataset` (`Dataset.purchaseLots`, isteğe bağlı: tohum verisi ve
   golden testler partisiz, eski yöntemle)
 - Motor: `src/lib/calc/engine.ts` `fifoLayersFrom` (başlangıç + ay + malzeme başına bellekli; `fifoLayers` Ayarlar'daki
   başlangıçla), `stockSheet` (`StockLine.valuation`,
@@ -185,7 +192,7 @@ Kâr-zararın (Gelir-gider) mal maliyeti sayımsız ayda artık "kapanış 0" de
 - **Reçeteye göre tüketim**: malzeme + ambalaj (ModPOS satış listesi + laffogato.net online) + ödenmezlerin tahmini
   malzeme maliyeti (ödenmez ÷ (1 + KDV) × ortalama maliyet oranı; Tutarlılık'taki gibi). Ödenmezler ciro dışıdır:
   ciroya yazılmaz, yalnız malzeme maliyeti olarak tüketime girer.
-- **Hiç bilinen kapanış yokken** (Excel'den aktarılan veri) ve bu aydan sonraki aylarda eski kural: kapanış 0.
+- **Hiç bilinen kapanış yokken** (ilk aktarılan veri) ve bu aydan sonraki aylarda eski kural: kapanış 0.
 - **Gösterim**: Gelir-gider'de mal maliyeti satırının altında ayın yöntemi ("sayım", "sayım aralığına dağıtıldı
   (tahmini)", "reçeteye göre tahmini"), hücrenin ipucunda hesabı; devreden malın altında "sayım" ya da "tahmini". Uyarı
   metinleri yönteme göre (`uncountedCogsText`).

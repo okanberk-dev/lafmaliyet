@@ -4,7 +4,7 @@ import type { SiteMenuItem } from "./schema";
 import { defaultSlot, isSingleSize, slotPriceMinor, toMinor, type SiteMenuSlot } from "./slot";
 
 /**
- * Eşleştirme önerileri (saf). Panelin ürün adları Excel'den gelir (tedarik ve kasa adları, çoğu İngilizce); sitenin
+ * Eşleştirme önerileri (saf). Panelin ürün adları ilk aktarımdan gelir (tedarik ve kasa adları, çoğu İngilizce); sitenin
  * kalemleri 22 Eyl 2026'dan beri Türkçe. Öneri sırası:
  *
  * 1. aynı ad (Türkçe duyarlı: büyük/küçük harf, ı/İ, aksan ve noktalama sayılmaz): "Çay" = "çay", "Caffè" = "Caffe";
@@ -22,8 +22,8 @@ export function menuNameKey(name: string): string {
 
 /**
  * Sitenin eski (İngilizce) adları, kimliğiyle: laffogato db/migrations/20260922120000_turkish_catalogue_names.sql ve
- * 20260922130000_turkish_menu_names_pass2.sql. Panelin Excel'i bunları taşır. Excel'deki yazım sitenin eski adından
- * biraz farklıysa (sitede "Iced …", Excel'de "Ice …") Excel'in yazımı da ikinci ad olarak listede.
+ * 20260922130000_turkish_menu_names_pass2.sql. Panelin ilk aktarılan adları bunlardır. Paneldeki yazım sitenin eski adından
+ * biraz farklıysa (sitede "Iced …", panelde "Ice …") panelin yazımı da ikinci ad olarak listede.
  */
 export const SITE_OLD_NAMES: Readonly<Record<string, readonly string[]>> = {
   "mnu-0002": ["Strawberry Matcha"],

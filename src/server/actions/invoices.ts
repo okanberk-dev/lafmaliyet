@@ -1058,7 +1058,7 @@ async function writeState(tx: Tx, key: string, value: unknown) {
 }
 
 /**
- * Faturayı siler. Elle/Excel'le girilmiş faturanın kopyası döner (bildirimdeki "Geri al" restoreInvoice ile
+ * Faturayı siler. Elle girilmiş ya da içe aktarılmış faturanın kopyası döner (bildirimdeki "Geri al" restoreInvoice ile
  * geri yazar). Paraşüt faturası yok sayılanlara (parasut.ignore) eklenir, sonraki eşitlemede geri gelmez; kopyası
  * kalemleriyle parasut.deleted'da saklanır, Faturalar'daki "Silinen Paraşüt faturaları"ndan geri alınabilir.
  */
@@ -1122,7 +1122,7 @@ export async function deleteInvoice(id: number) {
     const ownKey = parasutKeyOf(d);
     return {
       externalId: ownKey ? qualifyBillKey(invoiceAccountOf(d), ownKey) : null,
-      /** Elle/Excel faturası için geri alma kopyası (cari bağlarıyla); Paraşüt faturası sunucuda saklanır */
+      /** Elle girilmiş ya da içe aktarılmış fatura için geri alma kopyası (cari bağlarıyla); Paraşüt faturası sunucuda saklanır */
       snapshot: parasutKeyOf(d) ? null : { ...snapshotOf(d), ...(result.links ? { cari: result.links } : {}), ...(result.cashOutIds.length ? { cashOutIds: result.cashOutIds } : {}) },
       quantitiesRecomputed: result.lines > 0,
     };
@@ -1130,7 +1130,7 @@ export async function deleteInvoice(id: number) {
 }
 
 /**
- * Az önce silinen elle/Excel faturasını geri yazar (bildirimdeki "Geri al"). Paraşüt faturası için unignoreParasutBill.
+ * Az önce silinen elle girilmiş ya da içe aktarılmış faturayı geri yazar (bildirimdeki "Geri al"). Paraşüt faturası için unignoreParasutBill.
  * Cari bağları varsa yeniden kurulur ve yeniden doğrulanır: bağsız kalmış alım yeniden bağlanır, ödemenin hesabında
  * hâlâ duran para yeniden sayılır; sığmayan hesapta kalır.
  */

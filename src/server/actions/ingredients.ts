@@ -1,13 +1,15 @@
 "use server";
 
-import { and, count, eq, max, ne } from "drizzle-orm";
+import { and, count, eq, gte, max, ne } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { countFactor, countUnitsFor, currentMonthTR } from "@/lib/calc/engine";
 import { listedFromMonth } from "@/lib/count-item";
 import { tl } from "@/lib/format";
+import { unitChangeNotes, unitConfirmText, unitFamilyChanged, UNIT_WASTE_DAYS } from "@/lib/ingredient-unit";
 import { passiveRefusal, productListText } from "@/lib/ingredient-usage";
+import { addDays, todayTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { recordIngredientPrice } from "@/server/data/ingredient-prices";
 import { activeProductsUsing } from "@/server/data/ingredient-usage";
@@ -34,6 +36,8 @@ const ingredientSchema = z.object({
   countUnit: z.enum(["KG", "LT", "ADET", "DİLİM"]).nullable(),
   countGroup: zOptText(80),
   active: z.boolean(),
+  /** Ölçü ailesi değişen birim (gr / ml ↔ adet / dilim) onaylandı (src/lib/ingredient-unit.ts; bulgu 41) */
+  confirmUnit: z.boolean().optional(),
 });
 
 /** İşlem geçmişinde: sayım kaleminin tahmini düzeltildi (recordIngredientPrice "start") */
@@ -72,8 +76,24 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
           const refusal = passiveRefusal(before.name, (await activeProductsUsing(tx, [data.id])).get(data.id) ?? []);
           if (refusal) throw new UserError(refusal);
         }
-        const { id: _omit, base, ...rest } = data;
+        const { id: _omit, base, confirmUnit, ...rest } = data;
         void _omit;
+        // Birim değişince eski birimle yazılmış Paraşüt çarpanı, kritik eşik ve son zayi kayıtları söylenir; ölçü ailesi
+        // değişiyorsa (gr / ml ↔ adet / dilim) onaysız kaydedilmez (bulgu 41)
+        if (before.unit !== data.unit) {
+          const since = addDays(todayTR(), -UNIT_WASTE_DAYS);
+          const [[{ links }], [{ thresholds }], [{ recentWaste }]] = await Promise.all([
+            tx.select({ links: count() }).from(s.parasutProductLinks).where(eq(s.parasutProductLinks.ingredientId, data.id)),
+            tx.select({ thresholds: count() }).from(s.stockThresholds).where(eq(s.stockThresholds.ingredientId, data.id)),
+            tx
+              .select({ recentWaste: count() })
+              .from(s.wasteEntries)
+              .where(and(eq(s.wasteEntries.ingredientId, data.id), gte(s.wasteEntries.date, since))),
+          ]);
+          const notes = unitChangeNotes(before.unit, data.unit, { links, thresholds, recentWaste });
+          if (unitFamilyChanged(before.unit, data.unit) && !confirmUnit) throw new UserError([unitConfirmText(before.unit, data.unit), ...notes, "Onaylayıp yeniden kaydedin."].join(" "));
+          warnings.push(...notes);
+        }
         // Pencere açıkken fiyat başka yerden değiştiyse (satırdaki fiyat kutusu, Paraşüt eşitlemesi) dokunulmamış alan
         // eski değeri geri yazmaz, sahte fiyat geçmişi kaydı açılmaz
         if (base && rest.packagePrice === base.packagePrice) rest.packagePrice = before.packagePrice;
@@ -105,9 +125,10 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
         return data.id;
       }
       const [{ m }] = await tx.select({ m: max(s.ingredients.sortOrder) }).from(s.ingredients);
-      const { id: _omit, base: _base, ...rest } = data;
+      const { id: _omit, base: _base, confirmUnit: _confirm, ...rest } = data;
       void _omit;
       void _base;
+      void _confirm;
       // Sayım birimiyle açılan hammadde bu aydan sayım listesinde (geçmiş, sayımı bitmiş aylar "yarım" olmasın)
       const [created] = await tx
         .insert(s.ingredients)
@@ -128,8 +149,9 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
       `${data.name}: ${tl(saved.packagePrice, 2)} / ${saved.packageSize} ${data.unit}${fixedStart ? FIXED_START_LOG : ""}`,
     );
     refresh();
-    // warning: sayım birimi değiştiyse eski sayımların durumu (istemci bilgi olarak gösterir), yoksa null
-    return { id, warning: warnings[0] ?? null };
+    // warning: birim ya da sayım birimi değiştiyse eski sayımların, Paraşüt çarpanının, eşiğin ve zayi kayıtlarının
+    // durumu (istemci bilgi olarak gösterir), yoksa null
+    return { id, warning: warnings.length ? warnings.join(" ") : null };
   });
 }
 

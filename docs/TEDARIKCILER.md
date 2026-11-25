@@ -81,7 +81,7 @@ faturaları al** bir tedarikçinin daha eskilerini de getirir (`syncSupplierHist
   o da yoksa adıyla (aynı adlı tedarikçi kişileri, yoksa benzer adlı tek kişi; birden çok benzer varsa hiçbiri).
   Bulunamazsa vergi nosunu yazıp yeniden denemeniz söylenir (eşitleme kaydı açılmaz).
 - Gider faturaları kişiye göre süzülerek (`filter[supplier_id]`), eskiden yeniye okunur ve eşitlemenin kuralıyla
-  yazılır: paneldeki fatura çoğalmaz (Excel'den gelen de eşleşir), panelde silinen gelmez, Paraşüt'te iptal edilmiş
+  yazılır: paneldeki fatura çoğalmaz (içe aktarılmış kayıt da eşleşir), panelde silinen gelmez, Paraşüt'te iptal edilmiş
   olan (sabah eşitlemesindeki gibi) kaldırılır ve bildirimde söylenir, ödeme takibinden (`payments.since`) eski fatura
   Paraşüt'teki ödeme durumuyla gelir. Listede görünmeyen fatura kaldırılmaz; sabah eşitlemesinin imleci değişmez.
   Gelen e-fatura kutusu tedarikçiye göre süzülemediği için okunmaz.
@@ -396,7 +396,7 @@ eşleşir. Ad karşılaştırmasında büyük / küçük harf, Türkçe ı/i, fa
    faturaları 2. adımda tek bir karta gittiyse vergi nosuz faturası da onları izler.
 4. Yoksa (bugünkü kural) adın kendi kartsız grubu.
 
-- Vergi nosuz bir Excel satırı, aynı adla vergi nolu faturası olan grubun içindedir (ad köprüsü): Excel'den gelen
+- Vergi nosuz içe aktarılmış bir satır, aynı adla vergi nolu faturası olan grubun içindedir (ad köprüsü): içe aktarılmış
   "Kaldi" ile Paraşüt'ten gelen "Kaldi" ayrılmaz.
 - Kontrol hanesi tutmayan ve örnek numaralar (1234567890, 1111111111 …) saklanır, faturada görünür ama hiçbir şeyi
   birleştirmez. Paraşüt'ün geçici adı ("Paraşüt tedarikçisi") numarası bilinen tedarikçisine gider, hiçbir şeyi

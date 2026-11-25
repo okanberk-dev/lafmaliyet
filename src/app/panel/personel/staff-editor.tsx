@@ -796,7 +796,7 @@ export function StaffEditor({
           </Disclosure>
         </div>
 
-        {/* SGK oranları: nadiren değişir, kapalı gelir. Bütün aylar için geçerlidir (Excel'deki Personel sayfası gibi). */}
+        {/* SGK oranları: nadiren değişir, kapalı gelir. Bütün aylar için geçerlidir. */}
         <div ref={ratesRef} id={RATES_ANCHOR} className="scroll-mt-20 border-t border-line">
           <button
             type="button"
@@ -878,7 +878,7 @@ export function StaffEditor({
                 ) : null}
                 <p className="mt-2.5 text-xs leading-5 text-ink-mute">
                   Yüzde olarak yazın: 14 ya da %14. Teşvikten yararlanmıyorsanız işveren SGK primini 20,75 yazın. Oranlar bütün aylar için geçerlidir
-                  {closed.length ? `: ${spanText(closed)} personel SGK tutarı da yeniden hesaplanır` : ""} (Excel&apos;deki Personel sayfası gibi).
+                  {closed.length ? `: ${spanText(closed)} personel SGK tutarı da yeniden hesaplanır` : ""}.
                 </p>
                 <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                   {ratesDirty ? (
@@ -1406,7 +1406,7 @@ function StaffDialog({
         {!row || changed ? (
           <MonthChoiceField
             legend={row ? "Yeni maaş hangi aydan itibaren?" : "Hangi aydan itibaren maaş hesabına girsin?"}
-            tip="Excel'deki gibi her ay kendi tutarını taşır: seçtiğiniz aydan önceki aylar değişmez."
+            tip="Her ay kendi tutarını taşır: seçtiğiniz aydan önceki aylar değişmez."
             value={choice}
             onChange={setChoice}
             currentMonth={currentMonth}
