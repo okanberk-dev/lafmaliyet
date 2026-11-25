@@ -16,8 +16,8 @@ ModPOS'ta bunlar ödenmez ya da hiç girilmez, bu yüzden satış raporunda gör
 
 Ayarlar › LafPOS › **LafPOS'a geçiş günü** seçilince ([LAFPOS.md](LAFPOS.md) › İkram) o günden itibaren ürün ikramı
 kasada, LafPOS'ta işaretlenir ve gün sonuyla gelir (`pos_day_reports.ikram`). Her gün tek kaynak
-(`src/lib/lafpos/ikram.ts`). Geçiş günü yalnız LafPOS'un kurulu olduğu şubenin (Tuzla) kasasınındır: Marina'da ürün
-ikramı panelde girilmeye ve sayılmaya devam eder; Tuzla'nın gün sonu yalnız Tuzla'ya girilmiş ürün ikramını düşürür
+(`src/lib/lafpos/ikram.ts`). Geçiş günü yalnız LafPOS'un kurulu olduğu şubenin (Marina) kasasınındır: Tuzla'da (ModPOS) ürün
+ikramı panelde girilmeye ve sayılmaya devam eder; Marina'nın gün sonu yalnız Marina'ya girilmiş ürün ikramını düşürür
 (kaydın şubesiyle; denetim 21 Kasım #5, [LAFPOS.md](LAFPOS.md) › Şubeler):
 
 - **LafPOS'un gün sonu gelen günde** ikram satırları Tutarlılık'ın kayıtlı tüketimine (reçeteden, ürün satırlarıyla
