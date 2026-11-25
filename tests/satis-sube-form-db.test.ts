@@ -164,6 +164,8 @@ describe("Satışlar ve Gelir-gider: formun şubesi (veritabanında)", { skip: !
     assert.deepEqual(await withBranchScope(ALL_BRANCHES, () => pnl.setMonthNote(MONTH, "Tuzla'ya inerdi")), { ok: false, error: MONTH_TOTALS_LOCKED_TEXT });
     // Tek şube seçiliyken eski sekme o şubeye yazar
     assert.ok((await withBranchScope("tuzla", () => pnl.setMonthField(MONTH, "openDays", 20))).ok);
+    // Alan adı sunucuda da doğrulanır: bilinmeyen sütun adı yazılmaz
+    assert.equal((await withBranchScope("tuzla", () => pnl.setMonthField(MONTH, "note" as never, 1))).ok, false);
     assert.deepEqual(await monthRows(), [
       { b: "marina", pos: 42_000, days: null, note: "Marina'nın notu" },
       { b: "tuzla", pos: null, days: 20, note: null },

@@ -239,7 +239,7 @@ test("e-posta: konu, sonuç, döküm; not kaçışlı, metin sürümü yıldızs
   assert.match(plain(m.html), /120 ₺ eksik/);
   assert.match(m.html, /23:15/, "saat Türkiye saatiyle");
   assert.match(m.html, /\/panel\/kasa\?gun=2026-10-21/);
-  assert.doesNotMatch(m.html, /<script>/);
+  assert.doesNotMatch(m.html, /<script\b/i);
   assert.match(m.html, /&lt;script&gt;/);
   assert.doesNotMatch(m.text, /\*/);
   assert.match(plain(m.text), /120 ₺ EKSİK/);

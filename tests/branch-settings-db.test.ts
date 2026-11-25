@@ -278,6 +278,12 @@ describe("şube başına ayarlar: veritabanında", { skip: !SERVER_URL && "BRANC
     assert.deepEqual([tuzla.value, tuzla.secrets], [{ clientId: "musteri-1", secret: "cok-gizli" }, { secret: "saved" }]);
     const marina = await core.resolveBranchSetting(SECRET_GROUP, "marina");
     assert.deepEqual([marina.value.secret, marina.from], ["cok-gizli", "tuzla"], "aynı iken Tuzla'nın hesabı");
+    // Bilinmeyen ya da prototipe dokunan anahtar yazılmaz (istemciden gelen gövde)
+    const bad = JSON.parse('{"clientId":"musteri-1","__proto__":{"kirli":true},"fazla":"x","constructor":"y"}') as Record<string, unknown>;
+    await db.transaction((tx) => core.putBranchSetting(tx, SECRET_GROUP, "tuzla", bad as never, "Ali"));
+    const [clean] = await db.select().from(s.branchSettings).where(eq(s.branchSettings.grp, SECRET_GROUP.id));
+    assert.deepEqual(clean.value, { clientId: "musteri-1" }, "yalnız grubun alanları");
+    assert.equal(({} as Record<string, unknown>).kirli, undefined, "prototip kirlenmedi");
     // Verilmeyen gizli alan kalır
     await db.transaction((tx) => core.putBranchSetting(tx, SECRET_GROUP, "tuzla", { clientId: "musteri-2" }, "Ali"));
     assert.equal((await core.resolveBranchSetting(SECRET_GROUP, "tuzla")).value.secret, "cok-gizli");

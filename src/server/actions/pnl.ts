@@ -128,12 +128,14 @@ export async function setMonthField(month: string, field: "posRevenue" | "openDa
   return attempt(async () => {
     const me = await requireAdmin();
     const m = zMonth.parse(month);
+    // Alan adı istemciden gelir: tür yalnız derlemede denetlenir, burada da doğrulanır (başka sütuna yazılamaz)
+    const openDays = z.enum(["posRevenue", "openDays"]).parse(field) === "openDays";
     const sube = await monthCellBranch(branchId);
     const dim = daysInMonth(m);
     const v =
       value === null
         ? null
-        : field === "openDays"
+        : openDays
           ? z
               .number()
               .int()
@@ -141,11 +143,12 @@ export async function setMonthField(month: string, field: "posRevenue" | "openDa
               .max(dim, `En fazla ${dim} gün (${monthLabel(m)} ${dim} gün çeker)`)
               .parse(Math.round(value))
           : z.number().finite().min(0).parse(value);
+    const cell = openDays ? { openDays: v } : { posRevenue: v };
     await getDb()
       .insert(s.months)
-      .values({ month: m, branchId: sube, [field]: v })
-      .onConflictDoUpdate({ target: [s.months.month, s.months.branchId], set: { [field]: v, updatedAt: new Date() } });
-    await logActivity(me, field === "openDays" ? "Açık gün" : "Aylık ciro", `${monthLabel(m)} · ${await branchName(sube)}: ${v === null ? "boş (kasa raporu varsa oradan)" : field === "openDays" ? `${v} gün` : tl(v)}`);
+      .values({ month: m, branchId: sube, ...cell })
+      .onConflictDoUpdate({ target: [s.months.month, s.months.branchId], set: { ...cell, updatedAt: new Date() } });
+    await logActivity(me, openDays ? "Açık gün" : "Aylık ciro", `${monthLabel(m)} · ${await branchName(sube)}: ${v === null ? "boş (kasa raporu varsa oradan)" : openDays ? `${v} gün` : tl(v)}`);
     refresh();
     return null;
   });
