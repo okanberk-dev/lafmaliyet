@@ -338,7 +338,7 @@ olduğunu ve bu iki tablodaki her eylemin bir girdide (§ 4'tekilerin `haric` gi
 | Gider kaydını düzelt (saveExpenseEntry id ≠ null) | Kasaya ya da cari borca bağlı kayıtta tutar başka ekrandan düzeltilir. Geçmiş ayın giderini değiştirir. | /panel/harcamalar | Aylık harcamalar › kayıt › Düzenle. |
 | Faturayı ödenmedi yap (setInvoicePayment unpaid) | Ödeme geri alma yolu: dağıtımları siliyor. | /panel/hatirlaticilar › Son ödenenler | Son ödenenler › kalem › Geri al (30 gün). |
 | Kasa yöntemiyle tedarikçi ödemesi, elle dağıtım, ödeme düzeltmesi, borç düzeltmesi, yeni kart açan ödeme veya borç | Kasa raporuna Teslim satırı açar. Kalem seçimi görsel bir karar. Geçmiş ay onayı ister. | /panel/tedarikciler/[cari] | Tedarikçiler › tedarikçi › Ödeme ekle (ya da Borç ekle) › Kasadan, kalem seçimi ve ay onayı pencerede. |
-| Hammaddenin birimini, sayım birimini ya da fiyat kaynağını değiştir (saveIngredient) | Stok değerini 1000 kat bozabilir, sayım listesini değiştirir. | /panel/hammaddeler | Hammaddeler › satır › Düzenle › birim › Kaydet. |
+| Hammaddenin birimini, sayım birimini ya da fiyat kaynağını değiştir (saveIngredient) | Stok değerini 1000 kat bozabilir, sayım listesini değiştirir; Paraşüt çarpanı, eşik ve zayi eski birimle kalır (ölçü ailesi değişince ekran onay ister). | /panel/hammaddeler | Hammaddeler › satır › Düzenle › birim › Kaydet. |
 | Kapalı gün işaretle (saveSpecialDay kapali, markClosedDay, reviewClosedDay) | Açık gün sayısını ve ortalamaları değiştirir. Personel isteklerini onaylar ya da geri alır. | /panel/kasa › raporsuz gün; /panel/ozel-gunler | Kasa › raporsuz gün › "Kafe kapalıydı" › not yazın. |
 
 ### 3.2 Tarayıcıların da "rehber" dediği konular (doğrulandı)

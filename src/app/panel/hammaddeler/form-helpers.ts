@@ -11,6 +11,10 @@ export interface IngredientDeps {
   links: number;
   /** Zayi / ikram kayıtları (silinirse geçmiş ayların zayi maliyeti ve kayıtlı tüketimi 0'a düşerdi) */
   waste: number;
+  /** Şubelerin kritik stok eşikleri (birim değişince söylenir; src/lib/ingredient-unit.ts) */
+  thresholds?: number;
+  /** Son 90 günün zayi / ikram kayıtları (birim değişince söylenir) */
+  recentWaste?: number;
 }
 
 /** Silmeyi engelleyen geçmiş: "2 sayım, 1 alım miktarı, 3 zayi / ikram" (boşsa null) */

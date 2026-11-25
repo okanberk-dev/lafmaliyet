@@ -387,7 +387,12 @@ Ekrandaki **Ürün → hammadde bağlantıları** (yalnız mal alışı ve "Diğ
 listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları gelmez):
 
 - Paraşüt ürününü (ya da açıklamasını) bir hammaddeye bağlayın ve **çarpanı** yazın: Paraşüt'teki 1 birim kaç
-  hammadde birimi? (ör. "Süt 1 L" → süt hammaddesi ml ise `1000`; "Koli 12×1 L" → `12000`).
+  hammadde birimi? (ör. "Süt 1 L" → süt hammaddesi ml ise `1000`; "Koli 12×1 L" → `12000`). Çarpan hammaddenin
+  birimiyle yazılır ve birim sonradan değişince kendi kendine çevrilmez: Hammaddeler'de birim değişirken pencere bağlı
+  ürün sayısını, şubelerin kritik eşiklerini ve son 90 günün zayi / ikram kayıtlarını söyler, kayıttan sonra aynı
+  uyarı çıkar; ölçü ailesi değişiyorsa (gr / ml ↔ adet / dilim; çarpan 1000 kat yanlış kalırdı) "Birimi … yapmayı
+  onaylıyorum" işaretlenmeden kaydedilmez, sunucu da reddeder (bulgu 41, `src/lib/ingredient-unit.ts`). Çarpanı
+  burada yeni birimle yeniden girin.
 - O kalemden gelen miktar × çarpan, ayın **alınan miktarı** olur (Tutarlılık ekranı); iade faturaları düşülür (ayın
   toplamı 0 ise 0 yazılır). Çarpanı onay bekleyen kalem sayılmaz (5b). Elle girilmiş alınan miktar satırlarına
   dokunulmaz; yalnızca notu tam olarak "Paraşüt faturalarından" olanlar yönetilir. Tutarlılık'ta böyle bir satır elle

@@ -333,6 +333,49 @@ describe("stok sayımı eylemleri: veritabanında", { skip: !SERVER_URL && "SAYI
     assert.equal((await row(plain.data.id)).countFrom, "2026-11");
   });
 
+  test("hammaddenin birimi değişince Paraşüt çarpanı, eşik ve zayi söylenir; ölçü ailesi değişiyorsa onay ister (bulgu 41)", async () => {
+    at("2026-11-04T09:00:00Z");
+    who.role = "admin";
+    const base = { category: "Süt", supplier: null, packageDesc: null, packagePrice: 300, packageSize: 12000, vatRate: 0.01, note: null, isEstimate: false, priceSource: "manual" as const, countGroup: null, countUnit: null, active: true };
+    const created = await ingredients.saveIngredient({ ...base, id: null, name: "Krema (birim testi)", unit: "ml" });
+    assert.ok(created.ok, created.ok ? "" : created.error);
+    const id = created.data.id;
+    await db.insert(s.parasutProductLinks).values({ productKey: "krema-birim-testi", productName: "Krema 1 Koli", ingredientId: id, factor: 12000 });
+    await db.insert(s.stockThresholds).values({ branchId: "tuzla", ingredientId: id, qty: 2000 });
+    await db.insert(s.wasteEntries).values([
+      { date: "2026-10-20", kind: "zayi", ingredientId: id, name: "Krema", qty: 1, unit: "LT", factor: 1000, createdByName: "Ali" },
+      { date: "2026-06-01", kind: "zayi", ingredientId: id, name: "Krema", qty: 1, unit: "LT", factor: 1000, createdByName: "Ali" },
+    ]);
+    const unitOf = async () => (await db.select({ unit: s.ingredients.unit }).from(s.ingredients).where(eq(s.ingredients.id, id)))[0].unit;
+    try {
+      // ml → adet: onaysız kaydedilmez, birim değişmez; neyin eski birimle kaldığı söylenir (90 günden eski zayi sayılmaz)
+      const refused = await ingredients.saveIngredient({ ...base, id, name: "Krema (birim testi)", unit: "adet" });
+      assert.equal(refused.ok, false);
+      assert.ok(!refused.ok);
+      assert.match(refused.error, /^Birim ml → adet değişiyor: tartılan malzeme sayılan olur/);
+      assert.match(refused.error, /Paraşüt'te 1 ürün bu hammaddeye bağlı/);
+      assert.match(refused.error, /1 şubenin kritik stok eşiği “ml” ile yazıldı/);
+      assert.match(refused.error, /Son 90 günde 1 zayi \/ ikram kaydı/);
+      assert.match(refused.error, /Onaylayıp yeniden kaydedin\.$/);
+      assert.equal(await unitOf(), "ml");
+      // Onaylı kayıt yazılır, aynı notlar uyarı olarak döner
+      const ok = await ingredients.saveIngredient({ ...base, id, name: "Krema (birim testi)", unit: "adet", confirmUnit: true });
+      assert.ok(ok.ok, ok.ok ? "" : ok.error);
+      assert.equal(await unitOf(), "adet");
+      assert.match(ok.data.warning ?? "", /^Paraşüt'te 1 ürün bu hammaddeye bağlı; çarpanı “ml” ile yazıldı.*Tahmini stok'ta eşiği “adet” ile yeniden girin\./);
+      // Aynı aile (adet → dilim) onaysız yazılır, yine söylenir
+      const same = await ingredients.saveIngredient({ ...base, id, name: "Krema (birim testi)", unit: "dilim" });
+      assert.ok(same.ok, same.ok ? "" : same.error);
+      assert.match(same.data.warning ?? "", /çarpanı “adet” ile yazıldı/);
+      // Birim değişmeyen kayıtta uyarı yok
+      const plain = await ingredients.saveIngredient({ ...base, id, name: "Krema (birim testi)", unit: "dilim", note: "not" });
+      assert.ok(plain.ok && plain.data.warning === null, JSON.stringify(plain));
+    } finally {
+      await db.delete(s.wasteEntries).where(eq(s.wasteEntries.ingredientId, id));
+      await db.delete(s.ingredients).where(eq(s.ingredients.id, id));
+    }
+  });
+
   test("3 Kasım: personel Ekim sayımını düzeltebilir (ilk 10 gün)", async () => {
     at("2026-11-03T09:00:00Z");
     who.role = "staff";

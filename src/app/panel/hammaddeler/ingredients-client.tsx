@@ -47,6 +47,7 @@ import { formatPercentInput, parseNumberTR, parsePercentInput } from "@/lib/calc
 import type { CountUnit, Ingredient, Unit } from "@/lib/calc/types";
 import { COUNT_GROUPS, INGREDIENT_CATEGORIES, UNITS } from "@/lib/constants";
 import { isUnpriced } from "@/lib/count-item";
+import { unitChangeNotes, unitConfirmText, unitFamilyChanged } from "@/lib/ingredient-unit";
 import { activeUses, productListText, usageText } from "@/lib/ingredient-usage";
 import { dateTR, dayTR, num, pct, tl, tlUnit } from "@/lib/format";
 import { bulkPrice } from "@/lib/supplier-prices";
@@ -1113,6 +1114,8 @@ function IngredientDialog({
   const [advanced, setAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tried, setTried] = useState(false);
+  /** Ölçü ailesi değişen birim onaylandı (gr / ml ↔ adet / dilim; bulgu 41) */
+  const [unitConfirmed, setUnitConfirmed] = useState(false);
   const set = (patch: Partial<typeof f>) => setF((x) => ({ ...x, ...patch }));
   // Pencere açıkken fiyat başka yerden değişebilir (satırdaki fiyat kutusu ada/kaleme basınca blur'la kaydeder, Paraşüt
   // eşitlemesi): dokunulmamış alan güncel değeri alır. Kayıtta da dokunulmamış alan `base` ile gider, sunucu kayıttaki
@@ -1157,7 +1160,12 @@ function IngredientDialog({
         ? `${num(activeUses(row))} aktif ürünün reçetesinde kullanılıyor (${productListText(row.usedIn.filter((u) => u.active).map((u) => ({ id: u.id, name: u.label })))}). Pasif yapmadan önce bu reçetelerden çıkarın ya da yerine başka malzeme yazın.`
         : null,
   };
-  const invalid = Object.values(errors).some(Boolean);
+  // Birim değişince eski birimle yazılmış Paraşüt çarpanı, kritik eşik ve son zayi kayıtları (sunucu da söyler); ölçü
+  // ailesi değişiyorsa onay kutusu işaretlenmeden kaydedilmez (sunucu da reddeder; bulgu 41)
+  const unitNotes = row && f.unit !== row.unit ? unitChangeNotes(row.unit, f.unit, { links: row.deps.links, thresholds: row.deps.thresholds ?? 0, recentWaste: row.deps.recentWaste ?? 0 }) : [];
+  const needsUnitConfirm = row !== null && unitFamilyChanged(row.unit, f.unit);
+  const unitConfirmError = needsUnitConfirm && !unitConfirmed ? "Birimi değiştirmeyi onaylayın" : null;
+  const invalid = Object.values(errors).some(Boolean) || !!unitConfirmError;
   // Hatalar ilk "Ekle/Kaydet" denemesinden sonra görünür; aynı ad ve uyumsuz sayım birimi ise hemen çıkar
   const show = (k: keyof typeof errors) => ((tried || (k === "name" && duplicate) || k === "countUnit" || k === "active") && errors[k]) || undefined;
 
@@ -1175,6 +1183,8 @@ function IngredientDialog({
       : null;
 
   function setUnit(unit: Unit) {
+    // Onay seçilen birim içindir: birim yeniden değişince yeniden onaylanır
+    setUnitConfirmed(false);
     const allowed = countUnitsFor(unit);
     const patch: Partial<typeof f> = { unit };
     if (!row && !touched.countUnit) patch.countUnit = allowed[0];
@@ -1203,7 +1213,7 @@ function IngredientDialog({
     if (invalid) {
       const first = (["name", "category", "price", "size", "vat", "countUnit", "active"] as const).find((k) => errors[k]);
       if (first === "active") setAdvanced(true);
-      const id = { name: "i-name", category: "i-cat", price: "i-price", size: "i-size", vat: "i-vat", countUnit: "i-cu", active: "i-active" }[first!];
+      const id = first ? { name: "i-name", category: "i-cat", price: "i-price", size: "i-size", vat: "i-vat", countUnit: "i-cu", active: "i-active" }[first] : "i-unit-ok";
       document.getElementById(id)?.focus();
       return;
     }
@@ -1227,6 +1237,7 @@ function IngredientDialog({
         countUnit: f.countUnit || null,
         countGroup: f.countGroup || null,
         active: f.active,
+        confirmUnit: needsUnitConfirm && unitConfirmed,
       }),
     );
     setBusy(false);
@@ -1251,7 +1262,7 @@ function IngredientDialog({
             },
           },
     });
-    if (res.data.warning) toast.warning("Sayım birimi değişti", { description: res.data.warning, duration: 12_000 });
+    if (res.data.warning) toast.warning(row && row.unit !== f.unit ? "Birim değişti" : "Sayım birimi değişti", { description: res.data.warning, duration: 12_000 });
     onClose();
   }
 
@@ -1380,6 +1391,32 @@ function IngredientDialog({
           </div>
           {recipeWarning ? (
             <Notice tone="warn" size="sm" live="polite" title={recipeWarning} />
+          ) : null}
+          {unitNotes.length || needsUnitConfirm ? (
+            <Notice
+              tone="warn"
+              size="sm"
+              live="polite"
+              title={needsUnitConfirm && row ? unitConfirmText(row.unit, f.unit) : "Eski birimle yazılanlar"}
+              text={
+                unitNotes.length ? (
+                  <ul className="list-disc space-y-1 pl-4">
+                    {unitNotes.map((n) => (
+                      <li key={n}>{n}</li>
+                    ))}
+                  </ul>
+                ) : undefined
+              }
+            />
+          ) : null}
+          {needsUnitConfirm ? (
+            <Checkbox
+              id="i-unit-ok"
+              checked={unitConfirmed}
+              onChange={(e) => setUnitConfirmed(e.target.checked)}
+              aria-invalid={tried && unitConfirmError ? true : undefined}
+              label={`Birimi ${f.unit} yapmayı onaylıyorum`}
+            />
           ) : null}
           <div className="flex items-baseline justify-between gap-3 rounded-2xl bg-panel px-3.5 py-2.5 text-sm text-ink-mute" aria-live="polite">
             <span>
