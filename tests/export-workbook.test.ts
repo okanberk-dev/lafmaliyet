@@ -403,6 +403,52 @@ test("Dosya yazılıp geri okunabiliyor; notlar ve tarihler korunuyor", async ()
   assert.ok(back.getWorksheet("Gelir-Gider 2026")!.getCell("K1").note, "Eylül ay notu başlıkta");
 });
 
+test("Faturalar: KDV panelin indirilecek KDV'si; tevkifat ve tedarikçiye ödenen KDV ayrı; vergi no, ETTN, şube (bulgu 17)", () => {
+  const ds = dataset();
+  const base = { description: null, invoiceNo: null, unpaid: false, note: null, discount: 0 };
+  // NAKIT-PLANI.md'deki Eylül reklam faturası: 30.000 + 6.000 KDV, 3/10 tevkifat → tedarikçiye 4.200 KDV ödenir
+  ds.invoices.push(
+    { ...base, id: 990001, date: "2026-09-15", supplier: "Reklam Ajansı", category: "Diğer", amount: 30_000, payable: 34_200, vat: 6_000, source: "parasut", supplierTaxNumber: "1234567890", eInvoiceUuid: "0f8fad5b-d9cb-469f-a165-70867728950e", branchId: "marina" },
+    // ÖTV'li: 1.000 + 200 KDV + 100 ÖTV; KDV 200, fark 300
+    { ...base, id: 990002, date: "2026-09-16", supplier: "Akaryakıt", category: "Diğer", amount: 1_000, payable: 1_300, vat: 200, source: "parasut", branchId: null },
+    // KDV toplamı bilinmeyen (elle girilen): ödenecek − net, formülle
+    { ...base, id: 990003, date: "2026-09-17", supplier: "Elle", category: "Diğer", amount: 500, payable: 600, vat: 0, source: "manual" },
+  );
+  const ws = buildWorkbook(createModel(ds), "2026-09", { ...extras, branchNames: new Map([["marina", "Marina"]]) }).getWorksheet("Faturalar")!;
+  const head = ws.getRow(1);
+  const colOf = (name: string) => {
+    for (let c = 1; c <= ws.columnCount; c++) if (head.getCell(c).value === name) return c;
+    assert.fail(`sütun yok: ${name}`);
+  };
+  // Aylık Alımlar'ın SUMIFS'i Net (H), Kategori (E), Ay (K) sütunlarına bakar: yerleri değişmedi
+  assert.deepEqual([colOf("Kategori"), colOf("Net (KDV hariç)"), colOf("KDV"), colOf("Ödenecek (KDV dahil)"), colOf("Ay")], [5, 8, 9, 10, 11]);
+  const rowFor = (supplier: string) => {
+    for (let r = 2; r <= ws.rowCount; r++) if (ws.getRow(r).getCell(colOf("Tedarikçi")).value === supplier) return ws.getRow(r);
+    assert.fail(`satır yok: ${supplier}`);
+  };
+  const ad = rowFor("Reklam Ajansı");
+  assert.equal(ad.getCell(colOf("KDV")).value, 6_000, "tevkifatlı faturada KDV tam KDV (4.200 değil)");
+  assert.equal(ad.getCell(colOf("Tevkifat (KDV-2)")).value, 1_800);
+  const paid = ad.getCell(colOf("Tedarikçiye ödenen KDV")).value as ExcelJS.CellFormulaValue;
+  assert.equal(paid.formula, `J${ad.number}-H${ad.number}`);
+  assert.equal(paid.result, 4_200);
+  assert.equal(ad.getCell(colOf("Vergi no")).value, "1234567890");
+  assert.equal(ad.getCell(colOf("ETTN")).value, "0f8fad5b-d9cb-469f-a165-70867728950e");
+  assert.equal(ad.getCell(colOf("Şube")).value, "Marina");
+
+  const fuel = rowFor("Akaryakıt");
+  assert.equal(fuel.getCell(colOf("KDV")).value, 200, "ÖTV KDV sayılmaz");
+  assert.equal(fuel.getCell(colOf("Tevkifat (KDV-2)")).value, null);
+  assert.equal(val(fuel.getCell(colOf("Tedarikçiye ödenen KDV"))), 300);
+  assert.equal(fuel.getCell(colOf("Şube")).value, "İşletme geneli");
+  assert.equal(fuel.getCell(colOf("Vergi no")).value, null);
+
+  const manual = rowFor("Elle");
+  const kdv = manual.getCell(colOf("KDV")).value as ExcelJS.CellFormulaValue;
+  assert.equal(kdv.formula, `J${manual.number}-H${manual.number}`, "KDV toplamı bilinmiyorsa formül");
+  assert.equal(kdv.result, 100);
+});
+
 test("Yedek: bütün ayların satış satırları, ay bilgileri ve Gelir-gider'de elle girilen hücreler", () => {
   const ds = dataset();
   ds.salesLines.push({ id: 999001, month: "2026-10", posName: "TEST EKİM SATIRI", qty: 2, revenue: 300, productId: null, isService: false, note: "TEST not" });

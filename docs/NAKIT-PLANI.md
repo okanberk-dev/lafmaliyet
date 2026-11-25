@@ -186,6 +186,14 @@ satışların KDV'si, alışların KDV'si, devreden ve sonuç açılır.
 | Yuvarlama | Kasa, online ve alış KDV'si ile muhasebecinin tutarı ayrı ayrı en yakın **100 ₺**'ye yuvarlanır (yarım yukarı, işaret korunur); ödenecek ve devreden bunlardan çıkar, ekrandaki çıkarma birebir tutar. Ödemeler'deki tutar ve muhasebecinin tutarı olduğu gibi yazılır. |
 | Dahil değil | İkram ve ödenmez (Z dışı), Karaoke box'ın (MaviBahçe) satışları, Aylık harcamalar'daki fatura dışı ödemeler ve faturası panele gelmeyen giderlerin KDV'si (bilinmez; tahmin bu yüzden yüksek kalır). Süren ayın kasa cirosu ay sonuna ayın açık günüyle tamamlanır: Özel günler'de kafe kapalı işaretli günler (ileri tarihliler dahil) düşülür (denetim E-41). |
 
+**Excel'e aktar › Faturalar** aynı KDV'yi yazar (bulgu 17, 25 Kasım 2026): **KDV** sütunu `purchaseVat` (KDV toplamı,
+tevkifat düşülmeden; bilinmiyorsa ödenecek − net, formülle), **Tevkifat (KDV-2)** `purchaseWithheld`, **Tedarikçiye
+ödenen KDV** ödenecek − net (formül; ÖTV / ÖİV gibi başka vergi varsa o da bu farktadır). Önceden KDV sütunu ödenecek −
+net'ti: Eylül'ün reklam faturasında (30.000 + 6.000 KDV, 3/10 tevkifat) 6.000 yerine 4.200 ₺, ÖTV'li faturada şişkin
+çıkıyordu. Paraşüt ya da GİB listesiyle mutabakat için **Vergi no** (tedarikçinin VKN / TCKN'si), **ETTN** ve **Şube**
+(ayrı Paraşüt hesabının faturası o şubenin, öbürleri "İşletme geneli") sütunları da var. Yeni sütunlar sondadır; eski
+sütunların yeri değişmedi.
+
 **Plana yerleşme:**
 
 - Ödemeler'de KDV hatırlatıcısı yoksa her dönem ayın 28'ine, yarından itibaren “KDV (Ekim)” tahmini satırı olarak girer.

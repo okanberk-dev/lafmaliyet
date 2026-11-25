@@ -397,6 +397,9 @@ async function readDataset(): Promise<Dataset> {
       paidAt: i.paidAt,
       paymentRequestedAt: i.paymentRequestedAt,
       taxNotAsset: i.taxNotAsset,
+      supplierTaxNumber: i.supplierTaxNumber,
+      eInvoiceUuid: i.eInvoiceUuid,
+      branchId: i.branchId,
       ...(channelNamesOf && i.category === COMMISSION_CATEGORY && !channelOf([i.supplier]) ? { channelNames: channelNamesOf(i.supplier, i.supplierTaxNumber) } : {}),
     })),
     // netSalary / extras ve period / amount taban değerlerdir (ilk sürümden önceki aylar).

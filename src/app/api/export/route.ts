@@ -62,6 +62,7 @@ async function exportWorkbook(request: NextRequest, scope: BranchScope): Promise
       cari,
       tax,
       scope: { label: branchScopeLabel(scope, branches), branch: !whole },
+      branchNames: new Map(branches.map((b) => [b.id, b.name])),
     });
     const buffer = await wb.xlsx.writeBuffer();
     return new Response(buffer as ArrayBuffer, {

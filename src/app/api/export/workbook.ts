@@ -16,6 +16,7 @@ import type { FixedPeriod, MonthField, MonthRange } from "../../../lib/calc/type
 import { MONTH_FIELDS } from "../../../lib/cash-month";
 import { COUNT_GROUP_VAT_DEFAULT, FIXED_PERIODS, FIXED_SECTIONS, GOODS_CATEGORIES, INVOICE_CATEGORIES, MONTH_NAMES, SEPARATE_CATEGORIES } from "../../../lib/constants";
 import { dateTimeTR, dateTR, monthLabel, num, pct, tl } from "../../../lib/format";
+import { purchaseVat, purchaseWithheld } from "../../../lib/kdv";
 import { monthKasa, salesMonthKasa, type MonthKasa } from "../../../lib/lafpos/kasa";
 import { QUARTER_DEPRECIATION_LABELS } from "../../../lib/tax/assets";
 import { monthName as taxMonthName, quarterLabel, quarterMonths } from "../../../lib/tax/calendar";
@@ -89,6 +90,8 @@ export interface ExportExtras {
    * seçicisizdir ("Tümü"). İlk sayfa (Nasıl Okunur) kapsamı yazar. Verilmezse "Tümü"
    */
   scope?: { label: string; branch: boolean };
+  /** Şubelerin adları (kimlik → ad): Faturalar sekmesinin Şube sütunu; verilmezse kimlik yazılır */
+  branchNames?: ReadonlyMap<string, string>;
 }
 
 /** "Vergi" sekmesinin girdisi (src/app/api/export/route.ts kurar: loadTaxView, vergi ayarları) */
@@ -439,7 +442,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
   }
   hm.autoFilter = { from: "A1", to: `${colLetter(hm.columnCount)}1` };
 
-  addInvoices(wb, model, extras.outstanding);
+  addInvoices(wb, model, extras.outstanding, extras.branchNames);
   if (extras.cari?.length) addCari(wb, extras.cari);
   addPeople(wb, model, month, extras.investments);
   // Vergi (dalga 12): tahmin, beyanname değil; Personel ve Sabit Giderler'den sonra
@@ -509,7 +512,7 @@ function sheetPurpose(name: string, label: string, kasa: MonthKasa["both"] = "Mo
     "Ürün Kârlılık": `Her ürün ve boy: fiyat, maliyet, birim kâr, marj, önerilen fiyat, ${label} satış adedi (${kasa} + laffogato.net online). Süzgeç açık.`,
     "Reçete Kartları": "Her ürünün malzemeleri, miktarı, birim maliyeti ve KDV dahil tutarı; son satır fire dahil ürün maliyeti.",
     Hammaddeler: "Malzemelerin paket fiyatı, birim maliyeti, alış KDV'si, sayım birimi ve grubu.",
-    Faturalar: "Bütün alış faturaları: tarih, kategori, net, KDV, durum, kalan borç, vade ve not. Net, KDV ve Ay sütunları formül.",
+    Faturalar: "Bütün alış faturaları: tarih, kategori, net, KDV, tevkifat, durum, kalan borç, vade, not, vergi no, ETTN ve şube. Net ve Ay sütunları formül; KDV faturanın KDV toplamı (tevkifat düşülmeden), bilinmiyorsa formül.",
     "Aylık Alımlar": "Excel Faturalar'daki 'Aylara göre net alımlar': kategori × ay (formülle Faturalar'dan), TOPLAM ve mal maliyeti.",
     Vergi: "Tahmin, beyanname değil: vergiye göre gelir-gider (yalnız geliri mali belgeden gelen aylar), kafenin geçici ve kurumlar vergisine katkısı, vergi takvimi, kullanılan kurallar ve sahibin notları.",
     "Cari hareketleri": "Tedarikçilere elle girilen faturasız alımlar, eski borçlar ve ödemeler: tutar, şekil, ödemenin sayıldığı kalemler ve bağlandığı fatura. Ödeme gider değildir.",
@@ -558,7 +561,7 @@ function fillGuide(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook, model: Model, mo
     ["Köşesinde üçgen olan hücre", "Üzerine gelince açıklama çıkar: hesabın ne yaptığı, elle düzeltilen tutarın hesaplanan değeri ya da hücre notu."],
     ["Kırmızı sayı", "Eksi tutar: gider, zarar ya da fark."],
     ["\"-\"", "Gelir-gider tablosunda sıfır. Boş hücre o ay için veri yok demektir."],
-    ["Formüller", "Faturalar'daki Net, KDV ve Ay sütunları ile Aylık Alımlar tablosu formüldür; Faturalar'da bir tutarı düzeltirseniz özet de güncellenir. Diğer sekmelerdeki rakamlar panelin hesapladığı değerlerdir."],
+    ["Formüller", "Faturalar'daki Net, Ay ve Tedarikçiye ödenen KDV sütunları ile Aylık Alımlar tablosu formüldür; Faturalar'da bir tutarı düzeltirseniz özet de güncellenir. KDV sütunu KDV toplamı bilinen (Paraşüt'ten gelen) faturada tutardır, tevkifatı ayrı sütunda. Diğer sekmelerdeki rakamlar panelin hesapladığı değerlerdir."],
     [
       "KDV",
       `Menü fiyatları KDV dahil (%${num(model.settings.kdv * 100, 1)}; karaoke gibi hizmet satışları %${num(model.settings.kdvHizmet * 100, 1)}); malzeme ve gider tutarları KDV hariçtir (alışta ödenen KDV indirilebildiği için).`,
@@ -1391,7 +1394,7 @@ export function invoiceCategories(invoices: { category: string }[]): string[] {
   return out;
 }
 
-function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<number, number | null>) {
+function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<number, number | null>, branchNames?: ReadonlyMap<string, string>) {
   const invoices = model.ds.invoices;
   const ws = addSheet(
     wb,
@@ -1414,11 +1417,24 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
       { key: "due", header: "Vade", width: 11, fmt: DATE },
       { key: "note", header: "Not", width: 40 },
       { key: "src", header: "Kaynak", width: 9 },
+      // Vergi ve mutabakat sütunları sonda (bulgu 17): eski sütunların yeri değişmesin (Aylık Alımlar'ın SUMIFS'i H, E, K)
+      { key: "w", header: "Tevkifat (KDV-2)", width: 13, fmt: MONEY },
+      { key: "pv", header: "Tedarikçiye ödenen KDV", width: 14, fmt: MONEY },
+      { key: "vkn", header: "Vergi no", width: 13 },
+      { key: "ettn", header: "ETTN", width: 38 },
+      { key: "br", header: "Şube", width: 14 },
     ],
     { y: 1, landscape: true },
   );
   const head = headerRow(ws, colHeaders(ws));
   head.getCell("n").note = "Mal/hizmet tutarı − iskonto. Gerçek maliyet budur (KDV indirilebildiği için).";
+  head.getCell("v").note =
+    "İndirilecek KDV: faturanın KDV toplamı, tevkifat düşülmeden (Paraşüt'ten gelen; panelin KDV tahmini ve Vergi bunu kullanır). KDV toplamı bilinmeyen faturada (elle ya da Excel'den girilen) ödenecek − net, formülle.";
+  head.getCell("w").note = "KDV tevkifatı: KDV toplamından tedarikçiye ödenmeyen kısım (ör. 3/10). Alıcı bunu 2 No.lu KDV beyannamesiyle öder; 1 No.lu beyannamede indirilecek KDV yine tam KDV'dir.";
+  head.getCell("pv").note = "Ödenecek − net (formül): tedarikçiye ödenen KDV, tevkifat düşülmüş. Faturada ÖTV ya da ÖİV gibi başka bir vergi varsa o da bu farktadır; indirilecek KDV için KDV sütununa bakın.";
+  head.getCell("vkn").note = "Tedarikçinin VKN / TCKN'si (Paraşüt'ten ya da e-faturadan; elle girilen faturada boş).";
+  head.getCell("ettn").note = "E-faturanın ETTN'si (GİB): Paraşüt ya da GİB listesiyle satır satır karşılaştırmak için.";
+  head.getCell("br").note = "Faturanın şubesi: ayrı Paraşüt hesabına bağlı şubenin faturası o şubenindir; ortak hesabın ve elle girilen faturalar işletme genelidir.";
   head.getCell("m").note = "Faturanın ayı (Aylık Alımlar sekmesi bu sütuna göre toplar).";
   head.getCell("ob").note = "Ödenmemiş faturanın kalan borcu; kısmen ödenmiş Paraşüt faturasında kalan tutar, tedarikçiye panelde ödeme girildiyse sayılan ödemeler düşülmüş.";
   head.getCell("pp").note = "Bu faturaya sayılan, panelde girilen ödemeler (Tedarikçiler › Hesap hareketleri). Boşsa yok.";
@@ -1427,6 +1443,8 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
     const net = inv.amount - inv.discount;
     // Cari takipteki faturada panelde sayılan ödemeler düşülür (allocated, ledgerBase; src/lib/cari/balance.ts)
     const balance = openBalance({ payable: inv.payable, unpaid: inv.unpaid, outstanding: outstanding?.get(inv.id) ?? inv.outstanding ?? null, allocated: inv.allocated, ledgerBase: inv.ledgerBase });
+    const vat = purchaseVat(inv);
+    const withheld = purchaseWithheld(inv);
     ws.addRow({
       d: excelDate(inv.date),
       s: inv.supplier,
@@ -1436,9 +1454,16 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
       a: inv.amount,
       i: inv.discount,
       n: { formula: `F${r}-G${r}`, result: round2(net) },
-      v: { formula: `J${r}-H${r}`, result: round2(inv.payable - net) },
+      // İndirilecek KDV panelin KDV tahminiyle aynı (src/lib/kdv.ts purchaseVat): KDV toplamı biliniyorsa o (tevkifatlı
+      // faturada ödenecek − net KDV'yi eksik, ÖTV'li faturada fazla gösterirdi; bulgu 17), bilinmiyorsa formül
+      v: Math.abs(vat - (inv.payable - net)) < 0.005 ? { formula: `J${r}-H${r}`, result: round2(vat) } : round2(vat),
       p: inv.payable,
       m: { formula: `DATE(YEAR(A${r}),MONTH(A${r}),1)`, result: excelDate(`${monthOfDate(inv.date)}-01`) },
+      w: withheld > 0 ? round2(withheld) : null,
+      pv: { formula: `J${r}-H${r}`, result: round2(inv.payable - net) },
+      vkn: inv.supplierTaxNumber ?? null,
+      ettn: inv.eInvoiceUuid ?? null,
+      br: inv.branchId ? (branchNames?.get(inv.branchId) ?? inv.branchId) : "İşletme geneli",
       u: inv.unpaid ? "Ödenmedi" : "Ödendi",
       ob: inv.unpaid ? balance : null,
       pp: inv.allocated && inv.allocated > 0.005 ? round2(inv.allocated) : null,

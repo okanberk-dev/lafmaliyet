@@ -331,6 +331,15 @@ export interface Invoice {
   channelNames?: string[];
   /** Vergi: "Demirbaş olabilir" listesinde "Gider (demirbaş değil)" denildi (yalnız vergi hesabı; docs/VERGI.md) */
   taxNotAsset?: boolean;
+  /** Tedarikçinin VKN / TCKN'si (Excel'in Faturalar sekmesi; hesaplarda kullanılmaz) */
+  supplierTaxNumber?: string | null;
+  /** E-faturanın ETTN'si (Excel'in Faturalar sekmesi; hesaplarda kullanılmaz) */
+  eInvoiceUuid?: string | null;
+  /**
+   * Faturanın şubesi: ayrı Paraşüt hesabına bağlı şubenin faturası o şubenindir; boş = işletme geneli (ortak Paraşüt
+   * hesabı, elle ve Excel'den girilenler; docs/SUBE.md › Paraşüt)
+   */
+  branchId?: string | null;
 }
 
 /**
