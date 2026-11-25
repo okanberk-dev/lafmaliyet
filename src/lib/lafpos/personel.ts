@@ -110,13 +110,15 @@ export interface WorkedStaffAnswer {
 }
 
 /**
- * Gövdedeki kimliklerin sınıfı. Satırın şubesi LAFPOS_BRANCH_ID ve aralığı günün ayını tutuyorsa sayılan; satır başka
- * şubedeyse otherBranch; yoksa ya da aralık dışındaysa unknown. Sıra gövdeninki (tekil, sayı sırasıyla)
+ * Gövdedeki kimliklerin sınıfı. Satırın şubesi LafPOS'un şubesi (`lafposBranch`, sunucu lafposBranchId ile verir; yoksa
+ * LAFPOS_BRANCH_ID) ve aralığı günün ayını tutuyorsa sayılan; satır başka şubedeyse otherBranch; yoksa ya da aralık
+ * dışındaysa unknown. Sıra gövdeninki (tekil, sayı sırasıyla)
  */
 export function classifyWorkedStaff(
   refs: readonly string[],
   rows: ReadonlyMap<number, { branchId: string; startMonth: string | null; endMonth: string | null }>,
   date: string,
+  lafposBranch: string = LAFPOS_BRANCH_ID,
 ): WorkedStaffAnswer {
   const out: WorkedStaffAnswer = { counted: [], unknown: [], otherBranch: [] };
   const month = date.slice(0, 7);
@@ -124,7 +126,7 @@ export function classifyWorkedStaff(
     const id = staffIdOfRef(ref);
     const r = id === null ? undefined : rows.get(id);
     if (!r) out.unknown.push(ref);
-    else if (r.branchId !== LAFPOS_BRANCH_ID) out.otherBranch.push(ref);
+    else if (r.branchId !== lafposBranch) out.otherBranch.push(ref);
     else if (inRange(r, month)) out.counted.push(ref);
     else out.unknown.push(ref);
   }
@@ -139,6 +141,8 @@ export function classifyWorkedStaff(
  */
 export interface LafposWorked {
   switchDay: string;
+  /** Günlerin şubesi: LafPOS'un şubesi (veri kümesi kütükten türetir); verilmezse geri düşüş değeri */
+  branchId?: string;
   days: { date: string; refs: string[] | null }[];
 }
 
@@ -147,7 +151,7 @@ export interface LafposWorked {
  * var ve HER biri çalışan listesini taşıyor); yoksa null
  */
 function coveredDays(worked: LafposWorked | null | undefined, staff: { branchId?: string | null }, month: string): { date: string; refs: string[] }[] | null {
-  if (!worked || !isLafposBranch(staff.branchId)) return null;
+  if (!worked || !isLafposBranch(staff.branchId, worked.branchId)) return null;
   if (!isLafposDay(`${month}-01`, worked.switchDay)) return null;
   const days = worked.days.filter((d) => d.date.slice(0, 7) === month && isLafposDay(d.date, worked.switchDay));
   if (!days.length || days.some((d) => d.refs === null)) return null;

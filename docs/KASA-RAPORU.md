@@ -840,7 +840,10 @@ onu okur); değişen yalnız ciroya girmemesidir. **Kartlı satış oranı** da 
 - **Deneme e-postası** (yönetici, Rapor alıcıları): son kayıtlı raporla gider; kayıtlı rapor yoksa yazarkasa alanları
   da dolu bir örnek raporla.
 - **Zil:**
-  - Personele: akşam 20:00'den sonra bugünün raporu girilmediyse hatırlatma.
+  - Personele: akşam 20:00'den sonra bugünün raporu girilmediyse hatırlatma. Saat şube başına (Şube ayarları › Çalışma
+    takvimi); LafPOS'lu kasada metin şubenin banka POS'unun fişini söyler (Şube ayarları › Banka POS ve yazarkasa;
+    belirtilmediyse Pavo). Kasa raporu e-postasının yazarkasa bölümü başlığında cihaz ve sicil no ([SUBE.md](SUBE.md) ›
+    Şube başına ayarlar).
   - Yöneticiye: dünün raporu girilmediyse, son raporda fark varsa, bugünün ya da dünün açılışı devirle tutmuyorsa
     ve son 7 günün bir raporu ertesi gün kasa alanı değiştirilerek düzeltildiyse bildirim (açılış uyarısı rapor
     yeniden gönderilince, düzeltme uyarısı yeni bir ertesi gün düzeltmesiyle yeniden okunmamış olur).

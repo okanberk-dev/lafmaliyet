@@ -19,6 +19,8 @@ import { dateTimeTR } from "@/lib/format";
 import { missedPingShown } from "@/lib/site-orders/follow";
 import { requireAdmin } from "@/server/auth/dal";
 import { appUrl } from "@/server/auth/tokens";
+import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { loadBackupInfo } from "@/server/backup/state";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
@@ -394,11 +396,14 @@ function fifoMonthOptions(counted: string[], start: string | null, current: stri
 async function SettingsContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, log, accounts] = await Promise.all([
+  const [model, log, accounts, scope, branches] = await Promise.all([
     loadModel(),
     db.select().from(s.activityLog).orderBy(desc(s.activityLog.at), desc(s.activityLog.id)).limit(60),
     // Kaydın hesabı: ad tek başına yanıltabiliyorsa (sonradan değişti ya da başka hesap aynı adı taşıyor) e-postası da
     db.select({ id: s.users.id, name: s.users.name, email: s.users.email }).from(s.users),
+    // Kasa kartları seçili şubeye göre (LafPOS, ModPOS; src/lib/pos-cards.ts)
+    currentBranchScope(),
+    listBranches(),
   ]);
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   const productCount = new Map<number, number>();
@@ -452,8 +457,10 @@ async function SettingsContent() {
           price: p.price,
           active: p.product.active,
         }))}
+        scope={scope}
+        branches={branches}
       />
-      <ModposCard />
+      <ModposCard scope={scope} branches={branches} />
       <PhotoReadingCard />
       <BackupCard />
     </SettingsLayout>

@@ -242,8 +242,8 @@ test("kaynak: saf modül sunucuya bağlı değil; sunucu modülü yalnız okur (
 test("kaynak: zilin föy satırı kasa modülünün yönetici yolunda; personelin dalında ModPOS yok", () => {
   const bell = read("src/server/bell/kasa.ts");
   const fn = bell.slice(bell.indexOf("async function cashIntegrityNotifications"), bell.indexOf("async function requestNotifications"));
-  assert.match(fn, /Promise\.all\(\[loadModposSheets\(oldest\.date, day\), loadLafposSwitchDay\(\)\]\)\.catch\(\(\) => null\),/);
-  assert.match(fn, /for \(const m of modpos \? modposMismatches\(reports, modpos\[0\], modpos\[1\]\) : \[\]\) \{/);
+  assert.match(fn, /Promise\.all\(\[loadModposSheets\(oldest\.date, day\), loadLafposSwitchDay\(\), lafposBranchId\(\)\]\)\.catch\(\(\) => null\),/);
+  assert.match(fn, /for \(const m of modpos \? modposMismatches\(reports, modpos\[0\], modpos\[1\], modpos\[2\]\) : \[\]\) \{/);
   // Birden çok kasa açıkken gövdede şubenin adı
   assert.match(fn, /out\.push\(\{ \.\.\.modposMismatchBell\(m, t\.named \? t\.name : undefined\), kind: "warning", timeLabel: timeLabel\(m\.report\.date\), unread: true, group: "kasa" \}\);/);
   // cashIntegrityNotifications yalnız yönetici dalında çağrılır
@@ -272,7 +272,7 @@ test("kaynak: anahtarın zil satırı yalnız yönetici dalında, Sistem başlı
   assert.match(digest, /pastCountDigestLines\(now, scope\), modposDigestLines\(now, scope\)\]\)/);
   // Şubeye bağlı alıcının e-postası: ModPOS föy farkı ve anahtar uyarısı yalnız o şubenin (şube kapsamı C P1-11)
   const mp = read("src/server/bell/modpos.ts");
-  assert.match(mp, /modposMismatches\(reports, sheets, switchDay\)\.filter\(\(m\) => inScope\(m\.report\.branchId\)\)/);
+  assert.match(mp, /modposMismatches\(reports, sheets, switchDay, lafposBranchOf\(branches\)\)\.filter\(\(m\) => inScope\(m\.report\.branchId\)\)/);
   assert.match(mp, /\.then\(\(all\) => all\.filter\(\(k\) => inScope\(k\.branchId\)\)\)/);
   assert.match(digest, /\.\.\.count\.lines, \.\.\.modpos\.lines\]/);
   assert.match(digest, /\{ title: "ModPOS API", lines, href: modpos\.href \?\? "\/panel\/kasa"/);

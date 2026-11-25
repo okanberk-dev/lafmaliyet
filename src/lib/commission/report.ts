@@ -184,15 +184,18 @@ export interface CommissionInput {
    * bulunan kısım kanalına (modposBrands), kalan "Marka belirsiz". "Tümü"de, LafPOS'un şubesinde ve geçiş günü yokken yok
    */
   modposScope?: { switchDay: string } | null;
+  /** LafPOS'un şubesi (kütükten türetilmiş, lafposBranchId); verilmezse geri düşüş değeri */
+  lafposBranch?: string;
 }
 
 /**
  * Komisyonun kapsama göre geçiş günleri (src/server/data/commission.ts loadCommissionInput): `lafpos` LafPOS'un gün
  * sonlarının okunduğu geçiş günü ("Tümü" ve LafPOS'un şubesi; scopeSwitchDay), `modpos` ModPOS'ta kalan şube seçiliyken
- * geçiş günü (CommissionInput.modposScope: o ayın başından itibaren Z tek kanala yığılmaz). Geçiş günü yoksa ikisi de null
+ * geçiş günü (CommissionInput.modposScope: o ayın başından itibaren Z tek kanala yığılmaz). Geçiş günü yoksa ikisi de null.
+ * `lafposBranch`: LafPOS'un şubesi (verilmezse geri düşüş değeri)
  */
-export function commissionScopeDays(switchDay: string | null, scope: string): { lafpos: string | null; modpos: string | null } {
-  const lafpos = scopeSwitchDay(switchDay, scope);
+export function commissionScopeDays(switchDay: string | null, scope: string, lafposBranch?: string): { lafpos: string | null; modpos: string | null } {
+  const lafpos = scopeSwitchDay(switchDay, scope, lafposBranch);
   return { lafpos, modpos: switchDay && !lafpos ? switchDay : null };
 }
 
@@ -415,6 +418,20 @@ export function effectiveSettings(settings: Partial<Record<ChannelKey, Partial<C
   return out;
 }
 
+/**
+ * İşletmenin hakedişinin ödeme süreleri: şubelerin (yemek kartı açık kasaların) süreleri kanal kanal, en kısası.
+ * Faturalar, hakediş ve işaretleri işletmenin; hangi şubenin sözleşmesine düştükleri bilinmez. Son gün en erken şubenin
+ * süresiyle hesaplanır: Komisyon & hakediş (seçici ne olursa olsun), zil, Bugün, sabah e-postası ve haftalık özet aynı
+ * son günü görür, kısa süreli şubenin gecikmesi kaçmaz. Hiç şube yoksa kaydedilmemiş sayılır (30 gün).
+ * Şubeler "aynı"yken (sahibin varsayılanı) değer tek şubeninkiyle aynıdır (docs/KOMISYON.md › Şube)
+ */
+export function businessPayDays(list: readonly (Partial<Record<ChannelKey, Partial<ChannelSettings>>> | null | undefined)[]): Record<ChannelKey, ChannelSettings> {
+  const all = (list.length ? list : [null]).map(effectiveSettings);
+  const out = {} as Record<ChannelKey, ChannelSettings>;
+  for (const c of CHANNELS) out[c.key] = { payDays: Math.min(...all.map((s) => s[c.key].payDays)) };
+  return out;
+}
+
 /** Kayıttaki kanal ayarı (integration_state › komisyon.ayar: { channels: { pluxee: { payDays: 30 } } }); bozuk ya da eski biçim yok sayılır */
 export function parseCommissionSettings(value: unknown): Partial<Record<ChannelKey, ChannelSettings>> {
   const channels = (value as { channels?: unknown } | null)?.channels;
@@ -547,7 +564,7 @@ const groupKindOf = (p: Pick<LafposPaymentIn, "channel" | "zField">): ChannelKin
  * belirler), kanalsız ya da tanınmayan kanallı tür Z alanına göre gruba ("loose"); nakit, kart ve diğer komisyona girmez.
  */
 export function lafposMonth(
-  input: Pick<CommissionInput, "lafpos" | "till" | "through" | "firstReport" | "closed" | "modposBrands" | "openedOn">,
+  input: Pick<CommissionInput, "lafpos" | "till" | "through" | "firstReport" | "closed" | "modposBrands" | "openedOn" | "lafposBranch">,
   month: string,
 ): LafposMonth | null {
   const S = input.lafpos?.switchDay ?? null;
@@ -562,8 +579,8 @@ export function lafposMonth(
   const shut = new Set(closedDays);
   const inMonth = input.till.filter((r) => r.date >= from && r.date <= end);
   // Gün sonunun yedeği yalnız LafPOS'un şubesinin raporu; ModPOS'ta kalan şubenin raporu ayrıca, kasa raporu kuralıyla
-  const reports = new Map(inMonth.filter((r) => isLafposBranch(r.branchId)).map((r) => [r.date, r]));
-  const modposRows = inMonth.filter((r) => !isLafposBranch(r.branchId));
+  const reports = new Map(inMonth.filter((r) => isLafposBranch(r.branchId, input.lafposBranch)).map((r) => [r.date, r]));
+  const modposRows = inMonth.filter((r) => !isLafposBranch(r.branchId, input.lafposBranch));
   const modpos = modposRows.length ? { meal: r2(modposRows.reduce((a, r) => a + r.mealCard, 0)), online: r2(modposRows.reduce((a, r) => a + r.online, 0)) } : null;
   const have = new Set(days.map((d) => d.date));
   const lastSeen = [input.through, days.at(-1)?.date ?? from, ...reports.keys()].reduce((a, b) => (b > a ? b : a));

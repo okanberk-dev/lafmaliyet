@@ -5,7 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { useActionTransition } from "@/components/ui/action-error";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input } from "@/components/ui/form";
 import { ToggleRow } from "@/components/ui/toggle-row";
@@ -111,22 +111,49 @@ export function ModposFetchForm({
  * Ay rakamına yedek anahtarı (docs/MODPOS-API.md › Ay rakamına yedek; varsayılan kapalı). Çevirmeden önce onay penceresi
  * ne değişeceğini söyler; kayıttan sonra eylemin refresh()'i kartı yeni değerle çizer.
  */
-export function ModposFallbackSwitch({ on }: { on: boolean }) {
+export function ModposFallbackSwitch({
+  on,
+  branchId,
+  branchName = null,
+  from = null,
+}: {
+  on: boolean;
+  /** Anahtarın şubesi (şube ayarı modpos) */
+  branchId: string;
+  /** Birden çok kasa açıkken başlıkta şubenin adı */
+  branchName?: string | null;
+  /** Şube ay yedeğinde başka şubenin ayarını kullanıyorsa o şube: anahtar burada değişmez, Şube ayarları'na gider */
+  from?: { id: string; name: string } | null;
+}) {
   const [confirm, setConfirm] = useState<boolean | null>(null);
   const [pending, start] = useActionTransition();
 
   const save = (next: boolean) =>
     start(async () => {
-      const res = await saveModposFallback(next);
+      const res = await saveModposFallback(next, branchId);
       setConfirm(null);
       if (!res.ok) return void toast.error(res.error);
       toast.success(res.data.on ? "Ay rakamına yedek açık" : "Ay rakamına yedek kapalı");
     });
 
+  if (from) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-2xl bg-surface px-4 py-3 text-sm ring-1 ring-line">
+        <span className="min-w-0 flex-1 basis-56 text-ink">
+          Ay rakamına yedek{branchName ? ` · ${branchName}` : ""}: <span className="font-medium">{on ? "açık" : "kapalı"}</span>
+          <span className="block text-[13px] text-ink-mute">{from.name} ile aynı; ayrı ayar için Şube ayarları&apos;ndan ayırın</span>
+        </span>
+        <ButtonLink href={`/panel/subeler/${encodeURIComponent(branchId)}#modpos`} variant="secondary" size="sm" className="max-sm:w-full">
+          Şube ayarları
+        </ButtonLink>
+      </div>
+    );
+  }
+
   return (
     <>
       <ToggleRow
-        title="Ay rakamına yedek"
+        title={branchName ? `Ay rakamına yedek · ${branchName}` : "Ay rakamına yedek"}
         description="Açıkken kasa raporu olmayan günün kapanmış ModPOS API verisi ayın cirosuna girer; rapor girilince rapor kazanır."
         label="ModPOS API ay rakamına yedek"
         onText="Açık"

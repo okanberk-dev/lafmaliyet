@@ -191,10 +191,13 @@ export function trHour(now: Date = new Date()): number {
   return Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Istanbul", hour: "2-digit", hourCycle: "h23" }).format(now));
 }
 
-/** Akşam (20:00 ve sonrası) ya da gece 05:00'ten önce: bugünün kasa raporu beklenir (zil ve Bugün aynı kurala bakar) */
-export function isCashEvening(now: Date = new Date()): boolean {
+/**
+ * Akşam (20:00 ve sonrası) ya da gece 05:00'ten önce: bugünün kasa raporu beklenir (zil ve Bugün aynı kurala bakar).
+ * `eveningHour`: şubenin saati (şube ayarı isletme.takvim, Çalışma takvimi; docs/SUBE.md › Şube başına ayarlar)
+ */
+export function isCashEvening(now: Date = new Date(), eveningHour: number = CASH_EVENING_HOUR): boolean {
   const hour = trHour(now);
-  return hour >= CASH_EVENING_HOUR || hour < DAY_TURN_HOUR;
+  return hour >= eveningHour || hour < DAY_TURN_HOUR;
 }
 
 /**

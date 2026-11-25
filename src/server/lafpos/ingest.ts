@@ -3,13 +3,13 @@ import "server-only";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 
 import { createPosMappingIndex } from "@/lib/calc/pos-paste";
-import { readLafposSwitchDay } from "@/lib/constants";
 import { parsePosDay, POS_DAY_MAX_BYTES, resolvePosLine, siteSlotKey, type PosDayPush } from "@/lib/lafpos/day";
-import { checkLafposRequest, lafposSecretFrom } from "@/lib/lafpos/request";
-import { branchSwitchDay, isLafposDay, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { checkLafposRequest } from "@/lib/lafpos/request";
+import { isLafposDay } from "@/lib/lafpos/switch";
 import { onLafposDaySaved } from "@/server/closed-days";
 import { schema as s, type DB } from "@/server/db";
 
+import { lafposBranchId, switchDayOf } from "./branch";
 import { detachLafposCashOuts, syncLafposCashOuts } from "./cash-moves";
 
 /**
@@ -19,10 +19,11 @@ import { detachLafposCashOuts, syncLafposCashOuts } from "./cash-moves";
  * (tests/lafpos-db.test.ts doğrudan çalıştırır).
  */
 
-/** LafPOS'un anahtarı (LAFPOS_SYNC_SECRET, en az 32 karakter); yoksa uçların hepsi 503 */
-export function lafposSecret(): string | null {
-  return lafposSecretFrom(process.env);
-}
+/**
+ * LafPOS'un anahtarı (Şube ayarları'nda saklanan, yoksa LAFPOS_SYNC_SECRET; en az 32 karakter); yoksa uçların hepsi 503
+ * (src/server/lafpos/branch.ts lafposSecret)
+ */
+export { lafposSecret } from "./branch";
 
 export interface EndpointResult {
   status: number;
@@ -46,17 +47,21 @@ export type StorePosDayResult = { ok: true; lines: number; matched: number; unma
  * önceki Z'yi ve günün satırlarını sessizce silmek yerine uç 409 döner. Ürün: önce sitenin kalemi ve boyu, yoksa POS
  * eşleştirmesi (resolvePosLine). Gün LafPOS günüyse ve satış varsa o günün kapalı işareti kalkar (onLafposDaySaved).
  * Sayılan LafPOS gününde kasa hareketleri "Kasadan çıkanlar"a satır satır yazılır (Faz 3; cash-moves.ts), aynı işlemde;
- * sayılmayan günde o günün LafPOS satırları LafPOS'tan ayrılır (detachLafposCashOuts "drop").
+ * sayılmayan günde o günün LafPOS satırları LafPOS'tan ayrılır (detachLafposCashOuts "drop"). `branch`: LafPOS'un
+ * şubesi (uç bir kez okur ve verir; verilmezse lafposBranchId).
  */
-export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date()): Promise<StorePosDayResult> {
+export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(), branch?: string): Promise<StorePosDayResult> {
+  // Gün sonunun şubesi: LafPOS'un kurulu olduğu şube (türetilmiş, src/server/lafpos/branch.ts; 21 Kasım 2026'dan beri
+  // Marina; Tuzla ModPOS'ta, geçiş günü de yalnız onun kasasınındır; docs/SUBE.md)
+  const branchId = branch ?? (await lafposBranchId(db));
   return db.transaction(async (tx) => {
     // Kilit ve Z denetimi (gün, şube) başına: başka şubenin aynı günkü kaydı (ör. Tuzla'daki eski deneme günü) bu şubenin
     // gün sonunu engellemez
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`lafpos-gun:${LAFPOS_BRANCH_ID}:${day.date}`}))`);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`lafpos-gun:${branchId}:${day.date}`}))`);
     const [stored] = await tx
       .select({ z: s.posDayReports.z, receivedAt: s.posDayReports.receivedAt })
       .from(s.posDayReports)
-      .where(and(eq(s.posDayReports.date, day.date), eq(s.posDayReports.branchId, LAFPOS_BRANCH_ID)))
+      .where(and(eq(s.posDayReports.date, day.date), eq(s.posDayReports.branchId, branchId)))
       .limit(1);
     if (stored && stored.z.zNo !== day.z.zNo) return { ok: false, zNo: stored.z.zNo };
     const linked = await tx
@@ -88,7 +93,7 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
         // LafPOS'un hizmet işareti ayrıca: Satışlar'daki eşleştirme bu satırı ürüne bağlayamaz (sonraki gün sonu geri alırdı)
         lafposService: l.isService,
         createdAt: now,
-        branchId: LAFPOS_BRANCH_ID,
+        branchId,
       };
     });
     // Pavo karşılaştırması (bankPos): alanı taşımayan gönderim (eski LafPOS ya da Pavo sonucundan önceki düzeltme)
@@ -117,11 +122,8 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
       // Çalışanların personel kimlikleri (LM-4b): bankPos gibi, alanı taşımayan gönderim kayıtlı listeyi silmez
       ...(day.workedStaffRefs !== undefined ? { workedStaff: day.workedStaffRefs } : {}),
     };
-    // Gün sonunun şubesi: LafPOS'un kurulu olduğu şube (LAFPOS_BRANCH_ID; 21 Kasım 2026'dan beri Marina; Tuzla ModPOS'ta, geçiş günü de
-    // yalnız onun kasasınındır; docs/SUBE.md).
     // Çakışma hedefi (gün, şube) olmalı: şema 0056'dan sonra tek başına `date` benzersiz DEĞİL ve Postgres
     // "no unique or exclusion constraint matching" diye düşer.
-    const branchId = LAFPOS_BRANCH_ID;
     await tx
       .insert(s.posDayReports)
       .values({ date: day.date, branchId, ...report })
@@ -137,15 +139,14 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
     // Aynı günün satışlı gün sonu daha önce geldiyse (düzeltme) o andan sonra konan işaret yöneticinin kanıtı görerek
     // verdiği karardır: yeniden gönderim onu kaldırmaz
     const soldSince = stored && (stored.z.receipts > 0 || stored.z.zTotal > 0) ? stored.receivedAt : null;
-    await onLafposDaySaved(tx, day.date, day.z, now, soldSince);
+    await onLafposDaySaved(tx, day.date, day.z, now, soldSince, branchId);
     // Kasa hareketleri satır satır "Kasadan çıkanlar"a (Faz 3; cash-moves.ts): yalnız sayılan LafPOS gününde ve gövde
     // listeyi taşıyorsa (eski LafPOS ya da okunamayan liste satırlara dokunmaz). Deneme günü (geçişten önce) yazmaz; gün
     // sayılan iken yazılmış satırları varsa (geçiş günü sonradan sonraya alındı) onları LafPOS'tan ayırır: LafPOS'un
     // açtığı satır kalkar, sahiplenilen elle satır ve tedarikçi ödemesine bağlı satır kalır (inceleme LM-3)
-    const [setting] = await tx.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
-    if (isLafposDay(day.date, branchSwitchDay(readLafposSwitchDay(setting?.value), branchId))) {
-      if (day.cashMoves !== undefined) await syncLafposCashOuts(tx, day.date, day.cashMoves);
-    } else await detachLafposCashOuts(tx, day.date, "drop");
+    if (isLafposDay(day.date, await switchDayOf(branchId, tx))) {
+      if (day.cashMoves !== undefined) await syncLafposCashOuts(tx, day.date, day.cashMoves, branchId);
+    } else await detachLafposCashOuts(tx, day.date, "drop", { branchId });
     const unmatched = rows
       .filter((r) => r.productId === null && !r.isService)
       .sort((a, b) => b.qty - a.qty || a.posName.localeCompare(b.posName, "tr"))
@@ -172,9 +173,11 @@ export async function receivePosDay(
   if (!check.ok) return { status: check.status, body: { error: check.error } };
   const parsed = parsePosDay(input.body, now);
   if (!parsed.ok) return { status: 400, body: { error: "invalid", field: parsed.field } };
-  // Kasa başka şubeye ayarlıysa (ör. Tuzla'nın kasası ModPOS'ta): gün yazılmaz, kasa ayarını düzeltene kadar bekler
-  if (parsed.data.sube && parsed.data.sube !== LAFPOS_BRANCH_ID) return { status: 409, body: { error: "wrong_branch", sube: parsed.data.sube, expected: LAFPOS_BRANCH_ID } };
-  const r = await storePosDay(db, parsed.data, now);
+  // Kasa başka şubeye ayarlıysa (ör. Tuzla'nın kasası ModPOS'ta): gün yazılmaz, kasa ayarını düzeltene kadar bekler.
+  // Beklenen şube kütükten (kasa kaynağı LafPOS olan şube; yoksa Marina, lafposBranchId)
+  const expected = await lafposBranchId(db);
+  if (parsed.data.sube && parsed.data.sube !== expected) return { status: 409, body: { error: "wrong_branch", sube: parsed.data.sube, expected } };
+  const r = await storePosDay(db, parsed.data, now, expected);
   if (!r.ok) return { status: 409, body: { error: "z_conflict", date: parsed.data.date, zNo: r.zNo } };
   return { status: 200, body: { ok: true, date: parsed.data.date, lines: r.lines, matched: r.matched, unmatched: r.unmatched } };
 }

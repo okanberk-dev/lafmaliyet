@@ -2,6 +2,7 @@ import "server-only";
 
 import { inArray } from "drizzle-orm";
 
+import { CALENDAR_GROUP, TILL_DEVICE_GROUP, tillDeviceGenitive, type TillDevice } from "@/lib/branch-settings/groups";
 import { ALL_BRANCHES, DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
 import {
   branchDayKey,
@@ -9,6 +10,7 @@ import {
   carryChecks,
   carryChecksByBranch,
   carryDiffText,
+  CASH_EVENING_HOUR,
   changesText,
   diffKind,
   diffText,
@@ -29,12 +31,14 @@ import { waitedText } from "@/lib/staff-requests";
 import type { PanelNotification } from "@/server/actions/notifications";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentBranchScope, currentTillBranch, withBranchScope } from "@/server/branch-scope";
+import { resolveForTills } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, previousCarryOverByBranch, reportedDays, type CashReportDTO } from "@/server/data/cash-reports";
 import { closedInfoRows, closedYesterday, pendingClosedRows } from "@/server/closed-days";
 import { cashOutBellRow } from "@/server/data/cash-out-requests";
 import { lafposNoCountDays, loadKasaLafposDays } from "@/server/data/lafpos-day";
 import { lafposPhotoMarks } from "@/server/lafpos/foto";
+import { lafposBranchId, loadBranchSwitchDay } from "@/server/lafpos/branch";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { getDb, schema as s } from "@/server/db";
 import { loadModposSheets } from "@/server/modpos/store";
@@ -159,9 +163,25 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
   return out;
 }
 
-/** Akşam hatırlatmasının gövdesi: günün kasası LafPOS'taysa "Günü kapat" ve Pavo fişi, değilse ModPOS'un Z'si */
-const eveningText = (lafpos: boolean) =>
-  lafpos ? "Kapanışta LafPOS'ta Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin fotoğrafını ekleyin" : "Kapanışta ModPOS'un Z raporunu ve kasayı girin";
+/**
+ * Akşam hatırlatmasının gövdesi: günün kasası LafPOS'taysa "Günü kapat" ve banka POS'unun fişi (şubenin cihazı, şube
+ * ayarı kasa.cihaz; belirtilmediyse Pavo), değilse ModPOS'un Z'si
+ */
+const eveningText = (lafpos: boolean, device: TillDevice | null = null) =>
+  lafpos
+    ? `Kapanışta LafPOS'ta Günü kapat'a basın; rapor LafPOS'tan gelir, sonra ${tillDeviceGenitive(device)} gün sonu fişinin fotoğrafını ekleyin`
+    : "Kapanışta ModPOS'un Z raporunu ve kasayı girin";
+
+/** Şubelerin kasa raporu saati (şube ayarı isletme.takvim, Çalışma takvimi) ve banka POS'u (kasa.cihaz): açık şube → değer */
+async function tillEvenings(): Promise<{ hourOf: (id: string) => number; deviceOf: (id: string) => TillDevice | null; earliest: number }> {
+  const [hours, devices] = await Promise.all([resolveForTills(CALENDAR_GROUP), resolveForTills(TILL_DEVICE_GROUP)]).catch(() => [new Map(), new Map()] as const);
+  const hourOf = (id: string) => hours.get(id)?.value.eveningHour ?? CASH_EVENING_HOUR;
+  return {
+    hourOf,
+    deviceOf: (id) => devices.get(id)?.value.device ?? null,
+    earliest: Math.min(CASH_EVENING_HOUR + 24, ...[...hours.values()].map((r) => r.value.eveningHour)),
+  };
+}
 
 /**
  * Personelin kasa satırları (kendi kasası): LafPOS gününde (Marina) gün sonu fotoğrafı bekleyen otomatik rapor (bugün ve
@@ -194,19 +214,22 @@ async function staffCashNotifications(now: Date, day: string, reports: CashRepor
     if (!noCount.has(d)) continue;
     out.push({ id: `kasa-sayim-${d}`, kind: "warning", title: "Kasa sayılmadı", body: STAFF_NO_COUNT_TEXT, timeLabel: label(d), unread: true, href: `/panel/kasa?gun=${d}`, group: "kasa" });
   }
-  if (!isCashEvening(now)) return out;
+  // Akşam şubenin saatinden (şube ayarı isletme.takvim; varsayılan 20:00): önce en erken saat, sonra kasa kasa
+  const evening = await tillEvenings();
+  if (!isCashEvening(now, Math.min(evening.earliest, evening.hourOf(till)))) return out;
   // Şubesiz personel "Tümü"de birden çok kasa açıkken: raporu girilmemiş her kasa ayrı satır (şube kapsamı C P2-10)
-  const perTill = await staffTillsWaiting(day);
+  const perTill = await staffTillsWaiting(day, now, evening);
   if (perTill) return [...out, ...perTill];
+  if (!isCashEvening(now, evening.hourOf(till))) return out;
   if (reports.some((r) => r.date === day) || noCount.has(day)) return out;
   // Günün kasası (denetim E-39): geçiş gününden itibaren LafPOS'ta "Günü kapat"; okunamazsa bugünkü gibi ModPOS. Geçiş
   // günü yalnız LafPOS'un şubesinin kasasınındır (branchSwitchDay): ModPOS'ta kalan şubenin personeli ModPOS'u okur
-  const lafpos = kasaName(day, branchSwitchDay(await loadLafposSwitchDay().catch(() => null), till)) === "LafPOS";
+  const lafpos = kasaName(day, await loadBranchSwitchDay(till).catch(() => null)) === "LafPOS";
   out.push({
     id: `kasa-bekliyor-${day}`,
     kind: "warning",
     title: "Bugünün kasa raporu bekliyor",
-    body: eveningText(lafpos),
+    body: eveningText(lafpos, evening.deviceOf(till)),
     timeLabel: "Bugün",
     unread: true,
     href: "/panel/kasa",
@@ -235,7 +258,7 @@ async function cashIntegrityNotifications(reports: CashReportDTO[], day: string,
     cashRevisionsFor(revised),
     proposedByForReports(revised),
     loadKasaLafposDays(oldest.date, day).catch(() => null),
-    Promise.all([loadModposSheets(oldest.date, day), loadLafposSwitchDay()]).catch(() => null),
+    Promise.all([loadModposSheets(oldest.date, day), loadLafposSwitchDay(), lafposBranchId()]).catch(() => null),
   ]);
   const yesterday = addDays(day, -1);
   const timeLabel = (date: string) => (date === day ? "Bugün" : date === yesterday ? "Dün" : dateTR(date));
@@ -293,7 +316,7 @@ async function cashIntegrityNotifications(reports: CashReportDTO[], day: string,
   }
   // ModPOS föyünden farklı yazılan (yalnız ModPOS günlerinde, kasası kapanmış föyle; föy hiç çekilmediyse satır yok).
   // Rapor kendi şubesinin föyüyle; birden çok kasa açıkken gövdede şubenin adı
-  for (const m of modpos ? modposMismatches(reports, modpos[0], modpos[1]) : []) {
+  for (const m of modpos ? modposMismatches(reports, modpos[0], modpos[1], modpos[2]) : []) {
     const t = tills.of(m.report.branchId);
     out.push({ ...modposMismatchBell(m, t.named ? t.name : undefined), kind: "warning", timeLabel: timeLabel(m.report.date), unread: true, group: "kasa" });
   }
@@ -442,20 +465,25 @@ async function requestNotifications(user: CurrentUser): Promise<PanelNotificatio
  * her kasa "Marina: Bugünün kasa raporu bekliyor", bağlantı o şubeyi seçer. Tek kasada ya da seçim bir kasaysa null
  * (bugünkü tek satır)
  */
-async function staffTillsWaiting(day: string): Promise<PanelNotification[] | null> {
+async function staffTillsWaiting(day: string, now: Date, evening: Awaited<ReturnType<typeof tillEvenings>>): Promise<PanelNotification[] | null> {
   const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
   const tills = tillBranches(branches);
   if (tills.length < 2 || tills.some((b) => b.id === scope)) return null;
-  const [reports, switchDay] = await Promise.all([withBranchScope(ALL_BRANCHES, () => cashReportsBetween(day, day)), loadLafposSwitchDay().catch(() => null)]);
+  const [reports, switchDay, lafposBranch] = await Promise.all([
+    withBranchScope(ALL_BRANCHES, () => cashReportsBetween(day, day)),
+    loadLafposSwitchDay().catch(() => null),
+    lafposBranchId().catch(() => undefined),
+  ]);
   return tills
-    .filter((b) => !reports.some((r) => r.branchId === b.id && r.date === day))
+    // Kasanın kendi saatinden sonra (şube ayarı isletme.takvim)
+    .filter((b) => isCashEvening(now, evening.hourOf(b.id)) && !reports.some((r) => r.branchId === b.id && r.date === day))
     .map((b) => {
-      const lafpos = kasaName(day, branchSwitchDay(switchDay, b.id)) === "LafPOS";
+      const lafpos = kasaName(day, branchSwitchDay(switchDay, b.id, lafposBranch)) === "LafPOS";
       return {
         id: `kasa-bekliyor-${day}-${b.id}`,
         kind: "warning" as const,
         title: `${b.name}: Bugünün kasa raporu bekliyor`,
-        body: eveningText(lafpos),
+        body: eveningText(lafpos, evening.deviceOf(b.id)),
         timeLabel: "Bugün",
         unread: true,
         href: `/panel/kasa?sube=${encodeURIComponent(b.id)}`,

@@ -8,6 +8,7 @@ import { isLafposBranch } from "@/lib/lafpos/switch";
 import { addDays, shiftMonth } from "@/lib/reminders";
 import { currentBranchWhere } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 
 /**
  * Süren ayın kasa raporu gelmemiş LafPOS günleri: `month` ayında `after` gününden sonraki günler sayılmaz, kasa raporu
@@ -139,18 +140,21 @@ export async function mergeWithLafpos(
     lastTillDay?: string | null;
     /** Kasa raporu olan günler (veri kümesi): LafPOS gün sonu gelmemiş raporlu gün Satışlar'da ve Genel bakış'ta uyarılır */
     reportDays?: readonly string[];
+    /** LafPOS'un şubesi (veri kümesi kütükten türetir); verilmezse lafposBranchId */
+    lafposBranch?: string;
   },
 ): Promise<MergedSales> {
   const S = input.switchDay;
-  const countFrom = lafposSalesCountFrom(S, input.salesLines, input.lafposCoverage);
+  const lafposBranch = input.lafposBranch ?? (await lafposBranchId(db));
+  const countFrom = lafposSalesCountFrom(S, input.salesLines, input.lafposCoverage, lafposBranch);
   if (S === null || countFrom === null) return { salesLines: input.salesLines, coverage: { ...input.coverage }, lafposSales: null };
   const running = input.today.slice(0, 7);
   const hold = input.lastTillDay?.slice(0, 7) === running ? { month: running, after: input.lastTillDay } : null;
   const lafpos = await loadLafposMonthSales(db, countFrom, input.toMonth ? `${input.toMonth}-31` : undefined, hold);
-  const merged = mergeSalesSources({ switchDay: S, salesLines: input.salesLines, coverage: input.coverage, lafposLines: lafpos.lines, lafposDays: lafpos.days });
+  const merged = mergeSalesSources({ switchDay: S, salesLines: input.salesLines, coverage: input.coverage, lafposLines: lafpos.lines, lafposDays: lafpos.days, lafposBranch });
   // Özet: geçiş ayından, verisi olan son aya (en az bu ay ve geçiş ayı) kadar her ay. Yalnız LafPOS'un şubesinin
   // listesiyle: ModPOS'ta kalan şubenin listesi ("Tümü") LafPOS'la çakışmaz, ondan uyarı çıkmaz
-  const own = input.salesLines.filter((l) => isLafposBranch(l.branchId));
+  const own = input.salesLines.filter((l) => isLafposBranch(l.branchId, lafposBranch));
   const switchMonth = S.slice(0, 7);
   const dataMonths = [...own.map((l) => l.month), ...lafpos.days.map((x) => x.month)].filter((m) => m >= switchMonth);
   const last = [switchMonth, input.today.slice(0, 7), ...dataMonths].reduce((a, b) => (b > a ? b : a));

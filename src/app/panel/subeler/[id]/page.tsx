@@ -9,18 +9,27 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
-import { BRANCH_FEATURES, type BranchFeature, branchFeatures, featureBranches } from "@/lib/branch-features";
-import { SHARED_FOR_NOW } from "@/lib/branch-settings/groups";
+import { BRANCH_FEATURES, type BranchFeature, branchFeatures, featureBranches, hasFeature } from "@/lib/branch-features";
+import { CALENDAR_GROUP, COMMISSION_GROUP, LAFPOS_GROUP, MODPOS_GROUP, SHARED_FOR_NOW, TILL_DEVICE_GROUP } from "@/lib/branch-settings/groups";
 import { BRANCH_ID_PATTERN, tillBranches } from "@/lib/branches";
+import { effectiveSettings } from "@/lib/commission/report";
+import { modposKeyProblem } from "@/lib/modpos/request";
+import { modposBranchIds, modposKeyEnv } from "@/lib/modpos/sube";
 import { requireAdmin } from "@/server/auth/dal";
+import { branchSettingView } from "@/server/branch-settings-view";
 import { listBranches } from "@/server/branches";
 import { cashSettingsCardData } from "@/server/cash/settings-card";
+import { lafposBranchId, lafposSecretState } from "@/server/lafpos/branch";
 import { isEmailConfigured } from "@/server/notify/resend";
 import { parasutLinkCardData } from "@/server/parasut/link-card";
 
 import { CashSettingsCard } from "../../kasa/cash-settings";
+import { ChannelSettingsCard } from "../../komisyonlar/channel-settings";
+import { CalendarCard } from "./calendar-card";
 import { BranchFeaturesCard } from "./features-card";
 import { ParasutLinkCard } from "./parasut-card";
+import { LafposBranchCard, LafposOldSecretCard, ModposBranchCard } from "./pos-card";
+import { TillDeviceCard } from "./till-device-card";
 
 export const metadata: Metadata = { title: "Şube ayarları" };
 
@@ -72,7 +81,21 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
       </>
     );
   }
-  const [cash, parasut] = await Promise.all([cashSettingsCardData(branch.id), parasutLinkCardData(branch.id)]);
+  // Kasa bağlantısı: LafPOS'un şubesinde (türetilmiş; kütükte kaynağı ModPOS görünse de geri düşüşle Marina) LafPOS kartı,
+  // ModPOS'tan çekilen şubede ModPOS kartı. Sunucu (saveLafposSecret) ve Ayarlar › LafPOS da aynı şubeye bakar
+  const lafposHere = branch.id === (await lafposBranchId());
+  const modposHere = modposBranchIds(branches).includes(branch.id);
+  const [cash, parasut, commission, calendar, device, modpos, lafpos, secret] = await Promise.all([
+    cashSettingsCardData(branch.id),
+    parasutLinkCardData(branch.id),
+    branchSettingView(COMMISSION_GROUP, branch.id),
+    branchSettingView(CALENDAR_GROUP, branch.id),
+    branchSettingView(TILL_DEVICE_GROUP, branch.id),
+    branchSettingView(MODPOS_GROUP, branch.id),
+    // Öbür şubede yalnız eski anahtarın durumu (kasa kaynağı başka şubeye geçtiyse silinebilsin)
+    branchSettingView(LAFPOS_GROUP, branch.id),
+    lafposHere ? lafposSecretState() : Promise.resolve(null),
+  ]);
   // Tek şubelik özelliğin (karaoke) öbür şubedeki sahibi: kartta anahtar kapalı, "Marina şubesinde açık"
   const heldBy: Partial<Record<BranchFeature, string>> = {};
   for (const f of BRANCH_FEATURES.filter((x) => x.single)) {
@@ -97,6 +120,34 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
         <BranchFeaturesCard branchId={branch.id} branchName={branch.name} features={branchFeatures(branch)} heldBy={heldBy} />
         <CashSettingsCard {...cash} emailConfigured={isEmailConfigured()} />
         <ParasutLinkCard data={parasut} />
+        {lafposHere && secret ? (
+          <LafposBranchCard
+            data={{
+              branchId: branch.id,
+              switchDay: lafpos.value.switchDay,
+              stored: lafpos.secrets.secret ?? "none",
+              source: secret.source,
+              problem: secret.problem,
+              sourceModpos: branch.posSource !== "lafpos",
+            }}
+          />
+        ) : (lafpos.secrets.secret ?? "none") !== "none" ? (
+          <LafposOldSecretCard branchId={branch.id} />
+        ) : null}
+        {/* Kasası ModPOS olmayan şubede de, başka şube bu şubenin ay yedeğini kullanıyorsa ("X ile aynı"; oradaki "X şubesinde
+            düzenle" buraya gelir) */}
+        {modposHere || modpos.link?.sharedWith.length ? (
+          <ModposBranchCard
+            data={{ view: modpos, keyEnv: modposKeyEnv(branch.id), keyProblem: modposHere ? modposKeyProblem(process.env, branch.id, modposBranchIds(branches)) : null, ownTill: modposHere }}
+          />
+        ) : null}
+        <TillDeviceCard view={device} lafpos={lafposHere} />
+        {/* Yemek kartı ve platformlar bu şubede kullanılıyorsa (şube özelliği yemek_karti) ya da başka şube bu şubenin
+            sürelerini kullanıyorsa (oradaki "X şubesinde düzenle" buraya gelir) */}
+        {hasFeature(branch, "yemek_karti") || commission.link?.sharedWith.length ? (
+          <ChannelSettingsCard settings={effectiveSettings(commission.value.channels)} branchId={branch.id} link={commission.link} anchor="komisyon" />
+        ) : null}
+        <CalendarCard view={calendar} />
         <Card>
           <CardHeader icon={<Layers />} title="Şimdilik bütün şubelerde ortak" description="Bu ayarlar şubeye göre değişmez; tek yerden düzenlenir." />
           <ul className="flex flex-wrap gap-2 px-5 pb-5">

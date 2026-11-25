@@ -5,13 +5,13 @@ import { and, count, eq, gte, inArray, lte } from "drizzle-orm";
 import { branchDayKey } from "@/lib/cash-report";
 
 import type { KasaEvidence } from "@/lib/cash-out-requests";
-import { readLafposSwitchDay } from "@/lib/constants";
 import { bankPosSchema, posDaySchema, posZSchema, type BankPos, type PosOffDevice, type PosOkc } from "@/lib/lafpos/day";
 import { lafposDayDetail, type LafposDayDetail } from "@/lib/lafpos/gun-ayrinti";
 import { lafposDayOf, type LafposDay } from "@/lib/lafpos/prefill";
-import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { currentTillBranch } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
+import { lafposBranchId, lafposSwitchDay, loadBranchSwitchDay } from "@/server/lafpos/branch";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 
 /**
@@ -31,8 +31,8 @@ export async function loadKasaLafposDay(date: string, db: DB = getDb(), branchId
  * ModPOS'ta kalan şubenin her günü ModPOS günüdür (branchSwitchDay; denetim 21 Kasım #5).
  */
 export async function loadKasaLafpos(date: string, db: DB = getDb(), branchId?: string): Promise<{ lafpos: boolean; day: LafposDay | null }> {
-  const [switchDay, sube] = await Promise.all([loadLafposSwitchDay(db), branchId ?? currentTillBranch()]);
-  if (!isLafposDay(date, branchSwitchDay(switchDay, sube))) return { lafpos: false, day: null };
+  const [switchDay, sube, lafposBranch] = await Promise.all([loadLafposSwitchDay(db), branchId ?? currentTillBranch(), lafposBranchId(db)]);
+  if (!isLafposDay(date, branchSwitchDay(switchDay, sube, lafposBranch))) return { lafpos: false, day: null };
   return { lafpos: true, day: await loadLafposDay(date, db, sube) };
 }
 
@@ -43,7 +43,7 @@ export async function loadKasaLafpos(date: string, db: DB = getDb(), branchId?: 
  */
 export async function lafposNoCountDays(dates: readonly string[], branchId: string, db: DB = getDb()): Promise<Set<string>> {
   const out = new Set<string>();
-  const switchDay = branchSwitchDay(await loadLafposSwitchDay(db), branchId);
+  const switchDay = await loadBranchSwitchDay(branchId, db);
   const days = dates.filter((d) => isLafposDay(d, switchDay));
   if (!days.length) return out;
   const [pos, reports] = await Promise.all([
@@ -76,8 +76,8 @@ type Reader = Pick<DB, "select">;
 export async function kasaEvidence(db: Reader, date: string, branchId?: string): Promise<KasaEvidence> {
   // Gün sonu şubenin kasasınındır: başka şubenin LafPOS günü bu kasanın kanıtı sayılmaz
   const sube = branchId ?? (await currentTillBranch());
-  const [setting] = await db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
-  if (!isLafposDay(date, branchSwitchDay(readLafposSwitchDay(setting?.value), sube))) return "modpos-z";
+  const [switchDay, lafposBranch] = await Promise.all([lafposSwitchDay(db), lafposBranchId(db)]);
+  if (!isLafposDay(date, branchSwitchDay(switchDay, sube, lafposBranch))) return "modpos-z";
   const [day] = await db
     .select({ date: s.posDayReports.date })
     .from(s.posDayReports)
@@ -107,10 +107,10 @@ export async function loadKasaLafposDays(
   db: DB = getDb(),
 ): Promise<(date: string, branchId?: string | null) => { lafpos: boolean; day: LafposDay | null }> {
   const out = new Map<string, LafposDay>();
-  const [switchDay, sube] = await Promise.all([loadLafposSwitchDay(db), currentTillBranch()]);
+  const [switchDay, sube, lafposBranch] = await Promise.all([loadLafposSwitchDay(db), currentTillBranch(), lafposBranchId(db)]);
   const of = (date: string, branchId?: string | null) => {
     const b = branchId ?? sube;
-    return isLafposDay(date, branchSwitchDay(switchDay, b)) ? { lafpos: true, day: out.get(branchDayKey(b, date)) ?? null } : { lafpos: false, day: null };
+    return isLafposDay(date, branchSwitchDay(switchDay, b, lafposBranch)) ? { lafpos: true, day: out.get(branchDayKey(b, date)) ?? null } : { lafpos: false, day: null };
   };
   if (switchDay === null || to < switchDay) return of;
   const start = from > switchDay ? from : switchDay;

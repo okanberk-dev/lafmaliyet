@@ -62,7 +62,7 @@ const settingsSchema = z.object({
   potMl: numKey.gt(0, "Pottan çıkan miktar 0'dan büyük olmalı"),
   dondurmaTop: numKey.min(0),
   tkGr: numKey.min(0),
-  acikGun: numKey.int().min(1).max(31),
+  // acikGun (ayda açık gün) şube başına: Şube ayarları › Çalışma takvimi (saveBranchCalendar); eski sekme gönderirse yok sayılır
   // Personel yemek kartı (Faz 5): günlük tutar ve ayda gün
   mealCardDaily: numKey.min(0).max(100_000),
   mealCardDays: numKey.int().min(1).max(31),
@@ -87,7 +87,6 @@ const SETTING_LOG: Record<string, [label: string, kind: "pct" | "num" | "bool" |
   potMl: ["Pottan çıkan (ml)", "num"],
   dondurmaTop: ["Dondurma topu (ml)", "num"],
   tkGr: ["Türk kahvesi (gr)", "num"],
-  acikGun: ["Açık gün", "num"],
   mealCardDaily: ["Yemek kartı günlük (₺)", "num"],
   mealCardDays: ["Yemek kartı ayda gün", "num"],
   fireExcludesPackaging: ["Fire ambalaja uygulanmasın", "bool"],

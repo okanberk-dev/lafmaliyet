@@ -230,7 +230,12 @@ sabah kapanmış föy kendiliğinden gelir. Kasası açılmamış (föysüz) gü
 
 ## 6. Ay rakamına yedek (isteğe bağlı, varsayılan kapalı)
 
-Ayarlar › ModPOS kartındaki anahtar (`settings › modposAyYedegi`). Açıkken kasa raporu (ve LafPOS gün sonu) olmayan
+Ayarlar › ModPOS kartındaki anahtar, **şube başına** (25 Kasım 2026; şube ayarı `modpos`, [SUBE.md](SUBE.md) › Şube
+başına ayarlar): kartın her şube bölümünde kendi anahtarı, Şube ayarları › ModPOS'ta da. Eski genel kayıt
+(`settings › modposAyYedegi`) Tuzla'nındır; öbür şubeler "Tuzla ile aynı" başlar (bugünkü tek anahtar hiçbir şey
+yapmadan bütün föylere uygulanır). "Aynı" kapatılınca o anki değer şubeye kopyalanır; bağlı şubenin anahtarı Ayarlar'da
+salt okunur ve Şube ayarları'na götürür. Föy yalnız anahtarı açık şubenin föyüyse aya girer; hiçbir şubede açık değilse
+föy tablosu hiç okunmaz (`modposFallbackBranches`, `src/server/modpos/fallback.ts`). Açıkken kasa raporu (ve LafPOS gün sonu) olmayan
 günün **kapanmış** föyü ayın açık gün, ciro, ödenmez ve kart payına girer (LafPOS'un yedek satırıyla aynı kural, G6):
 gün yine "rapor yok" sayılır, rapor girilince rapor kazanır. Marina'nın (LafPOS'un şubesi) föyü LafPOS'a geçiş
 gününden önceki günler için, Tuzla'nınki (ModPOS'ta kalan şube) her gün (`modposTillRows`, `branchSwitchDay`). İndirim

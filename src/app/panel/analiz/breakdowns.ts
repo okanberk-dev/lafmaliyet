@@ -193,7 +193,7 @@ function fixedRows({ b, s, extraFixed }: Sides): BreakdownRow[] {
 /** Brüt kâr oranı sıfır ya da eksiyse aylık ciro hesaplanamaz */
 const NO_RATIO = "Brüt kâr oranı sıfır ya da eksi: hesaplanamaz";
 
-const daysRow = (acikGun: number) => info("days", "Ayda açık gün", acikGun, `${num(acikGun)} gün`, "Ayarlar'daki açık gün sayısı");
+const daysRow = (acikGun: number) => info("days", "Ayda açık gün", acikGun, `${num(acikGun)} gün`, "Şube ayarları'ndaki açık gün sayısı (Çalışma takvimi)");
 
 /**
  * Aylık net kâr / zarar: brüt kâr (net satış − malzeme − komisyon), indirimler ve sabit giderler kalem kalem. Satırlar

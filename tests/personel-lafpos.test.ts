@@ -123,7 +123,7 @@ test("uç: imzalı, önbelleksiz, oturumsuz GET; çekirdek imza ve şubeyi okuma
   const route = read("src/app/api/panel/pos/personel/route.ts");
   assert.match(route, /export async function GET\(request: NextRequest\) \{\s*await connection\(\);/);
   assert.match(route, /"Cache-Control": "no-store"/);
-  assert.match(route, /servePosStaff\(\{\s*secret: lafposSecret\(\),/);
+  assert.match(route, /servePosStaff\(\{\s*secret: await lafposSecret\(\),/);
   assert.doesNotMatch(route, /getCurrentUser|requireUser|requireAdmin/, "oturumla açılmaz");
   const serve = read("src/server/lafpos/personel.ts");
   const handler = serve.slice(serve.indexOf("export async function servePosStaff"));

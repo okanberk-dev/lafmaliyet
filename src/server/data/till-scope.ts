@@ -5,11 +5,12 @@ import { and, eq, exists, gte, isNull, type SQL } from "drizzle-orm";
 import { ALL_BRANCHES, namedTill, tillBranches, type BranchRow } from "@/lib/branches";
 import { businessDate, DAY_TURN_HOUR } from "@/lib/cash-report";
 import { tillScope, type TillScope } from "@/lib/lafpos/kasa";
-import { branchSwitchDay } from "@/lib/lafpos/switch";
+import { branchSwitchDay, lafposBranchOf } from "@/lib/lafpos/switch";
 import { currentBranchScope, currentTillBranch } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { getDb, schema as s, type DB } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 
 /**
  * Bir şubenin bugünkü kasası (şube kapsamı A3, 24 Kasım 2026): kasada bekleyen fiyat şube başına tutulur (pos_stale),
@@ -21,9 +22,12 @@ export interface BranchTill extends TillScope {
   name: string | null;
 }
 
-/** Şubenin kasası, geçiş günü verilmiş (saf; işlem içinden ve döngüde tek okuma için) */
-export function branchTill(switchDay: string | null, branchId: string, now: Date, branches: readonly BranchRow[] = []): BranchTill {
-  return { ...tillScope(businessDate(now), branchSwitchDay(switchDay, branchId)), branchId, name: namedTill(branches, branchId)?.name ?? null };
+/**
+ * Şubenin kasası, geçiş günü verilmiş (saf; işlem içinden ve döngüde tek okuma için). `lafposBranch`: LafPOS'un şubesi
+ * (lafposBranchId); verilmezse `branches`'tan türetilir (lafposBranchOf; liste de yoksa geri düşüş değeri)
+ */
+export function branchTill(switchDay: string | null, branchId: string, now: Date, branches: readonly BranchRow[] = [], lafposBranch: string = lafposBranchOf(branches)): BranchTill {
+  return { ...tillScope(businessDate(now), branchSwitchDay(switchDay, branchId, lafposBranch)), branchId, name: namedTill(branches, branchId)?.name ?? null };
 }
 
 /**
@@ -34,8 +38,8 @@ export function branchTill(switchDay: string | null, branchId: string, now: Date
  * ModPOS'ta kalan şubede (Tuzla) liste ModPOS'a göredir (branchSwitchDay; denetim 21 Kasım #5)
  */
 export async function loadTillScope(db: Pick<DB, "select"> = getDb(), now: Date = new Date(), branchId?: string): Promise<BranchTill> {
-  const [switchDay, sube] = await Promise.all([lafposSwitchDayOf(db), branchId ?? currentTillBranch()]);
-  return branchTill(switchDay, sube, now);
+  const [switchDay, sube, lafposBranch] = await Promise.all([lafposSwitchDayOf(db), branchId ?? currentTillBranch(), lafposBranchId(db)]);
+  return branchTill(switchDay, sube, now, [], lafposBranch);
 }
 
 /**

@@ -122,6 +122,11 @@ export interface CashTill {
   noCount?: string[];
   /** Şubenin LafPOS'a geçiş günü (yalnız metinler); verilmezse DayFacts.lafposSwitch */
   lafposSwitch?: string | null;
+  /**
+   * Şubenin kasa raporunun beklendiği saat (şube ayarı isletme.takvim): "Tümü"de her kasanın akşamı kendi saatiyle (zil
+   * de kasa kasa bakar). Verilmezse DayFacts.eveningHour
+   */
+  eveningHour?: number;
 }
 
 /**
@@ -135,6 +140,11 @@ export const CASH_FLAGS = { carry: "Açılış devirle tutmuyor", late: "Ertesi 
 export interface DayFacts {
   role: "admin" | "staff";
   now: Date;
+  /**
+   * Kasa raporunun beklendiği saat (şube ayarı isletme.takvim; seçili şubenin, "Tümü"de varsayılan şubenin; "Tümü"de
+   * kasa satırları her kasanın kendi saatiyle, CashTill.eveningHour). Yoksa 20:00 (CASH_EVENING_HOUR)
+   */
+  eveningHour?: number;
   /**
    * LafPOS'a geçiş günü (iki rol; yalnız metinler: günün kasası "ModPOS" ya da "LafPOS", src/lib/lafpos/switch.ts
    * kasaName). Yoksa ya da null her metin bugünkü gibi ModPOS der
@@ -229,7 +239,7 @@ export interface DayContext {
   prevMonth: string;
 }
 
-export function dayContext(now: Date): DayContext {
+export function dayContext(now: Date, eveningHour: number = CASH_EVENING_HOUR): DayContext {
   const today = todayTR(now);
   const day = businessDate(now);
   const month = today.slice(0, 7);
@@ -237,7 +247,7 @@ export function dayContext(now: Date): DayContext {
     today,
     day,
     yesterday: addDays(day, -1),
-    evening: isCashEvening(now),
+    evening: isCashEvening(now, eveningHour),
     dayOfMonth: Number(today.slice(8, 10)),
     lastDay: addDays(today, 1).slice(0, 7) !== month,
     month,
@@ -482,7 +492,9 @@ const cashToday: Row = (f, c) => {
   const tills = tillsOf(f);
   if (tills) {
     return tills.flatMap((t) => {
-      const row = cashTodayOf(f, c, t);
+      // Her kasanın akşamı kendi saatiyle (zil gibi; bell/kasa.ts staffTillsWaiting)
+      const tc = t.eveningHour === undefined ? c : { ...c, evening: isCashEvening(f.now, t.eveningHour) };
+      const row = cashTodayOf(f, tc, t);
       return row ? [ofTill(row, t)] : [];
     });
   }
@@ -946,7 +958,7 @@ const STAFF_ROWS: Row[] = [
 
 /** Günün işleri, rolün sırasıyla */
 export function dayTasks(f: DayFacts): DayTask[] {
-  const c = dayContext(f.now);
+  const c = dayContext(f.now, f.eveningHour);
   return (f.role === "admin" ? ADMIN_ROWS : STAFF_ROWS).flatMap((row) => row(f, c) ?? []);
 }
 
@@ -1085,16 +1097,24 @@ export function cafeLines(
 
 // ---------------------------------------------------------------- Kendiliğinden yenileme
 
+/** Ekranın kasa raporu saatleri: seçili şubenin (ya da varsayılanın) ve "Tümü"de her kasanın kendi saati (nextRefreshAt) */
+export function eveningHours(f: Pick<DayFacts, "eveningHour" | "cash">): number[] {
+  return [f.eveningHour ?? CASH_EVENING_HOUR, ...(f.cash?.tills ?? []).flatMap((t) => (t.eveningHour === undefined ? [] : [t.eveningHour]))];
+}
+
 /** Satırların değiştiği saatler (Türkiye): gece yarısı (takvim günü), 05:00 (iş günü) ve 20:00 (akşam) */
 const REFRESH_HOURS = [0, DAY_TURN_HOUR, CASH_EVENING_HOUR];
 
 /**
- * Ekranın kendiliğinden yenileneceği an (epoch ms): sıradaki 00:00, 05:00 ya da 20:00 (Türkiye); `extra` verilirse
- * (ör. karaoke oturumunun başlaması / bitmesi, ikinci paketin kontrol listelerinin saatleri) ondan önceyse o.
+ * Ekranın kendiliğinden yenileneceği an (epoch ms): sıradaki 00:00, 05:00 ya da 20:00 (Türkiye; şubenin kasa raporu saati
+ * başkaysa o da, `eveningHour`; "Tümü"de kasaların saatleri); `extra` verilirse (ör. karaoke oturumunun başlaması / bitmesi, ikinci paketin kontrol
+ * listelerinin saatleri) ondan önceyse o.
  */
-export function nextRefreshAt(now: Date, extra: number[] = []): number {
+export function nextRefreshAt(now: Date, extra: number[] = [], eveningHour: number | readonly number[] = CASH_EVENING_HOUR): number {
   const t = now.getTime();
   const midnight = Math.floor((t + TR_OFFSET_MS) / DAY_MS) * DAY_MS - TR_OFFSET_MS;
-  const marks = [0, 1].flatMap((d) => REFRESH_HOURS.map((h) => midnight + d * DAY_MS + h * HOUR_MS));
+  // "Tümü"de kasaların saatleri ayrıysa hepsi (her kasanın akşam satırı kendi saatinde açılır)
+  const hours = [...new Set([...REFRESH_HOURS, ...(typeof eveningHour === "number" ? [eveningHour] : eveningHour)])];
+  const marks = [0, 1].flatMap((d) => hours.map((h) => midnight + d * DAY_MS + h * HOUR_MS));
   return Math.min(...[...marks, ...extra].filter((x) => Number.isFinite(x) && x > t));
 }

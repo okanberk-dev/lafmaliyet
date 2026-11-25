@@ -6,7 +6,6 @@ import { and, asc, eq, gte, sql } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
 import { productIkramRefusal } from "@/lib/lafpos/ikram";
-import { branchSwitchDay } from "@/lib/lafpos/switch";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
 import {
   LateWastePayload,
@@ -24,9 +23,9 @@ import {
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { currentPhysicalBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { closedDayRefusal } from "@/server/closed-days";
-import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { resolveWasteTarget } from "@/server/data/waste";
 import { schema as s, type DB } from "@/server/db";
+import { loadBranchSwitchDay } from "@/server/lafpos/branch";
 import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { UserError } from "@/server/user-error";
 
@@ -86,7 +85,7 @@ export async function wasteLock(db: Tx, date: string, branchId: string): Promise
  */
 async function lafposIkramRefusal(tx: Tx, data: Pick<WasteInput, "date" | "kind" | "productId">, branchId: string, now: Date, where: "zayi" | "onay"): Promise<string | null> {
   if (data.kind !== "ikram" || data.productId === null) return null;
-  const switchDay = branchSwitchDay(await lafposSwitchDayOf(tx), branchId);
+  const switchDay = await loadBranchSwitchDay(branchId, tx);
   if (!switchDay || data.date < switchDay) return null;
   const [day] = await tx
     .select({ date: s.posDayReports.date })

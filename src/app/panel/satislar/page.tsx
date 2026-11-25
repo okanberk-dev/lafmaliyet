@@ -17,7 +17,7 @@ import { lafposListPart, manualOf, MONTH_FIELDS } from "@/lib/cash-month";
 import { RECIPE_COST_NOTE } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { dayRangeTR, lafposMonthNotes, lafposMonthStatus, type LafposMonthNotes } from "@/lib/lafpos/sales";
-import { branchSwitchDay, isLafposBranch, monthSource } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposBranch, lafposBranchOf, monthSource } from "@/lib/lafpos/switch";
 import { addDays, dayAblativeTR, todayTR } from "@/lib/reminders";
 import { coverageFor } from "@/lib/sales-coverage";
 import { salesSourceOf, type SalesSourceKind } from "@/lib/sales-source";
@@ -147,8 +147,10 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   // ModPOS satırları "Yenisiyle değiştir"in onayı için
   const tills = channel ? [] : scope === ALL_BRANCHES ? tillBranches(branches) : branches.filter((b) => b.id === scope);
   const linesOf = (id: string) => sales.lines.filter((l) => !l.line.lafpos && (l.line.branchId ?? DEFAULT_BRANCH_ID) === id).length;
+  // LafPOS'un şubesi kütükten (lafposBranchOf): ayı LafPOS'tan gelen şube yalnız o
+  const lafposBranch = lafposBranchOf(branches);
   const writable = tills
-    .filter((b) => monthSource(month, branchSwitchDay(model.settings.lafposGecisGunu, b.id)) !== "lafpos")
+    .filter((b) => monthSource(month, branchSwitchDay(model.settings.lafposGecisGunu, b.id, lafposBranch)) !== "lafpos")
     .map((b) => ({ id: b.id, name: b.name, lines: linesOf(b.id) }));
   // "Ayı temizle"nin sileceği satırlar (pencerenin kapsamı; sunucu aynı sayımla karşılaştırır)
   const [{ n: clearCount }] = await getDb()
@@ -372,7 +374,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
               }
               // LafPOS günlerinin indirimi satırlarda zaten düşülmüş (engine listDiscounts); "Tümü"de yalnız formun şubesi LafPOS'unsa
               lafposList={
-                !formBranch && formInfo && (!info?.byBranch || isLafposBranch(writeId)) ? lafposListPart(formInfo, model.ds.lafposSales?.countFrom ?? null) : null
+                !formBranch && formInfo && (!info?.byBranch || isLafposBranch(writeId, lafposBranch)) ? lafposListPart(formInfo, model.ds.lafposSales?.countFrom ?? null) : null
               }
               currentMonth={model.currentMonth}
               recordedIkram={model.wasteSummary(month).ikram}

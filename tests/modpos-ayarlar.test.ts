@@ -213,12 +213,15 @@ test("eylemler: her dışa aktarım bir POST ucu, önce yönetici oturumu; zod; 
   assert.match(fetch, /refresh\(\);\s*if \(!out\.ok\) throw new UserError\(out\.error\);\s*const name = [^\n]+\n\s*await logActivity\(me, "ModPOS API verisi çekildi", peers\.length > 1 \? `\$\{name\} · \$\{out\.log\}` : out\.log\);/);
   const save = actions.slice(actions.indexOf("export async function saveModposFallback"));
   assert.match(save, /const on = z\.boolean\(\{ message: "Geçersiz değer" \}\)\.parse\(input\);/);
-  assert.match(save, /const change = await writeModposFallback\(getDb\(\), me, on\);\s*if \(change\) \{\s*await logActivity\(me, "Ayarlar", change\);\s*refresh\(\);/);
+  // Şube başına (şube ayarı modpos): kartın şubesi, işlem geçmişine şubenin adıyla
+  assert.match(save, /const change = await writeModposFallback\(getDb\(\), me, on, branchId\);\s*if \(change\) \{\s*const name = [^\n]+\n\s*await logActivity\(me, "Ayarlar", `\$\{name\} · \$\{change\}`\);\s*refresh\(\);/);
   // Yazım çekirdeği rolü yeniden denetler
   const admin = read("src/server/modpos/admin.ts");
   assert.match(admin, /^import "server-only";/m);
-  assert.match(admin, /export async function writeModposFallback\(db: DB, me: Actor, on: boolean\): Promise<string \| null> \{\s*if \(me\.role !== "admin"\) throw new UserError\(MODPOS_ADMIN_ONLY\);/);
-  assert.match(admin, /\.for\("update"\)/);
+  assert.match(admin, /export async function writeModposFallback\(db: DB, me: Actor, on: boolean, branchId: string = DEFAULT_BRANCH_ID\): Promise<string \| null> \{\s*if \(me\.role !== "admin"\) throw new UserError\(MODPOS_ADMIN_ONLY\);/);
+  // Grup kilidi altında önceki değer, yazım şube ayarına (putBranchSetting bağlı şubeye yazmaz)
+  assert.match(admin, /await lockGroup\(tx, MODPOS_GROUP\.id\);/);
+  assert.match(admin, /await putBranchSetting\(tx, MODPOS_GROUP, branchId, \{ monthFallback: on \}, me\.name\);/);
 });
 
 test("sayfa açılışı ModPOS'a istek göndermez: kart ve yükleyici yalnız okur, after() yok (günde 2 hak)", () => {
@@ -236,9 +239,11 @@ test("sayfa açılışı ModPOS'a istek göndermez: kart ve yükleyici yalnız o
   }
   assert.match(read("src/server/modpos/status.ts"), /^import "server-only";/m);
   // Kart LafPOS kartının deseninde: okunamazsa yedek kart, bölüm kimliği modpos
-  // Her ModPOS şubesinin kendi bölümü (yoksa Tuzla): kendi anahtarı, hakkı ve günleriyle
-  assert.match(card, /const ids = modposBranchIds\(branches\);/);
-  assert.match(card, /\(ids\.length \? ids : \[DEFAULT_BRANCH_ID\]\)\.map\(\(id\) => loadModposCard\(undefined, now, process\.env, id, branches\)\)/);
+  // Her ModPOS şubesinin kendi bölümü (yoksa Tuzla; src/lib/pos-cards.ts modposCardView): kendi anahtarı, hakkı ve
+  // günleriyle; tek şube seçiliyken yalnız onunki, kasası ModPOS olmayan şubede "Bu şubede kullanılmıyor"
+  assert.match(card, /const view = modposCardView\(scope, branches\);/);
+  assert.match(card, /if \(view\.kind === "elsewhere"\) return <PosElsewhereCard id="modpos"/);
+  assert.match(card, /view\.ids\.map\(\(id\) => loadModposCard\(undefined, now, process\.env, id, branches\)\)/);
   assert.match(card, /\}\)\(\)\.catch\(\(e\) => \{/);
   assert.match(card, /<Notice tone="bad" size="sm" title="ModPOS API'nin durumu okunamadı; sayfayı yenileyin" \/>/);
   assert.equal((card.match(/<SectionCard\s+id="modpos"/g) ?? []).length, 2);
@@ -248,7 +253,8 @@ test("sayfa açılışı ModPOS'a istek göndermez: kart ve yükleyici yalnız o
   // Birden çok şubede günün bağlantısı şubeyi de taşır (?sube= panelin seçimine geçer)
   assert.match(card, /href=\{`\/panel\/kasa\?gun=\$\{d\.day\}\$\{sube\}`\}/);
   assert.match(card, /const sube = branch \? `&sube=\$\{branch\.id\}` : "";/);
-  assert.match(card, /<ModposFallbackSwitch on=\{data\.cards\[0\]\.fallback\} \/>/);
+  // Ay yedeği şube başına: her bölümün kendi anahtarı (bağlıysa salt okunur, Şube ayarları'na gider)
+  assert.match(card, /<ModposFallbackSwitch on=\{c\.fallback\} branchId=\{c\.branchId\} branchName=\{many \? nameOf\(c\.branchId\) : null\} from=\{c\.fallbackFrom \?\? null\} \/>/);
 });
 
 test("istemci: eylemler useActionTransition'la, onay penceresi tone=\"primary\" ve kalan hakla; düğme kapalıyken nedeni", () => {
@@ -260,7 +266,7 @@ test("istemci: eylemler useActionTransition'la, onay penceresi tone=\"primary\" 
   assert.match(client, /start\(\s*async \(\) => \{\s*try \{\s*const res = await fetchModposDay\(day, branchId\);/);
   // Yanıt kaybolursa çekim yapılmış olabilir: pencere kapanır, "Yenile" önerilir (maybeSaved)
   assert.match(client, /\} finally \{\s*setOpen\(false\);\s*\}\s*\},\s*\{ maybeSaved: true \},/);
-  assert.match(client, /start\(async \(\) => \{\s*const res = await saveModposFallback\(next\);/);
+  assert.match(client, /start\(async \(\) => \{\s*const res = await saveModposFallback\(next, branchId\);/);
   assert.equal((client.match(/<ConfirmDialog[\s\S]*?tone="primary"/g) ?? []).length, 2);
   assert.match(client, /modposFetchConfirmLines\(\{ day, today, left, stored: day in stored \? stored\[day\] : null, now: new Date\(\) \}\)/);
   assert.match(client, /disabled=\{!canFetch \|\| pending \|\| problem !== null\}/);
@@ -276,7 +282,7 @@ test("bölüm listesi, sayfa ve arama: ModPOS LafPOS'tan sonra; sayfanın sunucu
   const page = read("src/app/panel/ayarlar/page.tsx");
   assert.match(page, /\nexport const maxDuration = 60;\n/);
   const lafpos = page.indexOf("<LafposCard");
-  const modpos = page.indexOf("<ModposCard />");
+  const modpos = page.indexOf("<ModposCard scope={scope} branches={branches} />");
   assert.ok(lafpos > page.indexOf("await requireAdmin();") && modpos > lafpos && modpos < page.indexOf("<PhotoReadingCard />"));
   const settings = NAV_FOOTER.find((i) => i.href === "/panel/ayarlar");
   assert.match(settings?.keywords ?? "", /modpos api kasa föyü/);

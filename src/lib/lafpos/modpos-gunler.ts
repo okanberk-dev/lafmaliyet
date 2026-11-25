@@ -160,13 +160,15 @@ export type ModposDaysCheck = { ok: true; sube: string } | { ok: false; status: 
  * İsteğin denetimi: anahtar (503), imza (401; yol ve sıralı sorgu imzanın içinde, gövdesiz GET), sonra şube: yoksa ya
  * da bozuksa 400 `{ error: "invalid", field: "sube" }`, LafPOS'un şubesi değilse 409 `{ error: "wrong_branch", sube,
  * expected }` (gün sonunun kuralı: başka şubeye ayarlı kasa başka şubenin rakamını almaz). İmzasız istek şubeyi öğrenmez.
+ * `expected`: LafPOS'un şubesi (sunucu kütükten okur, lafposBranchId); verilmezse geri düşüş değeri
  */
-export function checkModposDaysRequest(input: { secret: string | null; url: URL; timestamp: string | null; signature: string | null; now?: number }): ModposDaysCheck {
+export function checkModposDaysRequest(input: { secret: string | null; url: URL; timestamp: string | null; signature: string | null; now?: number; expected?: string }): ModposDaysCheck {
   const check = checkLafposRequest({ ...input, method: "GET", body: "", maxBytes: 0 });
   if (!check.ok) return { ok: false, status: check.status, body: { error: check.error } };
   const sube = modposSube(input.url);
   if (sube === null) return { ok: false, status: 400, body: { error: "invalid", field: "sube" } };
-  if (sube !== LAFPOS_BRANCH_ID) return { ok: false, status: 409, body: { error: "wrong_branch", sube, expected: LAFPOS_BRANCH_ID } };
+  const expected = input.expected ?? LAFPOS_BRANCH_ID;
+  if (sube !== expected) return { ok: false, status: 409, body: { error: "wrong_branch", sube, expected } };
   return { ok: true, sube };
 }
 

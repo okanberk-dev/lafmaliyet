@@ -206,7 +206,8 @@ export function tillOpenedOn(branch: { id: string; openedOn: string | null } | n
  *
  * `lafposFrom`: LafPOS satışlarının sayıldığı ilk gün (Dataset.lafposSales.countFrom; geçiş günü yoksa null). Verilirse
  * ayın `lafposDiscounts`'u LafPOS'un şubesinin o günden itibarenki satırlarının indirimidir: LafPOS'un satırları
- * indirimden sonradır, bu indirim satış listesinden bir daha düşülmez (listDiscountOf; hesap sözleşmesi §11)
+ * indirimden sonradır, bu indirim satış listesinden bir daha düşülmez (listDiscountOf; hesap sözleşmesi §11).
+ * `lafposBranch`: LafPOS'un şubesi (kütükten türetilmiş, Dataset.lafposBranch); verilmezse geri düşüş değeri
  */
 export function tillMonths(
   rows: TillRow[],
@@ -218,6 +219,7 @@ export function tillMonths(
   modposFrom?: string | null,
   openedOn?: TillOpening,
   lafposFrom?: string | null,
+  lafposBranch?: string,
 ): TillMonth[] {
   const waiting = pendingLate ? new Set(pendingLate) : null;
   // Kapalı işaretli günler eksik sayılmaz, ayrı yazılır (raporu olan gün zaten eksik değil)
@@ -287,7 +289,7 @@ export function tillMonths(
     const posRevenue = r2(zTotalSum - offInPos);
     const disc = list.filter((r) => r.discounts != null);
     // LafPOS'un satırlarında zaten düşülmüş indirim: LafPOS'un şubesinin satış sayılan günleri (rapor ya da gün sonu)
-    const lafposDisc = lafposFrom ? disc.filter((r) => isLafposBranch(r.branchId) && r.date >= lafposFrom) : [];
+    const lafposDisc = lafposFrom ? disc.filter((r) => isLafposBranch(r.branchId, lafposBranch) && r.date >= lafposFrom) : [];
     const off = list.filter((r) => r.offRevenue != null);
     // Kart + yemek kartı (kartlı satış oranı: satış raporunun tahmini komisyonu); online ve diğer komisyonsuz. Banka POS
     // komisyonu yalnız banka kartından (yemek kartının komisyonu kendi faturasıyla; denetim E-43). Yanlış yazılmış bir
@@ -298,7 +300,7 @@ export function tillMonths(
     const bankByBranch = branched ? Object.fromEntries([...new Set(list.map(branchOf))].map((b) => [b, sum(list.filter((r) => branchOf(r) === b), (r) => r.card)])) : null;
     const share = (v: number) => (posRevenue > 0 ? Math.min(1, Math.round((v / posRevenue) * 10_000) / 10_000) : null);
     // LafPOS'un şubesinin günleri: KDV gün gün (dayVatOf); öteki şubelerin satırları ay toplamıyla
-    const lafposRows = branched ? list.filter((r) => isLafposBranch(r.branchId)) : [];
+    const lafposRows = branched ? list.filter((r) => isLafposBranch(r.branchId, lafposBranch)) : [];
     return {
       month,
       from,
@@ -535,12 +537,13 @@ export function listDiscount(discount: number, lafpos: LafposListPart | null): n
 
 /**
  * Ayın satış listesinden düşülecek indirimi (Tutarlılık, uyarılar, Genel bakış'ın reçeteye göre kârı; −90 ₺ hatası,
- * 23 Kasım 2026). "Tümü"de şube şube: yalnız LafPOS'un şubesinin LafPOS günleri satırlarda indirimli
+ * 23 Kasım 2026). "Tümü"de şube şube: yalnız LafPOS'un şubesinin LafPOS günleri satırlarda indirimli. `lafposBranch`:
+ * LafPOS'un şubesi (Dataset.lafposBranch; verilmezse geri düşüş değeri)
  */
-export function listDiscountOf(info: Month | undefined, lafposFrom: string | null): number {
+export function listDiscountOf(info: Month | undefined, lafposFrom: string | null, lafposBranch?: string): number {
   if (!info) return 0;
   if (info.byBranch) {
-    const parts = Object.entries(info.byBranch).map(([id, m]) => listDiscount(m.discounts, lafposListPart(m, isLafposBranch(id) ? lafposFrom : null)));
+    const parts = Object.entries(info.byBranch).map(([id, m]) => listDiscount(m.discounts, lafposListPart(m, isLafposBranch(id, lafposBranch) ? lafposFrom : null)));
     return r2(parts.reduce((a, v) => a + v, 0));
   }
   return listDiscount(info.discounts, lafposListPart(info, lafposFrom));

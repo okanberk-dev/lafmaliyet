@@ -1086,7 +1086,7 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
   assert.match(admin, /cashFlagsByBranch\(reports, beforeOf, revisions, viewer, modpos\)/);
   assert.match(
     admin,
-    /\.then\(\(\[sheets, switchDay\]\) => \(tills \? modposMismatchBranchDays\(reports, sheets, switchDay\) : modposMismatchDates\(reports, sheets, switchDay\)\)\)\s+\.catch\(\(\) => new Set<string>\(\)\)/,
+    /\.then\(\(\[sheets, switchDay, lafposBranch\]\) =>\s+tills \? modposMismatchBranchDays\(reports, sheets, switchDay, lafposBranch\) : modposMismatchDates\(reports, sheets, switchDay, lafposBranch\),\s+\)\s+\.catch\(\(\) => new Set<string>\(\)\)/,
   );
 });
 
@@ -1144,7 +1144,12 @@ test("kaynak: zil Bugün ile aynı akşam kuralına bakar; Bugün canlı veride 
   const bell = read("src/server/bell/kasa.ts");
   assert.match(read("src/server/actions/notifications.ts"), /kasaBell\(user\)\.catch\(\(\) => \[\]\)/);
   // Şubesiz personel "Tümü"de birden çok kasa açıkken kasa başına satır (şube kapsamı C P2-10), yoksa tek satır
-  assert.match(bell, /if \(!isCashEvening\(now\)\) return out;\s+\/\/[^\n]*\n\s+const perTill = await staffTillsWaiting\(day\);\s+if \(perTill\) return \[\.\.\.out, \.\.\.perTill\];\s+if \(reports\.some\(\(r\) => r\.date === day\) \|\| noCount\.has\(day\)\) return out;/);
+  // Akşam şubenin saatinden (şube ayarı isletme.takvim, Çalışma takvimi; varsayılan 20:00)
+  assert.match(
+    bell,
+    /if \(!isCashEvening\(now, Math\.min\(evening\.earliest, evening\.hourOf\(till\)\)\)\) return out;\s+\/\/[^\n]*\n\s+const perTill = await staffTillsWaiting\(day, now, evening\);\s+if \(perTill\) return \[\.\.\.out, \.\.\.perTill\];\s+if \(!isCashEvening\(now, evening\.hourOf\(till\)\)\) return out;\s+if \(reports\.some\(\(r\) => r\.date === day\) \|\| noCount\.has\(day\)\) return out;/,
+  );
+  assert.match(bell, /\.filter\(\(b\) => isCashEvening\(now, evening\.hourOf\(b\.id\)\) && !reports\.some/);
   assert.doesNotMatch(bell, /hour < 20/);
   // Bildirim gelince Bugün yenilenir (kural src/lib/live-poll.ts › refreshesScreen)
   assert.match(read("src/components/panel/live/alert-center.tsx"), /if \(refreshesScreen\(pathRef\.current, kind\)\) router\.refresh\(\)/);

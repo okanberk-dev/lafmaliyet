@@ -1078,7 +1078,7 @@ test("sorgunun satırları: fatura başına bir kayıt, kalemleri sırasıyla; k
 test("kaynak: ekran ve eylemler yalnız yönetici; zil yalnız yöneticide, hafif yoldan; okuyan yol yazmaz", () => {
   const page = read("src/app/panel/komisyonlar/page.tsx");
   // İşletmenin raporu ve (şube seçiliyken) şubenin satışı (23 Kasım 2026; tests/hesap-uyumu-faz1.test.ts)
-  assert.match(page, /await requireAdmin\(\);\s*const sp = await searchParams;[\s\S]*?featureInScope\("yemek_karti", view\.scope, view\.branches\)[\s\S]*?\n(\s*\/\/[^\n]*\n)?\s*const \{ all: report, branch, scope \} = await loadCommissionReports\(\);/);
+  assert.match(page, /await requireAdmin\(\);\s*const sp = await searchParams;[\s\S]*?featureInScope\("yemek_karti", view\.scope, view\.branches\)[\s\S]*?[\s\S]*?const \[\{ all: report, branch, scope \}, channelView\] = await Promise\.all\(\[loadCommissionReports\(\), branchSettingView\(COMMISSION_GROUP, settingsBranch\)\]\);/);
 
   const actions = read("src/server/actions/commission.ts");
   assert.ok(actions.startsWith('"use server";'));

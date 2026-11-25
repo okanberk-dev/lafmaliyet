@@ -390,7 +390,7 @@ const workedStaffRefsSchema = z.array(z.string().regex(STAFF_REF)).max(STAFF_REF
 export const posDaySchema = z.object({
   version: z.literal(LAFPOS_VERSION),
   source: z.literal("lafpos"),
-  /** Kasanın şubesi (LafPOS › Ayarlar › Şube); eski kasa göndermez. LAFPOS_BRANCH_ID'den başkaysa gün reddedilir */
+  /** Kasanın şubesi (LafPOS › Ayarlar › Şube); eski kasa göndermez. LafPOS'un şubesinden (kütükten, lafposBranchId) başkaysa gün reddedilir */
   sube: z.string().regex(/^[a-z][a-z0-9-]{1,23}$/).optional(),
   date: z
     .string()

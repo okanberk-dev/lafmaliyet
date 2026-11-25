@@ -1,4 +1,4 @@
-import { ALL_BRANCHES, DEFAULT_BRANCH_ID } from "@/lib/branches";
+import { ALL_BRANCHES, type BranchRow, DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { isCalendarDay, LAFPOS_SWITCH_MIN, readLafposSwitchDay } from "@/lib/constants";
 import { addDays, dayMonthTR, daysBetween, shiftMonth } from "@/lib/reminders";
 
@@ -36,29 +36,78 @@ export function isLafposDay(day: string, switchDay: string | null): boolean {
 }
 
 /**
- * LafPOS'un kurulu olduğu şube (docs/LAFPOS.md › Şubeler): **Marina** (sahibin kararı, 21 Kasım 2026: önce Marina
- * LafPOS'a geçer, Tuzla ModPOS'ta kalır). LafPOS gün sonunu yalnız bu şubeye yazar (src/server/lafpos/ingest.ts; kasanın
- * gönderdiği `sube` buna eşit değilse gün reddedilir) ve geçiş günü yalnız bu şubenin kasasınındır. Öteki şubelerin
- * kasası ModPOS kalır: föyü çekilir, Kasa raporu ModPOS'a göre açılır, ürün listesi sayılır, panelde girilen ürün ikramı
- * sayılır. Marina'da ModPOS bir daha kullanılmaz (sahip, 23 Kasım 2026): Marina'nın ModPOS dönemi yalnız 13–21 Kasım
- * 2026'dır, geçiş gününden önce sayılan odur, sonra yalnız LafPOS'un günü sayılır. Föyün yedek çekimi sürerse
- * (şubenin kasa kaynağı Ayarlar › Şubeler'de hâlâ ModPOS) geçiş gününden sonraki günü saklanır ama hiçbir hesaba girmez.
- * Şubesi verilmeyen eski kayıtlar Tuzla'nındır.
+ * LafPOS'un kurulu olduğu şubenin GERİ DÜŞÜŞ değeri (docs/LAFPOS.md › Şubeler): **Marina** (sahibin kararı, 21 Kasım
+ * 2026: önce Marina LafPOS'a geçer, Tuzla ModPOS'ta kalır). Şube artık kütükten türetilir (`lafposBranchOf`: kasa
+ * kaynağı LafPOS olan etkin fiziksel şube; şube kapsamı B6); kütükte LafPOS kasalı şube yoksa (bugünkü kurulumda Marina'nın
+ * kasa kaynağı hâlâ ModPOS olabilir, föyün yedek çekimi için) bu değer kullanılır, yani davranış bugünküyle aynı kalır.
+ * Sunucu türetilmiş değeri `lafposBranchId` (src/server/lafpos/branch.ts) ile okur; saf yardımcılar onu son parametre
+ * olarak alır, verilmezse bu sabite düşer.
+ *
+ * LafPOS gün sonunu yalnız bu şubeye yazar (src/server/lafpos/ingest.ts; kasanın gönderdiği `sube` buna eşit değilse
+ * gün reddedilir) ve geçiş günü yalnız bu şubenin kasasınındır. Öteki şubelerin kasası ModPOS kalır: föyü çekilir, Kasa
+ * raporu ModPOS'a göre açılır, ürün listesi sayılır, panelde girilen ürün ikramı sayılır. Marina'da ModPOS bir daha
+ * kullanılmaz (sahip, 23 Kasım 2026): Marina'nın ModPOS dönemi yalnız 13–21 Kasım 2026'dır, geçiş gününden önce sayılan
+ * odur, sonra yalnız LafPOS'un günü sayılır. Föyün yedek çekimi sürerse (şubenin kasa kaynağı Ayarlar › Şubeler'de hâlâ
+ * ModPOS) geçiş gününden sonraki günü saklanır ama hiçbir hesaba girmez. Şubesi verilmeyen eski kayıtlar Tuzla'nındır.
  */
 export const LAFPOS_BRANCH_ID = "marina";
 
-/** Kaydın şubesi LafPOS'un şubesi mi (şubesi verilmeyen kayıt Tuzla'nındır, şubeler öncesi) */
-export function isLafposBranch(branchId: string | null | undefined): boolean {
-  return (branchId ?? DEFAULT_BRANCH_ID) === LAFPOS_BRANCH_ID;
+/** LafPOS'un şubesini türetmek için kütüğün gereken alanları */
+export type LafposBranchRow = Pick<BranchRow, "id" | "kind" | "posSource" | "active">;
+
+/**
+ * LafPOS'un şubesi kütükten (şube kapsamı B6): kasa kaynağı LafPOS olan etkin fiziksel şube. Hiçbiri yoksa geri düşüş
+ * `LAFPOS_BRANCH_ID` (bugünkü davranış: kütükte Marina'nın kaynağı ModPOS olsa da LafPOS'un şubesi Marina). LafPOS bugün
+ * tek şubede çalışır (`lafposSourceError` ikincisini kaydettirmez); yine de birden çoksa geri düşüş değeri aralarındaysa
+ * o, değilse kütüğün sırasıyla ilki: değer hiçbir zaman iki şube arasında gidip gelmez.
+ */
+export function lafposBranchOf(branches: readonly LafposBranchRow[]): string {
+  const ids = branches.filter((b) => b.active && b.kind === "fiziksel" && b.posSource === "lafpos").map((b) => b.id);
+  if (!ids.length || ids.includes(LAFPOS_BRANCH_ID)) return LAFPOS_BRANCH_ID;
+  return ids[0];
+}
+
+/**
+ * Kasa kaynağını LafPOS yapmanın kuralı; sorun yoksa null. LafPOS bugün tek şubenin kasası olabilir: gün sonu, geçiş
+ * günü, kasadan çıkan ve personel bağı tek şubeye göre kurulu (docs/SUBE.md › Sırada ne var). LafPOS'un bugünkü şubesi
+ * (`lafposBranchOf`; kütükte kaynağı ModPOS görünse de geri düşüşle Marina) başka bir açık fiziksel şubeyse ikincisi
+ * kaydedilmez: kaydedilseydi LafPOS'un şubesi sessizce taşınır, eski şubenin LafPOS günleri ve geçiş günü hesaptan
+ * düşer, kasası 409 alırdı. Kaynağı açıkça LafPOS olan şube her zaman tutar; yalnız geri düşüşle tutan şube LafPOS'u
+ * kullanmıyorsa (`implicitHolderUsed` false: geçiş günü ve kayıtlı LafPOS günü yok) LafPOS başka şubeye geçebilir.
+ */
+export function lafposSourceError(
+  next: { id: string; kind: BranchRow["kind"]; posSource: BranchRow["posSource"]; active: boolean },
+  others: readonly (LafposBranchRow & { name: string })[],
+  implicitHolderUsed = true,
+): string | null {
+  if (next.posSource !== "lafpos" || !next.active || next.kind !== "fiziksel") return null;
+  const open = (b: LafposBranchRow) => b.id !== next.id && b.active && b.kind === "fiziksel";
+  const explicit = others.find((b) => open(b) && b.posSource === "lafpos");
+  if (explicit) return `LafPOS şimdilik yalnız bir şubenin kasası olabilir; ${explicit.name} şubesinin kasası zaten LafPOS`;
+  // Bugünkü şube kütüğün şimdiki hâliyle (düzenlenen şube eski kaynağıyla; kendisi tutuyorsa sorun yok)
+  const holderId = lafposBranchOf(others);
+  const implicit = others.find((b) => b.id === holderId && open(b));
+  if (implicit && implicitHolderUsed) {
+    return `LafPOS şimdilik yalnız bir şubenin kasası olabilir; LafPOS günleri ${implicit.name} şubesine yazılıyor (geçiş günü ya da kayıtlı gün var). Başka şubeye geçerse ${implicit.name} şubesinin LafPOS günleri hesaptan düşer`;
+  }
+  return null;
+}
+
+/**
+ * Kaydın şubesi LafPOS'un şubesi mi (şubesi verilmeyen kayıt Tuzla'nındır, şubeler öncesi). `lafposBranch`: türetilmiş
+ * şube (`lafposBranchOf`, sunucuda `lafposBranchId`); verilmezse geri düşüş değeri
+ */
+export function isLafposBranch(branchId: string | null | undefined, lafposBranch: string = LAFPOS_BRANCH_ID): boolean {
+  return (branchId ?? DEFAULT_BRANCH_ID) === lafposBranch;
 }
 
 /**
  * Bir şubenin kasasının geçiş günü: LafPOS'un şubesinde ayar, öteki şubelerde (kasası ModPOS) ve online kanalda null,
  * yani her günü ModPOS günü. Şubesi verilmeyen kayıt Tuzla'nındır (şubeler öncesi). Tek kasanın gününe bakan her yer
- * (Kasa raporu, föy, zil, geç rapor, kapalı gün, zayi) geçiş gününü bundan geçirir.
+ * (Kasa raporu, föy, zil, geç rapor, kapalı gün, zayi) geçiş gününü bundan geçirir. `lafposBranch`: isLafposBranch gibi
  */
-export function branchSwitchDay(switchDay: string | null, branchId: string | null | undefined): string | null {
-  return isLafposBranch(branchId) ? switchDay : null;
+export function branchSwitchDay(switchDay: string | null, branchId: string | null | undefined, lafposBranch: string = LAFPOS_BRANCH_ID): string | null {
+  return isLafposBranch(branchId, lafposBranch) ? switchDay : null;
 }
 
 /**
@@ -66,8 +115,8 @@ export function branchSwitchDay(switchDay: string | null, branchId: string | nul
  * şubenin kasasınınki (branchSwitchDay); "Tümü"de ayar. "Tümü"de satırlar şube şube ayrılır: ModPOS şubesinin ürün
  * listesi ve panel ikramı sayılmaya devam eder (mergeSalesSources, panelWasteCounts).
  */
-export function scopeSwitchDay(switchDay: string | null, scope: string): string | null {
-  return scope === ALL_BRANCHES ? switchDay : branchSwitchDay(switchDay, scope);
+export function scopeSwitchDay(switchDay: string | null, scope: string, lafposBranch: string = LAFPOS_BRANCH_ID): string | null {
+  return scope === ALL_BRANCHES ? switchDay : branchSwitchDay(switchDay, scope, lafposBranch);
 }
 
 /** Günün kasası (metinler için) */

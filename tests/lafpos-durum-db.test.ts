@@ -119,7 +119,8 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
   });
 
   beforeEach(async () => {
-    await db.execute(sql`TRUNCATE pos_daily_sales, pos_day_reports, integration_state, special_days, activity_log RESTART IDENTITY CASCADE`);
+    // Geçiş günü şube ayarında (grup pos.lafpos; docs/SUBE.md › Şube başına ayarlar): her test kendi gününü yazar
+    await db.execute(sql`TRUNCATE pos_daily_sales, pos_day_reports, integration_state, special_days, activity_log, branch_settings RESTART IDENTITY CASCADE`);
     await db.delete(s.settings).where(eq(s.settings.key, "lafposGecisGunu"));
     status.resetUnverifiedBuffer();
     warnings.length = 0;
@@ -300,7 +301,7 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
     assert.match(sum.short, /^7\u00a0Kasım gönderimi reddedildi · 2 gün için LafPOS'tan Gönder bekleniyor · /);
   });
 
-  test("geçiş günü: yalnız yönetici, geçerli gün; aynı değer kayıt değildir; boşaltınca satır silinir", async () => {
+  test("geçiş günü: yalnız yönetici, geçerli gün; aynı değer kayıt değildir; şube ayarına yazılır, eski kayıt yazılmaz", async () => {
     await refused(core.writeLafposSwitchDay(db, users.staff, "2026-11-10", "2026-11-12"), /yalnız yönetici/);
     await refused(core.writeLafposSwitchDay(db, users.admin, "2026-09-01", "2026-11-12"), /en erken/);
     await refused(core.writeLafposSwitchDay(db, users.admin, "2027-03-01", "2026-11-12"), /90 gün/);
@@ -309,12 +310,14 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
     assert.equal(await core.writeLafposSwitchDay(db, users.admin, "2026-11-10", "2026-11-12"), null);
     assert.equal(await status.loadLafposSwitchDay(db), "2026-11-10");
     assert.equal(await core.writeLafposSwitchDay(db, users.admin, null, "2026-11-12"), "LafPOS'a geçiş günü: 10 Kasım 2026 → yok (kasa ModPOS)");
+    // Yazım LafPOS'un şubesinin şube ayarına (Marina'nın satırı); eski genel kayıt (settings) yazılmaz
     assert.equal((await db.select().from(s.settings).where(eq(s.settings.key, "lafposGecisGunu"))).length, 0);
-    // Bozuk değer okunurken ModPOS; boşaltmak onu da temizler
+    assert.deepEqual((await db.select({ value: s.branchSettings.value }).from(s.branchSettings).where(eq(s.branchSettings.grp, "pos.lafpos")))[0]?.value, { switchDay: null });
+    // Satırı olmayan Marina eski kaydı okur: bozuk değer okunurken ModPOS; boşaltmak değişiklik değildir
+    await db.execute(sql`DELETE FROM branch_settings`);
     await db.insert(s.settings).values({ key: "lafposGecisGunu", value: "bozuk" });
     assert.equal(await status.loadLafposSwitchDay(db), null);
     assert.equal(await core.writeLafposSwitchDay(db, users.admin, null, "2026-11-12"), null);
-    assert.equal((await db.select().from(s.settings).where(eq(s.settings.key, "lafposGecisGunu"))).length, 0);
     const { loadSettings } = await import("../src/server/data/dataset");
     assert.equal((await loadSettings()).lafposGecisGunu, null);
   });

@@ -12,6 +12,7 @@ import { CARI_LOCKED_STAFF, cashOutPayment } from "@/server/cari/kasa";
 import { closedDayRefusal } from "@/server/closed-days";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { schema as s } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 import { staffDayOpen } from "@/server/photo-read/rules";
 import { UserError } from "@/server/user-error";
 
@@ -58,9 +59,9 @@ export async function staffCashOutGate(tx: CashOutTx, me: CashOutActor, target: 
   // kasa hareketlerinden gelir. Doğrudan ekleme, ekleme isteği ve satırı başka güne taşıma buradan geçer. Düzeltme ve fiş
   // (LafPOS satırına fiş fotoğrafı, kategori) açık kalır; yönetici her zaman ekler
   if (target.op === "ekle" && !target.restore) {
-    const till = await currentTillBranch();
-    const lafposDay = isLafposDay(date, branchSwitchDay(await lafposSwitchDayOf(tx), till));
-    if (staffLafposEntryClosed({ admin: false, branchId: till, lafposDay })) throw new UserError(LAFPOS_CASH_OUT_TEXT.staffAdd);
+    const [till, switchDay, lafposBranch] = await Promise.all([currentTillBranch(), lafposSwitchDayOf(tx), lafposBranchId(tx)]);
+    const lafposDay = isLafposDay(date, branchSwitchDay(switchDay, till, lafposBranch));
+    if (staffLafposEntryClosed({ admin: false, branchId: till, lafposDay, lafposBranch })) throw new UserError(LAFPOS_CASH_OUT_TEXT.staffAdd);
   }
   const [dayOpen, adminCategory, payment] = await Promise.all([
     // Satırın kasası: var olan satırda satırın şubesi, yeni satırda kasanın şubesi (yazım da oraya iner)

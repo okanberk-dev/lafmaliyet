@@ -46,6 +46,8 @@ export interface KiyasInput {
   today: string;
   /** LafPOS'a geçiş günü (ayar); LafPOS satırı yalnız şubesinin geçiş gününden itibaren sayılır */
   switchDay: string | null;
+  /** LafPOS'un şubesi (kütükten türetilmiş, lafposBranchOf); verilmezse geri düşüş değeri */
+  lafposBranch?: string;
   /** Kasa raporlarının fiş sayısı, `şube|gün` anahtarıyla (tillRows rapor satırına fiş koymaz) */
   receipts?: ReadonlyMap<string, number | null>;
   /** Kapalı işaretli gün mü (şubenin kendi ya da işletme geneli işareti) */
@@ -203,7 +205,7 @@ export function cellReader(input: KiyasInput): (branch: KiyasBranch, date: strin
   for (const r of input.rows) {
     const b = r.branchId ?? DEFAULT_BRANCH_ID;
     // Geçiş gününden önceki LafPOS gün sonu deneme günüdür: hiçbir hesaba girmez (tillRows zaten süzer; burada da)
-    if (r.source === "lafpos" && !isLafposDay(r.date, branchSwitchDay(input.switchDay, b))) continue;
+    if (r.source === "lafpos" && !isLafposDay(r.date, branchSwitchDay(input.switchDay, b, input.lafposBranch))) continue;
     const k = key(b, r.date);
     const had = byKey.get(k);
     if (!had || rank(r) < rank(had)) byKey.set(k, r);

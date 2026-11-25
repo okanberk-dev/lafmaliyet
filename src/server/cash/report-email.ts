@@ -2,10 +2,12 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 
+import { TILL_DEVICE_GROUP, tillDeviceLabel } from "@/lib/branch-settings/groups";
 import { namedTill } from "@/lib/branches";
 import { cashEmailKey, cashLogKey } from "@/lib/cash-report";
 import { allDroppedSentence, type DroppedRecipient } from "@/lib/notify-recipients";
 import type { TillOnlineRow } from "@/lib/site-sales/calc";
+import { resolveBranchSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { cashReportExtras } from "@/server/data/cash-photos";
 import { cashReportIntegrity, loadCashSettings, toCashDTO } from "@/server/data/cash-reports";
@@ -65,7 +67,9 @@ export async function emailReport(
     const online = await (o.site ?? fetchTillOnlineRow(row.date, row.branchId));
     // Yeniden gönderimde de değişenler aynı: son kopya yeniden okunur (anahtar cash-{rapor}-r{sürüm} değişmez). Birden çok
     // kasa açıkken raporun şubesi konuda, başlıkta ve "Panelde aç"ta (iki şubenin aynı günkü e-postası ayırt edilir)
-    const [extras, integrity, branches] = await Promise.all([cashReportExtras(dto), cashReportIntegrity(dto), listBranches()]);
+    // Şubenin banka POS'u ve yazarkasa sicil no'su (şube ayarı kasa.cihaz): yazarkasa bölümünün başlığında
+    const [extras, integrity, branches, device] = await Promise.all([cashReportExtras(dto), cashReportIntegrity(dto), listBranches(), resolveBranchSetting(TILL_DEVICE_GROUP, row.branchId)]);
+    const { device: kind, registerNo } = device.value;
     // Yazarkasa dışı tahsilat (sunucu sütunu) yalnız bu yönetici metnine: K4 onu da sayar, "tutmuyor" yanlış alarmı olmaz
     const msg = renderCashReport({ ...dto, okcOutside: row.okcOutside }, {
       by: dto.submittedByName,
@@ -78,6 +82,8 @@ export async function emailReport(
       online,
       approval: o.approval ?? null,
       branch: namedTill(branches, row.branchId),
+      // "Başka bir cihaz" başlığa yazılmaz (bilgi taşımaz); yalnız sicil no
+      device: (kind && kind !== "diger") || registerNo ? { label: kind && kind !== "diger" ? tillDeviceLabel(kind) : null, registerNo } : null,
       ...extras,
       ...integrity,
     });

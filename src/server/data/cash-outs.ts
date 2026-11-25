@@ -4,9 +4,9 @@ import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
 
 import { staffCategory, type CashOutDocType, type CashOutKind, type StaffCashOutField } from "@/lib/cash-outs";
 import { lafposAwaitingCategory, lafposInsertedRow } from "@/lib/lafpos/cash-moves";
-import { LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
 import { currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
 
@@ -105,7 +105,7 @@ export async function lafposAwaitingCategoryIds(
   const days = await db
     .select({ cashMoves: s.posDayReports.cashMoves })
     .from(s.posDayReports)
-    .where(and(eq(s.posDayReports.branchId, LAFPOS_BRANCH_ID), inArray(s.posDayReports.date, [...new Set(candidates.map((r) => r.date))])));
+    .where(and(eq(s.posDayReports.branchId, await lafposBranchId(db)), inArray(s.posDayReports.date, [...new Set(candidates.map((r) => r.date))])));
   const categories = await db.select().from(s.expenseCategories);
   // Hareketin kategorisi (saklı gövde şemadan geçmişti; yine de gevşek okunur): kimlik → kategori ya da null
   const moveCategory = new Map<string, number | null>();

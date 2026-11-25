@@ -347,7 +347,7 @@ export function estimateStock(input: StockEstimateInput): StockEstimate {
 
   // Zayi ve ikram: panel (her gün tek kaynak) ve LafPOS'un gün sonu
   for (const w of input.panelWaste) {
-    if (!inWindow(w.date) || !panelWasteCounts({ ...w, branchId: STOCK_ESTIMATE_BRANCH }, received)) continue;
+    if (!inWindow(w.date) || !panelWasteCounts({ ...w, branchId: STOCK_ESTIMATE_BRANCH }, received, STOCK_ESTIMATE_BRANCH)) continue;
     if (w.productId !== null) {
       if (!consume(w.productId, w.qty, w.date, wasted)) noRecipe.add(w.name, w.qty);
     } else if (w.ingredientId !== null && inPeriod(w.ingredientId, w.date)) {

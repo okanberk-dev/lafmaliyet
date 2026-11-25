@@ -2,18 +2,21 @@ import "server-only";
 
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
+import { TILL_DEVICE_GROUP } from "@/lib/branch-settings/groups";
 import { businessDate, LATE_REPORT_DAYS, revisionDataOf } from "@/lib/cash-report";
 import { bankPosSchema, okcSchema, posZSchema, type BankPos, type PosDayZ, type PosOkc } from "@/lib/lafpos/day";
 import { lafposPhotoCheck, lafposPhotoDone, lafposPhotoNeed, staffPhotoLine, type LafposPhotoCheck, type LafposPhotoNeed, type LafposPhotoRead } from "@/lib/lafpos/foto";
 import { autoMissing } from "@/lib/lafpos/gun-sonu";
-import { isLafposDay, LAFPOS_BRANCH_ID, branchSwitchDay } from "@/lib/lafpos/switch";
+import { isLafposDay } from "@/lib/lafpos/switch";
 import { OCR_MODEL, readingSourceOf } from "@/lib/photo-read/models";
 import { KasaOkcRaw } from "@/lib/photo-read/schemas";
 import { linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
 import { addDays, longDateTR, todayTR } from "@/lib/reminders";
+import { resolveBranchSetting } from "@/server/branch-settings";
 import { lockCashReport, lockLateDay, okcServerColumns, type CashActor, type CashReportRow, type CashTx } from "@/server/cash/report-store";
 import { schema as s, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
+import { lafposBranchId } from "@/server/lafpos/branch";
 import { assertNotHeld } from "@/server/staff-requests/core";
 import { getPhoto, keepPhoto, linkable } from "@/server/storage/photos";
 import { UserError } from "@/server/user-error";
@@ -46,17 +49,24 @@ export async function lafposDayDevice(db: Reader, date: string, branchId: string
 
 /**
  * Şubenin yazarkasa cihazı (LafPOS'un son gönderdiği `okc`'den: sağlayıcı ve ayrı mali Z basıyor mu); gün sonu henüz
- * gelmediyse fotoğrafın metni için (Pavo ayrı mali Z basmaz). Hiç gelmediyse null
+ * gelmediyse fotoğrafın metni için (Pavo ayrı mali Z basmaz). LafPOS hiç göndermediyse Şube ayarları › Banka POS ve
+ * yazarkasa'daki cihaz (şube ayarı kasa.cihaz; TokenX ayrı mali Z basar, Pavo basmaz); o da yoksa ya da "başka bir
+ * cihaz"sa null
  */
 export async function lafposOkcDeviceOf(db: Reader, branchId: string): Promise<{ provider: "pavo" | "tokenx"; zReport: boolean } | null> {
-  const rows = await db
-    .select({ okc: s.posDayReports.okc })
-    .from(s.posDayReports)
-    .where(and(eq(s.posDayReports.branchId, branchId), isNotNull(s.posDayReports.okc)))
-    .orderBy(desc(s.posDayReports.date))
-    .limit(1);
+  const [rows, setting] = await Promise.all([
+    db
+      .select({ okc: s.posDayReports.okc })
+      .from(s.posDayReports)
+      .where(and(eq(s.posDayReports.branchId, branchId), isNotNull(s.posDayReports.okc)))
+      .orderBy(desc(s.posDayReports.date))
+      .limit(1),
+    resolveBranchSetting(TILL_DEVICE_GROUP, branchId, db),
+  ]);
   const okc = rows[0]?.okc ? okcSchema.safeParse(rows[0].okc) : null;
-  return okc?.success ? { provider: okc.data.provider, zReport: okc.data.zReport } : null;
+  if (okc?.success) return { provider: okc.data.provider, zReport: okc.data.zReport };
+  const device = setting.value.device;
+  return device === "pavo" || device === "tokenx" ? { provider: device, zReport: device === "tokenx" } : null;
 }
 
 /** Rapora bağlı gün sonu fotoğrafları (yazarkasa bölümü: kasa-okc, eski kasa-pos), eklenme sırasıyla */
@@ -200,10 +210,11 @@ async function refreshServerColumns(tx: CashTx, row: CashReportRow): Promise<Cas
 
 /** Personelin fotoğraf ekleyebildiği LafPOS günü mü: LafPOS'un şubesi, geçiş gününden itibaren, bugünden en çok 14 gün geri */
 export async function lafposPhotoDayOpen(db: Reader, date: string, branchId: string, role: "admin" | "staff", now = new Date()): Promise<boolean> {
-  if (branchId !== LAFPOS_BRANCH_ID) return false;
+  // LafPOS'un şubesi kütükten (lafposBranchId); onun geçiş günü ayarın kendisidir (branchSwitchDay)
+  if (branchId !== (await lafposBranchId(db))) return false;
   const today = businessDate(now);
   if (date > today || (role !== "admin" && date < addDays(today, -LATE_REPORT_DAYS))) return false;
-  if (!isLafposDay(date, branchSwitchDay(await loadLafposSwitchDay(db as DB), branchId))) return false;
+  if (!isLafposDay(date, await loadLafposSwitchDay(db as DB))) return false;
   const [day] = await db
     .select({ date: s.posDayReports.date })
     .from(s.posDayReports)
@@ -333,10 +344,10 @@ export interface LafposPhotoState {
  * girildiyse null (eski yol). `role` personel ise karşılaştırma dönmez
  */
 export async function lafposPhotoState(db: DB, date: string, branchId: string, role: "admin" | "staff"): Promise<LafposPhotoState | null> {
-  if (branchId !== LAFPOS_BRANCH_ID) return null;
+  if (branchId !== (await lafposBranchId(db))) return null;
   const device = await lafposDayDevice(db, date, branchId);
   if (!device) return null;
-  if (!isLafposDay(date, branchSwitchDay(await loadLafposSwitchDay(db), branchId))) return null;
+  if (!isLafposDay(date, await loadLafposSwitchDay(db))) return null;
   const [[state], [report]] = await Promise.all([
     db
       .select()

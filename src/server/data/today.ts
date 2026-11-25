@@ -16,6 +16,7 @@ import {
   type OrdersLite,
 } from "@/app/panel/bugun/logic";
 import { featureInScope, karaokeBranchOf } from "@/lib/branch-features";
+import { CALENDAR_GROUP } from "@/lib/branch-settings/groups";
 import { ALL_BRANCHES, requestInScope, tillBranches } from "@/lib/branches";
 import { shiftMonth } from "@/lib/calc/engine";
 import { priceAlert } from "@/lib/calc/price-impact";
@@ -28,6 +29,7 @@ import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentBranchScope, currentPhysicalBranch, currentTillBranch, withBranchScope } from "@/server/branch-scope";
+import { resolveBranchSetting, resolveForTills } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, previousCarryOverByBranch, type CashReportDTO } from "@/server/data/cash-reports";
 import { closedYesterday } from "@/server/closed-days";
@@ -47,6 +49,7 @@ import { dayWaste } from "@/server/data/waste";
 import { countProgress } from "@/server/data/count-progress";
 import { getDb, schema as s } from "@/server/db";
 import { lafposPhotoMarks } from "@/server/lafpos/foto";
+import { lafposBranchId } from "@/server/lafpos/branch";
 import { isProductionRuntime, loadJobsOverview } from "@/server/jobs/alerts";
 import { lastParasutSyncOkAt } from "@/server/jobs/runs";
 import { loadSessions } from "@/server/karaoke/board";
@@ -269,8 +272,10 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
           tills ? null : previousCarryOver(oldest, v?.till ?? undefined),
           tills ? previousCarryOverByBranch(oldest, tills.map((b) => b.id)) : null,
           cashRevisionsFor(reports.filter((r) => r.revision > 1).map((r) => r.id)),
-          Promise.all([loadModposSheets(oldest, businessDate(now), undefined, v?.till ? { branchId: v.till } : {}), loadLafposSwitchDay()])
-            .then(([sheets, switchDay]) => (tills ? modposMismatchBranchDays(reports, sheets, switchDay) : modposMismatchDates(reports, sheets, switchDay)))
+          Promise.all([loadModposSheets(oldest, businessDate(now), undefined, v?.till ? { branchId: v.till } : {}), loadLafposSwitchDay(), lafposBranchId()])
+            .then(([sheets, switchDay, lafposBranch]) =>
+              tills ? modposMismatchBranchDays(reports, sheets, switchDay, lafposBranch) : modposMismatchDates(reports, sheets, switchDay, lafposBranch),
+            )
             .catch(() => new Set<string>()),
         ]);
         return beforeOf ? cashFlagsByBranch(reports, beforeOf, revisions, viewer, modpos) : cashFlags(reports, before, revisions, viewer, modpos);
@@ -312,7 +317,11 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const viewP = safe(cashView(admin));
   const tillScoped = <T>(fn: () => Promise<T>) => viewP.then((v) => (v?.till ? withBranchScope(v.till, fn) : fn()));
   const cashP = safe(tillScoped(() => cashReportsBetween(c.yesterday, c.day)));
-  const [reports, firstDate, view, tillFirsts, tillClosed, stock, due, sessions, orders, checklists, closed, ops, own, lafposSwitch, switchRaw, noCounts] = await Promise.all([
+  // Kasa raporunun beklendiği saat seçili şubenin (şube ayarı isletme.takvim; "Tümü"de ve online kanalda varsayılan şubenin)
+  const eveningHourP = safe(resolveBranchSetting(CALENDAR_GROUP, karaokeScope).then((r) => r.value.eveningHour));
+  // "Tümü"de kasa satırları her kasanın kendi saatiyle (zil gibi kasa kasa)
+  const tillHoursP = safe(viewP.then((v) => (v?.tills?.length ? resolveForTills(CALENDAR_GROUP) : null)));
+  const [reports, firstDate, view, tillFirsts, tillClosed, stock, due, sessions, orders, checklists, closed, ops, own, lafposSwitch, switchRaw, noCounts, lafposBranch] = await Promise.all([
     cashP,
     safe(tillScoped(() => firstCashReportDate())),
     viewP,
@@ -332,11 +341,13 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     admin ? adminFacts(now, user.id, cashP, viewP) : staffFacts(c),
     // LafPOS'a geçiş günü: yalnız metinler (günün kasası; okunamazsa ModPOS, bugünkü gibi). Kasanın şubesinin geçiş
     // günü (branchSwitchDay): ModPOS'ta kalan şubede metinler ModPOS der
-    safe(Promise.all([loadLafposSwitchDay(), currentTillBranch()]).then(([d, b]) => branchSwitchDay(d, b))),
+    safe(Promise.all([loadLafposSwitchDay(), currentTillBranch(), lafposBranchId()]).then(([d, b, l]) => branchSwitchDay(d, b, l))),
     // "Tümü"de her şubenin kendi geçiş günü (metinler şubenin kasasına göre)
     safe(loadLafposSwitchDay()),
     // LafPOS gün sonu geldi ama çekmece sayılmadı (rapor yok): dün ve bugün, kasa başına (tek kasada view.till)
     safe(viewP.then((v) => Promise.all((v?.tills ?? (v?.till ? [{ id: v.till }] : [])).map((b) => lafposNoCountDays([c.yesterday, c.day], b.id).then((d) => [...d]))))),
+    // LafPOS'un şubesi (kütükten; okunamazsa geri düşüş değeri, branchSwitchDay)
+    safe(lafposBranchId()),
   ]);
 
   // Personel: LafPOS'un otomatik raporunda tek iş gün sonu fotoğrafı (gün sonu tam; src/server/lafpos/foto.ts)
@@ -350,6 +361,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     const base = mark ? { ...toLite(r), lafposPhoto: mark } : toLite(r);
     return flags?.length ? { ...base, flags } : base;
   };
+  const tillHours = await tillHoursP;
   const tills = view?.tills
     ? view.tills.map((b, i) => ({
         ...b,
@@ -358,14 +370,17 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
         firstDate: tillFirsts ? (tillFirsts[i] ?? null) : firstDate,
         ...(tillClosed ? { closed: tillClosed[i]?.yesterday ?? null } : {}),
         ...(noCounts ? { noCount: noCounts[i] ?? [] } : {}),
-        ...(switchRaw !== null ? { lafposSwitch: branchSwitchDay(switchRaw, b.id) } : {}),
+        ...(switchRaw !== null ? { lafposSwitch: branchSwitchDay(switchRaw, b.id, lafposBranch ?? undefined) } : {}),
+        ...(tillHours?.get(b.id) ? { eveningHour: tillHours.get(b.id)!.value.eveningHour } : {}),
       }))
     : null;
+  const eveningHour = (await eveningHourP) ?? undefined;
   const facts: DayFacts = {
     ...own.facts,
     ...ops,
     role: user.role,
     now,
+    eveningHour,
     lafposSwitch,
     cash: reports
       ? {

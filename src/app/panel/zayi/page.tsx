@@ -160,7 +160,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
           unmatched: admin && l.productId === null && !l.isService,
           service: admin && l.isService,
         })),
-        notCounted: laf.received ? entries.filter((e) => e.branchId === laf.branchId && !panelWasteCounts(e, new Set([date]))).map((e) => e.id) : [],
+        notCounted: laf.received ? entries.filter((e) => e.branchId === laf.branchId && !panelWasteCounts(e, new Set([date]), laf.branchId)).map((e) => e.id) : [],
         // Paneldeki ürün zayisi, aynı gün aynı ürün LafPOS'ta da zayi yazıldıysa: ikisi de sayılır, aynıysa biri silinir
         maybeTwice: entries.filter((e) => e.branchId === laf.branchId && e.kind === "zayi" && e.productId !== null && lafposZayi.has(e.productId)).map((e) => e.id),
         branchName: laf.branchName,
@@ -244,7 +244,7 @@ async function WasteMonth({ month, today }: { month: string; today: string }) {
     rows.set(key, r);
   };
   for (const e of entries) {
-    if (!panelWasteCounts(e, lafposDays)) continue;
+    if (!panelWasteCounts(e, lafposDays, model.ds.lafposBranch)) continue;
     add(`${e.kind}|${e.name}|${e.unit}`, { kind: e.kind, lafpos: false, name: e.name, unit: e.unit }, e.qty, model.wasteCost(e));
   }
   for (const w of model.countedWaste) {

@@ -147,10 +147,15 @@ export interface LafposIkramData {
  * Paneldeki kayıt hesaba girer mi: LafPOS'un gün sonu gelen günde (geçiş gününden itibaren) ürün ikramı girmez,
  * LafPOS'taki sayılır. Zayi ve hammadde ikramı her zaman girer. `lafposDays` LafPOS'un şubesinin gün sonu gelen
  * günleridir: kayıt yalnız o şubenin kasasınınsa düşer, ModPOS'ta kalan şubenin aynı günkü ürün ikramı sayılır
- * (denetim 21 Kasım #5). Şubesi verilmeyen kayıt Tuzla'nındır.
+ * (denetim 21 Kasım #5). Şubesi verilmeyen kayıt Tuzla'nındır. `lafposBranch`: LafPOS'un şubesi (Dataset.lafposBranch;
+ * verilmezse geri düşüş değeri)
  */
-export function panelWasteCounts(w: { date: string; kind: "zayi" | "ikram"; productId: number | null; branchId?: string | null }, lafposDays: ReadonlySet<string>): boolean {
-  return !(w.kind === "ikram" && w.productId !== null && isLafposBranch(w.branchId) && lafposDays.has(w.date));
+export function panelWasteCounts(
+  w: { date: string; kind: "zayi" | "ikram"; productId: number | null; branchId?: string | null },
+  lafposDays: ReadonlySet<string>,
+  lafposBranch?: string,
+): boolean {
+  return !(w.kind === "ikram" && w.productId !== null && isLafposBranch(w.branchId, lafposBranch) && lafposDays.has(w.date));
 }
 
 /** Zayi & ikram'ın metinleri (ekran, eylemlerin reddi, kasa e-postası) */

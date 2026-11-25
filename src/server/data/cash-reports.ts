@@ -15,10 +15,8 @@ import {
   type CashRevisionData,
   type CashRevisionRow,
 } from "@/lib/cash-report";
-import { readLafposSwitchDay } from "@/lib/constants";
 import { posZSchema } from "@/lib/lafpos/day";
-import { branchSwitchDay, isLafposDay, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
-import { MODPOS_FALLBACK_KEY, readModposFallback } from "@/lib/modpos/status";
+import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { foyZ } from "@/lib/modpos/z";
 import type { OkcPrev, OkcRow, OkcVatLine } from "@/lib/okc-z";
 import { addDays } from "@/lib/reminders";
@@ -26,6 +24,8 @@ import { emailErrorFor } from "@/lib/staff-errors";
 import { andWhere, currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
 import { putBranchSetting, resolveBranchSetting } from "@/server/branch-settings";
 import { getDb, schema as s } from "@/server/db";
+import { lafposBranchId, lafposSwitchDay } from "@/server/lafpos/branch";
+import { modposFallbackBranches } from "@/server/modpos/fallback";
 import { loadModposSheets, type ModposSheet } from "@/server/modpos/store";
 
 /**
@@ -66,7 +66,7 @@ export async function loadCashSettingsView(branchId: string, db?: SettingsReader
 
 /**
  * Yazar; verilen alanların grubu yazılır (alıcılar ya da çalışanlar). Şube verilmezse eski kaydın sahipleri: alıcılar
- * varsayılan şubenin (öbürleri "aynı"ysa onlar da kullanır), çalışan listesi LafPOS'un şubesinin; tek kasalı eski
+ * varsayılan şubenin (öbürleri "aynı"ysa onlar da kullanır), çalışan listesi LafPOS'un şubesinin (lafposBranchId); tek kasalı eski
  * çağrının anlamı. Alıcıları başka şubeninkini kullanan şubeye yazmaz (putBranchSetting). `tx`: çağıranın işlemi (işlem
  * geçmişi aynı işlemde), `by`: yazanın adı
  */
@@ -77,7 +77,7 @@ export async function saveCashSettings(value: Partial<CashSettings>, branchId?: 
       await putBranchSetting(t, CASH_REPORT_GROUP, branchId ?? DEFAULT_BRANCH_ID, { recipients: value.recipients, emailEnabled: value.emailEnabled, whatsapp: value.whatsapp }, by);
     }
     if (value.staffRecipients !== undefined || value.staffAmounts !== undefined) {
-      await putBranchSetting(t, CASH_STAFF_GROUP, branchId ?? LAFPOS_BRANCH_ID, { staffRecipients: value.staffRecipients, staffAmounts: value.staffAmounts }, by);
+      await putBranchSetting(t, CASH_STAFF_GROUP, branchId ?? (await lafposBranchId(t)), { staffRecipients: value.staffRecipients, staffAmounts: value.staffAmounts }, by);
     }
   };
   if (o.tx) await run(o.tx);
@@ -399,8 +399,7 @@ function modposRunStarts(modpos: readonly TillRow[], reports: readonly TillRow[]
  * boşken boş (deneme günleri hiçbir hesaba girmez). Raporu olan günü süzmez: tillRows ve tillMonths raporu öne alır
  */
 export async function lafposTillRows(db: Db | Tx = getDb(), from?: string, to?: string): Promise<TillRow[]> {
-  const [setting] = await db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
-  const switchDay = readLafposSwitchDay(setting?.value);
+  const switchDay = await lafposSwitchDay(db);
   if (switchDay === null || (to !== undefined && to < switchDay)) return [];
   const start = from !== undefined && from > switchDay ? from : switchDay;
   const rows = await db
@@ -436,19 +435,17 @@ const MODPOS_FIRST_DAY = "2000-01-01";
 const MODPOS_LAST_DAY = "9999-12-31";
 
 /**
- * Ay rakamına yedeğin kapsamı (docs/MODPOS-API.md › Ay rakamına yedek): anahtar kapalıysa null (föy tablosu hiç
- * okunmaz); açıksa LafPOS'a geçiş günü (boşsa null: föyün her günü sayılır). Geçiş gününden itibaren LafPOS'un şubesinin
+ * Ay rakamına yedeğin kapsamı (docs/MODPOS-API.md › Ay rakamına yedek): anahtar hiçbir şubede açık değilse null (föy
+ * tablosu hiç okunmaz); açıksa anahtarı açık şubeler (şube ayarı `modpos`; öbür şubeler "aynı" başlar, bugünkü tek
+ * anahtar) ve LafPOS'a geçiş günü (boşsa null: föyün her günü sayılır). Geçiş gününden itibaren LafPOS'un şubesinin
  * kasası LafPOS'tur, o şubenin föyü aya girmez (docs/MODPOS-API.md › Nerede görünür); ModPOS'ta kalan şubenin föyü
  * girmeye devam eder (branchSwitchDay; denetim 21 Kasım #5)
  */
-async function modposFallbackSwitch(db: Db | Tx): Promise<{ switchDay: string | null } | null> {
-  const rows = await db
-    .select({ key: s.settings.key, value: s.settings.value })
-    .from(s.settings)
-    .where(inArray(s.settings.key, [MODPOS_FALLBACK_KEY, LAFPOS_SWITCH_KEY]));
-  const value = (key: string) => rows.find((r) => r.key === key)?.value;
-  if (!readModposFallback(value(MODPOS_FALLBACK_KEY))) return null;
-  return { switchDay: readLafposSwitchDay(value(LAFPOS_SWITCH_KEY)) };
+async function modposFallbackSwitch(db: Db | Tx): Promise<{ switchDay: string | null; lafposBranch: string; branches: Set<string> } | null> {
+  const branches = await modposFallbackBranches(db);
+  if (!branches.size) return null;
+  const [switchDay, lafposBranch] = await Promise.all([lafposSwitchDay(db), lafposBranchId(db)]);
+  return { switchDay, lafposBranch, branches };
 }
 
 /**
@@ -481,8 +478,8 @@ export function modposTillRow(sheet: Pick<ModposSheet, "day" | "branchId" | "sta
 }
 
 /**
- * ModPOS kasa föyünün yedek ay satırları, [from, to] içinde (docs/MODPOS-API.md › Ay rakamına yedek; Ayarlar › ModPOS
- * kartının anahtarı, settings › modposAyYedegi, varsayılan kapalı). Kapalıyken föy tablosu okunmadan boş döner: ay
+ * ModPOS kasa föyünün yedek ay satırları, [from, to] içinde (docs/MODPOS-API.md › Ay rakamına yedek; şube başına ayar
+ * `modpos`, modposFallbackBranches: yalnız anahtarı açık şubenin föyü; varsayılan kapalı). Kapalıyken föy tablosu okunmadan boş döner: ay
  * rakamı bugünkü gibi. Açıkken yalnız ModPOS günleri (LafPOS'un şubesinde geçiş gününden önceki günler, ModPOS'ta kalan
  * şubede bütün günler; geçiş günü boşsa bütün günler) ve yalnız kapanmış föyler (modposTillRow). Raporu olan günü
  * süzmez: tillRows ve tillMonths raporu öne alır (rapor > LafPOS > ModPOS). Yalnız yöneticinin ekranları ve hesaplar
@@ -504,7 +501,7 @@ export async function modposFallbackSheets(db: Db | Tx = getDb(), from?: string,
   const start = from ?? MODPOS_FIRST_DAY;
   if (upto < start) return [];
   const sheets = await loadModposSheets(start, upto, db);
-  return sheets.filter((sh) => !isLafposDay(sh.day, branchSwitchDay(fallback.switchDay, sh.branchId)));
+  return sheets.filter((sh) => fallback.branches.has(sh.branchId) && !isLafposDay(sh.day, branchSwitchDay(fallback.switchDay, sh.branchId, fallback.lafposBranch)));
 }
 
 /**

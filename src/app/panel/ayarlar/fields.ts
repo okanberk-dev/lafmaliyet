@@ -19,7 +19,6 @@ export type NumericKey =
   | "tkGr"
   | "potGr"
   | "potMl"
-  | "acikGun"
   | "mealCardDaily"
   | "mealCardDays";
 
@@ -62,8 +61,9 @@ export const MEASURE_FIELDS: FieldDef[] = [
   { key: "tkGr", label: "Türk kahvesi 1 fincan (gr)", hint: "Varsayım: 7 gr. Ölçüp yazın.", formula: "TKGr", kind: "num", assumption: true },
   { key: "potGr", label: "Filtre kahve tam pot (gr)", hint: "Bir pota konan çekilmiş kahve", formula: "PotGr", kind: "num" },
   { key: "potMl", label: "Tam pottan çıkan (ml)", hint: "Varsayım: ~1.800 ml. Makinenizin değerini ölçüp yazın.", formula: "PotMl", kind: "num", assumption: true, positive: true },
-  { key: "acikGun", label: "Ayda kaç gün açıksınız", hint: "Başabaş ve günlük giderler için", kind: "int", positive: true, max: 31 },
 ];
+// Ayda kaç gün açık (acikGun) 25 Kasım 2026'dan beri şube başına: Şube ayarları › Çalışma takvimi (şube ayarı
+// isletme.takvim; docs/SUBE.md › Şube başına ayarlar)
 
 /**
  * Personel yemek kartı (Faz 5, sahibin kararı 11): Maaşlar'da yemek kartı işaretli kişinin işveren maliyetine günlük

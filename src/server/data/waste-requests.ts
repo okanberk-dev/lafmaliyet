@@ -14,6 +14,7 @@ import { LateWastePayload, WasteDeletePayload, wasteEntryMatches, wasteItemText,
 import { listBranches } from "@/server/branches";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { getDb, schema as s } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 import { requestBranches } from "@/server/staff-requests/branch";
 
 /*
@@ -330,7 +331,7 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
   const productPrice = (model: Model, id: number | null) => (id !== null ? (model.productById.get(id)?.price ?? null) : null);
   // Geçiş günü ayarın kendisi; isteğin şubesine göre uygulanır (branchSwitchDay). LafPOS'un gün sonu gelen günleri
   // şubenin modelinden (LafPOS'un şubesinde geçiş gününden itibaren; ModPOS'ta kalan şubede boş) ve iş günü
-  const switchDay = await lafposSwitchDayOf(db);
+  const [switchDay, lafposBranch] = await Promise.all([lafposSwitchDayOf(db), lafposBranchId(db)]);
   const today = businessDate(now);
   /**
    * Günün sayılan ikramının menü değeri (şubenin modeli; Z'nin ödenmez tutarıyla karşılaştırılır): LafPOS satırı kendi
@@ -387,7 +388,7 @@ export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promi
           ikramRecorded: ikramRecorded !== null ? Math.round(ikramRecorded * 100) / 100 : null,
           ikramFromLafpos: lafposDays.has(p.date),
           countDone: countedMonths.has(p.date.slice(0, 7)) ? `${monthTitleTR(p.date.slice(0, 7)).split(" ")[0]} sayımı girilmiş: onaylanırsa tutarlılık değişir` : null,
-          lafposRefusal: productIkramRefusal(p, branchSwitchDay(switchDay, p.branchId), { received: lafposDays.has(p.date), today }, "onay"),
+          lafposRefusal: productIkramRefusal(p, branchSwitchDay(switchDay, p.branchId, lafposBranch), { received: lafposDays.has(p.date), today }, "onay"),
         },
       ];
     }

@@ -1,4 +1,5 @@
 import { Store } from "lucide-react";
+import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { CardContent } from "@/components/ui/card";
@@ -7,12 +8,22 @@ import { Notice } from "@/components/ui/notice";
 import { dateTimeTR, money, num } from "@/lib/format";
 import { clearedText, isUnverifiedAfterOk, lafposCardSummary, rejectionText, unverifiedText } from "@/lib/lafpos/status";
 import { LAFPOS_SWITCH_MAX_AHEAD, LAFPOS_SWITCH_MIN } from "@/lib/lafpos/switch";
+import type { BranchRow } from "@/lib/branches";
+import { lafposCardView } from "@/lib/pos-cards";
 import { addDays, longDateTR } from "@/lib/reminders";
 import { loadLafposCard } from "@/server/lafpos/status";
 
 import type { ProductOption } from "../satislar/product-picker";
 import { LafposDayDelete, LafposSwitchDayForm, LafposUnmatchedList } from "./lafpos-client";
+import { PosElsewhereCard } from "./pos-elsewhere";
 import { SectionCard } from "./section-card";
+
+/** Anahtarın nereden okunduğu (loadLafposCard secretSource) */
+const SECRET_SOURCE_TEXT = {
+  panel: "Anahtar panelde saklı (şifreli).",
+  ortam: "Anahtar sunucunun ayarında.",
+  yok: "Anahtar yok.",
+} as const;
 
 /** İmzası doğrulanamayan isteklerin satırı bu kadar gün görünür */
 const UNVERIFIED_DAYS = 14;
@@ -24,8 +35,14 @@ const UNVERIFIED_DAYS = 14;
  * geçiş günü, gelen ve gelmeyen günler, ürüne bağlanamayan POS adları. Geçiş günü boşken LafPOS'un gönderdiği günler
  * yalnız burada görünür (deneme), başka hiçbir ekrana ya da hesaba girmez (sahibin 26 Ekim kararı). Yalnız yönetici
  * (Ayarlar sayfası requireAdmin).
+ *
+ * Seçili şubeye göre (şube kapsamı C P2-2, src/lib/pos-cards.ts): kasası LafPOS olmayan şube ya da online kanal
+ * seçiliyken kart "Bu şubede kullanılmıyor" satırına iner (durum okunmaz); "Tümü"de birden çok kasa açıkken kart şubenin
+ * adıyla. LafPOS'un şubesi kütükten (kasa kaynağı LafPOS olan şube, yoksa Marina).
  */
-export async function LafposCard({ products }: { products: ProductOption[] }) {
+export async function LafposCard({ products, scope, branches }: { products: ProductOption[]; scope: string; branches: readonly BranchRow[] }) {
+  const view = lafposCardView(scope, branches);
+  if (view.kind === "elsewhere") return <PosElsewhereCard id="lafpos" icon={<Store />} title="LafPOS (kasa)" system="LafPOS" users={view.users} />;
   const now = new Date();
   const data = await loadLafposCard(undefined, now).catch((e) => {
     console.error("LafPOS durumu okunamadı", e);
@@ -42,6 +59,8 @@ export async function LafposCard({ products }: { products: ProductOption[] }) {
   }
   const sum = lafposCardSummary(data);
   const { state, today } = data;
+  // "Tümü"de birden çok kasa açıkken kartın şubesi adıyla (ModPOS kartının şube bölümleri gibi)
+  const branchName = view.named ? (branches.find((b) => b.id === data.branchId)?.name ?? data.branchId) : null;
   const linked = data.secretProblem === null;
   // Bağlantı kapalıyken retler kırmızı değil (özet de saymaz)
   const rejectTone = linked ? "bad" : "neutral";
@@ -54,7 +73,7 @@ export async function LafposCard({ products }: { products: ProductOption[] }) {
       id="lafpos"
       icon={<Store />}
       title="LafPOS (kasa)"
-      summary={sum.short}
+      summary={branchName ? `${branchName}: ${sum.short}` : sum.short}
       // Geçiş günü seçildiyse "ModPOS sayılır" cümlesi geçmişi anlatır: yalnız seçilmeden önce (sahibin isteği 24.11.2026)
       description={
         data.switchDay
@@ -63,6 +82,7 @@ export async function LafposCard({ products }: { products: ProductOption[] }) {
       }
     >
       <CardContent className="space-y-4">
+        {branchName ? <p className="text-sm font-semibold text-ink">{branchName}</p> : null}
         <div className="space-y-1.5 rounded-2xl bg-surface px-4 py-3 text-sm ring-1 ring-line">
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <Badge tone={sum.tone} dot>
@@ -75,6 +95,13 @@ export async function LafposCard({ products }: { products: ProductOption[] }) {
               {l}
             </p>
           ))}
+          {/* Anahtarın nereden okunduğu; panelde saklama ve silme şubenin sayfasında (Şube ayarları › LafPOS bağlantısı) */}
+          <p className="text-[13px] leading-5 text-pretty text-ink-mute">
+            {SECRET_SOURCE_TEXT[data.secretSource ?? "yok"]}{" "}
+            <Link href={`/panel/subeler/${encodeURIComponent(data.branchId)}#lafpos`} className="font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
+              {data.secretSource === "panel" ? "Şube ayarlarında değiştir" : "Şube ayarlarında panelde sakla"}
+            </Link>
+          </p>
         </div>
 
         {sum.dayRejections.map(({ rejection: e, day, status }) =>

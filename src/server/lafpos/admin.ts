@@ -2,12 +2,14 @@ import "server-only";
 
 import { and, eq, sql } from "drizzle-orm";
 
-import { readLafposSwitchDay } from "@/lib/constants";
+import { LAFPOS_GROUP } from "@/lib/branch-settings/groups";
 import { LAFPOS_STATE_KEY } from "@/lib/lafpos/status";
-import { branchSwitchDay, dayMonthYearTR, isLafposDay, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY, switchDayProblem } from "@/lib/lafpos/switch";
+import { dayMonthYearTR, isLafposDay, switchDayProblem } from "@/lib/lafpos/switch";
+import { lockGroup, putBranchSetting, resolveBranchSetting } from "@/server/branch-settings";
 import { schema as s, type DB } from "@/server/db";
 import { UserError } from "@/server/user-error";
 
+import { lafposBranchId, switchDayOf } from "./branch";
 import { detachLafposCashOuts } from "./cash-moves";
 
 /**
@@ -32,16 +34,22 @@ export async function writeLafposSwitchDay(db: DB, me: Actor, day: string | null
     const problem = switchDayProblem(day, today);
     if (problem) throw new UserError(problem);
   }
+  // LafPOS'un şubesinin şube ayarına yazılır (grup pos.lafpos; docs/SUBE.md › Şube başına ayarlar). İlk kayıtta satır
+  // açılır, eski genel kayıt (settings › lafposGecisGunu) bırakılır: satırı olan şube onu bir daha okumaz
+  const branchId = await lafposBranchId(db);
   return db.transaction(async (tx) => {
-    const [row] = await tx.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).for("update").limit(1);
-    const prev = readLafposSwitchDay(row?.value);
-    if (day === null) {
-      // Boşaltmak satırı siler (bozuk bir değer de böyle temizlenir; okuyan onu zaten null sayıyordu)
-      if (row) await tx.delete(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY));
-      return prev === null ? null : `LafPOS'a geçiş günü: ${switchText(prev)} → ${switchText(null)}`;
-    }
+    await lockGroup(tx, LAFPOS_GROUP.id);
+    const prev = (await resolveBranchSetting(LAFPOS_GROUP, branchId, tx)).value.switchDay;
     if (prev === day) return null;
-    await tx.insert(s.settings).values({ key: LAFPOS_SWITCH_KEY, value: day }).onConflictDoUpdate({ target: s.settings.key, set: { value: day, updatedAt: new Date() } });
+    const [known] = await tx.select({ id: s.branches.id }).from(s.branches).where(eq(s.branches.id, branchId)).limit(1);
+    if (known) await putBranchSetting(tx, LAFPOS_GROUP, branchId, { switchDay: day }, me.name);
+    // Kütükte LafPOS'un şubesi yok (tek şubeli eski kurulum; geri düşüş Marina): eski genel kayda (grubun legacySettings'i,
+    // settings › lafposGecisGunu), okuyan da satırsız sahibi şubede oradan okur (resolveBranchSetting)
+    else {
+      const key = LAFPOS_GROUP.legacySettings!.switchDay;
+      if (day === null) await tx.delete(s.settings).where(eq(s.settings.key, key));
+      else await tx.insert(s.settings).values({ key, value: day }).onConflictDoUpdate({ target: s.settings.key, set: { value: day, updatedAt: new Date() } });
+    }
     return `LafPOS'a geçiş günü: ${switchText(prev)} → ${switchText(day)}`;
   });
 }
@@ -61,17 +69,19 @@ export async function writeLafposSwitchDay(db: DB, me: Actor, day: string | null
  */
 export async function removeLafposDay(db: DB, me: Actor, date: string, zNo: number, now: Date = new Date()): Promise<{ zNo: number; lines: number }> {
   if (me.role !== "admin") throw new UserError(ADMIN_ONLY);
+  // LafPOS'un şubesi (türetilmiş, branch.ts): gün sonunu yazanla aynı kilit ve aynı şube
+  const branchId = await lafposBranchId(db);
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`lafpos-gun:${LAFPOS_BRANCH_ID}:${date}`}))`);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`lafpos-gun:${branchId}:${date}`}))`);
     // Yalnız LafPOS'un şubesinin günü (başka şubenin aynı günkü kaydına dokunulmaz)
-    const [rep] = await tx.select({ z: s.posDayReports.z }).from(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, LAFPOS_BRANCH_ID))).limit(1);
+    const [rep] = await tx.select({ z: s.posDayReports.z }).from(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, branchId))).limit(1);
     if (!rep) throw new UserError("Bu günün LafPOS kaydı yok (silinmiş olabilir); sayfayı yenileyin");
     if (rep.z.zNo !== zNo) throw new UserError(`Bu gün bu arada Z ${rep.z.zNo} ile yeniden gönderildi; sayfayı yenileyip yeniden bakın`);
-    const lines = await tx.delete(s.posDailySales).where(and(eq(s.posDailySales.date, date), eq(s.posDailySales.branchId, LAFPOS_BRANCH_ID))).returning({ id: s.posDailySales.id });
-    await tx.delete(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, LAFPOS_BRANCH_ID)));
-    const [setting] = await tx.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
-    const counted = isLafposDay(date, branchSwitchDay(readLafposSwitchDay(setting?.value), LAFPOS_BRANCH_ID));
-    await detachLafposCashOuts(tx, date, counted ? "release" : "drop", { id: me.id, name: me.name });
+    const lines = await tx.delete(s.posDailySales).where(and(eq(s.posDailySales.date, date), eq(s.posDailySales.branchId, branchId))).returning({ id: s.posDailySales.id });
+    await tx.delete(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, branchId)));
+    // Geçiş günü LafPOS'un şubesinin kasasınındır (branchSwitchDay): bu gün o şubenin günü
+    const counted = isLafposDay(date, await switchDayOf(branchId, tx));
+    await detachLafposCashOuts(tx, date, counted ? "release" : "drop", { by: { id: me.id, name: me.name }, branchId });
     await tx.execute(sql`
       update integration_state
          set value = jsonb_set(value, array['rejections', ${date}::text, 'clearedAt'], to_jsonb(${now.toISOString()}::text)), updated_at = now()

@@ -148,10 +148,11 @@ export const LAFPOS_STAFF_ENTRY_LINE = "LafPOS günü: harcama ve ikram/zayi Laf
  * şube ve gün kuralı). Kasadan çıkanlar LafPOS'un kasa hareketlerinden (cashMoves → cash_outs), ürün ikramı, zayisi ve
  * hazırlanmış iptal gün sonunun gövdesinden gelir. Yönetici her zaman ekler; personel LafPOS'un satırına fiş fotoğrafı ve
  * kategori ekler. Sunucu: personelin ekleme yolu (doğrudan, istek, başka güne taşıma) staffCashOutGate'te reddedilir.
- * ModPOS'ta kalan şube ve geçiş gününden önceki gün eskisi gibi; Zayi & ikram sayfasının hammadde yolu değişmez
+ * ModPOS'ta kalan şube ve geçiş gününden önceki gün eskisi gibi; Zayi & ikram sayfasının hammadde yolu değişmez.
+ * `lafposBranch`: LafPOS'un şubesi (sunucu lafposBranchId ile verir; yoksa LAFPOS_BRANCH_ID)
  */
-export function staffLafposEntryClosed(o: { admin: boolean; branchId: string | null | undefined; lafposDay: boolean }): boolean {
-  return !o.admin && o.branchId === LAFPOS_BRANCH_ID && o.lafposDay;
+export function staffLafposEntryClosed(o: { admin: boolean; branchId: string | null | undefined; lafposDay: boolean; lafposBranch?: string }): boolean {
+  return !o.admin && o.branchId === (o.lafposBranch ?? LAFPOS_BRANCH_ID) && o.lafposDay;
 }
 
 /**

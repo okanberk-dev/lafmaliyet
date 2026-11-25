@@ -3,9 +3,7 @@ import "server-only";
 import { and, asc, count, countDistinct, desc, eq, gte, inArray, isNull, lt, sql, sum } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
-import { readLafposSwitchDay } from "@/lib/constants";
 import { unmatchedIkramNames } from "@/lib/lafpos/ikram";
-import { lafposSecretProblem } from "@/lib/lafpos/request";
 import {
   isDayRejection,
   LAFPOS_STATE_KEY,
@@ -21,12 +19,13 @@ import {
 import { sentWorkedStaffRefs } from "@/lib/lafpos/day";
 import type { NextOpening } from "@/lib/lafpos/devir";
 import type { WorkedStaffAnswer } from "@/lib/lafpos/personel";
-import { isLafposDay, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { isLafposDay } from "@/lib/lafpos/switch";
 import { addDays } from "@/lib/reminders";
 import { closedDaysBetween } from "@/server/closed-days";
 import { loadLafposIkram } from "@/server/data/lafpos-ikram";
 import { getDb, schema as s, type DB } from "@/server/db";
 
+import { lafposBranchId, lafposSecretState, lafposSwitchDay } from "./branch";
 import { lafposNextOpening } from "./devir";
 import { workedStaffAnswer } from "./personel";
 import { receivePosDay, type EndpointResult } from "./ingest";
@@ -39,10 +38,12 @@ import { receivePosDay, type EndpointResult } from "./ingest";
  * okunur. Gün sonunun denetimi ve yazımı ingest.ts'te (değişmedi). Durum yazımı hiçbir zaman yanıtı bozmaz.
  */
 
-/** Kayıtlı geçiş günü (ayarlar tablosunun tek satırı; yoksa ya da bozuksa null = kasa ModPOS) */
+/**
+ * Kayıtlı geçiş günü (LafPOS'un şubesinin şube ayarı, src/server/lafpos/branch.ts lafposSwitchDay; yoksa ya da bozuksa
+ * null = kasa ModPOS)
+ */
 export async function loadLafposSwitchDay(db: DB = getDb()): Promise<string | null> {
-  const [row] = await db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
-  return readLafposSwitchDay(row?.value);
+  return lafposSwitchDay(db);
 }
 
 export async function readLafposState(db: DB = getDb()): Promise<LafposState> {
@@ -225,6 +226,8 @@ export interface LafposDayRow {
 }
 
 export interface LafposCardData extends LafposCardInput {
+  /** LafPOS'un şubesi (kütükten türetilir, lafposBranchId): kart yalnız onun kaydını sayar */
+  branchId: string;
   /** En yeni günler (tarihe göre, en çok 14) */
   days: LafposDayRow[];
   /** Ürüne bağlanamayan POS adları (hizmet satırları hariç): en çok satılan 10 ad ve toplam sayı */
@@ -245,13 +248,13 @@ const DAYS_SHOWN = 14;
 /** Ayarlar › LafPOS (kasa): durum, geçiş günü, gelen ve gelmeyen günler, eşleşmeyen adlar (yalnız yönetici) */
 export async function loadLafposCard(db: DB = getDb(), now: Date = new Date()): Promise<LafposCardData> {
   const today = businessDate(now);
-  const switchDay = await loadLafposSwitchDay(db);
+  const [switchDay, branchId, secret] = await Promise.all([loadLafposSwitchDay(db), lafposBranchId(db), lafposSecretState(db)]);
   const r = s.posDayReports;
   const d = s.posDailySales;
   // Kart yalnız LafPOS'un şubesinin (Marina) kaydını sayar: öteki şubenin ModPOS günleri ve satırları karışmaz, panelde
   // seçili şube de kartı değiştirmez
-  const ofR = eq(r.branchId, LAFPOS_BRANCH_ID);
-  const ofD = eq(d.branchId, LAFPOS_BRANCH_ID);
+  const ofR = eq(r.branchId, branchId);
+  const ofD = eq(d.branchId, branchId);
   const unmatchedWhere = and(isNull(d.productId), eq(d.isService, false), ofD);
   const missingFrom = switchDay && switchDay < today ? (switchDay > addDays(today, -60) ? switchDay : addDays(today, -60)) : null;
   const [state, recent, [totals], unmatched, [{ unmatchedCount }], receivedRange, closed, ikram] = await Promise.all([
@@ -271,9 +274,9 @@ export async function loadLafposCard(db: DB = getDb(), now: Date = new Date()): 
     db.select({ unmatchedCount: countDistinct(d.posName) }).from(d).where(unmatchedWhere),
     missingFrom ? db.select({ date: r.date }).from(r).where(and(gte(r.date, missingFrom), lt(r.date, today), ofR)) : Promise.resolve([]),
     // Gün sonu gelmeyen gün LafPOS'un şubesinin kapalı günüyse eksik değil (öteki şubenin kapalı günü sayılmaz)
-    missingFrom ? closedDaysBetween(missingFrom, addDays(today, -1), db, LAFPOS_BRANCH_ID) : Promise.resolve([]),
+    missingFrom ? closedDaysBetween(missingFrom, addDays(today, -1), db, branchId) : Promise.resolve([]),
     // İkramın adları geçiş gününden itibaren (okuma anındaki bağla çözülür; bağlanınca listeden düşer)
-    switchDay ? loadLafposIkram(db, switchDay, {}, LAFPOS_BRANCH_ID) : Promise.resolve(null),
+    switchDay ? loadLafposIkram(db, switchDay, {}, branchId) : Promise.resolve(null),
   ]);
   const ikramNames = ikram ? unmatchedIkramNames(ikram.lines, unmatched.map((u) => u.posName)) : { items: [], count: 0 };
   // Günlü retlerin günlerinin paneldeki kaydı (409'da silinecek olan; retten sonra yeniden yazıldıysa ret çözüldü)
@@ -299,7 +302,9 @@ export async function loadLafposCard(db: DB = getDb(), now: Date = new Date()): 
     counted: isLafposDay(x.date, switchDay),
   }));
   return {
-    secretProblem: lafposSecretProblem(process.env),
+    branchId,
+    secretProblem: secret.problem,
+    secretSource: secret.source,
     switchDay,
     today,
     state,

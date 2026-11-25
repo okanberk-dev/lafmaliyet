@@ -87,7 +87,7 @@ test("kaydı olmayan veritabanı varsayılanı okur; kayıtlı değer ve bilinme
   // Excel verisinde de yok: seed varsayılanı yazar
   assert.equal(excelToDataset(data).settings.pompaPure, 30);
   // loadSettings bu kuralı kullanır
-  assert.match(read("src/server/data/dataset.ts"), /return settingsFromRows\(await getDb\(\)\.select\(\)\.from\(s\.settings\)\);/);
+  assert.match(read("src/server/data/dataset.ts"), /return \{ \.\.\.settingsFromRows\(rows\), lafposGecisGunu: switchDay, acikGun: calendar\.value\.openDays \};/);
 });
 
 test("Ayarlar: alan şurup pompasının ardında, formül adıyla; eylem anahtarı kabul eder ve geçmişe adıyla yazar", () => {

@@ -667,6 +667,11 @@ export interface Dataset {
    */
   lafposSales?: { switchDay: string; countFrom: string; months: LafposSalesMonth[] };
   /**
+   * LafPOS'un şubesi (kütükten türetilir: kasa kaynağı LafPOS olan şube, yoksa Marina; src/lib/lafpos/switch.ts
+   * lafposBranchOf). Geçiş günü yalnız bu şubenin kasasınındır; okunmamışsa (test verisi) geri düşüş değeri
+   */
+  lafposBranch?: string;
+  /**
    * LafPOS'a geçiş günü seçiliyse o günden itibaren LafPOS'un ikramları ve gün sonu gelen günler
    * (src/lib/lafpos/ikram.ts): ikram satırları kayıtlı tüketime girer, o günlerde paneldeki ürün ikramı sayılmaz. Yoksa
    * (varsayılan) ikram yalnız Zayi & ikram'dan
