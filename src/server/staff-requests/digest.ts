@@ -20,10 +20,11 @@ import { pendingRequests } from "./core";
  * verilene kadar her sabah listelenir; bir şey yoksa kutu yok (e-posta kutusuz hâliyle aynı). Bekleyen istek yokken
  * başlık satırların kaynağını söyler: yalnız personelin satırları "Personelden", yalnız sayım "Stok sayımı" (o ayın
  * sayımına götürür), yalnız ModPOS "ModPOS kasa föyü" (farkın gününe ya da Ayarlar'a), karışıksa "Operasyon".
- * `scope`: şubeye bağlı alıcının e-postası (şube kapsamı C P1-11): yalnız o şubenin istekleri (`requestBranches`)
+ * `scope`: şubeye bağlı alıcının e-postası (şube kapsamı C P1-11): yalnız o şubenin istekleri (`requestBranches`),
+ * sayımı ve ModPOS föyü. Tükendi satırı bütün şubelerindir (sitenin sözleşmesinde şube yok)
  */
 export async function loadApprovalsDigest(now = new Date(), scope: BranchScope = ALL_BRANCHES): Promise<DigestExtraLoad | null> {
-  const [all, ops, count, modpos] = await Promise.all([pendingRequests(getDb(), { now }), opsDigestLines(now), pastCountDigestLines(now), modposDigestLines(now)]);
+  const [all, ops, count, modpos] = await Promise.all([pendingRequests(getDb(), { now }), opsDigestLines(now), pastCountDigestLines(now, scope), modposDigestLines(now, scope)]);
   // Şubenin istekleri: şube konudan ya da yükten okunur (src/server/staff-requests/branch.ts); satırın metni yine başlık ve ad
   const rows = scope === ALL_BRANCHES ? all : await requestsInScope(getDb(), all, scope);
   const lines = [...approvalsDigestLines(rows, now), ...ops, ...count.lines, ...modpos.lines];

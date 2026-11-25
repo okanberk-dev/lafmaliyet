@@ -43,7 +43,12 @@ export interface Recipient {
   blocked?: BlockReason | null;
   /** Adresin şubeleri; boş = bütün şubeler (şube kapsamı C P1-11: sabah e-postası şubenin başlığıyla ayrı gider) */
   branchIds?: string[];
+  /** Seçili şubelerinin hiçbiri açık değil: sabah e-postası bu adrese gitmez (bütün şubelere de genişlemez) */
+  branchClosed?: boolean;
 }
+
+/** Şubesi kapanmış adresin seçimdeki yer tutucusu (sunucuya gitmez) */
+const CLOSED_BRANCH = "__kapali";
 
 /** Zilden gelen bağlantının çapası: bölüm açılır */
 const SECTION_ID = "e-posta-bildirimleri";
@@ -238,10 +243,11 @@ export function NotificationsSection({
                         <p className="text-sm font-medium break-all text-ink">{r.name || r.email}</p>
                         <p className="text-xs break-all text-ink-mute">{r.name ? r.email : r.blocked ? null : r.active ? "Hatırlatma alır" : "Duraklatıldı"}</p>
                         {r.blocked ? <p className="text-xs font-medium text-bad">{BLOCK_ROW_TEXT[r.blocked]}</p> : null}
-                        {branchOptions.length > 1 ? (
+                        {r.branchClosed ? <p className="text-xs font-medium text-warn">Seçili şubesi kapalı: e-posta gitmez. Başka bir şube ya da Bütün şubeler seçin</p> : null}
+                        {branchOptions.length > 1 || r.branchClosed ? (
                           <Select
                             aria-label={`${r.email} hangi şubenin e-postasını alsın`}
-                            value={r.branchIds?.[0] ?? ""}
+                            value={r.branchClosed ? CLOSED_BRANCH : (r.branchIds?.[0] ?? "")}
                             disabled={pending}
                             className="mt-1 h-9 w-auto max-w-full text-xs pointer-coarse:h-11"
                             onChange={(e) => {
@@ -253,6 +259,11 @@ export function NotificationsSection({
                               });
                             }}
                           >
+                            {r.branchClosed ? (
+                              <option value={CLOSED_BRANCH} disabled>
+                                Şubesi kapalı
+                              </option>
+                            ) : null}
                             <option value="">Bütün şubeler</option>
                             {branchOptions.map((b) => (
                               <option key={b.id} value={b.id}>

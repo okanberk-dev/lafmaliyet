@@ -737,6 +737,11 @@ export async function runDigestNow() {
     await requireAdmin();
     const r = await runReminderDigest("manual");
     if (r.status === "error") throw new UserError(r.error);
+    // Bir alıcı grubu düştü: gidenler gitti; yeniden gönderim yalnız düşen gruba yeni iletidir (gidenlere aynı içerik gitmez)
+    if (r.status === "sent" && r.partialError) {
+      refresh();
+      throw new UserError(`Bazı adreslere gidemedi (${r.partialError}). Yeniden gönderebilirsiniz; giden adreslere ikinci kez gitmez.`);
+    }
     refresh();
     return r;
   });

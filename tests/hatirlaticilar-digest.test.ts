@@ -631,8 +631,10 @@ test("sabah e-postası: ek kutular ötekilerle aynı anda yüklenir; haber, teki
   // Tekil anahtarın tohumu kutusuzken ve bütün şubelerin grubunda eskisiyle aynı (boş dizi yayılır, ayraç eklenmez)
   assert.match(run, /system\.length \? `sys:\$\{system\.map\(\(p\) => p\.key\)\.join\(","\)\}` : "",\s*\/\/[^\n]*\n\s*\.\.\.\(g\.extras\.logKeys\.length \? \[`ek:\$\{g\.extras\.logKeys\.join\(","\)\}`\] : \[\]\),/);
   assert.match(run, /\.\.\.\(g\.branchIds\.length \? \[`sube:\$\{g\.branchIds\.join\(","\)\}`\] : \[\]\),\s*\]\.join\("\|"\);/);
-  // Günlüğe yalnız başarılı gönderimden sonra
-  assert.ok(run.indexOf("...g.extras.logKeys.map((key) => ({ key, subject, recipients: to.join(\", \"), ok: true }))") > run.indexOf("if (!res.ok) {"));
+  // Günlüğe yalnız başarılı gönderimden sonra; birden çok grubun anahtarı yalnız onu içeren bütün gruplar gidince
+  assert.match(run, /\.\.\.g\.extras\.logKeys\.map\(\(key\): \[string, string\] => \[key, key\]\),/);
+  assert.ok(run.indexOf("p.ok += 1;") > run.indexOf("if (!res.ok) {"));
+  assert.match(run, /const logRows = \[\.\.\.planned\.values\(\)\]\.filter\(\(p\) => p\.ok === p\.groups\)/);
   assert.match(run, /\.\.\.\(boxes\.size \? \{ boxes: \[\.\.\.boxes\] \} : \{\}\),/);
   // Gönderim sınırı yalnız sabah işinden; elle gönderim seçeneksiz (bugünkü gibi)
   assert.match(run, /ctx\.sendDeadlineAt === undefined \? undefined : \{ deadlineAt: ctx\.sendDeadlineAt \},/);

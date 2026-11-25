@@ -267,4 +267,65 @@ describe("şube kapsamı C: veritabanında", { skip: !SERVER_URL && "SUBE_C_TEST
       { branchIds: [MARINA], emails: ["marina-mudur@test.local"] },
     ]);
   });
+
+  test("sabah e-postası şube grupları: Marina'ya bağlı adrese Tuzla'nın kasadan çıkan alımı gitmez; bir grup düşerse ortak anahtar yazılmaz", async () => {
+    const { runReminderDigest } = await import("../src/server/notify/digest");
+    const { digestStep } = await import("../src/lib/job-health");
+    const { todayTR } = await import("../src/lib/reminders");
+    const today = todayTR();
+    await db.delete(s.notificationRecipients);
+    await db.delete(s.notificationLog);
+    await db.insert(s.notificationRecipients).values([
+      { email: "patron@test.local", branchIds: [] },
+      { email: "marina-mudur@test.local", branchIds: [MARINA] },
+    ]);
+    // İşletme geneli ödeme (iki grubun e-postasında) ve Tuzla kasasından faturalı alım (yalnız bütün şubelerinkinde)
+    await db.insert(s.reminders).values({ title: "Muhasebe ücreti", kind: "kira", amount: 1000, dueDate: today, anchorDate: today, repeat: "none", remindDaysBefore: 0 });
+    await db.insert(s.cashOuts).values({ branchId: TUZLA, date: today, kind: "harcama", amount: 250, store: "Tuzla Toptan", docType: "e_arsiv", createdByName: "Deniz" });
+    const sent: { to: string[]; subject: string; text: string }[] = [];
+    let failTo: string | null = "patron@test.local";
+    const realFetch = globalThis.fetch;
+    process.env.RESEND_API_KEY = "re_test_sube_c";
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (!String(input).startsWith("https://api.resend.com/")) throw new TypeError("testte ağ yok");
+      const body = JSON.parse(String(init?.body)) as { to: string[]; subject: string; text: string };
+      if (failTo && body.to.includes(failTo)) return new Response(JSON.stringify({ message: "olmadı" }), { status: 422, headers: { "Content-Type": "application/json" } });
+      sent.push({ to: body.to, subject: body.subject, text: body.text });
+      return new Response(JSON.stringify({ id: `em_${sent.length}` }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch;
+    try {
+      // Bütün şubelerin grubu düşer, Marina'nınki gider: sonuç "gitti" ama hata taşır; ortak ödemenin anahtarı yazılmaz
+      const first = await runReminderDigest("manual");
+      assert.equal(first.status, "sent", JSON.stringify(first));
+      assert.ok(first.status === "sent" && first.partialError, "düşen grup söylenir");
+      assert.equal(digestStep(first).code, "error", "Günlük işler hatayı görür");
+      assert.deepEqual(sent.map((m) => m.to), [["marina-mudur@test.local"]]);
+      assert.match(sent[0].subject, /^Marina: /);
+      assert.match(sent[0].text, /Muhasebe ücreti/);
+      assert.doesNotMatch(sent[0].text, /Tuzla Toptan/, "Tuzla kasasından çıkan alım Marina'nın e-postasına girmez");
+      const logged = await db.select({ key: s.notificationLog.key, ok: s.notificationLog.ok }).from(s.notificationLog);
+      assert.ok(!logged.some((l) => l.ok), `ortak anahtar yazılmadı: ${JSON.stringify(logged)}`);
+      // Sonraki gönderim: düşen gruba gider (gidene aynı içerik aynı tekil anahtarla; Resend ikinci kez göndermez)
+      failTo = null;
+      sent.length = 0;
+      const second = await runReminderDigest("manual");
+      assert.equal(second.status, "sent", JSON.stringify(second));
+      assert.ok(second.status === "sent" && !second.partialError);
+      const patron = sent.find((m) => m.to.includes("patron@test.local"));
+      assert.ok(patron, "bütün şubelerin e-postası gitti");
+      assert.match(patron.text, /Muhasebe ücreti/);
+      assert.match(patron.text, /Tuzla Toptan/);
+      // Artık hepsi gitti: anahtar yazıldı, üçüncü gönderim yok
+      sent.length = 0;
+      const third = await runReminderDigest("manual");
+      assert.equal(third.status, "skipped", JSON.stringify(third));
+      assert.equal(sent.length, 0);
+    } finally {
+      globalThis.fetch = realFetch;
+      delete process.env.RESEND_API_KEY;
+      await db.delete(s.cashOuts);
+      await db.delete(s.reminders);
+      await db.delete(s.notificationRecipients);
+    }
+  });
 });

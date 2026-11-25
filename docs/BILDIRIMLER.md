@@ -301,10 +301,16 @@ Haftalık özet zaten yalnız etkin yöneticilerin giriş e-postalarına gider.
 **Adresin şubesi** (şube kapsamı C, 24 Kasım 2026; [SUBE.md](SUBE.md)): birden çok kasa açıkken bildirim adresinin
 satırında "Bütün şubeler" ya da "Yalnız Marina" seçilir (`notification_recipients.branch_ids`, migration 0080; bütün
 kasalar seçilince boş yazılır). Şubeye bağlı adres sabah e-postasını ayrı alır: konu şubenin adıyla başlar ("Marina:
-Ödeme hatırlatması: …"), kartın üstü kapsamı söyler; ödemeler şubenin ve işletme genelinin, onay bekleyen istekler ve
-dünkü kontrol listeleri yalnız şubenin; faturalar, zam ve komisyon firma geneli. Şubesi seçilmemiş adreslerin e-postası
-bugünküyle aynıdır. Bütün grupların içeriği gönderimden önce kurulur (bir grubun günlüğe yazdığı "kontrol:<gün>" öbür
-grubun kutusunu düşürmez); bir grubun gönderimi düşerse öbürleri gider, hiçbiri gitmediyse sonuç hata.
+Ödeme hatırlatması: …"), kartın üstü kapsamı söyler; ödemeler şubenin ve işletme genelinin; onay bekleyen istekler,
+dünkü kontrol listeleri, geçen ayın yarım sayımı, ModPOS föy farkı ve anahtar uyarısı, kasadan çıkan faturalı alımlar
+yalnız şubenin; faturalar, zam, komisyon ve Tükendi firma geneli. Şubesi seçilmemiş adreslerin e-postası bugünküyle
+aynıdır. Seçili şubesi kapanan adres hiçbir e-postayı almaz (bütün şubelerinkine genişlemez; Hatırlatıcılar'daki satırı
+"Seçili şubesi kapalı" der). Bütün grupların içeriği gönderimden önce kurulur (bir grubun günlüğe yazdığı
+"kontrol:<gün>" öbür grubun kutusunu düşürmez). Bir grubun gönderimi düşerse öbürleri gider, ama birden çok grubun
+e-postasındaki anahtar (işletme geneli ödeme, faturalar, zam, eşitleme hatası, sistem, "kontrol:<gün>") yalnız onu
+içeren bütün grupların e-postası gidince yazılır: sonraki gönderim düşen gruba yeniden dener, gitmiş gruba aynı içerik
+aynı tekil anahtarla gider (Resend ikinci kez göndermez). Sonuç "gitti" olsa da düşen grup Günlük işler'de hata, "Şimdi
+gönder"de uyarı olarak görünür (`partialError`); hiçbiri gitmediyse sonuç hata.
 
 ## Marina gün sonu e-postası (22 Kasım 2026)
 

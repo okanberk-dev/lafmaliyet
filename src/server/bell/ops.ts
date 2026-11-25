@@ -2,7 +2,7 @@ import "server-only";
 
 import { pastCountReminder, pastCountReminders, staffLateEditNotice, unpricedExtrasNotice } from "@/app/panel/sayim/logic";
 import { featureInScope } from "@/lib/branch-features";
-import { ALL_BRANCHES, BRANCH_PARAM } from "@/lib/branches";
+import { ALL_BRANCHES, BRANCH_PARAM, type BranchScope } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { shiftMonth } from "@/lib/calc/engine";
 import { dateTR, num } from "@/lib/format";
@@ -256,12 +256,13 @@ export async function opsDigestLines(now: Date): Promise<DigestBox["lines"]> {
  * birden çoğunda ayın sayımı. Önceden e-postada şube seçimi olmadığı için yalnız Tuzla'nın sayımına bakılıyordu
  * (denetim 21 Kasım #16).
  */
-export async function pastCountDigestLines(now: Date): Promise<{ lines: DigestBox["lines"]; href: string | null }> {
+export async function pastCountDigestLines(now: Date, scope: BranchScope = ALL_BRANCHES): Promise<{ lines: DigestBox["lines"]; href: string | null }> {
   const day = businessDate(now);
   if (Number(day.slice(8, 10)) > 10) return { lines: [], href: null };
   const month = shiftMonth(day.slice(0, 7), -1);
   const prev = await countProgressByBranch(month).catch(() => null);
-  const counts = prev ? pastCountReminders(day, prev.counts, prev.named) : [];
+  // Şubeye bağlı alıcının e-postası (şube kapsamı C P1-11): yalnız o şubenin sayımı (satır yine şubenin adıyla)
+  const counts = prev ? pastCountReminders(day, scope === ALL_BRANCHES ? prev.counts : prev.counts.filter((c) => c.id === scope), prev.named) : [];
   if (!counts.length) return { lines: [], href: null };
   return {
     lines: counts.map((c) => ({ text: `${c.title}. ${c.body}`, tone: "warn" as const })),

@@ -14,7 +14,7 @@ import { countLogBranch, countLogDetail, loggedItems } from "../src/app/panel/sa
 import { ALL_BRANCHES, companyWideNote, mcpBranchScope, requestInScope } from "../src/lib/branches";
 import { createModel } from "../src/lib/calc/engine";
 import type { Dataset, ExpenseCategory, ExpenseEntry, Invoice } from "../src/lib/calc/types";
-import { digestGroups, digestItemInGroup } from "../src/lib/notify-recipients";
+import { branchesClosed, digestGroups, digestItemInGroup } from "../src/lib/notify-recipients";
 import { soldOutAllBranchesText } from "../src/lib/site-menu/sold-out";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -121,10 +121,14 @@ test("sabah e-postası alıcı grupları: şubesiz ve bütün kasaları seçen a
     tills,
   );
   assert.deepEqual(groups, [
-    { branchIds: [], emails: ["patron@x", "ikisi@x", "kapali@x"] },
+    { branchIds: [], emails: ["patron@x", "ikisi@x"] },
     { branchIds: ["tuzla"], emails: ["tuzla@x"] },
     { branchIds: ["marina"], emails: ["marina@x", "marina2@x"] },
   ]);
+  // Şubesi kapanan "Yalnız X" adresi bütün şubelerin e-postasına genişlemez, hiçbir gruba girmez
+  assert.equal(branchesClosed(["eski"], tills), true);
+  assert.equal(branchesClosed(["marina", "eski"], tills), false);
+  assert.equal(branchesClosed([], tills), false);
   // Ödeme kalemi: şubenin ve işletme genelinin; bütün şubelerde hepsi
   assert.equal(digestItemInGroup("tuzla", ["marina"]), false, "Marina'nın e-postasına Tuzla'nın kirası girmez");
   assert.equal(digestItemInGroup(null, ["marina"]), true);
