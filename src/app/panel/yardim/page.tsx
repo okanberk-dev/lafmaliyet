@@ -972,9 +972,9 @@ const FORMULAS = [
   ],
   [
     "Kâr / zarar (faturaya göre)",
-    "Ciro ÷ (1 + KDV) − satılan malın maliyeti − giderler (Gelir-gider tablosu). Satışlar'daki HİZMET satırları (karaoke) kadarı hizmet KDV'siyle (%20) ayrılır",
+    "Ciro ÷ (1 + KDV) − satılan malın maliyeti − giderler (Gelir-gider tablosu). Satışlar'daki HİZMET satırları (karaoke) kadarı hizmet KDV'siyle (%20) ayrılır. Şube seçiliyken adı “Gelir-gider'e göre”: mal maliyeti şubenin satışından reçeteye göre",
   ],
-  ["Faturaya göre maliyet oranı", "Faturayla alınan mal (KDV hariç) ÷ net satış (laffogato.net online dahil)"],
+  ["Faturaya göre maliyet oranı", "Faturayla alınan mal (KDV hariç) ÷ net satış (laffogato.net online dahil). Yalnız Tümü'de: faturalar işletme genelinde, şubeye bölünmez"],
   ["Günlük ortalama ciro", "Satış listesi toplamı (yoksa POS cirosu) ÷ açık gün; liste ayın bir kısmını kapsıyorsa listenin kendi açık günü"],
   [
     "Başabaş günlük ciro",

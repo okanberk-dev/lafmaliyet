@@ -48,6 +48,7 @@ import {
   yearTrend,
   type DashboardData,
   type MonthState,
+  type ProfitBasis,
   type YearTotals as YearTotalsData,
 } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
@@ -357,7 +358,11 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const netTip = t
     ? `Brüt kâr${t.online ? " (laffogato.net online satışı dahil)" : ""} − indirimler (KDV hariç) − o ayın Gelir-gider sabit giderleri (gün oranı + bu aya özel giderler), reçeteye göre.${
         t.listPeriod ? ` Satış listesi ${listDaysText(t.listPeriod)} günlerini kapsıyor: indirim o günlerin kasa raporlarından, sabit gider ve laffogato.net online satışı o günlere düşen payla.` : ""
-      } Excel Panel'i her ay standart aylık sabit gideri düşer; fark olduğunda altta "Excel temeli" yazar. Faturaya göre değer Gelir-gider tablosundan gelir; stok sayımı olmayan ayda mal maliyeti tahminidir (sayım aralığına dağıtılır ya da reçeteye göre).${changeNote(g.net)}`
+      } Excel Panel'i her ay standart aylık sabit gideri düşer; fark olduğunda altta "Excel temeli" yazar. ${
+        d.profitBasis.invoices
+          ? "Faturaya göre değer Gelir-gider tablosundan gelir; stok sayımı olmayan ayda mal maliyeti tahminidir (sayım aralığına dağıtılır ya da reçeteye göre)."
+          : "Gelir-gider'e göre değer Gelir-gider tablosundan gelir; şube seçiliyken mal maliyeti şubenin satışından reçeteye göre (faturalar işletme genelinde, şubeye bölünmez)."
+      }${changeNote(g.net)}`
     : "";
 
   const tabs: DashboardTab[] = [
@@ -546,7 +551,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                       ) : null}
                       {d.actual.hasRevenue ? (
                         <span className="block">
-                          Faturaya göre:{" "}
+                          {d.profitBasis.title}:{" "}
                           <Signed value={d.actual.profit} className="whitespace-nowrap">
                             {tl(d.actual.profit)}
                           </Signed>
@@ -621,6 +626,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             className="xl:col-span-5"
             recipeRatio={d.recipeCostRatio}
             invoiceRatio={d.invoiceCostRatio}
+            basis={d.profitBasis}
             target={st.hedefMaliyet}
             lowCount={d.lowProfitCount}
             attentionCount={d.attentionCount}
@@ -638,7 +644,11 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
               <CardHeader
                 icon={<Scale />}
                 title="Reçeteye göre mi, faturaya göre mi?"
-                description="Aradaki fark fire, ikram, stokta bekleyen mal ya da reçetede eksik malzemeyi gösterir."
+                description={
+                  d.profitBasis.invoices
+                    ? "Aradaki fark fire, ikram, stokta bekleyen mal ya da reçetede eksik malzemeyi gösterir."
+                    : "Faturalar işletme genelinde, şubeye bölünmez: karşılaştırma Tümü seçiliyken."
+                }
               />
               <CardContent className="@container flex flex-1 flex-col gap-4">
                 {/* Telefonda da yan yana (iki tutar birlikte okunur); çok dar ekranda alt alta */}
@@ -648,32 +658,46 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                     <p className="mt-1 text-lg font-semibold tracking-tight whitespace-nowrap text-ink tabular sm:text-xl">{tl(t.material)}</p>
                     <p className="text-xs text-ink-mute">Maliyet oranı {pct(d.recipeCostRatio)}</p>
                   </Well>
-                  <Well className="p-3 sm:p-3.5">
-                    <p className="text-xs font-medium text-ink-mute">Faturaya göre alım</p>
-                    <p className="mt-1 text-lg font-semibold tracking-tight whitespace-nowrap text-ink tabular sm:text-xl">{tl(purchases)}</p>
-                    <p className="text-xs text-ink-mute">
-                      {/* ⓘ oranla birlikte kırılır: dar kutuda tek başına alt satıra düşmez */}
-                      Maliyet oranı{" "}
-                      <span className="whitespace-nowrap">
-                        {pct(d.invoiceCostRatio)}
-                        <InfoTip
-                          className="ml-1.5 align-middle"
-                          text="Faturayla alınan mal (kahve, süt, gıda, ambalaj; KDV hariç) ÷ net satış (laffogato.net online dahil). Stok sayımı yoksa ay içinde alınan her şey o ayın maliyeti sayılır."
-                        />
-                      </span>
-                    </p>
-                  </Well>
+                  {!d.profitBasis.invoices ? (
+                    // Şube seçili: işletmenin bütün mal alımı şubenin satışına bölünmez (bulgu 64)
+                    <Well className="p-3 sm:p-3.5">
+                      <p className="text-xs font-medium text-ink-mute">Faturaya göre alım</p>
+                      <p className="mt-1 text-lg font-semibold tracking-tight text-ink sm:text-xl">Tümü&apos;nde</p>
+                      <p className="text-xs text-ink-mute">
+                        İşletme geneli, şubeye bölünmez
+                        <InfoTip className="ml-1.5 align-middle" text={d.profitBasis.sharedNote ?? ""} />
+                      </p>
+                    </Well>
+                  ) : (
+                    <Well className="p-3 sm:p-3.5">
+                      <p className="text-xs font-medium text-ink-mute">Faturaya göre alım</p>
+                      <p className="mt-1 text-lg font-semibold tracking-tight whitespace-nowrap text-ink tabular sm:text-xl">{tl(purchases)}</p>
+                      <p className="text-xs text-ink-mute">
+                        {/* ⓘ oranla birlikte kırılır: dar kutuda tek başına alt satıra düşmez */}
+                        Maliyet oranı{" "}
+                        <span className="whitespace-nowrap">
+                          {pct(d.invoiceCostRatio)}
+                          <InfoTip
+                            className="ml-1.5 align-middle"
+                            text="Faturayla alınan mal (kahve, süt, gıda, ambalaj; KDV hariç) ÷ net satış (laffogato.net online dahil). Stok sayımı yoksa ay içinde alınan her şey o ayın maliyeti sayılır."
+                          />
+                        </span>
+                      </p>
+                    </Well>
+                  )}
                 </div>
                 <div className="divide-y divide-line">
-                  <KeyValue
-                    label={
-                      <span className="inline-flex items-center gap-1.5">
-                        Fark (alınan − harcanan)
-                        <InfoTip text="Faturayla alınan mal − reçeteye göre satışlarda harcanan malzeme. Artı değer: fire, ikram, stokta bekleyen mal ya da reçetede eksik malzeme." />
-                      </span>
-                    }
-                    value={<span className="font-semibold whitespace-nowrap">{tl(purchases - t.material)}</span>}
-                  />
+                  {d.profitBasis.invoices ? (
+                    <KeyValue
+                      label={
+                        <span className="inline-flex items-center gap-1.5">
+                          Fark (alınan − harcanan)
+                          <InfoTip text="Faturayla alınan mal − reçeteye göre satışlarda harcanan malzeme. Artı değer: fire, ikram, stokta bekleyen mal ya da reçetede eksik malzeme." />
+                        </span>
+                      }
+                      value={<span className="font-semibold whitespace-nowrap">{tl(purchases - t.material)}</span>}
+                    />
+                  ) : null}
                   <KeyValue
                     label="Kâr/zarar · reçeteye göre"
                     value={
@@ -683,7 +707,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                     }
                   />
                   <KeyValue
-                    label="Kâr/zarar · faturaya göre"
+                    label={`Kâr/zarar · ${d.profitBasis.label}`}
                     value={
                       <Signed value={d.actual.profit} className="font-semibold whitespace-nowrap">
                         {tl(d.actual.profit)}
@@ -730,7 +754,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                   title={`${year} aylık gelir-gider`}
                   description={
                     <span className="inline-flex items-center gap-1.5">
-                      Gelir-gider tablosundan, faturaya göre
+                      {d.profitBasis.invoices ? "Gelir-gider tablosundan, faturaya göre" : "Gelir-gider tablosundan, mal maliyeti reçeteye göre"}
                       <InfoTip text="Kira, personel gibi aylık giderler ayın gün oranıyla bölünür (kasa raporlarından gelen ayda takvim günüyle: kapalı bir gün kirayı ve maaşı düşürmez). Ciro KDV hariçtir." />
                     </span>
                   }
@@ -833,8 +857,10 @@ function ThirdStat({ d, projected, breakdown }: { d: DashboardData; projected: n
         <Stat
           compact
           icon={d.actual.profit < 0 ? <TrendingDown /> : <TrendingUp />}
-          label="Kâr / zarar (faturaya göre)"
-          info="Ay bitti; tahmin yerine gerçekleşen sonuç: Gelir-gider tablosunda KDV hariç ciro − satılan malın maliyeti − giderler. Ürün satışları gelince reçeteye göre kâr da hesaplanır."
+          label={`Kâr / zarar (${d.profitBasis.label})`}
+          info={`Ay bitti; tahmin yerine gerçekleşen sonuç: Gelir-gider tablosunda KDV hariç ciro − satılan malın maliyeti − giderler.${
+            d.profitBasis.invoices ? "" : " Şube seçiliyken mal maliyeti şubenin satışından reçeteye göre (faturalar işletme genelinde)."
+          } Ürün satışları gelince reçeteye göre kâr da hesaplanır.`}
           value={<CountUp value={has ? d.actual.profit : null} />}
           tone={!has ? "default" : d.actual.profit < 0 ? "bad" : "good"}
           sub={
@@ -885,6 +911,7 @@ function CostCard({
   className,
   recipeRatio,
   invoiceRatio,
+  basis,
   target,
   lowCount,
   attentionCount,
@@ -895,6 +922,7 @@ function CostCard({
   className?: string;
   recipeRatio: number | null;
   invoiceRatio: number | null;
+  basis: ProfitBasis;
   target: number;
   lowCount: number;
   attentionCount: number;
@@ -923,7 +951,15 @@ function CostCard({
             </div>
             <div>
               <p className="text-xs text-ink-mute">Faturaya göre</p>
-              <p className="text-sm font-semibold text-ink tabular">{pct(invoiceRatio)}</p>
+              {basis.invoices ? (
+                <p className="text-sm font-semibold text-ink tabular">{pct(invoiceRatio)}</p>
+              ) : (
+                // Şube seçili: faturalar işletme genelinde, şubenin satışına bölünmez (bulgu 64)
+                <p className="text-sm font-semibold text-ink">
+                  Tümü&apos;nde
+                  <InfoTip className="ml-1.5 align-middle" text={basis.sharedNote ?? ""} />
+                </p>
+              )}
             </div>
           </div>
         </Well>
@@ -943,7 +979,7 @@ function CostCard({
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
             <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
               {year} kâr / zarar
-              <InfoTip text="Her ay Gelir-gider tablosundaki (faturaya göre) kâr ya da zarar. Gri: o ay için POS cirosu girilmedi ya da veri yok; ciro girilmeden kâr/zarar sayılmaz. Çerçeveli parça seçili ay." />
+              <InfoTip text={`Her ay Gelir-gider tablosundaki (${basis.invoices ? "faturaya göre" : "mal maliyeti şubenin satışından reçeteye göre"}) kâr ya da zarar. Gri: o ay için POS cirosu girilmedi ya da veri yok; ciro girilmeden kâr/zarar sayılmaz. Çerçeveli parça seçili ay.`} />
             </h3>
             <p className="flex items-center gap-1.5">
               <Badge tone="green" className="tabular">

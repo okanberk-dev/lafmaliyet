@@ -662,10 +662,14 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
     model.ds.invoices.some((i) => i.date.startsWith(month)) ||
     model.ds.pnlEntries.some((e) => e.month === month) ||
     model.ds.stockCounts.some((c) => c.month === month);
+  // Şube seçiliyken mal maliyeti şubenin satışından reçeteye göre: "faturaya göre" denmez (profitBasisOf; bulgu 64)
+  const actualKey = d.profitBasis.invoices ? "Kâr / zarar (faturaya göre, Gelir-gider)" : "Kâr / zarar (Gelir-gider)";
   lines.push({
-    k: monthHasData ? "Kâr / zarar (faturaya göre, Gelir-gider)" : "Kâr / zarar (faturaya göre, Gelir-gider) · bu ay veri yok",
+    k: monthHasData ? actualKey : `${actualKey} · bu ay veri yok`,
     v: monthHasData ? d.actual.profit : null,
-    note: "Gelir-gider sekmesindeki KÂR / ZARAR: POS cirosu (KDV hariç) − mal maliyeti (devir + alış − devreden) − bütün giderler.",
+    note: d.profitBasis.invoices
+      ? "Gelir-gider sekmesindeki KÂR / ZARAR: POS cirosu (KDV hariç) − mal maliyeti (devir + alış − devreden) − bütün giderler."
+      : "Gelir-gider sekmesindeki KÂR / ZARAR: POS cirosu (KDV hariç) − şubenin satışından reçeteye göre mal maliyeti − şubenin giderleri. Faturalar işletme genelinde, şubeye bölünmez.",
   });
 
   lines.push({ k: "HEDEF", section: true });
@@ -703,7 +707,7 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
 
   lines.push({ k: "MALİYET ORANI (düşük = iyi)", section: true });
   lines.push({ k: "Reçeteye göre maliyet oranı", v: d.recipeCostRatio, fmt: PCT });
-  lines.push({ k: `Faturaya göre maliyet oranı (${name} alımları)`, v: d.invoiceCostRatio, fmt: PCT });
+  lines.push({ k: `Faturaya göre maliyet oranı (${name} alımları)`, v: d.invoiceCostRatio, fmt: PCT, note: d.profitBasis.sharedNote ?? undefined });
   const best = d.bestProduct;
   lines.push({ k: `${name} ayında en çok kâr getiren ürün`, v: best ? (best.p.product.size === "Tek" ? best.p.product.name : `${best.p.product.name} (${best.p.product.size})`) : null });
   if (best) lines.push({ k: "… o ürünün brüt kârı", v: best.profit });

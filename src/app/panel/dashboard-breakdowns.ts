@@ -336,8 +336,8 @@ export function netProfitBreakdown(model: Model, d: DashboardData): CardBreakdow
   if (d.actual.hasRevenue) {
     compare.push({
       key: "fatura",
-      label: "Faturaya göre (Gelir-gider)",
-      sub: "Ciro − alınan malın maliyeti (stok devriyle) − giderler",
+      label: d.profitBasis.invoices ? "Faturaya göre (Gelir-gider)" : "Gelir-gider'e göre",
+      sub: d.profitBasis.invoices ? "Ciro − alınan malın maliyeti (stok devriyle) − giderler" : "Ciro − şubenin satışından reçeteye göre mal maliyeti − şubenin giderleri",
       amount: d.actual.profit,
       display: tl(d.actual.profit),
       href: pnlHref(d.month),
@@ -506,7 +506,9 @@ const PNL_SECTIONS = [
 
 /**
  * Bitmiş ayın faturaya göre kâr / zararı, Gelir-gider tablosunun satırlarından: ciro (KDV hariç), satılan mal
- * maliyeti (mal alışları + stok devri) ve bölüm bölüm giderler, eksi tutarla, büyük gider önce.
+ * maliyeti (mal alışları + stok devri) ve bölüm bölüm giderler, eksi tutarla, büyük gider önce. Şube seçiliyken mal
+ * maliyeti şubenin satışından reçeteye göre tek satır: işletme geneli faturalar şubenin mal maliyetine yazılmaz (bulgu 64;
+ * önceden faturalar satır satır yazılıyor, farkı "Diğer" artı tutarla kapatıyordu).
  */
 export function actualProfitBreakdown(model: Model, d: DashboardData): CardBreakdown {
   const month = d.month;
@@ -519,21 +521,23 @@ export function actualProfitBreakdown(model: Model, d: DashboardData): CardBreak
     defs
       .filter((r) => r.section === section)
       .map((r) => ({ key: r.key, label: pnlRowLabel(r, fixedNames), sub: r.sub, amount: -value(r.key), href: lineHref(r.key, month) }));
-  const cogsRows = withRemainder(
-    costFirst([
-      ...rowsOf("mal"),
-      {
-        key: "stock:change",
-        label: "Stok devri",
-        sub: `Önceki aydan devir ${tl(pm.opening)} − ay sonu stok ${tl(pm.closing)}`,
-        amount: -(pm.opening - pm.closing),
-        href: `/panel/sayim?ay=${month}`,
-      },
-    ]),
-    -pm.cogs,
-    "Diğer (tabloda ayrı satırı yok)",
-    "cogs:other",
-  );
+  const cogsRows = !d.profitBasis.invoices
+    ? [{ key: "total:cogs", label: "Mal maliyeti (reçeteye göre)", sub: model.pnlValue(pm, "total:cogs").info ?? undefined, amount: -pm.cogs, href: `/panel/gelir-gider?yil=${month.slice(0, 4)}` }]
+    : withRemainder(
+        costFirst([
+          ...rowsOf("mal"),
+          {
+            key: "stock:change",
+            label: "Stok devri",
+            sub: `Önceki aydan devir ${tl(pm.opening)} − ay sonu stok ${tl(pm.closing)}`,
+            amount: -(pm.opening - pm.closing),
+            href: `/panel/sayim?ay=${month}`,
+          },
+        ]),
+        -pm.cogs,
+        "Diğer (tabloda ayrı satırı yok)",
+        "cogs:other",
+      );
   const expenses: BreakdownGroup[] = [
     { key: "cogs", label: "Satılan mal maliyeti", rows: cogsRows },
     ...PNL_SECTIONS.map(({ key, label }) => ({
@@ -544,9 +548,10 @@ export function actualProfitBreakdown(model: Model, d: DashboardData): CardBreak
   ].sort((a, b) => sum(a.rows.map((r) => r.amount)) - sum(b.rows.map((r) => r.amount)));
   const has = d.actual.hasRevenue || d.actual.expenses > 0;
   return {
-    title: `${monthLabel(month)} kâr / zarar (faturaya göre)`,
-    description:
-      "Gelir-gider tablosundaki sonuç, KDV hariç: ciro − satılan mal maliyeti − giderler, bölüm bölüm. Stok sayımı olmayan ayda mal maliyeti tahminidir (sayım aralığına dağıtılır ya da reçeteye göre; hiç sayım yokken alınan malın tamamı).",
+    title: `${monthLabel(month)} kâr / zarar (${d.profitBasis.label})`,
+    description: d.profitBasis.invoices
+      ? "Gelir-gider tablosundaki sonuç, KDV hariç: ciro − satılan mal maliyeti − giderler, bölüm bölüm. Stok sayımı olmayan ayda mal maliyeti tahminidir (sayım aralığına dağıtılır ya da reçeteye göre; hiç sayım yokken alınan malın tamamı)."
+      : "Gelir-gider tablosundaki sonuç, KDV hariç: ciro − satılan mal maliyeti − giderler, bölüm bölüm. Şube seçiliyken mal maliyeti şubenin satışından reçeteye göre; faturalar işletme genelinde, şubeye bölünmez.",
     groups: has
       ? [
           {

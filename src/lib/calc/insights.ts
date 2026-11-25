@@ -645,6 +645,35 @@ export function expensePlanSub(x: Pick<MonthlyExpensePlan, "source" | "from" | "
   return `${monthLabel(x.from)} tutarı taşındı (${x.entered > 0.005 ? "bu ay girilen daha az" : "bu ay girilmedi"})`;
 }
 
+/** Genel bakış'ın Gelir-gider kârının temeli ve faturaya göre rakamları (profitBasisOf) */
+export interface ProfitBasis {
+  /** Faturaya göre maliyet oranı, faturaya göre alım ve "alınan − harcanan" çizilir mi: yalnız Tümü'de */
+  invoices: boolean;
+  /** Gelir-gider kârının adı, cümle içinde: "faturaya göre" ya da "Gelir-gider'e göre" */
+  label: string;
+  /** Başta ("Faturaya göre: …") */
+  title: string;
+  /** Şube seçiliyken faturaya göre rakamların yerine yazılan; Tümü'de null */
+  sharedNote: string | null;
+}
+
+/**
+ * Tümü'de Gelir-gider'in mal maliyeti sayımla ve faturalardan (alınan mal): kâr "faturaya göre", maliyet oranı ve
+ * "alınan − harcanan" faturayla. Şube seçiliyken faturalar işletme genelidir, şubeye bölünmez (docs/SUBE.md › Şube
+ * görünümünde maliyet): şubenin mal maliyeti satışından reçeteye göre, kârın adı "Gelir-gider'e göre", faturaya göre
+ * rakamlar çizilmez. Bulgu 64: Marina seçiliyken işletmenin bütün mal alımı Marina'nın satışına bölünüyor, "faturaya
+ * göre %70" ve büyük bir fark kaçak gibi görünüyordu.
+ */
+export function profitBasisOf(branchView: { name: string } | null | undefined): ProfitBasis {
+  if (!branchView) return { invoices: true, label: "faturaya göre", title: "Faturaya göre", sharedNote: null };
+  return {
+    invoices: false,
+    label: "Gelir-gider'e göre",
+    title: "Gelir-gider'e göre",
+    sharedNote: `${branchView.name} seçili: faturalar işletme genelinde, şubeye bölünmez. Faturaya göre oran ve alınan − harcanan Tümü seçiliyken görünür; şubenin mal maliyeti satışından reçeteye göre.`,
+  };
+}
+
 /**
  * Genel bakış (Excel Panel) verileri.
  * Ay sonu tahmini yalnızca devam eden ay için yapılır (bkz. resolveCurrentMonth). Sunucuda loadModel()
@@ -656,6 +685,7 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   const sales = model.monthSales(month);
   const hasSales = sales.lines.length > 0;
   const pm = model.pnlMonth(month);
+  const profitBasis = profitBasisOf(model.ds.branchView);
   const dim = daysInMonth(month);
   const openDays = info?.openDays ?? 0;
 
@@ -821,7 +851,9 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
     forecast,
     // Malzeme ve alınan mal online satışı da karşılar: oranlar ModPOS + online net satışa göre (kartta yazan tutarla aynı)
     recipeCostRatio: theoretical ? safeDiv(theoretical.material, theoretical.netSales) : null,
-    invoiceCostRatio: theoretical ? safeDiv(model.goodsPurchases(month), theoretical.netSales) : null,
+    // Şube seçiliyken yok: faturalar işletme genelinde, şubenin satışına bölünmez (profitBasisOf; bulgu 64)
+    invoiceCostRatio: theoretical && profitBasis.invoices ? safeDiv(model.goodsPurchases(month), theoretical.netSales) : null,
+    profitBasis,
     bestProduct: topProducts[0] ?? null,
     topProducts,
     bestSellers,
