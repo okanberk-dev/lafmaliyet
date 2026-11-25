@@ -478,8 +478,8 @@ export function modposTillRow(sheet: Pick<ModposSheet, "day" | "branchId" | "sta
 }
 
 /**
- * ModPOS kasa föyünün yedek ay satırları, [from, to] içinde (docs/MODPOS-API.md › Ay rakamına yedek; Ayarlar › ModPOS
- * kartının anahtarı, settings › modposAyYedegi, varsayılan kapalı). Kapalıyken föy tablosu okunmadan boş döner: ay
+ * ModPOS kasa föyünün yedek ay satırları, [from, to] içinde (docs/MODPOS-API.md › Ay rakamına yedek; şube başına ayar
+ * `modpos`, modposFallbackBranches: yalnız anahtarı açık şubenin föyü; varsayılan kapalı). Kapalıyken föy tablosu okunmadan boş döner: ay
  * rakamı bugünkü gibi. Açıkken yalnız ModPOS günleri (LafPOS'un şubesinde geçiş gününden önceki günler, ModPOS'ta kalan
  * şubede bütün günler; geçiş günü boşsa bütün günler) ve yalnız kapanmış föyler (modposTillRow). Raporu olan günü
  * süzmez: tillRows ve tillMonths raporu öne alır (rapor > LafPOS > ModPOS). Yalnız yöneticinin ekranları ve hesaplar

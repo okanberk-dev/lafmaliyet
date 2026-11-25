@@ -4,7 +4,8 @@
 // - kasa kaynağı başka şubeye (Tuzla) geçince okuyucu önbellekten eskisini en çok süresi kadar verir, şube eylemi
 //   önbelleği hemen düşürür;
 // - Tuzla LafPOS'tayken gün sonu Tuzla'ya yazılır, Marina'ya ayarlı kasa 409 alır, geçiş günü yalnız Tuzla'nın kasasının;
-// - ikinci şube LafPOS'a geçirilemez; zaten LafPOS olan şubenin adı düzenlenebilir; yalnız yönetici.
+// - ikinci şube LafPOS'a geçirilemez (geri düşüşle tutan Marina LafPOS'u kullanıyorsa da); zaten LafPOS olan şubenin
+//   adı düzenlenebilir; yalnız yönetici.
 //
 // LAFPOS_SUBE_TEST_DATABASE_URL verilmezse atlanır (ör. postgres://postgres:postgres@localhost:5432/postgres). Test o
 // sunucuda kendi geçici veritabanını (lm_lafpos_sube_<pid>) açar, sonunda siler.
@@ -134,6 +135,27 @@ describe("LafPOS'un şubesi kütükten: veritabanında", { skip: !SERVER_URL && 
     assert.equal(await branch.lafposBranchId(db, t0 + branch.LAFPOS_BRANCH_CACHE_MS + 2), "tuzla", "yeni önbellek");
     branch.forgetLafposBranch();
     assert.equal(await branch.lafposBranchId(db), "marina", "kütükte LafPOS kasalı şube yok: geri düşüş");
+  });
+
+  test("Marina geri düşüşle LafPOS'un şubesi (kütükte ModPOS) ve geçiş günü var: Tuzla da yeni şube de LafPOS yapılamaz", async () => {
+    const actions = await import("../src/server/actions/branches");
+    branch.forgetLafposBranch();
+    assert.equal(await branch.lafposBranchId(db), "marina");
+    assert.equal(await branch.lafposInUse("marina", db), true, "eski kaydın geçiş günü Marina'nın");
+    const base = { kind: "fiziksel" as const, openedOn: null, active: true };
+    const tuzla = await actions.updateBranch({ ...base, id: "tuzla", name: "Tuzla", posSource: "lafpos" });
+    assert.ok(!tuzla.ok && /LafPOS günleri Marina şubesine yazılıyor/.test(tuzla.error), tuzla.ok ? "kabul edildi" : tuzla.error);
+    const created = await actions.createBranch({ id: "bodrum", name: "Bodrum", kind: "fiziksel", posSource: "lafpos", openedOn: null });
+    assert.ok(!created.ok && /Marina/.test(created.error), created.ok ? "kabul edildi" : created.error);
+    branch.forgetLafposBranch();
+    assert.equal(await branch.lafposBranchId(db), "marina", "LafPOS'un şubesi yerinde");
+    assert.equal(await branch.loadBranchSwitchDay("marina", db), SWITCH, "Marina'nın geçiş günü yerinde");
+    // Marina'nın kendisi LafPOS yapılabilir (açık sahip olur), sonra geri alınır
+    const marina = await actions.updateBranch({ ...base, id: "marina", name: "Marina", posSource: "lafpos" });
+    assert.ok(marina.ok, marina.ok ? "" : marina.error);
+    assert.ok((await actions.updateBranch({ ...base, id: "marina", name: "Marina", posSource: "modpos" })).ok);
+    // Panelde anahtar saklama Marina'nın sayfasında (kaynağı ModPOS olsa da LafPOS'un şubesi): sunucu da Marina'yı kabul eder
+    assert.equal(await branch.lafposBranchId(db), "marina");
   });
 
   test("Tuzla LafPOS'tayken: gün sonu Tuzla'ya yazılır, Marina'ya ayarlı kasa 409 alır; geçiş günü yalnız Tuzla'nın", async () => {

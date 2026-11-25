@@ -13,7 +13,7 @@ import { Notice } from "@/components/ui/notice";
 import { featureBranches, featureInScope } from "@/lib/branch-features";
 import { COMMISSION_GROUP } from "@/lib/branch-settings/groups";
 import { DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
-import { branchCommissionShare, groupOf, shownChannels } from "@/lib/commission/report";
+import { branchCommissionShare, effectiveSettings, groupOf, shownChannels } from "@/lib/commission/report";
 import { COMMISSION_CATEGORY } from "@/lib/constants";
 import { dateTR, money, monthLabel, num, pct } from "@/lib/format";
 import { dayAblativeTR } from "@/lib/reminders";
@@ -77,7 +77,8 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
     );
   }
   // Faturalar, oran ve hakediş işletmenin (`report`); şube seçiliyken şubenin satışı ayrıca (`branch`; docs/KOMISYON.md › Şube)
-  // Kanalların ödeme süresi şube başına (şube ayarı komisyon): seçili şubenin, "Tümü"de ve online kanalda varsayılan şubenin
+  // Kanallar kartı seçili şubenin sürelerini düzenler ("Tümü"de ve online kanalda varsayılan şubeninkini); raporun son günleri
+  // seçiciden bağımsız işletmenin süreleriyle (şubelerin en kısası, businessPayDays; zille aynı)
   const settingsBranch = tillBranches(view.branches).find((b) => b.id === view.scope)?.id ?? DEFAULT_BRANCH_ID;
   const [{ all: report, branch, scope }, channelView] = await Promise.all([loadCommissionReports(), branchSettingView(COMMISSION_GROUP, settingsBranch)]);
   const branchName = branch ? ((await listBranches()).find((b) => b.id === scope)?.name ?? scope) : null;
@@ -220,7 +221,7 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
           </Card>
         ) : null}
 
-        <ChannelSettingsCard settings={report.settings} branchId={settingsBranch} branchName={channelView.branchName} link={channelView.link} />
+        <ChannelSettingsCard settings={effectiveSettings(channelView.value.channels)} branchId={settingsBranch} branchName={channelView.branchName} link={channelView.link} />
 
         <RulesCard switchDay={report.switchDay} />
       </div>

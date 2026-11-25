@@ -19,6 +19,7 @@ import type { ChannelKey } from "@/lib/commission/channels";
 import { effectiveSettings, parseCommissionSettings, type ChannelSettings } from "@/lib/commission/report";
 import { DEFAULT_SETTINGS, readLafposSwitchDay } from "@/lib/constants";
 import { LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
+import { clockSuffixTR } from "@/lib/reminders";
 
 type Env = Record<string, string | undefined>;
 
@@ -230,7 +231,7 @@ export const CALENDAR_GROUP: BranchSettingGroup<CalendarSetting> = {
     openDays: intIn(raw.openDays, 1, 31) ?? DEFAULT_SETTINGS.acikGun,
     eveningHour: intIn(raw.eveningHour, EVENING_HOUR_MIN, EVENING_HOUR_MAX) ?? CASH_EVENING_HOUR,
   }),
-  summary: (v) => `ayda ${v.openDays} gün · rapor ${String(v.eveningHour).padStart(2, "0")}:00'den sonra`,
+  summary: (v) => `ayda ${v.openDays} gün · rapor ${clockSuffixTR(`${String(v.eveningHour).padStart(2, "0")}:00`, "abl")} sonra`,
 };
 
 /** Banka POS'unun (yazarkasa) türü */

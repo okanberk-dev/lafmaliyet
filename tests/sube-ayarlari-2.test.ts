@@ -7,7 +7,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { dayContext, nextRefreshAt } from "../src/app/panel/bugun/logic";
+import { dayContext, dayTasks, eveningHours, nextRefreshAt, type DayFacts } from "../src/app/panel/bugun/logic";
 import { ALL_FIELDS } from "../src/app/panel/ayarlar/fields";
 import {
   BRANCH_SETTING_GROUPS,
@@ -25,6 +25,7 @@ import {
 import { settingLinkError, settingMode } from "../src/lib/branch-settings/rules";
 import type { BranchRow } from "../src/lib/branches";
 import { CASH_EVENING_HOUR, isCashEvening } from "../src/lib/cash-report";
+import { businessPayDays } from "../src/lib/commission/report";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 /** İstanbul saatiyle an ("2026-11-25T21:00" → UTC+3) */
@@ -103,6 +104,43 @@ test("kasa raporu saati şubenin: akşam kuralı, Bugün'ün günü ve yenilenme
   assert.equal(nextRefreshAt(tr("2026-11-25T20:30"), [], 21), tr("2026-11-25T21:00").getTime());
   assert.equal(nextRefreshAt(tr("2026-11-25T19:30"), [], 21), tr("2026-11-25T20:00").getTime());
   assert.equal(nextRefreshAt(tr("2026-11-25T20:30")), tr("2026-11-26T00:00").getTime());
+  // "Tümü"de kasaların saatleri ayrı: ekran her birinde yenilenir
+  assert.equal(nextRefreshAt(tr("2026-11-25T20:30"), [], [20, 22]), tr("2026-11-25T22:00").getTime());
+  assert.deepEqual(eveningHours({ eveningHour: 18, cash: null }), [18]);
+  const till = (id: string, eveningHour?: number) => ({ id, name: id, today: null, yesterday: null, firstDate: null, ...(eveningHour === undefined ? {} : { eveningHour }) });
+  assert.deepEqual(eveningHours({ cash: { today: null, yesterday: null, firstDate: null, tills: [till("tuzla", 18), till("marina", 22), till("bodrum")] } }), [CASH_EVENING_HOUR, 18, 22]);
+});
+
+test("Bugün 'Tümü'de her kasanın akşamı kendi saatiyle (zil gibi): 19:00'da Marina (22:00) henüz akşam değil", () => {
+  const now = tr("2026-11-25T19:00");
+  const till = (id: string, eveningHour: number) => ({ id, name: id === "tuzla" ? "Tuzla" : "Marina", today: null, yesterday: null, firstDate: "2026-01-01", eveningHour });
+  const tasks = dayTasks({ role: "admin", now, eveningHour: 18, cash: { today: null, yesterday: null, firstDate: "2026-01-01", tills: [till("tuzla", 18), till("marina", 22)] } } as DayFacts);
+  const kasa = tasks.filter((x) => x.key.startsWith("kasa") && x.title.startsWith("Bugünkü kasa raporu"));
+  assert.deepEqual(
+    kasa.map((x) => [x.title, x.status]),
+    [
+      ["Bugünkü kasa raporu · Tuzla", "todo"],
+      ["Bugünkü kasa raporu · Marina", "later"],
+    ],
+  );
+});
+
+test("çalışma takviminin saat metni ayrılma ekini saate göre alır", () => {
+  assert.equal(CALENDAR_GROUP.summary({ openDays: 26, eveningHour: 20 }), "ayda 26 gün · rapor 20:00'den sonra");
+  assert.equal(CALENDAR_GROUP.summary({ openDays: 26, eveningHour: 13 }), "ayda 26 gün · rapor 13:00'ten sonra");
+  assert.equal(CALENDAR_GROUP.summary({ openDays: 26, eveningHour: 16 }), "ayda 26 gün · rapor 16:00'dan sonra");
+  assert.equal(CALENDAR_GROUP.summary({ openDays: 26, eveningHour: 19 }), "ayda 26 gün · rapor 19:00'dan sonra");
+  assert.equal(CALENDAR_GROUP.summary({ openDays: 26, eveningHour: 23 }), "ayda 26 gün · rapor 23:00'ten sonra");
+  assert.doesNotMatch(read("src/app/panel/subeler/[id]/calendar-card.tsx"), /&apos;den sonra/);
+});
+
+test("komisyon: işletmenin hakedişi şubelerin en kısa süresiyle; şubeler 'aynı'yken tek şubeninki", () => {
+  const tuzla = { pluxee: { payDays: 30 }, multinet: { payDays: 30 } };
+  assert.deepEqual(businessPayDays([tuzla, tuzla]), businessPayDays([tuzla]), "aynı süreler: bugünkü gibi");
+  const both = businessPayDays([tuzla, { multinet: { payDays: 15 } }]);
+  assert.equal(both.multinet.payDays, 15, "Marina'nın kısa süresi işletmenin son gününü öne alır");
+  assert.equal(both.pluxee.payDays, 30);
+  assert.deepEqual(businessPayDays([]), businessPayDays([null]), "şube yoksa varsayılan");
 });
 
 test("ayda açık gün Ayarlar'ın formunda değil, şube başına; eski sekmenin gönderdiği alan yok sayılır", () => {
@@ -126,18 +164,27 @@ test("kaynak: geçiş günü, ModPOS ay yedeği ve komisyon süreleri eski genel
   assert.deepEqual(bad, [], "eski kayıt yalnız şube ayarının geçiş okumasında (legacySettings, legacyKey)");
   // Okuyucular tek yerde: LafPOS'un şubesinin şube ayarı
   const branch = read("src/server/lafpos/branch.ts");
-  assert.match(branch, /export async function lafposSwitchDay\(db: Reader = getDb\(\)\): Promise<string \| null> \{\s*const branch = await lafposBranchId\(db\);\s*return \(await resolveBranchSetting\(LAFPOS_GROUP, branch, db\)\)\.value\.switchDay;/);
+  assert.match(branch, /export async function lafposSwitchDay\(db: Reader = getDb\(\)\): Promise<string \| null> \{\s*return switchDayOf\(await lafposBranchId\(db\), db\);/);
+  assert.match(branch, /export async function switchDayOf\(branchId: string, db: Reader = getDb\(\)\): Promise<string \| null> \{\s*return \(await resolveBranchSetting\(LAFPOS_GROUP, branchId, db\)\)\.value\.switchDay;/);
+  // Gün sonunu yazan ve silen işlem geçiş gününü yazdığı şubeyle okur (şube işlemin içinde yeniden türetilmez)
+  assert.match(read("src/server/lafpos/ingest.ts"), /isLafposDay\(day\.date, await switchDayOf\(branchId, tx\)\)/);
+  assert.match(read("src/server/lafpos/admin.ts"), /const counted = isLafposDay\(date, await switchDayOf\(branchId, tx\)\);/);
   assert.match(read("src/server/lafpos/status.ts"), /export async function loadLafposSwitchDay\(db: DB = getDb\(\)\): Promise<string \| null> \{\s*return lafposSwitchDay\(db\);/);
   assert.match(read("src/server/data/lafpos-ikram.ts"), /export async function lafposSwitchDayOf\(db: Reader\): Promise<string \| null> \{\s*return lafposSwitchDay\(db\);/);
   assert.match(read("src/server/data/dataset.ts"), /lafposGecisGunu: switchDay, acikGun: calendar\.value\.openDays/);
   // Yazım şube ayarına, grup kilidiyle
   const admin = read("src/server/lafpos/admin.ts");
-  assert.match(admin, /await lockGroup\(tx, LAFPOS_GROUP\.id\);[\s\S]*?await putBranchSetting\(tx, LAFPOS_GROUP, branchId, \{ switchDay: day \}, me\.name\);/);
-  // Komisyon: ekran seçili şubenin süreleriyle, yazım şube ayarına
+  assert.match(admin, /await lockGroup\(tx, LAFPOS_GROUP\.id\);[\s\S]*?if \(known\) await putBranchSetting\(tx, LAFPOS_GROUP, branchId, \{ switchDay: day \}, me\.name\);/);
+  // Kütükte LafPOS'un şubesi yoksa (tek şubeli eski kurulum) eski genel kayda, okuyanla aynı yere
+  assert.match(admin, /const key = LAFPOS_GROUP\.legacySettings!\.switchDay;/);
+  // Komisyon: hakediş işletmenin; son gün seçiciden bağımsız, şubelerin en kısa süresiyle (ekran, zil, Bugün, e-posta aynı)
   const commission = read("src/server/data/commission.ts");
-  assert.match(commission, /resolveBranchSetting\(COMMISSION_GROUP, opts\.settingsBranch \?\? scope, db\)/);
-  assert.match(commission, /settings: channelSettings\.value\.channels,/);
-  assert.match(commission, /withBranchScope\(ALL_BRANCHES, \(\) => loadCommissionReport\(scope\)\)/);
+  assert.doesNotMatch(commission, /settingsBranch/);
+  assert.match(commission, /\n {4}loadBusinessPayDays\(db\),\n/);
+  assert.match(commission, /resolveForTills\(COMMISSION_GROUP, db\)/);
+  assert.match(commission, /return businessPayDays\(/);
+  assert.match(commission, /settings: channelSettings,/);
+  assert.match(commission, /withBranchScope\(ALL_BRANCHES, \(\) => loadCommissionReport\(\)\), withBranchScope\(scope, \(\) => loadCommissionReport\(\)\)/);
   assert.match(read("src/server/actions/commission.ts"), /await putBranchSetting\(tx, COMMISSION_GROUP, branchId, /);
 });
 
@@ -154,7 +201,15 @@ test("kaynak: LafPOS'un imzalı uçları anahtarı şube ayarından okur (paneld
   const action = read("src/server/actions/branch-settings.ts");
   const save = action.slice(action.indexOf("export async function saveLafposSecret"));
   assert.match(save, /const me = await requireAdmin\(\);/);
-  assert.match(save, /if \(d\.branchId !== \(await lafposBranchId\(db\)\)\) throw new UserError/);
+  assert.match(save, /if \(d\.secret !== null && d\.branchId !== \(await lafposBranchId\(db\)\)\) throw new UserError/);
+  // Parolayla (anahtar gün sonu yazımlarının güven kökü), denetimlerden sonra, yazımdan önce
+  assert.ok(save.indexOf("await requireStepUp(me, confirm,") > save.indexOf("KARAOKE_SYNC_SECRET"));
+  assert.ok(save.indexOf("await requireStepUp(me, confirm,") < save.indexOf("db.transaction("));
+  assert.ok(save.indexOf("forgetLafposSecret();") > save.indexOf("db.transaction("), "kayıttan sonra önbellek düşer");
+  // İmzalı uçların okuması önbellekli ve veritabanı hatasında null (503)
+  assert.match(branch, /if \(hit && now - hit\.at < LAFPOS_BRANCH_CACHE_MS\) stored = hit\.stored;/);
+  assert.match(branch, /console\.error\("\[lafpos\] anahtar okunamadı", e\);\s*return null;/);
+  assert.match(branch, /export function forgetLafposBranch\(\): void \{\s*cache = new WeakMap\(\);\s*forgetLafposSecret\(\);/);
   assert.match(save, /d\.secret === process\.env\.KARAOKE_SYNC_SECRET\?\.trim\(\)/);
   assert.doesNotMatch(save.slice(save.indexOf("logSetting")), /\$\{d\.secret\}/, "anahtar işlem geçmişine yazılmaz");
   // İstemciye giden kart verisinde gizli alan yok
@@ -166,20 +221,30 @@ test("ekran: Şube ayarları yeni kartları çizer; Komisyon ve ModPOS aynı bil
   for (const re of [/<LafposBranchCard/, /<ModposBranchCard/, /<TillDeviceCard view=\{device\} lafpos=\{lafposHere\} \/>/, /<ChannelSettingsCard settings=\{effectiveSettings\(commission\.value\.channels\)\}/, /<CalendarCard view=\{calendar\} \/>/]) {
     assert.match(page, re);
   }
-  // Kart yalnız kasası o sistem olan şubede
-  assert.match(page, /const lafposHere = branch\.id === \(await lafposBranchId\(\)\) && branch\.posSource === "lafpos";/);
+  // LafPOS kartı LafPOS'un (türetilmiş) şubesinde: kütükte kaynağı ModPOS görünse de (sunucu ve Ayarlar ile aynı şube)
+  assert.match(page, /const lafposHere = branch\.id === \(await lafposBranchId\(\)\);/);
+  assert.match(page, /sourceModpos: branch\.posSource !== "lafpos",/);
+  assert.match(page, /<LafposOldSecretCard branchId=\{branch\.id\} \/>/, "öbür şubede kalan eski anahtar silinebilir");
+  // "X şubesinde düzenle" bağlantısı kartı olan sayfaya çıkar: başka şube bu şubenin ayarını kullanıyorsa kart çizilir
+  assert.match(page, /\{modposHere \|\| modpos\.link\?\.sharedWith\.length \? \(/);
+  assert.match(page, /\{hasFeature\(branch, "yemek_karti"\) \|\| commission\.link\?\.sharedWith\.length \? \(/);
   assert.match(page, /const modposHere = modposBranchIds\(branches\)\.includes\(branch\.id\);/);
   // Komisyon ekranının kartı seçili şubenin, "Tümü"de varsayılan şubenin
   const komisyon = read("src/app/panel/komisyonlar/page.tsx");
   assert.match(komisyon, /const settingsBranch = tillBranches\(view\.branches\)\.find\(\(b\) => b\.id === view\.scope\)\?\.id \?\? DEFAULT_BRANCH_ID;/);
-  assert.match(komisyon, /<ChannelSettingsCard settings=\{report\.settings\} branchId=\{settingsBranch\}/);
+  assert.match(komisyon, /<ChannelSettingsCard settings=\{effectiveSettings\(channelView\.value\.channels\)\} branchId=\{settingsBranch\}/);
   assert.match(read("src/app/panel/komisyonlar/channel-settings.tsx"), /saveCommissionSettings\(\{ branchId, channels:/);
   // "Diğer şubeyle aynı" anahtarı tek bileşen; dokunma hedefi ToggleRow (44 px)
   const toggle = read("src/components/panel/same-as-toggle.tsx");
   assert.match(toggle, /<ToggleRow/);
   assert.match(toggle, /setBranchSettingLink\(\{ branchId, group, sameAs: to === "link" \? target : null \}\)/);
   // Anahtar alanı parola kutusu, değer bir daha gösterilmez
-  assert.match(read("src/app/panel/subeler/[id]/pos-card.tsx"), /<PasswordInput\s+id="lafpos-anahtar"/);
+  const pos = read("src/app/panel/subeler/[id]/pos-card.tsx");
+  assert.match(pos, /<PasswordInput\s+id="lafpos-anahtar"/);
+  // Kaydetme ve silme parola penceresiyle
+  assert.match(pos, /await saveLafposSecret\(\{ branchId: data\.branchId, secret: value \}, \{ password \}\)/);
+  assert.match(pos, /await saveLafposSecret\(\{ branchId, secret: null \}, \{ password \}\)/);
+  assert.doesNotMatch(pos, /<ConfirmDialog/);
 });
 
 test("kaynak: zil ve Bugün kasa raporu saatini şubeden, akşam fişini şubenin cihazından okur", () => {
@@ -190,6 +255,9 @@ test("kaynak: zil ve Bugün kasa raporu saatini şubeden, akşam fişini şubeni
   const today = read("src/server/data/today.ts");
   assert.match(today, /resolveBranchSetting\(CALENDAR_GROUP, karaokeScope\)\.then\(\(r\) => r\.value\.eveningHour\)/);
   assert.match(read("src/app/panel/bugun/logic.ts"), /const c = dayContext\(f\.now, f\.eveningHour\);/);
+  // "Tümü"de kasa satırları her kasanın kendi saatiyle (zil gibi)
+  assert.match(today, /resolveForTills\(CALENDAR_GROUP\)/);
+  assert.match(read("src/app/panel/bugun/logic.ts"), /evening: isCashEvening\(f\.now, t\.eveningHour\)/);
   // Kasa raporu e-postası yazarkasa başlığında cihaz ve sicil no
   assert.match(read("src/server/cash/report-email.ts"), /resolveBranchSetting\(TILL_DEVICE_GROUP, row\.branchId\)/);
   assert.match(read("src/server/lafpos/foto.ts"), /resolveBranchSetting\(TILL_DEVICE_GROUP, branchId, db\)/);

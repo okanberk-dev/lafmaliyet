@@ -1,4 +1,5 @@
 import { Store } from "lucide-react";
+import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { CardContent } from "@/components/ui/card";
@@ -16,6 +17,13 @@ import type { ProductOption } from "../satislar/product-picker";
 import { LafposDayDelete, LafposSwitchDayForm, LafposUnmatchedList } from "./lafpos-client";
 import { PosElsewhereCard } from "./pos-elsewhere";
 import { SectionCard } from "./section-card";
+
+/** Anahtarın nereden okunduğu (loadLafposCard secretSource) */
+const SECRET_SOURCE_TEXT = {
+  panel: "Anahtar panelde saklı (şifreli).",
+  ortam: "Anahtar sunucunun ayarında.",
+  yok: "Anahtar yok.",
+} as const;
 
 /** İmzası doğrulanamayan isteklerin satırı bu kadar gün görünür */
 const UNVERIFIED_DAYS = 14;
@@ -87,6 +95,13 @@ export async function LafposCard({ products, scope, branches }: { products: Prod
               {l}
             </p>
           ))}
+          {/* Anahtarın nereden okunduğu; panelde saklama ve silme şubenin sayfasında (Şube ayarları › LafPOS bağlantısı) */}
+          <p className="text-[13px] leading-5 text-pretty text-ink-mute">
+            {SECRET_SOURCE_TEXT[data.secretSource ?? "yok"]}{" "}
+            <Link href={`/panel/subeler/${encodeURIComponent(data.branchId)}#lafpos`} className="font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
+              {data.secretSource === "panel" ? "Şube ayarlarında değiştir" : "Şube ayarlarında panelde sakla"}
+            </Link>
+          </p>
         </div>
 
         {sum.dayRejections.map(({ rejection: e, day, status }) =>

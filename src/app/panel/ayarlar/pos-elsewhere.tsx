@@ -37,7 +37,7 @@ export function PosElsewhereCard({
       description={`${POS_ELSEWHERE}. ${posElsewhereText(system, users)}`}
       actions={users.map((b) => (
         <ButtonLink key={b.id} href={`/panel/ayarlar?${BRANCH_PARAM}=${encodeURIComponent(b.id)}#${id}`} variant="secondary" className="min-h-11">
-          {b.name}
+          {b.name} ayarlarına geç
         </ButtonLink>
       ))}
     />

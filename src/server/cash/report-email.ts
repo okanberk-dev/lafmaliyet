@@ -82,7 +82,8 @@ export async function emailReport(
       online,
       approval: o.approval ?? null,
       branch: namedTill(branches, row.branchId),
-      device: kind || registerNo ? { label: kind ? tillDeviceLabel(kind) : null, registerNo } : null,
+      // "Başka bir cihaz" başlığa yazılmaz (bilgi taşımaz); yalnız sicil no
+      device: (kind && kind !== "diger") || registerNo ? { label: kind && kind !== "diger" ? tillDeviceLabel(kind) : null, registerNo } : null,
       ...extras,
       ...integrity,
     });

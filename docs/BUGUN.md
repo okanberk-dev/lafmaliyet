@@ -80,8 +80,8 @@ sabit sütunlu personel yükleyicilerini okur). Dünün kapalı gün durumu `clo
   açıklama hangi güne baktığını tarihle söyler ("22 Ekim Perşembe · …"); başlıktaki tarih takvim günüdür.
 - **Akşam 20:00:** bugünün kasa raporu bundan sonra beklenir. Zil de aynı kurala bakar (`isCashEvening`,
   `src/lib/cash-report.ts`). Saat şube başına (25 Kasım 2026; Şube ayarları › Çalışma takvimi, [SUBE.md](SUBE.md) ›
-  Şube başına ayarlar): Bugün seçili şubenin saatiyle ("Tümü"de Tuzla'nınki) ve o saatte kendini yeniler, zil kasa
-  kasa.
+  Şube başına ayarlar): Bugün seçili şubenin saatiyle; "Tümü"de kasa satırları her kasanın kendi saatiyle (zil gibi kasa
+  kasa) ve ekran her saatte kendini yeniler.
 - **Takvim günü:** ödemeler, hatırlatıcılar ve sayım. 1 Kasım 00:30'da ay sonu satırı çıkmaz; Ekim sayılmadıysa ya da
   sayımı yarım kaldıysa "Geçen ayın stok sayımı" çıkar ve Ekim'e götürür (gece kapanıştan sonra başlayan sayım ertesi
   sabah da sürebilir).

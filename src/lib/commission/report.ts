@@ -418,6 +418,20 @@ export function effectiveSettings(settings: Partial<Record<ChannelKey, Partial<C
   return out;
 }
 
+/**
+ * İşletmenin hakedişinin ödeme süreleri: şubelerin (yemek kartı açık kasaların) süreleri kanal kanal, en kısası.
+ * Faturalar, hakediş ve işaretleri işletmenin; hangi şubenin sözleşmesine düştükleri bilinmez. Son gün en erken şubenin
+ * süresiyle hesaplanır: Komisyon & hakediş (seçici ne olursa olsun), zil, Bugün, sabah e-postası ve haftalık özet aynı
+ * son günü görür, kısa süreli şubenin gecikmesi kaçmaz. Hiç şube yoksa kaydedilmemiş sayılır (30 gün).
+ * Şubeler "aynı"yken (sahibin varsayılanı) değer tek şubeninkiyle aynıdır (docs/KOMISYON.md › Şube)
+ */
+export function businessPayDays(list: readonly (Partial<Record<ChannelKey, Partial<ChannelSettings>>> | null | undefined)[]): Record<ChannelKey, ChannelSettings> {
+  const all = (list.length ? list : [null]).map(effectiveSettings);
+  const out = {} as Record<ChannelKey, ChannelSettings>;
+  for (const c of CHANNELS) out[c.key] = { payDays: Math.min(...all.map((s) => s[c.key].payDays)) };
+  return out;
+}
+
 /** Kayıttaki kanal ayarı (integration_state › komisyon.ayar: { channels: { pluxee: { payDays: 30 } } }); bozuk ya da eski biçim yok sayılır */
 export function parseCommissionSettings(value: unknown): Partial<Record<ChannelKey, ChannelSettings>> {
   const channels = (value as { channels?: unknown } | null)?.channels;

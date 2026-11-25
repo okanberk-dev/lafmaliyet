@@ -69,16 +69,28 @@ export function lafposBranchOf(branches: readonly LafposBranchRow[]): string {
 
 /**
  * Kasa kaynağını LafPOS yapmanın kuralı; sorun yoksa null. LafPOS bugün tek şubenin kasası olabilir: gün sonu, geçiş
- * günü, kasadan çıkan ve personel bağı tek şubeye göre kurulu (docs/SUBE.md › Sırada ne var). Başka bir etkin fiziksel
- * şubenin kaynağı LafPOS'ken ikincisi kaydedilmez.
+ * günü, kasadan çıkan ve personel bağı tek şubeye göre kurulu (docs/SUBE.md › Sırada ne var). LafPOS'un bugünkü şubesi
+ * (`lafposBranchOf`; kütükte kaynağı ModPOS görünse de geri düşüşle Marina) başka bir açık fiziksel şubeyse ikincisi
+ * kaydedilmez: kaydedilseydi LafPOS'un şubesi sessizce taşınır, eski şubenin LafPOS günleri ve geçiş günü hesaptan
+ * düşer, kasası 409 alırdı. Kaynağı açıkça LafPOS olan şube her zaman tutar; yalnız geri düşüşle tutan şube LafPOS'u
+ * kullanmıyorsa (`implicitHolderUsed` false: geçiş günü ve kayıtlı LafPOS günü yok) LafPOS başka şubeye geçebilir.
  */
 export function lafposSourceError(
   next: { id: string; kind: BranchRow["kind"]; posSource: BranchRow["posSource"]; active: boolean },
   others: readonly (LafposBranchRow & { name: string })[],
+  implicitHolderUsed = true,
 ): string | null {
   if (next.posSource !== "lafpos" || !next.active || next.kind !== "fiziksel") return null;
-  const holder = others.find((b) => b.id !== next.id && b.active && b.kind === "fiziksel" && b.posSource === "lafpos");
-  return holder ? `LafPOS şimdilik yalnız bir şubenin kasası olabilir; ${holder.name} şubesinin kasası zaten LafPOS` : null;
+  const open = (b: LafposBranchRow) => b.id !== next.id && b.active && b.kind === "fiziksel";
+  const explicit = others.find((b) => open(b) && b.posSource === "lafpos");
+  if (explicit) return `LafPOS şimdilik yalnız bir şubenin kasası olabilir; ${explicit.name} şubesinin kasası zaten LafPOS`;
+  // Bugünkü şube kütüğün şimdiki hâliyle (düzenlenen şube eski kaynağıyla; kendisi tutuyorsa sorun yok)
+  const holderId = lafposBranchOf(others);
+  const implicit = others.find((b) => b.id === holderId && open(b));
+  if (implicit && implicitHolderUsed) {
+    return `LafPOS şimdilik yalnız bir şubenin kasası olabilir; LafPOS günleri ${implicit.name} şubesine yazılıyor (geçiş günü ya da kayıtlı gün var). Başka şubeye geçerse ${implicit.name} şubesinin LafPOS günleri hesaptan düşer`;
+  }
+  return null;
 }
 
 /**

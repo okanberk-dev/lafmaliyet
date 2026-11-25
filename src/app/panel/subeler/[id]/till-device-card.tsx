@@ -43,7 +43,7 @@ export function TillDeviceCard({ view, lafpos }: { view: BranchSettingView<TillD
           <Field
             label="Cihaz"
             htmlFor="cihaz-tur"
-            hint={lafpos ? "Boşsa LafPOS'un gönderdiği cihaz (gelmediyse Pavo)" : "Akşam hatırlatması ve fotoğraf okuması buna göre"}
+            hint={lafpos ? "Boşsa LafPOS'un gönderdiği cihaz (gelmediyse Pavo)" : "Kasa raporu e-postasının yazarkasa başlığında görünür"}
           >
             <Select id="cihaz-tur" value={device} onChange={(e) => setDevice(e.target.value as TillDevice | "")} className="pointer-coarse:h-12">
               <option value="">Belirtilmedi</option>

@@ -20,14 +20,15 @@ import {
   posRateError,
   type BranchKind,
   type BranchPosSource,
+  type BranchRow,
 } from "@/lib/branches";
-import { lafposSourceError } from "@/lib/lafpos/switch";
+import { lafposBranchOf, lafposSourceError } from "@/lib/lafpos/switch";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { staffBranchLock } from "@/server/branch-scope";
 import { branchSettingsCloseError } from "@/server/branch-settings";
 import { branchUsageCount, getBranch, listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
-import { forgetLafposBranch } from "@/server/lafpos/branch";
+import { forgetLafposBranch, lafposInUse } from "@/server/lafpos/branch";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zDate, zText } from "./util";
@@ -78,7 +79,7 @@ export async function createBranch(input: z.input<typeof createInput>) {
     const mevcut = await listBranches(db);
     if (mevcut.some((b) => b.id === d.id)) throw new UserError("Bu kimlikte bir şube zaten var");
     // LafPOS bugün tek şubenin kasası (LafPOS'un şubesi kütükten türetilir: lafposBranchOf)
-    const lafposHata = lafposSourceError({ id: d.id.trim(), kind: d.kind, posSource: d.posSource, active: true }, mevcut);
+    const lafposHata = lafposSourceError({ id: d.id.trim(), kind: d.kind, posSource: d.posSource, active: true }, mevcut, await implicitHolderUsed(db, mevcut, d.posSource));
     if (lafposHata) throw new UserError(lafposHata);
     if (mevcut.some((b) => b.name.localeCompare(d.name, "tr", { sensitivity: "base" }) === 0)) {
       throw new UserError("Bu adda bir şube zaten var");
@@ -91,6 +92,15 @@ export async function createBranch(input: z.input<typeof createInput>) {
     refresh();
     return { id: d.id.trim() };
   });
+}
+
+/**
+ * Geri düşüşle LafPOS'un şubesi olan (kütükte kaynağı ModPOS) şube LafPOS'u kullanıyor mu (geçiş günü ya da kayıtlı
+ * gün): kullanıyorsa başka şubenin kasası LafPOS yapılamaz (lafposSourceError). Yalnız LafPOS seçilirken sorulur
+ */
+async function implicitHolderUsed(db: ReturnType<typeof getDb>, others: readonly BranchRow[], source: BranchPosSource): Promise<boolean> {
+  if (source !== "lafpos") return false;
+  return lafposInUse(lafposBranchOf(others), db);
 }
 
 const updateInput = z.object({
@@ -124,7 +134,9 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
     // Kasası LafPOS'a geçen (ya da LafPOS kasasıyla yeniden açılan) şube: LafPOS bugün tek şubenin kasası. Zaten LafPOS
     // olan şubenin başka alanı düzenlenirken sorulmaz
     const lafposOlur = d.posSource === "lafpos" && d.active && (mevcut.posSource !== "lafpos" || !mevcut.active);
-    const lafposHata = lafposOlur ? lafposSourceError({ id: d.id, kind: d.kind, posSource: d.posSource, active: d.active }, hepsi) : null;
+    const lafposHata = lafposOlur
+      ? lafposSourceError({ id: d.id, kind: d.kind, posSource: d.posSource, active: d.active }, hepsi, await implicitHolderUsed(db, hepsi, d.posSource))
+      : null;
     if (lafposHata) throw new UserError(lafposHata);
     // Başka şube bu şubenin ayarını kullanıyorsa ("Marina ile aynı") kapatılmaz: bağ tek adımlı, bağlı şube değersiz kalırdı
     if (mevcut.active && !d.active) {

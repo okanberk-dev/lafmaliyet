@@ -11,7 +11,7 @@ import { listBranches } from "@/server/branches";
  * durumu ve gizli alanların yalnız durumu. Gizli alanın kendisi istemciye hiç gitmez (yalnız "kayıtlı mı").
  */
 
-/** "Diğer şubeyle aynı" bölümü (birden çok kasa açıkken ve grup "aynı" sunuyorsa) */
+/** "Diğer şubeyle aynı" bölümü (grup "aynı" sunuyorsa; birden çok kasa açıkken ya da şube başka şubeye bağlıyken) */
 export interface SettingLinkView {
   mode: SettingMode;
   /** Bağlıysa bağlandığı şubenin adı */
@@ -43,8 +43,10 @@ export async function branchSettingView<T extends Record<string, unknown>>(group
     branchId,
     branchName: many ? name(branchId) : null,
     value,
+    // Tek kasa açıkken de bağlıysa (ör. kapalı şubenin sayfası, örtük "aynı") anahtar çizilir: yoksa form düzenlenebilir
+    // görünür ama kayıt "önce aynı'yı kapatın" diye reddedilirdi
     link:
-      many && group.linkable
+      group.linkable && (many || resolved.mode.kind === "linked")
         ? {
             mode: resolved.mode,
             toName: resolved.mode.kind === "linked" ? name(resolved.mode.to) : null,

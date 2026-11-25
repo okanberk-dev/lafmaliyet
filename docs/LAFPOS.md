@@ -945,10 +945,13 @@ kuralı; Tuzla ModPOS'ta kalır, aşağıda "Şubeler"). Canlıda 22 Kasım 2026
   En erken 1 Ekim 2026, en çok 90 gün ileride. FIFO başlangıcı gibi parola istemez; işlem geçmişine "LafPOS'a geçiş
   günü: yok (kasa ModPOS) → 10 Kasım 2026" düşer. Boşaltmak günü siler (şube ayarına `null`; eski kayıt yazılmaz).
 - **Anahtar panelde de saklanabilir** (25 Kasım 2026): Şube ayarları › LafPOS bağlantısı'nda (yalnız LafPOS'un şubesi,
-  yalnız yönetici) `secret-box` ile şifreli; ortamdaki `LAFPOS_SYNC_SECRET`'ın önüne geçer, en az 32 karakter, sitenin
-  anahtarı (`KARAOKE_SYNC_SECRET`) reddedilir. Tarayıcıya, işlem geçmişine ve yedeğe gitmez; ekran yalnız "Panelde
-  kayıtlı / Sunucuda kayıtlı / Anahtar yok" der. Silinince ortamdaki kullanılır. İmzalı uçların hepsi
-  `await lafposSecret()` ile okur.
+  kütükte kaynağı ModPOS görünse de; yalnız yönetici, **parolasıyla**) `secret-box` ile şifreli; ortamdaki
+  `LAFPOS_SYNC_SECRET`'ın önüne geçer, en az 32 karakter, sitenin anahtarı (`KARAOKE_SYNC_SECRET`) reddedilir.
+  Tarayıcıya, işlem geçmişine ve yedeğe gitmez; ekran yalnız "Panelde kayıtlı / Sunucuda kayıtlı / Anahtar yok" der,
+  Ayarlar › LafPOS anahtarın nereden okunduğunu yazıp şube sayfasına bağlanır. Silinince ortamdaki kullanılır; kasa
+  kaynağı başka şubeye geçtiyse eski şubede kalan anahtar o şubenin sayfasından silinir. İmzalı uçların hepsi
+  `await lafposSecret()` ile okur: panelde saklanan anahtar 60 sn önbellekli (kayıtta ve kasa kaynağı değişince düşer),
+  imzasız istek her seferinde veritabanını okutmaz; veritabanı okunamazsa uç 503 döner.
 - **Hiçbir veri yazılmaz ya da silinmez:** ayar yalnız okuyanları değiştirir; geri almak günü değiştirmek ya da
   boşaltmaktır. Tercihen ayın 1'i (ModPOS'un o ayki ürün listesi bölünmez).
 - **LafPOS kendi tarihini tutmaz:** bütün gerçek günleri gönderir; neyin sayıldığına panel karar verir ve yanıtta söyler
@@ -976,7 +979,9 @@ kurulumda Marina'nın kaynağı ModPOS (föyün yedek çekimi) da olsa LafPOS'un
 Kaynağı başka şubeye geçirmek gün sonunu, geçiş gününü, `sube` denetimini (gün sonu, ModPOS dönemi ve personel uçları),
 otomatik raporu ve e-postaları, kasadan çıkanları, fotoğrafı, devri, veri kümesini (satış listeleri, ikram, yemek
 kartı, komisyon) o şubeye taşır. LafPOS bugün **yalnız bir şubenin** kasası olabilir: ikinci şubenin kaynağı LafPOS
-yapılamaz ("LafPOS şimdilik yalnız bir şubenin kasası olabilir; Tuzla şubesinin kasası zaten LafPOS"). Okuyucu
+yapılamaz ("LafPOS şimdilik yalnız bir şubenin kasası olabilir; Tuzla şubesinin kasası zaten LafPOS"). Geri düşüşle
+tutan Marina (kütükte ModPOS) geçiş günü ya da kayıtlı LafPOS günü taşıyorsa da Tuzla ya da yeni şube LafPOS yapılamaz
+(`lafposInUse`; "LafPOS günleri Marina şubesine yazılıyor"): LafPOS'un şubesi sessizce taşınmaz. Okuyucu
 önbelleklidir (60 sn, bağlantı başına); şube eylemi önbelleği hemen düşürür, başka sunucu örneği en geç 60 sn sonra
 yeniler. Saf yardımcılar (`branchSwitchDay`, `isLafposBranch`, `scopeSwitchDay`, `panelWasteCounts`, `listDiscountOf`,
 `tillMonths`, `modposMismatches`, `mergeSalesSources`, `commissionScopeDays`…) şubeyi son parametre olarak alır,

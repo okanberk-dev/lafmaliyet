@@ -10,11 +10,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, NumberInput, Select } from "@/components/ui/form";
 import { EVENING_HOUR_MAX, EVENING_HOUR_MIN, type CalendarSetting } from "@/lib/branch-settings/groups";
+import { clockSuffixTR } from "@/lib/reminders";
 import { saveBranchCalendar } from "@/server/actions/branch-settings";
 import type { BranchSettingView } from "@/server/branch-settings-view";
 
 const HOURS = Array.from({ length: EVENING_HOUR_MAX - EVENING_HOUR_MIN + 1 }, (_, i) => EVENING_HOUR_MIN + i);
-const hourText = (h: number) => `${String(h).padStart(2, "0")}:00`;
+/** "20:00'den sonra", "13:00'ten sonra", "16:00'dan sonra" (ayrılma hâli saate göre; clockSuffixTR) */
+const afterHourText = (h: number) => `${clockSuffixTR(`${String(h).padStart(2, "0")}:00`, "abl")} sonra`;
 
 /** Yazılan gün sayısının sorunu (sunucu aynı sınırı ayrıca denetler) */
 function daysProblem(text: string): string | null {
@@ -72,7 +74,7 @@ export function CalendarCard({ view }: { view: BranchSettingView<CalendarSetting
             </div>
             <div className="flex justify-between gap-3">
               <dt className="text-ink-mute">Kasa raporu</dt>
-              <dd className="tabular text-ink">{hourText(view.value.eveningHour)}&apos;den sonra</dd>
+              <dd className="tabular text-ink">{afterHourText(view.value.eveningHour)}</dd>
             </div>
           </dl>
         ) : (
@@ -93,7 +95,7 @@ export function CalendarCard({ view }: { view: BranchSettingView<CalendarSetting
                 <Select id="takvim-saat" value={hour} onChange={(e) => setHour(Number(e.target.value))} className="pointer-coarse:h-12">
                   {HOURS.map((h) => (
                     <option key={h} value={h}>
-                      {hourText(h)}&apos;den sonra
+                      {afterHourText(h)}
                     </option>
                   ))}
                 </Select>

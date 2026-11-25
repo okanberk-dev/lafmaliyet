@@ -50,6 +50,20 @@ test("ikinci LafPOS şubesi kaydedilmez; LafPOS'a geçmeyen değişiklik serbest
   assert.equal(lafposSourceError({ id: "marina", kind: "fiziksel", posSource: "lafpos", active: true }, [{ ...TUZLA, posSource: "lafpos", active: false }]), null, "pasif sahibi saymaz");
 });
 
+test("geri düşüşle LafPOS'un şubesi olan Marina (kütükte ModPOS) LafPOS'u kullanıyorsa Tuzla ya da yeni şube LafPOS olamaz", () => {
+  // Bugünkü kurulum: iki şube de ModPOS, LafPOS'un şubesi geri düşüşle Marina
+  const today = [TUZLA, MARINA, ONLINE];
+  assert.equal(lafposBranchOf(today), "marina");
+  const tuzla = { id: "tuzla", kind: "fiziksel" as const, posSource: "lafpos" as const, active: true };
+  assert.match(lafposSourceError(tuzla, today) ?? "", /LafPOS günleri Marina şubesine yazılıyor/, "varsayılan: kullanıyor sayılır");
+  assert.match(lafposSourceError(tuzla, today, true) ?? "", /Marina şubesinin LafPOS günleri hesaptan düşer/);
+  assert.match(lafposSourceError({ ...tuzla, id: "bodrum" }, today, true) ?? "", /Marina/, "yeni şube de");
+  assert.equal(lafposSourceError(tuzla, today, false), null, "Marina'da geçiş günü ve LafPOS günü yoksa LafPOS taşınabilir");
+  assert.equal(lafposSourceError({ ...tuzla, id: "marina" }, today, true), null, "Marina'nın kendisi LafPOS olabilir");
+  assert.equal(lafposSourceError(tuzla, [TUZLA, { ...MARINA, active: false }, ONLINE], true), null, "kapalı Marina tutmaz");
+  assert.equal(lafposSourceError(tuzla, [TUZLA, ONLINE], true), null, "kütükte Marina yoksa (tek şubeli eski kurulum) serbest");
+});
+
 test("yardımcılar türetilmiş şubeyi alır; verilmezse geri düşüş (bugünkü davranış)", () => {
   // Verilmeyince Marina
   assert.equal(isLafposBranch("marina"), true);
@@ -156,7 +170,11 @@ test("kaynak: okuyucu önbellekli; ingest, gün sonu ve uçlar kütüğün şube
   assert.match(read("src/server/data/dataset.ts"), /\n {4}lafposBranch,\n {4}currentMonth,/, "veri kümesi motora verir (Dataset.lafposBranch)");
   const actions = read("src/server/actions/branches.ts");
   assert.equal((actions.match(/forgetLafposBranch\(\);/g) ?? []).length, 3, "ekle, düzenle, sil");
-  assert.match(actions, /const lafposHata = lafposSourceError\(\{ id: d\.id\.trim\(\), kind: d\.kind, posSource: d\.posSource, active: true \}, mevcut\);/);
+  assert.match(actions, /const lafposHata = lafposSourceError\(\{ id: d\.id\.trim\(\), kind: d\.kind, posSource: d\.posSource, active: true \}, mevcut, await implicitHolderUsed\(db, mevcut, d\.posSource\)\);/);
+  // Geri düşüşle tutan şube (kütükte ModPOS) LafPOS'u kullanıyorsa (geçiş günü ya da kayıtlı gün) başka şube LafPOS olamaz
+  assert.match(actions, /lafposSourceError\(\{ id: d\.id, kind: d\.kind, posSource: d\.posSource, active: d\.active \}, hepsi, await implicitHolderUsed\(db, hepsi, d\.posSource\)\)/);
+  assert.match(actions, /return lafposInUse\(lafposBranchOf\(others\), db\);/);
+  assert.match(reader, /export async function lafposInUse\(branchId: string, db: Reader = getDb\(\)\): Promise<boolean>/);
   assert.match(actions, /const lafposOlur = d\.posSource === "lafpos" && d\.active && \(mevcut\.posSource !== "lafpos" \|\| !mevcut\.active\);/);
   // Eski kaydın sahibi tarihseldir: türetilmez
   assert.match(read("src/lib/branch-settings/groups.ts"), /return group\.legacy === "lafpos" \? LAFPOS_BRANCH_ID : DEFAULT_BRANCH_ID;/);

@@ -4,11 +4,12 @@ import { and, asc, eq, gte, inArray, min } from "drizzle-orm";
 
 import { channelNameResolver, type SupplierRef } from "@/app/panel/tedarikciler/logic";
 import { COMMISSION_GROUP } from "@/lib/branch-settings/groups";
-import { ALL_BRANCHES } from "@/lib/branches";
+import { featureBranches } from "@/lib/branch-features";
+import { ALL_BRANCHES, DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { tillOpenedOn } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn, closedRowApplies } from "@/lib/closed-days";
-import { channelOf, isChannelKey, lafposChannel } from "@/lib/commission/channels";
+import { channelOf, isChannelKey, lafposChannel, type ChannelKey } from "@/lib/commission/channels";
 import {
   buildCommissionReport,
   commissionAlerts,
@@ -16,10 +17,12 @@ import {
   commissionDigestBox,
   commissionLogKey,
   freshAlerts,
+  businessPayDays,
   groupInvoiceRows,
   overduePayouts,
   reportWindow,
   type ChannelMonthIn,
+  type ChannelSettings,
   type CommissionAlert,
   type CommissionInput,
   type CommissionReport,
@@ -31,7 +34,8 @@ import { posDaySchema, posZSchema } from "@/lib/lafpos/day";
 import { modposChannels } from "@/lib/modpos/z";
 import { addDays, todayTR } from "@/lib/reminders";
 import { andWhere, branchWhere, currentBranchScope, withBranchScope } from "@/server/branch-scope";
-import { resolveBranchSetting } from "@/server/branch-settings";
+import { resolveBranchSetting, resolveForTills } from "@/server/branch-settings";
+import { listBranches } from "@/server/branches";
 import { loadSupplierRefs } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { lafposBranchId, lafposSwitchDay } from "@/server/lafpos/branch";
@@ -74,7 +78,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
  * adı bir kanala bağlanmayan fatura varsa bakılır. `today` verilmezse Türkiye'de bugün (çağıran oturumu ya da isteği
  * okuduktan sonra).
  */
-export async function loadCommissionInput(opts: { resolveNames: boolean; today?: string; settingsBranch?: string }): Promise<CommissionInput> {
+export async function loadCommissionInput(opts: { resolveNames: boolean; today?: string }): Promise<CommissionInput> {
   const db = getDb();
   const today = opts.today ?? todayTR();
   const { fromMonth, fromDay } = reportWindow(today);
@@ -143,8 +147,8 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
     branchOnly
       ? db.select({ id: s.branches.id, openedOn: s.branches.openedOn }).from(s.branches).where(eq(s.branches.id, branchOnly)).limit(1)
       : Promise.resolve([]),
-    // Kanalların ödeme süresi şubenin (şube ayarı komisyon; "Tümü"de ve online kanalda varsayılan şubeninki, Tuzla)
-    resolveBranchSetting(COMMISSION_GROUP, opts.settingsBranch ?? scope, db),
+    // Kanalların ödeme süresi: hakediş işletmenin, seçiciden bağımsız (şubelerin en kısa süresi; businessPayDays)
+    loadBusinessPayDays(db),
   ]);
   // Geçiş günü seçili şubenin kasasınınki: ModPOS'ta kalan şube (Tuzla) seçiliyken LafPOS hiç okunmaz, Z'si geçiş ayından
   // itibaren föyün markasıyla (modposScope)
@@ -180,7 +184,7 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
       till.map((r) => r.date),
     ),
     marks: marks.filter((m): m is ChannelMonthIn => isChannelKey(m.channel)),
-    settings: channelSettings.value.channels,
+    settings: channelSettings,
     lafpos: switchDay ? { switchDay, days: lafposDays } : null,
     ...(modposBrands.length ? { modposBrands } : {}),
     ...(branchOnly ? { openedOn: tillOpenedOn(branchRow[0] ?? null) } : {}),
@@ -254,9 +258,21 @@ async function supplierNames(withRefs: boolean): Promise<(supplier: string, taxN
   );
 }
 
-/** Ekranın raporu: kanal tedarikçi kartının adlarıyla da aranır. `settingsBranch`: ödeme sürelerinin şubesi (yoksa seçili kapsamınki) */
-export async function loadCommissionReport(settingsBranch?: string): Promise<CommissionReport> {
-  return buildCommissionReport(await loadCommissionInput({ resolveNames: true, settingsBranch }));
+/**
+ * İşletmenin hakedişinin ödeme süreleri (businessPayDays): yemek kartı açık kasaların şube ayarı `komisyon`, kanal kanal
+ * en kısası. Ekran, zil, Bugün, sabah e-postası ve haftalık özet aynı süreyi okur; seçici değiştirmez. Yemek kartı
+ * hiçbir kasada açık değilse varsayılan şubeninki (eski kayıt komisyon.ayar ona aittir)
+ */
+async function loadBusinessPayDays(db: ReturnType<typeof getDb>): Promise<Record<ChannelKey, ChannelSettings>> {
+  const [tills, branches] = await Promise.all([resolveForTills(COMMISSION_GROUP, db), listBranches(db)]);
+  const meal = new Set(featureBranches(branches, "yemek_karti").map((b) => b.id));
+  const list = [...tills].filter(([id]) => meal.has(id)).map(([, r]) => r.value.channels);
+  return businessPayDays(list.length ? list : [(await resolveBranchSetting(COMMISSION_GROUP, DEFAULT_BRANCH_ID, db)).value.channels]);
+}
+
+/** Ekranın raporu: kanal tedarikçi kartının adlarıyla da aranır */
+export async function loadCommissionReport(): Promise<CommissionReport> {
+  return buildCommissionReport(await loadCommissionInput({ resolveNames: true }));
 }
 
 /**
@@ -274,8 +290,8 @@ async function loadLightReport(today?: string): Promise<CommissionReport> {
 export async function loadCommissionReports(): Promise<{ all: CommissionReport; branch: CommissionReport | null; scope: string }> {
   const scope = await currentBranchScope();
   if (scope === ALL_BRANCHES) return { all: await loadCommissionReport(), branch: null, scope };
-  // İşletmenin raporu da seçili şubenin ödeme süreleriyle (şube ayarı komisyon): ekrandaki son günler şubenin sözleşmesinin
-  const [all, branch] = await Promise.all([withBranchScope(ALL_BRANCHES, () => loadCommissionReport(scope)), withBranchScope(scope, () => loadCommissionReport(scope))]);
+  // Ödeme süreleri her iki raporda işletmenin (businessPayDays): son gün ve gecikme seçiciye göre değişmez, zille aynı
+  const [all, branch] = await Promise.all([withBranchScope(ALL_BRANCHES, () => loadCommissionReport()), withBranchScope(scope, () => loadCommissionReport())]);
   return { all, branch, scope };
 }
 

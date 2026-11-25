@@ -28,6 +28,7 @@ function dayError(text: string, max: number, meal: boolean): string | null {
  * yönetmelik en çok 30 gün der; platformda sözleşmedeki süre (en çok 90). Kaydet'e basınca hepsi birlikte kaydedilir.
  * Şube başına (şube ayarı komisyon; docs/SUBE.md › Şube başına ayarlar): Komisyon & hakediş ekranı ve Şube ayarları aynı
  * kartı çizer. Birden çok kasa açıkken başlıkta şubenin adı ve "Diğer şubeyle aynı"; bağlıyken süreler salt okunur.
+ * Faturalar ve hakediş işletmenin olduğu için son gün şubelerin en kısa süresiyle hesaplanır (businessPayDays).
  */
 export function ChannelSettingsCard({
   settings,
@@ -76,7 +77,11 @@ export function ChannelSettingsCard({
       <CardHeader
         icon={<Settings2 />}
         title={branchName ? `Kanallar · ${branchName}` : "Kanallar"}
-        description="Hakedişin, ayın son faturasından sonra kaç gün içinde gelmesi gerektiği; yemek kartında yönetmelik en çok 30 gün der. Son gün geçince zil çalar."
+        description={
+          link
+            ? "Hakedişin, ayın son faturasından sonra kaç gün içinde gelmesi gerektiği; yemek kartında yönetmelik en çok 30 gün der. Faturalar ve hakediş işletmenin: son gün şubelerin en kısa süresiyle hesaplanır, geçince zil çalar."
+            : "Hakedişin, ayın son faturasından sonra kaç gün içinde gelmesi gerektiği; yemek kartında yönetmelik en çok 30 gün der. Son gün geçince zil çalar."
+        }
       />
       {link ? (
         <div className="space-y-3 px-5 pb-4">

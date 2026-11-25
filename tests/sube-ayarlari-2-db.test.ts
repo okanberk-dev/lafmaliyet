@@ -22,6 +22,7 @@ import postgres from "postgres";
 
 import { CALENDAR_GROUP, COMMISSION_GROUP, LAFPOS_GROUP, MODPOS_GROUP, TILL_DEVICE_GROUP } from "../src/lib/branch-settings/groups";
 import { DEFAULT_BRANCHES } from "../src/lib/branches";
+import { STEP_UP_REQUIRED, WRONG_PASSWORD } from "../src/lib/step-up";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 
@@ -30,6 +31,7 @@ const DB_NAME = `lm_sube_a2_${process.pid}`;
 const ENV_SECRET = "ortamdaki-lafpos-anahtari-en-az-otuz-iki-karakter";
 const SITE_SECRET = "sitenin-anahtari-en-az-otuz-iki-karakterlik-metin";
 const PANEL_SECRET = "panelde-saklanan-lafpos-anahtari-otuz-iki-karakter";
+const PASSWORD = "yonetici-parolasi-1";
 
 type Who = { id: number; name: string; role: "admin" | "staff"; branchId: string | null };
 
@@ -69,6 +71,7 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
       requireUser: async () => ({ ...me, email: `${me.name}@test.local`, active: true }),
       getCurrentUser: async () => ({ ...me, email: `${me.name}@test.local`, active: true }),
     });
+    const { hashPassword } = await import("../src/server/auth/password");
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();
     await migrate(db, { migrationsFolder: "drizzle" });
@@ -78,7 +81,7 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     for (const k of Object.keys(users) as (keyof typeof users)[]) {
       const [u] = await db
         .insert(s.users)
-        .values({ email: `${k}@test.local`, name: users[k].name, passwordHash: "x", role: users[k].role, branchId: users[k].branchId })
+        .values({ email: `${k}@test.local`, name: users[k].name, passwordHash: await hashPassword(PASSWORD), role: users[k].role, branchId: users[k].branchId })
         .returning({ id: s.users.id });
       users[k].id = u.id;
     }
@@ -156,7 +159,12 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     await no({ branchId: "marina", secret: "kisa" }, /en az 32/);
     await no({ branchId: "marina", secret: SITE_SECRET }, /sitenin anahtarı/);
     await no({ branchId: "tuzla", secret: PANEL_SECRET }, /yalnız kasası LafPOS olan şubede/);
-    const r = await actions.saveLafposSecret({ branchId: "marina", secret: PANEL_SECRET });
+    await no({ branchId: "tuzla", secret: null }, /panelde saklanan LafPOS anahtarı yok/);
+    // Parolayla: onaysız ve yanlış parolayla yazılmaz
+    assert.deepEqual(await actions.saveLafposSecret({ branchId: "marina", secret: PANEL_SECRET }), { ok: false, error: STEP_UP_REQUIRED });
+    assert.deepEqual(await actions.saveLafposSecret({ branchId: "marina", secret: PANEL_SECRET }, { password: "yanlis" }), { ok: false, error: WRONG_PASSWORD });
+    assert.equal(await rowOf(LAFPOS_GROUP.id, "marina").then((r) => r?.secrets ?? null), null, "parolasız yazılmadı");
+    const r = await actions.saveLafposSecret({ branchId: "marina", secret: PANEL_SECRET }, { password: PASSWORD });
     assert.ok(r.ok, r.ok ? "" : r.error);
     assert.equal(await lafposSecret(db), PANEL_SECRET);
     assert.deepEqual(await lafposSecretState(db), { problem: null, source: "panel" });
@@ -171,11 +179,25 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     assert.ok(log.some((l) => /LafPOS anahtarı değiştirildi/.test(l.detail ?? "")) && !log.some((l) => (l.detail ?? "").includes(PANEL_SECRET)), "işlem geçmişinde anahtar yok");
     me = users.ayse;
     try {
-      assert.equal((await actions.saveLafposSecret({ branchId: "marina", secret: null })).ok, false, "personel anahtarı değiştiremez");
+      assert.equal((await actions.saveLafposSecret({ branchId: "marina", secret: null }, { password: PASSWORD })).ok, false, "personel anahtarı değiştiremez");
     } finally {
       me = users.ali;
     }
-    assert.ok((await actions.saveLafposSecret({ branchId: "marina", secret: null })).ok);
+    // Kasa kaynağı başka şubeye geçerse eski şubedeki anahtar kullanılmaz; yenisi yazılamaz ama silinebilir
+    const { forgetLafposBranch } = await import("../src/server/lafpos/branch");
+    await db.update(s.branches).set({ posSource: "modpos" }).where(eq(s.branches.id, "marina"));
+    await db.update(s.branches).set({ posSource: "lafpos" }).where(eq(s.branches.id, "tuzla"));
+    forgetLafposBranch();
+    try {
+      assert.equal(await lafposSecret(db), ENV_SECRET, "Tuzla'nın panel anahtarı yok: ortamdaki");
+      await no({ branchId: "marina", secret: PANEL_SECRET }, /yalnız kasası LafPOS olan şubede/);
+      assert.ok((await actions.saveLafposSecret({ branchId: "marina", secret: null }, { password: PASSWORD })).ok, "eski şubedeki anahtar silinir");
+      assert.equal((await branchSettingView(LAFPOS_GROUP, "marina")).secrets.secret, "none");
+    } finally {
+      await db.update(s.branches).set({ posSource: "modpos" }).where(eq(s.branches.id, "tuzla"));
+      await db.update(s.branches).set({ posSource: "lafpos" }).where(eq(s.branches.id, "marina"));
+      forgetLafposBranch();
+    }
     assert.equal(await lafposSecret(db), ENV_SECRET, "silinince ortamdaki");
     assert.deepEqual(await lafposSecretState(db), { problem: null, source: "ortam" });
   });
@@ -194,6 +216,14 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     assert.ok((await commission.saveCommissionSettings({ branchId: "marina", channels: { pluxee: { payDays: 25 } } })).ok);
     assert.equal((await resolveBranchSetting(COMMISSION_GROUP, "marina", db)).value.channels.pluxee?.payDays, 25);
     assert.equal((await resolveBranchSetting(COMMISSION_GROUP, "tuzla", db)).value.channels.pluxee?.payDays, 20, "Tuzla değişmez");
+    // Hakediş işletmenin: ekran (seçici ne olursa olsun) ile zil, Bugün ve e-posta (hep "Tümü") aynı süreyle, şubelerin en kısasıyla
+    const { loadCommissionInput } = await import("../src/server/data/commission");
+    const { withBranchScope } = await import("../src/server/branch-scope");
+    const termsIn = async (scope: string) => (await withBranchScope(scope, () => loadCommissionInput({ resolveNames: false, today: "2026-11-25" }))).settings.pluxee?.payDays;
+    assert.deepEqual([await termsIn("hepsi"), await termsIn("marina"), await termsIn("tuzla")], [20, 20, 20], "Tuzla 20, Marina 25: en kısası");
+    assert.ok((await commission.saveCommissionSettings({ branchId: "marina", channels: { pluxee: { payDays: 15 } } })).ok);
+    assert.deepEqual([await termsIn("hepsi"), await termsIn("marina"), await termsIn("tuzla")], [15, 15, 15], "Marina'nın kısa süresi zili de öne alır");
+    assert.ok((await commission.saveCommissionSettings({ branchId: "marina", channels: { pluxee: { payDays: 25 } } })).ok);
     const meal = await commission.saveCommissionSettings({ branchId: "marina", channels: { pluxee: { payDays: 40 } } });
     assert.ok(!meal.ok && /yönetmelik/.test(meal.error), "yemek kartında en çok 30 gün");
     me = users.ayse;
@@ -234,6 +264,21 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     assert.ok(same.ok && same.data.changed === 0, "değişiklik yoksa yazılmaz");
     const log = await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Şube ayarı"));
     assert.ok(log.some((l) => /Tuzla · Çalışma takvimi: ayda açık gün 26 → 28, kasa raporu saati 20:00 → 21:00/.test(l.detail ?? "")));
+  });
+
+  test("kapalı şubenin sayfası: tek kasa açıkken de örtük 'aynı' anahtarı çizilir (form reddedilen kayda düşmez)", async () => {
+    const { branchSettingView } = await import("../src/server/branch-settings-view");
+    await db.update(s.branches).set({ active: false }).where(eq(s.branches.id, "bodrum"));
+    await db.update(s.branches).set({ active: false }).where(eq(s.branches.id, "marina"));
+    try {
+      const view = await branchSettingView(CALENDAR_GROUP, "marina");
+      assert.equal(view.branchName, null, "tek kasa: başlıkta şube adı yok");
+      assert.ok(view.link && view.link.mode.kind === "linked", "bağlı: anahtar çizilir, ayrılabilir");
+      assert.equal((await branchSettingView(CALENDAR_GROUP, "tuzla")).link, null, "tek kasa ve kendi ayarı: anahtar yok");
+    } finally {
+      await db.update(s.branches).set({ active: true }).where(eq(s.branches.id, "marina"));
+      await db.update(s.branches).set({ active: true }).where(eq(s.branches.id, "bodrum"));
+    }
   });
 
   test("banka POS ve yazarkasa şubenin kendisinin; LafPOS cihaz göndermediyse fotoğraf okuması ondan", async () => {

@@ -29,7 +29,7 @@ import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentBranchScope, currentPhysicalBranch, currentTillBranch, withBranchScope } from "@/server/branch-scope";
-import { resolveBranchSetting } from "@/server/branch-settings";
+import { resolveBranchSetting, resolveForTills } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, previousCarryOverByBranch, type CashReportDTO } from "@/server/data/cash-reports";
 import { closedYesterday } from "@/server/closed-days";
@@ -319,6 +319,8 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const cashP = safe(tillScoped(() => cashReportsBetween(c.yesterday, c.day)));
   // Kasa raporunun beklendiği saat seçili şubenin (şube ayarı isletme.takvim; "Tümü"de ve online kanalda varsayılan şubenin)
   const eveningHourP = safe(resolveBranchSetting(CALENDAR_GROUP, karaokeScope).then((r) => r.value.eveningHour));
+  // "Tümü"de kasa satırları her kasanın kendi saatiyle (zil gibi kasa kasa)
+  const tillHoursP = safe(viewP.then((v) => (v?.tills?.length ? resolveForTills(CALENDAR_GROUP) : null)));
   const [reports, firstDate, view, tillFirsts, tillClosed, stock, due, sessions, orders, checklists, closed, ops, own, lafposSwitch, switchRaw, noCounts, lafposBranch] = await Promise.all([
     cashP,
     safe(tillScoped(() => firstCashReportDate())),
@@ -359,6 +361,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     const base = mark ? { ...toLite(r), lafposPhoto: mark } : toLite(r);
     return flags?.length ? { ...base, flags } : base;
   };
+  const tillHours = await tillHoursP;
   const tills = view?.tills
     ? view.tills.map((b, i) => ({
         ...b,
@@ -368,6 +371,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
         ...(tillClosed ? { closed: tillClosed[i]?.yesterday ?? null } : {}),
         ...(noCounts ? { noCount: noCounts[i] ?? [] } : {}),
         ...(switchRaw !== null ? { lafposSwitch: branchSwitchDay(switchRaw, b.id, lafposBranch ?? undefined) } : {}),
+        ...(tillHours?.get(b.id) ? { eveningHour: tillHours.get(b.id)!.value.eveningHour } : {}),
       }))
     : null;
   const eveningHour = (await eveningHourP) ?? undefined;

@@ -16,7 +16,7 @@ import type { SettingLinkView } from "@/server/branch-settings-view";
  * "Diğer şubeyle aynı" anahtarı (docs/SUBE.md › Şube başına ayarlar): kartın ilk satırı. Açılınca şubenin kendi değeri
  * silinir, seçilen şubeninki kullanılır; kapatılınca o anki değer şubeye kopyalanır, sonra ayrı düzenlenir. Bu şubenin
  * ayarını kullanan şubeler varsa söyler. Kasa raporu alıcıları ve Paraşüt kartları kendi metinleriyle aynı akışı taşır;
- * öbür gruplar (komisyon, ModPOS, çalışma takvimi) bunu kullanır. Birden çok kasa yokken çizilmez (`link` null).
+ * öbür gruplar (komisyon, ModPOS, çalışma takvimi) bunu kullanır. Tek kasa açıkken ve şube kendi ayarını tutarken çizilmez (`link` null).
  */
 export function SameAsToggle({
   link,

@@ -5,11 +5,11 @@ import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { createPosMappingIndex } from "@/lib/calc/pos-paste";
 import { parsePosDay, POS_DAY_MAX_BYTES, resolvePosLine, siteSlotKey, type PosDayPush } from "@/lib/lafpos/day";
 import { checkLafposRequest } from "@/lib/lafpos/request";
-import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
+import { isLafposDay } from "@/lib/lafpos/switch";
 import { onLafposDaySaved } from "@/server/closed-days";
 import { schema as s, type DB } from "@/server/db";
 
-import { lafposBranchId, lafposSwitchDay } from "./branch";
+import { lafposBranchId, switchDayOf } from "./branch";
 import { detachLafposCashOuts, syncLafposCashOuts } from "./cash-moves";
 
 /**
@@ -144,7 +144,7 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
     // listeyi taşıyorsa (eski LafPOS ya da okunamayan liste satırlara dokunmaz). Deneme günü (geçişten önce) yazmaz; gün
     // sayılan iken yazılmış satırları varsa (geçiş günü sonradan sonraya alındı) onları LafPOS'tan ayırır: LafPOS'un
     // açtığı satır kalkar, sahiplenilen elle satır ve tedarikçi ödemesine bağlı satır kalır (inceleme LM-3)
-    if (isLafposDay(day.date, branchSwitchDay(await lafposSwitchDay(tx), branchId, branchId))) {
+    if (isLafposDay(day.date, await switchDayOf(branchId, tx))) {
       if (day.cashMoves !== undefined) await syncLafposCashOuts(tx, day.date, day.cashMoves, branchId);
     } else await detachLafposCashOuts(tx, day.date, "drop", { branchId });
     const unmatched = rows

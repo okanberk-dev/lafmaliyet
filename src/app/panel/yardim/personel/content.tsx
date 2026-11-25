@@ -120,7 +120,7 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
         Kapanışta ModPOS&apos;tan ve banka POS&apos;tan (yazarkasa) Z raporunu alın, kasadaki nakdi sayın ve <StaffPath href="/panel/kasa" /> ekranına girin. Kasada
         LafPOS kullanılıyorsa LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın; rapor panele kendisi yazılır, siz Pavo&apos;dan gün sonu fişini (detaylı Z) alıp
         fotoğrafını <B>Gün sonu fotoğrafı</B> kartına eklersiniz.{" "}
-        {clockSuffixTR(hour(CASH_EVENING_HOUR), "abl")} sonra
+        {clockSuffixTR(hour(CASH_EVENING_HOUR), "abl")} sonra (saati yönetici şubeye göre değiştirebilir)
         Bugün ekranı hatırlatır.
       </>
     ),
