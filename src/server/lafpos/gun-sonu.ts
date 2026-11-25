@@ -639,14 +639,7 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
     }
     // Pavo karşılaştırması bu e-postayla gittiyse kısa Pavo e-postası ayrıca gitmez
     await finish({ emailedHash: day.hash, emailCount: st.emailCount + 1, emailedAt: new Date(), emailError: null, ...(day.bankPos ? { pavoEmailedHash: bankPosHash(day.bankPos) } : {}) });
-    // Fotoğraf (karşılaştırması, okunanlar ve kendisi) bu e-postayla gitti: aynı karşılaştırma için fotoğraf e-postası
-    // ayrıca gitmez
-    if (photo?.check) {
-      await db
-        .insert(s.notificationLog)
-        .values({ key: photoMailKey(branchId, date, photo.check), channel: "email", subject: msg.subject, recipients: to.join(", "), ok: true, error: null })
-        .onConflictDoNothing();
-    }
+    // Z raporu e-postası (sendPhotoEmail) ayrıca gider: sahibin isteği (25 Kasım 2026), Z tutsa da ayrı rapor
     return "sent";
   } catch (e) {
     await finish({ emailError: (e instanceof Error ? e.message : "bilinmeyen hata").slice(0, 300) }).catch(() => {});
@@ -738,7 +731,6 @@ export async function sendPhotoEmail(db: DB, date: string, now = new Date(), opt
   const [st] = await db
     .select({
       emailedHash: s.lafposDayEnds.emailedHash,
-      emailedAt: s.lafposDayEnds.emailedAt,
       photoCheck: s.lafposDayEnds.photoCheck,
       reportId: s.lafposDayEnds.reportId,
       autoValues: s.lafposDayEnds.autoValues,
@@ -756,7 +748,7 @@ export async function sendPhotoEmail(db: DB, date: string, now = new Date(), opt
   // Gün sonu e-postası henüz gitmediyse fotoğraf onunla gider
   if (!st.emailedHash) return photoMailNeeded(check, { fresh: true }) ? "waiting" : "skipped";
   const [newest] = await db.select({ at: sql<Date>`max(${s.photos.createdAt})`.mapWith((v) => new Date(v)) }).from(s.photos).where(inArray(s.photos.id, [...ids]));
-  if (!photoMailNeeded(check, { fresh: photoMailFresh(newest?.at ?? null, st.emailedAt, now) })) return "skipped";
+  if (!photoMailNeeded(check, { fresh: photoMailFresh(newest?.at ?? null, now) })) return "skipped";
   const key = photoMailKey(branchId, date, check!);
   const [already] = await db.select({ ok: s.notificationLog.ok }).from(s.notificationLog).where(eq(s.notificationLog.key, key)).limit(1);
   if (already?.ok) return "same";

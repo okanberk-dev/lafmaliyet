@@ -274,9 +274,10 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     const mail = sent.find((m) => m.to.includes("sahip@ornek.com"));
     assert.ok(mail, "yöneticinin gün sonu e-postası");
     assert.doesNotMatch(mail.subject, /FARKLI/);
-    // Fotoğraf gün sonu e-postasıyla gitti (okunanı ve karşılaştırması içinde): ayrı fotoğraf e-postası gitmez
+    // Fotoğraf gün sonu e-postasında da var; Z raporu tutsa da ayrıca "Z raporu tutuyor" gider (sahibin isteği)
     assert.match(plain(mail.text), /Fotoğrafta okunan/);
-    assert.equal(r.photo, "skipped");
+    assert.equal(r.photo, "sent");
+    assert.ok(sent.some((m) => /Z raporu tutuyor$/.test(plain(m.subject))), "Z raporu tutuyor e-postası");
     // Güçlü model bir kez: günlük iş yeniden okumaz
     await gun.runLafposDayEnd(db, DAY, NOW, undefined, { client, read });
     assert.equal(models.length, 2);
@@ -386,7 +387,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     assert.equal(sent.length, 1);
     const mail = sent[0];
     assert.deepEqual(mail.to, ["sahip@ornek.com"], "yalnız yöneticinin alıcıları");
-    assert.match(plain(mail.subject), /Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · gün sonu fotoğrafı LafPOS'tan FARKLI/);
+    assert.match(plain(mail.subject), /Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · Z raporu LafPOS'tan FARKLI/);
     const t = plain(mail.text);
     assert.match(t, /Yazarkasa kartı: fotoğrafta 4\.000 ₺ · LafPOS'ta 4\.160 ₺ · FARK/);
     assert.match(t, /Yazarkasa nakdi: fotoğrafta 1\.215 ₺ · LafPOS'ta 1\.055 ₺ · FARK/);
@@ -400,18 +401,21 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     for (const m of sent.filter((x) => x.to.includes("kasa@ornek.com"))) assert.doesNotMatch(m.text, /fotoğraf|LafPOS'ta/i);
   });
 
-  test("Gün sonu e-postası fotoğraftan sonra giderse fark onun içinde satır satır; ayrı fotoğraf e-postası gitmez", async () => {
+  test("Gün sonu e-postası fotoğraftan sonra giderse fark onun içinde satır satır; Z raporu e-postası da ayrıca gider (bir kez)", async () => {
     assert.ok((await push()).ok);
     await gun.writeAutoReport(db, DAY, NOW);
     const id = await newPhoto();
     await db.insert(s.aiCalls).values({ feature: "kasa-okc", model: "claude-haiku-5-5", status: "ok", photoId: id, userId: ayse.id, result: detailed({ card: 4_000, cash: 1_215 }) });
     await foto.attachLafposDayPhotoCore(db, ayse, { date: DAY, branchId: LAFPOS_SUBE, photoId: id }, NOW);
     const r = await gun.runLafposDayEnd(db, DAY, NOW);
-    assert.deepEqual([r.email, r.photo], ["sent", "same"]);
+    assert.deepEqual([r.email, r.photo], ["sent", "sent"]);
     const admin = sent.filter((m) => m.to.includes("sahip@ornek.com"));
-    assert.equal(admin.length, 1, "tek e-posta: gün sonu");
+    assert.equal(admin.length, 2, "gün sonu e-postası ve Z raporu");
     assert.match(admin[0].subject, /Fotoğraf FARKLI/);
     assert.match(plain(admin[0].text), /Yazarkasa kartı: fotoğrafta 4\.000 ₺ · LafPOS'ta 4\.160 ₺ · FARK/);
+    assert.match(plain(admin[1].subject), /Z raporu LafPOS'tan FARKLI$/);
+    // Günlük iş aynı Z raporunu yeniden göndermez
+    assert.equal((await gun.runLafposDayEnd(db, DAY, NOW)).photo, "same");
     for (const m of sent.filter((x) => x.to.includes("kasa@ornek.com"))) assert.doesNotMatch(m.text, /fotoğraf|LafPOS'ta/i);
   });
   test("Uyumlu fotoğraf da yöneticiye e-postayla gider (sahibin isteği, 25 Kasım 2026): okunan rakamlar, ekleyen ve fotoğrafın kendisi ek olarak; bir kez", async () => {
@@ -433,7 +437,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
       assert.equal(sent.length, 1);
       const mail = sent[0];
       assert.deepEqual(mail.to, ["sahip@ornek.com"], "yalnız yöneticinin alıcıları");
-      assert.match(plain(mail.subject), /gün sonu fotoğrafı alındı · LafPOS'la aynı$/);
+      assert.match(plain(mail.subject), /Z raporu tutuyor$/);
       const t = plain(mail.text);
       assert.match(t, /Ekleyen: Ayşe/);
       assert.match(t, /Fotoğrafta okunan\nBelge: /);

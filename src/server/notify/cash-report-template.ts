@@ -19,6 +19,7 @@ import {
   computeCash,
   nextWarning,
   paymentLines,
+  PHOTO_OK_TEXT,
   photoNames,
   reportNo,
   reportSubject,
@@ -264,6 +265,8 @@ export function renderCashReport(
     : "";
   const okcLines = okc ? `${toneLines(okcReconcile(f, "admin", kasa))}${warnBox([okcPhotoWarning])}` : "";
   const photoList = photoNames(meta.photos).join(", ");
+  // Fotoğraf okundu ve yazılanlarla tutuyor: yöneticiye olumlu satır (fark varsa yukarıdaki turuncu kutular)
+  const photoOk = meta.photoRead && !(meta.photoDiffs ?? []).length ? PHOTO_OK_TEXT : null;
   // Raporun şubesi bağlantıda: seçici o şubeyi seçer, form o kasayı gösterir (yoksa çerezdeki şubenin raporu açılırdı)
   const link = `${APP_URL}/panel/kasa?gun=${f.date}${meta.branch ? `&sube=${encodeURIComponent(meta.branch.id)}` : ""}`;
   // laffogato.net: bilgi satırı, hesaba katılmaz (sitenin günü gece yarısında biter)
@@ -296,7 +299,7 @@ export function renderCashReport(
   <tr><td style="background:#ffffff;border-radius:24px;padding:24px 20px 22px">
     <div style="font-family:${FONT};font-size:13px;line-height:18px;color:#71717a">${esc(`${byLine(meta.by, meta.countedBy)} · ${time}${meta.revision > 1 ? " · güncellendi" : ""}${zMeta ? ` · ${zMeta}` : ""}`)}</div>${
       photoList ? `\n    <div style="font-family:${FONT};font-size:12px;line-height:17px;color:#71717a;margin-top:2px">${esc(`Fotoğraflar panelde: ${photoList}`)}</div>` : ""
-    }${meta.approval ? `\n    <div style="font-family:${FONT};font-size:13px;line-height:18px;color:#3f3f46;font-weight:600;margin-top:4px">${esc(meta.approval)}</div>` : ""}
+    }${photoOk ? `\n    <div style="font-family:${FONT};font-size:13px;line-height:18px;color:#15803d;font-weight:600;margin-top:4px">${esc(`✓ ${photoOk}`)}</div>` : ""}${meta.approval ? `\n    <div style="font-family:${FONT};font-size:13px;line-height:18px;color:#3f3f46;font-weight:600;margin-top:4px">${esc(meta.approval)}</div>` : ""}
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:10px"><tr><td style="background:${tone.bg};border-radius:16px;padding:14px 16px;font-family:${FONT}">
       <div style="font-size:13px;line-height:18px;color:${tone.fg};font-weight:600">Kasa</div>
       <div style="font-size:26px;line-height:32px;font-weight:700;letter-spacing:-0.02em;color:${tone.fg}">${esc(headline)}</div>
@@ -322,6 +325,6 @@ export function renderCashReport(
 </td></tr></table>
 </body></html>`;
 
-  const text = `${meta.approval ? `${meta.approval}\n\n` : ""}${cashReportText(f, { ...meta, branchName }, "admin").replace(/\*/g, "")}${meta.online ? `\n\n${meta.online.text}` : ""}\n\nPanelde aç: ${link}`;
+  const text = `${meta.approval ? `${meta.approval}\n\n` : ""}${cashReportText(f, { ...meta, branchName }, "admin").replace(/\*/g, "")}${photoOk ? `\n\n✓ ${photoOk}` : ""}${meta.online ? `\n\n${meta.online.text}` : ""}\n\nPanelde aç: ${link}`;
   return { subject, html, text };
 }

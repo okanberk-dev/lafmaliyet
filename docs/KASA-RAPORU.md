@@ -530,8 +530,9 @@ da Z'nin rakamları da aynı fişte (ayrı mali Z basan cihazda yazarkasa Z'si d
 okunan Z no boş alana yazılır, yöneticiye "fotoğraftan okundu"): okunuşu, batch'ler Banka POS'la, Z'nin rakamları (Z no,
 toplam, nakit, kart, yemek kartı / diğer, KDV) yazarkasa alanlarıyla karşılaştırılır; fark yalnız yöneticinin uyarısıdır
 (Kasa gün görünümü, zil, gün sonu e-postasında satır satır, ay satırının rozeti). Fotoğraf gün sonu e-postasından sonra
-eklendiyse yöneticiye her zaman (uyumlu da) kısa fotoğraf e-postası gider: durum, okunan rakamlar ve fotoğrafın kendisi
-ek olarak ([LAFPOS.md](LAFPOS.md) › Fotoğraf e-postası). Fotoğraf önce ucuz modelle, gerekirse bir kez güçlü modelle, yapay zekâ yoksa
+Eklenen her gün sonu fotoğrafı için yöneticiye ayrı "Z raporu" e-postası gider, Z tutsa da ("Z raporu tutuyor"): durum,
+okunan rakamlar ve fotoğrafın kendisi ek olarak ([LAFPOS.md](LAFPOS.md) › Z raporu e-postası). Elle yazılan raporun
+e-postasında fotoğraf okunup yazılanlarla tutuyorsa yeşil "✓ Z fotoğrafı okundu: yazılan rakamlarla tutuyor" satırı. Fotoğraf önce ucuz modelle, gerekirse bir kez güçlü modelle, yapay zekâ yoksa
 kodla (OCR) okunur; kodla okunan bir satır güvenle seçilmediyse ya da OCR okuyamadıysa "okunamadı — yönetici baksın"
 (rakam uydurulmaz; okuyan yöneticiye "Yapay zekâ" / "Kodla okundu" diye yazar; [FOTOGRAF.md](FOTOGRAF.md)). Elle girilen
 raporun formunu yalnız yapay zekâ okunuşu doldurur; kodla okunduysa ya da okunamadıysa form "rakamları elle yazın" der. Personel farkı görmez: eski "Fotoğraftan farklı

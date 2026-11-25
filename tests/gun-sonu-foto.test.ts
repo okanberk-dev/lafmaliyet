@@ -415,20 +415,18 @@ test("Fotoğraf e-postası (gün sonu e-postasından sonra eklenen fotoğraf): h
   // Sahibin isteği (25 Kasım 2026): "z raporu yükleyince mail gelmedi" — uyumlu fotoğraf da bildirilir
   const ok = check([{ photoId: 1, raw: detailedZ(), error: null }]);
   assert.equal(ok.state, "uyumlu");
-  assert.equal(photoMailNeeded(ok), false, "gün sonu e-postasıyla giden uyumlu fotoğraf ayrıca gitmez");
-  assert.equal(photoMailNeeded(ok, { fresh: true }), true, "gün sonu e-postasından sonra eklenen uyumlu fotoğraf da e-posta gönderir");
-  // Taze: en yeni fotoğraf gün sonu e-postasından sonra ve son 48 saatte (yükseltmeden önceki eski günlere toplu e-posta yok)
-  const mailed = new Date("2026-11-24T21:00:00Z");
-  assert.equal(photoMailFresh(new Date("2026-11-24T22:00:00Z"), mailed, new Date("2026-11-25T08:00:00Z")), true);
-  assert.equal(photoMailFresh(new Date("2026-11-24T20:00:00Z"), mailed, new Date("2026-11-25T08:00:00Z")), false, "e-postadan önce eklendi");
-  assert.equal(photoMailFresh(new Date("2026-11-24T22:00:00Z"), mailed, new Date("2026-11-27T08:00:00Z")), false, "48 saatten eski");
-  assert.equal(photoMailFresh(null, mailed, new Date()), false);
-  assert.equal(plain(renderPhotoMail({ branchName: "Marina", date: DAY, check: ok, link: "x" }).subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · gün sonu fotoğrafı alındı · LafPOS'la aynı");
+  assert.equal(photoMailNeeded(ok), false, "taze olmayan (eski) uyumlu fotoğraf için e-posta yok");
+  assert.equal(photoMailNeeded(ok, { fresh: true }), true, "Z tutsa da 'tutuyor' raporu gider (sahibin isteği, 25 Kasım 2026)");
+  // Taze: son 48 saatte eklendi (yükseltmeden önceki eski günlere toplu e-posta yok)
+  assert.equal(photoMailFresh(new Date("2026-11-24T22:00:00Z"), new Date("2026-11-25T08:00:00Z")), true);
+  assert.equal(photoMailFresh(new Date("2026-11-24T22:00:00Z"), new Date("2026-11-27T08:00:00Z")), false, "48 saatten eski");
+  assert.equal(photoMailFresh(null, new Date()), false);
+  assert.equal(plain(renderPhotoMail({ branchName: "Marina", date: DAY, check: ok, link: "x" }).subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · Z raporu tutuyor");
   assert.equal(photoMailNeeded(null), false);
   // İkinci fotoğraf (aynı okunuş) da yeni içeriktir
   assert.notEqual(photoCheckHash(ok), photoCheckHash({ ...ok, photos: ok.photos + 1 }));
   const mail = renderPhotoMail({ branchName: "Marina", date: DAY, check: c, link: "https://ladmin.test/panel/kasa?gun=2026-11-24" });
-  assert.equal(plain(mail.subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · gün sonu fotoğrafı LafPOS'tan FARKLI");
+  assert.equal(plain(mail.subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · Z raporu LafPOS'tan FARKLI");
   const t = plain(mail.text);
   assert.match(t, /Yazarkasa kartı: fotoğrafta 850 ₺ · LafPOS'ta 800 ₺ · FARK/);
   assert.match(t, /Okuyan: Yapay zekâ \(Claude Opus 5\.5\)/);
@@ -440,5 +438,5 @@ test("Fotoğraf e-postası (gün sonu e-postasından sonra eklenen fotoğraf): h
   const unsure: LafposPhotoCheck = { ...check([{ photoId: 1, raw: parsePavoOcr([line("~~~(20)")]).raw, error: null, source: "kod", model: OCR_MODEL }]) };
   assert.equal(unsure.state, "belirsiz");
   assert.equal(photoMailNeeded(unsure), true);
-  assert.equal(plain(renderPhotoMail({ branchName: "Marina", date: DAY, check: unsure, link: "x" }).subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · gün sonu fotoğrafı okunamadı, yönetici baksın");
+  assert.equal(plain(renderPhotoMail({ branchName: "Marina", date: DAY, check: unsure, link: "x" }).subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · Z raporu okunamadı, yönetici baksın");
 });

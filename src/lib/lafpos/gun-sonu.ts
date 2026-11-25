@@ -529,25 +529,24 @@ export function photoRows(check: LafposPhotoCheck): [string, string][] {
   return rows;
 }
 
-/** Gün sonu e-postasından sonra eklenen uyumlu fotoğrafın bildirimi bu süreden eski fotoğrafa gitmez (yükseltme sonrası) */
+/** Z raporu e-postası bu süreden eski fotoğrafa gitmez (yükseltmeden önce eklenmiş eski günlere toplu e-posta yok) */
 export const PHOTO_MAIL_FRESH_MS = 48 * 3600_000;
 
 /**
- * Fotoğraf e-postası gerekir mi. Fark ya da "yönetici baksın" her zaman (24 Kasım 2026); öteki durumlar (uyumlu, okunamadı,
- * okunmadı) fotoğraf gün sonu e-postasından SONRA eklendiyse (`fresh`; sahibin isteği, 25 Kasım 2026: "gün sonu alınca
- * admine z raporu yükleyince mail gelmedi"). Gün sonu e-postasından önce eklenen fotoğraf o e-postanın içinde gitti;
- * yükseltmeden önce eklenmiş eski fotoğraflar için toplu e-posta gitmesin diye `fresh` son 48 saatle sınırlıdır
- * (photoMailFresh). Karşılaştırma yoksa e-posta yok
+ * Z raporu (gün sonu fotoğrafı) e-postası gerekir mi. Sahibin istekleri: 24 Kasım 2026 "farklı olunca belirsin"; 25 Kasım
+ * 2026 "z raporu yükleyince mail gelmedi" ve "z tutsa da tutuyor diye yine rapor şeklinde gönderilsin". Fark ve "yönetici
+ * baksın" her zaman; öteki durumlar (tutuyor, okunamadı, okunmadı) fotoğraf tazeyse (`fresh`: son 48 saatte eklendi,
+ * photoMailFresh). Gün sonu e-postası fotoğrafı içerse de Z raporu ayrıca gider. Karşılaştırma yoksa e-posta yok
  */
 export function photoMailNeeded(check: Pick<LafposPhotoCheck, "state"> | null | undefined, o: { fresh?: boolean } = {}): boolean {
   if (!check) return false;
   return check.state === "fark" || check.state === "belirsiz" || o.fresh === true;
 }
 
-/** En yeni fotoğraf gün sonu e-postasından sonra eklendi ve son 48 saatte mi (photoMailNeeded'in `fresh`'i) */
-export function photoMailFresh(newestPhotoAt: Date | null, emailedAt: Date | null, now: Date): boolean {
-  if (!newestPhotoAt || !emailedAt) return false;
-  return newestPhotoAt.getTime() > emailedAt.getTime() && now.getTime() - newestPhotoAt.getTime() <= PHOTO_MAIL_FRESH_MS;
+/** En yeni fotoğraf son 48 saatte mi eklendi (photoMailNeeded'in `fresh`'i) */
+export function photoMailFresh(newestPhotoAt: Date | null, now: Date): boolean {
+  if (!newestPhotoAt) return false;
+  return now.getTime() - newestPhotoAt.getTime() <= PHOTO_MAIL_FRESH_MS;
 }
 
 /**
@@ -567,11 +566,11 @@ export function photoCheckHash(check: LafposPhotoCheck): string {
 
 /** Fotoğraf e-postasının konu sonu ve üst satırı, karşılaştırmanın durumuna göre */
 const PHOTO_MAIL_STATE: Record<LafposPhotoCheck["state"], { subject: string; headline: string; tone: "ok" | "bad" | "warn" }> = {
-  uyumlu: { subject: "gün sonu fotoğrafı alındı · LafPOS'la aynı", headline: "Gün sonu fotoğrafı alındı ve okundu: rakamlar LafPOS'la aynı", tone: "ok" },
-  fark: { subject: "gün sonu fotoğrafı LafPOS'tan FARKLI", headline: "Fotoğraf LafPOS'un rakamlarından farklı okundu", tone: "bad" },
-  okunamadi: { subject: "gün sonu fotoğrafı okunamadı", headline: "Fotoğraf okunamadı ya da yanlış belge; personelden yeniden çekmesi istendi", tone: "warn" },
-  okunmadi: { subject: "gün sonu fotoğrafı alındı · okunmadı", headline: "Gün sonu fotoğrafı alındı ama henüz okunmadı; fotoğrafa bakın", tone: "warn" },
-  belirsiz: { subject: "gün sonu fotoğrafı okunamadı, yönetici baksın", headline: "", tone: "warn" },
+  uyumlu: { subject: "Z raporu tutuyor", headline: "Z raporu tutuyor: fotoğraftaki rakamlar LafPOS'la aynı", tone: "ok" },
+  fark: { subject: "Z raporu LafPOS'tan FARKLI", headline: "Z raporu tutmuyor: fotoğraf LafPOS'un rakamlarından farklı okundu", tone: "bad" },
+  okunamadi: { subject: "Z raporu okunamadı", headline: "Z raporu okunamadı ya da yanlış belge; personelden yeniden çekmesi istendi", tone: "warn" },
+  okunmadi: { subject: "Z raporu alındı · okunmadı", headline: "Z raporunun fotoğrafı alındı ama henüz okunmadı; fotoğrafa bakın", tone: "warn" },
+  belirsiz: { subject: "Z raporu okunamadı, yönetici baksın", headline: "", tone: "warn" },
 };
 
 const TONE = { ok: { bg: "#f0fdf4", fg: "#166534" }, bad: { bg: "#fef2f2", fg: "#991b1b" }, warn: { bg: "#fff7ed", fg: "#9a3412" } } as const;
