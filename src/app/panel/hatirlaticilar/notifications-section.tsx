@@ -237,19 +237,38 @@ export function NotificationsSection({
               ) : (
                 <ul>
                   {shownRecipients.map((r, i) => (
-                    <li key={r.id} className={cn("flex items-center gap-3 px-2.5 py-2", i > 0 && "border-t border-ink/[0.06]")}>
+                    <li key={r.id} className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 px-2.5 py-2", i > 0 && "border-t border-ink/[0.06]")}>
                       <Avatar name={r.name || r.email} size="sm" />
                       <div className={cn("min-w-0 flex-1", !r.active && "opacity-60")}>
                         <p className="text-sm font-medium break-all text-ink">{r.name || r.email}</p>
                         <p className="text-xs break-all text-ink-mute">{r.name ? r.email : r.blocked ? null : r.active ? "Hatırlatma alır" : "Duraklatıldı"}</p>
                         {r.blocked ? <p className="text-xs font-medium text-bad">{BLOCK_ROW_TEXT[r.blocked]}</p> : null}
                         {r.branchClosed ? <p className="text-xs font-medium text-warn">Seçili şubesi kapalı: e-posta gitmez. Başka bir şube ya da Bütün şubeler seçin</p> : null}
-                        {branchOptions.length > 1 || r.branchClosed ? (
+                      </div>
+                      <Switch
+                        checked={r.active}
+                        label={`${r.email} bildirim alsın`}
+                        disabled={pending}
+                        className="pointer-coarse:h-11"
+                        onChange={(v) =>
+                          start(async () => {
+                            patchRecipients({ id: r.id, active: v });
+                            const res = await setRecipientActive(r.id, v);
+                            if (!res.ok) toast.error(res.error);
+                          })
+                        }
+                      />
+                      <IconButton label={`${r.email} adresini sil`} tone="danger" onClick={() => setRemoving(r)} className="pointer-coarse:size-11">
+                        <Trash2 size={15} />
+                      </IconButton>
+                      {branchOptions.length > 1 || r.branchClosed ? (
+                        // Kendi satırında, adresin altında: dar ekranda seçimin metni ("Yalnız Marina") kırpılmasın
+                        <div className="basis-full pl-11">
                           <Select
                             aria-label={`${r.email} hangi şubenin e-postasını alsın`}
                             value={r.branchClosed ? CLOSED_BRANCH : (r.branchIds?.[0] ?? "")}
                             disabled={pending}
-                            className="mt-1 h-9 w-auto max-w-full text-xs pointer-coarse:h-11"
+                            className="h-9 w-auto max-w-full text-xs pointer-coarse:h-11"
                             onChange={(e) => {
                               const ids = e.target.value ? [e.target.value] : [];
                               start(async () => {
@@ -271,24 +290,8 @@ export function NotificationsSection({
                               </option>
                             ))}
                           </Select>
-                        ) : null}
-                      </div>
-                      <Switch
-                        checked={r.active}
-                        label={`${r.email} bildirim alsın`}
-                        disabled={pending}
-                        className="pointer-coarse:h-11"
-                        onChange={(v) =>
-                          start(async () => {
-                            patchRecipients({ id: r.id, active: v });
-                            const res = await setRecipientActive(r.id, v);
-                            if (!res.ok) toast.error(res.error);
-                          })
-                        }
-                      />
-                      <IconButton label={`${r.email} adresini sil`} tone="danger" onClick={() => setRemoving(r)} className="pointer-coarse:size-11">
-                        <Trash2 size={15} />
-                      </IconButton>
+                        </div>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
