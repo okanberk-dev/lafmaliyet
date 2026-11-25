@@ -16,7 +16,7 @@ import { listDaysText } from "@/lib/calc/insights";
 import { lafposListPart, manualOf, MONTH_FIELDS } from "@/lib/cash-month";
 import { RECIPE_COST_NOTE } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
-import { dayRangeTR, lafposMonthNotes, lafposMonthStatus, type LafposMonthNotes } from "@/lib/lafpos/sales";
+import { commonListText, dayRangeTR, lafposMonthNotes, lafposMonthStatus, type LafposMonthNotes } from "@/lib/lafpos/sales";
 import { branchSwitchDay, isLafposBranch, lafposBranchOf, monthSource } from "@/lib/lafpos/switch";
 import { addDays, dayAblativeTR, todayTR } from "@/lib/reminders";
 import { coverageFor } from "@/lib/sales-coverage";
@@ -95,6 +95,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
         ? { today, defaultThrough }
         : null;
   const listPeriod = sales.lines.length ? model.listPeriod(month) : null;
+  const common = model.ds.commonLists?.find((c) => c.month === month) ?? null;
 
   const products: ProductOption[] = model.products.map((p) => ({
     id: p.product.id,
@@ -206,6 +207,8 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
       />
 
       {notes ? <LafposBand notes={notes} source={lafpos!.source} /> : null}
+      {/* "Tümü"nün dönemi şubelerin en kısa listesiyle (bulgu 62): kısaltan şube adıyla */}
+      {common ? <Notice tone="neutral" size="sm" title="Tümü'de satışlar şubelerin ortak döneminden" text={commonListText(month, common.branch, common.through)} /> : null}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown

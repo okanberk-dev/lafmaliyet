@@ -664,6 +664,12 @@ export interface Dataset {
    */
   salesCoverage?: { month: string; through: string; till: TillMonth | null }[];
   /**
+   * Yalnız "Tümü": dönemi kısaltan şube, ay ay (src/lib/lafpos/sales.ts mergeSalesSources › short; bulgu 62). ModPOS'ta
+   * kalan şubenin listesi ayın öteki satırlarından önce bitiyorsa (`through`) ayın dönemi o gün, LafPOS'un sonraki günleri
+   * sayılmaz; listesi yoksa (`through` null) ayın satırları "Tümü"de sayılmaz. `branch` şubenin adı
+   */
+  commonLists?: { month: string; branch: string; through: string | null }[];
+  /**
    * Satışlar'ın içe aktarmasının yazdığı şubenin (currentWriteBranch: seçili şube, "Tümü"de Tuzla) listelerinin son günü,
    * ay ay (src/lib/sales-coverage.ts readCoverage; ay yoksa liste ayın tamamı): içe aktarma kartının "… tarihine kadar"ı
    * yeni yüklemenin değiştireceği ya da ekleneceği listenin günüdür. "Tümü"de Marina'nın listesinin günü ya da son

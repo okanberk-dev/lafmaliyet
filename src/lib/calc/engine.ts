@@ -1146,6 +1146,8 @@ export interface ListPeriod {
   discounts: number;
   /** Takvim günü (ilk günden son güne) */
   days: number;
+  /** "Tümü"de dönemi kısaltan şubenin adı (listesi bu gün biten ModPOS şubesi; Dataset.commonLists, bulgu 62) */
+  short?: string;
 }
 
 export type Model = ReturnType<typeof createModel>;
@@ -1433,6 +1435,7 @@ export function createModel(ds: Dataset) {
 
   // --- Satış listesinin dönemi (src/lib/sales-coverage.ts) --------------------------
   const coverageByMonth = new Map((ds.salesCoverage ?? []).map((c) => [c.month, c]));
+  const commonByMonth = new Map((ds.commonLists ?? []).map((c) => [c.month, c]));
   /**
    * Süren ayda yapıştırılan satış listesi kasa raporlarından kısa bir dönemi kapsıyorsa o dönem: liste ↔ POS cirosu
    * karşılaştırması, günlük ortalama, "ayda …" adetleri ve reçeteye göre kârın sabit gideri listenin günleriyle yapılır.
@@ -1458,6 +1461,7 @@ export function createModel(ds: Dataset) {
           ? Math.max(0, Math.round(((c.till.discounts ?? 0) - (c.till.lafposDiscounts ?? 0)) * 100) / 100)
           : listDiscounts(month),
       days: Math.max(1, days),
+      ...(commonByMonth.get(month)?.through === c.through ? { short: commonByMonth.get(month)!.branch } : {}),
     };
   }
 

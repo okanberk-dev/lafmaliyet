@@ -54,6 +54,7 @@ import {
 import { priceAlert } from "@/lib/calc/price-impact";
 import { monthLabel, monthShort, num, numPossessive, pct, tl } from "@/lib/format";
 import { salesMonthKasa } from "@/lib/lafpos/kasa";
+import { commonListText } from "@/lib/lafpos/sales";
 import { longDateTR } from "@/lib/reminders";
 import { salesSourceOf } from "@/lib/sales-source";
 import { holdAlert } from "@/lib/price-hold";
@@ -269,7 +270,13 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // Satışlar'ın banka POS komisyonu (kasa kartı olan ayda; süren ayda listenin günleriyle, metin söyler)
   const salesPos = model.salesPosCommission(month);
   // Süren ayda kısa satış listesi: sabit gider grupları listenin günlerine düşen payla
-  const listNote = t?.listPeriod ? ` Satış listesi ${listDaysText(t.listPeriod)} (ayın ${t.listPeriod.of} gününün ${numPossessive(t.listPeriod.days)}): tutar o günlere düşen pay.` : "";
+  const listNote = t?.listPeriod
+    ? ` Satış listesi ${listDaysText(t.listPeriod)} (ayın ${t.listPeriod.of} gününün ${numPossessive(t.listPeriod.days)}): tutar o günlere düşen pay.${
+        t.listPeriod.short ? ` ${commonListText(month, t.listPeriod.short, t.listPeriod.through)}` : ""
+      }`
+    : "";
+  // "Tümü"nün dönemi şubelerin en kısa listesiyle (bulgu 62): ayın satırları bir şubenin listesi olmadığı için sayılmıyorsa
+  const commonMissing = model.ds.commonLists?.find((c) => c.month === month && c.through === null) ?? null;
   // "Para nereye gitti?": Excel Panel'in 4 grubu (Kira, Personel, Reklam, Diğer) + varsa bu aya özel giderler; online
   // satış (laffogato.net) net satışın içinde: kâr-zarardaki gibi ModPOS + online
   const waterfall: FlowRow[] = t
@@ -357,7 +364,11 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const fm = t?.fixedBreakdown ?? d.fixedMonth;
   const netTip = t
     ? `Brüt kâr${t.online ? " (laffogato.net online satışı dahil)" : ""} − indirimler (KDV hariç) − o ayın Gelir-gider sabit giderleri (gün oranı + bu aya özel giderler), reçeteye göre.${
-        t.listPeriod ? ` Satış listesi ${listDaysText(t.listPeriod)} günlerini kapsıyor: indirim o günlerin kasa raporlarından, sabit gider ve laffogato.net online satışı o günlere düşen payla.` : ""
+        t.listPeriod
+          ? ` Satış listesi ${listDaysText(t.listPeriod)} günlerini kapsıyor: indirim o günlerin kasa raporlarından, sabit gider ve laffogato.net online satışı o günlere düşen payla.${
+              t.listPeriod.short ? ` ${commonListText(month, t.listPeriod.short, t.listPeriod.through)}` : ""
+            }`
+          : ""
       } Excel Panel'i her ay standart aylık sabit gideri düşer; fark olduğunda altta "Excel temeli" yazar. ${
         d.profitBasis.invoices
           ? "Faturaya göre değer Gelir-gider tablosundan gelir; stok sayımı olmayan ayda mal maliyeti tahminidir (sayım aralığına dağıtılır ya da reçeteye göre)."
@@ -481,6 +492,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             {branchNote.text}
           </Notice>
         ) : null}
+        {commonMissing ? <Notice tone="neutral" size="sm" title="Tümü'de satışlar şubelerin ortak döneminden" text={commonListText(month, commonMissing.branch, null)} /> : null}
         {paymentNotice ? (
           <Notice
             {...paymentNotice}

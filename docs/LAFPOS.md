@@ -360,6 +360,26 @@ son günü, aşağıda "Şubenin kendi kaydı") belirleyicidir:
   karşılaştırması yanlış uyarı verir, günlük ortalama bir günün satışı kadar şişerdi. Süren ayda hiç kasa raporu yoksa
   beklenmez (ayın kasa dönemi yok). Ay rakamlarının raporsuz günde LafPOS Z'sinden gelmesi (B09) bu bekleyişi kendiliğinden
   kaldırır: kasa dönemi LafPOS günlerini de kapsar.
+- **"Tümü"nün dönemi şube şube (25 Kasım 2026, denetim bulgusu 62).** "Tümü"de ayın satırları iki kaynaktan gelir:
+  ModPOS'ta kalan şubenin (Tuzla) elle yüklenen listesi ve Marina'nın LafPOS günleri. Önceden ayın dönemi Marina'nın son
+  LafPOS günüydü, Tuzla'nın kaydı geçiş ayından sonra hiç okunmuyordu: Tuzla'nın 15 Aralık'a kadarki listesi iki şubenin
+  24 günlük sabit gideri ve kasasıyla düşülüyor, net kâr, günlük ortalama ve başabaş ilerlemesi olduğundan düşük
+  çıkıyordu. Artık geçiş ayından itibaren her ayın "Tümü" dönemi **şubelerin en kısa listesiyle** biter
+  (`otherBranchLists`, `commonListCuts`, `mergeSalesSources` › `short`; `src/lib/lafpos/sales.ts`):
+  - Tuzla'nın o ayki listesinin son günü şubenin kendi kaydından (`sales.coverage.sube`; kayıt yoksa ayın tamamı).
+    Marina'nın LafPOS günleri gün gün okunduğu için o güne kesilir (`loadLafposMonthSales` `cuts`): "Tümü"de 16–24
+    Aralık sayılmaz, Tuzla'nın listesi gelince sayılır. Dönem (`listPeriod`) o güne kadarki iki şubenin kasasıyla;
+    sabit gider, indirim ve online satış o günlere düşen payla.
+  - Marina'nın LafPOS'u Tuzla'nın listesinden önce bitiyorsa (gün sonu gelmedi) dönem onunla biter (eskisi gibi).
+  - Tuzla'nın o ay kasa raporu var ama listesi yoksa (ay sonunda yüklenecek) "Tümü"de o ayın satırları sayılmaz: ortak
+    dönem yoktur. LafPOS'tan önceki gibi "Tümü"nün süren ayı liste yüklenene kadar POS cirosuyla görünür; Marina'nın
+    satışı Marina seçiliyken gün gün görünür.
+  - Genel bakış ve Satışlar kısaltan şubeyi adıyla yazar ("Tuzla'nın satış listesinin son günü 15 Aralık: öteki şubelerin
+    satışı da o güne kadar sayılır.", listesi yoksa "Tuzla'nın Aralık 2026 satış listesi yok: …"; `commonListText`).
+  - Şube seçiliyken değişmez (şubenin kendi kaydı). Geçiş ayında Marina'nın ModPOS listesi de aylık toplamdır, kesilemez:
+    Tuzla'nın listesi Marina'nın listesinden de kısaysa Marina'nın listesi dönemden uzun kalır (geçiş ayına özgü, bilinen
+    sınır). Kasa raporunu bekleyen gün (`held`) kasa raporlarının son gününe göre söylenir; ortak dönemin kestiği gün
+    bekleyen sayılmaz.
 
 **Satışlar** (`/panel/satislar`, yalnız yönetici): geçiş ayında bilgi bandı ("Kasım geçiş ayı: ModPOS listesi 1–9
 Kasım, LafPOS 10 Kasım'dan itibaren (12 gün geldi, son gün 21 Kasım).") ve yukarıdaki uyarılar. LafPOS satırları aynı

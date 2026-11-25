@@ -3,7 +3,17 @@ import "server-only";
 import { and, asc, countDistinct, gte, lte, sql, sum, type SQL } from "drizzle-orm";
 
 import type { LafposSalesMonth, SalesLine } from "@/lib/calc/types";
-import { lafposMonthStatus, lafposSalesCountFrom, mergeSalesSources, modposThroughOf, type LafposDaysOfMonth, type LafposMonthLine, type SalesSources } from "@/lib/lafpos/sales";
+import {
+  commonListCuts,
+  lafposMonthStatus,
+  lafposSalesCountFrom,
+  mergeSalesSources,
+  modposThroughOf,
+  type LafposDaysOfMonth,
+  type LafposMonthLine,
+  type OtherBranchList,
+  type SalesSources,
+} from "@/lib/lafpos/sales";
 import { isLafposBranch } from "@/lib/lafpos/switch";
 import { addDays, shiftMonth } from "@/lib/reminders";
 import { currentBranchWhere } from "@/server/branch-scope";
@@ -24,13 +34,15 @@ export interface LafposHold {
  * geçiş günü seçiliyken çağrılır: `from` (lafposSalesCountFrom) gününden itibaren pos_daily_sales (ay, POS adı, ürün,
  * hizmet) başına toplanır, pos_day_reports ay ay sayılır. Geçiş günü yoksa hiçbir okuma yapılmaz. `hold` verilirse süren
  * ayın kasa raporundan sonraki günleri satırlara ve `days`'e girmez, yalnız `received`'da (gelen bütün günler) ve
- * `dates`'te görünür.
+ * `dates`'te görünür. `cuts` ("Tümü"nün ortak dönemi, commonListCuts; bulgu 62): o ayın kesilen günden sonraki günleri
+ * de satırlara, `days`'e ve satır ↔ Z denetimine girmez (`received`'da ve `dates`'te görünür).
  */
 export async function loadLafposMonthSales(
   db: DB,
   from: string,
   to?: string,
   hold?: LafposHold | null,
+  cuts: readonly LafposHold[] = [],
 ): Promise<{
   lines: LafposMonthLine[];
   days: LafposDaysOfMonth[];
@@ -43,11 +55,12 @@ export async function loadLafposMonthSales(
   const r = s.posDayReports;
   const lineMonth = sql<string>`substr(${d.date}, 1, 7)`;
   const range = (col: typeof d.date | typeof r.date): SQL | undefined => (to ? and(gte(col, from), lte(col, to)) : gte(col, from));
-  // Bekleyen gün: süren ayda kasa raporlarının son gününden sonra
-  const isHeld = (day: string) => !!hold && day > hold.after && day.slice(0, 7) === hold.month;
+  // Bekleyen gün: süren ayda kasa raporlarının son gününden sonra; "Tümü"nün ortak döneminden sonraki gün de sayılmaz
+  const outside = (h: LafposHold, day: string) => day > h.after && day.slice(0, 7) === h.month;
+  const isHeld = (day: string) => (!!hold && outside(hold, day)) || cuts.some((c) => outside(c, day));
   // Seçili şubenin gün sonları ("Tümü"de koşul yok; docs/SUBE.md › Seçici)
   const [subeSatir, subeGun] = await Promise.all([currentBranchWhere(d.branchId), currentBranchWhere(r.branchId)]);
-  const notHeld = hold ? sql`not (${d.date} > ${hold.after} and substr(${d.date}, 1, 7) = ${hold.month})` : undefined;
+  const notHeld = and(...[...(hold ? [hold] : []), ...cuts].map((h) => sql`not (${d.date} > ${h.after} and substr(${d.date}, 1, 7) = ${h.month})`));
   const [lines, reports, perDay] = await Promise.all([
     db
       .select({
@@ -142,16 +155,22 @@ export async function mergeWithLafpos(
     reportDays?: readonly string[];
     /** LafPOS'un şubesi (veri kümesi kütükten türetir); verilmezse lafposBranchId */
     lafposBranch?: string;
+    /**
+     * Yalnız "Tümü": ModPOS'ta kalan şubelerin listeleri (otherBranchLists; bulgu 62). LafPOS'un günleri en kısa listenin
+     * son gününden sonra sayılmaz (commonListCuts), ayın dönemi o gün
+     */
+    others?: readonly OtherBranchList[];
   },
 ): Promise<MergedSales> {
   const S = input.switchDay;
   const lafposBranch = input.lafposBranch ?? (await lafposBranchId(db));
   const countFrom = lafposSalesCountFrom(S, input.salesLines, input.lafposCoverage, lafposBranch);
-  if (S === null || countFrom === null) return { salesLines: input.salesLines, coverage: { ...input.coverage }, lafposSales: null };
+  if (S === null || countFrom === null) return { salesLines: input.salesLines, coverage: { ...input.coverage }, short: {}, lafposSales: null };
   const running = input.today.slice(0, 7);
   const hold = input.lastTillDay?.slice(0, 7) === running ? { month: running, after: input.lastTillDay } : null;
-  const lafpos = await loadLafposMonthSales(db, countFrom, input.toMonth ? `${input.toMonth}-31` : undefined, hold);
-  const merged = mergeSalesSources({ switchDay: S, salesLines: input.salesLines, coverage: input.coverage, lafposLines: lafpos.lines, lafposDays: lafpos.days, lafposBranch });
+  const others = input.others ?? [];
+  const lafpos = await loadLafposMonthSales(db, countFrom, input.toMonth ? `${input.toMonth}-31` : undefined, hold, commonListCuts(others));
+  const merged = mergeSalesSources({ switchDay: S, salesLines: input.salesLines, coverage: input.coverage, lafposLines: lafpos.lines, lafposDays: lafpos.days, lafposBranch, others });
   // Özet: geçiş ayından, verisi olan son aya (en az bu ay ve geçiş ayı) kadar her ay. Yalnız LafPOS'un şubesinin
   // listesiyle: ModPOS'ta kalan şubenin listesi ("Tümü") LafPOS'la çakışmaz, ondan uyarı çıkmaz
   const own = input.salesLines.filter((l) => isLafposBranch(l.branchId, lafposBranch));
@@ -163,7 +182,6 @@ export async function mergeWithLafpos(
     const list = own.filter((l) => l.month === m);
     const through = modposThroughOf(m, input.lafposCoverage);
     const days = lafpos.received.find((x) => x.month === m) ?? null;
-    const counted = lafpos.days.find((x) => x.month === m) ?? null;
     const modposZ = list.length && input.zOf ? input.zOf(`${m}-01`, through) : null;
     const st = lafposMonthStatus({
       month: m,
@@ -176,8 +194,9 @@ export async function mergeWithLafpos(
       kasaDays: input.reportDays?.filter((x) => x.slice(0, 7) === m),
       lafposDates: lafpos.dates.filter((x) => x.slice(0, 7) === m),
       linesVsZ: lafpos.linesVsZ.filter((x) => x.date.slice(0, 7) === m),
-      // Kasa raporunu bekleyen günler: gelen son gün sayılan son günden sonraysa
-      held: hold && m === hold.month && days && (!counted || days.last > counted.last) ? { from: addDays(hold.after, 1), to: days.last } : null,
+      // Kasa raporunu bekleyen günler: gelen son gün kasa raporlarının son gününden sonraysa ("Tümü"nün ortak dönemi de
+      // günleri keser, sayılan son gün ölçü olamaz; bulgu 62)
+      held: hold && m === hold.month && days && days.last > hold.after ? { from: addDays(hold.after, 1), to: days.last } : null,
     });
     if (st) months.push(st);
   }
