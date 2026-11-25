@@ -22,13 +22,22 @@ Haftalık kullanım limiti dolduğu için yarım kaldı. Son hali `ai/fatura-sub
 - Göçler (0087–0089) var.
 - Sürdürmeden önce dalı origin/main ile birleştir (#145 ve #146 sonrası). Göç numaraları çakışırsa göçleri yeniden üret.
 
-Yapılan kısım (doğrulanmadı):
-- Faturaya şube alanı ve göçler.
-- Tedarikçinin varsayılan şubesi.
-- "Şubesi seçilmemiş" kutusu.
-- Paraşüt, Faturalar ve tahmini stok için şube süzgeci.
+Dalda yazılanlar (DOĞRULANMADI). Son commit 37df6643:
+- 13348b4d: Faturanın şubesi. Şube, işletme geneli ya da seçilmemiş olabilir. Tedarikçinin varsayılan şubesi, öneri kutusu ve şubeye göre süzme.
+- 00076018: Fatura sınıflandırma. Kalem kalem mal alışı ve sarf ayrımı, Temizlik & Sarf kategorisi, "hammadde değil" için neden etiketi, tedarikçi kuralı.
+- fbd02e1d: Paraşüt sayfasında bekleyen kartlar için aranabilir tek hammadde seçici.
+- 37df6643: AI eşleştirme isteminde faturanın bağlamı ve kısaltma yönergesi.
 
-Sınıflandırma maddelerinin (aşağıda 1–6) henüz hiçbiri yapılmadı.
+Sürdürürken yapılacaklar:
+1. Dalı origin/main ile birleştir. 25 Kasım'da denendi; 10 dosya çakışıyor: engine.ts, types.ts, dataset.ts, stock-estimate.ts (sunucu), workbook.ts, sync.ts, sayim/tahmini/page.tsx, SUBE.md, STOK-TAHMINI.md ve bilgi tabanı. Dalga 1 aynı dosyalara dokundu; iki tarafın amacını koruyarak çöz. Göç numaralarını (0087–0089) gerekirse yeniden üret.
+2. Ardından şunları çalıştır:
+   - `npm test`
+   - `npm run ci:yerel -- fatura-sube`
+   - `npx tsc --noEmit`
+   - eslint
+   - `npm run build`
+3. Kalem kalem sayma geçmiş ayların mal alışını ve giderini değiştirir. main ile aynı veride rakam karşılaştırması yap; değişen her rakamı bilinçli kabul et ve testle kilitle.
+4. Ajanın son notu: "Docs for B4, then commit." Paraşüt belgesinin ilgili bölümü (B4) eksik kalmış olabilir.
 
 - **Şube kapsamı: faturalar ve Paraşüt şubeye göre.** İstenen davranış:
   - Tuzla seçiliyken yalnız Tuzla'nın, Marina seçiliyken yalnız Marina'nın bilgileri görünür.
