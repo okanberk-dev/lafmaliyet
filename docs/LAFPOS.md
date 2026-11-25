@@ -97,7 +97,7 @@ Gövde katı JSON, en çok 256 KB. Tutarlar TL (iki ondalık; fazlası yuvarlan�
 | `lines[]` (Faz 2) | `gross` (indirimden önceki liste değeri; Σ(`gross` − `revenue`) = `z.discounts`), `isAddon` (birleşen satırda ek parçası var), `listPrices` (şube fiyatı, 24 Kasım 2026: satılan parçaların dondurulan liste birim fiyatları ve adetleri, en çok 20) |
 | `ikram[]` (Faz 2) | `kind` (`ikram`, `odenmez`, `zayi`), `personKind` (yalnız ödenmezde: `personel`, `musteri`, `patron`; yoksa `null`) |
 | `z` (Faz 3) | `expectedOpening` (açılışta beklenen nakit, önceki gerçek günün devri; bilinmiyorsa `null`), `openingDiff` (açılış − beklenen, **işaretli**; beklenen yoksa `null`), `openingReason` (farkın nedeni, en çok 200 karakter; yoksa `null`). Aşağıda "Faz 3: kasa zinciri" |
-| `cashMoves[]` | Faz 3: `id` (hareketin ULID'i, 26 karakter Crockford base32; aynı gün yeniden gönderilince aynı), `kind` (`harcama`, `teslim`, `giris`), `amount` (> 0), `description` (en çok 200, boş olabilir), `at` (ISO; takvimde olan an, "…T25:99" listeyi düşürür), `categoryId` (harcamanın panel gider kategorisi ya da `null`); günün kasa hareketleri yazıldığı sırayla, hareketsiz günde `[]`, en çok 2000; aynı kimlik iki kez geçemez. Kişi gelmez. Harcama ve teslim "Kasadan çıkanlar"a satır olur, giriş olmaz (aşağıda "Kasadan çıkanlar LafPOS'tan") |
+| `cashMoves[]` | Faz 3: `id` (hareketin ULID'i, 26 karakter Crockford base32; aynı gün yeniden gönderilince aynı), `kind` (`harcama`, `teslim`, `giris`), `amount` (> 0), `description` (en çok 200, boş olabilir), `at` (ISO; takvimde olan an, "…T25:99" listeyi düşürür), `categoryId` (harcamanın panel gider kategorisi ya da `null`), `recipient` (25 Kasım 2026; yalnız teslimde ve yazılmışsa: paranın verildiği kişi ya da yer, yalnız ad; satırın "Kime"si olur, en çok 60; bozuk gelen yalnız bu alanı düşürür); günün kasa hareketleri yazıldığı sırayla, hareketsiz günde `[]`, en çok 2000; aynı kimlik iki kez geçemez. Hareketi yazan kişi gelmez. Harcama ve teslim "Kasadan çıkanlar"a satır olur, giriş olmaz (aşağıda "Kasadan çıkanlar LafPOS'tan") |
 
 - **Beyaz liste.** Yalnız tablodaki alanlar okunur ve saklanır; bilinmeyen alan atılır (müşteri ya da personel adı
   gelse de yazılmaz). Her alan yazılmalıdır (sonradan gelen `sube`, `bankPos`, `z.cashIn`, `z.expectedCash`,
@@ -253,6 +253,11 @@ saf: `src/lib/lafpos/cash-moves.ts` › `planLafposCashOuts`):
   görünümünde **Kasa hareketleri (LafPOS)**: harcama, teslim, giriş sayı ve toplamla). Satır: şube Marina, gönderen
   "LafPOS" (kişi adı yazılmaz), saat hareketin anı, belge "yok", açıklama LafPOS'un, `lafpos_id` hareketin kimliği
   (benzersiz).
+- **Teslimin "Kime"si LafPOS'tan** (25 Kasım 2026, sahibin isteği "teslim edilirken kime olduğu yazılsın"): LafPOS'ta
+  teslimde alıcı zorunlu (patron ya da müdür hesabı, Banka ya da elle yazılan ad); gövdede `recipient` olarak gelir,
+  satırın "Kime"sine (`store`; listede "Teslim · Patron") yazılır (`lafposRecipient`, en çok 60 karakter). Kime'si boş
+  sahiplenilen elle satır ve alıcıyı okumayan sürümün yazdığı LafPOS teslimi de yeniden gönderimde dolar
+  (`planLafposRecipientFill`); panelde yazılmış Kime'ye dokunulmaz. Alıcısız eski LafPOS teslimi Kime'siz kalır.
 - **Aylık harcamalar:** harcamanın `categoryId`'si personelin seçebildiği bir kategoriyse kayıt da açılır (personelin
   fişsiz alışverişinin kuralı; nakit, "Kasadan · gün", şube Marina). Kategorisiz ya da yöneticinin kategorisindeki
   harcama yalnız satır olur; kategoriyi panelde personel (satırı düzeltince kategori sorulur, kayıt açılır) ya da
@@ -1215,8 +1220,10 @@ Anahtar yokken altı uç da `503` döner; panelin geri kalanı ve Kasa raporu es
   türünün adıdır, kişi değil. İkram, iptal ve iade nedenleri serbest metindir (en çok 200 karakter saklanır) ve yalnız
   yöneticinin verisinde kalır; personele giden Kasa bandı yalnız Z'yi, Zayi'nin günü LafPOS ikramının yalnız adını ve
   adedini taşır; ödeme kanalları yalnız yöneticinin Komisyon & hakediş'inde. Sürüm geçmişi aynı beyaz listeden geçmiş
-  gövdeyi saklar. Kasa hareketlerinde (Faz 3) kişi gelmez: "Kasadan çıkanlar"ın satırı ve Aylık harcamalar kaydı
-  "LafPOS" adıyla yazılır; açıklama ve açılış farkının nedeni serbest metindir (en çok 200 karakter).
+  gövdeyi saklar. Kasa hareketlerinde (Faz 3) hareketi yazan kişi gelmez: "Kasadan çıkanlar"ın satırı ve Aylık
+  harcamalar kaydı "LafPOS" adıyla yazılır; açıklama ve açılış farkının nedeni serbest metindir (en çok 200 karakter).
+  Tek istisna teslimin alıcısıdır (sahibin kararı, 25 Kasım 2026): paranın verildiği kişinin yalnız adı gelir ve satırın
+  "Kime"si olur; LafPOS'un kullanıcı kimliği gelmez.
 - Maliyet, devir ve gider kategorileri uçları yalnız imzayla açılır; personel maliyet ve kâr görmez. Kategori ucu tutar
   taşımaz.
 - ModPOS dönemi ucu yalnız imzayla ve yalnız LafPOS'un şubesi için açılır; kişi adı, kasa ve sayım rakamı taşımaz.

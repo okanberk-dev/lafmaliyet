@@ -301,6 +301,40 @@ describe("kasa zinciri: veritabanında", { skip: !SERVER_URL && "KASA_ZINCIRI_TE
     assert.equal((await outsOf(date)).length, 3);
   });
 
+  test("Kime: LafPOS teslimin alıcısı satırın Kime'si olur; alıcısız yazılmış satır yeniden gönderimde dolar; panelde yazılan Kime kalır", async () => {
+    const date = "2026-11-28";
+    const NOV29 = new Date("2026-11-29T12:00:00+03:00");
+    const to = (m: Move, recipient: string) => ({ ...m, recipient });
+    // Alıcıyı taşımayan gövde (eski LafPOS ya da alıcıyı okumayan sürüm): satırlar Kime'siz
+    const first = await send(day(date, { moves: [move("K1", "teslim", 500), move("K2", "teslim", 300), move("K3", "harcama", 90, cats.diger)] }), NOV29);
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    let rows = await outsOf(date);
+    assert.deepEqual(rows.map((o) => [o.kind, o.store]), [["teslim", null], ["teslim", null], ["harcama", null]]);
+    // Panelde K2'nin Kime'si elle yazıldı: LafPOS'un alıcısı onu ezmez
+    await db.update(s.cashOuts).set({ store: "Elle yazılan" }).where(eq(s.cashOuts.id, rows[1].id));
+    const again = await send(
+      day(date, { moves: [to(move("K1", "teslim", 500), "Patron"), to(move("K2", "teslim", 300), "Banka"), to(move("K3", "harcama", 90, cats.diger), "Patron")], revision: 2 }),
+      NOV29,
+    );
+    assert.equal(again.status, 200, JSON.stringify(again.body));
+    rows = await outsOf(date);
+    assert.deepEqual(rows.map((o) => [o.kind, o.store]), [["teslim", "Patron"], ["teslim", "Elle yazılan"], ["harcama", null]], "boş Kime dolar, elle yazılan kalır, harcamada yer yazılmaz");
+    // Yeni teslim alıcısıyla gelir: Kime ilk yazımda; uzun ad 60 karaktere kısalır
+    const third = await send(
+      day(date, {
+        moves: [to(move("K1", "teslim", 500), "Patron"), to(move("K2", "teslim", 300), "Banka"), to(move("K3", "harcama", 90, cats.diger), "Patron"), to(move("K4", "teslim", 100), "  Okan   Bey  "), to(move("K5", "teslim", 50), "Ç".repeat(100))],
+        revision: 3,
+      }),
+      NOV29,
+    );
+    assert.equal(third.status, 200, JSON.stringify(third.body));
+    rows = await outsOf(date);
+    assert.deepEqual(rows.slice(3).map((o) => [o.lafposId, o.store]), [
+      [ulid("K4"), "Okan Bey"],
+      [ulid("K5"), "Ç".repeat(60)],
+    ]);
+  });
+
   test("hareketler: gövdede olmayan LafPOS satırı kalkar; tedarikçi ödemesine bağlıysa kalır, LafPOS bağı çözülür; elle satıra dokunulmaz", async () => {
     const date = "2026-11-27";
     await send(day(date, { moves: [move("D1", "harcama", 100, cats.diger), move("D2", "teslim", 300), move("D3", "teslim", 400)] }), NOV28);

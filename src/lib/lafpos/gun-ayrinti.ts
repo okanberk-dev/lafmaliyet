@@ -1,5 +1,6 @@
 import { money } from "@/lib/format";
 
+import { lafposRecipient } from "./cash-moves";
 import type { PosDayPush, PosRefund } from "./day";
 
 /**
@@ -110,13 +111,23 @@ export function lafposDayDetail(
       const ms = d.cashMoves!.filter((m) => m.kind === kind);
       return ms.length ? `${ms.length} · ${money(sum(ms.map((m) => m.amount)))}` : "yok";
     };
+    // Teslim kime gitti (LafPOS 25 Kasım 2026, `recipient`): alıcı başına toplam, tutara göre; alıcısız eski teslim
+    // "Kime yazılmamış". Yalnız en az bir alıcı geldiyse (eski LafPOS'un gününde satır eklenmez)
+    const handed = d.cashMoves.filter((m) => m.kind === "teslim");
+    const byRecipient = new Map<string, number[]>();
+    for (const m of handed) {
+      const to = lafposRecipient(m) ?? "";
+      byRecipient.set(to, [...(byRecipient.get(to) ?? []), m.amount]);
+    }
+    const toRows: [string, string][] = handed.some((m) => lafposRecipient(m))
+      ? [...byRecipient]
+          .map(([to, amounts]): [string, number, number] => [to, sum(amounts), amounts.length])
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "tr"))
+          .map(([to, total, n]) => [`Teslim · ${to || "Kime yazılmamış"}`, `${n} · ${money(total)}`])
+      : [];
     sections.push({
       title: "Kasa hareketleri (LafPOS)",
-      rows: [
-        ["Harcama", of("harcama")],
-        ["Teslim", of("teslim")],
-        ["Kasaya giren (giriş)", of("giris")],
-      ],
+      rows: [["Harcama", of("harcama")], ["Teslim", of("teslim")], ...toRows, ["Kasaya giren (giriş)", of("giris")]],
     });
   }
   // Gün sonu tam: kasaya giren nakdin parçaları (z.cashIn = giriş + nakit tahsilat + nakit bahşiş) ve kartla tahsilat

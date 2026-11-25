@@ -52,6 +52,41 @@ export interface LafposCashOutPlan {
 /** Tutarlar kuruşta aynı mı */
 const sameAmount = (a: number, b: number) => Math.round(a * 100) === Math.round(b * 100);
 
+/** Teslimin "Kime"si (`cash_outs.store`) en çok bu kadar: panelin Kime alanının sınırı (cashOutSchema `store`) */
+export const LAFPOS_RECIPIENT_MAX = 60;
+
+/**
+ * LafPOS teslimin alıcısı → satırın "Kime"si (LafPOS 25 Kasım 2026, `cashMoves[].recipient`; sahibin isteği "teslim
+ * edilirken kime olduğu yazılsın"): yalnız teslimde; boşluklar teke iner, en çok 60 karakter. Alıcı yoksa ya da harcamada null
+ */
+export function lafposRecipient(m: PosCashMove): string | null {
+  if (m.kind !== "teslim" || typeof m.recipient !== "string") return null;
+  return m.recipient.replace(/\s+/g, " ").trim().slice(0, LAFPOS_RECIPIENT_MAX) || null;
+}
+
+/**
+ * "Kime"si boş satırların doldurulması: sahiplenilen elle girilmiş teslim ve önceden yazılmış LafPOS teslimi (alıcıyı
+ * okumayan sürümün yazdığı ya da LafPOS'un alıcısız gönderdiği gün sonradan alıcıyla geldi). Panelde yazılmış Kime'ye
+ * dokunulmaz; tutarı ya da türü değişen satır (`skip`, plan.update) yeniden yazılırken doldurulur
+ */
+export function planLafposRecipientFill(
+  moves: readonly PosCashMove[],
+  rows: readonly { id: number; lafposId: string | null; store: string | null }[],
+  adopt: readonly { rowId: number; move: PosCashMove }[],
+  skip: ReadonlySet<number> = new Set(),
+): { rowId: number; store: string }[] {
+  const byMove = new Map(moves.map((m) => [m.id, m]));
+  const out = new Map<number, string>();
+  const take = (row: { id: number; store: string | null } | undefined, m: PosCashMove | undefined) => {
+    const to = m ? lafposRecipient(m) : null;
+    if (row && to && !row.store?.trim() && !skip.has(row.id)) out.set(row.id, to);
+  };
+  const rowById = new Map(rows.map((r) => [r.id, r]));
+  for (const a of adopt) take(rowById.get(a.rowId), a.move);
+  for (const r of rows) if (r.lafposId !== null) take(r, byMove.get(r.lafposId));
+  return [...out].map(([rowId, store]) => ({ rowId, store }));
+}
+
 /** Satır olan hareket: harcama ve teslim (giriş kasaya girendir, "Kasadan çıkanlar"a girmez) */
 export const isCashOutMove = (m: PosCashMove): m is PosCashMove & { kind: CashOutKind } => m.kind === "harcama" || m.kind === "teslim";
 
