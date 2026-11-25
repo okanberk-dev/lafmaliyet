@@ -3,8 +3,9 @@ import "server-only";
 import { eq } from "drizzle-orm";
 
 import { LAFPOS_GROUP } from "@/lib/branch-settings/groups";
+import { staffBlindDay } from "@/lib/lafpos/kor-kasa";
 import { lafposSecretFrom, lafposSecretProblem } from "@/lib/lafpos/request";
-import { branchSwitchDay, lafposBranchOf } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposDay, lafposBranchOf } from "@/lib/lafpos/switch";
 import { resolveBranchSetting } from "@/server/branch-settings";
 
 import { getDb, schema as s, type DB } from "../db";
@@ -53,6 +54,16 @@ export function forgetLafposBranch(): void {
  */
 export async function lafposSwitchDay(db: Reader = getDb()): Promise<string | null> {
   return switchDayOf(await lafposBranchId(db), db);
+}
+
+/**
+ * Kör kasa (bulgu 0; src/lib/lafpos/kor-kasa.ts): bu kasanın bu günü personele kör mü (LafPOS'un şubesi, geçiş gününden
+ * itibaren). Geç raporun açılış önerisi ve açılış ↔ devir denetimi önceki halkanın günü için sorar: kör günün devri
+ * (sayılan − teslim) personele gitmez. İşlemin içinden de okunur
+ */
+export async function staffBlindOn(date: string, branchId: string, db: Reader = getDb()): Promise<boolean> {
+  const [branch, switchDay] = await Promise.all([lafposBranchId(db), lafposSwitchDay(db)]);
+  return staffBlindDay({ admin: false, branchId, lafposDay: isLafposDay(date, switchDay), lafposBranch: branch });
 }
 
 /**

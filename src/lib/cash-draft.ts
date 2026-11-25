@@ -112,3 +112,30 @@ export function leaveDropsDraft(href: string, date: string, today: string): bool
   if (url.pathname !== "/panel/kasa") return false;
   return (url.searchParams.get("gun") ?? today) !== date;
 }
+
+/**
+ * Taslaktan geri yüklenecek fotoğraflar (inceleme, 25 Kasım 2026): ortak telefonda B, A'nın bıraktığı taslağı geri
+ * yükleyince A'nın yüklediği fotoğraflar forma gelmez; sunucu personelin yalnız kendi yüklediğini bağlar, gönderim
+ * "Fotoğraf bulunamadı" diye düşerdi. Yönetici her fotoğrafı bağlar: hepsi gelir. `dropped`: gelmeyenlerin sayısı (bant ve
+ * bildirim söyler)
+ */
+export function restorableDraftPhotos(photos: readonly CashDraftPhoto[], o: { admin: boolean; me: string }): { kept: CashDraftPhoto[]; dropped: number } {
+  if (o.admin) return { kept: [...photos], dropped: 0 };
+  const kept = photos.filter((p) => p.byName === o.me);
+  return { kept, dropped: photos.length - kept.length };
+}
+
+/** Taslağın geri yüklenmeyen fotoğraflarının cümlesi (sonda nokta) */
+export function droppedPhotosText(n: number): string {
+  return `Başkasının yüklediği ${n} fotoğraf geri yüklenmez; yeniden çekin.`;
+}
+
+/**
+ * Gönderilmemiş rapordan çıkış penceresinin metni, hedefe göre (inceleme, 25 Kasım 2026): başka güne ya da şubeye
+ * geçilince taslak silinir (yıkıcı, kırmızı), başka sayfaya gidilince bu cihazda kalır (nötr)
+ */
+export function leaveDialogText(drops: boolean): { description: string; confirmLabel: string; tone: "danger" | "primary" } {
+  return drops
+    ? { description: "Yazdığınız rakamlar henüz gönderilmedi. Başka güne ya da şubeye geçerseniz bu taslak silinir.", confirmLabel: "Taslağı silip geç", tone: "danger" }
+    : { description: "Yazdığınız rakamlar henüz gönderilmedi. Bu cihazda kalır; sayfaya dönünce geri yükleyebilirsiniz.", confirmLabel: "Sayfadan çık", tone: "primary" };
+}

@@ -8,7 +8,9 @@ import type { LafposDay } from "./prefill";
  * personelin gördüğü raporda açılış, sayılan nakit, teslim ve kasa farkı yoktur (kayıtlı rapor kartı, döküm, Bugün,
  * Son 7 gün, eski LafPOS günü, RSC yükü). Olması gereken ve ertesi güne devir bunlardan hesaplandığı için onlar da
  * yok. Personel o günün raporunu formdan yazamaz, düzeltme öneremez, WhatsApp metnini alamaz (sunucu reddeder). Yönetici
- * (rakam yetkisi) her şeyi görür. Saf: tests/kor-kasa.test.ts
+ * (rakam yetkisi) her şeyi görür. Teslim (patrona verilen) kasiyerin LafPOS'a kendi girdiği kasa hareketidir: "gün içinde
+ * çıkan"ın ve LafPOS'un "harcama + teslim" bilgi satırının parçası olarak personelde kalır; açılış ve sayılan olmadan
+ * olması gereken ve fark çıkmaz. Raporun ayrı teslim alanı sıfırdır. Saf: tests/kor-kasa.test.ts
  */
 
 /** Personelin yükünde sıfırlanan alanlar (sayımın rakamları) */
@@ -19,12 +21,25 @@ export function staffBlindDay(o: { admin: boolean; branchId: string | null | und
   return staffLafposEntryClosed(o);
 }
 
+/**
+ * Kasa sayfasının kör kararı, okuma düşse de kapalı (inceleme, 25 Kasım 2026): `lafposDay` null ise günün LafPOS günü
+ * olup olmadığı okunamadı; LafPOS'un şubesinin kasasında personele kör sayılır (geçici bir okuma hatası sayımı açmaz).
+ * Yönetici ve öteki şube değişmez
+ */
+export function staffBlindView(o: { admin: boolean; branchId: string | null | undefined; lafposDay: boolean | null; lafposBranch?: string }): boolean {
+  return staffBlindDay({ ...o, lafposDay: o.lafposDay ?? true });
+}
+
 /** Personelin gördüğü metinler */
 export const BLIND_TEXT = {
   /** Kayıtlı raporun büyük satırı (fark yerine) */
   headline: "Gün sonu alındı",
   /** Altındaki satır ("LafPOS'ta düzeltin" değil: düzeltmeyi istemek farkı ima ederdi) */
   line: "Rakamlar LafPOS'tan geldi; kasayı yönetici kontrol eder.",
+  /** Elle girilmiş (otomatik olmayan) raporda aynı satır: rakamlar LafPOS'tan gelmedi */
+  manualLine: "Rapor elle girildi; kasayı yönetici kontrol eder.",
+  /** Raporu girilmiş LafPOS gününde sayfanın alt başlığı ("kasadaki nakdi sayın ve buraya girin" değil) */
+  description: "Gün sonu LafPOS'ta alınır; bu günün kasa raporu girildi, kasayı yönetici kontrol eder.",
   /** Dökümün kasa bölümünde açılış, sayılan ve farkın yerine */
   breakdown: "Kör sayım: açılış, sayılan nakit ve kasa farkı yalnız yöneticide.",
   /** Son 7 gün listesinde farkın rozeti yerine */

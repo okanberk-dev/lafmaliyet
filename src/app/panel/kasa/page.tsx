@@ -52,7 +52,7 @@ import {
   staffPhotoDiffs,
 } from "@/lib/lafpos/foto";
 import { LAFPOS_STAFF_ENTRY_LINE, staffLafposEntryClosed } from "@/lib/lafpos/cash-moves";
-import { BLIND_TEXT, blindLafposDay, blindReport, staffBlindDay } from "@/lib/lafpos/kor-kasa";
+import { BLIND_TEXT, blindLafposDay, blindReport, staffBlindDay, staffBlindView } from "@/lib/lafpos/kor-kasa";
 import { lafposBranchOf } from "@/lib/lafpos/switch";
 import { addDays, dayLocativeTR, isCalendarDate, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -93,7 +93,7 @@ import {
   type CashReportDTO,
 } from "@/server/data/cash-reports";
 import { loadKasaLafpos, loadKasaLafposDays, loadLafposBankPos, loadLafposDayDetail } from "@/server/data/lafpos-day";
-import { lafposBranchId } from "@/server/lafpos/branch";
+import { lafposBranchId, staffBlindOn } from "@/server/lafpos/branch";
 import { lafposAutoReport, lafposPhotoBadges, lafposPhotoState, type LafposPhotoState } from "@/server/lafpos/foto";
 import { loadKasaModpos, loadKasaModposDays, modposKeySet, NO_MODPOS } from "@/server/data/modpos-day";
 import { dayWaste } from "@/server/data/waste";
@@ -201,7 +201,9 @@ async function staffLafposDescription(searchParams: PageProps<"/panel/kasa">["se
     getCashReport(date, "staff", till).then(Boolean).catch(() => true),
     lafposBranchId().catch(() => undefined),
   ]);
-  return staffBeforeLafposDayEnd({ admin: false, branchId: till, lafposDay: kasa.lafpos, dayEnd: kasa.day !== null, hasReport: report, lafposBranch }) ? LAFPOS_STAFF_BEFORE_DAY_END_DESCRIPTION : null;
+  if (staffBeforeLafposDayEnd({ admin: false, branchId: till, lafposDay: kasa.lafpos, dayEnd: kasa.day !== null, hasReport: report, lafposBranch })) return LAFPOS_STAFF_BEFORE_DAY_END_DESCRIPTION;
+  // Raporu elle girilmiş kör gün (yönetici gün sonundan önce girdi): "kasadaki nakdi sayın ve buraya girin" denmez
+  return report && staffBlindDay({ admin: false, branchId: till, lafposDay: kasa.lafpos, lafposBranch }) ? BLIND_TEXT.description : null;
 }
 /** LafPOS günü değil (geçiş günü boş ya da gün ondan önce): form ModPOS'a göre */
 const NO_LAFPOS = { lafpos: false, day: null } as const;
@@ -339,7 +341,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   // (report-email.ts); formun Sonuç kartı buna göre "e-posta gider" ya da "WhatsApp ile paylaşın" der (UI-05)
   const mailTo = showForm ? await cashMailTo(settings) : 0;
   const storage = photoStorage();
-  const [report, carry, recent, waste, ai, outs, categories, next, counters, prevOkc, lafposState, lafposBranch] = await Promise.all([
+  const [report, carry, recent, waste, ai, outs, categories, next, counters, prevOkc, lafposRead, lafposBranch] = await Promise.all([
     // Sunucu sütunları (yazarkasa kümülatifi, yazarkasa dışı tahsilat) yalnız yöneticinin DTO'sunda
     showForm ? getCashReport(date, user.role) : Promise.resolve(null),
     showForm ? previousCarryOver(date) : Promise.resolve(null),
@@ -356,8 +358,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
     // Önceki yazarkasa Z'si: forma yalnız gün ve numara gider (Z no denetimi); kümülatif yalnız yöneticinin satırında
     showForm ? previousOkc(date) : Promise.resolve<OkcPrev>({ z: null, cum: null }),
     // Günün kasası ve LafPOS'un bu günün sonu ("LafPOS'tan doldur", docs/LAFPOS.md): yalnız geçiş gününden sonraki
-    // günlerde; okunamazsa form ModPOS'a göre açılır, bant görünmez
-    showForm ? loadKasaLafpos(date).catch(() => NO_LAFPOS) : Promise.resolve(NO_LAFPOS),
+    // günlerde; okunamazsa (null) form ModPOS'a göre açılır, bant görünmez; kör kasa kapalı kalır (staffBlindView)
+    showForm ? loadKasaLafpos(date).catch(() => null) : Promise.resolve(NO_LAFPOS),
     // LafPOS'un şubesi (kütükten, lafposBranchId; okunamazsa geri düşüş değeri)
     lafposBranchId().catch(() => undefined),
   ]);
@@ -377,8 +379,10 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const proposedBy = report ? Object.fromEntries(proposedMap.get(report.id) ?? []) : undefined;
   // Kör kasa (bulgu 0; src/lib/lafpos/kor-kasa.ts): LafPOS'un şubesinin LafPOS gününde personel sayımı görmez. Rapor
   // açılış, sayılan, teslim ve farkı sıfırlanmış gider (blindReport); önceki devir, ertesi günün açılışı, sürümler,
-  // istekler, WhatsApp metni ve LafPOS'un açılış / sayım alanları hiç gitmez; rapor salt okunur
-  const blind = staffBlindDay({ admin, branchId: view.till, lafposDay: lafposState.lafpos, lafposBranch });
+  // istekler, WhatsApp metni ve LafPOS'un açılış / sayım alanları hiç gitmez; rapor salt okunur. LafPOS okuması düşerse
+  // kapalı kalır: LafPOS'un şubesinin kasasında personele kör (staffBlindView)
+  const lafposState = lafposRead ?? NO_LAFPOS;
+  const blind = staffBlindView({ admin, branchId: view.till, lafposDay: lafposRead ? lafposRead.lafpos : null, lafposBranch });
   const shownReport = report && blind ? blindReport(report) : report;
   // LafPOS gününün gün sonu fotoğrafı (gün sonu tam): gün sonu geldiyse ve rapor elle girilmediyse; personelin tek işi
   const lafposPhoto = showForm && lafposState.lafpos ? await lafposPhotoState(getDb(), date, view.till, user.role).catch(() => null) : null;
@@ -895,6 +899,9 @@ async function StaffLateDay({ date, user, view }: { date: string; user: { id: nu
     loadKasaLafpos(date).catch(() => NO_LAFPOS),
     lafposBranchId().catch(() => undefined),
   ]);
+  // Kör kasa (bulgu 0): önceki halka LafPOS'un kör günüyse devri (sayılan − teslim) personele gitmez; açılışı kendisi
+  // yazar, yönetici onayda devirle karşılaştırır. Okunamazsa LafPOS'un şubesinde gizli (kapalı)
+  const prevBlind = chain.prev ? await staffBlindOn(chain.prev.date, view.till).catch(() => staffBlindView({ admin: false, branchId: view.till, lafposDay: null, lafposBranch })) : false;
   const storage = photoStorage();
   const yesterday = addDays(today, -1);
   return (
@@ -917,7 +924,7 @@ async function StaffLateDay({ date, user, view }: { date: string; user: { id: nu
         own={request.own}
         closedCount={request.closedCount}
         others={request.others}
-        carry={chain.prev ? { date: chain.prev.date, amount: chain.prev.carry } : null}
+        carry={chain.prev && !prevBlind ? { date: chain.prev.date, amount: chain.prev.carry } : null}
         counters={counters}
         photoUi={{ storage: storage.available, reading: ai.state, admin: false, me: user.name }}
         prevOkcZ={prevOkc.z}

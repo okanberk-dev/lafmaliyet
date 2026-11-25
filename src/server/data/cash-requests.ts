@@ -386,7 +386,7 @@ async function dayRequestCards(now: Date): Promise<((CorrectionCard | DeleteCard
     if (changes.some((c) => c.key === "cashOut")) {
       const [outs, lafpos] = await Promise.all([cashOutsOn(r.day, report.branchId), loadKasaLafpos(r.day, undefined, report.branchId)]);
       // Fişsiz çıkışın tek hesabı (raporun Kontrol listesi, ay listesi, e-posta ve zil de bununla)
-      const u = unreceiptedCashOut(after.cashOut, outs, lafpos.day?.till ?? null);
+      const u = unreceiptedCashOut(after.cashOut, outs, lafpos.day?.till ?? null, r.day);
       receipts = { count: outs.length, total: u.total, unreceipted: u.unreceipted || null, lafposHanded: u.lafposHanded };
     }
     const carryAfter = Math.round((after.countedCash - after.handedOver) * 100) / 100;

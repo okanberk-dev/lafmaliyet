@@ -50,13 +50,17 @@ yalnız düzen ve metin sadeleşti (`src/app/panel/kasa/cash-form.tsx`, `page.ts
   yazılanlar bu cihazda taslak olarak durur (`laf:kasa-taslak:{şube}:{gün}`; yalnız değiştirilen alanlar, kasayı sayan ve
   formda yüklenen fotoğrafların kimlikleri). Z fişi çekilirken telefon sekmeyi yeniden yüklese, sayfa kapansa ya da
   bağlantı gitse form yeniden açılınca bant çıkar: "Bu cihazda gönderilmemiş kasa raporu var" · **Geri yükle** / **Sil**
-  (başkası yazdıysa adı: "Ayşe bu cihazda …"; kayıtlı raporda Geri yükle Düzenle'yi açar). Taslak şube ve gün başınadır
+  (başkası yazdıysa adı: "Ayşe bu cihazda …"; kayıtlı raporda Geri yükle Düzenle'yi açar). Ortak telefonda personel
+  yalnız kendi yüklediği fotoğrafı geri alır (sunucu başkasınınkini bağlamaz); başkasının fotoğrafı varsa bant ve
+  bildirim "Başkasının yüklediği 2 fotoğraf geri yüklenmez; yeniden çekin." der (`restorableDraftPhotos`; yönetici
+  hepsini alır). Taslak şube ve gün başınadır
   (Tuzla'nın taslağı Marina'nın, dünkü bugünkü formda önerilmez) ve raporun sürümüne bağlıdır (arada rapor gönderildiyse
   ya da düzeltildiyse önerilmez, eski rakam yenisinin üstüne yüklenmez). Gönderilince (rapor, düzeltme önerisi, geç
   rapor), **Sil**'le, Düzenle'den **Vazgeç**'le ve başka güne ya da şubeye geçerken silinir; 14 günden eski günlerin
   taslakları form açılınca temizlenir. Yazılanlar varken sayfadan çıkmak (menü, alt çubuk, gün çipi, şube seçici,
-  sayfayı kapatma) önce sorar: "Gönderilmemiş kasa raporu var" · **Göndermeden geç** (başka güne ya da şubeye geçerken
-  taslak silinir; Zayi & ikram gibi başka bir sayfaya gidilince bu cihazda kalır, dönünce geri yüklenir). Yöneticinin
+  sayfayı kapatma) önce sorar: "Gönderilmemiş kasa raporu var". Pencerenin metni hedefe göredir (`leaveDialogText`):
+  başka güne ya da şubeye geçerken "… bu taslak silinir" ve kırmızı **Taslağı silip geç**; Zayi & ikram, Bugün gibi başka
+  bir sayfaya giderken "Bu cihazda kalır; sayfaya dönünce geri yükleyebilirsiniz" ve nötr **Sayfadan çık**. Yöneticinin
   Onaylar'daki "Düzeltip onayla"sı taslak tutmaz; düzenlenemeyen raporda (kör kasa, kilitli gün) taslak yok.
 - **Gönderilmiş rapor.** Kartın üstünde fark (bir kez; başlıktaki rozet kalktı; LafPOS gününde personele fark yerine
   "Gün sonu alındı", açılış ve sayılan da yok: [kör kasa](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026)), e-posta durumu ve eylemler; satır
@@ -341,6 +345,11 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
     500 ₺" (gövdede gün, çıkan ve satırların toplamı, neye çıktığı, gönderen; rapor düzeltilince yeniden okunmamış olur).
     Personelin WhatsApp metninde yok. LafPOS gününde farkın Kasadan çıkanlar'a girilmemiş LafPOS teslimi kadarı fişsiz
     sayılmaz (aşağıda, E-35).
+  - **Ne zamandan** (inceleme, 25 Kasım 2026): yalnız 23 Ekim 2026'dan (`UNRECEIPTED_SINCE`; Kasadan çıkanlar o gün
+    geldi) itibaren. Önceki günlerde satır girilemezdi; eski aylar rozetle dolmaz.
+  - **LafPOS gün sonu gelmeden** girilmiş raporda (yönetici LafPOS gününde erken girdi) hesaplanmaz: LafPOS'un
+    harcamaları Kasadan çıkanlar'a gün sonuyla düşer, o arada her çıkış fişsiz görünürdü (`lafposMovesPending`; zil,
+    Kontrol, ay listesi, e-posta). Gün sonu gelince hesaplanır.
 - **LafPOS gününde de kaynak bu satırlardır** (denetim E-35): Aylık harcamalar ve tedarikçi ödemeleri buradan
   okunur. **Sahip sorusu 5 yanıtlandı (23 Kasım 2026, Faz 3):** kasadan çıkan para LafPOS'ta girilir, harcama ve
   teslim gün sonunda buraya satır satır gelir ("LafPOS" rozetli; tutar, tür ve gün LafPOS'tan, satır silinmez; fiş

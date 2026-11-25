@@ -194,14 +194,31 @@ export interface UnreceiptedOut {
  * "tutuyor" görünür; bu yüzden yöneticinin her yeri aynı hesabı okur: onay kartları (düzeltme, geç rapor), raporun
  * Kontrol listesi, ay listesinin rozeti, tek gün görünümünün özeti, kasa e-postası ve zil. LafPOS gününde farkın LafPOS'ta
  * olup Kasadan çıkanlar'a girilmemiş teslim kadarı fişsiz sayılmaz (lafposHandedGap; `till` ModPOS gününde null). 1 ₺'nin
- * altı yok sayılır (CASH_TOLERANCE)
+ * altı yok sayılır (CASH_TOLERANCE). `date` verilirse `UNRECEIPTED_SINCE`'ten önceki gün fişsiz sayılmaz (o günlerde
+ * Kasadan çıkanlar yoktu; ay listesi eski aylarda uyarıyla dolmasın)
  */
-export function unreceiptedCashOut(cashOut: number, outs: readonly { kind: CashOutKind; amount: number }[], till: LafposDay["till"] | null): UnreceiptedOut {
+export function unreceiptedCashOut(cashOut: number, outs: readonly { kind: CashOutKind; amount: number }[], till: LafposDay["till"] | null, date?: string): UnreceiptedOut {
   const total = cashOutsTotal([...outs]);
   const gap = round2(cashOut - total);
+  if (date !== undefined && date < UNRECEIPTED_SINCE) return { total, gap, lafposHanded: null, unreceipted: 0 };
   const split = gap >= 1 ? lafposHandedGap(cashOut, total, till, teslimTotalOf([...outs])) : null;
   const rest = split ? split.rest : gap;
   return { total, gap, lafposHanded: split?.handed ?? null, unreceipted: rest >= 1 ? round2(rest) : 0 };
+}
+
+/**
+ * Fişsiz çıkışın başladığı gün (inceleme, 25 Kasım 2026): "Kasadan çıkanlar" (cash_outs, drizzle/0025) 23 Ekim 2026'da
+ * geldi. Öncesinde gün içinde çıkan yalnız rapordaki tutar ve notuydu, satır girilemezdi: o günler fişsiz sayılmaz
+ */
+export const UNRECEIPTED_SINCE = "2026-10-23";
+
+/**
+ * LafPOS'un kasa hareketleri henüz gelmedi mi: günün kasası LafPOS'unsa ve gün sonu gelmediyse (yönetici raporu gün
+ * sonundan önce girdi). O arada LafPOS'un harcamaları Kasadan çıkanlar'a düşmemiştir; "Fişsiz çıkış" hesaplanmaz, gün
+ * sonu gelince hesaplanır (yanlış alarm olmasın)
+ */
+export function lafposMovesPending(state: { lafpos: boolean; day: LafposDay | null } | null | undefined): boolean {
+  return Boolean(state?.lafpos && !state.day);
 }
 
 /**

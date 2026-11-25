@@ -26,7 +26,7 @@ import { dateTR, money } from "@/lib/format";
 import { lafposDiffs, lafposDiffText } from "@/lib/lafpos/diffs";
 import { LAFPOS_PHOTO_TEXT, photoUnsureText } from "@/lib/lafpos/foto";
 import { LAFPOS_NO_COUNT_ADMIN_TEXT, STAFF_NO_COUNT_TEXT } from "@/lib/lafpos/gun-sonu";
-import { unreceiptedCashOut } from "@/lib/lafpos/prefill";
+import { lafposMovesPending, unreceiptedCashOut } from "@/lib/lafpos/prefill";
 import { branchSwitchDay, kasaName } from "@/lib/lafpos/switch";
 import { modposMismatchBell, modposMismatches } from "@/lib/modpos/zil";
 import { addDays, longDateTR, todayTR } from "@/lib/reminders";
@@ -330,8 +330,11 @@ async function cashIntegrityNotifications(reports: CashReportDTO[], day: string,
   for (const r of recent) {
     const outs = outsOf.get(r.branchId);
     if (!outs) continue;
-    const till = lafposOf?.(r.date, r.branchId).day?.till ?? null;
-    const u = unreceiptedCashOut(r.cashOut, outs.filter((o) => o.date === r.date), till);
+    // LafPOS gününde gün sonu gelmediyse (yönetici erken girdi) LafPOS'un harcamaları Kasadan çıkanlar'a henüz düşmedi:
+    // fişsiz sayılmaz, gün sonu gelince hesaplanır (lafposMovesPending)
+    const lafpos = lafposOf?.(r.date, r.branchId);
+    if (lafposMovesPending(lafpos)) continue;
+    const u = unreceiptedCashOut(r.cashOut, outs.filter((o) => o.date === r.date), lafpos?.day?.till ?? null, r.date);
     if (!u.unreceipted) continue;
     const t = tills.of(r.branchId);
     out.push({

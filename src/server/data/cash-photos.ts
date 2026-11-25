@@ -7,7 +7,7 @@ import { normalizePos, normalizeZ, savedFields, suspiciousDiffs, type CashPhotoK
 import { normalizeOkc, okcReadFigures, toStaffReading, type OkcReadFigures } from "@/lib/photo-read/okc";
 import { KasaOkcRaw, KasaPosRaw, KasaZRaw } from "@/lib/photo-read/schemas";
 import { lafposDiffs } from "@/lib/lafpos/diffs";
-import { unreceiptedCashOut, type LafposDay } from "@/lib/lafpos/prefill";
+import { lafposMovesPending, unreceiptedCashOut, type LafposDay } from "@/lib/lafpos/prefill";
 import { cashOutsOn, type CashOutDTO } from "@/server/data/cash-outs";
 import { loadKasaLafpos } from "@/server/data/lafpos-day";
 import { getDb, schema as s } from "@/server/db";
@@ -176,8 +176,9 @@ export function extrasFrom(info: CashPhotoInfo | undefined, outs: CashOutDTO[], 
       : null,
     photoDiffs: info ? suspiciousDiffs(info.readings, savedFields(report)) : null,
     cashOuts: outs.map((o) => ({ kind: o.kind, amount: o.amount, store: o.store, description: o.description, photo: o.photoId !== null })),
-    // Fişsiz çıkış (bulgu 2): onay kartlarıyla aynı hesap; LafPOS gününde girilmemiş teslim fişsiz sayılmaz
-    unreceipted: unreceiptedCashOut(report.cashOut, outs, lafpos?.lafpos ? (lafpos.day?.till ?? null) : null).unreceipted || null,
+    // Fişsiz çıkış (bulgu 2): onay kartlarıyla aynı hesap; LafPOS gününde girilmemiş teslim fişsiz sayılmaz, gün sonu
+    // gelmemişse (hareketler bekleniyor) ve Kasadan çıkanlar'dan önceki günde hesaplanmaz
+    unreceipted: lafposMovesPending(lafpos) ? null : unreceiptedCashOut(report.cashOut, outs, lafpos?.lafpos ? (lafpos.day?.till ?? null) : null, report.date).unreceipted || null,
   };
 }
 
