@@ -798,6 +798,16 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
       t?.listPeriod ? ` Satış listesi ayın ${t.listPeriod.of} gününün ${t.listPeriod.days}'ini kapsıyor: indirim o günlerin kasa raporlarından, sabit gider ve online satış o günlere düşen payla.` : ""
     }`,
   });
+  // Standart aylık sabit giderle net kâr (her ay aynı sabit gider toplamı): o ayın Gelir-gider'inden farklıysa
+  if (t && Math.abs(t.netProfit - t.netProfitStandard) >= 1) {
+    lines.push({
+      k: "Net kâr / zarar (standart sabit giderle)",
+      v: t.netProfitStandard,
+      note: `Her ay aynı standart sabit gider toplamı düşülür (${tl(d.fixedStandardTotal)}). Fark: gün etkisi ${tl(d.fixedMonth.proration)}, Gelir-gider'de düzeltilen tutarlar ${tl(d.fixedMonth.overrides)}, bu aya özel giderler ${tl(d.fixedMonth.manual)}${d.fixedMonth.expenses ? `, aylık harcamalar ${tl(d.fixedMonth.expenses)}` : ""}${
+        t.fixedBreakdown.listShare ? `, satış listesinin günleri ${tl(t.fixedBreakdown.listShare.amount)}` : ""
+      }.`,
+    });
+  }
   // Hiç verisi olmayan ayda (ay bilgisi, fatura, Gelir-gider girişi, sayım yok) 0 yazılmaz: "veri yok" ile "kâr 0" karışmasın
   const monthHasData =
     model.monthInfo.has(month) ||

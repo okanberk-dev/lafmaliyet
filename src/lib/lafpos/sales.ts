@@ -252,6 +252,23 @@ export function commonListText(month: string, branchName: string, through: strin
 }
 
 /**
+ * "Tümü"de ortak dönemi olmayan ay (bir ModPOS şubesinin listesi yok; bulgu 62 inceleme): Genel bakış'ın "Satış raporu" işi
+ * ve başlığın kaynak satırı "LafPOS … sayılıyor" demez, satırların liste gelince sayıldığını söyler (bant da öyle).
+ * `running`: süren ay (liste ay sonunda yüklenir) ya da bitmiş ay (yüklenmedi). Cümle, sonda nokta
+ */
+export function commonListWaitText(month: string, branchName: string, running: boolean): string {
+  const owner = genitive(branchName);
+  return running
+    ? `Tümü'de bu ayın satışları ${owner} listesi gelince sayılır; şubeyi seçince gün gün görünür.`
+    : `${owner} ${monthLabel(month)} satış listesi yüklenmedi: Tümü'de bu ayın satışları sayılmıyor (şubeyi seçince görünür).`;
+}
+
+/** Başlığın altındaki kaynak satırı, ortak dönemi olmayan ayda ("Tümü"; commonListWaitText) */
+export function commonListSourceLine(branchName: string): string {
+  return `Satışlar: Tümü'de ${genitive(branchName)} listesi gelince (şube seçiliyken gün gün)`;
+}
+
+/**
  * Bir ayın satış kaynakları (Satışlar ekranının bandı ve uyarıları). Geçiş gününden önceki ayda null. `today`: iş günü;
  * geçiş ayında eksik günler ancak geçiş günü geldikten sonra söylenir (öncesinde ayın ModPOS kısmı sürüyor).
  */

@@ -125,14 +125,16 @@ test("dışa aktarım: hiçbir sekme, hücre ya da notta 'Excel' geçmez; içe a
   });
   assert.ok(src > 0, "Kaynak sütunu");
   assert.equal(fa.getRow(2).getCell(src).value, "İçe aktarılmış (eski)");
-  // Özet: tek net kâr satırı (reçeteye göre); rakam Genel bakış'la aynı
+  // Özet: reçeteye göre net kâr ve (fark varken) standart sabit giderle net kâr; eski tablonun adı geçmez (inceleme: rakam
+  // kaldırılmaz, yalnız adı değişir)
   const oz = wb.getWorksheet("Özet")!;
-  const netRows: number[] = [];
+  const netRows: string[] = [];
   oz.eachRow((r) => {
     const k = r.getCell(1).value;
-    if (typeof k === "string" && /net kâr \/ zarar/i.test(k) && !/tahmini/i.test(k)) netRows.push(Number(r.getCell(2).value));
+    if (typeof k === "string" && /net kâr \/ zarar/i.test(k) && !/tahmini/i.test(k)) netRows.push(k);
   });
-  assert.equal(netRows.length, 1, "standart sabit giderli ikinci kâr satırı yok");
+  assert.equal(netRows.length, 2);
+  assert.ok(netRows.includes("Net kâr / zarar (standart sabit giderle)"));
   const t = model.monthSales("2026-09");
   assert.ok(t.lines.length > 0);
 });

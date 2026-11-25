@@ -54,7 +54,7 @@ import {
 import { priceAlert } from "@/lib/calc/price-impact";
 import { monthLabel, monthShort, num, numPossessive, pct, tl } from "@/lib/format";
 import { salesMonthKasa } from "@/lib/lafpos/kasa";
-import { commonListText } from "@/lib/lafpos/sales";
+import { commonListSourceLine, commonListText } from "@/lib/lafpos/sales";
 import { longDateTR } from "@/lib/reminders";
 import { sameBranchBasis } from "@/lib/same-branches";
 import { salesSourceOf } from "@/lib/sales-source";
@@ -281,6 +281,9 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
     : "";
   // "Tümü"nün dönemi şubelerin en kısa listesiyle (bulgu 62): ayın satırları bir şubenin listesi olmadığı için sayılmıyorsa
   const commonMissing = model.ds.commonLists?.find((c) => c.month === month && c.through === null) ?? null;
+  // Başlığın kaynak satırı: ortak dönemi olmayan ayda "LafPOS … itibaren" değil, liste gelince sayıldığı
+  const ownSource = salesSourceOf(month, st.lafposGecisGunu, model.ds.lafposSales);
+  const salesSource = commonMissing ? { ...ownSource, line: commonListSourceLine(commonMissing.branch) } : ownSource;
   // "Para nereye gitti?": sabit giderin 4 grubu (Kira, Personel, Reklam, Diğer) + varsa bu aya özel giderler; online
   // satış (laffogato.net) net satışın içinde: kâr-zarardaki gibi ModPOS + online
   const waterfall: FlowRow[] = t
@@ -489,7 +492,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             {t?.listPeriod ? ` · satış listesi ${listDaysText(t.listPeriod)}` : ""}
           </>
         }
-        meta={<SalesSourceLine source={salesSourceOf(month, st.lafposGecisGunu, model.ds.lafposSales)} />}
+        meta={<SalesSourceLine source={salesSource} />}
         actions={
           <>
             <MonthPicker months={months} value={month} />
@@ -575,14 +578,26 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                   badge={<Change g={g.net} prevMonth={prevMonth} prevValue={pt?.netProfit} />}
                   tone={t.netProfit < 0 ? "bad" : "good"}
                   sub={
-                    d.actual.hasRevenue ? (
-                      <span className="block">
-                        {d.profitBasis.title}:{" "}
-                        <Signed value={d.actual.profit} className="whitespace-nowrap">
-                          {tl(d.actual.profit)}
-                        </Signed>
-                      </span>
-                    ) : null
+                    <>
+                      {/* Standart aylık sabit giderle net kâr (her ay aynı sabit gider; o ayın Gelir-gider'inden farklıysa) */}
+                      {differs(t.netProfit, t.netProfitStandard) ? (
+                        <span className="flex flex-wrap items-center gap-x-1.5">
+                          Standart sabit giderle:
+                          <Signed value={t.netProfitStandard} className="whitespace-nowrap">
+                            {tl(t.netProfitStandard)}
+                          </Signed>
+                          <InfoTip text={fixedBreakdownText(fm)} />
+                        </span>
+                      ) : null}
+                      {d.actual.hasRevenue ? (
+                        <span className="block">
+                          {d.profitBasis.title}:{" "}
+                          <Signed value={d.actual.profit} className="whitespace-nowrap">
+                            {tl(d.actual.profit)}
+                          </Signed>
+                        </span>
+                      ) : null}
+                    </>
                   }
                 />
               </StatBreakdown>
@@ -1088,6 +1103,14 @@ function WaterfallCard({ month, t, rows }: { month: string; t: Theoretical; rows
               </span>
             </span>
           </div>
+          {differs(t.netProfit, t.netProfitStandard) ? (
+            <p className="mt-1 flex flex-wrap items-center justify-between gap-x-3 text-xs text-ink-mute">
+              <span>Standart aylık sabit giderle</span>
+              <Signed value={t.netProfitStandard} className="font-medium whitespace-nowrap">
+                {tl(t.netProfitStandard)}
+              </Signed>
+            </p>
+          ) : null}
         </div>
         <p className="text-xs text-ink-mute">Vergi ve tek seferlik yatırımlar hariç.</p>
       </CardContent>
