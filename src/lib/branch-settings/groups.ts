@@ -138,6 +138,9 @@ export function legacyOwnerId(group: Pick<BranchSettingGroup, "legacy">): string
 /** Değerin şifresiz alanları (satırın `value`'su; gizli alanlar `secrets`'ta) */
 export function plainFields<T extends Record<string, unknown>>(group: Pick<BranchSettingGroup, "secretFields">, value: T): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(value)) if (!group.secretFields.includes(k)) out[k] = v;
+  for (const [k, v] of Object.entries(value)) {
+    if (k === "__proto__" || k === "constructor" || k === "prototype" || group.secretFields.includes(k)) continue;
+    out[k] = v;
+  }
   return out;
 }

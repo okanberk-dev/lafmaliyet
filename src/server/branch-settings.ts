@@ -182,8 +182,10 @@ export async function putBranchSetting<T extends Record<string, unknown>>(
   const current = await resolveWith(tx, group, branchId, rows, branches);
   const sealed = { ...(asObject(rows.find((r) => r.branchId === branchId)?.secrets) as Record<string, string>) };
   const plain: Record<string, unknown> = plainFields(group, current.value);
+  // Yalnız grubun bilinen alanları yazılır: istemciden gelen başka anahtar (ör. "__proto__") nesneye hiç girmez
+  const known = new Set([...Object.keys(group.read({}, process.env)), ...group.secretFields]);
   for (const [k, v] of Object.entries(change)) {
-    if (v === undefined) continue;
+    if (v === undefined || !known.has(k) || isUnsafeKey(k)) continue;
     if (group.secretFields.includes(k)) {
       if (typeof v === "string" && v.trim()) sealed[k] = seal(v.trim(), "branch-settings");
       else delete sealed[k];
@@ -192,6 +194,11 @@ export async function putBranchSetting<T extends Record<string, unknown>>(
   const value = group.read({ ...plain }, process.env);
   await writeRow(tx, group.id, branchId, { value: plainFields(group, value), secrets: Object.keys(sealed).length ? sealed : null, sameAs: null }, by);
   return value;
+}
+
+/** Nesne prototipine dokunan anahtarlar: hiçbir alanın adı olamaz */
+function isUnsafeKey(k: string): boolean {
+  return k === "__proto__" || k === "constructor" || k === "prototype";
 }
 
 /** "Diğer şubeyle aynı": şubenin kendi değeri silinir, değer bundan sonra hedeften okunur */
