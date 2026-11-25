@@ -10,6 +10,7 @@ import { zFormBranch } from "@/lib/branches";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { formBranch, withBranchScope } from "@/server/branch-scope";
 import { getDb } from "@/server/db";
+import { pushNewRequest } from "@/server/staff-requests/push";
 import { proposeLateWaste, proposeWasteDelete, reviewWasteRequestCore } from "@/server/waste/core";
 
 import { logActivity } from "./log";
@@ -58,6 +59,7 @@ export async function requestLateWaste(input: z.input<typeof lateSchema>) {
     // Kaydın ineceği şube formun gösterdiği (addWasteEntry ile aynı kapı); kilit de o şubenin kasasından
     const sube = await formBranch(branchId, "waste", { requireExplicit: true });
     const out = await withBranchScope(sube, () => proposeLateWaste(getDb(), me, data, undefined, sube));
+    pushNewRequest(out);
     if (out.created) {
       const p = out.payload;
       await logActivity(me, "Geç zayi / ikram kaydı istendi", wasteRequestLog({ name: p.name, qty: p.qty, unit: p.unit, dayText: longDateTR(p.date), reason: p.reason, message: data.message }));
@@ -76,6 +78,7 @@ export async function requestWasteDelete(input: z.input<typeof deleteSchema>) {
     if (me.role === "admin") throw new UserError("Yönetici doğrudan siler; istek gerekmez");
     const data = deleteSchema.parse(input);
     const out = await proposeWasteDelete(getDb(), me, data);
+    pushNewRequest(out);
     if (out.created || out.row.version > 1) {
       const e = out.payload.entry;
       await logActivity(me, "Zayi kaydının silinmesi istendi", wasteRequestLog({ name: e.name, qty: e.qty, unit: e.unit, dayText: `${longDateTR(e.date)} · ${e.createdByName} girmişti`, reason: null, message: data.message }));

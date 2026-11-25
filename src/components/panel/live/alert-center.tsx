@@ -270,7 +270,7 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
       // "Yalnız bu bilgisayar": sistem bildirimi her durumda sessiz (sesi genel hoparlörden çalardı)
       e.ports[0]?.postMessage({ willRing, quiet: onlyComputerActive() });
       if (msg.kind === "approvals") {
-        // Onay bildirimi (şu an gönderen yok; tesisat kalır): canlı veride yok. Sekme öndeyken sistem bildirimi çıkmaz
+        // Onay bildirimi (yöneticiye personelin yeni isteği; src/server/staff-requests/push.ts): canlı veride yok. Sekme öndeyken sistem bildirimi çıkmaz
         // (sw.js): bildirim burada, zil ve açık ekran yenilenir
         refreshScreen(msg.kind);
         window.dispatchEvent(new Event(ALERTS_REFRESH_EVENT));

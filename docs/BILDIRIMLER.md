@@ -476,9 +476,9 @@ görür ve değiştirir (yönetici de başkasınınkini görmez); ödemeler ve s
 Her cihaz kendi tercihini tutar (**Bu cihazda uyarılar** kartı, Hatırlatıcılarım ve Karaoke ekranlarında): bildirim
 izni ve aboneliği, karaoke bildirimleri, sipariş bildirimleri ve sipariş zili (laffogato.net'ten yeni uygulama
 siparişi; [SITE-SIPARIS.md](SITE-SIPARIS.md)), sabah özeti, sesli uyarı, saatli hatırlatmalar. Web Push'un ayrıntısı ve
-güvenliği [KARAOKE.md](KARAOKE.md)'de. **Onay bildirimleri** (`approvals`, varsayılan açık): konu ve cihaz tercihi
-duruyor ama şu an gönderen yok (tek gönderen mal siparişi taslağıydı, 26 Ekim 2026'da kalktı; [MAL-SIPARISI.md](MAL-SIPARISI.md)),
-bu yüzden anahtar cihaz kartında görünmez; yeniden bir gönderen olunca döner ([ONAYLAR.md](ONAYLAR.md)).
+güvenliği [KARAOKE.md](KARAOKE.md)'de. **Onay bildirimleri** (`approvals`, varsayılan açık; anahtar yalnız
+yöneticide): personel onaya yeni bir istek gönderince yöneticinin telefonuna "Onay isteği · Kasa düzeltmesi" /
+"Mehmet: 22 Ekim kasa düzeltmesi · Tuzla" gider, istek başına bir kez, tutarsız ([ONAYLAR.md](ONAYLAR.md) › Bildirimler).
 
 ## Uyarı sesleri yalnız bu bilgisayardan (22 Kasım 2026)
 

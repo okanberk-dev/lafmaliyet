@@ -79,8 +79,8 @@ export interface PushResult {
  * Aboneliklere bildirim gönderir: yalnız aktif kullanıcılar ve aboneliği alırken geçerli olan oturum sürümü hâlâ
  * geçerliyse (parola, rol ya da erişim değişince eski cihaza gitmez). `topic` aboneliğin tercihine bakar (karaoke /
  * sipariş / hatırlatıcı / onay; sipariş tercihi seçilmemişse personel cihazında açık, yöneticininkinde kapalı); "test"
- * herkese değil yalnız `userIds`'e gider. "approvals" (docs/ONAYLAR.md): yöneticiye personelin onay bekleyen isteği,
- * personele kendi isteğinin sonucu; metinde tutar yok, etiket `istek-<id>`. Süresi geçmiş abonelik (404/410) silinir; art arda 10 kez başarısız olan da. Hata
+ * herkese değil yalnız `userIds`'e gider. "approvals" (docs/ONAYLAR.md): yöneticiye personelin yeni açtığı istek
+ * (src/server/staff-requests/push.ts); metinde tutar yok, etiket `istek-<id>`. Süresi geçmiş abonelik (404/410) silinir; art arda 10 kez başarısız olan da. Hata
  * fırlatmaz, sonucu sayar.
  */
 export async function sendPush(
