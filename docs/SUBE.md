@@ -270,6 +270,11 @@ veri). Kurallar saf dosyada (`src/lib/branch-features.ts`), okuma `src/server/br
   şubenindir. Web Push kitlesi (`featureAudience`): yönetici, şubesiz personel ve özelliği açık şubenin personeli;
   özellik hiçbir şubede açık değilse kimse. Şubesi pasif ya da kütükte olmayan personel şubesiz sayılır.
 - **"Tümü"** özelliği herhangi bir etkin şubede açıksa gösterir; online kanal seçiliyken hiçbir şube özelliği görünmez.
+- **Eylemler sunucuda da reddedilir** (`staffFeatureError`, `assertStaffFeature`): sipariş kapalı şubeye kilitli
+  personel sipariş aşamasını ilerletemez, garson çağır kapalıysa masa çağrısını "Gördüm" diye kapatamaz ("Garson çağır
+  bu şubede kullanılmıyor"); özellik hiçbir şubede açık değilse hiçbir personel. Yönetici serbest. Karaoke eylemleri
+  aynı kuralla (`assertKaraokeBranch`). Siparişler ekranının cihaz ayarlarında karaoke alarmı satırları yalnız karaoke
+  bu kapsamda açıkken.
 - **Menü** (`src/components/panel/nav.ts` › `FEATURE_SCREENS`, `screenFeatureOn`): kenar çubuğu, çekmece, komut paleti
   ve alt menü seçili kapsamın özellikleriyle süzülür. Personelin alt menüsü beş hücre kalır: boşalan hücreye sırayla
   Zayi ve Kontrol girer (`withSpares`). Şube seçimi değişince kabuk canlı veriyi hemen yeniden ister.
@@ -313,8 +318,9 @@ yazma `src/server/branch-settings.ts`.
   adreslerine (bütün şubeler ya da o şube; `dayEndRecipients(db, şube)`, şube zorunlu), çalışanların kısa e-postası
   gün sonunun şubesinin çalışan listesine. Zil ve "bu adres hangi listede" (Hesabım, Kullanıcılar) bütün açık
   şubelerin listelerine bakar.
-- **Ekran**: Ayarlar › Şube ayarları (en üstte Özellikler kartı, yukarıda; tek şube seçiliyken doğrudan o şubenin ekranı, "Tümü"de Şubeler listesi; her
-  fiziksel şubenin satırında "Alıcılar: Tuzla ile aynı" çipi ve **Ayarlar**). Şube ayarları ekranı
+- **Ekran**: Ayarlar › Şube ayarları (tek şube seçiliyken doğrudan o şubenin ekranı, "Tümü"de Şubeler listesi; özet
+  satırı alıcıların kaynağını, karaokenin şubesini ve kullanılmayan özellikleri söyler; her fiziksel şubenin satırında
+  "Alıcılar: Tuzla ile aynı" çipi ve **Ayarlar**). Şube ayarları ekranının en üstünde Özellikler kartı (yukarıda). Şube ayarları ekranı
   (`/panel/subeler/[id]`, yalnız yönetici) şubeyi adresten alır, panelin seçicisini değiştirmez. Kasa sayfasının Rapor
   alıcıları kartı aynı bileşen (`src/app/panel/kasa/cash-settings.tsx`, verisi `src/server/cash/settings-card.ts`);
   "Tümü"de her şube bölümünde kendi kartı. Birden çok kasa açıkken kartın ilk satırı "Tuzla ile aynı" anahtarı; açıkken
