@@ -419,3 +419,16 @@ export function stockAlertItems(critical: readonly StockEstimateLine[], max = 4)
   }));
   return { items, more: Math.max(0, critical.length - items.length) };
 }
+
+/**
+ * Tahmini stok › Marina'ya gelen faturalar kesilince altındaki not (bulgu 42); kesilmediyse null. Liste şubesi
+ * seçilmeyenlerle başlar: gizlenenlerin arasında seçilmeyen varsa sayısı söylenir.
+ */
+export function receiptListNote(shown: number, total: number, unassigned: number): string | null {
+  const hidden = total - shown;
+  if (hidden <= 0) return null;
+  const open = Math.max(0, unassigned - shown);
+  return `${num(shown)} fatura gösteriliyor (şubesi seçilmeyenler önce), ${num(hidden)} fatura daha var${
+    open ? `: ${num(open)} tanesinin şubesi seçilmedi, seçtikçe listede yerini alır.` : "; hepsinin şubesi seçildi."
+  }`;
+}
