@@ -191,3 +191,16 @@ test("hammadde değil: neden saklanır, eski kayıt nedensiz okunur; tedarikçi 
   assert.match(sync, /!ruled\.has\(supplierMatchKey\(r\.supplier\)\)/);
   assert.match(read("src/server/data/invoice-split.ts"), /const not = isLinked \? null : notIngredientOf/);
 });
+
+// ---------------------------------------------------------------- Paraşüt sayfası hafif (B5)
+test("Paraşüt sayfası: bekleyen kartlarda tam hammadde listesi yok; aranabilir tek seçici, liste bir kez kurulur", () => {
+  const client = read("src/app/panel/parasut/parasut-client.tsx");
+  assert.doesNotMatch(client, /<optgroup|IngredientOptions/, "her kartta seçenek listesi çizilmez");
+  assert.match(client, /<IngredientCombobox value=\{d\.ingredientId\} onChange=\{choose\} groups=\{grouped\}/);
+  assert.match(client, /const grouped = useMemo\(\(\) => groupIngredients\(ingredients\), \[ingredients\]\)/);
+  const combo = read("src/app/panel/parasut/ingredient-combobox.tsx");
+  // Kapalıyken yalnız düğme; liste pencere açılınca; satırlar en az 44 px
+  assert.match(combo, /\{open \? \(\s*<ComboDialog/);
+  assert.match(combo, /min-h-11 w-full/);
+  assert.match(combo, /searchIngredients\(groups, q, value\)/);
+});

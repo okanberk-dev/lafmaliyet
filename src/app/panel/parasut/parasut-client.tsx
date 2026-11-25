@@ -74,6 +74,7 @@ import {
 import { connectionBreakdown, connectionHeadline, linkedBreakdown, LINKS_ID, runsBreakdown } from "./breakdowns";
 import { ConnectionCard } from "./connection-card";
 import { AiSuggestBar, MatchBadges, MatchWarnings, SuggestionBox } from "./match-suggestions";
+import { groupIngredients, IngredientCombobox } from "./ingredient-combobox";
 import { NotIngredientDialog } from "./not-ingredient-dialog";
 
 type MatchType = "supplier" | "parasut_category" | "keyword";
@@ -680,27 +681,8 @@ const LINK_SORTS = ["urun", "-urun", "hammadde", "-hammadde"] as const;
 type Draft = { ingredientId: string; factor: string; updatePrice: boolean; factorTouched?: boolean };
 type LinkPatch = { type: "remove"; id: number } | { type: "update"; id: number; patch: Partial<LinkRow> };
 
-/** Kategoriye göre gruplanmış hammadde seçenekleri */
-function IngredientOptions({ ingredients }: { ingredients: Ingredient[] }) {
-  const groups = useMemo(() => {
-    const m = new Map<string, Ingredient[]>();
-    for (const i of ingredients) m.set(i.category || "Diğer", [...(m.get(i.category || "Diğer") ?? []), i]);
-    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], "tr"));
-  }, [ingredients]);
-  return (
-    <>
-      {groups.map(([cat, list]) => (
-        <optgroup key={cat} label={cat}>
-          {list.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.name} ({UNIT_LABEL[i.unit] ?? i.unit})
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </>
-  );
-}
+/** Birimin ekrandaki adı (ml, gr, adet) */
+const unitLabel = (u: string) => UNIT_LABEL[u] ?? u;
 
 const FACTOR_TIP =
   "Faturadaki 1 birimin kaç hammadde birimi ettiği. Ör. 1 kg = 1000 gr, 1 L = 1000 ml, 1 koli = 12 adet. Alınan miktar bu çarpanla hesaplanır, birim fiyat da buna bölünür.";
@@ -743,6 +725,8 @@ function ProductLinks({
   const [removing, setRemoving] = useState<LinkRow | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const byId = useMemo(() => new Map(ingredients.map((i) => [i.id, i])), [ingredients]);
+  // Hammadde seçicisinin listesi: bir kez kurulur, bütün satırlar paylaşır (her kartta 108 seçenek çizilmez)
+  const grouped = useMemo(() => groupIngredients(ingredients), [ingredients]);
   const get = (k: string): Draft => draft[k] ?? { ingredientId: "", factor: "1", updatePrice: true };
   const set = (k: string, patch: Partial<Draft>) => setDraft((d) => ({ ...d, [k]: { ...get(k), ...patch } }));
 
@@ -1118,10 +1102,8 @@ function ProductLinks({
                           />
                         ) : null}
                         <div className="min-w-0">
-                          <Select value={d.ingredientId} onChange={(e) => choose(e.target.value)} aria-label={`${u.productName} için hammadde`}>
-                            <option value="">Hammadde seçin…</option>
-                            <IngredientOptions ingredients={ingredients} />
-                          </Select>
+                          {/* Aranabilir tek seçici: liste dokununca açılır, hammaddeler sayfada bir kez kurulur (B5) */}
+                          <IngredientCombobox value={d.ingredientId} onChange={choose} groups={grouped} unitLabel={unitLabel} label={`${u.productName} için hammadde`} />
                         </div>
                         <label className="flex items-center gap-2 text-xs text-ink-mute">
                           <span className="shrink-0">1 {u.unit ?? "birim"} =</span>
@@ -1550,6 +1532,7 @@ function LinkEditor({
   onSave: (p: { ingredientId: number; factor: number; updatePrice: boolean }) => void;
 }) {
   const id = useId();
+  const grouped = useMemo(() => groupIngredients(ingredients), [ingredients]);
   const [ingredientId, setIngredientId] = useState(String(link.ingredientId));
   const [factor, setFactor] = useState(num(link.factor, 3));
   const [updatePrice, setUpdatePrice] = useState(link.updatePrice);
@@ -1572,9 +1555,7 @@ function LinkEditor({
     >
       <p className="min-w-0 text-sm font-semibold break-words text-ink md:self-center">{link.productName}</p>
       <Field label="Hammadde" htmlFor={`${id}-ing`}>
-        <Select id={`${id}-ing`} value={ingredientId} onChange={(e) => setIngredientId(e.target.value)} autoFocus>
-          <IngredientOptions ingredients={ingredients} />
-        </Select>
+        <IngredientCombobox id={`${id}-ing`} value={ingredientId} onChange={setIngredientId} groups={grouped} unitLabel={unitLabel} label={`${link.productName} için hammadde`} />
       </Field>
       <Field label={`Çarpan (${ing ? (UNIT_LABEL[ing.unit] ?? ing.unit) : "birim"})`} htmlFor={`${id}-factor`} error={factor && invalid && ingredientId ? "Sıfırdan büyük olmalı" : undefined}>
         <NumberInput id={`${id}-factor`} value={factor} onChange={(e) => setFactor(e.target.value)} aria-invalid={(Boolean(ingredientId) && invalid) || undefined} />

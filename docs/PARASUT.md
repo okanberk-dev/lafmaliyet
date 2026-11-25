@@ -438,6 +438,11 @@ kalemleri listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet fat
   hammadde değil" bölümü (kaldır) ve "Hammadde değil" penceresi; tedarikçi sayfasının "Paraşüt kalemleri: hep hammadde
   değil" seçicisi (Kapalı / Sarf / Demirbaş / Hizmet / Deneme; tedarikçinin bütün adlarına yazılır).
 - Bağlanmayı bekleyen ürün sayısı zilde görünür.
+- **Hammadde seçici** (25 Kasım 2026): her bekleyen kartta ve bağlantı düzenlemede **aranabilir tek seçici**
+  (`ingredient-combobox.tsx`): kapalıyken alan gibi görünen düğme, dokununca arama kutulu pencerede kategori kategori
+  liste (arama ve Enter kuralı reçete önerisindeki seçiciyle aynı, `src/lib/ingredient-search.ts`; Türkçe harf ve
+  büyük/küçük harf farkı gözetmez; satırlar en az 44 px). Önceden her kart 108 seçenekli tam listeyi çiziyordu (sayfa
+  ~90 bin karakter); artık hammaddeler sayfada bir kez gönderilir ve bütün satırlar paylaşır.
 - **Mal alışı sayılmayan fatura** (denetim 26 Eki, E-07; 25 Kasım 2026'dan beri kalem kalem sayıldığı için yalnız
   komisyon faturasında kalabilir, aşağıda 5f): kalemi hammaddeye bağlı ama kategorisi mal alışı (Hammadde &
   İçecek, Tatlı & Hazır Ürün, Ambalaj) ya da kafe dışı olmayan fatura ("Diğer", "Hizmet"…) stoğa girer (alınan miktar,
