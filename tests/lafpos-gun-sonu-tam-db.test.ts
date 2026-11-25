@@ -503,7 +503,11 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DA
     assert.equal(r.bankPos, null, "Pavo gelmedi: uydurulmaz");
     assert.deepEqual([r.zTotal, r.countedCash, r.cashDiff, r.note, r.countedByName], [before.zTotal, before.countedCash, before.cashDiff, "Yönetici girdi", "Ali"]);
     assert.equal(r.revision, before.revision + 1, "önceki sürüm geçmişte");
-    assert.equal(r.submittedByName, "LafPOS (otomatik)");
+    // Gönderen elle girendir (Z, kasa ve not onun); LafPOS'un yazdığı işlem geçmişinde
+    assert.deepEqual([r.submittedBy, r.submittedByName], [before.submittedBy, before.submittedByName]);
+    assert.equal(r.submittedByName, "Ali");
+    const log = await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Kasa raporu güncellendi (LafPOS otomatik)"));
+    assert.ok(log.some((l) => l.userName === "LafPOS (otomatik)" && /elle girilen rapora cihaz alanları yazıldı/.test(l.detail ?? "")));
     assert.equal((await db.select().from(s.cashReportRevisions).where(eq(s.cashReportRevisions.reportId, r.id))).length, 1);
     // Pavo'nun sonucu ikinci gönderimle gelir: boş Banka POS dolar; aynı gönderim yeniden işlenince bir şey yazılmaz
     assert.ok((await push()).ok);

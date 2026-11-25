@@ -337,8 +337,8 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
 
 /**
  * Elle girilmiş raporun boş cihaz alanlarını LafPOS'un gün sonundan doldurur (humanDeviceFill; bulgu 6). Önceki sürüm
- * geçmişe, gönderen "LafPOS (otomatik)" (Değişiklikler'de kimin yazdığı doğru görünsün; sayan değişmez), işlem geçmişine
- * satır. Z, kasa ve not değişmez; e-postanın durumu kalır (rapor yeniden e-postalanmaz, gün sonu e-postası cihazları
+ * geçmişe, işlem geçmişine "LafPOS (otomatik)" adına satır. Gönderen ve sayan değişmez (inceleme, 25 Kasım 2026): Z, kasa
+ * ve not elle girenindir; rapor listesi, kart başlığı ve e-posta gönderen olarak onu gösterir. Z, kasa ve not değişmez; e-postanın durumu kalır (rapor yeniden e-postalanmaz, gün sonu e-postası cihazları
  * zaten söyler). Yazarkasa alanları dolduysa sunucu sütunları formun kaydındaki gibi hesaplanır. Yazılacak yoksa hiçbir
  * şey yazılmaz
  */
@@ -362,7 +362,7 @@ async function fillHumanDevice(tx: CashTx, prev: typeof s.cashReports.$inferSele
   if ("okcVat" in fill) set.okcVat = Array.isArray(fill.okcVat) && fill.okcVat.length ? fill.okcVat : null;
   let [row] = await tx
     .update(s.cashReports)
-    .set({ ...set, revision: prev.revision + 1, submittedBy: null, submittedByName: LAFPOS_AUTO_BY, updatedAt: now })
+    .set({ ...set, revision: prev.revision + 1, updatedAt: now })
     .where(eq(s.cashReports.id, prev.id))
     .returning();
   if (row.okcZNo && row.okcTotal !== null && ((prev.okcZNo ?? null) !== row.okcZNo || (prev.okcTotal ?? null) !== row.okcTotal)) row = await serverColumns(tx, row);
