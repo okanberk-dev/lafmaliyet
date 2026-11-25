@@ -54,6 +54,11 @@ Faturalar şubeye bölünmez ([SUBE.md](SUBE.md): mal alımı işletme genelidir
 Marina'da gösterir, hiç saymamak mal geldiği gün bile "bitiyor" der. Bu yüzden yönetici ekrandaki **Marina'ya gelen
 faturalar** kartında dönemin her faturası için "Marina" ya da "Tuzla" seçer (seçilmeyen fatura tahmine girmez, kart
 "şubesi seçilmedi" der). Seçim yalnız bu tahmini değiştirir: fatura, ödeme, cari, FIFO ve mal maliyeti aynıdır.
+Kart önce şubesi seçilmeyenleri, sonra seçilmişleri listeler (ikisi de en yeni önce) ve en çok 100 fatura gösterir.
+Başlıktaki fatura sayısı ve "şubesi seçilmedi" sayacı liste kesilse de dönemin bütün faturalarından sayılır. Liste
+kesilince altında kaç faturanın gizlendiği ve bunların kaçının şubesinin seçilmediği yazar (25 Kasım 2026'ya kadar liste
+en yeni 100 faturada sessizce kesiliyordu, sayaç da yalnız onları sayıyordu: dönemin başındaki seçilmemiş fatura ne
+görünüyor ne sayılıyordu).
 Faturası olmayan alım (elle ya da Excel'den girilen fatura, market alımı, Tuzla'dan getirilen mal) tahmine girmez:
 tahmini stok olduğundan az görünür, sayım düzeltir.
 

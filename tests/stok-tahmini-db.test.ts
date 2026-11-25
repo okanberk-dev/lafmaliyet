@@ -79,4 +79,45 @@ describe("Tahmini stok: LafPOS'un sayıldığı ilk gün", { skip: !SERVER_URL &
     // Şube kaydı olmayan (bu değişiklikten önce yüklenmiş) listede ortak kayıt
     assert.equal(await coverage({ "2026-11": "2026-11-20" }, {}), "2026-11-21");
   });
+
+  test("Marina'ya gelen faturalar: liste kesilse de sayılar bütün dönemden, şubesi seçilmeyen önce (bulgu 42)", async () => {
+    const [sut] = await db.insert(s.ingredients).values({ name: "Süt", category: "Test", unit: "ml", countUnit: "LT" }).returning();
+    await db.insert(s.parasutProductLinks).values({ productKey: "p:sut", productName: "SÜT 1 LT", ingredientId: sut.id, factor: 1000 });
+    /** Hammaddeye bağlı tek kalemli Paraşüt faturası; `branch` verilirse şubesi seçilmiş */
+    const bill = async (date: string, supplier: string, branch: string | null) => {
+      const [inv] = await db
+        .insert(s.invoices)
+        .values({ date, supplier, category: "Hammadde & İçecek", amount: 100, payable: 120, source: "parasut", origin: "parasut" })
+        .returning();
+      await db.insert(s.parasutBillLines).values({ invoiceId: inv.id, externalId: `l-${inv.id}`, productKey: "p:sut", productName: "SÜT 1 LT", unit: "Adet", quantity: 12, unitPrice: 8, netTotal: 100 });
+      if (branch) await db.insert(s.stockReceipts).values({ invoiceId: inv.id, branchId: branch });
+      return inv.id;
+    };
+    // Eski (dönemin başı) şubesi seçilmemiş fatura, yeni ve seçilmiş faturaların arkasında kalırdı
+    const eskiAcik = await bill("2026-09-02", "Eski süt", null);
+    await bill("2026-11-20", "Yeni süt", LAFPOS_SUBE);
+    await bill("2026-11-22", "Daha yeni süt", MODPOS_SUBE);
+    const yeniAcik = await bill("2026-11-23", "Açık süt", null);
+    await bill("2026-08-30", "Dönem dışı", null);
+
+    const all = await estimate.loadReceiptInvoices("2026-09-01", "2026-11-25", db);
+    assert.equal(all.total, 4, "dönem dışı fatura sayılmaz");
+    assert.equal(all.unassigned, 2);
+    assert.deepEqual(
+      all.invoices.map((i) => i.supplier),
+      ["Açık süt", "Eski süt", "Daha yeni süt", "Yeni süt"],
+      "önce şubesi seçilmeyenler, sonra seçilmişler; ikisi de en yeni önce",
+    );
+    assert.deepEqual(all.invoices[0].items, ["Süt 12 LT"]);
+
+    // Liste 2'de kesilince eski açık fatura yine listede; sayılar kesilmeden önceki dönemden
+    const cut = await estimate.loadReceiptInvoices("2026-09-01", "2026-11-25", db, 2);
+    assert.deepEqual(cut.invoices.map((i) => i.id), [yeniAcik, eskiAcik]);
+    assert.equal(cut.total, 4);
+    assert.equal(cut.unassigned, 2);
+    // Liste 1'de kesilince sayaç yine iki açık fatura der (eskiden yalnız gösterilenleri sayıyordu)
+    const one = await estimate.loadReceiptInvoices("2026-09-01", "2026-11-25", db, 1);
+    assert.equal(one.invoices.length, 1);
+    assert.equal(one.unassigned, 2);
+  });
 });
