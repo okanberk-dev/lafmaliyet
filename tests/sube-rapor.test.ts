@@ -40,7 +40,7 @@ test("#6 Gelir-gider: ciro, açık gün ve ay notu formun şubesinin ay satırı
   assert.match(note, /onConflictDoUpdate\(\{ target: \[s\.months\.month, s\.months\.branchId\]/);
   const field = body(src, "setMonthField");
   assert.match(field, /const sube = await monthCellBranch\(branchId\);/);
-  assert.match(field, /\.values\(\{ month: m, branchId: sube, \[field\]: v \}\)/);
+  assert.match(field, /\.values\(\{ month: m, branchId: sube, \.\.\.cell \}\)/);
   assert.match(field, /onConflictDoUpdate\(\{ target: \[s\.months\.month, s\.months\.branchId\]/);
   // Ay satırına şubesiz (sütunun varsayılanı Tuzla) yazan kalmadı
   assert.doesNotMatch(src, /insert\(s\.months\)\s*\.values\(\{ month: m, (?!branchId)/);
