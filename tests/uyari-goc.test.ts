@@ -569,3 +569,9 @@ test("inceleme B2: cari şeritleri yazıldığı sırada, eylemli uyarıların e
   // V9: site bağlı değilken siparişler kartının gövdesi (boş pay) çizilmez
   assert.match(read("src/app/panel/siparisler/orders-board.tsx"), /\{data\?\.configured \? \(\s*<div className="space-y-3 px-5 pb-5">/);
 });
+
+test("Sayfanın başındaki ses satırları yalnız personelde, yöneticide çıkmaz", () => {
+  const center = read("src/components/panel/live/alert-center.tsx");
+  assert.match(center, /const pageRows = role !== "admin";/);
+  assert.equal((center.match(/\{pageRows && /g) ?? []).length, 3, "üç satır da (susturuldu, karaoke, sesli uyarılar) personele bağlı");
+});
