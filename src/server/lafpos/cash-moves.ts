@@ -3,7 +3,7 @@ import "server-only";
 import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
 
 import { staffCategory } from "@/lib/cash-outs";
-import { isCashOutMove, LAFPOS_CASH_OUT_BY, planLafposCashOuts, planLafposDetach, type LafposCashOutRow } from "@/lib/lafpos/cash-moves";
+import { isCashOutMove, LAFPOS_CASH_OUT_BY, lafposRecipient, planLafposCashOuts, planLafposDetach, planLafposRecipientFill, type LafposCashOutRow } from "@/lib/lafpos/cash-moves";
 import type { PosCashMove } from "@/lib/lafpos/day";
 import { longDateTR } from "@/lib/reminders";
 import { removeCashOut, writeCashOut, type CashOutActor, type CashOutRow, type CashOutTx } from "@/server/cash-outs/write";
@@ -18,7 +18,8 @@ import { lafposBranchId } from "./branch";
  * `cashMoves` taşıyorsa (eski LafPOS ya da okunamayan listede satırlara dokunulmaz). Plan saf: src/lib/lafpos/cash-moves.ts.
  *
  * - Yeni harcama ve teslim satır olur: şube Marina, gönderen "LafPOS" (kişi adı yazılmaz), saat hareketin anı, belge
- *   "yok", açıklama LafPOS'un. Harcamanın kategorisi personelin seçebildiği bir kategoriyse (etkin, staffCategory)
+ *   "yok", açıklama LafPOS'un. Teslimde "Kime" (`store`) LafPOS'un alıcısıdır (`recipient`, 25 Kasım 2026); boş Kime'li
+ *   eski ya da sahiplenilen satır da alıcıyla dolar, panelde yazılmış Kime'ye dokunulmaz (planLafposRecipientFill). Harcamanın kategorisi personelin seçebildiği bir kategoriyse (etkin, staffCategory)
  *   Aylık harcamalar'a da yazılır (personelin fişsiz alışverişinin kuralı); kategorisizse ya da kategori yöneticininse
  *   yalnız satır (kategoriyi panelde personel ya da yönetici seçer).
  * - Elle girilmiş eşi sahiplenilir (yalnız kimlik yazılır; fotoğraf, yer, belge, kategori ve tedarikçi bağı kalır).
@@ -39,6 +40,8 @@ export interface LafposCashOutSync {
   removed: number;
   /** Tedarikçi ödemesine bağlı olduğu için silinmeyip LafPOS bağı çözülen satırlar */
   released: number;
+  /** "Kime"si LafPOS'un alıcısıyla doldurulan satırlar (sahiplenilen ya da önceden yazılmış teslim) */
+  recipients: number;
 }
 
 /** `branch`: LafPOS'un şubesi (gün sonu verir; verilmezse lafposBranchId) */
@@ -63,7 +66,7 @@ export async function syncLafposCashOuts(tx: CashOutTx, date: string, moves: rea
 
   const categories = await tx.select().from(s.expenseCategories);
   const usable = (id: number | null) => id !== null && categories.some((c) => c.id === id && staffCategory(c));
-  const out: LafposCashOutSync = { inserted: 0, adopted: 0, updated: 0, removed: 0, released: 0 };
+  const out: LafposCashOutSync = { inserted: 0, adopted: 0, updated: 0, removed: 0, released: 0, recipients: 0 };
 
   for (const m of plan.insert) {
     if (!isCashOutMove(m)) continue;
@@ -76,7 +79,7 @@ export async function syncLafposCashOuts(tx: CashOutTx, date: string, moves: rea
         date,
         kind: m.kind,
         amount: m.amount,
-        store: null,
+        store: lafposRecipient(m),
         description: m.description || null,
         receiptDate: null,
         receiptNo: null,
@@ -110,7 +113,7 @@ export async function syncLafposCashOuts(tx: CashOutTx, date: string, moves: rea
         date,
         kind: u.move.kind,
         amount: u.move.amount,
-        store: prev.store,
+        store: prev.store || lafposRecipient(u.move),
         description: prev.description,
         receiptDate: prev.receiptDate,
         receiptNo: prev.receiptNo,
@@ -125,6 +128,16 @@ export async function syncLafposCashOuts(tx: CashOutTx, date: string, moves: rea
     if (prev.branchId !== branchId) await tx.update(s.cashOuts).set({ branchId }).where(eq(s.cashOuts.id, prev.id));
     out.updated += 1;
   }
+
+  // Teslimin "Kime"si boş olan sahiplenilen ve önceden yazılmış satırlar (yeniden yazılanlar yukarıda doldu)
+  const fills = planLafposRecipientFill(
+    moves,
+    rows.map((r) => ({ id: r.id, lafposId: r.lafposId, store: r.store })),
+    plan.adopt,
+    new Set(update.map((u) => u.rowId)),
+  );
+  for (const f of fills) await tx.update(s.cashOuts).set({ store: f.store, updatedAt: new Date() }).where(eq(s.cashOuts.id, f.rowId));
+  out.recipients = fills.length;
 
   for (const id of plan.remove) {
     const row = byId.get(id)!;
@@ -144,6 +157,7 @@ export async function syncLafposCashOuts(tx: CashOutTx, date: string, moves: rea
     out.updated && `${out.updated} güncellendi`,
     out.removed && `${out.removed} kaldırıldı`,
     out.released && `${out.released} tedarikçi ödemesine bağlı olduğu için kaldı`,
+    out.recipients && `${out.recipients} teslime Kime yazıldı`,
   ]);
   return out;
 }
