@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { lafposPhotoCheck, lafposPhotoDone, photoSourceText, photoUnsureText, staffPhotoLine, type LafposPhotoCheck } from "../src/lib/lafpos/foto";
-import { photoCheckHash, photoMailNeeded, renderPhotoMail } from "../src/lib/lafpos/gun-sonu";
+import { photoCheckHash, photoMailFresh, photoMailNeeded, renderPhotoMail } from "../src/lib/lafpos/gun-sonu";
 import type { BankPos, PosOkc } from "../src/lib/lafpos/day";
 import { cheapReadingProblems, formFailureOf, runLafposRead, type ReadStep } from "../src/lib/photo-read/lafpos-read";
 import { OCR_MODEL, PHOTO_CHEAP_MODEL, PHOTO_STRONG_MODEL, photoModelsOf, readingSourceOf } from "../src/lib/photo-read/models";
@@ -415,7 +415,14 @@ test("Fotoğraf e-postası (gün sonu e-postasından sonra eklenen fotoğraf): h
   // Sahibin isteği (25 Kasım 2026): "z raporu yükleyince mail gelmedi" — uyumlu fotoğraf da bildirilir
   const ok = check([{ photoId: 1, raw: detailedZ(), error: null }]);
   assert.equal(ok.state, "uyumlu");
-  assert.equal(photoMailNeeded(ok), true, "uyumlu fotoğraf da e-posta gönderir");
+  assert.equal(photoMailNeeded(ok), false, "gün sonu e-postasıyla giden uyumlu fotoğraf ayrıca gitmez");
+  assert.equal(photoMailNeeded(ok, { fresh: true }), true, "gün sonu e-postasından sonra eklenen uyumlu fotoğraf da e-posta gönderir");
+  // Taze: en yeni fotoğraf gün sonu e-postasından sonra ve son 48 saatte (yükseltmeden önceki eski günlere toplu e-posta yok)
+  const mailed = new Date("2026-11-24T21:00:00Z");
+  assert.equal(photoMailFresh(new Date("2026-11-24T22:00:00Z"), mailed, new Date("2026-11-25T08:00:00Z")), true);
+  assert.equal(photoMailFresh(new Date("2026-11-24T20:00:00Z"), mailed, new Date("2026-11-25T08:00:00Z")), false, "e-postadan önce eklendi");
+  assert.equal(photoMailFresh(new Date("2026-11-24T22:00:00Z"), mailed, new Date("2026-11-27T08:00:00Z")), false, "48 saatten eski");
+  assert.equal(photoMailFresh(null, mailed, new Date()), false);
   assert.equal(plain(renderPhotoMail({ branchName: "Marina", date: DAY, check: ok, link: "x" }).subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · gün sonu fotoğrafı alındı · LafPOS'la aynı");
   assert.equal(photoMailNeeded(null), false);
   // İkinci fotoğraf (aynı okunuş) da yeni içeriktir

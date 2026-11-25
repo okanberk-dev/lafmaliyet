@@ -945,9 +945,11 @@ LafPOS'un gününde bu bölümler yok.
 - Geçiş gününden önceki gün (deneme) e-posta almaz, rapor yazılmaz.
 - **Fotoğraf e-postası** (`sendPhotoEmail`; sahibin istekleri, 24 Kasım 2026: "mail olarak vs. bilgilerde de farklı
   olunca belirsin"; 25 Kasım 2026: "gün sonu alınca admine z raporu yükleyince mail gelmedi"): fotoğraf çoğu gün gün
-  sonu e-postasından sonra eklenir. **Eklenen her gün sonu fotoğrafı** aynı alıcılara (kasa raporu alıcıları) kısa
-  e-postayla bildirilir; eskiden yalnız fark ya da "yönetici baksın"da gidiyordu, uyumlu fotoğrafta sahip fotoğrafın
-  geldiğini ve okunduğunu göremiyordu. Konu durumu söyler: "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · gün sonu
+  sonu e-postasından sonra eklenir. **Gün sonu e-postasından sonra eklenen her gün sonu fotoğrafı** aynı alıcılara
+  (kasa raporu alıcıları) kısa e-postayla bildirilir; eskiden yalnız fark ya da "yönetici baksın"da gidiyordu, uyumlu
+  fotoğrafta sahip fotoğrafın geldiğini ve okunduğunu göremiyordu. Gün sonu e-postasından önce eklenen fotoğraf o
+  e-postanın içinde gider (fark ve "yönetici baksın" sonradan çıkarsa yine ayrı e-posta). Yükseltmeden önce eklenmiş
+  eski fotoğraflar için toplu e-posta gitmesin diye kural son 48 saatte eklenen fotoğrafa bakar (`photoMailFresh`). Konu durumu söyler: "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · gün sonu
   fotoğrafı alındı · LafPOS'la aynı", "… LafPOS'tan FARKLI", "… okunamadı" (yanlış belge, personel yeniden çeker), "…
   okunamadı, yönetici baksın" ya da "… alındı · okunmadı". İçerik: ekleyen, okuyan (yapay zekâ ve modeli ya da kod),
   satır satır karşılaştırma, **Fotoğrafta okunan** (belge türü, tarih, Z no, fiş sayısı, günün toplamı, ödemeler, KDV

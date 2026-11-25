@@ -276,7 +276,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     assert.doesNotMatch(mail.subject, /FARKLI/);
     // Fotoğraf gün sonu e-postasıyla gitti (okunanı ve karşılaştırması içinde): ayrı fotoğraf e-postası gitmez
     assert.match(plain(mail.text), /Fotoğrafta okunan/);
-    assert.equal(r.photo, "same");
+    assert.equal(r.photo, "skipped");
     // Güçlü model bir kez: günlük iş yeniden okumaz
     await gun.runLafposDayEnd(db, DAY, NOW, undefined, { client, read });
     assert.equal(models.length, 2);

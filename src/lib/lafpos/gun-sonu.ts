@@ -529,14 +529,25 @@ export function photoRows(check: LafposPhotoCheck): [string, string][] {
   return rows;
 }
 
+/** Gün sonu e-postasından sonra eklenen uyumlu fotoğrafın bildirimi bu süreden eski fotoğrafa gitmez (yükseltme sonrası) */
+export const PHOTO_MAIL_FRESH_MS = 48 * 3600_000;
+
 /**
- * Fotoğraf e-postası gerekir mi: gün sonu e-postası gittikten sonra eklenen her gün sonu fotoğrafı yöneticiye bildirilir
- * (sahibin isteği, 25 Kasım 2026: "gün sonu alınca admine z raporu yükleyince mail gelmedi"). Eskiden yalnız fark ya da
- * "yönetici baksın"da gidiyordu; uyumlu fotoğraf sessiz kalıyor, sahip fotoğrafın geldiğini ve okunduğunu göremiyordu.
- * Karşılaştırma yoksa (henüz kurulmadı) e-posta yok
+ * Fotoğraf e-postası gerekir mi. Fark ya da "yönetici baksın" her zaman (24 Kasım 2026); öteki durumlar (uyumlu, okunamadı,
+ * okunmadı) fotoğraf gün sonu e-postasından SONRA eklendiyse (`fresh`; sahibin isteği, 25 Kasım 2026: "gün sonu alınca
+ * admine z raporu yükleyince mail gelmedi"). Gün sonu e-postasından önce eklenen fotoğraf o e-postanın içinde gitti;
+ * yükseltmeden önce eklenmiş eski fotoğraflar için toplu e-posta gitmesin diye `fresh` son 48 saatle sınırlıdır
+ * (photoMailFresh). Karşılaştırma yoksa e-posta yok
  */
-export function photoMailNeeded(check: Pick<LafposPhotoCheck, "state"> | null | undefined): boolean {
-  return Boolean(check);
+export function photoMailNeeded(check: Pick<LafposPhotoCheck, "state"> | null | undefined, o: { fresh?: boolean } = {}): boolean {
+  if (!check) return false;
+  return check.state === "fark" || check.state === "belirsiz" || o.fresh === true;
+}
+
+/** En yeni fotoğraf gün sonu e-postasından sonra eklendi ve son 48 saatte mi (photoMailNeeded'in `fresh`'i) */
+export function photoMailFresh(newestPhotoAt: Date | null, emailedAt: Date | null, now: Date): boolean {
+  if (!newestPhotoAt || !emailedAt) return false;
+  return newestPhotoAt.getTime() > emailedAt.getTime() && now.getTime() - newestPhotoAt.getTime() <= PHOTO_MAIL_FRESH_MS;
 }
 
 /**

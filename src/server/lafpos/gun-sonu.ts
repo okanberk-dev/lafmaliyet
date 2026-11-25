@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 import { businessDate, changesText, computeCash, revisionChanges, revisionDataOf } from "@/lib/cash-report";
 import { cashDaySubject } from "@/lib/cash-requests";
@@ -21,6 +21,7 @@ import {
   LAFPOS_AUTO_BY,
   mergeAuto,
   photoCheckHash,
+  photoMailFresh,
   photoMailNeeded,
   renderDayEnd,
   renderPhotoMail,
@@ -638,8 +639,9 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
     }
     // Pavo karşılaştırması bu e-postayla gittiyse kısa Pavo e-postası ayrıca gitmez
     await finish({ emailedHash: day.hash, emailCount: st.emailCount + 1, emailedAt: new Date(), emailError: null, ...(day.bankPos ? { pavoEmailedHash: bankPosHash(day.bankPos) } : {}) });
-    // Fotoğraf farkı bu e-postada satır satır gitti: aynı karşılaştırma için fotoğraf e-postası ayrıca gitmez
-    if (photo?.check && photoMailNeeded(photo.check)) {
+    // Fotoğraf (karşılaştırması, okunanlar ve kendisi) bu e-postayla gitti: aynı karşılaştırma için fotoğraf e-postası
+    // ayrıca gitmez
+    if (photo?.check) {
       await db
         .insert(s.notificationLog)
         .values({ key: photoMailKey(branchId, date, photo.check), channel: "email", subject: msg.subject, recipients: to.join(", "), ok: true, error: null })
@@ -736,6 +738,7 @@ export async function sendPhotoEmail(db: DB, date: string, now = new Date(), opt
   const [st] = await db
     .select({
       emailedHash: s.lafposDayEnds.emailedHash,
+      emailedAt: s.lafposDayEnds.emailedAt,
       photoCheck: s.lafposDayEnds.photoCheck,
       reportId: s.lafposDayEnds.reportId,
       autoValues: s.lafposDayEnds.autoValues,
@@ -749,8 +752,11 @@ export async function sendPhotoEmail(db: DB, date: string, now = new Date(), opt
   if (!auto && st.reportId) return "skipped";
   const ids = auto ? await dayPhotoIds(db, st.reportId!) : st.pendingPhotos;
   const check = auto ? (st.photoCheck ?? null) : await pendingPhotoCheck(db, date, branchId, ids, now);
-  if (!ids.length || !photoMailNeeded(check)) return "skipped";
-  if (!st.emailedHash) return "waiting";
+  if (!ids.length || !check) return "skipped";
+  // Gün sonu e-postası henüz gitmediyse fotoğraf onunla gider
+  if (!st.emailedHash) return photoMailNeeded(check, { fresh: true }) ? "waiting" : "skipped";
+  const [newest] = await db.select({ at: sql<Date>`max(${s.photos.createdAt})`.mapWith((v) => new Date(v)) }).from(s.photos).where(inArray(s.photos.id, [...ids]));
+  if (!photoMailNeeded(check, { fresh: photoMailFresh(newest?.at ?? null, st.emailedAt, now) })) return "skipped";
   const key = photoMailKey(branchId, date, check!);
   const [already] = await db.select({ ok: s.notificationLog.ok }).from(s.notificationLog).where(eq(s.notificationLog.key, key)).limit(1);
   if (already?.ok) return "same";
