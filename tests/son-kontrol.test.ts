@@ -147,12 +147,12 @@ test("personel: LafPOS'un şubesinde LafPOS gününde Kasa sayfasından kasadan 
 
 test("Kasa sayfası: LafPOS gününde personel ekle düğmeleri yerine kısa satırı görür; fiş fotoğrafı ekle kalır", () => {
   const page = read("src/app/panel/kasa/page.tsx");
-  assert.match(page, /const entryClosed = staffLafposEntryClosed\(\{ admin, branchId: view\.till, lafposDay: lafposState\.lafpos \}\);/);
+  assert.match(page, /const entryClosed = staffLafposEntryClosed\(\{ admin, branchId: view\.till, lafposDay: lafposState\.lafpos, lafposBranch \}\);/);
   assert.match(page, /lafposEntryClosed=\{entryClosed\}/, "kasadan çıkanlar kartı");
   // Zayi / ikram satırı: LafPOS gününde personelde Ekle yok (kısa satır Kasadan çıkanlar kartında, iki kez yazılmaz)
   assert.match(page, /\{entryClosed \? null : \(\n\s+<ButtonLink href=\{`\/panel\/zayi\?gun=\$\{date\}`\}/, "zayi / ikram kartı");
   // Geç rapor görünümü de aynı kuralla
-  assert.match(page, /staffLafposEntryClosed\(\{ admin: false, branchId: view\.till, lafposDay: lafposState\.lafpos \}\)/);
+  assert.match(page, /staffLafposEntryClosed\(\{ admin: false, branchId: view\.till, lafposDay: lafposState\.lafpos, lafposBranch \}\)/);
   const outs = read("src/app/panel/kasa/cash-outs.tsx");
   assert.match(outs, /\{lafposEntryClosed \? \(\n\s+<p[^>]*>\n\s+<Info[^>]*\/>\n\s+\{LAFPOS_STAFF_ENTRY_LINE\}\n\s+<\/p>\n\s+\) : canEdit \|\| \(staffActs && locked\) \? \(/);
   // Fiş fotoğrafı ekle (LafPOS satırına da) ekleme kuralından bağımsız

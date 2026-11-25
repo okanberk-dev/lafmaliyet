@@ -1,6 +1,7 @@
 import "server-only";
 
 import { ALL_BRANCHES, DEFAULT_BRANCH_ID, tillBranches, type BranchScope } from "@/lib/branches";
+import { lafposBranchOf } from "@/lib/lafpos/switch";
 import { businessDate } from "@/lib/cash-report";
 import { dateTR } from "@/lib/format";
 import { modposKeyProblem } from "@/lib/modpos/request";
@@ -85,7 +86,7 @@ export async function modposDigestLines(now = new Date(), scope: BranchScope = A
   const inScope = (id: string | null | undefined) => scope === ALL_BRANCHES || (id ?? DEFAULT_BRANCH_ID) === scope;
   const [found, key] = await Promise.all([
     Promise.all([cashReportsBetween(yesterday, yesterday), loadModposSheets(yesterday, yesterday), loadLafposSwitchDay(), listBranches()])
-      .then(([reports, sheets, switchDay, branches]) => ({ mismatches: modposMismatches(reports, sheets, switchDay).filter((m) => inScope(m.report.branchId)), branches }))
+      .then(([reports, sheets, switchDay, branches]) => ({ mismatches: modposMismatches(reports, sheets, switchDay, lafposBranchOf(branches)).filter((m) => inScope(m.report.branchId)), branches }))
       .catch(() => null),
     loadKeyAlerts()
       .then((all) => all.filter((k) => inScope(k.branchId)))

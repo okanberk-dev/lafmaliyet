@@ -21,11 +21,13 @@ import {
   type BranchKind,
   type BranchPosSource,
 } from "@/lib/branches";
+import { lafposSourceError } from "@/lib/lafpos/switch";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { staffBranchLock } from "@/server/branch-scope";
 import { branchSettingsCloseError } from "@/server/branch-settings";
 import { branchUsageCount, getBranch, listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
+import { forgetLafposBranch } from "@/server/lafpos/branch";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zDate, zText } from "./util";
@@ -75,12 +77,16 @@ export async function createBranch(input: z.input<typeof createInput>) {
     const db = getDb();
     const mevcut = await listBranches(db);
     if (mevcut.some((b) => b.id === d.id)) throw new UserError("Bu kimlikte bir şube zaten var");
+    // LafPOS bugün tek şubenin kasası (LafPOS'un şubesi kütükten türetilir: lafposBranchOf)
+    const lafposHata = lafposSourceError({ id: d.id.trim(), kind: d.kind, posSource: d.posSource, active: true }, mevcut);
+    if (lafposHata) throw new UserError(lafposHata);
     if (mevcut.some((b) => b.name.localeCompare(d.name, "tr", { sensitivity: "base" }) === 0)) {
       throw new UserError("Bu adda bir şube zaten var");
     }
     const sortOrder = Math.max(0, ...mevcut.map((b) => b.sortOrder)) + 1;
     const { posRate: oran, ...alanlar } = d;
     await db.insert(s.branches).values({ ...alanlar, id: d.id.trim(), sortOrder, ...(oran !== undefined ? { posRate: oran } : {}) });
+    forgetLafposBranch();
     await logActivity(me, "Şube eklendi", `${d.name} (${d.id})`);
     refresh();
     return { id: d.id.trim() };
@@ -115,6 +121,11 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
       hepsi.filter((b) => b.id !== d.id),
     );
     if (hata) throw new UserError(hata);
+    // Kasası LafPOS'a geçen (ya da LafPOS kasasıyla yeniden açılan) şube: LafPOS bugün tek şubenin kasası. Zaten LafPOS
+    // olan şubenin başka alanı düzenlenirken sorulmaz
+    const lafposOlur = d.posSource === "lafpos" && d.active && (mevcut.posSource !== "lafpos" || !mevcut.active);
+    const lafposHata = lafposOlur ? lafposSourceError({ id: d.id, kind: d.kind, posSource: d.posSource, active: d.active }, hepsi) : null;
+    if (lafposHata) throw new UserError(lafposHata);
     // Başka şube bu şubenin ayarını kullanıyorsa ("Marina ile aynı") kapatılmaz: bağ tek adımlı, bağlı şube değersiz kalırdı
     if (mevcut.active && !d.active) {
       const bagli = await branchSettingsCloseError(db, mevcut, BRANCH_SETTING_GROUPS);
@@ -140,6 +151,8 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
         updatedAt: new Date(),
       })
       .where(eq(s.branches.id, d.id));
+    // Kasa kaynağı ya da durum değiştiyse LafPOS'un şubesi değişmiş olabilir: bu sunucunun önbelleği hemen düşer
+    forgetLafposBranch();
     const degisen = [
       mevcut.name === d.name ? null : `ad: ${mevcut.name} → ${d.name}`,
       mevcut.posSource === d.posSource ? null : `kasa: ${mevcut.posSource} → ${d.posSource}`,
@@ -167,6 +180,7 @@ export async function deleteBranch(input: z.input<typeof deleteInput>) {
     const hata = branchDeleteError(mevcut, await branchUsageCount(db, id)) ?? (await branchSettingsCloseError(db, mevcut, BRANCH_SETTING_GROUPS));
     if (hata) throw new UserError(hata);
     await db.delete(s.branches).where(eq(s.branches.id, id));
+    forgetLafposBranch();
     await logActivity(me, "Şube silindi", `${mevcut.name} (${id})`);
     refresh();
     return { id };

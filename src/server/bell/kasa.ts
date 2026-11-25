@@ -35,6 +35,7 @@ import { closedInfoRows, closedYesterday, pendingClosedRows } from "@/server/clo
 import { cashOutBellRow } from "@/server/data/cash-out-requests";
 import { lafposNoCountDays, loadKasaLafposDays } from "@/server/data/lafpos-day";
 import { lafposPhotoMarks } from "@/server/lafpos/foto";
+import { lafposBranchId, loadBranchSwitchDay } from "@/server/lafpos/branch";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { getDb, schema as s } from "@/server/db";
 import { loadModposSheets } from "@/server/modpos/store";
@@ -201,7 +202,7 @@ async function staffCashNotifications(now: Date, day: string, reports: CashRepor
   if (reports.some((r) => r.date === day) || noCount.has(day)) return out;
   // Günün kasası (denetim E-39): geçiş gününden itibaren LafPOS'ta "Günü kapat"; okunamazsa bugünkü gibi ModPOS. Geçiş
   // günü yalnız LafPOS'un şubesinin kasasınındır (branchSwitchDay): ModPOS'ta kalan şubenin personeli ModPOS'u okur
-  const lafpos = kasaName(day, branchSwitchDay(await loadLafposSwitchDay().catch(() => null), till)) === "LafPOS";
+  const lafpos = kasaName(day, await loadBranchSwitchDay(till).catch(() => null)) === "LafPOS";
   out.push({
     id: `kasa-bekliyor-${day}`,
     kind: "warning",
@@ -235,7 +236,7 @@ async function cashIntegrityNotifications(reports: CashReportDTO[], day: string,
     cashRevisionsFor(revised),
     proposedByForReports(revised),
     loadKasaLafposDays(oldest.date, day).catch(() => null),
-    Promise.all([loadModposSheets(oldest.date, day), loadLafposSwitchDay()]).catch(() => null),
+    Promise.all([loadModposSheets(oldest.date, day), loadLafposSwitchDay(), lafposBranchId()]).catch(() => null),
   ]);
   const yesterday = addDays(day, -1);
   const timeLabel = (date: string) => (date === day ? "Bugün" : date === yesterday ? "Dün" : dateTR(date));
@@ -293,7 +294,7 @@ async function cashIntegrityNotifications(reports: CashReportDTO[], day: string,
   }
   // ModPOS föyünden farklı yazılan (yalnız ModPOS günlerinde, kasası kapanmış föyle; föy hiç çekilmediyse satır yok).
   // Rapor kendi şubesinin föyüyle; birden çok kasa açıkken gövdede şubenin adı
-  for (const m of modpos ? modposMismatches(reports, modpos[0], modpos[1]) : []) {
+  for (const m of modpos ? modposMismatches(reports, modpos[0], modpos[1], modpos[2]) : []) {
     const t = tills.of(m.report.branchId);
     out.push({ ...modposMismatchBell(m, t.named ? t.name : undefined), kind: "warning", timeLabel: timeLabel(m.report.date), unread: true, group: "kasa" });
   }
@@ -446,11 +447,15 @@ async function staffTillsWaiting(day: string): Promise<PanelNotification[] | nul
   const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
   const tills = tillBranches(branches);
   if (tills.length < 2 || tills.some((b) => b.id === scope)) return null;
-  const [reports, switchDay] = await Promise.all([withBranchScope(ALL_BRANCHES, () => cashReportsBetween(day, day)), loadLafposSwitchDay().catch(() => null)]);
+  const [reports, switchDay, lafposBranch] = await Promise.all([
+    withBranchScope(ALL_BRANCHES, () => cashReportsBetween(day, day)),
+    loadLafposSwitchDay().catch(() => null),
+    lafposBranchId().catch(() => undefined),
+  ]);
   return tills
     .filter((b) => !reports.some((r) => r.branchId === b.id && r.date === day))
     .map((b) => {
-      const lafpos = kasaName(day, branchSwitchDay(switchDay, b.id)) === "LafPOS";
+      const lafpos = kasaName(day, branchSwitchDay(switchDay, b.id, lafposBranch)) === "LafPOS";
       return {
         id: `kasa-bekliyor-${day}-${b.id}`,
         kind: "warning" as const,

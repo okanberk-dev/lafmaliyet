@@ -236,9 +236,11 @@ test("sayfa açılışı ModPOS'a istek göndermez: kart ve yükleyici yalnız o
   }
   assert.match(read("src/server/modpos/status.ts"), /^import "server-only";/m);
   // Kart LafPOS kartının deseninde: okunamazsa yedek kart, bölüm kimliği modpos
-  // Her ModPOS şubesinin kendi bölümü (yoksa Tuzla): kendi anahtarı, hakkı ve günleriyle
-  assert.match(card, /const ids = modposBranchIds\(branches\);/);
-  assert.match(card, /\(ids\.length \? ids : \[DEFAULT_BRANCH_ID\]\)\.map\(\(id\) => loadModposCard\(undefined, now, process\.env, id, branches\)\)/);
+  // Her ModPOS şubesinin kendi bölümü (yoksa Tuzla; src/lib/pos-cards.ts modposCardView): kendi anahtarı, hakkı ve
+  // günleriyle; tek şube seçiliyken yalnız onunki, kasası ModPOS olmayan şubede "Bu şubede kullanılmıyor"
+  assert.match(card, /const view = modposCardView\(scope, branches\);/);
+  assert.match(card, /if \(view\.kind === "elsewhere"\) return <PosElsewhereCard id="modpos"/);
+  assert.match(card, /view\.ids\.map\(\(id\) => loadModposCard\(undefined, now, process\.env, id, branches\)\)/);
   assert.match(card, /\}\)\(\)\.catch\(\(e\) => \{/);
   assert.match(card, /<Notice tone="bad" size="sm" title="ModPOS API'nin durumu okunamadı; sayfayı yenileyin" \/>/);
   assert.equal((card.match(/<SectionCard\s+id="modpos"/g) ?? []).length, 2);
@@ -276,7 +278,7 @@ test("bölüm listesi, sayfa ve arama: ModPOS LafPOS'tan sonra; sayfanın sunucu
   const page = read("src/app/panel/ayarlar/page.tsx");
   assert.match(page, /\nexport const maxDuration = 60;\n/);
   const lafpos = page.indexOf("<LafposCard");
-  const modpos = page.indexOf("<ModposCard />");
+  const modpos = page.indexOf("<ModposCard scope={scope} branches={branches} />");
   assert.ok(lafpos > page.indexOf("await requireAdmin();") && modpos > lafpos && modpos < page.indexOf("<PhotoReadingCard />"));
   const settings = NAV_FOOTER.find((i) => i.href === "/panel/ayarlar");
   assert.match(settings?.keywords ?? "", /modpos api kasa föyü/);

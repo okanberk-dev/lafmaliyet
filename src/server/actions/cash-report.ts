@@ -9,7 +9,6 @@ import { BRANCH_ID_MAX, DEFAULT_BRANCH_ID, namedTill, tillBranches, zFormBranch 
 import { businessDate, carryCheck, changesText, diffText, parseEmails, staffCanReport, waPhone, whatsappLink, whatsappText, type CashReportFields } from "@/lib/cash-report";
 import type { Role } from "@/lib/constants";
 import { money } from "@/lib/format";
-import { LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
 import { allDroppedSentence, droppedListText, recipientRefusal } from "@/lib/notify-recipients";
 import { longDateTR } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
@@ -28,6 +27,7 @@ import { blockedAccounts, sendableRecipients } from "@/server/notify/recipients"
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
 import { attachLafposDayPhotoCore, setLafposBankPosCore } from "@/server/lafpos/foto";
+import { lafposBranchId } from "@/server/lafpos/branch";
 import { sendPhotoEmail } from "@/server/lafpos/gun-sonu";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 
@@ -249,7 +249,7 @@ export async function updateCashSettings(input: z.input<typeof settingsSchema>) 
     refresh();
     // Şubesiz (eski sekme) kayıtta alıcılar varsayılan şubenin, çalışan listesi LafPOS'un şubesinin (saveCashSettings)
     const now = await loadCashSettings(branchId ?? DEFAULT_BRANCH_ID);
-    const staffNow = branchId || !staffGiven ? now : await loadCashSettings(LAFPOS_BRANCH_ID);
+    const staffNow = branchId || !staffGiven ? now : await loadCashSettings(await lafposBranchId());
     return { recipients: now.recipients, whatsapp: now.whatsapp, staffRecipients: staffNow.staffRecipients ?? [] };
   });
 }

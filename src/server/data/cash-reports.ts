@@ -17,7 +17,7 @@ import {
 } from "@/lib/cash-report";
 import { readLafposSwitchDay } from "@/lib/constants";
 import { posZSchema } from "@/lib/lafpos/day";
-import { branchSwitchDay, isLafposDay, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { MODPOS_FALLBACK_KEY, readModposFallback } from "@/lib/modpos/status";
 import { foyZ } from "@/lib/modpos/z";
 import type { OkcPrev, OkcRow, OkcVatLine } from "@/lib/okc-z";
@@ -26,6 +26,7 @@ import { emailErrorFor } from "@/lib/staff-errors";
 import { andWhere, currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
 import { putBranchSetting, resolveBranchSetting } from "@/server/branch-settings";
 import { getDb, schema as s } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 import { loadModposSheets, type ModposSheet } from "@/server/modpos/store";
 
 /**
@@ -66,7 +67,7 @@ export async function loadCashSettingsView(branchId: string, db?: SettingsReader
 
 /**
  * Yazar; verilen alanların grubu yazılır (alıcılar ya da çalışanlar). Şube verilmezse eski kaydın sahipleri: alıcılar
- * varsayılan şubenin (öbürleri "aynı"ysa onlar da kullanır), çalışan listesi LafPOS'un şubesinin; tek kasalı eski
+ * varsayılan şubenin (öbürleri "aynı"ysa onlar da kullanır), çalışan listesi LafPOS'un şubesinin (lafposBranchId); tek kasalı eski
  * çağrının anlamı. Alıcıları başka şubeninkini kullanan şubeye yazmaz (putBranchSetting). `tx`: çağıranın işlemi (işlem
  * geçmişi aynı işlemde), `by`: yazanın adı
  */
@@ -77,7 +78,7 @@ export async function saveCashSettings(value: Partial<CashSettings>, branchId?: 
       await putBranchSetting(t, CASH_REPORT_GROUP, branchId ?? DEFAULT_BRANCH_ID, { recipients: value.recipients, emailEnabled: value.emailEnabled, whatsapp: value.whatsapp }, by);
     }
     if (value.staffRecipients !== undefined || value.staffAmounts !== undefined) {
-      await putBranchSetting(t, CASH_STAFF_GROUP, branchId ?? LAFPOS_BRANCH_ID, { staffRecipients: value.staffRecipients, staffAmounts: value.staffAmounts }, by);
+      await putBranchSetting(t, CASH_STAFF_GROUP, branchId ?? (await lafposBranchId(t)), { staffRecipients: value.staffRecipients, staffAmounts: value.staffAmounts }, by);
     }
   };
   if (o.tx) await run(o.tx);
@@ -441,14 +442,14 @@ const MODPOS_LAST_DAY = "9999-12-31";
  * kasası LafPOS'tur, o şubenin föyü aya girmez (docs/MODPOS-API.md › Nerede görünür); ModPOS'ta kalan şubenin föyü
  * girmeye devam eder (branchSwitchDay; denetim 21 Kasım #5)
  */
-async function modposFallbackSwitch(db: Db | Tx): Promise<{ switchDay: string | null } | null> {
+async function modposFallbackSwitch(db: Db | Tx): Promise<{ switchDay: string | null; lafposBranch: string } | null> {
   const rows = await db
     .select({ key: s.settings.key, value: s.settings.value })
     .from(s.settings)
     .where(inArray(s.settings.key, [MODPOS_FALLBACK_KEY, LAFPOS_SWITCH_KEY]));
   const value = (key: string) => rows.find((r) => r.key === key)?.value;
   if (!readModposFallback(value(MODPOS_FALLBACK_KEY))) return null;
-  return { switchDay: readLafposSwitchDay(value(LAFPOS_SWITCH_KEY)) };
+  return { switchDay: readLafposSwitchDay(value(LAFPOS_SWITCH_KEY)), lafposBranch: await lafposBranchId(db) };
 }
 
 /**
@@ -504,7 +505,7 @@ export async function modposFallbackSheets(db: Db | Tx = getDb(), from?: string,
   const start = from ?? MODPOS_FIRST_DAY;
   if (upto < start) return [];
   const sheets = await loadModposSheets(start, upto, db);
-  return sheets.filter((sh) => !isLafposDay(sh.day, branchSwitchDay(fallback.switchDay, sh.branchId)));
+  return sheets.filter((sh) => !isLafposDay(sh.day, branchSwitchDay(fallback.switchDay, sh.branchId, fallback.lafposBranch)));
 }
 
 /**

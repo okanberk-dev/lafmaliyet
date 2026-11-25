@@ -4,10 +4,11 @@ import { and, eq, sql } from "drizzle-orm";
 
 import { readLafposSwitchDay } from "@/lib/constants";
 import { LAFPOS_STATE_KEY } from "@/lib/lafpos/status";
-import { branchSwitchDay, dayMonthYearTR, isLafposDay, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY, switchDayProblem } from "@/lib/lafpos/switch";
+import { branchSwitchDay, dayMonthYearTR, isLafposDay, LAFPOS_SWITCH_KEY, switchDayProblem } from "@/lib/lafpos/switch";
 import { schema as s, type DB } from "@/server/db";
 import { UserError } from "@/server/user-error";
 
+import { lafposBranchId } from "./branch";
 import { detachLafposCashOuts } from "./cash-moves";
 
 /**
@@ -61,17 +62,20 @@ export async function writeLafposSwitchDay(db: DB, me: Actor, day: string | null
  */
 export async function removeLafposDay(db: DB, me: Actor, date: string, zNo: number, now: Date = new Date()): Promise<{ zNo: number; lines: number }> {
   if (me.role !== "admin") throw new UserError(ADMIN_ONLY);
+  // LafPOS'un şubesi (türetilmiş, branch.ts): gün sonunu yazanla aynı kilit ve aynı şube
+  const branchId = await lafposBranchId(db);
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`lafpos-gun:${LAFPOS_BRANCH_ID}:${date}`}))`);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`lafpos-gun:${branchId}:${date}`}))`);
     // Yalnız LafPOS'un şubesinin günü (başka şubenin aynı günkü kaydına dokunulmaz)
-    const [rep] = await tx.select({ z: s.posDayReports.z }).from(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, LAFPOS_BRANCH_ID))).limit(1);
+    const [rep] = await tx.select({ z: s.posDayReports.z }).from(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, branchId))).limit(1);
     if (!rep) throw new UserError("Bu günün LafPOS kaydı yok (silinmiş olabilir); sayfayı yenileyin");
     if (rep.z.zNo !== zNo) throw new UserError(`Bu gün bu arada Z ${rep.z.zNo} ile yeniden gönderildi; sayfayı yenileyip yeniden bakın`);
-    const lines = await tx.delete(s.posDailySales).where(and(eq(s.posDailySales.date, date), eq(s.posDailySales.branchId, LAFPOS_BRANCH_ID))).returning({ id: s.posDailySales.id });
-    await tx.delete(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, LAFPOS_BRANCH_ID)));
+    const lines = await tx.delete(s.posDailySales).where(and(eq(s.posDailySales.date, date), eq(s.posDailySales.branchId, branchId))).returning({ id: s.posDailySales.id });
+    await tx.delete(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, branchId)));
     const [setting] = await tx.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
-    const counted = isLafposDay(date, branchSwitchDay(readLafposSwitchDay(setting?.value), LAFPOS_BRANCH_ID));
-    await detachLafposCashOuts(tx, date, counted ? "release" : "drop", { id: me.id, name: me.name });
+    // Geçiş günü LafPOS'un şubesinin kasasınındır (branchSwitchDay): bu gün o şubenin günü
+    const counted = isLafposDay(date, branchSwitchDay(readLafposSwitchDay(setting?.value), branchId, branchId));
+    await detachLafposCashOuts(tx, date, counted ? "release" : "drop", { by: { id: me.id, name: me.name }, branchId });
     await tx.execute(sql`
       update integration_state
          set value = jsonb_set(value, array['rejections', ${date}::text, 'clearedAt'], to_jsonb(${now.toISOString()}::text)), updated_at = now()

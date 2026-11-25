@@ -4,15 +4,15 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { CardContent } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
-import { DEFAULT_BRANCH_ID, type BranchRow } from "@/lib/branches";
+import type { BranchRow } from "@/lib/branches";
 import { modposDayBadges, modposDayLine } from "@/lib/modpos/ayarlar";
 import { timeText } from "@/lib/modpos/status";
-import { modposBranchIds } from "@/lib/modpos/sube";
+import { modposCardView } from "@/lib/pos-cards";
 import { longDateTR } from "@/lib/reminders";
-import { listBranches } from "@/server/branches";
 import { loadModposCard, type ModposCardData } from "@/server/modpos/status";
 
 import { ModposFallbackSwitch, ModposFetchForm } from "./modpos-client";
+import { PosElsewhereCard } from "./pos-elsewhere";
 import { SectionCard } from "./section-card";
 
 /**
@@ -21,14 +21,19 @@ import { SectionCard } from "./section-card";
  * kapsam, son çekim ve son hata, "Bu günü çek", son çekilen günler (Kasa'nın o gününe bağlantıyla) ve ay rakamına yedek
  * anahtarı. Yalnız okur: sayfa açılışı ModPOS'a istek göndermez, arka planda da çekmez (günde 2 hak).
  * Yalnız yönetici (Ayarlar sayfası requireAdmin); föyün parası personele gitmez.
+ *
+ * Seçili şubeye göre (şube kapsamı C P2-2, src/lib/pos-cards.ts): tek şube seçiliyken yalnız o şubenin bölümü; kasası
+ * ModPOS olmayan şube ya da online kanal seçiliyken kart "Bu şubede kullanılmıyor" satırına iner (durum okunmaz).
+ * "Tümü"de birden çok kasa açıkken her bölüm şubenin adıyla.
  */
-export async function ModposCard() {
+export async function ModposCard({ scope, branches }: { scope: string; branches: BranchRow[] }) {
+  const view = modposCardView(scope, branches);
+  if (view.kind === "elsewhere") return <PosElsewhereCard id="modpos" icon={<ReceiptTurkishLira />} title="ModPOS API" system="ModPOS" users={view.users} />;
   const now = new Date();
   const data = await (async () => {
-    const branches = await listBranches();
-    // ModPOS'tan çekilen her şubenin kendi bölümü (anahtar, hak, günler; docs/MODPOS-API.md › Şubeler); hiç yoksa Tuzla
-    const ids = modposBranchIds(branches);
-    const cards = await Promise.all((ids.length ? ids : [DEFAULT_BRANCH_ID]).map((id) => loadModposCard(undefined, now, process.env, id, branches)));
+    // ModPOS'tan çekilen her şubenin kendi bölümü (anahtar, hak, günler; docs/MODPOS-API.md › Şubeler); hiç yoksa Tuzla.
+    // Tek şube seçiliyken yalnız onunki
+    const cards = await Promise.all(view.ids.map((id) => loadModposCard(undefined, now, process.env, id, branches)));
     return { branches, cards };
   })().catch((e) => {
     console.error("ModPOS durumu okunamadı", e);
@@ -43,7 +48,8 @@ export async function ModposCard() {
       </SectionCard>
     );
   }
-  const many = data.cards.length > 1;
+  // Bölümler şube adıyla: birden çok ModPOS şubesi ya da "Tümü"de birden çok kasa
+  const many = data.cards.length > 1 || view.named;
   const nameOf = (id: string) => data.branches.find((b) => b.id === id)?.name ?? id;
   const sums = data.cards.map((c) => c.summary);
   const red = sums.some((x) => x.tone === "red");
@@ -58,7 +64,7 @@ export async function ModposCard() {
       description={
         <>
           ModPOS API&apos;den kasa verisi her sabah buraya gelir: ciro, ödeme yöntemleri, açılış ve sayım, giderler ve kasa farkı. Kasa ekranında yöneticinin
-          gördüğü raporla yan yana durur; personelin ekranı değişmez.{many ? " Her şube kendi anahtarı ve günlük hakkıyla çekilir, verisi yalnız kendi şubesine yazılır." : ""}
+          gördüğü raporla yan yana durur; personelin ekranı değişmez.{data.cards.length > 1 ? " Her şube kendi anahtarı ve günlük hakkıyla çekilir, verisi yalnız kendi şubesine yazılır." : ""}
         </>
       }
     >

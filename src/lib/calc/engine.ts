@@ -1379,7 +1379,7 @@ export function createModel(ds: Dataset) {
   // lafposIkram yok: kayıtlar bugünkü gibi yalnız panelden
   const lafposIkramDays = new Set(ds.lafposIkram?.days ?? []);
   const countedWaste: WasteEntry[] = [
-    ...(ds.wasteEntries ?? []).filter((w) => panelWasteCounts(w, lafposIkramDays)),
+    ...(ds.wasteEntries ?? []).filter((w) => panelWasteCounts(w, lafposIkramDays, ds.lafposBranch)),
     ...(ds.lafposIkram?.lines ?? []).map(
       (l): WasteEntry => ({
         date: l.date,
@@ -1404,7 +1404,7 @@ export function createModel(ds: Dataset) {
     else wasteByMonth.set(m, [w]);
   }
   /** Ayın sayılmayan panel kayıtları: LafPOS'un gün sonu gelen günde girilmiş ürün ikramı */
-  const notCountedOf = (month: string) => (ds.wasteEntries ?? []).filter((w) => w.date.slice(0, 7) === month && !panelWasteCounts(w, lafposIkramDays)).length;
+  const notCountedOf = (month: string) => (ds.wasteEntries ?? []).filter((w) => w.date.slice(0, 7) === month && !panelWasteCounts(w, lafposIkramDays, ds.lafposBranch)).length;
   /**
    * Kayıtlı zayi ve ikramın malzeme tüketimi (malzemenin kendi biriminde): ürün reçetesinden (fire payı olmadan),
    * hammadde doğrudan. Satış raporu yalnız ödenen satışları taşır; bunlar ona eklenmez, ayrı gösterilir.
@@ -1467,7 +1467,7 @@ export function createModel(ds: Dataset) {
    * Geçiş günü yoksa ayın indirimi (Month.discounts)
    */
   function listDiscounts(month: string): number {
-    return listDiscountOf(monthInfo.get(month), ds.lafposSales?.countFrom ?? null);
+    return listDiscountOf(monthInfo.get(month), ds.lafposSales?.countFrom ?? null, ds.lafposBranch);
   }
 
   /** Ayın "aynı gider iki kez" bulguları (pnlMonth'un hesabından; duplicate-expense.ts) */

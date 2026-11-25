@@ -10,7 +10,7 @@ import { createPosMappingIndex, describeSkipped, extractSalesRows, isSummaryRow,
 import { monthRowEmpty } from "@/lib/cash-month";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { modposImportRule, modposOverZText, modposZBetween } from "@/lib/lafpos/sales";
-import { branchSwitchDay, monthSource } from "@/lib/lafpos/switch";
+import { monthSource } from "@/lib/lafpos/switch";
 import { todayTR } from "@/lib/reminders";
 import { ALL_BRANCHES, zFormBranch } from "@/lib/branches";
 import { legacyCoveragePins, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
@@ -19,8 +19,8 @@ import { hasTillRowsIn } from "@/server/data/cash-reports";
 import { andWhere, assertShownScope, branchWhere, formBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
+import { loadBranchSwitchDay } from "@/server/lafpos/branch";
 import { rematchPosSalesByName } from "@/server/lafpos/rematch";
-import { loadLafposSwitchDay } from "@/server/lafpos/status";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zMonth, zOptText, zText } from "./util";
@@ -251,7 +251,7 @@ export async function importSales(input: {
     const sube = await salesBranch(input.branchId);
     return withBranchScope(sube, async () => {
       // Geçiş günü listenin şubesininki (branchSwitchDay): ModPOS'ta kalan şubenin (Tuzla) listesi her ay yüklenir
-      const switchDay = branchSwitchDay(await loadLafposSwitchDay(), sube);
+      const switchDay = await loadBranchSwitchDay(sube);
       // Süren ayda listenin son günü (verilmezse dün); biten aya yüklenen liste ayın tamamı (src/lib/sales-coverage.ts);
       // geçiş ayında en çok geçiş gününden önceki gün, LafPOS'un ayında red (src/lib/lafpos/sales.ts)
       const rule = modposImportRule(month, switchDay, todayTR(), z.string().max(10).nullish().parse(input.through));
@@ -594,7 +594,7 @@ export async function saveLine(input: { id: number | null; month: string; posNam
     const lineBranch = input.id
       ? (await getDb().select({ b: s.salesLines.branchId }).from(s.salesLines).where(eq(s.salesLines.id, z.number().int().parse(input.id))))[0]?.b
       : await salesBranch(input.branchId);
-    const switchDay = branchSwitchDay(await loadLafposSwitchDay(), lineBranch);
+    const switchDay = await loadBranchSwitchDay(lineBranch);
     if (monthSource(month, switchDay) === "lafpos") {
       throw new UserError(`${monthLabel(month)} LafPOS'tan geliyor; satırlar her gün sonunda LafPOS'tan gelir, elle ModPOS satırı eklenmez.`);
     }

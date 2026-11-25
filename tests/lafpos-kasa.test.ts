@@ -172,14 +172,14 @@ test("E-36: LafPOS'un satışlı gün sonu kapalı gün kanıtı (kırmızı sat
   // Sunucu: kanıt yalnız LafPOS gününde okunur (şube şube; şube verilmezse LafPOS'un şubesinin günü); gün sonu yazımı
   // kapalı işareti yalnız satışlı LafPOS gününde kaldırır (geçiş günü gün sonunun şubesinin kasasından)
   const server = read("src/server/closed-days.ts");
-  assert.match(server, /if \(!isLafposDay\(date, branchSwitchDay\(readLafposSwitchDay\(setting\?\.value\), branch\)\)\) return null;/);
+  assert.match(server, /if \(!isLafposDay\(date, branchSwitchDay\(readLafposSwitchDay\(setting\?\.value\), branch, lafposBranch\)\)\) return null;/);
   assert.match(
     server,
-    /if \(z\.receipts <= 0 && z\.zTotal <= 0\) return;\n\s+const \[setting\][\s\S]*?if \(!isLafposDay\(date, branchSwitchDay\(readLafposSwitchDay\(setting\?\.value\), branchId\)\)\) return;\n\s+await lockClosedDay\(tx, date\);/,
+    /if \(z\.receipts <= 0 && z\.zTotal <= 0\) return;\n\s+const \[\[setting\], lafposBranch\][\s\S]*?if \(!isLafposDay\(date, branchSwitchDay\(readLafposSwitchDay\(setting\?\.value\), branchId, lafposBranch\)\)\) return;\n\s+await lockClosedDay\(tx, date\);/,
   );
   const ingest = read("src/server/lafpos/ingest.ts");
   assert.match(ingest, /const soldSince = stored && \(stored\.z\.receipts > 0 \|\| stored\.z\.zTotal > 0\) \? stored\.receivedAt : null;/);
-  assert.match(ingest, /await onLafposDaySaved\(tx, day\.date, day\.z, now, soldSince\);/);
+  assert.match(ingest, /await onLafposDaySaved\(tx, day\.date, day\.z, now, soldSince, branchId\);/);
 });
 
 test("G6: raporsuz LafPOS günü ayın rakamına girer, gün yine 'rapor yok'; rapor varsa rapor kazanır", () => {
@@ -213,7 +213,7 @@ test("G6: raporsuz LafPOS günü ayın rakamına girer, gün yine 'rapor yok'; r
   assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);
   // LafPOS'un günleriyle yalnız LafPOS'un şubesinin raporları (denetim 21 Kasım #5: Marina'nın raporu Tuzla'nın LafPOS'unu beklemez).
   // Birleşme mergeSales'te: hem görünümün satışı hem su litresinin "Tümü" satışı aynı kuralı kullanır (#4)
-  assert.match(dataset, /const reportRows = input\.till\.filter\(\(r\) => isReportRow\(r\) && isLafposBranch\(r\.branchId\)\);/);
+  assert.match(dataset, /const reportRows = input\.till\.filter\(\(r\) => isReportRow\(r\) && isLafposBranch\(r\.branchId, input\.lafposBranch\)\);/);
   assert.match(dataset, /lastTillDay: reportRows\.at\(-1\)\?\.date \?\? null,/);
 });
 

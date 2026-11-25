@@ -4,7 +4,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { lafposPhotoCheck, type LafposPhotoReport } from "@/lib/lafpos/foto";
 import { bankPosAuto } from "@/lib/lafpos/gun-sonu";
-import { branchSwitchDay, isLafposDay, LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
+import { isLafposDay } from "@/lib/lafpos/switch";
 import { cheapReadingProblems, runLafposRead, type LafposReadResult, type ReadStep } from "@/lib/photo-read/lafpos-read";
 import { OCR_MODEL } from "@/lib/photo-read/models";
 import { slipWithZTraces, type LafposOkcDevice } from "@/lib/photo-read/okc";
@@ -14,6 +14,7 @@ import { KasaOkcRaw, type KasaOkc } from "@/lib/photo-read/schemas";
 import { aiConfigured, extractImage, loadAiSettings, type AiResult } from "@/server/ai/claude";
 import { OKC_EFFORT, OKC_MAX_TOKENS, type AiClient, type AiImageType, type AiTimeouts } from "@/server/ai/run";
 import { schema as s, type DB } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 import { dayPhotoIds, lafposDayDevice } from "@/server/lafpos/foto";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { getPhoto, readPhoto } from "@/server/storage/photos";
@@ -127,8 +128,9 @@ export async function readLafposDayPhoto(
   o: { client?: AiClient; ocr?: (bytes: Uint8Array) => Promise<Awaited<ReturnType<typeof ocrImage>>> } = {},
 ): Promise<(LafposReadResult & { device: LafposOkcDevice | null }) | null> {
   const { photoId, day, branchId, userId } = input;
-  if (branchId !== LAFPOS_BRANCH_ID) return null;
-  if (!isLafposDay(day, branchSwitchDay(await loadLafposSwitchDay(db), branchId))) return null;
+  // LafPOS'un şubesi kütükten (lafposBranchId); onun geçiş günü ayarın kendisidir (branchSwitchDay)
+  if (branchId !== (await lafposBranchId(db))) return null;
+  if (!isLafposDay(day, await loadLafposSwitchDay(db))) return null;
   const device = await lafposDayDevice(db, day, branchId);
   if (!device) return null;
   const [settings, report] = await Promise.all([loadAiSettings(), compareReport(db, day, branchId, device)]);
@@ -191,7 +193,7 @@ const AFTER_STRONG_MS = 10_000;
  * yapılmaz. Güçlü okuma denenen fotoğraf sayısı döner (çağıran karşılaştırmayı yeniler, sonra e-postaları gönderir)
  */
 export async function strongRecheckDayPhotos(db: DB, date: string, deps: StrongRecheckDeps = {}): Promise<number> {
-  const branchId = LAFPOS_BRANCH_ID;
+  const branchId = await lafposBranchId(db);
   const [st] = await db
     .select({ reportId: s.lafposDayEnds.reportId, autoValues: s.lafposDayEnds.autoValues, photoCheck: s.lafposDayEnds.photoCheck })
     .from(s.lafposDayEnds)

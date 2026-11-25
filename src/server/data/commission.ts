@@ -34,6 +34,7 @@ import { addDays, todayTR } from "@/lib/reminders";
 import { andWhere, branchWhere, currentBranchScope, withBranchScope } from "@/server/branch-scope";
 import { loadSupplierRefs } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 import { loadModposSheets } from "@/server/modpos/store";
 import type { DigestExtraCtx, DigestExtraLoad } from "@/server/notify/digest-template";
 
@@ -141,7 +142,8 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
   ]);
   // Geçiş günü seçili şubenin kasasınınki: ModPOS'ta kalan şube (Tuzla) seçiliyken LafPOS hiç okunmaz, Z'si geçiş ayından
   // itibaren föyün markasıyla (modposScope)
-  const { lafpos: switchDay, modpos: modposFrom } = commissionScopeDays(readLafposSwitchDay(switchRow[0]?.value), scope);
+  const lafposBranch = await lafposBranchId(db);
+  const { lafpos: switchDay, modpos: modposFrom } = commissionScopeDays(readLafposSwitchDay(switchRow[0]?.value), scope, lafposBranch);
   const lafposFrom = switchDay ? (switchDay > fromDay ? switchDay : fromDay) : null;
   // Föyün markası geçiş ayının başından (geçiş gününden önceki günler de kasa raporu kuralıyla sayılır)
   const brandsFrom = switchDay ?? modposFrom;
@@ -177,6 +179,7 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
     ...(modposBrands.length ? { modposBrands } : {}),
     ...(branchOnly ? { openedOn: tillOpenedOn(branchRow[0] ?? null) } : {}),
     ...(modposFrom ? { modposScope: { switchDay: modposFrom } } : {}),
+    lafposBranch,
   };
 }
 

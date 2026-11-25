@@ -58,10 +58,11 @@ export const LAFPOS_STAFF_BEFORE_DAY_END_DESCRIPTION = "Kasa raporu LafPOS'tan g
 
 /**
  * Personelin kasa formu yerine bilgi mi görür: LafPOS'un şubesinde LafPOS günü, gün sonu gelmedi ve rapor yok. Yönetici
- * formu görür (LafPOS hiç göndermezse yedek yol); dünden eski gün geç rapor yolundan girer. Elle girilmiş rapor eski yolla
+ * formu görür (LafPOS hiç göndermezse yedek yol); dünden eski gün geç rapor yolundan girer. Elle girilmiş rapor eski yolla.
+ * `lafposBranch`: LafPOS'un şubesi (sunucu lafposBranchId ile verir; yoksa LAFPOS_BRANCH_ID)
  */
-export function staffBeforeLafposDayEnd(o: { admin: boolean; branchId: string; lafposDay: boolean; dayEnd: boolean; hasReport: boolean }): boolean {
-  return !o.admin && o.branchId === LAFPOS_BRANCH_ID && o.lafposDay && !o.dayEnd && !o.hasReport;
+export function staffBeforeLafposDayEnd(o: { admin: boolean; branchId: string; lafposDay: boolean; dayEnd: boolean; hasReport: boolean; lafposBranch?: string }): boolean {
+  return !o.admin && o.branchId === (o.lafposBranch ?? LAFPOS_BRANCH_ID) && o.lafposDay && !o.dayEnd && !o.hasReport;
 }
 
 /**

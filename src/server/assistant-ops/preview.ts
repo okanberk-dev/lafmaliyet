@@ -6,7 +6,7 @@ import { z } from "zod";
 import { EPS, openBalance, paidViaOf, round2, type BalanceInvoice, type CariMethod } from "@/lib/cari/balance";
 import { businessDate } from "@/lib/cash-report";
 import { tillBranches } from "@/lib/branches";
-import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
+import { isLafposDay } from "@/lib/lafpos/switch";
 import { dateTR, num, pct, tl, tlUnit } from "@/lib/format";
 import { cleanName, foldName, ToolInputError } from "@/lib/mcp/answers/common";
 import type { OpName } from "@/lib/assistant/op-specs";
@@ -33,6 +33,7 @@ import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { branchTill } from "@/server/data/till-scope";
 import { soldOutNoteFor } from "@/server/data/menu-status";
 import { getDb, schema as s } from "@/server/db";
+import { loadBranchSwitchDay } from "@/server/lafpos/branch";
 import { siteLinkSecret } from "@/server/site-link";
 import { readSiteSnapshot } from "@/server/site-menu/sync";
 import { loadShiftEntries, loadShiftWeek } from "@/server/vardiya/store";
@@ -628,7 +629,7 @@ const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof prod
     // bugünkü türü (Fiyatlar › Kasaya işle ile aynı kural): LafPOS gününde bağlı olmayan ürün de listeye düşer, LafPOS'ta
     // yerel ürünse fiyat orada elle değişir
     const switchDay = await lafposSwitchDayOf(db());
-    const tills = tillBranches(ctx.branches).map((b) => branchTill(switchDay, b.id, ctx.now));
+    const tills = tillBranches(ctx.branches).map((b) => branchTill(switchDay, b.id, ctx.now, ctx.branches));
     const lafposTill = tills.some((t) => t.lafpos);
     const modposTill = !tills.length || tills.some((t) => !t.lafpos);
     const lines: OpCardLine[] = [
@@ -719,7 +720,7 @@ const cashOutAdd: OpPreview<"kasadan_cikan_ekle", z.output<typeof cashOutArgs>, 
     const cat = !teslim && input.kategori ? pickByName(await activeCategories(), input.kategori, (c) => c.name, "Gider kategorisi", "Kategoriler Aylık harcamalar › Kategoriler'de.") : null;
     // Şubenin bu günü LafPOS'taysa kasadan çıkan LafPOS'ta girilir (docs/LAFPOS.md, KASA-RAPORU.md): panelden eklenen
     // satır LafPOS'un nakit sayımına girmez; aynı tür ve tutarda LafPOS hareketi gün sonunda bu satırı sahiplenir
-    const lafposDay = isLafposDay(date, branchSwitchDay(await lafposSwitchDayOf(db()), b.id));
+    const lafposDay = isLafposDay(date, await loadBranchSwitchDay(b.id, db()));
     const warnings = lafposDay
       ? [
           `${b.name} bu gün LafPOS'ta: kasadan çıkanı LafPOS'ta (Kasa › Harcama / Teslim) girin. Aynı tür ve tutarda LafPOS girişi gün sonunda bu satırı sahiplenir; LafPOS'a girilmezse LafPOS'un kasa sayımı eksik çıkar, tutarı farklıysa panelde ayrı bir satır olarak kalır.`,

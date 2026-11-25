@@ -3,6 +3,7 @@ import "server-only";
 import { and, gte, lte } from "drizzle-orm";
 
 import { ALL_BRANCHES } from "@/lib/branches";
+import { lafposBranchOf } from "@/lib/lafpos/switch";
 import type { TillRow } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { kiyasSummary, type KiyasSummary } from "@/lib/kiyas";
@@ -30,7 +31,8 @@ export async function loadKiyas(till?: readonly TillRow[] | null, now: Date = ne
   const today = businessDate(now);
   const from = addDays(today, -LOOKBACK_DAYS);
   const scope = await currentBranchScope();
-  const branches = (await listBranches(db)).filter((b) => b.active && b.kind === "fiziksel" && (scope === ALL_BRANCHES || b.id === scope));
+  const all = await listBranches(db);
+  const branches = all.filter((b) => b.active && b.kind === "fiziksel" && (scope === ALL_BRANCHES || b.id === scope));
   if (!branches.length) return null;
 
   const [rows, switchDay, reports, closed] = await Promise.all([
@@ -50,6 +52,7 @@ export async function loadKiyas(till?: readonly TillRow[] | null, now: Date = ne
     branches: branches.map((b) => ({ id: b.id, name: b.name, openedOn: b.openedOn })),
     today,
     switchDay,
+    lafposBranch: lafposBranchOf(all),
     receipts: new Map(reports.map((r) => [`${r.branchId}|${r.date}`, r.receipts])),
     isClosed: (branchId, date) => closedBy.get(branchId)?.has(date) ?? false,
   });

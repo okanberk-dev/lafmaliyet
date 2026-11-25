@@ -24,6 +24,7 @@ import { heldPhotoInfo, type CashPhotoDTO } from "@/server/data/cash-photos";
 import { loadMonthEntry, nextOkc, previousOkc } from "@/server/data/cash-reports";
 import { loadKasaLafpos } from "@/server/data/lafpos-day";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
+import { lafposBranchId, loadBranchSwitchDay } from "@/server/lafpos/branch";
 import { getDb, schema as s } from "@/server/db";
 
 /*
@@ -85,7 +86,7 @@ export async function staffLateDays(me: { id: number }, now = new Date()): Promi
 async function lafposEvidenceDays(from: string, to: string, branchId: string): Promise<Set<string>> {
   const db = getDb();
   // Geçiş günü kasanın şubesininki (branchSwitchDay): ModPOS'ta kalan şubede LafPOS kanıtı yok
-  const switchDay = branchSwitchDay(await loadLafposSwitchDay(db), branchId);
+  const switchDay = await loadBranchSwitchDay(branchId, db);
   if (switchDay === null || to < switchDay) return new Set();
   const rows = await db
     .select({ date: s.posDayReports.date })
@@ -300,7 +301,7 @@ export async function lateCards(now = new Date()): Promise<(LateCard & { branchI
   const reportedDays = new Set(reported.map((x) => branchDayKey(x.branchId, x.date)));
   const firstOf = new Map(firsts.map((f) => [f.branchId, f.date]));
   const openedOf = (branchId: string) => tillOpenedOn(branches.find((b) => b.id === branchId));
-  const switchDay = await loadLafposSwitchDay(db);
+  const [switchDay, lafposBranch] = await Promise.all([loadLafposSwitchDay(db), lafposBranchId(db)]);
   const cards: (LateCard & { branchId: string })[] = [];
   for (const x of rows) {
     const parsed = LatePayload.safeParse(x.payload);
@@ -392,8 +393,8 @@ export async function lateCards(now = new Date()): Promise<(LateCard & { branchI
         ...lafpos,
         diffs: lafpos.day ? lafposDiffs(fields, lafpos.day) : [],
         sameTill: {
-          prev: !chain.prev || isLafposDay(chain.prev.date, branchSwitchDay(switchDay, branchId)) === lafpos.lafpos,
-          next: !chain.next || isLafposDay(chain.next.date, branchSwitchDay(switchDay, branchId)) === lafpos.lafpos,
+          prev: !chain.prev || isLafposDay(chain.prev.date, branchSwitchDay(switchDay, branchId, lafposBranch)) === lafpos.lafpos,
+          next: !chain.next || isLafposDay(chain.next.date, branchSwitchDay(switchDay, branchId, lafposBranch)) === lafpos.lafpos,
         },
       },
     });

@@ -10,7 +10,7 @@ Sahibin kararları (4 Kasım 2026):
 |---|---|
 | Menü, reçete, hammadde, tedarikçi | **Ortak**; şubeye göre değişen yalnız satış fiyatı ve "Satışta / Tükendi". **24 Kasım 2026:** şube fiyatı yapıldı (sitede satır, panelde Fiyatlar › Şube fiyatı ve Toplu değiştir › Şube, LafPOS siteden alır; [FIYATLAR.md › Şube fiyatı](FIYATLAR.md#şube-fiyatı-24-kasım-2026)) |
 | Panel | **Tek panel** (`ladmin.laffogato.net`) + üstte şube / kanal seçici |
-| Marina'nın kasası | **ModPOS** (Tuzla gibi); **21 Kasım 2026'da değişti:** önce Marina LafPOS'a geçer, Tuzla ModPOS'ta kalır. LafPOS'un şubesi `LAFPOS_BRANCH_ID = "marina"`; geçiş gününden sonra sayılan LafPOS'un günüdür. **23 Kasım 2026:** Marina'da ModPOS bir daha kullanılmaz (ModPOS dönemi 13–21 Kasım 2026); föyün yedek çekimi sürerse (kasa kaynağı ModPOS) saklanır ama sayılmaz |
+| Marina'nın kasası | **ModPOS** (Tuzla gibi); **21 Kasım 2026'da değişti:** önce Marina LafPOS'a geçer, Tuzla ModPOS'ta kalır. LafPOS'un şubesi kütükte kasa kaynağı LafPOS olan şube, yoksa Marina (`lafposBranchOf`; 25 Kasım 2026); geçiş gününden sonra sayılan LafPOS'un günüdür. **23 Kasım 2026:** Marina'da ModPOS bir daha kullanılmaz (ModPOS dönemi 13–21 Kasım 2026); föyün yedek çekimi sürerse (kasa kaynağı ModPOS) saklanır ama sayılmaz |
 | Bugüne kadarki veri | Hepsi **Tuzla**'ya |
 
 ## Kütük
@@ -22,7 +22,7 @@ Sahibin kararları (4 Kasım 2026):
 | `id` | Kısa kimlik (`tuzla`, `marina`, `online`); adreste, çerezde ve kayıtlarda geçer. **Eklendikten sonra değişmez** |
 | `name` | Ekranda görünen ad ("Marina", "laffogato.net") |
 | `kind` | `fiziksel` (şube) ya da `online` (kanal) |
-| `pos_source` | Gün sonu nereden gelir: `modpos`, `lafpos` ya da `yok` (online) |
+| `pos_source` | Gün sonu nereden gelir: `modpos`, `lafpos` ya da `yok` (online). LafPOS'un şubesi buradan türetilir (en çok bir şube; yoksa Marina, [LAFPOS.md › Şubeler](LAFPOS.md#şubeler-denetim-21-kasım-5)) |
 | `active` | Kapalı şube seçicide ve toplamlarda görünmez; kayıtları durur |
 | `opened_on` | Açılış günü; boşsa "başından beri" (Tuzla). Şube görünümünde açılış ayı "kasa raporları ay ortasında başladı" sayılmaz: ilk rapor açılış gününde ya da öncesindeyse ay tamdır; sonradan açılan şubede boşsa ilk raporu açılıştır ([KASA-RAPORU.md › Ay bilgisine aktarım](KASA-RAPORU.md#ay-bilgisine-aktarım)) |
 | `sort_order` | Seçicideki ve listedeki sıra |
@@ -38,6 +38,8 @@ Hepsi `src/lib/branches.ts`'te ve hem ekran hem eylem aynı işlevi çağırır;
 - **Online kanalın kasası olmaz**, fiziksel şube kasasız kalmaz (`branches_source_kind_ck`).
 - **Tuzla ve laffogato.net** silinemez, kapatılamaz, türü değişmez: panelin ciroyu bölmesi bunlara bağlı.
 - **Son açık şube** kapatılamaz (online kanal "açık şube" sayılmaz).
+- **LafPOS en çok bir şubenin kasası** (`lafposSourceError`, `src/lib/lafpos/switch.ts`): başka bir açık şubenin kaynağı
+  LafPOS'ken ikinci şube LafPOS'a geçirilemez; önce öbürünün kaynağı değiştirilir.
 - Verisi olan şube **silinmez**, yalnız kapatılır.
 
 ## Ekran
@@ -436,10 +438,22 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
   büyüklük denetimi (son 28 günün ortancası, docs/YAZARKASA-Z.md) de o şubenin raporlarıyla (`okcTypical`). Önceden
   iki şubenin toplamı karışıyordu: ortanca öbür şubeye kayıyor, büyük şubenin gerçek Z'si "çok büyük" görünebiliyordu.
 
+## Ayarlar'da kasa kartları (25 Kasım 2026)
+
+Ayarlar'daki **LafPOS (kasa)** ve **ModPOS API** kartları seçili şubeye göre (`src/lib/pos-cards.ts`; şube kapsamı C
+P2-2): tek şube seçiliyken yalnız o şubenin kasası çizilir (ModPOS kartında o şubenin bölümü); kasası o sistem olmayan
+şube ya da laffogato.net seçiliyken kart tek satıra iner: "Bu şubede kullanılmıyor", açılınca "LafPOS Marina şubesinin
+kasası; ayarları Marina seçiliyken ya da Tümü'nde görünür." ve o şubeyi seçtiren düğme (`?sube=`, bölüm açık gelir).
+Satıra inen kart durumu hiç okumaz. "Tümü"de birden çok kasa açıkken iki kart da şube adıyla (özet "Marina: …", bölüm
+başlığı şubenin adı). Hangi şubenin kasasının ne olduğu kütükten: LafPOS'un şubesi (yukarıda), ModPOS'tan çekilenler
+kaynağı ModPOS olan şubeler (hiç yoksa Tuzla). Bugünkü veride Marina'nın kaynağı ModPOS'sa ModPOS kartı Marina'da da
+bölümüyle görünür (föyün yedek çekimi); kaynak LafPOS yapılınca satıra iner. Tek şubeli kurulumda kartlar bugünkü gibi.
+
 ## LafPOS'a geçiş günü şubenin kasasınındır (21 Kasım 2026)
 
 LafPOS 21 Kasım 2026'dan beri Marina'da kurulu (gün sonunu Marina'ya yazar); Ayarlar › LafPOS'taki geçiş günü yalnız
-**Marina'nın kasasınındır** (`branchSwitchDay`, `src/lib/lafpos/switch.ts`; canlıda 22 Kasım 2026). Tuzla'nın kasası
+**Marina'nın kasasınındır** (`branchSwitchDay`, `src/lib/lafpos/switch.ts`; canlıda 22 Kasım 2026). 25 Kasım 2026'dan
+beri LafPOS'un şubesi sabit değil, kütükten türetilir (kasa kaynağı LafPOS olan şube, yoksa Marina). Tuzla'nın kasası
 ModPOS'ta kalır: föyü çekilir, Kasa raporu, föy karşılaştırması, ürün listesi, ürün ikramı ve kasadaki fiyatlar Tuzla'da
 bugünkü gibidir. Marina'da ModPOS bir daha kullanılmaz (sahip, 23 Kasım 2026; ModPOS dönemi 13–21 Kasım): föyün yedek
 çekimi sürerse geçiş gününden sonraki günü saklanır ama sayılmaz. Ay ekranları Tuzla seçiliyken
@@ -518,10 +532,12 @@ süzülmesini ve şube görünümünde maliyeti kurdu. Şube başına ModPOS ana
   `pos.lafpos` (geçiş günü ve LafPOS sırrı), `isletme.takvim` (açık gün, uyarı ve hatırlatma saatleri, hazır vardiya
   saatleri; #120 vardiya PR'ı birleştikten sonra), `modpos` (ay yedeği), banka POS / yazarkasa bilgileri. Şimdilik
   ortaklar Şube ayarları ekranında "Şimdilik bütün şubelerde ortak" diye adıyla yazılı.
-- **`LAFPOS_BRANCH_ID` türetmesi** (`branches.pos_source`'tan; 66 kullanım) ve `stok_tahmini` özelliği
-  (`STOCK_ESTIMATE_BRANCH`): ayrı PR; bugün tek LafPOS şubesi var, davranış doğru.
-- **Ayarlar'da LafPOS ve ModPOS kartları seçime göre** ("bu şubede kullanılmıyor"): #138 aynı kartlara dokunuyordu;
-  birleşti, sıradaki dilimde yapılır.
+- **LafPOS'un şubesi** kütükten türetildi (yukarıda, [LAFPOS.md › Şubeler](LAFPOS.md#şubeler-denetim-21-kasım-5)) ve
+  Ayarlar'daki kasa kartları seçime göre (yukarıda, "Ayarlar'da kasa kartları"). Kalanlar: **iki şube birden LafPOS'ta**
+  (gün sonu otomasyonu, sabah işi ve Ayarlar kartı tek şubeye göre; ikinci şube şimdilik kaydedilmez), `stok_tahmini`
+  özelliği (`STOCK_ESTIMATE_BRANCH` Marina; tahmin LafPOS'un şubesi değilse kendiliğinden kapanır), **kasa kaynağı
+  değişince** eski şubenin kayıtlı LafPOS günleri yerinde kalır (taşınmaz, sayılmaz), LafPOS kasası da kendi `sube`
+  ayarıyla değiştirilmelidir.
 - **`checklist_runs.branch_id`** (ortak kontrol listesinin şube başına koşusu): davranış değişikliği; bugün şubesiz
   şablonun koşusu kapalı gün kanıtında "uyarı" sayılır.
 - **Faturanın şubesi okumada** kuruldu (tek şubede öbür şubenin ayrı hesap faturası okunmaz), ama şubenin kendi faturası

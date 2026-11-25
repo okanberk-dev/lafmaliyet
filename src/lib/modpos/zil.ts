@@ -62,11 +62,12 @@ export function modposMismatches<R extends ModposSavedFields & { date: string; b
   reports: readonly R[],
   sheets: readonly ModposSheetLite[],
   switchDay: string | null,
+  lafposBranch?: string,
 ): ModposMismatch<R>[] {
   const byDay = new Map(sheets.map((x) => [modposPairKey(x.branchId, x.day), x]));
   const out: ModposMismatch<R>[] = [];
   for (const report of reports) {
-    if (isLafposDay(report.date, branchSwitchDay(switchDay, report.branchId))) continue;
+    if (isLafposDay(report.date, branchSwitchDay(switchDay, report.branchId, lafposBranch))) continue;
     const sheet = byDay.get(modposPairKey(report.branchId, report.date));
     const z = sheet ? sheetZ(sheet) : null;
     if (!sheet || !z || z.durum === "ACIK") continue;
@@ -77,8 +78,13 @@ export function modposMismatches<R extends ModposSavedFields & { date: string; b
 }
 
 /** Bugün'ün kasa satırları için yalnız günler (bugun/logic.ts cashFlags'e verilir: "ModPOS föyünden farklı") */
-export function modposMismatchDates(reports: readonly (ModposSavedFields & { date: string; branchId?: string | null })[], sheets: readonly ModposSheetLite[], switchDay: string | null): Set<string> {
-  return new Set(modposMismatches(reports, sheets, switchDay).map((m) => m.report.date));
+export function modposMismatchDates(
+  reports: readonly (ModposSavedFields & { date: string; branchId?: string | null })[],
+  sheets: readonly ModposSheetLite[],
+  switchDay: string | null,
+  lafposBranch?: string,
+): Set<string> {
+  return new Set(modposMismatches(reports, sheets, switchDay, lafposBranch).map((m) => m.report.date));
 }
 
 /**
@@ -89,8 +95,9 @@ export function modposMismatchBranchDays(
   reports: readonly (ModposSavedFields & { date: string; branchId?: string | null })[],
   sheets: readonly ModposSheetLite[],
   switchDay: string | null,
+  lafposBranch?: string,
 ): Set<string> {
-  return new Set(modposMismatches(reports, sheets, switchDay).map((m) => branchDayKey(m.report.branchId ?? DEFAULT_BRANCH_ID, m.report.date)));
+  return new Set(modposMismatches(reports, sheets, switchDay, lafposBranch).map((m) => branchDayKey(m.report.branchId ?? DEFAULT_BRANCH_ID, m.report.date)));
 }
 
 /**

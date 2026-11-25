@@ -10,6 +10,7 @@ import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/sw
 import { productLabel } from "@/lib/waste";
 import { currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 
 /**
  * LafPOS'un ikramları (denetim E-38; kural src/lib/lafpos/ikram.ts, docs/LAFPOS.md › İkram). Yalnız geçiş günü
@@ -107,7 +108,8 @@ export interface DayLafposIkram {
 export async function loadDayLafposIkram(date: string, db: Reader = getDb(), branchId?: string): Promise<DayLafposIkram | null> {
   // Günün gün sonu tek kasanındır: verilen şube, yoksa kasanın şubesi ("Tümü"de Tuzla)
   const sube = branchId ?? (await currentTillBranch());
-  const switchDay = branchSwitchDay(await lafposSwitchDayOf(db), sube);
+  const [setting, lafposBranch] = await Promise.all([lafposSwitchDayOf(db), lafposBranchId(db)]);
+  const switchDay = branchSwitchDay(setting, sube, lafposBranch);
   if (!switchDay || !isLafposDay(date, switchDay)) return null;
   const [data, [day], products] = await Promise.all([
     loadLafposIkram(db, switchDay, { from: date, to: date }, sube),

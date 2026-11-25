@@ -8,9 +8,9 @@ import { checkModposDaysRequest, type ModposDaysCheck } from "./modpos-gunler";
 
 /**
  * İsteğin denetimi (ModPOS dönemi ucuyla aynı kural ve sıra: src/lib/lafpos/modpos-gunler.ts): anahtar (503), imza (401;
- * sorgu imzanın içinde), şube yoksa 400 `{ error: "invalid", field: "sube" }`, LAFPOS_BRANCH_ID değilse 409
- * `{ error: "wrong_branch", sube, expected }`
+ * sorgu imzanın içinde), şube yoksa 400 `{ error: "invalid", field: "sube" }`, LafPOS'un şubesi (`expected`; sunucu
+ * kütükten okur, verilmezse LAFPOS_BRANCH_ID) değilse 409 `{ error: "wrong_branch", sube, expected }`
  */
-export function checkPosStaffRequest(input: { secret: string | null; url: URL; timestamp: string | null; signature: string | null; now?: number }): ModposDaysCheck {
+export function checkPosStaffRequest(input: { secret: string | null; url: URL; timestamp: string | null; signature: string | null; now?: number; expected?: string }): ModposDaysCheck {
   return checkModposDaysRequest(input);
 }

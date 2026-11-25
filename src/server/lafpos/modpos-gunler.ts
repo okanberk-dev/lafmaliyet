@@ -12,13 +12,12 @@ import {
   type ModposDayInput,
   type ModposDaysData,
 } from "@/lib/lafpos/modpos-gunler";
-import { branchSwitchDay } from "@/lib/lafpos/switch";
 import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import { getDb, schema as s, type DB } from "@/server/db";
+import { lafposBranchId, loadBranchSwitchDay } from "./branch";
 import { loadModposSheets } from "@/server/modpos/store";
 
 import type { EndpointResult } from "./ingest";
-import { loadLafposSwitchDay } from "./status";
 
 /**
  * `GET /api/panel/pos/modpos-gunler`'in çekirdeği (docs/LAFPOS.md › ModPOS dönemi): LafPOS'un şubesinin geçiş gününden
@@ -35,7 +34,7 @@ import { loadLafposSwitchDay } from "./status";
  * günü şubenin kendi kapsam kaydından (`sales.coverage.sube`), yoksa ortak kayıttan (src/lib/sales-coverage.ts).
  */
 export async function loadModposDays(db: DB, sube: string): Promise<ModposDaysData> {
-  const switchDay = branchSwitchDay(await loadLafposSwitchDay(db), sube);
+  const switchDay = await loadBranchSwitchDay(sube, db);
   if (switchDay === null) return { switchDay: null, days: [], urunler: null };
   const window = modposWindow(switchDay);
   const [reports, sheets, lines, coverage] = await Promise.all([
@@ -96,7 +95,8 @@ export async function serveModposDays(
   input: { secret: string | null; url: URL; timestamp: string | null; signature: string | null; now?: Date },
   load: (sube: string) => Promise<ModposDaysData> = (sube) => loadModposDays(getDb(), sube),
 ): Promise<EndpointResult> {
-  const check = checkModposDaysRequest({ ...input, now: (input.now ?? new Date()).getTime() });
+  // Beklenen şube kütükten (kasa kaynağı LafPOS olan şube, yoksa Marina; önbellekli)
+  const check = checkModposDaysRequest({ ...input, now: (input.now ?? new Date()).getTime(), expected: await lafposBranchId() });
   if (!check.ok) return { status: check.status, body: check.body };
   const data = await load(check.sube);
   return { status: 200, body: { version: LAFPOS_VERSION, now: (input.now ?? new Date()).toISOString(), sube: check.sube, ...data } };

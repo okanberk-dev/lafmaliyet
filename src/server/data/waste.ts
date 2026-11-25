@@ -8,6 +8,7 @@ import { lafposListByKind, panelWasteCounts, type LafposZKinds } from "@/lib/laf
 import { productLabel, summarize, type WasteChoice, type WasteKind, type WasteLine } from "@/lib/waste";
 import { currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 import { UserError } from "@/server/user-error";
 
 import { loadDayLafposIkram } from "./lafpos-ikram";
@@ -120,14 +121,15 @@ export interface DayWasteLafpos {
  */
 export async function dayWaste(date: string, branchId?: string): Promise<DayWaste & { ikramValue: number; count: number; lafpos: DayWasteLafpos | null }> {
   const db = getDb();
-  const [entries, prices, laf] = await Promise.all([
+  const [entries, prices, laf, lafposBranch] = await Promise.all([
     wasteEntriesBetween(date, date, branchId),
     db.select({ id: s.products.id, price: s.products.price }).from(s.products),
     loadDayLafposIkram(date, db, branchId),
+    lafposBranchId(db),
   ]);
   const price = new Map(prices.map((p) => [p.id, p.price]));
   const received = Boolean(laf?.received);
-  const counted = entries.filter((e) => panelWasteCounts(e, received ? new Set([date]) : new Set<string>()));
+  const counted = entries.filter((e) => panelWasteCounts(e, received ? new Set([date]) : new Set<string>(), lafposBranch));
   // LafPOS'un satırları kendi türüyle: "Zayi: …" zayi, öteki (ödenmez dahil) ikram
   const lafLines: WasteLine[] = received ? laf!.lines.map((l) => ({ kind: l.kind, name: l.name, qty: l.qty, unit: "adet" })) : [];
   const lines = [...counted, ...lafLines];

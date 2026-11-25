@@ -130,7 +130,11 @@ export const SHARED_FOR_NOW: readonly { id: string; label: string; linkable: boo
   { id: "modpos", label: "ModPOS ay yedeği", linkable: true, legacy: "default" },
 ];
 
-/** Eski genel kaydın sahibi şubenin kimliği */
+/**
+ * Eski genel kaydın sahibi şubenin kimliği. Tarihsel bir gerçek: eski kayıt şube başına ayarlara geçildiği gün LafPOS'un
+ * şubesinindi (Marina, `LAFPOS_BRANCH_ID`). Bu yüzden kütükten türetilen LafPOS şubesine (lafposBranchOf) bağlanmaz;
+ * kasa kaynağı sonradan değişse de eski kaydı okuyan şube değişmez
+ */
 export function legacyOwnerId(group: Pick<BranchSettingGroup, "legacy">): string {
   return group.legacy === "lafpos" ? LAFPOS_BRANCH_ID : DEFAULT_BRANCH_ID;
 }

@@ -8,6 +8,7 @@ import { classifyWorkedStaff, posStaffItems, staffIdOfRef, type PosStaffItem, ty
 import { checkPosStaffRequest } from "@/lib/lafpos/personel-istek";
 import { getDb, schema as s, type DB } from "@/server/db";
 
+import { lafposBranchId } from "./branch";
 import type { EndpointResult } from "./ingest";
 
 /**
@@ -39,7 +40,8 @@ export async function servePosStaff(
   load: (sube: string, month: string) => Promise<PosStaffItem[]> = (sube, month) => loadPosStaff(getDb(), sube, month),
 ): Promise<EndpointResult> {
   const now = input.now ?? new Date();
-  const check = checkPosStaffRequest({ ...input, now: now.getTime() });
+  // Beklenen şube kütükten (kasa kaynağı LafPOS olan şube, yoksa Marina; önbellekli)
+  const check = checkPosStaffRequest({ ...input, now: now.getTime(), expected: await lafposBranchId() });
   if (!check.ok) return { status: check.status, body: check.body };
   const items = await load(check.sube, currentMonthTR(now));
   return { status: 200, body: { version: LAFPOS_VERSION, now: (input.now ?? new Date()).toISOString(), sube: check.sube, items } };
@@ -54,5 +56,5 @@ export async function workedStaffAnswer(db: DB, refs: readonly string[], date: s
   const rows = ids.length
     ? await db.select({ id: s.staff.id, branchId: s.staff.branchId, startMonth: s.staff.startMonth, endMonth: s.staff.endMonth }).from(s.staff).where(inArray(s.staff.id, ids))
     : [];
-  return classifyWorkedStaff(refs, new Map(rows.map((r) => [r.id, r])), date);
+  return classifyWorkedStaff(refs, new Map(rows.map((r) => [r.id, r])), date, await lafposBranchId(db));
 }

@@ -602,7 +602,7 @@ test("Komisyon ekranı: markası belirsiz satırı ve şube görünümünün not
   const data = read("src/server/data/commission.ts");
   assert.match(data, /return withBranchScope\(ALL_BRANCHES, async \(\) => buildCommissionReport\(await loadCommissionInput\(\{ resolveNames: false, today \}\)\)\);/);
   assert.match(data, /\.where\(andWhere\(gte\(s\.cashReports\.date, fromDay\), branchWhere\(s\.cashReports\.branchId, scope\)\)\)/);
-  assert.match(data, /const \{ lafpos: switchDay, modpos: modposFrom \} = commissionScopeDays\(readLafposSwitchDay\(switchRow\[0\]\?\.value\), scope\);/);
+  assert.match(data, /const \{ lafpos: switchDay, modpos: modposFrom \} = commissionScopeDays\(readLafposSwitchDay\(switchRow\[0\]\?\.value\), scope, lafposBranch\);/);
   // Şube seçiliyken şubenin açılışı ve ModPOS'ta kalan şubenin föy kuralı loader'dan
   assert.match(data, /\.\.\.\(branchOnly \? \{ openedOn: tillOpenedOn\(branchRow\[0\] \?\? null\) \} : \{\}\),/);
   assert.match(data, /\.\.\.\(modposFrom \? \{ modposScope: \{ switchDay: modposFrom \} \} : \{\}\),/);

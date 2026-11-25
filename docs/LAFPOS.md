@@ -81,7 +81,7 @@ Gövde katı JSON, en çok 256 KB. Tutarlar TL (iki ondalık; fazlası yuvarlan�
 |------|--------|
 | `version` | `1`; başka sürüm reddedilir |
 | `source` | `"lafpos"` |
-| `sube` | İsteğe bağlı: kasanın şube kimliği (2-24 karakter, küçük harfle başlar: harf, rakam, tire); `marina` değilse gün yazılmaz, 409 `wrong_branch` (aşağıda "Şubeler"). Eski kasa göndermez |
+| `sube` | İsteğe bağlı: kasanın şube kimliği (2-24 karakter, küçük harfle başlar: harf, rakam, tire); LafPOS'un şubesi (kütükten; bugün `marina`) değilse gün yazılmaz, 409 `wrong_branch` (aşağıda "Şubeler"). Eski kasa göndermez |
 | `date` | İş günü `YYYY-MM-DD` (gün 05:00'te döner, Kasa raporuyla aynı kural); bugünün iş gününden sonrası reddedilir |
 | `z` | `zNo`, `receipts`, `zTotal`, `cash`, `card`, `mealCard`, `online`, `other`, `offRevenue`, `discounts`, `openingCash`, `cashOut` (harcama), `countedCash` (sayılmadıysa `null`), `handedOver` (gün içindeki teslim), `cashDiff` (`null` olabilir); isteğe bağlı (yazılmayabilir ya da `null`): `cashIn` (≥ 0; nakit satış dışında çekmeceye giren: giriş, nakit müşteri tahsilatı ve nakit bahşiş; yoksa 0 sayılır; Kasa raporunda "Gün içinde kasaya giren"), `expectedCash` (LafPOS'un olması gereken nakdi), `cardTips` ve `cardCollections` (kartla bahşiş ve kartla cari tahsilatı; aşağıda "Kart") |
 | `lines[]` | `posName`, `siteMenuId` (`null` olabilir), `slot` (`"M"`, `"L"` ya da `null`), `qty`, `revenue`, `isService`; bir POS adı günde bir kez |
@@ -950,9 +950,9 @@ kuralı; Tuzla ModPOS'ta kalır, aşağıda "Şubeler"). Canlıda 22 Kasım 2026
 
 ### Şubeler (denetim 21 Kasım #5)
 
-LafPOS 21 Kasım 2026'dan beri **Marina**'da kurulu (#98): gün sonunu Marina'ya yazar (`LAFPOS_BRANCH_ID = "marina"`,
-`src/lib/lafpos/switch.ts`) ve geçiş günü **yalnız Marina'nın kasasınındır**. Gövdedeki `sube` alanı (LafPOS › Yönetim ›
-Ayarlar ve yedek › Şube) `marina` değilse gün yazılmaz: 409 `{ error: "wrong_branch", sube, expected }`; Ayarlar ›
+LafPOS 21 Kasım 2026'dan beri **Marina**'da kurulu (#98): gün sonunu Marina'ya yazar ve geçiş günü **yalnız Marina'nın
+kasasınındır**. Gövdedeki `sube` alanı (LafPOS › Yönetim › Ayarlar ve yedek › Şube) LafPOS'un şubesi değilse gün
+yazılmaz: 409 `{ error: "wrong_branch", sube, expected }`; Ayarlar ›
 LafPOS kartı kasanın hangi şubeye ayarlı olduğunu ve ne yapılacağını yazar (`rejectionText`). Eski kasa `sube`
 göndermez, kabul edilir (bugünkü LafPOS her zaman gönderir). Ayarlar › LafPOS kartı yalnız Marina'nın kaydını sayar
 (günler, toplam, eşleşmeyen adlar, ikram): öteki şubenin ModPOS günleri karışmaz, panelde seçili şube kartı
@@ -961,6 +961,21 @@ günü seçilince Tuzla'da hiçbir şey değişmez. Marina'da ModPOS bir daha ku
 ModPOS dönemi yalnız 13–21 Kasım 2026'dır. Geçiş gününden sonra Marina için gelen ModPOS verisi hiçbir rakama girmez;
 föyün yedek çekimi sürüyorsa (kasa kaynağı Ayarlar › Şubeler'de hâlâ ModPOS) saklanır ama sayılmaz, kaynağı LafPOS
 yapmak çekimi durdurur (saklı föyler kalır).
+
+**LafPOS'un şubesi kütükten (şube kapsamı B6, 25 Kasım 2026).** Şube artık sabit değil: Ayarlar › Şubeler'de kasa
+kaynağı **LafPOS** olan etkin fiziksel şube (`lafposBranchOf`, saf; sunucuda `lafposBranchId`,
+`src/server/lafpos/branch.ts`). Kütükte LafPOS kasalı şube yoksa geri düşüş `LAFPOS_BRANCH_ID = "marina"`: bugünkü
+kurulumda Marina'nın kaynağı ModPOS (föyün yedek çekimi) da olsa LafPOS'un şubesi Marina kalır, davranış değişmez.
+Kaynağı başka şubeye geçirmek gün sonunu, geçiş gününü, `sube` denetimini (gün sonu, ModPOS dönemi ve personel uçları),
+otomatik raporu ve e-postaları, kasadan çıkanları, fotoğrafı, devri, veri kümesini (satış listeleri, ikram, yemek
+kartı, komisyon) o şubeye taşır. LafPOS bugün **yalnız bir şubenin** kasası olabilir: ikinci şubenin kaynağı LafPOS
+yapılamaz ("LafPOS şimdilik yalnız bir şubenin kasası olabilir; Tuzla şubesinin kasası zaten LafPOS"). Okuyucu
+önbelleklidir (60 sn, bağlantı başına); şube eylemi önbelleği hemen düşürür, başka sunucu örneği en geç 60 sn sonra
+yeniler. Saf yardımcılar (`branchSwitchDay`, `isLafposBranch`, `scopeSwitchDay`, `panelWasteCounts`, `listDiscountOf`,
+`tillMonths`, `modposMismatches`, `mergeSalesSources`, `commissionScopeDays`…) şubeyi son parametre olarak alır,
+verilmezse geri düşüşe düşer; sunucu ve sayfalar her çağrıda verir (`tests/lafpos-sube.test.ts` kaynağı denetler,
+`tests/lafpos-sube-db.test.ts` gerçek veritabanında). Şube kapsamından önceki eski genel kaydın sahibi (çalışan listesi,
+`legacyOwnerId`) tarihseldir, kütükten türetilmez.
 
 Kural tek yerde: `branchSwitchDay(geçiş günü, şube)` LafPOS'un şubesinde ayarı, öteki şubede ve online kanalda `null`
 (her günü ModPOS günü) verir; şubesiz eski kayıt Tuzla'nındır (`isLafposBranch`). Tek kasanın gününe bakan her yer geçiş

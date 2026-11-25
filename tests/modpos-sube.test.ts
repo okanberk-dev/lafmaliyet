@@ -282,7 +282,7 @@ test("kaynak: çekim şubenin anahtarı, hakkı, kirası ve günleriyle; föy ay
   assert.match(sync, /await releaseModposLease\(db, lease, branchId\);/);
   assert.match(sync, /readModposState\(db, branchId\),\n\s+loadModposIndex\(db, branchId\),/);
   // LafPOS'a geçiş günü yalnız LafPOS'un şubesinin föyünü keser (denetim 21 Kasım #5): Marina'nın föyü çekilmeye devam eder
-  assert.match(sync, /loadLafposSwitchDay\(db\)\.then\(\(d\) => branchSwitchDay\(d, branchId\)\),/);
+  assert.match(sync, /loadBranchSwitchDay\(branchId, db\),/);
   assert.match(sync, /planFoyDays\(\{ now, from, have, left, until: switchDay, failed \}\)/);
   assert.match(sync, /fetchKasaFoyu\(day, \{ now, timeoutMs: remaining - 1_000, fetchImpl: o\.fetchImpl, env, branchId \}\)/);
   assert.match(sync, /const split = splitFoyByBranch\(r\.foy, \{ own: branchId, resolve, keyed \}\);/);
@@ -393,8 +393,8 @@ test("kaynak: Kasa ekranı föyü ekrandaki raporun şubesinden; günden güne l
   assert.match(day, /const b = branchId \?\? sube;/);
   assert.match(day, /out\.get\(modposPairKey\(b, date\)\)/);
   // Geçiş günü günün kasasının şubesine göre (denetim 21 Kasım #5): Marina'nın föyü geçiş gününden sonra da okunur
-  assert.match(day, /if \(isLafposDay\(date, branchSwitchDay\(switchDay, sube\)\)\) return NO_MODPOS;/);
-  assert.match(day, /return isLafposDay\(date, branchSwitchDay\(switchDay, b\)\) \? NO_MODPOS/);
+  assert.match(day, /if \(isLafposDay\(date, branchSwitchDay\(switchDay, sube, lafposBranch\)\)\) return NO_MODPOS;/);
+  assert.match(day, /return isLafposDay\(date, branchSwitchDay\(switchDay, b, lafposBranch\)\) \? NO_MODPOS/);
   assert.match(day, /for \(const sheet of await loadModposSheets\(from, to, db\)\)/, "aralık geçiş gününe kırpılmaz");
   // Raporun DTO'su şubesini taşır
   assert.match(read("src/server/data/cash-reports.ts"), /id: r\.id,\n\s+branchId: r\.branchId,/);

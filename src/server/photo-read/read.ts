@@ -19,6 +19,7 @@ import { cashOutCategories } from "@/server/data/cash-outs";
 import { previousOkc } from "@/server/data/cash-reports";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { getDb, schema as s } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 import { lafposOkcDeviceOf } from "@/server/lafpos/foto";
 
 import { logPhotoRead, readLafposDayPhoto } from "./lafpos";
@@ -136,9 +137,9 @@ export async function readPhotoFor(
       okcTypical(input.day),
       // Günün kasası: LafPOS gününde ModPOS Z bölümü yok, oraya okutma önerilmez (denetim E-39). Kasanın şubesinin geçiş
       // günü (branchSwitchDay): ModPOS'ta kalan şubede öneri kalır
-      Promise.all([lafposSwitchDayOf(getDb()), currentTillBranch()])
-        .then(async ([d, b]) => {
-          const switchDay = branchSwitchDay(d, b);
+      Promise.all([lafposSwitchDayOf(getDb()), currentTillBranch(), lafposBranchId()])
+        .then(async ([d, b, l]) => {
+          const switchDay = branchSwitchDay(d, b, l);
           // LafPOS gününde günün kaydı henüz yoksa cihaz şubenin son gün sonundan (Pavo ayrı mali Z basmaz)
           return { switchDay, device: isLafposDay(input.day, switchDay) ? await lafposOkcDeviceOf(getDb(), b).catch(() => null) : null };
         })

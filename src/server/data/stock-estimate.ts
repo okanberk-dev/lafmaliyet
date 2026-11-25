@@ -26,6 +26,7 @@ import { productLabel } from "@/lib/waste";
 import { currentBranchScope } from "@/server/branch-scope";
 import { closedDaysBetween } from "@/server/closed-days";
 import { getDb, schema as s, type DB } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 
 import { loadLafposIkram } from "./lafpos-ikram";
 import { suspectFactorLine } from "./purchase-lots-query";
@@ -76,7 +77,9 @@ export async function loadStockEstimate(db: DB = getDb(), now: Date = new Date()
       .where(eq(s.stockThresholds.branchId, STOCK_ESTIMATE_BRANCH)),
   ]);
   const settings = settingsFromRows(settingRows);
-  const switchDay = branchSwitchDay(settings.lafposGecisGunu, STOCK_ESTIMATE_BRANCH);
+  // Tahmin LafPOS'un gün sonlarıyla: tahminin şubesi LafPOS'un şubesi değilse (kasa kaynağı başka şubeye geçti) tahmin
+  // yok (stok_tahmini özelliği ayrı dilim; docs/SUBE.md › Sırada ne var)
+  const switchDay = branchSwitchDay(settings.lafposGecisGunu, STOCK_ESTIMATE_BRANCH, await lafposBranchId(db));
   if (!switchDay) return null;
 
   // LafPOS'un sayıldığı ilk gün: geçiş ayında Marina'nın ModPOS listesi varsa onun son gününden sonra (veri kümesiyle
@@ -97,7 +100,8 @@ export async function loadStockEstimate(db: DB = getDb(), now: Date = new Date()
     .where(inArray(s.integrationState.key, [SALES_COVERAGE_KEY, SALES_COVERAGE_BRANCH_KEY]));
   const stored = (key: string) => coverageRows.find((r) => r.key === key)?.value;
   const coverage = readCoverage(stored(SALES_COVERAGE_KEY), stored(SALES_COVERAGE_BRANCH_KEY), STOCK_ESTIMATE_BRANCH);
-  const lafposFrom = lafposSalesCountFrom(switchDay, switchList, coverage) ?? switchDay;
+  // Tahminin şubesi burada LafPOS'un şubesidir (switchDay yalnız öyleyse dolu)
+  const lafposFrom = lafposSalesCountFrom(switchDay, switchList, coverage, STOCK_ESTIMATE_BRANCH) ?? switchDay;
 
   // Dönem en erken LafPOS'un sayıldığı ilk günde başlar (öncesi "LafPOS öncesi sayım"): okumalar oradan bugüne
   const range = (col: PgColumn) => and(gte(col, lafposFrom), lte(col, today));

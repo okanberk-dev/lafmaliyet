@@ -51,14 +51,20 @@ export function modposThroughOf(month: string, coverage: Readonly<Record<string,
 /**
  * LafPOS günlük satırlarının sayıldığı ilk gün (bütün aylar için tek sınır, docs/LAFPOS.md › Günlük satış): geçiş ayında
  * o ayın ModPOS listesinin son gününden sonra (liste varsa), sonraki aylarda her gün. Geçiş günü yoksa null. `coverage`
- * LafPOS'un şubesinin (Marina) kendi kaydıdır (src/lib/sales-coverage.ts readCoverage(…, LAFPOS_BRANCH_ID)), ayın ortak
- * kaydı değil: ortak kayıt son yükleyenindir, Tuzla'nın aynı aya yüklediği liste sınırı kaydırırdı.
+ * LafPOS'un şubesinin (Marina) kendi kaydıdır (src/lib/sales-coverage.ts readCoverage(…, LafPOS'un şubesi)), ayın ortak
+ * kaydı değil: ortak kayıt son yükleyenindir, Tuzla'nın aynı aya yüklediği liste sınırı kaydırırdı. `lafposBranch`:
+ * LafPOS'un şubesi (kütükten türetilmiş; verilmezse LAFPOS_BRANCH_ID)
  */
-export function lafposSalesCountFrom(switchDay: string | null, salesLines: readonly Pick<SalesLine, "month" | "branchId">[], coverage: Readonly<Record<string, string>>): string | null {
+export function lafposSalesCountFrom(
+  switchDay: string | null,
+  salesLines: readonly Pick<SalesLine, "month" | "branchId">[],
+  coverage: Readonly<Record<string, string>>,
+  lafposBranch?: string,
+): string | null {
   if (switchDay === null) return null;
   const month = switchDay.slice(0, 7);
   // Yalnız LafPOS'un şubesinin listesi: ModPOS'ta kalan şubenin listesi LafPOS'un günlerini kesmez
-  const hasList = salesLines.some((l) => l.month === month && isLafposBranch(l.branchId));
+  const hasList = salesLines.some((l) => l.month === month && isLafposBranch(l.branchId, lafposBranch));
   return lafposCountFrom(switchDay, hasList ? modposThroughOf(month, coverage) : null);
 }
 
@@ -75,6 +81,8 @@ export interface SalesSourcesInput {
   lafposLines: readonly LafposMonthLine[];
   /** Sayılan LafPOS gün sonları, ay ay */
   lafposDays: readonly LafposDaysOfMonth[];
+  /** LafPOS'un şubesi (kütükten türetilmiş, lafposBranchOf); verilmezse LAFPOS_BRANCH_ID */
+  lafposBranch?: string;
 }
 
 export interface SalesSources {
@@ -96,7 +104,7 @@ export function mergeSalesSources(input: SalesSourcesInput): SalesSources {
   const S = input.switchDay;
   if (S === null) return { salesLines: input.salesLines, coverage: { ...input.coverage } };
   const switchMonth = S.slice(0, 7);
-  const kept = input.salesLines.filter((l) => modposListCounts(l.month, branchSwitchDay(S, l.branchId)));
+  const kept = input.salesLines.filter((l) => modposListCounts(l.month, branchSwitchDay(S, l.branchId, input.lafposBranch)));
   const lafpos = input.lafposLines
     .filter((l) => l.month >= switchMonth)
     .slice()

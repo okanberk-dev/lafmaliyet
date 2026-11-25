@@ -6,6 +6,7 @@ import { sheetZ, type ModposZ } from "@/lib/modpos/z";
 import { modposPairKey } from "@/lib/modpos/zil";
 import { currentTillBranch } from "@/server/branch-scope";
 import { getDb, type DB } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { loadModposSheet, loadModposSheets, type ModposSheet } from "@/server/modpos/store";
 
@@ -38,8 +39,8 @@ const withZ = (sheet: ModposSheet | null): KasaModpos => ({ modpos: true, sheet,
  * "Tümü"de Tuzla (store.ts gunSubesi). Başka şubenin föyü bu günün raporuyla karşılaştırılmaz.
  */
 export async function loadKasaModpos(date: string, db: DB = getDb(), branchId?: string): Promise<KasaModpos> {
-  const [switchDay, sube] = await Promise.all([loadLafposSwitchDay(db), branchId ?? currentTillBranch()]);
-  if (isLafposDay(date, branchSwitchDay(switchDay, sube))) return NO_MODPOS;
+  const [switchDay, sube, lafposBranch] = await Promise.all([loadLafposSwitchDay(db), branchId ?? currentTillBranch(), lafposBranchId(db)]);
+  if (isLafposDay(date, branchSwitchDay(switchDay, sube, lafposBranch))) return NO_MODPOS;
   // Günün görünümü ham XML'i de gösterir (ModPOS bölümünün "Ham föy"ü)
   return withZ(await loadModposSheet(date, db, { raw: true, branchId: sube }));
 }
@@ -52,11 +53,11 @@ export async function loadKasaModpos(date: string, db: DB = getDb(), branchId?: 
  * tamamında okunur.
  */
 export async function loadKasaModposDays(from: string, to: string, db: DB = getDb(), fallback?: string): Promise<(date: string, branchId?: string | null) => KasaModpos> {
-  const [switchDay, sube] = await Promise.all([loadLafposSwitchDay(db), fallback ?? currentTillBranch()]);
+  const [switchDay, sube, lafposBranch] = await Promise.all([loadLafposSwitchDay(db), fallback ?? currentTillBranch(), lafposBranchId(db)]);
   const out = new Map<string, KasaModpos>();
   const of = (date: string, branchId?: string | null): KasaModpos => {
     const b = branchId ?? sube;
-    return isLafposDay(date, branchSwitchDay(switchDay, b)) ? NO_MODPOS : (out.get(modposPairKey(b, date)) ?? withZ(null));
+    return isLafposDay(date, branchSwitchDay(switchDay, b, lafposBranch)) ? NO_MODPOS : (out.get(modposPairKey(b, date)) ?? withZ(null));
   };
   for (const sheet of await loadModposSheets(from, to, db)) out.set(modposPairKey(sheet.branchId, sheet.day), withZ(sheet));
   return of;

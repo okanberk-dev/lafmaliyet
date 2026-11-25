@@ -27,7 +27,7 @@ import {
   type AutoValues,
   type ReportState,
 } from "@/lib/lafpos/gun-sonu";
-import { branchSwitchDay, isLafposDay, LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
+import { isLafposDay } from "@/lib/lafpos/switch";
 import { emailKey } from "@/lib/notify-recipients";
 import { DELETED_REPORT_DAYS } from "@/lib/photo-rules";
 import { addDays, longDateTR } from "@/lib/reminders";
@@ -36,6 +36,7 @@ import { onNextReport, onReportSaved } from "@/server/closed-days";
 import { loadCashSettings } from "@/server/data/cash-reports";
 import { schema as s, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
+import { lafposBranchId } from "@/server/lafpos/branch";
 import { APP_URL } from "@/server/notify/digest-template";
 import { activeDigestRecipients, sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail, type SendOptions } from "@/server/notify/resend";
@@ -47,7 +48,7 @@ import { supersede } from "@/server/staff-requests/core";
 import { applyPhotoZNo, dayPhotoIds, linkPendingPhotos, photoCheckOf, refreshDayPhotoCheck } from "./foto";
 
 /*
- * LafPOS gün sonunun otomasyonu (docs/LAFPOS.md › Gün sonu otomasyonu): LafPOS'un şubesinin (Marina, LAFPOS_BRANCH_ID)
+ * LafPOS gün sonunun otomasyonu (docs/LAFPOS.md › Gün sonu otomasyonu): LafPOS'un şubesinin (Marina; kütükten türetilir, lafposBranchId)
  * gün sonu geçiş gününden itibaren gelince
  *
  * 1. Kasa raporu kendiliğinden yazılır (rapor yoksa; LafPOS'ta sayım yoksa yazılmaz, uydurulmaz). Düzeltme gelince
@@ -182,9 +183,12 @@ async function waitsForPavo(db: DB, date: string, branchId: string, day: StoredD
   return Boolean(prev?.bankPos);
 }
 
-/** Gün LafPOS'un şubesinin LafPOS günü mü (geçiş günü seçili ve gün ondan önce değil) */
+/**
+ * Gün LafPOS'un şubesinin LafPOS günü mü (geçiş günü seçili ve gün ondan önce değil). LafPOS'un şubesinin geçiş günü
+ * ayarın kendisidir (branchSwitchDay; şube lafposBranchId), bu dosyanın her işi o şubenin günüdür
+ */
 export async function isCountedLafposDay(db: DB, date: string): Promise<boolean> {
-  return isLafposDay(date, branchSwitchDay(await loadLafposSwitchDay(db), LAFPOS_BRANCH_ID));
+  return isLafposDay(date, await loadLafposSwitchDay(db));
 }
 
 async function ensureState(tx: CashTx, date: string, branchId: string) {
@@ -204,7 +208,7 @@ async function ensureState(tx: CashTx, date: string, branchId: string) {
  * değişmemiş alanlar düzeltmeyle güncellenir (önceki sürüm geçmişe); başka biri girdiyse dokunulmaz.
  */
 export async function writeAutoReport(db: DB, date: string, now = new Date()): Promise<AutoReportResult> {
-  const branchId = LAFPOS_BRANCH_ID;
+  const branchId = await lafposBranchId(db);
   if (!(await isCountedLafposDay(db, date))) return "skipped";
   return db.transaction(async (tx) => {
     await lockLateDay(tx, date, branchId);
@@ -263,7 +267,7 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
           updatedAt: now,
         })
         .returning();
-      await onReportSaved(tx, date, now);
+      await onReportSaved(tx, date, now, branchId);
       await onNextReport(tx, row, now);
       await supersede(tx, { kinds: ["kasa-gec"], subject: cashDaySubject(date, branchId) }, "LafPOS gün sonundan rapor yazıldı", now, DELETED_REPORT_DAYS);
       await tx.insert(s.activityLog).values({ userName: LAFPOS_AUTO_BY, userId: null, action: "Kasa raporu (LafPOS otomatik)", detail: `${longDateTR(date)}: Z ${day.z.zNo}` });
@@ -436,7 +440,7 @@ const staffMailKey = (branchId: string, date: string, kind: StaffMailKind) => `l
  * ilk "gitti" kaydı kalır ve "same" döner
  */
 export async function sendStaffDayEnd(db: DB, date: string, now = new Date(), opts?: SendOptions & { retryOnly?: boolean }): Promise<StaffEmailResult> {
-  const branchId = LAFPOS_BRANCH_ID;
+  const branchId = await lafposBranchId(db);
   if (date < addDays(businessDate(now), -1)) return "skipped";
   const cash = await loadCashSettings(branchId, db);
   // Çalışanların adresleri personelin kendisi: yöneticinin listesindeki gibi personel adresi düşürülmez
@@ -481,8 +485,8 @@ export async function sendStaffDayEnd(db: DB, date: string, now = new Date(), op
  * günlük iş) yeniden dener. Sayımsız giden günün ilk sayımlı e-postası "düzeltildi" değil "kasa sayıldı" der.
  */
 export async function sendDayEndEmail(db: DB, date: string, report: ReportState, now = new Date(), opts?: SendOptions): Promise<DayEndEmailResult> {
-  const branchId = LAFPOS_BRANCH_ID;
-  const switchDay = branchSwitchDay(await loadLafposSwitchDay(db), branchId);
+  const branchId = await lafposBranchId(db);
+  const switchDay = await loadLafposSwitchDay(db);
   if (!isLafposDay(date, switchDay)) return "skipped";
   const day = await loadStoredDay(db, date, branchId);
   if (!day) return "skipped";
@@ -607,8 +611,8 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
  * Düşerse günlük iş yeniden dener. Hata alanı gün sonu e-postasınınkine yazılmaz (yalnız bildirim kaydında).
  */
 export async function sendPavoEmail(db: DB, date: string, now = new Date(), opts?: SendOptions): Promise<PavoEmailResult> {
-  const branchId = LAFPOS_BRANCH_ID;
-  if (!isLafposDay(date, branchSwitchDay(await loadLafposSwitchDay(db), branchId))) return "skipped";
+  const branchId = await lafposBranchId(db);
+  if (!isLafposDay(date, await loadLafposSwitchDay(db))) return "skipped";
   const day = await loadStoredDay(db, date, branchId);
   if (!day?.bankPos) return "skipped";
   const hash = bankPosHash(day.bankPos);
@@ -676,8 +680,8 @@ export async function sendPavoEmail(db: DB, date: string, now = new Date(), opts
  * eklenince (attachLafposDayPhoto, after) ve günlük işte (runLafposDayEnd) çağrılır; düşerse günlük iş yeniden dener
  */
 export async function sendPhotoEmail(db: DB, date: string, now = new Date(), opts?: SendOptions): Promise<PhotoEmailResult> {
-  const branchId = LAFPOS_BRANCH_ID;
-  if (!isLafposDay(date, branchSwitchDay(await loadLafposSwitchDay(db), branchId))) return "skipped";
+  const branchId = await lafposBranchId(db);
+  if (!isLafposDay(date, await loadLafposSwitchDay(db))) return "skipped";
   const [st] = await db
     .select({ emailedHash: s.lafposDayEnds.emailedHash, photoCheck: s.lafposDayEnds.photoCheck, reportId: s.lafposDayEnds.reportId, autoValues: s.lafposDayEnds.autoValues })
     .from(s.lafposDayEnds)
@@ -724,15 +728,16 @@ async function reportStateOf(db: DB, date: string, auto: AutoReportResult): Prom
   if (auto === "updated") return "updated";
   if (auto === "human") return "human";
   if (auto === "no-count") return "no-count";
+  const branchId = await lafposBranchId(db);
   const [st] = await db
     .select({ reportId: s.lafposDayEnds.reportId, autoValues: s.lafposDayEnds.autoValues })
     .from(s.lafposDayEnds)
-    .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, LAFPOS_BRANCH_ID)));
+    .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
   if (st?.reportId && st.autoValues) return "auto";
   const [rep] = await db
     .select({ id: s.cashReports.id })
     .from(s.cashReports)
-    .where(and(eq(s.cashReports.date, date), eq(s.cashReports.branchId, LAFPOS_BRANCH_ID)))
+    .where(and(eq(s.cashReports.date, date), eq(s.cashReports.branchId, branchId)))
     .limit(1);
   return rep ? "human" : "none";
 }
@@ -769,7 +774,7 @@ export async function runLafposDayEnd(
   // (strongRecheckDayPhotos); düşerse kayıtlı karşılaştırma kalır
   if (report === "written" || report === "updated" || report === "unchanged") {
     try {
-      if ((await strongRecheckDayPhotos(db, date, { deadlineAt: opts?.deadlineAt, ...recheck })) > 0) await refreshDayPhotoCheck(db, date, LAFPOS_BRANCH_ID, now);
+      if ((await strongRecheckDayPhotos(db, date, { deadlineAt: opts?.deadlineAt, ...recheck })) > 0) await refreshDayPhotoCheck(db, date, await lafposBranchId(db), now);
     } catch (e) {
       console.error("[lafpos] gün sonu fotoğrafının güçlü okuması:", date, e instanceof Error ? e.message : e);
     }
@@ -836,13 +841,14 @@ export function claimLafposWaitPoll(nowMs: number = Date.now()): boolean {
  */
 export async function finishWaitingDayEnds(db: DB, now = new Date(), opts?: SendOptions): Promise<Awaited<ReturnType<typeof runLafposDayEnd>>[]> {
   const today = businessDate(now);
+  const branchId = await lafposBranchId(db);
   const rows = await db
     .select({ date: s.posDayReports.date, emailedHash: s.lafposDayEnds.emailedHash, emailError: s.lafposDayEnds.emailError })
     .from(s.posDayReports)
     .leftJoin(s.lafposDayEnds, and(eq(s.lafposDayEnds.date, s.posDayReports.date), eq(s.lafposDayEnds.branchId, s.posDayReports.branchId)))
     .where(
       and(
-        eq(s.posDayReports.branchId, LAFPOS_BRANCH_ID),
+        eq(s.posDayReports.branchId, branchId),
         gte(s.posDayReports.date, addDays(today, -1)),
         lte(s.posDayReports.date, today),
         lte(s.posDayReports.receivedAt, new Date(now.getTime() - PAVO_WAIT_MS)),
@@ -853,7 +859,7 @@ export async function finishWaitingDayEnds(db: DB, now = new Date(), opts?: Send
   for (const r of rows) {
     // Düşen gönderim (email_error) sabahki işe kalır: her yoklamada yeniden denenmez
     if (r.emailError) continue;
-    const day = await loadStoredDay(db, r.date, LAFPOS_BRANCH_ID);
+    const day = await loadStoredDay(db, r.date, branchId);
     if (!day || day.bankPos || day.okc?.provider !== "pavo" || r.emailedHash === day.hash) continue;
     out.push(await runLafposDayEnd(db, r.date, now, opts));
   }
@@ -865,7 +871,8 @@ export async function finishWaitingDayEnds(db: DB, now = new Date(), opts?: Send
  * yazılmamış, düzeltilmiş ya da e-postası gitmemiş gün tamamlanır; işlenmiş gün hiçbir şey göndermez (idempotent).
  */
 export async function catchUpLafposDayEnds(db: DB, now = new Date(), opts?: SendOptions): Promise<{ status: "off" | "ok" | "error"; days: Awaited<ReturnType<typeof runLafposDayEnd>>[] }> {
-  const switchDay = branchSwitchDay(await loadLafposSwitchDay(db), LAFPOS_BRANCH_ID);
+  // LafPOS'un şubesinin geçiş günü ayarın kendisidir (branchSwitchDay)
+  const [switchDay, branchId] = await Promise.all([loadLafposSwitchDay(db), lafposBranchId(db)]);
   if (switchDay === null) return { status: "off", days: [] };
   const today = businessDate(now);
   const lookback = addDays(today, -DAY_END_LOOKBACK_DAYS);
@@ -873,7 +880,7 @@ export async function catchUpLafposDayEnds(db: DB, now = new Date(), opts?: Send
   const rows = await db
     .select({ date: s.posDayReports.date })
     .from(s.posDayReports)
-    .where(and(eq(s.posDayReports.branchId, LAFPOS_BRANCH_ID), gte(s.posDayReports.date, from), lte(s.posDayReports.date, today)))
+    .where(and(eq(s.posDayReports.branchId, branchId), gte(s.posDayReports.date, from), lte(s.posDayReports.date, today)))
     .orderBy(s.posDayReports.date);
   const days: Awaited<ReturnType<typeof runLafposDayEnd>>[] = [];
   for (const r of rows) days.push(await runLafposDayEnd(db, r.date, now, opts));

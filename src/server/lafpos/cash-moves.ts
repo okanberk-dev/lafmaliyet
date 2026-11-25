@@ -5,10 +5,11 @@ import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { staffCategory } from "@/lib/cash-outs";
 import { isCashOutMove, LAFPOS_CASH_OUT_BY, planLafposCashOuts, planLafposDetach, type LafposCashOutRow } from "@/lib/lafpos/cash-moves";
 import type { PosCashMove } from "@/lib/lafpos/day";
-import { LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
 import { longDateTR } from "@/lib/reminders";
 import { removeCashOut, writeCashOut, type CashOutActor, type CashOutRow, type CashOutTx } from "@/server/cash-outs/write";
 import { schema as s } from "@/server/db";
+
+import { lafposBranchId } from "./branch";
 
 /**
  * LafPOS'un kasa hareketleri → "Kasadan çıkanlar" (Faz 3, 23 Kasım 2026; sahibin kararı "Soru 5": LafPOS satırların
@@ -40,8 +41,9 @@ export interface LafposCashOutSync {
   released: number;
 }
 
-export async function syncLafposCashOuts(tx: CashOutTx, date: string, moves: readonly PosCashMove[]): Promise<LafposCashOutSync> {
-  const branchId = LAFPOS_BRANCH_ID;
+/** `branch`: LafPOS'un şubesi (gün sonu verir; verilmezse lafposBranchId) */
+export async function syncLafposCashOuts(tx: CashOutTx, date: string, moves: readonly PosCashMove[], branch?: string): Promise<LafposCashOutSync> {
+  const branchId = branch ?? (await lafposBranchId(tx));
   const ids = moves.filter(isCashOutMove).map((m) => m.id);
   // Günün satırları ve (olmaması gereken) başka güne düşmüş aynı kimlikli satır: benzersiz indeks ikinci satırı açtırmaz
   const rows: CashOutRow[] = await tx
@@ -164,13 +166,21 @@ async function logCashOuts(tx: CashOutTx, date: string, parts: (string | false |
  *   bağı çözülür.
  * - `release`: sayılan günün LafPOS kaydı silindi (admin.ts removeLafposDay, 409'un çözümü): satırlar kalır, bağları
  *   çözülür; yeni Z gelince elle girilmiş eş olarak yeniden sahiplenilir.
- * Gün sonunun (şube, gün) danışma kilidinin altında çağrılır. `by`: işlem geçmişinde yazan (verilmezse LafPOS)
+ * Gün sonunun (şube, gün) danışma kilidinin altında çağrılır. `by`: işlem geçmişinde yazan (verilmezse LafPOS);
+ * `branchId`: LafPOS'un şubesi (verilmezse lafposBranchId)
  */
-export async function detachLafposCashOuts(tx: CashOutTx, date: string, mode: "drop" | "release", by?: { id: number | null; name: string }): Promise<{ removed: number; released: number }> {
+export async function detachLafposCashOuts(
+  tx: CashOutTx,
+  date: string,
+  mode: "drop" | "release",
+  opts: { by?: { id: number | null; name: string }; branchId?: string } = {},
+): Promise<{ removed: number; released: number }> {
+  const { by } = opts;
+  const branchId = opts.branchId ?? (await lafposBranchId(tx));
   const rows: CashOutRow[] = await tx
     .select()
     .from(s.cashOuts)
-    .where(and(eq(s.cashOuts.date, date), eq(s.cashOuts.branchId, LAFPOS_BRANCH_ID), isNotNull(s.cashOuts.lafposId)))
+    .where(and(eq(s.cashOuts.date, date), eq(s.cashOuts.branchId, branchId), isNotNull(s.cashOuts.lafposId)))
     .for("update");
   if (!rows.length) return { removed: 0, released: 0 };
   const paid = new Set(

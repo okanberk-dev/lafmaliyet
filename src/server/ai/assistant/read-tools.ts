@@ -20,7 +20,7 @@ import { pavoView } from "@/lib/lafpos/bank-pos";
 import type { BankPos, PosDayZ, PosPayment } from "@/lib/lafpos/day";
 import { compareDays, MISSING_LABEL } from "@/lib/lafpos/gun-sonu";
 import { clearedText, isUnverifiedAfterOk, LAFPOS_RESEND_HINT, lafposCardSummary, rejectionText, unverifiedText, type LafposCardInput } from "@/lib/lafpos/status";
-import { branchSwitchDay, isLafposBranch, isLafposDay } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposBranch, isLafposDay, lafposBranchOf } from "@/lib/lafpos/switch";
 import { checkRange, cleanName, foldName, r2, r2n, spanDays, ToolInputError } from "@/lib/mcp/answers/common";
 import { zGun, zLimit } from "@/lib/mcp/schemas";
 import { addDays } from "@/lib/reminders";
@@ -293,12 +293,14 @@ export function gunSonu(deps: ReadToolDeps): AssistantTool<typeof gunSonuInput> 
       checkRange(from, to, { maxDays: DAY_END_MAX_DAYS, today });
       const [{ scope, rows }, switchDay] = await Promise.all([deps.branches(), deps.switchDay()]);
       const branches = readBranches(args.sube, scope, rows);
+      // LafPOS'un şubesi kütükten (lafposBranchOf; deps.branches bütün kütüğü verir)
+      const lafposBranch = lafposBranchOf(rows);
       const days: string[] = [];
       for (let d = from; d <= to; d = addDays(d, 1)) days.push(d);
       const out: Record<string, unknown>[] = [];
       const uyarilar: string[] = [];
       for (const b of branches) {
-        const sw = branchSwitchDay(switchDay, b.id);
+        const sw = branchSwitchDay(switchDay, b.id, lafposBranch);
         const lafDays = days.filter((d) => isLafposDay(d, sw));
         const modDays = days.filter((d) => !isLafposDay(d, sw));
         if (modDays.length) {
@@ -369,7 +371,8 @@ export function gunlukSatislar(deps: ReadToolDeps): AssistantTool<typeof gunlukS
       if (to >= today) throw new ToolInputError("Bugünün satışları gün sonu gelince okunur; bitiş en geç dün olabilir.");
       const [{ scope, rows }, switchDay] = await Promise.all([deps.branches(), deps.switchDay()]);
       const uyarilar: string[] = [];
-      const lafBranches = readBranches(args.sube, scope, rows).filter((b) => branchSwitchDay(switchDay, b.id) !== null);
+      const lafposBranch = lafposBranchOf(rows);
+      const lafBranches = readBranches(args.sube, scope, rows).filter((b) => branchSwitchDay(switchDay, b.id, lafposBranch) !== null);
       if (!lafBranches.length) {
         return {
           donem: `${from} – ${to}`,
@@ -378,7 +381,7 @@ export function gunlukSatislar(deps: ReadToolDeps): AssistantTool<typeof gunlukS
         };
       }
       const branch = lafBranches[0];
-      const sw = branchSwitchDay(switchDay, branch.id)!;
+      const sw = branchSwitchDay(switchDay, branch.id, lafposBranch)!;
       if (from < sw) uyarilar.push(`LafPOS'a geçiş günü ${sw}: ondan önceki günler sayılmadı (deneme ya da ModPOS günleri).`);
       const all = (await deps.dailySales(from < sw ? sw : from, to, branch.id)).filter((r) => isLafposDay(r.date, sw));
       const products = all.filter((r) => !r.isService);
@@ -714,7 +717,7 @@ export function stokTahmini(deps: ReadToolDeps): AssistantTool<typeof stokTahmin
       const [data, { scope, rows }] = await Promise.all([deps.stock(), deps.branches()]);
       const uyarilar: string[] = [];
       const chosen = rows.find((b) => b.id === scope);
-      if (chosen && !isLafposBranch(chosen.id)) uyarilar.push(`Panelde ${chosen.name} seçili; tahmini stok yalnız Marina (LafPOS) için hesaplanır.`);
+      if (chosen && !isLafposBranch(chosen.id, lafposBranchOf(rows))) uyarilar.push(`Panelde ${chosen.name} seçili; tahmini stok yalnız Marina (LafPOS) için hesaplanır.`);
       if (!data) return { tahmin: null, not: "LafPOS'a geçiş günü seçilmemiş: tahmini stok yok (yalnız LafPOS'un gün sonlarıyla hesaplanır).", ...(uyarilar.length ? { uyarilar } : {}) };
       const e = data.estimate;
       let lines: StockEstimateLine[] = args.hepsi ? e.lines : e.critical;

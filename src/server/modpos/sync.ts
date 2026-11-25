@@ -1,7 +1,6 @@
 import "server-only";
 
 import { DEFAULT_BRANCH_ID, type BranchRow } from "@/lib/branches";
-import { branchSwitchDay } from "@/lib/lafpos/switch";
 import { planFoyDays } from "@/lib/modpos/plan";
 import { modposAnyKey, modposKeyProblem, modposSyncFrom, MODPOS_DAILY_QUOTA, quotaLeft, requestableDay, type ModposQuota } from "@/lib/modpos/request";
 import { todayTR } from "@/lib/reminders";
@@ -9,7 +8,7 @@ import { runDaysText, type ModposDayResult, type ModposError, type ModposRun, ty
 import { combineModposResults, modposBranchIds, modposKeyEnv, parseModposSubeMap, resolveModposSube, splitFoyByBranch, splitNoticeText } from "@/lib/modpos/sube";
 import { listBranches } from "@/server/branches";
 import { getDb, type DB } from "@/server/db";
-import { loadLafposSwitchDay } from "@/server/lafpos/status";
+import { loadBranchSwitchDay } from "@/server/lafpos/branch";
 
 import { fetchKasaFoyu } from "./client";
 import { loadModposIndex, noteModposRun, readModposState, releaseModposLease, storeFoy, takeModposLease, type SheetChange } from "./store";
@@ -159,7 +158,7 @@ async function runSync(trigger: ModposTrigger, o: SyncOptions, env: Record<strin
   const [state, have, switchDay] = await Promise.all([
     readModposState(db, branchId),
     loadModposIndex(db, branchId),
-    loadLafposSwitchDay(db).then((d) => branchSwitchDay(d, branchId)),
+    loadBranchSwitchDay(branchId, db),
   ]);
   if (trigger === "cron") {
     // Sabah işinin çalıştığı an (istek gitmese de): kartın "sıradaki"si bugünün işi çalıştı mı diye bakar

@@ -37,6 +37,7 @@ import { photoReadingOf, type CashPhotoDTO } from "@/server/data/cash-photos";
 import { kasaEvidence, lafposAutoReportOf } from "@/server/data/lafpos-day";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { getDb, schema as s } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 import { staffDayOpen } from "@/server/photo-read/rules";
 
 /*
@@ -132,11 +133,11 @@ export async function staffOldCashOutDays(now = new Date()): Promise<string[]> {
   if (!days.length) return [];
   // Kasanın şubesinin kapalı günleri (ve işletme geneli): öteki şubenin kapalı günü bu şubenin listesinden düşmez
   const till = await currentTillBranch();
-  const [closedDays, setting] = await Promise.all([closedDaysBetween(days[days.length - 1], days[0], getDb(), till), lafposSwitchDayOf(getDb())]);
+  const [closedDays, setting, lafposBranch] = await Promise.all([closedDaysBetween(days[days.length - 1], days[0], getDb(), till), lafposSwitchDayOf(getDb()), lafposBranchId()]);
   const closed = new Set(closedDays);
   // LafPOS gününe personel satır eklemez (staffLafposEntryClosed; kapı staffCashOutGate da reddeder): kasadan çıkanlar LafPOS'tan
-  const switchDay = branchSwitchDay(setting, till);
-  return days.filter((d) => !closed.has(d) && !staffLafposEntryClosed({ admin: false, branchId: till, lafposDay: isLafposDay(d, switchDay) }));
+  const switchDay = branchSwitchDay(setting, till, lafposBranch);
+  return days.filter((d) => !closed.has(d) && !staffLafposEntryClosed({ admin: false, branchId: till, lafposDay: isLafposDay(d, switchDay), lafposBranch }));
 }
 
 // ---------------------------------------------------------------- Yöneticinin kartları (Onaylar › Kasa)

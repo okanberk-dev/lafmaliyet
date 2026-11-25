@@ -1086,7 +1086,7 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
   assert.match(admin, /cashFlagsByBranch\(reports, beforeOf, revisions, viewer, modpos\)/);
   assert.match(
     admin,
-    /\.then\(\(\[sheets, switchDay\]\) => \(tills \? modposMismatchBranchDays\(reports, sheets, switchDay\) : modposMismatchDates\(reports, sheets, switchDay\)\)\)\s+\.catch\(\(\) => new Set<string>\(\)\)/,
+    /\.then\(\(\[sheets, switchDay, lafposBranch\]\) =>\s+tills \? modposMismatchBranchDays\(reports, sheets, switchDay, lafposBranch\) : modposMismatchDates\(reports, sheets, switchDay, lafposBranch\),\s+\)\s+\.catch\(\(\) => new Set<string>\(\)\)/,
   );
 });
 

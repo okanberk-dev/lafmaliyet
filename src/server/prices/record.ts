@@ -9,6 +9,7 @@ import { toMinor } from "@/lib/site-menu/slot";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { branchTill } from "@/server/data/till-scope";
 import { getDb, schema as s } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 
 /**
  * Satış fiyatı geçmişi ve kasanın (ModPOS) durumu (docs/FIYATLAR.md). Satış fiyatını yazan her yol bunu fiyatla aynı
@@ -47,7 +48,7 @@ export async function recordPriceChange(tx: Tx, c: PriceChange, at: Date, opts: 
       .select({ branchId: s.posStale.branchId, stalePrice: s.posStale.stalePrice, since: s.posStale.staleSince })
       .from(s.posStale)
       .where(eq(s.posStale.productId, c.productId));
-    const switchDay = await lafposSwitchDayOf(tx);
+    const [switchDay, lafposBranch] = await Promise.all([lafposSwitchDayOf(tx), lafposBranchId(tx)]);
     for (const till of tills) {
       const cur = current.find((x) => x.branchId === till.id) ?? null;
       const next = posAfterPriceChange({ stalePrice: cur?.stalePrice ?? null, since: cur?.since ?? null }, c.before, c.after, at);
@@ -63,7 +64,7 @@ export async function recordPriceChange(tx: Tx, c: PriceChange, at: Date, opts: 
           .where(where);
       }
       // Geçiş günü yalnız siteye bağlı üründe okunur (bağlı olmayanın fiyatı kasada her zaman elle değişir)
-      if (next.stalePrice !== null && (row.siteMenuId === null || tillPriceManual(branchTill(switchDay, till.id, at), true))) posPending = true;
+      if (next.stalePrice !== null && (row.siteMenuId === null || tillPriceManual(branchTill(switchDay, till.id, at, [], lafposBranch), true))) posPending = true;
     }
   }
   await tx.insert(s.productPrices).values({

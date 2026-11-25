@@ -27,13 +27,14 @@ import { readLafposSwitchDay } from "@/lib/constants";
 import { DESK_BLOCK_CHANNEL } from "@/lib/karaoke/session";
 import { posZSchema, type PosDayZ } from "@/lib/lafpos/day";
 import type { KasaName } from "@/lib/lafpos/kasa";
-import { branchSwitchDay, isLafposDay, kasaName, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposDay, kasaName, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { addDays, longDateTR } from "@/lib/reminders";
 import type { StaffRequestStatus } from "@/lib/staff-requests";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentTillBranch } from "@/server/branch-scope";
 import { karaokeBranchId } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
+import { lafposBranchId } from "@/server/lafpos/branch";
 import { currentVia } from "@/server/activity-via";
 
 /*
@@ -114,14 +115,17 @@ export async function lockClosedDay(tx: Tx, date: string): Promise<void> {
  * Günün LafPOS gün sonu, yalnız LafPOS gününde (geçiş günü seçili ve gün ondan önce değil; src/lib/lafpos/switch.ts):
  * Z no, fiş sayısı ve Z toplamı. Geçiş günü boşken ya da önceki günde null (deneme günü kanıt değil). İşlem içinden de.
  * Şube şube: verilen şubenin kasası LafPOS'taysa (branchSwitchDay) ve yalnız o şubenin gün sonu. Şube verilmezse
- * (işletme geneli okuma) LafPOS'un şubesinin (Marina, LAFPOS_BRANCH_ID) gün sonu: LafPOS günü yalnız onun kasasınındır;
+ * (işletme geneli okuma) LafPOS'un şubesinin (Marina; kütükten, lafposBranchId) gün sonu: LafPOS günü yalnız onun kasasınındır;
  * önceden şube verilmeyince günün herhangi bir satırı okunuyordu, ModPOS'taki şubenin (Tuzla) eski deneme satırı da
  * "LafPOS'ta Z …" kanıtı sayılabiliyordu.
  */
 async function lafposEvidence(db: Db | Tx, date: string, branchId?: string | null): Promise<ClosedEvidence["lafpos"]> {
-  const branch = branchId ?? LAFPOS_BRANCH_ID;
-  const [setting] = await db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
-  if (!isLafposDay(date, branchSwitchDay(readLafposSwitchDay(setting?.value), branch))) return null;
+  const [[setting], lafposBranch] = await Promise.all([
+    db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1),
+    lafposBranchId(db),
+  ]);
+  const branch = branchId ?? lafposBranch;
+  if (!isLafposDay(date, branchSwitchDay(readLafposSwitchDay(setting?.value), branch, lafposBranch))) return null;
   const [row] = await db
     .select({ z: s.posDayReports.z })
     .from(s.posDayReports)
@@ -408,9 +412,10 @@ export async function onReportSaved(
   tx: Tx,
   date: string,
   now = new Date(),
-  /** Raporun şubesi; verilmezse LafPOS'un şubesi (gün sonundan otomatik rapor, src/server/lafpos/gun-sonu.ts) */
-  branchId: string = LAFPOS_BRANCH_ID,
+  /** Raporun şubesi; verilmezse LafPOS'un şubesi (lafposBranchId; gün sonundan otomatik rapor, src/server/lafpos/gun-sonu.ts) */
+  branch?: string,
 ): Promise<void> {
+  const branchId = branch ?? (await lafposBranchId(tx));
   await supersedeClosedRequests(tx, date, branchId, "Kasa raporu girildi", now);
   for (const row of await coveringRows(tx, date, branchId)) {
     if (row.dateFrom === row.dateTo) await clearClosedMark(tx, row, branchId, "kasa raporu girildi", now);
@@ -434,13 +439,20 @@ export async function onLafposDaySaved(
   z: Pick<PosDayZ, "zNo" | "receipts" | "zTotal">,
   now = new Date(),
   soldSince: Date | null = null,
-  /** Gün sonunun şubesi: LafPOS'un şubesi (yalnız onun bildirimi kapanır, onun ve işletme genelinin işareti kalkar) */
-  branchId: string = LAFPOS_BRANCH_ID,
+  /**
+   * Gün sonunun şubesi: LafPOS'un şubesi (yalnız onun bildirimi kapanır, onun ve işletme genelinin işareti kalkar);
+   * verilmezse lafposBranchId
+   */
+  branch?: string,
 ): Promise<void> {
   if (z.receipts <= 0 && z.zTotal <= 0) return;
-  const [setting] = await tx.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
+  const [[setting], lafposBranch] = await Promise.all([
+    tx.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1),
+    lafposBranchId(tx),
+  ]);
+  const branchId = branch ?? lafposBranch;
   // Geçiş günü gün sonunun şubesinin kasasından (LafPOS'un şubesinde ayar, öteki şubede hiç LafPOS günü yok)
-  if (!isLafposDay(date, branchSwitchDay(readLafposSwitchDay(setting?.value), branchId))) return;
+  if (!isLafposDay(date, branchSwitchDay(readLafposSwitchDay(setting?.value), branchId, lafposBranch))) return;
   await lockClosedDay(tx, date);
   const why = `LafPOS gün sonu geldi (Z ${z.zNo}${z.receipts > 0 ? ` · ${z.receipts} fiş` : ""})`;
   await supersedeClosedRequests(tx, date, branchId, why, now);
@@ -625,9 +637,10 @@ export async function closedDayCards(): Promise<ClosedDayCard[]> {
   const branchOf = new Map(rows.map((r) => [r.id, closedRequestBranch(r)]));
   const branches = [...new Set(branchOf.values())];
   // Üst üste günler: şubenin bekleyen bildirimleri ve zaten kapalı işaretli günleri (kendi ve işletme geneli) birlikte
-  const [marked, [setting]] = await Promise.all([
+  const [marked, [setting], lafposBranch] = await Promise.all([
     Promise.all(branches.map((b) => closedDaysBetween(from, to, db, b))),
     db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1),
+    lafposBranchId(db),
   ]);
   const switchDay = readLafposSwitchDay(setting?.value);
   const allOf = new Map(branches.map((b, i) => [b, new Set([...rows.filter((r) => branchOf.get(r.id) === b).map((r) => r.day!), ...marked[i]])]));
@@ -653,7 +666,7 @@ export async function closedDayCards(): Promise<ClosedDayCard[]> {
       reason: p.success ? p.data.reason : null,
       evidence: await closedDayEvidence(db, r.day!, branchId).catch(() => EMPTY_EVIDENCE),
       run: runOf(r.day!, allOf.get(branchId)!),
-      kasa: kasaName(r.day!, branchSwitchDay(switchDay, branchId)),
+      kasa: kasaName(r.day!, branchSwitchDay(switchDay, branchId, lafposBranch)),
       branchId,
     });
   }
