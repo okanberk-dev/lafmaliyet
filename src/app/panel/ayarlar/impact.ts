@@ -1,5 +1,5 @@
-// Ayar değişikliğinin etkisi (kaydetmeden önce): Excel'de mavi hücreyi değiştirince Ürün Kârlılık, durumlar ve
-// başabaş anında güncellenir; panelde aynı hesap, kaydedilmemiş değerlerle tarayıcıda yeniden çalıştırılır.
+// Ayar değişikliğinin etkisi (kaydetmeden önce): ürün kârlılığı, durumlar ve başabaş kaydetmeden görünsün diye aynı
+// hesap kaydedilmemiş değerlerle tarayıcıda yeniden çalıştırılır.
 // Saf modül: hem sunucu sayfası (veriyi hazırlar) hem istemci (hesaplar) hem testler kullanır.
 
 import { createModel, shiftMonth, type Model, type ProductStatus } from "@/lib/calc/engine";

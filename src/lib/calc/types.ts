@@ -52,6 +52,13 @@ export interface Settings {
    */
   mealCardDaily: number;
   mealCardDays: number;
+  /**
+   * Sayım gruplarının olağan alış KDV'si (Ayarlar › Oranlar): ambalaj grubu (bardak, kapak, peçete) ve gıda grupları.
+   * Hammaddeler'de yeni malzemenin önerilen KDV'si, sayımda listede olmayan kalemlerin KDV dahil değeri (gıda oranı) ve
+   * Alış KDV'si grubun olağan oranından ayrılan malzemelerin uyarısı bununla (constants.ts groupVatRate). %20 ve %1
+   */
+  alisKdvAmbalaj: number;
+  alisKdvGida: number;
   /** true: fire payı ambalaj (bardak, kapak, peçete) hariç malzemelere uygulanır */
   fireExcludesPackaging: boolean;
   /** Su + buz birim maliyeti (₺/litre). null = su faturasından otomatik hesapla */

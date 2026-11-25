@@ -11,7 +11,7 @@ export const CELL_NOTE_MAX = 500;
 export const MONTH_NOTE_MAX = 1000;
 
 /**
- * Açık gün: tam sayı, 0 ile ayın gün sayısı arası. Excel'de açık gün ÷ ayın gün sayısı oranı kullanılır;
+ * Açık gün: tam sayı, 0 ile ayın gün sayısı arası. Sabit giderler açık gün ÷ ayın gün sayısı oranıyla bölünür;
  * gün sayısından büyük bir değer kira, personel gibi giderleri %100'ün üzerine çıkarırdı.
  */
 export function openDaysError(month: string, v: number | null): string | null {
@@ -50,7 +50,7 @@ export function cleanNote(text: string): string | null {
 
 /**
  * Hücrede Enter'a basılınca kaydı engelleyen sorun (yoksa null). Sorun varsa hücre açık kalır ve yazılan
- * metin korunur (Excel de geçersiz girişte hücreden çıkarmaz).
+ * metin korunur (geçersiz girişte hücreden çıkılmaz).
  */
 export function enterProblem(text: string, validate?: (v: number | null) => string | null): string | null {
   const t = text.trim();

@@ -26,6 +26,7 @@ import {
 } from "@/lib/price-hold";
 import { packEvidence } from "@/lib/product-match";
 import { addDays, todayTR } from "@/lib/reminders";
+import { importedPriceRow } from "@/lib/import-labels";
 import { requireAdmin } from "@/server/auth/dal";
 import { ingredientHistoryCounts } from "@/server/data/product-history";
 import { loadModel } from "@/server/data/dataset";
@@ -94,7 +95,9 @@ async function IngredientsContent() {
   const usageMonth = latestSalesMonth(model);
   const usage = usageMonth ? model.ingredientUsage(usageMonth) : new Map<number, number>();
   const histBy = new Map<number, IngredientRow["history"]>();
-  for (const h of history) {
+  for (const row of history) {
+    // İlk aktarım satırı "İçe aktarım" adıyla (veri değişmez)
+    const h = importedPriceRow(row);
     const list = histBy.get(h.ingredientId) ?? [];
     list.push({ at: h.changedAt.toISOString(), price: h.packagePrice, size: h.packageSize, by: h.changedBy, note: h.note });
     histBy.set(h.ingredientId, list);
@@ -221,6 +224,8 @@ async function IngredientsContent() {
   const waterDokum = waterBreakdown(model.water, rows, waterUse?.list ?? new Map<number, number>(), waterUse?.online);
   const categoryCount = new Set(active.map((r) => r.category)).size;
   const estimateShare = active.length ? pct(estimates / active.length, 0) : null;
+  // Yeni malzemeye önerilen Alış KDV'si: sayım grubunun olağan oranı (Ayarlar › Oranlar)
+  const groupVat = { alisKdvAmbalaj: model.settings.alisKdvAmbalaj, alisKdvGida: model.settings.alisKdvGida };
 
   return (
     <>
@@ -229,7 +234,7 @@ async function IngredientsContent() {
         title="Hammaddeler"
         description={DESCRIPTION}
         more={MORE}
-        actions={<NewIngredientButton categories={categories} rows={rows} />}
+        actions={<NewIngredientButton categories={categories} rows={rows} groupVat={groupVat} />}
       />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown
@@ -313,7 +318,7 @@ async function IngredientsContent() {
       {/* Dökümdeki bağlantıların çapası (#hammadde-listesi): süzülmüş listeye kayar */}
       <ListAnchor>
         {/* Şube seçiliyken kullanım o şubenin satışından (şube kapsamı C P2-8) */}
-        <IngredientsClient rows={rows} categories={categories} usageScope={model.ds.branchView ? `${model.ds.branchView.name} satışı` : null} />
+        <IngredientsClient rows={rows} categories={categories} groupVat={groupVat} usageScope={model.ds.branchView ? `${model.ds.branchView.name} satışı` : null} />
       </ListAnchor>
     </>
   );

@@ -52,6 +52,7 @@ import { activeUses, productListText, usageText } from "@/lib/ingredient-usage";
 import { dateTR, dayTR, num, pct, tl, tlUnit } from "@/lib/format";
 import { bulkPrice } from "@/lib/supplier-prices";
 import { cn } from "@/lib/utils";
+import { downloadCsv } from "@/lib/csv";
 import { deleteIngredient, saveIngredient, setIngredientActive, setIngredientEstimate, updateIngredientPrice } from "@/server/actions/ingredients";
 
 import { FilterSheet, FilterSheetButton, FilterSummaryLine, SHEET_CHIP, SheetSection } from "../urunler/filter-sheet";
@@ -59,16 +60,17 @@ import { filterSummary } from "../urunler/filter-text";
 import { priceText } from "../urunler/price-text";
 
 import { catOrder } from "./categories";
-import { countUnitHint, groupForCategory, historyText, nearMatch, vatForGroup, type IngredientDeps } from "./form-helpers";
+import { countUnitHint, groupForCategory, historyText, nearMatch, vatForGroup, type GroupVatRates, type IngredientDeps } from "./form-helpers";
 import { scrollToHolds } from "./price-holds";
 import { SupplierPrices } from "./supplier-prices";
+import { ingredientCsv } from "./csv";
 
 export interface IngredientRow extends Ingredient {
   unitCost: number;
   /** Reçetesinde geçtiği ürünler, pasif ürünler dahil (`active` false: silme engeli, ama "Reçetede yok" sayılır) */
   usedIn: { id: number; label: string; active: boolean }[];
   monthUsage: number;
-  /** Fiyat geçmişi, eskiden yeniye; note: kaynak ("Excel'den aktarıldı", Paraşüt fatura numarası) */
+  /** Fiyat geçmişi, eskiden yeniye; note: kaynak ("İçe aktarılmış (eski)", Paraşüt fatura numarası) */
   history: { at: string; price: number; size: number; by: string | null; note: string | null }[];
   /** Silmeyi engelleyen geçmiş kayıt sayıları */
   deps: IngredientDeps;
@@ -135,18 +137,6 @@ const inScope = (r: IngredientRow, filter: Filter) => (filter === "pasif" ? !r.a
 const ESTIMATE_ROW = "bg-warn-soft/45";
 const ESTIMATE_STICKY = "bg-[color-mix(in_oklab,var(--color-warn-soft)_45%,var(--color-panel))]";
 
-/** Türkçe Excel'in açtığı CSV: noktalı virgül ayraç, UTF-8 BOM, virgüllü ondalık */
-function downloadCsv(filename: string, lines: (string | number)[][]) {
-  const cell = (c: string | number) => `"${String(c).replace(/"/g, '""')}"`;
-  const csv = "﻿" + lines.map((l) => l.map(cell).join(";")).join("\r\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 /** Sayfa karolarındaki rakam: açılışta sayarak gelir (AkmanOS AnimatedNumber); hareket azaltılmışsa doğrudan yazar */
 export function CountUp({ value, digits = 0, suffix = "" }: { value: number; digits?: number; suffix?: string }) {
   return <AnimatedNumber value={value} format={(v) => `${num(v, digits, digits)}${suffix}`} />;
@@ -171,7 +161,7 @@ function showList() {
   });
 }
 
-/** Excel'deki gibi: Enter ya da ↓ alttaki satırın fiyatına, ↑ üsttekine geçer (geçerken bu satır kaydedilir) */
+/** Tablo düzeni: Enter ya da ↓ alttaki satırın fiyatına, ↑ üsttekine geçer (geçerken bu satır kaydedilir) */
 function focusSibling(from: HTMLInputElement, step: 1 | -1): boolean {
   const list = visiblePriceInputs();
   const next = list[list.indexOf(from) + step];
@@ -275,7 +265,7 @@ function PackagePriceCell({ row, className }: { row: IngredientRow; className?: 
 }
 
 /**
- * Malzeme adı, rozetler ve kategori · tedarikçi (tablo ve telefon kartı). Excel'deki "Kaynak / Not" sütunu: tahmini
+ * Malzeme adı, rozetler ve kategori · tedarikçi (tablo ve telefon kartı). Kaynak / not: tahmini
  * ya da reçetede olmayan malzemede not görünür (ne doğrulanacağını söyler), ötekilerde üzerine gelince okunur.
  */
 function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () => void; compact?: boolean }) {
@@ -344,10 +334,13 @@ function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () =
 export function IngredientsClient({
   rows,
   categories,
+  groupVat,
   usageScope = null,
 }: {
   rows: IngredientRow[];
   categories: string[];
+  /** Sayım gruplarının olağan alış KDV'si (Ayarlar): yeni malzemeye önerilen KDV */
+  groupVat: GroupVatRates;
   /** Şube seçiliyken kullanımın kaynağı ("Marina satışı"; şube kapsamı C P2-8); "Tümü"de null */
   usageScope?: string | null;
 }) {
@@ -442,41 +435,7 @@ export function IngredientsClient({
   const clearSheet = () => clearQuery(["durum", "kategori"]);
 
   const exportCsv = () => {
-    const header = [
-      "Malzeme",
-      "Kategori",
-      "Tedarikçi",
-      "Paket",
-      "Paket fiyatı (KDV hariç)",
-      "Paket içeriği",
-      "Birim",
-      "Birim maliyet",
-      "Alış KDV (%)",
-      "Fiyat kaynağı",
-      "Reçete sayısı (aktif ürün)",
-      "Son ay kullanım",
-      "Tahmini",
-      "Aktif",
-      "Kaynak / not",
-    ];
-    const lines = visible.map((r) => [
-      r.name,
-      r.category,
-      r.supplier ?? "",
-      r.packageDesc ?? "",
-      r.priceSource === "water" ? "" : num(r.packagePrice, 2),
-      num(r.packageSize, 3),
-      r.unit,
-      num(r.unitCost, 4),
-      num(r.vatRate * 100, 2),
-      r.priceSource === "water" ? "Su faturası" : "Fatura / elle",
-      num(activeUses(r)),
-      num(r.monthUsage, 2),
-      r.isEstimate ? "Evet" : "",
-      r.active ? "Evet" : "Hayır",
-      r.note ?? "",
-    ]);
-    downloadCsv("hammaddeler.csv", [header, ...lines]);
+    downloadCsv("hammaddeler.csv", ingredientCsv(visible));
     toast.success(`${num(visible.length)} malzeme CSV olarak indirildi`);
   };
 
@@ -900,6 +859,7 @@ export function IngredientsClient({
           row={editing}
           rows={rows}
           categories={categories}
+          groupVat={groupVat}
           onClose={() => setEditing(null)}
           onDelete={() => {
             setDeleting(editing);
@@ -912,6 +872,7 @@ export function IngredientsClient({
           row={null}
           rows={rows}
           categories={categories}
+          groupVat={groupVat}
           initialName={creating}
           initialCategory={category || undefined}
           onClose={() => setCreating(null)}
@@ -923,7 +884,7 @@ export function IngredientsClient({
 }
 
 /** Sayfa başlığındaki "Yeni hammadde" düğmesi; kategori süzgeci açıksa o kategori seçili gelir */
-export function NewIngredientButton({ categories, rows }: { categories: string[]; rows: IngredientRow[] }) {
+export function NewIngredientButton({ categories, rows, groupVat }: { categories: string[]; rows: IngredientRow[]; groupVat: GroupVatRates }) {
   const [open, setOpen] = useState(false);
   const [kategori] = useQueryState<string>("kategori", "");
   return (
@@ -936,6 +897,7 @@ export function NewIngredientButton({ categories, rows }: { categories: string[]
           row={null}
           rows={rows}
           categories={categories}
+          groupVat={groupVat}
           initialCategory={categories.includes(kategori) ? kategori : undefined}
           onClose={() => setOpen(false)}
         />
@@ -1074,12 +1036,15 @@ function IngredientDialog({
   onClose,
   onDelete,
   categories,
+  groupVat,
   initialName = "",
   initialCategory,
 }: {
   row: IngredientRow | null;
   /** Aynı ad denetimi, kategori/tedarikçi önerileri için bütün malzemeler */
   rows: IngredientRow[];
+  /** Sayım gruplarının olağan alış KDV'si (Ayarlar): yeni malzemeye önerilen KDV */
+  groupVat: GroupVatRates;
   onClose: () => void;
   onDelete?: () => void;
   categories: string[];
@@ -1089,7 +1054,7 @@ function IngredientDialog({
   const formId = useId();
   const [f, setF] = useState(() => {
     const category = row?.category ?? initialCategory ?? "Diğer";
-    // Yeni malzeme: Excel'deki gibi sayım listesine girer (birime uyan sayım birimi, kategorinin rafı, rafın KDV'si)
+    // Yeni malzeme sayım listesine girer: birime uyan sayım birimi, kategorinin rafı ve rafın olağan KDV'si (Ayarlar)
     const countGroup = row ? (row.countGroup ?? "") : groupForCategory(rows, category);
     return {
       name: row?.name ?? initialName,
@@ -1099,7 +1064,7 @@ function IngredientDialog({
       packagePrice: row ? priceText(row.packagePrice) : "",
       packageSize: num(row?.packageSize ?? 1000, 3),
       unit: (row?.unit ?? "gr") as Unit,
-      vatRate: formatPercentInput(row?.vatRate ?? vatForGroup(countGroup)),
+      vatRate: formatPercentInput(row?.vatRate ?? vatForGroup(countGroup, groupVat)),
       note: row?.note ?? "",
       isEstimate: row?.isEstimate ?? false,
       priceSource: row?.priceSource ?? "manual",
@@ -1201,7 +1166,7 @@ function IngredientDialog({
     if (!row && allCats.includes(category)) {
       const group = touched.countGroup ? f.countGroup : groupForCategory(rows, category);
       if (!touched.countGroup) patch.countGroup = group;
-      if (!touched.vat) patch.vatRate = formatPercentInput(vatForGroup(group));
+      if (!touched.vat) patch.vatRate = formatPercentInput(vatForGroup(group, groupVat));
     }
     set(patch);
   }

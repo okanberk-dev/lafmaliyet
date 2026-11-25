@@ -349,7 +349,7 @@ export interface LedgerInvoice {
   dueDate?: string | null;
   paidAt?: string | null;
   paymentRequestedAt?: string | null;
-  /** Paraşüt'ten gelen tedarikçi vergi nosu (elle ve Excel'den girilende yok) */
+  /** Paraşüt'ten gelen tedarikçi vergi nosu (elle girilende ve içe aktarılmış kayıtta yok) */
   supplierTaxNumber?: string | null;
 }
 

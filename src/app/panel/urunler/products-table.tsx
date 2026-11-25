@@ -52,6 +52,7 @@ import type { MonthKasa } from "@/lib/lafpos/kasa";
 import { priceReminder } from "@/lib/prices/pos";
 import type { SiteMarker } from "@/lib/site-menu/view";
 import { cn, slugify } from "@/lib/utils";
+import { downloadCsv } from "@/lib/csv";
 import { updateProductPrice } from "@/server/actions/products";
 
 import { compareBy, LIST_QUERY_KEY, menuAverages, NO_RECIPE_LAST_KEYS, productHref, soldProfit, STATUS_CHIPS, statusChips, visibleProfit } from "./logic";
@@ -60,6 +61,7 @@ import { filterSummary } from "./filter-text";
 import { bulkHref, productSearchText } from "./fiyatlar/logic";
 import { NewProductDialog } from "./new-product";
 import { priceText } from "./price-text";
+import { productCsv } from "./csv";
 
 export interface ProductRow {
   id: number;
@@ -133,7 +135,7 @@ const STATUS_DOT: Record<ProductStatus, string> = {
   "Reçete yok": "bg-ink-quiet",
 };
 
-/** Sayfa boyu seçenekleri (?goster=100 / ?goster=tumu); Excel'deki gibi bütün menü tek sayfada da görülebilir */
+/** Sayfa boyu seçenekleri (?goster=100 / ?goster=tumu); bütün menü tek sayfada da görülebilir */
 const PAGE_SIZES = [
   { value: "", label: "50", size: 50 },
   { value: "100", label: "100", size: 100 },
@@ -216,18 +218,6 @@ const MOBILE_SORTS: { value: string; label: string }[] = [
   { value: "monthProfit.desc", label: "Aylık brüt kâr (yüksekten)" },
   { value: "fireRate.desc", label: "Zayi / fire (yüksekten)" },
 ];
-
-/** Türkçe Excel'in açtığı CSV: noktalı virgül ayraç, UTF-8 BOM, virgüllü ondalık */
-function downloadCsv(filename: string, lines: (string | number)[][]) {
-  const cell = (c: string | number) => `"${String(c).replace(/"/g, '""')}"`;
-  const csv = "﻿" + lines.map((l) => l.map(cell).join(";")).join("\r\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 /** Sayfa karolarındaki rakam: açılışta sayarak gelir (AkmanOS AnimatedNumber); hareket azaltılmışsa doğrudan yazar */
 export function CountUp({ value, digits = 0, suffix = "" }: { value: number; digits?: number; suffix?: string }) {
@@ -367,7 +357,7 @@ function Metric({ label, children, className }: { label: ReactNode; children: Re
 
 /**
  * Ürün adı hücresi (tablo ve telefon kartı); telefonda durum rozetleri adın altında. Ad, seçili ayla reçete
- * kartını açar. Ürün notu (Excel'deki hücre notu) adın yanında ⓘ: bağlantının dışında, tıklamak kartı açmaz.
+ * kartını açar. Ürün notu adın yanında ⓘ: bağlantının dışında, tıklamak kartı açmaz.
  */
 function ProductName({ r, compact, month }: { r: ProductRow; compact?: boolean; month: string }) {
   const href = productHref(r.id, month);
@@ -539,7 +529,7 @@ export function ProductsTable({
 
   const paged = useUrlPaged(filtered, pageSize, `${q}|${category}|${size}|${durum}|${includeInactive}|${sira}|${pageSize}`);
 
-  // Görünen ürünlerin bu ayki toplamları ve Excel'in "ORTALAMA" satırı (tablonun alt satırı ve telefon özeti)
+  // Görünen ürünlerin bu ayki toplamları ve menü ortalaması (tablonun alt satırı ve telefon özeti)
   // Brüt kâr reçeteli satılanlardan (kartla aynı kural); net ciro görünen bütün satılanlardan
   const totals = useMemo(() => {
     const sp = soldProfit(filtered);
@@ -607,53 +597,7 @@ export function ProductsTable({
   const bulkTitle = `Görünen ürünlerin fiyatını birlikte değiştir${statuses.length ? " (durum süzgeci taşınmaz)" : ""}`;
 
   const exportCsv = () => {
-    const header = [
-      "Ürün",
-      "Boy",
-      "Kategori",
-      "Aktif",
-      "Satış fiyatı (KDV dahil)",
-      "Net satış",
-      "POS komisyonu",
-      "Maliyet",
-      "Toplam maliyet",
-      "Birim kâr",
-      "Kâr marjı (%)",
-      "Maliyet oranı (%)",
-      "Önerilen fiyat",
-      "Durum",
-      `${monthLabel} adet`,
-      `${monthLabel} brüt kâr`,
-      `${monthLabel} net ciro`,
-      "Fire (%)",
-      "Not",
-      "Tahmini malzeme",
-      "Site menüsü",
-    ];
-    const lines = filtered.map((r) => [
-      r.name,
-      sizeLabel(r.size),
-      r.category,
-      r.active ? "Evet" : "Hayır",
-      num(r.price, 2),
-      num(r.net, 2),
-      num(r.commission, 2),
-      num(r.cost, 2),
-      num(r.totalCost, 2),
-      num(r.unitProfit, 2),
-      num(r.margin * 100, 1),
-      num(r.costRatio * 100, 1),
-      num(r.suggestedPrice, 0),
-      r.status,
-      num(r.soldQty),
-      num(r.monthProfit, 2),
-      num(r.monthNet, 2),
-      num(r.fireRate * 100, 1) + (r.fireOverridden ? " (özel)" : ""),
-      r.note ?? "",
-      r.hasEstimate ? "Evet" : "",
-      r.site?.ref ? `${r.site.ref}${r.site.kind === "linked" || r.site.kind === "pending" ? "" : ` (${r.site.text})`}` : "",
-    ]);
-    downloadCsv(`urunler-${slugify(monthLabel)}.csv`, [header, ...lines]);
+    downloadCsv(`urunler-${slugify(monthLabel)}.csv`, productCsv(filtered, monthLabel));
     toast.success(`${num(filtered.length)} ürün CSV olarak indirildi`);
   };
 
@@ -1034,11 +978,11 @@ export function ProductsTable({
                     Görünen {num(filtered.length)} ürün
                   </TD>
                   <TD colSpan={3 + Number(col("net")) + Number(col("commission")) + Number(col("totalCost"))} />
-                  {/* Excel Ürün Kârlılık satır 134 "ORTALAMA": basit ortalama, her ürün bir oy */}
+                  {/* Menü ortalaması: basit ortalama, her ürün bir oy */}
                   <TD numeric>
                     <span className="inline-flex items-center gap-1">
                       <InfoTip
-                        text={`Görünen ürünlerin basit ortalaması (Excel Ürün Kârlılık, TOPLAM / ORTALAMA satırı). Reçetesi olmayan ürün katılmaz${
+                        text={`Görünen ürünlerin basit ortalaması (her ürün bir oy). Reçetesi olmayan ürün katılmaz${
                           totals.avg.count !== filtered.length ? ` (${num(filtered.length - totals.avg.count)} ürün dışarıda)` : ""
                         }. Satışa göre ağırlıklı marj üstteki brüt kâr kartında.`}
                       />

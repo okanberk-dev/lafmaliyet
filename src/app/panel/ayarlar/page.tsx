@@ -17,6 +17,7 @@ import { backupCardSummary, backupDue, lastBackupText, sizeText } from "@/lib/ba
 import { currentMonthTR, shiftMonth, type Model } from "@/lib/calc/engine";
 import { dateTimeTR } from "@/lib/format";
 import { missedPingShown } from "@/lib/site-orders/follow";
+import { activityActionLabel } from "@/lib/import-labels";
 import { requireAdmin } from "@/server/auth/dal";
 import { appUrl } from "@/server/auth/tokens";
 import { currentBranchScope } from "@/server/branch-scope";
@@ -132,7 +133,7 @@ function UsersLinkCard() {
 
 /**
  * Yedek: paneldeki bütün verinin geri yüklenebilir tek dosyası (parolayla; /api/yedek, docs/YEDEK.md) ve okunabilir
- * Excel kopyası (/api/export; geri yüklenmez). Son yedek 30 günden eskiyse rozet çıkar, canlıda zil de hatırlatır
+ * dışa aktarım (.xlsx çalışma kitabı, /api/export; geri yüklenmez). Son yedek 30 günden eskiyse rozet çıkar, canlıda zil de hatırlatır
  * (src/lib/job-health.ts › systemAlerts). Geri yükleme panelde yok: bilgisayardan bir komutla yapılır.
  */
 async function BackupCard() {
@@ -153,7 +154,7 @@ async function BackupCard() {
         <>
           Paneldeki bütün veri tek dosyada iner ve gerekirse geri yüklenir. Ayda bir indirip bilgisayarınızda ya da Google Drive&apos;da saklayın. Parolalar
           dosyaya yazılmaz; dosyada ciro, maaş ve IBAN&apos;lar var, kimseyle paylaşmayın.{" "}
-          <InfoTip text="Veritabanı Neon'da da kendiliğinden yedeklenir ama yalnız kısa bir süre geriye gidilebilir; bu dosya sizde kalan uzun süreli kopyadır. Geri yükleme panelden yapılmaz (tek dokunuşla bütün veri değişmesin); geliştirici bilgisayardan bir komutla yapar. Excel kopyası okunmak içindir, geri yüklenmez." />
+          <InfoTip text="Veritabanı Neon'da da kendiliğinden yedeklenir ama yalnız kısa bir süre geriye gidilebilir; bu dosya sizde kalan uzun süreli kopyadır. Geri yükleme panelden yapılmaz (tek dokunuşla bütün veri değişmesin); geliştirici bilgisayardan bir komutla yapar. Dışa aktarılan çalışma kitabı (.xlsx) okumak içindir, geri yüklenmez." />
         </>
       }
       actionsClassName="max-sm:w-full"
@@ -162,7 +163,7 @@ async function BackupCard() {
           <BackupDownload uploads={info?.uploads ?? { count: 0, bytes: 0 }} last={last ? { dataBytes: last.dataBytes } : null} />
           {/* Dosya indiren rota: düz bağlantı (istemci yönlendirmesi önce sayfa isteği yapıp ikinci kez indirmesin) */}
           <a href="/api/export" download className={buttonClass("secondary", "md", "max-sm:w-full")}>
-            <FileSpreadsheet size={16} aria-hidden="true" /> Excel kopyası
+            <FileSpreadsheet size={16} aria-hidden="true" /> Dışa aktar (.xlsx)
           </a>
         </>
       }
@@ -440,7 +441,7 @@ async function SettingsContent() {
             userName: l.userName,
             person: logPerson(l.userName, (l.userId !== null && accountById.get(l.userId)) || null, accounts),
             viaAssistant: l.via === "asistan",
-            action: l.action,
+            action: activityActionLabel(l.action),
             detail: l.detail,
           }))}
         />

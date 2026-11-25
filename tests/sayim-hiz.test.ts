@@ -128,7 +128,8 @@ test("form: satır memo'lu ve yalnız kendi değerini alır; işleyiciler sabit;
   // Ertelenmiş değerler: ilerleme, toplamlar, FIFO payı ve döküm yalnız deferred'dan
   assert.match(form, /const deferred = useDeferredValue\(typed\);/);
   assert.match(form, /countedLineIds\(countable, deferred\.values, deferred\.prefilled\)/);
-  assert.match(form, /liveTotals\(groups, \(l\) => formQty\(byId\.get\(l\.id\)!, deferred\.values\[l\.id\]\), deferredExtras\)/);
+  // Listede olmayan kalemlerin KDV'si Ayarlar'dan (gıdanın alış KDV'si)
+  assert.match(form, /liveTotals\(groups, \(l\) => formQty\(byId\.get\(l\.id\)!, deferred\.values\[l\.id\]\), deferredExtras, extrasVatRate\)/);
   assert.match(form, /lineLayers\(l, formQty\(l, deferred\.values\[l\.id\]\)\)/);
   assert.match(form, /const breakdown = useCallback\(\(\) => stockBreakdown\(groups, \(l\) => formQty\(l, deferred\.values\[l\.id\]\), deferredExtras\)/);
   // Döküm her çizimde kurulmaz: karta işlev olarak gider

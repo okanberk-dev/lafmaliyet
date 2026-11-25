@@ -23,6 +23,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // Personel yemek kartı (sahibin kararı 11, 23 Kasım 2026): kişi başı günlük 330 ₺ × ayda 26 gün
   mealCardDaily: 330,
   mealCardDays: 26,
+  // Sayım gruplarının olağan alış KDV'si: ambalaj %20, gıda %1 (Ayarlar › Oranlar; groupVatRate)
+  alisKdvAmbalaj: 0.2,
+  alisKdvGida: 0.01,
   fireExcludesPackaging: false,
   suBirimLTOverride: null,
   publicMenu: false,
@@ -73,10 +76,15 @@ export function settingsFromRows(rows: Iterable<{ key: string; value: unknown }>
   if (out.stokFifoBaslangic !== null && !(typeof out.stokFifoBaslangic === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(out.stokFifoBaslangic))) out.stokFifoBaslangic = null;
   // LafPOS'a geçiş günü: bozuk değer ModPOS sayılır (null)
   out.lafposGecisGunu = readLafposSwitchDay(out.lafposGecisGunu);
+  // Sayım gruplarının alış KDV'si: 0 ile 1 arası sayı değilse varsayılan (bozuk değer sayımın değerini NaN yapmasın)
+  for (const k of ["alisKdvAmbalaj", "alisKdvGida"] as const) {
+    const v = out[k];
+    if (!(typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1)) out[k] = DEFAULT_SETTINGS[k];
+  }
   return out as unknown as Settings;
 }
 
-/** Reçete miktar formüllerinde kullanılabilen ayarlar (Excel'deki adlandırılmış hücreler). */
+/** Reçete miktar formüllerinde kullanılabilen ayarlar (formülde adıyla yazılır: "2 * ShotTek"). */
 export const RECIPE_PARAMS: { name: string; key: keyof Settings; label: string; unit: string }[] = [
   { name: "ShotTek", key: "shotTek", label: "Tek shot kahve", unit: "gr" },
   { name: "ShotCift", key: "shotCift", label: "Çift shot kahve", unit: "gr" },
@@ -214,18 +222,18 @@ export const MANUAL_PNL_ROWS: { key: string; section: FixedSection | "mal"; labe
   { key: "manual:diger", section: "genel", label: "DİĞER" },
 ];
 
-/** Excel Panel'in "Para nereye gitti?" bloğundaki sabit gider grupları (B9–B12) */
+/** Genel bakış'ın "Para nereye gitti?" kartındaki sabit gider grupları */
 export type PanelFixedGroup = "kira" | "personel" | "reklam" | "diger";
 
 export const PANEL_FIXED_GROUPS: { key: PanelFixedGroup; label: string; hint: string }[] = [
-  { key: "kira", label: "Kira", hint: "Sabit Giderler'deki kira satırı. Ortak gider / aidat Diğer'de sayılır (Excel Panel B9)." },
+  { key: "kira", label: "Kira", hint: "Sabit Giderler'deki kira satırı. Ortak gider / aidat Diğer'de sayılır." },
   {
     key: "personel",
     label: "Personel (maaş + SGK, part-time, yemek)",
-    hint: "Personel sayfasındaki işveren maliyeti + part-time + personel yemeği. Muhasebeci Diğer'de sayılır (Excel Panel B10).",
+    hint: "Maaşlar'daki işveren maliyeti + part-time + personel yemeği. Muhasebeci Diğer'de sayılır.",
   },
-  { key: "reklam", label: "Reklam (Instagram, influencer)", hint: "Reklam, Instagram, influencer gibi tanıtım giderleri (Excel Panel B11)." },
-  { key: "diger", label: "Diğer sabit giderler", hint: "Elektrik, muhasebe, güvenlik, yazılım, ortak gider… (Excel Panel B12)." },
+  { key: "reklam", label: "Reklam (Instagram, influencer)", hint: "Reklam, Instagram, influencer gibi tanıtım giderleri." },
+  { key: "diger", label: "Diğer sabit giderler", hint: "Elektrik, muhasebe, güvenlik, yazılım, ortak gider…" },
 ];
 
 /**
@@ -234,19 +242,24 @@ export const PANEL_FIXED_GROUPS: { key: PanelFixedGroup; label: string; hint: st
  */
 export const PANEL_GROUP_KEYWORDS = {
   reklam: /reklam|instagram|influencer|sosyal medya|tanitim|sponsor|tiktok|facebook|google ads|meta ads/,
-  /** Personel bölümünde olup Excel Panel'de "Diğer" sayılanlar (dışarıdan hizmet) */
+  /** Personel bölümünde olup "Diğer" grubunda sayılanlar (dışarıdan hizmet) */
   notPersonel: /muhasebe|musavir|avukat|hukuk|danisman/,
   kira: /kira/,
   /** Kira bölümünde olup kira sayılmayanlar */
   notKira: /ortak gider|aidat|avans/,
 };
 
+/** Ambalaj sayım grubu: olağan alış KDV'si Ayarlar'daki ambalaj oranı (öteki gruplar gıda oranı) */
+export const PACKAGING_COUNT_GROUP = "AMBALAJ MALZEMELERİ";
+
 /**
- * Excel Sayım sayfasındaki grup KDV oranı (M sütunu): ambalaj %20, diğer bütün gruplar ve listede olmayanlar %1.
- * Panel her malzemenin kendi Alış KDV'sini kullanır; bu tablo yalnızca karşılaştırma içindir.
+ * Sayım grubunun olağan alış KDV'si (Ayarlar › Oranlar): ambalaj grubu ambalaj oranı (%20), öteki gruplar, grupsuz
+ * malzeme ve sayımda listede olmayan kalemler gıda oranı (%1). Hammaddeler yeni malzemeye bunu önerir; sayım her
+ * malzemenin kendi Alış KDV'sini kullanır, oranı gruptan ayrılan malzeme sayımda bilgi olarak yazılır.
  */
-export const COUNT_GROUP_VAT: Record<string, number> = { "AMBALAJ MALZEMELERİ": 0.2 };
-export const COUNT_GROUP_VAT_DEFAULT = 0.01;
+export function groupVatRate(settings: Pick<Settings, "alisKdvAmbalaj" | "alisKdvGida">, group: string | null | undefined): number {
+  return group === PACKAGING_COUNT_GROUP ? settings.alisKdvAmbalaj : settings.alisKdvGida;
+}
 
 /** Satış listesinde ürün sayılmaması gereken satırlar (toplam / başlık) */
 // "Genel / ara / alt toplam …" her zaman özet; yalın "Toplam" yalnızca ardından tutar sözcükleri geliyorsa

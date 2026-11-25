@@ -11,7 +11,6 @@ import { test } from "node:test";
 import { coverageSplit, coverageText, layerText, lineAmount, liveTotals, type CountLineValue } from "../src/app/panel/sayim/logic";
 import { countFactor, createModel, type Model } from "../src/lib/calc/engine";
 import { buildLots, closingLayers, layersValue, lotPool, valuationFor, type PurchaseLot } from "../src/lib/calc/fifo";
-import { stockVatSummary } from "../src/lib/calc/insights";
 import type { Dataset, Ingredient } from "../src/lib/calc/types";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -240,10 +239,8 @@ test("11: SMM = açılış + alış − FIFO kapanış; sonraki ayın açılış
 /** sayim/page.tsx ile aynı eşleme (yönetici) */
 function formGroups(m: Model, month: string) {
   const sheet = m.stockSheet(month);
-  const vat = stockVatSummary(sheet);
-  return sheet.groups.map((g, gi) => ({
+  return sheet.groups.map((g) => ({
     name: g.name,
-    excelRate: vat.groups[gi].excelRate,
     lines: g.lines.map(
       (l): CountLineValue => ({
         id: l.ingredient.id,

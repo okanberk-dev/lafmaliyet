@@ -68,6 +68,9 @@ const settingsSchema = z.object({
   // Personel yemek kartı (Faz 5): günlük tutar ve ayda gün
   mealCardDaily: numKey.min(0).max(100_000),
   mealCardDays: numKey.int().min(1).max(31),
+  // Sayım gruplarının olağan alış KDV'si (yeni malzemenin önerisi, listede olmayan kalemler; constants.ts groupVatRate)
+  alisKdvAmbalaj: numKey.min(0).max(1),
+  alisKdvGida: numKey.min(0).max(1),
   fireExcludesPackaging: z.boolean(),
   suBirimLTOverride: numKey.min(0).nullable(),
   publicMenu: z.boolean(),
@@ -91,6 +94,8 @@ const SETTING_LOG: Record<string, [label: string, kind: "pct" | "num" | "bool" |
   tkGr: ["Türk kahvesi (gr)", "num"],
   mealCardDaily: ["Yemek kartı günlük (₺)", "num"],
   mealCardDays: ["Yemek kartı ayda gün", "num"],
+  alisKdvAmbalaj: ["Ambalajın alış KDV'si", "pct"],
+  alisKdvGida: ["Gıdanın alış KDV'si", "pct"],
   fireExcludesPackaging: ["Fire ambalaja uygulanmasın", "bool"],
   suBirimLTOverride: ["Su + buz ₺/L", "water"],
   publicMenu: ["QR menü yayında", "bool"],
@@ -112,7 +117,7 @@ function sameValue(a: unknown, b: unknown) {
 }
 
 /**
- * "%10" yerine "0,1" yazılınca oran binde bire düşer (Excel'deki % biçimli hücrede de 0,1 → %0,1). Satış ve hizmet
+ * "%10" yerine "0,1" yazılınca oran binde bire düşer (yüzde alanına 0,1 yazmak %0,1 demektir). Satış ve hizmet
  * KDV'si, POS komisyonu ve hedef maliyet oranı için %0,5'in altı (0 hariç) gerçekçi değil: kayıt reddedilir.
  */
 const PCT_SANITY = ["kdv", "kdvHizmet", "komisyon", "hedefMaliyet"] as const;

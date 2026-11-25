@@ -149,6 +149,9 @@ test("hammadde formu: yazım farkı yakalanır, kategori rafı ve KDV önerilir,
   assert.equal(groupForCategory(rows, "Meyve"), "DİĞER GIDA ÜRÜNLERİ", "yeni kategori");
   assert.equal(vatForGroup("AMBALAJ MALZEMELERİ"), 0.2);
   assert.equal(vatForGroup("SOS / ŞURUP / PÜRE"), 0.01);
+  // Oranlar Ayarlar'dan (alisKdvAmbalaj, alisKdvGida); varsayılan bugünkü değerler
+  assert.equal(vatForGroup("AMBALAJ MALZEMELERİ", { alisKdvAmbalaj: 0.18, alisKdvGida: 0.08 }), 0.18);
+  assert.equal(vatForGroup("TOZ ÜRÜNLER", { alisKdvAmbalaj: 0.18, alisKdvGida: 0.08 }), 0.08);
   // Dialogdaki KDV alanı: "%20" → 0,2 (eskiden 0,002 kaydediliyordu)
   assert.equal(parsePercentInput("%20"), 0.2);
 

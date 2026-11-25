@@ -2290,7 +2290,8 @@ export function createModel(ds: Dataset) {
       extras,
       extrasTotal,
       total: sum(groups.map((g) => g.total)) + extrasTotal,
-      totalVatIncl: sum(groups.map((g) => g.totalVatIncl)) + extrasTotal * 1.01,
+      // Listede olmayan kalemin malzeme kaydı (Alış KDV'si) yok: gıda grubunun olağan oranıyla (Ayarlar, %1)
+      totalVatIncl: sum(groups.map((g) => g.totalVatIncl)) + extrasTotal * (1 + st.alisKdvGida),
       hasData: counts.size > 0 || extras.length > 0,
     };
     stockCache.set(month, s);

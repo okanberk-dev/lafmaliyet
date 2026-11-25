@@ -51,7 +51,7 @@ const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
 /**
  * Vergi, KDV, SGK › Demirbaş (plan docs/planlar/vergi.md §4.3, K14; docs/planlar/ux-sade.md §7.8): demirbaş listesi,
  * listeye eklenmemiş Kuruluş & Demirbaş faturaları, "demirbaş olabilir" faturalar ve faturası Paraşüt'te silinen
- * demirbaşlar. Ekranda "varlık" yerine "demirbaş" (yalnız söz; veri ve Excel aynı). Nakit planını okumaz (K30).
+ * demirbaşlar. Ekranda "varlık" yerine "demirbaş" (yalnız söz; veri ve dışa aktarım aynı). Nakit planını okumaz (K30).
  */
 async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/panel/vergi/demirbas">["searchParams"] }) {
   await requireAdmin();

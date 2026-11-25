@@ -80,7 +80,7 @@ test("harcamalar: Para nereye gitti'de reklam grubunda, artık 'bu aya özel' ol
   assert.equal(after.lines.some((l) => l.key === "expense:2"), false);
 });
 
-test("harcamalar: standarda (Excel temeli) karışmaz; sabit gider kutusunda ve net kâr ipucunda ayrı satır", async () => {
+test("harcamalar: standart aylık sabit gidere karışmaz; sabit gider kutusunda ve net kâr ipucunda ayrı satır", async () => {
   const { renderToStaticMarkup } = await import("react-dom/server");
   const { createElement } = await import("react");
   const { FixedReconcile, fixedBreakdownText } = await import("../src/app/panel/dashboard-fixed");
@@ -90,12 +90,12 @@ test("harcamalar: standarda (Excel temeli) karışmaz; sabit gider kutusunda ve 
   const f = d.fixedMonth;
   const t = d.theoretical!;
   const ads = f.lines.find((l) => l.key === "expense:3")?.value ?? 0;
-  // Standart = Excel SabitGiderToplam (Eylül tam ay: açık gün etkisi yok); harcamalar ayrı bileşen
-  assert.ok(Math.abs(f.standard - d.fixedStandardTotal) < 1e-6, "standart = Excel temeli");
+  // Standart = standart aylık sabit gider (Eylül tam ay: açık gün etkisi yok); harcamalar ayrı bileşen
+  assert.ok(Math.abs(f.standard - d.fixedStandardTotal) < 1e-6, "standart = standart aylık sabit gider");
   assert.ok(Math.abs(f.standard - fixedCostsForMonth(createModel(base), M).standard) < 1e-6);
   assert.ok(Math.abs(f.expenses - 65_000 - ads) < 1e-6);
   assert.ok(Math.abs(f.standard + f.proration + f.overrides + f.manual + f.expenses - f.total) < 1e-6);
-  assert.ok(Math.abs(t.netProfitStandard - t.netProfit - f.expenses) < 1e-6, "Excel temeli ile net kâr farkı = harcamalar");
+  assert.ok(Math.abs(t.netProfitStandard - t.netProfit - f.expenses) < 1e-6, "standart sabit giderle net kâr farkı = harcamalar");
   assert.ok(Math.abs(f.flow.find((x) => x.key === "reklam")!.standard - fixedCostsForMonth(createModel(base), M).flow.find((x) => x.key === "reklam")!.standard) < 1e-6);
   const html = renderToStaticMarkup(createElement(FixedReconcile, { f })).replace(/ /g, " ");
   assert.match(html, /Aylık harcamalar/);

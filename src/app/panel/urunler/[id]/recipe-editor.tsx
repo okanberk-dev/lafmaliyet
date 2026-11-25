@@ -987,7 +987,7 @@ export function RecipeEditor({
                               </IconButton>
                             </div>
 
-                            {/* Satır notu (Excel'deki hücre notu): varsa hep görünür, yoksa "Not" ile açılır. Dar düzende
+                            {/* Satır notu: varsa hep görünür, yoksa "Not" ile açılır. Dar düzende
                                 satırın tam genişliğinde, "Not" düğmesinin hemen altında; genişte malzeme sütununda,
                                 seçim kutusunun altında (karo görünürken onunla hizalı) */}
                             {l.row.note || noteOpen.has(l.row.key) ? (

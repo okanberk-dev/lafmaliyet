@@ -13,7 +13,7 @@ import { getDb, schema as s } from "@/server/db";
 import { buildWorkbook } from "./workbook";
 
 /**
- * Excel'e aktar: panelin bütün sayfaları tek .xlsx dosyasında (yalnızca yönetici).
+ * Dışa aktar: panelin bütün sayfaları tek .xlsx çalışma kitabında (yalnızca yönetici).
  * ?ay=YYYY-MM seçili ayın sekmelerini (Özet, Sayım, Tutarlılık, Satış, Personel, Sabit Giderler) belirler;
  * verilmezse satış verisi olan son ay. Gelir-Gider o ayın yılının 12 ayını, Faturalar bütün faturaları içerir;
  * gri yedek sekmeleri (Satış / Gelir-Gider / Sayım Kayıtları, Ay Bilgileri, Alım Miktarları) bütün ayları taşır.
@@ -73,8 +73,8 @@ async function exportWorkbook(request: NextRequest, scope: BranchScope): Promise
       },
     });
   } catch (e) {
-    console.error("[export] Excel dosyası hazırlanamadı", e);
-    return new Response("Excel dosyası hazırlanamadı. Sayfayı yenileyip tekrar deneyin; sorun sürerse hata kaydına bakın.", {
+    console.error("[export] Dışa aktarım dosyası hazırlanamadı", e);
+    return new Response("Dışa aktarım dosyası (.xlsx) hazırlanamadı. Sayfayı yenileyip tekrar deneyin; sorun sürerse hata kaydına bakın.", {
       status: 500,
       headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
     });

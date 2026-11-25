@@ -4,7 +4,7 @@ import { monthLabel, num, tl } from "@/lib/format";
 
 import type { GridSection } from "./pnl-grid";
 
-/** Excel'den gelen büyük harfli satır adlarını cümle düzenine çevirir; kısaltmalar büyük kalır */
+/** Büyük harfli satır adlarını ("PERSONEL MAAŞ") cümle düzenine çevirir; kısaltmalar büyük kalır */
 const ACRONYMS = ["POS", "SGK", "KDV", "AVM"];
 export function sentenceCase(s: string): string {
   let out = s.toLocaleLowerCase("tr-TR");

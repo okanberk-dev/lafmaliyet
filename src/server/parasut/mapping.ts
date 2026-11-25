@@ -11,6 +11,7 @@
 
 import { cleanTaxNumber, taxKey } from "@/app/panel/tedarikciler/logic";
 import { dateTR } from "@/lib/format";
+import { INVOICE_SOURCE_PHRASE } from "@/lib/import-labels";
 
 import { dec, indexIncluded, relMany, relOne, str, type Resource } from "./jsonapi";
 
@@ -557,7 +558,7 @@ export function findByEInvoiceNo<T extends ExistingInvoice>(d: Pick<BillDraft, "
 }
 
 /**
- * Yeni açılacak kaydın GİB portalı numarası bağsız (elle, Excel'le girilmiş) bir kayıtta da var (±31 gün, aynı tarih ya
+ * Yeni açılacak kaydın GİB portalı numarası bağsız (elle girilmiş ya da içe aktarılmış) bir kayıtta da var (±31 gün, aynı tarih ya
  * da tutar) ama tedarikçi tutmadı (findByEInvoiceNo bağlamadı): başka ustanın aynı numarası da olabilir, adı başka
  * yazılmış aynı fatura da. Yeni kayıt açılır ama kontrol bekler (gibNoClashNote); yoksa null
  */
@@ -569,7 +570,7 @@ export function gibNoClash<T extends ExistingInvoice>(d: Pick<BillDraft, "invoic
 
 /** gibNoClash'ın yeni kayda düşen notu */
 export function gibNoClashNote(e: Pick<ExistingInvoice, "supplier" | "date"> & { origin?: string }): string {
-  const kind = e.origin === "manual" ? "elle girilmiş" : e.origin === "excel" ? "Excel'den alınmış" : "başka bir";
+  const kind = e.origin === "manual" || e.origin === "excel" ? INVOICE_SOURCE_PHRASE[e.origin] : "başka bir";
   return `aynı numaralı ${kind} fatura var (${e.supplier}, ${dateTR(e.date)}); aynı faturaysa birini silin`;
 }
 

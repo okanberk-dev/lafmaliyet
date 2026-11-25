@@ -1,7 +1,8 @@
 // Hammadde formunun saf yardımcıları (istemci formu ve testler kullanır).
 
 import { countFactor } from "@/lib/calc/engine";
-import { COUNT_GROUP_VAT, COUNT_GROUP_VAT_DEFAULT, COUNT_GROUPS } from "@/lib/constants";
+import type { Settings } from "@/lib/calc/types";
+import { COUNT_GROUPS, DEFAULT_SETTINGS, groupVatRate } from "@/lib/constants";
 import { num } from "@/lib/format";
 
 /** Silmeyi engelleyen geçmiş kayıt sayıları */
@@ -56,7 +57,11 @@ export function groupForCategory(rows: { category: string; countGroup: string | 
   return best || (category === "Ambalaj" ? "AMBALAJ MALZEMELERİ" : "DİĞER GIDA ÜRÜNLERİ");
 }
 
-export const vatForGroup = (group: string) => COUNT_GROUP_VAT[group] ?? COUNT_GROUP_VAT_DEFAULT;
+/** Sayım gruplarının olağan alış KDV'si (Ayarlar › Oranlar: ambalaj ve gıda) */
+export type GroupVatRates = Pick<Settings, "alisKdvAmbalaj" | "alisKdvGida">;
+
+/** Yeni malzemeye önerilen Alış KDV'si: sayım grubunun olağan oranı (Ayarlar; elle değiştirilebilir) */
+export const vatForGroup = (group: string, rates: GroupVatRates = DEFAULT_SETTINGS) => groupVatRate(rates, group);
 
 /** "1 KG = 1.000 gr" (sayım listesinde nasıl girileceği) */
 export const countUnitHint = (countUnit: string, unit: string) => (countUnit ? `Sayımda 1 ${countUnit} = ${num(countFactor(countUnit))} ${unit}` : "Sayım listesinde görünmez");

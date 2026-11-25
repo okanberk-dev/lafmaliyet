@@ -51,8 +51,6 @@ export interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
-  /** Excel'deki karşılığı */
-  excel?: string;
   roles: ("admin" | "staff")[];
   /** Bu öğeyi etkin gösteren diğer yollar (aynı bölümün sekmeleri) */
   match?: string[];
@@ -71,7 +69,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: "Genel",
     items: [
-      { href: "/panel", label: "Genel bakış", icon: LayoutDashboard, excel: "Panel", roles: ["admin"], keywords: "panel özet dashboard kâr zarar başabaş" },
+      { href: "/panel", label: "Genel bakış", icon: LayoutDashboard, roles: ["admin"], keywords: "panel özet dashboard kâr zarar başabaş" },
       {
         href: "/panel/bugun",
         label: "Bugün",
@@ -138,7 +136,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         href: "/panel/urunler",
         label: "Ürünler & kârlılık",
         icon: Coffee,
-        excel: "Ürün Kârlılık + Reçete Kartları",
+       
         roles: ["admin"],
         keywords: "reçete kartı fiyat marj kârlılık ürünler kâr düşük az kazandıran",
       },
@@ -158,7 +156,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         roles: ["admin"],
         keywords: "toplu fiyat zam indirim yüzde yuvarla modpos kasa fiyat geçmişi geri al",
       },
-      { href: "/panel/hammaddeler", label: "Hammaddeler", icon: Package, excel: "Hammaddeler", roles: ["admin"], keywords: "birim fiyat tedarikçi" },
+      { href: "/panel/hammaddeler", label: "Hammaddeler", icon: Package, roles: ["admin"], keywords: "birim fiyat tedarikçi" },
       { href: "/panel/receteler", label: "Reçete defteri", icon: BookOpen, roles: ["admin", "staff"], keywords: "barista tarif öneri değişiklik" },
     ],
   },
@@ -169,7 +167,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         href: "/panel/sayim",
         label: "Stok sayımı",
         icon: ClipboardList,
-        excel: "Sayım + Tutarlılık Kontrolü",
+       
         roles: ["admin", "staff"],
         keywords: "envanter tutarlılık fark",
       },
@@ -181,7 +179,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: "Satış",
     items: [
-      { href: "/panel/satislar", label: "Satışlar", icon: Receipt, excel: "Satış Raporu", roles: ["admin"], keywords: "pos rapor içe aktar" },
+      { href: "/panel/satislar", label: "Satışlar", icon: Receipt, roles: ["admin"], keywords: "pos rapor içe aktar" },
       // Yemek kartı ve platform komisyonunun gerçek oranı, faturadaki ücretler ve hakediş takibi (docs/KOMISYON.md)
       {
         href: "/panel/komisyonlar",
@@ -196,7 +194,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: "Alış & gider",
     items: [
-      { href: "/panel/faturalar", label: "Faturalar", icon: FileText, excel: "Faturalar", roles: ["admin"], keywords: "alış tedarikçi gider" },
+      { href: "/panel/faturalar", label: "Faturalar", icon: FileText, roles: ["admin"], keywords: "alış tedarikçi gider" },
       {
         href: "/panel/tedarikciler",
         label: "Tedarikçiler",
@@ -208,14 +206,14 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         href: "/panel/giderler",
         label: "Giderler & maaşlar",
         icon: Wallet,
-        excel: "Sabit Giderler + Personel",
+       
         roles: ["admin"],
         match: ["/panel/personel", "/panel/harcamalar"],
         keywords: "kira fatura maaş sgk yatırım reklam influencer harcama nakit fatura dışı aylık gider giderler & personel sabit gider kira aidat",
       },
       // Giderler & maaşlar'ın sekmeleri ve bölümü: kenar çubuğunda tek öğenin altında, burada adıyla
       { href: "/panel/harcamalar", label: "Aylık harcamalar", icon: Wallet, roles: ["admin"], keywords: "harcama reklam influencer nakit alım bakım fatura dışı" },
-      { href: "/panel/personel", label: "Maaşlar", icon: UserRound, excel: "Personel", roles: ["admin"], keywords: "personel maaş net brüt bordro çalışan işveren maliyeti" },
+      { href: "/panel/personel", label: "Maaşlar", icon: UserRound, roles: ["admin"], keywords: "personel maaş net brüt bordro çalışan işveren maliyeti" },
       { href: "/panel/personel#sgk-oranlari", label: "SGK oranı", icon: Percent, roles: ["admin"], keywords: "sgk oranı işveren payı işsizlik prim oranı" },
     ],
   },
@@ -223,7 +221,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     // Kâr ettim mi (Gelir-gider), ne ödeyeceğim (Ödemeler), param yeter mi (Nakit planı)
     title: "Kâr & ödemeler",
     items: [
-      { href: "/panel/gelir-gider", label: "Gelir-gider", icon: CalendarRange, excel: "Genel Maliyet", roles: ["admin"], keywords: "aylık tablo kâr zarar online satış laffogato.net site uygulama ciro" },
+      { href: "/panel/gelir-gider", label: "Gelir-gider", icon: CalendarRange, roles: ["admin"], keywords: "aylık tablo kâr zarar online satış laffogato.net site uygulama ciro" },
       { href: "/panel/gelir-gider#kar-zarar", label: "Kâr / zarar", icon: Scale, roles: ["admin"], keywords: "kâr zarar kar zarar net kâr yıl" },
       {
         href: "/panel/hatirlaticilar",
@@ -305,14 +303,14 @@ export const NAV_FOOTER: NavItem[] = [
     roles: ["admin"],
     keywords: "ürün hammadde bağlantısı eşleştir fatura kalemi",
   },
-  { href: "/panel/ayarlar", label: "Ayarlar", icon: Settings, excel: "Ayarlar", roles: ["admin"], keywords: "kdv komisyon qr menü yedek kategori laffogato.net bağlantı lafpos kasa geçiş günü modpos api kasa föyü" },
+  { href: "/panel/ayarlar", label: "Ayarlar", icon: Settings, roles: ["admin"], keywords: "kdv komisyon qr menü yedek kategori laffogato.net bağlantı lafpos kasa geçiş günü modpos api kasa föyü" },
   { href: "/panel/ayarlar#gorunum", label: "Görünüm (açık / koyu tema)", icon: SunMoon, roles: ["admin"], keywords: "koyu tema karanlık mod gece modu dark mode açık tema renk görünüm siyah" },
   { href: "/panel/ayarlar#oranlar", label: "KDV ve komisyon oranları", icon: Percent, roles: ["admin"], keywords: "kdv oranı %10 %20 hizmet pos komisyon oranı" },
   { href: "/panel/ayarlar#gecmis", label: "İşlem geçmişi", icon: History, roles: ["admin"], keywords: "kim neyi değiştirdi kayıt geçmiş log" },
-  { href: "/panel/ayarlar#yedek", label: "Yedek", icon: HardDriveDownload, roles: ["admin"], keywords: "yedek indir excel" },
+  { href: "/panel/ayarlar#yedek", label: "Yedek", icon: HardDriveDownload, roles: ["admin"], keywords: "yedek indir dışa aktar xlsx çalışma kitabı" },
   { href: "/panel/kullanicilar", label: "Kullanıcılar & roller", icon: Users, roles: ["admin"], keywords: "kullanıcı rol yetki personel yönetici parola iki adımlı 2fa güvenlik" },
   { href: "/panel/subeler", label: "Şubeler", icon: Building2, roles: ["admin"], keywords: "şube sube marina tuzla kanal laffogato.net online yeni şube kasa kaynağı modpos lafpos" },
-  { href: "/panel/yardim", label: "Yardım", icon: HelpCircle, excel: "Nasıl Kullanılır", roles: ["admin"], keywords: "nasıl kullanılır" },
+  { href: "/panel/yardim", label: "Yardım", icon: HelpCircle, roles: ["admin"], keywords: "nasıl kullanılır" },
   { href: "/panel/hesap", label: "Hesabım", icon: UserRound, roles: ["admin", "staff"], keywords: "parola şifre e-posta iki adımlı doğrulama 2fa authenticator" },
 ];
 
@@ -482,7 +480,7 @@ export interface SectionTab {
   roles: readonly ("admin" | "staff")[];
 }
 
-/** Sekmede kısa ad: başlık zaten "Stok", sekme "Sayım" der (Excel karşılığı da bu adla bulunur, yardim/nav-paths.ts) */
+/** Sekmede kısa ad: başlık zaten "Stok", sekme "Sayım" der */
 const TAB_LABELS: Record<string, string> = { "/panel/sayim": "Sayım" };
 
 /** Kenar çubuğundaki bir grubun alt sayfaları, aynı sırada ve aynı rollerle */

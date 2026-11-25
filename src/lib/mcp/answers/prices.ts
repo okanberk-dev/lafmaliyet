@@ -134,7 +134,7 @@ export function priceRiseImpact(model: Model, alerts: PriceAlertsLike, input: { 
     uyarilar,
     hesap,
     kaynak: [
-      "Hammadde fiyat geçmişi (elle, Excel ve Paraşüt faturalarından); %5'ten küçük değişiklik zam sayılmaz, onay bekleyen fiyatlar dahil değil",
+      "Hammadde fiyat geçmişi (elle, ilk aktarım ve Paraşüt faturalarından); %5'ten küçük değişiklik zam sayılmaz, onay bekleyen fiyatlar dahil değil",
       basis ? basisText(basis) : "Satış listesi yok: aylık tutar hesaplanamadı, yalnız birim maliyet farkı var.",
       "Zayi ve ikram tüketimi ile ürüne eşleşmeyen satışlar sayılmaz",
     ].map((s) => s.replace(/\u00a0/g, " ")),

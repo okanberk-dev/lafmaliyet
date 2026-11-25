@@ -289,7 +289,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
             label="Eşleşmeyen ürün"
             value={<CountUp value={unmatched} kind="num" />}
             tone={unmatched ? "warn" : "good"}
-            info="Reçetesi olmayan ürünlere eşleşenlerin ortalama maliyet oranı uygulanır (Excel'deki gibi)."
+            info="Reçetesi olmayan ürünlere eşleşenlerin ortalama maliyet oranı uygulanır (tahmini maliyet)."
             sub={
               <>
                 Ort. maliyet oranı {pct(sales.avgCostRatio)}

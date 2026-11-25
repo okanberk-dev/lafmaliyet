@@ -415,7 +415,7 @@ export function ParasutClient({
             label="Paraşüt'ten gelen fatura"
             value={num(stats.invoices)}
             suffix="adet"
-            info="Paraşüt'e bağlı bütün faturalar: gelen e-faturalar (içeri alınmamış olanlar dahil), içeri alınmış gider faturaları ve Paraşüt'teki karşılığıyla eşleşen Excel kayıtları."
+            info="Paraşüt'e bağlı bütün faturalar: gelen e-faturalar (içeri alınmamış olanlar dahil), içeri alınmış gider faturaları ve Paraşüt'teki karşılığıyla eşleşen içe aktarılmış (eski) kayıtlar."
             sub={
               stats.lastSyncedAt ? (
                 <>
@@ -571,7 +571,7 @@ export function ParasutClient({
           <CardContent className="space-y-3 border-t border-line-strong pt-4">
             <p className="text-xs leading-5 text-ink-mute">
               İlk eşitleme {settings.syncFrom.value ? dateTR(settings.syncFrom.value) : "bu yılın başından"} itibaren alır
-              {cursor ? `; sonrakiler son faturadan (${dateTR(cursor)}) 75 gün geriye bakar` : ""}. Panelde elle ya da Excel&apos;den girilmiş aynı fatura
+              {cursor ? `; sonrakiler son faturadan (${dateTR(cursor)}) 75 gün geriye bakar` : ""}. Panelde elle girilmiş ya da içe aktarılmış aynı fatura
               bulunursa yenisi açılmaz, mevcut kayıt Paraşüt&apos;e bağlanır; kategorisi ve tedarikçi adı korunur.
             </p>
             <form

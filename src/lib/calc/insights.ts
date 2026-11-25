@@ -1,6 +1,5 @@
 import {
-  COUNT_GROUP_VAT,
-  COUNT_GROUP_VAT_DEFAULT,
+  groupVatRate,
   MANUAL_PNL_ROWS,
   PANEL_FIXED_GROUPS,
   PANEL_GROUP_KEYWORDS,
@@ -16,7 +15,7 @@ import { isSummaryRow } from "./pos-paste";
 import { staffWarnings } from "./personnel";
 import { MANAGED_QTY_NOTE, NO_PURCHASE_NOTE } from "../purchase-notes";
 import { HOLDS_HREF } from "../price-hold";
-import type { FixedSection, Ingredient } from "./types";
+import type { FixedSection, Ingredient, Settings } from "./types";
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const safeDiv = (a: number, b: number) => (b ? a / b : 0);
@@ -1435,33 +1434,31 @@ export function consistency(model: Model, month: string) {
 // ============================================================================
 
 /**
- * Sayım sayfasının grup toplamları KDV hariç ve KDV dahil.
- * Panel her malzemenin Hammaddeler'deki Alış KDV'sini kullanır (engine.stockSheet). Excel Sayım ise grup
- * başına tek oran kullanır (ambalaj %20, diğerleri %1: N = L × M + L). İkisi farklıysa `mismatches`
- * listesi hangi malzemenin oranının grup oranından ayrıldığını gösterir (ör. Yenilebilir bardak %10 / grup %20).
+ * Sayım sayfasının grup toplamları KDV hariç ve KDV dahil. KDV dahil tutar her malzemenin Hammaddeler'deki Alış
+ * KDV'siyle (engine.stockSheet). `rate` grubun olağan alış KDV'si (Ayarlar: ambalaj %20, gıda %1; groupVatRate);
+ * `mismatches` Alış KDV'si bundan ayrılan malzemeler (ör. Yenilebilir bardak %10 / ambalaj %20): faturası kontrol
+ * edilsin diye bilgi. Listede olmayan kalemlerin malzeme kaydı yok: gıda oranıyla.
  */
-export function stockVatSummary(sheet: StockSheet) {
+export function stockVatSummary(sheet: StockSheet, settings: Pick<Settings, "alisKdvAmbalaj" | "alisKdvGida">) {
   const groups = sheet.groups.map((g) => {
-    const excelRate = COUNT_GROUP_VAT[g.name] ?? COUNT_GROUP_VAT_DEFAULT;
+    const rate = groupVatRate(settings, g.name);
     return {
       name: g.name,
       total: g.total,
       totalVatIncl: g.totalVatIncl,
       vat: g.totalVatIncl - g.total,
-      excelRate,
-      excelVatIncl: g.total * (1 + excelRate),
+      rate,
       mismatches: g.lines
-        .filter((l) => Math.abs(l.ingredient.vatRate - excelRate) > 1e-9)
+        .filter((l) => Math.abs(l.ingredient.vatRate - rate) > 1e-9)
         .map((l) => ({ ingredient: l.ingredient, vatRate: l.ingredient.vatRate, amount: l.amount })),
     };
   });
-  const extrasVatIncl = sheet.extrasTotal * (1 + COUNT_GROUP_VAT_DEFAULT);
+  const extrasRate = settings.alisKdvGida;
   return {
     groups,
-    extras: { total: sheet.extrasTotal, totalVatIncl: extrasVatIncl, rate: COUNT_GROUP_VAT_DEFAULT },
+    extras: { total: sheet.extrasTotal, totalVatIncl: sheet.extrasTotal * (1 + extrasRate), rate: extrasRate },
     total: sheet.total,
     totalVatIncl: sheet.totalVatIncl,
-    excelTotalVatIncl: sum(groups.map((g) => g.excelVatIncl)) + extrasVatIncl,
   };
 }
 

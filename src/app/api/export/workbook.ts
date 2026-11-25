@@ -1,11 +1,11 @@
-// "Excel'e aktar" dosyası: panelin bütün sayfaları, Excel çalışma kitabının ("L'Affogato – Maliyet & Kârlılık")
-// sekme sırası ve düzeniyle. Saf işlev: veritabanına dokunmaz, testleri tests/export-workbook.test.ts.
+// "Dışa aktar" dosyası: panelin bütün sayfaları tek .xlsx çalışma kitabında. Saf işlev: veritabanına dokunmaz,
+// testleri tests/export-workbook.test.ts (rakamlar) ve tests/export-bicim.test.ts (biçim).
 //
-// Sekmeler (Excel sırası): Nasıl Okunur (Nasıl Kullanılır) · Özet (Panel) · Gelir-Gider (Genel Maliyet) · Sayım ·
-// Tutarlılık · Ürün Kârlılık · Reçete Kartları · Satış (Satış Raporu) · Hammaddeler · Faturalar · Aylık Alımlar ·
-// Personel · Sabit Giderler · Vergi (tahmin, dalga 12; vergi görünümü verildiyse) · Ayarlar, ardından gri sekmelerde
-// yedek için bütün ayların ham kayıtları (Satış Kayıtları, Ay Bilgileri, Gelir-Gider Kayıtları, Sayım Kayıtları, Alım
-// Miktarları). Dosya Özet'te açılır.
+// Sekmeler: Nasıl Okunur (kapak: dönem, kapsam, oluşturma zamanı, sayfa listesi) · Özet · Gelir-Gider · Sayım ·
+// Tutarlılık · Ürün Kârlılık · Reçete Kartları · Satış · Hammaddeler · Faturalar · Aylık Alımlar · Personel · Sabit
+// Giderler · Vergi (tahmin, dalga 12; vergi görünümü verildiyse) · Ayarlar, ardından gri sekmelerde yedek için bütün
+// ayların ham kayıtları (Satış Kayıtları, Ay Bilgileri, Gelir-Gider Kayıtları, Sayım Kayıtları, Alım Miktarları). Dosya
+// Özet'te açılır.
 
 import ExcelJS from "exceljs";
 
@@ -14,9 +14,10 @@ import { layerText } from "../../../lib/calc/fifo";
 import { consistency, dashboard, forecastMonthOf, missingRevenueText, openBalance, soldWithOnline, stockVatSummary, yearTotals } from "../../../lib/calc/insights";
 import type { FixedPeriod, MonthField, MonthRange } from "../../../lib/calc/types";
 import { MONTH_FIELDS } from "../../../lib/cash-month";
-import { COUNT_GROUP_VAT_DEFAULT, FIXED_PERIODS, FIXED_SECTIONS, GOODS_CATEGORIES, INVOICE_CATEGORIES, MONTH_NAMES, SEPARATE_CATEGORIES } from "../../../lib/constants";
+import { FIXED_PERIODS, FIXED_SECTIONS, GOODS_CATEGORIES, INVOICE_CATEGORIES, MONTH_NAMES, SEPARATE_CATEGORIES } from "../../../lib/constants";
 import { dateTimeTR, dateTR, monthLabel, num, pct, tl } from "../../../lib/format";
 import { purchaseVat, purchaseWithheld } from "../../../lib/kdv";
+import { invoiceSourceLabel } from "../../../lib/import-labels";
 import { monthKasa, salesMonthKasa, type MonthKasa } from "../../../lib/lafpos/kasa";
 import { QUARTER_DEPRECIATION_LABELS } from "../../../lib/tax/assets";
 import { monthName as taxMonthName, quarterLabel, quarterMonths } from "../../../lib/tax/calendar";
@@ -50,7 +51,7 @@ const SECTION_FONT: Partial<ExcelJS.Font> = { bold: true, color: { argb: "FF6441
 const RAW_TAB: Partial<ExcelJS.Color> = { argb: "FFA1A1AA" };
 const BRAND_TAB: Partial<ExcelJS.Color> = { argb: "FF64412A" };
 
-/** Gelir-gider bölüm başlıkları: Excel Genel Maliyet A sütunu (ekrandaki SECTION_LABELS'ın büyük harfi) */
+/** Gelir-gider bölüm başlıkları (ekrandaki SECTION_LABELS'ın büyük harfi) */
 export const PNL_SECTION_LABELS: Record<string, string> = {
   mal: "MAL ALIŞLARI",
   devir: "DEVİRLER",
@@ -64,18 +65,17 @@ export const PNL_SECTION_LABELS: Record<string, string> = {
   oran: "ORANLAR",
 };
 
-/** Yıl toplamı olmayan satırlar (stok bir andaki değerdir, toplanmaz): Excel P19 / P21 boş */
+/** Yıl toplamı olmayan satırlar: stok bir andaki değerdir, toplanmaz */
 const NO_YEAR_TOTAL = new Set(["stock:opening", "stock:closing"]);
 
 const STATUS_LABEL = { active: "Devam ediyor", ended: "Bitti", upcoming: "Başlamadı" } as const;
-const SOURCE_LABEL: Record<string, string> = { manual: "Elle", excel: "Excel", parasut: "Paraşüt" };
 
 // ---------------------------------------------------------------------------- Girdi
 
 export interface ExportExtras {
   /** Tek seferlik yatırımlar (Sabit Giderler altında, aylık gidere dahil değil) */
   investments: { name: string; amount: number; date: string | null; note: string | null }[];
-  /** Tutarlılık bulguları (Excel Tutarlılık Kontrolü 3–5. bölümler) */
+  /** Tutarlılık bulguları (reçetede olmayan alımlar, fiyat ve fatura kontrolü) */
   findings: { section: string; title: string; detail: string | null; resolved: boolean; createdAt?: Date | null }[];
   /** Kısmen ödenmiş Paraşüt faturasının kalan borcu (fatura kimliği → TL, KDV dahil); verilmezse faturanın kendi alanı */
   outstanding?: Map<number, number | null>;
@@ -185,7 +185,7 @@ function colLetter(n: number): string {
 }
 
 /**
- * "YYYY-MM-DD" → Excel tarihi. ExcelJS tarihi UTC'ye göre seri sayıya çevirir; yerel gece yarısı
+ * "YYYY-MM-DD" → çalışma kitabının tarihi. ExcelJS tarihi UTC'ye göre seri sayıya çevirir; yerel gece yarısı
  * (Türkiye UTC+3) bir önceki güne düşerdi, bu yüzden UTC gece yarısı kullanılır.
  */
 export function excelDate(date: string): Date {
@@ -230,7 +230,7 @@ export function investmentDate(date: string | null): string | null {
   return v;
 }
 
-/** Aynı dosyadaki sekmeye bağlantı (HYPERLINK formülü: Excel, LibreOffice ve Google E-Tablolar'da çalışır) */
+/** Aynı dosyadaki sekmeye bağlantı (HYPERLINK formülü: yaygın tablo programlarının hepsinde çalışır) */
 function sheetLink(name: string): ExcelJS.CellFormulaValue {
   const target = `#'${name.replace(/'/g, "''")}'!A1`;
   return { formula: `HYPERLINK("${target.replace(/"/g, '""')}","${name.replace(/"/g, '""')}")`, result: name };
@@ -244,9 +244,9 @@ function historyText<T extends { fromMonth: string | null; versionId: number | n
 }
 
 /**
- * Gelir-gider satırının yıl toplamı (Excel Genel Maliyet P sütunu, "2026 YILI").
+ * Gelir-gider satırının yıl toplamı ("2026 YILI" sütunu).
  * Tutar satırları aylar toplanarak (hiç değer yoksa boş); stok devirleri toplanmaz; oranlar yıllık toplam ÷
- * yıllık KDV hariç ciro (Excel P72 = P66/P69). Gelir-gider ekranının yıl sütunuyla aynı kural.
+ * yıllık KDV hariç ciro (ör. maliyet oranı = yılın giderleri ÷ yılın cirosu). Gelir-gider ekranının yıl sütunuyla aynı kural.
  */
 export function pnlYearTotal(model: Pick<Model, "pnlValue">, calcs: PnlMonthCalc[], key: string): number | null {
   if (key.startsWith("ratio:")) {
@@ -298,7 +298,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
   const sold = soldWithOnline(model, month);
   const d = dashboard(model, month);
 
-  // Excel'deki "Nasıl Kullanılır" gibi ilk sekme; içeriği bütün sekmeler eklendikten sonra yazılır
+  // İlk sekme kapak ve okuma rehberi; içeriği bütün sekmeler eklendikten sonra yazılır (sayfa listesi)
   const guide = addSheet(wb, GUIDE_SHEET, [
     { key: "a", width: 30 },
     { key: "b", width: 110 },
@@ -496,15 +496,15 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
   return wb;
 }
 
-// ---------------------------------------------------------------------------- Nasıl Okunur (Excel Nasıl Kullanılır)
+// ---------------------------------------------------------------------------- Nasıl Okunur (kapak)
 
 export const GUIDE_SHEET = "Nasıl Okunur";
 
 /** Sekme adının başına göre bir satırlık açıklama (seçili ay ve yıl adlarda) */
 function sheetPurpose(name: string, label: string, kasa: MonthKasa["both"] = "ModPOS"): string {
   const year = name.match(/^Gelir-Gider (\d{4})$/)?.[1];
-  if (name === "Özet") return `Excel'deki Panel: ${label} para nereye gitti, net kâr / zarar, başabaş cirosu, süren ayın tahmini, en kârlı ürün, kategori ortalamaları (sağda).`;
-  if (year) return `Excel'deki Genel Maliyet: Ocak–Aralık gelir-gider tablosu ve ${year} YILI toplamı. Elle düzeltilen hücrelerde not var.`;
+  if (name === "Özet") return `Yönetim özeti: ${label} para nereye gitti, net kâr / zarar, başabaş cirosu, süren ayın tahmini, en kârlı ürün, kategori ortalamaları (sağda).`;
+  if (year) return `Gelir-gider tablosu: Ocak–Aralık ve ${year} YILI toplamı. Elle düzeltilen hücrelerde not var.`;
   if (name.startsWith("Sayım ") && name !== "Sayım Kayıtları") return `${label} ay sonu stok sayımı: sayım biriminde miktar, grup toplamları ve KDV dahil değer. Değer Ayarlar'daki başlangıç ayından itibaren ilk giren ilk çıkar (FIFO; katmanlar Not sütununda), öncesinde ay sonu fiyatıyla. Boşsa sayım formu olarak yazdırılabilir.`;
   if (name.startsWith("Tutarlılık ")) return `${label}: POS ↔ satış listesi, reçete ↔ fatura ↔ sayım karşılaştırması ve bulgular.`;
   if (name.startsWith("Satış ") && name !== "Satış Kayıtları") return `${label} POS ürün satışları: eşleşen ürün, maliyet, kâr, durum ve not; üstte POS ciro, ödenmez, indirim ve ortalama maliyet oranı.`;
@@ -513,7 +513,7 @@ function sheetPurpose(name: string, label: string, kasa: MonthKasa["both"] = "Mo
     "Reçete Kartları": "Her ürünün malzemeleri, miktarı, birim maliyeti ve KDV dahil tutarı; son satır fire dahil ürün maliyeti.",
     Hammaddeler: "Malzemelerin paket fiyatı, birim maliyeti, alış KDV'si, sayım birimi ve grubu.",
     Faturalar: "Bütün alış faturaları: tarih, kategori, net, KDV, tevkifat, durum, kalan borç, vade, not, vergi no, ETTN ve şube. Net ve Ay sütunları formül; KDV faturanın KDV toplamı (tevkifat düşülmeden), bilinmiyorsa formül.",
-    "Aylık Alımlar": "Excel Faturalar'daki 'Aylara göre net alımlar': kategori × ay (formülle Faturalar'dan), TOPLAM ve mal maliyeti.",
+    "Aylık Alımlar": "Aylara göre net alımlar: kategori × ay (formülle Faturalar'dan), TOPLAM ve mal maliyeti.",
     Vergi: "Tahmin, beyanname değil: vergiye göre gelir-gider (yalnız geliri mali belgeden gelen aylar), kafenin geçici ve kurumlar vergisine katkısı, vergi takvimi, kullanılan kurallar ve sahibin notları.",
     "Cari hareketleri": "Tedarikçilere elle girilen faturasız alımlar, eski borçlar ve ödemeler: tutar, şekil, ödemenin sayıldığı kalemler ve bağlandığı fatura. Ödeme gider değildir.",
     Personel: `${label} maaş + SGK işveren maliyeti, yemek kartı ve part-time ücreti (sütunlar toplamı verir), TOPLAM, SGK oranları; varsa başlangıç / bitiş ve maaş geçmişi.`,
@@ -554,7 +554,7 @@ function fillGuide(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook, model: Model, mo
         ? `${scope.label}: satış, kasa, personel ve ${scope.label} şubesine bağlı giderler yalnız bu şubenin; işletme geneli giderler (şubesi seçilmemiş) "İşletme geneli payı" olarak bilgi. Faturalar, Vergi ve Cari hareketleri firma geneli. Bütün şubeler için panelde soldan Tümü'nü seçip yeniden indirin.`
         : "Tümü: bütün şubeler ve laffogato.net birlikte; işletme geneli giderler bir kez sayılır.",
     ],
-    ["Seçili ay", `Özet, Sayım, Tutarlılık, Satış, Personel, Sabit Giderler ve Ürün Kârlılık'taki satış adetleri ${label} içindir. Başka bir ay için panelin ana sayfasında ayı seçip 'Excel'e aktar'a basın.`],
+    ["Seçili ay", `Özet, Sayım, Tutarlılık, Satış, Personel, Sabit Giderler ve Ürün Kârlılık'taki satış adetleri ${label} içindir. Başka bir ay için panelin Genel bakış ekranında ayı seçip 'Dışa aktar'a basın.`],
     ["Yedek", "Gri sekmeler bütün ayların ham kayıtlarıdır (satış, ay bilgisi, gelir-gider düzeltmeleri, sayım, alım miktarı). Seçili ay dışındaki veriler de buradadır."],
   ]);
   block("NASIL OKUNUR", [
@@ -579,7 +579,7 @@ function fillGuide(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook, model: Model, mo
   });
 }
 
-// ---------------------------------------------------------------------------- Özet (Excel Panel)
+// ---------------------------------------------------------------------------- Özet
 
 function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: ReturnType<typeof dashboard>, now: Date) {
   const label = monthLabel(month);
@@ -634,7 +634,7 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
     { k: "– Kart / POS komisyonu", v: t ? -t.commission : null },
     { k: "Brüt kâr (indirim öncesi)", v: t?.grossProfit ?? null },
   );
-  // Excel Panel B9–B12: Kira / Personel / Reklam / Diğer (+ varsa bu aya özel Gelir-gider satırları)
+  // Sabit gider grupları: Kira / Personel / Reklam / Diğer (+ varsa bu aya özel Gelir-gider satırları)
   const flow = t?.fixedFlow ?? d.fixedMonth.flow;
   for (const l of flow) {
     lines.push({ k: `– ${l.label}`, v: t ? -l.amount : null, note: [l.hint, l.items.length ? `En büyük kalemler: ${l.items.join(", ")}` : ""].filter(Boolean).join(" ") });
@@ -647,15 +647,6 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
       t?.listPeriod ? ` Satış listesi ayın ${t.listPeriod.of} gününün ${t.listPeriod.days}'ini kapsıyor: indirim o günlerin kasa raporlarından, sabit gider ve online satış o günlere düşen payla.` : ""
     }`,
   });
-  if (t && Math.abs(t.netProfit - t.netProfitStandard) >= 1) {
-    lines.push({
-      k: "Net kâr / zarar (standart sabit giderle – Excel Panel temeli)",
-      v: t.netProfitStandard,
-      note: `Excel Panel her ay standart sabit gider toplamını düşer (${tl(d.fixedStandardTotal)}). Fark: gün etkisi ${tl(d.fixedMonth.proration)}, Gelir-gider'de düzeltilen tutarlar ${tl(d.fixedMonth.overrides)}, bu aya özel giderler ${tl(d.fixedMonth.manual)}${d.fixedMonth.expenses ? `, aylık harcamalar ${tl(d.fixedMonth.expenses)}` : ""}${
-        t.fixedBreakdown.listShare ? `, satış listesinin günleri ${tl(t.fixedBreakdown.listShare.amount)}` : ""
-      }.`,
-    });
-  }
   // Hiç verisi olmayan ayda (ay bilgisi, fatura, Gelir-gider girişi, sayım yok) 0 yazılmaz: "veri yok" ile "kâr 0" karışmasın
   const monthHasData =
     model.monthInfo.has(month) ||
@@ -681,7 +672,7 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
     }) ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün.`,
   });
   lines.push({ k: `${name} günlük ortalama ciro (KDV dahil)`, v: d.dailyAvg });
-  // Excel B18 / B19: süren ayın ilk günlerine göre ay sonu tahmini (seçili ay hangisi olursa olsun)
+  // Süren ayın ilk günlerine göre ay sonu tahmini (seçili ay hangisi olursa olsun)
   const fm = forecastMonthOf(model);
   const fd = fm ? (fm === month ? d : dashboard(model, fm)) : null;
   if (fm && fd?.forecast) {
@@ -732,7 +723,7 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
     if (l.note) r.getCell("k").note = l.note;
   }
 
-  // Excel Panel D4:H17: kategori tablosu, sağda
+  // Kategori tablosu, sağda
   d.categories.forEach((c, i) => {
     const row = ws.getRow(i + 2);
     row.getCell("cn").value = c.name;
@@ -748,7 +739,7 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
   }
 }
 
-// ---------------------------------------------------------------------------- Gelir-Gider (Excel Genel Maliyet)
+// ---------------------------------------------------------------------------- Gelir-Gider
 
 function addPnl(wb: ExcelJS.Workbook, model: Model, month: string) {
   const year = Number(month.slice(0, 4));
@@ -814,7 +805,7 @@ function addPnl(wb: ExcelJS.Workbook, model: Model, month: string) {
     const range = def.fixedId !== undefined ? fixedRangeInYear(fixedById.get(def.fixedId), months, model.firstDataMonth) : null;
     const labelNote = [range, def.hint].filter(Boolean).join("\n");
     if (labelNote) r.getCell("l").note = labelNote;
-    // Elle düzeltilen hücre ve hücre notu: Excel'deki hücre açıklaması gibi
+    // Elle düzeltilen hücre ve hücre notu: hücrenin notunda
     months.forEach((m, i) => {
       const c = cells[i];
       const parts: string[] = [];
@@ -833,7 +824,7 @@ function addPnl(wb: ExcelJS.Workbook, model: Model, month: string) {
 function addStock(wb: ExcelJS.Workbook, model: Model, month: string) {
   const label = monthLabel(month);
   const sheet = model.stockSheet(month);
-  const vat = stockVatSummary(sheet);
+  const vat = stockVatSummary(sheet, model.settings);
   const ws = addSheet(
     wb,
     `Sayım ${label}`,
@@ -859,7 +850,7 @@ function addStock(wb: ExcelJS.Workbook, model: Model, month: string) {
     r.eachCell((c) => (c.fill = SUBHEADER_FILL));
     const mismatch = vat.groups[gi]?.mismatches ?? [];
     if (mismatch.length) {
-      r.getCell("av").note = `KDV her malzemenin Alış KDV'siyle hesaplandı. Excel bu grupta tek oran (%${num(vat.groups[gi].excelRate * 100)}) kullanır; farklı olanlar: ${mismatch
+      r.getCell("av").note = `KDV her malzemenin Alış KDV'siyle hesaplandı. Bu grubun olağan alış KDV'si %${num(vat.groups[gi].rate * 100)} (Ayarlar); farklı olanlar: ${mismatch
         .map((x) => `${x.ingredient.name} %${num(x.vatRate * 100)}`)
         .join(", ")}.`;
     }
@@ -872,25 +863,21 @@ function addStock(wb: ExcelJS.Workbook, model: Model, month: string) {
       ws.addRow({ n: l.ingredient.name, u: l.countUnit, q: l.qty, p: l.unitPrice, a: l.qty === null ? null : l.amount, v: l.ingredient.vatRate, av: l.qty === null ? null : l.amountVatIncl, x: notes.join(" ") || null });
     }
   });
-  // Excel: LİSTEDE OLMAYANLAR (grup KDV'si %1)
+  // Listede olmayanlar: malzeme kaydı yok, KDV'si gıdanın alış KDV'si (Ayarlar, %1)
   const er = ws.addRow({ g: "LİSTEDE OLMAYANLAR", a: sheet.extrasTotal, av: vat.extras.totalVatIncl });
   er.font = { bold: true };
   er.eachCell((c) => (c.fill = SUBHEADER_FILL));
   for (const e of sheet.extras) {
-    ws.addRow({ n: e.name, u: e.unit, q: e.qty, p: e.unitPrice, a: e.amount, v: COUNT_GROUP_VAT_DEFAULT, av: e.amount * (1 + COUNT_GROUP_VAT_DEFAULT) });
+    ws.addRow({ n: e.name, u: e.unit, q: e.qty, p: e.unitPrice, a: e.amount, v: vat.extras.rate, av: e.amount * (1 + vat.extras.rate) });
   }
   ws.addRow({});
   const t = ws.addRow({ g: `AY TOPLAMI – ${label.toLocaleUpperCase("tr-TR")}`, a: sheet.total, av: sheet.totalVatIncl });
   t.font = { bold: true };
   t.getCell("g").note = "Gelir-gider sekmesindeki 'SONRAKİ AYA DEVREDEN MAL' bu ayın KDV hariç toplamıdır (elle düzeltilmediyse).";
-  if (Math.abs(vat.excelTotalVatIncl - vat.totalVatIncl) >= 1) {
-    const x = ws.addRow({ g: "KDV dahil (Excel'deki grup oranlarıyla)", av: vat.excelTotalVatIncl });
-    x.getCell("g").note = "Excel Sayım sayfası KDV'yi grup başına tek oranla (ambalaj %20, diğerleri %1) hesaplar.";
-  }
   if (!sheet.hasData) ws.addRow({ g: "Bu ay sayım girilmemiş. Sayfayı boş sayım formu olarak yazdırabilirsiniz." });
 }
 
-// ---------------------------------------------------------------------------- Tutarlılık (Excel Tutarlılık Kontrolü)
+// ---------------------------------------------------------------------------- Tutarlılık
 
 function addConsistency(wb: ExcelJS.Workbook, model: Model, month: string, findings: ExportExtras["findings"]) {
   const label = monthLabel(month);
@@ -1011,7 +998,7 @@ function addConsistency(wb: ExcelJS.Workbook, model: Model, month: string, findi
   if (c.rejectedCount) ws.addRow({ a: `${c.rejectedCount} malzemenin bu ayki fiyatı reddedilen faturası alınana girmedi; sapma için ayın alımı Tutarlılık'ta elle yazılmalı.` });
   if (c.unreciped.count) ws.addRow({ a: `Reçetesiz tüketim: ${c.unreciped.count} malzeme hiçbir reçetede yok ama stoktan düştü (en az ${tl(c.unreciped.amount)}).` });
 
-  // 3) Bulgular (Excel 3–5. bölümler: reçetede olmayan alımlar, fiyat ve fatura kontrolü)
+  // 3) Bulgular: reçetede olmayan alımlar, fiyat ve fatura kontrolü
   ws.addRow({});
   sectionRow(ws, "a", "3) BULGULAR VE NOTLAR");
   subHeaderRow(ws, { a: "Başlık", b: "Bölüm", c: "Durum", d: "Ayrıntı" });
@@ -1020,7 +1007,7 @@ function addConsistency(wb: ExcelJS.Workbook, model: Model, month: string, findi
   if (!findings.length) ws.addRow({ a: "Kayıtlı bulgu yok." });
 }
 
-// ---------------------------------------------------------------------------- Satış (Excel Satış Raporu)
+// ---------------------------------------------------------------------------- Satış
 
 function addSales(wb: ExcelJS.Workbook, model: Model, month: string) {
   const label = monthLabel(month);
@@ -1048,7 +1035,7 @@ function addSales(wb: ExcelJS.Workbook, model: Model, month: string) {
   );
   const title = ws.addRow({ n: `Satış raporu – ${label}` });
   title.font = { bold: true, size: 13 };
-  // Excel C4:C8 özet bloğu
+  // Ayın özeti: POS cirosu, ciro dışı, indirim, açık gün, ortalama maliyet oranı, liste farkı
   const summary: [string, number | null, string, string?][] = [
     ["POS toplam ciro (KDV dahil)", info?.posRevenue ?? null, MONEY0, "POS > Raporlar > Ciro: indirimler düşülmüş, ödenmezler hariç."],
     ["Ciro dışı (ödenmez / ikram)", info?.offRevenue ?? null, MONEY0, "Malzemesi harcanan ama geliri olmayan siparişler."],
@@ -1101,7 +1088,6 @@ function addSales(wb: ExcelJS.Workbook, model: Model, month: string) {
 
 // ---------------------------------------------------------------------------- Faturalar + Aylık Alımlar
 
-/** Fatura özetinde gösterilen kategoriler: hepsi (Excel gibi, boş olanlar da), sonra listede olmayanlar */
 /** Tedarikçilere elle girilen cari kayıtlar, gün sırasıyla */
 function addCari(wb: ExcelJS.Workbook, rows: readonly CariExportRow[]) {
   const ws = addSheet(
@@ -1156,7 +1142,7 @@ const revenueSourceText = (m: TaxMonth) => (m.revenueSource === "yonetim" ? "gel
 const dotted = (d: string) => d.split("-").reverse().join(".");
 
 /**
- * Çeyreğin geçici vergi hesabı Excel'e yazılabilir mi: hesap kümülatiftir, çapadan (muhasebecinin matrahlı kaydı) ya da
+ * Çeyreğin geçici vergi hesabı dışa aktarıma yazılabilir mi: hesap kümülatiftir, çapadan (muhasebecinin matrahlı kaydı) ya da
  * hesap döneminin başından çeyreğin sonuna her ayın geliri mali belgeden (beyanname ya da Z) gelmeli (K11, K31)
  */
 export function taxQuarterFiscal(months: readonly TaxMonth[], calc: Pick<QuarterCalc, "to" | "anchor">): boolean {
@@ -1247,7 +1233,7 @@ function addTax(wb: ExcelJS.Workbook, tax: TaxExport) {
       money(r, [...cols, "e"]);
       return r;
     };
-    // Gelirsiz ayın (belge beklemez) yönetim verisi satırı yazılmaz: ModPOS / LafPOS Excel'e girmez (K31)
+    // Gelirsiz ayın (belge beklemez) yönetim verisi satırı yazılmaz: ModPOS / LafPOS dışa aktarıma girmez (K31)
     block((m) => (m.revenueSource === "yonetim" ? m.income.rows.filter((r) => r.key !== "pos") : m.income.rows));
     total("Gelir toplamı", fiscal.map((m) => m.income.total), q.income);
     block((m) => m.expense.rows);
@@ -1392,6 +1378,7 @@ function addTax(wb: ExcelJS.Workbook, tax: TaxExport) {
   }
 }
 
+/** Fatura özetinde gösterilen kategoriler: hepsi (boş olanlar da), sonra listede olmayanlar */
 export function invoiceCategories(invoices: { category: string }[]): string[] {
   const out = [...INVOICE_CATEGORIES];
   for (const i of invoices) if (!out.includes(i.category)) out.push(i.category);
@@ -1433,7 +1420,7 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
   const head = headerRow(ws, colHeaders(ws));
   head.getCell("n").note = "Mal/hizmet tutarı − iskonto. Gerçek maliyet budur (KDV indirilebildiği için).";
   head.getCell("v").note =
-    "İndirilecek KDV: faturanın KDV toplamı, tevkifat düşülmeden (Paraşüt'ten gelen; panelin KDV tahmini ve Vergi bunu kullanır). KDV toplamı bilinmeyen faturada (elle ya da Excel'den girilen) ödenecek − net, formülle.";
+    "İndirilecek KDV: faturanın KDV toplamı, tevkifat düşülmeden (Paraşüt'ten gelen; panelin KDV tahmini ve Vergi bunu kullanır). KDV toplamı bilinmeyen faturada (elle girilen ya da içe aktarılmış) ödenecek − net, formülle.";
   head.getCell("w").note = "KDV tevkifatı: KDV toplamından tedarikçiye ödenmeyen kısım (ör. 3/10). Alıcı bunu 2 No.lu KDV beyannamesiyle öder; 1 No.lu beyannamede indirilecek KDV yine tam KDV'dir.";
   head.getCell("pv").note = "Ödenecek − net (formül): tedarikçiye ödenen KDV, tevkifat düşülmüş. Faturada ÖTV ya da ÖİV gibi başka bir vergi varsa o da bu farktadır; indirilecek KDV için KDV sütununa bakın.";
   head.getCell("vkn").note = "Tedarikçinin VKN / TCKN'si (Paraşüt'ten ya da e-faturadan; elle girilen faturada boş).";
@@ -1473,13 +1460,13 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
       pp: inv.allocated && inv.allocated > 0.005 ? round2(inv.allocated) : null,
       due: inv.dueDate ? excelDate(inv.dueDate) : null,
       note: inv.note,
-      src: inv.source ? (SOURCE_LABEL[inv.source] ?? inv.source) : null,
+      src: invoiceSourceLabel(inv.source),
     });
   }
   const last = ws.rowCount;
   ws.autoFilter = { from: "A1", to: `${colLetter(ws.columnCount)}1` };
 
-  // Excel Faturalar L3:Q15 "Aylara göre net alımlar": ayrı sekmede, süzgeç satırları gizlemesin diye
+  // "Aylara göre net alımlar": ayrı sekmede, süzgeç satırları gizlemesin diye
   const months = [...new Set(invoices.map((i) => monthOfDate(i.date)))].sort();
   const cats = invoiceCategories(invoices);
   const al = addSheet(
@@ -1606,7 +1593,7 @@ function addPeople(wb: ExcelJS.Workbook, model: Model, month: string, investment
   });
   pt.font = { bold: true };
   pr.addRow({});
-  // Excel Personel B4:B7
+  // SGK oranları (Ayarlar)
   sectionRow(pr, "n", "Oranlar");
   for (const [k, v] of [
     ["İşçi SGK primi payı", st.isciSgk],
@@ -1658,7 +1645,7 @@ function addPeople(wb: ExcelJS.Workbook, model: Model, month: string, investment
   }
   const sgt = sg.addRow({ n: "TOPLAM", m: model.fixedStandardTotalFor(month) });
   sgt.font = { bold: true };
-  sgt.getCell("n").note = "Standart bir ayın sabit gider toplamı (Excel SabitGiderToplam). Gelir-gider her ayı gün oranıyla hesaplar (Gelir-Gider sekmesinde AÇIK GÜN SAYISI notu).";
+  sgt.getCell("n").note = "Standart aylık sabit gider: standart bir ayın sabit gider toplamı (personel dahil). Gelir-gider her ayı gün oranıyla hesaplar (Gelir-Gider sekmesinde AÇIK GÜN SAYISI notu).";
 
   sg.addRow({});
   sectionRow(sg, "n", "Tek seferlik yatırımlar (bilgi amaçlı, aylık gidere dahil değil)");

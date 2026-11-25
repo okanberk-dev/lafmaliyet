@@ -109,7 +109,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   const calcs = months.map((m) => model.pnlMonth(m));
   const current = model.currentMonth;
   // Yıl toplamları (kartlar ve tablonun yıl sütunu) tek kuraldan: bu aya kadar, POS cirosu girilmiş aylar (yearTotals;
-  // Genel bakış, Claude ve Excel'in yıl sütunu da aynı). Bu ay sayılınca sonraki ayın açılış stoğu ay başlamadan onun
+  // Genel bakış, Claude ve dışa aktarımın yıl sütunu da aynı). Bu ay sayılınca sonraki ayın açılış stoğu ay başlamadan onun
   // gideri görünürdü (denetim E-16); cirosu girilmemiş ayın gideri de kâra girmez (NEW-02, inceleme B02-D4). Tablo o
   // ayların sütunlarını yine gösterir
   const indexes = (keep: (m: string) => boolean) => months.flatMap((m, i) => (keep(m) ? [i] : []));
@@ -281,7 +281,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
     ),
   };
   // Yıl kartlarının notu: toplama girmeyen aylar ve sayımı olmayan aylar (tablo bu ayları yine gösterir)
-  // Ayarlar'daki işveren SGK oranı (bu tablo ve Excel) vergi ve nakit planının yasal oranından farklıysa (K17, K19)
+  // Ayarlar'daki işveren SGK oranı (bu tablo ve dışa aktarım) vergi ve nakit planının yasal oranından farklıysa (K17, K19)
   const sgkNotice = taxSettings ? employerRateNotice(model.settings.isverenSgk, taxSettings, Number(current.slice(0, 4))) : null;
   const yearNotes = [
     ...yt.missingRevenue.map(missingRevenueText),

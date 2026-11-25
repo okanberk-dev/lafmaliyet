@@ -263,7 +263,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // modelin saydığı bölünmeyle; denetim E-39)
   const mk = salesMonthKasa(month, st.lafposGecisGunu, model.ds.lafposSales);
 
-  // Süren ayın gidişatı (Excel "Ekim tahmini", Panel B19): yalnızca bugünün ayı için, bitmiş aylar için asla
+  // Süren ayın gidişatı (ay sonu tahmini): yalnızca bugünün ayı için, bitmiş aylar için asla
   const forecastMonth = forecastMonthOf(model);
   const current = forecastMonth && forecastMonth !== month ? dashboard(model, forecastMonth) : d;
   const forecast = forecastMonth ? current.forecast : null;
@@ -281,7 +281,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
     : "";
   // "Tümü"nün dönemi şubelerin en kısa listesiyle (bulgu 62): ayın satırları bir şubenin listesi olmadığı için sayılmıyorsa
   const commonMissing = model.ds.commonLists?.find((c) => c.month === month && c.through === null) ?? null;
-  // "Para nereye gitti?": Excel Panel'in 4 grubu (Kira, Personel, Reklam, Diğer) + varsa bu aya özel giderler; online
+  // "Para nereye gitti?": sabit giderin 4 grubu (Kira, Personel, Reklam, Diğer) + varsa bu aya özel giderler; online
   // satış (laffogato.net) net satışın içinde: kâr-zarardaki gibi ModPOS + online
   const waterfall: FlowRow[] = t
     ? [
@@ -393,7 +393,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
               t.listPeriod.short ? ` ${commonListText(month, t.listPeriod.short, t.listPeriod.through)}` : ""
             }`
           : ""
-      } Excel Panel'i her ay standart aylık sabit gideri düşer; fark olduğunda altta "Excel temeli" yazar. ${
+      }${differs(t.netProfit, t.netProfitStandard) ? ` Sabit gider: ${fixedBreakdownText(fm)}` : ""} ${
         d.profitBasis.invoices
           ? "Faturaya göre değer Gelir-gider tablosundan gelir; stok sayımı olmayan ayda mal maliyeti tahminidir (sayım aralığına dağıtılır ya da reçeteye göre)."
           : "Gelir-gider'e göre değer Gelir-gider tablosundan gelir; şube seçiliyken mal maliyeti şubenin satışından reçeteye göre (faturalar işletme genelinde, şubeye bölünmez)."
@@ -496,10 +496,10 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             {/* Dosya indiren rota: düz bağlantı (istemci yönlendirmesi rotayı iki kez istemesin) */}
             {/* Telefonda kısa ad: ay seçici ile aynı satıra sığar. Dosya ekranın şube seçimiyle (şube kapsamı C P1-9; Ayarlar'daki
                 tam yedek seçicisiz, Tümü) */}
-            <a href={`/api/export?ay=${month}&${BRANCH_PARAM}=${encodeURIComponent(scope)}`} download className={buttonClass("secondary")} aria-label={`${monthLabel(month)} Excel'e aktar`}>
+            <a href={`/api/export?ay=${month}&${BRANCH_PARAM}=${encodeURIComponent(scope)}`} download className={buttonClass("secondary")} aria-label={`${monthLabel(month)} çalışma kitabını dışa aktar (.xlsx)`}>
               <Download size={16} aria-hidden="true" />
-              <span className="max-[420px]:hidden">Excel&apos;e aktar</span>
-              <span className="min-[421px]:hidden">Excel</span>
+              <span className="max-[420px]:hidden">Dışa aktar</span>
+              <span className="min-[421px]:hidden">Aktar</span>
             </a>
           </>
         }
@@ -575,25 +575,14 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                   badge={<Change g={g.net} prevMonth={prevMonth} prevValue={pt?.netProfit} />}
                   tone={t.netProfit < 0 ? "bad" : "good"}
                   sub={
-                    <>
-                      {differs(t.netProfit, t.netProfitStandard) ? (
-                        <span className="flex flex-wrap items-center gap-x-1.5">
-                          Excel temeli:
-                          <Signed value={t.netProfitStandard} className="whitespace-nowrap">
-                            {tl(t.netProfitStandard)}
-                          </Signed>
-                          <InfoTip text={fixedBreakdownText(fm)} />
-                        </span>
-                      ) : null}
-                      {d.actual.hasRevenue ? (
-                        <span className="block">
-                          {d.profitBasis.title}:{" "}
-                          <Signed value={d.actual.profit} className="whitespace-nowrap">
-                            {tl(d.actual.profit)}
-                          </Signed>
-                        </span>
-                      ) : null}
-                    </>
+                    d.actual.hasRevenue ? (
+                      <span className="block">
+                        {d.profitBasis.title}:{" "}
+                        <Signed value={d.actual.profit} className="whitespace-nowrap">
+                          {tl(d.actual.profit)}
+                        </Signed>
+                      </span>
+                    ) : null
                   }
                 />
               </StatBreakdown>
@@ -881,7 +870,7 @@ function DailyRevenueCard({ month, days }: { month: string; days: { date: string
 }
 
 /**
- * Satış listesi olmayan ayın üçüncü rakamı: süren ayda ay sonu tahmini (Excel B19), bitmiş ayda
+ * Satış listesi olmayan ayın üçüncü rakamı: süren ayda ay sonu tahmini, bitmiş ayda
  * Gelir-gider'deki gerçek (faturaya göre) sonuç; tahmin yalnızca süren ay için yapılır. Dökümü sayfa kurar
  * (bitmiş ayda Gelir-gider satırları, süren ayda tahminin girdileri).
  */
@@ -922,7 +911,7 @@ function ThirdStat({ d, projected, breakdown }: { d: DashboardData; projected: n
           d.refMonth ? `${monthLabel(d.refMonth)} ` : "son satış ayının "
         }brüt kâr oranı${d.forecast?.projectedOnline != null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider${
           d.breakEven.expensesTotal ? " − her ay girilen harcamalar" : ""
-        } (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır.`}
+        }. Açık gün sayısı bugüne kadar geçen gün olarak kullanılır.`}
         value={<CountUp value={d.forecast?.projectedProfit ?? null} />}
         tone={!d.forecast ? "default" : projected < 0 ? "bad" : "good"}
         sub={
@@ -1066,7 +1055,6 @@ function CountLink({ href, value, label, tone }: { href: string; value: number; 
 function WaterfallCard({ month, t, rows }: { month: string; t: Theoretical; rows: FlowRow[] }) {
   const loss = t.netProfit < 0;
   const f = t.fixedBreakdown;
-  const showStandard = differs(t.netProfit, t.netProfitStandard);
   return (
     <Card>
       <CardHeader
@@ -1077,7 +1065,7 @@ function WaterfallCard({ month, t, rows }: { month: string; t: Theoretical; rows
             KDV hariç. Malzeme maliyeti reçetelere göre hesaplanır.
             <InfoTip
               className="ml-1.5"
-              text="Sabit giderler Excel Panel'deki gibi 4 grupta: Kira (yalnızca kira satırı), Personel (maaş + SGK, part-time, yemek), Reklam (Instagram, influencer) ve Diğer (elektrik, muhasebe, güvenlik, yazılım, ortak gider…). Tutarlar o ayın Gelir-gider değerleridir. Gelir-gider tablosu kendi bölümlerini (Personel giderleri, Faturalar, Kira, İşletme genel giderleri) kullanır; toplam aynıdır."
+              text="Sabit giderler 4 grupta: Kira (yalnızca kira satırı), Personel (maaş + SGK, part-time, yemek), Reklam (Instagram, influencer) ve Diğer (elektrik, muhasebe, güvenlik, yazılım, ortak gider…). Tutarlar o ayın Gelir-gider değerleridir. Gelir-gider tablosu kendi bölümlerini (Personel giderleri, Faturalar, Kira, İşletme genel giderleri) kullanır; toplam aynıdır."
             />
           </>
         }
@@ -1100,14 +1088,6 @@ function WaterfallCard({ month, t, rows }: { month: string; t: Theoretical; rows
               </span>
             </span>
           </div>
-          {showStandard ? (
-            <p className="mt-1 flex flex-wrap items-center justify-between gap-x-3 text-xs text-ink-mute">
-              <span>Excel temeli (standart aylık sabit gider)</span>
-              <Signed value={t.netProfitStandard} className="font-medium whitespace-nowrap">
-                {tl(t.netProfitStandard)}
-              </Signed>
-            </p>
-          ) : null}
         </div>
         <p className="text-xs text-ink-mute">Vergi ve tek seferlik yatırımlar hariç.</p>
       </CardContent>
@@ -1145,7 +1125,7 @@ function ForecastCard({
             <InfoTip
               text={`Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı${forecast.closedDays ? ` (kapalı işaretli ${forecast.closedDays} gün hariç)` : ""} × ${
                 forecast.refMonth ? `${monthLabel(forecast.refMonth)} ` : "son satış ayının "
-              }brüt kâr oranı${forecast.projectedOnline !== null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider${monthlyExpenses ? " − her ay girilen harcamalar" : ""} (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır; ay bitince gerçek açık gün sayısını yazın.`}
+              }brüt kâr oranı${forecast.projectedOnline !== null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider${monthlyExpenses ? " − her ay girilen harcamalar" : ""}. Açık gün sayısı bugüne kadar geçen gün olarak kullanılır; ay bitince gerçek açık gün sayısını yazın.`}
             />
           </span>
         }
@@ -1190,7 +1170,7 @@ function ForecastCard({
 }
 
 /**
- * "Bütün menü" alt satırının ortalamaları: Excel Ürün Kârlılık satır 134 (K134 / L134) gibi basit ortalama,
+ * "Bütün menü" alt satırının ortalamaları: basit ortalama (her ürün bir oy),
  * reçetesi olmayan ürün katılmaz (Ürünler listesinin alt satırıyla aynı kural: menuAverages).
  */
 function menuAverageRow(products: { status: ProductStatus; costRatio: number; margin: number; unitProfit: number }[]) {
@@ -1212,7 +1192,7 @@ function CategoriesTab({ d, target, menu }: { d: DashboardData; target: number; 
       target={target}
       menu={menu}
       salesMonth={other ? `${monthShort(d.categoryMonth!)} ${d.categoryMonth!.slice(0, 4)}` : null}
-      description={`Ort. değerler menüdeki ürünlerin basit ortalamasıdır (Excel'deki gibi). ${
+      description={`Ort. değerler menüdeki ürünlerin basit ortalamasıdır (her ürün bir oy). ${
         !d.categoryMonth
           ? "Satış verisi yok."
           : other

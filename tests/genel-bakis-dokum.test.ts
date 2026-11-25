@@ -104,15 +104,15 @@ test("Net kâr: brüt kâr − indirim − sabit giderler bölüm bölüm; her b
   const personel = group(b, "sabit:personel").rows;
   assert.ok(personel.some((r) => r.key === "personnel:net" && r.href === "/panel/personel"));
   assert.ok(group(b, "sabit:kira").rows.every((r) => r.href === "/panel/giderler"));
-  // Kartın alt satırı: Excel temeli yalnızca farklıysa, faturaya göre sonuç Gelir-gider'e bağlı
+  // Kartın alt satırı: faturaya göre sonuç Gelir-gider'e bağlı
   const cmp = group(b, "karsilastirma");
   assert.equal(cmp.apart, true);
-  assert.deepEqual(cmp.rows.map((r) => r.key), ["fatura"], "tam ayda Excel temeli aynı");
+  assert.deepEqual(cmp.rows.map((r) => r.key), ["fatura"]);
   assert.equal(cmp.rows[0].display, tl(d.actual.profit));
   assert.equal(cmp.rows[0].href, "/panel/gelir-gider?yil=2026&ay=2026-09");
 });
 
-test("Net kâr: eksik açık günde Excel temeli de görünür, açık gün etkisi kalemin altında yazar", () => {
+test("Net kâr: eksik açık günde standart sabit giderli ikinci kâr satırı yok (rakam aynı), açık gün etkisi kalemin altında yazar", () => {
   const m = createModel({ ...ds, months: ds.months.map((x) => (x.month === "2026-09" ? { ...x, openDays: 24 } : x)) });
   const d = dashboard(m, "2026-09");
   const t = d.theoretical!;
@@ -120,8 +120,10 @@ test("Net kâr: eksik açık günde Excel temeli de görünür, açık gün etki
   close(mainSum(b), t.netProfit);
   for (const fl of t.fixedFlow) close(groupSum(group(b, `sabit:${fl.key}`)), -fl.amount);
   const cmp = group(b, "karsilastirma");
-  assert.deepEqual(cmp.rows.map((r) => r.key), ["excel", "fatura"]);
-  assert.equal(cmp.rows[0].display, tl(t.netProfitStandard));
+  assert.deepEqual(cmp.rows.map((r) => r.key), ["fatura"]);
+  assert.ok(cmp.rows.every((r) => !/Excel/.test(`${r.label} ${r.sub ?? ""}`)));
+  // Net kârın kendisi değişmedi: brüt kâr − indirim − bu ay düşülen sabit gider
+  close(t.netProfit, t.grossProfit - t.discountsNet - t.fixedBreakdown.total);
   assert.ok(group(b, "sabit:personel").rows.some((r) => r.sub?.includes("24 / 30 gün açık")));
 });
 

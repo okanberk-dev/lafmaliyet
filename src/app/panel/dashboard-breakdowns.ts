@@ -31,7 +31,7 @@ export interface CardBreakdown {
 }
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
-/** Kuruş altı farklar yok sayılır (kartlardaki "Excel temeli" kuralıyla aynı: 1 ₺'den küçük fark yok) */
+/** Kuruş altı farklar yok sayılır (kartlardaki kuralla aynı: 1 ₺'den küçük fark yok) */
 const differs = (a: number, b: number) => Math.abs(a - b) >= 1;
 const safeDiv = (a: number, b: number) => (b ? a / b : 0);
 /** "%10": ayarlardaki oran (0,1) yazı olarak */
@@ -258,7 +258,7 @@ function lineSub(l: FixedLine, f: FixedMonthBreakdown): string | undefined {
 }
 
 /**
- * Bu ay düşülen sabit giderler, Excel Panel grupları (Kira, Personel, Reklam, Diğer, bu aya özel) bölüm bölüm,
+ * Bu ay düşülen sabit giderler, sabit gider grupları (Kira, Personel, Reklam, Diğer, bu aya özel) bölüm bölüm,
  * kalem kalem, eksi tutarla. Her bölüm "Para nereye gitti?" kartındaki tutarı tutar.
  */
 function fixedGroups(f: FixedMonthBreakdown): BreakdownGroup[] {
@@ -275,7 +275,7 @@ function fixedGroups(f: FixedMonthBreakdown): BreakdownGroup[] {
 }
 
 /**
- * Standart aylık sabit gider (Excel SabitGiderToplam) Panel grupları satır satır; aylık harcamalar standarda girmez.
+ * Standart aylık sabit gider (Sabit giderler + Maaşlar, bir aylık) gruplar satır satır; aylık harcamalar standarda girmez.
  * Toplam her zaman `d.fixedStandardTotal`ı tutar.
  */
 function standardRows(d: DashboardData, sign: 1 | -1): BreakdownRow[] {
@@ -324,15 +324,6 @@ export function netProfitBreakdown(model: Model, d: DashboardData): CardBreakdow
   if (!t) return { title: `${monthLabel(d.month)} net kâr / zarar`, description: "", groups: [], empty: "Bu ay ürün satış raporu yok." };
   const f = t.fixedBreakdown;
   const compare: BreakdownRow[] = [];
-  if (differs(t.netProfit, t.netProfitStandard)) {
-    compare.push({
-      key: "excel",
-      label: "Excel temeli",
-      sub: `Bu ayın sabit gideri yerine standart aylık sabit gider (${tl(d.fixedStandardTotal)}) düşülürse`,
-      amount: t.netProfitStandard,
-      display: tl(t.netProfitStandard),
-    });
-  }
   if (d.actual.hasRevenue) {
     compare.push({
       key: "fatura",
@@ -581,8 +572,8 @@ export function actualProfitBreakdown(model: Model, d: DashboardData): CardBreak
 }
 
 /**
- * Süren ayın ay sonu tahmini (Excel Panel B19): bu tempoyla ay sonu ciro × brüt kâr oranı − standart aylık sabit
- * gider. Girdiler üstte bilgi satırı, sabit gider Panel grupları satır satır.
+ * Süren ayın ay sonu tahmini: bu tempoyla ay sonu ciro × brüt kâr oranı − standart aylık sabit gider. Girdiler üstte
+ * bilgi satırı, sabit gider grupları satır satır.
  */
 export function forecastBreakdown(d: DashboardData): CardBreakdown {
   const fc = d.forecast;
@@ -603,7 +594,7 @@ export function forecastBreakdown(d: DashboardData): CardBreakdown {
       fc.refMonth ? `${monthLabel(fc.refMonth)} ` : "son satış ayının "
     }brüt kâr oranı${fc.projectedOnline !== null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider${
       d.breakEven.expensesTotal ? " − her ay girilen harcamalar" : ""
-    } (Excel Panel B19). Açık gün bugüne kadar geçen gün sayılır.`,
+    }. Açık gün bugüne kadar geçen gün sayılır.`,
     groups: [
       {
         key: "ciro",
@@ -653,7 +644,7 @@ export function forecastBreakdown(d: DashboardData): CardBreakdown {
 
 /**
  * Başabaş günlük ciro = standart aylık sabit gider ÷ brüt kâr oranı ÷ ayda açık gün. Girdiler bilgi satırı,
- * sabit gider Panel grupları satır satır; seçili ayın temposu (günlük ortalama, başabaşa göre) toplamın altında.
+ * sabit gider grupları satır satır; seçili ayın temposu (günlük ortalama, başabaşa göre) toplamın altında.
  */
 export function breakEvenBreakdown(model: Model, d: DashboardData): CardBreakdown {
   const st = model.settings;
