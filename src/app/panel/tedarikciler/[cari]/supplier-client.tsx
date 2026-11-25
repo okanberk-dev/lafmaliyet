@@ -47,6 +47,7 @@ import { coveredByAllocations, EPS, METHOD_LABEL, methodFromCard, round2 } from 
 import { linkableInvoice } from "@/lib/cari/match";
 import type { ForeignCredit } from "@/lib/cari/statement";
 import { dateTR, money, num } from "@/lib/format";
+import { invoiceBranchValue, isUnassigned, supplierDefaultValue, UNASSIGNED_LABEL } from "@/lib/invoice-branch";
 import { daysBetween } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import {
@@ -61,7 +62,7 @@ import {
   snoozeDebt,
   unlinkDebts,
 } from "@/server/actions/cari";
-import { restoreInvoicePayment, setInvoicePayment, type InvoicePaymentState } from "@/server/actions/invoices";
+import { restoreInvoicePayment, setInvoiceBranch, setInvoicePayment, type InvoicePaymentState } from "@/server/actions/invoices";
 import { importSupplierHistory, unhideSupplier } from "@/server/actions/suppliers";
 import type { CardDebt, CardPayment } from "@/server/data/cari-entries";
 import type { LedgerRow } from "@/server/data/suppliers";
@@ -194,7 +195,13 @@ export function SupplierClient({
   taxNotes = [],
   taxIndex,
   cari,
+  branchInfo,
 }: {
+  /**
+   * Faturaların şubesi (birden çok kasa açıkken; docs/SUBE.md › Faturanın şubesi): seçici seçenekleri, şube adları ve
+   * seçili şube ("hepsi" ya da kimlik). Bakiye firma genelidir; şube yalnız gösterim ve varsayılan
+   */
+  branchInfo?: { options: { value: string; label: string }[]; scope: string; scopeName: string | null };
   today: string;
   /**
    * `taxNumber`: kartta yazılı, yoksa faturalardaki tek vergi no; `taxNumbers` faturalardaki numaralar; `viaTax` yalnız
@@ -677,8 +684,17 @@ export function SupplierClient({
     return null;
   };
 
+  const branchLabelOf = (r: Row) => {
+    const v = invoiceBranchValue(r);
+    return v ? (branchInfo?.options.find((o) => o.value === v)?.label ?? v) : UNASSIGNED_LABEL;
+  };
   const hints = (r: Row) => (
     <>
+      {branchInfo?.options.length ? (
+        <Badge tone={isUnassigned(r) ? "amber" : "gray"} title="Faturanın şubesi">
+          {branchLabelOf(r)}
+        </Badge>
+      ) : null}
       {r.source === "parasut" ? (
         <Badge tone="blue" title="Paraşüt'ten otomatik alındı">
           Paraşüt
@@ -802,6 +818,15 @@ export function SupplierClient({
       ) : null}
 
       <TaxNotices notes={taxNotes} />
+
+      {branchInfo?.options.length ? (
+        <BranchNotice
+          invoices={invoices}
+          info={branchInfo}
+          card={card}
+          onEdit={() => setEditing(true)}
+        />
+      ) : null}
 
       {/* Sunucudan gelen öğe kendi Fragment'ında: içindeki istemci bileşenleri yüklenmeden RSC yükü okunursa öğe iç
           içe lazy olarak gelir ve React (geliştirmede) onu bu listede anahtarsız sanıp "unique key" uyarısı verirdi */}
@@ -1209,6 +1234,8 @@ export function SupplierClient({
       {editing ? (
         <SupplierCardDialog
           card={card}
+          branchOptions={branchInfo?.options ?? []}
+          unassignedCount={invoices.filter(isUnassigned).length}
           name={supplier.name}
           names={supplier.names}
           // Kartta vergi no yoksa faturalardaki tek numara alana önerilir (kart kendiliğinden yazılmaz)
@@ -1412,6 +1439,66 @@ function DeleteText({ confirming, cari }: { confirming: Extract<Confirming, { ki
  * Aynı vergi nosunu taşıyan öteki tedarikçiler: sayfanın üstünde birer satır (listeden kaldırıldı şeridiyle aynı
  * görünüm), onların sayfasına bağlantıyla. Birleştirme yok, yalnız bilgi ve ne yapılabileceği (sharedTaxNotes).
  */
+/**
+ * Faturaların şubesi şeridi (docs/SUBE.md › Faturanın şubesi): şubesi seçilmemiş faturalar varsa sayısı ve tek dokunuşla
+ * kartın varsayılanına yazma (yoksa Düzenle'den varsayılan seçilir); tek şube seçiliyken o şubenin faturaları. Bakiye
+ * firma geneli kalır (tek firma)
+ */
+function BranchNotice({
+  invoices,
+  info,
+  card,
+  onEdit,
+}: {
+  invoices: Row[];
+  info: { options: { value: string; label: string }[]; scope: string; scopeName: string | null };
+  card: SupplierCard | null;
+  onEdit: () => void;
+}) {
+  const [pending, start] = useActionTransition();
+  const unassigned = invoices.filter(isUnassigned);
+  const fallback = supplierDefaultValue(card);
+  const label = (v: string) => info.options.find((o) => o.value === v)?.label ?? v;
+  const here = info.scopeName ? invoices.filter((i) => i.branchId === info.scope) : [];
+  if (!unassigned.length && !info.scopeName) return null;
+  const apply = () =>
+    start(async () => {
+      if (!fallback) return;
+      const r = await tryAction(() => setInvoiceBranch({ ids: unassigned.map((i) => i.id), value: fallback }));
+      if (r?.ok) toast.success(`${num(r.data.changed)} fatura ${label(fallback)} oldu`);
+      else if (r) toast.error(r.error);
+    });
+  return (
+    <div className="mb-4 grid gap-2">
+      {info.scopeName ? (
+        <Notice
+          tone="neutral"
+          title={`${info.scopeName} seçili: bakiye ve ödemeler firma geneli`}
+          text={`Bu tedarikçinin ${info.scopeName} faturaları: ${num(here.length)} (${money(here.reduce((a, i) => a + i.payable, 0))}, KDV dahil). Listede her faturanın şubesi rozetinde.`}
+        />
+      ) : null}
+      {unassigned.length ? (
+        <Notice
+          tone="warn"
+          title={`${num(unassigned.length)} faturanın şubesi seçilmemiş`}
+          text={fallback ? `Tedarikçinin varsayılanı ${label(fallback)}.` : "Düzenle'den bu tedarikçinin varsayılan şubesini seçin; Paraşüt'ten gelen yeni faturası onu alır."}
+          action={
+            fallback ? (
+              <Button variant="secondary" size="xs" onClick={apply} disabled={pending}>
+                Hepsini {label(fallback)} yap
+              </Button>
+            ) : (
+              <Button variant="secondary" size="xs" onClick={onEdit}>
+                Varsayılan şubeyi seç
+              </Button>
+            )
+          }
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function TaxNotices({ notes }: { notes: TaxNote[] }) {
   if (!notes.length) return null;
   const rest = notes.length - TAX_NOTES_SHOWN;

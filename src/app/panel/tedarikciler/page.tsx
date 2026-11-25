@@ -8,7 +8,8 @@ import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
-import { tillRowsInScope } from "@/lib/branches";
+import { tillBranches, tillRowsInScope } from "@/lib/branches";
+import { invoiceBranchOptions } from "@/lib/invoice-branch";
 import { paidInMonthOf, type CariAccount } from "@/lib/cari/account";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
@@ -196,7 +197,7 @@ async function SuppliersContent() {
         </StatBreakdown>
       </div>
 
-      <SuppliersClient rows={rows} hidden={hidden} today={today} defaultTermDays={termDays} taxIndex={taxNameIndex(groups)} kasa={kasa} kasaElsewhere={kasaElsewhere} />
+      <SuppliersClient branchOptions={tillBranches(branches).length > 1 ? invoiceBranchOptions(branches) : []} rows={rows} hidden={hidden} today={today} defaultTermDays={termDays} taxIndex={taxNameIndex(groups)} kasa={kasa} kasaElsewhere={kasaElsewhere} />
     </>
   );
 }

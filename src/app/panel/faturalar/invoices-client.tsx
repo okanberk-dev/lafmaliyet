@@ -30,6 +30,7 @@ import { isPartiallyPaid, openBalance } from "@/lib/calc/insights";
 import type { InvoiceCariLinks } from "@/lib/cari/account";
 import { parasutDifference } from "@/lib/cari/balance";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
+import { invoiceBranchCols, invoiceBranchLabel, isUnassigned, UNASSIGNED_LABEL } from "@/lib/invoice-branch";
 import { stockOnlyCategory, stockOnlyText } from "@/lib/invoice-linking";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,7 @@ import {
   deleteInvoice,
   restoreInvoice,
   restoreInvoicePayment,
+  setInvoiceBranch,
   setInvoiceCategory,
   setInvoicePaid,
   unignoreParasutBill,
@@ -106,6 +108,18 @@ const UNDO_MS = 10000;
 /** "Temizle" düğmesinin sıfırladığı adres anahtarları (sıralama süzgeç sayılmaz, korunur) */
 const FILTER_KEYS = ["ara", "durum", "kategori", "ay", "kaynak"];
 
+/** "Şube ata…"nın "Seçimi kaldır" değeri (şubesi seçilmemiş yapar) */
+const UNSET_VALUE = "__yok";
+
+/** Durum süzgecinin adları (çip, alt sayfa) */
+const STATUS_LABEL: Record<InvoiceStatus, string> = {
+  tumu: "Tümü",
+  kontrol: "Kontrol bekleyen",
+  subesiz: UNASSIGNED_LABEL,
+  odenmedi: "Ödenmemiş",
+  odendi: "Ödendi",
+};
+
 /** Belgesi olmayan fatura için sabit boş liste (her çizimde yeni dizi olmasın) */
 const NO_CARI: Record<number, InvoiceCariLinks> = {};
 const NO_DOCS: DocumentMeta[] = [];
@@ -156,10 +170,19 @@ type Optimistic =
   /** Kategori değişince fatura kontrol edilmiş sayılır (sunucu da needsReview'u kaldırır); `review` geri almada yeniden işaretlenenler */
   | { kind: "category"; changes: { id: number; category: string }[]; review?: number[] }
   /** Onayla (needsReview false) ya da "Geri al" (true) */
-  | { kind: "review"; ids: number[]; needsReview: boolean };
+  | { kind: "review"; ids: number[]; needsReview: boolean }
+  /** Faturanın şubesi (rozet adıyla; docs/SUBE.md › Faturanın şubesi) */
+  | { kind: "branch"; changes: { id: number; value: string | null; label: string }[] };
 
 function applyChange(state: InvoiceRow[], a: Optimistic): InvoiceRow[] {
   if (a.kind === "delete") return state.filter((i) => i.id !== a.id);
+  if (a.kind === "branch") {
+    const next = new Map(a.changes.map((c) => [c.id, c]));
+    return state.map((i) => {
+      const c = next.get(i.id);
+      return c ? { ...i, ...invoiceBranchCols(c.value), branchName: c.label } : i;
+    });
+  }
   if (a.kind === "paid") {
     const ids = new Set(a.ids);
     return state.map((i) => (ids.has(i.id) ? { ...i, unpaid: !a.paid } : i));
@@ -187,7 +210,16 @@ export function InvoicesClient({
   cashOuts = NO_CASH_OUTS,
   cashOutDuplicates = NO_DUPLICATES,
   cashOutCategories = [],
+  branchOptions = [],
+  defaultBranch = "",
 }: {
+  /**
+   * Faturanın şubesinin seçenekleri (birden çok kasa açıkken; invoiceBranchOptions): pencerede alan, toplu "Şube ata…",
+   * "Şubesi seçilmemiş" süzgeci. Boşsa (tek kasa) hiçbiri çizilmez
+   */
+  branchOptions?: { value: string; label: string }[];
+  /** Yeni faturanın şubesi (seçili şube; "Tümü"de boş) */
+  defaultBranch?: string;
   invoices: InvoiceRow[];
   /** Fatura kimliği → saklanan belgeler (Paraşüt PDF kopyası, yüklenen fotoğraf / PDF); yalnız bilgileri */
   documents?: Record<number, DocumentMeta[]>;
@@ -269,6 +301,8 @@ export function InvoicesClient({
   const byStatus = filtered.filter((i) => matchesStatus(i, status));
   /** "Kontrol bekleyen" çipi: bekleyen varsa en başta; süzgeç açıkken sayı 0'a inse de (kapatılabilsin) */
   const showReviewChip = counts.review > 0 || status === "kontrol";
+  /** "Şubesi seçilmemiş" çipi: birden çok kasa açıkken (rozetler varken) ve böyle fatura varsa */
+  const showBranchChip = branchOptions.length > 0 && (counts.unassigned > 0 || status === "subesiz");
   const totalReview = list.filter((i) => i.needsReview).length;
   // Sıralama kararlı: eşit değerlerde sunucunun tarih sırası korunur
   const visible = [...byStatus].sort((a, b) => (sort.dir === "asc" ? 1 : -1) * COMPARE[sort.key](a, b));
@@ -335,7 +369,7 @@ export function InvoicesClient({
   const sortValue = `${sort.key}-${sort.dir === "asc" ? "artan" : "azalan"}`;
   const chips: ActiveFilter[] = [];
   if (status !== "tumu") {
-    chips.push({ key: "durum", label: status === "kontrol" ? "Kontrol bekleyen" : status === "odenmedi" ? "Ödenmemiş" : "Ödendi", onRemove: () => setStatus("tumu") });
+    chips.push({ key: "durum", label: STATUS_LABEL[status], onRemove: () => setStatus("tumu") });
   }
   if (category) chips.push({ key: "kategori", label: category === GOODS_FILTER ? "Mal alımları" : category, onRemove: () => setCategory("") });
   if (month) chips.push({ key: "ay", label: monthLabel(month), onRemove: () => setMonth("") });
@@ -531,6 +565,41 @@ export function InvoicesClient({
     });
   }
 
+  /** Seçilen faturaların şubesi ("Şube ata…"); "Geri al" önceki şubeleri yazar */
+  function changeBranch(changes: { id: number; value: string | null }[], opts: { undo?: boolean; onDone?: () => void } = {}) {
+    if (!changes.length) return;
+    const label = (v: string | null) => invoiceBranchLabel(v, branchOptions.map((o) => ({ id: o.value, name: o.label })));
+    keepScroll();
+    startTransition(async () => {
+      applyOptimistic({ kind: "branch", changes: changes.map((c) => ({ ...c, label: label(c.value) })) });
+      const res = await tryAction(() =>
+        opts.undo ? setInvoiceBranch({ ids: changes.map((c) => c.id), value: null, previous: changes }) : setInvoiceBranch({ ids: changes.map((c) => c.id), value: changes[0].value }),
+      );
+      opts.onDone?.();
+      if (!res?.ok) {
+        if (res) toast.error(res.error);
+        return;
+      }
+      if (opts.undo) return void toast.success("Şubeler geri alındı");
+      const previous = res.data.previous;
+      toast.success(`${res.data.changed === 1 ? "Faturanın" : `${num(res.data.changed)} faturanın`} şubesi: ${label(changes[0].value)}`, {
+        action: previous.length ? { label: "Geri al", onClick: () => changeBranch(previous, { undo: true }) } : undefined,
+        duration: UNDO_MS,
+      });
+    });
+  }
+
+  function bulkBranch(e: ChangeEvent<HTMLSelectElement>) {
+    const v = e.target.value;
+    e.target.value = "";
+    if (!v) return;
+    const value = v === UNSET_VALUE ? null : v;
+    changeBranch(
+      selected.map((i) => ({ id: i.id, value })),
+      { onDone: clearSelection },
+    );
+  }
+
   function bulkCategory(e: ChangeEvent<HTMLSelectElement>) {
     const c = e.target.value;
     e.target.value = "";
@@ -629,7 +698,7 @@ export function InvoicesClient({
           </Badge>
         ) : null}
         {i.branchName ? (
-          <Badge tone="gray" title={`${i.branchName} şubesinin ayrı Paraşüt hesabından geldi: bu şubenin faturası`}>
+          <Badge tone={isUnassigned(i) ? "amber" : "gray"} dot={isUnassigned(i)} title={isUnassigned(i) ? "Şubesi seçilmemiş: tek şube seçiliyken görünmez. Faturayı açıp şubesini seçin." : "Faturanın şubesi"}>
             {i.branchName}
           </Badge>
         ) : null}
@@ -891,6 +960,7 @@ export function InvoicesClient({
                     },
                   ]
                 : []),
+              ...(showBranchChip ? [{ value: "subesiz" as const, label: STATUS_LABEL.subesiz, count: counts.unassigned }] : []),
               { value: "odenmedi", label: "Ödenmemiş", count: filteredUnpaid },
               { value: "odendi", label: "Ödendi", count: filtered.length - filteredUnpaid },
             ]}
@@ -943,6 +1013,11 @@ export function InvoicesClient({
           <FilterChip active={status === "kontrol"} onToggle={() => setStatus(status === "kontrol" ? "tumu" : "kontrol")} count={counts.review}>
             {status === "kontrol" ? null : <span className="size-1.5 rounded-full bg-brass-500" aria-hidden="true" />}
             Kontrol bekleyen
+          </FilterChip>
+        ) : null}
+        {showBranchChip ? (
+          <FilterChip active={status === "subesiz"} onToggle={() => setStatus(status === "subesiz" ? "tumu" : "subesiz")} count={counts.unassigned}>
+            {STATUS_LABEL.subesiz}
           </FilterChip>
         ) : null}
         <FilterChip active={status === "odenmedi"} onToggle={() => setStatus(status === "odenmedi" ? "tumu" : "odenmedi")} count={filteredUnpaid}>
@@ -1380,6 +1455,19 @@ export function InvoicesClient({
                   <Check size={16} aria-hidden="true" /> {confirmLabel}
                 </Button>
               ) : null}
+              {branchOptions.length ? (
+                <Select defaultValue="" onChange={bulkBranch} aria-label="Seçilenlerin şubesini değiştir" className="min-w-0 flex-1 font-medium text-ink sm:w-auto sm:min-w-36 sm:flex-none">
+                  <option value="" disabled>
+                    Şube ata…
+                  </option>
+                  {branchOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                  <option value={UNSET_VALUE}>Seçimi kaldır</option>
+                </Select>
+              ) : null}
               <Select defaultValue="" onChange={bulkCategory} aria-label="Seçilenlerin kategorisini değiştir" className="min-w-0 flex-1 font-medium text-ink sm:w-auto sm:min-w-44 sm:flex-none">
                 <option value="" disabled>
                   Kategori ata…
@@ -1530,6 +1618,8 @@ export function InvoicesClient({
           fromCashOut={editing === "new" ? fromCashOut : null}
           suppliers={suppliers}
           defaults={defaults}
+          branchOptions={branchOptions}
+          defaultBranch={defaultBranch}
           onClose={() => {
             setEditing(null);
             setFromCashOut(null);

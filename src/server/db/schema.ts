@@ -482,14 +482,21 @@ export const invoices = pgTable(
      */
     parasutAccount: text("parasut_account").references(() => branches.id),
     /**
-     * Faturanın şubesi: ayrı Paraşüt hesabından gelen faturada o şube (sahibin kararı, 25 Kasım 2026); boş = işletme
-     * geneli (şubeler aynı Paraşüt hesabındayken bugünkü kural). Eşitleme yalnız yeni açtığı faturaya yazar
+     * Faturanın şubesi (sahibin kararı, 25 Kasım 2026; docs/SUBE.md › Faturanın şubesi): seçilen şube; boşsa
+     * `companyWide`'a bakılır. Eşitleme yalnız yeni açtığı faturaya yazar (ayrı Paraşüt hesabı → o şube, yoksa
+     * tedarikçinin varsayılan şubesi). Tahmini stoğun "Marina'ya gelen faturalar"ı da bunu okur (tek kaynak)
      */
     branchId: branchIdNullable(),
+    /**
+     * Bilinçli "İşletme geneli" seçimi (muhasebe, ortak hizmet): şubesi boş ve bu kapalıysa fatura "Şubesi seçilmemiş"
+     * kutusundadır; tek şube seçiliyken görünmez (src/lib/invoice-branch.ts)
+     */
+    companyWide: boolean("company_wide").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [
     index("invoices_date_idx").on(t.date),
+    check("invoices_company_wide_ck", sql`not (${t.companyWide} and ${t.branchId} is not null)`),
     // Paraşüt kimlikleri hesap içinde benzersiz. Hesabı boş Paraşüt faturası varsayılan hesabındır (invoiceAccountWhere;
     // eski yedekten ya da "Geri al" kopyasından gelebilir): boş hesap "tuzla" sayılır, aynı kimlik iki kez yazılamaz.
     // Elle girilen faturanın kimlikleri boş: çakışmaz
@@ -540,6 +547,14 @@ export const suppliers = pgTable(
     paymentMethod: text("payment_method", { enum: ["havale", "nakit", "kart", "cek", "diger"] }),
     /** Peşin çalışılır: Paraşüt'ten gelen yeni faturası ödendi (fatura günü) olarak gelir */
     paidOnDelivery: boolean("paid_on_delivery").notNull().default(false),
+    /**
+     * Faturalarının varsayılan şubesi (docs/SUBE.md › Faturanın şubesi): Paraşüt'ten gelen yeni fatura bunu alır
+     * (ayrı Paraşüt hesabının faturası hesabın şubesini). Boşsa ve `defaultCompanyWide` kapalıysa yeni fatura "Şubesi
+     * seçilmemiş" gelir
+     */
+    defaultBranchId: text("default_branch_id").references(() => branches.id),
+    /** Varsayılan: işletme geneli (muhasebeci, ortak hizmet) */
+    defaultCompanyWide: boolean("default_company_wide").notNull().default(false),
     note: text("note"),
     /**
      * Listeden kaldırıldığı gün (YYYY-MM-DD, Türkiye). Faturası olan tedarikçi silinmez, listeden kalkar; ödenmemiş
@@ -549,7 +564,10 @@ export const suppliers = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [uniqueIndex("suppliers_key_uq").on(t.key)],
+  (t) => [
+    uniqueIndex("suppliers_key_uq").on(t.key),
+    check("suppliers_default_branch_ck", sql`not (${t.defaultCompanyWide} and ${t.defaultBranchId} is not null)`),
+  ],
 );
 
 /**
@@ -957,21 +975,6 @@ export const stockThresholds = pgTable(
   },
   (t) => [primaryKey({ columns: [t.branchId, t.ingredientId] }), check("stock_thresholds_qty_ck", sql`${t.qty} >= 0`)],
 );
-
-/**
- * Faturanın malının geldiği şube, yalnız tahmini stok için (docs/STOK-TAHMINI.md § 3). Faturalar şubeye bölünmez (mal
- * alımı işletme genelidir, docs/SUBE.md); yönetici Tahmini stok ekranında faturanın hangi şubeye geldiğini seçer.
- * Satır yoksa "şubesi seçilmedi": hiçbir şubenin tahminine girmez. Fatura, ödeme, cari, FIFO ve mal maliyeti bunu
- * okumaz. Fatura silinirse satır da silinir.
- */
-export const stockReceipts = pgTable("stock_receipts", {
-  invoiceId: integer("invoice_id")
-    .primaryKey()
-    .references(() => invoices.id, { onDelete: "cascade" }),
-  branchId: branchId(),
-  markedByName: text("marked_by_name"),
-  updatedAt: updatedAt(),
-});
 
 export const findings = pgTable(
   "findings",

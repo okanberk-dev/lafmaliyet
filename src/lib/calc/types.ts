@@ -331,6 +331,12 @@ export interface Invoice {
   channelNames?: string[];
   /** Vergi: "Demirbaş olabilir" listesinde "Gider (demirbaş değil)" denildi (yalnız vergi hesabı; docs/VERGI.md) */
   taxNotAsset?: boolean;
+  /**
+   * Faturanın şubesi (docs/SUBE.md › Faturanın şubesi): şube, bilinçli işletme geneli (`companyWide`) ya da ikisi de
+   * boş (şubesi seçilmemiş; tek şube görünümüne gelmez). Yoksa (Excel, testler) işletme geneli sayılır
+   */
+  branchId?: string | null;
+  companyWide?: boolean;
 }
 
 /**

@@ -34,6 +34,8 @@ export function toCard(r: SupplierRow): SupplierCard {
     paidOnDelivery: r.paidOnDelivery,
     note: r.note,
     hiddenOn: r.hiddenOn,
+    defaultBranchId: r.defaultBranchId,
+    defaultCompanyWide: r.defaultCompanyWide,
   };
 }
 
@@ -148,6 +150,8 @@ const LEDGER_COLUMNS = {
   eInvoiceId: s.invoices.eInvoiceId,
   needsReview: s.invoices.needsReview,
   supplierTaxNumber: s.invoices.supplierTaxNumber,
+  branchId: s.invoices.branchId,
+  companyWide: s.invoices.companyWide,
 };
 
 export async function loadLedgerInvoices() {

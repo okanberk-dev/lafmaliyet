@@ -8,6 +8,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { defaultTill, EXPENSE_SHARED, sortBranches, tillBranches, tillRowsInScope } from "@/lib/branches";
+import { invoiceBranchOptions } from "@/lib/invoice-branch";
 import { compareOpenItems, debtLabel, debtRemaining, invoiceLabel, showsCredit } from "@/lib/cari/account";
 import { defaultCostMode } from "@/lib/cari/match";
 import { businessDate } from "@/lib/cash-report";
@@ -228,6 +229,11 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
       hidden={isHiddenSupplier(g.card, g.summary, { ...g.account, lastEntry: g.lastEntry })}
       stats={stats}
       cari={cariData}
+      branchInfo={
+        tillBranches(branches).length > 1
+          ? { options: invoiceBranchOptions(branches), scope, scopeName: branches.find((b) => b.id === scope)?.name ?? null }
+          : undefined
+      }
     />
   );
 }

@@ -61,6 +61,9 @@ export interface SupplierCard {
   note: string | null;
   /** Listeden kaldırıldığı gün (YYYY-MM-DD); kaldırılmadıysa null (isHiddenSupplier) */
   hiddenOn: string | null;
+  /** Faturalarının varsayılan şubesi (docs/SUBE.md › Faturanın şubesi); eski okuyucularda yok */
+  defaultBranchId?: string | null;
+  defaultCompanyWide?: boolean;
 }
 
 type CardNames = Pick<SupplierCard, "id" | "name" | "aliases">;
@@ -351,6 +354,9 @@ export interface LedgerInvoice {
   paymentRequestedAt?: string | null;
   /** Paraşüt'ten gelen tedarikçi vergi nosu (elle ve Excel'den girilende yok) */
   supplierTaxNumber?: string | null;
+  /** Faturanın şubesi (docs/SUBE.md › Faturanın şubesi; bakiye firma genelidir, şube yalnız gösterim) */
+  branchId?: string | null;
+  companyWide?: boolean;
 }
 
 /** Ödenmedi → (isteğe bağlı) ödemesi istendi → ödendi. Durumu kullanıcı koyar. */

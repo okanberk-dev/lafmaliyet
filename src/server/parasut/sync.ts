@@ -8,6 +8,8 @@ import { COMMISSION_CATEGORY, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/
 import { LINKABLE_CATEGORIES } from "@/lib/invoice-linking";
 import { appliedKeyOf, firstPriceCertain, holdLogText, livePct, previousInvoicePrice, priceStep, reopenApplied, repeatCount, staleHolds } from "@/lib/price-hold";
 import { packEvidence } from "@/lib/product-match";
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
+import { newInvoiceBranch, supplierDefaultValue, type InvoiceBranchValue } from "@/lib/invoice-branch";
 import { parseIgnored, type IgnoredProduct } from "@/lib/product-ignore";
 import { addDays, syncedDueDate, todayTR } from "@/lib/reminders";
 import { bulkPrice } from "@/lib/supplier-prices";
@@ -17,6 +19,7 @@ import { suspectFactorLine } from "@/server/data/purchase-lots-query";
 import { flagStockOnlyInvoices } from "@/server/data/stock-only-invoices";
 import { applyCreditOnArrival, arrivalLedgerBase, cardResolver, releaseInvoiceLinks, resettleAfterSync, trackedCardResolver, type TrackedCard } from "@/server/cari/settle";
 import { loadPaidOnDelivery, loadPaymentsSince, type PaidOnDelivery } from "@/server/data/suppliers";
+import { invoiceScopeWhere } from "@/server/invoice-scope";
 import { getDb, schema as s } from "@/server/db";
 
 import { PAGE_SIZE, ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "./client";
@@ -183,8 +186,10 @@ interface Ctx {
   account: string;
   /** Kalem kimliklerinin ve ürün anahtarlarının hesap öneki (varsayılan hesapta boş; accountNs) */
   ns: string;
-  /** Bu hesaptan yeni açılan faturanın şubesi (ayrı hesap → o şube; ortak hesap → null, işletme geneli) */
+  /** Bu hesaptan yeni açılan faturanın şubesi (ayrı hesap → o şube; ortak hesap → null: tedarikçinin varsayılanı) */
   invoiceBranch: string | null;
+  /** Tedarikçi kartının varsayılan şubesi (Tedarikçiler; yoksa null: şubesi seçilmemiş gelir) */
+  supplierBranch: (supplier: string, taxNumber?: string | null) => InvoiceBranchValue;
   /** Hesabın gördüğü faturalar: kendi hesabındakiler ve Paraşüt'e bağlanmamış elle/Excel kayıtları (invoiceAccountWhere) */
   existing: Existing[];
   rules: Awaited<ReturnType<typeof loadRules>>;
@@ -510,8 +515,8 @@ async function applyDraft(d: BillDraft, ctx: Ctx): Promise<"deferred" | undefine
       .values({
         ...common,
         ...pay,
-        // Ayrı Paraşüt hesabının faturası o şubenin; ortak hesabınki işletme geneli (null)
-        branchId: ctx.invoiceBranch,
+        // Ayrı Paraşüt hesabının faturası o şubenin; yoksa tedarikçinin varsayılanı, o da yoksa şubesi seçilmemiş
+        ...newInvoiceBranch({ accountBranch: ctx.invoiceBranch, supplierDefault: ctx.supplierBranch(supplier, taxRaw) }),
         dueDate: d.dueDate,
         origin: "parasut",
         supplier,
@@ -604,7 +609,7 @@ async function openRun(trigger: "cron" | "manual" | "history", started: number, 
  */
 async function loadCtx(account: string, listed: Iterable<string> = [], client: ParasutClient | null = null): Promise<Ctx> {
   const db = getDb();
-  const [existingRows, rules, ignoredList, dueSeen, ublRows, paidOnDelivery, paymentsSince, trackedCard, cardOf, invoiceBranch] = await Promise.all([
+  const [existingRows, rules, ignoredList, dueSeen, ublRows, paidOnDelivery, paymentsSince, trackedCard, cardOf, invoiceBranch, cardDefaults] = await Promise.all([
     db
       .select({
         id: s.invoices.id,
@@ -643,7 +648,9 @@ async function loadCtx(account: string, listed: Iterable<string> = [], client: P
     trackedCardResolver(),
     cardResolver(db),
     accountInvoiceBranch(account),
+    db.select({ id: s.suppliers.id, defaultBranchId: s.suppliers.defaultBranchId, defaultCompanyWide: s.suppliers.defaultCompanyWide }).from(s.suppliers),
   ]);
+  const defaultOf = new Map(cardDefaults.map((c) => [c.id, supplierDefaultValue(c)]));
   // Kısa adlar kaydı ilk açanın (origin) Paraşüt olmadığı faturalardan öğrenilir. Tedarikçi geçmişine eşitlemenin
   // açıp kontrol edilmiş (onaylanmış, kategorisi değiştirilmiş ya da kurala/geçmişe dayanan) faturaları da katılır;
   // kontrol bekleyen tahminler katılmaz (yanlış bir tahmin kendini çoğaltmasın)
@@ -654,6 +661,10 @@ async function loadCtx(account: string, listed: Iterable<string> = [], client: P
     account,
     ns: accountNs(account),
     invoiceBranch,
+    supplierBranch: (supplier, taxNumber) => {
+      const card = cardOf(supplier, taxNumber);
+      return card === null ? null : (defaultOf.get(card) ?? null);
+    },
     existing: existingRows as Existing[],
     rules,
     history,
@@ -1542,8 +1553,8 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
       eInvoiceId: d.eInvoiceId,
       eInvoiceUuid: d.uuid,
       parasutAccount: ctx.account,
-      // Ayrı Paraşüt hesabının faturası o şubenin; ortak hesabınki işletme geneli (null)
-      branchId: ctx.invoiceBranch,
+      // Ayrı Paraşüt hesabının faturası o şubenin; yoksa tedarikçinin varsayılanı, o da yoksa şubesi seçilmemiş
+      ...newInvoiceBranch({ accountBranch: ctx.invoiceBranch, supplierDefault: ctx.supplierBranch(supplier, d.supplierTaxNo) }),
       syncedAt: now,
       needsReview: categoryNeedsReview(reason) || d.withholding || clash !== null,
       note,
@@ -1864,7 +1875,7 @@ export async function countUnlinkedProducts(): Promise<number> {
  * Ekran için: bağlanmamış Paraşüt ürünleri (en çok geçenler önce); `total` kesilmeden önceki sayı. En yeni kalemin
  * açıklaması ve miktarı paket boyunun kanıtı için (src/lib/product-match.ts packEvidence: "150 AD." 1 adet mi 150 mi)
  */
-export async function unlinkedProducts(limit = 40) {
+export async function unlinkedProducts(limit = 40, scope: BranchScope = ALL_BRANCHES) {
   const db = getDb();
   const [lines, links, ignored] = await Promise.all([
     db
@@ -1880,7 +1891,8 @@ export async function unlinkedProducts(limit = 40) {
       })
       .from(s.parasutBillLines)
       .innerJoin(s.invoices, eq(s.invoices.id, s.parasutBillLines.invoiceId))
-      .where(and(isNotNull(s.parasutBillLines.productKey), inArray(s.invoices.category, LINKABLE_CATEGORIES)))
+      // Tek şube seçiliyken o şubenin ve işletme genelinin faturalarının kalemleri (docs/SUBE.md › Faturanın şubesi)
+      .where(and(isNotNull(s.parasutBillLines.productKey), inArray(s.invoices.category, LINKABLE_CATEGORIES), invoiceScopeWhere(scope)))
       .orderBy(desc(s.invoices.date)),
     db.select({ productKey: s.parasutProductLinks.productKey }).from(s.parasutProductLinks),
     ignoredProducts(),

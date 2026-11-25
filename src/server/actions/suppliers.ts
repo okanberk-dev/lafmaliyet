@@ -1,6 +1,6 @@
 "use server";
 
-import { and, asc, desc, eq, gt, inArray, isNotNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -25,8 +25,12 @@ import {
   taxNumberCheck,
   type SupplierInfo,
 } from "@/app/panel/tedarikciler/logic";
+import { BRANCH_ID_MAX } from "@/lib/branches";
 import { dateTR, money, num } from "@/lib/format";
+import { invoiceBranchCols, invoiceBranchError, invoiceBranchLabel } from "@/lib/invoice-branch";
 import { requireAdmin } from "@/server/auth/dal";
+import { listBranches } from "@/server/branches";
+import { cardInvoiceIds } from "@/server/cari/settle";
 import { accountOf } from "@/lib/cari/account";
 import { loadCardEntries } from "@/server/data/cari";
 import { loadSupplierLedger, loadSupplierRefs, supplierSlugOf, supplierSlugOfKey } from "@/server/data/suppliers";
@@ -60,6 +64,13 @@ const cardSchema = z.object({
   paymentMethod: z.enum(PAYMENT_METHOD_VALUES).nullable(),
   paidOnDelivery: z.boolean(),
   note: zOptText(1000),
+  /**
+   * Faturalarının varsayılan şubesi (docs/SUBE.md › Faturanın şubesi): şube kimliği, "isletme" ya da null (yok).
+   * Gönderilmezse değişmez (eski sekme, geri alma kopyası)
+   */
+  invoiceBranch: z.string().max(BRANCH_ID_MAX).nullable().optional(),
+  /** Varsayılanı bu tedarikçinin şubesi seçilmemiş faturalarına da yaz */
+  applyToUnassigned: z.boolean().optional(),
 });
 
 type CardInput = z.input<typeof cardSchema>;
@@ -162,15 +173,38 @@ export async function saveSupplier(input: CardInput & { id: number | null }) {
     if (conflict) throw new UserError(await conflictMessage(conflict));
     // Cari (K23): ödemesi sayılmış ya da faturasız alımı bağlı faturayı başka tedarikçiye taşıyan ad değişikliği olmaz
     await assertNoCariMove(all, { id: cur?.id ?? null, name: data.name, aliases, taxNumber: data.taxNumber });
-    const values = { ...data, aliases, key: supplierMatchKey(data.name), updatedAt: new Date() };
-    let savedId: number;
-    if (cur) {
-      await db.update(s.suppliers).set(values).where(eq(s.suppliers.id, cur.id));
-      savedId = cur.id;
-    } else {
-      const [row] = await db.insert(s.suppliers).values(values).returning({ id: s.suppliers.id });
-      savedId = row.id;
+    const { invoiceBranch, applyToUnassigned, ...fields } = data;
+    if (invoiceBranch !== undefined) {
+      const error = invoiceBranchError(invoiceBranch, await listBranches());
+      if (error) throw new UserError(error);
     }
+    const branchSet = invoiceBranch !== undefined ? (({ branchId, companyWide }) => ({ defaultBranchId: branchId, defaultCompanyWide: companyWide }))(invoiceBranchCols(invoiceBranch)) : {};
+    const values = { ...fields, ...branchSet, aliases, key: supplierMatchKey(data.name), updatedAt: new Date() };
+    // Kart ve (istenirse) şubesi seçilmemiş faturalarına varsayılan şube tek işlemde
+    const { savedId, applied } = await db.transaction(async (tx) => {
+      let savedId: number;
+      if (cur) {
+        await tx.update(s.suppliers).set(values).where(eq(s.suppliers.id, cur.id));
+        savedId = cur.id;
+      } else {
+        const [row] = await tx.insert(s.suppliers).values(values).returning({ id: s.suppliers.id });
+        savedId = row.id;
+      }
+      let applied = 0;
+      if (applyToUnassigned && invoiceBranch) {
+        const ids = await cardInvoiceIds(tx, savedId);
+        if (ids.length) {
+          const rows = await tx
+            .update(s.invoices)
+            .set(invoiceBranchCols(invoiceBranch))
+            .where(and(inArray(s.invoices.id, ids), isNull(s.invoices.branchId), eq(s.invoices.companyWide, false)))
+            .returning({ id: s.invoices.id });
+          applied = rows.length;
+        }
+      }
+      return { savedId, applied };
+    });
+    if (applied) await logActivity(me, "Faturanın şubesi", `${data.name}: şubesi seçilmemiş ${num(applied)} fatura → ${invoiceBranchLabel(invoiceBranch ?? null, await listBranches())}`);
     await logActivity(me, cur ? "Tedarikçi düzenlendi" : "Tedarikçi eklendi", [data.name, aliases.length ? `diğer adlar: ${aliases.join(", ")}` : null].filter(Boolean).join(" · "));
     // IBAN değişikliği ayrıca yazılır (eski ve yeni): sahte "IBAN'ımız değişti" e-postası en sık ödeme dolandırıcılığı
     if (cur && (cur.iban ?? null) !== (data.iban ?? null)) {
@@ -179,7 +213,7 @@ export async function saveSupplier(input: CardInput & { id: number | null }) {
     refresh();
     const tax = taxKey(data.taxNumber);
     const sharedTax = tax ? all.filter((c) => c.id !== savedId && taxKey(c.taxNumber) === tax).map((c) => c.name) : [];
-    return { id: savedId, slug: await supplierSlugOf(savedId), renamedAlias: renamed && aliases.includes(renamed) ? renamed : null, sharedTax };
+    return { id: savedId, slug: await supplierSlugOf(savedId), renamedAlias: renamed && aliases.includes(renamed) ? renamed : null, sharedTax, applied };
   });
 }
 

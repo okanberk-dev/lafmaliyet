@@ -45,15 +45,21 @@ tahmini stok = son sayım
 - **İptal:** LafPOS sözleşmesinde ayrı alan yok. İptal edilen kalem satışa girmez, tüketim yazılmaz; hazırlanıp
   atıldıysa personel zayi olarak girer.
 - **Alış:** Paraşüt faturalarının hammaddeye bağlı kalemleri (stok değerlemenin partileriyle aynı süzgeç: kafe dışı
-  fatura ve çarpanı şüpheli kalem girmez), yalnız **Marina'ya geldi** işaretli faturalar, fatura tarihi dönemin içinde.
+  fatura ve çarpanı şüpheli kalem girmez), yalnız şubesi **Marina** olan faturalar, fatura tarihi dönemin içinde.
   İade faturası işaretliyse düşer.
 
 ## 3. Faturanın şubesi
 
-Faturalar şubeye bölünmez ([SUBE.md](SUBE.md): mal alımı işletme genelidir). Bütün faturaları saymak Tuzla'nın malını
-Marina'da gösterir, hiç saymamak mal geldiği gün bile "bitiyor" der. Bu yüzden yönetici ekrandaki **Marina'ya gelen
-faturalar** kartında dönemin her faturası için "Marina" ya da "Tuzla" seçer (seçilmeyen fatura tahmine girmez, kart
-"şubesi seçilmedi" der). Seçim yalnız bu tahmini değiştirir: fatura, ödeme, cari, FIFO ve mal maliyeti aynıdır.
+Tahmin yalnız **Marina'nın faturalarını** sayar: faturanın şubesi (`invoices.branch_id`; [SUBE.md › Faturanın şubesi](SUBE.md#faturanın-şubesi-25-kasım-2026)).
+Bütün faturaları saymak Tuzla'nın malını Marina'da gösterir, hiç saymamak mal geldiği gün bile "bitiyor" der. Ekrandaki
+**Marina'ya gelen faturalar** kartı dönemin hammaddeye bağlı kalemi olan her faturasını şubesiyle gösterir ("Seçilmedi",
+Tuzla, Marina, İşletme geneli); seçim faturanın şubesini yazar, Faturalar'daki seçimle **aynı alandır** (tek doğruluk
+kaynağı). Seçilmeyen ve işletme geneli fatura tahmine girmez, kart "şubesi seçilmedi" der. Tutar, ödeme, cari, FIFO ve
+mal maliyeti değişmez; fatura seçilen şubenin Faturalar, Gelir-gider ve Maliyet görünümüne geçer.
+
+25 Kasım 2026'ya kadar bu seçim ayrı bir tabloda (`stock_receipts`) duruyordu; göç `0088_fatura_sube_veri` seçimleri
+şubesi boş faturalara taşıdı, `0089` tabloyu kaldırdı.
+
 Faturası olmayan alım (elle ya da Excel'den girilen fatura, market alımı, Tuzla'dan getirilen mal) tahmine girmez:
 tahmini stok olduğundan az görünür, sayım düzeltir.
 
@@ -100,9 +106,9 @@ tahmini stok olduğundan az görünür, sayım düzeltir.
 |---|---|
 | `src/lib/stock-estimate.ts` | Saf hesap: dönem, birim dönüşümü, satış ve zayi tüketimi, atlanan satırlar, kritik eşik, kartın özeti, görünürlük kuralı |
 | `src/server/data/stock-estimate.ts` | Okuyucu (yalnız okuma): Marina'nın sayımı, LafPOS gün sonları, zayi ve ikram, işaretli faturaların partileri, eşikler |
-| `src/server/actions/stock-estimate.ts` | Eşiği ve faturanın şubesini yazar (yönetici, işlem geçmişine düşer) |
+| `src/server/actions/stock-estimate.ts` | Eşiği yazar (yönetici, işlem geçmişine düşer); faturanın şubesini `setInvoiceBranch` (src/server/actions/invoices.ts) |
 | `src/app/panel/sayim/tahmini/` | Ekran |
 | `src/app/panel/stock-alert-card.tsx` | Genel bakış ve Bugün'ün kartı |
-| `drizzle/0066_tahmini_stok.sql` | `stock_thresholds`, `stock_receipts` (yalnız ekleme) |
+| `drizzle/0066_tahmini_stok.sql` | `stock_thresholds`, `stock_receipts` (yalnız ekleme; `stock_receipts` 0089'da kalktı, seçim faturanın şubesinde) |
 | `tests/stok-tahmini.test.ts` | Sayım yok, LafPOS öncesi, reçetesiz ve bağlanmamış ürün, birim dönüşümü, zayi ve ikram kuralı, alış, eşik, Tuzla'nın etkilenmemesi |
 | `tests/stok-tahmini-db.test.ts` | Veritabanında LafPOS'un sayıldığı ilk gün: Marina'nın geçiş ayı listesinin son gününden sonra, Marina'nın kendi kapsam kaydından (Tuzla'nın aynı aya yüklediği liste kaydırmaz; docs/LAFPOS.md › Günlük satış) |

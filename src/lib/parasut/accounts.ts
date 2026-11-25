@@ -46,7 +46,7 @@ export function parseBillKey(raw: string): { account: string; key: string } {
   return i > 0 ? { account: raw.slice(0, i), key: raw.slice(i + 1) } : { account: DEFAULT_PARASUT_ACCOUNT, key: raw };
 }
 
-/** Hesabın faturaları: "branch" tek şubenin hesabıysa o şubenin (varsayılan), "shared" her zaman işletme geneli */
+/** Hesabın faturaları: "branch" tek şubenin hesabıysa o şubenin (varsayılan), "shared" hesabın şubesine yazılmaz (tedarikçinin varsayılanı) */
 export type ParasutInvoiceScope = "branch" | "shared";
 
 export interface ParasutAccountInfo {
@@ -86,8 +86,9 @@ export function parasutAccounts(rows: readonly SettingLink[], branches: readonly
 
 /**
  * Hesaptan gelen faturanın şubesi (sahibin kararı, 25 Kasım 2026): hesabı yalnız sahibi şube kullanıyorsa (ayrı
- * Paraşüt hesabı) faturaları o şubenin; şubeler aynı hesaptaysa işletme geneli (null; bugünkü kural). "shared" seçilmişse
- * ayrı hesabın faturaları da işletme geneli kalır (Paraşüt ekranındaki seçim). Şube yalnız yeni açılan faturaya yazılır:
+ * Paraşüt hesabı) faturaları o şubenin; şubeler aynı hesaptaysa null: fatura tedarikçinin varsayılan şubesini alır, o da
+ * yoksa "Şubesi seçilmemiş" (src/lib/invoice-branch.ts newInvoiceBranch). "shared" seçilmişse ayrı hesabın faturaları da
+ * böyle (Paraşüt ekranındaki seçim). Şube yalnız yeni açılan faturaya yazılır:
  * var olan faturanın şubesi eşitlemede değişmez
  */
 export function invoiceBranchOf(account: Pick<ParasutAccountInfo, "id" | "users">, scope: ParasutInvoiceScope): string | null {

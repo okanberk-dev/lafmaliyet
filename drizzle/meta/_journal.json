@@ -610,6 +610,27 @@
       "when": 1795575564098,
       "tag": "0086_parasut_kimlik_bos_hesap",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1795615109048,
+      "tag": "0087_fatura_sube",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1795615119789,
+      "tag": "0088_fatura_sube_veri",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1795615486869,
+      "tag": "0089_stok_fatura_subesi_kaldir",
+      "breakpoints": true
     }
   ]
 }

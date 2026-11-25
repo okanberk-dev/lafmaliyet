@@ -19,7 +19,7 @@ import type { ParasutLinkCardData } from "@/server/parasut/link-card";
 
 /**
  * Şube ayarları › Paraşüt hesabı (docs/PARASUT.md › Şube başına Paraşüt hesabı). "Diğer şubeyle aynı" açıkken şube
- * bağlandığı şubenin Paraşüt hesabını kullanır: tek bağlantı, tek eşitleme, faturalar işletme geneli. Kapatılınca
+ * bağlandığı şubenin Paraşüt hesabını kullanır: tek bağlantı, tek eşitleme, faturanın şubesi tedarikçinin varsayılanından. Kapatılınca
  * hiçbir şey kopyalanmaz (aynı firma iki kez eşitlenmesin): şube boş bir hesapla başlar, bağlantısı Paraşüt ekranında
  * kurulur; o hesaptan gelen faturalar şubenindir. Hesabın ayarları ve sırrı bu ekrana hiç gelmez, yalnız durum.
  */
@@ -64,7 +64,7 @@ export function ParasutLinkCard({ data }: { data: ParasutLinkCardData }) {
             title={linked ? `${data.toName} ile aynı` : data.targets.length === 1 ? `${targetName} ile aynı` : "Diğer şubeyle aynı"}
             description={
               linked
-                ? `${here}, ${data.toName} şubesinin Paraşüt hesabını kullanır; faturalar işletme geneli`
+                ? `${here}, ${data.toName} şubesinin Paraşüt hesabını kullanır; faturanın şubesi tedarikçiden`
                 : data.hasInvoices
                   ? "Bu şubenin kendi hesabından fatura geldi; başka şubenin hesabına bağlanamaz"
                   : "Açarsanız bu şubenin Paraşüt bağlantısı silinir, seçtiğiniz şubeninki kullanılır"
@@ -125,7 +125,7 @@ export function ParasutLinkCard({ data }: { data: ParasutLinkCardData }) {
         description={
           <div className="space-y-3">
             <p>
-              {here} şubesinin Paraşüt bağlantısı ve eşitleme durumu silinir; faturalar {targetName} şubesinin hesabından gelir ve işletme geneli olur.
+              {here} şubesinin Paraşüt bağlantısı ve eşitleme durumu silinir; faturalar {targetName} şubesinin hesabından gelir; şubesi tedarikçinin varsayılanından (yoksa “Şubesi seçilmemiş”).
             </p>
             {data.targets.length > 1 ? (
               <Field label="Hangi şubeyle aynı" htmlFor="parasut-hedef">

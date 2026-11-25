@@ -23,6 +23,7 @@ import type { InvoiceCariLinks } from "@/lib/cari/account";
 import { isPartiallyPaid, METHOD_LABEL, openBalance } from "@/lib/cari/balance";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
+import { INVOICE_SHARED, invoiceBranchValue, UNASSIGNED_LABEL } from "@/lib/invoice-branch";
 import { stockOnlyCategory, stockOnlyText } from "@/lib/invoice-linking";
 import { formatBytes } from "@/lib/documents";
 import { dateTR, num, tl } from "@/lib/format";
@@ -56,7 +57,7 @@ function localToday() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function blankForm(invoice: InvoiceRow | null, keep?: { date: string; category: string }) {
+function blankForm(invoice: InvoiceRow | null, keep?: { date: string; category: string; branch?: string }) {
   return {
     date: invoice?.date ?? keep?.date ?? localToday(),
     supplier: invoice?.supplier ?? "",
@@ -72,6 +73,8 @@ function blankForm(invoice: InvoiceRow | null, keep?: { date: string; category: 
     dueDate: invoice?.dueDate ?? "",
     /** Ödeme günü (ödendi faturada); boşsa yeni faturada fatura günü, ödenmemişten geçerken bugün yazılır */
     paidAt: invoice?.paidAt ?? "",
+    /** Faturanın şubesi: şube kimliği, "isletme" ya da boş (seçilmedi; docs/SUBE.md › Faturanın şubesi) */
+    branch: invoice ? (invoiceBranchValue(invoice) ?? "") : (keep?.branch ?? ""),
   };
 }
 
@@ -126,7 +129,13 @@ export function InvoiceDialog({
   expenseLinks,
   supplierHref,
   cari,
+  branchOptions = [],
+  defaultBranch = "",
 }: {
+  /** Faturanın şubesinin seçenekleri (birden çok kasa açıkken; invoiceBranchOptions); boşsa alan çizilmez */
+  branchOptions?: { value: string; label: string }[];
+  /** Yeni faturanın şubesi: seçili şube; "Tümü"de boş (tedarikçinin varsayılanı) */
+  defaultBranch?: string;
   invoice: InvoiceRow | null;
   /**
    * Yeni fatura kasadan faturalı bir alımdan (Faturalar › Kontrol › "Faturalar'a ekle"; E-42): form kasadan dolu, fişin
@@ -153,7 +162,10 @@ export function InvoiceDialog({
   /** Bu faturaya sayılan cari ödemeler ve bağlı faturasız alımlar (salt okunur; Tedarikçiler'de değişir) */
   cari?: InvoiceCariLinks;
 }) {
-  const [f, setF] = useState(() => (fromCashOut && !invoice ? cashOutForm(fromCashOut, defaults) : blankForm(invoice)));
+  const [f, setF] = useState(() => {
+    const form = fromCashOut && !invoice ? cashOutForm(fromCashOut, defaults) : blankForm(invoice);
+    return invoice ? form : { ...form, branch: defaultBranch };
+  });
   const cashOut = invoice ? null : fromCashOut;
   /** Fişte KDV okunmadı: net tutar tedarikçinin son oranıyla geri hesaplandı, kontrol edilmeli */
   const cashVatGuessed = cashOut ? cashOutInvoiceDraft(cashOut).vatGuessed : false;
@@ -298,6 +310,8 @@ export function InvoiceDialog({
         cashOutId: cashOut?.id ?? null,
         clientKey: invoice ? null : clientKey,
         sameNoOk,
+        // Şube: alan çizilmediyse gönderilmez (değişmez); yeni faturada "seçilmedi" tedarikçinin varsayılanına bırakılır
+        ...(branchOptions.length && (invoice || f.branch) ? { branch: f.branch || null } : {}),
       });
       if (res.ok && !invoice && attachment && !res.data.duplicate) {
         setBusyText("Belge yükleniyor…");
@@ -360,7 +374,7 @@ export function InvoiceDialog({
     setAttachment(null);
     if (!again) return onClose();
     // Art arda giriş: tarih ve kategori kalır, diğer alanlar boşalır, imleç tedarikçiye döner
-    const next = blankForm(null, { date: f.date, category: f.category });
+    const next = blankForm(null, { date: f.date, category: f.category, branch: f.branch });
     setF(next);
     setStart({ category: next.category, vatRate: next.vatRate });
     setTouched({ category: false, vat: false });
@@ -560,6 +574,31 @@ export function InvoiceDialog({
             ))}
           </Select>
         </Field>
+        {branchOptions.length ? (
+          <Field
+            label="Şube"
+            htmlFor="f-branch"
+            className="sm:col-span-2"
+            hint={
+              f.branch
+                ? f.branch === INVOICE_SHARED
+                  ? "İşletme geneli: her şubede bilgi olarak görünür, hiçbir şubenin kârına girmez."
+                  : "Fatura bu şubenin Faturalar, Gelir-gider ve Maliyet görünümüne girer."
+                : invoice
+                  ? "Şubesi seçilmemiş: tek şube seçiliyken görünmez; şubesini seçin."
+                  : "Seçilmezse tedarikçinin varsayılan şubesi yazılır (yoksa “Şubesi seçilmemiş” kalır)."
+            }
+          >
+            <Select id="f-branch" value={f.branch} onChange={(e) => set({ branch: e.target.value })}>
+              <option value="">{invoice ? UNASSIGNED_LABEL : "Seçilmedi (tedarikçinin varsayılanı)"}</option>
+              {branchOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
 
         {cashOut?.photoId ? null : (
           <DocumentField

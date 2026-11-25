@@ -25,6 +25,7 @@ import { round2 } from "@/lib/cari/balance";
 import { linkedInvoiceProblem, linkedInvoiceRefusal } from "@/lib/cari/match";
 import { sniffMime } from "@/lib/documents";
 import { dateTR, tl } from "@/lib/format";
+import { invoiceBranchCols, invoiceBranchError, invoiceBranchLabel, invoiceBranchValue, supplierDefaultValue } from "@/lib/invoice-branch";
 import { crossesSeparate, separateMoveMonths } from "@/lib/invoice-linking";
 import { parseBillKey, qualifyBillKey } from "@/lib/parasut/accounts";
 import { addDays, todayTR } from "@/lib/reminders";
@@ -88,6 +89,11 @@ const invoiceSchema = z.object({
   clientKey: zClientKey,
   /** Aynı tedarikçinin aynı numaralı faturası var dendi, kullanıcı "Yine de ekle" dedi (denetim UI-02) */
   sameNoOk: z.boolean().optional(),
+  /**
+   * Faturanın şubesi: şube kimliği, "isletme" ya da null (seçilmedi). Gönderilmezse düzenlemede değişmez, yeni faturada
+   * tedarikçi kartının varsayılanı (yoksa seçilmemiş; docs/SUBE.md › Faturanın şubesi)
+   */
+  branch: z.string().max(BRANCH_ID_MAX).nullable().optional(),
 });
 
 /** Kasadan açılan faturanın satırı artık beklemiyor */
@@ -165,9 +171,13 @@ const blankResult = {
 export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const { id, paidAt, cashOutId, clientKey, sameNoOk, ...data } = invoiceSchema.parse(input);
+    const { id, paidAt, cashOutId, clientKey, sameNoOk, branch, ...data } = invoiceSchema.parse(input);
     if (paidAt && paidAt > addDays(todayTR(), 1)) throw new UserError("Ödeme günü ileri bir tarih olamaz");
     const db = getDb();
+    if (branch !== undefined) {
+      const error = invoiceBranchError(branch, await listBranches());
+      if (error) throw new UserError(error);
+    }
     const none: CreditUse = { allocationIds: [], used: new Map(), closed: [] };
     if (!id) {
       // Aynı anahtarla eklenmiş fatura (UI-03; kısayola ikinci basış, yanıtı yolda kalan isteğin tekrarı): yenisi
@@ -189,6 +199,8 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
       }
       // Cari takipteki kartın yeni faturası panelde sayılır (taban 0; src/lib/cari/balance.ts)
       const ledgerBase = await ledgerBaseForNew(data.supplier, null);
+      // Şube: pencerenin seçimi; gönderilmediyse (eski sekme, asistan) tedarikçi kartının varsayılanı
+      const branchCols = invoiceBranchCols(branch !== undefined ? branch : await supplierDefaultFor(data.supplier));
       let fromCash: PendingCashOutInvoice | null = null;
       let row: { id: number };
       let credit = none;
@@ -207,7 +219,7 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
           if (!pending) throw new UserError(CASH_OUT_GONE);
           const [inserted] = await tx
             .insert(s.invoices)
-            .values({ ...data, clientKey, paidAt: data.unpaid ? null : (paidAt ?? null), ledgerBase, ...(data.unpaid ? {} : { paidVia: "nakit" as const }) })
+            .values({ ...data, ...branchCols, clientKey, paidAt: data.unpaid ? null : (paidAt ?? null), ledgerBase, ...(data.unpaid ? {} : { paidVia: "nakit" as const }) })
             .returning({ id: s.invoices.id });
           await updateHandledCashOuts(tx, { add: [{ id: pending.id, invoiceId: inserted.id, by: me.name }] });
           return { repeat: false as const, row: inserted, fromCash: pending };
@@ -221,7 +233,7 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
         const viaCredit = !data.unpaid && ledgerBase !== null;
         const [inserted] = await db
           .insert(s.invoices)
-          .values({ ...data, clientKey, unpaid: data.unpaid || viaCredit, paidAt: data.unpaid || viaCredit ? null : (paidAt ?? null), ledgerBase })
+          .values({ ...data, ...branchCols, clientKey, unpaid: data.unpaid || viaCredit, paidAt: data.unpaid || viaCredit ? null : (paidAt ?? null), ledgerBase })
           .onConflictDoNothing({ target: s.invoices.clientKey })
           .returning({ id: s.invoices.id });
         if (!inserted) {
@@ -261,9 +273,11 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
     // Kilitli alanlar (Paraşüt'e bağlıda tarih, no, tutarlar) atılır; kalanlar yazılır. Kaydetmek faturayı kontrol
     // edilmiş sayar. Bağı çözülmüş kaydın eşitlemeden kalan KDV toplamı tutarlar değişince silinir: KDV ödenecek − net
     // olur (pencerede görünen), fark tevkifat sanılmaz (rules.ts amountsChanged)
+    // Şube Paraşüt'e bağlı faturada da düzenlenir (eşitleme var olan faturanın şubesine dokunmaz)
+    const branchSet = branch !== undefined ? invoiceBranchCols(branch) : {};
     const fields = isParasutLinked(cur)
-      ? { supplier: data.supplier, description: data.description, category: data.category, note: data.note, dueDate: data.dueDate, needsReview: false }
-      : { ...data, ...(amountsChanged(cur, data) ? { vat: 0 } : {}), needsReview: false };
+      ? { supplier: data.supplier, description: data.description, category: data.category, note: data.note, dueDate: data.dueDate, needsReview: false, ...branchSet }
+      : { ...data, ...(amountsChanged(cur, data) ? { vat: 0 } : {}), needsReview: false, ...branchSet };
     const payableChanged = !isParasutLinked(cur) && data.payable !== cur.payable && (cur.allocated > 0 || cur.ledgerBase !== null);
     // Faturasız alımı bağlı fatura kafe dışına, komisyona ya da iadeye geçemez (E-45): kural kilitli satırda okunur,
     // alanlar aynı işlemde yazılır (aynı anda bağlanan fatura bekler)
@@ -480,6 +494,89 @@ export async function setInvoiceCategory(changes: z.input<typeof categoryChanges
       missing: wanted.size - rows.length,
       /** Kontrolde kalanlar: kalemi hammaddeye bağlı, kategorisi mal alışı değil */
       stockOnly,
+    };
+  });
+}
+
+/** Tedarikçi kartının varsayılan şubesi (adı, diğer adları ve vergi noyla; kartı yoksa null) */
+async function supplierDefaultFor(supplier: string, taxNumber: string | null = null): Promise<string | null> {
+  const db = getDb();
+  const card = (await cardResolver(db))(supplier, taxNumber);
+  if (card === null) return null;
+  const [row] = await db.select({ defaultBranchId: s.suppliers.defaultBranchId, defaultCompanyWide: s.suppliers.defaultCompanyWide }).from(s.suppliers).where(eq(s.suppliers.id, card)).limit(1);
+  return supplierDefaultValue(row);
+}
+
+const branchChangesSchema = z.object({
+  ids: z.array(zId).min(1, "Fatura seçin").max(1000, "Tek seferde en fazla 1000 fatura"),
+  /** Şube kimliği, "isletme" (işletme geneli) ya da null (seçimi kaldır: şubesi seçilmemiş) */
+  value: z.string().max(BRANCH_ID_MAX).nullable(),
+  /** Aynı seçimi bu faturaların tedarikçi kartına varsayılan da yap (kartı olanlar) */
+  supplierDefault: z.boolean().optional(),
+  /** "Geri al": fatura başına önceki değer (verilirse `value` yok sayılır) */
+  previous: z.array(z.object({ id: zId, value: z.string().max(BRANCH_ID_MAX).nullable() })).max(1000).optional(),
+});
+
+/**
+ * Faturanın şubesi (docs/SUBE.md › Faturanın şubesi): bir ya da birçok faturaya şube, "İşletme geneli" ya da "seçilmedi"
+ * yazar (fatura penceresi, toplu seçim, "Şubesi seçilmemiş" kutusunun önerisi, Tahmini stok › Marina'ya gelen
+ * faturalar). Tek işlem; önceki değerler döner ("Geri al"). Yalnız yönetici. Tutar, ödeme ve cari değişmez; şube
+ * yalnız görünümü (Faturalar, Gelir-gider, Maliyet, Paraşüt, tahmini stok) ayırır.
+ */
+export async function setInvoiceBranch(input: z.input<typeof branchChangesSchema>) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const { ids, value, supplierDefault, previous } = branchChangesSchema.parse(input);
+    const branches = await listBranches();
+    const wanted = new Map<number, string | null>(previous ? previous.map((p) => [p.id, p.value]) : ids.map((id) => [id, value]));
+    for (const v of new Set(wanted.values())) {
+      const error = invoiceBranchError(v, branches);
+      if (error) throw new UserError(error);
+    }
+    const db = getDb();
+    const result = await db.transaction(async (tx) => {
+      const rows = await tx
+        .select({ id: s.invoices.id, supplier: s.invoices.supplier, supplierTaxNumber: s.invoices.supplierTaxNumber, branchId: s.invoices.branchId, companyWide: s.invoices.companyWide })
+        .from(s.invoices)
+        .where(inArray(s.invoices.id, [...wanted.keys()]))
+        .orderBy(s.invoices.id)
+        .for("update");
+      if (!rows.length) throw new UserError("Faturalar bulunamadı; silinmiş olabilir. Sayfayı yenileyin.");
+      const changed = rows.filter((r) => invoiceBranchValue(r) !== (wanted.get(r.id) ?? null));
+      const byValue = new Map<string, number[]>();
+      for (const r of changed) {
+        const k = wanted.get(r.id) ?? "";
+        byValue.set(k, [...(byValue.get(k) ?? []), r.id]);
+      }
+      for (const [k, list] of byValue) await tx.update(s.invoices).set(invoiceBranchCols(k || null)).where(inArray(s.invoices.id, list));
+      // Tedarikçi kartının varsayılanı: faturaların düştüğü kartlar (kartı olmayan tedarikçiye kart açılmaz)
+      let cards = 0;
+      if (supplierDefault && !previous) {
+        const resolve = await cardResolver(tx);
+        const cardIds = [...new Set(rows.map((r) => resolve(r.supplier, r.supplierTaxNumber)).filter((c): c is number => c !== null))];
+        if (cardIds.length) {
+          const set = invoiceBranchCols(value);
+          await tx.update(s.suppliers).set({ defaultBranchId: set.branchId, defaultCompanyWide: set.companyWide, updatedAt: new Date() }).where(inArray(s.suppliers.id, cardIds));
+          cards = cardIds.length;
+        }
+      }
+      return { rows, changed, cards };
+    });
+    if (result.changed.length || result.cards) {
+      const label = (v: string | null) => invoiceBranchLabel(v, branches);
+      const first = result.changed[0];
+      const detail =
+        result.changed.length === 1
+          ? `${splitSupplier(first.supplier).base}: ${label(invoiceBranchValue(first))} → ${label(wanted.get(first.id) ?? null)}`
+          : `${result.changed.length} fatura → ${previous ? "önceki şubeleri" : label(value)}`;
+      await logActivity(me, "Faturanın şubesi", `${detail}${result.cards ? ` · ${result.cards} tedarikçinin varsayılanı` : ""}`);
+      refresh();
+    }
+    return {
+      changed: result.changed.length,
+      missing: wanted.size - result.rows.length,
+      cards: result.cards,
+      previous: result.changed.map((r) => ({ id: r.id, value: invoiceBranchValue(r) })),
     };
   });
 }
@@ -830,6 +927,7 @@ function snapshotOf(r: InvoiceRow) {
     paidByLedger: r.paidByLedger,
     parasutAccount: r.parasutAccount,
     branchId: r.branchId,
+    companyWide: r.companyWide,
   };
 }
 
@@ -876,6 +974,8 @@ const snapshotSchema = z.object({
   // Şube başına Paraşüt hesabı (sonradan eklendi; eski kopyada yok: kopyanın anahtarındaki hesap, yoksa varsayılan)
   parasutAccount: z.string().max(BRANCH_ID_MAX).nullable().optional(),
   branchId: z.string().max(BRANCH_ID_MAX).nullable().optional(),
+  // Bilinçli işletme geneli (sonradan eklendi; eski kopyada yok: şubesi seçilmemiş geri gelir)
+  companyWide: z.boolean().optional(),
 });
 
 /** Silinen faturanın cari bağları (releaseInvoiceLinks): geri alınınca yeniden kurulur, sığmayan para hesapta kalır */
@@ -1041,10 +1141,10 @@ export async function restoreInvoice(snapshot: z.input<typeof snapshotSchema> & 
     const links = snapshot.cari ? cariLinksSchema.parse(snapshot.cari) : null;
     const cashOutIds = cashOutIdsSchema.parse(snapshot.cashOutIds ?? []);
     if (row.externalId || row.eInvoiceId) throw new UserError("Paraşüt faturası “Silinen Paraşüt faturaları” listesinden geri alınır.");
-    // Kopya istemciden gelir: elle girilen faturanın Paraşüt hesabı yoktur; şubesi bilinen bir şube değilse işletme
-    // geneli yazılır (yabancı anahtar hatası yerine)
+    // Kopya istemciden gelir: elle girilen faturanın Paraşüt hesabı yoktur; şubesi bilinen bir şube değilse şubesi
+    // seçilmemiş yazılır (yabancı anahtar hatası yerine)
     const branchId = row.branchId && (await listBranches()).some((b) => b.id === row.branchId) ? row.branchId : null;
-    const values = { ...row, parasutAccount: null, branchId };
+    const values = { ...row, parasutAccount: null, branchId, companyWide: branchId === null && (row.companyWide ?? false) };
     const db = getDb();
     const out = await db.transaction(async (tx) => {
       const [r] = await tx.insert(s.invoices).values(values).returning({ id: s.invoices.id });

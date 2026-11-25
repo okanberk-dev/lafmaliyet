@@ -285,14 +285,17 @@ test("Tuzla etkilenmez: tahmin yalnız Marina'nın; Tuzla ve online kanal seçil
 
   // Okuyucu yalnız Marina'nın satırlarını okur ve kartı kapıdan geçirir; sayım, fatura ve FIFO tablolarına yazmaz
   const loader = read("src/server/data/stock-estimate.ts");
-  for (const table of ["stockCounts", "posDailySales", "posDayReports", "wasteEntries", "stockThresholds", "stockReceipts"]) {
+  for (const table of ["stockCounts", "posDailySales", "posDayReports", "wasteEntries", "stockThresholds"]) {
     assert.match(loader, new RegExp(`eq\\(s\\.${table}\\.branchId, STOCK_ESTIMATE_BRANCH\\)`), `${table} şubeyle süzülür`);
   }
+  // Marina'ya gelen faturalar: faturanın kendi şubesi (tek kaynak; stock_receipts kalktı, docs/SUBE.md › Faturanın şubesi)
+  assert.match(loader, /eq\(inv\.branchId, STOCK_ESTIMATE_BRANCH\)/);
+  assert.doesNotMatch(loader, /stockReceipts/);
   assert.match(loader, /showsStockEstimate\(await currentBranchScope\(\)\)/);
   assert.doesNotMatch(loader, /\.(insert|update|delete)\(/, "okuyucu yazmaz");
   const actions = read("src/server/actions/stock-estimate.ts");
   for (const m of actions.matchAll(/\.(insert|update|delete)\(s\.(\w+)\)/g)) {
-    assert.ok(["stockThresholds", "stockReceipts"].includes(m[2]), `eylem yalnız kendi tablolarına yazar: ${m[2]}`);
+    assert.ok(["stockThresholds"].includes(m[2]), `eylem yalnız kendi tablosuna yazar: ${m[2]}`);
   }
   assert.match(actions, /requireAdmin\(\)/);
 
