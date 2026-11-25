@@ -9,23 +9,27 @@ Etiketler:
 
 LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
-## Şu an yapılıyor
+## Bitenler (25 Kasım 2026)
 
-- **Dalga 1** (dal `ai/dalga-1`). Denetimin 11 hatası ve küçük düzeltmeleri:
-  - kör kasa
-  - fişsiz çıkış
-  - kasa formu taslağı
-  - vardiya çakışması
-  - part-time silme koruması
-  - 09:00 zili
-  - "Tümü" kâr dönemi
-  - şube oranı
-  - zil
-  - rozetler
-  - büyüme gösterimi
+- **Dalga 1** (#146): kör kasa, fişsiz çıkış, kasa formu taslağı, vardiya çakışması, part-time silme koruması, 09:00 zili, "Tümü" kâr dönemi, şube oranı, zil ve rozetler, büyüme gösterimi, eski Excel kalıntılarının kaldırılması, dışa aktarımın profesyonelleşmesi.
+- **Uyarı satırları yalnız personelde** (#145).
 
-  Aynı dalda şunlar da var: eski Excel tablosu kalıntılarının kaldırılması, dışa aktarımın profesyonelleşmesi, gerileme denetimi.
-- **Uyarı satırları yalnız personelde** (#145). "Uyarı sesleri susturuldu" gibi satırlar yöneticide çıkmaz.
+## Yarım kalan: dal `ai/fatura-sube` (main'e GİTMEDİ)
+
+Haftalık kullanım limiti dolduğu için yarım kaldı. Son hali `ai/fatura-sube` dalında "ARA KAYIT (yarım)" commit'leriyle duruyor.
+
+- Henüz doğrulanmadı: testler, `npm run ci:yerel` ve derleme koşulmadı.
+- Göçler (0087–0089) var.
+- Sürdürmeden önce dalı origin/main ile birleştir (#145 ve #146 sonrası). Göç numaraları çakışırsa göçleri yeniden üret.
+
+Yapılan kısım (doğrulanmadı):
+- Faturaya şube alanı ve göçler.
+- Tedarikçinin varsayılan şubesi.
+- "Şubesi seçilmemiş" kutusu.
+- Paraşüt, Faturalar ve tahmini stok için şube süzgeci.
+
+Sınıflandırma maddelerinin (aşağıda 1–6) henüz hiçbiri yapılmadı.
+
 - **Şube kapsamı: faturalar ve Paraşüt şubeye göre.** İstenen davranış:
   - Tuzla seçiliyken yalnız Tuzla'nın, Marina seçiliyken yalnız Marina'nın bilgileri görünür.
   - "Tümü"de ikisi birlikte görünür.
