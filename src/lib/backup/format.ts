@@ -88,6 +88,9 @@ export const TABLE_RULES: Record<string, TableRule> = {
   // Elle karaoke rezervasyonunun hatırlatması: misafirin adresi (şifreli) yalnız e-posta gidene kadar durur
   karaoke_reminders: { skip: "karaoke hatırlatmasını bekleyen misafir adresleri (geçici; e-posta gidince silinir)" },
   users: { dropColumns: USER_CREDENTIAL_COLUMNS },
+  // Şube başına ayarlar (docs/SUBE.md › Şube başına ayarlar): değerler ve "aynı" bağı yedeğe girer, şifreli alanlar
+  // girmez (başka AUTH_SECRET'la açılmaz); geri yüklemeden sonra Şube ayarları'ndan yeniden girilir
+  branch_settings: { dropColumns: ["secrets"] },
   integration_state: { where: `key NOT IN (${sqlList(Object.keys(EXCLUDED_STATE_KEYS))})` },
   // Paraşüt'ün e-fatura PDF'i önbellektir (ilk açılışta yeniden indirilir); yalnız panelden yüklenenler
   invoice_documents: { where: `source = 'upload'`, documents: true },

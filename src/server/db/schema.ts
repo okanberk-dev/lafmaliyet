@@ -2669,3 +2669,37 @@ export const shifts = pgTable(
     check("shifts_time_ck", sql`(${t.kind} = 'off' and ${t.startMin} is null and ${t.endMin} is null) or (${t.kind} = 'work' and ${t.startMin} >= 0 and ${t.startMin} < 1440 and ${t.endMin} > ${t.startMin} and ${t.endMin} <= 1800)`),
   ],
 );
+
+// ---------------------------------------------------------------- Şube başına ayarlar
+/**
+ * Şube başına ayarlar (docs/SUBE.md › Şube başına ayarlar; gruplar src/lib/branch-settings/groups.ts): şube başına
+ * grup başına bir satır. `same_as` doluysa şube kendi değerini tutmaz (`value` boş, `secrets` yok), bağlandığı şubenin
+ * değerini kullanır ("Tuzla ile aynı"). Bağ tek adımlıdır: hedef başka şubeye bağlı olamaz (sunucu denetler,
+ * src/server/branch-settings.ts). Satırı olmayan şube eski genel kayıttan (integration_state) ya da varsayılandan okur;
+ * "aynı" sunulan grupta varsayılan şube dışındaki şube örtük olarak varsayılan şubeye bağlıdır. Şifreli alanlar
+ * `secrets`'ta (alan → secret-box mühürü); yedeğe girmez (src/lib/backup/format.ts).
+ */
+export const branchSettings = pgTable(
+  "branch_settings",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "cascade" }),
+    /** Grup kimliği ("kasa.rapor", "kasa.calisan") */
+    grp: text("grp").notNull(),
+    /** Grubun şifresiz alanları; bağlı satırda boş */
+    value: jsonb("value").notNull().default({}),
+    /** Şifreli alanlar (alan → mühür); yedeğe girmez, bağlı satırda boş */
+    secrets: jsonb("secrets"),
+    /** Değerin okunduğu şube ("diğer şubeyle aynı"); bağlı şubeler varken o şube kapatılamaz, silinemez */
+    sameAs: text("same_as").references(() => branches.id, { onDelete: "restrict" }),
+    updatedBy: text("updated_by"),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.branchId, t.grp] }),
+    index("branch_settings_same_as_idx").on(t.sameAs),
+    check("branch_settings_not_self_ck", sql`${t.sameAs} is null or ${t.sameAs} <> ${t.branchId}`),
+    check("branch_settings_linked_empty_ck", sql`${t.sameAs} is null or (${t.value} = '{}'::jsonb and ${t.secrets} is null)`),
+  ],
+);

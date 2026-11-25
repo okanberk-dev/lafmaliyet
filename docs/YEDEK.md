@@ -44,6 +44,7 @@ Yalnız şunlar dosyaya girmez (`src/lib/backup/format.ts` › `TABLE_RULES`, `E
 | Paraşüt oturumu (`integration_state` › `parasut.token`) | şifreli belirteç, her yenilemede değişir | geri yüklemeden sonra panelden **“Paraşüt hesabını bağla”** ile yeniden bağlanır |
 | Paraşüt bağlantı ayarları (`parasut.settings`: client_id, şifreli client_secret, firma numarası, ilk eşitleme başlangıcı) | şifreli değer başka `AUTH_SECRET`'la açılmaz | Paraşüt ekranındaki **Bağlantı** kartından yeniden girilir (Vercel'de tanımlıysa onlar kullanılır), sonra hesap bağlanır |
 | Bildirim (VAPID) anahtarı (`webpush_vapid`) | şifreli anahtar | yenisi üretilir |
+| Şube başına ayarların şifreli alanları (`branch_settings.secrets`) | şifreli değer başka `AUTH_SECRET`'la açılmaz. Ayarların kendisi ve "Diğer şubeyle aynı" bağı dosyaya girer | Şube ayarları'ndan yeniden girilir (bugünkü gruplarda şifreli alan yok; [SUBE.md](SUBE.md) › Şube başına ayarlar) |
 | Bar ekranındaki uygulama siparişlerinin kopyası (`site_orders`) | müşteri adları (KVKK); site bu listeyi bilerek geçmişsiz tutar | bar ekranı açılınca siteden yeniden çekilir |
 | Paraşüt'ten alınan e-fatura PDF'leri | önbellek | ilk açılışta Paraşüt'ten yeniden indirilir |
 | Panelden yüklenen fatura belgeleri | yalnız "belgeleri de ekle" seçilmediyse | seçilmediyse belgesiz gelir |

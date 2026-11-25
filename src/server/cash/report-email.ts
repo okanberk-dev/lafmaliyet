@@ -46,7 +46,7 @@ export async function emailReport(
 ): Promise<CashEmailOutcome> {
   const [row] = await getDb().select().from(s.cashReports).where(eq(s.cashReports.id, reportId)).limit(1);
   if (!row) throw new UserError("Rapor bulunamadı");
-  const settings = await loadCashSettings();
+  const settings = await loadCashSettings(row.branchId);
   // Personel hesabının ya da pasif hesabın adresi (ayar kaydedildikten sonra personele indirilen, pasif yapılan) gönderim
   // anında düşer (E-53). Düşen adres yöneticinin zilinde ve Rapor alıcıları kartında görünür; hepsi düştüyse e-posta
   // gitmedi sayılır (kapalı değil): yönetici nedenini formda görür, personel sabit metni (staff-errors.ts)

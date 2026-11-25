@@ -842,6 +842,8 @@ onu okur); değişen yalnız ciroya girmemesidir. **Kartlı satış oranı** da 
   ya da adreslerin hepsi personel / pasif hesabınsa formun Sonuç kartı "gönderince yöneticiye e-posta gider" yerine
   "e-posta kapalı; gönderdikten sonra WhatsApp ile paylaşın" der; yöneticinin "Nasıl çalışır?"u da öyle (denetim
   UI-05).
+- **Şube başına**: alıcılar, WhatsApp numarası ve çalışan listesi şubenin ayarıdır; birden çok kasa açıkken Marina
+  "Tuzla ile aynı" olabilir, kapatılınca değerler kopyalanır ([SUBE.md › Şube başına ayarlar](SUBE.md#şube-başına-ayarlar-25-kasım-2026)).
 
 Dosyalar: `src/lib/cash-report.ts` (hesap, açılış ↔ devir, düzeltme geçmişi, WhatsApp metni; `tests/kasa-raporu.test.ts`),
 `src/server/actions/cash-report.ts` (uçlar), `src/server/cash/report-store.ts` (yazım yolu ve silme; onay yolları da

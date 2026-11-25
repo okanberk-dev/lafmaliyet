@@ -218,6 +218,9 @@ test("yedek dışı: kurallar şemada var olan tablo ve sütunları gösterir; i
   // IBAN ve vergi numarası dosyada (sahibin kendi kaydı); karaoke müşterisinin yalnız adı da
   assert.ok(byName.get("suppliers")!.has("iban") && !TABLE_RULES.suppliers);
   assert.ok(byName.get("karaoke_sessions")!.has("customer_name") && !TABLE_RULES.karaoke_sessions);
+  // Şube başına ayarlar (docs/SUBE.md › Şube başına ayarlar): değer ve "aynı" bağı dosyada, şifreli alanlar değil
+  assert.deepEqual(TABLE_RULES.branch_settings, { dropColumns: ["secrets"] });
+  for (const c of ["branch_id", "grp", "value", "same_as"]) assert.ok(byName.get("branch_settings")!.has(c), `branch_settings.${c} dosyada kalır`);
 });
 
 /** Kodun integration_state'e yazdığı anahtarlar: o tabloya dokunan dosyalardaki ...KEY / ...PREFIX sabitleri ve düz metinler */

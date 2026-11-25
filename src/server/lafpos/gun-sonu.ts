@@ -35,7 +35,7 @@ import { loadCashSettings } from "@/server/data/cash-reports";
 import { schema as s, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { APP_URL } from "@/server/notify/digest-template";
-import { activeDigestEmails, sendableRecipients } from "@/server/notify/recipients";
+import { activeDigestRecipients, sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail, type SendOptions } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
@@ -354,10 +354,14 @@ async function dayTotal(db: DB, date: string, branchId: string, switchDay: strin
   return rep ? rep.zTotal : null;
 }
 
-/** Gün sonu e-postasının alıcıları: kasa raporu alıcıları ve etkin bildirim adresleri (açıksa), personel ve pasif hesap düşer */
-export async function dayEndRecipients(db: DB): Promise<string[]> {
-  const [cash, notify] = await Promise.all([loadCashSettings(), loadNotifySettings()]);
-  const list = [...(cash.emailEnabled ? cash.recipients : []), ...(notify.emailEnabled ? await activeDigestEmails(db) : [])];
+/**
+ * Gün sonu e-postasının alıcıları: şubenin kasa raporu alıcıları (şube başına ayar; "aynı"ysa bağlandığı şubeninki) ve
+ * o şubeye açık etkin bildirim adresleri (bütün şubeler ya da bu şube; açıksa), personel ve pasif hesap düşer
+ */
+export async function dayEndRecipients(db: DB, branchId: string = LAFPOS_BRANCH_ID): Promise<string[]> {
+  const [cash, notify] = await Promise.all([loadCashSettings(branchId, db), loadNotifySettings()]);
+  const digest = notify.emailEnabled ? (await activeDigestRecipients(db)).filter((r) => !r.branchIds.length || r.branchIds.includes(branchId)).map((r) => r.email) : [];
+  const list = [...(cash.emailEnabled ? cash.recipients : []), ...digest];
   const seen = new Set<string>();
   const unique = list.filter((e) => (seen.has(emailKey(e)) ? false : (seen.add(emailKey(e)), true)));
   return (await sendableRecipients(db, unique)).to;
@@ -368,7 +372,7 @@ export async function dayEndRecipients(db: DB): Promise<string[]> {
  * "tutarlar" açıksa ciro ve ödeme türleri. Rapor ayrıntısı, kasa farkı ve karaoke ödemesi gitmez.
  */
 async function sendStaffDayEnd(date: string, branchName: string, z: { zNo: number; receipts: number; zTotal: number; cash: number; card: number; mealCard: number; other: number }, hash: string, from: string | null | undefined, opts?: SendOptions) {
-  const cash = await loadCashSettings();
+  const cash = await loadCashSettings(LAFPOS_BRANCH_ID);
   if (!cash.staffRecipients?.length) return;
   const tlText = (v: number) => `${v.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₺`;
   const rows: [string, string][] = [["Z no", String(z.zNo)], ["Fiş sayısı", String(z.receipts)]];

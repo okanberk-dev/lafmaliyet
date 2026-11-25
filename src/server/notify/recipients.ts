@@ -3,7 +3,8 @@ import "server-only";
 import { eq, inArray, sql } from "drizzle-orm";
 
 import { blockReasonOf, emailKey, splitByBlocked, type BlockReason, type DroppedRecipient, type RecipientList } from "@/lib/notify-recipients";
-import { loadCashSettings } from "@/server/data/cash-reports";
+import { CASH_REPORT_GROUP } from "@/lib/branch-settings/groups";
+import { resolveForTills } from "@/server/branch-settings";
 import { getDb, schema as s, type DB } from "@/server/db";
 
 /*
@@ -56,13 +57,31 @@ export async function activeDigestRecipients(db: Reader = getDb()): Promise<{ em
 }
 
 /**
- * Adres hangi listelerde: kasa raporu alıcıları (e-posta kapalı olsa da: açılınca giderdi) ve sabah e-postasının
- * bildirim adresleri (duraklatılmış satır da: açılınca giderdi). Büyük-küçük harf fark etmez.
+ * Açık şubelerin kasa raporu alıcıları tek listede (şube başına ayar; "aynı" şubeler aynı listeyi verir, adres bir kez).
+ * `all`: e-postası kapalı şubenin listesi de (açılınca giderdi); değilse yalnız e-postası açık şubelerinki
+ */
+async function cashRecipientLists(db: Reader, o: { all: boolean }): Promise<string[]> {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const r of (await resolveForTills(CASH_REPORT_GROUP, db)).values()) {
+    if (!o.all && !r.value.emailEnabled) continue;
+    for (const e of r.value.recipients) {
+      if (seen.has(emailKey(e))) continue;
+      seen.add(emailKey(e));
+      out.push(e);
+    }
+  }
+  return out;
+}
+
+/**
+ * Adres hangi listelerde: herhangi bir şubenin kasa raporu alıcıları (e-posta kapalı olsa da: açılınca giderdi) ve
+ * sabah e-postasının bildirim adresleri (duraklatılmış satır da: açılınca giderdi). Büyük-küçük harf fark etmez.
  */
 export async function listsWithEmail(email: string, db: Reader = getDb()): Promise<RecipientList[]> {
   const key = emailKey(email);
   const [cash, digest] = await Promise.all([
-    loadCashSettings(),
+    cashRecipientLists(db, { all: true }),
     db
       .select({ id: s.notificationRecipients.id })
       .from(s.notificationRecipients)
@@ -70,18 +89,17 @@ export async function listsWithEmail(email: string, db: Reader = getDb()): Promi
       .limit(1),
   ]);
   const out: RecipientList[] = [];
-  if (cash.recipients.some((e) => emailKey(e) === key)) out.push("cash");
+  if (cash.some((e) => emailKey(e) === key)) out.push("cash");
   if (digest.length) out.push("digest");
   return out;
 }
 
 /**
- * Zil ve ayar ekranları: listelerde duran ama gönderimde düşen adresler. Kasa listesi yalnız e-posta açıkken (kapalıyken
- * zaten gitmiyor), bildirim adresleri yalnız etkin olanlar (duraklatılan bilerek kapalı).
+ * Zil ve ayar ekranları: listelerde duran ama gönderimde düşen adresler. Kasa listesi açık şubelerin, yalnız e-postası
+ * açık olanların (kapalıyken zaten gitmiyor), bildirim adresleri yalnız etkin olanlar (duraklatılan bilerek kapalı).
  */
 export async function blockedRecipientsNow(db: Reader = getDb()): Promise<Record<RecipientList, DroppedRecipient[]>> {
-  const [cash, digest] = await Promise.all([loadCashSettings(), activeDigestEmails(db)]);
-  const cashList = cash.emailEnabled ? cash.recipients : [];
+  const [cashList, digest] = await Promise.all([cashRecipientLists(db, { all: false }), activeDigestEmails(db)]);
   const blocked = await blockedAccounts(db, [...cashList, ...digest]);
   return { cash: splitByBlocked(cashList, blocked).dropped, digest: splitByBlocked(digest, blocked).dropped };
 }

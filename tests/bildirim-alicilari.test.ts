@@ -195,7 +195,9 @@ test("Hesabım: personel giriş e-postasını bir listedeki adrese çeviremez, k
   // Listeler: kasa alıcıları (kapalıyken de) ve bütün bildirim adresleri (duraklatılmış da)
   const lists = read("src/server/notify/recipients.ts");
   const fn = lists.slice(lists.indexOf("export async function listsWithEmail"), lists.indexOf("export async function blockedRecipientsNow"));
-  assert.match(fn, /cash\.recipients\.some\(\(e\) => emailKey\(e\) === key\)/);
+  // Kasa alıcıları şube başına (docs/SUBE.md › Şube başına ayarlar): bütün açık şubelerin listeleri, kapalıyken de
+  assert.match(fn, /cashRecipientLists\(db, \{ all: true \}\)/);
+  assert.match(fn, /cash\.some\(\(e\) => emailKey\(e\) === key\)/);
   assert.doesNotMatch(fn, /emailEnabled|active/);
 });
 

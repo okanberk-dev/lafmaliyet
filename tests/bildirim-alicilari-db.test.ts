@@ -260,7 +260,7 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     const inactive = await save(users.eski.email);
     assert.equal(inactive.ok, false);
     assert.match(inactive.ok ? "" : inactive.error, /^eski@laffogato\.net pasif bir hesabın adresi; pasif hesaba e-posta gitmez\./);
-    assert.deepEqual(await reports.loadCashSettings().then((c) => c.recipients), [], "hiçbiri yazılmadı");
+    assert.deepEqual(await reports.loadCashSettings("tuzla").then((c) => c.recipients), [], "hiçbiri yazılmadı");
     const ok = await save(`${ACCOUNTANT}\n${users.ali.email}`);
     assert.ok(ok.ok);
     // Sonradan Ali pasif: deneme e-postası yalnız muhasebeciye, düşen söylenir

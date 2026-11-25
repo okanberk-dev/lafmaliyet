@@ -568,6 +568,13 @@
       "when": 1795561986445,
       "tag": "0080_bildirim_alici_sube",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1795564016509,
+      "tag": "0081_sube_ayarlari",
+      "breakpoints": true
     }
   ]
 }

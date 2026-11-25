@@ -247,6 +247,49 @@ Sahibin varsayılanları (24 Kasım 2026, sonra Ayarlar'dan şube başına deği
 cari firma geneli, etiketli); Paraşüt hesabı ortak (faturalar işletme geneli); karaoke Tuzla'da; komisyon ve yemek kartı
 şubeler arasında aynı.
 
+## Şube başına ayarlar (25 Kasım 2026)
+
+Şubeye göre değişebilen ayarlar şube başına tutulur (tablo `branch_settings`, migration 0081; grup başına şube başına
+bir satır). Gruplar kodda: `src/lib/branch-settings/groups.ts`; kurallar `src/lib/branch-settings/rules.ts`; okuma ve
+yazma `src/server/branch-settings.ts`.
+
+| Grup | Alanlar | "Diğer şubeyle aynı" | Eski kaydın sahibi |
+|---|---|---|---|
+| `kasa.rapor` Kasa raporu alıcıları | e-posta adresleri, e-posta açık / kapalı, WhatsApp numarası | evet | Tuzla (varsayılan şube) |
+| `kasa.calisan` Çalışanların gün sonu e-postası | çalışan adresleri, tutarlar görünsün mü | hayır: liste şubenin kendisinin | Marina (LafPOS'un şubesi) |
+
+- **"Diğer şubeyle aynı"**: açıkken şube kendi değerini tutmaz (satırda `same_as`), bağlandığı şubenin değerini kullanır;
+  değer tek yerden düzenlenir. Kapatılınca o anki değer şubeye kopyalanır, sonra ayrı düzenlenir. Gizli alanlar
+  (şifreli, `secrets` sütunu) kopyalanmaz, yeniden girilir; istemciye yalnız "kayıtlı mı" gider. Bugünkü iki grupta
+  gizli alan yok.
+- **Bağ tek adımlıdır**: hedef başka şubeye bağlı olamaz, kendine bağ ve döngü yok (sunucu ve veritabanı denetler).
+  Varsayılan şube (Tuzla) öbürlerinin örtük hedefidir, kendisi bağlanamaz. Başka şube bir şubenin ayarını kullanıyorsa o
+  şube kapatılamaz ve silinemez ("Marina, kasa raporu alıcıları için Bodrum şubesinin ayarını kullanıyor; önce ayırın").
+- **Geçiş: veri göçü yok, hiçbir şey yapmadan çalışır.** Satırı olmayan şube eski genel kayıttan (`integration_state` ›
+  `cash.settings`) okur, ama yalnız kaydın sahibi şube: alıcılar Tuzla'nın, çalışan listesi Marina'nın. "Aynı" sunulan
+  grupta öbür şubeler örtük olarak Tuzla'ya bağlı başlar (bugünkü tek liste). Kayıt yoksa ortamın alıcıları
+  (`CASH_REPORT_RECIPIENTS`). İlk kayıtta satır yazılır, eski kayıt bırakılır (geri dönüş güvenli).
+- **Okuyanlar şubeyi verir** (`loadCashSettings(şube)`; şubesiz çağrı kalmadı, `tests/branch-settings.test.ts`): kasa
+  raporu e-postası raporun şubesinin alıcılarına, WhatsApp metni raporun şubesinin numarasına, LafPOS gün sonu e-postası
+  gün sonunun şubesinin alıcılarına ve o şubeye açık bildirim adreslerine (bütün şubeler ya da o şube), çalışanların
+  kısa e-postası şubenin çalışan listesine. Zil ve "bu adres hangi listede" (Hesabım, Kullanıcılar) bütün açık
+  şubelerin listelerine bakar.
+- **Ekran**: Ayarlar › Şube ayarları (tek şube seçiliyken doğrudan o şubenin ekranı, "Tümü"de Şubeler listesi; her
+  fiziksel şubenin satırında "Alıcılar: Tuzla ile aynı" çipi ve **Ayarlar**). Şube ayarları ekranı
+  (`/panel/subeler/[id]`, yalnız yönetici) şubeyi adresten alır, panelin seçicisini değiştirmez. Kasa sayfasının Rapor
+  alıcıları kartı aynı bileşen (`src/app/panel/kasa/cash-settings.tsx`, verisi `src/server/cash/settings-card.ts`);
+  "Tümü"de her şube bölümünde kendi kartı. Birden çok kasa açıkken kartın ilk satırı "Tuzla ile aynı" anahtarı; açıkken
+  form çizilmez, Tuzla'nın alıcıları salt okunur görünür ve "Tuzla şubesinde düzenle" bağlantısı çıkar. Tuzla'nın
+  kartı "Marina şubesi de bu alıcıları kullanıyor" der. Çalışan listesi alanı LafPOS'lu şubede (ya da listesi doluysa).
+- **Yazım**: yalnız yönetici; değer, bağ ve işlem geçmişi tek işlemde, aynı grubun yazımları sıraya girer (grup başına
+  işlem kilidi). Başka şubenin alıcılarını kullanan şubeye alıcı yazılmaz (eski sekme bağlı şubenin değerini sessizce
+  ayırmasın): önce "aynı" kapatılır.
+- **Yedek**: değerler ve bağ dosyaya girer, `secrets` sütunu girmez ([YEDEK.md](YEDEK.md)).
+- **Şimdilik ortak** (sıradaki dilimler; ekran adıyla söyler): Paraşüt hesabı, LafPOS bağlantısı ve geçiş günü,
+  çalışma ve uyarı saatleri, komisyon ve yemek kartı kanalları, ModPOS ay yedeği. Şube başına olmayacaklar: KDV, reçete
+  parametreleri, fire, hedef maliyet, FIFO başlangıcı, kategori ve POS eşlemeleri, site bağlantı sırrı, bildirim
+  gönderen ve vade günleri.
+
 ## "Tümü"nün ay bilgisi (denetim 13 Kasım 2026, P02)
 
 "Tümü" şubelerin toplamıdır. Kasa satırları (rapor, LafPOS gün sonu, ModPOS föyü) şubesini taşır (`tillRows`,
