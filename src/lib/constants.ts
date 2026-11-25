@@ -152,9 +152,9 @@ export const INVOICE_CATEGORIES = [
  */
 export const SEPARATE_CATEGORIES = ["Karaoke box", "Alp Koç"];
 
-/** Mal maliyeti sayılan fatura kategorileri (Genel Maliyet > Mal alışları) */
+/** Mal maliyeti sayılan fatura kategorileri (Gelir-gider › Mal alışları) */
 export const GOODS_CATEGORIES = ["Hammadde & İçecek", "Tatlı & Hazır Ürün", "Ambalaj"];
-/** Platform / yemek kartı komisyon faturaları (Genel Maliyet > Komisyon giderleri) */
+/** Platform / yemek kartı komisyon faturaları (Gelir-gider › Komisyon giderleri) */
 export const COMMISSION_CATEGORY = "Komisyon";
 
 /**
@@ -210,7 +210,7 @@ export const FIXED_PERIODS: { key: FixedPeriod; label: string; hint: string }[] 
   { key: "yillik", label: "Yıllık", hint: "÷ 12" },
 ];
 
-/** Genel Maliyet tablosunda elle girilen aylık satırlar */
+/** Gelir-gider tablosunda elle girilen aylık satırlar */
 export const MANUAL_PNL_ROWS: { key: string; section: FixedSection | "mal"; label: string; hint?: string }[] = [
   { key: "manual:diger_mal", section: "mal", label: "DİĞER (market / nakit alımlar)", hint: "Faturasız, nakit veya marketten alınan malzemeler." },
   { key: "manual:personel_extra", section: "personel", label: "PERSONEL EXTRA (prim, mesai)" },

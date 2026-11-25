@@ -103,7 +103,7 @@ export function eInvoiceToDraft(r: Resource<EInvoiceAttrs>): EInvoiceDraft {
 }
 
 /**
- * Tevkifatlı e-faturaya bağlı Excel / elle kaydın boş KDV'si için belgedeki tam KDV (`total_vat`). Liste tevkifat
+ * Tevkifatlı e-faturaya bağlı içe aktarılmış / elle kaydın boş KDV'si için belgedeki tam KDV (`total_vat`). Liste tevkifat
  * düşülmüş ödenecek tutarı verir, kayıtta KDV yoksa KDV tahmini (src/lib/kdv.ts) "ödenecek − tutar"a düşer ve
  * tevkifatı göremez (Eylül 2026 reklam faturası: 4.200 indirildi, 6.000 indirilmeliydi). Kayıttaki KDV'ye
  * dokunulmaz; ödenecek tutar e-faturayı tutmuyorsa (elle değişmiş) ya da iadeyse null.
@@ -115,7 +115,7 @@ export function withholdingVatFill(row: { vat: number | null; payable: number },
 }
 
 /**
- * Excel / elle kayıt tutarı ya da tarihi farklı bir e-faturaya ilk kez bağlanınca nota düşülen ek: değişen alanı ve
+ * İçe aktarılmış / elle kayıt tutarı ya da tarihi farklı bir e-faturaya ilk kez bağlanınca nota düşülen ek: değişen alanı ve
  * önceki değerini söyler ("tutar e-faturaya göre güncellendi (önce 1.100 ₺)", "tarih … (önce 07.11.2026)", ikisi
  * birden: "tutar ve tarih … (önce 1.100 ₺, 07.11.2026)"). Tutarda ±1 ₺ fark sayılmaz.
  */

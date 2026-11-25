@@ -550,7 +550,7 @@ export function listDiscountOf(info: Month | undefined, lafposFrom: string | nul
 }
 
 /**
- * Elle yazılan değer (kasadan gelen ya da boş alan null). Kaynak bilinmiyorsa (testler, Excel verisi): açık gün, ciro ve
+ * Elle yazılan değer (kasadan gelen ya da boş alan null). Kaynak bilinmiyorsa (testler, ilk aktarımın verisi): açık gün, ciro ve
  * oran boş değilse, indirim ve ödenmez 0 değilse elle yazılmış sayılır.
  */
 export function manualOf(info: Month | undefined, f: MonthField): number | null {

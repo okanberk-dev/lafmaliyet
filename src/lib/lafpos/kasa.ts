@@ -8,7 +8,7 @@ import { isLafposDay, kasaName, monthSource } from "./switch";
  * Kasanın adı metinlerde (denetim E-39; docs/LAFPOS.md › Metinler): geçiş günü boşken ya da gün ondan önceyken her
  * metin bugünkü gibi "ModPOS" der; geçiş gününden itibaren "LafPOS". Günlük metinler (Bugün, zil, Kasa raporu, Kasadaki
  * fiyatlar) günün kasasıyla (kasaName), aylık rapor etiketleri (Genel bakış, Gelir-gider, Tutarlılık, Ürünler, Analiz,
- * Excel, Claude) ayın kasasıyla (monthKasa). Saf; testleri tests/lafpos-metin.test.ts.
+ * dışa aktarım, Claude) ayın kasasıyla (monthKasa). Saf; testleri tests/lafpos-metin.test.ts.
  */
 
 export type KasaName = ReturnType<typeof kasaName>;
@@ -60,7 +60,7 @@ export function salesMonthKasa(month: string, switchDay: string | null, lafposSa
 }
 
 /**
- * Birden çok ayın kasası (Gelir-gider'in yıl tablosu ve kartları, Excel): ayların hepsi ModPOS ya da hepsi LafPOS ise
+ * Birden çok ayın kasası (Gelir-gider'in yıl tablosu ve kartları, dışa aktarım): ayların hepsi ModPOS ya da hepsi LafPOS ise
  * o, karışıksa (geçiş ayı ya da iki kasalı yıl) "Kasa" / "ModPOS / LafPOS". Ay yoksa ModPOS
  */
 export function periodKasa(months: readonly string[], switchDay: string | null): Pick<MonthKasa, "short" | "both"> {

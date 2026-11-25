@@ -32,7 +32,7 @@ import { CALENDAR_DAYS, INFLATION_LINE, type TaxView } from "../../../lib/tax/vi
 
 const MONEY = '#,##0.00 "₺";[Red]-#,##0.00 "₺"';
 const MONEY0 = '#,##0 "₺";[Red]-#,##0 "₺"';
-/** Genel Maliyet sayfasındaki gibi: sıfır "-" görünür */
+/** Gelir-gider tablosu için: sıfır "-" görünür */
 const MONEY0Z = '#,##0 "₺";[Red]-#,##0 "₺";"-"';
 const PCT = "0.0%";
 const PCTZ = '0.0%;[Red]-0.0%;"-"';

@@ -5,7 +5,7 @@ import type { TaxCalendarRow } from "./view";
  * Vergi ekranlarının sözlüğü (docs/planlar/ux-sade.md §7.11, K17): sade söz önce, resmî terim parantezde. Ekrandaki
  * sözler `calendarTitle`, `PLAIN_LABELS`, `badgeLabel` / `badgeNote` ve `plainBadge`'den; `TERMS` başvuru tablosudur,
  * tanımları ⓘ'de henüz çizilmiyor (ux-sade Ek C). Yalnız çizim: veri (`titleOfKind`, `row.badge`, kartların `rows`
- * etiketleri) ve Excel dışa aktarımı resmî adla kalır, muhasebeciye o gider. Yalnız yöneticinin vergi ekranları içe
+ * etiketleri) ve dışa aktarım resmî adla kalır, muhasebeciye o gider. Yalnız yöneticinin vergi ekranları içe
  * aktarır (Nakit planı KDV kartı değil); personel dosyaları da değil. Saf.
  */
 
@@ -42,7 +42,7 @@ export const TERMS: Readonly<Record<string, Term>> = {
 /** KDV-2 satırı açılınca ilk not: tevkifatın sade anlamı (§7.5) */
 export const KDV2_NOTE = "Faturadaki KDV'nin sizin ödediğiniz kısmı (tevkifat) ve yurt dışı hizmetin KDV'si.";
 
-/** Takvim satırının sade adı (§7.5): "KDV (Ekim satışları)", "SGK primi (Eylül maaşları)" … Veri ve Excel resmî adla kalır */
+/** Takvim satırının sade adı (§7.5): "KDV (Ekim satışları)", "SGK primi (Eylül maaşları)" … Veri ve dışa aktarım resmî adla kalır */
 export function calendarTitle(row: Pick<TaxCalendarRow, "kind" | "period" | "title">): string {
   switch (row.kind) {
     case "kdv1":

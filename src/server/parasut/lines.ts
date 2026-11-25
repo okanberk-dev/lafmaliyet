@@ -21,7 +21,7 @@ import { extractUblXml, parseUbl, ublLinesToDrafts, withholdingCorrection, type 
 
 /**
  * E-fatura kalemleri. İçeri alınmamış (Paraşüt'te gider faturası olmayan) e-faturalardan açılan kayıtların ve
- * Excel'den gelip e-faturaya bağlanan kayıtların kalemleri UBL belgesinden okunur ve gider faturası kalemleriyle
+ * İçe aktarılıp e-faturaya bağlanan kayıtların kalemleri UBL belgesinden okunur ve gider faturası kalemleriyle
  * aynı tabloya (parasut_bill_lines) yazılır; hammaddeye bağlı kalemlerden alınan miktar ve fiyat güncellenir
  * (applyProductLinks, eşitlemenin sonunda). Belgesi bir kez okunan fatura (ubl_read_at) yeniden okunmaz; e-fatura
  * değişirse eşitleme alanı boşaltır.

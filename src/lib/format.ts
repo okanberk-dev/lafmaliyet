@@ -184,7 +184,7 @@ export function qty(v: number | null | undefined, unit?: string | null, digits =
   return unit ? `${num(v, digits)} ${unit}` : num(v, digits);
 }
 
-/** Excel benzeri: işaretli tutar için CSS tonu */
+/** İşaretli tutar için CSS tonu (eksi kırmızı) */
 export function signTone(v: number | null | undefined): "pos" | "neg" | "zero" {
   if (!v) return "zero";
   return v > 0 ? "pos" : "neg";

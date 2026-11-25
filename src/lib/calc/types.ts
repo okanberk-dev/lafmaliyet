@@ -93,7 +93,7 @@ export interface Ingredient {
   priceSource: PriceSource;
   countUnit: CountUnit | null;
   countGroup: string | null;
-  /** Sayım listesine girdiği ay (YYYY-MM): önceki aylarda, o ay sayılmadıysa listede çıkmaz; boşsa (Excel'den gelenler) her ayda */
+  /** Sayım listesine girdiği ay (YYYY-MM): önceki aylarda, o ay sayılmadıysa listede çıkmaz; boşsa (ilk aktarımdan gelenler) her ayda */
   countFrom?: string | null;
   sortOrder: number;
   active: boolean;
@@ -118,7 +118,7 @@ export interface Product {
   sortOrder: number;
   /**
    * laffogato.net menüsündeki kalem (mnu-0011) ve yuvası (M / L); bağlı değilse boş. Online satışların kafe satırları
-   * bununla ürüne eşlenir (docs/SITE-SATIS.md). Excel verisinde yok.
+   * bununla ürüne eşlenir (docs/SITE-SATIS.md). İlk aktarımın verisinde yok.
    */
   siteMenuId?: string | null;
   siteMenuSlot?: "M" | "L" | null;
@@ -232,7 +232,7 @@ export interface TillMonth {
 
 /**
  * Ayın bilgisi. Sunucudaki yükleyici (src/server/data/dataset.ts) burada etkin değeri verir: elle yazılan, yoksa kasa
- * raporlarından türeyen, o da yoksa varsayılan. Hesapların hepsi (Gelir-gider, Genel bakış, Excel) bu değerle çalışır.
+ * raporlarından türeyen, o da yoksa varsayılan. Hesapların hepsi (Gelir-gider, Genel bakış, dışa aktarım) bu değerle çalışır.
  */
 export interface Month {
   /** "YYYY-MM" */
@@ -247,7 +247,7 @@ export interface Month {
   note: string | null;
   /** Kartlı satış oranı (0–1): elle ya da kasa raporlarından; yoksa Ayarlar › kartlı satış oranı geçer */
   cardShare?: number | null;
-  /** Alanların kaynağı (yalnız sunucudaki yükleyici doldurur; testlerde ve Excel verisinde yok) */
+  /** Alanların kaynağı (yalnız sunucudaki yükleyici doldurur; testlerde ve ilk aktarımın verisinde yok) */
   sources?: Record<MonthField, FieldSource>;
   /** Kasa raporlarından türeyen değerler (uygulanmayan alan null) ve kapsamı; ayın raporu yoksa null */
   kasa?: { values: Record<MonthField, number | null>; till: TillMonth } | null;
@@ -302,7 +302,7 @@ export interface Invoice {
   /** Ödenecek, KDV dahil */
   payable: number;
   /**
-   * Faturanın KDV toplamı, tevkifat düşülmemiş (Paraşüt `total_vat`). Excel'den gelenlerde 0. KDV tahmini indirilecek
+   * Faturanın KDV toplamı, tevkifat düşülmemiş (Paraşüt `total_vat`). İçe aktarılmışlarda 0. KDV tahmini indirilecek
    * KDV'yi ve 2 No.lu beyannamenin tevkifatını bundan okur (src/lib/kdv.ts)
    */
   vat?: number;
@@ -338,13 +338,13 @@ export interface Invoice {
   channelNames?: string[];
   /** Vergi: "Demirbaş olabilir" listesinde "Gider (demirbaş değil)" denildi (yalnız vergi hesabı; docs/VERGI.md) */
   taxNotAsset?: boolean;
-  /** Tedarikçinin VKN / TCKN'si (Excel'in Faturalar sekmesi; hesaplarda kullanılmaz) */
+  /** Tedarikçinin VKN / TCKN'si (dışa aktarımın Faturalar sekmesi; hesaplarda kullanılmaz) */
   supplierTaxNumber?: string | null;
-  /** E-faturanın ETTN'si (Excel'in Faturalar sekmesi; hesaplarda kullanılmaz) */
+  /** E-faturanın ETTN'si (dışa aktarımın Faturalar sekmesi; hesaplarda kullanılmaz) */
   eInvoiceUuid?: string | null;
   /**
    * Faturanın şubesi: ayrı Paraşüt hesabına bağlı şubenin faturası o şubenindir; boş = işletme geneli (ortak Paraşüt
-   * hesabı, elle ve Excel'den girilenler; docs/SUBE.md › Paraşüt)
+   * hesabı, elle girilenler ve içe aktarılmışlar; docs/SUBE.md › Paraşüt)
    */
   branchId?: string | null;
 }
@@ -466,7 +466,7 @@ export interface PnlEntry {
   month: string;
   rowKey: string;
   amount: number;
-  /** Hücre notu (Excel'deki hücre açıklaması) */
+  /** Hücre notu (elle düzeltmenin açıklaması) */
   note?: string | null;
 }
 
@@ -714,7 +714,7 @@ export interface Dataset {
   /**
    * Şubelerin banka POS oranı (Şubeler › POS oranı, branches.pos_rate; sahibin kararı 23 Kasım 2026: iki şube %2):
    * banka POS komisyonu = Σ şube (kart × şubenin oranı) (engine.ts posCommission). Kütükte olmayan şube (testler,
-   * Excel) Ayarlar'daki eski genel orandan (`settings.komisyon`); kasa kartı olmayan ay eski formülle
+   * dışa aktarım) Ayarlar'daki eski genel orandan (`settings.komisyon`); kasa kartı olmayan ay eski formülle
    */
   branchRates?: { id: string; name: string; posRate: number }[];
 }

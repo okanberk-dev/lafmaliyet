@@ -7,7 +7,7 @@
  *   yani karaoke hizmet oranıyla; engine.ts pnlMonth). Süren ayın cirosu Genel bakış'taki ay sonu tahminiyle aya
  *   tamamlanır.
  * - laffogato.net: sitenin saklı KDV'si ve oranı bilinmeyenin panel oranıyla KDV'si (site-sales/calc.ts siteVat).
- * - Alış KDV'si (indirilecek KDV): faturanın KDV toplamı (`vat`, Paraşüt); yoksa (Excel'den gelenlerde 0) ödenecek −
+ * - Alış KDV'si (indirilecek KDV): faturanın KDV toplamı (`vat`, Paraşüt); yoksa (içe aktarılmışlarda 0) ödenecek −
  *   (tutar − iskonto). Tevkifatlı faturada KDV'nin tamamı indirilir: tedarikçiye ödenen kısmı "yurtiçi alımlar", tevkif
  *   edilen kısmı "sorumlu sıfatıyla ödenen KDV" olarak (Eylül 2026 beyannamesi: 11.875,70 + 1.800). Tevkif edilen kısım
  *   2 No.lu beyannameyle izleyen ayın 25'inde ayrıca ödenir, 1 No.lu ödenecek sıfır ya da devreden olsa da

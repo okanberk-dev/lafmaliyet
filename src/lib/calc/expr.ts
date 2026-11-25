@@ -185,7 +185,7 @@ export function parseNumberTR(raw: string | number | null | undefined): number |
  *
  * - "10", "10,5", "85.6" → %10, %10,5, %85,6 (0,1 / 0,105 / 0,856)
  * - "%10", "10%", "% 10" → yine %10: "%" işareti ikinci kez 100'e böldürmez
- * - "0,1" → %0,1 (0,001). Excel'in "otomatik yüzde girişi" 1'den küçük sayıyı ×100 yapar (0,1 → %10);
+ * - "0,1" → %0,1 (0,001). Tablo programlarının "otomatik yüzde girişi" 1'den küçük sayıyı ×100 yapar (0,1 → %10);
  *   panel bunu yapmaz, çünkü %0,5 fire ya da %0,79 komisyon gibi gerçek küçük oranlar var ve alan
  *   zaten puan gösteriyor. Alan altındaki "= %0,1" yankısı yanlış yazımı görünür kılar.
  *

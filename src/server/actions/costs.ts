@@ -26,8 +26,8 @@ import { attempt, UserError, zMonth, zOptText, zRate, zText } from "./util";
 
 // ---------------------------------------------------------------- Geçmiş aylar (ortak)
 //
-// Kira, maaş gibi tutarlar "şu aydan itibaren" değişir; önceki aylar eski tutarla kalır (Excel'de her ay
-// sütunu kendi sabitini taşır). Kalemin hesaba girdiği aylar startMonth / endMonth ile sınırlanır.
+// Kira, maaş gibi tutarlar "şu aydan itibaren" değişir; önceki aylar eski tutarla kalır (her ay
+// kendi tutarını taşır). Kalemin hesaba girdiği aylar startMonth / endMonth ile sınırlanır.
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
 

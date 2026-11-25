@@ -80,8 +80,8 @@ export function matchesChoice(choice: Pick<WasteChoice, "name" | "group">, query
 
 /**
  * db:reset'te zayi / ikram kayıtları kalır (kasa raporları ve kasadan çıkanlar gibi; scripts/seed.ts). Ürünler ve
- * hammaddeler Excel'den yeniden yüklenip kimlikleri baştan sayıldığı için kayıt yalnız aynı kimlikte aynı adı taşıyan
- * ürüne ya da hammaddeye bağlı kalır (Excel'den gelenler); yoksa (sonradan eklenip silinen kalem) yalnız adıyla durur
+ * hammaddeler ilk aktarımdan yeniden yüklenip kimlikleri baştan sayıldığı için kayıt yalnız aynı kimlikte aynı adı taşıyan
+ * ürüne ya da hammaddeye bağlı kalır (ilk aktarımdan gelenler); yoksa (sonradan eklenip silinen kalem) yalnız adıyla durur
  * ve tüketim hesabına girmez.
  */
 export function relinkWaste<W extends { productId: number | null; ingredientId: number | null; name: string }>(

@@ -122,7 +122,7 @@ export function productSalesHistory(model: Model, productId: number): { month: s
 /**
  * Kategori satırları. Ortalamalar ve satış ağırlıklı marj reçetesi olan ürünlerden ("Bütün menü" satırı,
  * urunler/logic.ts menuAverages ile aynı kural): reçetesiz ürünün maliyeti 0, marjı ~%98 sayılıp ortalamayı
- * olduğundan iyi göstermesin. Ürün ve satış adedi bütün etkin ürünlerden. Excel'de reçetesiz ürün yok, sonuç aynı.
+ * olduğundan iyi göstermesin. Ürün ve satış adedi bütün etkin ürünlerden.
  */
 export function categoryStats(model: Model, month: string | null): CategoryStat[] {
   const sold = month ? soldWithOnline(model, month) : new Map<number, number>();
@@ -155,7 +155,7 @@ function foldKey(s: string): string {
 }
 
 /**
- * Sabit gider kaleminin Excel Panel grubu (Kira / Personel / Reklam / Diğer). Kayıtta `panelGroup`
+ * Sabit gider kaleminin "Para nereye gitti?" grubu (Kira / Personel / Reklam / Diğer). Kayıtta `panelGroup`
  * alanı varsa o kullanılır; yoksa Gelir-gider bölümü ve addan bulunur:
  * reklam kelimeleri → Reklam; kira bölümünde adı "kira" olan → Kira (ortak gider / aidat Diğer);
  * personel bölümünde muhasebe / müşavir dışındakiler → Personel; geri kalan → Diğer.
@@ -175,7 +175,7 @@ export interface FixedLine {
   label: string;
   section: FixedSection;
   group: PanelFixedGroup;
-  /** Standart ayın tutarı (Sabit Giderler sayfası, Excel SabitGiderToplam'ın parçası) */
+  /** Standart ayın tutarı (Sabit giderler sayfası; standart aylık sabit giderin parçası) */
   standard: number;
   /** Bu ay için açık gün oranıyla hesaplanan tutar */
   computed: number;
@@ -197,7 +197,7 @@ export interface FixedFlowLine {
   hint: string;
   /** Bu ayın tutarı (pozitif = gider) */
   amount: number;
-  /** Excel'deki standart aylık tutar (extras için 0; aylık harcamalar dahil değil) */
+  /** Standart aylık tutar (extras için 0; aylık harcamalar dahil değil) */
   standard: number;
   /** En büyük kalemlerin adları */
   items: string[];
@@ -209,12 +209,12 @@ export interface FixedMonthBreakdown {
   month: string;
   /**
    * "month": Gelir-gider'deki o ayın tutarları (açık gün oranı + elle düzeltmeler + o aya özel satırlar).
-   * "standard": ayın açık gün sayısı girilmemiş; standart aylık tutarlar (Excel SabitGiderToplam) kullanıldı.
+   * "standard": ayın açık gün sayısı girilmemiş; standart aylık tutarlar (standart aylık sabit gider) kullanıldı.
    */
   basis: "month" | "standard";
   openDays: number;
   /**
-   * Aylık kalemlerin günü (engine prorationDays): "acik" elle girilen açık gün (Excel), "takvim" kasa raporlarının
+   * Aylık kalemlerin günü (engine prorationDays): "acik" elle girilen açık gün, "takvim" kasa raporlarının
    * kapsadığı takvim günü (biten ayda ayın tamamı, süren ayda bugüne kadar; kapalı gün kira ve maaşı düşürmez)
    */
   prorationDays: number;
@@ -222,7 +222,7 @@ export interface FixedMonthBreakdown {
   dim: number;
   /** Ayarlar'daki "ayda açık gün" (günlük kalemlerin standart çarpanı) */
   acikGun: number;
-  /** Standart aylık sabit gider (Excel 'Sabit Giderler'!B22 / SabitGiderToplam) */
+  /** Standart aylık sabit gider: Sabit giderler + Maaşlar, bir aylık tutarlarla */
   standard: number;
   /** Açık gün etkisi: Σ (bu ayın hesaplanan tutarı − standart tutar). Tam ayda 0 */
   proration: number;
@@ -232,7 +232,7 @@ export interface FixedMonthBreakdown {
   manual: number;
   /** overrides + manual: "bu aya özel giderler" */
   extras: number;
-  /** Aylık harcamalar (Harcamalar sayfası + bağlı fatura kategorisi): Excel'de yok, `standard`a girmez */
+  /** Aylık harcamalar (Harcamalar sayfası + bağlı fatura kategorisi): `standard`a girmez */
   expenses: number;
   /** Reçetelerde su + buz maliyeti olarak sayıldığı için sabit giderden çıkarılan SU GİDERİ */
   waterExcluded: number;
@@ -250,7 +250,7 @@ export interface FixedMonthBreakdown {
   lines: FixedLine[];
   manualRows: FixedManualRow[];
   overrideRows: (FixedLine & { delta: number })[];
-  /** "Para nereye gitti?" için Excel Panel'deki 4 grup + varsa "Bu aya özel giderler"; Σ amount = total */
+  /** "Para nereye gitti?" için sabit giderin 4 grubu + varsa "Bu aya özel giderler"; Σ amount = total */
   flow: FixedFlowLine[];
   /**
    * Şube seçiliyken işletme geneli giderlerin toplamı (Faz 5; bilgi, `total`a girmez: engine PnlMonthCalc.shared). "Tümü"de
@@ -260,12 +260,11 @@ export interface FixedMonthBreakdown {
 }
 
 /**
- * Bir ayın sabit giderleri, Excel Panel'deki gruplamayla ve kaynaklarına ayrılmış olarak.
+ * Bir ayın sabit giderleri, "Para nereye gitti?" gruplarıyla ve kaynaklarına ayrılmış olarak.
  *
- * Bilerek yapılan sapma (docs/PROMPT-VE-PLAN.md §5): Excel Panel!B13 her ay standart SabitGiderToplam'ı
- * düşer. Panel o ayın Gelir-gider tutarlarını kullanır (açık gün oranı, elle düzeltmeler, o aya özel
- * satırlar); böylece eksik açık aylar ve gerçek faturalar doğru yansır ve faturaya göre kârla aynı
- * temel kullanılır. Fark `proration`, `overrides` ve `manual` olarak ayrı ayrı verilir.
+ * Kural: net kâr her ay standart aylık sabit gideri değil, o ayın Gelir-gider tutarlarını düşer (açık gün oranı, elle
+ * düzeltmeler, o aya özel satırlar); böylece eksik açık aylar ve gerçek faturalar doğru yansır ve faturaya göre kârla
+ * aynı temel kullanılır. Fark `proration`, `overrides` ve `manual` olarak ayrı ayrı verilir.
  * SU GİDERİ reçetelerde su + buz maliyeti olarak sayılıyorsa (model.water.perLiter > 0) burada
  * ikinci kez sayılmaz.
  */
@@ -370,7 +369,7 @@ export function fixedCostsForMonth(model: Model, month: string): FixedMonthBreak
   const residual = manual - sum(manualRows.map((r) => r.amount));
   if (nonZero(residual)) manualRows.push({ key: "manual:other", label: "Diğer Gelir-gider satırları", section: "genel", amount: residual });
 
-  // Standart = Excel SabitGiderToplam (model.fixedStandardTotalFor, "Excel temeli"); aylık harcamalar ayrı bileşen
+  // Standart = standart aylık sabit gider (model.fixedStandardTotalFor); aylık harcamalar ayrı bileşen
   const isExpense = (l: FixedLine) => l.key.startsWith("expense:");
   const base = lines.filter((l) => !isExpense(l));
   const standard = sum(base.map((l) => l.standard));
@@ -505,7 +504,7 @@ export type MonthState = "running" | "closed" | "future";
 
 /**
  * Ay sonu tahmini yapılacak ay: devam eden ay, açık gün sayısı ayın gün sayısından az ve POS cirosu
- * girilmişse o ay; değilse null. Excel'deki "Ekim tahmini" (Panel B19) yalnızca süren ay içindir.
+ * girilmişse o ay; değilse null. Ay sonu tahmini yalnızca süren ay içindir.
  */
 export function forecastMonthOf(model: Model, opts?: DashboardOptions): string | null {
   const cur = resolveCurrentMonth(model, opts);
@@ -577,9 +576,9 @@ export interface BreakEven {
   month: string;
   /** Brüt kâr oranının ayı (referenceSalesMonth); satış yoksa null */
   refMonth: string | null;
-  /** 1 ₺ (KDV dahil) cirodan kalan brüt kâr (Excel: EylulBrutKar / EylulCiro) */
+  /** 1 ₺ (KDV dahil) cirodan kalan brüt kâr: referans ayın brüt kârı ÷ cirosu */
   grossRatio: number;
-  /** Standart aylık sabit gider (Excel SabitGiderToplam, personel dahil) */
+  /** Standart aylık sabit gider (personel dahil) */
   standard: number;
   /** Her ay girilen harcamalar (Aylık harcamalar; model.monthlyExpensePlan) */
   expenses: MonthlyExpensePlan[];
@@ -674,7 +673,7 @@ export function profitBasisOf(branchView: { name: string } | null | undefined): 
 }
 
 /**
- * Genel bakış (Excel Panel) verileri.
+ * Genel bakış verileri.
  * Ay sonu tahmini yalnızca devam eden ay için yapılır (bkz. resolveCurrentMonth). Sunucuda loadModel()
  * "bu ay"ı zaten doldurduğu için seçenek gerekmez; başka bir gün için `{ today }` ya da `{ currentMonth }` verin.
  */
@@ -689,7 +688,7 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   const openDays = info?.openDays ?? 0;
 
   const fixedMonth = fixedCostsForMonth(model, month);
-  /** Standart aylık sabit gider (Excel SabitGiderToplam), o ayda geçerli kalemler ve tutarlarla */
+  /** Standart aylık sabit gider, o ayda geçerli kalemler ve tutarlarla */
   const fixedStandardTotal = model.fixedStandardTotalFor(month);
   // Süren ayda kasa raporlarından kısa bir dönemin satış listesi (engine listPeriod): listeye dayanan her şey o dönemle,
   // indirim o dönemin kasa raporlarından, sabit gider ve online satış o döneme düşen payla
@@ -703,7 +702,7 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   // laffogato.net online satışı reçeteye göre (kâr-zarardaki gibi: kâr ModPOS + online ile)
   const online = hasSales ? onlineTheory(model.onlineMonth(month), share) : null;
 
-  // Excel Panel: Brüt kâr − indirim − sabit giderler (reçeteye göre teorik maliyet); online satış ayrı satır
+  // Net kâr: brüt kâr − indirim − sabit giderler (reçeteye göre teorik maliyet); online satış ayrı satır
   const grossProfit = sales.grossProfit + (online?.grossProfit ?? 0);
   const theoretical = hasSales
     ? {
@@ -723,19 +722,19 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
         /** Gelir-gider bölümlerine göre (SU GİDERİ reçetedeyse düşülmüş) */
         fixed,
         fixedTotal,
-        /** Standart / açık gün etkisi / bu aya özel ayrımı ve Excel Panel grupları */
+        /** Standart / açık gün etkisi / bu aya özel ayrımı ve "Para nereye gitti?" grupları */
         fixedBreakdown: listFixed,
         /** "Para nereye gitti?" sabit gider satırları (Kira, Personel, Reklam, Diğer, bu aya özel) */
         fixedFlow: listFixed.flow,
         netProfit: grossProfit - discountsNet - fixedTotal,
-        /** Excel Panel!B13 temelinde: standart SabitGiderToplam ile */
+        /** Bu ayın sabit gideri yerine standart aylık sabit giderle (bilgi; ekranda gösterilmez) */
         netProfitStandard: grossProfit - discountsNet - fixedStandardTotal,
         /** Satış listesinin dönemi, kasa raporlarından kısaysa (yoksa null) */
         listPeriod: listShare ? { ...listShare.lp, of: listShare.of, share } : null,
       }
     : null;
 
-  // Genel Maliyet: faturaya göre gerçekleşen
+  // Gelir-gider: faturaya göre gerçekleşen
   const actual = {
     revenue: pm.revenue,
     revenueNet: pm.revenueNet,
@@ -761,7 +760,7 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   const breakEvenDaily = breakEven.daily;
   const grossRevenue = hasSales ? sales.revenue : (info?.posRevenue ?? 0);
   /**
-   * Excel B17: satış listesi varsa liste toplamı (indirim öncesi) ÷ açık gün, yoksa POS cirosu ÷ açık gün. Liste kasa
+   * Günlük ortalama ciro: satış listesi varsa liste toplamı (indirim öncesi) ÷ açık gün, yoksa POS cirosu ÷ açık gün. Liste kasa
    * raporlarından kısa bir dönemi kapsıyorsa o dönemin açık günüyle
    */
   const listDays = listShare ? listShare.lp.openDays : openDays;
@@ -772,7 +771,7 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
 
   const currentMonth = resolveCurrentMonth(model, opts);
   const monthState: MonthState = !currentMonth || month < currentMonth ? "closed" : month === currentMonth ? "running" : "future";
-  // Açık gün sayısı, devam eden ay için "geçen gün" olarak da kullanılır (Excel B18/B19: /16 × 31)
+  // Açık gün sayısı, devam eden ay için "geçen gün" olarak da kullanılır (ör. 16 gün geçtiyse ciro ÷ 16 × 31)
   const partial = monthState === "running" && forecastMonthOf(model, { currentMonth: currentMonth! }) === month;
   const forecast = partial
     ? (() => {
@@ -926,7 +925,7 @@ export function yearTrend(model: Model, year: number) {
 
 export type YearTrendMonth = ReturnType<typeof yearTrend>[number];
 
-/** Yılın kâr / zarar toplamı: Gelir-gider kartları, Excel, Genel bakış ve Claude (ay_ozeti) aynı rakamı söyler */
+/** Yılın kâr / zarar toplamı: Gelir-gider kartları, dışa aktarım, Genel bakış ve Claude (ay_ozeti) aynı rakamı söyler */
 export interface YearTotals {
   year: number;
   /** Toplama giren aylar: POS cirosu girilmiş, bu ay ya da öncesi (yearTrend active) */
@@ -983,7 +982,7 @@ export function missingRevenueText(m: YearTotals["missingRevenue"][number]): str
 type InvoiceBalance = BalanceInvoice;
 
 // Faturanın kalan borcu ve kısmi ödeme: tek kural src/lib/cari/balance.ts'te (Paraşüt'ün kalanı; kart cari ödemeyle
-// takipteyse panelde sayılan). Hatırlatıcılar, Tedarikçiler, Claude ve Excel aynı fonksiyonu kullanır.
+// takipteyse panelde sayılan). Hatırlatıcılar, Tedarikçiler, Claude ve dışa aktarım aynı fonksiyonu kullanır.
 export { isPartiallyPaid, openBalance };
 
 /**
@@ -1085,7 +1084,7 @@ export function alerts(model: Model, month: string): Alert[] {
     });
   }
   // Fiyatı girilmemiş hammadde (çoğu sayımda "Listeye ekle" ile 0 ₺ açılan) kullanan ürünün maliyeti eksik. Bütün
-  // malzemesi fiyatsızsa maliyet 0 olur ve durumu "Reçete yok" görünür (Excel kuralı): reçetesi boş sayılmaz, burada söylenir
+  // malzemesi fiyatsızsa maliyet 0 olur ve durumu "Reçete yok" görünür: reçetesi boş sayılmaz, burada söylenir
   const unpricedIds = new Set(model.ds.ingredients.filter(isUnpriced).map((i) => i.id));
   const usesUnpriced = (p: ProductCalc) => p.lines.some((l) => l.ingredient !== undefined && unpricedIds.has(l.ingredient.id));
   const noRecipe = model.activeProducts.filter((p) => p.status === "Reçete yok" && !usesUnpriced(p));
@@ -1208,7 +1207,7 @@ export function alerts(model: Model, month: string): Alert[] {
 }
 
 // ============================================================================
-// Tutarlılık Kontrolü
+// Tutarlılık
 // ============================================================================
 
 /**
