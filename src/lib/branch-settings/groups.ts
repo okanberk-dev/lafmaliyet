@@ -91,8 +91,27 @@ export const CASH_STAFF_GROUP: BranchSettingGroup<CashStaffSetting> = {
   summary: (v) => (v.staffRecipients.length ? `${v.staffRecipients.length} çalışan${v.staffAmounts ? " · tutarlarla" : ""}` : "kimse yok"),
 };
 
+/**
+ * Paraşüt hesabı (docs/PARASUT.md › Şube başına Paraşüt hesabı). Satır yalnız bağı tutar: "aynı" açıkken şube
+ * bağlandığı şubenin hesabını kullanır (tek bağlantı, tek eşitleme). Hesabın kendi ayarları (client_id, şifreli
+ * client_secret, firma, başlangıç) ve oturumu Paraşüt ekranında, integration_state'te hesap adıyla durur
+ * (src/server/parasut/config.ts). "Aynı" kapatılınca **kopyalanmaz**: aynı firma iki hesaptan iki kez eşitlenirse
+ * faturalar çiftlenir; şube boş, yeni bir hesapla başlar ve "Paraşüt hesabını bağla" ister (bilinçli istisna)
+ */
+export const PARASUT_GROUP: BranchSettingGroup<Record<string, never>> = {
+  id: "parasut",
+  label: "Paraşüt hesabı",
+  description: "Faturaların geldiği Paraşüt firması. Şubeler aynı firmadaysa tek bağlantı, tek eşitleme.",
+  linkable: true,
+  legacy: "default",
+  legacyKey: "parasut.settings",
+  secretFields: [],
+  read: () => ({}),
+  summary: () => "",
+};
+
 /** Şube başına tutulan gruplar (sıra Şube ayarları ekranının sırası) */
-export const BRANCH_SETTING_GROUPS = [CASH_REPORT_GROUP, CASH_STAFF_GROUP] as const;
+export const BRANCH_SETTING_GROUPS = [CASH_REPORT_GROUP, CASH_STAFF_GROUP, PARASUT_GROUP] as const;
 
 export type BranchSettingGroupId = (typeof BRANCH_SETTING_GROUPS)[number]["id"];
 
@@ -105,7 +124,6 @@ export function branchSettingGroup(id: string): BranchSettingGroup | null {
  * bunları "şimdilik ortak" diye adıyla söyler: sahip hangisinin şubeye göre değişmediğini bilir.
  */
 export const SHARED_FOR_NOW: readonly { id: string; label: string; linkable: boolean; legacy: LegacyOwner }[] = [
-  { id: "parasut", label: "Paraşüt hesabı", linkable: true, legacy: "default" },
   { id: "pos.lafpos", label: "LafPOS bağlantısı ve geçiş günü", linkable: true, legacy: "lafpos" },
   { id: "isletme.takvim", label: "Çalışma saatleri ve uyarı saatleri", linkable: true, legacy: "default" },
   { id: "komisyon", label: "Komisyon ve yemek kartı kanalları", linkable: true, legacy: "default" },

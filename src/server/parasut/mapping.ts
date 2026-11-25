@@ -129,8 +129,13 @@ export function supplierKey(name: string): string {
   return norm(name.replace(/\s*\(.*\)\s*$/, ""));
 }
 
-export function productKeyFor(productId: string | null, name: string): string {
-  return productId ? `p:${productId}` : `d:${norm(name)}`;
+/**
+ * Gider faturası kaleminin ürün anahtarı: Paraşüt ürününün kimliği (p:…), ürünsüz kalemde sadeleştirilmiş ad (d:…).
+ * `ns`: hesabın öneki (src/lib/parasut/accounts.ts accountNs): varsayılan hesapta boş (p:123), öbürlerinde p:marina:123;
+ * iki firmanın ürün kimlikleri çakışsa da hammadde bağlantısı karışmasın. Ada dayalı anahtar firmadan bağımsızdır
+ */
+export function productKeyFor(productId: string | null, name: string, ns = ""): string {
+  return productId ? `p:${ns}${productId}` : `d:${norm(name)}`;
 }
 
 /**
@@ -145,7 +150,8 @@ export function eInvoiceProductKey(seller: string, sellerCode: string | null, na
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export function billToDraft(bill: Resource, included: Resource[] | undefined): BillDraft {
+/** Paraşüt gider faturası → taslak. `ns`: hesabın öneki (kalem kimliği ve ürün anahtarı; varsayılan hesapta boş) */
+export function billToDraft(bill: Resource, included: Resource[] | undefined, ns = ""): BillDraft {
   const a = bill.attributes as Record<string, unknown>;
   const index = indexIncluded(included);
   const supplier = relOne(bill, "supplier", index);
@@ -173,8 +179,8 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
     const discount = str(da.discount_type) === "percentage" ? (qty * unitPrice * discountValue) / 100 : discountValue * rate;
     const net = da.net_total !== undefined ? dec(da.net_total) * rate : qty * unitPrice - discount;
     return {
-      externalId: d.id,
-      productKey: productKeyFor(product?.id ?? null, name),
+      externalId: `${ns}${d.id}`,
+      productKey: productKeyFor(product?.id ?? null, name, ns),
       productName: name,
       description: str(da.description),
       quantity: qty,

@@ -469,13 +469,25 @@ export const invoices = pgTable(
      * yanıtı yolda kalan isteğin tekrarı ikinci fatura açmaz, var olan döner (denetim UI-03). Eşitleme ve Excel yazmaz
      */
     clientKey: text("client_key"),
+    /**
+     * Faturanın geldiği Paraşüt hesabı (sahibi şube; docs/PARASUT.md › Şube başına Paraşüt hesabı): Paraşüt'e bağlı her
+     * kayıtta dolu (gider faturası ya da e-fatura kimliği varsa), elle ve Excel'le girilende boş. Paraşüt kimlikleri hesap
+     * içinde benzersizdir; eşitleme yalnız kendi hesabının faturalarını görür, kaldırır
+     */
+    parasutAccount: text("parasut_account").references(() => branches.id),
+    /**
+     * Faturanın şubesi: ayrı Paraşüt hesabından gelen faturada o şube (sahibin kararı, 25 Kasım 2026); boş = işletme
+     * geneli (şubeler aynı Paraşüt hesabındayken bugünkü kural). Eşitleme yalnız yeni açtığı faturaya yazar
+     */
+    branchId: branchIdNullable(),
     createdAt: createdAt(),
   },
   (t) => [
     index("invoices_date_idx").on(t.date),
-    uniqueIndex("invoices_external_id_uq").on(t.externalId),
-    uniqueIndex("invoices_e_invoice_id_uq").on(t.eInvoiceId),
+    uniqueIndex("invoices_external_id_uq").on(t.parasutAccount, t.externalId),
+    uniqueIndex("invoices_e_invoice_id_uq").on(t.parasutAccount, t.eInvoiceId),
     uniqueIndex("invoices_client_key_uq").on(t.clientKey),
+    index("invoices_branch_idx").on(t.branchId),
   ],
 );
 
@@ -1014,8 +1026,10 @@ export const parasutSyncRuns = pgTable(
     updated: integer("updated").notNull().default(0),
     removed: integer("removed").notNull().default(0),
     message: text("message"),
+    /** Eşitlenen Paraşüt hesabı (sahibi şube; eski kayıtlar varsayılan şubenin tek hesabı) */
+    account: text("account").notNull().default(DEFAULT_BRANCH_ID),
   },
-  (t) => [index("parasut_sync_runs_started_idx").on(t.startedAt)],
+  (t) => [index("parasut_sync_runs_started_idx").on(t.startedAt), index("parasut_sync_runs_account_idx").on(t.account, t.startedAt)],
 );
 
 /** Paraşüt faturasının kalemleri (purchase_bill_details); hammaddeye bağlanınca alınan miktar ve fiyat buradan hesaplanır */

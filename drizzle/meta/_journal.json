@@ -575,6 +575,20 @@
       "when": 1795564016509,
       "tag": "0081_sube_ayarlari",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1795566732301,
+      "tag": "0082_parasut_hesap",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1795566737538,
+      "tag": "0083_parasut_hesap_veri",
+      "breakpoints": true
     }
   ]
 }
