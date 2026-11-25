@@ -34,12 +34,31 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   - Her faturaya şube atanacak: tedarikçinin varsayılan şubesi, faturada elle değiştirme ve toplu seçim.
   - Paraşüt sayfası, Faturalar, Gelir-gider ve Maliyet bu şubeye göre süzülecek.
   - Şubesi belirsiz faturalar "Şubesi seçilmemiş" kutusunda bekleyecek.
-- **Faturaları sınıflandırma:**
-  1. **Karışık fatura kalem kalem bölünecek.** Hammaddeye bağlı kalemler mal alışı, kalanı sarf gideri sayılacak. Avansas'taki sorunu kökten çözer.
-  2. **Ayrı "Temizlik & Sarf" kategorisi.** Kuralsız faturalar "Diğer"e düşmez; "Diğer" yalnız sınıflanmamış faturaların bekleme kutusu olur. Kategori kuralı temizlik firmasını (Hizmet) temizlik malzemesinden (Sarf) ayıracak.
-  3. **"Hammadde değil" denince kategori sorulacak.** Örneğin "Sarf" seçilirse kalem doğrudan doğru gidere yazılır.
-  4. **Paraşüt sayfası hafifleyecek.** Bugün bekleyen her kartta 108 seçenekli tam liste var ve sayfa yaklaşık 90 bin karakter. Yerine aranabilir tek bir seçici gelecek.
-  5. **AI önerisine fatura açıklaması da verilecek.** Kısaltmalarda yanılıyor: "KRP END KONTY"yi toner sandı, aslında çöp torbası. Faturanın açıklaması, tedarikçi ve kalemin bağlamı istemde yer alacak.
+- **Faturaları sınıflandırma** (dal `ai/fatura-sube`):
+  1. **Karışık fatura kalem kalem sayılacak (en önemlisi).**
+     - Bugün bir fatura ya tamamen mal alışı ya tamamen gider sayılıyor.
+     - Hammaddeye bağlı kalemler mal alışına, kalanı sarf giderine yazılacak.
+     - Faturadaki toplam iskonto kalemlere tutarlarıyla orantılı dağıtılacak.
+     - "Stoğa giriyor, gelir-gidere girmiyor" kontrolü, vergi hesabı, dışa aktarım ve çifte gider kontrolü aynı mantığa geçecek.
+     - En riskli kısım bu; en çok test burada.
+  2. **Tedarikçi bazlı "hep hammadde değil" kuralı.**
+     - Kural açık tedarikçinin yeni kalemleri bekleyenlere düşmeyecek. Örnek: Avansas'ın ofis ve temizlik kalemleri.
+     - Zaten bir hammaddeye bağlı kalemler (çay, soda) bu kuraldan etkilenmeyecek.
+  3. **"Temizlik & Sarf" kategorisi.**
+     - Gelir-giderde sarf gideri olarak sayılacak.
+     - Kategori kuralı temizlik firmasını (Hizmet) temizlik malzemesinden (Sarf) ayıracak.
+     - "Diğer" yalnız sınıflanmamış faturaların bekleme kutusu olacak.
+  4. **AI eşleştirme istemi.** İsteme şunlar da verilecek:
+     - tedarikçi
+     - faturadaki diğer kalemler ve faturanın açıklaması
+     - bilinen kısaltmalar
+     - tedarikçide geçmişte "hammadde değil" denen kalemler
+
+     Örnek hata: "KRP END KONTY" çöp torbasıydı, AI toner sandı.
+  5. **Paraşüt sayfası hafifleyecek.** Bekleyen her kartta 108 seçenekli tam liste var ve sayfa yaklaşık 90 bin karakter. Yerine aranabilir tek bir seçici gelecek.
+  6. **"Hammadde değil" için neden etiketi.**
+     - Seçenekler: Sarf, Demirbaş, Hizmet, Deneme. Kalem seçilen yere yazılacak.
+     - Demirbaş seçilince Vergi › Demirbaş'a eklenmesi önerilecek. Örnek: 10.000 ₺'lik tüplü ısıtıcı.
 
 ## Sahibin tarafında (kod değil)
 
