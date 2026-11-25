@@ -215,7 +215,7 @@ test("bağlantılar: bar ekranı, canlı uç, geri çekme, zil, Bugün, Onaylar 
   const bell = read("src/server/bell/ops.ts");
   assert.match(bell, /karaoke sayacı silme isteği onay bekliyor/);
   assert.match(bell, /href: k\.firstId \? `\/panel\/onaylar#istek-\$\{k\.firstId\}` : "\/panel\/onaylar"/);
-  assert.match(bell, /karaokeRequestNotifications\(user, now\)\.catch\(\(\) => \[\]\)/);
+  assert.match(bell, /safe\("karaoke", karaokeRequestNotifications\(user, now\)\)/);
   assert.match(read("src/app/panel/bugun/logic.ts"), /const OPS_KINDS: StaffRequestKind\[\] = \["zayi-gec", "zayi-sil", "karaoke-sil"\];/);
   assert.match(read("src/app/panel/onaylar/karaoke-cards.tsx"), /reviewKaraokeDeleteRequest\(\{ id: card\.id, seenVersion: card\.version, decision, note: note\.trim\(\) \|\| null \}\)/);
   // İşlem geçmişinde karaoke kendi türünde ("Karaoke oturumu …" hesabın oturumu sayılmaz)

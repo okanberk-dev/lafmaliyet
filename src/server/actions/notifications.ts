@@ -2,6 +2,7 @@
 
 import { and, count, eq, gt } from "drizzle-orm";
 
+import { failedBellRows, logBellFailed, type BellFailed, type BellPart } from "@/lib/bell-failed";
 import { featureInScope } from "@/lib/branch-features";
 import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
@@ -479,19 +480,28 @@ async function modelNotifications(): Promise<{ priceNote: PanelNotification[]; w
  * Kontrol listeleri kasanın hemen ardından, iki rolde. Alanların satırlarını kendi modülleri üretir ve iki rol dalında
  * da çağrılır: kasa (src/server/bell/kasa.ts) ve operasyon (src/server/bell/ops.ts). Personel kendi hatırlatıcılarını,
  * önerilerinin ve isteklerinin sonucunu ("İsteklerim"), akşam bekleyen kasa raporunu ve bekleyen kontrol listesini
- * görür; maliyet, ödeme, fatura ve sistem bilgisi ona gitmez.
+ * görür; maliyet, ödeme, fatura ve sistem bilgisi ona gitmez. Okunamayan bölüm kendi grubunda "… yüklenemedi" satırı
+ * bırakır (failedBellRows; bulgu 88).
  */
 export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   const user = await getCurrentUser();
   if (!user) return [];
+  // Bir bölüm okunamazsa (Neon uyanırken zaman aşımı) sessizce boş görünmez: günlüğe yazılır ve kendi grubunda
+  // "{Grup} yüklenemedi" satırı olur (src/lib/bell-failed.ts; bulgu 88). Satır okunmamış sayılmaz
+  const failed: BellPart[] = [];
+  const onFailed: BellFailed = (part, e) => {
+    logBellFailed(part, e);
+    failed.push(part);
+  };
+  const safe = (part: BellPart, p: Promise<PanelNotification[]>) => p.catch((e: unknown) => (onFailed(part, e), [] as PanelNotification[]));
   const [mine, recipes, cash, kontrol, ops] = await Promise.all([
-    reminderNotifications(user).catch(() => []),
-    recipeNotifications(user).catch(() => []),
-    kasaBell(user).catch(() => []),
-    checklistNotifications(user).catch(() => []),
-    opsBell(user).catch(() => []),
+    safe("hatirlatici", reminderNotifications(user)),
+    safe("recete", recipeNotifications(user)),
+    safe("kasa", kasaBell(user, onFailed)),
+    safe("kontrol", checklistNotifications(user)),
+    safe("operasyon", opsBell(user, onFailed)),
   ]);
-  if (user.role !== "admin") return [...cash, ...kontrol, ...mine, ...recipes, ...ops];
+  if (user.role !== "admin") return [...failedBellRows(failed, user.role, todayTR()), ...cash, ...kontrol, ...mine, ...recipes, ...ops];
   // Maliyet modeli zilin en ağır okuması: düşerse (E-49) öbür maddeler yine gelir, modelNotifications kendi satırını
   // koyar. Ödemeler de öyle: okunamazsa "Ödemeler yüklenemedi" satırı (upcomingFailed). ModPOS kasa föyünün anahtarı
   // çalışmıyorsa Sistem başlığında (src/server/bell/modpos.ts)
@@ -501,14 +511,15 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     currentBranchScope()
       .then((branch) => loadUpcoming(undefined, { branch }))
       .catch(upcomingFailed),
-    invoiceNotifications().catch(() => []),
-    systemNotifications().catch(() => []),
-    unpricedNotifications().catch(() => []),
-    holdNotifications().catch(() => []),
-    commissionNotifications().catch(() => []),
-    recipientNotifications().catch(() => []),
-    modposKeyBell().catch(() => []),
+    safe("fatura", invoiceNotifications()),
+    safe("sistem", systemNotifications()),
+    safe("fiyatsiz", unpricedNotifications()),
+    safe("bekletme", holdNotifications()),
+    safe("komisyon", commissionNotifications()),
+    safe("alici", recipientNotifications()),
+    safe("modpos", modposKeyBell()),
   ]);
+  const lost = failedBellRows(failed, user.role, todayTR());
 
   const payments: PanelNotification[] = (upcoming?.items ?? [])
     .filter((i) => i.status !== "later")
@@ -540,5 +551,5 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     });
   }
 
-  return [...system, ...recipients, ...modpos, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
+  return [...lost, ...system, ...recipients, ...modpos, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
 }

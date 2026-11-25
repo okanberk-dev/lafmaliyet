@@ -741,8 +741,8 @@ test("personel kalem ekler (bu ay ve geçen ay); paket fiyatını yalnız yazar,
 
 test("zil: fiyatı girilmemiş hammaddeler yalnız yöneticide, hata zili düşürmez", () => {
   const src = read("src/server/actions/notifications.ts");
-  const staffReturn = src.indexOf('if (user.role !== "admin") return [...cash, ...kontrol, ...mine, ...recipes, ...ops];');
-  const call = src.indexOf("unpricedNotifications().catch(() => [])");
+  const staffReturn = src.indexOf('if (user.role !== "admin") return [...failedBellRows(failed, user.role, todayTR()), ...cash, ...kontrol, ...mine, ...recipes, ...ops];');
+  const call = src.indexOf('safe("fiyatsiz", unpricedNotifications())');
   assert.ok(staffReturn > 0 && call > staffReturn, "personel dalından sonra, yöneticinin Promise.all'ında");
   const fn = src.slice(src.indexOf("async function unpricedNotifications"), src.indexOf("export async function loadPanelNotifications"));
   assert.match(fn, /href: "\/panel\/hammaddeler\?durum=fiyatsiz"/);

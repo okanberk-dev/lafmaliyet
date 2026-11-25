@@ -1106,7 +1106,7 @@ test("kaynak: ekran ve eylemler yalnız yönetici; zil yalnız yöneticide, hafi
   const bell = read("src/server/actions/notifications.ts");
   const staffReturn = bell.indexOf('if (user.role !== "admin") return');
   assert.ok(staffReturn > 0);
-  assert.ok(bell.indexOf("commissionNotifications().catch(() => [])") > staffReturn, "komisyon zili yalnız yönetici dalında");
+  assert.ok(bell.indexOf('safe("komisyon", commissionNotifications())') > staffReturn, "komisyon zili yalnız yönetici dalında");
   assert.match(bell, /\.\.\.payments, \.\.\.commission, \.\.\.invoices, \.\.\.ops,/);
   assert.match(bell, /group: "fatura" as const/);
 

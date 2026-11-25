@@ -832,7 +832,7 @@ test("kaynak: zil kontrol grubu kasadan sonra, iki rolde; personel dalı ilk Pro
   assert.match(src, /group\?: "sistem" \| "hatirlatici" \| "onay" \| "kasa" \| "kontrol" \| "odeme" \| "fatura" \| "uyari";/);
   assert.match(
     src,
-    /checklistNotifications\(user\)\.catch\(\(\) => \[\]\),\n {4}opsBell\(user\)\.catch\(\(\) => \[\]\),\n {2}\]\);\n {2}if \(user\.role !== "admin"\) return \[\.\.\.cash, \.\.\.kontrol, \.\.\.mine, \.\.\.recipes, \.\.\.ops\];/,
+    /safe\("kontrol", checklistNotifications\(user\)\),\n {4}safe\("operasyon", opsBell\(user, onFailed\)\),\n {2}\]\);\n {2}if \(user\.role !== "admin"\) return \[\.\.\.failedBellRows\(failed, user\.role, todayTR\(\)\), \.\.\.cash, \.\.\.kontrol, \.\.\.mine, \.\.\.recipes, \.\.\.ops\];/,
   );
   assert.match(src, /\.\.\.cash, \.\.\.kontrol, \.\.\.payments,/);
   assert.doesNotMatch(src, /export async function checklistNotifications/);

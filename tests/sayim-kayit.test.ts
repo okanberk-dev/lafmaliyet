@@ -268,7 +268,7 @@ test("geçen ayın sayımı yarım: yöneticinin zil ve sabah e-postası satır�
   assert.equal(pastCountReminder("2027-01-02", { counted: 1, total: 5 })!.href, "/panel/sayim?ay=2026-12");
   const ops = read("src/server/bell/ops.ts");
   assert.match(ops, /if \(user\.role !== "admin"\) return \[\];\s+const day = businessDate\(now\);/);
-  assert.match(ops, /pastCountNotifications\(user, now\)\.catch\(\(\) => \[\]\),/);
+  assert.match(ops, /safe\("sayim", pastCountNotifications\(user, now\)\),/);
   // Zil: tek şube seçiliyken Stok sayımı ekranının şubesi; "Tümü"de e-posta gibi açık her fiziksel şube (denetim ST-04:
   // önceden "Tümü"de yalnız Tuzla'ya bakıyordu, Marina'nın eksik sayımı zilde hiç çıkmıyordu)
   const bell = ops.slice(ops.indexOf("async function pastCountNotifications"), ops.indexOf("export async function pastCountDigestLines"));

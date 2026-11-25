@@ -2,6 +2,7 @@ import "server-only";
 
 import { inArray } from "drizzle-orm";
 
+import { logBellFailed, type BellFailed } from "@/lib/bell-failed";
 import { CALENDAR_GROUP, TILL_DEVICE_GROUP, tillDeviceGenitive, type TillDevice } from "@/lib/branch-settings/groups";
 import { ALL_BRANCHES, DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
 import {
@@ -527,8 +528,14 @@ async function staffTillsWaiting(day: string, now: Date, evening: Awaited<Return
     });
 }
 
-/** Zilin kasa satırları, iki rolde (loadPanelNotifications iki dalda çağırır) */
-export async function kasaBell(user: CurrentUser): Promise<PanelNotification[]> {
-  const [cash, requests] = await Promise.all([cashNotifications(user), requestNotifications(user).catch(() => [])]);
+/**
+ * Zilin kasa satırları, iki rolde (loadPanelNotifications iki dalda çağırır). Onay istekleri okunamazsa kasa satırları
+ * yine gelir, düşen kaynak `onFailed` ile bildirilir ve zilde "Onaylar yüklenemedi" satırı olur (bulgu 88)
+ */
+export async function kasaBell(user: CurrentUser, onFailed: BellFailed = logBellFailed): Promise<PanelNotification[]> {
+  const [cash, requests] = await Promise.all([
+    cashNotifications(user),
+    requestNotifications(user).catch((e: unknown) => (onFailed("istek", e), [] as PanelNotification[])),
+  ]);
   return [...cash, ...requests];
 }

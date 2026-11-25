@@ -1142,7 +1142,7 @@ test("kaynak: uygulama siparişlerinin tazeliği son başarılı çekmeden (kopy
 test("kaynak: zil Bugün ile aynı akşam kuralına bakar; Bugün canlı veride ve çıkınca yenilenir", () => {
   // Kasa satırları kasa modülünde (src/server/bell/kasa.ts), toplayıcı iki rolde çağırır
   const bell = read("src/server/bell/kasa.ts");
-  assert.match(read("src/server/actions/notifications.ts"), /kasaBell\(user\)\.catch\(\(\) => \[\]\)/);
+  assert.match(read("src/server/actions/notifications.ts"), /safe\("kasa", kasaBell\(user, onFailed\)\)/);
   // Şubesiz personel "Tümü"de birden çok kasa açıkken kasa başına satır (şube kapsamı C P2-10), yoksa tek satır
   // Akşam şubenin saatinden (şube ayarı isletme.takvim, Çalışma takvimi; varsayılan 20:00)
   assert.match(
