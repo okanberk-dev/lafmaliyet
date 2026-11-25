@@ -1,8 +1,9 @@
 // "Giriş bilgileri" penceresi ve mesajı: yeni kullanıcı, davetliye parola, parola değişikliği ve yenilenen bağlantı
-// için ayrı metin; geçerli bağlantı varken yenisinden önce sorulan soru.
+// için ayrı metin; geçerli bağlantı varken yenisinden önce sorulan soru; e-postanın ortak tasarımı (email-kit).
 // Çalıştırma: npm test
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -109,4 +110,68 @@ test("yeni bağlantıdan önceki soru: eskisinin son geçerliliği ve hemen çal
 
   // Davetli "Parolamı unuttum"dan sıfırlama bağlantısı almış olsa da yenisi davet bağlantısıdır
   assert.match(relinkText({ name: "X", invite: "pending", liveLink: { kind: "reset", until } }).title, /davet bağlantısı/);
+});
+
+test("davet, sıfırlama ve hoş geldin e-postası ortak tasarımda (email-kit): kabuk, kitin h1'i, ana eylem düğmesi, içerik korunur", () => {
+  const src = readFileSync("src/app/panel/kullanicilar/access.ts", "utf8");
+  assert.match(src, /from "@\/lib\/email-kit"/);
+  assert.doesNotMatch(src, /#[0-9a-fA-F]{3,6}\b/, "renk yalnız kitten (C)");
+  assert.doesNotMatch(src, /const esc = |<!doctype/i, "kaçış ve kabuk kitten (esc, emailShell)");
+
+  const attr = (v: string) => v.replace(/'/g, "&#39;");
+  const reRaw = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (const base of [pw, invite, reset]) {
+    for (const reason of ACCESS_REASONS) {
+      const info: AccessInfo = { ...base, reason };
+      const tag = `${info.kind}/${reason}`;
+      const { subject, html, text } = accessEmail(info);
+      assert.equal(subject, accessSubject(info), tag);
+      assert.equal(text, credentialsText(info), tag);
+      assert.ok(html.includes(`<title>${attr(subject)}</title>`), tag);
+      assert.match(html, /<h1 class="em-h1"[^>]*>Merhaba Ayşe<\/h1>/, tag);
+      // Kabuğun telefon ayarı ve 600 px'lik kart
+      assert.ok(html.includes("@media only screen and (max-width:620px)") && html.includes("max-width:600px"), tag);
+      // Giriş bilgileri: panel adresi bağlantı, e-posta açık
+      assert.ok(html.includes(`<a href="${URL_BASE}/giris" `) && html.includes(`>${URL_BASE}/giris</a>`), tag);
+      assert.ok(html.includes(">ayse@laffogato.net</div>"), tag);
+      assert.ok(html.includes("Bu e-posta L&#39;Affogato yönetim panelinden gönderildi. Bilgileri kimseyle paylaşmayın."), tag);
+      // Ana eylem kitin tam genişlik düğmesi
+      const [href, label] =
+        info.kind === "password"
+          ? [`${URL_BASE}/giris`, "Panele giriş yap"]
+          : [`${URL_BASE}/davet?t=${RAW}`, info.kind === "invite" ? "Parolamı belirle" : "Yeni parola belirle"];
+      assert.match(html, new RegExp(`<a href="${reRaw(href)}" style="display:block;[^"]*">${label}</a>`), tag);
+    }
+  }
+
+  // Parola: kendi alanında, ön izleme satırında ve başlıkta yok (kilit ekranında görünmesin)
+  const p = accessEmail(pw).html;
+  assert.ok(p.includes(">hT7a-Ln3e-R4dy</div>"));
+  const preheader = p.match(/<div style="display:none;max-height:0;max-width:0[^>]*>([^<]*)/)?.[1] ?? "";
+  assert.ok(preheader.startsWith("L&#39;Affogato yönetim paneline hesabınız açıldı. Giriş bilgileriniz:"), preheader);
+  assert.ok(!preheader.includes("hT7a") && !p.slice(0, p.indexOf("<body")).includes("hT7a"));
+  assert.ok(p.includes("Giriş yaptıktan sonra Hesabım&#39;dan parolanızı değiştirebilir, iki adımlı doğrulamayı açabilirsiniz."));
+  assert.ok(accessEmail({ ...pw, reason: "changed" }).html.includes("L&#39;Affogato yönetim paneli parolanız değiştirildi. Yeni giriş bilgileriniz:"));
+
+  // Bağlantılı e-posta: tek kullanımlık notu, son geçerlilik, kopyalanacak adres; parola alanı yok
+  for (const info of [invite, reset]) {
+    const h = accessEmail(info).html;
+    assert.match(h, /Bağlantı tek kullanımlıktır; son geçerlilik: <strong[^>]*>23 Ekim 2026 Cuma 14:30<\/strong>\./, info.kind);
+    assert.ok(h.includes("Düğme çalışmazsa bu adresi tarayıcıya yapıştırın:"), info.kind);
+    assert.ok(h.includes(`>${URL_BASE}/davet?t=${RAW}</td>`), info.kind);
+    assert.ok(!h.includes(">Parola</div>"), info.kind);
+  }
+  assert.ok(accessEmail(invite).html.includes("L&#39;Affogato yönetim paneline davet edildiniz. Aşağıdaki düğmeyle parolanızı kendiniz belirleyin."));
+  assert.ok(accessEmail(reset).html.includes("Panel parolanızı sıfırlamak için bir bağlantı istendi. Aşağıdaki düğmeyle yeni parolanızı belirleyin."));
+  assert.ok(accessEmail(reset).html.includes("Bu isteği siz yapmadıysanız e-postayı yok sayın; parolanız değişmez."));
+  assert.ok(!accessEmail(invite).html.includes("yok sayın"));
+  // Son geçerliliği bilinmeyen bağlantı: yalnız "tek kullanımlık"
+  assert.ok(accessEmail({ ...invite, expiresAt: undefined }).html.includes("Bağlantı tek kullanımlıktır.</p>"));
+
+  // Kullanıcı metni her yerde kaçışlı: ad (başlık), e-posta, parola, adres
+  const evil = accessEmail({ ...pw, name: `<img src=x onerror=alert(1)>`, email: `"a"@x.com`, password: "<b>p</b>", loginUrl: `${URL_BASE}/giris?a="b"` }).html;
+  assert.ok(!evil.includes("<img") && !evil.includes("<b>p"));
+  assert.ok(evil.includes("Merhaba &lt;img"));
+  assert.ok(evil.includes("&quot;a&quot;@x.com") && evil.includes("&lt;b&gt;p&lt;/b&gt;"));
+  assert.ok(evil.includes(`href="${URL_BASE}/giris?a=&quot;b&quot;"`));
 });

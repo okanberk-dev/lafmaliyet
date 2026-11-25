@@ -3,6 +3,8 @@
  * e-postası. Saf modül: hem "Giriş bilgileri" penceresi (istemci) hem e-posta eylemi (sunucu) aynı metni üretir.
  */
 
+import { button, C, divider, emailShell, esc, FONT, heading, para, TABLE } from "@/lib/email-kit";
+
 export type AccessKind = "password" | "invite" | "reset";
 
 /**
@@ -116,8 +118,6 @@ export function whatsappUrl(text: string): string {
 
 // ---------------------------------------------------------------- E-posta
 
-const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
 const SUBJECT: Record<AccessKind, string> = {
   password: "L'Affogato paneline hoş geldiniz",
   invite: "L'Affogato paneline davetlisiniz",
@@ -184,30 +184,63 @@ export function relinkText(u: {
       };
 }
 
+/** Parola gibi elle yazılacak değerin yazı tipi: her karakter ayrı genişlikte, karışmaz */
+const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace";
+
 /**
- * AkmanOS açık temasında, satır içi stilli e-posta (hatırlatma e-postasıyla aynı dil): beyaz zemin, zinc-100 kart,
- * siyah düğme. Bütün değişken metinler kaçışlıdır.
+ * Giriş bilgilerinin kutusu (kitte karşılığı yok: email-kit'in satırı değeri sağa yaslar, uzun adres ve parola
+ * telefonda sıkışırdı). Her alan alt alta: üstte küçük gri etiket, altta büyük değer; uzun adres sarılır.
+ * `valueHtml` hazır (kaçışlı) HTML'dir.
+ */
+function fieldsBox(fields: readonly { label: string; valueHtml: string; mono?: boolean }[], top: number): string {
+  const cells = fields.map((f, i) => {
+    const border = i ? `border-top:1px solid ${C.line};` : "";
+    const value = f.mono
+      ? `font-family:${MONO};font-size:20px;line-height:28px;font-weight:700;letter-spacing:0.06em`
+      : `font-family:${FONT};font-size:16px;line-height:23px;font-weight:600`;
+    return `<tr><td style="${border}padding:14px 0">
+  <div style="font-family:${FONT};font-size:13px;line-height:18px;color:${C.mute}">${esc(f.label)}</div>
+  <div style="${value};color:${C.ink};margin-top:3px;word-break:break-word;overflow-wrap:anywhere">${f.valueHtml}</div>
+</td></tr>`;
+  });
+  return `<table ${TABLE} style="margin-top:${top}px"><tr><td style="background:${C.note};border-radius:16px;padding:4px 20px">
+<table ${TABLE}>${cells.join("")}</table>
+</td></tr></table>`;
+}
+
+/** Küçük not (hazır HTML; `<strong>` taşıyabilir): düğmenin altında ortalı ya da kartın sonunda sola yaslı */
+function noteHtml(html: string, o: { top: number; center?: boolean }): string {
+  return `<p style="margin:${o.top}px 0 0;font-family:${FONT};font-size:14px;line-height:21px;color:${C.mute};word-break:break-word${o.center ? ";text-align:center" : ""}">${html}</p>`;
+}
+
+/** Düğme çalışmazsa kopyalanacak adres: gri kutuda, her yerinden sarılır (anahtar uzun, telefonda taşmasın) */
+function linkBox(link: string, top: number): string {
+  return `<table ${TABLE} style="margin-top:${top}px"><tr><td style="background:${C.note};border-radius:12px;padding:12px 14px;font-family:${MONO};font-size:13px;line-height:20px;color:${C.soft};word-break:break-all">${esc(link)}</td></tr></table>`;
+}
+
+/**
+ * Davet, parola sıfırlama ve hoş geldin e-postası (ortak tasarım: src/lib/email-kit.ts). Karttaki sıra: selam ve ne
+ * olduğu, ana eylem düğmesi, giriş bilgileri; düğme çalışmazsa kopyalanacak adres en altta. Bütün değişken metinler
+ * kaçışlıdır; parola ön izleme satırına girmez (telefonun kilit ekranında görünür).
  */
 export function accessEmail(info: AccessInfo): { subject: string; html: string; text: string } {
-  const name = esc(firstName(info.name));
   const until = info.expiresAt ? esc(formatExpiry(info.expiresAt)) : null;
-  const button = (href: string, label: string) =>
-    `<a href="${esc(href)}" style="display:inline-block;background:#171717;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:13px 22px;border-radius:12px">${label}</a>`;
-  const row = (label: string, value: string, mono = false) =>
-    `<tr><td style="padding:8px 0;color:#71717a;font-size:13px;width:92px;vertical-align:top">${label}</td><td style="padding:8px 0;color:#171717;font-size:15px;font-weight:600;word-break:break-all;${mono ? "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:0.02em" : ""}">${value}</td></tr>`;
+  const panelLink = `<a href="${esc(info.loginUrl)}" style="color:${C.ink};text-decoration:underline">${esc(info.loginUrl)}</a>`;
 
   let lead: string;
   let body: string;
   if (info.kind === "password") {
     lead = info.reason === "changed" ? "L'Affogato yönetim paneli parolanız değiştirildi. Yeni giriş bilgileriniz:" : "L'Affogato yönetim paneline hesabınız açıldı. Giriş bilgileriniz:";
-    body = `
-      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;background:#ffffff;border-radius:16px;padding:6px 16px;margin:0 0 20px">
-        ${row("Panel", `<a href="${esc(info.loginUrl)}" style="color:#171717">${esc(info.loginUrl)}</a>`)}
-        ${row("E-posta", esc(info.email))}
-        ${row("Parola", esc(info.password ?? ""), true)}
-      </table>
-      ${button(info.loginUrl, "Panele giriş yap")}
-      <p style="margin:20px 0 0;color:#71717a;font-size:13px;line-height:20px">Giriş yaptıktan sonra Hesabım'dan parolanızı değiştirebilir, iki adımlı doğrulamayı açabilirsiniz.</p>`;
+    body = `${fieldsBox(
+      [
+        { label: "Panel", valueHtml: panelLink },
+        { label: "E-posta", valueHtml: esc(info.email) },
+        { label: "Parola", valueHtml: esc(info.password ?? ""), mono: true },
+      ],
+      24,
+    )}
+${button(info.loginUrl, "Panele giriş yap", { top: 24 })}
+${para("Giriş yaptıktan sonra Hesabım'dan parolanızı değiştirebilir, iki adımlı doğrulamayı açabilirsiniz.", { top: 20, muted: true, size: 14 })}`;
   } else {
     const link = info.link ?? "";
     const again = info.reason === "renewed" ? " Daha önce gönderilen bağlantı artık çalışmaz." : "";
@@ -217,29 +250,29 @@ export function accessEmail(info: AccessInfo): { subject: string; html: string; 
           ? `L'Affogato yönetim paneli için yeni davet bağlantınız hazır.${again} Aşağıdaki düğmeyle parolanızı kendiniz belirleyin.`
           : "L'Affogato yönetim paneline davet edildiniz. Aşağıdaki düğmeyle parolanızı kendiniz belirleyin."
         : `Panel parolanızı sıfırlamak için bir bağlantı istendi.${again} Aşağıdaki düğmeyle yeni parolanızı belirleyin.`;
-    body = `
-      ${button(link, info.kind === "invite" ? "Parolamı belirle" : "Yeni parola belirle")}
-      <p style="margin:16px 0 20px;color:#71717a;font-size:13px;line-height:20px">Bağlantı tek kullanımlıktır${until ? `; son geçerlilik: <strong style="color:#3f3f46">${until}</strong>` : ""}. Düğme çalışmazsa bu adresi tarayıcıya yapıştırın:<br><span style="word-break:break-all;color:#3f3f46">${esc(link)}</span></p>
-      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;background:#ffffff;border-radius:16px;padding:6px 16px">
-        ${row("Panel", `<a href="${esc(info.loginUrl)}" style="color:#171717">${esc(info.loginUrl)}</a>`)}
-        ${row("E-posta", esc(info.email))}
-      </table>
-      ${info.kind === "reset" ? `<p style="margin:16px 0 0;color:#71717a;font-size:13px;line-height:20px">Bu isteği siz yapmadıysanız e-postayı yok sayın; parolanız değişmez.</p>` : ""}`;
+    body = `${button(link, info.kind === "invite" ? "Parolamı belirle" : "Yeni parola belirle", { top: 26 })}
+${noteHtml(`Bağlantı tek kullanımlıktır${until ? `; son geçerlilik: <strong style="color:${C.soft};font-weight:600;white-space:nowrap">${until}</strong>` : ""}.`, { top: 12, center: true })}
+${fieldsBox(
+  [
+    { label: "Panel", valueHtml: panelLink },
+    { label: "E-posta", valueHtml: esc(info.email) },
+  ],
+  28,
+)}${info.kind === "reset" ? `\n${para("Bu isteği siz yapmadıysanız e-postayı yok sayın; parolanız değişmez.", { top: 20, muted: true, size: 14 })}` : ""}
+${divider(28)}
+${noteHtml("Düğme çalışmazsa bu adresi tarayıcıya yapıştırın:", { top: 20 })}
+${linkBox(link, 10)}`;
   }
 
   const subject = accessSubject(info);
-  const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(subject)}</title></head>
-<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#171717">
-  <div style="max-width:520px;margin:0 auto;padding:28px 16px">
-    <p style="margin:0 0 16px;font-size:13px;font-weight:600;color:#71717a">L'Affogato · Yönetim paneli</p>
-    <div style="background:#f4f4f5;border-radius:24px;padding:24px 20px">
-      <h1 style="margin:0 0 8px;font-size:22px;line-height:28px;letter-spacing:-0.01em">Merhaba ${name}</h1>
-      <p style="margin:0 0 20px;color:#3f3f46;font-size:15px;line-height:22px">${lead}</p>
-      ${body}
-    </div>
-    <p style="margin:16px 4px 0;color:#a1a1aa;font-size:12px;line-height:18px">Bu e-posta L'Affogato yönetim panelinden gönderildi. Bilgileri kimseyle paylaşmayın.</p>
-  </div>
-</body></html>`;
+  const html = emailShell({
+    subject,
+    preheader: lead,
+    brandSubHtml: "Yönetim paneli",
+    cardHtml: `${heading(`Merhaba ${firstName(info.name)}`, { sub: lead })}
+${body}`,
+    footer: "Bu e-posta L'Affogato yönetim panelinden gönderildi. Bilgileri kimseyle paylaşmayın.",
+  });
 
   return { subject, html, text: credentialsText(info) };
 }

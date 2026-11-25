@@ -5,14 +5,18 @@
  *
  * İkisinde de ödemesi alınmamış rezervasyon en üstte, kırmızı kutuda: "ÖDEME ALINMADI" ve ücretin misafir odaya girmeden,
  * önden alınacağı. Tutar yazılmaz (personel tutar görmez; ücret kasada). Konu ve ön izleme misafirin adını taşımaz
- * (telefonun kilit ekranında görünür); ad yalnız gövdede. Kabuk sabah e-postasıyla aynı (emailLayout).
+ * (telefonun kilit ekranında görünür); ad yalnız gövdede. Görünüm ortak e-posta tasarımından (src/lib/email-kit.ts:
+ * kabuk, başlık, kırmızı kutu, düğme); her rezervasyon kendi kutusunda, ödeme rozeti saatin yanında (dar ekranda altına
+ * iner). Renk tek başına anlam taşımaz: kırmızının yanında hep "ÖDEME ALINMADI" yazar.
  */
 
+import { button, C, callout, emailShell, esc, FONT, heading, para, pill, TABLE, TONE } from "@/lib/email-kit";
 import { durationLabel, trClock } from "@/lib/karaoke/session";
 import { staffPay, type StaffMailSession } from "@/lib/karaoke/staff-mail";
 import { dateTR } from "@/lib/format";
+import { longDateTR } from "@/lib/reminders";
 
-import { APP_URL, emailLayout, esc, FONT } from "./digest-template";
+import { APP_URL } from "./digest-template";
 
 export const STAFF_KARAOKE_FOOTER = "Bu e-posta karaoke rezervasyonu olan günlerde vardiyadaki personele gönderilir. Ücret kasada görünür; e-postada tutar yazmaz.";
 /** Ödemesi alınmamış rezervasyonun cümlesi (iki e-postada ve ekranda aynı söz) */
@@ -22,43 +26,43 @@ const KARAOKE_LINK = `${APP_URL}/panel/karaoke`;
 const range = (s: Pick<StaffMailSession, "startsAt" | "endsAt">) => `${trClock(Date.parse(s.startsAt)).time}–${trClock(Date.parse(s.endsAt)).time}`;
 const who = (s: Pick<StaffMailSession, "customerName" | "guests">) => [s.customerName?.trim() || "İsimsiz", s.guests ? `${s.guests} kişi` : null].filter(Boolean).join(" · ");
 
-/** Ödeme rozeti: alınmadıysa kırmızı ve büyük harf, sitede ödendiyse yeşil */
+/**
+ * Ödeme rozeti: alınmadıysa kırmızı zeminde beyaz, büyük harf (kırmızı kutunun içinde de seçilsin; kitin `pill`'i açık
+ * zeminli, bu yüzden yerel), sitede ödendiyse kitin yeşil rozeti
+ */
 function payBadge(s: StaffMailSession): string {
-  const collect = staffPay(s) === "collect";
-  const text = collect ? (s.status === "requested" ? "ÖDEME ALINMADI · onay bekliyor" : "ÖDEME ALINMADI") : "Ödendi (sitede)";
-  return `<span style="display:inline-block;padding:4px 10px;border-radius:999px;background:${collect ? "#dc2626" : "#dcfce7"};color:${collect ? "#ffffff" : "#166534"};font-family:${FONT};font-size:12px;line-height:16px;font-weight:700;letter-spacing:0.02em;white-space:nowrap">${esc(text)}</span>`;
+  if (staffPay(s) !== "collect") return pill("Ödendi (sitede)", "good");
+  const text = s.status === "requested" ? "ÖDEME ALINMADI · onay bekliyor" : "ÖDEME ALINMADI";
+  return `<span style="display:inline-block;padding:4px 11px;border-radius:999px;background:${TONE.bad.dot};color:#ffffff;font-family:${FONT};font-size:12px;line-height:18px;font-weight:700;letter-spacing:0.02em;white-space:nowrap;vertical-align:middle">${esc(text)}</span>`;
 }
 
-/** Ödeme alınacak rezervasyonların kırmızı kutusu (yoksa boş) */
+/** Ödeme alınacak rezervasyonların kırmızı kutusu (kitin `callout`'u, başlığı büyük; yoksa boş) */
 function collectBox(count: number, single: boolean): string {
   if (!count) return "";
   const title = single ? "ÖDEME ALINMADI" : `ÖDEME ALINACAK: ${count} rezervasyon`;
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 16px"><tr><td bgcolor="#dc2626" style="background:#dc2626;border-radius:16px;padding:14px 16px;font-family:${FONT}">
-  <div style="font-size:18px;line-height:24px;font-weight:800;letter-spacing:0.01em;color:#ffffff">${esc(title)}</div>
-  <div style="padding-top:4px;font-size:15px;line-height:21px;font-weight:600;color:#ffffff">${esc(COLLECT_FIRST)}</div>
-  <div style="padding-top:2px;font-size:13px;line-height:19px;color:#fee2e2">${count === 1 ? "Bu rezervasyon" : "Bu rezervasyonlar"} sitede ödenmedi; ücret kasadan tahsil edilir.</div>
-</td></tr></table>`;
+  return callout("bad", [], {
+    top: 0,
+    html: `<div style="font-size:18px;line-height:25px;font-weight:700;letter-spacing:0.01em">${esc(title)}</div>
+  <div style="margin-top:6px;font-size:15px;line-height:22px;font-weight:600">${esc(COLLECT_FIRST)}</div>
+  <div style="margin-top:4px">${count === 1 ? "Bu rezervasyon" : "Bu rezervasyonlar"} sitede ödenmedi; ücret kasadan tahsil edilir.</div>`,
+  });
 }
 
-function button(): string {
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:18px"><tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717">
-    <a href="${KARAOKE_LINK}" style="display:block;padding:14px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Karaoke ekranını aç</a>
-  </td></tr></table>`;
-}
-
-/** Bir rezervasyonun satırı: saat, kim, ödeme rozeti, not */
+/**
+ * Bir rezervasyonun kutusu: büyük saat ve yanında ödeme rozeti (satıra sığmazsa alta iner), kim, ödenmediyse "önden
+ * alın", not. Ödenmemiş rezervasyonun kutusu açık kırmızı, ötekiler gri
+ */
 function sessionBlock(s: StaffMailSession, first: boolean): string {
   const collect = staffPay(s) === "collect";
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="${first ? "" : "margin-top:12px;"}border:1px solid ${collect ? "#fecaca" : "#e4e4e7"};border-radius:16px;background:${collect ? "#fef2f2" : "#ffffff"}"><tr><td style="padding:14px 16px;font-family:${FONT}">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
-    <td style="font-size:22px;line-height:28px;font-weight:700;letter-spacing:-0.02em;color:#171717;white-space:nowrap">${esc(range(s))}</td>
-    <td align="right" style="vertical-align:middle">${payBadge(s)}</td>
-  </tr></table>
-  <div style="padding-top:4px;font-size:15px;line-height:21px;color:#3f3f46">${esc(who(s))}${s.desk === "booking" ? ` <span style="color:#71717a">· elle eklendi</span>` : ""}</div>
-  ${collect ? `<div style="padding-top:6px;font-size:14px;line-height:20px;font-weight:600;color:#b91c1c">${esc(COLLECT_FIRST)}</div>` : ""}
-  ${s.note?.trim() ? `<div style="padding-top:6px;font-size:13px;line-height:19px;color:#52525b">Not: ${esc(s.note.trim())}</div>` : ""}
+  const note = s.note?.trim();
+  return `<table ${TABLE} style="margin-top:${first ? 0 : 12}px"><tr><td style="background:${collect ? TONE.bad.bg : C.note};border-radius:18px;padding:18px 20px 18px;font-family:${FONT};word-break:break-word">
+  <div style="line-height:30px"><span style="font-size:22px;line-height:30px;font-weight:700;letter-spacing:-0.02em;color:${C.ink};white-space:nowrap;font-variant-numeric:tabular-nums;vertical-align:middle;padding-right:10px">${esc(range(s))}</span> ${payBadge(s)}</div>
+  <div style="margin-top:6px;font-size:15px;line-height:22px;color:${C.soft}">${esc(who(s))}${s.desk === "booking" ? ` <span style="color:${C.mute}">· elle eklendi</span>` : ""}</div>${collect ? `\n  <div style="margin-top:8px;font-size:15px;line-height:22px;font-weight:600;color:${TONE.bad.fg}">${esc(COLLECT_FIRST)}</div>` : ""}${note ? `\n  <div style="margin-top:10px;padding-top:10px;border-top:1px solid ${C.line};font-size:14px;line-height:21px;color:${C.soft}">Not: ${esc(note)}</div>` : ""}
 </td></tr></table>`;
 }
+
+/** Kırmızı kutu varsa başlığın üstünde ondan ayıran boşluk */
+const gap = (px: number) => `<div style="height:${px}px;line-height:${px}px;font-size:0">&nbsp;</div>`;
 
 function sessionText(s: StaffMailSession): string[] {
   const collect = staffPay(s) === "collect";
@@ -79,17 +83,18 @@ export function renderStaffMorning(sessions: StaffMailSession[], today: string) 
       ? `Bugün karaoke: ${times} · ${collect ? "ÖDEME ALINACAK" : "ödendi"}`
       : `Bugün ${n} karaoke rezervasyonu${collect ? ` · ${collect === n ? "hepsinde" : `${collect} rezervasyonda`} ÖDEME ALINACAK` : " · hepsi ödendi"}`;
   const headline = n === 1 ? "Bugün 1 karaoke rezervasyonu var" : `Bugün ${n} karaoke rezervasyonu var`;
-  const card = `${collectBox(collect, false)}
-<h1 style="margin:0 0 4px;font-family:${FONT};font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.02em;color:#171717">${esc(headline)}</h1>
-<div style="margin:0 0 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#52525b">Odayı saatinden önce hazırlayın. Her rezervasyondan 3 saat önce ayrıca hatırlatma gelir.</div>
+  const box = collectBox(collect, false);
+  const card = `${box}${box ? `\n${gap(26)}` : ""}
+${heading(headline, { sub: "Odayı saatinden önce hazırlayın. Her rezervasyondan 3 saat önce ayrıca hatırlatma gelir." })}
+${gap(22)}
 ${sessions.map((s, k) => sessionBlock(s, k === 0)).join("\n")}
-${button()}`;
-  const html = emailLayout({
+${button(KARAOKE_LINK, "Karaoke ekranını aç", { top: 28 })}`;
+  const html = emailShell({
     subject,
     preheader: `${times}${collect ? ` · ${collect} rezervasyonda ödeme alınacak` : ""}`,
-    brandSub: "Karaoke · bugün",
-    today,
-    card,
+    brandSubHtml: esc("Karaoke · bugün"),
+    dateLabel: longDateTR(today),
+    cardHtml: card,
     footer: STAFF_KARAOKE_FOOTER,
   });
   const text = [
@@ -116,17 +121,19 @@ export function renderStaffSoon(s: StaffMailSession, nowMs: number) {
   const subject = `Karaoke ${from} (${left} sonra) · ${collect ? "ÖDEME ALINACAK" : "ödendi"}`;
   const headline = `Karaoke ${left} sonra başlıyor`;
   const today = trClock(nowMs).date;
-  const card = `${collectBox(collect ? 1 : 0, true)}
-<h1 style="margin:0 0 12px;font-family:${FONT};font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.02em;color:#171717">${esc(headline)}</h1>
+  const box = collectBox(collect ? 1 : 0, true);
+  const card = `${box}${box ? `\n${gap(26)}` : ""}
+${heading(headline)}
+${gap(20)}
 ${sessionBlock(s, true)}
-<div style="margin:14px 0 0;font-family:${FONT};font-size:14px;line-height:20px;color:#52525b">Odayı saatinden önce hazırlayın; sayaç ${esc(from)} olunca kendiliğinden başlar.</div>
-${button()}`;
-  const html = emailLayout({
+${para(`Odayı saatinden önce hazırlayın; sayaç ${from} olunca kendiliğinden başlar.`, { top: 18 })}
+${button(KARAOKE_LINK, "Karaoke ekranını aç", { top: 28 })}`;
+  const html = emailShell({
     subject,
     preheader: `${range(s)}${s.guests ? ` · ${s.guests} kişi` : ""}${collect ? " · ödeme alınmadı, önden alın" : " · ödendi"}`,
-    brandSub: "Karaoke · 3 saat kala",
-    today,
-    card,
+    brandSubHtml: esc("Karaoke · 3 saat kala"),
+    dateLabel: longDateTR(today),
+    cardHtml: card,
     footer: STAFF_KARAOKE_FOOTER,
   });
   const text = [`L'Affogato · ${dateTR(today)}`, headline, "", ...sessionText(s), "", `Karaoke ekranı: ${KARAOKE_LINK}`, "", STAFF_KARAOKE_FOOTER].join("\n");

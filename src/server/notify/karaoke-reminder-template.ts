@@ -3,18 +3,20 @@
  * eklenen rezervasyonda e-posta yazıldıysa rezervasyondan bir gün önce bir kez gider (kurallar src/lib/karaoke/
  * reminder.ts, gönderen src/server/karaoke/reminders.ts; docs/KARAOKE.md › Hatırlatma e-postası).
  *
- * Panelin öteki e-postaları yöneticiye ve personele gider; bu tek ileti misafire gittiği için kendi görünümü var: üstte
- * L'Affogato yazısı, koyu "bilet" kartında gün ve saat, altında üç kısa bilgi ve "Takvime ekle". E-posta istemcileri
- * flex ve dış CSS tanımadığı için tablolar ve satır içi stiller; tek resim sitenin e-postalarındaki L'Af işareti
- * (laffogato.net'ten; engellenirse yerinde "L'Affogato" yazısı görünür), renkler de sitenin e-postalarınınki. Tutar yazmaz:
- * ücret kafede alınır. Tanıtım içermez (yalnız rezervasyonun bilgisi: ticari ileti değil).
+ * Panelin öteki e-postaları yöneticiye ve personele gider, ortak kabuğu (src/lib/email-kit.ts `emailShell`) panelin L'Af
+ * karosuyla açılır. Bu tek ileti misafire gittiği için sitenin e-postalarının kimliğini taşır: derin yeşil bantta L'Af
+ * işareti, altın rozet ve büyük saat ("bilet"), altında beyaz kartta üç kısa bilgi, "Takvime ekle" ve yol tarifi / telefon
+ * / site. Kabuk bu yüzden burada (`guestDocument`), ama kitin kurallarıyla: tablo düzeni, satır içi stiller, Outlook için
+ * 600 px'lik koşullu tablo, yalnız açık renk, ön izlemenin arkasına dolgu ve telefonda (≤ 620 px) daralan kenarlar.
+ * Yazı, nötr renkler, başlık (`heading`) ve ana eylem (`button`) kitten. Tek resim sitenin e-postalarındaki L'Af işareti
+ * (laffogato.net'ten; engellenirse yerinde "L'Affogato" yazısı görünür). Tutar yazmaz: ücret kafede alınır. Tanıtım
+ * içermez (yalnız rezervasyonun bilgisi: ticari ileti değil).
  */
 
+import { button, C, esc, FONT, heading, TABLE } from "@/lib/email-kit";
 import { reminderDay } from "@/lib/karaoke/reminder";
 import { durationLabel, trClock } from "@/lib/karaoke/session";
 import { longDateTR } from "@/lib/reminders";
-
-import { esc, FONT } from "./digest-template";
 
 export interface KaraokeReminderInput {
   /** Misafirin adı (sitenin panele verdiği ilk ad); boşsa adsız selam */
@@ -33,11 +35,16 @@ export interface KaraokeReminderInput {
 }
 
 const SERIF = "Georgia,'Times New Roman',Times,serif";
-const INK = "#1e2a25";
-/** laffogato.net e-postalarının renkleri (site: src/lib/email/templates): derin yeşil bant, altın vurgu, adaçayı */
+/**
+ * laffogato.net e-postalarının renkleri (site: src/lib/email/templates): derin yeşil bant, altın vurgu, adaçayı yazı,
+ * bandın içindeki biletin çizgisi, açık yeşil zemin ve madde numarası. Nötr renkler (kart, yazı, çizgi) kitten (`C`).
+ */
 const GREEN = "#173f35";
 const GOLD = "#cba258";
 const SAGE = "#c3d3cb";
+const TICKET_LINE = "#3f6658";
+const CANVAS = "#f2f5f1";
+const MINT = "#e6efe9";
 /** Sitenin e-postalarındaki işaret: derin yeşil zeminde beyaz L'Af, altın çekirdek (162×132, 54×44 basılır) */
 export const LOGO_URL = "https://laffogato.net/email/laf-mark-white.png";
 /** Köşkün adresi ve telefonu (sitenin e-posta altlığındaki değerler: laffogato src/lib/seo/site.ts) */
@@ -65,6 +72,88 @@ export function calendarLink(startsAt: number, endsAt: number): string {
     details: "L'Affogato karaoke odası rezervasyonunuz.",
   });
   return `https://calendar.google.com/calendar/render?${q.toString()}`;
+}
+
+/** Ön izleme satırının arkasına gövdenin sızmaması için dolgu (kitin kabuğundaki gibi; Gmail ve Apple Mail ~100 karakter gösterir) */
+const PREHEADER_FILL = "&#847;&zwnj;&nbsp;".repeat(60);
+
+/**
+ * Telefon ayarı (≤ 620 px; okumayan istemci masaüstü düzenini gösterir, o da 390 px'e sığar): kenarlar daralır, büyük
+ * saat ve başlık küçülür (`em-hero`, `em-h1` kitin sınıf adları: `heading` h1'i bu sınıfla yazar)
+ */
+const GUEST_MOBILE_CSS = `@media only screen and (max-width:620px){
+.g-outer{padding:12px 8px 28px !important}
+.g-band{padding:28px 20px 24px !important;border-radius:22px !important}
+.g-ticket{padding:18px 18px 18px !important}
+.g-card{padding:28px 20px 24px !important;border-radius:22px !important}
+.g-foot{padding:20px 14px 0 !important}
+.em-hero{font-size:34px !important;line-height:40px !important}
+.em-h1{font-size:22px !important;line-height:28px !important}
+}`;
+
+/**
+ * Misafir e-postasının kabuğu (kitin `emailShell`'i panelin L'Af karosuyla açılır; misafir sitenin kimliğini görür):
+ * açık yeşil zemin, üstte derin yeşil bant, altında beyaz kart, en altta ortalı adres ve not. Kural kitinkiyle aynı: en
+ * çok 600 px, Outlook için koşullu tablo, yalnız açık renk. Argümanlar hazır HTML'dir (konu ve ön izleme düz metin)
+ */
+function guestDocument(o: { subject: string; preheader: string; bandHtml: string; cardHtml: string; footerHtml: string }): string {
+  return `<!doctype html><html lang="tr" xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="x-apple-disable-message-reformatting"><meta name="format-detection" content="telephone=no,date=no,address=no,email=no"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(o.subject)}</title>
+<style>:root{color-scheme:light;supported-color-schemes:light}body{margin:0;padding:0}table{border-collapse:collapse}
+${GUEST_MOBILE_CSS}</style></head>
+<body style="margin:0;padding:0;background:${CANVAS};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;font-family:${FONT};color:${C.ink}">
+<div style="display:none;max-height:0;max-width:0;overflow:hidden;opacity:0;mso-hide:all;font-size:1px;line-height:1px;color:${CANVAS}">${esc(o.preheader)}${PREHEADER_FILL}</div>
+<table ${TABLE} style="background:${CANVAS}"><tr><td align="center" class="g-outer" style="padding:32px 16px 44px">
+<!--[if mso]><table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0"><tr><td><![endif]-->
+<table ${TABLE} style="max-width:600px">
+  <tr><td class="g-band" bgcolor="${GREEN}" style="background:${GREEN};border-radius:24px;padding:34px 28px 30px">
+${o.bandHtml}
+  </td></tr>
+  <tr><td style="height:14px;line-height:14px;font-size:0">&nbsp;</td></tr>
+  <tr><td class="g-card" bgcolor="${C.card}" style="background:${C.card};border-radius:24px;padding:34px 32px 30px">
+${o.cardHtml}
+  </td></tr>
+  <tr><td class="g-foot" align="center" style="padding:24px 24px 0;font-family:${FONT};font-size:12px;line-height:18px;color:${C.mute};text-align:center;word-break:break-word">
+${o.footerHtml}
+  </td></tr>
+</table>
+<!--[if mso]></td></tr></table><![endif]-->
+</td></tr></table>
+</body></html>`;
+}
+
+/**
+ * Bandın içindeki "bilet": küçük başlık, altın renkte büyük saat aralığı (bölünmez), gün, süre ve kişi; kesik çizginin
+ * altında adres. Saat masaüstünde 36 px: telefon ayarını okumayan istemcide de 390 px'e sığar
+ */
+function ticketHtml(t: { from: string; to: string; dateLong: string; meta: string }): string {
+  return `<table ${TABLE} style="margin-top:24px"><tr><td class="g-ticket" style="border:1px solid ${TICKET_LINE};border-radius:18px;padding:20px 20px 20px;font-family:${FONT}">
+  <div style="font-size:11px;line-height:14px;font-weight:600;letter-spacing:0.14em;color:${SAGE}">REZERVASYONUNUZ</div>
+  <div class="em-hero" style="padding-top:10px;font-size:36px;line-height:42px;font-weight:700;letter-spacing:-0.02em;color:${GOLD};white-space:nowrap;font-variant-numeric:tabular-nums">${esc(t.from)}&nbsp;–&nbsp;${esc(t.to)}</div>
+  <div style="padding-top:8px;font-size:17px;line-height:24px;font-weight:600;color:#ffffff">${esc(t.dateLong)}</div>${t.meta ? `\n  <div style="padding-top:2px;font-size:15px;line-height:22px;color:${SAGE}">${esc(t.meta)}</div>` : ""}
+  <div style="margin-top:16px;padding-top:14px;border-top:1px dashed ${TICKET_LINE};font-size:13px;line-height:20px;color:${SAGE};word-break:break-word">${esc(VENUE.address)}</div>
+</td></tr></table>`;
+}
+
+/** Numaralı kısa bilgiler (kitte yok): yeşil halkada numara, kalın başlık, altında açıklama; aralar ferah */
+function stepsHtml(list: readonly { title: string; body: string }[]): string {
+  const rowsHtml = list.map((n, k) => {
+    const top = k ? 22 : 0;
+    return `<tr>
+  <td width="42" valign="top" style="width:42px;padding:${top}px 0 0;vertical-align:top">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td width="28" height="28" align="center" style="width:28px;height:28px;border-radius:14px;background:${MINT};font-family:${FONT};font-size:13px;line-height:28px;font-weight:700;color:${GREEN}">${k + 1}</td></tr></table>
+  </td>
+  <td valign="top" style="padding:${top}px 0 0;font-family:${FONT};vertical-align:top;word-break:break-word">
+    <div style="padding-top:3px;font-size:16px;line-height:22px;font-weight:600;color:${C.ink}">${esc(n.title)}</div>
+    <div style="margin-top:4px;font-size:15px;line-height:23px;color:${C.soft}">${esc(n.body)}</div>
+  </td>
+</tr>`;
+  });
+  return `<table ${TABLE}>${rowsHtml.join("")}</table>`;
+}
+
+/** Kartın altındaki küçük bağlantı (yol tarifi, telefon, site): bölünmez, altı çizili; telefon yeni sekme açmaz */
+function linkHtml(href: string, label: string, newTab = true): string {
+  return `<a href="${esc(href)}"${newTab ? ` target="_blank" rel="noopener noreferrer"` : ""} style="color:${GREEN};font-weight:600;text-decoration:underline;white-space:nowrap">${esc(label)}</a>`;
 }
 
 export function renderKaraokeReminder(i: KaraokeReminderInput): { subject: string; html: string; text: string } {
@@ -105,63 +194,23 @@ export function renderKaraokeReminder(i: KaraokeReminderInput): { subject: strin
   const maps = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`L'Affogato, ${VENUE.address}`)}`;
   const footer = "Bu e-posta, L'Affogato'da adınıza yapılan karaoke rezervasyonunu hatırlatmak için bir kez gönderildi; tanıtım iletisi değildir.";
 
-  const noteRows = notes
-    .map(
-      (n, k) => `<tr>
-        <td width="34" valign="top" style="width:34px;padding:${k ? 16 : 0}px 0 0">
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td width="26" height="26" align="center" style="width:26px;height:26px;border-radius:13px;background:#eef4f0;font-family:${FONT};font-size:12px;line-height:26px;font-weight:700;color:${INK}">${k + 1}</td></tr></table>
-        </td>
-        <td valign="top" style="padding:${k ? 16 : 0}px 0 0 6px;font-family:${FONT}">
-          <div style="font-size:15px;line-height:21px;font-weight:600;color:${INK}">${esc(n.title)}</div>
-          <div style="font-size:14px;line-height:21px;color:#52525b">${esc(n.body)}</div>
-        </td>
-      </tr>`,
-    )
-    .join("\n");
+  const band = `<table ${TABLE}><tr><td align="center" style="line-height:0;font-size:0">
+  <img src="${LOGO_URL}" width="54" height="44" alt="L'Affogato" style="display:inline-block;border:0;outline:none;text-decoration:none;width:54px;height:44px;font-family:${SERIF};font-size:20px;line-height:44px;color:#ffffff">
+</td></tr><tr><td align="center" style="padding-top:10px;font-family:${FONT};font-size:11px;line-height:16px;font-weight:600;letter-spacing:0.22em;color:${SAGE}">KARAOKE</td></tr></table>
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin-top:28px"><tr><td bgcolor="${GOLD}" style="background:${GOLD};border-radius:999px;padding:5px 12px;font-family:${FONT};font-size:11px;line-height:14px;font-weight:700;letter-spacing:0.14em;color:${GREEN}">${esc(eyebrow)}</td></tr></table>
+<div style="margin-top:14px">${heading(headline, { color: "#ffffff" })}</div>
+<div style="margin-top:8px;font-family:${FONT};font-size:16px;line-height:24px;color:${SAGE};word-break:break-word">${esc(lead)}</div>
+${ticketHtml({ from, to, dateLong, meta })}`;
 
-  const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(subject)}</title></head>
-<body style="margin:0;padding:0;background:#f2f5f1;-webkit-text-size-adjust:100%;font-family:${FONT}">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${esc(preheader)}</div>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f2f5f1"><tr><td align="center" style="padding:28px 12px 32px">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:520px">
-  <tr><td align="center" bgcolor="${GREEN}" style="background:${GREEN};border-radius:28px 28px 0 0;padding:30px 26px 0;line-height:0;font-size:0">
-    <img src="${LOGO_URL}" width="54" height="44" alt="L'Affogato" style="display:inline-block;border:0;outline:none;text-decoration:none;width:54px;height:44px;font-family:${SERIF};font-size:20px;line-height:44px;color:#ffffff">
-    <div style="padding-top:8px;font-family:${FONT};font-size:11px;line-height:16px;font-weight:600;letter-spacing:0.22em;color:${SAGE}">KARAOKE</div>
-  </td></tr>
-  <tr><td bgcolor="${GREEN}" style="background:${GREEN};padding:22px 26px 6px">
-    <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td bgcolor="${GOLD}" style="background:${GOLD};border-radius:999px;padding:5px 12px;font-family:${FONT};font-size:11px;line-height:14px;font-weight:700;letter-spacing:0.14em;color:${GREEN}">${eyebrow}</td></tr></table>
-    <h1 style="margin:16px 0 8px;font-family:${SERIF};font-size:30px;line-height:36px;font-weight:400;letter-spacing:-0.01em;color:#ffffff">${esc(headline)}</h1>
-    <div style="font-family:${FONT};font-size:15px;line-height:22px;color:${SAGE}">${esc(lead)}</div>
-  </td></tr>
-  <tr><td bgcolor="${GREEN}" style="background:${GREEN};padding:20px 26px 28px;border-radius:0 0 28px 28px">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #3f6658;border-radius:20px"><tr>
-      <td style="padding:18px 20px;font-family:${FONT}">
-        <div style="font-size:11px;line-height:14px;font-weight:600;letter-spacing:0.14em;color:${SAGE}">REZERVASYONUNUZ</div>
-        <div style="padding-top:8px;font-size:34px;line-height:38px;font-weight:700;letter-spacing:-0.02em;color:${GOLD};white-space:nowrap">${esc(from)}&nbsp;–&nbsp;${esc(to)}</div>
-        <div style="padding-top:6px;font-size:17px;line-height:23px;font-weight:600;color:#ffffff">${esc(dateLong)}</div>
-        <div style="padding-top:2px;font-size:14px;line-height:20px;color:${SAGE}">${esc(meta)}</div>
-        <div style="padding-top:10px;font-size:13px;line-height:19px;color:${SAGE}">${esc(VENUE.address)}</div>
-      </td>
-    </tr></table>
-  </td></tr>
-  <tr><td style="height:12px;line-height:12px;font-size:0">&nbsp;</td></tr>
-  <tr><td bgcolor="#ffffff" style="background:#ffffff;border-radius:28px;padding:26px 24px 24px">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-      ${noteRows}
-    </table>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:24px"><tr><td align="center" bgcolor="${GREEN}" style="border-radius:16px;background:${GREEN}">
-      <a href="${esc(calendar)}" target="_blank" rel="noopener noreferrer" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:16px">Takvime ekle</a>
-    </td></tr></table>
-    <div style="padding-top:14px;text-align:center;font-family:${FONT};font-size:14px;line-height:20px"><a href="${esc(maps)}" target="_blank" rel="noopener noreferrer" style="color:${GREEN};text-decoration:underline">Yol tarifi</a> &nbsp;·&nbsp; <a href="tel:${VENUE.phoneTel}" style="color:${GREEN};text-decoration:underline">${esc(VENUE.phone)}</a> &nbsp;·&nbsp; <a href="${esc(site)}" target="_blank" rel="noopener noreferrer" style="color:${GREEN};text-decoration:underline">${esc(siteLabel)}</a></div>
-  </td></tr>
-  <tr><td align="center" style="padding:18px 16px 0;font-family:${FONT};font-size:12px;line-height:18px;color:#a8a29e">
-    <div style="font-family:${SERIF};font-size:15px;line-height:20px;color:#5b6a63">L&#39;Affogato · Tuzla</div>
-    <div style="padding-top:2px">${esc(VENUE.address)} · ${esc(VENUE.phone)}</div>
-    <div style="padding-top:6px">${esc(footer)}</div>
-  </td></tr>
-</table>
-</td></tr></table>
-</body></html>`;
+  const card = `${stepsHtml(notes)}
+${button(calendar, "Takvime ekle", { top: 30 })}
+<div style="margin-top:20px;text-align:center;font-family:${FONT};font-size:14px;line-height:26px;color:${C.quiet}">${linkHtml(maps, "Yol tarifi")}&nbsp;&nbsp;·&nbsp; ${linkHtml(`tel:${VENUE.phoneTel}`, VENUE.phone, false)}&nbsp;&nbsp;·&nbsp; ${linkHtml(site, siteLabel)}</div>`;
+
+  const foot = `<div style="font-family:${SERIF};font-size:15px;line-height:20px;color:${C.soft}">L&#39;Affogato · Tuzla</div>
+<div style="padding-top:4px">${esc(VENUE.address)} · ${esc(VENUE.phone)}</div>
+<div style="padding-top:10px">${esc(footer)}</div>`;
+
+  const html = guestDocument({ subject, preheader, bandHtml: band, cardHtml: card, footerHtml: foot });
 
   const text = [
     headline,
