@@ -26,6 +26,7 @@ import { UserError } from "@/server/user-error";
 
 import { reviewLate, type LateReviewOutcome } from "./late";
 import {
+  assertStaffOutNote,
   carryBefore,
   hasLaterReport,
   lockCashReport,
@@ -90,6 +91,8 @@ export async function proposeCashCorrection(db: DB, me: CashActor, input: Correc
     const { date: _date, ...sent } = withOkcOf(data, report);
     void _date;
     const proposed: ProposedFields = { ...sent, note, discounts: input.fields.discounts ?? null, countedBy: counter.id, countedByName: counter.name };
+    // Fişsiz çıkış (bulgu 2): çıkış ya da açıklaması değişiyorsa ve satırlardan fazlaysa neye çıktığı zorunlu
+    await assertStaffOutNote(tx, date, branchId, proposed, report);
     const changes = proposalChanges(base, proposed);
     if (!changes.length) throw new UserError(CASH_REQUEST_TEXT.noChange);
     const gate = staffCashGate({ date, now, hasReport: true, laterReport, changes });

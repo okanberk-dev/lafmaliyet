@@ -40,6 +40,7 @@ export function ReportSheet({
   okcAdmin = null,
   revisions = [],
   proposedBy,
+  unreceipted = null,
 }: {
   report: CashReportFields & { revision: number; cashDiff: number; countedByName: string | null; submittedByName: string; createdAt: string; updatedAt: string };
   kasa?: "ModPOS" | "LafPOS";
@@ -57,11 +58,13 @@ export function ReportSheet({
   okcAdmin?: OkcAdminView | null;
   revisions?: CashRevisionRow[];
   proposedBy?: Record<number, string>;
+  /** Fişsiz çıkış (bulgu 2): Kontrol listesinde "Fişsiz çıkış: X ₺" */
+  unreceipted?: number | null;
 }) {
   const f = withCardExtra(report, cardExtra, offDevice, kasa);
   const c = computeCash(f);
   const kind = diffKind(report.cashDiff);
-  const checks = reportChecks({ report, cardExtra, offDevice, kasa, carry, next, modposDiffs, lafposDiffs, photoDiffs, emailError });
+  const checks = reportChecks({ report, cardExtra, offDevice, kasa, carry, next, modposDiffs, lafposDiffs, photoDiffs, emailError, unreceipted });
   const zMeta = [report.zNo ? `Z no ${report.zNo}` : null, report.receipts ? `${report.receipts} fiş` : null].filter(Boolean).join(" · ");
   const card = <CardDetail report={f} audience="admin" okcAdmin={okcAdmin} kasa={kasa} cardExtra={cardExtra} offDevice={offDevice} />;
   const edits = Math.max(0, report.revision - 1);

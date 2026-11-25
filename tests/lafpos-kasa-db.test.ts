@@ -117,7 +117,8 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     openingCash: 1_500,
     cashIn: 1_300,
     cashOut: 5_450,
-    cashOutNote: null,
+    // Fişlerden fazlası (LafPOS'taki teslim) personelde açıklamasız gönderilmez (bulgu 2)
+    cashOutNote: "süt, patrona teslim",
     countedCash: 9_350,
     handedOver: 0,
     bankPos: null,

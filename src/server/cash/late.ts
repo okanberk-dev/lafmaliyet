@@ -15,7 +15,7 @@ import { getPhoto, holdPhoto, linkable, releasePhoto } from "@/server/storage/ph
 import { UserError } from "@/server/user-error";
 
 import { chainNeighbours } from "./late-chain";
-import { lockCashReport, lockLateDay, writeCashReport, type CashActor, type CashReportRow, type CashTx, type WriteResult } from "./report-store";
+import { assertStaffOutNote, lockCashReport, lockLateDay, writeCashReport, type CashActor, type CashReportRow, type CashTx, type WriteResult } from "./report-store";
 
 /*
  * Geç kasa raporu (docs/KASA-RAPORU.md › Geç rapor; plan docs/planlar/personel-yetki.md §2.6): personel dünden eski, son
@@ -100,6 +100,8 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
     if (check && openingNeedsNote({ check, openingCash: fields.openingCash, prevOpening: null, note: fields.note })) {
       throw new UserError(`Açılış önceki günün devrinden farklı (${carryDiffText(check)}): nedenini nota yazın`);
     }
+    // Fişsiz çıkış (bulgu 2): o günün kasadan çıkan satırlarından fazlası yazıldıysa neye çıktığı zorunlu
+    await assertStaffOutNote(tx, date, branchId, fields, null);
     // Fotoğraflar: önceki isteğin tuttukları serbest; yenileri kişinin kendisinin, Z ya da POS, bağlanmamış
     const kept = new Set(pending?.photoIds ?? []);
     const photos: LatePayloadT["photos"] = [];

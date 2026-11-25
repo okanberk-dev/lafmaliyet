@@ -17,6 +17,7 @@ import {
   isCashEvening,
   lateCorrections,
   staffCanReport,
+  unreceiptedLabel,
   type CarryCheck,
 } from "@/lib/cash-report";
 import { closedFollowUp, CLOSED_FOLLOW_UP_TEXT, staffResultBell } from "@/lib/cash-requests";
@@ -24,6 +25,7 @@ import { dateTR, money } from "@/lib/format";
 import { lafposDiffs, lafposDiffText } from "@/lib/lafpos/diffs";
 import { LAFPOS_PHOTO_TEXT, photoUnsureText } from "@/lib/lafpos/foto";
 import { LAFPOS_NO_COUNT_ADMIN_TEXT, STAFF_NO_COUNT_TEXT } from "@/lib/lafpos/gun-sonu";
+import { unreceiptedCashOut } from "@/lib/lafpos/prefill";
 import { branchSwitchDay, kasaName } from "@/lib/lafpos/switch";
 import { modposMismatchBell, modposMismatches } from "@/lib/modpos/zil";
 import { addDays, longDateTR, todayTR } from "@/lib/reminders";
@@ -36,6 +38,7 @@ import { listBranches } from "@/server/branches";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, previousCarryOverByBranch, reportedDays, type CashReportDTO } from "@/server/data/cash-reports";
 import { closedInfoRows, closedYesterday, pendingClosedRows } from "@/server/closed-days";
 import { cashOutBellRow } from "@/server/data/cash-out-requests";
+import { cashOutsBetween } from "@/server/data/cash-outs";
 import { lafposNoCountDays, loadKasaLafposDays } from "@/server/data/lafpos-day";
 import { lafposPhotoMarks } from "@/server/lafpos/foto";
 import { lafposBranchId, loadBranchSwitchDay } from "@/server/lafpos/branch";
@@ -92,8 +95,9 @@ const kasaHref = (date: string, t: TillOf) => `/panel/kasa?gun=${date}${t.named 
  * Gün sonu kasa raporu: personele akşam (20:00'den sonra) bugünün raporu girilmediyse hatırlatma, LafPOS gününde gün sonu
  * fotoğrafı ve sayılmayan çekmece (staffCashNotifications; kendi kasasının: kilitli şube, seçili fiziksel şube, "Tümü"de
  * Tuzla; formu o kasaya yazar); yöneticiye dünün raporu girilmediyse, son
- * raporda kasa farkı varsa (eksik kırmızı, fazla turuncu), açılış devirle tutmuyorsa ve rapor ertesi gün kasa alanı
- * değiştirilerek düzeltildiyse. "Tümü"de birden çok kasa açıkken yöneticiye her şubenin kasası ayrı.
+ * raporda kasa farkı varsa (eksik kırmızı, fazla turuncu), açılış devirle tutmuyorsa, dünün ya da bugünün raporunda
+ * fişsiz çıkış varsa ve rapor ertesi gün kasa alanı değiştirilerek düzeltildiyse. "Tümü"de birden çok kasa açıkken
+ * yöneticiye her şubenin kasası ayrı.
  */
 async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
@@ -308,6 +312,37 @@ async function cashIntegrityNotifications(reports: CashReportDTO[], day: string,
       kind: "warning",
       title: titleOf(after ? "LafPOS rapordan sonra farklı rakamla geldi" : "Kasa raporu LafPOS'tan farklı", t),
       body: body.length > 220 ? `${body.slice(0, 219)}…` : body,
+      timeLabel: timeLabel(r.date),
+      unread: true,
+      href: kasaHref(r.date, t),
+      group: "kasa",
+    });
+  }
+  // Fişsiz çıkış (bulgu 2): dünün ve bugünün raporunda "Gün içinde çıkan" kasadan çıkan satırlarından fazla (onay
+  // kartıyla aynı hesap; LafPOS gününde girilmemiş teslim fişsiz değil). Kimlik raporun sürümüyle: düzeltilince yeniden
+  const recent = reports.filter((r) => r.date === day || r.date === yesterday);
+  const outsOf = new Map(
+    await Promise.all(
+      [...new Set(recent.map((r) => r.branchId))].map(async (b) => [b, await cashOutsBetween(yesterday, day, b).catch(() => null)] as const),
+    ),
+  );
+  for (const r of recent) {
+    const outs = outsOf.get(r.branchId);
+    if (!outs) continue;
+    const till = lafposOf?.(r.date, r.branchId).day?.till ?? null;
+    const u = unreceiptedCashOut(r.cashOut, outs.filter((o) => o.date === r.date), till);
+    if (!u.unreceipted) continue;
+    const t = tills.of(r.branchId);
+    out.push({
+      id: `kasa-fissiz-${r.date}${idPart(t)}-r${r.revision}`,
+      kind: "warning",
+      title: titleOf(unreceiptedLabel(u.unreceipted), t),
+      body: [
+        longDateTR(r.date),
+        `Gün içinde çıkan ${money(r.cashOut)}, kasadan çıkan satırları ${money(u.total)}`,
+        r.cashOutNote?.trim() ? `neye çıktı: ${r.cashOutNote.trim()}` : "neye çıktığı yazılmadı",
+        r.submittedByName,
+      ].join(" · "),
       timeLabel: timeLabel(r.date),
       unread: true,
       href: kasaHref(r.date, t),

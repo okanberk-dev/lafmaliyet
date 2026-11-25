@@ -18,9 +18,11 @@ import {
   type CashReportFields,
   type FieldChange,
 } from "@/lib/cash-report";
+import { CASH_OUT_NOTE_REQUIRED, cashOutNoteMissing, cashOutNoteOf, type CashOutKind } from "@/lib/cash-outs";
 import { CASH_REQUEST_TEXT, cashDaySubject } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
 import { LAFPOS_STAFF_WRITE_TEXT } from "@/lib/lafpos/foto";
+import { unreceiptedCashOut } from "@/lib/lafpos/prefill";
 import { isLafposDay } from "@/lib/lafpos/switch";
 import { normalizeVat, OKC_KNOWN_RATES, okcCumulativeToStore, okcFormError, type OkcVatInput, type OkcVatLine } from "@/lib/okc-z";
 import { DELETED_REPORT_DAYS, linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
@@ -178,6 +180,30 @@ async function staffLafposRefusal(tx: CashTx, date: string, branchId: string, pr
   if (!prev) return LAFPOS_STAFF_WRITE_TEXT.fresh;
   const [state] = await tx.select({ autoValues: s.lafposDayEnds.autoValues }).from(s.lafposDayEnds).where(eq(s.lafposDayEnds.reportId, prev.id)).limit(1);
   return state?.autoValues ? LAFPOS_STAFF_WRITE_TEXT.auto : null;
+}
+
+/**
+ * Personelin fişsiz çıkışı (denetim 25 Kasım 2026, bulgu 2): "Gün içinde çıkan" o günün (şubenin) kasadan çıkan
+ * satırlarından fazlaysa "Neye çıktı" zorunlu (cashOutNoteMissing; form aynı kuralla). Yeni raporda ya da çıkış veya
+ * açıklaması değiştiyse denetlenir (`prev`: kayıtlı hâl; dokunulmayan eski satır yeniden sorulmaz). Personel LafPOS
+ * gününe raporu formdan yazmaz (staffLafposRefusal), bu yüzden LafPOS'un teslimi burada düşülmez. Çağıranlar:
+ * saveCashReport, proposeLateReport, proposeCashCorrection (yalnız personelde)
+ */
+export async function assertStaffOutNote(
+  tx: CashTx,
+  date: string,
+  branchId: string,
+  data: Pick<CashReportFields, "cashOut" | "cashOutNote">,
+  prev: Pick<CashReportRow, "cashOut" | "cashOutNote"> | null,
+): Promise<void> {
+  if (prev && prev.cashOut === data.cashOut && (prev.cashOutNote ?? null) === (data.cashOutNote ?? null)) return;
+  const rows = await tx
+    .select({ kind: s.cashOuts.kind, amount: s.cashOuts.amount, store: s.cashOuts.store, description: s.cashOuts.description })
+    .from(s.cashOuts)
+    .where(and(eq(s.cashOuts.date, date), eq(s.cashOuts.branchId, branchId)));
+  const lines = rows.map((o) => ({ ...o, kind: o.kind as CashOutKind }));
+  const { unreceipted } = unreceiptedCashOut(data.cashOut, lines, null);
+  if (cashOutNoteMissing({ unreceipted, note: data.cashOutNote, outsNote: cashOutNoteOf(lines) })) throw new UserError(CASH_OUT_NOTE_REQUIRED);
 }
 
 /** Bu günden sonra girilmiş bir rapor var mı (varsa bu raporun devri ertesi günün açılışına dayanak olmuştur) */
@@ -504,6 +530,7 @@ export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, 
     if (me.role !== "admin") {
       const lafpos = await staffLafposRefusal(tx, data.date, branchId, prev);
       if (lafpos) throw new UserError(lafpos);
+      await assertStaffOutNote(tx, data.date, branchId, data, prev);
     }
     if (prev && me.role !== "admin") {
       assertRevision(prev, revision);

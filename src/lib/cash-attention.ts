@@ -5,7 +5,7 @@
  * tek gün görünümünde hiçbir yerde görünmüyordu). Saf; tests/kasa-sade-gorunum.test.ts.
  */
 
-import { CASH_TOLERANCE, computeCash, withCardExtra, type CashOffDevice } from "@/lib/cash-report";
+import { CASH_TOLERANCE, computeCash, unreceiptedLabel, withCardExtra, type CashOffDevice } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { okcHasFigures, okcReconcile, type OkcReportFields } from "@/lib/okc-z";
 
@@ -35,13 +35,15 @@ export const cardDiffLabel = (d: number) => `Kart ${d > 0 ? "+" : "−"}${money(
 
 /**
  * Dikkat isteyenlerin kısa adları (sırası ay listesininki): fotoğraftan farklı, LafPOS'tan farklı, ModPOS API'den farklı,
- * Z tutmuyor, kart farkı, yazarkasa tutmuyor. Boşsa her şey yolunda
+ * fişsiz çıkış (bulgu 2; "Fişsiz çıkış: 500 ₺", unreceiptedCashOut), Z tutmuyor, kart farkı, yazarkasa tutmuyor. Boşsa her
+ * şey yolunda
  */
-export function reportAttention(flags: ReportFlags, o: { photoDiffs?: number; lafposDiffs?: number; modposDiffs?: number } = {}): string[] {
+export function reportAttention(flags: ReportFlags, o: { photoDiffs?: number; lafposDiffs?: number; modposDiffs?: number; unreceipted?: number | null } = {}): string[] {
   const out: string[] = [];
   if (o.photoDiffs) out.push("Fotoğraftan farklı");
   if (o.lafposDiffs) out.push("LafPOS'tan farklı");
   if (o.modposDiffs) out.push("ModPOS API'den farklı");
+  if (o.unreceipted && o.unreceipted >= CASH_TOLERANCE) out.push(unreceiptedLabel(o.unreceipted));
   if (flags.paymentsOff) out.push("Z tutmuyor");
   if (flags.cardDiff !== null) out.push(cardDiffLabel(flags.cardDiff));
   if (flags.okcOff) out.push("Yazarkasa tutmuyor");

@@ -22,6 +22,7 @@ import {
   photoNames,
   reportNo,
   reportSubject,
+  unreceiptedText,
   withCardExtra,
   zSectionTitle,
   type CashReportExtras,
@@ -231,6 +232,10 @@ export function renderCashReport(
   const diffWarning = (list: NonNullable<typeof meta.photoDiffs>) => (list.length ? `Fotoğraftan farklı yazılan: ${list.map((d) => photoDiffText(d, false)).join("; ")}` : null);
   const photoWarning = diffWarning((meta.photoDiffs ?? []).filter((d) => !okcDiff(d.field)));
   const okcPhotoWarning = diffWarning((meta.photoDiffs ?? []).filter((d) => okcDiff(d.field)));
+  // Fişsiz çıkış (bulgu 2): "Gün içinde çıkan" kasadan çıkan satırlarından fazla; kasanın altında, neye çıktığıyla
+  const unreceiptedWarning = meta.unreceipted
+    ? `${unreceiptedText(meta.unreceipted)}${f.cashOutNote?.trim() ? `; neye çıktı: ${f.cashOutNote.trim()}` : "; neye çıktığı yazılmadı"}.`
+    : null;
   // LafPOS'un gün sonundan farklı yazılan (E-09; yalnız LafPOS günlerinde): bölümlerin üstünde turuncu kutu
   const lafposLine = lafposDiffsLine(meta.lafposDiffs ?? []);
   const lafposBox = lafposLine ? warnBox([lafposLine], 14) : "";
@@ -300,7 +305,7 @@ export function renderCashReport(
     ${changesBox}
     ${lafposBox}
     ${section(zSectionTitle(meta.kasa), zRows, paymentsWarning ?? ikramWarning)}
-    ${section("Kasa (nakit)", cashRows, [meta.carry ? carryWarning(meta.carry) : null, meta.next ? nextWarning(meta.next) : null, photoWarning])}
+    ${section("Kasa (nakit)", cashRows, [unreceiptedWarning, meta.carry ? carryWarning(meta.carry) : null, meta.next ? nextWarning(meta.next) : null, photoWarning])}
     ${okc ? `${section(`Banka POS Z raporu (yazarkasa)${okcHead ? ` · ${okcHead}` : ""}`, okcRows)}${okcLines}` : ""}
     ${cardRows ? section("Kart", cardRows, cardWarning) : ""}
     ${wasteRows ? section("Zayi & ikram", wasteRows) : ""}

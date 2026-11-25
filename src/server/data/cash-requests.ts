@@ -4,7 +4,6 @@ import { and, asc, count, eq, inArray } from "drizzle-orm";
 
 import { ALL_BRANCHES, type BranchScope, requestInScope, tillBranches } from "@/lib/branches";
 import { businessDate, carryCheck, CHANGE_LABELS, computeCash, diffText, revisionChanges, type CashRevisionData, type FieldChange } from "@/lib/cash-report";
-import { cashOutsTotal, teslimTotalOf } from "@/lib/cash-outs";
 import {
   cashDaySubject,
   cashSubjectBranch,
@@ -21,7 +20,7 @@ import {
   type ProposedFields,
 } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
-import { lafposHandedGap } from "@/lib/lafpos/prefill";
+import { unreceiptedCashOut } from "@/lib/lafpos/prefill";
 import { dayMonthTR, monthTitleTR } from "@/lib/reminders";
 import { waitedText, type StaffRequestKind, type StaffRequestStatus } from "@/lib/staff-requests";
 import { currentTillBranch } from "@/server/branch-scope";
@@ -386,11 +385,9 @@ async function dayRequestCards(now: Date): Promise<((CorrectionCard | DeleteCard
     let receipts: CorrectionCard["receipts"] = null;
     if (changes.some((c) => c.key === "cashOut")) {
       const [outs, lafpos] = await Promise.all([cashOutsOn(r.day, report.branchId), loadKasaLafpos(r.day, undefined, report.branchId)]);
-      const total = cashOutsTotal(outs);
-      const over = Math.round((after.cashOut - total) * 100) / 100;
-      const split = over > 1 ? lafposHandedGap(after.cashOut, total, lafpos.day?.till ?? null, teslimTotalOf(outs)) : null;
-      const unreceipted = split ? split.rest : over;
-      receipts = { count: outs.length, total, unreceipted: unreceipted > 1 ? unreceipted : null, lafposHanded: split?.handed ?? null };
+      // Fişsiz çıkışın tek hesabı (raporun Kontrol listesi, ay listesi, e-posta ve zil de bununla)
+      const u = unreceiptedCashOut(after.cashOut, outs, lafpos.day?.till ?? null);
+      receipts = { count: outs.length, total: u.total, unreceipted: u.unreceipted || null, lafposHanded: u.lafposHanded };
     }
     const carryAfter = Math.round((after.countedCash - after.handedOver) * 100) / 100;
     cards.push({

@@ -535,7 +535,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DA
 
   test("Personel LafPOS gününde raporu formdan yazamaz (son denetim): gün sonundan önce, sayım bekleyen günde ve otomatik raporda reddedilir; elle girilen rapor ve Tuzla açık", async () => {
     const fields = (revision: number, branchNote: string | null = null) => ({
-      date: DAY, zNo: "11", receipts: 26, zTotal: 6_285, cash: 1_255, card: 5_030, mealCard: 0, online: 0, other: 0, openingCash: 1_120, cashIn: 0, cashOut: 800, cashOutNote: null,
+      date: DAY, zNo: "11", receipts: 26, zTotal: 6_285, cash: 1_255, card: 5_030, mealCard: 0, online: 0, other: 0, openingCash: 1_120, cashIn: 0, cashOut: 800, cashOutNote: "süt, buz",
       countedCash: 1_279.5, handedOver: 0, bankPos: null, offRevenue: 1_065, discounts: 90, note: branchNote, countedBy: null, revision, photos: [],
     });
     const asStaff = (revision: number, branch = LAFPOS_SUBE, note: string | null = null) => scope.withBranchScope(branch, () => store.saveCashReport(db, ayse, fields(revision, note), NOW));

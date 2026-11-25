@@ -14,7 +14,7 @@ import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/for
 import { Notice } from "@/components/ui/notice";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { reportAttention, reportFlags } from "@/lib/cash-attention";
-import { cashOutCheck, cashOutNoteOf, cashOutNoteVisible, cashOutsTotal } from "@/lib/cash-outs";
+import { CASH_OUT_NOTE_REQUIRED, cashOutCheck, cashOutNoteMissing, cashOutNoteOf, cashOutNoteVisible, cashOutsTotal } from "@/lib/cash-outs";
 import {
   CASH_TOLERANCE,
   carryCheck,
@@ -31,7 +31,7 @@ import {
 import { money } from "@/lib/format";
 import { lafposDiffs } from "@/lib/lafpos/diffs";
 import { staffAutoNote, staffPhotoDiffs } from "@/lib/lafpos/foto";
-import { LAFPOS_NO_COUNT_TEXT, lafposOutsCheck, lafposSummary, type LafposDay } from "@/lib/lafpos/prefill";
+import { LAFPOS_NO_COUNT_TEXT, lafposOutsCheck, lafposSummary, unreceiptedCashOut, type LafposDay } from "@/lib/lafpos/prefill";
 import { OKC_PREFILL_ENABLED } from "@/lib/okc-z";
 import { OKC_HALVES_TEXT, okcNeedsHalves } from "@/lib/photo-read/okc";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
@@ -769,6 +769,17 @@ export function CashForm({
     setPosPrompt(null);
   }
 
+  /**
+   * Personelin fişsiz çıkışının açıklaması eksik mi (cashOutNoteMissing): yeni raporda ya da çıkış veya açıklaması
+   * değiştiyse (eski raporun dokunulmayan satırı yeniden sorulmaz). Yönetici, geç rapor ve "Düzeltip onayla" değil
+   */
+  function staffOutNoteMissing(fields: CashReportFields): boolean {
+    if (photoUi.admin || review || isLate) return false;
+    if (report && report.cashOut === fields.cashOut && (report.cashOutNote ?? null) === (fields.cashOutNote ?? null)) return false;
+    const { unreceipted } = unreceiptedCashOut(fields.cashOut, cashOuts, lafpos?.till ?? null);
+    return cashOutNoteMissing({ unreceipted, note: fields.cashOutNote, outsNote: cashOutNoteOf(cashOuts) });
+  }
+
   function submit() {
     const { fields, errors: errs } = readValues(values, date);
     setErrors(errs);
@@ -781,6 +792,14 @@ export function CashForm({
       toast.error("Eksik ya da hatalı alan var", { description: name && message && !message.startsWith(name) ? `${name}: ${message}` : message });
       // Telefonda düğme formun altında (ya da çubukta): hatalı ilk alana gidilir (yoksa uyarı ekranın dışında kalır)
       goToField(first ? document.getElementById(fid(first)) : null);
+      return;
+    }
+    // Fişsiz çıkış (bulgu 2): personelin "Gün içinde çıkan"ı kasadan çıkan satırlarından fazlaysa neye çıktığı yazılır
+    // (sunucu da aynı kuralla). Geç raporda formda günün satırları yok: kararı sunucu verir
+    if (staffOutNoteMissing(fields)) {
+      flushSync(() => setErrors((x) => ({ ...x, cashOutNote: CASH_OUT_NOTE_REQUIRED })));
+      toast.error(CASH_OUT_NOTE_REQUIRED);
+      goToField(document.getElementById(fid("cashOutNote")));
       return;
     }
     if (review) {
@@ -958,6 +977,8 @@ export function CashForm({
       ? reportAttention(reportFlags(report, { cardExtra: lafpos?.cardExtra ?? null, offDevice: lafpos?.offDevice ?? null, kasa: lafposMode ? "LafPOS" : "ModPOS" }), {
           photoDiffs: diffs.length,
           lafposDiffs: fromLafpos.length,
+          // Fişsiz çıkış (bulgu 2): ay listesinin rozetiyle ve onay kartıyla aynı hesap
+          unreceipted: unreceiptedCashOut(report.cashOut, cashOuts, lafpos?.till ?? null).unreceipted,
         })
       : [];
     return (
@@ -1070,6 +1091,9 @@ export function CashForm({
   const cashOutValue = values.cashOut.trim() ? parseNumberTR(values.cashOut) : 0;
   const showCashIn = cashInOpen || Boolean(values.cashIn.trim()) || Boolean(marks.cashIn);
   const outsWarning = cashOutValue !== null ? cashOutCheck(cashOutValue, cashOuts.map((o) => o.amount)) : null;
+  // Fişsiz çıkış (bulgu 2): personelde "Neye çıktı" zorunlu (geç raporda formda günün satırları yok, sunucu söyler)
+  const unreceiptedLive = cashOutValue !== null ? unreceiptedCashOut(cashOutValue, cashOuts, lafpos?.till ?? null).unreceipted : 0;
+  const outNoteNeeded = !photoUi.admin && !review && !isLate && unreceiptedLive >= 1;
   const latestChecks = (k: CashPhotoKind) => [...photos].reverse().find((p) => p.kind === k && p.reading?.ok)?.reading?.checks ?? [];
 
   /**
@@ -1435,8 +1459,21 @@ export function CashForm({
               ),
             })}
             {showOutNote ? (
-              <Field label="Neye çıktı" htmlFor={fid("cashOutNote")}>
-                <Input id={fid("cashOutNote")} value={values.cashOutNote} onChange={set("cashOutNote")} maxLength={200} placeholder="ör. süt, buz (isteğe bağlı)" autoComplete="off" />
+              <Field
+                label="Neye çıktı"
+                htmlFor={fid("cashOutNote")}
+                hint={outNoteNeeded ? `Kasadan çıkanlar'dan ${money(unreceiptedLive)} fazla: neye çıktığını yazın` : undefined}
+                error={errors.cashOutNote}
+              >
+                <Input
+                  id={fid("cashOutNote")}
+                  value={values.cashOutNote}
+                  onChange={set("cashOutNote")}
+                  maxLength={200}
+                  placeholder={outNoteNeeded ? "ör. buz, bozuk para, patrona teslim" : "ör. süt, buz (isteğe bağlı)"}
+                  autoComplete="off"
+                  aria-invalid={Boolean(errors.cashOutNote)}
+                />
               </Field>
             ) : null}
             {showCashIn ? (

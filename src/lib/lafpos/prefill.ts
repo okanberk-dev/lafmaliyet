@@ -1,3 +1,4 @@
+import { cashOutsTotal, teslimTotalOf, type CashOutKind } from "@/lib/cash-outs";
 import { computeCash } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import type { CashPrefill, PrefillField, PrefillPlan, ReadCheck, ReadValue } from "@/lib/photo-read/kasa";
@@ -173,6 +174,34 @@ export function lafposHandedGap(cashOut: number, outsTotal: number, till: Lafpos
   if (kurus(gap) < kurus(pending) - 100) return null;
   const rest = round2(gap - pending);
   return { handed: pending, rest: rest < 1 ? 0 : rest };
+}
+
+/** Fişsiz çıkışın hesabı (unreceiptedCashOut) */
+export interface UnreceiptedOut {
+  /** O günün kasadan çıkan satırlarının toplamı */
+  total: number;
+  /** Raporda yazan − satırların toplamı (eksi: satırlar fazla) */
+  gap: number;
+  /** Farkın LafPOS'ta olup Kasadan çıkanlar'a girilmemiş teslim kısmı (fişsiz değil; E-35); yoksa null */
+  lafposHanded: number | null;
+  /** Fişsiz kalan tutar (1 ₺ ve üstü); yoksa 0 */
+  unreceipted: number;
+}
+
+/**
+ * "Gün içinde kasadan çıkan"ın fişsiz kısmı (denetim 25 Kasım 2026, bulgu 2): raporda yazan tutar o günün kasadan çıkan
+ * satırlarının toplamından fazlaysa farkı. Personel satır girmeden alana tutar yazınca olması gereken nakit düşer ve açık
+ * "tutuyor" görünür; bu yüzden yöneticinin her yeri aynı hesabı okur: onay kartları (düzeltme, geç rapor), raporun
+ * Kontrol listesi, ay listesinin rozeti, tek gün görünümünün özeti, kasa e-postası ve zil. LafPOS gününde farkın LafPOS'ta
+ * olup Kasadan çıkanlar'a girilmemiş teslim kadarı fişsiz sayılmaz (lafposHandedGap; `till` ModPOS gününde null). 1 ₺'nin
+ * altı yok sayılır (CASH_TOLERANCE)
+ */
+export function unreceiptedCashOut(cashOut: number, outs: readonly { kind: CashOutKind; amount: number }[], till: LafposDay["till"] | null): UnreceiptedOut {
+  const total = cashOutsTotal([...outs]);
+  const gap = round2(cashOut - total);
+  const split = gap >= 1 ? lafposHandedGap(cashOut, total, till, teslimTotalOf([...outs])) : null;
+  const rest = split ? split.rest : gap;
+  return { total, gap, lafposHanded: split?.handed ?? null, unreceipted: rest >= 1 ? round2(rest) : 0 };
 }
 
 /**

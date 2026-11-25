@@ -39,7 +39,8 @@ yalnız düzen ve metin sadeleşti (`src/app/panel/kasa/cash-form.tsx`, `page.ts
   "İsteğe bağlı; altındaki banka satırları değil"): yer tutucu alan dolunca kaybolur. LafPOS'tan dolan alanlara rozet basılmaz
   (bant söyler); fotoğraftan dolan alan "Fotoğraftan" rozetini taşır, LafPOS'tan farklı olan turuncu kalır.
 - **Kasa (nakit).** "Neye çıktı" fişlerden gelen kalemlerle yetinildiğinde gizli (adları kendiliğinden yazılır); elle
-  yazılan çıkışta, adlar değiştirildiyse ya da fişlerin toplamının üstüne elle tutar eklendiyse görünür. Sayımdan sonraki alanın adı **Sayımdan sonra teslim** ("Gün içinde çıkan"ın ipucunda "teslim" geçmez).
+  yazılan çıkışta, adlar değiştirildiyse ya da fişlerin toplamının üstüne elle tutar eklendiyse görünür; fişlerden
+  fazlası varken personelde zorunlu ([fişsiz çıkış](#gün-içinde-kasadan-çıkanlar)). Sayımdan sonraki alanın adı **Sayımdan sonra teslim** ("Gün içinde çıkan"ın ipucunda "teslim" geçmez).
   **Kasayı sayan** tek satır: "Kasayı sayan: Ayşe (siz) · Değiştir"; başkası saydıysa seçici açık.
 - **Sonuç çubuğu.** Telefonda Sonuç kartı ekranın altındayken alt menünün üstünde fark ve **Gönder** durur (öneride
   ve geç raporda **Onaya gönder**, gönderilmiş raporun düzenlenmesinde **Güncelle**); klavye açıkken ve Sonuç kartı
@@ -49,7 +50,7 @@ yalnız düzen ve metin sadeleşti (`src/app/panel/kasa/cash-form.tsx`, `page.ts
   satır döküm **Rapor dökümü** altında katlı ("Z 18.450 ₺ · nakit 6.200 ₺ · sayılan 6.400 ₺"). Açılış ya da ertesi
   günün açılışı devirle tutmuyorsa ya da yöneticinin dikkat etmesi gereken bir şey varsa açık gelir ve özet onu söyler
   ("… · Z tutmuyor · Yazarkasa tutmuyor"): ay listesinin rozetleriyle aynı kural (`src/lib/cash-attention.ts`;
-  fotoğraftan ya da LafPOS'tan farklı, Z tutmuyor, kart farkı, yazarkasa tutmuyor).
+  fotoğraftan ya da LafPOS'tan farklı, fişsiz çıkış, Z tutmuyor, kart farkı, yazarkasa tutmuyor).
 - **Yöneticinin gün görünümü** (`?gun=`): ayın listesi ve rapor ayarları yok (**Günden güne** ile dönülür). LafPOS
   gününün Pavo kart karşılaştırması ve LafPOS gün sonu dökümü **Ayrıntı** altında katlı; Pavo farkı varsa,
   karşılaştırılamadıysa ya da LafPOS'un dökümünde hassas işlem varsa (günü düzeltti, ödeme iptali) açık gelir ve özet
@@ -97,7 +98,7 @@ birden çok kasa açıkken e-postanın konusu ve başlığı, WhatsApp metninin 
 
 Yöneticinin rapor penceresi sadedir (`src/app/panel/kasa/report-sheet.tsx`): üç rakam (toplam satış, sayılan nakit,
 kasa), tek **Kontrol** listesi (`src/lib/cash-report-checks.ts` `reportChecks`: e-posta hatası, ödeme türleri ↔ Z,
-açılış ↔ devir, kart / yazarkasa, ModPOS API, LafPOS ve fotoğraftan farklı yazılanlar; her biri tek satır, yoksa
+fişsiz çıkış, açılış ↔ devir, kart / yazarkasa, ModPOS API, LafPOS ve fotoğraftan farklı yazılanlar; her biri tek satır, yoksa
 "Kontroller tamam"), satış ve nakit kasa dökümü (satır içi uyarı yok), not ve kapalı **Ayrıntılar** (kart ve
 yazarkasa, fotoğraflar, değişiklikler). Personelin kayıtlı rapor kartı ve Onaylar'daki döküm aynı kalır.
 
@@ -313,6 +314,20 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
   harcamalar'a yazılır (kategori sorulur); faturası geldiyse ya da yönetici listeden çıkardıysa yazılmaz (inceleme D5).
 - Akşam raporunun **Gün içinde kasadan çıkan** tutarı ve **Neye çıktı** notu satırlardan dolar ("Fişlerden: 2 kalem ·
   …"). Yazılan tutar satırların toplamından azsa uyarı çıkar (engellemez).
+- **Fişsiz çıkış** (denetim 25 Kasım 2026, bulgu 2): yazılan tutar satırların toplamından 1 ₺ ya da daha fazlaysa fark
+  fişsizdir. Satır girmeden alana yazılan çıkış olması gereken nakdi düşürür ve açığı örtebilir; bu yüzden:
+  - Personel **Neye çıktı**'yı yazmadan gönderemez (form alanın altında "Kasadan çıkanlar'dan 500 ₺ fazla: neye çıktığını
+    yazın" der; sunucu da reddeder: "Fişlerden fazla çıkan tutarın neye çıktığını yazın"). Satırların kendiliğinden
+    yazılan adları ("Migros, buz") fişsiz kısmı açıklamaz, not onlardan farklı olmalı. Kural yeni raporda ve çıkış ya da
+    açıklaması değişince uygulanır (dokunulmayan eski satır yeniden sorulmaz); düzeltme önerisi ve geç rapor da aynı
+    kuralla (geç rapor formunda günün satırları olmadığı için kararı sunucu verir). Yönetici serbest.
+  - Yöneticiye her yerde aynı hesapla (`src/lib/lafpos/prefill.ts` › `unreceiptedCashOut`; onay kartlarındaki "Fişsiz
+    çıkış" da bu): rapor penceresinin **Kontrol** listesinde "Fişsiz çıkış: 500 ₺ (kasadan çıkan satırlarından fazla);
+    neye çıktı: …", ay listesinde ve tek gün görünümünün döküm özetinde **Fişsiz çıkış: 500 ₺** rozeti, kasa
+    e-postasında kasanın altında turuncu kutu (metin sürümünde satır), zilde dünün ve bugünün raporu için "Fişsiz çıkış:
+    500 ₺" (gövdede gün, çıkan ve satırların toplamı, neye çıktığı, gönderen; rapor düzeltilince yeniden okunmamış olur).
+    Personelin WhatsApp metninde yok. LafPOS gününde farkın Kasadan çıkanlar'a girilmemiş LafPOS teslimi kadarı fişsiz
+    sayılmaz (aşağıda, E-35).
 - **LafPOS gününde de kaynak bu satırlardır** (denetim E-35): Aylık harcamalar ve tedarikçi ödemeleri buradan
   okunur. **Sahip sorusu 5 yanıtlandı (23 Kasım 2026, Faz 3):** kasadan çıkan para LafPOS'ta girilir, harcama ve
   teslim gün sonunda buraya satır satır gelir ("LafPOS" rozetli; tutar, tür ve gün LafPOS'tan, satır silinmez; fiş
