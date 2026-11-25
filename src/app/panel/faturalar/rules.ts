@@ -152,7 +152,7 @@ const AUTO_NOTE = /^Paraşüt'ten alındı(?:\s*·\s*kategori:(?:[^·“]|“[^�
 
 /**
  * Listede gösterilecek not: Paraşüt'ün otomatik notu atılır, kalan (ör. "Paraşüt'te iptal — kontrol edin" ya da
- * Excel hücre notu) döner. Gösterilecek bir şey yoksa null.
+ * içe aktarılmış kaydın notu) döner. Gösterilecek bir şey yoksa null.
  */
 export function visibleNote(note: string | null | undefined): string | null {
   if (!note) return null;
@@ -174,7 +174,7 @@ export function notePreview(note: string, max = 140): string {
 }
 
 /**
- * Tahmini (varsayımla hesaplanmış) fatura: Excel'de sarı satır (ör. Kaldi 14.08, "%1 KDV varsayılarak").
+ * Tahmini (varsayımla hesaplanmış) fatura: notunda varsayım yazar (ör. Kaldi 14.08, "%1 KDV varsayılarak").
  * Tedarikçi adındaki parantezli "tahmini" notu ya da faturanın notunda "tahmin" / "varsay" geçmesi yeter.
  */
 export function isEstimate(i: { supplier: string; note?: string | null }): boolean {
@@ -270,7 +270,7 @@ export interface SupplierDefault {
 
 /**
  * Her tedarikçinin en son faturasından kategori ve KDV oranı: yeni faturada tedarikçi seçilince bunlar önerilir
- * (Excel'de her satırda kategori açılır listeden seçiliyordu).
+ * (her satırda kategori listeden seçilir).
  */
 export function supplierDefaults(invoices: Pick<Invoice, "id" | "supplier" | "date" | "category" | "amount" | "discount" | "payable">[]) {
   const map = new Map<string, SupplierDefault>();

@@ -67,7 +67,7 @@ siteden çekildiyse:
   çıkabilir, doğrudur. Site kuruş gönderir, panel TL gösterir.
 - **Hiç çekilmemiş ay boş kalır** (0 değil): o ayın kârı yalnız ModPOS'la hesaplanır. Çekilmiş ama satışsız ay 0'dır.
 - **KÂR / ZARAR** = toplam ciro − giderler; **oranlar** (maliyet oranı, kira oranı, …) toplam ciroya göre. Genel
-  bakışın "Faturaya göre" kârı, yıllık eğilim, ay ay döküm ve Excel'e aktarım aynı toplamı kullanır; Genel bakışın
+  bakışın "Faturaya göre" kârı, yıllık eğilim, ay ay döküm ve dışa aktarım aynı toplamı kullanır; Genel bakışın
   reçeteye göre kârı da online satışı içerir (aşağıda "Genel bakış").
 - **Dokunulmayanlar:** AYLIK CİRO (KDV dahil – POS) elle girilen ModPOS cirosu olarak kalır, AYLIK CİRO (KDV hariç)
   yalnız ondan hesaplanır (kasada çalınan karaoke, yani Satışlar'da HİZMET işaretli satırlar, hizmet KDV'siyle: bkz.
@@ -107,9 +107,9 @@ ayırır (Ayarlar › Oranlar › **Hizmet satışı KDV oranı**, varsayılan %
 - **Gelir-gider:** AYLIK CİRO (KDV hariç) = (POS cirosu − hizmet payı) ÷ (1 + satış KDV) + hizmet payı ÷ (1 + hizmet
   KDV). Hizmet payı, ayın satış listesindeki HİZMET satırlarının cirosudur (ay cirosundan büyük olamaz); satış listesi
   yüklenmemiş ayda bütün ciro satış KDV'siyle ayrılır.
-- Excel tek oran kullanıyordu: Eylül 2026'nın 2.050 ₺'lik karaokesi yüzünden net ciro ve kâr 155,30 ₺ düşer
-  (`tests/calc.test.ts`; Excel'le birebir karşılaştırma Excel'in tek oranlı varsayımıyla yapılır). Hizmet oranı satış
-  oranına eşitlenirse hesap Excel'inkine döner.
+- Tek oranla (bütün ciro %10) hesaplanan eski tutara göre Eylül 2026'nın 2.050 ₺'lik karaokesi yüzünden net ciro ve
+  kâr 155,30 ₺ düşer (`tests/calc.test.ts`; tohum verisinin değerleriyle karşılaştırma tek oranlı varsayımla yapılır).
+  Hizmet oranı satış oranına eşitlenirse hesap tek oranlıya döner.
 
 ### Tüketim (Tutarlılık)
 
@@ -165,7 +165,7 @@ Gelir-gider gibi ModPOS + online'dır (`dashboard().theoretical`, `model.onlineM
 - **Adetler:** kategoriler, menü mühendisliği, en kârlı / en çok satan ürünler ve zam etkisinin "ayda …" adetleri
   online satılanı da sayar (`soldWithOnline`, `salesBasis`); zam etkisinin "brüt kârın %X'i" paydası online brüt kârı
   içerir. Online adet ayın açık günüyle standart aya çevrilir. Ürünler sayfası (adet, brüt kâr), ürün kartı (ayın adedi
-  ve Satışlar geçmişi; yalnız online satılan ay da görünür, `productSalesHistory`) ve Excel'in Ürün Kârlılık / Reçete
+  ve Satışlar geçmişi; yalnız online satılan ay da görünür, `productSalesHistory`) ve dışa aktarımın Ürün Kârlılık / Reçete
   Kartları sekmeleri de aynı adedi gösterir: Claude aracının açtığı kart aynı sayıyı söyler.
 - Süren ayda satış listesi kasa raporlarından kısa bir dönemi kapsıyorsa (Satışlar › "Liste hangi güne kadar?")
   online satış o günlere düşen payla girer (`listShareOf`), sabit gider gibi.
@@ -216,7 +216,7 @@ işletme genelidir (Marina'nın masa siparişi de dahil); fiziksel şube seçili
 | `site_sales:YYYY-MM` | Ayın kaydı: sitenin yanıtı (toplamlar, kafe satırları, `closed`, `now`) + `month`, `pulledAt`. Yeniden çekmek üzerine yazar; sitenin saatine (`now`) göre daha eski bir yanıt yenisinin üstüne yazılmaz. Çekme başarısızsa önceki kayıt kalır |
 | `site_sales_sync` | `lastPullAt` (son deneme), `lastOkAt` (son başarılı), `lastError` (ay ay), `lastMonth` |
 
-Günlük kasa satırı saklanmaz. `npm run db:reset` bu kayıtları silmez (sitenin verisi; Excel'den gelmez). Elle çekme
+Günlük kasa satırı saklanmaz. `npm run db:reset` bu kayıtları silmez (sitenin verisi; tohum verisinden gelmez). Elle çekme
 işlem geçmişine yazılır ("laffogato.net online satışları çekildi · Ekim 2026").
 
 ## Ne zaman çekilir

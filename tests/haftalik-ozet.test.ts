@@ -11,6 +11,7 @@ import { test } from "node:test";
 import { buildCashPlan, lineLabel, type CashPlan, type CashPlanInput } from "../src/lib/cash-plan";
 import { createModel } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
+import type { TillRow } from "../src/lib/cash-month";
 import { businessDate } from "../src/lib/cash-report";
 import type { ChecklistLite, IssueLite, RunLite } from "../src/lib/checklists";
 import { dailyOutcome, stepTexts } from "../src/lib/job-health";
@@ -315,26 +316,57 @@ test("kasa: birden çok kasa açıkken eksik tek şubedeyse başlıkta şube; ik
   assert.equal(both.href, "/panel/kasa?ay=2026-10&sube=marina", "en çok eksik günün en çok eksik şubesi");
 });
 
-/** `from`'dan başlayan `n` günün raporları, toplamı `total` */
-const weekReports = (from: string, n: number, total: number) => Array.from({ length: n }, (_, i) => rep(new Date(Date.parse(`${from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10), 0, total / n));
+/** Kasa satırı (tillRows biçimi): Z toplamı, şubesi (verilmezse Tuzla) */
+const till = (date: string, zTotal: number, branchId = "tuzla", extra: Partial<TillRow> = {}): TillRow => ({ date, zTotal, card: 0, mealCard: 0, discounts: null, offRevenue: null, branchId, ...extra });
+/** `from`'dan başlayan `n` günün kasa satırları, toplamı `total` */
+const weekReports = (from: string, n: number, total: number, branchId = "tuzla") =>
+  Array.from({ length: n }, (_, i) => till(new Date(Date.parse(`${from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10), total / n, branchId));
+const TUZLA = { id: "tuzla", name: "Tuzla", openedOn: null };
+const line = (rows: TillRow[], branches: { id: string; name: string; openedOn: string | null }[] = [TUZLA], switchDay: string | null = null) =>
+  salesLine({ week: W44, rows, branches, switchDay, lafposBranch: "marina" });
 
 test("kasa cirosu satırı: tam haftalar karşılaştırılır; eksik hafta gün sayısıyla; rapor yoksa satır yok", () => {
   const prev = ["2026-10-12", "2026-10-05", "2026-09-28", "2026-09-21"].flatMap((d) => weekReports(d, 7, 78_300));
-  assert.equal(salesLine({ week: W44, reports: [...weekReports("2026-10-19", 7, 68_900), ...prev] }), `Geçen hafta kasa cirosu 68.900${NB}₺ · önceki 4 haftaya göre %12 az`);
-  assert.equal(salesLine({ week: W44, reports: [...weekReports("2026-10-19", 5, 54_200), ...prev] }), `Geçen hafta kasa cirosu 54.200${NB}₺ (5 gün raporlu)`);
-  assert.equal(salesLine({ week: W44, reports: [...weekReports("2026-10-19", 7, 68_900), ...weekReports("2026-10-12", 7, 70_000)] }), `Geçen hafta kasa cirosu 68.900${NB}₺`);
-  assert.equal(salesLine({ week: W44, reports: [...weekReports("2026-10-19", 7, 79_000), ...prev] }), `Geçen hafta kasa cirosu 79.000${NB}₺ · önceki 4 haftayla aynı`);
-  assert.equal(salesLine({ week: W44, reports: prev }), null);
+  assert.equal(line([...weekReports("2026-10-19", 7, 68_900), ...prev]), `Geçen hafta kasa cirosu 68.900${NB}₺ · önceki 4 haftaya göre %12 az`);
+  assert.equal(line([...weekReports("2026-10-19", 5, 54_200), ...prev]), `Geçen hafta kasa cirosu 54.200${NB}₺ (5 gün raporlu)`);
+  assert.equal(line([...weekReports("2026-10-19", 7, 68_900), ...weekReports("2026-10-12", 7, 70_000)]), `Geçen hafta kasa cirosu 68.900${NB}₺`);
+  assert.equal(line([...weekReports("2026-10-19", 7, 79_000), ...prev]), `Geçen hafta kasa cirosu 79.000${NB}₺ · önceki 4 haftayla aynı`);
+  assert.equal(line(prev), null);
 });
 
 test("kasa cirosu satırı ödenmezi saymaz: Genel bakış ve Bugün'ün cirosuyla aynı kural (denetim 13 Kasım HM-08)", () => {
-  // Z 10.000; 500 ₺ ödenmez Z'nin içinde (nakit 3.500 + kart 6.000): günün cirosu 9.500
-  assert.equal(salesLine({ week: W44, reports: [{ date: "2026-10-20", zTotal: 10_000, revenue: 9_500, cashDiff: 0 }] }), `Geçen hafta kasa cirosu 9.500${NB}₺ (1 gün raporlu)`);
-  // Ciro verilmezse (eski çağıran) Z toplamı
-  assert.equal(salesLine({ week: W44, reports: [{ date: "2026-10-20", zTotal: 10_000, cashDiff: 0 }] }), `Geçen hafta kasa cirosu 10.000${NB}₺ (1 gün raporlu)`);
-  // Toplayıcı satıra dayRevenue'nun cirosunu verir
+  // Z 10.000; 500 ₺ ödenmez Z'nin içinde (ödemeler 9.500): günün cirosu 9.500
+  assert.equal(line([till("2026-10-20", 10_000, "tuzla", { offRevenue: 500, payments: 9_500 })]), `Geçen hafta kasa cirosu 9.500${NB}₺ (1 gün raporlu)`);
+  // Ödenmez Z'nin dışındaysa (ödemeler Z'yi tutuyor) Z toplamı
+  assert.equal(line([till("2026-10-20", 10_000, "tuzla", { offRevenue: 500, payments: 10_000 })]), `Geçen hafta kasa cirosu 10.000${NB}₺ (1 gün raporlu)`);
+  // Toplayıcı satırı Genel bakış'ın ay rakamıyla aynı kasa satırlarından kurar (tillRows: raporu olmayan LafPOS günü dahil)
   const collect = readFileSync(join(process.cwd(), "src/server/weekly/collect.ts"), "utf8");
-  assert.match(collect, /revenue: dayRevenue\(\{ zTotal: r\.zTotal, offRevenue: r\.offRevenue, payments: Math\.round\(\(r\.cash \+ r\.card \+ r\.mealCard \+ r\.online \+ r\.other\) \* 100\) \/ 100 \}\)\.revenue,/);
+  assert.match(collect, /Promise\.all\(\[tillRows\(\), loadLafposSwitchDay\(\)\]\)/);
+});
+
+test("kasa cirosu satırı: yeni açılan şube büyüme sayılmaz, karşılaştırma aynı şube ve günlerle (bulgu 65)", () => {
+  // Tuzla her hafta 70.000; Marina 19 Ekim'de açıldı, geçen hafta 35.000. Önceden "önceki 4 haftaya göre %50 fazla"
+  const tuzla = ["2026-10-19", "2026-10-12", "2026-10-05", "2026-09-28", "2026-09-21"].flatMap((d) => weekReports(d, 7, 70_000));
+  const marina = weekReports("2026-10-19", 7, 35_000, "marina");
+  const opened = { id: "marina", name: "Marina", openedOn: "2026-10-19" };
+  assert.equal(line([...tuzla, ...marina], [TUZLA, opened]), `Geçen hafta kasa cirosu 105.000${NB}₺ · önceki 4 haftayla aynı (aynı şubelerle: Marina önceki haftalarda yoktu)`);
+  // Açılış günü yazılmamışsa da: önceki haftalarda verisi olmayan şube-gün kıyas dışı
+  assert.equal(line([...tuzla, ...marina], [TUZLA, { ...opened, openedOn: null }]), `Geçen hafta kasa cirosu 105.000${NB}₺ · önceki 4 haftayla aynı (aynı şubelerle: Marina önceki haftalarda yoktu)`);
+  // Tuzla gerçekten büyüdüyse yine söylenir (yalnız Tuzla'nın eşleşen günleriyle)
+  const grown = [...weekReports("2026-10-19", 7, 77_000), ...tuzla.filter((r) => r.date < "2026-10-19"), ...marina];
+  assert.equal(line(grown, [TUZLA, opened]), `Geçen hafta kasa cirosu 112.000${NB}₺ · önceki 4 haftaya göre %10 fazla (aynı şubelerle: Marina önceki haftalarda yoktu)`);
+  // İki şube de önceki haftalarda varsa not yok
+  const both = [...tuzla, ...["2026-10-19", "2026-10-12", "2026-10-05", "2026-09-28", "2026-09-21"].flatMap((d) => weekReports(d, 7, 35_000, "marina"))];
+  assert.equal(line(both, [TUZLA, { ...opened, openedOn: null }]), `Geçen hafta kasa cirosu 105.000${NB}₺ · önceki 4 haftayla aynı`);
+});
+
+test("kasa cirosu satırı: raporu olmayan LafPOS günü gün sonundan sayılır; geçiş gününden önceki deneme günü sayılmaz (bulgu 65)", () => {
+  const marina = { id: "marina", name: "Marina", openedOn: null };
+  // 20 Ekim Marina'nın kasa raporu yok, LafPOS gün sonu var (tillRows'un yedek satırı)
+  const rows = [till("2026-10-20", 4_000), till("2026-10-20", 3_000, "marina", { source: "lafpos" })];
+  assert.equal(line(rows, [TUZLA, marina], "2026-10-01"), `Geçen hafta kasa cirosu 7.000${NB}₺ (1 gün raporlu)`);
+  // Geçiş günü sonraysa o gün deneme: sayılmaz
+  assert.equal(line(rows, [TUZLA, marina], "2026-10-22"), `Geçen hafta kasa cirosu 4.000${NB}₺ (1 gün raporlu)`);
 });
 
 const cand = (o: Partial<KomisyonCand>): KomisyonCand => ({
@@ -754,8 +786,8 @@ test("nakit: ilk eksi gün vergi satırlarını sayar (muhtasar, yasal oranlı S
 
 
 test("kasa cirosu satırı: iki şubenin aynı günkü raporları bir raporlu gün", () => {
-  const two = ["2026-10-19", "2026-10-20"].flatMap((d) => [rep(d, 0, 1_000), rep(d, 0, 2_000)]);
-  assert.equal(salesLine({ week: W44, reports: two }), `Geçen hafta kasa cirosu 6.000${NB}₺ (2 gün raporlu)`);
+  const two = ["2026-10-19", "2026-10-20"].flatMap((d) => [till(d, 1_000), till(d, 2_000, "marina")]);
+  assert.equal(line(two, [TUZLA, { id: "marina", name: "Marina", openedOn: null }]), `Geçen hafta kasa cirosu 6.000${NB}₺ (2 gün raporlu)`);
 });
 
 // Denetim 21 Kasım #30: "N gün eksik / fazla" gündür, rapor değil; iki şubenin aynı günkü eksiği tek gün

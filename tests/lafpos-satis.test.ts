@@ -14,6 +14,8 @@ import { createModel } from "../src/lib/calc/engine";
 import type { Dataset, SalesLine } from "../src/lib/calc/types";
 import { posVat, vatMonthInputs } from "../src/lib/kdv";
 import {
+  commonListCuts,
+  commonListText,
   dayRangeTR,
   lafposMonthNotes,
   lafposMonthStatus,
@@ -22,7 +24,9 @@ import {
   modposImportRule,
   modposOverZText,
   modposThroughOf,
+  otherBranchLists,
   type LafposMonthLine,
+  type OtherBranchList,
 } from "../src/lib/lafpos/sales";
 import { branchSwitchDay, LAFPOS_BRANCH_ID, lafposCountFrom, lafposSalesFrom, modposListCounts, monthSource } from "../src/lib/lafpos/switch";
 import { addDays, dayAblativeTR, monthEnd, shiftMonth } from "../src/lib/reminders";
@@ -224,6 +228,87 @@ test("birleştirme: geçiş günü yalnız Marina'nın listesini düşürür; Tu
   assert.deepEqual(modposImportRule("2026-12", branchSwitchDay(S, "tuzla"), "2027-01-05"), { ok: true, through: null });
   assert.deepEqual(modposImportRule("2026-12", branchSwitchDay(S, null), "2027-01-05"), { ok: true, through: null });
   assert.equal(modposImportRule("2026-12", branchSwitchDay(S, "marina"), "2027-01-05").ok, false);
+});
+
+test("Tümü'nün ortak dönemi: ModPOS'ta kalan şubenin listeleri ve kasa raporları, en kısa liste (bulgu 62)", () => {
+  const S = "2026-11-21";
+  const coverage: Record<string, Record<string, string>> = { tuzla: { "2026-12": "2026-12-15" } };
+  const others = otherBranchLists({
+    switchDay: S,
+    lafposBranch: "marina",
+    salesLines: [
+      { month: "2026-10", branchId: "tuzla" }, // geçiş ayından önce: bakılmaz
+      { month: "2026-11", branchId: undefined }, // şubesiz satır Tuzla'nın
+      { month: "2026-12", branchId: "tuzla" },
+      { month: "2026-12", branchId: "marina" }, // LafPOS'un şubesi: bakılmaz
+    ],
+    reportDays: [
+      { branchId: "tuzla", date: "2026-12-03" },
+      { branchId: "tuzla", date: "2027-01-02" }, // Ocak: rapor var, liste yok
+      { branchId: "marina", date: "2027-01-02" },
+    ],
+    coverageOf: (b) => coverage[b] ?? {},
+  });
+  assert.deepEqual(others, [
+    { branchId: "tuzla", month: "2026-11", through: "2026-11-30" },
+    { branchId: "tuzla", month: "2026-12", through: "2026-12-15" },
+    { branchId: "tuzla", month: "2027-01", through: null },
+  ]);
+  assert.deepEqual(otherBranchLists({ switchDay: null, salesLines: [{ month: "2026-12", branchId: "tuzla" }], reportDays: [], coverageOf: () => ({}) }), [], "geçiş günü yokken ortak dönem yok");
+  // Ayın en kısa listesi kesilir; listesi olmayan şube en kısasıdır; ayın sonuna kadar olan liste kesmez
+  const three: OtherBranchList[] = [...others, { branchId: "kadikoy", month: "2026-12", through: "2026-12-09" }, { branchId: "kadikoy", month: "2027-01", through: "2027-01-05" }];
+  assert.deepEqual(commonListCuts(three), [
+    { month: "2026-12", branchId: "kadikoy", through: "2026-12-09", after: "2026-12-09" },
+    { month: "2027-01", branchId: "tuzla", through: null, after: "2026-12-31" },
+  ]);
+  // Metin kısaltan şubeyi adıyla söyler
+  assert.equal(plain(commonListText("2026-12", "Tuzla", "2026-12-15")), "Tuzla'nın satış listesinin son günü 15 Aralık: öteki şubelerin satışı da o güne kadar sayılır.");
+  assert.equal(plain(commonListText("2027-01", "Tuzla", null)), "Tuzla'nın Ocak 2027 satış listesi yok: öteki şubelerin bu ayki satışı da sayılmaz (şubeyi seçince görünür).");
+});
+
+test("birleştirme: Tümü'de Tuzla'nın yarım listesi ve Marina'nın LafPOS günleri birlikte; dönem en kısa listeyle biter (bulgu 62)", () => {
+  const S = "2026-11-21";
+  const lines = [line({ id: 1, month: "2026-12", posName: "ARALIK TUZLA", branchId: "tuzla" }), line({ id: 2, month: "2027-01", posName: "OCAK MARINA (sayılmaz)", branchId: "marina" })];
+  // LafPOS satırları okuyucuda ortak döneme kesilmiş gelir (commonListCuts): Aralık 1-15
+  const input = {
+    switchDay: S,
+    salesLines: lines,
+    coverage: { "2026-12": "2026-12-15" },
+    lafposLines: [laf({ month: "2026-12", posName: "LATTE", revenue: 1_500, days: 15 }), laf({ month: "2027-01", posName: "LATTE", revenue: 500, days: 5 })],
+    lafposDays: [
+      { month: "2026-12", days: 15, last: "2026-12-15" },
+      { month: "2027-01", days: 5, last: "2027-01-05" },
+    ],
+    lafposBranch: "marina",
+  };
+  // Önceden: Aralık'ın dönemi Marina'nın son LafPOS günüydü, Tuzla'nın kaydı düşüyordu (ayın tamamı sayılırdı)
+  const before = mergeSalesSources({ ...input, lafposDays: [{ month: "2026-12", days: 24, last: "2026-12-24" }, input.lafposDays[1]] });
+  assert.equal(before.coverage["2026-12"], "2026-12-24", "others yokken (şube görünümü) eski kural");
+  assert.deepEqual(before.short, {});
+
+  const others: OtherBranchList[] = [
+    { branchId: "tuzla", month: "2026-12", through: "2026-12-15" },
+    { branchId: "tuzla", month: "2027-01", through: null },
+  ];
+  const r = mergeSalesSources({ ...input, others });
+  assert.deepEqual(r.coverage, { "2026-12": "2026-12-15" }, "Aralık Tuzla'nın listesinin son günüyle; Ocak'ta ortak dönem yok");
+  assert.deepEqual(r.short, { "2026-12": { branchId: "tuzla", through: "2026-12-15" }, "2027-01": { branchId: "tuzla", through: null } });
+  assert.deepEqual(
+    r.salesLines.map((l) => [l.month, l.posName]),
+    [
+      ["2026-12", "ARALIK TUZLA"],
+      ["2026-12", "LATTE"],
+    ],
+    "Ocak'ın satırları Tümü'de sayılmaz (Tuzla'nın listesi yok)",
+  );
+  // Marina'nın LafPOS'u Tuzla'nın listesinden önce bitiyorsa dönem onunla biter, kısaltan şube yazılmaz
+  const lag = mergeSalesSources({ ...input, lafposDays: [{ month: "2026-12", days: 10, last: "2026-12-10" }], lafposLines: [input.lafposLines[0]], others: [others[0]] });
+  assert.deepEqual(lag.coverage, { "2026-12": "2026-12-10" });
+  assert.deepEqual(lag.short, {});
+  // Aralık'a henüz LafPOS günü gelmediyse Tuzla'nın yarım listesinin kaydı kalır (önceden düşüyor, liste ayın tamamı sayılıyordu)
+  const early = mergeSalesSources({ ...input, coverage: {}, lafposLines: [], lafposDays: [], others: [others[0]] });
+  assert.deepEqual(early.coverage, { "2026-12": "2026-12-15" });
+  assert.deepEqual(early.short, { "2026-12": { branchId: "tuzla", through: "2026-12-15" } });
 });
 
 test("model: yalnız LafPOS olan ayda satır, reçeteye göre tüketim ve karaoke payı (KDV %20) ModPOS listesindekiyle aynı", () => {

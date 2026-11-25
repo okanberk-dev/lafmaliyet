@@ -1,7 +1,8 @@
 "use client";
 
 import { Calculator, Camera, ChevronDown, Copy, MessageCircle, Pencil, Plus, ReceiptText, RotateCw, Send, Wallet } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
 
@@ -10,12 +11,16 @@ import { SEND_OFFLINE_TEXT, tryAction, useActionTransition } from "@/components/
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
+import { BRANCH_LEAVE, useLeaveGuard } from "@/components/ui/leave-guard";
 import { Notice } from "@/components/ui/notice";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { reportAttention, reportFlags } from "@/lib/cash-attention";
-import { cashOutCheck, cashOutNoteOf, cashOutNoteVisible, cashOutsTotal } from "@/lib/cash-outs";
+import { cashDraftJson, cashDraftKey, droppedPhotosText, leaveDialogText, leaveDropsDraft, parseCashDraft, restorableDraftPhotos, staleCashDraftKeys, type CashDraft } from "@/lib/cash-draft";
+import { CASH_OUT_NOTE_REQUIRED, cashOutCheck, cashOutNoteMissing, cashOutNoteOf, cashOutNoteVisible, cashOutsTotal } from "@/lib/cash-outs";
 import {
+  businessDate,
   CASH_TOLERANCE,
   carryCheck,
   carryDiffText,
@@ -31,7 +36,8 @@ import {
 import { money } from "@/lib/format";
 import { lafposDiffs } from "@/lib/lafpos/diffs";
 import { staffAutoNote, staffPhotoDiffs } from "@/lib/lafpos/foto";
-import { LAFPOS_NO_COUNT_TEXT, lafposOutsCheck, lafposSummary, type LafposDay } from "@/lib/lafpos/prefill";
+import { BLIND_TEXT } from "@/lib/lafpos/kor-kasa";
+import { LAFPOS_NO_COUNT_TEXT, lafposOutsCheck, lafposSummary, unreceiptedCashOut, type LafposDay } from "@/lib/lafpos/prefill";
 import { OKC_PREFILL_ENABLED } from "@/lib/okc-z";
 import { OKC_HALVES_TEXT, okcNeedsHalves } from "@/lib/photo-read/okc";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
@@ -137,6 +143,16 @@ const MARK_FIELDS = [...READ_FIELDS, ...(["openingCash", "cashIn", "cashOut", "c
 type MarkField = (typeof MARK_FIELDS)[number];
 
 const input = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(Math.round(v * 100) / 100).replace(".", ","));
+
+/** Taslağın okunuşu (useSyncExternalStore: sunucuda ve hidrasyonda null, sonra bu cihazdaki taslak) */
+const noopSubscribe = () => () => {};
+function readDraft(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
 
 function initialValues(report: CashReportFields | null, carry: { amount: number } | null, outs: CashOutView[]): Values {
   if (report) {
@@ -536,6 +552,8 @@ export function CashForm({
   const [values, setValues] = useState<Values>(opening.values);
   const initialCounter = report?.countedBy ?? report?.submittedBy ?? me?.id ?? null;
   const [counter, setCounter] = useState<number | null>(initialCounter);
+  // Formun açıldığı hâl (taslak ve ayrılma uyarısı yalnız bundan farklı yazılanlara bakar; Düzenle ve öneri yeniden kurar)
+  const [baseline, setBaseline] = useState<{ values: Values; counter: number | null }>(() => ({ values: opening.values, counter: initialCounter }));
   const [errors, setErrors] = useState<Partial<Record<Key, string>>>({});
   const [pending, start] = useActionTransition();
   const [resending, setResending] = useState(false);
@@ -602,12 +620,90 @@ export function CashForm({
   const [autoSeen, setAutoSeen] = useState(auto);
   if (!report && (autoSeen.cashOut !== auto.cashOut || autoSeen.note !== auto.note)) {
     setAutoSeen(auto);
-    setValues((v) => ({
+    const follow = (v: Values): Values => ({
       ...v,
       cashOut: v.cashOut === autoSeen.cashOut ? auto.cashOut : v.cashOut,
       cashOutNote: v.cashOutNote === autoSeen.note ? auto.note : v.cashOutNote,
-    }));
+    });
+    setValues(follow);
+    // Kendiliğinden gelen değişiklik yazılmış sayılmaz (taslak ve ayrılma uyarısı yalnız kişinin yazdığına bakar)
+    setBaseline((b) => ({ ...b, values: follow(b.values) }));
   }
+
+  // ---------------------------------------------------------------- Taslak ve ayrılma uyarısı (bulgu 87)
+  // Yazılanlar bu cihazda taslak olarak durur (src/lib/cash-draft.ts): telefon Z fişini çekerken sekmeyi yeniden yüklese,
+  // sayfa kapansa da kaybolmaz; form yeniden açılınca "Geri yükle" önerilir. Taslak şube ve gün başına (başka şubenin ya da
+  // günün formunda önerilmez) ve raporun sürümüne bağlı (arada başkası gönderdiyse önerilmez); yalnız kişinin değiştirdiği
+  // alanlar, kasayı sayan ve formda yüklenen fotoğraflar. Gönderilince, "Sil"le ve başka güne ya da şubeye geçerken silinir.
+  // Yazılanlar varken sayfadan çıkmak önce sorar (useLeaveGuard). "Düzeltip onayla" (Onaylar) taslak tutmaz
+  const draftOn = mode !== "review" && branchId !== null && canEdit;
+  const draftKey = cashDraftKey(branchId ?? "", date);
+  const keptPhotos = late?.kept?.length ?? 0;
+  const changed = (Object.keys(values) as Key[]).filter((k) => values[k] !== baseline.values[k]);
+  const dirty = draftOn && editing && (changed.length > 0 || counter !== baseline.counter || photos.length !== keptPhotos);
+  const draftBody = dirty
+    ? JSON.stringify({
+        values: Object.fromEntries(changed.map((k) => [k, values[k]])),
+        counter,
+        photos: photos.map((p) => ({ id: p.id, kind: p.kind, createdAt: p.createdAt, byName: p.byName })),
+        revision: report?.revision ?? 0,
+        branch: branchId ?? "",
+        date,
+        by: me?.name ?? photoUi.me,
+      } satisfies Omit<CashDraft, "at">)
+    : "";
+  const wroteDraft = useRef(false);
+  useEffect(() => {
+    try {
+      if (draftBody) {
+        window.localStorage.setItem(draftKey, cashDraftJson({ ...(JSON.parse(draftBody) as Omit<CashDraft, "at">), at: new Date().toISOString() }));
+        wroteDraft.current = true;
+      } else if (wroteDraft.current) {
+        window.localStorage.removeItem(draftKey);
+        wroteDraft.current = false;
+      }
+    } catch {
+      // Gizli pencere ya da dolu depolama: taslaksız devam
+    }
+  }, [draftBody, draftKey]);
+  // Artık açılamayacak günlerin taslakları (14 günden eski) bir kez temizlenir
+  useEffect(() => {
+    if (!draftOn) return;
+    try {
+      const keys = Array.from({ length: window.localStorage.length }, (_, i) => window.localStorage.key(i) ?? "");
+      for (const k of staleCashDraftKeys(keys, businessDate())) window.localStorage.removeItem(k);
+    } catch {
+      // yok sayılır
+    }
+  }, [draftOn]);
+  // Bant yalnız açılışta var olan taslak için (bu açılışta yazılan, yazılanlar geri alınınca bant olarak çıkmasın)
+  const openingDraft = useRef<{ key: string; json: string | null } | null>(null);
+  const storedDraft = useSyncExternalStore(
+    noopSubscribe,
+    () => {
+      if (openingDraft.current?.key !== draftKey) openingDraft.current = { key: draftKey, json: readDraft(draftKey) };
+      return openingDraft.current.json;
+    },
+    () => null,
+  );
+  const [draftGone, setDraftGone] = useState(false);
+  const draft = draftOn && !dirty && !draftGone ? parseCashDraft(storedDraft, { branch: branchId ?? "", date, revision: report?.revision ?? 0, keys: Object.keys(opening.values) }) : null;
+  const draftPhotos = draft ? restorableDraftPhotos(draft.photos, { admin: photoUi.admin, me: me?.name ?? photoUi.me }) : null;
+  function forgetDraft() {
+    try {
+      window.localStorage.removeItem(draftKey);
+    } catch {
+      // yok sayılır
+    }
+    wroteDraft.current = false;
+    setDraftGone(true);
+  }
+  const router = useRouter();
+  const [leaveHref, setLeaveHref] = useLeaveGuard(dirty, BRANCH_LEAVE);
+  // Pencerenin metni hedefe göre (leaveDialogText): kapanırken son hedefin metni kalsın diye ayrı tutulur
+  const [leaveDrops, setLeaveDrops] = useState(false);
+  if (leaveHref !== null && leaveDropsDraft(leaveHref, date, businessDate()) !== leaveDrops) setLeaveDrops(!leaveDrops);
+  const leaveText = leaveDialogText(leaveDrops);
 
   const set = (k: Key) => (e: { target: { value: string } }) => {
     setValues((v) => ({ ...v, [k]: e.target.value }));
@@ -619,6 +715,7 @@ export function CashForm({
   function edit() {
     const s = withLafpos(initialValues(report, carry, cashOuts), lafpos, "compare");
     setValues(s.values);
+    setBaseline({ values: s.values, counter: initialCounter });
     setCounter(initialCounter);
     setErrors({});
     setPhotos([]);
@@ -642,6 +739,7 @@ export function CashForm({
     if (from) {
       const s = withLafpos(initialValues({ ...report, ...from.proposed }, carry, cashOuts), lafpos, "compare");
       setValues(s.values);
+      setBaseline({ values: s.values, counter: from.proposed.countedBy });
       setMarks(s.marks);
       setLafposFilled(s.filled);
       setCounter(from.proposed.countedBy);
@@ -769,6 +867,33 @@ export function CashForm({
     setPosPrompt(null);
   }
 
+  /** Taslağı forma geri yükler (kayıtlı raporda önce Düzenle açılır): yazılanlar, kasayı sayan, yüklenen fotoğraflar */
+  function restoreDraft() {
+    if (!draft) return;
+    if (!editing) edit();
+    setValues((v) => ({ ...v, ...draft.values }));
+    if (draft.counter !== null) setCounter(draft.counter);
+    if (draft.values.cashIn?.trim()) setCashInOpen(true);
+    // Personel yalnız kendi yüklediği fotoğrafı geri alır (sunucu başkasınınkini bağlamaz); yönetici hepsini
+    const { kept, dropped } = draftPhotos ?? { kept: [], dropped: 0 };
+    if (kept.length) {
+      const back: FormPhoto[] = kept.map((p) => ({ ...p, reading: null, error: null, switchTo: null, canRetry: false, summary: null }));
+      setPhotos((ps) => [...ps.filter((p) => !back.some((b) => b.id === p.id)), ...back]);
+    }
+    toast.success("Taslak geri yüklendi", { description: dropped ? `Rakamları kontrol edip gönderin. ${droppedPhotosText(dropped)}` : "Rakamları kontrol edip gönderin." });
+  }
+
+  /**
+   * Personelin fişsiz çıkışının açıklaması eksik mi (cashOutNoteMissing): yeni raporda ya da çıkış veya açıklaması
+   * değiştiyse (eski raporun dokunulmayan satırı yeniden sorulmaz). Yönetici, geç rapor ve "Düzeltip onayla" değil
+   */
+  function staffOutNoteMissing(fields: CashReportFields): boolean {
+    if (photoUi.admin || review || isLate) return false;
+    if (report && report.cashOut === fields.cashOut && (report.cashOutNote ?? null) === (fields.cashOutNote ?? null)) return false;
+    const { unreceipted } = unreceiptedCashOut(fields.cashOut, cashOuts, lafpos?.till ?? null);
+    return cashOutNoteMissing({ unreceipted, note: fields.cashOutNote, outsNote: cashOutNoteOf(cashOuts) });
+  }
+
   function submit() {
     const { fields, errors: errs } = readValues(values, date);
     setErrors(errs);
@@ -781,6 +906,14 @@ export function CashForm({
       toast.error("Eksik ya da hatalı alan var", { description: name && message && !message.startsWith(name) ? `${name}: ${message}` : message });
       // Telefonda düğme formun altında (ya da çubukta): hatalı ilk alana gidilir (yoksa uyarı ekranın dışında kalır)
       goToField(first ? document.getElementById(fid(first)) : null);
+      return;
+    }
+    // Fişsiz çıkış (bulgu 2): personelin "Gün içinde çıkan"ı kasadan çıkan satırlarından fazlaysa neye çıktığı yazılır
+    // (sunucu da aynı kuralla). Geç raporda formda günün satırları yok: kararı sunucu verir
+    if (staffOutNoteMissing(fields)) {
+      flushSync(() => setErrors((x) => ({ ...x, cashOutNote: CASH_OUT_NOTE_REQUIRED })));
+      toast.error(CASH_OUT_NOTE_REQUIRED);
+      goToField(document.getElementById(fid("cashOutNote")));
       return;
     }
     if (review) {
@@ -839,6 +972,7 @@ export function CashForm({
         if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
         toast.success(`Onaya gönderildi · ${diffText(res.data.cashDiff)}`, { description: "Yönetici onaylayınca kayda geçer; sonucu zilde görürsünüz." });
         setClientKey(newClientKey());
+        forgetDraft();
         onSent?.();
       });
       return;
@@ -861,6 +995,7 @@ export function CashForm({
         toast.success("Düzeltme onaya gönderildi", { description: "Yönetici onaylayınca rapora işlenir; sonucu zilde görürsünüz." });
         setProposal(null);
         setClientKey(newClientKey());
+        forgetDraft();
         setEditing(false);
       });
       return;
@@ -913,6 +1048,7 @@ export function CashForm({
           duration: 12_000,
         });
       }
+      forgetDraft();
       setEditing(false);
     });
   }
@@ -936,15 +1072,38 @@ export function CashForm({
     else toast.error("Kopyalanamadı");
   }
 
+  // Bu cihazdaki taslağın bandı (form açılınca; kayıtlı raporda "Geri yükle" Düzenle'yi açar)
+  const draftTime = draft?.at ? new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(draft.at)) : null;
+  const draftBanner = draft ? (
+    <Notice
+      tone="neutral"
+      live="polite"
+      title={`${draft.by && draft.by !== (me?.name ?? photoUi.me) ? `${draft.by} bu cihazda` : "Bu cihazda"} gönderilmemiş kasa raporu var`}
+      text={`${draftTime ? `${draftTime} · ` : ""}${longDateTR(date)} raporu; sayfa kapanmış ya da bağlantı gitmiş olabilir.${draftPhotos?.dropped ? ` ${droppedPhotosText(draftPhotos.dropped)}` : ""}`}
+      action={
+        <span className="flex flex-wrap gap-1.5">
+          <Button size="xs" onClick={restoreDraft}>
+            Geri yükle
+          </Button>
+          <Button size="xs" variant="ghost" onClick={forgetDraft}>
+            Sil
+          </Button>
+        </span>
+      }
+    />
+  ) : null;
+
   if (report && !editing) {
-    // LafPOS'un otomatik raporu personelde salt okunur (yalnız fotoğraf; sayfanın kartı)
-    const staffAuto = lafposAuto && !photoUi.admin;
+    // LafPOS'un otomatik raporu personelde salt okunur (yalnız fotoğraf; sayfanın kartı). Kör kasa (bulgu 0): personelin
+    // LafPOS günü raporu (otomatik ya da yöneticinin elle girdiği) sayımsız gelir (blindReport), o da salt okunur
+    const blind = report.blind === true && !photoUi.admin;
+    const staffAuto = (lafposAuto || blind) && !photoUi.admin;
     const mail = emailLine(report.emailStatus, report.emailError, recipients);
     const sentAt = new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(new Date(report.updatedAt));
     // Sayan gönderenden farklıysa ikisi de; eski raporlarda sayan yok (gönderen saymış sayılır)
     const who = report.countedByName && report.countedByName !== report.submittedByName ? `Sayan ${report.countedByName} · gönderen ${report.submittedByName}` : report.submittedByName;
-    const savedCarry = carryCheck(date, report.openingCash, carry);
-    const savedNext = next ? carryCheck(next.date, next.openingCash, { date, amount: computeCash(report).carryOver }) : null;
+    const savedCarry = blind ? null : carryCheck(date, report.openingCash, carry);
+    const savedNext = next && !blind ? carryCheck(next.date, next.openingCash, { date, amount: computeCash(report).carryOver }) : null;
     // LafPOS'un otomatik gününde fotoğraf ↔ rapor farkı yalnız yöneticinin (sayfanın "Fotoğraf ↔ LafPOS"u); personel görmez
     const diffs = staffPhotoDiffs(saved ? photoDiffs(saved.readings, savedFields(report)) : [], { admin: photoUi.admin, lafposAuto }) ?? [];
     // LafPOS'un gün sonundan farklı yazılanlar (E-09; yalnız LafPOS gününde, gönderimi geldiyse)
@@ -958,6 +1117,9 @@ export function CashForm({
       ? reportAttention(reportFlags(report, { cardExtra: lafpos?.cardExtra ?? null, offDevice: lafpos?.offDevice ?? null, kasa: lafposMode ? "LafPOS" : "ModPOS" }), {
           photoDiffs: diffs.length,
           lafposDiffs: fromLafpos.length,
+          // Fişsiz çıkış (bulgu 2): ay listesinin rozetiyle ve onay kartıyla aynı hesap
+          // gün sonu gelmemiş LafPOS gününde hesaplanmaz (hareketler bekleniyor; lafposMovesPending)
+          unreceipted: lafposMode && !lafpos ? 0 : unreceiptedCashOut(report.cashOut, cashOuts, lafpos?.till ?? null, date).unreceipted,
         })
       : [];
     return (
@@ -968,7 +1130,9 @@ export function CashForm({
           description={`${longDateTR(date)} · ${who} · ${sentAt}${report.revision > 1 ? " · güncellendi" : ""}`}
         />
         <div className="space-y-4 px-5 pb-5">
-          <DiffHeadline diff={report.cashDiff} />
+          {/* Kör kasa: personel farkı görmez (LafPOS'ta da görmedi); büyük satır yalnız günün alındığını söyler */}
+          {blind ? <p className="text-2xl font-semibold tracking-tight text-ink">{BLIND_TEXT.headline}</p> : <DiffHeadline diff={report.cashDiff} />}
+          {draftBanner}
           {mail ? (
             <Notice
               tone={mail.tone === "red" ? "bad" : mail.tone === "green" ? "good" : "neutral"}
@@ -988,7 +1152,9 @@ export function CashForm({
           {lafposOuts ? <Notice tone="neutral" size="sm" title={lafposOuts.text} /> : null}
           {laterNote ? <Notice tone="neutral" size="sm" title={laterNote} /> : null}
           {staffAuto ? (
-            <p className="text-[13px] leading-5 text-ink-mute">Yanlışlık varsa LafPOS&apos;ta düzeltin; gün yeniden gönderilir.</p>
+            // "LafPOS'ta düzeltin" değil: farkı görmeyen kasiyere düzeltmeyi istemek açığı ima ederdi (bulgu 0). Elle
+            // girilmiş kör raporda rakamlar LafPOS'tan gelmedi: ayrı satır
+            <p className="text-[13px] leading-5 text-ink-mute">{lafposAuto ? BLIND_TEXT.line : BLIND_TEXT.manualLine}</p>
           ) : (
           <div className="flex flex-wrap gap-2">
             {whatsapp ? (
@@ -1034,7 +1200,8 @@ export function CashForm({
             <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm text-ink-soft select-none [&::-webkit-details-marker]:hidden">
               <ChevronDown size={16} aria-hidden="true" className="shrink-0 motion-safe:transition-transform group-open/r:rotate-180" />
               <span className="min-w-0 flex-1">
-                <span className="font-medium text-ink">Rapor dökümü</span> · Z {money(report.zTotal)} · nakit {money(report.cash)} · sayılan {money(report.countedCash)}
+                <span className="font-medium text-ink">Rapor dökümü</span> · Z {money(report.zTotal)} · nakit {money(report.cash)}
+                {blind ? null : ` · sayılan ${money(report.countedCash)}`}
                 {attention.length ? <span className="font-medium text-warn"> · {attention.join(" · ")}</span> : null}
               </span>
             </summary>
@@ -1050,8 +1217,10 @@ export function CashForm({
                 kasa={lafposMode ? "LafPOS" : "ModPOS"}
                 cardExtra={lafpos?.cardExtra ?? null}
                 offDevice={lafpos?.offDevice ?? null}
+                blind={blind}
               />
-              <CashRevisions report={report} revisions={revisions} proposedBy={proposedBy} />
+              {/* Sürümler sayılanı ve farkı taşır: kör kasada personele gelmez (sayfa boş verir) */}
+              {blind ? null : <CashRevisions report={report} revisions={revisions} proposedBy={proposedBy} />}
             </div>
           </details>
         </div>
@@ -1070,6 +1239,9 @@ export function CashForm({
   const cashOutValue = values.cashOut.trim() ? parseNumberTR(values.cashOut) : 0;
   const showCashIn = cashInOpen || Boolean(values.cashIn.trim()) || Boolean(marks.cashIn);
   const outsWarning = cashOutValue !== null ? cashOutCheck(cashOutValue, cashOuts.map((o) => o.amount)) : null;
+  // Fişsiz çıkış (bulgu 2): personelde "Neye çıktı" zorunlu (geç raporda formda günün satırları yok, sunucu söyler)
+  const unreceiptedLive = cashOutValue !== null ? unreceiptedCashOut(cashOutValue, cashOuts, lafpos?.till ?? null).unreceipted : 0;
+  const outNoteNeeded = !photoUi.admin && !review && !isLate && unreceiptedLive >= 1;
   const latestChecks = (k: CashPhotoKind) => [...photos].reverse().find((p) => p.kind === k && p.reading?.ok)?.reading?.checks ?? [];
 
   /**
@@ -1294,6 +1466,7 @@ export function CashForm({
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 space-y-4">
+        {draftBanner}
         {isLate && !review ? (
           <Notice
             tone="neutral"
@@ -1435,8 +1608,21 @@ export function CashForm({
               ),
             })}
             {showOutNote ? (
-              <Field label="Neye çıktı" htmlFor={fid("cashOutNote")}>
-                <Input id={fid("cashOutNote")} value={values.cashOutNote} onChange={set("cashOutNote")} maxLength={200} placeholder="ör. süt, buz (isteğe bağlı)" autoComplete="off" />
+              <Field
+                label="Neye çıktı"
+                htmlFor={fid("cashOutNote")}
+                hint={outNoteNeeded ? `Kasadan çıkanlar'dan ${money(unreceiptedLive)} fazla: neye çıktığını yazın` : undefined}
+                error={errors.cashOutNote}
+              >
+                <Input
+                  id={fid("cashOutNote")}
+                  value={values.cashOutNote}
+                  onChange={set("cashOutNote")}
+                  maxLength={200}
+                  placeholder={outNoteNeeded ? "ör. buz, bozuk para, patrona teslim" : "ör. süt, buz (isteğe bağlı)"}
+                  autoComplete="off"
+                  aria-invalid={Boolean(errors.cashOutNote)}
+                />
               </Field>
             ) : null}
             {showCashIn ? (
@@ -1655,7 +1841,16 @@ export function CashForm({
                 Vazgeç
               </Button>
             ) : onCancel ? (
-              <Button variant="ghost" className="w-full" onClick={onCancel} disabled={pending || reviewPending}>
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  // Vazgeç yazılanları bırakır: taslak da silinir
+                  forgetDraft();
+                  onCancel();
+                }}
+                disabled={pending || reviewPending}
+              >
                 Vazgeç
               </Button>
             ) : null}
@@ -1685,6 +1880,21 @@ export function CashForm({
           </div>
         </div>
       ) : null}
+      {/* Gönderilmemiş rapordan çıkış (menü, alt çubuk, gün çipi, şube seçici): önce sorulur. Başka güne ya da şubeye
+          geçilince taslak silinir, başka sayfaya gidilince bu cihazda kalır (dönünce geri yüklenir) */}
+      <ConfirmDialog
+        open={leaveHref !== null}
+        onClose={() => setLeaveHref(null)}
+        onConfirm={() => {
+          const href = leaveHref;
+          setLeaveHref(null);
+          if (!href) return;
+          if (leaveDropsDraft(href, date, businessDate())) forgetDraft();
+          router.push(href);
+        }}
+        title="Gönderilmemiş kasa raporu var"
+        {...leaveText}
+      />
     </div>
   );
 }

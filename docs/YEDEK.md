@@ -6,8 +6,8 @@ veritabanına ya da var olan bir veritabanının yerine yüklenir. Geri yükleme
 veri değişmesin (Vercel 4,5 MB'tan büyük dosya yüklemesini zaten almaz).
 
 Neon da veritabanını kendiliğinden yedekler (nokta-zaman geri yükleme), ama küçük planlarda yalnız birkaç saat ya da gün
-geriye gidilir. Bu dosya sizde kalan uzun süreli kopyadır. **Excel kopyası** (aynı kartta, `/api/export`) okunmak
-içindir, geri yüklenmez.
+geriye gidilir. Bu dosya sizde kalan uzun süreli kopyadır. Aynı karttaki **Dışa aktar (.xlsx)** çalışma kitabı
+(`/api/export`) okumak ve muhasebeciye vermek içindir, geri yüklenmez (§ 12).
 
 ## 1. Yedek almak
 
@@ -72,7 +72,7 @@ UTF-8 JSON satırlarının (her satır bir JSON değeri, `\n` ile biter) gzip'i:
  "excluded":{"tables":["invoice_documents","push_subscriptions","user_tokens"],"columns":{"users":[…]},
              "stateKeys":["parasut.token","parasut.settings","webpush_vapid","site_orders","parasut.token:*","parasut.settings:*","parasut.connect*"],"documents":"hepsi"}}
 {"table":"activity_log","columns":["id","at","user_name","action","detail"]}
-{"r":{"id":1,"at":"2026-10-17T09:00:00+00:00","user_name":"Sistem","action":"Excel'den aktarım","detail":"…"}}
+{"r":{"id":1,"at":"2026-10-17T09:00:00+00:00","user_name":"Sistem","action":"İlk veri aktarımı","detail":"…"}}
 …
 {"table":"categories","columns":[…]}
 {"r":{…}}
@@ -192,7 +192,7 @@ Hedef: localhost/laffogato_prova (bu bilgisayar)
   fotoğrafın satırı geri gelir ama dosyası yoktur ("Fotoğraf bulunamadı"); sabah işi süresi gelince satırı da siler.
 - **Son yedek:** Ayarlar › Yedek'teki "Son yedek" dosyadaki hâline döner (dosyayı alan indirme kendisinden öncekini
   gösterir); yeni bir yedek alınca düzelir.
-- `npm run db:reset` (Excel verisini yeniden yükleme) bununla ilgisizdir. Tek farkı cari hareketleridir (Tedarikçiler'de
+- `npm run db:reset` (ilk aktarımın tohum verisini yeniden yükleme) bununla ilgisizdir. Tek farkı cari hareketleridir (Tedarikçiler'de
   elle girilen borç ve ödeme, `supplier_entries` / `supplier_allocations`): varsa db:reset tam yedeği aldıktan sonra
   durur ("Cari hareketleri var (N kayıt) … Yedek alındı: <dosya>"). TRUNCATE … CASCADE onları da silerdi; Kasa
   satırları kalır, faturalar ödenmemiş geri gelir ve iki kez ödenir. Yine de silmek için
@@ -248,7 +248,7 @@ yüklenir. Komut veritabanına yazmaz. Depo klasörüne yazılan yedek git'e gir
 
 | Tarih | Yedek | Kim | Sonuç |
 |-------|-------|-----|-------|
-| 22.10.2026 | Yerel deneme veritabanı (Excel verisi), panelden belgeli indirme · 40 tablo · 1.405 satır · 30 KB | Claude (geliştirme) | `npm run db:restore` boş veritabanına; ADMIN_PASSWORD ile girildi; Eylül Genel bakış (brüt kâr 290.257 ₺, net −98.462 ₺) kaynakla aynı; işlem geçmişinde "Yedekten geri yüklendi". Canlı yedekle ilk prova birleştirmeden sonra yapılmalı. |
+| 22.10.2026 | Yerel deneme veritabanı (tohum verisi), panelden belgeli indirme · 40 tablo · 1.405 satır · 30 KB | Claude (geliştirme) | `npm run db:restore` boş veritabanına; ADMIN_PASSWORD ile girildi; Eylül Genel bakış (brüt kâr 290.257 ₺, net −98.462 ₺) kaynakla aynı; işlem geçmişinde "Yedekten geri yüklendi". Canlı yedekle ilk prova birleştirmeden sonra yapılmalı. |
 
 ## 10. Otomatik prova
 
@@ -259,7 +259,7 @@ atlanır:
 YEDEK_TEST_DATABASE_URL=postgres://postgres:postgres@localhost/postgres npm test
 ```
 
-Verilen sunucuda geçici veritabanları açıp sonunda siler. Sınadıkları: Excel verisi ve uç durumlar (bayt dizisi, JSON
+Verilen sunucuda geçici veritabanları açıp sonunda siler. Sınadıkları: tohum verisi ve uç durumlar (bayt dizisi, JSON
 `null`, `NaN` / `Infinity`, satır sonu ve emoji içeren metin) yedeklenip boş veritabanına yüklenir, her tablo aynıdır,
 yazılmayanlar hedefte yoktur, sayaçlar ileridedir, şema günceldir; yarım, değişmiş ya da yedek olmayan dosya reddedilir,
 tarayıcının açtığı düz `.json` okunur; `--sil` olmadan dolu hedefe yazılmaz; sayı tutmazsa hedef olduğu gibi kalır;
@@ -282,3 +282,38 @@ adrese yazar (`.env.local`'daki havuzsuz adres öne geçmez), boş `DATABASE_URL
 | `src/app/api/yedek/route.ts` | Akan indirme (`GET /api/yedek?t=…`) |
 | `src/app/panel/ayarlar/backup-client.tsx` | Yedeği indir düğmesi ve parola penceresi |
 | `scripts/backup.ts`, `scripts/restore.ts` | `npm run db:backup`, `npm run db:restore` |
+
+## 12. Dışa aktarım (.xlsx) ve CSV (okumak için)
+
+Yedekten ayrı, okunabilir kopyalar. Panele geri yüklenmez; rakamlar paneldeki hesapla aynıdır.
+
+**Çalışma kitabı** (`/api/export`, `src/app/api/export/workbook.ts`): Genel bakış'taki **Dışa aktar** düğmesi
+(telefonda **Aktar**) ekranın ayını ve şubesini gönderir (`?ay=`, `?sube=`; [SUBE.md](SUBE.md)); Ayarlar › Yedek'teki
+**Dışa aktar (.xlsx)** seçicisiz, Tümü. Dosya adı `laffogato-2026-09.xlsx` (şube dosyasında `-marina`).
+
+- **Kapak** (ilk sayfa, "Nasıl Okunur"): rapor adı, **dönem** (seçili ay; Gelir-Gider o yılın 12 ayı), **kapsam**
+  (şube ya da Tümü), **oluşturulma** zamanı, kaynak, sayfa sayısı ve başlıklı sayfa listesi (adına tıklayınca açılır);
+  altında okuma notları. Dosya özelliklerinde başlık, konu (dönem · kapsam) ve şirket yazar. Dosya Özet'te açılır.
+- **Her sayfa:** tablo başlığı koyu zeminde beyaz kalın yazı (sayı sütununun başlığı sağa yaslı), başlık satırı
+  dondurulmuş, liste sayfalarında otomatik süzgeç (başlıktan son veri satırına; toplam satırı süzgecin dışında), sütun
+  genişliği içeriğe göre (rakam "####" olmaz). Para `#.##0,00 ₺` (eksi kırmızı), yüzde `%0,0`, tarih `gg.aa.yyyy`, ay
+  adları Türkçe. Yazdırma: A4, sayfa genişliğine sığar, üst bilgide rapor · sayfa adı · dönem ve kapsam, alt bilgide
+  oluşturulma ve "Sayfa n / N"; tablo başlığı her basılı sayfada tekrar eder.
+- **Toplam satırları** tek görünümde (kalın, açık zemin, üst çizgi): Satış, Personel, Sabit Giderler, Aylık Alımlar,
+  Sayım, Tutarlılık ve Gelir-gider'in toplam satırları. **Faturalar** (tutar, iskonto, net, KDV, ödenecek, kalan borç,
+  panelde ödenen, tevkifat, tedarikçiye ödenen KDV), **Ürün Kârlılık** (satış adedi, brüt kâr, net ciro) ve **Cari
+  hareketleri** (borç, ödeme) bir boş satır altta `SUBTOTAL` ile toplar: süzgeçte görünen satırları sayar. Aylık
+  Alımlar'ın formülleri faturaların toplam satırını saymaz.
+- Gri sekmeler bütün ayların ham kayıtlarıdır (yedek için okunur kopya); satır sayıları kayıt sayısıyla aynı, toplam
+  satırı yok.
+- Faturanın **Kaynak** sütunu "Elle", "Paraşüt" ya da ilk kurulumda içe aktarılan kayıt için **"İçe aktarılmış (eski)"**
+  (`src/lib/import-labels.ts`; veritabanındaki değer `excel` olarak kalır, göç yok).
+- Testler: rakamlar `tests/export-workbook.test.ts`, biçim `tests/export-bicim.test.ts`, eski adların kalmadığı
+  `tests/eski-veri-adlari.test.ts`.
+
+**CSV** (Ürünler ve Hammaddeler › CSV; `src/lib/csv.ts`, `src/app/panel/urunler/csv.ts`,
+`src/app/panel/hammaddeler/csv.ts`): görünen satırlar, birimi adında Türkçe sütun adlarıyla ("Satış fiyatı (KDV dahil,
+₺)", "Kâr marjı (%)", "Alış KDV (%)"). Noktalı virgül ayraç, UTF-8 BOM (Türkçe harfler bozulmaz), satır sonu CRLF. Sayılar
+tek biçimde: binlik ayraç yok, virgüllü ondalık, sabit ondalık sayısı ("1234,50"); değer yoksa boş hücre. Reçetesi boş
+üründe birim kâr, marj, maliyet oranı, önerilen fiyat ve aylık brüt kâr boştur (listedeki tire gibi). "=", "+", "-", "@"
+ile başlayan metnin başına tek tırnak eklenir: tablo programında formül diye çalışmaz. Testler `tests/csv.test.ts`.

@@ -58,7 +58,7 @@ import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import type { BreakdownGroup } from "@/lib/breakdown";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { CountUnit } from "@/lib/calc/types";
-import { COUNT_UNITS } from "@/lib/constants";
+import { COUNT_UNITS, DEFAULT_SETTINGS } from "@/lib/constants";
 import { nameKey } from "@/lib/count-item";
 import { num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -126,9 +126,9 @@ export interface FormLine extends CountLineValue {
 
 export interface FormGroup {
   name: string;
-  /** Excel Sayım'daki grubun tek KDV oranı (ambalaj %20, diğerleri %1) */
-  excelRate: number;
-  /** Alış KDV'si grup oranından farklı malzemeler (yalnızca yönetici) */
+  /** Grubun olağan alış KDV'si (Ayarlar › Oranlar: ambalaj %20, gıda %1) */
+  rate: number;
+  /** Alış KDV'si grubun olağan oranından farklı malzemeler (yalnızca yönetici) */
   mismatches: { name: string; vatRate: number }[];
   lines: FormLine[];
 }
@@ -144,7 +144,7 @@ type HistoryMonth = { month: string; short: string; label: string; counted: numb
 type Extra = { name: string; unit: string; qty: string; unitPrice: string; priced: boolean };
 
 /** Personelin formunda stok toplamı yok (fiyat gelmez) */
-const NO_TOTALS: LiveTotals = { groups: [], extrasTotal: 0, total: 0, totalVat: 0, totalVatExcel: 0 };
+const NO_TOTALS: LiveTotals = { groups: [], extrasTotal: 0, total: 0, totalVat: 0 };
 /** Adresteki süzgeç anahtarları (?ara=sut&durum=empty&grup=…); "Temizle" hepsini birden sıfırlar */
 const QUERY_KEYS = ["ara", "durum", "grup"];
 const BLANK_EXTRA: Extra = { name: "", unit: "ADET", qty: "", unitPrice: "", priced: false };
@@ -167,7 +167,7 @@ const toExtra = (e: ExtraProp, isAdmin: boolean): Extra => ({
   unitPrice: isAdmin ? num(e.unitPrice, 2) : "",
   priced: e.priced,
 });
-/** Ayın son günü (Excel Sayım B6 = SERİAY(ay; 0)) */
+/** Ayın son günü (sayım tarihi: ay sonu) */
 function monthEnd(month: string): string {
   const [y, m] = month.split("-").map(Number);
   const d = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -923,7 +923,7 @@ const ProgressCard = memo(function ProgressCard({
           <span className={cn(complete && "font-medium text-good")}>{remaining ? `${num(remaining)} kalem kaldı` : total ? "Tüm kalemler sayıldı" : "Sayılacak kalem yok"}</span>
           {total ? <span className="font-medium text-ink tabular">%{num(share * 100)}</span> : null}
         </div>
-        {/* Excel Sayım başlığı: SAYIM YAPANIN AD SOYAD + TARİH (ay sonu). Ekranda son kayıt, çıktıda doldurulacak satır. */}
+        {/* Sayım başlığı: sayımı yapanın adı soyadı + tarih (ay sonu). Ekranda son kayıt, çıktıda doldurulacak satır. */}
         {counter ? (
           <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-mute">
             <UserRound size={13} className="shrink-0 text-ink-quiet" aria-hidden="true" />
@@ -956,12 +956,15 @@ const StockTotalCard = memo(function StockTotalCard({
   closingOverride,
   branchLabel,
   breakdown,
+  extrasVatRate,
 }: {
   month: string;
   monthLabel: string;
   prevMonthLabel: string;
   valuation: { fifo: boolean; start: string | null; shared?: boolean } | null;
   live: LiveTotals;
+  /** Listede olmayan kalemlerin KDV'si (gıdanın alış KDV'si, Ayarlar) */
+  extrasVatRate: number;
   coveredShare: number;
   hasExtras: boolean;
   prevTotal: { value: number; note: string | null } | null;
@@ -1033,25 +1036,14 @@ const StockTotalCard = memo(function StockTotalCard({
             label={
               <span>
                 KDV dahil
-                <InfoTip className="ml-1.5" text="Her malzemenin Hammaddeler'deki Alış KDV'siyle; ek kalemler %1. Kâr-zarar KDV hariç tutarı kullanır." />
+                <InfoTip
+                  className="ml-1.5"
+                  text={`Her malzemenin Hammaddeler'deki Alış KDV'siyle; listede olmayan kalemler gıdanın alış KDV'siyle (${pct(extrasVatRate, 0)}, Ayarlar). Kâr-zarar KDV hariç tutarı kullanır.`}
+                />
               </span>
             }
             value={tl(live.totalVat)}
           />
-          {Math.abs(live.totalVatExcel - live.totalVat) >= 1 ? (
-            <KeyValue
-              label={
-                <span>
-                  KDV dahil (Excel usulü)
-                  <InfoTip
-                    className="ml-1.5"
-                    text="Excel Sayım grup başına tek KDV oranı kullanır: ambalaj %20, diğer gruplar %1. Fark, Alış KDV'si grup oranından ayrılan malzemelerden gelir (grup başlığındaki ipucu)."
-                  />
-                </span>
-              }
-              value={tl(live.totalVatExcel)}
-            />
-          ) : null}
           {hasExtras ? <KeyValue label="Listede olmayanlar" value={tl(live.extrasTotal)} /> : null}
           {prevTotal !== null ? (
             <KeyValue
@@ -1233,6 +1225,7 @@ export function StockCountForm({
   prevMonthLabel,
   isAdmin,
   groups,
+  extrasVatRate = DEFAULT_SETTINGS.alisKdvGida,
   extras: initialExtras,
   prevExtras,
   hasPrev,
@@ -1254,6 +1247,8 @@ export function StockCountForm({
   prevMonthLabel: string;
   isAdmin: boolean;
   groups: FormGroup[];
+  /** Listede olmayan kalemlerin KDV'si: gıdanın alış KDV'si (Ayarlar › Oranlar, %1) */
+  extrasVatRate?: number;
   extras: ExtraProp[];
   /** Geçen ayın "listede olmayanlar"ı: yeni ay boşken tek dokunuşla getirilir */
   prevExtras: ExtraProp[];
@@ -1379,8 +1374,8 @@ export function StockCountForm({
   );
   // Personele fiyat gelmez (hepsi 0): toplam hiç hesaplanmaz
   const live = useMemo(
-    () => (isAdmin ? liveTotals(groups, (l) => formQty(byId.get(l.id)!, deferred.values[l.id]), deferredExtras) : NO_TOTALS),
-    [isAdmin, groups, byId, deferred, deferredExtras],
+    () => (isAdmin ? liveTotals(groups, (l) => formQty(byId.get(l.id)!, deferred.values[l.id]), deferredExtras, extrasVatRate) : NO_TOTALS),
+    [isAdmin, groups, byId, deferred, deferredExtras, extrasVatRate],
   );
   const groupLive = useMemo(() => new Map(live.groups.map((g) => [g.name, g])), [live]);
   // Stok değerinin faturalardan (FIFO katmanları) gelen kısmı, formdaki miktarlarla; kalan ay sonu fiyatıyla (başlangıçtan
@@ -1944,6 +1939,7 @@ export function StockCountForm({
             closingOverride={closingOverride}
             branchLabel={branchLabel}
             breakdown={breakdown}
+            extrasVatRate={extrasVatRate}
           />
         ) : null}
       </div>
@@ -2003,9 +1999,9 @@ export function StockCountForm({
                       KDV dahil {tl(gt.totalVat)}
                       {g.mismatches.length ? (
                         <InfoTip
-                          text={`Excel Sayım bu grupta tek KDV oranı kullanır (${pct(g.excelRate, 0)}); panel her malzemenin Hammaddeler'deki Alış KDV'sini kullanır. Farklı olan: ${g.mismatches
+                          text={`Bu grubun olağan alış KDV'si ${pct(g.rate, 0)} (Ayarlar › Oranlar); KDV dahil tutar her malzemenin Hammaddeler'deki Alış KDV'siyle. Farklı olan: ${g.mismatches
                             .map((m) => `${m.name} ${pct(m.vatRate, 0)}`)
-                            .join(", ")}. Faturasını kontrol edin, gerekirse Hammaddeler'de düzeltin. Excel usulü KDV dahil: ${tl(gt.totalVatExcel)}.`}
+                            .join(", ")}. Faturasını kontrol edin, gerekirse Hammaddeler'de düzeltin.`}
                         />
                       ) : null}
                     </span>

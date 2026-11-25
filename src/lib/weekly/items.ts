@@ -7,11 +7,13 @@
 
 import type { Model } from "@/lib/calc/engine";
 import type { WasteEntry } from "@/lib/calc/types";
+import type { TillRow } from "@/lib/cash-month";
 import { CASH_TOLERANCE } from "@/lib/cash-report";
 import { listTitle, lowerFirst, type ChecklistLite } from "@/lib/checklists";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
 import { percentText, WEEKDAY_NAMES } from "@/lib/karaoke/occupancy-text";
+import { cellReader, comparePairs, type KiyasBranch } from "@/lib/kiyas";
 import type { KasaName } from "@/lib/lafpos/kasa";
 import { addDays, daysBetween, longDateTR } from "@/lib/reminders";
 
@@ -195,27 +197,70 @@ export function kasaItem(i: KasaIn): WeeklyItem | null {
   };
 }
 
+/** Kasa cirosu satırının girdisi: son beş haftanın kasa satırları ve şubeler */
+export interface SalesLineIn {
+  week: WeekInfo;
+  /**
+   * Geçen hafta ve önceki dört haftanın kasa satırları (tillRows: kasa raporu, yoksa LafPOS gün sonu ya da ModPOS föyü;
+   * günün cirosu Z'nin içindeki ödenmez düşülerek, src/lib/cash-revenue.ts dayRevenue). Şubesiz satır Tuzla'nın
+   */
+  rows: readonly TillRow[];
+  /** Kasası olan fiziksel şubeler ve açılış günleri (Kıyas kartıyla aynı: src/lib/kiyas.ts) */
+  branches: readonly KiyasBranch[];
+  /** LafPOS'a geçiş günü: öncesindeki LafPOS gün sonu deneme günüdür */
+  switchDay: string | null;
+  lafposBranch?: string;
+}
+
 /**
  * Bağlam satırı: geçen haftanın kasa cirosu (KDV dahil, ödenmez / ikram hariç: Genel bakış ve Bugün'ün cirosuyla aynı
- * kural, denetim 13 Kasım HM-08; laffogato.net online kasadan geçmez). Geçen hafta ve önceki dört haftanın en az ikisi
- * tam (6+ raporlu) ise onların ortalamasıyla karşılaştırılır; değilse raporlu gün sayısıyla; rapor yoksa satır yok.
+ * kural, denetim 13 Kasım HM-08; laffogato.net online kasadan geçmez). Kaynak Genel bakış'ın ay rakamıyla aynı kasa
+ * satırları: raporu olmayan LafPOS günü LafPOS'un gün sonundan (bulgu 65; önceden yalnız kasa raporları okunuyordu).
+ *
+ * Karşılaştırma aynı şube ve günlerle (Kıyas kartının şube-gün eşlemesi, src/lib/kiyas.ts comparePairs; bulgu 65):
+ * geçen haftanın her günü önceki dört haftanın aynı günüyle, şube şube, iki günü de bilinen şube-gün iki tarafa da
+ * girer. Önceki haftalarda olmayan şube (yeni açılan Marina) büyüme sayılmaz, satırda adıyla söylenir. Geçen hafta
+ * en az 6 gün raporlu ve önceki dört haftanın en az ikisinde en az 6 gün eşleştiyse karşılaştırılır; değilse raporlu gün
+ * sayısıyla; satır yoksa satır yok. Önceden haftaların toplamları şube ayrımı yapmadan karşılaştırılıyordu: iki şubeli
+ * hafta tek şubeli dört haftayla kıyaslanıp "önceki 4 haftaya göre %X fazla" deniyordu.
  */
-export function salesLine(i: Pick<KasaIn, "week" | "reports">): string | null {
-  const weekOf = (k: number) => {
-    const from = addDays(i.week.lastFrom, -7 * k);
-    const to = addDays(i.week.lastTo, -7 * k);
-    const rs = i.reports.filter((r) => r.date >= from && r.date <= to);
-    // Raporlu gün tekil: iki şubenin aynı günkü raporları bir gün (ciro ikisinin toplamı)
-    return { n: new Set(rs.map((r) => r.date)).size, total: sum(rs.map((r) => r.revenue ?? r.zTotal)) };
-  };
-  const last = weekOf(0);
-  if (!last.n) return null;
-  const full = [1, 2, 3, 4].map(weekOf).filter((w) => w.n >= WEEKLY_SALES_FULL_DAYS);
-  if (last.n >= WEEKLY_SALES_FULL_DAYS && full.length >= 2) {
-    const avg = sum(full.map((w) => w.total)) / full.length;
-    return `Geçen hafta kasa cirosu ${tl(last.total)} · ${trendText(last.total, avg)}`;
+export function salesLine(i: SalesLineIn): string | null {
+  const read = cellReader({ rows: i.rows, branches: i.branches, today: i.week.lastTo, switchDay: i.switchDay, lafposBranch: i.lafposBranch });
+  const days: string[] = [];
+  for (let d = i.week.lastFrom; d <= i.week.lastTo; d = addDays(d, 1)) days.push(d);
+  // Geçen hafta bütün şubelerle: raporlu gün tekil (iki şubenin aynı günü bir gün, ciro ikisinin toplamı)
+  let total = 0;
+  const known = new Set<string>();
+  const present = new Set<string>();
+  for (const d of days) {
+    for (const b of i.branches) {
+      const c = read(b, d);
+      if (c.kind === "satis") total += c.revenue;
+      if (c.kind === "satis" || c.kind === "bos") {
+        known.add(d);
+        present.add(b.id);
+      }
+    }
   }
-  return `Geçen hafta kasa cirosu ${tl(last.total)}${last.n < 7 ? ` (${last.n} gün raporlu)` : ""}`;
+  if (!known.size) return null;
+  const head = `Geçen hafta kasa cirosu ${tl(Math.round(total * 100) / 100)}`;
+  const weeks = [1, 2, 3, 4]
+    .map((k) => comparePairs(read, i.branches, days.map((d) => [d, addDays(d, -7 * k)] as const)))
+    .filter((w) => w.state === "ok" && (w.cur?.days ?? 0) >= WEEKLY_SALES_FULL_DAYS);
+  if (known.size >= WEEKLY_SALES_FULL_DAYS && weeks.length >= 2) {
+    const cur = sum(weeks.map((w) => w.cur!.revenue));
+    const prev = sum(weeks.map((w) => w.prev!.revenue));
+    // Geçen hafta satan ama kıyaslanan bir haftada hiç günü olmayan şube (açılmamıştı ya da verisi yok): kıyas dışı, adıyla
+    const out = new Set<string>();
+    for (const w of weeks) {
+      for (const b of i.branches.filter((x) => present.has(x.id))) {
+        const missed = (w.notOpen.find((x) => x.id === b.id)?.days ?? 0) + (w.excluded.find((x) => x.id === b.id)?.prevDays ?? 0);
+        if (missed >= days.length) out.add(b.name);
+      }
+    }
+    return `${head} · ${trendText(cur, prev)}${out.size ? ` (aynı şubelerle: ${[...out].join(", ")} önceki haftalarda yoktu)` : ""}`;
+  }
+  return `${head}${known.size < 7 ? ` (${known.size} gün raporlu)` : ""}`;
 }
 
 // ---------------------------------------------------------------- Komisyon ve hakediş (komisyon)

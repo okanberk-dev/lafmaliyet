@@ -1,6 +1,6 @@
 "use server";
 
-import { and, asc, eq, gt, inArray, lt, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lt, ne } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -15,6 +15,7 @@ import { linkConflict, PERSON_REF_PATTERN, type LinkRow } from "@/lib/staff-link
 import { requireAdmin } from "@/server/auth/dal";
 import { tillRows } from "@/server/data/cash-reports";
 import { fixedReminderMessage, followFixedReminders, type FollowResult } from "@/server/data/fixed-follow";
+import { lockStaffLinks } from "@/server/data/staff-links";
 import { ALL_BRANCHES } from "@/lib/branches";
 import { currentPhysicalBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
@@ -25,8 +26,8 @@ import { attempt, UserError, zMonth, zOptText, zRate, zText } from "./util";
 
 // ---------------------------------------------------------------- Geçmiş aylar (ortak)
 //
-// Kira, maaş gibi tutarlar "şu aydan itibaren" değişir; önceki aylar eski tutarla kalır (Excel'de her ay
-// sütunu kendi sabitini taşır). Kalemin hesaba girdiği aylar startMonth / endMonth ile sınırlanır.
+// Kira, maaş gibi tutarlar "şu aydan itibaren" değişir; önceki aylar eski tutarla kalır (her ay
+// kendi tutarını taşır). Kalemin hesaba girdiği aylar startMonth / endMonth ile sınırlanır.
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
 
@@ -331,22 +332,6 @@ export async function saveStaff(
     refresh();
     return { changes, message };
   });
-}
-
-/**
- * Maaş satırı bağlantılarının işlem kilidi (inceleme bulgusu 6). staff.user_id'de veritabanı tekilliği yok: kural "bir hesap
- * bir şubede aynı ayda tek satıra" (bir şubede aralığı çakışan iki satır aynı kişiyi gösteremez), aralığa bağlı olduğundan
- * bir indeksle yazılamaz. Denetim (checkStaffLinks, linkConflict) ve yazım bu kilidi tutan işlemde yapılır; kilidi tutan öteki kayıt
- * (saveStaff, endStaff) bitene kadar beklenir ve READ COMMITTED'da sonraki okuma onun yazdığını görür. Böylece iki
- * yöneticinin aynı anda kaydı aynı hesabı aralığı çakışan iki satıra bağlayamaz.
- *
- * Biten satır ile "Devam ettir"in açtığı yeni satır (aralıkları ayrık) aynı hesaba bağlı kalabilir: eski satırın geçmiş
- * ayları kendi bağlantısıyla sayılır. Bu yüzden bir hesaba bir şubede birden çok satır düşebilir; LM-4b'nin personel listesi
- * (GET /api/panel/pos/personel?sube=…, "bu ay ve geçen ay aralıktaki satırlar") şubede hesap başına TEK öğe vermelidir
- * (docs/VARDIYA.md).
- */
-async function lockStaffLinks(tx: Tx): Promise<void> {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext('personel-baglanti'))`);
 }
 
 /**

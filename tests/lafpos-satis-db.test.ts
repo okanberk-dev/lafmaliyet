@@ -288,6 +288,59 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.equal(all.lafposSales?.countFrom, S, "sayım Marina'nın listesine göre: Tuzla'nın listesi LafPOS'un başlangıcını değiştirmez");
   });
 
+  lafposTest("Tümü'nün dönemi şube şube: Tuzla'nın listesi 2 Aralık'a kadarsa Marina'nın LafPOS'u da 2 Aralık'a kadar, listesi yoksa ayın satırları sayılmaz (bulgu 62)", async () => {
+    await setSwitch(S);
+    // Aralık: iki şubenin kasa raporları 1-3 Aralık, Marina'nın LafPOS günleri 1-3 Aralık (beforeEach), Tuzla'nın listesi
+    // 2 Aralık'a kadar (kendi kaydı); Marina'nın eski Aralık listesi (999 latte) zaten sayılmaz
+    for (const d of ["2026-12-01", "2026-12-02", "2026-12-03"]) {
+      await report(d, 1_800);
+      await report(d, 3_000, MODPOS_SUBE);
+    }
+    await modpos("2026-12", [{ posName: "FILTRE", qty: 7, revenue: 700 }], MODPOS_SUBE);
+    await db.insert(s.integrationState).values({ key: "sales.coverage.sube", value: { [MODPOS_SUBE]: { "2026-12": "2026-12-02" } } });
+    const decOf = (ds: Awaited<ReturnType<typeof dataset.loadDataset>>) =>
+      ds.salesLines
+        .filter((l) => l.month === "2026-12")
+        .map((l) => [l.posName, l.qty, l.lafpos?.days ?? null])
+        .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+
+    const all = await branchScope.withBranchScope(ALL_BRANCHES, () => dataset.loadDataset());
+    assert.deepEqual(
+      decOf(all),
+      [
+        ["FILTRE", 7, null],
+        ["LATTE MEDIUM", 10, 2],
+        ["TIRAMISU", 8, 2],
+      ],
+      "Marina'nın 3 Aralık'ı Tümü'de sayılmaz: Tuzla'nın listesi 2 Aralık'a kadar",
+    );
+    assert.equal(all.salesCoverage?.find((c) => c.month === "2026-12")?.through, "2026-12-02");
+    assert.deepEqual(all.commonLists, [{ month: "2026-12", branch: "Tuzla", through: "2026-12-02" }]);
+    // Dönem iki şubenin kasasıyla 2 Aralık'a kadar (önceden Marina'nın 3 Aralık'ı: Tuzla'nın iki günlük listesi üç günün
+    // sabit gideriyle düşülüyordu)
+    const lp = createModel(all).listPeriod("2026-12");
+    assert.ok(lp, "kısa liste: dönem var");
+    assert.deepEqual([lp.through, lp.openDays, lp.posRevenue, lp.short], ["2026-12-02", 2, 2 * (1_800 + 3_000), "Tuzla"]);
+    const dec = all.lafposSales?.months.find((m) => m.month === "2026-12");
+    assert.equal(dec?.held, undefined, "kesilen gün kasa raporunu bekleyen gün sayılmaz");
+    // Marina seçiliyken Tuzla'nın listesine bakılmaz: LafPOS'un üç günü
+    const marina = await dataset.loadDataset();
+    assert.deepEqual(decOf(marina), [
+      ["LATTE MEDIUM", 15, 3],
+      ["TIRAMISU", 12, 3],
+    ]);
+    assert.equal(marina.commonLists, undefined);
+
+    // Tuzla'nın Aralık listesi silindi (kasa raporları duruyor): Tümü'de Aralık'ın ortak dönemi yok, satırları sayılmaz
+    await db.delete(s.salesLines).where(and(eq(s.salesLines.month, "2026-12"), eq(s.salesLines.branchId, MODPOS_SUBE)));
+    const none = await branchScope.withBranchScope(ALL_BRANCHES, () => dataset.loadDataset());
+    assert.deepEqual(decOf(none), []);
+    assert.deepEqual(none.commonLists, [{ month: "2026-12", branch: "Tuzla", through: null }]);
+    assert.equal(none.salesCoverage?.find((c) => c.month === "2026-12"), undefined);
+    // Satışlar bandı LafPOS'un gelen günlerini yine söyler (Marina'nın özeti)
+    assert.equal(none.lafposSales?.months.find((m) => m.month === "2026-12")?.lafpos?.days, 3);
+  });
+
   lafposTest("süren ayda kasa raporu girilmemiş LafPOS günü rapor girilince sayılır: liste ↔ POS cirosu aynı günlerle karşılaştırılır", async () => {
     at("2026-12-10T23:30:00+03:00");
     await setSwitch("2026-12-01");

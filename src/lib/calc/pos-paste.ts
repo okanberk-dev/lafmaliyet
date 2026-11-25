@@ -162,7 +162,7 @@ function finish(rows: SalesRow[], skippedRows: SkippedRow[], skipped: Record<Ski
 }
 
 /**
- * Yapıştırılan metni (Patron ekranından ya da Excel'den kopyalanan liste) okur.
+ * Yapıştırılan metni (Patron ekranından ya da bir tablo programından kopyalanan liste) okur.
  * Her satır: ürün adı, adet, ciro (KDV dahil). Sekme, noktalı virgül, iki boşluk ya da virgülle ayrılabilir.
  */
 export function parsePastedSales(text: string): SalesParseResult {

@@ -38,7 +38,7 @@ export interface CommissionInvoiceIn {
   /** KDV hariç, iskonto öncesi; amount − discount = KDV hariç tutar (Gelir-gider'in saydığı) */
   amount: number;
   discount: number;
-  /** KDV dahil (Excel'den gelenlerde vat sütunu 0 olduğu için KDV = payable − net) */
+  /** KDV dahil (içe aktarılmış kayıtlarda vat sütunu 0 olduğu için KDV = payable − net) */
   payable: number;
   needsReview: boolean;
   /** KDV hariç kalem tutarları; kalemi okunmamış faturada boş */

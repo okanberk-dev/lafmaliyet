@@ -27,6 +27,7 @@ import {
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { lafposDiffText, type LafposDiff } from "@/lib/lafpos/diffs";
+import { BLIND_TEXT } from "@/lib/lafpos/kor-kasa";
 import { okcHasFigures, okcReconcile } from "@/lib/okc-z";
 import { dayMonthTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -122,6 +123,7 @@ export function CashBreakdown({
   kasa = "ModPOS",
   cardExtra = null,
   offDevice = null,
+  blind = false,
 }: {
   report: CashReportFields;
   cashOuts?: (CashOutLine & { id: number; photoId: number | null })[];
@@ -137,6 +139,11 @@ export function CashBreakdown({
   cardExtra?: number | null;
   /** LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): kart karşılaştırması düşer */
   offDevice?: CashOffDevice | null;
+  /**
+   * Kör kasa (bulgu 0; personelin LafPOS günü, blindReport): kasa bölümünde yalnız nakit satış, giren ve çıkan; açılış,
+   * olması gereken, sayılan, fark, teslim ve devir yok (raporda sıfırlanmış gelirler)
+   */
+  blind?: boolean;
 }) {
   // Kart karşılaştırması LafPOS'un kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen ödemeyi (Faz 2)
   // düşer (kaydedilmez)
@@ -169,14 +176,16 @@ export function CashBreakdown({
       </section>
       <section aria-label="Kasa">
         <h3 className="border-b border-line pb-1 text-[13px] font-semibold text-ink-soft">Kasa (nakit)</h3>
-        <Line
-          label="Açılış (devir)"
-          value={money(report.openingCash)}
-          tone={carry ? "warn" : undefined}
-          sub={carry ? `Önceki rapor (${dayMonthTR(carry.prevDate)}) devri ${money(carry.carry)} · ${carryDiffText(carry)}` : null}
-          subWarn
-        />
-        <Line label="+ Nakit satış" value={money(report.cash)} />
+        {blind ? null : (
+          <Line
+            label="Açılış (devir)"
+            value={money(report.openingCash)}
+            tone={carry ? "warn" : undefined}
+            sub={carry ? `Önceki rapor (${dayMonthTR(carry.prevDate)}) devri ${money(carry.carry)} · ${carryDiffText(carry)}` : null}
+            subWarn
+          />
+        )}
+        <Line label={blind ? "Nakit satış" : "+ Nakit satış"} value={money(report.cash)} />
         {report.cashIn ? <Line label="+ Gün içinde giren" value={money(report.cashIn)} /> : null}
         {report.cashOut || cashOuts.length ? <Line label="− Gün içinde çıkan" value={money(report.cashOut)} sub={report.cashOutNote} /> : null}
         {cashOuts.length ? (
@@ -192,17 +201,23 @@ export function CashBreakdown({
             ))}
           </ul>
         ) : null}
-        <Line label="= Olması gereken" value={money(c.expectedCash)} strong />
-        <Line label="Sayılan" value={money(report.countedCash)} strong />
-        <Line label="Fark" value={diffText(c.cashDiff)} strong tone={c.kind === "short" ? "bad" : c.kind === "over" ? "warn" : "good"} />
-        {report.handedOver ? <Line label="Teslim edilen" value={money(report.handedOver)} /> : null}
-        <Line
-          label="Ertesi güne devir"
-          value={money(c.carryOver)}
-          tone={next ? "warn" : undefined}
-          sub={next ? `${dayMonthTR(next.date)} açılışı ${money(next.opening)} · ${money(Math.abs(next.diff))} farklı` : null}
-          subWarn
-        />
+        {blind ? (
+          <p className="pt-1.5 text-[13px] leading-5 text-ink-mute">{BLIND_TEXT.breakdown}</p>
+        ) : (
+          <>
+            <Line label="= Olması gereken" value={money(c.expectedCash)} strong />
+            <Line label="Sayılan" value={money(report.countedCash)} strong />
+            <Line label="Fark" value={diffText(c.cashDiff)} strong tone={c.kind === "short" ? "bad" : c.kind === "over" ? "warn" : "good"} />
+            {report.handedOver ? <Line label="Teslim edilen" value={money(report.handedOver)} /> : null}
+            <Line
+              label="Ertesi güne devir"
+              value={money(c.carryOver)}
+              tone={next ? "warn" : undefined}
+              sub={next ? `${dayMonthTR(next.date)} açılışı ${money(next.opening)} · ${money(Math.abs(next.diff))} farklı` : null}
+              subWarn
+            />
+          </>
+        )}
       </section>
       <CardDetail report={report} audience={audience} okcAdmin={okcAdmin} kasa={kasa} cardExtra={cardExtra} offDevice={offDevice} />
       {report.note ? (

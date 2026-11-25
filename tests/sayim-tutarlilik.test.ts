@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { counterLine, countComplete, countStatus, defaultCountMonth, extraKey, linePrice, liveTotals, planStaffExtras, todayTR, type CountLineValue, type SavedExtra } from "../src/app/panel/sayim/logic";
 import { RATIO_GUIDE, scopeTotals, severityOf, tableScope } from "../src/app/panel/tutarlilik/severity";
 import { countFactor, createModel, type Model } from "../src/lib/calc/engine";
-import { consistency, stockVatSummary } from "../src/lib/calc/insights";
+import { consistency } from "../src/lib/calc/insights";
 import type { Dataset } from "../src/lib/calc/types";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 import { MANAGED_QTY_NOTE, NO_PURCHASE_NOTE } from "../src/lib/purchase-notes";
@@ -34,10 +34,8 @@ function close(actual: number | null | undefined, expected: number, label: strin
 /** sayim/page.tsx ile aynı eşleme: StockSheet → formun satırları */
 function formGroups(model: Model, month: string) {
   const sheet = model.stockSheet(month);
-  const vat = stockVatSummary(sheet);
-  return sheet.groups.map((g, gi) => ({
+  return sheet.groups.map((g) => ({
     name: g.name,
-    excelRate: vat.groups[gi].excelRate,
     lines: g.lines.map(
       (l): CountLineValue => ({
         id: l.ingredient.id,
@@ -54,7 +52,7 @@ const saved = (l: CountLineValue) => l.qty;
 
 // ---------------------------------------------------------------- Canlı stok toplamı
 
-test("Sayım formu: değişiklik yokken canlı toplam engine.stockSheet ile aynı (KDV hariç, KDV dahil, Excel usulü)", () => {
+test("Sayım formu: değişiklik yokken canlı toplam engine.stockSheet ile aynı (KDV hariç, KDV dahil)", () => {
   // Her sayılabilir kalemden 1, ek kalem 3 × 12,5
   const counts = ds.ingredients.filter((i) => i.countUnit && i.active).map((i) => ({ month: "2026-09", ingredientId: i.id, qty: 1, factor: countFactor(i.countUnit) }));
   const model = createModel({ ...ds, stockCounts: counts, stockExtras: [{ id: 1, month: "2026-09", name: "Peçete", unit: "PAKET", qty: 3, unitPrice: 12.5 }] });
@@ -63,10 +61,15 @@ test("Sayım formu: değişiklik yokken canlı toplam engine.stockSheet ile ayn�
   close(live.total, sheet.total, "KDV hariç");
   close(live.totalVat, sheet.totalVatIncl, "KDV dahil");
   close(live.extrasTotal, 37.5, "ek kalemler");
-  close(live.totalVatExcel, stockVatSummary(sheet).excelTotalVatIncl, "Excel grup oranıyla KDV dahil");
   sheet.groups.forEach((g, i) => close(live.groups[i].total, g.total, `${g.name} grup toplamı`));
-  // Yalnızca Yenilebilir bardak (%10, grup %20) Excel usulünden ayrılır
-  assert.ok(live.totalVatExcel > live.totalVat);
+  // Grup oranıyla ikinci bir KDV dahil toplam yok (eski tablonun usulü kaldırıldı)
+  assert.equal("totalVatExcel" in live, false);
+  // Listede olmayan kalemin KDV'si Ayarlar'daki gıda oranından: %1 → %8 olunca yalnız ek kalemin KDV'si değişir
+  const live8 = liveTotals(formGroups(model, "2026-09"), saved, sheet.extras.map((e) => ({ qty: e.qty, unitPrice: e.unitPrice })), 0.08);
+  close(live8.totalVat - live.totalVat, 37.5 * (0.08 - 0.01), "ek kalem KDV'si ayardan");
+  const m8 = createModel({ ...ds, settings: { ...ds.settings, alisKdvGida: 0.08 }, stockCounts: counts, stockExtras: [{ id: 1, month: "2026-09", name: "Peçete", unit: "PAKET", qty: 3, unitPrice: 12.5 }] });
+  close(m8.stockSheet("2026-09").totalVatIncl, live8.totalVat, "motor da aynı ayarı okur");
+  close(m8.stockSheet("2026-09").total, sheet.total, "KDV hariç değişmez");
 });
 
 test("Sayım formu: Excel'in Eylül verisinde sayım yok, toplam 0 (Excel Sayım boş)", () => {

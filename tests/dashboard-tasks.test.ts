@@ -301,7 +301,8 @@ test("Sabit gider kutusu: standart, açık gün etkisi, bu aya özel gider ayrı
   const f = d.fixedMonth;
   assert.ok(f.waterInRecipes && f.waterExcluded === 3000);
   const html = renderToStaticMarkup(createElement(FixedReconcile, { f })).replace(/ /g, " ");
-  assert.match(html, /Standart aylık sabit gider \(Excel\)/);
+  assert.match(html, /Standart aylık sabit gider</);
+  assert.ok(!/Excel/.test(html), "kutuda Excel adı yok");
   assert.match(html, /Açık gün etkisi \(28 \/ 30 gün\)/);
   assert.match(html, /Bu aya özel giderler \(Gelir-gider\)/);
   assert.match(html, /DOĞALGAZ/);
@@ -312,9 +313,11 @@ test("Sabit gider kutusu: standart, açık gün etkisi, bu aya özel gider ayrı
   const tip = fixedBreakdownText(f).replace(/ /g, " ");
   assert.match(tip, /açık gün etkisi \(28 \/ 30 gün\) −/);
   assert.match(tip, /bu aya özel giderler \(Gelir-gider\) \+5\.000 ₺/);
-  // Fark yoksa (Excel'in Eylül'ü) tek satırlık not
+  assert.match(tip, /= bu ay düşülen [\d.]+ ₺\.$/);
+  assert.ok(!/Excel/.test(tip), "ipucunda Excel adı yok");
+  // Fark yoksa (tam açık Eylül) tek satırlık not
   const plain = renderToStaticMarkup(createElement(FixedReconcile, { f: dashboard(model, "2026-09").fixedMonth })).replace(/ /g, " ");
-  assert.match(plain, /standart aylık tutarlarla düşüldü \(377\.813 ₺, Excel Panel ile aynı temel\)/);
+  assert.match(plain, /standart aylık tutarlarla düşüldü \(377\.813 ₺\)\./);
 });
 
 test("Yalnızca ödeme işi açıksa ay eksiksiz sayılır (ödemeler bugüne bağlı)", () => {

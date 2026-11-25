@@ -1,7 +1,7 @@
 /**
  * Vergi hesabının veritabanından gelen girdileri ve modelden görünüm girdisinin kurulması (plan docs/planlar/vergi.md
  * §7.1, K30). Sunucu bunları tek turda okur (src/server/data/tax.ts loadTaxInputs); Özet, Vergiye göre, nakit planı ve
- * Excel aynı kurucudan geçer, böylece aynı hesabı okur. Saf modül (Model yalnız tip); tests/vergi-eylemler.test.ts.
+ * dışa aktarım aynı kurucudan geçer, böylece aynı hesabı okur. Saf modül (Model yalnız tip); tests/vergi-eylemler.test.ts.
  */
 
 import type { Model } from "../calc/engine";
@@ -65,7 +65,7 @@ export function muhtasarItemsWindow(model: Pick<Model, "fixedInMonth" | "pnlMont
 }
 
 /**
- * Vergi görünümünün girdisi modelden ve okunan vergi girdilerinden (Özet, Vergiye göre, nakit planı, Excel). `reminders`
+ * Vergi görünümünün girdisi modelden ve okunan vergi girdilerinden (Özet, Vergiye göre, nakit planı, dışa aktarım). `reminders`
  * ve `vat` yalnız takvim içindir: nakit planının beslemesi onları okumaz (taxPlanFeed)
  */
 export function taxViewInputFromModel(

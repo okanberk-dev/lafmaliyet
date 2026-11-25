@@ -10,12 +10,13 @@ import { currentTillBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
 import { isClosedDay } from "@/server/closed-days";
 import { kasaEvidence } from "@/server/data/lafpos-day";
+import { staffBlindOn } from "@/server/lafpos/branch";
 import { createOrUpdateRequest, decide, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { getPhoto, holdPhoto, linkable, releasePhoto } from "@/server/storage/photos";
 import { UserError } from "@/server/user-error";
 
 import { chainNeighbours } from "./late-chain";
-import { lockCashReport, lockLateDay, writeCashReport, type CashActor, type CashReportRow, type CashTx, type WriteResult } from "./report-store";
+import { assertStaffOutNote, lockCashReport, lockLateDay, writeCashReport, type CashActor, type CashReportRow, type CashTx, type WriteResult } from "./report-store";
 
 /*
  * Geç kasa raporu (docs/KASA-RAPORU.md › Geç rapor; plan docs/planlar/personel-yetki.md §2.6): personel dünden eski, son
@@ -94,12 +95,17 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
     if ((pending?.version ?? 0) !== input.requestVersion) throw new UserError(CASH_REQUEST_TEXT.lateStale);
     // Aynı gün için iki ret ya da geri çekmeden sonra yeni istek açılmaz (bekleyeni güncellemek serbest)
     if (!pending && closed >= 2) throw new UserError(CASH_REQUEST_TEXT.lateTwice);
-    // Açılış zincirin önceki halkasının (rapor ya da bekleyen geç rapor) devriyle tutmuyorsa nedeni nota
+    // Açılış zincirin önceki halkasının (rapor ya da bekleyen geç rapor) devriyle tutmuyorsa nedeni nota. Önceki halka
+    // LafPOS'un kör günüyse sorulmaz: hata metni devirden farkı söyler, kör günün devri personele gitmez (bulgu 0);
+    // yönetici onayda devirle karşılaştırır
     const { prev } = await chainNeighbours(tx, date, { prefer: me.id, branchId });
-    const check = carryCheck(date, fields.openingCash, prev ? { date: prev.date, amount: prev.carry } : null);
+    const prevBlind = prev ? await staffBlindOn(prev.date, branchId, tx) : false;
+    const check = prevBlind ? null : carryCheck(date, fields.openingCash, prev ? { date: prev.date, amount: prev.carry } : null);
     if (check && openingNeedsNote({ check, openingCash: fields.openingCash, prevOpening: null, note: fields.note })) {
       throw new UserError(`Açılış önceki günün devrinden farklı (${carryDiffText(check)}): nedenini nota yazın`);
     }
+    // Fişsiz çıkış (bulgu 2): o günün kasadan çıkan satırlarından fazlası yazıldıysa neye çıktığı zorunlu
+    await assertStaffOutNote(tx, date, branchId, fields, null);
     // Fotoğraflar: önceki isteğin tuttukları serbest; yenileri kişinin kendisinin, Z ya da POS, bağlanmamış
     const kept = new Set(pending?.photoIds ?? []);
     const photos: LatePayloadT["photos"] = [];

@@ -165,7 +165,7 @@ function EditableCell({
   label: string;
   /** Sütun (ay): Enter'dan sonra odak aynı sütunda alttaki hücreye geçer */
   col: string;
-  /** Hücre notu (Excel'deki hücre açıklaması) */
+  /** Hücre notu (elle düzeltmenin açıklaması) */
   note?: string | null;
   /** Sabit gider bu ay geçerlilik aralığının dışında: soluk ve kesik çizgili (yazılırsa yine de sayılır) */
   outOfRange?: boolean;
@@ -197,7 +197,7 @@ function EditableCell({
   const startText = useRef("");
   /** Esc ile vazgeçildi ya da not penceresi açıldı: ardından gelen blur kaydetmesin */
   const cancelled = useRef(false);
-  /** Klavyeyle bitince odak nereye: Esc hücrenin kendisine, Enter (Excel'deki gibi) alttaki hücreye */
+  /** Klavyeyle bitince odak nereye: Esc hücrenin kendisine, Enter alttaki hücreye (tablo düzeni) */
   const refocus = useRef<"self" | "next" | null>(null);
   const negative = value !== null && value < 0;
   const invalid = text.trim() !== "" && parseNumberTR(text.trim()) === null;
@@ -214,7 +214,7 @@ function EditableCell({
     setEditing(true);
   }
 
-  /** Not penceresi: düzenlenen tutar metniyle açılır (Excel'de Shift+F2) */
+  /** Not penceresi: düzenlenen tutar metniyle açılır (Shift+F2) */
   function openNote(amountText: string) {
     if (!onNote) return;
     cancelled.current = true;
@@ -301,7 +301,7 @@ function EditableCell({
             if (e.key === "Enter") {
               e.preventDefault();
               const input = e.target as HTMLInputElement;
-              // Excel gibi: kabul edilmeyen değerde hücrede kalınır, yazılan kaybolmaz (düzeltin ya da Esc)
+              // Kabul edilmeyen değerde hücrede kalınır, yazılan kaybolmaz (düzeltin ya da Esc)
               const problem = text.trim() === startText.current.trim() ? null : enterProblem(text, validate);
               if (problem) {
                 toast.error(problem, { id: "pnl-cell-error" });
@@ -365,7 +365,7 @@ function EditableCell({
           onClick={() => begin()}
           onKeyDown={(e) => {
             if (noteKeys(e, valueText())) return;
-            // Excel gibi: hücre seçiliyken rakam yazmak düzenlemeyi o rakamla başlatır
+            // Hücre seçiliyken rakam yazmak düzenlemeyi o rakamla başlatır
             if (!e.metaKey && !e.ctrlKey && !e.altKey && /^[\d,.-]$/.test(e.key)) {
               e.preventDefault();
               begin(e.key);
@@ -391,7 +391,7 @@ function EditableCell({
           {fmt(value, format)}
           {suffix ? <span className="ml-0.5 text-xs font-normal text-ink-quiet">{suffix}</span> : null}
           {note ? (
-            // Excel'deki not üçgeni: sol üst köşede
+            // Not üçgeni: sol üst köşede
             <span className="absolute top-0 left-0 size-0 rounded-tl-lg border-t-[7px] border-r-[7px] border-t-warn border-r-transparent" aria-hidden="true" />
           ) : null}
           {overridden && kind === "auto" ? <span className="absolute top-1 right-1 size-1.5 rounded-full bg-info" aria-hidden="true" /> : null}

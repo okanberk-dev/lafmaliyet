@@ -55,7 +55,7 @@ export const countItemSchema = z.object({
         .string()
         .min(COUNT_ITEM_NAME_MIN, `Ad en az ${COUNT_ITEM_NAME_MIN} harf olmalı`)
         .max(COUNT_ITEM_NAME_MAX, "Ad çok uzun")
-        // Ad ve paket Hammaddeler'in CSV'sine olduğu gibi gider: Excel'de formül diye çalışmasın
+        // Ad ve paket Hammaddeler'in CSV'sine olduğu gibi gider: tablo programında formül diye çalışmasın
         .refine((v) => !startsLikeFormula(v), formulaStartMessage("Ad")),
     ),
   group: zText("Grup", 80),

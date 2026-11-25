@@ -28,7 +28,7 @@ export interface NewRecipeLine {
 /**
  * Yeni ürünü (ve varsa reçetesini) yazar; Ürünler › Yeni ürün (createProduct) ve personelin yeni ürün önerisinin onayı
  * (approveNewProduct) aynı kuralla açar, çağıran kendi işleminde (tx) çağırır. Aynı ad + boyda ürün varsa UserError.
- * Kopyalamada (`copyFromId`) kaynağın ürüne özel fire oranı, notu ve reçetesi de gelir (Excel'de kart bloğu
+ * Kopyalamada (`copyFromId`) kaynağın ürüne özel fire oranı, notu ve reçetesi de gelir (eski tabloda kart bloğu
  * kopyalanınca G16 ve notlar da taşınır). Kopyasız yeni ürün, kategorisindeki ürünlerin en sık kullandığı zayi oranını
  * alır (categoryFireDefault); `items` verilirse reçetesi o satırlardır. Sıra en sonda; aktiflik ve QR menüde
  * görünürlük varsayılan (açık). laffogato.net menüsüne bağlanmaz (bağlantı Ürünler › Site menüsü'nde). Fiyatı varsa

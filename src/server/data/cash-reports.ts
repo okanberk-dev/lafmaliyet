@@ -16,6 +16,7 @@ import {
   type CashRevisionRow,
 } from "@/lib/cash-report";
 import { posZSchema } from "@/lib/lafpos/day";
+import { blindReport, staffBlindDay } from "@/lib/lafpos/kor-kasa";
 import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { foyZ } from "@/lib/modpos/z";
 import type { OkcPrev, OkcRow, OkcVatLine } from "@/lib/okc-z";
@@ -108,6 +109,11 @@ export interface CashReportDTO extends CashReportFields {
   okcOutside?: number | null;
   /** Personelin DTO'su: toplam dışı tahsilat var (tutarı yok; okc-z.ts K4 fazlayı tutmadı saymaz). Yoksa anahtar yok */
   okcExtraTakings?: true;
+  /**
+   * Kör kasa (bulgu 0; src/lib/lafpos/kor-kasa.ts): personelin LafPOS günü raporu, açılış, sayılan, teslim ve kasa farkı
+   * sıfırlanmış (blindForStaff). Ekran bu raporda farkı, sayılanı, açılışı, olması gerekeni ve devri çizmez
+   */
+  blind?: true;
   revision: number;
   cashDiff: number;
   submittedBy: number | null;
@@ -175,6 +181,18 @@ export function toCashDTO(r: Row, audience: CashAudience = "staff"): CashReportD
   };
   if (audience === "admin") return { ...dto, okcCumTotal: r.okcCumTotal, okcCumVat: r.okcCumVat, okcOutside: r.okcOutside };
   return r.okcOutside !== null && r.okcOutside > 1 ? { ...dto, okcExtraTakings: true } : dto;
+}
+
+/**
+ * Kör kasa (bulgu 0; docs/LAFPOS.md › Kör kasa): personele giden raporlardan LafPOS'un şubesinin LafPOS günlerinin sayım
+ * rakamları çıkar (blindReport: açılış, sayılan, teslim, fark; notun açılış cümleleri). Yönetici olduğu gibi alır; Tuzla
+ * (ModPOS) ve geçiş gününden önceki gün değişmez. Personele rapor gösteren her yükleyici bundan geçirir (Kasa sayfası,
+ * Bugün)
+ */
+export async function blindForStaff(reports: CashReportDTO[], role: CashAudience): Promise<CashReportDTO[]> {
+  if (role === "admin" || !reports.length) return reports;
+  const [branch, switchDay] = await Promise.all([lafposBranchId(), lafposSwitchDay()]);
+  return reports.map((r) => (staffBlindDay({ admin: false, branchId: r.branchId, lafposDay: isLafposDay(r.date, switchDay), lafposBranch: branch }) ? blindReport(r) : r));
 }
 
 /** Günün raporu: tek kasanın (verilen şube; yoksa seçili şube, "Tümü"nde raporun yazılacağı şube) */

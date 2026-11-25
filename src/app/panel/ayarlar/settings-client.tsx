@@ -206,9 +206,9 @@ export function SettingsForm({ settings, water, data, menuUrls }: { settings: Se
               Yeni: <strong className="font-semibold tabular">{shown(v, f)}</strong> · kayıtlı {shown(Number(settings[f.key]), f)}
             </span>
           ) : f.assumption ? (
-            // Excel'deki sarı "VARSAYIM" hücresi
+            // Ölçülmemiş, tahmini değer
             <span className="inline-flex flex-wrap items-center gap-1.5">
-              <Badge tone="amber" dot title="Excel'de sarı işaretli varsayım: gerçek değeri ölçüp yazın">
+              <Badge tone="amber" dot title="Tahmini değer: gerçek değeri ölçüp yazın">
                 Varsayım
               </Badge>
               {f.hint.replace(/^Varsayım:\s*/, "")}
@@ -265,7 +265,7 @@ export function SettingsForm({ settings, water, data, menuUrls }: { settings: Se
           <div className="grid gap-4 @lg:grid-cols-2 @3xl:grid-cols-3">{RATE_FIELDS.map(field)}</div>
           <ToggleRow
             title="Fireyi ambalaja (bardak, kapak, peçete) uygulama"
-            tip="Excel formülü fireyi ambalaj dahil uyguluyordu; notu ise hariç diyordu."
+            tip="Açıkken fire payı ambalaja (bardak, kapak, peçete) eklenmez, yalnız malzemelere eklenir. Ürün kartında ayrı zayi oranı olan üründe de aynı kural geçer."
             description={fireEx ? "Fire yalnızca malzemelere eklenir." : "Fire ambalaj dahil bütün reçeteye eklenir."}
             label="Fireyi ambalaja uygulama"
             onText="Ambalaja uygulanmıyor"
@@ -312,7 +312,7 @@ export function SettingsForm({ settings, water, data, menuUrls }: { settings: Se
             <Well className="ring-1 ring-line">
               <p className="flex items-center gap-1.5 text-[13px] text-ink-mute">
                 Şu an
-                <InfoTip text="Gelir-gider tablosunda SU GİDERİ girilmiş ve ürün satış listesi olan en son ayın faturası ÷ o ay reçetelere göre harcanan su + buz litresi. Excel her zaman Eylül'ü kullanır." />
+                <InfoTip text="Gelir-gider tablosunda SU GİDERİ girilmiş ve ürün satış listesi olan en son ayın faturası ÷ o ay reçetelere göre harcanan su + buz litresi. Yeni ayın faturası ve satış listesi girilince o aya geçer." />
               </p>
               <p className="mt-0.5 text-2xl font-semibold tracking-tight text-ink tabular">
                 {tl(water.perLiter, 4)}

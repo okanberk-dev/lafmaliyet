@@ -33,7 +33,15 @@ gününden sonra kasadan o tedarikçiye işlenmemiş bir çıkış varsa "Kasada
 en çok max(1 ₺, %2) farkla tutan, gününe en yakın kalem. Tutarı hiçbir kalemi tutmayan çıkış (ör. 300 ₺ fişsiz Metro
 alışverişi) yalnız ipucudur; e-posta kalemleri yine hatırlatır.
 
-Gecikmiş ve yaklaşan ödemeler kenar çubuğundaki **zilde** de görünür. Zilin **Onaylar** başlığında yöneticiye onay
+Gecikmiş ve yaklaşan ödemeler kenar çubuğundaki **zilde** de görünür, vadeye göre en çok 8 satır: sığmayanlar
+(ay başında kira, SGK, KDV, muhtasar ve tedarikçi vadeleri birikince) tek bir **"N ödeme daha"** satırında toplanır;
+satır kaçının gecikmiş, bugün ve yakında olduğunu ve ilk üçünün adını söyler ("5 gecikmiş: SGK, KDV, Muhtasar ve 2
+ödeme daha. Hepsi Ödemeler'de."), okununca içindekiler de okunmuş sayılır. Telefonun alt menüsündeki **Ödemeler**
+rozeti gecikmiş ödemelerin hepsini sayar, özetin içindekiler dahil (10 gecikmiş ödeme "9+"; önceden zilin ilk 8
+satırından sayıldığı için 8'de takılıyordu; bulgu 96, `src/lib/bell-payments.ts`). Kişinin hatırlatıcıları da en çok 8
+satır: fazlası "N hatırlatıcı daha · Hepsi Hatırlatıcılarım'da". Zil ve rozet seçili şubenin ödemelerini sayar (şubenin
+ve işletme genelinin); şube seçici değişince zil kendiliğinden yeniden okunur, rozet eski şubenin sayısında kalmaz
+(bulgu 89). Zilin **Onaylar** başlığında yöneticiye onay
 bekleyen reçete önerileri, onay bekleyen hammadde fiyatları (`docs/PARASUT.md` 5b) ve personelin onay bekleyen
 istekleri durur (istek başına bir satır, `/panel/onaylar#istek-<id>`'e götürür; satır istek güncellenince en çok 10
 dakikada bir yeniden okunmamış olur; [ONAYLAR.md](ONAYLAR.md)). Personelde aynı başlığın adı **İsteklerim**: reçete
@@ -430,7 +438,15 @@ zammı) zilin en ağır okumasıdır; düşerse zil boş gelmez (denetim E-49): 
 faturalar ve sistem satırları yine gelir, modelin satırları yerine Uyarılar'da tek bir **"Maliyet uyarıları
 yüklenemedi"** satırı durur (okunmamış sayılmaz, rozeti şişirmez; kimliği günden). **Zamanı gelen ödemeler** de kendi
 paralel sorgularıyla okunur; düşerse Ödemeler grubu sessizce boşalmaz, yerinde tek bir **"Ödemeler yüklenemedi"**
-satırı durur (okunmamış sayılmaz; gecikmiş ödeme rozeti bu okumada sayılamaz). Zilin bütün okuması düşerse (ağ,
+satırı durur (okunmamış sayılmaz; gecikmiş ödeme rozeti bu okumada sayılamaz). Öbür bölümler de öyle (bulgu 88):
+hatırlatıcılar, reçete önerileri, onay istekleri (kasa, zayi, karaoke), bekleyen fiyat onayları, kasa, kontrol
+listeleri, faturalar, komisyon, günlük işlerin durumu, bildirim alıcıları, ModPOS anahtarı, fiyatı girilmemiş
+hammaddeler, kasada değişecek fiyatlar, tükenenler ve sayım okunamazsa sessizce boş görünmez: hata günlüğe yazılır
+ve grubunda tek bir **"{Grup} yüklenemedi"** satırı durur ("Kasa yüklenemedi", "Kontrol listeleri yüklenemedi",
+"Onaylar yüklenemedi", personelde "İstekleriniz yüklenemedi", "Sistem uyarıları yüklenemedi"…). Aynı gruptan birden çok
+kaynak düşerse satır birdir, gövdesi okunamayanları sayar ("Reçete önerileri ve personel istekleri şu an okunamadı;
+zili birazdan yeniden açın"). Okunmamış sayılmaz, kimliği grup ve günden (`src/lib/bell-failed.ts`). Böylece bir
+bölüm düştüğünde zil "Dikkat isteyen bir şey yok" demez. Zilin bütün okuması düşerse (ağ,
 sunucu) menü "Dikkat isteyen bir şey yok" demez: üstte "Bildirimler okunamadı" ve **Yeniden dene** durur; önceki
 okumada liste varsa altında kalır ve üstteki satır "Bildirimler yenilenemedi; son okunan liste gösteriliyor" der.
 Panel yeniden yayınlandıysa "Panel güncellendi" ve **Yenile** (`src/components/panel/notifications.tsx`).

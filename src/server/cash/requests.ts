@@ -18,6 +18,7 @@ import {
   type DeletePayloadT,
   type ProposedFields,
 } from "@/lib/cash-requests";
+import { LAFPOS_STAFF_WRITE_TEXT } from "@/lib/lafpos/foto";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
 import { currentTillBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
@@ -26,8 +27,10 @@ import { UserError } from "@/server/user-error";
 
 import { reviewLate, type LateReviewOutcome } from "./late";
 import {
+  assertStaffOutNote,
   carryBefore,
   hasLaterReport,
+  isLafposTillDay,
   lockCashReport,
   lockLateDay,
   ownDeletePending,
@@ -77,6 +80,8 @@ export async function proposeCashCorrection(db: DB, me: CashActor, input: Correc
   return db.transaction(async (tx) => {
     const report = await lockCashReport(tx, date, branchId);
     if (!report) throw new UserError(CASH_REQUEST_TEXT.noReport);
+    // Kör kasa (bulgu 0): LafPOS gününün raporunu yalnız yönetici düzeltir; öneri sayılanı ve farkı ele verirdi
+    if (await isLafposTillDay(tx, date, branchId)) throw new UserError(LAFPOS_STAFF_WRITE_TEXT.manual);
     if (report.revision !== input.baseRevision) throw new UserError(CASH_REQUEST_TEXT.stale);
     if (await ownDeletePending(tx, me.id, date, branchId)) throw new UserError(CASH_REQUEST_TEXT.deletePending);
     const laterReport = await hasLaterReport(tx, date, branchId);
@@ -90,6 +95,8 @@ export async function proposeCashCorrection(db: DB, me: CashActor, input: Correc
     const { date: _date, ...sent } = withOkcOf(data, report);
     void _date;
     const proposed: ProposedFields = { ...sent, note, discounts: input.fields.discounts ?? null, countedBy: counter.id, countedByName: counter.name };
+    // Fişsiz çıkış (bulgu 2): çıkış ya da açıklaması değişiyorsa ve satırlardan fazlaysa neye çıktığı zorunlu
+    await assertStaffOutNote(tx, date, branchId, proposed, report);
     const changes = proposalChanges(base, proposed);
     if (!changes.length) throw new UserError(CASH_REQUEST_TEXT.noChange);
     const gate = staffCashGate({ date, now, hasReport: true, laterReport, changes });

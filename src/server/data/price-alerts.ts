@@ -14,6 +14,7 @@ import {
   type ProductImpact,
 } from "@/lib/calc/price-impact";
 import { priceLoss, type PriceLoss } from "@/lib/calc/price-loss";
+import { importedPriceRow } from "@/lib/import-labels";
 import { getDb, schema as s } from "@/server/db";
 
 /** "Şimdilik böyle kalsın" denen ürünler (ürün kimliği → o anki maliyet) */
@@ -54,7 +55,8 @@ export async function loadPriceAlerts(model: Model, days = PRICE_ALERT_DAYS, mon
   ]);
   const changes = ingredientChanges(
     model.ds.ingredients,
-    history.map((h) => ({ ...h, changedAt: h.changedAt.toISOString() })),
+    // İlk aktarım satırı "İçe aktarım" adıyla (zam etkisinin yazanı ve notu; veri değişmez)
+    history.map((h) => importedPriceRow({ ...h, changedAt: h.changedAt.toISOString() })),
     since,
   );
   const ack = (ackRow?.value ?? null) as PriceAck | null;

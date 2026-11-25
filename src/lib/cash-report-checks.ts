@@ -1,4 +1,4 @@
-import { CASH_TOLERANCE, carryDiffText, computeCash, nextWarning, revenueWord, withCardExtra, type CarryCheck, type CashOffDevice, type CashReportFields } from "./cash-report";
+import { CASH_TOLERANCE, carryDiffText, computeCash, nextWarning, revenueWord, unreceiptedText, withCardExtra, type CarryCheck, type CashOffDevice, type CashReportFields } from "./cash-report";
 import { money } from "./format";
 import { lafposDiffText, type LafposDiff } from "./lafpos/diffs";
 import { modposDiffText, type ModposDiff } from "./modpos/compare";
@@ -9,7 +9,7 @@ import { dayMonthTR } from "./reminders";
 /**
  * Yöneticinin kasa raporu penceresinin "Kontrol" listesi (sahibin kararı, 4 Kasım 2026: sade, profesyonel, gereksiz
  * bilgi yok): raporun kendi denetimleri ve dış kaynaklarla farkları tek listede, her biri tek satır. Kasa farkı başlıkta
- * olduğu için burada yok. Sıra: e-posta, raporun kendi içi (ödeme türleri, açılış ↔ devir), kart ve yazarkasa, dış
+ * olduğu için burada yok. Sıra: e-posta, raporun kendi içi (ödeme türleri, fişsiz çıkış, açılış ↔ devir), kart ve yazarkasa, dış
  * kaynaklar (ModPOS API, LafPOS, fotoğraf). Saf: tests/kasa-raporu-sade.test.ts
  */
 export interface ReportCheck {
@@ -30,6 +30,8 @@ export function reportChecks(i: {
   lafposDiffs?: readonly LafposDiff[] | null;
   photoDiffs?: readonly PhotoDiff[] | null;
   emailError?: string | null;
+  /** Fişsiz çıkış (bulgu 2; unreceiptedCashOut): "Gün içinde çıkan"ın kasadan çıkan satırlarından fazlası */
+  unreceipted?: number | null;
 }): ReportCheck[] {
   const kasa = i.kasa ?? "ModPOS";
   const f = withCardExtra(i.report, i.cardExtra, i.offDevice, kasa);
@@ -42,6 +44,11 @@ export function reportChecks(i: {
       tone: "warn",
       text: `Ödeme türleri toplamı ${money(c.paymentsTotal)}: ${revenueWord(c)} ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}`,
     });
+  }
+  // Fişsiz çıkış: satır girilmeden yazılan çıkış olması gerekeni düşürür, açığı örtebilir; neye çıktığı yanında (bulgu 2)
+  if (i.unreceipted && i.unreceipted >= CASH_TOLERANCE) {
+    const note = i.report.cashOutNote?.trim();
+    out.push({ key: "unreceipted", tone: "warn", text: `${unreceiptedText(i.unreceipted)}${note ? `; neye çıktı: ${note}` : "; neye çıktığı yazılmadı"}` });
   }
   if (i.carry) out.push({ key: "carry", tone: "warn", text: `Açılış ${money(i.carry.opening)}, ${dayMonthTR(i.carry.prevDate)} devri ${money(i.carry.carry)}: ${carryDiffText(i.carry)}` });
   if (i.next) out.push({ key: "next", tone: "warn", text: nextWarning(i.next) });

@@ -4,11 +4,10 @@ import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
 import { branchDayKey, businessDate, carryCheck, LATE_REPORT_DAYS, lateMissingDays, type CarryCheck, type CashReportFields } from "@/lib/cash-report";
 import { partialStart, tillOpenedOn, type TillOpening } from "@/lib/cash-month";
-import { cashOutsTotal, teslimTotalOf } from "@/lib/cash-outs";
 import { cashDaySubject, cashSubjectBranch, handedToText, lateBell, lateBranchOf, lateByText, LatePayload, lateFields, type LatePayloadT } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
 import { lafposDiffs, type LafposDiff } from "@/lib/lafpos/diffs";
-import { lafposHandedGap, type LafposDay } from "@/lib/lafpos/prefill";
+import { unreceiptedCashOut, type LafposDay } from "@/lib/lafpos/prefill";
 import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { okcLateChain, zNoNumber, type OkcLateChain } from "@/lib/okc-z";
 import { photoDiffs, savedFields, type CashReading, type PhotoDiff } from "@/lib/photo-read/kasa";
@@ -343,10 +342,12 @@ export async function lateCards(now = new Date()): Promise<(LateCard & { branchI
         (!prevReportDate || o.day > prevReportDate) &&
         !reportedDays.has(branchDayKey(branchId, o.day)),
     );
-    const outsTotal = cashOutsTotal(outs);
-    const outsGap = Math.round((fields.cashOut - outsTotal) * 100) / 100;
-    // LafPOS gününde farkın LafPOS'taki teslim kadarı fişsiz değil: teslim Kasadan çıkanlar'a girilmemiş (E-35)
-    const split = outsGap >= 1 ? lafposHandedGap(fields.cashOut, outsTotal, lafpos.day?.till ?? null, teslimTotalOf(outs)) : null;
+    // Fişsiz çıkışın tek hesabı (unreceiptedCashOut): LafPOS gününde farkın LafPOS'taki teslim kadarı fişsiz değil, teslim
+    // Kasadan çıkanlar'a girilmemiş (E-35)
+    const u = unreceiptedCashOut(fields.cashOut, outs, lafpos.day?.till ?? null);
+    const outsTotal = u.total;
+    const outsGap = u.gap;
+    const split = u.lafposHanded !== null ? { handed: u.lafposHanded, rest: u.unreceipted } : null;
     cards.push({
       kind: "kasa-gec",
       branchId,
@@ -383,8 +384,8 @@ export async function lateCards(now = new Date()): Promise<(LateCard & { branchI
                     : `Fark LafPOS'ta olup girilmemiş teslim (${money(split.handed)}), fişsiz değil`
                 }: teslimi Kasadan çıkanlar'a "Teslim" olarak ekleyin.`
               : `Gün içinde çıkan ${money(fields.cashOut)}; o güne kayıtlı kasadan çıkan ${money(outsTotal)}${outsGap > 0 ? ` (${money(outsGap)} fişsiz)` : ""}`,
-        lafposHanded: split?.handed ?? null,
-        unreceipted: split ? split.rest : Math.max(0, outsGap),
+        lafposHanded: u.lafposHanded,
+        unreceipted: u.unreceipted,
       },
       reported: reportedDays.has(branchDayKey(branchId, date)),
       olderPending: older?.day ?? null,

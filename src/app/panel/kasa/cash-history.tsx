@@ -19,6 +19,7 @@ import {
   lastRevision,
   nextCheckOf,
   reportNo,
+  unreceiptedLabel,
   whatsappLink,
   whatsappText,
   type CarryCheck,
@@ -310,6 +311,8 @@ export function CashHistory({
                     {modposDays[date]?.diffs.length ? <Badge tone="amber">ModPOS API&apos;den farklı</Badge> : null}
                     {carry[report.date] ? <Badge tone="amber">Açılış devirden farklı</Badge> : null}
                     {lateEdited(report) ? <Badge tone="amber">Ertesi gün düzeltildi</Badge> : null}
+                    {/* Fişsiz çıkış: "Gün içinde çıkan" kasadan çıkan satırlarından fazla (bulgu 2; onay kartıyla aynı hesap) */}
+                    {photos[report.id]?.extras.unreceipted ? <Badge tone="amber">{unreceiptedLabel(photos[report.id]?.extras.unreceipted ?? 0)}</Badge> : null}
                     {paymentsOff ? <Badge tone="amber">Z tutmuyor</Badge> : null}
                     {cardDiff !== null ? <Badge tone="amber">{cardDiffLabel(cardDiff)}</Badge> : null}
                     {okcOff ? <Badge tone="amber">Yazarkasa tutmuyor</Badge> : null}
@@ -370,6 +373,7 @@ export function CashHistory({
             next={openNext}
             modposDiffs={modposDays[open.date]?.diffs}
             lafposDiffs={openPhotos?.extras.lafposDiffs}
+            unreceipted={openPhotos?.extras.unreceipted ?? null}
             photos={openPhotos?.photos ?? []}
             photoDiffs={openPhotos?.diffs ?? []}
             emailError={open.emailStatus === "failed" ? (open.emailError ?? "bilinmeyen hata") : null}

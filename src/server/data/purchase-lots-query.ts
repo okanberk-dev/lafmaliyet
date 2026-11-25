@@ -46,7 +46,7 @@ export function suspectFactorLine(line: { productKey: AnyPgColumn; invoiceId: An
  * Stok değerlemenin (FIFO) partileri: Paraşüt faturalarının hammaddeye bağlı kalemleri, fatura + hammadde başına
  * toplanmış (miktar × bağlantı çarpanı, KDV hariç net tutar). "Fiyatı güncelle" kapalı bağlantının faturası da
  * gerçek alıştır, girer. Girmeyen: kafe dışı fatura ve çarpanı şüpheli kalem (suspectFactorLine). Kalemler her
- * eşitlemede yeniden yazıldığı için partiler her okumada türetilir. Faturası olmayan alım (elle / Excel girilen fatura,
+ * eşitlemede yeniden yazıldığı için partiler her okumada türetilir. Faturası olmayan alım (elle girilen ya da içe aktarılmış fatura,
  * nakit alım, bağlanmamış ürün) havuzda görünmez: havuz yettiği sürece sayılan miktar eski faturalara dağılır, yalnız
  * havuzun karşılamadığı kalan ay sonu fiyatıyla. docs/STOK-DEGERLEME.md §2
  */

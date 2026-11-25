@@ -23,7 +23,7 @@ export const metadata: Metadata = { title: "Sabit giderler" };
 const DESCRIPTION = "Her ay aynı olan giderler: kira, aidat, internet (KDV hariç).";
 // Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
 const MORE =
-  "Satış adedinden bağımsız aylık giderler (KDV hariç). Günlük, haftalık ve yıllık tutarlar otomatik aylığa çevrilir. Gelir-gider tablosunda bu tutarlar ayın gün oranıyla bölünür (açık günü kasa raporlarından gelen ayda takvim günüyle: kapalı bir gün kirayı ve maaşı düşürmez). Tutar değişince 'hangi aydan itibaren' sorulur: önceki aylar eski tutarla kalır (Excel'de her ay sütunu kendi tutarını taşıdığı gibi).";
+  "Satış adedinden bağımsız aylık giderler (KDV hariç). Günlük, haftalık ve yıllık tutarlar otomatik aylığa çevrilir. Gelir-gider tablosunda bu tutarlar ayın gün oranıyla bölünür (açık günü kasa raporlarından gelen ayda takvim günüyle: kapalı bir gün kirayı ve maaşı düşürmez). Tutar değişince 'hangi aydan itibaren' sorulur: önceki aylar eski tutarla kalır (her ay kendi tutarını taşır).";
 
 function Header() {
   return (

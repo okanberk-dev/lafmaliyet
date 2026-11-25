@@ -24,7 +24,8 @@ LafPOS, site (laffogato) ve bu panel tek işletme sisteminin üç parçasıdır 
 `docs/06-TEK-SISTEM.md`): ürünlerin tek kaynağı sitenin yönetim paneli, satışın ve kasanın kaynağı LafPOS,
 **maliyet, reçete, stok ve muhasebenin kaynağı bu panel**. LafPOS maliyeti buradan okur
 (`GET /api/panel/pos/urunler`), gün sonunu buraya iter (`POST /api/pos/gun`). Kasiyer LafPOS'ta kör kasa
-sayar (`kasa.rakam` yetkisi kapalı): beklenen tutarı ve farkı görmez; fark ve Z bu panelin Kasa raporuna gelir.
+sayar (`kasa.rakam` yetkisi kapalı): beklenen tutarı ve farkı görmez; fark ve Z bu panelin Kasa raporuna gelir, orada
+da yalnız yöneticiye görünür (personele kör; aşağıda "Gün sonu otomasyonu" › Kör kasa).
 
 ## Neden
 
@@ -359,6 +360,33 @@ son günü, aşağıda "Şubenin kendi kaydı") belirleyicidir:
   karşılaştırması yanlış uyarı verir, günlük ortalama bir günün satışı kadar şişerdi. Süren ayda hiç kasa raporu yoksa
   beklenmez (ayın kasa dönemi yok). Ay rakamlarının raporsuz günde LafPOS Z'sinden gelmesi (B09) bu bekleyişi kendiliğinden
   kaldırır: kasa dönemi LafPOS günlerini de kapsar.
+- **"Tümü"nün dönemi şube şube (25 Kasım 2026, denetim bulgusu 62).** "Tümü"de ayın satırları iki kaynaktan gelir:
+  ModPOS'ta kalan şubenin (Tuzla) elle yüklenen listesi ve Marina'nın LafPOS günleri. Önceden ayın dönemi Marina'nın son
+  LafPOS günüydü, Tuzla'nın kaydı geçiş ayından sonra hiç okunmuyordu: Tuzla'nın 15 Aralık'a kadarki listesi iki şubenin
+  24 günlük sabit gideri ve kasasıyla düşülüyor, net kâr, günlük ortalama ve başabaş ilerlemesi olduğundan düşük
+  çıkıyordu. Artık geçiş ayından itibaren her ayın "Tümü" dönemi **şubelerin en kısa listesiyle** biter
+  (`otherBranchLists`, `commonListCuts`, `mergeSalesSources` › `short`; `src/lib/lafpos/sales.ts`):
+  - Tuzla'nın o ayki listesinin son günü şubenin kendi kaydından (`sales.coverage.sube`; kayıt yoksa ayın tamamı).
+    Marina'nın LafPOS günleri gün gün okunduğu için o güne kesilir (`loadLafposMonthSales` `cuts`): "Tümü"de 16–24
+    Aralık sayılmaz, Tuzla'nın listesi gelince sayılır. Dönem (`listPeriod`) o güne kadarki iki şubenin kasasıyla;
+    sabit gider, indirim ve online satış o günlere düşen payla.
+  - Marina'nın LafPOS'u Tuzla'nın listesinden önce bitiyorsa (gün sonu gelmedi) dönem onunla biter (eskisi gibi).
+  - Tuzla'nın o ay kasa raporu var ama listesi yoksa (ay sonunda yüklenecek) "Tümü"de o ayın satırları sayılmaz: ortak
+    dönem yoktur. LafPOS'tan önceki gibi "Tümü"nün süren ayı liste yüklenene kadar POS cirosuyla görünür; Marina'nın
+    satışı Marina seçiliyken gün gün görünür.
+  - Bu ayda Genel bakış'ın "Satış raporu" işi ve başlığın kaynak satırı "LafPOS … itibaren sayılıyor" demez (bant
+    "satışı da sayılmaz" derken çelişiyordu; inceleme 25 Kasım 2026): süren ayda "Tümü'de bu ayın satışları Tuzla'nın
+    listesi gelince sayılır; şubeyi seçince gün gün görünür.", bitmiş ayda "yüklenmedi" (`commonListWaitText`); kaynak
+    satırı "Satışlar: Tümü'de Tuzla'nın listesi gelince (şube seçiliyken gün gün)" (`commonListSourceLine`). Liste ay
+    sonunda yüklendiği için süren ayın çoğunda "Tümü" satışsız (en kârlı ürünler, reçeteye göre oran ve brüt kâr yok,
+    başabaş önceki aya göre) görünür. **Sahibin onayı bekleniyor**: istenmezse süren ayda liste yokken eski davranışa
+    (Marina'nın LafPOS satırları kendi dönemiyle) uyarıyla dönülebilir.
+  - Genel bakış ve Satışlar kısaltan şubeyi adıyla yazar ("Tuzla'nın satış listesinin son günü 15 Aralık: öteki şubelerin
+    satışı da o güne kadar sayılır.", listesi yoksa "Tuzla'nın Aralık 2026 satış listesi yok: …"; `commonListText`).
+  - Şube seçiliyken değişmez (şubenin kendi kaydı). Geçiş ayında Marina'nın ModPOS listesi de aylık toplamdır, kesilemez:
+    Tuzla'nın listesi Marina'nın listesinden de kısaysa Marina'nın listesi dönemden uzun kalır (geçiş ayına özgü, bilinen
+    sınır). Kasa raporunu bekleyen gün (`held`) kasa raporlarının son gününe göre söylenir; ortak dönemin kestiği gün
+    bekleyen sayılmaz.
 
 **Satışlar** (`/panel/satislar`, yalnız yönetici): geçiş ayında bilgi bandı ("Kasım geçiş ayı: ModPOS listesi 1–9
 Kasım, LafPOS 10 Kasım'dan itibaren (12 gün geldi, son gün 21 Kasım).") ve yukarıdaki uyarılar. LafPOS satırları aynı
@@ -738,8 +766,16 @@ günler (en çok 7 gün geriye) yakalanır.
 - **Düzeltme:** LafPOS aynı günü yeniden gönderirse yalnız elle değişmemiş alanlar güncellenir (kayıtlı değer son
   otomatik değere eşitse); personelin ya da yöneticinin düzelttiği alan ve Banka POS korunur. Önceki sürüm geçmişe
   yazılır, işlem geçmişine "Kasa raporu güncellendi (LafPOS otomatik)" düşer.
-- Rapor personel tarafından girildiyse dokunulmaz (LafPOS'tan farklı yazılanları mevcut uzlaşma gösterir). Yönetici
-  otomatik raporu silerse yeniden yazılmaz. Geçiş gününden 7 günden eski güne rapor yazılmaz (geç rapor yöneticinin işi).
+- Rapor elle girildiyse (yönetici gün sonundan önce, sayımsız günde ya da LafPOS göndermezken yedek yolla girdi; eski
+  kayıtta personel) Z'sine, kasasına ve notuna dokunulmaz (LafPOS'tan farklı yazılanları mevcut uzlaşma gösterir); **yalnız
+  boş cihaz alanları dolar** (denetim 25 Kasım 2026, bulgu 6; `humanDeviceFill`): Banka POS boşsa Pavo'nun gün sonundan,
+  yazarkasa alanlarının hiçbiri yazılı değilse LafPOS'un cihaz belgelerinden ve yazarkasa Z no'sundan, grup olarak (bir
+  yazarkasa alanı elle yazılmışsa hiçbiri yazılmaz: iki kaynağın rakamı karışmaz). Elle yazılan alan ezilmez, cihazın
+  rakamı yoksa alan boş kalır; dolan alan bir daha yazılmaz (Pavo'nun sonucu ikinci gönderimle gelince boş Banka POS o
+  zaman dolar). Önceki sürüm geçmişe, işlem geçmişine "Kasa raporu güncellendi (LafPOS otomatik)"; gönderen ve sayan
+  değişmez (Z, kasa ve not elle girenin; rapor listesi, kart başlığı ve e-posta onu gösterir); rapor yeniden e-postalanmaz. Önceden yöneticinin akşam girdiği LafPOS gününde Pavo
+  karşılaştırması ve yazarkasa KDV dökümü sessizce kayboluyordu. Yönetici otomatik raporu silerse yeniden yazılmaz.
+  Geçiş gününden 7 günden eski güne rapor yazılmaz (geç rapor yöneticinin işi).
 
 **Personelin tek işi: gün sonu fotoğrafı** (sahibin isteği, 24 Kasım 2026: "sadece gün sonu ladmine personel foto
 atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
@@ -751,7 +787,8 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   (detaylı Z) alın ve fotoğrafını ekleyin" (birden çok fotoğraf da alınır, iki ayrı fotoğraf istenmez). Yalnız ayrı mali Z
   basan cihazda (TokenX, `zReport`) yazarkasa Z'si ayrıca istenir.
 - Otomatik raporlu LafPOS gününde personelin Kasa sayfası raporu salt okunur gösterir (Düzenle, Silinmesini iste,
-  Düzeltme öner, WhatsApp ile gönder ve Metni kopyala yok; düzeltme LafPOS'ta yapılır, LafPOS yeniden gönderir) ve tek bir
+  Düzeltme öner, WhatsApp ile gönder ve Metni kopyala yok; altında "Rakamlar LafPOS'tan geldi; kasayı yönetici kontrol
+  eder.", farkı ima eden "LafPOS'ta düzeltin" değil; sayım personele kör, aşağıda "Kör kasa") ve tek bir
   "Gün sonu fotoğrafı" kartı. Sayfanın alt başlığı "Rakamlar LafPOS'tan geldi; Pavo'dan gün sonu fişini (detaylı Z) alıp
   fotoğrafını ekleyin." ("Kapanışta Z raporunu alın, kasadaki nakdi sayın…" değil). Kart eklenince "Fotoğraf alındı",
   okunamadı ya da yanlış belgeyse "Fotoğraf okunamadı / yanlış belge, yeniden çekin" der; Pavo'nun sonucu LafPOS'a henüz
@@ -767,10 +804,45 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   gelmeden ve rapor yokken personel kasa formunu görmez; yerinde "Kasa raporu LafPOS'tan gelecek: Kapanışta LafPOS'ta
   Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin (detaylı Z) fotoğrafını eklersiniz." yazar
   (alt başlık, Bugün'ün akşam satırı ve zil de aynı işi söyler; "kasadaki nakdi sayıp girin" denmez). Personel girseydi
-  otomasyon raporu "elle girildi" sayar, Banka POS'u ve yazarkasa alanlarını hiç yazmazdı. Sunucu da reddeder
+  otomasyon raporu "elle girildi" sayar, Z'yi ve kasayı LafPOS'tan yazmazdı (yalnız boş cihaz alanları dolardı). Sunucu da reddeder
   (`saveCashReport`): personel LafPOS gününde yeni rapor yazmaz, otomatik raporu değiştirmez ("rakamlarını yalnız yönetici
-  düzeltir"); yöneticinin yedek yolla elle girdiği rapor personelin kendi kapısıyla açık kalır. LafPOS hiç göndermezse
-  raporu yönetici girer; dünden eski gün personelin geç rapor yolundan girilir.
+  düzeltir"), yöneticinin yedek yolla elle girdiği raporu da değiştirmez (kör kasa, 25 Kasım 2026; aşağıda). LafPOS hiç
+  göndermezse raporu yönetici girer; dünden eski gün personelin geç rapor yolundan girilir.
+- **Kör kasa** (denetim 25 Kasım 2026, bulgu 0; `src/lib/lafpos/kor-kasa.ts`): kasiyer LafPOS'ta çekmeceyi kör sayar
+  (`kasa.rakam` yok); panel de LafPOS'un şubesinde geçiş gününden itibaren personele **açılışı, sayılan nakdi, teslimi,
+  olması gerekeni, kasa farkını ve ertesi güne devri göstermez**. Önceden kasiyer kapanıştan saniyeler sonra panelde ve
+  Bugün'de "750 ₺ eksik" görüyor, ekran ona LafPOS'ta düzeltip yeniden göndermesini söylüyordu. Kurallar:
+  - Personelin yükü (`blindForStaff`, `blindReport`): raporun açılışı, sayılanı, teslimi ve farkı sıfır, `blind`
+    işaretli; notun açılış cümleleri ("Açılış önceki raporun devrinden …", "Açılış LafPOS'ta beklenenden … (beklenen …)",
+    "Neden (LafPOS): …") çıkar. LafPOS'un gün sonundan forma giden açılış, sayılan ve teslim alanları ve LafPOS'un olması
+    gerekeni satırı (`blindLafposDay`), önceki raporun devri, ertesi günün açılışı, sürümler ve bekleyen istekler hiç
+    gitmez. Otomatik rapor da yöneticinin elle girdiği rapor da böyle. Kasa sayfası LafPOS'u okuyamazsa (geçici hata)
+    gizleme açılmaz: LafPOS'un şubesinin kasasında personele kör sayılır (`staffBlindView`).
+  - Teslim (patrona verilen) kasiyerin LafPOS'a kendi girdiği kasa hareketidir: "gün içinde çıkan"ın ve "LafPOS'ta
+    harcama … + teslim …" bilgi satırının parçası olarak personelde kalır (inceleme, 25 Kasım 2026). Açılış ve sayılan
+    olmadan olması gereken ve fark çıkmaz; raporun ayrı teslim alanı sıfırdır.
+  - Kayıtlı rapor kartı farkın yerine "Gün sonu alındı" der (altında otomatik raporda "Rakamlar LafPOS'tan geldi;
+    kasayı yönetici kontrol eder.", elle girilmiş raporda "Rapor elle girildi; kasayı yönetici kontrol eder."; sayfanın
+    alt başlığı elle girilmiş raporda "Gün sonu LafPOS'ta alınır; bu günün kasa raporu girildi, kasayı yönetici kontrol
+    eder."), döküm özetinde "sayılan" yok; dökümün kasa bölümünde yalnız
+    nakit satış, gün içinde giren ve çıkan, altında "Kör sayım: açılış, sayılan nakit ve kasa farkı yalnız yöneticide."
+    Rapor salt okunur (Düzenle, Silinmesini iste, Düzeltme öner, WhatsApp ve Metni kopyala yok). Eski LafPOS günü kartı
+    (dünden eski 14 gün) da aynı dökümü gösterir.
+  - Bugün: "LafPOS gün sonu · Fotoğraf alındı" ve elle girilmiş raporda "Ali gönderdi" (fark yok). Kasa sayfasının
+    **Son 7 gün** listesinde LafPOS gününün farkının yerinde gri "Sayım LafPOS'ta" rozeti. Personelin zili zaten farkı
+    söylemez; çalışanların gün sonu e-postası da (`sendStaffDayEnd`).
+  - Sunucu: personel LafPOS gününün raporunu formdan yazamaz (yöneticinin elle girdiği de: "LafPOS gününün kasa raporunu
+    yalnız yönetici düzeltir; yanlışlık varsa yöneticinize yazın."), düzeltme öneremez (`proposeCashCorrection`) ve
+    WhatsApp metnini istemez (`cashReportWhatsapp`): ikisinin yanıtı farkı taşırdı.
+  - Yönetici (rakam yetkisi) her şeyi eskisi gibi görür: kart, Kontrol listesi, e-posta, zil. Tuzla (ModPOS) ve geçiş
+    gününden önceki gün değişmedi.
+  - Kapsam dışı (bilinçli): LafPOS'un hiç göndermediği güne personelin geç raporu (yazarkasa Z fotoğrafıyla, yöneticinin
+    onayına) eski yoldur: sayımı panelde kendisi yazar, form sonucu gösterir (o gün LafPOS'ta kör sayım yoktur). Önceki
+    halka LafPOS'un kör günüyse onun devri (sayılan − teslim) personele gitmez: açılış önerilmez, "… raporunun devri"
+    satırı yok, sunucu açılış ↔ devir farkını sormaz (hata metni farkı söylerdi; `staffBlindOn`). Yönetici onayda
+    devirle karşılaştırır.
+    LafPOS sayımı rapordan sonra değiştirirse yöneticiye ayrı bir uyarı ve "Personel kasa farkını görsün" şube ayarı
+    henüz yok.
 - Otomatik raporlu LafPOS gününde personelin "Kaldırılmasını iste" düğmesi ve isteği fotoğrafın okuma farkına bakmaz
   (fark fotoğraf ↔ LafPOS karşılaştırmasıdır, yalnız yöneticinin; düğmenin kaybolması farkı ele verirdi). Yöneticinin
   onayı farka yine bakar (`readingBlocksRemoval`).
@@ -1028,7 +1100,7 @@ Tuzla'da (ModPOS) işaretlenen ürün Marina'nın LafPOS listesinde kalır, Mari
 Denetimin önerdiği ayrı "kasa kipi" ayarı (ya da "son günlerde LafPOS günü geldiyse LafPOS" sezgisi) yerine geçiş günü
 kullanılır: deneme günleri hiçbir metni değiştirmez. Günün kasası `kasaName(gün, geçiş günü)`, ayın kasası
 `monthKasa(ay, geçiş günü)` (`src/lib/lafpos/kasa.ts`; geçiş ayında "Kasa (ModPOS 1–9 Kasım · LafPOS 10–30 Kasım)").
-Ürün satışlarının etiketi (Genel bakış'ın net satışı, Excel'in Özet'i, Claude'un ürün kârlılığı) geçiş ayında modelin
+Ürün satışlarının etiketi (Genel bakış'ın net satışı, dışa aktarımın Özet'i, Claude'un ürün kârlılığı) geçiş ayında modelin
 saydığı bölünmeyi yazar (`salesMonthKasa`: ModPOS listesinin son günü, LafPOS'un sayılan günleri; liste yoksa "ModPOS
 listesi yok"); Z ve ciro etiketleri geçiş gününde böler. Geçiş günü boşken her metin bugünkünün aynısıdır.
 
@@ -1044,7 +1116,7 @@ listesi yok"); Z ve ciro etiketleri geçiş gününde böler. Geçiş günü bo�
   "LafPOS kart"), günün online satış satırı, kapalı gün kartı ve Bugün'ün kapalı gün satırı ("o günün LafPOS / banka
   POS'una bakın"). LafPOS gününde yazarkasa bölümüne çekilen kasa çıktısına "ModPOS bölümüne okut" önerilmez.
 - **Ayın kasası:** Genel bakış (net satış, POS cirosu, döküm), Gelir-gider (online kartı, yıl dökümü, telefon görünümü,
-  tablo ipuçları), Tutarlılık, Ürünler, Analiz'in senaryosu, KDV tahmini, Excel ve Claude'un yanıtları.
+  tablo ipuçları), Tutarlılık, Ürünler, Analiz'in senaryosu, KDV tahmini, dışa aktarım ve Claude'un yanıtları.
 - **Ayın satış kaynağı** (`salesSourceOf`, `src/lib/sales-source.ts`; 29 Eki 2026, [planlar/ux-sade.md](planlar/ux-sade.md)
   §10): `salesMonthKasa`'nın üstünde tek kaynak. Dört tür: **ModPOS raporu** (geçiş günü yok ya da ay geçişten önce;
   "Satışlar: ModPOS raporu (ay sonunda elle yüklenir)"), **LafPOS** ("Satışlar: LafPOS (her gece kendiliğinden)"),
@@ -1181,7 +1253,7 @@ Personel'de iki tarafı gösteren onayla, elle bağlanır; hiçbir şey kendili�
   330 × 26 kalır); ayın en az bir sayılan LafPOS günü var ve **her biri** çalışan listesini taşıyor (bir gün listesizse ay
   varsayılanla); kişinin kimliği ayın **en az bir** gününde geçiyor. Gün = ayın gün sonlarından kişinin kimliğinin geçtiği
   gün. Bu gün gerçek gündür: Gelir-gider'in "PERSONEL YEMEK KARTI" satırında maaş gibi gün oranıyla bir daha oranlanmaz
-  (hücre notu oranı yalnız varsayılanlılara yazar, LafPOS'luları adı ve günüyle ayrı). Excel'in Personel sekmesi ve vergi
+  (hücre notu oranı yalnız varsayılanlılara yazar, LafPOS'luları adı ve günüyle ayrı). Dışa aktarımın Personel sekmesi ve vergi
   bordrosu (nakit planı dahil) biten ayda aynı günle; süren ve ileri ayda Ayarlar'daki günle.
 - **Görünmeyen kişi:** LafPOS listeyi bir kullanıcı bağlanınca her güne yazar. Ay biliniyor ama kişinin kimliği hiçbir
   günde yoksa (LafPOS'ta bağlı değil, ortak kasa; ya da "Devam ettir"den önceki satıra bağlı) bu "0 gün" sayılmaz:

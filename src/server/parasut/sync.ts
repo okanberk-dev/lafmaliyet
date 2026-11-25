@@ -185,7 +185,7 @@ interface Ctx {
   ns: string;
   /** Bu hesaptan yeni açılan faturanın şubesi (ayrı hesap → o şube; ortak hesap → null, işletme geneli) */
   invoiceBranch: string | null;
-  /** Hesabın gördüğü faturalar: kendi hesabındakiler ve Paraşüt'e bağlanmamış elle/Excel kayıtları (invoiceAccountWhere) */
+  /** Hesabın gördüğü faturalar: kendi hesabındakiler ve Paraşüt'e bağlanmamış elle girilmiş ve içe aktarılmış kayıtlar (invoiceAccountWhere) */
   existing: Existing[];
   rules: Awaited<ReturnType<typeof loadRules>>;
   history: Map<string, string>;
@@ -348,7 +348,7 @@ async function retire(match: Existing, reason: string, ctx: Ctx, billOnly = fals
     if (i >= 0) ctx.existing.splice(i, 1);
     ctx.counts.removed++;
   } else {
-    // Elle/Excel'le girilmiş kayıt silinmez: bağı çözülür ve not düşülür. E-faturaya da bağlıysa belgeden okunan
+    // Elle girilmiş ya da içe aktarılmış kayıt silinmez: bağı çözülür ve not düşülür. E-faturaya da bağlıysa belgeden okunan
     // kalemleri kalır; okunmamışsa sıradaki okumada belgeden okunur
     const note = `${match.note ? `${match.note} · ` : ""}Paraşüt'te ${reason} — kontrol edin`;
     const syncedAt = new Date();
@@ -1400,11 +1400,11 @@ function appendNote(note: string | null, add: string): string {
 /**
  * Tek bir gelen e-faturayı panele yazar:
  * - içeri alınmışsa tutarları gider faturası taşır; burada yalnız belge için e-fatura bağı kurulur;
- * - panelde aynı fatura (e-fatura kimliği ya da Excel/elle girilmiş aynı numara, tarih, tutar) varsa ona bağlanır;
- *   Excel kaydının tutarı e-faturadakiyle aynıysa dokunulmaz, farklıysa e-faturadaki yazılır ve kontrol istenir;
+ * - panelde aynı fatura (e-fatura kimliği ya da elle girilmiş / içe aktarılmış aynı numara, tarih, tutar) varsa ona bağlanır;
+ *   içe aktarılmış kaydın tutarı e-faturadakiyle aynıysa dokunulmaz, farklıysa e-faturadaki yazılır ve kontrol istenir;
  * - yoksa yeni kayıt açılır (kategori kurallardan / tedarikçinin geçmişinden; ödeme durumu e-faturada olmadığından
  *   "ödenmedi" açılır, ödendiğini kullanıcı işaretler; peşin çalışılan tedarikçininki ödendi);
- * - reddedilen/arşivlenen e-faturanın yalnız ondan açılmış kaydı kaldırılır; bağlı Excel/elle kaydın bağı çözülür,
+ * - reddedilen/arşivlenen e-faturanın yalnız ondan açılmış kaydı kaldırılır; bağlı içe aktarılmış / elle kaydın bağı çözülür,
  *   kaynağı eskisine döner.
  */
 async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "linked" | "updated" | "removed" | "skipped"> {
@@ -1433,7 +1433,7 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
         ctx.counts.removed++;
         return "removed";
       }
-      // Elle/Excel'le girilmiş kayıt hiçbir Paraşüt belgesine bağlı kalmadı: kaynağı geri döner (retire gibi; FC-02),
+      // Elle girilmiş ya da içe aktarılmış kayıt hiçbir Paraşüt belgesine bağlı kalmadı: kaynağı geri döner (retire gibi; FC-02),
       // tarih, no ve tutarlar yeniden düzenlenebilir (yoksa saveInvoice onları Paraşüt'e bağlı sayıp yazmazdı)
       const note = appendNote(match.note, `Paraşüt'te e-fatura ${verdict.reason} — kontrol edin`);
       await db.update(s.invoices).set({ eInvoiceId: null, eInvoiceUuid: null, source: match.origin, note, needsReview: true }).where(eq(s.invoices.id, match.id));
@@ -1455,7 +1455,7 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
   }
 
   if (!match) {
-    // Excel'den ya da elle girilmiş aynı fatura; gider faturasına bağlı ya da başka e-faturaya bağlı olanlar aday değil
+    // İçe aktarılmış ya da elle girilmiş aynı fatura; gider faturasına bağlı ya da başka e-faturaya bağlı olanlar aday değil
     const candidates = ctx.existing.filter((e) => !e.eInvoiceId && !e.externalId);
     match = findExisting({ externalId: key, invoiceNo: d.invoiceNo, date: d.date, payable: d.payable, supplier: d.supplier, taxNumber: d.supplierTaxNo }, candidates, ctx.cardOf) as Existing | null;
   }
@@ -1479,7 +1479,7 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
     const differs = Math.abs(match.payable - d.payable) > 1 || match.date !== d.date;
     // Değişmemiş e-faturada da (eski kayıtta boşsa) vergi no yazılır
     await fillTaxNumber(ctx, match, d.supplierTaxNo, "einvoice");
-    // Tevkifatlı e-faturaya bağlı Excel / elle kaydın boş KDV'si belgedekiyle dolar (KDV-2 tahmini ondan)
+    // Tevkifatlı e-faturaya bağlı içe aktarılmış / elle kaydın boş KDV'si belgedekiyle dolar (KDV-2 tahmini ondan)
     const vat = fromThis ? null : withholdingVatFill(match, d);
     if (vat !== null) {
       await db.update(s.invoices).set({ vat }).where(eq(s.invoices.id, match.id));
@@ -1492,7 +1492,7 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
     // E-fatura değişti: kalemler ve belgedeki tutar sıradaki okumada yenilenir
     if (fromThis && differs) set.ublReadAt = null;
     else if (differs) {
-      // Excel/elle kayıt ilk kez bağlanıyor ve tutarı ya da tarihi farklı: e-faturadaki geçerli, kontrol istenir; not
+      // İçe aktarılmış / elle kayıt ilk kez bağlanıyor ve tutarı ya da tarihi farklı: e-faturadaki geçerli, kontrol istenir; not
       // değişen alanı söyler (FC-X1: tarihi kayan fatura başka aya geçebilir)
       Object.assign(set, values, { needsReview: true, note: appendNote(match.note, eInvoiceUpdateNote(match, d)) });
     }

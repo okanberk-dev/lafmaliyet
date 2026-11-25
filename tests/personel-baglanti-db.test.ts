@@ -1,7 +1,8 @@
 // Personel Faz 5, gerçek Postgres'te (src/server/actions/costs.ts saveStaff, src/server/data/dataset.ts): yemek kartı ve
 // günlük ücret maaşla sürümlenir; part-time'ın çağrıldığı gün Vardiya'nın çalışma günlerinden (şube + kişi anahtarı) okunur;
 // maaş satırının Vardiya / hesap bağlantısı yalnız açık seçimle, doğrulanarak (hesap var mı, şubeye kilitli mi, aynı kişi
-// aynı ayda iki satırda mı) kurulur; maaş hesabına girmiş satırın türü değişmez.
+// aynı ayda iki satırda mı) kurulur; maaş hesabına girmiş satırın türü değişmez. Maaş satırına bağlı hesap silinemez
+// (denetim bulgusu 47; src/server/actions/settings.ts deleteUser), pasif yapılır.
 //
 // PERSONEL_TEST_DATABASE_URL verilmezse atlanır (npm run test:db onu TEST_DATABASE_URL'e bağlar). Test kendi geçici
 // veritabanını açar, migration'ları uygular, sonunda siler.
@@ -26,6 +27,7 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
   let db: import("../src/server/db").DB;
   let costs: typeof import("../src/server/actions/costs");
   let dataset: typeof import("../src/server/data/dataset");
+  let settings: typeof import("../src/server/actions/settings");
   let users: { admin: number; ayse: number; tuzlaKilitli: number };
   let dbUrl: string;
 
@@ -59,6 +61,7 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
     stub(require.resolve("../src/server/auth/dal"), { getCurrentUser: me, requireUser: me, requireAdmin: me });
     costs = await import("../src/server/actions/costs");
     dataset = await import("../src/server/data/dataset");
+    settings = await import("../src/server/actions/settings");
   });
 
   after(async () => {
@@ -70,6 +73,9 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
   beforeEach(async () => {
     await db.execute(sql`TRUNCATE staff, staff_versions, shifts, months, pnl_entries, activity_log RESTART IDENTITY CASCADE`);
   });
+
+  const newUser = async (name: string) =>
+    (await db.insert(s.users).values({ email: `${name.toLocaleLowerCase("tr-TR").replace(/\W+/g, "")}-${Date.now()}@laffogato.net`, name, passwordHash: "x", role: "staff", branchId: "marina" }).returning())[0];
 
   const part = (p: Record<string, unknown> = {}) => ({
     id: null,
@@ -261,6 +267,72 @@ describe("personel Faz 5: veritabanında", { skip: !SERVER_URL && "PERSONEL_TEST
     const model = await dataset.loadModel({ scope: "hepsi" });
     const days = new Map(model.personnelFor("2026-12").rows.map((r) => [r.staff.name, r.calledDays]));
     assert.deepEqual([days.get("Serbest"), days.get("Serbest (Tuzla)")], [1, 2]);
+  });
+
+  test("maaş satırına bağlı hesap silinemez (pasif yapılır), ücreti korunur; bağlantısız hesap silinir; boşalmış eski bağlantıya dokunulmaz", async () => {
+    // Denetim bulgusu 47: staff.user_id ON DELETE SET NULL; hesabı silinen part-time bağlantısız kalıyor, bütün aylardaki
+    // ücreti 0'a düşüyordu
+    const mert = await newUser("Mert Can");
+    assert.ok((await costs.saveStaff([part({ userId: mert.id, name: "Mert" })])).ok);
+    // Bulgudan önce silinmiş bir hesabın satırı: bağlantısı zaten boş, olduğu gibi kalır (geriye dönük onarım yok)
+    const [orphan] = await db.insert(s.staff).values({ name: "Eski part-time", kind: "part_time", dailyWage: 1_200, branchId: "marina", startMonth: "2026-10", endMonth: "2026-11" }).returning();
+    await db.insert(s.months).values({ month: "2026-12", branchId: "marina", openDays: 31 });
+    await db.insert(s.shifts).values({ branchId: "marina", date: "2026-12-01", personRef: `u:${mert.id}`, userId: mert.id, personName: "Mert Can", kind: "work", startMin: 600, endMin: 1080 });
+    const cost = async () => (await dataset.loadModel({ scope: "marina" })).personnelFor("2026-12").rows.find((x) => x.staff.name === "Mert")!;
+    assert.deepEqual([(await cost()).calledDays, (await cost()).total], [1, 1_500 + 330 + 2_000]);
+
+    const del = await settings.deleteUser(mert.id);
+    assert.equal(del.ok, false);
+    assert.equal(
+      del.ok ? "" : del.error,
+      "Bu hesap Maaşlar'da “Mert” satırına bağlı; silinirse Vardiya günleri o satıra sayılmaz, part-time ücreti geçmiş aylarda da 0'a düşer. Silmek yerine hesabı pasif yapın.",
+    );
+    assert.equal(await db.$count(s.users, eq(s.users.id, mert.id)), 1, "hesap durur");
+    const [row] = await db.select().from(s.staff).where(eq(s.staff.name, "Mert"));
+    assert.equal(row.userId, mert.id, "bağlantı durur");
+    assert.deepEqual([(await cost()).calledDays, (await cost()).total], [1, 1_500 + 330 + 2_000], "ücret değişmez");
+    // Biten satır da bağlıdır (geçmiş aylar bu bağlantıyla sayılır)
+    await db.update(s.staff).set({ startMonth: "2026-10", endMonth: "2026-12" }).where(eq(s.staff.id, row.id));
+    assert.equal((await settings.deleteUser(mert.id)).ok, false);
+    // Pasif yapmak serbest: giriş kapanır, bağlantı ve ücret kalır
+    const off = await settings.setUserActive(mert.id, false);
+    assert.ok(off.ok, off.ok ? "" : off.error);
+    assert.equal((await cost()).calledDays, 1);
+
+    // Maaş satırına bağlı olmayan hesap (yanlış e-postayla eklenen) silinir
+    const temp = await newUser("Yanlış Adres");
+    const gone = await settings.deleteUser(temp.id);
+    assert.ok(gone.ok, gone.ok ? "" : gone.error);
+    assert.equal(await db.$count(s.users, eq(s.users.id, temp.id)), 0);
+    const [still] = await db.select().from(s.staff).where(eq(s.staff.id, orphan.id));
+    assert.deepEqual([still.userId, still.personRef, still.dailyWage, still.endMonth], [null, null, 1_200, "2026-11"], "eski satır olduğu gibi");
+  });
+
+  test("silme maaş bağlantısı kilidini bekler: o an bağlanan hesap silinmez", async () => {
+    const can = await newUser("Can Ak");
+    const other = postgres(dbUrl, { max: 1, onnotice: () => {} });
+    let settled = false;
+    let settledWhileLocked = true;
+    let pending: ReturnType<typeof settings.deleteUser> | null = null;
+    try {
+      await other.begin(async (tx) => {
+        await tx`select pg_advisory_xact_lock(hashtext('personel-baglanti'))`;
+        await tx`insert into staff (name, net_salary, extras, kind, daily_wage, meal_card, user_id, start_month, branch_id, sort_order, active)
+                 values ('Can', 0, 0, 'part_time', 1500, false, ${can.id}, '2026-12', 'marina', 1, true)`;
+        pending = settings.deleteUser(can.id);
+        void pending.then(() => (settled = true));
+        await new Promise((r) => setTimeout(r, 500));
+        // Öteki işlem henüz bitmedi (kilit ve bağlantı yazılmamış sayılır): silme beklemede olmalı
+        settledWhileLocked = settled;
+      });
+    } finally {
+      await other.end();
+    }
+    assert.equal(settledWhileLocked, false, "silme öteki işlem bitene kadar bekler");
+    const res = await pending!;
+    assert.equal(res.ok, false, "o an bağlanan hesap silinmez");
+    assert.match(res.ok ? "" : res.error, /“Can” satırına bağlı/);
+    assert.equal(await db.$count(s.users, eq(s.users.id, can.id)), 1);
   });
 
   /** Kayıtlı satırlar, eylemin "değişmeden kalanlar" biçiminde */

@@ -1,9 +1,7 @@
-// Yardım sayfasının menü yolları ve Excel karşılıkları: kenar çubuğu ağacından (nav.ts) türer, el yazısı ad yok.
+// Yardım sayfasının menü yolları ve sekmeleri: kenar çubuğu ağacından (nav.ts) türer, el yazısı ad yok.
 // Saf işlevler; testleri tests/yardim.test.ts.
 
-import { NAV_FOOTER, NAV_GROUPS, NAV_TREE, navTreeFor, SECTION_TABS } from "@/components/panel/nav";
-
-const NAV_ITEMS = [...NAV_GROUPS.flatMap((g) => g.items), ...NAV_FOOTER];
+import { NAV_TREE, navTreeFor, SECTION_TABS } from "@/components/panel/nav";
 
 /** Bölüm sekmeleri (ilk sekme menü öğesinin kendi adresi) */
 const TAB_LISTS: readonly (readonly { href: string; label: string }[])[] = Object.values(SECTION_TABS);
@@ -33,24 +31,6 @@ export function pathOf(href: string): string[] {
     }
   }
   return [];
-}
-
-const fold = (s: string) => s.toLocaleLowerCase("tr-TR");
-
-/**
- * Ekranın Excel karşılığı. Sekmeli ekranlarda menü öğesinin Excel adı ("Sabit Giderler + Personel") parçalara
- * bölünür, her sekme adıyla başlayan parçayı alır (Tutarlılık → "Tutarlılık Kontrolü"); parçası bulunamayan sekme
- * kaydın kendi Excel adına düşer ("Maaşlar" sekmesi Excel'de "Personel"), o da yoksa (Aylık harcamalar) yenidir.
- * Sıra ya da sekme sayısı eşleşmeyi bozmaz.
- */
-export function excelFor(href: string): string | undefined {
-  for (const tabs of TAB_LISTS) {
-    const tab = tabs.find((t) => t.href === href);
-    if (!tab) continue;
-    const parts = NAV_ITEMS.find((n) => n.href === tabs[0].href)?.excel?.split(" + ") ?? [];
-    return parts.find((p) => fold(p).startsWith(fold(tab.label))) ?? NAV_ITEMS.find((n) => n.href === href)?.excel;
-  }
-  return NAV_ITEMS.find((n) => n.href === href)?.excel;
 }
 
 /** Aynı menü öğesinin altındaki sekmeler (Giderler & maaşlar → Sabit giderler, Aylık harcamalar, Maaşlar) */

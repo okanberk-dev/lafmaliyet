@@ -18,9 +18,11 @@ import {
   type CashReportFields,
   type FieldChange,
 } from "@/lib/cash-report";
+import { CASH_OUT_NOTE_REQUIRED, cashOutNoteMissing, cashOutNoteOf, type CashOutKind } from "@/lib/cash-outs";
 import { CASH_REQUEST_TEXT, cashDaySubject } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
 import { LAFPOS_STAFF_WRITE_TEXT } from "@/lib/lafpos/foto";
+import { unreceiptedCashOut } from "@/lib/lafpos/prefill";
 import { isLafposDay } from "@/lib/lafpos/switch";
 import { normalizeVat, OKC_KNOWN_RATES, okcCumulativeToStore, okcFormError, type OkcVatInput, type OkcVatLine } from "@/lib/okc-z";
 import { DELETED_REPORT_DAYS, linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
@@ -165,19 +167,52 @@ export async function lockCashReport(tx: CashTx, date: string, branchId: string)
 }
 
 /**
- * Personelin LafPOS gününde formdan yazımı (son denetim, 24 Kasım 2026; docs/LAFPOS.md › Gün sonu otomasyonu): LafPOS'un
- * şubesinde geçiş gününden itibaren rapor LafPOS'un gün sonundan kendiliğinden yazılır. Personel yeni rapor girmez (gün
- * sonundan önce de: girseydi otomasyon raporu "elle girildi" sayıp Banka POS'u ve yazarkasa alanlarını hiç yazmazdı) ve
- * otomatik raporu değiştirmez (salt okunur yalnız arayüzde değil). Elle girilmiş rapor (yönetici yedek yolla girdi ya da
- * eski kayıt) kendi kapısıyla açık kalır. Red metni; yazılabilirse null
+ * Gün LafPOS'un şubesinin LafPOS günü mü (geçiş gününden itibaren; LafPOS'un şubesi kütükten, lafposBranchId; onun geçiş
+ * günü ayarın kendisidir). Personele kör kasa günüdür (src/lib/lafpos/kor-kasa.ts): yazım, düzeltme önerisi ve WhatsApp
+ * metni reddedilir
+ */
+export async function isLafposTillDay(db: Pick<DB, "select"> | CashTx, date: string, branchId: string): Promise<boolean> {
+  if (branchId !== (await lafposBranchId(db))) return false;
+  return isLafposDay(date, await lafposSwitchDay(db));
+}
+
+/**
+ * Personelin LafPOS gününde formdan yazımı (son denetim, 24 Kasım 2026; docs/LAFPOS.md › Gün sonu otomasyonu ve Kör
+ * kasa): LafPOS'un şubesinde geçiş gününden itibaren rapor LafPOS'un gün sonundan kendiliğinden yazılır. Personel yeni
+ * rapor girmez (gün sonundan önce de: girseydi otomasyon raporu "elle girildi" sayar, Z'si ve kasası LafPOS'tan
+ * yazılmazdı), otomatik raporu değiştirmez (salt okunur yalnız arayüzde değil) ve yöneticinin elle girdiği raporu da
+ * değiştirmez (kör kasa, bulgu 0: düzenleme sayılanı, açılışı ve farkı gösterirdi; yanıt da farkı söylerdi). Red metni;
+ * yazılabilirse null
  */
 async function staffLafposRefusal(tx: CashTx, date: string, branchId: string, prev: CashReportRow | null): Promise<string | null> {
-  // LafPOS'un şubesi kütükten (lafposBranchId); onun geçiş günü ayarın kendisidir (branchSwitchDay)
-  if (branchId !== (await lafposBranchId(tx))) return null;
-  if (!isLafposDay(date, await lafposSwitchDay(tx))) return null;
+  if (!(await isLafposTillDay(tx, date, branchId))) return null;
   if (!prev) return LAFPOS_STAFF_WRITE_TEXT.fresh;
   const [state] = await tx.select({ autoValues: s.lafposDayEnds.autoValues }).from(s.lafposDayEnds).where(eq(s.lafposDayEnds.reportId, prev.id)).limit(1);
-  return state?.autoValues ? LAFPOS_STAFF_WRITE_TEXT.auto : null;
+  return state?.autoValues ? LAFPOS_STAFF_WRITE_TEXT.auto : LAFPOS_STAFF_WRITE_TEXT.manual;
+}
+
+/**
+ * Personelin fişsiz çıkışı (denetim 25 Kasım 2026, bulgu 2): "Gün içinde çıkan" o günün (şubenin) kasadan çıkan
+ * satırlarından fazlaysa "Neye çıktı" zorunlu (cashOutNoteMissing; form aynı kuralla). Yeni raporda ya da çıkış veya
+ * açıklaması değiştiyse denetlenir (`prev`: kayıtlı hâl; dokunulmayan eski satır yeniden sorulmaz). Personel LafPOS
+ * gününe raporu formdan yazmaz (staffLafposRefusal), bu yüzden LafPOS'un teslimi burada düşülmez. Çağıranlar:
+ * saveCashReport, proposeLateReport, proposeCashCorrection (yalnız personelde)
+ */
+export async function assertStaffOutNote(
+  tx: CashTx,
+  date: string,
+  branchId: string,
+  data: Pick<CashReportFields, "cashOut" | "cashOutNote">,
+  prev: Pick<CashReportRow, "cashOut" | "cashOutNote"> | null,
+): Promise<void> {
+  if (prev && prev.cashOut === data.cashOut && (prev.cashOutNote ?? null) === (data.cashOutNote ?? null)) return;
+  const rows = await tx
+    .select({ kind: s.cashOuts.kind, amount: s.cashOuts.amount, store: s.cashOuts.store, description: s.cashOuts.description })
+    .from(s.cashOuts)
+    .where(and(eq(s.cashOuts.date, date), eq(s.cashOuts.branchId, branchId)));
+  const lines = rows.map((o) => ({ ...o, kind: o.kind as CashOutKind }));
+  const { unreceipted } = unreceiptedCashOut(data.cashOut, lines, null);
+  if (cashOutNoteMissing({ unreceipted, note: data.cashOutNote, outsNote: cashOutNoteOf(lines) })) throw new UserError(CASH_OUT_NOTE_REQUIRED);
 }
 
 /** Bu günden sonra girilmiş bir rapor var mı (varsa bu raporun devri ertesi günün açılışına dayanak olmuştur) */
@@ -504,6 +539,7 @@ export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, 
     if (me.role !== "admin") {
       const lafpos = await staffLafposRefusal(tx, data.date, branchId, prev);
       if (lafpos) throw new UserError(lafpos);
+      await assertStaffOutNote(tx, data.date, branchId, data, prev);
     }
     if (prev && me.role !== "admin") {
       assertRevision(prev, revision);

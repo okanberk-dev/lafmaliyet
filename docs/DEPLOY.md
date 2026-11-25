@@ -21,7 +21,7 @@ olarak `laffogato` seçeceksiniz.
 1. vercel.com → **Add New… → Project** → depoyu seçin.
 2. Framework: **Next.js** (otomatik). Root Directory: `laffogato` (gerekiyorsa).
 3. Build komutu değişmez (`npm run build`). Bu komut önce migration'ları uygular ve hepsinin gerçekten uygulandığını
-   doğrular (§ 7), veritabanı boşsa Excel verisini yükler, sonra derler. Önizleme derlemesi migration ve seed
+   doğrular (§ 7), veritabanı boşsa tohum verisini (eski hesap tablosundan) yükler, sonra derler. Önizleme derlemesi migration ve seed
    çalıştırmaz (§ 3); bekçiyi içeren commit'lerde `main` dışındaki bir dalın Production derlemesi hiç başlamadan durur
    (§ 7, "Production yalnız main'den"; bekçiden önce açılmış eski dallar durmaz, onların dağıtımları yeniden
    derlenmez).
@@ -351,7 +351,7 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
     yapılırsa eski kod sütuna bakmaz: zayi formu, Fatura ekle ve Bulgu ekle yeniden çift basışta iki kayıt açabilir;
     yazılmış anahtarlar zarar vermez.
   - **fatura_kaynagi_onarimi** (yalnız veri, denetim FC-02; [PARASUT.md](PARASUT.md) § 3): hiçbir Paraşüt belgesine
-    bağlı olmayan elle / Excel faturasının kaynağını (`source`) bir kez eskisine döndürür; şema değişmez, eski kod da
+    bağlı olmayan elle girilmiş / içe aktarılmış faturanın kaynağını (`source`) bir kez eskisine döndürür; şema değişmez, eski kod da
     çalışır. Bu sürümden geriye Instant Rollback yapılırsa eski eşitleme e-faturası reddedilen kaydı yine Paraşüt'e bağlı
     bırakır (tutarı kilitli); migration yeniden çalışmaz, o kayıtlar ileri yayınla gelen eşitlemede de düzelmez.
   - **cikista_oturum_kapanir** (`revoked_sessions`, § 6a Çıkış): yalnız yeni tablo, eklemeli. Bu sürümden geriye
@@ -390,11 +390,11 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   `.json.gz` dosyasında indirir; ayda bir alınır, 30 günü geçince zil hatırlatır. Geri yükleme yalnız bilgisayardan:
   `npm run db:restore -- <dosya>` (dolu veritabanına `--sil`, önce onun yedeğini alır). Biçim, adımlar, prova ve geri
   yüklemeden sonra olanlar: [YEDEK.md](YEDEK.md). Kasa ve fiş fotoğraflarının dosyaları yedekte yoktur (yalnız
-  kayıtları); dosyalar özel Vercel Blob deposunda kalır ([FOTOGRAF.md](FOTOGRAF.md)). Aynı karttaki **Excel kopyası** okunabilir bir .xlsx'tir: panel
+  kayıtları); dosyalar özel Vercel Blob deposunda kalır ([FOTOGRAF.md](FOTOGRAF.md)). Aynı karttaki **Dışa aktar (.xlsx)** okunabilir bir çalışma kitabıdır ([YEDEK.md](YEDEK.md) § 12): panel
   sekmeleri ve bütün ayların satış, ay bilgisi, gelir-gider, sayım ve alım miktarı kayıtları. Aylık harcamaların tek
   tek kayıtları (yalnız Gelir-Gider'de ay toplamı), hatırlatıcılar, kullanıcılar ve Paraşüt bağlantıları o dosyada
-  yoktur; Excel kopyası panele geri yüklenmez.
-- Veriyi Excel'in ilk hâline döndürmek için yerel makineden production veritabanı adresiyle şunu çalıştırın:
+  yoktur; dışa aktarım panele geri yüklenmez.
+- Veriyi ilk kurulumdaki tohum verisine (eski hesap tablosu) döndürmek için yerel makineden production veritabanı adresiyle şunu çalıştırın:
 
 ```bash
 DATABASE_URL="<neon bağlantı adresi>" npm run db:reset -- --onay=<sunucu adı>

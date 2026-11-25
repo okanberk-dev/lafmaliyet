@@ -117,7 +117,8 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     openingCash: 1_500,
     cashIn: 1_300,
     cashOut: 5_450,
-    cashOutNote: null,
+    // Fişlerden fazlası (LafPOS'taki teslim) personelde açıklamasız gönderilmez (bulgu 2)
+    cashOutNote: "süt, patrona teslim",
     countedCash: 9_350,
     handedOver: 0,
     bankPos: null,
@@ -495,5 +496,30 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     );
     // Kapalı işaretli değil: raporu olmayan LafPOS günü ay bilgisinde "rapor yok" kalır (tillMonths, saf testte)
     assert.equal((await db.select().from(s.specialDays).where(and(eq(s.specialDays.kind, "kapali")))).length, 0);
+  });
+
+  kasaTest("Kör kasa (inceleme): önceki kör günün devri geç raporda personele sorulmaz; Tuzla'da ve geçişten önce sorulur", async () => {
+    const okcPhoto = async () => {
+      const [p] = await db
+        .insert(s.photos)
+        .values({ kind: "kasa-okc", storageKey: `kasa/2026/11/${randomUUID()}.jpg`, contentType: "image/jpeg", sizeBytes: 100, createdBy: users.ayse.id, createdByName: users.ayse.name, expiresAt: new Date("2100-01-01T00:00:00Z") })
+        .returning({ id: s.photos.id });
+      return p.id;
+    };
+    const propose = (date: string, photoIds: number[]) =>
+      late.proposeLateReport(db, users.ayse, { fields: fields(date, { openingCash: 1_200, note: null }), reason: "Akşam internet yoktu", requestVersion: 0, photoIds, handedTo: null, clientKey: null }, NOW);
+    // Geçiş gününden önce: önceki rapor (devri 9.350) kör değil, açılış 1.200 farkı nota sorulur (metin farkı söyler)
+    await report("2026-10-30");
+    await assert.rejects(propose("2026-11-06", [await okcPhoto()]), (e: unknown) => e instanceof UserError && /Açılış önceki günün devrinden farklı/.test(e.message));
+    // Geçiş günü seçili: önceki rapor Marina'nın LafPOS günü (kör); fark sorulmaz, hata metni devri ele vermez
+    await setSwitch("2026-10-30");
+    const ok = await propose("2026-11-06", [await okcPhoto()]);
+    assert.equal(ok.row.status, "pending");
+    // Tuzla'nın kasası ModPOS'ta: önceki raporunun devri yine sorulur
+    await inTuzla(() => report("2026-11-04"));
+    await assert.rejects(
+      inTuzla(async () => propose("2026-11-06", [await okcPhoto()])),
+      (e: unknown) => e instanceof UserError && /Açılış önceki günün devrinden farklı/.test(e.message),
+    );
   });
 });

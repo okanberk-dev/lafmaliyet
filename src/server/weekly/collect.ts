@@ -15,6 +15,7 @@ import { buildCommissionReport, commissionAlerts, groupOf, MEAL_LIMIT, rowOf, ty
 import { computeOccupancy, emptiestBlock, KARAOKE_ROOMS, periodBounds, resolvePeriod } from "@/lib/karaoke/occupancy";
 import { hourRangeLabel, insightLines, weekdayRange } from "@/lib/karaoke/occupancy-text";
 import { savedFields, suspiciousDiffs } from "@/lib/photo-read/kasa";
+import { lafposBranchOf } from "@/lib/lafpos/switch";
 import { addDays, shiftMonth, todayTR } from "@/lib/reminders";
 import { productLabel } from "@/lib/waste";
 import { parseWeeklyHistory, selectItems, weekInfo, WEEKLY_HISTORY_KEY, type WeekInfo, type WeeklyItem, type WeeklySource, type WeeklySummary } from "@/lib/weekly/core";
@@ -23,7 +24,7 @@ import { withBranchScope } from "@/server/branch-scope";
 import { featureHere, listBranches } from "@/server/branches";
 import { loadCashPlan } from "@/server/data/cash-plan";
 import { cashReportPhotoInfo } from "@/server/data/cash-photos";
-import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, type CashReportDTO } from "@/server/data/cash-reports";
+import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, tillRows, type CashReportDTO } from "@/server/data/cash-reports";
 import { loadChecklistHistory } from "@/server/data/checklists";
 import { loadCommissionInput } from "@/server/data/commission";
 import { loadModel } from "@/server/data/dataset";
@@ -33,6 +34,7 @@ import { loadTillScopes } from "@/server/data/till-scope";
 import { getDb, schema as s } from "@/server/db";
 import { capped } from "@/server/jobs/capped";
 import { loadOccupancySessions, readKaraokeHours } from "@/server/karaoke/occupancy";
+import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { loadUpcoming } from "@/server/notify/digest";
 
 /*
@@ -115,13 +117,15 @@ const kasa: Collector = {
   source: "kasa",
   timeoutMs: 3_000,
   async run(ctx) {
-    const reports = await ctx.cashWeeks();
-    const last = reports.filter((r) => inLastWeek(ctx.week, r.date));
     const quiet = <T>(p: Promise<T>, what: string) =>
       p.catch((e) => {
         console.error("[haftalik] kasa", what, e);
         return null;
       });
+    // Kasa cirosu satırının kasa satırları raporlarla aynı anda okunur (süre sınırı kaynağın tamamı için)
+    const tillP = quiet(Promise.all([tillRows(), loadLafposSwitchDay()]), "ciro");
+    const reports = await ctx.cashWeeks();
+    const last = reports.filter((r) => inLastWeek(ctx.week, r.date));
     const [carry, late, photo] = await Promise.all([
       // Açılış ↔ devir zinciri pencerenin raporlarıyla (geçen haftanın ilk günü önceki haftanın son raporuna bakar), şube
       // şube: iki şubenin raporları birlikteyken Marina'nın açılışı Tuzla'nın deviriyle karşılaştırılmaz. Madde "N gün"
@@ -142,9 +146,8 @@ const kasa: Collector = {
       ),
     ]);
     // Birden çok kasa açıkken eksik maddesi şubeyi yazar ve o şubenin kasasına bağlanır (tek kasada şube yazılmaz)
-    const tills = await listBranches()
-      .then(tillBranches)
-      .catch(() => []);
+    const all = await listBranches().catch(() => []);
+    const tills = tillBranches(all);
     const branchOf = (id: string) => (tills.length > 1 ? tills.find((b) => b.id === id) : undefined);
     // Ciro ay bilgisinin kuralıyla: Z toplamının içindeki ödenmez / ikram düşer (dayRevenue; denetim 13 Kasım HM-08)
     const rows = reports.map((r) => ({
@@ -154,7 +157,18 @@ const kasa: Collector = {
       revenue: dayRevenue({ zTotal: r.zTotal, offRevenue: r.offRevenue, payments: Math.round((r.cash + r.card + r.mealCard + r.online + r.other) * 100) / 100 }).revenue,
       cashDiff: r.cashDiff,
     }));
-    const line = salesLine({ week: ctx.week, reports: rows });
+    // Kasa cirosu satırı Genel bakış'ın ay rakamıyla aynı kasa satırlarından (raporu olmayan LafPOS günü gün sonundan) ve
+    // aynı şube-gün eşlemesiyle (Kıyas kartı; bulgu 65): okunamazsa yalnız satır düşer
+    const till = await tillP;
+    const line = till
+      ? salesLine({
+          week: ctx.week,
+          rows: till[0].filter((r) => r.date >= addDays(ctx.week.lastFrom, -28) && r.date <= ctx.week.lastTo),
+          branches: tills.map((b) => ({ id: b.id, name: b.name, openedOn: b.openedOn })),
+          switchDay: till[1],
+          lafposBranch: lafposBranchOf(all),
+        })
+      : null;
     return { ...one(kasaItem({ week: ctx.week, reports: rows, carryMismatch: carry, lateEdits: late, photoDiffs: photo })), lines: line ? [line] : [] };
   },
 };

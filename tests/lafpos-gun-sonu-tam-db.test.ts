@@ -90,6 +90,8 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DA
   let kasa: typeof import("../src/server/data/lafpos-day");
   let guard: typeof import("../src/server/cash-outs/guard");
   let outReqs: typeof import("../src/server/data/cash-out-requests");
+  let requests: typeof import("../src/server/cash/requests");
+  let data: typeof import("../src/server/data/cash-reports");
   const ali = { id: 0, name: "Ali", role: "admin" as const, email: "tam-ali@ornek.com" };
   const ayse = { id: 0, name: "Ayşe", role: "staff" as const, email: "tam-ayse@ornek.com" };
 
@@ -152,6 +154,8 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DA
     kasa = await import("../src/server/data/lafpos-day");
     guard = await import("../src/server/cash-outs/guard");
     outReqs = await import("../src/server/data/cash-out-requests");
+    requests = await import("../src/server/cash/requests");
+    data = await import("../src/server/data/cash-reports");
   });
 
   after(async () => {
@@ -477,9 +481,69 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DA
     await refused(foto.attachLafposDayPhotoCore(db, ayse, { date: DAY, branchId: LAFPOS_SUBE, photoId: await photo(null) }, NOW), /elle girildi/);
   });
 
+  test("Yönetici gün sonundan önce girdiyse (bulgu 6): gün sonu gelince boş Banka POS ve yazarkasa alanları dolar; Z, kasa ve elle yazılan alan kalır", async () => {
+    const manual = (o: Record<string, unknown> = {}, revision = 0) =>
+      scope.withBranchScope(LAFPOS_SUBE, () =>
+        store.saveCashReport(
+          db,
+          ali,
+          { date: DAY, zNo: "11", receipts: 26, zTotal: 6_300, cash: 1_255, card: 5_030, mealCard: 0, online: 0, other: 0, openingCash: 1_120, cashIn: 0, cashOut: 800, cashOutNote: null, countedCash: 1_300, handedOver: 0, bankPos: null, offRevenue: 1_065, discounts: 90, note: "Yönetici girdi", countedBy: null, revision, photos: [], ...o },
+          NOW,
+        ),
+      );
+    // Akşam, LafPOS'un gün sonundan önce: yönetici raporu kendisi girer (Banka POS ve yazarkasa boş)
+    assert.equal((await manual()).kind, "saved");
+    const before = (await report())!;
+    // Kapanış: Pavo'nun sonucu henüz yok; yazarkasa alanları cihaz belgelerinden dolar, Z ve kasa yöneticininki kalır
+    assert.ok((await push({ bankPos: undefined })).ok);
+    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    let r = (await report())!;
+    assert.deepEqual([r.okcReceipts, r.okcTotal, r.okcCash, r.okcCard, r.okcVatTotal], [19, 5_215, 1_055, 4_160, 474.09]);
+    assert.deepEqual(r.okcVat, [{ rate: 10, total: 5_215, vat: 474.09 }]);
+    assert.equal(r.bankPos, null, "Pavo gelmedi: uydurulmaz");
+    assert.deepEqual([r.zTotal, r.countedCash, r.cashDiff, r.note, r.countedByName], [before.zTotal, before.countedCash, before.cashDiff, "Yönetici girdi", "Ali"]);
+    assert.equal(r.revision, before.revision + 1, "önceki sürüm geçmişte");
+    // Gönderen elle girendir (Z, kasa ve not onun); LafPOS'un yazdığı işlem geçmişinde
+    assert.deepEqual([r.submittedBy, r.submittedByName], [before.submittedBy, before.submittedByName]);
+    assert.equal(r.submittedByName, "Ali");
+    const log = await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Kasa raporu güncellendi (LafPOS otomatik)"));
+    assert.ok(log.some((l) => l.userName === "LafPOS (otomatik)" && /elle girilen rapora cihaz alanları yazıldı/.test(l.detail ?? "")));
+    assert.equal((await db.select().from(s.cashReportRevisions).where(eq(s.cashReportRevisions.reportId, r.id))).length, 1);
+    // Pavo'nun sonucu ikinci gönderimle gelir: boş Banka POS dolar; aynı gönderim yeniden işlenince bir şey yazılmaz
+    assert.ok((await push()).ok);
+    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    r = (await report())!;
+    assert.equal(r.bankPos, 4_160);
+    const rev = r.revision;
+    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    assert.equal((await report())?.revision, rev, "dolan alan yeniden yazılmaz");
+    // Pavo düzeltip başka bir toplam gönderse de bir kez dolan alan kalır; otomatik rapora dönülmez
+    assert.ok((await push({ bankPos: okBank(4_150) })).ok);
+    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    assert.equal((await report())?.bankPos, 4_160);
+    assert.equal((await state())?.autoValues, null, "rapor elle girilmiş kalır");
+  });
+
+  test("Yönetici Banka POS'u ya da bir yazarkasa alanını elle yazdıysa (bulgu 6): o alan ezilmez, yazarkasa grubu karışmaz", async () => {
+    await scope.withBranchScope(LAFPOS_SUBE, () =>
+      store.saveCashReport(
+        db,
+        ali,
+        { date: DAY, zNo: "11", receipts: 26, zTotal: 6_300, cash: 1_255, card: 5_030, mealCard: 0, online: 0, other: 0, openingCash: 1_120, cashIn: 0, cashOut: 800, cashOutNote: null, countedCash: 1_300, handedOver: 0, bankPos: 4_200, offRevenue: 1_065, discounts: 90, note: null, countedBy: null, revision: 0, photos: [], okcTotal: 5_000, okcCash: 1_000, okcCard: 4_000 },
+        NOW,
+      ),
+    );
+    const before = (await report())!;
+    assert.ok((await push()).ok);
+    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    const r = (await report())!;
+    assert.deepEqual([r.bankPos, r.okcTotal, r.okcCash, r.okcCard, r.okcReceipts, r.okcVat], [4_200, 5_000, 1_000, 4_000, null, null]);
+    assert.equal(r.revision, before.revision, "yazılacak alan yok: sürüm de yok");
+  });
+
   test("Personel LafPOS gününde raporu formdan yazamaz (son denetim): gün sonundan önce, sayım bekleyen günde ve otomatik raporda reddedilir; elle girilen rapor ve Tuzla açık", async () => {
     const fields = (revision: number, branchNote: string | null = null) => ({
-      date: DAY, zNo: "11", receipts: 26, zTotal: 6_285, cash: 1_255, card: 5_030, mealCard: 0, online: 0, other: 0, openingCash: 1_120, cashIn: 0, cashOut: 800, cashOutNote: null,
+      date: DAY, zNo: "11", receipts: 26, zTotal: 6_285, cash: 1_255, card: 5_030, mealCard: 0, online: 0, other: 0, openingCash: 1_120, cashIn: 0, cashOut: 800, cashOutNote: "süt, buz",
       countedCash: 1_279.5, handedOver: 0, bankPos: null, offRevenue: 1_065, discounts: 90, note: branchNote, countedBy: null, revision, photos: [],
     });
     const asStaff = (revision: number, branch = LAFPOS_SUBE, note: string | null = null) => scope.withBranchScope(branch, () => store.saveCashReport(db, ayse, fields(revision, note), NOW));
@@ -500,26 +564,34 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DA
     assert.equal((await asStaff(0, MODPOS_SUBE)).kind, "saved");
   });
 
-  test("Yöneticinin elle girdiği (yedek yol) LafPOS raporunu personel kendi kapısıyla düzeltir", async () => {
-    const r0 = await scope.withBranchScope(LAFPOS_SUBE, () =>
-      store.saveCashReport(
-        db,
-        ali,
-        { date: DAY, zNo: "11", receipts: 26, zTotal: 6_285, cash: 1_255, card: 5_030, mealCard: 0, online: 0, other: 0, openingCash: 1_120, cashIn: 0, cashOut: 800, cashOutNote: null, countedCash: 1_279.5, handedOver: 0, bankPos: null, offRevenue: 1_065, discounts: 90, note: null, countedBy: null, revision: 0, photos: [] },
-        NOW,
-      ),
-    );
+  test("Kör kasa (bulgu 0): personel yöneticinin elle girdiği LafPOS raporunu da düzeltemez, düzeltme öneremez; yükleyici sayımı personelden çıkarır, yöneticiye ve Tuzla'ya dokunmaz", async () => {
+    const input = (revision: number, note: string | null = null) => ({
+      date: DAY, zNo: "11", receipts: 26, zTotal: 6_285, cash: 1_255, card: 5_030, mealCard: 0, online: 0, other: 0, openingCash: 1_120, cashIn: 0, cashOut: 800, cashOutNote: "süt, buz",
+      countedCash: 1_279.5, handedOver: 0, bankPos: null, offRevenue: 1_065, discounts: 90, note, countedBy: null, revision, photos: [],
+    });
+    const r0 = await scope.withBranchScope(LAFPOS_SUBE, () => store.saveCashReport(db, ali, input(0), NOW));
     assert.equal(r0.kind, "saved");
-    const r1 = await scope.withBranchScope(LAFPOS_SUBE, () =>
-      store.saveCashReport(
-        db,
-        ayse,
-        { date: DAY, zNo: "11", receipts: 26, zTotal: 6_285, cash: 1_255, card: 5_030, mealCard: 0, online: 0, other: 0, openingCash: 1_120, cashIn: 0, cashOut: 800, cashOutNote: null, countedCash: 1_279.5, handedOver: 0, bankPos: null, offRevenue: 1_065, discounts: 90, note: "Not eklendi", countedBy: null, revision: 1, photos: [] },
-        NOW,
-      ),
+    // Düzenleme sayılanı, açılışı ve farkı gösterirdi; yanıt da farkı söylerdi
+    await refused(scope.withBranchScope(LAFPOS_SUBE, () => store.saveCashReport(db, ayse, input(1, "Not eklendi"), NOW)), /yalnız yönetici düzeltir/);
+    assert.equal((await report())?.note, null, "rapor değişmedi");
+    const { date: _d, countedBy: _c, revision: _r, photos: _p, ...rest } = input(1);
+    void [_d, _c, _r, _p];
+    await refused(
+      scope.withBranchScope(LAFPOS_SUBE, () => requests.proposeCashCorrection(db, ayse, { date: DAY, baseRevision: 1, fields: { ...rest, countedCash: 1_300 }, countedBy: null, message: "Sayımı yanlış yazmışım", clientKey: null }, NOW)),
+      /yalnız yönetici düzeltir/,
     );
-    assert.equal(r1.kind, "saved");
-    assert.equal((await report())?.note, "Not eklendi");
+    // Yükleyici: personele sayım sıfır ve işaretli, yöneticiye olduğu gibi
+    const dto = data.toCashDTO((await report())!, "staff");
+    const [staffView] = await data.blindForStaff([dto], "staff");
+    assert.deepEqual([staffView.blind, staffView.openingCash, staffView.countedCash, staffView.cashDiff], [true, 0, 0, 0]);
+    assert.ok(!JSON.stringify(staffView).includes("1279.5"), "sayılan yükte yok");
+    const [adminView] = await data.blindForStaff([dto], "admin");
+    assert.deepEqual([adminView.blind, adminView.countedCash], [undefined, 1_279.5]);
+    // ModPOS'taki şube (Tuzla) ve geçiş gününden önceki gün personele eskisi gibi
+    const [tuzla] = await data.blindForStaff([{ ...dto, branchId: MODPOS_SUBE }], "staff");
+    assert.deepEqual([tuzla.blind, tuzla.countedCash], [undefined, 1_279.5]);
+    const [early] = await data.blindForStaff([{ ...dto, date: "2026-11-21" }], "staff");
+    assert.deepEqual([early.blind, early.countedCash], [undefined, 1_279.5]);
   });
 
   test("Personel LafPOS gününe kasadan çıkan eklemez (sahibin kararı, 24.11): kapı reddeder; yönetici, Tuzla, geçiş öncesi, geri alma ve LafPOS satırına fiş açık", async () => {

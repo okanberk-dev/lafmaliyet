@@ -2,6 +2,7 @@
 // zaman aşımına düşer; yöneticinin zili boş gelip "Dikkat isteyen bir şey yok" dememeli: ödemeler ve kişinin
 // hatırlatıcıları yine gelir, modele bağlı satırların yerine tek bir "yüklenemedi" satırı durur (okunmamış sayılmaz).
 // Zamanı gelen ödemeler (loadUpcoming) okunamazsa da Ödemeler grubu sessizce boşalmaz: "Ödemeler yüklenemedi".
+// Kasa ve kontrol listeleri de öyle: "Kasa yüklenemedi", "Kontrol listeleri yüklenemedi" (bulgu 88).
 // Kendi geçici veritabanını açar (migration'larla), sonunda siler; oturum ve maliyet modeli taklit edilir
 // (src/server/auth/dal, src/server/data/dataset loadModel'i istenince atar).
 //
@@ -13,6 +14,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { after, before, describe, test } from "node:test";
 
+import { inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
@@ -38,6 +40,9 @@ describe("Zil: maliyet modeli okunamayınca öbür maddeler", { skip: !SERVER_UR
   let modelDown = false;
   /** true iken loadUpcoming (zamanı gelen ödemeler) aynı hatayla düşer */
   let upcomingDown = false;
+  /** true iken zilin kasa bölümü ve kontrol listeleri okuması aynı hatayla düşer (bulgu 88) */
+  let kasaDown = false;
+  let checklistDown = false;
   const realError = console.error;
 
   before(async () => {
@@ -78,6 +83,22 @@ describe("Zil: maliyet modeli okunamayınca öbür maddeler", { skip: !SERVER_UR
       loadUpcoming: async (...args: Parameters<typeof digest.loadUpcoming>) => {
         if (upcomingDown) throw Object.assign(new Error("Authentication timed out"), { code: "08P01" });
         return digest.loadUpcoming(...args);
+      },
+    });
+    const kasa = require("../src/server/bell/kasa") as typeof import("../src/server/bell/kasa");
+    stub(require.resolve("../src/server/bell/kasa"), {
+      ...kasa,
+      kasaBell: async (...args: Parameters<typeof kasa.kasaBell>) => {
+        if (kasaDown) throw Object.assign(new Error("Authentication timed out"), { code: "08P01" });
+        return kasa.kasaBell(...args);
+      },
+    });
+    const checklists = require("../src/server/data/checklists") as typeof import("../src/server/data/checklists");
+    stub(require.resolve("../src/server/data/checklists"), {
+      ...checklists,
+      loadChecklistDays: async (...args: Parameters<typeof checklists.loadChecklistDays>) => {
+        if (checklistDown) throw Object.assign(new Error("Authentication timed out"), { code: "08P01" });
+        return checklists.loadChecklistDays(...args);
       },
     });
     const dbModule = await import("../src/server/db");
@@ -160,6 +181,66 @@ describe("Zil: maliyet modeli okunamayınca öbür maddeler", { skip: !SERVER_UR
     const back = await bell.loadPanelNotifications();
     assert.equal(back.filter((i) => i.id.startsWith("odeme-okunamadi-")).length, 0);
     assert.ok(back.some((i) => i.group === "odeme" && i.title.startsWith("Kira")));
+  });
+
+  test("kasa ve kontrol listeleri okunamayınca sessizce boşalmaz: grubunda 'yüklenemedi' satırı (bulgu 88)", async () => {
+    const logged: unknown[] = [];
+    console.error = (...a: unknown[]) => void logged.push(a);
+    kasaDown = true;
+    checklistDown = true;
+    try {
+      for (const who of [users.ali, users.ayse]) {
+        me = who;
+        logged.length = 0;
+        const items = await bell.loadPanelNotifications();
+        const lost = items.filter((i) => i.id.startsWith("okunamadi-"));
+        assert.deepEqual(
+          lost.map((i) => [i.id, i.title, i.kind, i.unread, i.group, i.href]).sort(),
+          [
+            [`okunamadi-kasa-${todayTR()}`, "Kasa yüklenemedi", "warning", false, "kasa", "/panel/kasa"],
+            [`okunamadi-kontrol-${todayTR()}`, "Kontrol listeleri yüklenemedi", "warning", false, "kontrol", "/panel/kontrol"],
+          ],
+          `${who.role}: ${JSON.stringify(items.map((i) => i.id))}`,
+        );
+        assert.match(lost[0].body, /zili birazdan yeniden açın/);
+        // Hata günlüğe yazılır (iki bölüm)
+        assert.equal(logged.length, 2, `${who.role}: ${JSON.stringify(logged.map((l) => String((l as unknown[])[0])))}`);
+        // Öbür bölümler yine gelir
+        if (who.role === "admin") assert.ok(items.some((i) => i.group === "odeme" && i.title.startsWith("Kira")), "ödeme satırı");
+      }
+    } finally {
+      console.error = realError;
+      kasaDown = false;
+      checklistDown = false;
+      me = users.ali;
+    }
+    // Okunabilince satır yok
+    const back = await bell.loadPanelNotifications();
+    assert.equal(back.filter((i) => i.id.startsWith("okunamadi-")).length, 0);
+  });
+
+  test("10 gecikmiş ödeme: zil 7 satır ve '3 ödeme daha' özeti; rozet 10 sayar (bulgu 96)", async () => {
+    me = users.ali;
+    const today = todayTR();
+    const extra = await db
+      .insert(s.reminders)
+      .values(Array.from({ length: 9 }, (_, i) => ({ title: `Vergi ${i + 1}`, kind: "vergi" as const, amount: 1000, dueDate: addDays(today, -3 - i), anchorDate: addDays(today, -3 - i) })))
+      .returning({ id: s.reminders.id });
+    try {
+      const items = await bell.loadPanelNotifications();
+      const pay = items.filter((i) => i.group === "odeme");
+      assert.equal(pay.length, 8, JSON.stringify(pay.map((i) => i.title)));
+      const sum = pay.at(-1)!;
+      assert.equal(sum.title, "3 ödeme daha");
+      assert.equal(sum.kind, "danger");
+      assert.equal(sum.overdue, 3);
+      assert.equal(sum.covers?.length, 3);
+      const { overdueCount, badgeText } = await import("../src/components/panel/nav");
+      assert.equal(overdueCount(items), 10);
+      assert.equal(badgeText(overdueCount(items)), "9+");
+    } finally {
+      await db.delete(s.reminders).where(inArray(s.reminders.id, extra.map((r) => r.id)));
+    }
   });
 
   test("personelin zili modele hiç dokunmaz: model düşse de aynı", async () => {

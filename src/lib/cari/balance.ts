@@ -1,6 +1,6 @@
 /**
  * Faturanın kalan borcu: bütün ekranların tek kuralı (Kalan borç, Ödemeler, Nakit planı, zil, sabah e-postası, Bugün,
- * Genel bakış, Claude, Excel). Saf; istemci ve sunucu birlikte kullanır (tests/cari-bakiye.test.ts).
+ * Genel bakış, Claude, dışa aktarım). Saf; istemci ve sunucu birlikte kullanır (tests/cari-bakiye.test.ts).
  *
  * İki kip (docs/TEDARIKCILER.md "Hesap hareketleri"):
  * - Takipsiz (`ledgerBase` boş): bugünkü kural, harfi harfine. Ödenmemiş faturada Paraşüt'ün kalanı (`outstanding`)

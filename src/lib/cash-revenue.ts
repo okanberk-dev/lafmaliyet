@@ -3,7 +3,7 @@
  *
  * **Sorun.** Panelin ay cirosu (`posRevenue`) günlerin Z toplamının toplamıdır ve sözleşmesi "KDV dahil, indirimler
  * düşülmüş, **ödenmezler hariç** (Patron › Ciro ile aynı anlam)" der (src/lib/calc/types.ts TillMonth.posRevenue,
- * Genel bakış'ın POS cirosu kartı, Excel'e aktarım). Oysa kasanın Z toplamı ödenmez / ikramı (sahip ve personel
+ * Genel bakış'ın POS cirosu kartı, dışa aktarım). Oysa kasanın Z toplamı ödenmez / ikramı (sahip ve personel
  * tüketimi, hediye, zayi) satış olarak içerir: ödenmez da bir "ödeme türü"dür, yalnız ciroya dahil değildir. O yüzden
  * ayın cirosu ModPOS'un Patron › Raporlar › Ciro rakamından ödenmez kadar fazla çıkıyordu (Ekim 2026: ModPOS 588 bin,
  * panel 600 bin). Burada o fark kapanır: ciro = Z toplamı − (Z toplamının içindeki ödenmez).

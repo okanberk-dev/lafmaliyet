@@ -11,6 +11,7 @@
 
 import { cleanTaxNumber, taxKey } from "@/app/panel/tedarikciler/logic";
 import { dateTR } from "@/lib/format";
+import { INVOICE_SOURCE_PHRASE } from "@/lib/import-labels";
 
 import { dec, indexIncluded, relMany, relOne, str, type Resource } from "./jsonapi";
 
@@ -107,7 +108,7 @@ export function isSalesReturn(d: Pick<BillDraft, "itemType" | "contactType" | "s
 export const CUSTOMER_CONTACT_NOTE = "Paraşüt'te müşteri kartıyla girilmiş: satış iadesiyse silin";
 export const customerContactBill = (d: Pick<BillDraft, "itemType" | "contactType" | "siteProducts" | "eDocumentKind">) => d.contactType === "customer" && !isSalesReturn(d);
 
-/** Komisyon faturası kesen platformlar (Excel aktarımındaki listeyle aynı) */
+/** Komisyon faturası kesen platformlar (ilk aktarımdaki listeyle aynı) */
 export const COMMISSION_SUPPLIERS = ["Trendyol", "Set Kart", "Pluxee", "Yemek Sepeti", "Multinet", "Edenred", "Metropol", "Getir", "Migros Yemek"];
 
 /** Şirket türü ekleri ve bağlaçlar karşılaştırmada yok sayılır */
@@ -465,7 +466,7 @@ export function recategorizeFromLines(
 }
 
 /**
- * Tedarikçi geçmişine katılan fatura: kaydı eşitleme açmadıysa (Excel, elle) ya da eşitlemenin açtığı kayıt kontrol
+ * Tedarikçi geçmişine katılan fatura: kaydı eşitleme açmadıysa (içe aktarılmış, elle) ya da eşitlemenin açtığı kayıt kontrol
  * edilmişse (onaylanmış, kategorisi elle değiştirilmiş ya da kurala, geçmişe dayanan). Kontrol bekleyen tahminler
  * katılmaz: yanlış bir tahmin kendini çoğaltmasın.
  */
@@ -492,7 +493,7 @@ export interface ExistingInvoice {
   supplier: string;
   date: string;
   payable: number;
-  /** Tedarikçinin vergi nosu (Paraşüt'ten gelmişse; elle ve Excel'le girilende yok) */
+  /** Tedarikçinin vergi nosu (Paraşüt'ten gelmişse; elle girilende ve içe aktarılmışta yok) */
   supplierTaxNumber?: string | null;
 }
 
@@ -531,7 +532,7 @@ const sameEInvoiceNo = (e: ExistingInvoice, d: Pick<BillDraft, "date" | "payable
 
 /**
  * Aynı tedarikçi mi: ad (sameSupplier), geçerli vergi no ya da ikisi Tedarikçiler'de aynı karta düşüyor (`cardOf`: kartın
- * adı, diğer adları, vergi nosu). Elle ve Excel'le girilen kayıtta vergi no yoktur; adı farklı yazılmış aynı usta kartla
+ * adı, diğer adları, vergi nosu). Elle girilen ve içe aktarılmış kayıtta vergi no yoktur; adı farklı yazılmış aynı usta kartla
  * tanınır
  */
 function sameIssuer(e: Pick<ExistingInvoice, "supplier" | "supplierTaxNumber">, d: Issuer, cardOf?: CardOf): boolean {
@@ -557,7 +558,7 @@ export function findByEInvoiceNo<T extends ExistingInvoice>(d: Pick<BillDraft, "
 }
 
 /**
- * Yeni açılacak kaydın GİB portalı numarası bağsız (elle, Excel'le girilmiş) bir kayıtta da var (±31 gün, aynı tarih ya
+ * Yeni açılacak kaydın GİB portalı numarası bağsız (elle girilmiş ya da içe aktarılmış) bir kayıtta da var (±31 gün, aynı tarih ya
  * da tutar) ama tedarikçi tutmadı (findByEInvoiceNo bağlamadı): başka ustanın aynı numarası da olabilir, adı başka
  * yazılmış aynı fatura da. Yeni kayıt açılır ama kontrol bekler (gibNoClashNote); yoksa null
  */
@@ -569,7 +570,7 @@ export function gibNoClash<T extends ExistingInvoice>(d: Pick<BillDraft, "invoic
 
 /** gibNoClash'ın yeni kayda düşen notu */
 export function gibNoClashNote(e: Pick<ExistingInvoice, "supplier" | "date"> & { origin?: string }): string {
-  const kind = e.origin === "manual" ? "elle girilmiş" : e.origin === "excel" ? "Excel'den alınmış" : "başka bir";
+  const kind = e.origin === "manual" || e.origin === "excel" ? INVOICE_SOURCE_PHRASE[e.origin] : "başka bir";
   return `aynı numaralı ${kind} fatura var (${e.supplier}, ${dateTR(e.date)}); aynı faturaysa birini silin`;
 }
 
@@ -601,7 +602,7 @@ export function eInvoiceDeleted(d: Pick<BillDraft, "eDocument">, ignored: Readon
 }
 
 /**
- * Elle ya da Excel'den girilmiş aynı faturayı bulur (çift sayımı önlemek için): önce Paraşüt kimliği; sonra tam
+ * Elle girilmiş ya da içe aktarılmış aynı faturayı bulur (çift sayımı önlemek için): önce Paraşüt kimliği; sonra tam
  * e-fatura numarası (findByEInvoiceNo; GİB portalı numarasında aynı tedarikçi de); sonra aynı tedarikçi + fatura
  * numarası (tarih ±31 gün; farklı firmalar aynı e-fatura önekini kullanabilir); sonra aynı tedarikçi + aynı tarih +
  * aynı tutar (±1 ₺). GİB numarasında adı farklı yazılmış aynı tedarikçi `taxNumber` (belgenin vergi nosu) ya da

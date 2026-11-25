@@ -139,7 +139,7 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
 
   const sheet = model.stockSheet(month);
   const prev = model.stockSheet(prevMonth);
-  const vat = stockVatSummary(sheet);
+  const vat = stockVatSummary(sheet, model.settings);
   const prevById = new Map(prev.groups.flatMap((g) => g.lines.filter((l) => l.qty !== null).map((l) => [l.ingredient.id, { qty: l.qty as number, unit: l.countUnit }])));
   const ml = monthLabel(month);
   // Sayım düzeni: seçili ay dahil son 6 ayın sayımı tamam mı, yarım mı (countStatus: tek kural); personelin açamadığı
@@ -158,7 +158,7 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
 
   const groups: FormGroup[] = sheet.groups.map((g, gi) => ({
     name: g.name,
-    excelRate: vat.groups[gi]?.excelRate ?? 0,
+    rate: vat.groups[gi]?.rate ?? 0,
     mismatches: isAdmin ? (vat.groups[gi]?.mismatches ?? []).map((x) => ({ name: x.ingredient.name, vatRate: x.vatRate })) : [],
     lines: g.lines.map((l) => {
       const p = prevById.get(l.ingredient.id);
@@ -219,6 +219,7 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         prevMonthLabel={monthLabel(prevMonth)}
         isAdmin={isAdmin}
         groups={groups}
+        extrasVatRate={model.settings.alisKdvGida}
         valuation={isAdmin ? { fifo: sheet.valuation === "fifo", covered: sheet.fifoCovered, total: sheet.total, start: model.fifoStart ? monthLabel(model.fifoStart) : null, shared: branchLabel !== null } : null}
         extras={sheet.extras.map((e) => ({ name: e.name, unit: e.unit, qty: e.qty, unitPrice: isAdmin ? e.unitPrice : 0, priced: e.unitPrice > 0 }))}
         prevExtras={prev.extras.map((e) => ({ name: e.name, unit: e.unit, qty: e.qty, unitPrice: isAdmin ? e.unitPrice : 0, priced: e.unitPrice > 0 }))}

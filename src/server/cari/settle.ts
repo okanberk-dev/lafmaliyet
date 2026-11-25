@@ -838,7 +838,7 @@ export async function creditFirstForInvoices(invoiceIds: readonly number[], by: 
   return out;
 }
 
-/** Elle ya da Excel'den eklenen faturanın tabanı: kartı takipliyse 0 (yalnız panel sayar), değilse boş */
+/** Elle eklenen ya da içe aktarılmış faturanın tabanı: kartı takipliyse 0 (yalnız panel sayar), değilse boş */
 export async function ledgerBaseForNew(supplier: string, taxNumber: string | null, db: DB | Tx = getDb()): Promise<number | null> {
   const tracked = await trackedCardIds(db);
   if (!tracked.size) return null;

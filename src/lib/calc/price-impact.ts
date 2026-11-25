@@ -6,9 +6,9 @@
  * Zamdan önce hedefte olan ürüne hedef fiyat (daha küçük artış yeter), zaten hedefin üstünde olana (hazır alınan
  * tatlı gibi) yalnız zammın payı önerilir. Saf modül; tests/price-impact.test.ts.
  *
- * Hammadde fiyatı her değiştiğinde ingredient_prices'a bir satır yazılır (elle, Excel aktarımı, Paraşüt
+ * Hammadde fiyatı her değiştiğinde ingredient_prices'a bir satır yazılır (elle, ilk aktarım, Paraşüt
  * faturası). Pencereden (ör. son 30 gün) önceki son satır "eski fiyat"tır; pencere içinde değişiklik yoksa
- * hammadde zamlanmış sayılmaz. Bütün geçmiş pencerenin içindeyse ilk satır (ör. Excel aktarımı) başlangıçtır. Sayım
+ * hammadde zamlanmış sayılmaz. Bütün geçmiş pencerenin içindeyse ilk satır (ör. ilk aktarım) başlangıçtır. Sayım
  * listesine fiyatıyla eklenen kalemin başlangıç satırı (COUNT_ITEM_PRICE_NOTE; yazılan tahmin) hiç sayılmaz: ilk gerçek
  * fiyat zam görünmesin. Yöneticinin düzelttiği başlangıç (COUNT_ITEM_PRICE_FIXED_NOTE) doğrulanmış fiyattır, taban olur.
  */

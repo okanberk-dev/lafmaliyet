@@ -11,7 +11,6 @@ import { contextLineOf } from "./nav";
  * Bağlam satırı ağaçtan türer (docs/planlar/ux-sade.md §3.8): elle yazılmaz, menüde olmayan ad ("Günlük", "Sistem")
  * çıkmaz; üst düzey ekranda (Bugün, Kasa raporu) ve grubun adını taşıyan giriş ekranında (Vergi, KDV, SGK; Ayarlar)
  * çizilmez. Telefonda gizli: üst çubuk ekranın adını zaten yazıyor.
- * Excel karşılığı başlıkta yok; Yardım'ın "Ekranlar" tablosunda ve ⌘K'nın alt satırında.
  */
 export function PageHeader({
   title,

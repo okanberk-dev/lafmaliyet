@@ -31,7 +31,7 @@ import type { CurrentUser } from "@/server/auth/dal";
 import { currentBranchScope, currentPhysicalBranch, currentTillBranch, withBranchScope } from "@/server/branch-scope";
 import { resolveBranchSetting, resolveForTills } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
-import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, previousCarryOverByBranch, type CashReportDTO } from "@/server/data/cash-reports";
+import { blindForStaff, cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, previousCarryOverByBranch, type CashReportDTO } from "@/server/data/cash-reports";
 import { closedYesterday } from "@/server/closed-days";
 import { loadStaffLateEdits, loadUnpricedExtras } from "@/server/data/count-alerts";
 import { loadChecklistDays } from "@/server/data/checklists";
@@ -106,6 +106,7 @@ const toLite = (r: CashReportDTO): CashLite => ({
   submittedByName: r.submittedByName,
   revision: r.revision,
   note: r.note,
+  ...(r.blind ? { blind: true as const } : {}),
 });
 
 /**
@@ -316,7 +317,8 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   // okur, satırlar şube şube kurulur (ilk raporun günü de şubenin); değilse tek kasanın (online kanalda Tuzla'nın)
   const viewP = safe(cashView(admin));
   const tillScoped = <T>(fn: () => Promise<T>) => viewP.then((v) => (v?.till ? withBranchScope(v.till, fn) : fn()));
-  const cashP = safe(tillScoped(() => cashReportsBetween(c.yesterday, c.day)));
+  // Kör kasa (bulgu 0): personelin LafPOS günü raporu sayımsız (fark satırda yok)
+  const cashP = safe(tillScoped(() => cashReportsBetween(c.yesterday, c.day).then((r) => blindForStaff(r, user.role))));
   // Kasa raporunun beklendiği saat seçili şubenin (şube ayarı isletme.takvim; "Tümü"de ve online kanalda varsayılan şubenin)
   const eveningHourP = safe(resolveBranchSetting(CALENDAR_GROUP, karaokeScope).then((r) => r.value.eveningHour));
   // "Tümü"de kasa satırları her kasanın kendi saatiyle (zil gibi kasa kasa)

@@ -101,6 +101,8 @@ export interface CashLite {
    * fotoğrafı. "pending" istenen fotoğraf eklenmedi (ya da okunamadı); "done" eklendi. Elle girilen raporda yok
    */
   lafposPhoto?: "pending" | "done";
+  /** Kör kasa (bulgu 0; personelin LafPOS günü): fark sıfırlanmış gelir, satır farkı yazmaz */
+  blind?: true;
 }
 
 /** "Tümü"de birden çok kasa açıkken bir şubenin kasası (yönetici): dünün ve bugünün raporu, şubenin ilk raporu */
@@ -521,8 +523,10 @@ function cashTodayOf(f: DayFacts, c: DayContext, till: TillDays | null): DayTask
   const r = till.today;
   // LafPOS gününün otomatik raporu: rakamlar LafPOS'tan, personelin tek işi gün sonu fotoğrafı; "Raporu gönder" yok
   if (r?.lafposPhoto === "pending") return { key: "kasa", title: "Gün sonu fotoğrafı", status: "todo", detail: LAFPOS_PHOTO_TEXT.slip, href, action: "Fotoğraf ekle" };
-  if (r?.lafposPhoto === "done") return { key: "kasa", title, status: "done", badge: "Tamam", detail: dated(c, r.date, `LafPOS gün sonu · ${LAFPOS_PHOTO_TEXT.done} · ${diffText(r.cashDiff)}`), href, action: "Raporu aç" };
-  if (r) return { key: "kasa", title, status: "done", badge: "Gönderildi", detail: dated(c, r.date, `${r.submittedByName} gönderdi · ${diffText(r.cashDiff)}`), href, action: "Raporu aç" };
+  // Kör kasa (bulgu 0): LafPOS gününde fark personele yazılmaz
+  const diff = r?.blind ? "" : ` · ${diffText(r?.cashDiff ?? 0)}`;
+  if (r?.lafposPhoto === "done") return { key: "kasa", title, status: "done", badge: "Tamam", detail: dated(c, r.date, `LafPOS gün sonu · ${LAFPOS_PHOTO_TEXT.done}${diff}`), href, action: "Raporu aç" };
+  if (r) return { key: "kasa", title, status: "done", badge: "Gönderildi", detail: dated(c, r.date, `${r.submittedByName} gönderdi${diff}`), href, action: "Raporu aç" };
   // Gün sonu geldi ama çekmece sayılmadı: "Günü kapat"a yeniden değil, LafPOS'ta sayıma
   if (till.noCount?.includes(c.day)) return { key: "kasa", title, status: "todo", badge: "Sayım yok", detail: dated(c, c.day, STAFF_NO_COUNT_TEXT), href, action: "Kasa raporu" };
   const kasa = tillKasa(f, till, c.day);

@@ -48,17 +48,21 @@ import {
   yearTrend,
   type DashboardData,
   type MonthState,
+  type ProfitBasis,
   type YearTotals as YearTotalsData,
 } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { monthLabel, monthShort, num, numPossessive, pct, tl } from "@/lib/format";
 import { salesMonthKasa } from "@/lib/lafpos/kasa";
+import { commonListSourceLine, commonListText } from "@/lib/lafpos/sales";
 import { longDateTR } from "@/lib/reminders";
+import { sameBranchBasis } from "@/lib/same-branches";
 import { salesSourceOf } from "@/lib/sales-source";
 import { holdAlert } from "@/lib/price-hold";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { currentBranchScope, withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { availableMonths, loadModel, monthParam, resolveMonth } from "@/server/data/dataset";
 import { loadCashOutInvoiceState, scopeCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCashPlan } from "@/server/data/cash-plan";
@@ -198,7 +202,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   await requireAdmin();
   const sp = await searchParams;
   const scope = await currentBranchScope();
-  const [model, upcoming, branchPayments, parasut, cashOutState, till] = await Promise.all([
+  const [model, upcoming, branchPayments, parasut, cashOutState, till, branchRows] = await Promise.all([
     loadModel(),
     loadPayments(),
     // "Yaklaşan ödemeler" kartı ve ayın işlerinin ödeme olguları şube seçimine uyar (Bugün, zil ve Ödemeler gibi;
@@ -212,6 +216,8 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
       .catch(() => null),
     // Günlük ciro grafiği: ay bilgisinin okuduğu kasa satırları (seçili şubeyle; okunamazsa kart çizilmez)
     tillRows().catch(() => null),
+    // Aydan aya rozetler "Tümü"de aynı şubelerle: şubelerin açılış günleri (src/lib/same-branches.ts; okunamazsa ilk verisi)
+    listBranches().catch(() => []),
   ]);
   // Ekrandaki ödeme listesi (kart, gecikme satırı, ayın işleri): seçili şubenin; nakit planı ve cari uyarıları işletmenin
   const shownPayments = scope === ALL_BRANCHES ? upcoming : branchPayments;
@@ -257,7 +263,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // modelin saydığı bölünmeyle; denetim E-39)
   const mk = salesMonthKasa(month, st.lafposGecisGunu, model.ds.lafposSales);
 
-  // Süren ayın gidişatı (Excel "Ekim tahmini", Panel B19): yalnızca bugünün ayı için, bitmiş aylar için asla
+  // Süren ayın gidişatı (ay sonu tahmini): yalnızca bugünün ayı için, bitmiş aylar için asla
   const forecastMonth = forecastMonthOf(model);
   const current = forecastMonth && forecastMonth !== month ? dashboard(model, forecastMonth) : d;
   const forecast = forecastMonth ? current.forecast : null;
@@ -268,8 +274,17 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // Satışlar'ın banka POS komisyonu (kasa kartı olan ayda; süren ayda listenin günleriyle, metin söyler)
   const salesPos = model.salesPosCommission(month);
   // Süren ayda kısa satış listesi: sabit gider grupları listenin günlerine düşen payla
-  const listNote = t?.listPeriod ? ` Satış listesi ${listDaysText(t.listPeriod)} (ayın ${t.listPeriod.of} gününün ${numPossessive(t.listPeriod.days)}): tutar o günlere düşen pay.` : "";
-  // "Para nereye gitti?": Excel Panel'in 4 grubu (Kira, Personel, Reklam, Diğer) + varsa bu aya özel giderler; online
+  const listNote = t?.listPeriod
+    ? ` Satış listesi ${listDaysText(t.listPeriod)} (ayın ${t.listPeriod.of} gününün ${numPossessive(t.listPeriod.days)}): tutar o günlere düşen pay.${
+        t.listPeriod.short ? ` ${commonListText(month, t.listPeriod.short, t.listPeriod.through)}` : ""
+      }`
+    : "";
+  // "Tümü"nün dönemi şubelerin en kısa listesiyle (bulgu 62): ayın satırları bir şubenin listesi olmadığı için sayılmıyorsa
+  const commonMissing = model.ds.commonLists?.find((c) => c.month === month && c.through === null) ?? null;
+  // Başlığın kaynak satırı: ortak dönemi olmayan ayda "LafPOS … itibaren" değil, liste gelince sayıldığı
+  const ownSource = salesSourceOf(month, st.lafposGecisGunu, model.ds.lafposSales);
+  const salesSource = commonMissing ? { ...ownSource, line: commonListSourceLine(commonMissing.branch) } : ownSource;
+  // "Para nereye gitti?": sabit giderin 4 grubu (Kira, Personel, Reklam, Diğer) + varsa bu aya özel giderler; online
   // satış (laffogato.net) net satışın içinde: kâr-zarardaki gibi ModPOS + online
   const waterfall: FlowRow[] = t
     ? [
@@ -317,15 +332,35 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const pt = prev.theoretical;
   const fullMonths = d.monthState === "closed";
   const daily = dailyChange(d, prev);
-  const g = {
-    netSales: t && pt && fullMonths ? growthOf(t.netSales, pt.netSales) : null,
-    gross: t && pt && fullMonths ? growthOf(t.grossProfit, pt.grossProfit) : null,
-    net: t && pt && fullMonths ? growthOf(t.netProfit, pt.netProfit) : null,
-    pos: fullMonths ? growthOf(d.info?.posRevenue, prev.info?.posRevenue) : null,
-    daily: daily.growth,
-  };
-  const changeNote = (x: number | null) => (x !== null ? ` Rozet: ${monthLabel(prevMonth)} ayına göre değişim.` : "");
-  const dailyBasis = daily.basis === "pos" ? "POS cirosu ÷ açık gün" : daily.basis === "list" ? "satış listesi ÷ açık gün" : undefined;
+  // "Tümü"de önceki ayın 1'inden sonra açılan şube büyüme sayılmaz (bulgu 65): POS cirosu ve günlük ortalama iki ayda da
+  // açık şubelerle, şubeye bölünemeyen rakamların (net satış, brüt ve net kâr) rozeti yok; ipucu yeni şubeyi söyler
+  const same = model.ds.branchView ? null : sameBranchBasis(model.monthInfo, month, branchRows);
+  const g = same
+    ? {
+        netSales: null,
+        gross: null,
+        net: null,
+        pos: fullMonths ? (same.pos?.growth ?? null) : null,
+        daily: same.daily?.growth ?? null,
+      }
+    : {
+        netSales: t && pt && fullMonths ? growthOf(t.netSales, pt.netSales) : null,
+        gross: t && pt && fullMonths ? growthOf(t.grossProfit, pt.grossProfit) : null,
+        net: t && pt && fullMonths ? growthOf(t.netProfit, pt.netProfit) : null,
+        pos: fullMonths ? growthOf(d.info?.posRevenue, prev.info?.posRevenue) : null,
+        daily: daily.growth,
+      };
+  // Rozetin önceki ay değeri (aynı şubelerle kıyasta o şubelerin)
+  const prevPos = same ? same.pos?.prev : prev.info?.posRevenue;
+  const prevDaily = same ? same.daily?.prev : daily.previous;
+  const changeNote = (x: number | null) => (x !== null ? (same ? same.note : ` Rozet: ${monthLabel(prevMonth)} ayına göre değişim.`) : (same?.noBadge ?? ""));
+  const dailyBasis = same
+    ? `POS cirosu ÷ açık gün, yalnız ${same.kept.join(", ")}`
+    : daily.basis === "pos"
+      ? "POS cirosu ÷ açık gün"
+      : daily.basis === "list"
+        ? "satış listesi ÷ açık gün"
+        : undefined;
 
   // Ayın işleri: satış raporu, ay bilgileri, faturalar, su, sayım (ödemeler işi listeden çıkar, K22: gecikme varsa
   // sayfanın başında tek kırmızı satır; ödemeler zaten Bugün'de, alt menü rozetinde ve "Yaklaşan ödemeler"de)
@@ -356,8 +391,16 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const fm = t?.fixedBreakdown ?? d.fixedMonth;
   const netTip = t
     ? `Brüt kâr${t.online ? " (laffogato.net online satışı dahil)" : ""} − indirimler (KDV hariç) − o ayın Gelir-gider sabit giderleri (gün oranı + bu aya özel giderler), reçeteye göre.${
-        t.listPeriod ? ` Satış listesi ${listDaysText(t.listPeriod)} günlerini kapsıyor: indirim o günlerin kasa raporlarından, sabit gider ve laffogato.net online satışı o günlere düşen payla.` : ""
-      } Excel Panel'i her ay standart aylık sabit gideri düşer; fark olduğunda altta "Excel temeli" yazar. Faturaya göre değer Gelir-gider tablosundan gelir; stok sayımı olmayan ayda mal maliyeti tahminidir (sayım aralığına dağıtılır ya da reçeteye göre).${changeNote(g.net)}`
+        t.listPeriod
+          ? ` Satış listesi ${listDaysText(t.listPeriod)} günlerini kapsıyor: indirim o günlerin kasa raporlarından, sabit gider ve laffogato.net online satışı o günlere düşen payla.${
+              t.listPeriod.short ? ` ${commonListText(month, t.listPeriod.short, t.listPeriod.through)}` : ""
+            }`
+          : ""
+      }${differs(t.netProfit, t.netProfitStandard) ? ` Sabit gider: ${fixedBreakdownText(fm)}` : ""} ${
+        d.profitBasis.invoices
+          ? "Faturaya göre değer Gelir-gider tablosundan gelir; stok sayımı olmayan ayda mal maliyeti tahminidir (sayım aralığına dağıtılır ya da reçeteye göre)."
+          : "Gelir-gider'e göre değer Gelir-gider tablosundan gelir; şube seçiliyken mal maliyeti şubenin satışından reçeteye göre (faturalar işletme genelinde, şubeye bölünmez)."
+      }${changeNote(g.net)}`
     : "";
 
   const tabs: DashboardTab[] = [
@@ -449,17 +492,17 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             {t?.listPeriod ? ` · satış listesi ${listDaysText(t.listPeriod)}` : ""}
           </>
         }
-        meta={<SalesSourceLine source={salesSourceOf(month, st.lafposGecisGunu, model.ds.lafposSales)} />}
+        meta={<SalesSourceLine source={salesSource} />}
         actions={
           <>
             <MonthPicker months={months} value={month} />
             {/* Dosya indiren rota: düz bağlantı (istemci yönlendirmesi rotayı iki kez istemesin) */}
             {/* Telefonda kısa ad: ay seçici ile aynı satıra sığar. Dosya ekranın şube seçimiyle (şube kapsamı C P1-9; Ayarlar'daki
                 tam yedek seçicisiz, Tümü) */}
-            <a href={`/api/export?ay=${month}&${BRANCH_PARAM}=${encodeURIComponent(scope)}`} download className={buttonClass("secondary")} aria-label={`${monthLabel(month)} Excel'e aktar`}>
+            <a href={`/api/export?ay=${month}&${BRANCH_PARAM}=${encodeURIComponent(scope)}`} download className={buttonClass("secondary")} aria-label={`${monthLabel(month)} çalışma kitabını dışa aktar (.xlsx)`}>
               <Download size={16} aria-hidden="true" />
-              <span className="max-[420px]:hidden">Excel&apos;e aktar</span>
-              <span className="min-[421px]:hidden">Excel</span>
+              <span className="max-[420px]:hidden">Dışa aktar</span>
+              <span className="min-[421px]:hidden">Aktar</span>
             </a>
           </>
         }
@@ -476,6 +519,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             {branchNote.text}
           </Notice>
         ) : null}
+        {commonMissing ? <Notice tone="neutral" size="sm" title="Tümü'de satışlar şubelerin ortak döneminden" text={commonListText(month, commonMissing.branch, null)} /> : null}
         {paymentNotice ? (
           <Notice
             {...paymentNotice}
@@ -535,9 +579,10 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                   tone={t.netProfit < 0 ? "bad" : "good"}
                   sub={
                     <>
+                      {/* Standart aylık sabit giderle net kâr (her ay aynı sabit gider; o ayın Gelir-gider'inden farklıysa) */}
                       {differs(t.netProfit, t.netProfitStandard) ? (
                         <span className="flex flex-wrap items-center gap-x-1.5">
-                          Excel temeli:
+                          Standart sabit giderle:
                           <Signed value={t.netProfitStandard} className="whitespace-nowrap">
                             {tl(t.netProfitStandard)}
                           </Signed>
@@ -546,7 +591,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                       ) : null}
                       {d.actual.hasRevenue ? (
                         <span className="block">
-                          Faturaya göre:{" "}
+                          {d.profitBasis.title}:{" "}
                           <Signed value={d.actual.profit} className="whitespace-nowrap">
                             {tl(d.actual.profit)}
                           </Signed>
@@ -559,25 +604,25 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             </>
           ) : (
             <>
-              <StatBreakdown {...withComparison(posRevenueBreakdown(model, d), { month: prevMonth, value: prev.info?.posRevenue, growth: g.pos })}>
+              <StatBreakdown {...withComparison(posRevenueBreakdown(model, d), { month: prevMonth, value: prevPos, growth: g.pos, basis: same ? `yalnız ${same.kept.join(", ")}` : undefined })}>
                 <Stat
                   compact
                   icon={<Receipt />}
                   label="POS cirosu (KDV dahil)"
                   info={g.pos !== null ? changeNote(g.pos).trim() : undefined}
                   value={<CountUp value={d.info?.posRevenue ?? null} />}
-                  badge={<Change g={g.pos} prevMonth={prevMonth} prevValue={prev.info?.posRevenue} />}
+                  badge={<Change g={g.pos} prevMonth={prevMonth} prevValue={prevPos} basis={same ? `yalnız ${same.kept.join(", ")}` : undefined} />}
                   sub={d.info?.openDays ? `${d.info.openDays} günde${d.info.sources?.posRevenue === "kasa" ? " · kasa raporlarından" : ""}` : null}
                 />
               </StatBreakdown>
-              <StatBreakdown {...withComparison(dailyAvgBreakdown(d), { month: prevMonth, value: daily.previous, growth: g.daily, basis: dailyBasis })}>
+              <StatBreakdown {...withComparison(dailyAvgBreakdown(d), { month: prevMonth, value: prevDaily, growth: g.daily, basis: dailyBasis })}>
                 <Stat
                   compact
                   icon={<CalendarDays />}
                   label="Günlük ortalama ciro"
-                  info={`POS cirosu ÷ açık gün (KDV dahil).${g.daily !== null ? ` Rozet: ${monthLabel(prevMonth)} ayına göre, iki ayda da ${dailyBasis}.` : ""}`}
+                  info={`POS cirosu ÷ açık gün (KDV dahil).${g.daily !== null ? (same ? same.note : ` Rozet: ${monthLabel(prevMonth)} ayına göre, iki ayda da ${dailyBasis}.`) : (same?.noBadge ?? "")}`}
                   value={<CountUp value={d.dailyAvg} />}
-                  badge={<Change g={g.daily} prevMonth={prevMonth} prevValue={daily.previous} basis={dailyBasis} />}
+                  badge={<Change g={g.daily} prevMonth={prevMonth} prevValue={prevDaily} basis={dailyBasis} />}
                   sub="KDV dahil"
                 />
               </StatBreakdown>
@@ -621,6 +666,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             className="xl:col-span-5"
             recipeRatio={d.recipeCostRatio}
             invoiceRatio={d.invoiceCostRatio}
+            basis={d.profitBasis}
             target={st.hedefMaliyet}
             lowCount={d.lowProfitCount}
             attentionCount={d.attentionCount}
@@ -638,7 +684,11 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
               <CardHeader
                 icon={<Scale />}
                 title="Reçeteye göre mi, faturaya göre mi?"
-                description="Aradaki fark fire, ikram, stokta bekleyen mal ya da reçetede eksik malzemeyi gösterir."
+                description={
+                  d.profitBasis.invoices
+                    ? "Aradaki fark fire, ikram, stokta bekleyen mal ya da reçetede eksik malzemeyi gösterir."
+                    : "Faturalar işletme genelinde, şubeye bölünmez: karşılaştırma Tümü seçiliyken."
+                }
               />
               <CardContent className="@container flex flex-1 flex-col gap-4">
                 {/* Telefonda da yan yana (iki tutar birlikte okunur); çok dar ekranda alt alta */}
@@ -648,32 +698,46 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                     <p className="mt-1 text-lg font-semibold tracking-tight whitespace-nowrap text-ink tabular sm:text-xl">{tl(t.material)}</p>
                     <p className="text-xs text-ink-mute">Maliyet oranı {pct(d.recipeCostRatio)}</p>
                   </Well>
-                  <Well className="p-3 sm:p-3.5">
-                    <p className="text-xs font-medium text-ink-mute">Faturaya göre alım</p>
-                    <p className="mt-1 text-lg font-semibold tracking-tight whitespace-nowrap text-ink tabular sm:text-xl">{tl(purchases)}</p>
-                    <p className="text-xs text-ink-mute">
-                      {/* ⓘ oranla birlikte kırılır: dar kutuda tek başına alt satıra düşmez */}
-                      Maliyet oranı{" "}
-                      <span className="whitespace-nowrap">
-                        {pct(d.invoiceCostRatio)}
-                        <InfoTip
-                          className="ml-1.5 align-middle"
-                          text="Faturayla alınan mal (kahve, süt, gıda, ambalaj; KDV hariç) ÷ net satış (laffogato.net online dahil). Stok sayımı yoksa ay içinde alınan her şey o ayın maliyeti sayılır."
-                        />
-                      </span>
-                    </p>
-                  </Well>
+                  {!d.profitBasis.invoices ? (
+                    // Şube seçili: işletmenin bütün mal alımı şubenin satışına bölünmez (bulgu 64)
+                    <Well className="p-3 sm:p-3.5">
+                      <p className="text-xs font-medium text-ink-mute">Faturaya göre alım</p>
+                      <p className="mt-1 text-lg font-semibold tracking-tight text-ink sm:text-xl">Tümü&apos;nde</p>
+                      <p className="text-xs text-ink-mute">
+                        İşletme geneli, şubeye bölünmez
+                        <InfoTip className="ml-1.5 align-middle" text={d.profitBasis.sharedNote ?? ""} />
+                      </p>
+                    </Well>
+                  ) : (
+                    <Well className="p-3 sm:p-3.5">
+                      <p className="text-xs font-medium text-ink-mute">Faturaya göre alım</p>
+                      <p className="mt-1 text-lg font-semibold tracking-tight whitespace-nowrap text-ink tabular sm:text-xl">{tl(purchases)}</p>
+                      <p className="text-xs text-ink-mute">
+                        {/* ⓘ oranla birlikte kırılır: dar kutuda tek başına alt satıra düşmez */}
+                        Maliyet oranı{" "}
+                        <span className="whitespace-nowrap">
+                          {pct(d.invoiceCostRatio)}
+                          <InfoTip
+                            className="ml-1.5 align-middle"
+                            text="Faturayla alınan mal (kahve, süt, gıda, ambalaj; KDV hariç) ÷ net satış (laffogato.net online dahil). Stok sayımı yoksa ay içinde alınan her şey o ayın maliyeti sayılır."
+                          />
+                        </span>
+                      </p>
+                    </Well>
+                  )}
                 </div>
                 <div className="divide-y divide-line">
-                  <KeyValue
-                    label={
-                      <span className="inline-flex items-center gap-1.5">
-                        Fark (alınan − harcanan)
-                        <InfoTip text="Faturayla alınan mal − reçeteye göre satışlarda harcanan malzeme. Artı değer: fire, ikram, stokta bekleyen mal ya da reçetede eksik malzeme." />
-                      </span>
-                    }
-                    value={<span className="font-semibold whitespace-nowrap">{tl(purchases - t.material)}</span>}
-                  />
+                  {d.profitBasis.invoices ? (
+                    <KeyValue
+                      label={
+                        <span className="inline-flex items-center gap-1.5">
+                          Fark (alınan − harcanan)
+                          <InfoTip text="Faturayla alınan mal − reçeteye göre satışlarda harcanan malzeme. Artı değer: fire, ikram, stokta bekleyen mal ya da reçetede eksik malzeme." />
+                        </span>
+                      }
+                      value={<span className="font-semibold whitespace-nowrap">{tl(purchases - t.material)}</span>}
+                    />
+                  ) : null}
                   <KeyValue
                     label="Kâr/zarar · reçeteye göre"
                     value={
@@ -683,7 +747,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                     }
                   />
                   <KeyValue
-                    label="Kâr/zarar · faturaya göre"
+                    label={`Kâr/zarar · ${d.profitBasis.label}`}
                     value={
                       <Signed value={d.actual.profit} className="font-semibold whitespace-nowrap">
                         {tl(d.actual.profit)}
@@ -730,7 +794,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                   title={`${year} aylık gelir-gider`}
                   description={
                     <span className="inline-flex items-center gap-1.5">
-                      Gelir-gider tablosundan, faturaya göre
+                      {d.profitBasis.invoices ? "Gelir-gider tablosundan, faturaya göre" : "Gelir-gider tablosundan, mal maliyeti reçeteye göre"}
                       <InfoTip text="Kira, personel gibi aylık giderler ayın gün oranıyla bölünür (kasa raporlarından gelen ayda takvim günüyle: kapalı bir gün kirayı ve maaşı düşürmez). Ciro KDV hariçtir." />
                     </span>
                   }
@@ -821,7 +885,7 @@ function DailyRevenueCard({ month, days }: { month: string; days: { date: string
 }
 
 /**
- * Satış listesi olmayan ayın üçüncü rakamı: süren ayda ay sonu tahmini (Excel B19), bitmiş ayda
+ * Satış listesi olmayan ayın üçüncü rakamı: süren ayda ay sonu tahmini, bitmiş ayda
  * Gelir-gider'deki gerçek (faturaya göre) sonuç; tahmin yalnızca süren ay için yapılır. Dökümü sayfa kurar
  * (bitmiş ayda Gelir-gider satırları, süren ayda tahminin girdileri).
  */
@@ -833,8 +897,10 @@ function ThirdStat({ d, projected, breakdown }: { d: DashboardData; projected: n
         <Stat
           compact
           icon={d.actual.profit < 0 ? <TrendingDown /> : <TrendingUp />}
-          label="Kâr / zarar (faturaya göre)"
-          info="Ay bitti; tahmin yerine gerçekleşen sonuç: Gelir-gider tablosunda KDV hariç ciro − satılan malın maliyeti − giderler. Ürün satışları gelince reçeteye göre kâr da hesaplanır."
+          label={`Kâr / zarar (${d.profitBasis.label})`}
+          info={`Ay bitti; tahmin yerine gerçekleşen sonuç: Gelir-gider tablosunda KDV hariç ciro − satılan malın maliyeti − giderler.${
+            d.profitBasis.invoices ? "" : " Şube seçiliyken mal maliyeti şubenin satışından reçeteye göre (faturalar işletme genelinde)."
+          } Ürün satışları gelince reçeteye göre kâr da hesaplanır.`}
           value={<CountUp value={has ? d.actual.profit : null} />}
           tone={!has ? "default" : d.actual.profit < 0 ? "bad" : "good"}
           sub={
@@ -860,7 +926,7 @@ function ThirdStat({ d, projected, breakdown }: { d: DashboardData; projected: n
           d.refMonth ? `${monthLabel(d.refMonth)} ` : "son satış ayının "
         }brüt kâr oranı${d.forecast?.projectedOnline != null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider${
           d.breakEven.expensesTotal ? " − her ay girilen harcamalar" : ""
-        } (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır.`}
+        }. Açık gün sayısı bugüne kadar geçen gün olarak kullanılır.`}
         value={<CountUp value={d.forecast?.projectedProfit ?? null} />}
         tone={!d.forecast ? "default" : projected < 0 ? "bad" : "good"}
         sub={
@@ -885,6 +951,7 @@ function CostCard({
   className,
   recipeRatio,
   invoiceRatio,
+  basis,
   target,
   lowCount,
   attentionCount,
@@ -895,6 +962,7 @@ function CostCard({
   className?: string;
   recipeRatio: number | null;
   invoiceRatio: number | null;
+  basis: ProfitBasis;
   target: number;
   lowCount: number;
   attentionCount: number;
@@ -923,7 +991,15 @@ function CostCard({
             </div>
             <div>
               <p className="text-xs text-ink-mute">Faturaya göre</p>
-              <p className="text-sm font-semibold text-ink tabular">{pct(invoiceRatio)}</p>
+              {basis.invoices ? (
+                <p className="text-sm font-semibold text-ink tabular">{pct(invoiceRatio)}</p>
+              ) : (
+                // Şube seçili: faturalar işletme genelinde, şubenin satışına bölünmez (bulgu 64)
+                <p className="text-sm font-semibold text-ink">
+                  Tümü&apos;nde
+                  <InfoTip className="ml-1.5 align-middle" text={basis.sharedNote ?? ""} />
+                </p>
+              )}
             </div>
           </div>
         </Well>
@@ -943,7 +1019,7 @@ function CostCard({
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
             <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
               {year} kâr / zarar
-              <InfoTip text="Her ay Gelir-gider tablosundaki (faturaya göre) kâr ya da zarar. Gri: o ay için POS cirosu girilmedi ya da veri yok; ciro girilmeden kâr/zarar sayılmaz. Çerçeveli parça seçili ay." />
+              <InfoTip text={`Her ay Gelir-gider tablosundaki (${basis.invoices ? "faturaya göre" : "mal maliyeti şubenin satışından reçeteye göre"}) kâr ya da zarar. Gri: o ay için POS cirosu girilmedi ya da veri yok; ciro girilmeden kâr/zarar sayılmaz. Çerçeveli parça seçili ay.`} />
             </h3>
             <p className="flex items-center gap-1.5">
               <Badge tone="green" className="tabular">
@@ -994,7 +1070,6 @@ function CountLink({ href, value, label, tone }: { href: string; value: number; 
 function WaterfallCard({ month, t, rows }: { month: string; t: Theoretical; rows: FlowRow[] }) {
   const loss = t.netProfit < 0;
   const f = t.fixedBreakdown;
-  const showStandard = differs(t.netProfit, t.netProfitStandard);
   return (
     <Card>
       <CardHeader
@@ -1005,7 +1080,7 @@ function WaterfallCard({ month, t, rows }: { month: string; t: Theoretical; rows
             KDV hariç. Malzeme maliyeti reçetelere göre hesaplanır.
             <InfoTip
               className="ml-1.5"
-              text="Sabit giderler Excel Panel'deki gibi 4 grupta: Kira (yalnızca kira satırı), Personel (maaş + SGK, part-time, yemek), Reklam (Instagram, influencer) ve Diğer (elektrik, muhasebe, güvenlik, yazılım, ortak gider…). Tutarlar o ayın Gelir-gider değerleridir. Gelir-gider tablosu kendi bölümlerini (Personel giderleri, Faturalar, Kira, İşletme genel giderleri) kullanır; toplam aynıdır."
+              text="Sabit giderler 4 grupta: Kira (yalnızca kira satırı), Personel (maaş + SGK, part-time, yemek), Reklam (Instagram, influencer) ve Diğer (elektrik, muhasebe, güvenlik, yazılım, ortak gider…). Tutarlar o ayın Gelir-gider değerleridir. Gelir-gider tablosu kendi bölümlerini (Personel giderleri, Faturalar, Kira, İşletme genel giderleri) kullanır; toplam aynıdır."
             />
           </>
         }
@@ -1028,9 +1103,9 @@ function WaterfallCard({ month, t, rows }: { month: string; t: Theoretical; rows
               </span>
             </span>
           </div>
-          {showStandard ? (
+          {differs(t.netProfit, t.netProfitStandard) ? (
             <p className="mt-1 flex flex-wrap items-center justify-between gap-x-3 text-xs text-ink-mute">
-              <span>Excel temeli (standart aylık sabit gider)</span>
+              <span>Standart aylık sabit giderle</span>
               <Signed value={t.netProfitStandard} className="font-medium whitespace-nowrap">
                 {tl(t.netProfitStandard)}
               </Signed>
@@ -1073,7 +1148,7 @@ function ForecastCard({
             <InfoTip
               text={`Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı${forecast.closedDays ? ` (kapalı işaretli ${forecast.closedDays} gün hariç)` : ""} × ${
                 forecast.refMonth ? `${monthLabel(forecast.refMonth)} ` : "son satış ayının "
-              }brüt kâr oranı${forecast.projectedOnline !== null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider${monthlyExpenses ? " − her ay girilen harcamalar" : ""} (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır; ay bitince gerçek açık gün sayısını yazın.`}
+              }brüt kâr oranı${forecast.projectedOnline !== null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider${monthlyExpenses ? " − her ay girilen harcamalar" : ""}. Açık gün sayısı bugüne kadar geçen gün olarak kullanılır; ay bitince gerçek açık gün sayısını yazın.`}
             />
           </span>
         }
@@ -1118,7 +1193,7 @@ function ForecastCard({
 }
 
 /**
- * "Bütün menü" alt satırının ortalamaları: Excel Ürün Kârlılık satır 134 (K134 / L134) gibi basit ortalama,
+ * "Bütün menü" alt satırının ortalamaları: basit ortalama (her ürün bir oy),
  * reçetesi olmayan ürün katılmaz (Ürünler listesinin alt satırıyla aynı kural: menuAverages).
  */
 function menuAverageRow(products: { status: ProductStatus; costRatio: number; margin: number; unitProfit: number }[]) {
@@ -1140,7 +1215,7 @@ function CategoriesTab({ d, target, menu }: { d: DashboardData; target: number; 
       target={target}
       menu={menu}
       salesMonth={other ? `${monthShort(d.categoryMonth!)} ${d.categoryMonth!.slice(0, 4)}` : null}
-      description={`Ort. değerler menüdeki ürünlerin basit ortalamasıdır (Excel'deki gibi). ${
+      description={`Ort. değerler menüdeki ürünlerin basit ortalamasıdır (her ürün bir oy). ${
         !d.categoryMonth
           ? "Satış verisi yok."
           : other

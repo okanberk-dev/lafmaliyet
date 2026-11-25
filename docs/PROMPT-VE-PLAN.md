@@ -1,5 +1,9 @@
 # L'Affogato Yönetim Paneli — Geliştirilmiş Prompt, Görev Planı ve Excel Analizi
 
+> **Tarihî belge.** Panelin ilk kurulumundaki istek ve eski hesap tablosunun analizi. Panel bugün kendi veritabanı ve
+> kurallarıyla çalışır; ekranda eski tablonun adı ve sayfa karşılıkları yok (25 Kasım 2026). Tablonun verisi yalnız
+> tohum verisi olarak kaldı (`npm run db:seed`, `tests/golden.json`). Güncel kurallar ilgili belgelerde.
+
 ## 1. Orijinal istek
 
 > klasörün içindeki exceli detaylıca analiz et ve bunun için nextjs frontend ve vercel'de çalışacak backend oluşturarak bana bir gelişmiş ama basit bir websitesi hazırla (laffogato.net için yapıyoruz cafe için yani), buna göre gelişmiş bir sistem yap ama exceldekiler olsun mutlaka basitleştirebilirsin ama özellikler olsun veya geliştirebilirsin önerilerinde

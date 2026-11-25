@@ -1,7 +1,7 @@
 // Sabit gider ve personel ekranlarının "hangi aydan itibaren?" metinleri ve kuralları.
 // Saf işlevler: hem sunucu sayfası hem istemci kullanır, testleri tests/giderler-history.test.ts.
 //
-// Kural (Excel'deki gibi): her ay kendi tutarını taşır. Bir tutar değişikliği, yeni kalem, durdurma ya da devam
+// Kural: her ay kendi tutarını taşır. Bir tutar değişikliği, yeni kalem, durdurma ya da devam
 // ettirme yalnızca seçilen aydan sonrasını değiştirir; kapanmış bir ay etkilenecekse ekran bunu açıkça yazar.
 
 import { inRange, shiftMonth } from "@/lib/calc/engine";

@@ -263,8 +263,8 @@ test("kaynak: anahtarın zil satırı yalnız yönetici dalında, Sistem başlı
   const load = src.slice(src.indexOf("export async function loadPanelNotifications"));
   const staffReturn = load.indexOf('if (user.role !== "admin") return');
   assert.ok(staffReturn > 0);
-  assert.ok(load.indexOf("modposKeyBell().catch(() => [])") > staffReturn, "personel dalında yok");
-  assert.match(load, /return \[\.\.\.system, \.\.\.recipients, \.\.\.modpos, /);
+  assert.ok(load.indexOf('safe("modpos", modposKeyBell())') > staffReturn, "personel dalında yok");
+  assert.match(load, /return \[\.\.\.lost, \.\.\.system, \.\.\.recipients, \.\.\.modpos, /);
   const srv = read("src/server/bell/modpos.ts");
   assert.match(srv, /href: MODPOS_SETTINGS_HREF,\s+group: "sistem",/);
   assert.match(srv, /export const MODPOS_SETTINGS_HREF = "\/panel\/ayarlar#modpos";/);

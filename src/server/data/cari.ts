@@ -505,7 +505,7 @@ export async function loadExpectedDebtsByCard(): Promise<{ cardId: number; name:
 }
 
 /**
- * Excel'in "Cari hareketleri" sekmesi: bütün elle kayıtlar (borç ve ödeme), kartın adı, ödemenin sayıldığı kalemler,
+ * Dışa aktarımın "Cari hareketleri" sekmesi: bütün elle kayıtlar (borç ve ödeme), kartın adı, ödemenin sayıldığı kalemler,
  * borcun bağlandığı fatura. Kayıt yokken boş (sekme eklenmez).
  */
 export async function loadCariExport(): Promise<CariExportRow[]> {

@@ -10,7 +10,8 @@
 //   "Devam ettir"in açtığı yeni kayıttan önceki satır kendi geçmişiyle bağlı kalabilir (aralıkları ayrık). Bu yüzden bir
 //   hesaba bir şubede birden çok (aralığı ayrık) satır düşebilir: şube başına liste verenler (LM-4b'nin
 //   /api/panel/pos/personel'i) şubede hesap başına tek öğe vermelidir. Veritabanında tekil indeks yok (kural aralığa bağlı); eylem
-//   denetimi ve yazımı bir işlem kilidi altında yapar (src/server/actions/costs.ts lockStaffLinks).
+//   denetimi ve yazımı bir işlem kilidi altında yapar (src/server/data/staff-links.ts lockStaffLinks).
+// - Maaş satırına bağlı hesap silinemez (denetim bulgusu 47; src/server/actions/settings.ts deleteUser): pasif yapılır.
 
 import type { MonthRange } from "./calc/types";
 
@@ -75,4 +76,14 @@ export function parseLinkValue(v: string): { userId: number | null; personRef: s
   if (u) return { userId: Number(u[1]), personRef: null };
   if (PERSON_REF_PATTERN.test(v)) return { userId: null, personRef: v };
   return { userId: null, personRef: null };
+}
+
+/**
+ * Maaş satırına bağlı hesabın silinmesinin reddi (denetim bulgusu 47). Silinince staff.user_id boşalır (ON DELETE SET NULL):
+ * part-time'ın çağrıldığı gün Vardiya'dan sayılamaz, bütün aylardaki ücreti 0'a düşer; tam zamanlının LafPOS yemek kartı
+ * günü de bağlantıyı kaybeder. Ayrılan kişinin hesabı pasif yapılır: giriş kapanır, bağlantı ve geçmiş aylar kalır
+ */
+export function linkedDeleteText(names: readonly string[]): string {
+  const list = names.map((n) => `“${n}”`).join(", ");
+  return `Bu hesap Maaşlar'da ${list} ${names.length > 1 ? "satırlarına" : "satırına"} bağlı; silinirse Vardiya günleri o satıra sayılmaz, part-time ücreti geçmiş aylarda da 0'a düşer. Silmek yerine hesabı pasif yapın.`;
 }

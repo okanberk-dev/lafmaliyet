@@ -444,7 +444,7 @@ test("palet sıralaması: aksanlı arama aksanlı başlığı öne alır ('kâr'
     label: p.label,
     t: fold(p.label),
     raw: p.label.toLocaleLowerCase("tr-TR"),
-    hay: fold([p.label, p.excel, p.keywords].filter(Boolean).join(" ")),
+    hay: fold([p.label, p.keywords].filter(Boolean).join(" ")),
   }));
   const first = (query: string) => {
     const raw = query.toLocaleLowerCase("tr-TR");

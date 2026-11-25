@@ -108,8 +108,8 @@ düşürmez, 500'de hak geri verilir). Bir istek tek bir kasa günüdür. Bu yü
 - **Alınamayan gün** (bozuk yanıt, 500…) her sabah yeniden denenmez: 2, 4, 8… gün (en çok 32) bekler, geçmiş onda
   takılmaz, sıradaki eksik güne geçer; iki kez alınamayan gün kartta yazar. Yanıt 2xx ama okunamıyorsa (bozuk, çok
   büyük, yarıda kesik) çalışma durur: sorun büyük olasılıkla her günde aynıdır, ikinci hak harcanmaz.
-- **LafPOS'a geçiş gününden** itibaren Tuzla'nın föyü çekilmez (o günleri hiçbir yer okumaz); geçmiş yalnız ondan önceye
-  tamamlanır. Geçiş günü yalnız LafPOS'un kurulu olduğu şubenin (Tuzla) kasasınındır: Marina'nın kasası ModPOS'ta kalır,
+- **LafPOS'a geçiş gününden** itibaren Marina'nın föyü çekilmez (o günleri hiçbir yer okumaz); geçmiş yalnız ondan önceye
+  tamamlanır. Geçiş günü yalnız LafPOS'un kurulu olduğu şubenin (Marina) kasasınındır: Tuzla'nın kasası ModPOS'ta kalır,
   föyü her sabah çekilmeye devam eder (`branchSwitchDay`; denetim 21 Kasım #5, [LAFPOS.md](LAFPOS.md) › Şubeler).
 - **Aynı anda tek çekim** (integration_state › `modpos.kira`, 90 sn): sabah işi iki kez tetiklenirse ya da **Bu günü
   çek** sabah işiyle çakışırsa ikincisi istek göndermez ("Başka bir ModPOS çekimi sürüyor"). Bu günü çek'in yanıtı yolda
@@ -223,7 +223,7 @@ Sayım girilmeden Z'si alınan günde ModPOS sayılanı 0 gönderir: tabloda "Mo
 zil çıkmaz; sayılan 0 yalnız ModPOS'un beklenen nakdi de 0'sa gerçek sayımdır ve karşılaştırılır. Panelde API'den gelen
 her bilgi "ModPOS API" diye anılır (personelin ModPOS'tan yazdığı Z ile karışmasın). Gider ↔ gün içinde çıkan,
 nakit cari tahsilat ↔ gün içinde giren, olması gereken ve kasa farkı yalnız bilgidir. LafPOS'a geçiş gününden
-itibaren Tuzla'nın kasası LafPOS'tur: föy karşılaştırılmaz (Marina'nın raporu kendi föyüyle karşılaştırılmaya devam
+itibaren Marina'nın kasası LafPOS'tur: föy karşılaştırılmaz (Tuzla'nın raporu kendi föyüyle karşılaştırılmaya devam
 eder). Kasası hâlâ açıkken alınmış föy (gün içinde **Bu günü çek**)
 karşılaştırılmaz: o anki tutarlardır, ModPOS bölümünde "Föy gün açıkken alındı" yazar, rozet ve zil çıkmaz; ertesi
 sabah kapanmış föy kendiliğinden gelir. Kasası açılmamış (föysüz) gün de kesinleşmeden karşılaştırılmaz.

@@ -76,7 +76,7 @@ export interface FireResult {
 /**
  * Ürüne özel fire alanı. Yazılan değer yüzde puanıdır (parsePercentInput): "8", "%8", "8%" ve "% 8" hepsi %8.
  * Okunamayan metin artık sessizce %0 sayılmaz: hata döner ve kayıt engellenir. %1'in altı ya da %50'nin üstü
- * kaydedilebilir ama uyarı verir (Excel'deki "0,08" alışkanlığı %0,08 olur; öneri tek tıkla %8 yapar).
+ * kaydedilebilir ama uyarı verir ("0,08" yazmak %0,08 demektir; öneri tek tıkla %8 yapar).
  */
 export function parseFireInput(text: string): FireResult {
   const raw = text.trim();
@@ -195,9 +195,8 @@ export interface AverageRow {
 }
 
 /**
- * Excel Ürün Kârlılık satır 134 "TOPLAM / ORTALAMA": K134 =AVERAGE(kâr marjı), L134 =AVERAGE(maliyet oranı).
- * Basit ortalama (her ürün bir oy). Reçetesi olmayan ürün katılmaz: maliyet oranı 0 sayılıp ortalamayı
- * olduğundan iyi göstermesin (Excel'de böyle ürün yok, sonuç aynı).
+ * Menü ortalaması: kâr marjının ve maliyet oranının basit ortalaması (her ürün bir oy). Reçetesi olmayan ürün
+ * katılmaz: maliyet oranı 0 sayılıp ortalamayı olduğundan iyi göstermesin.
  */
 export function menuAverages(rows: AverageRow[]): { count: number; costRatio: number | null; margin: number | null } {
   const list = rows.filter((r) => r.status !== "Reçete yok");

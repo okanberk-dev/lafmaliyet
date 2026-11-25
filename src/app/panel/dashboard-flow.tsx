@@ -15,7 +15,7 @@ export interface FlowRow {
   value: number;
   sub: string;
   sign: number;
-  /** Satırın ne içerdiği (Excel Panel karşılığı); bilgi simgesinde açılır */
+  /** Satırın ne içerdiği; bilgi simgesinde açılır */
   info?: string;
   /** Satırda Gelir-gider'de elle düzeltilmiş tutar var */
   edited?: boolean;

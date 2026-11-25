@@ -1,8 +1,8 @@
 /**
  * Ürünlerin varsayılan zayi (fire) oranları: kategori ortalamaları (sahibinin verdiği: kahve %5, tatlı %20, çay %40;
  * diğerleri kafe sektörü ortalamaları). drizzle/0012_zayi_oranlari.sql bunları yalnız o gün veritabanında olan ürünlere
- * yazdı; Excel'den yeniden yüklenen ürünler (boş veritabanı, npm run db:reset) oranları kaybediyor, her ürün genel %5'e
- * düşüyordu: tatlının maliyeti 15, çayınki 35 puan eksik çıkıyordu. Seed (scripts/seed.ts) Excel'de oranı boş ürünlere
+ * yazdı; ilk aktarımdan yeniden yüklenen ürünler (boş veritabanı, npm run db:reset) oranları kaybediyor, her ürün genel %5'e
+ * düşüyordu: tatlının maliyeti 15, çayınki 35 puan eksik çıkıyordu. Seed (scripts/seed.ts) oranı boş gelen ürünlere
  * bunları yazar. Ürün kartından ürün ürün değiştirilebilir. Saf: tests/zayi-oranlari.test.ts (migration'la aynı mı).
  *
  * Kurallar migration'daki sırayla uygulanır: sonraki öncekinin üstüne yazar (Çay ürünü, Atıştırmalıklar'da sandviç
@@ -44,7 +44,7 @@ export function defaultFireRate(product: { name: string }, category: string | nu
   return rate;
 }
 
-/** Excel'de oranı boş ürünlere varsayılanı yazar (Excel'de yazılı oran kalır) */
+/** Oranı boş gelen ürünlere varsayılanı yazar (yazılı oran kalır) */
 export function withFireDefaults<P extends { name: string; categoryId: number; fireOverride: number | null }>(
   products: readonly P[],
   categories: readonly { id: number; name: string }[],

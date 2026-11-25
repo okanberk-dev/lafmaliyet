@@ -31,7 +31,7 @@ export const SEVERITY: Record<Exclude<Severity, "none">, { label: string; range:
   big: { label: "Büyük fark", range: "> 1,5×", hint: "reçete, fire ya da ikram kontrol edilmeli", tone: "red", bar: "bg-bad" },
 };
 
-/** Oranı okumak için Excel'in E14 notundaki rehber (lejant ve ipuçlarında aynı cümleler) */
+/** Oranı okuma rehberi (lejant ve ipuçlarında aynı cümleler) */
 export const RATIO_GUIDE = {
   below1: "1×'in altı = alınandan fazla kullanıldı; önceki ayın stoğundan harcanmış.",
   bottles: "Büyük şişeli sos, püre ve şuruplar birkaç ay yettiği için tek aylık oranları yüksek çıkabilir.",

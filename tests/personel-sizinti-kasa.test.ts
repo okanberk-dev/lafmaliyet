@@ -300,3 +300,22 @@ test("ModPOS API: personele giden kasa kaynaklarında föyün anahtarları yok",
   assert.ok(staff.length > 100);
   assert.doesNotMatch(staff, /loadKasaModpos|ModposSections|ModposSheetCard|LadminReportCard|modposDays/);
 });
+
+/**
+ * Kör kasa (bulgu 0; docs/LAFPOS.md › Kör kasa): LafPOS gününde personele giden her rapor yükü sayımsızdır. Davranışı
+ * tests/kor-kasa.test.ts (saf) ve tests/lafpos-gun-sonu-tam-db.test.ts (yükleyici, ret) sınar; burada personele rapor
+ * götüren yolların hepsinin süzgeçten geçtiği kilitlenir (yeni bir yol eklenirse süzgeçsiz kalmasın)
+ */
+test("kör kasa: personele rapor götüren yollar sayımı süzer (kart, Son 7 gün, eski LafPOS günü, Bugün)", () => {
+  const page = read("src/app/panel/kasa/page.tsx");
+  assert.match(page, /const shownReport = report && blind \? blindReport\(report\) : report;/);
+  assert.match(page, /report=\{shownReport\}/);
+  assert.match(page, /carry=\{blind \? null : carry\}/);
+  assert.match(page, /next=\{blind \? null : next\}/);
+  assert.match(page, /revisions=\{blind \? \[\] : revisions\}/);
+  assert.match(page, /lafpos=\{blind && lafposState\.day \? blindLafposDay\(lafposState\.day\) : lafposState\.day\}/);
+  assert.match(page, /const whatsapp = report && !blind/);
+  assert.match(page, /cashReportsBetween\(addDays\(today, -6\), today\)\.then\(\(r\) => blindForStaff\(r, "staff"\)\)/);
+  assert.match(page, /getCashReport\(date, "staff"\)\.then\(async \(r\) => \(r \? \(await blindForStaff\(\[r\], "staff"\)\)\[0\] : null\)\)/);
+  assert.match(read("src/server/data/today.ts"), /cashReportsBetween\(c\.yesterday, c\.day\)\.then\(\(r\) => blindForStaff\(r, user\.role\)\)/);
+});

@@ -86,7 +86,7 @@ bekleyen hammaddeden eksik kalan ürünler "N ürünün maliyeti fiyat onayında
 (`holdEffectSentence`), "şimdiki fiyatla hesaplanır" demez.
 
 **Tahmini fiyat:** hammaddenin şimdiki fiyatı tahminiyse (Hammaddeler'de "Tahmini"; sayım listesine eklenen kalem,
-Excel'deki varsayım) kart `Şimdiki fiyat tahmini (varsayım), faturadan gelmedi. Faturadaki fiyat ilk gerçek fiyat
+ilk aktarımdaki varsayım) kart `Şimdiki fiyat tahmini (varsayım), faturadan gelmedi. Faturadaki fiyat ilk gerçek fiyat
 olabilir.` der, yüzde rozeti `tahmini fiyata göre` ile sarıdır. **Onayla** fiyatı yazar ve "Tahmini"yi aynı işlemde
 kaldırır (işlem geçmişinde "tahmini fiyat kalktı"); Geri al ikisini birden geri alır. %40 kuralı değişmez: çarpan yine
 yanlış olabilir, bir dokunuş bekler.

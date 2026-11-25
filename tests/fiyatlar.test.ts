@@ -814,7 +814,7 @@ test("eylemler: toplu fiyat ve şube fiyatı yöneticinin; kasaya işle iki rold
   assertNoCostKeys(marks);
   // Zilin satırı operasyonun modülünde (src/server/bell/ops.ts; dalga 10 Adım 0): toplayıcı iki rolde çağırır
   const bell = read("src/server/actions/notifications.ts");
-  assert.match(bell, /opsBell\(user\)\.catch\(\(\) => \[\]\)/);
+  assert.match(bell, /safe\("operasyon", opsBell\(user, onFailed\)\)/);
   const ops = read("src/server/bell/ops.ts");
   // Personel dalı kendi sabit sütunlu özetinden okur (yalnız etkin ürünler), yönetici posPendingSummary'den
   const pos = ops.slice(ops.indexOf("async function posNotifications"), ops.indexOf("export async function opsBell"));

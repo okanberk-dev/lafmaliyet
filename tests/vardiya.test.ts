@@ -198,7 +198,7 @@ test("kayıt farkı: yalnız değişen hücre yazılır, boşaltılan silinir, g
   const renamed = weekDiff(existing, [row("u:1", "Ayşe Yılmaz", ["10-18 kasa", "10-18", "izin", "", "", "", ""], 1)], monday);
   assert.equal(renamed.upserts.length, 3);
   // Girdi şeması: yedi hücre, en çok 60 kişi
-  assert.ok(saveWeekSchema.safeParse({ branchId: "tuzla", week: monday, rows: [{ ref: "u:1", name: "Ayşe", cells: Array(7).fill("") }] }).success);
+  assert.ok(saveWeekSchema.safeParse({ branchId: "tuzla", week: monday, rows: [{ ref: "u:1", name: "Ayşe", cells: Array(7).fill(""), seen: Array(7).fill("") }] }).success);
   assert.equal(saveWeekSchema.safeParse({ branchId: "tuzla", week: monday, rows: [{ ref: "u:1", name: "Ayşe", cells: Array(6).fill("") }] }).success, false);
   assert.equal(saveWeekSchema.safeParse({ branchId: "tuzla", week: "2026-02-30", rows: [] }).success, false);
   assert.equal(saveWeekSchema.safeParse({ branchId: "tuzla", week: monday, rows: Array.from({ length: 61 }, (_, i) => ({ ref: `u:${i + 1}`, name: "x", cells: Array(7).fill("") })) }).success, false);

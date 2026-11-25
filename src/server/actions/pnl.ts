@@ -26,7 +26,7 @@ const zNote = z
 
 /**
  * Gelir-gider tablosunda bir hücreyi elle girer (amount null = hesaplanan değere dön / boşalt; not da silinir).
- * note: undefined = var olan notu koru, null ya da "" = notu sil, metin = notu yaz (Excel'deki hücre açıklaması).
+ * note: undefined = var olan notu koru, null ya da "" = notu sil, metin = notu yaz (hücrenin açıklaması).
  * Bitmiş (bitiş ayı geçmiş) ya da silinmiş sabit giderin satırına (`fixed:<id>`, `stopaj:<id>`) o ay kayıtlı değer yoksa
  * yeni tutar yazılmaz (fixed-expense-rules.ts; 23 Kasım 2026): kayıtlı değeri düzeltmek ve silmek serbest.
  */

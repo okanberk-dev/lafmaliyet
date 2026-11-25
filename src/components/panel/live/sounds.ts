@@ -20,7 +20,7 @@ export type { OutputStatus };
  * ses ancak seçilen hoparlör etkinse çıkar; hoparlör seçilmemiş, çıkarılmış ya da izni düşmüşse ses kısılır, genel
  * hoparlöre (sistemin varsayılan çıkışına) düşmez (src/lib/audio-output.ts › alertAudible).
  *
- * Sesler sürekli çalmaz: her uyarı en çok 3 kez çalar (alarm döngüsü dahil, ALARM_RINGS) ve yalnız 10:00–01:00 arasında
+ * Sesler sürekli çalmaz: her uyarı en çok 3 kez çalar (alarm döngüsü dahil, ALARM_RINGS) ve yalnız 09:00–01:00 arasında
  * (alertHoursOpen); deneme sesi hariç, bu saatlerin dışında ses çalınmaz.
  *
  * Arka plandaki sekmede zamanlayıcılar geç kalabilir; sürenin bittiği an ayrıca ses saatine kurulur (scheduleBurst):
@@ -265,7 +265,7 @@ function schedule(kind: SoundKind, at: number, wallMs: number = Date.now()): Osc
   const c = context();
   // Çalınamıyorsa ("yalnız bu bilgisayar" açık, hoparlör yok) hiç kurulmaz: genel hoparlöre ses gitmez
   if (!c || !master || c.state !== "running" || !alertsAudible()) return [];
-  // 10:00–01:00 dışında ses yok (deneme sesi hariç)
+  // 09:00–01:00 dışında ses yok (deneme sesi hariç)
   if (kind !== "test" && !alertHoursOpen(wallMs)) return [];
   return PATTERNS[kind].map(([f, t, d, type, peak]) => tone(c, master!, f, at + t, d, type, peak));
 }
@@ -294,7 +294,7 @@ function ownersChanged() {
 
 /**
  * Alarm döngüsü: her 2,2 saniyede bir, toplam ALARM_RINGS (3) kez çalar ve kendiliğinden susar (sürekli çalmaz). Yeni bir
- * sahip alarmı başlatırsa 3 çalış yeniden başlar; 10:00–01:00 dışında hiç çalmaz.
+ * sahip alarmı başlatırsa 3 çalış yeniden başlar; 09:00–01:00 dışında hiç çalmaz.
  */
 export function startAlarm(owner: string) {
   alarmOwners.add(owner);

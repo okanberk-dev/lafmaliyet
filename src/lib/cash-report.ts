@@ -738,6 +738,11 @@ export interface CashReportExtras {
   cardExtra?: number | null;
   /** LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): yazarkasa ve banka karşılaştırmaları bunu düşer */
   offDevice?: CashOffDevice | null;
+  /**
+   * Fişsiz çıkış (bulgu 2; src/lib/lafpos/prefill.ts unreceiptedCashOut): "Gün içinde çıkan"ın kasadan çıkan satırlarından
+   * fazlası; yoksa null. Yöneticinin metninde (e-posta) satır, Kontrol listesinde ve ay listesinde "Fişsiz çıkış: X ₺"
+   */
+  unreceipted?: number | null;
 }
 
 /**
@@ -949,6 +954,17 @@ export function revenueWord(c: Pick<CashResult, "offInZTotal">): string {
   return c.offInZTotal ? "cirodan" : "Z toplamından";
 }
 
+/**
+ * Fişsiz çıkışın yöneticiye satırı (Kontrol listesi, e-posta): "Fişsiz çıkış: 500 ₺ (kasadan çıkan satırlarından fazla)".
+ * Rozet ve özet kısa adı (`unreceiptedLabel`) kullanır
+ */
+export function unreceiptedText(amount: number): string {
+  return `${unreceiptedLabel(amount)} (kasadan çıkan satırlarından fazla)`;
+}
+
+/** Fişsiz çıkışın kısa adı: ay listesinin rozeti ve tek gün görünümünün özeti */
+export const unreceiptedLabel = (amount: number) => `Fişsiz çıkış: ${money(amount)}`;
+
 /** Rapor metni: WhatsApp (`"staff"`) ya da e-postanın metin sürümü (`"admin"`; yıldızları şablon siler) */
 export function cashReportText(
   f: CashTextFields,
@@ -987,6 +1003,8 @@ export function cashReportText(
     `+ Nakit satış: ${money(f.cash)}`,
     ...(f.cashIn ? [`+ Gün içinde giren: ${money(f.cashIn)}`] : []),
     ...(f.cashOut || outs.length ? [`− Gün içinde çıkan: ${money(f.cashOut)}${f.cashOutNote ? ` (${f.cashOutNote})` : ""}`, ...outs.map((l) => `  · ${l}`)] : []),
+    // Fişsiz çıkış yöneticinin metninde (e-posta); personelin WhatsApp'ında yok (bulgu 2)
+    ...(audience === "admin" && meta.unreceipted ? [`⚠️ ${unreceiptedText(meta.unreceipted)}`] : []),
     `= Olması gereken: ${money(c.expectedCash)}`,
     `Sayılan: ${money(f.countedCash)}`,
     `${mark} *${c.kind === "even" ? "Kasa tutuyor" : diffText(c.cashDiff).toLocaleUpperCase("tr")}*`,

@@ -8,7 +8,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 /**
- * Excel'deki hücre notlarının karşılığı: üzerine gelince ya da klavyeyle odaklanınca açıklama; dokunmatikte
+ * Bilgi notu: üzerine gelince ya da klavyeyle odaklanınca açıklama; dokunmatikte
  * dokununca açılır, başka yere dokununca, kaydırınca ya da Esc ile kapanır. Balon gövdeye (portal) çizilir;
  * tabloların kaydırma kabı onu kesmez. Üstte yer yoksa alta açılır, ekran kenarından taşmaz. Açık bir modal
  * pencerenin (Dialog, telefonda alttan açılan sayfa) içindeyse balon o pencereye çizilir: üst katmandaki pencerenin

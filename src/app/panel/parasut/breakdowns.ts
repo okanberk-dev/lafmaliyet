@@ -39,7 +39,7 @@ const clip = (s: string | null | undefined, max = 240) => {
 export interface InvoiceMix {
   /** YYYY-MM (faturanın tarihi) */
   month: string;
-  /** Kaydı ilk kim açtı: Paraşüt eşitlemesi ya da panel (Excel / elle); bağlanınca değişmez */
+  /** Kaydı ilk kim açtı: Paraşüt eşitlemesi ya da panel (içe aktarılmış ya da elle); bağlanınca değişmez */
   origin: "manual" | "excel" | "parasut";
   /** Paraşüt'teki gider faturasına bağlı (içeri alınmış ya da Paraşüt'e elle girilmiş) */
   bill: boolean;
@@ -71,7 +71,7 @@ const KINDS: Record<InvoiceKind, { label: string; note: string }> = {
   },
   matched: {
     label: "Panel kaydı, Paraşüt'e bağlandı",
-    note: "Excel'den ya da elle girilmiş kayıt Paraşüt'teki karşılığıyla eşleşti; yenisi açılmadı, kategorisi korundu.",
+    note: "Elle girilmiş ya da içe aktarılmış (eski) kayıt Paraşüt'teki karşılığıyla eşleşti; yenisi açılmadı, kategorisi korundu.",
   },
   other: { label: "Diğer", note: "Paraşüt'teki gider faturası ya da e-fatura kimliği kalmamış kayıtlar." },
 };
@@ -104,14 +104,14 @@ export function invoiceBreakdown(mix: InvoiceMix[]): BreakdownGroup[] {
           const n = sum(inMonth.map((r) => r.n));
           const reviewed = sum(inMonth.map((r) => r.review));
           const withEInvoice = kind === "bill" ? sum(inMonth.filter((r) => r.eInvoice).map((r) => r.n)) : 0;
-          const fromExcel = kind === "matched" ? sum(inMonth.filter((r) => r.origin === "excel").map((r) => r.n)) : 0;
+          const imported = kind === "matched" ? sum(inMonth.filter((r) => r.origin === "excel").map((r) => r.n)) : 0;
           return {
             key: `${kind}:${m}`,
             label: monthLabel(m),
             sub: parts([
               withEInvoice ? `${num(withEInvoice)} e-faturalı` : null,
-              kind === "matched" && fromExcel ? `${num(fromExcel)} Excel` : null,
-              kind === "matched" && n - fromExcel ? `${num(n - fromExcel)} elle` : null,
+              kind === "matched" && imported ? `${num(imported)} içe aktarılmış (eski)` : null,
+              kind === "matched" && n - imported ? `${num(n - imported)} elle` : null,
               reviewed ? `${num(reviewed)} kontrol bekliyor` : null,
             ]),
             amount: n,

@@ -17,6 +17,7 @@ import {
   compareDays,
   dayEndSubjectNoCount,
   dayHash,
+  humanDeviceFill,
   LAFPOS_AUTO_BY,
   mergeAuto,
   photoCheckHash,
@@ -52,7 +53,8 @@ import { applyPhotoZNo, dayPhotoIds, linkPendingPhotos, photoCheckOf, refreshDay
  * gün sonu geçiş gününden itibaren gelince
  *
  * 1. Kasa raporu kendiliğinden yazılır (rapor yoksa; LafPOS'ta sayım yoksa yazılmaz, uydurulmaz). Düzeltme gelince
- *    yalnız elle değişmemiş alanlar güncellenir. Personelin girdiği rapora hiç dokunulmaz.
+ *    yalnız elle değişmemiş alanlar güncellenir. Elle girilmiş raporun Z'sine ve kasasına dokunulmaz; yalnız boş cihaz
+ *    alanları (Banka POS, yazarkasa) dolar (humanDeviceFill).
  * 2. Gün sonu e-postası kasa raporu alıcılarına gider (Tuzla'nın kasa e-postası gibi; personel ve pasif hesap düşer),
  *    içerik başına bir kez; düzeltme "düzeltildi" notuyla bir kez daha. Pavo'nun sonucu beklenirken (cihaz Pavo, önceki
  *    gün de geldi) en çok PAVO_WAIT_MS beklenir: karşılaştırma aynı e-postaya girer. Başarısızsa hata kaydedilir, günlük
@@ -205,7 +207,8 @@ async function ensureState(tx: CashTx, date: string, branchId: string) {
 /**
  * Kasa raporunu LafPOS'un gün sonundan yazar ya da günceller (tek işlem; geç raporun ve raporun kilidi altında).
  * Rapor yoksa ve LafPOS'ta sayım varsa yeni rapor (gönderen "LafPOS (otomatik)"); rapor bu otomasyonunsa elle
- * değişmemiş alanlar düzeltmeyle güncellenir (önceki sürüm geçmişe); başka biri girdiyse dokunulmaz.
+ * değişmemiş alanlar düzeltmeyle güncellenir (önceki sürüm geçmişe); başka biri girdiyse ("human") Z'ye, kasaya ve nota
+ * dokunulmaz, yalnız boş cihaz alanları (Banka POS, yazarkasa) dolar (fillHumanDevice).
  */
 export async function writeAutoReport(db: DB, date: string, now = new Date()): Promise<AutoReportResult> {
   const branchId = await lafposBranchId(db);
@@ -284,6 +287,9 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
     if (state.reportId !== prev.id || !state.autoValues) {
       // Sayım yokken bekleyen gün sonu fotoğrafları elle girilen rapora bağlanır (yoksa sahipsiz kalırdı)
       if (state.pendingPhotos.length && (await adoptPendingDayPhotos(tx, prev, now)) > 0) await serverColumns(tx, prev);
+      // Elle girilmiş rapor (yönetici gün sonundan önce ya da sayımsız günde girdi): Z'ye ve kasaya dokunulmaz, yalnız boş
+      // cihaz alanları LafPOS'tan dolar (bulgu 6); elle girilen alan ezilmez
+      await fillHumanDevice(tx, (await lockCashReport(tx, date, branchId)) ?? prev, next, now);
       await setState({ autoValues: null, missing: [] });
       return "human";
     }
@@ -326,6 +332,46 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
     await setState({ autoValues: merged.auto, photoCheck: check, missing: missingFor(attached, check) });
     await applyPhotoZNo(tx, row, check, now);
     return "updated";
+  });
+}
+
+/**
+ * Elle girilmiş raporun boş cihaz alanlarını LafPOS'un gün sonundan doldurur (humanDeviceFill; bulgu 6). Önceki sürüm
+ * geçmişe, işlem geçmişine "LafPOS (otomatik)" adına satır. Gönderen ve sayan değişmez (inceleme, 25 Kasım 2026): Z, kasa
+ * ve not elle girenindir; rapor listesi, kart başlığı ve e-posta gönderen olarak onu gösterir. Z, kasa ve not değişmez; e-postanın durumu kalır (rapor yeniden e-postalanmaz, gün sonu e-postası cihazları
+ * zaten söyler). Yazarkasa alanları dolduysa sunucu sütunları formun kaydındaki gibi hesaplanır. Yazılacak yoksa hiçbir
+ * şey yazılmaz
+ */
+async function fillHumanDevice(tx: CashTx, prev: typeof s.cashReports.$inferSelect, next: AutoValues, now: Date): Promise<void> {
+  const fill = humanDeviceFill(prev, next);
+  if (!Object.keys(fill).length) return;
+  await tx.insert(s.cashReportRevisions).values({
+    reportId: prev.id,
+    date: prev.date,
+    revision: prev.revision,
+    data: revisionDataOf(prev),
+    submittedBy: prev.submittedBy,
+    submittedByName: prev.submittedByName,
+    submittedAt: prev.updatedAt,
+  });
+  const num = (v: unknown) => (typeof v === "number" ? v : null);
+  const set: Partial<typeof s.cashReports.$inferInsert> = {};
+  if ("bankPos" in fill) set.bankPos = num(fill.bankPos);
+  for (const f of ["okcReceipts", "okcTotal", "okcCash", "okcCard", "okcMealCard", "okcOther", "okcVatTotal"] as const) if (f in fill) set[f] = num(fill[f]);
+  if ("okcZNo" in fill) set.okcZNo = typeof fill.okcZNo === "string" ? fill.okcZNo : null;
+  if ("okcVat" in fill) set.okcVat = Array.isArray(fill.okcVat) && fill.okcVat.length ? fill.okcVat : null;
+  let [row] = await tx
+    .update(s.cashReports)
+    .set({ ...set, revision: prev.revision + 1, updatedAt: now })
+    .where(eq(s.cashReports.id, prev.id))
+    .returning();
+  if (row.okcZNo && row.okcTotal !== null && ((prev.okcZNo ?? null) !== row.okcZNo || (prev.okcTotal ?? null) !== row.okcTotal)) row = await serverColumns(tx, row);
+  const changes = revisionChanges(revisionDataOf(prev), revisionDataOf(row));
+  await tx.insert(s.activityLog).values({
+    userName: LAFPOS_AUTO_BY,
+    userId: null,
+    action: "Kasa raporu güncellendi (LafPOS otomatik)",
+    detail: `${longDateTR(prev.date)}: elle girilen rapora cihaz alanları yazıldı · ${changesText(changes)}`,
   });
 }
 

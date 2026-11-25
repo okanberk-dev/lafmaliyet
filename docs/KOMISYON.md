@@ -203,11 +203,11 @@ sözcüklere bakılır; ilk eşleşen kazanır:
 | `diger` | Diğer ücret | hiçbiri | aynı |
 
 - Tek kalemli faturanın "diğer" kalemi komisyondur ("Hizmet faturası").
-- **Kalemsiz** fatura (Excel'den, elle girilen ya da kalemi henüz okunmamış e-fatura): tutarın tamamı komisyon.
+- **Kalemsiz** fatura (içe aktarılmış, elle girilen ya da kalemi henüz okunmamış e-fatura): tutarın tamamı komisyon.
 - Kalem tutarları faturanın KDV hariç tutarına (`amount − discount`) ölçeklenir: sınıfların toplamı Gelir-gider'in
   saydığı tutardır (fatura altı iskonto ve kuruş farkı dahil). İade (eksi) faturası düşer; ayın toplamı eksiye düşerse
   oran yazılmaz.
-- KDV = ödenecek − KDV hariç (Excel'den gelenlerde KDV sütunu 0); yalnız beklenen hakedişte kullanılır.
+- KDV = ödenecek − KDV hariç (içe aktarılmış kayıtlarda KDV sütunu 0); yalnız beklenen hakedişte kullanılır.
 
 Uyarılar sözcüklere bakar, bu yüzden hep "olabilir" der ve kalemin kendi adı kartta yazar.
 
@@ -367,7 +367,7 @@ metni mevzuat.gov.tr'den denetleyin; "Kurallar ve hesap" kartındaki cümleler o
 Testler: `tests/komisyon.test.ts` (kanallar, kalemler, ay, satışın kaynağı ve sonraki ayda kesilen fatura, oran ve
 uyarılar, ay sonunda kesilmeyen fatura, toplam, Z'de 0, hakediş, geciken hakedişin ay dönünce uyarıdan düşmemesi (13
 aylık tek pencere, 90 günlük platform), uyarı sırası ve anahtarları, e-posta kutusu, konu ve
-daha önce gönderilenler, Excel'deki 10 faturalık veri, ekran metinleri, kaydın farkı ve Geri al, sorgunun satırları,
+daha önce gönderilenler, tohum verisindeki 10 fatura, ekran metinleri, kaydın farkı ve Geri al, sorgunun satırları,
 kaynak denetimi),
 `tests/lafpos-komisyon.test.ts` (LafPOS'un kanalları: geçiş günü boşken aynı rapor, LafPOS ayı, elle > lafpos, eksik gün,
 geçiş ayı, kanalsız ödeme, faturası gelmeyen kanal), `tests/lafpos-komisyon-ikram-db.test.ts` (okuyucu: deneme günü

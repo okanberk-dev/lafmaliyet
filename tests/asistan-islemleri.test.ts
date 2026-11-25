@@ -123,7 +123,7 @@ test("kaynak: araç listesinde silme, toplu işlem ve şifre onayı yok; uygulay
   // Dizi alan eylemler tek elemana sabit
   const apply = code(`${dir}/apply.ts`);
   assert.match(apply, /setInvoicePayment\(\[args\.invoiceId\]/);
-  assert.match(apply, /rows: \[\{ ref: args\.ref, name, cells \}\]/);
+  assert.match(apply, /rows: \[\{ ref: args\.ref, name, cells, seen \}\]/);
   assert.match(apply, /allocation: \{ mode: args\.mode, lines: \[\] \}/);
   // Hatırlatıcı: tek dönem (through yok); geri al hiçbir kaydı silmez (removeId yok)
   assert.match(apply, /markReminderDone\(args\.reminderId\);/);

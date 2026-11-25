@@ -13,7 +13,7 @@ import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn, closedRowApplies } from "@/lib/closed-days";
 import { channelOf } from "@/lib/commission/channels";
 import { COMMISSION_CATEGORY, settingsFromRows } from "@/lib/constants";
-import { modposZBetween } from "@/lib/lafpos/sales";
+import { modposZBetween, otherBranchLists, type OtherBranchList } from "@/lib/lafpos/sales";
 import type { LafposWorked } from "@/lib/lafpos/personel";
 import { isLafposBranch, lafposBranchOf, scopeSwitchDay } from "@/lib/lafpos/switch";
 import { addDays } from "@/lib/reminders";
@@ -227,8 +227,14 @@ async function readDataset(): Promise<Dataset> {
   const billMonths = new Set(pnlEntries.filter((e) => e.rowKey === "manual:su" && e.amount > 0).map((e) => e.month));
   // Satış satırları LafPOS'la birleşir (mergeSales). LafPOS'un ikramları geçiş gününden itibaren kayıtlı tüketime
   // (src/lib/lafpos/ikram.ts); geçiş günü yoksa okunmaz
+  // "Tümü"de ayın dönemi şubelerin en kısa listesiyle (bulgu 62): ModPOS'ta kalan şubelerin (Tuzla) listesi ve kasa
+  // raporu olan ayları, şubenin kendi kaydıyla. Şube seçiliyken yok (görünümün kendi kaydı)
+  const others =
+    scope === ALL_BRANCHES
+      ? otherBranchLists({ switchDay: settings.lafposGecisGunu, lafposBranch, salesLines, reportDays: reportRows, coverageOf: (b) => coverageOf(b) })
+      : [];
   const [sales, lafposIkram, waterSales, lafposWorked] = await Promise.all([
-    mergeSales(db, { switchDay: settings.lafposGecisGunu, salesLines: salesLines.map(salesLineOf), coverage, lafposCoverage, today, till, lafposBranch }),
+    mergeSales(db, { switchDay: settings.lafposGecisGunu, salesLines: salesLines.map(salesLineOf), coverage, lafposCoverage, today, till, lafposBranch, others }),
     settings.lafposGecisGunu ? loadLafposIkram(db, settings.lafposGecisGunu) : Promise.resolve(null),
     branch && billMonths.size
       ? // Su litresi "Tümü" kapsamında: geçiş günü şubeye göre kısılmış değil, işletmenin ayarı (Tuzla'nın LafPOS satışı da sayılsın)
@@ -320,6 +326,11 @@ async function readDataset(): Promise<Dataset> {
     monthLockText: monthWriteLock(scope, branches),
     ...(waterSales ? { waterSales } : {}),
     salesCoverage,
+    ...(Object.keys(sales.short).length
+      ? {
+          commonLists: Object.entries(sales.short).map(([month, x]) => ({ month, branch: branches.find((b) => b.id === x.branchId)?.name ?? x.branchId, through: x.through })),
+        }
+      : {}),
     writeCoverage: coverageOf(writeBranch),
     ingredients: ingredients.map((i) => ({
       id: i.id,
@@ -397,6 +408,9 @@ async function readDataset(): Promise<Dataset> {
       paidAt: i.paidAt,
       paymentRequestedAt: i.paymentRequestedAt,
       taxNotAsset: i.taxNotAsset,
+      supplierTaxNumber: i.supplierTaxNumber,
+      eInvoiceUuid: i.eInvoiceUuid,
+      branchId: i.branchId,
       ...(channelNamesOf && i.category === COMMISSION_CATEGORY && !channelOf([i.supplier]) ? { channelNames: channelNamesOf(i.supplier, i.supplierTaxNumber) } : {}),
     })),
     // netSalary / extras ve period / amount taban değerlerdir (ilk sürümden önceki aylar).
@@ -533,7 +547,17 @@ function salesLineOf(l: typeof s.salesLines.$inferSelect): SalesLine {
  */
 function mergeSales(
   db: DB,
-  input: { switchDay: string | null; salesLines: SalesLine[]; coverage: Record<string, string>; lafposCoverage: Record<string, string>; today: string; till: readonly TillRow[]; lafposBranch: string },
+  input: {
+    switchDay: string | null;
+    salesLines: SalesLine[];
+    coverage: Record<string, string>;
+    lafposCoverage: Record<string, string>;
+    today: string;
+    till: readonly TillRow[];
+    lafposBranch: string;
+    /** Yalnız "Tümü": ModPOS'ta kalan şubelerin listeleri (ortak dönem; bulgu 62) */
+    others?: readonly OtherBranchList[];
+  },
 ) {
   // Yalnız kasa raporları: LafPOS'un yedek ay satırları (G6, source "lafpos") ve ModPOS föyü rapor değildir. LafPOS'un
   // günleriyle yalnız LafPOS'un şubesinin kasa raporları karşılaştırılır ("Tümü"de ModPOS'ta kalan şubeninki değil;
@@ -551,6 +575,7 @@ function mergeSales(
     reportDays: reportRows.map((r) => r.date),
     // Z ve indirim: ModPOS listesi indirimden öncedir, liste − indirim Z ile karşılaştırılır ("%8 fazla", 23 Kasım 2026)
     zOf: (from, upto) => modposZBetween(reportRows, from, upto),
+    others: input.others,
   });
 }
 
