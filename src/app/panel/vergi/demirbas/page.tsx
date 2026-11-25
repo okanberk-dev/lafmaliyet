@@ -8,7 +8,7 @@ import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { ALL_BRANCHES } from "@/lib/branches";
 import { dateTR, money } from "@/lib/format";
-import { ASSET_KIND_LABELS, ASSET_METHOD_LABELS, assetRows, lifeMissingText, parseInvoiceLabel, QUARTER_DEPRECIATION_LABELS } from "@/lib/tax/assets";
+import { ASSET_KIND_LABELS, ASSET_METHOD_LABELS, assetRows, lifeMissingText, lineAssetCandidates, parseInvoiceLabel, QUARTER_DEPRECIATION_LABELS } from "@/lib/tax/assets";
 import { quarterLabel } from "@/lib/tax/calendar";
 import { rulesFor } from "@/lib/tax/rules";
 import { requireAdmin } from "@/server/auth/dal";
@@ -73,6 +73,8 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
   };
   const rows = assetRows(assets, year, settings);
   const choices = invoiceChoices(model.ds.invoices, assets, today);
+  // "Hammadde değil · Demirbaş" denmiş kalemler (öneri; sahip ekler)
+  const lineCandidates = lineAssetCandidates(model.ds.invoices, assets);
   const directLimit = rulesFor(year).rules.vuk.dogrudanGider.value;
   const lifeless = assets.filter((a) => a.method === "amortisman" && !a.lifeYears);
   const missingLife = lifeless.length;
@@ -275,6 +277,35 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
             )}
           </CardContent>
         </Card>
+
+        {lineCandidates.length ? (
+          <Card>
+            <CardHeader
+              icon={<PackageSearch />}
+              title="Demirbaş denen kalemler"
+              description="Paraşüt'te “Hammadde değil · Demirbaş” denmiş kalemi olan faturalar (ör. hammadde faturasındaki ısıtıcı). Listeye ekleyene kadar gider sayılır."
+              meta={`${lineCandidates.length} fatura`}
+            />
+            <CardContent>
+              <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
+                {lineCandidates.map((c) => (
+                  <li key={c.invoice.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="text-sm leading-5 font-medium break-words text-ink">{c.invoice.supplier}</p>
+                      <p className="text-xs leading-4 break-words text-ink-mute">
+                        {dateTR(c.invoice.date)} · {c.invoice.category} · demirbaş kalemleri {money(c.net)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <AssetButton label="Listeye ekle" invoices={choices} invoiceId={c.invoice.id} directLimit={directLimit} today={today} />
+                      <NotAssetButton invoice={{ id: c.invoice.id, supplier: c.invoice.supplier }} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        ) : null}
 
         <Card className="p-5">
           <ul className="space-y-1.5 text-[13px] leading-5 text-ink-mute">

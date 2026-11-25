@@ -353,8 +353,15 @@ Yeni gelen faturanın panel kategorisi sırasıyla:
 2. aynı tedarikçinin önceki faturalarında en sık kullanılan kategori (eşitlemenin açıp henüz kontrol edilmemiş
    faturaları sayılmaz; onaylanan ya da kategorisi değiştirilen sayılır),
 3. komisyon platformları (Trendyol, Yemek Sepeti, Pluxee, Multinet, Edenred, Set Kart, Metropol …) → Komisyon,
-4. Paraşüt kategori adı ve kalem adlarındaki ipuçları (ambalaj, kira, yazılım, reklam …),
-5. Diğer.
+4. Paraşüt kategori adı ve kalem adlarındaki ipuçları (ambalaj, kira, yazılım, reklam …). **Temizlik** (25 Kasım
+   2026): temizlik **firması** hizmettir, temizlik **malzemesi** sarftır. Sıra: "temizlik hizmeti / firması / hizmet
+   bedeli" → Hizmet; malzeme sözcükleri (temizlik malzemesi, deterjan, çöp torbası / poşeti, eldiven, kağıt havlu,
+   peçete dışı hijyen ürünleri, sünger, dezenfektan, kırtasiye…) → **Temizlik & Sarf**; kalan tek başına "temizlik" →
+   Hizmet (`CATEGORY_HINTS`, `mapping.ts`; `tests/fatura-kalem.test.ts`),
+5. Diğer: yalnız **sınıflanmamış** faturaların bekleme kutusu (kontrol bekler). Sarf ve temizlik malzemesi kendi
+   kategorisinde: **Temizlik & Sarf**. Göç `0090_temizlik_sarf` bu kategoriye bağlı Aylık harcamalar satırını
+   ("Temizlik & sarf malzemesi", İşletme genel giderleri) yoksa açar: Gelir-gider'de sarf gideri olarak sayılır. Var olan
+   faturaların kategorisi değişmedi.
 
 Seçimin nedeni faturanın notuna yazılır ("Paraşüt'ten alındı · kategori: …"). Faturalar ekranından değiştirilen
 kategori sonraki eşitlemelerde korunur. E-faturadan açılan kaydın kalem adları ancak belge okununca bilinir: "eşleşme
@@ -386,8 +393,8 @@ Kalemler iki yerden gelir ve aynı tabloda (`parasut_bill_lines`) durur:
 Kalemler Faturalar'da faturayı açınca **Kalemler** bölümünde görünür (`GET /api/faturalar/{id}/kalemler`):
 miktar, net birim fiyat, KDV, bağlı hammadde ve bu faturadaki fiyatı (₺/kg, ₺/L, ₺/adet).
 
-Ekrandaki **Ürün → hammadde bağlantıları** (yalnız mal alışı ve "Diğer" kategorisindeki faturaların kalemleri
-listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları gelmez):
+Ekrandaki **Ürün → hammadde bağlantıları** (yalnız mal alışı, Temizlik & Sarf ve "Diğer" kategorisindeki faturaların
+kalemleri listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları gelmez):
 
 - Paraşüt ürününü (ya da açıklamasını) bir hammaddeye bağlayın ve **çarpanı** yazın: Paraşüt'teki 1 birim kaç
   hammadde birimi? (ör. "Süt 1 L" → süt hammaddesi ml ise `1000`; "Koli 12×1 L" → `12000`).
@@ -417,10 +424,22 @@ listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları g
   **Hazır olanları bağla** önerisi ve çarpanı belli bütün bekleyenleri listeleyip tek seferde bağlar; yalnız sizin
   seçtikleriniz ve yüksek güvenli öneriler işaretli gelir.
 - Hammadde olmayan kalemler (kargo, nakliye, hizmet bedeli, klişe, pompa, ekipman) bağlanmaz: **Hammadde değil**
-  denince bekleyenlerden ve zildeki sayıdan çıkar; listenin altındaki "Hammadde değil" bölümünden **Geri al** ile
-  bekleyenlere döner. Faturadaki tutarı değişmez. Liste `integration_state`'te (`parasut.productIgnore`) durur.
+  denince önce **nereye yazılacağı** sorulur (25 Kasım 2026): **Sarf** (Temizlik & Sarf gideri), **Demirbaş** (Kuruluş &
+  Demirbaş; Vergi › Demirbaş'ta "Demirbaş denen kalemler" önerisi, sahip listeye ekler), **Hizmet** (Hizmet gideri) ya da
+  **Deneme** (numune, denemelik gıda: mal alışı). Kalem bekleyenlerden ve zildeki sayıdan çıkar; listenin altındaki
+  "Hammadde değil" bölümünden **Geri al** ile bekleyenlere döner. Liste `integration_state`'te (`parasut.productIgnore`,
+  nedeniyle) durur. Nedeni olmayan eski işaretler faturanın kategorisinde kalır (rakam değişmez). Pencerede **"Bu
+  tedarikçi: hep hammadde değil"** işaretlenirse tedarikçi kuralı da açılır (aşağıda).
+- **Tedarikçi kuralı "hep hammadde değil"** (25 Kasım 2026; `parasut.supplierIgnore`, `src/lib/product-ignore.ts`
+  `IgnoredSupplier`): kural açık tedarikçinin hammaddeye bağlı **olmayan** kalemleri bekleyenlere ve zile düşmez, kuralın
+  nedeninin yerine yazılır (ör. temizlik firması → Hizmet, Avansas → Sarf). Zaten bir hammaddeye bağlı kalem (çay, soda)
+  etkilenmez, mal alışı kalır; ürünün kendi "hammadde değil" nedeni kuraldan önce gelir. Tedarikçi adın eşleşme
+  anahtarıyla tanınır (parantezli not, büyük/küçük harf sayılmaz). Açılıp kapandığı yerler: Paraşüt sayfasının "Hep
+  hammadde değil" bölümü (kaldır) ve "Hammadde değil" penceresi; tedarikçi sayfasının "Paraşüt kalemleri: hep hammadde
+  değil" seçicisi (Kapalı / Sarf / Demirbaş / Hizmet / Deneme; tedarikçinin bütün adlarına yazılır).
 - Bağlanmayı bekleyen ürün sayısı zilde görünür.
-- **Mal alışı sayılmayan fatura** (denetim 26 Eki, E-07): kalemi hammaddeye bağlı ama kategorisi mal alışı (Hammadde &
+- **Mal alışı sayılmayan fatura** (denetim 26 Eki, E-07; 25 Kasım 2026'dan beri kalem kalem sayıldığı için yalnız
+  komisyon faturasında kalabilir, aşağıda 5f): kalemi hammaddeye bağlı ama kategorisi mal alışı (Hammadde &
   İçecek, Tatlı & Hazır Ürün, Ambalaj) ya da kafe dışı olmayan fatura ("Diğer", "Hizmet"…) stoğa girer (alınan miktar,
   FIFO partisi, hammadde fiyatı) ama gelir-gider onu mal alışı saymaz: satılan malın maliyeti eksik, kâr fazla görünür.
   Böyle fatura kontrol bekleyene düşer ve onaylanamaz (6b). Kalemler stoktan çıkarılmaz: sayılan stok o malı zaten
@@ -646,6 +665,38 @@ ad benzerliği tahmindir, adında hammaddenin adı geçmeyen ürüne ("PINAR TAM
   hizmet "hammadde değil", gerisi "emin değil"). Testler: `tests/urun-eslestirme-ai.test.ts` (doğrulama, öncelik, parti,
   önbellek anahtarı, istek gövdesi, kaynak kuralları), `tests/urun-eslestirme-ai-db.test.ts`
   (`ESLESTIRME_TEST_DATABASE_URL`; saklama, yeniden sormama, sınırlar).
+
+### 5f. Kalem kalem sınıflandırma (karışık fatura, 25 Kasım 2026)
+
+Sahibin isteği: Avansas gibi hem gıda hem sarf satan tedarikçinin faturası bütünüyle ya mal alışı ya gider sayılıyordu.
+Artık fatura **kalem kalem** sayılır (`src/lib/invoice-split.ts`, yükleyici `src/server/data/invoice-split.ts`;
+testler `tests/fatura-kalem.test.ts`, `tests/fatura-sube-db.test.ts`):
+
+| Kalem | Nereye |
+|---|---|
+| Hammaddeye bağlı (fatura hangi kategoride olursa olsun) | **Mal alışı** (mal maliyeti; Gelir-gider'de tedarikçinin satırı) |
+| "Hammadde değil" · Sarf / Demirbaş / Hizmet / Deneme (ürünün işareti ya da tedarikçinin kuralı) | Temizlik & Sarf / Kuruluş & Demirbaş / Hizmet / mal alışı |
+| Ötekiler (bekleyen, nedensiz "hammadde değil", kalemi okunmamış) | **Faturanın kategorisi** (önceki kural) |
+
+- **Tutar**: faturanın KDV hariç, iskonto düşülmüş tutarı (tutar − iskonto) kalemlere **net tutarlarıyla orantılı**
+  bölünür; fatura altı iskonto (ör. 500 ₺) da böylece kalemlere oranla düşer. Kuruş yuvarlaması en büyük kalan
+  yöntemiyle: payların toplamı faturanın tutarını kuruşu kuruşuna tutar. Kalem tutarı da fatura tutarı da KDV hariç;
+  ödenecek (KDV dahil) tutar harcama satırının nakit planı için aynı oranla bölünür. İade (eksi) faturada paylar eksi.
+- **Bölünmeyenler**: kafe dışı (karaoke box, Alp Koç) ve komisyon faturaları; kalemi olmayan (elle, Excel) faturalar;
+  hiçbir kalemi faturanın kendi payından ayrılmayan faturalar (mal faturasının bağlı kalemi zaten mal alışı). Bunların
+  rakamı **değişmez**.
+- **Okuyanlar** aynı payları kullanır: Gelir-gider (mal alışı, tedarikçi satırları, harcamaya bağlı fatura kategorileri,
+  "aynı gider iki kez" denetimi), Genel bakış ve mal maliyeti (`goodsPurchases`), Faturalar'ın "Mal maliyeti" satırı,
+  Vergi (SMM'nin mal faturaları ve fatura giderleri; demirbaş nedenli kalem varlık listesine eklenene kadar gider),
+  dışa aktarımın "Alımlar" sayfası (kategori satırları faturanın kategorisiyle kalır, fark "Kalem kalem: mal alışına
+  geçen" satırında; mal maliyeti panelinkiyle aynı).
+- **"Mal alışı sayılmıyor" kontrolü** (E-07, `stock-only-invoices.ts`): kalemi hammaddeye bağlı Diğer / Hizmet /
+  Temizlik & Sarf faturası artık mal alışını sayar; elle düzeltme ("Kalsın", kategoriyi mal alışı yapmak) gerekmez.
+  Kontrol yalnız komisyon faturasında kalır.
+- **Davranış değişikliği** (sahibe söylenecek): kategorisi mal alışı olmayan ve kalemi hammaddeye bağlı faturaların o
+  kalemleri geçmiş aylarda da mal alışına geçer (önceden "Kalsın" denmiş temizlik faturasındaki süt dahil): o ayların mal
+  alışı artar, ilgili harcama satırı (bağlıysa) aynı tutar azalır; harcamaya bağlı değilse (ör. "Diğer" bağlı değilken)
+  gider toplamı o kadar artar. Nedeni seçilmiş "hammadde değil" kalem yalnız neden seçildikten sonra yer değiştirir.
 
 ## 6. Gelen e-faturalar ("içeri al" gerekmez)
 

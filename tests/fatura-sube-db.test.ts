@@ -268,4 +268,35 @@ describe("faturanın şubesi: veritabanında", { skip: !SERVER_URL && "FATURA_SU
     const [row] = await db.select({ branchId: s.invoices.branchId }).from(s.invoices).where(eq(s.invoices.supplier, "Fırın"));
     assert.equal(row.branchId, null);
   });
+
+  test("kalem kalem (B1/B2/B6): bağlı kalem mal alışı, nedenli 'hammadde değil' kendi yerine, tedarikçi kuralı bekleyenden çıkarır", async () => {
+    await db.execute(sql`TRUNCATE parasut_product_links, ingredients, integration_state RESTART IDENTITY CASCADE`);
+    const [ing] = await db.insert(s.ingredients).values({ name: "Süt", unit: "ml", category: "Süt", packagePrice: 30, packageSize: 1000 }).returning();
+    await db.insert(s.parasutProductLinks).values({ productKey: "p:sut", productName: "SÜT 1 L", ingredientId: ing.id, factor: 1000 });
+    const [a] = await db.insert(s.invoices).values(inv("2026-11-20", "Avansas", 1000, { category: "Temizlik & Sarf", discount: 500, branchId: "tuzla" })).returning();
+    const [m] = await db.insert(s.invoices).values(inv("2026-11-21", "Metro", 12_000, { branchId: "tuzla" })).returning();
+    const line = (invoiceId: number, externalId: string, productKey: string, net: number) => ({ invoiceId, externalId, productKey, productName: productKey, netTotal: net, quantity: 1 });
+    await db.insert(s.parasutBillLines).values([
+      line(a.id, "l1", "p:sut", 300),
+      line(a.id, "l2", "p:deterjan", 700),
+      line(m.id, "l3", "p:peynir", 2_000),
+      line(m.id, "l4", "p:isitici", 10_000),
+    ]);
+    const parasut = await import("../src/server/actions/parasut");
+    assert.ok((await parasut.ignoreProduct({ productKey: "p:isitici", productName: "Tüplü ısıtıcı", reason: "demirbas" })).ok);
+    const model = await dataset.loadModel({ scope: "hepsi" });
+    // Avansas: net 500 → süt 150 mal, deterjan 350 faturanın kategorisi (Temizlik & Sarf); Metro: ısıtıcı 10.000 demirbaşa
+    assert.equal(model.goodsPurchases("2026-11"), 150 + 2_000);
+    const sarf = model.expenseAmounts("2026-11").find((x) => x.cat.invoiceCategory === "Temizlik & Sarf");
+    assert.ok(sarf, "geçiş Temizlik & sarf malzemesi harcama satırını açtı");
+    assert.equal(sarf!.invoices, 350);
+    // Tedarikçi kuralı: Avansas'ın bağlanmamış kalemi (deterjan) bekleyenlerden çıkar, bağlı süt etkilenmez
+    const sync = await import("../src/server/parasut/sync");
+    assert.ok((await sync.unlinkedProducts(40)).items.some((u) => u.productKey === "p:deterjan"));
+    assert.ok((await parasut.setSupplierIgnoreRule({ supplier: "Avansas", reason: "sarf" })).ok);
+    const after = await sync.unlinkedProducts(40);
+    assert.ok(!after.items.some((u) => u.productKey === "p:deterjan"), "kural bekleyenden çıkardı");
+    assert.ok(after.items.some((u) => u.productKey === "p:peynir"), "başka tedarikçi etkilenmez");
+    assert.equal(await sync.countUnlinkedProducts(), 1);
+  });
 });

@@ -404,7 +404,14 @@ const CATEGORY_HINTS: [RegExp, string][] = [
   [/\b(kira(?!z)\w*|aidat\w*|avm|ortak alan)/, "Kira & AVM"],
   [/\b(yazilim|pos|abonelik|internet|bilisim|telekom|lisans)\b/, "Yazılım & POS"],
   [/\b(demirbas|makine|ekipman|mobilya|tadilat|kurulus)/, "Kuruluş & Demirbaş"],
-  [/\b(hizmet|danisman|muhasebe|temizlik|lojistik|kargo|bakim|ilaclama)/, "Hizmet"],
+  // Temizlik FİRMASI hizmettir, temizlik MALZEMESİ sarftır (25 Kasım 2026): önce açıkça hizmet diyenler, sonra malzeme
+  // sözcükleri, sonra kalan "temizlik" (tek başına: firma faturası) hizmete
+  [/\b(temizlik (hizmet|firma|sirket|personel)\w*|hizmet bedeli|ilaclama)/, "Hizmet"],
+  [
+    /\b(temizlik malzeme\w*|temizlik urun\w*|sarf\w*|deterjan\w*|camasir suyu|cop (torba|poset|kova)\w*|eldiven\w*|dezenfektan\w*|sabun\w*|kagit havlu|tuvalet kagid\w*|z katlama|havlu\w*|sunger\w*|bulasik\w*|yuzey temizleyici\w*|kirec coz\w*|islak mendil\w*|hijyen\w*|paspas\w*|cekpas\w*|kirtasiye\w*|bone\w*|maske\w*)/,
+    "Temizlik & Sarf",
+  ],
+  [/\b(hizmet|danisman|muhasebe|temizlik|lojistik|kargo|bakim)/, "Hizmet"],
   [/\b(ambalaj|bardak|kapak|pipet|pecete|poset|karton)/, "Ambalaj"],
   [/\b(tatli\w*|pasta\w*|kek(ler|i|leri)?\b|cheesecake|hazir\w*|tiramisu|kurabiye\w*|brownie)/, "Tatlı & Hazır Ürün"],
   [/\b(gida\w*|hammadde\w*|icecek\w*|kahve\w*|sut\w*|surub\w*|surup\w*|meyve\w*|sos(u|lu|lar|lari)?\b|espresso\w*|cikolata\w*|vanilya\w*|krema\w*|seker\w*|dondurma\w*)/, "Hammadde & İçecek"],

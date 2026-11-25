@@ -30,11 +30,12 @@ export function stockOnlyText(category: string, expenseLinks?: Record<string, st
 }
 
 /**
- * Hammaddeye bağlanmaya aday kalemlerin geldiği fatura kategorileri: mal alışları ve "Diğer". Komisyon, kira,
+ * Hammaddeye bağlanmaya aday kalemlerin geldiği fatura kategorileri: mal alışları, Temizlik & Sarf ve "Diğer". Komisyon, kira,
  * demirbaş, yazılım, reklam ve hizmet faturalarının kalemleri listeyi doldurmasın. Paraşüt sayfasının "Bekleyen"
  * listesi (sync.ts) de bu listeyi kullanır.
  */
-export const LINKABLE_CATEGORIES = [...GOODS_CATEGORIES, "Diğer"];
+// "Temizlik & Sarf" da (25 Kasım 2026): karışık faturanın (Avansas) gıda kalemi bağlanınca mal alışı sayılır
+export const LINKABLE_CATEGORIES = [...GOODS_CATEGORIES, "Temizlik & Sarf", "Diğer"];
 
 /** Kalemi "Hammaddeye bağla" ile Paraşüt sayfasına gönderilebilir mi (orada listelenir mi) */
 export function isLinkableCategory(category: string): boolean {

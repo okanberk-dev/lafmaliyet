@@ -337,6 +337,11 @@ export interface Invoice {
    */
   branchId?: string | null;
   companyWide?: boolean;
+  /**
+   * Kalem kalem sınıflandırma (src/lib/invoice-split.ts): yalnız bir kalemin payı faturanın kendi payından ayrılıyorsa
+   * (kategorisi mal alışı olmayan faturada hammaddeye bağlı kalem, nedenli "hammadde değil" kalem). Yoksa fatura bütün
+   */
+  lines?: { net: number; to: string | null }[] | null;
 }
 
 /**

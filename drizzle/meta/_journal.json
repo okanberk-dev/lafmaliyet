@@ -631,6 +631,13 @@
       "when": 1795615486869,
       "tag": "0089_stok_fatura_subesi_kaldir",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1795617264077,
+      "tag": "0090_temizlik_sarf",
+      "breakpoints": true
     }
   ]
 }

@@ -117,7 +117,7 @@ test("kaynak: eşitleme durumu hesap adıyla; sync.ts'te düz 'parasut.' anahtar
   const sync = read("src/server/parasut/sync.ts");
   assert.doesNotMatch(sync, /["'`]parasut\./, "anahtarlar keys.ts'te; sync.ts yalnız adlarını kullanır");
   // getState/setState: hesap başına anahtar ak(hesap, …) ile; hesapsız yalnız işletme geneli listeler
-  const shared = new Set(["PRICE_KEY", "IGNORE_KEY", "PRODUCT_IGNORE_KEY"]);
+  const shared = new Set(["PRICE_KEY", "IGNORE_KEY", "PRODUCT_IGNORE_KEY", "SUPPLIER_IGNORE_KEY"]);
   let checked = 0;
   for (const m of sync.matchAll(/(?:await getState(?:<[^>]*>)?|getState<[^>]*>|setState)\(([^,)]+)/g)) {
     const arg = m[1].trim();

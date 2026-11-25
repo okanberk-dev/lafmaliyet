@@ -34,6 +34,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { keepScroll, useQueryState } from "@/components/ui/filters";
 import { FloatingBar } from "@/components/ui/floating-bar";
+import { Select } from "@/components/ui/form";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { Pagination, usePaged } from "@/components/ui/pagination";
@@ -48,6 +49,7 @@ import { linkableInvoice } from "@/lib/cari/match";
 import type { ForeignCredit } from "@/lib/cari/statement";
 import { dateTR, money, num } from "@/lib/format";
 import { invoiceBranchValue, isUnassigned, supplierDefaultValue, UNASSIGNED_LABEL } from "@/lib/invoice-branch";
+import { NOT_INGREDIENT_REASONS, REASON_LABEL, type NotIngredientReason } from "@/lib/invoice-split";
 import { daysBetween } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import {
@@ -63,6 +65,7 @@ import {
   unlinkDebts,
 } from "@/server/actions/cari";
 import { restoreInvoicePayment, setInvoiceBranch, setInvoicePayment, type InvoicePaymentState } from "@/server/actions/invoices";
+import { setSupplierIgnoreRule } from "@/server/actions/parasut";
 import { importSupplierHistory, unhideSupplier } from "@/server/actions/suppliers";
 import type { CardDebt, CardPayment } from "@/server/data/cari-entries";
 import type { LedgerRow } from "@/server/data/suppliers";
@@ -196,7 +199,10 @@ export function SupplierClient({
   taxIndex,
   cari,
   branchInfo,
+  ignoreRule,
 }: {
+  /** Paraşüt kalemleri için "hep hammadde değil" kuralı (Paraşüt bağlıyken ya da kural açıkken); adları kuralın anahtarı */
+  ignoreRule?: { reason: NotIngredientReason | null; names: string[] };
   /**
    * Faturaların şubesi (birden çok kasa açıkken; docs/SUBE.md › Faturanın şubesi): seçici seçenekleri, şube adları ve
    * seçili şube ("hepsi" ya da kimlik). Bakiye firma genelidir; şube yalnız gösterim ve varsayılan
@@ -819,6 +825,8 @@ export function SupplierClient({
 
       <TaxNotices notes={taxNotes} />
 
+      {ignoreRule ? <IgnoreRuleRow rule={ignoreRule} /> : null}
+
       {branchInfo?.options.length ? (
         <BranchNotice
           invoices={invoices}
@@ -1439,6 +1447,48 @@ function DeleteText({ confirming, cari }: { confirming: Extract<Confirming, { ki
  * Aynı vergi nosunu taşıyan öteki tedarikçiler: sayfanın üstünde birer satır (listeden kaldırıldı şeridiyle aynı
  * görünüm), onların sayfasına bağlantıyla. Birleştirme yok, yalnız bilgi ve ne yapılabileceği (sharedTaxNotes).
  */
+/**
+ * Tedarikçi bazlı "hep hammadde değil" (25 Kasım 2026; src/lib/product-ignore.ts IgnoredSupplier): açıkken tedarikçinin
+ * hammaddeye bağlı olmayan Paraşüt kalemleri bekleyenlere düşmez, seçilen nedenin yerine yazılır (Sarf → sarf gideri).
+ * Bağlı kalemler (çay, soda) mal alışı kalır. Paraşüt sayfasındaki listeyle aynı kural
+ */
+function IgnoreRuleRow({ rule }: { rule: { reason: NotIngredientReason | null; names: string[] } }) {
+  const [pending, start] = useActionTransition();
+  const [value, setValue] = useState<string>(rule.reason ?? "");
+  const change = (next: string) =>
+    start(async () => {
+      const prev = value;
+      setValue(next);
+      for (const name of rule.names) {
+        const r = await tryAction(() => setSupplierIgnoreRule({ supplier: name, reason: (next || null) as NotIngredientReason | null }));
+        if (!r || !r.ok) {
+          setValue(prev);
+          if (r) toast.error(r.error);
+          return;
+        }
+      }
+      toast.success(next ? `Kalemleri hep hammadde değil · ${REASON_LABEL[next as NotIngredientReason]}` : "Kural kapandı: kalemleri yeniden bekleyenlere düşer");
+    });
+  return (
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-2xl bg-surface px-4 py-3 ring-1 ring-line">
+      <span className="min-w-0 flex-1 basis-60">
+        <span className="block text-sm font-medium text-ink">Paraşüt kalemleri: hep hammadde değil</span>
+        <span className="block text-xs leading-5 text-ink-mute">
+          Açıkken bağlanmamış kalemleri bekleyenlere düşmez, seçilen yere yazılır. Hammaddeye bağlı kalemleri mal alışı kalır.
+        </span>
+      </span>
+      <Select value={value} onChange={(e) => change(e.target.value)} disabled={pending} aria-label="Hep hammadde değil kuralı" className="w-full sm:w-44">
+        <option value="">Kapalı</option>
+        {NOT_INGREDIENT_REASONS.map((r) => (
+          <option key={r} value={r}>
+            {REASON_LABEL[r]}
+          </option>
+        ))}
+      </Select>
+    </div>
+  );
+}
+
 /**
  * Faturaların şubesi şeridi (docs/SUBE.md › Faturanın şubesi): şubesi seçilmemiş faturalar varsa sayısı ve tek dokunuşla
  * kartın varsayılanına yazma (yoksa Düzenle'den varsayılan seçilir); tek şube seçiliyken o şubenin faturaları. Bakiye

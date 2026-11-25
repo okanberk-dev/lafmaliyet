@@ -1,3 +1,4 @@
+import { categoryPart, GOODS_PART, goodsPart, invoiceParts } from "../invoice-split";
 import {
   COMMISSION_CATEGORY,
   FIXED_SECTIONS,
@@ -2328,12 +2329,12 @@ export function createModel(ds: Dataset) {
     list.push(inv);
     invoicesByMonth.set(m, list);
   }
+  /**
+   * Ayın mal alışı (KDV hariç, iskonto düşülmüş): kalem kalem (src/lib/invoice-split.ts): mal kategorisindeki faturanın
+   * tamamı, öbür kategorilerde hammaddeye bağlı kalemlerin payı; nedenli "hammadde değil" kalem kendi yerine
+   */
   function goodsPurchases(month: string): number {
-    return sum(
-      (invoicesByMonth.get(month) ?? [])
-        .filter((i) => GOODS_CATEGORIES.includes(i.category))
-        .map(invoiceNet),
-    );
+    return sum((invoicesByMonth.get(month) ?? []).map(goodsPart));
   }
 
   // --- Aylık harcamalar (reklam, influencer, fatura dışı) -------------------------
@@ -2398,17 +2399,20 @@ export function createModel(ds: Dataset) {
     const invs = invoicesByMonth.get(month) ?? [];
     return expenseCats.map((cat) => {
       const entries = expenseByMonth.get(month)?.get(cat.id) ?? 0;
-      const linked = invoiceCategoryMappable(cat.invoiceCategory) ? invs.filter((i) => i.category === cat.invoiceCategory) : [];
-      const invoices = sum(linked.map(invoiceNet));
+      // Kalem kalem (src/lib/invoice-split.ts): faturanın bu kategoriye düşen payı (karışık faturanın sarf kalemleri,
+      // nedeni seçilmiş "hammadde değil" kalemler); kategorisi bu olan faturanın hammaddeye bağlı kalemi mal alışında
+      const mappable = invoiceCategoryMappable(cat.invoiceCategory);
+      const linked = mappable ? invs.map((i) => ({ i, part: categoryPart(i, cat.invoiceCategory!) })).filter((x) => x.part !== 0) : [];
+      const invoices = sum(linked.map((x) => x.part));
       const invoicesByBranch = new Map<string, number>();
       let invoicesOwn = 0;
-      for (const i of linked) {
+      for (const { i, part } of linked) {
         if (!i.branchId) continue;
-        invoicesOwn += invoiceNet(i);
-        invoicesByBranch.set(i.branchId, (invoicesByBranch.get(i.branchId) ?? 0) + invoiceNet(i));
+        invoicesOwn += part;
+        invoicesByBranch.set(i.branchId, (invoicesByBranch.get(i.branchId) ?? 0) + part);
       }
-      // Ödenecek tutar (KDV dahil); Excel'den gelen ödenecek tutarı boş faturada KDV hariç tutar
-      const invoicesPayable = sum(linked.map((i) => (i.payable > 0 ? i.payable : invoiceNet(i))));
+      // Ödenecek tutar (KDV dahil; payı kadar); Excel'den gelen ödenecek tutarı boş faturada KDV hariç tutar
+      const invoicesPayable = sum(linked.map(({ i, part }) => (i.payable > 0 ? (invoiceNet(i) ? (i.payable * part) / invoiceNet(i) : 0) : part)));
       return { cat, entries, invoices, invoicesOwn, invoicesShared: invoices - invoicesOwn, invoicesByBranch, invoicesPayable, total: entries + invoices };
     });
   }
@@ -2735,9 +2739,12 @@ export function createModel(ds: Dataset) {
     // Mal alışları (fatura → tedarikçi)
     const invs = invoicesByMonth.get(month) ?? [];
     const bySupplier = new Map<string, number>();
-    for (const inv of invs.filter((i) => GOODS_CATEGORIES.includes(i.category))) {
+    // Kalem kalem: mal kategorisindeki faturanın tamamı, öbürlerinde hammaddeye bağlı kalemlerin payı
+    for (const inv of invs) {
+      const g = goodsPart(inv);
+      if (!g && !GOODS_CATEGORIES.includes(inv.category)) continue;
       const s = normalizeSupplier(inv.supplier);
-      bySupplier.set(s, (bySupplier.get(s) ?? 0) + invoiceNet(inv));
+      bySupplier.set(s, (bySupplier.get(s) ?? 0) + g);
     }
     let purchases = 0;
     for (const [s, v] of bySupplier) {
@@ -2934,9 +2941,12 @@ export function createModel(ds: Dataset) {
     const linkedInvoiceCats = new Set(expenseCats.filter((c) => invoiceCategoryMappable(c.invoiceCategory)).map((c) => c.invoiceCategory!));
     const duplicates = findDuplicateExpenses({
       fixed: allFixed.map((fe) => ({ id: fe.id, name: fe.name, amount: cells.get(`fixed:${fe.id}`)?.value ?? 0, branchId: fe.branchId ?? null })),
-      invoices: invs
-        .filter((i) => GOODS_CATEGORIES.includes(i.category) || i.category === COMMISSION_CATEGORY || linkedInvoiceCats.has(i.category))
-        .map((i) => ({ supplier: i.supplier, category: i.category, amount: invoiceNet(i) })),
+      // Kalem kalem: faturanın Gelir-gider'e giren her payı (mal alışı, bağlı harcama kategorisi, komisyon)
+      invoices: invs.flatMap((i) =>
+        [...invoiceParts(i)]
+          .filter(([k]) => k === GOODS_PART || k === COMMISSION_CATEGORY || linkedInvoiceCats.has(k))
+          .map(([k, amount]) => ({ supplier: i.supplier, category: k === GOODS_PART ? i.category : k, amount })),
+      ),
       expenses: (expenseEntriesByMonth.get(month) ?? []).map((e) => ({
         label: catById.get(e.categoryId)?.name ?? "Harcama",
         description: e.description,

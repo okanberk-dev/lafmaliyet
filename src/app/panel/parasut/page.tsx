@@ -24,7 +24,7 @@ import { parasutConnection } from "@/server/parasut/client";
 import { configFrom, hasParasutInvoices, loadInvoiceScope, loadParasutSettings, parasutRedirectUri } from "@/server/parasut/config";
 import { CURSOR_KEY, PENDING_KEY } from "@/server/parasut/keys";
 import { parseReturnLog, RETURNS_KEY, supplierReturnEntered } from "@/server/parasut/returns";
-import { ignoredProducts, unlinkedProducts } from "@/server/parasut/sync";
+import { ignoredProducts, ignoredSuppliers, unlinkedProducts } from "@/server/parasut/sync";
 
 import { invoiceBreakdown, invoiceStats, type InvoiceMix } from "./breakdowns";
 import { ParasutClient as ParasutScreen, type LinkCheck } from "./parasut-client";
@@ -105,7 +105,7 @@ async function ParasutContent() {
   // imleçler ve Paraşüt'ten gelen faturaların sayıları bu hesabın
   const [account, accounts, scope, branches] = await Promise.all([parasutAccountForScope(), loadParasutAccounts(), currentBranchScope(), listBranches()]);
   const mine = invoiceAccountWhere(account);
-  const [runs, rules, links, ingredients, unlinked, invoiceRows, cursorRow, pendingRow, [lineReads], ignored, newestLines, readState, returnsRow, negatives, settings, invoicesExist, unassigned] = await Promise.all([
+  const [runs, rules, links, ingredients, unlinked, invoiceRows, cursorRow, pendingRow, [lineReads], ignored, newestLines, readState, returnsRow, negatives, settings, invoicesExist, unassigned, supplierRules] = await Promise.all([
     db.select().from(s.parasutSyncRuns).where(eq(s.parasutSyncRuns.account, account)).orderBy(desc(s.parasutSyncRuns.startedAt)).limit(8),
     db.select().from(s.parasutCategoryRules).orderBy(asc(s.parasutCategoryRules.priority), asc(s.parasutCategoryRules.id)),
     db
@@ -187,6 +187,8 @@ async function ParasutContent() {
     hasParasutInvoices(account),
     // Şubesi seçilmemiş faturalar (tek şubede görünmez; uyarı)
     unassignedInvoiceCount(db),
+    // "Hep hammadde değil" kuralı açık tedarikçiler
+    ignoredSuppliers(),
   ]);
   const lineOf = new Map(newestLines.map((l) => [l.productKey, l]));
   // Adındaki ya da birimindeki paket boyu bağlantının çarpanından farklı olanlar: yalnız gösterilir, hiçbir şey değişmez
@@ -287,6 +289,7 @@ async function ParasutContent() {
         unlinkedTotal={unlinked.total}
         aiMatch={aiMatch}
         ignored={ignored}
+        supplierRules={supplierRules}
         lineReads={{ read: lineReads?.read ?? 0, pending: lineReads?.pending ?? 0 }}
         categories={INVOICE_CATEGORIES}
         returns={{

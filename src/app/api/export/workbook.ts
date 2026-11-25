@@ -1497,8 +1497,24 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
     t: months.length ? { formula: `SUM(${tCol}${firstCatRow}:${tCol}${lastCatRow})`, result: round2(sum(months.map((_, j) => colTotal(j)))) } : 0,
   });
   tr.font = { bold: true };
-  const goodsRows = GOODS_CATEGORIES.map((g) => rowOf.get(g)!).filter(Boolean);
-  const goodsVal = (j: number) => sum(GOODS_CATEGORIES.map((g) => byCat.get(g)?.[j] ?? 0));
+  // Kalem kalem sınıflandırma (src/lib/invoice-split.ts): karışık faturanın hammaddeye bağlı kalemleri mal alışı,
+  // mal faturasının nedenli "hammadde değil" kalemi gider. Kategori satırları faturanın kategorisiyle (SUMIFS) kalır;
+  // fark ayrı satırda, mal maliyeti panelinkiyle aynı
+  const shift = months.map((m) => round2(model.goodsPurchases(m) - sum(GOODS_CATEGORIES.map((g) => byCat.get(g)?.[months.indexOf(m)] ?? 0))));
+  if (shift.some((v) => Math.abs(v) >= 0.01)) {
+    const r = al.rowCount + 1;
+    rowOf.set("__kalem", r);
+    const sr = al.addRow({
+      c: "Kalem kalem: mal alışına geçen (karışık faturalar)",
+      ...Object.fromEntries(months.map((m, j) => [m, shift[j]])),
+      t: { formula: `SUM(B${r}:${mCol(months.length - 1)}${r})`, result: round2(sum(shift)) },
+    });
+    sr.font = { italic: true };
+    sr.getCell("c").note =
+      "Kategorisi mal alışı olmayan faturanın hammaddeye bağlı kalemleri mal alışı sayılır; mal faturasında Sarf / Demirbaş / Hizmet denmiş kalem kendi giderine geçer (eksi). Faturanın tutarı kalemlerine net tutarlarıyla orantılı bölünür.";
+  }
+  const goodsRows = [...GOODS_CATEGORIES.map((g) => rowOf.get(g)!), rowOf.get("__kalem")!].filter(Boolean);
+  const goodsVal = (j: number) => sum(GOODS_CATEGORIES.map((g) => byCat.get(g)?.[j] ?? 0)) + (rowOf.has("__kalem") ? shift[j] : 0);
   const gr = al.addRow({
     c: `Mal maliyeti (${GOODS_CATEGORIES.join(" + ")})`,
     ...Object.fromEntries(months.map((m, j) => [m, { formula: goodsRows.map((r) => `${mCol(j)}${r}`).join("+"), result: round2(goodsVal(j)) }])),

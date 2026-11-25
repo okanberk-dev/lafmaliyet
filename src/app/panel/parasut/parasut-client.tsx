@@ -51,7 +51,8 @@ import type { ReadingState } from "@/lib/photo-rules";
 import { evidenceLead, factorText, HOLDS_HREF } from "@/lib/price-hold";
 import { guessLinkFactor, packEvidence, packPairChoices, sameFactor, type PackEvidence } from "@/lib/product-match";
 import { MATCH_DAILY_CAP, matchView, preselected, unitPriceText, type AiMatchState, type MatchView } from "@/lib/product-match-ai";
-import type { IgnoredProduct } from "@/lib/product-ignore";
+import { REASON_HINT, REASON_LABEL, type NotIngredientReason } from "@/lib/invoice-split";
+import type { IgnoredProduct, IgnoredSupplier } from "@/lib/product-ignore";
 import { todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { readProductInvoice } from "@/server/actions/invoice-readings";
@@ -66,12 +67,14 @@ import {
   suggestProductLinksAi,
   testParasutConnection,
   ignoreProduct,
+  setSupplierIgnoreRule,
   unignoreProduct,
 } from "@/server/actions/parasut";
 
 import { connectionBreakdown, connectionHeadline, linkedBreakdown, LINKS_ID, runsBreakdown } from "./breakdowns";
 import { ConnectionCard } from "./connection-card";
 import { AiSuggestBar, MatchBadges, MatchWarnings, SuggestionBox } from "./match-suggestions";
+import { NotIngredientDialog } from "./not-ingredient-dialog";
 
 type MatchType = "supplier" | "parasut_category" | "keyword";
 const MATCH_LABEL: Record<MatchType, string> = { supplier: "Tedarikçi adı", parasut_category: "Paraşüt kategorisi", keyword: "Açıklama / kalemde geçen" };
@@ -211,6 +214,7 @@ export function ParasutClient({
   unlinkedTotal,
   aiMatch = NO_AI_MATCH,
   ignored = [],
+  supplierRules = [],
   lineReads,
   categories,
   checks = [],
@@ -257,6 +261,8 @@ export function ParasutClient({
   aiMatch?: AiMatchState;
   /** "Hammadde değil" denen ürünler (en yeni önce) */
   ignored?: IgnoredProduct[];
+  /** "Hep hammadde değil" kuralı açık tedarikçiler (src/lib/product-ignore.ts IgnoredSupplier) */
+  supplierRules?: IgnoredSupplier[];
   /** E-faturaya bağlı, gider faturası olmayan kayıtlar: kalemleri okunan / sırada */
   lineReads: { read: number; pending: number };
   categories: readonly string[];
@@ -603,6 +609,7 @@ export function ParasutClient({
         unlinkedTotal={unlinkedTotal}
         aiMatch={aiMatch}
         ignored={ignored}
+        supplierRules={supplierRules}
         ingredients={ingredients}
         lineReads={lineReads}
         onReadLines={readLines}
@@ -704,6 +711,7 @@ function ProductLinks({
   unlinkedTotal,
   aiMatch,
   ignored,
+  supplierRules,
   ingredients,
   lineReads,
   onReadLines,
@@ -718,6 +726,7 @@ function ProductLinks({
   unlinkedTotal: number;
   aiMatch: AiMatchState;
   ignored: IgnoredProduct[];
+  supplierRules: IgnoredSupplier[];
   ingredients: Ingredient[];
   lineReads: { read: number; pending: number };
   onReadLines: () => void;
@@ -781,16 +790,31 @@ function ProductLinks({
     });
   };
 
-  // Kargo, hizmet bedeli, ekipman gibi kalemler: bekleyenlerden çıkar (zil sayısına da girmez), geri alınabilir
-  const ignore = (u: Unlinked) =>
+  // Kargo, hizmet bedeli, ekipman gibi kalemler: önce neden sorulur (Sarf, Demirbaş, Hizmet, Deneme; kalemin gelir-
+  // giderdeki yeri), sonra bekleyenlerden çıkar (zil sayısına da girmez), geri alınabilir. "Hep" işaretliyse tedarikçi
+  // kuralı da açılır
+  const [asking, setAsking] = useState<Unlinked | null>(null);
+  const ignore = (u: Unlinked) => setAsking(u);
+  const confirmIgnore = (u: Unlinked, reason: NotIngredientReason, supplierRule: boolean) =>
     start(async () => {
+      setAsking(null);
       hideUnlinked(u.productKey);
-      const r = await ignoreProduct({ productKey: u.productKey, productName: u.productName });
+      const r = await ignoreProduct({ productKey: u.productKey, productName: u.productName, reason });
       if (!r.ok) return void toast.error(r.error);
-      toast.success(`${u.productName}: hammadde değil`, {
-        description: "Bekleyenlerden çıktı; listenin altındaki “Hammadde değil” bölümünden geri alınabilir.",
+      if (supplierRule) {
+        const s = await setSupplierIgnoreRule({ supplier: u.supplier, reason });
+        if (!s.ok) toast.error(s.error);
+      }
+      toast.success(`${u.productName}: hammadde değil · ${REASON_LABEL[reason]}`, {
+        description: `${REASON_HINT[reason]}.${supplierRule ? ` ${u.supplier}: bağlanmamış kalemleri artık bekleyenlere düşmez.` : ""} Listenin altındaki “Hammadde değil” bölümünden geri alınabilir.`,
         action: { label: "Geri al", onClick: () => void tryAction(() => unignoreProduct(u.productKey)).then((x) => (!x || x.ok ? undefined : toast.error(x.error))) },
       });
+    });
+  const dropRule = (r: IgnoredSupplier) =>
+    start(async () => {
+      const x = await setSupplierIgnoreRule({ supplier: r.supplierName, reason: null });
+      if (!x.ok) return void toast.error(x.error);
+      toast.success(`${r.supplierName}: kural kaldırıldı`, { description: "Bağlanmamış kalemleri yeniden bekleyenlere düşer." });
     });
   const unignore = (e: IgnoredProduct) =>
     start(async () => {
@@ -1171,6 +1195,7 @@ function ProductLinks({
                     <div className="min-w-0">
                       <p className="text-sm font-medium break-words text-ink">{e.productName}</p>
                       <p className="mt-0.5 text-xs text-ink-mute">
+                        {e.reason ? `${REASON_LABEL[e.reason]} · ` : "Nedeni yok (faturanın kategorisinde) · "}
                         {dateTimeTR(e.at)}
                         {e.by ? ` · ${e.by}` : ""}
                       </p>
@@ -1182,6 +1207,45 @@ function ProductLinks({
                 ))}
               </ul>
             </details>
+          ) : null}
+
+          {supplierRules.length ? (
+            <details className="group/sr mx-5 mb-4 rounded-2xl bg-surface">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-2xl px-3.5 py-2.5 outline-none focus-visible:ring-2 focus-visible:ring-ink/30 [&::-webkit-details-marker]:hidden">
+                <PackageX size={16} className="shrink-0 text-ink-mute" aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-ink">Hep hammadde değil · {num(supplierRules.length)} tedarikçi</span>
+                  <span className="block text-xs text-ink-mute">Bu tedarikçilerin bağlanmamış kalemleri bekleyenlere düşmez; hammaddeye bağlı kalemleri mal alışı kalır.</span>
+                </span>
+                <ChevronDown size={16} className="shrink-0 text-ink-quiet transition-transform group-open/sr:rotate-180" aria-hidden="true" />
+              </summary>
+              <ul className="divide-y divide-ink/[0.06] px-3.5 pb-1.5">
+                {supplierRules.map((r) => (
+                  <li key={r.supplierKey} className="flex items-center justify-between gap-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium break-words text-ink">{r.supplierName}</p>
+                      <p className="mt-0.5 text-xs text-ink-mute">
+                        {REASON_LABEL[r.reason]} · {dateTimeTR(r.at)}
+                        {r.by ? ` · ${r.by}` : ""}
+                      </p>
+                    </div>
+                    <Button size="sm" variant="secondary" className="shrink-0" disabled={pending} onClick={() => dropRule(r)} aria-label={`${r.supplierName}: kuralı kaldır`}>
+                      <RotateCcw size={14} /> Kaldır
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+
+          {asking ? (
+            <NotIngredientDialog
+              productName={asking.productName}
+              supplier={asking.supplier}
+              pending={pending}
+              onClose={() => setAsking(null)}
+              onConfirm={(reason, rule) => confirmIgnore(asking, reason, rule)}
+            />
           ) : null}
 
           {linkedShown.length ? (

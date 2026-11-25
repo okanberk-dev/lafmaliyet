@@ -4,8 +4,9 @@ import { test } from "node:test";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "../src/lib/constants";
 import { crossesSeparate, isLinkableCategory, LINKABLE_CATEGORIES, separateMoveMonths } from "../src/lib/invoice-linking";
 
-test("hammaddeye bağlanabilen kategoriler: mal alışları ve Diğer; kafe dışı, komisyon, kira bağlanmaz", () => {
-  assert.deepEqual(LINKABLE_CATEGORIES, [...GOODS_CATEGORIES, "Diğer"]);
+test("hammaddeye bağlanabilen kategoriler: mal alışları, Temizlik & Sarf ve Diğer; kafe dışı, komisyon, kira bağlanmaz", () => {
+  // Temizlik & Sarf (25 Kasım 2026): karışık faturanın gıda kalemi bağlanınca mal alışı sayılır (src/lib/invoice-split.ts)
+  assert.deepEqual(LINKABLE_CATEGORIES, [...GOODS_CATEGORIES, "Temizlik & Sarf", "Diğer"]);
   for (const c of LINKABLE_CATEGORIES) assert.ok(INVOICE_CATEGORIES.includes(c), c);
   for (const c of GOODS_CATEGORIES) assert.equal(isLinkableCategory(c), true, c);
   assert.equal(isLinkableCategory("Diğer"), true);

@@ -21,6 +21,7 @@ import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/l
 import type { SiteSalesMonth } from "@/lib/site-sales/schema";
 import { branchWhere, branchWhereWithShared, currentBranchScope, currentWriteBranch, withBranchScope } from "@/server/branch-scope";
 import { invoiceScopeWhere } from "@/server/invoice-scope";
+import { loadSplitLines } from "./invoice-split";
 import { resolveBranchSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s, type DB } from "@/server/db";
@@ -195,6 +196,8 @@ async function readDataset(): Promise<Dataset> {
   const lafposBranch = lafposBranchOf(branches);
   // Ayda açık gün seçili şubenin (şube ayarı isletme.takvim; "Tümü"de ve online kanalda varsayılan şubenin)
   const settings = { ...storedSettings, lafposGecisGunu: scopeSwitchDay(storedSettings.lafposGecisGunu, scope, lafposBranch), acikGun: calendar.value.openDays };
+  // Kalem kalem sınıflandırma (src/lib/invoice-split.ts): payı faturanın kategorisinden ayrılan kalemler
+  const splitOf = await loadSplitLines(db, invoices);
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
   const currentMonth = currentMonthTR();
   // Sabit giderler küçük tablo: hepsi okunur, şubeninkiler ve işletme genelinkiler burada ayrılır (silinmiş ya da
@@ -400,6 +403,7 @@ async function readDataset(): Promise<Dataset> {
       taxNotAsset: i.taxNotAsset,
       branchId: i.branchId,
       companyWide: i.companyWide,
+      ...(splitOf.has(i.id) ? { lines: splitOf.get(i.id) } : {}),
       ...(channelNamesOf && i.category === COMMISSION_CATEGORY && !channelOf([i.supplier]) ? { channelNames: channelNamesOf(i.supplier, i.supplierTaxNumber) } : {}),
     })),
     // netSalary / extras ve period / amount taban değerlerdir (ilk sürümden önceki aylar).

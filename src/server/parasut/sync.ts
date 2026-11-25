@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, desc, eq, gte, inArray, isNotNull, like, lt, notInArray, notLike, or, sql } from "drizzle-orm";
 
+import { supplierMatchKey } from "@/app/panel/faturalar/rules";
 import { cleanTaxNumber } from "@/app/panel/tedarikciler/logic";
 import { takesCreditOnArrival } from "@/lib/cari/balance";
 import { COMMISSION_CATEGORY, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
@@ -10,7 +11,7 @@ import { appliedKeyOf, firstPriceCertain, holdLogText, livePct, previousInvoiceP
 import { packEvidence } from "@/lib/product-match";
 import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { newInvoiceBranch, supplierDefaultValue, type InvoiceBranchValue } from "@/lib/invoice-branch";
-import { parseIgnored, type IgnoredProduct } from "@/lib/product-ignore";
+import { parseIgnored, parseIgnoredSuppliers, type IgnoredProduct, type IgnoredSupplier } from "@/lib/product-ignore";
 import { addDays, syncedDueDate, todayTR } from "@/lib/reminders";
 import { bulkPrice } from "@/lib/supplier-prices";
 import { logActivity } from "@/server/actions/log";
@@ -68,6 +69,7 @@ import {
   PRICE_KEY,
   PRODUCT_IGNORE_KEY,
   RESUME_KEY,
+  SUPPLIER_IGNORE_KEY,
   RETURNS_KEY,
 } from "./keys";
 
@@ -1853,22 +1855,44 @@ export async function updateIgnoredProducts(change: (list: IgnoredProduct[]) => 
   });
 }
 
+/** "Hep hammadde değil" kuralı açık tedarikçiler (anahtar: supplierMatchKey) */
+export async function ignoredSuppliers(): Promise<IgnoredSupplier[]> {
+  return parseIgnoredSuppliers(await getState(SUPPLIER_IGNORE_KEY));
+}
+
+/** Tedarikçi kuralı listesini kilitleyip değiştirir; önceki listeyi döner */
+export async function updateIgnoredSuppliers(change: (list: IgnoredSupplier[]) => IgnoredSupplier[]): Promise<IgnoredSupplier[]> {
+  return getDb().transaction(async (tx) => {
+    const [row] = await tx.select().from(s.integrationState).where(eq(s.integrationState.key, SUPPLIER_IGNORE_KEY)).for("update").limit(1);
+    const before = parseIgnoredSuppliers(row?.value);
+    const value = change(before);
+    await tx
+      .insert(s.integrationState)
+      .values({ key: SUPPLIER_IGNORE_KEY, value })
+      .onConflictDoUpdate({ target: s.integrationState.key, set: { value, updatedAt: new Date() } });
+    return before;
+  });
+}
+
 /** Hammaddeye bağlanmayı bekleyen ürün sayısı (zil ve ana sayfa için; listeyle aynı süzgeç) */
 export async function countUnlinkedProducts(): Promise<number> {
   const db = getDb();
-  const ignored = (await ignoredProducts()).map((i) => i.productKey);
-  const [row] = await db
-    .select({ n: sql<number>`count(distinct ${s.parasutBillLines.productKey})`.mapWith(Number) })
+  const [ignored, rules] = await Promise.all([ignoredProducts(), ignoredSuppliers()]);
+  const ignoredKeys = ignored.map((i) => i.productKey);
+  const rows = await db
+    .selectDistinct({ productKey: s.parasutBillLines.productKey, supplier: s.invoices.supplier })
     .from(s.parasutBillLines)
     .innerJoin(s.invoices, eq(s.invoices.id, s.parasutBillLines.invoiceId))
     .where(
       and(
         inArray(s.invoices.category, LINKABLE_CATEGORIES),
         notInArray(s.parasutBillLines.productKey, db.select({ k: s.parasutProductLinks.productKey }).from(s.parasutProductLinks)),
-        ignored.length ? notInArray(s.parasutBillLines.productKey, ignored) : undefined,
+        ignoredKeys.length ? notInArray(s.parasutBillLines.productKey, ignoredKeys) : undefined,
       ),
     );
-  return row?.n ?? 0;
+  // Tedarikçi kuralı ("hep hammadde değil"): o tedarikçinin kalemi bekleyen sayılmaz
+  const ruled = new Set(rules.map((r) => r.supplierKey));
+  return new Set(rows.filter((r) => !ruled.has(supplierMatchKey(r.supplier))).map((r) => r.productKey)).size;
 }
 
 /**
@@ -1897,7 +1921,8 @@ export async function unlinkedProducts(limit = 40, scope: BranchScope = ALL_BRAN
     db.select({ productKey: s.parasutProductLinks.productKey }).from(s.parasutProductLinks),
     ignoredProducts(),
   ]);
-  // Bağlı ve "hammadde değil" denen ürünler bekleyen sayılmaz
+  // Bağlı ve "hammadde değil" denen ürünler bekleyen sayılmaz; "hep hammadde değil" kuralı açık tedarikçinin kalemi de
+  const ruled = new Set((await ignoredSuppliers()).map((r) => r.supplierKey));
   const linked = new Set([...links.map((l) => l.productKey), ...ignored.map((i) => i.productKey)]);
   const agg = new Map<
     string,
@@ -1905,7 +1930,7 @@ export async function unlinkedProducts(limit = 40, scope: BranchScope = ALL_BRAN
   >();
   const unitPrice = (l: (typeof lines)[number]) => (l.quantity > 0 && l.netTotal > 0 ? l.netTotal / l.quantity : 0);
   for (const l of lines) {
-    if (linked.has(l.productKey)) continue;
+    if (linked.has(l.productKey) || ruled.has(supplierMatchKey(l.supplier))) continue;
     const a = agg.get(l.productKey);
     if (a) {
       a.count++;
