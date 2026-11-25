@@ -3,6 +3,7 @@
 //   "Tuzla ile aynı" başlar; kayıt yoksa ortamın alıcıları;
 // - Tuzla'nın alıcıları kaydedilince "aynı" Marina da onları kullanır; bağlı şubeye alıcı yazılmaz; "aynı" kapatılınca
 //   değerler kopyalanır, sonra ayrı düzenlenir; gün sonu e-postası şubenin alıcılarına ve o şubeye açık adreslere;
+// - kasa raporu e-postası ve deneme e-postası raporun / kartın şubesinin alıcılarına;
 // - gizli alan şifreli durur, "aynı" kapatılınca kopyalanmaz; bağlı şube varken hedef kapatılamaz, silinemez;
 // - yalnız yönetici; her yazım işlem geçmişine aynı işlemde.
 //
@@ -210,6 +211,55 @@ describe("şube başına ayarlar: veritabanında", { skip: !SERVER_URL && "BRANC
     assert.ok(closed.ok, closed.ok ? "" : closed.error);
     const reopened = await branchActions.updateBranch({ id: "bodrum", name: "Bodrum", kind: "fiziksel", posSource: "modpos", openedOn: null, active: true });
     assert.ok(reopened.ok, reopened.ok ? "" : reopened.error);
+  });
+
+  test("kasa raporu e-postası raporun şubesinin alıcılarına: 'aynı' iken Tuzla'nınkine, ayrılınca Marina'nınkine", async () => {
+    const realFetch = globalThis.fetch;
+    const sent: string[][] = [];
+    // Resend: alıcılar kaydedilir, ağa çıkılmaz; site bağlantısı yok (online satırı sorulmaz)
+    delete process.env.KARAOKE_SYNC_SECRET;
+    process.env.RESEND_API_KEY = "re_test_sube_ayarlari";
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (!String(input).startsWith("https://api.resend.com/")) throw new TypeError("testte ağ yok");
+      sent.push((JSON.parse(String(init?.body)) as { to: string[] }).to);
+      return new Response(JSON.stringify({ id: `em_${sent.length}` }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch;
+    try {
+      const { emailReport } = await import("../src/server/cash/report-email");
+      const link = await import("../src/server/actions/branch-settings");
+      const actions = await import("../src/server/actions/cash-report");
+      const rows = await db
+        .insert(s.cashReports)
+        .values([
+          { date: "2026-11-20", branchId: "tuzla", zTotal: 1000, cash: 500, card: 500, submittedByName: "Ali" },
+          { date: "2026-11-20", branchId: "marina", zTotal: 2000, cash: 900, card: 1100, submittedByName: "Ayşe" },
+        ])
+        .returning({ id: s.cashReports.id, branchId: s.cashReports.branchId });
+      const id = (b: string) => rows.find((r) => r.branchId === b)!.id;
+      assert.equal((await emailReport(id("marina"), { idempotencyKey: "a" })).status, "sent");
+      assert.deepEqual(sent.at(-1), ["yeni@ornek.com"], "aynı iken Tuzla'nın alıcıları");
+      assert.ok((await link.setBranchSettingLink({ branchId: "marina", group: "kasa.rapor", sameAs: null })).ok);
+      const own = await actions.updateCashSettings({ branchId: "marina", recipients: "marina@ornek.com", emailEnabled: true, whatsapp: "" });
+      assert.ok(own.ok, own.ok ? "" : own.error);
+      await emailReport(id("marina"), { idempotencyKey: "b" });
+      assert.deepEqual(sent.at(-1), ["marina@ornek.com"], "Marina'nın kendi alıcıları");
+      await emailReport(id("tuzla"), { idempotencyKey: "c" });
+      assert.deepEqual(sent.at(-1), ["yeni@ornek.com"], "Tuzla'nınki değişmedi");
+      // Deneme e-postası kartın şubesinin alıcılarına
+      const test = await actions.sendCashTestEmail("marina");
+      assert.ok(test.ok, test.ok ? "" : test.error);
+      assert.deepEqual(sent.at(-1), ["marina@ornek.com"]);
+      // Çalışan listesi gönderilmeyen kayıtta dokunulmaz (ModPOS'lu şubenin kartında alan yok)
+      const before = (await (await import("../src/server/data/cash-reports")).loadCashSettings("marina")).staffRecipients;
+      assert.ok((await actions.updateCashSettings({ branchId: "marina", recipients: "marina@ornek.com", emailEnabled: true, whatsapp: "" })).ok);
+      assert.deepEqual((await (await import("../src/server/data/cash-reports")).loadCashSettings("marina")).staffRecipients, before);
+      const empty = await actions.updateCashSettings({ branchId: "marina" });
+      assert.ok(!empty.ok && /Kaydedilecek bir şey yok/.test(empty.error), empty.ok ? "" : empty.error);
+      assert.ok((await link.setBranchSettingLink({ branchId: "marina", group: "kasa.rapor", sameAs: "tuzla" })).ok);
+    } finally {
+      globalThis.fetch = realFetch;
+      delete process.env.RESEND_API_KEY;
+    }
   });
 
   test("gizli alan: şifreli durur, okununca açılır; 'aynı' kapatılınca kopyalanmaz, yeniden girilir", async () => {

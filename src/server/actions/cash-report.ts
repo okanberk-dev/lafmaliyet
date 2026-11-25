@@ -9,6 +9,7 @@ import { BRANCH_ID_MAX, DEFAULT_BRANCH_ID, namedTill, tillBranches, zFormBranch 
 import { businessDate, carryCheck, changesText, diffText, parseEmails, staffCanReport, waPhone, whatsappLink, whatsappText, type CashReportFields } from "@/lib/cash-report";
 import type { Role } from "@/lib/constants";
 import { money } from "@/lib/format";
+import { LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
 import { allDroppedSentence, droppedListText, recipientRefusal } from "@/lib/notify-recipients";
 import { longDateTR } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
@@ -197,8 +198,12 @@ const settingsSchema = z.object({
   recipients: z.string().max(2000).optional(),
   emailEnabled: z.boolean().optional(),
   whatsapp: z.string().max(40).optional(),
-  staffRecipients: z.string().max(2000).default(""),
-  staffAmounts: z.boolean().default(false),
+  /**
+   * Çalışan listesi: kartta alanı olan şubede (LafPOS'lu ya da listesi dolu) gönderilir; gönderilmezse dokunulmaz (ModPOS'lu
+   * şubenin kartı, eski kaydın sahibi olmayan tek şubeli kurulum)
+   */
+  staffRecipients: z.string().max(2000).optional(),
+  staffAmounts: z.boolean().optional(),
 });
 
 export async function updateCashSettings(input: z.input<typeof settingsSchema>) {
@@ -220,7 +225,9 @@ export async function updateCashSettings(input: z.input<typeof settingsSchema>) 
     const whatsapp = data.whatsapp?.trim() ? waPhone(data.whatsapp) : null;
     if (data.whatsapp?.trim() && !whatsapp) throw new UserError("WhatsApp numarası geçersiz (ör. 0532 123 45 67)");
     // Çalışan listesi (LafPOS gün sonunun kısa e-postası): personel hesabı olabilir, rapor ayrıntısı ve karaoke ödemesi gitmez
-    const staff = parseEmails(data.staffRecipients);
+    const staffGiven = data.staffRecipients !== undefined;
+    if (!report && !staffGiven) throw new UserError("Kaydedilecek bir şey yok");
+    const staff = parseEmails(data.staffRecipients ?? "");
     if (staff.invalid.length) throw new UserError(`Geçersiz çalışan e-postası: ${staff.invalid.slice(0, 3).join(", ")}`);
     if (staff.valid.length > 20) throw new UserError("Çalışan listesine en çok 20 adres girilebilir");
     const branches = await listBranches();
@@ -229,7 +236,10 @@ export async function updateCashSettings(input: z.input<typeof settingsSchema>) 
     // Ayar ve işlem geçmişi tek işlemde (şube başına ayar; alıcılar bağlı şubeye yazılmaz, putBranchSetting reddeder)
     await getDb().transaction(async (tx) => {
       await saveCashSettings(
-        { ...(report ? { recipients: valid, emailEnabled, whatsapp } : {}), staffRecipients: staff.valid, staffAmounts: data.staffAmounts },
+        {
+          ...(report ? { recipients: valid, emailEnabled, whatsapp } : {}),
+          ...(staffGiven ? { staffRecipients: staff.valid, staffAmounts: data.staffAmounts ?? false } : {}),
+        },
         branchId,
         { tx, by: me.name },
       );
@@ -237,8 +247,10 @@ export async function updateCashSettings(input: z.input<typeof settingsSchema>) 
       await logSetting(tx, me, "Kasa raporu alıcıları", branchName ? `${branchName} · ${what}` : what);
     });
     refresh();
+    // Şubesiz (eski sekme) kayıtta alıcılar varsayılan şubenin, çalışan listesi LafPOS'un şubesinin (saveCashSettings)
     const now = await loadCashSettings(branchId ?? DEFAULT_BRANCH_ID);
-    return { recipients: now.recipients, whatsapp: now.whatsapp, staffRecipients: now.staffRecipients ?? [] };
+    const staffNow = branchId || !staffGiven ? now : await loadCashSettings(LAFPOS_BRANCH_ID);
+    return { recipients: now.recipients, whatsapp: now.whatsapp, staffRecipients: staffNow.staffRecipients ?? [] };
   });
 }
 

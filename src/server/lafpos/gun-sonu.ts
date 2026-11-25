@@ -358,7 +358,7 @@ async function dayTotal(db: DB, date: string, branchId: string, switchDay: strin
  * Gün sonu e-postasının alıcıları: şubenin kasa raporu alıcıları (şube başına ayar; "aynı"ysa bağlandığı şubeninki) ve
  * o şubeye açık etkin bildirim adresleri (bütün şubeler ya da bu şube; açıksa), personel ve pasif hesap düşer
  */
-export async function dayEndRecipients(db: DB, branchId: string = LAFPOS_BRANCH_ID): Promise<string[]> {
+export async function dayEndRecipients(db: DB, branchId: string): Promise<string[]> {
   const [cash, notify] = await Promise.all([loadCashSettings(branchId, db), loadNotifySettings()]);
   const digest = notify.emailEnabled ? (await activeDigestRecipients(db)).filter((r) => !r.branchIds.length || r.branchIds.includes(branchId)).map((r) => r.email) : [];
   const list = [...(cash.emailEnabled ? cash.recipients : []), ...digest];
@@ -371,8 +371,8 @@ export async function dayEndRecipients(db: DB, branchId: string = LAFPOS_BRANCH_
  * Çalışanların kısa gün sonu e-postası (Kasa raporu ayarları › Çalışanlar): "gün sonu alındı", Z no ve fiş sayısı;
  * "tutarlar" açıksa ciro ve ödeme türleri. Rapor ayrıntısı, kasa farkı ve karaoke ödemesi gitmez.
  */
-async function sendStaffDayEnd(date: string, branchName: string, z: { zNo: number; receipts: number; zTotal: number; cash: number; card: number; mealCard: number; other: number }, hash: string, from: string | null | undefined, opts?: SendOptions) {
-  const cash = await loadCashSettings(LAFPOS_BRANCH_ID);
+async function sendStaffDayEnd(branchId: string, date: string, branchName: string, z: { zNo: number; receipts: number; zTotal: number; cash: number; card: number; mealCard: number; other: number }, hash: string, from: string | null | undefined, opts?: SendOptions) {
+  const cash = await loadCashSettings(branchId);
   if (!cash.staffRecipients?.length) return;
   const tlText = (v: number) => `${v.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₺`;
   const rows: [string, string][] = [["Z no", String(z.zNo)], ["Fiş sayısı", String(z.receipts)]];
@@ -430,7 +430,7 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
       .set({ sendingAt: null, updatedAt: new Date(), ...patch })
       .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
   try {
-    const to = await dayEndRecipients(db);
+    const to = await dayEndRecipients(db, branchId);
     if (!to.length) {
       await finish({ emailError: "Alıcı yok: kasa raporu alıcıları ve bildirim adresleri boş ya da kapalı" });
       return "off";
@@ -493,7 +493,7 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
         .onConflictDoNothing();
     }
     // Çalışanlara kısa e-posta (yönetim e-postasından sonra, içerik başına bir kez; düşmesi yönetim e-postasını etkilemez)
-    await sendStaffDayEnd(date, branch?.name ?? "Marina", day.z, day.hash, notify.from, opts).catch(() => undefined);
+    await sendStaffDayEnd(branchId, date, branch?.name ?? "Marina", day.z, day.hash, notify.from, opts).catch(() => undefined);
     return "sent";
   } catch (e) {
     await finish({ emailError: (e instanceof Error ? e.message : "bilinmeyen hata").slice(0, 300) }).catch(() => {});
@@ -540,7 +540,7 @@ export async function sendPavoEmail(db: DB, date: string, now = new Date(), opts
       .set({ sendingAt: null, updatedAt: new Date(), ...patch })
       .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
   try {
-    const to = await dayEndRecipients(db);
+    const to = await dayEndRecipients(db, branchId);
     if (!to.length) {
       await finish({});
       return "off";
@@ -602,7 +602,7 @@ export async function sendPhotoEmail(db: DB, date: string, now = new Date(), opt
       .set({ sendingAt: null })
       .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
   try {
-    const to = await dayEndRecipients(db);
+    const to = await dayEndRecipients(db, branchId);
     if (!to.length) return "off";
     if (!isEmailConfigured()) return "failed";
     const [branch] = await db.select({ name: s.branches.name }).from(s.branches).where(eq(s.branches.id, branchId)).limit(1);

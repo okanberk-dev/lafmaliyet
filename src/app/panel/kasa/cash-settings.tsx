@@ -50,13 +50,14 @@ export function CashSettingsCard({
   function save() {
     start(async () => {
       // Alıcılar başka şubeninkiyse yalnız çalışan listesi gider (sunucu bağlı şubeye alıcı yazmaz)
-      const res = await updateCashSettings({ branchId, ...(linked ? {} : { recipients, emailEnabled, whatsapp }), staffRecipients, staffAmounts });
+      // Çalışan listesi yalnız alanı çizildiyse (ModPOS'lu şubenin kartında yok; sunucu gönderilmeyene dokunmaz)
+      const res = await updateCashSettings({ branchId, ...(linked ? {} : { recipients, emailEnabled, whatsapp }), ...(showStaff ? { staffRecipients, staffAmounts } : {}) });
       if (!res.ok) return void toast.error(res.error);
       if (!linked) {
         setRecipients(res.data.recipients.join("\n"));
         setWhatsapp(res.data.whatsapp ?? "");
       }
-      setStaffRecipients((res.data.staffRecipients ?? []).join("\n"));
+      if (showStaff) setStaffRecipients((res.data.staffRecipients ?? []).join("\n"));
       toast.success("Kasa raporu alıcıları kaydedildi", { description: linked ? undefined : res.data.recipients.join(", ") || "E-posta kapalı" });
     });
   }
