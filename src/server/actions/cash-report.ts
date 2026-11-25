@@ -260,6 +260,7 @@ export async function sendCashTestEmail(branchId?: string | null) {
     await requireAdmin();
     // Kartın şubesinin alıcıları ("aynı"ysa bağlandığı şubeninki); göndermeyen eski sekmede varsayılan şube
     const till = zFormBranch.parse(branchId) || DEFAULT_BRANCH_ID;
+    if (!tillBranches(await listBranches()).some((b) => b.id === till)) throw new UserError("Şube bulunamadı; sayfayı yenileyin");
     const settings = await loadCashSettings(till);
     if (!settings.recipients.length) throw new UserError("Önce bir adres girin");
     // Personel hesabının ya da pasif hesabın adresi (ayar kaydedildikten sonra değişen) deneme e-postasını da almaz

@@ -112,7 +112,14 @@ export interface UndoPosResult {
 }
 
 /** İşaretleri geri alır: ürün kasaya işle listesine işaretten önceki hâliyle (kasadaki fiyat, ne zamandan beri) döner */
-export async function undoPos(db: DB, user: PosMarkUser, markIds: readonly number[], now: Date): Promise<UndoPosResult> {
+export async function undoPos(
+  db: DB,
+  user: PosMarkUser,
+  markIds: readonly number[],
+  now: Date,
+  /** Şubeye kilitli personel: işaretin şubesi onun değilse gerekçe (staffBranchRefusal; başka şubenin kasa listesine yazmaz) */
+  branchRefusal: (branchId: string) => string | null = () => null,
+): Promise<UndoPosResult> {
   const ids = [...new Set(markIds)];
   if (!ids.length) throw new UserError("İşaret seçin");
   return db.transaction(async (tx) => {
@@ -146,7 +153,7 @@ export async function undoPos(db: DB, user: PosMarkUser, markIds: readonly numbe
         .orderBy(desc(m.id))
         .limit(1);
       const current = product ? { price: product.price, posStalePrice: staleOf(mark.branchId, mark.productId) } : null;
-      const reason = posUndoRefusal({ role: user.role, meId: user.id, now }, mark, current, latest?.id ?? null);
+      const reason = branchRefusal(mark.branchId) ?? posUndoRefusal({ role: user.role, meId: user.id, now }, mark, current, latest?.id ?? null);
       const name = product ? label(product) : "";
       if (reason) {
         out.refused.push({ markId: mark.id, label: name, reason });

@@ -8,7 +8,7 @@ import { genitive } from "@/lib/recipe-change";
 import { toMinor } from "@/lib/site-menu/slot";
 import { namedTill, zFormBranch } from "@/lib/branches";
 import { requireUser } from "@/server/auth/dal";
-import { formBranch } from "@/server/branch-scope";
+import { formBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadTillScope } from "@/server/data/till-scope";
 import { getDb } from "@/server/db";
@@ -79,7 +79,9 @@ export async function undoPosMarks(ids: z.input<typeof zUndo>) {
   return attempt(async () => {
     const me = await requireUser();
     const data = zUndo.parse(ids);
-    const r = await undoPos(getDb(), { id: me.id, name: me.name, role: me.role }, data, new Date());
+    // Şubeye kilitli personel yalnız kendi şubesinin işaretini geri alır (hesabı sonradan başka şubeye kilitlenmiş olsa da)
+    const refusals = new Map(me.role === "admin" ? [] : await Promise.all((await listBranches()).map(async (b) => [b.id, await staffBranchRefusal(me, b.id)] as const)));
+    const r = await undoPos(getDb(), { id: me.id, name: me.name, role: me.role }, data, new Date(), (id) => refusals.get(id) ?? null);
     if (!r.undone.length && r.refused.length) throw new UserError(r.refused[0].reason);
     if (r.undone.length) {
       // Başkasının işaretiyse kimin olduğu yazılır: "Latte M 205 ₺ (Ayşe'nin işareti)"; birden çok kasada şube önde

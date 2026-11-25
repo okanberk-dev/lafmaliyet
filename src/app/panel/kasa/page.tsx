@@ -54,7 +54,7 @@ import {
 import { LAFPOS_STAFF_ENTRY_LINE, staffLafposEntryClosed } from "@/lib/lafpos/cash-moves";
 import { addDays, dayLocativeTR, isCalendarDate, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
-import { ALL_BRANCHES, branchScopeLabel, sortBranches } from "@/lib/branches";
+import { ALL_BRANCHES, branchScopeLabel, sortBranches, tillBranches } from "@/lib/branches";
 import { closedEvidenceText } from "@/lib/closed-days";
 import { modposDayView, type ModposDayView } from "@/lib/cash-modpos";
 import { aiStatus } from "@/server/ai/claude";
@@ -145,7 +145,12 @@ function more(email: boolean) {
 async function CashDescription({ searchParams }: { searchParams: PageProps<"/panel/kasa">["searchParams"] }) {
   const user = await requireUser();
   if (user.role !== "admin") return (await staffLafposDescription(searchParams)) ?? STAFF_DESCRIPTION;
-  const mailTo = await cashMailTo(await loadCashSettings(await currentTillBranch()));
+  // Açıklamanın kasası: tek şubede o şube; "Tümü"de birden çok kasa açıkken herhangi birinin e-postası gidiyorsa "e-posta
+  // gider" (her şubenin kartı kendi alıcılarını ayrıca söyler; yalnız Tuzla'nınkine bakılmaz)
+  const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+  const tills = tillBranches(branches);
+  const read = scope === ALL_BRANCHES && tills.length > 1 ? tills.map((b) => b.id) : [await currentTillBranch()];
+  const mailTo = Math.max(0, ...(await Promise.all(read.map(async (id) => cashMailTo(await loadCashSettings(id))))));
   return (
     <>
       {ADMIN_DESCRIPTION} <InfoTip text={more(mailTo > 0)} label="Nasıl çalışır?" />

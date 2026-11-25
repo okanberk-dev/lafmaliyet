@@ -318,6 +318,13 @@ describe("kasada bekleyen fiyat şube başına: veritabanında", { skip: !SERVER
       const own = await action.markPosDone([{ productId: latte, price: 210 }], TUZLA);
       assert.ok(own.ok, !own.ok ? own.error : "");
       assert.deepEqual(await staleRows(latte), []);
+      // Hesabı sonradan Marina'ya kilitlenen personel Tuzla'daki kendi işaretini (30 dakika içinde de) geri alamaz
+      me = { ...users.ayse, branchId: MARINA };
+      const undoOther = await action.undoPosMarks([own.ok ? own.data.done[0].markId : 0]);
+      assert.equal(undoOther.ok, false);
+      assert.match(!undoOther.ok ? undoOther.error : "", /Tuzla şubesinin; hesabınız Marina şubesinde/);
+      assert.deepEqual(await staleRows(latte), [], "Tuzla'nın listesine yazılmadı");
+      me = users.ayse;
       // Şubesiz personel tek şube seçiliyken kasa göndermese de seçili şubeye yazar (eski sekme)
       me = users.deniz;
       await setPrice(latte, 220, new Date());
