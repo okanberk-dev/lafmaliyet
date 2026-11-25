@@ -87,7 +87,7 @@ export const EXCLUDED_STATE_PREFIXES: Readonly<Record<string, string>> = {
 
 const sqlList = (keys: string[]) => keys.map((k) => `'${k.replace(/'/g, "''")}'`).join(", ");
 /** LIKE kalıbı: önekteki % ve _ harfi harfine */
-const likePrefix = (p: string) => `'${p.replace(/'/g, "''").replace(/[\\%_]/g, (c) => `\\${c}`)}%'`;
+const likePrefix = (p: string) => `'${p.replace(/['\\%_]/g, (c) => (c === "'" ? "''" : `\\${c}`))}%'`;
 
 const MCP_SKIP = "Claude bağlantıları; geri yüklemeden sonra Claude'da yeniden bağlanılır";
 
