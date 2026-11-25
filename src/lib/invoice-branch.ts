@@ -179,5 +179,5 @@ export function unassignedGroups<I extends { id: number; supplier: string; date:
   }
   return [...groups.values()]
     .sort((a, b) => b.ids.length - a.ids.length || b.latest.localeCompare(a.latest) || a.supplier.localeCompare(b.supplier, "tr"))
-    .map(({ latest: _latest, ...g }) => g);
+    .map((g) => ({ supplier: g.supplier, suggestion: g.suggestion, ids: g.ids, total: g.total }));
 }

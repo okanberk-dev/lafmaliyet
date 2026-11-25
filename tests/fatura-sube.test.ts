@@ -177,7 +177,7 @@ test("Gelir-gider: şubenin faturası şubenin giderinde, işletme geneli bilgi 
   assert.equal(marina.cells.get("expense:1")!.value, 3_000);
   close(marina.shared.parts.find((p) => p.key === "expense:1")!.amount, 500, "Marina'nın bilgi satırı");
   // Şube kayıtları olmayan veri (Excel, eski testler): fatura işletme geneli kalır (önceki kural)
-  const legacy = createModel({ ...common, invoices: invoices.map(({ branchId: _b, companyWide: _c, ...i }) => i as Invoice), months: allMonths }).pnlMonth("2026-11");
+  const legacy = createModel({ ...common, invoices: invoices.map((i) => ({ ...i, branchId: undefined, companyWide: undefined })), months: allMonths }).pnlMonth("2026-11");
   assert.equal(legacy.cells.get("expense:1")!.value, 4_500);
   assert.equal(legacy.byBranch.tuzla ?? 0, 0);
 });

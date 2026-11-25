@@ -336,15 +336,15 @@ describe("Şube başına Paraşüt hesabı: veritabanında (iki firmalı sahte P
     assert.equal((await (await import("../src/server/parasut/config")).loadParasutSettings("marina")).resolved.clientSecret.value, "marina-GIZLI");
 
     // Faturanın şubesi okumada (sahibin kararı 2): Tuzla seçiliyken Marina'nın ayrı hesabının faturası modele (Maliyet,
-    // Gelir-gider, Faturalar) girmez. Şubesi seçilmemiş fatura (ortak hesabın faturası, "shared" seçimli 702; tedarikçinin
-    // varsayılanı yok) tek şubede görünmez, "Tümü"de hepsi (docs/SUBE.md › Faturanın şubesi)
+    // Gelir-gider, Faturalar) girmez. Şubesi seçilmemiş fatura ("shared" seçimli 702; tedarikçinin varsayılanı yok) tek şubede görünmez, "Tümü"de hepsi (docs/SUBE.md › Faturanın şubesi)
     const { loadModel } = await import("../src/server/data/dataset");
     const ids = async (scope: string) =>
       (await loadModel({ scope })).ds.invoices
         .filter((i) => i.source === "parasut")
         .map((i) => `${i.externalId}:${i.supplier}`)
         .sort();
-    assert.deepEqual(await ids("tuzla"), []);
+    // Marina ayrılınca Tuzla'nın hesabını yalnız Tuzla kullanır: 700 Tuzla'nın
+    assert.deepEqual(await ids("tuzla"), ["700:Sütaş"]);
     assert.deepEqual(await ids("marina"), ["700:Pınar", "701:Pınar"]);
     assert.deepEqual(await ids("hepsi"), ["700:Pınar", "700:Sütaş", "701:Pınar", "702:Pınar"]);
 
