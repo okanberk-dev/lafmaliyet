@@ -29,6 +29,15 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   kota uyarısı; banka / tedarikçi ekstresi ve POS hakediş mutabakatı. Sahibe söylenecek: yayından sonra iki adımlısı
   olmayan yönetici ilk açılışta kurulum ekranına düşer (telefonda doğrulama uygulaması hazır olsun); Tuzla'da kör sayım
   hemen açılır (istenmezse Şubeler › Tuzla › Kör sayım).
+- **Marina gün sonu e-postası gece kaybolmaz** (dal `claude/peaceful-maxwell-ov7ms7`): 25 Kasım akşamı e-posta gitmedi.
+  Pavo beklemesi (#141) sonraki bir tetiğe kalıyordu ve gece tetik yoktu. Bekleme artık aynı istekte biter
+  (`settlePavoWait`): sonuç gelmezse e-posta ~38 sn'de Pavo'suz gider. LafPOS'un `bankPosPending` alanına uyulur;
+  bekleme ilk gelişten sayılır. Ayrıntı: docs/LAFPOS.md "Pavo'yu bekler". LafPOS tarafı lafpos aynı adlı dalda.
+- **E-postalar ortak tasarımda** (aynı dal): `src/lib/email-kit.ts`. Ferah kart, telefonda tek sütun; bütün e-postalar
+  aynı kabuk ve parçaları kullanır. İçerik, bağlantı ve düz metin aynı kaldı.
+- **Gün sonu zinciri sağlamlaştı** (dal `wt/lm-takip`, 26 Kasım): sabah işi işi bekleyen günleri önce ve yeniden eskiye
+  işler (dünkü gün ilk; süre yetmezse adım hata); LafPOS'un reddedilen günü yöneticinin zilinde ("Marina gün sonu
+  alınamadı: …", gün ve neden başına bir kez). Ayrıntı: docs/LAFPOS.md "Sabah işinin sırası", "Zil".
 
 ## Devam eden (26 Kasım; yerel `wip/*` dallarında, ajanlar sürdürüyor)
 
@@ -36,8 +45,8 @@ Kullanım limitiyle kesilen ajanların işi kendi dallarında "ARA KAYIT" commit
 Bitince `claude/festive-goodall-sclggq`'ye birleştirilir (göç numarası çakışırsa yeniden üretilir).
 - Belge tarayıcı: `wip/tarama-cekirdek` (saf çekirdek) → `wip/tarama-arayuz`; `wip/tarama-olcum` (ölçüm düzeneği),
   `wip/tarama-kalite` (kalite, yön, uzun fiş birleştirme); sonra bağlama + ayar, canlı vizör, inceleme.
-- E-posta tasarımı: `wip/eposta-kit` (ortak kit, bitti), `wip/eposta-kasa` (bitti), `wip/eposta-ozet`, `wip/eposta-diger`,
-  sonra birleştirme ve görsel inceleme (`npm run eposta:onizleme`).
+- E-posta tasarımı: main'deki `src/lib/email-kit.ts` (#149) geçerli; paralel yapılan `wip/eposta-*` dalları onun yerine
+  geçmez, birleştirilmeyecek (yalnız gerekirse oradan görsel düzeltme alınır).
 - Dalga paketleri: `wip/raporlar` (şube karşılaştırma, işçilik/ciro, kaçak raporu, kayıp önleme), `wip/stok-asistan`,
   `wip/parasut-guvenlik` (aynı vergi no, POST + tek kullanımlık bağlantı, LafPOS anahtar önbelleği, CSP), `wip/muhasebe`
   (aylık paket, kontrol PDF'i, dönem kapanışı, reçete geçmişi), `wip/personel` (belgeler, avans, asistana fiş fotoğrafı).
@@ -47,6 +56,8 @@ Bitince `claude/festive-goodall-sclggq`'ye birleştirilir (göç numarası çak�
 
 - [ ] laffogato.net veritabanının (Neon) kotası 24 Kasım'da doldu. Online sipariş, karaoke ve menü eşitlemesi duruyor. Ücretli plana geçin ya da Coolify'a taşıyın.
 - [ ] GitHub'a `CRON_SECRET` ekleyin ve GitHub ödeme sorununu çözün. Kontrol listesi hatırlatmalarının yedek tetikleyicisi bunlar yüzünden çalışmıyor.
+- [ ] Marina gün sonu e-postasının alıcılarına bakın: 25 Kasım'dan (#141) beri yalnız Kasa › Rapor alıcıları alır (sabah
+  e-postasının adresleri artık almaz). Gün sonu e-postasını almak isteyen adres Rapor alıcıları'nda olmalı.
 - [ ] Panelin veritabanı da ücretsiz planda. Ücretli plana geçin. (%70 ve %90 kota uyarısı eklendi, 26 Kasım: Ayarlar › Veritabanı; kota `DB_QUOTA_MB`, varsayılan 512)
 - [ ] Vercel'de artık kullanılmayan `PARASUT_USERNAME` ve `PARASUT_PASSWORD` silinsin.
 - [ ] Fotoğraf okuma istemleri canlı modelle denensin (`FOTO_EVAL=1`). 24 Kasım'ın gerçek Z fotoğrafı değerlendirmeye eklensin.
@@ -89,4 +100,5 @@ Bitince `claude/festive-goodall-sclggq`'ye birleştirilir (göç numarası çak�
 
 ## Bekleyen başka iş
 
-- [ ] Vardiyayla ilgili şube maddeleri (hazır vardiya saatleri şube ayarına, "Tümü"de şube seçimi). Başka bir oturumun açık PR'ı #120 birleşince yapılacak.
+- [ ] Vardiyayla ilgili şube maddeleri (hazır vardiya saatleri şube ayarına, "Tümü"de şube seçimi). PR #120 bu dala
+  birleştirildi (26 Kasım); artık yapılabilir.

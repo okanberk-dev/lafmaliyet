@@ -49,13 +49,21 @@ Sahibin isteği (22 Kasım 2026): "ladmine de vardiya ayarlama diye ayrı sekme 
 - **Geçen haftayı kopyala:** geçen haftanın planı yalnız **boş** kutulara kopyalanır (yazılmış kutunun üstüne yazmaz);
   kaydedilene kadar taslaktır.
 - **Toplamlar:** satırın sonunda kişinin haftalık saati ("37,5 sa"), altta gün gün çalışan sayısı ve haftanın toplamı.
+- **Boş bırakılan listede yazmaz** (sahibin isteği, 23 Kasım 2026: "boş bıraktıklarım da hiç listede yazmasın";
+  `listedRows`): ızgarada yalnız haftasına bir şey yazılmış kişiler durur; haftası boş personel listenin altındaki
+  **Bu hafta yazılmayanlar** düğmelerindedir, dokununca listeye girer ve ilk kutusuna gidilir. Telefonda liste günlüktür:
+  yalnız o günü yazılmış kişiler, altında "**Perşembe yazılmayanlar**" düğmeleri. Dokunulan kişi kaydedilene kadar
+  listede kalır (kutusunu boşaltsa da); kayıttan sonra boş kalan düşer. Boş kutunun altında "–" yok, gün gün çalışan
+  satırında boş gün yazısız. "Kişi ekle"ye listede olmayan birinin adı yazılınca o kişi listeye girer. Yazarak
+  doldurma ve "Geçen haftayı kopyala" listede olmayan personeli de görür (doldurulan kişi listeye girer).
 - **Telefonda (yönetici):** yedi sütun sığmadığı için ızgara gün gün yazılır: üstte haftanın yedi günü tek satırda
   seçilir (kısa gün adı ve ayın günü; bugünün rakamı mavi; kaydırma yok), altında o günün kutuları kişi kişi. Kişinin
   adı kendi satırındadır (dar telefonda kesilmez), altında S / A / İ düğmeleri ve yanında saat, ya da "Elle yaz"da tam
   genişlikte kutu. Yatay kaydırma yok (360 ve 390 px'te ölçüldü).
-- **Personel:** üstte **Benim haftam** (gün gün saatleri ve haftalık toplamı), altında bütün ekibin planı (salt okunur,
-  kendi satırında "Siz"). Telefonda ekibin planı da gün gün listedir (aynı gün seçici; yedi sütunluk tablo yana
-  kayardı). Plan yazılmadıysa "Bu hafta için vardiya yazılmadı".
+- **Personel:** üstte **Benim haftam** (yalnız yazılmış günler: saatler ve haftalık toplam), altında bütün ekibin planı
+  (salt okunur, kendi satırında "Siz"; haftası boş kişi yok, boş kutu yazısız). Telefonda ekibin planı da gün gün
+  listedir (aynı gün seçici; yalnız o günü yazılmış kişiler, kimse yoksa "Bu gün için vardiya yazılmadı"). Plan
+  yazılmadıysa "Bu hafta için vardiya yazılmadı". PDF de yalnız haftasına bir şey yazılmış kişileri taşır.
 - Ekranda tutar, maaş ya da maliyet yoktur.
 
 ## Hazır vardiyalar: sabahçı ve akşamcı (22 Kasım 2026)

@@ -6,6 +6,7 @@
  */
 
 import type { BranchScope } from "@/lib/branches";
+import { button, C, callout, divider, emailShell, esc, FONT, heading, para, pill, rows as kitRows, sectionTitle, TABLE, TONE, type Tone } from "@/lib/email-kit";
 import { CASH_OUT_INVOICES_HREF } from "@/lib/cash-outs";
 import { dateTR, money, monthLabel, tl } from "@/lib/format";
 import { SYSTEM_ALERT_HELP } from "@/lib/job-health";
@@ -15,16 +16,16 @@ import { capped } from "@/server/jobs/capped";
 
 export const APP_URL = (process.env.APP_URL?.trim() || "https://ladmin.laffogato.net").replace(/\/+$/, "");
 
-/** HTML'e giden her kullanıcı metni buradan geçer */
-export const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+/** HTML'e giden her kullanıcı metni buradan geçer (email-kit'inki; eski içe aktarmalar için burada da) */
+export { esc, FONT };
 
-const STAGE: Record<NotifyStage, { label: string; title: string; bg: string; fg: string; tile: string; tileFg: string }> = {
-  overdue: { label: "Gecikti", title: "Gecikenler", bg: "#fef2f2", fg: "#dc2626", tile: "#dc2626", tileFg: "#ffffff" },
-  due: { label: "Bugün", title: "Son günü bugün", bg: "#fff7ed", fg: "#c2410c", tile: "#e8590c", tileFg: "#ffffff" },
-  before: { label: "Yaklaşıyor", title: "Yaklaşanlar", bg: "#f4f4f5", fg: "#3f3f46", tile: "#e4e4e7", tileFg: "#3f3f46" },
+/** Aşamanın adı, düz metindeki etiketi, rozetteki kelimesi ve tonu (gecikmiş kırmızı, bugün turuncu, yaklaşan gri) */
+const STAGE: Record<NotifyStage, { label: string; title: string; word: string; tone: Tone }> = {
+  overdue: { label: "Gecikti", title: "Gecikenler", word: "gecikmiş", tone: "bad" },
+  due: { label: "Bugün", title: "Son günü bugün", word: "bugün", tone: "warn" },
+  before: { label: "Yaklaşıyor", title: "Yaklaşanlar", word: "yaklaşan", tone: "neutral" },
 };
 const STAGE_ORDER: NotifyStage[] = ["overdue", "due", "before"];
-export const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Geist,Roboto,Helvetica,Arial,sans-serif";
 
 /** Sabah e-postasının Paraşüt bölümü: son e-postadan bu yana gelen faturalar, kontrol bekleyenler, eşitleme hatası */
 export interface DigestInvoices {
@@ -248,14 +249,14 @@ export async function collectDigestExtras(sources: readonly DigestExtraSource[],
   return { extras, news, logKeys: [...keys], parts };
 }
 
-/** Kutu renkleri: komisyon, kontrol ve onay bekleyenler turuncu (fiyat onayı kutusu gibi), tahmin gri (bilgi) */
-const BOX_TONE: Record<keyof DigestExtras, { bg: string; fg: string }> = {
-  commission: { bg: "#fff7ed", fg: "#9a3412" },
-  kontrol: { bg: "#fff7ed", fg: "#9a3412" },
-  forecast: { bg: "#f4f4f5", fg: "#3f3f46" },
-  approvals: { bg: "#fff7ed", fg: "#9a3412" },
+/** Kutu tonları (email-kit): komisyon, kontrol ve onay bekleyenler turuncu (fiyat onayı kutusu gibi), tahmin gri (bilgi) */
+const BOX_TONE: Record<keyof DigestExtras, Tone> = { commission: "warn", kontrol: "warn", forecast: "neutral", approvals: "warn" };
+/** Kutu satırının rengi: kötü kırmızı, uyarı turuncu, sönük gri ve küçük (metin anlamı taşır, renk yalnız vurgu) */
+const LINE_STYLE: Record<NonNullable<DigestBox["lines"][number]["tone"]>, string> = {
+  bad: `color:${TONE.bad.fg}`,
+  warn: `color:${TONE.warn.fg}`,
+  muted: `color:${C.mute};font-size:13px;line-height:19px`,
 };
-const LINE_TONE: Record<NonNullable<DigestBox["lines"][number]["tone"]>, string> = { bad: "#b91c1c", warn: "#c2410c", muted: "#71717a" };
 /** İlk harf büyük, Türkçe ("i" → "İ"): konu parçası küçük harfle başlayabilir ("dünkü kapanış listesi eksik") */
 const upperFirst = (v: string) => `${v.charAt(0).toLocaleUpperCase("tr-TR")}${v.slice(1)}`;
 
@@ -266,20 +267,62 @@ const upperFirst = (v: string) => `${v.charAt(0).toLocaleUpperCase("tr-TR")}${v.
 const PANEL_PATH = /^\/panel(?:\/[\w-]+)*\/?(?:[?#]\S*)?$/;
 const boxUrl = (href: string) => `${APP_URL}${PANEL_PATH.test(href) ? href : "/panel"}`;
 
-/** Ek kutunun HTML'i: fiyat onayı kutusu gibi yuvarlak köşeli renkli kutu; uzun metin sarılır (telefonda taşmaz) */
-function boxHtml(b: DigestBox, key: keyof DigestExtras): string {
-  const t = BOX_TONE[key];
+/**
+ * Ek kutunun HTML'i: fiyat onayı kutusu gibi yumuşak renkli not kutusu (email-kit callout); kalın başlık, satırlar,
+ * altta bağlantı. Uzun metin sarılır (telefonda taşmaz)
+ */
+function boxHtml(b: DigestBox, key: keyof DigestExtras, top: number): string {
   const lines = b.lines.map((l) => {
-    const style = l.tone ? `;color:${LINE_TONE[l.tone]}${l.tone === "muted" ? ";font-size:13px;line-height:18px" : ""}` : "";
+    const style = l.tone ? `;${LINE_STYLE[l.tone]}` : "";
     const body = l.strong ? `<strong>${esc(l.strong)}</strong>${l.text ? `<br>${esc(l.text)}` : ""}` : esc(l.text);
-    return `<div style="margin-top:6px${style}">${body}</div>`;
+    return `<div style="margin-top:8px${style}">${body}</div>`;
   });
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:${t.bg};border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:${t.fg};word-break:break-word">
-  <div style="font-size:13px;line-height:18px;font-weight:600">${esc(b.title)}</div>
-  ${lines.join("\n  ")}
-  <div style="margin-top:8px"><a href="${esc(boxUrl(b.href))}" style="color:${t.fg};font-weight:600">${esc(b.link)} →</a></div>
-</td></tr></table>`;
+  return callout(BOX_TONE[key], [], { title: b.title, html: lines.join(""), linkHref: boxUrl(b.href), linkLabel: b.link, top });
 }
+
+// ---------------------------------------------------------------- Sabah e-postasının yerel parçaları
+
+const NUM = "font-variant-numeric:tabular-nums";
+/** Bölünmez boşluk (U+00A0; kaçış gerekmez): "faturalar · 3" telefonda bölünmesin, sayı tek başına alt satıra düşmesin */
+const NB = "\u00a0";
+
+/**
+ * Liste satırı (ödeme, fatura, zam, ürün): solda isteğe bağlı karo, ortada kalın ad ve altında gri ayrıntı (sarılır),
+ * sağda tutar (sarılmaz). email-kit'in rowHtml'i düz metin ve tek renkli alt satır aldığı için yerel; ölçü ve renk
+ * kitten. Argümanlar hazır (kaçışlı) HTML
+ */
+function listRow(o: { lead?: string | null; titleHtml: string; metaHtml?: string | null; valueHtml: string; first: boolean }): string {
+  const border = o.first ? "" : `border-top:1px solid ${C.hair};`;
+  return `<tr>${o.lead ? `\n  <td width="44" style="${border}width:44px;padding:14px 14px 14px 0;vertical-align:top">${o.lead}</td>` : ""}
+  <td style="${border}padding:14px 0;vertical-align:top;font-family:${FONT};word-break:break-word">
+    <div style="font-size:15px;line-height:22px;font-weight:600;color:${C.ink}">${o.titleHtml}</div>${o.metaHtml ? `\n    <div style="font-size:13px;line-height:19px;color:${C.mute};margin-top:2px">${o.metaHtml}</div>` : ""}
+  </td>
+  <td align="right" style="${border}padding:14px 0 14px 16px;vertical-align:top;white-space:nowrap;font-family:${FONT};font-size:15px;line-height:22px;font-weight:600;color:${C.ink};${NUM}">${o.valueHtml}</td>
+</tr>`;
+}
+const listTable = (list: string[]) => `<table ${TABLE} style="border-collapse:collapse">${list.join("\n")}</table>`;
+
+/** Ödeme satırının tarih karosu: üstte ay (aşamanın tonuyla), altta gün */
+function dateTile(dueDate: string, stage: NotifyStage): string {
+  const t = TONE[STAGE[stage].tone];
+  return `<table role="presentation" width="44" cellspacing="0" cellpadding="0" border="0" style="border-collapse:separate;width:44px;border-radius:12px;overflow:hidden;border:1px solid ${C.line}">
+      <tr><td align="center" style="background:${t.bg};color:${t.fg};font-family:${FONT};font-size:11px;line-height:17px;font-weight:700;letter-spacing:0.02em">${esc(monthShortTR(dueDate))}</td></tr>
+      <tr><td align="center" style="background:${C.card};color:${C.ink};font-family:${FONT};font-size:18px;line-height:27px;font-weight:700;${NUM}">${Number(dueDate.slice(8, 10))}</td></tr>
+    </table>`;
+}
+
+/** Satır içinde vurgulanan kısa öbek (vade, kontrol edin, yeni maliyet oranı): tonun mürekkebiyle kalın, bölünmez */
+const toneSpan = (tone: Tone, html: string) => `<span style="color:${TONE[tone].fg};font-weight:600;white-space:nowrap">${html}</span>`;
+/** Bölünmeyen kısa öbek ("şimdi 120 ₺") */
+const keep = (html: string) => `<span style="white-space:nowrap">${html}</span>`;
+
+/** Kart içi bağlantı satırı ("Önerilen fiyatlara bak →") */
+const linkLine = (href: string, label: string, top = 14) =>
+  `<p style="margin:${top}px 0 0;font-family:${FONT};font-size:14px;line-height:21px"><a href="${esc(href)}" style="color:${C.ink};font-weight:600;text-decoration:underline">${esc(label)} →</a></p>`;
+
+/** Düğmenin altındaki ortalı küçük not (email-kit'in para'sı sola yaslı) */
+const centerNote = (text: string) =>
+  `<p style="margin:16px 0 0;font-family:${FONT};font-size:13px;line-height:20px;color:${C.mute};text-align:center;word-break:break-word">${esc(text)}</p>`;
 
 /** Ek kutunun düz metni: boş satır, başlık, satırlar, bağlantı */
 const boxText = (b: DigestBox) => ["", b.title, ...b.lines.map((l) => `- ${l.strong ? `${l.strong}${l.text ? `: ${l.text}` : ""}` : l.text}`), `${b.link}: ${boxUrl(b.href)}`];
@@ -292,32 +335,8 @@ const DEFAULT_FOOTER = "Bu e-posta ladmin.laffogato.net bildirim adreslerine gö
  * `brandSub` hazır (kaçışlı) HTML; `footer` düz metin (kaçışı burada; verilmezse bildirim adresleri notu).
  */
 export function emailLayout(o: { subject: string; preheader: string; brandSub: string; today: string; card: string; footer?: string }): string {
-  return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(o.subject)}</title></head>
-<body style="margin:0;padding:0;background:#f4f4f5;-webkit-text-size-adjust:100%;font-family:${FONT}">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${esc(o.preheader)}</div>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4f4f5"><tr><td align="center" style="padding:20px 12px 28px">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px">
-  <tr><td style="padding:0 4px 14px">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
-      <td style="vertical-align:middle">
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr>
-          <td width="38" height="38" align="center" style="width:38px;height:38px;background:#171717;border-radius:11px;color:#c0f21e;font-family:${FONT};font-size:13px;font-weight:700;letter-spacing:-0.02em">L'Af</td>
-          <td style="padding-left:10px;font-family:${FONT}">
-            <div style="font-size:16px;line-height:20px;font-weight:600;color:#171717">L'Affogato</div>
-            <div style="font-size:12px;line-height:16px;color:#71717a">${o.brandSub}</div>
-          </td>
-        </tr></table>
-      </td>
-      <td align="right" style="vertical-align:middle;font-family:${FONT};font-size:13px;color:#71717a;white-space:nowrap">${esc(longDateTR(o.today))}</td>
-    </tr></table>
-  </td></tr>
-  <tr><td style="background:#ffffff;border-radius:24px;padding:24px 20px 22px">
-    ${o.card}
-  </td></tr>
-  <tr><td style="padding:16px 12px 0;font-family:${FONT};font-size:12px;line-height:17px;color:#a1a1aa;text-align:center">${esc(o.footer ?? DEFAULT_FOOTER)}</td></tr>
-</table>
-</td></tr></table>
-</body></html>`;
+  // Tasarım tek yerde: src/lib/email-kit.ts (ferah kart, telefonda tek sütun)
+  return emailShell({ subject: o.subject, preheader: o.preheader, brandSubHtml: o.brandSub, dateLabel: longDateTR(o.today), cardHtml: o.card, footer: o.footer ?? DEFAULT_FOOTER });
 }
 
 /** Şubeye bağlı alıcının e-postasında kapsam notu (renderDigest `branch`) */
@@ -326,9 +345,10 @@ export function branchDigestNote(branch: string): string {
 }
 
 /**
- * Günlük sabah e-postası: AkmanOS açık teması, satır içi stiller ve tablolarla (e-posta istemcileri flex ve
- * dış CSS tanımaz). Telefonda tek sütun: üstte L'Af başlığı, varsa sistem uyarıları, aşamalara göre ödemeler, sağa
- * hizalı tutarlar, Paraşüt'ten gelen yeni faturalar, en altta tam genişlikte "Panelde aç" düğmesi. Ödeme yoksa yalnız
+ * Günlük sabah e-postası, ortak e-posta tasarımıyla (src/lib/email-kit.ts: ferah kart, satır içi stiller ve tablolar,
+ * telefonda tek sütun). Üstte kitin başlığı (h1) ve aşamaların rozetleri, varsa sistem uyarıları, aşamalara göre
+ * ödemeler (tarih karosu, sağa hizalı tutar), Paraşüt'ten gelen yeni faturalar, renkli not kutuları (kırmızı sorun,
+ * turuncu uyarı; kelime yanında), en altta tam genişlikte düğme. Ödeme yoksa yalnız
  * öteki bölümler. Gövde sırası: sistem, ödemeler, faturalar, kontrol bekleyen, fiyat onayı, ek kutular (komisyon,
  * kontrol, onay bekleyenler), zam, tahmin kutusu, düğme.
  *
@@ -421,123 +441,99 @@ export function renderDigest(
                   : (boxLast ?? "Bugün yeni bir şey yok");
   const preheader = rows.length ? `${parts.join(", ")} · toplam ${money(total)}${extra ? ` · ${extra}` : ""}` : headline;
 
+  // Aşamaların rozetleri (kelime yanında: renk tek başına anlam taşımaz). Aralarında boşluk: inline-block'u ve span
+  // dolgusunu tanımayan Outlook'ta da "1 gecikmiş 1 bugün" ayrı okunur ("gecikmiş1" değil)
   const pills = STAGE_ORDER.filter((st) => counts[st])
-    .map((st) => {
-      const c = STAGE[st];
-      return `<span style="display:inline-block;margin:0 6px 6px 0;padding:4px 10px;border-radius:999px;font-size:12px;line-height:16px;font-weight:600;background:${c.bg};color:${c.fg}">${counts[st]} ${esc(st === "overdue" ? "gecikmiş" : st === "due" ? "bugün" : "yaklaşan")}</span>`;
-    })
-    .join("");
+    .map((st) => `<span style="display:inline-block;margin:0 2px 6px 0">${pill(`${counts[st]} ${STAGE[st].word}`, STAGE[st].tone)}</span>`)
+    .join(" ");
 
-  const row = ({ item, stage }: { item: UpcomingItem; stage: NotifyStage }) => {
-    const c = STAGE[stage];
-    const day = Number(item.dueDate.slice(8, 10));
-    const meta = [dateTR(item.dueDate), daysLeftLabel(item.daysLeft), item.detail].filter(Boolean).map((v) => esc(String(v))).join(" · ");
-    return `<tr>
-  <td width="44" style="width:44px;padding:12px 12px 12px 0;vertical-align:top">
-    <table role="presentation" width="44" cellspacing="0" cellpadding="0" border="0" style="border-collapse:separate;width:44px;border-radius:10px;overflow:hidden;border:1px solid #e4e4e7">
-      <tr><td align="center" style="background:${c.tile};color:${c.tileFg};font-size:10px;line-height:14px;font-weight:600;font-family:${FONT}">${esc(monthShortTR(item.dueDate))}</td></tr>
-      <tr><td align="center" style="background:#ffffff;color:#171717;font-size:18px;line-height:26px;font-weight:600;font-family:${FONT}">${day}</td></tr>
-    </table>
-  </td>
-  <td style="padding:12px 0;vertical-align:top;font-family:${FONT}">
-    <div style="font-size:15px;line-height:20px;font-weight:600;color:#171717">${esc(item.title)}</div>
-    <div style="font-size:13px;line-height:18px;color:#71717a;margin-top:2px">${meta}</div>
-  </td>
-  <td align="right" style="padding:12px 0 12px 12px;vertical-align:top;white-space:nowrap;font-family:${FONT};font-size:15px;line-height:20px;font-weight:600;color:#171717">${item.amount !== null ? esc(money(item.amount)) : '<span style="color:#a1a1aa">–</span>'}</td>
-</tr>`;
+  const row = ({ item, stage }: { item: UpcomingItem; stage: NotifyStage }, i: number) => {
+    const tone = STAGE[stage].tone;
+    const days = esc(daysLeftLabel(item.daysLeft));
+    const meta = [esc(dateTR(item.dueDate)), tone === "neutral" ? days : toneSpan(tone, days), item.detail ? esc(String(item.detail)) : null].filter(Boolean).join(" · ");
+    return listRow({
+      lead: dateTile(item.dueDate, stage),
+      titleHtml: esc(item.title),
+      metaHtml: meta,
+      valueHtml: item.amount !== null ? esc(money(item.amount)) : `<span style="color:${C.quiet}">–</span>`,
+      first: i === 0,
+    });
   };
 
   const sections = STAGE_ORDER.filter((st) => counts[st])
-    .map((st) => {
-      const c = STAGE[st];
+    .map((st, i) => {
       const group = rows.filter((r) => r.stage === st);
       const sum = group.reduce((a, r) => a + (r.item.amount ?? 0), 0);
-      return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:20px">
-  <tr>
-    <td style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT}">
-      <span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:${c.fg};margin-right:6px;vertical-align:middle"></span><span style="font-size:13px;font-weight:600;color:${c.fg};vertical-align:middle">${esc(c.title)} · ${group.length}</span>
-    </td>
-    <td align="right" style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT};font-size:13px;color:#71717a;white-space:nowrap">${esc(money(sum))}</td>
-  </tr>
-</table>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">${group.map(row).join("\n")}</table>`;
+      return `${sectionTitle(`${STAGE[st].title} · ${group.length}`, { aside: money(sum), dot: STAGE[st].tone, top: i === 0 ? 24 : 32 })}
+${listTable(group.map(row))}`;
     })
     .join("\n");
+  const totalHtml = rows.length ? `${divider(2)}${kitRows([{ label: "Toplam", value: money(total), strong: true }])}` : "";
 
   const invoiceTotal = inv ? inv.items.reduce((a, i) => a + i.payable, 0) : 0;
-  const invoiceRow = (i: DigestInvoices["items"][number]) => `<tr>
-  <td style="padding:10px 0;vertical-align:top;font-family:${FONT}">
-    <div style="font-size:15px;line-height:20px;font-weight:600;color:#171717">${esc(i.supplier)}</div>
-    <div style="font-size:13px;line-height:18px;color:#71717a;margin-top:2px">${esc(dateTR(i.date))} · ${esc(i.category)}${i.unpaid && i.dueDate ? ` · <span style="color:#c2410c;font-weight:600">vade ${esc(dateTR(i.dueDate))}</span>` : ""}${i.needsReview ? ' · <span style="color:#c2410c;font-weight:600">kontrol edin</span>' : ""}</div>
-  </td>
-  <td align="right" style="padding:10px 0 10px 12px;vertical-align:top;white-space:nowrap;font-family:${FONT};font-size:15px;line-height:20px;font-weight:600;color:#171717">${esc(money(i.payable))}</td>
-</tr>`;
-  const invoiceSection = inv
-    ? `${
-        inv.syncError
-          ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:${rows.length ? 22 : 8}px"><tr><td style="background:#fef2f2;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#b91c1c"><strong>Paraşüt eşitlemesi başarısız.</strong> ${esc(inv.syncError)}<br><a href="${APP_URL}/panel/parasut" style="color:#b91c1c;font-weight:600">Paraşüt sayfasını aç →</a></td></tr></table>`
-          : ""
-      }${
-        inv.items.length
-          ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:22px">
-  <tr>
-    <td style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT}"><span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:#2563eb;margin-right:6px;vertical-align:middle"></span><span style="font-size:13px;font-weight:600;color:#2563eb;vertical-align:middle">Paraşüt'ten gelen yeni faturalar · ${inv.items.length}</span></td>
-    <td align="right" style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT};font-size:13px;color:#71717a;white-space:nowrap">${esc(money(invoiceTotal))}</td>
-  </tr>
-</table>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">${inv.items.slice(0, MAX_INVOICE_ROWS).map(invoiceRow).join("\n")}</table>${
-              inv.items.length > MAX_INVOICE_ROWS
-                ? `<div style="font-family:${FONT};font-size:13px;color:#71717a;padding:4px 0 0">ve ${inv.items.length - MAX_INVOICE_ROWS} fatura daha</div>`
-                : ""
-            }`
-          : ""
-      }${
-        inv.reviewCount
-          ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fff7ed;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412">${reviewSentence(inv)} <a href="${APP_URL}/panel/faturalar?durum=kontrol" style="color:#9a3412;font-weight:600">Kontrol edin →</a></td></tr></table>`
-          : ""
-      }${
-        cashOuts
-          ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fff7ed;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412">${cashOutSentence(cashOuts)} <a href="${APP_URL}${CASH_OUT_INVOICES_HREF}" style="color:#9a3412;font-weight:600">Bakın →</a></td></tr></table>`
-          : ""
-      }${
+  const invoiceRow = (i: DigestInvoices["items"][number], n: number) =>
+    listRow({
+      titleHtml: esc(i.supplier),
+      metaHtml: `${esc(dateTR(i.date))} · ${esc(i.category)}${i.unpaid && i.dueDate ? ` · ${toneSpan("warn", `vade ${esc(dateTR(i.dueDate))}`)}` : ""}${i.needsReview ? ` · ${toneSpan("warn", "kontrol edin")}` : ""}`,
+      valueHtml: esc(money(i.payable)),
+      first: n === 0,
+    });
+  // Paraşüt bölümünün not kutuları: kontrol bekleyen, kasadan faturalı alım, fiyat onayı. Bağlantı cümlenin arkasında;
+  // ilki bölümden ayrık, ötekiler ona yakın durur
+  const invNotes: string[] = inv
+    ? [
+        inv.reviewCount ? `${reviewSentence(inv)} <a href="${APP_URL}/panel/faturalar?durum=kontrol" style="color:${TONE.warn.fg};font-weight:600;text-decoration:underline">Kontrol edin →</a>` : "",
+        cashOuts ? `${cashOutSentence(cashOuts)} <a href="${APP_URL}${CASH_OUT_INVOICES_HREF}" style="color:${TONE.warn.fg};font-weight:600;text-decoration:underline">Bakın →</a>` : "",
         holds
-          ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fff7ed;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412">${holds.count} hammadde fiyatı onay bekliyor (${esc(holdsSummary(holds.items))}). ${holdReasonSentence(holds.items)}. <a href="${HOLDS_LINK}" style="color:#9a3412;font-weight:600">Bakın →</a></td></tr></table>`
-          : ""
-      }`
+          ? `${holds.count} hammadde fiyatı onay bekliyor (${esc(holdsSummary(holds.items))}). ${holdReasonSentence(holds.items)}. <a href="${HOLDS_LINK}" style="color:${TONE.warn.fg};font-weight:600;text-decoration:underline">Bakın →</a>`
+          : "",
+      ].filter(Boolean)
+    : [];
+  const invoiceSection = inv
+    ? [
+        inv.syncError ? callout("bad", [inv.syncError], { title: "Paraşüt eşitlemesi başarısız.", linkHref: `${APP_URL}/panel/parasut`, linkLabel: "Paraşüt sayfasını aç", top: 22 }) : "",
+        inv.items.length
+          ? `${sectionTitle(`Paraşüt'ten gelen yeni faturalar${NB}·${NB}${inv.items.length}`, { aside: money(invoiceTotal), dot: "info", top: rows.length || sys || inv.syncError ? 32 : 24 })}
+${listTable(inv.items.slice(0, MAX_INVOICE_ROWS).map(invoiceRow))}${inv.items.length > MAX_INVOICE_ROWS ? `\n${para(`ve ${inv.items.length - MAX_INVOICE_ROWS} fatura daha`, { top: 2, muted: true, size: 13 })}` : ""}`
+          : "",
+        ...invNotes.map((html, i) => callout("warn", [], { html, top: i === 0 && (inv.items.length || !inv.syncError) ? 22 : 12 })),
+      ]
+        .filter(Boolean)
+        .join("\n")
     : "";
-  const priceRow = (p: DigestPrices["products"][number]) => `<tr>
-  <td style="padding:10px 0;vertical-align:top;font-family:${FONT}">
-    <div style="font-size:15px;line-height:20px;font-weight:600;color:#171717">${esc(p.name)} · ${esc(p.size)}</div>
-    <div style="font-size:13px;line-height:18px;color:#71717a;margin-top:2px">Maliyet oranı ${esc(pctText(p.ratioBefore))} → <span style="color:#c2410c;font-weight:600">${esc(pctText(p.ratioAfter))}</span> · şimdi ${esc(money(p.price))}</div>
-  </td>
-  <td align="right" style="padding:10px 0 10px 12px;vertical-align:top;white-space:nowrap;font-family:${FONT}"><div style="font-size:12px;line-height:16px;color:#71717a">${p.basis === "keep" ? "zammın payı" : "önerilen"}</div><div style="font-size:15px;line-height:20px;font-weight:600;color:#171717">${esc(money(p.suggestedPrice))}</div></td>
-</tr>`;
+
+  const priceRow = (p: DigestPrices["products"][number], n: number) =>
+    listRow({
+      titleHtml: `${esc(p.name)} · ${esc(p.size)}`,
+      metaHtml: `Maliyet oranı ${esc(pctText(p.ratioBefore))} → ${toneSpan("warn", esc(pctText(p.ratioAfter)))} · ${keep(`şimdi ${esc(money(p.price))}`)}`,
+      valueHtml: `<div style="font-size:12px;line-height:17px;font-weight:400;color:${C.mute}">${p.basis === "keep" ? "zammın payı" : "önerilen"}</div><div>${esc(money(p.suggestedPrice))}</div>`,
+      first: n === 0,
+    });
   const zamLoss = zam ? lossSentence(zam) : "";
+  // Zam satırı: ad ve fiyatın eski → yeni hâli solda (sarılır), artış rozeti ve aylık tutar sağda alt alta (telefonda
+  // aynı satırda kaydırmasız uzun hücre e-postayı taşırırdı); tutar yoksa yalnız rozet
+  const zamRow = (c: DigestPrices["changes"][number], n: number) => {
+    const monthly = monthlyText(c.monthly);
+    return listRow({
+      titleHtml: esc(c.name),
+      metaHtml: `${esc(perUnit(c.before, c.unit))} → <strong style="color:${C.ink};font-weight:600">${esc(perUnit(c.after, c.unit))}</strong>`,
+      valueHtml: `${pill(`+${pctText(c.pct)}`, "warn")}${monthly ? `<div style="font-size:12px;line-height:18px;font-weight:600;color:${TONE.warn.fg};margin-top:6px">${esc(monthly)}</div>` : ""}`,
+      first: n === 0,
+    });
+  };
   const priceSection = zam
-    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:22px">
-  <tr><td style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT}"><span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:#c2410c;margin-right:6px;vertical-align:middle"></span><span style="font-size:13px;font-weight:600;color:#c2410c;vertical-align:middle">Hammadde zamları · ${zam.changes.length}</span></td></tr>
-</table>${zamLoss ? `\n<div style="font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412;padding:10px 0 2px;font-weight:600">${esc(zamLoss)}</div>` : ""}
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">${zam.changes
-        .slice(0, MAX_PRICE_ROWS)
-        .map((c) => {
-          // Aylık tutar fiyatların altında kendi satırında: aynı satırda kaydırmasız (nowrap) hücre e-postayı telefon
-          // genişliğinden taşırırdı. İki satırlı hücrede ad üste hizalanır; tutar yoksa satır eskisinin aynısı
-          const monthly = monthlyText(c.monthly);
-          const top = monthly ? "vertical-align:top;" : "";
-          return `<tr><td style="padding:8px 0;${top}font-family:${FONT};font-size:14px;line-height:19px;color:#171717">${esc(c.name)}</td><td align="right" style="padding:8px 0 8px 12px;${top}font-family:${FONT};font-size:13px;line-height:19px;color:#71717a;white-space:nowrap">${esc(perUnit(c.before, c.unit))} → <strong style="color:#171717">${esc(perUnit(c.after, c.unit))}</strong> <span style="color:#c2410c;font-weight:600">+${esc(pctText(c.pct))}</span>${monthly ? `<div style="font-size:12px;line-height:16px;color:#c2410c">${esc(monthly)}</div>` : ""}</td></tr>`;
-        })
-        .join("\n")}</table>${
+    ? `${sectionTitle(`Hammadde zamları · ${zam.changes.length}`, { dot: "warn" })}${zamLoss ? `\n${callout("warn", [zamLoss], { top: 14 })}` : ""}
+${listTable(zam.changes.slice(0, MAX_PRICE_ROWS).map(zamRow))}${
         zam.products.length
-          ? `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#3f3f46;padding:14px 0 0;font-weight:600">Fiyatına bakılacak ürünler · ${zam.productCount}</div>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">${zam.products.slice(0, MAX_PRICE_ROWS).map(priceRow).join("\n")}</table>${
-              zam.productCount > MAX_PRICE_ROWS ? `<div style="font-family:${FONT};font-size:13px;color:#71717a;padding:4px 0 0">ve ${zam.productCount - MAX_PRICE_ROWS} ürün daha</div>` : ""
-            }`
-          : `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#71717a;padding:10px 0 0">Etkilenen ürünlerin maliyet oranı hâlâ hedefte.</div>`
-      }<div style="font-family:${FONT};font-size:14px;padding:10px 0 0"><a href="${APP_URL}/panel/urunler#zamlar" style="color:#c2410c;font-weight:600">Önerilen fiyatlara bak →</a></div>`
+          ? `\n${sectionTitle(`Fiyatına bakılacak ürünler · ${zam.productCount}`, { top: 22 })}
+${listTable(zam.products.slice(0, MAX_PRICE_ROWS).map(priceRow))}${zam.productCount > MAX_PRICE_ROWS ? `\n${para(`ve ${zam.productCount - MAX_PRICE_ROWS} ürün daha`, { top: 2, muted: true, size: 13 })}` : ""}`
+          : `\n${para("Etkilenen ürünlerin maliyet oranı hâlâ hedefte.", { top: 8, muted: true, size: 14 })}`
+      }
+${linkLine(`${APP_URL}/panel/urunler#zamlar`, "Önerilen fiyatlara bak")}`
     : "";
   // Düğme kutunun bağlantısına: fiyat onayından sonra, zamdan önce (komisyon, sonra kontrol, sonra onay bekleyenler)
   const actionBox = com ?? kon ?? apv;
-  const button = rows.length
+  const action = rows.length
     ? { href: link, label: "Panelde aç" }
     : inv && (inv.items.length || inv.reviewCount || inv.syncError || cashOuts)
       ? { href: `${APP_URL}/panel/faturalar${inv?.reviewCount || cashOuts ? "?durum=kontrol" : "?kaynak=parasut"}`, label: "Faturaları aç" }
@@ -548,8 +544,12 @@ export function renderDigest(
           : zam || !sys
             ? { href: `${APP_URL}/panel/urunler#zamlar`, label: "Ürünleri aç" }
             : { href: JOBS_LINK, label: "Günlük işleri aç" };
-  const boxes = [com ? boxHtml(com, "commission") : "", kon ? boxHtml(kon, "kontrol") : "", apv ? boxHtml(apv, "approvals") : ""].join("");
-  const forecastBox = fc ? boxHtml(fc, "forecast") : "";
+  // Ek kutular Paraşüt bölümünden ayrık, birbirine yakın
+  const boxes = [com ? ["commission", com] : null, kon ? ["kontrol", kon] : null, apv ? ["approvals", apv] : null]
+    .filter((b): b is [keyof DigestExtras, DigestBox] => b !== null)
+    .map(([key, b], i) => boxHtml(b, key, i === 0 ? 22 : 12))
+    .join("\n");
+  const forecastBox = fc ? boxHtml(fc, "forecast", 22) : "";
   // Kapanış notu gövdenin asıl bölümüne göre; yalnız ek kutu varsa not yok (kutular kendi bağlantısını taşır)
   const note = rows.length
     ? "Ödediklerinizi panelde “Ödedim” ile işaretleyin; tekrar edenler sıradaki tarihe geçer."
@@ -559,11 +559,13 @@ export function renderDigest(
         ? "İş yeniden düzgün çalışınca uyarı kendiliğinden kalkar."
         : "";
   const systemSection = sys
-    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:8px"><tr><td style="background:#fef2f2;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#b91c1c">
-  <div style="font-size:13px;line-height:18px;font-weight:600">Sistem uyarıları · ${sys.items.length}</div>
-  ${sys.items.map((i) => `<div style="margin-top:8px"><strong>${esc(i.title)}</strong><br>${esc(i.body)}</div>`).join("\n  ")}
-  <div style="margin-top:8px"><a href="${JOBS_LINK}" style="color:#b91c1c;font-weight:600">Günlük işleri aç →</a></div>
-</td></tr></table>`
+    ? callout("bad", [], {
+        title: `Sistem uyarıları · ${sys.items.length}`,
+        html: sys.items.map((i) => `<div style="margin-top:10px"><strong>${esc(i.title)}</strong><br>${esc(i.body)}</div>`).join(""),
+        linkHref: JOBS_LINK,
+        linkLabel: "Günlük işleri aç",
+        top: rows.length ? 18 : 22,
+      })
     : "";
 
   const html = emailLayout({
@@ -571,29 +573,22 @@ export function renderDigest(
     preheader,
     brandSub: rows.length ? "Ödemeler &amp; hatırlatıcılar" : "Sabah özeti",
     today,
-    card: `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#71717a">${rows.length ? "Günlük ödeme hatırlatması" : "Günlük sabah özeti"}${branch ? ` · ${esc(branch)}` : ""}</div>
-    <h1 style="margin:4px 0 10px;font-family:${FONT};font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.02em;color:#171717">${esc(headline)}</h1>${branch ? `<p style="margin:0 0 10px;font-family:${FONT};font-size:13px;line-height:18px;color:#71717a">${esc(branchDigestNote(branch))}</p>` : ""}
-    <div>${pills}</div>
-    ${systemSection}
-    ${sections}
-    ${
-      rows.length
-        ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:4px">
-      <tr>
-        <td style="padding:14px 0 0;border-top:1px solid #e4e4e7;font-family:${FONT};font-size:14px;color:#3f3f46">Toplam</td>
-        <td align="right" style="padding:14px 0 0;border-top:1px solid #e4e4e7;font-family:${FONT};font-size:18px;font-weight:600;color:#171717;white-space:nowrap">${esc(money(total))}</td>
-      </tr>
-    </table>`
-        : ""
-    }
-    ${invoiceSection}${boxes}
-    ${priceSection}${forecastBox}
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px">
-      <tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717">
-        <a href="${esc(button.href)}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">${esc(button.label)}</a>
-      </td></tr>
-    </table>
-    ${note ? `<p style="margin:12px 0 0;font-family:${FONT};font-size:13px;line-height:19px;color:#71717a;text-align:center">${note}</p>` : ""}`,
+    card: [
+      heading(headline, { eyebrow: `${rows.length ? "Günlük ödeme hatırlatması" : "Günlük sabah özeti"}${branch ? ` · ${branch}` : ""}` }),
+      branch ? para(branchDigestNote(branch), { top: 10, muted: true, size: 14 }) : "",
+      pills ? `<div style="margin-top:16px">${pills}</div>` : "",
+      systemSection,
+      sections,
+      totalHtml,
+      invoiceSection,
+      boxes,
+      priceSection,
+      forecastBox,
+      button(action.href, action.label, { top: 32 }),
+      note ? centerNote(note) : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
   });
 
   const text = [
@@ -638,7 +633,7 @@ export function renderDigest(
       : []),
     ...(fc ? boxText(fc) : []),
     "",
-    `${button.label}: ${button.href}`,
+    `${action.label}: ${action.href}`,
   ].join("\n");
 
   return { subject, html, text };
@@ -667,28 +662,24 @@ export function renderSystemAlert(items: DigestSystem["items"], today: string, a
   const first = items[0]?.title ?? "Sistem uyarısı";
   const subject = `L'Affogato · ${first}${items.length > 1 ? ` (+${items.length - 1})` : ""}`;
   const headline = items.length > 1 ? `${items.length} sistem uyarısı` : first;
-  const list = items
-    .map(
-      (i) => `<tr><td style="padding:10px 0;border-top:1px solid #e4e4e7;font-family:${FONT}">
-  ${items.length > 1 ? `<div style="font-size:15px;line-height:20px;font-weight:600;color:#171717">${esc(i.title)}</div>` : ""}
-  <div style="font-size:14px;line-height:20px;color:#3f3f46;margin-top:2px">${esc(i.body)}</div>
+  // Tek uyarıda başlık zaten h1: yalnız açıklaması; birden çoksa her biri başlığı ve açıklamasıyla ayrı satır
+  const list =
+    items.length > 1
+      ? `<table ${TABLE} style="border-collapse:collapse;margin-top:18px">${items
+          .map(
+            (i, n) => `<tr><td style="${n ? `border-top:1px solid ${C.hair};` : ""}padding:14px 0;font-family:${FONT};word-break:break-word">
+  <div style="font-size:15px;line-height:22px;font-weight:600;color:${C.ink}">${esc(i.title)}</div>
+  <div style="font-size:14px;line-height:21px;color:${C.soft};margin-top:2px">${esc(i.body)}</div>
 </td></tr>`,
-    )
-    .join("\n");
+          )
+          .join("\n")}</table>`
+      : items.map((i) => para(i.body, { top: 12 })).join("");
   const html = emailLayout({
     subject,
     preheader: items.map((i) => i.title).join(" · "),
     brandSub: "Sistem uyarısı",
     today,
-    card: `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#b91c1c;font-weight:600">${esc(about.label)}</div>
-    <h1 style="margin:4px 0 10px;font-family:${FONT};font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.02em;color:#171717">${esc(headline)}</h1>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">${list}</table>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fef2f2;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#b91c1c">${esc(about.help)}</td></tr></table>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px">
-      <tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717">
-        <a href="${about.link.href}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">${esc(about.link.label)}</a>
-      </td></tr>
-    </table>`,
+    card: [heading(headline, { eyebrow: about.label }), list, callout("bad", [about.help], { top: 20 }), button(about.link.href, about.link.label)].join("\n"),
   });
   const text = [
     `L'Affogato · ${dateTR(today)}`,

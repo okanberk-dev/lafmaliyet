@@ -289,6 +289,27 @@ export function buildRows(monday: string, roster: readonly { id: number; name: s
   return [...rows.values()].sort(byName);
 }
 
+/**
+ * Listede duranlar (sahibin isteği, 23 Kasım 2026: "boş bıraktıklarım da hiç listede yazmasın"): bir şey yazılmış
+ * kişiler (gün verilirse yalnız o günü yazılmış olanlar), bu oturumda eklenen satır (`added`) ve elle açılanlar
+ * (`opened`: `ref` bütün hafta için, `ref|gün` yalnız o gün için). Kalanlar `hidden`'da: yöneticinin ekranı onları
+ * listenin altında "Ekle" düğmeleriyle gösterir, personelin ekranı hiç göstermez. Sıra korunur.
+ */
+export function listedRows<R extends { ref: string; texts: readonly string[]; added?: boolean }>(
+  rows: readonly R[],
+  opened: ReadonlySet<string> = new Set(),
+  day?: number,
+): { listed: R[]; hidden: R[] } {
+  const listed: R[] = [];
+  const hidden: R[] = [];
+  for (const r of rows) {
+    const written = day === undefined ? r.texts.some((t) => t.trim()) : Boolean(r.texts[day]?.trim());
+    const open = Boolean(r.added) || opened.has(r.ref) || (day === undefined ? r.texts.some((_, i) => opened.has(`${r.ref}|${i}`)) : opened.has(`${r.ref}|${day}`));
+    (written || open ? listed : hidden).push(r);
+  }
+  return { listed, hidden };
+}
+
 /** Kişinin haftalık toplamı (dakika) */
 export const rowMinutes = (row: Pick<ShiftRow, "cells">) => row.cells.reduce((sum, c) => sum + shiftMinutes(c), 0);
 /** Gün gün çalışan sayısı (izinli sayılmaz) */

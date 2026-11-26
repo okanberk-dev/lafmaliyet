@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { htmlText } from "./helpers/html-metin";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -57,6 +58,8 @@ test("e-posta: konu aşamaları sayar, gruplar gecikmiş → bugün → yaklaşa
   assert.ok(order.every((i) => i > 0));
   assert.deepEqual([...order].sort((a, b) => a - b), order);
   assert.match(html, /<h1[^>]*>3 ödeme sizi bekliyor<\/h1>/);
+  // Rozetler etiketsiz okununca da ayrı (inline-block'u tanımayan Outlook'ta "gecikmiş1 bugün" olmaz)
+  assert.ok(htmlText(html).includes("1 gecikmiş 1 bugün 1 yaklaşan"));
   assert.ok(html.includes("20 Ekim Salı"));
   assert.ok(text.startsWith("L'Affogato · 20.10.2026\nÖdeme hatırlatması"));
 });
@@ -259,6 +262,13 @@ test("e-posta: yalnız yeni onaya düşen fiyat e-postayı gönderir; özet sat�
 // ---------------------------------------------------------------- Ortak kabuk ve ek kutular (W2.0, CRITIQUE2 R8 / R11)
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
+/** Düzenli ifadeye giden düz metin */
+const reEsc = (v: string) => v.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+/**
+ * Ön metin (gelen kutusunda konunun yanındaki satır): kabuğun gizli ilk satırı. Kit metnin arkasına görünmez doldurma
+ * ekler (önizlemeye gövde sızmasın); metin doldurmadan hemen önce bitmeli, doldurma çıkarılıp metnin kendisi döner
+ */
+const preheaderOf = (html: string) => /<div style="display:none;[^"]*">([^<]*?)(?:&#847;&zwnj;&nbsp;)+<\/div>/.exec(html)?.[1];
 
 test("e-posta kabuğu: alt not verilmezse bildirim adresleri notu, verilirse o (kaçışlı); esc ve FONT dışa açık", () => {
   const shell = { subject: "Haftalık özet: 3 konu", preheader: "19–25 Ekim · 3 konu", brandSub: "Haftalık özet", today: "2026-10-26", card: "<p>kart</p>" };
@@ -276,6 +286,17 @@ test("e-posta kabuğu: alt not verilmezse bildirim adresleri notu, verilirse o (
   assert.ok(renderSystemAlert(system.items, "2026-10-22").html.includes("bildirim adreslerine gönderildi."));
   assert.equal(esc(`<a href="x">'&'</a>`), "&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;");
   assert.match(FONT, /^-apple-system,.*Geist/);
+});
+
+test("sabah ve bekçi e-postası ortak tasarımda (email-kit): şablonda sabit renk yok, başlık kitin h1'i, telefonda taşmayan tek sütun", () => {
+  const src = read("src/server/notify/digest-template.ts");
+  assert.match(src, /from "@\/lib\/email-kit"/);
+  assert.doesNotMatch(src, /#[0-9a-fA-F]{6}\b/, "renk yalnız kitten (C, TONE)");
+  for (const html of [renderDigest(rows, "2026-10-22", invoices, prices, system).html, renderSystemAlert(system.items, "2026-10-22").html]) {
+    assert.match(html, /<h1 class="em-h1"[^>]*>/);
+    // Kabuğun telefon ayarı ve 600 px'lik kart
+    assert.ok(html.includes("@media only screen and (max-width:620px)") && html.includes("max-width:600px"));
+  }
 });
 
 const com: DigestBox = {
@@ -332,17 +353,26 @@ test("ek kutular: verilmezse ya da boşsa e-posta kutusuz hâliyle birebir aynı
   }
 });
 
-test("kutusuz sabah e-postası W2.0 öncesiyle birebir aynı: konu, HTML ve düz metnin özeti 0671969'daki şablonunkiyle aynı", () => {
+test("kutusuz sabah e-postasının içeriği korunur: konu ve düz metnin özeti W2.0 öncesiyle aynı; HTML'in özeti yalnız tasarım bilerek değişince yenilenir", () => {
   // Şablon bilerek değişirse bu değerler yenilenir; APP_URL ortamdan bağımsız olsun diye yer tutucuya çevrilir. 29 Eki
-  // 2026: yalnız alt not değişti ("Ödemeler & hatırlatıcılar" → "Ödemeler", docs/planlar/ux-sade.md §3.10); eski notla
-  // dört özet eskisiyle aynıydı. 30 Eki 2026: kapanış notu düğmenin yeni adıyla ("“Ödedim” ile işaretleyin", K18); eski
-  // notla dört özet eskisiyle aynıydı, değişen yalnız hatırlatma satırlı ilki
-  const sha = (r: { subject: string; html: string; text: string }) =>
-    createHash("sha256").update([r.subject, r.html, r.text].join("\u0000").replaceAll(APP_URL, "{APP_URL}")).digest("hex").slice(0, 16);
-  assert.equal(sha(renderDigest(rows, "2026-10-22", { ...invoices, priceHolds: holds(1).priceHolds }, prices, system)), "cec006d1f11c6ba4");
-  assert.equal(sha(renderDigest([], "2026-10-22", holds(1))), "4bc12f6bec7c8664");
-  assert.equal(sha(renderDigest([], "2026-10-22", { items: [], reviewCount: 0, syncError: "401" }, prices)), "265d05fbed6eb763");
-  assert.equal(sha(renderDigest([], "2026-10-22")), "a1dab6e01442bef7");
+  // 2026: yalnız alt not değişti ("Ödemeler & hatırlatıcılar" → "Ödemeler", docs/planlar/ux-sade.md §3.10). 30 Eki 2026:
+  // kapanış notu düğmenin yeni adıyla ("“Ödedim” ile işaretleyin", K18). 25 Kas 2026: e-postalar ortak tasarıma geçti
+  // (src/lib/email-kit.ts: ferah kart, telefonda tek sütun); yalnız HTML'in görünümü değişti. Konu ve düz metin (içerik
+  // özeti) birebir aynı kaldı; HTML'deki görünen metin, bağlantılar ve ön metin de aynı (bu dosyanın öteki testleri).
+  // 26 Kas 2026: rozetlerin arasında boşluk (Outlook) ve fatura başlığında bölünmez boşluk; yalnız ilkinin HTML özeti değişti
+  const hash = (parts: string[]) => createHash("sha256").update(parts.join("\u0000").replaceAll(APP_URL, "{APP_URL}")).digest("hex").slice(0, 16);
+  const content = (r: { subject: string; text: string }) => hash([r.subject, r.text]);
+  const sha = (r: { subject: string; html: string; text: string }) => hash([r.subject, r.html, r.text]);
+  const cases = [
+    { r: renderDigest(rows, "2026-10-22", { ...invoices, priceHolds: holds(1).priceHolds }, prices, system), content: "0d90646efcacffef", sha: "69ff0b4d1c42cb43" },
+    { r: renderDigest([], "2026-10-22", holds(1)), content: "dcc37a632772f9ef", sha: "0eb06d21550ac2d4" },
+    { r: renderDigest([], "2026-10-22", { items: [], reviewCount: 0, syncError: "401" }, prices), content: "04a29ea7f09a312f", sha: "c7ae94a6d1aae21b" },
+    { r: renderDigest([], "2026-10-22"), content: "faafe460fd049918", sha: "3e6128da0fd4f07b" },
+  ];
+  for (const c of cases) {
+    assert.equal(content(c.r), c.content, `içerik değişti: ${c.r.subject}`);
+    assert.equal(sha(c.r), c.sha, `HTML değişti: ${c.r.subject}`);
+  }
 });
 
 test("ek kutular: gövde sırası sistem, ödemeler, faturalar, kontrol bekleyen, fiyat onayı, komisyon, kontrol, zam, karaoke, düğme", () => {
@@ -350,7 +380,8 @@ test("ek kutular: gövde sırası sistem, ödemeler, faturalar, kontrol bekleyen
   const marks = [
     "Sistem uyarıları · 2",
     "Gecikenler · 1",
-    "Paraşüt'ten gelen yeni faturalar · 2",
+    // "faturalar · 2" bölünmez boşlukla (telefonda sayı tek başına alt satıra düşmez)
+    `Paraşüt&#39;ten gelen yeni faturalar${NBSP}·${NBSP}2`,
     "faturanın kategorisi tahminle yazıldı",
     "hammadde fiyatı onay bekliyor (",
     ">Komisyon ve hakediş</div>",
@@ -385,7 +416,7 @@ test("ek kutu bağlantısı yalnız panel yolu: fotoğraf, Blob ya da dış adre
     "/panel/kontrol gecmis",
   ]) {
     const { html, text } = renderDigest([], "2026-10-22", null, null, null, { kontrol: { ...kon, href: bad } });
-    assert.ok(html.includes(`<a href="${APP_URL}/panel" style="color:#9a3412;font-weight:600">Kontrol geçmişi →</a>`), bad);
+    assert.match(html, new RegExp(`<a href="${reEsc(APP_URL)}/panel" style="[^"]*">Kontrol geçmişi →</a>`), bad);
     assert.ok(html.includes(`<a href="${APP_URL}/panel" style="display:block;`), bad);
     assert.ok(!html.includes("/api/foto") && !html.includes("blob.vercel-storage") && !html.includes("evil.example") && !html.includes("javascript:"), bad);
     assert.ok(text.endsWith(`Kontrol geçmişi: ${APP_URL}/panel`), bad);
@@ -447,10 +478,10 @@ test("başlık ve düğme: kutu fiyat onayından sonra, zamdan önce; yalnız ku
   assert.equal(h1({ kontrol: kon }, invoices), "Paraşüt&#39;ten 2 yeni fatura geldi");
 
   const comOnly = renderDigest([], "2026-10-22", null, null, null, { commission: com });
-  assert.ok(comOnly.html.includes(`<a href="${APP_URL}/panel/komisyonlar" style="display:block;padding:15px 20px;`));
+  assert.ok(comOnly.html.includes(`<a href="${APP_URL}/panel/komisyonlar" style="display:block;`));
   assert.ok(comOnly.html.includes(">Komisyon &amp; hakediş&#39;te aç</a>"));
   assert.ok(comOnly.text.endsWith(`Komisyon & hakediş'te aç: ${APP_URL}/panel/komisyonlar`));
-  assert.ok(!comOnly.html.includes('<p style="margin:12px 0 0;'));
+  for (const n of ["Ödediklerinizi panelde", "Faturalar her sabah Paraşüt", "İş yeniden düzgün çalışınca"]) assert.ok(!comOnly.html.includes(n), n);
   // Kontrol, zamdan önce düğmeye geçer; fiyat onayı ve fatura kutudan önce
   assert.ok(renderDigest([], "2026-10-22", null, prices, null, { kontrol: kon }).html.includes(">Kontrol geçmişi</a>"));
   assert.ok(renderDigest([], "2026-10-22", holds(1), null, null, { kontrol: kon }).html.includes(">Hammaddeleri aç</a>"));
@@ -461,9 +492,9 @@ test("başlık ve düğme: kutu fiyat onayından sonra, zamdan önce; yalnız ku
   assert.ok(withSys.html.includes(">Komisyon &amp; hakediş&#39;te aç</a>"));
   assert.ok(withSys.html.includes("İş yeniden düzgün çalışınca uyarı kendiliğinden kalkar."));
   // Fatura ya da zam varsa not eskisi gibi
-  assert.ok(renderDigest([], "2026-10-22", null, prices, null, { kontrol: kon }).html.includes(">Faturalar her sabah Paraşüt'ten kendiliğinden gelir; kategorisi tahmin edilenleri panelde onaylayın.</p>"));
+  assert.ok(renderDigest([], "2026-10-22", null, prices, null, { kontrol: kon }).html.includes(">Faturalar her sabah Paraşüt&#39;ten kendiliğinden gelir; kategorisi tahmin edilenleri panelde onaylayın.</p>"));
   // Ön metin: ödemeyle konunun ek parçaları, ödemesizken başlık
-  assert.ok(renderDigest(one, "2026-10-22", null, null, null, { commission: com }).html.includes(`>1 bugün · toplam 25.000${NBSP}₺ · Hakediş gecikti: Pluxee (Ekim)</div>`));
+  assert.equal(preheaderOf(renderDigest(one, "2026-10-22", null, null, null, { commission: com }).html), `1 bugün · toplam 25.000${NBSP}₺ · Hakediş gecikti: Pluxee (Ekim)`);
 });
 
 test("başlığı ya da konu parçası olmayan kutu tek içerikse e-posta 'yeni bir şey yok' demez: kutunun parçası, yoksa adı", async () => {
@@ -472,7 +503,7 @@ test("başlığı ya da konu parçası olmayan kutu tek içerikse e-posta 'yeni 
     return {
       subject: r.subject,
       h1: /<h1[^>]*>([^<]*)<\/h1>/.exec(r.html)?.[1],
-      pre: /<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">([^<]*)<\/div>/.exec(r.html)?.[1],
+      pre: preheaderOf(r.html),
     };
   };
   const comNoHead = { ...com, headline: null };
