@@ -280,7 +280,8 @@ Diğer ekranlara dokunuşlar:
   işaretli geçici vergi mahsup edilir. Damga: beyanname + bilanço + gelir tablosu (2026: 2.516,30).
 - **Asgari kurumlar vergisi muafiyeti (K10):** yalnız Muhasebeci › Vergi ayarları'nda şirket "ilk defa faaliyete
   başladı" seçilince; varsayılan uygulanmaz (vergi yüksek görünür).
-- **KDV (K5):** yeni KDV hesabı yok; takvim nakit planının KDV ve KDV-2 tahminini okur. Yurt dışı hizmet profilli
+- **KDV (K5):** yeni KDV hesabı yok; takvim nakit planının KDV ve KDV-2 tahminini okur (kasa KDV'si gün gün yazarkasa
+  Z'sinden, LafPOS'un dökümünden ya da oranla: [NAKIT-PLANI.md](NAKIT-PLANI.md) › Kasa KDV'sinin kaynağı). Yurt dışı hizmet profilli
   sabit giderin KDV-2'si ayrı satırdır; aynı ay nakit planının KDV tahmininde indirilecek KDV'ye eklenir (VG-04).
 - **Yerel vergiler (K23):** ÇTV ve ilan-reklam hesaplanmaz; hatırlatıcı yoksa takvimde tutarsız satır ("tutar
   belediyeden").

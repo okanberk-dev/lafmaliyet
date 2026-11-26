@@ -91,6 +91,15 @@ Sunucuda seçim, oturum gibi istek kapsamlı okunur (`src/server/branch-scope.ts
 `cache` ile istek başına bir kez): okuma işlevlerinin imzasına şube parametresi eklenmez. **İstek dışında** (göç
 betiği, arka plan işi, test) `cookies()` fırlar ve "Tümü"ye düşülür — betik bütün şubeleri görür.
 
+### Telefonda üst çubuk
+
+Sahibin isteği (Dalga 2, 25 Kasım 2026): "Telefonda üst çubukta hangi şubenin görüldüğü yazsın." Seçici telefonda
+çekmecenin içinde kaldığı için hangi şubenin rakamlarına bakıldığı ekranda görünmüyordu. Artık telefon ve tablette
+üst çubukta sayfa başlığının altında seçili kapsamın adı durur (dükkân simgesiyle): "Tümü", "Tuzla", "Marina". Şubeye
+dokununca seçicinin durduğu çekmece açılır. Şubesi kilitli personelde yalnız şubenin adı yazar (dokunulmaz). Tek şube
+açıkken satır yoktur (seçici de çizilmez). Kural `topBarBranchLabel` (src/lib/branches.ts), çizim
+`src/components/panel/sidebar.tsx`; test `tests/ust-cubuk-sube.test.ts`. Masaüstünde seçici zaten kenar çubuğunda görünür.
+
 ### Neyi süzer, neyi süzmez
 
 Süzülen (dalga 3 ile hepsi): kasa raporu, gün özeti, ModPOS föyü, LafPOS gün sonu, ay satırı, satış satırı, personel,
@@ -319,6 +328,7 @@ yazma `src/server/branch-settings.ts`.
 | `modpos` ModPOS ay yedeği | ay rakamına yedek ([MODPOS-API.md](MODPOS-API.md) › Ay rakamına yedek); anahtar şube başına ortamda kalır | evet | Tuzla (`settings` › `modposAyYedegi`) |
 | `isletme.takvim` Çalışma takvimi | ayda açık gün (başabaş, günlük giderler); kasa raporunun beklendiği saat (zil ve Bugün; 12:00–23:00, varsayılan 20:00) | evet | Tuzla (`settings` › `acikGun`; saat bugün sabitti) |
 | `kasa.cihaz` Banka POS ve yazarkasa | cihaz (Pavo, TokenX, başka), yazarkasa sicil no, bankası | hayır: cihaz şubenin kendisinin | yok (boşken her şey bugünkü gibi) |
+| `kasa.kor` Kör sayım | açık / kapalı ([KASA-RAPORU.md](KASA-RAPORU.md#kör-sayım)): personel önce sayılan nakdi kilitler, fark sonra görünür | hayır: ayar şubenin kendisinin | yok; seçilmemişken varsayılan: kasası ModPOS olan şubede açık, LafPOS'un şubesinde kapalı |
 
 - **"Diğer şubeyle aynı"**: açıkken şube kendi değerini tutmaz (satırda `same_as`), bağlandığı şubenin değerini kullanır;
   değer tek yerden düzenlenir. Kapatılınca o anki değer şubeye kopyalanır, sonra ayrı düzenlenir. Gizli alanlar

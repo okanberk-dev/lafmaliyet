@@ -5,10 +5,12 @@ import { eq } from "drizzle-orm";
 import { TILL_DEVICE_GROUP, tillDeviceLabel } from "@/lib/branch-settings/groups";
 import { namedTill } from "@/lib/branches";
 import { cashEmailKey, cashLogKey } from "@/lib/cash-report";
+import { countAttention } from "@/lib/kor-sayim";
 import { allDroppedSentence, type DroppedRecipient } from "@/lib/notify-recipients";
 import type { TillOnlineRow } from "@/lib/site-sales/calc";
 import { resolveBranchSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
+import { cashCountsOn } from "@/server/cash/blind-count";
 import { cashReportExtras } from "@/server/data/cash-photos";
 import { cashReportIntegrity, loadCashSettings, toCashDTO } from "@/server/data/cash-reports";
 import { dayWaste } from "@/server/data/waste";
@@ -68,7 +70,15 @@ export async function emailReport(
     // Yeniden gönderimde de değişenler aynı: son kopya yeniden okunur (anahtar cash-{rapor}-r{sürüm} değişmez). Birden çok
     // kasa açıkken raporun şubesi konuda, başlıkta ve "Panelde aç"ta (iki şubenin aynı günkü e-postası ayırt edilir)
     // Şubenin banka POS'u ve yazarkasa sicil no'su (şube ayarı kasa.cihaz): yazarkasa bölümünün başlığında
-    const [extras, integrity, branches, device] = await Promise.all([cashReportExtras(dto), cashReportIntegrity(dto), listBranches(), resolveBranchSetting(TILL_DEVICE_GROUP, row.branchId)]);
+    // Kör sayımın sayım geçmişi (docs/KASA-RAPORU.md › Kör sayım): kilitli sayım sonradan değiştiyse ya da raporla
+    // tutmuyorsa Kasa (nakit) bölümünde uyarı. Sayım yoksa (ayar kapalı, LafPOS günü, yöneticinin girdiği rapor) satır yok
+    const [extras, integrity, branches, device, counts] = await Promise.all([
+      cashReportExtras(dto),
+      cashReportIntegrity(dto),
+      listBranches(),
+      resolveBranchSetting(TILL_DEVICE_GROUP, row.branchId),
+      cashCountsOn(getDb(), row.date, row.branchId),
+    ]);
     const { device: kind, registerNo } = device.value;
     // Yazarkasa dışı tahsilat (sunucu sütunu) yalnız bu yönetici metnine: K4 onu da sayar, "tutmuyor" yanlış alarmı olmaz
     const msg = renderCashReport({ ...dto, okcOutside: row.okcOutside }, {
@@ -86,6 +96,7 @@ export async function emailReport(
       device: (kind && kind !== "diger") || registerNo ? { label: kind && kind !== "diger" ? tillDeviceLabel(kind) : null, registerNo } : null,
       ...extras,
       ...integrity,
+      blindCount: countAttention(counts, row.countedCash),
     });
     const notify = await loadNotifySettings();
     const res = await sendEmail({ from: resolveFrom(notify.from), to: recipients, ...msg, idempotencyKey: o.idempotencyKey ?? cashEmailKey(row) });

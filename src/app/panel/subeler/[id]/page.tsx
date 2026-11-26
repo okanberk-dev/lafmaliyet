@@ -10,9 +10,10 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { BRANCH_FEATURES, type BranchFeature, branchFeatures, featureBranches, hasFeature } from "@/lib/branch-features";
-import { CALENDAR_GROUP, COMMISSION_GROUP, LAFPOS_GROUP, MODPOS_GROUP, SHARED_FOR_NOW, TILL_DEVICE_GROUP } from "@/lib/branch-settings/groups";
+import { BLIND_COUNT_GROUP, CALENDAR_GROUP, COMMISSION_GROUP, LAFPOS_GROUP, MODPOS_GROUP, SHARED_FOR_NOW, TILL_DEVICE_GROUP } from "@/lib/branch-settings/groups";
 import { BRANCH_ID_PATTERN, tillBranches } from "@/lib/branches";
 import { effectiveSettings } from "@/lib/commission/report";
+import { blindCountSettingOn } from "@/lib/kor-sayim";
 import { modposKeyProblem } from "@/lib/modpos/request";
 import { modposBranchIds, modposKeyEnv } from "@/lib/modpos/sube";
 import { requireAdmin } from "@/server/auth/dal";
@@ -25,6 +26,7 @@ import { parasutLinkCardData } from "@/server/parasut/link-card";
 
 import { CashSettingsCard } from "../../kasa/cash-settings";
 import { ChannelSettingsCard } from "../../komisyonlar/channel-settings";
+import { BlindCountCard } from "./blind-count-card";
 import { CalendarCard } from "./calendar-card";
 import { BranchFeaturesCard } from "./features-card";
 import { ParasutLinkCard } from "./parasut-card";
@@ -85,7 +87,7 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
   // ModPOS'tan çekilen şubede ModPOS kartı. Sunucu (saveLafposSecret) ve Ayarlar › LafPOS da aynı şubeye bakar
   const lafposHere = branch.id === (await lafposBranchId());
   const modposHere = modposBranchIds(branches).includes(branch.id);
-  const [cash, parasut, commission, calendar, device, modpos, lafpos, secret] = await Promise.all([
+  const [cash, parasut, commission, calendar, device, modpos, lafpos, secret, blindCount, lafposBranch] = await Promise.all([
     cashSettingsCardData(branch.id),
     parasutLinkCardData(branch.id),
     branchSettingView(COMMISSION_GROUP, branch.id),
@@ -95,6 +97,8 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
     // Öbür şubede yalnız eski anahtarın durumu (kasa kaynağı başka şubeye geçtiyse silinebilsin)
     branchSettingView(LAFPOS_GROUP, branch.id),
     lafposHere ? lafposSecretState() : Promise.resolve(null),
+    branchSettingView(BLIND_COUNT_GROUP, branch.id),
+    lafposBranchId(),
   ]);
   // Tek şubelik özelliğin (karaoke) öbür şubedeki sahibi: kartta anahtar kapalı, "Marina şubesinde açık"
   const heldBy: Partial<Record<BranchFeature, string>> = {};
@@ -142,6 +146,13 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
           />
         ) : null}
         <TillDeviceCard view={device} lafpos={lafposHere} />
+        <BlindCountCard
+          branchId={branch.id}
+          branchName={branch.name}
+          on={blindCountSettingOn(blindCount.value.enabled, branch.id, lafposBranch)}
+          isDefault={blindCount.value.enabled === null}
+          lafpos={lafposHere}
+        />
         {/* Yemek kartı ve platformlar bu şubede kullanılıyorsa (şube özelliği yemek_karti) ya da başka şube bu şubenin
             sürelerini kullanıyorsa (oradaki "X şubesinde düzenle" buraya gelir) */}
         {hasFeature(branch, "yemek_karti") || commission.link?.sharedWith.length ? (

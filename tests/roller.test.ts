@@ -74,7 +74,11 @@ test("personel yalnız kendi ekranlarını açar; yol parçası sınırında eş
 });
 
 test("personel yolunun altındaki yönetici ekranları (Karaoke › Doluluk, Kontrol › Listeler) personele kapalı", () => {
-  assert.deepEqual([...ADMIN_ONLY_PATHS], ["/panel/karaoke/doluluk", "/panel/kontrol/duzenle"]);
+  assert.deepEqual([...ADMIN_ONLY_PATHS], ["/panel/karaoke/doluluk", "/panel/kontrol/duzenle", "/panel/kasa/teslim"]);
+  // Teslim defteri (Dalga 2): Kasa raporu personele açık, defteri yalnız yöneticinin
+  assert.equal(canOpen("staff", "/panel/kasa/teslim"), false);
+  assert.ok(canOpen("staff", "/panel/kasa"));
+  assert.match(read("src/app/panel/kasa/teslim/page.tsx"), /await requireAdmin\(\)/);
   assert.equal(canOpen("staff", "/panel/karaoke/doluluk"), false);
   assert.equal(canOpen("staff", "/panel/karaoke/doluluk/x"), false);
   assert.equal(canOpen("staff", "/panel/karaoke"), true);
