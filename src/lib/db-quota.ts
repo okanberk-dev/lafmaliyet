@@ -28,13 +28,16 @@ export function quotaPct(bytes: number, mb: number): number {
   return mb > 0 ? (Math.max(0, bytes) / (mb * MB)) * 100 : 0;
 }
 
+/** O anki kullanımın vardığı eşik (Ayarlar › Veritabanı'ndaki uyarı); bildirilmiş seviye quotaTransition'da */
+export const quotaReached = (pct: number): QuotaLevel => (pct >= 90 ? 90 : pct >= 70 ? 70 : 0);
+
 /**
  * Yeni seviye ve bildirilecek eşik. Yukarı geçişte yalnız varılan en yüksek eşik bildirilir (%65'ten %93'e sıçrayan
  * tek "%90" uyarısı alır). Aşağı inişte seviye, eşiğin QUOTA_REARM_POINTS altına inilince düşer; sonra yeniden
  * geçilirse yeniden bildirilir.
  */
 export function quotaTransition(prev: QuotaLevel, pct: number): { level: QuotaLevel; notify: 70 | 90 | null } {
-  const reached: QuotaLevel = pct >= 90 ? 90 : pct >= 70 ? 70 : 0;
+  const reached = quotaReached(pct);
   if (reached > prev) return { level: reached, notify: reached as 70 | 90 };
   // Tutulan seviye: eşiğin biraz altına inmek seviyeyi düşürmez
   const held: QuotaLevel = prev === 90 && pct >= 90 - QUOTA_REARM_POINTS ? 90 : prev >= 70 && pct >= 70 - QUOTA_REARM_POINTS ? 70 : 0;
@@ -87,14 +90,15 @@ export function quotaTone(pct: number): "ok" | "warn" | "bad" {
   return pct >= 90 ? "bad" : pct >= 70 ? "warn" : "ok";
 }
 
-const ADVICE = "Neon'da ücretli plana geçin ya da geliştiriciden eski kayıtların temizlenmesini isteyin.";
+/** Ne yapılacağı (zil, e-posta ve Ayarlar › Veritabanı'ndaki uyarı) */
+export const QUOTA_ADVICE = "Neon'da ücretli plana geçin ya da geliştiriciden eski kayıtların temizlenmesini isteyin.";
 
 /** Bildirimin başlığı ve gövdesi (zil ve e-posta aynı sözü kullanır) */
 export function quotaMessage(level: 70 | 90, bytes: number, mb: number): { title: string; body: string } {
   const usage = `${quotaUsageText(bytes, mb)} (${quotaPctText(quotaPct(bytes, mb))})`;
   return level === 90
-    ? { title: "Veritabanı kotasının %90'ı doldu", body: `${usage}. Kota dolarsa panel kayıt yazamaz: satış, fatura ve kasa raporu girilemez. ${ADVICE}` }
-    : { title: "Veritabanı kotasının %70'i doldu", body: `${usage}. Henüz bir şey bozulmadı; %90'da yeniden uyarılır. ${ADVICE}` };
+    ? { title: "Veritabanı kotasının %90'ı doldu", body: `${usage}. Kota dolarsa panel kayıt yazamaz: satış, fatura ve kasa raporu girilemez. ${QUOTA_ADVICE}` }
+    : { title: "Veritabanı kotasının %70'i doldu", body: `${usage}. Henüz bir şey bozulmadı; %90'da yeniden uyarılır. ${QUOTA_ADVICE}` };
 }
 
 /** Zildeki uyarı (src/lib/job-health.ts › systemAlerts ekler); seviye 0'sa null. %90 Genel bakış şeridinde de görünür */
