@@ -115,3 +115,14 @@ test("LafPOS kasası kur: şube listeden seçilir ya da aynı pencerede yeni şu
   assert.match(card, /createAction\(\{[^}]*email: t\.email\.trim\(\)/);
 });
 
+test("var olan kasalara giden bağlantılar: Uzaktan ve site (lafmaliyet hariç), sürüm değerlerin özeti", async () => {
+  const { dagitilanBaglantilar } = await import("../src/lib/lafpos/baglanti-dagitim");
+  assert.deepEqual(dagitilanBaglantilar({}), { surum: "", baglanti: {} });
+  const env = { LAFPOS_CLOUD_URL: "https://lafpos.laffogato.net", LAFPOS_CLOUD_SECRET: "c".repeat(40), LAFPOS_SITE_URL: "https://laffogato.net", LAFPOS_SITE_SECRET: "s".repeat(40) };
+  const a = dagitilanBaglantilar(env);
+  assert.deepEqual(Object.keys(a.baglanti), ["LAFFOGATO_SYNC_SECRET", "LAFFOGATO_URL", "LAFPOS_CLOUD_SECRET", "LAFPOS_CLOUD_URL"]);
+  assert.equal(a.surum.length, 16);
+  assert.notEqual(dagitilanBaglantilar({ ...env, LAFPOS_CLOUD_SECRET: "d".repeat(40) }).surum, a.surum);
+  assert.ok(read("src/app/api/panel/pos/baglanti/route.ts").includes("checkLafposRequest"));
+});
+

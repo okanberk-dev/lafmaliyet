@@ -1294,6 +1294,13 @@ Kurallar `src/lib/lafpos/kurulum.ts` ve `kurulum-mail.ts` (saf, `tests/lafpos-ku
 `src/server/lafpos/kurulum.ts`, uçlar `src/app/api/lafpos/kurulum/route.ts` ve `src/app/lafpos/indir/[kod]/route.ts`, göç
 `0095_lafpos_kurulum.sql`.
 
+**Anahtar değişimi:** kurulu kasalar Uzaktan ve site bağlantısını da buradan alır: `GET /api/panel/pos/baglanti`
+(LafPOS imzasıyla; `src/app/api/panel/pos/baglanti/route.ts`, değerler `dagitilanBaglantilar`,
+`src/lib/lafpos/baglanti-dagitim.ts`) panelin ortamındaki `LAFPOS_CLOUD_*` ve `LAFPOS_SITE_*`'ı ve kısa özetini
+(`surum`) verir. Kasa değişeni bekletir, gün kapanınca yazar ve sonraki sorgularda `uygulanan=<sürüm>` der; uç bunu
+günlüğe yazar (`[lafpos baglanti] sube=… uygulanan=… guncel=…`). Anahtar değişiminde sıra: önce panelin ortamına yeni
+değer, kasalar gece alır (günlükte `uygulanan` = `guncel`), sonra LafPOS Uzaktan'daki ve sitedeki anahtar değişir.
+
 **Sınır (bilerek ertelendi):** LafPOS bugün yalnız bir şubenin kasası (`lafposSourceError`, aşağıda "Şubeler"). Marina
 LafPOS'tayken yeni şube "Kasa kaynağı: LafPOS" ile eklenemez; ModPOS seçilip eklenir, kasa kurulur ve çalışır (satış,
 uzaktan yönetim), ama gün sonu bu panele `wrong_branch` (409) ile girmez, kasada bekler. Birden çok LafPOS şubesi için
