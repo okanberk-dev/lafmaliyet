@@ -12,7 +12,7 @@ import { Notice } from "@/components/ui/notice";
 import { twoFactorRequiredFor } from "@/lib/admin-security";
 import { ROLES } from "@/lib/constants";
 import { KURULUM_DURUM_ETIKET } from "@/lib/lafpos/kurulum";
-import { listInstalls } from "@/server/lafpos/kurulum";
+import { installForAccount } from "@/server/lafpos/kurulum";
 import { requireUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { loadMyConnections } from "@/server/mcp/connections";
@@ -57,8 +57,10 @@ async function Account() {
         })
       : null,
   ]);
-  // Şube hesabının LafPOS kurulumu (docs/LAFPOS.md › Şube kurulumu): şubesinin son bağlantısı
-  const install = user.role === "staff" && user.branchId ? ((await listInstalls(getDb(), user.branchId).catch(() => []))[0] ?? null) : null;
+  // LafPOS kurulumu (docs/LAFPOS.md › Şube kurulumu): şubenin son bağlantısı yalnız şubenin kendi hesabına (bağlantının
+  // gittiği adres, şubeye kilitli personel). Şubenin öbür personeli, müdür, muhasebeci ve yönetici görmez: bağlantıdaki
+  // kod kasanın eşitleme anahtarını verir (installForAccount)
+  const install = await installForAccount(getDb(), user).catch(() => null);
   // Parola, iki adımlı ve oturumları kapatma Claude bağlantısını da kapatır: pencereler bunu söyler (YO-08)
   const claude = Boolean(connections?.rows.length);
   return (

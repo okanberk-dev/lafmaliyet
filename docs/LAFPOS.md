@@ -1279,6 +1279,10 @@ Sahibin isteği: yeni şube panelden eklenince kasası da kendiliğinden kurulsu
    açılış günü), e-posta yazılır; bağlantı gider. Kartta her açık fiziksel şubenin kurulum durumu ve "Bağlantı gönder" /
    "Yeniden kur" düğmesi durur (`src/app/panel/subeler/lafpos-install.tsx`).
 3. Şube hesabı girince **Hesabım › LafPOS kurulumu** kartında bağlantı ve durum (Kurulum bekliyor / Kasa kuruldu).
+   Kartı **yalnız şubenin kendi hesabı** görür: bağlantının gittiği adresteki, o şubeye kilitli personel hesabı
+   (`isBranchAccount`, `installForAccount`). Şubenin öbür personeli (ortak tablette sırayla giren baristalar), müdürü,
+   muhasebeci ve yöneticiler görmez; ham kod sayfaya da gitmez: bağlantıdaki kod tek kullanımlıktır ve kasanın
+   eşitleme anahtarını verir. Bağlantı yeni bir adrese gönderilince kart eski hesaptan kalkar.
 4. Bağlantı (`GET /lafpos/indir/<kod>`, oturumsuz) kanaldaki genel kurucuyu (`https://lafpos.laffogato.net/guncelleme/LafPOS-Kur.cmd`,
    `LAFPOS_KURUCU_URL`) indirir, içindeki iki boş satıra (`$KurulumAdresi = ''`, `$KurulumKodu = ''`) panelin adresini ve
    kodu yazar, `LafPOS-Kur-<şube>.cmd` olarak verir (`kurucuWithCode`). Kod indirmede harcanmaz.
@@ -1292,7 +1296,7 @@ Sahibin isteği: yeni şube panelden eklenince kasası da kendiliğinden kurulsu
    Kasa tarafı: lafpos `server/sync/kurulum-kodu.ts`, `docs/03-ENTEGRASYON.md` "Şube kurulumu".
 
 Kurallar `src/lib/lafpos/kurulum.ts` ve `kurulum-mail.ts` (saf, `tests/lafpos-kurulum.test.ts`), sunucu
-`src/server/lafpos/kurulum.ts`, uçlar `src/app/api/lafpos/kurulum/route.ts` ve `src/app/lafpos/indir/[kod]/route.ts`, göç
+`src/server/lafpos/kurulum.ts` (gerçek Postgres'te `tests/lafpos-kurulum-db.test.ts`), uçlar `src/app/api/lafpos/kurulum/route.ts` ve `src/app/lafpos/indir/[kod]/route.ts`, göç
 `0095_lafpos_kurulum.sql`.
 
 **Anahtar değişimi:** kurulu kasalar Uzaktan ve site bağlantısını da buradan alır: `GET /api/panel/pos/baglanti`

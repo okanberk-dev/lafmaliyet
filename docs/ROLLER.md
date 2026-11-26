@@ -144,7 +144,10 @@ oturumları kapanır (oturum sürümü).
 - **Şube kurulumu e-postası** müdür ya da muhasebeci hesabının adresi olamaz (yöneticininki ve öteki şubenin
   personelininki de; `src/lib/branches.ts` › `branchEmailTaken`, `createBranch` ve `sendBranchInstall`): kurulum
   bağlantısı o adrese gider ve kasanın eşitleme anahtarını verir. Yalnız şubesiz ya da aynı şubedeki personel hesabı
-  şubenin panel hesabı sayılır ([LAFPOS.md](LAFPOS.md) › Şube kurulumu).
+  şubenin panel hesabı sayılır ([LAFPOS.md](LAFPOS.md) › Şube kurulumu). **Hesabım › LafPOS kurulumu** kartını ve
+  içindeki indirme bağlantısını da yalnız o hesap görür (bağlantının gittiği adres, şubeye kilitli personel;
+  `src/lib/lafpos/kurulum.ts` › `isBranchAccount`, `src/server/lafpos/kurulum.ts` › `installForAccount`): şubenin öbür
+  personeli, müdürü, muhasebeci ve yönetici görmez.
 - **Saha kitleleri:** vardiya planının kişileri, kontrol listesi ve karaoke uyarılarının personel alıcıları müdür ve
   personel (`SHIFT_ROLES`); muhasebeci sahada değil.
 - **Panel asistanı** yalnız yöneticinin (müdür ve muhasebeci "staff" düzeyinde reddedilir).
