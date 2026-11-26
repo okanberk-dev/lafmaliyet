@@ -17,6 +17,7 @@ import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { formTillBranch, staffBranchRefusal, withBranchScope } from "@/server/branch-scope";
 import { logSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
+import { lockCashCountCore } from "@/server/cash/blind-count";
 import { emailReport, type CashEmailOutcome } from "@/server/cash/report-email";
 import { clearOkcCumulativeCore, isLafposTillDay, removeCashReport, reportSchema, saveCashReport } from "@/server/cash/report-store";
 import { cashReportExtras } from "@/server/data/cash-photos";
@@ -33,7 +34,7 @@ import { sendPhotoEmail } from "@/server/lafpos/gun-sonu";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 
 import { logActivity } from "./log";
-import { attempt, UserError, zDate } from "./util";
+import { attempt, UserError, zAmount, zDate } from "./util";
 
 // Gün sonu kasa raporu: personel (ve yönetici) her akşam girer; kayıt iş günü başına bir tane, yeniden gönderilince
 // güncellenir. Gönderilince kasa raporu alıcılarına e-posta gider; WhatsApp metni ekranda hazırlanır (docs/KASA-RAPORU.md).
@@ -102,6 +103,32 @@ export async function submitCashReport(input: z.input<typeof submitSchema>) {
         integrity.next && nextReport && prevCarry !== null && !carryCheck(nextReport.date, nextReport.openingCash, { date: data.date, amount: prevCarry }),
       ),
     };
+  });
+}
+
+const countSchema = z.object({
+  date: zDate,
+  amount: zAmount,
+  /** Değişikliğin nedeni (ilk kör sayımda gerekmez; kural sunucuda) */
+  reason: z.string().max(300).nullish(),
+  /** Formun kasası (docs/SUBE.md › Yazarken hangi şube) */
+  branchId: z.string().max(BRANCH_ID_MAX).nullish(),
+});
+
+/**
+ * Kör sayım (docs/KASA-RAPORU.md › Kör sayım): çekmecede sayılan nakdi kilitler ya da nedeniyle değiştirir. Formun
+ * kasasına yazar; olması gereken ve kasa farkı form tarafında ancak bundan sonra görünür. Yanıt yalnız kilidin kendisi
+ * (sayılan, an, kim): fark ve olması gereken dönmez
+ */
+export async function lockCashCount(input: z.input<typeof countSchema>) {
+  return attempt(async () => {
+    const me = await requireUser();
+    const { branchId, ...data } = countSchema.parse(input);
+    const till = await formTillBranch(branchId);
+    // İşlem geçmişi sayımla aynı işlemde (lockCashCountCore)
+    const lock = await lockCashCountCore(getDb(), me, { ...data, branchId: till });
+    refresh();
+    return lock;
   });
 }
 

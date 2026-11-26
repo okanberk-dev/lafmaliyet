@@ -30,6 +30,7 @@ import { lafposDiffText, type LafposDiff } from "@/lib/lafpos/diffs";
 import { BLIND_TEXT } from "@/lib/lafpos/kor-kasa";
 import { okcHasFigures, okcReconcile } from "@/lib/okc-z";
 import { dayMonthTR } from "@/lib/reminders";
+import { handedOverLine } from "@/lib/teslim";
 import { cn } from "@/lib/utils";
 import { clearOkcCumulative } from "@/server/actions/cash-report";
 
@@ -125,7 +126,8 @@ export function CashBreakdown({
   offDevice = null,
   blind = false,
 }: {
-  report: CashReportFields;
+  /** Rapor; kayıtlıysa teslimin "Kime"siyle (Teslim defteri) */
+  report: CashReportFields & { handedToName?: string | null };
   cashOuts?: (CashOutLine & { id: number; photoId: number | null })[];
   carry?: CarryCheck | null;
   next?: CarryCheck | null;
@@ -208,7 +210,7 @@ export function CashBreakdown({
             <Line label="= Olması gereken" value={money(c.expectedCash)} strong />
             <Line label="Sayılan" value={money(report.countedCash)} strong />
             <Line label="Fark" value={diffText(c.cashDiff)} strong tone={c.kind === "short" ? "bad" : c.kind === "over" ? "warn" : "good"} />
-            {report.handedOver ? <Line label="Teslim edilen" value={money(report.handedOver)} /> : null}
+            {report.handedOver ? <Line label="Teslim edilen" value={handedOverLine(report.handedOver, report.handedToName ?? null)} /> : null}
             <Line
               label="Ertesi güne devir"
               value={money(c.carryOver)}

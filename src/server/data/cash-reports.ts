@@ -118,6 +118,9 @@ export interface CashReportDTO extends CashReportFields {
   cashDiff: number;
   submittedBy: number | null;
   submittedByName: string;
+  /** Sayımdan sonra teslim edileni alan ("Kime"; Teslim defteri) ve yönetici hesabıysa kimliği; eski raporlarda boş */
+  handedToName: string | null;
+  handedToUserId: number | null;
   /** Kasayı sayan; eski raporlarda boş (gönderen saymış sayılır) */
   countedBy: number | null;
   countedByName: string | null;
@@ -153,6 +156,8 @@ export function toCashDTO(r: Row, audience: CashAudience = "staff"): CashReportD
     cashOutNote: r.cashOutNote,
     countedCash: r.countedCash,
     handedOver: r.handedOver,
+    handedToName: r.handedTo,
+    handedToUserId: r.handedToUserId,
     bankPos: r.bankPos,
     offRevenue: r.offRevenue,
     discounts: r.discounts,
@@ -601,6 +606,16 @@ export async function cashCounters(branchId?: string): Promise<{ id: number; nam
     .select({ id: u.id, name: u.name })
     .from(u)
     .where(and(eq(u.active, true), branchId && recent ? or(eq(u.role, "admin"), isNull(u.branchId), eq(u.branchId, branchId), inArray(u.id, recent)) : undefined))
+    .orderBy(asc(u.name));
+}
+
+/** "Kime" seçicisinin yönetici kullanıcıları (Teslim defteri; sayımdan sonra teslim): etkin yöneticiler, ada göre */
+export async function handoverAdmins(): Promise<{ id: number; name: string }[]> {
+  const u = s.users;
+  return getDb()
+    .select({ id: u.id, name: u.name })
+    .from(u)
+    .where(and(eq(u.active, true), eq(u.role, "admin")))
     .orderBy(asc(u.name));
 }
 

@@ -38,6 +38,7 @@ import { okcHasFigures, okcReconcile, type OkcReconcileLine } from "@/lib/okc-z"
 import { photoDiffText } from "@/lib/photo-read/kasa";
 import { longDateTR } from "@/lib/reminders";
 import type { TillOnlineRow } from "@/lib/site-sales/calc";
+import { handedOverLine } from "@/lib/teslim";
 
 import { APP_URL } from "./digest-template";
 
@@ -208,7 +209,7 @@ export function renderCashReport(
     row("= Olması gereken", money(c.expectedCash), { strong: true }),
     row("Sayılan", money(f.countedCash), { strong: true }),
     row("Fark", c.kind === "even" ? "Tutuyor" : `${money(Math.abs(c.cashDiff))} ${tone.label}`, { strong: true, color: tone.fg }),
-    ...(f.handedOver ? [row("Teslim edilen", money(f.handedOver))] : []),
+    ...(f.handedOver ? [row("Teslim edilen", handedOverLine(f.handedOver, f.handedToName ?? null))] : []),
     row("Ertesi güne devir", money(c.carryOver)),
   ].join("\n");
   const cardRows =

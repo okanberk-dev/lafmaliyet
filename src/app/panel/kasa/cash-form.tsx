@@ -36,6 +36,7 @@ import {
 import { money } from "@/lib/format";
 import { lafposDiffs } from "@/lib/lafpos/diffs";
 import { staffAutoNote, staffPhotoDiffs } from "@/lib/lafpos/foto";
+import { BLIND_COUNT_TEXT, countNeedsReason, countReasonError, type BlindCountLock } from "@/lib/kor-sayim";
 import { BLIND_TEXT } from "@/lib/lafpos/kor-kasa";
 import { LAFPOS_NO_COUNT_TEXT, lafposOutsCheck, lafposSummary, unreceiptedCashOut, type LafposDay } from "@/lib/lafpos/prefill";
 import { OKC_PREFILL_ENABLED } from "@/lib/okc-z";
@@ -59,8 +60,9 @@ import {
 import { MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT, readingOffText, type ReadingState } from "@/lib/photo-rules";
 import { dayMonthTR, daysBetween, longDateTR } from "@/lib/reminders";
 import { emailFailedLine } from "@/lib/staff-errors";
+import { HANDED_TO_MAX, handedToChoiceOf, handedToInputOf, handedToMissing, HANDOVER_TEXT, type HandedToChoice } from "@/lib/teslim";
 import { cn } from "@/lib/utils";
-import { resendCashReportEmail, submitCashReport } from "@/server/actions/cash-report";
+import { lockCashCount, resendCashReportEmail, submitCashReport } from "@/server/actions/cash-report";
 import { requestCashCorrection, requestLateCashReport } from "@/server/actions/cash-requests";
 import type { CashEmailOutcome } from "@/server/cash/report-email";
 import type { CashOutView } from "@/server/data/cash-outs";
@@ -466,6 +468,8 @@ export function CashForm({
   lafposPhotoLabel,
   dayPhotoCard = false,
   branchId = null,
+  blindCount = null,
+  handoverAdmins = [],
 }: {
   date: string;
   report: CashReportDTO | null;
@@ -540,6 +544,14 @@ export function CashForm({
    * ikinci bir yazarkasa fotoğraf seçicisi çizilmez (aynı fiş iki kartta istenmesin)
    */
   dayPhotoCard?: boolean;
+  /**
+   * Kör sayım (Tuzla; src/lib/kor-sayim.ts, docs/KASA-RAPORU.md › Kör sayım): personelde ve bu günde geçerliyse verilir;
+   * `lock` geçerli sayım (yoksa null). Sayım kilitlenmeden olması gereken ve kasa farkı çizilmez, rapor gönderilmez;
+   * kilitli sayım salt okunur, "Sayımı değiştir" nedeniyle yeni sayım yazar (yöneticiye görünür). Yöneticide verilmez
+   */
+  blindCount?: { lock: BlindCountLock | null } | null;
+  /** "Kime" seçicisinin yönetici kullanıcıları (Teslim defteri; sayımdan sonra teslim) */
+  handoverAdmins?: { id: number; name: string }[];
 }) {
   // Öğe kimlikleri form başına: Onaylar'da iki "Düzeltip onayla" formu aynı anda açıkken etiket, odak ve kaydırma
   // öteki karta gitmesin
@@ -548,7 +560,11 @@ export function CashForm({
   const [editing, setEditing] = useState(report === null);
   // LafPOS gününde yeni formun ilk hâli LafPOS'un gün sonuyla; yazılmış değerlerle açılan form yalnız karşılaştırır
   // (withLafpos). Kayıtlı rapor görünümde açılır, Düzenle'de karşılaştırılır
-  const [opening] = useState(() => withLafpos(initialValues(report ?? initial, carry, cashOuts), report === null ? lafpos : null, initial === null ? "fill" : "compare"));
+  const [opening] = useState(() => {
+    const o = withLafpos(initialValues(report ?? initial, carry, cashOuts), report === null ? lafpos : null, initial === null ? "fill" : "compare");
+    // Kör sayım: kilitlenmiş sayım yeni raporun sayılanıdır (sayfa yenilense de)
+    return blindCount?.lock && !report && !initial ? { ...o, values: { ...o.values, countedCash: input(blindCount.lock.amount) } } : o;
+  });
   const [values, setValues] = useState<Values>(opening.values);
   const initialCounter = report?.countedBy ?? report?.submittedBy ?? me?.id ?? null;
   const [counter, setCounter] = useState<number | null>(initialCounter);
@@ -589,6 +605,15 @@ export function CashForm({
   const [lateReason, setLateReason] = useState(late?.reason ?? "");
   const [handedTo, setHandedTo] = useState<string>(late?.handedTo ? (late.handedTo.kind === "banka" ? "banka" : `user:${late.handedTo.id}`) : "");
   const [handedError, setHandedError] = useState<string | null>(null);
+  // Kör sayım: geçerli kilit (kilitleyince ve değiştirince güncellenir) ve "Sayımı değiştir"in alanları
+  const [countLock, setCountLock] = useState<BlindCountLock | null>(blindCount?.lock ?? null);
+  const [recount, setRecount] = useState<{ amount: string; reason: string; error: string | null } | null>(null);
+  const [countPending, startCount] = useActionTransition();
+  // Sayımdan sonra teslimin "Kime"si (Teslim defteri): yönetici, banka ya da elle yazılan ad
+  const savedHanded = handedToChoiceOf({ name: report?.handedToName ?? null, userId: report?.handedToUserId ?? null });
+  const [handChoice, setHandChoice] = useState<HandedToChoice>(savedHanded.choice);
+  const [handName, setHandName] = useState(savedHanded.name);
+  const [handError, setHandError] = useState<string | null>(null);
   const ownCorrection = requests?.own.find((r): r is OwnCorrection => r.kind === "kasa-duzeltme") ?? null;
   const ownDelete = requests?.own.find((r): r is OwnDelete => r.kind === "kasa-silme") ?? null;
   // Yükleme bölüm başına: yazarkasa Z'si okunurken ModPOS Z'si çekilebilir (docs/planlar/okc-z.md §3.3)
@@ -596,6 +621,17 @@ export function CashForm({
   const okcUp = usePhotoUpload();
   const live = preview(values);
   const reading = photoUi.reading === "on";
+  // Kör sayım yalnız günün raporunda (geç rapor, düzeltme önerisi ve "Düzeltip onayla" yöneticinin onayından geçer)
+  const blindOn = blindCount !== null && mode === "report" && !lateTurn && !proposal;
+  // Sayım kilitlenmeden olması gereken ve fark çizilmez (kayıtlı raporun farkı zaten görüldü: yalnız yeni raporda)
+  const awaitingLock = blindOn && countLock === null && report === null;
+  // Kilitli ya da kayıtlı sayılan salt okunur: değişiklik "Sayımı değiştir"le, nedeniyle
+  const countReadOnly = blindOn && !awaitingLock;
+  // Farkın gösterildiği hesap (kör sayımda kilitlenene kadar yok)
+  const diffLive = awaitingLock ? null : live;
+  // Sayımdan sonra teslim varken "Kime" (Teslim defteri); geç rapor kendi "Teslim alan"ını sorar, öneri ve "Düzeltip
+  // onayla" Kime taşımaz (kayıtlı değer kalır)
+  const kimeShown = !isLate && !review && !proposal && (parseNumberTR(values.handedOver) ?? 0) > 0;
 
   // Okuma yükleme bitince gelir: o arada yazılanlara ve işaretlere göre (en son hâlleri) uygulanır
   const valuesRef = useRef(values);
@@ -729,6 +765,10 @@ export function CashForm({
     setProposal(null);
     setReason("");
     setReasonError(null);
+    setRecount(null);
+    setHandChoice(savedHanded.choice);
+    setHandName(savedHanded.name);
+    setHandError(null);
     setEditing(true);
   }
 
@@ -867,11 +907,48 @@ export function CashForm({
     setPosPrompt(null);
   }
 
+  /** Kör sayım: çekmecede sayılanı kilitler (ilk sayım nedensiz). Olması gereken ve fark bundan sonra görünür */
+  function lockCount() {
+    const raw = values.countedCash.trim();
+    const amount = raw ? parseNumberTR(raw) : null;
+    if (amount === null || amount < 0) {
+      setErrors((x) => ({ ...x, countedCash: raw ? "Geçerli bir tutar yazın (ör. 1.250,50)" : "Çekmecede sayılan nakdi yazın (yoksa 0)" }));
+      return goToField(document.getElementById(fid("countedCash")));
+    }
+    startCount(async () => {
+      const res = await lockCashCount({ date, amount: Math.round(amount * 100) / 100, branchId });
+      if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
+      setCountLock(res.data);
+      setValues((v) => ({ ...v, countedCash: input(res.data.amount) }));
+      setErrors((x) => ({ ...x, countedCash: undefined }));
+      toast.success(`Sayım kilitlendi · ${money(res.data.amount)}`, { description: "Olması gereken ve kasa farkı artık görünür." });
+    });
+  }
+
+  /** "Sayımı değiştir": yeni sayım nedeniyle yazılır (yöneticiye görünür); form yeni sayımla sürer */
+  function saveRecount() {
+    if (!recount) return;
+    const amount = recount.amount.trim() ? parseNumberTR(recount.amount) : null;
+    if (amount === null || amount < 0) return setRecount({ ...recount, error: "Geçerli bir tutar yazın (ör. 1.250,50)" });
+    const err = countNeedsReason({ counts: countLock ? 1 : 0, hasReport: report !== null }) ? countReasonError(recount.reason) : null;
+    if (err) return setRecount({ ...recount, error: err });
+    const why = recount.reason.trim() || null;
+    startCount(async () => {
+      const res = await lockCashCount({ date, amount: Math.round(amount * 100) / 100, reason: why, branchId });
+      if (!res.ok) return void setRecount((r) => (r ? { ...r, error: res.error } : r));
+      setCountLock(res.data);
+      setValues((v) => ({ ...v, countedCash: input(res.data.amount) }));
+      setRecount(null);
+      toast.success(`Sayım değişti · ${money(res.data.amount)}`, { description: "Raporu gönderin; değişiklik yöneticiye görünür." });
+    });
+  }
+
   /** Taslağı forma geri yükler (kayıtlı raporda önce Düzenle açılır): yazılanlar, kasayı sayan, yüklenen fotoğraflar */
   function restoreDraft() {
     if (!draft) return;
     if (!editing) edit();
-    setValues((v) => ({ ...v, ...draft.values }));
+    // Kör sayım: kilitli sayılan taslaktan ezilmez (değişiklik yalnız "Sayımı değiştir"le)
+    setValues((v) => ({ ...v, ...draft.values, ...(countReadOnly ? { countedCash: v.countedCash } : {}) }));
     if (draft.counter !== null) setCounter(draft.counter);
     if (draft.values.cashIn?.trim()) setCashInOpen(true);
     // Personel yalnız kendi yüklediği fotoğrafı geri alır (sunucu başkasınınkini bağlamaz); yönetici hepsini
@@ -915,6 +992,20 @@ export function CashForm({
       toast.error(CASH_OUT_NOTE_REQUIRED);
       goToField(document.getElementById(fid("cashOutNote")));
       return;
+    }
+    // Kör sayım: sayım kilitlenmeden rapor gönderilmez (sunucu da reddeder)
+    if (awaitingLock) {
+      flushSync(() => setErrors((x) => ({ ...x, countedCash: BLIND_COUNT_TEXT.lockFirst })));
+      toast.error(BLIND_COUNT_TEXT.lockFirst);
+      return goToField(document.getElementById(fid("countedCash")));
+    }
+    // Sayımdan sonra teslimin "Kime"si (Teslim defteri; sunucu da aynı kuralla): yeni raporda ya da tutar değiştiyse
+    const kime = kimeShown ? handedToInputOf(handChoice, handName) : null;
+    if (kimeShown && handedToMissing({ handedOver: fields.handedOver, to: kime ? "seçildi" : null, prev: report ? { handedOver: report.handedOver, handedTo: report.handedToName } : null })) {
+      const msg = handChoice === "ad" ? HANDOVER_TEXT.nameMissing : HANDOVER_TEXT.required;
+      flushSync(() => setHandError(msg));
+      toast.error(msg);
+      return goToField(document.getElementById(fid(handChoice === "ad" ? "handName" : "handChoice")));
     }
     if (review) {
       if (openingNeedsNote({ check: carryCheck(date, fields.openingCash, carry), openingCash: fields.openingCash, prevOpening: null, note: fields.note })) {
@@ -1018,7 +1109,15 @@ export function CashForm({
       return;
     }
     start(async () => {
-      const res = await submitCashReport({ ...fields, countedBy: counter, revision: report?.revision ?? 0, photos: photos.map((p) => p.id), branchId });
+      const res = await submitCashReport({
+        ...fields,
+        countedBy: counter,
+        revision: report?.revision ?? 0,
+        photos: photos.map((p) => p.id),
+        branchId,
+        // Teslim yoksa Kime temizlenir; seçilmediyse (eski rapor, tutar aynı) kayıtlı değer kalır
+        handedTo: fields.handedOver > 0 ? (kime ?? undefined) : null,
+      });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
       // Gün döndü (05:00): dünün raporu artık geç rapor; yazılanlar ve fotoğraflar yerinde, geç rapora geçilir
       if (res.data.needsApproval && res.data.request === "kasa-gec") {
@@ -1228,7 +1327,7 @@ export function CashForm({
     );
   }
 
-  const kind = live ? live.kind : null;
+  const kind = diffLive ? diffLive.kind : null;
   // Açılış ↔ önceki raporun devri (yazarken): tutmuyorsa turuncu kutu, Sonuç'ta satır ve zorunlu not
   const openingNum = values.openingCash.trim() ? parseNumberTR(values.openingCash) : null;
   const liveCarry = openingNum !== null ? carryCheck(date, openingNum, carry) : null;
@@ -1331,6 +1430,121 @@ export function CashForm({
         data-warn={warnOf(k) || opts.warn || undefined}
       />
     </Field>
+  );
+  // Kör sayım (Tuzla): kilitlenene kadar yazılır ve "Sayımı kilitle"; sonra salt okunur, "Sayımı değiştir" nedeniyle
+  const countField = (
+    <div className="space-y-2">
+      {countReadOnly ? (
+        <Field
+          label="Akşam sayılan nakit"
+          htmlFor={fid("countedCash")}
+          error={errors.countedCash}
+          hint={
+            <span className="flex flex-wrap items-center gap-x-2">
+              <span>
+                {countLock
+                  ? `${BLIND_COUNT_TEXT.locked} · ${countLock.by} · ${new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(new Date(countLock.at))}${countLock.changed ? " · değişti" : ""}`
+                  : "Kayıtlı rapordaki sayım"}
+              </span>
+              {recount ? null : (
+                <button
+                  type="button"
+                  onClick={() => setRecount({ amount: values.countedCash, reason: "", error: null })}
+                  className="cursor-pointer font-medium text-ink underline underline-offset-2 pointer-coarse:min-h-11"
+                >
+                  Sayımı değiştir
+                </button>
+              )}
+            </span>
+          }
+        >
+          <NumberInput id={fid("countedCash")} value={values.countedCash} readOnly aria-readonly="true" className="bg-panel" />
+        </Field>
+      ) : (
+        field("countedCash", "Akşam sayılan nakit", { hint: "Çekmecedeki bütün nakit; kilitleyince fark görünür" })
+      )}
+      {awaitingLock ? (
+        <Button size="sm" variant="secondary" onClick={lockCount} disabled={countPending || !values.countedCash.trim()} className="max-sm:w-full">
+          {countPending ? "Kilitleniyor…" : "Sayımı kilitle"}
+        </Button>
+      ) : null}
+      {recount ? (
+        <div className="space-y-2 rounded-xl bg-panel p-3">
+          <Field label="Yeni sayım" htmlFor={fid("recount")}>
+            <NumberInput
+              id={fid("recount")}
+              value={recount.amount}
+              onChange={(e) => setRecount({ ...recount, amount: e.target.value, error: null })}
+              placeholder="0"
+              autoFocus
+            />
+          </Field>
+          <Field label="Neden değişti?" htmlFor={fid("recountReason")} hint="Yönetici görür" error={recount.error ?? undefined}>
+            <Input
+              id={fid("recountReason")}
+              value={recount.reason}
+              onChange={(e) => setRecount({ ...recount, reason: e.target.value, error: null })}
+              maxLength={300}
+              placeholder="ör. çekmecenin altında 50 ₺ çıktı"
+              autoComplete="off"
+            />
+          </Field>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={saveRecount} disabled={countPending}>
+              {countPending ? "Kaydediliyor…" : "Sayımı değiştir"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setRecount(null)} disabled={countPending}>
+              Vazgeç
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+  // Sayımdan sonra teslimin "Kime"si (Teslim defteri): yönetici, banka ya da elle yazılan ad
+  const kimeAdmins =
+    report?.handedToUserId && !handoverAdmins.some((a) => a.id === report.handedToUserId)
+      ? [...handoverAdmins, { id: report.handedToUserId, name: report.handedToName ?? "Yönetici" }]
+      : handoverAdmins;
+  const kimeField = (
+    <div className="space-y-2">
+      <Field label="Kime" htmlFor={fid("handChoice")} hint="Teslim edileni kim aldı?" error={handChoice === "ad" ? undefined : (handError ?? undefined)}>
+        <Select
+          id={fid("handChoice")}
+          value={handChoice}
+          onChange={(e) => {
+            setHandChoice(e.target.value as HandedToChoice);
+            setHandError(null);
+          }}
+          aria-invalid={Boolean(handError) && handChoice !== "ad"}
+        >
+          <option value="">Seçin</option>
+          {kimeAdmins.map((a) => (
+            <option key={a.id} value={`user:${a.id}`}>
+              {a.name}
+            </option>
+          ))}
+          <option value="banka">Banka (yatırıldı)</option>
+          <option value="ad">Başka biri (adını yazın)</option>
+        </Select>
+      </Field>
+      {handChoice === "ad" ? (
+        <Field label="Teslim alanın adı" htmlFor={fid("handName")} error={handError ?? undefined}>
+          <Input
+            id={fid("handName")}
+            value={handName}
+            onChange={(e) => {
+              setHandName(e.target.value);
+              setHandError(null);
+            }}
+            maxLength={HANDED_TO_MAX}
+            placeholder="ör. Okan Bey"
+            autoComplete="off"
+            aria-invalid={Boolean(handError)}
+          />
+        </Field>
+      ) : null}
+    </div>
   );
   /** Yazarkasa Z no ve fiş sayısı (sayısal metin) */
   const textField = (k: "okcZNo" | "okcReceipts", label: string, opts: OkcFieldOptions = {}) => (
@@ -1562,7 +1776,7 @@ export function CashForm({
           </div>
         </Card>
         <Card>
-          <CardHeader icon={<Wallet />} title="Kasa (nakit)" description="Çekmecedeki bütün nakdi sayın." />
+          <CardHeader icon={<Wallet />} title="Kasa (nakit)" description={awaitingLock ? BLIND_COUNT_TEXT.card : "Çekmecedeki bütün nakdi sayın."} />
           <div className="grid gap-3 px-5 pb-5 sm:grid-cols-2">
             {field("openingCash", "Açılış (dünden devir)", {
               hint: liveCarry ? (
@@ -1586,7 +1800,7 @@ export function CashForm({
                 "Gün başında kasadaki nakit"
               ),
             })}
-            {field("countedCash", "Akşam sayılan nakit")}
+            {blindOn ? countField : field("countedCash", "Akşam sayılan nakit")}
             {field("cashOut", "Gün içinde kasadan çıkan", {
               hint: cashOuts.length ? (
                 <span className="flex flex-wrap items-center gap-x-2">
@@ -1640,6 +1854,7 @@ export function CashForm({
               </p>
             )}
             {field("handedOver", "Sayımdan sonra teslim", { hint: "Patrona ya da bankaya verilen" })}
+            {kimeShown ? kimeField : null}
             {isLate && !review && (parseNumberTR(values.handedOver) ?? 0) > 0 ? (
               <Field label="Teslim alan" htmlFor={fid("handedTo")} hint="Teslim edileni kim aldı ya da bankaya mı yatırıldı?" error={handedError ?? undefined}>
                 <Select
@@ -1754,7 +1969,9 @@ export function CashForm({
             }
           />
           <div className="space-y-3 px-5 pb-5">
-            {live ? (
+            {awaitingLock ? (
+              <p className="text-sm text-ink-mute">{BLIND_COUNT_TEXT.result}</p>
+            ) : live ? (
               <>
                 <DiffHeadline diff={live.cashDiff} live />
                 {teslimMissing !== null ? (
@@ -1868,10 +2085,10 @@ export function CashForm({
             className="pointer-events-auto flex w-full max-w-2xl items-center gap-3 rounded-2xl bg-surface py-2 pr-2 pl-4 shadow-[0_12px_40px_rgba(0,0,0,0.14)] ring-1 ring-line-strong"
           >
             <p className="min-w-0 flex-1 truncate text-sm">
-              {live ? (
-                <span className={cn("font-semibold tabular", kind === "short" ? "text-bad" : kind === "over" ? "text-warn" : "text-good")}>{diffText(live.cashDiff)}</span>
+              {diffLive ? (
+                <span className={cn("font-semibold tabular", kind === "short" ? "text-bad" : kind === "over" ? "text-warn" : "text-good")}>{diffText(diffLive.cashDiff)}</span>
               ) : (
-                <span className="text-ink-mute">Kasa farkı sayımdan sonra</span>
+                <span className="text-ink-mute">{awaitingLock ? BLIND_COUNT_TEXT.bar : "Kasa farkı sayımdan sonra"}</span>
               )}
             </p>
             <Button size="lg" onClick={submit} disabled={pending || busy || reviewPending}>

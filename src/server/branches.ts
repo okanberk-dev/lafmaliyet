@@ -101,6 +101,8 @@ export async function branchUsageCount(db: DB, id: string): Promise<number> {
     s.stockExtras,
     s.wasteEntries,
     s.cashOuts,
+    // Kör sayımın sayım geçmişi (docs/KASA-RAPORU.md › Kör sayım)
+    s.cashCounts,
     s.staff,
     s.expenseEntries,
     s.fixedExpenses,
