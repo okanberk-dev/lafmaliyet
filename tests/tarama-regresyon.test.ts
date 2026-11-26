@@ -30,17 +30,21 @@ const DIZIN = join(__dirname, "fixtures/tarama");
 const yanit = JSON.parse(readFileSync(join(DIZIN, "yanit.json"), "utf8")) as VeriYaniti;
 
 /**
- * Bugünkü sonuç (çekirdek: wip/tarama-cekirdek 0096e18; ac82331'deki sonuçla aynı) ve eşik. `hata`: en kötü köşe,
- * köşegenin oranı, en çok; `karar`: kabul edilen kararlar; `bilinen`: bugün yanlış (eşik yalnız kötüleşmeyi yakalar;
- * düzelince sıkılaştırın).
+ * Bugünkü sonuç (çekirdek: wip/tarama-2) ve eşik. `hata`: en kötü köşe, köşegenin oranı, en çok; `karar`: kabul edilen
+ * kararlar; `bilinen`: bugün yanlış (eşik yalnız kötüleşmeyi yakalar; düzelince sıkılaştırın).
  */
 const BEKLENTI: Record<string, { karar?: Karar[]; hata?: number; bilinen?: string }> = {
   // bugün %0,01
   "000-pavo-z-ahsap": { karar: ["kirp"], hata: 0.012 },
-  "001-market-uzun-beyaz-tezgah": { hata: 0.4, bilinen: "beyaz tezgâhta uzun fiş bulunamıyor (bugün belge yok, hata %31,4)" },
+  "001-market-uzun-beyaz-tezgah": {
+    karar: ["kirp"],
+    hata: 0.15,
+    bilinen: "beyaz tezgâhta parlamalı uzun fiş: soluk sol kenar bulunmuyor, dörtgen yazının içinden geçiyor (bugün hata %10,2)",
+  },
   // bugün %0,01
   "002-banka-batch-koyu-tezgah": { karar: ["kirp"], hata: 0.012 },
-  "003-fatura-a4-mermer": { hata: 0.4, bilinen: "karanlık, odak bulanık A4: dörtgen kâğıttan taşıyor (bugün hata %28,5)" },
+  // bugün %0,1 (karanlık, odak bulanık A4; önce dörtgen kâğıttan taşıyordu, hata %28,5)
+  "003-fatura-a4-mermer": { karar: ["kirp"], hata: 0.012 },
   // bugün %0,07
   "004-modpos-z-gri-masa": { karar: ["kirp"], hata: 0.012 },
   // bugün %0,04
@@ -49,11 +53,13 @@ const BEKLENTI: Record<string, { karar?: Karar[]; hata?: number; bilinen?: strin
   "006-pavo-gunsonu-ahsap-kadraj-disi": { karar: ["kirp"], hata: 0.015 },
   // bugün "kareyi dolduruyor"
   "007-fatura-a4-gri-masa-yakin": { karar: ["tam-kare", "yok"] },
-  "008-degil-ekran-pos-koyu-tezgah": { bilinen: "POS ekranı (yuvarlak köşeli tablet) belge sanılıp kırpılıyor" },
-  "009-degil-kutu-ahsap": { bilinen: "koli belge sanılıp kırpılıyor" },
+  // renkli döşemeli POS ekranı: belge yok (renkli içerik)
+  "008-degil-ekran-pos-koyu-tezgah": { karar: ["yok"] },
+  // koli: belge yok (yazısız ince şerit, bandı)
+  "009-degil-kutu-ahsap": { karar: ["yok"] },
 };
-/** Bugün 10 görselin 6'sı doğru; azalmasın */
-const EN_AZ_DOGRU = 6;
+/** Bugün 10 görselin 9'u doğru; azalmasın */
+const EN_AZ_DOGRU = 9;
 
 test("regresyon örnekleri: on görsel, her biri < 60 KB, yanıtta köşe ve kategori", () => {
   assert.equal(yanit.gorseller.length, 10);

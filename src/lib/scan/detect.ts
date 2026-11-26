@@ -1121,7 +1121,7 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
     // içeriyorsa kareye uzanan kısım zemindir (açık zeminde soluk kenarlı fiş): o aday biraz düşük puanlı da olsa seçilir
     if (best.realSides < 4 && tinOf(best) >= 0) {
       const b = best;
-      const own = scored.slice(0, 30).find((s) => s !== b && s.realSides > b.realSides && s.score >= b.score - 0.08 && tinOf(s) >= tinOf(b) - 0.03 && s.area <= 0.75 * b.area && s.q.every((p) => insideConvex(growQuad(b.q, 1.02), p)));
+      const own = scored.slice(0, 30).find((s) => s !== b && s.realSides > b.realSides && s.score >= b.score - 0.1 && tinOf(s) >= tinOf(b) - 0.03 && s.area <= 0.97 * b.area && s.q.every((p) => insideConvex(growQuad(b.q, 1.02), p)));
       if (own) {
         best = own;
         reasons.push("kagidin-kendisi");
@@ -1150,8 +1150,11 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
   // çekilmeli). Kırpmak yerine "belge yok": ekran elle seçmeyi ve yapay zekâ ipucunu açar.
   const content = interiorContent(ctx, best.q);
   const noText = (best.parts?.tin ?? -1) < 0;
+  const sideLens = [0, 1, 2, 3].map((i) => Math.hypot(best.q[(i + 1) % 4].x - best.q[i].x, best.q[(i + 1) % 4].y - best.q[i].y));
+  const aspect = (sideLens[0] + sideLens[2]) / 2 / Math.max(1, (sideLens[1] + sideLens[3]) / 2);
+  const slender = Math.max(aspect, 1 / aspect) >= 6;
   const notDoc =
-    content.variety >= 0.15 || (content.saturated >= 0.15 && content.saturated <= 0.75) ? "renkli-icerik" : noText && (content.dark >= 0.4 || content.saturated >= 0.4) ? "yazisiz-nesne" : best.area < 0.02 ? "cok-kucuk" : null;
+    content.variety >= 0.15 || (content.saturated >= 0.15 && content.saturated <= 0.75) ? "renkli-icerik" : noText && (content.dark >= 0.4 || content.saturated >= 0.4 || slender) ? "yazisiz-nesne" : best.area < 0.02 ? "cok-kucuk" : null;
   if (notDoc) {
     reasons.push("kagida-benzemiyor", notDoc);
     return { corners: null, confidence: Math.min(0.2, confidenceOf(best)), method: null, fillsFrame: false, reasons };
