@@ -1,5 +1,5 @@
 /**
- * Banka POS hakediş mutabakatı (saf; tests/mutabakat-pos.test.ts, docs/MUTABAKAT.md): kasa raporlarındaki kart satışı
+ * Banka POS hakediş mutabakatı (saf; tests/mutabakat.test.ts, docs/MUTABAKAT.md): kasa raporlarındaki kart satışı
  * (gün gün, şube şube) ile banka ekstresindeki POS girişleri. Beklenen net = kart satışı × (1 − şubenin POS komisyon
  * oranı); valör günü = satış günü + bloke günü (hafta sonuna denk gelirse pazartesi). Karşılaştırma valör gününe göre:
  * o gün bankaya giren POS tutarı (komisyon ayrı kesiliyorsa kesinti düşülmüş). Yemek kartı ve platform hakedişi başka

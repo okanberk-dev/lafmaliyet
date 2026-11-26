@@ -1,5 +1,5 @@
 /**
- * Mutabakat: banka ve tedarikçi ekstresini okuma (saf; tests/mutabakat-okuma.test.ts, docs/MUTABAKAT.md).
+ * Mutabakat: banka ve tedarikçi ekstresini okuma (saf; tests/mutabakat.test.ts, docs/MUTABAKAT.md).
  *
  * Bankaların dışa aktarımı birbirine benzemez: başlık satırı dosyanın ortasında olabilir (üstte hesap bilgisi), tutar
  * tek sütunda (eksi = çıkış) ya da iki sütunda (Borç / Alacak), sayılar "1.234,56" ya da "1,234.56", tarihler

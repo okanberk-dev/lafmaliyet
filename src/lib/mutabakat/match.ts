@@ -1,5 +1,5 @@
 /**
- * Mutabakat: ekstre satırlarını panel kayıtlarıyla eşleştirme (saf; tests/mutabakat-eslesme.test.ts,
+ * Mutabakat: ekstre satırlarını panel kayıtlarıyla eşleştirme (saf; tests/mutabakat.test.ts,
  * docs/MUTABAKAT.md). Eşleşme okuma anında hesaplanır, saklanmaz: yalnız yöneticinin kararı (elle eşleştirme, yok say,
  * eşleşmeyi ayır, POS hakedişi) satırda durur. Panel kaydına hiçbir şey yazılmaz: mutabakat bir karşılaştırmadır,
  * faturayı "ödendi" yapmaz, ödeme kaydı açmaz.
@@ -18,7 +18,7 @@ export const RECORD_LABEL: Record<RecordKind, string> = {
   fatura: "Fatura",
 };
 
-export const RECORD_KINDS = Object.keys(RECORD_LABEL) as RecordKind[];
+export const RECORD_KINDS = ["harcama", "odeme", "fatura-odeme", "teslim", "fatura"] as const satisfies readonly RecordKind[];
 
 export interface Candidate {
   kind: RecordKind;
