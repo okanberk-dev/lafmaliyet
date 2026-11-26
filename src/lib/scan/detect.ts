@@ -1121,7 +1121,14 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
     // içeriyorsa kareye uzanan kısım zemindir (açık zeminde soluk kenarlı fiş): o aday biraz düşük puanlı da olsa seçilir
     if (best.realSides < 4 && tinOf(best) >= 0) {
       const b = best;
-      const own = scored.slice(0, 30).find((s) => s !== b && s.realSides > b.realSides && s.score >= b.score - 0.1 && tinOf(s) >= tinOf(b) - 0.03 && s.area <= 0.97 * b.area && s.q.every((p) => insideConvex(growQuad(b.q, 1.02), p)));
+      // dışarıda kalan yazı: hiç yok ya da kalan şeritte seyrek (mermer damarı, doku; asıl yazının yoğunluğunun 1/3'ünden az)
+      const leavesText = (s: Scored) => {
+        const lost = tinOf(b) - tinOf(s);
+        if (lost <= 0.03) return false;
+        const rest = Math.max(1e-3, b.area - s.area);
+        return lost / rest > (0.33 * tinOf(s)) / Math.max(1e-3, s.area);
+      };
+      const own = scored.slice(0, 30).find((s) => s !== b && s.realSides > b.realSides && s.score >= b.score - 0.1 && tinOf(s) >= 0 && !leavesText(s) && s.area <= 0.97 * b.area && s.q.every((p) => insideConvex(growQuad(b.q, 1.02), p)));
       if (own) {
         best = own;
         reasons.push("kagidin-kendisi");
