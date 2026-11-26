@@ -14,6 +14,7 @@ import { NextRequest } from "next/server";
 import { BOTTOM_NAV, BOTTOM_SPARES, NAV_FOOTER, NAV_GROUPS, NAV_TREE, navTreeFor, sectionTabsFor } from "../src/components/panel/nav";
 import { needsTwoFactorSetup, twoFactorRequiredFor } from "../src/lib/admin-security";
 import { featureAudience } from "../src/lib/branch-features";
+import { sheetCashOutsByDate } from "../src/lib/cash-outs";
 import { alertRecipients } from "../src/lib/checklist-alerts";
 import { ROLE_ORDER, ROLES, type Role } from "../src/lib/constants";
 import { karaokeAudience } from "../src/lib/karaoke/staff-mail";
@@ -210,6 +211,46 @@ describe("müdür: şubesinin günlük işletmesi", () => {
     for (const f of ["cash-requests", "cash-out-requests", "waste-requests", "closed-days"]) {
       assert.match(read(`src/server/actions/${f}.ts`), /reviewBranchRefusal\(getDb\(\), me, /, f);
     }
+  });
+
+  test("Kasa ay görünümü: rapor penceresine kasadan çıkanın yalnız adı, tutarı ve fişi gider; maaş / kira kategorisinin adı gitmez (bulgu 8)", () => {
+    // Sunucunun okuduğu bütün satır (cashOutsBetween): bağlı harcama kaydı, kategorisi ve yazanıyla
+    type CashOutDTO = import("../src/server/data/cash-outs").CashOutDTO;
+    const full = (o: Pick<CashOutDTO, "id" | "date" | "photoId" | "expenseEntryId" | "categoryId" | "categoryName">) =>
+      ({
+        kind: "harcama",
+        amount: 15_000,
+        store: null,
+        description: "Kasım ödemesi",
+        receiptDate: null,
+        receiptNo: null,
+        vat: null,
+        docType: "yok",
+        createdBy: 3,
+        createdByName: "Ali",
+        createdAt: "2026-11-03T10:00:00.000Z",
+        updatedAt: "2026-11-03T10:00:00.000Z",
+        lafposId: null,
+        lafposAwaitingCategory: false,
+        ...o,
+      }) satisfies CashOutDTO;
+    const rows = [
+      full({ id: 7, date: "2026-11-03", photoId: null, expenseEntryId: 41, categoryId: 12, categoryName: "Maaş" }),
+      full({ id: 8, date: "2026-11-04", photoId: 5, expenseEntryId: 42, categoryId: 13, categoryName: "Kira" }),
+    ];
+    const byDate = sheetCashOutsByDate(rows);
+    assert.deepEqual(Object.keys(byDate), ["2026-11-03", "2026-11-04"]);
+    // Tutar kalır (müdür öbür satırların tutarını görür), fiş simgesi kalır
+    assert.deepEqual(byDate["2026-11-03"], [{ id: 7, kind: "harcama", amount: 15_000, store: null, description: "Kasım ödemesi", photoId: null }]);
+    assert.deepEqual(byDate["2026-11-04"], [{ id: 8, kind: "harcama", amount: 15_000, store: null, description: "Kasım ödemesi", photoId: 5 }]);
+    // Tarayıcıya giden prop (RSC yükü): kategorinin adı ve kimliği, harcama kaydı, yazanı yok
+    assert.doesNotMatch(JSON.stringify(byDate), /Maaş|Kira|categoryName|categoryId|expenseEntryId|createdBy|lafposId/);
+    // Sayfa pencereye bütün satırı değil beyaz listeden geçeni verir (gün görünümündeki hideName kuralının ay karşılığı)
+    const page = read("src/app/panel/kasa/page.tsx");
+    assert.match(page, /cashOuts=\{sheetCashOutsByDate\(monthOuts\)\}/);
+    assert.doesNotMatch(page, /cashOuts=\{outsByDate\}/);
+    // İstemci bileşeni sunucunun satır tipini almaz
+    assert.doesNotMatch(read("src/app/panel/kasa/cash-history.tsx"), /CashOutDTO/);
   });
 });
 

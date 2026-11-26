@@ -32,7 +32,7 @@ import {
   type CarryCheck,
   type CashRevisionRow,
 } from "@/lib/cash-report";
-import { staffCashOutRow } from "@/lib/cash-outs";
+import { sheetCashOutsByDate, staffCashOutRow } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import { shortDayTR } from "@/lib/cash-requests";
 import type { KasaName, MonthKasa } from "@/lib/lafpos/kasa";
@@ -778,6 +778,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today, "admin"));
   // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları
   const [infos, photoBadges] = await Promise.all([cashReportPhotoInfo(monthReports, "admin"), lafposPhotoBadges(getDb(), monthReports.map((r) => r.id)).catch(() => new Map())]);
+  // Sunucuda kalır (extrasFrom): tarayıcıya giden pencere satırı sheetCashOutsByDate'ten (kategori adı gitmez)
   const outsByDate: Record<string, typeof monthOuts> = {};
   for (const o of monthOuts) (outsByDate[o.date] ??= []).push(o);
   // Yöneticinin kayıtlı rapordaki kümülatif satırı: zincir ayın içinde eskiden yeniye son saklanan kümülatife bağlanır
@@ -849,7 +850,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
             totals={totalsOf(days)}
             whatsappPhone={settings.whatsapp}
             photos={historyPhotos}
-            cashOuts={outsByDate}
+            // Pencereye yalnız satırın adı, tutarı ve fişi (beyaz liste): müdüre maaş, kira gibi kategorinin adı gitmez
+            cashOuts={sheetCashOutsByDate(monthOuts)}
             carry={carryByDate}
             revisions={revisionsById}
             proposedBy={Object.fromEntries([...monthProposed].map(([id, m]) => [id, Object.fromEntries(m)]))}

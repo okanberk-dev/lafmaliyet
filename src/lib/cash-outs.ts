@@ -294,6 +294,20 @@ export function staffCashOutRow<T extends Record<StaffCashOutField, unknown>>(ro
   return { ...(out as Pick<T, StaffCashOutField>), locked };
 }
 
+/** Kasa ay görünümünün rapor penceresindeki satır (ReportSheet): adı, tutarı, fişi; kategori ve kayıt bağı yok */
+export type SheetCashOutRow = CashOutLine & { id: number; photoId: number | null };
+
+/**
+ * Ay görünümünün (Günden güne) tarayıcıya giden kasadan çıkanları, güne göre (beyaz liste): pencere yalnız adı, tutarı ve
+ * fiş simgesini yazar; kategori adı ve kimliği, harcama kaydı, yazanın kimliği gitmez. Müdür maaş, kira gibi kategorinin
+ * adını görmez (`kategori.tum` yok; gün görünümünde hideName), pencere de kimseye kategori yazmaz (docs/ROLLER.md › Kararlar)
+ */
+export function sheetCashOutsByDate(rows: readonly (SheetCashOutRow & { date: string })[]): Record<string, SheetCashOutRow[]> {
+  const out: Record<string, SheetCashOutRow[]> = {};
+  for (const o of rows) (out[o.date] ??= []).push({ id: o.id, kind: o.kind, amount: o.amount, store: o.store, description: o.description, photoId: o.photoId });
+  return out;
+}
+
 /**
  * Adın eşleşme anahtarı: faturalardaki supplierMatchKey ile aynı kural (sondaki parantez atılır, tek boşluk, Türkçe
  * küçük harf, ı → i). Kasa penceresi fatura kurallarını (ve hesap motorunu) yüklemesin diye burada; ikisinin aynı

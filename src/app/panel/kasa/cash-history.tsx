@@ -29,11 +29,11 @@ import {
 import type { ModposDayView } from "@/lib/cash-modpos";
 import { money } from "@/lib/format";
 import { cardDiffLabel, reportFlags } from "@/lib/cash-attention";
+import type { SheetCashOutRow } from "@/lib/cash-outs";
 import { okcHasFigures } from "@/lib/okc-z";
 import { longDateTR } from "@/lib/reminders";
 import { deleteCashReport, resendCashReportEmail } from "@/server/actions/cash-report";
 import type { PhotoDiff } from "@/lib/photo-read/kasa";
-import type { CashOutDTO } from "@/server/data/cash-outs";
 import type { CashPhotoDTO } from "@/server/data/cash-photos";
 import type { CashReportDTO } from "@/server/data/cash-reports";
 
@@ -107,8 +107,8 @@ export function CashHistory({
   totals: CashMonthTotals;
   whatsappPhone: string | null;
   photos?: CashHistoryPhotos;
-  /** Günlerin kasadan çıkanları (tarihe göre) */
-  cashOuts?: Record<string, CashOutDTO[]>;
+  /** Günlerin kasadan çıkanları (tarihe göre): yalnız adı, tutarı ve fişi (sheetCashOutsByDate; kategori adı gelmez) */
+  cashOuts?: Record<string, SheetCashOutRow[]>;
   /** Açılışı önceki devirle tutmayan raporlar (denetlenen raporun gününe göre; sonraki ayın ilk raporu dahil) */
   carry?: Record<string, CarryCheck>;
   /** Raporların önceki sürümleri (rapor kimliğine göre) */

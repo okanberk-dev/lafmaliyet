@@ -271,6 +271,40 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
       }
     });
 
+    test("Kasa ay görünümü: pencereye giden kasadan çıkanda maaş kategorisinin adı yok, tutarı var; öteki şubenin satırı yok (bulgu 8)", async () => {
+      const { cashOutsBetween } = await import("../src/server/data/cash-outs");
+      const { sheetCashOutsByDate } = await import("../src/lib/cash-outs");
+      const [cat] = await db.insert(s.expenseCategories).values({ name: "Maaş (roller testi)", section: "personel", panelGroup: "personel" }).returning({ id: s.expenseCategories.id });
+      const outs = await db
+        .insert(s.cashOuts)
+        .values([
+          { date: DAY, kind: "harcama", amount: 15_000, description: "Kasım ödemesi", branchId: "tuzla", createdBy: ids.ali, createdByName: "Ali" },
+          { date: DAY, kind: "harcama", amount: 77, store: "Marina dükkân", branchId: "marina", createdBy: ids.ali, createdByName: "Ali" },
+        ])
+        .returning({ id: s.cashOuts.id });
+      const [entry] = await db
+        .insert(s.expenseEntries)
+        .values({ branchId: "tuzla", date: DAY, categoryId: cat.id, description: "Kasım ödemesi", amount: 15_000, cashOutId: outs[0].id })
+        .returning({ id: s.expenseEntries.id });
+      try {
+        await signIn("mehmet");
+        // Sayfanın okuduğu bütün satır kategoriyi taşır; tarayıcıya giden pencere satırı taşımaz
+        const rows = await scope.withBranchScope("hepsi", () => cashOutsBetween(DAY, DAY));
+        assert.deepEqual(
+          rows.map((r) => [r.id, r.categoryName]),
+          [[outs[0].id, "Maaş (roller testi)"]],
+          "müdürün okuması şubesine daralır",
+        );
+        const sent = sheetCashOutsByDate(rows);
+        assert.deepEqual(sent, { [DAY]: [{ id: outs[0].id, kind: "harcama", amount: 15_000, store: null, description: "Kasım ödemesi", photoId: null }] });
+        assert.doesNotMatch(JSON.stringify(sent), /Maaş|categoryName|categoryId|expenseEntryId|createdBy|Marina/);
+      } finally {
+        await db.delete(s.expenseEntries).where(eq(s.expenseEntries.id, entry.id));
+        for (const o of outs) await db.delete(s.cashOuts).where(eq(s.cashOuts.id, o.id));
+        await db.delete(s.expenseCategories).where(eq(s.expenseCategories.id, cat.id));
+      }
+    });
+
     test("şubesi pasife alınan müdürün oturumu yok (öteki şubelere açılmaz)", async () => {
       await signIn("mehmet");
       assert.ok(await dal.getCurrentUser());

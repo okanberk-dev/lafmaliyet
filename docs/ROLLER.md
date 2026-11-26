@@ -108,13 +108,14 @@ oturumları kapanır (oturum sürümü).
 
 - **Maaş ve kişisel ücret müdürde yok** (en tutucusu). İşçilik / ciro'da yalnız haftalık ve aylık şube toplamı; günlük
   görünüm tek kişinin gününü (kişisel ücret) gösterdiği için kapalı. Kasadan çıkanda müdür personelin kategorilerini
-  seçer, öbür satırların tutarını görür ama kategori adını görmez; sunucu da müdürün maaş, kira gibi kategoriye
-  yazmasını reddeder: kural yazım yolunda (`src/server/cash-outs/write.ts` › `writeCashOut`, gerçek rol), doğrudan
-  kayıt da Onaylar'da isteğin onayı da ondan geçer (Onaylar'ın kategori seçicisi müdüre personelin kategorileri;
-  düzeltmede satırın şimdiki kategorisi kalabilir, geri almada silinen kaydınki geri gelir). Onaylar'ın kasadan çıkan
-  kartında da yöneticinin kategorisinin adı müdüre gitmez ("Bağlı gider: yöneticinin kategorisi"); olası tekrar
-  listesi ona yalnız isteğin şubesinin satırlarını ve personelin kategorisindeki harcama kayıtlarını gösterir (öteki
-  şubenin satırı, maaş ve kira kaydı gitmez; `src/server/data/cash-out-requests.ts` › `cashOutCards`).
+  seçer, öbür satırların tutarını görür ama kategori adını görmez (Kasa'nın ay görünümünde rapor penceresine satırın
+  yalnız adı, tutarı ve fişi gider; `src/lib/cash-outs.ts` › `sheetCashOutsByDate`); sunucu da müdürün maaş, kira gibi
+  kategoriye yazmasını reddeder: kural yazım yolunda (`src/server/cash-outs/write.ts` › `writeCashOut`, gerçek rol),
+  doğrudan kayıt da Onaylar'da isteğin onayı da ondan geçer (Onaylar'ın kategori seçicisi müdüre personelin
+  kategorileri; düzeltmede satırın şimdiki kategorisi kalabilir, geri almada silinen kaydınki geri gelir). Onaylar'ın
+  kasadan çıkan kartında da yöneticinin kategorisinin adı müdüre gitmez ("Bağlı gider: yöneticinin kategorisi"); olası
+  tekrar listesi ona yalnız isteğin şubesinin satırlarını ve personelin kategorisindeki harcama kayıtlarını gösterir
+  (öteki şubenin satırı, maaş ve kira kaydı gitmez; `src/server/data/cash-out-requests.ts` › `cashOutCards`).
 - **Genel bakış, Şube karşılaştırma, Kaçak ve Kayıp önleme müdüre açılmadı:** işletme geneli kâr, kira ve maaşı ve
   öteki şubeleri bir arada gösteriyorlar. Müdürün şube raporları: Bugün'deki şube günü ve İşçilik / ciro.
 - **Muhasebeci kişi başı maaş görmez**; bordro toplamları, SGK ve muhtasar toplamları vergide görünür. Personel
