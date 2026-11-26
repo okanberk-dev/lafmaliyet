@@ -189,7 +189,7 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             Banka POS&apos;tan (yazarkasa) aldığınız Z raporudur: üstünde Z RAPORU ve KDV dökümü yazar, banka gün sonu fişi değil. <StaffPath href="/panel/kasa" />{" "}
-            ekranındaki Banka POS Z raporu (yazarkasa) kartında fişi düz koyup fotoğrafını çekin; uzunsa önce üst, sonra alt yarısını.{" "}
+            ekranındaki Banka POS Z raporu (yazarkasa) kartında fişi düz koyup fotoğrafını çekin; uzunsa <B>Devamını çek</B> ile alt yarısını da.{" "}
             {OKC_PREFILL_ENABLED ? (
               <>Birbirini tutan rakamlar forma dolar; tutmayan rakam turuncu kalır, altında nedeni yazar: fişe bakıp yazın.</>
             ) : (
@@ -274,6 +274,20 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           </>
         ),
         icon: CalendarX2,
+      },
+      {
+        id: "kasa-tara",
+        q: "Fotoğraf çekince açılan tarama ekranı",
+        a: (
+          <>
+            Z raporunun ya da fişin fotoğrafını çekince önce <B>Belgeyi tara</B> ekranı açılır: kâğıt kendiliğinden bulunur, kenarları yeşil çizilir, yan
+            çekildiyse düz çevrilir. Köşe yanlışsa parmağınızla sürükleyin. Bulanık, parlamalı, karanlık ya da kesik çekimde üstte tek satır uyarı ve{" "}
+            <B>Yeniden çek</B> çıkar; yine de <B>Kullan</B>&apos;a basabilirsiniz. Fiş uzunsa ve tek fotoğrafa sığmıyorsa üst kısmı çekip <B>Devamını çek</B> ile
+            alt kısmını çekin (en çok 3 parça): parçalar tek uzun fişte birleşir, birleşemezse ayrı fotoğraf olarak eklenir. En iyi sonuç için fişi koyu ve düz
+            bir zemine koyun, ışığı yandan alın, kâğıt kareyi yaklaşık doldursun. <B>Taramadan kullan</B> fotoğrafı olduğu gibi ekler.
+          </>
+        ),
+        icon: Camera,
       },
       {
         id: "kasa-foto",

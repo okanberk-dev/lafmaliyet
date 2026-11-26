@@ -433,7 +433,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Turuncu alanları fişle karşılaştırıp gönderin; hiçbir şey kendiliğinden kaydedilmez. LafPOS&apos;lu şubede rapor LafPOS&apos;un gün sonundan
             kendisi yazılır; personel yalnız Pavo&apos;nun gün sonu fişinin (detaylı Z) fotoğrafını Gün sonu fotoğrafı kartına ekler. Kasadan çıkan paranın fişini aynı ekranda Fiş ekle ile çekin;
             kaydedince Harcamalar&apos;a da yazılır. Okuma Claude ile yapılır (fotoğraf başına birkaç sent); aç / kapat ve bu ayın tutarı Ayarlar › Fotoğraftan
-            okuma&apos;da.
+            okuma&apos;da. Fotoğraf çekilince önce Belgeyi tara ekranı açılır: kâğıt kendiliğinden bulunup kırpılır ve düz çevrilir, taranmış gibi
+            görünür (köşe yanlışsa sürüklenir). Bulanık, parlamalı ya da kesik çekimde Yeniden çek önerilir; uzun fiş Devamını çek ile parça parça çekilip
+            tek fişte birleşir. Fiş, rapor ya da fatura olmayan bir şey çekilirse kırpılmaz.
           </>
         ),
         icon: Receipt,
