@@ -1,6 +1,6 @@
 import { and, count, eq, inArray, notInArray, sql, type SQL } from "drizzle-orm";
 
-import { GOODS_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
+import { COMMISSION_CATEGORY } from "@/lib/constants";
 import type { DB } from "@/server/db";
 import * as s from "@/server/db/schema";
 
@@ -15,15 +15,16 @@ export const STOCK_ONLY_ACCEPTED_KEY = "invoices.stockOnlyAccepted";
 
 /**
  * Stoğa girip gelir-gidere girmeyen fatura (denetim 26 Eki, E-07): kalemlerinden biri hammaddeye bağlı (alınan miktar,
- * FIFO partisi ve hammadde fiyatı ondan gelir) ama kategorisi mal alışı değil (Hammadde & İçecek, Tatlı & Hazır Ürün,
- * Ambalaj; gelir-gider yalnız bunları mal alışı sayar). Kafe dışı faturanın (karaoke box, Alp Koç) kalemleri stoğa zaten
- * girmez. Yalnız `invoices` üzerinden sorgularda (dış sorguda fatura kalemi birleştirilmemiş olmalı).
+ * FIFO partisi ve hammadde fiyatı ondan gelir) ama o kalem mal alışı sayılmıyor. 25 Kasım 2026'dan beri faturalar kalem
+ * kalem sayılır (src/lib/invoice-split.ts): hammaddeye bağlı kalem kategorisi ne olursa olsun mal alışıdır (Diğer,
+ * Hizmet, Temizlik & Sarf dahil), elle düzeltme gerekmez. Bölünmeyen yalnız komisyon faturası kaldı (kafe dışı faturanın
+ * kalemleri stoğa zaten girmez). Yalnız `invoices` üzerinden sorgularda (dış sorguda fatura kalemi birleştirilmemiş olmalı).
  */
 export function stockOnlyWhere(): SQL {
   const bl = s.parasutBillLines;
   const ln = s.parasutProductLinks;
   return and(
-    notInArray(s.invoices.category, [...GOODS_CATEGORIES, ...SEPARATE_CATEGORIES]),
+    eq(s.invoices.category, COMMISSION_CATEGORY),
     sql`exists (select 1 from ${bl} join ${ln} on ${ln.productKey} = ${bl.productKey} where ${bl.invoiceId} = ${s.invoices.id})`,
   )!;
 }

@@ -4,9 +4,11 @@ import { eq, inArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { splitSupplier, supplierMatchKey } from "@/app/panel/faturalar/rules";
 import { INVOICE_CATEGORIES } from "@/lib/constants";
 import { PARASUT_SETTING_KEYS, parasutSettingsInput, planParasutSettings, settingsLogText, type ParasutSettingKey } from "@/lib/parasut/settings";
-import { addIgnored, removeIgnored } from "@/lib/product-ignore";
+import { NOT_INGREDIENT_REASONS, REASON_LABEL, type NotIngredientReason } from "@/lib/invoice-split";
+import { addIgnored, addIgnoredSupplier, removeIgnored, removeIgnoredSupplier } from "@/lib/product-ignore";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { companyClash, type ParasutInvoiceScope } from "@/lib/parasut/accounts";
@@ -17,7 +19,7 @@ import { configFrom, envOf, hasParasutInvoices, loadInvoiceScope, loadPanelSetti
 import { forgetParasutConnect } from "@/server/parasut/connect";
 import { suggestNextBatch } from "@/server/parasut/ai-match";
 import { readEInvoiceLines } from "@/server/parasut/lines";
-import { applyProductLinks, parasutStateKeys, parasutSyncRunning, syncParasut, updateIgnoredProducts } from "@/server/parasut/sync";
+import { applyProductLinks, parasutStateKeys, parasutSyncRunning, syncParasut, updateIgnoredProducts, updateIgnoredSuppliers } from "@/server/parasut/sync";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zDate, zText } from "./util";
@@ -307,6 +309,11 @@ const ignoreSchema = z.object({
   // Anahtar olduğu gibi saklanır (kırpılmaz): bekleyenler listesi aynı anahtarla eşleşir
   productKey: z.string().min(1, "Ürün gerekli").max(600),
   productName: zText("Ürün adı", 300),
+  /**
+   * Neden (src/lib/invoice-split.ts): kalemin gelir-giderde yazılacağı yer. Gönderilmezse (eski sekme, asistan) nedensiz:
+   * kalem faturanın kategorisinde kalır
+   */
+  reason: z.enum(NOT_INGREDIENT_REASONS as [NotIngredientReason, ...NotIngredientReason[]]).optional(),
 });
 
 /**
@@ -317,10 +324,42 @@ export async function ignoreProduct(input: z.input<typeof ignoreSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const data = ignoreSchema.parse(input);
-    await updateIgnoredProducts((list) => addIgnored(list, { ...data, at: new Date().toISOString(), by: me.name }));
-    await logActivity(me, "Paraşüt ürünü hammadde değil işaretlendi", data.productName);
+    const { reason, ...rest } = data;
+    await updateIgnoredProducts((list) => addIgnored(list, { ...rest, ...(reason ? { reason } : {}), at: new Date().toISOString(), by: me.name }));
+    await logActivity(me, "Paraşüt ürünü hammadde değil işaretlendi", `${data.productName}${reason ? ` · ${REASON_LABEL[reason]}` : ""}`);
+    // Kalemin payı yeniden sayılır (kalem kalem sınıflandırma okumada hesaplanır; alınan miktar değişmez)
     refresh();
-    return null;
+    return { reason: reason ?? null };
+  });
+}
+
+const supplierRuleSchema = z.object({
+  supplier: zText("Tedarikçi", 300),
+  /** null: kural kalkar */
+  reason: z.enum(NOT_INGREDIENT_REASONS as [NotIngredientReason, ...NotIngredientReason[]]).nullable(),
+});
+
+/**
+ * Tedarikçi bazlı "hep hammadde değil" kuralı (sahibin isteği, 25 Kasım 2026; src/lib/product-ignore.ts IgnoredSupplier):
+ * kural açık tedarikçinin hammaddeye bağlı olmayan kalemleri bekleyenlere düşmez, nedeninin yerine yazılır. Bağlı kalem
+ * (çay, soda) etkilenmez. Tedarikçi ekranından ve Paraşüt sayfasından açılıp kapanır
+ */
+export async function setSupplierIgnoreRule(input: z.input<typeof supplierRuleSchema>) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const { supplier, reason } = supplierRuleSchema.parse(input);
+    const key = supplierMatchKey(supplier);
+    if (!key) throw new UserError("Tedarikçi adı gerekli");
+    const name = splitSupplier(supplier).base;
+    const before = await updateIgnoredSuppliers((list) =>
+      reason ? addIgnoredSupplier(list, { supplierKey: key, supplierName: name, reason, at: new Date().toISOString(), by: me.name }) : removeIgnoredSupplier(list, key),
+    );
+    const prev = before.find((e) => e.supplierKey === key)?.reason ?? null;
+    if (prev !== reason) {
+      await logActivity(me, "Tedarikçi kuralı: hep hammadde değil", `${name}: ${prev ? REASON_LABEL[prev] : "kapalı"} → ${reason ? REASON_LABEL[reason] : "kapalı"}`);
+      refresh();
+    }
+    return { reason, previous: prev };
   });
 }
 

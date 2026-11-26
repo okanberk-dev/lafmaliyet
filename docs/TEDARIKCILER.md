@@ -367,6 +367,17 @@ Cuma gününe kadar
   Silme için yukarıda *Silme*.
 - `npm run db:reset` kartları silmez; faturaların ödendi / talep edildi işaretleri faturalarla birlikte silinir.
 
+### Faturaların şubesi (25 Kasım 2026)
+
+Düzenle penceresinde birden çok kasa açıkken **Faturaların şubesi › Varsayılan şube**: Tuzla, Marina, laffogato.net,
+İşletme geneli ya da seçilmedi (`suppliers.default_branch_id`, `default_company_wide`). Paraşüt'ten gelen yeni faturası
+bu şubeye yazılır (ayrı Paraşüt hesabının faturası hesabın şubesine), elle eklenen faturada pencere şube seçmediyse bu
+geçer. "Şubesi seçilmemiş N faturasına da yaz" işaretlenirse kayıtla aynı işlemde yalnız seçilmemiş faturalara yazılır;
+şubesi seçilmiş faturaya dokunulmaz. Tedarikçi sayfasında her faturanın şubesi rozetinde; şubesi seçilmemiş fatura varsa
+şerit sayısını söyler ve kartın varsayılanı varsa **Hepsini … yap** der. Bakiye, borç ve ödemeler firma geneli kalır
+(tek firma); şube seçiliyken sayfa o şubenin fatura sayısını ve tutarını ayrıca yazar. Ayrıntı:
+[SUBE.md › Faturanın şubesi](SUBE.md#faturanın-şubesi-25-kasım-2026).
+
 ## Eşleşme
 
 Faturalar karta yabancı anahtarla bağlanmaz; tedarikçi adıyla ve Paraşüt'ten gelen faturada tedarikçinin vergi

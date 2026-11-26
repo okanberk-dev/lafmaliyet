@@ -320,7 +320,7 @@ test("bağlantılar: eylem yalnız yönetici ve kayıt yapmaz; günlük sınır 
   // olan türler (vardiya, ürün önerisi; tests/urun-eslestirme-ai.test.ts) tek tabloda: okuma sınırı hepsini dışarıda bırakır
   const claude = src("src/server/ai/claude.ts");
   assert.match(claude, /const OWN_CAP: Partial<Record<AiFeature, number>> = \{ \[SHIFT_FEATURE\]: SHIFT_DRAFT_DAILY_CAP,/);
-  assert.match(claude, /notInArray\(s\.aiCalls\.feature, \[\.\.\.OWN_CAP_FEATURES, ASSISTANT_FEATURE\]\)/);
+  assert.match(claude, /notInArray\(s\.aiCalls\.feature, \[\.\.\.OWN_CAP_FEATURES, ASSISTANT_FEATURE, INVOICE_FEATURE\]\)/);
   assert.match(claude, /if \(ownCap !== undefined\) \{\s*if \(\(await featureCallsSince\(req\.feature, since, tx\)\) >= ownCap\) return gate\("cap", ownCap\);/);
   // (panel asistanının soruları da okuma sınırına sayılmaz: docs/ASISTAN.md; sınırı yönetici başına)
   assert.match(claude, /feature: SHIFT_FEATURE, photoId: null, model: AI_MODEL, keepResult: false/);

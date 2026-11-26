@@ -18,6 +18,7 @@ import { FIXED_PERIODS, FIXED_SECTIONS, GOODS_CATEGORIES, INVOICE_CATEGORIES, MO
 import { dateTimeTR, dateTR, monthLabel, num, pct, tl } from "../../../lib/format";
 import { purchaseVat, purchaseWithheld } from "../../../lib/kdv";
 import { invoiceSourceLabel } from "../../../lib/import-labels";
+import { SHARED_LABEL, UNASSIGNED_LABEL } from "../../../lib/invoice-branch";
 import { monthKasa, salesMonthKasa, type MonthKasa } from "../../../lib/lafpos/kasa";
 import { QUARTER_DEPRECIATION_LABELS } from "../../../lib/tax/assets";
 import { monthName as taxMonthName, quarterLabel, quarterMonths } from "../../../lib/tax/calendar";
@@ -693,7 +694,7 @@ function fillGuide(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook, model: Model, mo
     [
       "Kapsam",
       scope?.branch
-        ? `${scope.label} şubesi: satış, kasa, personel ve ${scope.label} şubesine bağlı giderler yalnız bu şubenin; işletme geneli giderler (şubesi seçilmemiş) "İşletme geneli payı" olarak bilgi. Faturalar, Vergi ve Cari hareketleri firma geneli. Bütün şubeler için panelde soldan Tümü'nü seçip yeniden indirin.`
+        ? `${scope.label} şubesi: satış, kasa, personel ve ${scope.label} şubesine bağlı giderler yalnız bu şubenin; işletme geneli giderler (şubesi seçilmemiş) "İşletme geneli payı" olarak bilgi. Faturalar bu şubenin ve işletme geneli olanlar (şubesi seçilmemişler Tümü'de); Vergi ve Cari hareketleri firma geneli. Bütün şubeler için panelde soldan Tümü'nü seçip yeniden indirin.`
         : "Tümü: bütün şubeler ve laffogato.net birlikte; işletme geneli giderler bir kez sayılır.",
     ],
     ["Oluşturulma", dateTimeTR(now)],
@@ -1601,7 +1602,8 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
   head.getCell("pv").note = "Ödenecek − net (formül): tedarikçiye ödenen KDV, tevkifat düşülmüş. Faturada ÖTV ya da ÖİV gibi başka bir vergi varsa o da bu farktadır; indirilecek KDV için KDV sütununa bakın.";
   head.getCell("vkn").note = "Tedarikçinin VKN / TCKN'si (Paraşüt'ten ya da e-faturadan; elle girilen faturada boş).";
   head.getCell("ettn").note = "E-faturanın ETTN'si (GİB): Paraşüt ya da GİB listesiyle satır satır karşılaştırmak için.";
-  head.getCell("br").note = "Faturanın şubesi: ayrı Paraşüt hesabına bağlı şubenin faturası o şubenindir; ortak hesabın ve elle girilen faturalar işletme genelidir.";
+  head.getCell("br").note =
+    "Faturanın şubesi: panelde seçilen şube (ayrı Paraşüt hesabının faturası o şubenin, öbürleri tedarikçinin varsayılanıyla ya da elle), bilinçli seçilmiş İşletme geneli ya da Şubesi seçilmemiş.";
   head.getCell("m").note = "Faturanın ayı (Aylık Alımlar sekmesi bu sütuna göre toplar).";
   head.getCell("ob").note = "Ödenmemiş faturanın kalan borcu; kısmen ödenmiş Paraşüt faturasında kalan tutar, tedarikçiye panelde ödeme girildiyse sayılan ödemeler düşülmüş.";
   head.getCell("pp").note = "Bu faturaya sayılan, panelde girilen ödemeler (Tedarikçiler › Hesap hareketleri). Boşsa yok.";
@@ -1630,7 +1632,9 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
       pv: { formula: `J${r}-H${r}`, result: round2(inv.payable - net) },
       vkn: inv.supplierTaxNumber ?? null,
       ettn: inv.eInvoiceUuid ?? null,
-      br: inv.branchId ? (branchNames?.get(inv.branchId) ?? inv.branchId) : "İşletme geneli",
+      // Faturanın şubesi (docs/SUBE.md › Faturanın şubesi): şube, işletme geneli ya da şubesi seçilmemiş. `companyWide`
+      // bilinmeyen (içe aktarılmış, testler) şubesiz fatura işletme geneli
+      br: inv.branchId ? (branchNames?.get(inv.branchId) ?? inv.branchId) : inv.companyWide === false ? UNASSIGNED_LABEL : SHARED_LABEL,
       u: inv.unpaid ? "Ödenmedi" : "Ödendi",
       ob: inv.unpaid ? balance : null,
       pp: inv.allocated && inv.allocated > 0.005 ? round2(inv.allocated) : null,
@@ -1716,8 +1720,24 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
     t: months.length ? { formula: `SUM(${tCol}${firstCatRow}:${tCol}${lastCatRow})`, result: round2(sum(months.map((_, j) => colTotal(j)))) } : 0,
   });
   totalRow(al, tr);
-  const goodsRows = GOODS_CATEGORIES.map((g) => rowOf.get(g)!).filter(Boolean);
-  const goodsVal = (j: number) => sum(GOODS_CATEGORIES.map((g) => byCat.get(g)?.[j] ?? 0));
+  // Kalem kalem sınıflandırma (src/lib/invoice-split.ts): karışık faturanın hammaddeye bağlı kalemleri mal alışı,
+  // mal faturasının nedenli "hammadde değil" kalemi gider. Kategori satırları faturanın kategorisiyle (SUMIFS) kalır;
+  // fark ayrı satırda, mal maliyeti panelinkiyle aynı
+  const shift = months.map((m) => round2(model.goodsPurchases(m) - sum(GOODS_CATEGORIES.map((g) => byCat.get(g)?.[months.indexOf(m)] ?? 0))));
+  if (shift.some((v) => Math.abs(v) >= 0.01)) {
+    const r = al.rowCount + 1;
+    rowOf.set("__kalem", r);
+    const sr = al.addRow({
+      c: "Kalem kalem: mal alışına geçen (karışık faturalar)",
+      ...Object.fromEntries(months.map((m, j) => [m, shift[j]])),
+      t: { formula: `SUM(B${r}:${mCol(months.length - 1)}${r})`, result: round2(sum(shift)) },
+    });
+    sr.font = { italic: true };
+    sr.getCell("c").note =
+      "Kategorisi mal alışı olmayan faturanın hammaddeye bağlı kalemleri mal alışı sayılır; mal faturasında Sarf / Demirbaş / Hizmet denmiş kalem kendi giderine geçer (eksi). Faturanın tutarı kalemlerine net tutarlarıyla orantılı bölünür.";
+  }
+  const goodsRows = [...GOODS_CATEGORIES.map((g) => rowOf.get(g)!), rowOf.get("__kalem")!].filter(Boolean);
+  const goodsVal = (j: number) => sum(GOODS_CATEGORIES.map((g) => byCat.get(g)?.[j] ?? 0)) + (rowOf.has("__kalem") ? shift[j] : 0);
   const gr = al.addRow({
     c: `Mal maliyeti (${GOODS_CATEGORIES.join(" + ")})`,
     ...Object.fromEntries(months.map((m, j) => [m, { formula: goodsRows.map((r) => `${mCol(j)}${r}`).join("+"), result: round2(goodsVal(j)) }])),

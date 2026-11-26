@@ -2,16 +2,17 @@
  * Fatura kategorisi ile Paraşüt kalemlerinin hammaddeye bağlanması arasındaki kurallar; istemci de kullanır
  * (sync.ts "server-only" olduğu için fatura penceresi oradan alamaz). Saf modül; tests/fatura-kalem-baglama.test.ts.
  */
-import { GOODS_CATEGORIES, SEPARATE_CATEGORIES } from "./constants";
+import { COMMISSION_CATEGORY, GOODS_CATEGORIES, SEPARATE_CATEGORIES } from "./constants";
 
 /**
- * Kalemi hammaddeye bağlıysa stoğa girip gelir-gidere girmeyen kategori (denetim 26 Eki, E-07): mal alışı ya da kafe
- * dışı değil ("Diğer", "Hizmet"…). Böyle faturanın bağlı kalemi alınan miktara, FIFO partisine ve hammadde fiyatına
- * girer ama gelir-gider mal alışını saymaz; satılan malın maliyeti eksik, kâr fazla görünür. Sunucudaki sorgu
- * src/server/data/stock-only-invoices.ts
+ * Kalemi hammaddeye bağlıysa stoğa girip gelir-gidere girmeyen kategori (denetim 26 Eki, E-07). Böyle faturanın bağlı
+ * kalemi alınan miktara, FIFO partisine ve hammadde fiyatına girer ama gelir-gider mal alışını saymaz; satılan malın
+ * maliyeti eksik, kâr fazla görünür. 25 Kasım 2026'dan beri faturalar kalem kalem sayılır (src/lib/invoice-split.ts):
+ * "Diğer", "Hizmet", "Temizlik & Sarf" faturasının bağlı kalemi mal alışıdır; bölünmeyen yalnız komisyon faturası kaldı
+ * (kafe dışı faturanın kalemi stoğa girmez). Sunucudaki sorgu src/server/data/stock-only-invoices.ts
  */
 export function stockOnlyCategory(category: string): boolean {
-  return !GOODS_CATEGORIES.includes(category) && !SEPARATE_CATEGORIES.includes(category);
+  return category === COMMISSION_CATEGORY;
 }
 
 const GOODS_LIST = `${GOODS_CATEGORIES.slice(0, -1).join(", ")} ya da ${GOODS_CATEGORIES.at(-1)}`;
@@ -30,11 +31,12 @@ export function stockOnlyText(category: string, expenseLinks?: Record<string, st
 }
 
 /**
- * Hammaddeye bağlanmaya aday kalemlerin geldiği fatura kategorileri: mal alışları ve "Diğer". Komisyon, kira,
+ * Hammaddeye bağlanmaya aday kalemlerin geldiği fatura kategorileri: mal alışları, Temizlik & Sarf ve "Diğer". Komisyon, kira,
  * demirbaş, yazılım, reklam ve hizmet faturalarının kalemleri listeyi doldurmasın. Paraşüt sayfasının "Bekleyen"
  * listesi (sync.ts) de bu listeyi kullanır.
  */
-export const LINKABLE_CATEGORIES = [...GOODS_CATEGORIES, "Diğer"];
+// "Temizlik & Sarf" da (25 Kasım 2026): karışık faturanın (Avansas) gıda kalemi bağlanınca mal alışı sayılır
+export const LINKABLE_CATEGORIES = [...GOODS_CATEGORIES, "Temizlik & Sarf", "Diğer"];
 
 /** Kalemi "Hammaddeye bağla" ile Paraşüt sayfasına gönderilebilir mi (orada listelenir mi) */
 export function isLinkableCategory(category: string): boolean {

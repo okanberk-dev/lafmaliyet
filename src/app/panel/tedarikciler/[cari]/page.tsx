@@ -8,6 +8,9 @@ import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { defaultTill, EXPENSE_SHARED, sortBranches, tillBranches, tillRowsInScope } from "@/lib/branches";
+import { invoiceBranchOptions } from "@/lib/invoice-branch";
+import { ignoredSuppliers } from "@/server/parasut/sync";
+import { supplierMatchKey } from "../../faturalar/rules";
 import { compareOpenItems, debtLabel, debtRemaining, invoiceLabel, showsCredit } from "@/lib/cari/account";
 import { defaultCostMode } from "@/lib/cari/match";
 import { businessDate } from "@/lib/cash-report";
@@ -80,13 +83,17 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
     if (moved) redirect(supplierHref(moved.slug));
     notFound();
   }
-  const [docs, data, scope, branches, parasut] = await Promise.all([
+  const [docs, data, scope, branches, parasut, rules] = await Promise.all([
     listInvoiceDocuments(g.invoices.map((i) => i.id)),
     loadSupplierCari(g, { today, termDays: g.termDays }),
     currentBranchScope(),
     listBranches(),
     anyParasutConfigured(),
+    ignoredSuppliers(),
   ]);
+  // "Hep hammadde değil" kuralı (Paraşüt kalemleri; adlarından birinde açıksa)
+  const nameKeys = new Set((g.names.length ? g.names : [g.name]).map(supplierMatchKey));
+  const ignoreRule = rules.find((r) => nameKeys.has(r.supplierKey))?.reason ?? null;
   const documents: Record<number, DocumentMeta[]> = {};
   for (const d of docs) (documents[d.invoiceId] ??= []).push(d);
   const a = data.account;
@@ -228,6 +235,12 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
       hidden={isHiddenSupplier(g.card, g.summary, { ...g.account, lastEntry: g.lastEntry })}
       stats={stats}
       cari={cariData}
+      ignoreRule={parasut || ignoreRule ? { reason: ignoreRule, names: g.names.length ? g.names : [g.name] } : undefined}
+      branchInfo={
+        tillBranches(branches).length > 1
+          ? { options: invoiceBranchOptions(branches), scope, scopeName: branches.find((b) => b.id === scope)?.name ?? null }
+          : undefined
+      }
     />
   );
 }

@@ -28,9 +28,10 @@ import { renderCashReport } from "@/server/notify/cash-report-template";
 import { blockedAccounts, sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
-import { attachLafposDayPhotoCore, setLafposBankPosCore } from "@/server/lafpos/foto";
+import { attachLafposDayPhotoCore, refreshDayPhotoCheck, setLafposBankPosCore } from "@/server/lafpos/foto";
 import { lafposBranchId } from "@/server/lafpos/branch";
 import { sendPhotoEmail } from "@/server/lafpos/gun-sonu";
+import { readUnreadDayPhotos } from "@/server/photo-read/lafpos";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 
 import { logActivity } from "./log";
@@ -196,9 +197,19 @@ export async function attachLafposDayPhoto(input: z.input<typeof lafposPhotoSche
     const refusal = await staffBranchRefusal(me, data.branchId);
     if (refusal) throw new UserError(refusal);
     const res = await attachLafposDayPhotoCore(getDb(), me, data);
-    // Fotoğraf LafPOS'tan farklıysa (ya da kodla okunup "yönetici baksın") yöneticiye satır satır e-posta, yanıttan sonra;
-    // düşerse günlük iş yeniden dener. Personele hiçbir şey gitmez
-    after(() => sendPhotoEmail(getDb(), data.date).catch((e) => console.error("[lafpos] fotoğraf e-postası", data.date, e)));
+    // Yanıttan sonra: yüklenirken okunamayan fotoğraf bir kez daha okunur (readUnreadDayPhotos), karşılaştırma yenilenir,
+    // sonra yöneticiye fotoğraf e-postası (okunan, karşılaştırma, fotoğrafın kendisi; uyumlu fotoğrafta da). Düşerse
+    // günlük iş yeniden dener. Personele hiçbir şey gitmez
+    const deadlineAt = Date.now() + 45_000;
+    after(async () => {
+      const db = getDb();
+      try {
+        if ((await readUnreadDayPhotos(db, data.date, { deadlineAt })) > 0) await refreshDayPhotoCheck(db, data.date, data.branchId);
+      } catch (e) {
+        console.error("[lafpos] okunmamış gün sonu fotoğrafı", data.date, e instanceof Error ? e.message : e);
+      }
+      await sendPhotoEmail(db, data.date).catch((e) => console.error("[lafpos] fotoğraf e-postası", data.date, e));
+    });
     refresh();
     return res;
   });

@@ -1,6 +1,9 @@
 import "server-only";
 
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
+
+import { supplierMatchKey } from "@/app/panel/faturalar/rules";
+import { parseIgnored } from "@/lib/product-ignore";
 
 import {
   aiCandidates,
@@ -17,6 +20,7 @@ import {
   shortKeys,
   validateAnswer,
   type AiMatchState,
+  type MatchContext,
   type MatchExample,
   type MatchIngredientInfo,
   type MatchProduct,
@@ -26,6 +30,8 @@ import { extractMatch, matchSuggestStatus } from "@/server/ai/claude";
 import { MATCH_TIMEOUTS } from "@/server/ai/run";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { UserError } from "@/server/user-error";
+
+import { PRODUCT_IGNORE_KEY } from "./keys";
 
 import { unlinkedProducts } from "./sync";
 
@@ -148,7 +154,11 @@ export async function suggestNextBatch(me: { id: number }, now = new Date(), sta
   const batch = candidates.slice(0, MATCH_BATCH_SIZE);
   const ids = new Set(active.map((i) => i.id));
   const totalMs = Math.max(MIN_CALL_MS, Math.min(MATCH_TIMEOUTS.totalMs, MATCH_BUDGET_MS - (Date.now() - startedAt)));
-  const res = await extractMatch({ userId: me.id, system: matchSystemPrompt(active, pickExamples(links, ids)), task: matchTask(batch), schema: MatchAiRaw, totalMs });
+  // Faturanın bağlamı (açıklama, kategori, aynı faturadaki kalemler, tedarikçinin "hammadde değil"leri): kısaltmalar
+  // ("KRP END KONTY") ancak bağlamla anlaşılır
+  const context = await matchContext(db, batch);
+  const asked = batch.map((p) => ({ ...p, context: context.get(p.productKey) }));
+  const res = await extractMatch({ userId: me.id, system: matchSystemPrompt(active, pickExamples(links, ids)), task: matchTask(asked), schema: MatchAiRaw, totalMs });
   if (!res.ok) throw new UserError(res.message);
   const items = validateAnswer(res.data, { keys: shortKeys(batch), ingredientIds: ids, units: new Map(active.map((i) => [i.id, i.unit])), at: now.toISOString() });
   await saveSuggestions(db, hash, items, pendingKeys, active);
@@ -162,4 +172,46 @@ export async function suggestNextBatch(me: { id: number }, now = new Date(), sta
     rejected: inventedCount(items),
     costUsd: res.costUsd,
   };
+}
+
+/**
+ * Partideki ürünlerin bağlamı (docs/PARASUT.md › 5e): ürünün en yeni kaleminin faturası (açıklaması ve kategorisi), aynı
+ * faturadaki öteki kalemlerin adları, tedarikçinin "hammadde değil" denmiş kalemlerinin adları. Fatura no, vergi no,
+ * tedarikçi dışında kişi adı ve faturanın notu (elle yazılır, kişisel bilgi taşıyabilir) gitmez
+ */
+export async function matchContext(db: DB, products: readonly Pick<MatchProduct, "productKey" | "supplier">[]): Promise<Map<string, MatchContext>> {
+  const out = new Map<string, MatchContext>();
+  if (!products.length) return out;
+  const keys = products.map((p) => p.productKey);
+  const bl = s.parasutBillLines;
+  const latest = await db
+    .selectDistinctOn([bl.productKey], { productKey: bl.productKey, invoiceId: bl.invoiceId, description: s.invoices.description, category: s.invoices.category })
+    .from(bl)
+    .innerJoin(s.invoices, eq(s.invoices.id, bl.invoiceId))
+    .where(inArray(bl.productKey, keys))
+    .orderBy(bl.productKey, desc(s.invoices.date), desc(bl.id));
+  const invoiceIds = [...new Set(latest.map((l) => l.invoiceId))];
+  const supplierKeys = new Set(products.map((p) => supplierMatchKey(p.supplier)));
+  const [siblings, ignoredRow, supplierLines] = await Promise.all([
+    invoiceIds.length ? db.select({ invoiceId: bl.invoiceId, productKey: bl.productKey, name: bl.productName }).from(bl).where(inArray(bl.invoiceId, invoiceIds)) : Promise.resolve([]),
+    db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, PRODUCT_IGNORE_KEY)),
+    db.selectDistinct({ productKey: bl.productKey, name: bl.productName, supplier: s.invoices.supplier }).from(bl).innerJoin(s.invoices, eq(s.invoices.id, bl.invoiceId)),
+  ]);
+  const ignored = new Set(parseIgnored(ignoredRow[0]?.value).map((e) => e.productKey));
+  const notIngredientBySupplier = new Map<string, string[]>();
+  for (const l of supplierLines) {
+    const k = supplierMatchKey(l.supplier);
+    if (!supplierKeys.has(k) || !ignored.has(l.productKey)) continue;
+    notIngredientBySupplier.set(k, [...(notIngredientBySupplier.get(k) ?? []), l.name]);
+  }
+  for (const p of products) {
+    const l = latest.find((x) => x.productKey === p.productKey);
+    out.set(p.productKey, {
+      invoiceDescription: l?.description ?? null,
+      invoiceCategory: l?.category ?? null,
+      otherLines: l ? siblings.filter((x) => x.invoiceId === l.invoiceId && x.productKey !== p.productKey).map((x) => x.name) : [],
+      supplierNotIngredient: notIngredientBySupplier.get(supplierMatchKey(p.supplier)) ?? [],
+    });
+  }
+  return out;
 }

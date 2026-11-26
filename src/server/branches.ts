@@ -112,14 +112,13 @@ export async function branchUsageCount(db: DB, id: string): Promise<number> {
     s.users,
     // Şubenin kapalı günü (denetim 13 Kasım KP-05)
     s.specialDays,
-    // Tahmini stoğun kritik eşikleri ve faturanın geldiği şube (docs/STOK-TAHMINI.md)
+    // Tahmini stoğun kritik eşikleri (docs/STOK-TAHMINI.md)
     s.stockThresholds,
-    s.stockReceipts,
     // Vardiya planı (docs/VARDIYA.md)
     s.shifts,
     // Kasaya işle işaretleri (şube kapsamı A3). Kasada bekleyen fiyat (pos_stale) sayılmaz: durumdur, şubeyle silinir
     s.posMarks,
-    // Ayrı Paraşüt hesabından gelen faturanın şubesi (docs/PARASUT.md › Şube başına Paraşüt hesabı)
+    // Faturanın şubesi (docs/SUBE.md › Faturanın şubesi) ve tedarikçinin varsayılan şubesi
     s.invoices,
   ];
   const counts = await Promise.all(
@@ -130,5 +129,7 @@ export async function branchUsageCount(db: DB, id: string): Promise<number> {
   );
   // Şubenin Paraşüt hesabından gelmiş faturalar (hesap şubenin kimliğiyle adlanır)
   const [acc] = await db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.parasutAccount, id));
-  return counts.reduce((a, b) => a + b, 0) + Number(acc?.n ?? 0);
+  // Varsayılan şubesi bu şube olan tedarikçi kartı (yabancı anahtar)
+  const [card] = await db.select({ n: count() }).from(s.suppliers).where(eq(s.suppliers.defaultBranchId, id));
+  return counts.reduce((a, b) => a + b, 0) + Number(acc?.n ?? 0) + Number(card?.n ?? 0);
 }
