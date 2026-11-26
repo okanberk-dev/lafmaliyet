@@ -544,11 +544,12 @@ export function LiveCamera({ opts, onDone }: { opts: LiveCameraOptions; onDone: 
           type="button"
           role="switch"
           aria-checked={auto}
+          aria-label="Otomatik çekim"
           onClick={toggleAuto}
           disabled={!detecting}
           className={cn("flex min-h-12 flex-col items-center justify-center gap-0.5 justify-self-end rounded-xl px-2 text-[12px] hover:bg-white/10 disabled:opacity-40", auto ? "text-[#c0f21e]" : "text-white/70")}
         >
-          <ScanLine size={22} aria-hidden="true" /> {auto ? "Otomatik" : "Elle"}
+          <ScanLine size={22} aria-hidden="true" /> {auto ? "Otomatik" : "Otomatik kapalı"}
         </button>
       </footer>
       <input ref={galleryRef} type="file" accept="image/*" hidden onChange={onGallery} />
