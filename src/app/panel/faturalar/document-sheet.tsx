@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { deleteInvoiceDocument } from "@/server/actions/invoices";
 import type { DocumentMeta } from "@/server/documents";
 
-import { documentKind, documentUrl, isParasutDocument, uploadPlan, type DocumentKind } from "./document-rules";
+import { documentKind, documentUrl, isParasutDocument, uploadKindOf, uploadPlan, type DocumentKind } from "./document-rules";
 import { canShareFile, loadDocument, prepareDocument, uploadDocument, type LoadedDocument } from "./document-upload";
 import { splitSupplier, type InvoiceRow } from "./rules";
 
@@ -32,10 +32,12 @@ export function useDocumentUpload() {
   const busy = phase.kind === "preparing" || phase.kind === "uploading";
 
   async function upload(invoiceId: number, file: File): Promise<DocumentMeta | null> {
-    if (uploadPlan(file).action === "compress") setPhase({ kind: "preparing" });
+    // Fotoğraf önce taranır (tarama ekranı), sonra gerekirse küçültülür
+    if (uploadPlan(file).action !== "reject" && uploadKindOf(file) === "image") setPhase({ kind: "preparing" });
     const prepared = await prepareDocument(file);
     if (!prepared.ok) {
-      setPhase({ kind: "error", message: prepared.error });
+      // Tarama ekranı kapatıldı: hata değil, hiçbir şey yüklenmez
+      setPhase(prepared.cancelled ? { kind: "idle" } : { kind: "error", message: prepared.error });
       return null;
     }
     return send(invoiceId, prepared.file);

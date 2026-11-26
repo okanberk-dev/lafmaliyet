@@ -115,7 +115,7 @@ interface Recorded {
 }
 
 /** Türe ve görsele göre kayıtlı yanıt (fotoğraflar) */
-export function replayAnswer(feature: Exclude<AiFeature, "fatura" | "vardiya" | "eslestirme" | "asistan">, size: { width: number; height: number } | null): Recorded {
+export function replayAnswer(feature: Exclude<AiFeature, "fatura" | "vardiya" | "eslestirme" | "asistan" | "tarama">, size: { width: number; height: number } | null): Recorded {
   const image = size ? IMAGES[`${size.width}x${size.height}`] : undefined;
   const key = image ? `${feature}:${image}` : feature;
   const usage = { input_tokens: 4000, output_tokens: 300, iterations: [{ type: "message", model: null, input_tokens: 4000, output_tokens: 300 }] };
@@ -123,6 +123,15 @@ export function replayAnswer(feature: Exclude<AiFeature, "fatura" | "vardiya" | 
   const file = FILES[key] ?? FILES[feature];
   const rec = JSON.parse(readFileSync(join(process.cwd(), "tests", "fixtures", "foto", `${file}.json`), "utf8")) as Recorded;
   return rec;
+}
+
+/**
+ * Belge taramanın köşe ipucu (geliştirmede; canlı istek yapılmaz, görüntü okunmaz): "belge, köşe yok" der, tarama
+ * telefondaki kodun sonucuyla sürer (ekranın akışını denemeye yeter)
+ */
+export function replayScanHintAnswer(): Recorded {
+  const usage = { input_tokens: 1200, output_tokens: 60, iterations: [{ type: "message", model: null, input_tokens: 1200, output_tokens: 60 }] };
+  return { json: { document: true, top: "up", corners: null }, usage, ms: 800, model: "claude-haiku-5-5" };
 }
 
 /** Fatura okumasının kayıtlı yanıtları: istemdeki kalem adına göre; tanınmayan kalem "bulunamadı" */
@@ -209,7 +218,9 @@ export function replayClient(feature: Exclude<AiFeature, "asistan">): AiClient {
                 ? replayShiftAnswer(task)
                 : feature === "eslestirme"
                   ? replayMatchAnswer(system, task)
-                  : replayAnswer(feature, imageSize(new Uint8Array(Buffer.from(data, "base64"))));
+                  : feature === "tarama"
+                    ? replayScanHintAnswer()
+                    : replayAnswer(feature, imageSize(new Uint8Array(Buffer.from(data, "base64"))));
           await new Promise((r) => setTimeout(r, Math.min(rec.ms, 2500)));
           return { model: rec.model, stop_reason: "end_turn", stop_details: null, content: [{ type: "text", text: JSON.stringify(rec.json) }], usage: rec.usage, _request_id: "kayitli-yanit" };
         },

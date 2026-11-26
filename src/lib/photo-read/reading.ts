@@ -12,7 +12,8 @@ export type PhotoReading = CashReading | (ReceiptReading & { kind: "fis" });
 
 export interface PhotoUploadResponse {
   ok: true;
-  photo: { id: number; kind: PhotoKind; url: string };
+  /** `original`: belge taranarak yüklendi, asıl fotoğraf da saklandı (yalnız POST /api/foto; docs/FOTOGRAF.md › Belge tarama) */
+  photo: { id: number; kind: PhotoKind; url: string; original?: boolean };
   reading: PhotoReading | null;
   readError: string | null;
   /** src/server/ai/run.ts AiErrorCode (ekranda yalnız metin gösterilir) */

@@ -443,6 +443,20 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         ],
       },
       {
+        id: "belge-tara",
+        q: "Fotoğraf çekince açılan Belgeyi tara ekranı",
+        a: (
+          <>
+            Z raporu, fiş ya da fatura fotoğrafı çekilince önce Belgeyi tara ekranı açılır: kâğıt kendiliğinden bulunup kırpılır, yan çekildiyse düz
+            çevrilir ve taranmış gibi görünür (kâğıt beyaz, yazı koyu). Köşe yanlışsa sürüklenir. Bulanık, parlamalı, karanlık ya da kesik çekimde tek satır
+            uyarı ve Yeniden çek çıkar; Kullan yine serbesttir. Uzun fiş Devamını çek ile en çok 3 parçada çekilir, parçalar tek fişte birleşir (birleşemezse
+            ayrı fotoğraf olur). Fiş, rapor ya da fatura olmayan bir şey (ekran, telefon, koli) kırpılmaz. Taramadan kullan fotoğrafı olduğu gibi ekler.
+          </>
+        ),
+        icon: ScanText,
+        links: [{ href: "/panel/kasa", label: "Kasa raporu" }],
+      },
+      {
         id: "yazarkasa-z",
         q: "ModPOS Z ve banka POS Z raporu (yazarkasa)",
         a: (

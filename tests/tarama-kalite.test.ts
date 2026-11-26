@@ -166,6 +166,25 @@ test("kesik: yazılı kenar kadraj dışında; boş kenar boşluğu kesilince uy
   assert.deepEqual(sides, ["alt", "sag"], ozet(r3));
 });
 
+test("kesik: eğik fişin altı kadraj dışında (algılama alt kenarı karşı kenara paralel yaptı, köşe karenin biraz içinde)", () => {
+  // detect.ts squareFrameSides: kareye dayanan alt kenar üst kenara paralel; bir köşe karede, öteki ~20 px içeride
+  const W = 900;
+  const H = 1150;
+  const k = (H * 0.82) / FIS.height;
+  const truth = dondur(dikdortgen(W / 2 - (FIS.width * k) / 2, H * 0.62 - (FIS.height * k) / 2, FIS.width * k, FIS.height * k), -3.4);
+  const img = sahne(FIS, { width: W, height: H, corners: truth, noise: 3, blur: 0.7, seed: 44 });
+  const [tl, tr] = truth;
+  // sağ ve sol kenarlar boyunca; alt kenar üstünkine paralel, sol alt köşe karenin alt kenarında
+  const along = (a: { x: number; y: number }, b: { x: number; y: number }, y: number) => ({ x: a.x + ((b.x - a.x) * (y - a.y)) / (b.y - a.y), y });
+  const bl = along(tl, truth[3], H - 1);
+  const slope = (tr.y - tl.y) / (tr.x - tl.x);
+  const brY = bl.y + slope * (along(tr, truth[2], H - 1).x - bl.x);
+  const q: Quad = [tl, tr, along(tr, truth[2], brY), bl];
+  assert.ok(H - 1 - brY > 12, `sağ alt köşe karenin içinde: ${(H - 1 - brY).toFixed(1)}`);
+  const r = assessQuality(img, { corners: q });
+  assert.equal(r.issues.find((i) => i.kind === "kesik")?.side, "alt", ozet(r));
+});
+
 test("çok küçük yazı: uzaktan çekim; uzun fişte parça parça çekim önerisi", () => {
   const far = cek(FIS, { width: 900, height: 1150, noise: 2.5, blur: 0.5, seed: 51 }, yerlestir(FIS, 330, 380, 0.36, 2)).r;
   const k = far.issues.find((i) => i.kind === "kucuk-yazi");

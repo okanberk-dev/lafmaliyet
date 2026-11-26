@@ -304,7 +304,7 @@ export function CashOutDialog({
     });
   }
 
-  const busyPhoto = phase.kind === "compressing" || phase.kind === "uploading" || phase.kind === "reading";
+  const busyPhoto = phase.kind === "scanning" || phase.kind === "compressing" || phase.kind === "uploading" || phase.kind === "reading";
   const caption = photoId ? photoCaption("fis", line?.createdAt ?? new Date().toISOString(), line?.createdByName ?? me) : "";
 
   return (

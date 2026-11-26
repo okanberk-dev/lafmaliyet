@@ -13,6 +13,7 @@ Genel anlatım: [docs/FOTOGRAF.md](../../../docs/FOTOGRAF.md) § 11 (çekirdek) 
 | `quality.ts` | çekim kalitesi: bulanık, parlama, karanlık / soluk, kesik, küçük yazı, birden çok belge |
 | `orientation.ts` | sayfa yönü: 90° / 180° / 270° döndürülmüş belge, emin değilse "bilinmiyor" |
 | `stitch.ts` | uzun fiş birleştirme: ardışık parçaların örtüşmesi; emin değilse null |
+| `live.ts` | canlı vizör: dörtgen yumuşatma (`QuadSmoother`), karenin ışık / netlik ölçüsü (`frameMetrics`), otomatik çekim kararı (`AutoCapture`), algılama ölçüsünün süreye göre ayarı (`nextLiveEdge`); docs/FOTOGRAF.md § 1 › Canlı vizör |
 
 ## Önerilen akış (arayüz için)
 
