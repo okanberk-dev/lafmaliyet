@@ -285,6 +285,48 @@ export function despeckle(v: Float32Array, w: number, h: number): number {
   return dropped;
 }
 
+/**
+ * Kenarda kalan zemin şeridini siler: köşeler kâğıdın birkaç piksel dışına düştüyse açılan sayfanın kenarında masa
+ * kalır ve siyah-beyazda koyu çizgi olur. Bir kenar boyunca konumların en az %35'inde mürekkep tam kenardan başlıyorsa
+ * (şerit), kenardan başlayan ve en çok `maxDepth` (kısa kenarın %2,5'i) derinlikteki mürekkep silinir. Kenara
+ * değmeyen çerçeve çizgisi ve tek tük kesik yazı dokunulmaz. Silinen piksel sayısını döner.
+ */
+export function clearBorderInk(v: Float32Array, w: number, h: number): number {
+  const maxDepth = Math.max(3, Math.round(0.025 * Math.min(w, h)));
+  let cleared = 0;
+  // kenar: başlangıç, kenar boyunca adım, içeri adım, uzunluk
+  const sides: [number, number, number, number][] = [
+    [0, 1, w, w], // üst
+    [(h - 1) * w, 1, -w, w], // alt
+    [0, w, 1, h], // sol
+    [w - 1, w, -1, h], // sağ
+  ];
+  const runs = new Int32Array(Math.max(w, h));
+  for (const [start, along, inward, len] of sides) {
+    const depthLimit = inward === 1 || inward === -1 ? w : h;
+    let touching = 0;
+    for (let k = 0; k < len; k++) {
+      const base = start + k * along;
+      let r = 0;
+      while (r <= maxDepth && r < depthLimit && v[base + r * inward] > 0.25) r++;
+      runs[k] = r;
+      if (r > 0) touching++;
+    }
+    if (touching < len * 0.35) continue;
+    for (let k = 0; k < len; k++) {
+      const r = runs[k];
+      if (r === 0 || r > maxDepth) continue;
+      const base = start + k * along;
+      // geçişin açık kuyruğu da (yarı koyu bir piksel daha)
+      for (let j = 0; j < Math.min(depthLimit, r + 1); j++) {
+        if (v[base + j * inward] > 0) cleared++;
+        v[base + j * inward] = 0;
+      }
+    }
+  }
+  return cleared;
+}
+
 /** "belge": CamScanner tarzı siyah-beyaz */
 function documentMode(img: RgbaImage, ill: Illumination): { out: RgbaImage; levels: InkLevels } {
   const { width: W, height: H } = img;
@@ -383,6 +425,7 @@ function documentMode(img: RgbaImage, ill: Illumination): { out: RgbaImage; leve
       v[o + x] = t < 0.1 ? 0 : t;
     }
   }
+  clearBorderInk(v, W, H);
   const specks = despeckle(v, W, H);
   // keskinlik: kâğıt tam beyaz olduğu için harf çevresinde hale görünmez, yalnız kenarlar netleşir
   const o255 = new Float32Array(n);

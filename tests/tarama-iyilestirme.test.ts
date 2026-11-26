@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { createRgba, type Point, type RgbaImage } from "../src/lib/scan/image";
-import { despeckle, enhance, enhanceDocument, estimateSkew } from "../src/lib/scan/enhance";
+import { clearBorderInk, despeckle, enhance, enhanceDocument, estimateSkew } from "../src/lib/scan/enhance";
 import { fullFrame, rotationForTop, scanDocument } from "../src/lib/scan";
 import { estimateSize } from "../src/lib/scan/warp";
 import { regionMean, renderScene } from "./helpers/tarama-sentetik";
@@ -140,6 +140,30 @@ test("belge: tek başına benekler silinir, yazının yanındaki nokta kalır", 
   v[22 * 100 + 30] = 1;
   assert.equal(despeckle(v, 100, 100), 1, "yalnız uzak benek silinir");
   assert.equal(v[22 * 100 + 30], 1, "çizginin yanındaki nokta kalır");
+});
+
+test("belge: kenarda kalan zemin şeridi silinir, kenara değmeyen çerçeve çizgisi kalır", () => {
+  const W = 500;
+  const H = 600;
+  const img = page({ width: W, height: H, strokes: [{ x0: 60, y0: 60, x1: 440, y1: 540, ink: DARK }] });
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      // solda 4 px masa şeridi (köşe kâğıdın biraz dışında kalmış), 20 px içeride dikey çerçeve çizgisi
+      if (x < 4) img.data.set([70, 60, 50, 255], (y * W + x) * 4);
+      else if (x >= 20 && x < 23 && y >= 20 && y < H - 20) img.data.set([30, 30, 30, 255], (y * W + x) * 4);
+    }
+  }
+  const out = enhanceDocument(img).image;
+  assert.ok(regionMean(out, 0, 0, 6, H) >= 250, `sol kenar şeridi beyaz: ${regionMean(out, 0, 0, 6, H).toFixed(0)}`);
+  assert.ok(regionMean(out, 20, 40, 23, H - 40) < 60, "çerçeve çizgisi kalır");
+  assert.ok(strokeMean(out, 60, 60, 440, 540) <= 30, "yazı kalır");
+  // tek tük kenara değen yazı (kesik satır) silinmez
+  const v = new Float32Array(100 * 100);
+  for (let y = 10; y < 20; y++) for (let x = 0; x < 8; x++) v[y * 100 + x] = 1;
+  assert.equal(clearBorderInk(v, 100, 100), 0, "şerit değil: dokunulmaz");
+  for (let y = 0; y < 100; y++) v[y * 100] = 1;
+  assert.ok(clearBorderInk(v, 100, 100) >= 90, "kenar boyunca şerit silinir");
+  assert.equal(v[50 * 100], 0);
 });
 
 test("gri, renkli ve orijinal modlar", () => {

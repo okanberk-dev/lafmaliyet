@@ -10,7 +10,7 @@ import { interiorAngles, isConvex, orderCorners, polygonArea } from "./geom";
 import { clampQuad, detectDocument, MAX_OUTSIDE, type DetectMethod, type DetectOptions } from "./detect";
 import { refineCorners } from "./refine";
 import { estimateSkew, enhance, type ScanMode } from "./enhance";
-import { estimateSize, rotationAbout, verticalShear, warpQuad, type Affine } from "./warp";
+import { applyHomography, estimateSize, homography, rotationAbout, verticalShear, warpQuad, type Affine } from "./warp";
 
 export type { GrayImage, Point, Quad, RgbaImage } from "./image";
 export { orderCorners } from "./geom";
@@ -167,6 +167,23 @@ function paperColor(img: RgbaImage): [number, number, number] {
 }
 
 /**
+ * Kâğıdın kenarı fotoğrafta birkaç piksellik yumuşak geçiştir: köşeler tam kenarda olunca açılan sayfanın en dış
+ * satırı yarı zemin olur, taranmış görünümde ince koyu çerçeve çıkar. Sayfa, çıktının kısa kenarının %0,4'ü (1–6 px)
+ * içeriden açılır; kâğıdın boş kenar payından gider.
+ */
+function insetPage(q: Quad, width: number, height: number): Quad {
+  const d = Math.max(1, Math.min(6, 0.004 * Math.min(width, height)));
+  const rect = (k: number): Point[] => [
+    { x: -0.5 + k, y: -0.5 + k },
+    { x: width - 0.5 - k, y: -0.5 + k },
+    { x: width - 0.5 - k, y: height - 0.5 - k },
+    { x: -0.5 + k, y: height - 0.5 - k },
+  ];
+  const H = homography(rect(0), q);
+  return rect(d).map((p) => applyHomography(H, p)) as Quad;
+}
+
+/**
  * Fotoğrafı tarar: köşeler verilmediyse belge algılanır; bulunamazsa ya da kâğıt kareyi dolduruyorsa kırpılmaz (yalnız
  * görünüm işlenir). Döner: taranmış görüntü, kullanılan köşeler, güven, yöntem, uygulanan eğiklik düzeltmesi.
  */
@@ -207,7 +224,7 @@ export function scanDocument(img: RgbaImage, opts: ScanOptions = {}): ScanResult
   // köşeler görüntünün köşeleriyse açma birebir olsun (piksel merkezi 0 … W−1; kâğıdın kenarı −0,5 … W−0,5)
   const frame = fullFrame(img.width, img.height);
   const isFrame = corners.every((p, i) => Math.abs(p.x - frame[i].x) <= 0.75 && Math.abs(p.y - frame[i].y) <= 0.75);
-  const pageCorners = turnCorners(
+  let pageCorners = turnCorners(
     isFrame
       ? [
           { x: -0.5, y: -0.5 },
@@ -222,7 +239,10 @@ export function scanDocument(img: RgbaImage, opts: ScanOptions = {}): ScanResult
   if (isFrame) {
     const f = fitSize(img.width, img.height, maxEdge);
     size = rotate % 180 ? { width: f.height, height: f.width } : f;
-  } else size = estimateSize(pageCorners, img.width, img.height, maxEdge);
+  } else {
+    size = estimateSize(pageCorners, img.width, img.height, maxEdge);
+    pageCorners = insetPage(pageCorners, size.width, size.height);
+  }
   const outside = corners.some((p) => p.x < -0.5 || p.y < -0.5 || p.x > img.width - 0.5 || p.y > img.height - 0.5);
   let correction: Affine | undefined;
   let rotation = 0;
