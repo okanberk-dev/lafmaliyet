@@ -247,6 +247,7 @@ Perşembe 18:00'den Pazar sonuna kadar gelecek haftanın planında bir şubenin 
 | `src/server/notify/vardiya-template.ts` | "Vardiyanız değişti" e-postası |
 | `src/server/bell/vardiya.ts` | Yöneticinin zil satırı |
 | `tests/vardiya-bildirim.test.ts` | Değişiklik kuralları, metinler, e-posta, hatırlatma zamanı, günlük işin adımı, kaynak bağlantıları |
+| `tests/bildirim-gonderim-db.test.ts` | Gerçek Postgres'te (`BILDIRIM_TEST_DATABASE_URL`, `npm run test:db`): kaydın değişiklikleri kayıttan önceki hâlle, gönderim (cihaz ve e-posta yoksa atlanır, pasif hesaba gitmez), eksik plan ve zil (seçili şubeye göre), günlük işin şube ve gün başına tek hatırlatması |
 
 ## Veri
 

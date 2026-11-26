@@ -120,7 +120,8 @@ sabah e-postası ve Son kararlar bunu yazar.
   - Sekme öndeyken sistem bildirimi yerine sekme kendisi gösterir ("Gör" düğmesiyle), zili tazeler ve Onaylar'ı yeniler
     (`alert-center.tsx`, `src/lib/live-poll.ts` › `refreshesScreen`).
   - Kod: metin `src/lib/staff-requests.ts` › `requestPushText`, gönderim `src/server/staff-requests/push.ts`
-    (`pushNewRequest`; isteği açan her eylem çekirdeğin hemen ardından çağırır), test `tests/onay-bildirimi.test.ts`.
+    (`pushNewRequest`; isteği açan her eylem çekirdeğin hemen ardından çağırır), test `tests/onay-bildirimi.test.ts`;
+    veritabanında (yalnız hâlâ bekleyen istek, etkin yönetici varken) `tests/bildirim-gonderim-db.test.ts`.
     Yeni bir istek yolu eklenince eylemi de `pushNewRequest` çağırır (test isteği açan çekirdeklerin listesini tutar).
   - Önceden (26 Ekim – 25 Kasım 2026) hiçbir istek push göndermiyordu; tek gönderen mal siparişi taslağıydı.
 - **İşlem geçmişi:** eylem adları her türün kendi maddesinde; ayrıntıda nedenin yalnız ilk 200 karakteri. Genel geri
