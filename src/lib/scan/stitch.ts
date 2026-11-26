@@ -16,7 +16,7 @@
  * (4096; aşarsa küçültülür). Belge: docs/FOTOGRAF.md › Belge tarama (kalite, yön, birleştirme), src/lib/scan/README.md.
  */
 
-import type { RgbaImage } from "./image";
+import type { GrayImage, RgbaImage } from "./image";
 import { boxMean, fitSize, gaussianBlur, maxFilter, resizeGray, resizeRgba, toGray } from "./image";
 import { MAX_PHOTO_EDGE } from "../photo-rules";
 
@@ -39,6 +39,10 @@ export interface OverlapMatch {
   margin: number;
   /** Örtüşen bölgedeki yazı satırı sayısı */
   lines: number;
+  /** İnce doğrulama: yazılı blok sayısı, tutmayan blokların oranı, blok ilintilerinin alt onda biri */
+  blocks: number;
+  badBlocks: number;
+  blockLow: number;
   /** 0–1 */
   confidence: number;
   /** Dikiş: üst parçanın bu satırına kadar üst parça, sonrası alt parça */
@@ -91,7 +95,7 @@ const SY_RANGE = 0.1;
 const SY_STEP = 0.01;
 /** Yatay ölçek farkı (±) ve adımı */
 const SX_RANGE = 0.06;
-const SX_STEP = 0.01;
+const SX_STEP = 0.02;
 /** Yatay kayma: genişliğin bu oranına kadar */
 const DX_RANGE = 0.08;
 /** Örtüşme en az genişliğin bu oranı; en çok kısa parçanın bu oranı */
@@ -100,13 +104,21 @@ const MAX_OVERLAP = 0.92;
 /** Alt parça üst parçanın altına en az genişliğin bu oranı kadar yeni yer eklemeli */
 const MIN_NEW = 0.02;
 /** Satır profilinden iki boyutlu sınamaya giden aday sayısı */
-const CANDIDATES = 40;
+const CANDIDATES = 24;
 /** İlinti şeritleri */
 const BANDS = 4;
 /** Karar: şerit ilintisinin bu aralıkta güveni 0 → 1, farkın bu değerde 1 */
 const BAND_LO = 0.45;
 const BAND_HI = 0.75;
 const MARGIN_FULL = 0.2;
+/** İnce doğrulamanın genişliği (piksel) */
+const FINE_W = 560;
+/** Blok doğrulaması: yerel kayma (±piksel), yazılı blok varyans tabanı, kötü blok sınırı ve kötü blokların en çok oranı */
+const BLOCK_SHIFT = 2;
+const BLOCK_VAR = 0.002;
+const BLOCK_BAD = 0.5;
+const BLOCK_BAD_OK = 0.05;
+const BLOCK_BAD_MAX = 0.12;
 
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 
@@ -129,20 +141,30 @@ interface Work {
   ky: number;
 }
 
-function prepare(img: RgbaImage, W: number): Work {
-  const H = Math.max(2, Math.round((img.height * W) / img.width));
-  const g = resizeGray(toGray(img), W, H);
+/**
+ * Koyuluk haritası `W` genişlikte. `strokes`: harf boyunda yerel ortalama çıkarılır (yalnız çizgiler kalır; iki farklı
+ * rakam aynı yerde dursa da birbirine benzemez), ince doğrulama için.
+ */
+function prepare(gray: GrayImage, W: number, strokes = false): Work {
+  const H = Math.max(2, Math.round((gray.height * W) / gray.width));
+  const g = resizeGray(gray, W, H);
   // kâğıdın yerel parlaklığı: harften geniş en büyük süzgeç + kutu ortalaması (yazıyı siler, gölgeyi izler)
   const r = Math.max(3, Math.round(W / 30));
   const bg = boxMean(maxFilter(g, r), r).data;
-  const d0 = new Float32Array(W * H);
+  let d0 = new Float32Array(W * H);
   for (let i = 0; i < d0.length; i++) {
     const b = bg[i] > 16 ? bg[i] : 16;
     const v = (b - g.data[i]) / b;
     d0[i] = v > 0 ? (v < 1 ? v : 1) : 0;
   }
+  if (strokes) {
+    const m = boxMean({ width: W, height: H, data: d0 }, Math.max(1, Math.round(W / 200))).data;
+    const hp = new Float32Array(W * H);
+    for (let i = 0; i < hp.length; i++) hp[i] = d0[i] - m[i];
+    d0 = hp;
+  }
   // hafif bulanıklık: kalan küçük eğiklik ve ölçek farkı ilintiyi düşürmesin
-  const d = gaussianBlur({ width: W, height: H, data: d0 }, 0.8).data;
+  const d = gaussianBlur({ width: W, height: H, data: d0 }, strokes ? 0.7 : 0.8).data;
   const rows = new Float64Array(H);
   const x0 = Math.round(0.04 * W);
   const x1 = W - x0;
@@ -151,7 +173,24 @@ function prepare(img: RgbaImage, W: number): Work {
     for (let x = x0, o = y * W + x0; x < x1; x++, o++) s += d[o];
     rows[y] = s / (x1 - x0);
   }
-  return { w: W, h: H, d, rows, kx: W / img.width, ky: H / img.height };
+  return { w: W, h: H, d, rows, kx: W / gray.width, ky: H / gray.height };
+}
+
+/** Parça: asıl görüntü, gri hâli ve arama kopyası */
+interface Part {
+  img: RgbaImage;
+  gray: GrayImage;
+  work: Work;
+}
+
+function partOf(img: RgbaImage, W: number): Part {
+  const gray = toGray(img);
+  return { img, gray, work: prepare(gray, W) };
+}
+
+/** Gri görüntünün [y0, y1) satırları */
+function cropRows(g: GrayImage, y0: number, y1: number): GrayImage {
+  return { width: g.width, height: y1 - y0, data: g.data.slice(y0 * g.width, y1 * g.width) };
 }
 
 /** Çalışma kopyasında eşleşme: alt parçanın (x, y) noktası üst parçada (dx + sx · x, oy + sy · y) */
@@ -317,8 +356,11 @@ interface Score2D {
   n: number;
 }
 
-/** Koyuluk haritalarının örtüşen bölgede ilintisi (alt parça çift doğrusal örneklenir); `rowStep` satır atlama */
-function score2d(A: Work, B: Work, p: Params, rowStep = 1): Score2D {
+/**
+ * Koyuluk haritalarının örtüşen bölgede ilintisi (alt parça çift doğrusal örneklenir). Uzun örtüşmede satırlar eşit
+ * aralıkla seyreltilir: en çok `maxRows` satır.
+ */
+function score2d(A: Work, B: Work, p: Params, maxRows = Infinity): Score2D {
   const W = A.w;
   const x0 = Math.round(0.04 * W);
   const x1 = W - x0;
@@ -338,6 +380,7 @@ function score2d(A: Work, B: Work, p: Params, rowStep = 1): Score2D {
   }
   const S = new Float64Array(BANDS * 6);
   const y0 = Math.max(0, Math.ceil(p.oy));
+  const rowStep = Math.max(1, Math.ceil((A.h - y0) / maxRows));
   let rowsUsed = 0;
   for (let ya = y0; ya < A.h; ya += rowStep) {
     const yb = rowOf(p, ya);
@@ -403,12 +446,12 @@ function combined(s: Score2D): number {
 }
 
 /** Tepe tırmanma: her parametrede ± adım, iyileşme kalmayınca adımlar yarıya; `minStep` piksele kadar */
-function refine(A: Work, B: Work, start: Params, rowStep: number, minStep = 0.25): { p: Params; s: Score2D } {
+function refine(A: Work, B: Work, start: Params, maxRows: number, minStep = 0.25): { p: Params; s: Score2D } {
   let p = { ...start };
-  let s = score2d(A, B, p, rowStep);
+  let s = score2d(A, B, p, maxRows);
   let best = combined(s);
   let step = 2;
-  for (let guard = 0; guard < 60 && step >= minStep; guard++) {
+  for (let guard = 0; guard < 40 && step >= minStep; guard++) {
     let improved = false;
     const scaleStep = (step / Math.max(A.h - p.oy, 40)) * 2;
     const tries: Params[] = [
@@ -423,7 +466,7 @@ function refine(A: Work, B: Work, start: Params, rowStep: number, minStep = 0.25
     ];
     for (const t of tries) {
       if (t.oy < 0 || t.oy > A.h - 4 || Math.abs(t.sy - 1) > SY_RANGE + 0.02 || Math.abs(t.sx - 1) > SX_RANGE + 0.02) continue;
-      const ts = score2d(A, B, t, rowStep);
+      const ts = score2d(A, B, t, maxRows);
       const c = combined(ts);
       if (c > best + 1e-6) {
         best = c;
@@ -495,8 +538,130 @@ function toOriginal(p: Params, A: Work, B: Work): Params {
   return { dx: x.o, sx: x.s, oy: y.o, sy: y.s };
 }
 
-/** İki çalışma kopyası arasında örtüşme (üst parça A, alt parça B) */
-function probeWorks(A: Work, B: Work, imgA: RgbaImage): OverlapProbe {
+/** Asıl pikseldeki eşleşmeyi çalışma kopyasına çevirir (toOriginal'ın tersi) */
+function fromOriginal(o: Params, A: Work, B: Work): Params {
+  const conv = (off: number, s: number, kA: number, kB: number) => {
+    const sw = (s * kA) / kB;
+    return { o: (off + 0.5) * kA - 0.5 - sw * (0.5 * kB - 0.5), s: sw };
+  };
+  const x = conv(o.dx, o.sx, A.kx, B.kx);
+  const y = conv(o.oy, o.sy, A.ky, B.ky);
+  return { dx: x.o, sx: x.s, oy: y.o, sy: y.s };
+}
+
+interface BlockCheck {
+  /** yazılı blok sayısı */
+  blocks: number;
+  /** ilintisi BLOCK_BAD'in altında kalan blokların oranı */
+  bad: number;
+  /** blok ilintilerinin alt onda biri */
+  low: number;
+}
+
+/**
+ * İnce doğrulama: örtüşen bölge satır aralığı boyunda, genişliğin sekizde biri eninde bloklara bölünür; her yazılı
+ * blokta çizgi haritalarının ilintisi (±BLOCK_SHIFT piksel yerel kaymayla: kalan küçük bükülme cezalandırılmaz).
+ * Aynı kâğıtta bütün bloklar tutar; aynı şablonlu başka raporda etiket blokları tutar, tutar blokları tutmaz.
+ */
+function blockCheck(A: Work, B: Work, p: Params): BlockCheck {
+  const W = A.w;
+  const y0 = Math.max(0, Math.ceil(p.oy));
+  const y1 = Math.min(A.h, Math.floor(p.oy + p.sy * (B.h - 1)) + 1);
+  const n = y1 - y0;
+  const S = BLOCK_SHIFT;
+  if (n < 2 * S + 6) return { blocks: 0, bad: 1, low: -1 };
+  // alt parça üst parçanın çerçevesine örneklenir (dışarısı NaN)
+  const bm = new Float32Array(n * W).fill(NaN);
+  for (let r = 0; r < n; r++) {
+    const yb = (y0 + r - p.oy) / p.sy;
+    if (yb < 0 || yb > B.h - 1) continue;
+    const j0 = Math.min(B.h - 2, Math.floor(yb));
+    const fy = yb - j0;
+    const r0 = j0 * B.w;
+    const r1 = r0 + B.w;
+    for (let x = 0; x < W; x++) {
+      const xb = (x - p.dx) / p.sx;
+      if (xb < 0 || xb > B.w - 1) continue;
+      const i = Math.min(B.w - 2, Math.floor(xb));
+      const fx = xb - i;
+      const t = B.d[r0 + i] + (B.d[r0 + i + 1] - B.d[r0 + i]) * fx;
+      const b = B.d[r1 + i] + (B.d[r1 + i + 1] - B.d[r1 + i]) * fx;
+      bm[r * W + x] = t + (b - t) * fy;
+    }
+  }
+  const bh = Math.max(8, Math.round(0.05 * W));
+  const bw = Math.max(8, Math.round(W / 8));
+  const x0 = Math.round(0.04 * W);
+  const x1 = W - x0;
+  const nccs: number[] = [];
+  for (let ry = S; ry + Math.min(bh, 6) <= n - S; ry += bh) {
+    const ry1 = Math.min(n - S, ry + bh);
+    for (let cx = x0; cx < x1; cx += bw) {
+      const cx1 = Math.min(x1, cx + bw);
+      if (cx1 - cx < bw / 2) continue;
+      let m = 0;
+      let sa = 0;
+      let saa = 0;
+      for (let r = ry; r < ry1; r++) {
+        for (let x = cx; x < cx1; x++) {
+          const a = A.d[(y0 + r) * W + x];
+          sa += a;
+          saa += a * a;
+          m++;
+        }
+      }
+      const va = saa - (sa * sa) / m;
+      if (va < BLOCK_VAR * m) continue;
+      let best = -1;
+      let bOk = false;
+      for (let v = -S; v <= S; v++) {
+        for (let u = -S; u <= S; u++) {
+          let k = 0;
+          let a1 = 0;
+          let a2 = 0;
+          let b1 = 0;
+          let b2 = 0;
+          let ab = 0;
+          for (let r = ry; r < ry1; r++) {
+            const ob = (r + v) * W;
+            const oa = (y0 + r) * W;
+            for (let x = cx; x < cx1; x++) {
+              const xx = x + u;
+              if (xx < 0 || xx >= W) continue;
+              const b = bm[ob + xx];
+              if (b !== b) continue; // NaN
+              const a = A.d[oa + x];
+              k++;
+              a1 += a;
+              a2 += a * a;
+              b1 += b;
+              b2 += b * b;
+              ab += a * b;
+            }
+          }
+          if (k < 0.8 * m) continue;
+          const vA = a2 - (a1 * a1) / k;
+          const vB = b2 - (b1 * b1) / k;
+          if (vB < BLOCK_VAR * k) continue;
+          bOk = true;
+          const c = vA > 1e-12 ? (ab - (a1 * b1) / k) / Math.sqrt(vA * vB) : -1;
+          if (c > best) best = c;
+        }
+      }
+      // üstte yazı var, altta hiç yok: tutmuyor
+      nccs.push(bOk ? best : 0);
+    }
+  }
+  if (!nccs.length) return { blocks: 0, bad: 1, low: -1 };
+  nccs.sort((a, b) => a - b);
+  const bad = nccs.filter((c) => c < BLOCK_BAD).length / nccs.length;
+  return { blocks: nccs.length, bad, low: nccs[Math.floor(0.1 * (nccs.length - 1))] };
+}
+
+/** İki parça arasında örtüşme (üst parça A, alt parça B): kaba arama, inceltme, ince doğrulama */
+function probeParts(PA: Part, PB: Part): OverlapProbe {
+  const A = PA.work;
+  const B = PB.work;
   const reasons: string[] = [];
   const cands = rowSearch(A, B);
   if (!cands.length) {
@@ -508,7 +673,7 @@ function probeWorks(A: Work, B: Work, imgA: RgbaImage): OverlapProbe {
   for (const rc of cands) {
     for (const cs of colSearch(A, B, rc.oy, rc.sy)) {
       const p: Params = { oy: rc.oy, sy: rc.sy, dx: cs.dx, sx: cs.sx };
-      const s = score2d(A, B, p, 2);
+      const s = score2d(A, B, p, 100);
       scored.push({ p, s, c: combined(s) });
     }
   }
@@ -517,9 +682,9 @@ function probeWorks(A: Work, B: Work, imgA: RgbaImage): OverlapProbe {
   const distinct = Math.max(4, 0.02 * A.w);
   const refined: { p: Params; s: Score2D; c: number }[] = [];
   for (const sc of scored) {
-    if (refined.length >= 4) break;
+    if (refined.length >= 3) break;
     if (refined.some((r) => Math.abs(r.p.oy - sc.p.oy) < distinct && Math.abs(r.p.sy - sc.p.sy) < 0.03)) continue;
-    const r = refine(A, B, sc.p, 1);
+    const r = refine(A, B, sc.p, 120);
     refined.push({ p: r.p, s: r.s, c: combined(r.s) });
   }
   refined.sort((a, b) => b.c - a.c);
@@ -530,14 +695,30 @@ function probeWorks(A: Work, B: Work, imgA: RgbaImage): OverlapProbe {
   const second = Math.max(other ? other.c : -1, otherRaw ? otherRaw.c : -1);
   const margin = top.c - second;
   const lines = countLines(A, top.p.oy);
+
+  // ince doğrulama: daha büyük kopyada (yalnız örtüşen satırlar ve biraz payı) çizgi haritasıyla inceltme ve blok
+  // blok ilinti. Üst parçanın kopyası a0 satırından başlar: orada ya' = ya − a0.
+  const o0 = toOriginal(top.p, A, B);
+  const FW = Math.min(FINE_W, PA.img.width, PB.img.width);
+  const pad = Math.round(0.04 * PA.img.width) + 4;
+  const a0 = clamp(Math.floor(o0.oy) - pad, 0, PA.img.height - 8);
+  const b1 = clamp(Math.ceil((PA.img.height - o0.oy) / o0.sy) + pad, 8, PB.img.height);
+  const Af = prepare(cropRows(PA.gray, a0, PA.img.height), FW, true);
+  const Bf = prepare(cropRows(PB.gray, 0, b1), FW, true);
+  const fine = refine(Af, Bf, fromOriginal({ ...o0, oy: o0.oy - a0 }, Af, Bf), 240, 0.5);
+  const blocks = blockCheck(Af, Bf, fine.p);
+
   const cBand = clamp((top.s.band - BAND_LO) / (BAND_HI - BAND_LO), 0, 1);
   const cMargin = clamp(margin / MARGIN_FULL, 0, 1);
   const cLines = clamp((lines - 1) / 2, 0, 1);
-  const confidence = Math.round(cBand * Math.sqrt(cMargin) * cLines * 1000) / 1000;
+  const cBlocks = blocks.blocks >= 4 ? clamp((BLOCK_BAD_MAX - blocks.bad) / (BLOCK_BAD_MAX - BLOCK_BAD_OK), 0, 1) : 0;
+  const confidence = Math.round(cBand * Math.sqrt(cMargin) * cLines * cBlocks * 1000) / 1000;
   if (cBand === 0) reasons.push("icerik-tutmuyor");
   if (cMargin < 0.5) reasons.push("baska-yer-de-tutuyor");
   if (cLines < 1) reasons.push("ortusmede-yazi-az");
-  const o = toOriginal(top.p, A, B);
+  if (cBlocks < 0.5) reasons.push("ayrintida-tutmuyor");
+  const of = toOriginal(fine.p, Af, Bf);
+  const o = { ...of, oy: of.oy + a0 };
   const seamW = seamRow(A, B, top.p);
   const seam = Math.round((seamW + 0.5) / A.ky - 0.5);
   const r3 = (v: number) => Math.round(v * 1000) / 1000;
@@ -547,11 +728,14 @@ function probeWorks(A: Work, B: Work, imgA: RgbaImage): OverlapProbe {
       offsetY: Math.round(o.oy * 100) / 100,
       scaleX: Math.round(o.sx * 1e4) / 1e4,
       scaleY: Math.round(o.sy * 1e4) / 1e4,
-      overlap: Math.round(imgA.height - o.oy),
+      overlap: Math.round(PA.img.height - o.oy),
       score: r3(top.s.ncc),
       bandScore: r3(top.s.band),
       margin: r3(margin),
       lines,
+      blocks: blocks.blocks,
+      badBlocks: r3(blocks.bad),
+      blockLow: r3(blocks.low),
       confidence,
       seam,
     },
@@ -571,7 +755,7 @@ function workWidth(parts: readonly RgbaImage[]): number {
 export function probeOverlap(top: RgbaImage, bottom: RgbaImage): OverlapProbe {
   if (Math.min(top.width, bottom.width) < 64 || Math.min(top.height, bottom.height) < 32) return { best: null, reasons: ["parca-cok-kucuk"] };
   const W = workWidth([top, bottom]);
-  return probeWorks(prepare(top, W), prepare(bottom, W), top);
+  return probeParts(partOf(top, W), partOf(bottom, W));
 }
 
 /** Üst ve alt parçanın örtüşmesi; yoksa ya da emin değilse null */
@@ -709,12 +893,12 @@ export function stitchParts(parts: readonly RgbaImage[], opts: StitchOptions = {
   const minConf = opts.minConfidence ?? STITCH_MIN_CONFIDENCE;
   const maxEdge = opts.maxEdge ?? MAX_PHOTO_EDGE;
   const W = workWidth(parts);
-  const works = parts.map((p) => prepare(p, W));
+  const ps = parts.map((p) => partOf(p, W));
   const cache = new Map<string, OverlapMatch | null>();
   const pair = (i: number, j: number): OverlapMatch | null => {
     const key = `${i}-${j}`;
     if (!cache.has(key)) {
-      const r = probeWorks(works[i], works[j], parts[i]).best;
+      const r = probeParts(ps[i], ps[j]).best;
       cache.set(key, r && r.confidence >= minConf ? r : null);
     }
     return cache.get(key)!;
