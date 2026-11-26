@@ -57,15 +57,27 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Devam eden (26 Kasım akşamı)
 
-Ayrıntı, sıra ve devam istemi: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md).
-- `wip/entegre3`: "Müdür" ve salt okunur "Muhasebeci" rolleri + vardiyanın şube ayarları; incelemenin doğruladığı 12 bulgu
-  düzeltilecek, sonra PR.
-- `wip/excel-bagimsiz`: Excel'den tam bağımsızlık (canlıda kendiliğinden tohum yok, başlangıç verisi uygulama ağacının
-  dışında, Excel çıkarma betiği kalkar, exceljs güvenlik açığı).
-- Kalan işler ve "profesyonel kod" denetimi yeniden yapılacak; çıkanlar buraya yazılır.
+Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Kod paketleri:
+- P1 Roller (Müdür, salt okunur Muhasebeci) + vardiyanın şube ayarları (`wip/entegre3`): incelemenin doğruladığı 12
+  bulgu düzeltilecek, ikinci inceleme, sonra PR.
+- P2 Excel'den tam bağımsızlık (`wip/excel-bagimsiz`): kendiliğinden tohum kalktı, başlangıç verisi uygulama dışına
+  taşındı; bağımlılık açıkları ve kişi adlarının anonimleştirilmesi kaldı.
+- P3 Hata izleme ve kalıcı hata kaydı; P4 CI ve kod sağlığı (şema–göç denetimi, asistan bilgisinin derlemede üretilmesi,
+  rol × ekran duman testi).
+- P5 Ayarlar ay bazlı + 2027 vergi kuralları (Ocak'tan önce); P6 Excel'den kalan sabit listeler (fatura / hammadde
+  kategorileri, sayım grupları) ekrandan; P7 dönem kapanışı sayım / ciro / kasaya da; P8 fotoğraf okuma doğruluğu;
+  P9 temizlik.
 
 ## Sahibin tarafında (kod değil)
 
+- [ ] **ACİL: Depo herkese açık (public).** Başlangıç verisi maaş, kira, fatura ve kişi adları taşıyor. GitHub › Settings ›
+  Danger Zone › Change visibility › Private; açığa düşmüş anahtarlar yenilensin.
+- [ ] GitHub › Settings › Branches: main için "Tip · Lint · Test · Derleme" zorunlu olsun (kırmızı CI'yla birleştirme olmasın).
+- [ ] GitHub sırrı `ANTHROPIC_API_KEY`: PR incelemesi her PR'da kırmızı.
+- [ ] Vercel planı (Hobby ticari kullanıma izin vermiyor, günlük 1 saat): Pro kararı. Vercel'de `ADMIN_2FA_REQUIRED=1`; CSP bir
+  hafta temizse `CSP_ENFORCE=1`.
+- [ ] Yayından sonra el kontrolü ve belge tarayıcının gerçek iPhone / Android'de denenmesi; muhasebecinin adresi (Ayarlar ›
+  Muhasebeci paketi); SGK işveren oranı kararı (%15,75 / %19,75); yedekten geri yükleme provası; dış sağlık izleyicisi.
 - [ ] laffogato.net veritabanının (Neon) kotası 24 Kasım'da doldu. Online sipariş, karaoke ve menü eşitlemesi duruyor. Ücretli plana geçin ya da Coolify'a taşıyın.
 - [ ] Marina gün sonu e-postasının alıcılarına bakın: 25 Kasım'dan (#141) beri yalnız Kasa › Rapor alıcıları alır (sabah
   e-postasının adresleri artık almaz). Gün sonu e-postasını almak isteyen adres Rapor alıcıları'nda olmalı.
