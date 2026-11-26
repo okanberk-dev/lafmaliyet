@@ -62,6 +62,7 @@ import { closedEvidenceText } from "@/lib/closed-days";
 import { modposDayView, type ModposDayView } from "@/lib/cash-modpos";
 import { aiStatus } from "@/server/ai/claude";
 import { can, cashAudience } from "@/lib/roles";
+import { siteDayTitle } from "@/lib/site-sales/calc";
 import { requireUser, type CurrentUser } from "@/server/auth/dal";
 import { currentBranchScope, currentTillBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
@@ -520,7 +521,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   // laffogato.net'in o günkü online satışı: bilgi satırı, sayfayı bekletmez (site gelene kadar boş, gelmezse yok)
   const siteRow = showForm ? (
     <Suspense fallback={null}>
-      <SiteDayRow date={date} till={view.till} admin={admin} kasa={lafposState.lafpos ? "LafPOS" : "ModPOS"} />
+      <SiteDayRow date={date} till={view.till} karaoke={can(user.role, "karaoke.tutar")} kasa={lafposState.lafpos ? "LafPOS" : "ModPOS"} />
     </Suspense>
   ) : null;
   const form = showForm ? (
@@ -1075,18 +1076,16 @@ function ScopeNote({ view }: { view: KasaView }) {
 /**
  * laffogato.net'in o günkü online satışı (docs/SITE-SATIS.md): uygulama ve web siparişleri ve karaoke ön ödemesi,
  * kasadan geçmez. Bilgi satırıdır: kasa farkına, Z raporuna ve hiçbir kasa rakamına girmez. Sayfa açılınca sorulur;
- * bağlantı kapalıysa, site ulaşılamazsa ya da 8 saniyede yanıt vermezse satır görünmez (rapor beklemez). Personele
- * karaoke tutarı gösterilmez (README: karaoke tutarları yalnız yöneticiye).
+ * bağlantı kapalıysa, site ulaşılamazsa ya da 8 saniyede yanıt vermezse satır görünmez (rapor beklemez). Online toplamı
+ * herkese; karaoke ön ödemesi yalnız `karaoke.tutar` yeteneğinde (yönetici, muhasebeci): müdüre ve personele tutar
+ * gösterilmez ve tarayıcıya da gitmez (docs/ROLLER.md › Müdür; kasa e-postası da onlara gitmez).
  */
-async function SiteDayRow({ date, till, admin, kasa }: { date: string; till: string; admin: boolean; kasa: KasaName }) {
+async function SiteDayRow({ date, till, karaoke, kasa }: { date: string; till: string; karaoke: boolean; kasa: KasaName }) {
   // Kasanın şubesinin online satışı (Marina'nın masa siparişi Tuzla'nın satırına yazılmaz; docs/SITE-SATIS.md)
   const row = await fetchTillOnlineRow(date, till);
   if (!row) return null;
   return (
-    <Notice
-      tone="neutral"
-      title={`laffogato.net · ${longDateTR(date)}: online ${money(row.online)}${admin ? ` · karaoke ön ödeme ${money(row.karaoke)}` : ""}, kasadan geçmez`}
-    >
+    <Notice tone="neutral" title={siteDayTitle(row, longDateTR(date), karaoke)}>
       Kasa farkına ve Z raporuna girmez; {kasa}&apos;un &quot;Online&quot; ödemesi (Yemeksepeti, Getir…) ayrı. Sitenin günü gece yarısında biter.
     </Notice>
   );

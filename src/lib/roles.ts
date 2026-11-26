@@ -37,6 +37,11 @@ export const CAPABILITIES = {
   "isletme.yonet": ["admin", "manager"],
   /** Kasa raporlarının rakamları ve geçmişi (fark, devir, beklenen nakit, yazarkasa kümülatifi; kör kasa yok) */
   "kasa.rakam": ["admin", "manager", "accountant"],
+  /**
+   * Karaoke tutarları (ön ödeme; Kasa raporunun site satırı): kasa e-postasının kitlesiyle aynı. Müdür ve personel
+   * görmez, online toplamı herkes görür (docs/ROLLER.md › Müdür)
+   */
+  "karaoke.tutar": ["admin", "accountant"],
   /** Personelin isteklerini onaylamak ya da reddetmek (Onaylar; müdür yalnız şubesininkileri, reçete önerisi hariç) */
   onay: ["admin", "manager"],
   /** Vardiya planını yazmak (müdür şubesinin) */

@@ -510,11 +510,11 @@ Formun altında, site bağlıysa o günün online satışı tek satır olarak g�
 
 Uygulama ve web siparişleri (kafe + mağaza) ile ön ödemeli karaoke, KDV dahil, iadeler düşülmüş. Parası sanal POS'tan
 alındığı için **kasadan geçmez**: kasa farkına, Z kontrolüne ve devre girmez; ModPOS'un "Online" ödemesi (Yemeksepeti,
-Getir…) ayrıdır. Personel karaoke tutarını görmez. Rapor açılınca, gönderilince ve e-postası gönderilince siteden
-sorulur (saklanmaz); site düşük ya da yavaşsa (8 saniye) satır görünmez, form ve gönderim hiç beklemez. Sitenin günü
-gece yarısında biter (kasanınki 05:00'te). Satır kasanın şubesinindir (site 21 Kasım'dan beri şubeli): Tuzla'nın
-kasası `&branch=tuzla`, Marina'nınki `&branch=marina` ile sorar; Marina'nın masa siparişi Tuzla'nın satırına yazılmaz.
-Ayrıntı: [SITE-SATIS.md](SITE-SATIS.md).
+Getir…) ayrıdır. Personel ve müdür karaoke tutarını görmez (yalnız online toplamı; `karaoke.tutar`, [ROLLER.md](ROLLER.md)).
+Rapor açılınca, gönderilince ve e-postası gönderilince siteden sorulur (saklanmaz); site düşük ya da yavaşsa (8 saniye)
+satır görünmez, form ve gönderim hiç beklemez. Sitenin günü gece yarısında biter (kasanınki 05:00'te). Satır kasanın
+şubesinindir (site 21 Kasım'dan beri şubeli): Tuzla'nın kasası `&branch=tuzla`, Marina'nınki `&branch=marina` ile
+sorar; Marina'nın masa siparişi Tuzla'nın satırına yazılmaz. Ayrıntı: [SITE-SATIS.md](SITE-SATIS.md).
 
 **Marina (LafPOS) gün sonu:** geçiş gününden itibaren Marina'nın raporu LafPOS'un gün sonu gelince kendiliğinden yazılır
 (gönderen "LafPOS (otomatik)"; sayım yoksa rapor yazılmaz) ve gün sonu e-postası gider. **Gün sonu tam (24 Kasım 2026):**

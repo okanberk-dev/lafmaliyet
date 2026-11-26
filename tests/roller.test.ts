@@ -387,6 +387,15 @@ test("e-posta alıcıları: personel ve müdür hesabına kasa ve sabah e-postas
   assert.equal(blockReasonOf({ role: "patron" as unknown as Role, active: true }), "staff", "tanınmayan rol de almaz");
 });
 
+test("karaoke tutarı: kasa e-postasının kitlesiyle aynı (müdür ve personel görmez)", () => {
+  for (const r of ROLE_ORDER) assert.equal(can(r, "karaoke.tutar"), blockReasonOf({ role: r, active: true }) === null, r);
+  assert.equal(can("manager", "karaoke.tutar"), false);
+  assert.equal(can("staff", "karaoke.tutar"), false);
+  assert.equal(can("accountant", "karaoke.tutar"), true);
+  // Müdür kasa rakamlarını görür ("admin" kitlesi) ama karaoke tutarını değil: iki kapı ayrı
+  assert.ok(can("manager", "kasa.rakam") && cashAudience("manager") === "admin");
+});
+
 test("saha kitleleri: muhasebeci karaoke, özellik ve kontrol uyarısı almaz; müdür şubesininkini alır", () => {
   const users = [
     { id: 1, role: "admin" as Role, branchId: null },

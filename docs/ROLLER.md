@@ -24,6 +24,7 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
 | `kayit.yaz` | Her yazan eylemin tabanı (kasa raporu, zayi, sayım, kontrol listesi, sipariş …) | yönetici, müdür, personel |
 | `isletme.yonet` | Kasa raporunu onaysız düzeltmek ve silmek, kilitli / eski güne yazmak, kasadan çıkanı ve zayiyi doğrudan, kafe kapalı günü işaretlemek | yönetici, müdür |
 | `kasa.rakam` | Kasa raporlarının rakamları ve geçmişi (fark, devir, beklenen nakit, yazarkasa; kör kasa yok) | yönetici, müdür, muhasebeci |
+| `karaoke.tutar` | Karaoke ön ödemesi ve tutarları (Kasa raporunun site satırı; kasa e-postasının kitlesi) | yönetici, muhasebeci |
 | `kategori.tum` | Kasadan çıkanın bütün gider kategorileri (maaş, kira, reklam): seçmek ve adını görmek | yönetici, muhasebeci |
 | `onay` | Personelin isteklerine karar (Onaylar) | yönetici, müdür |
 | `vardiya.yaz` | Vardiya planını yazmak | yönetici, müdür |
@@ -75,8 +76,9 @@ ciro (haftalık ve aylık, yalnız şubesi).
 **Görmez / yapamaz:** maaşlar ve kişisel ücretler (Maaşlar, avanslar, bordro, personel belgeleri, İşçilik'in günlük
 görünümü, kasadan çıkanın maaş / kira kategorileri), vergi, Paraşüt, ayarlar, kullanıcı yönetimi, yedek, anahtarlar,
 şube ayarları, Genel bakış, Şube karşılaştırma, Kaçak ve Kayıp önleme raporları, maliyet / kâr / hammadde fiyatı
-ekranları, reçeteyi doğrudan düzenleme ve reçete önerisine karar, karaoke doluluğu (tutar), kontrol listelerini
-düzenleme, panel asistanı (yalnız yönetici), öteki şubeler.
+ekranları, reçeteyi doğrudan düzenleme ve reçete önerisine karar, karaoke doluluğu (tutar) ve Kasa raporunun site
+satırındaki karaoke ön ödemesi (online toplamı görür; `karaoke.tutar`), kontrol listelerini düzenleme, panel asistanı
+(yalnız yönetici), öteki şubeler.
 
 ## Muhasebeci
 
