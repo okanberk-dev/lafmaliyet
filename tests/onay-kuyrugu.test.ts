@@ -276,8 +276,8 @@ test("reçete onayı ekranda görülen sürümle: öneri güncellenince sürüm 
 
 test("push: onay bildirimleri ayrı konu (varsayılan açık, yalnız açık aboneliklere); cihazdaki anahtar ancak gönderen varken", () => {
   const send = read("src/server/push/send.ts");
-  assert.match(send, /kind: "karaoke" \| "orders" \| "reminders" \| "approvals" \| "test";/);
-  assert.match(send, /topic: "karaoke" \| "orders" \| "reminders" \| "approvals" \| "test",/);
+  assert.match(send, /kind: "karaoke" \| "orders" \| "reminders" \| "approvals" \| "shifts" \| "test";/);
+  assert.match(send, /topic: "karaoke" \| "orders" \| "reminders" \| "approvals" \| "shifts" \| "test",/);
   assert.match(send, /if \(topic === "approvals"\) conditions\.push\(eq\(s\.pushSubscriptions\.approvals, true\)\);/);
   const actions = read("src/server/actions/push.ts");
   assert.match(actions, /approvals: z\.boolean\(\)\.optional\(\)/);

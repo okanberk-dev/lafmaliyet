@@ -1,5 +1,5 @@
 {
-  "id": "c01efa9c-c0c5-4d08-a78e-ee762b0ebe31",
+  "id": "2d80065a-0344-47fd-af39-355695bd3bf7",
   "prevId": "0a959ce9-1957-4b02-929a-4d17bf7838dc",
   "version": "7",
   "dialect": "postgresql",
@@ -662,6 +662,118 @@
       },
       "isRLSEnabled": false
     },
+    "public.cash_counts": {
+      "name": "cash_counts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'tuzla'"
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_name": {
+          "name": "user_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "cash_counts_day_idx": {
+          "name": "cash_counts_day_idx",
+          "columns": [
+            {
+              "expression": "date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "branch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "cash_counts_branch_id_branches_id_fk": {
+          "name": "cash_counts_branch_id_branches_id_fk",
+          "tableFrom": "cash_counts",
+          "tableTo": "branches",
+          "columnsFrom": [
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "cash_counts_user_id_users_id_fk": {
+          "name": "cash_counts_user_id_users_id_fk",
+          "tableFrom": "cash_counts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.cash_outs": {
       "name": "cash_outs",
       "schema": "",
@@ -1199,6 +1311,18 @@
           "notNull": true,
           "default": 0
         },
+        "handed_to": {
+          "name": "handed_to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "handed_to_user_id": {
+          "name": "handed_to_user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "bank_pos": {
           "name": "bank_pos",
           "type": "double precision",
@@ -1401,6 +1525,19 @@
             "id"
           ],
           "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "cash_reports_handed_to_user_id_users_id_fk": {
+          "name": "cash_reports_handed_to_user_id_users_id_fk",
+          "tableFrom": "cash_reports",
+          "tableTo": "users",
+          "columnsFrom": [
+            "handed_to_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "cash_reports_submitted_by_users_id_fk": {
@@ -2396,12 +2533,6 @@
         "supplier_entry_id": {
           "name": "supplier_entry_id",
           "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "period_date": {
-          "name": "period_date",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         }
@@ -3892,12 +4023,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
-        },
-        "period_date": {
-          "name": "period_date",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -7973,130 +8098,6 @@
             "id"
           ],
           "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.recipe_versions": {
-      "name": "recipe_versions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "product_id": {
-          "name": "product_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'edit'"
-        },
-        "before": {
-          "name": "before",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "after": {
-          "name": "after",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "changed_by": {
-          "name": "changed_by",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "changed_by_name": {
-          "name": "changed_by_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "requested_by_name": {
-          "name": "requested_by_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "recipe_versions_product_idx": {
-          "name": "recipe_versions_product_idx",
-          "columns": [
-            {
-              "expression": "product_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "recipe_versions_product_id_products_id_fk": {
-          "name": "recipe_versions_product_id_products_id_fk",
-          "tableFrom": "recipe_versions",
-          "tableTo": "products",
-          "columnsFrom": [
-            "product_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "recipe_versions_changed_by_users_id_fk": {
-          "name": "recipe_versions_changed_by_users_id_fk",
-          "tableFrom": "recipe_versions",
-          "tableTo": "users",
-          "columnsFrom": [
-            "changed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

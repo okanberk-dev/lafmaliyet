@@ -11,7 +11,7 @@ görünür ([BUGUN.md](BUGUN.md)).
 | Bölüm | Alanlar |
 |-------|---------|
 | ModPOS Z raporu | Toplam satış, nakit, kredi / banka kartı; varsa yemek kartı, online, diğer; ödenmez / ikram (ciro dışı); indirim, Z no ve fiş sayısı (isteğe bağlı). Ya da ModPOS Z raporunun fotoğrafını çekin: rakamlar dolar |
-| Kasa (nakit) | Açılış (önceki raporun ertesi güne devrinden kendiliğinden dolar), akşam sayılan nakit, gün içinde kasadan çıkan (harcama, teslim; gün içinde girilen satırlardan dolar) ve neye çıktığı, **gün içinde kasaya giren** (nakit satış dışında çekmeceye konan: bozuk para, nakit tahsilat, nakit bahşiş), sayımdan sonra teslim edilen, **kasayı sayan** (gönderen değilse listeden seçilir) |
+| Kasa (nakit) | Açılış (önceki raporun ertesi güne devrinden kendiliğinden dolar), akşam sayılan nakit, gün içinde kasadan çıkan (harcama, teslim; gün içinde girilen satırlardan dolar) ve neye çıktığı, **gün içinde kasaya giren** (nakit satış dışında çekmeceye konan: bozuk para, nakit tahsilat, nakit bahşiş), sayımdan sonra teslim edilen ve **kime** teslim edildiği ([Teslim defteri](#teslim-defteri)), **kasayı sayan** (gönderen değilse listeden seçilir). Kör sayım açık şubede sayılan nakit önce kilitlenir ([Kör sayım](#kör-sayım)) |
 | Yazarkasa Z raporu | Banka POS'tan (yazarkasa) alınan mali Z: üstünde Z RAPORU ve KDV dökümü yazar; banka gün sonu fişi değil. Fotoğraf ve dört alan: **Günlük toplam** (NET SATIŞ ya da TOPLAM satırı), **Z no** (Z NO / Z SAYAÇ, fiş no değil), **Nakit**, **Kredi kartı** (K.KARTI satırı; altındaki banka satırları değil). **Ayrıntılar** kutusunda: yemek kartı, diğer, toplam KDV, KDV dökümü (%10 ve %20'nin KDV dahil toplamı ve KDV'si; %1 yalnız okunduysa ya da yazılıysa), fiş sayısı ve **Banka gün sonu** (bankanın ayrı gün sonu fişi varsa neti; yedek). Bölüm isteğe bağlı (aşağıda [Yazarkasa Z raporu](#yazarkasa-z-raporu)) |
 | Not | Fark varsa nedeni (bozuk para, iade, yanlış fiş…) |
 
@@ -823,6 +823,70 @@ düzeltilmesi istenir. Kural üç kaynakta da aynıdır: elle girilen kasa rapor
 Ödenmez alanı olduğu gibi durur (Zayi & ikram tutarlılığı, ödenmezlerin tahmini malzeme maliyeti ve kasa karşılaştırması
 onu okur); değişen yalnız ciroya girmemesidir. **Kartlı satış oranı** da ciroya göre hesaplanır: POS komisyonu tahmini
 (ciro × oran × pay) yine kart tutarını verir.
+
+## Kör sayım
+
+Dalga 2 (25 Kasım 2026), sahibin isteği: "Tuzla'da kör sayım. Önce sayılan nakit girilip kilitlenir, fark sonra
+görünür." Marina'da sayım zaten LafPOS'ta kördür ([LAFPOS.md](LAFPOS.md) › Kör kasa); bu bölüm kasa raporu panelde
+girilen (ModPOS) günleri anlatır. Kurallar `src/lib/kor-sayim.ts` (testleri `tests/kor-sayim.test.ts`), sunucu yolu
+`src/server/cash/blind-count.ts` (`tests/kor-sayim-db.test.ts`).
+
+- **Personelin akışı:** Kasa (nakit) kartında önce **Akşam sayılan nakit** yazılır ve **Sayımı kilitle**'ye basılır.
+  Kilitlenene kadar Sonuç kartı "Kasa farkı, sayım kilitlenince görünür." der, telefonun alt çubuğu "Fark sayım
+  kilitlenince" yazar; olması gereken nakit ve fark çizilmez, rapor gönderilmez. Kilitlenince alan salt okunur olur
+  ("Kilitli sayım · Ayşe · 20:14"), olması gereken ve fark görünür, rapor gönderilir. Sayfa yenilense de kilit yerindedir.
+- **Kilitli sayım sessizce değişmez:** alanın altındaki **Sayımı değiştir** yeni tutarı ve **nedeni** (en az 5 karakter)
+  ister. Değişiklik eski sayımın üzerine yazılmaz: yeni bir sayım satırı olur (`cash_counts`, yalnız eklenir), işlem
+  geçmişine "Kasa sayımı değişti" diye düşer ve yöneticiye görünür. Rapor girildikten sonra sayılanı değiştirmek de aynı
+  yoldan geçer (personel farkı görmüştür: neden zorunlu).
+- **Yönetici ne görür:** günün kasa görünümünde **Kör sayım** kutusu, satır satır: "Kör sayım 6.400 ₺ · Ayşe · 20:14",
+  "Sayım değişti: 6.450 ₺ · Ayşe · 20:31 · çekmecenin altında 50 ₺ çıktı". Sayım kilitlendikten sonra değiştiyse kutu
+  turuncudur ("Sayım kilitlendikten sonra değişti: 6.400 ₺ → 6.450 ₺"); rapordaki sayılan geçerli sayımdan farklıysa
+  (yönetici düzeltti ya da düzeltme önerisi onaylandı) "Raporda sayılan 6.350 ₺, kilitli sayım 6.400 ₺". Aynı uyarı
+  kasa e-postasının **Kasa (nakit)** bölümündeki turuncu kutuda ve metin sürümünde de yazar (`emailReport`,
+  `renderCashReport` › `blindCount`); sayım tutuyorsa e-posta bugünkü gibidir. Yönetici kör değildir: formu bugünkü gibi
+  doldurur, kilit beklemez.
+- **Sunucu zorlar:** personelin doğrudan yazdığı raporda sayılan nakit geçerli (en son) sayıma eşit olmak zorundadır
+  (`assertBlindCount`, `saveCashReport`'un işleminin içinde); sayım yoksa "Önce çekmecedeki nakdi sayıp kilitleyin; kasa
+  farkı sonra görünür.", farklıysa "Sayımı değiştir"i söyleyen ret. Kayıtlı raporun değişmeyen sayılanı geçer (ayar
+  açılmadan önce girilmiş ya da yöneticinin düzelttiği rapor yeniden gönderilebilsin). Kilitleme eylemi (`lockCashCount`)
+  yalnız kilidi döndürür (sayılan, an, kim): olması gereken ve fark yanıtta yoktur. Sayım ile raporun yazımı aynı gün
+  kilidinin (`kasa-gec:<şube>:<gün>`) altında sıraya girer.
+- **Kapsam:** yalnız günün raporu. Geç rapor ve sonradan düzeltme önerisi zaten yöneticinin onayından geçer, kilit
+  istemez. Personel sayımı yalnız raporunu doğrudan yazabildiği günde (bugün ve dün, ertesi günün raporu girilmemişken)
+  kilitler ya da değiştirir; sonrası yöneticinindir ("Bu günün sayımını artık yalnız yönetici değiştirir.").
+- **Şube ayarı** (`kasa.kor`, Şubeler › şube › **Kör sayım** anahtarı; [SUBE.md](SUBE.md) › Şube ayarları): seçilmemişken
+  kasası ModPOS olan şubede **açık**, LafPOS'un şubesinde kapalıdır; LafPOS'un şubesinin LafPOS gününde anahtar ne olursa
+  olsun uygulanmaz (sayım LafPOS'ta kör). Anahtar hemen kaydedilir ve işlem geçmişine yazılır. Kapatılınca personelin
+  raporu kilidi beklemez; o güne kadarki sayım geçmişi yerinde kalır ve yöneticiye görünür.
+- **Bilinen sınır:** kör sayım personelin Z'deki nakit satıştan olması gerekeni kendisinin hesaplamasını engellemez
+  (Z rakamlarını o giriyor); engellediği, ekranın farkı gösterip sayımın ona göre yazılmasıdır.
+
+## Teslim defteri
+
+Dalga 2 (25 Kasım 2026), sahibin isteği: "Teslim defteri: teslim edilen nakdi kimin aldığı kaydedilir. Tuzla'nınki
+panelde yapılır." Kurallar `src/lib/teslim.ts` (`tests/teslim-defteri.test.ts`), okuyucu
+`src/server/data/handover-ledger.ts`.
+
+- **"Kime" alanı:** kasa raporunda **Sayımdan sonra teslim** 0'dan büyükse altında **Kime** seçicisi çıkar: etkin
+  yöneticiler, **Banka (yatırıldı)** ya da **Başka biri** (adı yazılır, en çok 60 karakter). Yeni raporda ve teslim tutarı
+  değişince zorunludur ("Sayımdan sonra teslim edileni kimin aldığını seçin…"; form da sunucu da aynı kuralla,
+  `handedToMissing`); alan gelmeden önce girilmiş, tutarı değişmeyen raporun boş Kime'si yeniden sorulmaz. Kayıt
+  `cash_reports.handed_to` (ad; hesap silinse de okunur) ve yönetici hesabıysa `handed_to_user_id`. Teslim 0 yapılınca
+  Kime temizlenir. Geç raporun kendi **Teslim alan**'ı onaylanınca raporun Kime'si olur.
+- **Nerede yazar:** rapor dökümünde, rapor penceresinde, e-postada ve yöneticinin WhatsApp metninde "Teslim edilen
+  2.000 ₺ · Kime: Okan".
+- **Defter** (`/panel/kasa/teslim`, yalnız yönetici; Kasa raporu'nun ay görünümündeki **Teslim defteri** kartından ve
+  ⌘K'dan): ayın teslimleri tek listede, yeni gün üstte: tarih, şube ("Tümü"de), tutar, **Kime**, **Kaydeden** ve türü
+  (Sayımdan sonra, Gün içinde, LafPOS). Üstte ayın toplamı ve alana göre toplamlar ("Okan: 14.000 ₺ (6)"; büyük / küçük
+  harf farkı aynı kişi sayılır, Kime'si yazılmamışlar turuncu "Kime yazılmamış"). **Ay** başlıktaki ay seçicisinden
+  (`?ay=`), **şube** panelin şube seçicisinden ("Tümü"de iki şube birlikte; [SUBE.md](SUBE.md)).
+- **İki kaynak:** (1) kasa raporlarının Sayımdan sonra teslim'i (Kime'siyle; panelde girilen kasa, Tuzla); (2) Kasadan
+  çıkanlar'ın **Teslim · ödeme** satırları (`cash_outs`, tür teslim; Kime'si satırın "Kime" alanı). Marina'nın
+  LafPOS'tan gelen teslimleri ikinci kaynaktadır: LafPOS'un `cashMoves[].recipient`'i satırın Kime'si olur
+  ([LAFPOS.md](LAFPOS.md) › Kasadan çıkanlar LafPOS'tan), defterde "LafPOS" rozetiyle, kaydeden "LafPOS".
+- **Personel defteri görmez:** `/panel/kasa/teslim` `ADMIN_ONLY_PATHS`'tedir (`src/lib/roles.ts`), sayfa `requireAdmin`
+  ile açılır (`tests/roller.test.ts`).
 
 ## Gönderince
 

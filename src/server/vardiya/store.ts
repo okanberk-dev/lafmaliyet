@@ -4,7 +4,7 @@ import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
 import { ALL_BRANCHES, type BranchRow } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
-import { addDays } from "@/lib/reminders";
+import { addDays, todayTR } from "@/lib/reminders";
 import {
   buildRows,
   byName,
@@ -27,6 +27,7 @@ import {
   type ShiftEntry,
   type ShiftRow,
 } from "@/lib/vardiya";
+import { shiftChanges, type ShiftChange } from "@/lib/vardiya-bildirim";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s, type DB } from "@/server/db";
@@ -129,6 +130,8 @@ export interface SaveWeekResult {
   monday: string;
   /** "5 kişi · 28 vardiya · 3 izin" (kaydedilen satırların özeti) */
   summary: string;
+  /** Kişilere bildirilecek değişiklikler (src/lib/vardiya-bildirim.ts shiftChanges) */
+  changes: ShiftChange[];
 }
 
 /**
@@ -227,7 +230,9 @@ export async function saveShiftWeek(db: DB, me: { name: string }, raw: SaveWeekI
     }
     // Özet kayıttan sonraki plandan: dokunulmayan hücre ekrandaki eski hâliyle değil, veritabanındaki hâliyle sayılır
     const after = await loadShiftEntries(tx, branch.id, monday);
-    return { written: diff.upserts.length, removed: diff.deletes.length, summary: weekSummary(buildRows(monday, [], after.entries)) };
+    // Kişilere bildirilecek değişiklikler (docs/VARDIYA.md › Bildirimler): kayıttan önceki hâliyle karşılaştırılır
+    const changes = shiftChanges({ before: entries, upserts: diff.upserts, deletes: diff.deletes, today: todayTR(now) });
+    return { written: diff.upserts.length, removed: diff.deletes.length, summary: weekSummary(buildRows(monday, [], after.entries)), changes };
   });
   return { ...result, branch: { id: branch.id, name: branch.name }, monday };
 }

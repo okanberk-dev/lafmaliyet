@@ -10,7 +10,8 @@ import { AuthShell } from "@/app/giris/auth-shell";
 import { AuthHeading, authCard, authLink } from "@/app/giris/auth-ui";
 import { consentLines, MAX_ACTIVE_GRANTS, mcpEnabled } from "@/lib/mcp/oauth";
 import { STAFF_HOME } from "@/lib/roles";
-import { getCurrentUser } from "@/server/auth/dal";
+import { twoFactorSetupHref } from "@/lib/admin-security";
+import { awaitingTwoFactorSetup, getCurrentUser } from "@/server/auth/dal";
 import { expiredLoginQuery, LEGACY_COOKIES, readCookie, SESSION_COOKIE } from "@/server/auth/session";
 import { getDb, schema as s } from "@/server/db";
 import { openRequest } from "@/server/mcp/base";
@@ -69,6 +70,8 @@ async function ConnectContent({ searchParams }: { searchParams: PageProps<"/bagl
 
   const me = await getCurrentUser();
   if (!me) {
+    // İki adımlıyı kurmamış yönetici (zorunluluk; src/lib/admin-security.ts): oturumu geçerli, önce kurulum, sonra bu ekran
+    if (await awaitingTwoFactorSetup()) redirect(twoFactorSetupHref(`/baglan?istek=${encodeURIComponent(raw)}`));
     // Girişten sonra bu ekrana dönülür (safeNext /baglan?… kabul eder). Çerez duruyor ama geçersizse (parola değişti,
     // oturumlar kapatıldı, çıkış yapıldı) "oturum bitti" ve çerezin özeti: proxy yalnız bu çerezi siler, giriş açılır
     const stale = readCookie(await cookies(), SESSION_COOKIE, LEGACY_COOKIES.session.name);

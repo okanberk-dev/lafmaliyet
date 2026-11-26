@@ -25,6 +25,7 @@ import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 import { UserError } from "../src/server/user-error";
 
+import { blindCountOff } from "./helpers/kor-sayim";
 import { raceOnRequest } from "./helpers/lock-race";
 
 const URL = process.env.KASA_ISTEK_TEST_DATABASE_URL;
@@ -47,6 +48,8 @@ describe("Kasa istekleri: veritabanında düzeltme ve silme isteği, karar", { s
     donen: { id: 0, name: "Dönen", role: "staff" },
   };
   const dates: string[] = [];
+  /** Kör sayım bu testin konusu değil (tests/kor-sayim-db.test.ts): Tuzla'da kapatılır, sonunda geri yazılır */
+  let restoreBlind: (() => Promise<void>) | null = null;
 
   const fields = (date: string, o: Partial<CashReportFields> = {}): CashReportFields & { discounts: number | null } => ({
     date,
@@ -104,6 +107,7 @@ describe("Kasa istekleri: veritabanında düzeltme ve silme isteği, karar", { s
     requests = await import("../src/server/cash/requests");
     loaders = await import("../src/server/data/cash-requests");
     reports = await import("../src/server/data/cash-reports");
+    restoreBlind = await blindCountOff(db, DEFAULT_BRANCH_ID);
     for (const k of Object.keys(users) as (keyof typeof users)[]) {
       const [u] = await db
         .insert(s.users)
@@ -120,6 +124,7 @@ describe("Kasa istekleri: veritabanında düzeltme ve silme isteği, karar", { s
     if (dates.length) await db.delete(s.cashOuts).where(inArray(s.cashOuts.date, dates));
     if (dates.length) await db.delete(s.cashReports).where(inArray(s.cashReports.date, dates));
     await db.delete(s.users).where(inArray(s.users.id, ids));
+    await restoreBlind?.();
     await db.$client.end();
     const { getDb } = await import("../src/server/db");
     await getDb().$client.end();

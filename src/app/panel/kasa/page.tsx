@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronDown, Gift, ReceiptText } from "lucide-react";
+import { ArrowLeft, ChevronDown, Gift, HandCoins, ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
@@ -52,6 +52,7 @@ import {
   staffPhotoDiffs,
 } from "@/lib/lafpos/foto";
 import { LAFPOS_STAFF_ENTRY_LINE, staffLafposEntryClosed } from "@/lib/lafpos/cash-moves";
+import { countAttention, countLines, lockOf } from "@/lib/kor-sayim";
 import { BLIND_TEXT, blindLafposDay, blindReport, staffBlindDay, staffBlindView } from "@/lib/lafpos/kor-kasa";
 import { lafposBranchOf } from "@/lib/lafpos/switch";
 import { addDays, dayLocativeTR, isCalendarDate, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
@@ -64,6 +65,7 @@ import { requireUser, type CurrentUser } from "@/server/auth/dal";
 import { currentBranchScope, currentTillBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { chainNeighbours } from "@/server/cash/late-chain";
+import { blindCountState } from "@/server/cash/blind-count";
 import { cashEmailRecipients } from "@/server/cash/report-store";
 import { cashSettingsCardData } from "@/server/cash/settings-card";
 import { closedDayEvidence, isClosedDay, staffClosedState } from "@/server/closed-days";
@@ -82,6 +84,7 @@ import {
   firstModposTillDay,
   firstOkcReportDate,
   getCashReport,
+  handoverAdmins,
   lafposTillRows,
   loadCashSettings,
   loadMonthEntry,
@@ -384,6 +387,9 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const lafposState = lafposRead ?? NO_LAFPOS;
   const blind = staffBlindView({ admin, branchId: view.till, lafposDay: lafposRead ? lafposRead.lafpos : null, lafposBranch });
   const shownReport = report && blind ? blindReport(report) : report;
+  // Kör sayım (Tuzla; docs/KASA-RAPORU.md › Kör sayım): personel kilidi alır (sayım kilitlenmeden fark çizilmez), yönetici
+  // sayım geçmişini ve uyarıyı görür. LafPOS'un kör gününde yok (sayım LafPOS'ta). "Kime" seçicisinin yöneticileri
+  const [countState, kimeAdmins] = showForm && !blind ? await Promise.all([blindCountState(date, view.till), handoverAdmins()]) : [null, []];
   // LafPOS gününün gün sonu fotoğrafı (gün sonu tam): gün sonu geldiyse ve rapor elle girilmediyse; personelin tek işi
   const lafposPhoto = showForm && lafposState.lafpos ? await lafposPhotoState(getDb(), date, view.till, user.role).catch(() => null) : null;
   const photoCard = lafposPhoto ? (
@@ -529,6 +535,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
       lafposPhotoLabel={lafposPhoto ? lafposPhotoLabel(lafposPhoto.need) : undefined}
       // Gün sonu geldiyse yazarkasanın fişi "Gün sonu fotoğrafı" kartından (formda ikinci seçici yok)
       dayPhotoCard={photoCard !== null}
+      blindCount={!admin && countState?.on ? { lock: lockOf(countState.rows) } : null}
+      handoverAdmins={kimeAdmins}
       // Kümülatif ve yazarkasa dışı tahsilat yalnız yöneticiye: personelin yükünde anahtarı da yok
       {...(admin && report ? { okcAdmin: okcAdminView(report, photoInfo?.readings ?? [], prevOkc.cum ?? null) } : {})}
     />
@@ -575,6 +583,21 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
       lafposEntryClosed={entryClosed}
     />
   ) : null;
+  // Yöneticinin kör sayım satırları: sayım geçmişi, kilitlendikten sonra değiştiyse ya da raporla tutmuyorsa turuncu
+  const countWarn = admin && countState?.rows.length ? countAttention(countState.rows, report?.countedCash ?? null) : null;
+  const countCard =
+    admin && countState?.rows.length ? (
+      <Notice
+        tone={countWarn ? "warn" : "neutral"}
+        size="sm"
+        title={countWarn ?? "Kör sayım"}
+        text={countLines(countState.rows).map((l, i) => (
+          <span key={i} className="block">
+            {l}
+          </span>
+        ))}
+      />
+    ) : null;
   const yesterday = addDays(today, -1);
   // Raporsuz geçmiş gün: "Kafe kapalıydı" (personel yalnız dün için, yöneticinin onayıyla; yönetici doğrudan)
   const closedBar = showForm && !report && date < today ? await closedBarFor(date, admin, user, yesterday, view) : null;
@@ -782,6 +805,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
           {outsCard}
           {/* Gün sonu fotoğrafı formdan önce (personeldeki gibi): Yazarkasa kartı fotoğrafın bu karttan eklendiğini söyler */}
           {photoCard}
+          {countCard}
           {form}
           {modposDay?.modpos ? <ModposSections date={date} today={today} sheet={modposDay.sheet} z={modposDay.z} report={report} ladmin={ladmin} keySet={modposKeySet(process.env, modposDay.sheet?.branchId ?? report?.branchId)} now={new Date()} /> : null}
           {wasteCard}
@@ -847,6 +871,17 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
                 )}
                 <ButtonLink href={`/panel/kasa?gun=${today}${view.branch ? `&sube=${encodeURIComponent(view.branch.id)}` : ""}`} variant={todays ? "secondary" : "primary"} className="w-full">
                   {todays ? "Raporu aç" : "Raporu gir"}
+                </ButtonLink>
+              </div>
+            </Card>
+          ) : null}
+          {/* Teslim defteri (docs/KASA-RAPORU.md › Teslim defteri): "Tümü"de yalnız ilk şubenin bölümünde (defter seçiciye göre süzer) */}
+          {view.settings === "rapor-alicilari" ? (
+            <Card>
+              <CardHeader icon={<HandCoins />} title="Teslim defteri" description="Ayın teslimleri ve kimin aldığı; Marina'nın LafPOS teslimleri dahil." />
+              <div className="px-5 pb-5">
+                <ButtonLink href={`/panel/kasa/teslim?ay=${month}`} variant="secondary" className="w-full">
+                  Teslim defterini aç
                 </ButtonLink>
               </div>
             </Card>

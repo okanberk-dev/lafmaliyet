@@ -24,6 +24,8 @@ import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { kasaBell } from "@/server/bell/kasa";
 import { modposKeyBell } from "@/server/bell/modpos";
 import { opsBell } from "@/server/bell/ops";
+import { vardiyaBell } from "@/server/bell/vardiya";
+import { newDeviceBellRows } from "@/server/auth/new-device";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { closedMarksOn } from "@/server/closed-days";
@@ -543,7 +545,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   // Maliyet modeli zilin en ağır okuması: düşerse (E-49) öbür maddeler yine gelir, modelNotifications kendi satırını
   // koyar. Ödemeler de öyle: okunamazsa "Ödemeler yüklenemedi" satırı (upcomingFailed). ModPOS kasa föyünün anahtarı
   // çalışmıyorsa Sistem başlığında (src/server/bell/modpos.ts)
-  const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos] = await Promise.all([
+  const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos, vardiya, devices] = await Promise.all([
     modelNotifications().catch(modelFailed),
     // Şube seçiliyken o şubenin ve işletme genelinin ödemeleri (docs/SUBE.md › Ödemeler)
     currentBranchScope()
@@ -556,6 +558,10 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     safe("komisyon", commissionNotifications()),
     safe("alici", recipientNotifications()),
     safe("modpos", modposKeyBell()),
+    // Gelecek haftanın vardiyası yazılmadıysa (Perşembe 18:00'den Pazar'a; docs/VARDIYA.md › Bildirimler)
+    safe("vardiya", currentBranchScope().then((scope) => vardiyaBell(scope))),
+    // Kişinin kendi hesabına yeni cihazdan giriş (son 7 gün; docs/DEPLOY.md › 6a)
+    safe("guvenlik", newDeviceBellRows(user)),
   ]);
   const lost = failedBellRows(failed, user.role, todayTR());
 
@@ -578,5 +584,6 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     });
   }
 
-  return [...lost, ...system, ...recipients, ...modpos, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
+  // Sistem başlığında yeni cihazdan girişler ModPOS'tan sonra; vardiya hatırlatması Uyarılar başlığının ilk satırı
+  return [...lost, ...system, ...recipients, ...modpos, ...devices, ...mine, ...recipes, ...holds, ...vardiya, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
 }
