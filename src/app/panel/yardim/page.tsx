@@ -648,15 +648,20 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
       },
       {
         id: "hesap",
-        q: "Personele hesap açmak",
+        q: "Personele, müdüre ve muhasebeciye hesap açmak",
         a: (
           <>
             <Path href="/panel/kullanicilar" /> › Kullanıcı ekle: giriş e-postası, rol Personel; parolayı siz belirleyin ya da 72 saat geçerli davet bağlantısı
             gönderin. Personel Bugün, Siparişler, Karaoke, Kasa raporu, Kontrol listeleri, Vardiya, Zayi &amp; ikram, Reçete defteri (öneri ve satış fiyatı),
             Stok sayımı (Listeye ekle), Özel günler, Hatırlatıcılarım, kendi Yardım&apos;ı ve Hesabım ekranlarını görür; maliyet, maaş, kâr ve karaoke tutarlarını
-            görmez. Geçmiş kasa, silme ve geç kayıt gibi işler isteğe döner, kararı <Path href="/panel/onaylar" /> ekranında verirsiniz. Her kullanıcı
-            Hesabım&apos;dan iki adımlı doğrulamayı açabilir; yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirirken kendi parolanız
-            sorulur.
+            görmez. Geçmiş kasa, silme ve geç kayıt gibi işler isteğe döner, kararı <Path href="/panel/onaylar" /> ekranında verirsiniz. Rol{" "}
+            <strong className="font-semibold text-ink">Müdür</strong>: şubesini seçmek zorunludur, hesap o şubeye kilitlidir; personelin her ekranına ek olarak kasa
+            raporlarını rakamlarıyla görür ve onaysız düzeltir, şubesinin isteklerini Onaylar&apos;da karara bağlar, vardiyayı yazar, Teslim defterini ve
+            İşçilik / ciro&apos;yu görür; maaş, kişisel ücret, vergi, Paraşüt, ayarlar, kullanıcılar ve öteki şubeler yok. Rol{" "}
+            <strong className="font-semibold text-ink">Muhasebeci</strong>: salt okunur; faturalar, gelir-gider, vergi, aylık harcamalar, kasa raporları ve
+            muhasebeci paketi; hiçbir kaydı değiştiremez, ayar, kişi başı maaş ve personel belgesi görmez. Yönetici, müdür ve muhasebeci hesaplarında iki
+            adımlı doğrulama zorunludur, personel Hesabım&apos;dan isterse açar. Yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını
+            değiştirirken kendi parolanız sorulur.
           </>
         ),
         icon: UserPlus,

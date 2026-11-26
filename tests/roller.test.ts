@@ -43,6 +43,7 @@ import {
   TWO_FACTOR_ROLES,
   type Capability,
 } from "../src/lib/roles";
+import { MANAGER_HELP } from "../src/app/panel/yardim/personel/mudur";
 import { canEditShifts } from "../src/lib/vardiya";
 import { proxy } from "../src/proxy";
 import { SESSION_COOKIE, signSession, verifySession } from "../src/server/auth/session";
@@ -530,4 +531,12 @@ test("personelin her sunucu eylemi kendi kaydına dokunur: hatırlatıcı sorgul
   assert.ok(writes.length > 0);
   assert.ok(scoped.length >= writes.length, "her yazım mine(…, me.id) ile süzülmeli");
   assert.doesNotMatch(src, /requireAdmin/);
+});
+
+test("müdürün Yardım'ı: her bağlantı müdüre açık; personelin Yardım'ı ona da açık ve kart yalnız müdürde", () => {
+  assert.ok(MANAGER_HELP.length >= 5);
+  for (const m of MANAGER_HELP) assert.ok(canOpen("manager", m.href), m.href);
+  assert.ok(canOpen("manager", "/panel/yardim/personel"));
+  assert.equal(canOpen("accountant", "/panel/yardim/personel"), false, "muhasebecinin anlatımı Muhasebe ekranında");
+  assert.match(read("src/app/panel/yardim/personel/page.tsx"), /me\.role === "manager" \? \(/);
 });

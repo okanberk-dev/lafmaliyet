@@ -60,7 +60,10 @@ test("rol seçicinin açıklaması ve tablo tek kaynaktan; eski 'yalnız sayım 
   }
   const yardim = read("src/app/panel/yardim/page.tsx");
   assert.doesNotMatch(yardim, /Personel\s+yalnızca stok sayımını ve reçete defterini görür/);
-  const faq = yardim.slice(yardim.indexOf('q: "Personele hesap açmak"'), yardim.indexOf("icon: UserPlus"));
+  const faq = yardim.slice(yardim.indexOf('q: "Personele, müdüre ve muhasebeciye hesap açmak"'), yardim.indexOf("icon: UserPlus"));
+  assert.ok(faq.length > 200, "Yardım'daki hesap açma maddesi bulundu");
+  // Müdür ve muhasebeci rolleri de anlatılır (docs/ROLLER.md)
+  for (const word of ["Müdür", "şubesini seçmek zorunludur", "Muhasebeci", "salt okunur", "adımlı doğrulama zorunludur"]) assert.ok(faq.includes(word), `Yardım: ${word}`);
   for (const word of ["Bugün", "Karaoke", "Kasa raporu", "Kontrol listeleri", "Zayi &amp; ikram", "Reçete", "satış fiyatı", "Stok sayımı", "Listeye ekle", "Hatırlatıcılarım", "Hesabım", "görmez"]) {
     assert.ok(faq.includes(word), `Yardım: ${word}`);
   }
