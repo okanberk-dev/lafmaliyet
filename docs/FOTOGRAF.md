@@ -429,3 +429,53 @@ raporlarda `kasa-pos` kalmadığı denetlenerek).
 | `src/app/panel/ayarlar/photo-card.tsx` | Ayarlar › Fotoğraftan okuma |
 | `src/app/api/kontrol/foto/`, `src/app/panel/kontrol/[id]/photo-item.tsx`, `src/server/data/checklists.ts` (`kontrolPhotoRules`) | kontrol listesinin fotoğraflı maddesi: yükleme ve yanıt tek istekte, kim görür ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md)) |
 | `scripts/foto-eval/` | canlı değerlendirme (`scripts/okc-eval/` banka POS Z'si için, henüz yazılmadı; § 8) |
+| `src/lib/scan/` | belge tarayıcı çekirdeği (§ 11): algılama, köşe oturtma, perspektif, taranmış görünüm |
+| `scripts/tarama-dene.ts` | tarayıcıyı gerçek fotoğrafla ya da sentetik sahneyle deneme (§ 11) |
+
+## 11. Belge tarama (çekirdek)
+
+Z raporu (dar, uzun termal rulo), banka gün sonu fişi, alışveriş fişi ve fatura fotoğrafı yüklenmeden önce **telefonda,
+tarayıcıda** taranır: kâğıt bulunur, kenarları belli edilir, perspektif düzeltilir ve CamScanner tarzı siyah-beyaz
+"taranmış" görünüm üretilir; sonra `photo-compress.ts` ile küçültülüp `POST /api/foto`'ya gider. Sunucu görseli
+çözmez (güvenlik kararı), Python / OpenCV yok: `src/lib/scan/` dış bağımlılıksız saf TypeScript, DOM'a dokunmaz
+(görüntü `{ width, height, data: Uint8ClampedArray RGBA }`, canvas `ImageData` ile aynı); Node'da test edilir, telefonda
+bir Web Worker'da çalıştırılması önerilir (eşzamanlı; `ImageData.data.buffer` aktarılır). Arayüz bağlantısı henüz yok.
+
+- **Algılama** (`detect.ts`, 640 px kopyada, son ince ayar 1000 px): üç yöntem aday dörtgen üretir, hepsi aynı puanla
+  karşılaştırılır. *Kâğıt bölütleme* (aydınlık − doygunluk haritası, gölge çıkarılmış yerel hâli, Otsu, morfoloji, dış
+  hat, zarftan dörtgen, kenarlara RANSAC); *kenar* (Canny, eşikler görüntüden; yönlü Hough; görüntünün kenarı da doğru
+  sayılır); *yazıdan başlama* (yoğun yazı bölgesi dışarı doğru en yakın kâğıt kenarına büyütülür: açık tezgâhta beyaz
+  fiş). Puan: her kenarın gradyan desteği ve içi / dışı basamağı (işaret tutarlı), alan, açılar, kâğıtlık karşıtlığı,
+  yazıyı kesiyor mu. Puanı düşük kalan en iyi adaylar kenarlara oturtulup yeniden puanlanır. Güven 0–1; birbirine
+  yakın puanlı iki farklı aday, zayıf kenar güveni düşürür. Kâğıt kareyi dolduruyorsa `fillsFrame` (kırpılmaz).
+  Kareden taşan uzun fişte kareye dayanan kenar, uzun kenarların kaçış noktasından bulunan kısa kenar yönüyle
+  görüntünün içine alınır; köşesi kareden çıkmış ama iki kenarı görünen kâğıtta köşe kenarların kesişimidir (en çok
+  %8 dışarıda, `MAX_OUTSIDE`; açılan sayfada dışarısı kâğıt rengiyle dolar).
+- **Köşe oturtma** (`refine.ts`): kaba köşeler (kullanıcının sürüklediği, yapay zekânın 0–1000 oranlı ipucu) her kenar
+  boyunca kenara dik şeritte aranan geçişe (önce içerisi aydınlık, tutmazsa tersi), RANSAC + en küçük karelerle
+  oturtulur; geniş şerit (köşegenin %7,5'i), sonra dar şerit. Korumalar: destek zayıfsa, içeri kayılan şerit kâğıda
+  benziyorsa (yazı satırı, tablo çizgisi), çizginin dışı içiyle aynıysa ya da kenar görüntünün kenarındaysa o kenar
+  değişmez; içeri arama karşı kenarın yarısına varmaz (dar fiş).
+- **Açma** (`warp.ts`): normalize DLT homografi; çıktının en/boy oranı perspektiften (Zhang–He, odak dörtgenden
+  kestirilir), olmazsa kenar uzunluklarından; küçültürken önce alan ortalaması (örtüşme yok). Sayfa birkaç piksel
+  içeriden açılır (kenarda koyu çizgi kalmaz). `rotate` (90 / 180 / 270; `rotationForTop` yapay zekânın "top"
+  ipucundan) açmayla birlikte uygulanır.
+- **Taranmış görünüm** (`enhance.ts`): "belge" — her renk kanalı kâğıdın yerel parlaklığına bölünür (gölge, sarı ışık
+  gider), gri ton = parlaklık + en koyu kanal (mavi tükenmez, kırmızı kaşe koyu), mürekkep koyuluğu her görüntüde
+  ölçülen iki eşik arasında yumuşak açılır (kâğıt gürültüsünün altı bembeyaz; soluk termal baskıda siyah eşiği bölge
+  bölge iner), kenardaki masa şeridi ve tek başına benekler silinir, hafif keskinlik. "gri", "renkli" (beyaz dengesi),
+  "orijinal". Kalan ±8° eğiklik yazı satırlarının izdüşümünden ölçülüp düzeltilir; dar uzun fişte dönüş yerine
+  yamultma (uzun kenarlar yerinde).
+- **Giriş noktası** (`index.ts`): `scanDocument(img, { corners?, refine?, mode?, maxEdge?, deskew?, rotate? })` →
+  `{ image, corners, confidence, method, fillsFrame, rotation, rotate, reasons, timings }`; `detectDocument`,
+  `refineCorners`, `quadIsValid`, `orderCorners`, `cornersFromHint` / `cornersToHint` (0–1000 oran), `thumbnail`.
+- **Doğruluk ve süre** (sentetik fotoğraflar, gerçek köşeler bilinir; `tests/tarama-*.test.ts`): köşe hatası köşegenin
+  %1,5'inin altında (eğik A4, koyu / dokulu / tahta zemin, açık ve beyaza yakın tezgâhta termal fiş, gölgeli fiş, kareden
+  taşan fiş, köşesi kareden çıkmış kâğıt; çoğunda %0,1'in altında); rastgele 120 sahnede 120'si. Kaba ipucu (köşegenin
+  ±%5'i) %1,5'in altına oturur. Beyaz fiş beyaza yakın tezgâhta: kâğıtla zemin arası ~20 gri düzeyinde bulunur, ~12'de
+  çoğu, ~8'de hiçbiri (A4 ~8'de de bulunur); bulunamayınca kırpılmaz, yalnız görünüm işlenir.
+  1670×2220 fotoğrafta (yüklemedeki ölçü) sunucu çekirdeğinde A4 ~0,7–1 sn, fiş ~0,4 sn işlemci süresi; telefonda
+  birkaç kat.
+- **Deneme:** `npx tsx scripts/tarama-dene.ts <fotoğraf|klasör> [--mod hepsi] [--ipucu x1,y1,…,x4,y4] [--ust right]`
+  ya da `--sentetik`; çıktı `.data/tarama-dene/` (köşe çizimi ve taranmış hâller). sharp yalnız bu betikte, dinamik
+  yüklenir.
