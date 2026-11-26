@@ -61,6 +61,45 @@ export interface TillRow {
    * raporunun satırına da koyar). Gün KDV'si bundan (tillMonths dayVat; engine.ts posNet), yoksa günün oranıyla
    */
   vat?: readonly { rate: number; base: number; vat: number }[] | null;
+  /**
+   * Kasa raporundaki yazarkasa Z'si (KDV dahil toplam ve KDV toplamı; KDV girilmemişse satır yok): KDV tahmini bu günün
+   * KDV'sini Z'den alır (vatDaysOf; docs/NAKIT-PLANI.md › KDV tahmini). Yalnız kasa raporu satırında
+   */
+  okc?: { total: number; vat: number } | null;
+}
+
+/** En yüksek KDV oranının (%20) KDV dahil tutardaki payı: Z'nin KDV'si bundan büyük olamaz */
+const MAX_VAT_SHARE = 0.2 / 1.2;
+
+/** Günün LafPOS dökümü cirosunu tutuyor mu (±0,01): tutuyorsa günün KDV'si dökümden (dayVatOf ile aynı sınama) */
+function lafposVatKnown(r: TillRow, rev: number): boolean {
+  return Boolean(r.vat?.length) && Math.abs(r.vat!.reduce((a, x) => a + x.base + x.vat, 0) - rev) < 0.01;
+}
+
+/**
+ * Ayın satışlı günlerinin KDV kaynağı (KDV tahmini, src/lib/kdv.ts): LafPOS'un dökümü cirosunu tutan gün LafPOS'tan
+ * (`lafposRows`: LafPOS'un şubesinin satırları, motorun gün gün hesabındakiler); kasa raporunda yazarkasa Z'sinin KDV'si
+ * girilmiş öteki gün Z'den; kalanı oranla. Z'nin KDV'si akla yatkın değilse (eksi ya da toplamın %20'lik payından büyük:
+ * yanlış okunmuş fiş) gün oranla kalır. Yazarkasa toplamı günün cirosunu aşsa da (ödenmez yazarkasadan geçmiş) kapsanan
+ * kısım ciroyla sınırlıdır; cironun yazarkasa dışında kalanı (online platform, yazarkasadan geçmeyen satış) oranla
+ */
+export function vatDaysOf(rows: readonly TillRow[], lafposRows: readonly TillRow[] = []): NonNullable<TillMonth["vatDays"]> {
+  const laf = new Set(lafposRows);
+  const z = { days: 0, revenue: 0, covered: 0, vat: 0 };
+  let lafpos = 0;
+  let estimate = 0;
+  for (const r of rows) {
+    const rev = dayRevenue({ zTotal: r.zTotal, offRevenue: r.offRevenue ?? null, payments: r.payments ?? null }).revenue;
+    if (!(rev > 0)) continue;
+    if (laf.has(r) && lafposVatKnown(r, rev)) lafpos++;
+    else if (r.okc && r.okc.total > 0 && r.okc.vat >= 0 && r.okc.vat <= r.okc.total * MAX_VAT_SHARE + 0.01) {
+      z.days++;
+      z.revenue += rev;
+      z.covered += Math.min(rev, r.okc.total);
+      z.vat += r.okc.vat;
+    } else estimate++;
+  }
+  return { z: { days: z.days, revenue: r2(z.revenue), covered: r2(z.covered), vat: r2(z.vat) }, lafpos, estimate };
 }
 
 /**
@@ -321,6 +360,8 @@ export function tillMonths(
       mealCard: sum(list, (r) => r.mealCard),
       ...(bankByBranch ? { cardByBranch: bankByBranch } : {}),
       ...(lafposRows.length ? { dayVat: dayVatOf(lafposRows) } : {}),
+      // Günlerin KDV kaynağı (KDV tahmini): yazarkasa Z'si ya da LafPOS dökümü olan bir gün varsa
+      ...(list.some((r) => r.okc) || lafposRows.some((r) => r.vat?.length) ? { vatDays: vatDaysOf(list, lafposRows) } : {}),
       missing,
       ...(waiting ? { pending: missing.filter((d) => waiting.has(d)) } : {}),
       ...(shut ? { closed } : {}),
