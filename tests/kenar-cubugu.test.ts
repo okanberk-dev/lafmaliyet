@@ -189,6 +189,8 @@ test("yönetici: en sık dört ekran üst düzeyde, gerisi konu başlıkları al
     "Alış & gider › Faturalar, Tedarikçiler, Giderler & maaşlar",
     // "Finans" → "Kâr & ödemeler"; Nakit planı kendi satırında
     "Kâr & ödemeler › Gelir-gider, Ödemeler, Nakit planı, Mutabakat",
+    // 26 Kas 2026 (docs/RAPORLAR.md): dört rapor kendi grubunda, yalnız yöneticide
+    "Raporlar › Şube karşılaştırma, İşçilik / ciro, Kaçak raporu, Kayıp önleme",
     // Vergi (dalga 12) kendi grubunda; adı KDV ve SGK'yı da söyler, kapalı kenar çubuğunda görünür
     "Vergi, KDV, SGK › Özet, Vergi kârı, Demirbaş, Muhasebeci",
     "Ayarlar › Genel ayarlar, Kullanıcılar & roller, Şubeler, Paraşüt entegrasyonu",
@@ -256,6 +258,8 @@ test("hiçbir ekran menüden düşmedi: adresler aynı, ağaç, komut paleti ve 
     "/panel/zayi", "/panel/tutarlilik", "/panel/ayarlar", "/panel/kullanicilar", "/panel/subeler", "/panel/parasut", "/panel/yardim",
     "/panel/urunler/fiyatlar", "/panel/hatirlaticilar/nakit", "/panel/vergi/gelir-gider", "/panel/vergi/demirbas", "/panel/vergi/kurallar",
     "/panel/mutabakat",
+    // Raporlar 26 Kas 2026'da (docs/RAPORLAR.md)
+    "/panel/raporlar", "/panel/raporlar/iscilik", "/panel/raporlar/kacak", "/panel/raporlar/kayip",
   ];
   assert.deepEqual([...hrefsOf(navTreeFor("admin"))].sort(), [...ADMIN_PAGES].sort());
   // Ağaçtaki her ekran komut paletinde de (Tutarlılık Stok sayımı'nın sekmesi olarak bulunur)
@@ -356,7 +360,7 @@ test("Stok sekmeleri: role göre süzülmüş kenar çubuğu Stok grubunun sayfa
     tree.map((c) => [c.href, c.roles]),
   );
   // Giderler'in sekmeleri yalnız yöneticide; tek sekme kalan bölüm çizilmez
-  assert.equal(sectionTabsFor("giderler", "admin").length, 3);
+  assert.equal(sectionTabsFor("giderler", "admin").length, 5);
   assert.deepEqual(sectionTabsFor("giderler", "staff"), []);
 });
 
@@ -510,6 +514,6 @@ test("bölüm sekmeleri: Vergi grubundan türer; Ödemeler ↔ Nakit planı yaln
   assert.deepEqual(sectionTabsFor("vergi", "staff"), []);
   assert.deepEqual(
     sectionTabsFor("giderler", "admin").map((t) => t.label),
-    ["Sabit giderler", "Aylık harcamalar", "Maaşlar"],
+    ["Sabit giderler", "Aylık harcamalar", "Maaşlar", "Belgeler", "Avanslar"],
   );
 });

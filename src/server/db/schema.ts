@@ -492,6 +492,13 @@ export const invoices = pgTable(
      * kutusundadır; tek şube seçiliyken görünmez (src/lib/invoice-branch.ts)
      */
     companyWide: boolean("company_wide").notNull().default(false),
+    /**
+     * Kapalı dönem kararı (docs/DONEM-KAPANISI.md): ay kapandıktan sonra o aya tarihli gelen fatura hesaplara girmez
+     * ("Kapalı döneme düşenler" kutusu), ta ki yönetici karar verene kadar. Karar bu sütuna yazılır: faturanın hesaplarda
+     * sayılacağı gün (YYYY-MM-DD). Kendi tarihiyse kapalı aya bilerek işlendi; başka bir günse o günün ayında sayılır
+     * (belgenin tarihi `date` değişmez). Boş: karar yok. Eşitleme dokunmaz
+     */
+    periodDate: text("period_date"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -757,6 +764,70 @@ export const staffVersions = pgTable(
   (t) => [uniqueIndex("staff_versions_staff_month_uq").on(t.staffId, t.fromMonth)],
 );
 
+/**
+ * Personel belgeleri (docs/PERSONEL-BELGE.md): hijyen eğitimi, sağlık raporu, SGK işe giriş bildirgesi ve öteki
+ * belgeler; kişi başına birden çok, geçerlilik bitişi isteğe bağlı. Dosya özel depoda (src/server/storage/staff-docs.ts;
+ * fotoğraf deposuyla aynı sürücü), yalnız yöneticiye /api/personel/belge/{id}'den verilir; dosyasız belge de girilir
+ * (yalnız tarih takibi). Bitişe 30 gün kala ve bitince yöneticinin zili ve e-postası (src/lib/staff-docs.ts). Kişi
+ * silinince belgeleri de silinir (dosyalarını eylem siler).
+ */
+export const staffDocuments = pgTable(
+  "staff_documents",
+  {
+    id: serial("id").primaryKey(),
+    staffId: integer("staff_id")
+      .notNull()
+      .references(() => staff.id, { onDelete: "cascade" }),
+    /** "hijyen" | "saglik" | "sgk" | "diger" (src/lib/staff-docs.ts DOC_KINDS; yeni tür migration istemez) */
+    kind: text("kind").notNull(),
+    /** "diger" türünde belgenin adı; ötekilerde isteğe bağlı ek ad */
+    label: text("label"),
+    /** Düzenlenme günü (YYYY-MM-DD); bilinmiyorsa boş */
+    issuedOn: text("issued_on"),
+    /** Geçerliliğin son günü (YYYY-MM-DD); süresiz belgede boş (hatırlatma yok) */
+    validUntil: text("valid_until"),
+    note: text("note"),
+    /** Depodaki yol ("personel-belge/2026/11/<uuid>.pdf"); dosyasız belgede boş */
+    storageKey: text("storage_key"),
+    contentType: text("content_type"),
+    sizeBytes: integer("size_bytes"),
+    fileName: text("file_name"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdByName: text("created_by_name"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("staff_documents_staff_idx").on(t.staffId), index("staff_documents_valid_idx").on(t.validUntil), uniqueIndex("staff_documents_storage_key_uq").on(t.storageKey)],
+);
+
+/**
+ * Personel avansları (docs/PERSONEL-BELGE.md): `avans` kişiye verilen para, `kesinti` maaşından düşülen. Tutar hep
+ * artı; kişinin bakiyesi (maaşından düşülecek kalan) = avansların toplamı − kesintilerin toplamı
+ * (src/lib/staff-advances.ts). Avans gider değildir: maaş zaten işveren maliyetinde; avans onun erken ödenen parçasıdır,
+ * kâr-zarara ikinci kez girmez.
+ */
+export const staffAdvances = pgTable(
+  "staff_advances",
+  {
+    id: serial("id").primaryKey(),
+    staffId: integer("staff_id")
+      .notNull()
+      .references(() => staff.id, { onDelete: "cascade" }),
+    /** Paranın verildiği / maaştan düşüldüğü gün (YYYY-MM-DD) */
+    date: text("date").notNull(),
+    kind: text("kind", { enum: ["avans", "kesinti"] }).notNull(),
+    amount: doublePrecision("amount").notNull(),
+    note: text("note"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdByName: text("created_by_name"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("staff_advances_staff_idx").on(t.staffId, t.date),
+    check("staff_advances_kind_ck", sql`${t.kind} in ('avans','kesinti')`),
+    check("staff_advances_amount_ck", sql`${t.amount} > 0`),
+  ],
+);
+
 export const fixedExpenses = pgTable("fixed_expenses", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -882,6 +953,8 @@ export const expenseEntries = pgTable(
      * Tedarikçiler'de düzeltilir, burada kilitli
      */
     supplierEntryId: integer("supplier_entry_id").references(() => supplierEntries.id, { onDelete: "set null" }),
+    /** Kapalı dönem kararı: harcamanın hesaplarda sayılacağı gün (faturalardaki `periodDate` ile aynı kural) */
+    periodDate: text("period_date"),
   },
   (t) => [
     index("expense_entries_date_idx").on(t.date),
@@ -1291,6 +1364,33 @@ export const recipeChangeRequests = pgTable(
       sql`(${t.kind} = 'change' and ${t.productId} is not null) or (${t.kind} = 'new' and ${t.proposed} is not null)`,
     ),
   ],
+);
+
+/**
+ * Reçete geçmişi (docs/DONEM-KAPANISI.md › Reçete geçmişi): reçeteyi (satırlar ya da hazırlama notu) değiştiren her
+ * kayıtta bir satır: kim, ne zaman, nereden, önceki ve sonraki reçete. Satır adları anlık görüntüde saklanır (malzeme
+ * sonra silinse de okunur). Yalnız eklenir; ürün silinince geçmişi de gider.
+ */
+export const recipeVersions = pgTable(
+  "recipe_versions",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    /** edit: ürün kartından; approval: personelin onaylanan önerisi; create: ürün açılırken yazılan ilk reçete */
+    source: text("source", { enum: ["edit", "approval", "create"] }).notNull().default("edit"),
+    before: jsonb("before").$type<RecipeSnapshot>().notNull(),
+    after: jsonb("after").$type<RecipeSnapshot>().notNull(),
+    /** Farkın tek satırlık özeti (summarizeDiff): liste bunu gösterir, ayrıntı açılınca fark hesaplanır */
+    summary: text("summary").notNull(),
+    changedBy: integer("changed_by").references(() => users.id, { onDelete: "set null" }),
+    changedByName: text("changed_by_name").notNull(),
+    /** Onaylanan öneride öneren personelin adı */
+    requestedByName: text("requested_by_name"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("recipe_versions_product_idx").on(t.productId, t.createdAt)],
 );
 
 // ---------------------------------------------------------------- Kişisel hatırlatıcılar

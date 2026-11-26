@@ -128,7 +128,8 @@ test("kaynak: araç listesinde silme, toplu işlem ve şifre onayı yok; uygulay
   // Hatırlatıcı: tek dönem (through yok); geri al hiçbir kaydı silmez (removeId yok)
   assert.match(apply, /markReminderDone\(args\.reminderId\);/);
   assert.match(apply, /restoreReminder\(args\.reminderId, prev as Parameters<typeof restoreReminder>\[1\]\)/);
-  // Kasadan ödeme, kasa satırı ve fotoğraf yok
+  // Tedarikçi ödemesinde kasadan ödeme, kasa satırı ve fotoğraf yok (fiş fotoğrafı yalnız kasadan çıkan ve harcamada,
+  // sunucunun denetlediği plandan: tests/asistan-fis.test.ts)
   assert.match(apply, /cashOut: null,/);
   assert.match(apply, /photoId: null,/);
   // Kişisel sırlar ve ayarlar araç listesinde yok

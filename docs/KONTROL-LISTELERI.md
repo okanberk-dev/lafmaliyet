@@ -151,6 +151,26 @@ Maddeler bölümlere ayrılır (Bar, Salon, Karaoke odası…); maddenin açıkl
 
 Ekran liste saatlerinde ve sekmeye geri dönülünce kendiliğinden yenilenir.
 
+### Aylık PDF (26 Kasım 2026)
+
+Denetime hazır aylık kayıt (Yapılacaklar › Dalga 3): **Geçmiş** sekmesinin başlığında (yalnız yönetici) ay ve şube seçilir,
+**Aylık PDF** yeni sekmede açılır (`/api/kontrol/pdf?ay=YYYY-MM&sube=…`; şube verilmezse panelde seçili şube, "Bütün
+şubeler" de seçilebilir). Dosya saklanmaz, her istekte kayıtlardan çizilir; A4 dikey, vardiya PDF'inin yazı tipi
+(Inter, Türkçe) ve logosu.
+
+- **İlk sayfa:** ay, şube; beklenen liste, tamamlanan, eksik, doldurulmadı, kapalı gün, sorun / aralık dışı, fotoğraf
+  sayısı; **eksik ya da doldurulmamış listesi olan günler** (hangi liste, kaç madde eksik).
+- **Gün gün:** o gün beklenen her liste (Geçmiş'teki kural: o şubenin ve bütün şubelerin listeleri; günün o liste için
+  beklendiği haftanın günleri ve etkinlik tarihleriyle). Listenin başlığında saat aralığı ve durumu ("Tamamlandı · 09:20 ·
+  Selin", "Eksik: 2 madde", "Doldurulmadı"). Doldurulan listede **madde madde**: yanıt (Tamam, değer ve izin verilen
+  aralık, "aralık dışı", "Sorun var: not", kısa not), **işaretleyen**, **saat** (Türkiye) ve **fotoğraf** (Var / Yok;
+  fotoğraf 60 gün sonra silinse de "çekildi" bilgisi kalır). Doldurulmamış listenin maddeleri tek tek yazılmaz, tek satır.
+- **Kapalı gün:** kafenin kapalı işaretli günü (özel günlerin "kapalı" satırı; tek şubede o şubenin ve işletme genelinin,
+  "Bütün şubeler"de yalnız işletme genelinin) "Kafe kapalıydı" yazar; doldurulmamış liste eksik sayılmaz.
+- Ayın bugüne kadarki günleri; bu ay seçilirse bugüne kadar.
+- Kod: `src/lib/checklist-month.ts` (saf rapor), `src/server/checklists/month-pdf.ts` (çizim), `src/app/api/kontrol/pdf/route.ts`;
+  testi `tests/kontrol-aylik.test.ts`.
+
 ## 6. Bugün, zil ve sabah e-postası
 
 **Bugün** ([BUGUN.md](BUGUN.md)): her liste bir satırdır (`liste-{id}`, açılış saatine göre): aralıktan önce
@@ -267,6 +287,7 @@ yaptığını tutar).
 - `src/server/data/checklists.ts`: bağlantı, fotoğraf deposu, işlem geçmişi, fotoğraf erişimi, e-posta kutusu
 - `src/server/actions/checklists.ts`: işaretleme ve listelerin düzenlenmesi
 - `src/app/api/kontrol/foto/route.ts`: fotoğraflı yanıt
+- `src/lib/checklist-month.ts`, `src/server/checklists/month-pdf.ts`, `src/app/api/kontrol/pdf/route.ts`: aylık PDF (§5)
 - `src/app/panel/kontrol/`: ekranlar
-- Testler: `tests/kontrol-listeleri.test.ts`; veritabanıyla `KONTROL_TEST_DATABASE_URL=postgres://…/laffogato_…`
+- Testler: `tests/kontrol-listeleri.test.ts`, `tests/kontrol-aylik.test.ts`; veritabanıyla `KONTROL_TEST_DATABASE_URL=postgres://…/laffogato_…`
   verilince `tests/kontrol-listeleri-db.test.ts`

@@ -8,7 +8,8 @@ laffogato.net** (bağlantının durumu).
 **Kullananlar** (sözleşmeye dokunan bir değişiklik bunların hepsine bakar): kâr-zarar, Genel bakış ve tüketim (hesap
 motoru, `src/lib/calc/engine.ts`), kasa raporunun günlük bilgi satırı (`src/server/site-sales/sync.ts`),
 **Nakit planı › KDV tahmini** (satış KDV'sine sitenin KDV'si de girer: `siteVat` `src/lib/site-sales/calc.ts`, okuyan
-`src/lib/kdv.ts`; [NAKIT-PLANI.md](NAKIT-PLANI.md)). Sözleşmenin sitedeki kopyası: laffogato deposunda
+`src/lib/kdv.ts`; [NAKIT-PLANI.md](NAKIT-PLANI.md)), **Marina'nın tahmini stoğu** (şubenin ayrı ay kaydı; aşağıda
+Saklama, [STOK-TAHMINI.md](STOK-TAHMINI.md) § 2). Sözleşmenin sitedeki kopyası: laffogato deposunda
 `docs/PANEL-SALES.md` (uç, alanlar, KDV kuralı, hata kodları; sitenin kuralı `src/lib/panel/sales-export-core.ts`).
 
 ## Geliştirilmiş istek (prompt)
@@ -215,6 +216,8 @@ işletme genelidir (Marina'nın masa siparişi de dahil); fiziksel şube seçili
 |-------------------------------|--------|
 | `site_sales:YYYY-MM` | Ayın kaydı: sitenin yanıtı (toplamlar, kafe satırları, `closed`, `now`) + `month`, `pulledAt`. Yeniden çekmek üzerine yazar; sitenin saatine (`now`) göre daha eski bir yanıt yenisinin üstüne yazılmaz. Çekme başarısızsa önceki kayıt kalır |
 | `site_sales_sync` | `lastPullAt` (son deneme), `lastOkAt` (son başarılı), `lastError` (ay ay), `lastMonth` |
+| `site_sales_sube:marina:YYYY-MM` | **Marina'nın** ay kaydı (`&branch=marina`; 26 Kasım 2026): aynı biçim + `branch`. Yalnız tahmini stok okur (kasadan geçmeyen online siparişin tüketimi); kâr-zarar, KDV ve Tutarlılık işletmenin şubesiz kaydını okur. Önek `site_sales:` ile başlamaz: `loadSiteSales` onu görmez. Yanıt `branch: "marina"` demezse (eski site) yazılmaz |
+| `site_sales_sube_sync` | Şube başına `lastPullAt`, `lastOkAt`, `lastError` (Tahmini stok'un uyarısı yazar) |
 
 Günlük kasa satırı saklanmaz. `npm run db:reset` bu kayıtları silmez (sitenin verisi; tohum verisinden gelmez). Elle çekme
 işlem geçmişine yazılır ("laffogato.net online satışları çekildi · Ekim 2026").
@@ -226,6 +229,10 @@ işlem geçmişine yazılır ("laffogato.net online satışları çekildi · Eki
 | Günlük iş (`/api/cron/gunluk`, sabah; ayrı ve yalıtılmış bir adım, hata öteki adımları durdurmaz) | Bu ay ve önceki iki ay, her gün (`salesMonthsToPull`) |
 | Gelir-gider › **Siteden yenile** | Aynı üç ay |
 | Ay satırındaki ↻ ya da **Başka bir ay › Siteden çek** | O ay (bu yılın Ocak 2026'dan bu aya kadarki ayları; istek başına en çok 3) |
+| Tahmini stok › **Siteden al** (yalnız Marina'nın kaydı) | Tahminin gerektirdiği ama kaydı olmayan aylar (en çok 6; `refreshStockOnline`) |
+
+Günlük iş ve **Siteden yenile** aynı üç ayı Marina için de ayrıca, aynı anda sorar (`syncBranchSiteSales`, `&branch=marina`;
+üç küçük istek daha). Onun hatası işletmenin çekmesinin sonucunu ve durumunu değiştirmez, kendi durumuna yazılır.
 
 Aylar aynı anda sorulur (üç küçük imzalı istek): site yavaşsa günlük iş en çok 8 saniye bekler. Elle çekme yalnız
 yöneticinin (`src/server/actions/site-sales.ts`).
@@ -285,7 +292,7 @@ bilgidir; yokluğu raporu etkilemez.
 |-------|-------|
 | `src/lib/site-sales/schema.ts` | Sitenin yanıtının doğrulanması, ayın dönemi, saklanan kaydın okunması (saf) |
 | `src/lib/site-sales/calc.ts` | KDV hariç gelir, çekilecek aylar, satır → ürün eşlemesi, kasa satırı ve zaman sınırı (saf) |
-| `src/server/site-sales/sync.ts` | Ayları çekme ve saklama, durum, kasa satırının isteği |
+| `src/server/site-sales/sync.ts` | Ayları çekme ve saklama, durum, kasa satırının isteği; Marina'nın ayrı ay kaydı (tahmini stok) |
 | `src/server/actions/site-sales.ts` | Siteden yenile (yönetici) |
 | `src/app/api/cron/gunluk/route.ts` | Günlük işin online satış adımı |
 | `src/lib/calc/engine.ts`, `insights.ts` | Kâr-zarar satırları ve toplam ciro; online tüketim; uyarı |

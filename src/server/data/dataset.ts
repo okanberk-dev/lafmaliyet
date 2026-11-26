@@ -11,6 +11,7 @@ import type { Dataset, SalesLine, Settings } from "@/lib/calc/types";
 import { isReportRow, resolveBranchMonths, resolveMonths, tillMonths, tillOpenedOn, type MonthEntry, type TillRow } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn, closedRowApplies } from "@/lib/closed-days";
+import { countedRecords, redateLots } from "@/lib/closed-period";
 import { channelOf } from "@/lib/commission/channels";
 import { COMMISSION_CATEGORY, settingsFromRows } from "@/lib/constants";
 import { modposZBetween, otherBranchLists, type OtherBranchList } from "@/lib/lafpos/sales";
@@ -20,6 +21,7 @@ import { addDays } from "@/lib/reminders";
 import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import type { SiteSalesMonth } from "@/lib/site-sales/schema";
 import { branchWhere, branchWhereWithShared, currentBranchScope, currentWriteBranch, withBranchScope } from "@/server/branch-scope";
+import { invoiceAccountDates, loadClosedPeriods } from "@/server/closed-period";
 import { invoiceScopeWhere } from "@/server/invoice-scope";
 import { loadSplitLines } from "./invoice-split";
 import { resolveBranchSetting } from "@/server/branch-settings";
@@ -76,7 +78,7 @@ async function readDataset(): Promise<Dataset> {
     recipeItems,
     months,
     salesLines,
-    invoices,
+    rawInvoices,
     supplierCards,
     staff,
     staffVersions,
@@ -85,7 +87,7 @@ async function readDataset(): Promise<Dataset> {
     pnlEntries,
     stockCounts,
     ingredientPrices,
-    purchaseLots,
+    rawLots,
     heldPurchases,
     pendingPriceHolds,
     stockExtras,
@@ -100,6 +102,7 @@ async function readDataset(): Promise<Dataset> {
     lateWaiting,
     closedRows,
     calendar,
+    periods,
   ] = await Promise.all([
     loadSettings(),
     db.select().from(s.ingredients).orderBy(asc(s.ingredients.sortOrder), asc(s.ingredients.id)),
@@ -188,7 +191,12 @@ async function readDataset(): Promise<Dataset> {
       .where(eq(s.specialDays.kind, "kapali")),
     // Çalışma takvimi seçili şubenin (şube ayarı isletme.takvim; "Tümü"de ve online kanalda varsayılan şubenin)
     resolveBranchSetting(CALENDAR_GROUP, scope, db),
+    // Kapalı dönemler (docs/DONEM-KAPANISI.md): kapanıştan sonra kapalı aya düşen fatura ve harcama hiçbir hesaba girmez,
+    // açık aya alınan kararın gününde sayılır; FIFO partileri de faturanın hesap gününe göre
+    loadClosedPeriods(db).then(async (p) => ({ p, lotDates: await invoiceAccountDates(db, p) })),
   ]);
+  const invoices = countedRecords(rawInvoices, periods.p);
+  const purchaseLots = redateLots(rawLots, periods.lotDates);
 
   // LafPOS'a geçiş günü görünümün kasasınınki (scopeSwitchDay; denetim 21 Kasım #5): ModPOS'ta kalan şube (Tuzla) ya da
   // online kanal seçiliyken yok (LafPOS hiç okunmaz, ekranlar ModPOS der); "Tümü"de ve LafPOS'un şubesinde ayar. Veri
@@ -499,7 +507,10 @@ async function readDataset(): Promise<Dataset> {
     })),
     wasteEntries,
     siteSales,
-    expenseEntries: expenseEntries.map(({ entry: e, docType }) => ({
+    expenseEntries: countedRecords(
+      expenseEntries.map(({ entry, docType }) => ({ ...entry, docType })),
+      periods.p,
+    ).map((e) => ({
       id: e.id,
       date: e.date,
       categoryId: e.categoryId,
@@ -508,7 +519,7 @@ async function readDataset(): Promise<Dataset> {
       paymentMethod: e.paymentMethod,
       note: e.note,
       cashOutId: e.cashOutId,
-      docType,
+      docType: e.docType,
       supplierEntryId: e.supplierEntryId,
       branchId: e.branchId,
     })),

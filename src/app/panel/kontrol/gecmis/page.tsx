@@ -8,15 +8,20 @@ import { Badge, type Tone } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardFooter, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
+import { ALL_BRANCHES } from "@/lib/branches";
 import { checklistDay, historyRange, isStarted, lateFinish, listState, nowBusinessMinute, STAFF_HISTORY_DAYS, timeTR, type ChecklistLite, type HistoryRange } from "@/lib/checklists";
+import { monthTitle, prevMonth } from "@/lib/closed-period";
 import { num } from "@/lib/format";
 import { keepUntil } from "@/lib/photo-rules";
 import { longDateTR } from "@/lib/reminders";
 import { requireUser } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { firstChecklistDay, loadChecklistHistory, type HistoryList } from "@/server/data/checklists";
 
 import { RunView } from "../run-view";
 import { KontrolTabs } from "../tabs";
+import { MonthPdfLink } from "./month-pdf";
 
 export const metadata: Metadata = { title: "Kontrol geçmişi" };
 
@@ -53,8 +58,17 @@ async function HistoryContent({ searchParams }: { searchParams: PageProps<"/pane
   const now = new Date();
   const today = checklistDay(now);
   const first = await firstChecklistDay();
+  // Aylık PDF (yalnız yönetici): ilk kaydın ayından bu aya, en yeni önce; şube panelde seçili olandan başlar
+  const pdf = admin && first ? await monthPdfProps(first, today) : null;
   const header = (
-    <PageHeader path="/panel/kontrol/gecmis" role={user.role} title="Geçmiş" description={admin ? DESCRIPTION : STAFF_DESCRIPTION} tabs={<KontrolTabs current="/panel/kontrol/gecmis" role={user.role} />} />
+    <PageHeader
+      path="/panel/kontrol/gecmis"
+      role={user.role}
+      title="Geçmiş"
+      description={admin ? DESCRIPTION : STAFF_DESCRIPTION}
+      tabs={<KontrolTabs current="/panel/kontrol/gecmis" role={user.role} />}
+      actions={pdf ? <MonthPdfLink {...pdf} /> : undefined}
+    />
   );
   if (!first) {
     return (
@@ -98,6 +112,16 @@ async function HistoryContent({ searchParams }: { searchParams: PageProps<"/pane
       </Card>
     </>
   );
+}
+
+/** Aylık PDF'in seçenekleri: ilk kaydın ayından bu aya (en çok 24 ay), şubeler ("Bütün şubeler" dahil) ve seçili şube */
+async function monthPdfProps(first: string, today: string) {
+  const [branches, scope] = await Promise.all([listBranches(), currentBranchScope()]);
+  const months: { month: string; title: string }[] = [];
+  for (let m = today.slice(0, 7); m >= first.slice(0, 7) && months.length < 24; m = prevMonth(m)) months.push({ month: m, title: monthTitle(m) });
+  const physical = branches.filter((b) => b.active && b.kind === "fiziksel").map((b) => ({ id: b.id, name: b.name }));
+  const options = [...physical, { id: ALL_BRANCHES, name: "Bütün şubeler" }];
+  return { months, branches: options, branch: options.some((o) => o.id === scope) ? scope : ALL_BRANCHES };
 }
 
 /** Gün satırındaki bir listenin çipi: "Açılış 09:42", "Kapanış geç 03:10", "Kapanış 3 eksik", "Açılış yapılmadı" … */

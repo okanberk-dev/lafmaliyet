@@ -158,6 +158,24 @@ export async function postParasutToken(cfg: ParasutConfig, params: Record<string
   return JSON.parse(body) as ParasutTokenResponse;
 }
 
+/**
+ * `GET /v4/me?include=companies`, verilen erişim belirteciyle: kullanıcının eriştiği firmalar (ad, vergi numarası).
+ * Bağlanırken henüz saklanmamış yeni belirteçle çağrılır ("Aynı vergi numarası mı?", company.ts); kayıtlı oturumla
+ * okumak için ParasutClient.get("me", …, { root: true }). Yeniden denenmez
+ */
+export async function parasutMe(cfg: Pick<ParasutConfig, "baseUrl">, accessToken: string): Promise<unknown> {
+  const url = new URL(`${cfg.baseUrl}/v4/me`);
+  url.searchParams.set("include", "companies");
+  const res = await fetchParasut("me", url, { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } });
+  const body = await res.text();
+  if (!res.ok) throw new ParasutError(parasutErrorText(res.status, body), res.status, body);
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    throw new ParasutError("Paraşüt'ün kullanıcı bilgisi okunamadı.", res.status, body.slice(0, 200));
+  }
+}
+
 /** Belirteci şifreleyip integration_state'e yazar (hesabın adıyla) */
 async function writeToken(account: string, t: StoredToken, db: Exec) {
   const value = { sealed: seal(JSON.stringify(t)) };

@@ -1069,8 +1069,15 @@ kuralı; Tuzla ModPOS'ta kalır, aşağıda "Şubeler"). Canlıda 22 Kasım 2026
   Tarayıcıya, işlem geçmişine ve yedeğe gitmez; ekran yalnız "Panelde kayıtlı / Sunucuda kayıtlı / Anahtar yok" der,
   Ayarlar › LafPOS anahtarın nereden okunduğunu yazıp şube sayfasına bağlanır. Silinince ortamdaki kullanılır; kasa
   kaynağı başka şubeye geçtiyse eski şubede kalan anahtar o şubenin sayfasından silinir. İmzalı uçların hepsi
-  `await lafposSecret()` ile okur: panelde saklanan anahtar 60 sn önbellekli (kayıtta ve kasa kaynağı değişince düşer),
-  imzasız istek her seferinde veritabanını okutmaz; veritabanı okunamazsa uç 503 döner.
+  anahtarı isteğe göre okur (`await lafposRequestSecret(request)`, `src/server/lafpos/branch.ts` › `lafposSecretFor`;
+  veritabanı okunamazsa uç 503 döner). **Döndürülen anahtar her sunucu örneğinde hemen geçersiz** (güvenlik notu, 26
+  Kasım 2026): panelde saklanan anahtar 60 sn önbellekli ama önbellek yalnız ön süzgeçtir. İmza önbellekteki anahtarla
+  tutarsa anahtar kabulden önce veritabanından (LafPOS'un şubesi dahil, önbelleksiz) yeniden okunur; başka bir örnekte
+  döndürüldüyse eski anahtarla imzalı istek 401 alır ve önbellek yenilenir. Bu okuma yalnız imzası tutan (LafPOS'un
+  kendi) isteklerinde olur; imzasız ya da yanlış imzalı istek veritabanını okutmaz, yalnız önbellek
+  `LAFPOS_SECRET_RELOAD_MS`'tan (10 sn) eskiyse bir kez yeniden okunur: yeni anahtar başka örneklerde de en geç 10 sn
+  sonra geçer (eskiden 60 sn). Anahtarı kaydeden örnekte önbellek kayıtta hemen düşer. Deneme:
+  `tests/sube-ayarlari-2-db.test.ts` (iki örnek: eski anahtar geçmez, imzası tutmayan istek okuma yapmaz).
 - **Hiçbir veri yazılmaz ya da silinmez:** ayar yalnız okuyanları değiştirir; geri almak günü değiştirmek ya da
   boşaltmaktır. Tercihen ayın 1'i (ModPOS'un o ayki ürün listesi bölünmez).
 - **LafPOS kendi tarihini tutmaz:** bütün gerçek günleri gönderir; neyin sayıldığına panel karar verir ve yanıtta söyler
@@ -1378,7 +1385,8 @@ Anahtar yokken altı uç da `503` döner; panelin geri kalanı ve Kasa raporu es
 |-------|-------|
 | `src/lib/lafpos/day.ts` | Gövdenin şeması (beyaz liste; Faz 2 alanları bozuksa yok sayılır), okunması ve hata alanı, ürünün bulunma sırası (saf) |
 | `src/lib/lafpos/gun-ayrinti.ts`, `src/app/panel/kasa/lafpos-day-card.tsx` | Faz 2 ayrıntısı: yazarkasadan geçmeyen, ödeme iptalleri, iptal edilen kalemler, yazarkasa Z no, KDV, gönderim ve düzeltme (gün görünümü kartı ve gün sonu e-postası; saf) |
-| `src/lib/lafpos/request.ts` | Anahtar ve imzalı isteğin denetimi (saf) |
+| `src/lib/lafpos/request.ts` | Anahtar ve imzalı isteğin denetimi (saf; `node:crypto`, yalnız sunucu) |
+| `src/lib/lafpos/secret-rules.ts` | Anahtarın en kısa uzunluğu (Şube ayarları kartı da okur; tarayıcı `request.ts`'i içe aktarmaz, CSP: [DEPLOY.md](DEPLOY.md) › Güvenlik başlıkları) |
 | `src/lib/lafpos/prefill.ts` | Z → Kasa formunun alanları (`CashPrefill`), bandın metni, harcama ve teslimin bilgi satırı, kartla bahşiş ve cari tahsilatı, yazarkasadan geçmeyen ödeme (`LafposDay.offDevice`; saf) |
 | `src/lib/lafpos/diffs.ts` | Gönderilmiş raporun LafPOS'tan farklı yazılanları ve metni (saf) |
 | `src/lib/lafpos/costs.ts` | Maliyet listesinin beyaz listesi (saf) |

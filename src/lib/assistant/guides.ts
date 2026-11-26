@@ -82,6 +82,22 @@ export const OP_GUIDES: readonly OpGuide[] = [
     actions: ["applyBulkPrices", "undoPriceBatch"],
   },
   {
+    id: "sube-fiyati",
+    kind: "rehber",
+    topic: "Bir şubenin kendi fiyatı (şube fiyatı)",
+    keywords: ["şube fiyatı", "sube fiyati", "marina fiyatı", "marina'da fiyat", "şubeye özel fiyat", "taban fiyata dön", "geçerlilik"],
+    why: "Şube fiyatı sitede geçerlilik anıyla yazılır, silinmez; yanlış an ya da şube müşteriye görünen fiyatı değiştirir. Asistanın fiyat kartı yalnız tabanı değiştirir.",
+    path: "/panel/urunler/fiyatlar",
+    steps: [
+      "Ürünler › Fiyatlar'ı açın, Şube fiyatı sekmesine geçin ve şubeyi seçin.",
+      "Kalemin satırında Değiştir'e basın; M ve L'yi yazın (ya da Taban fiyata dön'ü seçin).",
+      "Geçerlilik varsayılan olarak sonraki iş günü 05:00'tir; gerekirse değiştirin ve kaydedin.",
+      "Anı gelmemiş değişikliği aynı sekmede İptal ile geri alın.",
+    ],
+    instead: "Tabanı (Tuzla ve kendi fiyatı olmayan şubeler) asistan onay kartıyla değiştirebilir; kart kendi fiyatı olan şubeyi ayrıca gösterir.",
+    actions: ["setBranchPrice", "cancelBranchPriceRow", "applyBranchPrices"],
+  },
+  {
     id: "odenmedi",
     kind: "rehber",
     topic: "Faturayı ödenmedi yapmak (ödeme geri alma)",

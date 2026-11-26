@@ -33,6 +33,7 @@ const PARTS = {
   sayim: { group: "uyari", what: "stok sayımı", href: "/panel/sayim" },
   vardiya: { group: "uyari", what: "vardiya planı", href: "/panel/vardiya" },
   operasyon: { group: "uyari", what: "operasyon uyarıları", href: "/panel" },
+  belge: { group: "uyari", what: "personel belgeleri", href: "/panel/personel/belgeler" },
 } as const;
 
 export type BellPart = keyof typeof PARTS;

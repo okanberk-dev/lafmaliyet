@@ -58,6 +58,11 @@ export const assistantRequest = z
     page: assistantPage.optional().catch(undefined),
     /** Derin analiz (efor high, daha çok araç turu; günlük sınıra 2 soru sayılır; loop.ts ASSISTANT_DEEP) */
     deep: z.boolean().default(false),
+    /**
+     * Sohbete eklenen fiş fotoğrafı (src/lib/assistant/receipt.ts): yalnız kimlik; fotoğrafı ve okumasını sunucu kendisi
+     * okur ve denetler (bu kullanıcının, fiş türünde, bağlanmamış), okunan değerler mesaja veri bloğu olarak eklenir
+     */
+    photo: z.object({ id: z.number().int().positive() }).strict().optional(),
   })
   .strict()
   .superRefine((v, ctx) => {
@@ -150,6 +155,8 @@ export interface ChatMessage {
   deep?: boolean;
   /** Yanıtın sonundaki takip önerileri (followups.ts; metinden ayrılmış, yalnız ekranda) */
   followups?: string[];
+  /** Soruyla gönderilen fiş fotoğrafı (ekranda küçük resmi; geçmişe gitmez, sunucuya istekte ayrı alanla gider) */
+  photoId?: number;
 }
 
 /** Sayfa işlem sürerken yenilendiyse kartın iletisi (durum sunucudan yeniden okunana kadar) */
