@@ -102,7 +102,10 @@ export async function runAutoBackup(now = new Date(), opts: { db?: DB; store?: B
     const name = autoBackupName(now, randomBytes(4).toString("hex"));
     await store.put(name, bytes);
     const tables = Object.keys(summary.tables).length;
-    await saveAutoBackupState(db, { lastAttemptAt: now.toISOString(), lastError: null, lastOk: { at: now.toISOString(), name, bytes: bytes.byteLength, rows: summary.rows, tables } });
+    // Dosya depoda: durum yazılamasa da yedek alınmıştır (kart ve hafta denetimi depodaki listeye bakar)
+    await saveAutoBackupState(db, { lastAttemptAt: now.toISOString(), lastError: null, lastOk: { at: now.toISOString(), name, bytes: bytes.byteLength, rows: summary.rows, tables } }).catch((e) =>
+      console.error("[yedek] otomatik yedeğin durumu yazılamadı", e),
+    );
     let deleted = 0;
     try {
       const extra = autoBackupsToDelete([...before, { name }]);
