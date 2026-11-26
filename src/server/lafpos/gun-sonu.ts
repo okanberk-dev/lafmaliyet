@@ -14,7 +14,9 @@ import {
   autoMissing,
   autoValuesOf,
   autoValuesOfReport,
+  catchUpOrder,
   compareDays,
+  dayEndPending,
   dayEndSubjectNoCount,
   dayHash,
   humanDeviceFill,
@@ -62,10 +64,10 @@ import { applyPhotoZNo, dayPhotoIds, linkPendingPhotos, photoCheckOf, refreshDay
  * 3. Çalışanların kısa e-postası (Kasa › Rapor alıcıları › Çalışanlar): sayım varsa "gün sonu alındı" günde bir kez,
  *    sayım yoksa "kasa sayılmadı" uyarısı günde bir kez. Sonucu notification_log'a yazılır; düşerse günlük iş yeniden dener.
  *
- * Tetik: `POST /api/pos/gun` yanıtı döndükten sonra (after(); kasa e-postayı beklemez) ve günlük iş (son 7 gün; geçiş günü
- * sonradan girildiyse eksik günler). Pavo'yu bekleyen gün (LafPOS günü yeniden göndermedi) beklemesi dolunca canlı
- * yoklamadan (en çok 5 dakikada bir) ya da kontrol işinden (22:07, 22:37) biter: finishWaitingDayEnds. Tuzla (ModPOS) bu
- * yoldan hiç geçmez.
+ * Tetik: `POST /api/pos/gun` yanıtı döndükten sonra (after(); kasa e-postayı beklemez) ve günlük iş (son 7 gün, işi bekleyen
+ * gün önce ve yeniden eskiye; geçiş günü sonradan girildiyse eksik günler). Pavo'yu bekleyen gün (LafPOS günü yeniden
+ * göndermedi) beklemesi dolunca canlı yoklamadan (en çok 5 dakikada bir) ya da kontrol işinden (22:07, 22:37) biter:
+ * finishWaitingDayEnds. Tuzla (ModPOS) bu yoldan hiç geçmez.
  */
 
 /** Günlük işin geriye baktığı gün sayısı (geçiş günü sonradan girilse de en çok bu kadar eski gün işlenir) */
@@ -987,25 +989,71 @@ export async function settlePavoWait(
   return runLafposDayEnd(db, date, new Date(nowMs()), { deadlineAt: Date.now() + (o.deadlineAt - nowMs()), noPavoWait: true });
 }
 
+/** Sabah işinde yeni güne başlamak için son ana (`deadlineAt`) en az bu kadar kalmalı (rapor ve bir e-posta denemesi; ms) */
+export const CATCH_UP_MIN_MS = 2_000;
+
 /**
  * Günlük iş: son DAY_END_LOOKBACK_DAYS gün içindeki (geçiş gününden önce değil) LafPOS gün sonlarını işler. Rapor
  * yazılmamış, düzeltilmiş ya da e-postası gitmemiş gün tamamlanır; işlenmiş gün hiçbir şey göndermez (idempotent).
+ *
+ * Sıra (catchUpOrder): adımın bütçesi kısa (sabah işinde yaklaşık 8 sn), eskiden yeniye giderken en yeni gün
+ * yetişmeyebilirdi. İşi bekleyen günler (dayEndPending: rapor adımı bugünkü içerikle işlenmedi ya da e-postası gitmedi)
+ * önce ve yeniden eskiye (dünkü gün ilk), işlenmiş günler sona. `deadlineAt` verildiyse son ana CATCH_UP_MIN_MS'den az
+ * kalınca yeni güne başlanmaz: başlanamayan bekleyen günler `left`te (adım hata sayar, sonraki tetik dener), işlenmiş
+ * günler sessizce kalır.
+ *
+ * Kasa zinciri: yeni gün önce yazıldığından raporunun devir denetimi (açılış ↔ önceki raporun devri, notta) ondan sonra
+ * yazılan eski günü görmemiş olabilir. Bu çalışmada birden çok gün yazıldıysa (ya da düzeltildiyse) en eskisinden
+ * sonrakilerin raporu eskiden yeniye bir kez daha hesaplanır (writeAutoReport); devir değişmediyse hiçbir şey yazılmaz,
+ * ertesi çalışma da yazmaz
  */
-export async function catchUpLafposDayEnds(db: DB, now = new Date(), opts?: SendOptions): Promise<{ status: "off" | "ok" | "error"; days: Awaited<ReturnType<typeof runLafposDayEnd>>[] }> {
+export async function catchUpLafposDayEnds(
+  db: DB,
+  now = new Date(),
+  opts?: SendOptions,
+): Promise<{ status: "off" | "ok" | "error"; days: Awaited<ReturnType<typeof runLafposDayEnd>>[]; left: string[] }> {
   // LafPOS'un şubesinin geçiş günü ayarın kendisidir (branchSwitchDay)
   const [switchDay, branchId] = await Promise.all([loadLafposSwitchDay(db), lafposBranchId(db)]);
-  if (switchDay === null) return { status: "off", days: [] };
+  if (switchDay === null) return { status: "off", days: [], left: [] };
   const today = businessDate(now);
   const lookback = addDays(today, -DAY_END_LOOKBACK_DAYS);
   const from = switchDay > lookback ? switchDay : lookback;
   const rows = await db
-    .select({ date: s.posDayReports.date })
+    .select({
+      date: s.posDayReports.date,
+      z: s.posDayReports.z,
+      payments: s.posDayReports.payments,
+      ikram: s.posDayReports.ikram,
+      doneHash: s.lafposDayEnds.dayHash,
+      emailedHash: s.lafposDayEnds.emailedHash,
+      seen: s.lafposDayEnds.date,
+    })
     .from(s.posDayReports)
-    .where(and(eq(s.posDayReports.branchId, branchId), gte(s.posDayReports.date, from), lte(s.posDayReports.date, today)))
-    .orderBy(s.posDayReports.date);
+    .leftJoin(s.lafposDayEnds, and(eq(s.lafposDayEnds.date, s.posDayReports.date), eq(s.lafposDayEnds.branchId, s.posDayReports.branchId)))
+    .where(and(eq(s.posDayReports.branchId, branchId), gte(s.posDayReports.date, from), lte(s.posDayReports.date, today)));
+  const order = catchUpOrder(rows.map((r) => ({ date: r.date, pending: dayEndPending(r.seen ? r : null, dayHash({ z: r.z, payments: r.payments, ikram: r.ikram })) })));
+  const deadlineAt = opts?.deadlineAt;
+  const timeLeft = () => deadlineAt === undefined || deadlineAt - Date.now() >= CATCH_UP_MIN_MS;
   const days: Awaited<ReturnType<typeof runLafposDayEnd>>[] = [];
-  for (const r of rows) days.push(await runLafposDayEnd(db, r.date, now, opts));
+  const left: string[] = [];
+  for (const d of order.filter((x) => x.pending)) {
+    if (timeLeft()) days.push(await runLafposDayEnd(db, d.date, now, opts));
+    else left.push(d.date);
+  }
+  const wrote = days.filter((d) => d.report === "written" || d.report === "updated").map((d) => d.date).sort();
+  for (const date of wrote.slice(1)) {
+    if (!timeLeft()) break;
+    try {
+      await writeAutoReport(db, date, now);
+    } catch (e) {
+      console.error("[lafpos] gün sonu raporunun devri yeniden hesaplanamadı:", date, e);
+    }
+  }
+  for (const d of order.filter((x) => !x.pending)) {
+    if (!timeLeft()) break;
+    days.push(await runLafposDayEnd(db, d.date, now, opts));
+  }
   const failed = (d: (typeof days)[number]) =>
     d.report === "error" || d.email === "error" || d.email === "failed" || d.pavo === "error" || d.pavo === "failed" || d.photo === "error" || d.photo === "failed" || d.staff === "error" || d.staff === "failed";
-  return { status: days.some(failed) ? "error" : "ok", days };
+  return { status: days.some(failed) || left.length ? "error" : "ok", days, left };
 }

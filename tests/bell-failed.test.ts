@@ -45,6 +45,12 @@ test("personelde onay grubu 'İstekleriniz yüklenemedi', kendi sayfasına göt�
   assert.equal(row.href, "/panel/kasa#isteklerim");
 });
 
+test("LafPOS retleri okunamazsa Sistem grubunda, Ayarlar › LafPOS'a götürür", () => {
+  const [row] = failedBellRows(["lafpos"], "admin", DAY);
+  assert.deepEqual([row.group, row.title, row.href], ["sistem", "Sistem uyarıları yüklenemedi", "/panel/ayarlar#lafpos"]);
+  assert.equal(row.body, "LafPOS gün sonu retleri şu an okunamadı; zili birazdan yeniden açın.");
+});
+
 test("sistem kaynakları tek Sistem satırında", () => {
   const rows = failedBellRows(["sistem", "modpos", "alici"], "admin", DAY);
   assert.equal(rows.length, 1);

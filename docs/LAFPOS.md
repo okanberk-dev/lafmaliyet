@@ -738,6 +738,17 @@ günlük iş (`/api/cron/gunluk`, adım "LafPOS gün sonu"): son 7 günün (geç
 işlenir. İşlenmiş gün hiçbir şey yapmaz; gece gönderilemeyen e-posta sabah gider, geçiş günü sonradan girildiyse eksik
 günler (en çok 7 gün geriye) yakalanır.
 
+**Sabah işinin sırası (26 Kasım 2026):** adımın bütçesi kısadır (sabah işinin kuyruğunda yaklaşık 8 sn), önceden günler
+eskiden yeniye işlendiği için en yeni gün yetişmeyebilirdi. Artık işi bekleyen günler önce ve **yeniden eskiye** (dünkü gün
+ilk) işlenir: hiç işlenmemiş, rapor adımı bugünkü içerikle işlenmemiş (yazım düştü, düzeltme gelip işlenmedi) ya da gün
+sonu e-postası bugünkü içerikle gitmemiş gün (`dayEndPending`, `catchUpOrder`). İşlenmiş günler (Pavo, fotoğraf ve
+çalışan e-postasının yeniden denemesi) sona kalır. Son ana 2 sn'den az kalınca yeni güne başlanmaz: başlanamayan bekleyen
+gün adımda hata olur ("2026-11-22 süre yetmedi"; Ayarlar › Günlük işler), sonraki tetik dener; işlenmiş gün sessizce
+kalır. Davranış idempotenttir: ikinci çalışma rapor yazmaz, e-posta göndermez. Kasa zinciri bozulmaz: yeni gün eski
+günden önce yazıldığından devir denetimi (açılış ↔ önceki raporun devri, raporun notunda) eski günü görmemiş olabilir;
+aynı çalışmada birden çok gün yazıldıysa en eskisinden sonrakilerin raporu eskiden yeniye bir kez daha hesaplanır
+(devir değişmediyse hiçbir şey yazılmaz).
+
 **Kasa raporu kendiliğinden yazılır** (`writeAutoReport`, tek işlem, geç raporun ve raporun kilidi altında):
 
 - Rapor yoksa ve LafPOS'ta sayım varsa: "LafPOS'tan doldur"un eşlemesiyle (Z, ödemeler, ödenmez, indirim, açılış, gün
@@ -1194,6 +1205,16 @@ okunamayan 400) son başarılı gönderimden yeniyse kırmızı, değilse gri "�
   …" diye gösterilmez (`modposNameFilter`). Ürün sitenin kalemine Ürünler › Site menüsü'nde de bağlanabilir; geçiş
   gününden sonraki aylarda Satışlar'da da eşleştirilir.
 
+**Zil (26 Kasım 2026):** sayılan LafPOS gününün (geçiş günü ve sonrası) reddi yöneticinin zilinin **Sistem** başlığına
+düşer; önceden yalnız bu kartta görünüyordu, gün sonu e-postası da (gün yazılmadığı için) hiç gitmiyordu. Satır "Marina
+gün sonu alınamadı: <neden>" (Z numarası çakıştı / gönderim sözleşmeye uymadı / kasa başka şubeye ayarlı), gövdesi
+gün, ne olduğu ve ne yapılacağı ("25 Kasım: panelde Z 127 kayıtlı, LafPOS Z 128 gönderdi. LafPOS'taki doğruysa Ayarlar ›
+LafPOS'ta bu günün kaydını silin, sonra LafPOS'tan o günü Gönder'e basın."); bu karta götürür (`?sube=` LafPOS'un
+şubesi). Ayrı kayıt yok: satır `rejections`'tan türer (`rejectionBells`, `src/lib/lafpos/status.ts`;
+`src/server/bell/lafpos.ts`). Kimliği gün ve nedenden (`lafpos-ret-<gün>-<hata>`): LafPOS aynı günü aynı nedenle yeniden
+gönderip yine reddedilse satır yinelenmez, başka bir neden yeni satırdır. Yalnız açık ret (gün yeniden yazılınca ya da
+yönetici kaydı silince kalkar) ve son 7 günde gelen; deneme günü (geçişten önce) zile düşmez. Personelin zilinde yok.
+
 **Bu günün LafPOS kaydını sil** (`deleteLafposDay`; çekirdek `removeLafposDay`, `src/server/lafpos/admin.ts`): yalnız
 yönetici, kendi parolasıyla (`requireStepUp`, yanlışı işlem geçmişine "Hatalı parola onayı (LafPOS)"). Yalnız LafPOS'un
 şubesinin (Marina) günü silinir; parolayı sormadan önceki "gün kayıtlı mı" denetimi de yalnız onun satırına bakar (22 Kasım
@@ -1347,7 +1368,8 @@ Anahtar yokken altı uç da `503` döner; panelin geri kalanı ve Kasa raporu es
 | `src/server/lafpos/rematch.ts` | Ürünsüz satırların sonradan bağlanması (site kalemi, POS adı) |
 | `src/lib/lafpos/ikram.ts`, `src/server/data/lafpos-ikram.ts` | İkramın kuralı (her gün tek kaynak, ürün ikramının reddi, e-postanın karşılaştırması; saf) ve okuyucusu (veri kümesi, Zayi'nin günü, kasa özeti) |
 | `src/lib/commission/report.ts` (`lafposMonth`, `lafposSales`), `src/lib/commission/channels.ts` (`lafposChannel`), `src/server/data/commission.ts` | Ödeme kanallarının Komisyon & hakediş'e girmesi |
-| `src/lib/lafpos/status.ts` | Durum satırının biçimi, retlerin metni, Ayarlar kartının özeti, gelmeyen günler (saf) |
+| `src/lib/lafpos/status.ts` | Durum satırının biçimi, retlerin metni, Ayarlar kartının özeti, retlerin zil satırı (`rejectionBells`), gelmeyen günler (saf) |
+| `src/server/bell/lafpos.ts` | Reddedilen gün sonunun zil satırı (yalnız yönetici, Sistem başlığı) |
 | `src/server/lafpos/status.ts` | Ucun sonucu durum satırına (`handlePosDay`, imzasız sayaç), geçiş günü okuyucusu, kartın verisi |
 | `src/server/lafpos/admin.ts` | Geçiş gününün yazımı ve günün silinmesi (çekirdekler, rol denetimi) |
 | `src/server/actions/lafpos.ts` | Ayarlar'ın iki eylemi (yönetici; silme parolayla) |

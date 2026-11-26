@@ -65,7 +65,9 @@ günün saklanan ModPOS kasa föyünden farklı yazılan raporları durur, "Kasa
 Pazartesi · Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺)" (kasası açıkken çekilen föy karşılaştırılmaz; rapor ya da föy
 değişince yeniden okunmamış olur), ModPOS anahtarı tanımlı ama çalışmıyorsa da **Sistem** başlığında "ModPOS kasa föyü
 çekilemiyor" ve hatanın metni, Ayarlar › ModPOS (kasa föyü)'ne götürür ([MODPOS-API.md](MODPOS-API.md) › Nerede
-görünür). Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
+görünür); LafPOS'un sayılan günü reddedilince (Z çakışması, sözleşmeye uymayan gövde, başka şubeye
+ayarlı kasa) aynı başlıkta "Marina gün sonu alınamadı: <neden>", gün ve ne yapılacağıyla, Ayarlar › LafPOS'a götürür
+(gün ve neden başına bir satır, son 7 gün; [LAFPOS.md](LAFPOS.md) › Durum ve onarım). Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
 kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklemesi ("Ayşe özel gün ekledi") son 3 gün durur
 ([KASA-RAPORU.md](KASA-RAPORU.md) › Kafe kapalıydı). **Uyarılar** başlığının
 başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişecek N fiyat"** durur (**Ürünler › Fiyatlar ›

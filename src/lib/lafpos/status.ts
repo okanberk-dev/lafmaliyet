@@ -131,7 +131,7 @@ export type RejectionDay = { zNo: number; lines: number; receivedAt: string } | 
  * - "cleared": yönetici kaydı sildi ya da 409'un günü panelde yok; gün LafPOS'tan elle gönderilmeyi bekliyor;
  * - "open": ret duruyor (409'da panelde eski Z, 400'de eski kayıt ya da hiçbir şey).
  */
-export function dayRejectionStatus(e: LafposRejection, day: RejectionDay): "open" | "cleared" | "resolved" {
+export function dayRejectionStatus(e: LafposRejection, day: Pick<NonNullable<RejectionDay>, "receivedAt"> | null): "open" | "cleared" | "resolved" {
   if (day && Date.parse(day.receivedAt) > Date.parse(e.at) && (e.clearedAt === null || Date.parse(day.receivedAt) > Date.parse(e.clearedAt))) return "resolved";
   if (e.clearedAt !== null || (e.error === "z_conflict" && !day)) return "cleared";
   return "open";
@@ -167,6 +167,80 @@ export function rejectionText(e: LafposRejection, today: string): string {
     default:
       return `${e.status} ${e.error}${day ? ` (${day})` : ""}`;
   }
+}
+
+/** Zilde günlü ret bu kadar gün durur (retin anından); çözülmeyen ret Ayarlar › LafPOS kartında kalır */
+export const REJECTION_BELL_DAYS = 7;
+
+/** Retin zil satırı (src/server/bell/lafpos.ts zilin satırına çevirir) */
+export interface RejectionBell {
+  /** Gün ve neden başına sabit: LafPOS aynı günü aynı nedenle yeniden gönderip yine reddedilse de satır yinelenmez */
+  id: string;
+  date: string;
+  /** Retin anı */
+  at: string;
+  title: string;
+  body: string;
+}
+
+/** Retin zildeki kısa nedeni (başlıkta) */
+function rejectionReason(e: LafposRejection): string {
+  switch (e.error) {
+    case "z_conflict":
+      return "Z numarası çakıştı";
+    case "invalid":
+      return "gönderim sözleşmeye uymadı";
+    case "wrong_branch":
+      return "kasa başka şubeye ayarlı";
+    default:
+      return `${e.status} ${e.error}`;
+  }
+}
+
+/**
+ * Zilin gövdesi: gün, ne oldu ve ne yapılacağı, kısa (zilde iki satır görünür; tamamı Ayarlar › LafPOS kartında,
+ * rejectionText). LafPOS reddedilen günü kendisi yeniden göndermez: her yol LafPOS'tan elle Gönder'le biter
+ */
+function rejectionBellBody(e: LafposRejection & { date: string }, today: string): string {
+  const day = dayText(e.date, today);
+  switch (e.error) {
+    case "z_conflict":
+      return `${day}: panelde Z ${e.zNo ?? "?"} kayıtlı, LafPOS ${e.sentZNo !== null ? `Z ${e.sentZNo}` : "başka bir Z"} gönderdi. LafPOS'taki doğruysa Ayarlar › LafPOS'ta bu günün kaydını silin, sonra LafPOS'tan o günü Gönder'e basın.`;
+    case "invalid":
+      return `${day}: ilk sorunlu alan ${e.field ?? "bilinmiyor"}. LafPOS'un sürümünü panelle uyumlu yapın, sonra LafPOS'tan o günü Gönder'e basın.`;
+    case "wrong_branch":
+      return `${day}: LafPOS ${e.sube ? `"${e.sube}"` : "başka bir şube"} için gönderdi, panel ${e.expected ? `"${e.expected}"` : "LafPOS'un şubesini"} bekliyor. LafPOS'ta Ayarlar ve yedek › Şube'yi düzeltin, sonra o günü Gönder'e basın.`;
+    default:
+      return `${day}: hiçbir şey yazılmadı. Ayarlar › LafPOS'a bakın.`;
+  }
+}
+
+/**
+ * Zilin LafPOS retleri (yalnız yönetici; docs/LAFPOS.md › Durum ve onarım): sayılan LafPOS gününün (geçiş günü ve
+ * sonrası) açık günlü reddi (409 wrong_branch, 409 z_conflict, 400 invalid; dayRejectionStatus "open") son
+ * REJECTION_BELL_DAYS günde geldiyse bir satır: "Marina gün sonu alınamadı: <neden>", gövdede gün ve ne yapılacağı. O
+ * günün gün sonu panele yazılmadı: Kasa raporu kendiliğinden yazılmaz, gün sonu e-postası gitmez. Kimlik gün ve
+ * nedenden (aynı gün aynı nedenle yeniden reddedilse yinelenmez; başka bir neden yeni satırdır); gün yeniden yazılınca ya
+ * da yönetici kaydı silince ("Gönder bekleniyor", kart söyler) satır kalkar. Deneme günü (geçişten önce) zile düşmez.
+ * `received`: retlerin günlerinin paneldeki kaydının son gelişi (kaydı olmayan gün yok). En yeni gün önce
+ */
+export function rejectionBells(o: {
+  rejections: Record<string, LafposRejection>;
+  switchDay: string | null;
+  received: Record<string, string>;
+  branchName: string;
+  today: string;
+  now: Date;
+}): RejectionBell[] {
+  const out: RejectionBell[] = [];
+  for (const e of Object.values(o.rejections)) {
+    if (!isDayRejection(e) || !isLafposDay(e.date, o.switchDay)) continue;
+    if (o.now.getTime() - Date.parse(e.at) >= REJECTION_BELL_DAYS * 86_400_000) continue;
+    const receivedAt = o.received[e.date];
+    if (dayRejectionStatus(e, receivedAt ? { receivedAt } : null) !== "open") continue;
+    out.push({ id: `lafpos-ret-${e.date}-${e.error}`, date: e.date, at: e.at, title: `${o.branchName} gün sonu alınamadı: ${rejectionReason(e)}`, body: rejectionBellBody(e, o.today) });
+  }
+  return out.sort((a, b) => b.date.localeCompare(a.date));
 }
 
 /** Silinen (ya da panelde olmayan) 409 gününün satırı: LafPOS'tan elle gönderim bekleniyor */

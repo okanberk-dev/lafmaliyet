@@ -623,17 +623,91 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
     await setSwitch(null);
     assert.ok((await push("2026-11-21", 13)).ok);
     assert.ok((await push(DAY, 14)).ok);
-    assert.deepEqual(await gun.catchUpLafposDayEnds(db, NOW), { status: "off", days: [] });
+    assert.deepEqual(await gun.catchUpLafposDayEnds(db, NOW), { status: "off", days: [], left: [] });
     assert.equal(sent.length, 0);
     await setSwitch("2026-11-21");
     const daily = await gun.catchUpLafposDayEnds(db, NOW);
+    // İşi bekleyen günler yeniden eskiye: en yeni gün önce
     assert.deepEqual(daily.days.map((d) => [d.date, d.report, d.email]), [
-      ["2026-11-21", "written", "sent"],
       [DAY, "written", "sent"],
+      ["2026-11-21", "written", "sent"],
     ]);
     assert.equal(sent.length, 2);
-    // İkinci günün e-postası dünle kıyaslar
-    assert.match(sent[1].text.replace(/[  ]/g, " "), /Dün \(21 Kasım Cumartesi\): 20\.000 ₺ \(aynı\)/);
+    // Yeni günün e-postası dünle kıyaslar (dünkü gün LafPOS'un gün sonundan okunur, sıradan bağımsız)
+    assert.match(sent[0].text.replace(/[  ]/g, " "), /Dün \(21 Kasım Cumartesi\): 20\.000 ₺ \(aynı\)/);
+    // Kasa zinciri: yeni gün eski günden önce yazıldı; devir denetimi aynı çalışmada eski günün raporuyla yeniden yapılır
+    const rep = (await marinaReport())!;
+    assert.match(rep.note ?? "", /Açılış önceki raporun devrinden 7\.850\s₺ az/);
+    // İkinci çalışma hiçbir şey yazmaz, göndermez (idempotent)
+    const again = await gun.catchUpLafposDayEnds(db, NOW);
+    assert.deepEqual(again.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "unchanged", "same"],
+      ["2026-11-21", "unchanged", "same"],
+    ]);
+    assert.equal(sent.length, 2);
+    assert.equal((await marinaReport())!.revision, rep.revision);
+  });
+
+  test("sabah işi: işi bekleyen günler önce ve yeniden eskiye (dünkü gün ilk), işlenmiş günler sona; ikinci çalışma bir şey yapmaz", async () => {
+    await setSwitch("2026-11-20");
+    const morning = new Date("2026-11-23T08:00:00+03:00");
+    assert.ok((await push("2026-11-20", 12)).ok);
+    const first = await gun.runLafposDayEnd(db, "2026-11-20", NOW);
+    assert.deepEqual([first.report, first.email], ["written", "sent"]);
+    // 21'in e-postası düştü (rapor yazıldı), 22 hiç işlenmedi (ör. gönderimin after()'ı kesildi)
+    assert.ok((await push("2026-11-21", 13)).ok);
+    resendStatus = 422;
+    assert.equal((await gun.runLafposDayEnd(db, "2026-11-21", NOW, { attempts: 1 })).email, "failed");
+    resendStatus = 200;
+    assert.ok((await push(DAY, 14)).ok);
+    sent.length = 0;
+    const daily = await gun.catchUpLafposDayEnds(db, morning);
+    assert.deepEqual(daily.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "written", "sent"],
+      ["2026-11-21", "unchanged", "sent"],
+      ["2026-11-20", "unchanged", "same"],
+    ]);
+    assert.deepEqual([daily.status, daily.left], ["ok", []]);
+    assert.deepEqual(
+      sent.map((m) => m.subject.match(/2[0-2] Kasım/)?.[0]),
+      ["22 Kasım", "21 Kasım"],
+      "dünkü günün e-postası önce",
+    );
+    const revisions = async () =>
+      (await db.select({ date: s.cashReports.date, revision: s.cashReports.revision }).from(s.cashReports).where(eq(s.cashReports.branchId, LAFPOS_SUBE)).orderBy(s.cashReports.date)).map(
+        (r) => `${r.date}:${r.revision}`,
+      );
+    const before = await revisions();
+    assert.equal(before.length, 3);
+    const again = await gun.catchUpLafposDayEnds(db, morning);
+    assert.deepEqual(again.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "unchanged", "same"],
+      ["2026-11-21", "unchanged", "same"],
+      ["2026-11-20", "unchanged", "same"],
+    ]);
+    assert.equal(sent.length, 2, "ikinci çalışma e-posta göndermez");
+    assert.deepEqual(await revisions(), before, "ikinci çalışma raporu yeniden yazmaz");
+  });
+
+  test("sabah işi: son ana az kalınca yeni güne başlanmaz; başlanamayan bekleyen gün `left`te, adım hata; işlenmiş gün sessizce kalır", async () => {
+    const { gunSonuStep } = await import("../src/lib/job-health");
+    await setSwitch("2026-11-21");
+    assert.ok((await push("2026-11-21", 13)).ok);
+    await gun.runLafposDayEnd(db, "2026-11-21", NOW);
+    assert.ok((await push(DAY, 14)).ok);
+    sent.length = 0;
+    const late = await gun.catchUpLafposDayEnds(db, NOW, { attempts: 1, deadlineAt: Date.now() + gun.CATCH_UP_MIN_MS - 500 });
+    assert.deepEqual(late, { status: "error", days: [], left: [DAY] });
+    assert.deepEqual(gunSonuStep(late), { code: "error", error: `${DAY} süre yetmedi` });
+    assert.equal(sent.length, 0);
+    assert.equal(await marinaReport(), null);
+    // Süre varken (sonraki tetik) önce bekleyen gün
+    const daily = await gun.catchUpLafposDayEnds(db, NOW, { attempts: 1, deadlineAt: Date.now() + 30_000 });
+    assert.deepEqual(daily.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "written", "sent"],
+      ["2026-11-21", "unchanged", "same"],
+    ]);
+    assert.deepEqual([daily.status, daily.left], ["ok", []]);
   });
 
   test("Tuzla'ya dokunulmaz: Tuzla'nın raporu ve online satırı eskisi gibi (&branch=tuzla)", async () => {

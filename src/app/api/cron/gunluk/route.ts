@@ -145,7 +145,8 @@ export async function GET(request: NextRequest) {
     );
   // LafPOS gün sonu (docs/LAFPOS.md › Gün sonu otomasyonu): son 7 günün Kasa raporu ve gün sonu e-postası eksikse
   // tamamlanır (gece gönderilemeyen e-posta, geçiş günü sonradan girildiyse eksik günler); işlenmiş gün bir şey göndermez.
-  // E-posta tek deneme, kuyruğun 55 sn'sini aşmadan
+  // İşi bekleyen günler önce ve yeniden eskiye (dünkü gün ilk), işlenmiş günler sona; son ana az kalınca yeni güne
+  // başlanmaz (başlanamayan bekleyen gün adımda hata). E-posta tek deneme, kuyruğun 55 sn'sini aşmadan
   const gunSonuTask = () => {
     const deadlineAt = tailStepDeadline(jobStart);
     return capped(
