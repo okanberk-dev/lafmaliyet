@@ -20,7 +20,7 @@ import {
   type RemovablePhotoKind,
   type StaffCashOutView,
 } from "@/lib/cash-out-requests";
-import { cashOutLabel, cashOutsTotal, staffExpenseLocked, staffToExpenses } from "@/lib/cash-outs";
+import { cashOutLabel, cashOutsTotal, staffCategory, staffExpenseLocked, staffToExpenses } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import { staffLafposEntryClosed } from "@/lib/lafpos/cash-moves";
 import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
@@ -184,7 +184,10 @@ export interface CashOutCard extends CardBase {
   changedSince: boolean;
   /** Satır artık yok (düzeltme ve silme) */
   rowGone: boolean;
-  /** Bağlı harcama kaydının kategorisi ve yöneticinin kategorisi mi (düzeltme ve silme) */
+  /**
+   * Bağlı harcama kaydının kategorisi ve yöneticinin kategorisi mi (düzeltme ve silme). Müdüre yöneticinin kategorisinin
+   * (maaş, kira gibi) adı gitmez: `categoryName` null (docs/ROLLER.md › Kararlar; Kasa sayfasındaki kuralla aynı)
+   */
   expense: { categoryName: string | null; admin: boolean } | null;
   /** Fiş fotoğrafı (eklemede istekte tutulan, düzeltme ve silmede satırınki) */
   photoId: number | null;
@@ -196,7 +199,10 @@ export interface CashOutCard extends CardBase {
     lines: DayLine[];
     /** Satırların toplamı şimdi ve onaydan sonra */
     totals: { now: number; after: number };
-    /** Olası tekrar: aynı tutar (±0,01), ±1 gün ("Migros · 412,50 ₺ · 21 Ekim · kasadan çıkan") */
+    /**
+     * Olası tekrar: aynı tutar (±0,01), ±1 gün ("Migros · 412,50 ₺ · 21 Ekim · kasadan çıkan"). Müdüre yalnız isteğin
+     * şubesinin satırları ve personelin kategorisindeki harcama kayıtları (öteki şubeninki, maaş ve kira kaydı gitmez)
+     */
     duplicates: string[];
     /** Kırmızı işaretler */
     flags: string[];
@@ -217,8 +223,12 @@ export interface PhotoRemovalCard extends CardBase {
   refusal: string | null;
 }
 
-/** Bekleyen kasadan çıkan ve fotoğraf kaldırma kartları (yalnız yönetici; loadCashRequestQueue toplar) */
-export async function cashOutCards(now = new Date()): Promise<(CashOutCard | PhotoRemovalCard)[]> {
+/**
+ * Bekleyen kasadan çıkan ve fotoğraf kaldırma kartları (yönetici ve müdür; loadCashRequestQueue toplar).
+ * `allCategories` false (müdür, `kategori.tum` yok; docs/ROLLER.md): kart yöneticinin kategorisinin adını ve öteki
+ * şubenin, yöneticinin kategorisinin kayıtlarını taşımaz (kart tarayıcıya bütünüyle gider)
+ */
+export async function cashOutCards(now = new Date(), allCategories = true): Promise<(CashOutCard | PhotoRemovalCard)[]> {
   const db = getDb();
   const rows = await db
     .select({
@@ -248,7 +258,7 @@ export async function cashOutCards(now = new Date()): Promise<(CashOutCard | Pho
     }
     const p = CashOutRequestPayload.safeParse(x.payload);
     if (!p.success) continue;
-    out.push(await cashOutCard(base, p.data, thisMonth, now));
+    out.push(await cashOutCard(base, p.data, thisMonth, now, allCategories));
   }
   return out;
 }
@@ -287,7 +297,7 @@ async function photoCard(base: Omit<CardBase, "branchId">, p: { photoId: number;
   };
 }
 
-async function cashOutCard(base: Omit<CardBase, "branchId">, p: ReturnType<typeof CashOutRequestPayload.parse>, thisMonth: string, now: Date): Promise<CashOutCard> {
+async function cashOutCard(base: Omit<CardBase, "branchId">, p: ReturnType<typeof CashOutRequestPayload.parse>, thisMonth: string, now: Date, allCategories: boolean): Promise<CashOutCard> {
   const db = getDb();
   const day = p.day;
   // İsteğin kasası (yöneticinin seçimi değil): isteği açanın şubesi; eski isteklerde satırın şubesi, o da yoksa Tuzla
@@ -306,7 +316,9 @@ async function cashOutCard(base: Omit<CardBase, "branchId">, p: ReturnType<typeo
   let expense: CashOutCard["expense"] = null;
   if (current && current.categoryId !== null) {
     const [cat] = await db.select().from(s.expenseCategories).where(eq(s.expenseCategories.id, current.categoryId)).limit(1);
-    expense = { categoryName: current.categoryName, admin: staffExpenseLocked(cat) };
+    const locked = staffExpenseLocked(cat);
+    // Müdür yöneticinin kategorisinin adını görmez (kart "yöneticinin kategorisi" der); personelinkiler adıyla
+    expense = { categoryName: locked && !allCategories ? null : current.categoryName, admin: locked };
   }
   const changedSince =
     p.before !== null &&
@@ -323,7 +335,8 @@ async function cashOutCard(base: Omit<CardBase, "branchId">, p: ReturnType<typeo
   const after =
     p.op === "ekle" ? nowTotal + p.line!.amount : p.op === "sil" ? nowTotal - (current?.amount ?? 0) : nowTotal - (current?.amount ?? 0) + (p.line?.amount ?? 0);
   const subjectLine = p.line ?? p.before;
-  // Olası tekrar: aynı tutar, ±1 gün (kasadan çıkan) ve ±7 gün (harcama kaydı); istenen satırın kendisi hariç
+  // Olası tekrar: aynı tutar, ±1 gün (kasadan çıkan) ve ±7 gün (harcama kaydı); istenen satırın kendisi hariç. Müdüre
+  // yalnız isteğin şubesinden ve personelin kategorisinden (öteki şubenin satırı, maaş ve kira kaydı gitmez)
   let duplicates: string[] = [];
   if (p.op === "ekle" && p.line) {
     const ref = p.line.receiptDate ?? day;
@@ -331,16 +344,27 @@ async function cashOutCard(base: Omit<CardBase, "branchId">, p: ReturnType<typeo
       db
         .select({ id: s.cashOuts.id, date: s.cashOuts.date, receiptDate: s.cashOuts.receiptDate, amount: s.cashOuts.amount, store: s.cashOuts.store, description: s.cashOuts.description, kind: s.cashOuts.kind })
         .from(s.cashOuts)
-        .where(and(gte(s.cashOuts.date, addDays(day, -1)), lte(s.cashOuts.date, addDays(day, 1)))),
+        .where(and(gte(s.cashOuts.date, addDays(day, -1)), lte(s.cashOuts.date, addDays(day, 1)), allCategories ? undefined : eq(s.cashOuts.branchId, sube))),
       db
-        .select({ date: s.expenseEntries.date, amount: s.expenseEntries.amount, description: s.expenseEntries.description, cashOutId: s.expenseEntries.cashOutId })
+        .select({
+          date: s.expenseEntries.date,
+          amount: s.expenseEntries.amount,
+          description: s.expenseEntries.description,
+          cashOutId: s.expenseEntries.cashOutId,
+          section: s.expenseCategories.section,
+          panelGroup: s.expenseCategories.panelGroup,
+          active: s.expenseCategories.active,
+        })
         .from(s.expenseEntries)
-        .where(and(gte(s.expenseEntries.date, addDays(ref, -7)), lte(s.expenseEntries.date, addDays(ref, 7)))),
+        .innerJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
+        .where(and(gte(s.expenseEntries.date, addDays(ref, -7)), lte(s.expenseEntries.date, addDays(ref, 7)), allCategories ? undefined : eq(s.expenseEntries.branchId, sube))),
     ]);
     const near = (a: number) => Math.abs(a - p.line!.amount) <= 0.01;
     duplicates = [
       ...outs.filter((o) => near(o.amount) && Math.abs(dayDiff(o.receiptDate ?? o.date, ref)) <= 1).map((o) => `${cashOutLabel(o)} · ${money(o.amount)} · ${dayMonthTR(o.date)} · kasadan çıkan`),
-      ...entries.filter((e) => e.cashOutId === null && near(e.amount)).map((e) => `${e.description ?? "Harcama"} · ${money(e.amount)} · ${dayMonthTR(e.date)} · harcama kaydı`),
+      ...entries
+        .filter((e) => e.cashOutId === null && near(e.amount) && (allCategories || staffCategory(e)))
+        .map((e) => `${e.description ?? "Harcama"} · ${money(e.amount)} · ${dayMonthTR(e.date)} · harcama kaydı`),
     ].slice(0, 4);
   }
   const expenseDay = p.line && p.line.kind === "harcama" ? expenseDateFor(day, p.line.receiptDate) : null;

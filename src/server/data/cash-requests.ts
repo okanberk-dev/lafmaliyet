@@ -284,10 +284,11 @@ export type CashRequestCard = CorrectionCard | DeleteCard | LateCard | CashOutCa
 
 /**
  * Bekleyen kasa isteklerinin kartları (düzeltme, silme, geç rapor, kasadan çıkan, fotoğraf kaldırma), en eski gün önce
- * (yalnız yönetici)
+ * (yönetici ve müdür). `allCategories` false (müdür; docs/ROLLER.md): kasadan çıkan kartı yöneticinin kategorisinin adını
+ * ve öteki şubenin, yöneticinin kategorisinin kayıtlarını taşımaz (`cashOutCards`)
  */
-export async function loadCashRequestQueue(now = new Date(), scope: BranchScope = ALL_BRANCHES, strict = false): Promise<CashRequestCard[]> {
-  const [day, late, outs, closed, branches] = await Promise.all([dayRequestCards(now), lateCards(now), cashOutCards(now), closedDayCards(), listBranches()]);
+export async function loadCashRequestQueue(now = new Date(), scope: BranchScope = ALL_BRANCHES, strict = false, allCategories = true): Promise<CashRequestCard[]> {
+  const [day, late, outs, closed, branches] = await Promise.all([dayRequestCards(now), lateCards(now), cashOutCards(now, allCategories), closedDayCards(), listBranches()]);
   // Birden çok kasa açıkken kasa günü kartları şubesini adıyla söyler; kasadan çıkan ve fotoğraf kaldırma kartları da
   // (önceden şubesizdi, "Günü aç" yöneticinin seçili kasasını açıyordu; denetim 21 Kasım #29)
   const many = tillBranches(branches).length > 1;

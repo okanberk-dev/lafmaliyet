@@ -151,8 +151,9 @@ export function CashOutItem({ card, categories }: { card: CashOutCard; categorie
       ) : null}
       {card.expense ? (
         <p className="text-[13px] text-ink-mute">
-          Bağlı gider: {card.expense.categoryName ?? "kategori yok"}
-          {card.expense.admin ? " (yöneticinin kategorisi)" : ""}
+          {/* Müdüre yöneticinin kategorisinin adı gelmez (categoryName null): yalnız "yöneticinin kategorisi" */}
+          Bağlı gider: {card.expense.categoryName ?? (card.expense.admin ? "yöneticinin kategorisi" : "kategori yok")}
+          {card.expense.admin && card.expense.categoryName ? " (yöneticinin kategorisi)" : ""}
         </p>
       ) : null}
       {card.rowGone ? <Notice tone="bad" size="sm" title="Satır silinmiş; isteği reddedin" /> : null}

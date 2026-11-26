@@ -76,7 +76,7 @@ test("Tükendi: birden çok şube açıkken bütün şubelerde kapandığı söy
 });
 
 test("kaynak: Onaylar ve zil tek şubede şubenin istekleri; karaoke yalnız kendi şubesinde", () => {
-  assert.match(read("src/app/panel/onaylar/kasa-section.tsx"), /loadCashRequestQueue\(undefined, await currentBranchScope\(\), me\.role !== "admin"\)/);
+  assert.match(read("src/app/panel/onaylar/kasa-section.tsx"), /loadCashRequestQueue\(undefined, await currentBranchScope\(\), me\.role !== "admin", allCategories\)/);
   assert.match(read("src/app/panel/onaylar/karaoke-section.tsx"), /if \(!\(await featureHere\("karaoke", await currentBranchScope\(\)\)\)\) return null;/);
   const kasa = read("src/server/bell/kasa.ts");
   assert.match(kasa, /pendingCashBellRows\(scope\),\s+cashOutBellRow\(now, scope\),\s+pendingClosedRows\(scope\),/);

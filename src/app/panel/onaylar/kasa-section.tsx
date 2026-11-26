@@ -21,10 +21,11 @@ import { KasaRequestCards } from "./kasa-cards";
 export async function KasaRequests() {
   // Yönetici ve müdür (docs/ROLLER.md): müdürün kapsamı şubesine kilitli; şubesi bilinmeyen kart da müdüre gösterilmez
   const me = await requireCan("onay");
-  // Kategori seçicisi: müdüre personelin kategorileri (maaş, kira yöneticinin; sunucu da reddeder, writeCashOut)
+  // Kategori seçicisi: müdüre personelin kategorileri (maaş, kira yöneticinin; sunucu da reddeder, writeCashOut). Kartlar
+  // da müdüre yöneticinin kategorisinin adını taşımaz (kart tarayıcıya bütünüyle gider; cashOutCards)
   const allCategories = can(me.role, "kategori.tum");
   const [cards, counters, categories] = await Promise.all([
-    loadCashRequestQueue(undefined, await currentBranchScope(), me.role !== "admin"),
+    loadCashRequestQueue(undefined, await currentBranchScope(), me.role !== "admin", allCategories),
     cashCounters(),
     cashOutCategories(allCategories ? "admin" : "staff"),
   ]);

@@ -613,6 +613,68 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
     assert.equal((await expenseOf(back.id))?.categoryId, cats.admin);
   });
 
+  test("Onaylar kartı müdüre yöneticinin kategorisinin adını, öteki şubenin ve maaş kaydının olası tekrarını taşımaz (tarayıcıya giden kart)", async () => {
+    marinaAdded =
+      (await db.insert(s.branches).values({ id: "marina", name: "Marina", kind: "fiziksel", posSource: "modpos", sortOrder: 2 }).onConflictDoNothing().returning({ id: s.branches.id }))
+        .length > 0 || marinaAdded;
+    const { loadCashRequestQueue } = await import("../src/server/data/cash-requests");
+    const ADMIN_NAME = `Test avans ${tag}`;
+    // Bağlı gideri yöneticinin kategorisinde (maaş, avans) ve personelin kategorisinde iki satır: düzeltme ve silme isteği
+    const salary = await adminRow(YESTERDAY, { amount: 2_222, categoryId: cats.admin });
+    const plain = await adminRow(YESTERDAY, { amount: 33 });
+    const fix = await propose(users.fatma, { op: "duzelt", cashOutId: salary, line: line({ amount: 2_300, store: "Bim", description: "buz", categoryId: null }), clientKey: key() });
+    const del = await propose(users.fatma, { op: "sil", cashOutId: plain, clientKey: key() });
+    // Ekleme isteğiyle aynı tutar: Tuzla'nın satırı, Marina'nın satırı, Tuzla'nın maaş kaydı ve personel kategorisindeki kaydı
+    const SAME = 987.65;
+    const tuzlaRow = await adminRow(YESTERDAY, { amount: SAME });
+    const marinaRow = await db.transaction((tx) =>
+      write.writeCashOut(
+        tx,
+        users.ali,
+        { id: null, date: YESTERDAY, kind: "harcama", amount: SAME, store: `Marina dükkân ${tag}`, description: null, receiptDate: null, receiptNo: null, vat: null, docType: "yok", categoryId: cats.staff, toExpenses: true, photoId: null },
+        { branchId: "marina" },
+      ),
+    );
+    outIds.push(marinaRow.id);
+    const entries = await db
+      .insert(s.expenseEntries)
+      .values([
+        { branchId: "tuzla", date: YESTERDAY, categoryId: cats.admin, description: `Maaş avansı ${tag}`, amount: SAME },
+        { branchId: "tuzla", date: YESTERDAY, categoryId: cats.staff, description: `Buz faturası ${tag}`, amount: SAME },
+      ])
+      .returning({ id: s.expenseEntries.id });
+    const add = await propose(users.fatma, { date: YESTERDAY, line: line({ amount: SAME }), clientKey: key() });
+    try {
+      const cardIn = (cards: Awaited<ReturnType<typeof loadCashRequestQueue>>, id: number) => {
+        const c = cards.find((x) => x.id === id);
+        assert.ok(c && c.kind === "kasa-cikan", `kart ${id}`);
+        return c;
+      };
+      // Müdür (Tuzla, kategori.tum yok): yöneticinin kategorisi adsız; personelinki adıyla
+      const m = await loadCashRequestQueue(NOW, "tuzla", true, false);
+      assert.deepEqual(cardIn(m, fix.row.id).expense, { categoryName: null, admin: true });
+      assert.deepEqual(cardIn(m, del.row.id).expense, { categoryName: `Test market ${tag}`, admin: false });
+      // Olası tekrar: yalnız Tuzla'nın satırı ve personel kategorisindeki kayıt
+      const mDup = cardIn(m, add.row.id).context.duplicates;
+      assert.equal(mDup.length, 2, mDup.join(" | "));
+      assert.ok(mDup.some((d) => d.startsWith("Bim · buz · ") && d.endsWith("kasadan çıkan")), mDup.join(" | "));
+      assert.ok(mDup.some((d) => d.startsWith(`Buz faturası ${tag}`)), mDup.join(" | "));
+      // Tarayıcıya giden kartların hiçbirinde yöneticinin kategorisinin adı, maaş kaydı ve öteki şubenin satırı yok
+      const sent = JSON.stringify(m);
+      for (const secret of [ADMIN_NAME, `Maaş avansı ${tag}`, `Marina dükkân ${tag}`]) assert.ok(!sent.includes(secret), secret);
+      // Yönetici: adı da, bütün şubelerin ve kategorilerin olası tekrarı da gelir
+      const a = await loadCashRequestQueue(NOW);
+      assert.deepEqual(cardIn(a, fix.row.id).expense, { categoryName: ADMIN_NAME, admin: true });
+      const aDup = cardIn(a, add.row.id).context.duplicates;
+      assert.equal(aDup.length, 4, aDup.join(" | "));
+      for (const want of [`Marina dükkân ${tag}`, `Maaş avansı ${tag}`, `Buz faturası ${tag}`]) assert.ok(aDup.some((d) => d.startsWith(want)), want);
+      assert.equal((await outOf(tuzlaRow)).branchId, "tuzla");
+    } finally {
+      for (const x of [fix, del, add]) await review(users.ali, x.row.id, x.row.version, "reject");
+      await db.delete(s.expenseEntries).where(inArray(s.expenseEntries.id, entries.map((e) => e.id)));
+    }
+  });
+
   test("müdür ('admin' düzeyinde) başkasının bağsız fişini kendi satırına bağlayamaz (öteki şubenin fotoğrafı); onayladığı isteğin fişini bağlar", async () => {
     const gone = /Fotoğraf bulunamadı/;
     const foreign = await photo(users.fatma);
