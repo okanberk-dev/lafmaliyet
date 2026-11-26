@@ -7,9 +7,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createRgba, type RgbaImage } from "../src/lib/scan/image";
-import { despeckle, enhance, enhanceDocument, estimateSkew } from "../src/lib/scan/enhance";
-import { fullFrame, scanDocument } from "../src/lib/scan";
+import { createRgba, type Point, type RgbaImage } from "../src/lib/scan/image";
+import { clearBorderInk, despeckle, enhance, enhanceDocument, estimateSkew } from "../src/lib/scan/enhance";
+import { fullFrame, rotationForTop, scanDocument } from "../src/lib/scan";
 import { estimateSize } from "../src/lib/scan/warp";
 import { regionMean, renderScene } from "./helpers/tarama-sentetik";
 
@@ -142,6 +142,30 @@ test("belge: tek başına benekler silinir, yazının yanındaki nokta kalır", 
   assert.equal(v[22 * 100 + 30], 1, "çizginin yanındaki nokta kalır");
 });
 
+test("belge: kenarda kalan zemin şeridi silinir, kenara değmeyen çerçeve çizgisi kalır", () => {
+  const W = 500;
+  const H = 600;
+  const img = page({ width: W, height: H, strokes: [{ x0: 60, y0: 60, x1: 440, y1: 540, ink: DARK }] });
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      // solda 4 px masa şeridi (köşe kâğıdın biraz dışında kalmış), 20 px içeride dikey çerçeve çizgisi
+      if (x < 4) img.data.set([70, 60, 50, 255], (y * W + x) * 4);
+      else if (x >= 20 && x < 23 && y >= 20 && y < H - 20) img.data.set([30, 30, 30, 255], (y * W + x) * 4);
+    }
+  }
+  const out = enhanceDocument(img).image;
+  assert.ok(regionMean(out, 0, 0, 6, H) >= 250, `sol kenar şeridi beyaz: ${regionMean(out, 0, 0, 6, H).toFixed(0)}`);
+  assert.ok(regionMean(out, 20, 40, 23, H - 40) < 60, "çerçeve çizgisi kalır");
+  assert.ok(strokeMean(out, 60, 60, 440, 540) <= 30, "yazı kalır");
+  // tek tük kenara değen yazı (kesik satır) silinmez
+  const v = new Float32Array(100 * 100);
+  for (let y = 10; y < 20; y++) for (let x = 0; x < 8; x++) v[y * 100 + x] = 1;
+  assert.equal(clearBorderInk(v, 100, 100), 0, "şerit değil: dokunulmaz");
+  for (let y = 0; y < 100; y++) v[y * 100] = 1;
+  assert.ok(clearBorderInk(v, 100, 100) >= 90, "kenar boyunca şerit silinir");
+  assert.equal(v[50 * 100], 0);
+});
+
 test("gri, renkli ve orijinal modlar", () => {
   const W = 400;
   const H = 500;
@@ -254,6 +278,45 @@ test("eğiklik: dar uzun fişte yamultma (uzun kenarlar yerinde, satırlar düz)
   assert.ok(regionMean(r.image, 0, 0, 4, H) > 240, "sol kenar şeridi beyaz");
   assert.ok(regionMean(r.image, W - 4, 0, W, H) > 240, "sağ kenar şeridi beyaz");
   assert.ok(Math.abs(estimateSkew(r.image).angle) < 0.5, "satırlar düz");
+});
+
+test("tarama: çeyrek çevirme (yapay zekânın üst kenar ipucu) açmayla birlikte", () => {
+  // 400×300 gri zemin, kâğıt (50–350 × 40–260), kâğıdın sol üstünde koyu kare
+  const img = createRgba(400, 300);
+  for (let y = 0; y < 300; y++) {
+    for (let x = 0; x < 400; x++) {
+      let v = 90;
+      if (x >= 50 && x < 350 && y >= 40 && y < 260) v = x >= 60 && x < 100 && y >= 50 && y < 90 ? 20 : 235;
+      img.data.set([v, v, v, 255], (y * 400 + x) * 4);
+    }
+  }
+  const corners: [Point, Point, Point, Point] = [
+    { x: 49.5, y: 39.5 },
+    { x: 349.5, y: 39.5 },
+    { x: 349.5, y: 259.5 },
+    { x: 49.5, y: 259.5 },
+  ];
+  const at = (r: ReturnType<typeof scanDocument>, fx: number, fy: number) =>
+    regionMean(r.image, fx * r.image.width - 8, fy * r.image.height - 8, fx * r.image.width + 8, fy * r.image.height + 8);
+  const r0 = scanDocument(img, { corners, mode: "orijinal", deskew: false });
+  assert.deepEqual([r0.image.width, r0.image.height], [300, 220]);
+  assert.ok(at(r0, 0.08, 0.13) < 60, "çevirmeden: koyu kare sol üstte");
+  const r90 = scanDocument(img, { corners, mode: "orijinal", deskew: false, rotate: 90 });
+  assert.deepEqual([r90.image.width, r90.image.height], [220, 300], "90°: en ve boy yer değiştirir");
+  assert.equal(r90.rotate, 90);
+  assert.ok(at(r90, 0.87, 0.08) < 60, `90°: koyu kare sağ üstte (${at(r90, 0.87, 0.08).toFixed(0)})`);
+  assert.ok(at(r90, 0.13, 0.08) > 200, "90°: sol üst kâğıt");
+  assert.deepEqual(r90.corners, corners, "köşeler görüntüye göre kalır");
+  const r180 = scanDocument(img, { corners, mode: "orijinal", deskew: false, rotate: 180 });
+  assert.ok(at(r180, 0.92, 0.87) < 60, "180°: koyu kare sağ altta");
+  const r270 = scanDocument(img, { corners, mode: "orijinal", deskew: false, rotate: 270 });
+  assert.ok(at(r270, 0.13, 0.92) < 60, "270°: koyu kare sol altta");
+  // kareyi dolduran (kırpılmayan) görüntüde de
+  const full = scanDocument(img, { corners: fullFrame(400, 300), mode: "orijinal", deskew: false, rotate: 90 });
+  assert.deepEqual([full.image.width, full.image.height], [300, 400]);
+  assert.deepEqual(Array.from(full.image.data.slice(0, 4)), Array.from(img.data.slice((299 * 400) * 4, (299 * 400) * 4 + 4)), "sol alt piksel sol üste");
+  // yapay zekânın "top" ipucu: üst kenar sağdaysa sola (270°) çevrilir
+  assert.deepEqual((["up", "right", "down", "left", null] as const).map((t) => rotationForTop(t)), [0, 270, 180, 90, 0]);
 });
 
 test("tarama: mod, çıktı ölçüsü ve geçersiz köşe", () => {

@@ -11,7 +11,7 @@
 
 import type { GrayImage, Point, Quad, RgbaImage } from "./image";
 import { fitSize, gaussianBlur, resizeRgba, sampleBilinear, scaleQuad, seededRandom, toGray, unscaleQuad } from "./image";
-import { intersect, lineThrough, orderCorners, ransacLine, type Line } from "./geom";
+import { intersect, lineThrough, orderCorners, ransacLine, signedDist, type Line } from "./geom";
 
 export interface RefineOptions {
   /** "iki": geniş + dar şerit (kaba köşe, ipucu); "ince": yalnız dar şerit. Varsayılan "iki" */
@@ -123,6 +123,9 @@ export function snapPass(g: GrayImage, q: Quad, pass: SnapPass, fixed: readonly 
     const d = base.d;
     let n = { x: d.y, y: -d.x };
     if (((a.x + b.x) / 2 - cx) * n.x + ((a.y + b.y) / 2 - cy) * n.y < 0) n = { x: -n.x, y: -n.y }; // dışa doğru
+    // içeri arama karşı kenarın yarısına varmasın: dar fişte geniş şerit öbür kenarı ya da yazı sütununu bulur
+    const ext = Math.abs(signedDist(lineThrough(q[(i + 2) % 4], q[(i + 3) % 4]), { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }));
+    const inBand = Math.max(4, Math.min(band, 0.4 * ext));
     // profiller: satır = kenar boyunca örnek, sütun = kenara dik uzaklık (eksi içeri, artı dışarı)
     for (let k = 0; k < SAMPLES; k++) {
       const t = 0.08 + (0.84 * k) / (SAMPLES - 1);
@@ -167,7 +170,7 @@ export function snapPass(g: GrayImage, q: Quad, pass: SnapPass, fixed: readonly 
       if (Math.abs(den) < 1e-6) return null;
       const oMid = ((fit.line.p.x - mid.x) * nl.x + (fit.line.p.y - mid.y) * nl.y) / den;
       const cMid = oMid - o0;
-      const pi = regionMedian(prof, valid, SAMPLES, cols, cMid - band * 0.6, cMid - 3);
+      const pi = regionMedian(prof, valid, SAMPLES, cols, cMid - Math.max(6, inBand * 0.6), cMid - 3);
       const same = (c0: number, c1: number) => {
         if (pi === null) return false;
         const m = regionMedian(prof, valid, SAMPLES, cols, c0, c1);
@@ -187,6 +190,7 @@ export function snapPass(g: GrayImage, q: Quad, pass: SnapPass, fixed: readonly 
       let bc = -1;
       for (let c = 2; c < cols - 2; c++) {
         const o = o0 + c;
+        if (o < -inBand) continue;
         if (o > band) break;
         const w = 1 - (0.4 * Math.min(Math.abs(o), band)) / band;
         const v = der[k * cols + c] * w;

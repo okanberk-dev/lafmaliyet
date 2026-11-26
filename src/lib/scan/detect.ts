@@ -63,7 +63,10 @@ export interface DetectOptions {
 }
 
 export interface Detection {
-  /** Sol üst, sağ üst, sağ alt, sol alt; asıl görüntünün pikselinde. Bulunamazsa null */
+  /**
+   * Sol üst, sağ üst, sağ alt, sol alt; asıl görüntünün pikselinde. Kâğıdın köşesi kareden çıkmışsa o köşe görüntünün
+   * en çok `MAX_OUTSIDE` oranında dışında olabilir (neden: "kose-kare-disinda"). Bulunamazsa null.
+   */
   corners: Quad | null;
   /** 0–1 */
   confidence: number;
@@ -117,6 +120,12 @@ interface Scored {
 }
 
 const DEFAULT_EDGE = 640;
+/**
+ * Köşe kareden en çok bu oranda (genişliğin / yüksekliğin) taşabilir: kâğıdın köşesi kareden çıkmış ama iki kenarı da
+ * görünüyorsa köşe kenarların kesişimidir (kareye kenetlenen köşe açılan görüntüyü yamultur). Daha çok taşan kâğıtta
+ * o taraf kareye dayanan kenar sayılır.
+ */
+export const MAX_OUTSIDE = 0.08;
 /** son ince ayarın çözünürlüğü (uzun kenar) */
 const REFINE_EDGE = 1000;
 const STEP_OFFSETS = [2, 4, 6, 8, 10, 12, 14];
@@ -385,7 +394,9 @@ function textInside(ctx: Ctx, q: Quad): number | null {
 
 function evaluate(ctx: Ctx, q: Quad, how: DetectMethod): Scored | null {
   const { w, h } = ctx;
-  for (const p of q) if (p.x < -0.03 * w || p.y < -0.03 * h || p.x > 1.03 * w || p.y > 1.03 * h) return null;
+  const ow = MAX_OUTSIDE * w;
+  const oh = MAX_OUTSIDE * h;
+  for (const p of q) if (p.x < -ow || p.y < -oh || p.x > w - 1 + ow || p.y > h - 1 + oh) return null;
   if (!isConvex(q)) return null;
   const area = polygonArea(q) / ctx.n;
   if (area < 0.01 || area > 0.995) return null;
@@ -897,6 +908,13 @@ export function squareFrameSides(q: Quad, w: number, h: number): Quad {
 
 // ---------------------------------------------------------------- akış
 
+/** Köşeleri görüntünün en çok `out` oranında dışına kenetler */
+export function clampQuad(q: Quad, w: number, h: number, out = 0): Quad {
+  const ox = out * w;
+  const oy = out * h;
+  return q.map((p) => ({ x: Math.max(-ox, Math.min(w - 1 + ox, p.x)), y: Math.max(-oy, Math.min(h - 1 + oy, p.y)) })) as Quad;
+}
+
 function frameQuad(w: number, h: number): Quad {
   return [
     { x: 0, y: 0 },
@@ -915,6 +933,28 @@ function looksLikePaper(ctx: Ctx): boolean {
 
 function confidenceOf(s: Scored): number {
   return Math.max(0, Math.min(1, (s.score - 0.35) / 0.4));
+}
+
+/**
+ * En iyi birkaç farklı aday (geniş + dar şeritle) kenarlara oturtulur; puanı artan aday listeye eklenir. Düşük
+ * karşıtlıkta (açık tezgâhta beyaz fiş) bölütleme ve yazıdan büyütme kâğıdı kaba bulur; asıl kenarlar oradan
+ * birkaç on piksel uzaktadır. Liste puana göre yeniden sıralanır.
+ */
+function refineTop(ctx: Ctx, scored: Scored[], k = 4): void {
+  const tried: Quad[] = [];
+  const better: Scored[] = [];
+  for (const s of scored) {
+    if (tried.length >= k) break;
+    if (tried.some((q) => quadDistance(q, s.q) < ctx.diag * 0.01)) continue;
+    tried.push(s.q);
+    const sn = snapQuad(ctx.gray, s.q, { passes: "iki" });
+    if (!sn.sides.some(Boolean)) continue;
+    const re = evaluate(ctx, sn.q, s.how);
+    if (re && re.score > s.score + 0.01) better.push(re);
+  }
+  if (!better.length) return;
+  scored.push(...better);
+  scored.sort((a, b) => b.score - a.score);
 }
 
 /**
@@ -940,6 +980,7 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
       scored.sort((a, b) => b.score - a.score);
     }
   }
+  if (!scored.length || scored[0].score < 0.75) refineTop(ctx, scored);
   let best = scored[0];
   if (best) {
     // ince ayar (dar şerit): köşeler gerçek kenara oturur; puan düşmüyorsa kabul
@@ -980,10 +1021,8 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
     const diagOrig = Math.hypot(img.width, img.height);
     if (quadDistance(fq, corners) < diagOrig * 0.012) corners = fq;
   }
-  corners = corners.map((p) => ({
-    x: Math.max(0, Math.min(img.width - 1, p.x)),
-    y: Math.max(0, Math.min(img.height - 1, p.y)),
-  })) as Quad;
+  corners = clampQuad(corners, img.width, img.height, MAX_OUTSIDE);
+  if (corners.some((p) => p.x < -0.5 || p.y < -0.5 || p.x > img.width - 0.5 || p.y > img.height - 0.5)) reasons.push("kose-kare-disinda");
   return { corners, confidence: Math.round(confidence * 1000) / 1000, method: best.how, fillsFrame: false, reasons };
 }
 
