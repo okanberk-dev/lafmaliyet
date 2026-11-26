@@ -5,7 +5,7 @@ import { clockTR } from "./ozel-gun";
  * Kör sayım (Tuzla; Dalga 2, 25 Kasım 2026; docs/KASA-RAPORU.md › Kör sayım). Personel kasa raporunda önce çekmecedeki
  * nakdi sayıp kilitler; olması gereken nakit ve kasa farkı ancak ondan sonra görünür. Kilitli sayım personel tarafından
  * sessizce değiştirilemez: değişiklik nedeniyle yeni bir sayım satırı olur (cash_counts) ve yöneticiye görünür (kasa gün
- * görünümü, rapor penceresinin Kontrol listesi, işlem geçmişi). Sunucu da zorlar: personelin raporundaki sayılan nakit
+ * görünümünde "Kör sayım" kutusu, işlem geçmişi). Sunucu da zorlar: personelin raporundaki sayılan nakit
  * geçerli (en son) sayıma eşit olmalıdır (src/server/cash/blind-count.ts).
  *
  * Şube ayarıdır (kasa.kor, Şube ayarları › Kör sayım); seçilmemişken kasası ModPOS olan şubede açık. LafPOS'un şubesinin
