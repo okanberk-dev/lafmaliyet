@@ -418,7 +418,38 @@ npx tsx --test tests/tarama-regresyon.test.ts   # 10 küçük örnek (tests/fixt
   Okunabilirlik: tesseract.js (kodla okumanın ayarı, Türkçe) ile asıl fotoğrafın ve taranmış hâlin bilinen metne
   karakter doğruluğu (1 − düzenleme uzaklığı / uzunluk) ve tutarların (1.234,56) aynen bulunma oranı. Kategori,
   zemin, durum ve senaryo kırılımı, karar matrisi, en kötü 10 görsel.
-TEMEL_OLCUM_YERI
+- **Temel ölçüm** (26 Kasım 2026; çekirdek `ac82331`, algılaması `ff4efa24`'te aynı; 96 görsel, tohum 2026):
+  kırpılması gereken 76 görselde köşe başarısı **42/76 (%55)**, kaçan 10, yanlış dörtgen 24; köşe hatası ort %8,0,
+  p90 %27,6. Kareyi dolduran 8 görselin 8'i kırpılmadı, ama açık zeminde duran 5 fişte de yanlışlıkla "kareyi
+  dolduruyor" dendi. Belge olmayan 12 görselin 11'i kırpıldı (yanlış pozitif). Kadraj dışı 8 görselin 0'ı doğru
+  (karenin kenarına dayanması gereken kenar yazının içinden geçiyor). Süre ort 3,1 sn, p90 4,7 sn (1500×2000; yük
+  altındaki 4 çekirdekli makine). Okunabilirlik (84 belge): karakter doğruluğu asıl %40 → taranmış %63 (doğru
+  köşelerle %70), tutarların aynen bulunması %23 → %54.
+
+  | Kategori | doğru | köşe hatası ort | OCR asıl → taranmış | tutar asıl → taranmış |
+  |---|---:|---:|---:|---:|
+  | Pavo detaylı Z | 6/12 | %9,9 | %42 → %57 | %19 → %50 |
+  | Pavo / LafPOS gün sonu | 5/11 | %8,7 | %46 → %75 | %28 → %65 |
+  | ModPOS Z | 8/11 | %2,2 | %56 → %84 | %26 → %67 |
+  | Banka batch (58 mm) | 5/9 | %5,4 | %56 → %89 | %25 → %87 |
+  | Market fişi (80 mm) | 6/9 | %6,0 | %42 → %67 | %27 → %66 |
+  | Market fişi (58 mm) | 8/8 | %0,5 | %36 → %72 | %16 → %58 |
+  | Uzun market fişi | 4/12 | %16,0 | %32 → %51 | %25 → %38 |
+  | A4 e-Arşiv fatura | 8/12 | %6,2 | %17 → %20 | %17 → %16 |
+  | Belge değil | 1/12 | – | – | – |
+
+  Zemine göre doğru: ahşap 13/18, elde 9/12, gri masa 11/16, koyu tezgâh 8/14, mermer 7/18, **beyaz tezgâh 3/18**.
+  En zayıflar: beyaz / açık zeminde fiş (kâğıt bulunamıyor ya da iki kenar karenin kenarına uzatılıyor), uzun fiş,
+  kadraj dışı ve belge olmayan fotoğraflar. A4'ün okunabilirliği düşük: 1500×2000 fotoğrafta yazı ~10 px, kodla okuma
+  zorlanıyor (yapay zekâ okur; tarayıcının değil ölçeğin sınırı). Yana dönük fişin yazısı çevrilmediği için okunmuyor.
+- **Regresyon:** `tests/tarama-regresyon.test.ts` on küçük örnekte (540×720, `npm run tarama:veri -- --fixture` ile
+  yeniden üretilir; tohumlu, aynı baytlar) kararı ve köşe hatasını bugünkünün biraz gevşeğiyle sınar (doğru olanlarda
+  en kötü köşe ≤ %1,2–1,5; bugün 10'un 6'sı doğru). Bilinen yanlışlar (beyaz tezgâhta uzun fiş, karanlık ve bulanık
+  A4, POS ekranı, koli) yalnız kötüleşmesin diye gevşek; çekirdek iyileşince `BEKLENTI` ve `EN_AZ_DOGRU`
+  sıkılaştırılır.
+- **Çekirdek değişince:** `npm run tarama:olc -- --ocr 0 --karsilastir .data/tarama-olcum/temel.json` (temel:
+  bir önceki `son.json`'ın kopyası) kategori başına doğru ve hatayı, sonucu değişen görselleri yazar; okunabilirlik
+  için `--ocr` açık (96 görselde ~15–50 dk, makinenin yüküne göre).
 
 ## 9. Yeni bir fotoğraf türü
 
@@ -462,6 +493,7 @@ raporlarda `kasa-pos` kalmadığı denetlenerek).
 | `src/app/panel/ayarlar/photo-card.tsx` | Ayarlar › Fotoğraftan okuma |
 | `src/app/api/kontrol/foto/`, `src/app/panel/kontrol/[id]/photo-item.tsx`, `src/server/data/checklists.ts` (`kontrolPhotoRules`) | kontrol listesinin fotoğraflı maddesi: yükleme ve yanıt tek istekte, kim görür ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md)) |
 | `scripts/foto-eval/` | canlı değerlendirme (`scripts/okc-eval/` banka POS Z'si için, henüz yazılmadı; § 8) |
+| `scripts/tarama-veri.ts`, `scripts/tarama-olc.ts`, `scripts/tarama/`, `tests/tarama-regresyon.test.ts` | belge tarayıcının ölçümü: sentetik veri seti, ölçüm, regresyon örnekleri (§ 8 › Tarayıcının ölçümü) |
 | `src/lib/scan/` | belge tarayıcı çekirdeği (§ 11): algılama, köşe oturtma, perspektif, taranmış görünüm |
 | `scripts/tarama-dene.ts` | tarayıcıyı gerçek fotoğrafla ya da sentetik sahneyle deneme (§ 11) |
 
