@@ -40,6 +40,7 @@ import { getDb, schema as s } from "@/server/db";
 import { loadBranchSwitchDay } from "@/server/lafpos/branch";
 import { siteLinkSecret } from "@/server/site-link";
 import { readBranchPrices, readSiteSnapshot } from "@/server/site-menu/sync";
+import { loadShiftPresets } from "@/server/vardiya/presets";
 import { loadShiftEntries, loadShiftWeek } from "@/server/vardiya/store";
 
 import { chatReceipt, chatReceiptStale } from "./receipt";
@@ -1009,7 +1010,7 @@ const shiftCells: OpPreview<"vardiya_hucre_yaz", z.output<typeof shiftArgs>, z.o
     const monday = weekStart(input.gunler[0].gun);
     if (input.gunler.some((g) => weekStart(g.gun) !== monday)) throw new ToolInputError("Günler aynı haftada olmalı (Pazartesi–Pazar); başka haftayı ayrı kartla iste.");
     if (new Set(input.gunler.map((g) => g.gun)).size !== input.gunler.length) throw new ToolInputError("Aynı gün iki kez verildi.");
-    const week = await loadShiftWeek(db(), { id: b.id, name: b.name }, monday, { roster: true });
+    const [week, presets] = await Promise.all([loadShiftWeek(db(), { id: b.id, name: b.name }, monday, { roster: true }), loadShiftPresets(b.id, db())]);
     const people = [...week.rows.map((r) => ({ ref: r.ref, name: r.name })), ...week.others.map((o) => ({ ref: userRef(o.id), name: o.name }))];
     const person = pickByName(people, input.kisi, (p) => p.name, "Kişi", "Kişinin adını Vardiya ekranındaki gibi yazın.");
     const days = weekDays(monday);
@@ -1019,7 +1020,7 @@ const shiftCells: OpPreview<"vardiya_hucre_yaz", z.output<typeof shiftArgs>, z.o
     const changes: { date: string; text: string }[] = [];
     for (const g of input.gunler) {
       const i = days.indexOf(g.gun);
-      const parsed = parseShiftCell(expandShiftAbbr(b.id, g.metin));
+      const parsed = parseShiftCell(expandShiftAbbr(presets, g.metin));
       if (!parsed.ok) throw new ToolInputError(`${dayLong(g.gun, i)}: ${parsed.error}`);
       next[i] = parsed.cell;
       changes.push({ date: g.gun, text: formatShiftCell(parsed.cell) });

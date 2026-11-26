@@ -1,6 +1,7 @@
 "use client";
 
 import { CalendarRange, Copy, Eraser, FileDown, Plus, Save, Sparkles, Undo2, UserPlus, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -40,12 +41,12 @@ import {
   SHIFT_PEOPLE_MAX,
   SHIFT_TEXT,
   shiftMinutes,
-  shiftPresets,
   shiftTimes,
   userRef,
   weekDays,
   weekLabel,
   type ShiftCell,
+  type ShiftPreset,
 } from "@/lib/vardiya";
 import { applyDraft, draftSummary, SHIFT_PROMPT_MAX, SHIFT_PROMPT_MIN } from "@/lib/vardiya-taslak";
 import { draftShiftWeekAction, saveShiftWeekAction } from "@/server/actions/vardiya";
@@ -62,6 +63,8 @@ export interface GridRow {
 
 interface Props {
   branch: { id: string; name: string };
+  /** Şubenin hazır vardiyaları (şube ayarı; src/server/vardiya/presets.ts): S / A düğmeleri, "s" / "a" kısaltması, ad */
+  presets: readonly ShiftPreset[];
   monday: string;
   today: string;
   canEdit: boolean;
@@ -150,7 +153,7 @@ function DayPicker({ days, today, value, onChange }: { days: readonly string[]; 
  * çıkınca metin biçimlenir, "Kaydet" bütün haftayı tek eylemle yazar. PDF kaydedilen plandan çizilir: kayıttan sonra
  * kendiliğinden günceldir. Personel aynı planı salt okunur görür; kendi haftası üstte ayrı kartta.
  */
-export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, others, previous, stamp, updatedText, draftState }: Props) {
+export function ShiftGrid({ branch, presets, monday, today, canEdit, meRef, rows: saved, others, previous, stamp, updatedText, draftState }: Props) {
   const router = useRouter();
   const addId = useId();
   const [pending, run] = useActionTransition();
@@ -178,7 +181,7 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
   /** Bu oturumda kaydedildi: "PDF hazır" satırı */
   const [savedNote, setSavedNote] = useState<string | null>(null);
   // Hücrenin okunuşu: elle yazarken "s" / "a" şubenin sabahçı / akşamcı saatlerine açılır (expandShiftAbbr)
-  const read = (text: string) => parseShiftCell(expandShiftAbbr(branch.id, text));
+  const read = (text: string) => parseShiftCell(expandShiftAbbr(presets, text));
   /** Metnin okunmuş hâli: geçerliyse biçimlenmiş metni (karşılaştırma ve kayıt aynı metne bakar), değilse kendisi */
   const norm = (text: string): string => {
     const p = read(text);
@@ -192,16 +195,18 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
   /**
    * Hücreler seçerek doldurulur (22 Kasım 2026: "saat yazmaktansa seçimli yap, S ve A ekle"): her kutuda S (sabahçı),
    * A (akşamcı) ve İ (izin) düğmeleri; seçili harfe yeniden tıklamak kutuyu boşaltır. "Elle yaz"da kutular klavyeyle
-   * yazılır (başka saat, görev notu). Hazır vardiyası olmayan şube elle yazmayla açılır
+   * yazılır (başka saat, görev notu). Hazır vardiyası olmayan şube elle yazmayla açılır. Saatler şubenin ayarından
+   * (Şube ayarları › Hazır vardiyalar)
    */
-  const presets = shiftPresets(branch.id);
   const [mode, setMode] = useState<"pick" | "type">(presets.length ? "pick" : "type");
   const choices: { key: string; short: string; title: string; text: string }[] = [
     ...presets.map((p) => ({ key: p.key, short: presetShort(p), title: `${p.label} ${presetText(p)}`, text: presetText(p) })),
     { key: "off", short: "İ", title: "İzin", text: "İzin" },
   ];
   /** Hücrenin hazır vardiya adı ("Sabahçı" / "Akşamcı"); saatleri şubenin hazır vardiyasıyla aynıysa */
-  const presetLabel = (text: string) => presetOf(branch.id, cellOfText(text))?.label ?? null;
+  const presetLabel = (text: string) => presetOf(presets, cellOfText(text))?.label ?? null;
+  /** Hazır vardiyaların saatleri şubenin ayarında (yalnız yönetici; ızgaranın altındaki bağlantı) */
+  const presetsHref = `/panel/subeler/${encodeURIComponent(branch.id)}#vardiya`;
   // Telefonda ızgara gün gün yazılır (yedi sütun sığmaz): seçili gün, açılışta bugün (hafta bu haftaysa) ya da Pazartesi
   const phone = useIsPhone();
   const [day, setDay] = useState(() => Math.max(0, weekDays(monday).indexOf(today)));
@@ -390,7 +395,7 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
   const cellPicker = (r: GridRow, i: number, big = false) => {
     const t = r.texts[i];
     const cell = cellOfText(t);
-    const preset = presetOf(branch.id, cell);
+    const preset = presetOf(presets, cell);
     const chosen = cell?.kind === "off" ? "off" : (preset?.key ?? null);
     const invalid = bad.has(`${r.ref}|${i}`);
     const changed = norm(t) !== (before.get(r.ref)?.[i] ?? "");
@@ -744,7 +749,8 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
             />
           </div>
         ) : null}
-        {/* Doldurma biçimi: seçerek (S / A / İ düğmeleri) ya da elle yazarak. Sabahçı ve akşamcının saatleri şubeye göre (src/lib/vardiya.ts) */}
+        {/* Doldurma biçimi: seçerek (S / A / İ düğmeleri) ya da elle yazarak. Sabahçı ve akşamcının saatleri şubenin ayarı
+            (Şube ayarları › Hazır vardiyalar; bağlantı satırın sonunda) */}
         <div className="px-5 pb-3">
           {presets.length ? (
             <Segmented
@@ -762,7 +768,10 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
               ? `${choices.map((c) => `${c.short} = ${c.title}`).join(" · ")}. Seçili harfe yeniden tıklayınca kutu boşalır.`
               : presets.length
                 ? `Saatleri yazın: “10-18”, “18-02 bar”, “izin”. Kısaltma: ${presets.map((p) => `“${presetShort(p).toLocaleLowerCase("tr-TR")}” ${p.label.toLocaleLowerCase("tr-TR")}`).join(", ")}.`
-                : "Saatleri yazın: “10-18”, “18-02 bar”, “izin”."}
+                : "Saatleri yazın: “10-18”, “18-02 bar”, “izin”."}{" "}
+            <Link href={presetsHref} className="font-medium whitespace-nowrap text-ink underline underline-offset-2">
+              {presets.length ? "Saatleri değiştir" : "Sabahçı ve akşamcı ekle"}
+            </Link>
           </p>
         </div>
         {phone ? (

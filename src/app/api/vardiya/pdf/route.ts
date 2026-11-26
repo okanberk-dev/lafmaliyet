@@ -7,6 +7,7 @@ import { currentPhysicalBranch, staffBranchLock } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb } from "@/server/db";
 import { renderShiftPdf } from "@/server/vardiya/pdf";
+import { loadShiftPresets } from "@/server/vardiya/presets";
 import { loadShiftWeek, shiftBranches } from "@/server/vardiya/store";
 
 /**
@@ -27,8 +28,9 @@ export async function GET(request: NextRequest) {
   if (!branch) return Response.json({ error: "Şube bulunamadı" }, { status: 404 });
   const monday = weekParam(params.get("hafta"), todayTR());
   try {
-    const week = await loadShiftWeek(getDb(), branch, monday, { roster: false });
-    const bytes = await renderShiftPdf({ branchId: branch.id, branchName: branch.name, monday, rows: week.rows, updated: week.updated, generatedAt: new Date() });
+    const db = getDb();
+    const [week, presets] = await Promise.all([loadShiftWeek(db, branch, monday, { roster: false }), loadShiftPresets(branch.id, db)]);
+    const bytes = await renderShiftPdf({ presets, branchName: branch.name, monday, rows: week.rows, updated: week.updated, generatedAt: new Date() });
     return new Response(bytes as Uint8Array<ArrayBuffer>, {
       headers: {
         "Content-Type": "application/pdf",
