@@ -435,6 +435,42 @@ describe("asistanın işlemleri: veritabanında", { skip: !SERVER_URL && "ASISTA
     assert.equal((await db.select().from(s.products).where(eq(s.products.id, m.id)))[0].price, 110);
   });
 
+  test("ürün fiyatı: kart şube fiyatını bilir; açık ekranın şubesi kendi fiyatlıysa en başta uyarır, planlı satırı söyler", async () => {
+    const item: SiteMenuItem = { id: "sube-latte", name: "Şube Latte", categoryKey: "sicak", categoryLabel: "Sıcak", priceMinor: 19_000, priceMinorL: 22_000, isActive: true, sortOrder: 0, updatedAt: new Date(Date.now() - 3_600_000).toISOString() };
+    await product("Şube Latte", "M", 190, { siteMenuId: item.id, siteMenuSlot: "M" });
+    await product("Şube Latte", "L", 220, { siteMenuId: item.id, siteMenuSlot: "L" });
+    const items = { now: new Date().toISOString(), at: new Date().toISOString(), items: [item] };
+    await db.insert(s.integrationState).values({ key: "menu_site_items", value: items }).onConflictDoUpdate({ target: s.integrationState.key, set: { value: items } });
+    // Marina'nın kendi fiyatı: M 205 ₺ (dünden beri), L tabanı izler; yarın 05:00'ten M 210 ₺ planlı
+    const past = new Date(Date.now() - 86_400_000).toISOString();
+    const future = new Date(Date.now() + 2 * 86_400_000).toISOString();
+    const rows = [
+      { id: item.id, branch: "marina", priceMinor: 20_500, priceMinorL: 0, effectiveFrom: past, createdAt: past },
+      { id: item.id, branch: "marina", priceMinor: 21_000, priceMinorL: 0, effectiveFrom: future, createdAt: past },
+    ];
+    const prices = { now: new Date().toISOString(), at: new Date().toISOString(), rows };
+    await db.insert(s.integrationState).values({ key: "menu_site_branch_prices", value: prices }).onConflictDoUpdate({ target: s.integrationState.key, set: { value: prices } });
+    try {
+      // Açık ekran Marina: kart tabanı değiştirir, Marina'nın fiyatı değişmez (en başta söylenir)
+      const m = await open("urun_fiyati_degistir", { urun: "Şube Latte", boy: "M", yeniFiyat: 195 }, { scope: "marina" });
+      assert.match(m.warnings[0], /Açık ekranda Marina seçili ve Marina'nın kendi fiyatı var \(205,00\s₺\): bu kart Marina'da fiyatı değiştirmez/);
+      assert.match(m.branch ?? "", /Taban fiyat \(Marina hariç/);
+      assert.ok(m.lines.some((l) => l.label === "Marina'da" && /^205,00\s₺$/.test(l.from ?? "") && /değişmez/.test(l.to)), JSON.stringify(m.lines));
+      assert.match(m.warnings.join(" "), /Marina'da .*210,00\s₺ planlı \(şube fiyatı\)/);
+      // Açık ekran Tuzla: uyarı sonda, yine söylenir
+      const t = await open("urun_fiyati_degistir", { urun: "Şube Latte", boy: "M", yeniFiyat: 195 }, { scope: "tuzla" });
+      assert.doesNotMatch(t.warnings[0], /Açık ekranda/);
+      assert.match(t.warnings.join(" "), /Marina kendi fiyatıyla kalır/);
+      // L tabanı izliyor: Marina'da da değişir, şube satırı yok
+      const l = await open("urun_fiyati_degistir", { urun: "Şube Latte", boy: "L", yeniFiyat: 230 }, { scope: "marina" });
+      assert.equal(l.branch, "Bütün şubeler (menü ortak)");
+      assert.ok(!l.lines.some((x) => x.label === "Marina'da"));
+      assert.doesNotMatch(l.warnings.join(" "), /Açık ekranda/);
+    } finally {
+      await db.delete(s.integrationState).where(eq(s.integrationState.key, "menu_site_branch_prices"));
+    }
+  });
+
   test("kasadan çıkan: 'Tümü'de şube sorulur; bugünün kasasına yazılır; raporu girilmiş güne rehber", async () => {
     const cat = await expenseCategory("Market");
     await assert.rejects(open("kasadan_cikan_ekle", { tur: "harcama", tutar: 85, belge: "fis", harcamalaraYaz: false }, { scope: ALL_BRANCHES }), /hangi şube/);

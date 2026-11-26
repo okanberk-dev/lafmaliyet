@@ -2,11 +2,14 @@
  * Panel asistanının sayfa bağlamı (saf; tarayıcı ve sunucu birlikte kullanır, tests/asistan-gelismis.test.ts;
  * docs/ASISTAN.md › Sayfa bağlamı). Asistan açık olan ekranı bilir:
  *
- * - Tarayıcı her soruda açık ekranın yolunu (`/panel/kasa`) ve adresteki seçili ayı (`?ay=2026-11`) ya da günü
- *   (`?gun=2026-11-24`) gönderir (`page`); başka bir şey gitmez (sorgunun geri kalanı, #çapa, başlık yok).
+ * - Tarayıcı her soruda açık ekranın yolunu (`/panel/kasa`), adresteki seçili ayı (`?ay=2026-11`) ya da günü
+ *   (`?gun=2026-11-24`) ve ekranın çizildiği şubeyi (`branch`: kabuğun seçicisinin değeri, "hepsi" ya da şube kimliği)
+ *   gönderir (`page`); başka bir şey gitmez (sorgunun geri kalanı, #çapa, başlık yok).
  * - Sunucu bundan tek kısa satır yazar (pageContextLine) ve sistem isteminin DEĞİŞKEN bloğuna, önbellek işaretinden
- *   SONRA ekler: araçlar + sabit istem bayt bayt aynı kalır, önbellekten okunur (loop.ts › assistantParams). Şube zaten
- *   o blokta (panelin seçicisi, sunucuda okunur).
+ *   SONRA ekler: araçlar + sabit istem bayt bayt aynı kalır, önbellekten okunur (loop.ts › assistantParams). Şube o
+ *   bloğun kendi satırındadır: araçlar açık ekranın şubesiyle okur (screenBranch; tanınmayan ya da kapalı şube gelirse
+ *   çerezdeki seçim). Çerez sekmeler arasında ortak olduğu için şube ekrandan okunur: başka sekmede seçici değişince
+ *   bu sekmenin asistanı gördüğünden başka şubeyi okumasın.
  * - Asistan boşken o ekrana özel 3–4 öneri çipi (suggestionsFor; en uzun eşleşen yol, yoksa genel liste).
  *
  * Yol yalnız panelin kendi biçimindeyse kabul edilir (küçük harf, rakam, tire; en çok 120 karakter); ekranın adı
@@ -16,8 +19,11 @@
 import { z } from "zod";
 
 import { mobileTitleFor } from "@/components/panel/nav";
+import { ALL_BRANCHES, type BranchRow, type BranchScope } from "@/lib/branches";
 
 const PATH = /^\/panel(?:\/[a-z0-9-]{1,40}){0,4}$/;
+/** Şube kimliği ya da "hepsi" (src/lib/branches.ts: küçük harf, rakam, tire) */
+const BRANCH = /^[a-z][a-z0-9-]{1,23}$/;
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const DAY = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
@@ -27,19 +33,34 @@ export const assistantPage = z
     path: z.string().max(120).regex(PATH),
     month: z.string().regex(MONTH).optional(),
     day: z.string().regex(DAY).optional(),
+    /** Açık ekranın şubesi (kabuğun seçicisi); sunucu bilinen etkin şubeyse kullanır (screenBranch) */
+    branch: z.string().regex(BRANCH).optional(),
   })
   .strict();
 
 export type AssistantPage = z.output<typeof assistantPage>;
 
-/** Tarayıcının adresinden sayfa bilgisi (yol + ?ay / ?gun); panelin dışındaysa null */
-export function pageFromLocation(pathname: string, search: string): AssistantPage | null {
+/**
+ * Tarayıcının adresinden sayfa bilgisi (yol + ?ay / ?gun) ve ekranın şubesi (kabuğun çizdiği seçim; verilmezse ya da
+ * biçimi bozuksa alan yok); panelin dışındaysa null
+ */
+export function pageFromLocation(pathname: string, search: string, branch?: string | null): AssistantPage | null {
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
   if (!PATH.test(path)) return null;
   const q = new URLSearchParams(search);
   const month = q.get("ay") ?? undefined;
   const day = q.get("gun") ?? undefined;
-  return { path, ...(month && MONTH.test(month) ? { month } : {}), ...(day && DAY.test(day) ? { day } : {}) };
+  return { path, ...(month && MONTH.test(month) ? { month } : {}), ...(day && DAY.test(day) ? { day } : {}), ...(branch && BRANCH.test(branch) ? { branch } : {}) };
+}
+
+/**
+ * Açık ekranın şubesi sunucuda: "hepsi" ya da kütükte etkin bir şubenin kimliği; değilse (gelmedi, tanınmıyor, kapalı)
+ * null: çerezdeki seçim geçerli. Yetki vermez (asistan yalnız yöneticinin; seçim yalnız okumayı süzer)
+ */
+export function screenBranch(raw: string | null | undefined, branches: readonly Pick<BranchRow, "id" | "active">[]): BranchScope | null {
+  if (!raw) return null;
+  if (raw === ALL_BRANCHES) return ALL_BRANCHES;
+  return branches.some((b) => b.id === raw && b.active) ? raw : null;
 }
 
 const MONTHS = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];

@@ -74,6 +74,36 @@ export function branchPriceAt(
   return { priceMinor: rule.priceMinor, priceMinorL: baseL > 0 ? (rule.priceMinorL > 0 ? rule.priceMinorL : baseL) : 0, from: rule.effectiveFrom };
 }
 
+/**
+ * Bir boyun bir şubedeki durumu (asistanın fiyat kartı; docs/ASISTAN-ISLEMLER.md › 2.1): şu anki fiyatı (kuruş), şubenin
+ * kendi satırı mı yoksa tabanı mı izliyor (`own`), kendi satırının anı ve anı gelmemiş (planlı) satırlarda bu boyun
+ * fiyatı. L, satırın L'si 0 ise tabanı izler; "Taban fiyata dön" satırı (priceMinor null) tabanı izletir. Tabanı
+ * değiştiren kart, `own` şubede fiyatı değiştirmez.
+ */
+export interface BranchSlotFacts {
+  priceMinor: number;
+  own: boolean;
+  from: string | null;
+  planned: { effectiveFrom: string; priceMinor: number | null }[];
+}
+
+export function branchSlotFacts(base: { priceMinor: number; priceMinorL: number }, rows: readonly BranchPriceRule[], t: number, slot: SiteMenuSlot): BranchSlotFacts {
+  const rule = ruleAt(rows, t);
+  const p = branchPriceAt(base, rows, t);
+  const ownRule = (r: BranchPriceRule | null) => r !== null && r.priceMinor !== null && (slot === "M" || (base.priceMinorL > 0 && r.priceMinorL > 0));
+  const own = ownRule(rule);
+  const priceMinor = slot === "L" ? p.priceMinorL : p.priceMinor;
+  // Planlı satırlardan yalnız bu boyu değiştirenler (L'si tabanı izlemeye devam eden satır L için değişiklik değildir)
+  const planned: BranchSlotFacts["planned"] = [];
+  let prev: number | null = own ? priceMinor : null;
+  for (const r of rows.filter((x) => at(x.effectiveFrom) > t && at(x.effectiveFrom) !== Number.POSITIVE_INFINITY).sort((a, b) => at(a.effectiveFrom) - at(b.effectiveFrom))) {
+    const value = ownRule(r) ? (slot === "L" ? r.priceMinorL : (r.priceMinor as number)) : null;
+    if (value !== prev) planned.push({ effectiveFrom: r.effectiveFrom, priceMinor: value });
+    prev = value;
+  }
+  return { priceMinor, own, from: own ? p.from : null, planned };
+}
+
 /** Bir kalemin bir şubedeki satırları, eskiden yeniye */
 export function rowsOf<T extends { id: string; branch: string; effectiveFrom: string }>(rows: readonly T[], id: string, branch: string): T[] {
   return rows.filter((r) => r.id === id && r.branch === branch).sort((a, b) => at(a.effectiveFrom) - at(b.effectiveFrom));

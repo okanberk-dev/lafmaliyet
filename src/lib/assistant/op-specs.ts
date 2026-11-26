@@ -231,7 +231,7 @@ export const OP_SPECS: readonly OpSpec[] = [
     label: "Ürün fiyatı kartı",
     title: "Ürünün satış fiyatını değiştir",
     description:
-      "TEK bir ürünün (bir boyun) satış fiyatını değiştirmek için onay kartı hazırlar: eski → yeni fiyat, % fark, maliyet ve marj, siteye ve LafPOS'a etkisi. Siteye bağlı ürünün fiyatı önce sitede değişir. Toplu fiyat değişikliği yok.",
+      "TEK bir ürünün (bir boyun) satış fiyatını değiştirmek için onay kartı hazırlar: eski → yeni fiyat, % fark, maliyet ve marj, siteye ve LafPOS'a etkisi. Siteye bağlı ürünün fiyatı önce sitede değişir. Kart TABAN fiyatı değiştirir (Tuzla ve kendi fiyatı olmayan şubeler): kendi şube fiyatı olan şubede (ör. Marina) fiyat değişmez, kart bunu ve planlı şube fiyatını gösterir. Kullanıcı bir şubenin fiyatını istiyorsa (\"Marina'da Latte 205 olsun\") kart açma; islem_rehberi ile Şube fiyatı ekranını göster. Toplu fiyat değişikliği yok.",
   },
   {
     name: "kasadan_cikan_ekle",

@@ -15,7 +15,7 @@
  */
 
 import { errorTag } from "@/lib/assistant/error-tag";
-import { pageContextLine } from "@/lib/assistant/page-context";
+import { pageContextLine, type AssistantPage } from "@/lib/assistant/page-context";
 import { ASSISTANT_LIMITS, assistantRequest, encodeEvent, type AssistantEvent } from "@/lib/assistant/protocol";
 
 import type { AiErrorCode } from "../run";
@@ -60,7 +60,8 @@ export interface AssistantDeps {
   start(userId: number, opts: { deep: boolean }): Promise<number | null>;
   /** Satırı sonuçla kapatır (maliyet, token, süre; metin yok) */
   finish(callId: number, outcome: AssistantOutcome, ms: number): Promise<void>;
-  setup(): Promise<AssistantSetup>;
+  /** İsteğin kurulumu; `page` açık ekran (şubesi okumaların kapsamıdır: service.ts) */
+  setup(page?: AssistantPage): Promise<AssistantSetup>;
   timing?: Partial<AssistantTiming>;
   onToolError?: (tool: string, e: unknown) => void;
 }
@@ -144,7 +145,7 @@ export async function handleAssistantPost(request: Request, deps: AssistantDeps)
   const weight = deep ? ASSISTANT_DEEP.weight : 1;
   if (deep && status.cap - status.usedToday < weight) return deepRefusal(status);
 
-  const setup = await deps.setup();
+  const setup = await deps.setup(parsed.data.page);
   const callId = await deps.start(me.id, { deep });
   // Kapıdan sonra aynı anda gelen başka bir soru sınırı doldurduysa (sayım ve ekleme start'ta atomik)
   if (callId === null) {
