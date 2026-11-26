@@ -23,7 +23,9 @@ import { num } from "./format";
 import { panelWasteCounts } from "./lafpos/ikram";
 import { missingLafposDays } from "./lafpos/status";
 import { LAFPOS_BRANCH_ID } from "./lafpos/switch";
-import { addDays, shiftMonth } from "./reminders";
+import { addDays, shiftMonth, todayTR } from "./reminders";
+import { OPTION_KINDS, OPTION_PRODUCTS, optionProductId, optionTotals, productForLine, sizeLabel } from "./site-sales/calc";
+import type { SiteSalesMonth } from "./site-sales/schema";
 
 /** Tahmini stoğun şubesi: LafPOS'un kurulu olduğu şube (Marina). Tuzla'nın kasası ModPOS: tahmin yok */
 export const STOCK_ESTIMATE_BRANCH = LAFPOS_BRANCH_ID;
@@ -108,17 +110,23 @@ export interface EstimateLafposWaste {
 }
 
 /**
- * Şubenin kasadan geçmeyen online siparişi (laffogato.net'in şubeye göre ay kaydı, `cafe.lines`): site kasada ödenen
- * (`counter`) ve panelden elle girilen (`manual`) siparişi bu satırlardan çıkarır, onlar LafPOS'un gün sonundadır. Gün gün
- * gelmez: ay başına ürün adedi (dönem hep ayın 1'inde başladığı için ay yeter).
+ * Şubenin bir ayının laffogato.net online siparişleri (sitenin şubeye göre ay kaydı, `site_sales_sube:<şube>:YYYY-MM`;
+ * docs/STOK-TAHMINI.md § 2). Yalnız **kasadan geçmeyen** kafe siparişleri: site kasada ödenen (`counter`) ve panelden
+ * elle girilen (`manual`) siparişi kafe satırlarından (`cafe.lines`) çıkarır, onlar LafPOS'ta çalınıp gün sonuyla gelir.
+ * Satırlar menü bağlantısıyla ürüne eşlenmiş gelir, seçenekler (ekstra shot, şurup, alternatif süt) kendi ürünleriyle
+ * (Tutarlılık'la aynı kural, src/lib/site-sales/calc.ts). Gün gün gelmez: dönem hep ayın 1'inde başladığı için ay yeter.
  */
-export interface EstimateOnlineSale {
+export interface EstimateOnlineMonth {
   /** YYYY-MM */
   month: string;
-  /** Panel ürünü; menüye bağlı değilse null (atlanır ve sayılır) */
-  productId: number | null;
-  name: string;
-  qty: number;
+  /** Kaydın kapsadığı son tam gün: çekildiği günün bir öncesi; ay o gün bittiyse ayın son günü */
+  through: string;
+  /** Kasadan geçmeyen kafe siparişi */
+  orders: number;
+  /** Kasada ödenen ya da panelden elle girilen online sipariş: LafPOS'un gün sonunda, burada düşülmez */
+  tillOrders: number;
+  /** Ürüne eşlenmiş satırlar ve seçenekler; menüye bağlı değilse ya da seçeneğin ürünü yoksa productId null */
+  lines: readonly { productId: number | null; name: string; qty: number }[];
 }
 
 /** Ürünün bir adedinin harcadığı malzeme (kendi biriminde, fire hariç; formül hesaplanmış) */
@@ -143,8 +151,11 @@ export interface StockEstimateInput {
   sales: readonly EstimateSale[];
   panelWaste: readonly EstimatePanelWaste[];
   lafposWaste: readonly EstimateLafposWaste[];
-  /** Kasadan geçmeyen online siparişler (ay ay); verilmezse düşülmez */
-  onlineSales?: readonly EstimateOnlineSale[];
+  /**
+   * Şubenin online siparişleri ay ay; null ya da verilmezse site bağlantısı yok: düşülmez, uyarı da çıkmaz. Gereken ama
+   * kaydı olmayan ay "çekilmedi" sayılır (`online.missingMonths`)
+   */
+  online?: { months: readonly EstimateOnlineMonth[] } | null;
   /** Günlük ortalamanın penceresi (gün, dünden geriye); verilmezse AVG_DAYS */
   avgDays?: number;
   /** Tedarik süresi (gün): eşik önerisi bu kadar günün + emniyet gününün kullanımıdır; verilmezse DEFAULT_LEAD_DAYS */
@@ -225,13 +236,29 @@ export interface StockEstimate {
   noRecipe: SkippedRows;
   /** Durum sayıları */
   counts: Record<EstimateStatus, number>;
-  /** Tüketime giren online sipariş adedi (ürüne bağlı, reçetesi olan satırlar) */
-  onlineQty: number;
+  /** Online siparişlerin özeti; site bağlantısı yoksa null */
+  online: EstimateOnlineSummary | null;
   /** Günlük ortalamanın dayandığı gün sayısı (gün sonu gelen ya da kapalı işaretli günler) ve penceresi */
   avgDays: number;
   avgWindow: number;
   /** Eşik önerisinin tedarik süresi (gün) */
   leadDays: number;
+}
+
+/** Tahmine giren online siparişlerin özeti (dönemin ayları) */
+export interface EstimateOnlineSummary {
+  /** Kasadan geçmeyen, tüketimi düşülen kafe siparişi */
+  orders: number;
+  /** Tüketime giren adet (ürüne bağlı, reçetesi olan satırlar ve seçenekler) */
+  qty: number;
+  /** Kasada ödenen ya da elle girilen online sipariş: LafPOS'un satışında sayıldı, ayrıca düşülmedi */
+  tillOrders: number;
+  /** Panel ürününe bağlı olmayan satırlar ve ürünü olmayan seçenekler (atlandı; Ürünler › Site menüsü'nde bağlanır) */
+  unmatched: SkippedRows;
+  /** Tahminin ya da ortalamanın gerektirdiği ama kaydı olmayan aylar: o ayların online tüketimi düşülmedi */
+  missingMonths: string[];
+  /** Süren ayın kaydının kapsadığı son gün; kayıt yoksa null */
+  through: string | null;
 }
 
 // ---------------------------------------------------------------- Yardımcılar
@@ -258,6 +285,67 @@ export function parseLeadDays(raw: string | string[] | undefined): number {
 function daysInMonth(month: string): number {
   const [y, m] = month.split("-").map(Number);
   return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+/** Ayın son günü ("2026-02" → "2026-02-28") */
+const monthEnd = (month: string) => `${month}-${String(daysInMonth(month)).padStart(2, "0")}`;
+
+/** [from, to] aralığının ayın içine düşen gün sayısı */
+function overlapDays(month: string, from: string, to: string): number {
+  const a = from > `${month}-01` ? from : `${month}-01`;
+  const b = to < monthEnd(month) ? to : monthEnd(month);
+  return a > b ? 0 : Number(b.slice(8)) - Number(a.slice(8)) + 1;
+}
+
+/**
+ * Şubenin online ay kaydının kapsadığı son tam gün: çekildiği gün (İstanbul takvimi; sitenin günü gece yarısında biter)
+ * bitmemişti, bir öncesi; ay o günden önce bittiyse ayın son günü
+ */
+export function onlineThrough(month: string, pulledDay: string): string {
+  const end = monthEnd(month);
+  return pulledDay > end ? end : addDays(pulledDay, -1);
+}
+
+/**
+ * Sitenin şubeye göre ay kaydı → tahminin online ayı. Kafe satırları menü bağlantısıyla ürüne (L → L yuvası, M ve tek
+ * boy → M), seçenekler kendi ürünlerine (Tutarlılık'la aynı kural: optionTotals, optionProductId); bağlanamayan satır ve
+ * ürünü olmayan seçenek productId null. Kasada ödenen (`counter`) ve elle girilen (`manual`) sipariş satırlarda yoktur,
+ * yalnız sayısı bilgi için taşınır.
+ */
+export function estimateOnlineMonth(
+  rec: Pick<SiteSalesMonth, "month" | "pulledAt" | "cafe" | "manual" | "counter">,
+  index: ReadonlyMap<string, number>,
+  products: readonly { id: number; name: string; active: boolean }[],
+): EstimateOnlineMonth {
+  const lines: { productId: number | null; name: string; qty: number }[] = rec.cafe.lines.map((l) => ({
+    productId: productForLine(l, index),
+    name: [l.name, sizeLabel(l.size)].filter(Boolean).join(" "),
+    qty: l.qty,
+  }));
+  const options = optionTotals(rec.cafe.lines);
+  for (const kind of OPTION_KINDS) {
+    if (options[kind] > 0) lines.push({ productId: optionProductId(kind, index, products), name: OPTION_PRODUCTS[kind].label, qty: options[kind] });
+  }
+  return {
+    month: rec.month,
+    through: onlineThrough(rec.month, todayTR(new Date(rec.pulledAt))),
+    orders: rec.cafe.orders,
+    tillOrders: (rec.counter?.orders ?? 0) + rec.manual.orders,
+    lines,
+  };
+}
+
+/**
+ * Tahminin gerektirdiği online aylar: dönemin en erken ayından (ortalamanın penceresi daha eskiye uzanıyorsa ondan)
+ * süren aya. Tahmin yoksa boş
+ */
+export function onlineMonthsNeeded(windowFrom: string | null, today: string, avgWindow = AVG_DAYS): string[] {
+  if (windowFrom === null) return [];
+  const avgFrom = addDays(today, -Math.max(1, Math.round(avgWindow)));
+  const start = (avgFrom < windowFrom ? avgFrom : windowFrom).slice(0, 7);
+  const out: string[] = [];
+  for (let m = start; m <= today.slice(0, 7) && out.length < 24; m = shiftMonth(m, 1)) out.push(m);
+  return out;
 }
 
 /**
@@ -362,7 +450,11 @@ const add = (m: Map<number, number>, id: number, v: number) => m.set(id, (m.get(
  * başlıyorsa tahmin yok (`lafpos-oncesi`). Satış reçeteye göre × (1 + genel fire); zayi ve ikram reçeteden ya da
  * hammadde olarak, fire eklenmeden. Panele girilmiş ürün ikramı LafPOS'un gün sonu gelen gününde sayılmaz (her gün tek
  * kaynak, panelWasteCounts). Ürüne bağlı olmayan ve reçetesi boş ürünün satırları atlanır ve sayılır; hizmet satırı
- * (karaoke) sayılmaz.
+ * (karaoke) sayılmaz. Kasadan geçmeyen online sipariş satış gibi × (1 + genel fire) ayrıca düşülür.
+ *
+ * Günlük kullanım: dünden geriye `avgDays` günde (gün sonu gelen ya da kapalı işaretli günlere bölünür) satış, zayi ve
+ * ikram; online payı takvim günüyle. "Kaç gün yeter" = tahmini stok ÷ günlük kullanım; eşik önerisi = günlük kullanım ×
+ * (tedarik süresi + emniyet günü). En az MIN_AVG_DAYS gün yoksa ikisi de yok.
  */
 export function estimateStock(input: StockEstimateInput): StockEstimate {
   const { today, lafposFrom } = input;
@@ -413,7 +505,13 @@ export function estimateStock(input: StockEstimateInput): StockEstimate {
   const leadDays = Math.max(0, Math.round(input.leadDays ?? DEFAULT_LEAD_DAYS));
   const avgFrom = addDays(today, -avgWindow);
   const avgTo = addDays(today, -1);
-  const inAvg = (date: string) => date >= avgFrom && date <= avgTo;
+  // Ortalamanın günleri: pencerede gün sonu gelen ya da kapalı işaretli günler. Gün sonu gelmeyen gün ne paya ne paydaya
+  // girer (o günün satışı bilinmiyor; panele girilen zayisi de sayılmaz): ortalamayı düşürmez, şişirmez
+  const closed = new Set(input.closedDays ?? []);
+  const avgDay = (date: string) => received.has(date) || closed.has(date);
+  let avgDays = 0;
+  for (let d = avgFrom; d <= avgTo; d = addDays(d, 1)) if (avgDay(d)) avgDays++;
+  const inAvg = (date: string) => date >= avgFrom && date <= avgTo && avgDay(date);
   const recentSold = new Map<number, number>();
   const recentWasted = new Map<number, number>();
   const recent = (productId: number, qty: number, into: Map<number, number>) => {
@@ -460,51 +558,55 @@ export function estimateStock(input: StockEstimateInput): StockEstimate {
     else if (!consume(l.productId, l.qty, l.date, wasted)) noRecipe.add(l.productName ?? l.posName, l.qty);
   }
 
-  // Online sipariş: kasadan geçmeyenler, ay ay (dönem ayın 1'inde başlar: ay dönemin ayından eski değilse sayılır).
-  // LafPOS'un gün sonunda olmadıkları için satışla çift sayılmaz; kasada ödenen sipariş bu satırlarda yoktur
+  // Online sipariş (docs/STOK-TAHMINI.md § 2): yalnız kasadan geçmeyenler, ay ay. Dönem ayın 1'inde başladığı için ay
+  // dönemin ayından eski değilse malzemeye düşülür. Kasada ödenen ve elle girilen sipariş kaydın satırlarında yoktur
+  // (LafPOS'un gün sonunda): satışla çift sayılmaz
   const windowMonth = windowFrom?.slice(0, 7) ?? null;
-  /** Ay başına malzemenin online tüketimi (fire hariç): günlük ortalamanın online payı için */
-  const onlineByMonth = new Map<string, Map<number, number>>();
+  const onlineMonths = input.online ? input.online.months.filter((m) => m.month <= running) : [];
+  /** Ay başına malzemenin online tüketimi (fire hariç) ve kaydın kapsadığı gün: günlük ortalamanın online payı için */
+  const onlineUse = new Map<string, { through: string; use: Map<number, number> }>();
+  const onlineSkipped = skipCounter();
+  let onlineOrders = 0;
+  let onlineTill = 0;
   let onlineQty = 0;
-  for (const o of input.onlineSales ?? []) {
-    if (o.qty <= 0 || o.month > running) continue;
-    const items = o.productId !== null ? recipeOf.get(o.productId) : undefined;
-    if (items?.length) {
-      let m = onlineByMonth.get(o.month);
-      if (!m) onlineByMonth.set(o.month, (m = new Map()));
-      for (const it of items) add(m, it.ingredientId, it.qty * o.qty);
+  for (const m of onlineMonths) {
+    const use = new Map<number, number>();
+    onlineUse.set(m.month, { through: m.through, use });
+    const counted = windowMonth !== null && m.month >= windowMonth;
+    if (counted) {
+      onlineOrders += m.orders;
+      onlineTill += m.tillOrders;
     }
-    if (windowMonth === null || o.month < windowMonth) continue;
-    if (o.productId === null) unmatched.add(o.name, o.qty);
-    else if (!items?.length) noRecipe.add(o.name, o.qty);
-    else {
-      onlineQty += o.qty;
-      for (const it of items) {
-        const p = period.get(it.ingredientId);
-        if (p?.status === "tahmin" && o.month >= (p.from as string).slice(0, 7)) add(online, it.ingredientId, it.qty * o.qty);
+    for (const o of m.lines) {
+      if (o.qty <= 0) continue;
+      const items = o.productId !== null ? recipeOf.get(o.productId) : undefined;
+      if (items?.length) for (const it of items) add(use, it.ingredientId, it.qty * o.qty);
+      if (!counted) continue;
+      if (o.productId === null) onlineSkipped.add(o.name, o.qty);
+      else if (!items?.length) noRecipe.add(o.name, o.qty);
+      else {
+        onlineQty += o.qty;
+        for (const it of items) {
+          const p = period.get(it.ingredientId);
+          if (p?.status === "tahmin" && m.month >= (p.from as string).slice(0, 7)) add(online, it.ingredientId, it.qty * o.qty);
+        }
       }
     }
   }
 
-  // Ortalamanın günleri: pencerede gün sonu gelen ya da kapalı işaretli günler (gelmeyen gün ortalamayı düşürmesin)
-  const closed = new Set(input.closedDays ?? []);
-  let avgDays = 0;
-  for (let d = avgFrom; d <= avgTo; d = addDays(d, 1)) if (received.has(d) || closed.has(d)) avgDays++;
-  /** Online tüketimin günlük payı: pencerenin değdiği her ayın günlük ortalaması × o aya düşen gün ÷ pencere */
+  /**
+   * Online tüketimin günlük payı: pencerenin değdiği her ayın günlük ortalaması (kaydın kapsadığı günlere bölünür) × o
+   * aya düşen pencere günü ÷ pencere. Online sipariş gün sonuna bağlı değil: takvim günüyle sayılır
+   */
   const onlineDaily = (ingredientId: number): number => {
     let total = 0;
-    for (const [month, m] of onlineByMonth) {
-      const q = m.get(ingredientId);
-      if (!q) continue;
-      const first = `${month}-01`;
-      const last = `${month}-${String(daysInMonth(month)).padStart(2, "0")}`;
-      const from = avgFrom > first ? avgFrom : first;
-      const to = avgTo < last ? avgTo : last;
-      if (from > to) continue;
-      const overlap = Number(to.slice(8)) - Number(from.slice(8)) + 1;
-      // Süren ayın kaydı bugüne kadardır
-      const elapsed = month === running ? Number(today.slice(8)) : daysInMonth(month);
-      total += (q / elapsed) * overlap;
+    for (const [month, { through, use }] of onlineUse) {
+      const q = use.get(ingredientId);
+      // Ayın ilk günü bitmeden çekilen kayıt (through önceki ayda) tam gün kapsamaz: oranı bilinmez
+      if (!q || through < `${month}-01`) continue;
+      const overlap = overlapDays(month, avgFrom, avgTo);
+      if (!overlap) continue;
+      total += (q / Math.max(1, Number(through.slice(8)))) * overlap;
     }
     return total / avgWindow;
   };
@@ -563,7 +665,17 @@ export function estimateStock(input: StockEstimateInput): StockEstimate {
     unmatched: unmatched.done(),
     noRecipe: noRecipe.done(),
     counts,
-    onlineQty,
+    online: input.online
+      ? {
+          orders: onlineOrders,
+          qty: onlineQty,
+          tillOrders: onlineTill,
+          unmatched: onlineSkipped.done(),
+          missingMonths: onlineMonthsNeeded(windowFrom, today, avgWindow).filter((m) => !onlineUse.has(m)),
+          // Ayın ilk sabahı çekilen kayıt henüz tam gün kapsamaz (through önceki ayda): gün yazılmaz
+          through: (onlineUse.get(running)?.through ?? "") >= `${running}-01` ? onlineUse.get(running)!.through : null,
+        }
+      : null,
     avgDays,
     avgWindow,
     leadDays,
@@ -575,7 +687,7 @@ export function estimateStock(input: StockEstimateInput): StockEstimate {
 export interface StockAlertItem {
   ingredientId: number;
   name: string;
-  /** "≈ 1,81 KG · eşik 2 KG" */
+  /** "≈ 1,81 KG · eşik 2 KG · ≈ 2 gün yeter" */
   text: string;
 }
 
@@ -584,7 +696,7 @@ export function stockAlertItems(critical: readonly StockEstimateLine[], max = 4)
   const items = critical.slice(0, max).map((l) => ({
     ingredientId: l.ingredientId,
     name: l.name,
-    text: `≈ ${stockQty(l.estimate ?? 0, l)} · eşik ${stockQty(l.threshold ?? 0, l)}`,
+    text: `≈ ${stockQty(l.estimate ?? 0, l)} · eşik ${stockQty(l.threshold ?? 0, l)}${l.daysLeft !== null ? ` · ${daysLeftText(l.daysLeft)} yeter` : ""}`,
   }));
   return { items, more: Math.max(0, critical.length - items.length) };
 }

@@ -4,16 +4,21 @@ import { and, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { currentMonthTR } from "@/lib/calc/engine";
+import { monthLabel } from "@/lib/format";
+import { siteBranchOf } from "@/lib/site-sales/calc";
 import { displayUnit, parseThresholdInput, stockQty, STOCK_ESTIMATE_BRANCH } from "@/lib/stock-estimate";
 import { logActivity } from "@/server/actions/log";
-import { attempt, UserError } from "@/server/actions/util";
+import { attempt, UserError, zMonth } from "@/server/actions/util";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
+import { SITE_SALES_FIRST_MONTH, syncBranchSiteSales } from "@/server/site-sales/sync";
 
 /**
- * Tahmini stoğun yazımı (docs/STOK-TAHMINI.md): kritik eşik. Yalnız yönetici; yalnız kendi tablosuna yazar
- * (stock_thresholds). Stok sayımı, faturalar, FIFO ve mal maliyeti değişmez. Her değişiklik işlem geçmişine düşer.
- * Faturanın geldiği şube faturanın şubesidir (setInvoiceBranch).
+ * Tahmini stoğun yazımı (docs/STOK-TAHMINI.md): kritik eşik ve Marina'nın online siparişlerini siteden yenileme. Yalnız
+ * yönetici; eşik yalnız kendi tablosuna yazar (stock_thresholds). Eşik önerisi kendiliğinden yazılmaz: yönetici öneriyi
+ * alana alır ve Kaydet'e basar (aynı eylem). Stok sayımı, faturalar, FIFO ve mal maliyeti değişmez. Her değişiklik işlem
+ * geçmişine düşer. Faturanın geldiği şube faturanın şubesidir (setInvoiceBranch).
  */
 
 const thresholdSchema = z.object({
@@ -57,6 +62,32 @@ export async function saveStockThreshold(input: z.input<typeof thresholdSchema>)
     }
     refresh();
     return { value: parsed.value };
+  });
+}
+
+const onlineSchema = z.object({ months: z.array(zMonth).min(1).max(6) });
+
+/**
+ * Tahmini stok › "Online siparişleri yenile": Marina'nın verilen aylarının online siparişlerini siteden yeniden çeker
+ * (`&branch=marina`; docs/STOK-TAHMINI.md § 2). Günlük iş ve Gelir-gider'deki "Siteden yenile" bu ayı ve önceki iki ayı
+ * zaten çeker; düğme eksik ya da eski ayı hemen getirir. Kâr-zarar, KDV ve tüketim değişmez (ayrı kayıt). Yalnız yönetici.
+ */
+export async function refreshStockOnline(input: z.input<typeof onlineSchema>) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const months = [...new Set(onlineSchema.parse(input).months)].sort();
+    if (months.some((m) => m > currentMonthTR())) throw new UserError("İleri bir ayın siparişi çekilemez");
+    if (months.some((m) => m < SITE_SALES_FIRST_MONTH)) throw new UserError(`${monthLabel(SITE_SALES_FIRST_MONTH)} öncesinde sitede online sipariş yok`);
+    const branch = siteBranchOf(STOCK_ESTIMATE_BRANCH);
+    if (!branch) throw new UserError("Tahminin şubesinin sitede karşılığı yok");
+    const r = await syncBranchSiteSales(branch, months);
+    if (r.status === "off") throw new UserError("laffogato.net bağlantısı kurulmamış (KARAOKE_SYNC_SECRET)");
+    const ok = r.results.filter((x) => x.status === "ok").map((x) => monthLabel(x.month));
+    if (ok.length) await logActivity(me, "Marina'nın online siparişleri çekildi (tahmini stok)", ok.join(", "));
+    refresh();
+    const failed = r.results.filter((x): x is Extract<typeof x, { status: "error" }> => x.status === "error");
+    if (failed.length && !ok.length) throw new UserError(failed.map((x) => `${monthLabel(x.month)}: ${x.error}`).join(" · "));
+    return { ok, failed: failed.map((x) => ({ month: x.month, error: x.error })) };
   });
 }
 
