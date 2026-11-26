@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { after, before, describe, test } from "node:test";
 
+import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
@@ -92,6 +93,11 @@ describe("raporlar: veritabanında", { skip: !SERVER_URL && "RAPOR_TEST_DATABASE
         countedByName: "Ali",
       });
     }
+    // Kör sayım: Ali 1. gün 3.850 ₺ kilitledi, farkı görünce 3.900 ₺'ye değiştirdi (rapordaki sayılan)
+    await db.insert(s.cashCounts).values([
+      { branchId: "tuzla", date: d(1), amount: 3_850, userId: ali.id, userName: "Ali", createdAt: new Date(`${d(1)}T17:00:00Z`) },
+      { branchId: "tuzla", date: d(1), amount: 3_900, reason: "çekmecenin altında 50 ₺", userId: ali.id, userName: "Ali", createdAt: new Date(`${d(1)}T17:20:00Z`) },
+    ]);
     loadModel = (await import("../src/server/data/dataset")).loadModel;
     compare = await import("../src/server/data/sube-karsilastirma");
     labor = await import("../src/server/data/iscilik");
@@ -162,5 +168,52 @@ describe("raporlar: veritabanında", { skip: !SERVER_URL && "RAPOR_TEST_DATABASE
     assert.equal(days.vardiyaDays, 3);
     assert.ok(days.missingMetrics.includes("iptal"), "ModPOS iptal göndermez");
     assert.ok(data.summary.days.rows.some((r) => r.person.name === "Can"), "Vardiya'daki ad");
+    const [recount] = data.summary.recount.rows;
+    assert.deepEqual([recount.person.key, recount.locks, recount.changes, recount.net], [`u:${aliId}`, 1, 1, 50], "kör sayımı kilitten sonra değiştiren");
+    assert.deepEqual(data.summary.recount.branches, [{ branchId: "tuzla", days: 1, changedDays: 1 }]);
+  });
+
+  // En sonda: Marina'yı LafPOS'a geçirir (öteki testler geçişsiz Marina'yı bekler)
+  test("Kaçak raporu: ayın sayımı − ay sonu tahmini (önceki ayın sayımından), ay sonu fiyatıyla TL", async () => {
+    // Sabit aylar (geçiş günü LAFPOS_SWITCH_MIN'den önce olamaz): Marina 1 Kasım 2026'da LafPOS'a geçti, Kasım sonu sayımı
+    // Aralık'ın kaçak raporunun başlangıcı; rapor Ocak'ta okunur
+    const [K0, K1] = ["2026-11", "2026-12"];
+    const NOW = new Date("2027-01-10T12:00:00+03:00");
+    await db.insert(s.settings).values({ key: "lafposGecisGunu", value: `${K0}-01` });
+    const [cat] = await db.insert(s.categories).values({ name: "Kahve" }).returning();
+    // Süt: 1 LT 40 ₺ (0,04 ₺ / ml); Latte'de 200 ml
+    const [sut] = await db.insert(s.ingredients).values({ name: "Süt", category: "Süt", unit: "ml", countUnit: "LT", packageSize: 1000, packagePrice: 40 }).returning();
+    const [latte] = await db.insert(s.products).values({ categoryId: cat.id, name: "Latte", size: "Tek", price: 100 }).returning();
+    await db.insert(s.recipeItems).values({ productId: latte.id, ingredientId: sut.id, qty: 200 });
+    // Önceki ay sonu 10 LT, bu ay sonu 5 LT sayıldı; bu ay 20 Latte satıldı (4 LT, genel fireyle 4,2 LT)
+    await db.insert(s.stockCounts).values([
+      { month: K0, branchId: "marina", ingredientId: sut.id, qty: 10, factor: 1000 },
+      { month: K1, branchId: "marina", ingredientId: sut.id, qty: 5, factor: 1000 },
+    ]);
+    await db.insert(s.posDailySales).values({ date: `${K1}-10`, branchId: "marina", posName: "LATTE", productId: latte.id, qty: 20, revenue: 2_000 });
+
+    const data = await leak.loadLeakReport(K1, NOW);
+    assert.equal(data.state, "ok", `durum: ${data.state}`);
+    assert.ok(data.report, "rapor var");
+    assert.deepEqual(data.months, [K0, K1], "Marina'nın sayıldığı bitmiş aylar");
+    const [line] = data.report.lines;
+    assert.equal(line.name, "Süt");
+    assert.equal(line.countMonth, K0, "başlangıç önceki ayın sayımı (ayın kendi sayımı değil)");
+    assert.ok(Math.abs(line.expected - 5_800) < 0.01, `tahmini 10.000 − 4.200 ml: ${line.expected}`);
+    assert.equal(line.actual, 5_000);
+    assert.ok(Math.abs(line.diff + 800) < 0.01, `fark −800 ml: ${line.diff}`);
+    assert.equal(line.value, -32, "800 ml × 0,04 ₺");
+    assert.equal(data.report.leakTotal, -32);
+    assert.deepEqual(
+      data.report.leaks.map((l) => l.name),
+      ["Süt"],
+    );
+    assert.ok(data.report.missingDays.includes(`${K1}-31`), "gün sonu gelmeyen günler (ayın son günü dahil) uyarıda: kaçak büyük görünebilir");
+    // Kasım'ın başlangıcı yok (Ekim sonu sayılmadı): Kasım sayımı karşılaştırılamaz, sıfır kaçak da yazılmaz
+    const first = await leak.loadLeakReport(K0, NOW);
+    assert.deepEqual([first.state, first.report?.lines.length, first.report?.noEstimate, first.report?.leakTotal], ["ok", 0, 1, 0]);
+    // Ayın sayımı girilmemişse rapor değil "sayım yok"
+    await db.delete(s.stockCounts).where(eq(s.stockCounts.month, K1));
+    assert.equal((await leak.loadLeakReport(K1, NOW)).state, "sayim-yok");
   });
 });

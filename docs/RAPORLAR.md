@@ -4,7 +4,8 @@
 yöneticinin. **Şube karşılaştırma** şubeleri ay ay yan yana koyar (ciro, fiş, ortalama sepet, kasa farkı, ikram, zayi,
 mal maliyeti, işçilik, gider, kâr). **İşçilik / ciro** personel maliyetinin ciroya oranını günlük, haftalık ve şube şube
 verir. **Kaçak raporu** Marina'nın ay sonu sayımını tahmini stokla karşılaştırır, farkı TL olarak ve en çok kaçan
-kalemlerle yazar. **Kayıp önleme** kasa farkını, iptali, ikramı ve indirimi kişiye göre gösterir. Hiçbir rapor yeni rakam
+kalemlerle yazar. **Kayıp önleme** kasa farkını, kör sayımın sonradan değişmesini, iptali, ikramı ve indirimi kişiye göre
+gösterir. Hiçbir rapor yeni rakam
 uydurmaz: her rakam başka bir ekranın rakamıdır ve veri yoksa "bilinmiyor" yazar, sıfır değil.
 
 Dalga 2 (Şube karşılaştırma) ve Dalga 3'ün üç maddesi (İşçilik / ciro, Marina kaçak raporu, kişi bazında kayıp önleme);
@@ -25,7 +26,8 @@ Kod: saf hesaplar `src/lib/sube-karsilastirma.ts`, `src/lib/iscilik.ts`, `src/li
 yükleyiciler `src/server/data/` altında aynı adlarla (`kacak.ts`, `kayip-onleme.ts`, `iscilik.ts`,
 `sube-karsilastirma.ts`); ekranlar `src/app/panel/raporlar/`. Testler: `tests/sube-karsilastirma.test.ts`,
 `tests/iscilik.test.ts`, `tests/kacak.test.ts`, `tests/kayip-onleme.test.ts`, veritabanında
-`tests/raporlar-db.test.ts` (dört yükleyici canlı şemayla; ay rakamları Gelir-gider'in şube görünümüyle aynı).
+`tests/raporlar-db.test.ts` (dört yükleyici canlı şemayla; ay rakamları Gelir-gider'in şube görünümüyle aynı; kaçak
+raporu LafPOS'a geçmiş Marina'da sayım, satış ve fiyatla uçtan uca; kör sayımın değişikliği değiştirene).
 
 ## Şube karşılaştırma
 
@@ -103,11 +105,12 @@ TL = fark × malzemenin ay sonu birim maliyeti (Stok sayımı'nın fiyatı, `uni
 
 ## Kayıp önleme
 
-`/panel/raporlar/kayip`. LafPOS deposu değiştirilmeden, panelde var olan kişi bilgisiyle üç bölüm (`src/lib/kayip-onleme.ts`):
+`/panel/raporlar/kayip`. LafPOS deposu değiştirilmeden, panelde var olan kişi bilgisiyle dört bölüm (`src/lib/kayip-onleme.ts`):
 
 | Bölüm | Kişi | Nasıl |
 |---|---|---|
 | **Kasa farkı · kasayı sayana göre** (doğrudan) | Kasa raporunun "Kasayı sayan"ı; eski raporda gönderen | Rapor sayısı, toplam ve ortalama fark, eksik çıkan gün (1 ₺'den çok), en büyük eksik; **sapma** = kişinin ortalaması − aynı şubede başkalarının saydığı raporların ortalaması (iki tarafta da en az 3 rapor). "dikkat": sapma eksi yönde ve şubenin raporlarının standart sapmasından büyük |
+| **Kör sayım · sayımı sonradan değiştirene göre** (doğrudan; yalnız kör sayım kaydı olan dönemde) | Sayımı kilitleyen ve kilitten sonra değiştiren (`cash_counts`; [KASA-RAPORU.md › Kör sayım](KASA-RAPORU.md#kör-sayım)) | Günün ilk satırı kör sayım (kilit), sonrakiler değişiklik: kişinin kilitlediği sayım, değişiklik sayısı ve günü, değişikliklerin toplamı (yeni − önceki; artı: sayılan arttı) ve en büyüğü. Değişiklik farkı gördükten sonra yapılır; nedeni günün kasa görünümünde. İşaret yok: sayı ve tutar yöneticinin okumasına |
 | **Zayi & ikram · kaydı girene göre** (doğrudan) | Panelde kaydı giren | Kayıt sayısı, zayi ve ikramın malzeme maliyeti, şubedeki payı. Kaydı giren, ikramı yapan olmayabilir |
 | **Çalıştığı günlere göre · kişiye yazılmaz** (dolaylı) | O gün çalışanlar: LafPOS'un gün sonundaki çalışan listesi (personel bağlantısı, `worked_staff`), yoksa Vardiya planı | Kasa farkı, iptal (liste değeri), ikram / ödenmez (menü değeri; Tuzla'da Z'nin ödenmezi) ve indirim: kişinin çalıştığı günlerin günlük ortalaması ve aynı şubede çalışmadığı günlerinkinden sapması (iki tarafta da en az 3 gün). ▲: sapma kötü yönde ve şubenin günden güne oynamasından büyük |
 

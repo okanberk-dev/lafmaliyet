@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { cashByPerson, dayAssociation, MIN_DAYS, staffPersonKey, wasteByPerson, type LossCashReport, type LossDay } from "../src/lib/kayip-onleme";
+import { cashByPerson, dayAssociation, MIN_DAYS, recountByPerson, staffPersonKey, wasteByPerson, type LossCashReport, type LossCount, type LossDay } from "../src/lib/kayip-onleme";
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 const ali = { key: "u:1", name: "Ali" };
@@ -99,6 +99,35 @@ test("çalıştığı günlere göre: çalıştığı ve çalışmadığı günl
   const eceT = rows.find((r) => r.branchId === "tuzla" && r.person.key === "u:2")!;
   assert.equal(eceT.metrics.cashDiff.deviation, null);
   assert.equal(rows.find((r) => r.person.key === "n:veli")?.person.name, "Veli");
+});
+
+test("kör sayım: ilk satır kilit, sonrakiler değişiklik (yeni − önceki), kişi değişikliği yazan; sıra ana göre", () => {
+  const at = (n: number, h: number) => `${day(n)}T${String(h).padStart(2, "0")}:00:00.000Z`;
+  const counts: LossCount[] = [
+    // 1 Kasım: Ali kilitledi, iki kez değiştirdi (+50, sonra -20); satırlar karışık sırada gelir
+    { branchId: "tuzla", date: day(1), amount: 6_430, at: at(1, 18), seq: 3, person: ali },
+    { branchId: "tuzla", date: day(1), amount: 6_400, at: at(1, 17), seq: 1, person: ali },
+    { branchId: "tuzla", date: day(1), amount: 6_450, at: at(1, 17), seq: 2, person: ali },
+    // 2 Kasım: Ece kilitledi, Ali değiştirdi (+100)
+    { branchId: "tuzla", date: day(2), amount: 5_000, at: at(2, 17), seq: 4, person: ece },
+    { branchId: "tuzla", date: day(2), amount: 5_100, at: at(2, 18), seq: 5, person: ali },
+    // 3 Kasım: Ece kilitledi, değişmedi
+    { branchId: "tuzla", date: day(3), amount: 4_000, at: at(3, 17), seq: 6, person: ece },
+    // Kişisi bilinmeyen değişiklik kişiye yazılmaz, gün sayılır
+    { branchId: "tuzla", date: day(4), amount: 3_000, at: at(4, 17), seq: 7, person: ece },
+    { branchId: "tuzla", date: day(4), amount: 2_900, at: at(4, 18), seq: 8, person: null },
+  ];
+  const { rows, branches } = recountByPerson(counts);
+  assert.deepEqual(
+    rows.map((r) => [r.person.name, r.locks, r.changes, r.changeDays, r.net, r.largest]),
+    [
+      ["Ali", 1, 3, 2, 130, 100],
+      ["Ece", 3, 0, 0, 0, 0],
+    ],
+    "önce en çok değiştiren",
+  );
+  assert.deepEqual(branches, [{ branchId: "tuzla", days: 4, changedDays: 3 }]);
+  assert.deepEqual(recountByPerson([]), { rows: [], branches: [] }, "kör sayım yoksa boş");
 });
 
 test("LafPOS'un çalışan kimliği kişinin anahtarına: hesap, Vardiya adı, yoksa kendisi", () => {

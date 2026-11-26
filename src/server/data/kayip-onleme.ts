@@ -4,7 +4,7 @@ import { and, eq, gte, lte } from "drizzle-orm";
 
 import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
-import { lossSummary, staffPersonKey, type LossCashReport, type LossDay, type LossPerson, type LossSummary, type LossWasteEntry } from "@/lib/kayip-onleme";
+import { lossSummary, staffPersonKey, type LossCashReport, type LossCount, type LossDay, type LossPerson, type LossSummary, type LossWasteEntry } from "@/lib/kayip-onleme";
 import { LAFPOS_AUTO_BY } from "@/lib/lafpos/gun-sonu";
 import { branchSwitchDay, isLafposDay, lafposBranchOf } from "@/lib/lafpos/switch";
 import { addDays, shiftMonth } from "@/lib/reminders";
@@ -29,8 +29,10 @@ const nameKey = (name: string) => `x:${name.trim().toLocaleLowerCase("tr-TR")}`;
 
 /**
  * Kişi bazında kayıp önleme özeti (docs/RAPORLAR.md › Kayıp önleme; hesap src/lib/kayip-onleme.ts). Yalnız yönetici;
- * soldaki seçiciden bağımsız, açık fiziksel şubeler. Yalnız okur; LafPOS'un göndermediği alan (iptal eden, ikram eden,
- * indirim yapan, LafPOS'ta kasayı sayan) uydurulmaz: ekran bunu yazar.
+ * soldaki seçiciden bağımsız, açık fiziksel şubeler. Kişi bilgisi panelde olanlardan: kasa raporunun sayanı, kör sayımı
+ * kilitleyen ve değiştiren (cash_counts), zayi / ikram kaydını giren, o gün çalışanlar (LafPOS'un listesi, yoksa Vardiya).
+ * Yalnız okur; LafPOS'un göndermediği alan (iptal eden, ikram eden, indirim yapan, LafPOS'ta kasayı sayan) uydurulmaz:
+ * ekran bunu yazar.
  */
 export async function loadLossSummary(lastMonth: string, span: number, now: Date = new Date()): Promise<LossData | null> {
   await requireAdmin();
@@ -48,7 +50,7 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
   if (!branches.length) return null;
   const lafposBranch = lafposBranchOf(all);
 
-  const [cash, waste, posDays, shifts, staff, users, switchDay, model] = await Promise.all([
+  const [cash, counts, waste, posDays, shifts, staff, users, switchDay, model] = await Promise.all([
     db
       .select({
         branchId: s.cashReports.branchId,
@@ -63,6 +65,19 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
       })
       .from(s.cashReports)
       .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to))),
+    // Kör sayım (Tuzla; docs/KASA-RAPORU.md › Kör sayım): günün ilk satırı kilit, sonrakiler değişiklik
+    db
+      .select({
+        id: s.cashCounts.id,
+        branchId: s.cashCounts.branchId,
+        date: s.cashCounts.date,
+        amount: s.cashCounts.amount,
+        userId: s.cashCounts.userId,
+        userName: s.cashCounts.userName,
+        createdAt: s.cashCounts.createdAt,
+      })
+      .from(s.cashCounts)
+      .where(and(gte(s.cashCounts.date, from), lte(s.cashCounts.date, to))),
     db
       .select({
         branchId: s.wasteEntries.branchId,
@@ -108,6 +123,14 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
     cashDiff: r.cashDiff,
     // Sayan; eski raporda gönderen. LafPOS'un otomatik raporunda ikisi de yok (LafPOS kasayı sayanı göndermiyor)
     person: r.countedBy || r.countedByName ? person(r.countedBy, r.countedByName) : r.submittedByName === LAFPOS_AUTO_BY ? null : person(r.submittedBy, r.submittedByName),
+  }));
+  const countRows: LossCount[] = counts.map((c) => ({
+    branchId: c.branchId,
+    date: c.date,
+    amount: c.amount,
+    at: c.createdAt.toISOString(),
+    seq: c.id,
+    person: person(c.userId, c.userName || null),
   }));
   const wasteEntries: LossWasteEntry[] = waste.map((w) => ({
     branchId: w.branchId,
@@ -169,6 +192,7 @@ export async function loadLossSummary(lastMonth: string, span: number, now: Date
     branches: branches.map((b) => ({ id: b.id, name: b.name, lafpos: b.id === lafposBranch && switchDay !== null })),
     summary: lossSummary({
       cash: cashReports.filter((r) => ids.has(r.branchId)),
+      counts: countRows.filter((c) => ids.has(c.branchId)),
       waste: wasteEntries.filter((w) => ids.has(w.branchId)),
       days,
       names,

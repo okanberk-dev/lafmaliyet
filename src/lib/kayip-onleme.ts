@@ -11,6 +11,9 @@
 //    günlerin günlük ortalaması, aynı şubede çalışmadığı günlerinkiyle karşılaştırılır. Kişiye yazılmaz, tek başına kanıt
 //    değildir: aynı gün çalışanların hepsi aynı sapmayı alır. LafPOS'un listesi olmayan günde Vardiya planı.
 //
+// Kör sayım (Tuzla; docs/KASA-RAPORU.md › Kör sayım) açık şubede bir de sayımı kilitleyen ve kilitten sonra değiştiren
+// (doğrudan): değişiklik farkı gördükten sonra yapılır, neden zorunludur. Kişi değişikliği yazandır.
+//
 // Sapma yalnız iki tarafta da en az MIN_DAYS gün varken hesaplanır; "dikkat" işareti sapma kötü yönde ve şubenin günlük
 // değerlerinin standart sapmasından büyükse.
 
@@ -132,8 +135,41 @@ export interface DayBranchSummary {
   missingMetrics: LossMetric[];
 }
 
+/** Kör sayımın bir satırı (cash_counts; günün ilk satırı kör sayım, sonrakiler değişiklik) */
+export interface LossCount {
+  branchId: string;
+  date: string;
+  amount: number;
+  /** Satırın sırası (kaydın anı, ISO; eşitse kimlik) */
+  at: string;
+  seq: number;
+  /** Sayımı kilitleyen ya da değiştiren */
+  person: LossPerson | null;
+}
+
+export interface RecountPersonRow {
+  branchId: string;
+  person: LossPerson;
+  /** Kilitlediği kör sayım */
+  locks: number;
+  /** Kilitten sonra yazdığı değişiklik ve değiştirdiği gün */
+  changes: number;
+  changeDays: number;
+  /** Değişikliklerin toplamı (yeni − önceki sayım; artı: sayılan arttı, eksik kapandı) ve en büyüğü (mutlak değerce) */
+  net: number;
+  largest: number;
+}
+
+export interface RecountBranchSummary {
+  branchId: string;
+  /** Kör sayımı olan gün ve bunlardan sayımı kilitten sonra değişen */
+  days: number;
+  changedDays: number;
+}
+
 export interface LossSummary {
   cash: { rows: CashPersonRow[]; branches: CashBranchSummary[] };
+  recount: { rows: RecountPersonRow[]; branches: RecountBranchSummary[] };
   waste: { rows: WastePersonRow[]; unknown: { entries: number; cost: number } };
   days: { rows: DayPersonRow[]; branches: DayBranchSummary[] };
 }
@@ -189,6 +225,52 @@ export function cashByPerson(reports: readonly LossCashReport[]): LossSummary["c
   // Önce en çok eksik çıkan (ortalaması en eksi)
   rows.sort((a, b) => a.branchId.localeCompare(b.branchId) || a.mean - b.mean || byName(a, b));
   return { rows, branches: summaries };
+}
+
+/**
+ * Kör sayım, kilitleyene ve kilitten sonra değiştirene göre: günün satırları sırayla, ilki kör sayım (kilit), her sonraki
+ * bir değişiklik (yeni − önceki). Değişikliğin kişisi onu yazandır (kilitleyen olmayabilir). Kişisi bilinmeyen satır
+ * kişiye yazılmaz, günün sayısına girer
+ */
+export function recountByPerson(counts: readonly LossCount[]): LossSummary["recount"] {
+  const byDay = new Map<string, LossCount[]>();
+  for (const c of counts) {
+    const k = `${c.branchId}|${c.date}`;
+    const list = byDay.get(k);
+    if (list) list.push(c);
+    else byDay.set(k, [c]);
+  }
+  const people = new Map<string, RecountPersonRow & { dates: Set<string> }>();
+  const branches = new Map<string, RecountBranchSummary>();
+  const row = (branchId: string, person: LossPerson) => {
+    const k = `${branchId}|${person.key}`;
+    const cur = people.get(k) ?? { branchId, person, locks: 0, changes: 0, changeDays: 0, net: 0, largest: 0, dates: new Set<string>() };
+    people.set(k, cur);
+    return cur;
+  };
+  for (const list of byDay.values()) {
+    const sorted = [...list].sort((a, b) => a.at.localeCompare(b.at) || a.seq - b.seq);
+    const { branchId, date } = sorted[0];
+    const sum = branches.get(branchId) ?? { branchId, days: 0, changedDays: 0 };
+    sum.days++;
+    if (sorted.length > 1) sum.changedDays++;
+    branches.set(branchId, sum);
+    if (sorted[0].person) row(branchId, sorted[0].person).locks++;
+    for (let i = 1; i < sorted.length; i++) {
+      const p = sorted[i].person;
+      if (!p) continue;
+      const delta = sorted[i].amount - sorted[i - 1].amount;
+      const r = row(branchId, p);
+      r.changes++;
+      r.dates.add(date);
+      r.net += delta;
+      if (Math.abs(delta) > Math.abs(r.largest)) r.largest = delta;
+    }
+  }
+  const rows = [...people.values()].map(({ dates, ...r }) => ({ ...r, changeDays: dates.size, net: r2(r.net), largest: r2(r.largest) }));
+  // Önce en çok değiştiren
+  rows.sort((a, b) => a.branchId.localeCompare(b.branchId) || b.changes - a.changes || byName(a, b));
+  return { rows, branches: [...branches.values()].sort((a, b) => a.branchId.localeCompare(b.branchId)) };
 }
 
 /** Panelde girilmiş zayi ve ikram, kaydedene göre */
@@ -260,8 +342,19 @@ export function dayAssociation(days: readonly LossDay[], names: ReadonlyMap<stri
   return { rows, branches: summaries };
 }
 
-export function lossSummary(input: { cash: readonly LossCashReport[]; waste: readonly LossWasteEntry[]; days: readonly LossDay[]; names: ReadonlyMap<string, string> }): LossSummary {
-  return { cash: cashByPerson(input.cash), waste: wasteByPerson(input.waste), days: dayAssociation(input.days, input.names) };
+export function lossSummary(input: {
+  cash: readonly LossCashReport[];
+  counts?: readonly LossCount[];
+  waste: readonly LossWasteEntry[];
+  days: readonly LossDay[];
+  names: ReadonlyMap<string, string>;
+}): LossSummary {
+  return {
+    cash: cashByPerson(input.cash),
+    recount: recountByPerson(input.counts ?? []),
+    waste: wasteByPerson(input.waste),
+    days: dayAssociation(input.days, input.names),
+  };
 }
 
 /** LafPOS'un çalışan kimliği ("s:<personel>") → kişinin anahtarı: bağlı hesap "u:<id>", Vardiya adı "n:…", yoksa kendisi */

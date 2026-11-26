@@ -28,7 +28,7 @@ const PATH = "/panel/raporlar/kayip";
 const TITLE = "Kayıp önleme";
 const DESCRIPTION = "Kasa farkı, iptal, ikram ve indirimin kişiye göre sapması.";
 const MORE =
-  "Kasa farkı kasayı sayana göre (kasa raporunun Kasayı sayan'ı), zayi ve ikram kaydı girene göre: ikisi doğrudan kişinindir. İptal, ikram ve indirimi kimin yaptığını LafPOS göndermiyor; bunlar kişinin çalıştığı günlerin günlük ortalamasıyla, aynı şubede çalışmadığı günlerinki karşılaştırılarak gösterilir. Kişiye yazılmaz, tek başına kanıt değildir: aynı gün çalışanların hepsi aynı sapmayı alır.";
+  "Kasa farkı kasayı sayana göre (kasa raporunun Kasayı sayan'ı), kör sayımın sonradan değişmesi değiştirene göre, zayi ve ikram kaydı girene göre: bunlar doğrudan kişinindir. İptal, ikram ve indirimi kimin yaptığını LafPOS göndermiyor; bunlar kişinin çalıştığı günlerin günlük ortalamasıyla, aynı şubede çalışmadığı günlerinki karşılaştırılarak gösterilir. Kişiye yazılmaz, tek başına kanıt değildir: aynı gün çalışanların hepsi aynı sapmayı alır.";
 
 /** LafPOS'tan gelmeyen alanlar (ekranda ve raporda açıkça) */
 const NOT_FROM_LAFPOS = [
@@ -94,10 +94,11 @@ async function LossContent({ searchParams }: { searchParams: PageProps<"/panel/r
       <CompanyWideNotice screen="raporlar" className="mb-4" />
       <Notice tone="neutral" size="sm" className="mb-6" title="LafPOS'tan gelmeyenler: kişiye yazılamaz">
         LafPOS şunları göndermiyor: {NOT_FROM_LAFPOS.join("; ")}. ModPOS (föy ve kasa raporu) iptal göndermez. Bu yüzden iptal, ikram ve indirim aşağıda kişinin
-        çalıştığı günlerle karşılaştırılır; kasa farkı ve panelde girilen zayi / ikram doğrudan kişinindir.
+        çalıştığı günlerle karşılaştırılır; kasa farkı, kör sayımın değişmesi ve panelde girilen zayi / ikram doğrudan kişinindir.
       </Notice>
       <div className="space-y-6">
         <CashCard data={data} nameOf={nameOf} />
+        {data.summary.recount.branches.length ? <RecountCard data={data} nameOf={nameOf} /> : null}
         <WasteCard data={data} nameOf={nameOf} />
         <DaysCard data={data} nameOf={nameOf} />
       </div>
@@ -171,6 +172,56 @@ function CashCard({ data, nameOf }: { data: LossData; nameOf: (id: string) => st
           . Bu raporlar aşağıda çalıştığı günlere göre bölümünde sayılır.
         </p>
       ) : null}
+    </Card>
+  );
+}
+
+function RecountCard({ data, nameOf }: { data: LossData; nameOf: (id: string) => string }) {
+  const { rows, branches } = data.summary.recount;
+  return (
+    <Card>
+      <CardHeader
+        title="Kör sayım · sayımı sonradan değiştirene göre"
+        description="Kör sayım açık şubede personel çekmecedeki nakdi önce sayıp kilitler, farkı sonra görür. Kilitten sonraki her değişiklik nedeniyle yazılır; kişi değişikliği yazandır. Değişiklik: yeni sayım − önceki (artı: sayılan arttı, eksik kapandı)."
+      />
+      {rows.length ? (
+        <TableWrap>
+          <Table>
+            <THead>
+              <tr>
+                <TH sticky>Kişi</TH>
+                <TH>Şube</TH>
+                <TH numeric>Kör sayım</TH>
+                <TH numeric>Değişiklik</TH>
+                <TH numeric>Değiştirdiği gün</TH>
+                <TH numeric>Toplam değişiklik</TH>
+                <TH numeric>En büyük</TH>
+              </tr>
+            </THead>
+            <tbody>
+              {rows.map((r) => (
+                <TR key={`${r.branchId}|${r.person.key}`}>
+                  <TD sticky className="whitespace-nowrap">
+                    {r.person.name}
+                  </TD>
+                  <TD className="text-ink-mute">{nameOf(r.branchId)}</TD>
+                  <TD numeric>{num(r.locks)}</TD>
+                  <TD numeric className={cn(r.changes > 0 && "font-semibold")}>
+                    {num(r.changes)}
+                  </TD>
+                  <TD numeric>{num(r.changeDays)}</TD>
+                  <TD numeric>{r.changes ? signed(r.net) : "—"}</TD>
+                  <TD numeric>{r.changes ? signed(r.largest) : "—"}</TD>
+                </TR>
+              ))}
+            </tbody>
+          </Table>
+        </TableWrap>
+      ) : null}
+      <p className="px-5 pb-4 text-xs text-pretty text-ink-mute">
+        {branches.map((b) => `${nameOf(b.branchId)}: kör sayımlı ${num(b.days)} gün, sayımı kilitten sonra değişen ${num(b.changedDays)}`).join(" · ")}. Nedenler
+        günün kasa görünümünde.
+      </p>
     </Card>
   );
 }
