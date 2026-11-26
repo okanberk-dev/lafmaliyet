@@ -120,8 +120,10 @@ yanlış olabilir, bir dokunuş bekler.
   hammaddenin birimine göre sorulur: bağlantı başka birimli hammaddeye geçerse eski okuma gösterilmez. Fatura silinince
   okuması da silinir; `db:reset` faturalarla birlikte siler.
 - **Kapılar** (fotoğraftan okumayla aynı, `src/server/ai/claude.ts`): anahtar (`ANTHROPIC_API_KEY`), **Ayarlar ›
-  Fotoğraftan okuma** anahtarı (kapalıyken fatura da okunmaz) ve günlük sınır (varsayılan 40, fotoğraflarla ortak;
-  Yeniden oku da sayılır; kendiliğinden okuma yarısında durur, `autoReadAllowed`). Okuma yalnız yöneticinin; personel
+  Fotoğraftan okuma** anahtarı (kapalıyken fatura da okunmaz) ve günlük sınır (varsayılan 40). **Faturaların kendi
+  havuzu vardır** (25 Kasım 2026): sınır Ayarlar'daki sayıdır ama fotoğraflardan ayrı sayılır; gündüz okunan faturalar
+  akşamki Z ve gün sonu fotoğrafının okumasını kesmez (eskiden ortaktı, sınır dolunca Z fotoğrafı koda düşüyordu).
+  Yeniden oku da sayılır; kendiliğinden okuma havuzun yarısında durur (`autoReadAllowed`). Okuma yalnız yöneticinin; personel
   bu ekranları görmez.
 - **İstek:** `claude-haiku-5-5`, efor `medium` (modelin varsayılanı, açıkça yazılır), JSON şemalı çıktı
   (`output_config.format`), PDF `document` bloğu (base64). Haiku 5.5'te sunucu tarafı yedek model yoktur: `fallbacks`
@@ -196,7 +198,7 @@ Hepsi aynı kapılardan geçer (`src/server/ai/claude.ts`: anahtar, **Ayarlar �
 | İş | Model | Efor | Yedek model | Günlük sınır |
 |----|-------|------|-------------|--------------|
 | Fotoğraftan okuma (Z, POS, fiş, yazarkasa Z'si; [FOTOGRAF.md](FOTOGRAF.md)) | `claude-opus-5-5` | low | `fallbacks: "default"` | okuma sınırı (varsayılan 40) |
-| Faturayı oku (bu belge) | `claude-haiku-5-5` | medium | yok (Haiku 5.5'te sunucu tarafı yedek yok) | okuma sınırı (fotoğraflarla ortak) |
+| Faturayı oku (bu belge) | `claude-haiku-5-5` | medium | yok (Haiku 5.5'te sunucu tarafı yedek yok) | fatura okuma sınırı (kendi havuzu) |
 | Vardiyayı yazarak doldurma ([VARDIYA.md](VARDIYA.md)) | `claude-opus-5-5` | low | `fallbacks: "default"` | kendi sınırı (40) |
 | Ürün → hammadde AI önerisi ([PARASUT.md](PARASUT.md) 5e) | `claude-sonnet-5-5` | medium | `fallbacks: "default"` (Claude Sonnet 5) | kendi sınırı (40 parti, 10 ürünlük) |
 

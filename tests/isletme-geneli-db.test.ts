@@ -85,9 +85,11 @@ describe("işletme geneli payı: veritabanında", { skip: !SERVER_URL && "ISLETM
       { date: "2026-10-11", categoryId: cat.id, amount: 4_000, branchId: null },
       { date: "2026-10-12", categoryId: cat.id, amount: 5_000, branchId: "tuzla" },
     ]);
+    // Faturalar bilinçli "İşletme geneli" (25 Kasım 2026'dan beri şubesi boş fatura "şubesi seçilmemiş"tir, tek şubede
+    // görünmez; docs/SUBE.md › Faturanın şubesi)
     await db.insert(s.invoices).values([
-      { date: "2026-10-15", supplier: "Pluxee", category: "Komisyon", amount: 1_000, payable: 1_200, vat: 200 },
-      { date: "2026-10-16", supplier: "Tabelacı", category: "Reklam & Tabela", amount: 6_000, payable: 7_200, vat: 1_200 },
+      { date: "2026-10-15", supplier: "Pluxee", category: "Komisyon", amount: 1_000, payable: 1_200, vat: 200, companyWide: true },
+      { date: "2026-10-16", supplier: "Tabelacı", category: "Reklam & Tabela", amount: 6_000, payable: 7_200, vat: 1_200, companyWide: true },
     ]);
     await db.insert(s.pnlEntries).values([
       { month: "2026-10", rowKey: "manual:su", amount: 2_000 },

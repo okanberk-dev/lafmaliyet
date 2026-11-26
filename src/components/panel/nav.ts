@@ -1,5 +1,6 @@
 import {
   AlarmClock,
+  ArrowLeftRight,
   Banknote,
   BarChart3,
   BellRing,
@@ -18,6 +19,7 @@ import {
   Gift,
   Globe,
   Grid3x3,
+  HandCoins,
   HardDriveDownload,
   HelpCircle,
   History,
@@ -86,6 +88,15 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         keywords: "onay bekleyen reçete değişikliği personel önerisi istek kasa düzeltme geç rapor zayi kapalı gün",
       },
       { href: "/panel/kasa", label: "Kasa raporu", icon: Banknote, roles: ["admin", "staff"], keywords: "kasa z raporu gün sonu modpos nakit sayım eksik fazla kapanış whatsapp" },
+      // Kasa raporu'nun alt ekranı, yalnız yönetici (kenar çubuğunda ayrı öğesi yok; Kasa'nın ay görünümünden ve ⌘K'dan;
+      // docs/KASA-RAPORU.md › Teslim defteri)
+      {
+        href: "/panel/kasa/teslim",
+        label: "Teslim defteri",
+        icon: HandCoins,
+        roles: ["admin"],
+        keywords: "teslim defteri kime teslim edildi patron banka yatırıldı nakit teslim alan kasadan çıkan lafpos alıcı",
+      },
     ],
   },
   {
@@ -236,6 +247,14 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         icon: ChartNoAxesColumn,
         roles: ["admin"],
         keywords: "nakit akış tahmin bakiye kalan para haftalık plan sıkışık kdv devreden kdv hesabı devreden kdv param yeter mi",
+      },
+      // Banka ve tedarikçi ekstresi ile panel kayıtları, kart satışı ile bankaya gelen POS hakedişi (docs/MUTABAKAT.md)
+      {
+        href: "/panel/mutabakat",
+        label: "Mutabakat",
+        icon: ArrowLeftRight,
+        roles: ["admin"],
+        keywords: "mutabakat banka ekstresi hesap hareketleri cari ekstre tedarikçi ekstresi eşleştirme pos hakediş bloke valör kart satışı bankaya gelen excel csv",
       },
     ],
   },
@@ -439,6 +458,7 @@ export const NAV_TREE: NavNode[] = [
       { id: "gelir-gider", label: "Gelir-gider", href: "/panel/gelir-gider", roles: ["admin"] },
       { id: "hatirlaticilar", label: "Ödemeler", href: "/panel/hatirlaticilar", roles: ["admin"] },
       { id: "nakit", label: "Nakit planı", href: "/panel/hatirlaticilar/nakit", roles: ["admin"] },
+      { id: "mutabakat", label: "Mutabakat", href: "/panel/mutabakat", roles: ["admin"] },
     ],
   },
   {
@@ -761,6 +781,7 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/onaylar": "Onaylar",
   "/panel/kontrol/gecmis": "Kontrol geçmişi",
   "/panel/kasa/fiyatlar": "Kasadaki fiyatlar",
+  "/panel/kasa/teslim": "Teslim defteri",
   "/panel/kontrol/duzenle": "Listeleri düzenle",
   "/panel/karaoke/doluluk": "Doluluk",
   "/panel/komisyonlar": "Komisyonlar",

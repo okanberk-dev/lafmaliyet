@@ -35,9 +35,10 @@ export const STAFF_PATHS = [
 /**
  * Personel yolunun altında yalnız yöneticinin ekranı: proxy personeli buraya sokmaz, sayfa ve eylemleri ayrıca
  * requireAdmin ile denetler. canOpen önce buna bakar. Karaoke doluluğu tutar gösterir; kontrol listelerini düzenlemek
- * yöneticinin işidir (Geçmiş personele de açık).
+ * yöneticinin işidir (Geçmiş personele de açık); Teslim defteri bütün teslimleri ve alanlarını gösterir (Kasa raporu
+ * personele açık, defteri değil).
  */
-export const ADMIN_ONLY_PATHS = ["/panel/karaoke/doluluk", "/panel/kontrol/duzenle"] as const;
+export const ADMIN_ONLY_PATHS = ["/panel/karaoke/doluluk", "/panel/kontrol/duzenle", "/panel/kasa/teslim"] as const;
 
 /**
  * Personelin girişte açılan ve izinsiz bir adrese gidince döndüğü ekran: Bugün (günün işleri; ay sonu sayımı da orada
@@ -117,6 +118,7 @@ export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; staff: 
   { label: "Vergi, KDV, SGK: tahmini vergi takvimi, vergi kârı, muhtasar, SGK, damga, geçici ve kurumlar vergisine katkı", admin: true, staff: false },
   { label: "Sabit gider, maaş ve personel", admin: true, staff: false },
   { label: "Ödemeler, hatırlatıcılar, e-posta bildirimleri", admin: true, staff: false },
+  { label: "Mutabakat: banka ve tedarikçi ekstresi, POS hakedişi", admin: true, staff: false },
   { label: "Kontrol listelerini düzenleme, 7 günden eski geçmiş, karaoke doluluğu, vardiya planını yazma", admin: true, staff: false },
   { label: "Paraşüt, ayarlar, yedek, kullanıcı yönetimi, Claude bağlantısı", admin: true, staff: false },
 ];

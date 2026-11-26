@@ -142,6 +142,8 @@ export const INVOICE_CATEGORIES = [
   "Komisyon",
   "Karaoke box",
   "Alp Koç",
+  // Temizlik ve sarf malzemesi (25 Kasım 2026): "Diğer" yalnız sınıflanmamış faturaların bekleme kutusu
+  "Temizlik & Sarf",
   "Diğer",
 ];
 

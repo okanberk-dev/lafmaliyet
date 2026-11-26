@@ -6,7 +6,7 @@ import { addDays, longDateTR } from "@/lib/reminders";
 
 import { pavoSectionHtml, pavoSectionText, pavoState } from "./bank-pos";
 import type { BankPos, PosDayZ, PosIkram, PosOffDevice, PosOkc, PosPayment } from "./day";
-import { lafposPhotoDone, lafposPhotoNeed, photoCheckText, photoSourceText, photoUnsureText, type LafposPhotoCheck, type LafposPhotoNeed } from "./foto";
+import { lafposPhotoDone, lafposPhotoNeed, photoCheckText, photoSourceText, photoUnsureText, type LafposPhotoCheck, type LafposPhotoNeed, type LafposPhotoReport } from "./foto";
 import type { LafposDayDetail } from "./gun-ayrinti";
 
 /**
@@ -90,6 +90,26 @@ export const GAP_TEXT = {
 export function bankFailedText(b: Pick<BankPos, "errorCode" | "message">): string {
   const why = [b.errorCode ? `hata ${b.errorCode}` : null, b.message].filter(Boolean).join(": ");
   return `Banka POS: Pavo gün sonu alınamadı${why ? ` (${why})` : ""}; LafPOS'ta Yönetim › Yazarkasa POS › Cihazda gün sonu al`;
+}
+
+/**
+ * Rapor yokken (LafPOS'ta sayım yok, fotoğraf bekliyor) ya da rapor yazılmadan önce fotoğrafın karşılaştırılacağı
+ * alanlar: otomatik raporun yazacağı değerler (Banka POS = Pavo'nun gün sonları, yazarkasa alanları cihaz belgelerinden;
+ * okcAuto ile aynı eşleme). `lafposZNo` LafPOS'un yazarkasa Z no'su (yoksa null)
+ */
+export function deviceCompareReport(d: { bankPos: BankPos | null; okc: PosOkc | null; lafposZNo: string | null }): LafposPhotoReport {
+  const okc = d.okc;
+  return {
+    bankPos: bankPosAuto(d.bankPos).value,
+    okcZNo: d.lafposZNo,
+    okcTotal: okc?.total ?? null,
+    okcCash: okc?.cash ?? null,
+    okcCard: okc?.card ?? null,
+    okcMealCard: okc?.mealCard ?? null,
+    okcOther: okc?.other ?? null,
+    okcVat: okc?.vat?.length ? okc.vat : null,
+    lafposZNo: d.lafposZNo,
+  };
 }
 
 /**
@@ -396,7 +416,8 @@ export interface DayEndMail {
   /** Gün sonu tam: yazarkasanın cihaz belgeleri (gövdenin okc'si; yoksa null) */
   okc?: PosOkc | null;
   /** Gün sonu tam: istenen gün sonu fotoğrafı, eklenen sayı ve fotoğraf ↔ LafPOS karşılaştırması (verilmezse bölüm yok) */
-  photo?: { need: LafposPhotoNeed; attached: number; check: LafposPhotoCheck | null } | null;
+  /** `reads`: fotoğraf başına okunan satırlar (okcReadRows); yoksa bölüm yok */
+  photo?: { need: LafposPhotoNeed; attached: number; check: LafposPhotoCheck | null; reads?: readonly (readonly [string, string])[][] } | null;
   /**
    * Faz 2 ayrıntısı (src/lib/lafpos/gun-ayrinti.ts): yazarkasadan geçmeyen, ödeme iptalleri, iptal edilen kalemler,
    * yazarkasa Z no, KDV dökümü, düzeltmenin nedeni. Eski LafPOS'un gününde bölümleri boş
@@ -507,12 +528,20 @@ export function dayEndSections(m: DayEndMail): { title: string; rows: [string, s
     ...(m.bankPos !== undefined || m.okc !== undefined || m.photo ? [{ title: "Cihazlar ve fotoğraf", rows: deviceRows(m) }] : []),
     // Fotoğraf ↔ LafPOS satır satır (yalnız yönetici e-postası; sahibin isteği, 24 Kasım 2026: "farklı olunca belirsin")
     ...(m.photo?.check && (m.photo.check.rows.length || m.photo.check.state === "belirsiz") ? [{ title: PHOTO_TITLE, rows: photoRows(m.photo.check) }] : []),
+    // Fotoğrafta okunan rakamlar (karşılaştırmadan bağımsız; sahibin isteği, 25 Kasım 2026)
+    ...photoReadSections(m.photo?.reads),
     // Faz 2: yazarkasadan geçmeyen, ödeme iptalleri, iptal edilen kalemler, yazarkasa Z no ve KDV (gönderim sırası yazılmaz)
     ...(m.detail?.sections.filter((x) => x.title !== "Gönderim") ?? []),
   ];
 }
 
 const PHOTO_TITLE = "Fotoğraf ↔ LafPOS";
+
+/** "Fotoğrafta okunan" bölümleri: fotoğraf başına bir bölüm, birden çok fotoğrafta sırasıyla */
+function photoReadSections(reads: readonly (readonly [string, string])[][] | undefined): { title: string; rows: [string, string][] }[] {
+  const list = (reads ?? []).filter((r) => r.length);
+  return list.map((rows, i) => ({ title: list.length > 1 ? `Fotoğrafta okunan (${i + 1}. fotoğraf)` : "Fotoğrafta okunan", rows: rows.map(([a, b]) => [a, b] as [string, string]) }));
+}
 
 /**
  * Fotoğraf ↔ LafPOS satırları (gün sonu ve fotoğraf e-postası): okuyan (yapay zekâ / kod), "okunamadı — yönetici baksın"
@@ -525,12 +554,24 @@ export function photoRows(check: LafposPhotoCheck): [string, string][] {
   return rows;
 }
 
+/** Z raporu e-postası bu süreden eski fotoğrafa gitmez (yükseltmeden önce eklenmiş eski günlere toplu e-posta yok) */
+export const PHOTO_MAIL_FRESH_MS = 48 * 3600_000;
+
 /**
- * Fotoğraf e-postası gerekir mi: fotoğraf LafPOS'tan farklı ya da kodla okunup "yönetici baksın". Uyumlu fotoğraf e-posta
- * göndermez (gün sonu e-postasında satırları yine görünür)
+ * Z raporu (gün sonu fotoğrafı) e-postası gerekir mi. Sahibin istekleri: 24 Kasım 2026 "farklı olunca belirsin"; 25 Kasım
+ * 2026 "z raporu yükleyince mail gelmedi" ve "z tutsa da tutuyor diye yine rapor şeklinde gönderilsin". Fark ve "yönetici
+ * baksın" her zaman; öteki durumlar (tutuyor, okunamadı, okunmadı) fotoğraf tazeyse (`fresh`: son 48 saatte eklendi,
+ * photoMailFresh). Gün sonu e-postası fotoğrafı içerse de Z raporu ayrıca gider. Karşılaştırma yoksa e-posta yok
  */
-export function photoMailNeeded(check: Pick<LafposPhotoCheck, "state"> | null | undefined): boolean {
-  return check?.state === "fark" || check?.state === "belirsiz";
+export function photoMailNeeded(check: Pick<LafposPhotoCheck, "state"> | null | undefined, o: { fresh?: boolean } = {}): boolean {
+  if (!check) return false;
+  return check.state === "fark" || check.state === "belirsiz" || o.fresh === true;
+}
+
+/** En yeni fotoğraf son 48 saatte mi eklendi (photoMailNeeded'in `fresh`'i) */
+export function photoMailFresh(newestPhotoAt: Date | null, now: Date): boolean {
+  if (!newestPhotoAt) return false;
+  return now.getTime() - newestPhotoAt.getTime() <= PHOTO_MAIL_FRESH_MS;
 }
 
 /**
@@ -538,7 +579,24 @@ export function photoMailNeeded(check: Pick<LafposPhotoCheck, "state"> | null | 
  * girmez (bilgi satırı eklenince gönderilmiş fark e-postası yeniden gitmez)
  */
 export function photoCheckHash(check: LafposPhotoCheck): string {
-  const text = JSON.stringify([check.state, check.source ?? "ai", check.model ?? null, check.rows.filter((r) => !r.info).map((r) => [r.label, r.photo, r.lafpos, r.ok])]);
+  // Fotoğraftan okunup raporun boş Z no'suna yazılan numara ("gönderilmedi; raporda 0011") yeni bilgi değildir: özet
+  // değişmez (yoksa aynı fotoğraf için ikinci e-posta giderdi). İkinci fotoğraf da bildirilir: fotoğraf sayısı 1'den
+  // büyükse özete girer (tek fotoğraflı eski özetler aynı kalır, yükseltmeden sonra yeniden gönderim yok)
+  const lafposText = (r: LafposPhotoCheck["rows"][number]) => (r.label === "Yazarkasa Z no" ? r.lafpos.replace(/; raporda .*$/, "") : r.lafpos);
+  const rows = check.rows.filter((r) => !r.info).map((r) => [r.label, r.photo, lafposText(r), r.ok]);
+  const text = JSON.stringify(check.photos > 1 ? [check.state, check.source ?? "ai", check.model ?? null, rows, check.photos] : [check.state, check.source ?? "ai", check.model ?? null, rows]);
+  return fnv1a(text);
+}
+
+/**
+ * 25 Kasım 2026'dan önceki özet formülü (Z no'nun "raporda" eki ve fotoğraf sayısı ayrımı yok): yükseltmeden önce gitmiş
+ * fotoğraf e-postasının kaydı bu özetle durur; sendPhotoEmail ikisine de bakar (aynı e-posta ikinci kez gitmez)
+ */
+export function photoCheckHashLegacy(check: LafposPhotoCheck): string {
+  return fnv1a(JSON.stringify([check.state, check.source ?? "ai", check.model ?? null, check.rows.filter((r) => !r.info).map((r) => [r.label, r.photo, r.lafpos, r.ok])]));
+}
+
+function fnv1a(text: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
     h ^= text.charCodeAt(i);
@@ -547,27 +605,71 @@ export function photoCheckHash(check: LafposPhotoCheck): string {
   return h.toString(16).padStart(8, "0");
 }
 
+/** Fotoğraf e-postasının konu sonu ve üst satırı, karşılaştırmanın durumuna göre */
+const PHOTO_MAIL_STATE: Record<LafposPhotoCheck["state"], { subject: string; headline: string; tone: Tone }> = {
+  uyumlu: { subject: "Z raporu tutuyor", headline: "Z raporu tutuyor: fotoğraftaki rakamlar LafPOS'la aynı", tone: "good" },
+  fark: { subject: "Z raporu LafPOS'tan FARKLI", headline: "Z raporu tutmuyor: fotoğraf LafPOS'un rakamlarından farklı okundu", tone: "bad" },
+  okunamadi: { subject: "Z raporu okunamadı", headline: "Z raporu okunamadı ya da yanlış belge; personelden yeniden çekmesi istendi", tone: "warn" },
+  okunmadi: { subject: "Z raporu alındı · okunmadı", headline: "Z raporunun fotoğrafı alındı ama henüz okunmadı; fotoğrafa bakın", tone: "warn" },
+  belirsiz: { subject: "Z raporu okunamadı, yönetici baksın", headline: "", tone: "warn" },
+};
+
+
+/** Fotoğrafta okunanın başlığı (e-postanın ikinci bölümü) */
+const READ_TITLE = "Fotoğrafta okunan";
+
 /**
- * Fotoğraf e-postası (yalnız yöneticinin alıcıları): gün sonu e-postası gittikten sonra eklenen fotoğraf LafPOS'tan farklı
- * okunduysa ya da kodla okunup güvenle seçilmediyse, karşılaştırma satır satır. Personele hiçbir zaman gitmez
+ * Fotoğraf e-postası (yalnız yöneticinin alıcıları): gün sonu e-postası gittikten sonra eklenen her gün sonu fotoğrafı
+ * (photoMailNeeded). Üstte durum (aynı / FARKLI / okunamadı / yönetici baksın), altında karşılaştırma satır satır,
+ * fotoğrafta okunan rakamlar (`reads`, okcReadRows) ve ekleyen; fotoğrafın kendisi e-postaya eklenir (sunucu,
+ * sendPhotoEmail). Personele hiçbir zaman gitmez
  */
-export function renderPhotoMail(m: { branchName: string; date: string; check: LafposPhotoCheck; link: string }): { subject: string; html: string; text: string } {
-  const subject = `${dayEndSubjectHead(m.branchName, m.date)} · gün sonu fotoğrafı ${m.check.state === "fark" ? "LafPOS'tan FARKLI" : "okunamadı, yönetici baksın"}`;
+export function renderPhotoMail(m: {
+  branchName: string;
+  date: string;
+  check: LafposPhotoCheck;
+  link: string;
+  /** Fotoğrafta okunanlar (fotoğraf başına satırlar); yoksa bölüm yok */
+  reads?: readonly (readonly [string, string])[][];
+  /** Ekleyen(ler)in adı */
+  by?: string | null;
+  /** E-postaya eklenen fotoğraf sayısı */
+  attachments?: number;
+}): { subject: string; html: string; text: string } {
+  const st = PHOTO_MAIL_STATE[m.check.state];
+  const subject = `${dayEndSubjectHead(m.branchName, m.date)} · ${st.subject}`;
   const rows = photoRows(m.check);
-  const headline = m.check.state === "fark" ? "Fotoğraf LafPOS'un rakamlarından farklı okundu" : `${photoUnsureText(m.check)}: fotoğrafa bakın`;
-  const fark = m.check.state === "fark";
+  const headline = m.check.state === "belirsiz" ? `${photoUnsureText(m.check)}: fotoğrafa bakın` : st.headline;
+  const reads = (m.reads ?? []).filter((r) => r.length);
+  const readSections = reads.map((r, i) => ({ title: reads.length > 1 ? `${READ_TITLE} (${i + 1}. fotoğraf)` : READ_TITLE, rows: r }));
+  const meta = [
+    m.by ? `Ekleyen: ${m.by}` : null,
+    m.attachments ? `Fotoğraf ${m.attachments > 1 ? `${m.attachments} ek olarak` : "ek olarak"} bu e-postada.` : null,
+  ].filter((x): x is string => Boolean(x));
   const html = emailShell({
     subject,
     preheader: headline,
     brandSubHtml: `Gün sonu fotoğrafı · ${esc(m.branchName)}`,
     dateLabel: `${longDateTR(m.date)} ${m.date.slice(0, 4)}`,
-    cardHtml: `${heading("Gün sonu fotoğrafı", { eyebrow: "Gün sonu e-postası daha önce gitti" })}
-${callout(fark ? "bad" : "warn", [headline], { top: 18 })}
+    cardHtml: `${heading("Z raporu", { eyebrow: "Gün sonu fotoğrafı" })}
+${callout(st.tone, [headline, ...meta], { top: 18 })}
 ${section(PHOTO_TITLE, rows.map(mailRow), { top: 28 })}
+${readSections.map((x) => section(x.title, x.rows.map(([l, v]) => mailRow([l, v])), { top: 28 })).join("\n")}
 ${button(m.link, "Panelde aç")}`,
     footer: "Bu e-posta kasa raporu alıcılarına gönderildi.",
   });
-  const text = [subject, "", headline, "", PHOTO_TITLE, ...rows.map(([l, v]) => `${l}: ${v}`), "", `Panelde aç: ${m.link}`].join("\n");
+  const text = [
+    subject,
+    "",
+    headline,
+    ...meta,
+    "",
+    PHOTO_TITLE,
+    ...rows.map(([l, v]) => `${l}: ${v}`),
+    ...readSections.flatMap((x) => ["", x.title, ...x.rows.map(([l, v]) => `${l}: ${v}`)]),
+    "",
+    `Panelde aç: ${m.link}`,
+  ].join("\n");
   return { subject, html, text };
 }
 

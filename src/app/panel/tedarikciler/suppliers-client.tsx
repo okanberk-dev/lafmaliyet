@@ -95,7 +95,10 @@ export function SuppliersClient({
   taxIndex,
   kasa = [],
   kasaElsewhere = 0,
+  branchOptions = [],
 }: {
+  /** Yeni tedarikçinin faturalarının varsayılan şubesi (birden çok kasa açıkken; invoiceBranchOptions) */
+  branchOptions?: { value: string; label: string }[];
   rows: SupplierListRow[];
   hidden: HiddenSupplierRow[];
   today: string;
@@ -575,6 +578,7 @@ export function SuppliersClient({
       {adding ? (
         <SupplierCardDialog
           card={null}
+          branchOptions={branchOptions}
           defaultTermDays={defaultTermDays}
           taxIndex={taxIndex}
           onClose={() => setAdding(false)}

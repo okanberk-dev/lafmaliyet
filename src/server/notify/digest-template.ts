@@ -639,11 +639,26 @@ ${linkLine(`${APP_URL}/panel/urunler#zamlar`, "Önerilen fiyatlara bak")}`
   return { subject, html, text };
 }
 
+/** Sistem uyarısı e-postasının konusu: üst etiket, "ne yapmalı" kutusu ve düğme (varsayılan: günlük işler) */
+export interface SystemAlertAbout {
+  label: string;
+  help: string;
+  link: { href: string; label: string };
+}
+const JOBS_ABOUT: SystemAlertAbout = { label: "Günlük işler", help: SYSTEM_ALERT_HELP, link: { href: JOBS_LINK, label: "Günlük işleri aç" } };
+/** Veritabanı kotası uyarısı (src/server/db-quota/check.ts; docs/YEDEK.md › Veritabanı kotası) */
+export const DB_QUOTA_ABOUT: SystemAlertAbout = {
+  label: "Veritabanı",
+  help: "Ne yapmalı: Neon konsolunda (console.neon.tech) projenin planını yükseltin ya da geliştiriciden eski kayıtların temizlenmesini isteyin. Plan yükseltilince Vercel'de DB_QUOTA_MB'yi yeni kotaya göre güncelleyin. Paneldeki durum: Ayarlar › Veritabanı.",
+  link: { href: `${APP_URL}/panel/ayarlar#veritabani`, label: "Veritabanı kullanımını aç" },
+};
+
 /**
  * Bekçi e-postası (Paraşüt işi, 07:00–08:00): dünkü sabah işi çalışmadıysa ya da hata verdiyse kısa uyarı. Sabah
  * e-postasını gönderen iş bozulunca bunu ancak öteki iş söyleyebilir. Sabah e-postasıyla aynı kabuk.
+ * `about` verilirse aynı kabuk başka bir sistem uyarısını taşır (veritabanı kotası).
  */
-export function renderSystemAlert(items: DigestSystem["items"], today: string) {
+export function renderSystemAlert(items: DigestSystem["items"], today: string, about: SystemAlertAbout = JOBS_ABOUT) {
   const first = items[0]?.title ?? "Sistem uyarısı";
   const subject = `L'Affogato · ${first}${items.length > 1 ? ` (+${items.length - 1})` : ""}`;
   const headline = items.length > 1 ? `${items.length} sistem uyarısı` : first;
@@ -664,7 +679,7 @@ export function renderSystemAlert(items: DigestSystem["items"], today: string) {
     preheader: items.map((i) => i.title).join(" · "),
     brandSub: "Sistem uyarısı",
     today,
-    card: [heading(headline, { eyebrow: "Günlük işler" }), list, callout("bad", [SYSTEM_ALERT_HELP], { top: 20 }), button(JOBS_LINK, "Günlük işleri aç")].join("\n"),
+    card: [heading(headline, { eyebrow: about.label }), list, callout("bad", [about.help], { top: 20 }), button(about.link.href, about.link.label)].join("\n"),
   });
   const text = [
     `L'Affogato · ${dateTR(today)}`,
@@ -672,9 +687,9 @@ export function renderSystemAlert(items: DigestSystem["items"], today: string) {
     "",
     ...items.flatMap((i) => [`- ${i.title}`, `  ${i.body}`]),
     "",
-    SYSTEM_ALERT_HELP,
+    about.help,
     "",
-    `Günlük işleri aç: ${JOBS_LINK}`,
+    `${about.link.label}: ${about.link.href}`,
   ].join("\n");
   return { subject, html, text };
 }

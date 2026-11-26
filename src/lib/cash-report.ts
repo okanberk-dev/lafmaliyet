@@ -6,6 +6,7 @@ import { okcFromDevice, okcHasFigures, okcReconcile, sameVat, type OkcReconcileL
 import { lafposDiffsLine, type LafposDiff } from "./lafpos/diffs";
 import { photoDiffText, type PhotoDiff } from "./photo-read/kasa";
 import { addDays, dayMonthTR, daysBetween, longDateTR, todayTR } from "./reminders";
+import { handedOverLine } from "./teslim";
 
 /**
  * Gün sonu kasa raporu (saf; testli: tests/kasa-raporu.test.ts). Personel her akşam ModPOS'un Z raporuna ve kasaya
@@ -725,6 +726,11 @@ export interface CashReportExtras {
   photos?: { z: boolean; okc: boolean; pos: boolean } | null;
   /** Net okunmuş ama farklı yazılan alanlar (src/lib/photo-read/kasa.ts suspiciousDiffs) */
   photoDiffs?: PhotoDiff[] | null;
+  /**
+   * Rapora bağlı fotoğraflardan en az biri okundu (yapay zekâ okunuşu var). Fark yoksa yöneticinin e-postası "Z fotoğrafı
+   * okundu, yazılanlarla tutuyor" der (sahibin isteği, 25 Kasım 2026: "z tutsa da tutuyor diye yine rapor şeklinde")
+   */
+  photoRead?: boolean;
   /** Günün kasadan çıkan satırları */
   cashOuts?: (CashOutLine & { photo: boolean })[] | null;
   /**
@@ -802,6 +808,9 @@ export function photoNames(p: CashReportExtras["photos"]): string[] {
   return [p.z ? "ModPOS Z" : null, p.okc ? "banka POS Z" : null, p.pos ? "banka fişi" : null].filter((n): n is string => n !== null);
 }
 
+/** Fotoğraf okundu ve yazılanlarla tutuyor (yöneticinin e-postası; sahibin isteği, 25 Kasım 2026) */
+export const PHOTO_OK_TEXT = "Z fotoğrafı okundu: yazılan rakamlarla tutuyor";
+
 /** "📷 ModPOS Z ve banka POS Z fotoğrafı panelde" (docs/planlar/okc-z.md §8) */
 export function photosLine(p: CashReportExtras["photos"]): string | null {
   const names = photoNames(p);
@@ -855,7 +864,11 @@ export function byLine(by: string, countedBy?: string | null): string {
 export type CashTextAudience = "staff" | "admin";
 
 /** Yöneticinin metninde rapor alanları ve sunucunun yazarkasa dışı tahsilatı (K4 onu da sayar; personelde hiç yok) */
-export type CashTextFields = CashReportFields & Pick<OkcReportFields, "okcOutside">;
+export type CashTextFields = CashReportFields &
+  Pick<OkcReportFields, "okcOutside"> & {
+    /** Sayımdan sonra teslimin "Kime"si (Teslim defteri; kayıtlı raporun handed_to'su): metinde teslimin yanında */
+    handedToName?: string | null;
+  };
 
 /** WhatsApp metninde değeriyle yazılan yazarkasa alanları (bloğun kendi rakamları); ötekiler yalnız adıyla (İlke 8) */
 const OKC_STAFF_DIFF_VALUES: readonly PhotoDiff["field"][] = ["okcZNo", "okcCash", "okcCard"];
@@ -1008,7 +1021,7 @@ export function cashReportText(
     `= Olması gereken: ${money(c.expectedCash)}`,
     `Sayılan: ${money(f.countedCash)}`,
     `${mark} *${c.kind === "even" ? "Kasa tutuyor" : diffText(c.cashDiff).toLocaleUpperCase("tr")}*`,
-    ...(f.handedOver ? [`Teslim edilen: ${money(f.handedOver)} · Ertesi güne devir: ${money(c.carryOver)}`] : [`Ertesi güne devir: ${money(c.carryOver)}`]),
+    ...(f.handedOver ? [`Teslim edilen: ${handedOverLine(f.handedOver, f.handedToName ?? null)} · Ertesi güne devir: ${money(c.carryOver)}`] : [`Ertesi güne devir: ${money(c.carryOver)}`]),
     ...(meta.next ? [`⚠️ ${nextWarning(meta.next)}`] : []),
   ];
   const kart = okcTextBlock(f, audience, meta.kasa);

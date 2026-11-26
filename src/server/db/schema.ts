@@ -482,14 +482,21 @@ export const invoices = pgTable(
      */
     parasutAccount: text("parasut_account").references(() => branches.id),
     /**
-     * Faturanın şubesi: ayrı Paraşüt hesabından gelen faturada o şube (sahibin kararı, 25 Kasım 2026); boş = işletme
-     * geneli (şubeler aynı Paraşüt hesabındayken bugünkü kural). Eşitleme yalnız yeni açtığı faturaya yazar
+     * Faturanın şubesi (sahibin kararı, 25 Kasım 2026; docs/SUBE.md › Faturanın şubesi): seçilen şube; boşsa
+     * `companyWide`'a bakılır. Eşitleme yalnız yeni açtığı faturaya yazar (ayrı Paraşüt hesabı → o şube, yoksa
+     * tedarikçinin varsayılan şubesi). Tahmini stoğun "Marina'ya gelen faturalar"ı da bunu okur (tek kaynak)
      */
     branchId: branchIdNullable(),
+    /**
+     * Bilinçli "İşletme geneli" seçimi (muhasebe, ortak hizmet): şubesi boş ve bu kapalıysa fatura "Şubesi seçilmemiş"
+     * kutusundadır; tek şube seçiliyken görünmez (src/lib/invoice-branch.ts)
+     */
+    companyWide: boolean("company_wide").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [
     index("invoices_date_idx").on(t.date),
+    check("invoices_company_wide_ck", sql`not (${t.companyWide} and ${t.branchId} is not null)`),
     // Paraşüt kimlikleri hesap içinde benzersiz. Hesabı boş Paraşüt faturası varsayılan hesabındır (invoiceAccountWhere;
     // eski yedekten ya da "Geri al" kopyasından gelebilir): boş hesap "tuzla" sayılır, aynı kimlik iki kez yazılamaz.
     // Elle girilen faturanın kimlikleri boş: çakışmaz
@@ -540,6 +547,14 @@ export const suppliers = pgTable(
     paymentMethod: text("payment_method", { enum: ["havale", "nakit", "kart", "cek", "diger"] }),
     /** Peşin çalışılır: Paraşüt'ten gelen yeni faturası ödendi (fatura günü) olarak gelir */
     paidOnDelivery: boolean("paid_on_delivery").notNull().default(false),
+    /**
+     * Faturalarının varsayılan şubesi (docs/SUBE.md › Faturanın şubesi): Paraşüt'ten gelen yeni fatura bunu alır
+     * (ayrı Paraşüt hesabının faturası hesabın şubesini). Boşsa ve `defaultCompanyWide` kapalıysa yeni fatura "Şubesi
+     * seçilmemiş" gelir
+     */
+    defaultBranchId: text("default_branch_id").references(() => branches.id),
+    /** Varsayılan: işletme geneli (muhasebeci, ortak hizmet) */
+    defaultCompanyWide: boolean("default_company_wide").notNull().default(false),
     note: text("note"),
     /**
      * Listeden kaldırıldığı gün (YYYY-MM-DD, Türkiye). Faturası olan tedarikçi silinmez, listeden kalkar; ödenmemiş
@@ -549,7 +564,10 @@ export const suppliers = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [uniqueIndex("suppliers_key_uq").on(t.key)],
+  (t) => [
+    uniqueIndex("suppliers_key_uq").on(t.key),
+    check("suppliers_default_branch_ck", sql`not (${t.defaultCompanyWide} and ${t.defaultBranchId} is not null)`),
+  ],
 );
 
 /**
@@ -957,21 +975,6 @@ export const stockThresholds = pgTable(
   },
   (t) => [primaryKey({ columns: [t.branchId, t.ingredientId] }), check("stock_thresholds_qty_ck", sql`${t.qty} >= 0`)],
 );
-
-/**
- * Faturanın malının geldiği şube, yalnız tahmini stok için (docs/STOK-TAHMINI.md § 3). Faturalar şubeye bölünmez (mal
- * alımı işletme genelidir, docs/SUBE.md); yönetici Tahmini stok ekranında faturanın hangi şubeye geldiğini seçer.
- * Satır yoksa "şubesi seçilmedi": hiçbir şubenin tahminine girmez. Fatura, ödeme, cari, FIFO ve mal maliyeti bunu
- * okumaz. Fatura silinirse satır da silinir.
- */
-export const stockReceipts = pgTable("stock_receipts", {
-  invoiceId: integer("invoice_id")
-    .primaryKey()
-    .references(() => invoices.id, { onDelete: "cascade" }),
-  branchId: branchId(),
-  markedByName: text("marked_by_name"),
-  updatedAt: updatedAt(),
-});
 
 export const findings = pgTable(
   "findings",
@@ -1450,9 +1453,8 @@ export const pushSubscriptions = pgTable(
      */
     orders: boolean("orders"),
     /**
-     * Onay bildirimleri: yöneticiye personelin onay bekleyen isteği, personele kendi isteğinin sonucu (docs/ONAYLAR.md).
-     * Tek gönderen mal siparişi taslağıydı (26 Eki 2026'da kaldırıldı); tesisat ve cihaz tercihi kalır, cihazdaki anahtar
-     * ancak yeniden bir gönderen olunca görünür
+     * Onay bildirimleri: yöneticiye personelin yeni açtığı istek (src/server/staff-requests/push.ts; docs/ONAYLAR.md).
+     * Cihazdaki "Onay bildirimleri" anahtarı (yalnız yönetici) bunu yazar
      */
     approvals: boolean("approvals").notNull().default(true),
     lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
@@ -1497,6 +1499,13 @@ export const cashReports = pgTable(
     cashOutNote: text("cash_out_note"),
     countedCash: doublePrecision("counted_cash").notNull().default(0),
     handedOver: doublePrecision("handed_over").notNull().default(0),
+    /**
+     * Sayımdan sonra teslim edileni alan ("Kime"; Teslim defteri, docs/KASA-RAPORU.md › Teslim defteri): yönetici
+     * kullanıcının adı, "Banka" ya da elle yazılan ad (en çok 60). Teslim yoksa boş; alan gelmeden önceki raporlarda boş
+     */
+    handedTo: text("handed_to"),
+    /** Teslimi alan yönetici hesabıysa kimliği (adı handedTo'da kalır, hesap silinse de okunur) */
+    handedToUserId: integer("handed_to_user_id").references(() => users.id, { onDelete: "set null" }),
     /**
      * Banka gün sonu fişinin net toplamı (yazarkasa Z'sinin kart satırı değil); yazarkasa kartı yoksa ModPOS'taki kartla
      * karşılaştırılır. Yazarkasa bölümünden (dalga 13) önceki raporlarda tek kart kanıtı: o günlerde Z'nin kart satırını
@@ -1578,6 +1587,31 @@ export const cashReportRevisions = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("cash_report_revisions_report_idx").on(t.reportId)],
+);
+
+/**
+ * Kör sayım (docs/KASA-RAPORU.md › Kör sayım; şube ayarı kasa.kor): personel çekmecedeki nakdi önce sayıp kilitler,
+ * olması gereken ve kasa farkı ancak ondan sonra görünür. Sayım başına bir satır, yalnız eklenir: ilk satır kör sayımdır
+ * (neden yok), sonrakiler değişikliktir (neden zorunlu) ve yöneticiye görünür. Günün geçerli sayımı en son satırdır;
+ * personelin raporundaki sayılan nakit ona eşit olmak zorundadır (src/server/cash/blind-count.ts). Rapordan bağımsızdır:
+ * rapor silinse de sayım geçmişi kalır.
+ */
+export const cashCounts = pgTable(
+  "cash_counts",
+  {
+    id: serial("id").primaryKey(),
+    branchId: branchId(),
+    /** Kasanın iş günü (YYYY-MM-DD) */
+    date: text("date").notNull(),
+    /** Sayılan nakit (TL) */
+    amount: doublePrecision("amount").notNull(),
+    /** Değişikliğin nedeni; ilk (kör) sayımda boş */
+    reason: text("reason"),
+    userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+    userName: text("user_name").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("cash_counts_day_idx").on(t.date, t.branchId)],
 );
 
 /**
@@ -2725,5 +2759,82 @@ export const branchSettings = pgTable(
     index("branch_settings_same_as_idx").on(t.sameAs),
     check("branch_settings_not_self_ck", sql`${t.sameAs} is null or ${t.sameAs} <> ${t.branchId}`),
     check("branch_settings_linked_empty_ck", sql`${t.sameAs} is null or (${t.value} = '{}'::jsonb and ${t.secrets} is null)`),
+  ],
+);
+
+// ---------------------------------------------------------------- Mutabakat (banka ve tedarikçi ekstresi)
+/**
+ * Yüklenen ekstre (docs/MUTABAKAT.md): banka hesabının ya da tedarikçinin cari ekstresi. DOSYA SAKLANMAZ (KVKK, veri
+ * en azı): yalnız okunan satırlar recon_lines'ta durur ve `expires_on`'dan sonra günlük işte silinir (yüklendiği gün +
+ * 90; src/lib/mutabakat/match.ts KEEP_DAYS). Panel kaydına hiçbir şey yazılmaz: mutabakat bir karşılaştırmadır.
+ */
+export const reconStatements = pgTable(
+  "recon_statements",
+  {
+    id: serial("id").primaryKey(),
+    kind: text("kind", { enum: ["banka", "tedarikci"] }).notNull(),
+    /** Banka: yöneticinin yazdığı hesap adı ("Garanti TL"); tedarikçi: tedarikçinin yükleme anındaki adı */
+    account: text("account").notNull(),
+    /** Tedarikçi ekstresinin kartı (kartsız tedarikçide boş; o zaman `supplierNames`'ten bulunur) */
+    supplierCardId: integer("supplier_card_id").references(() => suppliers.id, { onDelete: "set null" }),
+    /** Tedarikçinin ad anahtarları (faturalardaki adlar, kartın adları): kartsız tedarikçiyi bulmak için */
+    supplierNames: jsonb("supplier_names").$type<string[]>().notNull().default([]),
+    /** Yüklenen dosyanın adı (yalnız ekranda; içeriği saklanmaz) */
+    fileName: text("file_name"),
+    /** Ekstrenin ilk ve son hareket günü (YYYY-MM-DD) */
+    periodFrom: text("period_from").notNull(),
+    periodTo: text("period_to").notNull(),
+    /** Yazılan satır sayısı; dosyada olup önceki yüklemede yazılmış (aynı) satırlar `duplicates`'ta */
+    lineCount: integer("line_count").notNull().default(0),
+    duplicates: integer("duplicates").notNull().default(0),
+    /** Yüklendiği gün (Türkiye) ve satırların saklandığı son gün (ertesi gün silinir) */
+    uploadedOn: text("uploaded_on").notNull(),
+    expiresOn: text("expires_on").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdByName: text("created_by_name").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("recon_statements_expires_idx").on(t.expiresOn),
+    check("recon_statements_period_ck", sql`${t.periodFrom} <= ${t.periodTo}`),
+    check("recon_statements_supplier_ck", sql`${t.kind} = 'tedarikci' or (${t.supplierCardId} is null and ${t.supplierNames} = '[]'::jsonb)`),
+  ],
+);
+
+/**
+ * Ekstrenin satırı ve yöneticinin kararı. Eşleşme okuma anında hesaplanır (saklanmaz); yalnız karar durur: `elle`
+ * (bu kayıtla eşleşir: `match_kind` + `match_id`), `yoksay`, `ayir` (kendiliğinden eşleşmez), `pos` (POS hakedişi say).
+ * Tutar işaretlidir: banka + giren / − çıkan; tedarikçi + fatura / − ödeme. Açıklamadaki IBAN, kart ve uzun numaralar
+ * yazılmadan örtülür (src/lib/mutabakat/parse.ts maskSensitive). `scope` + `fingerprint`: aynı hesabın aynı hareketi
+ * ikinci yüklemede yeniden yazılmaz.
+ */
+export const reconLines = pgTable(
+  "recon_lines",
+  {
+    id: serial("id").primaryKey(),
+    statementId: integer("statement_id")
+      .notNull()
+      .references(() => reconStatements.id, { onDelete: "cascade" }),
+    /** Hesabın kimliği: "banka:<hesap adı>" ya da "tedarikci:<kart ya da ad>" */
+    scope: text("scope").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    /** Dosyadaki satır (1'den) */
+    rowNo: integer("row_no").notNull(),
+    date: text("date").notNull(),
+    description: text("description").notNull().default(""),
+    amount: doublePrecision("amount").notNull(),
+    balance: doublePrecision("balance"),
+    ref: text("ref"),
+    decision: text("decision", { enum: ["elle", "yoksay", "ayir", "pos"] }),
+    matchKind: text("match_kind", { enum: ["harcama", "odeme", "fatura-odeme", "teslim", "fatura"] }),
+    matchId: integer("match_id"),
+    decidedByName: text("decided_by_name"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("recon_lines_statement_idx").on(t.statementId, t.date),
+    uniqueIndex("recon_lines_fingerprint_uq").on(t.scope, t.fingerprint),
+    check("recon_lines_amount_ck", sql`${t.amount} <> 0`),
+    check("recon_lines_match_ck", sql`(${t.decision} is not distinct from 'elle') = (${t.matchKind} is not null and ${t.matchId} is not null)`),
   ],
 );

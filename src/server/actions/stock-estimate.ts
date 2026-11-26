@@ -4,19 +4,16 @@ import { and, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { BRANCH_ID_MAX } from "@/lib/branches";
-import { dateTR } from "@/lib/format";
 import { displayUnit, parseThresholdInput, stockQty, STOCK_ESTIMATE_BRANCH } from "@/lib/stock-estimate";
 import { logActivity } from "@/server/actions/log";
 import { attempt, UserError } from "@/server/actions/util";
 import { requireAdmin } from "@/server/auth/dal";
-import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 
 /**
- * Tahmini stoğun iki yazımı (docs/STOK-TAHMINI.md): kritik eşik ve faturanın geldiği şube. Yalnız yönetici; yalnız
- * kendi iki tablosuna yazar (stock_thresholds, stock_receipts). Stok sayımı, faturalar, FIFO ve mal maliyeti
- * değişmez. Her değişiklik işlem geçmişine düşer.
+ * Tahmini stoğun yazımı (docs/STOK-TAHMINI.md): kritik eşik. Yalnız yönetici; yalnız kendi tablosuna yazar
+ * (stock_thresholds). Stok sayımı, faturalar, FIFO ve mal maliyeti değişmez. Her değişiklik işlem geçmişine düşer.
+ * Faturanın geldiği şube faturanın şubesidir (setInvoiceBranch).
  */
 
 const thresholdSchema = z.object({
@@ -63,39 +60,5 @@ export async function saveStockThreshold(input: z.input<typeof thresholdSchema>)
   });
 }
 
-const receiptSchema = z.object({
-  invoiceId: z.number().int().positive(),
-  /** Malın geldiği fiziksel şube; null: seçim kalkar (hiçbir şubenin tahminine girmez) */
-  branchId: z.string().max(BRANCH_ID_MAX).nullable(),
-});
-
-/** Faturanın malının geldiği şube (yalnız tahmini stok okur) */
-export async function setStockReceipt(input: z.input<typeof receiptSchema>) {
-  return attempt(async () => {
-    const me = await requireAdmin();
-    const { invoiceId, branchId } = receiptSchema.parse(input);
-    const db = getDb();
-    const [[invoice], branches, [prev]] = await Promise.all([
-      db.select({ supplier: s.invoices.supplier, date: s.invoices.date }).from(s.invoices).where(eq(s.invoices.id, invoiceId)).limit(1),
-      listBranches(db),
-      db.select({ branchId: s.stockReceipts.branchId }).from(s.stockReceipts).where(eq(s.stockReceipts.invoiceId, invoiceId)).limit(1),
-    ]);
-    if (!invoice) throw new UserError("Fatura bulunamadı; sayfayı yenileyin");
-    if (branchId !== null && !branches.some((b) => b.id === branchId && b.active && b.kind === "fiziksel")) throw new UserError("Şube bulunamadı");
-    const before = prev?.branchId ?? null;
-    if (branchId === null) {
-      if (before !== null) await db.delete(s.stockReceipts).where(eq(s.stockReceipts.invoiceId, invoiceId));
-    } else {
-      await db
-        .insert(s.stockReceipts)
-        .values({ invoiceId, branchId, markedByName: me.name })
-        .onConflictDoUpdate({ target: s.stockReceipts.invoiceId, set: { branchId, markedByName: me.name, updatedAt: new Date() } });
-    }
-    if (before !== branchId) {
-      const name = (id: string | null) => (id === null ? "seçilmedi" : (branches.find((b) => b.id === id)?.name ?? id));
-      await logActivity(me, "Faturanın şubesi (tahmini stok)", `${invoice.supplier} · ${dateTR(invoice.date)}: ${name(before)} → ${name(branchId)}`);
-    }
-    refresh();
-    return { branchId };
-  });
-}
+// Faturanın geldiği şube 25 Kasım 2026'dan beri faturanın kendi şubesidir (invoices.branch_id, tek kaynak): Tahmini stok ›
+// Marina'ya gelen faturalar seçimi setInvoiceBranch'e yazar (src/server/actions/invoices.ts; docs/SUBE.md › Faturanın şubesi)

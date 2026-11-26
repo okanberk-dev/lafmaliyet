@@ -69,7 +69,7 @@ export async function anyParasutConfigured(): Promise<boolean> {
   return (await configuredParasutAccounts()).length > 0;
 }
 
-/** Hesaptan yeni açılan faturanın şubesi (invoiceBranchOf: ayrı hesap → o şube, ortak hesap → işletme geneli) */
+/** Hesaptan yeni açılan faturanın şubesi (invoiceBranchOf: ayrı hesap → o şube, ortak hesap → null: tedarikçinin varsayılanı ya da şubesi seçilmemiş) */
 export async function accountInvoiceBranch(account: string, db: Reader = getDb()): Promise<string | null> {
   const info = (await loadParasutAccounts(db)).find((a) => a.id === account);
   if (!info) return null;

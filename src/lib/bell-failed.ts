@@ -23,6 +23,7 @@ const PARTS = {
   fatura: { group: "fatura", what: "faturalar", href: "/panel/faturalar" },
   komisyon: { group: "fatura", what: "komisyon hakedişleri", href: "/panel/komisyonlar" },
   sistem: { group: "sistem", what: "günlük işlerin durumu", href: "/panel/ayarlar" },
+  guvenlik: { group: "sistem", what: "yeni cihazdan girişler", href: "/panel/hesap" },
   alici: { group: "sistem", what: "bildirim alıcıları", href: "/panel/ayarlar" },
   modpos: { group: "sistem", what: "ModPOS anahtarı", href: "/panel/ayarlar" },
   lafpos: { group: "sistem", what: "LafPOS gün sonu retleri", href: "/panel/ayarlar#lafpos" },
@@ -30,6 +31,7 @@ const PARTS = {
   fiyat: { group: "uyari", what: "kasada değişecek fiyatlar", href: { admin: "/panel/urunler/fiyatlar?sekme=kasa", staff: "/panel/kasa/fiyatlar" } },
   tukendi: { group: "uyari", what: "tükenen ürünler", href: "/panel/urunler" },
   sayim: { group: "uyari", what: "stok sayımı", href: "/panel/sayim" },
+  vardiya: { group: "uyari", what: "vardiya planı", href: "/panel/vardiya" },
   operasyon: { group: "uyari", what: "operasyon uyarıları", href: "/panel" },
 } as const;
 

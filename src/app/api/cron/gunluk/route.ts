@@ -1,14 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { countStep, dailyOutcome, digestStep, gunSonuStep, modposStep, photosStep, reminderStep, requestsStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
+import { backupStep, countStep, dailyOutcome, digestStep, gunSonuStep, modposStep, photosStep, quotaStep, reminderStep, requestsStep, vardiyaStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
+import { todayTR } from "@/lib/reminders";
 import { weeklyStep, WEEKLY_DEADLINE_MS, type WeeklyRunResult } from "@/lib/weekly/core";
 import { capped, JOB_SEND_DEADLINE_MS, JOB_TAIL_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
+import type { AutoBackupResult } from "@/lib/backup/auto";
+import type { QuotaCheckResult } from "@/lib/db-quota";
+import { runAutoBackup } from "@/server/backup/auto";
+import { runQuotaCheck } from "@/server/db-quota/check";
 import { getDb } from "@/server/db";
 import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/runs";
 import { dailyKaraoke } from "@/server/karaoke/history";
 import { catchUpLafposDayEnds } from "@/server/lafpos/gun-sonu";
 import { pruneMcp } from "@/server/mcp/store";
+import { purgeExpiredStatements } from "@/server/mutabakat/store";
 import { isModposConfigured } from "@/server/modpos/client";
 import { syncModposAll, type ModposSyncResult } from "@/server/modpos/sync";
 import { pushMonthEndCount } from "@/server/notify/count-push";
@@ -20,6 +26,7 @@ import { syncSiteMenu } from "@/server/site-menu/sync";
 import { syncSiteSales } from "@/server/site-sales/sync";
 import { expireStaffRequests } from "@/server/staff-requests/core";
 import { cleanupPhotos } from "@/server/storage/photos";
+import { pushPlanReminders } from "@/server/vardiya/notify";
 import { runWeeklyStep } from "@/server/weekly/send";
 
 // Her sabah 08:00–09:00 (05:00 UTC; Vercel Hobby'de saat esnek, bir saatlik pencere): sabah e-postası (ödemeler +
@@ -28,11 +35,16 @@ import { runWeeklyStep } from "@/server/weekly/send";
 // kişisel hatırlatıcıların sabah bildirimi, karaoke rezervasyonlarının ve laffogato.net menüsünün (fiyat, Satışta /
 // Tükendi; docs/SITE-MENU.md) günlük yedek eşitlemesi (ping kaçtıysa) ve laffogato.net'in online satışları (bu ay ve
 // önceki iki ay: geç iadeler; salesMonthsToPull, docs/SITE-SATIS.md), süresi dolan fotoğrafların silinmesi (docs/FOTOGRAF.md),
-// Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md), ayın son günü ay sonu
+// Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md), saklama süresi dolan
+// mutabakat ekstrelerinin silinmesi (docs/MUTABAKAT.md), ayın son günü ay sonu
 // stok sayımı bildirimi (tamamlanmadıysa). Pazartesi (gönderilemezse salı, çarşamba) yöneticilere haftalık özet
 // (docs/HAFTALIK-OZET.md). Süresi dolan personel istekleri (kasadan
-// çıkan) kapanır ve tuttukları fotoğraflar bırakılır (docs/ONAYLAR.md). ModPOS'un kasa föyü (dün ve bir geçmiş gün,
+// çıkan) kapanır ve tuttukları fotoğraflar bırakılır (docs/ONAYLAR.md). Cuma–Pazar gelecek haftanın vardiyası yazılmamış
+// şube için yöneticilere bildirim (docs/VARDIYA.md › Bildirimler). ModPOS'un kasa föyü (dün ve bir geçmiş gün,
 // günde 2 hak; docs/MODPOS-API.md) de Paraşüt'le aynı anda yalnız bir kez çekilir, sabah e-postasından önce beklenir.
+// Haftalık tam yedek (pazartesi; alınamazsa sonraki günler) özel depoya yazılır, son 8 hafta kalır (docs/YEDEK.md ›
+// Otomatik haftalık yedek); veritabanının boyutu ölçülür, %70 ve %90 kota eşiği ilk geçildiğinde yöneticilere zil ve
+// e-posta gider (docs/YEDEK.md › Veritabanı kotası).
 // Her çalışma ve adımlarının sonucu job_runs'a yazılır (Ayarlar › Günlük işler); e-posta gidemezse ya da iş hiç
 // çalışmazsa ertesi sabah Paraşüt işinin bekçisi söyler. Zaman bütçesi jobStart'tan: sabah e-postasının gönderimi en
 // geç 48 sn'de kesilir (takılan Resend işlevi bitirmesin), kuyruk en geç 55 sn'de biter (src/server/jobs/capped.ts).
@@ -49,6 +61,14 @@ const MODPOS_DEADLINE_MS = 30_000;
 const MODPOS_CAP_MS = 32_000;
 /** Anahtar yoksa çekme hiç başlamaz (veritabanına da gidilmez); adım yazılmaz (modposStep) */
 const MODPOS_OFF: ModposSyncResult = { status: "off", days: [], left: null };
+
+/**
+ * Otomatik haftalık yedeğin son anı (jobStart'tan sonra): iş başlarken başlar, öteki adımlarla aynı anda sürer; bu ana
+ * kadar okuyamadıysa bırakır, ertesi sabah yeniden dener (docs/YEDEK.md › Otomatik haftalık yedek)
+ */
+const BACKUP_DEADLINE_MS = 40_000;
+/** Yedek adımının beklenme sınırı: son anın üstüne depoya yazma ve eskileri silme payı; kuyruğun 55 sn'sini aşmaz */
+const BACKUP_CAP_MS = 50_000;
 
 /** Site eşitlemelerinin sonucu adım koduna (hata metniyle) */
 function siteStep(r: { status: string; error?: string; results?: { month: string; status: string; error?: string }[] }): StepResult {
@@ -73,6 +93,18 @@ export async function GET(request: NextRequest) {
     ),
     jobStart + MODPOS_CAP_MS - Date.now(),
     { status: "error", days: [], left: null, error: "süre doldu" },
+  );
+  // Otomatik haftalık yedek (bu haftanın dosyası depoda yoksa) ve veritabanı kotası: yalnız burada ve bir kez başlar
+  // (extras() iki kez çalışabilir), öteki adımları bekletmez; ikisi de hata fırlatmaz
+  const backupP = capped<AutoBackupResult>(
+    runAutoBackup(new Date(jobStart), { deadlineAt: jobStart + BACKUP_DEADLINE_MS }).catch((e: Error): AutoBackupResult => ({ status: "error", error: e.message })),
+    BACKUP_CAP_MS,
+    { status: "error", error: "süre doldu" },
+  );
+  const quotaP = capped<QuotaCheckResult>(
+    runQuotaCheck(new Date(jobStart)).catch((e: Error): QuotaCheckResult => ({ status: "error", error: e.message })),
+    BACKUP_CAP_MS,
+    { status: "error", error: "süre doldu" },
   );
   // Şube başına Paraşüt hesabı: bugün eşitlenmemiş her hesap yeniden denenir (aynı firma iki kez çekilmez)
   const accounts = await configuredParasutAccounts();
@@ -118,6 +150,17 @@ export async function GET(request: NextRequest) {
       Math.min(3_000, tailStepDeadline(jobStart) - Date.now()),
       "süre doldu" as const,
     );
+  // Mutabakat ekstrelerinin saklama süresi (KVKK; docs/MUTABAKAT.md › Saklama): yüklendikten 90 gün sonra ekstre ve
+  // satırları silinir. En çok 3 sn, sonucu yalnız yanıtta (body.mutabakat); iş adımı değil, aksarsa ertesi gün yeniden
+  const reconTask = () =>
+    capped<number | "error" | "süre doldu">(
+      purgeExpiredStatements(getDb(), todayTR()).catch((e: Error) => {
+        console.error("[mutabakat] saklama süresi", e);
+        return "error" as const;
+      }),
+      Math.min(3_000, tailStepDeadline(jobStart) - Date.now()),
+      "süre doldu" as const,
+    );
   // Ay sonu stok sayımı bildirimi (ayın son günü, sayım tamamlanmadıysa): en çok 8 sn, kuyruğun 55 sn'sini aşmadan;
   // adım yalnız bildirim gönderilince yazılır
   const countTask = () =>
@@ -155,8 +198,16 @@ export async function GET(request: NextRequest) {
       { error: "süre doldu" },
     );
   };
+  // Vardiya (docs/VARDIYA.md › Bildirimler): Cuma–Pazar sabahı gelecek haftanın planı yazılmamış şube için yöneticilere
+  // bildirim (şube ve gün başına bir kez); en çok 5 sn, kuyruğun 55 sn'sini aşmadan. Adım yalnız bildirim denenince yazılır
+  const vardiyaTask = () =>
+    capped(
+      pushPlanReminders(getDb(), new Date()).catch((e: Error) => ({ error: e.message })),
+      Math.min(5_000, tailStepDeadline(jobStart) - Date.now()),
+      { error: "süre doldu" },
+    );
   const extras = async () => {
-    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu] = await Promise.all([
+    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu, vardiya, backup, quota, mutabakat] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
       // Karaoke eşitlemesi ve KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (docs/KARAOKE.md › KVKK); ardından
       // karaoke e-postaları (misafirin hatırlatması, personelin sabah listesi), kuyruğun 55 sn'sini aşmadan
@@ -169,11 +220,18 @@ export async function GET(request: NextRequest) {
       weeklyTask(),
       requestsTask(),
       gunSonuTask(),
+      vardiyaTask(),
+      backupP,
+      quotaP,
+      reconTask(),
     ]);
+    const vardiyaResult = vardiyaStep(vardiya);
     const countResult = countStep(count);
     const weeklyResult = weeklyStep(weekly);
     const requestsResult = requestsStep(requests);
     const gunSonuResult = gunSonuStep(gunSonu);
+    const backupResult = backupStep(backup);
+    const quotaResult = quotaStep(quota);
     const steps: Record<Exclude<CoreStep, "sync" | "digest">, StepResult> & Partial<Record<OptionalStep, StepResult>> = {
       reminders: reminderStep(reminders),
       karaoke: siteStep(karaoke),
@@ -184,8 +242,11 @@ export async function GET(request: NextRequest) {
       ...(weeklyResult ? { weekly: weeklyResult } : {}),
       ...(requestsResult ? { requests: requestsResult } : {}),
       ...(gunSonuResult ? { gunSonu: gunSonuResult } : {}),
+      ...(vardiyaResult ? { vardiya: vardiyaResult } : {}),
+      ...(backupResult ? { backup: backupResult } : {}),
+      ...(quotaResult ? { quota: quotaResult } : {}),
     };
-    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp, requests }, steps, weekly: weekly.status };
+    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp, requests, backup: backup.status, quota: quota.status === "ok" ? { pct: Math.floor(quota.pct), level: quota.level } : "error", mutabakat }, steps, weekly: weekly.status };
   };
   // Paraşüt bitince çoğunlukla bitmiştir; adım yalnız anahtar varken yazılır
   const modpos = await modposP;

@@ -10,6 +10,7 @@ import { normalizeSupplier } from "../calc/engine";
 import type { Invoice } from "../calc/types";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, SEPARATE_CATEGORIES } from "../constants";
 import { dateTR, num } from "../format";
+import { categoryPart } from "../invoice-split";
 import { daysBetween } from "../reminders";
 
 import { periodQuarters, quarterOfMonth } from "./calendar";
@@ -203,6 +204,23 @@ export function assetCandidates(invoices: readonly Invoice[], assets: readonly P
     if (!recent) out.push({ invoice: inv, net: n });
   }
   return out.sort((a, b) => a.invoice.date.localeCompare(b.invoice.date) || a.invoice.id - b.invoice.id);
+}
+
+/**
+ * "Hammadde değil · Demirbaş" denmiş kalemi olan faturalar (25 Kasım 2026; src/lib/invoice-split.ts): ör. hammadde
+ * faturasında 10.000 ₺'lik tüplü ısıtıcı. Kategorisi Kuruluş & Demirbaş olmayan, karar verilmemiş ve kalemin payı varlık
+ * listesine eklenmemiş fatura; `net` kalemlerin payı. Yalnız öneri: sahip "Listeye ekle" der, ekleyene kadar gider
+ * (doğrudan gider sınırının altında da önerilir, karar sahibin)
+ */
+export function lineAssetCandidates(invoices: readonly Invoice[], assets: readonly Pick<TaxAsset, "invoiceId" | "cost">[]): AssetCandidate[] {
+  const linked = allocatedByInvoice(assets);
+  const out: AssetCandidate[] = [];
+  for (const inv of invoices) {
+    if (inv.category === ASSET_CATEGORY || inv.taxNotAsset || !inv.lines?.some((l) => l.to === ASSET_CATEGORY)) continue;
+    const part = r2(categoryPart(inv, ASSET_CATEGORY));
+    if (part - (linked.get(inv.id) ?? 0) > 0.005) out.push({ invoice: inv, net: part });
+  }
+  return out.sort((a, b) => b.invoice.date.localeCompare(a.invoice.date) || b.invoice.id - a.invoice.id);
 }
 
 /** "Gider (demirbaş değil)" denen faturalar */

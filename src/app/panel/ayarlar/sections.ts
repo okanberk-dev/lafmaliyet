@@ -1,4 +1,4 @@
-import { Building2, Droplets, Globe, HardDriveDownload, History, Layers, Percent, QrCode, ReceiptTurkishLira, Ruler, ScanText, Store, SunMoon, Tags, Timer, Users, Utensils, type LucideIcon } from "lucide-react";
+import { Building2, Database, Droplets, Globe, HardDriveDownload, History, Layers, Percent, QrCode, ReceiptTurkishLira, Ruler, ScanText, Store, SunMoon, Tags, Timer, Users, Utensils, type LucideIcon } from "lucide-react";
 
 /**
  * Ayarlar sayfasının bölümleri: kenardaki gezinme bu sırayla listelenir, her kart `id` olarak bunu taşır.
@@ -31,6 +31,9 @@ export const SETTINGS_SECTIONS = [
   { id: "modpos", label: "ModPOS API", icon: ReceiptTurkishLira },
   // Z raporu, POS fişi ve kasadan çıkan fişlerin fotoğraftan okunması (Claude): aç / kapat, günlük sınır, tutar
   { id: "foto", label: "Fotoğraftan okuma", icon: ScanText },
+  // Veritabanının boyutu ve kotası (Neon; %70 ve %90'da zil ve e-posta, docs/YEDEK.md › Veritabanı kotası)
+  { id: "veritabani", label: "Veritabanı", icon: Database },
+  // Elle indirilen tam yedek ve otomatik haftalık yedekler (docs/YEDEK.md)
   { id: "yedek", label: "Yedek", icon: HardDriveDownload },
 ] as const satisfies readonly { id: string; label: string; icon: LucideIcon }[];
 

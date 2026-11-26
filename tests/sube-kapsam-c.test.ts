@@ -165,13 +165,14 @@ test("firma geneli ekranların notu: tek şube seçiliyken söylenir, Tümü'de 
     { id: "marina", name: "Marina", kind: "fiziksel" as const, posSource: "lafpos" as const, active: true, openedOn: null, sortOrder: 2 },
   ];
   assert.equal(companyWideNote("vergi", ALL_BRANCHES, known), null);
-  const note = companyWideNote("faturalar", "marina", known);
+  const note = companyWideNote("tedarikciler", "marina", known);
   assert.equal(note?.title, "Marina seçili: bu ekran firma geneli");
-  assert.match(note!.text, /aynı Paraşüt hesabındaysa faturalar işletme genelidir/);
+  assert.match(note!.text, /cari hesabı firmanındır/);
+  // Faturalar firma geneli değil (25 Kasım 2026, docs/SUBE.md › Faturanın şubesi): seçili şubenin faturaları
+  assert.doesNotMatch(read("src/app/panel/faturalar/page.tsx"), /<CompanyWideNotice/);
   // Ekranlar notu çizer (şube kapsamı C P1-12, P2-1)
   for (const [file, screen] of [
     ["src/app/panel/vergi/page.tsx", "vergi"],
-    ["src/app/panel/faturalar/page.tsx", "faturalar"],
     ["src/app/panel/tedarikciler/page.tsx", "tedarikciler"],
     ["src/app/panel/tutarlilik/page.tsx", "tutarlilik"],
   ] as const)

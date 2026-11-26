@@ -7,6 +7,7 @@
  */
 
 import { BACKUP_HREF, backupReminder } from "@/lib/backup/format";
+import { DB_QUOTA_HREF, quotaAlert, type DbQuotaState } from "@/lib/db-quota";
 import { addDays, longDateTR } from "@/lib/reminders";
 
 export type JobKey = "parasut" | "gunluk";
@@ -161,6 +162,9 @@ const STEP_NAMES: Record<string, string> = {
   weekly: "Haftalık özet",
   requests: "Personel istekleri",
   gunSonu: "LafPOS gün sonu",
+  vardiya: "Vardiya hatırlatması",
+  backup: "Otomatik yedek",
+  quota: "Veritabanı kotası",
   watchdog: "Sistem uyarısı e-postası",
   checklist: "Kontrol listesi e-postası",
   karaokeMail: "Karaoke e-postası",
@@ -201,6 +205,9 @@ export const STEP_LABELS: Record<string, Record<string, string>> = {
   },
   requests: { ok: "Süresi dolan personel istekleri kapandı", error: "Personel istekleri hata" },
   gunSonu: { ok: "LafPOS gün sonu: eksik rapor ya da e-posta tamamlandı", error: "LafPOS gün sonu hata" },
+  vardiya: { sent: "Gelecek haftanın vardiyası yazılmadı: yöneticilere bildirim gitti", nodevice: "Gelecek haftanın vardiyası yazılmadı (bildirim açık yönetici cihazı yok)", error: "Vardiya hatırlatması hata" },
+  backup: { ok: "Haftalık yedek alındı", off: "Otomatik yedek: depo yok", error: "Otomatik yedek alınamadı" },
+  quota: { warn70: "Veritabanı kotası %70'i geçti", warn90: "Veritabanı kotası %90'ı geçti", error: "Veritabanı kotası ölçülemedi" },
   watchdog: { sent: "Sistem uyarısı e-postası gitti", error: "Sistem uyarısı e-postası gönderilemedi" },
   checklist: { sent: "Kontrol listesi e-postaları gitti", none: "Kontrol listesi: gönderilecek yok", failed: "Kontrol listesi e-postası bir kısmına gidemedi", error: "Kontrol listesi hata" },
   karaokeMail: { sent: "Karaoke e-postaları gitti", none: "Karaoke e-postası: gönderilecek yok", failed: "Karaoke e-postası bir kısmına gidemedi", error: "Karaoke e-postası hata" },
@@ -220,9 +227,10 @@ const cut = (v: string, n: number) => (v.length > n ? `${v.slice(0, n - 1)}…` 
 export type CoreStep = "sync" | "digest" | "reminders" | "karaoke" | "menu" | "sales";
 /**
  * Yalnız çalıştığı gün yazılan adımlar (yoksa hiçbir şey yazılmaz): satış tahmini, ModPOS kasa föyü (yalnız anahtar
- * varken), fotoğraf temizliği, ay sonu sayım bildirimi, haftalık özet, süresi dolan personel istekleri
+ * varken), fotoğraf temizliği, ay sonu sayım bildirimi, haftalık özet, süresi dolan personel istekleri, LafPOS gün sonu,
+ * otomatik haftalık yedek (alındığı ya da alınamadığı gün), veritabanı kotası (eşik geçildiği gün)
  */
-export type OptionalStep = "forecast" | "modpos" | "photos" | "count" | "weekly" | "requests" | "gunSonu";
+export type OptionalStep = "forecast" | "modpos" | "photos" | "count" | "weekly" | "requests" | "gunSonu" | "vardiya" | "backup" | "quota";
 export type DailyStep = CoreStep | OptionalStep;
 export type StepResult = { code: string; error?: string | null };
 
@@ -265,7 +273,7 @@ const stepFailed = (k: DailyStep, s: StepResult) => s.code === "error" || (k ===
  * İsteğe bağlı adım verilmediyse hiç yazılmaz (o gün çalışmadı).
  */
 export function dailyOutcome(steps: Record<CoreStep, StepResult> & Partial<Record<OptionalStep, StepResult>>): JobOutcome {
-  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "modpos", "photos", "count", "weekly", "requests", "gunSonu"];
+  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "modpos", "photos", "count", "weekly", "requests", "gunSonu", "vardiya", "backup", "quota"];
   const present = order.filter((k) => steps[k] !== undefined);
   const failed = present.filter((k) => stepFailed(k, steps[k]!));
   const status = steps.digest.code === "error" ? "error" : failed.length ? "partial" : "ok";
@@ -332,6 +340,41 @@ export function gunSonuStep(
   const problems = [...failed.map((d) => `${d.date ?? ""} ${why(d)}`.trim()), ...(r.left ?? []).map((d) => `${d} süre yetmedi`)];
   if (problems.length) return { code: "error", error: problems.join(" · ") };
   return r.days.some((d) => d.report === "written" || d.report === "updated" || d.email === "sent") ? { code: "ok" } : undefined;
+}
+
+/**
+ * Vardiya hatırlatmasının adımı (src/server/vardiya/notify.ts pushPlanReminders; docs/VARDIYA.md › Bildirimler): yalnız
+ * gelecek haftanın planı yazılmamış bir şube için bildirim denendiyse (Cuma–Pazar sabahı, gün başına bir kez) ya da hata
+ * verdiyse yazılır. Bildirim açık yönetici cihazı yoksa "nodevice" (sorun sayılmaz: zil yine söyler); hiçbir cihaza
+ * gidemediyse hata.
+ */
+export function vardiyaStep(r: { status: "skip" | "sent"; tried: number; sent: number; failed: number } | { error: string }): StepResult | undefined {
+  if ("error" in r) return { code: "error", error: r.error };
+  if (r.status === "skip" || !r.tried) return undefined;
+  if (r.sent) return { code: "sent" };
+  return r.failed ? { code: "error", error: `${r.failed} cihaza gönderilemedi` } : { code: "nodevice" };
+}
+
+/**
+ * Otomatik haftalık yedeğin adımı (src/server/backup/auto.ts runAutoBackup; docs/YEDEK.md › Otomatik haftalık yedek):
+ * yalnız yedek alındığı, alınamadığı ya da depo olmadığı gün yazılır (bu haftanın yedeği varsa adım yok). Alınamadıysa
+ * hata: iş "kısmen" olur, zilde "Sabah işinde bir adım hata verdi", ertesi sabahın e-postasında "Dünkü sabah işinde bir
+ * adım hata verdi" olarak söylenir; ertesi sabah yeniden denenir.
+ */
+export function backupStep(r: { status: "ok" | "skip" | "off" | "error"; error?: string }): StepResult | undefined {
+  if (r.status === "skip") return undefined;
+  if (r.status === "error") return { code: "error", error: r.error || null };
+  return { code: r.status };
+}
+
+/**
+ * Veritabanı kotası denetiminin adımı (src/server/db-quota/check.ts runQuotaCheck): yalnız bir eşik geçildiği gün
+ * (uyarı gönderildi) ya da ölçüm hata verdiğinde yazılır. Eşiğin geçilmesi hata değildir (iş "tamam" kalır; uyarıyı
+ * zil ve e-posta taşır).
+ */
+export function quotaStep(r: { status: "ok"; notified: 70 | 90 | null } | { status: "error"; error: string }): StepResult | undefined {
+  if (r.status === "error") return { code: "error", error: r.error };
+  return r.notified ? { code: `warn${r.notified}` } : undefined;
 }
 
 /** Fotoğraf temizliğinin adımı (src/server/storage/photos.ts cleanupPhotos) */
@@ -426,7 +469,8 @@ const LEVEL_ORDER = { danger: 0, warning: 1, info: 2 } as const;
  * CRON_SECRET yoksa iki iş de hiç çalışmaz: tek iş uyarısı o, işlerin "çalışmadı" uyarıları ayrıca verilmez. Paraşüt
  * işinin hatası, zildeki "Paraşüt eşitlemesi başarısız" (parasut_sync_runs) zaten söylüyorsa yinelenmez. Yedek
  * hatırlatması (son yedek 30 günden eski ya da hiç yok, src/lib/backup/format.ts) işlerden bağımsızdır ve "info":
- * Genel bakış şeridine ve /api/health'in 503'üne girmez. Önce "danger".
+ * Genel bakış şeridine ve /api/health'in 503'üne girmez. Veritabanı kotası (%70 ve %90, src/lib/db-quota.ts) da işlerden
+ * bağımsızdır ve "warning"; %90 şeritte de görünür, 503'e girmez. Önce "danger".
  */
 export function systemAlerts(i: {
   production: boolean;
@@ -437,13 +481,20 @@ export function systemAlerts(i: {
   parasutSyncErrorAt: string | null;
   /** Son yedeğin anı (integration_state › backup.last); hiç yoksa null, verilmezse yedek hatırlatılmaz */
   lastBackupAt?: string | null;
+  /** Veritabanı kotasının son ölçümü (integration_state › db.quota); verilmezse kota uyarısı yok */
+  dbQuota?: DbQuotaState;
   /** job_runs'un bütün satırları (yeni önce); verilirse bugünün son `kontrol` çalışması e-postası gidemediyse uyarır */
   runs?: JobRunLite[];
 }): SystemAlert[] {
   if (!i.production) return [];
   const today = trClock(i.now).day;
   const reminder = i.lastBackupAt === undefined ? null : backupReminder(i.lastBackupAt, i.now);
-  const backup: SystemAlert[] = reminder ? [{ ...reminder, level: "info", href: BACKUP_HREF, day: null }] : [];
+  const quota = i.dbQuota ? quotaAlert(i.dbQuota) : null;
+  // İşlerden bağımsız uyarılar: veritabanı kotası (uyarı; %90 Genel bakış şeridinde de) ve yedek hatırlatması (bilgi)
+  const backup: SystemAlert[] = [
+    ...(quota ? [{ ...quota, href: DB_QUOTA_HREF, day: null }] : []),
+    ...(reminder ? [{ ...reminder, level: "info" as const, href: BACKUP_HREF, day: null }] : []),
+  ];
   if (!i.cronSecret) {
     return [
       {

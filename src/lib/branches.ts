@@ -430,6 +430,15 @@ export function branchScopeLabel(scope: BranchScope, known: readonly BranchRow[]
   return known.find((b) => b.id === scope)?.name ?? "Tümü";
 }
 
+/**
+ * Telefonun üst çubuğundaki şube satırı (docs/SUBE.md › Telefonda üst çubuk): birden çok şube açıkken seçili kapsamın
+ * adı ("Tümü", "Marina"); tek şube açıkken null (seçici de çizilmez, satır gürültü olurdu)
+ */
+export function topBarBranchLabel(scope: BranchScope, known: readonly BranchRow[]): string | null {
+  if (known.filter((b) => b.active).length < 2) return null;
+  return branchScopeLabel(scope, known);
+}
+
 /** Seçime giren şube kimlikleri: "hepsi" bütün etkinleri, tek seçim yalnız kendini verir */
 export function branchScopeIds(scope: BranchScope, known: readonly BranchRow[]): string[] {
   if (scope === ALL_BRANCHES) return sortBranches(known.filter((b) => b.active)).map((b) => b.id);
@@ -506,21 +515,22 @@ export function monthWriteNote(scope: BranchScope, known: readonly BranchRow[]):
 }
 
 /** Firma geneli ekranlar (şube kapsamı C P1-12, P2-1): şube seçiliyken de bütün şubelerin verisini gösterir */
-export type CompanyWideScreen = "vergi" | "nakit" | "faturalar" | "tedarikciler" | "tutarlilik";
+export type CompanyWideScreen = "vergi" | "nakit" | "tedarikciler" | "tutarlilik" | "mutabakat";
 
 const COMPANY_WIDE_TEXT: Record<CompanyWideScreen, string> = {
   vergi: "Vergi ve KDV firmanın: bütün şubelerin satışı, faturaları ve giderleri birlikte hesaplanır (tek vergi numarası).",
   nakit: "Nakit planı firmanın: bütün şubelerin kasası, ödemeleri ve faturaları birlikte.",
-  faturalar:
-    "Faturalar firmanındır, hepsi burada. Şubeler aynı Paraşüt hesabındaysa faturalar işletme genelidir; ayrı Paraşüt hesabından gelen fatura şubesinin adıyla işaretlidir. Kasadan ödenen faturalar kasanın şubesiyle ayrılır.",
-  tedarikciler: "Tedarikçilerin cari hesabı firmanındır; borç ve ödemeler şubeye bölünmez. Kasadan yapılan ödemeler kasanın şubesiyle ayrılır.",
+  tedarikciler:
+    "Tedarikçilerin cari hesabı firmanındır; borç ve ödemeler şubeye bölünmez. Faturanın şubesi tedarikçi sayfasında rozetinde; kasadan yapılan ödemeler kasanın şubesiyle ayrılır.",
   tutarlilik: "Tutarlılık işletme geneli: alınan mal şubeye bölünmez; sayım, satış ve zayi bütün şubelerden birlikte karşılaştırılır.",
+  mutabakat:
+    "Banka hesabı ve tedarikçi cari hesabı firmanındır: ekstreler bütün şubelerin kayıtlarıyla eşleşir. POS hakedişinde kart satışı şube şube, kendi POS oranıyla hesaplanır.",
 };
 
 /**
  * Firma geneli ekranın notu (şube kapsamı C P1-12, P2-1; sahibin varsayılanı 24 Kasım 2026: tek firma, Paraşüt hesabı
- * ortak): tek şube seçiliyken ekran yine bütün şubeleri gösterir ve bunu söyler; "Tümü"de not yok (null). Paraşüt ekranı
- * bu listede değil: seçili şubenin Paraşüt hesabını gösterir (B4, docs/PARASUT.md › Şube başına Paraşüt hesabı)
+ * ortak): tek şube seçiliyken ekran yine bütün şubeleri gösterir ve bunu söyler; "Tümü"de not yok (null). Paraşüt ve
+ * Faturalar bu listede değil: seçili şubenin hesabını ve faturalarını gösterir (docs/SUBE.md › Faturanın şubesi)
  */
 export function companyWideNote(screen: CompanyWideScreen, scope: BranchScope, known: readonly BranchRow[]): { title: string; text: string } | null {
   if (scope === ALL_BRANCHES) return null;
@@ -539,8 +549,9 @@ export function branchViewNote(b: { name: string; kind: BranchKind }): { title: 
     title: `${b.name} seçili: yalnız bu ${what}; işletme geneli giderler bilgi olarak`,
     text:
       `Ciro, kasa, personel ve bu ${to} bağlı giderler yalnız bu ${of}. İşletme geneli giderler (şubesi seçilmemiş harcama ve sabit ` +
-      `gider, Gelir-gider'e elle yazılan tutarlar, komisyon faturaları) ${of} kârına girmez: "İşletme geneli payı (bilgi)" satırında ` +
-      `toplamı görünür, Tümü'de bir kez sayılır (bölüştürme yok). Mal maliyeti ${of} satışından reçeteye göre (faturalar ve stok devri ` +
-      `işletme genelinde). İşletmenin toplamı, sayımlı mal maliyeti ve elle yazılan tutarlar için soldan Tümü'nü seçin.`,
+      `gider, işletme geneli faturalar, Gelir-gider'e elle yazılan tutarlar, komisyon faturaları) ${of} kârına girmez: "İşletme geneli ` +
+      `payı (bilgi)" satırında toplamı görünür, Tümü'de bir kez sayılır (bölüştürme yok). Bu ${to} seçilmiş faturalar ${of} giderinde; ` +
+      `şubesi seçilmemiş faturalar hiçbir şubede yok (Faturalar › Tümü'de "Şubesi seçilmemiş" kutusu). Mal maliyeti ${of} satışından ` +
+      `reçeteye göre (stok devri işletme genelinde). İşletmenin toplamı, sayımlı mal maliyeti ve elle yazılan tutarlar için soldan Tümü'nü seçin.`,
   };
 }

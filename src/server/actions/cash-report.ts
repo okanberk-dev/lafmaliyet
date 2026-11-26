@@ -17,6 +17,7 @@ import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { formTillBranch, staffBranchRefusal, withBranchScope } from "@/server/branch-scope";
 import { logSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
+import { lockCashCountCore } from "@/server/cash/blind-count";
 import { emailReport, type CashEmailOutcome } from "@/server/cash/report-email";
 import { clearOkcCumulativeCore, isLafposTillDay, removeCashReport, reportSchema, saveCashReport } from "@/server/cash/report-store";
 import { cashReportExtras } from "@/server/data/cash-photos";
@@ -27,13 +28,14 @@ import { renderCashReport } from "@/server/notify/cash-report-template";
 import { blockedAccounts, sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
-import { attachLafposDayPhotoCore, setLafposBankPosCore } from "@/server/lafpos/foto";
+import { attachLafposDayPhotoCore, refreshDayPhotoCheck, setLafposBankPosCore } from "@/server/lafpos/foto";
 import { lafposBranchId } from "@/server/lafpos/branch";
 import { sendPhotoEmail } from "@/server/lafpos/gun-sonu";
+import { readUnreadDayPhotos } from "@/server/photo-read/lafpos";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 
 import { logActivity } from "./log";
-import { attempt, UserError, zDate } from "./util";
+import { attempt, UserError, zAmount, zDate } from "./util";
 
 // Gün sonu kasa raporu: personel (ve yönetici) her akşam girer; kayıt iş günü başına bir tane, yeniden gönderilince
 // güncellenir. Gönderilince kasa raporu alıcılarına e-posta gider; WhatsApp metni ekranda hazırlanır (docs/KASA-RAPORU.md).
@@ -105,6 +107,32 @@ export async function submitCashReport(input: z.input<typeof submitSchema>) {
   });
 }
 
+const countSchema = z.object({
+  date: zDate,
+  amount: zAmount,
+  /** Değişikliğin nedeni (ilk kör sayımda gerekmez; kural sunucuda) */
+  reason: z.string().max(300).nullish(),
+  /** Formun kasası (docs/SUBE.md › Yazarken hangi şube) */
+  branchId: z.string().max(BRANCH_ID_MAX).nullish(),
+});
+
+/**
+ * Kör sayım (docs/KASA-RAPORU.md › Kör sayım): çekmecede sayılan nakdi kilitler ya da nedeniyle değiştirir. Formun
+ * kasasına yazar; olması gereken ve kasa farkı form tarafında ancak bundan sonra görünür. Yanıt yalnız kilidin kendisi
+ * (sayılan, an, kim): fark ve olması gereken dönmez
+ */
+export async function lockCashCount(input: z.input<typeof countSchema>) {
+  return attempt(async () => {
+    const me = await requireUser();
+    const { branchId, ...data } = countSchema.parse(input);
+    const till = await formTillBranch(branchId);
+    // İşlem geçmişi sayımla aynı işlemde (lockCashCountCore)
+    const lock = await lockCashCountCore(getDb(), me, { ...data, branchId: till });
+    refresh();
+    return lock;
+  });
+}
+
 /**
  * E-posta gitmediyse yeniden dener (yönetici ya da raporu gönderen, raporun günü geçmeden; şubesine kilitli personel
  * yalnız kendi şubesinin raporunu, staffBranchRefusal)
@@ -169,9 +197,19 @@ export async function attachLafposDayPhoto(input: z.input<typeof lafposPhotoSche
     const refusal = await staffBranchRefusal(me, data.branchId);
     if (refusal) throw new UserError(refusal);
     const res = await attachLafposDayPhotoCore(getDb(), me, data);
-    // Fotoğraf LafPOS'tan farklıysa (ya da kodla okunup "yönetici baksın") yöneticiye satır satır e-posta, yanıttan sonra;
-    // düşerse günlük iş yeniden dener. Personele hiçbir şey gitmez
-    after(() => sendPhotoEmail(getDb(), data.date).catch((e) => console.error("[lafpos] fotoğraf e-postası", data.date, e)));
+    // Yanıttan sonra: yüklenirken okunamayan fotoğraf bir kez daha okunur (readUnreadDayPhotos), karşılaştırma yenilenir,
+    // sonra yöneticiye fotoğraf e-postası (okunan, karşılaştırma, fotoğrafın kendisi; uyumlu fotoğrafta da). Düşerse
+    // günlük iş yeniden dener. Personele hiçbir şey gitmez
+    const deadlineAt = Date.now() + 45_000;
+    after(async () => {
+      const db = getDb();
+      try {
+        if ((await readUnreadDayPhotos(db, data.date, { deadlineAt })) > 0) await refreshDayPhotoCheck(db, data.date, data.branchId);
+      } catch (e) {
+        console.error("[lafpos] okunmamış gün sonu fotoğrafı", data.date, e instanceof Error ? e.message : e);
+      }
+      await sendPhotoEmail(db, data.date).catch((e) => console.error("[lafpos] fotoğraf e-postası", data.date, e));
+    });
     refresh();
     return res;
   });

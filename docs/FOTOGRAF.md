@@ -137,8 +137,22 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
 
 ## 5. Claude
 
-- Faturadan paket boyu okuma (Hammaddeler › fiyat onayı, Paraşüt › ürün bağlama) aynı istemciyi, kapıları ve günlük
-  sınırı kullanır ama başka modelle: `claude-haiku-5-5`, PDF belge, yedek model yok ([FATURA-OKUMA.md](FATURA-OKUMA.md)).
+- **Önce ucuz model, gerekirse bir kez güçlü model** (25 Kasım 2026; sahibin isteği: "rapor ve z raporlarını ai okusun ama
+  ucuz model ile okut"; `src/lib/photo-read/cheap-first.ts`). ModPOS Z'si, elle girilen raporun yazarkasa Z'si ve kasadan
+  çıkan fiş önce ucuz modelle (Ayarlar › `photoModels.cheap`, varsayılan Claude Haiku 5.5; aynı istem ve şema, tek 15 sn'lik
+  deneme) okunur. Okunuş eksik ya da kendi içinde tutarsızsa güçlü model (varsayılan Claude Opus 5.5, 35 sn) bir kez
+  yeniden okur: Z'de belge türü, toplam, Z no, ödeme satırı yok / okunamadı, tanınmayan ödeme, ödemelerin toplamı Z
+  toplamını da Z toplamı − ödenmezi de tutmuyor, toplamda ya da ödemede orta / düşük güven (`zReadProblems`); yazarkasa
+  Z'sinde LafPOS gününün kuralı (`cheapReadingProblems`); fişte belge türü, toplam yok ya da güveni yüksek değil, kalemler
+  ya da KDV satırları toplamı tutmuyor (`receiptReadProblems`). Ucuz model ret / yarım / şema dışı yanıt, zaman aşımı ya
+  da yoğunlukla dönerse güçlü model bir kez denenir; kapılar (anahtar, kapalı, sınır, fotoğraf başına 3 okuma) güçlü
+  modeli de kapatır. Güçlü okuma düşerse ucuz okunuş kalır; formdaki denetimler ve renkler aynıdır. Çoğu net fiş tek ucuz
+  çağrıyla biter: görselin tokenı Haiku'da Opus'un kırkta biri. LafPOS gününün gün sonu fotoğrafının kendi sırası var
+  (aşağıda; yapay zekâ yoksa kod da okur). Aşağıdaki "Model `claude-opus-5-5`" maddesi güçlü modelin isteğidir.
+- **Faturanın günlük sınırı ayrı** (25 Kasım 2026): faturadan paket boyu okuma (Hammaddeler › fiyat onayı, Paraşüt › ürün
+  bağlama) aynı istemciyi ve kapıları kullanır ama kendi günlük havuzu vardır (sayı Ayarlar'daki sınır) ve başka modelle
+  okur: `claude-haiku-5-5`, PDF belge, yedek model yok ([FATURA-OKUMA.md](FATURA-OKUMA.md)). Eskiden sınır ortaktı:
+  gündüz okunan faturalar sınırı doldurunca akşamki Z fotoğrafı yapay zekâyla okunamıyordu.
 - Model `claude-opus-5-5`, efor `low`, JSON şemalı çıktı (`output_config.format`), base64 görsel. Reddedilen okuma
   Anthropic'in önerdiği yedek modelle sunucuda yeniden denenir (`server-side-fallback-2026-07-01`,
   `fallbacks: "default"`). Deneme başına 20 sn, bir yeniden deneme, toplam en çok 45 sn; `max_tokens` 6000.
@@ -158,8 +172,8 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
   400" büyük olasılıkla buydu (o gün günlük API'nin hata metnini yazmıyordu).
 - İstemler `src/lib/photo-read/prompts.ts`, şemalar `schemas.ts` (açıklamalar modele gider, İngilizce). Yanıt zod ile
   doğrulanır; tutmazsa "Fotoğraftaki rakamlar güvenilir okunamadı. Elle yazın."
-- **Kapılar:** anahtar (`ANTHROPIC_API_KEY`), Ayarlar › Fotoğraftan okuma'daki anahtar, günlük sınır (varsayılan 40;
-  dolunca fotoğraf yine eklenir), fotoğraf başına 3 okuma. Vardiya'daki yazarak doldurma aynı anahtarı ve aynı aç / kapa
+- **Kapılar:** anahtar (`ANTHROPIC_API_KEY`), Ayarlar › Fotoğraftan okuma'daki anahtar, günlük sınır (varsayılan 40,
+  yalnız fotoğraf okumaları sayılır; dolunca fotoğraf yine eklenir), fotoğraf başına 3 okuma (ucuz + güçlü iki sayılır). Vardiya'daki yazarak doldurma aynı anahtarı ve aynı aç / kapa
   ayarını kullanır ama günlük sınıra **sayılmaz** (kendi sınırı var: [VARDIYA.md](VARDIYA.md) › Yazarak doldurma).
 - **Günlük:** her okuma `ai_calls`'a yazılır: zaman, tür, kişi, fotoğraf, durum ve hata kodu, token sayıları, tutar
   (dolar), süre, çalışan model, Anthropic'in istek kimliği ve doğrulanmış sonuç (sayılar, mağaza adı, tarih, kalemler;

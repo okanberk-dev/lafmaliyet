@@ -218,6 +218,10 @@ Diğer ekranlara dokunuşlar:
   gelmişse "Paraşüt'te faturası var" sayılır (denetim B17'nin iki kez sayılan listesi).
 - **Demirbaş olabilir:** mal, komisyon, kira ve kafe dışı dışındaki kategoride KDV hariç 12.000 ₺'yi aşan, aynı
   tedarikçiden aynı kategoride önceki 90 günde faturası olmayan fatura; karar verilene kadar sayılmaz.
+- **Demirbaş denen kalemler** (25 Kasım 2026): Paraşüt'te "Hammadde değil · Demirbaş" denmiş kalemi olan fatura (ör.
+  hammadde faturasındaki 10.000 ₺'lik tüplü ısıtıcı; `lineAssetCandidates`) Vergi › Demirbaş'ta öneri olarak çıkar,
+  sınırın altında da: sahip **Listeye ekle** der ya da "Gider (demirbaş değil)". Listeye eklenene kadar kalemin payı gider
+  sayılır (kalem kalem sınıflandırma, [PARASUT.md › 5f](PARASUT.md)).
 - **POS komisyonu (K12a):** Gelir-gider'deki `commission:pos` hücresi (elle girildiyse banka dekontu, değilse banka
   kartı payıyla tahmin; denetim B16'nın kuralı). Yemek kartı komisyonu Faturalar › Komisyon'da.
 - **Amortisman (K14):** yalnız normal yöntem, yıllık = maliyet ÷ ömür, edinilen yıl tam yıl; geçici vergi dönemine
@@ -276,7 +280,8 @@ Diğer ekranlara dokunuşlar:
   işaretli geçici vergi mahsup edilir. Damga: beyanname + bilanço + gelir tablosu (2026: 2.516,30).
 - **Asgari kurumlar vergisi muafiyeti (K10):** yalnız Muhasebeci › Vergi ayarları'nda şirket "ilk defa faaliyete
   başladı" seçilince; varsayılan uygulanmaz (vergi yüksek görünür).
-- **KDV (K5):** yeni KDV hesabı yok; takvim nakit planının KDV ve KDV-2 tahminini okur. Yurt dışı hizmet profilli
+- **KDV (K5):** yeni KDV hesabı yok; takvim nakit planının KDV ve KDV-2 tahminini okur (kasa KDV'si gün gün yazarkasa
+  Z'sinden, LafPOS'un dökümünden ya da oranla: [NAKIT-PLANI.md](NAKIT-PLANI.md) › Kasa KDV'sinin kaynağı). Yurt dışı hizmet profilli
   sabit giderin KDV-2'si ayrı satırdır; aynı ay nakit planının KDV tahmininde indirilecek KDV'ye eklenir (VG-04).
 - **Yerel vergiler (K23):** ÇTV ve ilan-reklam hesaplanmaz; hatırlatıcı yoksa takvimde tutarsız satır ("tutar
   belediyeden").

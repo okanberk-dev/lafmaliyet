@@ -6,10 +6,11 @@ import { TILL_DEVICE_GROUP } from "@/lib/branch-settings/groups";
 import { businessDate, LATE_REPORT_DAYS, revisionDataOf } from "@/lib/cash-report";
 import { bankPosSchema, okcSchema, posZSchema, type BankPos, type PosDayZ, type PosOkc } from "@/lib/lafpos/day";
 import { lafposPhotoCheck, lafposPhotoDone, lafposPhotoNeed, staffPhotoLine, type LafposPhotoCheck, type LafposPhotoNeed, type LafposPhotoRead } from "@/lib/lafpos/foto";
-import { autoMissing } from "@/lib/lafpos/gun-sonu";
+import { autoMissing, deviceCompareReport } from "@/lib/lafpos/gun-sonu";
 import { isLafposDay } from "@/lib/lafpos/switch";
 import { OCR_MODEL, readingSourceOf } from "@/lib/photo-read/models";
 import { KasaOkcRaw } from "@/lib/photo-read/schemas";
+import { okcReadRows } from "@/lib/photo-read/summary";
 import { linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
 import { addDays, longDateTR, todayTR } from "@/lib/reminders";
 import { resolveBranchSetting } from "@/server/branch-settings";
@@ -17,8 +18,9 @@ import { lockCashReport, lockLateDay, okcServerColumns, type CashActor, type Cas
 import { schema as s, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { lafposBranchId } from "@/server/lafpos/branch";
+import type { EmailAttachment } from "@/server/notify/resend";
 import { assertNotHeld } from "@/server/staff-requests/core";
-import { getPhoto, keepPhoto, linkable } from "@/server/storage/photos";
+import { getPhoto, keepPhoto, linkable, readPhoto } from "@/server/storage/photos";
 import { UserError } from "@/server/user-error";
 
 /*
@@ -134,6 +136,47 @@ export async function photoCheckOf(
     },
     now,
   );
+}
+
+/**
+ * Rapor yokken bekleyen fotoğrafların karşılaştırması (LafPOS'ta sayım yok): otomatik raporun yazacağı değerlerle
+ * (deviceCompareReport). Fotoğraf e-postası rapor beklenirken de okunanı ve karşılaştırmayı söylesin; rapor yazılınca
+ * aynı okunuş aynı satırları verir, e-posta ikinci kez gitmez. Fotoğraf ya da gün yoksa null
+ */
+export async function pendingPhotoCheck(db: Reader, date: string, branchId: string, ids: readonly number[], now = new Date()): Promise<LafposPhotoCheck | null> {
+  if (!ids.length) return null;
+  const device = await lafposDayDevice(db, date, branchId);
+  if (!device) return null;
+  return lafposPhotoCheck(
+    { day: date, reads: await photoReads(db, ids), bankPos: device.bankPos, okc: device.okc, report: deviceCompareReport({ bankPos: device.bankPos, okc: device.okc, lafposZNo: device.z.okcZNo ?? null }) },
+    now,
+  );
+}
+
+/** E-postaya eklenen fotoğraf en çok (bölümde en çok 3 fotoğraf olur) */
+const MAIL_PHOTO_MAX = 3;
+/** Eklerin toplam boyutu en çok (Resend 40 MB; e-posta telefonda da açılsın) */
+const MAIL_PHOTO_BYTES = 8_000_000;
+
+const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+
+/**
+ * Fotoğraf e-postasının parçaları: her fotoğrafta okunan (okcReadRows; okunmadıysa satır yok), ekleyen(ler)in adı ve
+ * fotoğrafların kendisi (ek). Depo yoksa ya da fotoğraf okunamazsa ek düşer, e-posta yine gider
+ */
+export async function photoMailParts(db: Reader, date: string, ids: readonly number[]): Promise<{ reads: [string, string][][]; by: string | null; attachments: EmailAttachment[] }> {
+  const reads = (await photoReads(db, ids)).map((r) => (r.raw ? okcReadRows(r.raw) : []));
+  const rows = ids.length ? await db.select({ id: s.photos.id, by: s.photos.createdByName }).from(s.photos).where(inArray(s.photos.id, [...ids])) : [];
+  const names = [...new Set(rows.map((r) => r.by).filter((x): x is string => Boolean(x)))];
+  const attachments: EmailAttachment[] = [];
+  let total = 0;
+  for (const [i, id] of ids.slice(0, MAIL_PHOTO_MAX).entries()) {
+    const file = await readPhoto(id).catch(() => null);
+    if (!file || total + file.bytes.length > MAIL_PHOTO_BYTES) continue;
+    total += file.bytes.length;
+    attachments.push({ filename: `gun-sonu-${date}${ids.length > 1 ? `-${i + 1}` : ""}.${EXT[file.contentType] ?? "jpg"}`, content: file.bytes, contentType: file.contentType });
+  }
+  return { reads, by: names.length ? names.join(", ") : null, attachments };
 }
 
 /**

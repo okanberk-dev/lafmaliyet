@@ -20,6 +20,7 @@ import {
   computeCash,
   nextWarning,
   paymentLines,
+  PHOTO_OK_TEXT,
   photoNames,
   reportNo,
   reportSubject,
@@ -40,6 +41,7 @@ import { okcHasFigures, okcReconcile, type OkcReconcileLine } from "@/lib/okc-z"
 import { photoDiffText } from "@/lib/photo-read/kasa";
 import { longDateTR } from "@/lib/reminders";
 import type { TillOnlineRow } from "@/lib/site-sales/calc";
+import { handedOverLine } from "@/lib/teslim";
 
 import { APP_URL } from "./digest-template";
 
@@ -135,6 +137,12 @@ export function renderCashReport(
      * yazarkasa bölümünün başlığında ("Pavo · sicil AB123"). Belirtilmediyse yazılmaz (bugünkü gibi)
      */
     device?: { label: string | null; registerNo: string | null } | null;
+    /**
+     * Kör sayımın uyarısı (Tuzla; src/lib/kor-sayim.ts countAttention, docs/KASA-RAPORU.md › Kör sayım): kilitli sayım
+     * sonradan değiştiyse ya da rapordaki sayılan kilitli sayımdan farklıysa Kasa (nakit) bölümünün turuncu kutusunda
+     * ("Sayım kilitlendikten sonra değişti: 6.400 ₺ → 6.450 ₺"). Yoksa yazılmaz
+     */
+    blindCount?: string | null;
   } & CashReportExtras &
     CashReportIntegrity,
 ) {
@@ -204,7 +212,7 @@ export function renderCashReport(
     { label: "= Olması gereken", value: money(c.expectedCash), strong: true },
     { label: "Sayılan", value: money(f.countedCash), strong: true },
     { label: "Fark", value: c.kind === "even" ? "Tutuyor" : `${money(Math.abs(c.cashDiff))} ${tone.label}`, strong: true, tone: tone.tone },
-    ...(f.handedOver ? [{ label: "Teslim edilen", value: money(f.handedOver) }] : []),
+    ...(f.handedOver ? [{ label: "Teslim edilen", value: handedOverLine(f.handedOver, f.handedToName ?? null) }] : []),
     { label: "Ertesi güne devir", value: money(c.carryOver) },
   ];
   const cardRows: Row[] =
@@ -259,6 +267,8 @@ export function renderCashReport(
       ]
     : [];
   const photoList = photoNames(meta.photos).join(", ");
+  // Fotoğraf okundu ve yazılanlarla tutuyor: yöneticiye olumlu satır (fark varsa yukarıdaki turuncu kutular)
+  const photoOk = meta.photoRead && !(meta.photoDiffs ?? []).length ? PHOTO_OK_TEXT : null;
   // Raporun şubesi bağlantıda: seçici o şubeyi seçer, form o kasayı gösterir (yoksa çerezdeki şubenin raporu açılırdı)
   const link = `${APP_URL}/panel/kasa?gun=${f.date}${meta.branch ? `&sube=${encodeURIComponent(meta.branch.id)}` : ""}`;
   // laffogato.net: bilgi satırı, hesaba katılmaz (sitenin günü gece yarısında biter)
@@ -273,7 +283,7 @@ export function renderCashReport(
   // Z, kasa, yazarkasa ya da kart, zayi ve ikram, laffogato.net, not, "Panelde aç"
   const sections = [
     block(zSectionTitle(meta.kasa), zRows, paymentsWarning ?? ikramWarning, { top: 30 }),
-    block("Kasa (nakit)", cashRows, [unreceiptedWarning, meta.carry ? carryWarning(meta.carry) : null, meta.next ? nextWarning(meta.next) : null, photoWarning]),
+    block("Kasa (nakit)", cashRows, [meta.blindCount ?? null, unreceiptedWarning, meta.carry ? carryWarning(meta.carry) : null, meta.next ? nextWarning(meta.next) : null, photoWarning]),
     okc ? block(`Banka POS Z raporu (yazarkasa)${okcHead ? ` · ${okcHead}` : ""}`, okcRows, null, { after: `${toneLines(okcReconcile(f, "admin", kasa))}${warnBox([okcPhotoWarning])}` }) : "",
     cardRows.length ? block("Kart", cardRows, cardWarning) : "",
     wasteRows.length ? block("Zayi & ikram", wasteRows) : "",
@@ -288,7 +298,7 @@ export function renderCashReport(
     dateLabel: longDateTR(f.date),
     cardHtml: `${metaLine(keepParts(`${byLine(meta.by, meta.countedBy)} · ${time}${meta.revision > 1 ? " · güncellendi" : ""}${zMeta ? ` · ${zMeta}` : ""}`))}${
       photoList ? `\n${metaLine(`Fotoğraflar panelde: ${photoList}`, { top: 4, size: 13 })}` : ""
-    }${meta.approval ? `\n${metaLine(meta.approval, { top: 8, color: C.soft, strong: true })}` : ""}
+    }${photoOk ? `\n${metaLine(`✓ ${photoOk}`, { top: 6, size: 13, color: C.goodInk, strong: true })}` : ""}${meta.approval ? `\n${metaLine(meta.approval, { top: 8, color: C.soft, strong: true })}` : ""}
 ${space(16)}${hero({ label: "Kasa", value: headline, sub: keepParts(`Olması gereken ${money(c.expectedCash)} · sayılan ${money(f.countedCash)}`), tone: tone.tone })}
 ${changesBox}${lafposBox}
 ${sections.join("\n")}
@@ -296,6 +306,6 @@ ${button(link, "Panelde aç")}`,
     footer: "Bu e-posta kasa raporu alıcılarına gönderildi. Adresleri panelde Kasa raporu sayfasından değiştirebilirsiniz.",
   });
 
-  const text = `${meta.approval ? `${meta.approval}\n\n` : ""}${cashReportText(f, { ...meta, branchName }, "admin").replace(/\*/g, "")}${meta.online ? `\n\n${meta.online.text}` : ""}\n\nPanelde aç: ${link}`;
+  const text = `${meta.approval ? `${meta.approval}\n\n` : ""}${cashReportText(f, { ...meta, branchName }, "admin").replace(/\*/g, "")}${meta.blindCount ? `\n\n⚠️ ${meta.blindCount}` : ""}${photoOk ? `\n\n✓ ${photoOk}` : ""}${meta.online ? `\n\n${meta.online.text}` : ""}\n\nPanelde aç: ${link}`;
   return { subject, html, text };
 }

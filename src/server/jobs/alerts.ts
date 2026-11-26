@@ -9,7 +9,8 @@ import { droppedLogSuffix } from "@/lib/notify-recipients";
 import { logActivity } from "@/server/actions/log";
 import { readLastBackup } from "@/server/backup/state";
 import { getDb, schema as s } from "@/server/db";
-import { renderSystemAlert } from "@/server/notify/digest-template";
+import { readDbQuotaState } from "@/server/db-quota/state";
+import { renderSystemAlert, type SystemAlertAbout } from "@/server/notify/digest-template";
 import { activeDigestEmails, sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
@@ -31,15 +32,21 @@ export interface JobsOverview {
 
 /**
  * Ayarlar › Günlük işler ve /api/health?isler=1: son çalışmalar, iki işin durumu ve uyarılar (yalnız okur). Uyarılara
- * yedek hatırlatması da girer (Ayarlar › Yedek); son yedek okunamazsa yalnız o atlanır, iş uyarıları etkilenmez.
+ * yedek hatırlatması (Ayarlar › Yedek) ve veritabanı kotası (Ayarlar › Veritabanı) da girer; biri okunamazsa yalnız o
+ * atlanır, iş uyarıları etkilenmez.
  */
 export async function loadJobsOverview(now = new Date()): Promise<JobsOverview> {
-  const [runs, watchSince, parasutSyncErrorAt, lastBackup] = await Promise.all([
+  const [runs, watchSince, parasutSyncErrorAt, lastBackup, dbQuota] = await Promise.all([
     loadJobRuns(),
     readWatchSince(),
     lastParasutSyncErrorAt(),
     readLastBackup().catch((e) => {
       console.error("[sistem uyarıları] son yedek okunamadı", e);
+      return undefined;
+    }),
+    // Veritabanı kotası: sabah işinin son ölçümü (burada boyut yeniden sorulmaz); okunamazsa yalnız o uyarı atlanır
+    readDbQuotaState().catch((e) => {
+      console.error("[sistem uyarıları] kota durumu okunamadı", e);
       return undefined;
     }),
   ]);
@@ -52,7 +59,7 @@ export async function loadJobsOverview(now = new Date()): Promise<JobsOverview> 
     cronSecret,
     runs,
     health,
-    alerts: systemAlerts({ production, cronSecret, now, health, parasutSyncErrorAt, lastBackupAt, runs }),
+    alerts: systemAlerts({ production, cronSecret, now, health, parasutSyncErrorAt, lastBackupAt, dbQuota, runs }),
   };
 }
 
@@ -89,13 +96,25 @@ export async function sendWatchdogAlert(now = new Date()): Promise<"sent" | "non
   if (!isProductionRuntime()) return "none";
   const settings = await loadNotifySettings();
   if (!settings.emailEnabled || !isEmailConfigured()) return "none";
+  const items = await loadEmailProblems("watchdog", { now });
+  return sendSystemEmail(items, now);
+}
+
+/**
+ * Sistem uyarısı e-postası (bekçi ve veritabanı kotası): sabah e-postasının alıcılarına, sorun başına bir kez
+ * (notification_log anahtarı). Personel hesabının ya da pasif hesabın adresi düşer (E-53; sabah e-postasıyla aynı
+ * alıcılar, aynı kural). Yalnız canlıda, e-posta açık ve yapılandırılmışsa; `about` e-postanın konusunu değiştirir.
+ */
+export async function sendSystemEmail(items: EmailProblem[], now = new Date(), about?: SystemAlertAbout): Promise<"sent" | "none" | "error"> {
+  if (!isProductionRuntime() || !items.length) return "none";
+  const settings = await loadNotifySettings();
+  if (!settings.emailEnabled || !isEmailConfigured()) return "none";
   const db = getDb();
-  // Personel hesabının ya da pasif hesabın adresi düşer (E-53; sabah e-postasıyla aynı alıcılar, aynı kural)
-  const [items, recipients] = await Promise.all([loadEmailProblems("watchdog", { now }), activeDigestEmails(db).then((emails) => sendableRecipients(db, emails))]);
+  const recipients = await activeDigestEmails(db).then((emails) => sendableRecipients(db, emails));
   const to = recipients.to;
-  if (!items.length || !to.length) return "none";
+  if (!to.length) return "none";
   const today = trClock(now).day;
-  const { subject, html, text } = renderSystemAlert(items, today);
+  const { subject, html, text } = renderSystemAlert(items, today, about);
   const keys = items.map((i) => i.key);
   const res = await sendEmail({
     from: resolveFrom(settings.from),
