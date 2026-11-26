@@ -630,7 +630,7 @@ export function ScanEditor({
                 >
                   <span
                     className={cn(
-                      "size-5 rounded-full border-[3px] bg-white/25 shadow-[0_1px_6px_rgb(0_0_0/0.5)] transition-transform group-focus-visible:ring-4 group-focus-visible:ring-white/60",
+                      "size-5 rounded-full border-[3px] bg-white/25 shadow-[0_1px_6px_rgb(0_0_0/0.5)] transition-transform motion-reduce:transition-none group-focus-visible:ring-[3px] group-focus-visible:ring-white group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-black/70",
                       valid ? "border-[#c0f21e]" : "border-[#ff5a4f]",
                       dragging === i && "scale-125",
                     )}

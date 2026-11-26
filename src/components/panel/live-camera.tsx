@@ -517,7 +517,7 @@ export function LiveCamera({ opts, onDone }: { opts: LiveCameraOptions; onDone: 
             </span>
           </div>
         ) : null}
-        <div aria-hidden="true" className={cn("pointer-events-none absolute inset-0 bg-white transition-opacity duration-150", flash ? "opacity-80" : "opacity-0")} />
+        <div aria-hidden="true" className={cn("pointer-events-none absolute inset-0 bg-white transition-opacity duration-150 motion-reduce:hidden", flash ? "opacity-80" : "opacity-0")} />
         <p
           aria-live="polite"
           className={cn(
