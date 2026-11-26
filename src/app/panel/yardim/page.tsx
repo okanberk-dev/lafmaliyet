@@ -1,4 +1,5 @@
 import {
+  ArrowLeftRight,
   ArrowUpRight,
   Bell,
   Bot,
@@ -542,6 +543,23 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         links: [
           { href: "/panel/komisyonlar", label: "Komisyon & hakediş" },
           { href: "/panel/komisyonlar#kanallar", label: "Kanallar" },
+        ],
+      },
+      {
+        id: "mutabakat",
+        q: "Banka ve tedarikçi ekstresi panelle tutuyor mu?",
+        a: (
+          <>
+            <Path href="/panel/mutabakat" /> ekranında Ekstre yükle&apos;ye dokunun: bankanın hesap hareketlerini ya da tedarikçinin cari ekstresini .xlsx ya da CSV
+            dosyası olarak seçin. Sütunlar kendiliğinden tanınır, tanınmazsa siz seçersiniz. Hareketler harcamalar, tedarikçi ödemeleri, ödendi işaretli faturalar ve
+            kasadan teslimlerle (tedarikçide faturalar ve ödemelerle) eşleşir; eşleşmeyeni Eşleştir ile elle bağlayın ya da Yok say deyin. POS hakediş sekmesi kasa
+            raporlarının kart satışını bankaya gelen POS parasıyla gün gün karşılaştırır. Dosya saklanmaz, hareketler 90 gün sonra silinir; panel kaydı değişmez.
+          </>
+        ),
+        icon: ArrowLeftRight,
+        links: [
+          { href: "/panel/mutabakat", label: "Mutabakat" },
+          { href: "/panel/mutabakat?sekme=pos", label: "POS hakediş" },
         ],
       },
       {
