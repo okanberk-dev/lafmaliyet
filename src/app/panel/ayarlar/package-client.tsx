@@ -74,8 +74,8 @@ export function PackageOptions({ recipients, auto, months, emailReady }: { recip
             ))}
           </Select>
         </Field>
-        {/* Dosya indiren rota: düz bağlantı */}
-        <a href={`/api/muhasebe/paket?ay=${month}`} download className={buttonClass("secondary", "md")}>
+        {/* Dosya indiren rota: düz bağlantı. Adres seçicinin değerinden değil, listedeki ayın kendisinden kurulur */}
+        <a href={`/api/muhasebe/paket?ay=${encodeURIComponent(picked?.month ?? months[0]?.month ?? "")}`} download className={buttonClass("secondary", "md")}>
           <FileSpreadsheet size={16} aria-hidden="true" /> Paketi indir (.xlsx)
         </a>
         <Button variant="secondary" onClick={() => setAsking(true)} disabled={pending || !savedCount || !emailReady || dirty}>
