@@ -446,7 +446,9 @@ bir Web Worker'da çalıştırılması önerilir (eşzamanlı; `ImageData.data.b
   hat, zarftan dörtgen, kenarlara RANSAC); *kenar* (Canny, eşikler görüntüden; yönlü Hough; görüntünün kenarı da doğru
   sayılır); *yazıdan başlama* (yoğun yazı bölgesi dışarı doğru en yakın kâğıt kenarına büyütülür: açık tezgâhta beyaz
   fiş). Puan: her kenarın gradyan desteği ve içi / dışı basamağı (işaret tutarlı), alan, açılar, kâğıtlık karşıtlığı,
-  yazıyı kesiyor mu. Puanı düşük kalan en iyi adaylar kenarlara oturtulup yeniden puanlanır. Güven 0–1; birbirine
+  yazıyı kesiyor mu, içerisi kâğıda benziyor mu (koyu ya da çok renkli, yazısız dikdörtgen — telefon, POS cihazı,
+  kutu — seçilmez; tek başınaysa güveni en çok 0,3, neden "kagida-benzemiyor"). Puanı düşük kalan en iyi adaylar
+  kenarlara oturtulup yeniden puanlanır. Güven 0–1; birbirine
   yakın puanlı iki farklı aday, zayıf kenar güveni düşürür. Kâğıt kareyi dolduruyorsa `fillsFrame` (kırpılmaz).
   Kareden taşan uzun fişte kareye dayanan kenar, uzun kenarların kaçış noktasından bulunan kısa kenar yönüyle
   görüntünün içine alınır; köşesi kareden çıkmış ama iki kenarı görünen kâğıtta köşe kenarların kesişimidir (en çok
@@ -471,7 +473,8 @@ bir Web Worker'da çalıştırılması önerilir (eşzamanlı; `ImageData.data.b
   `refineCorners`, `quadIsValid`, `orderCorners`, `cornersFromHint` / `cornersToHint` (0–1000 oran), `thumbnail`.
 - **Doğruluk ve süre** (sentetik fotoğraflar, gerçek köşeler bilinir; `tests/tarama-*.test.ts`): köşe hatası köşegenin
   %1,5'inin altında (eğik A4, koyu / dokulu / tahta zemin, açık ve beyaza yakın tezgâhta termal fiş, gölgeli fiş, kareden
-  taşan fiş, köşesi kareden çıkmış kâğıt; çoğunda %0,1'in altında); rastgele 120 sahnede 120'si. Kaba ipucu (köşegenin
+  taşan fiş, köşesi kareden çıkmış kâğıt, yanında POS cihazı olan fiş; çoğunda %0,1'in altında); rastgele 192 sahnede
+  192'si. Kaba ipucu (köşegenin
   ±%5'i) %1,5'in altına oturur. Beyaz fiş beyaza yakın tezgâhta: kâğıtla zemin arası ~20 gri düzeyinde bulunur, ~12'de
   çoğu, ~8'de hiçbiri (A4 ~8'de de bulunur); bulunamayınca kırpılmaz, yalnız görünüm işlenir.
   1670×2220 fotoğrafta (yüklemedeki ölçü) sunucu çekirdeğinde A4 ~0,7–1 sn, fiş ~0,4 sn işlemci süresi; telefonda
