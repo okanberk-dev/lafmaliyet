@@ -9,7 +9,7 @@ import { CASH_OUT_REQUEST_TEXT } from "@/lib/cash-out-requests";
 import { cashOutLabel, cashOutUndoJson, readCashOutUndo, type CashOutSnapshot } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
-import { asActor, opsLevel } from "@/lib/roles";
+import { asActor, opsLevel, realRoleOf } from "@/lib/roles";
 import { requireCan } from "@/server/auth/dal";
 import { formTillBranch, staffBranchRefusal, withBranchScope } from "@/server/branch-scope";
 import { assertCashOutDeletable, lockCashOutLink, syncLinkedCashOut } from "@/server/cari/kasa";
@@ -44,9 +44,11 @@ function logDetail(d: CashOutData, expense: boolean) {
 async function persist(me: CashOutActor, d: CashOutData, opts: { restore?: boolean; restoreId?: number; branchId?: string } = {}) {
   if (d.date > businessDate()) throw new UserError("İleri bir günün kasasına eklenemez");
   const admin = me.role === "admin";
+  // Tedarikçiler (cari) yalnız yöneticinin: "admin" düzeyinde yazan müdür bağlı satırda personel gibi kilitli
+  const owner = realRoleOf(me) === "admin";
   const saved = await getDb().transaction(async (tx) => {
-    // Tedarikçi ödemesine bağlı satır (src/server/cari/kasa.ts): personel düzeltemez, yöneticide önce kart kilitlenir
-    const link = d.id ? await lockCashOutLink(tx, d.id, admin) : null;
+    // Tedarikçi ödemesine bağlı satır (src/server/cari/kasa.ts): personel ve müdür düzeltemez, yöneticide önce kart kilitlenir
+    const link = d.id ? await lockCashOutLink(tx, d.id, owner) : null;
     const prev = d.id ? await lockCashOut(tx, d.id) : null;
     if (d.id && !prev) throw new UserError("Satır bulunamadı; silinmiş olabilir");
     // Müdür "admin" düzeyinde yazar ama şubesine kilitli: var olan satır kendi şubesinin olmalı (kilit oturumdan)
@@ -59,7 +61,7 @@ async function persist(me: CashOutActor, d: CashOutData, opts: { restore?: boole
       const moved = prev && prev.date !== d.date ? await staffCashOutGate(tx, me, { op: "ekle", date: d.date }) : "direct";
       if (gate === "request" || moved === "request") throw new UserError(CASH_OUT_REQUEST_TEXT.needsApproval);
     }
-    const supplier = prev ? await syncLinkedCashOut(tx, prev.id, link, { admin, kind: d.kind, amount: d.amount, date: d.date }) : null;
+    const supplier = prev ? await syncLinkedCashOut(tx, prev.id, link, { admin: owner, kind: d.kind, amount: d.amount, date: d.date }) : null;
     return { ...(await writeCashOut(tx, me, d, { prev, restore: opts.restore, restoreId: opts.restoreId, branchId: opts.branchId })), supplier };
   });
   await logActivity(me, saved.updated ? "Kasadan çıkan düzeltildi" : "Kasadan çıkan", logDetail(d, saved.expenseId !== null) + (saved.supplier ? ` · ${saved.supplier} ödemesi de güncellendi` : ""));
@@ -103,7 +105,8 @@ export async function deleteCashOut(id: number) {
       if (!row) throw new UserError("Satır bulunamadı; silinmiş olabilir");
       const otherBranch = await staffBranchRefusal(me, row.branchId);
       if (otherBranch) throw new UserError(otherBranch);
-      await assertCashOutDeletable(tx, cid, me.role === "admin");
+      // Bağlı satır: müdüre de personel gibi kilitli (tedarikçinin adı ve ödeme günü yalnız yöneticiye)
+      await assertCashOutDeletable(tx, cid, actor.role === "admin");
       if (me.role !== "admin" && (await staffCashOutGate(tx, me, { op: "sil", row })) === "request") throw new UserError(CASH_OUT_REQUEST_TEXT.needsApproval);
       return removeCashOut(tx, row);
     });

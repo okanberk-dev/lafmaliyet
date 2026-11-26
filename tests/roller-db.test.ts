@@ -244,6 +244,33 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
       assert.equal((await db.select({ role: s.users.role }).from(s.users).where(eq(s.users.id, ids.ayse)))[0].role, "staff");
     });
 
+    test("tedarikçi ödemesine bağlı kasadan çıkanı düzeltemez ve silemez (cari yalnız yöneticinin; tedarikçi adı da gitmez)", async () => {
+      const outs = await import("../src/server/actions/cash-outs");
+      const { CARI_LOCKED_STAFF } = await import("../src/server/cari/kasa");
+      const date = "2026-01-05";
+      const [row] = await db.insert(s.cashOuts).values({ date, kind: "teslim", amount: 300, branchId: "tuzla", createdBy: ids.ali, createdByName: "Ali" }).returning({ id: s.cashOuts.id });
+      const [sup] = await db.insert(s.suppliers).values({ name: "Gizli Tedarikçi", key: "gizli-tedarikci-roller" }).returning({ id: s.suppliers.id });
+      const [pay] = await db
+        .insert(s.supplierEntries)
+        .values({ supplierId: sup.id, kind: "odeme", date, amount: 300, method: "kasa", cashOutId: row.id, createdByName: "Ali" })
+        .returning({ id: s.supplierEntries.id });
+      try {
+        await signIn("mehmet");
+        asAction();
+        const line = { id: row.id, date: "2026-01-06", kind: "teslim" as const, amount: 350, store: null, description: null, receiptDate: null, receiptNo: null, vat: null, docType: "yok" as const, categoryId: null, toExpenses: false, photoId: null, branchId: "tuzla" };
+        assert.deepEqual(await outs.saveCashOut(line), { ok: false, error: CARI_LOCKED_STAFF });
+        assert.deepEqual(await outs.deleteCashOut(row.id), { ok: false, error: CARI_LOCKED_STAFF }, "silme yanıtı tedarikçinin adını ve gününü söylemez");
+        const [p] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, pay.id));
+        assert.deepEqual([p.amount, p.date], [300, date], "tedarikçi ödemesi değişmedi");
+        const [o] = await db.select().from(s.cashOuts).where(eq(s.cashOuts.id, row.id));
+        assert.deepEqual([o.amount, o.date], [300, date], "satır değişmedi");
+      } finally {
+        await db.delete(s.supplierEntries).where(eq(s.supplierEntries.id, pay.id));
+        await db.delete(s.suppliers).where(eq(s.suppliers.id, sup.id));
+        await db.delete(s.cashOuts).where(eq(s.cashOuts.id, row.id));
+      }
+    });
+
     test("şubesi pasife alınan müdürün oturumu yok (öteki şubelere açılmaz)", async () => {
       await signIn("mehmet");
       assert.ok(await dal.getCurrentUser());

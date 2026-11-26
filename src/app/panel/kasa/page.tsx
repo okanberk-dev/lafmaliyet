@@ -424,13 +424,16 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   // önerileri görür, personel yalnız kilidi; personelin satır verisi beyaz listeyle kurulur (ödeme bağı gitmez)
   const ids = outs.map((o) => o.id);
   const [linked, supplierNames, cariHints] = showForm
-    ? await Promise.all([admin ? Promise.resolve(new Set<number>()) : loadLinkedCashOuts(ids), loadSupplierNames(), owner ? loadKasaCariHints(ids, today) : Promise.resolve({})])
+    ? await Promise.all([owner ? Promise.resolve(new Set<number>()) : loadLinkedCashOuts(ids), loadSupplierNames(), owner ? loadKasaCariHints(ids, today) : Promise.resolve({})])
     : [new Set<number>(), [], {}];
   const hideName = (o: (typeof outs)[number]) => (o.categoryId !== null && !staffCats.has(o.categoryId) ? { ...o, categoryName: null } : o);
+  // Tedarikçi ödemesine bağlı satır yöneticiden başkasına kilitli görünür (cari yalnız yöneticinin; sunucu da reddeder:
+  // persist › lockCashOutLink, deleteCashOut › assertCashOutDeletable gerçek role bakar)
+  const lockRow = <T extends { id: number }>(o: T) => (owner ? o : { ...o, locked: linked.has(o.id) });
   const dayOuts: CashOutView[] = admin
     ? allCategories
-      ? outs
-      : outs.map(hideName)
+      ? outs.map(lockRow)
+      : outs.map((o) => lockRow(hideName(o)))
     : outs.map((o) => staffCashOutRow(hideName(o), linked.has(o.id)));
   // Raporun fotoğraf bilgisi: WhatsApp metninin "📷 … fotoğrafı panelde" ve "Fotoğraftan farklı yazılan" satırları
   // e-postadakiyle aynı olsun diye personelin girebildiği her günde (cashReportWhatsapp'ın kuralı). Fotoğrafların

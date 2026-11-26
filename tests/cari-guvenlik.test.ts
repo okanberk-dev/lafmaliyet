@@ -175,7 +175,10 @@ test("Kasa (§8): personelin satır verisi beyaz listeyle kurulur; ödeme bağı
   assert.equal(row.locked, true);
   // Sayfa personelde yalnız staffCashOutRow'dan geçen satırı verir; yöneticinin ipucu personele hiç okunmaz
   const page = read("src/app/panel/kasa/page.tsx");
-  assert.match(page, /const dayOuts: CashOutView\[\] = admin\s+\? allCategories\s+\? outs\s+: outs\.map\(hideName\)\s+: outs\.map\(\(o\) => staffCashOutRow\(/);
+  assert.match(page, /const dayOuts: CashOutView\[\] = admin\s+\? allCategories\s+\? outs\.map\(lockRow\)\s+: outs\.map\(\(o\) => lockRow\(hideName\(o\)\)\)\s+: outs\.map\(\(o\) => staffCashOutRow\(/);
+  // Bağlı satır müdüre de kilitli görünür (yalnız yönetici bağlı satırı düzeltir)
+  assert.match(page, /owner \? Promise\.resolve\(new Set<number>\(\)\) : loadLinkedCashOuts\(ids\)/);
+  assert.match(page, /const lockRow = <T extends \{ id: number \}>\(o: T\) => \(owner \? o : \{ \.\.\.o, locked: linked\.has\(o\.id\) \}\);/);
   assert.match(page, /owner \? loadKasaCariHints\(ids, today\) : Promise\.resolve\(\{\}\)/);
   // Ad ipucu faturalardaki eşleşme kuralıyla aynı anahtarı kullanır (pencere fatura kurallarını yüklemez)
   const { supplierMatchKey } = await import("../src/app/panel/faturalar/rules");
@@ -195,7 +198,11 @@ test("Kasa (§6.8, §8): bağlı satır personele kilitli, yöneticinin düzeltm
     assert.ok(i >= 0, s);
     return i;
   };
-  assert.ok(at("lockCashOutLink(tx, d.id, admin)") < at("lockCashOut(tx, d.id)"));
+  assert.ok(at("lockCashOutLink(tx, d.id, owner)") < at("lockCashOut(tx, d.id)"));
+  // Cari kapıları gerçek role bakar: "admin" düzeyinde yazan müdür bağlı satırda personel gibi kilitli
+  assert.match(persist, /const owner = realRoleOf\(me\) === "admin";/);
+  assert.match(persist, /syncLinkedCashOut\(tx, prev\.id, link, \{ admin: owner,/);
+  assert.match(body(co, "export async function deleteCashOut("), /assertCashOutDeletable\(tx, cid, actor\.role === "admin"\)/);
   assert.ok(at("lockCashOut(tx, d.id)") < at("syncLinkedCashOut(tx, prev.id, link,"));
   assert.ok(at("syncLinkedCashOut(") < at("writeCashOut(tx, me, d,"));
   assert.match(body(read("src/server/cash-outs/write.ts"), "export async function lockCashOut("), /\.for\("update"\)/);
