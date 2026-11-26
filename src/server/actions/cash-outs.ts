@@ -83,9 +83,9 @@ export async function saveCashOut(input: z.input<typeof saveSchema>) {
   return attempt(async () => {
     const me = await requireCan("kayit.yaz");
     const { branchId, ...d } = saveSchema.parse(input);
-    const till = await formTillBranch(branchId);
     // Müdür "admin" düzeyinde yazar ama bütün kategorileri seçemez: kural yazım yolunda (writeCashOut, gerçek rol
     // `realRole`), isteğin onayı da aynı kuraldan geçer (docs/ROLLER.md › Kararlar)
+    const till = await formTillBranch(branchId);
     return withBranchScope(till, () => persist(asActor(me, opsLevel(me.role)), d));
   });
 }
