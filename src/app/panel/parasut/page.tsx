@@ -15,14 +15,16 @@ import { requireAdmin } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
+import { unassignedInvoiceCount } from "@/server/data/invoice-branch";
 import { invoiceReadingState } from "@/server/invoice-reading/read";
+import { invoiceScopeWhere } from "@/server/invoice-scope";
 import { aiMatchPage } from "@/server/parasut/ai-match";
 import { invoiceAccountWhere, loadParasutAccounts, parasutAccountForScope } from "@/server/parasut/accounts";
 import { parasutConnection } from "@/server/parasut/client";
 import { configFrom, hasParasutInvoices, loadInvoiceScope, loadParasutSettings, parasutRedirectUri } from "@/server/parasut/config";
 import { CURSOR_KEY, PENDING_KEY } from "@/server/parasut/keys";
 import { parseReturnLog, RETURNS_KEY, supplierReturnEntered } from "@/server/parasut/returns";
-import { ignoredProducts, unlinkedProducts } from "@/server/parasut/sync";
+import { ignoredProducts, ignoredSuppliers, unlinkedProducts } from "@/server/parasut/sync";
 
 import { invoiceBreakdown, invoiceStats, type InvoiceMix } from "./breakdowns";
 import { ParasutClient as ParasutScreen, type LinkCheck } from "./parasut-client";
@@ -78,7 +80,7 @@ function AccountNotice({
   const text = all && others.length
     ? `${others.map((o) => o.name).join(", ")} ayrı Paraşüt hesabı kullanıyor; onun bağlantısı ve eşitlemesi için şube seçiciden şubeyi seçin. Kategori kuralları ve ürün bağlantıları bütün hesaplarda ortak.`
     : shared
-      ? "Tek bağlantı, tek eşitleme; gelen faturalar işletme geneli. Şubeyi ayrı bir Paraşüt firmasına bağlamak için Şube ayarları'nda “aynı” seçimini kapatın."
+      ? "Tek bağlantı, tek eşitleme; gelen fatura tedarikçinin varsayılan şubesini alır (yoksa “Şubesi seçilmemiş”). Şubeyi ayrı bir Paraşüt firmasına bağlamak için Şube ayarları'nda “aynı” seçimini kapatın."
       : `Bağlantı ve eşitleme yalnız ${account.name} için${scopeName && scopeName !== account.name ? ` (${scopeName} bu hesabı kullanıyor)` : ""}. Kategori kuralları ve ürün bağlantıları bütün hesaplarda ortak.`;
   // Bağlantı metnin sonunda: başlık, açıklama, eylem sırası telefonda da bozulmaz (düğme başlıkla metnin arasına düşüyordu)
   return (
@@ -103,7 +105,7 @@ async function ParasutContent() {
   // imleçler ve Paraşüt'ten gelen faturaların sayıları bu hesabın
   const [account, accounts, scope, branches] = await Promise.all([parasutAccountForScope(), loadParasutAccounts(), currentBranchScope(), listBranches()]);
   const mine = invoiceAccountWhere(account);
-  const [runs, rules, links, ingredients, unlinked, invoiceRows, cursorRow, pendingRow, [lineReads], ignored, newestLines, readState, returnsRow, negatives, settings, invoicesExist] = await Promise.all([
+  const [runs, rules, links, ingredients, unlinked, invoiceRows, cursorRow, pendingRow, [lineReads], ignored, newestLines, readState, returnsRow, negatives, settings, invoicesExist, unassigned, supplierRules] = await Promise.all([
     db.select().from(s.parasutSyncRuns).where(eq(s.parasutSyncRuns.account, account)).orderBy(desc(s.parasutSyncRuns.startedAt)).limit(8),
     db.select().from(s.parasutCategoryRules).orderBy(asc(s.parasutCategoryRules.priority), asc(s.parasutCategoryRules.id)),
     db
@@ -132,7 +134,8 @@ async function ParasutContent() {
       })
       .from(s.ingredients)
       .orderBy(asc(s.ingredients.name)),
-    unlinkedProducts(40),
+    // Bekleyen ürünler: tek şube seçiliyken o şubenin ve işletme genelinin faturalarından (docs/SUBE.md › Faturanın şubesi)
+    unlinkedProducts(40, scope),
     // Paraşüt'e bağlı faturalar ay ve tür kırılımıyla: kartın sayısı da dökümü de bu satırlardan (breakdowns.ts)
     db
       .select({
@@ -145,7 +148,7 @@ async function ParasutContent() {
         review: sql<number>`count(*) filter (where ${s.invoices.needsReview})`.mapWith(Number),
       })
       .from(s.invoices)
-      .where(and(eq(s.invoices.source, "parasut"), mine))
+      .where(and(eq(s.invoices.source, "parasut"), mine, invoiceScopeWhere(scope)))
       .groupBy(invoiceMonth, s.invoices.origin, hasBill, hasEInvoice),
     db.select().from(s.integrationState).where(eq(s.integrationState.key, parasutKey(CURSOR_KEY, account))).limit(1),
     db.select().from(s.integrationState).where(eq(s.integrationState.key, parasutKey(PENDING_KEY, account))).limit(1),
@@ -182,6 +185,10 @@ async function ParasutContent() {
     loadParasutSettings(account),
     // Paraşüt'ten fatura geldiyse firma numarası panelden değiştirilemez
     hasParasutInvoices(account),
+    // Şubesi seçilmemiş faturalar (tek şubede görünmez; uyarı)
+    unassignedInvoiceCount(db),
+    // "Hep hammadde değil" kuralı açık tedarikçiler
+    ignoredSuppliers(),
   ]);
   const lineOf = new Map(newestLines.map((l) => [l.productKey, l]));
   // Adındaki ya da birimindeki paket boyu bağlantının çarpanından farklı olanlar: yalnız gösterilir, hiçbir şey değişmez
@@ -231,7 +238,29 @@ async function ParasutContent() {
       <HashScroll />
       <ParasutScreen
         // Birden çok kasa açıkken: gösterilen Paraşüt hesabı (şube başına hesap)
-        scopeNotice={accountView ? <AccountNotice account={accountView} accounts={accounts} all={scope === ALL_BRANCHES} scopeName={scopeName} /> : null}
+        scopeNotice={
+          accountView ? (
+            <>
+              <AccountNotice account={accountView} accounts={accounts} all={scope === ALL_BRANCHES} scopeName={scopeName} />
+              {unassigned.count ? (
+                <Notice
+                  tone="warn"
+                  size="sm"
+                  className="mb-4"
+                  title={`${unassigned.count} faturanın şubesi seçilmemiş`}
+                  text={
+                    <>
+                      {scopeName
+                        ? `${scopeName} seçiliyken sayılara ve bekleyen ürünlere girmezler. `
+                        : "Tek şube seçiliyken görünmezler. "}
+                      <NoticeLink href={`/panel/faturalar?${BRANCH_PARAM}=${ALL_BRANCHES}#subesiz`}>Şubelerini seçin</NoticeLink>
+                    </>
+                  }
+                />
+              ) : null}
+            </>
+          ) : null
+        }
         account={account}
         accountName={many ? info.name : null}
         // Seçili şube hesabı başka şubeden kullanıyor ("Tuzla ile aynı"): bağlantı kartı salt okunur, düzenleme sahibinde
@@ -260,6 +289,7 @@ async function ParasutContent() {
         unlinkedTotal={unlinked.total}
         aiMatch={aiMatch}
         ignored={ignored}
+        supplierRules={supplierRules}
         lineReads={{ read: lineReads?.read ?? 0, pending: lineReads?.pending ?? 0 }}
         categories={INVOICE_CATEGORIES}
         returns={{

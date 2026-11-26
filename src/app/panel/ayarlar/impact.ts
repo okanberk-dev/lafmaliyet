@@ -6,6 +6,7 @@ import { createModel, shiftMonth, type Model, type ProductStatus } from "@/lib/c
 import { latestSalesMonth, onlineCoverFor, referenceSalesMonth, requiredDailyRevenue } from "@/lib/calc/insights";
 import type { Dataset, Settings } from "@/lib/calc/types";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
+import { invoiceParts } from "@/lib/invoice-split";
 
 /**
  * Önizleme için hesaplama motorunun ihtiyaç duyduğu en küçük veri: ürünler, reçeteler, hammaddeler, son satış ayının
@@ -87,10 +88,25 @@ export function impactData(model: Model): ImpactData {
     currentMonth: cur,
     expenseCategories: ds.expenseCategories ?? [],
     expenseEntries: (ds.expenseEntries ?? []).filter((e) => e.date.slice(0, 7) >= from).map((e) => ({ ...e, description: null, note: null })),
-    // Mal, komisyon ve kafe dışı faturalar harcamaya bağlanamaz (motor da saymaz); yalnız bağlı kategoriler
+    // Mal, komisyon ve kafe dışı faturalar harcamaya bağlanamaz (motor da saymaz); yalnız bağlı kategorilere payı düşenler.
+    // Kalem kalem (src/lib/invoice-split.ts): mal faturasının "Sarf" denmiş kalemi de bağlı kategoriye düşer, bağlı
+    // kategorideki faturanın hammadde kalemi düşmez; kalemler de gider (motor payı onlarla böler)
     invoices: ds.invoices
-      .filter((i) => linked.has(i.category) && i.date.slice(0, 7) >= from)
-      .map((i) => ({ id: i.id, date: i.date, supplier: i.supplier, description: null, invoiceNo: null, category: i.category, amount: i.amount, discount: i.discount, payable: i.payable, unpaid: i.unpaid, note: null })),
+      .filter((i) => i.date.slice(0, 7) >= from && [...invoiceParts(i).keys()].some((k) => linked.has(k)))
+      .map((i) => ({
+        id: i.id,
+        date: i.date,
+        supplier: i.supplier,
+        description: null,
+        invoiceNo: null,
+        category: i.category,
+        amount: i.amount,
+        discount: i.discount,
+        payable: i.payable,
+        unpaid: i.unpaid,
+        note: null,
+        ...(i.lines ? { lines: i.lines } : {}),
+      })),
   };
 }
 
