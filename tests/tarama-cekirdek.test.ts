@@ -27,7 +27,21 @@ import {
   type Point,
 } from "../src/lib/scan/image";
 import { convexHull, hullToQuad, interiorAngles, isConvex, minAreaRect, polygonArea, ransacLine, signedDist } from "../src/lib/scan/geom";
-import { cornersFromHint, cornersToHint, fullFrame, orderCorners, quadIsValid } from "../src/lib/scan";
+import {
+  cornersFromHint,
+  cornersToHint,
+  detectDocument,
+  fullFrame,
+  orderCorners,
+  quadIsValid,
+  scaleQuad,
+  SCAN_MODES,
+  scanDocument,
+  thumbnail,
+  unscaleQuad,
+  type Quad,
+  type RgbaImage,
+} from "../src/lib/scan";
 
 function randomGray(w: number, h: number, seed: number) {
   const g = createGray(w, h);
@@ -309,4 +323,61 @@ test("dörtgen denetimi, ipucu köşeleri (0–1000) ve tam kare", () => {
     { x: 240, y: 2880 },
   ]);
   assert.equal(cornersFromHint([[1, 2], null as unknown as [number, number], [5, 6], [7, 8]], 100, 100), null, "bozuk öğe null");
+});
+
+test("önizleme kopyası: köşeler asıl fotoğrafa ve geri kaymadan taşınır", () => {
+  const img = createRgba(1670, 2220);
+  const th = thumbnail(img, 500);
+  assert.deepEqual([th.width, th.height], [376, 500], "uzun kenar 500, oran korunur");
+  assert.equal(thumbnail(th, 800), th, "küçükse kopyalanmaz");
+  const q: Quad = [
+    { x: 40.5, y: 30 },
+    { x: 340, y: 41 },
+    { x: 350, y: 470.25 },
+    { x: 35, y: 460 },
+  ];
+  const big = unscaleQuad(q, img.width, img.height, th.width, th.height);
+  // piksel merkezleri hizalı: önizlemenin (0, 0) pikseli asıl fotoğrafta ölçek / 2 − 0,5'te
+  const k = img.width / th.width;
+  assert.ok(Math.abs(big[0].x - ((40.5 + 0.5) * k - 0.5)) < 1e-9);
+  const back = scaleQuad(big, img.width, img.height, th.width, th.height);
+  for (let i = 0; i < 4; i++) assert.ok(Math.hypot(back[i].x - q[i].x, back[i].y - q[i].y) < 1e-9, `köşe ${i} gidiş-dönüş`);
+});
+
+test("tarama: küçük, çok ince, düz ve gürültü görüntüde çökmez; belge bulunamayınca kırpılmaz", () => {
+  const solid = (w: number, h: number, v: number): RgbaImage => {
+    const img = createRgba(w, h);
+    for (let i = 0; i < w * h; i++) img.data.set([v, v, v, 255], i * 4);
+    return img;
+  };
+  const noisy = (w: number, h: number): RgbaImage => {
+    const img = createRgba(w, h);
+    const rnd = seededRandom(8);
+    for (let i = 0; i < img.data.length; i++) img.data[i] = (i & 3) === 3 ? 255 : rnd() * 255;
+    return img;
+  };
+  const cases: [string, RgbaImage][] = [
+    ["1×1", solid(1, 1, 200)],
+    ["5×7", solid(5, 7, 100)],
+    ["16×16 gürültü", noisy(16, 16)],
+    ["3000×8", noisy(3000, 8)],
+    ["8×3000", solid(8, 3000, 240)],
+    ["siyah", solid(400, 300, 0)],
+    ["beyaz", solid(400, 300, 255)],
+    ["gürültü", noisy(300, 400)],
+  ];
+  for (const [name, img] of cases) {
+    const d = detectDocument(img);
+    assert.equal(d.corners, null, `${name}: belge yok`);
+    assert.equal(d.confidence, 0, `${name}: güven 0`);
+    for (const mode of SCAN_MODES) {
+      const r = scanDocument(img, { mode });
+      assert.equal(r.method, "yok", `${name} ${mode}`);
+      assert.equal(r.fillsFrame, true, `${name} ${mode}: bulunamayınca kırpılmaz`);
+      assert.deepEqual(r.corners, fullFrame(img.width, img.height));
+      const { width, height, data } = r.image;
+      assert.ok(width >= 1 && height >= 1 && data.length === width * height * 4, `${name} ${mode}: çıktı ${width}×${height}`);
+      assert.ok(Math.max(width, height) <= 2000, `${name} ${mode}: uzun kenar en çok 2000`);
+    }
+  }
 });

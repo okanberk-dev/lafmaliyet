@@ -1,7 +1,8 @@
 // Belge tarayıcı: kâğıt algılama ve köşe oturtma, sentetik fotoğraflarla (gerçek köşeler bilinir). Eğik A4, açık
 // tezgâhta dar uzun termal fiş (düşük karşıtlık, kıvrık kenar), gölgeli gri zeminde fiş, kareden taşan fiş, kareyi
-// dolduran kâğıt, belgesiz doku; kaba ipucu köşelerinin (köşegenin ±%5'i) kenarlara oturması. Köşe hatası köşegenin
-// %1,5'inden az olmalı. src/lib/scan/detect.ts, refine.ts; docs/FOTOGRAF.md › Belge tarama (çekirdek).
+// dolduran kâğıt, belgesiz doku, tohumlu rastgele sahneler; kaba ipucu köşelerinin (köşegenin ±%5'i) kenarlara
+// oturması. Köşe hatası köşegenin %1,5'inden az olmalı. src/lib/scan/detect.ts, refine.ts; docs/FOTOGRAF.md › Belge
+// tarama (çekirdek).
 // Çalıştırma: npx tsx --test tests/tarama-algilama.test.ts
 
 import assert from "node:assert/strict";
@@ -105,6 +106,53 @@ for (const [name, s] of Object.entries(scenes)) {
     assert.ok(d.confidence >= 0.6, `güven ${d.confidence} (${d.reasons.join(",")})`);
   });
 }
+
+test("algılama: rastgele sahneler (fiş 1/3–1/10, A4; yedi zemin, gölge, kıvrık kenar) — hepsinde köşe hatası %1,5'ten az", () => {
+  // elle seçilmiş sahnelere aşırı uyum olmasın: tohumlu rastgele, köşesi kareden çıkan sahne atlanır
+  const zeminler = ["koyu", "doku", "degrade", "acik", "gri", "beyaz", "tahta"] as const;
+  const failed: string[] = [];
+  let tried = 0;
+  for (let seed = 5000; tried < 6; seed++) {
+    const rnd = seededRandom(seed);
+    const fis = rnd() < 0.5;
+    const aspect = fis ? 1 / (3 + rnd() * 7) : rnd() < 0.5 ? A4 : 0.75;
+    const size = fis ? 0.1 + rnd() * 0.15 : 0.45 + rnd() * 0.3;
+    const background = zeminler[Math.floor(rnd() * zeminler.length)];
+    const v = 214 + Math.floor(rnd() * 10);
+    const corners = projectRect({
+      width: W,
+      height: H,
+      aspect,
+      size,
+      rotDeg: (rnd() - 0.5) * 30,
+      tiltX: rnd() * 30,
+      tiltY: (rnd() - 0.5) * 20,
+      cx: W / 2 + (rnd() - 0.5) * 120,
+      cy: H / 2 + (rnd() - 0.5) * 120,
+    });
+    const s: Sahne = {
+      width: W,
+      height: H,
+      corners,
+      paperAspect: aspect,
+      background,
+      bgColor: background === "beyaz" ? [v, v - 1, v - 5] : undefined,
+      paper: [244, 243, 238],
+      text: { rows: fis ? 40 + Math.floor(rnd() * 50) : 20 + Math.floor(rnd() * 20), strength: 0.5 + rnd() * 0.5 },
+      shadow: rnd() < 0.3 ? rnd() * 0.5 : 0,
+      noise: 1.5 + rnd() * 3,
+      blur: rnd() * 1.2,
+      curl: fis && rnd() < 0.5 ? rnd() * 4 : 0,
+      seed,
+    };
+    if (corners.some((p) => p.x < 2 || p.y < 2 || p.x > W - 3 || p.y > H - 3)) continue;
+    tried++;
+    const d = detectDocument(renderScene(s));
+    const err = d.corners && !d.fillsFrame ? cornerError(d.corners, corners, W, H) : 1;
+    if (err >= 0.015) failed.push(`#${seed} ${fis ? "fiş" : "A4"} 1/${(1 / aspect).toFixed(1)} ${background}: %${(err * 100).toFixed(2)} ${d.method} ${d.reasons.join(",")}`);
+  }
+  assert.deepEqual(failed, [], "köşe hatası %1,5'i aşan sahne olmamalı");
+});
 
 test("algılama: kâğıt kareyi dolduruyor → fillsFrame, köşeler görüntünün köşeleri", () => {
   for (const [corners, seed] of [
