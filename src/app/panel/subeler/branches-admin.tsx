@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, Globe, Plus, Settings2 } from "lucide-react";
+import { Building2, Copy, Globe, Plus, Send, Settings2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -33,7 +33,9 @@ import { hasFeature, offFeatureLabels } from "@/lib/branch-features";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { num } from "@/lib/format";
 import { shortDateTR } from "@/lib/takvim";
+import { KURULUM_DURUM_ETIKET } from "@/lib/lafpos/kurulum";
 import type { ActionResult } from "@/server/actions/util";
+import type { KurulumView } from "@/server/lafpos/kurulum";
 
 /** Kapalı özelliklerin çip metni (yoksa null; `offFeatureLabels`) */
 function offFeatures(b: BranchRow): string | null {
@@ -49,7 +51,7 @@ function offFeatures(b: BranchRow): string | null {
  */
 
 /** `posRate`: yüzde metni ("2", "1,5"); kaydederken 0,02 gibi orana çevrilir */
-type Taslak = { id: string; name: string; kind: BranchKind; posSource: BranchPosSource; openedOn: string; active: boolean; posRate: string };
+type Taslak = { id: string; name: string; kind: BranchKind; posSource: BranchPosSource; openedOn: string; active: boolean; posRate: string; email: string };
 
 /** Oran → yüzde metni: 0,02 → "2", 0,015 → "1,5" */
 const oranMetni = (rate: number | undefined) => num((rate ?? DEFAULT_POS_RATE) * 100, 2);
@@ -60,7 +62,15 @@ const oranOf = (text: string) => {
 };
 
 export interface BranchActions {
-  createAction: (input: { id: string; name: string; kind: BranchKind; posSource: BranchPosSource; openedOn: string | null; posRate?: number }) => Promise<ActionResult<{ id: string }>>;
+  createAction: (input: {
+    id: string;
+    name: string;
+    kind: BranchKind;
+    posSource: BranchPosSource;
+    openedOn: string | null;
+    posRate?: number;
+    email?: string;
+  }) => Promise<ActionResult<{ id: string; kurulum: KurulumSonuc | null }>>;
   updateAction: (input: {
     id: string;
     name: string;
@@ -73,7 +83,11 @@ export interface BranchActions {
   deleteAction: (input: { id: string }) => Promise<ActionResult<{ id: string }>>;
 }
 
-const BOS: Taslak = { id: "", name: "", kind: "fiziksel", posSource: "modpos", openedOn: "", active: true, posRate: oranMetni(DEFAULT_POS_RATE) };
+const BOS: Taslak = { id: "", name: "", kind: "fiziksel", posSource: "modpos", openedOn: "", active: true, posRate: oranMetni(DEFAULT_POS_RATE), email: "" };
+
+/** Şube kurulumunun sonucu (docs/LAFPOS.md › Şube kurulumu): bağlantı ekranda da gösterilir, e-posta gitmezse elle iletilir */
+type KurulumSonuc = { link: string; mailError: string | null; account: "acildi" | "vardi" };
+type InstallAction = (input: { id: string; email?: string }) => Promise<ActionResult<KurulumSonuc>>;
 
 /**
  * `settingsText`, `parasutText`: fiziksel şubenin şube ayarlarının durumu ("Kendi ayarı", "Tuzla ile aynı"; kasa raporu
@@ -87,15 +101,28 @@ export function BranchesAdmin({
   createAction,
   updateAction,
   deleteAction,
-}: { rows: BranchRow[]; settingsText?: Record<string, string>; parasutText?: Record<string, string> } & BranchActions) {
+  canCreate = false,
+  installs = {},
+  installAction,
+}: {
+  rows: BranchRow[];
+  settingsText?: Record<string, string>;
+  parasutText?: Record<string, string>;
+  /** Ana yönetici: şube ekler ve LafPOS kurulum bağlantısı gönderir */
+  canCreate?: boolean;
+  /** Fiziksel şubenin son kurulum bağlantısı (yalnız ana yöneticiye) */
+  installs?: Record<string, KurulumView | null>;
+  installAction?: InstallAction;
+} & BranchActions) {
   const [acik, setAcik] = useState<Taslak | null>(null);
+  const [sonuc, setSonuc] = useState<{ name: string; kurulum: KurulumSonuc } | null>(null);
   const [yeni, setYeni] = useState(false);
   const [silinecek, setSilinecek] = useState<BranchRow | null>(null);
   const [bekliyor, basla] = useActionTransition();
 
   function duzenle(b: BranchRow) {
     setYeni(false);
-    setAcik({ id: b.id, name: b.name, kind: b.kind, posSource: b.posSource, openedOn: b.openedOn ?? "", active: b.active, posRate: oranMetni(b.posRate) });
+    setAcik({ id: b.id, name: b.name, kind: b.kind, posSource: b.posSource, openedOn: b.openedOn ?? "", active: b.active, posRate: oranMetni(b.posRate), email: installs[b.id]?.email ?? "" });
   }
 
   function ekle() {
@@ -108,7 +135,7 @@ export function BranchesAdmin({
     const gonder = { name: t.name.trim(), kind: t.kind, posSource: t.posSource, openedOn: t.openedOn || null, ...(t.kind === "fiziksel" ? { posRate: oranOf(t.posRate) } : {}) };
     basla(async () => {
       const sonuc = yeni
-        ? await createAction({ ...gonder, id: t.id.trim() })
+        ? await createAction({ ...gonder, id: t.id.trim(), ...(t.kind === "fiziksel" && t.email.trim() ? { email: t.email.trim() } : {}) })
         : await updateAction({ ...gonder, id: t.id, active: t.active });
       if (!sonuc.ok) {
         toast.error(sonuc.error);
@@ -116,7 +143,22 @@ export function BranchesAdmin({
       }
       toast.success(yeni ? "Şube eklendi" : "Şube güncellendi");
       setAcik(null);
+      const kurulum = yeni ? (sonuc.data as { kurulum?: KurulumSonuc | null }).kurulum : null;
+      if (kurulum) setSonuc({ name: t.name.trim(), kurulum });
     }, yeni ? { maybeSaved: true } : undefined);
+  }
+
+  function kurulumGonder(t: Taslak) {
+    if (!installAction) return;
+    basla(async () => {
+      const r = await installAction({ id: t.id, ...(t.email.trim() ? { email: t.email.trim() } : {}) });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+      setAcik(null);
+      setSonuc({ name: t.name, kurulum: r.data });
+    });
   }
 
   function sil(b: BranchRow) {
@@ -140,9 +182,11 @@ export function BranchesAdmin({
           title="Şubeler ve kanallar"
           description="Ciro, kasa ve giderler bu listeye göre ayrılır. Menü ve reçeteler ortaktır."
           actions={
-            <Button onClick={ekle} size="sm">
-              <Plus className="size-4" /> Şube ekle
-            </Button>
+            canCreate ? (
+              <Button onClick={ekle} size="sm">
+                <Plus className="size-4" /> Şube ekle
+              </Button>
+            ) : undefined
           }
         />
         {rows.length ? (
@@ -163,6 +207,7 @@ export function BranchesAdmin({
                   {/* Şube özellikleri (docs/SUBE.md › Şube özellikleri): karaoke tek şubede; kapalı özellikler ayrı çipte */}
                   {hasFeature(b, "karaoke") ? <Badge tone="violet">Karaoke</Badge> : null}
                   {offFeatures(b) ? <Badge tone="gray">Kullanılmıyor: {offFeatures(b)}</Badge> : null}
+                  {installs[b.id] ? <Badge tone={installs[b.id]!.durum === "kuruldu" ? "green" : installs[b.id]!.durum === "bekliyor" ? "blue" : "gray"}>LafPOS: {KURULUM_DURUM_ETIKET[installs[b.id]!.durum]}</Badge> : null}
                 </button>
                 {b.kind === "fiziksel" ? (
                   <ButtonLink href={`/panel/subeler/${encodeURIComponent(b.id)}`} variant="secondary" size="sm" className="shrink-0" aria-label={`${b.name} şube ayarları`}>
@@ -173,7 +218,7 @@ export function BranchesAdmin({
             ))}
           </ul>
         ) : (
-          <EmptyState title="Henüz şube yok" description="İlk şubeyi ekleyin." action={<Button onClick={ekle}>Şube ekle</Button>} />
+          <EmptyState title="Henüz şube yok" description={canCreate ? "İlk şubeyi ekleyin." : "Şubeyi ana yönetici ekler."} action={canCreate ? <Button onClick={ekle}>Şube ekle</Button> : undefined} />
         )}
       </Card>
 
@@ -186,8 +231,11 @@ export function BranchesAdmin({
           onClose={() => setAcik(null)}
           onSave={kaydet}
           onDelete={yeni ? undefined : () => setSilinecek(rows.find((r) => r.id === acik.id) ?? null)}
+          kurulum={canCreate ? { view: installs[acik.id] ?? null, onSend: installAction ? kurulumGonder : undefined } : undefined}
         />
       ) : null}
+
+      {sonuc ? <KurulumDialog name={sonuc.name} kurulum={sonuc.kurulum} onClose={() => setSonuc(null)} /> : null}
 
       <ConfirmDialog
         open={!!silinecek}
@@ -209,6 +257,7 @@ function BranchDialog({
   onClose,
   onSave,
   onDelete,
+  kurulum,
 }: {
   taslak: Taslak;
   yeni: boolean;
@@ -217,6 +266,8 @@ function BranchDialog({
   onClose: () => void;
   onSave: (t: Taslak) => void;
   onDelete?: () => void;
+  /** Ana yöneticiye: şubenin e-postası ve LafPOS kurulumu (yoksa alan çizilmez) */
+  kurulum?: { view: KurulumView | null; onSend?: (t: Taslak) => void };
 }) {
   const [t, setT] = useState(taslak);
   const sabit = FIXED_BRANCH_IDS.includes(t.id);
@@ -309,7 +360,63 @@ function BranchDialog({
             onChange={(e) => setT((o) => ({ ...o, active: e.target.checked }))}
           />
         )}
+        {kurulum && t.kind === "fiziksel" ? (
+          <div className="space-y-3 border-t border-line pt-4">
+            <Field
+              label="Şubenin e-postası"
+              htmlFor="sube-eposta"
+              hint={
+                yeni
+                  ? "Yazılırsa şubenin panel hesabı açılır ve LafPOS kurulum bağlantısı bu adrese gider. Boş bırakılabilir."
+                  : "Kurulum bağlantısı ve şubenin panel hesabı bu adresle."
+              }
+            >
+              <Input id="sube-eposta" type="email" inputMode="email" autoComplete="off" value={t.email} onChange={(e) => setT((o) => ({ ...o, email: e.target.value }))} />
+            </Field>
+            {!yeni && kurulum.view ? (
+              <p className="text-[13px] text-ink-soft">
+                LafPOS: {KURULUM_DURUM_ETIKET[kurulum.view.durum]}
+                {kurulum.view.usedAt ? ` · ${shortDateTR(kurulum.view.usedAt.slice(0, 10))}` : ""}
+              </p>
+            ) : null}
+            {!yeni && kurulum.onSend ? (
+              <Button variant="secondary" size="sm" onClick={() => kurulum.onSend!(t)} disabled={bekliyor || !t.email.trim()}>
+                <Send className="size-4" /> LafPOS kurulum bağlantısı gönder
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
         {rows.length && yeni ? <p className="text-xs text-ink-mute">Şu anki şubeler: {rows.map((r) => r.name).join(" · ")}</p> : null}
+      </div>
+    </Dialog>
+  );
+}
+
+/** Şube kurulumunun sonucu: bağlantı (kopyalanır), e-posta gittiyse adresi, gitmediyse nedeni */
+function KurulumDialog({ name, kurulum, onClose }: { name: string; kurulum: KurulumSonuc; onClose: () => void }) {
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`${name}: LafPOS kurulumu`}
+      description={kurulum.mailError ? `E-posta gitmedi (${kurulum.mailError}). Bağlantıyı şubeye kendiniz iletin.` : "Kurulum bağlantısı ve panel hesabı şubenin e-postasına gönderildi."}
+      footer={<Button onClick={onClose}>Tamam</Button>}
+    >
+      <div className="space-y-3 text-sm">
+        <p className="text-ink-soft">
+          Bağlantı kasa bilgisayarında açılır; inen dosya LafPOS&apos;u kurar ve kasa şubeye kendiliğinden bağlanır. Tek kurulumluktur, 14 gün geçerlidir.
+          {kurulum.account === "acildi" ? " Şubenin panel hesabı açıldı (davet e-postayla)." : ""}
+        </p>
+        <code className="block break-all rounded-lg bg-surface-soft p-3 text-[12px] text-ink">{kurulum.link}</code>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            void navigator.clipboard?.writeText(kurulum.link).then(() => toast.success("Bağlantı kopyalandı"), () => toast.error("Kopyalanamadı"));
+          }}
+        >
+          <Copy className="size-4" /> Bağlantıyı kopyala
+        </Button>
       </div>
     </Dialog>
   );

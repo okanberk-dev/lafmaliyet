@@ -23,7 +23,10 @@ import {
   type BranchRow,
 } from "@/lib/branches";
 import { lafposBranchOf, lafposSourceError } from "@/lib/lafpos/switch";
-import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { requireAdmin, requireAnaAdmin, requireUser } from "@/server/auth/dal";
+import { INVITE_PASSWORD_HASH, TOKEN_HOURS } from "@/server/auth/tokens";
+import { issueUserToken } from "@/server/auth/user-tokens";
+import { issueInstallCode, sendInstallMail } from "@/server/lafpos/kurulum";
 import { staffBranchLock } from "@/server/branch-scope";
 import { branchSettingsCloseError } from "@/server/branch-settings";
 import { branchUsageCount, getBranch, listBranches } from "@/server/branches";
@@ -57,6 +60,16 @@ const posRate = z
 const oranMetni = (v: number) => `%${(Math.round(v * 10_000) / 100).toLocaleString("tr-TR")}`;
 const scopeInput = z.object({ scope: z.string().trim().max(24) });
 
+/** Şubenin e-postası (isteğe bağlı): verilirse şube hesabı açılır ve LafPOS kurulum bağlantısı gider */
+const branchEmail = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .max(200)
+  .optional()
+  .transform((v) => v || null)
+  .refine((v) => v === null || z.email().safeParse(v).success, { message: "E-posta adresi geçersiz" });
+
 const createInput = z.object({
   id: z.string().trim(),
   name: zText("Şube adı", BRANCH_NAME_MAX),
@@ -64,12 +77,18 @@ const createInput = z.object({
   posSource,
   openedOn,
   posRate,
+  email: branchEmail,
 });
 
-/** Yeni şube ya da kanal açar. Kimlik bir daha değişmez: kayıtlar ona bağlanır. */
+/**
+ * Yeni şube ya da kanal açar. Kimlik bir daha değişmez: kayıtlar ona bağlanır. Yalnız ana yönetici (sahibin kararı,
+ * 26 Kasım 2026). Fiziksel şubeye e-posta verilirse şube kurulumu da yapılır (docs/LAFPOS.md › Şube kurulumu): şubenin
+ * panel hesabı açılır (personel, şubede kilitli, davetle), LafPOS kurulum bağlantısı üretilir ve ikisi tek e-postayla
+ * gider; e-posta gitmese de şube ve bağlantı kalır (Hesabım'da ve Şubeler'de görünür)
+ */
 export async function createBranch(input: z.input<typeof createInput>) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = await requireAnaAdmin();
     const d = createInput.parse(input);
     const idHata = branchIdError(d.id);
     if (idHata) throw new UserError(idHata);
@@ -84,13 +103,67 @@ export async function createBranch(input: z.input<typeof createInput>) {
     if (mevcut.some((b) => b.name.localeCompare(d.name, "tr", { sensitivity: "base" }) === 0)) {
       throw new UserError("Bu adda bir şube zaten var");
     }
+    if (d.email && d.kind !== "fiziksel") throw new UserError("E-posta ve LafPOS kurulumu yalnız fiziksel şubede");
+    if (d.email) {
+      const [dup] = await db.select({ id: s.users.id, branchId: s.users.branchId, role: s.users.role }).from(s.users).where(eq(s.users.email, d.email)).limit(1);
+      if (dup && (dup.role === "admin" || (dup.branchId && dup.branchId !== d.id.trim()))) throw new UserError("Bu e-posta başka bir hesapta kayıtlı; şube için ayrı bir adres yazın");
+    }
     const sortOrder = Math.max(0, ...mevcut.map((b) => b.sortOrder)) + 1;
-    const { posRate: oran, ...alanlar } = d;
-    await db.insert(s.branches).values({ ...alanlar, id: d.id.trim(), sortOrder, ...(oran !== undefined ? { posRate: oran } : {}) });
+    const { posRate: oran, email, ...alanlar } = d;
+    const id = d.id.trim();
+    await db.insert(s.branches).values({ ...alanlar, id, email, sortOrder, ...(oran !== undefined ? { posRate: oran } : {}) });
     forgetLafposBranch();
-    await logActivity(me, "Şube eklendi", `${d.name} (${d.id})`);
+    await logActivity(me, "Şube eklendi", `${d.name} (${d.id})${email ? ` · ${email}` : ""}`);
+    const kurulum = email ? await onboard(me.id, { id, name: d.name, email }) : null;
+    if (kurulum) await logActivity(me, "LafPOS kurulumu gönderildi", `${d.name} · ${email}${kurulum.mailError ? ` (e-posta gitmedi: ${kurulum.mailError})` : ""}`);
     refresh();
-    return { id: d.id.trim() };
+    return { id, kurulum };
+  });
+}
+
+/**
+ * Şube kurulumu: şubenin panel hesabı (yoksa açılır: personel, şubede kilitli, davetle), yeni LafPOS kurulum bağlantısı
+ * ve e-posta. Dönen bağlantı ekranda da gösterilir (e-posta gitmezse elle iletilir)
+ */
+async function onboard(by: number, b: { id: string; name: string; email: string }): Promise<{ link: string; mailError: string | null; account: "acildi" | "vardi" }> {
+  const db = getDb();
+  const [existing] = await db.select({ id: s.users.id }).from(s.users).where(eq(s.users.email, b.email)).limit(1);
+  let inviteRaw: string | null = null;
+  if (!existing) {
+    const [u] = await db
+      .insert(s.users)
+      .values({ name: `${b.name} şubesi`, email: b.email, role: "staff", active: true, branchId: b.id, passwordHash: INVITE_PASSWORD_HASH })
+      .returning({ id: s.users.id });
+    inviteRaw = (await issueUserToken(u.id, "invite", TOKEN_HOURS.invite)).raw;
+  }
+  const code = await issueInstallCode(db, { branchId: b.id, email: b.email, by });
+  const mail = await sendInstallMail({ to: b.email, branchName: b.name, link: code.link, expiresAt: code.expiresAt, inviteRaw });
+  return { link: code.link, mailError: mail.ok ? null : (mail.error ?? "gönderilemedi"), account: existing ? "vardi" : "acildi" };
+}
+
+const installInput = z.object({ id: z.string().trim().min(1), email: branchEmail });
+
+/**
+ * Var olan şubeye LafPOS kurulum bağlantısı (yeni bağlantı eskisini iptal eder). E-posta verilirse şubeye yazılır;
+ * verilmezse şubenin kayıtlı e-postası. Yalnız ana yönetici
+ */
+export async function sendBranchInstall(input: z.input<typeof installInput>) {
+  return attempt(async () => {
+    const me = await requireAnaAdmin();
+    const d = installInput.parse(input);
+    const db = getDb();
+    const [b] = await db.select({ id: s.branches.id, name: s.branches.name, kind: s.branches.kind, active: s.branches.active, email: s.branches.email }).from(s.branches).where(eq(s.branches.id, d.id)).limit(1);
+    if (!b) throw new UserError("Şube bulunamadı");
+    if (b.kind !== "fiziksel" || !b.active) throw new UserError("LafPOS kurulumu yalnız açık fiziksel şubede");
+    const email = d.email ?? b.email;
+    if (!email) throw new UserError("Şubenin e-postasını yazın");
+    const [dup] = await db.select({ branchId: s.users.branchId, role: s.users.role }).from(s.users).where(eq(s.users.email, email)).limit(1);
+    if (dup && (dup.role === "admin" || (dup.branchId && dup.branchId !== b.id))) throw new UserError("Bu e-posta başka bir hesapta kayıtlı; şube için ayrı bir adres yazın");
+    if (email !== b.email) await db.update(s.branches).set({ email }).where(eq(s.branches.id, b.id));
+    const kurulum = await onboard(me.id, { id: b.id, name: b.name, email });
+    await logActivity(me, "LafPOS kurulumu gönderildi", `${b.name} · ${email}${kurulum.mailError ? ` (e-posta gitmedi: ${kurulum.mailError})` : ""}`);
+    refresh();
+    return kurulum;
   });
 }
 
