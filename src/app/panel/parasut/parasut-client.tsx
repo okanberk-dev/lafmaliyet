@@ -73,6 +73,7 @@ import {
 
 import { connectionBreakdown, connectionHeadline, linkedBreakdown, LINKS_ID, runsBreakdown } from "./breakdowns";
 import { ConnectionCard } from "./connection-card";
+import { ConnectQuestionDialog, type ConnectQuestion } from "./connect-question";
 import { AiSuggestBar, MatchBadges, MatchWarnings, SuggestionBox } from "./match-suggestions";
 import { groupIngredients, IngredientCombobox } from "./ingredient-combobox";
 import { NotIngredientDialog } from "./not-ingredient-dialog";
@@ -226,7 +227,10 @@ export function ParasutClient({
   accountName = null,
   invoiceScope = null,
   linkedFrom = null,
+  connectQuestion = null,
 }: {
+  /** "Aynı vergi numarası mı?": Paraşüt dönüşünde onaya bekletilen bağlantı (bu yöneticinin); yoksa null */
+  connectQuestion?: ConnectQuestion | null;
   /** Seçili şube hesabı başka şubeden kullanıyor: Bağlantı kartı salt okunur (ConnectionCard › linkedFrom) */
   linkedFrom?: { branchName: string; ownerName: string; href: string } | null;
   /** Birden çok kasa açıkken gösterilen Paraşüt hesabının notu (sunucuda çizilir; tek kasada boş) */
@@ -292,7 +296,8 @@ export function ParasutClient({
   useEffect(() => {
     if (!connectResult) return;
     if (connectResult === "tamam") toast.success("Paraşüt hesabı bağlandı");
-    else toast.error(connectMessage || "Paraşüt hesabı bağlanamadı");
+    // "onay": bağlantı "Aynı vergi numarası mı?" sorusunu bekliyor; pencere kendiliğinden açılır
+    else if (connectResult !== "onay") toast.error(connectMessage || "Paraşüt hesabı bağlanamadı");
     clearQuery(["baglanti", "mesaj"]);
   }, [connectResult, connectMessage]);
   // Tedarikçi sayfasındaki "Geçmiş faturaları al" listede görünür ama son eşitleme sayılmaz
@@ -524,6 +529,8 @@ export function ParasutClient({
       ) : null}
 
       {returns ? <ReturnsNotice returns={returns} /> : null}
+
+      {connectQuestion ? <ConnectQuestionDialog key={`${connectQuestion.account}:${connectQuestion.kind}`} question={connectQuestion} /> : null}
 
       {/* Yan yana yalnız geniş ekranda: 1024'te kenar çubuğuyla içerik ~660 px kalır, ayar formu sıkışırdı */}
       <div className="grid gap-4 xl:grid-cols-12">

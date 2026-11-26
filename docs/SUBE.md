@@ -351,7 +351,10 @@ yazma `src/server/branch-settings.ts`.
   (`invoices.branch_id`; Bağlantı kartından kapatılabilir), ortak hesabınki tedarikçinin varsayılan şubesini alır
   ([Faturanın şubesi](#faturanın-şubesi-25-kasım-2026)). Tek şube seçiliyken öbür şubenin faturası Faturalar'a,
   Gelir-gider'e ve Maliyet'e girmez (Vergi, Nakit ve Ödemeler firma geneli; [PARASUT.md](PARASUT.md)). Şubeler
-  listesinde "Paraşüt: Tuzla ile aynı" çipi. Şubenin hesabından fatura gelmişse şube silinemez.
+  listesinde "Paraşüt: Tuzla ile aynı" çipi. Şubenin hesabından fatura gelmişse şube silinemez. Ayrı firma
+  bağlanırken vergi numarası öbür hesabın firmasınınkiyle aynı çıkarsa (ya da okunamazsa) yetki yazılmadan "Aynı vergi
+  numarası mı?" diye sorulur: aynı işletmeyse doğru yol "Tuzla ile aynı"dır, faturalar iki kez sayılmasın
+  ([PARASUT.md › Aynı vergi numarası mı?](PARASUT.md#şube-başına-paraşüt-hesabı)).
 - **İkinci tur (25 Kasım 2026): komisyon, LafPOS, ModPOS, çalışma takvimi, banka POS.** Hepsi Şube ayarları ekranında
   birer kart (`src/app/panel/subeler/[id]/`; "Diğer şubeyle aynı" anahtarı tek bileşen,
   `src/components/panel/same-as-toggle.tsx`; kart verisi `branchSettingView`, `src/server/branch-settings-view.ts`, gizli

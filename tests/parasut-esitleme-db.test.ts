@@ -1011,7 +1011,7 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     assert.deepEqual(fake.grants, [], "kod belirtece çevrilmedi");
 
     const third = new URL(await connect.startParasutConnect("tuzla", "Patron", 7));
-    assert.deepEqual(await connect.finishParasutConnect({ code: "kod-3", state: third.searchParams.get("state") }, undefined, { userId: 7 }), { by: "Patron", account: "tuzla" });
+    assert.deepEqual(await connect.finishParasutConnect({ code: "kod-3", state: third.searchParams.get("state") }, undefined, { userId: 7 }), { by: "Patron", account: "tuzla", question: null });
     assert.deepEqual(fake.grants, ["authorization_code"]);
 
     // Eski sürümün tek kaydı ve süresi geçmiş istekler temizlenir

@@ -1,7 +1,8 @@
 /*
  * Ayrı Paraşüt firması bağlanırken "Aynı vergi numarası mı?" denetiminin saf kuralları (docs/PARASUT.md › Şube başına
  * Paraşüt hesabı › Aynı vergi numarası). Ağa ve veritabanına dokunmaz; okuma src/server/parasut/company.ts'te, akış
- * src/server/parasut/connect.ts'te.
+ * src/server/parasut/connect.ts'te, soru Paraşüt ekranında (src/app/panel/parasut/connect-question.tsx). Denemesi
+ * tests/parasut-firma.test.ts.
  *
  * Neden: gelen e-faturalar GİB'de vergi numarasına gelir. Aynı vergi numaralı iki Paraşüt firması (aynı işletme için
  * açılmış iki kayıt) aynı faturaları ayrı kimliklerle verir; iki hesap da eşitlenirse her fatura iki kez yazılır ve
@@ -93,7 +94,7 @@ export function taxConfirmCopy(v: TaxQuestion, accountName: string): { title: st
       title: "Aynı vergi numarası",
       description:
         `${accountName} için bağladığınız Paraşüt firması ${others} ${withTheirs} aynı vergi numarasını taşıyor (${v.taxNumber}). ` +
-        "Gelen e-faturalar vergi numarasına geldiği için aynı faturalar iki hesaptan da gelir ve iki kez sayılır. " +
+        "Gelen e-faturalar vergi numarasına geldiği için aynı faturalar iki hesaptan da gelebilir ve iki kez sayılır. " +
         `Aynı işletmeyse bağlamayın, Şube ayarları'ndan “${v.others[0]} ile aynı”yı açın. Faturaları gerçekten ayrıysa bağlayabilirsiniz.`,
       confirmLabel: "Yine de bağla",
       log: `aynı vergi numarası uyarısı onaylandı (${v.taxNumber}; ${others})`,
@@ -105,7 +106,7 @@ export function taxConfirmCopy(v: TaxQuestion, accountName: string): { title: st
       (v.taxNumber
         ? `${others} ${many ? "şubelerinin Paraşüt firmalarının" : "şubesinin Paraşüt firmasının"} vergi numarası okunamadı; ${accountName} için bağladığınız firmanınki ${v.taxNumber}. `
         : `${accountName} için bağladığınız Paraşüt firmasının vergi numarası okunamadı; ${others} ${withTheirs} karşılaştırılamadı. `) +
-      "İki firma aynı vergi numarasını taşıyorsa aynı faturalar iki hesaptan da gelir ve iki kez sayılır. Vergi numaraları farklıysa bağlayın, aynıysa vazgeçin.",
+      "İki firma aynı vergi numarasını taşıyorsa aynı faturalar iki hesaptan da gelebilir ve iki kez sayılır. Vergi numaraları farklıysa bağlayın, aynıysa vazgeçin.",
     confirmLabel: "Farklı, bağla",
     log: `vergi numarası karşılaştırılamadı (${others}); yönetici farklı olduğunu onayladı`,
   };

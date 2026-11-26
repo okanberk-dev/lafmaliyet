@@ -4,11 +4,12 @@ import { createHash } from "node:crypto";
 
 import { and, eq, like, lt, or } from "drizzle-orm";
 
-import { DEFAULT_PARASUT_ACCOUNT } from "@/lib/parasut/accounts";
+import { DEFAULT_PARASUT_ACCOUNT, parasutKey } from "@/lib/parasut/accounts";
+import { parseTaxQuestion, type TaxQuestion } from "@/lib/parasut/company";
 import { getDb, schema as s } from "@/server/db";
 import { open, seal } from "@/server/secret-box";
 
-import { postParasutToken, saveParasutToken } from "./client";
+import { postParasutToken, saveParasutToken, type ParasutTokenResponse } from "./client";
 import { assertOidcSettings, readParasutConfig, type ParasutConfig } from "./config";
 import { authorizeRequestUrl, challengeOf, createState, createVerifier, sameToken } from "@/lib/parasut/oidc";
 
@@ -31,14 +32,22 @@ import { parasutEndpoints } from "./oidc";
  *
  * Şube başına Paraşüt hesabı (docs/PARASUT.md › Şube başına Paraşüt hesabı): dönüş adresi (DevHub'daki kayıt) bütün
  * hesaplarda aynıdır. Hesap başına tek bekleyen istek: aynı hesap için yenisi öncekinin yerine geçer, öbür hesabın
- * süren bağlanmasına dokunulmaz.
+ * süren bağlanmasına dokunulmaz. Başka hesap varken bağlanan firmanın vergi numarası öbürlerininkiyle karşılaştırılır
+ * ("Aynı vergi numarası mı?", company.ts): aynıysa ya da okunamadıysa belirteç onaya bekletilir (aşağıda).
  */
 
 /** Bekleyen isteklerin öneki: `parasut.connect:<state'in özeti>` (yedeğe girmez: src/lib/backup/format.ts) */
 const PENDING_PREFIX = "parasut.connect:";
 /** Eski sürümün tek bekleyen isteği (hesapsız tek kayıt); okunmaz, temizlikte silinir */
 const SINGLE_PENDING_KEY = "parasut.connect";
+/** Bekleyen istek ve onay bekleyen bağlantı bu kadar geçerli */
 const PENDING_TTL_MS = 10 * 60 * 1000;
+/**
+ * Onay bekleyen bağlantının kaydı ("Aynı vergi numarası mı?", hesap başına): varsayılan hesapta `parasut.connect.onay`,
+ * öbürlerinde `parasut.connect.onay:<hesap>` (yedeğe girmez, önek parasut.connect)
+ */
+const HELD_BASE = "parasut.connect.onay";
+const heldKey = (account: string) => parasutKey(HELD_BASE, account);
 
 interface Pending {
   state: string;
@@ -109,8 +118,9 @@ export async function startParasutConnect(account: string, by: string, userId?: 
   const value = { sealed: seal(JSON.stringify(pending), "parasut-connect") };
   await getDb().transaction(async (tx) => {
     await forgetParasutConnect(account, tx);
-    // Dönüşü gelmemiş eski istekler (yönetici Paraşüt'te vazgeçti): kayıt birikmesin
-    await tx.delete(s.integrationState).where(and(like(s.integrationState.key, `${PENDING_PREFIX}%`), lt(s.integrationState.updatedAt, new Date(Date.now() - PENDING_TTL_MS))));
+    // Dönüşü gelmemiş eski istekler (yönetici Paraşüt'te vazgeçti) ve yanıtlanmamış eski onaylar: kayıt birikmesin
+    const stale = lt(s.integrationState.updatedAt, new Date(Date.now() - PENDING_TTL_MS));
+    await tx.delete(s.integrationState).where(and(or(like(s.integrationState.key, `${PENDING_PREFIX}%`), like(s.integrationState.key, `${HELD_BASE}%`)), stale));
     await tx.insert(s.integrationState).values({ key: pendingKey(state), value });
   });
   return authorizeRequestUrl({ authorizeUrl, clientId: cfg.clientId, redirectUri: cfg.redirectUri, scope: cfg.scope, state, challenge: challengeOf(verifier) });
@@ -120,13 +130,19 @@ export async function startParasutConnect(account: string, by: string, userId?: 
  * Dönüşteki yetki kodunu belirteçle değiştirir. Bekleyen istek yalnız dönen state'le bulunur; bulunamazsa, bayatsa
  * ya da başka bir yöneticinin oturumunda başlatıldıysa kod kullanılmaz. Belirteç isteğin başlatıldığı hesaba
  * (mühürlü bekleyen istekteki), o hesabın ayarlarıyla yazılır; hesap bu arada geçersizleştiyse (şube başka şubenin
- * hesabına bağlandı) `isAccount` reddeder. Başarılıysa bağlantıyı kuran yöneticinin adı ve hesap döner.
+ * hesabına bağlandı) `isAccount` reddeder.
+ *
+ * "Aynı vergi numarası mı?" (company.ts): başka hesap varsa bağlanan firmanın vergi numarası öbürlerininkiyle
+ * karşılaştırılır. Aynıysa ya da karşılaştırılamadıysa belirteç **yazılmaz**: şifreli, tek kullanımlık ve 10 dakikalık
+ * bir onay kaydına konur, `question` döner; yönetici Paraşüt ekranında onaylarsa yazılır (confirmParasutConnect),
+ * vazgeçerse silinir. Yeniden bağlamada eski oturum o zamana kadar yerinde kalır. Döner: bağlantıyı kuran yönetici,
+ * hesap ve soru (sorulmadan bağlandıysa null).
  */
 export async function finishParasutConnect(
   input: { code: string | null; state: string | null },
   isAccount: (account: string) => Promise<boolean> = async () => true,
   session: { userId?: number } = {},
-): Promise<{ by: string; account: string }> {
+): Promise<{ by: string; account: string; question: TaxQuestion | null }> {
   if (!input.state) throw new ParasutConnectError("Bağlanma isteği doğrulanamadı (state yok). Yeniden deneyin.");
   const pending = await takePending(input.state);
   if (!pending) throw new ParasutConnectError("Bağlanma isteği bulunamadı ya da süresi doldu (10 dakika). Yeniden deneyin.");
@@ -150,14 +166,101 @@ export async function finishParasutConnect(
       "Paraşüt bir refresh_token vermedi; panel her sabah kendiliğinden eşitleyemez. DevHub'daki istemcinin çevrimdışı erişime (offline) izin verdiğini doğrulayın.",
     );
   }
+  // accounts.ts bu dosyayı içe aktarır (forgetParasutConnect); karşılaştırma hesapları okuduğu için çağrı anında yüklenir
+  const { connectTaxVerdict } = await import("./company");
+  const verdict = await connectTaxVerdict(cfg, token.access_token);
+  if (verdict.kind !== "clear") {
+    const held: Held = { token, clientId: cfg.clientId, issuer: cfg.issuer, companyId: cfg.companyId, at: Date.now(), by: pending.by, userId: pending.userId, account, question: verdict };
+    const value = { sealed: seal(JSON.stringify(held), "parasut-connect") };
+    await getDb()
+      .insert(s.integrationState)
+      .values({ key: heldKey(account), value })
+      .onConflictDoUpdate({ target: s.integrationState.key, set: { value, updatedAt: new Date() } });
+    return { by: pending.by, account, question: verdict };
+  }
   await saveParasutToken(cfg, token);
-  return { by: pending.by, account };
+  return { by: pending.by, account, question: null };
+}
+
+// ---------------------------------------------------------------- "Aynı vergi numarası mı?" onayı
+
+/** Onay bekleyen bağlantı: Paraşüt'ün verdiği belirteç (henüz yazılmadı), alındığı ayarlar ve soru */
+interface Held {
+  token: ParasutTokenResponse;
+  clientId: string;
+  issuer: string;
+  companyId: string;
+  /** epoch ms */
+  at: number;
+  by: string;
+  userId?: number;
+  account: string;
+  question: TaxQuestion;
+}
+
+function openHeld(value: unknown): Held | null {
+  const sealed = (value as { sealed?: string } | undefined)?.sealed;
+  const plain = sealed ? open(sealed, "parasut-connect") : null;
+  if (!plain) return null;
+  try {
+    const h = JSON.parse(plain) as Held;
+    const question = parseTaxQuestion(h.question);
+    return h.token?.access_token && h.clientId && h.account && question ? { ...h, question } : null;
+  } catch {
+    return null;
+  }
+}
+
+const heldRows = (db: Pick<Exec, "select">) =>
+  db
+    .select()
+    .from(s.integrationState)
+    .where(or(eq(s.integrationState.key, HELD_BASE), like(s.integrationState.key, `${HELD_BASE}:%`)));
+
+/** Süresi geçmemiş ve bu yöneticinin başlattığı onay bekleyen bağlantı mı */
+const heldFor = (h: Held | null, userId: number | undefined): h is Held => Boolean(h && Date.now() - h.at <= PENDING_TTL_MS && (h.userId === undefined || h.userId === userId));
+
+/** Yöneticinin onay bekleyen bağlantısı (Paraşüt ekranındaki soru); yoksa null. Belirteç dışarı verilmez */
+export async function parasutConnectQuestion(userId: number): Promise<{ account: string; question: TaxQuestion } | null> {
+  for (const row of await heldRows(getDb())) {
+    const h = openHeld(row.value);
+    if (heldFor(h, userId)) return { account: h.account, question: h.question };
+  }
+  return null;
 }
 
 /**
- * Hesabın yarıda kalan bağlanma isteklerini siler (oturum sıfırlanırken, istemci ayarları değişince, yeni istek
- * başlarken). Başka bir hesabın bekleyen isteğine dokunulmaz (Marina'nın oturumunu sıfırlamak Tuzla'nın süren
- * bağlanmasını bozmasın); açılamayan istek ve eski sürümün tek kaydı da silinir (zaten kullanılamaz)
+ * "Yine de bağla" / "Farklı, bağla": onay kaydını alır ve siler (tek kullanımlık), bu arada hesabın istemcisi ya da
+ * firması değiştiyse belirteci yazmaz; değişmediyse yazar. Soru (işlem geçmişi için) ve bağlantıyı kuran döner
+ */
+export async function confirmParasutConnect(account: string, userId: number): Promise<{ by: string; question: TaxQuestion }> {
+  const h = await takeHeld(account, userId);
+  const cfg = await readParasutConfig(account);
+  if (cfg.clientId !== h.clientId || cfg.issuer !== h.issuer || cfg.companyId !== h.companyId) {
+    throw new ParasutConnectError("Bu arada hesabın Paraşüt ayarları değişti; bağlantı yazılmadı. Paraşüt hesabını yeniden bağlayın.");
+  }
+  await saveParasutToken(cfg, h.token);
+  return { by: h.by, question: h.question };
+}
+
+/** "Vazgeç": onay bekleyen bağlantı silinir, belirteç yazılmaz (yeniden bağlamada eski oturum yerinde kalır) */
+export async function dropParasutConnect(account: string, userId: number): Promise<{ question: TaxQuestion }> {
+  const h = await takeHeld(account, userId);
+  return { question: h.question };
+}
+
+async function takeHeld(account: string, userId: number): Promise<Held> {
+  const [row] = await getDb().delete(s.integrationState).where(eq(s.integrationState.key, heldKey(account))).returning();
+  const h = openHeld(row?.value);
+  if (!heldFor(h, userId) || h.account !== account) throw new ParasutConnectError("Onay bekleyen Paraşüt bağlantısı bulunamadı ya da süresi doldu (10 dakika). Paraşüt hesabını yeniden bağlayın.");
+  return h;
+}
+
+/**
+ * Hesabın yarıda kalan bağlanma isteklerini ve onay bekleyen bağlantısını siler (oturum sıfırlanırken, istemci
+ * ayarları değişince, yeni istek başlarken). Başka bir hesabın bekleyen isteğine dokunulmaz (Marina'nın oturumunu
+ * sıfırlamak Tuzla'nın süren bağlanmasını bozmasın); açılamayan istek ve eski sürümün tek kaydı da silinir (zaten
+ * kullanılamaz)
  */
 export async function forgetParasutConnect(account: string, db: Pick<Exec, "delete" | "select"> = getDb()) {
   for (const row of await pendingRows(db)) {
@@ -165,4 +268,5 @@ export async function forgetParasutConnect(account: string, db: Pick<Exec, "dele
     if (p && p.account !== account) continue;
     await db.delete(s.integrationState).where(eq(s.integrationState.key, row.key));
   }
+  await db.delete(s.integrationState).where(eq(s.integrationState.key, heldKey(account)));
 }
