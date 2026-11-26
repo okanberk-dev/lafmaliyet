@@ -13,6 +13,9 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 - **Dalga 1** (#146): kör kasa, fişsiz çıkış, kasa formu taslağı, vardiya çakışması, part-time silme koruması, 09:00 zili, "Tümü" kâr dönemi, şube oranı, zil ve rozetler, büyüme gösterimi, eski Excel kalıntılarının kaldırılması, dışa aktarımın profesyonelleşmesi.
 - **Uyarı satırları yalnız personelde** (#145).
+- **GitHub `CRON_SECRET` eklendi** (26 Kasım 2026): kontrol listesi hatırlatmalarının yedek tetikleyicisi (Kontrol listesi
+  hatırlatmaları iş akışı) yeniden çalışıyor; elle çalıştırma yeşil. Pavo'yu bekleyen gün sonu e-postasının gece
+  tamamlanması da bu işten yararlanır.
 - **Faturanın şubesi ve fatura sınıflandırma** (`ai/fatura-sube`'nin devamı; güncel main ile birleştirildi, doğrulandı; `claude/festive-goodall-sclggq` dalında, main'e PR'la gidecek):
   - Her faturanın şubesi: şube, İşletme geneli ya da Şubesi seçilmemiş. Tedarikçinin varsayılan şubesi, Faturalar › Tümü'de öneri kutusu, toplu seçim. Faturalar, Gelir-gider, Maliyet ve Paraşüt şubeye göre süzülür.
   - Karışık fatura kalem kalem: hammaddeye bağlı kalem mal alışı, "hammadde değil" kalem nedeninin yerine (Sarf, Demirbaş, Hizmet, Deneme). Tedarikçi kuralı, Temizlik & Sarf kategorisi, aranabilir hammadde seçici, AI isteminde faturanın bağlamı.
@@ -55,7 +58,6 @@ Bitince `claude/festive-goodall-sclggq`'ye birleştirilir (göç numarası çak�
 ## Sahibin tarafında (kod değil)
 
 - [ ] laffogato.net veritabanının (Neon) kotası 24 Kasım'da doldu. Online sipariş, karaoke ve menü eşitlemesi duruyor. Ücretli plana geçin ya da Coolify'a taşıyın.
-- [ ] GitHub'a `CRON_SECRET` ekleyin ve GitHub ödeme sorununu çözün. Kontrol listesi hatırlatmalarının yedek tetikleyicisi bunlar yüzünden çalışmıyor.
 - [ ] Marina gün sonu e-postasının alıcılarına bakın: 25 Kasım'dan (#141) beri yalnız Kasa › Rapor alıcıları alır (sabah
   e-postasının adresleri artık almaz). Gün sonu e-postasını almak isteyen adres Rapor alıcıları'nda olmalı.
 - [ ] Panelin veritabanı da ücretsiz planda. Ücretli plana geçin. (%70 ve %90 kota uyarısı eklendi, 26 Kasım: Ayarlar › Veritabanı; kota `DB_QUOTA_MB`, varsayılan 512)
