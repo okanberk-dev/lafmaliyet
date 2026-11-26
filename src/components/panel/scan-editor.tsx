@@ -48,9 +48,9 @@ interface Box {
   scale: number;
 }
 
-/** Sahnede fotoğrafın kutusu (oran korunur, ortada) */
-function fitBox(stageW: number, stageH: number, w: number, h: number): Box {
-  const scale = Math.max(0.01, Math.min((stageW - 2 * STAGE_PAD) / w, (stageH - 2 * STAGE_PAD) / h));
+/** Alanda görüntünün kutusu (oran korunur, ortada, kenarlarda `pad` boşluk) */
+function fitBox(stageW: number, stageH: number, w: number, h: number, pad = STAGE_PAD): Box {
+  const scale = Math.max(0.01, Math.min((stageW - 2 * pad) / w, (stageH - 2 * pad) / h));
   const width = w * scale;
   const height = h * scale;
   return { left: (stageW - width) / 2, top: (stageH - height) / 2, width, height, scale };
@@ -67,16 +67,16 @@ function methodOf(d: { corners: Quad | null; method: string | null; fillsFrame: 
 function ScanBeam({ on }: { on: boolean }) {
   const reduce = useReducedMotion();
   if (!on) return null;
-  if (reduce) return <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-lime/10" />;
+  if (reduce) return <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[#c0f21e]/10" />;
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
       <motion.div
-        className="absolute inset-x-0 h-16 -translate-y-1/2 bg-gradient-to-b from-transparent via-lime/35 to-transparent"
+        className="absolute inset-x-0 h-16 -translate-y-1/2 bg-gradient-to-b from-transparent via-[#c0f21e]/35 to-transparent"
         initial={{ top: "0%" }}
         animate={{ top: ["0%", "100%"] }}
         transition={{ duration: 1.7, ease: "easeInOut", repeat: Infinity, repeatType: "reverse" }}
       >
-        <div className="absolute inset-x-0 top-1/2 h-0.5 bg-lime shadow-[0_0_12px_2px_rgb(192_242_30/0.7)]" />
+        <div className="absolute inset-x-0 top-1/2 h-0.5 bg-[#c0f21e] shadow-[0_0_12px_2px_rgb(192_242_30/0.7)]" />
       </motion.div>
     </div>
   );
@@ -97,6 +97,8 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
 
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [stage, setStage] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  const resultRef = useRef<HTMLDivElement>(null);
+  const [resultBox, setResultBox] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const [corners, setCorners] = useState<Quad | null>(null);
   const [method, setMethod] = useState<ScanInfoMethod | null>(null);
   const [confidence, setConfidence] = useState(0);
@@ -119,22 +121,30 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
     onDone(choice);
   };
 
-  // Pencere: yerel <dialog> üst katmanda (telefonda tam ekran); Esc yüklemeyi bırakır
+  // Pencere: yerel <dialog> üst katmanda (telefonda tam ekran); Esc yüklemeyi bırakır. Odak pencerenin kendisinde
+  // (dokunmatikte Kapat düğmesi odak halkasıyla açılmasın; ekran okuyucu başlığı okur)
   useLayoutEffect(() => {
     const el = dialogRef.current;
-    if (el && !el.open) el.showModal();
+    if (!el || el.open) return;
+    el.showModal();
+    el.focus({ preventScroll: true });
   }, []);
 
-  // Sahnenin ölçüsü (fotoğrafın kutusu bundan)
+  // Sahnenin ve sonuç alanının ölçüsü (fotoğrafın ve önizlemenin kutusu bundan)
   useLayoutEffect(() => {
-    const el = stageRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      const r = entry.contentRect;
-      setStage((s) => (Math.abs(s.width - r.width) < 0.5 && Math.abs(s.height - r.height) < 0.5 ? s : { width: r.width, height: r.height }));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
+    const watch = (el: HTMLElement | null, set: (v: { width: number; height: number }) => void) => {
+      if (!el) return null;
+      const ro = new ResizeObserver(([entry]) => set({ width: entry.contentRect.width, height: entry.contentRect.height }));
+      ro.observe(el);
+      return ro;
+    };
+    const same = (a: { width: number; height: number }, b: { width: number; height: number }) => Math.abs(a.width - b.width) < 0.5 && Math.abs(a.height - b.height) < 0.5;
+    const a = watch(stageRef.current, (v) => setStage((s) => (same(s, v) ? s : v)));
+    const b = watch(resultRef.current, (v) => setResultBox((s) => (same(s, v) ? s : v)));
+    return () => {
+      a?.disconnect();
+      b?.disconnect();
+    };
   }, []);
 
   // Fotoğrafı çöz, Worker'a yükle, kâğıdı bul; kod emin değilse ve okuma açıksa yapay zekâya sor
@@ -369,8 +379,8 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
         style={{
           width: LOUPE,
           height: LOUPE,
-          top: 10,
-          // Büyüteç parmağın altında kalmasın: köşe sahnenin solundaysa sağda, sağındaysa solda
+          // Büyüteç parmağın altında kalmasın: sahnenin köşeye çapraz karşı köşesinde
+          top: box.top + corners[dragging].y * box.scale < stage.height / 2 ? stage.height - LOUPE - 10 : 10,
           left: box.left + corners[dragging].x * box.scale < stage.width / 2 ? stage.width - LOUPE - 10 : 10,
           backgroundImage: `url(${photo.url})`,
           backgroundRepeat: "no-repeat",
@@ -378,8 +388,8 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
           backgroundPosition: `${LOUPE / 2 - corners[dragging].x * box.scale * LOUPE_ZOOM}px ${LOUPE / 2 - corners[dragging].y * box.scale * LOUPE_ZOOM}px`,
         }}
       >
-        <div className="absolute top-1/2 left-0 h-px w-full bg-lime/80" />
-        <div className="absolute top-0 left-1/2 h-full w-px bg-lime/80" />
+        <div className="absolute top-1/2 left-0 h-px w-full bg-[#c0f21e]/80" />
+        <div className="absolute top-0 left-1/2 h-full w-px bg-[#c0f21e]/80" />
       </div>
     ) : null;
 
@@ -404,7 +414,7 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
               />
               <polygon
                 points={corners.map((p) => `${p.x},${p.y}`).join(" ")}
-                className={cn("fill-none", valid ? "stroke-lime" : "stroke-bad")}
+                className={cn("fill-none", valid ? "stroke-[#c0f21e]" : "stroke-[#ff5a4f]")}
                 strokeWidth={2.5}
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
@@ -432,7 +442,7 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
                   <span
                     className={cn(
                       "size-5 rounded-full border-[3px] bg-white/25 shadow-[0_1px_6px_rgb(0_0_0/0.5)] transition-transform group-focus-visible:ring-4 group-focus-visible:ring-white/60",
-                      valid ? "border-lime" : "border-bad",
+                      valid ? "border-[#c0f21e]" : "border-[#ff5a4f]",
                       dragging === i && "scale-125",
                     )}
                   />
@@ -440,18 +450,6 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
               ))
             : null}
           {loupe}
-          {/* Telefonda taranmış sonucun küçük önizlemesi: dokununca Sonuç */}
-          {preview ? (
-            <button
-              type="button"
-              onClick={() => setView("sonuc")}
-              aria-label="Taranmış sonucu göster"
-              className="absolute right-3 bottom-3 z-10 overflow-hidden rounded-lg bg-white shadow-[0_4px_16px_rgb(0_0_0/0.4)] ring-2 ring-white sm:hidden"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element -- yerel önizleme */}
-              <img src={preview.url} alt="" className="block max-h-24 w-auto max-w-16 object-contain" />
-            </button>
-          ) : null}
         </>
       ) : (
         <div className="absolute inset-0 grid place-items-center text-sm text-white/70">
@@ -463,21 +461,18 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
     </div>
   );
 
+  // Önizlemenin kutusu (sonuç alanına sığar, oran korunur)
+  const shown = preview && resultBox.width > 0 ? fitBox(resultBox.width, resultBox.height, preview.width, preview.height, 12) : null;
   const result = (
-    <div className="relative grid min-h-0 flex-1 place-items-center overflow-hidden bg-panel p-3 dark:bg-panel-deep">
-      {preview ? (
-        <div className="relative max-h-full max-w-full">
+    <div ref={resultRef} className="relative min-h-0 flex-1 overflow-hidden bg-panel dark:bg-panel-deep">
+      {preview && shown ? (
+        <div className="absolute overflow-hidden rounded-md bg-white shadow-[0_2px_12px_rgb(0_0_0/0.12)]" style={{ left: shown.left, top: shown.top, width: shown.width, height: shown.height }}>
           {/* eslint-disable-next-line @next/next/no-img-element -- yerel önizleme */}
-          <img
-            src={preview.url}
-            alt="Taranmış sonucun önizlemesi"
-            className={cn("block max-h-full max-w-full rounded-md bg-white object-contain shadow-[0_2px_12px_rgb(0_0_0/0.12)] transition-opacity", previewBusy && "opacity-70")}
-            style={{ aspectRatio: `${preview.width} / ${preview.height}` }}
-          />
+          <img src={preview.url} alt="Taranmış sonucun önizlemesi" className={cn("block size-full transition-opacity", previewBusy && "opacity-70")} />
           <ScanBeam on={finishing} />
         </div>
       ) : (
-        <p className="flex items-center gap-2 text-[13px] text-ink-mute">
+        <p className="absolute inset-0 flex items-center justify-center gap-2 text-[13px] text-ink-mute">
           <LoaderCircle size={14} className="animate-spin" aria-hidden="true" /> Önizleme hazırlanıyor…
         </p>
       )}
@@ -514,13 +509,14 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
   return (
     <dialog
       ref={dialogRef}
+      tabIndex={-1}
       aria-labelledby={titleId}
       onCancel={(e) => {
         e.preventDefault();
         if (!finishing) finish(null);
       }}
       className={cn(
-        "fixed inset-0 m-0 hidden h-dvh max-h-none w-screen max-w-none flex-col overflow-hidden bg-canvas p-0 text-ink backdrop:bg-black/60 open:flex",
+        "fixed inset-0 m-0 hidden h-dvh max-h-none w-screen max-w-none flex-col overflow-hidden bg-canvas p-0 text-ink outline-none backdrop:bg-black/60 open:flex",
         "sm:m-auto sm:h-[min(92dvh,860px)] sm:w-[min(96vw,1120px)] sm:rounded-3xl sm:shadow-[0_12px_40px_rgba(0,0,0,.14)]",
       )}
     >
@@ -547,7 +543,19 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
           onChange={setView}
           options={[
             { value: "kenar", label: "Kenarlar" },
-            { value: "sonuc", label: "Sonuç" },
+            {
+              value: "sonuc",
+              // Taranmış sonucun küçük önizlemesi sekmenin içinde (fotoğrafın üstünde köşe tutamağını örtmesin)
+              label: (
+                <>
+                  {preview ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- yerel önizleme
+                    <img src={preview.url} alt="" className="h-7 w-auto max-w-6 rounded-[3px] bg-white object-contain ring-1 ring-line-strong" />
+                  ) : null}
+                  Sonuç
+                </>
+              ),
+            },
           ]}
         />
       </div>
