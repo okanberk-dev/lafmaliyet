@@ -9,7 +9,21 @@ import { test } from "node:test";
 import { gunSonuStep } from "../src/lib/job-health";
 import { pavoState, pavoSubject, pavoView, renderPavoMail } from "../src/lib/lafpos/bank-pos";
 import { bankPosSchema, parsePosDay, type PosDayZ } from "../src/lib/lafpos/day";
-import { autoMissing, autoValuesOf, compareText, dayEndSubject, dayEndSubjectNoCount, dayHash, mergeAuto, renderDayEnd, renderStaffDayEnd, type AutoValues, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
+import {
+  autoMissing,
+  autoValuesOf,
+  catchUpOrder,
+  compareText,
+  dayEndPending,
+  dayEndSubject,
+  dayEndSubjectNoCount,
+  dayHash,
+  mergeAuto,
+  renderDayEnd,
+  renderStaffDayEnd,
+  type AutoValues,
+  type DayEndMail,
+} from "../src/lib/lafpos/gun-sonu";
 import { unmatchedIkramNames } from "../src/lib/lafpos/ikram";
 import { rejectionText, type LafposRejection } from "../src/lib/lafpos/status";
 import { siteBranchMatches, siteBranchOf } from "../src/lib/site-sales/calc";
@@ -218,6 +232,32 @@ test("Günlük işin adımı: yalnız bir şey yapılınca ya da hata varsa", ()
   assert.equal(gunSonuStep({ status: "error", days: [{ date: "2026-11-22", report: "written", email: "failed" }] })?.code, "error");
   assert.equal(gunSonuStep({ status: "error", days: [{ date: "2026-11-22", report: "unchanged", email: "same", staff: "failed" }] })?.code, "error", "çalışan e-postası düştüyse de");
   assert.equal(gunSonuStep({ error: "süre doldu" })?.code, "error");
+  // Süre yetmediği için başlanamayan, işi bekleyen gün de hata (e-postası ya da raporu tamamlanmadı)
+  assert.deepEqual(gunSonuStep({ status: "error", days: [{ date: "2026-11-21", report: "unchanged", email: "same" }], left: ["2026-11-22"] }), { code: "error", error: "2026-11-22 süre yetmedi" });
+  assert.equal(gunSonuStep({ status: "ok", days: [{ date: "2026-11-22", report: "unchanged", email: "same" }], left: [] }), undefined);
+});
+
+test("Sabah işinin sırası: işi bekleyen günler önce ve yeniden eskiye (dünkü gün ilk), işlenmiş günler sona", () => {
+  const h = "abc";
+  // İşi bekleyen: hiç işlenmedi, rapor adımı eski içerikle, e-postası gitmedi (ya da eski içerikle gitti)
+  assert.equal(dayEndPending(null, h), true);
+  assert.equal(dayEndPending({ doneHash: null, emailedHash: h }, h), true, "rapor yazımı düştü");
+  assert.equal(dayEndPending({ doneHash: h, emailedHash: null }, h), true, "e-posta gitmedi");
+  assert.equal(dayEndPending({ doneHash: h, emailedHash: "eski" }, h), true, "düzeltmenin e-postası gitmedi");
+  assert.equal(dayEndPending({ doneHash: "eski", emailedHash: "eski" }, h), true, "düzeltme gelmiş, işlenmemiş");
+  assert.equal(dayEndPending({ doneHash: h, emailedHash: h }, h), false);
+  const days = [
+    { date: "2026-11-18", pending: false },
+    { date: "2026-11-19", pending: true },
+    { date: "2026-11-20", pending: false },
+    { date: "2026-11-21", pending: true },
+    { date: "2026-11-22", pending: true },
+  ];
+  assert.deepEqual(
+    catchUpOrder(days).map((d) => d.date),
+    ["2026-11-22", "2026-11-21", "2026-11-19", "2026-11-20", "2026-11-18"],
+  );
+  assert.deepEqual(days[0].date, "2026-11-18", "girdi değişmez");
 });
 
 test("laffogato.net satırı kasanın şubesinden: verilmezse Tuzla; Marina'ya şubesiz (eski) yanıt yazılmaz", () => {

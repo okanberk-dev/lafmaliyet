@@ -50,7 +50,7 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
     await db.delete(s.settings).where(eq(s.settings.key, "lafposGecisGunu"));
     if (day) await db.insert(s.settings).values({ key: "lafposGecisGunu", value: day });
   };
-  const push = (date: string, zNo: number, z: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => {
+  const push = (date: string, zNo: number, z: Record<string, unknown> = {}, extra: Record<string, unknown> = {}, at = NOW) => {
     const body = {
       version: 1,
       source: "lafpos",
@@ -81,9 +81,9 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
       payments: [{ name: "Nakit", zField: "cash", channel: null, count: 40, amount: 12_000 }],
       ...extra,
     };
-    const parsed = parsePosDay(JSON.stringify(body), NOW);
+    const parsed = parsePosDay(JSON.stringify(body), at);
     assert.ok(parsed.ok, "gövde geçerli");
-    return ingest.storePosDay(db, parsed.data, NOW);
+    return ingest.storePosDay(db, parsed.data, at);
   };
   const marinaReport = async (date = DAY) => {
     const [row] = await db.select().from(s.cashReports).where(and(eq(s.cashReports.date, date), eq(s.cashReports.branchId, LAFPOS_SUBE)));
@@ -169,7 +169,7 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
   });
 
   beforeEach(async () => {
-    await db.execute(sql`TRUNCATE lafpos_day_ends, pos_daily_sales, pos_day_reports, activity_log, staff_requests, cash_reports, cash_outs, notification_log, integration_state, branch_settings RESTART IDENTITY CASCADE`);
+    await db.execute(sql`TRUNCATE lafpos_day_ends, pos_daily_sales, pos_day_reports, pos_day_revisions, activity_log, staff_requests, cash_reports, cash_outs, notification_log, integration_state, branch_settings RESTART IDENTITY CASCADE`);
     await setSwitch(SWITCH);
     await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: true, whatsapp: null });
     sent.length = 0;
@@ -458,6 +458,96 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
     assert.equal(sent.length, 0);
   });
 
+  // 25 Kasım 2026 akşamı: ilk gönderim Pavo'yu beklemeye aldı, LafPOS ikinci gönderimi yapmadı ve gece hiçbir tetik yoktu;
+  // gün sonu e-postası gitmedi. Bekleme artık aynı istekte biter (settlePavoWait), LafPOS beklenip beklenmeyeceğini söyler
+  const OKC_PAVO = { provider: "pavo", zReport: false, docs: 19, cash: 12_000, card: 8_000, mealCard: 0, other: 0, total: 20_000, voided: { count: 0, cash: 0, card: 0 }, vat: null };
+  /** Sahte saat: uyku saati ilerletir, gerçekten beklemez */
+  const fakeClock = (startMs: number) => {
+    let t = startMs;
+    return { nowMs: () => t, sleep: async (ms: number) => void (t += ms) };
+  };
+
+  test("Pavo'nun sonucu süre içinde gelmezse aynı istek e-postayı Pavo'suz gönderir (settlePavoWait); çalışanlar da alır, sonuç sonra gelirse kısa Pavo e-postası", async () => {
+    await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: true, whatsapp: null, staffRecipients: ["kasa@ornek.com"], staffAmounts: false });
+    assert.ok((await push("2026-11-21", 13, {}, { okc: OKC_PAVO, bankPos: bankPos(8_000) })).ok);
+    assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO })).ok);
+    const first = await gun.runLafposDayEnd(db, DAY, NOW);
+    assert.deepEqual([first.email, first.staff], ["waiting", "skipped"]);
+    const clock = fakeClock(NOW.getTime());
+    const settled = await gun.settlePavoWait(db, DAY, { deadlineAt: NOW.getTime() + 50_000, ...clock });
+    assert.ok(typeof settled === "object", "Pavo gelmedi: e-posta gönderildi");
+    assert.deepEqual([settled.email, settled.staff], ["sent", "sent"]);
+    assert.ok(clock.nowMs() >= NOW.getTime() + 50_000 - gun.SETTLE_SEND_MARGIN_MS, "süre sonuna kadar beklendi");
+    assert.ok(clock.nowMs() < NOW.getTime() + 50_000, "işlevin süresi içinde");
+    assert.deepEqual(sent.map((m) => m.to), [["sahip@ornek.com"], ["kasa@ornek.com"]]);
+    // Pavo'nun sonucu sonra gelirse gün sonu yinelenmez, kısa Pavo e-postası gider
+    assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO, bankPos: bankPos(8_000) })).ok);
+    const late = await gun.runLafposDayEnd(db, DAY, new Date(NOW.getTime() + 60_000));
+    assert.deepEqual([late.email, late.pavo], ["same", "sent"]);
+    assert.equal(sent.length, 3);
+  });
+
+  test("Pavo'nun sonucu beklerken gelirse settlePavoWait göndermez ('arrived'); e-postayı sonucun gönderimi tek ve karşılaştırmalı gönderir", async () => {
+    assert.ok((await push("2026-11-21", 13, {}, { okc: OKC_PAVO, bankPos: bankPos(8_000) })).ok);
+    assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO })).ok);
+    assert.equal((await gun.runLafposDayEnd(db, DAY, NOW)).email, "waiting");
+    let polls = 0;
+    const clock = fakeClock(NOW.getTime());
+    const settled = await gun.settlePavoWait(db, DAY, {
+      deadlineAt: NOW.getTime() + 50_000,
+      nowMs: clock.nowMs,
+      sleep: async (ms) => {
+        await clock.sleep(ms);
+        // Üçüncü bakıştan önce LafPOS günü Pavo'nun sonucuyla yeniden gönderir
+        if (++polls === 3) assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO, bankPos: bankPos(8_000) })).ok);
+      },
+    });
+    assert.equal(settled, "arrived");
+    assert.equal(sent.length, 0);
+    const second = await gun.runLafposDayEnd(db, DAY, NOW);
+    assert.deepEqual([second.email, second.pavo], ["sent", "same"]);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].text, /Pavo – LafPOS kart karşılaştırması/);
+  });
+
+  test("LafPOS 'bankPosPending: false' derse (banka gün sonu başlamayacak ya da atlandı) beklenmez; 'true' derse önceki gün sonucsuz olsa da beklenir", async () => {
+    assert.ok((await push("2026-11-21", 13, {}, { okc: OKC_PAVO, bankPos: bankPos(8_000) })).ok);
+    assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO, bankPosPending: false })).ok);
+    assert.equal((await gun.runLafposDayEnd(db, DAY, NOW)).email, "sent");
+    assert.equal(sent.length, 1);
+    // Önceki günde sonuç yok (eski kurala göre beklenmezdi) ama LafPOS bekleniyor diyor
+    await db.execute(sql`TRUNCATE lafpos_day_ends, pos_day_reports, pos_day_revisions, cash_reports, notification_log RESTART IDENTITY CASCADE`);
+    sent.length = 0;
+    assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO, bankPosPending: true })).ok);
+    assert.equal((await gun.runLafposDayEnd(db, DAY, NOW)).email, "waiting");
+    assert.equal((await gun.runLafposDayEnd(db, DAY, new Date(NOW.getTime() + gun.PAVO_WAIT_MS))).email, "sent");
+  });
+
+  test("bekleme günün ilk gelişinden sayılır: sonucsuz yeniden gönderim (sayım düzeltmesi) beklemeyi uzatmaz", async () => {
+    assert.ok((await push("2026-11-21", 13, {}, { okc: OKC_PAVO, bankPos: bankPos(8_000) })).ok);
+    assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO })).ok);
+    assert.equal((await gun.runLafposDayEnd(db, DAY, NOW)).email, "waiting");
+    const later = new Date(NOW.getTime() + gun.PAVO_WAIT_MS - 1_000);
+    assert.ok((await push(DAY, 14, { countedCash: 9_300, cashDiff: -50 }, { okc: OKC_PAVO }, later)).ok);
+    assert.equal((await gun.runLafposDayEnd(db, DAY, later)).email, "waiting");
+    // İlk gelişten PAVO_WAIT_MS sonra (son gönderimden yalnız 1 sn sonra) gider
+    assert.equal((await gun.runLafposDayEnd(db, DAY, new Date(NOW.getTime() + gun.PAVO_WAIT_MS))).email, "sent");
+  });
+
+  test("yarıda kalan gönderim (işlev kesildi, sending_at kaldı) Pavo'nun sonucu gelmiş olsa da canlı yoklamada tamamlanır", async () => {
+    assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO, bankPos: bankPos(8_000) })).ok);
+    await gun.writeAutoReport(db, DAY, NOW);
+    await db.insert(s.lafposDayEnds).values({ date: DAY, branchId: LAFPOS_SUBE }).onConflictDoNothing();
+    await db.update(s.lafposDayEnds).set({ sendingAt: NOW }).where(and(eq(s.lafposDayEnds.date, DAY), eq(s.lafposDayEnds.branchId, LAFPOS_SUBE)));
+    // İşaret tazeyken dokunulmaz (başka gönderim sürüyor olabilir)
+    assert.deepEqual(await gun.finishWaitingDayEnds(db, new Date(NOW.getTime() + gun.PAVO_WAIT_MS)), []);
+    // İşaret bayatlayınca tamamlanır
+    const done = await gun.finishWaitingDayEnds(db, new Date(NOW.getTime() + 6 * 60_000));
+    assert.deepEqual(done.map((d) => [d.date, d.email]), [[DAY, "sent"]]);
+    assert.equal(sent.length, 1);
+    assert.deepEqual(await gun.finishWaitingDayEnds(db, new Date(NOW.getTime() + 12 * 60_000)), []);
+  });
+
   test("yöneticinin e-postası düşse de çalışanlar e-postasını alır; giden çalışan kaydı sonraki düşen gönderimle (409) ezilmez", async () => {
     await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: true, whatsapp: null, staffRecipients: ["kasa@ornek.com"], staffAmounts: false });
     assert.ok((await push(DAY, 14)).ok);
@@ -533,17 +623,142 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
     await setSwitch(null);
     assert.ok((await push("2026-11-21", 13)).ok);
     assert.ok((await push(DAY, 14)).ok);
-    assert.deepEqual(await gun.catchUpLafposDayEnds(db, NOW), { status: "off", days: [] });
+    assert.deepEqual(await gun.catchUpLafposDayEnds(db, NOW), { status: "off", days: [], left: [] });
     assert.equal(sent.length, 0);
     await setSwitch("2026-11-21");
     const daily = await gun.catchUpLafposDayEnds(db, NOW);
+    // İşi bekleyen günler yeniden eskiye: en yeni gün önce
     assert.deepEqual(daily.days.map((d) => [d.date, d.report, d.email]), [
-      ["2026-11-21", "written", "sent"],
       [DAY, "written", "sent"],
+      ["2026-11-21", "written", "sent"],
     ]);
     assert.equal(sent.length, 2);
-    // İkinci günün e-postası dünle kıyaslar
-    assert.match(sent[1].text.replace(/[  ]/g, " "), /Dün \(21 Kasım Cumartesi\): 20\.000 ₺ \(aynı\)/);
+    // Yeni günün e-postası dünle kıyaslar (dünkü gün LafPOS'un gün sonundan okunur, sıradan bağımsız)
+    assert.match(sent[0].text.replace(/[  ]/g, " "), /Dün \(21 Kasım Cumartesi\): 20\.000 ₺ \(aynı\)/);
+    // Kasa zinciri: yeni gün eski günden önce yazıldı; devir denetimi aynı çalışmada eski günün raporuyla yeniden yapılır
+    const rep = (await marinaReport())!;
+    assert.match(rep.note ?? "", /Açılış önceki raporun devrinden 7\.850\s₺ az/);
+    // İkinci çalışma hiçbir şey yazmaz, göndermez (idempotent)
+    const again = await gun.catchUpLafposDayEnds(db, NOW);
+    assert.deepEqual(again.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "unchanged", "same"],
+      ["2026-11-21", "unchanged", "same"],
+    ]);
+    assert.equal(sent.length, 2);
+    assert.equal((await marinaReport())!.revision, rep.revision);
+  });
+
+  test("sabah işi: işi bekleyen günler önce ve yeniden eskiye (dünkü gün ilk), işlenmiş günler sona; ikinci çalışma bir şey yapmaz", async () => {
+    await setSwitch("2026-11-20");
+    const morning = new Date("2026-11-23T08:00:00+03:00");
+    assert.ok((await push("2026-11-20", 12)).ok);
+    const first = await gun.runLafposDayEnd(db, "2026-11-20", NOW);
+    assert.deepEqual([first.report, first.email], ["written", "sent"]);
+    // 21'in e-postası düştü (rapor yazıldı), 22 hiç işlenmedi (ör. gönderimin after()'ı kesildi)
+    assert.ok((await push("2026-11-21", 13)).ok);
+    resendStatus = 422;
+    assert.equal((await gun.runLafposDayEnd(db, "2026-11-21", NOW, { attempts: 1 })).email, "failed");
+    resendStatus = 200;
+    assert.ok((await push(DAY, 14)).ok);
+    sent.length = 0;
+    const daily = await gun.catchUpLafposDayEnds(db, morning);
+    assert.deepEqual(daily.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "written", "sent"],
+      ["2026-11-21", "unchanged", "sent"],
+      ["2026-11-20", "unchanged", "same"],
+    ]);
+    assert.deepEqual([daily.status, daily.left], ["ok", []]);
+    assert.deepEqual(
+      sent.map((m) => m.subject.match(/2[0-2] Kasım/)?.[0]),
+      ["22 Kasım", "21 Kasım"],
+      "dünkü günün e-postası önce",
+    );
+    const revisions = async () =>
+      (await db.select({ date: s.cashReports.date, revision: s.cashReports.revision }).from(s.cashReports).where(eq(s.cashReports.branchId, LAFPOS_SUBE)).orderBy(s.cashReports.date)).map(
+        (r) => `${r.date}:${r.revision}`,
+      );
+    const before = await revisions();
+    assert.equal(before.length, 3);
+    const again = await gun.catchUpLafposDayEnds(db, morning);
+    assert.deepEqual(again.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "unchanged", "same"],
+      ["2026-11-21", "unchanged", "same"],
+      ["2026-11-20", "unchanged", "same"],
+    ]);
+    assert.equal(sent.length, 2, "ikinci çalışma e-posta göndermez");
+    assert.deepEqual(await revisions(), before, "ikinci çalışma raporu yeniden yazmaz");
+  });
+
+  test("sabah işi: son ana az kalınca yeni güne başlanmaz; başlanamayan bekleyen gün `left`te, adım hata; işlenmiş gün sessizce kalır", async () => {
+    const { gunSonuStep } = await import("../src/lib/job-health");
+    await setSwitch("2026-11-21");
+    assert.ok((await push("2026-11-21", 13)).ok);
+    await gun.runLafposDayEnd(db, "2026-11-21", NOW);
+    assert.ok((await push(DAY, 14)).ok);
+    sent.length = 0;
+    const late = await gun.catchUpLafposDayEnds(db, NOW, { attempts: 1, deadlineAt: Date.now() + gun.CATCH_UP_MIN_MS - 500 });
+    assert.deepEqual(late, { status: "error", days: [], left: [DAY] });
+    assert.deepEqual(gunSonuStep(late), { code: "error", error: `${DAY} süre yetmedi` });
+    assert.equal(sent.length, 0);
+    assert.equal(await marinaReport(), null);
+    // Süre varken (sonraki tetik) önce bekleyen gün
+    const daily = await gun.catchUpLafposDayEnds(db, NOW, { attempts: 1, deadlineAt: Date.now() + 30_000 });
+    assert.deepEqual(daily.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "written", "sent"],
+      ["2026-11-21", "unchanged", "same"],
+    ]);
+    assert.deepEqual([daily.status, daily.left], ["ok", []]);
+  });
+
+  test("sabah işi, kasa zinciri: eski gün yazılınca ondan önce işlenen dünkü günün (yalnız e-postası düşmüş) devri de yeniden hesaplanır", async () => {
+    const morning = new Date("2026-11-23T08:00:00+03:00");
+    assert.ok((await push("2026-11-21", 13)).ok);
+    assert.ok((await push(DAY, 14)).ok);
+    resendStatus = 422;
+    const night = await gun.runLafposDayEnd(db, DAY, NOW, { attempts: 1 });
+    assert.deepEqual([night.report, night.email], ["written", "failed"]);
+    resendStatus = 200;
+    assert.doesNotMatch((await marinaReport())?.note ?? "", /devrinden/, "önceki rapor yokken devir denetimi yok");
+    // Geçiş günü bir gün geriye alındı: 21 Kasım hiç işlenmedi; 22'nin raporu yazılı, yalnız e-postası bekliyor
+    await setSwitch("2026-11-21");
+    sent.length = 0;
+    const daily = await gun.catchUpLafposDayEnds(db, morning);
+    assert.deepEqual(daily.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "unchanged", "sent"],
+      ["2026-11-21", "written", "sent"],
+    ]);
+    const rep = await marinaReport();
+    assert.match(rep?.note ?? "", /Açılış önceki raporun devrinden 7\.850\s₺ az/, "22'nin devri 21'in raporuyla");
+    // İkinci çalışma hiçbir şey yazmaz, göndermez
+    const again = await gun.catchUpLafposDayEnds(db, morning);
+    assert.deepEqual(again.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "unchanged", "same"],
+      ["2026-11-21", "unchanged", "same"],
+    ]);
+    assert.equal(sent.length, 2);
+    assert.equal((await marinaReport())?.revision, rep?.revision);
+  });
+
+  test("yöneticinin sildiği otomatik raporun günü düzeltme gelince işlenmiş sayılır: sabah işinde öne geçmez, süre yetmese de hata vermez", async () => {
+    const morning = new Date("2026-11-23T08:00:00+03:00");
+    assert.ok((await push(DAY, 14)).ok);
+    const first = await gun.runLafposDayEnd(db, DAY, NOW);
+    assert.deepEqual([first.report, first.email], ["written", "sent"]);
+    const rep = await marinaReport();
+    assert.ok(rep, "rapor yazıldı");
+    await db.delete(s.cashReports).where(eq(s.cashReports.id, rep.id));
+    // LafPOS günü düzeltip yeniden gönderdi (aynı Z)
+    assert.ok((await push(DAY, 14, { receipts: 64 })).ok);
+    const fixed = await gun.runLafposDayEnd(db, DAY, NOW);
+    assert.deepEqual([fixed.report, fixed.email], ["deleted", "sent"]);
+    assert.equal(await marinaReport(), null, "silinen rapor yeniden yazılmaz");
+    const st = await state();
+    assert.ok(st?.dayHash, "rapor adımı bu içeriği işledi");
+    assert.equal(st.dayHash, st.emailedHash);
+    sent.length = 0;
+    const late = await gun.catchUpLafposDayEnds(db, morning, { attempts: 1, deadlineAt: Date.now() + gun.CATCH_UP_MIN_MS - 500 });
+    assert.deepEqual(late, { status: "ok", days: [], left: [] });
+    assert.equal(sent.length, 0);
   });
 
   test("Tuzla'ya dokunulmaz: Tuzla'nın raporu ve online satırı eskisi gibi (&branch=tuzla)", async () => {

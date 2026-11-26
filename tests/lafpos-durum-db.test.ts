@@ -44,6 +44,7 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
   let core: typeof import("../src/server/lafpos/admin");
   let kasa: typeof import("../src/server/data/lafpos-day");
   let actions: typeof import("../src/server/actions/lafpos");
+  let bell: typeof import("../src/server/bell/lafpos");
   const users = { admin: { id: 0, name: "Yönetici", email: "lafpos-yonetici@ornek.com", role: "admin" as const }, staff: { id: 0, name: "Ayşe", email: "lafpos-ayse@ornek.com", role: "staff" as const } };
   const warnings: unknown[][] = [];
   const realWarn = console.warn;
@@ -108,6 +109,7 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
     core = await import("../src/server/lafpos/admin");
     kasa = await import("../src/server/data/lafpos-day");
     actions = await import("../src/server/actions/lafpos");
+    bell = await import("../src/server/bell/lafpos");
     console.warn = (...args: unknown[]) => void warnings.push(args);
   });
 
@@ -243,6 +245,39 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
     assert.deepEqual([sum.undated?.fresh, sum.alerts, sum.dayRejections.length], [false, 2, 2]);
     assert.equal(await reportOf("2026-11-09"), undefined, "400'ün günü yazılmadı");
     assert.equal((await reportOf("2026-11-07")).z.zNo, 127);
+  });
+
+  test("zil: sayılan LafPOS gününün reddi yöneticinin zilinde bir kez (gün ve neden başına); deneme günü düşmez, gün yeniden yazılınca kalkar", async () => {
+    const rows = async (now: Date) => (await bell.lafposRejectionBell(db, now)).map((n) => [n.id, n.title, n.group, n.kind, n.href, n.timeLabel]);
+    assert.deepEqual(await bell.lafposRejectionBell(db, later(1)), [], "ret yokken satır yok");
+    assert.match((await core.writeLafposSwitchDay(db, users.admin, "2026-11-06", "2026-11-12")) ?? "", /→ 6\sKasım 2026$/);
+    // Deneme günü (geçişten önce) reddedilse de zile düşmez (kart gösterir)
+    await send(push("2026-11-05", 31));
+    assert.equal((await send(push("2026-11-05", 32), { now: later(1) })).status, 409);
+    assert.deepEqual(await rows(later(2)), []);
+    // Sayılan gün: Z çakışması
+    await send(push("2026-11-07", 127), { now: later(2) });
+    assert.equal((await send(push("2026-11-07", 128), { now: later(3) })).status, 409);
+    const conflict = ["lafpos-ret-2026-11-07-z_conflict", "Marina gün sonu alınamadı: Z numarası çakıştı", "sistem", "danger", "/panel/ayarlar?sube=marina#lafpos", "Bugün"];
+    assert.deepEqual(await rows(later(4)), [conflict]);
+    const [first] = await bell.lafposRejectionBell(db, later(4));
+    assert.match(first.body, /^7\sKasım: panelde Z 127 kayıtlı, LafPOS Z 128 gönderdi\. .*Gönder'e basın\.$/);
+    // LafPOS aynı günü aynı nedenle yeniden gönderip yine reddedilince satır yinelenmez (kimlik aynı)
+    assert.equal((await send(push("2026-11-07", 129), { now: later(5) })).status, 409);
+    assert.deepEqual(await rows(later(6)), [conflict]);
+    // Başka gün, başka neden: sözleşmeye uymayan gövde ve başka şubeye ayarlı kasa (en yeni gün önce)
+    assert.equal((await send({ ...push("2026-11-08", 40), lines: [line("X", { qty: -1 })] }, { now: later(7) })).status, 400);
+    assert.equal((await send({ ...push("2026-11-09", 41), sube: MODPOS_SUBE }, { now: later(8) })).status, 409);
+    assert.deepEqual(
+      (await rows(later(9))).map((r) => r[0]),
+      ["lafpos-ret-2026-11-09-wrong_branch", "lafpos-ret-2026-11-08-invalid", "lafpos-ret-2026-11-07-z_conflict"],
+    );
+    // LafPOS panelin Z'sini yeniden gönderdi (200): 7 Kasım'ın reddi kapanır, satırı kalkar; ötekiler durur
+    assert.equal((await send(push("2026-11-07", 127), { now: later(10) })).status, 200);
+    assert.deepEqual((await rows(later(11))).map((r) => r[0]), ["lafpos-ret-2026-11-09-wrong_branch", "lafpos-ret-2026-11-08-invalid"]);
+    // Bir hafta sonra zilden düşer (kart göstermeye devam eder)
+    assert.deepEqual(await rows(new Date(NOW.getTime() + 8 * 86_400_000)), []);
+    assert.equal(lafposCardSummary(await status.loadLafposCard(db, new Date(NOW.getTime() + 8 * 86_400_000))).dayRejections.length, 3);
   });
 
   test("LafPOS panelin Z'sini yeniden gönderince (200) o günün 409'u kapanır: kart doğru kaydı silmeyi önermez", async () => {
