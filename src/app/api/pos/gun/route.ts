@@ -47,7 +47,8 @@ export async function POST(request: NextRequest) {
     // Sayılan LafPOS günü (geçiş gününden itibaren, LafPOS'un şubesi): Kasa raporu ve gün sonu e-postası yanıttan sonra
     // (docs/LAFPOS.md › Gün sonu otomasyonu). Kasa e-postayı beklemez; başarısızsa günlük iş yeniden dener
     if (r.status === 200 && r.body.counted === true && typeof r.body.date === "string") {
-      const date = r.body.date;
+      // Tarih gövdeden gelir (biçimi denetlendi: YYYY-AA-GG); günlük satırlarına satır sonu taşıyamasın
+      const date = r.body.date.replace(/[\r\n]/g, "");
       // Pavo'yu bekleyen gün (ilk gönderim, karşılaştırma birazdan gelecek) bu istekte biter: sonuç süre içinde gelmezse
       // e-posta Pavo'suz gider (settlePavoWait). Gece başka tetik yok; e-posta sabaha kalmaz
       after(async () => {
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
         try {
           console.info("[lafpos] Pavo beklemesi", await settlePavoWait(getDb(), date, { deadlineAt }));
         } catch (e) {
-          console.error("[lafpos] Pavo beklemesi bitirilemedi:", date, e);
+          console.error("[lafpos] Pavo beklemesi bitirilemedi:", e);
         }
       });
     }

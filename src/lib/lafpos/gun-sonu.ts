@@ -386,12 +386,18 @@ export interface DayEndMail {
   detail?: LafposDayDetail | null;
 }
 
+/** Kıyasın kısa sözü: "%11 fazla" / "%7 az" / "aynı"; kıyas günü bilinmiyorsa ya da cirosu yoksa null */
+export function compareWord(today: number, other: number | null): string | null {
+  if (other === null || other <= 0) return null;
+  const pct = Math.round(((today - other) / other) * 100);
+  return pct === 0 ? "aynı" : `%${Math.abs(pct)} ${pct > 0 ? "fazla" : "az"}`;
+}
+
 /** Kıyas metni: "18.000 ₺ (%11 fazla)" / "bilinmiyor" */
 export function compareText(today: number, other: number | null): string {
   if (other === null) return "bilinmiyor";
-  if (other <= 0) return money(other);
-  const pct = Math.round(((today - other) / other) * 100);
-  return `${money(other)} (${pct === 0 ? "aynı" : `%${Math.abs(pct)} ${pct > 0 ? "fazla" : "az"}`})`;
+  const word = compareWord(today, other);
+  return word === null ? money(other) : `${money(other)} (${word})`;
 }
 
 /**
@@ -620,7 +626,7 @@ export function renderDayEnd(m: DayEndMail): { subject: string; html: string; te
   const result = dayEndCashResult(m);
   const resultTone: Tone = result === "kasa tutuyor" ? "good" : / eksik$/.test(result) ? "bad" : "warn";
   const kasaValue = result === "kasa tutuyor" ? "tutuyor" : result;
-  const cmp = (c: DayCompare) => (c.zTotal === null ? "bilinmiyor" : compareText(m.z.zTotal, c.zTotal).replace(/^.*\((.*)\)$/, "$1"));
+  const cmp = (c: DayCompare) => (c.zTotal === null ? "bilinmiyor" : (compareWord(m.z.zTotal, c.zTotal) ?? money(c.zTotal)));
   const html = emailShell({
     subject,
     preheader: `Toplam satış ${money(m.z.zTotal)} · ${result}${m.corrected ? " · düzeltildi" : ""}`,
