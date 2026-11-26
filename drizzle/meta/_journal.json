@@ -652,6 +652,13 @@
       "when": 1795688640068,
       "tag": "0092_mutabakat",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1795691407486,
+      "tag": "0093_foto_tarama",
+      "breakpoints": true
     }
   ]
 }

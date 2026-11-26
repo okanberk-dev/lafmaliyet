@@ -4,15 +4,37 @@ import { contentDisposition } from "@/lib/documents";
 import { photoExt, type PhotoMime } from "@/lib/photo-rules";
 import { getCurrentUser } from "@/server/auth/dal";
 import { canViewPhoto, FORBIDDEN_TEXT } from "@/server/storage/photo-access";
-import { getPhoto, NOT_FOUND_TEXT, PhotoError, readPhoto } from "@/server/storage/photos";
+import { getPhoto, NOT_FOUND_TEXT, PhotoError, readPhoto, type PhotoRow } from "@/server/storage/photos";
 
 /** Özel kopya, her gösterişte sunucuya sorulur (yetki yeniden denetlenir) */
 const PHOTO_CACHE = "private, no-cache";
 
+const NO_ORIGINAL_TEXT = "Bu fotoğrafın taranmamış hâli yok.";
+
+type Allowed = { ok: true; photo: PhotoRow; id: number; original: boolean } | { ok: false; res: Response };
+
+/**
+ * Giriş, kimlik, satır ve görme kuralı (GET ve HEAD ortak). `?v=asil`: taranarak yüklenen belgenin asıl fotoğrafı
+ * (aynı kural; taranmadan yüklenmiş fotoğrafta 404)
+ */
+async function allowed(request: NextRequest, params: Promise<{ id: string }>): Promise<Allowed> {
+  const me = await getCurrentUser();
+  if (!me) return { ok: false, res: Response.json({ error: "Oturum kapanmış; sayfayı yenileyip yeniden giriş yapın." }, { status: 401 }) };
+  const id = Number((await params).id);
+  if (!Number.isInteger(id) || id <= 0) return { ok: false, res: Response.json({ error: NOT_FOUND_TEXT }, { status: 404 }) };
+  const photo = await getPhoto(id);
+  if (!photo || (photo.expiresAt && photo.expiresAt.getTime() <= Date.now())) return { ok: false, res: Response.json({ error: NOT_FOUND_TEXT }, { status: 404 }) };
+  if (!(await canViewPhoto(me, photo))) return { ok: false, res: Response.json({ error: FORBIDDEN_TEXT }, { status: 403 }) };
+  const original = request.nextUrl.searchParams.get("v") === "asil";
+  if (original && photo.originalSize === null) return { ok: false, res: Response.json({ error: NO_ORIGINAL_TEXT }, { status: 404 }) };
+  return { ok: true, photo, id, original };
+}
+
 /**
  * Fotoğrafın kendisi (GET /api/foto/{id}): panelde fotoğrafın tek adresi. Giriş, sonra türün kuralı (yönetici hepsini,
  * personel kasada yalnız hâlâ düzenleyebildiği günleri, kontrol listelerinde son 7 günü görür), sonra baytlar. Blob'a
- * hiçbir zaman yönlendirmez. Tür koklanmaz, belge olarak açılırsa hiçbir şey çalıştırmaz (CSP sandbox).
+ * hiçbir zaman yönlendirmez. Tür koklanmaz, belge olarak açılırsa hiçbir şey çalıştırmaz (CSP sandbox). Taranarak
+ * yüklenen belgede bu adres taranmış hâli, `?v=asil` asıl fotoğrafı verir (docs/FOTOGRAF.md › Belge tarama).
  *
  * Tarayıcı kopyayı tutar ama her gösterişte sunucuya sorar ("no-cache" + ETag): ortak bar ya da kasa bilgisayarında
  * yönetici çıkış yaptıktan sonra personel geçmişten açsa da yetki yeniden denetlenir (önceden bir saat sorulmadan
@@ -20,19 +42,16 @@ const PHOTO_CACHE = "private, no-cache";
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await connection();
-  const me = await getCurrentUser();
-  if (!me) return Response.json({ error: "Oturum kapanmış; sayfayı yenileyip yeniden giriş yapın." }, { status: 401 });
-  const id = Number((await params).id);
-  if (!Number.isInteger(id) || id <= 0) return Response.json({ error: NOT_FOUND_TEXT }, { status: 404 });
-  const photo = await getPhoto(id);
-  if (!photo || (photo.expiresAt && photo.expiresAt.getTime() <= Date.now())) return Response.json({ error: NOT_FOUND_TEXT }, { status: 404 });
-  if (!(await canViewPhoto(me, photo))) return Response.json({ error: FORBIDDEN_TEXT }, { status: 403 });
+  const a = await allowed(request, params);
+  if (!a.ok) return a.res;
+  const { id, photo, original } = a;
   // Kimlik, yüklenme anı ve boyut: kimlikler bir gün yeniden sayılırsa (yeni veritabanı) eski kopya yenisinin yerine geçmez
   const etag = `"foto-${id}-${photo.createdAt.getTime().toString(36)}-${photo.sizeBytes}"`;
-  const cache = { "Cache-Control": PHOTO_CACHE, ETag: etag };
-  if (request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: cache });
+  const tag = original ? `${etag.slice(0, -1)}-asil-${photo.originalSize}"` : etag;
+  const cache = { "Cache-Control": PHOTO_CACHE, ETag: tag };
+  if (request.headers.get("if-none-match") === tag) return new Response(null, { status: 304, headers: cache });
   try {
-    const file = await readPhoto(id);
+    const file = await readPhoto(id, original ? "asil" : "goster");
     if (!file) return Response.json({ error: NOT_FOUND_TEXT }, { status: 404 });
     return new Response(new Uint8Array(file.bytes), {
       headers: {
@@ -41,7 +60,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         ...cache,
         "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy": "default-src 'none'; sandbox",
-        "Content-Disposition": contentDisposition("inline", `foto-${id}.${photoExt(file.contentType as PhotoMime)}`),
+        "Content-Disposition": contentDisposition("inline", `foto-${id}${original ? "-asil" : ""}.${photoExt(file.contentType as PhotoMime)}`),
       },
     });
   } catch (e) {
@@ -49,4 +68,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     console.error("[foto] okunamadı", id, e instanceof Error ? e.message : e);
     return Response.json({ error: "Fotoğraf açılamadı; biraz sonra yeniden deneyin." }, { status: 500 });
   }
+}
+
+/**
+ * Dosyayı indirmeden var mı (HEAD /api/foto/{id}?v=asil): büyütme penceresi "Taranmış / Orijinal" seçimini yalnız asıl
+ * fotoğrafı olan belgede gösterir. Aynı giriş ve görme kuralı; gövde yok
+ */
+export async function HEAD(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  await connection();
+  const a = await allowed(request, params);
+  return new Response(null, { status: a.ok ? 200 : a.res.status, headers: { "Cache-Control": PHOTO_CACHE } });
 }
