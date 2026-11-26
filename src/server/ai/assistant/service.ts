@@ -4,6 +4,7 @@ import { assistantEnabled } from "@/lib/assistant/protocol";
 import { screenBranch } from "@/lib/assistant/page-context";
 import { businessDate } from "@/lib/cash-report";
 import { todayTR } from "@/lib/reminders";
+import { adminLevel } from "@/lib/roles";
 import { getCurrentUser } from "@/server/auth/dal";
 import { chatReceiptBlock } from "@/server/assistant-ops/receipt";
 import { branchScope, withBranchScope } from "@/server/branch-scope";
@@ -29,7 +30,8 @@ export const liveAssistantDeps: AssistantDeps = {
   sameOrigin,
   user: async () => {
     const u = await getCurrentUser();
-    return u ? { id: u.id, role: u.role } : null;
+    // Asistan yalnız yöneticinin (handler "admin" ister); öteki roller "staff" düzeyinde reddedilir
+    return u ? { id: u.id, role: adminLevel(u.role) } : null;
   },
   status: (userId) => assistantStatus(userId),
   start: (userId, opts) => startAssistantCall(userId, undefined, undefined, opts),

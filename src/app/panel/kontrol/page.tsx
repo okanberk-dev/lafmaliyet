@@ -7,7 +7,8 @@ import { ButtonLink } from "@/components/ui/button";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
 import { absentReason, checklistBoundaries, checklistDay, listTitle } from "@/lib/checklists";
 import { addDays, clockSuffixTR } from "@/lib/reminders";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { loadChecklistDay, loadChecklistTemplates } from "@/server/data/checklists";
 
 import { nextRefreshAt } from "../bugun/logic";
@@ -42,7 +43,7 @@ export default function ChecklistsPage() {
 }
 
 async function ChecklistsContent() {
-  const user = await requireUser();
+  const user = adminActor(await requireCan("kayit.yaz"));
   const admin = user.role === "admin";
   const now = new Date();
   const day = checklistDay(now);

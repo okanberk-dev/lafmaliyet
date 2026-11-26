@@ -15,6 +15,8 @@
  * anahtarı notification_log'a yazılır: aynı uyarı iki kez gitmez. Ayrıntı docs/KONTROL-LISTELERI.md § 6.
  */
 
+import type { Role } from "./constants";
+import { isShiftRole } from "./roles";
 import { clockInstant, groupBySection, isAnswered, sectionSlot, slotOpensInstant, type AnswerLite, type ChecklistItemSnap } from "./checklists";
 
 /** Gecikme uyarısı son saatten en çok bu kadar dakika sonra gider (sonra artık eskidir) */
@@ -187,7 +189,7 @@ const dayBefore = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) - 2
  * doldurabilen bütün personele (`alertReaches`). Şubesiz listede bütün şubelerin planına bakılır. `at`: bildirim anının
  * Türkiye günü ve günün dakikası.
  */
-export function alertRecipients<U extends { id: number; role: "admin" | "staff"; branchId: string | null }>(
+export function alertRecipients<U extends { id: number; role: Role; branchId: string | null }>(
   listBranch: string | null,
   users: readonly U[],
   shifts: readonly AlertShift[],
@@ -208,5 +210,5 @@ export function alertRecipients<U extends { id: number; role: "admin" | "staff";
     const hit = users.filter((u) => ids.has(u.id));
     if (hit.length) return hit;
   }
-  return users.filter((u) => u.role === "staff" && alertReaches(listBranch, u));
+  return users.filter((u) => isShiftRole(u.role) && alertReaches(listBranch, u));
 }

@@ -35,7 +35,7 @@ export async function holdSoldOut(input: z.input<typeof zHold>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const data = zHold.parse(input);
-    const r = await holdSoldOutCore({ id: me.id, name: me.name, role: me.role }, data);
+    const r = await holdSoldOutCore({ id: me.id, name: me.name, role: "admin" }, data);
     refresh();
     return { changed: r.changed, message: r.message, name: r.name };
   });

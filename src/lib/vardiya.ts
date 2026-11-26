@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { Role } from "@/lib/constants";
+import { can } from "@/lib/roles";
 import { addDays, isCalendarDate } from "@/lib/reminders";
 
 /**
@@ -507,5 +509,5 @@ export function todayShiftText(list: readonly { name: string; startMin: number; 
   return `Vardiyada: ${[...shown, more > 0 ? `ve ${more} kişi` : null].filter(Boolean).join(" · ")}`;
 }
 
-/** Bu rol planı değiştirebilir mi (personel yalnız görür ve PDF'ini alır) */
-export const canEditShifts = (role: "admin" | "staff") => role === "admin";
+/** Bu rol planı değiştirebilir mi (yönetici ve müdür şubesinin; personel yalnız görür ve PDF'ini alır) */
+export const canEditShifts = (role: Role) => can(role, "vardiya.yaz");

@@ -9,7 +9,7 @@ import { PageSkeleton } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { addDays, todayTR } from "@/lib/reminders";
 import { buildRows, canEditShifts, formatShiftCell, userRef, VARDIYA_PATH, weekLabel, weekParam, type ShiftRow } from "@/lib/vardiya";
-import { requireUser } from "@/server/auth/dal";
+import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope, currentPhysicalBranch, staffBranchLock } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb } from "@/server/db";
@@ -63,12 +63,14 @@ function updatedLine(u: { by: string | null; at: string } | null): string | null
 }
 
 async function VardiyaContent({ searchParams }: { searchParams: PageProps<"/panel/vardiya">["searchParams"] }) {
-  const user = await requireUser();
+  const user = await requireCan("kayit.yaz");
   const sp = await searchParams;
   const today = todayTR();
   const hafta = Array.isArray(sp.hafta) ? sp.hafta[0] : sp.hafta;
   const monday = weekParam(hafta, today);
   const canEdit = canEditShifts(user.role);
+  // Başlık ve açıklama planı yazabilenin (yönetici, müdür) ya da yalnız görenin
+  const view = canEdit ? "admin" : "staff";
   const [scope, branches, lock] = await Promise.all([currentBranchScope(), listBranches(), staffBranchLock()]);
   const physical = shiftBranches(branches);
   // "Tümü" ya da online kanal seçiliyken birden çok şube açıksa plan çizilmeden önce şube sorulur (kasa ve sayımla aynı
@@ -77,7 +79,7 @@ async function VardiyaContent({ searchParams }: { searchParams: PageProps<"/pane
   if (physical.length > 1 && !physical.some((b) => b.id === scope)) {
     return (
       <>
-        <PageHeader path={VARDIYA_PATH} role={user.role} title={TITLE[user.role]} description={DESCRIPTION[user.role]} more={canEdit ? MORE : undefined} />
+        <PageHeader path={VARDIYA_PATH} role={user.role} title={TITLE[view]} description={DESCRIPTION[view]} more={canEdit ? MORE : undefined} />
         <BranchChooser
           title="Hangi şubenin vardiyası?"
           description={canEdit ? "Vardiya planı şube başına yazılır. Şubeyi seçin; plan o şubeyle açılır, Kaydet o şubeye yazar." : "Vardiya planı şube başına. Şubeyi seçin; o şubenin planı açılır."}
@@ -107,8 +109,8 @@ async function VardiyaContent({ searchParams }: { searchParams: PageProps<"/pane
       <PageHeader
         path={VARDIYA_PATH}
         role={user.role}
-        title={TITLE[user.role]}
-        description={DESCRIPTION[user.role]}
+        title={TITLE[view]}
+        description={DESCRIPTION[view]}
         more={canEdit ? MORE : undefined}
         actions={
           <>

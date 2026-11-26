@@ -7,7 +7,8 @@ import { businessDate } from "@/lib/cash-report";
 import { checklistBoundaries } from "@/lib/checklists";
 import { longDateTR, todayTR } from "@/lib/reminders";
 import { todayShiftText, VARDIYA_PATH } from "@/lib/vardiya";
-import { requireUser } from "@/server/auth/dal";
+import { can } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { loadBranchDay } from "@/server/data/branch-day";
 import { loadStockAlert } from "@/server/data/stock-estimate";
 import { loadToday } from "@/server/data/today";
@@ -53,14 +54,15 @@ function dayTitle(now: Date): string {
 }
 
 async function TodayContent() {
-  const user = await requireUser();
-  // Şubelerin günü yalnız yöneticide (tutar, ödeme, kasa farkı); okunamazsa kart çizilmez, sayfa açılır
+  const user = await requireCan("kayit.yaz");
+  // Şubelerin günü yönetici ve müdürde (tutar, ödeme şekli, kasa farkı; müdürde yalnız kendi şubesi, rapor.sube);
+  // okunamazsa kart çizilmez, sayfa açılır
   // Kıyas (dün / geçen hafta / geçen ay) da yalnız yöneticide, seçili şubeyle
   // Kritik stok (Marina, tahmini; docs/STOK-TAHMINI.md): iki rolde, yalnız Marina ya da "Tümü" seçiliyken okunur
   // Bugünün vardiyası (docs/VARDIYA.md): iki rolde, seçili şubenin planı; plan yoksa ya da okunamazsa satır yok
   const [data, branchDay, stockAlert, shifts] = await Promise.all([
     loadToday(user),
-    user.role === "admin" ? safe(loadBranchDay()) : Promise.resolve(null),
+    can(user.role, "rapor.sube") ? safe(loadBranchDay()) : Promise.resolve(null),
     safe(loadStockAlert()),
     safe(todayShifts()),
   ]);

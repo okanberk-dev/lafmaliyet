@@ -202,7 +202,7 @@ export async function sendAccountingPackage(
   }
   if (!isEmailConfigured()) return o.trigger === "cron" ? { status: "skip", reason: "nokey" } : { status: "error", error: "E-posta kurulmadı (RESEND_API_KEY)" };
   const { to, dropped } = await sendableRecipients(db, settings.recipients);
-  if (!to.length) return { status: "error", error: "Muhasebeci adreslerinin hepsi personel ya da pasif hesaba ait; e-posta gitmedi" };
+  if (!to.length) return { status: "error", error: "Muhasebeci adreslerinin hepsi personel, müdür ya da pasif hesaba ait; e-posta gitmedi" };
   const now = new Date();
   const [file, notify] = await Promise.all([packageFile(month, now), loadNotifySettings()]);
   const msg = renderPackageMail(file.data, packageSummary(file.data), { auto: o.trigger === "cron" });

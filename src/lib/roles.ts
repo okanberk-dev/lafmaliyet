@@ -327,3 +327,11 @@ export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; manager
   { label: "Kontrol listelerini düzenleme, 7 günden eski geçmiş, karaoke doluluğu", admin: true, manager: false, staff: false, accountant: false },
   { label: "Paraşüt, ayarlar, yedek, tam dışa aktarım, kullanıcı yönetimi, Claude bağlantısı", admin: true, manager: false, staff: false, accountant: false },
 ];
+
+/**
+ * Vardiyada çalışan ve sahada uyarı alan roller (vardiya planının kişileri, kontrol listesi ve karaoke uyarısının
+ * personel alıcıları): personel ve müdür. Muhasebeci sahada değil
+ */
+export const SHIFT_ROLES: readonly Role[] = ["manager", "staff"];
+
+export const isShiftRole = (role: Role | string): boolean => (SHIFT_ROLES as readonly string[]).includes(role);

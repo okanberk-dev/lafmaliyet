@@ -117,7 +117,7 @@ export function CashSettingsCard({
                 ))}
                 {/* Neden kişiye göre: personele karaoke ön ödemesi gitmesin; pasif hesaba e-posta hiç gitmez */}
                 <span className="block">
-                  {blocked.some((b) => b.reason === "staff") ? "Kasa e-postasında karaoke ön ödemesi var; personel hesabına gitmez." : "Pasif hesaba e-posta gitmez."}{" "}
+                  {blocked.some((b) => b.reason === "staff" || b.reason === "manager") ? "Kasa e-postasında karaoke ön ödemesi var; personel ve müdür hesabına gitmez." : "Pasif hesaba e-posta gitmez."}{" "}
                   {blocked.length > 1 ? "Bu adresleri" : "Bu adresi"} listeden çıkarın ya da doğru adresi yazın.
                 </span>
               </>

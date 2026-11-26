@@ -96,7 +96,10 @@ export function CashHistory({
   okcFirst = null,
   okcLine = null,
   branch = null,
+  readOnly = false,
 }: {
+  /** Salt okunur (muhasebeci, docs/ROLLER.md): Sil, Düzenle ve e-postayı yeniden gönder yok */
+  readOnly?: boolean;
   monthLabel: string;
   prevHref: string | null;
   nextHref: string | null;
@@ -337,20 +340,22 @@ export function CashHistory({
         description={open ? `${longDateTR(open.date)} · ${whoOf(open)}${open.revision > 1 ? ` · ${open.revision - 1} kez düzeltildi` : ""}` : undefined}
         size="lg"
         footerStart={
-          <Button variant="ghost" onClick={() => setConfirmDelete(true)} disabled={pending} className="text-bad">
-            <Trash2 size={15} /> Sil
-          </Button>
+          readOnly ? undefined : (
+            <Button variant="ghost" onClick={() => setConfirmDelete(true)} disabled={pending} className="text-bad">
+              <Trash2 size={15} /> Sil
+            </Button>
+          )
         }
         footer={
           <>
-            {open?.emailStatus === "failed" ? (
+            {open?.emailStatus === "failed" && !readOnly ? (
               <Button variant="secondary" onClick={resend} disabled={pending}>
                 <RotateCw size={15} /> E-postayı yeniden gönder
               </Button>
             ) : null}
             {open ? (
               <ButtonLink href={dayHref(open.date)} variant="secondary">
-                <Pencil size={15} /> Düzenle
+                {readOnly ? null : <Pencil size={15} />} {readOnly ? "Günü aç" : "Düzenle"}
               </ButtonLink>
             ) : null}
             {wa ? (

@@ -14,7 +14,8 @@ import { monthTitle, prevMonth } from "@/lib/closed-period";
 import { num } from "@/lib/format";
 import { keepUntil } from "@/lib/photo-rules";
 import { longDateTR } from "@/lib/reminders";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { firstChecklistDay, loadChecklistHistory, type HistoryList } from "@/server/data/checklists";
@@ -52,7 +53,7 @@ export default function ChecklistHistoryPage({ searchParams }: PageProps<"/panel
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 async function HistoryContent({ searchParams }: { searchParams: PageProps<"/panel/kontrol/gecmis">["searchParams"] }) {
-  const user = await requireUser();
+  const user = adminActor(await requireCan("kayit.yaz"));
   const admin = user.role === "admin";
   const sp = await searchParams;
   const now = new Date();

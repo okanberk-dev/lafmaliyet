@@ -17,7 +17,8 @@ import { monthSource } from "@/lib/lafpos/switch";
 import { addDays, isCalendarDate, longDateTR, monthShortTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { productLabel, qtyText, WASTE_KIND_LABEL, type WasteKind } from "@/lib/waste";
 import { lateWasteDays, staffDeleteMode, staffWasteMode, WASTE_REQUEST_TEXT, wasteDayLabel, wasteItemText, type WasteDeleteMode, type WasteLock } from "@/lib/waste-requests";
-import { requireUser } from "@/server/auth/dal";
+import { opsLevel } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
@@ -70,8 +71,10 @@ export default function WastePage({ searchParams }: PageProps<"/panel/zayi">) {
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/zayi">["searchParams"] }) {
-  const user = await requireUser();
-  const admin = user.role === "admin";
+  const user = await requireCan("kayit.yaz");
+  // Müdür şubesinin zayi / ikramını yönetici gibi yönetir (src/lib/roles.ts › opsLevel); şubesi oturumdan kilitli
+  const level = opsLevel(user.role);
+  const admin = level === "admin";
   const sp = await searchParams;
   const now = new Date();
   const today = businessDate(now);
@@ -81,7 +84,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
   const tills = tillBranches(branchRows);
   const chosen = tills.find((b) => b.id === scope) ?? (tills.length === 1 ? tills[0] : null);
   const formBranches = (chosen ? [chosen] : tills).map((b) => ({ id: b.id, name: b.name }));
-  const header = <WasteHeader role={user.role} branch={chosen && tills.length > 1 ? chosen.name : null} />;
+  const header = <WasteHeader role={level} branch={chosen && tills.length > 1 ? chosen.name : null} />;
   const gun = pick(sp.gun);
   // Takvimde olmayan gün (2026-02-30, ay 00) bugüne düşer (KP-09'daki kasa sayfası gibi)
   const date = gun && isCalendarDate(gun) && gun <= today ? gun : today;

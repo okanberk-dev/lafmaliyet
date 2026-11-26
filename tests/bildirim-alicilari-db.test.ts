@@ -218,7 +218,7 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     const none = await email.emailReport(id, { site: Promise.resolve(null), idempotencyKey: "ikinci" });
     assert.equal(none.status, "failed");
     // Formdaki satır "E-posta gitmedi: " ile başlar (emailFailedLine): metin onu yinelemez, iç içe parantez yok
-    assert.equal(none.error, "Alıcıların hepsi personel ya da pasif hesaba ait: veli@laffogato.net (personel hesabı), eski@laffogato.net (pasif hesap). Kasa › Rapor alıcıları'na yöneticinin ya da muhasebecinin adresini yazın.");
+    assert.equal(none.error, "Alıcıların hepsi personel, müdür ya da pasif hesaba ait: veli@laffogato.net (personel hesabı), eski@laffogato.net (pasif hesap). Kasa › Rapor alıcıları'na yöneticinin ya da muhasebecinin adresini yazın.");
     assert.equal(sent.length, 0);
     assert.equal((await reports.getCashReport(date, "admin"))?.emailError, none.error);
     assert.equal((await reports.getCashReport(date, "staff"))?.emailError, STAFF_EMAIL_ERROR);
@@ -274,7 +274,7 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     await setCash([users.ali.email]);
     const all = await cashActions.sendCashTestEmail();
     assert.equal(all.ok, false);
-    assert.equal(all.ok ? "" : all.error, "Alıcıların hepsi personel ya da pasif hesaba ait: ali@laffogato.net (pasif hesap). Yöneticinin ya da muhasebecinin adresini girin.");
+    assert.equal(all.ok ? "" : all.error, "Alıcıların hepsi personel, müdür ya da pasif hesaba ait: ali@laffogato.net (pasif hesap). Yöneticinin ya da muhasebecinin adresini girin.");
   });
 
   test("bildirim adresi: personel ve pasif hesabın adresi eklenmez, duraklatılmışsa açılmaz; hesabı olmayan eklenir", async () => {
@@ -305,12 +305,12 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     const none = await digest.runReminderDigest("manual");
     assert.equal(none.status, "skipped");
     assert.equal(none.status === "skipped" && none.off, "norecipient");
-    assert.equal(none.status === "skipped" && none.reason, "Etkin bildirim adreslerinin hepsi personel ya da pasif hesaba ait: ayse@laffogato.net (personel hesabı), eski@laffogato.net (pasif hesap).");
+    assert.equal(none.status === "skipped" && none.reason, "Etkin bildirim adreslerinin hepsi personel, müdür ya da pasif hesaba ait: ayse@laffogato.net (personel hesabı), eski@laffogato.net (pasif hesap).");
     // Günlük işler ve sistem uyarısı "adres yok" demez, adresleri söyler
     const { digestStep } = await import("../src/lib/job-health");
     assert.deepEqual(digestStep(none), {
       code: "norecipient",
-      error: "gönderilecek bir şey vardı ama etkin bildirim adreslerinin hepsi personel ya da pasif hesaba ait: ayse@laffogato.net (personel hesabı), eski@laffogato.net (pasif hesap)",
+      error: "gönderilecek bir şey vardı ama etkin bildirim adreslerinin hepsi personel, müdür ya da pasif hesaba ait: ayse@laffogato.net (personel hesabı), eski@laffogato.net (pasif hesap)",
     });
     assert.equal(sent.length, 0);
     const test = await digest.sendTestEmail();

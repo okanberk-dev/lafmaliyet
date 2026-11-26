@@ -1,6 +1,7 @@
 import "server-only";
 
 import { photoViewDecision, type PhotoKind } from "@/lib/photo-rules";
+import { adminLevel } from "@/lib/roles";
 import type { CurrentUser } from "@/server/auth/dal";
 import { kontrolPhotoRules } from "@/server/data/checklists";
 import { cashPhotoRules, okcPhotoRules, receiptPhotoRules } from "@/server/photo-read/rules";
@@ -32,7 +33,8 @@ export const PHOTO_RULES: Record<PhotoKind, PhotoKindRules> = {
 export const FORBIDDEN_TEXT = "Bu fotoğrafı görme yetkiniz yok.";
 
 export async function canViewPhoto(me: CurrentUser, photo: PhotoRow, now = new Date()): Promise<boolean> {
-  const first = photoViewDecision(me, photo, now);
+  // Yöneticinin "her şeyi görür"ü yalnız yöneticide; müdür ve muhasebeci türün kuralına (şube kilidi, kasa rakamı) gider
+  const first = photoViewDecision({ id: me.id, role: adminLevel(me.role) }, photo, now);
   if (first !== "rules") return first === "yes";
   return PHOTO_RULES[photo.kind].canView(me, photo);
 }

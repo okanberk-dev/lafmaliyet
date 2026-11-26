@@ -1,6 +1,7 @@
 import "server-only";
 
 import { pastCountReminder, pastCountReminders, staffLateEditNotice, unpricedExtrasNotice } from "@/app/panel/sayim/logic";
+import { adminLevel } from "@/lib/roles";
 import { logBellFailed, type BellFailed, type BellPart } from "@/lib/bell-failed";
 import { featureInScope } from "@/lib/branch-features";
 import { ALL_BRANCHES, BRANCH_PARAM, type BranchScope } from "@/lib/branches";
@@ -50,7 +51,7 @@ async function posNotifications(user: CurrentUser, now: Date): Promise<PanelNoti
     // LafPOS gününde personele fiyat görevi yok (LafPOS'ta ürün fiyatını kasiyer değiştiremez; posBell)
     if (user.role !== "admin" && scope.lafpos) continue;
     const summary = user.role === "admin" ? await posPendingSummary(scope) : await staffPosSummary(scope);
-    const item = posBell(user.role, summary, now, scope.kasa);
+    const item = posBell(adminLevel(user.role), summary, now, scope.kasa);
     if (!item) continue;
     out.push(scope.name ? { ...item, id: `${item.id}-${scope.branchId}`, title: `${scope.name}: ${item.title}`, href: withBranchParam(item.href, scope.branchId) } : item);
   }

@@ -6,7 +6,8 @@ import { Skeleton } from "@/components/ui/misc";
 import { PACKAGING_CATEGORY, RECIPE_PARAMS } from "@/lib/constants";
 import { countGroupOptions } from "@/lib/count-item";
 import { pumpHint } from "@/lib/recipe-pump";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { countPendingByKind, loadMyRequests, pendingByProduct, pendingNewProposals } from "@/server/data/recipe-requests";
 
@@ -72,7 +73,7 @@ function RecipeBookSkeleton() {
 }
 
 async function RecipeBookContent() {
-  const user = await requireUser();
+  const user = adminActor(await requireCan("kayit.yaz"));
   const isAdmin = user.role === "admin";
   const [model, mine, pendingKinds, pendingMap, pendingNew] = await Promise.all([
     loadModel(),

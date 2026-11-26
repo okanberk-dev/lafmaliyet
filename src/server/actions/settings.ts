@@ -5,9 +5,10 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { linkAccessInfo, type AccessInfo } from "@/app/panel/kullanicilar/access";
-import { DEFAULT_SETTINGS, FIFO_OFF, settingsFromRows } from "@/lib/constants";
+import { DEFAULT_SETTINGS, FIFO_OFF, ROLES, settingsFromRows, type Role } from "@/lib/constants";
 import { monthLabel } from "@/lib/format";
 import { blockReasonOf, oldAddressNotice, userListNotice } from "@/lib/notify-recipients";
+import { BRANCH_REQUIRED_ROLES, BRANCH_ROLES } from "@/lib/roles";
 import { linkedDeleteText } from "@/lib/staff-link";
 import { needsStepUp, stepUpWhat, type StepUpCase, type StepUpConfirm } from "@/lib/step-up";
 import { accessMailHandle } from "@/server/auth/access-handle";
@@ -31,7 +32,7 @@ const numKey = z.number().finite();
  * bildirim adreslerindeyse yöneticiye uyarı (E-53): gönderim o adresi zaten düşürür, liste temizlensin diye söylenir.
  * Dışa açılmaz ("use server" dosyasının her dışa verdiği bir uçtur).
  */
-async function listNotice(user: { name: string; email: string; role: "admin" | "staff"; active: boolean }): Promise<string | null> {
+async function listNotice(user: { name: string; email: string; role: Role; active: boolean }): Promise<string | null> {
   const reason = blockReasonOf(user);
   if (!reason) return null;
   const lists = await listsWithEmail(user.email);
@@ -198,22 +199,40 @@ const zUserBranch = z
   .transform((v) => (v === undefined ? undefined : v || null));
 
 /**
- * Personelin şubesi kütükte etkin bir fiziksel şube mi (düzenlemede kişinin şimdiki şubesi pasif olsa da kalabilir).
- * Yönetici şubeye bağlanmaz: bütün şubeleri görür, seçiciyle süzer. Şubenin adı işlem geçmişi için döner.
+ * Personelin ve müdürün şubesi kütükte etkin bir fiziksel şube mi (düzenlemede kişinin şimdiki şubesi pasif olsa da
+ * kalabilir). Yönetici ve muhasebeci şubeye bağlanmaz: bütün şubeleri görür, seçiciyle süzer. Müdürde şube ZORUNLU
+ * (docs/ROLLER.md; veritabanı kısıtı users_manager_branch_ck). Şubenin adı işlem geçmişi için döner.
  */
-async function userBranch(role: "admin" | "staff", branchId: string | null | undefined, keep?: string | null): Promise<{ id: string | null; name: string | null } | undefined> {
-  if (branchId === undefined) return role === "admin" ? { id: null, name: null } : undefined;
-  if (role === "admin" || !branchId) return { id: null, name: null };
+async function userBranch(role: Role, branchId: string | null | undefined, keep?: string | null): Promise<{ id: string | null; name: string | null } | undefined> {
+  if (!(BRANCH_ROLES as readonly Role[]).includes(role)) return { id: null, name: null };
+  const required = (BRANCH_REQUIRED_ROLES as readonly Role[]).includes(role);
+  if (branchId === undefined) {
+    if (required && !keep) throw new UserError(MANAGER_BRANCH_REQUIRED);
+    return undefined;
+  }
+  if (!branchId) {
+    if (required) throw new UserError(MANAGER_BRANCH_REQUIRED);
+    return { id: null, name: null };
+  }
   const b = (await listBranches()).find((x) => x.id === branchId && x.kind === "fiziksel" && (x.active || x.id === keep));
   if (!b) throw new UserError("Şube bulunamadı ya da pasif (sayfayı yenileyin)");
   return { id: b.id, name: b.name };
 }
 
+/** Rol seçimi (src/lib/constants.ts › ROLES) */
+const zRole = z.enum(["admin", "manager", "staff", "accountant"]);
+
+/** İşlem geçmişinde rolün adı: "müdür", "muhasebeci" */
+const roleWord = (role: Role) => ROLES[role].toLocaleLowerCase("tr-TR");
+
+/** Müdürün şubesi seçilmeden kayıt */
+const MANAGER_BRANCH_REQUIRED = "Müdürün şubesini seçin: müdür yalnız kendi şubesini yönetir";
+
 const userSchema = z.object({
   id: z.number().int().positive(),
   name: zText("Ad", 80),
   email: z.string().trim().toLowerCase().email("Geçerli bir e-posta girin"),
-  role: z.enum(["admin", "staff"]),
+  role: zRole,
   active: z.boolean(),
   branchId: zUserBranch,
   password: z
@@ -221,7 +240,7 @@ const userSchema = z.object({
     .optional()
     .transform((v) => (v ? v : undefined)),
   /** Düzenleme penceresi açılırken kişinin hâli: veritabanındakiyle tutmazsa kayıt reddedilir (YO-01) */
-  seen: z.object({ name: z.string(), email: z.string(), role: z.enum(["admin", "staff"]), active: z.boolean(), branchId: z.string().nullable() }),
+  seen: z.object({ name: z.string(), email: z.string(), role: zRole, active: z.boolean(), branchId: z.string().nullable() }),
 });
 
 /** Pencere açıkken başka sekmede ya da başka bir yöneticinin yaptığı değişiklik eski formla geri yazılmasın */
@@ -305,7 +324,7 @@ export async function saveUser(input: z.input<typeof userSchema>, confirm?: Step
     await logActivity(
       me,
       "Kullanıcı güncellendi",
-      `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})${branchChanged && data.role === "staff" ? ` · şube ${branch.name ?? "bütün şubeler"}` : ""}`,
+      `${data.name} (${roleWord(data.role)})${branchChanged && (BRANCH_ROLES as readonly Role[]).includes(data.role) ? ` · şube ${branch.name ?? "bütün şubeler"}` : ""}`,
     );
     refresh();
     // Yeni adres listede (hesap e-posta almıyorsa) ve eski adres listede kaldıysa (artık hiçbir hesabın değil): ikisi de
@@ -354,7 +373,7 @@ export async function setUserActive(id: number, active: boolean, confirm?: StepU
     if (!after) return { notice: null };
     // Pasif yapılınca bekleyen davet / sıfırlama bağlantısı iptal (yeniden aktif yapılınca eski bağlantı canlanmasın)
     if (!next) await expireUserTokens(userId);
-    await logActivity(me, next ? "Kullanıcı yeniden aktif yapıldı" : "Kullanıcı pasif yapıldı", `${after.name} (${after.role === "admin" ? "yönetici" : "personel"})`);
+    await logActivity(me, next ? "Kullanıcı yeniden aktif yapıldı" : "Kullanıcı pasif yapıldı", `${after.name} (${roleWord(after.role)})`);
     return { notice: await listNotice(after) };
   });
 }
@@ -364,7 +383,7 @@ const createSchema = z.discriminatedUnion("mode", [
     mode: z.literal("password"),
     name: zText("Ad", 80),
     email: z.string().trim().toLowerCase().email("Geçerli bir e-posta girin"),
-    role: z.enum(["admin", "staff"]),
+    role: zRole,
     active: z.boolean(),
     branchId: zUserBranch,
     password: z.string().max(200, "Parola en fazla 200 karakter olabilir"),
@@ -373,7 +392,7 @@ const createSchema = z.discriminatedUnion("mode", [
     mode: z.literal("invite"),
     name: zText("Ad", 80),
     email: z.string().trim().toLowerCase().email("Geçerli bir e-posta girin"),
-    role: z.enum(["admin", "staff"]),
+    role: zRole,
     active: z.literal(true, { message: "Davet edilen kullanıcı aktif olmalı" }),
     branchId: zUserBranch,
   }),
@@ -407,7 +426,7 @@ export async function createUser(input: z.input<typeof createSchema>, confirm?: 
     await logActivity(
       me,
       data.mode === "invite" ? "Kullanıcı davet edildi" : "Kullanıcı eklendi",
-      `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})${branch?.name ? ` · ${branch.name}` : ""}`,
+      `${data.name} (${roleWord(data.role)})${branch?.name ? ` · ${branch.name}` : ""}`,
     );
     refresh();
     const notice = (await listNotice(data)) ?? undefined;
