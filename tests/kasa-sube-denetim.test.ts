@@ -139,7 +139,7 @@ test("#12 sayfa formlara kasayı koyar, formlar gönderir; form anahtarı kasay�
   assert.equal(page.match(/branchId=\{view\.till\}/g)?.length, 5, "CashForm, CashOutsCard, LateReport, gün sonu fotoğrafı (gün ve eski LafPOS günü)");
   assert.match(page, /chainNeighbours\(getDb\(\), date, \{ prefer: user\.id, branchId: view\.till \}\)/);
   const form = read("src/app/panel/kasa/cash-form.tsx");
-  assert.match(form, /submitCashReport\(\{[^}]*branchId \}\)/);
+  assert.match(form, /submitCashReport\(\{\n\s+\.\.\.fields,\n(?:\s+[^\n]*\n){0,4}?\s+branchId,\n/);
   assert.match(form, /requestCashCorrection\(\{[^}]*branchId,/);
   assert.match(form, /requestLateCashReport\(\{[\s\S]*?branchId,\n\s*clientKey,/);
   assert.match(form, /<DeleteRequestButton [^>]*branchId=\{branchId\}/);

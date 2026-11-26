@@ -100,7 +100,7 @@ test("Sonuç: telefonda alt menünün üstünde çubuk (klavyede gizli), fark va
 });
 
 test("Gönderilmiş rapor: fark bir kez, döküm katlı (devir tutmuyorsa açık)", () => {
-  const saved = form.slice(form.indexOf("if (report && !editing) {"), form.indexOf("const kind = live ? live.kind : null;"));
+  const saved = form.slice(form.indexOf("if (report && !editing) {"), form.indexOf("const kind = diffLive ? diffLive.kind : null;"));
   assert.doesNotMatch(saved, /meta=\{/, "başlıkta ikinci fark rozeti yok");
   assert.equal(saved.match(/<DiffHeadline\b/g)?.length, 1);
   assert.match(saved, /<details open=\{Boolean\(savedCarry \|\| savedNext \|\| attention\.length\)\}/);
@@ -129,8 +129,9 @@ test("Sayfa: yöneticinin gün görünümünde ay listesi ve ayarlar yok; Pavo v
   assert.deepEqual(dayDetailNotes(null), []);
   assert.deepEqual(dayDetailNotes({ correction: null, refunds: [] }), []);
   assert.deepEqual(dayDetailNotes({ correction: "Gün yeniden açıldı", refunds: [{ name: "Kart", amount: "120 ₺", reason: null }, { name: "Nakit", amount: "40 ₺", reason: "yanlış" }] }), ["LafPOS düzeltti", "2 ödeme iptali"]);
-  // Yöneticide gün sonu fotoğrafı formdan önce (Yazarkasa kartı fotoğrafın o karttan eklendiğini söyler)
-  assert.match(admin, /\{outsCard\}\n(\s+\{\/\*[^\n]*\*\/\}\n)?\s+\{photoCard\}\n\s+\{form\}/);
+  // Yöneticide gün sonu fotoğrafı formdan önce (Yazarkasa kartı fotoğrafın o karttan eklendiğini söyler); arada yalnız
+  // kör sayımın kutusu (docs/KASA-RAPORU.md › Kör sayım)
+  assert.match(admin, /\{outsCard\}\n(\s+\{\/\*[^\n]*\*\/\}\n)?\s+\{photoCard\}\n(\s+\{countCard\}\n)?\s+\{form\}/);
 });
 
 test("Gönderilmiş rapor: yöneticinin dikkat etmesi gerekenler (ay listesinin rozetleri) döküm özetinde; ikisi aynı kuraldan", () => {
