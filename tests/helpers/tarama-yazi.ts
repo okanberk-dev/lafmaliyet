@@ -77,7 +77,12 @@ function outline(path: fontkit.Path): Pt[][] {
 function fill(mask: Uint8Array, w: number, h: number, polys: Pt[][]): void {
   let y0 = Infinity;
   let y1 = -Infinity;
-  for (const p of polys) for (const [, y] of p) (y0 = Math.min(y0, y)), (y1 = Math.max(y1, y));
+  for (const p of polys) {
+    for (const [, y] of p) {
+      y0 = Math.min(y0, y);
+      y1 = Math.max(y1, y);
+    }
+  }
   const from = Math.max(0, Math.floor(y0));
   const to = Math.min(h - 1, Math.ceil(y1));
   const xs: { x: number; d: number }[] = [];

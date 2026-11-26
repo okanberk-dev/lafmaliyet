@@ -7,7 +7,7 @@
  */
 
 import type { GrayImage, Point, Quad, RgbaImage } from "./image";
-import { dilateMask, erodeMask, fitSize, labelComponents, maxFilter, minFilter, resizeRgba, scaleQuad, sobel, toGray } from "./image";
+import { boxMean, dilateMask, erodeMask, fitSize, labelComponents, maxFilter, minFilter, resizeRgba, scaleQuad, sobel, toGray } from "./image";
 import { estimateSize, warpQuad } from "./warp";
 import { sideOnFrame } from "./refine";
 import { noiseSigma } from "./enhance";
@@ -114,6 +114,10 @@ export const GLYPH_WARN = 10;
 export const GLYPH_BAD = 7;
 /** Parlamanın kâğıda oranı: yazının üstünde değilse bunun üstü hafif uyarı */
 export const GLARE_AREA_WARN = 0.03;
+/** Parlama: gürültüsü yumuşatılmış parlaklığın doyma düzeyi (0–255) */
+export const GLARE_LEVEL = 249;
+/** Kesik: kadraj dışındaki kenardan ilk satıra boşluk, satır aralığının bu katından azsa */
+export const CUT_GAP = 0.35;
 
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 
@@ -266,27 +270,48 @@ function maskedPercentile(data: Float32Array, mask: Uint8Array, p: number): numb
   return 255;
 }
 
-/** Kenar şeridinde yazı: kenara değen harf bileşeni sayısı, kenar boyunca kapladığı oran, şeridin yoğunluğu */
+/**
+ * Kenar ile yazı arasındaki ilişki (0 üst, 1 sağ, 2 alt, 3 sol): kenara değen (kenarca kesilmiş) harf bileşeni sayısı
+ * ve kenar boyunca kapladığı oran, kenardan ilk yazı satırına / sütununa boşluk (piksel) ve kenar şeridinin yazı
+ * yoğunluğunun bütün yazıya oranı.
+ */
 interface SideText {
   touching: number;
   spread: number;
-  /** şeridin yoğunluğu / yazılı bölgenin yoğunluğu */
+  gap: number;
   density: number;
 }
 
-function sideText(L: TextLayout, tm: TextMask, w: number, h: number, glyph: number): SideText[] {
+function sideText(L: TextLayout, tm: TextMask, w: number, h: number, glyph: number, depth: number): SideText[] {
   const c = L.components;
-  const depth = Math.max(2, Math.round(0.9 * glyph));
+  const rows = new Float32Array(h);
+  const cols = new Float32Array(w);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!tm.mask[y * w + x]) continue;
+      rows[y]++;
+      cols[x]++;
+    }
+  }
   const out: SideText[] = [];
   for (let s = 0; s < 4; s++) {
-    // 0 üst, 1 sağ, 2 alt, 3 sol
     const along = s % 2 === 0 ? w : h;
+    const across = s % 2 === 0 ? h : w;
+    const prof = s % 2 === 0 ? rows : cols;
+    const fromEnd = s === 1 || s === 2;
+    const at = (k: number) => prof[fromEnd ? across - 1 - k : k];
     const cover = new Uint8Array(along);
     let touching = 0;
     for (let l = 1; l <= c.count; l++) {
-      if (!tm.ok[l]) continue;
       const t = s === 0 ? c.minY[l] <= 1 : s === 1 ? c.maxX[l] >= w - 2 : s === 2 ? c.maxY[l] >= h - 2 : c.minX[l] <= 1;
-      if (!t) continue;
+      if (!t || c.areas[l] < 3) continue;
+      // kenarca kesilmiş harf: kenar boyunca harf boyunda ya da sözcük uzunluğunda, kenara dik yönde harften kısa
+      // (kesik harfin kalan dilimi ince olabilir; kâğıt kenarının gölgesi gibi uzun bileşenler sayılmaz)
+      const bw = c.maxX[l] - c.minX[l] + 1;
+      const bh = c.maxY[l] - c.minY[l] + 1;
+      const alongExt = s % 2 === 0 ? bw : bh;
+      const acrossExt = s % 2 === 0 ? bh : bw;
+      if (alongExt < 0.3 * glyph || alongExt > 12 * glyph || acrossExt > 2.5 * glyph) continue;
       touching++;
       const a = s % 2 === 0 ? c.minX[l] : c.minY[l];
       const b = s % 2 === 0 ? c.maxX[l] : c.maxY[l];
@@ -294,11 +319,22 @@ function sideText(L: TextLayout, tm: TextMask, w: number, h: number, glyph: numb
     }
     let cov = 0;
     for (let k = 0; k < along; k++) cov += cover[k];
+    // ilk yazı satırı: kenar boyunca en az %0,4'ü (en az 2 piksel) yazı
+    const min = Math.max(2, 0.004 * along);
+    let gap = across;
+    for (let k = 0; k < across; k++) {
+      if (at(k) >= min) {
+        gap = k;
+        break;
+      }
+    }
+    // kenar şeridi (ilk yazıdan başlayarak `depth` kalınlıkta) bütün yazının yoğunluğuna oranla
     let n = 0;
-    const [sx0, sy0, sx1, sy1] = s === 0 ? [0, 0, w, depth] : s === 1 ? [w - depth, 0, w, h] : s === 2 ? [0, h - depth, w, h] : [0, 0, depth, h];
-    for (let y = sy0; y < sy1; y++) for (let x = sx0; x < sx1; x++) n += tm.mask[y * w + x];
-    const area = (sx1 - sx0) * (sy1 - sy0);
-    out.push({ touching, spread: cov / along, density: tm.density > 0 ? n / area / tm.density : 0 });
+    const d0 = Math.min(across, gap);
+    const d1 = Math.min(across, gap + depth);
+    for (let k = d0; k < d1; k++) n += at(k);
+    const area = Math.max(1, (d1 - d0) * along);
+    out.push({ touching, spread: cov / along, gap, density: tm.density > 0 ? n / area / tm.density : 0 });
   }
   return out;
 }
@@ -415,9 +451,9 @@ export function assessQuality(img: RgbaImage, opts: QualityOptions = {}): Qualit
     const size = estimateSize(corners, img.width, img.height, Math.max(workEdge, edge));
     const warped = warpQuad(img, corners, size.width, size.height);
     scale = Math.max(size.width, size.height) / paperLongOrig;
-    // dörtgenin kenarında kalabilecek zemin şeridi çözümlemeye girmesin
-    const ix = Math.max(1, Math.round(size.width * 0.012));
-    const iy = Math.max(1, Math.round(size.height * 0.012));
+    // dörtgenin kenarında kalabilecek ince zemin şeridi çözümlemeye girmesin (uzun ince bileşen harf sayılmaz zaten)
+    const ix = Math.max(2, Math.round(size.width * 0.006));
+    const iy = Math.max(2, Math.round(size.height * 0.006));
     work = cropRgba(warped, ix, iy, size.width - ix, size.height - iy);
     const tol = Math.max(2, 0.012 * Math.min(img.width, img.height));
     onFrame = [0, 1, 2, 3].map((i) => sideOnFrame(corners[i], corners[(i + 1) % 4], img.width, img.height, tol));
@@ -480,71 +516,89 @@ export function assessQuality(img: RgbaImage, opts: QualityOptions = {}): Qualit
     }
   }
 
-  // parlama: kâğıtta doymuş, kâğıttan belirgin parlak leke
+  // parlama: kâğıtta doymuş (gürültüsü yumuşatılmış parlaklık ≥ 249), çevresindeki kâğıttan belirgin parlak leke. Kâğıt
+  // zaten doymuşsa (aşırı pozlama) leke ayırt edilemez, bakılmaz.
   let glare = 0;
   let glareOnText = false;
-  {
-    const thr = clamp(paper + 14, 238, 252);
-    if (paper < 236) {
-      const m = new Uint8Array(w * h);
-      for (let i = 0; i < w * h; i++) {
-        const p = i * 4;
-        if (Math.min(work.data[p], work.data[p + 1], work.data[p + 2]) >= thr) m[i] = 1;
-      }
-      const opened = dilateMask(erodeMask(m, w, h, 1), w, h, 1);
-      const comps = labelComponents(opened, w, h);
-      const minArea = Math.max(0.0015 * w * h, 4 * glyphRef * glyphRef);
-      const pitch = L.lines.linePitch || 1.8 * glyphRef;
-      const textDens = tm.density;
-      for (let l = 1; l <= comps.count; l++) {
-        if (comps.areas[l] < minArea) continue;
-        glare += comps.areas[l];
-        // yazının üstünde mi: çevresindeki halkada yazı var, içinde yok
-        const r = Math.max(3, Math.round(1.2 * pitch));
-        const bx0 = Math.max(0, comps.minX[l] - r);
-        const by0 = Math.max(0, comps.minY[l] - r);
-        const bx1 = Math.min(w - 1, comps.maxX[l] + r);
-        const by1 = Math.min(h - 1, comps.maxY[l] + r);
-        const bw = bx1 - bx0 + 1;
-        const bh = by1 - by0 + 1;
-        const blob = new Uint8Array(bw * bh);
-        for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) if (comps.labels[y * w + x] === l) blob[(y - by0) * bw + (x - bx0)] = 1;
-        const ring = dilateMask(blob, bw, bh, r);
-        let inInk = 0;
-        let inN = 0;
-        let ringInk = 0;
-        let ringN = 0;
-        for (let y = 0; y < bh; y++) {
-          for (let x = 0; x < bw; x++) {
-            const j = y * bw + x;
-            const v = tm.mask[(y + by0) * w + x + bx0];
-            if (blob[j]) {
-              inInk += v;
-              inN++;
-            } else if (ring[j]) {
-              ringInk += v;
-              ringN++;
-            }
+  if (paper < GLARE_LEVEL - 3) {
+    const sm = boxMean(g, 1).data;
+    const m = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) if (sm[i] >= GLARE_LEVEL) m[i] = 1;
+    const opened = dilateMask(erodeMask(m, w, h, 1), w, h, 1);
+    const comps = labelComponents(opened, w, h);
+    const minArea = Math.max(0.0015 * w * h, 4 * glyphRef * glyphRef);
+    const pitch = L.lines.linePitch || 1.8 * glyphRef;
+    const textDens = tm.density;
+    for (let l = 1; l <= comps.count; l++) {
+      if (comps.areas[l] < minArea) continue;
+      // lekenin çevresindeki halka (satır aralığının ~1,2 katı): yazı yoğunluğu ve kâğıdın parlaklığı
+      const r = Math.max(3, Math.round(1.2 * pitch));
+      const bx0 = Math.max(0, comps.minX[l] - r);
+      const by0 = Math.max(0, comps.minY[l] - r);
+      const bx1 = Math.min(w - 1, comps.maxX[l] + r);
+      const by1 = Math.min(h - 1, comps.maxY[l] + r);
+      const bw = bx1 - bx0 + 1;
+      const bh = by1 - by0 + 1;
+      const blob = new Uint8Array(bw * bh);
+      for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) if (comps.labels[y * w + x] === l) blob[(y - by0) * bw + (x - bx0)] = 1;
+      const ring = dilateMask(blob, bw, bh, r);
+      let inInk = 0;
+      let inN = 0;
+      let ringInk = 0;
+      let ringN = 0;
+      const ringHist = new Float64Array(256);
+      for (let y = 0; y < bh; y++) {
+        for (let x = 0; x < bw; x++) {
+          const j = y * bw + x;
+          const i = (y + by0) * w + x + bx0;
+          const v = tm.mask[i];
+          if (blob[j]) {
+            inInk += v;
+            inN++;
+          } else if (ring[j]) {
+            ringInk += v;
+            ringN++;
+            if (!v) ringHist[clamp(Math.floor(sm[i]), 0, 255)]++;
           }
         }
-        const ringD = ringN ? ringInk / ringN : 0;
-        const inD = inN ? inInk / inN : 0;
-        if (text && ringD >= 0.5 * textDens && inD <= 0.35 * ringD) glareOnText = true;
       }
-      glare /= w * h;
+      // halkadaki kâğıdın ortancası lekeden belirgin koyu değilse (kâğıdın kendisi parlak) parlama sayılmaz
+      let acc = 0;
+      let ringPaper = 255;
+      const half = ringHist.reduce((a, b) => a + b, 0) / 2;
+      for (let b = 0; b < 256; b++) {
+        acc += ringHist[b];
+        if (acc >= half) {
+          ringPaper = b;
+          break;
+        }
+      }
+      if (ringPaper > GLARE_LEVEL - 6) continue;
+      glare += comps.areas[l];
+      // yazının üstünde mi: çevresindeki halkada yazı var, içinde yok
+      const ringD = ringN ? ringInk / ringN : 0;
+      const inD = inN ? inInk / inN : 0;
+      if (text && ringD >= 0.5 * textDens && inD <= 0.35 * ringD) glareOnText = true;
     }
-    if (glareOnText) add("parlama", "ciddi");
-    else if (glare >= GLARE_AREA_WARN) add("parlama", "hafif");
+    glare /= w * h;
   }
+  if (glareOnText) add("parlama", "ciddi");
+  else if (glare >= GLARE_AREA_WARN) add("parlama", "hafif");
 
-  // kesik: yazı kâğıdın kenarına dayanıyor ve o kenar kadraj dışında
+  // kesik: kâğıdın kadraj dışında kalan kenarı (dörtgen yoksa karenin kenarı) yazıyı kesiyor ya da satırlar kenara
+  // dayanıyor. Satırlara koşut kenarda (fişin altı) ilk satıra boşluk satır aralığının ~üçte birinden azsa (kesik
+  // satırların arasından geçmiş), satırların koştuğu kenarda (fişin yanı) harfler kenarca kesilmişse.
   const cutSides: DocSide[] = [];
-  if (text) {
-    const st = sideText(L, tm, w, h, glyphRef);
+  if (text && L.axis.axis) {
+    const pitch = L.lines.linePitch || 2 * glyphRef;
+    const st = sideText(L, tm, w, h, glyphRef, Math.round(pitch));
     for (let s = 0; s < 4; s++) {
       if (!onFrame[s]) continue;
       const v = st[s];
-      if (v.touching >= 3 && v.spread >= 0.12 && v.density >= 0.25) cutSides.push(docSide(s, opts.rotation ?? 0));
+      const parallel = (L.axis.axis === "yatay") === (s % 2 === 0);
+      const cutText = v.touching >= 3 && v.spread >= 0.12 && v.density >= 0.25;
+      const nearLine = parallel && v.gap < CUT_GAP * pitch && v.density >= 0.3;
+      if (cutText || nearLine) cutSides.push(docSide(s, opts.rotation ?? 0));
     }
     for (const side of cutSides) add("kesik", "ciddi", side);
   }
@@ -560,7 +614,7 @@ export function assessQuality(img: RgbaImage, opts: QualityOptions = {}): Qualit
     ok: !issues.some((i) => i.severity === "ciddi"),
     issues,
     metrics: {
-      work: { width: w, height: h, scale: r1(scale * 1000) / 1000 },
+      work: { width: w, height: h, scale: Math.round(scale * 1e4) / 1e4 },
       paper: r1(paper),
       contrast: r1(contrast),
       noise: r1(noise),
@@ -569,12 +623,12 @@ export function assessQuality(img: RgbaImage, opts: QualityOptions = {}): Qualit
       blurSigma: r1(eb.sigma),
       blurSigmaX: r1(eb.sigmaX),
       blurSigmaY: r1(eb.sigmaY),
-      blurRatio: r1(blurRatio * 100) / 100,
+      blurRatio: Math.round(blurRatio * 1000) / 1000,
       laplace: r1(eb.laplace * glyphRef),
       edgePoints: eb.points,
       glyphPhoto: r1(glyphPhoto),
       glyphRead: r1(glyphRead),
-      glare: r1(glare * 1000) / 1000,
+      glare: Math.round(glare * 1e4) / 1e4,
       glareOnText,
       cutSides,
       otherDocs,
