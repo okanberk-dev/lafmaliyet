@@ -40,6 +40,7 @@ import {
 } from "./image";
 import {
   convexHull,
+  growQuad,
   fitLine,
   hullToQuad,
   insideConvex,
@@ -387,6 +388,8 @@ function textOutside(ctx: Ctx, a: Point, b: Point, cx: number, cy: number): numb
     ny = -ny;
   }
   const reach = Math.max(6, ctx.diag * 0.025);
+  // kenar boyunca bir çizgi varsa ötesine daha uzun bakılır (aşağıda)
+  const reach2 = Math.max(reach, ctx.diag * 0.06);
   const K = 24;
   // örnek başına dışarıdaki "yazı" piksellerinin uzaklıkları (kenardan dışa)
   const offs: number[][] = [];
@@ -396,7 +399,7 @@ function textOutside(ctx: Ctx, a: Point, b: Point, cx: number, cy: number): numb
     const py = a.y + (b.y - a.y) * t;
     const hits: number[] = [];
     let any = false;
-    for (let o = 3; o <= reach; o += 1.5) {
+    for (let o = 3; o <= reach2; o += 1.5) {
       const x = Math.round(px + nx * o);
       const y = Math.round(py + ny * o);
       if (x < 0 || y < 0 || x >= w || y >= h) break;
@@ -421,8 +424,14 @@ function textOutside(ctx: Ctx, a: Point, b: Point, cx: number, cy: number): numb
     }
     if (best < offs.length * 0.4) band = null;
   }
+  // Çizginin ötesinde yazı varsa (kâğıdın içindeki tablo ya da kesik çizgisi, ötesi yine yazılı kâğıt) kesiyor sayılır;
+  // gölgenin ötesi zemindir, yazı çıkmaz
   let hit = 0;
-  for (const hs of offs) if (hs.some((o) => !band || o < band[0] || o > band[1])) hit++;
+  for (const hs of offs) {
+    const near = hs.some((o) => o <= reach && (!band || o < band[0] || o > band[1]));
+    const beyond = !!band && hs.some((o) => o > band![1] + 1.5);
+    if (near || beyond) hit++;
+  }
   return hit / offs.length;
 }
 
@@ -570,7 +579,8 @@ interface HLine extends Line {
   frame: boolean;
 }
 
-function canny(ctx: Ctx): { xs: Int32Array; ys: Int32Array; ang: Float32Array; count: number } {
+/** `factor`: yüksek eşiğin çarpanı (düşük karşıtlıklı kâğıt kenarı için ikinci geçişte < 1) */
+function canny(ctx: Ctx, factor = 1): { xs: Int32Array; ys: Int32Array; ang: Float32Array; count: number } {
   const { w, h, n, gx, gy } = ctx;
   const mag = new Float32Array(n);
   for (let i = 0; i < n; i++) mag[i] = Math.hypot(gx[i], gy[i]);
@@ -601,7 +611,7 @@ function canny(ctx: Ctx): { xs: Int32Array; ys: Int32Array; ang: Float32Array; c
     }
   }
   const hist = histogram(nms.filter((v) => v > 0), 400, 0, 200);
-  const high = Math.max(5, Math.min(40, histPercentile(hist, 0.8, 0, 200)));
+  const high = Math.max(4, factor * Math.max(5, Math.min(40, histPercentile(hist, 0.8, 0, 200))));
   const low = high * 0.4;
   const edge = new Uint8Array(n);
   const stack: number[] = [];
@@ -733,7 +743,15 @@ function edgeCandidates(ctx: Ctx): Quad[] {
   const { w, h } = ctx;
   const e = canny(ctx);
   if (e.count < 50) return [];
+  // Yazının güçlü kenarları eşiği yükseltir: açık zeminde soluk kâğıt kenarı ilk geçişte kaçar. Düşük eşikli ikinci
+  // geçişin doğruları eklenir (yinelenenler atlanır)
   const lines = houghLines(ctx, e);
+  const low = canny(ctx, 0.35);
+  for (const l of houghLines(ctx, low, 16)) {
+    if (lines.length >= 36) break;
+    const dup = lines.some((m) => Math.abs(m.d.x * l.d.y - m.d.y * l.d.x) < Math.sin((2 * Math.PI) / 180) && Math.abs(signedDist(m, l.p)) < ctx.diag * 0.008);
+    if (!dup) lines.push(l);
+  }
   const frame: HLine[] = [
     { p: { x: 0, y: 0 }, d: { x: 1, y: 0 }, votes: 0, frame: true },
     { p: { x: 0, y: h - 1 }, d: { x: 1, y: 0 }, votes: 0, frame: true },
@@ -766,7 +784,7 @@ function edgeCandidates(ctx: Ctx): Quad[] {
       pairs.push({ i, j, ang: angs[i] });
     }
   }
-  const quick: { q: Quad; s: number }[] = [];
+  const quick: { q: Quad; s: number; v: number }[] = [];
   const margin = 0.02;
   for (let a = 0; a < pairs.length; a++) {
     for (let b = a + 1; b < pairs.length; b++) {
@@ -793,14 +811,16 @@ function edgeCandidates(ctx: Ctx): Quad[] {
       const an = interiorAngles(q);
       if (Math.min(...an) < 35 || Math.max(...an) > 145) continue;
       // hızlı ön puan: kenar desteği (oy) toplamı
-      const s = (all[A.i].votes + all[A.j].votes + all[B.i].votes + all[B.j].votes) / Math.sqrt(area);
-      quick.push({ q, s });
+      const votes = all[A.i].votes + all[A.j].votes + all[B.i].votes + all[B.j].votes;
+      quick.push({ q, s: votes / Math.sqrt(area), v: nFrame ? 0 : votes });
     }
   }
   quick.sort((x, y) => y.s - x.s);
   // pahalı puana yalnız en iyi ~40 aday; büyük alanlılar da kaçmasın diye alanla sıralı ilk 20 de
   const byArea = quick.slice().sort((x, y) => polygonArea(y.q) - polygonArea(x.q));
-  const picked = new Set<{ q: Quad; s: number }>([...quick.slice(0, 40), ...byArea.slice(0, 20)]);
+  // ve dört kenarı da gerçek doğru olanlardan oyu en çok 30 (orta büyüklükte kâğıt iki sıralamanın arasında kalmasın)
+  const byVotes = quick.filter((x) => x.v > 0).sort((x, y) => y.v - x.v);
+  const picked = new Set<{ q: Quad; s: number; v: number }>([...quick.slice(0, 40), ...byArea.slice(0, 20), ...byVotes.slice(0, 30)]);
   return [...picked].map((x) => x.q);
 }
 
@@ -1029,6 +1049,17 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
   }
   if (!scored.length || scored[0].score < 0.75) refineTop(ctx, scored);
   let best = scored[0];
+  // Seçilen dörtgen kâğıdın yalnız bir bölümüyse (başlık, kesik çizgiyle ayrılan blok; kenarı gölgeli fişte) onu içeren,
+  // yazının çok daha fazlasını kapsayan dört kenarlı aday biraz düşük puanlı da olsa yeğlenir
+  if (best) {
+    const tinOf = (s: Scored) => s.parts?.tin ?? -1;
+    const grown = (s: Scored) => growQuad(s.q, 1.02);
+    const whole = scored.slice(0, 20).find((s) => s !== best && s.realSides === 4 && s.score >= best.score - 0.16 && tinOf(best) >= 0 && tinOf(s) - tinOf(best) >= 0.12 && tinOf(s) >= 1.6 * tinOf(best) && best.q.every((p) => insideConvex(grown(s), p)));
+    if (whole) {
+      best = whole;
+      reasons.push("butunu-secildi");
+    }
+  }
   if (best) {
     // ince ayar (dar şerit): köşeler gerçek kenara oturur; puan düşmüyorsa kabul
     const snapped = snapQuad(ctx.gray, best.q, { passes: "ince" });
@@ -1117,3 +1148,4 @@ export function scoreQuad(
     parts: s.parts,
   };
 }
+
