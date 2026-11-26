@@ -360,7 +360,7 @@ test("Stok sekmeleri: role göre süzülmüş kenar çubuğu Stok grubunun sayfa
     tree.map((c) => [c.href, c.roles]),
   );
   // Giderler'in sekmeleri yalnız yöneticide; tek sekme kalan bölüm çizilmez
-  assert.equal(sectionTabsFor("giderler", "admin").length, 3);
+  assert.equal(sectionTabsFor("giderler", "admin").length, 5);
   assert.deepEqual(sectionTabsFor("giderler", "staff"), []);
 });
 
@@ -514,6 +514,6 @@ test("bölüm sekmeleri: Vergi grubundan türer; Ödemeler ↔ Nakit planı yaln
   assert.deepEqual(sectionTabsFor("vergi", "staff"), []);
   assert.deepEqual(
     sectionTabsFor("giderler", "admin").map((t) => t.label),
-    ["Sabit giderler", "Aylık harcamalar", "Maaşlar"],
+    ["Sabit giderler", "Aylık harcamalar", "Maaşlar", "Belgeler", "Avanslar"],
   );
 });

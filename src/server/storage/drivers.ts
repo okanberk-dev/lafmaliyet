@@ -29,6 +29,19 @@ export function photoKey(kind: PhotoKind, now: Date, uuid: string, ext: "jpg" | 
 /** Yalnız photoKey'in ürettiği biçim (dosya sisteminde ../ ile dışarı çıkılamaz) */
 export const PHOTO_KEY_RE = /^[a-z-]+\/\d{4}\/\d{2}\/[0-9a-f-]{36}\.(jpg|png|webp)$/;
 
+/**
+ * Aynı depodaki öteki dosyalar (personel belgeleri; src/server/staff-docs.ts): önek / yıl / ay / rastgele kimlik, PDF de
+ * olabilir. Fotoğrafla aynı sürücü ve aynı yol kuralı; önek fotoğraf türlerinden ayrı ("personel-belge")
+ */
+export const STORED_KEY_RE = /^[a-z-]+\/\d{4}\/\d{2}\/[0-9a-f-]{36}\.(jpg|png|webp|pdf)$/;
+
+/** Depodaki yol (fotoğraf dışı dosya): önek / yıl / ay / rastgele kimlik */
+export function storedKey(prefix: string, now: Date, uuid: string, ext: "jpg" | "png" | "webp" | "pdf"): string {
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, "0");
+  return `${prefix}/${y}/${m}/${uuid}.${ext}`;
+}
+
 type BlobGetResult = { statusCode: number; stream: ReadableStream<Uint8Array> | null } | null;
 
 /** @vercel/blob'un kullandığımız üç işlevi (testte sahtesi verilir; özel depo ayarlarını sabitler) */
@@ -65,7 +78,7 @@ export function blobDriver(api: BlobApi, token?: string): PhotoDriver {
 }
 
 function safePath(dir: string, key: string): string {
-  if (!PHOTO_KEY_RE.test(key)) throw new Error(`Geçersiz fotoğraf anahtarı: ${key.slice(0, 80)}`);
+  if (!STORED_KEY_RE.test(key)) throw new Error(`Geçersiz fotoğraf anahtarı: ${key.slice(0, 80)}`);
   return join(dir, key);
 }
 

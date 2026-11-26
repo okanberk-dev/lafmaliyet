@@ -56,6 +56,7 @@ Yalnız şunlar dosyaya girmez (`src/lib/backup/format.ts` › `TABLE_RULES`, `E
 | Paraşüt'ten alınan e-fatura PDF'leri | önbellek | ilk açılışta Paraşüt'ten yeniden indirilir |
 | Panelden yüklenen fatura belgeleri | yalnız "belgeleri de ekle" seçilmediyse | seçilmediyse belgesiz gelir |
 | Kasa ve fiş fotoğraflarının dosyaları (kayıtları `photos` tablosunda yazılır) | dosyalar veritabanında değil, özel Vercel Blob deposunda ([FOTOGRAF.md](FOTOGRAF.md)) | aynı depo bağlıysa fotoğraflar açılır; değilse "Fotoğraf bulunamadı" |
+| Personel belgelerinin dosyaları (kayıtları `staff_documents` tablosunda yazılır) | fotoğraflarla aynı özel depoda ([PERSONEL-BELGE.md](PERSONEL-BELGE.md)) | aynı depo bağlıysa açılır; değilse "Belge bulunamadı", dosya yeniden eklenir |
 | Claude bağlantıları (`mcp_clients`, `mcp_codes`, `mcp_grants`, `mcp_tokens`, `mcp_calls`) | anahtar özetleri ve verilmiş erişim; eski bir yedekten bağlantı geri gelmesin | Claude'da bağlayıcıya yeniden "Connect" denir ([CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md)) |
 | Panel asistanının bekleyen onay kartları (`assistant_ops`, durumu `pending` ya da `running`) | geçici (10 dakika); eski bir yedekten onaylanabilir kart dönmesin. Sonuçlanmış kartlar (yapıldı, vazgeçildi, geri alındı…) denetim kaydı olarak dosyaya girer | asistandan yeniden istenir ([ASISTAN-ISLEMLER.md](ASISTAN-ISLEMLER.md)) |
 

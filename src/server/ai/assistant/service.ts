@@ -5,6 +5,7 @@ import { screenBranch } from "@/lib/assistant/page-context";
 import { businessDate } from "@/lib/cash-report";
 import { todayTR } from "@/lib/reminders";
 import { getCurrentUser } from "@/server/auth/dal";
+import { chatReceiptBlock } from "@/server/assistant-ops/receipt";
 import { branchScope, withBranchScope } from "@/server/branch-scope";
 import { sameOrigin } from "@/server/same-origin";
 
@@ -33,6 +34,7 @@ export const liveAssistantDeps: AssistantDeps = {
   status: (userId) => assistantStatus(userId),
   start: (userId, opts) => startAssistantCall(userId, undefined, undefined, opts),
   finish: (callId, outcome, ms) => finishAssistantCall(callId, outcome, ms),
+  receipt: (userId, photoId) => chatReceiptBlock(userId, photoId),
   setup: async (page) => {
     const cookie = await branchScope();
     const shown = screenBranch(page?.branch, cookie.branches);

@@ -106,8 +106,8 @@ ana eylem `bg-primary text-on-primary` (açıkta ikisi de eski siyah / beyaz).
   adı yazıyor). Başlıklarda ve ⌘K'da eski hesap tablosunun sayfa adı yok; menüdeki ekranların listesi Yardım'ın "Ekranlar" kartında.
   `tests/kenar-cubugu.test.ts` iki ağacı, tek tıkla açılan ekranları, `src/app/panel` altındaki her ekranın menüden
   açıldığını ve paletin her ekranının rolünün ağacında da olduğunu sabitler.
-  Bölüm sekmeleri (`SECTION_TABS`, sayfa başında): Giderler & maaşlar → Sabit giderler, Aylık harcamalar, Maaşlar
-  (son ikisinin menüde ayrı öğesi yok); Ödeme → Ödemeler, Nakit planı; Vergi → Özet, Vergi kârı, Demirbaş, Muhasebeci
+  Bölüm sekmeleri (`SECTION_TABS`, sayfa başında): Giderler & maaşlar → Sabit giderler, Aylık harcamalar, Maaşlar, Belgeler, Avanslar
+  (Sabit giderler dışındakilerin menüde ayrı öğesi yok; Belgeler ve Avanslar docs/PERSONEL-BELGE.md); Ödeme → Ödemeler, Nakit planı; Vergi → Özet, Vergi kârı, Demirbaş, Muhasebeci
   (ağaçtan); Raporlar → Şubeler, İşçilik, Kaçak, Kayıp önleme (ağaçtan, kısaltılmış adla); Stok → Sayım, Zayi & ikram, Tutarlılık: kenar çubuğunun Stok grubundan türer
   (aynı sıra, aynı roller; denetim E-56), üç sayfada da çizilir, personel Sayım ve Zayi & ikram'ı görür (`sectionTabsFor`,
   tek sekme kalırsa çubuk çizilmez; sayfa yüklenirken iki rolün ortak sekmeleri, yükleme başlığı yüklenen başlıkla aynı

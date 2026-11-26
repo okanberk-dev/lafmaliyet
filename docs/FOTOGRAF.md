@@ -14,6 +14,7 @@ düzeltir, **Raporu gönder** ya da **Kaydet**'e basar. Fotoğraf kanıt olarak 
 | Kasa raporu › Yazarkasa Z raporu | Yazarkasanın (banka POS) mali Z raporu; uzunsa üst ve alt yarı ayrı (bölümde en çok 3) | Günlük toplam, Z no, nakit, kredi kartı; Ayrıntılar'da yemek kartı, diğer, toplam KDV, oran oran KDV dökümü (%1, %10, %20), fiş sayısı; aynı şeritte basılıysa banka gün sonu. **Bugün hepsi öneri** (§ 2) |
 | Kasa raporu › Yazarkasa Z raporu | Bankanın ayrı gün sonu fişi (yedek) | Yalnız Banka gün sonu (net toplam; iki fişte "Toplama ekle"); yazarkasa alanları boş kalır |
 | Kasa raporu › Gün içinde kasadan çıkanlar › Fiş ekle | Alışveriş fişi, e-Arşiv ya da fatura | Tutar (verilen nakit ya da para üstü değil, fişin toplamı), yer, ne alındığı, fiş tarihi, KDV, kategori |
+| Panel asistanı › kamera düğmesi (yalnız yönetici) | Alışveriş fişi, e-Arşiv ya da fatura (aynı okuma, tür `fis`) | Okunan değerler asistanın mesajına veri bloğu olarak gider; asistan kasadan çıkan ya da harcama kartı hazırlar, fotoğraf Onayla'da kayda bağlanır ([ASISTAN-ISLEMLER.md](ASISTAN-ISLEMLER.md) › 1.13) |
 
 Kasadan çıkan alışveriş satırı **Aylık harcamalar**'a da yazılır (kurallar KASA-RAPORU.md › Gün içinde kasadan
 çıkanlar); orada fotoğraf simgesi ve **Kasadan** rozetiyle görünür, tutarı ve tarihi Kasa raporu'nda düzeltilir.

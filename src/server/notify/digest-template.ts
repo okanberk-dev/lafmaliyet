@@ -171,6 +171,8 @@ export interface DigestExtras {
   kontrol?: DigestBox | null;
   forecast?: DigestBox | null;
   approvals?: DigestBox | null;
+  /** Personel belgeleri: bitişe 30 gün kala ve bitince, her aşama bir kez (docs/PERSONEL-BELGE.md) */
+  staffDocs?: DigestBox | null;
 }
 
 /** Kaynağın bulduğu kutu ve gönderimden sonra notification_log'a yazılacak anahtarlar (ör. "komisyon:<uyarı>", "kontrol:<gün>") */
@@ -195,7 +197,7 @@ export interface DigestExtraCtx {
  * dönerse (null) kutu yok.
  */
 export type DigestExtraSource =
-  | { key: "commission" | "kontrol" | "approvals"; news: boolean; load(today: string, ctx: DigestExtraCtx): Promise<DigestExtraLoad | null> }
+  | { key: "commission" | "kontrol" | "approvals" | "staffDocs"; news: boolean; load(today: string, ctx: DigestExtraCtx): Promise<DigestExtraLoad | null> }
   | { key: "forecast"; news: false; load(today: string, ctx: DigestExtraCtx): Promise<DigestExtraLoad | null> };
 
 /** Kaynakların toplu sonucu: e-postanın kutuları, "yeni bir şey var mı"ya katkısı, tekil anahtara ve günlüğe giden anahtarlar */
@@ -249,8 +251,11 @@ export async function collectDigestExtras(sources: readonly DigestExtraSource[],
   return { extras, news, logKeys: [...keys], parts };
 }
 
-/** Kutu tonları (email-kit): komisyon, kontrol ve onay bekleyenler turuncu (fiyat onayı kutusu gibi), tahmin gri (bilgi) */
-const BOX_TONE: Record<keyof DigestExtras, Tone> = { commission: "warn", kontrol: "warn", forecast: "neutral", approvals: "warn" };
+/**
+ * Kutu tonları (email-kit): komisyon, kontrol, onay bekleyenler ve personel belgeleri turuncu (fiyat onayı kutusu gibi),
+ * tahmin gri (bilgi)
+ */
+const BOX_TONE: Record<keyof DigestExtras, Tone> = { commission: "warn", kontrol: "warn", forecast: "neutral", approvals: "warn", staffDocs: "warn" };
 /** Kutu satırının rengi: kötü kırmızı, uyarı turuncu, sönük gri ve küçük (metin anlamı taşır, renk yalnız vurgu) */
 const LINE_STYLE: Record<NonNullable<DigestBox["lines"][number]["tone"]>, string> = {
   bad: `color:${TONE.bad.fg}`,
@@ -390,21 +395,23 @@ export function renderDigest(
   const com = extras?.commission ?? null;
   const kon = extras?.kontrol ?? null;
   const apv = extras?.approvals ?? null;
+  const doc = extras?.staffDocs ?? null;
   const fc = extras?.forecast ?? null;
   const comPart = com?.subjectPart || null;
   const konPart = kon?.subjectPart || null;
   const apvPart = apv?.subjectPart || null;
+  const docPart = doc?.subjectPart || null;
   // Konuya eklenen parçaların tek sırası
-  const tail = [invPart, holdPart, zamPart, comPart, konPart, apvPart];
+  const tail = [invPart, holdPart, zamPart, comPart, konPart, apvPart, docPart];
   const extra = [sys ? "sistem uyarısı" : null, ...tail].filter(Boolean).join(" · ");
   const sysExtra = tail.filter(Boolean).join(" · ");
-  const failExtra = [holdPart, zamPart, comPart, konPart, apvPart].filter(Boolean).join(" · ");
+  const failExtra = [holdPart, zamPart, comPart, konPart, apvPart, docPart].filter(Boolean).join(" · ");
   // "Sabah özeti: <ilk haber>": adayın kuyruktaki yeri (kontrol bekleyen kuyrukta yok); ilk haber kuyruktan çıkar
-  const lead = ([[invPart, 0], [reviewPart, -1], [holdPart, 1], [comPart, 3], [konPart, 4], [apvPart, 5]] as const).find(([p]) => p);
+  const lead = ([[invPart, 0], [reviewPart, -1], [holdPart, 1], [comPart, 3], [konPart, 4], [apvPart, 5], [docPart, 6]] as const).find(([p]) => p);
   // Başlığı ya da konu parçası olmayan kutu e-postanın tek içeriğiyse konu ve başlık "yeni bir şey yok" demesin: kutunun
   // parçası (başlıkta ilk harfi büyük), o da yoksa adı. Konunun son dalında parça zaten yoktur (varsa `lead` olurdu)
-  const boxPart = comPart || konPart || apvPart;
-  const boxLast = boxPart ? upperFirst(boxPart) : com?.title || kon?.title || apv?.title || null;
+  const boxPart = comPart || konPart || apvPart || docPart;
+  const boxLast = boxPart ? upperFirst(boxPart) : com?.title || kon?.title || apv?.title || doc?.title || null;
   const subjectOf = rows.length
     ? `Ödeme hatırlatması: ${parts.join(", ")}${extra ? ` · ${extra}` : ""}`
     : sys
@@ -417,7 +424,7 @@ export function renderDigest(
   const subject = branch ? `${branch}: ${subjectOf}` : subjectOf;
   const total = rows.reduce((a, r) => a + (r.item.amount ?? 0), 0);
   const link = `${APP_URL}/panel/hatirlaticilar`;
-  const boxHeadline = com?.headline || kon?.headline || apv?.headline || null;
+  const boxHeadline = com?.headline || kon?.headline || apv?.headline || doc?.headline || null;
   const headline = rows.length
     ? rows.length === 1
       ? "1 ödeme sizi bekliyor"
@@ -532,7 +539,7 @@ ${listTable(zam.products.slice(0, MAX_PRICE_ROWS).map(priceRow))}${zam.productCo
 ${linkLine(`${APP_URL}/panel/urunler#zamlar`, "Önerilen fiyatlara bak")}`
     : "";
   // Düğme kutunun bağlantısına: fiyat onayından sonra, zamdan önce (komisyon, sonra kontrol, sonra onay bekleyenler)
-  const actionBox = com ?? kon ?? apv;
+  const actionBox = com ?? kon ?? apv ?? doc;
   const action = rows.length
     ? { href: link, label: "Panelde aç" }
     : inv && (inv.items.length || inv.reviewCount || inv.syncError || cashOuts)
@@ -545,7 +552,7 @@ ${linkLine(`${APP_URL}/panel/urunler#zamlar`, "Önerilen fiyatlara bak")}`
             ? { href: `${APP_URL}/panel/urunler#zamlar`, label: "Ürünleri aç" }
             : { href: JOBS_LINK, label: "Günlük işleri aç" };
   // Ek kutular Paraşüt bölümünden ayrık, birbirine yakın
-  const boxes = [com ? ["commission", com] : null, kon ? ["kontrol", kon] : null, apv ? ["approvals", apv] : null]
+  const boxes = [com ? ["commission", com] : null, kon ? ["kontrol", kon] : null, apv ? ["approvals", apv] : null, doc ? ["staffDocs", doc] : null]
     .filter((b): b is [keyof DigestExtras, DigestBox] => b !== null)
     .map(([key, b], i) => boxHtml(b, key, i === 0 ? 22 : 12))
     .join("\n");
@@ -614,6 +621,7 @@ ${linkLine(`${APP_URL}/panel/urunler#zamlar`, "Önerilen fiyatlara bak")}`
     ...(com ? boxText(com) : []),
     ...(kon ? boxText(kon) : []),
     ...(apv ? boxText(apv) : []),
+    ...(doc ? boxText(doc) : []),
     ...(zam
       ? [
           "",

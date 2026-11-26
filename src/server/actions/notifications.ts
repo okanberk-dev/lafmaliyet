@@ -19,6 +19,7 @@ import { blockedBell } from "@/lib/notify-recipients";
 import { holdReason, holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
 import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
 import { addDays, todayTR } from "@/lib/reminders";
+import { docBellRows } from "@/lib/staff-docs";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { kasaBell } from "@/server/bell/kasa";
@@ -41,6 +42,7 @@ import { loadCashOutInvoiceState, scopeCashOutInvoiceState } from "@/server/data
 import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders } from "@/server/data/user-reminders";
+import { loadDocAlerts } from "@/server/staff-docs";
 import { getDb, schema as s } from "@/server/db";
 import { latestParasutRun } from "@/server/jobs/runs";
 import { loadSystemAlerts } from "@/server/jobs/alerts";
@@ -514,6 +516,17 @@ async function modelNotifications(): Promise<{ priceNote: PanelNotification[]; w
 }
 
 /**
+ * Personel belgeleri (yalnız yönetici; docs/PERSONEL-BELGE.md): süresi dolan belgeler tek satır, 30 gün içinde bitecekler
+ * tek satır (Uyarılar). Seçili şubenin kişileri ("Tümü"de hepsi). Kimlik belgelerden ve bitişlerden türer: yeni bir belge
+ * bitince ya da yaklaşınca satır yeniden okunmamış olur, gün geçti diye olmaz (src/lib/staff-docs.ts docBellRows).
+ */
+async function staffDocNotifications(): Promise<PanelNotification[]> {
+  const today = todayTR();
+  const alerts = await loadDocAlerts(getDb(), today, await currentBranchScope());
+  return docBellRows(alerts, today).map((r) => ({ ...r, timeLabel: "", unread: true, group: "uyari" as const }));
+}
+
+/**
  * Kenar çubuğundaki zil: (yalnız yönetici) önce günlük işlerin sorunları, sonra kişinin hatırlatıcıları ve onaylar
  * (reçete önerileri ve personel istekleri), sonra (yalnız yönetici) zamanı gelen ödemeler (gecikmiş, bugün, yakında),
  * faturalar, operasyonun satırları (kasada (ModPOS) değişecek fiyatlar …), fiyatı girilmemiş hammaddeler ve son satış
@@ -546,7 +559,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   // Maliyet modeli zilin en ağır okuması: düşerse (E-49) öbür maddeler yine gelir, modelNotifications kendi satırını
   // koyar. Ödemeler de öyle: okunamazsa "Ödemeler yüklenemedi" satırı (upcomingFailed). ModPOS kasa föyünün anahtarı
   // çalışmıyorsa ve LafPOS'un gün sonu reddedildiyse Sistem başlığında (src/server/bell/modpos.ts, src/server/bell/lafpos.ts)
-  const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos, lafpos, vardiya, devices] = await Promise.all([
+  const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos, lafpos, vardiya, devices, staffDocs] = await Promise.all([
     modelNotifications().catch(modelFailed),
     // Şube seçiliyken o şubenin ve işletme genelinin ödemeleri (docs/SUBE.md › Ödemeler)
     currentBranchScope()
@@ -564,6 +577,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     safe("vardiya", currentBranchScope().then((scope) => vardiyaBell(scope))),
     // Kişinin kendi hesabına yeni cihazdan giriş (son 7 gün; docs/DEPLOY.md › 6a)
     safe("guvenlik", newDeviceBellRows(user)),
+    safe("belge", staffDocNotifications()),
   ]);
   const lost = failedBellRows(failed, user.role, todayTR());
 
@@ -586,6 +600,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     });
   }
 
-  // Sistem başlığında LafPOS'un reddi ModPOS'tan, yeni cihazdan girişler ondan sonra; vardiya hatırlatması Uyarılar başlığının ilk satırı
-  return [...lost, ...system, ...recipients, ...modpos, ...lafpos, ...devices, ...mine, ...recipes, ...holds, ...vardiya, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
+  // Sistem başlığında LafPOS'un reddi ModPOS'tan, yeni cihazdan girişler ondan sonra; vardiya hatırlatması Uyarılar başlığının
+  // ilk satırı, personel belgeleri (süresi dolan / yaklaşan) hemen ardından
+  return [...lost, ...system, ...recipients, ...modpos, ...lafpos, ...devices, ...mine, ...recipes, ...holds, ...vardiya, ...staffDocs, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
 }

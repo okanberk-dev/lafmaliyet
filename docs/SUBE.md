@@ -266,6 +266,7 @@ birden çok kasa açıkken şubenin adıyla.
 | Hammaddeler › Kullanım | Şube seçiliyken "son ay · Marina satışı" |
 | Claude bağlantısı ve panel asistanının araçları | İsteğe bağlı `sube` girdisi (ad, kimlik ya da "hepsi"); verilmezse panelin seçimi (asistanda açık ekranın şubesi: tarayıcı soruyla gönderir, çerez yalnız yedek; 26 Kasım 2026, docs/ASISTAN.md › Sayfa bağlamı). Çıktı `kapsam` yazar; tedarikçi ve arama "Firma geneli". Şubesine kilitli hesap başka şubeyi isteyemez |
 | Kasa raporu silindi (işlem geçmişi) | Birden çok kasa açıkken kasanın adı |
+| Personel belgeleri ve avansları | Kişinin şubesi Maaşlar'daki **Şube** alanı (Maaşlar'la aynı süzgeç): ekranlar ve zilin belge satırları seçili şubenin kişileri, "Tümü"de hepsi, birden çok fiziksel şube açıkken kartta kişinin şubesi. Sabah e-postasının "Personel belgeleri" kutusu şubeye bağlı alıcıya yalnız o şubenin kişileri ([PERSONEL-BELGE.md](PERSONEL-BELGE.md)) |
 
 Sahibin varsayılanları (24 Kasım 2026, sonra Ayarlar'dan şube başına değiştirilebilir olacak): tek firma (Vergi, Nakit,
 cari firma geneli, etiketli); Paraşüt hesabı ortak (25 Kasım'dan beri şube başına seçilebilir: ayrı hesabın faturaları o
