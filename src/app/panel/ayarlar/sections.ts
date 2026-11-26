@@ -1,4 +1,4 @@
-import { Building2, Droplets, Globe, HardDriveDownload, History, Layers, LockKeyhole, Percent, QrCode, ReceiptTurkishLira, Ruler, ScanText, Store, SunMoon, Tags, Timer, Users, Utensils, type LucideIcon } from "lucide-react";
+import { Building2, Droplets, FileArchive, Globe, HardDriveDownload, History, Layers, LockKeyhole, Percent, QrCode, ReceiptTurkishLira, Ruler, ScanText, Store, SunMoon, Tags, Timer, Users, Utensils, type LucideIcon } from "lucide-react";
 
 /**
  * Ayarlar sayfasının bölümleri: kenardaki gezinme bu sırayla listelenir, her kart `id` olarak bunu taşır.
@@ -21,6 +21,8 @@ export const SETTINGS_SECTIONS = [
   { id: "stok", label: "Stok değerleme", icon: Layers },
   // Beyan edilmiş ayı kapatma ve kapalı döneme düşen kayıtlar (docs/DONEM-KAPANISI.md)
   { id: "donem", label: "Dönem kapanışı", icon: LockKeyhole },
+  // Muhasebeciye aylık paket (.xlsx) ve ay kapanış e-postası (docs/MUHASEBE-PAKETI.md)
+  { id: "muhasebe", label: "Muhasebeci paketi", icon: FileArchive },
   { id: "kategoriler", label: "Kategoriler", icon: Tags },
   { id: "gecmis", label: "İşlem geçmişi", icon: History },
   // Zamanlanmış işlerin (Paraşüt eşitlemesi, sabah işi) son çalışması; uyarılar buraya getirir

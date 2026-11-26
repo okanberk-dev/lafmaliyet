@@ -161,6 +161,7 @@ const STEP_NAMES: Record<string, string> = {
   weekly: "Haftalık özet",
   requests: "Personel istekleri",
   gunSonu: "LafPOS gün sonu",
+  muhasebe: "Muhasebe paketi",
   watchdog: "Sistem uyarısı e-postası",
   checklist: "Kontrol listesi e-postası",
   karaokeMail: "Karaoke e-postası",
@@ -201,6 +202,7 @@ export const STEP_LABELS: Record<string, Record<string, string>> = {
   },
   requests: { ok: "Süresi dolan personel istekleri kapandı", error: "Personel istekleri hata" },
   gunSonu: { ok: "LafPOS gün sonu: eksik rapor ya da e-posta tamamlandı", error: "LafPOS gün sonu hata" },
+  muhasebe: { sent: "Muhasebe paketi gönderildi", error: "Muhasebe paketi gönderilemedi" },
   watchdog: { sent: "Sistem uyarısı e-postası gitti", error: "Sistem uyarısı e-postası gönderilemedi" },
   checklist: { sent: "Kontrol listesi e-postaları gitti", none: "Kontrol listesi: gönderilecek yok", failed: "Kontrol listesi e-postası bir kısmına gidemedi", error: "Kontrol listesi hata" },
   karaokeMail: { sent: "Karaoke e-postaları gitti", none: "Karaoke e-postası: gönderilecek yok", failed: "Karaoke e-postası bir kısmına gidemedi", error: "Karaoke e-postası hata" },
@@ -222,7 +224,7 @@ export type CoreStep = "sync" | "digest" | "reminders" | "karaoke" | "menu" | "s
  * Yalnız çalıştığı gün yazılan adımlar (yoksa hiçbir şey yazılmaz): satış tahmini, ModPOS kasa föyü (yalnız anahtar
  * varken), fotoğraf temizliği, ay sonu sayım bildirimi, haftalık özet, süresi dolan personel istekleri
  */
-export type OptionalStep = "forecast" | "modpos" | "photos" | "count" | "weekly" | "requests" | "gunSonu";
+export type OptionalStep = "forecast" | "modpos" | "photos" | "count" | "weekly" | "requests" | "gunSonu" | "muhasebe";
 export type DailyStep = CoreStep | OptionalStep;
 export type StepResult = { code: string; error?: string | null };
 
@@ -265,7 +267,7 @@ const stepFailed = (k: DailyStep, s: StepResult) => s.code === "error" || (k ===
  * İsteğe bağlı adım verilmediyse hiç yazılmaz (o gün çalışmadı).
  */
 export function dailyOutcome(steps: Record<CoreStep, StepResult> & Partial<Record<OptionalStep, StepResult>>): JobOutcome {
-  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "modpos", "photos", "count", "weekly", "requests", "gunSonu"];
+  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "modpos", "photos", "count", "weekly", "requests", "gunSonu", "muhasebe"];
   const present = order.filter((k) => steps[k] !== undefined);
   const failed = present.filter((k) => stepFailed(k, steps[k]!));
   const status = steps.digest.code === "error" ? "error" : failed.length ? "partial" : "ok";
@@ -328,6 +330,17 @@ export function gunSonuStep(r: { status: string; days: { date?: string; report: 
   const why = (d: (typeof failed)[number]) => d.error ?? (d.report !== "error" && d.email !== "error" && d.email !== "failed" ? "çalışanların e-postası gitmedi" : d.email);
   if (failed.length) return { code: "error", error: failed.map((d) => `${d.date ?? ""} ${why(d)}`.trim()).join(" · ") };
   return r.days.some((d) => d.report === "written" || d.report === "updated" || d.email === "sent") ? { code: "ok" } : undefined;
+}
+
+/**
+ * Muhasebeci paketinin adımı (src/server/muhasebe/paket.ts sendAccountingPackage; docs/MUHASEBE-PAKETI.md): yalnız
+ * gönderildiyse ya da hata verdiyse yazılır. Gönderim günü değilse, ayar kapalıysa, alıcı yoksa, ay zaten gittiyse ya da
+ * Resend kurulmadıysa adım yok
+ */
+export function packageStep(r: { status: "sent" } | { status: "skip" } | { status: "error"; error: string } | { error: string }): StepResult | undefined {
+  if (!("status" in r)) return { code: "error", error: r.error };
+  if (r.status === "error") return { code: "error", error: (r as { error: string }).error };
+  return r.status === "sent" ? { code: "sent" } : undefined;
 }
 
 /** Fotoğraf temizliğinin adımı (src/server/storage/photos.ts cleanupPhotos) */

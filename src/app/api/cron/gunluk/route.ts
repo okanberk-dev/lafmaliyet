@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { countStep, dailyOutcome, digestStep, gunSonuStep, modposStep, photosStep, reminderStep, requestsStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
+import { businessDate } from "@/lib/cash-report";
+import { countStep, dailyOutcome, digestStep, gunSonuStep, modposStep, packageStep, photosStep, reminderStep, requestsStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
 import { weeklyStep, WEEKLY_DEADLINE_MS, type WeeklyRunResult } from "@/lib/weekly/core";
 import { capped, JOB_SEND_DEADLINE_MS, JOB_TAIL_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
@@ -10,6 +11,7 @@ import { dailyKaraoke } from "@/server/karaoke/history";
 import { catchUpLafposDayEnds } from "@/server/lafpos/gun-sonu";
 import { pruneMcp } from "@/server/mcp/store";
 import { isModposConfigured } from "@/server/modpos/client";
+import { sendAccountingPackage } from "@/server/muhasebe/paket";
 import { syncModposAll, type ModposSyncResult } from "@/server/modpos/sync";
 import { pushMonthEndCount } from "@/server/notify/count-push";
 import { runReminderDigest } from "@/server/notify/digest";
@@ -154,8 +156,19 @@ export async function GET(request: NextRequest) {
       { error: "süre doldu" },
     );
   };
+  // Muhasebeci paketi (docs/MUHASEBE-PAKETI.md): ayın 1'inde (gidemezse 2'si, 3'ü) geçen ayın paketi muhasebeci
+  // alıcılarına ekli e-postayla; alıcı yoksa ya da ayar kapalıysa gönderilmez. E-posta tek deneme, kuyruğun 55 sn'sini
+  // aşmadan; adım yalnız gönderilince ya da hata verince yazılır
+  const muhasebeTask = () => {
+    const deadlineAt = tailStepDeadline(jobStart);
+    return capped(
+      sendAccountingPackage({ trigger: "cron", today: businessDate(), opts: { attempts: 1, deadlineAt } }).catch((e: Error) => ({ error: e.message })),
+      deadlineAt - Date.now() + 500,
+      { error: "süre doldu" },
+    );
+  };
   const extras = async () => {
-    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu] = await Promise.all([
+    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu, muhasebe] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
       // Karaoke eşitlemesi ve KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (docs/KARAOKE.md › KVKK); ardından
       // karaoke e-postaları (misafirin hatırlatması, personelin sabah listesi), kuyruğun 55 sn'sini aşmadan
@@ -168,11 +181,13 @@ export async function GET(request: NextRequest) {
       weeklyTask(),
       requestsTask(),
       gunSonuTask(),
+      muhasebeTask(),
     ]);
     const countResult = countStep(count);
     const weeklyResult = weeklyStep(weekly);
     const requestsResult = requestsStep(requests);
     const gunSonuResult = gunSonuStep(gunSonu);
+    const muhasebeResult = packageStep(muhasebe);
     const steps: Record<Exclude<CoreStep, "sync" | "digest">, StepResult> & Partial<Record<OptionalStep, StepResult>> = {
       reminders: reminderStep(reminders),
       karaoke: siteStep(karaoke),
@@ -183,6 +198,7 @@ export async function GET(request: NextRequest) {
       ...(weeklyResult ? { weekly: weeklyResult } : {}),
       ...(requestsResult ? { requests: requestsResult } : {}),
       ...(gunSonuResult ? { gunSonu: gunSonuResult } : {}),
+      ...(muhasebeResult ? { muhasebe: muhasebeResult } : {}),
     };
     return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp, requests }, steps, weekly: weekly.status };
   };

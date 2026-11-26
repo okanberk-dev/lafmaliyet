@@ -35,6 +35,7 @@ describe("dönem kapanışı: veritabanında", { skip: !SERVER_URL && "DONEM_TES
   let server: typeof import("../src/server/closed-period");
   let versions: typeof import("../src/server/data/recipe-versions");
   let loadModel: typeof import("../src/server/data/dataset").loadModel;
+  let pkg: typeof import("../src/server/muhasebe/paket");
   let me: { id: number; name: string };
 
   before(async () => {
@@ -64,6 +65,7 @@ describe("dönem kapanışı: veritabanında", { skip: !SERVER_URL && "DONEM_TES
     server = await import("../src/server/closed-period");
     versions = await import("../src/server/data/recipe-versions");
     loadModel = (await import("../src/server/data/dataset")).loadModel;
+    pkg = await import("../src/server/muhasebe/paket");
   });
 
   after(async () => {
@@ -173,6 +175,25 @@ describe("dönem kapanışı: veritabanında", { skip: !SERVER_URL && "DONEM_TES
     assert.equal(model.ds.invoices.find((i) => i.id === late.id)?.date, businessDate(), "verilen karar dönem açılınca da yerinde kalmalı");
     const del2 = await expenses.deleteExpenseEntry(exp.id);
     assert.equal(del2.ok, true, `açık ayın harcaması silinebilmeli: ${JSON.stringify(del2)}`);
+  });
+
+  test("muhasebeci paketi: ayın faturaları hesap gününe göre, notlarıyla; dosya iner", async () => {
+    // Önceki testin kayıtları: erken fatura, bu aya alınan (başka ayda sayılır), kapalı aya işlenen, açılınca giren
+    const file = await pkg.packageFile(CLOSED);
+    const { packageSummary } = await import("../src/lib/muhasebe/paket");
+    const s = packageSummary(file.data);
+    assert.equal(s.invoices, 3, "bu ayda sayılan üç fatura (başka aya alınan hariç)");
+    assert.equal(s.invoicePayable, 1_350, "ödenecek toplamı hesap gününe göre");
+    const moved = file.data.invoices.find((i) => i.supplier === "Geç Tedarikçi");
+    assert.match(moved?.status ?? "", /bu ayın toplamına girmedi/, "başka aya alınan fatura notuyla listelenmeli");
+    assert.match(file.data.invoices.find((i) => i.supplier === "İkinci Geç")?.status ?? "", /Kapalı aya sonradan işlendi/, "kapalı aya işlenen notlu");
+    assert.ok(file.bytes.byteLength > 1000, "xlsx yazılmalı");
+    assert.equal(file.filename, `laffogato-muhasebe-${CLOSED}.xlsx`, "dosya adı");
+    // Alıcı yokken elle gönderim hata söyler, kendiliğinden gönderim sessizce atlar
+    const manual = await pkg.sendAccountingPackage({ trigger: "manual", month: CLOSED, by: me });
+    assert.equal(manual.status, "error", "alıcı yokken elle gönderim hata vermeli");
+    const auto = await pkg.sendAccountingPackage({ trigger: "cron", today: `${CUR}-01` });
+    assert.deepEqual(auto, { status: "skip", reason: "norecipient" }, "alıcı yokken kendiliğinden gönderim atlanmalı");
   });
 
   test("reçete geçmişi: değişen reçete sürüm yazar, değişmeyen yazmaz", async () => {
