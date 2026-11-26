@@ -333,6 +333,9 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const admin = audience === "admin";
   const readOnly = !can(user.role, "kayit.yaz");
   const owner = user.role === "admin";
+  // Kasadan çıkanın bütün kategorileri (maaş, kira, reklam): yönetici ve muhasebeci. Müdür personelin kategorilerini seçer,
+  // öbür satırların kategori adını görmez (kişisel ücret; docs/ROLLER.md › Kararlar)
+  const allCategories = can(user.role, "kategori.tum");
   const today = businessDate();
   const gun = pick(sp.gun);
   // Personel bugünü ve dünü girer; yönetici herhangi bir geçmiş günü açar. Dünden eski, raporu girilmemiş son 14 gün
@@ -363,7 +366,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
     showForm ? dayWaste(date) : Promise.resolve(null),
     aiStatus(),
     showForm ? cashOutsOn(date) : Promise.resolve([]),
-    showForm ? cashOutCategories(audience) : Promise.resolve([]),
+    showForm ? cashOutCategories(allCategories ? "admin" : "staff") : Promise.resolve([]),
     // Sonraki günün raporu: açılışı bu raporun devriyle karşılaştırılır; varsa personel bu raporu düzeltemez
     showForm ? nextReportAfter(date) : Promise.resolve(null),
     // Kasayı sayan: bu kasayı sayabilecekler (şube kapsamı C P2-3)
@@ -423,9 +426,12 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const [linked, supplierNames, cariHints] = showForm
     ? await Promise.all([admin ? Promise.resolve(new Set<number>()) : loadLinkedCashOuts(ids), loadSupplierNames(), owner ? loadKasaCariHints(ids, today) : Promise.resolve({})])
     : [new Set<number>(), [], {}];
+  const hideName = (o: (typeof outs)[number]) => (o.categoryId !== null && !staffCats.has(o.categoryId) ? { ...o, categoryName: null } : o);
   const dayOuts: CashOutView[] = admin
-    ? outs
-    : outs.map((o) => staffCashOutRow(o.categoryId !== null && !staffCats.has(o.categoryId) ? { ...o, categoryName: null } : o, linked.has(o.id)));
+    ? allCategories
+      ? outs
+      : outs.map(hideName)
+    : outs.map((o) => staffCashOutRow(hideName(o), linked.has(o.id)));
   // Raporun fotoğraf bilgisi: WhatsApp metninin "📷 … fotoğrafı panelde" ve "Fotoğraftan farklı yazılan" satırları
   // e-postadakiyle aynı olsun diye personelin girebildiği her günde (cashReportWhatsapp'ın kuralı). Fotoğrafların
   // kendisini (küçük resim, büyütme) yalnız görebilen görür: yönetici ya da personelin hâlâ düzenleyebildiği gün

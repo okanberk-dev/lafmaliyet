@@ -164,7 +164,11 @@ describe("müdür: şubesinin günlük işletmesi", () => {
 
   test("yetenekleri: işletmeyi yönetir, maaş, vergi, yönetim ve öteki şubeler yok", () => {
     for (const cap of ["kayit.yaz", "isletme.yonet", "kasa.rakam", "onay", "vardiya.yaz", "rapor.sube"] as const) assert.ok(can("manager", cap), cap);
-    for (const cap of ["maas", "yonetim", "muhasebe.oku", "sube.tumu"] as const) assert.equal(can("manager", cap), false, cap);
+    for (const cap of ["maas", "yonetim", "muhasebe.oku", "sube.tumu", "kategori.tum"] as const) assert.equal(can("manager", cap), false, cap);
+    // Kasadan çıkanda maaş, kira gibi kategorileri seçemez ve adını görmez; sunucu da reddeder
+    const outs = read("src/server/actions/cash-outs.ts");
+    assert.match(outs, /if \(opsLevel\(me.role\) === "admin" && !can\(me.role, "kategori.tum"\)\) await assertManagerCategory\(d\);/);
+    assert.match(read("src/app/panel/kasa/page.tsx"), /cashOutCategories\(allCategories \? "admin" : "staff"\)/);
     assert.equal(opsLevel("manager"), "admin");
     assert.equal(adminLevel("manager"), "staff");
     assert.equal(cashAudience("manager"), "admin");

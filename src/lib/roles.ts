@@ -45,6 +45,12 @@ export const CAPABILITIES = {
   "rapor.sube": ["admin", "manager"],
   /** Muhasebe ekranları (salt okunur): faturalar, gelir-gider, vergi, aylık harcamalar, muhasebeci paketi */
   "muhasebe.oku": ["admin", "accountant"],
+  /**
+   * Kasadan çıkanın bütün gider kategorileri (maaş, kira, reklam): seçmek ve satırda adını görmek. Müdür personelin
+   * kategorilerini seçer (malzeme, bakım, temizlik); öbür satırın tutarını görür, kategori adını görmez (kasadan ödenen
+   * maaş ve avans kişisel ücrettir)
+   */
+  "kategori.tum": ["admin", "accountant"],
   /** Maaşlar ve kişisel ücretler: Maaşlar, avanslar, bordro dökümü (kişi kişi), personel belgeleri */
   maas: ["admin"],
   /** Yönetim: ayarlar, kullanıcılar, Paraşüt, yedek, anahtarlar, şube ayarları, Claude bağlantısı, tam dışa aktarım */
