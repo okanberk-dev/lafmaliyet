@@ -14,11 +14,11 @@ import { countUnitHint, groupForCategory, historyText, nearMatch, vatForGroup } 
 import { createModel, type WaterCost } from "../src/lib/calc/engine";
 import { parsePercentInput } from "../src/lib/calc/expr";
 import type { Settings } from "../src/lib/calc/types";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const ds = excelToDataset(data);
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const ds = datasetFromSeed(data);
 const full = createModel(ds);
 const slim = impactData(full);
 const base = impactModel(slim);

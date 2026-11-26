@@ -12,10 +12,10 @@ import { liveTotals, type CountLineValue } from "../src/app/panel/sayim/logic";
 import { prepareBreakdown, type BreakdownGroup } from "../src/lib/breakdown";
 import { countFactor, createModel, type Model } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
-const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
-const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(readFileSync(join(__dirname, "..", "tests/fixtures/baslangic/veri.json"), "utf8"));
+const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const groupsSum = (gs: BreakdownGroup[]) => sum(gs.filter((g) => !g.apart).flatMap((g) => g.rows.map((r) => r.amount)));
 const close = (a: number, b: number, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≠ ${b}`);

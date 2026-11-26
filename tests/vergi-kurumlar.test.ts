@@ -17,7 +17,7 @@ import { taxMonths, taxPnlInputFromModel, taxQuarters } from "../src/lib/tax/pnl
 import { r2 } from "../src/lib/tax/rules";
 import { DEFAULT_TAX_SETTINGS, type TaxSettings } from "../src/lib/tax/settings";
 import { geciciStamp, kvStamps } from "../src/lib/tax/stamp";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const S_A: TaxSettings = { ...DEFAULT_TAX_SETTINGS, periodStart: "2026-01-01" };
 const close = (a: number, b: number, msg: string, eps = 0.0101) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} ≠ ${b}`);
@@ -228,8 +228,8 @@ test("C: indirim zarar yaratmaz (kümülatif 2.000, indirim 3.000 → matrah 0)"
 
 // ---------------------------------------------------------------- Excel verisi (Örnek C) ve durum
 
-const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
-const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(readFileSync(join(__dirname, "..", "tests/fixtures/baslangic/veri.json"), "utf8"));
+const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const TODAY = "2026-10-24";
 
 function excel(dsOver: Partial<Dataset> = {}, settings: TaxSettings = DEFAULT_TAX_SETTINGS, filings: TaxFiling[] = []) {

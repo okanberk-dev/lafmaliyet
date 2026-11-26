@@ -31,7 +31,7 @@ import {
 import { branchSwitchDay, LAFPOS_BRANCH_ID, lafposCountFrom, lafposSalesFrom, modposListCounts, monthSource } from "../src/lib/lafpos/switch";
 import { addDays, dayAblativeTR, monthEnd, shiftMonth } from "../src/lib/reminders";
 import { readCoverage } from "../src/lib/sales-coverage";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 /** dayMonthTR'nin bölünmez boşluğu düz boşluğa, aralığın sözcük birleştiricisi atılır (metin karşılaştırması okunur kalsın) */
@@ -312,8 +312,8 @@ test("birleştirme: Tümü'de Tuzla'nın yarım listesi ve Marina'nın LafPOS g�
 });
 
 test("model: yalnız LafPOS olan ayda satır, reçeteye göre tüketim ve karaoke payı (KDV %20) ModPOS listesindekiyle aynı", () => {
-  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-  const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-11" };
+  const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+  const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-11" };
   const sept = base.salesLines.filter((l) => l.month === "2026-09");
   // Kasım LafPOS'tan: Eylül'ün satırları LafPOS ay toplamı olarak; aynı aya yüklenmiş eski bir ModPOS listesi sayılmaz
   const r = mergeSalesSources({

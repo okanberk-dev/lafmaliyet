@@ -54,7 +54,7 @@ import {
 import { failedText, headlineOf, recipientsText, subjectOf, trendText, weeklyLogText, weeklyStatusText, weekRangeText } from "../src/lib/weekly/text";
 import { APP_URL } from "../src/server/notify/digest-template";
 import { renderWeekly, WEEKLY_FOOTER } from "../src/server/notify/weekly-template";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 import type { TaxPlanFeed } from "../src/lib/tax/view";
 import { esc } from "../src/lib/email-kit";
 
@@ -451,8 +451,8 @@ test("zayi ve ikram: önceki dört haftanın ortalamasının 1,5 katı ve en az 
 });
 
 test("zayi maliyeti motorun kuralıyla: bir ayın kayıtlarının toplamı wasteSummary'ninkiyle aynı (Excel verisi)", () => {
-  const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
-  const base = excelToDataset(data);
+  const data: SeedData = JSON.parse(readFileSync(join(__dirname, "..", "tests/fixtures/baslangic/veri.json"), "utf8"));
+  const base = datasetFromSeed(data);
   const product = base.products.find((p) => p.name === "Latte")!;
   const milk = base.ingredients.find((i) => i.name === "Süt %2,5")!;
   const entries: Dataset["wasteEntries"] = [

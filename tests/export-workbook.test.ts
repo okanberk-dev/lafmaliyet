@@ -11,18 +11,18 @@ import ExcelJS from "exceljs";
 
 import { createModel } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
-import { excelToDataset, investmentSeed, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, investmentSeed, type SeedData } from "./fixtures/baslangic";
 
 import { buildWorkbook, excelDate, fixedRangeInYear, GUIDE_SHEET, investmentDate, invoiceCategories, pnlYearTotal, waterExplanation } from "../src/app/api/export/workbook";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
 const golden = JSON.parse(readFileSync(join(root, "tests/golden.json"), "utf8"));
 const NOW = new Date("2026-10-20T10:00:00Z");
 
 /** Excel'in verisi ve varsayımı: bütün satışa tek KDV oranı (karaoke dahil %10; panelin hizmet ayrımı calc.test.ts'te) */
 function dataset(): Dataset {
-  const ds = excelToDataset(data);
+  const ds = datasetFromSeed(data);
   ds.currentMonth = "2026-10";
   ds.settings = { ...ds.settings, kdvHizmet: ds.settings.kdv };
   return ds;

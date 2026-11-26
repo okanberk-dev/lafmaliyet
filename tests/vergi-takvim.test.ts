@@ -18,7 +18,7 @@ import { type MuhtasarItem, muhtasarItemsFromModel } from "../src/lib/tax/muhtas
 import { taxPnlInputFromModel } from "../src/lib/tax/pnl";
 import type { TaxSettings } from "../src/lib/tax/settings";
 import { buildTaxView, type TaxView } from "../src/lib/tax/view";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 import {
   defaultQuarter,
@@ -140,8 +140,8 @@ test("G: varsayılan yıl ve çeyrek; yıl seçicisi 2026 boyunca yok", () => {
 
 // ---------------------------------------------------------------- Excel verisinde takvim (24.10.2026)
 
-const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
-const excel = excelToDataset(data);
+const data: SeedData = JSON.parse(readFileSync(join(__dirname, "..", "tests/fixtures/baslangic/veri.json"), "utf8"));
+const excel = datasetFromSeed(data);
 // Excel faturalarının KDV'si boş; Eylül KDV-2'si (1.800) yalnız Paraşüt'ün KDV toplamıyla çıkar: Beyza Karaman faturasına
 // (30.000 + 4.200 ödenecek) KDV 6.000 yazılır, tevkifat 1.800 (denetim notu, drift §3)
 const base: Dataset = { ...excel, currentMonth: "2026-10", invoices: excel.invoices.map((i) => (i.supplier === "Beyza Karaman" ? { ...i, vat: 6000 } : i)) };

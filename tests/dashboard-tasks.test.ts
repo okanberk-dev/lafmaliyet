@@ -13,7 +13,7 @@ import type { Dataset, PnlEntry } from "../src/lib/calc/types";
 import type { UpcomingItem } from "../src/lib/reminders";
 import { money } from "../src/lib/format";
 import { lafposMonthStatus } from "../src/lib/lafpos/sales";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 import {
   defaultTaskMonth,
   monthCashOuts,
@@ -28,8 +28,8 @@ import {
 } from "../src/app/panel/dashboard-tasks";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const model = createModel(ds);
 
 const NO_PAYMENTS: PaymentFacts = { overdue: 0, overdueTotal: 0, soon: 0, soonTotal: 0, unpaidInvoices: 0, unpaidTotal: 0 };

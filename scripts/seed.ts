@@ -1,9 +1,10 @@
-// Excel'den çıkarılan başlangıç verisini veritabanına yükler.
+// Başlangıç verisini (tests/fixtures/baslangic/veri.json; ilk kurulumda eski hesap tablosundan bir kez aktarıldı)
+// veritabanına yükler.
 // Kullanım:
 //   npm run db:seed                        -> veritabanı boşsa yükler
 //   npm run db:reset [-- --onay=<sunucu>]  -> kullanıcılar hariç verinin çoğunu silip yeniden yükler (README › db:reset)
 // İkisi de hazır kontrol listelerini (Açılış, Kapanış) bir kez ekler; dolu veritabanında da (canlıya ilk çıkış). Ürünler
-// Excel'de boş bıraktığı zayi oranlarını kategorilerinden alır (src/lib/fire-defaults.ts).
+// eski tablonun boş bıraktığı zayi oranlarını kategorilerinden alır (src/lib/fire-defaults.ts).
 //
 // db:reset geri alınamaz: bu bilgisayarda olmayan bir veritabanında (Neon) sunucu adıyla onay ister (db:restore gibi;
 // .env.local canlının adresini gösteriyorsa yerel sanılan sıfırlama canlıyı silmesin) ve silmeden önce her zaman tam
@@ -44,7 +45,7 @@ import { hashPassword } from "../src/server/auth/password";
 import { appVersion, writeBackupFile } from "../src/server/backup/core";
 import { createDb, type DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
-import { excelToDataset, investmentSeed, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, investmentSeed, readSeedData } from "../tests/fixtures/baslangic";
 
 const SERIAL_TABLES = [
   "categories",
@@ -268,7 +269,7 @@ export function resetCheck(
   if (confirm !== null) return { ok: false, error: `Onay tutmuyor: --onay=${target.host} yazın (sunucu adı). Hiçbir şey silinmedi.` };
   return {
     ok: false,
-    warning: `Bu veritabanındaki ürünler, faturalar (vergi demirbaş listesiyle), satışlar, sayımlar ve ayarlar silinip Excel verisi yüklenecek: ${target.label}.`,
+    warning: `Bu veritabanındaki ürünler, faturalar (vergi demirbaş listesiyle), satışlar, sayımlar ve ayarlar silinip başlangıç verisi yüklenecek: ${target.label}.`,
   };
 }
 
@@ -285,7 +286,7 @@ export function cariResetBlock(entries: number, wipe: boolean, backupFile: strin
  * db:reset'in vergi demirbaş listesi notu (dalga 12, K32; saf): `tax_assets` faturalara bağlı olduğu için `TRUNCATE
  * invoices … CASCADE` onu da boşaltır. Elle girilmiş liste durdurmaz (yedekte kalır), silineceği söylenir. Vergi
  * kayıtları (muhasebecinin rakamları, düzeltmeler) ve vergi ayarları kalır; sabit gider ve aylık harcama kategorisinin
- * vergi belgesi kendi satırıyla birlikte gider ya da kalır (sabit giderler Excel'den yeniden yüklenir, sınıflandırmasız)
+ * vergi belgesi kendi satırıyla birlikte gider ya da kalır (sabit giderler başlangıç verisinden yeniden yüklenir, sınıflandırmasız)
  */
 export function taxAssetsResetNote(assets: number): string | null {
   return assets ? `Vergi demirbaş listesi de silinecek (${assets} varlık; yedekte duruyor, Vergi › Demirbaş'tan yeniden girilir).` : null;
@@ -346,10 +347,8 @@ export async function runSeed({
       return;
     }
 
-    const raw: ExcelData = JSON.parse(
-      readFileSync(join(process.cwd(), "src/server/db/seed/excel-data.json"), "utf8"),
-    );
-    const ds = excelToDataset(raw);
+    const raw = readSeedData();
+    const ds = datasetFromSeed(raw);
 
     if (reset) {
       // Silmeden önce tam yedek (yüklenen belgeler dahil): yanlış veritabanı sıfırlandıysa db:restore ile geri gelir
@@ -368,7 +367,7 @@ export async function runSeed({
 
     await db.transaction(async (tx) => {
       // Zayi ve ikram kayıtları kalır (kasa raporları ve kasadan çıkanlar gibi): TRUNCATE … CASCADE ürünlere bağlı
-      // oldukları için onları da boşaltır; önce okunur, Excel verisinden sonra aynı kimliklerle geri yazılır
+      // oldukları için onları da boşaltır; önce okunur, başlangıç verisinden sonra aynı kimliklerle geri yazılır
       const keptWaste = reset ? await tx.select().from(s.wasteEntries) : [];
       if (reset) {
         await tx.execute(
@@ -427,10 +426,10 @@ export async function runSeed({
             changedAt: new Date("2026-10-17T12:00:00+03:00"),
           })),
       );
-      // Excel'de zayi oranı boş ürünler kategorisinin oranını alır (0012_zayi_oranlari'nın kuralları)
+      // Başlangıç verisinde zayi oranı boş ürünler kategorisinin oranını alır (0012_zayi_oranlari'nın kuralları)
       await tx.insert(s.products).values(withFireDefaults(ds.products, ds.categories));
       await tx.insert(s.recipeItems).values(ds.recipeItems);
-      // Excel'in ay bilgileri elle yazılmış değerlerdir (sıfırlar dahil); kasa raporundan gelen bir şey yok
+      // Başlangıç verisinin ay bilgileri elle yazılmış değerlerdir (sıfırlar dahil); kasa raporundan gelen bir şey yok
       await tx.insert(s.months).values(
         ds.months.map((m) => ({ month: m.month, openDays: m.openDays, posRevenue: m.posRevenue, discounts: m.discounts, offRevenue: m.offRevenue, note: m.note })),
       );
@@ -457,7 +456,7 @@ export async function runSeed({
       await tx.insert(s.activityLog).values({
         userName: "Sistem",
         action: IMPORT_ACTIVITY_LABEL,
-        detail: `${raw.meta.source}: ${ds.ingredients.length} hammadde, ${ds.products.length} ürün, ${ds.salesLines.length} satış satırı, ${ds.invoices.length} fatura`,
+        detail: `Başlangıç verisi: ${ds.ingredients.length} hammadde, ${ds.products.length} ürün, ${ds.salesLines.length} satış satırı, ${ds.invoices.length} fatura`,
       });
       // Kalan zayi / ikram kayıtları: aynı kimlikte aynı adla geri gelen ürüne ya da hammaddeye bağlı kalır, yoksa adıyla
       if (keptWaste.length) await tx.insert(s.wasteEntries).values(relinkWaste(keptWaste, ds.products, ds.ingredients));
@@ -471,7 +470,7 @@ export async function runSeed({
         );
       }
       // Sayıma sonradan eklenen sekiz kalem (çilek, cookie, lemon tea, hazelnut şurubu; vanilya sos; yaban mersini ve
-      // böğürtlen püre; klips kapak): migration'ları boş veritabanında bir şey eklemez, Excel yüklendikten sonra aynı
+      // böğürtlen püre; klips kapak): migration'ları boş veritabanında bir şey eklemez, başlangıç verisi yüklendikten sonra aynı
       // dosya burada çalışır ki taze ortam ve sıfırlanan veritabanı canlıyla aynı listeyi görsün (denetim E-29). Sayaçlar
       // ileri alındıktan sonra; aynı ad varsa atlar. Reçeteler değişmez (hangi ürünün kullandığı sahibin cevabını bekliyor)
       await tx.execute(sql.raw(countItemsSql()));
@@ -479,7 +478,7 @@ export async function runSeed({
 
     const [{ total }] = await db.select({ total: count() }).from(s.ingredients);
     console.log(
-      `✓ Excel verisi yüklendi: ${ds.ingredients.length} hammadde (+${total - ds.ingredients.length} sayım kalemi), ${ds.products.length} ürün, ` +
+      `✓ Başlangıç verisi yüklendi: ${ds.ingredients.length} hammadde (+${total - ds.ingredients.length} sayım kalemi), ${ds.products.length} ürün, ` +
         `${ds.recipeItems.length} reçete satırı, ${ds.salesLines.length} satış satırı, ${ds.invoices.length} fatura`,
     );
     await ensureAdmin(db);

@@ -22,10 +22,10 @@ import { createModel } from "../src/lib/calc/engine";
 import { applyScenario, scenarioBase, type ScenarioBase } from "../src/lib/calc/insights";
 import type { Dataset } from "../src/lib/calc/types";
 import { pct, tl } from "../src/lib/format";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
-const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
-const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(readFileSync(join(__dirname, "..", "tests/fixtures/baslangic/veri.json"), "utf8"));
+const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const model = createModel(ds);
 const month = model.salesMonths.at(-1)!;
 const acikGun = model.settings.acikGun;

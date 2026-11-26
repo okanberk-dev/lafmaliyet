@@ -11,11 +11,11 @@ import type { Dataset, FixedExpense } from "../src/lib/calc/types";
 import { muhtasarItemsFromModel } from "../src/lib/tax/muhtasar";
 import { bridge, taxMonths, taxPnlInputFromModel } from "../src/lib/tax/pnl";
 import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-11" };
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-11" };
 const close = (a: number, b: number, msg: string, eps = 0.01) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} ≠ ${b}`);
 const kira = base.fixedExpenses.find((f) => f.name === "Kira")!;
 const withKira = (patch: Partial<FixedExpense>): Dataset => ({ ...base, fixedExpenses: base.fixedExpenses.map((f) => (f.id === kira.id ? { ...f, vatRate: 0, ...patch } : f)) });

@@ -1,6 +1,6 @@
 // Hiç cari kaydı yokken bugünkü rakamlar değişmez (docs/planlar: cari §9 sabit testleri). Planın tabanındaki
 // fonksiyonlar (main @ 48a984c; aşağıda harfi harfine kopyalandı) yeni fonksiyonlarla yan yana, seed verisinin
-// faturalarıyla (excel-data.json) ve onlardan türetilen rastgele ödeme durumlarıyla (tohumlu): tedarikçinin Kalan
+// faturalarıyla (tests/fixtures/baslangic/veri.json) ve onlardan türetilen rastgele ödeme durumlarıyla (tohumlu): tedarikçinin Kalan
 // borç, Vadesi geçen ve 7 gün içinde kartları (summarize → accountOf), Ödemeler'in tutarları ve sırası
 // (upcomingItems, laterInvoiceItems), nakit planının toplamları (buildCashPlan), Bu ay ödenen (paidInMonth →
 // paymentEvents), Son ödeme, Excel'in Kalan borç sütunu, ödenmemiş fatura özeti ve Genel bakış uyarısı.
@@ -21,10 +21,10 @@ import { accountOf, lastPaymentOf, netCredit, paidInMonthOf, paymentEvents } fro
 import { cariHints, upcomingWithCari } from "../src/lib/cari/upcoming";
 import { buildCashPlan, type CashPlanInput } from "../src/lib/cash-plan";
 import { addDays, daysBetween, dueNotifications, laterInvoiceItems, upcomingItems, type ReminderRow, type UnpaidInvoiceRow, type UpcomingItem } from "../src/lib/reminders";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
 
 // ---------------------------------------------------------------- Tabandaki kurallar (harfi harfine)
 
@@ -107,7 +107,7 @@ function rng(seed: number) {
 
 /** Seed faturaları olduğu gibi, sonra her tohumda ödeme durumu, Paraşüt kalanı, vade ve talep rastgele */
 function variants(): Invoice[][] {
-  const base = excelToDataset(data).invoices;
+  const base = datasetFromSeed(data).invoices;
   const out: Invoice[][] = [base.map((i) => ({ ...i, outstanding: null }))];
   for (let seed = 1; seed <= 12; seed++) {
     const r = rng(seed);
@@ -291,7 +291,7 @@ test("nakit planı: fatura kalemleri aynı olduğu için bütün toplamlar aynı
 test("ödenmemiş fatura özeti ve Genel bakış uyarısı aynı", () => {
   for (const list of variants()) {
     assert.deepEqual(unpaidSummary(list), oldUnpaidSummary(list));
-    const ds: Dataset = { ...excelToDataset(data), invoices: list, currentMonth: "2026-10" };
+    const ds: Dataset = { ...datasetFromSeed(data), invoices: list, currentMonth: "2026-10" };
     const model = createModel(ds);
     const alert = alerts(model, "2026-10").find((a) => a.title.endsWith("fatura ödenmemiş görünüyor"));
     const open = list.filter((i) => i.unpaid);
@@ -312,7 +312,7 @@ test("ödenmemiş fatura özeti ve Genel bakış uyarısı aynı", () => {
 
 test("Excel: Faturalar sekmesinin Kalan borç sütunu aynı", () => {
   for (const list of variants().slice(0, 4)) {
-    const ds: Dataset = { ...excelToDataset(data), invoices: list, currentMonth: "2026-10" };
+    const ds: Dataset = { ...datasetFromSeed(data), invoices: list, currentMonth: "2026-10" };
     const model = createModel(ds);
     const wb = buildWorkbook(model, "2026-09", { investments: [], findings: [], now: new Date("2026-10-24T10:00:00Z"), outstanding: new Map(list.map((i) => [i.id, i.outstanding ?? null])) });
     const ws = wb.getWorksheet("Faturalar")!;

@@ -52,16 +52,16 @@ import {
   type UpcomingHint,
   type UpcomingItem,
 } from "../src/lib/reminders";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const seed = () =>
-  excelToDataset(
+  datasetFromSeed(
     JSON.parse(
       readFileSync(
-        join(__dirname, "..", "src/server/db/seed/excel-data.json"),
+        join(__dirname, "..", "tests/fixtures/baslangic/veri.json"),
         "utf8",
       ),
-    ) as ExcelData,
+    ) as SeedData,
   );
 
 const TODAY = "2026-10-30";

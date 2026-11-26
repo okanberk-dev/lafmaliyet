@@ -23,12 +23,12 @@ import {
   unmatchedIkramNames,
   type LafposIkramData,
 } from "../src/lib/lafpos/ikram";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 import { renderCashReport } from "../src/server/notify/cash-report-template";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-11" };
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-11" };
 const plain = (s: string | null | undefined) =>
   (s ?? "")
     .replace(/[\u00a0\u202f]/g, " ")

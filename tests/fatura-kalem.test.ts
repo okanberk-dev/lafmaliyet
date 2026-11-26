@@ -21,7 +21,7 @@ import { addIgnoredSupplier, notIngredientOf, parseIgnored, parseIgnoredSupplier
 import { lineAssetCandidates } from "../src/lib/tax/assets";
 import { taxMonths, taxPnlInputFromModel } from "../src/lib/tax/pnl";
 import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 import { pickCategory } from "../src/server/parasut/mapping";
 
 const root = join(__dirname, "..");
@@ -74,8 +74,8 @@ test("kalemin hedefi: bağlı → mal; nedenli hammadde değil → nedeninin yer
 });
 
 // ---------------------------------------------------------------- Gelir-gider ve mal maliyeti
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const excel: Dataset = excelToDataset(data);
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const excel: Dataset = datasetFromSeed(data);
 const sarf: ExpenseCategory = { id: 90, name: "Temizlik & sarf malzemesi", section: "genel", panelGroup: "diger", invoiceCategory: SUPPLIES_CATEGORY, monthly: false, active: true, sortOrder: 90 };
 const MONTH = "2026-11";
 const inv = (id: number, supplier: string, category: string, amount: number, discount: number, lines?: Invoice["lines"]): Invoice =>

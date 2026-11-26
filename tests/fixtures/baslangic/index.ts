@@ -1,8 +1,16 @@
-// excel-data.json (Excel'den çıkarılan ham veri) -> hesaplama motorunun Dataset'i.
-// Hem veritabanı seed betiği hem de Excel karşılaştırma testleri bunu kullanır.
+// Başlangıç verisi (veri.json) -> hesaplama motorunun Dataset'i.
+//
+// veri.json panelin ilk kurulumunda eski hesap tablosundan bir kez aktarıldı (Ekim 2026); kaynağı depoda yok, yeniden
+// üretilmez. Uygulama bu dosyayı kullanmaz: yerel ve test veritabanını dolduran tohum betiği (scripts/seed.ts,
+// `npm run db:seed`) ile hesap motorunun altın testleri (tests/golden.json'a karşı) kullanır. Değerleri DEĞİŞTİRMEYİN:
+// testlerin beklenen rakamları bu değerlerden gelir. Dosya kişisel veri taşır (maaşlar, kira, faturalar, satışlar):
+// depo bu yüzden gizli kalır (docs/DEPLOY.md § 1). Canlıda boş veritabanına kendiliğinden yüklenmez (§ 5).
 
-import { DEFAULT_SETTINGS } from "../../../lib/constants";
-import { productKey } from "../../../lib/calc/engine";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { DEFAULT_SETTINGS } from "../../../src/lib/constants";
+import { productKey } from "../../../src/lib/calc/engine";
 import type {
   CountUnit,
   Dataset,
@@ -11,9 +19,17 @@ import type {
   PriceSource,
   Size,
   Unit,
-} from "../../../lib/calc/types";
+} from "../../../src/lib/calc/types";
 
-export interface ExcelData {
+/** Verinin dosyası, depo kökünden */
+export const SEED_DATA_FILE = "tests/fixtures/baslangic/veri.json";
+
+/** Başlangıç verisini okur (`root`: depo kökü) */
+export function readSeedData(root = process.cwd()): SeedData {
+  return JSON.parse(readFileSync(join(root, SEED_DATA_FILE), "utf8")) as SeedData;
+}
+
+export interface SeedData {
   meta: { source: string; extractedAt: string; preparedNote: string };
   settings: Record<string, number>;
   productCategories: string[];
@@ -89,7 +105,7 @@ export interface ExcelData {
 }
 
 /**
- * Excel'de ödeme durumu açıklamaya yazılmıştı ("Kaldi (Gider listesi, ödenmedi)"). Durum ayrı alanda (unpaid)
+ * Eski tabloda ödeme durumu açıklamaya yazılmıştı ("Kaldi (Gider listesi, ödenmedi)"). Durum ayrı alanda (unpaid)
  * tutulduğu için açıklamadan atılır; yoksa fatura ödenince "ödenmedi" yazısı yeşil "Ödendi" rozetiyle çelişir.
  */
 export function cleanInvoiceDescription(d: string | null): string | null {
@@ -99,7 +115,7 @@ export function cleanInvoiceDescription(d: string | null): string | null {
 }
 
 /**
- * Tek seferlik yatırımların dönemi. Excel yalnızca XND için tarih veriyor (Temmuz 2026); diğerleri fatura tarihlerinden:
+ * Tek seferlik yatırımların dönemi. Eski tablo yalnızca XND için tarih veriyordu (Temmuz 2026); diğerleri fatura tarihlerinden:
  * Aria 07.07.2026, reklam (Beyza Karaman) 17.09.2026. Tabela/baskı Temmuz–Eylül arasındaki üç faturanın toplamı,
  * klişe bedelinin faturası yok: dönem boş bırakılır.
  */
@@ -112,7 +128,8 @@ export function investmentSeed(x: { name: string; amount: number; note: string |
   return { ...x, date: null };
 }
 
-export function excelToDataset(data: ExcelData): Dataset {
+/** Başlangıç verisinden hesap motorunun Dataset'i (kimlikler sırayla 1'den; tohum betiği de aynı kimliklerle yazar) */
+export function datasetFromSeed(data: SeedData): Dataset {
   const ingredients = data.ingredients.map((i, idx) => ({
     id: idx + 1,
     name: i.name,
@@ -193,7 +210,7 @@ export function excelToDataset(data: ExcelData): Dataset {
     months: data.months.map((m) => ({ ...m })),
     salesLines,
     invoices: data.invoices.map((inv, idx) => ({ id: idx + 1, ...inv, description: cleanInvoiceDescription(inv.description) })),
-    // Excel'deki personel ve sabit giderler bütün aylarda geçerli (başlangıç / bitiş ayı yok, tutar değişikliği yok)
+    // Eski tablodaki personel ve sabit giderler bütün aylarda geçerli (başlangıç / bitiş ayı yok, tutar değişikliği yok)
     staff: data.staff.map((s, idx) => ({ id: idx + 1, ...s, active: true, startMonth: null, endMonth: null })),
     staffVersions: [],
     fixedExpenses: data.fixedExpenses.map((f, idx) => ({

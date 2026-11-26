@@ -15,11 +15,11 @@ import { evaluateExpression, formulaParams, validateExpression } from "../src/li
 import type { Dataset } from "../src/lib/calc/types";
 import { DEFAULT_SETTINGS, RECIPE_PARAMS, settingsFromRows } from "../src/lib/constants";
 import { NOT_PUMPED, notPumped, pumpCount, pumpHint, pumpOf, type PumpLine } from "../src/lib/recipe-pump";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (f: string) => readFileSync(join(root, f), "utf8");
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
 const st = DEFAULT_SETTINGS;
 
 // ---------------------------------------------------------------- Ayar ve formül
@@ -85,7 +85,7 @@ test("kaydı olmayan veritabanı varsayılanı okur; kayıtlı değer ve bilinme
   assert.equal(settingsFromRows([]).pompaPure, 30);
   assert.equal(settingsFromRows([{ key: "pompaPure", value: 25 }]).pompaPure, 25);
   // Excel verisinde de yok: seed varsayılanı yazar
-  assert.equal(excelToDataset(data).settings.pompaPure, 30);
+  assert.equal(datasetFromSeed(data).settings.pompaPure, 30);
   // loadSettings bu kuralı kullanır
   assert.match(read("src/server/data/dataset.ts"), /return \{ \.\.\.settingsFromRows\(rows\), lafposGecisGunu: switchDay, acikGun: calendar\.value\.openDays \};/);
 });
@@ -110,7 +110,7 @@ test("Ayarlar: alan şurup pompasının ardında, formül adıyla; eylem anahtar
 });
 
 test("formülle bağlı püre satırı: 1,5*PurePompa varsayılanla 45 ml, ölçü değişince birlikte değişir", () => {
-  const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+  const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
   const product = ds.products.find((p) => p.name === "Strawberry" && p.size === "M")!;
   const puree = ds.ingredients.find((i) => i.name === "Çilek püre")!;
   const item = ds.recipeItems.find((r) => r.productId === product.id && r.ingredientId === puree.id)!;
@@ -179,7 +179,7 @@ test("pompa karşılığı yok: 0 miktar, ml dışı birim, ambalaj, yazılmamı
 });
 
 test("Excel reçeteleri: püre satırları püre pompasıyla, formüllü şurup satırları şurup pompasıyla", () => {
-  const model = createModel({ ...excelToDataset(data), currentMonth: "2026-10" });
+  const model = createModel({ ...datasetFromSeed(data), currentMonth: "2026-10" });
   const hint = (key: string, ingredient: string) => {
     const p = model.products.find((x) => x.key === key)!;
     const l = p.lines.find((x) => x.ingredient?.name === ingredient)!;
@@ -239,7 +239,7 @@ test("pompayla verilmeyenler: limon özü ve kondanse süt Sos & Şurup'ta olsa 
   assert.equal(pumpHint(L({ qty: 80, category: "Sos & Şurup", name: "Limon özü" }), st), null, "Limonata'da '8 pompa' yazmaz");
 
   // Excel reçeteleri: Limon özü ve Condensed milk satırlarında pompa yok, şuruplarda var
-  const model = createModel({ ...excelToDataset(data), currentMonth: "2026-10" });
+  const model = createModel({ ...datasetFromSeed(data), currentMonth: "2026-10" });
   const lines = model.products.flatMap((p) => p.lines.filter((l) => l.ingredient).map((l) => ({ p, l })));
   const hintOf = ({ l }: (typeof lines)[number]) =>
     pumpHint({ qty: l.qty, unit: l.ingredient!.unit, qtyExpr: l.item.qtyExpr, category: l.ingredient!.category, name: l.ingredient!.name, packaging: l.isPackaging }, model.settings);

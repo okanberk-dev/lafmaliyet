@@ -12,10 +12,10 @@ import { createModel } from "../src/lib/calc/engine";
 import { fixedCostsForMonth } from "../src/lib/calc/insights";
 import type { Dataset, ExpenseCategory, ExpenseEntry } from "../src/lib/calc/types";
 import { FIXED_ESTIMATE_DESCRIPTION } from "../src/lib/constants";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
-const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
-const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(readFileSync(join(__dirname, "..", "tests/fixtures/baslangic/veri.json"), "utf8"));
+const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const M = "2026-09";
 
 const cat = (p: Partial<ExpenseCategory> & Pick<ExpenseCategory, "id" | "name">): ExpenseCategory => ({

@@ -29,12 +29,12 @@ import {
 } from "../src/lib/site-sales/calc";
 import { monthRange, parseSiteSales, readSalesRecord, SiteSalesFormatError, type SiteSales, type SiteSalesMonth } from "../src/lib/site-sales/schema";
 import { renderCashReport } from "../src/server/notify/cash-report-template";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 
 const close = (a: number | null | undefined, b: number, msg?: string, eps = 1e-6) => assert.ok(a !== null && a !== undefined && Math.abs(a - b) < eps, `${msg ?? ""}: ${a} ≠ ${b}`);
 

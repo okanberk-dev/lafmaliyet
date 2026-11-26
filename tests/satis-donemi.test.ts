@@ -16,12 +16,12 @@ import type { Dataset, SalesLine } from "../src/lib/calc/types";
 import { resolveMonth, tillMonths, type TillRow } from "../src/lib/cash-month";
 import { addDays } from "../src/lib/reminders";
 import { branchCoverage, coverageFor, legacyCoveragePins, parseBranchCoverage, parseCoverage, readCoverage } from "../src/lib/sales-coverage";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-11" };
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-11" };
 
 function close(actual: number | null | undefined, expected: number, label: string, eps = 1e-6) {
   assert.ok(actual !== null && actual !== undefined && Math.abs(actual - expected) < eps, `${label}: beklenen ${expected}, bulunan ${actual}`);

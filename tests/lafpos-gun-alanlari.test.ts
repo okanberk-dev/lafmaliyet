@@ -28,7 +28,7 @@ import { monthSummary } from "../src/lib/mcp/answers/month";
 import { lafposMonthNotes, lafposMonthStatus, mergeSalesSources } from "../src/lib/lafpos/sales";
 import { IPTAL_ZAYI_REASON, iptalWasteLines, lafposCompKind, lafposIkramCheck, lafposLineKind, lafposListByKind, lafposReasonText, lafposZKinds, recordedOffRevenue } from "../src/lib/lafpos/ikram";
 import { okcReconcile } from "../src/lib/okc-z";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 import { renderCashReport } from "../src/server/notify/cash-report-template";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
@@ -234,8 +234,8 @@ test("iptal: hazırlanmış kalem zayi tüketimidir (\"İptal (hazırlanmıştı
 });
 
 test("motor: hazırlanmış iptal kayıtlı zayi tüketimine girer (LafPOS'un zayi satırı gibi)", () => {
-  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-  const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-11" };
+  const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+  const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-11" };
   const product = ds.products.find((p) => p.active && ds.recipeItems.some((x) => x.productId === p.id))!;
   const [line] = iptalWasteLines("2026-11-22", [{ posName: "LATTE MEDIUM", siteMenuId: null, slot: null, qty: 2, listValue: 390, prepared: true, reason: "Müşteri gitti", refund: false }], () => ({ productId: product.id, isService: false }));
   const model = createModel({ ...ds, wasteEntries: [], lafposIkram: { switchDay: "2026-11-22", days: ["2026-11-22"], lines: [line] } });
@@ -439,8 +439,8 @@ const MODPOS_DAYS: [string, number, number, number, number, number][] = [
 const KABUL_VAT = [{ rate: 10, base: 5713.64, vat: 571.36 }];
 
 function novemberModel(rows: TillRow[], switchDay: string | null = "2026-11-22") {
-  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-  const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-12" };
+  const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+  const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-12" };
   const [till] = tillMonths(rows, "2026-11-30", undefined, undefined, undefined, undefined, undefined, true, switchDay);
   const nov = resolveMonth("2026-11", undefined, till);
   const ds: Dataset = { ...base, settings: { ...base.settings, lafposGecisGunu: switchDay }, salesLines: base.salesLines.filter((l) => l.month !== "2026-11"), months: [...base.months.filter((m) => m.month !== "2026-11"), nov] };

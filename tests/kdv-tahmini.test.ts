@@ -35,14 +35,14 @@ import {
 } from "../src/lib/kdv";
 import { siteRevenue, siteVat } from "../src/lib/site-sales/calc";
 import type { SiteSalesMonth } from "../src/lib/site-sales/schema";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 import type { Resource } from "../src/server/parasut/jsonapi";
 import { billToDraft } from "../src/server/parasut/mapping";
 
 const root = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const model = createModel(ds);
 const TODAY = "2026-10-22";
 const inputs = vatMonthInputs(model, TODAY);

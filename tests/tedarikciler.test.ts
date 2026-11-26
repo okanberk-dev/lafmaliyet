@@ -1,6 +1,6 @@
 // Tedarikçiler (cari hesaplar) ekranının kuralları (src/app/panel/tedarikciler/logic.ts): faturaların karta adla
 // eşleşmesi, kalan borç ve vade, ödeme durumu, adres parçaları, IBAN / VKN / TCKN denetimi, telefon bağlantıları ve
-// ödeme talebi metni. Seed verisiyle (excel-data.json) gruplamanın faturaları kaybetmediği de sınanır.
+// ödeme talebi metni. Seed verisiyle (tests/fixtures/baslangic/veri.json) gruplamanın faturaları kaybetmediği de sınanır.
 // Çalıştırma: npx tsx --test tests/tedarikciler.test.ts
 
 import assert from "node:assert/strict";
@@ -73,11 +73,11 @@ import { laterInvoiceItems, upcomingItems } from "../src/lib/reminders";
 import { canOpen } from "../src/lib/roles";
 import { contactInfo, newInvoicePayment, sameSupplier } from "../src/server/parasut/mapping";
 import { parseUbl } from "../src/server/parasut/ubl";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const ds = excelToDataset(data);
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const ds = datasetFromSeed(data);
 
 const TODAY = "2026-10-21";
 

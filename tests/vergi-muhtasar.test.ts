@@ -16,10 +16,10 @@ import { taxPnlInputFromModel } from "../src/lib/tax/pnl";
 import { r2 } from "../src/lib/tax/rules";
 import { DEFAULT_TAX_SETTINGS, type TaxSettings } from "../src/lib/tax/settings";
 import { buildTaxView } from "../src/lib/tax/view";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
-const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
-const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(readFileSync(join(__dirname, "..", "tests/fixtures/baslangic/veri.json"), "utf8"));
+const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 
 function setup(fixed: FixedExpense[] = base.fixedExpenses) {
   const model = createModel({ ...base, fixedExpenses: fixed });

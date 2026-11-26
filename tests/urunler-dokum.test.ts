@@ -12,10 +12,10 @@ import { menuAverages } from "../src/app/panel/urunler/logic";
 import { prepareBreakdown, type BreakdownGroup } from "../src/lib/breakdown";
 import { createModel } from "../src/lib/calc/engine";
 import { soldWithOnline } from "../src/lib/calc/insights";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
-const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
-const model = createModel({ ...excelToDataset(data), currentMonth: "2026-10" });
+const data: SeedData = JSON.parse(readFileSync(join(__dirname, "..", "tests/fixtures/baslangic/veri.json"), "utf8"));
+const model = createModel({ ...datasetFromSeed(data), currentMonth: "2026-10" });
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const inTotal = (gs: BreakdownGroup[]) => gs.filter((g) => !g.apart).flatMap((g) => g.rows);
 const close = (a: number, b: number, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≠ ${b}`);

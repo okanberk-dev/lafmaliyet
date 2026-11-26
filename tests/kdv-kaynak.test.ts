@@ -13,7 +13,7 @@ import type { Dataset } from "../src/lib/calc/types";
 import { resolveMonth, tillMonths, vatDaysOf, type TillRow } from "../src/lib/cash-month";
 import { posVatByDays, vatEstimates, vatLineDetail, vatMonthInputs, vatSourceText } from "../src/lib/kdv";
 import { okcDayVat } from "../src/lib/okc-z";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -39,8 +39,8 @@ const rowsOf = (branchId: string, extra: Record<string, Partial<TillRow>> = {}):
   DAYS.map(([date, z]) => ({ date, zTotal: z, card: z, mealCard: 0, discounts: 0, offRevenue: 0, payments: z, branchId, ...extra[date] }));
 
 function novemberModel(rows: TillRow[], switchDay: string | null, typed?: { posRevenue: number; openDays: number }) {
-  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-  const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-12" };
+  const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+  const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-12" };
   const [till] = tillMonths(rows, "2026-11-30", undefined, undefined, undefined, undefined, undefined, true, switchDay);
   const stored = typed ? { month: "2026-11", discounts: null, offRevenue: null, cardShare: null, note: null, ...typed } : undefined;
   const nov = resolveMonth("2026-11", stored, till);
