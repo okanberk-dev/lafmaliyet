@@ -13,6 +13,9 @@ import { Select } from "@/components/ui/form";
 export function MonthPdfLink({ months, branches, branch }: { months: { month: string; title: string }[]; branches: { id: string; name: string }[]; branch: string }) {
   const [month, setMonth] = useState(months[0]?.month ?? "");
   const [sube, setSube] = useState(branch);
+  // Adres seçicilerin değerinden değil, sunucunun verdiği listedeki kayıttan kurulur
+  const ay = months.find((m) => m.month === month)?.month ?? months[0]?.month ?? "";
+  const subeId = branches.find((b) => b.id === sube)?.id ?? branch;
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Select aria-label="Ay" value={month} onChange={(e) => setMonth(e.target.value)} className="w-36">
@@ -31,7 +34,7 @@ export function MonthPdfLink({ months, branches, branch }: { months: { month: st
           ))}
         </Select>
       ) : null}
-      <a href={`/api/kontrol/pdf?ay=${month}&sube=${encodeURIComponent(sube)}`} target="_blank" rel="noopener" className={buttonClass("secondary", "md")}>
+      <a href={`/api/kontrol/pdf?ay=${encodeURIComponent(ay)}&sube=${encodeURIComponent(subeId)}`} target="_blank" rel="noopener" className={buttonClass("secondary", "md")}>
         <FileDown size={16} aria-hidden="true" /> Aylık PDF
       </a>
     </div>
