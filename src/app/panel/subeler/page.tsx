@@ -12,9 +12,10 @@ import { requireAdmin } from "@/server/auth/dal";
 import { listInstalls } from "@/server/lafpos/kurulum";
 import { settingLinks } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
-import { getDb } from "@/server/db";
+import { getDb, schema as s } from "@/server/db";
 
 import { BranchesAdmin } from "./branches-admin";
+import { LafposInstallCard } from "./lafpos-install";
 
 export const metadata: Metadata = { title: "Şubeler" };
 
@@ -53,5 +54,11 @@ async function BranchesContent() {
   const many = tillBranches(rows).length > 1;
   const settingsText = many ? Object.fromEntries(tillBranches(rows).map((b) => [b.id, settingModeText(settingMode(CASH_REPORT_GROUP, b.id, links), rows)])) : {};
   const parasutText = many ? Object.fromEntries(tillBranches(rows).map((b) => [b.id, settingModeText(settingMode(PARASUT_GROUP, b.id, parasutLinks), rows)])) : {};
-  return <BranchesAdmin rows={rows} settingsText={settingsText} parasutText={parasutText} createAction={createBranch} updateAction={updateBranch} deleteAction={deleteBranch} canCreate={canCreate} installs={installs} installAction={sendBranchInstall} />;
+  const emails = canCreate ? Object.fromEntries((await getDb().select({ id: s.branches.id, email: s.branches.email }).from(s.branches)).map((r) => [r.id, r.email])) : {};
+  return (
+    <div className="space-y-4">
+      {canCreate ? <LafposInstallCard rows={rows} installs={installs} emails={emails} createAction={createBranch} installAction={sendBranchInstall} /> : null}
+      <BranchesAdmin rows={rows} settingsText={settingsText} parasutText={parasutText} createAction={createBranch} updateAction={updateBranch} deleteAction={deleteBranch} canCreate={canCreate} installs={installs} installAction={sendBranchInstall} />
+    </div>
+  );
 }
