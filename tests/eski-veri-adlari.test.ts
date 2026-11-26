@@ -187,7 +187,7 @@ test("asistanın bilgi tabanında eski tablonun adı yok", () => {
 
 // ---------------------------------------------------------------- Başlangıç verisi uygulamanın dışında
 
-test("başlangıç verisi (kişisel veri) uygulama ağacında değil: src/ onu içe aktarmaz, okumaz", () => {
+test("başlangıç verisi (kişisel veri) uygulama ağacında değil: src/ onu içe aktarmaz, okumaz; çıkarma betiği yok", () => {
   // Veri ve yükleyicisi tests/fixtures/baslangic/'te: yalnız tohum betiği (scripts/seed.ts) ve testler kullanır
   // (docs/DEPLOY.md § 1). Uygulamanın bir dosyası onu içe aktarsaydı maaş ve kira paketlenip yayına çıkabilirdi
   assert.ok(existsSync(join(root, SEED_DATA_FILE)), SEED_DATA_FILE);
@@ -196,6 +196,10 @@ test("başlangıç verisi (kişisel veri) uygulama ağacında değil: src/ onu i
     .filter((f) => /fixtures\/baslangic|baslangic\/veri\.json|db\/seed\/excel/.test(readFileSync(f, "utf8")))
     .map((f) => f.slice(root.length + 1));
   assert.deepEqual(bad, []);
+  // Eski tablodan veri çıkaran betik kaldırıldı (26 Kasım 2026): kaynak depoda yok, veri bir kez aktarıldı
+  assert.equal(existsSync(join(root, "scripts/excel-import")), false);
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { scripts: Record<string, string> };
+  assert.deepEqual(Object.keys(pkg.scripts).filter((k) => /excel/i.test(k)), []);
   // Tohum betiği veriyi yeni yerinden okur
   assert.match(readFileSync(join(root, "scripts/seed.ts"), "utf8"), /from "\.\.\/tests\/fixtures\/baslangic"/);
 });

@@ -1,5 +1,6 @@
 // Hesaplama motorunun Excel ile birebir aynı sonucu verdiğini doğrular.
-// golden.json, scripts/excel-import/extract.py tarafından Excel'in hesapladığı değerlerden üretilir.
+// golden.json, ilk kurulumda Excel'in hesapladığı değerlerden bir kez üretildi (donmuş; çıkarma betiği 26 Kasım 2026'da
+// kaldırıldı). Girdisi başlangıç verisi: tests/fixtures/baslangic/veri.json.
 // Çalıştırma: npm test
 
 import assert from "node:assert/strict";

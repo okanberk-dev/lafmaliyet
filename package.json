@@ -19,8 +19,7 @@
     "modpos:foy": "tsx scripts/modpos-foy.ts",
     "asistan:bilgi": "tsx scripts/asistan-bilgi.ts",
     "tarama:veri": "tsx scripts/tarama-veri.ts",
-    "tarama:olc": "tsx scripts/tarama-olc.ts",
-    "excel:extract": "python3 scripts/excel-import/extract.py"
+    "tarama:olc": "tsx scripts/tarama-olc.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.132.1",

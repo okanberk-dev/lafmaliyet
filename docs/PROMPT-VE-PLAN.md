@@ -1,5 +1,9 @@
 # L'Affogato Yönetim Paneli — Geliştirilmiş Prompt, Görev Planı ve Excel Analizi
 
+> **Not (26 Kasım 2026):** tarihî; Excel'e bağımlılık 26 Kasım 2026'da kaldırıldı (çıkarma betiği
+> `scripts/excel-import/` ve `excel:extract` silindi), başlangıç verisi şurada: `tests/fixtures/baslangic/veri.json`
+> (eskiden `src/server/db/seed/excel-data.json`; kişisel veri, [DEPLOY.md](DEPLOY.md) § 1). Aşağıdaki yollar ilk kurulumun.
+
 > **Tarihî belge.** Panelin ilk kurulumundaki istek ve eski hesap tablosunun analizi. Panel bugün kendi veritabanı ve
 > kurallarıyla çalışır; ekranda eski tablonun adı ve sayfa karşılıkları yok (25 Kasım 2026). Tablonun verisi yalnız
 > tohum verisi olarak kaldı (`npm run db:seed`, `tests/golden.json`). Güncel kurallar ilgili belgelerde.

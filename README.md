@@ -156,7 +156,6 @@ Uygulama http://localhost:3000 adresinde açılır. Panel girişi `/giris` sayfa
 | `npm run db:restore -- <dosya>` | Yedeği boş bir veritabanına yükler; `--sil` ile dolu bir veritabanının yerine (önce onun yedeğini dosyanın yanına alır; Neon'da `--onay=<sunucu>`). Parolalar dosyada yok: aynı e-postalı kişi hedefteki parolasını korur, ötekiler davet bekler ([docs/YEDEK.md](docs/YEDEK.md)) |
 | `npm run modpos:foy -- <gün>` | ModPOS'un kasa föyünü çekip özetini yazar (günün 2 hakkından birini kullanır, veritabanına yazmaz; anahtar ortamda `MODPOS_API_KEY`, ekrana yazılmaz); `--dosya yanit.xml` yalnız dosyayı okur (istek yok), `--kaydet` veritabanına da yazar ([docs/MODPOS-API.md](docs/MODPOS-API.md) § 8) |
 | `npm run asistan:bilgi` | Panel asistanının bilgi tabanını `docs/*.md`'den yeniden yazar (`src/lib/assistant/knowledge-data.ts`); belge değişince çalıştırılır, unutulursa test düşer ([docs/ASISTAN.md](docs/ASISTAN.md) › Bilgi tabanı) |
-| `npm run excel:extract -- "<tablo yolu>"` | Eski hesap tablosundan (.xlsx) tohum verisini (`excel-data.json`) ve `tests/golden.json`'u yeniden üretir (Python 3 + openpyxl gerekir) |
 
 ## Klasör yapısı
 
@@ -191,7 +190,7 @@ src/
     insights.ts        panel, uyarılar, tutarlılık, menü mühendisliği, senaryo
     expr.ts            reçete miktar formülleri (2*ShotCift …) ve Türkçe sayı çözümleme
   server/
-    db/                Drizzle şeması, bağlantı ve tohum verisi
+    db/                Drizzle şeması ve bağlantı
     auth/              oturum (JWT), parola (scrypt), yetki kontrolü
     actions/           sunucu eylemleri (her biri yetki kontrolü yapar)
     data/              veritabanından hesaplama modelini yükleyen katman
@@ -214,14 +213,17 @@ src/
     mcp/               Claude bağlantısı: istemciler, kodlar, anahtarlar (yalnız özet), MCP sunucusu ve salt okunur araçlar
     checklists/        kontrol listelerinin veritabanı tarafı: günün listeleri, doldurma, geçmiş, yanıt yazımı
   proxy.ts             panel sayfaları için oturum kontrolü (Next 16'da middleware'in yeni adı)
-scripts/               migrate (ve migration doğrulaması), seed, predeploy, tam yedek ve geri yükleme, tohum verisi çıkarma betikleri
-tests/                 hesap, tohum verisi karşılaştırma ve ekran kuralı testleri
+scripts/               migrate (ve migration doğrulaması), seed, predeploy, tam yedek ve geri yükleme betikleri
+tests/                 hesap, altın değer karşılaştırma ve ekran kuralı testleri
+  fixtures/baslangic/  başlangıç verisi (veri.json; kişisel veri, docs/DEPLOY.md § 1) ve yükleyicisi: tohum betiği ve testler okur
 drizzle/               SQL migration'ları
 ```
 
 ## Hesaplamaların doğruluğu
 
-`tests/golden.json`, ilk kurulumdaki eski tablonun kendi hesapladığı değerlerden üretilir. `npm test` şunları karşılaştırır: 129 ürün
+`tests/golden.json`, ilk kurulumdaki eski tablonun kendi hesapladığı değerlerden bir kez üretildi; girdisi başlangıç
+verisidir (`tests/fixtures/baslangic/veri.json`). İkisi de donmuştur: kaynak tablo ve çıkarma betiği depoda yok (betik
+26 Kasım 2026'da kaldırıldı), değerleri elle değiştirilmez. `npm test` şunları karşılaştırır: 129 ürün
 kartının maliyet, kâr, marj, önerilen fiyat ve durumu; 125 satış satırının maliyeti ve brüt kârı; Panel'deki Eylül
 kâr/zararı, başabaş ve kategori ortalamaları; Temmuz–Ekim gelir-gider tablosu; personel ve sabit gider toplamları;
 tutarlılık kontrolündeki kullanım ve fark tutarları. Hepsi o değerlerle aynıdır.
