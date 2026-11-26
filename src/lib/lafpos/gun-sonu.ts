@@ -1,5 +1,5 @@
 import { carryCheck, carryDiffText, computeCash, openingNeedsNote, reportNo, type CashReportFields } from "@/lib/cash-report";
-import { badge, button, esc, kpiGrid, kvRow, layout, note, paragraph, section, splitHeadline, statusBanner, upperFirst, type Kpi, type Tone } from "@/lib/email";
+import { badge, button, kpiGrid, kvRow, layout, note, paragraph, section, splitHeadline, statusBanner, upperFirst, type Kpi, type Tone } from "@/lib/email";
 import { money } from "@/lib/format";
 import { normalizeVat, sameVat, type OkcVatLine } from "@/lib/okc-z";
 import { addDays, longDateTR } from "@/lib/reminders";
@@ -839,7 +839,7 @@ export function renderStaffDayEnd(m: { branchName: string; date: string; kind: "
   if (m.kind === "sayim-yok") {
     const subject = `${m.branchName} · kasa sayılmadı · ${day}`;
     const text = [`${m.branchName} gün sonu sayımsız geldi (${day}).`, "", STAFF_NO_COUNT_TEXT].join("\n");
-    const html = `<!doctype html><html lang="tr"><body style="font-family:Inter,Arial,sans-serif;color:#171a26"><h2 style="margin:0 0 12px">${esc(m.branchName)} · kasa sayılmadı</h2><p style="color:#5f6371;margin:0 0 12px">${esc(day)}</p><p style="margin:0">${esc(STAFF_NO_COUNT_TEXT)}</p></body></html>`;
+    const html = layout({ subject, preheader: STAFF_NO_COUNT_TEXT, branch: m.branchName, title: `${m.branchName} · kasa sayılmadı`, lead: day, body: [note(STAFF_NO_COUNT_TEXT, { tone: "warn" })] });
     return { subject, html, text };
   }
   const z = m.z;
@@ -852,7 +852,15 @@ export function renderStaffDayEnd(m: { branchName: string; date: string; kind: "
   }
   const subject = `${m.branchName} · gün sonu alındı · ${day}`;
   const text = [`${m.branchName} gün sonu alındı (${day}).`, "", ...rows.map(([k, v]) => `${k}: ${v}`), "", "Emeğiniz için teşekkürler."].join("\n");
-  const html = `<!doctype html><html lang="tr"><body style="font-family:Inter,Arial,sans-serif;color:#171a26"><h2 style="margin:0 0 12px">${esc(m.branchName)} · gün sonu alındı</h2><p style="color:#5f6371;margin:0 0 12px">${esc(day)}</p><table style="border-collapse:collapse">${rows.map(([k, v]) => `<tr><td style="padding:4px 16px 4px 0;color:#5f6371">${esc(k)}</td><td style="padding:4px 0;font-weight:600">${esc(v)}</td></tr>`).join("")}</table><p style="margin-top:16px">Emeğiniz için teşekkürler.</p></body></html>`;
+  // Personelin kısa e-postası (src/lib/email): başlık, gün, satırlar ve teşekkür
+  const html = layout({
+    subject,
+    preheader: `${m.branchName} gün sonu alındı (${day}).`,
+    branch: m.branchName,
+    title: `${m.branchName} · gün sonu alındı`,
+    lead: day,
+    body: [section(null, rows), paragraph("Emeğiniz için teşekkürler.")],
+  });
   return { subject, html, text };
 }
 
