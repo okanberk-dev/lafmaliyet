@@ -1,16 +1,20 @@
 /**
- * Günlük hatırlatma e-postasının şablonu (saf; "server-only" yok, tests/hatirlaticilar-digest.test.ts sınar).
- * Veriyi okuyup gönderen kısım digest.ts'te. Ek kutuların (komisyon, kontrol, tahmin) toplanması da burada
- * (`collectDigestExtras`); kaynakların listesi src/server/notify/digest-extras.ts'te. E-postaların ortak kabuğu
- * (`emailLayout`, `esc`, `FONT`) öteki e-postalar için dışa açık.
+ * Günlük hatırlatma e-postasının ve bekçi (sistem uyarısı) e-postasının şablonu (saf; "server-only" yok,
+ * tests/hatirlaticilar-digest.test.ts sınar). Görünüşü e-posta kitinden (src/lib/email; docs/BILDIRIMLER.md › E-posta
+ * tasarımı): kabuk layout(), bölümler section + kvRow, uyarılar note, düğme button. Konu, düz metin ve HTML'deki
+ * sözcükler buradaki fonksiyonlardan gelir; kit yalnız görünüşü kurar. Veriyi okuyup gönderen kısım digest.ts'te. Ek
+ * kutuların (komisyon, kontrol, tahmin) toplanması da burada (`collectDigestExtras`); kaynakların listesi
+ * src/server/notify/digest-extras.ts'te. Eski ortak kabuk (`emailLayout`, `esc`, `FONT`) kite taşınmamış öteki
+ * e-postalar için dışa açık kalır.
  */
 
 import type { BranchScope } from "@/lib/branches";
 import { CASH_OUT_INVOICES_HREF } from "@/lib/cash-outs";
+import { badge, button, kpiGrid, kvRow, layout, LIGHT, link, note, paragraph, section, stack, statusBanner, TONES, type Tone } from "@/lib/email";
 import { dateTR, money, monthLabel, tl } from "@/lib/format";
 import { SYSTEM_ALERT_HELP } from "@/lib/job-health";
 import { holdReasonSentence, holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
-import { daysLeftLabel, longDateTR, monthShortTR, type NotifyStage, type UpcomingItem } from "@/lib/reminders";
+import { daysLeftLabel, longDateTR, type NotifyStage, type UpcomingItem } from "@/lib/reminders";
 import { capped } from "@/server/jobs/capped";
 
 export const APP_URL = (process.env.APP_URL?.trim() || "https://ladmin.laffogato.net").replace(/\/+$/, "");
@@ -18,12 +22,18 @@ export const APP_URL = (process.env.APP_URL?.trim() || "https://ladmin.laffogato
 /** HTML'e giden her kullanıcı metni buradan geçer */
 export const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-const STAGE: Record<NotifyStage, { label: string; title: string; bg: string; fg: string; tile: string; tileFg: string }> = {
-  overdue: { label: "Gecikti", title: "Gecikenler", bg: "#fef2f2", fg: "#dc2626", tile: "#dc2626", tileFg: "#ffffff" },
-  due: { label: "Bugün", title: "Son günü bugün", bg: "#fff7ed", fg: "#c2410c", tile: "#e8590c", tileFg: "#ffffff" },
-  before: { label: "Yaklaşıyor", title: "Yaklaşanlar", bg: "#f4f4f5", fg: "#3f3f46", tile: "#e4e4e7", tileFg: "#3f3f46" },
+/**
+ * Ödeme aşamaları: düz metindeki etiket, bölümün başlığı, üstteki rozetin sözcüğü ve tonu (gecikmiş kırmızı, bugün
+ * turuncu, yaklaşan gri; satırın tutarı da bu renkte)
+ */
+const STAGE: Record<NotifyStage, { label: string; title: string; pill: string; tone: Tone }> = {
+  overdue: { label: "Gecikti", title: "Gecikenler", pill: "gecikmiş", tone: "bad" },
+  due: { label: "Bugün", title: "Son günü bugün", pill: "bugün", tone: "warn" },
+  before: { label: "Yaklaşıyor", title: "Yaklaşanlar", pill: "yaklaşan", tone: "neutral" },
 };
 const STAGE_ORDER: NotifyStage[] = ["overdue", "due", "before"];
+/** Bölünmez boşluk (U+00A0): başlıktaki " · 2" telefonda tek başına alt satıra düşmesin */
+const NBSP = " ";
 export const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Geist,Roboto,Helvetica,Arial,sans-serif";
 
 /** Sabah e-postasının Paraşüt bölümü: son e-postadan bu yana gelen faturalar, kontrol bekleyenler, eşitleme hatası */
@@ -248,14 +258,14 @@ export async function collectDigestExtras(sources: readonly DigestExtraSource[],
   return { extras, news, logKeys: [...keys], parts };
 }
 
-/** Kutu renkleri: komisyon, kontrol ve onay bekleyenler turuncu (fiyat onayı kutusu gibi), tahmin gri (bilgi) */
-const BOX_TONE: Record<keyof DigestExtras, { bg: string; fg: string }> = {
-  commission: { bg: "#fff7ed", fg: "#9a3412" },
-  kontrol: { bg: "#fff7ed", fg: "#9a3412" },
-  forecast: { bg: "#f4f4f5", fg: "#3f3f46" },
-  approvals: { bg: "#fff7ed", fg: "#9a3412" },
+/** Kutu tonları: komisyon, kontrol ve onay bekleyenler turuncu (fiyat onayı kutusu gibi), tahmin gri (bilgi) */
+const BOX_TONE: Record<keyof DigestExtras, Tone> = { commission: "warn", kontrol: "warn", forecast: "neutral", approvals: "warn" };
+/** Kutu satırının rengi: sınıf koyu temanın tutamağı (src/lib/email/layout.ts), satır içi renk açık temanın */
+const LINE_TONE: Record<NonNullable<DigestBox["lines"][number]["tone"]>, { cls: string; style: string }> = {
+  bad: { cls: "e-v-bad", style: `color:${TONES.bad.value}` },
+  warn: { cls: "e-v-warn", style: `color:${TONES.warn.value}` },
+  muted: { cls: "e-mute", style: `color:${LIGHT.mute};font-size:13px;line-height:18px` },
 };
-const LINE_TONE: Record<NonNullable<DigestBox["lines"][number]["tone"]>, string> = { bad: "#b91c1c", warn: "#c2410c", muted: "#71717a" };
 /** İlk harf büyük, Türkçe ("i" → "İ"): konu parçası küçük harfle başlayabilir ("dünkü kapanış listesi eksik") */
 const upperFirst = (v: string) => `${v.charAt(0).toLocaleUpperCase("tr-TR")}${v.slice(1)}`;
 
@@ -266,30 +276,31 @@ const upperFirst = (v: string) => `${v.charAt(0).toLocaleUpperCase("tr-TR")}${v.
 const PANEL_PATH = /^\/panel(?:\/[\w-]+)*\/?(?:[?#]\S*)?$/;
 const boxUrl = (href: string) => `${APP_URL}${PANEL_PATH.test(href) ? href : "/panel"}`;
 
-/** Ek kutunun HTML'i: fiyat onayı kutusu gibi yuvarlak köşeli renkli kutu; uzun metin sarılır (telefonda taşmaz) */
+/**
+ * Ek kutunun HTML'i: kitin notu (tonun yumuşak zemini); üstte kutunun adı küçük etiket, altında satırlar (kalın ilk
+ * satır kutunun haberi), en altta bağlantı. Uzun metin sarılır (telefonda taşmaz)
+ */
 function boxHtml(b: DigestBox, key: keyof DigestExtras): string {
-  const t = BOX_TONE[key];
+  const tone = BOX_TONE[key];
+  const t = TONES[tone];
+  const label = `<div class="e-ti-${tone}" style="font-size:13px;line-height:18px;font-weight:600;color:${t.ink}">${esc(b.title)}</div>`;
   const lines = b.lines.map((l) => {
-    const style = l.tone ? `;color:${LINE_TONE[l.tone]}${l.tone === "muted" ? ";font-size:13px;line-height:18px" : ""}` : "";
     const body = l.strong ? `<strong>${esc(l.strong)}</strong>${l.text ? `<br>${esc(l.text)}` : ""}` : esc(l.text);
-    return `<div style="margin-top:6px${style}">${body}</div>`;
+    return l.tone ? `<span class="${LINE_TONE[l.tone].cls}" style="${LINE_TONE[l.tone].style}">${body}</span>` : body;
   });
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:${t.bg};border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:${t.fg};word-break:break-word">
-  <div style="font-size:13px;line-height:18px;font-weight:600">${esc(b.title)}</div>
-  ${lines.join("\n  ")}
-  <div style="margin-top:8px"><a href="${esc(boxUrl(b.href))}" style="color:${t.fg};font-weight:600">${esc(b.link)} →</a></div>
-</td></tr></table>`;
+  return note([label, ...lines, `<div style="padding-top:4px">${link(boxUrl(b.href), `${b.link} →`, tone === "neutral" ? undefined : tone)}</div>`], { tone, html: true });
 }
 
 /** Ek kutunun düz metni: boş satır, başlık, satırlar, bağlantı */
 const boxText = (b: DigestBox) => ["", b.title, ...b.lines.map((l) => `- ${l.strong ? `${l.strong}${l.text ? `: ${l.text}` : ""}` : l.text}`), `${b.link}: ${boxUrl(b.href)}`];
 
-/** Ortak kabuğun alt notu (sabah e-postası, bekçi e-postası) */
+/** Alt not (sabah e-postası, bekçi e-postası ve eski kabuğun varsayılanı) */
 const DEFAULT_FOOTER = "Bu e-posta ladmin.laffogato.net bildirim adreslerine gönderildi. Adresleri Ödemeler sayfasından değiştirebilirsiniz.";
 
 /**
- * E-postaların ortak kabuğu: üstte L'Af başlığı ve tarih, ortada beyaz kart (`card`), altta alıcı notu. `card` ve
- * `brandSub` hazır (kaçışlı) HTML; `footer` düz metin (kaçışı burada; verilmezse bildirim adresleri notu).
+ * Eski ortak kabuk (kite taşınmamış e-postalar için; docs/BILDIRIMLER.md › E-posta tasarımı envanteri): üstte L'Af
+ * başlığı ve tarih, ortada beyaz kart (`card`), altta alıcı notu. `card` ve `brandSub` hazır (kaçışlı) HTML; `footer`
+ * düz metin (kaçışı burada; verilmezse bildirim adresleri notu). Yeni e-posta src/lib/email'in layout()'unu kullanır.
  */
 export function emailLayout(o: { subject: string; preheader: string; brandSub: string; today: string; card: string; footer?: string }): string {
   return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(o.subject)}</title></head>
@@ -326,11 +337,11 @@ export function branchDigestNote(branch: string): string {
 }
 
 /**
- * Günlük sabah e-postası: AkmanOS açık teması, satır içi stiller ve tablolarla (e-posta istemcileri flex ve
- * dış CSS tanımaz). Telefonda tek sütun: üstte L'Af başlığı, varsa sistem uyarıları, aşamalara göre ödemeler, sağa
- * hizalı tutarlar, Paraşüt'ten gelen yeni faturalar, en altta tam genişlikte "Panelde aç" düğmesi. Ödeme yoksa yalnız
- * öteki bölümler. Gövde sırası: sistem, ödemeler, faturalar, kontrol bekleyen, fiyat onayı, ek kutular (komisyon,
- * kontrol, onay bekleyenler), zam, tahmin kutusu, düğme.
+ * Günlük sabah e-postası, e-posta kitiyle (src/lib/email): açık ve koyu temada, telefonda tek sütun. Ödeme varsa üstte
+ * toplam büyük rakamla ve aşama rozetleri (gecikmiş, bugün, yaklaşan), sonra varsa sistem uyarıları, aşamalara göre
+ * ödemeler (ince ayraçlı satırlar, tutar sağda), Paraşüt'ten gelen yeni faturalar ve uyarı notları, en altta tam
+ * genişlikte düğme ve kapanış notu. Ödeme yoksa yalnız öteki bölümler. Gövde sırası: toplam, sistem, ödemeler,
+ * faturalar, kontrol bekleyen, fiyat onayı, ek kutular (komisyon, kontrol, onay bekleyenler), zam, tahmin kutusu, düğme.
  *
  * Konu (öncelik sırasıyla; ötekiler " · " ile, hep aynı sırada eklenir: yeni fatura, yeni fiyat onayı, zam, komisyon,
  * kontrol, onay bekleyenler): ödeme varsa "Ödeme hatırlatması: …" (+ önce sistem uyarısı); yoksa sistem uyarısı varsa "Sistem uyarısı:
@@ -396,7 +407,7 @@ export function renderDigest(
           : `Sabah özeti: ${zamPart ?? boxLast ?? "bugün yeni bir şey yok"}`;
   const subject = branch ? `${branch}: ${subjectOf}` : subjectOf;
   const total = rows.reduce((a, r) => a + (r.item.amount ?? 0), 0);
-  const link = `${APP_URL}/panel/hatirlaticilar`;
+  const paymentsLink = `${APP_URL}/panel/hatirlaticilar`;
   const boxHeadline = com?.headline || kon?.headline || apv?.headline || null;
   const headline = rows.length
     ? rows.length === 1
@@ -421,124 +432,102 @@ export function renderDigest(
                   : (boxLast ?? "Bugün yeni bir şey yok");
   const preheader = rows.length ? `${parts.join(", ")} · toplam ${money(total)}${extra ? ` · ${extra}` : ""}` : headline;
 
+  // Görünüş (src/lib/email): üstte toplam büyük rakamla ve aşama rozetleri, sistem uyarıları, aşama bölümleri (ince
+  // ayraçlı satırlar, tutar sağda), Paraşüt bölümü ve uyarı notları, ek kutular, zam, tahmin kutusu, düğme ve kapanış notu
   const pills = STAGE_ORDER.filter((st) => counts[st])
-    .map((st) => {
-      const c = STAGE[st];
-      return `<span style="display:inline-block;margin:0 6px 6px 0;padding:4px 10px;border-radius:999px;font-size:12px;line-height:16px;font-weight:600;background:${c.bg};color:${c.fg}">${counts[st]} ${esc(st === "overdue" ? "gecikmiş" : st === "due" ? "bugün" : "yaklaşan")}</span>`;
-    })
-    .join("");
+    .map((st) => badge(`${counts[st]} ${STAGE[st].pill}`, STAGE[st].tone))
+    .join(" ");
+  const totals = rows.length ? stack([kpiGrid([{ label: "Toplam", value: money(total) }]), paragraph(pills, { html: true })], 12) : null;
 
-  const row = ({ item, stage }: { item: UpcomingItem; stage: NotifyStage }) => {
-    const c = STAGE[stage];
-    const day = Number(item.dueDate.slice(8, 10));
-    const meta = [dateTR(item.dueDate), daysLeftLabel(item.daysLeft), item.detail].filter(Boolean).map((v) => esc(String(v))).join(" · ");
-    return `<tr>
-  <td width="44" style="width:44px;padding:12px 12px 12px 0;vertical-align:top">
-    <table role="presentation" width="44" cellspacing="0" cellpadding="0" border="0" style="border-collapse:separate;width:44px;border-radius:10px;overflow:hidden;border:1px solid #e4e4e7">
-      <tr><td align="center" style="background:${c.tile};color:${c.tileFg};font-size:10px;line-height:14px;font-weight:600;font-family:${FONT}">${esc(monthShortTR(item.dueDate))}</td></tr>
-      <tr><td align="center" style="background:#ffffff;color:#171717;font-size:18px;line-height:26px;font-weight:600;font-family:${FONT}">${day}</td></tr>
-    </table>
-  </td>
-  <td style="padding:12px 0;vertical-align:top;font-family:${FONT}">
-    <div style="font-size:15px;line-height:20px;font-weight:600;color:#171717">${esc(item.title)}</div>
-    <div style="font-size:13px;line-height:18px;color:#71717a;margin-top:2px">${meta}</div>
-  </td>
-  <td align="right" style="padding:12px 0 12px 12px;vertical-align:top;white-space:nowrap;font-family:${FONT};font-size:15px;line-height:20px;font-weight:600;color:#171717">${item.amount !== null ? esc(money(item.amount)) : '<span style="color:#a1a1aa">–</span>'}</td>
-</tr>`;
+  // Tutar aşamanın renginde (gecikmiş kırmızı, bugün turuncu); tutarsız satır gri tire
+  const paymentRow = ({ item, stage }: { item: UpcomingItem; stage: NotifyStage }) => {
+    const meta = [dateTR(item.dueDate), daysLeftLabel(item.daysLeft), item.detail].filter(Boolean).join(" · ");
+    return item.amount !== null ? kvRow(item.title, money(item.amount), { sub: meta, tone: STAGE[stage].tone }) : kvRow(item.title, "–", { sub: meta, quiet: true });
   };
-
-  const sections = STAGE_ORDER.filter((st) => counts[st])
-    .map((st) => {
-      const c = STAGE[st];
-      const group = rows.filter((r) => r.stage === st);
-      const sum = group.reduce((a, r) => a + (r.item.amount ?? 0), 0);
-      return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:20px">
-  <tr>
-    <td style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT}">
-      <span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:${c.fg};margin-right:6px;vertical-align:middle"></span><span style="font-size:13px;font-weight:600;color:${c.fg};vertical-align:middle">${esc(c.title)} · ${group.length}</span>
-    </td>
-    <td align="right" style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT};font-size:13px;color:#71717a;white-space:nowrap">${esc(money(sum))}</td>
-  </tr>
-</table>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">${group.map(row).join("\n")}</table>`;
-    })
-    .join("\n");
+  const sections = STAGE_ORDER.filter((st) => counts[st]).map((st) => {
+    const group = rows.filter((r) => r.stage === st);
+    const sum = group.reduce((a, r) => a + (r.item.amount ?? 0), 0);
+    return section(`${STAGE[st].title} · ${group.length}`, group.map(paymentRow), { aside: money(sum) });
+  });
 
   const invoiceTotal = inv ? inv.items.reduce((a, i) => a + i.payable, 0) : 0;
-  const invoiceRow = (i: DigestInvoices["items"][number]) => `<tr>
-  <td style="padding:10px 0;vertical-align:top;font-family:${FONT}">
-    <div style="font-size:15px;line-height:20px;font-weight:600;color:#171717">${esc(i.supplier)}</div>
-    <div style="font-size:13px;line-height:18px;color:#71717a;margin-top:2px">${esc(dateTR(i.date))} · ${esc(i.category)}${i.unpaid && i.dueDate ? ` · <span style="color:#c2410c;font-weight:600">vade ${esc(dateTR(i.dueDate))}</span>` : ""}${i.needsReview ? ' · <span style="color:#c2410c;font-weight:600">kontrol edin</span>' : ""}</div>
-  </td>
-  <td align="right" style="padding:10px 0 10px 12px;vertical-align:top;white-space:nowrap;font-family:${FONT};font-size:15px;line-height:20px;font-weight:600;color:#171717">${esc(money(i.payable))}</td>
-</tr>`;
+  const invoiceRow = (i: DigestInvoices["items"][number]) =>
+    kvRow(i.supplier, money(i.payable), {
+      sub: `${dateTR(i.date)} · ${i.category}`,
+      valueSub: i.unpaid && i.dueDate ? `vade ${dateTR(i.dueDate)}` : null,
+      badge: i.needsReview ? { text: "kontrol edin", tone: "warn" } : null,
+    });
+  const moreInvoices = inv ? inv.items.length - MAX_INVOICE_ROWS : 0;
+  // Paraşüt bölümünün uyarıları (kontrol bekleyen, kasadan faturalı alım, fiyat onayı) tek turuncu notta, her biri kendi
+  // paragrafında bağlantısıyla; cümleler ve bağlantılar eskisiyle aynı
+  const invoiceWarnings = inv
+    ? [
+        inv.reviewCount ? `${esc(reviewSentence(inv))} ${link(`${APP_URL}/panel/faturalar?durum=kontrol`, "Kontrol edin →", "warn")}` : null,
+        cashOuts ? `${cashOutSentence(cashOuts)} ${link(`${APP_URL}${CASH_OUT_INVOICES_HREF}`, "Bakın →", "warn")}` : null,
+        holds ? `${holds.count} hammadde fiyatı onay bekliyor (${esc(holdsSummary(holds.items))}). ${holdReasonSentence(holds.items)}. ${link(HOLDS_LINK, "Bakın →", "warn")}` : null,
+      ].filter((x): x is string => Boolean(x))
+    : [];
+  // Paraşüt bölümü: eşitleme hatası, yeni faturalar (başlıktaki sayı telefonda başlıktan kopmasın: bölünmez boşluk),
+  // altında uyarılar
   const invoiceSection = inv
-    ? `${
-        inv.syncError
-          ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:${rows.length ? 22 : 8}px"><tr><td style="background:#fef2f2;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#b91c1c"><strong>Paraşüt eşitlemesi başarısız.</strong> ${esc(inv.syncError)}<br><a href="${APP_URL}/panel/parasut" style="color:#b91c1c;font-weight:600">Paraşüt sayfasını aç →</a></td></tr></table>`
-          : ""
-      }${
-        inv.items.length
-          ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:22px">
-  <tr>
-    <td style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT}"><span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:#2563eb;margin-right:6px;vertical-align:middle"></span><span style="font-size:13px;font-weight:600;color:#2563eb;vertical-align:middle">Paraşüt'ten gelen yeni faturalar · ${inv.items.length}</span></td>
-    <td align="right" style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT};font-size:13px;color:#71717a;white-space:nowrap">${esc(money(invoiceTotal))}</td>
-  </tr>
-</table>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">${inv.items.slice(0, MAX_INVOICE_ROWS).map(invoiceRow).join("\n")}</table>${
-              inv.items.length > MAX_INVOICE_ROWS
-                ? `<div style="font-family:${FONT};font-size:13px;color:#71717a;padding:4px 0 0">ve ${inv.items.length - MAX_INVOICE_ROWS} fatura daha</div>`
-                : ""
-            }`
-          : ""
-      }${
-        inv.reviewCount
-          ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fff7ed;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412">${reviewSentence(inv)} <a href="${APP_URL}/panel/faturalar?durum=kontrol" style="color:#9a3412;font-weight:600">Kontrol edin →</a></td></tr></table>`
-          : ""
-      }${
-        cashOuts
-          ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fff7ed;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412">${cashOutSentence(cashOuts)} <a href="${APP_URL}${CASH_OUT_INVOICES_HREF}" style="color:#9a3412;font-weight:600">Bakın →</a></td></tr></table>`
-          : ""
-      }${
-        holds
-          ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fff7ed;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412">${holds.count} hammadde fiyatı onay bekliyor (${esc(holdsSummary(holds.items))}). ${holdReasonSentence(holds.items)}. <a href="${HOLDS_LINK}" style="color:#9a3412;font-weight:600">Bakın →</a></td></tr></table>`
-          : ""
-      }`
-    : "";
-  const priceRow = (p: DigestPrices["products"][number]) => `<tr>
-  <td style="padding:10px 0;vertical-align:top;font-family:${FONT}">
-    <div style="font-size:15px;line-height:20px;font-weight:600;color:#171717">${esc(p.name)} · ${esc(p.size)}</div>
-    <div style="font-size:13px;line-height:18px;color:#71717a;margin-top:2px">Maliyet oranı ${esc(pctText(p.ratioBefore))} → <span style="color:#c2410c;font-weight:600">${esc(pctText(p.ratioAfter))}</span> · şimdi ${esc(money(p.price))}</div>
-  </td>
-  <td align="right" style="padding:10px 0 10px 12px;vertical-align:top;white-space:nowrap;font-family:${FONT}"><div style="font-size:12px;line-height:16px;color:#71717a">${p.basis === "keep" ? "zammın payı" : "önerilen"}</div><div style="font-size:15px;line-height:20px;font-weight:600;color:#171717">${esc(money(p.suggestedPrice))}</div></td>
-</tr>`;
+    ? stack(
+        [
+          inv.syncError
+            ? note([esc(inv.syncError), link(`${APP_URL}/panel/parasut`, "Paraşüt sayfasını aç →", "bad")], { tone: "bad", title: "Paraşüt eşitlemesi başarısız.", html: true })
+            : null,
+          inv.items.length
+            ? section(`Paraşüt'ten gelen yeni faturalar${NBSP}·${NBSP}${inv.items.length}`, inv.items.slice(0, MAX_INVOICE_ROWS).map(invoiceRow), {
+                aside: money(invoiceTotal),
+                afterHtml: moreInvoices > 0 ? paragraph(`ve ${moreInvoices} fatura daha`, { small: true }) : null,
+              })
+            : null,
+          invoiceWarnings.length ? note(invoiceWarnings.map((w, i) => (i ? `<div style="padding-top:8px">${w}</div>` : w)), { tone: "warn", html: true }) : null,
+        ],
+        16,
+      )
+    : null;
+
+  // Zam: üstte aylık kayıp küçük turuncu bantta, hammaddeler (eski → yeni, artış rozeti, altında aylık tutar), fiyatına
+  // bakılacak ürünler (önerilen fiyat sağda) ve bağlantı
+  const changeRow = (c: DigestPrices["changes"][number]) => {
+    // Aylık tutar fiyatların altında kendi satırında: aynı satırda kaydırmasız değer e-postayı telefonda taşırırdı
+    const monthly = monthlyText(c.monthly);
+    return kvRow(c.name, `${esc(perUnit(c.before, c.unit))} → <strong class="e-ink" style="color:${LIGHT.ink}">${esc(perUnit(c.after, c.unit))}</strong>`, {
+      html: true,
+      quiet: true,
+      // Telefonda hepsi alt alta (kısa değer yanında kalsaydı satırlar karışık görünürdü)
+      stack: true,
+      badge: { text: `+${pctText(c.pct)}`, tone: "warn" },
+      valueSub: monthly || null,
+    });
+  };
+  const priceRow = (p: DigestPrices["products"][number]) =>
+    kvRow(`${p.name} · ${p.size}`, money(p.suggestedPrice), {
+      sub: `Maliyet oranı ${pctText(p.ratioBefore)} → ${pctText(p.ratioAfter)} · şimdi ${money(p.price)}`,
+      valueSub: p.basis === "keep" ? "zammın payı" : "önerilen",
+      strong: true,
+    });
   const zamLoss = zam ? lossSentence(zam) : "";
   const priceSection = zam
-    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:22px">
-  <tr><td style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT}"><span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:#c2410c;margin-right:6px;vertical-align:middle"></span><span style="font-size:13px;font-weight:600;color:#c2410c;vertical-align:middle">Hammadde zamları · ${zam.changes.length}</span></td></tr>
-</table>${zamLoss ? `\n<div style="font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412;padding:10px 0 2px;font-weight:600">${esc(zamLoss)}</div>` : ""}
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">${zam.changes
-        .slice(0, MAX_PRICE_ROWS)
-        .map((c) => {
-          // Aylık tutar fiyatların altında kendi satırında: aynı satırda kaydırmasız (nowrap) hücre e-postayı telefon
-          // genişliğinden taşırırdı. İki satırlı hücrede ad üste hizalanır; tutar yoksa satır eskisinin aynısı
-          const monthly = monthlyText(c.monthly);
-          const top = monthly ? "vertical-align:top;" : "";
-          return `<tr><td style="padding:8px 0;${top}font-family:${FONT};font-size:14px;line-height:19px;color:#171717">${esc(c.name)}</td><td align="right" style="padding:8px 0 8px 12px;${top}font-family:${FONT};font-size:13px;line-height:19px;color:#71717a;white-space:nowrap">${esc(perUnit(c.before, c.unit))} → <strong style="color:#171717">${esc(perUnit(c.after, c.unit))}</strong> <span style="color:#c2410c;font-weight:600">+${esc(pctText(c.pct))}</span>${monthly ? `<div style="font-size:12px;line-height:16px;color:#c2410c">${esc(monthly)}</div>` : ""}</td></tr>`;
-        })
-        .join("\n")}</table>${
-        zam.products.length
-          ? `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#3f3f46;padding:14px 0 0;font-weight:600">Fiyatına bakılacak ürünler · ${zam.productCount}</div>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">${zam.products.slice(0, MAX_PRICE_ROWS).map(priceRow).join("\n")}</table>${
-              zam.productCount > MAX_PRICE_ROWS ? `<div style="font-family:${FONT};font-size:13px;color:#71717a;padding:4px 0 0">ve ${zam.productCount - MAX_PRICE_ROWS} ürün daha</div>` : ""
-            }`
-          : `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#71717a;padding:10px 0 0">Etkilenen ürünlerin maliyet oranı hâlâ hedefte.</div>`
-      }<div style="font-family:${FONT};font-size:14px;padding:10px 0 0"><a href="${APP_URL}/panel/urunler#zamlar" style="color:#c2410c;font-weight:600">Önerilen fiyatlara bak →</a></div>`
-    : "";
+    ? stack(
+        [
+          section(`Hammadde zamları · ${zam.changes.length}`, zam.changes.slice(0, MAX_PRICE_ROWS).map(changeRow), {
+            leadHtml: zamLoss ? statusBanner({ tone: "warn", size: "sm", title: zamLoss }) : null,
+          }),
+          zam.products.length
+            ? section(`Fiyatına bakılacak ürünler · ${zam.productCount}`, zam.products.slice(0, MAX_PRICE_ROWS).map(priceRow), {
+                afterHtml: zam.productCount > MAX_PRICE_ROWS ? paragraph(`ve ${zam.productCount - MAX_PRICE_ROWS} ürün daha`, { small: true }) : null,
+              })
+            : paragraph("Etkilenen ürünlerin maliyet oranı hâlâ hedefte.", { small: true }),
+          paragraph(link(`${APP_URL}/panel/urunler#zamlar`, "Önerilen fiyatlara bak →"), { html: true }),
+        ],
+        20,
+      )
+    : null;
   // Düğme kutunun bağlantısına: fiyat onayından sonra, zamdan önce (komisyon, sonra kontrol, sonra onay bekleyenler)
   const actionBox = com ?? kon ?? apv;
-  const button = rows.length
-    ? { href: link, label: "Panelde aç" }
+  const action = rows.length
+    ? { href: paymentsLink, label: "Panelde aç" }
     : inv && (inv.items.length || inv.reviewCount || inv.syncError || cashOuts)
       ? { href: `${APP_URL}/panel/faturalar${inv?.reviewCount || cashOuts ? "?durum=kontrol" : "?kaynak=parasut"}`, label: "Faturaları aç" }
       : holdPart
@@ -548,10 +537,8 @@ export function renderDigest(
           : zam || !sys
             ? { href: `${APP_URL}/panel/urunler#zamlar`, label: "Ürünleri aç" }
             : { href: JOBS_LINK, label: "Günlük işleri aç" };
-  const boxes = [com ? boxHtml(com, "commission") : "", kon ? boxHtml(kon, "kontrol") : "", apv ? boxHtml(apv, "approvals") : ""].join("");
-  const forecastBox = fc ? boxHtml(fc, "forecast") : "";
   // Kapanış notu gövdenin asıl bölümüne göre; yalnız ek kutu varsa not yok (kutular kendi bağlantısını taşır)
-  const note = rows.length
+  const closing = rows.length
     ? "Ödediklerinizi panelde “Ödedim” ile işaretleyin; tekrar edenler sıradaki tarihe geçer."
     : inv || zam || (!sys && !actionBox)
       ? "Faturalar her sabah Paraşüt'ten kendiliğinden gelir; kategorisi tahmin edilenleri panelde onaylayın."
@@ -559,41 +546,36 @@ export function renderDigest(
         ? "İş yeniden düzgün çalışınca uyarı kendiliğinden kalkar."
         : "";
   const systemSection = sys
-    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:8px"><tr><td style="background:#fef2f2;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#b91c1c">
-  <div style="font-size:13px;line-height:18px;font-weight:600">Sistem uyarıları · ${sys.items.length}</div>
-  ${sys.items.map((i) => `<div style="margin-top:8px"><strong>${esc(i.title)}</strong><br>${esc(i.body)}</div>`).join("\n  ")}
-  <div style="margin-top:8px"><a href="${JOBS_LINK}" style="color:#b91c1c;font-weight:600">Günlük işleri aç →</a></div>
-</td></tr></table>`
-    : "";
+    ? note([...sys.items.map((i) => `<strong>${esc(i.title)}</strong><br>${esc(i.body)}`), link(JOBS_LINK, "Günlük işleri aç →", "bad")], {
+        tone: "bad",
+        title: `Sistem uyarıları · ${sys.items.length}`,
+        html: true,
+      })
+    : null;
 
-  const html = emailLayout({
+  const html = layout({
     subject,
     preheader,
-    brandSub: rows.length ? "Ödemeler &amp; hatırlatıcılar" : "Sabah özeti",
-    today,
-    card: `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#71717a">${rows.length ? "Günlük ödeme hatırlatması" : "Günlük sabah özeti"}${branch ? ` · ${esc(branch)}` : ""}</div>
-    <h1 style="margin:4px 0 10px;font-family:${FONT};font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.02em;color:#171717">${esc(headline)}</h1>${branch ? `<p style="margin:0 0 10px;font-family:${FONT};font-size:13px;line-height:18px;color:#71717a">${esc(branchDigestNote(branch))}</p>` : ""}
-    <div>${pills}</div>
-    ${systemSection}
-    ${sections}
-    ${
-      rows.length
-        ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:4px">
-      <tr>
-        <td style="padding:14px 0 0;border-top:1px solid #e4e4e7;font-family:${FONT};font-size:14px;color:#3f3f46">Toplam</td>
-        <td align="right" style="padding:14px 0 0;border-top:1px solid #e4e4e7;font-family:${FONT};font-size:18px;font-weight:600;color:#171717;white-space:nowrap">${esc(money(total))}</td>
-      </tr>
-    </table>`
-        : ""
-    }
-    ${invoiceSection}${boxes}
-    ${priceSection}${forecastBox}
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px">
-      <tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717">
-        <a href="${esc(button.href)}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">${esc(button.label)}</a>
-      </td></tr>
-    </table>
-    ${note ? `<p style="margin:12px 0 0;font-family:${FONT};font-size:13px;line-height:19px;color:#71717a;text-align:center">${note}</p>` : ""}`,
+    meta: rows.length ? "Ödemeler & hatırlatıcılar" : "Sabah özeti",
+    date: today,
+    eyebrow: `${rows.length ? "Günlük ödeme hatırlatması" : "Günlük sabah özeti"}${branch ? ` · ${branch}` : ""}`,
+    title: headline,
+    body: [
+      // Şube kapsamı küçük gri not: başlıktan sonra göz toplama gitsin
+      branch ? paragraph(branchDigestNote(branch), { small: true }) : null,
+      totals,
+      systemSection,
+      ...sections,
+      invoiceSection,
+      com ? boxHtml(com, "commission") : null,
+      kon ? boxHtml(kon, "kontrol") : null,
+      apv ? boxHtml(apv, "approvals") : null,
+      priceSection,
+      fc ? boxHtml(fc, "forecast") : null,
+      // Kapanış notu sabit cümle (kaçışsız; eskisiyle aynı)
+      stack([button(action.href, action.label), closing ? paragraph(closing, { small: true, align: "center", html: true }) : null], 14),
+    ],
+    footer: DEFAULT_FOOTER,
   });
 
   const text = [
@@ -638,7 +620,7 @@ export function renderDigest(
       : []),
     ...(fc ? boxText(fc) : []),
     "",
-    `${button.label}: ${button.href}`,
+    `${action.label}: ${action.href}`,
   ].join("\n");
 
   return { subject, html, text };
@@ -660,35 +642,30 @@ export const DB_QUOTA_ABOUT: SystemAlertAbout = {
 
 /**
  * Bekçi e-postası (Paraşüt işi, 07:00–08:00): dünkü sabah işi çalışmadıysa ya da hata verdiyse kısa uyarı. Sabah
- * e-postasını gönderen iş bozulunca bunu ancak öteki iş söyleyebilir. Sabah e-postasıyla aynı kabuk.
+ * e-postasını gönderen iş bozulunca bunu ancak öteki iş söyleyebilir. Sabah e-postasıyla aynı kit (src/lib/email).
  * `about` verilirse aynı kabuk başka bir sistem uyarısını taşır (veritabanı kotası).
  */
 export function renderSystemAlert(items: DigestSystem["items"], today: string, about: SystemAlertAbout = JOBS_ABOUT) {
   const first = items[0]?.title ?? "Sistem uyarısı";
   const subject = `L'Affogato · ${first}${items.length > 1 ? ` (+${items.length - 1})` : ""}`;
   const headline = items.length > 1 ? `${items.length} sistem uyarısı` : first;
-  const list = items
-    .map(
-      (i) => `<tr><td style="padding:10px 0;border-top:1px solid #e4e4e7;font-family:${FONT}">
-  ${items.length > 1 ? `<div style="font-size:15px;line-height:20px;font-weight:600;color:#171717">${esc(i.title)}</div>` : ""}
-  <div style="font-size:14px;line-height:20px;color:#3f3f46;margin-top:2px">${esc(i.body)}</div>
-</td></tr>`,
-    )
-    .join("\n");
-  const html = emailLayout({
+  // Görünüş (src/lib/email): kırmızı üst etiket ve sorun başlıkta; tek sorunda açıklaması başlığın altında, birden
+  // çoksa her biri küçük kırmızı bantta; altında ne yapılacağı (gri not) ve düğme
+  const html = layout({
     subject,
     preheader: items.map((i) => i.title).join(" · "),
-    brandSub: "Sistem uyarısı",
-    today,
-    card: `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#b91c1c;font-weight:600">${esc(about.label)}</div>
-    <h1 style="margin:4px 0 10px;font-family:${FONT};font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.02em;color:#171717">${esc(headline)}</h1>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">${list}</table>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fef2f2;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#b91c1c">${esc(about.help)}</td></tr></table>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px">
-      <tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717">
-        <a href="${about.link.href}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">${esc(about.link.label)}</a>
-      </td></tr>
-    </table>`,
+    meta: "Sistem uyarısı",
+    date: today,
+    eyebrow: about.label,
+    eyebrowTone: "bad",
+    title: headline,
+    lead: items.length === 1 ? items[0].body : null,
+    body: [
+      items.length > 1 ? stack(items.map((i) => statusBanner({ tone: "bad", size: "sm", title: i.title, sub: i.body })), 10) : null,
+      note(about.help),
+      button(about.link.href, about.link.label),
+    ],
+    footer: DEFAULT_FOOTER,
   });
   const text = [
     `L'Affogato · ${dateTR(today)}`,

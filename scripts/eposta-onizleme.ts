@@ -32,7 +32,7 @@ import { weekInfo, type WeeklyItem } from "../src/lib/weekly/core";
 import { renderConnectedNotice } from "../src/server/mcp/notice";
 import { renderCashReport } from "../src/server/notify/cash-report-template";
 import { renderChecklistAlert } from "../src/server/notify/checklist-alert-template";
-import { renderDigest, renderSystemAlert } from "../src/server/notify/digest-template";
+import { DB_QUOTA_ABOUT, renderDigest, renderSystemAlert, type DigestBox, type DigestInvoices, type DigestPrices } from "../src/server/notify/digest-template";
 import { renderKaraokeReminder } from "../src/server/notify/karaoke-reminder-template";
 import { renderStaffMorning, renderStaffSoon } from "../src/server/notify/karaoke-staff-template";
 import { renderWeekly } from "../src/server/notify/weekly-template";
@@ -221,7 +221,66 @@ const DIGEST_ROWS = [
   { item: item({ ref: "invoice:23", source: "invoice", sourceId: 23, kind: "fatura", title: "Örnek Süt Ltd.", detail: "Fatura ÖRN2026 · vade tahmini (30 gün)", amount: 12_500.5, dueDate: "2026-11-18", daysLeft: -7, status: "overdue", repeat: "none" }), stage: "overdue" as const },
   { item: item({ title: "Kira" }), stage: "due" as const },
   { item: item({ title: "Muhasebe ücreti", amount: 4_000, dueDate: "2026-11-28", daysLeft: 3, status: "soon" }), stage: "before" as const },
+  { item: item({ title: "Su faturası", amount: null, dueDate: "2026-11-27", daysLeft: 2, status: "soon" }), stage: "before" as const },
 ];
+const DIGEST_SYSTEM = { items: [{ title: "Dünkü sabah işi çalışmadı (24 Kasım)", body: "08:00–09:00 arasında çalışması gerekiyordu: sabah e-postası gitmedi." }] };
+/** Paraşüt bölümünün her parçası: yeni faturalar (biri vadeli, biri kontrol bekliyor), kontrol, kasadan alım, fiyat onayı */
+const DIGEST_INVOICES: DigestInvoices = {
+  items: [
+    { supplier: "Örnek Kahve A.Ş.", date: "2026-11-24", payable: 8_640, category: "Mal alışı", needsReview: true },
+    { supplier: "Örnek Ambalaj Ltd. Şti.", date: "2026-11-24", payable: 1_212.75, category: "Ambalaj", needsReview: false, unpaid: true, dueDate: "2026-12-24" },
+  ],
+  reviewCount: 2,
+  stockOnlyCount: 1,
+  cashOuts: { count: 1, summary: "Örnek Market 640 ₺" },
+  priceHolds: { count: 2, fresh: 1, items: [{ name: "Süt", pct: 0.52 }, { name: "Çikolata sosu", pct: -0.45 }] },
+};
+const DIGEST_PRICES: DigestPrices = {
+  changes: [
+    { name: "Süt", unit: "ml", before: 0.042, after: 0.048, pct: 0.14, monthly: 690 },
+    { name: "Espresso çekirdeği", unit: "gr", before: 0.62, after: 0.68, pct: 0.1, monthly: 1_180 },
+    { name: "Karton bardak 12 oz", unit: "adet", before: 2.1, after: 2.4, pct: 0.14 },
+  ],
+  products: [
+    { name: "Latte", size: "M", price: 120, suggestedPrice: 135, basis: "target", ratioBefore: 0.31, ratioAfter: 0.36 },
+    { name: "Mocha", size: "L", price: 150, suggestedPrice: 158, basis: "keep", ratioBefore: 0.33, ratioAfter: 0.37 },
+  ],
+  productCount: 2,
+  monthlyTotal: 1_870,
+  basisMonth: "2026-10",
+};
+const COMMISSION_BOX: DigestBox = {
+  title: "Komisyon ve hakediş",
+  lines: [
+    { strong: "Hakediş gecikti: Örnek Kart (Ekim)", text: "Beklenen ≈ 1.234 ₺; son gün 20 Kasım'dı" },
+    { text: "Yemek kartı oranı %7,2 (sınır %6) olabilir", tone: "bad" },
+  ],
+  href: "/panel/komisyonlar",
+  link: "Komisyon & hakediş'te aç",
+  subjectPart: "Hakediş gecikti: Örnek Kart (Ekim)",
+  headline: "Hakediş gecikti: Örnek Kart (Ekim)",
+};
+const KONTROL_BOX: DigestBox = {
+  title: "Kontrol listeleri · 24 Kasım Salı",
+  lines: [
+    { strong: "Kapanış", text: "hiç açılmadı" },
+    { text: "Buzdolabı: 6 °C (0–4 °C) · Ayşe: kapı açık kalmış", tone: "bad" },
+    { text: "Dün kasa raporu da girilmedi; kafe kapalıysa bu bölümü önemsemeyin.", tone: "muted" },
+  ],
+  href: "/panel/kontrol/gecmis?gun=2026-11-24",
+  link: "Kontrol geçmişi",
+  subjectPart: "dünkü kapanış listesi eksik",
+  headline: "Dünkü kontrol listelerinde eksik var",
+};
+const APPROVALS_BOX: DigestBox = {
+  title: "Onay bekleyenler",
+  lines: [{ strong: "1 personel isteği onay bekliyor", text: "24 Kasım kasa düzeltmesi (Mehmet)" }],
+  href: "/panel/onaylar",
+  link: "Onaylar'ı aç",
+  subjectPart: "1 istek onay bekliyor",
+  headline: "1 personel isteği onay bekliyor",
+};
+const FORECAST_BOX: DigestBox = { title: "Karaoke", lines: [{ text: "Bugün 3 rezervasyon · 1 rezervasyonsuz" }, { text: "Oda 20:00'de dolu", tone: "muted" }], href: "/panel/karaoke", link: "Ayrıntı", subjectPart: null, headline: null };
 
 // ---------------------------------------------------------------- Karaoke
 
@@ -293,7 +352,32 @@ const SAMPLES: { name: string; title: string; mail: () => Mail }[] = [
         { changes: [{ name: "Süt", unit: "ml", before: 0.042, after: 0.048, pct: 0.14, monthly: 690 }], products: [], productCount: 0 },
       ),
   },
+  {
+    name: "sabah-ozeti-kutular",
+    title: "Sabah e-postası · ödemesiz: Paraşüt bölümü, ek kutular, zam ve ürünler",
+    mail: () => renderDigest([], "2026-11-25", DIGEST_INVOICES, DIGEST_PRICES, null, { commission: COMMISSION_BOX, kontrol: KONTROL_BOX, approvals: APPROVALS_BOX, forecast: FORECAST_BOX }),
+  },
+  {
+    name: "sabah-ozeti-sistem",
+    title: "Sabah e-postası · sistem uyarısı, eşitleme hatası, şube",
+    mail: () => renderDigest(DIGEST_ROWS.slice(1, 2), "2026-11-25", { items: [], reviewCount: 0, syncError: "Paraşüt 401: oturumun süresi doldu" }, null, DIGEST_SYSTEM, { kontrol: KONTROL_BOX }, "Marina"),
+  },
+  { name: "sabah-ozeti-bos", title: "Sabah e-postası · yeni bir şey yok", mail: () => renderDigest([], "2026-11-25", null, null, null, { forecast: FORECAST_BOX }) },
   { name: "sistem-uyarisi", title: "Sistem uyarısı", mail: () => renderSystemAlert([{ title: "Dünkü sabah işi çalışmadı", body: "Sabah e-postası ve eşitlemeler dün yapılmadı." }], "2026-11-25") },
+  {
+    name: "sistem-uyarisi-iki",
+    title: "Sistem uyarısı · iki sorun",
+    mail: () =>
+      renderSystemAlert(
+        [DIGEST_SYSTEM.items[0], { title: "Paraşüt işi bu sabah çalışmadı", body: "07:00–08:00 arasında çalışması gerekiyordu; eşitlemeyi sabah işi yapacak." }],
+        "2026-11-25",
+      ),
+  },
+  {
+    name: "sistem-uyarisi-kota",
+    title: "Sistem uyarısı · veritabanı kotası",
+    mail: () => renderSystemAlert([{ title: "Veritabanının %90'ı doldu", body: "512 MB kotanın 463 MB'ı kullanılıyor; dolunca panel kayıt yazamaz." }], "2026-11-25", DB_QUOTA_ABOUT),
+  },
   {
     name: "kontrol-listesi",
     title: "Kontrol listesi hatırlatması",
@@ -326,6 +410,27 @@ const SAMPLES: { name: string; title: string; mail: () => Mail }[] = [
         { today: "2026-11-23" },
       ),
   },
+  {
+    name: "haftalik-ozet-ornek",
+    title: "Haftalık özet · örnek, beş madde, okunamayan",
+    mail: () =>
+      renderWeekly(
+        {
+          week: weekInfo("2026-11-23"),
+          items: [
+            weekly("nakit", 12_400, { title: `30 Kasım Pazartesi para yetmeyebilir: tahmini −12.400${NB}₺`, href: "/panel/hatirlaticilar/nakit", action: "Nakit planını aç", detail: "O gün: Kira" }),
+            weekly("zam", 4_800, { title: `Latte: Süt %14 zammı ayda ≈ 4.800${NB}₺ kâr kaybı`, href: "/panel/urunler#zamlar", action: "Fiyatlara bak" }),
+            weekly("komisyon", 3_200, { title: "Hakediş gecikti: Örnek Kart (Ekim)", href: "/panel/komisyonlar?ay=2026-10", action: "Komisyon & hakedişe bak" }),
+            weekly("kasa", 640, { title: `Kasa 3 günde toplam 640${NB}₺ eksik`, href: "/panel/kasa?ay=2026-11", action: "Kasa raporlarına bak", detail: "En büyüğü 18 Kasım Salı: 420 ₺ (Marina)" }),
+            weekly("karaoke", null, { title: "Salı–Perşembe 14–17 karaoke %12 dolu", href: "/panel/karaoke/doluluk", action: "Doluluğa bak" }),
+          ],
+          lines: [`Geçen hafta kasa cirosu 68.900${NB}₺ · önceki 4 haftaya göre %12 az`],
+          failed: ["stok"],
+        },
+        { today: "2026-11-24", sample: true },
+      ),
+  },
+  { name: "haftalik-ozet-sakin", title: "Haftalık özet · sakin hafta", mail: () => renderWeekly({ week: weekInfo("2026-11-23"), items: [], lines: [], failed: ["nakit", "karaoke"] }, { today: "2026-11-23" }) },
   { name: "claude-baglandi", title: "Claude bağlantısı", mail: () => renderConnectedNotice({ name: "Okan", label: "Claude", host: "claude.ai", at: new Date("2026-11-25T09:12:00Z"), base: "https://ladmin.laffogato.net" }) },
   ...(["invite", "password", "reset"] as const).map((kind) => ({
     name: `erisim-${kind}`,

@@ -1,14 +1,16 @@
 /**
- * Haftalık özetin e-postası (saf; "server-only" yok, tests/haftalik-ozet.test.ts sınar): sabah e-postasıyla aynı kabuk
- * (emailLayout), satır içi stiller ve tablolar, açık tema, en çok 560 px, telefonda tek sütun. Maddeler numaralı; başlık
- * ve "… →" bağlantısı aynı panel ekranını açar (Outlook blok bağlantıyı tanımaz, iki ayrı <a>). Bütün kullanıcı metni
- * (ürün, hammadde, kanal adı) esc()'ten geçer. Veriyi src/server/weekly/collect.ts toplar, gönderim send.ts'te.
+ * Haftalık özetin e-postası (saf; "server-only" yok, tests/haftalik-ozet.test.ts sınar): sabah e-postasıyla aynı e-posta
+ * kiti (src/lib/email; docs/BILDIRIMLER.md › E-posta tasarımı), açık ve koyu tema, telefonda tek sütun. Üstte başlık,
+ * geçen haftanın satırları (kasa cirosu) gri kutuda; maddeler numaralı, başlık ve "… →" bağlantısı aynı panel ekranını
+ * açar (Outlook blok bağlantıyı tanımaz, iki ayrı <a>). Bütün kullanıcı metni (ürün, hammadde, kanal adı) esc()'ten
+ * geçer. Veriyi src/server/weekly/collect.ts toplar, gönderim send.ts'te.
  */
 
+import { button, esc, LIGHT, layout, link, list, note, paragraph } from "@/lib/email";
 import type { WeeklySummary } from "@/lib/weekly/core";
 import { failedText, headlineOf, subjectOf, weekRangeText } from "@/lib/weekly/text";
 
-import { APP_URL, emailLayout, esc, FONT } from "./digest-template";
+import { APP_URL } from "./digest-template";
 
 /** E-postanın alt notu (kabuğun alıcı notunun yerine) */
 export const WEEKLY_FOOTER = "Bu özet her pazartesi panel yöneticilerine gider. Kapatmak için: Ödemeler › E-posta bildirimleri › Haftalık özet.";
@@ -31,44 +33,38 @@ export function renderWeekly(s: WeeklySummary, o: { today: string; sample?: bool
   const n = s.items.length;
   const preheader = n ? `${range} · ${n} konu` : `${range} · dikkat isteyen bir şey yok`;
   const failed = failedText(s.failed);
-  const note = [n ? WEEKLY_NOTE : null, failed].filter(Boolean).join(" ");
+  const footnote = [n ? WEEKLY_NOTE : null, failed].filter(Boolean).join(" ");
   const eyebrow = `${sample ? "Örnek · " : ""}Haftalık özet · ${range}`;
   const panel = `${APP_URL}/panel`;
 
-  const rows = s.items
-    .map((item, i) => {
-      const url = esc(weeklyUrl(item.href));
-      return `<tr>
-  <td width="28" style="width:28px;padding:12px 6px 12px 0;border-top:1px solid #e4e4e7;vertical-align:top">
-    <table role="presentation" width="22" cellspacing="0" cellpadding="0" border="0"><tr><td width="22" height="22" align="center" style="width:22px;height:22px;border-radius:11px;background:#f4f4f5;color:#3f3f46;font-family:${FONT};font-size:12px;line-height:22px;font-weight:600">${i + 1}</td></tr></table>
-  </td>
-  <td style="padding:12px 0;border-top:1px solid #e4e4e7;vertical-align:top;font-family:${FONT};word-break:break-word">
-    <a href="${url}" style="font-size:15px;line-height:20px;font-weight:600;color:#171717;text-decoration:none">${esc(item.title)}</a>
-    ${item.detail ? `<div style="font-size:13px;line-height:18px;color:#71717a;margin-top:2px">${esc(item.detail)}</div>` : ""}
-    <div style="margin-top:4px"><a href="${url}" style="font-size:13px;line-height:18px;font-weight:600;color:#171717;text-decoration:underline">${esc(item.action)} →</a></div>
-  </td>
-</tr>`;
-    })
-    .join("\n");
+  // Madde: başlık (kalın, bağlantı), açıklama (gri), "… →" bağlantısı; maddeler arasında nefes payı (kitin listesi 8 px
+  // bırakır, bu maddeler üç satırlık)
+  const items = s.items.map((item, i) => {
+    const url = weeklyUrl(item.href);
+    const title = `<a class="e-link" href="${esc(url)}" style="font-size:16px;line-height:22px;font-weight:600;color:${LIGHT.ink};text-decoration:none">${esc(item.title)}</a>`;
+    const detail = item.detail ? `<div class="e-mute" style="margin-top:2px;font-size:14px;line-height:20px;color:${LIGHT.mute}">${esc(item.detail)}</div>` : "";
+    const action = `<div style="margin-top:6px;font-size:14px;line-height:20px">${link(url, `${item.action} →`)}</div>`;
+    return `<div style="padding-bottom:${i < n - 1 ? 10 : 0}px">${title}${detail}${action}</div>`;
+  });
 
-  const html = emailLayout({
+  // Görünüş (src/lib/email): başlık, sakin haftada altında tek cümle; örnekte turuncu not, geçen haftanın satırları gri
+  // kutuda, numaralı maddeler, küçük dipnot ve düğme
+  const html = layout({
     subject,
     preheader,
-    brandSub: "Haftalık özet",
-    today: o.today,
+    meta: "Haftalık özet",
+    date: o.today,
+    eyebrow,
+    title: headline,
+    lead: n ? null : QUIET_LINE,
+    body: [
+      sample ? note(SAMPLE_LINE, { tone: "warn" }) : null,
+      s.lines.length ? note(s.lines) : null,
+      n ? list(items, { ordered: true, html: true }) : null,
+      footnote ? paragraph(footnote, { small: true }) : null,
+      button(panel, "Paneli aç"),
+    ],
     footer: WEEKLY_FOOTER,
-    card: `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#71717a">${esc(eyebrow)}</div>
-    <h1 style="margin:4px 0 10px;font-family:${FONT};font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.02em;color:#171717">${esc(headline)}</h1>
-    ${sample ? `<p style="margin:0 0 10px;font-family:${FONT};font-size:13px;line-height:18px;color:#c2410c">${esc(SAMPLE_LINE)}</p>` : ""}
-    ${n ? "" : `<p style="margin:0 0 10px;font-family:${FONT};font-size:14px;line-height:20px;color:#3f3f46">${esc(QUIET_LINE)}</p>`}
-    ${s.lines.map((l) => `<div style="font-family:${FONT};font-size:13px;line-height:19px;color:#3f3f46;margin-top:2px">${esc(l)}</div>`).join("\n    ")}
-    ${n ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:14px">${rows}</table>` : ""}
-    ${note ? `<p style="margin:12px 0 0;font-family:${FONT};font-size:12px;line-height:17px;color:#a1a1aa">${esc(note)}</p>` : ""}
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:20px">
-      <tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717">
-        <a href="${panel}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Paneli aç</a>
-      </td></tr>
-    </table>`,
   });
 
   const text = [
@@ -78,7 +74,7 @@ export function renderWeekly(s: WeeklySummary, o: { today: string; sample?: bool
     ...(n ? [] : [QUIET_LINE]),
     ...(s.lines.length ? ["", ...s.lines] : []),
     ...s.items.flatMap((item, i) => ["", `${i + 1}. ${item.title}`, ...(item.detail ? [`   ${item.detail}`] : []), `   ${item.action}: ${weeklyUrl(item.href)}`]),
-    ...(note ? ["", note] : []),
+    ...(footnote ? ["", footnote] : []),
     "",
     `Paneli aç: ${panel}`,
   ].join("\n");
