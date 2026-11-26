@@ -3,7 +3,8 @@
 // cihazın kilidini Kilidi aç da açar (YO-03); iki adımlı kurulumun onayı sınırlı, süresi geçen ya da durdurulan anahtar
 // silinir (YO-05); davet sayfasında parola kuralı ve tekrar alanı bağlantının hakkından düşmez (YO-06); kurtarma kodu
 // kipinde yanlış kodun metni kurtarma koduna göre (YO-07). Oturum gerçek src/server/auth/dal.ts'le, çerezler taklit
-// edilerek (her tarayıcı ayrı çerez kutusu).
+// edilerek (her tarayıcı ayrı çerez kutusu). Yöneticide zorunlu iki adımlı kurulum ve yeni cihaz uyarısı da burada
+// (src/lib/admin-security.ts); öteki testler zorunluluk kapalıyken (ADMIN_2FA_OPTIONAL=1) koşar.
 //
 // HESAP_TEST_DATABASE_URL (yoksa BAGLANTI_TEST_DATABASE_URL) verilmezse atlanır. Bir Postgres sunucusunun adresi
 // (veritabanı oluşturabilen kullanıcı): test kendi geçici veritabanını açar, migration'ları uygular, sonunda siler.
@@ -65,7 +66,10 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
   let locks: typeof import("../src/server/auth/login-locks");
   let totp: typeof import("../src/server/auth/totp");
   let box: typeof import("../src/server/secret-box");
+  let newDevice: typeof import("../src/server/auth/new-device");
   let jar = new Jar();
+  /** İsteğin başlıkları (tarayıcı kimliği, IP) */
+  let reqHeaders = new Headers();
   const ids = {} as Record<Key, number>;
 
   before(async () => {
@@ -83,7 +87,7 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
       require.cache[p] = { id: p, filename: p, loaded: true, exports } as unknown as NodeJS.Module;
     };
     stub("server-only", {});
-    stub("next/headers", { cookies: async () => jar, headers: async () => new Headers() });
+    stub("next/headers", { cookies: async () => jar, headers: async () => reqHeaders });
     stub("next/navigation", {
       redirect: (to: string) => {
         throw Object.assign(new Error("NEXT_REDIRECT"), { to });
@@ -110,6 +114,7 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
     locks = await import("../src/server/auth/login-locks");
     totp = await import("../src/server/auth/totp");
     box = await import("../src/server/secret-box");
+    newDevice = await import("../src/server/auth/new-device");
   });
 
   after(async () => {
@@ -119,11 +124,14 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
   });
 
   beforeEach(async () => {
+    // Öteki testler iki adımlısız yöneticiyle çalışır: zorunluluk kapalı (zorunluluğun kendi testi açar)
+    process.env.ADMIN_2FA_OPTIONAL = "1";
+    reqHeaders = new Headers();
     await db.execute(sql`TRUNCATE activity_log, login_device_locks, user_tokens, revoked_sessions RESTART IDENTITY CASCADE`);
     for (const k of Object.keys(BASE) as Key[]) {
       await db
         .update(s.users)
-        .set({ ...BASE[k], active: true, failedLogins: 0, lockedUntil: null, totpEnabled: false, totpSecret: null, totpLastStep: null, recoveryCodes: null })
+        .set({ ...BASE[k], active: true, failedLogins: 0, lockedUntil: null, lastLoginAt: null, totpEnabled: false, totpSecret: null, totpLastStep: null, recoveryCodes: null })
         .where(eq(s.users.id, ids[k]));
     }
   });
