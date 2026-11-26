@@ -119,9 +119,9 @@ test("LafPOS öncesi başlayan dönemde tahmin yok: kalem rapora girmez", () => 
 test("yükleyici: yalnız yönetici, ayın son günüyle tahmin, Marina'nın sayımı; sayfa requireAdmin", () => {
   const src = readFileSync(join(process.cwd(), "src/server/data/kacak.ts"), "utf8");
   assert.match(src, /await requireAdmin\(\);/);
-  assert.match(src, /loadStockEstimate\(db, now, monthEnd\)/);
+  assert.match(src, /loadStockEstimate\(db, now, \{ asOf: monthEnd \}\)/);
   assert.match(src, /eq\(s\.stockCounts\.branchId, STOCK_ESTIMATE_BRANCH\)/);
   assert.match(src, /model\.unitCostAtMonthEnd\(id, chosen\)/);
   const est = readFileSync(join(process.cwd(), "src/server/data/stock-estimate.ts"), "utf8");
-  assert.match(est, /const today = asOf \?\? businessDate\(now\);/);
+  assert.match(est, /const today = opts.asOf \?\? businessDate\(now\);/);
 });
