@@ -606,6 +606,19 @@ function segmentCandidates(ctx: Ctx): Quad[] {
   for (let i = 0; i < n; i++) local[i] = paper[i] - low[i] + mean;
   const tl = otsuIndex(histogram(local));
   masks.push(mk(local, tl + 0.5));
+  // renksizlik: kâğıt gri / beyazdır, ahşap ve renkli zemin doygun. Gölgenin kararttığı kâğıt parlaklıkla zeminden
+  // ayrılmasa da doygunlukla ayrılır (yarısı gölgede fiş). Zemin de renksizse (gri masa, mermer) iki tepe yoktur, atlanır.
+  // doygunluk ışığa göre (gölgede renk farkı da küçülür): renk farkı / parlaklık
+  const satRaw = new Float32Array(n);
+  for (let i = 0; i < n; i++) satRaw[i] = (255 * ctx.chroma[i]) / (ctx.lum[i] + 40);
+  const ch = gaussianBlur({ width: w, height: h, data: satRaw }, 1.5).data;
+  const chist = histogram(ch);
+  const tc = otsuIndex(chist);
+  if (tc >= 12) {
+    const m = new Uint8Array(n);
+    for (let i = 0; i < n; i++) m[i] = ch[i] < tc - 0.5 && ctx.lum[i] > 40 ? 1 : 0;
+    masks.push(m);
+  }
   for (const m of masks) maskCandidates(ctx, m, out);
   return out;
 }
