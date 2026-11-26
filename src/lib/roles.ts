@@ -117,6 +117,7 @@ export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; staff: 
   { label: "Vergi, KDV, SGK: tahmini vergi takvimi, vergi kârı, muhtasar, SGK, damga, geçici ve kurumlar vergisine katkı", admin: true, staff: false },
   { label: "Sabit gider, maaş ve personel", admin: true, staff: false },
   { label: "Ödemeler, hatırlatıcılar, e-posta bildirimleri", admin: true, staff: false },
+  { label: "Mutabakat: banka ve tedarikçi ekstresi, POS hakedişi", admin: true, staff: false },
   { label: "Kontrol listelerini düzenleme, 7 günden eski geçmiş, karaoke doluluğu, vardiya planını yazma", admin: true, staff: false },
   { label: "Paraşüt, ayarlar, yedek, kullanıcı yönetimi, Claude bağlantısı", admin: true, staff: false },
 ];

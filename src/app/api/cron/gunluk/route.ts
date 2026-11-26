@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
   // Mutabakat ekstrelerinin saklama süresi (KVKK; docs/MUTABAKAT.md › Saklama): yüklendikten 90 gün sonra ekstre ve
   // satırları silinir. En çok 3 sn, sonucu yalnız yanıtta (body.mutabakat); iş adımı değil, aksarsa ertesi gün yeniden
   const reconTask = () =>
-    capped(
+    capped<number | "error" | "süre doldu">(
       purgeExpiredStatements(getDb(), todayTR()).catch((e: Error) => {
         console.error("[mutabakat] saklama süresi", e);
         return "error" as const;
