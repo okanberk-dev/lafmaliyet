@@ -1,6 +1,7 @@
 // Mutabakat (docs/MUTABAKAT.md): ekstre okuma (esnek sütun eşlemesi, Türk sayı ve tarih biçimleri, CSV), eşleştirme
 // (belge no, ad + tutar, tutar + gün, tutarı farklı, kararlar) ve banka POS hakediş karşılaştırması. Saf modüller:
-// src/lib/mutabakat/{parse,match,pos}.ts. Sonda ekran, menü, yetki ve saklama kurallarının kaynak denetimi.
+// src/lib/mutabakat/{parse,match,pos,view}.ts. Sonda ekran, menü, yetki ve saklama kurallarının kaynak denetimi;
+// veritabanıyla gidip gelen yol tests/mutabakat-db.test.ts'te.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -21,6 +22,7 @@ import {
   type ParseResult,
 } from "../src/lib/mutabakat/parse";
 import { blockDaysError, posCardOf, posReconciliation, settlementDay, type PosSaleDay } from "../src/lib/mutabakat/pos";
+import { accountName, bankScope, decisionProblem, filterRows, lineActions, missingFor, poolOf, reconcilePool, rowStatus, statementSummary, supplierScope } from "../src/lib/mutabakat/view";
 import { canOpen } from "../src/lib/roles";
 
 const ok = (r: ReturnType<typeof parseStatement>): ParseResult => {
@@ -355,6 +357,77 @@ test("POS: ekstre yokken hepsi bekleniyor; kart tutarı banka fişinden, yoksa Z
   assert.deepEqual(posCardOf({ card: 1000, bankPos: 0 }), { card: 1000, source: "z" });
   const last = posReconciliation({ days: [day("2026-11-02", 1000)], inflows: [], settings, coverage: { from: "2026-11-01", to: "2026-11-03" }, today: "2026-11-12" });
   assert.deepEqual(last.rows.map((r) => [r.status, r.diff]), [["bekleniyor", 0]]);
+});
+
+// ---------------------------------------------------------------- Ekran kuralları (view.ts)
+
+test("havuz: bankada POS satırları eşleştirmeye girmez, boşta kalan kayıtlar dönemle süzülür; özet POS'u ayrı sayar", () => {
+  const lines = [
+    line("2026-11-03", 9800, "UYE ISYERI POS HAKEDIS"),
+    line("2026-11-03", -150, "POS KOMISYON KESINTISI"),
+    line("2026-11-04", -500, "HAVALE TAMIRCI"),
+    line("2026-11-05", 1000, "NAKIT YATAN", { decision: "pos" }),
+    line("2026-11-06", -40, "MASRAF", { decision: "yoksay" }),
+  ];
+  // POS hakedişi kadar bir teslim kaydı: POS satırı onu "kapmaz"
+  const candidates = [cand("harcama", 1, "2026-11-04", -500, "Tamirci"), cand("teslim", 2, "2026-11-03", 9800, "Bankaya"), cand("harcama", 3, "2026-12-20", -70, "Aralık")];
+  const { rows, free } = reconcilePool("banka", lines, candidates, BANK_MATCH);
+  assert.deepEqual(
+    rows.map((r) => [r.line.description, rowStatus(r)]),
+    [
+      ["UYE ISYERI POS HAKEDIS", "pos"],
+      ["POS KOMISYON KESINTISI", "pos"],
+      ["HAVALE TAMIRCI", "eslesti"],
+      ["NAKIT YATAN", "pos"],
+      ["MASRAF", "yoksay"],
+    ],
+  );
+  assert.deepEqual(free.map((c) => c.id), [2, 3]);
+  assert.deepEqual(missingFor(free, { from: "2026-11-01", to: "2026-11-30" }).map((c) => c.id), [2]);
+  const sum = statementSummary(rows);
+  assert.deepEqual([sum.total, sum.eslesti, sum.yok, sum.yoksay, sum.pos, sum.posAmount], [5, 1, 0, 1, 3, 10650]);
+  assert.deepEqual(filterRows(rows, "pos").length, 3);
+  assert.deepEqual(filterRows(rows, "hepsi").length, 5);
+  // Tedarikçi ekstresinde POS diye bir şey yok: açıklama ne derse desin eşleştirilir
+  const sup = reconcilePool("tedarikci", [line("2026-11-03", 9800, "POS HAKEDIS")], [], SUPPLIER_MATCH);
+  assert.equal(sup.rows[0].pos, false);
+});
+
+test("hesap kimliği ve havuz: banka adı sadeleşir, bütün banka hesapları tek havuz, tedarikçi kendi havuzunda", () => {
+  assert.equal(accountName("  Garanti   TL "), "Garanti TL");
+  assert.equal(bankScope("Garanti TL"), bankScope("GARANTİ  tl"));
+  assert.notEqual(bankScope("Garanti TL"), bankScope("Garanti USD"));
+  assert.equal(supplierScope(7, "sutas"), "tedarikci:kart:7");
+  assert.equal(supplierScope(null, "sutas"), "tedarikci:ad:sutas");
+  assert.equal(poolOf({ kind: "banka", scope: bankScope("Garanti TL") }), poolOf({ kind: "banka", scope: bankScope("Akbank") }));
+  assert.equal(poolOf({ kind: "tedarikci", scope: "tedarikci:kart:7" }), "tedarikci:kart:7");
+});
+
+test("satırın düğmeleri ve kararın denetimi", () => {
+  const r = (status: "eslesti" | "fark" | "yok" | "yoksay", o: { pos?: boolean; decision?: MatchLine["decision"]; amount?: number; basis?: "elle" | "tutar" | null } = {}) => ({
+    status,
+    pos: o.pos ?? false,
+    basis: o.basis ?? null,
+    line: { decision: o.decision ?? null, amount: o.amount ?? -100 },
+  });
+  assert.deepEqual(lineActions("banka", r("yok")), ["eslestir", "yoksay"]);
+  // Bankada eşleşmeyen giriş POS hakedişi sayılabilir; tedarikçide hiç
+  assert.deepEqual(lineActions("banka", r("yok", { amount: 500 })), ["eslestir", "yoksay", "pos"]);
+  assert.deepEqual(lineActions("tedarikci", r("yok", { amount: 500 })), ["eslestir", "yoksay"]);
+  assert.deepEqual(lineActions("banka", r("eslesti", { basis: "tutar" })), ["eslestir", "ayir"]);
+  assert.deepEqual(lineActions("banka", r("eslesti", { decision: "elle", basis: "elle" })), ["eslestir", "geri-al"]);
+  assert.deepEqual(lineActions("banka", r("yok", { pos: true, amount: 500 })), ["ayir"]);
+  assert.deepEqual(lineActions("banka", r("yok", { pos: true, decision: "pos", amount: 500 })), ["geri-al"]);
+  assert.deepEqual(lineActions("banka", r("yoksay", { decision: "yoksay" })), ["geri-al"]);
+  assert.deepEqual(lineActions("banka", r("yok", { decision: "ayir" })), ["eslestir", "yoksay", "geri-al"]);
+
+  assert.equal(decisionProblem("banka", "yoksay", { amount: -10 }), null);
+  assert.equal(decisionProblem("banka", null, { amount: -10 }), null);
+  assert.match(decisionProblem("tedarikci", "pos", { amount: 10 }) ?? "", /yalnız banka/);
+  assert.match(decisionProblem("banka", "elle", { amount: -10 }, null) ?? "", /bulunamadı/);
+  assert.match(decisionProblem("banka", "elle", { amount: 10 }, { amount: -10 }) ?? "", /giren para/);
+  assert.match(decisionProblem("tedarikci", "elle", { amount: 10 }, { amount: -10 }) ?? "", /Fatura bir ödemeyle/);
+  assert.equal(decisionProblem("banka", "elle", { amount: -10 }, { amount: -12 }), null);
 });
 
 // ---------------------------------------------------------------- Kurallar: yetki, menü, saklama
