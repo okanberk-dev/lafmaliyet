@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 };
 
 /**
- * Zorunlu iki adımlı kurulum (src/lib/admin-security.ts; docs/DEPLOY.md › 6a): iki adımlısı kapalı yönetici girişten
+ * Zorunlu iki adımlı kurulum (yalnız ADMIN_2FA_REQUIRED=1 iken; src/lib/admin-security.ts; docs/DEPLOY.md › 6a): iki adımlısı kapalı yönetici girişten
  * sonra ve panelin her adresinden buraya gelir; kurana kadar panel açılmaz. Panelin dışında durur (kabuk, zil, canlı
  * veri yok) ve proxy'nin eşleştirdiği adreslerden değildir. İki adımlısı açık kişi bu sayfada kalabilir: kurulum
  * bittiğinde sayfa sunucudan yeniden çizilir, kurtarma kodları ekranda kalmalı (yönlendirme onları silerdi). Oturum ve

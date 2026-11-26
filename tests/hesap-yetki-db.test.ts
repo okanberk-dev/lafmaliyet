@@ -4,7 +4,7 @@
 // silinir (YO-05); davet sayfasında parola kuralı ve tekrar alanı bağlantının hakkından düşmez (YO-06); kurtarma kodu
 // kipinde yanlış kodun metni kurtarma koduna göre (YO-07). Oturum gerçek src/server/auth/dal.ts'le, çerezler taklit
 // edilerek (her tarayıcı ayrı çerez kutusu). Yöneticide zorunlu iki adımlı kurulum ve yeni cihaz uyarısı da burada
-// (src/lib/admin-security.ts); öteki testler zorunluluk kapalıyken (ADMIN_2FA_OPTIONAL=1) koşar.
+// (src/lib/admin-security.ts; zorunluluk varsayılan kapalı, ADMIN_2FA_REQUIRED=1 açar); öteki testler zorunluluk kapalıyken koşar.
 //
 // HESAP_TEST_DATABASE_URL (yoksa BAGLANTI_TEST_DATABASE_URL) verilmezse atlanır. Bir Postgres sunucusunun adresi
 // (veritabanı oluşturabilen kullanıcı): test kendi geçici veritabanını açar, migration'ları uygular, sonunda siler.
@@ -124,8 +124,9 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
   });
 
   beforeEach(async () => {
-    // Öteki testler iki adımlısız yöneticiyle çalışır: zorunluluk kapalı (zorunluluğun kendi testi açar)
-    process.env.ADMIN_2FA_OPTIONAL = "1";
+    // Öteki testler iki adımlısız yöneticiyle çalışır: zorunluluk kapalı, varsayılan (zorunluluğun kendi testi açar)
+    delete process.env.ADMIN_2FA_REQUIRED;
+    delete process.env.ADMIN_2FA_OPTIONAL;
     reqHeaders = new Headers();
     await db.execute(sql`TRUNCATE activity_log, login_device_locks, user_tokens, revoked_sessions RESTART IDENTITY CASCADE`);
     for (const k of Object.keys(BASE) as Key[]) {
@@ -359,8 +360,8 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
   const SETUP = "/giris/iki-adim";
   const login = (k: Key, next?: string) => auth.loginAction({}, form({ email: BASE[k].email, password: PASSWORD, ...(next ? { next } : {}) }));
 
-  test("zorunlu iki adımlı: kurmamış yönetici girişten sonra kurulum ekranına; kurana kadar ekran ve eylem yok, kurunca panel", async () => {
-    delete process.env.ADMIN_2FA_OPTIONAL;
+  test("zorunlu iki adımlı (ADMIN_2FA_REQUIRED=1): kurmamış yönetici girişten sonra kurulum ekranına; kurana kadar ekran ve eylem yok, kurunca panel", async () => {
+    process.env.ADMIN_2FA_REQUIRED = "1";
     jar = new Jar();
     await assert.rejects(login("ali", "/panel/kasa"), to(`${SETUP}?next=%2Fpanel%2Fkasa`), "panel yerine kurulum ekranı, dönülecek yerle");
     // Oturum açıldı ama panel kapalı: veri uçları oturumsuz sayar, sayfa ve eylemler kurulum ekranına gönderir
@@ -389,8 +390,8 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
     assert.equal((await dal.requireSignedIn()).id, ids.ali);
   });
 
-  test("zorunlu iki adımlı: personel etkilenmez, kurmuş yönetici kod adımından panele, açık oturum düşmez, ADMIN_2FA_OPTIONAL=1 kapatır", async () => {
-    delete process.env.ADMIN_2FA_OPTIONAL;
+  test("zorunlu iki adımlı: personel etkilenmez, kurmuş yönetici kod adımından panele, açık oturum düşmez, ADMIN_2FA_OPTIONAL=1 kapatır; varsayılan isteğe bağlı", async () => {
+    process.env.ADMIN_2FA_REQUIRED = "1";
     jar = new Jar();
     await assert.rejects(login("ayse"), to("/panel/bugun"), "personelde isteğe bağlı");
     assert.equal((await dal.requireUser()).id, ids.ayse);
@@ -410,6 +411,17 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
     assert.equal((await dal.requireAdmin()).id, ids.ali, "acil durum: zorunluluk kapalı, aynı oturum geçer");
     jar = new Jar();
     await assert.rejects(login("ali"), to("/panel"), "acil durumda giriş doğrudan panele");
+
+    // Varsayılan (değişken yok; sahibin isteği 26 Kasım): iki adımlısız yönetici parolayla doğrudan panele, açık oturum geçer
+    delete process.env.ADMIN_2FA_REQUIRED;
+    delete process.env.ADMIN_2FA_OPTIONAL;
+    assert.equal((await dal.requireAdmin()).id, ids.ali, "aynı oturum kurulum ekranına düşmez");
+    assert.equal(await dal.awaitingTwoFactorSetup(), false);
+    jar = new Jar();
+    await assert.rejects(login("ali", "/panel/kasa"), to("/panel/kasa"), "giriş doğrudan panele, kurulum ekranı yok");
+    // Kurmuş yöneticinin kod adımı yerinde (isteğe bağlı, açtıysa sorulur)
+    jar = new Jar();
+    assert.deepEqual(await login("veli"), { step: "totp", email: BASE.veli.email });
   });
 
   const UA_CHROME = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";

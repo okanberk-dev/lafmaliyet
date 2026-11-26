@@ -12,6 +12,7 @@ import { test } from "node:test";
 
 import {
   ADMIN_2FA_OPTIONAL_ENV,
+  ADMIN_2FA_REQUIRED_ENV,
   adminTwoFactorRequired,
   alertsNewDevice,
   maskIp,
@@ -51,12 +52,20 @@ const UA = {
 
 // ---------------------------------------------------------------- Zorunluluk
 
-test("zorunluluk: varsayılan açık; yalnız ADMIN_2FA_OPTIONAL=1 kapatır", () => {
+test("zorunluluk: varsayılan kapalı (sahibin isteği, 26 Kasım: iki adımlı isteğe bağlı); yalnız ADMIN_2FA_REQUIRED=1 açar, ADMIN_2FA_OPTIONAL=1 yine kapatır", () => {
+  assert.equal(ADMIN_2FA_REQUIRED_ENV, "ADMIN_2FA_REQUIRED");
   assert.equal(ADMIN_2FA_OPTIONAL_ENV, "ADMIN_2FA_OPTIONAL");
-  assert.equal(adminTwoFactorRequired({}), true, "değişken yoksa zorunlu");
+  assert.equal(adminTwoFactorRequired({}), false, "değişken yoksa isteğe bağlı");
+  assert.equal(adminTwoFactorRequired({ ADMIN_2FA_REQUIRED: "1" }), true);
+  assert.equal(adminTwoFactorRequired({ ADMIN_2FA_REQUIRED: " 1\n" }), true, "panoya yapıştırılan boşluk sayılmaz");
+  for (const v of ["0", "", "true", "evet", "yes"]) assert.equal(adminTwoFactorRequired({ ADMIN_2FA_REQUIRED: v }), false, `"${v}" zorunlu yapmaz (yalnız 1)`);
+  // Zorunluluk açıkken acil durum: ADMIN_2FA_OPTIONAL=1 kapatır; tek başına bir şey değiştirmez
+  assert.equal(adminTwoFactorRequired({ ADMIN_2FA_REQUIRED: "1", ADMIN_2FA_OPTIONAL: "1" }), false);
+  assert.equal(adminTwoFactorRequired({ ADMIN_2FA_REQUIRED: "1", ADMIN_2FA_OPTIONAL: " 1\n" }), false);
+  assert.equal(adminTwoFactorRequired({ ADMIN_2FA_REQUIRED: "1", ADMIN_2FA_OPTIONAL: "0" }), true);
   assert.equal(adminTwoFactorRequired({ ADMIN_2FA_OPTIONAL: "1" }), false);
-  assert.equal(adminTwoFactorRequired({ ADMIN_2FA_OPTIONAL: " 1\n" }), false, "panoya yapıştırılan boşluk sayılmaz");
-  for (const v of ["0", "", "true", "evet", "yes"]) assert.equal(adminTwoFactorRequired({ ADMIN_2FA_OPTIONAL: v }), true, `"${v}" zorunluluğu kapatmaz (yalnız 1)`);
+  // Varsayılan (process.env, testte değişken yok): kurmamış yönetici kurulum ekranına gitmez
+  assert.equal(needsTwoFactorSetup({ role: "admin", totpEnabled: false }, adminTwoFactorRequired({})), false);
 });
 
 test("kurulum gereken hesap: iki adımlısı kapalı yönetici, zorunluluk açıkken; personel hiç", () => {
@@ -210,10 +219,12 @@ test("yeni cihaz: işlem geçmişine yalnız etiket ve kısaltılmış IP; e-pos
   assert.match(read("src/lib/bell-failed.ts"), /guvenlik: \{ group: "sistem", what: "yeni cihazdan girişler", href: "\/panel\/hesap" \}/);
 });
 
-test("belgeler: acil durum değişkeni ve yeni cihaz uyarısı yazılı", () => {
+test("belgeler: zorunluluk ve acil durum değişkenleri ve yeni cihaz uyarısı yazılı", () => {
   const env = read(".env.example");
+  assert.match(env, /^# ADMIN_2FA_REQUIRED=1/m, "örnek dosyada kapalı (yorumlu) durur: iki adımlı isteğe bağlı");
   assert.match(env, /^# ADMIN_2FA_OPTIONAL=1/m, "örnek dosyada kapalı (yorumlu) durur");
   const deploy = read("docs/DEPLOY.md");
+  assert.match(deploy, /ADMIN_2FA_REQUIRED=1/);
   assert.match(deploy, /ADMIN_2FA_OPTIONAL=1/);
   assert.match(deploy, /Yeni cihazdan giriş/);
   assert.match(deploy, /\/giris\/iki-adim/);

@@ -1254,7 +1254,7 @@ function Mark({ on, label }: { on: boolean; label: string }) {
   );
 }
 
-/** `twoFactorRequired`: yönetici hesaplarında iki adımlı zorunlu (src/lib/admin-security.ts; ADMIN_2FA_OPTIONAL=1 kapatır) */
+/** `twoFactorRequired`: yönetici hesaplarında iki adımlı zorunlu (src/lib/admin-security.ts; yalnız ADMIN_2FA_REQUIRED=1 iken) */
 export function RolesCard({ twoFactorRequired = false }: { twoFactorRequired?: boolean }) {
   return (
     <Card>

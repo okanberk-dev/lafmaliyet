@@ -326,11 +326,13 @@ yanıtları kendi başlığını taşır: fotoğrafın `default-src 'none'; sand
   bilgisayarında ya da kaybolan telefonda açık kalan oturumları parolayı değiştirmeden kapatır. Hesabım'daki parola
   onayları kişi başına 15 dakikada 5 hatayla sınırlıdır (Kullanıcılar'daki yönetici onaylarıyla aynı pay;
   `src/server/auth/step-up.ts`); hatalar işlem geçmişine yazılır.
-- **Yönetici hesaplarında iki adımlı doğrulama zorunlu** (Dalga 2, 26 Kasım 2026; sahibin isteği "Yönetici
-  hesaplarında iki adımlı doğrulama zorunlu olsun; yeni cihazdan girişte uyarı"). İki adımlısı kapalı yönetici
-  girişten sonra panel yerine **İki adımlı doğrulamayı kurun** ekranına (`/giris/iki-adim`) gider: parola → QR'ı
-  okut, kodu gir → kurtarma kodlarını sakla (indir / kopyala, "kaydettim" işaretlenmeden geçilmez) → **Panele geç**
-  (giriş adresindeki hedefe, Claude bağlantısının onay ekranı dahil). Kurulum Hesabım'dakiyle aynı eylemler ve
+- **Yönetici hesaplarında zorunlu iki adımlı doğrulama: varsayılan kapalı** (Dalga 2, 26 Kasım 2026; sahibin isteği
+  "Yönetici hesaplarında iki adımlı doğrulama zorunlu olsun; yeni cihazdan girişte uyarı"; aynı gün sahip zorunlulukla
+  panele giremedi ve "2FA isteğe bağlı olsun" dedi). İki adımlı herkeste isteğe bağlıdır (Hesabım'dan açılır; açık
+  hesabın girişinde kod adımı her zaman vardır). Vercel'de `ADMIN_2FA_REQUIRED=1` (yeniden yayın gerekir) zorunluluğu
+  açar: iki adımlısı kapalı yönetici girişten sonra panel yerine **İki adımlı doğrulamayı kurun** ekranına
+  (`/giris/iki-adim`) gider: parola → QR'ı okut, kodu gir → kurtarma kodlarını sakla (indir / kopyala, "kaydettim"
+  işaretlenmeden geçilmez) → **Panele geç** (giriş adresindeki hedefe, Claude bağlantısının onay ekranı dahil). Kurulum Hesabım'dakiyle aynı eylemler ve
   sınırlardır (15 dakika, 5 hatalı kod; `src/lib/two-factor-setup.ts`); ekranda **Çıkış yap** da vardır. Kurana kadar
   panelin hiçbir ekranı ve eylemi açılmaz (`requireUser` kurulum ekranına gönderir), veri uçları (canlı veri, dışa
   aktarma, fotoğraflar, yedek…) ona oturumsuz gibi 401 verir (`getCurrentUser`); yalnız kurulum ekranı ve kurulumun üç
@@ -341,11 +343,11 @@ yanıtları kendi başlığını taşır: fotoğrafın `default-src 'none'; sand
     adımlı doğrulamayı sıfırla** der (kendi parolasıyla): kişi parolasıyla girer, kurulum ekranı açılır, yeni
     telefonuyla kurar. Hesabım'da kapatmak da serbesttir (telefon değiştirirken), pencere kurulum ekranının açılacağını
     söyler.
-  - **Acil durum:** başka yönetici de yoksa Vercel'de ortam değişkeni `ADMIN_2FA_OPTIONAL=1` (yeniden yayın gerekir)
-    zorunluluğu kapatır; iki adımlı yeniden isteğe bağlı olur. İki adımlısı **açık** hesabın girişte kod adımı bu
-    değişkenle kalkmaz: o hesabın iki adımlısını sıfırlamak gerekir. İş bitince değişkeni silin. Kural
-    `src/lib/admin-security.ts` (`adminTwoFactorRequired`; yalnız tam `1` kapatır).
-  - Yayından sonra iki adımlısı olmayan yöneticiler ilk sayfa açılışında kurulum ekranına düşer (açık oturumları
+  - **Acil durum (zorunluluk açıkken):** başka yönetici de yoksa Vercel'de `ADMIN_2FA_OPTIONAL=1` (yeniden yayın
+    gerekir) ya da `ADMIN_2FA_REQUIRED`'ı silmek zorunluluğu kapatır; iki adımlı yeniden isteğe bağlı olur. İki
+    adımlısı **açık** hesabın girişte kod adımı bununla kalkmaz: o hesabın iki adımlısını sıfırlamak gerekir. İş bitince
+    değişkeni silin. Kural `src/lib/admin-security.ts` (`adminTwoFactorRequired`; ikisinde de yalnız tam `1` sayılır).
+  - Zorunluluk açılınca iki adımlısı olmayan yöneticiler ilk sayfa açılışında kurulum ekranına düşer (açık oturumları
     kapanmaz; kurulum öteki cihazlardaki oturumları, iki adımlıyı açmak gibi, kapatır). Önceden kurulmuş bir Claude
     bağlantısı salt okunurdur ve kurulumla (oturum sürümü artınca) kapanır; kurulumdan önce yenisi kurulamaz.
 - **Yeni cihazdan giriş uyarısı** (yalnız yönetici hesapları; personel ortak tablette sırayla girer, her biri ilk

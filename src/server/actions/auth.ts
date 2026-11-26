@@ -171,7 +171,7 @@ async function completeLogin(user: typeof s.users.$inferSelect, next: string | u
   // Uyarı girişi bozmaz (noteNewDevice hata fırlatmamaya çalışır; yine de)
   if (fresh) await noteNewDevice(user, await headers()).catch((e: unknown) => console.error("[giriş] yeni cihaz uyarısı", e));
   const target = safeNext(next, user.role);
-  // İki adımlısı kapalı yönetici panel yerine kurulum ekranına (zorunluluk; ADMIN_2FA_OPTIONAL=1 kapatır)
+  // İki adımlısı kapalı yönetici panel yerine kurulum ekranına (yalnız ADMIN_2FA_REQUIRED=1 iken zorunlu)
   redirect(needsTwoFactorSetup(user) ? twoFactorSetupHref(target) : target);
 }
 

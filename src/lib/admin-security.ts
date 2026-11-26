@@ -1,12 +1,14 @@
 /**
  * Yönetici hesaplarının güvenliği (Dalga 2, 25 Kasım 2026; docs/DEPLOY.md › 6a). Sahibin isteği: "Yönetici hesaplarında
- * iki adımlı doğrulama zorunlu olsun; yeni cihazdan girişte uyarı." Saf kurallar ve metinler; oturum tarafı
- * src/server/auth/dal.ts (requireUser / requireSignedIn), giriş src/server/actions/auth.ts, uyarının gönderimi
- * src/server/auth/new-device.ts. Testler: tests/yonetici-guvenlik.test.ts.
+ * iki adımlı doğrulama zorunlu olsun; yeni cihazdan girişte uyarı." 26 Kasım: sahip zorunlulukla panele giremedi ve
+ * "2FA isteğe bağlı olsun" dedi; iki adımlı artık herkeste isteğe bağlı (Hesabım'dan açılır), zorunluluk yalnız ortam
+ * değişkeniyle açılır. Saf kurallar ve metinler; oturum tarafı src/server/auth/dal.ts (requireUser / requireSignedIn),
+ * giriş src/server/actions/auth.ts, uyarının gönderimi src/server/auth/new-device.ts. Testler:
+ * tests/yonetici-guvenlik.test.ts.
  *
- * - Zorunluluk: iki adımlısı kapalı yönetici girişten sonra panel yerine kurulum ekranına (TWO_FACTOR_SETUP_PATH) gider;
- *   kurana kadar panelin hiçbir ekranı, eylemi ve veri ucu açılmaz. Kilitlenme olmasın: kurulum o ekranda hemen yapılır;
- *   acil durumda ortam değişkeni ADMIN_2FA_OPTIONAL=1 zorunluluğu kapatır (iki adımlı yine isteğe bağlı kalır).
+ * - Zorunluluk (varsayılan kapalı; ADMIN_2FA_REQUIRED=1 açar): iki adımlısı kapalı yönetici girişten sonra panel yerine
+ *   kurulum ekranına (TWO_FACTOR_SETUP_PATH) gider; kurana kadar panelin hiçbir ekranı, eylemi ve veri ucu açılmaz.
+ *   Kilitlenme olmasın: kurulum o ekranda hemen yapılır; zorunluluk açıkken acil durumda ADMIN_2FA_OPTIONAL=1 onu kapatır.
  * - Yeni cihaz: bu tarayıcıdan bu hesapla daha önce hiç giriş yapılmadıysa (cihaz çerezi), başarılı girişte hesabın
  *   sahibine e-posta ve zil uyarısı. Kişisel veri en azda: tarayıcı ve işletim sisteminin adı ("Chrome · Windows") ve
  *   kısaltılmış IP ("85.105.12.x"); tam IP ve tarayıcı kimliği saklanmaz.
@@ -15,12 +17,18 @@
 /** İki adımlı kurulum ekranı (panelin dışında: kabuk, zil ve canlı veri yüklenmez) */
 export const TWO_FACTOR_SETUP_PATH = "/giris/iki-adim";
 
+/** Yönetici hesaplarında iki adımlıyı zorunlu yapan ortam değişkeni (yoksa iki adımlı herkeste isteğe bağlı) */
+export const ADMIN_2FA_REQUIRED_ENV = "ADMIN_2FA_REQUIRED";
+
 /** Zorunluluğu kapatan ortam değişkeni (acil durum: telefon kayboldu, kurtarma kodu yok, başka yönetici yok) */
 export const ADMIN_2FA_OPTIONAL_ENV = "ADMIN_2FA_OPTIONAL";
 
-/** Yönetici hesaplarında iki adımlı zorunlu mu: ADMIN_2FA_OPTIONAL=1 değilse evet */
+/**
+ * Yönetici hesaplarında iki adımlı zorunlu mu: yalnız ADMIN_2FA_REQUIRED=1 iken ve ADMIN_2FA_OPTIONAL=1 değilken
+ * (ikisinde de yalnız tam "1" sayılır; panoya yapıştırılan boşluk sayılmaz)
+ */
 export function adminTwoFactorRequired(env: Readonly<Record<string, string | undefined>> = process.env): boolean {
-  return env[ADMIN_2FA_OPTIONAL_ENV]?.trim() !== "1";
+  return env[ADMIN_2FA_REQUIRED_ENV]?.trim() === "1" && env[ADMIN_2FA_OPTIONAL_ENV]?.trim() !== "1";
 }
 
 /** Bu rolde iki adımlı zorunlu mu (yönetici ve zorunluluk açık); Hesabım ve Kullanıcılar metinleri buna göre */
