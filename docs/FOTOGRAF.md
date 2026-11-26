@@ -489,3 +489,26 @@ bir Web Worker'da çalıştırılması önerilir (eşzamanlı; `ImageData.data.b
 - **Deneme:** `npx tsx scripts/tarama-dene.ts <fotoğraf|klasör> [--mod hepsi] [--ipucu x1,y1,…,x4,y4] [--ust right]`
   ya da `--sentetik`; çıktı `.data/tarama-dene/` (köşe çizimi ve taranmış hâller). sharp yalnız bu betikte, dinamik
   yüklenir.
+
+## 12. Belge tarama (kalite, yön, birleştirme)
+
+Çekirdeğin (§ 11) yanında üç saf modül; arayüz bağlantısı henüz yok. İmzalar, önerilen akış, kullanım örnekleri ve
+eşikler: [src/lib/scan/README.md](../src/lib/scan/README.md). Ortak yazı çözümlemesi `metin.ts`'te (kâğıdın yerel
+parlaklığına göre mürekkep haritası, harf boyu, satır yönü ve ölçüleri).
+
+- **Çekim kalitesi** (`quality.ts`, `assessQuality(img, { corners, noun, rotation })`): fotoğraf çekilir çekilmez
+  kâğıdın içinde bulanıklık (yazı kenarının σ'sı harf boyuna oranla; Laplace varyansı da ölçülür), parlama (doymuş,
+  çevresinden parlak leke; yazının üstündeyse ciddi), karanlık / soluk yazı, kesik (kadraj dışındaki kenara dayanan
+  satırlar), çok küçük yazı (okuyucunun göreceği 2576 px ölçekte) ve birden çok belge. Sonuç `{ ok, issues: [{ kind,
+  severity, text }] }`; metinler sade Türkçe ("Fişin altı kesilmiş; tamamını çekin."). Net çekimde uyarı çıkmaz
+  (`tests/tarama-kalite.test.ts`).
+- **Sayfa yönü** (`orientation.ts`, `detectOrientation(img, { corners })`): 90 / 180 / 270° döndürülmüş belge; satır
+  yönü, sonra düz / ters (nokta ve virgülün taban çizgisinde, harf noktalarının üstte olması; kısa satırların sola
+  yaslanması; fişin ortalı başlığı). Emin değilse `"bilinmiyor"` (döndürülmez; yapay zekâ yönü kendisi bulur).
+  Arayüze bağlanınca § 11'deki "90° / 180° yön kendiliğinden bulunmaz" sınırı kalkar (`rotate` buradan verilir).
+- **Uzun fiş birleştirme** (`stitch.ts`, `stitchParts(parts)`): parça parça çekilmiş uzun Z'nin taranmış parçaları
+  örtüşen bölgeden tek görüntüde birleşir (satır profili ve koyuluk haritasında normalize çapraz ilinti, ölçek ve
+  yatay kayma farkı tolere edilir; dikiş satır arasından). Örtüşme yoksa, yazısızsa, tekrarlayan satırlar yüzünden
+  belirsizse ya da aynı şablonlu başka bir rapor ise `null`: parçalar ayrı fotoğraf olarak yüklenir. Çıktının uzun
+  kenarı en çok `MAX_PHOTO_EDGE` (4096); yüklemede 2576 px'e küçültüleceği için çok uzun birleşmede yazı boyu
+  `assessQuality` ile denetlenmeli.
