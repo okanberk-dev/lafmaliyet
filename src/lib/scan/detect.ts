@@ -272,8 +272,8 @@ function sideStats(ctx: Ctx, a: Point, b: Point, cx: number, cy: number): SideSt
   return { frame: false, quality: Math.max(0, Math.max(qPos, qNeg)), brightInside: qPos >= qNeg };
 }
 
-/** Dörtgenin içinden ve hemen dışından örnek: kâğıtlık farkı (artı: içerisi kâğıda daha çok benziyor) */
-function paperContrast(ctx: Ctx, q: Quad): number {
+/** Dörtgenin içinden ve hemen dışından örnek: kâğıtlık ortalamaları (içerisi kâğıda daha çok benziyorsa `inside` büyük) */
+function paperLevels(ctx: Ctx, q: Quad): { inside: number; outside: number | null } {
   const { w, h } = ctx;
   let sin = 0;
   let nin = 0;
@@ -309,8 +309,33 @@ function paperContrast(ctx: Ctx, q: Quad): number {
       nout++;
     }
   }
-  if (!nout) return 0.5;
-  return (sin / nin - sout / nout) / 40;
+  return { inside: sin / nin, outside: nout ? sout / nout : null };
+}
+
+/**
+ * Kareye dayanan kenar gerçekten kâğıt mı: kâğıt o yönde kareden taşıyorsa karenin hemen içindeki şerit de kâğıttır.
+ * Şerit zemine benziyorsa (örneklerin kâğıtlığı içeriden çok dışarıya yakın) dörtgen kâğıdı karenin kenarına kadar
+ * boşuna uzatmıştır (dokulu zeminde iki gerçek kenar + iki kare kenarı, dört gerçek kenarlı adayı geçmesin). Döner:
+ * zemine benzeyen örneklerin oranı (0–1).
+ */
+function frameSideBackground(ctx: Ctx, a: Point, b: Point, cx: number, cy: number, inside: number, outside: number): number {
+  const { w, h } = ctx;
+  const inset = Math.max(4, ctx.diag * 0.012);
+  const mid = (inside + outside) / 2;
+  let bg = 0;
+  let tot = 0;
+  for (let k = 0; k < 24; k++) {
+    const t = 0.08 + (0.84 * k) / 23;
+    const px = a.x + (b.x - a.x) * t;
+    const py = a.y + (b.y - a.y) * t;
+    const vx = cx - px;
+    const vy = cy - py;
+    const L = Math.hypot(vx, vy) || 1;
+    const v = nearest(ctx.paper, w, h, px + (vx / L) * inset, py + (vy / L) * inset);
+    tot++;
+    if (inside > outside ? v < mid : v > mid) bg++;
+  }
+  return bg / tot;
 }
 
 /** Kenarın hemen dışında yazı var mı (kenar yazıyı kesiyor): kenar boyunca örneklerin oranı */
@@ -382,11 +407,20 @@ function evaluate(ctx: Ctx, q: Quad, how: DetectMethod): Scored | null {
   const tin = textInside(ctx, q);
   const areaTerm = Math.min(1, Math.sqrt(area / 0.3));
   const rect = 1 - Math.min(1, angles.reduce((s, a) => s + Math.abs(a - 90), 0) / 160);
-  const pc = Math.max(0, Math.min(1, paperContrast(ctx, q)));
+  const lv = paperLevels(ctx, q);
+  const pc = lv.outside === null ? 0.5 : Math.max(0, Math.min(1, (lv.inside - lv.outside) / 40));
   let score =
     0.45 * minSide + 0.25 * meanSide + 0.12 * areaTerm + 0.08 * rect + 0.05 * pc + 0.05 * (tin ?? 0.5) - 0.6 * Math.max(0, cut - 0.15);
   if (real.length === 2) score -= 0.06;
   else if (real.length === 3) score -= 0.02;
+  // kareye dayanan kenarın içi zeminse kâğıt orada bitmiyordur
+  if (real.length < 4 && lv.outside !== null && Math.abs(lv.inside - lv.outside) >= 12) {
+    let bg = 0;
+    for (let i = 0; i < 4; i++) {
+      if (sides[i].frame) bg = Math.max(bg, frameSideBackground(ctx, q[i], q[(i + 1) % 4], cx, cy, lv.inside, lv.outside));
+    }
+    score -= 0.5 * Math.max(0, bg - 0.4);
+  }
   return { q, how, score, sides, realSides: real.length, minSide, area };
 }
 
