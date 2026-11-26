@@ -387,6 +387,78 @@ ve kimlikleri plandan ve araştırma notlarından yazıldı, kafenin gerçek fi�
    ilk okuma p90 ≤ 20 sn. Sonuç `docs/planlar/ekler/okc-z/eval.md`'ye; geçerse `OKC_PREFILL_ENABLED = true`, okuma
    süresi metni ölçülen p50'yle, kalite ve çekim kararı (§ 3) ölçümle.
 
+### Tarayıcının ölçümü
+
+Belge tarayıcının çekirdeği (`src/lib/scan`) telefonla çekilmiş gibi üretilen sentetik fotoğraflarla ölçülür: köşeler
+ve kâğıttaki yazı bilindiği için hata kesin hesaplanır. Ağ, anahtar ve veritabanı gerekmez; görsel çözme sharp ile
+(next'in isteğe bağlı bağımlılığı; yalnız betikler ve test), kâğıtlar Playwright ile çizilir.
+
+```bash
+npm run tarama:veri                         # 96 görsel → .data/tarama-veri/ (depoya girmez; tohumlu, ~8 dk)
+npm run tarama:olc                          # köşe, karar, süre, okunabilirlik (OCR) → tablolar + .data/tarama-olcum/son.json
+npm run tarama:olc -- --ocr 0               # okunabilirliksiz, hızlı (köşe, karar, süre)
+npm run tarama:olc -- --ideal --cizim       # doğru köşelerle taramanın okunabilirliği; köşeleri çizili küçük resimler
+npm run tarama:olc -- --ocr 0 --karsilastir .data/tarama-olcum/temel.json   # çekirdek değişince öncekiyle fark
+npx tsx --test tests/tarama-regresyon.test.ts   # 10 küçük örnek (tests/fixtures/tarama), bugünkü sonuçla
+```
+
+- **Veri** (`scripts/tarama-veri.ts`, `scripts/tarama/kagit.ts`, `sahne.ts`): Pavo detaylı Z, LafPOS/Pavo gün sonu,
+  ModPOS Z, banka batch fişi, market fişi (80 mm, 58 mm, uzun rulo) ve A4 e-Arşiv fatura HTML'den çizilir (termal
+  kâğıt, soluk baskı; içerik uydurma). Kâğıt 3B bir ızgara olarak zemine bindirilir: ahşap, mermer, koyu tezgâh, beyaz
+  tezgâh, gri masa, elde tutulmuş (bulanık oda, başparmak); perspektif, döndürme, yana dönük fiş, kıvrılma / bükülme,
+  kıvrık köşe, kâğıdın gölgesi, gölge degradesi, el gölgesi, renkli ışık, parlama, karanlık, hareket ve odak
+  bulanıklığı, gürültü, JPEG %55–92. Ayrıca kareyi dolduran yakın çekim, bir ucu kadraj dışında kalan kâğıt ve belge
+  olmayan fotoğraflar (POS ekranı, ekranda tablo, telefon, koli, fincan, paketler). Doğru köşe kâğıdın köşesidir:
+  kıvrık köşede katlanmamış köşe (kenarların kesiştiği yer), kadraj dışında kâğıdın kenarının karenin kenarını
+  kestiği yer, yakın çekimde görüntünün köşeleri. `yanit.json`: köşeler, beklenen sonuç (kırp / kareyi dolduruyor /
+  belge değil), kategori, zemin, senaryolar, bilinen metin.
+- **Yöntem** (`scripts/tarama-olc.ts`): her görsel `scanDocument`'tan geçer. Köşe hatası en kötü köşenin uzaklığı /
+  köşegen (kırpılmayan görselde görüntünün köşeleriyle, kaçan belgenin hatası da sayılır); başarı < %2. Karar:
+  kırptı / kareyi dolduruyor / belge yok → doğru, kaçan, yanlış (belge olmayanı kırpmak yanlış pozitif).
+  Okunabilirlik: tesseract.js (kodla okumanın ayarı, Türkçe) ile asıl fotoğrafın ve taranmış hâlin bilinen metne
+  karakter doğruluğu (1 − düzenleme uzaklığı / uzunluk) ve tutarların (1.234,56) aynen bulunma oranı. Kategori,
+  zemin, durum ve senaryo kırılımı, karar matrisi, güven eşiği (düşük güvenli kırpma "emin değil" sayılsa ne
+  kazanılır, ne kaybedilir), en kötü 10 görsel; `son.json`'da her görselin bulunan köşeleri de.
+- **Temel ölçüm** (26 Kasım 2026; çekirdek `0096e18`, `wip/tarama-cekirdek`; 96 görsel, tohum 2026): kırpılması
+  gereken 76 görselde köşe başarısı **41/76 (%54)**, kaçan 10, yanlış dörtgen 25; köşe hatası ort %8,1, p90 %27,6.
+  Kareyi dolduran 8 görselin 8'i kırpılmadı (6'sında "kareyi dolduruyor", 2'sinde "belge yok"), ama açık zeminde duran
+  5 fişte de yanlışlıkla "kareyi dolduruyor" dendi. Belge olmayan 12 görselin 3'ünde "belge yok", 9'u kırpıldı (yanlış
+  pozitif; seçilen dörtgen açık renkli ve yazılı: POS ekranındaki adisyon paneli, ekrandaki tablo, kolideki etiket).
+  Kadraj dışı 8 görselin 0'ı doğru (hata ort %9,8: kareye dayanan kenar görüntünün içine alınıyor, yazının içinden
+  geçiyor). Süre ort 5,3 sn, p90 8,1 sn, algılama ort 2,8 sn (1500×2000; yük ortalaması ~30 olan 4 çekirdekli makine,
+  yükü azken 3,1 sn). Okunabilirlik (84 belge): karakter doğruluğu asıl %40 → taranmış %64 (doğru köşelerle %71),
+  tutarların aynen bulunması %23 → %53. Önceki çekirdeğe (`ac82331`) göre: belge değil 1/12 → 3/12 (kâğıda
+  benzemeyen dikdörtgen), banka batch 5/9 → 4/9, mermer 7/18 → 8/18; köşe başarısı 42 → 41.
+
+  | Kategori | doğru | köşe hatası ort | OCR asıl → taranmış (doğru köşelerle) | tutar asıl → taranmış |
+  |---|---:|---:|---:|---:|
+  | Pavo detaylı Z | 6/12 | %9,9 | %42 → %57 (%65) | %19 → %50 |
+  | Pavo / LafPOS gün sonu | 5/11 | %8,7 | %46 → %77 (%90) | %28 → %64 |
+  | ModPOS Z | 8/11 | %2,2 | %56 → %85 (%84) | %26 → %68 |
+  | Banka batch (58 mm) | 4/9 | %5,6 | %56 → %90 (%96) | %25 → %78 |
+  | Market fişi (80 mm) | 6/9 | %6,0 | %42 → %68 (%81) | %27 → %68 |
+  | Market fişi (58 mm) | 8/8 | %0,5 | %36 → %75 (%74) | %16 → %56 |
+  | Uzun market fişi | 4/12 | %16,0 | %32 → %52 (%57) | %25 → %38 |
+  | A4 e-Arşiv fatura | 8/12 | %6,2 | %17 → %20 (%21) | %17 → %17 |
+  | Belge değil | 3/12 | – | – | – |
+
+  Zemine göre doğru: ahşap 13/18, elde 9/12, gri masa 11/16, koyu tezgâh 8/14, mermer 8/18, **beyaz tezgâh 3/18**.
+  En zayıflar: beyaz / açık zeminde fiş (kâğıt bulunamıyor, kâğıt kareyi dolduruyor sanılıyor ya da iki kenar karenin
+  kenarına uzatılıyor), uzun fiş, kadraj dışı ve belge olmayan fotoğraflar; senaryolardan hareket bulanıklığı (6/14),
+  soluk baskı (9/19) ve gölge degradesi (14/32). Güven yanlışı ayırmıyor: kırpılanlarda güven < 0,5 "emin değil"
+  sayılsa 9 yanlış pozitiften 3'ü, 25 yanlış dörtgenden 5'i yakalanır, 41 doğru kırpmadan 5'i kaybedilir (doğru
+  kırpmaların 4'ü nedensiz 0,27–0,29 güvenli; rapordaki "Güven eşiği" tablosu). A4'ün okunabilirliği düşük:
+  1500×2000 fotoğrafta yazı ~10 px, kodla okuma zorlanıyor (yapay zekâ okur; tarayıcının değil ölçeğin sınırı). Yana
+  dönük fişin yazısı çevrilmediği için okunmuyor.
+- **Regresyon:** `tests/tarama-regresyon.test.ts` on küçük örnekte (540×720, `npm run tarama:veri -- --fixture` ile
+  yeniden üretilir; tohumlu, aynı baytlar) kararı ve köşe hatasını bugünkünün biraz gevşeğiyle sınar (doğru olanlarda
+  en kötü köşe ≤ %1,2–1,5; bugün, çekirdek `0096e18`'de de, 10'un 6'sı doğru). Bilinen yanlışlar (beyaz tezgâhta uzun fiş, karanlık ve bulanık
+  A4, POS ekranı, koli) yalnız kötüleşmesin diye gevşek; çekirdek iyileşince `BEKLENTI` ve `EN_AZ_DOGRU`
+  sıkılaştırılır.
+- **Çekirdek değişince:** `npm run tarama:olc -- --ocr 0 --karsilastir .data/tarama-olcum/temel.json` (temel:
+  bir önceki `son.json`'ın kopyası) kategori başına doğru ve hatayı, sonucu değişen görselleri yazar; okunabilirlik
+  için `--ocr` açık (96 görselde ~15–50 dk, makinenin yüküne göre).
+
 ## 9. Yeni bir fotoğraf türü
 
 1. `src/lib/photo-rules.ts`: `PhotoKind`, `PHOTO_KINDS`, `KEEP_DAYS`, `PHOTO_KIND_LABEL`.
@@ -429,6 +501,7 @@ raporlarda `kasa-pos` kalmadığı denetlenerek).
 | `src/app/panel/ayarlar/photo-card.tsx` | Ayarlar › Fotoğraftan okuma |
 | `src/app/api/kontrol/foto/`, `src/app/panel/kontrol/[id]/photo-item.tsx`, `src/server/data/checklists.ts` (`kontrolPhotoRules`) | kontrol listesinin fotoğraflı maddesi: yükleme ve yanıt tek istekte, kim görür ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md)) |
 | `scripts/foto-eval/` | canlı değerlendirme (`scripts/okc-eval/` banka POS Z'si için, henüz yazılmadı; § 8) |
+| `scripts/tarama-veri.ts`, `scripts/tarama-olc.ts`, `scripts/tarama/`, `tests/tarama-regresyon.test.ts` | belge tarayıcının ölçümü: sentetik veri seti, ölçüm, regresyon örnekleri (§ 8 › Tarayıcının ölçümü) |
 | `src/lib/scan/` | belge tarayıcı çekirdeği (§ 11): algılama, köşe oturtma, perspektif, taranmış görünüm |
 | `scripts/tarama-dene.ts` | tarayıcıyı gerçek fotoğrafla ya da sentetik sahneyle deneme (§ 11) |
 
