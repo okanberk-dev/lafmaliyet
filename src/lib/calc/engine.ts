@@ -1,3 +1,4 @@
+import { categoryPart, GOODS_PART, goodsPart, invoiceParts } from "../invoice-split";
 import {
   COMMISSION_CATEGORY,
   FIXED_SECTIONS,
@@ -2332,12 +2333,12 @@ export function createModel(ds: Dataset) {
     list.push(inv);
     invoicesByMonth.set(m, list);
   }
+  /**
+   * Ayın mal alışı (KDV hariç, iskonto düşülmüş): kalem kalem (src/lib/invoice-split.ts): mal kategorisindeki faturanın
+   * tamamı, öbür kategorilerde hammaddeye bağlı kalemlerin payı; nedenli "hammadde değil" kalem kendi yerine
+   */
   function goodsPurchases(month: string): number {
-    return sum(
-      (invoicesByMonth.get(month) ?? [])
-        .filter((i) => GOODS_CATEGORIES.includes(i.category))
-        .map(invoiceNet),
-    );
+    return sum((invoicesByMonth.get(month) ?? []).map(goodsPart));
   }
 
   // --- Aylık harcamalar (reklam, influencer, fatura dışı) -------------------------
@@ -2384,16 +2385,39 @@ export function createModel(ds: Dataset) {
   /** Fatura kategorisi harcamaya bağlanabilir mi: mal, komisyon ve kafe dışı faturalar zaten ayrı sayılır */
   const invoiceCategoryMappable = (c: string | null): c is string =>
     Boolean(c) && !GOODS_CATEGORIES.includes(c!) && c !== COMMISSION_CATEGORY && !SEPARATE_CATEGORIES.includes(c!);
-  /** Kategorilerin aydaki tutarı: girilen harcamalar + bağlı fatura kategorisindeki faturalar (KDV hariç, iskonto düşülmüş) */
-  function expenseAmounts(month: string): { cat: ExpenseCategory; entries: number; invoices: number; invoicesPayable: number; total: number }[] {
+  /**
+   * Kategorilerin aydaki tutarı: girilen harcamalar + bağlı fatura kategorisindeki faturalar (KDV hariç, iskonto
+   * düşülmüş). `invoicesOwn`: şubesi seçilmiş faturalar (şube seçiliyken o şubenin; docs/SUBE.md › Faturanın şubesi),
+   * `invoicesShared`: işletme geneli olanlar; `invoicesByBranch` "Tümü"nün şube kırılımı için
+   */
+  function expenseAmounts(month: string): {
+    cat: ExpenseCategory;
+    entries: number;
+    invoices: number;
+    invoicesOwn: number;
+    invoicesShared: number;
+    invoicesByBranch: Map<string, number>;
+    invoicesPayable: number;
+    total: number;
+  }[] {
     const invs = invoicesByMonth.get(month) ?? [];
     return expenseCats.map((cat) => {
       const entries = expenseByMonth.get(month)?.get(cat.id) ?? 0;
-      const linked = invoiceCategoryMappable(cat.invoiceCategory) ? invs.filter((i) => i.category === cat.invoiceCategory) : [];
-      const invoices = sum(linked.map(invoiceNet));
-      // Ödenecek tutar (KDV dahil); içe aktarılmış, ödenecek tutarı boş faturada KDV hariç tutar
-      const invoicesPayable = sum(linked.map((i) => (i.payable > 0 ? i.payable : invoiceNet(i))));
-      return { cat, entries, invoices, invoicesPayable, total: entries + invoices };
+      // Kalem kalem (src/lib/invoice-split.ts): faturanın bu kategoriye düşen payı (karışık faturanın sarf kalemleri,
+      // nedeni seçilmiş "hammadde değil" kalemler); kategorisi bu olan faturanın hammaddeye bağlı kalemi mal alışında
+      const mappable = invoiceCategoryMappable(cat.invoiceCategory);
+      const linked = mappable ? invs.map((i) => ({ i, part: categoryPart(i, cat.invoiceCategory!) })).filter((x) => x.part !== 0) : [];
+      const invoices = sum(linked.map((x) => x.part));
+      const invoicesByBranch = new Map<string, number>();
+      let invoicesOwn = 0;
+      for (const { i, part } of linked) {
+        if (!i.branchId) continue;
+        invoicesOwn += part;
+        invoicesByBranch.set(i.branchId, (invoicesByBranch.get(i.branchId) ?? 0) + part);
+      }
+      // Ödenecek tutar (KDV dahil; payı kadar); içe aktarılmış, ödenecek tutarı boş faturada KDV hariç tutar
+      const invoicesPayable = sum(linked.map(({ i, part }) => (i.payable > 0 ? (invoiceNet(i) ? (i.payable * part) / invoiceNet(i) : 0) : part)));
+      return { cat, entries, invoices, invoicesOwn, invoicesShared: invoices - invoicesOwn, invoicesByBranch, invoicesPayable, total: entries + invoices };
     });
   }
 
@@ -2410,14 +2434,16 @@ export function createModel(ds: Dataset) {
   function monthlyExpensePlan(month: string): MonthlyExpensePlan[] {
     const cats = expenseCats.filter((c) => c.monthly && c.section !== "mal");
     if (!cats.length) return [];
-    // Şube seçiliyken şubenin kendi kayıtları: şubesi boş kayıtlar ve bağlı faturalar işletme geneli (Gelir-gider'in
-    // harcama hücresi gibi; inceleme bulgusu 3)
+    // Şube seçiliyken şubenin kendi kayıtları ve faturaları: şubesi boş kayıtlar ve işletme geneli faturalar dışarıda
+    // (Gelir-gider'in harcama hücresi gibi; inceleme bulgusu 3, docs/SUBE.md › Faturanın şubesi). Ödenecek tutar
+    // faturaların payıyla
     const amountsOf = (m: string) =>
       new Map(
         expenseAmounts(m).map((x) => {
           if (!ds.branchView) return [x.cat.id, x];
           const own = expenseOwnByMonth.get(m)?.get(x.cat.id) ?? 0;
-          return [x.cat.id, { ...x, entries: own, invoices: 0, invoicesPayable: 0, total: own }];
+          const payable = x.invoices ? x.invoicesPayable * (x.invoicesOwn / x.invoices) : 0;
+          return [x.cat.id, { ...x, entries: own, invoices: x.invoicesOwn, invoicesPayable: payable, total: own + x.invoicesOwn }];
         }),
       );
     const own = amountsOf(month);
@@ -2717,9 +2743,12 @@ export function createModel(ds: Dataset) {
     // Mal alışları (fatura → tedarikçi)
     const invs = invoicesByMonth.get(month) ?? [];
     const bySupplier = new Map<string, number>();
-    for (const inv of invs.filter((i) => GOODS_CATEGORIES.includes(i.category))) {
+    // Kalem kalem: mal kategorisindeki faturanın tamamı, öbürlerinde hammaddeye bağlı kalemlerin payı
+    for (const inv of invs) {
+      const g = goodsPart(inv);
+      if (!g && !GOODS_CATEGORIES.includes(inv.category)) continue;
       const s = normalizeSupplier(inv.supplier);
-      bySupplier.set(s, (bySupplier.get(s) ?? 0) + invoiceNet(inv));
+      bySupplier.set(s, (bySupplier.get(s) ?? 0) + g);
     }
     let purchases = 0;
     for (const [s, v] of bySupplier) {
@@ -2748,7 +2777,7 @@ export function createModel(ds: Dataset) {
       const shared = `${ds.branchView.name} seçili: stok devri işletme genelinde, şubeye bölünmez. Şubenin mal maliyeti satışından reçeteye göre.`;
       cells.set("stock:opening", { value: null, computed: null, overridden: false, info: shared });
       cells.set("stock:closing", { value: null, computed: null, overridden: false, info: shared });
-      cells.set("stock:purchased", { value: purchases, computed: purchases, overridden: false, info: "İşletme geneli: faturalar ortak, şubeye bölünmez; mal maliyetine girmez." });
+      cells.set("stock:purchased", { value: purchases, computed: purchases, overridden: false, info: "Bilgi: şubenin ve İşletme geneli seçilmiş mal faturaları; mal maliyetine girmez (şubenin mal maliyeti reçeteden)." });
       opening = 0;
       closing = 0;
       cogs = flow.cogs;
@@ -2900,11 +2929,13 @@ export function createModel(ds: Dataset) {
     for (const x of exp) {
       if (x.cat.section === "mal") continue;
       const key = `expense:${x.cat.id}`;
-      const own = ds.branchView ? (expenseOwnByMonth.get(month)?.get(x.cat.id) ?? 0) : x.total;
+      // Şube seçiliyken: şubenin kendi kayıtları ve şubenin faturaları; işletme geneli faturalar bilgi satırında
+      const own = ds.branchView ? (expenseOwnByMonth.get(month)?.get(x.cat.id) ?? 0) + x.invoicesOwn : x.total;
       cells.set(key, { value: own, computed: own, overridden: false });
       sections[x.cat.section] += own;
       for (const [b, v] of expenseByBranch.get(`${month}|${x.cat.id}`) ?? []) toBranch(b, v);
-      const sharedPart = (expenseSharedByMonth.get(month)?.get(x.cat.id) ?? 0) + x.invoices;
+      for (const [b, v] of x.invoicesByBranch) toBranch(b, v);
+      const sharedPart = (expenseSharedByMonth.get(month)?.get(x.cat.id) ?? 0) + x.invoicesShared;
       if (sharedPart) sharedParts.push({ key, label: x.cat.name, amount: sharedPart });
     }
     // Aynı gider iki kez (23 Kasım 2026; duplicate-expense.ts): bu ay sayılan sabit gider kalemi aynı adla bir faturada
@@ -2914,9 +2945,12 @@ export function createModel(ds: Dataset) {
     const linkedInvoiceCats = new Set(expenseCats.filter((c) => invoiceCategoryMappable(c.invoiceCategory)).map((c) => c.invoiceCategory!));
     const duplicates = findDuplicateExpenses({
       fixed: allFixed.map((fe) => ({ id: fe.id, name: fe.name, amount: cells.get(`fixed:${fe.id}`)?.value ?? 0, branchId: fe.branchId ?? null })),
-      invoices: invs
-        .filter((i) => GOODS_CATEGORIES.includes(i.category) || i.category === COMMISSION_CATEGORY || linkedInvoiceCats.has(i.category))
-        .map((i) => ({ supplier: i.supplier, category: i.category, amount: invoiceNet(i) })),
+      // Kalem kalem: faturanın Gelir-gider'e giren her payı (mal alışı, bağlı harcama kategorisi, komisyon)
+      invoices: invs.flatMap((i) =>
+        [...invoiceParts(i)]
+          .filter(([k]) => k === GOODS_PART || k === COMMISSION_CATEGORY || linkedInvoiceCats.has(k))
+          .map(([k, amount]) => ({ supplier: i.supplier, category: k === GOODS_PART ? i.category : k, amount })),
+      ),
       expenses: (expenseEntriesByMonth.get(month) ?? []).map((e) => ({
         label: catById.get(e.categoryId)?.name ?? "Harcama",
         description: e.description,

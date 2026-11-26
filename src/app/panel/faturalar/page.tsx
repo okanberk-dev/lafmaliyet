@@ -1,13 +1,13 @@
-import { and, inArray, isNotNull, ne, or } from "drizzle-orm";
+import { and, inArray, isNotNull, ne } from "drizzle-orm";
 import { ChevronDown, CircleAlert, FileText, Table2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
-import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { PageHeader } from "@/components/panel/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, InfoTip, PageSkeleton, Stat } from "@/components/ui/misc";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { monthOfDate, normalizeSupplier } from "@/lib/calc/engine";
@@ -16,6 +16,7 @@ import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CAT
 import { monthLabel, monthShort, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { namedTill, tillBranches } from "@/lib/branches";
+import { invoiceBranchLabel, invoiceBranchOptions, invoiceBranchValue } from "@/lib/invoice-branch";
 import { DEFAULT_PARASUT_ACCOUNT } from "@/lib/parasut/accounts";
 import { requireAdmin } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
@@ -24,6 +25,7 @@ import { loadInvoiceCariLinks } from "@/server/data/cari";
 import { loadCashOutInvoiceState, scopeCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { cashOutCategories } from "@/server/data/cash-outs";
 import { loadModel } from "@/server/data/dataset";
+import { loadUnassignedBox, unassignedInvoiceCount } from "@/server/data/invoice-branch";
 import { stockOnlyIds } from "@/server/data/stock-only-invoices";
 import { loadSupplierCards } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
@@ -39,6 +41,7 @@ import { groupDocuments } from "./document-rules";
 import { CountUp, InvoicesClient } from "./invoices-client";
 import { MonthStatCards } from "./month-stat-cards";
 import { ReviewNotice } from "./review-notice";
+import { UnassignedBox } from "./unassigned-box";
 import { DELETED_BILLS_KEY, ignoredBills, UNPAID_VS_PAYMENTS, type InvoiceRow } from "./rules";
 
 export const metadata: Metadata = { title: "Faturalar" };
@@ -88,7 +91,7 @@ export default function InvoicesPage() {
 async function InvoicesContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, state, docs, cards, taxRows, cariLinks, stockOnly, cashOutState, cashOutCats, parasutCompanies, scope, branches, accountRows] = await Promise.all([
+  const [model, state, docs, cards, taxRows, cariLinks, stockOnly, cashOutState, cashOutCats, parasutCompanies, scope, branches, accountRows, unassigned] = await Promise.all([
     loadModel(),
     db
       .select()
@@ -117,12 +120,18 @@ async function InvoicesContent() {
       .catch(() => [] as (readonly [string, string | null])[]),
     currentBranchScope(),
     listBranches(),
-    // Varsayılan hesabın dışındaki Paraşüt hesabı ve şubesi olan faturalar (şube başına Paraşüt hesabı; çoğu kurulumda yok)
+    // Varsayılan hesabın dışındaki Paraşüt hesabından gelen faturalar (şube başına Paraşüt hesabı; çoğu kurulumda yok)
     db
-      .select({ id: s.invoices.id, parasutAccount: s.invoices.parasutAccount, branchId: s.invoices.branchId })
+      .select({ id: s.invoices.id, parasutAccount: s.invoices.parasutAccount })
       .from(s.invoices)
-      .where(or(isNotNull(s.invoices.branchId), and(isNotNull(s.invoices.parasutAccount), ne(s.invoices.parasutAccount, DEFAULT_PARASUT_ACCOUNT)))),
+      .where(and(isNotNull(s.invoices.parasutAccount), ne(s.invoices.parasutAccount, DEFAULT_PARASUT_ACCOUNT))),
+    unassignedInvoiceCount(db),
   ]);
+  // Faturanın şubesi (birden çok kasa açıkken): rozet, pencere ve toplu seçim; "Tümü"de şubesi seçilmemişlerin kutusu
+  const manyTills = tillBranches(branches).length > 1;
+  const branchOptions = manyTills ? invoiceBranchOptions(branches) : [];
+  const scopeName = manyTills ? (branches.find((b) => b.id === scope)?.name ?? null) : null;
+  const box = manyTills && !scopeName && unassigned.count ? await loadUnassignedBox({ branches }, db) : null;
   // Kasadan faturalı alımlar seçili şubenin kasasından (docs/SUBE.md › Ödemeler; faturalar işletme geneli kalır); birden çok
   // kasa açıkken satır hangi kasadan çıktığını söyler ("Kasa 24 Kas · Marina")
   const tillName = (id: string) => namedTill(branches, id)?.name ?? null;
@@ -132,8 +141,7 @@ async function InvoicesContent() {
     duplicates: scopedCashOuts.duplicates.map((r) => ({ ...r, tillName: tillName(r.branchId) })),
   };
   const taxOf = new Map(taxRows.map((r) => [r.id, r.supplierTaxNumber]));
-  // Faturanın Paraşüt hesabı ve şubesi: şube adı yalnız birden çok kasa açıkken rozette
-  const manyTills = tillBranches(branches).length > 1;
+  // Faturanın Paraşüt hesabı (varsayılan hesap dışındaysa)
   const accountOf = new Map(accountRows.map((r) => [r.id, r]));
   const companies = Object.fromEntries(parasutCompanies.flatMap(([id, c]) => (c ? [[id, c]] : [])));
   // Kalan borç (kısmen ödenmiş Paraşüt faturası) çekirdek veriyle gelir: Invoice.outstanding
@@ -146,7 +154,7 @@ async function InvoicesContent() {
         supplierTaxNumber: taxOf.get(i.id) ?? null,
         stockOnly: stockOnly.has(i.id),
         ...(acc?.parasutAccount && acc.parasutAccount !== DEFAULT_PARASUT_ACCOUNT ? { parasutAccount: acc.parasutAccount } : {}),
-        ...(acc?.branchId && manyTills ? { branchName: tillName(acc.branchId) ?? acc.branchId } : {}),
+        ...(manyTills ? { branchName: invoiceBranchLabel(invoiceBranchValue(i), branches) } : {}),
       };
     })
     .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
@@ -183,8 +191,23 @@ async function InvoicesContent() {
   return (
     <>
       <PageHeader path="/panel/faturalar" title="Faturalar" description={DESCRIPTION} more={MORE} />
-      {/* Şube seçiliyken: faturalar işletme geneli (şube kapsamı C P2-1) */}
-      <CompanyWideNotice screen="faturalar" className="mb-4" />
+      {/* Faturanın şubesi (docs/SUBE.md › Faturanın şubesi): tek şube seçiliyken o şubenin ve işletme genelinin faturaları;
+          şubesi seçilmemişler "Tümü"deki kutuda */}
+      {scopeName ? (
+        <Notice
+          tone={unassigned.count ? "warn" : "neutral"}
+          className="mb-4"
+          title={`${scopeName} seçili: ${scopeName} şubesinin ve işletme genelinin faturaları`}
+          text={
+            unassigned.count
+              ? `${num(unassigned.count)} faturanın şubesi seçilmemiş (${tl(unassigned.total)}); burada görünmezler. Tümü'de “Şubesi seçilmemiş” kutusundan şubelerini seçin.`
+              : "Öbür şubelerin faturaları burada görünmez; Tümü'de hepsi."
+          }
+          action={unassigned.count ? <NoticeLink href="/panel/faturalar?sube=hepsi#subesiz">Şubesi seçilmemişler</NoticeLink> : undefined}
+        />
+      ) : box ? (
+        <UnassignedBox box={box} options={branchOptions} />
+      ) : null}
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown
@@ -205,7 +228,7 @@ async function InvoicesContent() {
           months={months}
           goodsByMonth={goodsByMonth}
           commissionByMonth={commissionByMonth}
-          goodsInfo={`KDV hariç, iskonto düşülmüş. Mal maliyeti = ${GOODS_CATEGORIES.join(" + ")}.`}
+          goodsInfo={`KDV hariç, iskonto düşülmüş. Mal maliyeti = ${GOODS_CATEGORIES.join(" + ")}; karışık faturada kalem kalem (hammaddeye bağlı kalem mal alışı).`}
           goods={breakdown.goods}
           commission={breakdown.commission}
         />
@@ -266,6 +289,8 @@ async function InvoicesContent() {
         cashOuts={cashOuts.pending}
         cashOutDuplicates={cashOuts.duplicates}
         cashOutCategories={cashOutCats.map(({ id, name }) => ({ id, name }))}
+        branchOptions={branchOptions}
+        defaultBranch={scopeName ? scope : ""}
       />
 
       <Card className="mt-6">
@@ -418,7 +443,7 @@ async function InvoicesContent() {
                     <span className="inline-flex items-center gap-2">
                       <span className="size-2 shrink-0 rounded-full bg-good" aria-hidden="true" />
                       Mal maliyeti
-                      <InfoTip text={`Gelir-gider tablosuna giden mal alışı: ${GOODS_CATEGORIES.join(" + ")}.`} />
+                      <InfoTip text={`Gelir-gider tablosuna giden mal alışı: ${GOODS_CATEGORIES.join(" + ")}; karışık faturada kalem kalem (öbür kategorideki faturanın hammaddeye bağlı kalemi de, mal faturasının Sarf / Demirbaş / Hizmet denmiş kalemi hariç). Kategori satırları faturanın kategorisiyle.`} />
                     </span>
                   </TD>
                   {goodsByMonth.map((v, i) => (

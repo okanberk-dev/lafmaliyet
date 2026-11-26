@@ -12,6 +12,7 @@ import type { Model } from "../calc/engine";
 import { daysInMonth, PERSONNEL_SUB_KEYS, shiftMonth } from "../calc/engine";
 import type { ExpenseCategory, ExpenseEntry, FixedExpense, FixedSection, Invoice } from "../calc/types";
 import { COMMISSION_CATEGORY, FIXED_ESTIMATE_DESCRIPTION, fixedVatRate, GOODS_CATEGORIES, MANUAL_PNL_ROWS, SEPARATE_CATEGORIES } from "../constants";
+import { GOODS_PART, invoiceParts, splittable } from "../invoice-split";
 import { money, tl } from "../format";
 import { monthSource } from "../lafpos/switch";
 import { monthEnd } from "../reminders";
@@ -500,7 +501,10 @@ function monthCalc(ctx: Ctx, month: string): TaxMonth {
   for (const inv of invs) {
     const n = net(inv);
     if (inv.date < from) {
-      if (GOODS_CATEGORIES.includes(inv.category) || inv.category === COMMISSION_CATEGORY) prePeriod = r2(prePeriod + n);
+      // Gelir-gider'in mal alışına ve komisyonuna giren payı (kalem kalem: öbür kategorideki faturanın hammadde kalemi
+      // de; mal faturasının sarf kalemi bağlı harcamada, köprünün "Gelir-gider'e girmeyen faturalar" satırında)
+      const parts = invoiceParts(inv);
+      prePeriod = r2(prePeriod + (parts.get(GOODS_PART) ?? 0) + (parts.get(COMMISSION_CATEGORY) ?? 0));
       continue;
     }
     const a = ctx.linkedCost.get(inv.id) ?? 0;
@@ -511,6 +515,24 @@ function monthCalc(ctx: Ctx, month: string): TaxMonth {
         separate = r2(separate + n);
         separateItems.push({ label: `${inv.supplier} · ${inv.category}`, amount: n, note });
       } else excluded.push({ key: `invoice:${inv.id}`, source: "invoice", id: inv.id, name: inv.supplier, section: null, amount: n, raw: n, reason: "kafe_disi", note });
+    } else if (inv.lines?.length && inv.category !== ASSET_CATEGORY && !ctx.candidates.has(inv.id) && splittable(inv.category)) {
+      // Kalem kalem (src/lib/invoice-split.ts; Gelir-gider'le aynı): hammaddeye bağlı kalemler mal alışı (SMM),
+      // kalanı payının kategorisinde gider. Demirbaş nedenli kalem burada gider kalır: varlık listesine eklenince
+      // (Vergi › Demirbaş, öneri) amortismana geçer. Varlığa bağlı tutar (rem) önce gider payından düşer
+      const parts = invoiceParts(inv);
+      const g = parts.get(GOODS_PART) ?? 0;
+      // İade (eksi) faturada varlık payı yok: paylar olduğu gibi
+      const goodsRem = rem < 0 ? g : r2(Math.min(g, rem));
+      goods = r2(goods + goodsRem);
+      goodsAll = r2(goodsAll + g);
+      let left = r2(rem - goodsRem);
+      for (const [k, v] of parts) {
+        if (k === GOODS_PART || (rem >= 0 && left <= 0.005)) continue;
+        const take = rem < 0 ? v : r2(Math.min(v, left));
+        left = r2(left - take);
+        if (inv.taxNotAsset) notAsset = r2(notAsset + take);
+        else byCategory.set(k, r2((byCategory.get(k) ?? 0) + take));
+      }
     } else if (GOODS_CATEGORIES.includes(inv.category)) {
       goods = r2(goods + rem);
       goodsAll = r2(goodsAll + n);

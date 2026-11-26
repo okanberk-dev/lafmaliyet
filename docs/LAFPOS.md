@@ -955,8 +955,12 @@ LafPOS'un gününde bu bölümler yok.
   olanın yanında "(belirsiz)", kümülatif yok; `okcReadRows`), "Panelde aç" ve **fotoğrafın kendisi ek olarak** (en çok 3
   fotoğraf, toplam 8 MB; depo okunamazsa ek düşer, e-posta yine gider). Rapor yokken (LafPOS'ta sayım yok) bekleyen
   fotoğraf otomatik raporun yazacağı değerlerle karşılaştırılır (`pendingPhotoCheck`). Aynı karşılaştırma bir kez gider
-  (`notification_log` anahtarı `lafpos-foto:marina:GÜN:<özet>`; özet durum, okuyan, satırlar ve fotoğraf sayısından,
-  `photoCheckHash`); yeni fotoğraf ya da LafPOS'un düzeltmesi karşılaştırmayı değiştirirse yeniden gider. Gün sonu
+  (`notification_log` anahtarı `lafpos-foto:marina:GÜN:<özet>`; özet durum, okuyan ve satırlardan, birden çok fotoğrafta
+  fotoğraf sayısından, `photoCheckHash`; fotoğraftan okunup raporun boş Z no'suna yazılan numaranın "raporda" eki özeti
+  değiştirmez; yükseltmeden önceki formülle gitmiş kayıt da sayılır, `photoCheckHashLegacy`); yeni fotoğraf ya da
+  LafPOS'un düzeltmesi karşılaştırmayı değiştirirse yeniden gider. Gönderimi kendi kaydıyla üstlenir (kayıt
+  "gönderiliyor" iken ikinci deneme bekler, yarıda kalan kayıt 5 dk sonra devralınır): gün sonu ve Pavo e-postasının
+  kilidini tutmaz, onlar da Z raporunu sabaha bırakmaz. Gün sonu
   e-postası henüz gitmediyse beklenir (önce gün sonu, sonra Z raporu). Yükseltmeden önce eklenmiş eski fotoğraflar için
   toplu e-posta gitmesin diye tutan / okunamayan fotoğrafta kural son 48 saatte eklenen fotoğrafa bakar
   (`photoMailFresh`); fark ve "yönetici baksın" her zaman. Fotoğraf bağlanınca (`attachLafposDayPhoto`, yanıttan sonra)
@@ -965,10 +969,13 @@ LafPOS'un gününde bu bölümler yok.
   e-postası fotoğraf okunup yazılanlarla tutuyorsa yeşil "✓ Z fotoğrafı okundu: yazılan rakamlarla tutuyor" satırını
   taşır (Tuzla / ModPOS da).
 - **Okunmamış fotoğraf yeniden okunur** (`readUnreadDayPhotos`; 25 Kasım 2026, "rapor ve z raporları okunmuyor"):
-  fotoğraf yüklenirken okuma düştüyse (zaman aşımı, yoğunluk, bağlantı) fotoğraf okunmadan bağlanıyor, hiçbir yol onu
-  yeniden okumuyordu. Şimdi fotoğraf bağlanınca (yanıttan sonra, e-postadan önce) ve gün sonu otomasyonunda ne yapay
-  zekâ ne kod okunuşu olan her fotoğraf aynı sırayla (ucuz → güçlü → kod) bir kez daha okunur, karşılaştırma yenilenir.
-  Fotoğraf başına sınırlı: `ai_calls`'ta 6 deneme satırı olan fotoğraf bir daha denenmez.
+  fotoğraf yüklenirken okuma düştüyse (zaman aşımı, yoğunluk, bağlantı) fotoğraf okunmadan ya da yalnız kodla okunup
+  bağlanıyor, hiçbir yol onu yeniden okumuyordu. Şimdi fotoğraf bağlanınca (yanıttan sonra, Z raporu e-postasından önce)
+  ve gün sonu otomasyonunda (gün sonu ve Pavo e-postalarından sonra, Z raporundan önce) yapay zekâ okunuşu olmayan her
+  fotoğraf aynı sırayla (ucuz → güçlü → kod) bir kez daha okunur, karşılaştırma yenilenir. Yalnız kodla okunmuş fotoğraf
+  yapay zekâ açıkken yeniden denenir (kapalıyken kod okunuşu kalır, yeni OCR yok). Süreye sığmayan adım atlanır (son an:
+  yanıttan sonraki iş 45 sn, günlük işin kalan süresi): ucuz okuma sığmazsa hiç denenmez, güçlü sığmazsa ucuz okunuş
+  kalır. Fotoğraf başına sınırlı: `ai_calls`'ta 6 deneme satırı olan fotoğraf bir daha denenmez.
 - **Çalışanların kısa e-postası** (`sendStaffDayEnd`; Kasa › Rapor alıcıları › Çalışanlar): yöneticinin e-postasıyla
   aynı tetikte, ondan ayrı gönderilir; yöneticininki düşse ya da alıcısı olmasa da gider (Pavo beklenirken beklenir). Sayım varsa (rapor yazıldı ya da elle girildi) "Marina · gün sonu alındı · 22 Kasım Pazar": Z no, fiş
   sayısı, "tutarlar" açıksa ciro ve ödeme türleri, "Emeğiniz için teşekkürler". **Günde bir kez**: LafPOS düzeltip

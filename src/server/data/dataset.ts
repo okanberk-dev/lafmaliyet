@@ -20,6 +20,8 @@ import { addDays } from "@/lib/reminders";
 import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import type { SiteSalesMonth } from "@/lib/site-sales/schema";
 import { branchWhere, branchWhereWithShared, currentBranchScope, currentWriteBranch, withBranchScope } from "@/server/branch-scope";
+import { invoiceScopeWhere } from "@/server/invoice-scope";
+import { loadSplitLines } from "./invoice-split";
 import { resolveBranchSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s, type DB } from "@/server/db";
@@ -54,7 +56,8 @@ export interface DatasetOptions {
 /**
  * Hesaplama motorunun ihtiyaç duyduğu bütün veriyi tek seferde, paralel okur. Şube seçiliyken (ya da `scope` bir
  * şubeyse) ciro, kasa, satış, personel, sayım, zayi o şubenin; gider ve sabit gider şubenin + işletme genelinin
- * (docs/SUBE.md › Neyi süzer). Menü, reçete, hammadde, fatura ortak: hiç süzülmez.
+ * (docs/SUBE.md › Neyi süzer); fatura şubenin + işletme genelinin (şubesi seçilmemiş fatura yalnız "Tümü"de; docs/SUBE.md ›
+ * Faturanın şubesi). Menü, reçete ve hammadde ortak: hiç süzülmez.
  */
 export async function loadDataset(opts: DatasetOptions = {}): Promise<Dataset> {
   return opts.scope === undefined ? readDataset() : withBranchScope(opts.scope, readDataset);
@@ -105,9 +108,9 @@ async function readDataset(): Promise<Dataset> {
     db.select().from(s.recipeItems).orderBy(asc(s.recipeItems.sortOrder), asc(s.recipeItems.id)),
     db.select().from(s.months).where(branchWhere(s.months.branchId, scope)).orderBy(asc(s.months.month)),
     db.select().from(s.salesLines).where(branchWhere(s.salesLines.branchId, scope)).orderBy(asc(s.salesLines.sortOrder), asc(s.salesLines.id)),
-    // Faturalar işletme genelidir (şubesi boş); ayrı Paraşüt hesabına bağlı şubenin faturası o şubenin (sahibin kararı,
-    // 25 Kasım 2026; docs/SUBE.md › Paraşüt): tek şube seçiliyken öbür şubenin faturası okunmaz. Vergi ve Nakit "Tümü"yle okur
-    db.select().from(s.invoices).where(branchWhereWithShared(s.invoices.branchId, scope)).orderBy(asc(s.invoices.date), asc(s.invoices.id)),
+    // Faturanın şubesi (docs/SUBE.md › Faturanın şubesi): tek şube seçiliyken o şubenin ve bilinçli işletme geneli
+    // faturalar; öbür şubenin ve şubesi seçilmemiş faturalar okunmaz. Vergi ve Nakit "Tümü"yle okur
+    db.select().from(s.invoices).where(invoiceScopeWhere(scope)).orderBy(asc(s.invoices.date), asc(s.invoices.id)),
     // Tedarikçi kartlarının adları ve vergi no: komisyon faturasının kanalı Komisyon & hakediş'teki gibi bulunur
     db.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, taxNumber: s.suppliers.taxNumber }).from(s.suppliers),
     db.select().from(s.staff).where(branchWhere(s.staff.branchId, scope)).orderBy(asc(s.staff.sortOrder), asc(s.staff.id)),
@@ -194,6 +197,8 @@ async function readDataset(): Promise<Dataset> {
   const lafposBranch = lafposBranchOf(branches);
   // Ayda açık gün seçili şubenin (şube ayarı isletme.takvim; "Tümü"de ve online kanalda varsayılan şubenin)
   const settings = { ...storedSettings, lafposGecisGunu: scopeSwitchDay(storedSettings.lafposGecisGunu, scope, lafposBranch), acikGun: calendar.value.openDays };
+  // Kalem kalem sınıflandırma (src/lib/invoice-split.ts): payı faturanın kategorisinden ayrılan kalemler
+  const splitOf = await loadSplitLines(db, invoices);
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
   const currentMonth = currentMonthTR();
   // Sabit giderler küçük tablo: hepsi okunur, şubeninkiler ve işletme genelinkiler burada ayrılır (silinmiş ya da
@@ -411,6 +416,8 @@ async function readDataset(): Promise<Dataset> {
       supplierTaxNumber: i.supplierTaxNumber,
       eInvoiceUuid: i.eInvoiceUuid,
       branchId: i.branchId,
+      companyWide: i.companyWide,
+      ...(splitOf.has(i.id) ? { lines: splitOf.get(i.id) } : {}),
       ...(channelNamesOf && i.category === COMMISSION_CATEGORY && !channelOf([i.supplier]) ? { channelNames: channelNamesOf(i.supplier, i.supplierTaxNumber) } : {}),
     })),
     // netSalary / extras ve period / amount taban değerlerdir (ilk sürümden önceki aylar).

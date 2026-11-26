@@ -42,6 +42,8 @@ export const RETURNS_KEY = "parasut.returns";
 export const UBL_RETRY_KEY = "parasut.ublRetries";
 /** İşletme geneli: "hammadde değil" işaretlenen ürünler */
 export const PRODUCT_IGNORE_KEY = "parasut.productIgnore";
+/** İşletme geneli: "hep hammadde değil" kuralı açık tedarikçiler (src/lib/product-ignore.ts IgnoredSupplier) */
+export const SUPPLIER_IGNORE_KEY = "parasut.supplierIgnore";
 
 /** Eşitlemenin kendi durumu; "Oturumu sıfırla" ve firma değişimi bunları siler (vergi no tamamlaması da baştan başlar) */
 export const PARASUT_STATE_KEYS = [CURSOR_KEY, RESUME_KEY, PENDING_KEY, E_CURSOR_KEY, HISTORY_KEY, LAST_BILL_KEY, TAX_BACKFILL_KEY];

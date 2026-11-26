@@ -9,10 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { keepScroll } from "@/components/ui/filters";
-import { Field, Input, Select, Textarea } from "@/components/ui/form";
+import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/form";
 import { BIG_FIELDS, SHEET_BTN } from "@/components/ui/mobile-filters";
 import { Notice } from "@/components/ui/notice";
 import { ToggleRow } from "@/components/ui/toggle-row";
+import { supplierDefaultValue } from "@/lib/invoice-branch";
 import { cn } from "@/lib/utils";
 import { saveSupplier, supplierInfoFromParasut } from "@/server/actions/suppliers";
 
@@ -58,6 +59,9 @@ function blankForm(card: SupplierCard | null, name: string, inferredTaxNumber: s
     paymentMethod: (card?.paymentMethod ?? "") as PaymentMethod | "",
     paidOnDelivery: card?.paidOnDelivery ?? false,
     note: card?.note ?? "",
+    /** Faturalarının varsayılan şubesi: şube kimliği, "isletme" ya da boş (yok) */
+    invoiceBranch: supplierDefaultValue(card) ?? "",
+    applyToUnassigned: false,
   };
 }
 
@@ -84,10 +88,19 @@ export function SupplierCardDialog({
   suggestions = [],
   defaultTermDays,
   canFill = false,
+  branchOptions = [],
+  unassignedCount = 0,
   onClose,
   onSaved,
   onDelete,
 }: {
+  /**
+   * Faturaların varsayılan şubesinin seçenekleri (şubeler ve İşletme geneli; invoiceBranchOptions). Boşsa (tek şube)
+   * alan çizilmez ve kayıt değeri göndermez
+   */
+  branchOptions?: { value: string; label: string }[];
+  /** Bu tedarikçinin şubesi seçilmemiş fatura sayısı ("hepsine de uygula") */
+  unassignedCount?: number;
   card: SupplierCard | null;
   /** Kartsız tedarikçinin faturalardaki adı (yeni kartın adı olur) */
   name?: string;
@@ -226,6 +239,7 @@ export function SupplierCardDialog({
         paymentMethod: f.paymentMethod || null,
         paidOnDelivery: f.paidOnDelivery,
         note: f.note,
+        ...(branchOptions.length ? { invoiceBranch: f.invoiceBranch || null, applyToUnassigned: Boolean(f.invoiceBranch) && f.applyToUnassigned } : {}),
       });
       if (!r.ok) return void toast.error(r.error);
       // Aynı vergi no başka bir kartta da yazılı: kayıt durmaz, numara eşleşmede kullanılmaz
@@ -233,8 +247,9 @@ export function SupplierCardDialog({
         ? `Bu vergi no ${r.data.sharedTax.map((n) => `“${n}”`).join(", ")} ${r.data.sharedTax.length > 1 ? "tedarikçilerinde" : "tedarikçisinde"} de kayıtlı; faturalar adlarına göre ayrılır.`
         : null;
       const lead = r.data.renamedAlias ? `“${r.data.renamedAlias}” adıyla gelen faturalar bu tedarikçide kalsın diye diğer adlara eklendi.` : f.name.trim();
+      const applied = r.data.applied ? ` · şubesi seçilmemiş ${r.data.applied} faturaya da yazıldı` : "";
       toast.success(card || names.length ? "Tedarikçi kaydedildi" : "Tedarikçi eklendi", {
-        description: shared ? `${lead}${lead.endsWith(".") ? " " : " · "}${shared}` : lead,
+        description: shared ? `${lead}${lead.endsWith(".") ? " " : " · "}${shared}${applied}` : `${lead}${applied}`,
         duration: shared ? 10000 : undefined,
       });
       onSaved?.({ id: r.data.id, slug: r.data.slug });
@@ -474,6 +489,33 @@ export function SupplierCardDialog({
               offText="Kapalı"
             />
           </fieldset>
+
+          {branchOptions.length ? (
+            <fieldset className="grid gap-x-3 gap-y-3">
+              <legend className="mb-2 text-[13px] font-semibold text-ink">Faturaların şubesi</legend>
+              <Field
+                label="Varsayılan şube"
+                htmlFor="s-branch"
+                hint="Paraşüt'ten gelen yeni faturası bu şubeye yazılır (ayrı Paraşüt hesabının faturası hesabın şubesine). Muhasebe gibi ortak hizmette İşletme geneli."
+              >
+                <Select id="s-branch" value={f.invoiceBranch} onChange={(e) => set({ invoiceBranch: e.target.value })}>
+                  <option value="">Seçilmedi (fatura “Şubesi seçilmemiş” gelir)</option>
+                  {branchOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              {unassignedCount > 0 && f.invoiceBranch ? (
+                <Checkbox
+                  checked={f.applyToUnassigned}
+                  onChange={(e) => set({ applyToUnassigned: e.target.checked })}
+                  label={`Şubesi seçilmemiş ${unassignedCount} faturasına da yaz`}
+                />
+              ) : null}
+            </fieldset>
+          ) : null}
 
           <fieldset>
             <legend className="mb-1 text-[13px] font-semibold text-ink">Faturalarda geçen diğer adlar</legend>

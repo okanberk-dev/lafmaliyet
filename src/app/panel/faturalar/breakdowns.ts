@@ -3,6 +3,7 @@ import { monthOfDate, normalizeSupplier } from "@/lib/calc/engine";
 import { openBalance } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { num } from "@/lib/format";
+import { goodsPart } from "@/lib/invoice-split";
 
 import type { InvoiceRow } from "./rules";
 
@@ -54,8 +55,19 @@ export function invoiceBreakdowns(invoices: InvoiceRow[], months: string[], href
       { key: "kafe", rows: cats.filter((c) => !SEPARATE_CATEGORIES.includes(c)).map(categoryRow) },
       { key: "kafe-disi", label: "Kafe dışı", apart: true, rows: cats.filter((c) => SEPARATE_CATEGORIES.includes(c)).map(categoryRow) },
     ],
+    // Kalem kalem (src/lib/invoice-split.ts): mal faturasının mal payı, öbür kategorilerin hammaddeye bağlı kalemleri
+    // ayrı grupta; döküm kartın rakamını (Gelir-gider'in mal alışı) tutar
     goods: Object.fromEntries(
-      months.map((m) => [m, GOODS_CATEGORIES.map((c) => ({ key: c, label: c, rows: bySupplier(inMonth(m, c), net, (s) => href({ kategori: c, ay: m, ara: s })) }))]),
+      months.map((m) => {
+        const mixed = invoices.filter((i) => !GOODS_CATEGORIES.includes(i.category) && monthOfDate(i.date) === m && goodsPart(i) !== 0);
+        return [
+          m,
+          [
+            ...GOODS_CATEGORIES.map((c) => ({ key: c, label: c, rows: bySupplier(inMonth(m, c), goodsPart, (s) => href({ kategori: c, ay: m, ara: s })) })),
+            ...(mixed.length ? [{ key: "kalem", label: "Öbür faturaların hammadde kalemleri", rows: bySupplier(mixed, goodsPart, (s) => href({ ay: m, ara: s })) }] : []),
+          ],
+        ];
+      }),
     ),
     commission: Object.fromEntries(
       months.map((m) => [m, [{ key: "komisyon", rows: bySupplier(inMonth(m, COMMISSION_CATEGORY), net, (s) => href({ kategori: COMMISSION_CATEGORY, ay: m, ara: s })) }]]),
