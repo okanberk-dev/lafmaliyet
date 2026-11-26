@@ -5,7 +5,7 @@
  */
 
 import type { Point, Quad, RgbaImage } from "./image";
-import { fitSize, resizeRgba, toGray } from "./image";
+import { fitSize, resizeRgba, scaleQuad, toGray, unscaleQuad } from "./image";
 import { interiorAngles, isConvex, orderCorners, polygonArea } from "./geom";
 import { detectDocument, type DetectMethod, type DetectOptions } from "./detect";
 import { refineCorners } from "./refine";
@@ -56,6 +56,9 @@ export interface ScanResult {
 }
 
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+
+/** Algılama, köşe oturtma ve eğiklik önizlemesinin çalışma kopyası (uzun kenar) */
+const WORK_EDGE = 1000;
 
 /** Görüntünün köşeleri (kırpmasız) */
 export function fullFrame(width: number, height: number): Quad {
@@ -140,20 +143,27 @@ export function scanDocument(img: RgbaImage, opts: ScanOptions = {}): ScanResult
   let method: ScanMethod = "verilen";
   let fillsFrame = false;
   const reasons: string[] = [];
+  // algılama, köşe oturtma ve eğiklik önizlemesi tek bir küçük kopyada; tam çözünürlükte yalnız açma ve görünüm
+  const work = thumbnail(img, WORK_EDGE);
+  const toWork = (q: Quad) => scaleQuad(q, img.width, img.height, work.width, work.height);
+  const fromWork = (q: Quad) => unscaleQuad(q, img.width, img.height, work.width, work.height);
   if (opts.corners && quadIsValid(opts.corners, img.width, img.height)) {
     corners = orderCorners(opts.corners);
     if (opts.refine) {
-      const r = refineCorners(img, corners);
-      corners = r.corners;
+      const r = refineCorners(work, toWork(corners), { workEdge: WORK_EDGE });
+      corners = fromWork(r.corners);
       reasons.push(`oturan-kenar-${r.snapped}`);
     }
   } else {
     if (opts.corners) reasons.push("verilen-kose-gecersiz");
-    const d = detectDocument(img, opts.detect);
+    const d = detectDocument(work, opts.detect);
     confidence = d.confidence;
     reasons.push(...d.reasons);
     if (d.corners && !d.fillsFrame) {
-      corners = d.corners;
+      corners = fromWork(d.corners).map((p) => ({
+        x: Math.max(0, Math.min(img.width - 1, p.x)),
+        y: Math.max(0, Math.min(img.height - 1, p.y)),
+      })) as Quad;
       method = d.method ?? "yok";
     } else {
       corners = fullFrame(img.width, img.height);
@@ -179,7 +189,7 @@ export function scanDocument(img: RgbaImage, opts: ScanOptions = {}): ScanResult
   let fill: [number, number, number] | undefined;
   if (opts.deskew !== false) {
     const pv = fitSize(size.width, size.height, 800);
-    const preview = warpQuad(img, warpCorners, pv.width, pv.height);
+    const preview = warpQuad(work, toWork(warpCorners), pv.width, pv.height);
     const sk = estimateSkew(preview);
     if (sk.confidence >= 0.3 && Math.abs(sk.angle) >= 0.3) {
       rotation = -sk.angle;

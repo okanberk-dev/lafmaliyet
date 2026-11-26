@@ -220,6 +220,8 @@ export function sampleBilinear(g: GrayImage, x: number, y: number): number {
 // ---------------------------------------------------------------- süzgeçler
 
 function gaussKernel(sigma: number): Float32Array {
+  // σ = 1 için 5 dokunuşlu binom çekirdeği (tam σ = 1; 7 dokunuştan hızlı)
+  if (Math.abs(sigma - 1) < 0.05) return Float32Array.from([1 / 16, 4 / 16, 6 / 16, 4 / 16, 1 / 16]);
   const r = Math.max(1, Math.ceil(sigma * 3));
   const k = new Float32Array(2 * r + 1);
   let sum = 0;

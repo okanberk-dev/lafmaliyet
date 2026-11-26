@@ -17,6 +17,8 @@
 import type { GrayImage, Point, Quad, RgbaImage } from "./image";
 import {
   closeMask,
+  dilateMask,
+  erodeMask,
   fitSize,
   gaussianBlur,
   histogram,
@@ -24,10 +26,10 @@ import {
   labelComponents,
   maxFilter,
   minFilter,
-  openMask,
   otsuIndex,
   resizeGray,
   resizeRgba,
+  scaleQuad,
   seededRandom,
   sobel,
   traceContour,
@@ -51,7 +53,7 @@ import {
   simplifyClosed,
   type Line,
 } from "./geom";
-import { sideOnFrame, snapQuad } from "./refine";
+import { sideOnFrame, snapQuad, workGray } from "./refine";
 
 export type DetectMethod = "kagit" | "kenar" | "yazi" | "tam-kare";
 
@@ -93,6 +95,8 @@ interface Ctx {
   /** ince koyu çizgiler (yazı) */
   text: Uint8Array;
   textTotal: number;
+  /** yazı piksellerinden seyrek örnek (en çok ~3000; dörtgenin içindeki yazı oranı için) */
+  textPts: Point[];
 }
 
 interface SideStat {
@@ -113,6 +117,8 @@ interface Scored {
 }
 
 const DEFAULT_EDGE = 640;
+/** son ince ayarın çözünürlüğü (uzun kenar) */
+const REFINE_EDGE = 1000;
 const STEP_OFFSETS = [2, 4, 6, 8, 10, 12, 14];
 const bufIn = new Float32Array(STEP_OFFSETS.length);
 const bufOut = new Float32Array(STEP_OFFSETS.length);
@@ -173,7 +179,13 @@ function buildCtx(img: RgbaImage, maxEdge: number): Ctx {
       textTotal++;
     }
   }
-  return { w, h, n, diag: Math.hypot(w, h), rgba: data, lum, chroma, gray, paper, gx, gy, gradThr, stepThr, text, textTotal };
+  const textPts: Point[] = [];
+  const every = Math.max(1, Math.floor(textTotal / 3000));
+  for (let i = 0, k = 0; i < n; i++) {
+    if (!text[i]) continue;
+    if (k++ % every === 0) textPts.push({ x: i % w, y: Math.floor(i / w) });
+  }
+  return { w, h, n, diag: Math.hypot(w, h), rgba: data, lum, chroma, gray, paper, gx, gy, gradThr, stepThr, text, textTotal, textPts };
 }
 
 // ---------------------------------------------------------------- puan
@@ -340,19 +352,10 @@ function textOutside(ctx: Ctx, a: Point, b: Point, cx: number, cy: number): numb
 
 /** Yazının yüzde kaçı dörtgenin içinde (yazı azsa null) */
 function textInside(ctx: Ctx, q: Quad): number | null {
-  if (ctx.textTotal < ctx.n * 0.002) return null;
-  const { w, h } = ctx;
+  if (ctx.textTotal < ctx.n * 0.002 || !ctx.textPts.length) return null;
   let inside = 0;
-  let tot = 0;
-  const step = Math.max(1, Math.round(Math.sqrt(ctx.n / 40_000)));
-  for (let y = 0; y < h; y += step) {
-    for (let x = 0; x < w; x += step) {
-      if (!ctx.text[y * w + x]) continue;
-      tot++;
-      if (insideConvex(q, { x, y })) inside++;
-    }
-  }
-  return tot ? inside / tot : null;
+  for (const p of ctx.textPts) if (insideConvex(q, p)) inside++;
+  return inside / ctx.textPts.length;
 }
 
 function evaluate(ctx: Ctx, q: Quad, how: DetectMethod): Scored | null {
@@ -419,7 +422,8 @@ function fitSidesToContour(q: Quad, contour: Point[], diag: number): Quad {
 function maskCandidates(ctx: Ctx, mask: Uint8Array, out: Quad[]): void {
   const { w, h, n } = ctx;
   const r = Math.max(2, Math.round(Math.min(w, h) / 90));
-  const m = openMask(closeMask(mask, w, h, r), w, h, r);
+  // kapama + açma = genişlet(r) → aşındır(2r) → genişlet(r) (iki aşındırma tek geçişte)
+  const m = dilateMask(erodeMask(dilateMask(mask, w, h, r), w, h, 2 * r), w, h, r);
   const cc = labelComponents(m, w, h);
   const order: number[] = [];
   for (let l = 1; l <= cc.count; l++) if (cc.areas[l] >= n * 0.012) order.push(l);
@@ -475,9 +479,7 @@ interface HLine extends Line {
 }
 
 function canny(ctx: Ctx): { xs: Int32Array; ys: Int32Array; ang: Float32Array; count: number } {
-  const { w, h, n } = ctx;
-  const g = gaussianBlur(ctx.gray, 1);
-  const { gx, gy } = sobel(g);
+  const { w, h, n, gx, gy } = ctx;
   const mag = new Float32Array(n);
   for (let i = 0; i < n; i++) mag[i] = Math.hypot(gx[i], gy[i]);
   const nms = new Float32Array(n);
@@ -934,7 +936,17 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
     reasons.push("kareyi-dolduruyor");
     return { corners: frameQuad(img.width, img.height), confidence, method: "tam-kare", fillsFrame: true, reasons };
   }
-  const corners = unscaleQuad(squareFrameSides(best.q, w, h), img.width, img.height, w, h).map((p) => ({
+  let corners = unscaleQuad(squareFrameSides(best.q, w, h), img.width, img.height, w, h);
+  // son ince ayar daha yüksek çözünürlükte (en çok 1000 px): köşe ~1 px'e oturur; kareye dayanan kenar sabit
+  const fixed = best.sides.map((s, i) => (s.frame ? i : -1)).filter((i) => i >= 0);
+  const g = workGray(img, REFINE_EDGE);
+  if (g.width > w) {
+    const fine = snapQuad(g, scaleQuad(corners, img.width, img.height, g.width, g.height), { passes: "ince", fixed });
+    const fq = unscaleQuad(fine.q, img.width, img.height, g.width, g.height);
+    const diagOrig = Math.hypot(img.width, img.height);
+    if (quadDistance(fq, corners) < diagOrig * 0.012) corners = fq;
+  }
+  corners = corners.map((p) => ({
     x: Math.max(0, Math.min(img.width - 1, p.x)),
     y: Math.max(0, Math.min(img.height - 1, p.y)),
   })) as Quad;

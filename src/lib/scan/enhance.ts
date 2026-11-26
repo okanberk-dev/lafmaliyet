@@ -124,26 +124,29 @@ function normalizedGray(img: RgbaImage, ill: Illumination, rgb?: Float32Array): 
   const mw = ill.width;
   const tx = upTaps(mw, W);
   const ty = upTaps(ill.height, H);
+  // bölme yerine çarpma: haritanın tersi (yumuşak harita; tersin aradeğeri tersine çok yakın)
+  const inv = ill.bg.map((m) => {
+    const o = new Float32Array(m.length);
+    for (let i = 0; i < m.length; i++) o[i] = 1 / (m[i] > 16 ? m[i] : 16);
+    return o;
+  });
   const rr = new Float32Array(mw);
   const rg = new Float32Array(mw);
   const rb = new Float32Array(mw);
   const gray = new Float32Array(W * H);
   for (let y = 0; y < H; y++) {
-    mapRow(ill.bg[0], mw, ty, y, rr);
-    mapRow(ill.bg[1], mw, ty, y, rg);
-    mapRow(ill.bg[2], mw, ty, y, rb);
+    mapRow(inv[0], mw, ty, y, rr);
+    mapRow(inv[1], mw, ty, y, rg);
+    mapRow(inv[2], mw, ty, y, rb);
     for (let x = 0; x < W; x++) {
       const a = tx.i0[x];
       const b = tx.i1[x];
       const f = tx.f[x];
-      const br = rr[a] + (rr[b] - rr[a]) * f;
-      const bgg = rg[a] + (rg[b] - rg[a]) * f;
-      const bb = rb[a] + (rb[b] - rb[a]) * f;
       const i = y * W + x;
       const p = i * 4;
-      const nr = data[p] / (br > 16 ? br : 16);
-      const ng = data[p + 1] / (bgg > 16 ? bgg : 16);
-      const nb = data[p + 2] / (bb > 16 ? bb : 16);
+      const nr = data[p] * (rr[a] + (rr[b] - rr[a]) * f);
+      const ng = data[p + 1] * (rg[a] + (rg[b] - rg[a]) * f);
+      const nb = data[p + 2] * (rb[a] + (rb[b] - rb[a]) * f);
       const mn = nr < ng ? (nr < nb ? nr : nb) : ng < nb ? ng : nb;
       gray[i] = 0.7 * (0.299 * nr + 0.587 * ng + 0.114 * nb) + 0.3 * mn;
       if (rgb) {
@@ -347,6 +350,7 @@ function documentMode(img: RgbaImage, ill: Illumination): { out: RgbaImage; leve
   const mh = ill.height;
   const pl = 0.299 * ill.paper[0] + 0.587 * ill.paper[1] + 0.114 * ill.paper[2];
   const t1Small = upsample(sm, tx, ty, mw, mh);
+  // tam çözünürlükte bölme olmasın: alt eşik ve aralığın tersi haritada
   const T0 = new Float32Array(mw * mh);
   const T1 = new Float32Array(mw * mh);
   for (let i = 0; i < mw * mh; i++) {
@@ -354,13 +358,14 @@ function documentMode(img: RgbaImage, ill: Illumination): { out: RgbaImage; leve
     const gain = Math.max(1, pl / Math.max(8, bgl));
     const a = Math.min(t0 * Math.sqrt(gain), t0 + 0.06);
     T0[i] = a;
-    T1[i] = Math.max(t1Small[i], a + 0.14);
+    T1[i] = 1 / (Math.max(t1Small[i], a + 0.14) - a);
   }
   const txs = upTaps(mw, W);
   const tys = upTaps(mh, H);
   const r0 = new Float32Array(mw);
   const r1 = new Float32Array(mw);
   const v = g; // yerinde: koyuluk açılımı
+  const invMode = 1 / mode;
   for (let y = 0; y < H; y++) {
     mapRow(T0, mw, tys, y, r0);
     mapRow(T1, mw, tys, y, r1);
@@ -370,10 +375,10 @@ function documentMode(img: RgbaImage, ill: Illumination): { out: RgbaImage; leve
       const b = txs.i1[x];
       const f = txs.f[x];
       const lo = r0[a] + (r0[b] - r0[a]) * f;
-      const hi = r1[a] + (r1[b] - r1[a]) * f;
-      let d = (mode - g[o + x]) / mode;
+      const span = r1[a] + (r1[b] - r1[a]) * f;
+      let d = 1 - g[o + x] * invMode;
       d = d < 0 ? 0 : d > 1 ? 1 : d;
-      let t = (d - lo) / (hi - lo);
+      let t = (d - lo) * span;
       t = t < 0 ? 0 : t > 1 ? 1 : t;
       v[o + x] = t < 0.1 ? 0 : t;
     }
