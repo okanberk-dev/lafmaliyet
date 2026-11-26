@@ -28,8 +28,11 @@ listesinin fotoğrafı taranmaz.
 - Kâğıt kendiliğinden bulunur; kenarları yeşil çizgiyle belirgin çizilir, dışı karartılır. Köşe yanlışsa parmakla ya
   da fareyle sürüklenir (sürüklerken köşenin büyütülmüş hâli görünür; klavyede köşeye gelip ok tuşları). Kenar
   bulunamazsa "Kenarlar bulunamadı; köşeleri sürükleyin." yazar ve dörtgen fotoğrafın tamamıdır.
-- **Otomatik** bulunan kenarlara geri döner, **Tüm fotoğraf** kırpmadan kullanır, **Döndür** sonucu 90° çevirir (yan
-  çekilmiş fiş).
+- Yan ya da ters çekilmiş belge kendiliğinden dik çevrilir (yazıya bakılarak; emin olunamazsa çevrilmez). **Otomatik**
+  bulunan kenarlara geri döner, **Tüm fotoğraf** kırpmadan kullanır, **Döndür** sonucu 90° çevirir.
+- Çekim sorunluysa başlığın altında tek satır uyarı çıkar: "Fotoğraf bulanık; telefonu sabit tutup yeniden çekin.",
+  "Fişte parlama var; ışığı yandan alın.", "Raporun altı kesilmiş; tamamını çekin." gibi (turuncu: hafif, kırmızı:
+  yeniden çekmek önerilir). Yükleme yine serbesttir; yeniden çekmek için ekran kapatılır.
 - Görünüm: **Belge** (varsayılan; taranmış gibi: kâğıt beyaz, yazı koyu ve net, gölge ve sarı ışık gider), **Gri**,
   **Renkli**, **Orijinal** (yalnız kırpılır ve düzeltilir). Sonuç önizlemede görünür (telefonda **Sonuç** sekmesi).
 - **Kullan**: taranmış hâl yüklenir, okunur ve her yerde o gösterilir; asıl fotoğraf küçültülüp yanında saklanır.
@@ -46,6 +49,8 @@ Nasıl çalışır: tarama telefonda, tarayıcıda yapılır (sunucu görseli ç
 (`src/components/panel/scan/scan.worker.ts`; Turbopack `new Worker(new URL(…, import.meta.url))` kalıbını ayrı paket
 derler), açılamazsa ana iş parçacığında; ekran ve çekirdek yalnız ilk taramada iner. Fotoğraf okumanın ölçüsünde
 çözülür (en çok 2576 px / ~3,7 MP); kâğıt 1000 px'lik kopyada aranır, önizleme ~900 px, son tarama asıl çözünürlükte.
+Kâğıt bulununca arka planda sayfa yönü ve çekim kalitesi ölçülür (§ 12 `detectOrientation`, `assessQuality`; uyarının
+adı türe göre: fiş, rapor, fatura).
 Yükleme (`POST /api/foto`): `dosya` taranmış JPEG (%70; olağan belgede en uzun kenar 2576 px ve ~3,7 MP, dar uzun
 fişte kısa kenar en az 260 px kalsın diye uzun kenar 4096'ya kadar; daha darında iki yana beyaz pay: sunucunun 200 px
 alt sınırı), `asil` asıl fotoğraf (1800 px, %65), `tarama` taramanın bilgisi (`photos.scan`: köşeler asıl fotoğrafa
@@ -606,15 +611,16 @@ Belge tarama.
   çökmez (yöntem "yok", kırpılmaz).
 - **Bilinen sınırlar:** yalnız sentetik fotoğraflarla ölçüldü (gerçek fotoğraf deneme betiğiyle denenmeli); kâğıtla
   zemin arası ~10 gri düzeyinin altında kâğıt bulunmaz, görüntü kâğıda benziyorsa "tam-kare" (kırpılmaz); karede iki
-  belge varsa biri seçilir, güven düşer ("iki-aday"); 90° / 180° yön kendiliğinden bulunmaz (`rotate` ya da yapay
-  zekânın "top" ipucu gerekir), yalnız ±8° eğiklik düzeltilir.
+  belge varsa biri seçilir, güven düşer ("iki-aday"); çekirdek 90° / 180° yönü kendisi bulmaz (`rotate`; tarama ekranı
+  bunu § 12 `detectOrientation`'dan ya da yapay zekânın "top" ipucundan verir), kendisi yalnız ±8° eğikliği düzeltir.
 - **Deneme:** `npx tsx scripts/tarama-dene.ts <fotoğraf|klasör> [--mod hepsi] [--ipucu x1,y1,…,x4,y4] [--ust right]`
   ya da `--sentetik`; çıktı `.data/tarama-dene/` (köşe çizimi ve taranmış hâller). sharp yalnız bu betikte, dinamik
   yüklenir.
 
 ## 12. Belge tarama (kalite, yön, birleştirme)
 
-Çekirdeğin (§ 11) yanında üç saf modül; arayüz bağlantısı henüz yok. İmzalar, önerilen akış, kullanım örnekleri ve
+Çekirdeğin (§ 11) yanında üç saf modül; yön ve kalite tarama ekranına bağlı (§ 1 › Belge tarama), birleştirme henüz
+bağlı değil. İmzalar, önerilen akış, kullanım örnekleri ve
 eşikler: [src/lib/scan/README.md](../src/lib/scan/README.md). Ortak yazı çözümlemesi `metin.ts`'te (kâğıdın yerel
 parlaklığına göre mürekkep haritası, harf boyu, satır yönü ve ölçüleri).
 
@@ -627,7 +633,8 @@ parlaklığına göre mürekkep haritası, harf boyu, satır yönü ve ölçüle
 - **Sayfa yönü** (`orientation.ts`, `detectOrientation(img, { corners })`): 90 / 180 / 270° döndürülmüş belge; satır
   yönü, sonra düz / ters (nokta ve virgülün taban çizgisinde, harf noktalarının üstte olması; kısa satırların sola
   yaslanması; fişin ortalı başlığı). Emin değilse `"bilinmiyor"` (döndürülmez; yapay zekâ yönü kendisi bulur).
-  Arayüze bağlanınca § 11'deki "90° / 180° yön kendiliğinden bulunmaz" sınırı kalkar (`rotate` buradan verilir).
+  Tarama ekranı `rotate`'i buradan verir; yapay zekânın "top" ipucu gelirse o öne geçer, kullanıcı **Döndür**'e
+  bastıysa ikisi de dokunmaz.
 - **Uzun fiş birleştirme** (`stitch.ts`, `stitchParts(parts)`): parça parça çekilmiş uzun Z'nin taranmış parçaları
   örtüşen bölgeden tek görüntüde birleşir (satır profili ve koyuluk haritasında normalize çapraz ilinti, ölçek ve
   yatay kayma farkı tolere edilir; dikiş satır arasından). Örtüşme yoksa, yazısızsa, tekrarlayan satırlar yüzünden

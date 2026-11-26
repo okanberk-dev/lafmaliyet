@@ -220,6 +220,15 @@ test("tarama ekranının motoru (Worker'da çalışan kod, DOM'suz): fişi bulur
   const r = run({ type: "refine", corners: rough });
   assert.equal(r.type, "refined");
   if (r.type === "refined") assert.ok(cornerError(r.corners, truth, W, H) < cornerError(rough, truth, W, H), "oturtma köşeyi yaklaştırır");
+  // Sayfa yönü ve çekim kalitesi (src/lib/scan orientation.ts, quality.ts): emin değilse döndürmez; uyarı metinleri ada göre
+  const a = run({ type: "analyze", corners: d.detection.corners!, noun: "fis" });
+  assert.equal(a.type, "analyzed");
+  if (a.type === "analyzed") {
+    assert.ok(a.rotate === null || [0, 90, 180, 270].includes(a.rotate), String(a.rotate));
+    assert.notEqual(a.rotate, 90, "dik fiş yan sanılmaz");
+    assert.notEqual(a.rotate, 270, "dik fiş yan sanılmaz");
+    for (const i of a.issues) assert.ok(i.text.length > 0 && (i.severity === "hafif" || i.severity === "ciddi"));
+  }
   const preview = run({ type: "scan", corners: d.detection.corners!, mode: "belge", rotate: 0, maxEdge: 300, preview: true });
   const full = run({ type: "scan", corners: d.detection.corners!, mode: "gri", rotate: 90, maxEdge: scanMaxEdge(4), preview: false });
   assert.equal(preview.type, "scanned");
@@ -253,7 +262,7 @@ test("yollar ve ekran: asıl fotoğraf aynı denetimden geçer, aynı erişim ku
   // Yükleme: belge türünde önce tarama ekranı, kontrol listesinin yolu tarama bilmez
   const picker = read("src/components/panel/photo-picker.tsx");
   assert.ok(picker.indexOf("if (isScanKind(o.kind))") < picker.indexOf("compressImage(file, ORIGINAL_COMPRESS)"));
-  assert.match(picker, /openScan\(file, o\.read,/, "yapay zekâya köşe yalnız okuma açıkken");
+  assert.match(picker, /openScan\(file, o\.kind, o\.read,/, "yapay zekâya köşe yalnız okuma açıkken");
   assert.doesNotMatch(read("src/app/api/kontrol/foto/route.ts"), /asil|tarama/);
   // Ağır iş Web Worker'da (Turbopack kalıbı), açılamazsa ana iş parçacığında
   assert.match(read("src/components/panel/scan/client.ts"), /new Worker\(new URL\("\.\/scan\.worker\.ts", import\.meta\.url\), \{ type: "module"/);

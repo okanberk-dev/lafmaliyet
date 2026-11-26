@@ -38,7 +38,7 @@ async function scanDocumentPhoto(file: File): Promise<File | "skip" | null> {
   } catch {
     return "skip";
   }
-  const choice = await mod.openScanEditor(file, { hint: false }).result;
+  const choice = await mod.openScanEditor(file, { hint: false, noun: "fatura" }).result;
   if (!choice) return null;
   if (choice.kind === "skip") return "skip";
   return new File([choice.scanned], jpegName(file.name), { type: "image/jpeg" });

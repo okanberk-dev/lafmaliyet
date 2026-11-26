@@ -27,14 +27,15 @@ import type { ScanChoice } from "./scan-editor";
  * Tarama ekranını açar (ilk açılışta yüklenir: tarayıcı çekirdeği ve Worker yalnız gerekince iner). Ekran yüklenemezse
  * (bağlantı koptu) tarama atlanır, fotoğraf olduğu gibi yüklenir
  */
-async function openScan(file: Blob, hint: boolean, keep: (close: () => void) => void): Promise<ScanChoice | null> {
+async function openScan(file: Blob, kind: PhotoKind, hint: boolean, keep: (close: () => void) => void): Promise<ScanChoice | null> {
   let mod: typeof import("./scan-editor");
   try {
     mod = await import("./scan-editor");
   } catch {
     return { kind: "skip" };
   }
-  const { result, close } = mod.openScanEditor(file, { hint });
+  // Çekim uyarılarındaki ad: "Raporun altı kesilmiş", "Fişte parlama var"
+  const { result, close } = mod.openScanEditor(file, { hint, noun: kind === "fis" ? "fis" : "rapor" });
   keep(close);
   return result;
 }
@@ -89,7 +90,7 @@ export function usePhotoUpload() {
     if (isScanKind(o.kind)) {
       setPhase({ kind: "scanning" });
       // Kod emin değilse yapay zekâya köşe yalnız okuma açıkken sorulur
-      const choice = await openScan(file, o.read, (close) => (closeScan.current = close));
+      const choice = await openScan(file, o.kind, o.read, (close) => (closeScan.current = close));
       closeScan.current = null;
       if (!choice) {
         setPhase({ kind: "idle" });

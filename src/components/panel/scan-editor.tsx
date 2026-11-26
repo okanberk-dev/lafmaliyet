@@ -1,6 +1,6 @@
 "use client";
 
-import { Expand, LoaderCircle, RotateCw, Wand2, X } from "lucide-react";
+import { Expand, LoaderCircle, RotateCw, TriangleAlert, Wand2, X } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { createRoot } from "react-dom/client";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
 import { needsAiHint, SCAN_MODE_LABEL, SCAN_MODE_LIST, scanMaxEdge, scanStatusText, type ScanInfo, type ScanInfoMethod } from "@/lib/photo-scan";
 import { cornersFromHint, cornersToHint, estimateSize, fullFrame, orderCorners, quadIsValid, rotationForTop, type DocumentTop, type QuarterTurn, type Quad, type RgbaImage, type ScanMode } from "@/lib/scan";
+import type { DocNoun, QualityIssue } from "@/lib/scan/quality";
 import { cn } from "@/lib/utils";
 
 import { decodePhoto, encodeScan, hintJpeg, previewUrl, ScanClient } from "./scan/client";
@@ -82,7 +83,7 @@ function ScanBeam({ on }: { on: boolean }) {
   );
 }
 
-export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; onDone: (choice: ScanChoice | null) => void }) {
+export function ScanEditor({ file, hint, noun = "belge", onDone }: { file: Blob; hint: boolean; noun?: DocNoun; onDone: (choice: ScanChoice | null) => void }) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -91,6 +92,7 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
   const autoRef = useRef<{ corners: Quad; method: ScanInfoMethod } | null>(null);
   const touchedRef = useRef(false);
   const rotatedRef = useRef(false);
+  const aiTopRef = useRef(false);
   const previewSeq = useRef(0);
   const grab = useRef<{ index: number; dx: number; dy: number } | null>(null);
   const doneRef = useRef(false);
@@ -114,8 +116,9 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
   const [view, setView] = useState<"kenar" | "sonuc">("kenar");
   const [dragging, setDragging] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [issues, setIssues] = useState<QualityIssue[]>([]);
 
-  const finish = (choice: ScanChoice | null) => {
+  const finish =(choice: ScanChoice | null) => {
     if (doneRef.current) return;
     doneRef.current = true;
     onDone(choice);
@@ -183,6 +186,18 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
         setMethod(m);
         setConfidence(d.confidence);
         setDetecting(false);
+        // Sayfa yönü ve çekim kalitesi kâğıdın içinden (arka planda; köşeler beklemeden görünür)
+        const analyze = async (quad: Quad) => {
+          try {
+            const a = await client.call({ type: "analyze", corners: quad, noun });
+            if (cancelled || a.type !== "analyzed") return;
+            setIssues(a.issues);
+            if (a.rotate !== null && !rotatedRef.current && !aiTopRef.current) setRotate(a.rotate);
+          } catch {
+            // çözümleme çöktü: uyarısız, döndürmeden sürer
+          }
+        };
+        void analyze(q);
         if (!hint || !needsAiHint(d)) return;
         setAiAsked(true);
         setAiPending(true);
@@ -205,9 +220,14 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
             if (!touchedRef.current) {
               setCorners(refined);
               setMethod("yapay-zeka");
+              void analyze(refined);
             }
           }
-          if (h.document && h.top !== "up" && !rotatedRef.current) setRotate(rotationForTop(h.top));
+          // Belgenin üstü: yapay zekâ söylediyse kodun yön tahmininin önüne geçer (kullanıcı döndürmediyse)
+          if (h.document) {
+            aiTopRef.current = true;
+            if (!rotatedRef.current) setRotate(rotationForTop(h.top));
+          }
         } catch {
           // Yapay zekâ yok, yanıt vermedi ya da bağlantı koptu: kodun sonucu kalır
         } finally {
@@ -528,6 +548,13 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
           <p aria-live="polite" className={cn("mt-0.5 text-[13px] leading-5", error || (!valid && photo && !detecting) ? "text-bad" : "text-ink-mute")}>
             {status}
           </p>
+          {/* Çekim kalitesi (src/lib/scan/quality.ts): ilk sorun yeter; ciddiyse yeniden çekmek önerilir, yükleme yine serbest */}
+          {issues.length && !error ? (
+            <p className={cn("mt-1 flex items-start gap-1.5 text-[13px] leading-5", issues[0].severity === "ciddi" ? "text-bad-ink" : "text-warn-ink")}>
+              <TriangleAlert size={14} className="mt-[3px] shrink-0" aria-hidden="true" />
+              <span>{issues[0].text}</span>
+            </p>
+          ) : null}
         </div>
         <Button size="icon" variant="ghost" onClick={() => finish(null)} disabled={finishing} aria-label="Kapat (fotoğraf eklenmez)" className="-mr-1">
           <X size={18} aria-hidden="true" />
@@ -593,7 +620,7 @@ export function ScanEditor({ file, hint, onDone }: { file: Blob; hint: boolean; 
  * Ekran kendi köküne çizilir (çağıran bileşen yalnız sonucu bekler; usePhotoUpload, faturanın belgesi). `close` ekranı
  * kapatır (sayfa değişti), sonuç null olur.
  */
-export function openScanEditor(file: Blob, opts: { hint: boolean }): { result: Promise<ScanChoice | null>; close: () => void } {
+export function openScanEditor(file: Blob, opts: { hint: boolean; noun?: DocNoun }): { result: Promise<ScanChoice | null>; close: () => void } {
   const host = document.createElement("div");
   host.dataset.scanEditor = "";
   document.body.append(host);
@@ -611,6 +638,6 @@ export function openScanEditor(file: Blob, opts: { hint: boolean }): { result: P
       host.remove();
     }, 0);
   };
-  root.render(<ScanEditor file={file} hint={opts.hint} onDone={end} />);
+  root.render(<ScanEditor file={file} hint={opts.hint} noun={opts.noun} onDone={end} />);
   return { result, close: () => end(null) };
 }
