@@ -903,7 +903,7 @@ test("Zil: sayılan LafPOS gününün açık reddi bir satır (gün ve neden ba�
   // Gövde: gün, ne oldu, ne yapılacağı (LafPOS'tan elle Gönder)
   assert.equal(rows[0].body.replace(/\s/g, " "), "25 Kasım: panelde Z 127 kayıtlı, LafPOS Z 128 gönderdi. LafPOS'taki doğruysa Ayarlar › LafPOS'ta bu günün kaydını silin, sonra LafPOS'tan o günü Gönder'e basın.");
   assert.match(rows[1].body, /^24\sKasım: ilk sorunlu alan lines\.0\.qty\. .*Gönder'e basın\.$/);
-  assert.match(rows[2].body, /^23\sKasım: LafPOS "tuzla" için gönderdi, panel "marina" bekliyor\. LafPOS'ta Ayarlar ve yedek › Şube'yi düzeltin/);
+  assert.match(rows[2].body, /^23\sKasım: LafPOS "tuzla" için gönderdi, panel "marina" bekliyor\. LafPOS'ta Yönetim › Ayarlar ve yedek › Şube'yi düzeltin/);
   // Aynı gün aynı nedenle yeniden reddedilince (yeni an) kimlik aynı: satır yinelenmez; başka neden yeni satır
   const again = rejectionBells({ rejections: { ...rejections, "2026-11-25": rej("2026-11-25", "2026-11-26T05:00:00.000Z", { sentZNo: 129 }) }, switchDay: "2026-11-15", received, branchName: "Marina", today: "2026-11-26", now });
   assert.equal(again[0].id, rows[0].id);
