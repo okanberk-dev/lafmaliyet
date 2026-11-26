@@ -37,6 +37,7 @@ import {
   linksAnyPhoto,
   MANAGER_CLOSED_PATHS,
   MANAGER_EXTRA_PATHS,
+  openableHref,
   opsLevel,
   realRoleOf,
   ROLE_HINTS,
@@ -48,7 +49,7 @@ import {
   type Capability,
 } from "../src/lib/roles";
 import { MANAGER_HELP } from "../src/app/panel/yardim/personel/mudur";
-import { canEditShifts } from "../src/lib/vardiya";
+import { canEditShifts, shiftGridLinks } from "../src/lib/vardiya";
 import { proxy } from "../src/proxy";
 import { SESSION_COOKIE, signSession, verifySession } from "../src/server/auth/session";
 
@@ -251,6 +252,48 @@ describe("müdür: şubesinin günlük işletmesi", () => {
     assert.doesNotMatch(page, /cashOuts=\{outsByDate\}/);
     // İstemci bileşeni sunucunun satır tipini almaz
     assert.doesNotMatch(read("src/app/panel/kasa/cash-history.tsx"), /CashOutDTO/);
+  });
+
+  test("açamadığı ekrana bağlantı çizilmez: Vardiya'nın Şube ayarları ve Ayarlar bağlantıları, Zayi'nin Ayarlar › LafPOS'u (bulgu E2)", () => {
+    // Bağlantının kuralı ekranın kuralı (canOpen); sorgu ve çapa yola girmez
+    assert.equal(openableHref("admin", "/panel/subeler/tuzla#vardiya"), "/panel/subeler/tuzla#vardiya");
+    assert.equal(openableHref("manager", "/panel/subeler/tuzla#vardiya"), null);
+    assert.equal(openableHref("manager", "/panel/ayarlar#lafpos"), null);
+    assert.equal(openableHref("manager", "/panel/kasa?gun=2026-11-03#ozet"), "/panel/kasa?gun=2026-11-03#ozet");
+    assert.equal(openableHref("manager", "/panel/onaylar#istek-3"), "/panel/onaylar#istek-3");
+    assert.equal(openableHref("staff", "/panel/onaylar#istek-3"), null);
+    assert.equal(openableHref("staff", "/panel/sayimx?ay=2026-11"), null, "yol parçası sınırı");
+    assert.equal(openableHref("accountant", "/api/vardiya/pdf?sube=tuzla"), "/api/vardiya/pdf?sube=tuzla", "panel dışı adrese karışmaz");
+
+    // Vardiya: müdür planı yazar (vardiya.yaz) ama Şube ayarları › Hazır vardiyalar'ı ve Ayarlar'ı açamaz
+    assert.equal(canEditShifts("manager"), true);
+    assert.deepEqual(shiftGridLinks("admin", "tuzla"), { presets: "/panel/subeler/tuzla#vardiya", settings: "/panel/ayarlar" });
+    assert.deepEqual(shiftGridLinks("manager", "tuzla"), { presets: null, settings: null });
+    assert.equal(shiftGridLinks("admin", "şube 2").presets, `/panel/subeler/${encodeURIComponent("şube 2")}#vardiya`);
+    // Değişmez: planı yazan her rolün gördüğü bağlantıyı açabilir
+    for (const role of ROLE_ORDER.filter(canEditShifts)) {
+      for (const href of Object.values(shiftGridLinks(role, "tuzla"))) {
+        if (href) assert.ok(canOpen(role, href.split("#")[0]), `${role}: ${href}`);
+      }
+    }
+    // Izgara bağlantıyı sayfadan alır (kendi sabit adresi yok); yoksa düz metin, Ayarlar ve anahtarın notu çizilmez
+    const page = read("src/app/panel/vardiya/page.tsx");
+    assert.match(page, /links=\{shiftGridLinks\(user\.role, week\.branch\.id\)\}/);
+    const grid = read("src/app/panel/vardiya/shift-grid.tsx");
+    assert.doesNotMatch(grid, /"\/panel\/ayarlar|\/panel\/subeler\//);
+    assert.match(grid, /\{links\.presets \? \(\s*<Link href=\{links\.presets\}/);
+    assert.match(grid, /action=\{draftState === "off" && links\.settings \? <NoticeLink href=\{links\.settings\}>/);
+    assert.match(grid, /draftState === "nokey" && links\.settings \? \(/);
+
+    // Zayi: müdür LafPOS satırlarını "admin" düzeyinde görür; bağlanmamış satırın notu kalır, Ayarlar bağlantısı gitmez.
+    // Başlığın sekmeleri gerçek rolle: Tutarlılık yok (bulgu 4)
+    const zayi = read("src/app/panel/zayi/page.tsx");
+    assert.match(zayi, /settingsHref: openableHref\(user\.role, "\/panel\/ayarlar#lafpos"\)/);
+    const board = read("src/app/panel/zayi/waste-board.tsx");
+    assert.doesNotMatch(board, /href="\/panel\/ayarlar/);
+    assert.match(board, /\{l\.unmatched && lafpos\.settingsHref \? \(/);
+    assert.ok(!sectionTabsFor("stok", "manager").some((t) => t.href === "/panel/tutarlilik"));
+    assert.ok(sectionTabsFor("stok", "admin").some((t) => t.href === "/panel/tutarlilik"));
   });
 });
 

@@ -18,7 +18,7 @@ import { addDays, isCalendarDate, longDateTR, monthShortTR, monthTitleTR, shiftM
 import { productLabel, qtyText, WASTE_KIND_LABEL, type WasteKind } from "@/lib/waste";
 import { lateWasteDays, staffDeleteMode, staffWasteMode, WASTE_REQUEST_TEXT, wasteDayLabel, wasteItemText, type WasteDeleteMode, type WasteLock } from "@/lib/waste-requests";
 import type { Role } from "@/lib/constants";
-import { opsLevel } from "@/lib/roles";
+import { openableHref, opsLevel } from "@/lib/roles";
 import { requireAdmin, requireCan } from "@/server/auth/dal";
 import { DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
 import { currentBranchScope } from "@/server/branch-scope";
@@ -169,6 +169,8 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
         // Paneldeki ürün zayisi, aynı gün aynı ürün LafPOS'ta da zayi yazıldıysa: ikisi de sayılır, aynıysa biri silinir
         maybeTwice: entries.filter((e) => e.branchId === laf.branchId && e.kind === "zayi" && e.productId !== null && lafposZayi.has(e.productId)).map((e) => e.id),
         branchName: laf.branchName,
+        // Ayarlar yöneticinin: müdür zayiyi "admin" düzeyinde görse de bağlanmamış satırın Ayarlar bağlantısı ona çizilmez
+        settingsHref: openableHref(user.role, "/panel/ayarlar#lafpos"),
       }
     : null;
   // Satırın silme kipi kaydın kendi şubesinin kilidiyle (removeWaste gibi): "Tümü"deki şubesiz personel öteki şubenin

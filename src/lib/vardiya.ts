@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { Role } from "@/lib/constants";
-import { can } from "@/lib/roles";
+import { can, openableHref } from "@/lib/roles";
 import { addDays, isCalendarDate } from "@/lib/reminders";
 
 /**
@@ -511,3 +511,23 @@ export function todayShiftText(list: readonly { name: string; startMin: number; 
 
 /** Bu rol planı değiştirebilir mi (yönetici ve müdür şubesinin; personel yalnız görür ve PDF'ini alır) */
 export const canEditShifts = (role: Role) => can(role, "vardiya.yaz");
+
+/** Izgaranın yönetici ekranlarına bağlantıları; rolün açamadığı null (çizilmez) */
+export interface ShiftGridLinks {
+  /** Hazır vardiyaların saatleri: Şube ayarları › Hazır vardiyalar ("Saatleri değiştir", "Sabahçı ve akşamcı ekle") */
+  presets: string | null;
+  /** Yazarak doldurma kapalıyken açılacak yer: Ayarlar › Fotoğraftan okuma */
+  settings: string | null;
+}
+
+/**
+ * Düzenleme görünümünün bağlantıları, bakanın rolüne göre (src/lib/roles.ts › openableHref): yönetici ikisini de görür;
+ * müdür planı yazar ama Şube ayarları'nı ve Ayarlar'ı açamaz (docs/ROLLER.md › Müdür), ona ikisi de null: bağlantı
+ * çizilmez, yerinde "yönetici değiştirir" yazar (önceden tıklayınca Bugün'e dönüyordu).
+ */
+export function shiftGridLinks(role: Role, branchId: string): ShiftGridLinks {
+  return {
+    presets: openableHref(role, `/panel/subeler/${encodeURIComponent(branchId)}#vardiya`),
+    settings: openableHref(role, "/panel/ayarlar"),
+  };
+}

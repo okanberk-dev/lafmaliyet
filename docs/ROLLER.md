@@ -16,7 +16,9 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
 - **Ekranlar** (`canOpen(rol, yol)`): `STAFF_PATHS`, `MANAGER_EXTRA_PATHS`, `ACCOUNTANT_PATHS` ve her rolün altında kapalı
   olanlar (`ADMIN_ONLY_PATHS`, `MANAGER_CLOSED_PATHS`, `ACCOUNTANT_CLOSED_PATHS`). `src/proxy.ts` izinsiz adresi rolün
   ana ekranına (`homeFor`: yönetici `/panel`, müdür ve personel `/panel/bugun`, muhasebeci `/panel/muhasebe`)
-  döndürür; menü, alt menü, sekme ve arama aynı kurala bakar (`src/components/panel/nav.ts`).
+  döndürür; menü, alt menü, sekme ve arama aynı kurala bakar (`src/components/panel/nav.ts`). Ekranın içindeki
+  bağlantı da: rolün açamadığı ekrana bağlantı çizilmez (`openableHref(rol, adres)`, açamıyorsa null; tıklayan ana
+  ekranına dönerdi).
 - **Yetenekler** (`CAPABILITIES`, `can(rol, yetenek)`): eylem düzeyi. Tabloda olmayan rol için her yetenek KAPALI.
 
 | Yetenek | Ne | Roller |
@@ -73,6 +75,11 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
   `src/server/data/waste-requests.ts` › `wasteCardsFor`).
 - Canlı uçta (`/api/canli`) karaoke, uygulama siparişi ve masa çağrısı yalnız şubesinde açıksa gelir (seçici çerezi yok
   sayılır); karaoke tutarı gitmez.
+- Yönetici ekranlarına bağlantı ona çizilmez (`openableHref`): Vardiya'da planı yazar ama hazır vardiyaların saatleri
+  (Şube ayarları) ve yazarak doldurmanın anahtarı (Ayarlar) yöneticinin; bağlantıların yerinde "Saatleri yönetici
+  değiştirir.", "Yönetici Ayarlar'dan açınca kullanılır." yazar, anahtarın teknik notu yok (`src/lib/vardiya.ts` ›
+  `shiftGridLinks`). Zayi & ikram'da LafPOS'un ürüne bağlanmamış satırının notu kalır, "Ayarlar › LafPOS'ta bağlayın"
+  bağlantısı gitmez.
 - Kasa e-postasının neden gitmediği (Resend anahtarı, alıcı listesi) yalnız yöneticinin: müdür "admin" DTO'sunu alsa
   da günün formunda, ayın penceresinde ve Onaylar'da onayladığı düzeltmenin yanıtında sabit metni görür ("E-posta
   gitmedi; yöneticiye haber verin…"; `src/lib/staff-errors.ts` › `emailErrorFor`, okuyanın gerçek rolüyle).

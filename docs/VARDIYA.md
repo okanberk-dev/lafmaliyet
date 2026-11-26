@@ -103,7 +103,9 @@ koddaki sabit saatlerdi, ayarı olmayan şubede davranış değişmedi):
 
 Sabahçı ve akşamcının saatleri **Ayarlar › Şubeler › şubenin Ayarlar'ı › Hazır vardiyalar** kartında girilir
 (`/panel/subeler/[id]#vardiya`, yalnız yönetici). Vardiya ekranındaki seçim satırının sonunda da yöneticiye **Saatleri
-değiştir** (hazır vardiyası yoksa **Sabahçı ve akşamcı ekle**) bağlantısı durur.
+değiştir** (hazır vardiyası yoksa **Sabahçı ve akşamcı ekle**) bağlantısı durur. Müdür planı yazar ama Şube ayarları'nı
+açamaz: ona bağlantı yerine "Saatleri yönetici değiştirir." ("Sabahçı ve akşamcıyı yönetici ekler.") yazar
+(`shiftGridLinks`, [ROLLER.md](ROLLER.md) › Müdür).
 
 - **Kart:** Sabahçı (S) ve Akşamcı (A) için birer anahtar (kullanılıyor mu) ve başlangıç / bitiş saati. Ayar seçilmemişse
   kart varsayılan saatleri söyler ("Varsayılan saatler: … Değiştirip kaydedince bu şubenin ayarı olur"); hazır vardiyası
@@ -154,8 +156,10 @@ uyumlu yap". Kartın başındaki **Yazarak doldur** kutusuna hafta düz cümleyl
 - **Kapılar:** anahtar (`ANTHROPIC_API_KEY`; fotoğraftan okumayla aynı) ve Ayarlar › Fotoğraftan okuma anahtarı
   (kapalıyken hiçbir istek gitmez). Günlük sınır **ayrıdır**: günde 40 taslak (`SHIFT_DRAFT_DAILY_CAP`); okumanın günlük
   sınırı vardiya taslaklarını saymaz (yöneticinin denemeleri kasadaki okumayı kesmesin). Kullanılamıyorken kutunun
-  yerinde nedeni yazar ("kurulu değil", "kapalı", "bugünkü sınır doldu"); kutular her zaman elle doldurulur.
-- **Yalnız yönetici** (eylem `requireAdmin`); personelin ekranında kutu yoktur.
+  yerinde nedeni yazar ("kurulu değil", "kapalı", "bugünkü sınır doldu"); kutular her zaman elle doldurulur. Ayarlar
+  bağlantısı ve anahtarın teknik notu yalnız yöneticide; müdürde "kapalı"nın metni "Yönetici Ayarlar'dan açınca
+  kullanılır.".
+- **Planı yazan** (yönetici ve müdür; eylem `requireCan("vardiya.yaz")`); personelin ekranında kutu yoktur.
 - **Geliştirmede** (`AI_REPLAY=1`) canlı istek yapılmaz: sentetik bir yanıt döner (ilk kişi hafta içi sabahçı, ikinci
   akşamcı, herkes Pazar izinli) ve uyarı metnin okunmadığını söyler.
 

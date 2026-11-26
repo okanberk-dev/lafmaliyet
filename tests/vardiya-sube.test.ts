@@ -23,6 +23,7 @@ import {
   presetText,
   SHIFT_PRESETS,
   SHIFT_TEXT,
+  shiftGridLinks,
   shiftPresetsError,
   shiftPresetsOf,
   validPresetMinutes,
@@ -167,8 +168,10 @@ test("kaynak: ızgara, PDF, yazarak doldurma ve asistan şubenin ayarından okur
   assert.match(save, /await lockGroup\(tx, SHIFT_PRESET_GROUP\.id\);/);
   assert.match(save, /putBranchSetting\(tx, SHIFT_PRESET_GROUP, d\.branchId, \{ presets: list \}, me\.name\)/);
   assert.match(save, /logSetting\(tx, me, "Şube ayarı"/);
-  // Izgaradan şubenin ayarına bağlantı (yönetici)
-  assert.match(read("src/app/panel/vardiya/shift-grid.tsx"), /\/panel\/subeler\/\$\{encodeURIComponent\(branch\.id\)\}#vardiya/);
+  // Izgaradan şubenin ayarına bağlantı (yalnız yönetici; müdür Şube ayarları'nı açamaz: tests/roller.test.ts)
+  assert.equal(shiftGridLinks("admin", "marina").presets, "/panel/subeler/marina#vardiya");
+  assert.match(read("src/app/panel/vardiya/page.tsx"), /links=\{shiftGridLinks\(user\.role, week\.branch\.id\)\}/);
+  assert.match(read("src/app/panel/vardiya/shift-grid.tsx"), /<Link href=\{links\.presets\}/);
   assert.match(read("src/app/panel/subeler/[id]/shift-presets-card.tsx"), /<Card id="vardiya"/);
 });
 

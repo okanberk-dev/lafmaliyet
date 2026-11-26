@@ -282,6 +282,15 @@ export function canOpen(role: Role, pathname: string): boolean {
 }
 
 /**
+ * Ekranın çizeceği bir bağlantı: rol hedefi açabiliyorsa adresin kendisi, açamıyorsa null (sorgu ve çapa yola girmez).
+ * Ekran rolün açamadığı ekrana bağlantı çizmez; tıklayan kendi ana ekranına dönerdi (proxy). Örnek: müdür vardiya
+ * planını yazar ama Şube ayarları'nı ve Ayarlar'ı açamaz (src/lib/vardiya.ts › shiftGridLinks).
+ */
+export function openableHref(role: Role, href: string): string | null {
+  return canOpen(role, href.split(/[?#]/, 1)[0]) ? href : null;
+}
+
+/**
  * Personelin rolü tek cümlede: Kullanıcılar & roller'deki rol seçicinin açıklaması. Yardım'daki "Personele hesap
  * açmak" da aynı ekranları sayar; ikisi STAFF_PATHS'le birlikte güncellenir (tests/personel-yetkileri.test.ts).
  */

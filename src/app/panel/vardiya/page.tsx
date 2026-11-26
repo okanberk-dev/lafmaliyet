@@ -8,7 +8,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { addDays, todayTR } from "@/lib/reminders";
-import { buildRows, canEditShifts, formatShiftCell, userRef, VARDIYA_PATH, weekLabel, weekParam, type ShiftRow } from "@/lib/vardiya";
+import { buildRows, canEditShifts, formatShiftCell, shiftGridLinks, userRef, VARDIYA_PATH, weekLabel, weekParam, type ShiftRow } from "@/lib/vardiya";
 import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope, currentPhysicalBranch, staffBranchLock } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
@@ -149,6 +149,8 @@ async function VardiyaContent({ searchParams }: { searchParams: PageProps<"/pane
           stamp={`${week.branch.id}:${monday}:${week.updated?.at ?? "bos"}:${week.rows.length}:${week.rows.reduce((n, r) => n + r.cells.filter(Boolean).length, 0)}`}
           updatedText={updatedLine(week.updated)}
           draftState={draft}
+          // Şube ayarları ve Ayarlar bağlantıları yalnız açabilen role (müdürde null; src/lib/vardiya.ts › shiftGridLinks)
+          links={shiftGridLinks(user.role, week.branch.id)}
         />
       </div>
     </>
