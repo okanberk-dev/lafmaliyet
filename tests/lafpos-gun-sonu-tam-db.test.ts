@@ -560,7 +560,9 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DA
     const rep = (await report())!;
     await refused(asStaff(rep.revision, LAFPOS_SUBE, "deneme"), /yalnız yönetici/);
     assert.equal((await report())?.note, rep.note, "rapor değişmedi");
-    // ModPOS'ta kalan şube (Tuzla) eskisi gibi
+    // ModPOS'ta kalan şube (Tuzla) eskisi gibi; orada kör sayım (Dalga 2, docs/KASA-RAPORU.md › Kör sayım): önce sayım kilitlenir
+    const { lockCashCountCore } = await import("../src/server/cash/blind-count");
+    await lockCashCountCore(db, ayse, { date: DAY, branchId: MODPOS_SUBE, amount: 1_279.5 }, NOW);
     assert.equal((await asStaff(0, MODPOS_SUBE)).kind, "saved");
   });
 

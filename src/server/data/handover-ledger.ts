@@ -1,0 +1,71 @@
+import "server-only";
+
+import { and, eq, gt, gte, isNotNull, lte } from "drizzle-orm";
+
+import { LAFPOS_CASH_OUT_BY } from "@/lib/lafpos/cash-moves";
+import { sortLedger, type HandoverRow } from "@/lib/teslim";
+import { currentBranchWhere } from "@/server/branch-scope";
+import { getDb, schema as s } from "@/server/db";
+
+/**
+ * Teslim defterinin satırları (docs/KASA-RAPORU.md › Teslim defteri; kurallar src/lib/teslim.ts): ayın kasa raporlarının
+ * "Sayımdan sonra teslim"i (Kime'siyle) ve Kasadan çıkanlar'ın "Teslim · ödeme" satırları (Marina'nın LafPOS'tan gelen
+ * teslimleri dahil; Kime'si LafPOS'un alıcısı). Şube seçiciye göre ("Tümü"de bütün şubeler). Yalnız yönetici ekranı okur
+ */
+export async function handoverLedger(month: string): Promise<HandoverRow[]> {
+  const from = `${month}-01`;
+  const to = `${month}-31`;
+  const db = getDb();
+  const [reports, outs] = await Promise.all([
+    db
+      .select({
+        id: s.cashReports.id,
+        date: s.cashReports.date,
+        branchId: s.cashReports.branchId,
+        amount: s.cashReports.handedOver,
+        to: s.cashReports.handedTo,
+        by: s.cashReports.submittedByName,
+      })
+      .from(s.cashReports)
+      .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to), gt(s.cashReports.handedOver, 0), await currentBranchWhere(s.cashReports.branchId))),
+    db
+      .select({
+        id: s.cashOuts.id,
+        date: s.cashOuts.date,
+        branchId: s.cashOuts.branchId,
+        amount: s.cashOuts.amount,
+        to: s.cashOuts.store,
+        by: s.cashOuts.createdByName,
+        lafposId: s.cashOuts.lafposId,
+      })
+      .from(s.cashOuts)
+      .where(and(gte(s.cashOuts.date, from), lte(s.cashOuts.date, to), eq(s.cashOuts.kind, "teslim"), await currentBranchWhere(s.cashOuts.branchId))),
+  ]);
+  const clean = (v: string | null) => v?.replace(/\s+/g, " ").trim() || null;
+  return sortLedger([
+    ...reports.map((r): HandoverRow => ({ date: r.date, branchId: r.branchId, amount: r.amount, to: clean(r.to), by: r.by, kind: "sayim", lafpos: false, ref: { report: r.id } })),
+    ...outs.map(
+      (o): HandoverRow => ({
+        date: o.date,
+        branchId: o.branchId,
+        amount: o.amount,
+        to: clean(o.to),
+        by: o.by,
+        kind: "gun-ici",
+        lafpos: o.lafposId !== null && o.by === LAFPOS_CASH_OUT_BY,
+        ref: { cashOut: o.id },
+      }),
+    ),
+  ]);
+}
+
+/** Defterin ay seçicisi: teslimi olan ilk aydan bu aya (en eski kasa raporu ya da kasadan çıkan teslim) */
+export async function handoverFirstDate(): Promise<string | null> {
+  const db = getDb();
+  const [[r], [o]] = await Promise.all([
+    db.select({ date: s.cashReports.date }).from(s.cashReports).where(gt(s.cashReports.handedOver, 0)).orderBy(s.cashReports.date).limit(1),
+    db.select({ date: s.cashOuts.date }).from(s.cashOuts).where(and(eq(s.cashOuts.kind, "teslim"), isNotNull(s.cashOuts.date))).orderBy(s.cashOuts.date).limit(1),
+  ]);
+  const days = [r?.date, o?.date].filter((d): d is string => Boolean(d)).sort();
+  return days[0] ?? null;
+}
