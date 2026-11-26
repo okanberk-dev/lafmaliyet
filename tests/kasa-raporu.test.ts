@@ -7,6 +7,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { withoutLogo } from "./helpers/html-metin";
+
 import {
   businessDate,
   carryCheck,
@@ -262,7 +264,7 @@ test("e-posta: yazılan her metin kaçışlı (ad, sayan, onay, şube, cihaz, ne
       cashOuts: [{ kind: "harcama", amount: 100, store: evil, description: evil, photo: false }],
     },
   );
-  assert.doesNotMatch(m.html, /<img\b/i, "ham etiket yok");
+  assert.doesNotMatch(withoutLogo(m.html), /<img\b/i, "ham etiket yok (yalnız kabuğun logosu)");
   assert.doesNotMatch(m.html, /onerror="/);
   const html = plain(m.html);
   const E = "&lt;img src=x onerror=&quot;alert\\(1\\)&quot;&gt;&amp;&#39;";
@@ -427,7 +429,7 @@ test("fotoğraflı rapor: WhatsApp başta 📷 satırı ve fotoğraftan farklı 
   for (const out of [m.html, m.text, t]) {
     assert.doesNotMatch(out, /\/api\/foto/, "fotoğrafın adresi metne girmez");
     assert.doesNotMatch(out, /blob\.vercel-storage/);
-    assert.doesNotMatch(out, /<img/);
+    assert.doesNotMatch(withoutLogo(out), /<img/, "fotoğraf e-postaya girmez (yalnız kabuğun logosu)");
   }
 });
 

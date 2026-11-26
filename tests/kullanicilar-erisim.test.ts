@@ -6,6 +6,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { withoutLogo } from "./helpers/html-metin";
+
 import {
   ACCESS_REASONS,
   accessEmail,
@@ -144,8 +146,8 @@ test("davet, sıfırlama ve hoş geldin e-postası ortak tasarımda (email-kit):
       assert.ok(at >= 0, `${tag}: düğmenin bağlantısı`);
       const anchor = html.slice(at, html.indexOf("</a>", at));
       assert.ok(anchor.endsWith(`">${label}`) && !anchor.slice(0, -label.length - 2).includes(">"), `${tag}: düğmenin yazısı`);
-      // E-posta istemcisi: tablo düzeni, satır içi stil; Outlook'ta bozulan flex / grid / konumlama ve görsel yok
-      assert.doesNotMatch(html, /display:\s*(flex|grid)|position:|float:|<img|<svg/i, tag);
+      // E-posta istemcisi: tablo düzeni, satır içi stil; Outlook'ta bozulan flex / grid / konumlama ve görsel yok (kabuğun logosu dışında)
+      assert.doesNotMatch(withoutLogo(html), /display:\s*(flex|grid)|position:|float:|<img|<svg/i, tag);
     }
   }
 
@@ -185,7 +187,7 @@ test("davet, sıfırlama ve hoş geldin e-postası ortak tasarımda (email-kit):
 
   // Kullanıcı metni her yerde kaçışlı: ad (başlık), e-posta, parola, adres
   const evil = accessEmail({ ...pw, name: `<img src=x onerror=alert(1)>`, email: `"a"@x.com`, password: "<b>p</b>", loginUrl: `${URL_BASE}/giris?a="b"` }).html;
-  assert.ok(!evil.includes("<img") && !evil.includes("<b>p"));
+  assert.ok(!withoutLogo(evil).includes("<img") && !evil.includes("<b>p"));
   assert.ok(evil.includes("Merhaba &lt;img"));
   assert.ok(evil.includes("&quot;a&quot;@x.com") && evil.includes("&lt;b&gt;p&lt;/b&gt;"));
   assert.ok(evil.includes(`href="${URL_BASE}/giris?a=&quot;b&quot;"`));
