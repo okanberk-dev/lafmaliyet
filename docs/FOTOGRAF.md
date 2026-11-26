@@ -37,7 +37,9 @@ listesinin fotoğrafı taranmaz.
 - Uzun fiş (Z, banka POS Z'si, banka gün sonu, alışveriş fişi) tek fotoğrafa sığmıyorsa üst kısım çekilir, sonra
   **Devamını çek** ile alt kısım (en çok 3 parça). **Kullan** parçaları kodla hizalayıp tek uzun görüntüde birleştirir
   (en çok 4096 px, 2 MB; `src/lib/photo-rules.ts`); kod emin değilse parçalar ayrı fotoğraf olarak eklenir (bölümün
-  kalan yeri kadar; Z bölümü en çok 3 fotoğraf alır).
+  kalan yeri kadar; Z bölümü en çok 3 fotoğraf alır). Ekrandaki son parça birleştirmeye saklanmadan katılır
+  (birleştirme çöker de **Kullan** yeniden basılırsa parça iki kez girmez); tarayıcının Worker'ı çöküp saklanan
+  parçalar kaybolduysa eksik fiş yüklenmez, "Parçalar kayboldu; fişi baştan çekin." denir.
 - Fiş, rapor ya da fatura olmayan bir şey çekildiyse (POS ekranı, telefon, koli, fincan, ambalaj) kırpılmaz:
   "Kenarlar bulunamadı" denir, köşeler elle seçilebilir.
 - Görünüm: **Belge** (varsayılan; taranmış gibi: kâğıt beyaz, yazı koyu ve net, gölge ve sarı ışık gider), **Gri**,
@@ -755,7 +757,8 @@ parlaklığına göre mürekkep haritası, harf boyu, satır yönü ve ölçüle
 - **Çekim kalitesi** (`quality.ts`, `assessQuality(img, { corners, noun, rotation })`): fotoğraf çekilir çekilmez
   kâğıdın içinde bulanıklık (yazı kenarının σ'sı harf boyuna oranla; Laplace varyansı da ölçülür), parlama (doymuş,
   çevresinden parlak leke; yazının üstündeyse ciddi), karanlık / soluk yazı, kesik (kadraj dışındaki kenara dayanan
-  satırlar), çok küçük yazı (okuyucunun göreceği 2576 px ölçekte) ve birden çok belge. Sonuç `{ ok, issues: [{ kind,
+  satırlar; eğik fişte algılama kareye dayanan kenarı karşı kenara paralel yapar, köşesi karenin biraz içinde kalır:
+  o kenar da kadraj dışına uzanan taraf sayılır, `refine.ts` `sideLeavesFrame`), çok küçük yazı (okuyucunun göreceği 2576 px ölçekte) ve birden çok belge. Sonuç `{ ok, issues: [{ kind,
   severity, text }] }`; metinler sade Türkçe ("Fişin altı kesilmiş; tamamını çekin."). Net çekimde uyarı çıkmaz
   (`tests/tarama-kalite.test.ts`).
 - **Sayfa yönü** (`orientation.ts`, `detectOrientation(img, { corners })`): 90 / 180 / 270° döndürülmüş belge; satır
