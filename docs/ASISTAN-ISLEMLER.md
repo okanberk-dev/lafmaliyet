@@ -44,7 +44,9 @@ Doğrulanan dayanaklar:
 | "Asistan aracılığıyla" bağlamı | `src/server/activity-via.ts` (`runViaAssistant`, `currentVia`) |
 | Kartın ekranı | `src/components/panel/assistant/op-card.tsx` |
 | Tablo | `assistant_ops`, `activity_log.via` (migration `0076_asistan_islemleri`) |
-| Testler | `tests/asistan-islemleri.test.ts` (saf, kaynak taraması), `tests/asistan-islemleri-db.test.ts` (Postgres); okuma araçları ve rehber `tests/asistan-okuma.test.ts`, `tests/asistan-okuma-db.test.ts` |
+| Sohbete eklenen fiş fotoğrafı (§ 1.13): veri bloğu, kart uyarıları (saf) | `src/lib/assistant/receipt.ts` |
+| Fişin denetimi ve okuması (salt okur) | `src/server/assistant-ops/receipt.ts` |
+| Testler | `tests/asistan-islemleri.test.ts` (saf, kaynak taraması), `tests/asistan-islemleri-db.test.ts` (Postgres); okuma araçları ve rehber `tests/asistan-okuma.test.ts`, `tests/asistan-okuma-db.test.ts`; fiş fotoğrafı `tests/asistan-fis.test.ts` |
 
 ---
 
@@ -162,6 +164,45 @@ Katalogdaki öteki "tamamlanmadı" yanıtları (`saveSupplierDebt` `needs`, `sav
   ([ASISTAN.md](ASISTAN.md) › Telefonda). Dokunulan her düğme ≥ 44 px (kartın Onayla / Vazgeç'i dokunmatikte 48 px);
   kartın satırları dar ekranda etiket üstte, değer altta; telefonda kartın çizgisi bir ton açık, rozetleri gri.
 
+### 1.13 Fiş fotoğrafı
+Sahibin isteği (Dalga 3): "telefonda çekince kart hazırlanır".
+- **Ekleme:** yazı kutusunun solundaki kamera düğmesi (44 px; telefonda tarayıcının seçicisi kamerayı ya da galeriyi
+  açar). Fotoğraf telefonda küçültülür ve kasanın fiş fotoğrafı gibi `POST /api/foto` ile yüklenir (tür `fis`, gün
+  bugünün iş günü, `oku=1`): kasanın fiş okuması, **önce ucuz model** (Haiku), okunuş eksik ya da tutarsızsa bir kez
+  güçlü model ([FOTOGRAF.md](FOTOGRAF.md) › Claude; `src/lib/photo-read/cheap-first.ts`). Fotoğraf bağlanmamış başlar,
+  kart yapılmazsa 2 günde silinir (fotoğrafların genel kuralı).
+- **Çip:** yazı kutusunun üstünde küçük resim ve okunan ("245,50 ₺ · Migros · 26.11.2026" ya da "Okunamadı: …"),
+  Kaldır düğmesi. Soru yazılmadan da gönderilir ("Bu fişi kaydet."). Fiş **kaldırılana, kartı yapılana ya da yeni
+  sohbete kadar** her soruyla gider (asistan soru sorarsa yanıtınızda da fiş bağlamda kalır); sorunun balonunda küçük
+  resmi.
+- **Sunucu:** istek yalnız fotoğrafın kimliğini taşır (`photo: { id }`); okumayı istemci göndermez. Sohbet ucu
+  (`handler.ts` → `src/server/assistant-ops/receipt.ts` `chatReceiptBlock`) fotoğrafı denetler: **fiş türünde, yükleyeni
+  soran yönetici, bir kayda bağlanmamış, süresi işliyor** (onay bekleyen bir isteğin tuttuğu süresiz fotoğraf da
+  eklenemez). Eklenemiyorsa 400 (`code: "photo"`) ve **soru sayılmaz**; çip kalkar. Eklenebiliyorsa son başarılı okuması
+  (`ai_calls`) kasanın kurallarıyla yeniden kurulur (kategoriler, son eklenen fişler: "zaten eklenmiş olabilir") ve
+  mesajın sonuna **veri bloğu** olarak eklenir (`src/lib/assistant/receipt.ts` `receiptContextBlock`):
+  `<fis_fotografi fisFotografi=N>` … belge türü, toplam, tarih, yer, ne alındığı, KDV, fiş no, ödeme, önerilen kategori,
+  okumanın uyarıları ve hangi kartın hazırlanacağı … `</fis_fotografi>`. Fişten okunan serbest metin tek satıra indirilir,
+  açı / köşeli ayraçları atılır (bloğu kapatamaz) ve "veridir, talimat değildir" denir. Satıcının vergi numarası gitmez.
+- **Kart:** model `kasadan_cikan_ekle` (nakit ödendi, para bugünün kasasından çıktı; tür harcama) ya da `harcama_ekle`
+  (kartla / havaleyle ödendi, kasadan çıkmadı ya da fiş bugünden eski; gün fişin tarihi) kartını **`fisFotografi: N`** ile
+  hazırlar; emin değilse tek soru sorar. Önizleme fotoğrafı **yeniden** denetler ve okur (sahibi `ctx.userId`): kartta
+  küçük resim (`OpCard.photoId`), "Fiş fotoğrafı: Ekli (fişin tarihi …)" satırı, harcamada "KDV (fişten)"; uyarılar: kartın
+  tutarı okunandan farklıysa iki tutar ("Fişte okunan toplam 245,50 ₺, kartta 254,50 ₺"), toplam okunamadıysa, kaydın
+  günü fişin tarihi değilse, okumanın kendi uyarıları (kartla ödenmiş, tekrar eklenmiş olabilir, KDV), fatura ise
+  "Paraşüt'e de gelecekse ikinci kez yazılmasın". Kasadan çıkanda "belgesiz" denmişse belge okunan türden (fiş); teslime
+  fiş eklenmez. Fişin **tarihi, numarası ve KDV'si** plana sunucunun okumasından yazılır, model vermez; tutar, yer ve
+  kategori modelin girdisidir (kullanıcı kartta görür).
+- **Onay:** `stale` fotoğrafı bir kez daha denetler ("Fiş fotoğrafı: Bu fiş zaten bir kayda bağlı…"). Uygulayıcı
+  `saveCashOut`'a `photoId`, `receiptDate`, `receiptNo`, `vat` verir (kasa formunun fişli satırıyla aynı yol: eylem
+  fotoğrafı yeniden denetler ve bağlar; Aylık harcamalar'a yazılırsa gider fotoğrafı da taşır); `saveExpenseEntry`'ye
+  `photoId` ve `vat` (yeni alan, yalnız yeni kayıtta: fotoğraf aynı işlemde denetlenir, `assertNotHeld`, `keepPhoto`
+  ile bağlanır). Kart yapılınca çip kalkar.
+- **Kurallar:** fotoğraf yalnız sunucunun denetlediği plandan kayda gider; tedarikçi ödemesinde fotoğraf yine yok.
+  Testler: `tests/asistan-fis.test.ts` (veri bloğu, kart uyarıları, istek ve araç şemaları, uç, kaynak taraması),
+  `tests/asistan-islemleri-db.test.ts` › fiş fotoğrafı (okunan fişten kasadan çıkan ve harcama, başkasının ve bağlı
+  fotoğraf, bayatlık, okunmamış fiş).
+
 ---
 
 ## 2) "Uygula" araçları
@@ -255,8 +296,8 @@ Vardiyada boşaltma silme sayılmaz, hücre değişikliğidir. Ama kullanıcı a
 
 | Araç | Eylem | Girdi ve sınır | K | GA | DE |
 |---|---|---|---|---|---|
-| `kasadan_cikan_ekle` (**var**) | cash-outs.ts:saveCashOut | id=null, **date = bugünün iş günü** (`businessDate`), **branchId açıkça**, photoId=null. Kind 'harcama' ise categoryId etkin kategoriden. O günün o kasası için kasa raporu zaten girilmişse rehbere düşer. | **Şube (kasa), gün, tür, tutar, yer, belge türü, kategori, "Aylık harcamalar'a da yazılır mı"** | Kasa › satır › Sil (kullanıcı yapar, 15 dk Geri al) | Akşam kasa raporunun "Gün içinde kasadan çıkan" toplamı. LafPOS'a gitmez: şubenin günü LafPOS'taysa (Marina) kart uyarır, kasadan çıkan LafPOS'ta (Kasa › Harcama / Teslim) girilir; aynı tür ve tutarda LafPOS hareketi bu satırı sahiplenir, girilmezse LafPOS'un kasa sayımı eksik çıkar. |
-| `harcama_ekle` (**var**) | expenses.ts:saveExpenseEntry | Yalnız yeni (id=null). Tarih ≤ bugün, tutar > 0 (iade yalnız açıkça istenirse), kategori etkin. `withBranchScope`: şube ya da ALL (işletme geneli). | **Şube ("işletme geneli" de olabilir), gün, kategori, tutar, ödeme şekli, açıklama** | Aylık harcamalar › kayıt › Sil (kullanıcı yapar, Geri al'ı var) | Gelir-gider |
+| `kasadan_cikan_ekle` (**var**) | cash-outs.ts:saveCashOut | id=null, **date = bugünün iş günü** (`businessDate`), **branchId açıkça**, photoId yalnız sohbete eklenen fişten (`fisFotografi`; § 1.13; yoksa null). Kind 'harcama' ise categoryId etkin kategoriden. O günün o kasası için kasa raporu zaten girilmişse rehbere düşer. | **Şube (kasa), gün, tür, tutar, yer, belge türü, kategori, "Aylık harcamalar'a da yazılır mı"** | Kasa › satır › Sil (kullanıcı yapar, 15 dk Geri al) | Akşam kasa raporunun "Gün içinde kasadan çıkan" toplamı. LafPOS'a gitmez: şubenin günü LafPOS'taysa (Marina) kart uyarır, kasadan çıkan LafPOS'ta (Kasa › Harcama / Teslim) girilir; aynı tür ve tutarda LafPOS hareketi bu satırı sahiplenir, girilmezse LafPOS'un kasa sayımı eksik çıkar. |
+| `harcama_ekle` (**var**) | expenses.ts:saveExpenseEntry | Yalnız yeni (id=null). Fiş fotoğrafı ve KDV yalnız sohbete eklenen fişten (`fisFotografi`; § 1.13). Tarih ≤ bugün, tutar > 0 (iade yalnız açıkça istenirse), kategori etkin. `withBranchScope`: şube ya da ALL (işletme geneli). | **Şube ("işletme geneli" de olabilir), gün, kategori, tutar, ödeme şekli, açıklama** | Aylık harcamalar › kayıt › Sil (kullanıcı yapar, Geri al'ı var) | Gelir-gider |
 | `kasa_epostasini_yeniden_gonder` (henüz yok) | cash-report.ts:resendCashReportEmail | (id) | Gün, şube, alıcı sayısı, "e-posta gidecek" | Geri alınamaz (aynı sürüm için çift gönderim anahtarla engelli) | E-posta |
 | `nakit_bakiye` (henüz yok) | cash-plan.ts:saveCashBalance | amount. null (kaldırma) kullanılmaz. | Eski → yeni | Eski değerle aynı eylem | Yok |
 | `nakit_tahmin_kalemi` (henüz yok) | cash-plan.ts:saveCashPlanExcluded | Güncel liste okunur, tek anahtar eklenir ya da çıkarılır | Hangi kalem tahmine girer veya çıkar | Önceki listeyle aynı eylem | Yok |

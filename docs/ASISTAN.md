@@ -285,6 +285,18 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
   kuralı; panel sesi görmez, saklamaz). İlk kullanımda tarayıcı mikrofon izni ister; izin yoksa kutunun üstünde kısa
   not çıkar. Dosyalar: `src/lib/assistant/speech.ts`, `voice-button.tsx`.
 
+## Fiş fotoğrafı
+
+- Yazı kutusunun solunda **kamera düğmesi** (44 px). Telefonda fişin ya da faturanın fotoğrafını çekin (ya da
+  galeriden seçin): fotoğraf küçültülüp yüklenir ve kasanın fiş okumasıyla okunur (önce ucuz model, gerekirse güçlü;
+  [FOTOGRAF.md](FOTOGRAF.md)). Yazı kutusunun üstünde küçük resmi ve okunan tutar, yer, tarih görünür.
+- Bir şey yazmadan gönderebilirsiniz ("Bu fişi kaydet.") ya da ne yapılacağını yazın ("kasadan ödedim", "kartla
+  ödendi, Marina"). Asistan bir **kasadan çıkan** (nakit, bugünün kasası) ya da **harcama** (kart, havale, eski fiş)
+  kartı hazırlar; emin değilse tek soru sorar. Kartta fişin küçük resmi, okunan tarihi ve KDV'si; kartın tutarı
+  okunandan farklıysa uyarı. **Kayıt yalnız Onayla'ya basınca yazılır**, fotoğraf o anda kayda bağlanır.
+- Fiş kaldırılana (çipin X'i), kartı yapılana ya da yeni sohbete kadar sohbette kalır. Kart yapılmazsa fotoğraf 2 günde
+  silinir. Ayrıntı ve kurallar: [ASISTAN-ISLEMLER.md](ASISTAN-ISLEMLER.md) › 1.13 Fiş fotoğrafı.
+
 ## Derin analiz
 
 - Yazı kutusunun üstünde küçük bir **Derin analiz** anahtarı (beyin simgesi). **Varsayılan kapalı**; açılınca yalnız o

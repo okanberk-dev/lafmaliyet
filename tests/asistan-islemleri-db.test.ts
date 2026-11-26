@@ -469,6 +469,105 @@ describe("asistanın işlemleri: veritabanında", { skip: !SERVER_URL && "ASISTA
     await assert.rejects(open("harcama_ekle", { kategori: "Kırtasiye", tutar: 10, tarih: addDays(todayTR(), 2) }), /ileri/);
   });
 
+  test("fiş fotoğrafı: okunan fişten kasadan çıkan ve harcama; fotoğraf onayda bağlanır, başkasınınki ve bağlı olan eklenemez", async () => {
+    const photos = await import("../src/server/storage/photos");
+    const drivers = await import("../src/server/storage/drivers");
+    const receipt = await import("../src/server/assistant-ops/receipt");
+    const { slipPng } = await import("./helpers/fis-gorsel");
+    photos.__setPhotoDriverForTests(drivers.memoryDriver());
+    try {
+      const market = await expenseCategory("Market");
+      const day = businessDate();
+      const amount = (value: number | null, text: string | null = value === null ? null : String(value)) => ({ text, value, confidence: "high" as const });
+      /** Kasanın fiş okumasının kaydı (sohbetteki /api/foto yüklemesinin yazdığı gibi): fotoğraf ve başarılı okuma */
+      const upload = async (who: Who, total: number, o: { paymentMethod?: "cash" | "card"; documentType?: "purchase_receipt" | "invoice" } = {}) => {
+        const { id } = await photos.savePhoto({ kind: "fis", bytes: slipPng(["MIGROS", "SUT", "BUZ", `TOPLAM ${total}`]), contentType: "image/png", userId: who.id });
+        const raw = {
+          documentType: o.documentType ?? "purchase_receipt",
+          readable: true,
+          store: "MİGROS TİC. A.Ş.",
+          storeTaxNo: "1234567890",
+          date: day,
+          time: "10:12",
+          receiptNo: "0042",
+          total: amount(total),
+          vatTotal: amount(22.32),
+          vatLines: [],
+          paymentMethod: o.paymentMethod ?? "cash",
+          items: [],
+          itemSummary: "süt, buz",
+          categoryId: market.id,
+          issues: [],
+        };
+        await db.insert(s.aiCalls).values({ feature: "fis", model: "haiku", status: "ok", userId: who.id, photoId: id, result: raw });
+        return id;
+      };
+
+      // Sohbet ucunun veri bloğu: okunanlar ve önerilen kategori; başkasının fotoğrafı eklenemez
+      const p1 = await upload(users.ali, 245.5);
+      const block = await receipt.chatReceiptBlock(users.ali.id, p1);
+      assert.ok(block.ok, block.ok ? "" : block.error);
+      assert.match(block.text, new RegExp(`<fis_fotografi fisFotografi=${p1}>`));
+      assert.match(block.text, /Toplam: 245,50 ₺/);
+      assert.match(block.text, /Önerilen kategori: Market/);
+      assert.doesNotMatch(block.text, /1234567890/, "satıcının vergi numarası gitmez");
+      const foreign = await receipt.chatReceiptBlock(users.veli.id, p1);
+      assert.deepEqual(foreign, { ok: false, error: "Bu fotoğrafı siz eklemediniz; fişi sohbete kendiniz ekleyin." });
+      await assert.rejects(open("kasadan_cikan_ekle", { sube: "Tuzla", tur: "harcama", tutar: 245.5, belge: "fis", kategori: "Market", harcamalaraYaz: true, fisFotografi: p1 }, { who: users.veli }), /siz eklemediniz/);
+
+      // Kasadan çıkan: belgesiz dense de fişli yazılır; tutar farkı kartta uyarı; onayda fotoğraf bağlanır
+      const card = await open("kasadan_cikan_ekle", { sube: "Tuzla", tur: "harcama", tutar: 254.5, yer: "Migros", aciklama: "süt, buz", belge: "yok", kategori: "Market", harcamalaraYaz: true, fisFotografi: p1 });
+      assert.equal(card.photoId, p1);
+      assert.ok(card.lines.some((l) => l.label === "Belge" && l.to === "Fiş"), "belge fiş");
+      assert.ok(card.lines.some((l) => l.label === "Fiş fotoğrafı"), "fotoğraf satırı");
+      assert.ok(card.warnings.some((w) => w.startsWith("Fişte okunan toplam 245,50")), card.warnings.join(" | "));
+      assert.equal((await photos.getPhoto(p1))!.linkedAt, null, "önizleme fotoğrafı bağlamaz");
+      const out = await confirm.confirmOp(users.ali, card.id);
+      assert.equal(out.status, "done", out.message);
+      const [row] = await db.select().from(s.cashOuts).where(eq(s.cashOuts.photoId, p1));
+      assert.ok(row, "kasadan çıkan fotoğrafıyla yazıldı");
+      assert.equal(row.docType, "fis");
+      assert.equal(row.receiptNo, "0042");
+      assert.equal(row.receiptDate, day);
+      assert.equal(row.vat, 22.32);
+      assert.ok((await photos.getPhoto(p1))!.linkedAt, "onayda bağlandı");
+      // Bağlanan fiş ikinci kez eklenemez
+      assert.deepEqual(await receipt.chatReceiptBlock(users.ali.id, p1), { ok: false, error: "Bu fiş zaten bir kayda bağlı; ikinci kez eklenmez." });
+
+      // Harcama (kartla ödenmiş fiş): gider fotoğrafı ve KDV'siyle; kart yazılmadan önce fiş başka kayda bağlanırsa bayat
+      const p2 = await upload(users.ali, 120, { paymentMethod: "card" });
+      const exp = await open("harcama_ekle", { kategori: "Market", tutar: 120, tarih: todayTR(), odemeSekli: "kart", sube: "Tuzla", fisFotografi: p2 });
+      assert.equal(exp.photoId, p2);
+      assert.ok(exp.lines.some((l) => l.label === "KDV (fişten)"), "KDV satırı");
+      assert.ok(exp.warnings.some((w) => /kartla ödenmiş/.test(w)), "okumanın uyarısı kartta");
+      const done = await confirm.confirmOp(users.ali, exp.id);
+      assert.equal(done.status, "done", done.message);
+      const [entry] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.photoId, p2));
+      assert.ok(entry, "harcama fotoğrafıyla yazıldı");
+      assert.equal(entry.vat, 22.32);
+      assert.equal(entry.amount, 120);
+      assert.ok((await photos.getPhoto(p2))!.linkedAt, "harcamaya bağlandı");
+
+      const p3 = await upload(users.ali, 50);
+      const stale = await open("harcama_ekle", { kategori: "Market", tutar: 50, tarih: todayTR(), fisFotografi: p3 });
+      await photos.keepPhoto(p3, null);
+      const refused = await confirm.confirmOp(users.ali, stale.id);
+      assert.notEqual(refused.status, "done");
+      assert.match(refused.message, /Fiş fotoğrafı: Bu fiş zaten bir kayda bağlı/);
+      assert.equal((await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.amount, 50))).length, 0, "hiçbir şey yazılmadı");
+
+      // Teslime fiş eklenmez; okunmamış fotoğraf da eklenir (okunamadı, kart uyarır)
+      await assert.rejects(open("kasadan_cikan_ekle", { sube: "Tuzla", tur: "teslim", tutar: 10, belge: "yok", harcamalaraYaz: false, fisFotografi: p3 }), /teslimde fiş olmaz/);
+      const { id: bare } = await photos.savePhoto({ kind: "fis", bytes: slipPng(["FIS", "1", "2", "3"]), contentType: "image/png", userId: users.ali.id });
+      const unread = await receipt.chatReceiptBlock(users.ali.id, bare);
+      assert.ok(unread.ok && /Fiş okunamadı/.test(unread.text), "okunamadı bloğu");
+      const blind = await open("harcama_ekle", { kategori: "Market", tutar: 30, tarih: todayTR(), fisFotografi: bare });
+      assert.ok(blind.warnings.includes("Fişin toplamı okunamadı; tutarı fişle karşılaştırın."), blind.warnings.join(" | "));
+    } finally {
+      photos.__setPhotoDriverForTests(undefined);
+    }
+  });
+
   test("zayi / ikram: şubesine, istemci anahtarı planın kimliği", async () => {
     await product("Cheesecake", "Tek", 150);
     await assert.rejects(open("zayi_ikram_ekle", { tur: "zayi", urun: "Cheesecake", miktar: 1 }, { scope: ALL_BRANCHES }), /hangi şube/);
