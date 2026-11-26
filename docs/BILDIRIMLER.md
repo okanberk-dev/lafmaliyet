@@ -65,7 +65,9 @@ günün saklanan ModPOS kasa föyünden farklı yazılan raporları durur, "Kasa
 Pazartesi · Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺)" (kasası açıkken çekilen föy karşılaştırılmaz; rapor ya da föy
 değişince yeniden okunmamış olur), ModPOS anahtarı tanımlı ama çalışmıyorsa da **Sistem** başlığında "ModPOS kasa föyü
 çekilemiyor" ve hatanın metni, Ayarlar › ModPOS (kasa föyü)'ne götürür ([MODPOS-API.md](MODPOS-API.md) › Nerede
-görünür). Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
+görünür). Yöneticinin kendi hesabına yeni bir cihazdan giriş yapıldıysa yine **Sistem** başlığında 7 gün "Yeni cihazdan
+giriş: Chrome · Windows · IP 85.105.12.x" durur, Hesabım › Oturumlar'a götürür; aynı uyarı hesabın adresine e-postayla da
+gider ([DEPLOY.md](DEPLOY.md) › 6a). Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
 kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklemesi ("Ayşe özel gün ekledi") son 3 gün durur
 ([KASA-RAPORU.md](KASA-RAPORU.md) › Kafe kapalıydı). **Uyarılar** başlığının
 başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişecek N fiyat"** durur (**Ürünler › Fiyatlar ›
@@ -360,7 +362,7 @@ gönder). Haftada en çok bir kez (`haftalik:<hafta>`). Ayrıntı: [HAFTALIK-OZE
 
 Her sabah iki zamanlanmış iş çalışır (`vercel.json`, Vercel Cron, yalnız canlıda): 07:00–08:00 **Paraşüt eşitlemesi**
 (`/api/cron/parasut`), 08:00–09:00 **sabah işi** (`/api/cron/gunluk`: sabah e-postası, hatırlatıcı bildirimi,
-karaoke / menü / online satış eşitlemeleri). Her çalışma başlarken ve biterken `job_runs` tablosuna yazılır (adımların
+karaoke / menü / online satış eşitlemeleri, pazartesi otomatik yedek, veritabanı kotasının ölçümü). Her çalışma başlarken ve biterken `job_runs` tablosuna yazılır (adımların
 sonucu ve hatasıyla; 90 gün tutulur). Ekran: **Ayarlar › Günlük işler** (`/panel/ayarlar#isler`): iki işin son
 çalışması, rozeti (Çalıştı, Atlandı, Sürüyor, Bekleniyor, Çalışmadı, Hata, Yarıda kesildi, Kısmen), adımları ve hatası.
 
@@ -374,6 +376,8 @@ Pencere sonundan 30 dakika sonra (Hobby planında saat esnek) o günün çalış
 | Paraşüt işi hata verdi / yarıda kesildi | kırmızı (eşitlemenin kendi hatası zaten "Paraşüt eşitlemesi başarısız" olarak görünüyorsa yinelenmez) | kırmızı şerit | — (hata sabah e-postasında) |
 | `CRON_SECRET` tanımlı değil | kırmızı, tek iş uyarısı | kırmızı şerit | — (hiçbir iş çalışmaz) |
 | Son yedek 30 günden eski ya da hiç yedek yok (işlerden bağımsız) | mavi, Ayarlar › Yedek'e götürür ([YEDEK.md](YEDEK.md)) | — | — |
+| Otomatik haftalık yedek alınamadı (sabah işinin "Otomatik yedek" adımı) | turuncu, "Sabah işinde bir adım hata verdi" ("Otomatik yedek: <hata>") | — | ertesi sabahın sabah e-postasında ([YEDEK.md](YEDEK.md) § 13) |
+| Veritabanı kotasının %70'i / %90'ı doldu (işlerden bağımsız; sabah işinin ölçümü) | turuncu, Ayarlar › Veritabanı'na götürür; seviye düşene kadar durur | %90'da kırmızı şerit ("Veritabanı") | eşiğin ilk geçildiği sabah ayrı sistem uyarısı e-postası, eşik başına bir kez ([YEDEK.md](YEDEK.md) § 14) |
 
 - **Bugün ekranı** ([BUGUN.md](BUGUN.md)): kırmızı uyarılar yöneticiye listenin ilk satırında ("Günlük işler", sorun
   var) görünür ve Ayarlar › Günlük işler'e götürür. Bugün'de ayrı bir "Paraşüt eşitlemesi başarısız" satırı olmadığı
@@ -406,6 +410,9 @@ Pencere sonundan 30 dakika sonra (Hobby planında saat esnek) o günün çalış
   sayılır). Perşembe–pazar ve haftanın özeti gittikten sonra adım yok.
 - Personel isteklerinin adımı (`requests`, [ONAYLAR.md](ONAYLAR.md)) yalnız süresi dolan bir istek kapandığında ("Süresi
   dolan personel istekleri kapandı") ya da adım hata verdiğinde yazılır ("Personel istekleri hata"; iş "Kısmen").
+- Vardiya hatırlatmasının adımı (`vardiya`, [VARDIYA.md](VARDIYA.md) › Bildirimler) yalnız Cuma–Pazar sabahı gelecek
+  haftanın planı yazılmamış bir şube için yöneticilere bildirim denendiğinde yazılır: "… yöneticilere bildirim gitti",
+  bildirim açık yönetici cihazı yoksa bilgi; hiçbir cihaza gidemediyse "Vardiya hatırlatması hata" (iş "Kısmen").
 
 **İki iş birden durursa** (Vercel Cron hiç tetiklemiyor) e-posta da gidemez; panel zil ve Genel bakış'ta yine söyler
 ama panel açılmazsa kimse görmez. Bunun için isteğe bağlı dış izleme: ücretsiz bir uptime servisine (ör. UptimeRobot,
@@ -440,7 +447,7 @@ yüklenemedi"** satırı durur (okunmamış sayılmaz, rozeti şişirmez; kimli�
 paralel sorgularıyla okunur; düşerse Ödemeler grubu sessizce boşalmaz, yerinde tek bir **"Ödemeler yüklenemedi"**
 satırı durur (okunmamış sayılmaz; gecikmiş ödeme rozeti bu okumada sayılamaz). Öbür bölümler de öyle (bulgu 88):
 hatırlatıcılar, reçete önerileri, onay istekleri (kasa, zayi, karaoke), bekleyen fiyat onayları, kasa, kontrol
-listeleri, faturalar, komisyon, günlük işlerin durumu, bildirim alıcıları, ModPOS anahtarı, fiyatı girilmemiş
+listeleri, faturalar, komisyon, günlük işlerin durumu, yeni cihazdan girişler, bildirim alıcıları, ModPOS anahtarı, fiyatı girilmemiş
 hammaddeler, kasada değişecek fiyatlar, tükenenler ve sayım okunamazsa sessizce boş görünmez: hata günlüğe yazılır
 ve grubunda tek bir **"{Grup} yüklenemedi"** satırı durur ("Kasa yüklenemedi", "Kontrol listeleri yüklenemedi",
 "Onaylar yüklenemedi", personelde "İstekleriniz yüklenemedi", "Sistem uyarıları yüklenemedi"…). Aynı gruptan birden çok
@@ -476,9 +483,12 @@ görür ve değiştirir (yönetici de başkasınınkini görmez); ödemeler ve s
 Her cihaz kendi tercihini tutar (**Bu cihazda uyarılar** kartı, Hatırlatıcılarım ve Karaoke ekranlarında): bildirim
 izni ve aboneliği, karaoke bildirimleri, sipariş bildirimleri ve sipariş zili (laffogato.net'ten yeni uygulama
 siparişi; [SITE-SIPARIS.md](SITE-SIPARIS.md)), sabah özeti, sesli uyarı, saatli hatırlatmalar. Web Push'un ayrıntısı ve
-güvenliği [KARAOKE.md](KARAOKE.md)'de. **Onay bildirimleri** (`approvals`, varsayılan açık): konu ve cihaz tercihi
-duruyor ama şu an gönderen yok (tek gönderen mal siparişi taslağıydı, 26 Ekim 2026'da kalktı; [MAL-SIPARISI.md](MAL-SIPARISI.md)),
-bu yüzden anahtar cihaz kartında görünmez; yeniden bir gönderen olunca döner ([ONAYLAR.md](ONAYLAR.md)).
+güvenliği [KARAOKE.md](KARAOKE.md)'de. **Onay bildirimleri** (`approvals`, varsayılan açık; anahtar yalnız
+yöneticide): personel onaya yeni bir istek gönderince yöneticinin telefonuna "Onay isteği · Kasa düzeltmesi" /
+"Mehmet: 22 Ekim kasa düzeltmesi · Tuzla" gider, istek başına bir kez, tutarsız ([ONAYLAR.md](ONAYLAR.md) › Bildirimler).
+**Vardiya bildirimleri** (konu `shifts`, cihaz anahtarı yok, kişiye özel): vardiyası değişen kişiye "Vardiyanız değişti"
+(bildirim açık cihazı yoksa e-posta), gelecek haftanın planı yazılmadıysa Cuma–Pazar sabahı yöneticilere
+([VARDIYA.md](VARDIYA.md) › Bildirimler).
 
 ## Uyarı sesleri yalnız bu bilgisayardan (22 Kasım 2026)
 

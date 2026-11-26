@@ -195,6 +195,14 @@ export interface TillMonth {
    */
   dayVat?: { known: { days: number; revenue: number; base: number; vat: number }; days: number[] };
   /**
+   * Ayın satışlı günlerinin KDV kaynağı (KDV tahmini; src/lib/cash-month.ts vatDaysOf, src/lib/kdv.ts; Dalga 2, 26 Kasım
+   * 2026). `lafpos`: KDV'si LafPOS'un dökümünden gelen günler (dayVat.known ile aynı günler). `z`: kasa raporunda
+   * yazarkasa Z'sinin KDV'si girilmiş öteki günler: `revenue` günlerin cirosu, `covered` o cironun yazarkasadan geçen
+   * kısmı (yazarkasa toplamıyla sınırlı), `vat` Z'lerin KDV toplamı. `estimate`: ikisi de olmayan günler (oranla).
+   * Gün sayıları satırdır ("Tümü"de şube × gün). Yoksa (eski kayıt, test) bütün ay oranla
+   */
+  vatDays?: { z: { days: number; revenue: number; covered: number; vat: number }; lafpos: number; estimate: number };
+  /**
    * [from, to] içinde raporu olmayan günler. Yalnız ilk kasa raporundan (ya da LafPOS gün sonundan) itibaren aranır:
    * raporlar başlamadan önceki ModPOS föy günleri eksik değildir (docs/MODPOS-API.md › Ay rakamına yedek)
    */

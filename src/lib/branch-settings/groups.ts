@@ -290,6 +290,32 @@ export function tillDeviceGenitive(device: TillDevice | null): string {
   return "Pavo'nun";
 }
 
+/** Şubenin kör sayım ayarı */
+export interface BlindCountSetting extends Record<string, unknown> {
+  /**
+   * Kör sayım açık mı; null: hiç seçilmedi, varsayılan geçer (kasası ModPOS olan şubede açık, LafPOS'un şubesinde
+   * kapalı: orada sayım zaten LafPOS'ta kördür). Kural src/lib/kor-sayim.ts blindCountOn
+   */
+  enabled: boolean | null;
+}
+
+/**
+ * Kör sayım (docs/KASA-RAPORU.md › Kör sayım; Dalga 2, 25 Kasım 2026): personel önce çekmecedeki nakdi sayıp kilitler,
+ * olması gereken ve kasa farkı ancak sonra görünür. Ayar şubenin kendisinin, "aynı" sunulmaz. Eski kayıt yok: seçilmemişken
+ * varsayılan (ModPOS'taki şubede açık)
+ */
+export const BLIND_COUNT_GROUP: BranchSettingGroup<BlindCountSetting> = {
+  id: "kasa.kor",
+  label: "Kör sayım",
+  description: "Personel önce çekmecedeki nakdi sayıp kilitler; olması gereken ve kasa farkı sonra görünür.",
+  linkable: false,
+  legacy: "default",
+  legacyKey: null,
+  secretFields: [],
+  read: (raw) => ({ enabled: typeof raw.enabled === "boolean" ? raw.enabled : null }),
+  summary: (v) => (v.enabled === null ? "varsayılan" : v.enabled ? "açık" : "kapalı"),
+};
+
 /** Şube başına tutulan gruplar (sıra Şube ayarları ekranının sırası) */
 export const BRANCH_SETTING_GROUPS = [
   CASH_REPORT_GROUP,
@@ -300,6 +326,7 @@ export const BRANCH_SETTING_GROUPS = [
   MODPOS_GROUP,
   CALENDAR_GROUP,
   TILL_DEVICE_GROUP,
+  BLIND_COUNT_GROUP,
 ] as const;
 
 export type BranchSettingGroupId = (typeof BRANCH_SETTING_GROUPS)[number]["id"];

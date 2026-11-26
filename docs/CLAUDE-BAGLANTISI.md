@@ -26,7 +26,8 @@ https://claude.ai/customize/connectors.
    adresi değil).
 3. Pencere sorarsa: Authentication **Sign in now**; OAuth client **Use Claude's published identity** (ya da **Register
    automatically**). Client ID ve secret alanlarını **boş** bırakın, istek başlığı (header) eklemeyin. **Add**'e basın.
-4. **Connect**'e basın. Tarayıcıda panel açılır: giriş yapın (iki adımlı doğrulama açıksa kodu da girin). "Claude
+4. **Connect**'e basın. Tarayıcıda panel açılır: giriş yapın ve iki adımlı doğrulamanın kodunu girin (yönetici hesaplarında
+   zorunlu; henüz kurmadıysanız önce kurulum ekranı açılır, kurulumdan sonra bu adıma dönülür). "Claude
    panelinize bağlanmak istiyor" ekranında isteğin **claude.ai**'den geldiğini görün, parolanızı yazın, **İzin ver**'e
    dokunun. Claude bağlayıcıyı **Connected** gösterir; hesabınızın adresine "Panelinize Claude bağlandı" e-postası gelir.
 5. İsteğe bağlı: bağlayıcının **Tool permissions** bölümünde panelin araçlarını **Always allow** yapın (hepsi yalnız

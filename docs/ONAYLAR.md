@@ -105,11 +105,25 @@ sabah e-postası ve Son kararlar bunu yazar.
   ([BUGUN.md](BUGUN.md)).
 - **Sabah e-postası:** "Onay bekleyenler" kutusu: "2 istek onay bekliyor", en eskisinin beklediği ve istek başına
   başlık ile isteyenin adı; karar verilene kadar her sabah.
-- **Push:** konu `approvals` (aboneliğin `approvals` sütunu, varsayılan açık). Tek gönderen mal siparişi taslağıydı
-  (Dalga 10b); 26 Ekim 2026'da kalktı, bugün hiçbir istek push göndermez (zil, Bugün ve sabah e-postası). Tesisat
-  duruyor: cihazdaki "Onay bildirimleri" anahtarı ancak yeniden bir gönderen olunca **Bu cihazda uyarılar** kartına
-  döner (`tests/onay-kuyrugu.test.ts` tutar). Gelen onay bildiriminde sekme bildirimi kendisi gösterir, zili tazeler ve
-  Onaylar'ı yeniler (`alert-center.tsx`, `src/lib/live-poll.ts` › `refreshesScreen`).
+- **Telefon bildirimi (push; Dalga 2, 25 Kasım 2026):** sahibin isteği "Onay istekleri yöneticinin telefonuna bildirim
+  olarak gitsin". Personel yeni bir istek açınca bildirimi açık her yönetici cihazına kısa bildirim gider:
+  "Onay isteği · Kasa düzeltmesi" / "Mehmet: 22 Ekim kasa düzeltmesi · Tuzla". Kim (isteyenin adı), ne (türü ve
+  tutarsız başlığı) ve şube (yalnız birden çok şube açıkken); personelin yazdığı neden ve tutar yazılmaz. Dokununca
+  Onaylar'daki karta iner (`/panel/onaylar#istek-<id>`; seçili şube başkaysa üstte "öbür şubelerde N istek daha").
+  - **Yalnız bir kez:** istek ilk açıldığında. Aynı isteğin güncellemesi (sürüm artar), çift dokunuş (aynı istemci
+    anahtarı) ve yeniden deneme yeniden göndermez; etiket `istek-<id>` olduğu için telefonda da tek bildirim kalır.
+  - **Ne zaman:** işlem bittikten sonra, yanıttan sonra (`after`): personelin "Onaya gönderildi"si beklemez. Gönderim
+    anında istek yeniden okunur; arada geri çekildiyse ya da karara bağlandıysa gitmez.
+  - **Kime:** etkin yöneticiler (isteyen hariç), bildirimi açık ve **Bu cihazda uyarılar › Onay bildirimleri** anahtarı
+    açık cihazlarına (konu `approvals`, aboneliğin `approvals` sütunu, varsayılan açık; anahtar yalnız yöneticide).
+    Bildirimi açık cihazı olmayan yönetici zilde, Bugün'de ve sabah e-postasında görür.
+  - Sekme öndeyken sistem bildirimi yerine sekme kendisi gösterir ("Gör" düğmesiyle), zili tazeler ve Onaylar'ı yeniler
+    (`alert-center.tsx`, `src/lib/live-poll.ts` › `refreshesScreen`).
+  - Kod: metin `src/lib/staff-requests.ts` › `requestPushText`, gönderim `src/server/staff-requests/push.ts`
+    (`pushNewRequest`; isteği açan her eylem çekirdeğin hemen ardından çağırır), test `tests/onay-bildirimi.test.ts`;
+    veritabanında (yalnız hâlâ bekleyen istek, etkin yönetici varken) `tests/bildirim-gonderim-db.test.ts`.
+    Yeni bir istek yolu eklenince eylemi de `pushNewRequest` çağırır (test isteği açan çekirdeklerin listesini tutar).
+  - Önceden (26 Ekim – 25 Kasım 2026) hiçbir istek push göndermiyordu; tek gönderen mal siparişi taslağıydı.
 - **İşlem geçmişi:** eylem adları her türün kendi maddesinde; ayrıntıda nedenin yalnız ilk 200 karakteri. Genel geri
   çekme "Kasa düzeltmesi geri çekildi", "Geç zayi / ikram isteği geri çekildi" gibi türün adıyla yazılır.
 
