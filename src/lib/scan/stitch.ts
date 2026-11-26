@@ -113,7 +113,10 @@ const BAND_HI = 0.75;
 const MARGIN_FULL = 0.2;
 /** İnce doğrulamanın genişliği (piksel) */
 const FINE_W = 560;
-/** Blok doğrulaması: yerel kayma (±piksel), yazılı blok varyans tabanı, kötü blok sınırı ve kötü blokların en çok oranı */
+/**
+ * Blok doğrulaması: yerel kayma (±piksel), yazılı blok varyans tabanı, kötü blok sınırı (ilinti); kötü blokların oranı
+ * BLOCK_BAD_OK'a kadar güven tam, BLOCK_BAD_MAX'ta sıfır (aynı kâğıtta ~%0–3, aynı şablonlu başka raporda ~%18–21)
+ */
 const BLOCK_SHIFT = 2;
 const BLOCK_VAR = 0.002;
 const BLOCK_BAD = 0.5;
