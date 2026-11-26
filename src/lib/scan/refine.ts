@@ -62,6 +62,23 @@ export function sideOnFrame(a: Point, b: Point, w: number, h: number, tol: numbe
   return (na.l && nb.l) || (na.r && nb.r) || (na.t && nb.t) || (na.b && nb.b);
 }
 
+/**
+ * Kenar kâğıdın kadraj dışında kalan tarafı mı: ya karenin kenarında (sideOnFrame) ya da bir ucu karenin kenarında,
+ * öteki ona `slack` kadar yakın. Algılama kareye dayanan kenarı karşısındaki gerçek kenara paralel bir doğruyla
+ * değiştirir (detect.ts squareFrameSides; eğik fişte kenar karenin içinden biraz geçer, köşegenin en çok %2'si): o
+ * kenar da kadrajın dışına uzanan taraftır (çekim kalitesinin "kesik" denetimi).
+ */
+export function sideLeavesFrame(a: Point, b: Point, w: number, h: number, tol: number, slack: number): boolean {
+  if (sideOnFrame(a, b, w, h, tol)) return true;
+  const gaps = (p: Point) => [p.x, w - 1 - p.x, p.y, h - 1 - p.y];
+  const ga = gaps(a);
+  const gb = gaps(b);
+  for (let e = 0; e < 4; e++) {
+    if ((ga[e] <= tol && gb[e] <= slack) || (gb[e] <= tol && ga[e] <= slack)) return true;
+  }
+  return false;
+}
+
 /** Bölgenin ortancası (0–255 histogramı ile) */
 function regionMedian(prof: Float32Array, valid: Uint8Array, rows: number, cols: number, c0: number, c1: number): number | null {
   const hist = new Uint32Array(256);

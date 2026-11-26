@@ -9,7 +9,7 @@
 import type { GrayImage, Point, Quad, RgbaImage } from "./image";
 import { boxMean, dilateMask, erodeMask, fitSize, labelComponents, maxFilter, minFilter, resizeRgba, scaleQuad, sobel, toGray } from "./image";
 import { estimateSize, warpQuad } from "./warp";
-import { sideOnFrame } from "./refine";
+import { sideLeavesFrame } from "./refine";
 import { noiseSigma } from "./enhance";
 import { analyzeText, inkMap, percentile, type TextLayout, type TextMask } from "./metin";
 import { PHOTO_COMPRESS } from "../photo-compress";
@@ -456,7 +456,9 @@ export function assessQuality(img: RgbaImage, opts: QualityOptions = {}): Qualit
     const iy = Math.max(2, Math.round(size.height * 0.006));
     work = cropRgba(warped, ix, iy, size.width - ix, size.height - iy);
     const tol = Math.max(2, 0.012 * Math.min(img.width, img.height));
-    onFrame = [0, 1, 2, 3].map((i) => sideOnFrame(corners[i], corners[(i + 1) % 4], img.width, img.height, tol));
+    // kareye dayanıp algılamada karşı kenara paralel yapılan kenar da (eğik fişin kesik altı) kadraj dışına uzanır
+    const slack = tol + 0.02 * Math.hypot(img.width, img.height);
+    onFrame = [0, 1, 2, 3].map((i) => sideLeavesFrame(corners[i], corners[(i + 1) % 4], img.width, img.height, tol, slack));
   } else {
     const short = Math.min(img.width, img.height);
     const long = Math.max(img.width, img.height);
