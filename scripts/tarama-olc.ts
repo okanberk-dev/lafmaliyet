@@ -19,6 +19,7 @@
  *   npm run tarama:olc -- --fixture        # tests/fixtures/tarama (regresyon örnekleri)
  *   npm run tarama:olc -- --yalniz pavo    # adında geçenler
  *   npm run tarama:olc -- --cizim          # doğru (yeşil) ve bulunan (kırmızı) köşeler çizili küçük resimler
+ *   npm run tarama:olc -- --ocr 0 --karsilastir .data/tarama-olcum/temel.json   # önceki ölçümle fark
  */
 
 import { execSync } from "node:child_process";
@@ -349,6 +350,29 @@ async function main() {
   satir.push("\n### En kötü 10\n");
   for (const k of kotu)
     satir.push(`- ${k.ad}: ${k.sonuc} (${k.karar}${k.hata == null ? "" : `, hata ${yuzde(k.hata)}`}, ${k.yontem} ${k.guven}; ${k.nedenler.join(" ") || "–"}) [${k.senaryolar.join(", ")}]`);
+  // önceki ölçümle karşılaştırma (çekirdek değişince): kategori başına doğru ve hata, sonucu değişen görseller
+  const oncekiYolu = arg("karsilastir");
+  if (oncekiYolu) {
+    const once = JSON.parse(readFileSync(oncekiYolu, "utf8")) as { cekirdek: string | null; kayitlar: Kayit[] };
+    const oncekiler = new Map(once.kayitlar.map((k) => [k.ad, k]));
+    const ortak = kayitlar.filter((k) => oncekiler.has(k.ad));
+    satir.push(`\n### Karşılaştırma: ${oncekiYolu} (çekirdek ${once.cekirdek ?? "?"}) → şimdi; ${ortak.length} ortak görsel\n`);
+    satir.push("| | doğru önce | doğru şimdi | hata ort önce | hata ort şimdi |", "|---|---:|---:|---:|---:|");
+    const kats = grupla(ortak, (k) => [k.kategori, "TOPLAM"], [...KAT, "TOPLAM"]);
+    for (const [ad, ks] of kats) {
+      const o = ozetle(ks.map((k) => oncekiler.get(k.ad)!));
+      const s = ozetle(ks);
+      satir.push(`| ${ad} | ${o.dogru}/${o.n} | ${s.dogru}/${s.n} | ${yuzde(o.hataOrt)} | ${yuzde(s.hataOrt)} |`);
+    }
+    const degisen = ortak.filter((k) => oncekiler.get(k.ad)!.sonuc !== k.sonuc);
+    if (degisen.length) {
+      satir.push("\nSonucu değişen:");
+      for (const k of degisen) {
+        const o = oncekiler.get(k.ad)!;
+        satir.push(`- ${k.ad}: ${o.sonuc}${o.hata == null ? "" : ` ${yuzde(o.hata)}`} → ${k.sonuc}${k.hata == null ? "" : ` ${yuzde(k.hata)}`}`);
+      }
+    }
+  }
   const metin = satir.join("\n");
   console.log("\n" + metin);
 
