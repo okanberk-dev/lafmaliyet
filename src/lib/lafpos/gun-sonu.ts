@@ -340,6 +340,24 @@ export function dayHash(day: { z: unknown; payments: unknown; ikram: unknown }):
   return h.toString(16).padStart(8, "0");
 }
 
+/**
+ * Gün sonu işi bekliyor mu (sabah işinin sırası, catchUpLafposDayEnds): günün bugünkü içeriği (`hash`) için ya rapor adımı
+ * işlenmedi (`doneHash`, lafpos_day_ends.day_hash; yazım düştüyse ya da hiç çalışmadıysa eski ya da boş) ya da gün sonu
+ * e-postası gitmedi (`emailedHash`). Satır yoksa gün hiç işlenmedi
+ */
+export function dayEndPending(state: { doneHash: string | null; emailedHash: string | null } | null, hash: string): boolean {
+  return !state || state.doneHash !== hash || state.emailedHash !== hash;
+}
+
+/**
+ * Sabah işinin gün sırası (25 Kasım 2026: bütçe kısa, en yeni gün yetişmeyebilirdi): işi bekleyen günler önce ve yeniden
+ * eskiye (dünkü gün ilk), işlenmiş günler (Pavo, fotoğraf, çalışan e-postasının yeniden denemesi) sona, onlar da yeniden
+ * eskiye
+ */
+export function catchUpOrder<T extends { date: string; pending: boolean }>(days: readonly T[]): T[] {
+  return [...days].sort((a, b) => Number(b.pending) - Number(a.pending) || b.date.localeCompare(a.date));
+}
+
 // ---------------------------------------------------------------- Gün sonu e-postası
 
 /** Kıyas günü: tarih ve satış (Z toplamı); o gün satış bilinmiyorsa null */
