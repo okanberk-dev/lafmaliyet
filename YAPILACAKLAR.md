@@ -45,7 +45,9 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   PDF'i, dönem kapanışı ve reçete geçmişi; personel belgeleri, avans ve asistana fiş fotoğrafı. Göçler 0093 (muhasebe),
   0094 (personel). Sahibe söylenecek: Ayarlar › Muhasebeci paketi'ne muhasebecinin adresi yazılmadıkça paket gitmez;
   Marina'nın online ay kaydı yayından sonra işletmeninkiyle bir kez karşılaştırılmalı (site şubeyi süzmüyorsa tahmin
-  online tüketimi fazla düşer).
+  online tüketimi fazla düşer). Paraşüt güvenliği (aynı vergi no sorusu, POST + tek kullanımlık bağlantı, LafPOS anahtarı hemen
+  geçersiz) ve CSP: tam politika önce yalnız raporlar (Report-Only); bir hafta Vercel günlüğünde `[csp]` satırı
+  çıkmazsa `CSP_ENFORCE=1` verilip yeniden yayınlanır.
 
 ## Devam eden (26 Kasım; yerel `wip/*` dallarında, ajanlar sürdürüyor)
 
@@ -53,7 +55,6 @@ Kullanım limitiyle kesilen ajanların işi kendi dallarında "ARA KAYIT" commit
 Bitince `claude/festive-goodall-sclggq`'ye birleştirilir (göç numarası çakışırsa yeniden üretilir).
 - Belge tarayıcı: çekirdek, kalite / yön / uzun fiş ve ölçüm düzeneği birleşti (henüz ekrana bağlı değil;
   docs/FOTOGRAF.md § 11). `wip/tarama-arayuz` sürüyor; sonra bağlama + ayar, canlı vizör, inceleme.
-- `wip/parasut-guvenlik` (aynı vergi no, POST + tek kullanımlık bağlantı, LafPOS anahtar önbelleği, CSP).
 - En son: `roller` (Müdür, Muhasebeci), çünkü bütün yeni ekranlara dokunur.
 - E-posta tasarımı: main'deki `src/lib/email-kit.ts` (#149) geçerli; paralel yapılan `wip/eposta-*` dalları
   birleştirilmeyecek.
@@ -76,7 +77,7 @@ Bitince `claude/festive-goodall-sclggq`'ye birleştirilir (göç numarası çak�
 - [x] [Ladmin] Şube karşılaştırma ekranı: şubeler ay ay yan yana. (26 Kasım; Raporlar › Şubeler, docs/RAPORLAR.md)
 - [x] [Ladmin] Stok tahmini Marina'nın online siparişlerini düşsün; "kaç gün yeter" ve eşik önerisi eklensin. (26 Kasım; docs/STOK-TAHMINI.md)
 - [x] [Ladmin] Asistanın fiyat kartı şube fiyatını bilsin. Asistan şubeyi açık ekrandan okusun; "bugün" iş günü (05:00) olsun. (26 Kasım)
-- [ ] [Ladmin] Ayrı Paraşüt firması bağlanırken "Aynı vergi numarası mı?" diye sorulsun.
+- [x] [Ladmin] Ayrı Paraşüt firması bağlanırken "Aynı vergi numarası mı?" diye sorulsun. (26 Kasım; docs/PARASUT.md)
 - [x] [Ladmin] KDV tahmini yazarkasa Z'sine ve LafPOS'un KDV dökümüne dayansın. (26 Kasım; kaynak satırı: "12 gün yazarkasa Z'sinden, 3 gün tahmin")
 - [x] [Ladmin] Vardiyası değişen personele bildirim gitsin. Gelecek haftanın planı yazılmadıysa hatırlatılsın. (26 Kasım)
 - [x] [Ladmin] Onay istekleri yöneticinin telefonuna bildirim olarak gitsin. (26 Kasım)
@@ -100,9 +101,9 @@ Bitince `claude/festive-goodall-sclggq`'ye birleştirilir (göç numarası çak�
 
 ## Düşük öncelikli güvenlik notları
 
-- [ ] Paraşüt bağlantısı adres çubuğundan başlatılabiliyor. Bir düğmeyle (POST) başlatılmalı ve hesabı tek kullanımlık bir değerle seçmeli.
-- [ ] Döndürülen LafPOS anahtarı önbellek yüzünden en çok 60 saniye daha geçerli kalıyor.
-- [ ] Content-Security-Policy başlığı yok.
+- [x] Paraşüt bağlantısı adres çubuğundan başlatılabiliyor. Bir düğmeyle (POST) başlatılmalı ve hesabı tek kullanımlık bir değerle seçmeli. (26 Kasım)
+- [x] Döndürülen LafPOS anahtarı önbellek yüzünden en çok 60 saniye daha geçerli kalıyor. (26 Kasım; imzası tutan istek anahtarı veritabanından taze okur)
+- [x] Content-Security-Policy başlığı yok. (26 Kasım; çekirdek uygulanır, tam politika önce yalnız raporlar; docs/DEPLOY.md › Güvenlik başlıkları)
 
 ## Bekleyen başka iş
 
