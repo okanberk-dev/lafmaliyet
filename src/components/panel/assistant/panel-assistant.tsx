@@ -880,7 +880,7 @@ export function PanelAssistant({ userId }: { userId: number }) {
                 rows={1}
                 maxLength={ASSISTANT_LIMITS.message + 200}
                 disabled={blocked}
-                placeholder={blocked ? "" : receipt ? "Ne yapılsın? (boş bırakırsanız kaydedilir)" : "Sorunuzu yazın…"}
+                placeholder={blocked ? "" : receipt ? "Ne yapılsın? (boş bırakırsanız kartı hazırlanır)" : "Sorunuzu yazın…"}
                 aria-invalid={tooLong || undefined}
                 className="field-sizing-content max-h-36 min-h-11 min-w-0 flex-1 resize-none rounded-xl bg-panel px-3.5 py-2.5 text-[16px] leading-6 text-ink placeholder:text-ink-mute focus:ring-2 focus:ring-ink/25 focus:outline-none disabled:opacity-60 max-lg:in-data-[keyboard=open]:max-h-28 lg:text-[14px]"
               />
