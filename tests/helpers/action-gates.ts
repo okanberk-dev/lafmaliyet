@@ -21,7 +21,9 @@ export interface ActionGates {
   gates: Gate[];
 }
 
-const GATE_NAMES = new Set(["requireAdmin", "requireUser", "requireSignedIn", "requireCan", "requireRole"]);
+const GATE_NAMES = new Set(["requireAdmin", "requireAnaAdmin", "requireUser", "requireSignedIn", "requireCan", "requireRole"]);
+/** requireAnaAdmin önce requireAdmin'den geçer (src/server/auth/dal.ts; ana yönetici şube ekler): kapı olarak yönetici */
+const GATE_ALIAS: Record<string, Gate["kind"]> = { requireAnaAdmin: "requireAdmin" };
 
 function walk(root: string, dir: string): string[] {
   return readdirSync(join(root, dir)).flatMap((n) => {
@@ -39,7 +41,7 @@ function gatesIn(node: ts.Node, sf: ts.SourceFile): Gate[] {
   const out: Gate[] = [];
   const visit = (n: ts.Node) => {
     if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && GATE_NAMES.has(n.expression.text)) {
-      out.push({ kind: n.expression.text as Gate["kind"], args: n.arguments.map((a) => (ts.isStringLiteral(a) ? a.text : a.getText(sf))) });
+      out.push({ kind: GATE_ALIAS[n.expression.text] ?? (n.expression.text as Gate["kind"]), args: n.arguments.map((a) => (ts.isStringLiteral(a) ? a.text : a.getText(sf))) });
     }
     ts.forEachChild(n, visit);
   };
