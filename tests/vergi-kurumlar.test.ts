@@ -257,7 +257,7 @@ test("C, Örnek C: kafenin 2026/3 katkısı: hesaplanan 68.887,00, asgari 27.554
 
 test("C: durum: sınıflandırma tam, gelir mali belgeden ve kafe dışı işler konuşulunca 'hazır'", () => {
   const fixedExpenses = base.fixedExpenses.map((f) => ({ ...f, taxDoc: f.section === "personel" ? ("bordro" as const) : ("belgeli" as const) }));
-  const invoices = base.invoices.map((i) => (["Aria Yazılım", "Beyza Karaman"].includes(i.supplier) ? { ...i, taxNotAsset: true } : i));
+  const invoices = base.invoices.map((i) => (["Aria Yazılım", "Berna Kalaycı"].includes(i.supplier) ? { ...i, taxNotAsset: true } : i));
   const manualRows = Object.fromEntries(MANUAL_PNL_ROWS.map((r) => [r.key, r.section === "personel" ? "bordro" : "belgeli"])) as TaxSettings["manualRows"];
   const filings: TaxFiling[] = ["2026-07", "2026-08", "2026-09"].map((period, i) => ({ id: i + 1, kind: "kdv_matrah", period, payable: 0, stamp: 0, values: { m10: 100000, m20: 0, kafeDisi: 0 } }));
   const mark = { by: "Ayşe", date: "2026-10-24", note: null };
