@@ -121,10 +121,34 @@ Her şube kendi Paraşüt hesabına (firmasına) bağlanabilir; şubeler aynı f
   alamaz (kayıt reddedilir). DevHub'daki dönüş adresi bütün hesaplarda aynıdır; aynı DevHub uygulaması da kullanılabilir.
 - **Yeniden "aynı" yapmak**: şubenin kendi hesabından fatura geldiyse reddedilir (faturalar sahipsiz kalır, eşitlemesi
   durur). Gelmediyse hesabın ayarları, oturumu, yarım bağlanma isteği ve eşitleme durumu aynı işlemde silinir.
-- **Bağlanma (OAuth)**: `/panel/parasut/baglan?hesap=<şube>`; hesap sunucuda doğrulanır ve bekleyen istekle (state,
-  PKCE doğrulayıcısı) mühürlü saklanır. Dönüşte belirteç isteğin başlatıldığı hesaba, o hesabın ayarlarıyla yazılır;
-  şube bu arada başka şubenin hesabına bağlandıysa reddedilir. Aynı anda tek bağlanma isteği; bir hesabın "Oturumu
-  sıfırla"sı öbür hesabın süren bağlanmasına dokunmaz.
+- **Bağlanma (OAuth)**: Bağlantı kartının düğmesi `/panel/parasut/baglan`'a POST'la `hesap=<şube>` gönderir (adreste
+  `?hesap=` yok; § 2 › Kimlik). Hesap sunucuda doğrulanır ve bekleyen istekle (state, PKCE doğrulayıcısı, başlatan
+  yönetici) state'e bağlı tek kullanımlık kayıtta mühürlü saklanır. Dönüşte belirteç isteğin başlatıldığı hesaba, o
+  hesabın ayarlarıyla yazılır; şube bu arada başka şubenin hesabına bağlandıysa reddedilir. Hesap başına tek bekleyen
+  istek (yenisi öncekinin yerine geçer); iki hesap aynı anda bağlanabilir, bir hesabın "Oturumu sıfırla"sı öbür
+  hesabın süren bağlanmasına dokunmaz.
+- **Aynı vergi numarası mı?** (Dalga 2, 26 Kasım 2026): ikinci bir Paraşüt firması bağlanırken panel, bağlanan
+  firmanın vergi numarasını (VKN 10, TCKN 11 hane) öbür hesapların firmalarınınkiyle karşılaştırır. Aynı işletmenin
+  iki Paraşüt firması aynı vergi numarasını taşır; gelen e-faturalar vergi numarasına geldiği için aynı faturalar iki
+  hesaptan da gelebilir ve gider iki kez sayılır (firma numarası aynıysa kayıt zaten reddedilir; bu denetim firma
+  numarası farklı, vergi numarası aynı durumu yakalar).
+  - Okuma: yeni belirteçle `GET /v4/me?include=companies` (`included` › `companies` › `tax_number`). Öbür hesabın
+    firması bu listede görünüyorsa (aynı Paraşüt kullanıcısı iki firmaya da erişiyor) numarası oradan; görünmüyorsa ve
+    o hesap bağlıysa kendi kayıtlı oturumuyla okunur (en çok 20 sn). Bağlı olmayan ve görünmeyen hesap
+    karşılaştırılmaz: o hesap bağlanırken bununla karşılaştırılır. Tek hesaplı kurulumda Paraşüt'e fazladan istek
+    gitmez. Saf kurallar `src/lib/parasut/company.ts`, okuma `src/server/parasut/company.ts`.
+  - Karar: vergi numaraları farklıysa sorulmadan bağlanır. **Aynıysa** ya da bir taraf **okunamadıysa** Paraşüt'ün
+    verdiği yetki **yazılmaz**: şifreli, tek kullanımlık, 10 dakikalık bir onay kaydına konur
+    (`parasut.connect.onay`, öbür hesaplarda `parasut.connect.onay:<şube>`; yedeğe girmez) ve Paraşüt ekranı
+    yalnız bağlanmayı başlatan yöneticiye sorar: aynı numarada “Aynı vergi numarası … Aynı işletmeyse bağlamayın,
+    Şube ayarları'ndan ‘Tuzla ile aynı’yı açın” (**Yine de bağla** / Vazgeç), okunamayanda “Aynı vergi numarası mı?”
+    (**Farklı, bağla** / Vazgeç). Onayda yetki o an yazılır (hesabın istemcisi, kimlik sunucusu ya da firması bu arada
+    değiştiyse yazılmaz); Vazgeç'te (ya da pencere kapatılınca) silinir. Yeniden bağlamada eski oturum karar verilene
+    kadar yerinde kalır. Oturumu sıfırlamak, istemciyi değiştirmek ya da yeni bağlanma isteği onay bekleyeni de siler.
+  - İşlem geçmişi: “Paraşüt hesabı bağlandı · … aynı vergi numarası uyarısı onaylandı (1111111111; Tuzla)” ya da
+    “Paraşüt hesabı bağlanmadı · Yönetici vazgeçti: aynı vergi numarası (…)”.
+  - Deneme: `tests/parasut-firma.test.ts` (kurallar, metin, kaynak), `tests/parasut-hesap-db.test.ts` (aynı numara
+    sorulur, vazgeç / onayla, ortak kullanıcı, okunamayan numara).
 - **Eşitleme**: sabah işi ve e-posta işinin yeniden denemesi ayarı tamam her farklı hesabı **bir kez, sırayla**
   eşitler (`syncParasutAccounts`; süre hesaplara bölünür, aynı anda tek eşitleme). Bir hesabın eşitlemesi yalnız kendi
   faturalarını ve Paraşüt'e bağlanmamış elle girilmiş / içe aktarılmış kayıtları görür (`invoiceAccountWhere`): öbür hesabın faturasını
@@ -172,7 +196,15 @@ Her şube kendi Paraşüt hesabına (firmasına) bağlanabilir; şubeler aynı f
   yayıncı bir Keycloak alanıysa (`/realms/<ad>`) standart uçlar kullanılır: `{issuer}/protocol/openid-connect/auth` ve
   `…/token` (`keycloakEndpoints`). Canlıda bu iki adres ayrıca `PARASUT_AUTHORIZE_URL` / `PARASUT_TOKEN_URL` ile verili.
   Yetkilendirme bir kez tarayıcıdan yapılır (`/panel/parasut/baglan` → Paraşüt onayı → `/panel/parasut/baglan/geri`,
-  `src/server/parasut/connect.ts`); `state` ve `code_verifier` 10 dakika geçerli, tek kullanımlık ve şifreli durur.
+  `src/server/parasut/connect.ts`). **Yalnız düğmeyle başlar** (26 Kasım 2026, güvenlik notu): Bağlantı kartındaki
+  “Paraşüt hesabını bağla” bir form düğmesidir ve `/panel/parasut/baglan`'a **aynı kökenden POST** gönderir
+  (`sameOrigin`; köken tutmazsa 403). Adres çubuğundan, bir bağlantıdan ya da başka bir siteden gelen GET hiçbir şey
+  başlatmaz, Paraşüt ekranına döner. Hesap adreste taşınmaz: formdaki hesap sunucuda doğrulanır ve `state`,
+  `code_verifier`, başlatan yönetici ile birlikte **state'in SHA-256 özetiyle anılan** şifreli kayıtta durur
+  (`parasut.connect:<özet>`; state'in kendisi yazılmaz). Kayıt 10 dakika geçerli ve tek kullanımlıktır: dönüş yolu
+  onu yalnız dönen state'le bulur ve bulduğu anda siler (uydurma ya da eski bir state başkasının bekleyen isteğini
+  harcayamaz); istek başka bir yöneticinin oturumundan tamamlanamaz. Hesap başına tek bekleyen istek; süresi geçenler
+  yeni istekte silinir.
   Dönen `refresh_token` **30 gün** geçerlidir ve her eşitlemede yenilenir (her yenilemede yenisi döner, hemen
   kaydedilir); erişim belirteci ~2 saat geçerli. Belirteçler veritabanında (`integration_state`) AES-256-GCM ile
   şifreli durur; anahtar `AUTH_SECRET`'tan türetilir. Panel Paraşüt parolasını hiçbir zaman görmez.

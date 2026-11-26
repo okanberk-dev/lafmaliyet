@@ -23,7 +23,7 @@ import { detachLafposCashOuts, syncLafposCashOuts } from "./cash-moves";
  * LafPOS'un anahtarı (Şube ayarları'nda saklanan, yoksa LAFPOS_SYNC_SECRET; en az 32 karakter); yoksa uçların hepsi 503
  * (src/server/lafpos/branch.ts lafposSecret)
  */
-export { lafposSecret } from "./branch";
+export { lafposRequestSecret, lafposSecret } from "./branch";
 
 export interface EndpointResult {
   status: number;

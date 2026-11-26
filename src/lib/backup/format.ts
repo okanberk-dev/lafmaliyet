@@ -77,12 +77,13 @@ export const EXCLUDED_STATE_KEYS: Readonly<Record<string, string>> = {
 /**
  * Önekiyle dışarıda kalan durum anahtarları: şube başına Paraşüt hesabının oturumu ve ayarları hesap adıyla saklanır
  * ("parasut.token:marina", "parasut.settings:marina"; docs/PARASUT.md › Şube başına Paraşüt hesabı). Varsayılan hesabın
- * eski adlı kayıtları EXCLUDED_STATE_KEYS'te. Yarım bağlanma isteği (parasut.connect) de şifreli ve 10 dakikalık: girmez
+ * eski adlı kayıtları EXCLUDED_STATE_KEYS'te. Yarım bağlanma istekleri (parasut.connect:<özet>) ve "Aynı vergi numarası mı?"
+ * onayını bekleyen bağlantı (parasut.connect.onay…) de şifreli ve 10 dakikalık: girmez
  */
 export const EXCLUDED_STATE_PREFIXES: Readonly<Record<string, string>> = {
   "parasut.token:": "öbür şubelerin Paraşüt oturumu (şifreli); geri yüklemeden sonra Paraşüt ekranında o şube seçiliyken yeniden bağlanır",
   "parasut.settings:": "öbür şubelerin Paraşüt bağlantı ayarları (client_secret şifreli); geri yüklemeden sonra yeniden girilir",
-  "parasut.connect": "yarım kalmış Paraşüt bağlanma isteği (şifreli, 10 dakika geçerli)",
+  "parasut.connect": "yarım kalmış Paraşüt bağlanma istekleri ve onay bekleyen bağlantı (şifreli, 10 dakika geçerli)",
 };
 
 const sqlList = (keys: string[]) => keys.map((k) => `'${k.replace(/'/g, "''")}'`).join(", ");
