@@ -645,6 +645,13 @@
       "when": 1795669685298,
       "tag": "0091_kasa_tuzla",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1795688684373,
+      "tag": "0092_muhasebe",
+      "breakpoints": true
     }
   ]
 }
