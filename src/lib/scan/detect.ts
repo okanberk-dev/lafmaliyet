@@ -56,7 +56,7 @@ import {
   simplifyClosed,
   type Line,
 } from "./geom";
-import { sideOnFrame, snapQuad, workGray } from "./refine";
+import { polishCorners, sideOnFrame, snapQuad, workGray } from "./refine";
 
 export type DetectMethod = "kagit" | "kenar" | "yazi" | "tam-kare";
 
@@ -1052,6 +1052,12 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
     const fq = unscaleQuad(fine.q, img.width, img.height, g.width, g.height);
     const diagOrig = Math.hypot(img.width, img.height);
     if (quadDistance(fq, corners) < diagOrig * 0.012) corners = fq;
+    // kıvrık kenarda köşe: komşu kenarların köşeye yakın parçasının teğetleri (köşe başına en çok %3)
+    const pol = polishCorners(g, scaleQuad(corners, img.width, img.height, g.width, g.height), { fixed });
+    if (pol.moved) {
+      corners = unscaleQuad(pol.q, img.width, img.height, g.width, g.height);
+      reasons.push(`kose-ince-${pol.moved}`);
+    }
   }
   corners = clampQuad(corners, img.width, img.height, MAX_OUTSIDE);
   if (corners.some((p) => p.x < -0.5 || p.y < -0.5 || p.x > img.width - 0.5 || p.y > img.height - 0.5)) reasons.push("kose-kare-disinda");
