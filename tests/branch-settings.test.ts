@@ -110,6 +110,8 @@ test("gruplar: alıcılar 'aynı' sunulur ve Tuzla'nın, çalışan listesi şub
       ["modpos", true, "tuzla", null],
       ["isletme.takvim", true, "tuzla", null],
       ["kasa.cihaz", false, "tuzla", null],
+      // Kör sayım (Dalga 2): şubenin kendisinin; seçilmemişken varsayılan (ModPOS'taki şubede açık)
+      ["kasa.kor", false, "tuzla", null],
     ],
   );
   assert.equal(branchSettingGroup("kasa.rapor"), CASH_REPORT_GROUP);

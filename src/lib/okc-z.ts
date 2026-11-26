@@ -916,6 +916,17 @@ export interface OkcRow {
   okcCumVat?: number | null;
 }
 
+/**
+ * Günün yazarkasa Z'sinin KDV dahil toplamı ve KDV'si (KDV tahmini; src/lib/cash-month.ts vatDaysOf): KDV toplamı
+ * girilmişse o, yoksa oran oran dökümün KDV'leri. Toplam ya da KDV girilmemişse null (gün oranla tahmin edilir)
+ */
+export function okcDayVat(r: Pick<OkcRow, "okcTotal" | "okcVatTotal" | "okcVat">): { total: number; vat: number } | null {
+  if (!isNum(r.okcTotal) || !(r.okcTotal > 0)) return null;
+  if (isNum(r.okcVatTotal)) return { total: r.okcTotal, vat: r.okcVatTotal };
+  const lines = normalizeVat(r.okcVat);
+  return lines.length ? { total: r.okcTotal, vat: r2(lines.reduce((a, l) => a + l.vat, 0)) } : null;
+}
+
 export interface OkcRateSum {
   rate: number;
   total: number;

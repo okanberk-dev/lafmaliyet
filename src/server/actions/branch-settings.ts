@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { BRANCH_FEATURE_IDS } from "@/lib/branch-features";
 import {
+  BLIND_COUNT_GROUP,
   branchSettingGroup,
   CALENDAR_GROUP,
   EVENING_HOUR_MAX,
@@ -161,6 +162,28 @@ export async function saveTillDevice(input: z.input<typeof deviceInput>) {
       );
       const what = [v.device ? tillDeviceLabel(v.device) : "cihaz belirtilmedi", v.registerNo ? `sicil ${v.registerNo}` : null, v.bank].filter(Boolean).join(" · ");
       await logSetting(tx, me, "Şube ayarı", `${name} · ${TILL_DEVICE_GROUP.label}: ${what}`);
+      return v;
+    });
+    refresh();
+    return value;
+  });
+}
+
+const blindInput = z.object({ branchId: zBranch, enabled: z.boolean() });
+
+/**
+ * Şubenin kör sayım ayarı (şube ayarı kasa.kor; docs/KASA-RAPORU.md › Kör sayım): açıkken personel kasa raporunda önce
+ * sayımı kilitler, fark sonra görünür. Yalnız yönetici; tek işlem, işlem geçmişine yazılır. Bugün kilitlenmiş sayımlar
+ * yerinde kalır; kapatılınca personelin raporu kilidi beklemez
+ */
+export async function saveBlindCount(input: z.input<typeof blindInput>) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const d = blindInput.parse(input);
+    const name = (await listBranches()).find((b) => b.id === d.branchId)?.name ?? d.branchId;
+    const value = await getDb().transaction(async (tx) => {
+      const v = await putBranchSetting(tx, BLIND_COUNT_GROUP, d.branchId, { enabled: d.enabled }, me.name);
+      await logSetting(tx, me, "Şube ayarı", `${name} · ${BLIND_COUNT_GROUP.label}: ${d.enabled ? "açık" : "kapalı"}`);
       return v;
     });
     refresh();
