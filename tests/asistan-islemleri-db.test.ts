@@ -645,6 +645,14 @@ describe("asistanın işlemleri: veritabanında", { skip: !SERVER_URL && "ASISTA
       back.map((r) => [r.date, r.startMin]),
       [[day(0), 540]],
     );
+    // "s" kısaltması şubenin hazır vardiya ayarına açılır (Şube ayarları › Hazır vardiyalar; ayarsızken 09:00–18:00)
+    await db.insert(s.branchSettings).values({ branchId: "tuzla", grp: "vardiya.hazir", value: { presets: [{ key: "morning", startMin: 510, endMin: 1050 }] }, updatedBy: "Ali" });
+    try {
+      const preview = await open("vardiya_hucre_yaz", { sube: "Tuzla", kisi: "ayşe", gunler: [{ gun: day(2), metin: "s kasa" }] });
+      assert.equal(preview.lines[0]?.to, "08:30–17:30 · kasa");
+    } finally {
+      await db.delete(s.branchSettings).where(and(eq(s.branchSettings.branchId, "tuzla"), eq(s.branchSettings.grp, "vardiya.hazir")));
+    }
   });
 
   test("işlem geçmişi: onaydan gelen her satır asistan aracılığıyla; ekrandan yapılan iş öyle işaretlenmez", async () => {

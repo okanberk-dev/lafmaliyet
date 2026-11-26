@@ -214,6 +214,7 @@ sayımı (Tuzla)"); sayım toplamı ve elle yazılmamış açılış şubenin ke
 | Kontrol listesi | Listede seçilen şube ya da "Bütün şubeler" (yeni liste seçili şubeyle başlar, "Tümü"de bütün şubeler) |
 | Özel gün (maç, AVM, kampanya, kapalı, diğer) | Formda seçilen şube ya da "Bütün şubeler" (her tür; yeni gün seçili şubeyle başlar). Personelin eklediği gün şubesine kilitliyse o şubenin, değilse bütün şubelerin. Tek şube seçiliyken liste o şubenin ve bütün şubelerin günleri |
 | Personel hesabı (Kullanıcılar) | Formda seçilen şube ya da "Bütün şubeler"; şubesi olan personel o şubede kilitli |
+| Vardiya planı | Izgaranın şubesi: seçili fiziksel şube. "Tümü" ya da online kanal seçiliyken birden çok şube açıksa ızgara çizilmez, önce **"Hangi şubenin vardiyası?"** sorulur (26 Kasım 2026; önceden sessizce Tuzla'nın planı açılıp Kaydet Tuzla'ya yazıyordu); tek şubede o şube. Kaydet ve Yazarak doldur ızgaranın şubesini gönderir (zorunlu alan; çerez okunmaz). Asistanın vardiya kartı "Tümü"de şubeyi sorar ([VARDIYA.md](VARDIYA.md) › Ekran) |
 
 **Ortak kapı** (`formBranch(raw, tür)`, `src/server/branch-scope.ts`; kural saf `pickFormBranch`, `src/lib/branches.ts`;
 24 Kasım 2026 şube kapsamı): kasa, sayım, zayi, satış ve gider yazımları formun gönderdiği şubeyi aynı kapıdan geçirir.
@@ -331,6 +332,7 @@ yazma `src/server/branch-settings.ts`.
 | `isletme.takvim` Çalışma takvimi | ayda açık gün (başabaş, günlük giderler); kasa raporunun beklendiği saat (zil ve Bugün; 12:00–23:00, varsayılan 20:00) | evet | Tuzla (`settings` › `acikGun`; saat bugün sabitti) |
 | `kasa.cihaz` Banka POS ve yazarkasa | cihaz (Pavo, TokenX, başka), yazarkasa sicil no, bankası | hayır: cihaz şubenin kendisinin | yok (boşken her şey bugünkü gibi) |
 | `kasa.kor` Kör sayım | açık / kapalı ([KASA-RAPORU.md](KASA-RAPORU.md#kör-sayım)): personel önce sayılan nakdi kilitler, fark sonra görünür | hayır: ayar şubenin kendisinin | yok; seçilmemişken varsayılan: kasası ModPOS olan şubede açık, LafPOS'un şubesinde kapalı |
+| `vardiya.hazir` Hazır vardiyalar | sabahçı ve akşamcı: kullanılıyor mu, başlangıç ve bitiş ([VARDIYA.md](VARDIYA.md#şube-ayarı-26-kasım-2026)); Vardiya ekranının S / A düğmeleri, "s" / "a" kısaltması, yazarak doldurma, PDF ve asistanın vardiya kartı | hayır: saatler şubenin açılışına bağlı (Tuzla ile Marina'nınki bugün de ayrı) | yok; seçilmemişken bugünkü sabit saatler (`SHIFT_PRESETS`: Tuzla 09:00–18:00 / 16:00–01:00, Marina 09:30–18:30 / 13:00–22:00, öbür şubede hazır vardiya yok) |
 
 - **"Diğer şubeyle aynı"**: açıkken şube kendi değerini tutmaz (satırda `same_as`), bağlandığı şubenin değerini kullanır;
   değer tek yerden düzenlenir. Kapatılınca o anki değer şubeye kopyalanır, sonra ayrı düzenlenir. Gizli alanlar
@@ -410,9 +412,16 @@ yazma `src/server/branch-settings.ts`.
     e-postanın başlığına girer; "Başka bir cihaz" başlığa yazılmaz, yalnız sicil no.
   - **Tek kasa açıkken** (ör. kapalı şubenin sayfası) şube başka şubeye bağlıysa "aynı" anahtarı yine çizilir: form
     düzenlenebilir görünüp kayıt reddedilmesin.
+- **Hazır vardiyalar (26 Kasım 2026)**: Şube ayarları ekranında **Hazır vardiyalar** kartı
+  (`src/app/panel/subeler/[id]/shift-presets-card.tsx`, kayıt `saveShiftPresets`): sabahçı (S) ve akşamcı (A) için
+  anahtar ve başlangıç / bitiş saati. Ayarı olmayan şube bugünkü sabit saatleri kullanır (davranış değişmez); iki vardiya
+  da kapatılınca şubede hazır vardiya yoktur. Saatler kutunun okuyucusuyla okunur (gece yarısını geçen bitiş ertesi gün,
+  en çok 16 saat); 01:00–09:00 arasına uzanan vardiyada kart uyarı seslerinin o saatlerde çalmadığını söyler. Okuyan
+  `loadShiftPresets(şube)` (`src/server/vardiya/presets.ts`): Vardiya ızgarası, PDF, yazarak doldurma ve asistanın
+  vardiya kartı. Ayrıntı [VARDIYA.md › Şube ayarı](VARDIYA.md#şube-ayarı-26-kasım-2026).
 - **Şimdilik ortak** (ekran adıyla söyler): uyarı sesi saatleri (09:00–01:00, alt sınır en erken açılan şubenin,
   Tuzla'nın açılışı; tarayıcıda ve bildirim işçisinde, `public/sw.js`, sabit), kontrol listesi hatırlatma saatleri (tek
-  dilim takvimi), hazır vardiya saatleri (#120 vardiya PR'ı birleştikten sonra). Şube başına olmayacaklar: KDV, reçete parametreleri, fire, hedef maliyet, FIFO başlangıcı,
+  dilim takvimi). Şube başına olmayacaklar: KDV, reçete parametreleri, fire, hedef maliyet, FIFO başlangıcı,
   kategori ve POS eşlemeleri, site bağlantı sırrı, bildirim gönderen ve vade günleri.
 
 ## Faturanın şubesi (25 Kasım 2026)
@@ -655,12 +664,12 @@ süzülmesini ve şube görünümünde maliyeti kurdu. Şube başına ModPOS ana
 **Şube kapsamı ve şube başına ayarlar (24–25 Kasım 2026): bilerek sonraya kalanlar** (gerekçeleriyle):
 
 - **Şube başına ayar grupları**: `kasa.rapor`, `kasa.calisan`, `parasut`, `komisyon`, `pos.lafpos`, `modpos`,
-  `isletme.takvim` ve `kasa.cihaz` kuruldu (yukarıda). Kalanlar: **uyarı sesi saatleri** (tarayıcıda ve `public/sw.js`'te
+  `isletme.takvim`, `kasa.cihaz`, `kasa.kor` ve `vardiya.hazir` (hazır vardiya saatleri, 26 Kasım 2026) kuruldu
+  (yukarıda). Kalanlar: **uyarı sesi saatleri** (tarayıcıda ve `public/sw.js`'te
   sabit, 09:00–01:00: alt sınır 25 Kasım'da en erken açılışa çekildi, denetim bulguları 45 ve 99,
   [HATIRLATICILAR.md](HATIRLATICILAR.md#uyarı-seslerinin-sınırı-23-kasım-2026); şube başına olması Çalışma takvimine
   açılış ve kapanış saatini eklemeyi ve bildirim işçisine şubenin saatini taşımayı ister), **kontrol listesi hatırlatma saatleri**
-  (e-posta işi tek dilim takvimiyle çalışır), **hazır vardiya saatleri** (`SHIFT_PRESETS`; #120 vardiya PR'ı
-  birleştikten sonra), **"yalnız bu bilgisayar" varsayılanı** (`ONLY_COMPUTER_BRANCHES`; "aynı" Marina'nın varsayılanını
+  (e-posta işi tek dilim takvimiyle çalışır), **"yalnız bu bilgisayar" varsayılanı** (`ONLY_COMPUTER_BRANCHES`; "aynı" Marina'nın varsayılanını
   değiştirirdi, ayrı alan ister), komisyon takibinin başladığı gün (`komisyon.since`; hakediş işletmenin, bilerek ortak).
   Ekran "Şimdilik bütün şubelerde ortak" kartında adıyla yazar. Komisyonun şube başına süresi işletmenin hakedişine
   "en kısası" kuralıyla girer; hakedişi şube payına bölmek faturanın şubesi bilinince.
@@ -682,6 +691,6 @@ süzülmesini ve şube görünümünde maliyeti kurdu. Şube başına ModPOS ana
   ("laffogato.net, uygulama ve QR menü") yazar. Site şube başına durum tutunca kapanır.
 
 **Sahibe söylenecek davranış değişiklikleri**: ikiden fazla kasa açıkken şubesiz personelin izi kapalı günde kırmızı
-değil uyarı sayılır; kasa, sayım ve Satışlar'ın ay bilgisi "Tümü"de formu açmadan şubeyi sorar; bir şube ayrı Paraşüt
+değil uyarı sayılır; kasa, sayım, Satışlar'ın ay bilgisi ve Vardiya "Tümü"de formu açmadan şubeyi sorar; bir şube ayrı Paraşüt
 hesabına geçince kalan hesabın (Tuzla) yeni faturaları da `branch_id='tuzla'` alır (hesabı yalnız o kullanıyor);
 gün sonu e-postası yalnız Rapor alıcılarına gider, liste boş ya da kapalıysa o şubeye açık bildirim adreslerine.

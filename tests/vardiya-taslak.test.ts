@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { claudeSchema, fitsStructuredOutputs, schemaComplexity } from "../src/lib/photo-read/claude-schema";
-import { nameRef, userRef } from "../src/lib/vardiya";
+import { defaultShiftPresets, nameRef, shiftPresetsOf, userRef } from "../src/lib/vardiya";
 import {
   applyDraft,
   DRAFT_DAYS,
@@ -37,7 +37,8 @@ const rows = [
   { ref: nameRef("Zeynep"), userId: null, name: "Zeynep", cells: EMPTY },
 ];
 const people = draftPeople(rows);
-const tuzla = { branch: { id: "tuzla", name: "Tuzla" }, people };
+// Hazır vardiyalar şubenin ayarından gelir (src/server/vardiya/presets.ts); ayarı olmayan Tuzla bugünkü sabit saatlerle
+const tuzla = { branch: { id: "tuzla", name: "Tuzla" }, presets: defaultShiftPresets("tuzla"), people };
 const WEEK = ["mon", "tue", "wed", "thu", "fri"] as const;
 type Assignment = ShiftDraftRaw["assignments"][number];
 const a = (over: Partial<Assignment> & Pick<Assignment, "person" | "days" | "shift">): Assignment => ({ newName: null, start: null, end: null, note: null, ...over });
@@ -62,9 +63,16 @@ test("hazır vardiyalar şubenin saatleriyle yazılır: Tuzla ve Marina ayrı", 
   assert.deepEqual(cellsOf(t, "u:2"), ["09:00–18:00", "09:00–18:00", "09:00–18:00", "09:00–18:00", "09:00–18:00", null, null]);
   assert.deepEqual(cellsOf(t, "u:3").slice(5), ["16:00–01:00", "16:00–01:00"]);
   assert.deepEqual([t.added, t.skipped, t.unclear], [[], [], null]);
-  const m = draftToCells(raw, { branch: { id: "marina", name: "Marina" }, people });
+  const m = draftToCells(raw, { branch: { id: "marina", name: "Marina" }, presets: defaultShiftPresets("marina"), people });
   assert.equal(cellsOf(m, "u:2")[0], "09:30–18:30");
   assert.equal(cellsOf(m, "u:3")[5], "13:00–22:00");
+  // Şube ayarındaki saatler (Şube ayarları › Hazır vardiyalar) sabit saatlerin yerine geçer; kapatılan vardiya yazılmaz
+  const set = shiftPresetsOf("tuzla", [{ key: "morning", startMin: 8 * 60 + 30, endMin: 17 * 60 + 30 }]);
+  const own = draftToCells(raw, { ...tuzla, presets: set });
+  assert.equal(cellsOf(own, "u:2")[0], "08:30–17:30");
+  assert.deepEqual(cellsOf(own, "u:3").slice(5), [null, null]);
+  assert.match(own.skipped[0], /hazır akşamcı vardiyası yok/);
+  assert.match(shiftDraftTask({ ...tuzla, presets: set, monday: "2026-11-23", today: "2026-11-22" }, "x"), /Preset shifts: morning \(sabahçı\) 08:30–17:30\n/);
 });
 
 test("izin, başka saat (gece yarısını geçen dahil), not ve boşaltma", () => {
@@ -153,7 +161,7 @@ test("işlenemeyenler yazılmaz, yöneticinin okuyacağı cümleyle döner", () 
 });
 
 test("hazır vardiyası olmayan şubede sabahçı / akşamcı yazılmaz; saat ve izin yazılır", () => {
-  const ctx = { branch: { id: "depo", name: "Depo" }, people };
+  const ctx = { branch: { id: "depo", name: "Depo" }, presets: defaultShiftPresets("depo"), people };
   const r = draftToCells({ assignments: [a({ person: "p1", days: ["mon"], shift: "morning" }), a({ person: "p1", days: ["tue"], shift: "hours", start: "10:00", end: "18:00" }), a({ person: "p1", days: ["wed"], shift: "off" })], unclear: null }, ctx);
   assert.deepEqual(cellsOf(r, "u:2").slice(0, 3), [null, "10:00–18:00", "İzin"]);
   assert.match(r.skipped[0], /hazır sabahçı vardiyası yok/);
@@ -161,7 +169,7 @@ test("hazır vardiyası olmayan şubede sabahçı / akşamcı yazılmaz; saat ve
 
 test("kişi sınırı: fazladan yeni kişi eklenmez; not 40 karakterde kesilir", () => {
   const many = draftPeople(Array.from({ length: 60 }, (_, i) => ({ ref: `n:k${i}`, userId: null, name: `Kişi ${i}`, cells: EMPTY })));
-  const full = draftToCells({ assignments: [a({ person: "", newName: "Yeni", days: ["mon"], shift: "off" })], unclear: null }, { branch: tuzla.branch, people: many });
+  const full = draftToCells({ assignments: [a({ person: "", newName: "Yeni", days: ["mon"], shift: "off" })], unclear: null }, { ...tuzla, people: many });
   assert.deepEqual([full.cells, full.added], [[], []]);
   assert.match(full.skipped[0], /en çok 60 kişi/);
   const long = draftToCells({ assignments: [a({ person: "p1", days: ["mon"], shift: "morning", note: "x".repeat(80) })], unclear: null }, tuzla);
@@ -208,7 +216,7 @@ test("görev metni: şube, haftanın takvimi, hazır saatler, kişiler anahtarı
   assert.match(task, /<instruction>\nAyşe hafta içi sabahçı\n<\/instruction>$/);
   // Kişinin yalnız adı gider: anahtar, e-posta, hesap kimliği yok
   assert.doesNotMatch(task, /u:2|u:3|n:zeynep|@/);
-  const empty = shiftDraftTask({ branch: { id: "depo", name: "Depo" }, people: [], monday: "2026-11-23", today: "2026-11-23" }, "x");
+  const empty = shiftDraftTask({ branch: { id: "depo", name: "Depo" }, presets: [], people: [], monday: "2026-11-23", today: "2026-11-23" }, "x");
   assert.match(empty, /Preset shifts: none/);
   assert.match(empty, /People: nobody/);
   assert.match(empty, /Current plan: every cell is empty/);

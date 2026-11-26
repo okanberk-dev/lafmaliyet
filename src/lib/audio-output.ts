@@ -138,12 +138,27 @@ export function systemDefaultLabel(devices: readonly { kind: string; deviceId: s
  * denetler).
  *
  * Alt sınır en erken açılan şubenin açılışıdır (denetim bulguları 45 ve 99, 25 Kasım 2026): Tuzla 09:00'da, Marina
- * 09:30'da açılır (hazır vardiyalar, src/lib/vardiya.ts SHIFT_PRESETS). Önceden 10:00'dı; açılıştaki ilk saatte gelen
- * uygulama siparişi ve masa çağrısı sessiz kalıyordu. Şube ayarlarında açılış saati yok: sınır şube başına değil, bütün
- * şubelerin en erken açılışı. Bir şube daha erken açılırsa test düşer, sınır birlikte çekilir.
+ * 09:30'da açılır (hazır vardiyaların varsayılanı, src/lib/vardiya.ts SHIFT_PRESETS). Önceden 10:00'dı; açılıştaki ilk
+ * saatte gelen uygulama siparişi ve masa çağrısı sessiz kalıyordu. Şube ayarlarında açılış saati yok: sınır şube başına
+ * değil, bütün şubelerin en erken açılışı. Varsayılanlar daha erken açılırsa test düşer, sınır birlikte çekilir; hazır
+ * vardiyalar 26 Kasım 2026'dan beri şube ayarı olduğundan Şube ayarları kartı sessiz saate düşen vardiyayı söyler
+ * (`alertQuietDuring`).
  */
 export const ALERT_SOUND_FROM_MIN = 9 * 60;
 export const ALERT_SOUND_UNTIL_MIN = 60;
+
+/**
+ * Bir vardiyanın (günün başından dakika; gece yarısını geçen bitiş 1440'tan büyük) bir kısmı uyarı seslerinin sessiz
+ * saatlerine (01:00–09:00) düşüyor mu: Şube ayarları › Hazır vardiyalar, şube bu saatlerde açıksa sipariş ve çağrı
+ * zilinin o saatlerde çalmayacağını söyler (ses saatleri şimdilik bütün şubelerde ortak)
+ */
+export function alertQuietDuring(startMin: number, endMin: number): boolean {
+  const quiet = [
+    [ALERT_SOUND_UNTIL_MIN, ALERT_SOUND_FROM_MIN],
+    [1440 + ALERT_SOUND_UNTIL_MIN, 1440 + ALERT_SOUND_FROM_MIN],
+  ] as const;
+  return quiet.some(([from, until]) => startMin < until && endMin > from);
+}
 
 export function alertHoursOpen(atMs: number): boolean {
   const minutes = Math.floor((((atMs + 3 * 3600_000) % 86_400_000) + 86_400_000) % 86_400_000 / 60_000);

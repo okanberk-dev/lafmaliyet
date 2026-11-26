@@ -507,11 +507,16 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             <Path href="/panel/vardiya" /> ekranında haftayı kişi kişi yazın: günün kutusuna saatleri (“10-18”, gece yarısını geçen vardiyada “18-02”), isterseniz
             görevi (“10-18 kasa”), izin için “izin”. Okunamayan kutu kırmızı olur. Kaydet bütün haftayı yazar; PDF kaydedilen plandan çizilir. Geçen haftayı
-            kopyala boş kutuları doldurur, hesabı olmayan çalışanı Kişi ekle ile yazarsınız. Personel planı görür, değiştiremez. Plan şube şubedir.
+            kopyala boş kutuları doldurur, hesabı olmayan çalışanı Kişi ekle ile yazarsınız. Personel planı görür, değiştiremez. Plan şube şubedir: soldan
+            “Tümü” seçiliyken önce şube sorulur, Kaydet ekranda görünen şubeye yazar. Sabahçı ve akşamcının (S, A) saatleri şube başınadır:{" "}
+            <Path href="/panel/subeler" /> › şubenin Ayarlar&apos;ı › Hazır vardiyalar.
           </>
         ),
         icon: CalendarClock,
-        links: [{ href: "/panel/vardiya", label: "Vardiya ayarlama" }],
+        links: [
+          { href: "/panel/vardiya", label: "Vardiya ayarlama" },
+          { href: "/panel/subeler", label: "Şubeler" },
+        ],
       },
       {
         id: "tedarikci",
