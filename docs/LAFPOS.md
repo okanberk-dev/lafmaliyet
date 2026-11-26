@@ -1049,8 +1049,15 @@ kuralı; Tuzla ModPOS'ta kalır, aşağıda "Şubeler"). Canlıda 22 Kasım 2026
   Tarayıcıya, işlem geçmişine ve yedeğe gitmez; ekran yalnız "Panelde kayıtlı / Sunucuda kayıtlı / Anahtar yok" der,
   Ayarlar › LafPOS anahtarın nereden okunduğunu yazıp şube sayfasına bağlanır. Silinince ortamdaki kullanılır; kasa
   kaynağı başka şubeye geçtiyse eski şubede kalan anahtar o şubenin sayfasından silinir. İmzalı uçların hepsi
-  `await lafposSecret()` ile okur: panelde saklanan anahtar 60 sn önbellekli (kayıtta ve kasa kaynağı değişince düşer),
-  imzasız istek her seferinde veritabanını okutmaz; veritabanı okunamazsa uç 503 döner.
+  anahtarı isteğe göre okur (`await lafposRequestSecret(request)`, `src/server/lafpos/branch.ts` › `lafposSecretFor`;
+  veritabanı okunamazsa uç 503 döner). **Döndürülen anahtar her sunucu örneğinde hemen geçersiz** (güvenlik notu, 26
+  Kasım 2026): panelde saklanan anahtar 60 sn önbellekli ama önbellek yalnız ön süzgeçtir. İmza önbellekteki anahtarla
+  tutarsa anahtar kabulden önce veritabanından (LafPOS'un şubesi dahil, önbelleksiz) yeniden okunur; başka bir örnekte
+  döndürüldüyse eski anahtarla imzalı istek 401 alır ve önbellek yenilenir. Bu okuma yalnız imzası tutan (LafPOS'un
+  kendi) isteklerinde olur; imzasız ya da yanlış imzalı istek veritabanını okutmaz, yalnız önbellek
+  `LAFPOS_SECRET_RELOAD_MS`'tan (10 sn) eskiyse bir kez yeniden okunur: yeni anahtar başka örneklerde de en geç 10 sn
+  sonra geçer (eskiden 60 sn). Anahtarı kaydeden örnekte önbellek kayıtta hemen düşer. Deneme:
+  `tests/sube-ayarlari-2-db.test.ts` (iki örnek: eski anahtar geçmez, imzası tutmayan istek okuma yapmaz).
 - **Hiçbir veri yazılmaz ya da silinmez:** ayar yalnız okuyanları değiştirir; geri almak günü değiştirmek ya da
   boşaltmaktır. Tercihen ayın 1'i (ModPOS'un o ayki ürün listesi bölünmez).
 - **LafPOS kendi tarihini tutmaz:** bütün gerçek günleri gönderir; neyin sayıldığına panel karar verir ve yanıtta söyler

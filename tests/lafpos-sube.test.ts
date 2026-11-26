@@ -155,7 +155,7 @@ test("kaynak: sunucu ve sayfalar sabiti kullanmaz; geçiş gününü şubeye uyg
 test("kaynak: okuyucu önbellekli; ingest, gün sonu ve uçlar kütüğün şubesini okur; şube eylemleri reddeder ve önbelleği düşürür", () => {
   const reader = read("src/server/lafpos/branch.ts");
   assert.match(reader, /^import "server-only";/m);
-  assert.match(reader, /export async function lafposBranchId\(db: Reader = getDb\(\), now: number = Date\.now\(\)\): Promise<string>/);
+  assert.match(reader, /export async function lafposBranchId\(db: Reader = getDb\(\), now: number = Date\.now\(\), fresh = false\): Promise<string>/);
   assert.match(reader, /if \(hit && now - hit\.at < LAFPOS_BRANCH_CACHE_MS\) return hit\.id;/);
   assert.match(reader, /const id = lafposBranchOf\(rows\);/, "kural tek yerde (saf)");
   assert.match(reader, /export function forgetLafposBranch\(\): void/);

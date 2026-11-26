@@ -513,13 +513,13 @@ test("maliyet listesi: yalnız siteye bağlı ürünler, yalnız altı alan; mal
 
 test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; maliyet ucu yalnız imzayla", () => {
   const gun = read("src/app/api/pos/gun/route.ts");
-  const order = ["await connection()", "await lafposSecret()", "content-length", "request.text()", "handlePosDay("];
+  const order = ["await connection()", "await lafposSecret()", "content-length", "request.text()", "await lafposRequestSecret(request, body)", "handlePosDay("];
   const at = order.map((s) => gun.indexOf(s));
   assert.ok(at.every((i, k) => i > 0 && (k === 0 || i > at[k - 1])), `sıra: ${order.join(" → ")}`);
   assert.match(gun, /"Cache-Control": "no-store"/);
   // Uç gün sonunu durum kaydından geçirir (src/server/lafpos/status.ts): o da denetimi ve yazımı receivePosDay'e bırakır;
   // anahtar yokken (503) durum satırına hiçbir şey yazılmaz
-  assert.ok(gun.indexOf("if (!secret) return") < gun.indexOf("noteUnverified("), "anahtar yokken sayaç da yazılmaz");
+  assert.ok(gun.indexOf("if (!(await lafposSecret())) return") < gun.indexOf("noteUnverified("), "anahtar yokken sayaç da yazılmaz");
   const status = read("src/server/lafpos/status.ts");
   const handle = status.slice(status.indexOf("export async function handlePosDay"));
   assert.match(handle, /r = await receivePosDay\(db, input, now\);/);
@@ -538,13 +538,14 @@ test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; 
   const urunler = read("src/app/api/panel/pos/urunler/route.ts");
   assert.match(urunler, /export async function GET\(request: NextRequest\) \{\s*await connection\(\);/);
   assert.match(urunler, /"Cache-Control": "no-store"/);
-  assert.match(urunler, /servePosProducts\(\{\s*secret: await lafposSecret\(\),/);
+  // Anahtar isteğe bağlı okunur (lafposRequestSecret): imza önbellekteki anahtarla tutarsa veritabanından yeniden
+  assert.match(urunler, /servePosProducts\(\{\s*(?:\/\/[^\n]*\n\s*)?secret: await lafposRequestSecret\(request\),/);
   assert.doesNotMatch(urunler, /getCurrentUser|requireUser|requireAdmin/, "oturumla açılmaz");
   // ModPOS dönemi ucu: aynı kalıp (bağlantı, imza, önbelleksiz, oturumsuz); denetim sırası imza → şube → okuma
   const modpos = read("src/app/api/panel/pos/modpos-gunler/route.ts");
   assert.match(modpos, /export async function GET\(request: NextRequest\) \{\s*await connection\(\);/);
   assert.match(modpos, /"Cache-Control": "no-store"/);
-  assert.match(modpos, /serveModposDays\(\{\s*secret: await lafposSecret\(\),/);
+  assert.match(modpos, /serveModposDays\(\{\s*(?:\/\/[^\n]*\n\s*)?secret: await lafposRequestSecret\(request\),/);
   assert.doesNotMatch(modpos, /getCurrentUser|requireUser|requireAdmin/, "oturumla açılmaz");
   const serve = read("src/server/lafpos/modpos-gunler.ts");
   const handler = serve.slice(serve.indexOf("export async function serveModposDays"));
@@ -560,7 +561,7 @@ test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; 
     const route = read(file);
     assert.match(route, /export async function GET\(request: NextRequest\) \{\s*await connection\(\);/, file);
     assert.match(route, /"Cache-Control": "no-store"/, file);
-    assert.match(route, new RegExp(`${fn}\\(getDb\\(\\), \\{\\s*secret: await lafposSecret\\(\\),`), file);
+    assert.match(route, new RegExp(`${fn}\\(getDb\\(\\), \\{\\s*(?:\\/\\/[^\\n]*\\n\\s*)?secret: await lafposRequestSecret\\(request\\),`), file);
     assert.doesNotMatch(route, /getCurrentUser|requireUser|requireAdmin/, `${file}: oturumla açılmaz`);
   }
   // Oturum ara katmanı bu uçlara dokunmaz (imza tek kapı)

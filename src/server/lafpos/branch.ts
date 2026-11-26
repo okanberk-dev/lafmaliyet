@@ -3,6 +3,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 
 import { LAFPOS_GROUP } from "@/lib/branch-settings/groups";
+import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifySignature } from "@/lib/karaoke/signature";
 import { staffBlindDay } from "@/lib/lafpos/kor-kasa";
 import { lafposSecretFrom, lafposSecretProblem } from "@/lib/lafpos/request";
 import { branchSwitchDay, isLafposDay, lafposBranchOf } from "@/lib/lafpos/switch";
@@ -28,9 +29,9 @@ export const LAFPOS_BRANCH_CACHE_MS = 60_000;
 
 let cache = new WeakMap<object, { at: number; id: string }>();
 
-/** LafPOS'un şubesi (türetilmiş; önbellekli). `now` testler için */
-export async function lafposBranchId(db: Reader = getDb(), now: number = Date.now()): Promise<string> {
-  const hit = cache.get(db);
+/** LafPOS'un şubesi (türetilmiş; önbellekli). `now` testler için; `fresh`: önbelleğe bakmadan kütükten (anahtarın güncelliği) */
+export async function lafposBranchId(db: Reader = getDb(), now: number = Date.now(), fresh = false): Promise<string> {
+  const hit = fresh ? undefined : cache.get(db);
   if (hit && now - hit.at < LAFPOS_BRANCH_CACHE_MS) return hit.id;
   const rows = await db.select({ id: s.branches.id, kind: s.branches.kind, posSource: s.branches.posSource, active: s.branches.active, sortOrder: s.branches.sortOrder, name: s.branches.name }).from(s.branches);
   // Kütüğün sırası (sortBranches ile aynı: sıra, sonra ad): birden çok LafPOS şubesinde seçim sabit kalsın
@@ -112,25 +113,83 @@ export async function lafposSecretEnv(db: Reader = getDb(), env: Env = process.e
 let secretCache = new WeakMap<object, { at: number; stored: string | null }>();
 
 /**
- * LafPOS'un anahtarı (panelde saklanan, yoksa ortamdaki; en az 32 karakter, sitenin anahtarından ayrı); yoksa null (uçlar
- * 503). İmzalı uçlar imzayı denetlemeden önce bunu okur: imzasız istek her seferinde veritabanını okutmasın diye panelde
- * saklanan anahtar LafPOS'un şubesi gibi önbellekli (`LAFPOS_BRANCH_CACHE_MS`; anahtar kaydedilince ya da kasa kaynağı
- * değişince hemen düşer). Veritabanı okunamazsa null: uç 500 değil 503 döner (anahtar okunamadı, istek kabul edilmez)
+ * Anahtarın okunuşu: anahtar (yoksa null), önbelleğe yazıldığı an ve bu çağrıda veritabanından mı okundu (`fresh`).
+ * Veritabanından okunurken LafPOS'un şubesi de kütükten taze okunur (anahtar şubenin ayarı). `force`: önbelleğe
+ * bakılmaz. Veritabanı okunamazsa null
  */
-export async function lafposSecret(db: Reader = getDb(), env: Env = process.env, now: number = Date.now()): Promise<string | null> {
-  let stored: string | null;
-  const hit = secretCache.get(db);
-  if (hit && now - hit.at < LAFPOS_BRANCH_CACHE_MS) stored = hit.stored;
+async function secretEntry(db: Reader, env: Env, now: number, force = false): Promise<{ secret: string | null; at: number; fresh: boolean } | null> {
+  const hit = force ? undefined : secretCache.get(db);
+  let entry: { at: number; stored: string | null };
+  let fresh = false;
+  if (hit && now - hit.at < LAFPOS_BRANCH_CACHE_MS) entry = hit;
   else {
     try {
-      stored = (await resolveBranchSetting(LAFPOS_GROUP, await lafposBranchId(db), db)).value.secret ?? null;
+      entry = { at: now, stored: (await resolveBranchSetting(LAFPOS_GROUP, await lafposBranchId(db, now, true), db)).value.secret ?? null };
     } catch (e) {
       console.error("[lafpos] anahtar okunamadı", e);
       return null;
     }
-    secretCache.set(db, { at: now, stored });
+    secretCache.set(db, entry);
+    fresh = true;
   }
-  return lafposSecretFrom(stored ? { ...env, LAFPOS_SYNC_SECRET: stored } : env);
+  return { secret: lafposSecretFrom(entry.stored ? { ...env, LAFPOS_SYNC_SECRET: entry.stored } : env), at: entry.at, fresh };
+}
+
+/**
+ * LafPOS'un anahtarı (panelde saklanan, yoksa ortamdaki; en az 32 karakter, sitenin anahtarından ayrı); yoksa null (uçlar
+ * 503). Önbellekli (`LAFPOS_BRANCH_CACHE_MS`; bu sunucu örneğinde anahtar kaydedilince ya da kasa kaynağı değişince
+ * hemen düşer): imzasız istek her seferinde veritabanını okutmaz. Veritabanı okunamazsa null: uç 500 değil 503 döner
+ * (anahtar okunamadı, istek kabul edilmez). İmzalı uçlar isteği kabul etmeden önce `lafposRequestSecret` ile okur:
+ * önbellek yalnız ön süzgeçtir, döndürülen eski anahtar başka bir sunucu örneğinde de hemen geçmez
+ */
+export async function lafposSecret(db: Reader = getDb(), env: Env = process.env, now: number = Date.now()): Promise<string | null> {
+  return (await secretEntry(db, env, now))?.secret ?? null;
+}
+
+/**
+ * İmzası tutmayan istekte anahtar önbellekten en çok bu sıklıkla yeniden okunur (sunucu örneği başına): başka bir
+ * örnekte kaydedilen yeni anahtar 60 sn değil en geç bu kadar sonra kabul edilir; imzasız istek yağmuru veritabanını
+ * bundan sık okutamaz
+ */
+export const LAFPOS_SECRET_RELOAD_MS = 10_000;
+
+/**
+ * İmzalı LafPOS isteğinin denetleneceği anahtar (döndürülen anahtar her sunucu örneğinde hemen geçersiz; güvenlik notu
+ * 26 Kasım 2026, docs/LAFPOS.md). Önbellekteki anahtar yalnız ön süzgeçtir:
+ *
+ * - İmza önbellekteki anahtarla **tutuyorsa** anahtar kabulden önce veritabanından (LafPOS'un şubesi dahil, önbelleksiz)
+ *   yeniden okunur ve o döner. Anahtar başka bir örnekte döndürüldüyse uç yeni anahtarla denetler: eski anahtarla
+ *   imzalanmış istek 401 alır, önbellek de yenilenir. Bu okuma yalnız imzası tutan (LafPOS'un kendi) isteklerinde
+ *   olur; uçların her biri zaten veritabanında iş yapar.
+ * - İmza **tutmuyorsa** önbellekteki anahtar döner (uç 401 verir, veritabanı okunmaz); önbellek
+ *   `LAFPOS_SECRET_RELOAD_MS`'tan eskiyse bir kez yeniden okunur (yeni anahtarla imzalanmış istek beklemeden geçsin).
+ * - Anahtar bu çağrıda zaten veritabanından okunduysa yeniden okunmaz.
+ *
+ * Uç dönen anahtarla `checkLafposRequest`'i her zamanki gibi çağırır (imza bir kez daha denetlenir).
+ */
+export async function lafposSecretFor(
+  req: { method: string; url: URL; body: string; timestamp: string | null; signature: string | null },
+  db: Reader = getDb(),
+  env: Env = process.env,
+  now: number = Date.now(),
+): Promise<string | null> {
+  const first = await secretEntry(db, env, now);
+  if (!first) return null;
+  if (first.fresh) return first.secret;
+  const signed = first.secret !== null && verifySignature(first.secret, { ...req, now });
+  if (signed || now - first.at >= LAFPOS_SECRET_RELOAD_MS) return (await secretEntry(db, env, now, true))?.secret ?? null;
+  return first.secret;
+}
+
+/** Yol işleyicisinin isteğinden `lafposSecretFor` (GET gövdesiz; POST'ta okunan gövde verilir) */
+export function lafposRequestSecret(request: Request, body = ""): Promise<string | null> {
+  return lafposSecretFor({
+    method: request.method,
+    url: new URL(request.url),
+    body,
+    timestamp: request.headers.get(TIMESTAMP_HEADER),
+    signature: request.headers.get(SIGNATURE_HEADER),
+  });
 }
 
 /** Anahtarın önbelleğini düşürür (panelde anahtar kaydedildi ya da silindi; kasa kaynağı değişti) */

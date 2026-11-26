@@ -370,7 +370,9 @@ yazma `src/server/branch-settings.ts`.
     geçiş gününü okuyan her yer buna iner, eski kayıt doğrudan okunmaz: `tests/sube-ayarlari-2.test.ts`). Ayarlar ›
     LafPOS geçiş gününü bu satıra yazar; kasa kaynağı başka şubeye geçerse Marina'nın günü ona geçmez, o şube kendi gününü
     alır. Anahtar panelde şifreli saklanabilir: ortamdakinin önüne geçer (`lafposSecret`; imzalı uçlar için önbellekli,
-    kayıtta düşer; veritabanı okunamazsa uç 503), tarayıcıya, işlem geçmişine ve yedeğe gitmez. Kaydetme ve silme
+    kayıtta düşer; önbellek ön süzgeç: imza tutunca anahtar veritabanından yeniden okunur, döndürülen eski anahtar başka
+    sunucu örneğinde de hemen geçmez, [LAFPOS.md](LAFPOS.md); veritabanı okunamazsa uç 503), tarayıcıya, işlem
+    geçmişine ve yedeğe gitmez. Kaydetme ve silme
     yöneticinin parolasıyla (anahtar gün sonu yazımlarının güven kökü). Kart LafPOS'un (türetilmiş) şubesinde: bugünkü
     kurulumda kütükte kaynağı ModPOS olsa da Marina'da ("Kasa kaynağı Şubeler'de hâlâ ModPOS" notuyla); geçiş günü orada
     gösterilir, Ayarlar › LafPOS'ta değişir. Ayarlar › LafPOS anahtarın nereden okunduğunu yazar, şube sayfasına bağlanır.
