@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { htmlText } from "./helpers/html-metin";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -58,7 +59,7 @@ test("e-posta: konu aşamaları sayar, gruplar gecikmiş → bugün → yaklaşa
   assert.deepEqual([...order].sort((a, b) => a - b), order);
   assert.match(html, /<h1[^>]*>3 ödeme sizi bekliyor<\/h1>/);
   // Rozetler etiketsiz okununca da ayrı (inline-block'u tanımayan Outlook'ta "gecikmiş1 bugün" olmaz)
-  assert.ok(html.replace(/<[^>]+>/g, "").includes("1 gecikmiş 1 bugün 1 yaklaşan"));
+  assert.ok(htmlText(html).includes("1 gecikmiş 1 bugün 1 yaklaşan"));
   assert.ok(html.includes("20 Ekim Salı"));
   assert.ok(text.startsWith("L'Affogato · 20.10.2026\nÖdeme hatırlatması"));
 });

@@ -56,6 +56,7 @@ import { APP_URL } from "../src/server/notify/digest-template";
 import { renderWeekly, WEEKLY_FOOTER } from "../src/server/notify/weekly-template";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 import type { TaxPlanFeed } from "../src/lib/tax/view";
+import { esc } from "../src/lib/email-kit";
 
 const NB = " ";
 const W44 = weekInfo("2026-10-26");
@@ -588,7 +589,7 @@ test("e-posta: konu, başlık, bağlantılar, kaçış, alt not, düz metin, oku
   assert.ok(r.html.includes('class="em-h1"'));
   assert.ok(r.html.includes(">Geçen hafta kasa cirosu 68.900 ₺ · önceki 4 haftaya göre %12 az</div>"));
   for (const [i, x] of five.entries()) {
-    assert.ok(r.html.includes(`>${x.action.replace("&", "&amp;")} →</a>`), x.action);
+    assert.ok(r.html.includes(`>${esc(x.action)} →</a>`), x.action);
     assert.ok(r.html.includes(`>${i + 1}</td>`), String(i + 1));
   }
   assert.ok(r.html.includes("Haftalık özet · 19–25 Ekim"));
