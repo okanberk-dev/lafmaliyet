@@ -7,15 +7,17 @@ import QRCode from "qrcode";
 import { z } from "zod";
 
 import { nameTakenBy, sameName } from "@/lib/activity-person";
+import { needsTwoFactorSetup, twoFactorSetupHref } from "@/lib/admin-security";
 import { PROFILE_LIST_REFUSAL, PROFILE_OWN_LIST_REFUSAL } from "@/lib/notify-recipients";
 import { canOpen, homeFor } from "@/lib/roles";
 import { WRONG_PASSWORD } from "@/lib/step-up";
 import { openPendingSecret, pendingSecret, SETUP_EXPIRED, SETUP_MAX, SETUP_STOPPED } from "@/lib/two-factor-setup";
 import { hashPassword, passwordProblem, verifyPassword } from "@/server/auth/password";
-import { clearPending, endSession, readDevice, readPending, rememberDevice, requireUser, startPending, startSession } from "@/server/auth/dal";
+import { clearPending, endSession, readDevice, readPending, rememberDevice, requireSignedIn, requireUser, startPending, startSession } from "@/server/auth/dal";
 import { clearDeviceAttempts, consumeRecoveryList, consumeTotpStep, DEVICE_MAX_FAILED, refundDeviceAttempt, reserveDeviceAttempt, type Reservation } from "@/server/auth/login-locks";
 import { clientIp, createLimiter, createLockout } from "@/server/auth/rate-limit";
-import { isKnownDevice, verifyPending, type DeviceToken } from "@/server/auth/session";
+import { noteNewDevice } from "@/server/auth/new-device";
+import { deviceSeenBefore, isKnownDevice, verifyPending, type DeviceToken } from "@/server/auth/session";
 import { confirmPassword, requirePassword } from "@/server/auth/step-up";
 import {
   consumeRecoveryCode,
@@ -161,10 +163,15 @@ async function logLock(user: { id: number; name: string; email: string }, where:
 
 async function completeLogin(user: typeof s.users.$inferSelect, next: string | undefined) {
   await getDb().update(s.users).set({ lastLoginAt: new Date(), failedLogins: 0, lockedUntil: null }).where(eq(s.users.id, user.id));
+  // Yeni cihaz (src/lib/admin-security.ts): bu tarayıcıdan bu hesapla daha önce giriş yapılmadıysa; hesabın ilk girişi sayılmaz
+  const fresh = user.lastLoginAt !== null && !deviceSeenBefore(await readDevice(), user.id);
   const did = await rememberDevice(user);
   await clearDeviceAttempts(getDb(), user.id, did);
   await startSession(user);
-  redirect(safeNext(next, user.role));
+  if (fresh) await noteNewDevice(user, await headers());
+  const target = safeNext(next, user.role);
+  // İki adımlısı kapalı yönetici panel yerine kurulum ekranına (zorunluluk; ADMIN_2FA_OPTIONAL=1 kapatır)
+  redirect(needsTwoFactorSetup(user) ? twoFactorSetupHref(target) : target);
 }
 
 export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
@@ -415,7 +422,8 @@ async function dropPendingSecret(userId: number, sealed?: string) {
  */
 export async function beginTotpSetup(password: string) {
   return attempt(async () => {
-    const me = await requireUser();
+    // Kurulum ekranından da (iki adımlısı olmayan yönetici; src/lib/admin-security.ts) çağrılır
+    const me = await requireSignedIn();
     const u = await requirePassword(me, password, "Hesabım");
     if (u.totpEnabled) throw new UserError("İki adımlı doğrulama zaten açık");
     const secret = generateTotpSecret();
@@ -437,7 +445,7 @@ const hashCodes = (userId: number, codes: string[]) => Promise.all(codes.map((c)
  */
 export async function confirmTotpSetup(code: string) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = await requireSignedIn();
     const db = getDb();
     const [u] = await db.select().from(s.users).where(eq(s.users.id, me.id)).limit(1);
     if (!u?.totpSecret || u.totpEnabled) throw new UserError("Önce kurulumu başlatın");
@@ -480,7 +488,7 @@ export async function confirmTotpSetup(code: string) {
  */
 export async function cancelTotpSetup() {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = await requireSignedIn();
     await dropPendingSecret(me.id);
     return null;
   });

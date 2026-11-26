@@ -6,6 +6,7 @@ import { eq, lt, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { needsTwoFactorSetup, TWO_FACTOR_SETUP_PATH } from "@/lib/admin-security";
 import { STAFF_HOME } from "@/lib/roles";
 import { getDb, schema as s } from "@/server/db";
 
@@ -47,8 +48,11 @@ export interface CurrentUser {
   branchId?: string | null;
 }
 
-/** Oturumdaki kullanıcıyı doğrular ve veritabanında hâlâ aktif mi diye bakar. */
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+/** Oturumun kullanıcısı ve iki adımlıyı kurmadan panele giremeyen yönetici mi (src/lib/admin-security.ts) */
+type SessionUser = CurrentUser & { needsTwoFactor: boolean };
+
+/** Oturumu doğrular ve kullanıcı veritabanında hâlâ aktif mi diye bakar (iki adımlı zorunluluğunu söyler, uygulamaz) */
+async function readSessionUser(): Promise<SessionUser | null> {
   const token = readCookie(await cookies(), SESSION_COOKIE, LEGACY_COOKIES.session.name);
   const session = await verifySession(token);
   if (!session) return null;
@@ -62,6 +66,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       branchId: s.users.branchId,
       active: s.users.active,
       sessionVersion: s.users.sessionVersion,
+      totpEnabled: s.users.totpEnabled,
       revoked: s.revokedSessions.id,
     })
     .from(s.users)
@@ -71,20 +76,47 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   // Parola / iki adımlı doğrulama değiştiyse ya da yönetici oturumları kapattıysa eski çerez geçmez; çıkış yapılmış
   // oturumun çerezi de (kopyası alınmış olsa bile) geçmez
   if (!u || !u.active || (session.sv ?? 1) !== u.sessionVersion || u.revoked) return null;
-  return { id: u.id, name: u.name, email: u.email, role: u.role, branchId: u.role === "staff" ? u.branchId : null };
+  return { id: u.id, name: u.name, email: u.email, role: u.role, branchId: u.role === "staff" ? u.branchId : null, needsTwoFactor: needsTwoFactorSetup(u) };
+}
+
+const toCurrent = ({ needsTwoFactor: _n, ...u }: SessionUser): CurrentUser => (void _n, u);
+
+/**
+ * Oturumdaki kullanıcı. İki adımlıyı kurmamış yönetici (zorunluluk açıkken; docs/DEPLOY.md › 6a) burada oturumsuz
+ * sayılır: veri uçları (canlı veri, dışa aktarma, fotoğraflar…) ona hiçbir şey vermez; sayfalar ve eylemler requireUser
+ * ile kurulum ekranına gönderir.
+ */
+export async function getCurrentUser(): Promise<CurrentUser | null> {
+  const u = await readSessionUser();
+  return u && !u.needsTwoFactor ? toCurrent(u) : null;
+}
+
+/** Oturum yoksa ya da geçersizse giriş sayfası (requireUser ve requireSignedIn ortak) */
+async function toLogin(): Promise<never> {
+  const token = readCookie(await cookies(), SESSION_COOKIE, LEGACY_COOKIES.session.name);
+  redirect(token ? `/giris?${await expiredLoginQuery(token)}` : "/giris");
 }
 
 /**
  * Sayfa ve eylemlerde: giriş yapmamışsa giriş sayfasına yönlendirir. Çerez duruyor ama geçersizse (parola değişti,
  * hesap pasif, çıkış yapıldı) "oturum bitti" ve çerezin özetiyle gider; proxy o zaman yalnız bu çerezi siler (yoksa
- * /giris ↔ /panel arasında döngü olurdu; özetsiz `?oturum=bitti` geçerli oturumu silemez).
+ * /giris ↔ /panel arasında döngü olurdu; özetsiz `?oturum=bitti` geçerli oturumu silemez). İki adımlıyı kurmamış
+ * yönetici (zorunluluk açıkken) panel yerine kurulum ekranına gider: kurmadan hiçbir ekranı ve eylemi kullanamaz.
  */
 export async function requireUser(): Promise<CurrentUser> {
-  const user = await getCurrentUser();
-  if (!user) {
-    const token = readCookie(await cookies(), SESSION_COOKIE, LEGACY_COOKIES.session.name);
-    redirect(token ? `/giris?${await expiredLoginQuery(token)}` : "/giris");
-  }
+  const user = await readSessionUser();
+  if (!user) return toLogin();
+  if (user.needsTwoFactor) redirect(TWO_FACTOR_SETUP_PATH);
+  return toCurrent(user);
+}
+
+/**
+ * Yalnız iki adımlı kurulum ekranı ve kurulum eylemleri (başlat, onayla, vazgeç): giriş yapmış herkes geçer, iki
+ * adımlıyı henüz kurmamış yönetici de. Başka hiçbir yerde kullanılmaz (tests/yonetici-guvenlik.test.ts tutar).
+ */
+export async function requireSignedIn(): Promise<SessionUser> {
+  const user = await readSessionUser();
+  if (!user) return toLogin();
   return user;
 }
 
