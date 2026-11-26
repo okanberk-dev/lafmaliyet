@@ -1565,6 +1565,13 @@ export const cashReports = pgTable(
     countedCash: doublePrecision("counted_cash").notNull().default(0),
     handedOver: doublePrecision("handed_over").notNull().default(0),
     /**
+     * Sayımdan sonra teslim edileni alan ("Kime"; Teslim defteri, docs/KASA-RAPORU.md › Teslim defteri): yönetici
+     * kullanıcının adı, "Banka" ya da elle yazılan ad (en çok 60). Teslim yoksa boş; alan gelmeden önceki raporlarda boş
+     */
+    handedTo: text("handed_to"),
+    /** Teslimi alan yönetici hesabıysa kimliği (adı handedTo'da kalır, hesap silinse de okunur) */
+    handedToUserId: integer("handed_to_user_id").references(() => users.id, { onDelete: "set null" }),
+    /**
      * Banka gün sonu fişinin net toplamı (yazarkasa Z'sinin kart satırı değil); yazarkasa kartı yoksa ModPOS'taki kartla
      * karşılaştırılır. Yazarkasa bölümünden (dalga 13) önceki raporlarda tek kart kanıtı: o günlerde Z'nin kart satırını
      * da tutabilir, anlam iddia edilmez
@@ -1645,6 +1652,31 @@ export const cashReportRevisions = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("cash_report_revisions_report_idx").on(t.reportId)],
+);
+
+/**
+ * Kör sayım (docs/KASA-RAPORU.md › Kör sayım; şube ayarı kasa.kor): personel çekmecedeki nakdi önce sayıp kilitler,
+ * olması gereken ve kasa farkı ancak ondan sonra görünür. Sayım başına bir satır, yalnız eklenir: ilk satır kör sayımdır
+ * (neden yok), sonrakiler değişikliktir (neden zorunlu) ve yöneticiye görünür. Günün geçerli sayımı en son satırdır;
+ * personelin raporundaki sayılan nakit ona eşit olmak zorundadır (src/server/cash/blind-count.ts). Rapordan bağımsızdır:
+ * rapor silinse de sayım geçmişi kalır.
+ */
+export const cashCounts = pgTable(
+  "cash_counts",
+  {
+    id: serial("id").primaryKey(),
+    branchId: branchId(),
+    /** Kasanın iş günü (YYYY-MM-DD) */
+    date: text("date").notNull(),
+    /** Sayılan nakit (TL) */
+    amount: doublePrecision("amount").notNull(),
+    /** Değişikliğin nedeni; ilk (kör) sayımda boş */
+    reason: text("reason"),
+    userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+    userName: text("user_name").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("cash_counts_day_idx").on(t.date, t.branchId)],
 );
 
 /**

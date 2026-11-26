@@ -813,7 +813,7 @@ atsın"; `src/server/lafpos/foto.ts`, kurallar `src/lib/lafpos/foto.ts`):
   (`saveCashReport`): personel LafPOS gününde yeni rapor yazmaz, otomatik raporu değiştirmez ("rakamlarını yalnız yönetici
   düzeltir"), yöneticinin yedek yolla elle girdiği raporu da değiştirmez (kör kasa, 25 Kasım 2026; aşağıda). LafPOS hiç
   göndermezse raporu yönetici girer; dünden eski gün personelin geç rapor yolundan girilir.
-- **Kör kasa** (denetim 25 Kasım 2026, bulgu 0; `src/lib/lafpos/kor-kasa.ts`): kasiyer LafPOS'ta çekmeceyi kör sayar
+- **Kör kasa** (denetim 25 Kasım 2026, bulgu 0; `src/lib/lafpos/kor-kasa.ts`; panelde girilen ModPOS günlerinin karşılığı [KASA-RAPORU.md](KASA-RAPORU.md#kör-sayım) › Kör sayım): kasiyer LafPOS'ta çekmeceyi kör sayar
   (`kasa.rakam` yok); panel de LafPOS'un şubesinde geçiş gününden itibaren personele **açılışı, sayılan nakdi, teslimi,
   olması gerekeni, kasa farkını ve ertesi güne devri göstermez**. Önceden kasiyer kapanıştan saniyeler sonra panelde ve
   Bugün'de "750 ₺ eksik" görüyor, ekran ona LafPOS'ta düzeltip yeniden göndermesini söylüyordu. Kurallar:

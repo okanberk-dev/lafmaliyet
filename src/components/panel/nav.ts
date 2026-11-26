@@ -19,6 +19,7 @@ import {
   Gift,
   Globe,
   Grid3x3,
+  HandCoins,
   HardDriveDownload,
   HandCoins,
   HelpCircle,
@@ -88,6 +89,15 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         keywords: "onay bekleyen reçete değişikliği personel önerisi istek kasa düzeltme geç rapor zayi kapalı gün",
       },
       { href: "/panel/kasa", label: "Kasa raporu", icon: Banknote, roles: ["admin", "staff"], keywords: "kasa z raporu gün sonu modpos nakit sayım eksik fazla kapanış whatsapp" },
+      // Kasa raporu'nun alt ekranı, yalnız yönetici (kenar çubuğunda ayrı öğesi yok; Kasa'nın ay görünümünden ve ⌘K'dan;
+      // docs/KASA-RAPORU.md › Teslim defteri)
+      {
+        href: "/panel/kasa/teslim",
+        label: "Teslim defteri",
+        icon: HandCoins,
+        roles: ["admin"],
+        keywords: "teslim defteri kime teslim edildi patron banka yatırıldı nakit teslim alan kasadan çıkan lafpos alıcı",
+      },
     ],
   },
   {
@@ -776,6 +786,7 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/onaylar": "Onaylar",
   "/panel/kontrol/gecmis": "Kontrol geçmişi",
   "/panel/kasa/fiyatlar": "Kasadaki fiyatlar",
+  "/panel/kasa/teslim": "Teslim defteri",
   "/panel/kontrol/duzenle": "Listeleri düzenle",
   "/panel/karaoke/doluluk": "Doluluk",
   "/panel/komisyonlar": "Komisyonlar",
