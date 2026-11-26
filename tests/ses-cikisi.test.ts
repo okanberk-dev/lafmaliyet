@@ -96,10 +96,11 @@ test("sesi sekme çalıyorsa sistem bildirimi sessiz (işletim sisteminin sesi B
   assert.doesNotMatch(center, /silent: prefs\.sound/);
 });
 
-test("mikrofon izni yalnız panel sayfalarında ve yalnız bu site için", () => {
+test("mikrofon ve kamera izni yalnız panel sayfalarında ve yalnız bu site için", () => {
   const config = readFileSync(join(process.cwd(), "next.config.ts"), "utf8");
+  // Panelin dışında ikisi de kapalı; panelde yalnız bu site (kamera: belge tarayıcının canlı vizörü)
   assert.match(config, /\{ key: "Permissions-Policy", value: "camera=\(\), microphone=\(\), geolocation=\(\), payment=\(\), usb=\(\)" \}/);
-  assert.match(config, /const PANEL_PERMISSIONS = \{ key: "Permissions-Policy", value: "camera=\(\), microphone=\(self\), geolocation=\(\), payment=\(\), usb=\(\)" \}/);
+  assert.match(config, /const PANEL_PERMISSIONS = \{ key: "Permissions-Policy", value: "camera=\(self\), microphone=\(self\), geolocation=\(\), payment=\(\), usb=\(\)" \}/);
   assert.match(config, /\{ source: "\/panel\/:path\*", headers: \[PANEL_PERMISSIONS\] \}/);
   // Açılan mikrofon hemen kapatılır
   const client = readFileSync(join(process.cwd(), "src/components/panel/live/output-client.ts"), "utf8");
