@@ -11,6 +11,9 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–26 Kasım 2026)
 
+- **Belge tarayıcı** (#160, 26 Kasım): tarama ekranı (kenar yeşil, köşeler sürüklenir, Belge / Gri / Renkli / Orijinal),
+  canlı kamera vizörü ve otomatik çekim, kalite uyarısı ve Yeniden çek, sayfa yönü, uzun fişte Devamını çek; algılama
+  ölçümle 52/96 → 89/96. Sahibe söylenecek: gerçek iPhone ve Android'de bir kez denensin.
 - **Dalga 1** (#146): kör kasa, fişsiz çıkış, kasa formu taslağı, vardiya çakışması, part-time silme koruması, 09:00 zili, "Tümü" kâr dönemi, şube oranı, zil ve rozetler, büyüme gösterimi, eski Excel kalıntılarının kaldırılması, dışa aktarımın profesyonelleşmesi.
 - **Uyarı satırları yalnız personelde** (#145).
 - **GitHub `CRON_SECRET` eklendi** (26 Kasım 2026): kontrol listesi hatırlatmalarının yedek tetikleyicisi (Kontrol listesi
@@ -55,7 +58,6 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 ## Devam eden (26 Kasım akşamı)
 
 Ayrıntı, sıra ve devam istemi: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md).
-- PR #160: belge tarayıcı (tarama ekranı, canlı kamera vizörü, kalite / yön / uzun fiş). CI yeşil olunca birleşir.
 - `wip/entegre3`: "Müdür" ve salt okunur "Muhasebeci" rolleri + vardiyanın şube ayarları; incelemenin doğruladığı 12 bulgu
   düzeltilecek, sonra PR.
 - `wip/excel-bagimsiz`: Excel'den tam bağımsızlık (canlıda kendiliğinden tohum yok, başlangıç verisi uygulama ağacının

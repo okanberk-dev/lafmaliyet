@@ -17,18 +17,17 @@ PR numarasıyla "Bitenler"e, önemsiz/geçersiz olan silinir).
 - Belgeler değişince `npm run asistan:bilgi` (tests/panel-asistani.test.ts denetler).
 - Commit iletileri Türkçe; sonuna `Co-Authored-By` ve `Claude-Session` satırları.
 
-## 1. PR #160 — belge tarayıcı (dal `wip/tarama`)
+## 1. PR #160 — belge tarayıcı (dal `wip/tarama`) — BİRLEŞTİ (26 Kasım 17:35, main 1ed3584a)
 
 Tarama ekranı, canlı kamera vizörü, kalite / yön / uzun fiş, ölçümle ayarlanmış algılama. Göç `0096_foto_tarama`.
 CI ilk koşuda `tests/lafpos-sube-db.test.ts` yüzünden kırmızıydı: bu test #157'den beri main'de de düşüyor (oturum taklidinde
-`requireAnaAdmin` yoktu). Düzeltme b3d10654 ile dala eklendi. **Yapılacak:** CI "Tip · Lint · Test · Derleme" yeşilse
-birleştir (main de yeşile döner). Kırmızıysa iş günlüğünden düşen testi bul, düzelt.
+`requireAnaAdmin` yoktu). Düzeltme b3d10654 ile dala eklendi. Bitti: CI yeşildi, main'e birleşti; main yeniden yeşil. Yayından sonra gerçek telefonda denenmeli (aşağıda).
 
 ## 2. Roller + vardiya şube ayarları (dal `wip/entegre3`, PR henüz yok)
 
 İçerik: "Müdür" (şubesine kilitli, maaş görmez) ve salt okunur "Muhasebeci" rolleri (docs/ROLLER.md), vardiyanın şube
 ayarları (hazır vardiya saatleri şube ayarı; "Tümü"de Vardiya önce şubeyi sorar), main #157–#159 ile birleşmiş, rol testinin
-`requireAnaAdmin` düzeltmesi. Göç `0096_roller` (iki CHECK kısıtı) — **#160 birleşince 0097'ye yeniden üretilmeli.**
+`requireAnaAdmin` düzeltmesi. Göç `0096_roller` (iki CHECK kısıtı) — **#160 main'e `0096_foto_tarama`'yı soktu: rol göçü 0097 olarak yeniden üretilmeli.**
 
 Bağımsız inceleme (iki doğrulayıcı) şu bulguları DOĞRULADI; PR'dan önce düzeltilmeli (her birine test):
 1. (orta) Müdür, Onaylar'da kasadan çıkan isteğini onaylarken maaş / kira kategorisine harcama yazabiliyor
