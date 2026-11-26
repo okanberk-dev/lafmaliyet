@@ -10,10 +10,12 @@
 // Çalıştırma: ROLLER_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx tsx --test tests/roller-db.test.ts
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { join } from "node:path";
 import { after, before, beforeEach, describe, test } from "node:test";
 
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
@@ -310,6 +312,48 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
         await db.delete(s.expenseEntries).where(eq(s.expenseEntries.id, entry.id));
         for (const o of outs) await db.delete(s.cashOuts).where(eq(s.cashOuts.id, o.id));
         await db.delete(s.expenseCategories).where(eq(s.expenseCategories.id, cat.id));
+      }
+    });
+
+    test("fiş okuması müdüre yöneticinin kategorisini önermez (yazımda reddedilirdi; bulgu 1)", async () => {
+      const read = await import("../src/server/photo-read/read");
+      // Kayıtlı yanıt (tests/fixtures/foto/fis-soluk.json) hep aynı kategoriyi seçer: o kategori bu testte yöneticinin
+      // (reklam) olur, müdürün seçemediği
+      const fixture = JSON.parse(readFileSync(join(process.cwd(), "tests", "fixtures", "foto", "fis-soluk.json"), "utf8")) as { json: { categoryId: number } };
+      const catId = fixture.json.categoryId;
+      const [cat] = await db.select().from(s.expenseCategories).where(eq(s.expenseCategories.id, catId));
+      assert.ok(cat, "kayıtlı yanıtın kategorisi veritabanında var");
+      const env = process.env as Record<string, string | undefined>;
+      const saved = { NODE_ENV: env.NODE_ENV, AI_REPLAY: env.AI_REPLAY };
+      const photoIds: number[] = [];
+      /** Kişinin yüklediği fişi kayıtlı yanıtla okur (görsel tanınmasa da fişin yanıtı döner) */
+      const readAs = async (k: Key) => {
+        await signIn(k);
+        const me = (await dal.getCurrentUser())!;
+        const [p] = await db
+          .insert(s.photos)
+          .values({ kind: "fis", storageKey: `fis/2099/${k}-${photoIds.length}.jpg`, contentType: "image/jpeg", sizeBytes: 100, createdBy: me.id, createdByName: me.name, expiresAt: new Date("2100-01-01T00:00:00Z") })
+          .returning({ id: s.photos.id });
+        photoIds.push(p.id);
+        const out = await read.readPhotoFor("fis", { photoId: p.id, bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), contentType: "image/jpeg", day: DAY, me });
+        assert.equal(out.readError, null, JSON.stringify(out));
+        const reading = out.reading as import("../src/lib/photo-read/receipt").ReceiptReading;
+        return { categoryId: reading.values.categoryId, confidence: reading.confidence.categoryId };
+      };
+      await db.update(s.expenseCategories).set({ section: "genel", panelGroup: "reklam" }).where(eq(s.expenseCategories.id, catId));
+      Object.assign(env, { NODE_ENV: "development", AI_REPLAY: "1" });
+      try {
+        assert.deepEqual(await readAs("ali"), { categoryId: catId, confidence: "high" }, "yöneticiye modelin seçtiği kategori");
+        const m = await readAs("mehmet");
+        assert.notEqual(m.categoryId, catId, "müdüre yöneticinin kategorisi önerilmez");
+        assert.equal(m.confidence, "low", "kategoriyi kendisi seçer");
+        // Personel de (kıyas)
+        assert.notEqual((await readAs("ayse")).categoryId, catId);
+      } finally {
+        Object.assign(env, saved);
+        await db.update(s.expenseCategories).set({ section: cat.section, panelGroup: cat.panelGroup }).where(eq(s.expenseCategories.id, catId));
+        await db.delete(s.aiCalls).where(inArray(s.aiCalls.photoId, photoIds));
+        await db.delete(s.photos).where(inArray(s.photos.id, photoIds));
       }
     });
 

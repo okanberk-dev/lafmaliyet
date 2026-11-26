@@ -21,6 +21,7 @@ import postgres from "postgres";
 import { computeCash, withCardExtra } from "../src/lib/cash-report";
 import { parsePosDay } from "../src/lib/lafpos/day";
 import { okcReconcile } from "../src/lib/okc-z";
+import { opsActor } from "../src/lib/roles";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 
@@ -238,6 +239,19 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "LAFPOS_TEST_DA
     await refused(foto.attachLafposDayPhotoCore(db, ayse, { date: DAY, branchId: LAFPOS_SUBE, photoId: alis }, later), /Fotoğraf bulunamadı/);
     await refused(foto.attachLafposDayPhotoCore(db, ayse, { date: DAY, branchId: LAFPOS_SUBE, photoId: await photo(null) }, new Date("2026-12-10T12:00:00+03:00")), /14 günden eski/);
     await refused(foto.attachLafposDayPhotoCore(db, ayse, { date: DAY, branchId: "tuzla", photoId: await photo(null) }, later), /eklenemez/);
+    // Müdür eyleme "admin" düzeyinde girer (opsActor) ama başkasının fotoğrafını bağlayamaz: gerçek role bakılır
+    // (src/lib/roles.ts › linksAnyPhoto; fotoğrafta şube yok, öteki şubenin bağsız fotoğrafı da olabilirdi). Yönetici bağlar
+    const [m] = await db.insert(s.users).values({ email: "tam-mudur@ornek.com", name: "Mehmet", passwordHash: "x", role: "manager", branchId: LAFPOS_SUBE }).returning({ id: s.users.id });
+    const mudur = opsActor({ id: m.id, name: "Mehmet", role: "manager" as const });
+    assert.deepEqual([mudur.role, mudur.realRole], ["admin", "manager"]);
+    const ayses = await photo(null);
+    for (const foreign of [alis, ayses]) {
+      await refused(foto.attachLafposDayPhotoCore(db, mudur, { date: DAY, branchId: LAFPOS_SUBE, photoId: foreign }, later), /Fotoğraf bulunamadı/);
+    }
+    const linked = async () => (await db.select({ id: s.cashReportPhotos.photoId }).from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, rep.id))).map((l) => l.id).sort((a, b) => a - b);
+    assert.deepEqual(await linked(), [id, other].sort((a, b) => a - b), "müdür başkasının fotoğrafını bağlamadı");
+    assert.equal((await foto.attachLafposDayPhotoCore(db, ali, { date: DAY, branchId: LAFPOS_SUBE, photoId: ayses }, later)).status, "linked", "yönetici personelin fotoğrafını bağlar");
+    assert.deepEqual(await linked(), [id, other, ayses].sort((a, b) => a - b));
   });
 
   test("Okuma kapalıyken fotoğraf yine alınır (personel 'alındı' görür, yöneticiye 'okunmadı'); yanlış belge yeniden çekilir", async () => {

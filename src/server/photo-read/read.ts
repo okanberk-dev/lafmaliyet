@@ -15,7 +15,7 @@ import { KasaOkcRaw, KasaZRaw, ReceiptRaw } from "@/lib/photo-read/schemas";
 import { addDays } from "@/lib/reminders";
 import { extractImage, loadAiSettings, type AiErrorCode, type AiResult } from "@/server/ai/claude";
 import { OKC_EFFORT, OKC_MAX_TOKENS, RETRYABLE, type AiEffort, type AiImageType, type AiTimeouts } from "@/server/ai/run";
-import { opsLevel } from "@/lib/roles";
+import { can, opsLevel } from "@/lib/roles";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentTillBranch } from "@/server/branch-scope";
 import { cashOutCategories } from "@/server/data/cash-outs";
@@ -181,7 +181,11 @@ export async function readPhotoFor(
     return { reading: kind === "kasa-pos" ? okcToLegacyPos(reading) : reading, readError: null, readCode: null, canRetry: false };
   }
   const staff = opsLevel(input.me.role) !== "admin";
-  const [categories, recent] = await Promise.all([cashOutCategories(opsLevel(input.me.role)), recentReceipts(input.day, staff)]);
+  // Önerilen kategori kişinin yazabildiklerinden (writeCashOut'un kuralı): müdür "admin" düzeyinde yazar ama maaş, kira,
+  // reklam gibi kategorileri seçemez (`kategori.tum`; docs/ROLLER.md › Kararlar). Bütün liste ona önerilseydi forma
+  // seçicide olmayan bir kategori düşer, kayıt "yalnız yönetici" diye reddedilirdi
+  const allCategories = !staff && can(input.me.role, "kategori.tum");
+  const [categories, recent] = await Promise.all([cashOutCategories(allCategories ? "admin" : "staff"), recentReceipts(input.day, staff)]);
   const run = await twoStep({ task: RECEIPT_TASK(input.day, categories), schema: ReceiptRaw, problems: receiptReadProblems, stored: receiptToStore });
   const res = run.result;
   logPhotoRead({ photoId: input.photoId, kind, steps: run.steps, model: res.ok ? res.model : null, documentType: res.ok ? res.data.documentType : null, ok: res.ok });
