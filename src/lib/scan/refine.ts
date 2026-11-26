@@ -171,7 +171,7 @@ export function snapPass(g: GrayImage, q: Quad, pass: SnapPass, fixed: readonly 
       const same = (c0: number, c1: number) => {
         if (pi === null) return false;
         const m = regionMedian(prof, valid, SAMPLES, cols, c0, c1);
-        return m !== null && Math.abs(m - pi) < Math.max(10, 0.06 * pi);
+        return m !== null && Math.abs(m - pi) < Math.max(7, 0.035 * pi);
       };
       // içeri kayma: aradaki şerit kâğıda benziyorsa (yazı satırı, tablo çizgisi) kâğıt kenarı değil
       if (oMid < -tol && same(cMid + 2, -1 - o0)) return null;
