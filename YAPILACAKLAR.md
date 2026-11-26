@@ -52,15 +52,15 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   geçersiz) ve CSP: tam politika önce yalnız raporlar (Report-Only); bir hafta Vercel günlüğünde `[csp]` satırı
   çıkmazsa `CSP_ENFORCE=1` verilip yeniden yayınlanır.
 
-## Devam eden (26 Kasım; yerel `wip/*` dallarında, ajanlar sürdürüyor)
+## Devam eden (26 Kasım akşamı)
 
-Kullanım limitiyle kesilen ajanların işi kendi dallarında "ARA KAYIT" commit'leriyle durur; yeni ajan dalından sürdürür.
-Bitince `claude/festive-goodall-sclggq`'ye birleştirilir (göç numarası çakışırsa yeniden üretilir).
-- Belge tarayıcı: çekirdek, kalite / yön / uzun fiş ve ölçüm düzeneği birleşti (henüz ekrana bağlı değil;
-  docs/FOTOGRAF.md § 11). `wip/tarama-arayuz` sürüyor; sonra bağlama + ayar, canlı vizör, inceleme.
-- En son: `roller` (Müdür, Muhasebeci), çünkü bütün yeni ekranlara dokunur.
-- E-posta tasarımı: main'deki `src/lib/email-kit.ts` (#149) geçerli; paralel yapılan `wip/eposta-*` dalları
-  birleştirilmeyecek.
+Ayrıntı, sıra ve devam istemi: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md).
+- PR #160: belge tarayıcı (tarama ekranı, canlı kamera vizörü, kalite / yön / uzun fiş). CI yeşil olunca birleşir.
+- `wip/entegre3`: "Müdür" ve salt okunur "Muhasebeci" rolleri + vardiyanın şube ayarları; incelemenin doğruladığı 12 bulgu
+  düzeltilecek, sonra PR.
+- `wip/excel-bagimsiz`: Excel'den tam bağımsızlık (canlıda kendiliğinden tohum yok, başlangıç verisi uygulama ağacının
+  dışında, Excel çıkarma betiği kalkar, exceljs güvenlik açığı).
+- Kalan işler ve "profesyonel kod" denetimi yeniden yapılacak; çıkanlar buraya yazılır.
 
 ## Sahibin tarafında (kod değil)
 
