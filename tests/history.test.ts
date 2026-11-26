@@ -23,13 +23,13 @@ import {
   valueMonthFor,
 } from "../src/lib/calc/engine";
 import type { Dataset, FixedExpense, Staff } from "../src/lib/calc/types";
-import { cleanInvoiceDescription, excelToDataset, investmentSeed, type ExcelData } from "../src/server/db/seed/excel";
+import { cleanInvoiceDescription, datasetFromSeed, investmentSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
 const golden = JSON.parse(readFileSync(join(root, "tests/golden.json"), "utf8"));
 // Excel bütün satışa tek KDV oranı uyguluyordu (karaoke dahil %10): Excel'le karşılaştırma onun varsayımıyla (calc.test.ts)
-const excel = excelToDataset(data);
+const excel = datasetFromSeed(data);
 const base: Dataset = { ...excel, settings: { ...excel.settings, kdvHizmet: excel.settings.kdv }, currentMonth: "2026-10" };
 const MONTHS = ["2026-07", "2026-08", "2026-09", "2026-10"];
 

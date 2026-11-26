@@ -165,7 +165,7 @@ test("yöneticinin fotoğrafları ve belgeleri: ortak cihazda çıkıştan sonra
   assert.doesNotMatch(foto, /max-age/);
   // Her gösteriş yetkiyi yeniden denetler; değişmeyen dosya 304 ile inmez
   const etag = foto.indexOf("if-none-match");
-  assert.ok(foto.indexOf("canViewPhoto(me, photo)") < etag && etag < foto.indexOf("readPhoto(id)"), "304 yetkiden sonra, dosyadan önce");
+  assert.ok(foto.indexOf("canViewPhoto(me, photo)") < etag && etag < foto.indexOf("readPhoto(id"), "304 yetkiden sonra, dosyadan önce");
   assert.match(foto, /const etag = `"foto-\$\{id\}-\$\{photo\.createdAt\.getTime\(\)\.toString\(36\)\}-\$\{photo\.sizeBytes\}"`;/);
   const belge = read("src/app/api/faturalar/[id]/belge/route.ts");
   assert.match(belge, /"Cache-Control": "private, no-store",/);

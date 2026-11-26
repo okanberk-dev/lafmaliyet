@@ -33,8 +33,8 @@ export function fitWithin(width: number, height: number, max: number, maxPixels 
   return { width: Math.max(1, Math.round(width * k)), height: Math.max(1, Math.round(height * k)) };
 }
 
-/** Görseli çözer; iOS ve Android'de çekilen fotoğrafın yönü (EXIF) tarayıcıda zaten uygulanır */
-async function decodeImage(url: string): Promise<HTMLImageElement> {
+/** Görseli çözer; iOS ve Android'de çekilen fotoğrafın yönü (EXIF) tarayıcıda zaten uygulanır (belge tarama da kullanır) */
+export async function decodeImage(url: string): Promise<HTMLImageElement> {
   const img = new Image();
   img.decoding = "async";
   img.src = url;
@@ -54,6 +54,9 @@ async function encodeJpeg(img: HTMLImageElement, width: number, height: number, 
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(img, 0, 0, width, height);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+  // Tuvalin belleği hemen bırakılır: iOS Safari tuvallerin toplam belleğini sınırlar, çöp toplayıcıyı beklemeden dolabilir
+  canvas.width = 0;
+  canvas.height = 0;
   if (!blob) throw new PhotoCompressError(COMPRESS_ERROR_TEXT);
   return blob;
 }

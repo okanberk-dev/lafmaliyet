@@ -223,6 +223,43 @@ test("algılama: kâğıda benzemeyen dikdörtgen (telefon, POS cihazı) — gü
   assert.ok(d2.confidence >= 0.6, `güven ${d2.confidence}`);
 });
 
+test("algılama: renkli döşemeli panel belge değil; tek renk (sarı) nüsha kâğıdı yine bulunur", () => {
+  // koyu tezgâhta açık panel, içinde altı renkli döşeme (POS ekranı gibi)
+  const panel = projectRect({ width: W, height: H, aspect: 0.75, size: 0.55, rotDeg: 6, tiltX: 10 });
+  const img = renderScene({ width: W, height: H, corners: panel, paperAspect: 0.75, background: "koyu", text: { rows: 12 }, noise: 2, blur: 0.6, seed: 31 });
+  const colors: [number, number, number][] = [
+    [220, 140, 30],
+    [40, 160, 90],
+    [130, 50, 170],
+    [200, 50, 50],
+    [40, 110, 200],
+    [210, 190, 40],
+  ];
+  const [p0, p1, , p3] = panel;
+  for (let k = 0; k < 6; k++) {
+    const u0 = 0.06 + (k % 3) * 0.31;
+    const v0 = 0.08 + Math.floor(k / 3) * 0.45;
+    for (let v = v0; v < v0 + 0.38; v += 0.002) {
+      for (let u = u0; u < u0 + 0.26; u += 0.002) {
+        const x = Math.round(p0.x + (p1.x - p0.x) * u + (p3.x - p0.x) * v);
+        const y = Math.round(p0.y + (p1.y - p0.y) * u + (p3.y - p0.y) * v);
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        img.data.set([...colors[k], 255], (y * W + x) * 4);
+      }
+    }
+  }
+  const d = detectDocument(img);
+  assert.equal(d.corners, null, `renkli panel kırpılmamalı: ${d.method} ${d.reasons.join(" ")}`);
+  assert.ok(d.reasons.includes("kagida-benzemiyor") && d.reasons.includes("renkli-icerik"), d.reasons.join(" "));
+  // sarı nüsha (bütünü doygun, tek ton): kâğıt sayılır
+  const fis = projectRect({ width: W, height: H, aspect: 1 / 3, size: 0.3, rotDeg: -5, tiltX: 12 });
+  const sari = renderScene({ width: W, height: H, corners: fis, paperAspect: 1 / 3, paper: [250, 235, 130], background: "koyu", text: { rows: 30 }, noise: 2, blur: 0.6, seed: 32 });
+  const d2 = detectDocument(sari);
+  assert.ok(d2.corners, `sarı nüsha bulunmalı: ${d2.reasons.join(" ")}`);
+  const err = cornerError(d2.corners!, fis, W, H);
+  assert.ok(err < 0.015, `sarı nüsha: köşe hatası %${(err * 100).toFixed(2)}`);
+});
+
 test("algılama: kareden taşan uzun fiş — uzun kenarlar oturur, kısa kenarlar görüntüde ve uzun kenarlara uygun", () => {
   const truth: Quad = [
     { x: 300, y: -30 },

@@ -127,7 +127,7 @@ oturumları kapanır (oturum sürümü).
 
 ## Veritabanı
 
-`users.role` text; göç `drizzle/0095_roller.sql`:
+`users.role` text; göç `drizzle/0097_roller.sql`:
 
 - `users_role_ck`: `role in ('admin','manager','staff','accountant')`;
 - `users_manager_branch_ck`: müdürde `branch_id` boş olamaz.

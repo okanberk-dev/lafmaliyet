@@ -161,6 +161,7 @@ const NOT_SECRET: Record<string, string> = {
   "invoice_readings.product_key": "Paraşüt ürününün adından anahtar (okunan fatura kalemi)",
   "pnl_entries.row_key": "gelir-gider tablosundaki satırın adı",
   "photos.storage_key": "özel Blob deposundaki dosyanın yolu; okumak için BLOB_READ_WRITE_TOKEN gerekir",
+  "photos.original_key": "taranan belgenin asıl fotoğrafının özel Blob deposundaki yolu; okumak için BLOB_READ_WRITE_TOKEN gerekir",
   "staff_documents.storage_key": "personel belgesinin özel Blob deposundaki yolu (fotoğraflarla aynı depo); okumak için BLOB_READ_WRITE_TOKEN gerekir",
   "staff_requests.client_key": "personel isteğinin çift dokunuşa karşı istemcide üretilen kimliği",
   "waste_entries.client_key": "zayi kaydının çift gönderime karşı istemcide üretilen kimliği",

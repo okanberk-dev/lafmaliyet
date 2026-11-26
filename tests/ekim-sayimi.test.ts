@@ -23,7 +23,7 @@ import postgres from "postgres";
 import { countUnitsFor } from "../src/lib/calc/engine";
 import type { CountUnit, Unit } from "../src/lib/calc/types";
 import { BASE_UNIT, COUNT_ITEM_PRICE_NOTE, groupDefaults, looseKey } from "../src/lib/count-item";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 const migrationFile = readdirSync(join(process.cwd(), "drizzle")).find((f) => f.endsWith("_ekim_sayimi.sql"));
@@ -92,7 +92,7 @@ function docNumber(text: string): number {
 /** Migration'ın önce yeniden adlandırdığı kalem (sahibinin isteği): sayım yeni adla eşlenir */
 const RENAMED: Record<string, string> = { "Smoothie powder": "Cooler base" };
 
-const excel = excelToDataset(JSON.parse(read("src/server/db/seed/excel-data.json")) as ExcelData).ingredients;
+const excel = datasetFromSeed(JSON.parse(read("tests/fixtures/baslangic/veri.json")) as SeedData).ingredients;
 const known = new Map<string, string | null>([...excel.map((i) => [i.name, i.countUnit] as const), ...Object.entries(EIGHT)]);
 for (const [now, before] of Object.entries(RENAMED)) known.set(now, known.get(before) ?? null);
 

@@ -37,7 +37,7 @@ import {
   visibilityFromSite,
 } from "../src/lib/site-menu/slot";
 import { siteMarker } from "../src/lib/site-menu/view";
-import type { ExcelData } from "../src/server/db/seed/excel";
+import type { SeedData } from "./fixtures/baslangic";
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
 
@@ -588,7 +588,7 @@ test("öneri: tek boy kalemin tek fiyatı fiyatı tutan satıra; bağlı yuva ö
 });
 
 test("öneri: Excel'in 129 ürünü sitenin tohum menüsüne; yanlış eşleşme yok, her yuva bir kez", () => {
-  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
+  const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
   const products = data.products.map((p, i) => ({ id: i + 1, name: p.name, size: p.size, price: p.price }));
   const s = suggestLinks(products, SITE_ITEMS);
   const keys = s.map((x) => `${x.siteMenuId}:${x.slot}`);

@@ -26,14 +26,14 @@ import {
 } from "../src/lib/tax/assets";
 import { rulesFor } from "../src/lib/tax/rules";
 import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const R = rulesFor(2026).rules;
 const S = DEFAULT_TAX_SETTINGS;
 /** Örnek A: şirket 2026-01-01'de başlar */
 const A = { ...DEFAULT_TAX_SETTINGS, periodStart: "2026-01-01" };
-const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
-const invoices = excelToDataset(data).invoices;
+const data: SeedData = JSON.parse(readFileSync(join(__dirname, "..", "tests/fixtures/baslangic/veri.json"), "utf8"));
+const invoices = datasetFromSeed(data).invoices;
 
 const asset = (over: Partial<TaxAsset>): TaxAsset => ({
   id: 1,

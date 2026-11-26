@@ -15,11 +15,11 @@ import type { Dataset, Invoice } from "../src/lib/calc/types";
 import { resolveMonth, tillMonths, type MonthEntry, type TillRow } from "../src/lib/cash-month";
 import { channelOf } from "../src/lib/commission/channels";
 import { addDays } from "../src/lib/reminders";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-12" };
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-12" };
 
 function close(actual: number | null | undefined, expected: number, label: string) {
   assert.ok(actual !== null && actual !== undefined && Math.abs(actual - expected) < 1e-6, `${label}: beklenen ${expected}, bulunan ${actual}`);

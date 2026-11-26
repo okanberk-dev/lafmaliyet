@@ -1,5 +1,6 @@
 // Hesaplama motorunun Excel ile birebir aynı sonucu verdiğini doğrular.
-// golden.json, scripts/excel-import/extract.py tarafından Excel'in hesapladığı değerlerden üretilir.
+// golden.json, ilk kurulumda Excel'in hesapladığı değerlerden bir kez üretildi (donmuş; çıkarma betiği 26 Kasım 2026'da
+// kaldırıldı). Girdisi başlangıç verisi: tests/fixtures/baslangic/veri.json.
 // Çalıştırma: npm test
 
 import assert from "node:assert/strict";
@@ -11,15 +12,15 @@ import { createModel } from "../src/lib/calc/engine";
 import { evaluateExpression, parseNumberTR } from "../src/lib/calc/expr";
 import { consistency, dashboard } from "../src/lib/calc/insights";
 import { DEFAULT_SETTINGS } from "../src/lib/constants";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
 const golden = JSON.parse(readFileSync(join(root, "tests/golden.json"), "utf8"));
 // Excel bütün satışa tek KDV oranı uyguluyordu (karaoke dahil %10). Panel hizmet satışını (Satışlar'da HİZMET işaretli
 // satırlar: karaoke odası) kendi oranıyla ayırır (Ayarlar › Hizmet satışı KDV, varsayılan %20). Excel'le birebir
 // karşılaştırma Excel'in varsayımıyla yapılır; ayrımın kendisi en alttaki testte.
-const ds = excelToDataset(data);
+const ds = datasetFromSeed(data);
 const model = createModel({ ...ds, settings: { ...ds.settings, kdvHizmet: ds.settings.kdv } });
 
 function close(actual: number | null | undefined, expected: number | null | undefined, label: string, tol = 1e-6) {

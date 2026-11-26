@@ -1993,6 +1993,15 @@ export const photos = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     /** Bir kayda bağlandığı an (null: bağlanmamış; yalnız yükleyen ve yönetici görür) */
     linkedAt: timestamp("linked_at", { withTimezone: true }),
+    /**
+     * Belge taranarak yüklendiyse (docs/FOTOGRAF.md › Belge tarama) asıl fotoğrafın depodaki yolu: `storage_key`
+     * taranmış hâldir (okunan ve gösterilen), bu küçültülmüş asıl hâl ("Orijinal" düğmesi, GET /api/foto/{id}?v=asil).
+     * Tür uzantıdan; fotoğrafla birlikte silinir. Taranmadan yüklenen fotoğrafta boş
+     */
+    originalKey: text("original_key"),
+    originalSize: integer("original_size"),
+    /** Taramanın bilgisi (src/lib/photo-scan.ts ScanInfo: köşeler 0–1000, mod, yöntem, güven, çeyrek dönüş) */
+    scan: jsonb("scan"),
   },
   (t) => [
     uniqueIndex("photos_storage_key_uq").on(t.storageKey),
@@ -2013,7 +2022,8 @@ export const aiCalls = pgTable(
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
     /**
      * "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya" (yazarak doldurma; okuma sınırına sayılmaz) |
-     * "asistan" (panel asistanının sorusu, docs/ASISTAN.md; okuma sınırına sayılmaz, yönetici başına kendi sınırı var)
+     * "asistan" (panel asistanının sorusu, docs/ASISTAN.md; okuma sınırına sayılmaz, yönetici başına kendi sınırı var) |
+     * "tarama" (belge taramada köşe ipucu, docs/FOTOGRAF.md › Belge tarama; okuma sınırına sayılmaz, kendi sınırı var)
      */
     feature: text("feature").notNull(),
     /** İstenen model */

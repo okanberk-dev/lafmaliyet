@@ -11,6 +11,9 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–26 Kasım 2026)
 
+- **Belge tarayıcı** (#160, 26 Kasım): tarama ekranı (kenar yeşil, köşeler sürüklenir, Belge / Gri / Renkli / Orijinal),
+  canlı kamera vizörü ve otomatik çekim, kalite uyarısı ve Yeniden çek, sayfa yönü, uzun fişte Devamını çek; algılama
+  ölçümle 52/96 → 89/96. Sahibe söylenecek: gerçek iPhone ve Android'de bir kez denensin.
 - **Dalga 1** (#146): kör kasa, fişsiz çıkış, kasa formu taslağı, vardiya çakışması, part-time silme koruması, 09:00 zili, "Tümü" kâr dönemi, şube oranı, zil ve rozetler, büyüme gösterimi, eski Excel kalıntılarının kaldırılması, dışa aktarımın profesyonelleşmesi.
 - **Uyarı satırları yalnız personelde** (#145).
 - **GitHub `CRON_SECRET` eklendi** (26 Kasım 2026): kontrol listesi hatırlatmalarının yedek tetikleyicisi (Kontrol listesi
@@ -52,18 +55,29 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   geçersiz) ve CSP: tam politika önce yalnız raporlar (Report-Only); bir hafta Vercel günlüğünde `[csp]` satırı
   çıkmazsa `CSP_ENFORCE=1` verilip yeniden yayınlanır.
 
-## Devam eden (26 Kasım; yerel `wip/*` dallarında, ajanlar sürdürüyor)
+## Devam eden (26 Kasım akşamı)
 
-Kullanım limitiyle kesilen ajanların işi kendi dallarında "ARA KAYIT" commit'leriyle durur; yeni ajan dalından sürdürür.
-Bitince `claude/festive-goodall-sclggq`'ye birleştirilir (göç numarası çakışırsa yeniden üretilir).
-- Belge tarayıcı: çekirdek, kalite / yön / uzun fiş ve ölçüm düzeneği birleşti (henüz ekrana bağlı değil;
-  docs/FOTOGRAF.md § 11). `wip/tarama-arayuz` sürüyor; sonra bağlama + ayar, canlı vizör, inceleme.
-- En son: `roller` (Müdür, Muhasebeci), çünkü bütün yeni ekranlara dokunur.
-- E-posta tasarımı: main'deki `src/lib/email-kit.ts` (#149) geçerli; paralel yapılan `wip/eposta-*` dalları
-  birleştirilmeyecek.
+Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Kod paketleri:
+- P1 Roller (Müdür, salt okunur Muhasebeci) + vardiyanın şube ayarları (`wip/entegre3`): incelemenin doğruladığı 12
+  bulgu düzeltilecek, ikinci inceleme, sonra PR.
+- P2 Excel'den tam bağımsızlık (`wip/excel-bagimsiz`): kendiliğinden tohum kalktı, başlangıç verisi uygulama dışına
+  taşındı; bağımlılık açıkları ve kişi adlarının anonimleştirilmesi kaldı.
+- P3 Hata izleme ve kalıcı hata kaydı; P4 CI ve kod sağlığı (şema–göç denetimi, asistan bilgisinin derlemede üretilmesi,
+  rol × ekran duman testi).
+- P5 Ayarlar ay bazlı + 2027 vergi kuralları (Ocak'tan önce); P6 Excel'den kalan sabit listeler (fatura / hammadde
+  kategorileri, sayım grupları) ekrandan; P7 dönem kapanışı sayım / ciro / kasaya da; P8 fotoğraf okuma doğruluğu;
+  P9 temizlik.
 
 ## Sahibin tarafında (kod değil)
 
+- [ ] **ACİL: Depo herkese açık (public).** Başlangıç verisi maaş, kira, fatura ve kişi adları taşıyor. GitHub › Settings ›
+  Danger Zone › Change visibility › Private; açığa düşmüş anahtarlar yenilensin.
+- [ ] GitHub › Settings › Branches: main için "Tip · Lint · Test · Derleme" zorunlu olsun (kırmızı CI'yla birleştirme olmasın).
+- [ ] GitHub sırrı `ANTHROPIC_API_KEY`: PR incelemesi her PR'da kırmızı.
+- [ ] Vercel planı (Hobby ticari kullanıma izin vermiyor, günlük 1 saat): Pro kararı. Vercel'de `ADMIN_2FA_REQUIRED=1`; CSP bir
+  hafta temizse `CSP_ENFORCE=1`.
+- [ ] Yayından sonra el kontrolü ve belge tarayıcının gerçek iPhone / Android'de denenmesi; muhasebecinin adresi (Ayarlar ›
+  Muhasebeci paketi); SGK işveren oranı kararı (%15,75 / %19,75); yedekten geri yükleme provası; dış sağlık izleyicisi.
 - [ ] laffogato.net veritabanının (Neon) kotası 24 Kasım'da doldu. Online sipariş, karaoke ve menü eşitlemesi duruyor. Ücretli plana geçin ya da Coolify'a taşıyın.
 - [ ] Marina gün sonu e-postasının alıcılarına bakın: 25 Kasım'dan (#141) beri yalnız Kasa › Rapor alıcıları alır (sabah
   e-postasının adresleri artık almaz). Gün sonu e-postasını almak isteyen adres Rapor alıcıları'nda olmalı.

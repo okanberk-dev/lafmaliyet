@@ -24,7 +24,7 @@ import { classifyWorkedStaff, lafposWorkedDays, lafposWorkedUnseen, posStaffItem
 import { checkPosStaffRequest } from "../src/lib/lafpos/personel-istek";
 import { taxPayrollFromModel } from "../src/lib/tax/payroll";
 import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (p: string) => readFileSync(join(root, p), "utf8");
@@ -192,8 +192,8 @@ test("sınıflama: sayılan = şubenin o ay aralıktaki satırı; başka şubeni
 
 // ---------------------------------------------------------------- yemek kartının günü
 
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const excel: Dataset = excelToDataset(data);
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const excel: Dataset = datasetFromSeed(data);
 const person = (p: Partial<Staff> & Pick<Staff, "id" | "name" | "netSalary">): Staff => ({ extras: 0, active: true, startMonth: null, endMonth: null, branchId: "marina", ...p });
 const ALPER = person({ id: 7, name: "Alper", netSalary: 35_000, mealCard: true });
 const CEM = person({ id: 12, name: "Cem", netSalary: 32_000, mealCard: true });

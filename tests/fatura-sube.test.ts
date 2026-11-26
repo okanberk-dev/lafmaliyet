@@ -28,7 +28,7 @@ import {
   unassignedGroups,
 } from "../src/lib/invoice-branch";
 import { invoiceBranchOf } from "../src/lib/parasut/accounts";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (f: string) => readFileSync(join(root, f), "utf8");
@@ -148,8 +148,8 @@ test("Faturalar süzgeci: 'Şubesi seçilmemiş' durumu ve sayacı", () => {
 });
 
 // ---------------------------------------------------------------- Gelir-gider: şubenin faturası şubenin giderinde
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const excel: Dataset = excelToDataset(data);
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const excel: Dataset = datasetFromSeed(data);
 const sarf: ExpenseCategory = { id: 1, name: "Sarf malzemesi", section: "genel", panelGroup: "diger", invoiceCategory: "Hizmet", monthly: false, active: true, sortOrder: 1 };
 const invoice = (id: number, amount: number, branch: string | null, companyWide = false): Invoice =>
   ({ id, date: "2026-11-15", supplier: `T${id}`, description: null, invoiceNo: null, category: "Hizmet", amount, discount: 0, payable: amount * 1.2, vat: amount * 0.2, unpaid: false, note: null, branchId: branch, companyWide }) as Invoice;

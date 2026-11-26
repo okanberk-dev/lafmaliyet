@@ -17,7 +17,7 @@ import type { Dataset, MonthField, TillMonth } from "../src/lib/calc/types";
 import * as lib from "../src/lib/cash-month";
 import { isReportRow, kasaMonthLine, kasaValues, missingSentence, modposRunStart, partialSentence, resolveMonth, tillMonths, type MonthEntry, type TillRow } from "../src/lib/cash-month";
 import { addDays } from "../src/lib/reminders";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (p: string) => readFileSync(join(root, p), "utf8");
@@ -296,8 +296,8 @@ test("föy günlerinin indirimi bilinmez: yalnız föylü ayda indirim boş, var
   assert.equal(kasaHint("offRevenue", info.kasa!, "kasa", ""), "ModPOS API'den (31 / 31 günde girildi). Değiştirmek için dokunun.");
   assert.equal(kasaHint("discounts", info.kasa!, "kasa", ""), null, "indirim kasadan gelmez");
   // Motor: Gelir-gider'in POS komisyonu föyün banka kartı payıyla (kart ÷ ciro; yemek kartı hariç, E-43)
-  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-  const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+  const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+  const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
   const [nov] = tillMonths(range("2026-11-01", "2026-11-30", (d) => foy(d)), "2026-12-01");
   const model = createModel({ ...ds, months: [...ds.months, resolveMonth("2026-11", undefined, nov)] });
   assert.deepEqual(model.cardShareOf("2026-11"), { rate: 0.75, source: "kasa" });

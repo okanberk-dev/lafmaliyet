@@ -45,3 +45,42 @@ export function predeploySkipReason(env: Record<string, string | undefined>): st
   }
   return null;
 }
+
+/**
+ * Derleme boş bir veritabanına başlangıç verisini (tests/fixtures/baslangic/veri.json: maaşlar, kira, faturalar,
+ * satışlar) kendiliğinden yükleyecek mi: yüklemeyecekse nedeni, yükleyecekse null. Migration'lar, ilk yönetici, şube
+ * kütüğü ve hazır kontrol listeleri bundan bağımsız, her zaman (scripts/seed.ts › runSeed `emptySkip`).
+ * - `SEED_ON_EMPTY=1`: yüklenir (canlıda da; bilerek, tek derleme için: `vercel deploy --prod --build-env SEED_ON_EMPTY=1`).
+ * - `SEED_ON_EMPTY=0`: hiçbir yerde yüklenmez (yerelde boş panelin denemesi).
+ * - Canlı (`VERCEL_ENV=production` ya da `NODE_ENV=production`) ve Vercel önizlemesi: yüklenmez. Yanlış ya da yeni
+ *   açılmış boş bir veritabanının adresi verilirse kişisel veri oraya yazılmasın; canlının boş veritabanı yedekten
+ *   (`npm run db:restore`) ya da panelden dolar.
+ * - Bu bilgisayarda olmayan veritabanı (Neon, uzak sunucu; `.env.local` canlının adresini gösterebilir): yüklenmez.
+ * - Geri kalan (yerel geliştirme, bu bilgisayardaki Postgres): yüklenir, bugünkü gibi.
+ * `npm run db:seed` ve `npm run test:db` bu karara bağlı değildir: açıkça çağrılınca yükler.
+ */
+export function emptySeedSkipReason(env: Record<string, string | undefined>, target: { host: string; local: boolean }): string | null {
+  const flag = env.SEED_ON_EMPTY?.trim();
+  if (flag === "1") return null;
+  if (flag === "0") return "SEED_ON_EMPTY=0";
+  if (env.VERCEL_ENV === "production") return "canlı derleme (VERCEL_ENV=production)";
+  if (env.NODE_ENV === "production") return "canlı ortam (NODE_ENV=production)";
+  if (env.VERCEL_ENV === "preview") return "önizleme derlemesi (VERCEL_ENV=preview)";
+  if (!target.local) return `veritabanı bu bilgisayarda değil (${target.host})`;
+  return null;
+}
+
+/** Boş veritabanında başlangıç verisi yüklenmediğinde günlüğe yazılan uyarı (docs/DEPLOY.md § 5 aynı metni gösterir) */
+export function emptySeedWarning(reason: string): string {
+  return (
+    `Veritabanı boş; başlangıç verisi yüklenmedi: ${reason}. Panel boş açılır: veri yedekten (npm run db:restore) gelir ` +
+    "ya da panelden girilir. Bilerek yüklemek için bu derlemeye SEED_ON_EMPTY=1 verin ya da npm run db:seed çalıştırın"
+  );
+}
+
+/** Bilerek açılmış yükleme (SEED_ON_EMPTY=1, canlıda ya da uzak veritabanında): derleme sürer, günlüğe uyarı yazılır */
+export function emptySeedOverride(env: Record<string, string | undefined>, target: { host: string; local: boolean }): string | null {
+  if (env.SEED_ON_EMPTY?.trim() !== "1") return null;
+  if (emptySeedSkipReason({ ...env, SEED_ON_EMPTY: undefined }, target) === null) return null;
+  return "SEED_ON_EMPTY=1: veritabanı boşsa başlangıç verisi (maaşlar, kira, faturalar, satışlar) yüklenir. Değişkeni bu derlemeden sonra kaldırın";
+}

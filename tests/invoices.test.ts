@@ -1,6 +1,6 @@
 // Faturalar ekranının kuralları (src/app/panel/faturalar/rules.ts): Paraşüt kilidi, not / tahmin işareti,
 // tedarikçi varsayılanları, silinen Paraşüt faturaları listesi. Excel'deki Faturalar sayfasıyla karşılaştırmalar
-// seed verisinden (excel-data.json) yapılır.
+// seed verisinden (tests/fixtures/baslangic/veri.json) yapılır.
 // Çalıştırma: npx tsx --test tests/invoices.test.ts
 
 import assert from "node:assert/strict";
@@ -27,11 +27,11 @@ import {
 } from "../src/app/panel/faturalar/rules";
 import { unpaidSummary } from "../src/lib/calc/insights";
 import { eInvoiceDeleted } from "../src/server/parasut/mapping";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const ds = excelToDataset(data);
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const ds = datasetFromSeed(data);
 
 const base = { date: "2026-10-14", invoiceNo: "SUT2026000123", amount: 7968, discount: 557.76, payable: 7484.34 };
 

@@ -12,12 +12,12 @@ import { COGS_METHOD_LABELS, createModel, uncountedCogsText } from "../src/lib/c
 import { dashboard, profitBasisOf } from "../src/lib/calc/insights";
 import { actualProfitBreakdown, netProfitBreakdown } from "../src/app/panel/dashboard-breakdowns";
 import type { Dataset } from "../src/lib/calc/types";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const oku = (p: string) => readFileSync(join(root, p), "utf8");
-const data: ExcelData = JSON.parse(oku("src/server/db/seed/excel-data.json"));
-const excel: Dataset = excelToDataset(data);
+const data: SeedData = JSON.parse(oku("tests/fixtures/baslangic/veri.json"));
+const excel: Dataset = datasetFromSeed(data);
 const esp = excel.ingredients.find((i) => i.name === "Espresso çekirdeği")!;
 const close = (a: number, b: number, msg: string, eps = 0.01) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} ≠ ${b}`);
 

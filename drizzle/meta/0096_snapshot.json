@@ -1,5 +1,5 @@
 {
-  "id": "9fd418ce-e5ca-4835-b1a4-74a9e979269c",
+  "id": "dee35f96-9f72-49d4-befa-5743c1c05a2f",
   "prevId": "686e513a-c67b-429e-a8a2-f58a000c27c2",
   "version": "7",
   "dialect": "postgresql",
@@ -6348,6 +6348,24 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "original_key": {
+          "name": "original_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "original_size": {
+          "name": "original_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scan": {
+          "name": "scan",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -12375,16 +12393,7 @@
         }
       },
       "policies": {},
-      "checkConstraints": {
-        "users_role_ck": {
-          "name": "users_role_ck",
-          "value": "\"users\".\"role\" in ('admin','manager','staff','accountant')"
-        },
-        "users_manager_branch_ck": {
-          "name": "users_manager_branch_ck",
-          "value": "\"users\".\"role\" <> 'manager' or \"users\".\"branch_id\" is not null"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.waste_entries": {

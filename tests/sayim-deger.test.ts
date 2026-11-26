@@ -17,11 +17,11 @@ import { missingRevenueText, yearTotals, yearTrend } from "../src/lib/calc/insig
 import type { Dataset } from "../src/lib/calc/types";
 import { activeUses, isCountable, passiveRefusal, productListText, usageText } from "../src/lib/ingredient-usage";
 import { yearSummary } from "../src/lib/mcp/answers/month";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 function close(actual: number, expected: number, label: string, tol = 1e-6) {
   assert.ok(Math.abs(actual - expected) <= tol * Math.max(1, Math.abs(expected)), `${label}: beklenen ${expected}, bulunan ${actual}`);
 }

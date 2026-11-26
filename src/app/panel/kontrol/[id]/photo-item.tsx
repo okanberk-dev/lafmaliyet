@@ -28,8 +28,8 @@ type Phase =
 type UploadResult = { ok: true; answer: AnswerLite; summary: RunLite; completedNow: boolean };
 
 /**
- * Fotoğraflı madde: "Fotoğraf çek" telefonun arka kamerasını açar (<input capture>: getUserMedia değil, panelin
- * camera=() kuralı değişmez; masaüstünde dosya seçici açılır). Fotoğraf telefonda küçültülür (PHOTO_COMPRESS; EXIF ve
+ * Fotoğraflı madde: "Fotoğraf çek" telefonun arka kamerasını açar (<input capture>: kontrol fotoğrafı belge
+ * değil, canlı vizör yalnız belge tarayıcıda; masaüstünde dosya seçici açılır). Fotoğraf telefonda küçültülür (PHOTO_COMPRESS; EXIF ve
  * konum düşer), önizlemesi soluk görünürken POST /api/kontrol/foto ile yüklenir; yanıt aynı istekte yazılır. Hata olursa
  * küçültülmüş fotoğraf bellekte kalır, "Tekrar dene" onu yeniden yollar; başarı, yeniden çekme ve sayfadan çıkışta
  * bırakılır. Yükleme Server Action değil: işaretler fotoğrafı beklemesin (eylemler istemcide sırayla gider).

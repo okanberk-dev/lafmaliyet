@@ -24,7 +24,7 @@ import {
 import { branchPnlEntry } from "../src/lib/branches";
 import { createModel, shiftMonth } from "../src/lib/calc/engine";
 import type { Dataset, PnlEntry } from "../src/lib/calc/types";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (p: string) => readFileSync(join(root, p), "utf8");
@@ -136,8 +136,8 @@ test("#19/#24 fiyatsız ek kalem uyarısı şube başına: birden çok şube aç
 
 // ---------------------------------------------------------------- #20: elle yazılan devirler şube sayfasında
 
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const M = "2026-10";
 const P = shiftMonth(M, -1);
 const withEntries = (extra: PnlEntry[]): Dataset => ({ ...base, pnlEntries: [...base.pnlEntries, ...extra] });

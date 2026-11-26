@@ -1,9 +1,10 @@
-# Sürekli entegrasyon: her PR'da ve main'e doğrudan push'ta tip denetimi, ESLint, testler (Excel karşılaştırması
-# dahil, tests/*.test.ts), geçici Postgres'te veritabanı testleri (npm run test:db) ve production derlemesi.
+# Sürekli entegrasyon: her PR'da ve main'e doğrudan push'ta tip denetimi, ESLint, testler (başlangıç verisiyle altın
+# karşılaştırması dahil, tests/*.test.ts), geçici Postgres'te veritabanı testleri (npm run test:db) ve production
+# derlemesi.
 #
-# Derleme `npm run build` ile değil `next build` ile alınır: `npm run build` önce scripts/predeploy.ts ile
-# veritabanına migration uygular ve boşsa Excel verisini yükler; CI canlı ya da kalıcı hiçbir veritabanına dokunmaz. Aşağıdaki
-# ortam değişkenleri yalnız yer tutucudur, gerçek sırlar Vercel'de kalır.
+# Derleme `npm run build` ile değil `next build` ile alınır: `npm run build` önce scripts/predeploy.ts ile veritabanına
+# migration uygular (boş yerel veritabanına başlangıç verisini de yükler); CI canlı ya da kalıcı hiçbir veritabanına
+# dokunmaz. Aşağıdaki ortam değişkenleri yalnız yer tutucudur, gerçek sırlar Vercel'de kalır.
 #
 # Squash merge edilen PR'ın ağacı PR'da zaten denendi; main'de "(#N)" başlıklı commit'te iş atlanır (atlanan iş
 # Actions dakikası harcamaz). "(#" içermeyen doğrudan push yine denenir.

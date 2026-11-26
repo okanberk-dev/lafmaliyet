@@ -7,10 +7,10 @@ import { test } from "node:test";
 import { createModel } from "../src/lib/calc/engine";
 import { changesSummary, ingredientChanges, isAcknowledged, productImpacts, type PriceHistoryRow } from "../src/lib/calc/price-impact";
 import type { Dataset } from "../src/lib/calc/types";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
-const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
-const ds = excelToDataset(data);
+const data: SeedData = JSON.parse(readFileSync(join(__dirname, "..", "tests/fixtures/baslangic/veri.json"), "utf8"));
+const ds = datasetFromSeed(data);
 const ing = (name: string) => {
   const i = ds.ingredients.find((x) => x.name === name);
   assert.ok(i, `hammadde yok: ${name}`);

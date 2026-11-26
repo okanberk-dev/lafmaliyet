@@ -12,13 +12,13 @@ import { RATIO_GUIDE, scopeTotals, severityOf, tableScope } from "../src/app/pan
 import { countFactor, createModel, type Model } from "../src/lib/calc/engine";
 import { consistency } from "../src/lib/calc/insights";
 import type { Dataset } from "../src/lib/calc/types";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 import { MANAGED_QTY_NOTE, NO_PURCHASE_NOTE } from "../src/lib/purchase-notes";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
 const golden = JSON.parse(readFileSync(join(root, "tests/golden.json"), "utf8"));
-const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const ingId = (name: string) => {
   const i = ds.ingredients.find((x) => x.name === name);
   assert.ok(i, `hammadde yok: ${name}`);

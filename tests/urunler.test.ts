@@ -29,12 +29,12 @@ import {
 import { createModel, priceProduct } from "../src/lib/calc/engine";
 import { productDeleteBlocker } from "../src/lib/product-delete";
 import { DEFAULT_SETTINGS } from "../src/lib/constants";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
 const golden = JSON.parse(readFileSync(join(root, "tests/golden.json"), "utf8"));
-const model = createModel(excelToDataset(data));
+const model = createModel(datasetFromSeed(data));
 const st = DEFAULT_SETTINGS;
 
 const near = (a: number | null | undefined, b: number, tol = 1e-9, label = "") =>

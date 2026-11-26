@@ -55,13 +55,13 @@ import {
 import { planMenuSync, type LinkedRow } from "../src/lib/site-menu/plan";
 import { PRICE_PUSH_REMINDER } from "../src/lib/site-menu/push";
 import type { SiteMenuItem } from "../src/lib/site-menu/schema";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 import { assertNoCostKeys } from "./helpers/leak-scan";
 
 const root = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const model = createModel(excelToDataset(data));
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const model = createModel(datasetFromSeed(data));
 const st = DEFAULT_SETTINGS;
 
 const R = (id: Parameters<typeof roundingById>[0]): Rounding => roundingById(id);

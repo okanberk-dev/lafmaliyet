@@ -37,7 +37,7 @@ import { alerts, consistency, dashboard } from "../src/lib/calc/insights";
 import type { Dataset, Month, SalesLine } from "../src/lib/calc/types";
 import { listDiscountOf, resolveMonth, tillMonths, type TillRow } from "../src/lib/cash-month";
 import { mergeSalesSources, type LafposMonthLine } from "../src/lib/lafpos/sales";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 /** Marina'nın LafPOS'a geçiş günü (22 Kasım 2026); ModPOS günleri 13–21 Kasım */
 const S = "2026-11-22";
@@ -64,7 +64,7 @@ function marinaTill(extra: TillRow[] = []): TillRow[] {
   ];
 }
 
-const seed: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
+const seed: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
 
 /** ModPOS listesinin satırı (Marina) */
 const mline = (id: number, posName: string, revenue: number, productId: number | null, month = "2026-11"): SalesLine => ({
@@ -85,7 +85,7 @@ const lafLine = (posName: string, revenue: number, productId: number | null, mon
  * `till` verilirse ayın kasa satırları onlar; `month` verilirse ayın bilgisi o (elle yazılmış indirim sınaması)
  */
 function marinaNovember(o: { till?: TillRow[]; month?: (till: ReturnType<typeof tillMonths>[number]) => Month; through?: string } = {}) {
-  const base: Dataset = { ...excelToDataset(seed), currentMonth: "2026-12" };
+  const base: Dataset = { ...datasetFromSeed(seed), currentMonth: "2026-12" };
   const sept = base.salesLines.filter((l) => l.month === "2026-09");
   const merged = mergeSalesSources({
     switchDay: S,
@@ -299,7 +299,7 @@ test("POS komisyonu: 'Tümü' şubelerin toplamı (her şube kendi kartı ve ora
 });
 
 test("POS komisyonu: kasa kartı olmayan ay (Excel) eski formüllerle kalır", () => {
-  const base: Dataset = { ...excelToDataset(seed), currentMonth: "2026-12", branchRates: rates(0.02, 0.02) };
+  const base: Dataset = { ...datasetFromSeed(seed), currentMonth: "2026-12", branchRates: rates(0.02, 0.02) };
   const model = createModel(base);
   assert.equal(model.posCommission("2026-09"), null);
   const st = model.settings;
@@ -313,7 +313,7 @@ import { POS_COMMISSION_SAME_NOTE, posCommissionNote } from "../src/lib/calc/eng
 
 test("POS komisyonu: süren ayda liste kasa raporlarından kısaysa Satışlar listenin günleriyle; metin 'Gelir-gider'le aynı' demez", () => {
   // Tuzla, Aralık 2026 sürüyor: kasa raporları 1–20 Aralık (her gün kart 1.000), ModPOS listesi 15 Aralık'a kadar, oran %2
-  const base: Dataset = { ...excelToDataset(seed), currentMonth: "2026-12" };
+  const base: Dataset = { ...datasetFromSeed(seed), currentMonth: "2026-12" };
   const rows: TillRow[] = Array.from({ length: 20 }, (_, i) => ({
     date: `2026-12-${String(i + 1).padStart(2, "0")}`,
     zTotal: 2000,
@@ -640,7 +640,7 @@ test("bitmiş sabit gider: Gelir-gider'de bitmiş kalemin boş hücresi salt oku
 test("bitmiş sabit gider: stopaj satırı ve silinmiş giderin satırı da boş ayda salt okunur (motor aralık dışı der)", () => {
   // Kira Ekim 2026'da bitti, resmi kirası var: Kasım'da KİRA STOPAJI satırı hücresi motorun hesabında yok; silinmiş kalemin
   // yalnız Ekim'de elle girişi var. setPnlCell ikisini de reddeder (fixedCellRefusal), hücre de kilitli olmalı
-  const base: Dataset = { ...excelToDataset(seed), currentMonth: "2026-12" };
+  const base: Dataset = { ...datasetFromSeed(seed), currentMonth: "2026-12" };
   const rentId = 9200;
   const goneId = 9201;
   const ds: Dataset = {
@@ -685,7 +685,7 @@ test("aynı gider iki kez: ad eşleşmesi (Türkçe harfler sade, parantez içi 
 });
 
 test("aynı gider iki kez: sabit gider ile aynı ayın harcaması, faturası ya da elle hücresi → uyarı ve hücrede işaret", () => {
-  const base: Dataset = { ...excelToDataset(seed), currentMonth: "2026-12" };
+  const base: Dataset = { ...datasetFromSeed(seed), currentMonth: "2026-12" };
   const fixedId = 9100;
   // Kasım'ın ay bilgisi (açık gün 30): sabit gider bu ay sayılır (ay bilgisi olmayan ayda tutarı 0, iki kez sayılmaz)
   const nov: Month = { month: "2026-11", openDays: 30, posRevenue: 100_000, discounts: 0, offRevenue: 0, cardShare: null, note: null };

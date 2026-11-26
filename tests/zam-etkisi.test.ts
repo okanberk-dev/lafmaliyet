@@ -14,13 +14,13 @@ import { basisText, priceLoss, salesBasis } from "../src/lib/calc/price-loss";
 import { ingredientChanges, priceAlert, productImpacts, type PriceHistoryRow } from "../src/lib/calc/price-impact";
 import type { Dataset } from "../src/lib/calc/types";
 import type { SiteSalesMonth } from "../src/lib/site-sales/schema";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 import { renderDigest, type DigestPrices } from "../src/server/notify/digest-template";
 
 const root = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const ing = (name: string) => {
   const i = ds.ingredients.find((x) => x.name === name);
   assert.ok(i, `hammadde yok: ${name}`);

@@ -23,12 +23,12 @@ import type { Dataset, Staff } from "../src/lib/calc/types";
 import { DEFAULT_SETTINGS } from "../src/lib/constants";
 import { taxPayrollFromModel } from "../src/lib/tax/payroll";
 import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (p: string) => readFileSync(join(root, p), "utf8");
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const excel: Dataset = excelToDataset(data);
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const excel: Dataset = datasetFromSeed(data);
 const close = (a: number, b: number, msg: string, eps = 0.01) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} ≠ ${b}`);
 
 /** Aralık 2026 part-time: günlük 1.500 ₺, yemek kartı, aylık 2.000 ₺ ek; Vardiya'da hesabıyla (u:7) */

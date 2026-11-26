@@ -46,10 +46,15 @@ export function LafposPhotoCard({
 
   async function pick(file: File) {
     // Fotoğraf her zaman okunur: yapay zekâ kapalı / kurulu değil / sınırda ise sunucu kodla okur (OCR; src/server/photo-read/lafpos.ts)
-    const res = await up.upload(file, { kind: "kasa-okc", day: date, read: true });
-    if (!res) return;
+    // Uzun fiş birleştirilemezse parçalar ayrı fotoğraf olarak bağlanır (bölümün kalan yeri kadar)
+    const room = Math.max(1, MAX_OKC_PHOTOS - state.attached);
+    const res = await up.upload(file, { kind: "kasa-okc", day: date, read: true, room, onMore: (more) => attach(more.photo.id) });
+    if (res) attach(res.photo.id);
+  }
+
+  function attach(photoId: number) {
     start(async () => {
-      const out = await attachLafposDayPhoto({ date, branchId, photoId: res.photo.id });
+      const out = await attachLafposDayPhoto({ date, branchId, photoId });
       if (!out.ok) return void toast.error(out.error);
       toast.success(out.data.status === "pending" ? "Fotoğraf alındı; rapor gelince bağlanır" : out.data.line);
     });

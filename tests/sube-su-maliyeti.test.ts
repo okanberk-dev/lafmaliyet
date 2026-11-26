@@ -14,12 +14,12 @@ import { waterBreakdown } from "../src/app/panel/hammaddeler/breakdowns";
 import { createModel, type Model } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
 import type { SiteSalesLine, SiteSalesMonth } from "../src/lib/site-sales/schema";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const oku = (p: string) => readFileSync(join(root, p), "utf8");
-const data: ExcelData = JSON.parse(oku("src/server/db/seed/excel-data.json"));
-const excel = excelToDataset(data);
+const data: SeedData = JSON.parse(oku("tests/fixtures/baslangic/veri.json"));
+const excel = datasetFromSeed(data);
 const close = (a: number, b: number, msg: string, eps = 1e-9) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} ≠ ${b}`);
 
 const M = "2026-09";

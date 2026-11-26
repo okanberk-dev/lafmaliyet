@@ -26,11 +26,11 @@ import { araInput, kasaRaporlariInput, odemelerInput, tedarikciOzetiInput, urunK
 import { upcomingItems, type ReminderRow } from "../src/lib/reminders";
 import type { SiteSalesMonth } from "../src/lib/site-sales/schema";
 import { productLabel } from "../src/lib/waste";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const model = createModel(ds);
 const ctx = { base: "https://ladmin.laffogato.net" };
 const close = (a: number | null | undefined, b: number, msg: string, eps = 0.006) => {

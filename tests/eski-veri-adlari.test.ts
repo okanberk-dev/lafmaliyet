@@ -3,7 +3,7 @@
 // Çalıştırma: npx tsx --test tests/eski-veri-adlari.test.ts
 
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -17,14 +17,14 @@ import { stockVatSummary } from "../src/lib/calc/insights";
 import type { Dataset } from "../src/lib/calc/types";
 import { DEFAULT_SETTINGS, groupVatRate, PACKAGING_COUNT_GROUP, settingsFromRows } from "../src/lib/constants";
 import { activityActionLabel, IMPORT_ACTIVITY_LABEL, IMPORT_AUTHOR_LABEL, IMPORTED_LABEL, importedPriceRow, INVOICE_SOURCE_LABEL, INVOICE_SOURCE_PHRASE, invoiceSourceLabel } from "../src/lib/import-labels";
-import { excelToDataset, investmentSeed, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, investmentSeed, SEED_DATA_FILE, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
 const close = (a: number, b: number, label: string, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${label}: ${a} ≠ ${b}`);
 
 function dataset(): Dataset {
-  const ds = excelToDataset(data);
+  const ds = datasetFromSeed(data);
   ds.currentMonth = "2026-10";
   return ds;
 }
@@ -163,8 +163,8 @@ function walk(dir: string): string[] {
 test("ekran, e-posta, asistan ve dışa aktarım kodunda 'Excel' metni kalmadı (ExcelJS kütüphanesi ve şema değeri hariç)", () => {
   const files = ["src/app", "src/components", "src/lib", "src/server"]
     .flatMap((d) => walk(join(root, d)))
-    // İlk kurulumun veri aktarımı (seed) eski tablonun kendisini okur; bilgi tabanı belgelerden üretilir (ayrı test)
-    .filter((f) => !f.includes(join("src", "server", "db", "seed")) && !f.endsWith(join("assistant", "knowledge-data.ts")));
+    // Bilgi tabanı belgelerden üretilir (ayrı test). Başlangıç verisi uygulama ağacında değil (aşağıdaki test)
+    .filter((f) => !f.endsWith(join("assistant", "knowledge-data.ts")));
   assert.ok(files.length > 300, "tarama dosya bulamadı");
   const bad: string[] = [];
   for (const f of files) {
@@ -183,4 +183,23 @@ test("asistanın bilgi tabanında eski tablonun adı yok", () => {
   const kb = readFileSync(join(root, "src/lib/assistant/knowledge-data.ts"), "utf8");
   const hits = [...kb.matchAll(/[^"]{0,60}Excel[^"]{0,60}/g)].map((m) => m[0]);
   assert.deepEqual(hits, []);
+});
+
+// ---------------------------------------------------------------- Başlangıç verisi uygulamanın dışında
+
+test("başlangıç verisi (kişisel veri) uygulama ağacında değil: src/ onu içe aktarmaz, okumaz; çıkarma betiği yok", () => {
+  // Veri ve yükleyicisi tests/fixtures/baslangic/'te: yalnız tohum betiği (scripts/seed.ts) ve testler kullanır
+  // (docs/DEPLOY.md § 1). Uygulamanın bir dosyası onu içe aktarsaydı maaş ve kira paketlenip yayına çıkabilirdi
+  assert.ok(existsSync(join(root, SEED_DATA_FILE)), SEED_DATA_FILE);
+  assert.equal(existsSync(join(root, "src/server/db/seed")), false, "eski yer boş kalmalı");
+  const bad = walk(join(root, "src"))
+    .filter((f) => /fixtures\/baslangic|baslangic\/veri\.json|db\/seed\/excel/.test(readFileSync(f, "utf8")))
+    .map((f) => f.slice(root.length + 1));
+  assert.deepEqual(bad, []);
+  // Eski tablodan veri çıkaran betik kaldırıldı (26 Kasım 2026): kaynak depoda yok, veri bir kez aktarıldı
+  assert.equal(existsSync(join(root, "scripts/excel-import")), false);
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { scripts: Record<string, string> };
+  assert.deepEqual(Object.keys(pkg.scripts).filter((k) => /excel/i.test(k)), []);
+  // Tohum betiği veriyi yeni yerinden okur
+  assert.match(readFileSync(join(root, "scripts/seed.ts"), "utf8"), /from "\.\.\/tests\/fixtures\/baslangic"/);
 });

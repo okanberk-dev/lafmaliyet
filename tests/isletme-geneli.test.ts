@@ -17,11 +17,11 @@ import { branchPnlEntry } from "../src/lib/branches";
 import { createModel, staffCost, stopajKey } from "../src/lib/calc/engine";
 import { breakEvenOf, dashboard, fixedCostsForMonth } from "../src/lib/calc/insights";
 import type { Dataset, ExpenseCategory, ExpenseEntry, FixedExpense, Invoice, Month, Staff } from "../src/lib/calc/types";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const excel: Dataset = excelToDataset(data);
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const excel: Dataset = datasetFromSeed(data);
 const close = (a: number, b: number, msg: string, eps = 0.01) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} ≠ ${b}`);
 
 const kira = excel.fixedExpenses.find((f) => f.name === "Kira")!;

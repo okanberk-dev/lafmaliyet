@@ -13,12 +13,12 @@ import { rowLink } from "../src/app/panel/gelir-gider/row-links";
 import { countOpening, countOpeningNote } from "../src/app/panel/sayim/logic";
 import { createModel } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (p: string) => readFileSync(join(root, p), "utf8");
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 /** ₺ ile tutar arasındaki bölünmez boşluk düz boşluk olur */
 const plain = (s: string | null) => s?.replace(/ /g, " ") ?? null;
 

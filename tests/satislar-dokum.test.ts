@@ -12,10 +12,10 @@ import { prepareBreakdown, type BreakdownGroup } from "../src/lib/breakdown";
 import type { SalesLineCalc } from "../src/lib/calc/engine";
 import { createModel } from "../src/lib/calc/engine";
 import { pct, tl } from "../src/lib/format";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
-const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
-const model = createModel(excelToDataset(data));
+const data: SeedData = JSON.parse(readFileSync(join(__dirname, "..", "tests/fixtures/baslangic/veri.json"), "utf8"));
+const model = createModel(datasetFromSeed(data));
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const close = (a: number, b: number, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≠ ${b}`);
 const inTotal = (gs: BreakdownGroup[]) => gs.filter((g) => !g.apart);

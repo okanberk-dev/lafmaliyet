@@ -21,12 +21,12 @@ import { alerts } from "../src/lib/calc/insights";
 import type { Dataset, FixedExpense } from "../src/lib/calc/types";
 import { fixedVatRate } from "../src/lib/constants";
 import { muhtasarItemsFromModel, muhtasarMonth, withholdingUnknown } from "../src/lib/tax/muhtasar";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (p: string) => readFileSync(join(root, p), "utf8");
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const excel: Dataset = excelToDataset(data);
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const excel: Dataset = datasetFromSeed(data);
 const close = (a: number, b: number, msg: string, eps = 0.01) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} ≠ ${b}`);
 const kira = excel.fixedExpenses.find((f) => f.name === "Kira")!;
 const months = [

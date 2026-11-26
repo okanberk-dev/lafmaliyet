@@ -54,7 +54,7 @@ import {
   unpricedNotice,
 } from "../src/lib/count-item";
 import { newProductIssue } from "../src/lib/recipe-change";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 /** Kaynaktaki bir işlevin gövdesi: adından sonraki ilk "export async function"a kadar */
@@ -176,8 +176,8 @@ test("grup seçenekleri: listedeki sırayla, olağan birimle; hiçbir hammaddede
 });
 
 test("Excel verisinde grupların olağan birimi ve varsayılanları (sayım ekranının gördüğü)", () => {
-  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-  const ds = excelToDataset(data);
+  const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+  const ds = datasetFromSeed(data);
   const sorted = [...ds.ingredients].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
   const sheet = createModel(ds).stockSheet("2026-10");
   const options = countGroupOptions(
@@ -205,8 +205,8 @@ test("fiyatı girilmemiş: aktif, elle fiyatlı, paket fiyatı 0; zil metni", ()
 // ---------------------------------------------------------------- Listeye girdiği ay (count_from)
 
 test("listeye girdiği ay: sonradan eklenen kalem önceki aylarda, o ay sayılmadıysa listede çıkmaz", () => {
-  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-  const base = excelToDataset(data);
+  const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+  const base = datasetFromSeed(data);
   const newId = Math.max(...base.ingredients.map((i) => i.id)) + 1;
   const added = { ...base.ingredients.find((i) => i.name === "Toffeenut şurubu")!, id: newId, name: "Çilek şurubu", packagePrice: 0, isEstimate: true, sortOrder: 2000, countFrom: "2026-10" };
   const countable = base.ingredients.filter((i) => i.countUnit && i.active);
@@ -261,8 +261,8 @@ test("listeye girdiği ay: sonradan eklenen kalem önceki aylarda, o ay sayılma
 });
 
 test("fiyatı girilmemiş malzeme kullanan ürün: 'maliyeti eksik' uyarısı; yalnız ondan oluşan reçete 'reçetesi boş' sayılmaz", () => {
-  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-  const base = excelToDataset(data);
+  const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+  const base = datasetFromSeed(data);
   const newId = Math.max(...base.ingredients.map((i) => i.id)) + 1;
   const syrup = { ...base.ingredients.find((i) => i.name === "Toffeenut şurubu")!, id: newId, name: "Fındık şurubu (yeni)", packagePrice: 0, isEstimate: true, priceSource: "manual" as const, sortOrder: 2000 };
   const latte = base.products.find((p) => p.name === "Latte" && p.size === "M")!;
@@ -457,8 +457,8 @@ test("aynı ad: çekirdek kaydı bulur; reçete önerisi aktif olanı seçtirir,
 // ---------------------------------------------------------------- Sahte zam yok
 
 test("fiyatı 0 eklenen kalemin ilk fiyatı zam sayılmaz (zil, Genel bakış, sabah e-postası, Hammaddeler aynı hesabı kullanır)", () => {
-  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-  const base = excelToDataset(data);
+  const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+  const base = datasetFromSeed(data);
   const newId = Math.max(...base.ingredients.map((i) => i.id)) + 1;
   const latte = base.products.find((p) => p.name === "Latte" && p.size === "M")!;
   const counted = {
@@ -496,8 +496,8 @@ test("fiyatı 0 eklenen kalemin ilk fiyatı zam sayılmaz (zil, Genel bakış, s
 });
 
 test("Listeye fiyatıyla eklenen kalem: sonraki zam kapanmış ayın devreden malını ve kârını değiştirmez; ilk gerçek fiyat zam sayılmaz", () => {
-  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-  const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+  const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+  const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
   const id = Math.max(...base.ingredients.map((i) => i.id)) + 1;
   const item = {
     ...base.ingredients.find((i) => i.name === "Toffeenut şurubu")!,
@@ -565,8 +565,8 @@ test("eylem ve yazım yolları: Listeye ekle yalnız yazılan fiyatı başlangı
 });
 
 test("tahmin düzeltilince: kalem hâlâ Tahmini ve geçmişinde yalnız başlangıç varken düzeltme başlangıcın yerine geçer, kapanmış ay da düzelir", () => {
-  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-  const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+  const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+  const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
   const id = Math.max(...base.ingredients.map((i) => i.id)) + 1;
   const item = {
     ...base.ingredients.find((i) => i.name === "Toffeenut şurubu")!,
@@ -824,8 +824,8 @@ test("migration: sekiz kalem, korumalar, Excel usulü tahmin ve fiyat geçmişi"
 });
 
 test("migration satırları Excel'in gruplarıyla tutarlı: birim sayım birimine uyar, grup ve kategori var, KDV grubunki", () => {
-  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-  const excel = excelToDataset(data).ingredients;
+  const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+  const excel = datasetFromSeed(data).ingredients;
   const rows = migrationRows(read(`drizzle/${migrationFile}`));
   for (const r of rows) {
     assert.equal(BASE_UNIT[r.countUnit as CountUnit], r.unit, `${r.name}: birim`);

@@ -18,10 +18,10 @@ import type { Dataset } from "../src/lib/calc/types";
 import { BLIND_TEXT, staffBlindView } from "../src/lib/lafpos/kor-kasa";
 import { lafposMovesPending, UNRECEIPTED_SINCE, unreceiptedCashOut } from "../src/lib/lafpos/prefill";
 import { commonListSourceLine, commonListWaitText } from "../src/lib/lafpos/sales";
-import { excelToDataset, investmentSeed, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, investmentSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
 
 // ---------------------------------------------------------------- Kör kasa
 
@@ -107,7 +107,7 @@ test("Tümü: listesi olmayan ayda kaynak satırı ve iş 'LafPOS sayılıyor' d
 });
 
 function tasksFor(month: string, current: string, commonMissing: boolean) {
-  const base: Dataset = { ...excelToDataset(data), currentMonth: current };
+  const base: Dataset = { ...datasetFromSeed(data), currentMonth: current };
   const ds: Dataset = {
     ...base,
     // Ortak dönem yok: ayın satırları sayılmaz (mergeSalesSources), veri kümesi kısaltan şubeyi taşır
@@ -136,7 +136,7 @@ test("Tümü: Genel bakış'ın Satış raporu işi ortak dönemi olmayan ayda l
 // ---------------------------------------------------------------- Standart sabit giderle net kâr (dışa aktarım)
 
 test("dışa aktarım Özet: standart sabit giderle net kâr satırı farklıysa kalır (kaldırılan rakam geri geldi)", () => {
-  const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+  const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
   // Açık günü eksik ay: gün etkisi standart sabit giderle farkı doğurur
   ds.months = ds.months.map((m) => (m.month === "2026-09" ? { ...m, openDays: 24 } : m));
   const model = createModel(ds);
