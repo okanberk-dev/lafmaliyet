@@ -140,6 +140,9 @@ export function uploadCanvas(width: number, height: number): { canvasWidth: numb
   return { canvasWidth: cw, canvasHeight: ch, x: Math.floor((cw - w) / 2), y: Math.floor((ch - h) / 2), width: w, height: h };
 }
 
+/** Taranan belgenin asıl fotoğrafının adresi (aynı erişim kuralı; taranmadan yüklenende 404) */
+export const originalPhotoUrl = (id: number) => `/api/foto/${id}?v=asil`;
+
 /** Kodun algılamasından ekrana ve karara gerekenler (src/lib/scan Detection'ın bir kısmı) */
 export interface DetectionLike {
   corners: unknown[] | null;

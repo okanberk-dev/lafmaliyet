@@ -33,8 +33,8 @@ export function fitWithin(width: number, height: number, max: number, maxPixels 
   return { width: Math.max(1, Math.round(width * k)), height: Math.max(1, Math.round(height * k)) };
 }
 
-/** Görseli çözer; iOS ve Android'de çekilen fotoğrafın yönü (EXIF) tarayıcıda zaten uygulanır */
-async function decodeImage(url: string): Promise<HTMLImageElement> {
+/** Görseli çözer; iOS ve Android'de çekilen fotoğrafın yönü (EXIF) tarayıcıda zaten uygulanır (belge tarama da kullanır) */
+export async function decodeImage(url: string): Promise<HTMLImageElement> {
   const img = new Image();
   img.decoding = "async";
   img.src = url;

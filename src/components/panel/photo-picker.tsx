@@ -1,24 +1,47 @@
 "use client";
 
 import { Camera, ImagePlus, LoaderCircle, RotateCw, X } from "lucide-react";
-import { useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/documents";
 import { compressImage, COMPRESS_ERROR_TEXT, PhotoCompressError } from "@/lib/photo-compress";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import { photoUrl, uploadErrorText, type PhotoKind } from "@/lib/photo-rules";
+import { isScanKind, ORIGINAL_COMPRESS, type ScanInfo } from "@/lib/photo-scan";
 import { cn } from "@/lib/utils";
+
+import type { ScanChoice } from "./scan-editor";
 
 /*
  * Fotoğraf ekleme (kasa raporu, kasadan çıkan fiş): telefonda "Fotoğraf çek" arka kamerayı açar (<input capture>:
- * getUserMedia değil, panelin camera=() kuralı değişmez), "Galeriden seç" galeriyi. Fotoğraf telefonda JPEG'e
- * küçültülür (en çok 2576 px / ~3,7 MP; EXIF ve konum düşer), POST /api/foto ile yüklenir ve aynı istekte okunur. Aşamalar ekranda:
- * küçültülüyor → yükleniyor → okunuyor; hata kırmızı. Kurallar ve hata metinleri src/lib/photo-rules.ts'te.
+ * getUserMedia değil, panelin camera=() kuralı değişmez), "Galeriden seç" galeriyi. Belge türlerinde (Z, yazarkasa Z,
+ * fiş; kontrol listesi değil) önce tarama ekranı açılır (scan-editor.tsx; docs/FOTOGRAF.md › Belge tarama): taranmış
+ * hâl okunan ve gösterilen dosya olur, asıl fotoğraf küçültülüp yanında saklanır. Fotoğraf telefonda JPEG'e
+ * küçültülür (en çok 2576 px / ~3,7 MP; EXIF ve konum düşer), POST /api/foto ile yüklenir ve aynı istekte okunur.
+ * Aşamalar ekranda: taranıyor → küçültülüyor → yükleniyor → okunuyor; hata kırmızı. Kurallar ve hata metinleri
+ * src/lib/photo-rules.ts'te.
  */
+
+/**
+ * Tarama ekranını açar (ilk açılışta yüklenir: tarayıcı çekirdeği ve Worker yalnız gerekince iner). Ekran yüklenemezse
+ * (bağlantı koptu) tarama atlanır, fotoğraf olduğu gibi yüklenir
+ */
+async function openScan(file: Blob, hint: boolean, keep: (close: () => void) => void): Promise<ScanChoice | null> {
+  let mod: typeof import("./scan-editor");
+  try {
+    mod = await import("./scan-editor");
+  } catch {
+    return { kind: "skip" };
+  }
+  const { result, close } = mod.openScanEditor(file, { hint });
+  keep(close);
+  return result;
+}
 
 export type PhotoPhase =
   | { kind: "idle" }
+  | { kind: "scanning" }
   | { kind: "compressing" }
   | { kind: "uploading"; size: number }
   | { kind: "reading" }
@@ -40,10 +63,16 @@ function post(url: string, body: FormData | string, onSent?: () => void): Promis
   });
 }
 
-/** Fotoğrafı küçültüp yükler (isteğe bağlı okumayla) ya da saklanmış fotoğrafı yeniden okutur; aşama ekranda */
+/**
+ * Fotoğrafı (belge türünde önce tarayıp) küçültür ve yükler (isteğe bağlı okumayla) ya da saklanmış fotoğrafı yeniden
+ * okutur; aşama ekranda. Tarama ekranı kapatılırsa hiçbir şey yüklenmez (null, aşama boş)
+ */
 export function usePhotoUpload() {
   const [phase, setPhase] = useState<PhotoPhase>({ kind: "idle" });
-  const busy = phase.kind === "compressing" || phase.kind === "uploading" || phase.kind === "reading";
+  const busy = phase.kind === "scanning" || phase.kind === "compressing" || phase.kind === "uploading" || phase.kind === "reading";
+  // Açık tarama ekranı: sayfa değişirse kapanır
+  const closeScan = useRef<(() => void) | null>(null);
+  useEffect(() => () => closeScan.current?.(), []);
 
   function finish(res: { status: number; body: unknown }): PhotoUploadResponse | null {
     const ok = res.status === 200 && Boolean(res.body) && (res.body as { ok?: unknown }).ok === true;
@@ -56,20 +85,40 @@ export function usePhotoUpload() {
   }
 
   async function upload(file: File, o: { kind: PhotoKind; day: string; read: boolean }): Promise<PhotoUploadResponse | null> {
+    let scan: { scanned: Blob; info: ScanInfo } | null = null;
+    if (isScanKind(o.kind)) {
+      setPhase({ kind: "scanning" });
+      // Kod emin değilse yapay zekâya köşe yalnız okuma açıkken sorulur
+      const choice = await openScan(file, o.read, (close) => (closeScan.current = close));
+      closeScan.current = null;
+      if (!choice) {
+        setPhase({ kind: "idle" });
+        return null;
+      }
+      if (choice.kind === "scan") scan = { scanned: choice.scanned, info: choice.info };
+    }
     setPhase({ kind: "compressing" });
     let blob: Blob;
+    let original: Blob | null = null;
     try {
-      blob = await compressImage(file);
+      if (scan) {
+        blob = scan.scanned;
+        original = await compressImage(file, ORIGINAL_COMPRESS);
+      } else blob = await compressImage(file);
     } catch (e) {
       setPhase({ kind: "error", message: e instanceof PhotoCompressError ? e.message : COMPRESS_ERROR_TEXT });
       return null;
     }
     const form = new FormData();
     form.append("dosya", blob, "foto.jpg");
+    if (scan && original) {
+      form.append("asil", original, "asil.jpg");
+      form.append("tarama", JSON.stringify(scan.info));
+    }
     form.append("tur", o.kind);
     form.append("gun", o.day);
     if (o.read) form.append("oku", "1");
-    setPhase({ kind: "uploading", size: blob.size });
+    setPhase({ kind: "uploading", size: blob.size + (original?.size ?? 0) });
     return finish(await post("/api/foto", form, o.read ? () => setPhase({ kind: "reading" }) : undefined));
   }
 
@@ -116,7 +165,7 @@ export function PhotoStatus({ phase, className }: { phase: PhotoPhase; className
       </p>
     );
   }
-  const text = phase.kind === "compressing" ? "Fotoğraf küçültülüyor…" : phase.kind === "uploading" ? `Yükleniyor… ${formatBytes(phase.size)}` : phase.kind === "reading" ? "Okunuyor… genelde 5–10 saniye" : null;
+  const text = phase.kind === "scanning" ? "Belge taranıyor…" : phase.kind === "compressing" ? "Fotoğraf küçültülüyor…" : phase.kind === "uploading" ? `Yükleniyor… ${formatBytes(phase.size)}` : phase.kind === "reading" ? "Okunuyor… genelde 5–10 saniye" : null;
   return (
     <p aria-live="polite" className={cn("flex items-center gap-2 text-[13px] text-ink-mute empty:hidden", className)}>
       {text ? (
