@@ -116,6 +116,8 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `ANTHROPIC_API_KEY` | (isteğe bağlı, **yalnız Production**) Fotoğraftan okuma (Claude): kasa raporunda Z raporu, banka POS fişi ve kasadan çıkan fişler. Yoksa fotoğraf yine eklenir, rakamlar elle yazılır; LafPOS gününün gün sonu fotoğrafı (Pavo'nun detaylı Z'si) anahtarsız da kodla (OCR) okunur, öteki fotoğraflar okunmaz. Aynı anahtar Vardiya'daki **Yazarak doldur**u da çalıştırır ([VARDIYA.md](VARDIYA.md) › Yazarak doldurma); yoksa kutular elle doldurulur. Ayrıntı [FOTOGRAF.md](FOTOGRAF.md) |
 | `BLOB_READ_WRITE_TOKEN` | (isteğe bağlı, **yalnız Production**) Fotoğraf deposu: Vercel › Storage › Blob, erişim **Private**, bölge Frankfurt (fra1). Depoyu projeye bağlayınca kendiliğinden eklenir (yeni bağlantı anahtar yerine `BLOB_STORE_ID` verirse o da yeter). Yoksa fotoğraf düğmeleri görünmez ([FOTOGRAF.md](FOTOGRAF.md)) |
 | `PHOTO_DIR` | (yalnız yerel, isteğe bağlı) Fotoğrafların yerel klasörü; yoksa `.data/photos` |
+| `DB_QUOTA_MB` | (isteğe bağlı) Veritabanının kotası, MB: sabah işi boyutu buna göre ölçer, %70 ve %90'da zil ve e-postayla uyarır. Yoksa 512 (Neon ücretsiz planı); plan yükseltilince yeni kotayı yazın (ör. 10 GB için `10240`). [YEDEK.md](YEDEK.md) § 14 |
+| `BACKUP_DIR` | (yalnız yerel, isteğe bağlı) Otomatik haftalık yedeklerin yerel klasörü; yoksa `.data/backups`. Canlıda yedekler fotoğraflarla aynı özel Blob deposunda (`yedek/haftalik/`); depo bağlı değilse otomatik yedek kapalı ([YEDEK.md](YEDEK.md) § 13) |
 | `MCP_DISABLED` | (isteğe bağlı) `1` ise Claude bağlantısı kapalı (bütün uçlar 404, verilmiş anahtarlar çalışmaz). Önizlemelerde zaten kapalı ([CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md)) |
 | `MCP_ALLOW_LOCALHOST` | (isteğe bağlı) `1` ise Claude Code / MCP Inspector'ın localhost dönüş adresine canlıda da izin verilir; varsayılan kapalı |
 | `DATABASE_SSL` | (isteğe bağlı, yalnız acil durumda) `require`: veritabanı sunucusunun sertifikası doğrulanmaz. Varsayılan doğrulamalı bağlantıdır (`verify-full`; Neon'un sertifikası Let's Encrypt'ten, Node tanır): şifreli ama sertifikası denetlenmeyen bağlantıda araya giren biri kendi sertifikasıyla bütün veriyi okuyabilirdi. Canlı derleme önce havuzlu adresi, sonra migration için doğrudan adresi doğrulamalı açar; biri açılmazsa derleme migration'dan önce durur, ne veritabanı ne yayındaki sürüm değişir. Neon sertifikasını değiştirdiği için derleme durursa geçici olarak `require` yazılır |
@@ -424,7 +426,9 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   `fast-xml-parser` (düşük önem, düzeltmesi 5.12 ara sürümü).
 - Veri yedeği: Neon'un otomatik nokta-zaman geri yüklemesi (point-in-time restore) küçük planlarda yalnız birkaç saat
   ya da gün geriye gider. Uzun süreli yedek: **Ayarlar › Yedek › Yedeği indir** (parolayla) paneldeki bütün veriyi tek
-  `.json.gz` dosyasında indirir; ayda bir alınır, 30 günü geçince zil hatırlatır. Geri yükleme yalnız bilgisayardan:
+  `.json.gz` dosyasında indirir; ayda bir alınır, 30 günü geçince zil hatırlatır. Sabah işi her pazartesi aynı yedeği
+  özel Blob deposuna da yazar, son 8 haftayı saklar (Ayarlar › Yedek'te parolayla iner; [YEDEK.md](YEDEK.md) § 13);
+  veritabanının boyutu her sabah ölçülür, `DB_QUOTA_MB`'nin %70 ve %90'ında uyarılır (§ 14). Geri yükleme yalnız bilgisayardan:
   `npm run db:restore -- <dosya>` (dolu veritabanına `--sil`, önce onun yedeğini alır). Biçim, adımlar, prova ve geri
   yüklemeden sonra olanlar: [YEDEK.md](YEDEK.md). Kasa ve fiş fotoğraflarının dosyaları yedekte yoktur (yalnız
   kayıtları); dosyalar özel Vercel Blob deposunda kalır ([FOTOGRAF.md](FOTOGRAF.md)). Aynı karttaki **Dışa aktar (.xlsx)** okunabilir bir çalışma kitabıdır ([YEDEK.md](YEDEK.md) § 12): panel

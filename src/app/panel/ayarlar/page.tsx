@@ -13,6 +13,7 @@ import { InfoTip, Skeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { logPerson } from "@/lib/activity-person";
 import { ALL_BRANCHES } from "@/lib/branches";
+import { AUTO_BACKUP_KEEP, storedBackupLabel } from "@/lib/backup/auto";
 import { backupCardSummary, backupDue, lastBackupText, sizeText } from "@/lib/backup/format";
 import { currentMonthTR, shiftMonth, type Model } from "@/lib/calc/engine";
 import { dateTimeTR } from "@/lib/format";
@@ -22,6 +23,7 @@ import { requireAdmin } from "@/server/auth/dal";
 import { appUrl } from "@/server/auth/tokens";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
+import { loadAutoBackupInfo, type AutoBackupInfo } from "@/server/backup/auto";
 import { loadBackupInfo } from "@/server/backup/state";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
@@ -32,8 +34,9 @@ import { readOrdersState, syncSiteOrders } from "@/server/site-orders/sync";
 import { readSalesState, syncSiteSales } from "@/server/site-sales/sync";
 
 import { AppearanceCard } from "./appearance-card";
-import { BackupDownload } from "./backup-client";
+import { BackupDownload, StoredBackupList } from "./backup-client";
 import { BranchSettingsLinkCard } from "./branch-settings-card";
+import { DatabaseCard } from "./database-card";
 import { impactData } from "./impact";
 import { JobsCard } from "./jobs-card";
 import { LafposCard } from "./lafpos-card";
@@ -137,24 +140,33 @@ function UsersLinkCard() {
  * (src/lib/job-health.ts › systemAlerts). Geri yükleme panelde yok: bilgisayardan bir komutla yapılır.
  */
 async function BackupCard() {
-  const info = await loadBackupInfo().catch((e) => {
-    console.error("Yedek bilgisi okunamadı", e);
-    return null;
-  });
+  const [info, auto] = await Promise.all([
+    loadBackupInfo().catch((e) => {
+      console.error("Yedek bilgisi okunamadı", e);
+      return null;
+    }),
+    loadAutoBackupInfo().catch((e) => {
+      console.error("Otomatik yedekler okunamadı", e);
+      return null;
+    }),
+  ]);
   const now = new Date();
   const last = info?.last ?? null;
+  // Telefonda kapalı satır: otomatik yedek alınamıyorsa o söylenir (kırmızı), yoksa elle alınan son yedek
+  const autoFailed = auto?.status.tone === "bad";
   return (
     <SectionCard
       id="yedek"
       icon={<HardDriveDownload />}
       title="Yedek"
-      summary={info ? backupCardSummary(last, now) : "Durum okunamadı"}
-      summaryTone={!info ? "bad" : !last || backupDue(last.at, now) ? "warn" : undefined}
+      summary={autoFailed ? "Otomatik yedek alınamadı" : info ? backupCardSummary(last, now) : "Durum okunamadı"}
+      summaryTone={autoFailed || !info ? "bad" : !last || backupDue(last.at, now) ? "warn" : undefined}
       description={
         <>
-          Paneldeki bütün veri tek dosyada iner ve gerekirse geri yüklenir. Ayda bir indirip bilgisayarınızda ya da Google Drive&apos;da saklayın. Parolalar
-          dosyaya yazılmaz; dosyada ciro, maaş ve IBAN&apos;lar var, kimseyle paylaşmayın.{" "}
-          <InfoTip text="Veritabanı Neon'da da kendiliğinden yedeklenir ama yalnız kısa bir süre geriye gidilebilir; bu dosya sizde kalan uzun süreli kopyadır. Geri yükleme panelden yapılmaz (tek dokunuşla bütün veri değişmesin); geliştirici bilgisayardan bir komutla yapar. Dışa aktarılan çalışma kitabı (.xlsx) okumak içindir, geri yüklenmez." />
+          Paneldeki bütün veri tek dosyada iner ve gerekirse geri yüklenir. Ayda bir indirip bilgisayarınızda ya da Google Drive&apos;da saklayın. Panel her
+          pazartesi kendiliğinden de yedek alır, son {AUTO_BACKUP_KEEP} haftayı saklar. Parolalar dosyaya yazılmaz; dosyada ciro, maaş ve IBAN&apos;lar var,
+          kimseyle paylaşmayın.{" "}
+          <InfoTip text="Veritabanı Neon'da da kendiliğinden yedeklenir ama yalnız kısa bir süre geriye gidilebilir. Otomatik haftalık yedekler panelin özel dosya deposunda (Vercel) durur; sizde kalan kopyanın yerini tutmaz, bu yüzden ayda bir indirme hatırlatması sürer. Geri yükleme panelden yapılmaz (tek dokunuşla bütün veri değişmesin); geliştirici bilgisayardan bir komutla yapar. Dışa aktarılan çalışma kitabı (.xlsx) okumak içindir, geri yüklenmez." />
         </>
       }
       actionsClassName="max-sm:w-full"
@@ -201,8 +213,34 @@ async function BackupCard() {
         ) : (
           <Notice tone="bad" size="sm" title="Son yedeğin bilgisi okunamadı; sayfayı yenileyin" text="İndirme yine çalışır." />
         )}
+        <AutoBackups auto={auto} />
       </CardContent>
     </SectionCard>
+  );
+}
+
+const AUTO_TONE = { ok: "green", warn: "amber", bad: "red", off: "gray" } as const;
+
+/**
+ * Otomatik haftalık yedek (docs/YEDEK.md › Otomatik haftalık yedek): durum satırı (son yedek, alınamadı, gecikti, depo
+ * yok) ve depodaki dosyalar; her birinin İndir'i parola ister (StoredBackupList).
+ */
+function AutoBackups({ auto }: { auto: AutoBackupInfo | null }) {
+  if (!auto) return <Notice tone="bad" size="sm" className="mt-3" title="Otomatik yedeklerin listesi okunamadı; sayfayı yenileyin" />;
+  const { status, items } = auto;
+  return (
+    <section aria-labelledby="oto-yedek-baslik" className="mt-3 rounded-2xl bg-surface px-4 py-3 text-sm ring-1 ring-line">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <h3 id="oto-yedek-baslik" className="font-medium text-ink">
+          Otomatik haftalık yedek
+        </h3>
+        <Badge tone={AUTO_TONE[status.tone]} dot>
+          {status.badge}
+        </Badge>
+      </div>
+      <p className="mt-1 text-[13px] text-pretty text-ink-mute">{status.text}</p>
+      {items.length ? <StoredBackupList items={items.map((b) => ({ name: b.name, label: storedBackupLabel(b), size: sizeText(b.bytes) }))} /> : null}
+    </section>
   );
 }
 
@@ -463,6 +501,7 @@ async function SettingsContent() {
       />
       <ModposCard scope={scope} branches={branches} />
       <PhotoReadingCard />
+      <DatabaseCard />
       <BackupCard />
     </SettingsLayout>
   );
