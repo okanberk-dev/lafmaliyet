@@ -38,6 +38,7 @@ import { impactData } from "./impact";
 import { JobsCard } from "./jobs-card";
 import { LafposCard } from "./lafpos-card";
 import { ModposCard } from "./modpos-card";
+import { ClosedPeriodCard } from "./period-card";
 import { PhotoReadingCard } from "./photo-card";
 import { SectionCard } from "./section-card";
 import { SettingsNav } from "./section-nav";
@@ -428,6 +429,7 @@ async function SettingsContent() {
         months={fifoOptions}
         openingOverrides={company.ds.pnlEntries.filter((e) => e.rowKey === "stock:opening").map((e) => e.month)}
       />
+      <ClosedPeriodCard />
       <div className="grid gap-4 @5xl:grid-cols-2">
         <CategoriesEditor categories={model.categories.map((c) => ({ id: c.id, name: c.name, count: productCount.get(c.id) ?? 0 }))} />
         <ActivityLog

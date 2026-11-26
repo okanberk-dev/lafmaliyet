@@ -12,6 +12,9 @@
 /** integration_state anahtarı */
 export const CLOSED_PERIODS_KEY = "donem.kapali";
 
+/** Ayarlar'daki bölüm: kapalı aylar ve bekleyen kayıtlar (zil buraya götürür) */
+export const CLOSED_PERIOD_HREF = "/panel/ayarlar#donem";
+
 /** Kapanış anındaki sağlama: ayın fatura ve harcama sayısı ile toplamı (kuruşa yuvarlı) */
 export interface PeriodCheck {
   invoices: number;
@@ -175,4 +178,44 @@ export function checkDrift(saved: PeriodCheck | undefined, now: PeriodCheck): st
 export function heldSummary(n: { invoices: number; expenses: number }): string | null {
   const parts = [n.invoices ? `${n.invoices} fatura` : null, n.expenses ? `${n.expenses} harcama` : null].filter(Boolean);
   return parts.length ? `${parts.join(" ve ")} kapalı döneme düştü; hesaplara girmedi, kararınızı bekliyor.` : null;
+}
+
+/** Kapalı ay ya da verilmiş karar var mı: yoksa hesaplar kayıtlara hiç dokunmaz */
+export const periodsActive = (p: ClosedPeriods, rows: readonly { periodDate: string | null }[] = []) => Object.keys(p.months).length > 0 || rows.some((r) => r.periodDate);
+
+/**
+ * Hesaplara giren kayıtlar (src/server/data/dataset.ts): bekleyen kayıt çıkar, açık aya alınan kayıt karar gününe
+ * taşınır (`date` hesap günü olur; belgenin tarihi veritabanında değişmez). Sıra tarihe göre korunur. Kapalı ay ve
+ * karar yoksa liste olduğu gibi döner
+ */
+export function countedRecords<T extends PeriodRecord>(rows: readonly T[], p: ClosedPeriods): T[] {
+  if (!periodsActive(p, rows)) return rows as T[];
+  const out: T[] = [];
+  let moved = false;
+  for (const r of rows) {
+    const d = accountDate(r, p);
+    if (d === null) continue;
+    if (d !== r.date) moved = true;
+    out.push(d === r.date ? r : { ...r, date: d });
+  }
+  return moved ? out.map((r, i) => ({ r, i })).sort((a, b) => a.r.date.localeCompare(b.r.date) || a.i - b.i).map((x) => x.r) : out;
+}
+
+/**
+ * Stok değerlemesinin (FIFO) partileri faturanın hesap gününe göre: bekleyen faturanın partisi çıkar, açık aya alınanın
+ * partisi karar gününde (kapalı ayın devreden malı sonradan gelen faturayla değişmesin). `dates`: hesap günü kendi
+ * tarihinden farklı olan faturalar (id → gün; bekleyen null)
+ */
+export function redateLots<T extends { invoiceId: number; date: string }>(lots: readonly T[], dates: ReadonlyMap<number, string | null>): T[] {
+  if (!dates.size) return lots as T[];
+  const out: T[] = [];
+  for (const l of lots) {
+    if (!dates.has(l.invoiceId)) {
+      out.push(l);
+      continue;
+    }
+    const d = dates.get(l.invoiceId) ?? null;
+    if (d !== null) out.push({ ...l, date: d });
+  }
+  return out;
 }

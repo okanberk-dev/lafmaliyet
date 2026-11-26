@@ -15,6 +15,7 @@ import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
 import { linkedUntil } from "@/lib/photo-rules";
 import { addDays, todayTR } from "@/lib/reminders";
+import { assertPeriodOpen } from "@/server/closed-period";
 import { getDb, schema as s } from "@/server/db";
 import { getPhoto, keepPhoto, releasePhoto } from "@/server/storage/photos";
 import { assertNotHeld } from "@/server/staff-requests/core";
@@ -79,6 +80,14 @@ export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
       if (prev?.supplierEntryId && (Math.abs(prev.amount - data.amount) >= 0.005 || prev.date !== data.date || prev.categoryId !== data.categoryId)) {
         throw new UserError(`Bu harcama ${await ownerName(prev.supplierEntryId)} faturasız alımından; tutarını, gününü ve kategorisini Tedarikçiler'de düzeltin`);
       }
+      // Dönem kapanışı (docs/DONEM-KAPANISI.md): kapalı ayda sayılan kaydın tutarı, günü, kategorisi ve şubesi değişmez,
+      // kayıt kapalı aya da taşınamaz (açıklama ve not serbest). Bekleyen kayıt kilitli değil
+      if (
+        prev &&
+        (Math.abs(prev.amount - data.amount) >= 0.005 || prev.date !== data.date || prev.categoryId !== data.categoryId || (rawBranch && rawBranch !== (prev.branchId ?? EXPENSE_SHARED)))
+      ) {
+        await assertPeriodOpen(db, prev, [data.date]);
+      }
       // Şube formda değiştiyse (gönderilmediyse ya da aynıysa dokunulmaz: kapanmış şubenin eski kaydı da düzeltilir).
       // Kaynağa bağlı kaydın şubesi kaynağın şubesidir: kasadan çıkanınki o kasanın, cari giderinki Tedarikçiler'de seçilen
       if (prev && rawBranch && rawBranch !== (prev.branchId ?? EXPENSE_SHARED)) {
@@ -138,8 +147,14 @@ export async function deleteExpenseEntry(id: number) {
     const me = await requireAdmin();
     const entryId = z.number().int().positive().parse(id);
     // Cari borcun gideri burada silinmez: borç silinince ya da "Faturası gelecek" yapılınca kalkar
-    const [owned] = await getDb().select({ owner: s.expenseEntries.supplierEntryId }).from(s.expenseEntries).where(eq(s.expenseEntries.id, entryId)).limit(1);
+    const [owned] = await getDb()
+      .select({ owner: s.expenseEntries.supplierEntryId, date: s.expenseEntries.date, createdAt: s.expenseEntries.createdAt, periodDate: s.expenseEntries.periodDate })
+      .from(s.expenseEntries)
+      .where(eq(s.expenseEntries.id, entryId))
+      .limit(1);
     if (owned?.owner) throw new UserError(`Bu harcama ${await ownerName(owned.owner)} faturasız alımının gideri; orada silin ya da 'Faturası gelecek' yapın`);
+    // Kapalı ayda sayılan harcama silinmez (docs/DONEM-KAPANISI.md)
+    if (owned) await assertPeriodOpen(getDb(), owned);
     const row = await getDb().transaction(async (tx) => {
       const [row] = await tx.delete(s.expenseEntries).where(and(eq(s.expenseEntries.id, entryId), isNull(s.expenseEntries.supplierEntryId))).returning();
       if (!row) throw new UserError("Harcama bulunamadı; silinmiş olabilir");

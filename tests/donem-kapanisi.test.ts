@@ -11,6 +11,7 @@ import {
   closableMonths,
   closedMonths,
   closeRefusal,
+  countedRecords,
   heldSummary,
   lockRefusal,
   monthLastDay,
@@ -18,6 +19,7 @@ import {
   parseClosedPeriods,
   periodStateOf,
   prevMonth,
+  redateLots,
   type ClosedPeriods,
 } from "../src/lib/closed-period";
 
@@ -103,4 +105,49 @@ test("bekleyenlerin tek satırı", () => {
   assert.equal(heldSummary({ invoices: 0, expenses: 0 }), null, "bekleyen yoksa satır yok");
   assert.match(heldSummary({ invoices: 2, expenses: 1 }) ?? "", /^2 fatura ve 1 harcama kapalı döneme düştü/, "iki tür birlikte yazılmalı");
   assert.match(heldSummary({ invoices: 0, expenses: 3 }) ?? "", /^3 harcama kapalı döneme düştü/, "yalnız harcama");
+});
+
+test("hesaplara giren kayıtlar: bekleyen çıkar, açık aya alınan karar gününe taşınır, sıra tarihe göre", () => {
+  const rows = [
+    { id: 1, date: "2026-10-05", createdAt: "2026-10-06T10:00:00.000Z", periodDate: null },
+    { id: 2, date: "2026-10-20", createdAt: "2026-11-12T10:00:00.000Z", periodDate: null },
+    { id: 3, date: "2026-10-28", createdAt: "2026-11-12T10:00:00.000Z", periodDate: "2026-11-12" },
+    { id: 4, date: "2026-11-03", createdAt: "2026-11-03T10:00:00.000Z", periodDate: null },
+  ];
+  const out = countedRecords(rows, CLOSED);
+  assert.deepEqual(
+    out.map((r) => [r.id, r.date]),
+    [
+      [1, "2026-10-05"],
+      [4, "2026-11-03"],
+      [3, "2026-11-12"],
+    ],
+    "bekleyen (2) çıkmalı, alınan (3) karar gününe taşınıp tarihe göre sıralanmalı",
+  );
+  const plain = rows.filter((r) => !r.periodDate);
+  assert.equal(countedRecords(plain, { months: {} }), plain, "kapalı ay ve karar yoksa liste olduğu gibi (aynı nesne) dönmeli");
+});
+
+test("FIFO partileri faturanın hesap gününe göre", () => {
+  const lots = [
+    { invoiceId: 1, date: "2026-10-05", qty: 1 },
+    { invoiceId: 2, date: "2026-10-20", qty: 2 },
+    { invoiceId: 3, date: "2026-10-28", qty: 3 },
+  ];
+  const out = redateLots(
+    lots,
+    new Map([
+      [2, null],
+      [3, "2026-11-12"],
+    ]),
+  );
+  assert.deepEqual(
+    out.map((l) => [l.invoiceId, l.date]),
+    [
+      [1, "2026-10-05"],
+      [3, "2026-11-12"],
+    ],
+    "bekleyen faturanın partisi çıkmalı, alınanınki karar gününe taşınmalı",
+  );
+  assert.equal(redateLots(lots, new Map()), lots, "taşınan fatura yoksa aynı dizi");
 });
