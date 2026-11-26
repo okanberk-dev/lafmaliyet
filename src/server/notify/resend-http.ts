@@ -4,6 +4,13 @@
  * sahte fetch ve saatle sınar). Anahtarı ve gönderen sırasını resend.ts verir (sendEmail).
  */
 
+/** E-posta eki (ör. gün sonu fotoğrafı); Resend'e base64 gider */
+export interface EmailAttachment {
+  filename: string;
+  content: Uint8Array;
+  contentType?: string;
+}
+
 export interface EmailMessage {
   from: string;
   to: string[];
@@ -11,6 +18,15 @@ export interface EmailMessage {
   html: string;
   text: string;
   idempotencyKey?: string;
+  attachments?: EmailAttachment[];
+}
+
+/** İsteğin gövdesi (ekler base64); saf, testli */
+export function emailPayload(msg: EmailMessage): Record<string, unknown> {
+  const attachments = msg.attachments?.length
+    ? msg.attachments.map((a) => ({ filename: a.filename, content: Buffer.from(a.content).toString("base64"), ...(a.contentType ? { content_type: a.contentType } : {}) }))
+    : undefined;
+  return { from: msg.from, to: msg.to, subject: msg.subject, html: msg.html, text: msg.text, ...(attachments ? { attachments } : {}) };
 }
 
 /**
@@ -119,7 +135,7 @@ export async function postEmail(apiKey: string, msg: EmailMessage, opts: SendOpt
           "Content-Type": "application/json",
           ...(msg.idempotencyKey ? { "Idempotency-Key": msg.idempotencyKey } : {}),
         },
-        body: JSON.stringify({ from: msg.from, to: msg.to, subject: msg.subject, html: msg.html, text: msg.text }),
+        body: JSON.stringify(emailPayload(msg)),
         signal,
       });
       const body = await res.text();

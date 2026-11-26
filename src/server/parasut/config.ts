@@ -49,7 +49,7 @@ interface StoredSettings {
   clientSecret?: string;
   companyId?: string;
   syncFrom?: string;
-  /** Hesabın faturaları: "shared" işletme geneli (yoksa tek şubenin hesabıysa o şubenin; invoiceBranchOf) */
+  /** Hesabın faturaları: "shared" şubeye yazılmaz, tedarikçinin varsayılanı (yoksa tek şubenin hesabıysa o şubenin; invoiceBranchOf) */
   invoices?: ParasutInvoiceScope;
   updatedAt?: string;
   updatedBy?: string;

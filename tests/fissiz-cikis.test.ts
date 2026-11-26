@@ -88,3 +88,13 @@ test("e-posta: yöneticinin metninde ve HTML'inde fişsiz çıkış; personelin 
   assert.match(plain(m.text), /⚠️ Fişsiz çıkış: 500 ₺/);
   assert.doesNotMatch(renderCashReport(day, { by: "Ayşe", revision: 1, submittedAt: new Date() }).html, /Fişsiz/);
 });
+
+test("Kasa e-postası: fotoğraf okundu ve yazılanlarla tutuyorsa yöneticiye olumlu satır; fark varsa satır yok (sahibin isteği, 25 Kasım 2026)", () => {
+  const base = { by: "Ayşe", revision: 1, submittedAt: new Date("2026-11-24T20:00:00Z") };
+  const ok = renderCashReport(day, { ...base, photoRead: true, photoDiffs: [] });
+  assert.match(ok.text, /✓ Z fotoğrafı okundu: yazılan rakamlarla tutuyor/);
+  assert.match(ok.html, /Z fotoğrafı okundu: yazılan rakamlarla tutuyor/);
+  const diff = renderCashReport(day, { ...base, photoRead: true, photoDiffs: [{ field: "zTotal", label: "Z toplamı", photo: 9_350, written: 9_000 } as never] });
+  assert.doesNotMatch(diff.text, /yazılan rakamlarla tutuyor/);
+  assert.doesNotMatch(renderCashReport(day, base).text, /yazılan rakamlarla tutuyor/, "okunan fotoğraf yoksa satır yok");
+});

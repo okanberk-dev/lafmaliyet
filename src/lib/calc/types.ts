@@ -343,10 +343,17 @@ export interface Invoice {
   /** E-faturanın ETTN'si (dışa aktarımın Faturalar sekmesi; hesaplarda kullanılmaz) */
   eInvoiceUuid?: string | null;
   /**
-   * Faturanın şubesi: ayrı Paraşüt hesabına bağlı şubenin faturası o şubenindir; boş = işletme geneli (ortak Paraşüt
-   * hesabı, elle girilenler ve içe aktarılmışlar; docs/SUBE.md › Paraşüt)
+   * Faturanın şubesi (docs/SUBE.md › Faturanın şubesi): şube, bilinçli işletme geneli (`companyWide`) ya da ikisi de
+   * boş (şubesi seçilmemiş; tek şube görünümüne gelmez). Ayrı Paraşüt hesabına bağlı şubenin faturası o şubenindir.
+   * `companyWide` yoksa (içe aktarılmış veri, testler) şubesiz fatura işletme geneli sayılır
    */
   branchId?: string | null;
+  companyWide?: boolean;
+  /**
+   * Kalem kalem sınıflandırma (src/lib/invoice-split.ts): yalnız bir kalemin payı faturanın kendi payından ayrılıyorsa
+   * (kategorisi mal alışı olmayan faturada hammaddeye bağlı kalem, nedenli "hammadde değil" kalem). Yoksa fatura bütün
+   */
+  lines?: { net: number; to: string | null }[] | null;
 }
 
 /**
