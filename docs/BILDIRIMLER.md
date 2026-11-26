@@ -320,6 +320,41 @@ içeren bütün grupların e-postası gidince yazılır: sonraki gönderim düş
 aynı tekil anahtarla gider (Resend ikinci kez göndermez). Sonuç "gitti" olsa da düşen grup Günlük işler'de hata, "Şimdi
 gönder"de uyarı olarak görünür (`partialError`); hiçbiri gitmediyse sonuç hata.
 
+## E-posta tasarımı (teknik)
+
+E-postaların ortak görünüşü `src/lib/email/` altındaki saf kitten gelir (veritabanı, ağ ve Next yok; lib ve sunucu
+modülleri içe aktarır). Amaç: ferah, telefonda rahat okunan, açık ve koyu temada aynı kimlik (docs/TASARIM.md,
+`src/app/globals.css`).
+
+- **Kabuk** `layout({ subject, preheader, branch, meta, date, eyebrow, title, lead, body, footer })`: yumuşak gri zemin,
+  en geniş 600 px beyaz yuvarlatılmış kart, üstte L'Af karosu + "L'Affogato · <şube>" + meta satırı, altta gri not.
+  `body` blokların dizisidir; aralarına eşit boşluk girer (28 px, telefonda 22). Kart içi 32 px, telefonda 20.
+- **Bileşenler** (`blocks.ts`): `statusBanner` (iyi / uyarı / kötü / nötr; işaret + başlık + alt satır), `kpiGrid` (1–3
+  büyük rakam; telefonda alt alta), `section` + `kvRow` (ince ayraçlı etiket–değer satırları; uzun değer telefonda
+  etiketin altına iner, kısa tutar yanında kalır), `list`, `note`, `button` ("Panelde aç"; tablo hücresi, resimsiz),
+  `link`, `divider`, `badge`, `paragraph`, `stack` / `gap`. Metin parametreleri kaçışlanır; ham HTML yalnız `html: true`
+  ya da adı `…Html` olan alanla girer. Düz metin sürümü için `text.ts` (`kvText`, `sectionText`, `listText`…).
+- **Renkler** (`tokens.ts`): mürekkep #171717, zinc zemin; durum renkleri yalnız anlam taşırken (yeşil tutuyor, kırmızı
+  fark, turuncu dikkat) ve hiçbir zaman tek başına (işaret ve sözcük aynı şeyi söyler). Rakamlar tabular.
+- **İstemci gerçekleri**: yerleşim tablolarla, her stil satır içinde; `<head>`'deki `<style>` yalnız iyileştirir:
+  `@media (max-width: 620px)` telefon düzeni, `@media (prefers-color-scheme: dark)` + `color-scheme` meta koyu tema,
+  Outlook.com için `[data-ogsc]` kuralları; Outlook masaüstü için MSO koşullu 600 px tablo ve Arial. `<style>`'ı
+  okumayan istemcide e-posta açık temada, akışkan masaüstü düzeniyle görünür. Web yazı tipi ve resim yok.
+- **Kural**: tasarım içeriği değiştirmez. Konu satırı, düz metin sürümü ve HTML'deki sözcükler şablonun kendi
+  fonksiyonlarından gelir; kit yalnız görünüşü kurar.
+
+Kite taşınanlar: Z raporu (gün sonu fotoğrafı) e-postası `renderPhotoMail`, gün sonu `renderDayEnd`
+(`src/lib/lafpos/gun-sonu.ts`) ve Pavo karşılaştırması `renderPavoMail` / `pavoSectionHtml`
+(`src/lib/lafpos/bank-pos.ts`). Öteki şablonlar (sabah özeti, haftalık özet, kasa raporu, karaoke, kontrol listesi,
+giriş bilgileri, Claude bağlantısı, personel gün sonu) eski kendi HTML'leriyle; taşınırken aynı kural geçerli.
+
+**Önizleme**: `npm run eposta:onizleme` (`scripts/eposta-onizleme.ts`) her şablonu uydurma örnek verilerle
+`.data/eposta-onizleme/<ad>.html` + `<ad>.txt` + `index.html` olarak yazar; Playwright kuruluysa 375 ve 640 px, açık
+ve koyu temada tam sayfa PNG alır (`.data/eposta-onizleme/png/<ad>-<genişlik>-<light|dark>.png`) ve yatay taşmayı
+bildirir. `-- z-raporu gun-sonu` yalnız adı bunlarla başlayanları, `-- --png-yok` yalnız HTML ve metni üretir. `.data/`
+depoya girmez. Şablona dokunan değişiklikte önizlemeyi çalıştırıp telefon görüntüsüne bakın. Testler:
+`tests/eposta-kit.test.ts`.
+
 ## Marina gün sonu e-postası (22 Kasım 2026)
 
 LafPOS'un şubesinin (Marina) gün sonu geçiş gününden itibaren geldiğinde o şubenin kasa raporu alıcılarına (şube başına;

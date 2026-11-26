@@ -99,7 +99,8 @@ export interface Kpi {
 export function kpiGrid(items: readonly Kpi[]): string {
   const list = items.slice(0, 3);
   if (!list.length) return "";
-  const width = Math.floor(100 / list.length);
+  // Aradaki 12 px'lik boşluklara yer kalsın diye yüzdeler 100'ü doldurmaz (yoksa tablo boşlukları sıkıştırır)
+  const width = Math.floor(100 / list.length) - (list.length > 1 ? 1 : 0);
   const cell = (k: Kpi) => {
     const valueTone = k.tone && k.tone !== "neutral" ? k.tone : null;
     const subTone = k.subTone && k.subTone !== "neutral" ? k.subTone : null;
