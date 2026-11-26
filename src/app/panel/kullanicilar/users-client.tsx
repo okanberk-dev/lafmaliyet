@@ -21,6 +21,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { ToggleRow } from "@/components/ui/toggle-row";
+import { twoFactorRequiredFor, twoFactorResetTextFor } from "@/lib/admin-security";
 import { ROLE_ORDER, ROLES, type Role } from "@/lib/constants";
 import { num } from "@/lib/format";
 import { PASSWORD_MIN, passwordProblem } from "@/lib/password-rules";
@@ -197,7 +198,7 @@ export function UsersEditor({
   emailConfigured: boolean;
   loginUrl: string;
   branches?: readonly UserBranchOption[];
-  /** Yöneticide iki adımlı zorunlu (src/lib/admin-security.ts): sıfırlama penceresi kurulum ekranını söyler */
+  /** Zorunluluk açık (ADMIN_2FA_REQUIRED=1; src/lib/admin-security.ts): hedef yönetici, müdür ya da muhasebeciyse sıfırlama penceresi kurulum ekranını söyler */
   twoFactorRequired?: boolean;
 }) {
   return (
@@ -1082,7 +1083,11 @@ function UserDialog({
   /** Yöneticinin iki adımlısını sıfırlamak ve yöneticiyi silmek kendi parolanızı ister; personelde yalnızca onay */
   function ask(kind: "2fa" | "delete") {
     if (!needsStepUp({ kind, targetRole: user.role })) return setConfirm(kind);
-    void stepUp.guard(stepUpText(kind === "2fa" ? { kind, required: twoFactorRequired } : { kind, name: user.name }), (confirm) => act(kind, confirm), finish(kind));
+    void stepUp.guard(
+      stepUpText(kind === "2fa" ? { kind, required: twoFactorRequiredFor(user.role, twoFactorRequired) } : { kind, name: user.name }),
+      (confirm) => act(kind, confirm),
+      finish(kind),
+    );
   }
 
   const secBtn = cn(TAP, "w-full justify-start sm:w-auto sm:pointer-fine:h-8");
@@ -1134,7 +1139,8 @@ function UserDialog({
   const confirmText: Record<Confirm, { title: string; description: string; label: string }> = {
     "2fa": {
       title: "İki adımlı doğrulama sıfırlansın mı?",
-      description: "Telefonunu kaybeden kullanıcı için. Girişte yalnızca parola istenir; kişi Hesabım'dan yeniden kurabilir.",
+      // Parola istemeyen sıfırlama (müdür, muhasebeci, personel): zorunluluk açıkken müdür ve muhasebeci kurulum ekranına gider
+      description: twoFactorResetTextFor(user.role, twoFactorRequired),
       label: "Sıfırla",
     },
     logout: { title: "Bütün oturumları kapatılsın mı?", description: "Kullanıcı bütün cihazlarda çıkış yapar ve yeniden giriş yapması gerekir.", label: "Oturumları kapat" },
@@ -1272,7 +1278,7 @@ function Mark({ on, label }: { on: boolean; label: string }) {
   );
 }
 
-/** `twoFactorRequired`: yönetici hesaplarında iki adımlı zorunlu (src/lib/admin-security.ts; yalnız ADMIN_2FA_REQUIRED=1 iken) */
+/** `twoFactorRequired`: zorunluluk açık (yalnız ADMIN_2FA_REQUIRED=1 iken; yönetici, müdür, muhasebecide; src/lib/admin-security.ts) */
 export function RolesCard({ twoFactorRequired = false }: { twoFactorRequired?: boolean }) {
   return (
     <Card>
@@ -1280,7 +1286,9 @@ export function RolesCard({ twoFactorRequired = false }: { twoFactorRequired?: b
         icon={<ShieldCheck />}
         title="Roller"
         description={`Her kullanıcının tek rolü vardır. Yetkiler hem menüde hem sunucuda denetlenir. Müdür yalnız şubesini görür (şubesi zorunlu); muhasebeci salt okur, hiçbir kaydı değiştiremez. Yönetici eklemek ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirmek kendi parolanızı ister.${
-          twoFactorRequired ? " Yönetici, müdür ve muhasebeci hesaplarında iki adımlı doğrulama zorunludur: kurmamış kişi girişten sonra kurulum ekranına gider." : ""
+          twoFactorRequired
+            ? " Yönetici, müdür ve muhasebeci hesaplarında iki adımlı doğrulama zorunludur: kurmamış kişi girişten sonra kurulum ekranına gider."
+            : " İki adımlı doğrulama herkeste isteğe bağlıdır."
         }`}
       />
       <TableWrap>

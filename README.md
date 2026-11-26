@@ -29,10 +29,11 @@ asistan ([docs/ASISTAN.md](docs/ASISTAN.md)).
 - **Arayüz:** [AkmanOS](https://akmanos.com) bileşen kütüphanesinin açık teması (`src/components/akmanos/`), L'Af logosu
   laffogato deposundan. Tasarım kuralları [docs/TASARIM.md](docs/TASARIM.md)
 - **Backend:** Next.js Server Actions + Route Handlers (Vercel Functions), Postgres (Neon), Drizzle ORM
-- **Oturum:** imzalı JWT çerezi (jose) ve scrypt parola özeti. Roller: yönetici ve personel (**Ayarlar › Kullanıcılar &
-  roller**). İki adımlı doğrulama (TOTP, Google/Microsoft Authenticator) ve kurtarma kodları (**Hesabım**):
-  herkeste isteğe bağlı (`ADMIN_2FA_REQUIRED=1` yönetici hesaplarında zorunlu yapar: kurmamış yönetici girişten sonra
-  kurulum ekranına gider); yöneticinin yeni bir cihazdan girişi e-posta ve zille bildirilir
+- **Oturum:** imzalı JWT çerezi (jose) ve scrypt parola özeti. Roller: yönetici, müdür, muhasebeci ve personel
+  (**Ayarlar › Kullanıcılar & roller**; [docs/ROLLER.md](docs/ROLLER.md)). İki adımlı doğrulama (TOTP,
+  Google/Microsoft Authenticator) ve kurtarma kodları (**Hesabım**): herkeste isteğe bağlı (`ADMIN_2FA_REQUIRED=1`
+  yönetici, müdür ve muhasebeci hesaplarında zorunlu yapar: kurmamış kişi girişten sonra kurulum ekranına gider;
+  personelde her zaman isteğe bağlı); bu üç rolün yeni bir cihazdan girişi e-posta ve zille bildirilir
   ([docs/DEPLOY.md](docs/DEPLOY.md) › 6a); 5 hatalı denemede 15 dakika kilit; parola, rol ya da erişim değişince eski oturumlar kapanır;
   yönetici hesaplarını etkileyen işlemler (yönetici ekleme ya da yapma, bir yöneticinin parolası, e-postası, iki
   adımlısı, bağlantısı, pasif yapma, silme) işlemi yapanın kendi parolasıyla onaylanır

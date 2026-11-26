@@ -150,8 +150,9 @@ export function opsActor<T extends { role: Role }>(me: T): Actor<T> {
 }
 
 /**
- * İki adımlı doğrulamanın zorunlu olduğu roller (src/lib/admin-security.ts): rakam gören her rol (yönetici, müdür,
- * muhasebeci). Personel ortak tablette sırayla girer; onda isteğe bağlı kalır.
+ * ADMIN_2FA_REQUIRED=1 iken iki adımlının zorunlu olduğu roller (src/lib/admin-security.ts; varsayılan herkeste isteğe
+ * bağlı): rakam gören her rol (yönetici, müdür, muhasebeci). Yeni cihaz uyarısı da bunlarda (zorunluluktan bağımsız).
+ * Personel ortak tablette sırayla girer; onda her zaman isteğe bağlı.
  */
 export const TWO_FACTOR_ROLES: readonly Role[] = ["admin", "manager", "accountant"];
 

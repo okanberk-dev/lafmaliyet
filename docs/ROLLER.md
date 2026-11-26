@@ -133,10 +133,13 @@ oturumları kapanır (oturum sürümü).
   öteki şubeleri bir arada gösteriyorlar. Müdürün şube raporları: Bugün'deki şube günü ve İşçilik / ciro.
 - **Muhasebeci kişi başı maaş görmez**; bordro toplamları, SGK ve muhtasar toplamları vergide görünür. Personel
   belgeleri ona kapalı.
-- **İki adımlı doğrulama** rakam gören her rolde zorunlu: yönetici, müdür, muhasebeci (`TWO_FACTOR_ROLES`;
-  `src/lib/admin-security.ts`). Personel ortak tablette sırayla girer; onda isteğe bağlı. Yeni cihaz uyarısı da bu üç
-  rolde: işlem geçmişi, kişinin kendi adresine e-posta ve zilinin Sistem başlığı, her birinde yalnız kendi hesabının
-  girişleri (`src/server/actions/notifications.ts` › `loadPanelNotifications`).
+- **İki adımlı doğrulama** isteğe bağlıdır (Hesabım'dan açılır; sahibin kararı, PR #154). `ADMIN_2FA_REQUIRED=1`
+  iken rakam gören her rolde (yönetici, müdür, muhasebeci; `TWO_FACTOR_ROLES`) zorunlu: kurmamış kişi girişten sonra
+  kurulum ekranına gider, kurana kadar paneli kullanamaz; `ADMIN_2FA_OPTIONAL=1` acil durumda zorunluluğu kapatır
+  (`src/lib/admin-security.ts` › `twoFactorRequiredFor`, metni `TWO_FACTOR_RULE_TEXT`). Personel ortak tablette
+  sırayla girer; onda her zaman isteğe bağlı. Yeni cihaz uyarısı bu üç rolde, zorunluluktan bağımsız: işlem geçmişi,
+  kişinin kendi adresine e-posta ve zilinin Sistem başlığı, her birinde yalnız kendi hesabının girişleri
+  (`src/server/actions/notifications.ts` › `loadPanelNotifications`).
 - **E-posta alıcıları** ([BILDIRIMLER.md](BILDIRIMLER.md) › Alıcılar ve hesaplar): kasa raporu ve sabah e-postası
   personel ve **müdür** hesabının adresine gitmez (listeler şubeler arasında ortak olabilir; kasa e-postası karaoke ön
   ödemesini, sabah e-postası işletmenin ödemelerini ve maliyetini taşır); **muhasebeci** hesabı alır (hesabı olmayan

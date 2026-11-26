@@ -25,7 +25,7 @@ function safeStore(kind: "localStorage" | "sessionStorage"): Storage | null {
 }
 
 /**
- * Zorunlu iki adımlı kurulum (yönetici; src/lib/admin-security.ts). Hesabım'daki kurulumla aynı sunucu eylemleri ve
+ * Zorunlu iki adımlı kurulum (yönetici, müdür, muhasebeci; src/lib/admin-security.ts). Hesabım'daki kurulumla aynı sunucu eylemleri ve
  * aynı sınırlar (parolayla başlar, 15 dakika, 5 hatalı kod; src/lib/two-factor-setup.ts), giriş kartının görünümüyle:
  * parola → QR'ı okut, kodu gir → kurtarma kodlarını sakla → panele geç. `enabled`: iki adımlı zaten açık (kurulum az
  * önce bitti ya da sayfa sonradan açıldı); kodlar ekrandaysa onlar, değilse yalnız "panele geç" gösterilir. Eylem

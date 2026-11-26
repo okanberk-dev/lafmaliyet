@@ -496,7 +496,10 @@ export const OP_GUIDES: readonly OpGuide[] = [
     keywords: ["iki adımlıyı sıfırla", "authenticator", "doğrulama uygulaması", "2fa"],
     why: "Kurtarma kodu taşır; güvenlik düşürme sosyal mühendislikle istenebilir.",
     path: "/panel/hesap",
-    steps: ["Kendi hesabınız için Hesabım › İki adımlı doğrulama › Kur.", "Başka kullanıcı için Kullanıcılar › kişi › İki adımlıyı sıfırla (parola ister)."],
+    steps: [
+      "Kendi hesabınız için Hesabım › İki adımlı doğrulama › İki adımlı doğrulamayı aç.",
+      "Başka kullanıcı için Kullanıcılar › kişi › İki adımlıyı sıfırla (hedef yöneticiyse kendi parolanızı ister).",
+    ],
     password: true,
     actions: ["confirmTotpSetup", "cancelTotpSetup", "resetUserTwoFactor"],
   },

@@ -64,7 +64,10 @@ test("rol seçicinin açıklaması ve tablo tek kaynaktan; eski 'yalnız sayım 
   // Müdür ve muhasebeci rolleri ayrı maddede (docs/ROLLER.md)
   const roles = yardim.slice(yardim.indexOf('q: "Müdür ve muhasebeci hesabı"'));
   assert.ok(roles.length < yardim.length, "Yardım'da roller maddesi var");
-  for (const word of ["Müdür", "şubesini seçmek zorunludur", "Muhasebeci", "salt okunur", "iki adımlı doğrulama zorunludur"]) assert.ok(roles.slice(0, 1500).includes(word), `Yardım: ${word}`);
+  for (const word of ["Müdür", "şubesini seçmek zorunludur", "Muhasebeci", "salt okunur", "İki adımlı doğrulama isteğe bağlıdır", "ADMIN_2FA_REQUIRED=1"]) {
+    assert.ok(roles.slice(0, 1500).includes(word), `Yardım: ${word}`);
+  }
+  assert.doesNotMatch(roles.slice(0, 1500), /iki adımlı doğrulama zorunludur/, "iki adımlı koşulsuz zorunlu değil (PR #154)");
   for (const word of ["Bugün", "Karaoke", "Kasa raporu", "Kontrol listeleri", "Zayi &amp; ikram", "Reçete", "satış fiyatı", "Stok sayımı", "Listeye ekle", "Hatırlatıcılarım", "Hesabım", "görmez"]) {
     assert.ok(faq.includes(word), `Yardım: ${word}`);
   }

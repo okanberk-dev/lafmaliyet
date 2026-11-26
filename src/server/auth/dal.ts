@@ -55,7 +55,7 @@ export interface CurrentUser {
   branchId?: string | null;
 }
 
-/** Oturumun kullanıcısı ve iki adımlıyı kurmadan panele giremeyen yönetici mi (src/lib/admin-security.ts) */
+/** Oturumun kullanıcısı ve iki adımlıyı kurmadan panele giremeyen kişi mi (zorunluluk açıkken yönetici, müdür, muhasebeci; src/lib/admin-security.ts) */
 type SessionUser = CurrentUser & { needsTwoFactor: boolean; totpEnabled: boolean };
 
 /** Oturumu doğrular ve kullanıcı veritabanında hâlâ aktif mi diye bakar (iki adımlı zorunluluğunu söyler, uygulamaz) */
@@ -102,7 +102,7 @@ export function managerWithoutBranch(u: { role: string; branchId: string | null;
 const toCurrent = ({ id, name, email, role, branchId }: SessionUser): CurrentUser => ({ id, name, email, role, branchId });
 
 /**
- * Oturumdaki kullanıcı. İki adımlıyı kurmamış yönetici (zorunluluk açıkken; docs/DEPLOY.md › 6a) burada oturumsuz
+ * Oturumdaki kullanıcı. İki adımlıyı kurmamış yönetici, müdür ya da muhasebeci (zorunluluk açıkken; docs/DEPLOY.md › 6a) burada oturumsuz
  * sayılır: veri uçları (canlı veri, dışa aktarma, fotoğraflar…) ona hiçbir şey vermez; sayfalar ve eylemler requireUser
  * ile kurulum ekranına gönderir.
  */
@@ -112,7 +112,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 }
 
 /**
- * Oturum geçerli ama kişi iki adımlıyı kurmadan panele giremeyen yönetici mi. getCurrentUser'ın null'unu kendisi
+ * Oturum geçerli ama kişi iki adımlıyı kurmadan panele giremeyen (zorunlu roldeki) hesap mı. getCurrentUser'ın null'unu kendisi
  * yönlendiren sayfa (Claude bağlantısının onay ekranı) bununla ayırır: bu kişi girişe "oturum bitti" diye gönderilmez
  * (proxy geçerli oturumunu silerdi), kurulum ekranına gider.
  */
@@ -130,7 +130,7 @@ async function toLogin(): Promise<never> {
  * Sayfa ve eylemlerde: giriş yapmamışsa giriş sayfasına yönlendirir. Çerez duruyor ama geçersizse (parola değişti,
  * hesap pasif, çıkış yapıldı) "oturum bitti" ve çerezin özetiyle gider; proxy o zaman yalnız bu çerezi siler (yoksa
  * /giris ↔ /panel arasında döngü olurdu; özetsiz `?oturum=bitti` geçerli oturumu silemez). İki adımlıyı kurmamış
- * yönetici (zorunluluk açıkken) panel yerine kurulum ekranına gider: kurmadan hiçbir ekranı ve eylemi kullanamaz.
+ * yönetici, müdür ya da muhasebeci (zorunluluk açıkken) panel yerine kurulum ekranına gider: kurmadan hiçbir ekranı ve eylemi kullanamaz.
  */
 export async function requireUser(): Promise<CurrentUser> {
   const user = await readSessionUser();
@@ -141,7 +141,7 @@ export async function requireUser(): Promise<CurrentUser> {
 
 /**
  * Yalnız iki adımlı kurulum ekranı ve kurulum eylemleri (başlat, onayla, vazgeç): giriş yapmış herkes geçer, iki
- * adımlıyı henüz kurmamış yönetici de. Başka hiçbir yerde kullanılmaz (tests/yonetici-guvenlik.test.ts tutar).
+ * adımlıyı henüz kurmamış yönetici, müdür ya da muhasebeci de. Başka hiçbir yerde kullanılmaz (tests/yonetici-guvenlik.test.ts tutar).
  */
 export async function requireSignedIn(): Promise<SessionUser> {
   const user = await readSessionUser();

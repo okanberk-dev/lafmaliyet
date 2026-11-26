@@ -689,7 +689,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             o şubeye kilitlidir. Personelin her ekranına ek olarak kasa raporlarını rakamlarıyla görür ve onaysız düzeltir, şubesinin isteklerini Onaylar&apos;da
             karara bağlar, vardiyayı yazar, Teslim defterini ve İşçilik / ciro&apos;yu görür; maaş, vergi, Paraşüt, ayarlar ve öteki şubeler yok. Rol{" "}
             <strong className="font-semibold text-ink">Muhasebeci</strong>: salt okunur; faturalar, gelir-gider, vergi, aylık harcamalar, kasa raporları ve
-            muhasebeci paketi; hiçbir kaydı değiştiremez, ayar ve kişi başı maaş görmez. İkisinde de iki adımlı doğrulama zorunludur.
+            muhasebeci paketi; hiçbir kaydı değiştiremez, ayar ve kişi başı maaş görmez. İki adımlı doğrulama isteğe bağlıdır; zorunluluk açıksa
+            (ADMIN_2FA_REQUIRED=1) ikisi de yönetici gibi kurmadan paneli kullanamaz. Yeni bir cihazdan girişleri bildirilir.
           </>
         ),
         icon: UserPlus,

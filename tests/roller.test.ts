@@ -12,7 +12,7 @@ import { describe, test } from "node:test";
 import { NextRequest } from "next/server";
 
 import { BOTTOM_NAV, BOTTOM_SPARES, NAV_FOOTER, NAV_GROUPS, NAV_TREE, navTreeFor, sectionTabsFor } from "../src/components/panel/nav";
-import { needsTwoFactorSetup, twoFactorRequiredFor } from "../src/lib/admin-security";
+import { adminTwoFactorRequired, alertsNewDevice, needsTwoFactorSetup, twoFactorRequiredFor } from "../src/lib/admin-security";
 import { featureAudience } from "../src/lib/branch-features";
 import { sheetCashOutsByDate } from "../src/lib/cash-outs";
 import { alertRecipients } from "../src/lib/checklist-alerts";
@@ -408,13 +408,18 @@ test("yetki tablosu (Kullanıcılar & roller) ekran ve yetenek kuralıyla aynı;
   assert.match(read("src/server/actions/settings.ts"), /if \(required\) throw new UserError\(MANAGER_BRANCH_REQUIRED\);/);
 });
 
-test("iki adımlı doğrulama rakam gören her rolde zorunlu; yeni cihaz uyarısı da", () => {
+test("iki adımlı: ADMIN_2FA_REQUIRED=1 iken rakam gören her rolde zorunlu, yoksa isteğe bağlı; yeni cihaz uyarısı her durumda", () => {
   assert.deepEqual([...TWO_FACTOR_ROLES].sort(), ["accountant", "admin", "manager"]);
   for (const r of ["admin", "manager", "accountant"] as const) {
     assert.ok(twoFactorRequiredFor(r, true), r);
     assert.ok(needsTwoFactorSetup({ role: r, totpEnabled: false }, true), r);
     assert.equal(needsTwoFactorSetup({ role: r, totpEnabled: true }, true), false, r);
+    // Varsayılan (değişken yok; sahibin kararı, PR #154): isteğe bağlı, uyarı yine gider
+    assert.equal(twoFactorRequiredFor(r, adminTwoFactorRequired({})), false, `${r}: varsayılan isteğe bağlı`);
+    assert.equal(needsTwoFactorSetup({ role: r, totpEnabled: false }, adminTwoFactorRequired({})), false, `${r}: varsayılan kurulum ekranı yok`);
+    assert.equal(alertsNewDevice({ role: r }), true, `${r}: yeni cihaz uyarısı zorunluluktan bağımsız`);
   }
+  assert.equal(alertsNewDevice({ role: "staff" }), false);
   assert.equal(twoFactorRequiredFor("staff", true), false);
   assert.equal(twoFactorRequiredFor("manager", false), false, "ADMIN_2FA_OPTIONAL=1 hepsini kapatır");
 });

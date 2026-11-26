@@ -21,12 +21,16 @@ import {
   newDeviceDetail,
   needsTwoFactorSetup,
   setupContinueHref,
+  TWO_FACTOR_RULE_TEXT,
   TWO_FACTOR_SETUP_PATH,
+  twoFactorCardNote,
   twoFactorRequiredFor,
   twoFactorResetText,
+  twoFactorResetTextFor,
   twoFactorSetupHref,
   userAgentLabel,
 } from "../src/lib/admin-security";
+import { ROLE_ORDER } from "../src/lib/constants";
 import { renderNewDeviceNotice, SESSIONS_HREF } from "../src/server/auth/new-device-notice";
 import { deviceSeenBefore } from "../src/server/auth/session";
 
@@ -78,6 +82,24 @@ test("kurulum gereken hesap: iki adımlısı kapalı yönetici, zorunluluk açı
   assert.equal(twoFactorRequiredFor("admin", false), false);
 });
 
+test("kural: iki adımlı yalnız ADMIN_2FA_REQUIRED=1 iken ve yalnız yönetici/müdür/muhasebecide zorunlu; personelde hiç; yeni cihaz uyarısı zorunluluktan bağımsız", () => {
+  const envs: Record<string, string>[] = [{}, { ADMIN_2FA_REQUIRED: "1" }, { ADMIN_2FA_REQUIRED: "0" }, { ADMIN_2FA_REQUIRED: "1", ADMIN_2FA_OPTIONAL: "1" }];
+  assert.deepEqual([...ROLE_ORDER].sort(), ["accountant", "admin", "manager", "staff"], "dört rolün hepsi denenir");
+  for (const env of envs) {
+    const on = env.ADMIN_2FA_REQUIRED === "1" && env.ADMIN_2FA_OPTIONAL !== "1";
+    const required = adminTwoFactorRequired(env);
+    assert.equal(required, on, JSON.stringify(env));
+    for (const role of ROLE_ORDER) {
+      const want = on && role !== "staff";
+      const at = `${role} ${JSON.stringify(env)}`;
+      assert.equal(twoFactorRequiredFor(role, required), want, `zorunlu mu: ${at}`);
+      assert.equal(needsTwoFactorSetup({ role, totpEnabled: false }, required), want, `kurmamış kişi kurulum ekranına mı: ${at}`);
+      assert.equal(needsTwoFactorSetup({ role, totpEnabled: true }, required), false, `kurmuş kişi hiç kurulum ekranına gitmez: ${at}`);
+      assert.equal(alertsNewDevice({ role }), role !== "staff", `yeni cihaz uyarısı ortama bakmaz: ${at}`);
+    }
+  }
+});
+
 test("kurulumdan sonra dönülecek yer: yalnız panel içi ya da Claude onay ekranı; başka her şey rolün ana sayfası", () => {
   assert.equal(setupContinueHref("/panel/kasa?ay=2026-11", "/panel"), "/panel/kasa?ay=2026-11");
   assert.equal(setupContinueHref("/baglan?istek=abc", "/panel"), "/baglan?istek=abc");
@@ -88,15 +110,26 @@ test("kurulumdan sonra dönülecek yer: yalnız panel içi ya da Claude onay ekr
   assert.equal(twoFactorSetupHref("/panel/kasa?ay=2026-11"), "/giris/iki-adim?next=%2Fpanel%2Fkasa%3Fay%3D2026-11");
 });
 
-test("metinler: sıfırlama penceresi zorunluyken kurulum ekranını söyler, değilken eskisi gibi", () => {
+test("metinler: sıfırlama penceresi hedefin rolünde zorunluyken kurulum ekranını söyler, değilken eskisi gibi; kart ve kural cümlesi", () => {
   assert.match(twoFactorResetText(true), /kurulum ekranı açılır/);
   assert.match(twoFactorResetText(true), /kurana kadar paneli kullanamaz/);
   assert.equal(twoFactorResetText(false), "Telefonunu kaybeden kullanıcı için. Girişte yalnızca parola istenir; kişi Hesabım'dan yeniden kurabilir.");
+  // Parola istemeyen sıfırlama müdür ve muhasebecide de: zorunluluk açıkken onlar da kurulum ekranına gider
+  for (const role of ["admin", "manager", "accountant"]) assert.match(twoFactorResetTextFor(role, true), /kurulum ekranı açılır/, role);
+  assert.equal(twoFactorResetTextFor("staff", true), twoFactorResetText(false), "personelde hiç zorunlu değil");
+  for (const role of ROLE_ORDER) assert.equal(twoFactorResetTextFor(role, false), twoFactorResetText(false), `${role}: zorunluluk kapalı`);
+  // Hesabım kartı rolün zorunluluğunu söyler ("Yönetici hesaplarında" demez: müdür ve muhasebeci de görür)
+  assert.equal(twoFactorCardNote(true), "Bu hesapta zorunlu");
+  assert.equal(twoFactorCardNote(false), "İsteğe bağlı");
+  assert.match(TWO_FACTOR_RULE_TEXT, /isteğe bağlı/);
+  assert.match(TWO_FACTOR_RULE_TEXT, /ADMIN_2FA_REQUIRED=1/);
+  assert.match(TWO_FACTOR_RULE_TEXT, /yönetici, müdür ve muhasebeci/);
+  assert.match(TWO_FACTOR_RULE_TEXT, /personelde her zaman isteğe bağlı/);
 });
 
 // ---------------------------------------------------------------- Yeni cihaz
 
-test("yeni cihaz uyarısı iki adımlısı zorunlu rollere (yönetici, müdür, muhasebeci); personele yok (ortak tablette sırayla girer)", () => {
+test("yeni cihaz uyarısı rakam gören rollere (yönetici, müdür, muhasebeci), zorunluluktan bağımsız; personele yok (ortak tablette sırayla girer)", () => {
   assert.equal(alertsNewDevice({ role: "admin" }), true);
   assert.equal(alertsNewDevice({ role: "manager" }), true);
   assert.equal(alertsNewDevice({ role: "accountant" }), true);
@@ -230,4 +263,43 @@ test("belgeler: zorunluluk ve acil durum değişkenleri ve yeni cihaz uyarısı 
   assert.match(deploy, /ADMIN_2FA_OPTIONAL=1/);
   assert.match(deploy, /Yeni cihazdan giriş/);
   assert.match(deploy, /\/giris\/iki-adim/);
+});
+
+test("belgeler ve ekran metinleri kuralla aynı: iki adımlı isteğe bağlı, zorunluluk yalnız ADMIN_2FA_REQUIRED=1 iken ve üç rolde", () => {
+  // Eski yazımlar: koşulsuz "zorunlu", yalnız yöneticiyi anan zorunluluk ya da yeni cihaz uyarısı
+  const OLD = /İkisinde de iki adımlı doğrulama zorunludur|rakam gören her rolde zorunlu|[Yy]önetici hesaplarında zorunlu|yalnız yönetici hesapları|Yöneticinin kendi hesabına yeni|hesabınızda zorunludur|İki adımlı doğrulama\s+zorunludur\./;
+  const files = [
+    // Bütün belgeler (ROLLER, DEPLOY, BILDIRIMLER, bağlantı kurulumu…)
+    ...readdirSync(join(process.cwd(), "docs"))
+      .filter((f) => f.endsWith(".md"))
+      .map((f) => `docs/${f}`),
+    "README.md",
+    ".env.example",
+    "src/app/panel/yardim/page.tsx",
+    "src/app/panel/yardim/personel/mudur.tsx",
+    "src/app/panel/muhasebe/page.tsx",
+    "src/app/panel/kullanicilar/page.tsx",
+    "src/app/panel/kullanicilar/users-client.tsx",
+    "src/app/panel/hesap/two-factor.tsx",
+  ];
+  assert.ok(files.includes("docs/ROLLER.md") && files.includes("docs/DEPLOY.md") && files.includes("docs/BILDIRIMLER.md"));
+  for (const f of files) assert.doesNotMatch(read(f), OLD, f);
+  for (const f of ["docs/ROLLER.md", "README.md", "src/app/panel/yardim/page.tsx"]) {
+    const text = read(f).replace(/\s+/g, " ");
+    assert.match(text, /isteğe bağlı/, `${f}: isteğe bağlı`);
+    assert.match(text, /ADMIN_2FA_REQUIRED=1/, `${f}: zorunluluğun değişkeni`);
+  }
+  assert.match(read("docs/ROLLER.md").replace(/\s+/g, " "), /Yeni cihaz uyarısı bu üç rolde, zorunluluktan bağımsız/);
+  for (const f of ["src/app/panel/yardim/personel/mudur.tsx", "src/app/panel/muhasebe/page.tsx"]) {
+    assert.match(read(f).replace(/\s+/g, " "), /isteğe bağlıdır, zorunluluk açıksa/, f);
+  }
+  // Kullanıcılar sayfası kuralı tek kaynaktan yazar
+  assert.match(read("src/app/panel/kullanicilar/page.tsx"), /davet bağlantısı gönderebilirsiniz\. \$\{TWO_FACTOR_RULE_TEXT\}`\}/);
+  // Kullanıcılar istemci bileşeni: parolasız sıfırlama penceresi de hedefin rolüne bakar (müdür, muhasebeci kurulum ekranına gider)
+  const users = read("src/app/panel/kullanicilar/users-client.tsx");
+  assert.match(users, /description: twoFactorResetTextFor\(user\.role, twoFactorRequired\)/);
+  assert.match(users, /required: twoFactorRequiredFor\(user\.role, twoFactorRequired\)/);
+  assert.doesNotMatch(users, /Girişte yalnızca parola istenir/);
+  assert.match(users, /İki adımlı doğrulama herkeste isteğe bağlıdır\./, "Roller kartı zorunluluk kapalıyken de kuralı söyler");
+  assert.match(read("src/app/panel/hesap/two-factor.tsx"), /description=\{`\$\{twoFactorCardNote\(required\)\}\. Açıkken/);
 });

@@ -175,7 +175,7 @@ async function completeLogin(user: typeof s.users.$inferSelect, next: string | u
   // Uyarı girişi bozmaz (noteNewDevice hata fırlatmamaya çalışır; yine de)
   if (fresh) await noteNewDevice(user, await headers()).catch((e: unknown) => console.error("[giriş] yeni cihaz uyarısı", e));
   const target = safeNext(next, user.role);
-  // İki adımlısı kapalı yönetici panel yerine kurulum ekranına (yalnız ADMIN_2FA_REQUIRED=1 iken zorunlu)
+  // İki adımlısı kapalı yönetici, müdür ya da muhasebeci panel yerine kurulum ekranına (yalnız ADMIN_2FA_REQUIRED=1 iken zorunlu)
   redirect(needsTwoFactorSetup(user) ? twoFactorSetupHref(target) : target);
 }
 
@@ -437,7 +437,7 @@ async function dropPendingSecret(userId: number, sealed?: string) {
  */
 export async function beginTotpSetup(password: string) {
   return attempt(async () => {
-    // Kurulum ekranından da (iki adımlısı olmayan yönetici; src/lib/admin-security.ts) çağrılır
+    // Kurulum ekranından da (iki adımlısı olmayan yönetici, müdür ya da muhasebeci; src/lib/admin-security.ts) çağrılır
     const me = await requireSignedIn();
     const u = await requirePassword(me, password, "Hesabım");
     if (u.totpEnabled) throw new UserError("İki adımlı doğrulama zaten açık");

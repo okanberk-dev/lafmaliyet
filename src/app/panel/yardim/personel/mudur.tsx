@@ -61,8 +61,9 @@ export const MANAGER_HELP: { title: string; href: string; icon: LucideIcon; body
     icon: ShieldCheck,
     body: (
       <>
-        Müdür hesabı şubenize kilitlidir: öteki şubeleri, maaşları, vergiyi, Paraşüt&apos;ü, ayarları ve kullanıcıları görmezsiniz. İki adımlı doğrulama
-        zorunludur. Kasa ve sabah e-postaları müdür hesabının adresine gitmez; raporları panelde görürsünüz.
+        Müdür hesabı şubenize kilitlidir: öteki şubeleri, maaşları, vergiyi, Paraşüt&apos;ü, ayarları ve kullanıcıları görmezsiniz. İki adımlı doğrulamayı
+        Hesabım&apos;dan açarsınız: isteğe bağlıdır, zorunluluk açıksa kurmadan paneli kullanamazsınız; yeni bir cihazdan girişiniz size bildirilir. Kasa ve
+        sabah e-postaları müdür hesabının adresine gitmez; raporları panelde görürsünüz.
       </>
     ),
   },

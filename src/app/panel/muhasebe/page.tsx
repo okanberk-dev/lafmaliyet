@@ -83,7 +83,9 @@ async function AccountingContent() {
           <CardContent className="space-y-2 text-sm text-pretty text-ink-soft">
             <p>Bir kaydı düzeltmek gerekirse yöneticiye yazın; düğmelere basarsanız işlem &ldquo;salt okunur&rdquo; diye reddedilir.</p>
             <p>Kişi başı maaş ve bordro dökümü, personel belgeleri, ayarlar ve Paraşüt bağlantısı bu hesapta görünmez. Gelir-gider ve vergide personel giderleri toplam olarak durur.</p>
-            <p>İki adımlı doğrulama hesabınızda zorunludur; parolanızı Hesabım&apos;dan değiştirirsiniz.</p>
+            <p>
+              İki adımlı doğrulamayı ve parolanızı Hesabım&apos;dan yönetirsiniz: iki adımlı isteğe bağlıdır, zorunluluk açıksa kurmadan paneli kullanamazsınız.
+            </p>
           </CardContent>
         </Card>
       </div>

@@ -14,7 +14,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
-import { ADMIN_2FA_DISABLE_NOTE } from "@/lib/admin-security";
+import { ADMIN_2FA_DISABLE_NOTE, twoFactorCardNote } from "@/lib/admin-security";
 import { isSetupEnded } from "@/lib/two-factor-setup";
 import { beginTotpSetup, cancelTotpSetup, confirmTotpSetup, disableTotp, regenerateRecoveryCodes } from "@/server/actions/auth";
 
@@ -23,7 +23,8 @@ import { sessionsNote } from "./session-note";
 type Setup = { qr: string; secret: string; uri: string };
 
 /**
- * İki adımlı doğrulama (personelde isteğe bağlı; yöneticide zorunlu, `required`: src/lib/admin-security.ts): açıkken girişte parolanın ardından telefondaki uygulamanın 6 haneli kodu
+ * İki adımlı doğrulama (isteğe bağlı; ADMIN_2FA_REQUIRED=1 iken yönetici, müdür, muhasebecide zorunlu, `required`:
+ * src/lib/admin-security.ts › twoFactorRequiredFor): açıkken girişte parolanın ardından telefondaki uygulamanın 6 haneli kodu
  * istenir. Kurulum: parola → QR'ı okut → kodu gir → kurtarma kodlarını sakla. Açmak, kapatmak ve yeni kurtarma kodu
  * parola ister: açık kalmış bir oturumla başkası kendi telefonunu bağlayamasın. Açmak ve kapatmak diğer cihazlardaki
  * oturumları (yöneticide Claude bağlantısını da) kapatır; pencereler bunu önceden söyler. `claude`: etkin bir Claude
@@ -40,7 +41,7 @@ export function TwoFactorCard({ enabled, recoveryLeft, claude = false, required 
       <CardHeader
         icon={<ShieldCheck />}
         title="İki adımlı doğrulama"
-        description={`${required ? "Yönetici hesaplarında zorunlu" : "İsteğe bağlı"}. Açıkken girişte parolanın ardından telefonunuzdaki doğrulama uygulamasının 6 haneli kodu istenir.`}
+        description={`${twoFactorCardNote(required)}. Açıkken girişte parolanın ardından telefonunuzdaki doğrulama uygulamasının 6 haneli kodu istenir.`}
         meta={
           enabled ? (
             <Badge dot tone="green">

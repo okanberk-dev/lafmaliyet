@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 };
 
 /**
- * Zorunlu iki adımlı kurulum (yalnız ADMIN_2FA_REQUIRED=1 iken; src/lib/admin-security.ts; docs/DEPLOY.md › 6a): iki adımlısı kapalı yönetici girişten
+ * Zorunlu iki adımlı kurulum (yalnız ADMIN_2FA_REQUIRED=1 iken; src/lib/admin-security.ts; docs/DEPLOY.md › 6a): iki adımlısı kapalı yönetici, müdür ya da muhasebeci girişten
  * sonra ve panelin her adresinden buraya gelir; kurana kadar panel açılmaz. Panelin dışında durur (kabuk, zil, canlı
  * veri yok) ve proxy'nin eşleştirdiği adreslerden değildir. İki adımlısı açık kişi bu sayfada kalabilir: kurulum
  * bittiğinde sayfa sunucudan yeniden çizilir, kurtarma kodları ekranda kalmalı (yönlendirme onları silerdi). Oturum ve
@@ -34,7 +34,7 @@ export default function TwoFactorSetupPage({ searchParams }: PageProps<"/giris/i
 async function SetupContent({ searchParams }: { searchParams: PageProps<"/giris/iki-adim">["searchParams"] }) {
   const me = await requireSignedIn();
   const next = setupContinueHref((await searchParams).next, homeFor(me.role));
-  // Buraya işi olmayan (personel; zorunluluk kapalıyken iki adımlısız yönetici) kendi sayfasına
+  // Buraya işi olmayan (personel; zorunluluk kapalıyken iki adımlısız herkes) kendi sayfasına
   if (!me.needsTwoFactor && !me.totpEnabled) redirect(next);
   return <TwoFactorSetup userId={me.id} email={me.email} enabled={me.totpEnabled} next={next} />;
 }
