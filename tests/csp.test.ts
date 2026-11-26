@@ -3,8 +3,8 @@
 // sorgu dizgesi olmadan günlüğe.
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 import { coreDirectives, cspEnforced, cspHeaders, cspLogLine, fullDirectives, parasutFormOrigins, parseCspReports } from "../src/lib/csp";
@@ -107,4 +107,58 @@ test("tarayıcıda zod eval denemesi yapmaz: politikada 'unsafe-eval' yok, her s
   assert.match(instrumentation, /^import \{ config \} from "zod\/v4\/core";/m);
   assert.match(instrumentation, /^config\(\{ jitless: true \}\);/m, "uygulama kodundan önce, üst düzeyde ve eşzamanlı");
   assert.ok(!fullDirectives({ dev: false, env: {} })["script-src"].includes("'unsafe-eval'"), "üretimde eval'e izin verilmez");
+});
+
+/** src altındaki .ts/.tsx dosyaları ve metinleri */
+function sources(dir: string, out = new Map<string, string>()): Map<string, string> {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) sources(p, out);
+    else if (/\.tsx?$/.test(e.name)) out.set(p, readFileSync(p, "utf8"));
+  }
+  return out;
+}
+
+test("tarayıcı bileşenleri node:crypto'ya ulaşmaz: paketleyicinin crypto-browserify'ı her açılışta eval ihlali ürettirir", () => {
+  // Yerel denetimde Şube ayarları'nın LafPOS kartı imza modülünü (node:crypto) içe aktarıyordu: sayfaya ~0,5 MB
+  // crypto-browserify ve onunla gelen `Function(...)` denemesi (script-src eval) gidiyordu
+  const src = join(root, "src");
+  const text = sources(src);
+  const resolve = (from: string, spec: string): string | null => {
+    const base = spec.startsWith("@/") ? join(src, spec.slice(2)) : spec.startsWith(".") ? join(dirname(from), spec) : null;
+    if (!base) return null;
+    return [`${base}.ts`, `${base}.tsx`, join(base, "index.ts"), join(base, "index.tsx")].find((c) => text.has(c)) ?? null;
+  };
+  // Değer içe aktarmaları (yalnız tür olanlar paketlenmez)
+  const IMPORT = /^\s*(?:import|export)\s+(?!type\s)[^;]*?\sfrom\s+"([^"]+)"|^\s*import\s+"([^"]+)"/gm;
+  const rel = (f: string) => f.slice(src.length + 1);
+  const seen = new Map<string, string | null>();
+  /** Dosyadan node:crypto'ya giden yol ("a → b → c") ya da null */
+  const pathToCrypto = (file: string, stack: Set<string>): string | null => {
+    if (seen.has(file)) return seen.get(file)!;
+    if (stack.has(file)) return null;
+    const body = text.get(file)!;
+    // Sunucu eylemi tarayıcıya yalnız başvuru olarak gider; server-only tarayıcıya hiç giremez (derleme durur)
+    if (/^\s*["']use server["']/.test(body) || /^import "server-only";/m.test(body)) return null;
+    stack.add(file);
+    let found: string | null = null;
+    for (const m of body.matchAll(IMPORT)) {
+      const spec = m[1] ?? m[2];
+      if (spec === "crypto" || spec === "node:crypto") found = `${rel(file)} → node:crypto`;
+      else {
+        const next = resolve(file, spec);
+        const deeper = next ? pathToCrypto(next, stack) : null;
+        if (deeper) found = `${rel(file)} → ${deeper}`;
+      }
+      if (found) break;
+    }
+    stack.delete(file);
+    seen.set(file, found);
+    return found;
+  };
+  const clients = [...text.keys()].filter((f) => /^\s*["']use client["']/.test(text.get(f)!));
+  assert.ok(clients.length > 50, `tarayıcı bileşenleri bulunamadı (${clients.length})`);
+  assert.deepEqual(clients.map((f) => pathToCrypto(f, new Set())).filter(Boolean), [], "tarayıcı bileşeninden node:crypto'ya giden yol");
+  // Denetimin kendisi: LafPOS isteğinin denetimi imza modülü üzerinden node:crypto'ya ulaşır
+  assert.equal(pathToCrypto(join(src, "lib/lafpos/request.ts"), new Set()), "lib/lafpos/request.ts → lib/karaoke/signature.ts → node:crypto");
 });
