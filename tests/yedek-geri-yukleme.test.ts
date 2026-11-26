@@ -485,7 +485,7 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
     // Ayrı bir klasörde çalışır: .env.local o klasörün (Neon entegrasyonu ve "vercel env pull" iki adresi de yazar)
     const ws = mkdtempSync(join(tmpdir(), "laf-komut-"));
     try {
-      for (const f of ["drizzle", "node_modules", "package.json", "src", "tsconfig.json"]) symlinkSync(join(process.cwd(), f), join(ws, f));
+      for (const f of ["drizzle", "node_modules", "package.json", "src", "tests", "tsconfig.json"]) symlinkSync(join(process.cwd(), f), join(ws, f));
       // Testin kendi ortamındaki adresler ve NODE_ENV (test'te .env.local okunmaz) alt sürece geçmez
       const drop = new Set(["DATABASE_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL", "ADMIN_EMAIL", "ADMIN_PASSWORD", "ADMIN_NAME", "NODE_ENV"]);
       const base = Object.fromEntries(Object.entries(process.env).filter(([k]) => !drop.has(k)));
@@ -509,7 +509,7 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
       assert.equal(await tables("f"), 0);
       const seeded = run("seed.ts", local, { DATABASE_URL: urlFor(NAMES.g) });
       assert.ok(seeded.includes(`Hedef: localhost/${NAMES.g} (bu bilgisayar)`), seeded);
-      assert.match(seeded, /✓ Excel verisi yüklendi/);
+      assert.match(seeded, /✓ Başlangıç verisi yüklendi/);
       const [{ n }] = await dbs.g!.$client.unsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM ingredients`);
       assert.ok(n > 0);
       assert.equal(await tables("f"), 0);
