@@ -389,6 +389,22 @@ function raporYaz(kayitlar: Kayit[], { baslik, ocrAcik, ideal, karsilastir }: Ra
     const c = (kr: Karar) => ks.filter((k) => k.karar === kr).length;
     satir.push(`| ${b} | ${c("kirp")} | ${c("tam-kare")} | ${c("yok")} |`);
   }
+  // güven eşiği: arayüz düşük güvenli kırpmayı "emin değilim, köşeleri göster" sayarsa ne kazanılır, ne kaybedilir
+  const kirpanlar = kayitlar.filter((k) => k.karar === "kirp");
+  if (kirpanlar.length) {
+    satir.push("\n### Güven eşiği (kırpılan görselde güven < eşik → \"emin değil\" sayılırsa)\n");
+    satir.push(
+      "| eşik | belge olmayanda yanlış pozitif kalır | yanlış dörtgen yakalanır | doğru kırpma kaybedilir |",
+      "|---:|---:|---:|---:|",
+    );
+    const yp = kirpanlar.filter((k) => k.beklenen === "belge-degil");
+    const yanlisD = kirpanlar.filter((k) => k.beklenen !== "belge-degil" && k.sonuc !== "dogru");
+    const dogruD = kirpanlar.filter((k) => k.beklenen !== "belge-degil" && k.sonuc === "dogru");
+    for (const e of [0.3, 0.35, 0.4, 0.5, 0.6]) {
+      const alt = (ks: Kayit[]) => ks.filter((k) => k.guven < e).length;
+      satir.push(`| ${e.toFixed(2).replace(".", ",")} | ${yp.length - alt(yp)}/${yp.length} | ${alt(yanlisD)}/${yanlisD.length} | ${alt(dogruD)}/${dogruD.length} |`);
+    }
+  }
   // en kötü 10 (köşe hatasına göre; belgeler) ve belge olmayanda yanlış pozitifler
   const satirYaz = (k: Kayit) =>
     `- ${k.ad}: ${k.sonuc} (${k.karar}${k.hata == null ? "" : `, hata ${yuzde(k.hata)}`}, ${k.yontem} ${k.guven}; ${k.nedenler.join(" ") || "–"}) [${k.senaryolar.join(", ")}]`;
