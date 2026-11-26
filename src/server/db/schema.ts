@@ -1517,9 +1517,8 @@ export const pushSubscriptions = pgTable(
      */
     orders: boolean("orders"),
     /**
-     * Onay bildirimleri: yöneticiye personelin onay bekleyen isteği, personele kendi isteğinin sonucu (docs/ONAYLAR.md).
-     * Tek gönderen mal siparişi taslağıydı (26 Eki 2026'da kaldırıldı); tesisat ve cihaz tercihi kalır, cihazdaki anahtar
-     * ancak yeniden bir gönderen olunca görünür
+     * Onay bildirimleri: yöneticiye personelin yeni açtığı istek (src/server/staff-requests/push.ts; docs/ONAYLAR.md).
+     * Cihazdaki "Onay bildirimleri" anahtarı (yalnız yönetici) bunu yazar
      */
     approvals: boolean("approvals").notNull().default(true),
     lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),

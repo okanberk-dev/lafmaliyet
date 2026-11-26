@@ -9,6 +9,10 @@ Neon da veritabanını kendiliğinden yedekler (nokta-zaman geri yükleme), ama 
 geriye gidilir. Bu dosya sizde kalan uzun süreli kopyadır. Aynı karttaki **Dışa aktar (.xlsx)** çalışma kitabı
 (`/api/export`) okumak ve muhasebeciye vermek içindir, geri yüklenmez (§ 12).
 
+Panel ayrıca her pazartesi sabahı aynı yedeği kendiliğinden alır ve özel dosya deposunda son 8 haftayı saklar
+(**otomatik haftalık yedek**, § 13); Ayarlar › Yedek'te listelenir, parolayla iner. Veritabanının boyutu da her sabah
+ölçülür: Neon kotasının %70'i ve %90'ı geçilince zil ve e-postayla uyarılır (**Ayarlar › Veritabanı**, § 14).
+
 ## 1. Yedek almak
 
 1. Ayarlar › Yedek › **Yedeği indir**.
@@ -26,6 +30,8 @@ geriye gidilir. Bu dosya sizde kalan uzun süreli kopyadır. Aynı karttaki **D�
   altında "Yedek almayalı 34 gün oldu" / "Henüz yedek indirilmedi" yazar (bilgi; Genel bakış'taki kırmızı şeride ve
   `/api/health?isler=1`'in 503'üne girmez).
 - `npm run db:backup` ile bilgisayardan alınan yedek kartta "Son yedek" sayılmaz (komut veritabanına yazmaz).
+- Otomatik haftalık yedek de "Son yedek" sayılmaz ve 30 günlük hatırlatmayı susturmaz: o dosyalar panelin özel
+  deposunda (Vercel) durur, sizde kalan kopyanın yerini tutmaz (§ 13).
 
 **Dosyada ciro, maaş ve IBAN'lar var; kimseyle paylaşmayın, e-postayla göndermeyin.** Dosya şifreli değildir (parola
 unutulursa yedek de kaybolurdu). Parolalar dosyaya yazılmaz.
@@ -279,10 +285,18 @@ adrese yazar (`.env.local`'daki havuzsuz adres öne geçmez), boş `DATABASE_URL
 | `src/server/backup/core.ts` | Dışa aktarım (`backupLines`, `writeBackupFile`) |
 | `src/server/backup/restore.ts` | Dosyayı okuma ve doğrulama, geri yükleme |
 | `src/server/backup/state.ts` | İndirme bağlantısı, son yedek kaydı (`integration_state` › `backup.last`), yüklenen belgelerin toplamı |
-| `src/server/actions/backup.ts` | Parola onayı ve indirme bağlantısı (`prepareBackupDownload`) |
+| `src/server/actions/backup.ts` | Parola onayı ve indirme bağlantısı (`prepareBackupDownload`; otomatik yedek için `prepareStoredBackupDownload`) |
 | `src/app/api/yedek/route.ts` | Akan indirme (`GET /api/yedek?t=…`) |
-| `src/app/panel/ayarlar/backup-client.tsx` | Yedeği indir düğmesi ve parola penceresi |
+| `src/app/panel/ayarlar/backup-client.tsx` | Yedeği indir düğmesi, parola penceresi, otomatik yedeklerin listesi ve İndir'i |
 | `scripts/backup.ts`, `scripts/restore.ts` | `npm run db:backup`, `npm run db:restore` |
+| `src/lib/backup/auto.ts` | Otomatik haftalık yedeğin kuralları: dosya adı, hafta, saklama, Ayarlar'daki durum satırı (saf; `tests/yedek-oto.test.ts`) |
+| `src/server/backup/auto.ts` | Otomatik yedeği alma (`runAutoBackup`, sabah işi çağırır), Ayarlar'daki liste ve durum, indirme bağlantısı |
+| `src/server/backup/store.ts` | Otomatik yedeklerin deposu: özel Vercel Blob (`yedek/haftalik/`), yerelde `.data/backups`, testte bellek |
+| `src/app/api/yedek/kayitli/route.ts` | Saklanan otomatik yedeğin indirilmesi (`GET /api/yedek/kayitli?t=…`) |
+| `src/lib/db-quota.ts` | Veritabanı kotası: kota, yüzde, eşik geçişi, metinler, zil uyarısı (saf; `tests/db-kota.test.ts`) |
+| `src/server/db-quota/state.ts`, `check.ts` | Boyut ölçümü (`pg_database_size`), durum kaydı, sabah işinin denetimi ve e-postası |
+| `src/app/panel/ayarlar/database-card.tsx` | Ayarlar › Veritabanı: kullanım çubuğu |
+| `tests/yedek-kota-db.test.ts` | Otomatik yedek ve kota gerçek Postgres'te (`YEDEK_KOTA_TEST_DATABASE_URL`; `npm run test:db`) |
 
 ## 12. Dışa aktarım (.xlsx) ve CSV (okumak için)
 
@@ -318,3 +332,69 @@ Yedekten ayrı, okunabilir kopyalar. Panele geri yüklenmez; rakamlar paneldeki 
 tek biçimde: binlik ayraç yok, virgüllü ondalık, sabit ondalık sayısı ("1234,50"); değer yoksa boş hücre. Reçetesi boş
 üründe birim kâr, marj, maliyet oranı, önerilen fiyat ve aylık brüt kâr boştur (listedeki tire gibi). "=", "+", "-", "@"
 ile başlayan metnin başına tek tırnak eklenir: tablo programında formül diye çalışmaz. Testler `tests/csv.test.ts`.
+
+## 13. Otomatik haftalık yedek
+
+Sabah işi (`/api/cron/gunluk`, 08:00–09:00, [BILDIRIMLER.md](BILDIRIMLER.md) › Sistem uyarıları) her gün bakar:
+içinde bulunulan haftanın (pazartesi başlar, İstanbul günü) yedeği depoda yoksa tam yedeği alır. Yani yedek pazartesi
+sabahı alınır; o gün alınamazsa salı, çarşamba… yeniden denenir.
+
+- **Ne:** panelden indirilenle aynı dosya (§ 3), yüklenen fatura belgeleri hariç. Yazılmayanlar § 2'dekiyle aynı
+  (parola özetleri, iki adımlı doğrulama anahtarları, Paraşüt oturumu ve şifreli ayarlar, bildirim anahtarları…).
+  Başlıkta alan kişi "Otomatik (sabah işi)" yazar. `npm run db:restore` ile aynı yoldan yüklenir (§ 4).
+- **Nerede:** canlıda özel Vercel Blob deposu: fotoğraflarla aynı depo, `yedek/haftalik/` klasörü, dosya adı
+  `laffogato-yedek-oto-2026-11-23-0812-<8 rastgele karakter>.json.gz` (İstanbul saati). Erişim Private: adresi tek
+  başına işe yaramaz; dosya panelde yalnız aşağıdaki **İndir**'le, panel dışında yalnız Vercel hesabından (Storage ›
+  Blob) iner. Yerelde `.data/backups` (`BACKUP_DIR` ile değişir; git'e girmez). Vercel'de depo bağlı değilse otomatik
+  yedek kapalıdır, kart "Depo yok" der ([DEPLOY.md](DEPLOY.md) › `BLOB_READ_WRITE_TOKEN`).
+- **Ne kadar:** en yeni 8 dosya (son 8 hafta). Yeni dosya yazılınca daha eskisi silinir. Silme aksarsa yedek yine
+  alınmış sayılır, fazlası sonraki hafta silinir. Klasördeki başka adlı dosyalara dokunulmaz.
+- **Süre:** sabah işinin öteki adımlarıyla aynı anda çalışır, onları bekletmez. Veritabanı en geç işin 40. saniyesine
+  kadar okunur (yetmezse bırakılır, okuma işlemi kapanır, dosya yazılmaz, ertesi sabah yeniden denenir); adım en geç
+  50. saniyede kapanır. Belgesiz yedek bugün ~1 MB, birkaç saniye sürer.
+- **Ekran:** Ayarlar › Yedek › **Otomatik haftalık yedek**: durum rozeti ve açıklaması (Çalışıyor: son yedeğin günü ve
+  boyutu; Alınamadı: son denemenin günü ve hatası; Gecikti: en yeni dosya 10 günden eski; Bekliyor: henüz dosya yok;
+  Depo yok) ve depodaki dosyalar, yeni önce (tarih, gün, saat, boyut). **İndir** parolanızı ister, elle yedekle aynı
+  kalıp: bağlantı iki dakika ve yalnız sizin oturumunuzla geçerli, dosya adı bağlantının içinde mühürlü; yanlış parola
+  işlem geçmişine "Hatalı parola onayı (Yedek)" olarak yazılır. Dosya `/api/yedek/kayitli` üzerinden iner; deponun
+  adresi tarayıcıya hiç çıkmaz. Yalnız yönetici.
+- **İşlem geçmişi:** "Otomatik yedek alındı" (Sistem; tablo, satır, boyut, silinen eski yedek sayısı) ve "Otomatik
+  yedek indirildi" (kim, hangi hafta, boyut).
+- **Alınamazsa:** sabah işinin **Otomatik yedek** adımı hata verir, iş "Kısmen" olur: zilde turuncu "Sabah işinde bir
+  adım hata verdi" (metinde "Otomatik yedek: <hata>"), ertesi sabahın e-postasında "Dünkü sabah işinde bir adım hata
+  verdi". Ayarlar › Yedek'te rozet kırmızı "Alınamadı", telefonda kartın kapalı satırı "Otomatik yedek alınamadı".
+  Ertesi sabah yeniden denenir; alınınca hepsi kalkar. Günlük işler'de adım yalnız yedeğin alındığı ("Haftalık yedek
+  alındı"), alınamadığı ya da depo olmadığı gün yazılır.
+- **Durum kaydı:** `integration_state` › `backup.auto` (son deneme, son hata, son başarılı yedek). Hangi dosyaların
+  durduğunu depo söyler, veritabanı değil: geri yüklemeden sonra da liste doğrudur.
+- **Elle yedek sürer:** kartın "Son yedek"i ve 30 günlük hatırlatma yalnız elle indirilen yedeğe bakar (§ 1).
+- **Büyürse:** panelden indirme dosyayı bellekten verir; Vercel'in yanıt sınırı (4,5 MB) yüzünden 4 MB'ı aşan bir
+  otomatik yedek panelden inmeyebilir. O durumda dosya Vercel › Storage › Blob › `yedek/haftalik/`'tan indirilir.
+
+## 14. Veritabanı kotası
+
+Panelin veritabanı Neon'un ücretsiz planında: kota 0,5 GB; dolunca yazma durur (laffogato.net'in veritabanı 24 Kasım
+2026'da böyle doldu). Ücretli plana geçilene kadar panel uyarır.
+
+- **Ölçüm:** sabah işi her gün `pg_database_size(current_database())` ile boyuta bakar (tablolar, dizinler ve boş alan).
+  Kota `DB_QUOTA_MB` ortam değişkeninden (MB; yoksa ya da geçersizse 512, Neon ücretsiz planı).
+- **Uyarı:** %70 ve %90 eşiği **ilk geçildiğinde** yöneticiye zil ve e-posta. Eşik başına bir kez; kullanım eşiğin
+  altına inip yeniden geçerse yine. Seviye eşiğin 2 puan altına inmeden düşmez (%70 çevresinde gidip gelen boyut her gün
+  e-posta atmasın). Bir günde %65'ten %93'e sıçrarsa yalnız "%90" gider.
+- **Zil (Sistem, yalnız yönetici, yalnız canlıda):** turuncu "Veritabanı kotasının %70'i doldu" / "…%90'ı doldu",
+  kullanım ve ne yapılacağıyla; Ayarlar › Veritabanı'na götürür. Uyarı seviye düşene kadar durur. %90 Genel bakış'ın
+  kırmızı şeridinde de ("Veritabanı" bağlantısıyla) görünür; `/api/health`'in 503'üne girmez. Zil boyutu yeniden
+  sormaz, sabah işinin son ölçümünü okur.
+- **E-posta:** sabah e-postasının alıcılarına (personel ya da pasif hesabın adresi düşer, E-53), sistem uyarısı
+  e-postasının kabuğuyla: konu "L'Affogato · Veritabanı kotasının %90'ı doldu", üstte "Veritabanı", ne yapılacağı ve
+  **Veritabanı kullanımını aç** düğmesi. `notification_log` anahtarı `db-kota:<eşik>:<geçiş günü>`. Gidemezse (Resend
+  hatası) ertesi sabah yeniden denenir. E-posta kapalıysa, Resend kurulu değilse ya da alıcı yoksa yalnız zil.
+- **Ekran:** Ayarlar › **Veritabanı** (`/panel/ayarlar#veritabani`, yalnız yönetici): o anki boyut / kota, yüzde ve
+  çubuk (%70 ve %90 işaretli; %70'te turuncu, %90'da kırmızı), sabah işinin son ölçümü; eşik geçilmişse uyarı kutusu.
+  Telefonda kapalı satır "%41 dolu · 210 MB / 512 MB".
+- **İşlem geçmişi:** "Veritabanı kotası uyarısı" (yüzde, kullanım, geçilen eşik). **Günlük işler:** eşik geçildiği gün
+  adım "Veritabanı kotası %70'i geçti" (iş "Çalıştı" kalır); ölçüm hata verirse "Veritabanı kotası ölçülemedi" (iş
+  "Kısmen").
+- **Plan değişince:** Vercel'de `DB_QUOTA_MB`'yi yeni kotaya göre yazın (ör. 10 GB için `10240`) ve yeniden
+  yayınlayın. Yer açmak için eski kayıtların temizliği geliştiricinin işidir; önce yedek alınır (§ 1).
+- **Durum kaydı:** `integration_state` › `db.quota` (bildirilmiş seviye, geçiş anı, e-postası gitti mi, son ölçüm).

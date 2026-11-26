@@ -75,7 +75,7 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
     toast.success("Bu cihazda bildirimler kapatıldı");
   }
 
-  async function changeTopic(key: "karaoke" | "reminders" | "orders", value: boolean) {
+  async function changeTopic(key: "karaoke" | "reminders" | "orders" | "approvals", value: boolean) {
     if (!endpoint) return;
     const next = { karaoke: topics?.karaoke ?? true, reminders: topics?.reminders ?? true, orders: topics?.orders ?? role === "staff", approvals: topics?.approvals ?? true, [key]: value };
     const prev = topics;
@@ -176,8 +176,17 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
                 onChange={(v) => void changeTopic("orders", v)}
               />
             ) : null}
-            {/* Onay bildirimlerinin anahtarı yok: tek gönderen mal siparişi taslağıydı (26 Eki 2026'da kaldırıldı). Tesisat
-                (konu, cihaz tercihi) kalır; yeniden bir gönderen olunca anahtar buraya döner (tests/onay-kuyrugu.test.ts) */}
+            {/* Onay bildirimleri (yalnız yönetici): personel onaya yeni bir istek gönderince (src/server/staff-requests/push.ts;
+                docs/ONAYLAR.md). Gönderen yokken anahtar görünmezdi (tests/onay-kuyrugu.test.ts) */}
+            {role === "admin" ? (
+              <ToggleRow
+                title="Onay bildirimleri"
+                description="Personel onaya bir istek gönderince: kim, ne istedi, şube"
+                label="Onay bildirimleri"
+                checked={topics?.approvals ?? true}
+                onChange={(v) => void changeTopic("approvals", v)}
+              />
+            ) : null}
             <ToggleRow
               title="Sabah hatırlatma özeti"
               description="Bugün yapılacak kişisel hatırlatıcılarınız, her sabah"

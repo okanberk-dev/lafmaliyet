@@ -184,6 +184,8 @@ export function UsersEditor({
   emailConfigured: boolean;
   loginUrl: string;
   branches?: readonly UserBranchOption[];
+  /** Yöneticide iki adımlı zorunlu (src/lib/admin-security.ts): sıfırlama penceresi kurulum ekranını söyler */
+  twoFactorRequired?: boolean;
 }) {
   return (
     <BranchesContext.Provider value={branches}>
@@ -192,7 +194,19 @@ export function UsersEditor({
   );
 }
 
-function UsersList({ users, meId, emailConfigured, loginUrl }: { users: UserRow[]; meId: number; emailConfigured: boolean; loginUrl: string }) {
+function UsersList({
+  users,
+  meId,
+  emailConfigured,
+  loginUrl,
+  twoFactorRequired = false,
+}: {
+  users: UserRow[];
+  meId: number;
+  emailConfigured: boolean;
+  loginUrl: string;
+  twoFactorRequired?: boolean;
+}) {
   const [editing, setEditing] = useState<UserRow | "new" | null>(null);
   const [access, setAccess] = useState<AccessInfo | null>(null);
   const [confirmOff, setConfirmOff] = useState<UserRow | null>(null);
@@ -465,6 +479,7 @@ function UsersList({ users, meId, emailConfigured, loginUrl }: { users: UserRow[
           user={rows.find((u) => u.id === editing.id) ?? editing}
           meId={meId}
           loginUrl={loginUrl}
+          twoFactorRequired={twoFactorRequired}
           linkBusy={linkBusy === editing.id}
           onLink={(dirty) => newLink(rows.find((u) => u.id === editing.id) ?? editing, dirty)}
           onAccess={(info) => {
@@ -942,6 +957,7 @@ function UserDialog({
   user,
   meId,
   loginUrl,
+  twoFactorRequired,
   linkBusy,
   onLink,
   onAccess,
@@ -950,6 +966,7 @@ function UserDialog({
   user: UserRow;
   meId: number;
   loginUrl: string;
+  twoFactorRequired: boolean;
   linkBusy: boolean;
   /** dirty: kaydedilmemiş değişiklik var (pencere açık kalsın) */
   onLink: (dirty: boolean) => void;
@@ -1047,7 +1064,7 @@ function UserDialog({
   /** Yöneticinin iki adımlısını sıfırlamak ve yöneticiyi silmek kendi parolanızı ister; personelde yalnızca onay */
   function ask(kind: "2fa" | "delete") {
     if (!needsStepUp({ kind, targetRole: user.role })) return setConfirm(kind);
-    void stepUp.guard(stepUpText(kind === "2fa" ? { kind } : { kind, name: user.name }), (confirm) => act(kind, confirm), finish(kind));
+    void stepUp.guard(stepUpText(kind === "2fa" ? { kind, required: twoFactorRequired } : { kind, name: user.name }), (confirm) => act(kind, confirm), finish(kind));
   }
 
   const secBtn = cn(TAP, "w-full justify-start sm:w-auto sm:pointer-fine:h-8");
@@ -1237,13 +1254,16 @@ function Mark({ on, label }: { on: boolean; label: string }) {
   );
 }
 
-export function RolesCard() {
+/** `twoFactorRequired`: yönetici hesaplarında iki adımlı zorunlu (src/lib/admin-security.ts; ADMIN_2FA_OPTIONAL=1 kapatır) */
+export function RolesCard({ twoFactorRequired = false }: { twoFactorRequired?: boolean }) {
   return (
     <Card>
       <CardHeader
         icon={<ShieldCheck />}
         title="Roller"
-        description="Her kullanıcının tek rolü vardır. Yetkiler hem menüde hem sunucuda denetlenir. Yönetici eklemek ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirmek kendi parolanızı ister."
+        description={`Her kullanıcının tek rolü vardır. Yetkiler hem menüde hem sunucuda denetlenir. Yönetici eklemek ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirmek kendi parolanızı ister.${
+          twoFactorRequired ? " Yönetici hesaplarında iki adımlı doğrulama zorunludur: kurmamış yönetici girişten sonra kurulum ekranına gider." : ""
+        }`}
       />
       <TableWrap>
         <Table>

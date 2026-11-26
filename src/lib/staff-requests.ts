@@ -218,3 +218,23 @@ export function approvalsDigestLines(rows: readonly { title: string; requestedBy
   const more = sorted.length - shown.length;
   return [head, ...shown, ...(more > 0 ? [{ text: `ve ${num(more)} istek daha`, tone: "muted" as const }] : [])];
 }
+
+/** Onay bildiriminin (push) içeriği: başlık, gövde, adres ve etiket */
+export interface RequestPush {
+  title: string;
+  body: string;
+  url: string;
+  tag: string;
+}
+
+/**
+ * Personel istek açınca yöneticinin telefonuna giden bildirim (docs/ONAYLAR.md › Bildirimler): kim, ne istedi ve şube.
+ * "Onay isteği · Kasa düzeltmesi" / "Mehmet: 22 Ekim kasa düzeltmesi · Tuzla". Metin isteğin tutarsız başlığından;
+ * personelin yazdığı neden (içinde tutar olabilir) bildirime girmez. Şube yalnız birden çok şube açıkken yazılır
+ * (`branchName`). Dokununca Onaylar'daki karta iner; etiket `istek-<id>`: aynı isteğin bildirimi öncekinin yerine geçer.
+ */
+export function requestPushText(r: { id: number; kind: StaffRequestKind; title: string; requestedByName: string; branchName: string | null }): RequestPush {
+  const who = r.requestedByName.trim() || "Personel";
+  const body = [`${who}: ${r.title.trim()}`, r.branchName].filter(Boolean).join(" · ");
+  return { title: `Onay isteği · ${KIND_LABEL[r.kind]}`, body, url: `/panel/onaylar#istek-${r.id}`, tag: `istek-${r.id}` };
+}

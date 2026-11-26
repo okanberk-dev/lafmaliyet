@@ -650,11 +650,26 @@ export function renderDigest(
   return { subject, html, text };
 }
 
+/** Sistem uyarısı e-postasının konusu: üst etiket, "ne yapmalı" kutusu ve düğme (varsayılan: günlük işler) */
+export interface SystemAlertAbout {
+  label: string;
+  help: string;
+  link: { href: string; label: string };
+}
+const JOBS_ABOUT: SystemAlertAbout = { label: "Günlük işler", help: SYSTEM_ALERT_HELP, link: { href: JOBS_LINK, label: "Günlük işleri aç" } };
+/** Veritabanı kotası uyarısı (src/server/db-quota/check.ts; docs/YEDEK.md › Veritabanı kotası) */
+export const DB_QUOTA_ABOUT: SystemAlertAbout = {
+  label: "Veritabanı",
+  help: "Ne yapmalı: Neon konsolunda (console.neon.tech) projenin planını yükseltin ya da geliştiriciden eski kayıtların temizlenmesini isteyin. Plan yükseltilince Vercel'de DB_QUOTA_MB'yi yeni kotaya göre güncelleyin. Paneldeki durum: Ayarlar › Veritabanı.",
+  link: { href: `${APP_URL}/panel/ayarlar#veritabani`, label: "Veritabanı kullanımını aç" },
+};
+
 /**
  * Bekçi e-postası (Paraşüt işi, 07:00–08:00): dünkü sabah işi çalışmadıysa ya da hata verdiyse kısa uyarı. Sabah
  * e-postasını gönderen iş bozulunca bunu ancak öteki iş söyleyebilir. Sabah e-postasıyla aynı kabuk.
+ * `about` verilirse aynı kabuk başka bir sistem uyarısını taşır (veritabanı kotası).
  */
-export function renderSystemAlert(items: DigestSystem["items"], today: string) {
+export function renderSystemAlert(items: DigestSystem["items"], today: string, about: SystemAlertAbout = JOBS_ABOUT) {
   const first = items[0]?.title ?? "Sistem uyarısı";
   const subject = `L'Affogato · ${first}${items.length > 1 ? ` (+${items.length - 1})` : ""}`;
   const headline = items.length > 1 ? `${items.length} sistem uyarısı` : first;
@@ -671,13 +686,13 @@ export function renderSystemAlert(items: DigestSystem["items"], today: string) {
     preheader: items.map((i) => i.title).join(" · "),
     brandSub: "Sistem uyarısı",
     today,
-    card: `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#b91c1c;font-weight:600">Günlük işler</div>
+    card: `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#b91c1c;font-weight:600">${esc(about.label)}</div>
     <h1 style="margin:4px 0 10px;font-family:${FONT};font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.02em;color:#171717">${esc(headline)}</h1>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">${list}</table>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fef2f2;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#b91c1c">${esc(SYSTEM_ALERT_HELP)}</td></tr></table>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fef2f2;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#b91c1c">${esc(about.help)}</td></tr></table>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px">
       <tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717">
-        <a href="${JOBS_LINK}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Günlük işleri aç</a>
+        <a href="${about.link.href}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">${esc(about.link.label)}</a>
       </td></tr>
     </table>`,
   });
@@ -687,9 +702,9 @@ export function renderSystemAlert(items: DigestSystem["items"], today: string) {
     "",
     ...items.flatMap((i) => [`- ${i.title}`, `  ${i.body}`]),
     "",
-    SYSTEM_ALERT_HELP,
+    about.help,
     "",
-    `Günlük işleri aç: ${JOBS_LINK}`,
+    `${about.link.label}: ${about.link.href}`,
   ].join("\n");
   return { subject, html, text };
 }

@@ -147,9 +147,14 @@ test("gönderim yolları ortak süzgeçten: kasa e-postası ve denemesi, sabah e
   assert.match(run, /off: "norecipient"/);
   assert.match(run, /\$\{droppedLogSuffix\(dropped\)\}/, "işlem geçmişinde atlanan sayısı");
   assert.match(fnBody(digest, "sendTestEmail"), /const \{ to, dropped \} = await sendableRecipients\(db, await activeDigestEmails\(db\)\);/);
-  const alerts = fnBody(read("src/server/jobs/alerts.ts"), "sendWatchdogAlert");
+  // Bekçi ve veritabanı kotası aynı gönderimden (sendSystemEmail; docs/YEDEK.md › Veritabanı kotası)
+  const alertsSrc = read("src/server/jobs/alerts.ts");
+  assert.match(fnBody(alertsSrc, "sendWatchdogAlert"), /return sendSystemEmail\(items, now\);/);
+  const alerts = fnBody(alertsSrc, "sendSystemEmail");
+  assert.match(alerts, /if \(!isProductionRuntime\(\) \|\| !items\.length\) return "none";/);
   assert.match(alerts, /activeDigestEmails\(db\)\.then\(\(emails\) => sendableRecipients\(db, emails\)\)/);
-  assert.match(alerts, /if \(!items\.length \|\| !to\.length\) return "none";/);
+  assert.match(alerts, /if \(!to\.length\) return "none";/);
+  assert.ok(alerts.indexOf("sendableRecipients(") < alerts.indexOf("await sendEmail("), "süzgeç gönderimden önce");
   // Bildirim adreslerini doğrudan okuyan başka gönderim kalmadı (yalnız ortak modül ve ekranlar)
   for (const f of ["src/server/notify/digest.ts", "src/server/jobs/alerts.ts"]) assert.doesNotMatch(read(f), /from\(s\.notificationRecipients\)/, f);
 });

@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { Skeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
+import { adminTwoFactorRequired } from "@/lib/admin-security";
 import { tillBranches } from "@/lib/branches";
 import { dateTimeTR, num } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
@@ -24,7 +25,7 @@ export default function UsersPage() {
         title="Kullanıcılar & roller"
         path="/panel/kullanicilar"
         description="Panele kim girer, neyi görür: kullanıcı ekleyin ya da davet gönderin."
-        more="Panele kimlerin gireceğini ve neleri göreceğini belirleyin. Kullanıcı ekleyip parolasını siz verebilir ya da davet bağlantısı gönderebilirsiniz; iki adımlı doğrulamayı her kullanıcı kendisi açar."
+        more="Panele kimlerin gireceğini ve neleri göreceğini belirleyin. Kullanıcı ekleyip parolasını siz verebilir ya da davet bağlantısı gönderebilirsiniz; iki adımlı doğrulamayı her kullanıcı kendisi kurar (yönetici hesaplarında zorunludur)."
       />
       <Suspense
         fallback={
@@ -80,6 +81,8 @@ async function UsersContent() {
   const branches = all.filter((b) => b.kind === "fiziksel" && (b.active || branchIds.has(b.id))).map((b) => ({ id: b.id, name: b.name }));
   const live = new Map(links.map((l) => [l.userId, { kind: l.kind, until: dateTimeTR(l.until) }]));
   const deviceLocked = new Set(deviceLocks.map((l) => l.userId));
+  // Yönetici hesaplarında iki adımlı zorunlu mu (docs/DEPLOY.md › 6a; ADMIN_2FA_OPTIONAL=1 kapatır)
+  const twoFactor = adminTwoFactorRequired();
   // Birden çok kasa açıkken şubesi seçilmemiş etkin personel (şube kapsamı C P2-10): bütün şubeleri görür, kasa ve sayım
   // formu "Tümü"de şubeyi sorar, akşam zili her kasa için ayrı satır verir
   const unbound = tillBranches(all).length > 1 ? rows.filter((u) => u.role === "staff" && u.active && !u.branchId) : [];
@@ -101,6 +104,7 @@ async function UsersContent() {
         emailConfigured={isEmailConfigured()}
         loginUrl={`${appUrl()}/giris`}
         branches={branches}
+        twoFactorRequired={twoFactor}
         users={rows.map((u) => ({
           id: u.id,
           name: u.name,
@@ -115,7 +119,7 @@ async function UsersContent() {
           liveLink: live.get(u.id) ?? null,
         }))}
       />
-      <RolesCard />
+      <RolesCard twoFactorRequired={twoFactor} />
     </div>
   );
 }

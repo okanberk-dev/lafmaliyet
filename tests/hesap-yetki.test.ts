@@ -74,11 +74,12 @@ test("Hesabım: iki adımlıyı açmak, kapatmak, parola ve oturumları kapatmak
   const ui = read("src/app/panel/hesap/two-factor.tsx");
   // Açma penceresi (parola) ve kurulum penceresi (QR) ikisi de söyler; kapatma Claude'u da söyler
   assert.equal(ui.match(/sessionsNote\(claude, "Açılınca"\)/g)?.length, 2);
-  assert.match(ui, /description=\{`Girişte yalnızca parola istenir\. \$\{sessionsNote\(claude\)\}`\}/);
+  // Yöneticide iki adımlı zorunluyken kapatma penceresi kurulum ekranını da söyler (src/lib/admin-security.ts)
+  assert.match(ui, /description=\{required \? `\$\{ADMIN_2FA_DISABLE_NOTE\} \$\{sessionsNote\(claude\)\}` : `Girişte yalnızca parola istenir\. \$\{sessionsNote\(claude\)\}`\}/);
   const page = read("src/app/panel/hesap/page.tsx");
   assert.match(page, /const claude = Boolean\(connections\?\.rows\.length\);/);
   assert.match(page, /sessionsNote\(claude, "Değişince"\)/);
-  assert.match(page, /<TwoFactorCard [^>]*claude=\{claude\} \/>/);
+  assert.match(page, /<TwoFactorCard [^>]*claude=\{claude\} required=\{twoFactorRequiredFor\(user\.role\)\} \/>/);
   assert.match(page, /<SessionsCard claude=\{claude\} \/>/);
   assert.match(read("src/app/panel/hesap/sessions.tsx"), /\$\{claude \? ` \$\{CLAUDE_NOTE\}` : ""\}/);
   assert.match(read("src/app/panel/hesap/connections.tsx"), /iki adımlı doğrulamayı açıp kapatınca/);

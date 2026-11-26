@@ -146,6 +146,16 @@ export function isKnownDevice(device: DeviceToken | null, user: { id: number; se
   return now < LEGACY_DEVICE_UNTIL && Boolean(device.legacyIds?.includes(user.id));
 }
 
+/**
+ * Bu tarayıcıdan kişi daha önce giriş yaptı mı (oturum sürümü ne olursa olsun; eski biçimin kişileri de): yeni cihaz
+ * uyarısı için (src/lib/admin-security.ts). Hesap kilidindeki "bilinen cihaz"dan geniş: parola değişince bu tarayıcı
+ * kilit için bilinmez olur ama yeni cihaz sayılmaz (sahibi her parola değişikliğinden sonra uyarı almasın)
+ */
+export function deviceSeenBefore(device: DeviceToken | null, userId: number): boolean {
+  if (!device) return false;
+  return device.users.some((u) => u.id === userId) || Boolean(device.legacyIds?.includes(userId));
+}
+
 export async function signDevice(device: DeviceToken) {
   return new SignJWT({ did: device.did, u: device.users.map((x) => [x.id, x.sv]), typ: "device" })
     .setProtectedHeader({ alg: "HS256" })
