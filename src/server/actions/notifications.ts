@@ -11,6 +11,7 @@ import { businessDate } from "@/lib/cash-report";
 import { CASH_OUT_INVOICES_HREF, pendingCashOutSummary } from "@/lib/cash-outs";
 import { checklistBell } from "@/lib/checklists";
 import { closedDayBellLists } from "@/lib/closed-days";
+import { CLOSED_PERIOD_HREF, heldSummary } from "@/lib/closed-period";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { dateTR, dayTR, monthShort, num, tl } from "@/lib/format";
@@ -29,6 +30,7 @@ import { newDeviceBellRows } from "@/server/auth/new-device";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { closedMarksOn } from "@/server/closed-days";
+import { heldCounts } from "@/server/closed-period";
 import { loadChecklistDays } from "@/server/data/checklists";
 import { loadCommissionAlerts } from "@/server/data/commission";
 import { loadModel } from "@/server/data/dataset";
@@ -278,7 +280,7 @@ async function holdNotifications(): Promise<PanelNotification[]> {
 async function invoiceNotifications(): Promise<PanelNotification[]> {
   const db = getDb();
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const [[review], [fresh], [lastRun], unlinked, stockOnly, cashState] = await Promise.all([
+  const [[review], [fresh], [lastRun], unlinked, stockOnly, cashState, held] = await Promise.all([
     db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
     db.select({ n: count() }).from(s.invoices).where(and(eq(s.invoices.origin, "parasut"), gt(s.invoices.createdAt, dayAgo))),
     // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz; hesap başına son çalışma, hatalı önce
@@ -292,6 +294,8 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
     Promise.all([loadCashOutInvoiceState(db), currentBranchScope()])
       .then(([state, scope]) => scopeCashOutInvoiceState(state, scope))
       .catch(() => ({ pending: [], duplicates: [] })),
+    // Kapalı döneme düşen, kararı bekleyen fatura ve harcamalar (docs/DONEM-KAPANISI.md); kapalı ay yoksa sorgu yok
+    heldCounts(db).catch(() => ({ invoices: 0, expenses: 0 })),
   ]);
   const cashOuts = cashState.pending;
   const twice = cashState.duplicates;
@@ -305,6 +309,19 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
       timeLabel: dateTR(dayTR(lastRun.startedAt)),
       unread: true,
       href: "/panel/parasut",
+      group: "fatura",
+    });
+  }
+  const heldText = heldSummary(held);
+  if (heldText) {
+    out.push({
+      id: `donem-bekleyen-${held.invoices}-${held.expenses}`,
+      kind: "warning",
+      title: "Kapalı döneme düşen kayıt var",
+      body: heldText,
+      timeLabel: "",
+      unread: true,
+      href: CLOSED_PERIOD_HREF,
       group: "fatura",
     });
   }

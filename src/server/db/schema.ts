@@ -492,6 +492,13 @@ export const invoices = pgTable(
      * kutusundadır; tek şube seçiliyken görünmez (src/lib/invoice-branch.ts)
      */
     companyWide: boolean("company_wide").notNull().default(false),
+    /**
+     * Kapalı dönem kararı (docs/DONEM-KAPANISI.md): ay kapandıktan sonra o aya tarihli gelen fatura hesaplara girmez
+     * ("Kapalı döneme düşenler" kutusu), ta ki yönetici karar verene kadar. Karar bu sütuna yazılır: faturanın hesaplarda
+     * sayılacağı gün (YYYY-MM-DD). Kendi tarihiyse kapalı aya bilerek işlendi; başka bir günse o günün ayında sayılır
+     * (belgenin tarihi `date` değişmez). Boş: karar yok. Eşitleme dokunmaz
+     */
+    periodDate: text("period_date"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -882,6 +889,8 @@ export const expenseEntries = pgTable(
      * Tedarikçiler'de düzeltilir, burada kilitli
      */
     supplierEntryId: integer("supplier_entry_id").references(() => supplierEntries.id, { onDelete: "set null" }),
+    /** Kapalı dönem kararı: harcamanın hesaplarda sayılacağı gün (faturalardaki `periodDate` ile aynı kural) */
+    periodDate: text("period_date"),
   },
   (t) => [
     index("expense_entries_date_idx").on(t.date),
@@ -1291,6 +1300,33 @@ export const recipeChangeRequests = pgTable(
       sql`(${t.kind} = 'change' and ${t.productId} is not null) or (${t.kind} = 'new' and ${t.proposed} is not null)`,
     ),
   ],
+);
+
+/**
+ * Reçete geçmişi (docs/DONEM-KAPANISI.md › Reçete geçmişi): reçeteyi (satırlar ya da hazırlama notu) değiştiren her
+ * kayıtta bir satır: kim, ne zaman, nereden, önceki ve sonraki reçete. Satır adları anlık görüntüde saklanır (malzeme
+ * sonra silinse de okunur). Yalnız eklenir; ürün silinince geçmişi de gider.
+ */
+export const recipeVersions = pgTable(
+  "recipe_versions",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    /** edit: ürün kartından; approval: personelin onaylanan önerisi; create: ürün açılırken yazılan ilk reçete */
+    source: text("source", { enum: ["edit", "approval", "create"] }).notNull().default("edit"),
+    before: jsonb("before").$type<RecipeSnapshot>().notNull(),
+    after: jsonb("after").$type<RecipeSnapshot>().notNull(),
+    /** Farkın tek satırlık özeti (summarizeDiff): liste bunu gösterir, ayrıntı açılınca fark hesaplanır */
+    summary: text("summary").notNull(),
+    changedBy: integer("changed_by").references(() => users.id, { onDelete: "set null" }),
+    changedByName: text("changed_by_name").notNull(),
+    /** Onaylanan öneride öneren personelin adı */
+    requestedByName: text("requested_by_name"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("recipe_versions_product_idx").on(t.productId, t.createdAt)],
 );
 
 // ---------------------------------------------------------------- Kişisel hatırlatıcılar

@@ -18,6 +18,7 @@ import { soldOutNoteFor } from "@/server/data/menu-status";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { loadProductPriceHistory } from "@/server/data/prices";
 import { productHistoryCounts } from "@/server/data/product-history";
+import { loadRecipeVersions } from "@/server/data/recipe-versions";
 import { syncSiteMenu } from "@/server/site-menu/sync";
 import { loadSiteLinks } from "@/server/site-menu/view";
 
@@ -109,13 +110,15 @@ async function RecipeContent({
   const month = resolveMonth(sp.ay, model);
   // Fiyat geçmişi kartı (son 20 değişiklik ve kasanın durumu) okunamazsa kart görünmez, reçete kartı açılır
   // Siparişler ekranının Tükenenler kartıyla kapatıldıysa kim ve ne zaman (dalga 10 §2.1; okunamazsa not yok)
-  const [prices, priceHistory, soldOut, counts] = await Promise.all([
+  const [prices, priceHistory, soldOut, counts, recipeHistory] = await Promise.all([
     loadPriceAlerts(model).catch(() => null),
     loadProductPriceHistory(product.id).catch(() => null),
     soldOutNoteFor(link?.siteMenuId ?? null).catch(() => null),
     // Silme engelinin sayıları eylemin sayacından, bütün şubelerden (şube kapsamı C P2-6): şubenin modeli Marina
     // seçiliyken Tuzla'nın zayisini görmüyordu. Okunamazsa kart düğmeyi açık bırakır, eylem yine veritabanından sayar
     productHistoryCounts({ id: product.id, siteMenuId: link?.siteMenuId ?? null, siteMenuSlot: link?.slot ?? null }).catch(() => null),
+    // Reçete geçmişi (son 30 değişiklik); okunamazsa kart görünmez
+    loadRecipeVersions(product.id).catch(() => null),
   ]);
   const impact = prices?.impacts.find((i) => i.productId === product.id) ?? null;
 
@@ -192,6 +195,7 @@ async function RecipeContent({
             : null,
       }}
       priceHistory={priceHistory}
+      recipeHistory={recipeHistory}
       soldOutNote={soldOut ? `${soldOut.staff ? "Personel tükendi yaptı" : "Siparişler ekranında tükendi yapıldı"} · ${soldOut.by} ${soldOutWhen(soldOut.at, new Date())}` : null}
       priceImpact={
         impact

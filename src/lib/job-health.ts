@@ -165,6 +165,7 @@ const STEP_NAMES: Record<string, string> = {
   vardiya: "Vardiya hatırlatması",
   backup: "Otomatik yedek",
   quota: "Veritabanı kotası",
+  muhasebe: "Muhasebe paketi",
   watchdog: "Sistem uyarısı e-postası",
   checklist: "Kontrol listesi e-postası",
   karaokeMail: "Karaoke e-postası",
@@ -208,6 +209,7 @@ export const STEP_LABELS: Record<string, Record<string, string>> = {
   vardiya: { sent: "Gelecek haftanın vardiyası yazılmadı: yöneticilere bildirim gitti", nodevice: "Gelecek haftanın vardiyası yazılmadı (bildirim açık yönetici cihazı yok)", error: "Vardiya hatırlatması hata" },
   backup: { ok: "Haftalık yedek alındı", off: "Otomatik yedek: depo yok", error: "Otomatik yedek alınamadı" },
   quota: { warn70: "Veritabanı kotası %70'i geçti", warn90: "Veritabanı kotası %90'ı geçti", error: "Veritabanı kotası ölçülemedi" },
+  muhasebe: { sent: "Muhasebe paketi gönderildi", error: "Muhasebe paketi gönderilemedi" },
   watchdog: { sent: "Sistem uyarısı e-postası gitti", error: "Sistem uyarısı e-postası gönderilemedi" },
   checklist: { sent: "Kontrol listesi e-postaları gitti", none: "Kontrol listesi: gönderilecek yok", failed: "Kontrol listesi e-postası bir kısmına gidemedi", error: "Kontrol listesi hata" },
   karaokeMail: { sent: "Karaoke e-postaları gitti", none: "Karaoke e-postası: gönderilecek yok", failed: "Karaoke e-postası bir kısmına gidemedi", error: "Karaoke e-postası hata" },
@@ -228,9 +230,10 @@ export type CoreStep = "sync" | "digest" | "reminders" | "karaoke" | "menu" | "s
 /**
  * Yalnız çalıştığı gün yazılan adımlar (yoksa hiçbir şey yazılmaz): satış tahmini, ModPOS kasa föyü (yalnız anahtar
  * varken), fotoğraf temizliği, ay sonu sayım bildirimi, haftalık özet, süresi dolan personel istekleri, LafPOS gün sonu,
- * otomatik haftalık yedek (alındığı ya da alınamadığı gün), veritabanı kotası (eşik geçildiği gün)
+ * otomatik haftalık yedek (alındığı ya da alınamadığı gün), veritabanı kotası (eşik geçildiği gün), muhasebeci paketi
+ * (gönderildiği ya da gönderilemediği gün)
  */
-export type OptionalStep = "forecast" | "modpos" | "photos" | "count" | "weekly" | "requests" | "gunSonu" | "vardiya" | "backup" | "quota";
+export type OptionalStep = "forecast" | "modpos" | "photos" | "count" | "weekly" | "requests" | "gunSonu" | "vardiya" | "backup" | "quota" | "muhasebe";
 export type DailyStep = CoreStep | OptionalStep;
 export type StepResult = { code: string; error?: string | null };
 
@@ -273,7 +276,7 @@ const stepFailed = (k: DailyStep, s: StepResult) => s.code === "error" || (k ===
  * İsteğe bağlı adım verilmediyse hiç yazılmaz (o gün çalışmadı).
  */
 export function dailyOutcome(steps: Record<CoreStep, StepResult> & Partial<Record<OptionalStep, StepResult>>): JobOutcome {
-  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "modpos", "photos", "count", "weekly", "requests", "gunSonu", "vardiya", "backup", "quota"];
+  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "modpos", "photos", "count", "weekly", "requests", "gunSonu", "vardiya", "backup", "quota", "muhasebe"];
   const present = order.filter((k) => steps[k] !== undefined);
   const failed = present.filter((k) => stepFailed(k, steps[k]!));
   const status = steps.digest.code === "error" ? "error" : failed.length ? "partial" : "ok";
@@ -375,6 +378,17 @@ export function backupStep(r: { status: "ok" | "skip" | "off" | "error"; error?:
 export function quotaStep(r: { status: "ok"; notified: 70 | 90 | null } | { status: "error"; error: string }): StepResult | undefined {
   if (r.status === "error") return { code: "error", error: r.error };
   return r.notified ? { code: `warn${r.notified}` } : undefined;
+}
+
+/**
+ * Muhasebeci paketinin adımı (src/server/muhasebe/paket.ts sendAccountingPackage; docs/MUHASEBE-PAKETI.md): yalnız
+ * gönderildiyse ya da hata verdiyse yazılır. Gönderim günü değilse, ayar kapalıysa, alıcı yoksa, ay zaten gittiyse ya da
+ * Resend kurulmadıysa adım yok
+ */
+export function packageStep(r: { status: "sent" } | { status: "skip" } | { status: "error"; error: string } | { error: string }): StepResult | undefined {
+  if (!("status" in r)) return { code: "error", error: r.error };
+  if (r.status === "error") return { code: "error", error: (r as { error: string }).error };
+  return r.status === "sent" ? { code: "sent" } : undefined;
 }
 
 /** Fotoğraf temizliğinin adımı (src/server/storage/photos.ts cleanupPhotos) */

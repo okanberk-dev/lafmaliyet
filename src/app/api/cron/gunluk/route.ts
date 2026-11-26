@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { backupStep, countStep, dailyOutcome, digestStep, gunSonuStep, modposStep, photosStep, quotaStep, reminderStep, requestsStep, vardiyaStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
+import { businessDate } from "@/lib/cash-report";
+import { backupStep, countStep, dailyOutcome, digestStep, gunSonuStep, modposStep, packageStep, photosStep, quotaStep, reminderStep, requestsStep, vardiyaStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
 import { todayTR } from "@/lib/reminders";
 import { weeklyStep, WEEKLY_DEADLINE_MS, type WeeklyRunResult } from "@/lib/weekly/core";
 import { capped, JOB_SEND_DEADLINE_MS, JOB_TAIL_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
@@ -16,6 +17,7 @@ import { catchUpLafposDayEnds } from "@/server/lafpos/gun-sonu";
 import { pruneMcp } from "@/server/mcp/store";
 import { purgeExpiredStatements } from "@/server/mutabakat/store";
 import { isModposConfigured } from "@/server/modpos/client";
+import { sendAccountingPackage } from "@/server/muhasebe/paket";
 import { syncModposAll, type ModposSyncResult } from "@/server/modpos/sync";
 import { pushMonthEndCount } from "@/server/notify/count-push";
 import { runReminderDigest } from "@/server/notify/digest";
@@ -206,8 +208,19 @@ export async function GET(request: NextRequest) {
       Math.min(5_000, tailStepDeadline(jobStart) - Date.now()),
       { error: "süre doldu" },
     );
+  // Muhasebeci paketi (docs/MUHASEBE-PAKETI.md): ayın 1'inde (gidemezse 2'si, 3'ü) geçen ayın paketi muhasebeci
+  // alıcılarına ekli e-postayla; alıcı yoksa ya da ayar kapalıysa gönderilmez. E-posta tek deneme, kuyruğun 55 sn'sini
+  // aşmadan; adım yalnız gönderilince ya da hata verince yazılır
+  const muhasebeTask = () => {
+    const deadlineAt = tailStepDeadline(jobStart);
+    return capped(
+      sendAccountingPackage({ trigger: "cron", today: businessDate(), opts: { attempts: 1, deadlineAt } }).catch((e: Error) => ({ error: e.message })),
+      deadlineAt - Date.now() + 500,
+      { error: "süre doldu" },
+    );
+  };
   const extras = async () => {
-    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu, vardiya, backup, quota, mutabakat] = await Promise.all([
+    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu, vardiya, backup, quota, mutabakat, muhasebe] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
       // Karaoke eşitlemesi ve KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (docs/KARAOKE.md › KVKK); ardından
       // karaoke e-postaları (misafirin hatırlatması, personelin sabah listesi), kuyruğun 55 sn'sini aşmadan
@@ -224,6 +237,7 @@ export async function GET(request: NextRequest) {
       backupP,
       quotaP,
       reconTask(),
+      muhasebeTask(),
     ]);
     const vardiyaResult = vardiyaStep(vardiya);
     const countResult = countStep(count);
@@ -232,6 +246,7 @@ export async function GET(request: NextRequest) {
     const gunSonuResult = gunSonuStep(gunSonu);
     const backupResult = backupStep(backup);
     const quotaResult = quotaStep(quota);
+    const muhasebeResult = packageStep(muhasebe);
     const steps: Record<Exclude<CoreStep, "sync" | "digest">, StepResult> & Partial<Record<OptionalStep, StepResult>> = {
       reminders: reminderStep(reminders),
       karaoke: siteStep(karaoke),
@@ -245,6 +260,7 @@ export async function GET(request: NextRequest) {
       ...(vardiyaResult ? { vardiya: vardiyaResult } : {}),
       ...(backupResult ? { backup: backupResult } : {}),
       ...(quotaResult ? { quota: quotaResult } : {}),
+      ...(muhasebeResult ? { muhasebe: muhasebeResult } : {}),
     };
     return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp, requests, backup: backup.status, quota: quota.status === "ok" ? { pct: Math.floor(quota.pct), level: quota.level } : "error", mutabakat }, steps, weekly: weekly.status };
   };

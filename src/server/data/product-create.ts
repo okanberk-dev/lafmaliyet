@@ -4,7 +4,9 @@ import { and, eq, max } from "drizzle-orm";
 
 import { categoryFireDefault } from "@/app/panel/urunler/logic";
 import { UserError } from "@/server/actions/util";
+import { EMPTY_SNAPSHOT } from "@/lib/recipe-change";
 import { withPassiveRelist } from "@/server/data/ingredient-usage";
+import { recordRecipeVersion } from "@/server/data/recipe-versions";
 import { getDb, schema as s } from "@/server/db";
 import { recordPriceChange } from "@/server/prices/record";
 
@@ -38,7 +40,7 @@ export interface NewRecipeLine {
 export async function insertProduct(
   tx: Tx,
   data: NewProduct,
-  opts: { copyFromId?: number | null; note?: string | null; items?: NewRecipeLine[]; changedBy: string },
+  opts: { copyFromId?: number | null; note?: string | null; items?: NewRecipeLine[]; changedBy: string; changedById?: number | null; requestedByName?: string | null },
 ) {
   const copyFromId = opts.copyFromId ?? null;
   const [dup] = await tx
@@ -81,5 +83,7 @@ export async function insertProduct(
     },
   );
   if (data.price > 0) await recordPriceChange(tx, { productId: created.id, before: null, after: data.price, source: "create", changedBy: opts.changedBy }, new Date(), { pos: false });
+  // Reçete geçmişinin ilk satırı: ürün reçetesiyle (ya da notuyla) açıldıysa (docs/DONEM-KAPANISI.md › Reçete geçmişi)
+  await recordRecipeVersion(tx, { productId: created.id, before: EMPTY_SNAPSHOT, source: "create", by: { id: opts.changedById ?? null, name: opts.changedBy }, requestedByName: opts.requestedByName ?? null });
   return { id: created.id, lines: lines.length, fireOverride: initial.fireOverride, noteCopied: !!(copyFromId && initial.note) };
 }

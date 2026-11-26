@@ -351,6 +351,15 @@ dener (adım "LafPOS gün sonu"). Ayrıntı:
 
 Tetikleyiciler kontrol listesi hatırlatmalarınınki (açık sekmenin canlı yoklaması, saatlik iş) ve sabah işi.
 
+## Muhasebeci paketi ve dönem kapanışı (26 Kasım 2026)
+
+- **Muhasebeci e-postası:** ayın 1'inde (sabah işi kaçarsa 2'si, 3'ü) geçen ayın paketi (.xlsx ekli) Ayarlar ›
+  Muhasebeci paketi'ndeki adreslere; adres yoksa ya da "Ay kapanınca gönder" kapalıysa gitmez. Personel ya da pasif
+  hesabın adresi düşer. Günlük işlerde adım "Muhasebe paketi" yalnız gönderilince ya da hata verince yazılır. Ayrıntı:
+  [MUHASEBE-PAKETI.md](MUHASEBE-PAKETI.md).
+- **Zil (yönetici, Fatura grubu):** "Kapalı döneme düşen kayıt var" (kapanmış aya sonradan gelen fatura ya da harcama,
+  kararı bekliyor); Ayarlar › Dönem kapanışı'na götürür. Ayrıntı: [DONEM-KAPANISI.md](DONEM-KAPANISI.md).
+
 ## Haftalık özet (pazartesi)
 
 Her pazartesi 08:00–09:00 (gönderilemezse salı, sonra çarşamba) **yöneticilere** (etkin yönetici hesaplarının giriş
