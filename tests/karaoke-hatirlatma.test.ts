@@ -6,6 +6,7 @@
 // Saf kurallar ve şablonlar burada; gerçek Postgres'le gönderim tests/karaoke-hatirlatma-db.test.ts'te.
 
 import assert from "node:assert/strict";
+import { htmlText } from "./helpers/html-metin";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -318,6 +319,37 @@ test("personel '3 saat kala' e-postası: ödeme alınmadıysa konu ve kırmızı
   assert.doesNotMatch(paid.html, /ÖDEME ALINMADI/);
   // Onay bekleyen talep de ödenmemiştir
   assert.match(renderStaffSoon({ ...desk, desk: null, status: "requested" }, tr("2026-11-24", 17)).html, /ÖDEME ALINMADI · onay bekliyor/);
+});
+
+test("karaoke e-postaları ortak tasarımla: tek h1, telefon ayarı, ana eylem; personelde ad ve not HTML'e kaçışla girer", () => {
+  // Misafir: başlık kitin h1'i (telefonda küçülür), saat aralığı bölünmez, telefon ayarı kabukta
+  const guest = renderKaraokeReminder(guestInput);
+  assert.equal(guest.html.match(/<h1 /g)?.length, 1);
+  assert.match(guest.html, /<h1 class="em-h1"[^>]*>Yarın görüşüyoruz, Ayşe!<\/h1>/);
+  assert.match(guest.html, /@media only screen and \(max-width:620px\)/);
+  assert.match(guest.html, /<a href="https:\/\/calendar\.google\.com\/[^"]*"[^>]*>Takvime ekle<\/a>/);
+  // Saat aralığı ve telefon satır sonunda bölünmez (yalnız sarılma): etiketler çıkınca cümleler aynı
+  const guestPlain = htmlText(guest.html);
+  assert.match(guest.html, /<span style="white-space:nowrap">20:00–22:00<\/span>/);
+  assert.match(guestPlain, /Karaoke odanız yarın 20:00–22:00 arasında sizin için ayrıldı\./);
+  assert.match(guestPlain, /Lütfen bize haber verin \(\+90 536 429 09 19\); saatinizi başka misafirlere açabilelim\./);
+  assert.match(guestPlain, /34940 Tuzla \/ İstanbul · \+90 536 429 09 19/);
+  // Adresin sonu (posta kodu, ilçe, il) biletinde ve altlıkta bölünmez; adres metni aynı kalır
+  assert.equal(guest.html.match(/<span style="white-space:nowrap">34940 Tuzla \/ İstanbul<\/span>/g)?.length, 2);
+  assert.match(guestPlain, /Postane Mah\. Atatürk Cad\. No: 28 İç Kapı No: 1, 34940 Tuzla \/ İstanbul/);
+  // Boşluksuz uzun ad başlığı telefonda taşırmaz: başlığın sarmalayıcısı kelimeyi böler
+  assert.match(guest.html, /<div style="[^"]*word-break:break-word[^"]*"><h1 class="em-h1"/);
+  // Site adresi bağlantıda kaçışlı
+  assert.match(renderKaraokeReminder({ ...guestInput, siteUrl: "https://ornek.net/a?b=1&c=2" }).html, /href="https:\/\/ornek\.net\/a\?b=1&amp;c=2"/);
+  // Personel: kullanıcının yazdığı ad ve not kaçışlanır; tek h1, düğme karaoke ekranına
+  const evil = session({ id: 7, date: "2026-11-24", hour: 14, paymentStatus: "none", desk: "booking", customerName: '<img src=x onerror="alert(1)">', note: "<script>x</script>" });
+  for (const m of [renderStaffMorning([evil], "2026-11-24"), renderStaffSoon(evil, tr("2026-11-24", 11))]) {
+    assert.doesNotMatch(m.html, /<img src=x|<script\b/i);
+    assert.match(m.html, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt; · 4 kişi/);
+    assert.match(m.html, /Not: &lt;script&gt;x&lt;\/script&gt;/);
+    assert.equal(m.html.match(/<h1 /g)?.length, 1);
+    assert.match(m.html, /<a href="[^"]*\/panel\/karaoke"[^>]*>Karaoke ekranını aç<\/a>/);
+  }
 });
 
 // ---------------------------------------------------------------- Bağlantılar (kaynak)
