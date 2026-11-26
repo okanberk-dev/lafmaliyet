@@ -842,8 +842,10 @@ girilen (ModPOS) günleri anlatır. Kurallar `src/lib/kor-sayim.ts` (testleri `t
 - **Yönetici ne görür:** günün kasa görünümünde **Kör sayım** kutusu, satır satır: "Kör sayım 6.400 ₺ · Ayşe · 20:14",
   "Sayım değişti: 6.450 ₺ · Ayşe · 20:31 · çekmecenin altında 50 ₺ çıktı". Sayım kilitlendikten sonra değiştiyse kutu
   turuncudur ("Sayım kilitlendikten sonra değişti: 6.400 ₺ → 6.450 ₺"); rapordaki sayılan geçerli sayımdan farklıysa
-  (yönetici düzeltti ya da düzeltme önerisi onaylandı) "Raporda sayılan 6.350 ₺, kilitli sayım 6.400 ₺". Yönetici kör
-  değildir: formu bugünkü gibi doldurur, kilit beklemez.
+  (yönetici düzeltti ya da düzeltme önerisi onaylandı) "Raporda sayılan 6.350 ₺, kilitli sayım 6.400 ₺". Aynı uyarı
+  kasa e-postasının **Kasa (nakit)** bölümündeki turuncu kutuda ve metin sürümünde de yazar (`emailReport`,
+  `renderCashReport` › `blindCount`); sayım tutuyorsa e-posta bugünkü gibidir. Yönetici kör değildir: formu bugünkü gibi
+  doldurur, kilit beklemez.
 - **Sunucu zorlar:** personelin doğrudan yazdığı raporda sayılan nakit geçerli (en son) sayıma eşit olmak zorundadır
   (`assertBlindCount`, `saveCashReport`'un işleminin içinde); sayım yoksa "Önce çekmecedeki nakdi sayıp kilitleyin; kasa
   farkı sonra görünür.", farklıysa "Sayımı değiştir"i söyleyen ret. Kayıtlı raporun değişmeyen sayılanı geçer (ayar

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { BLIND_COUNT_GROUP } from "../src/lib/branch-settings/groups";
+import type { CashReportFields } from "../src/lib/cash-report";
 import {
   blindCountOn,
   blindCountRefusal,
@@ -21,6 +22,7 @@ import {
   lockOf,
   type CashCountRow,
 } from "../src/lib/kor-sayim";
+import { renderCashReport } from "../src/server/notify/cash-report-template";
 
 const plain = (t: string) => t.replace(/ /g, " ");
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
@@ -108,4 +110,37 @@ test("form ve sunucu: kilitlenmeden fark çizilmez, rapor gönderilmez; sunucu p
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /blindCount=\{!admin && countState\?\.on \? \{ lock: lockOf\(countState\.rows\) \} : null\}/);
   assert.match(page, /const countCard =\s*admin && countState\?\.rows\.length/);
+});
+
+test("e-posta: kilitli sayım sonradan değiştiyse yöneticinin kasa e-postasında Kasa (nakit) bölümünde uyarı", () => {
+  const f: CashReportFields = {
+    date: "2031-03-04",
+    zNo: null,
+    receipts: null,
+    zTotal: 10_000,
+    cash: 6_000,
+    card: 4_000,
+    mealCard: 0,
+    online: 0,
+    other: 0,
+    openingCash: 400,
+    cashIn: 0,
+    cashOut: 0,
+    cashOutNote: null,
+    countedCash: 6_450,
+    handedOver: 0,
+    bankPos: null,
+    offRevenue: null,
+    note: null,
+  };
+  const warn = countAttention([row(6_400, "2031-03-04T17:14:00.000Z"), row(6_450, "2031-03-04T17:31:00.000Z", "Çekmecenin altında 50 ₺ çıktı")], 6_450);
+  const m = renderCashReport(f, { by: "Ayşe", revision: 1, submittedAt: new Date("2031-03-04T17:40:00Z"), blindCount: warn });
+  assert.match(plain(m.html), /Sayım kilitlendikten sonra değişti: 6\.400 ₺ → 6\.450 ₺/);
+  assert.match(plain(m.text), /⚠️ Sayım kilitlendikten sonra değişti: 6\.400 ₺ → 6\.450 ₺/);
+  // Sayım yoksa ya da tutuyorsa satır yok (bugünkü e-posta)
+  const none = renderCashReport(f, { by: "Ayşe", revision: 1, submittedAt: new Date("2031-03-04T17:40:00Z"), blindCount: null });
+  assert.doesNotMatch(none.html, /Sayım kilitlendikten/);
+  assert.doesNotMatch(none.text, /Sayım kilitlendikten/);
+  const email = read("src/server/cash/report-email.ts");
+  assert.match(email, /blindCount: countAttention\(counts, row\.countedCash\)/);
 });
