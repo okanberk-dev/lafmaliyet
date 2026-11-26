@@ -18,6 +18,7 @@
     "db:restore": "tsx scripts/restore.ts",
     "modpos:foy": "tsx scripts/modpos-foy.ts",
     "asistan:bilgi": "tsx scripts/asistan-bilgi.ts",
+    "eposta:onizleme": "tsx scripts/eposta-onizleme.ts",
     "excel:extract": "python3 scripts/excel-import/extract.py"
   },
   "dependencies": {

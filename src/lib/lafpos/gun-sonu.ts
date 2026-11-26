@@ -1,4 +1,5 @@
 import { carryCheck, carryDiffText, computeCash, openingNeedsNote, reportNo, type CashReportFields } from "@/lib/cash-report";
+import { badge, button, esc, kpiGrid, kvRow, layout, note, paragraph, section, splitHeadline, statusBanner, upperFirst, type Kpi, type Tone } from "@/lib/email";
 import { money } from "@/lib/format";
 import { normalizeVat, sameVat, type OkcVatLine } from "@/lib/okc-z";
 import { addDays, longDateTR } from "@/lib/reminders";
@@ -565,15 +566,13 @@ export function photoCheckHash(check: LafposPhotoCheck): string {
 }
 
 /** Fotoğraf e-postasının konu sonu ve üst satırı, karşılaştırmanın durumuna göre */
-const PHOTO_MAIL_STATE: Record<LafposPhotoCheck["state"], { subject: string; headline: string; tone: "ok" | "bad" | "warn" }> = {
-  uyumlu: { subject: "Z raporu tutuyor", headline: "Z raporu tutuyor: fotoğraftaki rakamlar LafPOS'la aynı", tone: "ok" },
+const PHOTO_MAIL_STATE: Record<LafposPhotoCheck["state"], { subject: string; headline: string; tone: Tone }> = {
+  uyumlu: { subject: "Z raporu tutuyor", headline: "Z raporu tutuyor: fotoğraftaki rakamlar LafPOS'la aynı", tone: "good" },
   fark: { subject: "Z raporu LafPOS'tan FARKLI", headline: "Z raporu tutmuyor: fotoğraf LafPOS'un rakamlarından farklı okundu", tone: "bad" },
   okunamadi: { subject: "Z raporu okunamadı", headline: "Z raporu okunamadı ya da yanlış belge; personelden yeniden çekmesi istendi", tone: "warn" },
   okunmadi: { subject: "Z raporu alındı · okunmadı", headline: "Z raporunun fotoğrafı alındı ama henüz okunmadı; fotoğrafa bakın", tone: "warn" },
   belirsiz: { subject: "Z raporu okunamadı, yönetici baksın", headline: "", tone: "warn" },
 };
-
-const TONE = { ok: { bg: "#f0fdf4", fg: "#166534" }, bad: { bg: "#fef2f2", fg: "#991b1b" }, warn: { bg: "#fff7ed", fg: "#9a3412" } } as const;
 
 /** Fotoğrafta okunanın başlığı (e-postanın ikinci bölümü) */
 const READ_TITLE = "Fotoğrafta okunan";
@@ -600,33 +599,29 @@ export function renderPhotoMail(m: {
   const subject = `${dayEndSubjectHead(m.branchName, m.date)} · ${st.subject}`;
   const rows = photoRows(m.check);
   const headline = m.check.state === "belirsiz" ? `${photoUnsureText(m.check)}: fotoğrafa bakın` : st.headline;
-  const tone = TONE[st.tone];
   const reads = (m.reads ?? []).filter((r) => r.length);
   const readSections = reads.map((r, i) => ({ title: reads.length > 1 ? `${READ_TITLE} (${i + 1}. fotoğraf)` : READ_TITLE, rows: r }));
   const meta = [
     m.by ? `Ekleyen: ${m.by}` : null,
     m.attachments ? `Fotoğraf ${m.attachments > 1 ? `${m.attachments} ek olarak` : "ek olarak"} bu e-postada.` : null,
   ].filter((x): x is string => Boolean(x));
-  const rowHtml = ([label, value]: readonly [string, string]) =>
-    `<tr><td style="padding:6px 0;font-family:${FONT};font-size:14px;color:#3f3f46;vertical-align:top">${esc(label)}</td><td align="right" style="padding:6px 0 6px 12px;font-family:${FONT};font-size:14px;font-weight:${/· FARK$/.test(value) ? 700 : 600};color:${/· FARK$/.test(value) ? "#b91c1c" : "#171717"}">${esc(value)}</td></tr>`;
-  const sectionHtml = (title: string, list: readonly (readonly [string, string])[]) =>
-    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:18px"><tr><td colspan="2" style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT};font-size:13px;font-weight:600;color:#3f3f46">${esc(title)}</td></tr>${list.map(rowHtml).join("")}</table>`;
-  const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(subject)}</title></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:${FONT}">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4f4f5"><tr><td align="center" style="padding:20px 12px 28px">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px">
-  <tr><td style="padding:0 4px 14px;font-family:${FONT}"><div style="font-size:16px;font-weight:600;color:#171717">L'Affogato ${esc(m.branchName)}</div><div style="font-size:12px;color:#71717a">Gün sonu fotoğrafı · ${esc(longDateTR(m.date))} ${m.date.slice(0, 4)} · gün sonu e-postası daha önce gitti</div></td></tr>
-  <tr><td style="background:#ffffff;border-radius:24px;padding:22px 20px">
-    <div style="background:${tone.bg};border-radius:12px;padding:10px 12px;font-family:${FONT};font-size:15px;line-height:20px;font-weight:700;color:${tone.fg}">${esc(headline)}</div>
-    ${meta.length ? `<div style="margin-top:10px;font-family:${FONT};font-size:13px;line-height:18px;color:#52525b">${meta.map(esc).join("<br>")}</div>` : ""}
-    ${sectionHtml(PHOTO_TITLE, rows)}
-    ${readSections.map((x) => sectionHtml(x.title, x.rows)).join("")}
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px"><tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717"><a href="${esc(m.link)}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Panelde aç</a></td></tr></table>
-  </td></tr>
-  <tr><td style="padding:16px 12px 0;font-family:${FONT};font-size:12px;color:#a1a1aa;text-align:center">Bu e-posta kasa raporu alıcılarına gönderildi.</td></tr>
-</table>
-</td></tr></table>
-</body></html>`;
+  // Üstte durum bandı ve büyük rakamlar (fotoğrafta okunan toplam, nakit, kart; LafPOS'la karşılaştırmasıyla), altında
+  // ekleyen ve ek notu, karşılaştırma satır satır, fotoğrafta okunanlar (src/lib/email)
+  const html = layout({
+    subject,
+    preheader: headline,
+    branch: m.branchName,
+    meta: `Gün sonu fotoğrafı · ${longDateTR(m.date)} ${m.date.slice(0, 4)} · gün sonu e-postası daha önce gitti`,
+    body: [
+      statusBanner({ tone: st.tone, ...splitHeadline(headline) }),
+      kpiGrid(photoKpis(reads, m.check)),
+      meta.length ? note(meta) : null,
+      section(PHOTO_TITLE, rows.map(mailRow)),
+      ...readSections.map((x) => section(x.title, x.rows.map(mailRow))),
+      button(m.link, "Panelde aç"),
+    ],
+    footer: MAIL_FOOTER,
+  });
   const text = [
     subject,
     "",
@@ -641,6 +636,55 @@ export function renderPhotoMail(m: {
   ].join("\n");
   return { subject, html, text };
 }
+
+/** Gün sonu ve fotoğraf e-postasının alt notu */
+const MAIL_FOOTER = "Bu e-posta kasa raporu alıcılarına gönderildi.";
+
+/** Karşılaştırma sonucunun tonu: rozet ve büyük rakamın alt satırı */
+const CMP_TONE: Record<string, Tone> = { aynı: "good", FARK: "bad", okunamadı: "warn", bilgi: "neutral" };
+
+/**
+ * Satırın HTML'i (gün sonu ve fotoğraf e-postası): karşılaştırma satırında ("fotoğrafta X · LafPOS'ta Y · FARK") sonuç
+ * rozet olur, kasa farkı tonlu ve kalın; ötekiler düz satır. Sözcükler düz metindekiyle aynı
+ */
+function mailRow([label, value]: readonly [string, string]): string {
+  const cmp = /^(fotoğrafta .*) · (aynı|FARK|okunamadı|bilgi)$/.exec(value);
+  if (cmp) return kvRow(label, cmp[1], { badge: { text: cmp[2], tone: CMP_TONE[cmp[2]] } });
+  if (label === "Kasa farkı") return kvRow(label, value, { tone: diffTone(value), strong: true });
+  return kvRow(label, value);
+}
+
+/** Kasa sonucunun tonu: tutuyor yeşil, eksik kırmızı, fazla ve sayım yok turuncu */
+function diffTone(result: string): Tone {
+  if (/tutuyor$/.test(result)) return "good";
+  if (/eksik$/.test(result)) return "bad";
+  return "warn";
+}
+
+/** Fotoğrafta okunan satır ve karşılaştırmadaki adı (büyük rakamın altına LafPOS'taki değer ve sonuç yazılır) */
+const KPI_ROWS = [
+  ["Günün toplamı", "Yazarkasa toplamı"],
+  ["Nakit", "Yazarkasa nakdi"],
+  ["Kart", "Yazarkasa kartı"],
+] as const;
+
+/**
+ * Z raporu e-postasının büyük rakamları: fotoğrafta okunan günün toplamı, nakit ve kart (okunduysa; toplamı okunan ilk
+ * fotoğraftan), altında LafPOS'taki değer ve sonuç. Okunan yoksa karşılaştırmanın fotoğraf değeri; o da yoksa kutu yok
+ */
+function photoKpis(reads: readonly (readonly (readonly [string, string])[])[], check: LafposPhotoCheck): Kpi[] {
+  const read = reads.find((r) => r.some(([l]) => l === "Günün toplamı")) ?? reads[0] ?? [];
+  return KPI_ROWS.flatMap(([label, cmpLabel]): Kpi[] => {
+    const row = check.rows.find((r) => r.label === cmpLabel && !r.info);
+    const raw = read.find(([l]) => l === label)?.[1] ?? (row && !row.unread && !/^(yok|okunamadı)$/.test(row.photo) ? row.photo : null);
+    if (!raw) return [];
+    const unsure = raw.endsWith(UNSURE);
+    const state = row ? (row.ok ? "aynı" : row.unread ? "okunamadı" : "FARK") : null;
+    const sub = [row ? `LafPOS'ta ${row.lafpos}` : null, state, unsure ? "belirsiz" : null].filter(Boolean).join(" · ");
+    return [{ label, value: unsure ? raw.slice(0, -UNSURE.length) : raw, sub: sub || null, tone: state === "FARK" ? "bad" : null, subTone: state ? CMP_TONE[state] : unsure ? "warn" : null }];
+  });
+}
+const UNSURE = " (belirsiz)";
 
 /** "Banka POS: 995 ₺ (000278 240 ₺ + 000279 755 ₺)", ya da "boş · <tam neden>"; yazarkasanın kaynağı; fotoğraf */
 function deviceRows(m: DayEndMail): [string, string][] {
@@ -695,34 +739,47 @@ export function dayEndNotes(m: DayEndMail): string[] {
   return out;
 }
 
-const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
-
 /** Gün sonu e-postası: konu, HTML ve düz metin. Maliyet ve kâr yok (alıcılar yönetici ya da hesabı olmayan adres) */
 export function renderDayEnd(m: DayEndMail): { subject: string; html: string; text: string } {
-  const subject = `${dayEndSubject(m.branchName, m.date, { result: dayEndCashResult(m), corrected: m.corrected, recount: m.recount })}${m.bankPos && pavoState(m.bankPos) === "fark" ? " · Pavo FARK VAR" : ""}${m.photo?.check?.state === "fark" ? " · Fotoğraf FARKLI" : ""}`;
+  const result = dayEndCashResult(m);
+  const pavoFark = Boolean(m.bankPos && pavoState(m.bankPos) === "fark");
+  const photoFark = m.photo?.check?.state === "fark";
+  const subject = `${dayEndSubject(m.branchName, m.date, { result, corrected: m.corrected, recount: m.recount })}${pavoFark ? " · Pavo FARK VAR" : ""}${photoFark ? " · Fotoğraf FARKLI" : ""}`;
   const sections = dayEndSections(m);
   const notes = dayEndNotes(m);
-  const rowHtml = ([label, value]: [string, string]) =>
-    `<tr><td style="padding:6px 0;font-family:${FONT};font-size:14px;color:#3f3f46">${esc(label)}</td><td align="right" style="padding:6px 0 6px 12px;font-family:${FONT};font-size:14px;font-weight:600;color:#171717;white-space:nowrap">${esc(value)}</td></tr>`;
-  const sectionHtml = (s: { title: string; rows: [string, string][] }) =>
-    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:18px"><tr><td colspan="2" style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT};font-size:13px;font-weight:600;color:#3f3f46">${esc(s.title)}</td></tr>${s.rows.map(rowHtml).join("")}</table>`;
-  const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(subject)}</title></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:${FONT}">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4f4f5"><tr><td align="center" style="padding:20px 12px 28px">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px">
-  <tr><td style="padding:0 4px 14px;font-family:${FONT}"><div style="font-size:16px;font-weight:600;color:#171717">L'Affogato ${esc(m.branchName)}</div><div style="font-size:12px;color:#71717a">LafPOS gün sonu · ${esc(longDateTR(m.date))} ${m.date.slice(0, 4)}</div></td></tr>
-  <tr><td style="background:#ffffff;border-radius:24px;padding:22px 20px">
-    <div style="font-family:${FONT};font-size:13px;color:#71717a">Toplam satış</div>
-    <div style="font-family:${FONT};font-size:28px;line-height:34px;font-weight:700;color:#171717">${esc(money(m.z.zTotal))}</div>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:10px"><tr><td style="background:${m.corrected ? "#fff7ed" : "#f4f4f5"};border-radius:12px;padding:10px 12px;font-family:${FONT};font-size:13px;line-height:18px;color:${m.corrected ? "#9a3412" : "#3f3f46"}">${notes.map(esc).join("<br>")}</td></tr></table>
-    ${sections.map(sectionHtml).join("\n    ")}${m.bankPos ? `\n    ${pavoSectionHtml(m.bankPos)}` : ""}
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px"><tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717"><a href="${esc(m.link)}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Panelde aç</a></td></tr></table>
-  </td></tr>
-  <tr><td style="padding:16px 12px 0;font-family:${FONT};font-size:12px;color:#a1a1aa;text-align:center">Bu e-posta kasa raporu alıcılarına gönderildi.</td></tr>
-</table>
-</td></tr></table>
-</body></html>`;
+  // Üstte kasanın sonucu (konudakiyle aynı), konudaki farklar rozet, büyük rakamlar (satış, nakit, kart), notlar,
+  // bölümler ve Pavo karşılaştırması (src/lib/email)
+  const kasa = sections.find((x) => x.title === "Kasa (nakit)")?.rows ?? [];
+  const kasaValue = (label: string) => kasa.find(([l]) => l === label)?.[1] ?? null;
+  const expected = kasaValue("Olması gereken nakit");
+  const counted = kasaValue("Sayılan nakit");
+  const flags = [pavoFark ? badge("Pavo FARK VAR", "bad") : "", photoFark ? badge("Fotoğraf FARKLI", "bad") : ""].filter(Boolean);
+  const html = layout({
+    subject,
+    preheader: `Toplam satış ${money(m.z.zTotal)} · ${result}`,
+    branch: m.branchName,
+    meta: `LafPOS gün sonu · ${longDateTR(m.date)} ${m.date.slice(0, 4)}`,
+    body: [
+      statusBanner({
+        tone: diffTone(result),
+        eyebrow: "Kasa",
+        title: result === "kasa tutuyor" ? "Tutuyor" : upperFirst(result),
+        sub: [expected ? `Olması gereken ${expected}` : null, counted && counted !== "sayım yok" ? `sayılan ${counted}` : null].filter(Boolean).join(" · ") || null,
+        size: "lg",
+      }),
+      flags.length ? paragraph(flags.join(" "), { html: true }) : null,
+      kpiGrid([
+        { label: "Toplam satış", value: money(m.z.zTotal) },
+        { label: "Nakit", value: money(m.z.cash) },
+        { label: "Kredi / banka kartı", value: money(m.z.card) },
+      ]),
+      note(notes, { tone: m.corrected ? "warn" : "neutral" }),
+      ...sections.map((x) => section(x.title, x.rows.map(mailRow))),
+      m.bankPos ? pavoSectionHtml(m.bankPos) : null,
+      button(m.link, "Panelde aç"),
+    ],
+    footer: MAIL_FOOTER,
+  });
   const text = [
     subject,
     "",
