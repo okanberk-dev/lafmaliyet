@@ -10,6 +10,10 @@
 // Migration'dan sonra her migration'ın gerçekten uygulandığı doğrulanır (scripts/migrate.ts › verifyMigrations):
 // sıra bozulup atlanan varsa derleme durur, canlıda eski sürüm yayında kalır.
 //
+// Aynı anda iki canlı derleme migration'a girerse ikincisi kilidi bekler, öteki bitince "güncel" der; her tablo
+// kilidi sınırlı beklenir, takılırsa derleme tutan işlemi yazarak durur (scripts/migrate.ts; 26 Kas 2026'da #152'nin
+// derlemesi #151'inkiyle üst üste binip "column already exists" ile düşmüştü).
+//
 // Production derlemesi yalnız main dalından (predeploy-guard.ts › productionBranchRefusal): bir dal önizlemesi
 // Production'a terfi ya da redeploy edilirse derleme her şeyden önce durur; dalın migration'ı canlıya gitmez, dalın kodu
 // canlı sırlarıyla yayına çıkmaz (26 Eki 2026, denetim E-10). Bilerek yapılan dağıtım ALLOW_BRANCH_PRODUCTION=1 ister.

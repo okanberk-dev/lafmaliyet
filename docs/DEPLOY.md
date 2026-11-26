@@ -138,6 +138,7 @@ uyarıları; iki iş birden durursa diye isteğe bağlı dış izleme: `/api/hea
 **Deploy** düğmesine basın. Build günlüğünde şunları görmelisiniz:
 
 ```
+✓ 21 migration uygulandı (2,4 sn)
 ✓ Veritabanı şeması güncel (21 migration)
 ✓ Excel verisi yüklendi: 74 hammadde, 129 ürün, 699 reçete satırı, 125 satış satırı, 81 fatura
 ✓ Yönetici hesabı oluşturuldu: …
@@ -459,6 +460,22 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   - **satis_tahmini** (satış tahmini: `special_days`, `weather_days`, `forecast_snapshots`): yalnız yeni tablolar,
     eklemeli; eski kod onlara dokunmaz. Satış tahmini 4 Kasım 2026'da kalktı: `special_days` (Özel günler) kullanılıyor,
     hava durumu isteği ve `WEATHER_CONTACT` artık yok.
+- **Aynı anda iki canlı derleme (26 Kas 2026).** Migration bir danışma kilidi altında çalışır
+  (`scripts/migrate.ts`): ikinci derleme `… Başka bir migration sürüyor (pid …); bitmesi bekleniyor, en çok 10 dk`
+  yazar, öteki bitince uygulanmış migration'ları **kilidi aldıktan sonra** okur ve `✓ Veritabanı şeması güncel` der.
+  Önceden ikisi birden uygulamaya kalkıyordu: #151'in derlemesi 0087–0092'yi uygularken (11:27–11:46 UTC) başlayan
+  #152'ninki kaydı ilk işlem commit olmadan okudu ve `column "company_wide" of relation "invoices" already exists`
+  ile düştü. Kilit oturum kilididir, tek bağlantıda tutulur; bu yüzden migration yalnız havuzsuz adrese
+  (`DATABASE_URL_UNPOOLED`) gider, havuzlu (Neon `-pooler`, PgBouncer) adreste derleme şemaya dokunmadan durur. Öteki
+  migration 10 dakikada bitmezse derleme `Migration kilidi … içinde alınamadı` diye durur ve kilidi tutan oturumu
+  (pid, uygulama adı) yazar; şema ve yayındaki sürüm değişmez.
+- **Tablo kilidi beklemesi.** `ALTER TABLE` tabloyu tutan her açık işlemin bitmesini bekler; beklerken canlı
+  uygulamanın o tabloya her sorgusu da onun arkasında sıraya girer. #151'in migration'ının 18 dakikası büyük olasılıkla
+  buydu (tutan işlem kaydedilmemişti). Artık her tablo kilidi en çok 15 sn beklenir (`lock_timeout`); süre dolunca
+  işlem geri alınır, hiçbir şey değişmez, 15 sn sonra yeniden denenir (en çok 4 deneme; `MIGRATION_LIMITS`). Denemeler
+  biterse derleme `Migration 4 denemede de tablo kilidini alamadı …` diye durur ve uzun süredir açık işlemleri yazar
+  (pid, durum, süre, tuttuğu tablolar, son sorgu). Açık işlem bitince yeniden dağıtılır; `idle in transaction` bir
+  oturum takılı kaldıysa Neon'un SQL Editor'ünde `select pg_terminate_backend(<pid>)` ile kapatılır.
 - **"Migration uygulanmadı" hatası.** Canlı derleme (ve `npm run db:migrate`) migration'dan sonra günlükteki her
   girdinin `drizzle.__drizzle_migrations`'ta kaydını arar (`scripts/migration-check.ts`). Eksik varsa derleme
   `Migration uygulanmadı: 0021_x … (sıra bozuk)` diye durur ve yayındaki sürüm değişmez. Çözüm: yukarıdaki gibi

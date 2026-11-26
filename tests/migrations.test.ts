@@ -8,6 +8,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { duration, lockWaitMessage, MIGRATION_LIMITS, MIGRATION_LOCK, poolerRefusal, tableLockMessage } from "../scripts/migrate";
 import { migrationGaps, migrationReport, readJournal, type JournalEntry } from "../scripts/migration-check";
 
 test("günlük: sıra numaraları 0..n-1, zamanlar kesin artan, her girdinin SQL dosyası var", () => {
@@ -71,10 +72,75 @@ test("doğrulama: boş veritabanında hepsi eksik", () => {
   assert.match(migrationReport(J, []).error ?? "", /0000_init, 0001_a, 0002_b/);
 });
 
-test("derleme migration'dan sonra doğrular", () => {
+test("derleme migration'dan sonra, kilidi bırakmadan doğrular", () => {
   const src = readFileSync(join(process.cwd(), "scripts/migrate.ts"), "utf8");
-  assert.match(src, /await migrate\(db, \{ migrationsFolder: "drizzle" \}\);\s*await verifyMigrations\(db\);/);
+  // Kilit alınır, lock_timeout konur, migration uygulanır ve hemen doğrulanır; kilit ancak sonra bırakılır
+  assert.match(
+    src,
+    /await takeMigrationLock\(db, limits\.waitForOtherMs\);\s*await db\.execute\(sql\.raw\(`set lock_timeout = [^`]+`\)\);\s*const applied = await applyMigrations\(db, limits, folder\);\s*await verifyMigrations\(db, folder\);\s*const \[lock\] = await db\.execute<\{ released: boolean \}>\(sql`select pg_advisory_unlock/,
+  );
+  assert.match(src, /await migrate\(db, \{ migrationsFolder: folder \}\);/);
+  assert.match(src, /const \{ folder = "drizzle", \.\.\.given \} = options;/);
   assert.match(src, /if \(report\.error\) throw new Error\(report\.error\)/);
+});
+
+test("migration kilidi: tek bağlantı, yeniden denemesiz; anahtar uygulamanın int4 kilitlerine denk gelemez", () => {
+  const src = readFileSync(join(process.cwd(), "scripts/migrate.ts"), "utf8");
+  const fn = src.slice(src.indexOf("function migrationDb("), src.indexOf("export function poolerRefusal("));
+  // Oturum kilidi ancak kilit, drizzle'ın okuması ve işlemi aynı sunucu oturumundaysa korur
+  assert.match(fn, /max: 1,/);
+  assert.match(fn, /idle_timeout: 0,/);
+  assert.match(fn, /max_lifetime: 0,/);
+  assert.match(fn, /connection: \{ application_name: MIGRATION_APP \}/);
+  assert.doesNotMatch(fn, /createDb|withConnectionRetry/, "createDb'nin yeniden denemesi kopan sorguyu kilitsiz yeni bağlantıda gönderirdi");
+  assert.ok(MIGRATION_LOCK > 2 ** 31 - 1 && Number.isSafeInteger(MIGRATION_LOCK), "hashtext(...) int4'tür: anahtar onun aralığının dışında olmalı");
+  for (const n of [7_340_211, 7_340_212, 7_340_213]) assert.notEqual(MIGRATION_LOCK, n);
+  // Vercel'in derleme sınırı (45 dk) içinde kalır: öteki migration'ı bekleme + bütün denemeler
+  const { waitForOtherMs, lockTimeoutMs, attempts, retryPauseMs } = MIGRATION_LIMITS;
+  assert.ok(waitForOtherMs + attempts * lockTimeoutMs * 2 + (attempts - 1) * retryPauseMs < 20 * 60_000);
+});
+
+test("migration havuzlu adrese (Neon -pooler) gitmez; havuzsuz ve yerel adres geçer", () => {
+  const pooled = "postgres://u:p@ep-cool-name-123456-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=require";
+  assert.match(poolerRefusal(pooled) ?? "", /^Migration havuzlu adrese gidiyor \(ep-cool-name-123456-pooler\.eu-central-1\.aws\.neon\.tech\): .*DATABASE_URL_UNPOOLED/);
+  assert.doesNotMatch(poolerRefusal(pooled) ?? "", /u:p|parola/);
+  assert.equal(poolerRefusal("postgres://u:p@ep-cool-name-123456.eu-central-1.aws.neon.tech/neondb?sslmode=require"), null);
+  assert.equal(poolerRefusal("postgres://postgres:postgres@localhost:5432/laffogato_test"), null);
+});
+
+test("DEPLOY.md § 7: aynı anda iki derleme ve tablo kilidi beklemesi; satırlar ve sınırlar koddakiyle aynı", () => {
+  const doc = readFileSync(join(process.cwd(), "docs/DEPLOY.md"), "utf8").replace(/\s*\n\s*/g, " ");
+  const s7 = doc.slice(doc.indexOf("## 7. Güncelleme ve yedek"), doc.indexOf("## 8."));
+  const src = readFileSync(join(process.cwd(), "scripts/migrate.ts"), "utf8");
+  const { waitForOtherMs, lockTimeoutMs, attempts, retryPauseMs } = MIGRATION_LIMITS;
+  assert.ok(s7.includes(`\`… Başka bir migration sürüyor (pid …); bitmesi bekleniyor, en çok ${duration(waitForOtherMs)}\``));
+  assert.ok(src.includes("`… Başka bir migration sürüyor (${holder}); bitmesi bekleniyor, en çok ${duration(waitMs)}`"));
+  assert.ok(s7.includes("**kilidi aldıktan sonra** okur ve `✓ Veritabanı şeması güncel` der"));
+  assert.ok(s7.includes(`migration ${duration(waitForOtherMs).replace(" dk", " dakikada")} bitmezse derleme \`Migration kilidi … içinde alınamadı\``));
+  assert.match(lockWaitMessage(waitForOtherMs, "x"), /^Migration kilidi 10 dk içinde alınamadı: /);
+  assert.ok(s7.includes(`her tablo kilidi en çok ${duration(lockTimeoutMs)} beklenir (\`lock_timeout\`)`));
+  assert.ok(s7.includes(`${duration(retryPauseMs)} sonra yeniden denenir (en çok ${attempts} deneme; \`MIGRATION_LIMITS\`)`));
+  assert.ok(s7.includes(`\`Migration ${attempts} denemede de tablo kilidini alamadı …\``));
+  assert.ok(s7.includes("havuzlu (Neon `-pooler`, PgBouncer) adreste derleme şemaya dokunmadan durur"));
+  // § 5'teki örnek günlük de uygulanan migration satırını gösterir
+  const s5 = doc.slice(doc.indexOf("## 5."), doc.indexOf("## 6."));
+  assert.match(s5, /✓ 21 migration uygulandı \([\d,]+ sn\) ✓ Veritabanı şeması güncel \(21 migration\)/);
+  assert.ok(src.includes("console.log(`✓ ${applied} migration uygulandı (${duration(Date.now() - started)})`)"));
+});
+
+test("migration günlüğü: süreler ve iletiler", () => {
+  assert.equal(duration(0), "0 sn");
+  assert.equal(duration(200), "0,2 sn");
+  assert.equal(duration(15_000), "15 sn");
+  assert.equal(duration(10 * 60_000), "10 dk");
+  assert.equal(duration(18 * 60_000 + 24_000), "18 dk 24 sn");
+  assert.match(lockWaitMessage(600_000, "pid 42 · laffogato-migrate · 3 dk önce bağlandı"), /^Migration kilidi 10 dk içinde alınamadı: başka bir migration hâlâ sürüyor \(pid 42 · laffogato-migrate · /);
+  const msg = tableLockMessage(MIGRATION_LIMITS, 'ALTER TABLE "invoices" ADD COLUMN "company_wide" boolean DEFAULT false NOT NULL;', [
+    { pid: 7, state: "idle in transaction", app: "?", ms: 1_080_000, tables: "invoices, suppliers", query: "select 1" },
+  ]);
+  assert.match(msg, /^Migration 4 denemede de tablo kilidini alamadı \(her bekleyiş en çok 15 sn; takılan: ALTER TABLE "invoices"/);
+  assert.match(msg, /Şemaya dokunulmadı \(işlem geri alındı\), yayındaki sürüm değişmedi\./);
+  assert.match(msg, /\n {2}pid 7 · idle in transaction · açık: 18 dk · \? · tablolar: invoices, suppliers · son sorgu: select 1$/);
 });
 
 test("dalga 10 (personel yetkileri): tek migration; ortak onay kuyruğu, kasaya işle işaretleri ve eklenen sütunlar", () => {
