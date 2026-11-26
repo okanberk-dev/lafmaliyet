@@ -784,9 +784,9 @@ test("arayüz (telefon 390 / 360 px): yüzen düğme yok, alt menünün üstünd
   assert.match(w, /data-turn="user" className="rounded-xl bg-panel [^"]*max-lg:text-\[16px\] max-lg:leading-7 dark:text-ink-soft/);
   // Yanıt telefonda 16 px, geniş satır; koyu temada saf beyaz yerine bir ton kısık (parlama yok)
   assert.match(w, /<MarkdownView\s[^/]*?max-lg:text-\[16px\] max-lg:leading-7 dark:text-ink-soft/);
-  // Yazı kutusu 16 px (iOS yakınlaştırmasın), 44 px; gönder ve durdur 44 px; başlık düğmeleri telefonda 44 px; çipler 44 px
+  // Yazı kutusu 16 px (iOS yakınlaştırmasın), 44 px; gönder, durdur ve fiş fotoğrafı 44 px; başlık düğmeleri telefonda 44 px; çipler 44 px
   assert.match(w, /min-h-11 min-w-0 flex-1 resize-none [^"]*text-\[16px\]/);
-  assert.equal((w.match(/inline-flex size-11 shrink-0/g) ?? []).length, 2);
+  assert.equal((w.match(/inline-flex size-11 shrink-0/g) ?? []).length, 3);
   assert.match(w, /max-lg:size-11 pointer-coarse:size-11/);
   assert.match(w, /max-lg:h-11 [^"]*pointer-coarse:h-11/);
   assert.match(w, /max-lg:min-h-11 [^"]*pointer-coarse:min-h-11/);

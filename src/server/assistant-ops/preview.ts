@@ -11,6 +11,7 @@ import { dateTR, num, pct, tl, tlUnit } from "@/lib/format";
 import { cleanName, foldName, ToolInputError } from "@/lib/mcp/answers/common";
 import type { OpName } from "@/lib/assistant/op-specs";
 import type { OpCardLine } from "@/lib/assistant/ops";
+import { receiptCardWarnings } from "@/lib/assistant/receipt";
 import { longDateTR, nextOccurrence, taxAmountTravels, todayTR, type ReminderRepeat } from "@/lib/reminders";
 import { SITE_MENU_ID } from "@/lib/site-menu/schema";
 import {
@@ -38,6 +39,7 @@ import { siteLinkSecret } from "@/server/site-link";
 import { readSiteSnapshot } from "@/server/site-menu/sync";
 import { loadShiftEntries, loadShiftWeek } from "@/server/vardiya/store";
 
+import { chatReceipt, chatReceiptStale } from "./receipt";
 import { expenseBranch, physicalBranch, pickByName } from "./resolve";
 import type { OpPreview, PreviewCtx } from "./types";
 
@@ -678,6 +680,32 @@ const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof prod
 // ---------------------------------------------------------------- Kasadan çıkan
 
 const DOC_LABEL = { fis: "Fiş", e_arsiv: "e-Arşiv", fatura: "Fatura", yok: "Belgesiz" } as const;
+
+/**
+ * Sohbete eklenen fiş (docs/ASISTAN-ISLEMLER.md › Fiş fotoğrafı): kimlik ve sahibi (bayatlık denetimi için), fişten
+ * okunan tarih, numara ve KDV. Eski planlarda yok (alan isteğe bağlı): fotoğrafsız kart
+ */
+const receiptArgs = z
+  .object({
+    photoId: z.number().int().positive(),
+    ownerId: z.number().int().positive(),
+    receiptDate: z.string().nullable(),
+    receiptNo: z.string().max(40).nullable(),
+    vat: z.number().min(0).nullable(),
+  })
+  .nullable()
+  .optional();
+type ReceiptArgs = NonNullable<z.output<typeof receiptArgs>>;
+
+/** Modelin verdiği fiş kimliği: denetlenir, okunur; kartın satırı, uyarıları ve plana giden fiş alanları */
+async function receiptPart(photoId: number | undefined, ctx: PreviewCtx, card: { amount: number; day: string | null }) {
+  if (!photoId) return null;
+  const r = await chatReceipt(ctx.userId, photoId, ctx.now);
+  const args: ReceiptArgs = { photoId, ownerId: ctx.userId, receiptDate: r.facts.receiptDate, receiptNo: r.facts.receiptNo, vat: r.facts.vat };
+  const line: OpCardLine = { label: "Fiş fotoğrafı", to: r.facts.receiptDate ? `Ekli (fişin tarihi ${dateTR(r.facts.receiptDate)})` : "Ekli" };
+  return { args, line, docType: r.facts.docType, warnings: receiptCardWarnings(r.facts, card) };
+}
+
 const cashOutArgs = z.object({
   branchId: z.string().min(1).max(24),
   date: z.string(),
@@ -688,6 +716,7 @@ const cashOutArgs = z.object({
   docType: z.enum(["fis", "e_arsiv", "fatura", "yok"]),
   categoryId: z.number().int().positive().nullable(),
   toExpenses: z.boolean(),
+  receipt: receiptArgs,
 });
 
 async function reportEntered(date: string, branchId: string): Promise<boolean> {
@@ -716,6 +745,10 @@ const cashOutAdd: OpPreview<"kasadan_cikan_ekle", z.output<typeof cashOutArgs>, 
     }
     const teslim = input.tur === "teslim";
     if (teslim && input.harcamalaraYaz) throw new ToolInputError("Teslim (birine verilen para) Aylık harcamalar'a yazılmaz; harcamalaraYaz false olmalı.");
+    if (teslim && input.fisFotografi) throw new ToolInputError("Fiş fotoğrafı yalnız alışverişe (tür harcama) eklenir; teslimde fiş olmaz.");
+    const receipt = await receiptPart(input.fisFotografi, ctx, { amount: input.tutar, day: date });
+    // Fotoğraflı satırın belgesi okunandan (belgesiz denmişse fiş): kasa formu da fişli satırı "Belgesiz" yazmaz
+    const docType = receipt ? (input.belge === "yok" ? (receipt.docType ?? "fis") : input.belge) : input.belge;
     if (input.harcamalaraYaz && !input.kategori) throw new ToolInputError("Aylık harcamalar'a yazılacaksa gider kategorisi gerekli; kullanıcıya sor.");
     const cat = !teslim && input.kategori ? pickByName(await activeCategories(), input.kategori, (c) => c.name, "Gider kategorisi", "Kategoriler Aylık harcamalar › Kategoriler'de.") : null;
     // Şubenin bu günü LafPOS'taysa kasadan çıkan LafPOS'ta girilir (docs/LAFPOS.md, KASA-RAPORU.md): panelden eklenen
@@ -737,7 +770,8 @@ const cashOutAdd: OpPreview<"kasadan_cikan_ekle", z.output<typeof cashOutArgs>, 
     const description = plainText(input.aciklama);
     if (store) lines.push({ label: teslim ? "Kime" : "Yer", to: store });
     if (description) lines.push({ label: "Ne alındı", to: description });
-    lines.push({ label: "Belge", to: DOC_LABEL[input.belge] });
+    lines.push({ label: "Belge", to: DOC_LABEL[docType] });
+    if (receipt) lines.push(receipt.line);
     if (cat) lines.push({ label: "Kategori", to: cleanName(cat.name) });
     lines.push({ label: "Aylık harcamalar'a", to: yesNo(input.harcamalaraYaz) });
     return {
@@ -750,7 +784,8 @@ const cashOutAdd: OpPreview<"kasadan_cikan_ekle", z.output<typeof cashOutArgs>, 
         effects: input.harcamalaraYaz ? ["kasa", "gelirGider"] : ["kasa"],
         undo: "Asistan geri almaz (silmek gerekir): Kasa › Kasadan çıkanlar › satır › Sil (bildirimde 15 dk Geri al).",
         undoable: false,
-        warnings,
+        warnings: [...(receipt?.warnings ?? []), ...warnings],
+        ...(receipt ? { photoId: receipt.args.photoId } : {}),
       },
       args: {
         branchId: b.id,
@@ -759,9 +794,10 @@ const cashOutAdd: OpPreview<"kasadan_cikan_ekle", z.output<typeof cashOutArgs>, 
         amount: input.tutar,
         store,
         description,
-        docType: input.belge,
+        docType,
         categoryId: cat?.id ?? null,
         toExpenses: input.harcamalaraYaz,
+        receipt: receipt?.args ?? null,
       },
       before: {},
       branch: b.id,
@@ -769,7 +805,8 @@ const cashOutAdd: OpPreview<"kasadan_cikan_ekle", z.output<typeof cashOutArgs>, 
   },
   async stale(args) {
     if (businessDate(new Date()) !== args.date) return "İş günü değişti (05:00); kartı yeniden isteyin.";
-    return (await reportEntered(args.date, args.branchId)) ? "Bu arada günün kasa raporu girildi; satırı Kasa ekranından ekleyin." : null;
+    if (await reportEntered(args.date, args.branchId)) return "Bu arada günün kasa raporu girildi; satırı Kasa ekranından ekleyin.";
+    return args.receipt ? chatReceiptStale(args.receipt.ownerId, args.receipt.photoId) : null;
   },
 };
 
@@ -782,6 +819,7 @@ const expenseArgs = z.object({
   amount: z.number().positive(),
   paymentMethod: z.enum(["nakit", "kart", "havale", "diger"]).nullable(),
   description: z.string().max(200).nullable(),
+  receipt: receiptArgs,
 });
 
 const expenseAdd: OpPreview<"harcama_ekle", z.output<typeof expenseArgs>, z.output<typeof emptyBefore>> = {
@@ -800,6 +838,14 @@ const expenseAdd: OpPreview<"harcama_ekle", z.output<typeof expenseArgs>, z.outp
     ];
     const description = plainText(input.aciklama);
     if (description) lines.push({ label: "Açıklama", to: description });
+    const receipt = await receiptPart(input.fisFotografi, ctx, { amount: input.tutar, day: input.tarih });
+    if (receipt) {
+      lines.push(receipt.line);
+      if (receipt.args.vat !== null) lines.push({ label: "KDV (fişten)", to: tl(receipt.args.vat, 2) });
+    }
+    const pastMonth = input.tarih.slice(0, 7) < today(ctx).slice(0, 7) ? ["Geçmiş ayın giderine yazılır: o ayın kârı değişir."] : [];
+    // Fatura ve e-Arşiv Paraşüt'ten de gelir: Aylık harcamalar'a ikinci kez yazılmasın (kasanın fiş formuyla aynı uyarı)
+    const invoice = receipt?.docType === "fatura" || receipt?.docType === "e_arsiv" ? ["Bu bir fatura: Paraşüt'e de gelecekse Aylık harcamalar'a ikinci kez yazılmasın; öyleyse Vazgeç deyin."] : [];
     return {
       card: {
         title: `${cleanName(cat.name)} gideri eklenecek: ${tl(input.tutar, 2)}`,
@@ -810,16 +856,18 @@ const expenseAdd: OpPreview<"harcama_ekle", z.output<typeof expenseArgs>, z.outp
         effects: ["gelirGider"],
         undo: "Asistan geri almaz (silmek gerekir): Aylık harcamalar › kayıt › Sil (bildirimde Geri al).",
         undoable: false,
-        warnings: input.tarih.slice(0, 7) < today(ctx).slice(0, 7) ? ["Geçmiş ayın giderine yazılır: o ayın kârı değişir."] : [],
+        warnings: [...invoice, ...(receipt?.warnings ?? []), ...pastMonth],
+        ...(receipt ? { photoId: receipt.args.photoId } : {}),
       },
-      args: { categoryId: cat.id, date: input.tarih, amount: input.tutar, paymentMethod: input.odemeSekli ?? null, description },
+      args: { categoryId: cat.id, date: input.tarih, amount: input.tutar, paymentMethod: input.odemeSekli ?? null, description, receipt: receipt?.args ?? null },
       before: {},
       branch: eb.scope,
     };
   },
   async stale(args) {
     const [c] = await db().select({ active: s.expenseCategories.active }).from(s.expenseCategories).where(eq(s.expenseCategories.id, args.categoryId)).limit(1);
-    return c?.active ? null : "Kategori bu arada pasife alındı ya da silindi.";
+    if (!c?.active) return "Kategori bu arada pasife alındı ya da silindi.";
+    return args.receipt ? chatReceiptStale(args.receipt.ownerId, args.receipt.photoId) : null;
   },
 };
 

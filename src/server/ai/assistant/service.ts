@@ -3,6 +3,7 @@ import "server-only";
 import { assistantEnabled } from "@/lib/assistant/protocol";
 import { todayTR } from "@/lib/reminders";
 import { getCurrentUser } from "@/server/auth/dal";
+import { chatReceiptBlock } from "@/server/assistant-ops/receipt";
 import { branchScope, withBranchScope } from "@/server/branch-scope";
 import { sameOrigin } from "@/server/same-origin";
 
@@ -28,6 +29,7 @@ export const liveAssistantDeps: AssistantDeps = {
   status: (userId) => assistantStatus(userId),
   start: (userId, opts) => startAssistantCall(userId, undefined, undefined, opts),
   finish: (callId, outcome, ms) => finishAssistantCall(callId, outcome, ms),
+  receipt: (userId, photoId) => chatReceiptBlock(userId, photoId),
   setup: async () => {
     const branch = await branchScope();
     const now = new Date();

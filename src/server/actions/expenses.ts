@@ -38,6 +38,12 @@ const entrySchema = z.object({
    * seçili şube, "Tümü"de işletme geneli; düzeltmede şube değişmez
    */
   branchId: zFormBranch,
+  /**
+   * Yeni kayda bağlanacak fiş fotoğrafı ve fişten okunan KDV (panel asistanının fiş kartı; docs/ASISTAN-ISLEMLER.md ›
+   * Fiş fotoğrafı). Fotoğraf fiş türünde, bağlanmamış, süresi işleyen ve bir isteğin tutmadığı olmalı; düzeltmede yok sayılır
+   */
+  photoId: z.number().int().positive().nullish(),
+  vat: zAmount.nullish(),
 });
 
 /** Harcamanın en ileri tarihi: bugünden bu kadar gün sonrası (gelecek ayın ödemesi önceden girilebilir; 2030 girilemez) */
@@ -57,7 +63,7 @@ async function ownerName(supplierEntryId: number): Promise<string> {
 export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const { id, branchId: rawBranch, ...data } = entrySchema.parse(input);
+    const { id, branchId: rawBranch, photoId, vat, ...data } = entrySchema.parse(input);
     if (data.date > addDays(todayTR(), EXPENSE_AHEAD_DAYS)) throw new UserError("Tarih bir aydan daha ileri olamaz");
 
     const db = getDb();
@@ -105,7 +111,25 @@ export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
       // Yeni harcama formun şubesine (docs/SUBE.md › Yazarken hangi şube): gönderim anındaki seçim değil. Şube
       // göndermeyen eski sekmede ve asistanda seçili şube, "Tümü"nde işletme geneli
       moved = { branch: await formBranch(rawBranch, "expense") };
-      [saved] = await db.insert(s.expenseEntries).values({ ...values, branchId: moved.branch, createdBy: me.name }).returning({ id: s.expenseEntries.id });
+      const branch = moved.branch;
+      if (photoId) {
+        // Fişli yeni kayıt (asistanın fiş kartı): fotoğraf aynı işlemde denetlenir ve bağlanır (kasadan çıkanın fişi gibi)
+        saved = await db.transaction(async (tx) => {
+          const p = await getPhoto(photoId, tx);
+          if (!p || p.kind !== "fis" || p.linkedAt !== null || p.expiresAt === null || p.expiresAt.getTime() <= Date.now()) {
+            throw new UserError("Fiş fotoğrafı bulunamadı, süresi doldu ya da başka bir kayda bağlandı; fotoğrafı yeniden ekleyin");
+          }
+          await assertNotHeld(tx, p.id);
+          await keepPhoto(p.id, linkedUntil("fis", data.date, todayTR()), tx);
+          const [row] = await tx
+            .insert(s.expenseEntries)
+            .values({ ...values, branchId: branch, createdBy: me.name, photoId: p.id, vat: vat ?? null })
+            .returning({ id: s.expenseEntries.id });
+          return row;
+        });
+      } else {
+        [saved] = await db.insert(s.expenseEntries).values({ ...values, branchId: branch, createdBy: me.name }).returning({ id: s.expenseEntries.id });
+      }
     }
     const where = moved ? ` · ${moved.branch ? ((await listBranches()).find((b) => b.id === moved.branch)?.name ?? moved.branch) : "İşletme geneli"}` : "";
     await logActivity(me, id ? "Harcama düzeltildi" : "Harcama eklendi", `${cat.name} · ${dateTR(data.date)} · ${tl(data.amount, 2)}${where}${data.description ? ` · ${data.description}` : ""}`);

@@ -79,7 +79,7 @@ async function okcTypical(day: string): Promise<number[]> {
  * için harcama kayıtları okunmaz (yöneticinin maaş, kira gibi kayıtları; tekrar uyarısı personelde genel metindir,
  * ayrıntılı eşleşme yöneticinin onay kartında)
  */
-async function recentReceipts(day: string, staff: boolean) {
+export async function recentReceipts(day: string, staff: boolean) {
   const db = getDb();
   const outs = (
     await db

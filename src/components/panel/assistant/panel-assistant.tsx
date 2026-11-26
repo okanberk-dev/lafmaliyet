@@ -1,9 +1,10 @@
 "use client";
 
-import { ArrowUp, Brain, Check, Copy, History, LoaderCircle, RefreshCw, RotateCcw, Sparkles, Square, X } from "lucide-react";
+import { ArrowUp, Brain, Camera, Check, Copy, History, LoaderCircle, RefreshCw, RotateCcw, Sparkles, Square, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 
+import { PhotoStatus, usePhotoUpload } from "@/components/panel/photo-picker";
 import { useMediaQuery } from "@/components/ui/use-media";
 import type { OpCardState } from "@/lib/assistant/ops";
 import { restoreFollowups, splitFollowups } from "@/lib/assistant/followups";
@@ -11,6 +12,9 @@ import { fromStored, loadHistory, newConversationId, removeConversation, saveHis
 import { markdownToPlain } from "@/lib/assistant/markdown";
 import { pageFromLocation, suggestionsFor } from "@/lib/assistant/page-context";
 import { ASSISTANT_DAILY_CAP, ASSISTANT_DEEP_WEIGHT, ASSISTANT_LIMITS, eventReader, historyForRequest, restoreCards, type AssistantDone, type AssistantEvent, type ChatMessage } from "@/lib/assistant/protocol";
+import { RECEIPT_DEFAULT_MESSAGE, receiptChipText } from "@/lib/assistant/receipt";
+import { businessDate } from "@/lib/cash-report";
+import { photoUrl } from "@/lib/photo-rules";
 import { cn } from "@/lib/utils";
 
 import { onAssistantOpened, setAssistantOpen, toggleAssistant, useAssistantOpen } from "./assistant-open";
@@ -93,7 +97,16 @@ function loadMessages(userId: number): ChatMessage[] {
         const followups = m.role === "assistant" ? restoreFollowups(m.followups) : undefined;
         // Takip bloğu yarım kalmış bir metin (sayfa akış sürerken yenilendi) bloksuz geri gelir
         const text = m.role === "assistant" ? splitFollowups(m.text).body : m.text;
-        return { role: m.role, text, ...(m.role === "user" && m.deep === true ? { deep: true } : {}), ...(m.failed ? { failed: true } : {}), ...(typeof m.note === "string" ? { note: m.note } : {}), ...(cards ? { cards } : {}), ...(followups ? { followups } : {}) };
+        return {
+          role: m.role,
+          text,
+          ...(m.role === "user" && m.deep === true ? { deep: true } : {}),
+          ...(m.role === "user" && typeof m.photoId === "number" && Number.isInteger(m.photoId) && m.photoId > 0 ? { photoId: m.photoId } : {}),
+          ...(m.failed ? { failed: true } : {}),
+          ...(typeof m.note === "string" ? { note: m.note } : {}),
+          ...(cards ? { cards } : {}),
+          ...(followups ? { followups } : {}),
+        };
       });
   } catch {
     return [];
@@ -160,6 +173,17 @@ export function PanelAssistant({ userId }: { userId: number }) {
   const [deep, setDeep] = useState(false);
   /** Sesle sorunun kısa notu (izin yok, mikrofon yok…) */
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
+  /**
+   * Sohbete eklenen fiş fotoğrafı (docs/ASISTAN-ISLEMLER.md › Fiş fotoğrafı): yüklenip okunur, yazı kutusunun üstünde
+   * durur ve kaldırılana, kartı yapılana ya da yeni sohbete kadar her soruyla gider (sunucu okumasını mesaja ekler)
+   */
+  const [receipt, setReceipt] = useState<{ id: number; text: string } | null>(null);
+  const receiptRef = useRef(receipt);
+  useEffect(() => {
+    receiptRef.current = receipt;
+  }, [receipt]);
+  const photo = usePhotoUpload();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [tool, setTool] = useState<string | null>(null);
   const [gate, setGate] = useState<Gate | null>(null);
@@ -322,24 +346,41 @@ export function PanelAssistant({ userId }: { userId: number }) {
       return [...list.slice(0, -1), fn(list[list.length - 1])];
     });
 
-  /** Bir kartın durumunu değiştirir (hangi mesajda olursa olsun) */
-  const patchCard = useCallback(
-    (next: OpCardState) =>
-      setMessages((list) => list.map((m) => (m.cards?.some((c) => c.card.id === next.card.id) ? { ...m, cards: m.cards.map((c) => (c.card.id === next.card.id ? next : c)) } : m))),
-    [],
-  );
+  /** Bir kartın durumunu değiştirir (hangi mesajda olursa olsun); fişin kartı yapılınca fiş sohbetten kalkar */
+  const patchCard = useCallback((next: OpCardState) => {
+    setMessages((list) => list.map((m) => (m.cards?.some((c) => c.card.id === next.card.id) ? { ...m, cards: m.cards.map((c) => (c.card.id === next.card.id ? next : c)) } : m)));
+    if (next.status === "done" && next.card.photoId && next.card.photoId === receiptRef.current?.id) setReceipt(null);
+  }, []);
+
+  /** Fiş fotoğrafı seçildi: küçültülür, yüklenir ve okunur (kasanın fiş okuması; önce ucuz model) */
+  const pickReceipt = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || photo.busy) return;
+    setAnnounce("Fiş fotoğrafı yükleniyor");
+    const r = await photo.upload(file, { kind: "fis", day: businessDate(), read: true });
+    if (!r) {
+      setAnnounce("Fiş fotoğrafı eklenemedi");
+      return;
+    }
+    const reading = r.reading?.kind === "fis" ? r.reading : null;
+    setReceipt({ id: r.photo.id, text: receiptChipText(reading, r.readError) });
+    setAnnounce("Fiş fotoğrafı eklendi; gönderince asistan kartı hazırlar");
+  };
 
   /**
    * Soruyu gönderir. `base`: soruların ekleneceği konuşma (Yeniden sor'da son soru ve yanıtı çıkmış hâli; geçmiş de
    * ondan kurulur: aynı soru iki kez gitmez). `opts.deep`: anahtar yerine bu (Yeniden sor, sorunun kendi seçimi)
    */
   const send = async (text: string, base: ChatMessage[] = messages, opts: { deep?: boolean } = {}) => {
-    const question = text.trim();
-    if (!question || busy || (gate && gate.state !== "on")) return;
+    // Fiş eklenmişse soru yazılmadan da gider ("Bu fişi kaydet."); fiş her soruyla gider (kaldırılana ya da kartı yapılana dek)
+    const attached = receiptRef.current;
+    const question = text.trim() || (attached ? RECEIPT_DEFAULT_MESSAGE : "");
+    if (!question || busy || photo.busy || (gate && gate.state !== "on")) return;
     const history = historyForRequest(base);
     // Derin analiz yalnız bu soru için (yanlışlıkla iki kat hak harcanmasın); hak yetmiyorsa olağan soru gider
     const asDeep = (opts.deep ?? deep) && deepAllowed;
-    setMessages([...base, { role: "user", text: question, ...(asDeep ? { deep: true } : {}) }, { role: "assistant", text: "" }]);
+    setMessages([...base, { role: "user", text: question, ...(asDeep ? { deep: true } : {}), ...(attached ? { photoId: attached.id } : {}) }, { role: "assistant", text: "" }]);
     setInput("");
     setDeep(false);
     setBusy(true);
@@ -394,11 +435,19 @@ export function PanelAssistant({ userId }: { userId: number }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // Açık ekran: yalnız yol ve adresteki ?ay / ?gun (page-context.ts); sunucu bağlamın sonuna tek satır yazar
-        body: JSON.stringify({ message: question, history, page: pageFromLocation(window.location.pathname, window.location.search) ?? undefined, ...(asDeep ? { deep: true } : {}) }),
+        body: JSON.stringify({
+          message: question,
+          history,
+          page: pageFromLocation(window.location.pathname, window.location.search) ?? undefined,
+          ...(asDeep ? { deep: true } : {}),
+          ...(attached ? { photo: { id: attached.id } } : {}),
+        }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
         const body = (await res.json().catch(() => null)) as { error?: string; code?: string; left?: number } | null;
+        // Fiş artık eklenemiyor (süresi doldu, başka kayda bağlandı): çipi kaldır, soru sayılmadı
+        if (body?.code === "photo") setReceipt(null);
         // deep_cap: derin analize hak yetmedi, kapı açık kalır (olağan soru sorulabilir)
         if (body?.code && ["nokey", "off", "cap"].includes(body.code)) setGate({ state: body.code as Gate["state"], left: body.left ?? 0, cap: gate?.cap ?? 0, message: body.error ?? null });
         // Kalan hak güncellenir: anahtar kapanır, Yeniden sor olağan soru olarak gider
@@ -464,6 +513,8 @@ export function PanelAssistant({ userId }: { userId: number }) {
     setConvId(newConversationId());
     setView("chat");
     setInput("");
+    setReceipt(null);
+    photo.reset();
     inputRef.current?.focus();
   };
 
@@ -655,6 +706,20 @@ export function PanelAssistant({ userId }: { userId: number }) {
                   m.role === "user" ? (
                     // Soru: hafif zeminli düz blok (balon yok); yanıt altında düz metin
                     <p key={i} data-turn="user" className="rounded-xl bg-panel px-3.5 py-2.5 text-[14px] leading-6 break-words whitespace-pre-wrap text-ink max-lg:text-[16px] max-lg:leading-7 dark:text-ink-soft">
+                      {m.photoId ? (
+                        // Fiş fotoğrafı: panelin yetkili yolundan; süresi dolmuşsa (2 gün, bağlanmadıysa) gizlenir
+                        // eslint-disable-next-line @next/next/no-img-element -- yetkili yol; görsel iyileştirici giriş çerezini taşımaz
+                        <img
+                          src={photoUrl(m.photoId)}
+                          alt="Eklenen fiş fotoğrafı"
+                          loading="lazy"
+                          decoding="async"
+                          onError={(e) => {
+                            e.currentTarget.hidden = true;
+                          }}
+                          className="mb-2 block h-20 w-auto max-w-32 rounded-lg object-cover ring-1 ring-line"
+                        />
+                      ) : null}
                       {m.text}
                       {m.deep ? (
                         <span className="mt-1 flex items-center gap-1 text-[12px] leading-4 font-medium text-ink-mute max-lg:text-[13px]">
@@ -739,6 +804,28 @@ export function PanelAssistant({ userId }: { userId: number }) {
                 {voiceNote}
               </p>
             ) : null}
+            {/* Fiş fotoğrafı: yüklenirken aşama, eklenince küçük resim ve okunan (her soruyla gider; Kaldır çıkarır) */}
+            {photo.phase.kind !== "idle" ? <PhotoStatus phase={photo.phase} className="mb-1.5 px-1" /> : null}
+            {receipt ? (
+              <div className="mb-1.5 flex items-center gap-2.5 rounded-xl bg-panel px-2.5 py-2" data-receipt-chip>
+                {/* eslint-disable-next-line @next/next/no-img-element -- yetkili yol; görsel iyileştirici giriş çerezini taşımaz */}
+                <img src={photoUrl(receipt.id)} alt="" className="size-10 shrink-0 rounded-lg object-cover ring-1 ring-line" />
+                <div className="min-w-0 flex-1 text-[13px] leading-5 max-lg:text-[14px]">
+                  <p className="font-medium text-ink">Fiş eklendi</p>
+                  <p className="truncate text-ink-mute">{receipt.text}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReceipt(null)}
+                  aria-label="Fiş fotoğrafını kaldır"
+                  title="Kaldır (fotoğraf kayda bağlanmaz)"
+                  disabled={busy}
+                  className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-ink-mute hover:bg-panel-deep hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none disabled:opacity-40 max-lg:size-11 pointer-coarse:size-11"
+                >
+                  <X className="size-4" aria-hidden="true" />
+                </button>
+              </div>
+            ) : null}
             {!blocked ? (
               // Telefonda klavye açıkken gizli (yazı alanına yer kalsın), anahtar açıksa görünür (unutulmasın)
               <div className={cn("mb-1.5 flex items-center gap-2 px-0.5", !deep && "max-lg:in-data-[keyboard=open]:hidden")} data-deep-row>
@@ -768,6 +855,19 @@ export function PanelAssistant({ userId }: { userId: number }) {
                 void send(input);
               }}
             >
+              {/* Fiş ya da fatura fotoğrafı: telefonda kamera ya da galeri (tarayıcının seçicisi); okunup kart hazırlanır */}
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                aria-label="Fiş fotoğrafı ekle"
+                title="Fiş fotoğrafı ekle: okunur, asistan harcama ya da kasadan çıkan kartı hazırlar"
+                disabled={blocked || busy || photo.busy}
+                data-receipt-button
+                className="inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-panel text-ink-mute hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"
+              >
+                {photo.busy ? <LoaderCircle className="size-5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Camera className="size-5" aria-hidden="true" />}
+              </button>
+              <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => void pickReceipt(e)} />
               <label htmlFor={`${titleId}-soru`} className="sr-only">
                 Sorunuz
               </label>
@@ -780,7 +880,7 @@ export function PanelAssistant({ userId }: { userId: number }) {
                 rows={1}
                 maxLength={ASSISTANT_LIMITS.message + 200}
                 disabled={blocked}
-                placeholder={blocked ? "" : "Sorunuzu yazın…"}
+                placeholder={blocked ? "" : receipt ? "Ne yapılsın? (boş bırakırsanız kaydedilir)" : "Sorunuzu yazın…"}
                 aria-invalid={tooLong || undefined}
                 className="field-sizing-content max-h-36 min-h-11 min-w-0 flex-1 resize-none rounded-xl bg-panel px-3.5 py-2.5 text-[16px] leading-6 text-ink placeholder:text-ink-mute focus:ring-2 focus:ring-ink/25 focus:outline-none disabled:opacity-60 max-lg:in-data-[keyboard=open]:max-h-28 lg:text-[14px]"
               />
@@ -801,7 +901,7 @@ export function PanelAssistant({ userId }: { userId: number }) {
                   type="submit"
                   aria-label="Gönder"
                   title="Gönder (Enter)"
-                  disabled={blocked || !input.trim() || tooLong}
+                  disabled={blocked || (!input.trim() && !receipt) || tooLong || photo.busy}
                   className="inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-primary text-on-primary hover:bg-primary/85 focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-offset-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"
                 >
                   <ArrowUp className="size-5" aria-hidden="true" />

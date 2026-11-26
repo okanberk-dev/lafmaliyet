@@ -250,7 +250,25 @@ const productPriceChange: OpApplier<ProductPriceArgs, { price: number }> = {
 
 // ---------------------------------------------------------------- Kasadan çıkan
 
-type CashOutArgs = { branchId: string; date: string; kind: "harcama" | "teslim"; amount: number; store: string | null; description: string | null; docType: "fis" | "e_arsiv" | "fatura" | "yok"; categoryId: number | null; toExpenses: boolean };
+/**
+ * Sohbete eklenen fiş (önizlemenin denetleyip okuduğu; docs/ASISTAN-ISLEMLER.md › Fiş fotoğrafı): kimliği ve fişten
+ * okunan tarih, numara, KDV. Fotoğrafı eylemin kendisi bir kez daha denetler (fiş türü, bağlanmamış, süresi işliyor) ve
+ * kayda bağlar; eski planlarda yok
+ */
+type ReceiptArgs = { photoId: number; ownerId: number; receiptDate: string | null; receiptNo: string | null; vat: number | null } | null | undefined;
+
+type CashOutArgs = {
+  branchId: string;
+  date: string;
+  kind: "harcama" | "teslim";
+  amount: number;
+  store: string | null;
+  description: string | null;
+  docType: "fis" | "e_arsiv" | "fatura" | "yok";
+  categoryId: number | null;
+  toExpenses: boolean;
+  receipt?: ReceiptArgs;
+};
 
 const cashOutAdd: OpApplier<CashOutArgs, Record<string, never>> = {
   async apply(args) {
@@ -261,29 +279,39 @@ const cashOutAdd: OpApplier<CashOutArgs, Record<string, never>> = {
       amount: args.amount,
       store: args.store,
       description: args.description,
-      receiptDate: null,
-      receiptNo: null,
-      vat: null,
+      receiptDate: args.receipt?.receiptDate ?? null,
+      receiptNo: args.receipt?.receiptNo ?? null,
+      vat: args.receipt?.vat ?? null,
       docType: args.docType,
       categoryId: args.categoryId,
       toExpenses: args.toExpenses,
-      photoId: null,
+      photoId: args.receipt?.photoId ?? null,
       branchId: args.branchId,
     });
     if (notOk(r)) return r;
-    return { ok: true, message: `Kasadan çıkan eklendi${r.data.expenseId ? "; Aylık harcamalar'a da yazıldı" : ""}.`, undo: null };
+    return { ok: true, message: `Kasadan çıkan eklendi${args.receipt ? " (fiş fotoğrafıyla)" : ""}${r.data.expenseId ? "; Aylık harcamalar'a da yazıldı" : ""}.`, undo: null };
   },
 };
 
 // ---------------------------------------------------------------- Harcama
 
-type ExpenseArgs = { categoryId: number; date: string; amount: number; paymentMethod: "nakit" | "kart" | "havale" | "diger" | null; description: string | null };
+type ExpenseArgs = { categoryId: number; date: string; amount: number; paymentMethod: "nakit" | "kart" | "havale" | "diger" | null; description: string | null; receipt?: ReceiptArgs };
 
 const expenseAdd: OpApplier<ExpenseArgs, Record<string, never>> = {
   async apply(args) {
-    const r = await saveExpenseEntry({ id: null, date: args.date, categoryId: args.categoryId, description: args.description, amount: args.amount, paymentMethod: args.paymentMethod, note: null });
+    const r = await saveExpenseEntry({
+      id: null,
+      date: args.date,
+      categoryId: args.categoryId,
+      description: args.description,
+      amount: args.amount,
+      paymentMethod: args.paymentMethod,
+      note: null,
+      photoId: args.receipt?.photoId ?? null,
+      vat: args.receipt?.vat ?? null,
+    });
     if (notOk(r)) return r;
-    return { ok: true, message: "Gider Aylık harcamalar'a eklendi.", undo: null };
+    return { ok: true, message: `Gider Aylık harcamalar'a eklendi${args.receipt ? " (fiş fotoğrafıyla)" : ""}.`, undo: null };
   },
 };
 
