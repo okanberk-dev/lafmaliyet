@@ -39,18 +39,24 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   işler (dünkü gün ilk; süre yetmezse adım hata); LafPOS'un reddedilen günü yöneticinin zilinde ("Marina gün sonu
   alınamadı: …", gün ve neden başına bir kez). Ayrıntı: docs/LAFPOS.md "Sabah işinin sırası", "Zil".
 
+- **Dalga 2/3 paketleri (ikinci grup)** (26 Kasım; `wip/entegre`, sonraki PR): Raporlar (şube karşılaştırma, işçilik /
+  ciro, Marina kaçak raporu, kayıp önlemenin panel tarafı); stok tahmininde Marina'nın online siparişi, kaç gün yeter ve
+  eşik önerisi; asistanın şube fiyatı, açık ekranın şubesi ve iş günü; muhasebeci paketi, kontrol listelerinin aylık
+  PDF'i, dönem kapanışı ve reçete geçmişi; personel belgeleri, avans ve asistana fiş fotoğrafı. Göçler 0093 (muhasebe),
+  0094 (personel). Sahibe söylenecek: Ayarlar › Muhasebeci paketi'ne muhasebecinin adresi yazılmadıkça paket gitmez;
+  Marina'nın online ay kaydı yayından sonra işletmeninkiyle bir kez karşılaştırılmalı (site şubeyi süzmüyorsa tahmin
+  online tüketimi fazla düşer).
+
 ## Devam eden (26 Kasım; yerel `wip/*` dallarında, ajanlar sürdürüyor)
 
 Kullanım limitiyle kesilen ajanların işi kendi dallarında "ARA KAYIT" commit'leriyle durur; yeni ajan dalından sürdürür.
 Bitince `claude/festive-goodall-sclggq`'ye birleştirilir (göç numarası çakışırsa yeniden üretilir).
-- Belge tarayıcı: `wip/tarama-cekirdek` (saf çekirdek) → `wip/tarama-arayuz`; `wip/tarama-olcum` (ölçüm düzeneği),
-  `wip/tarama-kalite` (kalite, yön, uzun fiş birleştirme); sonra bağlama + ayar, canlı vizör, inceleme.
-- E-posta tasarımı: main'deki `src/lib/email-kit.ts` (#149) geçerli; paralel yapılan `wip/eposta-*` dalları onun yerine
-  geçmez, birleştirilmeyecek (yalnız gerekirse oradan görsel düzeltme alınır).
-- Dalga paketleri: `wip/raporlar` (şube karşılaştırma, işçilik/ciro, kaçak raporu, kayıp önleme), `wip/stok-asistan`,
-  `wip/parasut-guvenlik` (aynı vergi no, POST + tek kullanımlık bağlantı, LafPOS anahtar önbelleği, CSP), `wip/muhasebe`
-  (aylık paket, kontrol PDF'i, dönem kapanışı, reçete geçmişi), `wip/personel` (belgeler, avans, asistana fiş fotoğrafı).
+- Belge tarayıcı: çekirdek, kalite / yön / uzun fiş ve ölçüm düzeneği birleşti (henüz ekrana bağlı değil;
+  docs/FOTOGRAF.md § 11). `wip/tarama-arayuz` sürüyor; sonra bağlama + ayar, canlı vizör, inceleme.
+- `wip/parasut-guvenlik` (aynı vergi no, POST + tek kullanımlık bağlantı, LafPOS anahtar önbelleği, CSP).
 - En son: `roller` (Müdür, Muhasebeci), çünkü bütün yeni ekranlara dokunur.
+- E-posta tasarımı: main'deki `src/lib/email-kit.ts` (#149) geçerli; paralel yapılan `wip/eposta-*` dalları
+  birleştirilmeyecek.
 
 ## Sahibin tarafında (kod değil)
 
@@ -67,9 +73,9 @@ Bitince `claude/festive-goodall-sclggq`'ye birleştirilir (göç numarası çak�
 - [x] [Ladmin] Otomatik haftalık yedek; son 8 hafta saklanır. (26 Kasım; Ayarlar › Yedek, docs/YEDEK.md § 13)
 - [x] [Ladmin] Tuzla'da kör sayım. Önce sayılan nakit girilip kilitlenir, fark sonra görünür. (26 Kasım; şube ayarı Şubeler › Kör sayım, ModPOS şubesinde varsayılan açık)
 - [x] [İkisi] Teslim defteri: teslim edilen nakdi kimin aldığı kaydedilir. (26 Kasım; Tuzla'da Kime, iki şube Kasa › Teslim defteri'nde; Marina'nınki LafPOS #144'ün alıcısından)
-- [ ] [Ladmin] Şube karşılaştırma ekranı: şubeler ay ay yan yana.
-- [ ] [Ladmin] Stok tahmini Marina'nın online siparişlerini düşsün; "kaç gün yeter" ve eşik önerisi eklensin.
-- [ ] [Ladmin] Asistanın fiyat kartı şube fiyatını bilsin. Asistan şubeyi açık ekrandan okusun; "bugün" iş günü (05:00) olsun.
+- [x] [Ladmin] Şube karşılaştırma ekranı: şubeler ay ay yan yana. (26 Kasım; Raporlar › Şubeler, docs/RAPORLAR.md)
+- [x] [Ladmin] Stok tahmini Marina'nın online siparişlerini düşsün; "kaç gün yeter" ve eşik önerisi eklensin. (26 Kasım; docs/STOK-TAHMINI.md)
+- [x] [Ladmin] Asistanın fiyat kartı şube fiyatını bilsin. Asistan şubeyi açık ekrandan okusun; "bugün" iş günü (05:00) olsun. (26 Kasım)
 - [ ] [Ladmin] Ayrı Paraşüt firması bağlanırken "Aynı vergi numarası mı?" diye sorulsun.
 - [x] [Ladmin] KDV tahmini yazarkasa Z'sine ve LafPOS'un KDV dökümüne dayansın. (26 Kasım; kaynak satırı: "12 gün yazarkasa Z'sinden, 3 gün tahmin")
 - [x] [Ladmin] Vardiyası değişen personele bildirim gitsin. Gelecek haftanın planı yazılmadıysa hatırlatılsın. (26 Kasım)
@@ -80,17 +86,17 @@ Bitince `claude/festive-goodall-sclggq`'ye birleştirilir (göç numarası çak�
 ## Dalga 3 (sonra)
 
 - [ ] [Ladmin] "Müdür" ve salt okunur "Muhasebeci" rolleri.
-- [ ] [Ladmin] Marina ay sonu kaçak raporu: tahmini stokla sayım arasındaki fark TL olarak, en çok kaçan kalemlerle.
-- [ ] [İkisi] Kişi bazında kayıp önleme özeti: kasa farkı, iptal, ikram ve indirimin kişiye göre sapması. LafPOS iptali yapanı ve ikram edeni göndermiyorsa LafPOS'a da ekleme gerekir.
+- [x] [Ladmin] Marina ay sonu kaçak raporu: tahmini stokla sayım arasındaki fark TL olarak, en çok kaçan kalemlerle. (26 Kasım; Raporlar › Kaçak; ilk gerçek rapor Aralık sonu sayımıyla)
+- [ ] [İkisi] Kişi bazında kayıp önleme özeti: kasa farkı, iptal, ikram ve indirimin kişiye göre sapması. LafPOS iptali yapanı ve ikram edeni göndermiyorsa LafPOS'a da ekleme gerekir. (26 Kasım: panel tarafı bitti, Raporlar › Kayıp önleme; kasa farkı sayana, zayi / ikram girene göre. LafPOS'un iptal ve ikramı kişiyle göndermesi sahibin onayını bekliyor)
 - [x] [Ladmin] Banka ve tedarikçi ekstresiyle mutabakat. (26 Kasım; Kâr & ödemeler › Mutabakat, docs/MUTABAKAT.md)
 - [x] [Ladmin] Banka POS hakediş mutabakatı: kart satışı ile bankaya gelen para karşılaştırılır. (26 Kasım; Mutabakat › POS hakediş)
-- [ ] [Ladmin] Muhasebeciye aylık tek paket ve ay kapanış e-postası.
-- [ ] [Ladmin] Kontrol listelerinin denetime hazır aylık PDF'i.
-- [ ] [Ladmin] Asistana fiş fotoğrafı: telefonda çekince kart hazırlanır.
+- [x] [Ladmin] Muhasebeciye aylık tek paket ve ay kapanış e-postası. (26 Kasım; Ayarlar › Muhasebeci paketi, docs/MUHASEBE-PAKETI.md)
+- [x] [Ladmin] Kontrol listelerinin denetime hazır aylık PDF'i. (26 Kasım; Kontrol › Geçmiş › Aylık PDF)
+- [x] [Ladmin] Asistana fiş fotoğrafı: telefonda çekince kart hazırlanır. (26 Kasım; docs/ASISTAN-ISLEMLER.md › Fiş fotoğrafı)
 - [ ] [İkisi] Tuzla LafPOS'a geçecekse iki şubeli LafPOS.
-- [ ] [Ladmin] Dönem kapanışı: beyan edilmiş aya sonradan fatura girmesin. Reçete geçmişi tutulsun.
-- [ ] [Ladmin] İşçilik maliyeti / ciro oranı: günlük, haftalık ve şube şube.
-- [ ] [Ladmin] Personel belgeleri (hijyen eğitimi, sağlık raporu, SGK) ve avans takibi.
+- [x] [Ladmin] Dönem kapanışı: beyan edilmiş aya sonradan fatura girmesin. Reçete geçmişi tutulsun. (26 Kasım; Ayarlar › Dönem kapanışı, docs/DONEM-KAPANISI.md)
+- [x] [Ladmin] İşçilik maliyeti / ciro oranı: günlük, haftalık ve şube şube. (26 Kasım; Raporlar › İşçilik)
+- [x] [Ladmin] Personel belgeleri (hijyen eğitimi, sağlık raporu, SGK) ve avans takibi. (26 Kasım; Giderler & maaşlar › Belgeler, Avanslar; docs/PERSONEL-BELGE.md)
 
 ## Düşük öncelikli güvenlik notları
 
