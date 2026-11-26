@@ -961,7 +961,14 @@ export function squareFrameSides(q: Quad, w: number, h: number): Quad {
         pick = cand;
       }
     }
-    if (pick) out[i] = pick;
+    // Doğru kâğıdı karenin içinden çok kesiyorsa (geniş kâğıt, belirgin eğiklik) yazı kaybolur: karenin kenarı kalır,
+    // kalan yamukluğu açma ve eğiklik düzeltmesi giderir. Küçük kesmede (dar fiş) kısa kenar uzun kenarlara uygun olur.
+    if (pick) {
+      const a = intersect(prev, pick)!;
+      const b = intersect(pick, next)!;
+      const cut = Math.max(Math.hypot(a.x - q[i].x, a.y - q[i].y), Math.hypot(b.x - q[(i + 1) % 4].x, b.y - q[(i + 1) % 4].y));
+      if (cut <= 0.02 * Math.hypot(w, h)) out[i] = pick;
+    }
   }
   const corners: Point[] = [];
   for (let i = 0; i < 4; i++) {
