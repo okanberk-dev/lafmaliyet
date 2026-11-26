@@ -209,7 +209,7 @@ function rejectionBellBody(e: LafposRejection & { date: string }, today: string)
     case "invalid":
       return `${day}: ilk sorunlu alan ${e.field ?? "bilinmiyor"}. LafPOS'un sürümünü panelle uyumlu yapın, sonra LafPOS'tan o günü Gönder'e basın.`;
     case "wrong_branch":
-      return `${day}: LafPOS ${e.sube ? `"${e.sube}"` : "başka bir şube"} için gönderdi, panel ${e.expected ? `"${e.expected}"` : "LafPOS'un şubesini"} bekliyor. LafPOS'ta Ayarlar ve yedek › Şube'yi düzeltin, sonra o günü Gönder'e basın.`;
+      return `${day}: LafPOS ${e.sube ? `"${e.sube}"` : "başka bir şube"} için gönderdi, panel ${e.expected ? `"${e.expected}"` : "LafPOS'un şubesini"} bekliyor. LafPOS'ta Yönetim › Ayarlar ve yedek › Şube'yi düzeltin, sonra o günü Gönder'e basın.`;
     default:
       return `${day}: hiçbir şey yazılmadı. Ayarlar › LafPOS'a bakın.`;
   }
