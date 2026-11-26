@@ -218,6 +218,16 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     ],
   },
   {
+    // Raporlar (docs/RAPORLAR.md): dört ekran, hepsi yalnız yöneticinin
+    title: "Raporlar",
+    items: [
+      { href: "/panel/raporlar", label: "Şube karşılaştırma", icon: BarChart3, roles: ["admin"], keywords: "rapor şubeler yan yana ay ay kıyas ciro kâr fiş ortalama sepet kasa farkı" },
+      { href: "/panel/raporlar/iscilik", label: "İşçilik / ciro", icon: BarChart3, roles: ["admin"], keywords: "rapor işçilik maliyeti personel oranı günlük haftalık şube maaş vardiya" },
+      { href: "/panel/raporlar/kacak", label: "Kaçak raporu", icon: BarChart3, roles: ["admin"], keywords: "rapor kaçak ay sonu tahmini stok sayım farkı marina fire kayıp" },
+      { href: "/panel/raporlar/kayip", label: "Kayıp önleme", icon: BarChart3, roles: ["admin"], keywords: "rapor kayıp önleme kişi bazında kasa farkı iptal ikram indirim sapma" },
+    ],
+  },
+  {
     // Kâr ettim mi (Gelir-gider), ne ödeyeceğim (Ödemeler), param yeter mi (Nakit planı)
     title: "Kâr & ödemeler",
     items: [
@@ -442,6 +452,20 @@ export const NAV_TREE: NavNode[] = [
     ],
   },
   {
+    // Raporlar (docs/RAPORLAR.md): şubeler yan yana, işçilik / ciro, Marina'nın kaçağı, kişi bazında kayıp önleme;
+    // sekmeleri bu gruptan türer (SECTION_TABS.raporlar)
+    id: "raporlar",
+    label: "Raporlar",
+    icon: BarChart3,
+    roles: ["admin"],
+    children: [
+      { id: "rapor-subeler", label: "Şubeler", href: "/panel/raporlar", roles: ["admin"] },
+      { id: "rapor-iscilik", label: "İşçilik", href: "/panel/raporlar/iscilik", roles: ["admin"] },
+      { id: "rapor-kacak", label: "Kaçak", href: "/panel/raporlar/kacak", roles: ["admin"] },
+      { id: "rapor-kayip", label: "Kayıp önleme", href: "/panel/raporlar/kayip", roles: ["admin"] },
+    ],
+  },
+  {
     // Devlete ödemeler (dalga 12, docs/VERGI.md): dört ekran, sekmeleri bu gruptan türer (SECTION_TABS.vergi)
     id: "vergi",
     label: "Vergi, KDV, SGK",
@@ -495,7 +519,7 @@ function treeTabs(id: string): SectionTab[] {
  * geçilir. Giderler'in sekmeleri kenar çubuğunda tek öğedir (Giderler & maaşlar), o yüzden elle. Ödemeler ile Nakit
  * planı kenar çubuğunda iki ayrı satır, sekmeyle de birbirine bağlı (docs/planlar/ux-sade.md K7).
  */
-export const SECTION_TABS: Record<"giderler" | "stok" | "vergi" | "odeme", readonly SectionTab[]> = {
+export const SECTION_TABS: Record<"giderler" | "stok" | "vergi" | "odeme" | "raporlar", readonly SectionTab[]> = {
   giderler: [
     { href: "/panel/giderler", label: "Sabit giderler", roles: ["admin"] },
     { href: "/panel/harcamalar", label: "Aylık harcamalar", roles: ["admin"] },
@@ -504,6 +528,8 @@ export const SECTION_TABS: Record<"giderler" | "stok" | "vergi" | "odeme", reado
   stok: treeTabs("stok"),
   // Özet · Vergi kârı · Demirbaş · Muhasebeci (390 px'te kaydırmasız)
   vergi: treeTabs("vergi"),
+  // Şubeler · İşçilik · Kaçak · Kayıp önleme (docs/RAPORLAR.md)
+  raporlar: treeTabs("raporlar"),
   odeme: [
     { href: "/panel/hatirlaticilar", label: "Ödemeler", roles: ["admin"] },
     { href: "/panel/hatirlaticilar/nakit", label: "Nakit planı", roles: ["admin"] },
