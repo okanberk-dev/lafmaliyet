@@ -1115,8 +1115,9 @@ export function CashForm({
         revision: report?.revision ?? 0,
         photos: photos.map((p) => p.id),
         branchId,
-        // Teslim yoksa Kime temizlenir; seçilmediyse (eski rapor, tutar aynı) kayıtlı değer kalır
-        handedTo: fields.handedOver > 0 ? (kime ?? undefined) : null,
+        // Teslim yoksa Kime temizlenir. Seçilmediyse null: sunucu da aynı kuralla reddeder (handedToMissing; alan gelmeden
+        // önce girilmiş, tutarı değişmeyen raporun boş Kime'si geçer)
+        handedTo: fields.handedOver > 0 ? kime : null,
       });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
       // Gün döndü (05:00): dünün raporu artık geç rapor; yazılanlar ve fotoğraflar yerinde, geç rapora geçilir
