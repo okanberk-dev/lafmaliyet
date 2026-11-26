@@ -165,7 +165,7 @@ export function ScanEditor({
   const [error, setError] = useState<string | null>(null);
   const [issues, setIssues] = useState<QualityIssue[]>([]);
 
-  const finish =(choice: ScanChoice | null) => {
+  const finish = (choice: ScanChoice | null) => {
     if (doneRef.current) return;
     doneRef.current = true;
     onDone(choice);
@@ -518,11 +518,19 @@ export function ScanEditor({
    * (ekrandaki son fotoğraf tek başına kullanılabilir)
    */
   async function acceptParts(client: ScanClient, q: Quad) {
-    const added = await client.call({ type: "part-add", corners: q, rotate });
-    if (added.type !== "parts") throw new Error("parca");
     const all = [...partsRef.current, { info: infoOf(q), original: src }];
-    const r = await client.call({ type: "stitch", mode });
+    // Son parça saklanmadan birleştirmeye katılır: çökerse "Kullan" yeniden basıldığında iki kez girmez
+    const r = await client.call({ type: "stitch", mode, last: { corners: q, rotate } });
     if (r.type !== "stitched") throw new Error("birlestirme");
+    // Saklanan parçalar kaybolduysa (Worker çöktü, ana iş parçacığına geçildi) eksik fiş yüklenmez
+    if (r.count !== all.length) {
+      await client.call({ type: "parts-reset" });
+      partsRef.current = [];
+      setPartCount(0);
+      setError("Parçalar kayboldu; fişi baştan çekin.");
+      setFinishing(false);
+      return;
+    }
     if (r.image) {
       const scanned = await encodeScan(r.image);
       return finish({ kind: "scan", scanned, info: { ...all[0].info, parts: all.length }, original: all[0].original });

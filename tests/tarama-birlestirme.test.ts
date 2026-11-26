@@ -223,6 +223,19 @@ test("tarama ekranının motoru: 'Devamını çek' parçaları saklar, 'Kullan' 
   const oran = st.image.height / st.image.width;
   assert.ok(Math.abs(oran - ph / pw) <= 0.02 * (ph / pw), `oran ${oran.toFixed(2)} / ${(ph / pw).toFixed(2)}`);
   assert.equal(st.seams.length, 1);
+  assert.equal(st.count, 2);
+
+  // "Kullan": ekrandaki son parça saklanmadan katılır; iki kez basılsa da (ilki çöktüyse) parça iki kez girmez
+  run({ type: "parts-reset" });
+  parcaEkle(ust);
+  run({ type: "load", image: alt });
+  const dAlt = run({ type: "detect" });
+  assert.ok(dAlt.type === "detected" && dAlt.detection.corners);
+  const last = { corners: dAlt.detection.corners, rotate: 0 as const };
+  for (let i = 0; i < 2; i++) {
+    const s = run({ type: "stitch", mode: "belge", last });
+    assert.ok(s.type === "stitched" && s.image && s.count === 2, `${i + 1}. basış: iki parça birleşmeli`);
+  }
 
   // başka günün Z'si: birleşmez, iki parça ayrı (görünüm uygulanmış) döner; sıfırlayınca parça kalmaz
   run({ type: "parts-reset" });
