@@ -13,7 +13,8 @@ import { BLIND_TEXT } from "@/lib/lafpos/kor-kasa";
 import { allDroppedSentence, droppedListText, recipientRefusal } from "@/lib/notify-recipients";
 import { longDateTR } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
-import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { adminActor, asActor, cashAudience, opsLevel } from "@/lib/roles";
+import { requireAdmin, requireCan, requireUser } from "@/server/auth/dal";
 import { formTillBranch, staffBranchRefusal, withBranchScope } from "@/server/branch-scope";
 import { logSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
@@ -61,14 +62,14 @@ const submitSchema = reportSchema.extend({
  */
 export async function submitCashReport(input: z.input<typeof submitSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = await requireCan("kayit.yaz");
     const { branchId, ...data } = submitSchema.parse(input);
     const till = await formTillBranch(branchId);
     // laffogato.net'in o günkü online satışı e-postaya bilgi satırı olarak girer: istek kayıtla aynı anda başlar, site
     // yavaşsa e-posta en çok 8 saniye bekler, ulaşılamazsa satırsız gider (kasa rakamlarına hiç girmez)
     const site = fetchTillOnlineRow(data.date, till);
     // Kayıt formun kasasının kapsamında: başka sekmede seçici değiştiyse de Tuzla'nın formu Tuzla'ya yazar
-    const out = await withBranchScope(till, () => saveCashReport(getDb(), me, data));
+    const out = await withBranchScope(till, () => saveCashReport(getDb(), asActor(me, opsLevel(me.role)), data));
     if (out.kind === "needsApproval") return { needsApproval: true as const, request: out.request, gate: out.gate };
     const { row: saved, changes, prevCarry } = out;
     const cashDiff = saved.cashDiff;
@@ -123,11 +124,11 @@ const countSchema = z.object({
  */
 export async function lockCashCount(input: z.input<typeof countSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = await requireCan("kayit.yaz");
     const { branchId, ...data } = countSchema.parse(input);
     const till = await formTillBranch(branchId);
     // İşlem geçmişi sayımla aynı işlemde (lockCashCountCore)
-    const lock = await lockCashCountCore(getDb(), me, { ...data, branchId: till });
+    const lock = await lockCashCountCore(getDb(), asActor(me, opsLevel(me.role)), { ...data, branchId: till });
     refresh();
     return lock;
   });
@@ -139,22 +140,26 @@ export async function lockCashCount(input: z.input<typeof countSchema>) {
  */
 export async function resendCashReportEmail(id: number) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = await requireCan("kayit.yaz");
     const [row] = await getDb().select().from(s.cashReports).where(eq(s.cashReports.id, z.number().int().positive().parse(id))).limit(1);
     if (!row) throw new UserError("Rapor bulunamadı");
     const otherBranch = await staffBranchRefusal(me, row.branchId);
     if (otherBranch) throw new UserError(otherBranch);
-    if (me.role !== "admin" && (row.submittedBy !== me.id || !staffCanReport(row.date))) throw new UserError("Bu raporu yalnız yönetici yeniden gönderebilir");
+    if (opsLevel(me.role) !== "admin" && (row.submittedBy !== me.id || !staffCanReport(row.date))) throw new UserError("Bu raporu yalnız yönetici yeniden gönderebilir");
     const email = await emailReport(row.id);
     refresh();
     return outcomeFor(me.role, email);
   });
 }
 
+/** Yönetici ve müdür (yalnız şubesinin raporu; staffBranchRefusal oturumdaki kilide bakar) */
 export async function deleteCashReport(id: number) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = await requireCan("isletme.yonet");
     const reportId = z.number().int().positive().parse(id);
+    const [own] = await getDb().select({ branchId: s.cashReports.branchId }).from(s.cashReports).where(eq(s.cashReports.id, reportId)).limit(1);
+    const otherBranch = own ? await staffBranchRefusal(me, own.branchId) : null;
+    if (otherBranch) throw new UserError(otherBranch);
     // Yanlışlıkla silinen raporun fotoğrafları 30 gün daha saklanır (bağları raporla birlikte silinir)
     const { row, photos } = await getDb().transaction((tx) => removeCashReport(tx, reportId));
     // Birden çok kasa açıkken kaydın kasası adıyla (şube kapsamı C P2-4): "24 Kasım Pazartesi · Marina · Z …"
@@ -177,7 +182,7 @@ export async function deleteCashReport(id: number) {
  */
 export async function clearOkcCumulative(id: number) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = adminActor(await requireAdmin());
     await clearOkcCumulativeCore(getDb(), me, z.number().int().positive().parse(id));
     refresh();
     return null;
@@ -192,11 +197,11 @@ const lafposPhotoSchema = z.object({ date: zDate, branchId: z.string().max(BRANC
  */
 export async function attachLafposDayPhoto(input: z.input<typeof lafposPhotoSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = await requireCan("kayit.yaz");
     const data = lafposPhotoSchema.parse(input);
     const refusal = await staffBranchRefusal(me, data.branchId);
     if (refusal) throw new UserError(refusal);
-    const res = await attachLafposDayPhotoCore(getDb(), me, data);
+    const res = await attachLafposDayPhotoCore(getDb(), asActor(me, opsLevel(me.role)), data);
     // Yanıttan sonra: yüklenirken okunamayan fotoğraf bir kez daha okunur (readUnreadDayPhotos), karşılaştırma yenilenir,
     // sonra yöneticiye fotoğraf e-postası (okunan, karşılaştırma, fotoğrafın kendisi; uyumlu fotoğrafta da). Düşerse
     // günlük iş yeniden dener. Personele hiçbir şey gitmez
@@ -220,7 +225,7 @@ const lafposBankSchema = z.object({ date: zDate, branchId: z.string().max(BRANCH
 /** Yönetici: Pavo alınamadığı gün fotoğrafta okunan banka toplamını raporun Banka POS'una yazar */
 export async function setLafposBankPos(input: z.input<typeof lafposBankSchema>) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = adminActor(await requireAdmin());
     await setLafposBankPosCore(getDb(), me, lafposBankSchema.parse(input));
     refresh();
     return null;
@@ -247,7 +252,7 @@ const settingsSchema = z.object({
 
 export async function updateCashSettings(input: z.input<typeof settingsSchema>) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = adminActor(await requireAdmin());
     const data = settingsSchema.parse(input);
     const branchId = data.branchId || undefined;
     const report = data.recipients !== undefined;
@@ -357,10 +362,11 @@ export async function cashReportWhatsapp(date: string, branchId?: string | null)
   return attempt(async () => {
     const me = await requireUser();
     const d = zDate.parse(date);
-    if (me.role !== "admin" && !staffCanReport(d)) throw new UserError("Bu raporu yalnız yönetici görebilir");
+    // Salt okunur: rakam gören rol (yönetici, müdür şubesinin, muhasebeci) her günü, personel düzenleyebildiği günü
+    if (cashAudience(me.role) !== "admin" && !staffCanReport(d)) throw new UserError("Bu raporu yalnız yönetici görebilir");
     const till = await formTillBranch(zFormBranch.parse(branchId));
     // Kör kasa (bulgu 0): LafPOS gününün metni sayılanı ve farkı taşır; personele verilmez
-    if (me.role !== "admin" && (await isLafposTillDay(getDb(), d, till))) throw new UserError(BLIND_TEXT.whatsapp);
+    if (cashAudience(me.role) !== "admin" && (await isLafposTillDay(getDb(), d, till))) throw new UserError(BLIND_TEXT.whatsapp);
     const r = await getCashReport(d, "staff", till);
     if (!r) throw new UserError("Bu günün raporu yok");
     const [settings, waste, extras, integrity, branches] = await Promise.all([

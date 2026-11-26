@@ -1,10 +1,127 @@
 /**
- * Rollerin erişebildiği ekranlar: tek kaynak. proxy.ts (sayfa yönlendirmesi), giriş sonrası yönlendirme, menü ve alt
- * menü bu listeye bakar; testler (tests/roller.test.ts) menüdeki her öğenin rolüyle buradaki kuralın aynı olduğunu
- * denetler. Asıl yetki yine her sayfada ve her sunucu eyleminde ayrıca denetlenir (src/server/auth/dal.ts).
+ * Rollerin erişebildiği ekranlar ve yapabildikleri: TEK KAYNAK (docs/ROLLER.md). proxy.ts (sayfa yönlendirmesi), giriş
+ * sonrası yönlendirme, menü ve alt menü ekran listelerine (`canOpen`), sayfalar ve sunucu eylemleri yetenek tablosuna
+ * (`can`; src/server/auth/dal.ts › requireCan) bakar. Testler (tests/roller.test.ts) menüdeki her öğenin rolüyle buradaki
+ * kuralın aynı olduğunu, her sunucu eyleminin bir yetki kapısından geçtiğini ve muhasebeciye yazma izni veren eylem
+ * olmadığını denetler. Asıl yetki yine her sayfada ve her sunucu eyleminde ayrıca denetlenir.
+ *
+ * Dört rol (src/lib/constants.ts › ROLES):
+ * - Yönetici (admin): her şey.
+ * - Müdür (manager): şubesinin günlük işletmesi; şubesine KİLİTLİ (hesabında şube zorunlu). Personelin her ekranı, kasa
+ *   raporlarının rakamları ve onaysız düzeltme, Onaylar (şubesinin istekleri), vardiya yazma, Teslim defteri, şubesinin
+ *   günü ve İşçilik / ciro. Maaş ve kişisel ücret, vergi, Paraşüt, ayarlar, kullanıcılar, yedek, anahtarlar ve öteki
+ *   şubeler yok.
+ * - Personel (staff): günün işleri (değişmedi).
+ * - Muhasebeci (accountant): SALT OKUNUR; faturalar, gelir-gider, vergi, aylık harcamalar, kasa raporları (rakamlarıyla),
+ *   muhasebeci paketi. Hiçbir kayıt değiştiremez (her sunucu eylemi reddeder), ayar görmez; kişi başı maaş (bordro
+ *   dökümü, Maaşlar) ve personel belgeleri yok.
+ * Varsayılan KAPALI: tabloda olmayan her şey yalnız yöneticinin.
  */
 
 import type { Role } from "./constants";
+
+// ---------------------------------------------------------------- Yetenekler (eylem düzeyi)
+
+/**
+ * Eylem düzeyi yetenekler: rol → yapabildikleri. Sayfa ve eylemler `requireCan(yetenek)` (src/server/auth/dal.ts),
+ * istemci ve saf kurallar `can(rol, yetenek)` ile sorar. Yeni bir yetenek eklenince satırı burada yazılır; rol listesinde
+ * olmayan her rol için KAPALIDIR.
+ */
+export const CAPABILITIES = {
+  /** İş kaydı yazmak (kasa raporu, zayi, sayım, kontrol listesi, sipariş aşaması …): her yazan eylemin tabanı */
+  "kayit.yaz": ["admin", "manager", "staff"],
+  /**
+   * Şubenin günlük işletmesini doğrudan yönetmek: kasa raporunu onaysız düzeltmek ve silmek, kilitli ya da eski güne
+   * yazmak, kasadan çıkanı ve zayi / ikramı doğrudan, kafe kapalı günü işaretlemek
+   */
+  "isletme.yonet": ["admin", "manager"],
+  /** Kasa raporlarının rakamları ve geçmişi (fark, devir, beklenen nakit, yazarkasa kümülatifi; kör kasa yok) */
+  "kasa.rakam": ["admin", "manager", "accountant"],
+  /** Personelin isteklerini onaylamak ya da reddetmek (Onaylar; müdür yalnız şubesininkileri, reçete önerisi hariç) */
+  onay: ["admin", "manager"],
+  /** Vardiya planını yazmak (müdür şubesinin) */
+  "vardiya.yaz": ["admin", "manager"],
+  /** Şubenin işletme raporları: Bugün'ün şube günü (ciro, kasa farkı, geçen hafta), İşçilik / ciro */
+  "rapor.sube": ["admin", "manager"],
+  /** Muhasebe ekranları (salt okunur): faturalar, gelir-gider, vergi, aylık harcamalar, muhasebeci paketi */
+  "muhasebe.oku": ["admin", "accountant"],
+  /** Maaşlar ve kişisel ücretler: Maaşlar, avanslar, bordro dökümü (kişi kişi), personel belgeleri */
+  maas: ["admin"],
+  /** Yönetim: ayarlar, kullanıcılar, Paraşüt, yedek, anahtarlar, şube ayarları, Claude bağlantısı, tam dışa aktarım */
+  yonetim: ["admin"],
+  /** Bütün şubeleri görmek ve seçmek (müdür ve şubesi seçilmiş personel şubesine kilitli) */
+  "sube.tumu": ["admin", "accountant"],
+} as const satisfies Record<string, readonly Role[]>;
+
+export type Capability = keyof typeof CAPABILITIES;
+
+/** Bu rol bu yeteneğe sahip mi (tabloda olmayan rol için hayır) */
+export function can(role: Role | null | undefined, cap: Capability): boolean {
+  return !!role && (CAPABILITIES[cap] as readonly Role[]).includes(role);
+}
+
+/** Bilinen bir rol mü (oturum çerezi ve veritabanı satırı için) */
+export function isRole(v: unknown): v is Role {
+  return v === "admin" || v === "manager" || v === "staff" || v === "accountant";
+}
+
+/**
+ * Hesabı şubesine kilitli olabilen roller: personel (şubesi seçiliyse) ve müdür (şube ZORUNLU; şubesi yoksa ya da pasifse
+ * oturum açılmaz, src/server/auth/dal.ts). Kilit oturumdan okunur (src/server/branch-scope.ts › lockedBranch); eylemlere
+ * gelen `role` değerine güvenilmez.
+ */
+export const BRANCH_ROLES: readonly Role[] = ["manager", "staff"];
+
+/** Hesabında şube zorunlu olan roller (Kullanıcılar & roller, davet ve veritabanı kısıtı users_manager_branch_ck) */
+export const BRANCH_REQUIRED_ROLES: readonly Role[] = ["manager"];
+
+/**
+ * Çekirdeklerin (kasa, zayi, kasadan çıkan, kapalı gün, istekler) iki düzeyi: "admin" doğrudan yazar, "staff" kurallara ve
+ * onaya bağlı. Müdür çekirdeğe "admin" düzeyinde girer, şubesi oturumdan kilitli kalır. Muhasebeci hiçbir yazma eylemine
+ * giremez (requireCan("kayit.yaz")); okuma düzeyi için `cashAudience`.
+ */
+export function opsLevel(role: Role): "admin" | "staff" {
+  return can(role, "isletme.yonet") ? "admin" : "staff";
+}
+
+/** Kasa okumalarının (DTO, kör kasa, fotoğraf) düzeyi: rakamları gören rol "admin" DTO'sunu alır */
+export function cashAudience(role: Role): "admin" | "staff" {
+  return can(role, "kasa.rakam") ? "admin" : "staff";
+}
+
+/**
+ * Müdürün personel gibi kullandığı ekranların çekirdek düzeyi (karaoke, kontrol listesi, sayım, reçete önerisi, sipariş,
+ * özel gün, kasadaki fiyatlar): yalnız yönetici "admin", öteki her rol "staff" (varsayılan kapalı)
+ */
+export function adminLevel(role: Role): "admin" | "staff" {
+  return role === "admin" ? "admin" : "staff";
+}
+
+/**
+ * Çekirdeğe giden kişi: rolü çekirdeğin iki düzeyinden birine çevrilmiş (`opsLevel` ya da `adminLevel`). Çekirdekler
+ * "admin" | "staff" bekler; gerçek rol eylemin kapısında (requireCan) denetlenmiştir, şube kilidi oturumdan okunur.
+ */
+export function asActor<T extends { role: Role }>(me: T, level: "admin" | "staff"): Omit<T, "role"> & { role: "admin" | "staff" } {
+  return { ...me, role: level };
+}
+
+/** Müdürün personel gibi kullandığı ekranların eylemleri: yalnız yönetici "admin" düzeyinde (`adminLevel`) */
+export function adminActor<T extends { role: Role }>(me: T): Omit<T, "role"> & { role: "admin" | "staff" } {
+  return asActor(me, adminLevel(me.role));
+}
+
+/** Şubenin günlük işletmesi (kasa, zayi, kasadan çıkan, kapalı gün, onay): müdür "admin" düzeyinde (`opsLevel`) */
+export function opsActor<T extends { role: Role }>(me: T): Omit<T, "role"> & { role: "admin" | "staff" } {
+  return asActor(me, opsLevel(me.role));
+}
+
+/**
+ * İki adımlı doğrulamanın zorunlu olduğu roller (src/lib/admin-security.ts): rakam gören her rol (yönetici, müdür,
+ * muhasebeci). Personel ortak tablette sırayla girer; onda isteğe bağlı kalır.
+ */
+export const TWO_FACTOR_ROLES: readonly Role[] = ["admin", "manager", "accountant"];
+
+// ---------------------------------------------------------------- Ekranlar
 
 /**
  * Personelin girebildiği ekranlar (alt sayfaları dahil). Maliyet, alış fiyatı, kâr, maaş ve ayar ekranları yok; günün
@@ -41,13 +158,61 @@ export const STAFF_PATHS = [
 export const ADMIN_ONLY_PATHS = ["/panel/karaoke/doluluk", "/panel/kontrol/duzenle", "/panel/kasa/teslim"] as const;
 
 /**
+ * Müdürün personelin ekranlarına EK olarak girdikleri: Onaylar (şubesinin istekleri; reçete önerileri yöneticinin), İşçilik /
+ * ciro (yalnız şubesi). Personel yolunun altındaki yönetici ekranlarından Teslim defteri müdüre açık (şubesinin teslimleri);
+ * Karaoke doluluğu (tutar) ve Kontrol listelerini düzenleme (şablonlar şubeler arası ortak olabilir) yöneticinin kalır.
+ * Genel bakış, Şube karşılaştırma, Kaçak ve Kayıp önleme açılmadı: işletme geneli kâr, kira, maaş ve öteki şubeleri bir
+ * arada gösteriyorlar (docs/ROLLER.md › Kararlar).
+ */
+export const MANAGER_EXTRA_PATHS = ["/panel/onaylar", "/panel/raporlar/iscilik"] as const;
+
+/** Personel yolunun altında müdüre de kapalı olanlar (ADMIN_ONLY_PATHS'ten Teslim defteri müdüre açık) */
+export const MANAGER_CLOSED_PATHS = ["/panel/karaoke/doluluk", "/panel/kontrol/duzenle"] as const;
+
+/**
+ * Muhasebecinin ekranları (salt okunur): kendi ana ekranı (muhasebe ekranlarının listesi ve muhasebeci paketi), faturalar,
+ * gelir-gider, vergi (alt sayfalarıyla), aylık harcamalar, kasa raporları, Hesabım. Ekranlardaki yazma düğmeleri gizlidir;
+ * sunucu eylemlerinin hepsi muhasebeciyi reddeder (tests/roller.test.ts).
+ */
+export const ACCOUNTANT_PATHS = [
+  "/panel/muhasebe",
+  "/panel/faturalar",
+  "/panel/gelir-gider",
+  "/panel/vergi",
+  "/panel/harcamalar",
+  "/panel/kasa",
+  "/panel/hesap",
+] as const;
+
+/** Muhasebecinin ekranlarının altında ona kapalı olanlar: Kasadaki fiyatlar (işaretleme yazar), Teslim defteri */
+export const ACCOUNTANT_CLOSED_PATHS = ["/panel/kasa/fiyatlar", "/panel/kasa/teslim"] as const;
+
+/** Rolün açık yolları ve onların altında kapalı olanlar (kapalı olan önce gelir); yönetici her yere */
+const ROLE_PATHS: Record<Exclude<Role, "admin">, { open: readonly string[]; closed: readonly string[] }> = {
+  staff: { open: STAFF_PATHS, closed: ADMIN_ONLY_PATHS },
+  manager: { open: [...STAFF_PATHS, ...MANAGER_EXTRA_PATHS], closed: MANAGER_CLOSED_PATHS },
+  accountant: { open: ACCOUNTANT_PATHS, closed: ACCOUNTANT_CLOSED_PATHS },
+};
+
+/** Rolün açabildiği panel yolları (alt sayfaları dahil; `closed` hariç). Yönetici için null: her yer */
+export function rolePaths(role: Role): { open: readonly string[]; closed: readonly string[] } | null {
+  return role === "admin" ? null : (ROLE_PATHS[role] ?? null);
+}
+
+/**
  * Personelin girişte açılan ve izinsiz bir adrese gidince döndüğü ekran: Bugün (günün işleri; ay sonu sayımı da orada
  * satır olarak çıkar). Ana ekrana eklenmiş uygulama /panel'den açılır, proxy personeli buraya götürür.
  */
 export const STAFF_HOME = "/panel/bugun";
 
+/** Muhasebecinin ana ekranı: muhasebe ekranlarının listesi ve muhasebeci paketi */
+export const ACCOUNTANT_HOME = "/panel/muhasebe";
+
+/** Rolün girişte açılan ve izinsiz bir adrese gidince döndüğü ekran (müdür personel gibi Bugün'de açılır) */
 export function homeFor(role: Role): string {
-  return role === "admin" ? "/panel" : STAFF_HOME;
+  if (role === "admin") return "/panel";
+  if (role === "accountant") return ACCOUNTANT_HOME;
+  return STAFF_HOME;
 }
 
 /** Adres yol parçası sınırında eşleşir: "/panel/sayim" ve "/panel/sayim/…" evet, "/panel/sayimlar" hayır */
@@ -68,11 +233,17 @@ export function retiredRedirect(pathname: string): string | null {
   return RETIRED_PATHS.some((p) => under(pathname, p)) ? RETIRED_TARGET : null;
 }
 
-/** Bu rol bu panel adresini açabilir mi (panel dışı adreslere karışmaz) */
+/**
+ * Bu rol bu panel adresini açabilir mi (panel dışı adreslere karışmaz). Tanınmayan rol hiçbir panel adresini açamaz
+ * (varsayılan kapalı).
+ */
 export function canOpen(role: Role, pathname: string): boolean {
-  if (role === "admin" || !under(pathname, "/panel")) return true;
-  if (ADMIN_ONLY_PATHS.some((p) => under(pathname, p))) return false;
-  return STAFF_PATHS.some((p) => under(pathname, p));
+  if (!under(pathname, "/panel")) return true;
+  if (role === "admin") return true;
+  const rule = rolePaths(role);
+  if (!rule) return false;
+  if (rule.closed.some((p) => under(pathname, p))) return false;
+  return rule.open.some((p) => under(pathname, p));
 }
 
 /**
@@ -82,43 +253,77 @@ export function canOpen(role: Role, pathname: string): boolean {
 export const STAFF_ROLE_HINT =
   "Bugün, kasa raporu ve kasadaki fiyatlar, açılış / kapanış listeleri ve son 7 günü, zayi ve ikram, stok sayımı, reçete defteri (öneri), uygulama siparişleri, masa çağrıları ve tükenen ürün, karaoke ve bar ekranı, özel günler, vardiya planı, yardım; önemli düzeltmeler yöneticinin onayıyla; maliyet, maaş ve kâr görmez";
 
+
+/** Müdürün rolü tek cümlede (rol seçicinin açıklaması) */
+export const MANAGER_ROLE_HINT =
+  "Şubesinin günlük işletmesi: personelin her ekranı, kasa raporlarının rakamları ve onaysız düzeltme, personelin isteklerini onaylama, vardiya yazma, teslim defteri, şubesinin günü ve işçilik / ciro; şubesine kilitli (şube zorunlu); maaş, vergi, Paraşüt, ayarlar ve kullanıcılar yok";
+
+/** Muhasebecinin rolü tek cümlede (rol seçicinin açıklaması) */
+export const ACCOUNTANT_ROLE_HINT =
+  "Salt okunur: faturalar, gelir-gider, vergi, aylık harcamalar, kasa raporları ve muhasebeci paketi; hiçbir kaydı değiştiremez, ayar ve kişi başı maaş (bordro dökümü, personel belgeleri) görmez";
+
+/** Yöneticinin rolü tek cümlede */
+export const ADMIN_ROLE_HINT = "Her şey (maliyet, kâr, ayarlar, reçete onayı dahil)";
+
+/** Rol seçicinin açıklamaları (Kullanıcılar & roller) */
+export const ROLE_HINTS: Record<Role, string> = {
+  admin: ADMIN_ROLE_HINT,
+  manager: MANAGER_ROLE_HINT,
+  staff: STAFF_ROLE_HINT,
+  accountant: ACCOUNTANT_ROLE_HINT,
+};
+
 /**
  * Kullanıcılar & roller'deki yetki tablosu. `paths`: satırın anlattığı personel ekranları; personelin her ekranı
- * tabloda bir satırda geçer (tests/personel-yetkileri.test.ts), ekran eklenince tablo eskimesin.
+ * tabloda bir satırda geçer (tests/personel-yetkileri.test.ts), ekran eklenince tablo eskimesin. Müdür ve muhasebeci
+ * sütunları ekran ve yetenek kuralıyla aynıdır (tests/roller.test.ts): müdür personelin her satırını yapar.
  */
-export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; staff: boolean; paths?: readonly string[] }[] = [
-  { label: "Bugün: günün işleri (kasa raporu, açılış ve kapanış listeleri, zayi, ay sonu sayımı)", admin: true, staff: true, paths: ["/panel/bugun"] },
+export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; manager: boolean; staff: boolean; accountant: boolean; paths?: readonly string[] }[] = [
+  { label: "Bugün: günün işleri (kasa raporu, açılış ve kapanış listeleri, zayi, ay sonu sayımı)", admin: true, manager: true, staff: true, accountant: false, paths: ["/panel/bugun"] },
   {
     label: "Siparişler: uygulama siparişlerinin aşaması (Hazırlanıyor, Hazır, Teslim edildi), masa çağrısında Gördüm, tükenen ürünü işaretleme; iade ve iptal sitenin panelinde",
     admin: true,
+    manager: true,
     staff: true,
+    accountant: false,
     paths: ["/panel/siparisler"],
   },
-  { label: "Karaoke ve bar ekranı: oda sayacı, rezervasyonlar (personel tutarları görmez)", admin: true, staff: true, paths: ["/panel/karaoke"] },
+  { label: "Karaoke ve bar ekranı: oda sayacı, rezervasyonlar (personel tutarları görmez)", admin: true, manager: true, staff: true, accountant: false, paths: ["/panel/karaoke"] },
   {
     label:
       "Gün sonu kasa raporu; Z raporu ve fişler fotoğraftan, kasadan çıkanlar; ModPOS'ta değişecek satış fiyatları; ertesi gün kasa düzeltmesi, kilitli ve eski güne ekleme, 14 güne kadar geç rapor, silme ve fotoğraf kaldırma isteği (yönetici onaylar)",
     admin: true,
+    manager: true,
     staff: true,
+    accountant: false,
     paths: ["/panel/kasa"],
   },
-  { label: "Açılış ve kapanış kontrol listeleri; son 7 günün geçmişi (salt okunur)", admin: true, staff: true, paths: ["/panel/kontrol"] },
-  { label: "Vardiya planı: haftanın vardiyalarını görme ve PDF'ini alma (planı yalnız yönetici yazar)", admin: true, staff: true, paths: ["/panel/vardiya"] },
-  { label: "Zayi ve ikram kaydı; 14 güne kadar geç kayıt ve başkasının kaydını silme isteği (yönetici onaylar)", admin: true, staff: true, paths: ["/panel/zayi"] },
-  { label: "Reçete defteri; değişiklik ve yeni ürün önerisi, önerirken satış fiyatı (yönetici onaylar)", admin: true, staff: true, paths: ["/panel/receteler"] },
-  { label: "Stok sayımı; sayım listesine kalem ekleme (Listeye ekle)", admin: true, staff: true, paths: ["/panel/sayim"] },
-  { label: "Özel günler: maç, AVM etkinliği, kampanya; dünü “kafe kapalıydı” diye bildirme (yönetici onaylar)", admin: true, staff: true, paths: ["/panel/ozel-gunler"] },
-  { label: "Kendi hatırlatıcıları ve bildirimleri", admin: true, staff: true, paths: ["/panel/hatirlaticilarim"] },
-  { label: "Kendi parolası ve iki adımlı doğrulama", admin: true, staff: true, paths: ["/panel/hesap"] },
-  { label: "Yardım: kendi ekranlarının anlatımı (yönetici bölümleri gönderilmez)", admin: true, staff: true, paths: ["/panel/yardim/personel"] },
-  { label: "Reçeteyi doğrudan düzenleme; personelin önerilerini ve isteklerini onaylama (Onaylar)", admin: true, staff: false },
-  { label: "Ürün maliyeti, fiyat değiştirme ve kârlılık", admin: true, staff: false },
-  { label: "Hammadde fiyatları", admin: true, staff: false },
-  { label: "Satış, fatura, gelir-gider, kasa raporlarının geçmişi", admin: true, staff: false },
-  { label: "Vergi, KDV, SGK: tahmini vergi takvimi, vergi kârı, muhtasar, SGK, damga, geçici ve kurumlar vergisine katkı", admin: true, staff: false },
-  { label: "Sabit gider, maaş ve personel", admin: true, staff: false },
-  { label: "Ödemeler, hatırlatıcılar, e-posta bildirimleri", admin: true, staff: false },
-  { label: "Mutabakat: banka ve tedarikçi ekstresi, POS hakedişi", admin: true, staff: false },
-  { label: "Kontrol listelerini düzenleme, 7 günden eski geçmiş, karaoke doluluğu, vardiya planını yazma", admin: true, staff: false },
-  { label: "Paraşüt, ayarlar, yedek, kullanıcı yönetimi, Claude bağlantısı", admin: true, staff: false },
+  { label: "Açılış ve kapanış kontrol listeleri; son 7 günün geçmişi (salt okunur)", admin: true, manager: true, staff: true, accountant: false, paths: ["/panel/kontrol"] },
+  { label: "Vardiya planı: haftanın vardiyalarını görme ve PDF'ini alma (planı yönetici ve müdür yazar)", admin: true, manager: true, staff: true, accountant: false, paths: ["/panel/vardiya"] },
+  { label: "Zayi ve ikram kaydı; 14 güne kadar geç kayıt ve başkasının kaydını silme isteği (yönetici onaylar)", admin: true, manager: true, staff: true, accountant: false, paths: ["/panel/zayi"] },
+  { label: "Reçete defteri; değişiklik ve yeni ürün önerisi, önerirken satış fiyatı (yönetici onaylar)", admin: true, manager: true, staff: true, accountant: false, paths: ["/panel/receteler"] },
+  { label: "Stok sayımı; sayım listesine kalem ekleme (Listeye ekle)", admin: true, manager: true, staff: true, accountant: false, paths: ["/panel/sayim"] },
+  { label: "Özel günler: maç, AVM etkinliği, kampanya; dünü “kafe kapalıydı” diye bildirme (yönetici onaylar)", admin: true, manager: true, staff: true, accountant: false, paths: ["/panel/ozel-gunler"] },
+  { label: "Kendi hatırlatıcıları ve bildirimleri", admin: true, manager: true, staff: true, accountant: false, paths: ["/panel/hatirlaticilarim"] },
+  { label: "Kendi parolası ve iki adımlı doğrulama", admin: true, manager: true, staff: true, accountant: true, paths: ["/panel/hesap"] },
+  { label: "Yardım: kendi ekranlarının anlatımı (yönetici bölümleri gönderilmez)", admin: true, manager: true, staff: true, accountant: false, paths: ["/panel/yardim/personel"] },
+  { label: "Kasa raporlarının rakamları ve geçmişi: fark, devir, beklenen nakit, yazarkasa Z'si (müdür şubesinin)", admin: true, manager: true, staff: false, accountant: true },
+  { label: "Kasa raporunu onaysız düzeltme ve silme, kilitli ya da eski güne yazma, kafe kapalı günü işaretleme (müdür şubesinin)", admin: true, manager: true, staff: false, accountant: false },
+  { label: "Personelin isteklerini onaylama (Onaylar; müdür yalnız şubesininkileri)", admin: true, manager: true, staff: false, accountant: false },
+  { label: "Vardiya planını yazma (müdür şubesinin)", admin: true, manager: true, staff: false, accountant: false },
+  { label: "Teslim defteri: ayın teslimleri ve kimin aldığı (müdür şubesinin)", admin: true, manager: true, staff: false, accountant: false },
+  { label: "Şubenin günü (ciro, kasa farkı, geçen hafta) ve İşçilik / ciro (müdür yalnız şubesinin; kişi başı ücret yok)", admin: true, manager: true, staff: false, accountant: false },
+  { label: "Faturalar, gelir-gider, aylık harcamalar ve muhasebeci paketi (muhasebecide salt okunur)", admin: true, manager: false, staff: false, accountant: true },
+  { label: "Vergi, KDV, SGK: tahmini vergi takvimi, vergi kârı, muhtasar, SGK, damga, geçici ve kurumlar vergisine katkı (muhasebecide salt okunur, kişi kişi bordro dökümü yok)", admin: true, manager: false, staff: false, accountant: true },
+  { label: "Bütün şubeler (müdür şubesine kilitli)", admin: true, manager: false, staff: false, accountant: true },
+  { label: "Reçeteyi doğrudan düzenleme; reçete önerilerini onaylama", admin: true, manager: false, staff: false, accountant: false },
+  { label: "Genel bakış, şube karşılaştırma, kaçak ve kayıp önleme raporları", admin: true, manager: false, staff: false, accountant: false },
+  { label: "Ürün maliyeti, fiyat değiştirme ve kârlılık", admin: true, manager: false, staff: false, accountant: false },
+  { label: "Hammadde fiyatları", admin: true, manager: false, staff: false, accountant: false },
+  { label: "Satışlar, komisyon ve analiz", admin: true, manager: false, staff: false, accountant: false },
+  { label: "Maaşlar, kişisel ücretler, avanslar ve personel belgeleri; sabit giderleri düzenleme", admin: true, manager: false, staff: false, accountant: false },
+  { label: "Ödemeler, hatırlatıcılar, e-posta bildirimleri", admin: true, manager: false, staff: false, accountant: false },
+  { label: "Mutabakat: banka ve tedarikçi ekstresi, POS hakedişi", admin: true, manager: false, staff: false, accountant: false },
+  { label: "Kontrol listelerini düzenleme, 7 günden eski geçmiş, karaoke doluluğu", admin: true, manager: false, staff: false, accountant: false },
+  { label: "Paraşüt, ayarlar, yedek, tam dışa aktarım, kullanıcı yönetimi, Claude bağlantısı", admin: true, manager: false, staff: false, accountant: false },
 ];

@@ -8,7 +8,8 @@ import { zFormBranch } from "@/lib/branches";
 import { countItemLogDetail } from "@/lib/count-item";
 import { logActivity } from "@/server/actions/log";
 import { attempt, UserError, zMonth, zText } from "@/server/actions/util";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { formCountBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { countItemSchema, createCountItem } from "@/server/data/count-item";
@@ -29,7 +30,7 @@ const addSchema = countItemSchema.extend({ branchId: zFormBranch });
  */
 export async function addCountItem(input: z.input<typeof addSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const { branchId, ...data } = addSchema.parse(input);
     const sube = await formCountBranch(branchId);
     const created = await withBranchScope(sube, () => createCountItem(me, data, "sayim"));
@@ -57,7 +58,7 @@ export async function addCountItem(input: z.input<typeof addSchema>) {
  */
 export async function saveStaffStockExtras(month: string, extras: { name: string; unit: string; qty: number }[], base?: string, branchId?: string | null) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const m = zMonth.parse(month);
     // Personel bu ayı, geçen ayı yalnız ayın ilk 10 gününde değiştirir (sayim/logic.ts staffCountIssue)
     const monthIssue = staffCountIssue(me.role, m);

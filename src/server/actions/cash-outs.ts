@@ -9,8 +9,9 @@ import { CASH_OUT_REQUEST_TEXT } from "@/lib/cash-out-requests";
 import { cashOutLabel, cashOutUndoJson, readCashOutUndo, type CashOutSnapshot } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
-import { requireUser } from "@/server/auth/dal";
-import { formTillBranch, withBranchScope } from "@/server/branch-scope";
+import { asActor, opsLevel } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
+import { formTillBranch, staffBranchRefusal, withBranchScope } from "@/server/branch-scope";
 import { assertCashOutDeletable, lockCashOutLink, syncLinkedCashOut } from "@/server/cari/kasa";
 import { staffCashOutGate } from "@/server/cash-outs/guard";
 import { cashOutSchema, lockCashOut, removeCashOut, writeCashOut, type CashOutActor, type CashOutData, type CashOutInput } from "@/server/cash-outs/write";
@@ -48,6 +49,11 @@ async function persist(me: CashOutActor, d: CashOutData, opts: { restore?: boole
     const link = d.id ? await lockCashOutLink(tx, d.id, admin) : null;
     const prev = d.id ? await lockCashOut(tx, d.id) : null;
     if (d.id && !prev) throw new UserError("Satır bulunamadı; silinmiş olabilir");
+    // Müdür "admin" düzeyinde yazar ama şubesine kilitli: var olan satır kendi şubesinin olmalı (kilit oturumdan)
+    if (admin && prev) {
+      const refusal = await staffBranchRefusal(me, prev.branchId);
+      if (refusal) throw new UserError(refusal);
+    }
     if (!admin) {
       const gate = await staffCashOutGate(tx, me, prev ? { op: "duzelt", row: prev } : { op: "ekle", date: d.date, restore: opts.restore });
       const moved = prev && prev.date !== d.date ? await staffCashOutGate(tx, me, { op: "ekle", date: d.date }) : "direct";
@@ -73,10 +79,10 @@ const saveSchema = cashOutSchema.extend({
  */
 export async function saveCashOut(input: z.input<typeof saveSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = await requireCan("kayit.yaz");
     const { branchId, ...d } = saveSchema.parse(input);
     const till = await formTillBranch(branchId);
-    return withBranchScope(till, () => persist(me, d));
+    return withBranchScope(till, () => persist(asActor(me, opsLevel(me.role)), d));
   });
 }
 
@@ -87,11 +93,14 @@ export async function saveCashOut(input: z.input<typeof saveSchema>) {
  */
 export async function deleteCashOut(id: number) {
   return attempt(async (): Promise<{ undo: string }> => {
-    const me = await requireUser();
+    const actor = await requireCan("kayit.yaz");
+    const me = asActor(actor, opsLevel(actor.role));
     const cid = z.number().int().positive().parse(id);
     const snap = await getDb().transaction(async (tx) => {
       const row = await lockCashOut(tx, cid);
       if (!row) throw new UserError("Satır bulunamadı; silinmiş olabilir");
+      const otherBranch = await staffBranchRefusal(me, row.branchId);
+      if (otherBranch) throw new UserError(otherBranch);
       await assertCashOutDeletable(tx, cid, me.role === "admin");
       if (me.role !== "admin" && (await staffCashOutGate(tx, me, { op: "sil", row })) === "request") throw new UserError(CASH_OUT_REQUEST_TEXT.needsApproval);
       return removeCashOut(tx, row);
@@ -114,7 +123,8 @@ const constraintOf = (e: unknown) =>
  */
 export async function restoreCashOut(undo: string) {
   return attempt(async () => {
-    const me = await requireUser();
+    const actor = await requireCan("kayit.yaz");
+    const me = asActor(actor, opsLevel(actor.role));
     const sealed = z.string().max(8000).safeParse(undo);
     const opened = sealed.success ? readCashOutUndo(open(sealed.data, "cashout-undo"), me.id, Date.now()) : null;
     if (!opened) throw new UserError("Geri alma süresi doldu; satırı yeniden ekleyin");

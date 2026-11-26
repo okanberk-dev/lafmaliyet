@@ -9,7 +9,9 @@ import { approvalLine, CASH_REQUEST_TEXT, correctionLog, lateApprovalLine, lateL
 import { MAX_REPORT_PHOTOS } from "@/lib/photo-rules";
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
-import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { asActor, opsLevel } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
+import { reviewBranchRefusal } from "@/server/staff-requests/branch";
 import { formTillBranch, withBranchScope } from "@/server/branch-scope";
 import { proposeLateReport } from "@/server/cash/late";
 import { emailReport, type CashEmailOutcome } from "@/server/cash/report-email";
@@ -64,12 +66,13 @@ const correctionSchema = z.object({
  */
 export async function requestCashCorrection(input: z.input<typeof correctionSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
-    if (me.role === "admin") throw new UserError(CASH_REQUEST_TEXT.adminDirect);
+    const me = await requireCan("kayit.yaz");
+    // Yönetici ve müdür doğrudan düzeltir (src/lib/roles.ts › opsLevel)
+    if (opsLevel(me.role) === "admin") throw new UserError(CASH_REQUEST_TEXT.adminDirect);
     const parsed = correctionSchema.parse(input);
     // Yazarkasa alanları kayıtlı biçime (kural formla aynı metinle; dalga 13)
     const data = { ...parsed, fields: okcFieldsIn(parsed.fields) };
-    const { row, changes, created } = await inFormTill(parsed.branchId, () => proposeCashCorrection(getDb(), me, data));
+    const { row, changes, created } = await inFormTill(parsed.branchId, () => proposeCashCorrection(getDb(), asActor(me, "staff"), data));
     pushNewRequest({ row, created });
     await logActivity(me, "Kasa düzeltmesi önerildi", correctionLog({ date: data.date, changes, reason: data.message }));
     refresh();
@@ -88,10 +91,10 @@ const deleteSchema = z.object({
 /** Personel: raporun silinmesini ister (bugün ya da dün); rapor silinene kadar yerinde kalır */
 export async function requestCashDelete(input: z.input<typeof deleteSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
-    if (me.role === "admin") throw new UserError(CASH_REQUEST_TEXT.adminDirect);
+    const me = await requireCan("kayit.yaz");
+    if (opsLevel(me.role) === "admin") throw new UserError(CASH_REQUEST_TEXT.adminDirect);
     const data = deleteSchema.parse(input);
-    const { row, created } = await inFormTill(data.branchId, () => proposeCashDelete(getDb(), me, data));
+    const { row, created } = await inFormTill(data.branchId, () => proposeCashDelete(getDb(), asActor(me, "staff"), data));
     pushNewRequest({ row, created });
     await logActivity(me, "Kasa raporunun silinmesi istendi", [longDateTR(data.date), reasonLog(data.message)].filter(Boolean).join(" · "));
     refresh();
@@ -117,11 +120,11 @@ const lateSchema = reportSchema.omit({ countedBy: true, revision: true, photos: 
  */
 export async function requestLateCashReport(input: z.input<typeof lateSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
-    if (me.role === "admin") throw new UserError(CASH_REQUEST_TEXT.adminDirect);
+    const me = await requireCan("kayit.yaz");
+    if (opsLevel(me.role) === "admin") throw new UserError(CASH_REQUEST_TEXT.adminDirect);
     const { reason, requestVersion, photoIds, handedTo, clientKey: key, branchId, ...form } = lateSchema.parse(input);
     const fields = okcFieldsIn(form);
-    const out = await inFormTill(branchId, () => proposeLateReport(getDb(), me, { fields, reason, requestVersion, photoIds, handedTo, clientKey: key }));
+    const out = await inFormTill(branchId, () => proposeLateReport(getDb(), asActor(me, "staff"), { fields, reason, requestVersion, photoIds, handedTo, clientKey: key }));
     pushNewRequest(out);
     if (out.created || out.row.version > 1) {
       await logActivity(me, "Geç kasa raporu onaya gönderildi", lateLog({ date: fields.date, zTotal: fields.zTotal, cashDiff: out.cashDiff, reason }));
@@ -150,10 +153,13 @@ const reviewSchema = z.object({
  */
 export async function reviewCashRequest(input: z.input<typeof reviewSchema>) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    // Yönetici ve müdür (yalnız şubesinin isteği; reviewBranchRefusal)
+    const me = await requireCan("onay");
     const parsed = reviewSchema.parse(input);
+    const branchRefusal = await reviewBranchRefusal(getDb(), me, parsed.id);
+    if (branchRefusal) throw new UserError(branchRefusal);
     const data = { ...parsed, fields: parsed.fields ? okcFieldsIn(parsed.fields) : parsed.fields };
-    const out = await reviewCashRequestCore(getDb(), me, data);
+    const out = await reviewCashRequestCore(getDb(), asActor(me, opsLevel(me.role)), data);
     const who = out.request.requestedByName;
     const note = out.request.reviewNote ? ` · not: ${out.request.reviewNote}` : "";
     let email: CashEmailOutcome | null = null;

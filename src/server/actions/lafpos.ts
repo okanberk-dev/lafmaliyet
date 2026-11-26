@@ -7,6 +7,7 @@ import { z } from "zod";
 import { businessDate } from "@/lib/cash-report";
 import { dayMonthYearTR } from "@/lib/lafpos/switch";
 import type { StepUpConfirm } from "@/lib/step-up";
+import { adminActor } from "@/lib/roles";
 import { requireAdmin } from "@/server/auth/dal";
 import { requireStepUp } from "@/server/auth/step-up";
 import { getDb, schema as s } from "@/server/db";
@@ -27,7 +28,7 @@ import { attempt, UserError, zDate } from "./util";
  */
 export async function saveLafposSwitchDay(input: string | null) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = adminActor(await requireAdmin());
     const day = z.union([z.null(), zDate]).parse(input);
     const change = await writeLafposSwitchDay(getDb(), me, day, businessDate());
     if (change) {
@@ -49,7 +50,7 @@ const deleteSchema = z.object({ date: zDate, zNo: z.number().int().nonnegative()
  */
 export async function deleteLafposDay(input: z.input<typeof deleteSchema>, confirm?: StepUpConfirm) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = adminActor(await requireAdmin());
     const data = deleteSchema.parse(input);
     const db = getDb();
     const [rep] = await db

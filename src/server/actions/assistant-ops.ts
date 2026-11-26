@@ -1,7 +1,7 @@
 "use server";
 
 import type { OpOutcome } from "@/lib/assistant/ops";
-import { requireUser } from "@/server/auth/dal";
+import { requireAdmin } from "@/server/auth/dal";
 import { cancelOp, confirmOp, readOp, undoOp } from "@/server/assistant-ops/confirm";
 
 /*
@@ -13,24 +13,24 @@ import { cancelOp, confirmOp, readOp, undoOp } from "@/server/assistant-ops/conf
 
 /** Kartın Onayla'sı: planı tek kullanımlık tüketir, yeniden doğrular, asıl eylemi çağırır */
 export async function confirmAssistantOp(opId: string): Promise<OpOutcome> {
-  const me = await requireUser();
-  return confirmOp({ id: me.id, name: me.name, role: me.role }, opId);
+  const me = await requireAdmin();
+  return confirmOp({ id: me.id, name: me.name, role: "admin" as const }, opId);
 }
 
 /** Kartın Vazgeç'i: bekleyen plan kapanır, hiçbir şey değişmez */
 export async function cancelAssistantOp(opId: string): Promise<OpOutcome> {
-  const me = await requireUser();
-  return cancelOp({ id: me.id, name: me.name, role: me.role }, opId);
+  const me = await requireAdmin();
+  return cancelOp({ id: me.id, name: me.name, role: "admin" as const }, opId);
 }
 
 /** Kartın durumu (salt okur): sayfa işlem sürerken yenilendiyse kart sonucu buradan okur */
 export async function readAssistantOp(opId: string): Promise<OpOutcome> {
-  const me = await requireUser();
-  return readOp({ id: me.id, name: me.name, role: me.role }, opId);
+  const me = await requireAdmin();
+  return readOp({ id: me.id, name: me.name, role: "admin" as const }, opId);
 }
 
 /** Sonuç kartının Geri al'ı (yalnız katalogda geri alması tanımlı işlemlerde, 1 saat) */
 export async function undoAssistantOp(opId: string): Promise<OpOutcome> {
-  const me = await requireUser();
-  return undoOp({ id: me.id, name: me.name, role: me.role }, opId);
+  const me = await requireAdmin();
+  return undoOp({ id: me.id, name: me.name, role: "admin" as const }, opId);
 }

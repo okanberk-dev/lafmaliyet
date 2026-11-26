@@ -10,7 +10,9 @@ import { money } from "@/lib/format";
 import { PHOTO_KIND_LABEL } from "@/lib/photo-rules";
 import { genitive } from "@/lib/recipe-change";
 import { longDateTR } from "@/lib/reminders";
-import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { asActor, opsLevel } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
+import { reviewBranchRefusal } from "@/server/staff-requests/branch";
 import { formTillBranch, withBranchScope } from "@/server/branch-scope";
 import { attachCashOutReceiptCore, proposeCashOutChange, proposePhotoRemoval, reviewCashOutRequestCore, reviewPhotoRemovalCore } from "@/server/cash-outs/requests";
 import { getDb } from "@/server/db";
@@ -62,10 +64,10 @@ const changeSchema = z.object({
  */
 export async function requestCashOutChange(input: z.input<typeof changeSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
-    if (me.role === "admin") throw new UserError(CASH_OUT_REQUEST_TEXT.adminDirect);
+    const me = await requireCan("kayit.yaz");
+    if (opsLevel(me.role) === "admin") throw new UserError(CASH_OUT_REQUEST_TEXT.adminDirect);
     const data = changeSchema.parse(input);
-    const out = await withBranchScope(await formTillBranch(data.branchId), () => proposeCashOutChange(getDb(), me, data));
+    const out = await withBranchScope(await formTillBranch(data.branchId), () => proposeCashOutChange(getDb(), asActor(me, "staff"), data));
     pushNewRequest(out);
     if (out.created || out.row.version > 1) {
       await logActivity(me, "Kasadan çıkan isteği", cashOutRequestLog({ op: out.payload.op, day: out.payload.day, line: out.payload.line, before: out.payload.before, note: data.message }));
@@ -80,9 +82,9 @@ const receiptSchema = z.object({ cashOutId: z.number().int().positive(), photoId
 /** Fotoğrafsız alışveriş satırına fiş fotoğrafı (onaysız; yalnız kanıt, tutar ve kategori değişmez) */
 export async function attachCashOutReceipt(input: z.input<typeof receiptSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = await requireCan("kayit.yaz");
     const data = receiptSchema.parse(input);
-    const row = await attachCashOutReceiptCore(getDb(), me, data);
+    const row = await attachCashOutReceiptCore(getDb(), asActor(me, opsLevel(me.role)), data);
     await logActivity(me, "Kasadan çıkan: fiş eklendi", [longDateTR(row.date), cashOutLabel(row), money(row.amount)].join(" · "));
     refresh();
     return null;
@@ -94,10 +96,10 @@ const removalSchema = z.object({ photoId: z.number().int().positive(), message: 
 /** Personel: rapora bağlı yanlış Z / POS fotoğrafının kaldırılmasını ister (yönetici onaylarsa rapordan çıkar) */
 export async function requestPhotoRemoval(input: z.input<typeof removalSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
-    if (me.role === "admin") throw new UserError(CASH_OUT_REQUEST_TEXT.adminDirect);
+    const me = await requireCan("kayit.yaz");
+    if (opsLevel(me.role) === "admin") throw new UserError(CASH_OUT_REQUEST_TEXT.adminDirect);
     const data = removalSchema.parse(input);
-    const out = await proposePhotoRemoval(getDb(), me, data);
+    const out = await proposePhotoRemoval(getDb(), asActor(me, "staff"), data);
     pushNewRequest(out);
     if (out.created) {
       await logActivity(me, "Fotoğraf kaldırma istendi", [PHOTO_KIND_LABEL[out.payload.photoKind], longDateTR(out.payload.day), data.message].filter(Boolean).join(" · "));
@@ -123,9 +125,12 @@ const reviewSchema = z.object({
  */
 export async function reviewCashOutRequest(input: z.input<typeof reviewSchema>) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    // Yönetici ve müdür (yalnız şubesinin isteği)
+    const me = await requireCan("onay");
     const data = reviewSchema.parse(input);
-    const out = await reviewCashOutRequestCore(getDb(), me, { ...data, note: data.note });
+    const branchRefusal = await reviewBranchRefusal(getDb(), me, data.id);
+    if (branchRefusal) throw new UserError(branchRefusal);
+    const out = await reviewCashOutRequestCore(getDb(), asActor(me, opsLevel(me.role)), { ...data, note: data.note });
     const who = `${genitive(out.request.requestedByName)} isteği`;
     const note = out.request.reviewNote ? ` · not: ${out.request.reviewNote}` : "";
     if (out.status === "rejected") {
@@ -154,9 +159,12 @@ const photoReviewSchema = z.object({
 /** Yönetici: fotoğraf kaldırma isteğini karara bağlar; onayda okuma farkı işlem geçmişine yazılır, fotoğraf 30 gün kalır */
 export async function reviewPhotoRemoval(input: z.input<typeof photoReviewSchema>) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    // Yönetici ve müdür (yalnız şubesinin isteği)
+    const me = await requireCan("onay");
     const data = photoReviewSchema.parse(input);
-    const out = await reviewPhotoRemovalCore(getDb(), me, data);
+    const branchRefusal = await reviewBranchRefusal(getDb(), me, data.id);
+    if (branchRefusal) throw new UserError(branchRefusal);
+    const out = await reviewPhotoRemovalCore(getDb(), asActor(me, opsLevel(me.role)), data);
     const note = out.request.reviewNote ? ` · not: ${out.request.reviewNote}` : "";
     const head = `${PHOTO_KIND_LABEL[out.payload.photoKind]} · ${longDateTR(out.payload.day)} · ${out.request.requestedByName} istedi`;
     if (out.status === "approved") {

@@ -6,7 +6,8 @@ import { z } from "zod";
 import { STAFF_SPECIAL_TEXT } from "@/lib/closed-days";
 import { specialSummary } from "@/lib/ozel-gun";
 import { isCalendarDate } from "@/lib/reminders";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope, staffBranchLock } from "@/server/branch-scope";
 import { getDb } from "@/server/db";
 import { deleteStaffSpecialCore, saveStaffSpecialCore } from "@/server/staff-special";
@@ -37,7 +38,7 @@ const saveInput = z.object({
  */
 export async function saveStaffSpecialDay(input: z.input<typeof saveInput>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     if (me.role === "admin") throw new UserError(STAFF_SPECIAL_TEXT.adminDirect);
     const d = saveInput.parse(input);
     const out = await saveStaffSpecialCore(
@@ -58,7 +59,7 @@ export async function saveStaffSpecialDay(input: z.input<typeof saveInput>) {
 /** Personel: kendi başlamamış, yöneticinin dokunmadığı özel gününü siler. Dönüşte yalnız tamam */
 export async function deleteStaffSpecialDay(id: number) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     if (me.role === "admin") throw new UserError(STAFF_SPECIAL_TEXT.adminDirect);
     const key = z.number().int().positive().parse(id);
     const values = await deleteStaffSpecialCore(getDb(), me, key);
