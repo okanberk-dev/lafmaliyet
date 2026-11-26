@@ -114,9 +114,13 @@ export function logPhotoRead(o: { photoId: number; kind: string; steps: readonly
 export async function readLafposDayPhoto(
   db: DB,
   input: LafposPhotoInput,
-  o: { client?: AiClient; ocr?: (bytes: Uint8Array) => Promise<Awaited<ReturnType<typeof ocrImage>>> } = {},
+  o: { client?: AiClient; ocr?: (bytes: Uint8Array) => Promise<Awaited<ReturnType<typeof ocrImage>>>; deadlineAt?: number } = {},
 ): Promise<(LafposReadResult & { device: LafposOkcDevice | null }) | null> {
   const { photoId, day, branchId, userId } = input;
+  // Son an verildiyse (yanıttan sonraki iş, günlük iş) süreye sığmayan adım atlanır: zaman aşımı sayılır, sıradaki adıma
+  // geçilir (ucuz sığmazsa kod, güçlü sığmazsa ucuz okunuş kalır). Yükleme yolunda son an yok (60 sn'ye sığar)
+  const fits = (ms: number) => o.deadlineAt === undefined || o.deadlineAt - Date.now() >= ms + STEP_MARGIN_MS;
+  const late: ReadStep = { ok: false, code: "timeout", message: "Süre yetmedi" };
   // LafPOS'un şubesi kütükten (lafposBranchId); onun geçiş günü ayarın kendisidir (branchSwitchDay)
   if (branchId !== (await lafposBranchId(db))) return null;
   if (!isLafposDay(day, await loadLafposSwitchDay(db))) return null;
@@ -135,9 +139,10 @@ export async function readLafposDayPhoto(
   const result = await runLafposRead({
     previous: await previousReads(db, photoId, strong),
     strongModel: strong,
-    cheap: async () => step(await extractImage({ ...base, model: cheap, task: OKC_SHORT_TASK(day), effort: "low", timeouts: CHEAP_TIMEOUTS }), cheap),
-    strong: async () => step(await extractImage({ ...base, model: strong, task: OKC_TASK(day), effort: OKC_EFFORT, timeouts: STRONG_TIMEOUTS }), strong),
+    cheap: async () => (fits(CHEAP_TIMEOUTS.totalMs) ? step(await extractImage({ ...base, model: cheap, task: OKC_SHORT_TASK(day), effort: "low", timeouts: CHEAP_TIMEOUTS }), cheap) : late),
+    strong: async () => (fits(STRONG_TIMEOUTS.totalMs) ? step(await extractImage({ ...base, model: strong, task: OKC_TASK(day), effort: OKC_EFFORT, timeouts: STRONG_TIMEOUTS }), strong) : late),
     ocr: async () => {
+      if (!fits(OCR_TIMEOUT_MS)) return late;
       const t0 = Date.now();
       try {
         const lines = await (o.ocr ?? ((b: Uint8Array) => ocrImage(b, { timeoutMs: OCR_TIMEOUT_MS })))(input.bytes);
@@ -158,8 +163,10 @@ export async function readLafposDayPhoto(
   return { ...result, device: device.okc ? { provider: device.okc.provider, zReport: device.okc.zReport } : null };
 }
 
-/** Okunmamış fotoğrafın yeniden okunması için en az kalan süre (ucuz + güçlü + kod okumaya ve e-postaya yetsin) */
-const UNREAD_MIN_MS = 30_000;
+/** Süreye sığma payı: adımın kendi süresinin üstüne (e-postalara ve kayıtlara pay) */
+const STEP_MARGIN_MS = 5_000;
+/** Okunmamış fotoğrafın yeniden okunması için en az kalan süre: ucuz okuma sığmalı (güçlü ve kod sığmazsa atlanır) */
+const UNREAD_MIN_MS = CHEAP_TIMEOUTS.totalMs + STEP_MARGIN_MS;
 /** Okunmamış fotoğrafın ai_calls satırı bu kadarsa (yükleme + iki yeniden okuma) bir daha denenmez */
 const UNREAD_MAX_ATTEMPTS = 6;
 
@@ -181,11 +188,14 @@ export async function readUnreadDayPhotos(db: DB, date: string, deps: StrongRech
     .limit(1);
   if (!st) return 0;
   const ids = st.reportId && st.autoValues ? await dayPhotoIds(db, st.reportId) : st.reportId ? [] : st.pendingPhotos;
+  const aiOn = aiConfigured() && (await loadAiSettings()).enabled;
   let read = 0;
   for (const photoId of ids) {
     if (deps.deadlineAt !== undefined && deps.deadlineAt - Date.now() < UNREAD_MIN_MS) break;
     const prev = await previousReads(db, photoId, "");
-    if (prev.reading || prev.ocr) continue;
+    // Yapay zekâ okunuşu varsa bitti. Yalnız kod okunuşu varsa (yüklemede yapay zekâ düştü) yapay zekâ açıkken yeniden
+    // denenir; kapalıyken kod okunuşu kalır
+    if (prev.reading || (prev.ocr && !aiOn)) continue;
     // Sınırlı deneme: yükleme ve en çok iki yeniden okuma (her biri yapay zekâ + kod satırı bırakır)
     const [tries] = await db
       .select({ n: count() })
@@ -196,8 +206,13 @@ export async function readUnreadDayPhotos(db: DB, date: string, deps: StrongRech
     if (!photo?.createdBy) continue;
     const file = await (deps.read ?? readPhoto)(photoId).catch(() => null);
     if (!file) continue;
-    const r = await readLafposDayPhoto(db, { photoId, bytes: file.bytes, contentType: file.contentType as AiImageType, day: date, userId: photo.createdBy, branchId }, deps.client ? { client: deps.client } : {});
-    if (r?.raw) read++;
+    const r = await readLafposDayPhoto(
+      db,
+      { photoId, bytes: file.bytes, contentType: file.contentType as AiImageType, day: date, userId: photo.createdBy, branchId },
+      { ...(deps.client ? { client: deps.client } : {}), ...(deps.deadlineAt !== undefined ? { deadlineAt: deps.deadlineAt } : {}) },
+    );
+    // Yeni okunuş: yapay zekâ okudu ya da hiç okunuşu olmayan fotoğraf kodla okundu
+    if (r?.raw && (r.source === "ai" || !prev.ocr)) read++;
   }
   return read;
 }

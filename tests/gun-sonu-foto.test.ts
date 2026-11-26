@@ -440,3 +440,15 @@ test("Fotoğraf e-postası (gün sonu e-postasından sonra eklenen fotoğraf): h
   assert.equal(photoMailNeeded(unsure), true);
   assert.equal(plain(renderPhotoMail({ branchName: "Marina", date: DAY, check: unsure, link: "x" }).subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · Z raporu okunamadı, yönetici baksın");
 });
+
+test("İnceleme: Z raporu özeti tek fotoğrafta eski formülle aynı (yükseltmede yeniden gönderim yok); fotoğraftan yazılan Z no'nun 'raporda' eki özeti değiştirmez", async () => {
+  const { photoCheckHashLegacy } = await import("../src/lib/lafpos/gun-sonu");
+  const c = farkCheck();
+  assert.equal(c.photos, 1);
+  assert.equal(photoCheckHash(c), photoCheckHashLegacy(c));
+  const z = { label: "Yazarkasa Z no", photo: "0011 (fotoğraftan okundu)", lafpos: "gönderilmedi", ok: true };
+  const a: LafposPhotoCheck = { ...c, rows: [...c.rows, z] };
+  const b: LafposPhotoCheck = { ...c, rows: [...c.rows, { ...z, lafpos: "gönderilmedi; raporda 0011" }] };
+  assert.equal(photoCheckHash(a), photoCheckHash(b));
+  assert.notEqual(photoCheckHash(a), photoCheckHash({ ...a, photos: 2 }), "ikinci fotoğraf yeni rapordur");
+});

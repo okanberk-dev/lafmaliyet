@@ -554,8 +554,24 @@ export function photoMailFresh(newestPhotoAt: Date | null, now: Date): boolean {
  * girmez (bilgi satırı eklenince gönderilmiş fark e-postası yeniden gitmez)
  */
 export function photoCheckHash(check: LafposPhotoCheck): string {
-  // Fotoğraf sayısı da girer: aynı okunuşlu ikinci fotoğraf da yöneticiye bildirilir
-  const text = JSON.stringify([check.state, check.source ?? "ai", check.model ?? null, check.rows.filter((r) => !r.info).map((r) => [r.label, r.photo, r.lafpos, r.ok]), check.photos]);
+  // Fotoğraftan okunup raporun boş Z no'suna yazılan numara ("gönderilmedi; raporda 0011") yeni bilgi değildir: özet
+  // değişmez (yoksa aynı fotoğraf için ikinci e-posta giderdi). İkinci fotoğraf da bildirilir: fotoğraf sayısı 1'den
+  // büyükse özete girer (tek fotoğraflı eski özetler aynı kalır, yükseltmeden sonra yeniden gönderim yok)
+  const lafposText = (r: LafposPhotoCheck["rows"][number]) => (r.label === "Yazarkasa Z no" ? r.lafpos.replace(/; raporda .*$/, "") : r.lafpos);
+  const rows = check.rows.filter((r) => !r.info).map((r) => [r.label, r.photo, lafposText(r), r.ok]);
+  const text = JSON.stringify(check.photos > 1 ? [check.state, check.source ?? "ai", check.model ?? null, rows, check.photos] : [check.state, check.source ?? "ai", check.model ?? null, rows]);
+  return fnv1a(text);
+}
+
+/**
+ * 25 Kasım 2026'dan önceki özet formülü (Z no'nun "raporda" eki ve fotoğraf sayısı ayrımı yok): yükseltmeden önce gitmiş
+ * fotoğraf e-postasının kaydı bu özetle durur; sendPhotoEmail ikisine de bakar (aynı e-posta ikinci kez gitmez)
+ */
+export function photoCheckHashLegacy(check: LafposPhotoCheck): string {
+  return fnv1a(JSON.stringify([check.state, check.source ?? "ai", check.model ?? null, check.rows.filter((r) => !r.info).map((r) => [r.label, r.photo, r.lafpos, r.ok])]));
+}
+
+function fnv1a(text: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
     h ^= text.charCodeAt(i);

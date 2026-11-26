@@ -21,6 +21,7 @@ import {
   LAFPOS_AUTO_BY,
   mergeAuto,
   photoCheckHash,
+  photoCheckHashLegacy,
   photoMailFresh,
   photoMailNeeded,
   renderDayEnd,
@@ -98,6 +99,8 @@ export type PhotoEmailResult = "sent" | "failed" | "off" | "same" | "busy" | "sk
 
 /** Fotoğraf karşılaştırmasının gittiğinin kaydı (notification_log): içerik başına bir anahtar */
 const photoMailKey = (branchId: string, date: string, check: LafposPhotoCheck) => `lafpos-foto:${branchId}:${date}:${photoCheckHash(check)}`;
+/** Z raporu e-postasının kaydı gönderilirken (notification_log.error): yarıda kalırsa SENDING_STALE_MS sonra devralınır */
+const PHOTO_SENDING = "gönderiliyor";
 
 interface StoredDay {
   z: ReturnType<typeof posZSchema.parse>;
@@ -750,24 +753,37 @@ export async function sendPhotoEmail(db: DB, date: string, now = new Date(), opt
   const [newest] = await db.select({ at: sql<Date>`max(${s.photos.createdAt})`.mapWith((v) => new Date(v)) }).from(s.photos).where(inArray(s.photos.id, [...ids]));
   if (!photoMailNeeded(check, { fresh: photoMailFresh(newest?.at ?? null, now) })) return "skipped";
   const key = photoMailKey(branchId, date, check!);
-  const [already] = await db.select({ ok: s.notificationLog.ok }).from(s.notificationLog).where(eq(s.notificationLog.key, key)).limit(1);
-  if (already?.ok) return "same";
+  // Yükseltmeden önce eski özetle gitmiş aynı karşılaştırma ikinci kez gitmez
+  const legacy = `lafpos-foto:${branchId}:${date}:${photoCheckHashLegacy(check!)}`;
+  const prior = await db.select({ key: s.notificationLog.key, ok: s.notificationLog.ok }).from(s.notificationLog).where(inArray(s.notificationLog.key, [key, legacy]));
+  if (prior.some((r) => r.ok)) return "same";
+  // Kendi kaydıyla üstlenir (gün sonu / Pavo e-postasının sending_at kilidini tutmaz, onlar da bunu bekletmez): kayıt
+  // yoksa açılır; düşmüş ya da yarıda kalmış (SENDING_STALE_MS) kayıt devralınır, sürmekte olan gönderim "busy"
   const stale = new Date(now.getTime() - SENDING_STALE_MS);
-  const claimed = await db
-    .update(s.lafposDayEnds)
-    .set({ sendingAt: now })
-    .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId), or(isNull(s.lafposDayEnds.sendingAt), lt(s.lafposDayEnds.sendingAt, stale))))
-    .returning({ date: s.lafposDayEnds.date });
-  if (!claimed.length) return "busy";
-  const release = () =>
+  const opened = await db.insert(s.notificationLog).values({ key, channel: "email", ok: false, error: PHOTO_SENDING, sentAt: now }).onConflictDoNothing().returning({ id: s.notificationLog.id });
+  if (!opened.length) {
+    const taken = await db
+      .update(s.notificationLog)
+      .set({ error: PHOTO_SENDING, sentAt: now })
+      .where(and(eq(s.notificationLog.key, key), eq(s.notificationLog.ok, false), or(isNull(s.notificationLog.error), sql`${s.notificationLog.error} <> ${PHOTO_SENDING}`, lt(s.notificationLog.sentAt, stale))))
+      .returning({ id: s.notificationLog.id });
+    if (!taken.length) return "busy";
+  }
+  const done = (patch: { ok: boolean; error: string | null; subject?: string; recipients?: string }) =>
     db
-      .update(s.lafposDayEnds)
-      .set({ sendingAt: null })
-      .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
+      .update(s.notificationLog)
+      .set({ ...patch, sentAt: new Date() })
+      .where(eq(s.notificationLog.key, key));
   try {
     const to = await dayEndRecipients(db, branchId);
-    if (!to.length) return "off";
-    if (!isEmailConfigured()) return "failed";
+    if (!to.length) {
+      await done({ ok: false, error: "Alıcı yok" });
+      return "off";
+    }
+    if (!isEmailConfigured()) {
+      await done({ ok: false, error: "E-posta kurulmamış (RESEND_API_KEY)" });
+      return "failed";
+    }
     const [[branch], parts] = await Promise.all([db.select({ name: s.branches.name }).from(s.branches).where(eq(s.branches.id, branchId)).limit(1), photoMailParts(db, date, ids)]);
     const msg = renderPhotoMail({
       branchName: branch?.name ?? "Marina",
@@ -780,14 +796,12 @@ export async function sendPhotoEmail(db: DB, date: string, now = new Date(), opt
     });
     const notify = await loadNotifySettings();
     const res = await sendEmail({ from: resolveFrom(notify.from), to, ...msg, attachments: parts.attachments, idempotencyKey: key.replace(/:/g, "-") }, opts);
-    await db
-      .insert(s.notificationLog)
-      .values({ key, channel: "email", subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error })
-      .onConflictDoUpdate({ target: s.notificationLog.key, set: { subject: msg.subject, ok: res.ok, error: res.ok ? null : res.error, sentAt: new Date() } });
-    if (!res.ok) console.error("[lafpos] fotoğraf e-postası gitmedi:", date, res.error);
+    await done({ ok: res.ok, error: res.ok ? null : res.error, subject: msg.subject, recipients: to.join(", ") });
+    if (!res.ok) console.error("[lafpos] Z raporu e-postası gitmedi:", date, res.error);
     return res.ok ? "sent" : "failed";
-  } finally {
-    await release().catch(() => {});
+  } catch (e) {
+    await done({ ok: false, error: (e instanceof Error ? e.message : "bilinmeyen hata").slice(0, 300) }).catch(() => {});
+    throw e;
   }
 }
 
@@ -839,12 +853,6 @@ export async function runLafposDayEnd(
     report = "error";
     error = e instanceof Error ? e.message : String(e);
   }
-  // Yüklenirken okunamayan fotoğraf bir kez daha okunur (readUnreadDayPhotos): e-postalar ve zil rakamı görsün
-  try {
-    if ((await readUnreadDayPhotos(db, date, { deadlineAt: opts?.deadlineAt, ...recheck })) > 0) await refreshDayPhotoCheck(db, date, await lafposBranchId(db), now);
-  } catch (e) {
-    console.error("[lafpos] okunmamış gün sonu fotoğrafı:", date, e instanceof Error ? e.message : e);
-  }
   // LafPOS'un yeni rakamları ucuz okunuşu "fark"a çevirdiyse e-postalardan ve zilden önce bir kez güçlü model bakar
   // (strongRecheckDayPhotos); düşerse kayıtlı karşılaştırma kalır
   if (report === "written" || report === "updated" || report === "unchanged") {
@@ -871,7 +879,16 @@ export async function runLafposDayEnd(
     pavo = "error";
     error = error ?? (e instanceof Error ? e.message : String(e));
   }
-  // Fotoğraf ↔ LafPOS farkı: gün sonu e-postasından sonra eklenen fotoğrafın karşılaştırması (gitmediyse)
+  // Yüklenirken okunamayan (ya da yalnız kodla okunan) fotoğraf bir kez daha okunur (readUnreadDayPhotos): gün sonu ve
+  // Pavo e-postalarından SONRA (onları geciktirmez), Z raporu e-postasından önce; süreye sığmayan adım atlanır
+  if (report !== "skipped") {
+    try {
+      if ((await readUnreadDayPhotos(db, date, { deadlineAt: opts?.deadlineAt, ...recheck })) > 0) await refreshDayPhotoCheck(db, date, await lafposBranchId(db), now);
+    } catch (e) {
+      console.error("[lafpos] okunmamış gün sonu fotoğrafı:", date, e instanceof Error ? e.message : e);
+    }
+  }
+  // Z raporu: gün sonu e-postasından sonra eklenen fotoğrafın karşılaştırması ve okunanları (gitmediyse)
   let photo: PhotoEmailResult | "error";
   try {
     photo = report === "skipped" || email === "error" ? "skipped" : await sendPhotoEmail(db, date, now, opts);
