@@ -35,7 +35,7 @@ import {
 import { markdownToPlain, parseInline, parseMarkdown, splitAmounts } from "../src/lib/assistant/markdown";
 import type { OpCard } from "../src/lib/assistant/ops";
 import { configureRecognition, mergeTranscript, speechErrorText, speechRecognitionCtor, transcriptOf, type SpeechRecognitionLike } from "../src/lib/assistant/speech";
-import { DEFAULT_SUGGESTIONS, PAGE_SUGGESTIONS, pageContextLine, pageFromLocation, suggestionsFor } from "../src/lib/assistant/page-context";
+import { DEFAULT_SUGGESTIONS, PAGE_SUGGESTIONS, pageContextLine, pageFromLocation, screenBranch, suggestionsFor } from "../src/lib/assistant/page-context";
 import { ASSISTANT_DAILY_CAP, ASSISTANT_DEEP_WEIGHT, assistantRequest, eventReader, historyForRequest, type AssistantEvent, type ChatMessage } from "../src/lib/assistant/protocol";
 import { handleAssistantPost, type AssistantDeps, type AssistantStatus } from "../src/server/ai/assistant/handler";
 import { ASSISTANT_DEEP, ASSISTANT_EFFORT, ASSISTANT_MAX_TOKENS, ASSISTANT_TIMING, assistantParams, runAssistant, type AssistantClient, type AssistantOutcome, type AssistantParams } from "../src/server/ai/assistant/loop";
@@ -133,6 +133,33 @@ test("sayfa: adresten yalnız yol ve ?ay / ?gun; panelin dışı ve bozuk değer
   for (const bad of ["/", "/menu", "/panelx", "/panel/Kasa", "/panel/../api", "/panel/a b", "/panel/a/b/c/d/e"]) assert.equal(pageFromLocation(bad, ""), null, bad);
 });
 
+test("sayfa: açık ekranın şubesi gider; sunucu yalnız bilinen etkin şubeyi ya da Tümü'yü kullanır, yoksa çerez", () => {
+  assert.deepEqual(pageFromLocation("/panel/kasa", "", "marina"), { path: "/panel/kasa", branch: "marina" });
+  assert.deepEqual(pageFromLocation("/panel/kasa", "", "hepsi"), { path: "/panel/kasa", branch: "hepsi" });
+  assert.deepEqual(pageFromLocation("/panel/kasa", "", "Marina'; drop"), { path: "/panel/kasa" }, "bozuk şube alanı düşer");
+  assert.deepEqual(pageFromLocation("/panel/kasa", "", null), { path: "/panel/kasa" });
+  const ok = assistantRequest.safeParse({ message: "x", page: { path: "/panel/kasa", branch: "marina" } });
+  assert.ok(ok.success && ok.data.page?.branch === "marina");
+  const branches = [
+    { id: "tuzla", active: true },
+    { id: "marina", active: true },
+    { id: "eski", active: false },
+  ];
+  assert.equal(screenBranch("marina", branches), "marina");
+  assert.equal(screenBranch("hepsi", branches), "hepsi");
+  assert.equal(screenBranch("eski", branches), null, "kapalı şube: çerez");
+  assert.equal(screenBranch("yok", branches), null, "tanınmayan: çerez");
+  assert.equal(screenBranch(undefined, branches), null);
+  // Uç sayfayı kuruluma verir; kurulum ekranın şubesini çerezden önce, "bugün"ü iş günüyle yazar
+  assert.match(code("src/server/ai/assistant/handler.ts"), /deps\.setup\(parsed\.data\.page\)/);
+  const service = code("src/server/ai/assistant/service.ts");
+  assert.match(service, /screenBranch\(page\?\.branch, cookie\.branches\)/);
+  assert.match(service, /withBranchScope\(branch\.scope, fn\)/);
+  assert.match(service, /contextBlock\(\{ today: businessDate\(now\), calendarDay: todayTR\(now\)/);
+  // Kabuk ekranın şubesini asistana verir (kenar çubuğunun seçicisiyle aynı çizim)
+  assert.match(code("src/components/panel/assistant/assistant-gate.tsx"), /<PanelAssistant userId=\{user\.id\} branch=\{scope\} \/>/);
+});
+
 test("sayfa: bağlam satırı ekranın menüdeki adıyla; bozuk sayfa satır yazmaz, istek reddedilmez", () => {
   const line = pageContextLine({ path: "/panel/kasa", month: "2026-11", day: "2026-11-24" });
   assert.match(line, /^Yöneticinin açık ekranı: Kasa raporu \(\/panel\/kasa\); ekranda seçili ay: Kasım 2026, seçili gün: 24 Kasım 2026\./);
@@ -156,12 +183,12 @@ test("sayfa: bağlam önbellek işaretinden SONRA; sabit istem ve araçlar bayt 
   assert.equal(sa[0].text, sb[0].text, "önek aynı");
   assert.deepEqual(sa[0].cache_control, { type: "ephemeral" });
   assert.equal(sa[1].cache_control, undefined);
-  assert.match(sa[1].text, /Panelde seçili şube: Marina\.[\s\S]*\nYöneticinin açık ekranı: Kasa raporu \(\/panel\/kasa\); ekranda seçili ay: Kasım 2026/);
+  assert.match(sa[1].text, /Açık ekranın şubesi: Marina\.[\s\S]*\nYöneticinin açık ekranı: Kasa raporu \(\/panel\/kasa\); ekranda seçili ay: Kasım 2026/);
   assert.doesNotMatch(sb[1].text, /açık ekranı/);
   assert.deepEqual(a.calls[0].tools, b.calls[0].tools);
   // Tarayıcı sayfayı adresten yollar; çipler açık ekranın önerileri
   const w = code("src/components/panel/assistant/panel-assistant.tsx");
-  assert.match(w, /page: pageFromLocation\(window\.location\.pathname, window\.location\.search\) \?\? undefined/);
+  assert.match(w, /page: pageFromLocation\(window\.location\.pathname, window\.location\.search, branch\) \?\? undefined/);
   assert.match(w, /suggestionsFor\(pathname\)\.map/);
 });
 
@@ -686,7 +713,7 @@ test("önbellek öneki bayt bayt sabit: sayfa, şube, gün, derin analiz ve son 
   }
   // İstemde değişen hiçbir şey yok: tarih, ay adı + yıl, şube seçimi, açık ekran satırı, efor
   assert.doesNotMatch(SYSTEM_PROMPT, /\b20\d\d-\d\d-\d\d\b/);
-  assert.doesNotMatch(SYSTEM_PROMPT, /Panelde seçili şube|Yöneticinin açık ekranı: |Bugün: \d/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /Açık ekranın şubesi:|Yöneticinin açık ekranı: |Bugün: \d/);
   // Ekran listesi menüden hesaplanır, sıra sabit: istem her yüklemede aynı
   assert.ok(SYSTEM_PROMPT.includes(screenLines().join("\n")));
 });

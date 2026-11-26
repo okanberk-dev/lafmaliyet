@@ -14,7 +14,7 @@ işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları 
   dün ve geçen haftayla kıyas
 - "Dün en çok ne sattı?", "Bu hafta kaç San Sebastian sattık?" → LafPOS'un gün gün ürün satışı
 - "Bugün kim çalışıyor?" → vardiya
-- "Ne bitmek üzere?" → Marina'nın tahmini stoğu, kritik malzemeler
+- "Ne bitmek üzere?", "Süt kaç gün yeter?" → Marina'nın tahmini stoğu, kritik malzemeler, kaç gün yeteceği
 - "LafPOS bağlantısı çalışıyor mu?", "Ne tükendi?", "Bekleyen ne var?", "Bugün ne yapmam lazım?"
 - "Bu ay nasıl gidiyor?" → ayın cirosu, gideri, kârı, ay sonu tahmini
 - "En çok kime borcumuz var?" → tedarikçilerin kalan borcu, büyükten küçüğe
@@ -61,9 +61,20 @@ işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları 
   Sunucu bundan tek kısa satır yazar ("Yöneticinin açık ekranı: Kasa raporu (/panel/kasa); ekranda seçili ay: Kasım
   2026") ve onu sistem isteminin **değişken** bloğuna (tarih ve şubenin yanına, önbellek işaretinden sonra) ekler: sabit
   istem ve araç tanımları bayt bayt aynı kalır, önbellekten okunur. Ekranın adı menüden gelir; yol yalnız panelin
-  biçimindeyse (küçük harf, rakam, tire) kabul edilir, bozuksa satır yazılmaz (soru yine gider). Şube zaten panelin
-  seçicisinden okunur. "Bu ne demek?", "buradaki farkı açıkla" gibi sorular bu ekranı kastedebilir; soruda başka dönem
-  ya da şube geçiyorsa o geçerlidir.
+  biçimindeyse (küçük harf, rakam, tire) kabul edilir, bozuksa satır yazılmaz (soru yine gider). "Bu ne demek?",
+  "buradaki farkı açıkla" gibi sorular bu ekranı kastedebilir; soruda başka dönem ya da şube geçiyorsa o geçerlidir.
+- **Ekranın şubesi** (26 Kasım 2026): tarayıcı soruyla birlikte açık ekranın çizildiği şubeyi de gönderir (kenar
+  çubuğundaki seçicinin bu sekmedeki değeri; "Tümü" ya da şube). Araçlar, işlem kartlarının planı ve değişken bağlamın
+  şube satırı ("Açık ekranın şubesi: Marina.") bununla çalışır. Önceden sunucu şubeyi istek anındaki **çerezden**
+  okuyordu: çerez sekmeler arasında ortak olduğu için başka sekmede seçici Tuzla'ya geçince Marina'yı gösteren
+  sekmedeki asistan Tuzla'yı okuyordu. Şube gelmezse, tanınmıyorsa ya da kapalı bir şubeyse çerezdeki seçim geçerlidir
+  (`screenBranch`, `src/lib/assistant/page-context.ts`). Seçim yalnız okumayı süzer, yetki vermez (asistan yalnız
+  yöneticinin).
+- **"Bugün" iş günüdür** (26 Kasım 2026): gün kasa raporu gibi **05:00'te** döner (`businessDate`). Gece 02:00'de
+  "bugün" dünün iş günüdür, "dün" ondan önceki gün; değişken bağlam o saatlerde bunu ayrı bir satırla söyler ("Saat
+  05:00'ten önce: takvimde 27 Kasım, ama "bugün" iş günüdür (26 Kasım)…"). Kartların günü (ödeme, gider, kasadan
+  çıkan, zayi, Tükendi…) iş günüdür; "ileri tarih olamaz" sınırı takvim günüdür (gece yarısından sonra takvim
+  tarihiyle yazılan ödeme reddedilmez). Okuma araçları zaten iş günüyle okuyordu (gün sonu, vardiya, Bugün).
 - **Önbellek notu:** değişken blok (tarih, şube, ekran satırı) mesajlardan önce gelir. Araçlar ve sabit istem ekran
   değişse de önbellekten okunur; ama yönetici ekran ya da `?ay` / `?gun` değiştirip aynı sohbette sorarsa sohbetin
   önceki turları (en çok 20 mesaj) önbellekten okunamaz, yeniden yazılır (girdi fiyatının 1,25 katı). Kısa bir sohbette
@@ -138,7 +149,7 @@ Asistanın onay kartıyla hazırlayabildiği işler:
 | Faturayı ödendi (ya da ödemesi talep edildi) işaretlemek | "Sütaş'ın 12 Kasım faturası havaleyle ödendi" |
 | Tedarikçiye ödeme kaydı girmek (havale, elden, kart, çek; kasadan değil) | "Ambalajcı'ya bugün 3.000 ₺ havale yaptık" |
 | Hammaddenin paket fiyatını değiştirmek | "Süt paketi artık 48 ₺" |
-| Bir ürünün (tek boy) satış fiyatını değiştirmek; kart siteye ve LafPOS'a etkisini gösterir | "Latte M 90 ₺ olsun" |
+| Bir ürünün (tek boy) satış fiyatını (taban) değiştirmek; kart siteye ve LafPOS'a etkisini, kendi fiyatı olan şubeyi gösterir | "Latte M 90 ₺ olsun" |
 | Bugünün kasasına kasadan çıkan eklemek; Aylık harcamalar'a gider eklemek | "Tuzla kasasından Migros'a 85 ₺ süt aldık" |
 | Zayi ya da ikram kaydı | "Marina'da 2 cheesecake döküldü" |
 | Tek kişinin vardiyasını ayarlamak (aynı haftanın günleri) | "Ayşe Cuma 10-18, Pazar izinli" |
@@ -155,8 +166,14 @@ Asistanın onay kartıyla hazırlayabildiği işler:
   silmez, kart ekranı gösterir.
 - **İşlem geçmişi:** onaylanan iş sizin adınıza yazılır ve Ayarlar › İşlem geçmişi'nde "… (asistan aracılığıyla)" diye
   görünür.
-- **Şube:** kasa, zayi ve vardiya tek şubeye yazılır; panelde "Tümü" seçiliyken asistan şubeyi size sorar. Gider ve
-  hatırlatıcıda "işletme geneli" de seçilebilir.
+- **Şube:** kasa, zayi ve vardiya tek şubeye yazılır; açık ekranda "Tümü" seçiliyken asistan şubeyi size sorar. Gider
+  ve hatırlatıcıda "işletme geneli" de seçilebilir.
+- **Fiyat kartı ve şube fiyatı:** kart **tabanı** değiştirir (Tuzla'nın ve kendi fiyatı olmayan şubelerin fiyatı;
+  [FIYATLAR.md › Şube fiyatı](FIYATLAR.md#şube-fiyatı-24-kasım-2026)). Kendi şube fiyatı olan şube kartta ayrı satırdır
+  ("Marina'da 205 ₺ → 205 ₺ (şube fiyatı, değişmez)") ve kartın şubesi "Taban fiyat (Marina hariç: kendi fiyatı var)"
+  olur; açık ekranın şubesi kendi fiyatlıysa uyarıların en başında söylenir. O boyu değiştiren planlı şube fiyatı da
+  uyarıda yazar. Bir şubenin kendi fiyatını asistan değiştirmez: "Marina'da Latte 205 olsun" denince Fiyatlar › Şube
+  fiyatı'nın adımlarını verir (rehber "Bir şubenin kendi fiyatı").
 - **Bir yanıtta tek kart:** toplu işlem yapılmaz; birden çok kayıt istenirse birer birer, her biri ayrı onayla.
 - **Yapmadıkları:** silme, toplu işlem (toplu fiyat, toplu bağlama, çok dönemi birden ödendi), faturayı ödenmedi yapma,
   fatura ekleme / düzenleme, reçete, kasa raporu, ayarlar, kullanıcılar, yedek, parola ve iki adımlı doğrulama. Bunlarda
@@ -171,7 +188,7 @@ hazırlayabilir). Rehberin her girdisinde konu, asistanın neden yapmadığı, e
 
 | Tür | Örnekler |
 |---|---|
-| Rehber (riskli; yol gösterir) | Her türlü silme ve bildirimdeki Geri al, toplu fiyat, faturayı ödenmedi yapma, çok dönemi birden ödendi, kasadan tedarikçi ödemesi ve elle dağıtım, tedarikçi kartı ve IBAN, fatura ekleme / düzenleme, geçmiş günün kasası, kasa raporu ve onaylar, kapalı gün, reçete, siteye bağlama, satış eşleştirme, personelin isteklerine karar, Paraşüt eşitleme, hammadde birimi, vergi, karaoke rezervasyonu, ayarlar, LafPOS gününü silme (409 onarımı), şube, kullanıcılar, Hesabım |
+| Rehber (riskli; yol gösterir) | Her türlü silme ve bildirimdeki Geri al, toplu fiyat, bir şubenin kendi fiyatı (şube fiyatı), faturayı ödenmedi yapma, çok dönemi birden ödendi, kasadan tedarikçi ödemesi ve elle dağıtım, tedarikçi kartı ve IBAN, fatura ekleme / düzenleme, geçmiş günün kasası, kasa raporu ve onaylar, kapalı gün, reçete, siteye bağlama, satış eşleştirme, personelin isteklerine karar, Paraşüt eşitleme, hammadde birimi, vergi, karaoke rezervasyonu, ayarlar, LafPOS gününü silme (409 onarımı), şube, kullanıcılar, Hesabım |
 | Hariç (hiç önermez; sorulursa yalnız ekran) | Giriş, çıkış ve parola sıfırlama, iki adımlı doğrulama kurulumu ve sıfırlama, davet bağlantısı, yedek, uygulama bağlama onayı, Paraşüt bağlantı ayarları, kasa e-posta alıcıları, bildirim alıcıları ve testleri, sistem geneli oranlar, cihaz bildirimleri, vardiya taslağı, personelin kendi istekleri |
 
 Şifre isteyen işlerde (LafPOS gününü silme, kullanıcılar, Hesabım, yedek, davet) parola yalnız ekrandaki alana girilir;
@@ -200,11 +217,12 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
 | Vardiya | Bir gün kim çalışıyor; bir haftanın planı kişi kişi |
 | Bugün | Bugün ekranının özeti: sıradaki iş, Şimdi, Sonra, Tamamlananlar, Bugün kafede |
 | Bekleyen işler | Zildeki bekleyen işler başlık başlık ve bugünkü hatırlatıcılarınız |
-| Stok tahmini | Marina'nın tahmini stoğu, kritik malzemeler, tek malzemenin ayrıntısı (yaklaşık) |
+| Stok tahmini | Marina'nın tahmini stoğu (LafPOS satışı ve kasadan geçmeyen online sipariş düşülmüş), kritik malzemeler, kaç gün yeteceği, önerilen eşik (öneri; eşiği yönetici ekranda kaydeder), tek malzemenin ayrıntısı (yaklaşık) |
 | İşlem rehberi | Asistanın yapmadığı işlerde (silme, toplu, şifreli, riskli, ayar, güvenlik) ekran ve adımlar |
 
-- **Şube:** araçlar panelde seçili şubeyle okur (üstteki seçici). "Tümü" işletme genelidir. Asistan yanıtında hangi
-  şubeye baktığını söyler. Soruda şube adı geçerse ("Marina'da bugün kim var?") o şubeye bakar.
+- **Şube:** araçlar açık ekranın şubesiyle okur (üstteki seçicinin bu sekmedeki değeri; yukarıda Sayfa bağlamı).
+  "Tümü" işletme genelidir. Asistan yanıtında hangi şubeye baktığını söyler. Soruda şube adı geçerse ("Marina'da bugün
+  kim var?") o şubeye bakar.
 - **LafPOS:** kafedeki kasa programıdır (Marina). Ürün ve fiyatı siteden alır, her gün kapanınca gün sonunu (Z, ödeme
   türleri, kasa sayımı, ikram, satış listesi) panele iter; maliyet, reçete ve kâr panelde hesaplanır. Gün sonu ve günlük
   satışlar yalnız LafPOS'a geçilen günden sonrası içindir; öncesi denemedir. ModPOS'ta kalan şubenin (Tuzla) günleri

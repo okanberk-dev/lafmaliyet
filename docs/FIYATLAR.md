@@ -341,7 +341,13 @@ kayıtlıdır, birkaç dakika geç düşebilir). Kasada gün 05:00'ten sonra kap
 fiyatına göre denetlenir (yaklaşık; LafPOS iş gününü kendi açılış / kapanışıyla sayar).
 
 Ekonomi (önerilen fiyat, zam etkisi, maliyet oranı) tabanla hesaplanır; şube fiyatı Satışlar'a LafPOS'un gerçek
-cirosuyla zaten girer. Marina'nın basılı fiyat listesinin tarihi sitede tek (Tuzla'nın); kapsam dışı.
+cirosuyla zaten girer.
+
+**Panel asistanı** (26 Kasım 2026; [ASISTAN.md](ASISTAN.md) › İşlemler): asistanın fiyat kartı (`urun_fiyati_degistir`)
+yalnız **tabanı** değiştirir ve şube fiyatını bilir: kendi fiyatı olan şubeyi kartta ayrı satırda "şube fiyatı,
+değişmez" diye, o boyu değiştiren planlı satırı uyarıda gösterir; yöneticinin açık ekranının şubesi kendi fiyatlıysa
+bunu uyarıların en başında söyler. L'si tabanı izleyen (satırın L'si 0) şubede L için değişiklik şubeye de geçer, satır
+yazılmaz. Bir şubenin kendi fiyatını asistan yazmaz; Şube fiyatı sekmesinin adımlarını verir. Marina'nın basılı fiyat listesinin tarihi sitede tek (Tuzla'nın); kapsam dışı.
 
 ## Veri
 

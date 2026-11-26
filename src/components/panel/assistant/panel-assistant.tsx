@@ -29,7 +29,8 @@ import { VoiceButton } from "./voice-button";
  * - Düğmenin yeri globals.css'te (--assistant-bottom): masaüstünde köşede, hatırlatma kartı ya da kaydetme çubuğu
  *   açıkken onların üstünde; baskıda görünmez. Telefonda düğme hiç çizilmez (`!sheet`, sınıfta da `max-lg:hidden`).
  * - Sayfa bağlamı (src/lib/assistant/page-context.ts): boşken açık ekrana özel 3–4 öneri çipi; her soruda açık ekranın
- *   yolu ve adresteki ?ay / ?gun gider (sunucu değişken bağlama tek satır yazar).
+ *   yolu, adresteki ?ay / ?gun ve ekranın şubesi (`branch`, kabuğun seçicisi; assistant-gate.tsx) gider: sunucu değişken
+ *   bağlama tek satır yazar, araçlar o şubeyle okur (çerez sekmeler arasında ortak; ekranın şubesi esastır).
  * - Takip önerileri (src/lib/assistant/followups.ts): yanıtın sonundaki <takip> bloğu ayrılır, son yanıtın altında çip.
  * - Derin analiz anahtarı (yazı kutusunun üstünde): varsayılan kapalı, bir soruluk; efor high, 2 soru sayılır (loop.ts
  *   ASSISTANT_DEEP). Hak 2'den azsa kapalı.
@@ -144,7 +145,7 @@ function answerAnnouncement(text: string): string {
   return `Yanıt hazır: ${first}`;
 }
 
-export function PanelAssistant({ userId }: { userId: number }) {
+export function PanelAssistant({ userId, branch }: { userId: number; branch?: string }) {
   const open = useAssistantOpen();
   const pathname = usePathname();
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadMessages(userId));
@@ -393,8 +394,9 @@ export function PanelAssistant({ userId }: { userId: number }) {
       const res = await fetch("/api/asistan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // Açık ekran: yalnız yol ve adresteki ?ay / ?gun (page-context.ts); sunucu bağlamın sonuna tek satır yazar
-        body: JSON.stringify({ message: question, history, page: pageFromLocation(window.location.pathname, window.location.search) ?? undefined, ...(asDeep ? { deep: true } : {}) }),
+        // Açık ekran: yalnız yol, adresteki ?ay / ?gun ve ekranın şubesi (page-context.ts); sunucu bağlamın sonuna tek satır
+        // yazar, araçlar o şubeyle okur
+        body: JSON.stringify({ message: question, history, page: pageFromLocation(window.location.pathname, window.location.search, branch) ?? undefined, ...(asDeep ? { deep: true } : {}) }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {

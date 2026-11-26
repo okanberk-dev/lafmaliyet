@@ -61,7 +61,7 @@ export async function loadLeakReport(month: string | null, now: Date = new Date(
   if (chosen >= current) return { ...base, state: "ay-bitmedi" };
 
   const monthEnd = addDays(`${shiftMonth(chosen, 1)}-01`, -1);
-  const data = await loadStockEstimate(db, now, monthEnd);
+  const data = await loadStockEstimate(db, now, { asOf: monthEnd });
   if (!data) return { ...base, state: "lafpos-yok" };
 
   const [countRows, model, monthEndReceived, monthEndClosed] = await Promise.all([

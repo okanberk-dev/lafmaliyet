@@ -8,9 +8,18 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { DEFAULT_SETTINGS } from "../src/lib/constants";
+import { buildSiteLinkIndex } from "../src/lib/site-sales/calc";
 import {
+  daysLeftText,
+  DEFAULT_LEAD_DAYS,
+  estimateOnlineMonth,
   estimateStock,
+  MIN_AVG_DAYS,
+  onlineMonthsNeeded,
+  onlineThrough,
+  parseLeadDays,
   parseThresholdInput,
+  suggestThreshold,
   receiptListNote,
   stockQty,
   recipePerUnit,
@@ -266,7 +275,8 @@ test("kritik eşik: eşiğe eşit ya da altı kritik, eşik yoksa uyarı yok; kr
   assert.ok((line(empty, KAHVE).estimate as number) < 0);
   assert.equal(line(empty, KAHVE).critical, true);
   // Kartın özeti
-  assert.deepEqual(stockAlertItems(r.critical), { items: [{ ingredientId: KAHVE, name: "Espresso çekirdeği", text: "≈ 1,55 KG · eşik 2 KG" }], more: 0 });
+  // Son 14 günün ortalamasıyla kaç gün yeter: (378 gr satış + 54 gr zayi ve ikram) ÷ 8 gün = 54 gr/gün
+  assert.deepEqual(stockAlertItems(r.critical), { items: [{ ingredientId: KAHVE, name: "Espresso çekirdeği", text: "≈ 1,55 KG · eşik 2 KG · ≈ 28 gün yeter" }], more: 0 });
   const many = stockAlertItems([...r.critical, ...r.critical, ...r.critical, ...r.critical, ...r.critical], 4);
   assert.equal(many.items.length, 4);
   assert.equal(many.more, 1);
@@ -315,4 +325,166 @@ test("Marina'ya gelen faturalar: liste kesilince not, kesilmezse yok (bulgu 42)"
   assert.equal(receiptListNote(100, 130, 120), "100 fatura gösteriliyor (şubesi seçilmeyenler önce), 30 fatura daha var: 20 tanesinin şubesi seçilmedi, seçtikçe listede yerini alır.");
   // Açıkların hepsi listede: gizlenenler seçilmiş
   assert.equal(receiptListNote(100, 1_250, 7), "100 fatura gösteriliyor (şubesi seçilmeyenler önce), 1.150 fatura daha var; hepsinin şubesi seçildi.");
+});
+
+// ---------------------------------------------------------------- Online sipariş, kaç gün yeter, eşik önerisi
+
+/** Marina'nın online ay kayıtları: Aralık (süren ay, 9 Aralık'a kadar) ve Kasım (sayımın içinde; yalnız ortalamada) */
+const ONLINE: NonNullable<StockEstimateInput["online"]> = {
+  months: [
+    {
+      month: "2026-12",
+      through: "2026-12-09",
+      orders: 6,
+      tillOrders: 2,
+      lines: [
+        { productId: LATTE, name: "Latte M", qty: 5 },
+        { productId: null, name: "Pumpkin Latte L", qty: 2 },
+        { productId: COOKIE, name: "Cookie", qty: 1 },
+      ],
+    },
+    { month: "2026-11", through: "2026-11-30", orders: 30, tillOrders: 0, lines: [{ productId: LATTE, name: "Latte M", qty: 30 }] },
+  ],
+};
+
+test("online: kasadan geçmeyen sipariş reçeteyle × (1 + fire) düşülür; dönemden önceki ay düşülmez; bağlanmayan satır sayılır", () => {
+  const r = estimateStock(base({ online: ONLINE }));
+  const sut = line(r, SUT);
+  close(sut.online, 5 * 200 * 1.05, "süt online (5 Latte × 200 ml × 1,05)");
+  close(sut.sold, 2000 * 1.05, "LafPOS satışı değişmez");
+  close(sut.estimate, 10_000 + 11_000 - 2100 - 1050 - 2100, "süt tahmini online düşülmüş");
+  close(line(r, KAHVE).online, 5 * 18 * 1.05, "çekirdek online");
+  close(line(r, BARDAK).online, 5 * 1.05, "bardak online");
+  assert.equal(line(r, SURUP).online, null, "sayılmamış malzemede rakam yok");
+  assert.ok(r.online, "site bağlıyken özet var");
+  assert.equal(r.online.orders, 6, "yalnız dönemin ayının siparişi");
+  assert.equal(r.online.tillOrders, 2);
+  assert.equal(r.online.qty, 5, "tüketime giren adet: reçetesi olan, ürüne bağlı satır");
+  assert.deepEqual(r.online.unmatched, { lines: 1, qty: 2, names: 1, top: ["Pumpkin Latte L"] }, "menüye bağlı olmayan online satır");
+  assert.ok(r.noRecipe.top.includes("Cookie"), "reçetesi boş ürünün online satırı reçetesizlere");
+  assert.deepEqual(r.online.missingMonths, [], "gereken aylar (Kasım: ortalama, Aralık: dönem) var");
+  assert.equal(r.online.through, "2026-12-09");
+  // Kapanmış Kasım'ın online siparişi sayımın içinde: tahmin yalnız Aralık'ı düşer
+  const onlyNov = estimateStock(base({ online: { months: [ONLINE.months[1]] } }));
+  close(line(onlyNov, SUT).online, 0, "dönemden önceki ay düşülmez");
+  assert.deepEqual(onlyNov.online?.missingMonths, ["2026-12"], "dönemin ayının kaydı yok");
+});
+
+test("online: kasada ödenen ve elle girilen sipariş LafPOS'la çift sayılmaz (yalnız bilgi); site bağlı değilse düşülmez ve uyarı yok", () => {
+  const a = estimateStock(base({ online: ONLINE }));
+  const b = estimateStock(base({ online: { months: ONLINE.months.map((m) => ({ ...m, tillOrders: m.tillOrders + 40 })) } }));
+  close(line(b, SUT).estimate, line(a, SUT).estimate as number, "kasadan geçen sipariş tahmini değiştirmez");
+  assert.equal(b.online?.tillOrders, 42);
+  const off = estimateStock(base({ online: null }));
+  assert.equal(off.online, null, "bağlantı yok: özet yok");
+  close(line(off, SUT).online, 0);
+  close(line(off, SUT).estimate, line(estimateStock(base()), SUT).estimate as number, "online verilmezse eski hesap");
+  // Bağlı ama hiç kayıt yok: gereken aylar eksik
+  assert.deepEqual(estimateStock(base({ online: { months: [] } })).online?.missingMonths, ["2026-11", "2026-12"]);
+  // Tahmin yoksa ay da gerekmez
+  assert.deepEqual(onlineMonthsNeeded(null, "2026-12-10"), []);
+  assert.deepEqual(onlineMonthsNeeded("2026-12-01", "2026-12-20"), ["2026-12"], "pencere dönemin içinde");
+  assert.deepEqual(onlineMonthsNeeded("2026-10-01", "2026-12-10"), ["2026-10", "2026-11", "2026-12"]);
+});
+
+test("online ay kaydı: sitenin satırları menü bağlantısıyla ürüne, seçenekler kendi ürününe; kayıt çekildiği günün öncesine kadar", () => {
+  const totals = { orders: 4, grossMinor: 0, discountMinor: 0, deliveryMinor: 0, refundedMinor: 0, netMinor: 0, kdvMinor: 0, unknownKdvNetMinor: 0 };
+  const products = [
+    { id: LATTE, name: "Latte", active: true, siteMenuId: "mnu-0003", siteMenuSlot: "M" },
+    { id: 20, name: "Extra Shot", active: true, siteMenuId: "mnu-0081", siteMenuSlot: "M" },
+  ];
+  const m = estimateOnlineMonth(
+    {
+      month: "2026-12",
+      // 07:30 İstanbul: 10 Aralık bitmedi, kayıt 9 Aralık'a kadar
+      pulledAt: "2026-12-10T04:30:00.000Z",
+      cafe: {
+        ...totals,
+        lines: [
+          { menuItemId: "mnu-0003", size: "M", name: "Latte", qty: 3, listMinor: 0, extraShots: 2, syrups: { karamel: 1 }, milks: { yulaf: 1, normal: 2 } },
+          { menuItemId: "mnu-0003", size: "L", name: "Latte", qty: 1, listMinor: 0 },
+          { menuItemId: "mnu-0099", size: "single", name: "Pumpkin", qty: 2, listMinor: 0 },
+        ],
+      },
+      manual: { orders: 1, grossMinor: 0, netMinor: 0 },
+      counter: { orders: 2, grossMinor: 0, netMinor: 0 },
+    },
+    buildSiteLinkIndex(products),
+    products,
+  );
+  assert.equal(m.through, "2026-12-09");
+  assert.equal(m.orders, 4);
+  assert.equal(m.tillOrders, 3, "kasada ödenen 2 + elle girilen 1");
+  assert.deepEqual(m.lines, [
+    { productId: LATTE, name: "Latte M", qty: 3 },
+    // L yuvasına bağlı ürün yok: başka boya düşülmez
+    { productId: null, name: "Latte L", qty: 1 },
+    { productId: null, name: "Pumpkin", qty: 2 },
+    { productId: 20, name: "Ekstra shot", qty: 2 },
+    { productId: null, name: "Şurup", qty: 1 },
+    // Normal süt içeceğin reçetesinde: sayılmaz
+    { productId: null, name: "Alternatif süt", qty: 1 },
+  ]);
+  assert.equal(onlineThrough("2026-11", "2026-12-10"), "2026-11-30", "biten ayın kaydı ayın sonuna kadar");
+  assert.equal(onlineThrough("2026-12", "2026-12-01"), "2026-11-30", "ayın ilk günü çekilen kayıt tam gün kapsamaz");
+});
+
+test("kaç gün yeter ve eşik önerisi: son 14 günün gün sonu gelen ya da kapalı günlerine bölünür; online takvim günüyle", () => {
+  const r = estimateStock(base());
+  assert.equal(r.avgWindow, 14);
+  // 26 Kasım – 9 Aralık: 7 gün sonu + 1 kapalı gün; 30 Kasım'ın (gün sonu yok) satışı ve 5 Aralık'ın ikramı girmez
+  assert.equal(r.avgDays, 8);
+  const sut = line(r, SUT);
+  // (10 Latte × 200 × 1,05 + 1,5 LT zayi + 2 Latte zayi ve ikram × 200) ÷ 8
+  close(sut.dailyUse, (2100 + 1500 + 400) / 8, "süt günlük kullanım");
+  close(sut.daysLeft, 16_800 / 500, "süt kaç gün");
+  assert.equal(daysLeftText(sut.daysLeft), "≈ 33 gün");
+  // 500 ml × (3 gün tedarik + 1 gün emniyet), KG/LT 0,1'e yukarı
+  assert.equal(sut.suggestedThreshold, 2000);
+  assert.equal(r.leadDays, DEFAULT_LEAD_DAYS);
+  assert.equal(line(estimateStock(base({ leadDays: 5 })), SUT).suggestedThreshold, 3000, "tedarik 5 gün");
+  const bardak = line(r, BARDAK);
+  close(bardak.dailyUse, (10 * 1.05 + 2) / 8, "bardak");
+  assert.equal(bardak.suggestedThreshold, 7, "adet 1'e yukarı (6,25 → 7)");
+  assert.equal(line(r, SURUP).dailyUse, null, "sayılmamış malzemede yok");
+
+  // Online: Aralık 1000 ml ÷ 9 gün × 9 + Kasım 6000 ml ÷ 30 gün × 5 = 2000 ml ÷ 14 gün × 1,05
+  const o = line(estimateStock(base({ online: ONLINE })), SUT);
+  close(o.dailyUse, 500 + (2000 / 14) * 1.05, "süt günlük kullanım online dahil");
+  close(o.daysLeft, (16_800 - 1050) / 650);
+  assert.equal(o.suggestedThreshold, 2600);
+
+  // Ortalama için en az 3 gün: azsa kaç gün ve öneri yok
+  const few = estimateStock(base({ receivedDays: ["2026-12-09"], closedDays: [] }));
+  assert.equal(few.avgDays, 1);
+  assert.equal(line(few, SUT).dailyUse, null);
+  assert.equal(line(few, SUT).daysLeft, null);
+  assert.equal(line(few, SUT).suggestedThreshold, null);
+  assert.ok(MIN_AVG_DAYS > 1, "en az gün birden çok");
+
+  assert.equal(daysLeftText(null), "–");
+  assert.equal(daysLeftText(0.4), "1 günden az");
+  assert.equal(daysLeftText(4.9), "≈ 4 gün");
+  assert.equal(daysLeftText(75), "60+ gün");
+  assert.equal(suggestThreshold(null, 3, 1000), null);
+  assert.equal(suggestThreshold(0, 3, 1000), null, "kullanım yoksa öneri yok");
+  assert.equal(suggestThreshold(10, 2, 1), 30);
+  assert.equal(parseLeadDays("5"), 5);
+  assert.equal(parseLeadDays(["7"]), 7);
+  assert.equal(parseLeadDays("4"), DEFAULT_LEAD_DAYS, "seçeneklerde yok");
+  assert.equal(parseLeadDays(undefined), DEFAULT_LEAD_DAYS);
+});
+
+test("öneri yalnız önerir: eşik yalnız yöneticinin Kaydet'iyle yazılır; online kaydı kâr-zarara girmez", () => {
+  // Ekran öneriyi alana yazar, Kaydet aynı eylemdir (saveStockThreshold); otomatik yazım yok
+  const input = read("src/app/panel/sayim/tahmini/threshold-input.tsx");
+  assert.match(input, /setValue\(suggestion\)/);
+  assert.equal((input.match(/saveStockThreshold\(/g) ?? []).length, 1, "tek yazım: Kaydet");
+  const actions = read("src/server/actions/stock-estimate.ts");
+  assert.match(actions, /export async function refreshStockOnline[\s\S]*?requireAdmin\(\)/, "online yenileme yalnız yönetici");
+  // Şubenin ay kaydı ayrı önekte: işletmenin kayıtlarını okuyan loadSiteSales (kâr-zarar, KDV, tüketim) onu görmez
+  const sync = read("src/server/site-sales/sync.ts");
+  assert.match(sync, /const MONTH_PREFIX = "site_sales:"/);
+  assert.match(sync, /const BRANCH_PREFIX = "site_sales_sube:"/);
+  assert.ok(!"site_sales_sube:marina:2026-12".startsWith("site_sales:"), "önek ayrı");
 });

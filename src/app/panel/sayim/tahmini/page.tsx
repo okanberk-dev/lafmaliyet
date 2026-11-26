@@ -8,16 +8,24 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
+import { SegmentedLinks } from "@/components/ui/segmented";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { ALL_BRANCHES, type BranchRow } from "@/lib/branches";
 import { dateTR, monthLabel, monthShort, num } from "@/lib/format";
 import { addDays, dayAblativeTR, dayMonthTR, shiftMonth } from "@/lib/reminders";
+import { siteBranchOf } from "@/lib/site-sales/calc";
 import {
+  daysLeftText,
+  LEAD_DAY_CHOICES,
+  MIN_AVG_DAYS,
+  parseLeadDays,
   receiptListNote,
+  SAFETY_DAYS,
   STOCK_ESTIMATE_BRANCH,
   STOCK_ESTIMATE_PATH,
   stockQty,
   thresholdInputValue,
+  type EstimateOnlineSummary,
   type SkippedRows,
   type StockEstimateLine,
 } from "@/lib/stock-estimate";
@@ -28,14 +36,16 @@ import { requireUser } from "@/server/auth/dal";
 import { currentBranchScope, staffBranchLock } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadReceiptInvoices, loadStockEstimate, type ReceiptList } from "@/server/data/stock-estimate";
+import { readBranchSalesState, type BranchSalesSyncState } from "@/server/site-sales/sync";
 
+import { OnlineRefresh } from "./online-refresh";
 import { ReceiptChoice } from "./receipt-choice";
 import { ThresholdInput } from "./threshold-input";
 
 export const metadata: Metadata = { title: "Tahmini stok" };
 
 /** Tek cümle, 100 harfi geçmez (docs/planlar/ux-sade.md §8) */
-const DESCRIPTION = "Marina'da son sayımdan bu yana gelen mal, LafPOS satışı, zayi ve ikramla hesaplanan stok.";
+const DESCRIPTION = "Marina'da son sayımdan bu yana gelen mal, LafPOS ve online satış, zayi ve ikramla hesaplanan stok.";
 
 /**
  * Başlık ve Stok sekmeleri (ekran Stok sayımı'nın alt ekranı: sekmede Sayım seçili). Rol bilinmeden (yükleniyor)
@@ -56,9 +66,10 @@ function Header({ role, meta }: { role: "admin" | "staff"; meta?: ReactNode }) {
 
 /**
  * Tahmini stok (docs/STOK-TAHMINI.md): yalnız Marina, yalnız LafPOS'a geçildiyse. İki rol açar (Stok sayımı'nın alt
- * ekranı); eşik ve faturanın şubesi yalnız yöneticide. Ekranda para yok: tutar, fiyat ve fatura tutarı gösterilmez.
+ * ekranı); eşik, eşik önerisi, online siparişleri yenileme ve faturanın şubesi yalnız yöneticide. Ekranda para yok: tutar,
+ * fiyat ve fatura tutarı gösterilmez. `?tedarik=` eşik önerisinin tedarik süresidir (gün; LEAD_DAY_CHOICES).
  */
-export default function StockEstimatePage() {
+export default function StockEstimatePage({ searchParams }: PageProps<"/panel/sayim/tahmini">) {
   return (
     <Suspense
       fallback={
@@ -68,13 +79,14 @@ export default function StockEstimatePage() {
         </>
       }
     >
-      <StockEstimateContent />
+      <StockEstimateContent searchParams={searchParams} />
     </Suspense>
   );
 }
 
-async function StockEstimateContent() {
+async function StockEstimateContent({ searchParams }: { searchParams: PageProps<"/panel/sayim/tahmini">["searchParams"] }) {
   const user = await requireUser();
+  const leadDays = parseLeadDays((await searchParams).tedarik);
   const admin = user.role === "admin";
   // Başka şubeye kilitli personel Marina'nın stoğunu görmez (docs/SUBE.md › Personel hesabının şubesi)
   const lock = admin ? null : await staffBranchLock();
@@ -86,7 +98,7 @@ async function StockEstimateContent() {
       </>
     );
   }
-  const data = await loadStockEstimate();
+  const data = await loadStockEstimate(undefined, undefined, { leadDays });
   if (!data) {
     return (
       <>
@@ -97,10 +109,12 @@ async function StockEstimateContent() {
   }
   const { estimate, today, lafposFrom } = data;
   // Faturanın şubesi kartı yalnız yöneticide ve tahmin başladıysa (dönemin faturaları)
-  const [receipts, branches, scope] = await Promise.all([
+  const siteBranch = siteBranchOf(STOCK_ESTIMATE_BRANCH);
+  const [receipts, branches, scope, onlineState] = await Promise.all([
     admin && estimate.from ? loadReceiptInvoices(estimate.from, today) : Promise.resolve<ReceiptList>({ invoices: [], total: 0, unassigned: 0 }),
     admin ? listBranches() : Promise.resolve<BranchRow[]>([]),
     currentBranchScope(),
+    admin && estimate.online?.missingMonths.length && siteBranch ? readBranchSalesState(siteBranch) : Promise.resolve<BranchSalesSyncState | null>(null),
   ]);
   // Başka şube seçiliyken (ör. Tuzla) ekran yine Marina'nın tahminidir: söylenir (şube kapsamı tarama #78)
   const otherScope = scope !== ALL_BRANCHES && scope !== STOCK_ESTIMATE_BRANCH ? (branches.find((b) => b.id === STOCK_ESTIMATE_BRANCH)?.name ?? "Marina") : null;
@@ -116,7 +130,11 @@ async function StockEstimateContent() {
   const firstMonth = addDays(lafposFrom, -1).slice(0, 7);
   const lastFinished = shiftMonth(today.slice(0, 7), -1);
   const startMonth = lastFinished > firstMonth ? lastFinished : firstMonth;
-  const skipped = estimate.unmatched.lines + estimate.noRecipe.lines;
+  const online = estimate.online;
+  const skipped = estimate.unmatched.lines + estimate.noRecipe.lines + (online?.unmatched.lines ?? 0);
+  // Ortalama yeterli günden: "kaç gün yeter" ve eşik önerisi var
+  const hasAverage = estimate.avgDays >= MIN_AVG_DAYS;
+  const leadHref = (n: number) => `${STOCK_ESTIMATE_PATH}?tedarik=${n}`;
 
   return (
     <>
@@ -149,9 +167,23 @@ async function StockEstimateContent() {
             </p>
           </Notice>
         ) : null}
+        {admin && online?.missingMonths.length ? (
+          <Notice
+            tone="neutral"
+            title={`Online siparişler alınmadı: ${online.missingMonths.map(monthLabel).join(", ")}`}
+            text="O ayların kasadan geçmeyen online siparişi düşülmedi; stok olduğundan fazla görünür."
+            action={<OnlineRefresh months={online.missingMonths.slice(-6)} />}
+          >
+            <p>
+              Günlük iş bu ayı ve önceki iki ayı her sabah laffogato.net&apos;ten alır; Gelir-gider&apos;deki Siteden yenile de alır.
+              {onlineState?.lastError ? ` Son deneme: ${onlineState.lastError}` : ""}
+            </p>
+          </Notice>
+        ) : null}
         {admin && skipped ? (
           <Notice tone="neutral" title={`${num(skipped)} satır tüketime girmedi`} text="Ürüne bağlı olmayan ya da reçetesi boş: malzemesi düşülmedi, stok fazla görünür.">
             {estimate.unmatched.lines ? <p>{skippedText("Ürüne bağlı değil", estimate.unmatched)} Ayarlar › LafPOS (kasa)&apos;da bağlanır.</p> : null}
+            {online?.unmatched.lines ? <p>{skippedText("Online, panel ürününe bağlı değil", online.unmatched)} Ürünler › Site menüsü&apos;nde bağlanır.</p> : null}
             {estimate.noRecipe.lines ? <p>{skippedText("Reçetesi boş", estimate.noRecipe)} Ürünler & kârlılık&apos;ta reçete yazılır.</p> : null}
           </Notice>
         ) : null}
@@ -174,6 +206,22 @@ async function StockEstimateContent() {
             }
           />
           <CardContent className="px-3 sm:px-5">
+            {estimate.counts.tahmin ? (
+              <div className="space-y-3 pb-3 text-[13px] text-ink-mute">
+                {online ? <p>{onlineText(online)}</p> : null}
+                {admin ? (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <span className="font-medium text-ink">Eşik önerisi · tedarik süresi</span>
+                    <SegmentedLinks label="Tedarik süresi" value={String(estimate.leadDays)} options={LEAD_DAY_CHOICES.map((n) => ({ value: String(n), label: `${n} gün`, href: leadHref(n) }))} />
+                    <span className="basis-full">
+                      {hasAverage
+                        ? `Öneri = son ${num(estimate.avgWindow)} günün günlük kullanımı × (${num(estimate.leadDays)} gün tedarik + ${num(SAFETY_DAYS)} gün emniyet). Kendiliğinden yazılmaz: Öneri'ye dokunup Kaydet'e basın.`
+                        : `Kaç gün yeteceği ve eşik önerisi için son ${num(estimate.avgWindow)} günde en az ${num(MIN_AVG_DAYS)} gün sonu gerekir.`}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {/* Geniş ekranda tablo, telefonda kart (docs/TASARIM.md §6) */}
             <TableWrap className="-mx-2 max-md:hidden">
               <Table>
@@ -183,8 +231,10 @@ async function StockEstimateContent() {
                     <TH numeric>Son sayım</TH>
                     <TH numeric>Gelen</TH>
                     <TH numeric>Satış</TH>
+                    {online ? <TH numeric>Online</TH> : null}
                     <TH numeric>Zayi ve ikram</TH>
                     <TH numeric>Tahmini</TH>
+                    <TH numeric>Yeter</TH>
                     <TH>Kritik eşik</TH>
                   </tr>
                 </THead>
@@ -200,9 +250,13 @@ async function StockEstimateContent() {
                       <TD numeric>{countText(l)}</TD>
                       <TD numeric>{signed(l.purchased, l, "+")}</TD>
                       <TD numeric>{signed(l.sold, l, "−")}</TD>
+                      {online ? <TD numeric>{signed(l.online, l, "−")}</TD> : null}
                       <TD numeric>{signed(l.wasted, l, "−")}</TD>
                       <TD numeric>
                         <EstimateValue line={l} />
+                      </TD>
+                      <TD numeric>
+                        <DaysLeft line={l} />
                       </TD>
                       <TD>{admin ? <Threshold line={l} /> : thresholdText(l)}</TD>
                     </TR>
@@ -220,11 +274,17 @@ async function StockEstimateContent() {
                     </span>
                     <span className="shrink-0 text-right">
                       <EstimateValue line={l} />
+                      {l.daysLeft !== null ? (
+                        <span className="block text-[12px] text-ink-mute">
+                          <DaysLeft line={l} /> yeter
+                        </span>
+                      ) : null}
                     </span>
                   </div>
                   {l.status === "tahmin" ? (
                     <p className="text-[13px] text-ink-mute tabular">
-                      Sayım {countText(l)} · gelen {signed(l.purchased, l, "+")} · satış {signed(l.sold, l, "−")} · zayi ve ikram {signed(l.wasted, l, "−")}
+                      Sayım {countText(l)} · gelen {signed(l.purchased, l, "+")} · satış {signed(l.sold, l, "−")}
+                      {online ? ` · online ${signed(l.online, l, "−")}` : ""} · zayi ve ikram {signed(l.wasted, l, "−")}
                     </p>
                   ) : null}
                   <div className="flex items-center gap-2 text-[13px] text-ink-mute">
@@ -276,6 +336,14 @@ async function StockEstimateContent() {
   );
 }
 
+/** "Online: kasadan geçmeyen 34 sipariş düşüldü · kasada ödenen 5 sipariş LafPOS satışında sayıldı · bu ayın kaydı 9 Aralık gününe kadar." */
+function onlineText(o: EstimateOnlineSummary): string {
+  const parts = [`Online: kasadan geçmeyen ${num(o.orders)} sipariş düşüldü`];
+  if (o.tillOrders) parts.push(`kasada ödenen ${num(o.tillOrders)} sipariş LafPOS satışında sayıldı`);
+  if (o.through) parts.push(`bu ayın kaydı ${dayMonthTR(o.through)} gününe kadar`);
+  return `${parts.join(" · ")}.`;
+}
+
 /** "Ürüne bağlı değil (2 satır, 4 adet): PUMPKIN LATTE, TADIM." */
 function skippedText(head: string, s: SkippedRows): string {
   const rest = s.names > s.top.length ? ` ve ${num(s.names - s.top.length)} ad daha` : "";
@@ -322,7 +390,14 @@ function EstimateValue({ line }: { line: StockEstimateLine }) {
   );
 }
 
+/** Kaç gün yeter: "≈ 4 gün"; eşiğin altındaysa ya da 3 günden azsa kırmızı; bilinmiyorsa "–" */
+function DaysLeft({ line }: { line: StockEstimateLine }) {
+  if (line.daysLeft === null) return <span className="text-ink-quiet">–</span>;
+  return <span className={cn("tabular", line.critical || line.daysLeft < 3 ? "font-medium text-bad" : "text-ink")}>{daysLeftText(line.daysLeft)}</span>;
+}
+
 function Threshold({ line }: { line: StockEstimateLine }) {
   const initial = thresholdInputValue(line.threshold, line.factor);
-  return <ThresholdInput key={initial} ingredientId={line.ingredientId} name={line.name} unit={line.unit} initial={initial} />;
+  const suggestion = line.suggestedThreshold !== null ? thresholdInputValue(line.suggestedThreshold, line.factor) : null;
+  return <ThresholdInput key={initial} ingredientId={line.ingredientId} name={line.name} unit={line.unit} initial={initial} suggestion={suggestion} />;
 }

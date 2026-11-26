@@ -79,7 +79,7 @@ altında iki rakam ve neden yazılır.
 ## Kaçak raporu (Marina)
 
 `/panel/raporlar/kacak`. Ayın son günündeki tahmini stok ([STOK-TAHMINI.md](STOK-TAHMINI.md); `loadStockEstimate(db,
-now, asOf)` ayın son günüyle: o ayın sayımı başlangıç sayılmaz, önceki ayların en yenisi sayılır) ile **ayın sayımı**
+now, { asOf })` ayın son günüyle: o ayın sayımı başlangıç sayılmaz, önceki ayların en yenisi sayılır) ile **ayın sayımı**
 karşılaştırılır.
 
 ```

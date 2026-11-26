@@ -5,9 +5,12 @@ import { z } from "zod";
 
 import { EPS, openBalance, paidViaOf, round2, type BalanceInvoice, type CariMethod } from "@/lib/cari/balance";
 import { businessDate } from "@/lib/cash-report";
-import { tillBranches } from "@/lib/branches";
+import { tillBranches, type BranchRow } from "@/lib/branches";
 import { isLafposDay } from "@/lib/lafpos/switch";
-import { dateTR, num, pct, tl, tlUnit } from "@/lib/format";
+import { dateTR, locativeTR, num, pct, tl, tlUnit } from "@/lib/format";
+import { branchPriceTargets, branchSlotFacts, effectiveFromText, OPTION_MENU_ITEM_IDS, rowsOf, type BranchSlotFacts } from "@/lib/prices/branch";
+import { genitive } from "@/lib/recipe-change";
+import type { SiteMenuSlot } from "@/lib/site-menu/slot";
 import { cleanName, foldName, ToolInputError } from "@/lib/mcp/answers/common";
 import type { OpName } from "@/lib/assistant/op-specs";
 import type { OpCardLine } from "@/lib/assistant/ops";
@@ -35,7 +38,7 @@ import { soldOutNoteFor } from "@/server/data/menu-status";
 import { getDb, schema as s } from "@/server/db";
 import { loadBranchSwitchDay } from "@/server/lafpos/branch";
 import { siteLinkSecret } from "@/server/site-link";
-import { readSiteSnapshot } from "@/server/site-menu/sync";
+import { readBranchPrices, readSiteSnapshot } from "@/server/site-menu/sync";
 import { loadShiftEntries, loadShiftWeek } from "@/server/vardiya/store";
 
 import { expenseBranch, physicalBranch, pickByName } from "./resolve";
@@ -51,7 +54,13 @@ const db = () => getDb();
 
 const NO_CHANGE = (what: string) => new ToolInputError(`${what}; değişiklik yok, kart açılmadı.`);
 const yesNo = (v: boolean) => (v ? "Evet" : "Hayır");
-const today = (ctx: PreviewCtx) => todayTR(ctx.now);
+/**
+ * Kartın "bugün"ü İŞ GÜNÜDÜR (05:00'te döner; businessDate): gece 02:00'de istenen ödemenin, giderin ve kartın günü
+ * dündür, kasa ve zayi gibi. "İleri tarih olamaz" sınırı takvim günüdür (latestDay): gece yarısından sonra takvim
+ * tarihiyle yazılan ödeme ya da gider reddedilmez.
+ */
+const today = (ctx: PreviewCtx) => businessDate(ctx.now);
+const latestDay = (ctx: PreviewCtx) => todayTR(ctx.now);
 const dayText = (date: string) => `${longDateTR(date)} ${date.slice(0, 4)}`;
 
 /**
@@ -423,7 +432,7 @@ const invoicePaid: OpPreview<"fatura_odendi", z.output<typeof invoiceArgs>, z.ou
     const status = input.durum === "odendi" ? "paid" : "requested";
     if (status === "requested" && inv.paymentRequestedAt) throw NO_CHANGE("Bu faturanın ödemesi zaten talep edilmiş");
     const date = input.odemeGunu ?? today(ctx);
-    if (date > today(ctx)) throw new ToolInputError("Ödeme günü ileri bir tarih olamaz.");
+    if (date > latestDay(ctx)) throw new ToolInputError("Ödeme günü ileri bir tarih olamaz.");
     const label = inv.invoiceNo ? cleanName(inv.invoiceNo, 40) : `${dateTR(inv.date)} faturası`;
     const lines: OpCardLine[] = [
       { label: "Fatura", to: `${label} (${dateTR(inv.date)})` },
@@ -492,7 +501,7 @@ const supplierPayment: OpPreview<"tedarikci_odemesi_ekle", z.output<typeof suppl
   args: supplierPayArgs,
   before: emptyBefore,
   async preview(input, ctx) {
-    if (input.tarih > today(ctx)) throw new ToolInputError("Ödeme günü ileri bir tarih olamaz.");
+    if (input.tarih > latestDay(ctx)) throw new ToolInputError("Ödeme günü ileri bir tarih olamaz.");
     const cards = await db().select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases }).from(s.suppliers);
     const q = foldName(input.tedarikci);
     const namesOf = (c: (typeof cards)[number]) => [c.name, ...(c.aliases ?? [])];
@@ -605,12 +614,28 @@ export async function productPrice(id: number) {
   return r?.price ?? null;
 }
 
+/**
+ * Şube fiyatı (docs/FIYATLAR.md › Şube fiyatı): siteye bağlı ürünün boyunun, şube fiyatı yazılabilen her şubedeki
+ * durumu (sitenin son okumasının kopyasından; siteye gidilmez). Seçenek kalemi ve bağlı olmayan ürün şubeye göre
+ * fiyatlanmaz: boş.
+ */
+async function branchPriceFacts(siteMenuId: string | null, slot: SiteMenuSlot | null, ctx: PreviewCtx): Promise<{ branch: BranchRow; facts: BranchSlotFacts }[]> {
+  if (!siteMenuId || !slot || OPTION_MENU_ITEM_IDS.includes(siteMenuId)) return [];
+  const targets = branchPriceTargets(ctx.branches);
+  if (!targets.length) return [];
+  const [snapshot, prices] = await Promise.all([readSiteSnapshot(), readBranchPrices()]);
+  const item = snapshot.items.find((i) => i.id === siteMenuId);
+  if (!item) return [];
+  const t = ctx.now.getTime();
+  return targets.map((branch) => ({ branch, facts: branchSlotFacts(item, rowsOf(prices.rows, siteMenuId, branch.id), t, slot) }));
+}
+
 const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof productPriceArgs>, z.output<typeof productPriceBefore>> = {
   args: productPriceArgs,
   before: productPriceBefore,
   async preview(input, ctx) {
     const rows = await db()
-      .select({ id: s.products.id, name: s.products.name, size: s.products.size, price: s.products.price, siteMenuId: s.products.siteMenuId })
+      .select({ id: s.products.id, name: s.products.name, size: s.products.size, price: s.products.price, siteMenuId: s.products.siteMenuId, siteMenuSlot: s.products.siteMenuSlot })
       .from(s.products)
       .where(eq(s.products.active, true));
     const p = pickProduct(rows, input.urun, input.boy, "Adını ara ile bulun.");
@@ -651,11 +676,36 @@ const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof prod
           ]
         : ["Sitede değişmez. Kasada elle değiştirilecek: Fiyatlar › Kasaya işle listesine düşer."];
     if (change !== null && Math.abs(change) > 0.3) warnings.unshift(`Fiyat ${pct(change)} değişiyor: tutarı kontrol edin.`);
+    // Şube fiyatı: kart tabanı (sitenin kalemi, products.price) değiştirir. Kendi fiyatı olan şubede fiyat değişmez; kart
+    // bunu satır satır söyler, açık ekranın şubesi kendi fiyatlıysa en başta uyarır. Şubenin fiyatı asistanla değişmez
+    // (Fiyatlar › Şube fiyatı; rehber "sube-fiyati")
+    const facts = linked ? await branchPriceFacts(p.siteMenuId, p.siteMenuSlot, ctx) : [];
+    const own = facts.filter((f) => f.facts.own);
+    for (const f of own) {
+      lines.push({ label: locativeTR(f.branch.name), from: tl(f.facts.priceMinor / 100, 2), to: `${tl(f.facts.priceMinor / 100, 2)} (şube fiyatı, değişmez)` });
+    }
+    for (const f of facts) {
+      const next = f.facts.planned[0];
+      if (!next) continue;
+      warnings.push(
+        next.priceMinor === null
+          ? `${locativeTR(f.branch.name)} ${effectiveFromText(next.effectiveFrom)} taban fiyat planlı: o andan sonra bu değişiklik ${locativeTR(f.branch.name)} da geçerli olur.`
+          : `${locativeTR(f.branch.name)} ${effectiveFromText(next.effectiveFrom)} ${tl(next.priceMinor / 100, 2)} planlı (şube fiyatı): bu değişiklik ${locativeTR(f.branch.name)} o fiyatı değiştirmez.`,
+      );
+    }
+    const shown = own.find((f) => f.branch.id === ctx.scope);
+    if (shown) {
+      warnings.unshift(
+        `Açık ekranda ${shown.branch.name} seçili ve ${genitive(shown.branch.name)} kendi fiyatı var (${tl(shown.facts.priceMinor / 100, 2)}): bu kart ${locativeTR(shown.branch.name)} fiyatı değiştirmez, tabanı değiştirir. ${genitive(shown.branch.name)} fiyatı Fiyatlar › Şube fiyatı'ndan değişir.`,
+      );
+    } else if (own.length) {
+      warnings.push(`${own.map((f) => f.branch.name).join(", ")} kendi fiyatıyla kalır; bu kart yalnız tabanı değiştirir.`);
+    }
     return {
       card: {
         title: `${cleanName(productLabel(p))} fiyatı ${tl(input.yeniFiyat, 2)} olacak`,
         subject: cleanName(productLabel(p)),
-        branch: "Bütün şubeler (menü ortak)",
+        branch: own.length ? `Taban fiyat (${own.map((f) => f.branch.name).join(", ")} hariç: kendi fiyatı var)` : "Bütün şubeler (menü ortak)",
         day: dayText(today(ctx)),
         lines,
         effects: linked ? ["site", "lafpos", "modpos"] : [...(lafposTill ? (["lafpos"] as const) : []), ...(modposTill ? (["modpos"] as const) : [])],
@@ -788,7 +838,7 @@ const expenseAdd: OpPreview<"harcama_ekle", z.output<typeof expenseArgs>, z.outp
   args: expenseArgs,
   before: emptyBefore,
   async preview(input, ctx) {
-    if (input.tarih > today(ctx)) throw new ToolInputError("Harcamanın günü ileri bir tarih olamaz.");
+    if (input.tarih > latestDay(ctx)) throw new ToolInputError("Harcamanın günü ileri bir tarih olamaz.");
     const eb = expenseBranch(input.sube, ctx.scope, ctx.branches);
     const cat = pickByName(await activeCategories(), input.kategori, (c) => c.name, "Gider kategorisi", "Kategoriler Aylık harcamalar › Kategoriler'de.");
     const lines: OpCardLine[] = [
