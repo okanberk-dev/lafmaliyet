@@ -1065,7 +1065,7 @@ function confidenceOf(s: Scored): number {
  * karşıtlıkta (açık tezgâhta beyaz fiş) bölütleme ve yazıdan büyütme kâğıdı kaba bulur; asıl kenarlar oradan
  * birkaç on piksel uzaktadır. Liste puana göre yeniden sıralanır.
  */
-function refineTop(ctx: Ctx, scored: Scored[], k = 4): void {
+function refineTop(ctx: Ctx, scored: Scored[], k = 8): void {
   const tried: Quad[] = [];
   const better: Scored[] = [];
   for (const s of scored) {
@@ -1117,6 +1117,16 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
       best = whole;
       reasons.push("butunu-secildi");
     }
+    // Tersi: kareye dayanan aday, yazının hepsini kapsayan ve daha çok gerçek kenarı olan daha küçük bir adayı
+    // içeriyorsa kareye uzanan kısım zemindir (açık zeminde soluk kenarlı fiş): o aday biraz düşük puanlı da olsa seçilir
+    if (best.realSides < 4 && tinOf(best) >= 0) {
+      const b = best;
+      const own = scored.slice(0, 30).find((s) => s !== b && s.realSides > b.realSides && s.score >= b.score - 0.08 && tinOf(s) >= tinOf(b) - 0.03 && s.area <= 0.75 * b.area && s.q.every((p) => insideConvex(growQuad(b.q, 1.02), p)));
+      if (own) {
+        best = own;
+        reasons.push("kagidin-kendisi");
+      }
+    }
   }
   if (best) {
     // ince ayar (dar şerit): köşeler gerçek kenara oturur; puan düşmüyorsa kabul
@@ -1124,7 +1134,9 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
     const re = evaluate(ctx, snapped.q, best.how);
     if (re && re.score >= best.score - 0.02) best = re;
   }
-  if (!best || best.minSide < 0.3 || confidenceOf(best) < 0.25) {
+  // kareye dayanan güçlü adayın içinden seçilen kâğıdın soluk kenarı daha zayıf olabilir (kenarın kendisi kanıtlı)
+  const minSideFloor = reasons.includes("kagidin-kendisi") ? 0.18 : 0.3;
+  if (!best || best.minSide < minSideFloor || confidenceOf(best) < 0.25) {
     if (looksLikePaper(ctx)) {
       reasons.push("kenar-yok", "kareyi-dolduruyor");
       return { corners: frameQuad(img.width, img.height), confidence: 0.45, method: "tam-kare", fillsFrame: true, reasons };
