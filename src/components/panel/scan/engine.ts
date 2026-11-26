@@ -4,10 +4,12 @@
  * asıl çözünürlükte. Köşeler her zaman yüklenen fotoğrafın pikselinde. Çekirdek: src/lib/scan.
  */
 
-import { detectDocument, refineCorners, scanDocument, scaleQuad, thumbnail, unscaleQuad, type QuarterTurn, type Quad, type RgbaImage, type ScanMode } from "@/lib/scan";
+import { scanMaxEdge } from "@/lib/photo-scan";
+import { detectDocument, enhance, estimateSize, refineCorners, scanDocument, scaleQuad, thumbnail, unscaleQuad, type QuarterTurn, type Quad, type RgbaImage, type ScanMode } from "@/lib/scan";
 import { clampQuad, MAX_OUTSIDE } from "@/lib/scan/detect";
 import { detectOrientation } from "@/lib/scan/orientation";
 import { assessQuality, type DocNoun, type QualityIssue } from "@/lib/scan/quality";
+import { stitchParts } from "@/lib/scan/stitch";
 
 /** Algılama, köşe oturtma ve önizlemenin çalışma kopyası (uzun kenar; çekirdeğin WORK_EDGE'i) */
 const WORK_EDGE = 1000;
@@ -18,7 +20,15 @@ export type EngineRequest =
   | { type: "refine"; corners: Quad }
   /** Kâğıdın içine bakarak sayfa yönü ve çekim kalitesi (src/lib/scan orientation.ts, quality.ts; docs/FOTOGRAF.md § 12) */
   | { type: "analyze"; corners: Quad; noun: DocNoun }
-  | { type: "scan"; corners: Quad; mode: ScanMode; rotate: QuarterTurn; maxEdge: number; preview: boolean };
+  | { type: "scan"; corners: Quad; mode: ScanMode; rotate: QuarterTurn; maxEdge: number; preview: boolean }
+  /**
+   * Uzun fiş: yüklü fotoğraf açılıp (görünümsüz, dik) parça olarak saklanır; sonraki parça yeni "load" ile gelir.
+   * Parçalar yeni fotoğrafla silinmez, yalnız "parts-reset" ile
+   */
+  | { type: "part-add"; corners: Quad; rotate: QuarterTurn }
+  | { type: "parts-reset" }
+  /** Saklanan parçaları birleştirir (src/lib/scan/stitch.ts); emin değilse her parça ayrı görüntü olarak döner */
+  | { type: "stitch"; mode: ScanMode };
 
 export interface EngineDetection {
   corners: Quad | null;
@@ -35,13 +45,24 @@ export type EngineResponse =
   | { type: "refined"; corners: Quad; snapped: number }
   /** `rotate`: belgeyi dik yapan dönüş (emin değilse null); `issues`: ciddi önce, ilk metni göstermek yeter */
   | { type: "analyzed"; rotate: QuarterTurn | null; issues: QualityIssue[]; ms: number }
-  | { type: "scanned"; image: RgbaImage; rotation: number; ms: number };
+  | { type: "scanned"; image: RgbaImage; rotation: number; ms: number }
+  | { type: "parts"; count: number }
+  /** `image`: birleşmiş görüntü (dikişler `seams`); null ise `parts` her parçanın taranmış hâli (sırayla) */
+  | { type: "stitched"; image: RgbaImage | null; parts: RgbaImage[]; seams: number[]; confidence: number; ms: number };
 
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+
+/** Tek parçanın açılmış hâlinin uzun kenarı: yüklemenin ölçüsü (dar fişte 4096'ya kadar; scanMaxEdge) */
+function partEdge(corners: Quad, width: number, height: number): number {
+  const size = estimateSize(corners, width, height, 4096);
+  return scanMaxEdge(Math.max(size.width, size.height) / Math.max(1, Math.min(size.width, size.height)));
+}
 
 export function createEngine(): (req: EngineRequest) => EngineResponse {
   let src: RgbaImage | null = null;
   let work: RgbaImage | null = null;
+  // uzun fişin önceki parçaları (açılmış, dik, görünümsüz)
+  let parts: RgbaImage[] = [];
   const loaded = () => {
     if (!src || !work) throw new Error("Fotoğraf yüklenmedi");
     return { src, work };
@@ -52,7 +73,24 @@ export function createEngine(): (req: EngineRequest) => EngineResponse {
       work = thumbnail(req.image, WORK_EDGE);
       return { type: "loaded" };
     }
+    if (req.type === "parts-reset") {
+      parts = [];
+      return { type: "parts", count: 0 };
+    }
+    if (req.type === "stitch") {
+      // Görünüm birleşmiş görüntüye bir kez uygulanır (parçaların ışığı dikişte eşitlenir, eşik tek)
+      const t0 = now();
+      const st = parts.length >= 2 ? stitchParts(parts) : null;
+      const image = st ? enhance(st.image, req.mode) : null;
+      const each = st ? [] : parts.map((p) => enhance(p, req.mode));
+      return { type: "stitched", image, parts: each, seams: st?.seams ?? [], confidence: st?.confidence ?? 0, ms: now() - t0 };
+    }
     const { src: s, work: w } = loaded();
+    if (req.type === "part-add") {
+      const r = scanDocument(s, { corners: req.corners, mode: "orijinal", rotate: req.rotate, maxEdge: partEdge(req.corners, s.width, s.height) });
+      parts.push(r.image);
+      return { type: "parts", count: parts.length };
+    }
     if (req.type === "detect") {
       const t0 = now();
       const d = detectDocument(w);

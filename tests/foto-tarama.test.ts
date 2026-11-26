@@ -78,9 +78,16 @@ test("tarama bilgisi: yalnız tanınan alanlar, sınırlar içinde; biri tutmazs
     JSON.stringify({ ...INFO, rotate: 45 }),
     JSON.stringify({ ...INFO, ai: "evet" }),
     JSON.stringify({ ...INFO, ai: undefined }),
+    // uzun fişin birleşen parça sayısı: 2–3 tam sayı
+    JSON.stringify({ ...INFO, parts: 1 }),
+    JSON.stringify({ ...INFO, parts: 4 }),
+    JSON.stringify({ ...INFO, parts: 2.5 }),
+    JSON.stringify({ ...INFO, parts: "2" }),
     `${JSON.stringify(INFO)}${" ".repeat(SCAN_INFO_MAX_CHARS)}`,
   ];
   for (const b of bad) assert.equal(parseScanInfo(b), null, String(b).slice(0, 80));
+  assert.deepEqual(parseScanInfo({ ...INFO, parts: 3 }), { ...INFO, parts: 3 });
+  assert.equal(Object.hasOwn(parseScanInfo(INFO)!, "parts"), false);
   for (const m of ["yapay-zeka", "elle", "tum-fotograf", "tam-kare", "yok"] as const) assert.equal(parseScanInfo({ ...INFO, method: m })?.method, m);
   for (const r of [90, 180, 270] as const) assert.equal(parseScanInfo({ ...INFO, rotate: r })?.rotate, r);
 });
@@ -261,12 +268,12 @@ test("yollar ve ekran: asıl fotoğraf aynı denetimden geçer, aynı erişim ku
   assert.match(claude, /\[SCAN_FEATURE\]: SCAN_HINT_DAILY_CAP/, "köşe ipucunun kendi günlük sınırı (okuma sınırını yemez)");
   // Yükleme: belge türünde önce tarama ekranı, kontrol listesinin yolu tarama bilmez
   const picker = read("src/components/panel/photo-picker.tsx");
-  assert.ok(picker.indexOf("if (isScanKind(o.kind))") < picker.indexOf("compressImage(file, ORIGINAL_COMPRESS)"));
+  assert.ok(picker.indexOf("if (isScanKind(o.kind))") < picker.indexOf("compressImage(scan.original, ORIGINAL_COMPRESS)"));
   assert.match(picker, /openScan\(file, o\.kind, o\.read,/, "yapay zekâya köşe yalnız okuma açıkken");
   assert.doesNotMatch(read("src/app/api/kontrol/foto/route.ts"), /asil|tarama/);
   // Ağır iş Web Worker'da (Turbopack kalıbı), açılamazsa ana iş parçacığında
   assert.match(read("src/components/panel/scan/client.ts"), /new Worker\(new URL\("\.\/scan\.worker\.ts", import\.meta\.url\), \{ type: "module"/);
   const editor = read("src/components/panel/scan-editor.tsx");
   assert.match(editor, /useReducedMotion\(\)/, "tarama çizgisi hareket azaltmaya uyar");
-  for (const label of ["Otomatik", "Tüm fotoğraf", "Döndür", "Taramadan kullan", "Kullan"]) assert.ok(editor.includes(`> ${label}`) || editor.includes(`${label}\n`), label);
+  for (const label of ["Otomatik", "Tüm fotoğraf", "Döndür", "Taramadan kullan", "Kullan", "Yeniden çek", "Devamını çek"]) assert.ok(editor.includes(`> ${label}`) || editor.includes(`${label}\n`), label);
 });

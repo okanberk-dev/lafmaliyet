@@ -5,7 +5,7 @@
  * src/components/panel/scan-editor.tsx; ayrıntı docs/FOTOGRAF.md › Belge tarama.
  */
 
-import { MAX_PHOTO_EDGE, MIN_PHOTO_EDGE, type PhotoKind } from "./photo-rules";
+import { MAX_OKC_PHOTOS, MAX_PHOTO_EDGE, MIN_PHOTO_EDGE, type PhotoKind } from "./photo-rules";
 import type { QuarterTurn, ScanMode } from "./scan";
 
 /**
@@ -16,6 +16,17 @@ export const SCAN_KINDS: readonly PhotoKind[] = ["kasa-z", "kasa-pos", "kasa-okc
 
 export function isScanKind(kind: unknown): kind is PhotoKind {
   return typeof kind === "string" && (SCAN_KINDS as readonly string[]).includes(kind);
+}
+
+/**
+ * Uzun fiş parça parça çekilebilen türler ("Devamını çek"): rulo kâğıda basılan her şey (Z, yazarkasa Z, banka gün
+ * sonu, alışveriş fişi). Parçalar kodla birleştirilir (src/lib/scan/stitch.ts); en çok `MAX_SCAN_PARTS` parça: yazarkasa
+ * bölümünün sınırı, birleşmezse parçalar ayrı fotoğraf olarak oraya sığar
+ */
+export const MAX_SCAN_PARTS = MAX_OKC_PHOTOS;
+
+export function scanPartsKind(kind: PhotoKind): boolean {
+  return isScanKind(kind);
 }
 
 export const SCAN_MODE_LIST = ["belge", "gri", "renkli", "orijinal"] as const satisfies readonly ScanMode[];
@@ -40,6 +51,11 @@ export interface ScanInfo {
   rotate: QuarterTurn;
   /** Yapay zekâya köşe soruldu mu (yanıt kullanılmasa da) */
   ai: boolean;
+  /**
+   * Uzun fiş birkaç parçada çekilip tek görüntüde birleştirildi: parça sayısı (2–`MAX_SCAN_PARTS`). Köşeler, yöntem ve
+   * asıl fotoğraf ilk parçanın
+   */
+  parts?: number;
 }
 
 /** Tarama bilgisinin form alanı en çok bu kadar karakter (sunucu daha uzununu okumaz) */
@@ -77,6 +93,7 @@ export function parseScanInfo(raw: unknown): ScanInfo | null {
   if (typeof o.confidence !== "number" || !(o.confidence >= 0 && o.confidence <= 1)) return null;
   if (!(QUARTERS as readonly unknown[]).includes(o.rotate)) return null;
   if (typeof o.ai !== "boolean") return null;
+  if (o.parts !== undefined && !(Number.isInteger(o.parts) && (o.parts as number) >= 2 && (o.parts as number) <= MAX_SCAN_PARTS)) return null;
   return {
     corners,
     mode: o.mode as ScanMode,
@@ -84,6 +101,7 @@ export function parseScanInfo(raw: unknown): ScanInfo | null {
     confidence: Math.round(o.confidence * 100) / 100,
     rotate: o.rotate as QuarterTurn,
     ai: o.ai,
+    ...(o.parts !== undefined ? { parts: o.parts as number } : {}),
   };
 }
 

@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { createEngine } from "../src/components/panel/scan/engine";
 import { scanDocument } from "../src/lib/scan";
 import { resizeRgba, toGray, type RgbaImage } from "../src/lib/scan/image";
 import { inkMap } from "../src/lib/scan/metin";
@@ -197,4 +198,40 @@ test("fotoğraftan: kadraja sığmayan Z iki fotoğrafta çekilir, taranır, bir
   assert.deepEqual(r.order, [1, 0]);
   assert.ok(Math.abs(r.image.height - ph) <= 0.01 * ph, `boy ${r.image.height} / ${ph.toFixed(0)}`);
   assert.ok(r.confidence >= 0.8, `güven ${r.confidence}`);
+});
+
+test("tarama ekranının motoru: 'Devamını çek' parçaları saklar, 'Kullan' birleştirir; tutmazsa parçalar ayrı döner", () => {
+  // src/components/panel/scan/engine.ts (Worker'da çalışan kod): parça açılıp saklanır, yeni fotoğraf yüklenir
+  const k = 0.9;
+  const pw = Z.width * k;
+  const ph = Z.height * k;
+  const ust = sahne(Z, { width: 820, height: 1150, corners: dondur(dikdortgen((820 - pw) / 2, 60, pw, ph), 1.5), noise: 3, blur: 0.8, shadow: 0.2, seed: 21 });
+  const alt = sahne(Z, { width: 820, height: 1150, corners: dondur(dikdortgen((820 - pw) / 2 + 12, -760, pw, ph), -1), noise: 3.5, blur: 1, warm: 0.1, light: 0.9, seed: 22 });
+  const run = createEngine();
+  const parcaEkle = (img: RgbaImage) => {
+    run({ type: "load", image: img });
+    const d = run({ type: "detect" });
+    assert.ok(d.type === "detected" && d.detection.corners, "kâğıt bulunmalı");
+    const r = run({ type: "part-add", corners: d.detection.corners, rotate: 0 });
+    assert.equal(r.type, "parts");
+  };
+  parcaEkle(ust);
+  parcaEkle(alt);
+  const st = run({ type: "stitch", mode: "belge" });
+  assert.ok(st.type === "stitched" && st.image, "birleşmeli");
+  assert.equal(st.parts.length, 0);
+  const oran = st.image.height / st.image.width;
+  assert.ok(Math.abs(oran - ph / pw) <= 0.02 * (ph / pw), `oran ${oran.toFixed(2)} / ${(ph / pw).toFixed(2)}`);
+  assert.equal(st.seams.length, 1);
+
+  // başka günün Z'si: birleşmez, iki parça ayrı (görünüm uygulanmış) döner; sıfırlayınca parça kalmaz
+  run({ type: "parts-reset" });
+  const baska = sahne(Z_BASKA, { width: 820, height: 1150, corners: dondur(dikdortgen((820 - pw) / 2 + 12, -760, pw, ph), -1), noise: 3, seed: 23 });
+  parcaEkle(ust);
+  parcaEkle(baska);
+  const st2 = run({ type: "stitch", mode: "gri" });
+  assert.ok(st2.type === "stitched" && st2.image === null && st2.parts.length === 2, "ayrı dönmeli");
+  run({ type: "parts-reset" });
+  const st3 = run({ type: "stitch", mode: "gri" });
+  assert.ok(st3.type === "stitched" && st3.image === null && st3.parts.length === 0);
 });

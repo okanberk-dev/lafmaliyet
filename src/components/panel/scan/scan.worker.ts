@@ -24,5 +24,6 @@ scope.onmessage = (e) => {
     scope.postMessage({ id, error: err instanceof Error ? err.message : String(err) });
     return;
   }
-  scope.postMessage({ id, res }, res.type === "scanned" ? [res.image.data.buffer as ArrayBuffer] : []);
+  const images = res.type === "scanned" ? [res.image] : res.type === "stitched" ? [...(res.image ? [res.image] : []), ...res.parts] : [];
+  scope.postMessage({ id, res }, images.map((i) => i.data.buffer as ArrayBuffer));
 };

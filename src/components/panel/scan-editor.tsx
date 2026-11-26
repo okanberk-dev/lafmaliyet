@@ -1,8 +1,8 @@
 "use client";
 
-import { Expand, LoaderCircle, RotateCw, Wand2, X } from "lucide-react";
+import { Camera, Expand, LoaderCircle, RotateCw, ScrollText, Wand2, X } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { createRoot } from "react-dom/client";
 
 import { Button } from "@/components/ui/button";
@@ -22,9 +22,31 @@ import { decodePhoto, encodeScan, hintJpeg, previewUrl, ScanClient } from "./sca
  * dokunma alanı, sürüklerken büyüteç; klavyede ok tuşları). Kod emin değilse ve okuma açıksa yapay zekâya köşe sorulur
  * (POST /api/foto/kenar), dönen köşeler gerçek kenara oturtulur; yapay zekâ yoksa sessizce kodun sonucu. "Kullan"
  * taranmış görüntüyü, "Taramadan kullan" fotoğrafı olduğu gibi yükletir; kapatmak yüklemeyi bırakır.
+ *
+ * Çekim sorunu (bulanık, parlama, karanlık, kesik, küçük yazı) tek satır uyarıyla "Yeniden çek" önerir: kamera ekranın
+ * içinden açılır, yeni fotoğraf aynı ekranda taranır ("Kullan" yine serbest). Uzun fişte "Devamını çek": o anki parça
+ * açılıp saklanır, sonraki parça çekilir (en çok `parts.max`); "Kullan" parçaları kodla hizalayıp tek uzun görüntüde
+ * birleştirir (src/lib/scan/stitch.ts). Emin değilse parçalar ayrı fotoğraf olarak döner (çağıran alabiliyorsa).
  */
 
-export type ScanChoice = { kind: "scan"; scanned: Blob; info: ScanInfo } | { kind: "skip" };
+/** Taranmış bir görüntü: yüklenecek dosya, tarama bilgisi ve asıl fotoğraf (yeniden çekildiyse yenisi) */
+export interface ScannedPart {
+  scanned: Blob;
+  info: ScanInfo;
+  original: Blob;
+}
+
+/**
+ * Kullanıcının seçimi: taranmış görüntü (uzun fiş birleştirilemediyse sonraki parçalar `more`'da) ya da taramasız
+ * yükleme (`file`: yeniden çekildiyse son çekilen)
+ */
+export type ScanChoice = ({ kind: "scan" } & ScannedPart & { more?: ScannedPart[] }) | { kind: "skip"; file: Blob };
+
+/** Uzun fiş: en çok kaç parça çekilir; birleştirilemezse kaç fotoğrafa kadar ayrı yüklenebilir (1: ayrı yüklenemez) */
+export interface PartsOption {
+  max: number;
+  room: number;
+}
 
 const CORNER_LABEL = ["Sol üst köşe", "Sağ üst köşe", "Sağ alt köşe", "Sol alt köşe"] as const;
 /** Fotoğrafın sahnedeki payı (köşe tutamakları kenarda da tutulabilsin) */
@@ -84,9 +106,29 @@ function ScanBeam({ on }: { on: boolean }) {
   );
 }
 
-export function ScanEditor({ file, hint, noun = "belge", onDone }: { file: Blob; hint: boolean; noun?: DocNoun; onDone: (choice: ScanChoice | null) => void }) {
+/** Parçalar birleştirilemedi, ayrı da yüklenemiyor */
+const STITCH_FAILED_TEXT = "Parçalar birleştirilemedi; alt parçayı üsttekiyle birkaç satır örtüşerek yeniden çekin.";
+
+export function ScanEditor({
+  file,
+  hint,
+  noun = "belge",
+  parts,
+  onDone,
+}: {
+  file: Blob;
+  hint: boolean;
+  noun?: DocNoun;
+  parts?: PartsOption;
+  onDone: (choice: ScanChoice | null) => void;
+}) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  // Kamera neden açıldı: aynı parçayı yeniden çekmek ya da uzun fişin sonraki parçası
+  const cameraFor = useRef<"again" | "next">("again");
+  // Uzun fişin saklanan parçalarının bilgisi ve asıl fotoğrafı (görüntüleri motorda)
+  const partsRef = useRef<{ info: ScanInfo; original: Blob }[]>([]);
   const stageRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<ScanClient | null>(null);
   const imageRef = useRef<RgbaImage | null>(null);
@@ -98,6 +140,8 @@ export function ScanEditor({ file, hint, noun = "belge", onDone }: { file: Blob;
   const grab = useRef<{ index: number; dx: number; dy: number } | null>(null);
   const doneRef = useRef(false);
 
+  const [src, setSrc] = useState<Blob>(file);
+  const [partCount, setPartCount] = useState(0);
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [stage, setStage] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const resultRef = useRef<HTMLDivElement>(null);
@@ -151,20 +195,38 @@ export function ScanEditor({ file, hint, noun = "belge", onDone }: { file: Blob;
     };
   }, []);
 
-  // Fotoğrafı çöz, Worker'a yükle, kâğıdı bul; kod emin değilse ve okuma açıksa yapay zekâya sor
+  // Motor (Web Worker) ekran açıkken bir tane: uzun fişin parçaları onda saklanır
+  useEffect(() => {
+    const client = new ScanClient();
+    clientRef.current = client;
+    return () => {
+      client.dispose();
+      clientRef.current = null;
+    };
+  }, []);
+
+  // Fotoğrafı çöz, Worker'a yükle, kâğıdı bul; kod emin değilse ve okuma açıksa yapay zekâya sor. Yeniden çekilince
+  // (ya da uzun fişin sonraki parçası) yeni fotoğrafla baştan
   useEffect(() => {
     let cancelled = false;
     let displayUrl: string | null = null;
     const ac = new AbortController();
-    const client = new ScanClient();
-    clientRef.current = client;
+    const client = clientRef.current;
+    if (!client) return;
     (async () => {
       let decoded: Awaited<ReturnType<typeof decodePhoto>>;
       try {
-        decoded = await decodePhoto(file);
+        decoded = await decodePhoto(src);
       } catch {
-        // Tarayıcı fotoğrafı açamadı (HEIC): yükleme taramasız sürer, hata metnini küçültme verir
-        if (!cancelled) finish({ kind: "skip" });
+        // Tarayıcı fotoğrafı açamadı (HEIC): yükleme taramasız sürer, hata metnini küçültme verir. Uzun fişin sonraki
+        // parçası açılamadıysa önceki parçalar kalır, uyarı görünür
+        if (cancelled) return;
+        if (partsRef.current.length) {
+          setError("Fotoğraf açılamadı; yeniden çekin.");
+          setDetecting(false);
+          return;
+        }
+        finish({ kind: "skip", file: src });
         return;
       }
       displayUrl = decoded.displayUrl;
@@ -246,14 +308,12 @@ export function ScanEditor({ file, hint, noun = "belge", onDone }: { file: Blob;
     return () => {
       cancelled = true;
       ac.abort();
-      client.dispose();
-      clientRef.current = null;
       imageRef.current = null;
       if (displayUrl) URL.revokeObjectURL(displayUrl);
     };
-    // Bileşen bir fotoğraf için açılır; `hint` ve `file` değişmez
+    // Fotoğraf değişince baştan; `hint` ve `noun` ekran açıkken değişmez
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [src]);
 
   // Taranmış sonucun önizlemesi (çalışma kopyasında, ~900 px): köşe bırakılınca, mod ya da dönüş değişince
   useEffect(() => {
@@ -289,6 +349,8 @@ export function ScanEditor({ file, hint, noun = "belge", onDone }: { file: Blob;
   const box = photo && stage.width > 0 ? fitBox(stage.width, stage.height, photo.width, photo.height) : null;
   const valid = Boolean(photo && corners && quadIsValid(corners, photo.width, photo.height));
   const busy = detecting || finishing;
+  // Uzun fişin sonraki parçası çekilebilir mi (parça sınırı dolmadıysa)
+  const canContinue = Boolean(parts && parts.max >= 2 && partCount + 1 < parts.max);
 
   function setCorner(i: number, x: number, y: number) {
     if (!photo) return;
@@ -357,6 +419,64 @@ export function ScanEditor({ file, hint, noun = "belge", onDone }: { file: Blob;
     setView("sonuc");
   }
 
+  /** Yeni fotoğrafla baştan (yeniden çekildi ya da sonraki parça): ekranın fotoğrafa bağlı her şeyi sıfırlanır */
+  function startPhoto(next: Blob) {
+    autoRef.current = null;
+    touchedRef.current = false;
+    rotatedRef.current = false;
+    aiTopRef.current = false;
+    previewSeq.current++;
+    setPhoto(null);
+    setCorners(null);
+    setMethod(null);
+    setConfidence(0);
+    setHasAuto(false);
+    setDetecting(true);
+    setAiPending(false);
+    setAiAsked(false);
+    setRotate(0);
+    setPreview(null);
+    setPreviewBusy(false);
+    setIssues([]);
+    setError(null);
+    setView("kenar");
+    setSrc(next);
+  }
+
+  /** Kamerayı ekranın içinden açar (dokunuşun kendisinde; tarayıcı başka türlü açtırmaz) */
+  function openCamera(why: "again" | "next") {
+    cameraFor.current = why;
+    cameraRef.current?.click();
+  }
+
+  /** O anki köşelerle tarama bilgisi */
+  function infoOf(q: Quad): ScanInfo {
+    return { corners: cornersToHint(q, photo!.width, photo!.height), mode, method: method ?? "yok", confidence: Math.round(confidence * 100) / 100, rotate, ai: aiAsked };
+  }
+
+  async function onCamera(e: ChangeEvent<HTMLInputElement>) {
+    const next = e.target.files?.[0];
+    e.target.value = "";
+    if (!next || finishing) return;
+    if (cameraFor.current === "again") return startPhoto(next);
+    // Sonraki parça: o anki parça (köşeleri, dönüşü) motorda açılıp saklanır, sonra yeni fotoğraf
+    const client = clientRef.current;
+    if (!client || !photo || !corners || !valid) return;
+    setFinishing(true);
+    try {
+      const q = orderCorners(corners);
+      const r = await client.call({ type: "part-add", corners: q, rotate });
+      if (r.type !== "parts") throw new Error("parca");
+      partsRef.current.push({ info: infoOf(q), original: src });
+      setPartCount(partsRef.current.length);
+      setFinishing(false);
+      startPhoto(next);
+    } catch {
+      setError("Parça saklanamadı; yeniden deneyin.");
+      setFinishing(false);
+    }
+  }
+
   async function accept() {
     const client = clientRef.current;
     if (!photo || !corners || !valid || !client || finishing) return;
@@ -364,20 +484,45 @@ export function ScanEditor({ file, hint, noun = "belge", onDone }: { file: Blob;
     setError(null);
     try {
       const q = orderCorners(corners);
+      if (partsRef.current.length) return await acceptParts(client, q);
       const size = estimateSize(q, photo.width, photo.height, 4096);
       const aspect = Math.max(size.width, size.height) / Math.max(1, Math.min(size.width, size.height));
       const r = await client.call({ type: "scan", corners: q, mode, rotate, maxEdge: scanMaxEdge(aspect), preview: false });
       if (r.type !== "scanned") throw new Error("tarama");
       const scanned = await encodeScan(r.image);
-      finish({
-        kind: "scan",
-        scanned,
-        info: { corners: cornersToHint(q, photo.width, photo.height), mode, method: method ?? "yok", confidence: Math.round(confidence * 100) / 100, rotate, ai: aiAsked },
-      });
+      finish({ kind: "scan", scanned, info: infoOf(q), original: src });
     } catch {
       setError("Taranamadı; yeniden deneyin ya da taramadan kullanın.");
       setFinishing(false);
     }
+  }
+
+  /**
+   * Uzun fiş: son parça da saklanır, parçalar birleştirilir. Birleşirse tek görüntü (bilgisi ilk parçanınki, parça
+   * sayısıyla); emin değilse parçalar ayrı fotoğraf (çağıranın yeri yetiyorsa), yetmiyorsa uyarı ve parçalar bırakılır
+   * (ekrandaki son fotoğraf tek başına kullanılabilir)
+   */
+  async function acceptParts(client: ScanClient, q: Quad) {
+    const added = await client.call({ type: "part-add", corners: q, rotate });
+    if (added.type !== "parts") throw new Error("parca");
+    const all = [...partsRef.current, { info: infoOf(q), original: src }];
+    const r = await client.call({ type: "stitch", mode });
+    if (r.type !== "stitched") throw new Error("birlestirme");
+    if (r.image) {
+      const scanned = await encodeScan(r.image);
+      return finish({ kind: "scan", scanned, info: { ...all[0].info, parts: all.length }, original: all[0].original });
+    }
+    if (r.parts.length === all.length && all.length <= (parts?.room ?? 1)) {
+      const blobs: Blob[] = [];
+      for (const img of r.parts) blobs.push(await encodeScan(img));
+      const each = all.map((p, i) => ({ scanned: blobs[i], info: p.info, original: p.original }));
+      return finish({ kind: "scan", ...each[0], more: each.slice(1) });
+    }
+    await client.call({ type: "parts-reset" });
+    partsRef.current = [];
+    setPartCount(0);
+    setError(STITCH_FAILED_TEXT);
+    setFinishing(false);
   }
 
   const status = error
@@ -549,9 +694,23 @@ export function ScanEditor({ file, hint, noun = "belge", onDone }: { file: Blob;
           <p aria-live="polite" className={cn("mt-0.5 text-[13px] leading-5", error || (!valid && photo && !detecting) ? "text-bad" : "text-ink-mute")}>
             {status}
           </p>
-          {/* Çekim kalitesi (src/lib/scan/quality.ts): ilk sorun yeter; ciddiyse yeniden çekmek önerilir, yükleme yine serbest */}
-          {issues.length && !error ? <Notice tone={issues[0].severity === "ciddi" ? "bad" : "warn"} size="line" live="polite" title={issues[0].text} className="mt-1 text-[13px]" /> : null}
+          {/* Çekim kalitesi (src/lib/scan/quality.ts): ilk sorun yeter; yeniden çekmek önerilir, "Kullan" yine serbest */}
+          {issues.length && !error ? (
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <Notice tone={issues[0].severity === "ciddi" ? "bad" : "warn"} size="line" live="polite" title={issues[0].text} className="min-w-0 flex-1 text-[13px]" />
+              <Button size="xs" variant="secondary" onClick={() => openCamera("again")} disabled={busy} className="shrink-0 text-ink">
+                <Camera size={13} aria-hidden="true" /> Yeniden çek
+              </Button>
+            </div>
+          ) : null}
+          {partCount ? (
+            <p className="mt-1 text-[13px] leading-5 text-ink-mute">
+              {partCount + 1}. parça · önceki {partCount === 1 ? "parça saklandı" : `${partCount} parça saklandı`}; &quot;Kullan&quot; parçaları birleştirir.
+            </p>
+          ) : null}
         </div>
+        {/* Yeniden çek ve Devamını çek: arka kamera (dokunmatikte), masaüstünde dosya seçimi */}
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void onCamera(e)} />
         <Button size="icon" variant="ghost" onClick={() => finish(null)} disabled={finishing} aria-label="Kapat (fotoğraf eklenmez)" className="-mr-1">
           <X size={18} aria-hidden="true" />
         </Button>
@@ -599,10 +758,18 @@ export function ScanEditor({ file, hint, noun = "belge", onDone }: { file: Blob;
         {tools}
       </div>
 
-      <footer className="flex gap-2 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:justify-end sm:px-5 sm:pb-4">
-        <Button variant="secondary" onClick={() => finish({ kind: "skip" })} disabled={finishing} className="flex-1 text-ink max-sm:min-h-12 sm:flex-none">
-          Taramadan kullan
-        </Button>
+      <footer className="flex flex-wrap gap-2 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:justify-end sm:px-5 sm:pb-4">
+        {canContinue ? (
+          // Uzun fiş kareye sığmadı: alt kısmı ayrıca çekilir, "Kullan" birleştirir
+          <Button variant="secondary" onClick={() => openCamera("next")} disabled={!valid || busy} className="text-ink max-sm:min-h-12 max-sm:basis-full sm:mr-auto">
+            <ScrollText size={16} aria-hidden="true" /> Devamını çek
+          </Button>
+        ) : null}
+        {partCount ? null : (
+          <Button variant="secondary" onClick={() => finish({ kind: "skip", file: src })} disabled={finishing} className="flex-1 text-ink max-sm:min-h-12 sm:flex-none">
+            Taramadan kullan
+          </Button>
+        )}
         <Button onClick={() => void accept()} disabled={!valid || busy} className="flex-1 max-sm:min-h-12 sm:flex-none sm:px-6">
           {finishing ? <LoaderCircle size={16} className="animate-spin" aria-hidden="true" /> : null} Kullan
         </Button>
@@ -616,7 +783,7 @@ export function ScanEditor({ file, hint, noun = "belge", onDone }: { file: Blob;
  * Ekran kendi köküne çizilir (çağıran bileşen yalnız sonucu bekler; usePhotoUpload, faturanın belgesi). `close` ekranı
  * kapatır (sayfa değişti), sonuç null olur.
  */
-export function openScanEditor(file: Blob, opts: { hint: boolean; noun?: DocNoun }): { result: Promise<ScanChoice | null>; close: () => void } {
+export function openScanEditor(file: Blob, opts: { hint: boolean; noun?: DocNoun; parts?: PartsOption }): { result: Promise<ScanChoice | null>; close: () => void } {
   const host = document.createElement("div");
   host.dataset.scanEditor = "";
   document.body.append(host);
@@ -634,6 +801,6 @@ export function openScanEditor(file: Blob, opts: { hint: boolean; noun?: DocNoun
       host.remove();
     }, 0);
   };
-  root.render(<ScanEditor file={file} hint={opts.hint} noun={opts.noun} onDone={end} />);
+  root.render(<ScanEditor file={file} hint={opts.hint} noun={opts.noun} parts={opts.parts} onDone={end} />);
   return { result, close: () => end(null) };
 }

@@ -40,7 +40,8 @@ async function scanDocumentPhoto(file: File): Promise<File | "skip" | null> {
   }
   const choice = await mod.openScanEditor(file, { hint: false, noun: "fatura" }).result;
   if (!choice) return null;
-  if (choice.kind === "skip") return "skip";
+  // Taramadan: yeniden çekildiyse son çekilen fotoğraf
+  if (choice.kind === "skip") return choice.file === file ? "skip" : new File([choice.file], file.name, { type: choice.file.type || file.type });
   return new File([choice.scanned], jpegName(file.name), { type: "image/jpeg" });
 }
 

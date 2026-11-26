@@ -8,10 +8,10 @@ import { formatBytes } from "@/lib/documents";
 import { compressImage, COMPRESS_ERROR_TEXT, PhotoCompressError } from "@/lib/photo-compress";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import { photoUrl, uploadErrorText, type PhotoKind } from "@/lib/photo-rules";
-import { isScanKind, ORIGINAL_COMPRESS, type ScanInfo } from "@/lib/photo-scan";
+import { isScanKind, MAX_SCAN_PARTS, ORIGINAL_COMPRESS, scanPartsKind, type ScanInfo } from "@/lib/photo-scan";
 import { cn } from "@/lib/utils";
 
-import type { ScanChoice } from "./scan-editor";
+import type { ScanChoice, ScannedPart } from "./scan-editor";
 
 /*
  * Fotoğraf ekleme (kasa raporu, kasadan çıkan fiş): telefonda "Fotoğraf çek" arka kamerayı açar (<input capture>:
@@ -27,15 +27,16 @@ import type { ScanChoice } from "./scan-editor";
  * Tarama ekranını açar (ilk açılışta yüklenir: tarayıcı çekirdeği ve Worker yalnız gerekince iner). Ekran yüklenemezse
  * (bağlantı koptu) tarama atlanır, fotoğraf olduğu gibi yüklenir
  */
-async function openScan(file: Blob, kind: PhotoKind, hint: boolean, keep: (close: () => void) => void): Promise<ScanChoice | null> {
+async function openScan(file: Blob, kind: PhotoKind, hint: boolean, room: number, keep: (close: () => void) => void): Promise<ScanChoice | null> {
   let mod: typeof import("./scan-editor");
   try {
     mod = await import("./scan-editor");
   } catch {
-    return { kind: "skip" };
+    return { kind: "skip", file };
   }
-  // Çekim uyarılarındaki ad: "Raporun altı kesilmiş", "Fişte parlama var"
-  const { result, close } = mod.openScanEditor(file, { hint, noun: kind === "fis" ? "fis" : "rapor" });
+  // Çekim uyarılarındaki ad: "Raporun altı kesilmiş", "Fişte parlama var". Uzun fişte "Devamını çek" (en çok 3 parça)
+  const parts = scanPartsKind(kind) ? { max: MAX_SCAN_PARTS, room } : undefined;
+  const { result, close } = mod.openScanEditor(file, { hint, noun: kind === "fis" ? "fis" : "rapor", parts });
   keep(close);
   return result;
 }
@@ -66,7 +67,11 @@ function post(url: string, body: FormData | string, onSent?: () => void): Promis
 
 /**
  * Fotoğrafı (belge türünde önce tarayıp) küçültür ve yükler (isteğe bağlı okumayla) ya da saklanmış fotoğrafı yeniden
- * okutur; aşama ekranda. Tarama ekranı kapatılırsa hiçbir şey yüklenmez (null, aşama boş)
+ * okutur; aşama ekranda. Tarama ekranı kapatılırsa hiçbir şey yüklenmez (null, aşama boş).
+ *
+ * Uzun fiş parça parça çekilip birleştirilemediyse parçalar ayrı fotoğraf olarak yüklenebilir: çağıran `room` (bu
+ * yüklemeye ayırabileceği fotoğraf sayısı, varsayılan 1) ve `onMore` (ilkinden sonraki her parçanın yanıtı) verir.
+ * Vermeyende ekran parçaları birleştiremezse uyarır, ayrı yüklemez.
  */
 export function usePhotoUpload() {
   const [phase, setPhase] = useState<PhotoPhase>({ kind: "idle" });
@@ -85,27 +90,49 @@ export function usePhotoUpload() {
     return res.body as PhotoUploadResponse;
   }
 
-  async function upload(file: File, o: { kind: PhotoKind; day: string; read: boolean }): Promise<PhotoUploadResponse | null> {
-    let scan: { scanned: Blob; info: ScanInfo } | null = null;
+  async function upload(
+    file: File,
+    o: { kind: PhotoKind; day: string; read: boolean; room?: number; onMore?: (res: PhotoUploadResponse) => void },
+  ): Promise<PhotoUploadResponse | null> {
+    let source: Blob = file;
+    let scan: ScannedPart | null = null;
+    let more: ScannedPart[] = [];
     if (isScanKind(o.kind)) {
       setPhase({ kind: "scanning" });
       // Kod emin değilse yapay zekâya köşe yalnız okuma açıkken sorulur
-      const choice = await openScan(file, o.kind, o.read, (close) => (closeScan.current = close));
+      const room = o.onMore ? Math.max(1, o.room ?? 1) : 1;
+      const choice = await openScan(file, o.kind, o.read, room, (close) => (closeScan.current = close));
       closeScan.current = null;
       if (!choice) {
         setPhase({ kind: "idle" });
         return null;
       }
-      if (choice.kind === "scan") scan = { scanned: choice.scanned, info: choice.info };
+      if (choice.kind === "scan") {
+        scan = choice;
+        more = choice.more ?? [];
+      } else source = choice.file;
     }
+    const first = await send(o, scan, source);
+    // Birleştirilemeyen uzun fişin sonraki parçaları: sırayla ayrı fotoğraf (biri olmazsa kalanlar bırakılır)
+    for (const part of more) {
+      if (!first) break;
+      const res = await send(o, part, part.original);
+      if (!res) break;
+      o.onMore?.(res);
+    }
+    return first;
+  }
+
+  /** Bir fotoğrafı (taranmışsa asıl hâli ve tarama bilgisiyle) küçültüp yükler */
+  async function send(o: { kind: PhotoKind; day: string; read: boolean }, scan: { scanned: Blob; info: ScanInfo; original: Blob } | null, source: Blob): Promise<PhotoUploadResponse | null> {
     setPhase({ kind: "compressing" });
     let blob: Blob;
     let original: Blob | null = null;
     try {
       if (scan) {
         blob = scan.scanned;
-        original = await compressImage(file, ORIGINAL_COMPRESS);
-      } else blob = await compressImage(file);
+        original = await compressImage(scan.original, ORIGINAL_COMPRESS);
+      } else blob = await compressImage(source);
     } catch (e) {
       setPhase({ kind: "error", message: e instanceof PhotoCompressError ? e.message : COMPRESS_ERROR_TEXT });
       return null;
