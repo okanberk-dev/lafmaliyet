@@ -119,6 +119,12 @@ Paraşüt hesabını ve faturalarını gösterir ([Faturanın şubesi](#faturan�
 ekranın şubesini gönderir (`?sube=`): satış, kasa, personel ve giderler o şubenin, Vergi ve Cari hareketleri firma
 geneli; dosyanın ilk sayfası (Nasıl Okunur) kapsamı yazar, dosya adı şubeyle biter.
 
+**Raporlar** (26 Kasım 2026, [RAPORLAR.md](RAPORLAR.md)) de seçiciden bağımsızdır ama "Tümü"yle değil, **şube şube**
+okur: her açık fiziksel şube kendi görünümüyle (`loadModel({ scope: şube })`; Gelir-gider'de o şube seçiliyken görünen
+rakamlar), kasa satırları `withBranchScope(ALL_BRANCHES, …)` ile. Şube seçiliyken Şube karşılaştırma, İşçilik / ciro ve
+Kayıp önleme "soldaki seçim raporu süzmez" notunu gösterir (`companyWideNote("raporlar")`); Kaçak raporu hep Marina'nın
+(tahmini stoğun şubesi).
+
 **Komisyon & hakediş** (23 Kasım 2026, [KOMISYON.md](KOMISYON.md) › Şube): satış seçili şubenin kasa raporlarından,
 LafPOS'undan ve ModPOS föyünden; komisyon faturaları, oran ve hakediş işletmenin (faturalar şubeye bölünmez). Şube
 seçiliyken ekran işletmenin raporunu gösterir ve üstte şubenin payını (şube satışı × işletmenin oranı) notuyla ekler.

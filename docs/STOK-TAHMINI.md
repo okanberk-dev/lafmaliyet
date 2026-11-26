@@ -111,7 +111,7 @@ tahmini stok olduğundan az görünür, sayım düzeltir.
 | Dosya | Görev |
 |---|---|
 | `src/lib/stock-estimate.ts` | Saf hesap: dönem, birim dönüşümü, satış ve zayi tüketimi, atlanan satırlar, kritik eşik, kartın özeti, görünürlük kuralı |
-| `src/server/data/stock-estimate.ts` | Okuyucu (yalnız okuma): Marina'nın sayımı, LafPOS gün sonları, zayi ve ikram, işaretli faturaların partileri, eşikler |
+| `src/server/data/stock-estimate.ts` | Okuyucu (yalnız okuma): Marina'nın sayımı, LafPOS gün sonları, zayi ve ikram, işaretli faturaların partileri, eşikler. İsteğe bağlı `asOf` günü (26 Kasım 2026): tahmin o günün sonundaki stok, o ayın sayımı başlangıç sayılmaz; Raporlar › Kaçak raporu ayın son günüyle okur ve ayın sayımıyla karşılaştırır ([RAPORLAR.md › Kaçak raporu](RAPORLAR.md#kaçak-raporu-marina)) |
 | `src/server/actions/stock-estimate.ts` | Eşiği yazar (yönetici, işlem geçmişine düşer); faturanın şubesini `setInvoiceBranch` (src/server/actions/invoices.ts) |
 | `src/app/panel/sayim/tahmini/` | Ekran |
 | `src/app/panel/stock-alert-card.tsx` | Genel bakış ve Bugün'ün kartı |
