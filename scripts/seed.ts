@@ -6,6 +6,10 @@
 // İkisi de hazır kontrol listelerini (Açılış, Kapanış) bir kez ekler; dolu veritabanında da (canlıya ilk çıkış). Ürünler
 // eski tablonun boş bıraktığı zayi oranlarını kategorilerinden alır (src/lib/fire-defaults.ts).
 //
+// Derleme öncesi hazırlık (scripts/predeploy.ts) da runSeed'i çağırır, ama canlıda, önizlemede ve uzak veritabanında boş
+// veritabanına başlangıç verisini yüklemez (`emptySkip`; scripts/predeploy-guard.ts › emptySeedSkipReason, docs/DEPLOY.md
+// § 5). db:seed ve db:reset açıkça çağrıldıkları için yükler.
+//
 // db:reset geri alınamaz: bu bilgisayarda olmayan bir veritabanında (Neon) sunucu adıyla onay ister (db:restore gibi;
 // .env.local canlının adresini gösteriyorsa yerel sanılan sıfırlama canlıyı silmesin) ve silmeden önce her zaman tam
 // yedeği ev klasörüne yazar (laffogato-yedek-once-<sunucu>-….json.gz; yüklenen belgeler dahil, docs/YEDEK.md).
@@ -46,6 +50,8 @@ import { appVersion, writeBackupFile } from "../src/server/backup/core";
 import { createDb, type DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 import { datasetFromSeed, investmentSeed, readSeedData } from "../tests/fixtures/baslangic";
+
+import { emptySeedWarning } from "./predeploy-guard";
 
 const SERIAL_TABLES = [
   "categories",
@@ -310,7 +316,24 @@ export interface SeedOptions {
   confirm?: string | null;
   /** Etkileşimli terminalde soru (yoksa onay yalnız --onay ile) */
   ask?: ((question: string) => Promise<string>) | null;
+  /**
+   * Boş veritabanına başlangıç verisi yüklenmesin; değer nedeni (derleme öncesi hazırlık verir: canlı, önizleme, uzak
+   * veritabanı; scripts/predeploy-guard.ts › emptySeedSkipReason). Veri yüklenmez, uyarı yazılır; ilk yönetici, şube
+   * kütüğü ve hazır kontrol listeleri yine eklenir. Verilmezse (db:seed, test:db) boş veritabanı dolar. --reset'te yok sayılır
+   */
+  emptySkip?: string | null;
   now?: Date;
+}
+
+/** Boş ya da dolu her veritabanında: ilk yönetici, şube kütüğü, hazır kontrol listeleri ve maddeleri (her biri bir kez) */
+async function ensureBasics(db: DB) {
+  await ensureAdmin(db);
+  await ensureChecklistSeed(db);
+  await ensureBranchSeed(db);
+  await ensureMarinaChecklistSeed(db);
+  await ensureTuzlaHourlySeed(db);
+  await ensureFoodSafetyItems(db);
+  await ensureMarinaPhotoItems(db);
 }
 
 export async function runSeed({
@@ -319,6 +342,7 @@ export async function runSeed({
   wipeCari = false,
   confirm = null,
   ask = null,
+  emptySkip = null,
   now = new Date(),
 }: SeedOptions = {}) {
   if (!url) throw new Error("DATABASE_URL tanımlı değil");
@@ -337,13 +361,13 @@ export async function runSeed({
     const [{ n }] = await db.select({ n: count() }).from(s.ingredients);
     if (n > 0 && !reset) {
       console.log("✓ Veritabanında veri var, seed atlandı (yeniden yüklemek için --reset)");
-      await ensureAdmin(db);
-      await ensureChecklistSeed(db);
-      await ensureBranchSeed(db);
-      await ensureMarinaChecklistSeed(db);
-      await ensureTuzlaHourlySeed(db);
-      await ensureFoodSafetyItems(db);
-      await ensureMarinaPhotoItems(db);
+      await ensureBasics(db);
+      return;
+    }
+    // Canlı derleme boş veritabanına kişisel veri yazmaz (emptySkip); derleme uyarıyla sürer
+    if (emptySkip && !reset) {
+      console.warn(`! ${emptySeedWarning(emptySkip)}`);
+      await ensureBasics(db);
       return;
     }
 
@@ -481,13 +505,7 @@ export async function runSeed({
       `✓ Başlangıç verisi yüklendi: ${ds.ingredients.length} hammadde (+${total - ds.ingredients.length} sayım kalemi), ${ds.products.length} ürün, ` +
         `${ds.recipeItems.length} reçete satırı, ${ds.salesLines.length} satış satırı, ${ds.invoices.length} fatura`,
     );
-    await ensureAdmin(db);
-    await ensureChecklistSeed(db);
-    await ensureBranchSeed(db);
-    await ensureMarinaChecklistSeed(db);
-    await ensureTuzlaHourlySeed(db);
-    await ensureFoodSafetyItems(db);
-    await ensureMarinaPhotoItems(db);
+    await ensureBasics(db);
   } finally {
     await db.$client.end();
   }

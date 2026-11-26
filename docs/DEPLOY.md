@@ -9,10 +9,17 @@ olarak çalışıyor. Veritabanı olarak Vercel Marketplace'teki Neon Postgres �
 git init && git add . && git commit -m "L'Affogato paneli"
 ```
 
-GitHub'da **gizli (private)** bir depo açıp kodu oraya gönderin. Depoda Excel'den aktarılan başlangıç verisi
-(`src/server/db/seed/excel-data.json`: maaşlar, kira, faturalar, satışlar) bulunduğu için depoyu herkese açık
-yapmayın. Depo kökü `lafmaliyet` klasörüyse Vercel'de **Root Directory**
-olarak `laffogato` seçeceksiniz.
+GitHub'da **gizli (private)** bir depo açıp kodu oraya gönderin. Depo kökü `lafmaliyet` klasörüyse Vercel'de
+**Root Directory** olarak `laffogato` seçeceksiniz.
+
+**Depo gizli kalmalı: kişisel veri taşır.** `tests/fixtures/baslangic/veri.json` panelin ilk kurulumundaki başlangıç
+verisidir (Ekim 2026'da eski hesap tablosundan bir kez aktarıldı): personelin adı ve maaşı, kira, faturalar,
+tedarikçiler, satışlar. Uygulama bu dosyayı kullanmaz (`src/` onu içe aktarmaz; `tests/eski-veri-adlari.test.ts`
+tutar), canlıda boş veritabanına da kendiliğinden yüklenmez (§ 5). Yalnız yerel ve test veritabanını dolduran tohum
+betiği (`npm run db:seed`, `scripts/seed.ts`) ve hesap motorunun altın testleri okur; değerleri değiştirilmez (testlerin
+beklenen rakamları onlardan gelir). Depoyu herkese açık yapmayın. Dosya git geçmişinde de durur (26 Kasım 2026'ya kadar
+`src/server/db/seed/excel-data.json` adıyla): depo bir gün açılacaksa ya da dışarıyla paylaşılacaksa önce geçmişten de
+silinmeli (ör. `git filter-repo`) ve testler kişisel olmayan bir veriye taşınmalıdır.
 
 > Vercel CLI ile Git'siz de deploy edebilirsiniz: `laffogato` klasöründe `vercel` komutu.
 
@@ -21,7 +28,8 @@ olarak `laffogato` seçeceksiniz.
 1. vercel.com → **Add New… → Project** → depoyu seçin.
 2. Framework: **Next.js** (otomatik). Root Directory: `laffogato` (gerekiyorsa).
 3. Build komutu değişmez (`npm run build`). Bu komut önce migration'ları uygular ve hepsinin gerçekten uygulandığını
-   doğrular (§ 7), veritabanı boşsa tohum verisini (eski hesap tablosundan) yükler, sonra derler. Önizleme derlemesi migration ve seed
+   doğrular (§ 7), ilk yöneticiyi, şube kütüğünü ve hazır kontrol listelerini bir kez yazar, sonra derler. Canlı
+   derleme boş veritabanına başlangıç verisi **yüklemez**, uyarıyla sürer (§ 5). Önizleme derlemesi migration ve seed
    çalıştırmaz (§ 3); bekçiyi içeren commit'lerde `main` dışındaki bir dalın Production derlemesi hiç başlamadan durur
    (§ 7, "Production yalnız main'den"; bekçiden önce açılmış eski dallar durmaz, onların dağıtımları yeniden
    derlenmez).
@@ -112,6 +120,7 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `CASH_REPORT_RECIPIENTS` | (isteğe bağlı, yalnız Production) Kasa raporunun alıcıları, yönetici panelden hiç kaydetmediyse: virgülle ayrılmış e-postalar. Panelde kaydedilen liste her zaman önce gelir ([KASA-RAPORU.md](KASA-RAPORU.md)) |
 | `MIGRATE_ON_PREVIEW` | (yalnız Preview, isteğe bağlı) `1`: önizlemelerin **kendi** veritabanı varsa (Neon önizleme dalları) önizleme derlemesi de migration uygular. Önizleme canlının veritabanını kullanıyorsa tanımlamayın (§ 3) |
 | `ALLOW_BRANCH_PRODUCTION` | (yalnız acil durumda, tek derleme için) `1`: `main` dışındaki bir dalın Production derlemesine bilerek izin verir; derleme günlüğüne uyarı yazılır. Proje ayarlarına **eklemeyin**: `vercel deploy --prod --build-env ALLOW_BRANCH_PRODUCTION=1` ile yalnız o derlemeye verilir (§ 7, "Production yalnız main'den") |
+| `SEED_ON_EMPTY` | (yalnız bilerek, tek derleme için) `1`: veritabanı boşsa derleme başlangıç verisini (maaşlar, kira, faturalar, satışlar) canlıda da yükler, günlüğe uyarı yazılır; `0`: yerelde de yüklemez. Yoksa canlı, önizleme ve bu bilgisayarda olmayan veritabanı yüklemez, yerel yükler (§ 5, "Boş veritabanı"). Proje ayarlarına **eklemeyin**: `vercel deploy --prod --build-env SEED_ON_EMPTY=1` ile yalnız o derlemeye verilir; ayarda kalırsa yanlış adrese bağlanan bir derleme kişisel veriyi oraya yazar |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | (isteğe bağlı) Web Push anahtarları; yoksa ilk kullanımda üretilip veritabanında şifreli saklanır |
 | `ANTHROPIC_API_KEY` | (isteğe bağlı, **yalnız Production**) Fotoğraftan okuma (Claude): kasa raporunda Z raporu, banka POS fişi ve kasadan çıkan fişler. Yoksa fotoğraf yine eklenir, rakamlar elle yazılır; LafPOS gününün gün sonu fotoğrafı (Pavo'nun detaylı Z'si) anahtarsız da kodla (OCR) okunur, öteki fotoğraflar okunmaz. Aynı anahtar Vardiya'daki **Yazarak doldur**u da çalıştırır ([VARDIYA.md](VARDIYA.md) › Yazarak doldurma); yoksa kutular elle doldurulur. Ayrıntı [FOTOGRAF.md](FOTOGRAF.md) |
 | `BLOB_READ_WRITE_TOKEN` | (isteğe bağlı, **yalnız Production**) Fotoğraf deposu: Vercel › Storage › Blob, erişim **Private**, bölge Frankfurt (fra1). Depoyu projeye bağlayınca kendiliğinden eklenir (yeni bağlantı anahtar yerine `BLOB_STORE_ID` verirse o da yeter). Yoksa fotoğraf düğmeleri görünmez ([FOTOGRAF.md](FOTOGRAF.md)) |
@@ -135,14 +144,44 @@ uyarıları; iki iş birden durursa diye isteğe bağlı dış izleme: `/api/hea
 
 ## 5. Deploy
 
-**Deploy** düğmesine basın. Build günlüğünde şunları görmelisiniz:
+**Deploy** düğmesine basın. Yeni (boş) bir veritabanında build günlüğünde şunları görmelisiniz:
 
 ```
 ✓ 21 migration uygulandı (2,4 sn)
 ✓ Veritabanı şeması güncel (21 migration)
-✓ Excel verisi yüklendi: 74 hammadde, 129 ürün, 699 reçete satırı, 125 satış satırı, 81 fatura
+! Veritabanı boş; başlangıç verisi yüklenmedi: canlı derleme (VERCEL_ENV=production). Panel boş açılır: …
 ✓ Yönetici hesabı oluşturuldu: …
+✓ Kontrol listeleri eklendi: Açılış, Kapanış
+✓ Şubeler eklendi: Marina, laffogato.net
 ```
+
+Dolu veritabanında (sonraki her yayın) `✓ Veritabanında veri var, seed atlandı` yazar.
+
+**Boş veritabanı ve başlangıç verisi (26 Kasım 2026).** Canlı derleme boş bir veritabanına başlangıç verisini
+(`tests/fixtures/baslangic/veri.json`: maaşlar, kira, faturalar, satışlar; § 1) **kendiliğinden yüklemez**. Önceden
+"veritabanı boşsa yükle" kuralı vardı: Vercel'e yanlış ya da yeni açılmış boş bir veritabanının adresi verilse ilk
+derleme kişisel veriyi oraya yazardı. Şimdi boş veritabanında derleme migration'ları uygular, ilk yöneticiyi
+(`ADMIN_*`), şube kütüğünü ve hazır kontrol listelerini yazar ve şu uyarıyla **sürer** (derleme düşmez):
+`! Veritabanı boş; başlangıç verisi yüklenmedi: canlı derleme (VERCEL_ENV=production). Panel boş açılır: veri yedekten
+(npm run db:restore) gelir ya da panelden girilir. …`. Yeni canlı veritabanının verisi yedekten gelir
+([YEDEK.md](YEDEK.md) § 8). Karar `scripts/predeploy-guard.ts` › `emptySeedSkipReason`'da (deneme
+`tests/predeploy.test.ts`, betiğin kendisiyle gerçek Postgres'te `tests/predeploy-db.test.ts`):
+
+| Derleme | Boş veritabanına başlangıç verisi |
+|---------|-----------------------------------|
+| Canlı (`VERCEL_ENV=production` ya da `NODE_ENV=production`) | Yüklenmez, uyarı |
+| Vercel önizlemesi (`MIGRATE_ON_PREVIEW=1` ile kendi veritabanı varsa; § 3) | Yüklenmez, uyarı |
+| Bu bilgisayarda olmayan veritabanı (Neon, uzak sunucu; `.env.local` canlının adresini gösterebilir) | Yüklenmez, uyarı |
+| Yerel geliştirme (bu bilgisayardaki Postgres, canlı değil) | Yüklenir (önceki gibi) |
+| `SEED_ON_EMPTY=1` (her yerde, canlıda da) | Yüklenir; canlıda ve uzak veritabanında günlüğe `! SEED_ON_EMPTY=1: …` uyarısı |
+| `SEED_ON_EMPTY=0` (her yerde) | Yüklenmez |
+
+Bilerek yüklemek (deneme amaçlı ayrı bir canlı kopya) tek derleme için yapılır:
+`vercel deploy --prod --build-env SEED_ON_EMPTY=1`; değişken proje ayarlarına eklenmez (§ 4). `npm run db:seed` ve
+`npm run db:reset` açıkça çağrıldıkları için bu kurala bağlı değildir (hedefi `Hedef: …` diye yazar; uzak
+veritabanında `db:reset` sunucu adıyla onay ister, § 7); `npm run test:db` de geçici test veritabanını her zaman
+doldurur. Dolu veritabanında hiçbir şey değişmez: veri varsa (hammadde tablosu boş değilse) tohum atlanır, yalnız
+eksik yönetici, şube ve hazır listeler bir kez eklenir.
 
 **Kodla okuma (OCR):** LafPOS gününün gün sonu fotoğrafı yapay zekâ yokken panelin içinde okunur (tesseract.js). Dil
 verisi (`@tesseract.js-data/tur`) ve çekirdek (`tesseract.js-core`, WebAssembly) paketle gelir: ortam değişkeni yok, ağ
@@ -509,7 +548,7 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   sekmeleri ve bütün ayların satış, ay bilgisi, gelir-gider, sayım ve alım miktarı kayıtları. Aylık harcamaların tek
   tek kayıtları (yalnız Gelir-Gider'de ay toplamı), hatırlatıcılar, kullanıcılar ve Paraşüt bağlantıları o dosyada
   yoktur; dışa aktarım panele geri yüklenmez.
-- Veriyi ilk kurulumdaki tohum verisine (eski hesap tablosu) döndürmek için yerel makineden production veritabanı adresiyle şunu çalıştırın:
+- Veriyi ilk kurulumdaki başlangıç verisine (`tests/fixtures/baslangic/veri.json`, § 1) döndürmek için yerel makineden production veritabanı adresiyle şunu çalıştırın:
 
 ```bash
 DATABASE_URL="<neon bağlantı adresi>" npm run db:reset -- --onay=<sunucu adı>
@@ -525,11 +564,11 @@ DATABASE_URL="<neon bağlantı adresi>" npm run db:reset -- --onay=<sunucu adı>
   Dikkat: ürünler, hammaddeler, satışlar, faturalar (belge ve kalemleriyle), sabit giderler, personel, gelir-gider
   düzeltmeleri, sayımlar, ay bilgileri, ayarlar, POS eşleştirmeleri, aylık harcama kayıtları, işlem geçmişi, Paraşüt
   eşitleme geçmişi, imleci ve ürün bağlantıları, ürünlerin laffogato.net menü bağlantıları ve eşitleme durumu,
-  Ödemeler › Son ödenenler listesi ile bildirim günlüğü silinip Excel verisi yeniden yüklenir. Faturaların ödendi / talep edildi işaretleri de gider; ödeme takibinin başlangıcı
+  Ödemeler › Son ödenenler listesi ile bildirim günlüğü silinip başlangıç verisi yeniden yüklenir. Faturaların ödendi / talep edildi işaretleri de gider; ödeme takibinin başlangıcı
   sıfırlanır. Ürünler zayi oranlarını kategorilerinden alır (kahve %5, tatlı %20, çay %40…; `src/lib/fire-defaults.ts`).
   **Silinmeyenler:** kullanıcılar, aylık harcama kategorileri (kayıtları silinir), hatırlatıcılar,
   bildirim alıcıları ve e-posta ayarları, Paraşüt kategori kuralları, tedarikçi cari kartları, günlük işlerin çalışma kayıtları,
-  fotoğraflar, kasadan çıkanlar ve okuma kayıtları, zayi ve ikram kayıtları (Excel'de aynı kimlik ve adla geri gelen ürüne
+  fotoğraflar, kasadan çıkanlar ve okuma kayıtları, zayi ve ikram kayıtları (başlangıç verisinde aynı kimlik ve adla geri gelen ürüne
   ya da hammaddeye bağlı kalır, gerisi yalnız adıyla). Sonraki eşitleme
   Paraşüt faturalarını baştan alır: son 30 günün faturaları "ödenmedi", daha eskileri Paraşüt'teki durumuyla gelir.
 

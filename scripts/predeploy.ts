@@ -1,5 +1,5 @@
 // `npm run build` öncesinde çalışır (Vercel dahil):
-// veritabanı tanımlıysa şemayı günceller ve veritabanı boşsa Excel verisini yükler.
+// veritabanı tanımlıysa şemayı günceller; veritabanı boşsa başlangıç verisini yalnız yerelde yükler (aşağıda).
 // DATABASE_URL yoksa sessizce geçer; böylece veritabanı olmadan da derleme yapılabilir.
 //
 // Önizleme (preview) dağıtımlarında atlanır: önizlemeler canlıyla aynı veritabanını kullanıyor, birleşmemiş bir dalın
@@ -17,16 +17,22 @@
 // Production derlemesi yalnız main dalından (predeploy-guard.ts › productionBranchRefusal): bir dal önizlemesi
 // Production'a terfi ya da redeploy edilirse derleme her şeyden önce durur; dalın migration'ı canlıya gitmez, dalın kodu
 // canlı sırlarıyla yayına çıkmaz (26 Eki 2026, denetim E-10). Bilerek yapılan dağıtım ALLOW_BRANCH_PRODUCTION=1 ister.
+//
+// Canlıda boş veritabanına başlangıç verisi kendiliğinden yüklenmez (predeploy-guard.ts › emptySeedSkipReason; 26 Kas
+// 2026): yanlış ya da yeni açılmış bir veritabanının adresi verilirse maaş ve kira oraya yazılmasın. Boş veritabanında
+// migration'lar, ilk yönetici, şube kütüğü ve hazır kontrol listeleri yine yazılır, derleme uyarıyla sürer; veri yedekten
+// (npm run db:restore) gelir. Bilerek yüklemek için o derlemeye SEED_ON_EMPTY=1. Yerelde (bu bilgisayardaki Postgres)
+// boş veritabanı bugünkü gibi dolar.
 
 import { loadEnvConfig } from "@next/env";
 import { sql } from "drizzle-orm";
 
-import { databaseUrl } from "../src/lib/backup/format";
+import { databaseTarget, databaseUrl } from "../src/lib/backup/format";
 import { createDb } from "../src/server/db";
 import { restartWatchOnDeploy } from "../src/server/jobs/watch";
 
 import { runMigrations } from "./migrate";
-import { predeploySkipReason, productionBranchOverride, productionBranchRefusal } from "./predeploy-guard";
+import { emptySeedOverride, emptySeedSkipReason, predeploySkipReason, productionBranchOverride, productionBranchRefusal } from "./predeploy-guard";
 import { runSeed } from "./seed";
 
 /**
@@ -87,7 +93,11 @@ async function main() {
   const url = databaseUrl(shell, process.env);
   await checkRuntimeConnection(url);
   await runMigrations(url);
-  await runSeed({ url });
+  // Boş veritabanına başlangıç verisi yalnız yerelde; canlıda ve uzak veritabanında yalnız SEED_ON_EMPTY=1 ile
+  const target = databaseTarget(url ?? "");
+  const seedOverride = emptySeedOverride(process.env, target);
+  if (seedOverride) console.warn(`! ${seedOverride}`);
+  await runSeed({ url, emptySkip: emptySeedSkipReason(process.env, target) });
   if (process.env.VERCEL_ENV === "production") await markJobsWatched(url);
 }
 

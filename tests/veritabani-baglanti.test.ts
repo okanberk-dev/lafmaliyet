@@ -601,7 +601,7 @@ test("havuzun ayarları ve canlı derlemenin bağlantı denetimi", () => {
   assert.match(src, /Object\.assign\(db, \{ \$client: client \}\)/);
   const pre = read("scripts/predeploy.ts");
   // Havuzlu bağlantı migration'dan önce: açılmazsa derleme şemayı değiştirmeden durur (eski sürüm yeni şemayla kalmasın)
-  assert.match(pre, /await checkRuntimeConnection\(url\);\s*await runMigrations\(url\);\s*await runSeed\(\{ url \}\);/);
+  assert.match(pre, /await checkRuntimeConnection\(url\);\s*await runMigrations\(url\);[\s\S]{0,400}?await runSeed\(\{ url, emptySkip: /);
   assert.ok(pre.indexOf("await checkRuntimeConnection(url);") < pre.indexOf("await runMigrations(url);"));
   assert.match(pre, /if \(!url \|\| url === migrated\) return;/);
 });
