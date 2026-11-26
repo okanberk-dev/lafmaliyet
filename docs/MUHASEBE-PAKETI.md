@@ -29,6 +29,8 @@ Kod: `src/lib/muhasebe/paket.ts` (saf: ayarlar, gönderim günü, özet, çalı�
 
 ## 2. Nereden
 
+- **Muhasebe** (`/panel/muhasebe`): **Muhasebeci** rolündeki hesabın ana ekranı ([ROLLER.md](ROLLER.md)); ay seçip
+  **Paketi indir (.xlsx)** (`/api/muhasebe/paket`, yetenek `muhasebe.oku`). Salt okunur: gönderim ve ayarlar yok.
 - **Ayarlar › Muhasebeci paketi** (`/panel/ayarlar#muhasebe`, yalnız yönetici): muhasebeci e-posta adresleri (en çok 5;
   boşsa e-posta gitmez), "Ay kapanınca gönder" (varsayılan açık), ay seçimi, **Paketi indir (.xlsx)**, **Şimdi gönder**
   (onaylı; kaydedilmiş adreslere), son gönderim (ay, an, kim, kime).

@@ -1,6 +1,9 @@
 # Onaylar ve personel istekleri
 
-Ekran: **Onaylar** (`/panel/onaylar`; yalnız yönetici, menüde **Bugün**'ün hemen altında). Personelin yöneticinin
+Ekran: **Onaylar** (`/panel/onaylar`; yönetici, menüde **Bugün**'ün hemen altında). **Müdür** de açar
+([ROLLER.md](ROLLER.md)): yalnız şubesinin Kasa ve Zayi ve ikram isteklerini görür ve karara bağlar (şubesi bilinmeyen
+istek ona kapalı; karar eylemleri `reviewBranchRefusal`); öbür şubelerin sayısı, Karaoke, Reçete önerileri ve Son
+kararlar yöneticinin. Personelin yöneticinin
 onayına giden istekleri ve reçete önerileri tek yerde. Karar: dalga 10, sahibin isteği "önemli olan onaydan geçsin"
 ([planlar/personel-yetki.md](planlar/personel-yetki.md) §0, §3).
 

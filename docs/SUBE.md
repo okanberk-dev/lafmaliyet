@@ -615,6 +615,10 @@ Yönetici şubeye bağlanmaz; bütün şubeleri görür ve seçiciyle süzer.
   serbest. Yeni kayıt zaten formun kasasına (`formTillBranch`) ya da seçili şubeye yazılır, kilitli personelde ikisi de
   kendi şubesidir.
 - Şube pasife alınırsa kilit kalkar (kişi "Tümü"ye düşer); yönetici yeni şubesini seçer.
+- **Müdür** ([ROLLER.md](ROLLER.md)) de şubesine kilitlidir, şube onda ZORUNLUDUR (veritabanı kısıtı
+  `users_manager_branch_ck`). Personelin kilidine ek olarak `withBranchScope` ile açılan işletme geneli ya da başka
+  şubenin okumaları da şubesine daralır; şubesi pasife alınırsa kilit kalkmaz, oturumu yok sayılır (giriş de
+  reddedilir). Muhasebeci şubeye bağlanmaz, bütün şubeleri salt okur.
 - Kullanıcı listesinde personelin şubesi rozetle görünür. Şubeye bağlı hesap varken şube silinmez
   (`branchUsageCount`).
 
