@@ -1,9 +1,12 @@
 "use client";
 
 import { Check, CircleCheck, Copy, Download, Loader2, LogOut, ShieldCheck } from "lucide-react";
-import { useState, useTransition, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
+import { forgetDeviceOnSignOut } from "@/components/panel/live/push-client";
+import { actionErrorText, useActionTransition } from "@/components/ui/action-error";
 import { ADMIN_2FA_REQUIRED_TEXT } from "@/lib/admin-security";
+import { forgetAssistantData } from "@/lib/assistant/history";
 import { isSetupEnded } from "@/lib/two-factor-setup";
 import { beginTotpSetup, cancelTotpSetup, confirmTotpSetup, logoutAction } from "@/server/actions/auth";
 
@@ -12,30 +15,39 @@ import { AuthError, AuthHeading, authButton, authCard, authInput, authLink, Floa
 type Setup = { qr: string; secret: string; uri: string };
 type Step = { at: "start" } | { at: "scan"; setup: Setup } | { at: "codes"; codes: string[] };
 
-const UNREACHABLE = "Sunucuya ulaşılamadı. Bağlantınızı kontrol edip yeniden deneyin.";
+/** Tarayıcı deposu (kapalıysa null: gizli sekme, engelli site verisi) */
+function safeStore(kind: "localStorage" | "sessionStorage"): Storage | null {
+  try {
+    return window[kind];
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Zorunlu iki adımlı kurulum (yönetici; src/lib/admin-security.ts). Hesabım'daki kurulumla aynı sunucu eylemleri ve
  * aynı sınırlar (parolayla başlar, 15 dakika, 5 hatalı kod; src/lib/two-factor-setup.ts), giriş kartının görünümüyle:
  * parola → QR'ı okut, kodu gir → kurtarma kodlarını sakla → panele geç. `enabled`: iki adımlı zaten açık (kurulum az
- * önce bitti ya da sayfa sonradan açıldı); kodlar ekrandaysa onlar, değilse yalnız "panele geç" gösterilir.
+ * önce bitti ya da sayfa sonradan açıldı); kodlar ekrandaysa onlar, değilse yalnız "panele geç" gösterilir. Eylem
+ * atarsa (bağlantı koptu, panel güncellendi) kart hata ekranına düşmez, neden kartın kendi hata satırında görünür.
  */
-export function TwoFactorSetup({ email, enabled, next }: { email: string; enabled: boolean; next: string }) {
+export function TwoFactorSetup({ userId, email, enabled, next }: { userId: number; email: string; enabled: boolean; next: string }) {
   const [step, setStep] = useState<Step>({ at: "start" });
   const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, startAction] = useActionTransition();
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
-  /** Eylem ağ hatasıyla düşerse (bağlantı koptu, panel güncellendi) kart hata ekranına gitmez */
+  /** Eylemi kartın içinde bekler: atılan hata (ağ, eski sayfa) kartın hata satırına yazılır */
   const run = (fn: () => Promise<void>) =>
-    startTransition(async () => {
+    startAction(async () => {
       try {
         await fn();
-      } catch {
-        setError(UNREACHABLE);
+      } catch (e) {
+        setError(actionErrorText(e));
       }
     });
 
@@ -73,12 +85,27 @@ export function TwoFactorSetup({ email, enabled, next }: { email: string; enable
     setStep({ at: "start" });
   }
 
-  const signOut = (
-    <form action={logoutAction}>
-      <button type="submit" className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 text-[15px] font-semibold text-black/70 hover:text-black">
-        <LogOut className="size-4" aria-hidden /> Çıkış yap
-      </button>
-    </form>
+  // Çıkış panelin çıkışı gibi: bu cihazın bildirim aboneliği ve asistanın sohbet geçmişi bu kullanıcıyla gider
+  function signOut() {
+    setLeaving(true);
+    forgetAssistantData(userId, [safeStore("localStorage"), safeStore("sessionStorage")]);
+    void forgetDeviceOnSignOut().finally(() =>
+      logoutAction().catch((e: unknown) => {
+        setLeaving(false);
+        setError(actionErrorText(e));
+      }),
+    );
+  }
+
+  const signOutButton = (
+    <button
+      type="button"
+      onClick={signOut}
+      disabled={leaving}
+      className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 self-start text-[15px] font-semibold text-black/70 hover:text-black disabled:cursor-default disabled:opacity-60"
+    >
+      <LogOut className="size-4" aria-hidden /> Çıkış yap
+    </button>
   );
 
   if (step.at === "codes") {
@@ -215,7 +242,7 @@ export function TwoFactorSetup({ email, enabled, next }: { email: string; enable
         <FloatingPasswordField id="setup-password" label="Parolanız" name="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
         {error ? <AuthError>{error}</AuthError> : null}
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {signOut}
+          {signOutButton}
           <button type="submit" disabled={pending || !password} className={`${authButton} max-sm:w-full`}>
             {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
             {pending ? "Denetleniyor…" : "Devam"}

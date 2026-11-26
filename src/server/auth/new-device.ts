@@ -28,16 +28,25 @@ export async function noteNewDevice(user: { id: number; name: string; email: str
   // logActivity kendi hatasını yutar (günlüğe yazar)
   await logActivity({ id: user.id, name: user.name }, NEW_DEVICE_ACTION, detail);
   if (!isEmailConfigured()) return;
-  after(async () => {
-    try {
-      const settings = await loadNotifySettings();
-      const mail = renderNewDeviceNotice({ name: user.name, detail, at, base: appUrl() });
-      const res = await sendEmail({ from: resolveFrom(settings.from), to: [user.email], ...mail, idempotencyKey: `yeni-cihaz-${user.id}-${at.getTime()}` });
-      if (!res.ok) console.error("[giriş] yeni cihaz e-postası gitmedi:", res.error);
-    } catch (e) {
-      console.error("[giriş] yeni cihaz e-postası", e);
-    }
-  });
+  try {
+    after(() => sendNewDeviceEmail(user, detail, at));
+  } catch {
+    // İstek dışında (betik, test) e-posta gönderilmez; giriş bozulmaz
+  }
+}
+
+/** Uyarı e-postası hesabın kendi adresine (Resend; gönderen Ödemeler & hatırlatıcılar › Gönderim ayarları). Hata fırlatmaz */
+export async function sendNewDeviceEmail(user: { id: number; name: string; email: string }, detail: string, at: Date): Promise<boolean> {
+  try {
+    const settings = await loadNotifySettings();
+    const mail = renderNewDeviceNotice({ name: user.name, detail, at, base: appUrl() });
+    const res = await sendEmail({ from: resolveFrom(settings.from), to: [user.email], ...mail, idempotencyKey: `yeni-cihaz-${user.id}-${at.getTime()}` });
+    if (!res.ok) console.error("[giriş] yeni cihaz e-postası gitmedi:", res.error);
+    return res.ok;
+  } catch (e) {
+    console.error("[giriş] yeni cihaz e-postası", e);
+    return false;
+  }
 }
 
 /**

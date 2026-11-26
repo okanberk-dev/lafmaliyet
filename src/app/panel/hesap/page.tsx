@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
-import { needsTwoFactorSetup } from "@/lib/admin-security";
+import { twoFactorRequiredFor } from "@/lib/admin-security";
 import { ROLES } from "@/lib/constants";
 import { requireUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
@@ -93,7 +93,7 @@ async function Account() {
         </CardContent>
       </Card>
       <Card>
-        <TwoFactorCard enabled={Boolean(security?.totpEnabled)} recoveryLeft={security?.recoveryCodes?.length ?? 0} claude={claude} required={needsTwoFactorSetup({ role: user.role, totpEnabled: false })} />
+        <TwoFactorCard enabled={Boolean(security?.totpEnabled)} recoveryLeft={security?.recoveryCodes?.length ?? 0} claude={claude} required={twoFactorRequiredFor(user.role)} />
       </Card>
       {/* Yeni cihaz uyarısı (zil, e-posta) buraya getirir */}
       <Card id="oturumlar" className="scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">

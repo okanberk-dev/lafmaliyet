@@ -23,13 +23,28 @@ export function adminTwoFactorRequired(env: Readonly<Record<string, string | und
   return env[ADMIN_2FA_OPTIONAL_ENV]?.trim() !== "1";
 }
 
+/** Bu rolde iki adımlı zorunlu mu (yönetici ve zorunluluk açık); Hesabım ve Kullanıcılar metinleri buna göre */
+export function twoFactorRequiredFor(role: string, required: boolean = adminTwoFactorRequired()): boolean {
+  return required && role === "admin";
+}
+
 /** Bu hesap panele girmeden önce iki adımlıyı kurmalı mı (yönetici, kapalı, zorunluluk açık) */
 export function needsTwoFactorSetup(u: { role: string; totpEnabled: boolean }, required: boolean = adminTwoFactorRequired()): boolean {
-  return required && u.role === "admin" && !u.totpEnabled;
+  return twoFactorRequiredFor(u.role, required) && !u.totpEnabled;
 }
 
 /** Kurulum ekranının açıklaması */
 export const ADMIN_2FA_REQUIRED_TEXT = "Yönetici hesaplarında iki adımlı doğrulama zorunludur. Kurulum bitince panel açılır.";
+
+/**
+ * Kullanıcılar › Güvenlik › İki adımlı doğrulamayı sıfırla (telefonunu kaybeden yönetici): zorunluyken kişi girişte
+ * parolanın ardından kurulum ekranına gider ve yeni telefonuyla hemen kurar; zorunluluk kapalıyken yalnız parola
+ */
+export function twoFactorResetText(required: boolean): string {
+  return required
+    ? "Telefonunu kaybeden yönetici için. Girişte parolanın ardından kurulum ekranı açılır: yeni telefonuyla hemen yeniden kurar, kurana kadar paneli kullanamaz."
+    : "Telefonunu kaybeden kullanıcı için. Girişte yalnızca parola istenir; kişi Hesabım'dan yeniden kurabilir.";
+}
 
 /** Hesabım'da kapatma penceresinin uyarısı (zorunluyken yönetici) */
 export const ADMIN_2FA_DISABLE_NOTE =
