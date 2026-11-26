@@ -470,15 +470,22 @@ bir Web Worker'da çalıştırılması önerilir (eşzamanlı; `ImageData.data.b
   yamultma (uzun kenarlar yerinde).
 - **Giriş noktası** (`index.ts`): `scanDocument(img, { corners?, refine?, mode?, maxEdge?, deskew?, rotate? })` →
   `{ image, corners, confidence, method, fillsFrame, rotation, rotate, reasons, timings }`; `detectDocument`,
-  `refineCorners`, `quadIsValid`, `orderCorners`, `cornersFromHint` / `cornersToHint` (0–1000 oran), `thumbnail`.
+  `refineCorners`, `quadIsValid`, `orderCorners`, `cornersFromHint` / `cornersToHint` (0–1000 oran), `thumbnail`,
+  `scaleQuad` / `unscaleQuad` (önizleme kopyası ile asıl fotoğraf arasında köşe taşıma).
 - **Doğruluk ve süre** (sentetik fotoğraflar, gerçek köşeler bilinir; `tests/tarama-*.test.ts`): köşe hatası köşegenin
   %1,5'inin altında (eğik A4, koyu / dokulu / tahta zemin, açık ve beyaza yakın tezgâhta termal fiş, gölgeli fiş, kareden
   taşan fiş, köşesi kareden çıkmış kâğıt, yanında POS cihazı olan fiş; çoğunda %0,1'in altında); rastgele 192 sahnede
-  192'si. Kaba ipucu (köşegenin
-  ±%5'i) %1,5'in altına oturur. Beyaz fiş beyaza yakın tezgâhta: kâğıtla zemin arası ~20 gri düzeyinde bulunur, ~12'de
-  çoğu, ~8'de hiçbiri (A4 ~8'de de bulunur); bulunamayınca kırpılmaz, yalnız görünüm işlenir.
+  192'si (testte tohumlu altısı). Kaba ipucu (köşegenin ±%5'i) %1,5'in altına oturur. Beyaz fiş beyaza yakın
+  tezgâhta: kâğıtla zemin arası ~20 gri düzeyinde bulunur, ~12'de çoğu, ~8'de hiçbiri (A4 ~8'de de bulunur);
+  bulunamayınca kırpılmaz, yalnız görünüm işlenir.
   1670×2220 fotoğrafta (yüklemedeki ölçü) sunucu çekirdeğinde A4 ~0,7–1 sn, fiş ~0,4 sn işlemci süresi; telefonda
-  birkaç kat.
+  birkaç kat. Canlı önizleme (kamerada kenarı göstermek) için kare önce küçültülür: `detectDocument(thumbnail(kare,
+  320), { maxEdge: 320 })` ~0,13 sn, köşe hatası yine %0,2'nin altında. Küçük, çok ince, düz ya da gürültü görüntüde
+  çökmez (yöntem "yok", kırpılmaz).
+- **Bilinen sınırlar:** yalnız sentetik fotoğraflarla ölçüldü (gerçek fotoğraf deneme betiğiyle denenmeli); kâğıtla
+  zemin arası ~10 gri düzeyinin altında kâğıt bulunmaz, görüntü kâğıda benziyorsa "tam-kare" (kırpılmaz); karede iki
+  belge varsa biri seçilir, güven düşer ("iki-aday"); 90° / 180° yön kendiliğinden bulunmaz (`rotate` ya da yapay
+  zekânın "top" ipucu gerekir), yalnız ±8° eğiklik düzeltilir.
 - **Deneme:** `npx tsx scripts/tarama-dene.ts <fotoğraf|klasör> [--mod hepsi] [--ipucu x1,y1,…,x4,y4] [--ust right]`
   ya da `--sentetik`; çıktı `.data/tarama-dene/` (köşe çizimi ve taranmış hâller). sharp yalnız bu betikte, dinamik
   yüklenir.
