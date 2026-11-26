@@ -50,18 +50,23 @@ export function percentile(data: ArrayLike<number>, p: number, lo = 0, hi = 1): 
 /**
  * Mürekkep haritası: kâğıdın yerel parlaklığı (en büyük süzgeç + kutu ortalaması; yazıyı siler, gölgeyi izler), ona
  * oranla koyuluk ve eşiklenmiş yazı maskesi. Eşik mürekkebin koyuluğuna göre seçilir (soluk termal baskıda düşer).
+ * Mürekkebin koyuluğu yalnız ince koyu yerlerde (yakınında kâğıt kadar açık piksel olan) ölçülür: kâğıdın çevresindeki
+ * koyu zemin şeridi (bütün kare çözümlenirken) eşiği yükseltip soluk yazıyı parçalamasın.
  */
 export function inkMap(g: GrayImage): InkMap {
   const { width: w, height: h, data } = g;
   const r = Math.max(3, Math.round(Math.max(w, h) / 110));
   const bg = boxMean(maxFilter(g, r), 2 * r).data;
+  const near = maxFilter(g, Math.max(2, Math.round(r / 3))).data;
   const dark = new Float32Array(w * h);
+  const thin = new Float32Array(w * h);
   for (let i = 0; i < dark.length; i++) {
     const b = bg[i] > 16 ? bg[i] : 16;
     const d = (b - data[i]) / b;
     dark[i] = d > 0 ? (d < 1 ? d : 1) : 0;
+    thin[i] = near[i] >= 0.85 * b ? dark[i] : 0;
   }
-  const inkLevel = percentile(dark, 0.995);
+  const inkLevel = percentile(thin, 0.995);
   const threshold = Math.max(0.08, Math.min(0.35, 0.42 * inkLevel));
   const mask = new Uint8Array(w * h);
   let count = 0;
