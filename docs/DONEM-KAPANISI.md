@@ -13,7 +13,8 @@ da harcama gelirse panelin o ayki rakamı beyandan ayrılırdı. Dönem kapanı�
   Ayarlar › Dönem kapanışı'ndaki **"Kapalı döneme düşenler"** kutusunda kararı bekler; zil ("Kapalı döneme düşen kayıt
   var") oraya götürür.
 - Kapalı ayda sayılan kaydın **tarihi, tutarları ve kategorisi düzeltilemez, kaydın kendisi silinemez**; başka bir
-  kayıt kapalı aya taşınamaz. Ödeme, vade, şube, açıklama ve not serbesttir (eski faturayı ödemek, şubesini seçmek olağan iş).
+  kayıt kapalı aya taşınamaz. Ödeme, vade, açıklama ve not serbesttir; faturanın şubesi de seçilebilir (eski faturayı
+  ödemek, şubesini seçmek olağan iş). Harcamanın şubesi kilitlidir (şubenin o ayki gideri değişmesin).
 - Kapalı ayın rakamı yalnız yöneticinin bilerek verdiği kararla ya da ayı yeniden açmakla değişir.
 
 ## 2. Kurallar (kod: `src/lib/closed-period.ts`, testler `tests/donem-kapanisi.test.ts`, `tests/donem-kapanisi-db.test.ts`)
@@ -70,6 +71,7 @@ eski değişiklikler yalnız işlem geçmişinde (Ayarlar › İşlem geçmişi)
 
 - Kapalı aya düşen kayıt reddedilmez, beklemeye alınır (veri kaybolmaz; karar yöneticinin).
 - Bekleyen kayıt hiçbir hesaba girmez (kapalı ayın rakamı değişmez, açık ayın rakamı da karar verilmeden şişmez).
-- Şube seçimi kilitli değil: şirketin toplamı ve vergi değişmez; eski faturaların şubesini seçme işi sürüyor.
+- Faturanın şube seçimi kilitli değil: şirketin toplamı ve vergi değişmez; eski faturaların şubesini seçme işi sürüyor.
+  Harcamanın şubesi kapalı ayda kilitli (seçme işi yok; tutucu olan).
 - Paraşüt'te değişen eski fatura kilitlenmez, sağlama uyarısıyla görünür (Paraşüt muhasebecinin kaynağıdır).
 - Kapanış geri alınabilir (yeniden aç); kararlar işlem geçmişinde.
