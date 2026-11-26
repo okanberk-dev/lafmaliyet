@@ -29,6 +29,7 @@ import { PROFILE_LIST_REFUSAL, PROFILE_OWN_LIST_REFUSAL } from "../src/lib/notif
 import { STAFF_EMAIL_ERROR } from "../src/lib/staff-errors";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.BILDIRIM_TEST_DATABASE_URL ?? process.env.LAFPOS_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_bildirim_${process.pid}`;
@@ -111,6 +112,7 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     stub(require.resolve("../src/server/auth/dal"), {
       getCurrentUser: session,
       requireUser: session,
+      ...dalCapabilities(session),
       requireAdmin: async () => {
         if (me.role !== "admin") throw new Error("yönetici değil");
         return session();
@@ -328,7 +330,7 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
       [ACCOUNTANT, users.ali.email],
     ]);
     const [act] = await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Sabah e-postası"));
-    assert.match(act.detail ?? "", / → 2 adres · 2 adres atlandı \(personel ya da pasif hesap\)$/);
+    assert.match(act.detail ?? "", / → 2 adres · 2 adres atlandı \(personel, müdür ya da pasif hesap\)$/);
     const logs = await db.select({ recipients: s.notificationLog.recipients }).from(s.notificationLog);
     assert.ok(logs.length > 0);
     for (const l of logs) assert.doesNotMatch(l.recipients ?? "", /ayse@|eski@/);

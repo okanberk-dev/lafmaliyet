@@ -26,6 +26,7 @@ import { addDays, todayTR } from "../src/lib/reminders";
 import type { SiteMenuItem } from "../src/lib/site-menu/schema";
 import { weekStart } from "../src/lib/vardiya";
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.ASISTAN_TEST_DATABASE_URL;
 const DB_NAME = `lm_asistan_islem_${process.pid}`;
@@ -92,6 +93,7 @@ describe("asistanın işlemleri: veritabanında", { skip: !SERVER_URL && "ASISTA
         return { ...me, branchId: null };
       },
       requireUser: async () => ({ ...me, branchId: null }),
+      ...dalCapabilities(async () => ({ ...me, branchId: null })),
       getCurrentUser: async () => ({ ...me, branchId: null }),
     });
     const dbModule = await import("../src/server/db");

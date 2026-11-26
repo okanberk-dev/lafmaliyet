@@ -16,6 +16,7 @@ import postgres from "postgres";
 
 import { currentMonthTR, shiftMonth } from "../src/lib/calc/engine";
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.RAPOR_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_raporlar_${process.pid}`;
@@ -53,7 +54,7 @@ describe("raporlar: veritabanında", { skip: !SERVER_URL && "RAPOR_TEST_DATABASE
     const [ali] = await db.insert(s.users).values({ email: "ali@laffogato.net", name: "Ali", passwordHash: "x", role: "staff" }).returning();
     aliId = ali.id;
     const me = async () => ({ ...a, role: "admin" as const });
-    stub(require.resolve("../src/server/auth/dal"), { requireUser: me, requireAdmin: me });
+    stub(require.resolve("../src/server/auth/dal"), { requireUser: me, requireAdmin: me, ...dalCapabilities(me) });
 
     // Marina (LafPOS'a geçilmedi: geçiş günü yok); Tuzla migration'la gelir
     await db.insert(s.branches).values({ id: "marina", name: "Marina", kind: "fiziksel", posSource: "lafpos", sortOrder: 2 }).onConflictDoNothing();

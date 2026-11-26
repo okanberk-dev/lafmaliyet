@@ -28,6 +28,7 @@ import { CALL_ACK_PATH } from "../src/lib/site-orders/calls";
 import { AWAITING_FOLLOW_MS, awaitingUntil as followUntil, boardBusy } from "../src/lib/site-orders/follow";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const URL_ = process.env.BAGLANTI_TEST_DATABASE_URL;
 const SECRET = "siparis-takip-test-anahtari-gercek-degil-0123";
@@ -128,7 +129,7 @@ describe("Bar ekranı: ödeme takibi ve kaçan ping (sitenin sahte ucuyla)", { s
       vapidPublicKey: async () => null,
     });
     // "Gördüm"ü yönetici dokunur (kurulum hatalarının ayrıntılı metni yöneticide görünür)
-    stub(require.resolve("../src/server/auth/dal"), { requireUser: async () => ({ id: 1, name: "Test Yönetici", role: "admin" }) });
+    stub(require.resolve("../src/server/auth/dal"), { requireUser: async () => ({ id: 1, name: "Test Yönetici", role: "admin" }), ...dalCapabilities(async () => ({ id: 1, name: "Test Yönetici", role: "admin" })) });
     const dbModule = await import("../src/server/db");
     db = dbModule.createDb(URL_!, 4);
     closeDb = () => dbModule.getDb().$client.end();

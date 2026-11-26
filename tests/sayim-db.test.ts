@@ -17,6 +17,7 @@ import postgres from "postgres";
 import { extrasBase, STAFF_LATE_FIX_MESSAGE } from "../src/app/panel/sayim/logic";
 import { DEFAULT_BRANCHES } from "../src/lib/branches";
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.SAYIM_TEST_DATABASE_URL ?? process.env.EKLE_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_sayim_${process.pid}`;
@@ -61,6 +62,7 @@ describe("stok sayımı eylemleri: veritabanında", { skip: !SERVER_URL && "SAYI
       // Şube kilidi oturumdan okunur (src/server/branch-scope.ts lockedBranch)
       getCurrentUser: me,
       requireUser: me,
+      ...dalCapabilities(me),
       requireAdmin: async () => {
         if (who.role !== "admin") throw new Error("yalnız yönetici");
         return me();

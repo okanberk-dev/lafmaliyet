@@ -20,6 +20,7 @@ import { businessDate } from "../src/lib/cash-report";
 import { addDays } from "../src/lib/reminders";
 import * as s from "../src/server/db/schema";
 import { seedBranches } from "./helpers/subeler";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.ZAYI_SUBE_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_zayi_sube_${process.pid}`;
@@ -55,7 +56,7 @@ describe("zayi ve ikram: formun şubesi (veritabanında)", { skip: !SERVER_URL &
     const [p] = await db.insert(s.users).values({ email: "ayse@laffogato.net", name: "Ayşe", passwordHash: "x", role: "staff" }).returning();
     // Şube kilidi oturumdan okunur (src/server/branch-scope.ts lockedBranch)
     const me = async () => (who.role === "admin" ? a : { ...p, branchId: who.branchId });
-    stub(require.resolve("../src/server/auth/dal"), { getCurrentUser: me, requireUser: me, requireAdmin: me });
+    stub(require.resolve("../src/server/auth/dal"), { getCurrentUser: me, requireUser: me, requireAdmin: me, ...dalCapabilities(me) });
     waste = await import("../src/server/actions/waste");
     requests = await import("../src/server/actions/waste-requests");
     withBranchScope = (await import("../src/server/branch-scope")).withBranchScope;
