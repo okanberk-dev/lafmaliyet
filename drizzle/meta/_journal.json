@@ -610,13 +610,6 @@
       "when": 1795575564098,
       "tag": "0086_parasut_kimlik_bos_hesap",
       "breakpoints": true
-    },
-    {
-      "idx": 87,
-      "version": "7",
-      "when": 1795637686809,
-      "tag": "0087_kasa_tuzla",
-      "breakpoints": true
     }
   ]
 }
