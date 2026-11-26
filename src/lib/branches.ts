@@ -515,7 +515,7 @@ export function monthWriteNote(scope: BranchScope, known: readonly BranchRow[]):
 }
 
 /** Firma geneli ekranlar (şube kapsamı C P1-12, P2-1): şube seçiliyken de bütün şubelerin verisini gösterir */
-export type CompanyWideScreen = "vergi" | "nakit" | "tedarikciler" | "tutarlilik" | "raporlar";
+export type CompanyWideScreen = "vergi" | "nakit" | "tedarikciler" | "tutarlilik" | "mutabakat" | "raporlar";
 
 const COMPANY_WIDE_TEXT: Record<CompanyWideScreen, string> = {
   // Raporlar (docs/RAPORLAR.md): şubeler yan yana; Kaçak raporu hep Marina'nın
@@ -525,6 +525,8 @@ const COMPANY_WIDE_TEXT: Record<CompanyWideScreen, string> = {
   tedarikciler:
     "Tedarikçilerin cari hesabı firmanındır; borç ve ödemeler şubeye bölünmez. Faturanın şubesi tedarikçi sayfasında rozetinde; kasadan yapılan ödemeler kasanın şubesiyle ayrılır.",
   tutarlilik: "Tutarlılık işletme geneli: alınan mal şubeye bölünmez; sayım, satış ve zayi bütün şubelerden birlikte karşılaştırılır.",
+  mutabakat:
+    "Banka hesabı ve tedarikçi cari hesabı firmanındır: ekstreler bütün şubelerin kayıtlarıyla eşleşir. POS hakedişinde kart satışı şube şube, kendi POS oranıyla hesaplanır.",
 };
 
 /**

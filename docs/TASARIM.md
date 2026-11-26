@@ -82,7 +82,7 @@ ana eylem `bg-primary text-on-primary` (açıkta ikisi de eski siyah / beyaz).
   · Bugün · Onaylar · Kasa raporu**; gerisi konu başlıkları altında: **Kafe** (Karaoke, Kontrol listeleri, Satış
   tahmini, Hatırlatıcılarım) · **Menü** (Ürünler & kârlılık, Fiyatlar, Hammaddeler, Reçete defteri) · **Stok** (Stok
   sayımı, Zayi & ikram, Tutarlılık) · **Satış** (Satışlar, Komisyon & hakediş, Analiz & senaryo) · **Alış & gider**
-  (Faturalar, Tedarikçiler, Giderler & maaşlar) · **Kâr & ödemeler** (Gelir-gider, Ödemeler, Nakit planı) ·
+  (Faturalar, Tedarikçiler, Giderler & maaşlar) · **Kâr & ödemeler** (Gelir-gider, Ödemeler, Nakit planı, Mutabakat) ·
   **Raporlar** (Şube karşılaştırma, İşçilik / ciro, Kaçak raporu, Kayıp önleme; 26 Kas 2026, [RAPORLAR.md](RAPORLAR.md)) · **Vergi,
   KDV, SGK** (Özet, Vergi kârı, Demirbaş, Muhasebeci) · **Ayarlar** (Genel ayarlar, Kullanıcılar & roller, Paraşüt
   entegrasyonu) · Yardım. Kapalıyken "KDV" sözcüğü görünür; "Vergi, KDV, SGK" ve "Kâr & ödemeler" kesilmeden sığar.
