@@ -29,6 +29,7 @@ import { CountItemExists, countItemSchema, createCountItem } from "@/server/data
 import { loadSettings } from "@/server/data/dataset";
 import { withPassiveRelist } from "@/server/data/ingredient-usage";
 import { insertProduct } from "@/server/data/product-create";
+import { recordRecipeVersion } from "@/server/data/recipe-versions";
 import { approvedNewPairs, lockNewProducts } from "@/server/data/recipe-requests";
 import { currentSnapshot } from "@/server/data/recipe-snapshot";
 import { getDb, schema as s } from "@/server/db";
@@ -245,6 +246,8 @@ export async function reviewRecipeChange(input: z.input<typeof reviewSchema>) {
         }
       });
       await tx.update(s.products).set({ note: req.after.note, updatedAt: new Date() }).where(eq(s.products.id, product.id));
+      // Reçete geçmişi: onaylayan yönetici, öneren personel (docs/DONEM-KAPANISI.md › Reçete geçmişi)
+      await recordRecipeVersion(tx, { productId: product.id, before: current, source: "approval", by: me, requestedByName: req.requestedByName });
       await tx.update(s.recipeChangeRequests).set({ ...decided, status: "approved" }).where(eq(s.recipeChangeRequests.id, req.id));
       return { kind: "approved" as const, product, req, summary: summarizeDiff(diffRecipe(current, { note: req.after.note, items })) };
     });
@@ -464,7 +467,7 @@ export async function approveNewProduct(input: z.input<typeof approveNewSchema>)
         if (negative) throw new UserError(negative);
         return { ingredientId: line.ingredientId, qty, qtyExpr: line.qtyExpr, note: line.note };
       });
-      const created = await insertProduct(tx, { name, size, categoryId: data.categoryId, price: data.price }, { items, note: req.after.note, changedBy: me.name });
+      const created = await insertProduct(tx, { name, size, categoryId: data.categoryId, price: data.price }, { items, note: req.after.note, changedBy: me.name, changedById: me.id, requestedByName: req.requestedByName });
       const now = new Date();
       await tx
         .update(s.recipeChangeRequests)
