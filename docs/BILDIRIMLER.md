@@ -329,9 +329,11 @@ modülleri içe aktarır). Amaç: ferah, telefonda rahat okunan, açık ve koyu 
 - **Kabuk** `layout({ subject, preheader, branch, meta, date, eyebrow, title, lead, body, footer })`: yumuşak gri zemin,
   en geniş 600 px beyaz yuvarlatılmış kart, üstte L'Af karosu + "L'Affogato · <şube>" + meta satırı, altta gri not.
   `body` blokların dizisidir; aralarına eşit boşluk girer (28 px, telefonda 22). Kart içi 32 px, telefonda 20.
-- **Bileşenler** (`blocks.ts`): `statusBanner` (iyi / uyarı / kötü / nötr; işaret + başlık + alt satır), `kpiGrid` (1–3
-  büyük rakam; telefonda alt alta), `section` + `kvRow` (ince ayraçlı etiket–değer satırları; uzun değer telefonda
-  etiketin altına iner, kısa tutar yanında kalır), `list`, `note`, `button` ("Panelde aç"; tablo hücresi, resimsiz),
+- **Bileşenler** (`blocks.ts`): `statusBanner` (iyi / uyarı / kötü / nötr; işaret + başlık + alt satır; uzun cümle
+  `splitHeadline` ile ilk ": " ya da "; " ayracından başlık + alt satır), `kpiGrid` (1–3 büyük rakam, alt satırında
+  rozet; telefonda alt alta), `section` + `kvRow` (ince ayraçlı etiket–değer satırları; kısa tutar yanında kalır, uzun
+  değer telefonda etiketin altına iner, 48 karakteri aşan cümle her genişlikte altında ve sola dayalı; karşılaştırma
+  satırı "fotoğrafta X" + rozet, altında gri "LafPOS'ta Y"), `list`, `note`, `button` ("Panelde aç"; tablo hücresi, resimsiz),
   `link`, `divider`, `badge`, `paragraph`, `stack` / `gap`. Metin parametreleri kaçışlanır; ham HTML yalnız `html: true`
   ya da adı `…Html` olan alanla girer. Düz metin sürümü için `text.ts` (`kvText`, `sectionText`, `listText`…).
 - **Renkler** (`tokens.ts`): mürekkep #171717, zinc zemin; durum renkleri yalnız anlam taşırken (yeşil tutuyor, kırmızı
@@ -343,10 +345,24 @@ modülleri içe aktarır). Amaç: ferah, telefonda rahat okunan, açık ve koyu 
 - **Kural**: tasarım içeriği değiştirmez. Konu satırı, düz metin sürümü ve HTML'deki sözcükler şablonun kendi
   fonksiyonlarından gelir; kit yalnız görünüşü kurar.
 
-Kite taşınanlar: Z raporu (gün sonu fotoğrafı) e-postası `renderPhotoMail`, gün sonu `renderDayEnd`
-(`src/lib/lafpos/gun-sonu.ts`) ve Pavo karşılaştırması `renderPavoMail` / `pavoSectionHtml`
-(`src/lib/lafpos/bank-pos.ts`). Öteki şablonlar (sabah özeti, haftalık özet, kasa raporu, karaoke, kontrol listesi,
-giriş bilgileri, Claude bağlantısı, personel gün sonu) eski kendi HTML'leriyle; taşınırken aynı kural geçerli.
+**E-postaların envanteri** (şablon → konu → gönderen; "kit" `src/lib/email`, "eski kabuk" `digest-template.ts`'in
+`emailLayout`'u). Taşınırken aynı kural geçerli; önizlemede her birinin örneği var.
+
+| Şablon | Konu | Gönderen | Görünüş |
+| --- | --- | --- | --- |
+| `lib/lafpos/gun-sonu.ts` › `renderDayEnd` | Kasa raporu KR-… · şube · gün · kasa sonucu (· düzeltildi / kasa sayıldı, · Pavo FARK VAR, · Fotoğraf FARKLI) | `server/lafpos/gun-sonu.ts` › `sendDayEndEmail` | kit |
+| `lib/lafpos/gun-sonu.ts` › `renderPhotoMail` | Kasa raporu KR-… · şube · gün · Z raporu tutuyor / LafPOS'tan FARKLI / okunamadı / alındı · okunmadı / okunamadı, yönetici baksın | `sendPhotoEmail` | kit |
+| `lib/lafpos/gun-sonu.ts` › `renderStaffDayEnd` | şube · gün sonu alındı · gün / şube · kasa sayılmadı · gün | `sendStaffDayEnd` | kit |
+| `lib/lafpos/bank-pos.ts` › `renderPavoMail` | Kasa raporu KR-… · şube · gün · Pavo karşılaştırması (· FARK VAR / alınamadı) | `sendPavoEmail` | kit |
+| `server/notify/cash-report-template.ts` › `renderCashReport` | Kasa raporu KR-… · şube · gün · kasa sonucu (güncellendi) (`reportSubject`); denemede "[Deneme] …" | `server/cash/report-email.ts` › `emailReport`, `server/actions/cash-report.ts` › `sendCashTestEmail` | kendi HTML'i |
+| `server/notify/digest-template.ts` › `renderDigest` | (şube: ) Ödeme hatırlatması / Sistem uyarısı / Paraşüt eşitlemesi başarısız / Sabah özeti: …; denemede "L'Affogato · deneme bildirimi" | `server/notify/digest.ts` › `runReminderDigest`, `sendTestEmail` (`actions/reminders.ts` › `sendTestNotification`) | eski kabuk |
+| `server/notify/digest-template.ts` › `renderSystemAlert` | L'Affogato · ilk sorun (+n) | `server/jobs/alerts.ts` › `sendWatchdogAlert` | eski kabuk |
+| `server/notify/weekly-template.ts` › `renderWeekly` | (Örnek · ) Haftalık özet: ilk madde · +n madde (`lib/weekly/text.ts` › `subjectOf`) | `server/weekly/send.ts` (otomatik, `sendWeeklySampleTo` ← `actions/weekly.ts` › `sendWeeklySample`) | eski kabuk |
+| `server/notify/checklist-alert-template.ts` › `renderChecklistAlert` | Liste · saat zamanı geldi / gecikti (+n) (`lib/checklist-alerts.ts` › `alertSubject`) | `server/notify/checklist-alerts.ts` › `runChecklistAlerts` | eski kabuk |
+| `server/notify/karaoke-staff-template.ts` › `renderStaffMorning`, `renderStaffSoon` | Bugün karaoke: saat · ÖDEME ALINACAK / ödendi; Karaoke saat (kalan sonra) · … | `server/karaoke/staff-mail.ts` › `runStaffKaraokeMails` | eski kabuk |
+| `server/notify/karaoke-reminder-template.ts` › `renderKaraokeReminder` | Yarın / Bugün karaoke: saat · L'Affogato; Karaoke rezervasyonunuz: … (misafire) | `server/karaoke/reminders.ts` › `runGuestReminders` | sitenin renkleri (bilerek ayrı) |
+| `app/panel/kullanicilar/access.ts` › `accessEmail` | L'Affogato paneline hoş geldiniz / davetlisiniz; L'Affogato paneli: parola sıfırlama / yeni parolanız | `server/actions/invites.ts` | kendi HTML'i |
+| `server/mcp/notice.ts` › `renderConnectedNotice` | Panelinize Claude bağlandı | `server/mcp/notify.ts` › `sendConnectedNotice` | kendi HTML'i |
 
 **Önizleme**: `npm run eposta:onizleme` (`scripts/eposta-onizleme.ts`) her şablonu uydurma örnek verilerle
 `.data/eposta-onizleme/<ad>.html` + `<ad>.txt` + `index.html` olarak yazar; Playwright kuruluysa 375 ve 640 px, açık
