@@ -1,13 +1,13 @@
 /**
  * Tarayıcı ölçümünün kâğıtları (docs/FOTOGRAF.md › Tarayıcının ölçümü): Pavo detaylı Z, LafPOS/Pavo gün sonu, ModPOS Z,
- * banka batch fişi, market fişi (80 ve 58 mm) ve A4 e-Arşiv fatura; ayrıca belge OLMAYAN nesneler (POS ekranı, tablo
+ * banka batch fişi, market fişi (80 ve 58 mm; uzun rulo) ve A4 e-Arşiv fatura; ayrıca belge OLMAYAN nesneler (POS ekranı, tablo
  * açık dizüstü, telefon, koli, ürünler). Her kâğıt tohumlu üretilir: aynı tohum aynı HTML'i ve aynı bilinen metni verir.
  * HTML Playwright ile resme çevrilir (scripts/tarama-veri.ts); bilinen metin okunabilirlik ölçümünde kullanılır
  * (scripts/tarama-olc.ts). İçerik uydurmadır: gerçek işletme, kişi ya da banka yok.
  */
 
-export type KagitTuru = "pavo-z" | "pavo-gunsonu" | "modpos-z" | "banka-batch" | "market" | "market-58" | "fatura-a4";
-export const KAGIT_TURLERI: readonly KagitTuru[] = ["pavo-z", "pavo-gunsonu", "modpos-z", "banka-batch", "market", "market-58", "fatura-a4"];
+export type KagitTuru = "pavo-z" | "pavo-gunsonu" | "modpos-z" | "banka-batch" | "market" | "market-58" | "market-uzun" | "fatura-a4";
+export const KAGIT_TURLERI: readonly KagitTuru[] = ["pavo-z", "pavo-gunsonu", "modpos-z", "banka-batch", "market", "market-58", "market-uzun", "fatura-a4"];
 
 export type NesneTuru = "ekran-pos" | "ekran-tablo" | "telefon" | "kutu" | "urun-fincan" | "urun-paket";
 export const NESNE_TURLERI: readonly NesneTuru[] = ["ekran-pos", "ekran-tablo", "telefon", "kutu", "urun-fincan", "urun-paket"];
@@ -162,12 +162,13 @@ const URUNLER = [
   "LİMON KG", "MUZ KG", "KREMA 200 ML", "FINDIK EZMESİ", "ÇİKOLATA 80 GR", "MADEN SUYU 6'LI", "PEÇETE 100'LÜ", "ISLAK MENDİL",
 ] as const;
 
-function market(rnd: Rnd, dar: boolean): Satir[] {
+function market(rnd: Rnd, dar: boolean, uzun = false): Satir[] {
   const { tarih, saat } = tarihSaat(rnd);
   const s: Satir[] = [{ logo: sec(rnd, ["ÖM", "DM", "ÜÇ"]) }, { c: sec(rnd, ["ÖRNEK MARKET A.Ş.", "DENEME GROSS MARKET", "ÜÇ YILDIZ SÜPERMARKET"]), kalin: true }];
   s.push({ c: "MERKEZ MAH. ÇARŞI CAD. NO:5" }, { c: "TUZLA / İSTANBUL" }, { c: "ANADOLU KURUMLAR V.D. 7340012986" }, { cizgi: true });
   s.push({ l: tarih, r: `FİŞ NO: ${String(ri(rnd, 1, 400)).padStart(4, "0")}` }, { l: `SAAT: ${saat}`, r: `KASA: ${ri(rnd, 1, 9)}` }, { cizgi: true });
-  const n = dar ? ri(rnd, 5, 9) : ri(rnd, 11, 22);
+  // uzun fiş: 80 mm rulo, 32–44 kalem (boy / en ≈ 1:7)
+  const n = uzun ? ri(rnd, 32, 44) : dar ? ri(rnd, 5, 9) : ri(rnd, 11, 22);
   let top = 0;
   let kdv = 0;
   for (let i = 0; i < n; i++) {
@@ -301,6 +302,8 @@ export function kagitUret(tur: KagitTuru, rnd: Rnd): Kagit {
       return yap(market(rnd, false), 576, dejavu, 20, 1.5);
     case "market-58":
       return yap(market(rnd, true), 384, dejavu, 17, 2);
+    case "market-uzun":
+      return yap(market(rnd, false, true), 576, dejavu, 20, 1.5);
     case "fatura-a4":
       return { ...faturaA4(rnd), genislik: 794, olcek: 1.6, saydam: false };
   }
