@@ -3,7 +3,7 @@ import { connection, type NextRequest } from "next/server";
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER } from "@/lib/karaoke/signature";
 import { getDb } from "@/server/db";
 import { servePosExpenseCategories } from "@/server/lafpos/categories";
-import { lafposSecret } from "@/server/lafpos/ingest";
+import { lafposRequestSecret } from "@/server/lafpos/ingest";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
@@ -17,7 +17,8 @@ export async function GET(request: NextRequest) {
   await connection();
   try {
     const r = await servePosExpenseCategories(getDb(), {
-      secret: await lafposSecret(),
+      // Önbellekteki anahtar ön süzgeç: imza tutarsa anahtar veritabanından yeniden okunur (döndürülen eski anahtar geçmez)
+      secret: await lafposRequestSecret(request),
       url: new URL(request.url),
       timestamp: request.headers.get(TIMESTAMP_HEADER),
       signature: request.headers.get(SIGNATURE_HEADER),

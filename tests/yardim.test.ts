@@ -40,7 +40,7 @@ test("menüde ayrı öğesi olmayan sekme, menü öğesinin altında (Aylık har
 test("Giderler & maaşlar sekmeleri Yardım'ın Ekranlar kartında sırasıyla", () => {
   assert.deepEqual(
     tabsOf("/panel/giderler")?.map((t) => t.label),
-    ["Sabit giderler", "Aylık harcamalar", "Maaşlar"],
+    ["Sabit giderler", "Aylık harcamalar", "Maaşlar", "Belgeler", "Avanslar"],
   );
   assert.equal(tabsOf("/panel/harcamalar"), undefined);
 });

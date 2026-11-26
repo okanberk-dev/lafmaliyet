@@ -10,9 +10,13 @@ import { lafposSalesCountFrom } from "@/lib/lafpos/sales";
 import { branchSwitchDay } from "@/lib/lafpos/switch";
 import { addDays } from "@/lib/reminders";
 import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
+import { buildSiteLinkIndex, siteBranchOf } from "@/lib/site-sales/calc";
 import {
+  AVG_DAYS,
   displayUnit,
+  estimateOnlineMonth,
   estimateStock,
+  onlineMonthsNeeded,
   stockQty,
   recipePerUnit,
   showsStockEstimate,
@@ -27,6 +31,8 @@ import { currentBranchScope } from "@/server/branch-scope";
 import { closedDaysBetween } from "@/server/closed-days";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { lafposBranchId, lafposSwitchDay } from "@/server/lafpos/branch";
+import { siteLinkSecret } from "@/server/site-link";
+import { loadBranchSiteSales } from "@/server/site-sales/sync";
 
 import { loadLafposIkram } from "./lafpos-ikram";
 import { suspectFactorLine } from "./purchase-lots-query";
@@ -48,9 +54,19 @@ export interface StockEstimateData {
   estimate: StockEstimate;
 }
 
-/** Marina'nın tahmini stoğu; geçiş günü yoksa null */
-export async function loadStockEstimate(db: DB = getDb(), now: Date = new Date()): Promise<StockEstimateData | null> {
-  const today = businessDate(now);
+/**
+/**
+ * Marina'nın tahmini stoğu; geçiş günü yoksa null. `asOf` (YYYY-MM-DD) verilirse tahmin o günün sonundaki stoktur: o
+ * ayın sayımı başlangıç sayılmaz (yalnız önceki ayların), dönem o güne kadar. Kaçak raporu (docs/RAPORLAR.md) ayın son
+ * günüyle okur ve ayın sayımıyla karşılaştırır. `leadDays`: eşik önerisinin tedarik süresi (Tahmini stok › Tedarik
+ * süresi; verilmezse DEFAULT_LEAD_DAYS)
+ */
+export async function loadStockEstimate(
+  db: DB = getDb(),
+  now: Date = new Date(),
+  opts: { asOf?: string; leadDays?: number } = {},
+): Promise<StockEstimateData | null> {
+  const today = opts.asOf ?? businessDate(now);
   const [settingRows, ingredients, products, recipeRows, counts, thresholds] = await Promise.all([
     db.select({ key: s.settings.key, value: s.settings.value }).from(s.settings),
     db
@@ -65,7 +81,9 @@ export async function loadStockEstimate(db: DB = getDb(), now: Date = new Date()
       })
       .from(s.ingredients)
       .orderBy(asc(s.ingredients.sortOrder), asc(s.ingredients.id)),
-    db.select({ id: s.products.id, name: s.products.name, size: s.products.size, active: s.products.active }).from(s.products),
+    db
+      .select({ id: s.products.id, name: s.products.name, size: s.products.size, active: s.products.active, siteMenuId: s.products.siteMenuId, siteMenuSlot: s.products.siteMenuSlot })
+      .from(s.products),
     db.select({ productId: s.recipeItems.productId, ingredientId: s.recipeItems.ingredientId, qty: s.recipeItems.qty, qtyExpr: s.recipeItems.qtyExpr }).from(s.recipeItems),
     db
       .select({ month: s.stockCounts.month, ingredientId: s.stockCounts.ingredientId, qty: s.stockCounts.qty, factor: s.stockCounts.factor })
@@ -106,7 +124,12 @@ export async function loadStockEstimate(db: DB = getDb(), now: Date = new Date()
 
   // Dönem en erken LafPOS'un sayıldığı ilk günde başlar (öncesi "LafPOS öncesi sayım"): okumalar oradan bugüne
   const range = (col: PgColumn) => and(gte(col, lafposFrom), lte(col, today));
-  const [days, sales, panelWaste, ikram, purchases, closed] = await Promise.all([
+  // Online siparişin ayları: dönem en erken LafPOS'un sayıldığı ilk günde, ortalamanın penceresi dünden geriye
+  // AVG_DAYS gün önce başlar; hangisi eskiyse onun ayından bu aya (gerekenleri ve eksikleri saf hesap ayırır)
+  const branch = siteBranchOf(STOCK_ESTIMATE_BRANCH);
+  const onlineOn = Boolean(siteLinkSecret()) && branch !== null;
+  const onlineFrom = [lafposFrom, addDays(today, -AVG_DAYS)].reduce((a, b) => (b < a ? b : a));
+  const [days, sales, panelWaste, ikram, purchases, closed, onlineRecords] = await Promise.all([
     db
       .select({ date: s.posDayReports.date })
       .from(s.posDayReports)
@@ -130,9 +153,11 @@ export async function loadStockEstimate(db: DB = getDb(), now: Date = new Date()
     loadLafposIkram(db, switchDay, { from: lafposFrom, to: today }, STOCK_ESTIMATE_BRANCH),
     receiptLots(db, lafposFrom, today),
     closedDaysBetween(lafposFrom, addDays(today, -1), db, STOCK_ESTIMATE_BRANCH),
+    onlineOn && branch ? loadBranchSiteSales(branch, onlineMonthsNeeded(onlineFrom, today, 0), db) : Promise.resolve([]),
   ]);
 
   const byProduct = new Map(products.map((p) => [p.id, p]));
+  const siteIndex = buildSiteLinkIndex(products);
   const nameOf = (id: number | null) => {
     const p = id !== null ? byProduct.get(id) : undefined;
     return p ? productLabel(p) : null;
@@ -152,6 +177,9 @@ export async function loadStockEstimate(db: DB = getDb(), now: Date = new Date()
     sales: sales.map((x) => ({ ...x, productName: nameOf(x.productId) })),
     panelWaste,
     lafposWaste: ikram.lines.map((l) => ({ date: l.date, kind: l.kind, posName: l.posName, productId: l.productId, productName: nameOf(l.productId), isService: l.isService, qty: l.qty })),
+    // Kasadan geçmeyen online siparişler (site bağlantısı yoksa düşülmez, uyarı da yok)
+    online: onlineOn ? { months: onlineRecords.map((r) => estimateOnlineMonth(r, siteIndex, products)) } : null,
+    leadDays: opts.leadDays,
     recipe: recipePerUnit(recipeRows, settings),
     fireRate: settings.fire,
     fireExcludesPackaging: settings.fireExcludesPackaging,

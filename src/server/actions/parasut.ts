@@ -12,11 +12,12 @@ import { addIgnored, addIgnoredSupplier, removeIgnored, removeIgnoredSupplier } 
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { companyClash, type ParasutInvoiceScope } from "@/lib/parasut/accounts";
+import { taxConfirmCopy, type TaxQuestion } from "@/lib/parasut/company";
 import { listBranches } from "@/server/branches";
 import { loadParasutAccounts, parasutAccountInput } from "@/server/parasut/accounts";
 import { forgetParasutToken, ParasutClient } from "@/server/parasut/client";
 import { configFrom, envOf, hasParasutInvoices, loadInvoiceScope, loadPanelSettings, loadParasutSettings, writeInvoiceScope, writePanelSettings, type ParasutConfig } from "@/server/parasut/config";
-import { forgetParasutConnect } from "@/server/parasut/connect";
+import { confirmParasutConnect, dropParasutConnect, forgetParasutConnect, ParasutConnectError } from "@/server/parasut/connect";
 import { suggestNextBatch } from "@/server/parasut/ai-match";
 import { readEInvoiceLines } from "@/server/parasut/lines";
 import { applyProductLinks, parasutStateKeys, parasutSyncRunning, syncParasut, updateIgnoredProducts, updateIgnoredSuppliers } from "@/server/parasut/sync";
@@ -115,6 +116,54 @@ export async function disconnectParasut(accountRaw?: string) {
       await tx.delete(s.integrationState).where(inArray(s.integrationState.key, parasutStateKeys(account)));
     });
     await logActivity(me, "Paraşüt bağlantısı sıfırlandı", `${await accountLabel(account)}Kayıtlı oturum ve eşitleme imleci silindi; yeniden bağlanması gerekir`);
+    refresh();
+    return null;
+  });
+}
+
+/** Onay penceresinin ve işlem geçmişinin metni (hesabın adıyla; tek hesapta şube adı yine yazılır) */
+async function questionCopy(account: string, question: TaxQuestion) {
+  const name = (await loadParasutAccounts()).find((a) => a.id === account)?.name ?? account;
+  return taxConfirmCopy(question, name);
+}
+
+/**
+ * "Aynı vergi numarası mı?" sorusuna onay (docs/PARASUT.md › Aynı vergi numarası): Paraşüt'ün dönüşünde bekletilen
+ * belirteç hesaba yazılır. Yalnız bağlanmayı başlatan yönetici; onay tek kullanımlık, 10 dakika geçerli
+ */
+export async function confirmParasutConnection(accountRaw: string) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const account = await parasutAccountInput(accountRaw);
+    let r: Awaited<ReturnType<typeof confirmParasutConnect>>;
+    try {
+      r = await confirmParasutConnect(account, me.id);
+    } catch (e) {
+      if (e instanceof ParasutConnectError) throw new UserError(e.message);
+      throw e;
+    }
+    const copy = await questionCopy(account, r.question);
+    await logActivity(me, "Paraşüt hesabı bağlandı", `${await accountLabel(account)}Authorization Code + PKCE ile yetkilendirildi · ${copy.log}`);
+    refresh();
+    return null;
+  });
+}
+
+/** "Vazgeç": bekletilen belirteç silinir, hesap bağlanmaz (yeniden bağlamada eski oturum yerinde kalır) */
+export async function cancelParasutConnection(accountRaw: string) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const account = await parasutAccountInput(accountRaw);
+    let r: Awaited<ReturnType<typeof dropParasutConnect>>;
+    try {
+      r = await dropParasutConnect(account, me.id);
+    } catch (e) {
+      // Süresi dolmuş ya da zaten yanıtlanmış: yapılacak bir şey yok
+      if (e instanceof ParasutConnectError) return null;
+      throw e;
+    }
+    const reason = r.question.kind === "same" ? `aynı vergi numarası (${r.question.taxNumber}; ${r.question.others.join(", ")})` : `vergi numarası karşılaştırılamadı (${r.question.others.join(", ")})`;
+    await logActivity(me, "Paraşüt hesabı bağlanmadı", `${await accountLabel(account)}Yönetici vazgeçti: ${reason}`);
     refresh();
     return null;
   });

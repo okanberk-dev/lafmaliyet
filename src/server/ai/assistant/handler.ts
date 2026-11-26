@@ -15,7 +15,7 @@
  */
 
 import { errorTag } from "@/lib/assistant/error-tag";
-import { pageContextLine } from "@/lib/assistant/page-context";
+import { pageContextLine, type AssistantPage } from "@/lib/assistant/page-context";
 import { ASSISTANT_LIMITS, assistantRequest, encodeEvent, type AssistantEvent } from "@/lib/assistant/protocol";
 
 import type { AiErrorCode } from "../run";
@@ -60,7 +60,13 @@ export interface AssistantDeps {
   start(userId: number, opts: { deep: boolean }): Promise<number | null>;
   /** Satırı sonuçla kapatır (maliyet, token, süre; metin yok) */
   finish(callId: number, outcome: AssistantOutcome, ms: number): Promise<void>;
-  setup(): Promise<AssistantSetup>;
+  /** İsteğin kurulumu; `page` açık ekran (şubesi okumaların kapsamıdır: service.ts) */
+  setup(page?: AssistantPage): Promise<AssistantSetup>;
+  /**
+   * Sohbete eklenen fiş fotoğrafının veri bloğu (src/server/assistant-ops/receipt.ts chatReceiptBlock): fotoğraf bu
+   * kullanıcının, fiş türünde ve bağlanmamışsa okunan değerler; değilse kullanıcıya gösterilecek metin (soru sayılmaz)
+   */
+  receipt?(userId: number, photoId: number): Promise<{ ok: true; text: string } | { ok: false; error: string }>;
   timing?: Partial<AssistantTiming>;
   onToolError?: (tool: string, e: unknown) => void;
 }
@@ -143,8 +149,16 @@ export async function handleAssistantPost(request: Request, deps: AssistantDeps)
   const { deep } = parsed.data;
   const weight = deep ? ASSISTANT_DEEP.weight : 1;
   if (deep && status.cap - status.usedToday < weight) return deepRefusal(status);
+  // Fiş fotoğrafı (docs/ASISTAN-ISLEMLER.md › Fiş fotoğrafı): soru sayılmadan önce denetlenir; okunan değerler mesajın
+  // sonuna veri bloğu olarak eklenir (geçmişe gitmez: tarayıcı fotoğrafı sohbette tuttukça her istekte yeniden gelir)
+  let attachment = "";
+  if (parsed.data.photo) {
+    const r = deps.receipt ? await deps.receipt(me.id, parsed.data.photo.id) : { ok: false as const, error: "Fiş fotoğrafı bu kurulumda eklenemiyor." };
+    if (!r.ok) return json(400, { error: r.error, code: "photo" });
+    attachment = r.text;
+  }
 
-  const setup = await deps.setup();
+  const setup = await deps.setup(parsed.data.page);
   const callId = await deps.start(me.id, { deep });
   // Kapıdan sonra aynı anda gelen başka bir soru sınırı doldurduysa (sayım ve ekleme start'ta atomik)
   if (callId === null) {
@@ -183,7 +197,7 @@ export async function handleAssistantPost(request: Request, deps: AssistantDeps)
             tools: setup.tools,
             toolCtx,
             history: parsed.data.history,
-            message: parsed.data.message,
+            message: attachment ? `${parsed.data.message}\n\n${attachment}` : parsed.data.message,
             deep,
             emit: send,
             signal: stop.signal,

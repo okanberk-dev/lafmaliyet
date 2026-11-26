@@ -14,6 +14,7 @@ düzeltir, **Raporu gönder** ya da **Kaydet**'e basar. Fotoğraf kanıt olarak 
 | Kasa raporu › Yazarkasa Z raporu | Yazarkasanın (banka POS) mali Z raporu; uzunsa üst ve alt yarı ayrı (bölümde en çok 3) | Günlük toplam, Z no, nakit, kredi kartı; Ayrıntılar'da yemek kartı, diğer, toplam KDV, oran oran KDV dökümü (%1, %10, %20), fiş sayısı; aynı şeritte basılıysa banka gün sonu. **Bugün hepsi öneri** (§ 2) |
 | Kasa raporu › Yazarkasa Z raporu | Bankanın ayrı gün sonu fişi (yedek) | Yalnız Banka gün sonu (net toplam; iki fişte "Toplama ekle"); yazarkasa alanları boş kalır |
 | Kasa raporu › Gün içinde kasadan çıkanlar › Fiş ekle | Alışveriş fişi, e-Arşiv ya da fatura | Tutar (verilen nakit ya da para üstü değil, fişin toplamı), yer, ne alındığı, fiş tarihi, KDV, kategori |
+| Panel asistanı › kamera düğmesi (yalnız yönetici) | Alışveriş fişi, e-Arşiv ya da fatura (aynı okuma, tür `fis`) | Okunan değerler asistanın mesajına veri bloğu olarak gider; asistan kasadan çıkan ya da harcama kartı hazırlar, fotoğraf Onayla'da kayda bağlanır ([ASISTAN-ISLEMLER.md](ASISTAN-ISLEMLER.md) › 1.13) |
 
 Kasadan çıkan alışveriş satırı **Aylık harcamalar**'a da yazılır (kurallar KASA-RAPORU.md › Gün içinde kasadan
 çıkanlar); orada fotoğraf simgesi ve **Kasadan** rozetiyle görünür, tutarı ve tarihi Kasa raporu'nda düzeltilir.
@@ -387,6 +388,78 @@ ve kimlikleri plandan ve araştırma notlarından yazıldı, kafenin gerçek fi�
    ilk okuma p90 ≤ 20 sn. Sonuç `docs/planlar/ekler/okc-z/eval.md`'ye; geçerse `OKC_PREFILL_ENABLED = true`, okuma
    süresi metni ölçülen p50'yle, kalite ve çekim kararı (§ 3) ölçümle.
 
+### Tarayıcının ölçümü
+
+Belge tarayıcının çekirdeği (`src/lib/scan`) telefonla çekilmiş gibi üretilen sentetik fotoğraflarla ölçülür: köşeler
+ve kâğıttaki yazı bilindiği için hata kesin hesaplanır. Ağ, anahtar ve veritabanı gerekmez; görsel çözme sharp ile
+(next'in isteğe bağlı bağımlılığı; yalnız betikler ve test), kâğıtlar Playwright ile çizilir.
+
+```bash
+npm run tarama:veri                         # 96 görsel → .data/tarama-veri/ (depoya girmez; tohumlu, ~8 dk)
+npm run tarama:olc                          # köşe, karar, süre, okunabilirlik (OCR) → tablolar + .data/tarama-olcum/son.json
+npm run tarama:olc -- --ocr 0               # okunabilirliksiz, hızlı (köşe, karar, süre)
+npm run tarama:olc -- --ideal --cizim       # doğru köşelerle taramanın okunabilirliği; köşeleri çizili küçük resimler
+npm run tarama:olc -- --ocr 0 --karsilastir .data/tarama-olcum/temel.json   # çekirdek değişince öncekiyle fark
+npx tsx --test tests/tarama-regresyon.test.ts   # 10 küçük örnek (tests/fixtures/tarama), bugünkü sonuçla
+```
+
+- **Veri** (`scripts/tarama-veri.ts`, `scripts/tarama/kagit.ts`, `sahne.ts`): Pavo detaylı Z, LafPOS/Pavo gün sonu,
+  ModPOS Z, banka batch fişi, market fişi (80 mm, 58 mm, uzun rulo) ve A4 e-Arşiv fatura HTML'den çizilir (termal
+  kâğıt, soluk baskı; içerik uydurma). Kâğıt 3B bir ızgara olarak zemine bindirilir: ahşap, mermer, koyu tezgâh, beyaz
+  tezgâh, gri masa, elde tutulmuş (bulanık oda, başparmak); perspektif, döndürme, yana dönük fiş, kıvrılma / bükülme,
+  kıvrık köşe, kâğıdın gölgesi, gölge degradesi, el gölgesi, renkli ışık, parlama, karanlık, hareket ve odak
+  bulanıklığı, gürültü, JPEG %55–92. Ayrıca kareyi dolduran yakın çekim, bir ucu kadraj dışında kalan kâğıt ve belge
+  olmayan fotoğraflar (POS ekranı, ekranda tablo, telefon, koli, fincan, paketler). Doğru köşe kâğıdın köşesidir:
+  kıvrık köşede katlanmamış köşe (kenarların kesiştiği yer), kadraj dışında kâğıdın kenarının karenin kenarını
+  kestiği yer, yakın çekimde görüntünün köşeleri. `yanit.json`: köşeler, beklenen sonuç (kırp / kareyi dolduruyor /
+  belge değil), kategori, zemin, senaryolar, bilinen metin.
+- **Yöntem** (`scripts/tarama-olc.ts`): her görsel `scanDocument`'tan geçer. Köşe hatası en kötü köşenin uzaklığı /
+  köşegen (kırpılmayan görselde görüntünün köşeleriyle, kaçan belgenin hatası da sayılır); başarı < %2. Karar:
+  kırptı / kareyi dolduruyor / belge yok → doğru, kaçan, yanlış (belge olmayanı kırpmak yanlış pozitif).
+  Okunabilirlik: tesseract.js (kodla okumanın ayarı, Türkçe) ile asıl fotoğrafın ve taranmış hâlin bilinen metne
+  karakter doğruluğu (1 − düzenleme uzaklığı / uzunluk) ve tutarların (1.234,56) aynen bulunma oranı. Kategori,
+  zemin, durum ve senaryo kırılımı, karar matrisi, güven eşiği (düşük güvenli kırpma "emin değil" sayılsa ne
+  kazanılır, ne kaybedilir), en kötü 10 görsel; `son.json`'da her görselin bulunan köşeleri de.
+- **Temel ölçüm** (26 Kasım 2026; çekirdek `0096e18`, `wip/tarama-cekirdek`; 96 görsel, tohum 2026): kırpılması
+  gereken 76 görselde köşe başarısı **41/76 (%54)**, kaçan 10, yanlış dörtgen 25; köşe hatası ort %8,1, p90 %27,6.
+  Kareyi dolduran 8 görselin 8'i kırpılmadı (6'sında "kareyi dolduruyor", 2'sinde "belge yok"), ama açık zeminde duran
+  5 fişte de yanlışlıkla "kareyi dolduruyor" dendi. Belge olmayan 12 görselin 3'ünde "belge yok", 9'u kırpıldı (yanlış
+  pozitif; seçilen dörtgen açık renkli ve yazılı: POS ekranındaki adisyon paneli, ekrandaki tablo, kolideki etiket).
+  Kadraj dışı 8 görselin 0'ı doğru (hata ort %9,8: kareye dayanan kenar görüntünün içine alınıyor, yazının içinden
+  geçiyor). Süre ort 5,3 sn, p90 8,1 sn, algılama ort 2,8 sn (1500×2000; yük ortalaması ~30 olan 4 çekirdekli makine,
+  yükü azken 3,1 sn). Okunabilirlik (84 belge): karakter doğruluğu asıl %40 → taranmış %64 (doğru köşelerle %71),
+  tutarların aynen bulunması %23 → %53. Önceki çekirdeğe (`ac82331`) göre: belge değil 1/12 → 3/12 (kâğıda
+  benzemeyen dikdörtgen), banka batch 5/9 → 4/9, mermer 7/18 → 8/18; köşe başarısı 42 → 41.
+
+  | Kategori | doğru | köşe hatası ort | OCR asıl → taranmış (doğru köşelerle) | tutar asıl → taranmış |
+  |---|---:|---:|---:|---:|
+  | Pavo detaylı Z | 6/12 | %9,9 | %42 → %57 (%65) | %19 → %50 |
+  | Pavo / LafPOS gün sonu | 5/11 | %8,7 | %46 → %77 (%90) | %28 → %64 |
+  | ModPOS Z | 8/11 | %2,2 | %56 → %85 (%84) | %26 → %68 |
+  | Banka batch (58 mm) | 4/9 | %5,6 | %56 → %90 (%96) | %25 → %78 |
+  | Market fişi (80 mm) | 6/9 | %6,0 | %42 → %68 (%81) | %27 → %68 |
+  | Market fişi (58 mm) | 8/8 | %0,5 | %36 → %75 (%74) | %16 → %56 |
+  | Uzun market fişi | 4/12 | %16,0 | %32 → %52 (%57) | %25 → %38 |
+  | A4 e-Arşiv fatura | 8/12 | %6,2 | %17 → %20 (%21) | %17 → %17 |
+  | Belge değil | 3/12 | – | – | – |
+
+  Zemine göre doğru: ahşap 13/18, elde 9/12, gri masa 11/16, koyu tezgâh 8/14, mermer 8/18, **beyaz tezgâh 3/18**.
+  En zayıflar: beyaz / açık zeminde fiş (kâğıt bulunamıyor, kâğıt kareyi dolduruyor sanılıyor ya da iki kenar karenin
+  kenarına uzatılıyor), uzun fiş, kadraj dışı ve belge olmayan fotoğraflar; senaryolardan hareket bulanıklığı (6/14),
+  soluk baskı (9/19) ve gölge degradesi (14/32). Güven yanlışı ayırmıyor: kırpılanlarda güven < 0,5 "emin değil"
+  sayılsa 9 yanlış pozitiften 3'ü, 25 yanlış dörtgenden 5'i yakalanır, 41 doğru kırpmadan 5'i kaybedilir (doğru
+  kırpmaların 4'ü nedensiz 0,27–0,29 güvenli; rapordaki "Güven eşiği" tablosu). A4'ün okunabilirliği düşük:
+  1500×2000 fotoğrafta yazı ~10 px, kodla okuma zorlanıyor (yapay zekâ okur; tarayıcının değil ölçeğin sınırı). Yana
+  dönük fişin yazısı çevrilmediği için okunmuyor.
+- **Regresyon:** `tests/tarama-regresyon.test.ts` on küçük örnekte (540×720, `npm run tarama:veri -- --fixture` ile
+  yeniden üretilir; tohumlu, aynı baytlar) kararı ve köşe hatasını bugünkünün biraz gevşeğiyle sınar (doğru olanlarda
+  en kötü köşe ≤ %1,2–1,5; bugün, çekirdek `0096e18`'de de, 10'un 6'sı doğru). Bilinen yanlışlar (beyaz tezgâhta uzun fiş, karanlık ve bulanık
+  A4, POS ekranı, koli) yalnız kötüleşmesin diye gevşek; çekirdek iyileşince `BEKLENTI` ve `EN_AZ_DOGRU`
+  sıkılaştırılır.
+- **Çekirdek değişince:** `npm run tarama:olc -- --ocr 0 --karsilastir .data/tarama-olcum/temel.json` (temel:
+  bir önceki `son.json`'ın kopyası) kategori başına doğru ve hatayı, sonucu değişen görselleri yazar; okunabilirlik
+  için `--ocr` açık (96 görselde ~15–50 dk, makinenin yüküne göre).
+
 ## 9. Yeni bir fotoğraf türü
 
 1. `src/lib/photo-rules.ts`: `PhotoKind`, `PHOTO_KINDS`, `KEEP_DAYS`, `PHOTO_KIND_LABEL`.
@@ -429,3 +502,87 @@ raporlarda `kasa-pos` kalmadığı denetlenerek).
 | `src/app/panel/ayarlar/photo-card.tsx` | Ayarlar › Fotoğraftan okuma |
 | `src/app/api/kontrol/foto/`, `src/app/panel/kontrol/[id]/photo-item.tsx`, `src/server/data/checklists.ts` (`kontrolPhotoRules`) | kontrol listesinin fotoğraflı maddesi: yükleme ve yanıt tek istekte, kim görür ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md)) |
 | `scripts/foto-eval/` | canlı değerlendirme (`scripts/okc-eval/` banka POS Z'si için, henüz yazılmadı; § 8) |
+| `scripts/tarama-veri.ts`, `scripts/tarama-olc.ts`, `scripts/tarama/`, `tests/tarama-regresyon.test.ts` | belge tarayıcının ölçümü: sentetik veri seti, ölçüm, regresyon örnekleri (§ 8 › Tarayıcının ölçümü) |
+| `src/lib/scan/` | belge tarayıcı çekirdeği (§ 11): algılama, köşe oturtma, perspektif, taranmış görünüm |
+| `scripts/tarama-dene.ts` | tarayıcıyı gerçek fotoğrafla ya da sentetik sahneyle deneme (§ 11) |
+
+## 11. Belge tarama (çekirdek)
+
+Z raporu (dar, uzun termal rulo), banka gün sonu fişi, alışveriş fişi ve fatura fotoğrafı yüklenmeden önce **telefonda,
+tarayıcıda** taranır: kâğıt bulunur, kenarları belli edilir, perspektif düzeltilir ve CamScanner tarzı siyah-beyaz
+"taranmış" görünüm üretilir; sonra `photo-compress.ts` ile küçültülüp `POST /api/foto`'ya gider. Sunucu görseli
+çözmez (güvenlik kararı), Python / OpenCV yok: `src/lib/scan/` dış bağımlılıksız saf TypeScript, DOM'a dokunmaz
+(görüntü `{ width, height, data: Uint8ClampedArray RGBA }`, canvas `ImageData` ile aynı); Node'da test edilir, telefonda
+bir Web Worker'da çalıştırılması önerilir (eşzamanlı; `ImageData.data.buffer` aktarılır). Arayüz bağlantısı henüz yok.
+
+- **Algılama** (`detect.ts`, 640 px kopyada, son ince ayar 1000 px): üç yöntem aday dörtgen üretir, hepsi aynı puanla
+  karşılaştırılır. *Kâğıt bölütleme* (aydınlık − doygunluk haritası, gölge çıkarılmış yerel hâli, Otsu, morfoloji, dış
+  hat, zarftan dörtgen, kenarlara RANSAC); *kenar* (Canny, eşikler görüntüden; yönlü Hough; görüntünün kenarı da doğru
+  sayılır); *yazıdan başlama* (yoğun yazı bölgesi dışarı doğru en yakın kâğıt kenarına büyütülür: açık tezgâhta beyaz
+  fiş). Puan: her kenarın gradyan desteği ve içi / dışı basamağı (işaret tutarlı), alan, açılar, kâğıtlık karşıtlığı,
+  yazıyı kesiyor mu, içerisi kâğıda benziyor mu (koyu ya da çok renkli, yazısız dikdörtgen — telefon, POS cihazı,
+  kutu — seçilmez; tek başınaysa güveni en çok 0,3, neden "kagida-benzemiyor"). Puanı düşük kalan en iyi adaylar
+  kenarlara oturtulup yeniden puanlanır. Güven 0–1; birbirine
+  yakın puanlı iki farklı aday, zayıf kenar güveni düşürür. Kâğıt kareyi dolduruyorsa `fillsFrame` (kırpılmaz).
+  Kareden taşan uzun fişte kareye dayanan kenar, uzun kenarların kaçış noktasından bulunan kısa kenar yönüyle
+  görüntünün içine alınır; köşesi kareden çıkmış ama iki kenarı görünen kâğıtta köşe kenarların kesişimidir (en çok
+  %8 dışarıda, `MAX_OUTSIDE`; açılan sayfada dışarısı kâğıt rengiyle dolar).
+- **Köşe oturtma** (`refine.ts`): kaba köşeler (kullanıcının sürüklediği, yapay zekânın 0–1000 oranlı ipucu) her kenar
+  boyunca kenara dik şeritte aranan geçişe (önce içerisi aydınlık, tutmazsa tersi), RANSAC + en küçük karelerle
+  oturtulur; geniş şerit (köşegenin %7,5'i), sonra dar şerit. Korumalar: destek zayıfsa, içeri kayılan şerit kâğıda
+  benziyorsa (yazı satırı, tablo çizgisi), çizginin dışı içiyle aynıysa ya da kenar görüntünün kenarındaysa o kenar
+  değişmez; içeri arama karşı kenarın yarısına varmaz (dar fiş).
+- **Açma** (`warp.ts`): normalize DLT homografi; çıktının en/boy oranı perspektiften (Zhang–He, odak dörtgenden
+  kestirilir), olmazsa kenar uzunluklarından; küçültürken önce alan ortalaması (örtüşme yok). Sayfa birkaç piksel
+  içeriden açılır (kenarda koyu çizgi kalmaz). `rotate` (90 / 180 / 270; `rotationForTop` yapay zekânın "top"
+  ipucundan) açmayla birlikte uygulanır.
+- **Taranmış görünüm** (`enhance.ts`): "belge" — her renk kanalı kâğıdın yerel parlaklığına bölünür (gölge, sarı ışık
+  gider), gri ton = parlaklık + en koyu kanal (mavi tükenmez, kırmızı kaşe koyu), mürekkep koyuluğu her görüntüde
+  ölçülen iki eşik arasında yumuşak açılır (kâğıt gürültüsünün altı bembeyaz; soluk termal baskıda siyah eşiği bölge
+  bölge iner), kenardaki masa şeridi ve tek başına benekler silinir, hafif keskinlik. "gri", "renkli" (beyaz dengesi),
+  "orijinal". Kalan ±8° eğiklik yazı satırlarının izdüşümünden ölçülüp düzeltilir; dar uzun fişte dönüş yerine
+  yamultma (uzun kenarlar yerinde).
+- **Giriş noktası** (`index.ts`): `scanDocument(img, { corners?, refine?, mode?, maxEdge?, deskew?, rotate? })` →
+  `{ image, corners, confidence, method, fillsFrame, rotation, rotate, reasons, timings }`; `detectDocument`,
+  `refineCorners`, `quadIsValid`, `orderCorners`, `cornersFromHint` / `cornersToHint` (0–1000 oran), `thumbnail`,
+  `scaleQuad` / `unscaleQuad` (önizleme kopyası ile asıl fotoğraf arasında köşe taşıma).
+- **Doğruluk ve süre** (sentetik fotoğraflar, gerçek köşeler bilinir; `tests/tarama-*.test.ts`): köşe hatası köşegenin
+  %1,5'inin altında (eğik A4, koyu / dokulu / tahta zemin, açık ve beyaza yakın tezgâhta termal fiş, gölgeli fiş, kareden
+  taşan fiş, köşesi kareden çıkmış kâğıt, yanında POS cihazı olan fiş; çoğunda %0,1'in altında); rastgele 192 sahnede
+  192'si (testte tohumlu altısı). Kaba ipucu (köşegenin ±%5'i) %1,5'in altına oturur. Beyaz fiş beyaza yakın
+  tezgâhta: kâğıtla zemin arası ~20 gri düzeyinde bulunur, ~12'de çoğu, ~8'de hiçbiri (A4 ~8'de de bulunur);
+  bulunamayınca kırpılmaz, yalnız görünüm işlenir.
+  1670×2220 fotoğrafta (yüklemedeki ölçü) sunucu çekirdeğinde A4 ~0,7–1 sn, fiş ~0,4 sn işlemci süresi; telefonda
+  birkaç kat. Canlı önizleme (kamerada kenarı göstermek) için kare önce küçültülür: `detectDocument(thumbnail(kare,
+  320), { maxEdge: 320 })` ~0,13 sn, köşe hatası yine %0,2'nin altında. Küçük, çok ince, düz ya da gürültü görüntüde
+  çökmez (yöntem "yok", kırpılmaz).
+- **Bilinen sınırlar:** yalnız sentetik fotoğraflarla ölçüldü (gerçek fotoğraf deneme betiğiyle denenmeli); kâğıtla
+  zemin arası ~10 gri düzeyinin altında kâğıt bulunmaz, görüntü kâğıda benziyorsa "tam-kare" (kırpılmaz); karede iki
+  belge varsa biri seçilir, güven düşer ("iki-aday"); 90° / 180° yön kendiliğinden bulunmaz (`rotate` ya da yapay
+  zekânın "top" ipucu gerekir), yalnız ±8° eğiklik düzeltilir.
+- **Deneme:** `npx tsx scripts/tarama-dene.ts <fotoğraf|klasör> [--mod hepsi] [--ipucu x1,y1,…,x4,y4] [--ust right]`
+  ya da `--sentetik`; çıktı `.data/tarama-dene/` (köşe çizimi ve taranmış hâller). sharp yalnız bu betikte, dinamik
+  yüklenir.
+
+## 12. Belge tarama (kalite, yön, birleştirme)
+
+Çekirdeğin (§ 11) yanında üç saf modül; arayüz bağlantısı henüz yok. İmzalar, önerilen akış, kullanım örnekleri ve
+eşikler: [src/lib/scan/README.md](../src/lib/scan/README.md). Ortak yazı çözümlemesi `metin.ts`'te (kâğıdın yerel
+parlaklığına göre mürekkep haritası, harf boyu, satır yönü ve ölçüleri).
+
+- **Çekim kalitesi** (`quality.ts`, `assessQuality(img, { corners, noun, rotation })`): fotoğraf çekilir çekilmez
+  kâğıdın içinde bulanıklık (yazı kenarının σ'sı harf boyuna oranla; Laplace varyansı da ölçülür), parlama (doymuş,
+  çevresinden parlak leke; yazının üstündeyse ciddi), karanlık / soluk yazı, kesik (kadraj dışındaki kenara dayanan
+  satırlar), çok küçük yazı (okuyucunun göreceği 2576 px ölçekte) ve birden çok belge. Sonuç `{ ok, issues: [{ kind,
+  severity, text }] }`; metinler sade Türkçe ("Fişin altı kesilmiş; tamamını çekin."). Net çekimde uyarı çıkmaz
+  (`tests/tarama-kalite.test.ts`).
+- **Sayfa yönü** (`orientation.ts`, `detectOrientation(img, { corners })`): 90 / 180 / 270° döndürülmüş belge; satır
+  yönü, sonra düz / ters (nokta ve virgülün taban çizgisinde, harf noktalarının üstte olması; kısa satırların sola
+  yaslanması; fişin ortalı başlığı). Emin değilse `"bilinmiyor"` (döndürülmez; yapay zekâ yönü kendisi bulur).
+  Arayüze bağlanınca § 11'deki "90° / 180° yön kendiliğinden bulunmaz" sınırı kalkar (`rotate` buradan verilir).
+- **Uzun fiş birleştirme** (`stitch.ts`, `stitchParts(parts)`): parça parça çekilmiş uzun Z'nin taranmış parçaları
+  örtüşen bölgeden tek görüntüde birleşir (satır profili ve koyuluk haritasında normalize çapraz ilinti, ölçek ve
+  yatay kayma farkı tolere edilir; dikiş satır arasından). Örtüşme yoksa, yazısızsa, tekrarlayan satırlar yüzünden
+  belirsizse ya da aynı şablonlu başka bir rapor ise `null`: parçalar ayrı fotoğraf olarak yüklenir. Çıktının uzun
+  kenarı en çok `MAX_PHOTO_EDGE` (4096); yüklemede 2576 px'e küçültüleceği için çok uzun birleşmede yazı boyu
+  `assessQuality` ile denetlenmeli.

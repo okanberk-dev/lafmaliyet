@@ -21,6 +21,7 @@ import {
   branchDialogSeed,
   branchDialogSet,
   branchPriceAt,
+  branchSlotFacts,
   cancelBranchBody,
   defaultEffectiveFrom,
   effectiveFromText,
@@ -162,6 +163,36 @@ test("şubedeki fiyat: anı gelmiş en son satır; null satır tabana döner; sa
   assert.deepEqual(branchPriceAt(base, rows, Date.parse("2026-11-30T00:00:00Z")), { priceMinor: 21_000, priceMinorL: 23_000, from: "2026-11-28T02:00:00.000Z" });
   assert.deepEqual(branchPriceAt(base, rows, Date.parse("2026-12-06T00:00:00Z")), { priceMinor: 19_500, priceMinorL: 21_000, from: null });
   assert.deepEqual(branchPriceAt({ priceMinor: 19_500, priceMinorL: 0 }, [row({ priceMinorL: 23_000 })], Date.parse("2026-11-26T00:00:00Z")), { priceMinor: 20_500, priceMinorL: 0, from: "2026-11-25T02:00:00.000Z" });
+});
+
+test("asistanın fiyat kartı: boyun şubedeki durumu (kendi fiyatı mı, tabanı mı izliyor) ve bu boyu değiştiren planlı satırlar", () => {
+  const base = { priceMinor: 19_500, priceMinorL: 21_000 };
+  const rows = [row(), row({ priceMinor: 21_000, priceMinorL: 23_000, effectiveFrom: "2026-11-28T02:00:00.000Z" }), row({ priceMinor: null, effectiveFrom: "2026-12-05T02:00:00.000Z" })];
+  const t = Date.parse("2026-11-26T00:00:00Z");
+  // M: kendi fiyatı 205; planlı 210 (28 Kas) ve tabana dönüş (5 Ara)
+  assert.deepEqual(branchSlotFacts(base, rows, t, "M"), {
+    priceMinor: 20_500,
+    own: true,
+    from: "2026-11-25T02:00:00.000Z",
+    planned: [
+      { effectiveFrom: "2026-11-28T02:00:00.000Z", priceMinor: 21_000 },
+      { effectiveFrom: "2026-12-05T02:00:00.000Z", priceMinor: null },
+    ],
+  });
+  // L: satırın L'si 0, tabanı izliyor (taban değişince şubede de değişir); 28 Kas'ta kendi L'si 230, 5 Ara'da tabana döner
+  assert.deepEqual(branchSlotFacts(base, rows, t, "L"), {
+    priceMinor: 21_000,
+    own: false,
+    from: null,
+    planned: [
+      { effectiveFrom: "2026-11-28T02:00:00.000Z", priceMinor: 23_000 },
+      { effectiveFrom: "2026-12-05T02:00:00.000Z", priceMinor: null },
+    ],
+  });
+  // L'yi değiştirmeyen planlı satır L için yazılmaz
+  assert.deepEqual(branchSlotFacts(base, [row({ effectiveFrom: "2026-11-27T02:00:00.000Z" })], t, "L").planned, []);
+  // Satırı olmayan şube: taban, plan yok
+  assert.deepEqual(branchSlotFacts(base, [], t, "M"), { priceMinor: 19_500, own: false, from: null, planned: [] });
 });
 
 // ---------------------------------------------------------------- Yazımın gövdesi

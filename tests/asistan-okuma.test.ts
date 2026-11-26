@@ -143,8 +143,12 @@ const stockLine = (name: string, over: Partial<StockEstimateLine> = {}): StockEs
   counted: 20_000,
   purchased: 10_000,
   sold: 27_500,
+  online: 0,
   wasted: 700,
   estimate: 1_800,
+  dailyUse: 900,
+  daysLeft: 2,
+  suggestedThreshold: 3_600,
   threshold: 2_000,
   critical: true,
   ...over,
@@ -163,6 +167,10 @@ const STOCK: StockRead = {
     unmatched: { lines: 2, qty: 3, names: 1, top: ["LATTE BUYUK XL"] },
     noRecipe: { lines: 0, qty: 0, names: 0, top: [] },
     counts: { tahmin: 2, "sayim-yok": 0, "lafpos-oncesi": 0 },
+    online: { orders: 12, qty: 15, tillOrders: 3, unmatched: { lines: 0, qty: 0, names: 0, top: [] }, missingMonths: ["2026-10"], through: "2026-11-23" },
+    avgDays: 2,
+    avgWindow: 14,
+    leadDays: 3,
   },
 };
 
@@ -447,9 +455,17 @@ test("stok_tahmini: kritikler yaklaşık ve birimiyle, malzeme ayrıntısı, Tuz
   assert.match(json!.uyarilar.join(" "), /Tuzla seçili; tahmini stok yalnız Marina/);
   assert.match(json!.uyarilar.join(" "), /Gün sonu gelmeyen 1 gün/);
   assert.equal(json!.panelAdresi, "/panel/sayim/tahmini");
+  // Kaç gün yeter, günlük kullanım ve önerilen eşik (öneri; eşiği yönetici kaydeder)
+  assert.equal(json!.malzemeler[0].kacGunYeter, "≈ 2 gün");
+  assert.equal(json!.malzemeler[0].onerilenEsik, "3,6 LT");
+  // Online siparişler: düşülen ve kasadan geçen (LafPOS'ta sayılan), çekilmemiş ay uyarısı
+  assert.equal(json!.online.dusulenSiparis, 12);
+  assert.equal(json!.online.kasadanGecen, 3);
+  assert.match(json!.uyarilar.join(" "), /Online siparişler şu aylar için alınmadı: 2026-10/);
   const one = await call(tools, "stok_tahmini", { malzeme: "espresso" });
   assert.equal(one.json!.malzemeler.length, 1);
   assert.equal(one.json!.malzemeler[0].sonSayimAyi, "2026-10");
+  assert.equal(one.json!.malzemeler[0].onlineTuketim, "0 KG");
   const none = await call(toolsOf(fakeDeps(undefined, { stock: async () => null })), "stok_tahmini");
   assert.equal(none.json!.tahmin, null);
 });
@@ -784,9 +800,9 @@ test("arayüz (telefon 390 / 360 px): yüzen düğme yok, alt menünün üstünd
   assert.match(w, /data-turn="user" className="rounded-xl bg-panel [^"]*max-lg:text-\[16px\] max-lg:leading-7 dark:text-ink-soft/);
   // Yanıt telefonda 16 px, geniş satır; koyu temada saf beyaz yerine bir ton kısık (parlama yok)
   assert.match(w, /<MarkdownView\s[^/]*?max-lg:text-\[16px\] max-lg:leading-7 dark:text-ink-soft/);
-  // Yazı kutusu 16 px (iOS yakınlaştırmasın), 44 px; gönder ve durdur 44 px; başlık düğmeleri telefonda 44 px; çipler 44 px
+  // Yazı kutusu 16 px (iOS yakınlaştırmasın), 44 px; gönder, durdur ve fiş fotoğrafı 44 px; başlık düğmeleri telefonda 44 px; çipler 44 px
   assert.match(w, /min-h-11 min-w-0 flex-1 resize-none [^"]*text-\[16px\]/);
-  assert.equal((w.match(/inline-flex size-11 shrink-0/g) ?? []).length, 2);
+  assert.equal((w.match(/inline-flex size-11 shrink-0/g) ?? []).length, 3);
   assert.match(w, /max-lg:size-11 pointer-coarse:size-11/);
   assert.match(w, /max-lg:h-11 [^"]*pointer-coarse:h-11/);
   assert.match(w, /max-lg:min-h-11 [^"]*pointer-coarse:min-h-11/);

@@ -5,12 +5,16 @@ import { z } from "zod";
 
 import { EPS, openBalance, paidViaOf, round2, type BalanceInvoice, type CariMethod } from "@/lib/cari/balance";
 import { businessDate } from "@/lib/cash-report";
-import { tillBranches } from "@/lib/branches";
+import { tillBranches, type BranchRow } from "@/lib/branches";
 import { isLafposDay } from "@/lib/lafpos/switch";
-import { dateTR, num, pct, tl, tlUnit } from "@/lib/format";
+import { dateTR, locativeTR, num, pct, tl, tlUnit } from "@/lib/format";
+import { branchPriceTargets, branchSlotFacts, effectiveFromText, OPTION_MENU_ITEM_IDS, rowsOf, type BranchSlotFacts } from "@/lib/prices/branch";
+import { genitive } from "@/lib/recipe-change";
+import type { SiteMenuSlot } from "@/lib/site-menu/slot";
 import { cleanName, foldName, ToolInputError } from "@/lib/mcp/answers/common";
 import type { OpName } from "@/lib/assistant/op-specs";
 import type { OpCardLine } from "@/lib/assistant/ops";
+import { receiptCardWarnings } from "@/lib/assistant/receipt";
 import { longDateTR, nextOccurrence, taxAmountTravels, todayTR, type ReminderRepeat } from "@/lib/reminders";
 import { SITE_MENU_ID } from "@/lib/site-menu/schema";
 import {
@@ -35,9 +39,10 @@ import { soldOutNoteFor } from "@/server/data/menu-status";
 import { getDb, schema as s } from "@/server/db";
 import { loadBranchSwitchDay } from "@/server/lafpos/branch";
 import { siteLinkSecret } from "@/server/site-link";
-import { readSiteSnapshot } from "@/server/site-menu/sync";
+import { readBranchPrices, readSiteSnapshot } from "@/server/site-menu/sync";
 import { loadShiftEntries, loadShiftWeek } from "@/server/vardiya/store";
 
+import { chatReceipt, chatReceiptStale } from "./receipt";
 import { expenseBranch, physicalBranch, pickByName } from "./resolve";
 import type { OpPreview, PreviewCtx } from "./types";
 
@@ -51,7 +56,13 @@ const db = () => getDb();
 
 const NO_CHANGE = (what: string) => new ToolInputError(`${what}; değişiklik yok, kart açılmadı.`);
 const yesNo = (v: boolean) => (v ? "Evet" : "Hayır");
-const today = (ctx: PreviewCtx) => todayTR(ctx.now);
+/**
+ * Kartın "bugün"ü İŞ GÜNÜDÜR (05:00'te döner; businessDate): gece 02:00'de istenen ödemenin, giderin ve kartın günü
+ * dündür, kasa ve zayi gibi. "İleri tarih olamaz" sınırı takvim günüdür (latestDay): gece yarısından sonra takvim
+ * tarihiyle yazılan ödeme ya da gider reddedilmez.
+ */
+const today = (ctx: PreviewCtx) => businessDate(ctx.now);
+const latestDay = (ctx: PreviewCtx) => todayTR(ctx.now);
 const dayText = (date: string) => `${longDateTR(date)} ${date.slice(0, 4)}`;
 
 /**
@@ -423,7 +434,7 @@ const invoicePaid: OpPreview<"fatura_odendi", z.output<typeof invoiceArgs>, z.ou
     const status = input.durum === "odendi" ? "paid" : "requested";
     if (status === "requested" && inv.paymentRequestedAt) throw NO_CHANGE("Bu faturanın ödemesi zaten talep edilmiş");
     const date = input.odemeGunu ?? today(ctx);
-    if (date > today(ctx)) throw new ToolInputError("Ödeme günü ileri bir tarih olamaz.");
+    if (date > latestDay(ctx)) throw new ToolInputError("Ödeme günü ileri bir tarih olamaz.");
     const label = inv.invoiceNo ? cleanName(inv.invoiceNo, 40) : `${dateTR(inv.date)} faturası`;
     const lines: OpCardLine[] = [
       { label: "Fatura", to: `${label} (${dateTR(inv.date)})` },
@@ -492,7 +503,7 @@ const supplierPayment: OpPreview<"tedarikci_odemesi_ekle", z.output<typeof suppl
   args: supplierPayArgs,
   before: emptyBefore,
   async preview(input, ctx) {
-    if (input.tarih > today(ctx)) throw new ToolInputError("Ödeme günü ileri bir tarih olamaz.");
+    if (input.tarih > latestDay(ctx)) throw new ToolInputError("Ödeme günü ileri bir tarih olamaz.");
     const cards = await db().select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases }).from(s.suppliers);
     const q = foldName(input.tedarikci);
     const namesOf = (c: (typeof cards)[number]) => [c.name, ...(c.aliases ?? [])];
@@ -605,12 +616,28 @@ export async function productPrice(id: number) {
   return r?.price ?? null;
 }
 
+/**
+ * Şube fiyatı (docs/FIYATLAR.md › Şube fiyatı): siteye bağlı ürünün boyunun, şube fiyatı yazılabilen her şubedeki
+ * durumu (sitenin son okumasının kopyasından; siteye gidilmez). Seçenek kalemi ve bağlı olmayan ürün şubeye göre
+ * fiyatlanmaz: boş.
+ */
+async function branchPriceFacts(siteMenuId: string | null, slot: SiteMenuSlot | null, ctx: PreviewCtx): Promise<{ branch: BranchRow; facts: BranchSlotFacts }[]> {
+  if (!siteMenuId || !slot || OPTION_MENU_ITEM_IDS.includes(siteMenuId)) return [];
+  const targets = branchPriceTargets(ctx.branches);
+  if (!targets.length) return [];
+  const [snapshot, prices] = await Promise.all([readSiteSnapshot(), readBranchPrices()]);
+  const item = snapshot.items.find((i) => i.id === siteMenuId);
+  if (!item) return [];
+  const t = ctx.now.getTime();
+  return targets.map((branch) => ({ branch, facts: branchSlotFacts(item, rowsOf(prices.rows, siteMenuId, branch.id), t, slot) }));
+}
+
 const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof productPriceArgs>, z.output<typeof productPriceBefore>> = {
   args: productPriceArgs,
   before: productPriceBefore,
   async preview(input, ctx) {
     const rows = await db()
-      .select({ id: s.products.id, name: s.products.name, size: s.products.size, price: s.products.price, siteMenuId: s.products.siteMenuId })
+      .select({ id: s.products.id, name: s.products.name, size: s.products.size, price: s.products.price, siteMenuId: s.products.siteMenuId, siteMenuSlot: s.products.siteMenuSlot })
       .from(s.products)
       .where(eq(s.products.active, true));
     const p = pickProduct(rows, input.urun, input.boy, "Adını ara ile bulun.");
@@ -651,11 +678,36 @@ const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof prod
           ]
         : ["Sitede değişmez. Kasada elle değiştirilecek: Fiyatlar › Kasaya işle listesine düşer."];
     if (change !== null && Math.abs(change) > 0.3) warnings.unshift(`Fiyat ${pct(change)} değişiyor: tutarı kontrol edin.`);
+    // Şube fiyatı: kart tabanı (sitenin kalemi, products.price) değiştirir. Kendi fiyatı olan şubede fiyat değişmez; kart
+    // bunu satır satır söyler, açık ekranın şubesi kendi fiyatlıysa en başta uyarır. Şubenin fiyatı asistanla değişmez
+    // (Fiyatlar › Şube fiyatı; rehber "sube-fiyati")
+    const facts = linked ? await branchPriceFacts(p.siteMenuId, p.siteMenuSlot, ctx) : [];
+    const own = facts.filter((f) => f.facts.own);
+    for (const f of own) {
+      lines.push({ label: locativeTR(f.branch.name), from: tl(f.facts.priceMinor / 100, 2), to: `${tl(f.facts.priceMinor / 100, 2)} (şube fiyatı, değişmez)` });
+    }
+    for (const f of facts) {
+      const next = f.facts.planned[0];
+      if (!next) continue;
+      warnings.push(
+        next.priceMinor === null
+          ? `${locativeTR(f.branch.name)} ${effectiveFromText(next.effectiveFrom)} taban fiyat planlı: o andan sonra bu değişiklik ${locativeTR(f.branch.name)} da geçerli olur.`
+          : `${locativeTR(f.branch.name)} ${effectiveFromText(next.effectiveFrom)} ${tl(next.priceMinor / 100, 2)} planlı (şube fiyatı): bu değişiklik ${locativeTR(f.branch.name)} o fiyatı değiştirmez.`,
+      );
+    }
+    const shown = own.find((f) => f.branch.id === ctx.scope);
+    if (shown) {
+      warnings.unshift(
+        `Açık ekranda ${shown.branch.name} seçili ve ${genitive(shown.branch.name)} kendi fiyatı var (${tl(shown.facts.priceMinor / 100, 2)}): bu kart ${locativeTR(shown.branch.name)} fiyatı değiştirmez, tabanı değiştirir. ${genitive(shown.branch.name)} fiyatı Fiyatlar › Şube fiyatı'ndan değişir.`,
+      );
+    } else if (own.length) {
+      warnings.push(`${own.map((f) => f.branch.name).join(", ")} kendi fiyatıyla kalır; bu kart yalnız tabanı değiştirir.`);
+    }
     return {
       card: {
         title: `${cleanName(productLabel(p))} fiyatı ${tl(input.yeniFiyat, 2)} olacak`,
         subject: cleanName(productLabel(p)),
-        branch: "Bütün şubeler (menü ortak)",
+        branch: own.length ? `Taban fiyat (${own.map((f) => f.branch.name).join(", ")} hariç: kendi fiyatı var)` : "Bütün şubeler (menü ortak)",
         day: dayText(today(ctx)),
         lines,
         effects: linked ? ["site", "lafpos", "modpos"] : [...(lafposTill ? (["lafpos"] as const) : []), ...(modposTill ? (["modpos"] as const) : [])],
@@ -678,6 +730,32 @@ const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof prod
 // ---------------------------------------------------------------- Kasadan çıkan
 
 const DOC_LABEL = { fis: "Fiş", e_arsiv: "e-Arşiv", fatura: "Fatura", yok: "Belgesiz" } as const;
+
+/**
+ * Sohbete eklenen fiş (docs/ASISTAN-ISLEMLER.md › Fiş fotoğrafı): kimlik ve sahibi (bayatlık denetimi için), fişten
+ * okunan tarih, numara ve KDV. Eski planlarda yok (alan isteğe bağlı): fotoğrafsız kart
+ */
+const receiptArgs = z
+  .object({
+    photoId: z.number().int().positive(),
+    ownerId: z.number().int().positive(),
+    receiptDate: z.string().nullable(),
+    receiptNo: z.string().max(40).nullable(),
+    vat: z.number().min(0).nullable(),
+  })
+  .nullable()
+  .optional();
+type ReceiptArgs = NonNullable<z.output<typeof receiptArgs>>;
+
+/** Modelin verdiği fiş kimliği: denetlenir, okunur; kartın satırı, uyarıları ve plana giden fiş alanları */
+async function receiptPart(photoId: number | undefined, ctx: PreviewCtx, card: { amount: number; day: string | null }) {
+  if (!photoId) return null;
+  const r = await chatReceipt(ctx.userId, photoId, ctx.now);
+  const args: ReceiptArgs = { photoId, ownerId: ctx.userId, receiptDate: r.facts.receiptDate, receiptNo: r.facts.receiptNo, vat: r.facts.vat };
+  const line: OpCardLine = { label: "Fiş fotoğrafı", to: r.facts.receiptDate ? `Ekli (fişin tarihi ${dateTR(r.facts.receiptDate)})` : "Ekli" };
+  return { args, line, docType: r.facts.docType, warnings: receiptCardWarnings(r.facts, card) };
+}
+
 const cashOutArgs = z.object({
   branchId: z.string().min(1).max(24),
   date: z.string(),
@@ -688,6 +766,7 @@ const cashOutArgs = z.object({
   docType: z.enum(["fis", "e_arsiv", "fatura", "yok"]),
   categoryId: z.number().int().positive().nullable(),
   toExpenses: z.boolean(),
+  receipt: receiptArgs,
 });
 
 async function reportEntered(date: string, branchId: string): Promise<boolean> {
@@ -716,6 +795,10 @@ const cashOutAdd: OpPreview<"kasadan_cikan_ekle", z.output<typeof cashOutArgs>, 
     }
     const teslim = input.tur === "teslim";
     if (teslim && input.harcamalaraYaz) throw new ToolInputError("Teslim (birine verilen para) Aylık harcamalar'a yazılmaz; harcamalaraYaz false olmalı.");
+    if (teslim && input.fisFotografi) throw new ToolInputError("Fiş fotoğrafı yalnız alışverişe (tür harcama) eklenir; teslimde fiş olmaz.");
+    const receipt = await receiptPart(input.fisFotografi, ctx, { amount: input.tutar, day: date });
+    // Fotoğraflı satırın belgesi okunandan (belgesiz denmişse fiş): kasa formu da fişli satırı "Belgesiz" yazmaz
+    const docType = receipt ? (input.belge === "yok" ? (receipt.docType ?? "fis") : input.belge) : input.belge;
     if (input.harcamalaraYaz && !input.kategori) throw new ToolInputError("Aylık harcamalar'a yazılacaksa gider kategorisi gerekli; kullanıcıya sor.");
     const cat = !teslim && input.kategori ? pickByName(await activeCategories(), input.kategori, (c) => c.name, "Gider kategorisi", "Kategoriler Aylık harcamalar › Kategoriler'de.") : null;
     // Şubenin bu günü LafPOS'taysa kasadan çıkan LafPOS'ta girilir (docs/LAFPOS.md, KASA-RAPORU.md): panelden eklenen
@@ -737,7 +820,8 @@ const cashOutAdd: OpPreview<"kasadan_cikan_ekle", z.output<typeof cashOutArgs>, 
     const description = plainText(input.aciklama);
     if (store) lines.push({ label: teslim ? "Kime" : "Yer", to: store });
     if (description) lines.push({ label: "Ne alındı", to: description });
-    lines.push({ label: "Belge", to: DOC_LABEL[input.belge] });
+    lines.push({ label: "Belge", to: DOC_LABEL[docType] });
+    if (receipt) lines.push(receipt.line);
     if (cat) lines.push({ label: "Kategori", to: cleanName(cat.name) });
     lines.push({ label: "Aylık harcamalar'a", to: yesNo(input.harcamalaraYaz) });
     return {
@@ -750,7 +834,8 @@ const cashOutAdd: OpPreview<"kasadan_cikan_ekle", z.output<typeof cashOutArgs>, 
         effects: input.harcamalaraYaz ? ["kasa", "gelirGider"] : ["kasa"],
         undo: "Asistan geri almaz (silmek gerekir): Kasa › Kasadan çıkanlar › satır › Sil (bildirimde 15 dk Geri al).",
         undoable: false,
-        warnings,
+        warnings: [...(receipt?.warnings ?? []), ...warnings],
+        ...(receipt ? { photoId: receipt.args.photoId } : {}),
       },
       args: {
         branchId: b.id,
@@ -759,9 +844,10 @@ const cashOutAdd: OpPreview<"kasadan_cikan_ekle", z.output<typeof cashOutArgs>, 
         amount: input.tutar,
         store,
         description,
-        docType: input.belge,
+        docType,
         categoryId: cat?.id ?? null,
         toExpenses: input.harcamalaraYaz,
+        receipt: receipt?.args ?? null,
       },
       before: {},
       branch: b.id,
@@ -769,7 +855,8 @@ const cashOutAdd: OpPreview<"kasadan_cikan_ekle", z.output<typeof cashOutArgs>, 
   },
   async stale(args) {
     if (businessDate(new Date()) !== args.date) return "İş günü değişti (05:00); kartı yeniden isteyin.";
-    return (await reportEntered(args.date, args.branchId)) ? "Bu arada günün kasa raporu girildi; satırı Kasa ekranından ekleyin." : null;
+    if (await reportEntered(args.date, args.branchId)) return "Bu arada günün kasa raporu girildi; satırı Kasa ekranından ekleyin.";
+    return args.receipt ? chatReceiptStale(args.receipt.ownerId, args.receipt.photoId) : null;
   },
 };
 
@@ -782,13 +869,14 @@ const expenseArgs = z.object({
   amount: z.number().positive(),
   paymentMethod: z.enum(["nakit", "kart", "havale", "diger"]).nullable(),
   description: z.string().max(200).nullable(),
+  receipt: receiptArgs,
 });
 
 const expenseAdd: OpPreview<"harcama_ekle", z.output<typeof expenseArgs>, z.output<typeof emptyBefore>> = {
   args: expenseArgs,
   before: emptyBefore,
   async preview(input, ctx) {
-    if (input.tarih > today(ctx)) throw new ToolInputError("Harcamanın günü ileri bir tarih olamaz.");
+    if (input.tarih > latestDay(ctx)) throw new ToolInputError("Harcamanın günü ileri bir tarih olamaz.");
     const eb = expenseBranch(input.sube, ctx.scope, ctx.branches);
     const cat = pickByName(await activeCategories(), input.kategori, (c) => c.name, "Gider kategorisi", "Kategoriler Aylık harcamalar › Kategoriler'de.");
     const lines: OpCardLine[] = [
@@ -800,6 +888,14 @@ const expenseAdd: OpPreview<"harcama_ekle", z.output<typeof expenseArgs>, z.outp
     ];
     const description = plainText(input.aciklama);
     if (description) lines.push({ label: "Açıklama", to: description });
+    const receipt = await receiptPart(input.fisFotografi, ctx, { amount: input.tutar, day: input.tarih });
+    if (receipt) {
+      lines.push(receipt.line);
+      if (receipt.args.vat !== null) lines.push({ label: "KDV (fişten)", to: tl(receipt.args.vat, 2) });
+    }
+    const pastMonth = input.tarih.slice(0, 7) < today(ctx).slice(0, 7) ? ["Geçmiş ayın giderine yazılır: o ayın kârı değişir."] : [];
+    // Fatura ve e-Arşiv Paraşüt'ten de gelir: Aylık harcamalar'a ikinci kez yazılmasın (kasanın fiş formuyla aynı uyarı)
+    const invoice = receipt?.docType === "fatura" || receipt?.docType === "e_arsiv" ? ["Bu bir fatura: Paraşüt'e de gelecekse Aylık harcamalar'a ikinci kez yazılmasın; öyleyse Vazgeç deyin."] : [];
     return {
       card: {
         title: `${cleanName(cat.name)} gideri eklenecek: ${tl(input.tutar, 2)}`,
@@ -810,16 +906,18 @@ const expenseAdd: OpPreview<"harcama_ekle", z.output<typeof expenseArgs>, z.outp
         effects: ["gelirGider"],
         undo: "Asistan geri almaz (silmek gerekir): Aylık harcamalar › kayıt › Sil (bildirimde Geri al).",
         undoable: false,
-        warnings: input.tarih.slice(0, 7) < today(ctx).slice(0, 7) ? ["Geçmiş ayın giderine yazılır: o ayın kârı değişir."] : [],
+        warnings: [...invoice, ...(receipt?.warnings ?? []), ...pastMonth],
+        ...(receipt ? { photoId: receipt.args.photoId } : {}),
       },
-      args: { categoryId: cat.id, date: input.tarih, amount: input.tutar, paymentMethod: input.odemeSekli ?? null, description },
+      args: { categoryId: cat.id, date: input.tarih, amount: input.tutar, paymentMethod: input.odemeSekli ?? null, description, receipt: receipt?.args ?? null },
       before: {},
       branch: eb.scope,
     };
   },
   async stale(args) {
     const [c] = await db().select({ active: s.expenseCategories.active }).from(s.expenseCategories).where(eq(s.expenseCategories.id, args.categoryId)).limit(1);
-    return c?.active ? null : "Kategori bu arada pasife alındı ya da silindi.";
+    if (!c?.active) return "Kategori bu arada pasife alındı ya da silindi.";
+    return args.receipt ? chatReceiptStale(args.receipt.ownerId, args.receipt.photoId) : null;
   },
 };
 

@@ -9,6 +9,7 @@ import { Notice, NoticeLink } from "@/components/ui/notice";
 import { ALL_BRANCHES, BRANCH_PARAM, tillBranches } from "@/lib/branches";
 import { INVOICE_CATEGORIES } from "@/lib/constants";
 import { parasutKey, type ParasutAccountInfo } from "@/lib/parasut/accounts";
+import { taxConfirmCopy } from "@/lib/parasut/company";
 import { missingSettings, settingsView } from "@/lib/parasut/settings";
 import { packEvidence, sameFactor } from "@/lib/product-match";
 import { requireAdmin } from "@/server/auth/dal";
@@ -21,6 +22,7 @@ import { invoiceScopeWhere } from "@/server/invoice-scope";
 import { aiMatchPage } from "@/server/parasut/ai-match";
 import { invoiceAccountWhere, loadParasutAccounts, parasutAccountForScope } from "@/server/parasut/accounts";
 import { parasutConnection } from "@/server/parasut/client";
+import { parasutConnectQuestion } from "@/server/parasut/connect";
 import { configFrom, hasParasutInvoices, loadInvoiceScope, loadParasutSettings, parasutRedirectUri } from "@/server/parasut/config";
 import { CURSOR_KEY, PENDING_KEY } from "@/server/parasut/keys";
 import { parseReturnLog, RETURNS_KEY, supplierReturnEntered } from "@/server/parasut/returns";
@@ -99,7 +101,7 @@ function AccountNotice({
 }
 
 async function ParasutContent() {
-  await requireAdmin();
+  const me = await requireAdmin();
   const db = getDb();
   // Şube başına Paraşüt hesabı: seçili şubenin hesabı ("Tümü": varsayılan şubeninki); bağlantı, eşitleme geçmişi,
   // imleçler ve Paraşüt'ten gelen faturaların sayıları bu hesabın
@@ -209,12 +211,14 @@ async function ParasutContent() {
   }));
   const pending = pendingRow[0]?.value as { count: number; total?: number; ingested?: boolean; sample?: { from: string | null; date: string | null }[]; at: string } | undefined;
   const configured = missingSettings(settings.resolved).length === 0;
-  const [connection, aiMatch, invoiceScope] = await Promise.all([
+  const [connection, aiMatch, invoiceScope, held] = await Promise.all([
     // Paraşüt hesabı tarayıcıdan yetkilendirildi mi (belirteçlerin kendisi panele hiç gelmez)
     parasutConnection(undefined, configured ? configFrom(settings.resolved, account) : null, account),
     // "AI ile öner": düğmenin durumu ve saklı öneriler (sayfa açılınca servise istek gitmez; docs/PARASUT.md § 5e)
     aiMatchPage(unlinked.items, links),
     loadInvoiceScope(account),
+    // "Aynı vergi numarası mı?": bu yöneticinin Paraşüt dönüşünde onaya bekletilen bağlantısı (hangi hesap olursa olsun)
+    parasutConnectQuestion(me.id),
   ]);
   // Birden çok kasa açıkken hangi hesabın gösterildiği ve faturaların şubesi seçimi (tek kasada ikisi de çizilmez)
   const many = tillBranches(branches).length > 1;
@@ -224,6 +228,9 @@ async function ParasutContent() {
   const scopeName = scope === ALL_BRANCHES ? null : nameOf(scope);
   // Ayrı hesabın (yalnız sahibi şube kullanıyor) faturalarının şubesi: Bağlantı kartındaki seçim
   const ownAccount = many && info.users.length === 1 && info.users[0] === info.id;
+  // Onay penceresinin metni (işlem geçmişine düşen not sunucuda kalır)
+  const heldCopy = held ? taxConfirmCopy(held.question, nameOf(held.account)) : null;
+  const connectQuestion = held && heldCopy ? { account: held.account, kind: held.question.kind, title: heldCopy.title, description: heldCopy.description, confirmLabel: heldCopy.confirmLabel } : null;
   // DevHub'a kaydedilecek dönüş adresi; PARASUT_REDIRECT_URI yanlış yazıldıysa ekran yine açılır
   let redirectUri: string | null = null;
   try {
@@ -262,6 +269,7 @@ async function ParasutContent() {
           ) : null
         }
         account={account}
+        connectQuestion={connectQuestion}
         accountName={many ? info.name : null}
         // Seçili şube hesabı başka şubeden kullanıyor ("Tuzla ile aynı"): bağlantı kartı salt okunur, düzenleme sahibinde
         linkedFrom={

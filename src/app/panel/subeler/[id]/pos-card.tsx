@@ -13,7 +13,7 @@ import { Field } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
 import { PasswordInput } from "@/components/ui/password-input";
 import type { ModposSetting } from "@/lib/branch-settings/groups";
-import { LAFPOS_SECRET_MIN } from "@/lib/lafpos/request";
+import { LAFPOS_SECRET_MIN } from "@/lib/lafpos/secret-rules";
 import { dayMonthYearTR } from "@/lib/lafpos/switch";
 import { isStepUpError } from "@/lib/step-up";
 import { saveLafposSecret } from "@/server/actions/branch-settings";

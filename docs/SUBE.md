@@ -119,6 +119,12 @@ Paraşüt hesabını ve faturalarını gösterir ([Faturanın şubesi](#faturan�
 ekranın şubesini gönderir (`?sube=`): satış, kasa, personel ve giderler o şubenin, Vergi ve Cari hareketleri firma
 geneli; dosyanın ilk sayfası (Nasıl Okunur) kapsamı yazar, dosya adı şubeyle biter.
 
+**Raporlar** (26 Kasım 2026, [RAPORLAR.md](RAPORLAR.md)) de seçiciden bağımsızdır ama "Tümü"yle değil, **şube şube**
+okur: her açık fiziksel şube kendi görünümüyle (`loadModel({ scope: şube })`; Gelir-gider'de o şube seçiliyken görünen
+rakamlar), kasa satırları `withBranchScope(ALL_BRANCHES, …)` ile. Şube seçiliyken Şube karşılaştırma, İşçilik / ciro ve
+Kayıp önleme "soldaki seçim raporu süzmez" notunu gösterir (`companyWideNote("raporlar")`); Kaçak raporu hep Marina'nın
+(tahmini stoğun şubesi).
+
 **Komisyon & hakediş** (23 Kasım 2026, [KOMISYON.md](KOMISYON.md) › Şube): satış seçili şubenin kasa raporlarından,
 LafPOS'undan ve ModPOS föyünden; komisyon faturaları, oran ve hakediş işletmenin (faturalar şubeye bölünmez). Şube
 seçiliyken ekran işletmenin raporunu gösterir ve üstte şubenin payını (şube satışı × işletmenin oranı) notuyla ekler.
@@ -258,8 +264,9 @@ birden çok kasa açıkken şubenin adıyla.
 | Fiyatlar › Şube fiyatı, Eski fiyattan satılanlar | Panelin seçimi (önceden adresteki `?sube=` okunuyordu; seçici onu adresten düşürünce ilk şubeye dönüyordu). Geçmiş sekmesi sitedeki şube fiyatı kayıtlarını ayrı kartta gösterir |
 | Silme engeli (ürün, hammadde) | Bütün şubelerden, eylemin sayacıyla (`productHistoryCounts`, `ingredientHistoryCounts`): Marina seçiliyken Tuzla'nın zayisi ya da sayımı da engeller |
 | Hammaddeler › Kullanım | Şube seçiliyken "son ay · Marina satışı" |
-| Claude bağlantısı ve panel asistanının araçları | İsteğe bağlı `sube` girdisi (ad, kimlik ya da "hepsi"); verilmezse panelin seçimi. Çıktı `kapsam` yazar; tedarikçi ve arama "Firma geneli". Şubesine kilitli hesap başka şubeyi isteyemez |
+| Claude bağlantısı ve panel asistanının araçları | İsteğe bağlı `sube` girdisi (ad, kimlik ya da "hepsi"); verilmezse panelin seçimi (asistanda açık ekranın şubesi: tarayıcı soruyla gönderir, çerez yalnız yedek; 26 Kasım 2026, docs/ASISTAN.md › Sayfa bağlamı). Çıktı `kapsam` yazar; tedarikçi ve arama "Firma geneli". Şubesine kilitli hesap başka şubeyi isteyemez |
 | Kasa raporu silindi (işlem geçmişi) | Birden çok kasa açıkken kasanın adı |
+| Personel belgeleri ve avansları | Kişinin şubesi Maaşlar'daki **Şube** alanı (Maaşlar'la aynı süzgeç): ekranlar ve zilin belge satırları seçili şubenin kişileri, "Tümü"de hepsi, birden çok fiziksel şube açıkken kartta kişinin şubesi. Sabah e-postasının "Personel belgeleri" kutusu şubeye bağlı alıcıya yalnız o şubenin kişileri ([PERSONEL-BELGE.md](PERSONEL-BELGE.md)) |
 
 Sahibin varsayılanları (24 Kasım 2026, sonra Ayarlar'dan şube başına değiştirilebilir olacak): tek firma (Vergi, Nakit,
 cari firma geneli, etiketli); Paraşüt hesabı ortak (25 Kasım'dan beri şube başına seçilebilir: ayrı hesabın faturaları o
@@ -362,7 +369,10 @@ yazma `src/server/branch-settings.ts`.
   (`invoices.branch_id`; Bağlantı kartından kapatılabilir), ortak hesabınki tedarikçinin varsayılan şubesini alır
   ([Faturanın şubesi](#faturanın-şubesi-25-kasım-2026)). Tek şube seçiliyken öbür şubenin faturası Faturalar'a,
   Gelir-gider'e ve Maliyet'e girmez (Vergi, Nakit ve Ödemeler firma geneli; [PARASUT.md](PARASUT.md)). Şubeler
-  listesinde "Paraşüt: Tuzla ile aynı" çipi. Şubenin hesabından fatura gelmişse şube silinemez.
+  listesinde "Paraşüt: Tuzla ile aynı" çipi. Şubenin hesabından fatura gelmişse şube silinemez. Ayrı firma
+  bağlanırken vergi numarası öbür hesabın firmasınınkiyle aynı çıkarsa (ya da okunamazsa) yetki yazılmadan "Aynı vergi
+  numarası mı?" diye sorulur: aynı işletmeyse doğru yol "Tuzla ile aynı"dır, faturalar iki kez sayılmasın
+  ([PARASUT.md › Aynı vergi numarası mı?](PARASUT.md#şube-başına-paraşüt-hesabı)).
 - **İkinci tur (25 Kasım 2026): komisyon, LafPOS, ModPOS, çalışma takvimi, banka POS.** Hepsi Şube ayarları ekranında
   birer kart (`src/app/panel/subeler/[id]/`; "Diğer şubeyle aynı" anahtarı tek bileşen,
   `src/components/panel/same-as-toggle.tsx`; kart verisi `branchSettingView`, `src/server/branch-settings-view.ts`, gizli
@@ -378,7 +388,9 @@ yazma `src/server/branch-settings.ts`.
     geçiş gününü okuyan her yer buna iner, eski kayıt doğrudan okunmaz: `tests/sube-ayarlari-2.test.ts`). Ayarlar ›
     LafPOS geçiş gününü bu satıra yazar; kasa kaynağı başka şubeye geçerse Marina'nın günü ona geçmez, o şube kendi gününü
     alır. Anahtar panelde şifreli saklanabilir: ortamdakinin önüne geçer (`lafposSecret`; imzalı uçlar için önbellekli,
-    kayıtta düşer; veritabanı okunamazsa uç 503), tarayıcıya, işlem geçmişine ve yedeğe gitmez. Kaydetme ve silme
+    kayıtta düşer; önbellek ön süzgeç: imza tutunca anahtar veritabanından yeniden okunur, döndürülen eski anahtar başka
+    sunucu örneğinde de hemen geçmez, [LAFPOS.md](LAFPOS.md); veritabanı okunamazsa uç 503), tarayıcıya, işlem
+    geçmişine ve yedeğe gitmez. Kaydetme ve silme
     yöneticinin parolasıyla (anahtar gün sonu yazımlarının güven kökü). Kart LafPOS'un (türetilmiş) şubesinde: bugünkü
     kurulumda kütükte kaynağı ModPOS olsa da Marina'da ("Kasa kaynağı Şubeler'de hâlâ ModPOS" notuyla); geçiş günü orada
     gösterilir, Ayarlar › LafPOS'ta değişir. Ayarlar › LafPOS anahtarın nereden okunduğunu yazar, şube sayfasına bağlanır.

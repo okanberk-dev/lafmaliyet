@@ -4,7 +4,7 @@ import { SIGNATURE_HEADER, TIMESTAMP_HEADER } from "@/lib/karaoke/signature";
 import { POS_DAY_MAX_BYTES } from "@/lib/lafpos/day";
 import { getDb } from "@/server/db";
 import { runLafposDayEnd, settlePavoWait } from "@/server/lafpos/gun-sonu";
-import { lafposSecret } from "@/server/lafpos/ingest";
+import { lafposRequestSecret, lafposSecret } from "@/server/lafpos/ingest";
 import { handlePosDay, noteUnverified } from "@/server/lafpos/status";
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -28,14 +28,17 @@ export async function POST(request: NextRequest) {
   // İşlevin süresi (maxDuration) isteğin başından sayılır: after()'ın son anı da buradan (Vercel 60. saniyede keser)
   const start = Date.now();
   await connection();
-  const secret = await lafposSecret();
-  if (!secret) return Response.json({ error: "not_configured" }, { status: 503, headers: NO_STORE });
+  // Ön süzgeç (önbellekli): anahtar yoksa gövde okunmaz
+  if (!(await lafposSecret())) return Response.json({ error: "not_configured" }, { status: 503, headers: NO_STORE });
   const length = Number(request.headers.get("content-length") ?? 0);
   if (length > POS_DAY_MAX_BYTES) {
     await noteUnverified(getDb(), 413);
     return Response.json({ error: "too_large" }, { status: 413, headers: NO_STORE });
   }
   const body = await request.text();
+  // İmza önbellekteki anahtarla tutarsa anahtar veritabanından yeniden okunur: döndürülen eski anahtar geçmez
+  const secret = await lafposRequestSecret(request, body);
+  if (!secret) return Response.json({ error: "not_configured" }, { status: 503, headers: NO_STORE });
   try {
     const r = await handlePosDay(getDb(), {
       secret,

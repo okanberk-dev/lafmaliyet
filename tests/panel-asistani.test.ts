@@ -172,7 +172,7 @@ test("istek: Sonnet 5.5, efor medium, yedek model 'default', önbellek sırası;
   assert.equal(system.length, 2);
   assert.equal(system[0].text, SYSTEM_PROMPT);
   assert.deepEqual(system[0].cache_control, { type: "ephemeral" });
-  assert.match(system[1].text, /^Bugün: 24 Kasım 2026, Salı \(2026-11-24, İstanbul\)\.\nPanelde seçili şube: Tuzla\./);
+  assert.match(system[1].text, /^Bugün: 24 Kasım 2026, Salı \(2026-11-24, İstanbul; iş günü, 05:00'te döner\)\.\nAçık ekranın şubesi: Tuzla\./);
   assert.equal("cache_control" in system[1], false);
   // Geçmiş yalnız görünen metin (düşünme bloğu yok); yeni soru sonda
   assert.deepEqual(params.messages, [
@@ -272,8 +272,13 @@ test("sistem istemi: kurallar, araç seçimi, yönetici ekranları ve sözlük; 
   }
   // İstem sabit: bugünün tarihi, saat ve kişi adı yok (önbellek her gün bozulmasın)
   assert.doesNotMatch(SYSTEM_PROMPT, new RegExp(new Date().toISOString().slice(0, 10)));
-  assert.doesNotMatch(SYSTEM_PROMPT, /Panelde seçili şube/);
-  assert.match(contextBlock({ today: "2026-11-02", branchLabel: "Tümü" }), /^Bugün: 2 Kasım 2026, Pazartesi \(2026-11-02, İstanbul\)\.\nPanelde seçili şube: Tümü\./);
+  assert.doesNotMatch(SYSTEM_PROMPT, /Açık ekranın şubesi/);
+  assert.match(contextBlock({ today: "2026-11-02", branchLabel: "Tümü" }), /^Bugün: 2 Kasım 2026, Pazartesi \(2026-11-02, İstanbul; iş günü, 05:00'te döner\)\.\nAçık ekranın şubesi: Tümü\./);
+  // Gece 05:00'ten önce: takvim günü ileride, "bugün" iş günüdür ve ayrı satırla söylenir
+  const night = contextBlock({ today: "2026-11-02", calendarDay: "2026-11-03", branchLabel: "Marina" });
+  assert.match(night, /^Bugün: 2 Kasım 2026, Pazartesi[^\n]*\nSaat 05:00'ten önce: takvimde 3 Kasım, ama "bugün" iş günüdür \(2 Kasım\), "dün" 1 Kasım\./);
+  assert.match(night, /\nAçık ekranın şubesi: Marina\./);
+  assert.doesNotMatch(contextBlock({ today: "2026-11-02", calendarDay: "2026-11-02", branchLabel: "Marina" }), /Saat 05:00/);
   // Boyu: önbelleğe alınacak kadar uzun (Sonnet 5.5'te en az 512 token), ama ölçülü
   assert.ok(SYSTEM_PROMPT.length > 4000 && SYSTEM_PROMPT.length < 30_000, String(SYSTEM_PROMPT.length));
 });

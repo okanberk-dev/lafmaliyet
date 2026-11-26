@@ -7,7 +7,7 @@ import { z } from "zod";
 import { validateExpression } from "@/lib/calc/expr";
 import { tl } from "@/lib/format";
 import { productDeleteBlocker } from "@/lib/product-delete";
-import { pendingProposalIssue } from "@/lib/recipe-change";
+import { EMPTY_SNAPSHOT, pendingProposalIssue } from "@/lib/recipe-change";
 import type { PriceAck } from "@/lib/calc/price-impact";
 import { LINK_CHANGED_TEXT, priceMovedText, priceRefusedText, seenPriceDecision } from "@/lib/prices/seen";
 import { isStaleFailure } from "@/lib/site-menu/push";
@@ -18,6 +18,8 @@ import { loadModel, loadSettings } from "@/server/data/dataset";
 import { withPassiveRelist } from "@/server/data/ingredient-usage";
 import { PRICE_ACK_KEY } from "@/server/data/price-alerts";
 import { insertProduct } from "@/server/data/product-create";
+import { recordRecipeVersion } from "@/server/data/recipe-versions";
+import { currentSnapshot } from "@/server/data/recipe-snapshot";
 import { productHistoryCounts } from "@/server/data/product-history";
 import { lockNewProducts, pendingNewProposalRows } from "@/server/data/recipe-requests";
 import { loadTillScope } from "@/server/data/till-scope";
@@ -145,7 +147,7 @@ export async function createProduct(input: z.input<typeof productSchema> & { cop
       await lockNewProducts(tx);
       const pending = pendingProposalIssue(data.name, [data.size], await pendingNewProposalRows(tx), "önce Onaylar'da onaylayın ya da reddedin");
       if (pending) throw new UserError(pending);
-      return insertProduct(tx, data, { copyFromId, changedBy: me.name });
+      return insertProduct(tx, data, { copyFromId, changedBy: me.name, changedById: me.id });
     });
     await logActivity(me, "Yeni ürün", `${data.name} ${data.size}${copyFromId ? ` (${result.lines} malzemelik reçete kopyalandı)` : ""}`);
     refresh();
@@ -259,6 +261,8 @@ export async function saveRecipe(input: z.input<typeof recipeSchema>) {
     const now = new Date();
     const sale = await db.transaction(async (tx) => {
       await checkRecipe(tx, data);
+      // Reçete geçmişi (docs/DONEM-KAPANISI.md › Reçete geçmişi): yazımdan önceki reçete, yazımdan sonra farkıyla
+      const recipeBefore = (await currentSnapshot(data.productId, tx)) ?? EMPTY_SNAPSHOT;
       const pushed = push.kind === "pushed" ? await applyPushed(tx, push, before, desired, now) : null;
       // Site kabul ettiyse sitenin döndürdüğü satış alanları; değilse yalnız dokunulanlar (dokunulmayan, okumadan sonra
       // eşitlemenin ya da başka bir sekmenin yazdığını ezmesin)
@@ -320,6 +324,7 @@ export async function saveRecipe(input: z.input<typeof recipeSchema>) {
         }
         return row;
       });
+      await recordRecipeVersion(tx, { productId: data.productId, before: recipeBefore, source: "edit", by: me });
       // Fiyat yazıldıysa ve değiştiyse geçmişe ve kasanın (ModPOS) listesine (kuruşu aynıysa yazılmaz). Dokunulmayan
       // fiyat yerelde yazılmadı: okumadan sonra başka yerde değişmişse o değişiklik kendi kaydını zaten yazdı. Yalnız
       // menü durumu siteye gittiyse ve sitenin yanıtı başka bir fiyat taşıdıysa o fiyat sitenindir ("laffogato.net")

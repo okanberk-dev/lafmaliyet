@@ -24,7 +24,7 @@ import { branchSwitchDay, isLafposBranch, isLafposDay, lafposBranchOf } from "@/
 import { checkRange, cleanName, foldName, r2, r2n, spanDays, ToolInputError } from "@/lib/mcp/answers/common";
 import { zGun, zLimit } from "@/lib/mcp/schemas";
 import { addDays } from "@/lib/reminders";
-import { stockQty, STOCK_ESTIMATE_PATH, type StockEstimateLine, type StockEstimate } from "@/lib/stock-estimate";
+import { daysLeftText, stockQty, STOCK_ESTIMATE_PATH, type StockEstimateLine, type StockEstimate } from "@/lib/stock-estimate";
 import { clockOf, DAY_NAMES, shiftMinutes, shiftTimes, weekStart, type ShiftCell } from "@/lib/vardiya";
 
 import type { AssistantTool, ToolContext } from "./tool-adapter";
@@ -697,8 +697,19 @@ function stockLine(l: StockEstimateLine, detail: boolean) {
     esik: q(l.threshold),
     kritik: l.critical,
     durum: l.status === "tahmin" ? "tahmin" : l.status === "sayim-yok" ? "sayım yok" : "LafPOS öncesi dönem (tahmin yok)",
+    ...(l.daysLeft !== null ? { kacGunYeter: daysLeftText(l.daysLeft) } : {}),
+    ...(l.dailyUse !== null ? { gunlukKullanim: q(l.dailyUse) } : {}),
+    ...(l.suggestedThreshold !== null ? { onerilenEsik: q(l.suggestedThreshold) } : {}),
     ...(detail
-      ? { sonSayimAyi: l.countMonth, donemBasi: l.from, sayilan: q(l.counted), alinan: q(l.purchased), satisTuketimi: q(l.sold), zayiIkram: q(l.wasted) }
+      ? {
+          sonSayimAyi: l.countMonth,
+          donemBasi: l.from,
+          sayilan: q(l.counted),
+          alinan: q(l.purchased),
+          satisTuketimi: q(l.sold),
+          onlineTuketim: q(l.online ?? null),
+          zayiIkram: q(l.wasted),
+        }
       : {}),
   };
 }
@@ -709,7 +720,7 @@ export function stokTahmini(deps: ReadToolDeps): AssistantTool<typeof stokTahmin
     title: "Tahmini stok (Marina)",
     label: "Stok tahmini",
     description:
-      "Marina'nın (LafPOS şubesi) tahmini stoğu: son sayım + alınan − satış tüketimi (reçeteye göre) − zayi ve ikram. Eşiğin altına inen kritik malzemeler, tek malzemenin ayrıntısı (`malzeme`), gün sonu gelmeyen günler, ürüne bağlı olmadığı için atlanan satırlar. Yaklaşıktır; tutar ve tedarikçi vermez. Örnek: 'Ne bitmek üzere?', 'Süt ne kadar kaldı?'" +
+      "Marina'nın (LafPOS şubesi) tahmini stoğu: son sayım + alınan − LafPOS satışı ve kasadan geçmeyen laffogato.net online siparişinin tüketimi (reçeteye göre) − zayi ve ikram. Son 14 günün ortalamasıyla kaç gün yeteceği ve tedarik süresine göre önerilen eşik (öneri; eşiği yönetici Tahmini stok ekranında kaydeder). Eşiğin altına inen kritik malzemeler, tek malzemenin ayrıntısı (`malzeme`), gün sonu gelmeyen günler, ürüne bağlı olmadığı için atlanan satırlar, çekilmemiş online aylar. Yaklaşıktır; tutar ve tedarikçi vermez. Örnek: 'Ne bitmek üzere?', 'Süt kaç gün yeter?'" +
       TAIL,
     inputSchema: stokTahminiInput,
     run: async (args, ctx) => {
@@ -728,6 +739,7 @@ export function stokTahmini(deps: ReadToolDeps): AssistantTool<typeof stokTahmin
       }
       const cut = lines.slice(0, 40);
       if (e.missingDays.length) uyarilar.push(`Gün sonu gelmeyen ${e.missingDays.length} gün var: o günlerin satışı tahmine girmedi.`);
+      if (e.online?.missingMonths.length) uyarilar.push(`Online siparişler şu aylar için alınmadı: ${e.online.missingMonths.join(", ")}; o ayların online tüketimi düşülmedi.`);
       return {
         sube: "Marina",
         gun: data.today,
@@ -737,11 +749,23 @@ export function stokTahmini(deps: ReadToolDeps): AssistantTool<typeof stokTahmin
         ...(lines.length > cut.length ? { kalan: lines.length - cut.length } : {}),
         durumSayilari: { tahmin: e.counts.tahmin, sayimYok: e.counts["sayim-yok"], lafposOncesi: e.counts["lafpos-oncesi"] },
         gelmeyenGunler: e.missingDays.slice(-10),
+        ...(e.online
+          ? {
+              online: {
+                dusulenSiparis: e.online.orders,
+                kasadanGecen: e.online.tillOrders,
+                not: "Kasada ödenen ya da elle girilen online sipariş LafPOS satışında sayılır, ayrıca düşülmez.",
+                ...(e.online.through ? { kayitSonGun: e.online.through } : {}),
+                ...(e.online.unmatched.lines ? { urunsuz: { satir: e.online.unmatched.lines, adet: r2(e.online.unmatched.qty), ilkler: e.online.unmatched.top.map((n) => cleanName(n, 60)) } } : {}),
+              },
+            }
+          : {}),
+        ...(e.avgWindow ? { ortalama: { pencereGun: e.avgWindow, sayilanGun: e.avgDays, tedarikSuresiGun: e.leadDays } } : {}),
         atlananSatirlar: {
           urunsuz: { satir: e.unmatched.lines, adet: r2(e.unmatched.qty), ilkler: e.unmatched.top.map((n) => cleanName(n, 60)) },
           recetesiz: { satir: e.noRecipe.lines, adet: r2(e.noRecipe.qty), ilkler: e.noRecipe.top.map((n) => cleanName(n, 60)) },
         },
-        kaynak: "Son sayım, Marina'ya gelen faturalar, LafPOS gün sonu satışları (reçeteyle), zayi ve ikram. Yaklaşıktır: sayımla doğrulayın.",
+        kaynak: "Son sayım, Marina'ya gelen faturalar, LafPOS gün sonu satışları ve kasadan geçmeyen online siparişler (reçeteyle), zayi ve ikram. Yaklaşıktır: sayımla doğrulayın.",
         panelAdresi: STOCK_ESTIMATE_PATH,
         ...(uyarilar.length ? { uyarilar } : {}),
       };

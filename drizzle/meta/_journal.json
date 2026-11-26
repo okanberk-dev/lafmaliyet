@@ -652,6 +652,20 @@
       "when": 1795688640068,
       "tag": "0092_mutabakat",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1795691272992,
+      "tag": "0093_muhasebe",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1795691318414,
+      "tag": "0094_personel_belge_avans",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,7 @@
 import { connection, type NextRequest } from "next/server";
 
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER } from "@/lib/karaoke/signature";
-import { lafposSecret } from "@/server/lafpos/ingest";
+import { lafposRequestSecret } from "@/server/lafpos/ingest";
 import { serveModposDays } from "@/server/lafpos/modpos-gunler";
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -16,7 +16,8 @@ export async function GET(request: NextRequest) {
   await connection();
   try {
     const r = await serveModposDays({
-      secret: await lafposSecret(),
+      // Önbellekteki anahtar ön süzgeç: imza tutarsa anahtar veritabanından yeniden okunur (döndürülen eski anahtar geçmez)
+      secret: await lafposRequestSecret(request),
       url: new URL(request.url),
       timestamp: request.headers.get(TIMESTAMP_HEADER),
       signature: request.headers.get(SIGNATURE_HEADER),

@@ -1,11 +1,12 @@
 import "server-only";
 
-import { eq, like, sql, type SQL } from "drizzle-orm";
+import { eq, inArray, like, sql, type SQL } from "drizzle-orm";
 
 import { salesMonthsToPull, siteBranchMatches, siteBranchOf, tillRowOrNull, type SiteBranch, type TillOnlineRow } from "@/lib/site-sales/calc";
 import { monthRange, parseSiteSales, readSalesRecord, SiteSalesFormatError, type SiteSales, type SiteSalesMonth } from "@/lib/site-sales/schema";
 import { todayTR } from "@/lib/reminders";
-import { getDb, schema as s } from "@/server/db";
+import { STOCK_ESTIMATE_BRANCH } from "@/lib/stock-estimate";
+import { getDb, schema as s, type DB } from "@/server/db";
 import { signedSiteFetch, siteLinkSecret, siteUrl } from "@/server/site-link";
 
 /**
@@ -120,36 +121,106 @@ export type SalesPullResult = { month: string; status: "ok"; record: SiteSalesMo
 
 /**
  * Bir ayı çeker ve saklar. Aynı ay için daha yeni bir yanıt (site saatine göre) zaten yazıldıysa eskisi yazılmaz.
- * Hata olursa önceki kayıt olduğu gibi kalır, yalnız durum yazılır.
+ * Hata olursa önceki kayıt olduğu gibi kalır, yalnız durum yazılır. `branch` verilirse şubenin ay kaydı
+ * (`site_sales_sube:<şube>:YYYY-MM`; yanıtın şubesi denetlenir), verilmezse işletmenin (`site_sales:YYYY-MM`)
  */
-async function pullMonth(secret: string, month: string): Promise<SalesPullResult> {
+async function pullMonth(secret: string, month: string, branch?: SiteBranch): Promise<SalesPullResult> {
   const range = monthRange(month);
   let sales: SiteSales;
   try {
-    sales = await fetchSales(secret, range, { month });
+    sales = await fetchSales(secret, range, { month }, branch);
   } catch (e) {
     return { month, status: "error", error: (e instanceof Error ? e.message : "Bilinmeyen hata").slice(0, 300) };
   }
   const record: SiteSalesMonth = { ...sales, month, pulledAt: new Date().toISOString() };
-  const value = JSON.stringify(record);
+  const value = JSON.stringify(branch ? { ...record, branch } : record);
   await getDb().execute(sql`
-    insert into integration_state (key, value) values (${monthKey(month)}, ${value}::jsonb)
+    insert into integration_state (key, value) values (${branch ? branchMonthKey(branch, month) : monthKey(month)}, ${value}::jsonb)
     on conflict (key) do update set value = excluded.value, updated_at = now()
       where (integration_state.value->>'now') is null
          or (integration_state.value->>'now')::timestamptz <= (excluded.value->>'now')::timestamptz`);
   return { month, status: "ok", record };
 }
 
+// ---------------------------------------------------------------- Şubenin ay kaydı (tahmini stok)
+
+/**
+ * Şubenin ay kaydı (docs/STOK-TAHMINI.md § 2): Marina'nın tahmini stoğu Marina'nın online siparişlerini düşer. İşletmenin
+ * ay kaydı (kâr-zarar) şubesizdir, bütün şubelerin toplamıdır; şubeninki ayrı anahtarda (`site_sales_sube:marina:2026-12`)
+ * durur ve kâr-zarara, KDV'ye, tüketime girmez (önek `site_sales:` ile başlamaz: loadSiteSales onu okumaz).
+ */
+const BRANCH_PREFIX = "site_sales_sube:";
+const branchMonthKey = (branch: SiteBranch, month: string) => `${BRANCH_PREFIX}${branch}:${month}`;
+const BRANCH_STATE_KEY = "site_sales_sube_sync";
+
+/** Şubenin ay kayıtlarının çekme durumu (son deneme, son başarılı, son hata) */
+export interface BranchSalesSyncState {
+  lastPullAt: string | null;
+  lastOkAt: string | null;
+  lastError: string | null;
+}
+
+/** Şubenin ay kayıtları (verilen aylardan saklananlar; okunamayan kayıt atlanır) */
+export async function loadBranchSiteSales(branch: SiteBranch, months: readonly string[], db: DB = getDb()): Promise<SiteSalesMonth[]> {
+  if (!months.length) return [];
+  const rows = await db
+    .select({ value: s.integrationState.value })
+    .from(s.integrationState)
+    .where(inArray(s.integrationState.key, months.map((m) => branchMonthKey(branch, m))));
+  return rows.flatMap((r) => readSalesRecord(r.value) ?? []).sort((a, b) => a.month.localeCompare(b.month));
+}
+
+export async function readBranchSalesState(branch: SiteBranch): Promise<BranchSalesSyncState> {
+  const [row] = await getDb().select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, BRANCH_STATE_KEY)).limit(1);
+  const all = (row?.value as Record<string, Partial<BranchSalesSyncState>> | undefined) ?? {};
+  return { lastPullAt: null, lastOkAt: null, lastError: null, ...(all[branch] ?? {}) };
+}
+
+/**
+ * Şubenin aylarını çeker ve saklar (`&branch=`; aylar aynı anda). Site şubeye göre vermezse (eski site) ay yazılmaz,
+ * durum hatayı söyler: tahmin o ayın online siparişini düşmez ve ekran ayı "alınmadı" diye yazar. Önceki durumun
+ * `lastOkAt`'ı başarısız denemede korunur.
+ */
+export async function syncBranchSiteSales(branch: SiteBranch, months: readonly string[]): Promise<{ status: "off" } | { status: "ok" | "error"; results: SalesPullResult[] }> {
+  const secret = siteLinkSecret();
+  if (!secret) return { status: "off" };
+  const tryAt = new Date().toISOString();
+  const results = await Promise.all(months.map((m) => pullMonth(secret, m, branch)));
+  const failed = results.filter((r): r is Extract<SalesPullResult, { status: "error" }> => r.status === "error");
+  const prev = await readBranchSalesState(branch);
+  const next: BranchSalesSyncState = {
+    lastPullAt: tryAt,
+    lastOkAt: failed.length < results.length ? new Date().toISOString() : prev.lastOkAt,
+    lastError: failed.length ? failed.map((r) => `${r.month}: ${r.error}`).join(" · ").slice(0, 300) : null,
+  };
+  const patch = JSON.stringify({ [branch]: next });
+  await getDb().execute(sql`
+    insert into integration_state (key, value) values (${BRANCH_STATE_KEY}, ${patch}::jsonb)
+    on conflict (key) do update set value = integration_state.value || ${patch}::jsonb, updated_at = now()`);
+  return { status: failed.length ? "error" : "ok", results };
+}
+
 /**
  * Ayları çeker ve saklar (aylar aynı anda sorulur: site yavaşsa günlük iş en çok 8 saniye bekler). Aynı ay için daha
  * yeni bir yanıt (site saatine göre) zaten yazıldıysa eskisi yazılmaz. Bir ay çekilemezse önceki kaydı olduğu gibi
  * kalır, öteki aylar yine yazılır; durum (son deneme, son hata) bir kez yazılır.
+ *
+ * Aynı aylar tahmini stoğun şubesi (Marina) için de ayrıca, aynı anda çekilir (syncBranchSiteSales): onun hatası bu
+ * sonucu değiştirmez, kendi durumuna yazılır (Tahmini stok ekranı söyler).
  */
 export async function syncSiteSales(months: string[] = salesMonthsToPull(todayTR())): Promise<{ status: "off" } | { status: "ok" | "error"; results: SalesPullResult[] }> {
   const secret = siteLinkSecret();
   if (!secret) return { status: "off" };
   const tryAt = new Date().toISOString();
-  const results = await Promise.all(months.map((m) => pullMonth(secret, m)));
+  const stockBranch = siteBranchOf(STOCK_ESTIMATE_BRANCH);
+  const [results] = await Promise.all([
+    Promise.all(months.map((m) => pullMonth(secret, m))),
+    stockBranch
+      ? syncBranchSiteSales(stockBranch, months).catch((e: unknown) => {
+          console.warn("[satis] şubenin ay kaydı çekilemedi:", e instanceof Error ? e.message : "bilinmeyen hata");
+        })
+      : null,
+  ]);
   const failed = results.filter((r): r is Extract<SalesPullResult, { status: "error" }> => r.status === "error");
   const ok = results.find((r) => r.status === "ok");
   await patchState({

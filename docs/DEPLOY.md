@@ -120,6 +120,7 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `BACKUP_DIR` | (yalnız yerel, isteğe bağlı) Otomatik haftalık yedeklerin yerel klasörü; yoksa `.data/backups`. Canlıda yedekler fotoğraflarla aynı özel Blob deposunda (`yedek/haftalik/`); depo bağlı değilse otomatik yedek kapalı ([YEDEK.md](YEDEK.md) § 13) |
 | `MCP_DISABLED` | (isteğe bağlı) `1` ise Claude bağlantısı kapalı (bütün uçlar 404, verilmiş anahtarlar çalışmaz). Önizlemelerde zaten kapalı ([CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md)) |
 | `MCP_ALLOW_LOCALHOST` | (isteğe bağlı) `1` ise Claude Code / MCP Inspector'ın localhost dönüş adresine canlıda da izin verilir; varsayılan kapalı |
+| `CSP_ENFORCE` | (isteğe bağlı) `1`: Content-Security-Policy'nin kaynak politikası **uygulanır**; yoksa Report-Only (yalnız raporlar). Derlemede okunur: değiştirince yeniden deploy. Ne zaman açılacağı § 6 › Güvenlik başlıkları |
 | `DATABASE_SSL` | (isteğe bağlı, yalnız acil durumda) `require`: veritabanı sunucusunun sertifikası doğrulanmaz. Varsayılan doğrulamalı bağlantıdır (`verify-full`; Neon'un sertifikası Let's Encrypt'ten, Node tanır): şifreli ama sertifikası denetlenmeyen bağlantıda araya giren biri kendi sertifikasıyla bütün veriyi okuyabilirdi. Canlı derleme önce havuzlu adresi, sonra migration için doğrudan adresi doğrulamalı açar; biri açılmazsa derleme migration'dan önce durur, ne veritabanı ne yayındaki sürüm değişir. Neon sertifikasını değiştirdiği için derleme durursa geçici olarak `require` yazılır |
 
 `DATABASE_URL` / `DATABASE_URL_UNPOOLED` Neon entegrasyonundan gelir. Paraşüt değişkenleri (`PARASUT_*`; istemci
@@ -169,6 +170,60 @@ başlığı ve sayfalarda `noindex` etiketi vardır. `robots.txt` taramayı bile
 Google sayfaları açamaz, noindex'i göremez ve başka yerden bağlantı alan adresi "açıklama yok" diye listeleyebilirdi.
 Adres daha önce dizine girdiyse Search Console › Kaldırmalar'dan hemen gizlenir; noindex kalıcı olarak çıkarır. `lafmaliyet.vercel.app` adresi sayfalar için `ladmin.laffogato.net`'e
 yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
+
+### Güvenlik başlıkları
+
+`next.config.ts` her yanıta `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`,
+`Permissions-Policy` (panelde mikrofon yalnız bu site) ve `Strict-Transport-Security` ekler. **Content-Security-Policy**
+(26 Kasım 2026, güvenlik notu; kurallar `src/lib/csp.ts`, deneme `tests/csp.test.ts`) yalnız sayfalara gider (API
+yanıtları kendi başlığını taşır: fotoğrafın `default-src 'none'; sandbox`'ı ezilmez, PDF açılır):
+
+- **Uygulanan çekirdek** (her zaman): `frame-ancestors 'none'` (panel başka sitede çerçeveye alınamaz),
+  `base-uri 'self'` (sayfaya sokulan `<base>` bağlantıları kaçıramaz), `form-action 'self'` + Paraşüt'ün kimlik
+  sunucusu (`https://id.parasut.com`, `https://*.parasut.com`, ortamda verilmişse `PARASUT_ISSUER` /
+  `PARASUT_AUTHORIZE_URL` kökeni): "Paraşüt hesabını bağla" formu POST'tan sonra Paraşüt'ün onay ekranına 303 ile
+  gider ve tarayıcılar form hedefini yönlendirmede de denetler. Bu üçü hiçbir kaynak yüklemesine dokunmaz.
+- **Tam politika** (kaynaklar): her şey kendi kökeninden; `script-src 'self' 'unsafe-inline'`, `style-src 'self'
+  'unsafe-inline'`, `img-src 'self' blob: data:`, `connect-src 'self'`, `frame-src 'self' blob:` (fatura belgesinin
+  PDF önizlemesi), `worker-src 'self' blob:` (servis çalışanı `/sw.js`), `object-src 'none'`. `CSP_ENFORCE=1`
+  değilken **Report-Only** gider: tarayıcı hiçbir şeyi engellemez, engelleyeceği her kaynağı `/api/csp-rapor`'a
+  bildirir (oturumsuz, hep 204, dakikada en çok 30 satır; adresler köken + yola indirilir). Vercel › Logs'ta `[csp]`
+  ile aranır: `[csp] report img-src https://… · /panel/kasa`. Chrome raporu Reporting API ile (`report-to`,
+  `Reporting-Endpoints`; yalnız HTTPS'te, birkaç saniye içinde) gönderir, Firefox ve Safari `report-uri` ile; uç iki
+  biçimi de okur. Yerelde `http://localhost`'ta Chrome `Reporting-Endpoints`'i yok sayar, `report-to` varken
+  `report-uri`'ye de göndermez: yerel denetimde ihlal tarayıcı konsolunda görülür (sunucu günlüğünde değil).
+- **Paketlere dair iki kural** (CSP'de `'unsafe-eval'` yok): tarayıcıya giden kod `eval` / `new Function` kullanmaz.
+  zod 4 nesne şemalarını hızlandırmak için ilk ayrıştırmada `Function("")` dener; `src/instrumentation-client.ts`
+  React canlanmadan önce zod'u `jitless` yapar, deneme hiç yapılmaz. Tarayıcı bileşeni (`"use client"`) `node:crypto`'ya
+  ulaşan bir modülü içe aktarmaz: paketleyici sayfaya crypto-browserify (~0,5 MB) koyar, onunla gelen `Function(...)`
+  denemesi de ihlal ürettirir (sınır `tests/csp.test.ts`; ör. LafPOS anahtarının uzunluğu
+  `src/lib/lafpos/secret-rules.ts`'te, imza denetimi `request.ts`'te).
+- **Neden nonce yok:** panel `cacheComponents` ve `partialPrefetching` ile önceden çizilmiş kabuklar sunar; Next'in CSP
+  kılavuzuna göre nonce her sayfayı her istekte çizmeye zorlar ve önceden çizilmiş kabukla (PPR) bağdaşmaz. Next'in
+  sayfaya gömdüğü satır içi betikler (RSC verisi) ve koyu tema betiği bu yüzden `'unsafe-inline'` ile çalışır; motion,
+  Recharts ve Sonner satır içi stil yazar. Kazanç yine de: başka kökenden betik, istek, görsel, çerçeve ve eklenti
+  yüklenemez, sızdırılan veri başka bir sunucuya `fetch` ya da görselle gönderilemez.
+- **Karar: tam politika Report-Only ile başlar.** Panel her gün kasa raporu, sayım ve faturalar için kullanılıyor;
+  yerelde denenemeyen yollar var (personelin telefonundaki Safari, kamerayla çekilen fotoğrafın küçültülmesi, gerçek
+  push servisiyle cihaz bildirimi, Safari/Firefox'un PDF önizlemesi, başka dallarda süren işler: belge tarayıcı işçi
+  ya da WebAssembly isteyebilir). Uygulanan bir CSP'de bunlardan biri sessizce bozulur ve sahibin fark etmesi günler
+  sürebilir; Report-Only'de hiçbir şey bozulmaz, aynı ihlaller günlüğe düşer. Çekirdek ise hiçbir yüklemeye
+  dokunmadığı için baştan uygulanır.
+- **Yerel denetim** (26 Kasım 2026, `next build` + `next start`, Playwright'la Chromium, yönetici oturumu): giriş,
+  davet, Claude bağlantısı, 404, QR menünün yönetici önizlemesi ve panelin 50 ekranı (şube, ürün ve kontrol listesi
+  sayfaları dahil); koyu tema (satır içi betik), Recharts grafiği, profil menüsündeki gölgelendirici (WebGL), servis
+  çalışanının kaydı ve canlı akış, fotoğraf yükleme ve `/api/foto` görseli (kendi `sandbox` politikası yerinde),
+  `blob:` / `data:` görsel ve `blob:` çerçeve, fatura PDF'inin `blob:` çerçevede Chromium PDF görüntüleyicisiyle açılması
+  (uygulanan tam politikayla da), "Paraşüt hesabını bağla" formunun Paraşüt'e 303 ile gitmesi (form hedefi). İlk
+  turda iki ihlal çıktı, ikisi de düzeltildi (yukarıdaki iki kural): her sayfada zod'un eval denemesi, Şube
+  ayarları'nda crypto-browserify. Son turda ihlal yok; kasıtlı ihlal (başka kökenden görsel) HTTPS'te Chrome'dan
+  `/api/csp-rapor`'a ulaşıp `[csp] report img-src https://iz.example.com/p.gif · /giris` olarak günlüğe düştü
+  (sorgu dizgesi atıldı). `CSP_ENFORCE=1` derlemesiyle de giriş, 12 ekran (grafik, şube ayarları, Paraşüt dahil),
+  koyu tema, servis çalışanı, fotoğraf ve Paraşüt formu çalıştı; kasıtlı görsel engellendi.
+- **Uygulamaya geçiş:** yayından sonra bir hafta Vercel › Logs'ta `[csp]` aranır. Beklenmeyen satır yoksa (tarayıcı
+  eklentilerinin `chrome-extension://` satırları sayılmaz) Vercel'de `CSP_ENFORCE=1` eklenip yeniden deploy edilir.
+  Bir şey bozulursa değişkeni silip yeniden deploy etmek geri alır. Yeni bir dış kaynak (CDN, analiz, harita)
+  eklenecekse önce `src/lib/csp.ts`'e yazılır.
 
 ## 6a. Kullanıcılar ve iki adımlı doğrulama
 
