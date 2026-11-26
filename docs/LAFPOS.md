@@ -1259,6 +1259,43 @@ geçmişi: "LafPOS günü silindi · 26 Ekim 2026 · Z 127 · 42 satır". Deneme
 kural: yeniden gelmesi için Gönder). Günün Kasadan çıkanlar'daki LafPOS satırları da aynı işlemde LafPOS'tan ayrılır
 (yukarıda "Kasadan çıkanlar LafPOS'tan"): deneme gününde LafPOS'un açtıkları kalkar, sayılan günde hepsi kalır.
 
+## Şube kurulumu (26 Kasım 2026)
+
+Sahibin isteği: yeni şube panelden eklenince kasası da kendiliğinden kurulsun. Akış:
+
+1. **Şubeyi yalnız ana yönetici ekler** (`info@nextgenlab.com.tr`; ortamda `LADMIN_ANA_ADMIN` ile değişir;
+   `isAnaAdmin`, `requireAnaAdmin`). Öbür yöneticiler Şubeler'i görür ve düzenler, "Şube ekle" ve kurulum bağlantısı
+   onlarda yoktur; eylem de sunucuda reddeder (`createBranch`, `sendBranchInstall`).
+2. Ayarlar › Şubeler › **Şube ekle**'de fiziksel şubeye **e-posta** yazılırsa (`branches.email`):
+   - şubenin panel hesabı açılır (personel, şubede kilitli, ad "<Şube> şubesi"; davetle, 72 saat; adres zaten bir
+     personelde ve aynı şubedeyse hesap yeniden açılmaz, başka şubede ya da yöneticideyse eklenmez);
+   - şubeye özel **LafPOS kurulum bağlantısı** üretilir (`lafpos_installs`, 32 bayt kod, 14 gün; yeni bağlantı eskisini
+     iptal eder);
+   - ikisi tek e-postayla gider (`kurulumMail`; Resend kurulu değilse gitmez, bağlantı ekranda gösterilir, elle iletilir).
+   Var olan şubeye (Marina gibi) şubenin düzenleme penceresinden **LafPOS kurulum bağlantısı gönder**.
+3. Şube hesabı girince **Hesabım › LafPOS kurulumu** kartında bağlantı ve durum (Kurulum bekliyor / Kasa kuruldu).
+4. Bağlantı (`GET /lafpos/indir/<kod>`, oturumsuz) kanaldaki genel kurucuyu (`https://lafpos.laffogato.net/guncelleme/LafPOS-Kur.cmd`,
+   `LAFPOS_KURUCU_URL`) indirir, içindeki iki boş satıra (`$KurulumAdresi = ''`, `$KurulumKodu = ''`) panelin adresini ve
+   kodu yazar, `LafPOS-Kur-<şube>.cmd` olarak verir (`kurucuWithCode`). Kod indirmede harcanmaz.
+5. Kurucu kodu kasanın veri klasörüne yazar; kasa ilk açılışta kodu bir kez verir: **`POST /api/lafpos/kurulum`**
+   `{ "kod": "…" }` → 200 `{ ok: true, sube: { id, ad }, baglanti: { LAFMALIYET_URL, LAFMALIYET_SYNC_SECRET,
+   LAFPOS_CLOUD_URL?, LAFPOS_CLOUD_SECRET?, LAFFOGATO_URL?, LAFFOGATO_SYNC_SECRET? } }`; 404 kod yok, 410 kullanılmış /
+   iptal / süresi dolmuş, 400 biçim, 429 çok deneme (IP başına 15 dk'da 20). Kod koşullu güncellemeyle bir kez geçer.
+   Anahtar LafPOS'un şu anki anahtarı (`lafposSecret`); LafPOS Uzaktan ve site yalnız panelin ortamında
+   `LAFPOS_CLOUD_URL` + `LAFPOS_CLOUD_SECRET`, `LAFPOS_SITE_URL` + `LAFPOS_SITE_SECRET` (en az 32 karakter) tanımlıysa.
+   Kasa şube kimliğini ve bağlantıları yazar, yeniden başlar; Merkez'e (uzaktan yönetim) şubenin adıyla kaydolur.
+   Kasa tarafı: lafpos `server/sync/kurulum-kodu.ts`, `docs/03-ENTEGRASYON.md` "Şube kurulumu".
+
+Kurallar `src/lib/lafpos/kurulum.ts` ve `kurulum-mail.ts` (saf, `tests/lafpos-kurulum.test.ts`), sunucu
+`src/server/lafpos/kurulum.ts`, uçlar `src/app/api/lafpos/kurulum/route.ts` ve `src/app/lafpos/indir/[kod]/route.ts`, göç
+`0095_lafpos_kurulum.sql`.
+
+**Sınır (bilerek ertelendi):** LafPOS bugün yalnız bir şubenin kasası (`lafposSourceError`, aşağıda "Şubeler"). Marina
+LafPOS'tayken yeni şube "Kasa kaynağı: LafPOS" ile eklenemez; ModPOS seçilip eklenir, kasa kurulur ve çalışır (satış,
+uzaktan yönetim), ama gün sonu bu panele `wrong_branch` (409) ile girmez, kasada bekler. Birden çok LafPOS şubesi için
+`lafposBranchId()`'yi kullanan her yer (gün sonu alımı, gün sonu otomasyonu, kasa raporu, komisyon, Bugün, anahtar
+seçimi) şube başına çalışmalı; ayrı iş.
+
 ## Açılış sırası
 
 Sahibin istediği tek liste; LafPOS deposunda `docs/03-ENTEGRASYON.md` › "Açılış sırası" aynı adımlardır. Partiler

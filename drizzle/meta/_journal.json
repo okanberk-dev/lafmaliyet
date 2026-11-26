@@ -666,6 +666,13 @@
       "when": 1795691318414,
       "tag": "0094_personel_belge_avans",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1795705106137,
+      "tag": "0095_lafpos_kurulum",
+      "breakpoints": true
     }
   ]
 }

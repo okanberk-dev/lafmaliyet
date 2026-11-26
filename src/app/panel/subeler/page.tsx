@@ -6,8 +6,10 @@ import { PageSkeleton } from "@/components/ui/misc";
 import { CASH_REPORT_GROUP, PARASUT_GROUP } from "@/lib/branch-settings/groups";
 import { settingMode, settingModeText } from "@/lib/branch-settings/rules";
 import { tillBranches } from "@/lib/branches";
-import { createBranch, deleteBranch, updateBranch } from "@/server/actions/branches";
+import { isAnaAdmin } from "@/lib/lafpos/kurulum";
+import { createBranch, deleteBranch, sendBranchInstall, updateBranch } from "@/server/actions/branches";
 import { requireAdmin } from "@/server/auth/dal";
+import { listInstalls } from "@/server/lafpos/kurulum";
 import { settingLinks } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { getDb } from "@/server/db";
@@ -38,12 +40,18 @@ export default function BranchesPage() {
 }
 
 async function BranchesContent() {
-  await requireAdmin();
+  const me = await requireAdmin();
   const [rows, links, parasutLinks] = await Promise.all([listBranches(getDb()), settingLinks(CASH_REPORT_GROUP.id), settingLinks(PARASUT_GROUP.id)]);
+  // Şube kurulumu (docs/LAFPOS.md › Şube kurulumu): şube eklemek ve kurulum bağlantısı göndermek yalnız ana yöneticide;
+  // her fiziksel şubenin son bağlantısı ve e-postası satırda
+  const canCreate = isAnaAdmin(me);
+  const installs = canCreate
+    ? Object.fromEntries(await Promise.all(rows.filter((b) => b.kind === "fiziksel").map(async (b) => [b.id, (await listInstalls(getDb(), b.id))[0] ?? null] as const)))
+    : {};
   // Birden çok kasa açıkken her fiziksel şubenin satırında kasa raporu alıcılarının ve Paraşüt hesabının durumu
   // ("Tuzla ile aynı")
   const many = tillBranches(rows).length > 1;
   const settingsText = many ? Object.fromEntries(tillBranches(rows).map((b) => [b.id, settingModeText(settingMode(CASH_REPORT_GROUP, b.id, links), rows)])) : {};
   const parasutText = many ? Object.fromEntries(tillBranches(rows).map((b) => [b.id, settingModeText(settingMode(PARASUT_GROUP, b.id, parasutLinks), rows)])) : {};
-  return <BranchesAdmin rows={rows} settingsText={settingsText} parasutText={parasutText} createAction={createBranch} updateAction={updateBranch} deleteAction={deleteBranch} />;
+  return <BranchesAdmin rows={rows} settingsText={settingsText} parasutText={parasutText} createAction={createBranch} updateAction={updateBranch} deleteAction={deleteBranch} canCreate={canCreate} installs={installs} installAction={sendBranchInstall} />;
 }

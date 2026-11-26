@@ -7,7 +7,9 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { needsTwoFactorSetup, TWO_FACTOR_SETUP_PATH } from "@/lib/admin-security";
+import { ANA_ADMIN_ONLY, isAnaAdmin } from "@/lib/lafpos/kurulum";
 import { STAFF_HOME } from "@/lib/roles";
+import { UserError } from "@/server/user-error";
 import { getDb, schema as s } from "@/server/db";
 
 import {
@@ -133,6 +135,16 @@ export async function requireSignedIn(): Promise<SessionUser> {
 export async function requireAdmin(): Promise<CurrentUser> {
   const user = await requireUser();
   if (user.role !== "admin") redirect(STAFF_HOME);
+  return user;
+}
+
+/**
+ * Ana yönetici (şube ekleme; docs/LAFPOS.md › Şube kurulumu): yönetici ve e-postası ana yöneticininki
+ * (src/lib/lafpos/kurulum.ts `isAnaAdmin`). Değilse eylemde okunur hata (sayfa açılır, yalnız ekleme kapalıdır)
+ */
+export async function requireAnaAdmin(): Promise<CurrentUser> {
+  const user = await requireAdmin();
+  if (!isAnaAdmin(user)) throw new UserError(ANA_ADMIN_ONLY);
   return user;
 }
 

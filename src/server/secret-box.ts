@@ -10,7 +10,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
  * kurulur, bildirim anahtarı yenilenir ve cihazlar bir sonraki açılışta yeniden abone olur; bekleyen karaoke
  * hatırlatmaları gönderilmeden düşer).
  */
-export type SealPurpose = "parasut-token" | "parasut-connect" | "parasut-settings" | "totp" | "webpush" | "access-mail" | "backup" | "mcp-request" | "cashout-undo" | "cari-undo" | "karaoke-reminder" | "branch-settings";
+export type SealPurpose = "parasut-token" | "parasut-connect" | "parasut-settings" | "totp" | "webpush" | "access-mail" | "backup" | "mcp-request" | "cashout-undo" | "cari-undo" | "karaoke-reminder" | "branch-settings" | "lafpos-kurulum";
 
 function key(purpose: SealPurpose): Buffer {
   const secret = process.env.AUTH_SECRET;

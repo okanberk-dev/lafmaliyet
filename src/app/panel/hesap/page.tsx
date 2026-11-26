@@ -1,15 +1,18 @@
 import { eq } from "drizzle-orm";
-import { KeyRound, PlugZap, UserRound } from "lucide-react";
+import { Download, KeyRound, MonitorDown, PlugZap, UserRound } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge } from "@/components/ui/badge";
+import { ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { twoFactorRequiredFor } from "@/lib/admin-security";
 import { ROLES } from "@/lib/constants";
+import { KURULUM_DURUM_ETIKET } from "@/lib/lafpos/kurulum";
+import { listInstalls } from "@/server/lafpos/kurulum";
 import { requireUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { loadMyConnections } from "@/server/mcp/connections";
@@ -54,6 +57,8 @@ async function Account() {
         })
       : null,
   ]);
+  // Şube hesabının LafPOS kurulumu (docs/LAFPOS.md › Şube kurulumu): şubesinin son bağlantısı
+  const install = user.role === "staff" && user.branchId ? ((await listInstalls(getDb(), user.branchId).catch(() => []))[0] ?? null) : null;
   // Parola, iki adımlı ve oturumları kapatma Claude bağlantısını da kapatır: pencereler bunu söyler (YO-08)
   const claude = Boolean(connections?.rows.length);
   return (
@@ -82,6 +87,30 @@ async function Account() {
           </CardContent>
         </div>
       </Card>
+      {install ? (
+        <Card id="lafpos" className="scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
+          <CardHeader
+            icon={<MonitorDown />}
+            title="LafPOS kurulumu"
+            description="Şubenizin kasa bilgisayarına LafPOS'u bu bağlantıyla kurun; kasa şubeye, gün sonuna ve uzaktan yönetime kendiliğinden bağlanır."
+          />
+          <CardContent className="space-y-3 text-sm">
+            <Badge tone={install.durum === "kuruldu" ? "green" : install.durum === "bekliyor" ? "blue" : "gray"}>{KURULUM_DURUM_ETIKET[install.durum]}</Badge>
+            {install.link ? (
+              <>
+                <p className="text-ink-soft">Bağlantıyı kasa bilgisayarında açın, inen dosyaya (LafPOS-Kur) çift tıklayın ve Windows izin sorunca Evet deyin. Tek kurulumluktur.</p>
+                <ButtonLink href={install.link} prefetch={false}>
+                  <Download className="size-4" aria-hidden="true" /> LafPOS&apos;u indir
+                </ButtonLink>
+              </>
+            ) : (
+              <p className="text-ink-soft">
+                {install.durum === "kuruldu" ? "Kasa kuruldu ve şubeye bağlandı." : "Bağlantı artık geçerli değil; yenisi için yöneticiye yazın."}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
       <Card>
         <CardHeader
           icon={<KeyRound />}
