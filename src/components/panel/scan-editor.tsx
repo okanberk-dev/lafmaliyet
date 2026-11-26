@@ -1,11 +1,12 @@
 "use client";
 
-import { Expand, LoaderCircle, RotateCw, TriangleAlert, Wand2, X } from "lucide-react";
+import { Expand, LoaderCircle, RotateCw, Wand2, X } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { createRoot } from "react-dom/client";
 
 import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { needsAiHint, SCAN_MODE_LABEL, SCAN_MODE_LIST, scanMaxEdge, scanStatusText, type ScanInfo, type ScanInfoMethod } from "@/lib/photo-scan";
 import { cornersFromHint, cornersToHint, estimateSize, fullFrame, orderCorners, quadIsValid, rotationForTop, type DocumentTop, type QuarterTurn, type Quad, type RgbaImage, type ScanMode } from "@/lib/scan";
@@ -549,12 +550,7 @@ export function ScanEditor({ file, hint, noun = "belge", onDone }: { file: Blob;
             {status}
           </p>
           {/* Çekim kalitesi (src/lib/scan/quality.ts): ilk sorun yeter; ciddiyse yeniden çekmek önerilir, yükleme yine serbest */}
-          {issues.length && !error ? (
-            <p className={cn("mt-1 flex items-start gap-1.5 text-[13px] leading-5", issues[0].severity === "ciddi" ? "text-bad-ink" : "text-warn-ink")}>
-              <TriangleAlert size={14} className="mt-[3px] shrink-0" aria-hidden="true" />
-              <span>{issues[0].text}</span>
-            </p>
-          ) : null}
+          {issues.length && !error ? <Notice tone={issues[0].severity === "ciddi" ? "bad" : "warn"} size="line" live="polite" title={issues[0].text} className="mt-1 text-[13px]" /> : null}
         </div>
         <Button size="icon" variant="ghost" onClick={() => finish(null)} disabled={finishing} aria-label="Kapat (fotoğraf eklenmez)" className="-mr-1">
           <X size={18} aria-hidden="true" />
