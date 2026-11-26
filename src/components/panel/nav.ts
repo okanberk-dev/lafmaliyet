@@ -218,16 +218,6 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     ],
   },
   {
-    // Raporlar (docs/RAPORLAR.md): dört ekran, hepsi yalnız yöneticinin
-    title: "Raporlar",
-    items: [
-      { href: "/panel/raporlar", label: "Şube karşılaştırma", icon: BarChart3, roles: ["admin"], keywords: "rapor şubeler yan yana ay ay kıyas ciro kâr fiş ortalama sepet kasa farkı" },
-      { href: "/panel/raporlar/iscilik", label: "İşçilik / ciro", icon: BarChart3, roles: ["admin"], keywords: "rapor işçilik maliyeti personel oranı günlük haftalık şube maaş vardiya" },
-      { href: "/panel/raporlar/kacak", label: "Kaçak raporu", icon: BarChart3, roles: ["admin"], keywords: "rapor kaçak ay sonu tahmini stok sayım farkı marina fire kayıp" },
-      { href: "/panel/raporlar/kayip", label: "Kayıp önleme", icon: BarChart3, roles: ["admin"], keywords: "rapor kayıp önleme kişi bazında kasa farkı iptal ikram indirim sapma" },
-    ],
-  },
-  {
     // Kâr ettim mi (Gelir-gider), ne ödeyeceğim (Ödemeler), param yeter mi (Nakit planı)
     title: "Kâr & ödemeler",
     items: [
@@ -247,6 +237,16 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         roles: ["admin"],
         keywords: "nakit akış tahmin bakiye kalan para haftalık plan sıkışık kdv devreden kdv hesabı devreden kdv param yeter mi",
       },
+    ],
+  },
+  {
+    // Raporlar (docs/RAPORLAR.md): dört ekran, hepsi yalnız yöneticinin; kenar çubuğunda Kâr & ödemeler'in ardından
+    title: "Raporlar",
+    items: [
+      { href: "/panel/raporlar", label: "Şube karşılaştırma", icon: BarChart3, roles: ["admin"], keywords: "rapor şubeler yan yana ay ay kıyas ciro kâr fiş ortalama sepet kasa farkı ikram zayi" },
+      { href: "/panel/raporlar/iscilik", label: "İşçilik / ciro", icon: BarChart3, roles: ["admin"], keywords: "rapor işçilik maliyeti personel oranı günlük haftalık şube maaş vardiya" },
+      { href: "/panel/raporlar/kacak", label: "Kaçak raporu", icon: BarChart3, roles: ["admin"], keywords: "rapor kaçak ay sonu tahmini stok sayım farkı marina fire kayıp" },
+      { href: "/panel/raporlar/kayip", label: "Kayıp önleme", icon: BarChart3, roles: ["admin"], keywords: "rapor kayıp önleme kişi bazında kasa farkı iptal ikram indirim sapma" },
     ],
   },
   {
@@ -354,7 +354,9 @@ export interface NavNode {
  * altında görür. 6 Kas 2026: Siparişler (uygulama siparişleri ve masa çağrıları) personelde Bugün'ün altına, yönetici
  * Kafe'nin başına; satırında açık sayısı. Personelin görebildiği düğümlerin sırası değişmez (tests/kenar-cubugu.test.ts personelin ağacını olduğu gibi
  * sabitler). Adresler değişmedi, yalnız gruplama. 22 Kas 2026: Vardiya (docs/VARDIYA.md) iki rolde üst düzeyde, Kasa
- * raporu'nun altında; yöneticide adı "Vardiya ayarlama", personelde "Vardiya" (`labelFor`).
+ * raporu'nun altında; yöneticide adı "Vardiya ayarlama", personelde "Vardiya" (`labelFor`). 26 Kas 2026: Raporlar
+ * (docs/RAPORLAR.md; Şube karşılaştırma, İşçilik / ciro, Kaçak raporu, Kayıp önleme) Kâr & ödemeler'in ardından, yalnız
+ * yöneticide.
  */
 export const NAV_TREE: NavNode[] = [
   { id: "genel", label: "Genel bakış", icon: LayoutDashboard, href: "/panel", roles: ["admin"] },
@@ -459,9 +461,9 @@ export const NAV_TREE: NavNode[] = [
     icon: BarChart3,
     roles: ["admin"],
     children: [
-      { id: "rapor-subeler", label: "Şubeler", href: "/panel/raporlar", roles: ["admin"] },
-      { id: "rapor-iscilik", label: "İşçilik", href: "/panel/raporlar/iscilik", roles: ["admin"] },
-      { id: "rapor-kacak", label: "Kaçak", href: "/panel/raporlar/kacak", roles: ["admin"] },
+      { id: "rapor-subeler", label: "Şube karşılaştırma", href: "/panel/raporlar", roles: ["admin"] },
+      { id: "rapor-iscilik", label: "İşçilik / ciro", href: "/panel/raporlar/iscilik", roles: ["admin"] },
+      { id: "rapor-kacak", label: "Kaçak raporu", href: "/panel/raporlar/kacak", roles: ["admin"] },
       { id: "rapor-kayip", label: "Kayıp önleme", href: "/panel/raporlar/kayip", roles: ["admin"] },
     ],
   },
@@ -505,7 +507,13 @@ export interface SectionTab {
 }
 
 /** Sekmede kısa ad: başlık zaten "Stok", sekme "Sayım" der */
-const TAB_LABELS: Record<string, string> = { "/panel/sayim": "Sayım" };
+const TAB_LABELS: Record<string, string> = {
+  "/panel/sayim": "Sayım",
+  // Raporlar'ın sekmeleri kısaltılmış adla (390 px'te kaydırmasız; sekme yalnız kısaltır)
+  "/panel/raporlar": "Şubeler",
+  "/panel/raporlar/iscilik": "İşçilik",
+  "/panel/raporlar/kacak": "Kaçak",
+};
 
 /** Kenar çubuğundaki bir grubun alt sayfaları, aynı sırada ve aynı rollerle */
 function treeTabs(id: string): SectionTab[] {

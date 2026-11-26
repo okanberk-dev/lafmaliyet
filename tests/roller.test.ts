@@ -62,8 +62,14 @@ test("personel yalnız kendi ekranlarını açar; yol parçası sınırında eş
     assert.equal(canOpen("staff", p), false, p);
     assert.ok(canOpen("admin", p), p);
   }
+  // Raporlar (docs/RAPORLAR.md): şubelerin cirosu, kârı, işçiliği, kaçağı ve kişi bazında kasa farkı; yalnız yönetici
+  for (const p of ["/panel/raporlar", "/panel/raporlar/iscilik", "/panel/raporlar/kacak", "/panel/raporlar/kayip"]) {
+    assert.equal(canOpen("staff", p), false, p);
+    assert.ok(canOpen("admin", p), p);
+    assert.match(read(`src/app${p}/page.tsx`), /await requireAdmin\(\)/, `${p}: sayfa requireAdmin ile`);
+  }
   const staffIds = navTreeFor("staff").flatMap((n) => [n.id, ...(n.children ?? []).map((c) => c.id)]);
-  assert.ok(!staffIds.includes("vergi") && !staffIds.includes("finans"));
+  assert.ok(!staffIds.includes("vergi") && !staffIds.includes("finans") && !staffIds.includes("raporlar"));
   assert.ok(navTreeFor("admin").find((n) => n.id === "vergi")?.children?.some((c) => c.href === "/panel/vergi"));
 });
 

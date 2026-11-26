@@ -1,6 +1,9 @@
-// Şube karşılaştırma (Raporlar › Şubeler; docs/RAPORLAR.md): seçilen aylar için şubeler yan yana. Saf: rakamları
-// yükleyici verir (src/server/data/raporlar.ts), her biri başka bir ekranın rakamıdır (Gelir-gider'in ay hesabı, Zayi &
-// ikram'ın ay özeti, kasa raporları); burada yalnız toplanır ve orana çevrilir. Testi tests/sube-karsilastirma.test.ts.
+// Şube karşılaştırma (Raporlar › Şube karşılaştırma; docs/RAPORLAR.md): seçilen aylar için şubeler yan yana. Saf:
+// rakamları yükleyici verir (src/server/data/sube-karsilastirma.ts), her biri başka bir ekranın rakamıdır (Gelir-gider'in
+// ay hesabı, Zayi & ikram'ın ay özeti, kasa raporları, Kıyas'ın fiş kuralı); burada yalnız toplanır ve orana çevrilir.
+// Testi tests/sube-karsilastirma.test.ts.
+
+import type { KiyasCell } from "./kiyas";
 
 /** Bir şubenin bir ayı. "Bilinmiyor" null'dır, sıfır değildir (ciro girilmemiş ay, fiş sayısı yazılmamış gün) */
 export interface BranchMonthFigures {
@@ -198,4 +201,46 @@ export function monthsEnding(last: string, span: number): string[] {
 export function spanParam(raw: string | string[] | undefined): (typeof COMPARE_SPANS)[number] {
   const v = Number(Array.isArray(raw) ? raw[0] : raw);
   return (COMPARE_SPANS as readonly number[]).includes(v) ? (v as (typeof COMPARE_SPANS)[number]) : 3;
+}
+
+/** Ayın günleri, `to` dahil (YYYY-MM-DD); `to` ayın içindeyse orada kesilir, aydan önceyse boş */
+export function monthDays(month: string, to: string): string[] {
+  const [y, m] = month.split("-").map(Number);
+  const dim = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const out: string[] = [];
+  for (let d = 1; d <= dim; d++) {
+    const day = `${month}-${String(d).padStart(2, "0")}`;
+    if (day > to) break;
+    out.push(day);
+  }
+  return out;
+}
+
+/**
+ * Fiş sayısı ve fişi bilinen günlerin cirosu, Kıyas'ın şube-gün hücrelerinden (src/lib/kiyas.ts cellReader; fiş kuralı
+ * aynı: satış varken 0 fiş bilinmiyor): satış olan ve fişi yazılmış gün sayılır, fişi bilinmeyen günün cirosu sepete
+ * girmez. Hiçbir günün fişi yoksa `receipts` null
+ */
+export function receiptFigures(cells: readonly KiyasCell[]): Pick<BranchMonthFigures, "receipts" | "receiptRevenue"> {
+  let receipts = 0;
+  let revenue = 0;
+  let known = 0;
+  for (const c of cells) {
+    if (c.kind !== "satis" || c.receipts === null) continue;
+    known++;
+    receipts += c.receipts;
+    revenue += c.revenue;
+  }
+  return known ? { receipts, receiptRevenue: r2(revenue) } : { receipts: null, receiptRevenue: 0 };
+}
+
+/** Kasa raporlarının kasa farkı şube ve ay başına (`şube|YYYY-MM`; eksik eksi, fazla artı) ve rapor girilen gün */
+export function cashDiffByMonth(rows: readonly { branchId: string; date: string; cashDiff: number }[]): Map<string, { sum: number; days: number }> {
+  const out = new Map<string, { sum: number; days: number }>();
+  for (const r of rows) {
+    const k = `${r.branchId}|${r.date.slice(0, 7)}`;
+    const cur = out.get(k) ?? { sum: 0, days: 0 };
+    out.set(k, { sum: r2(cur.sum + r.cashDiff), days: cur.days + 1 });
+  }
+  return out;
 }

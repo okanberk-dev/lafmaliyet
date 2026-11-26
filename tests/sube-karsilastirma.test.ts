@@ -4,7 +4,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { branchCompare, COMPARE_ROWS, EMPTY_FIGURES, monthsEnding, spanParam, sumFigures, type BranchMonthFigures } from "../src/lib/sube-karsilastirma";
+import {
+  branchCompare,
+  cashDiffByMonth,
+  COMPARE_ROWS,
+  EMPTY_FIGURES,
+  monthDays,
+  monthsEnding,
+  receiptFigures,
+  spanParam,
+  sumFigures,
+  type BranchMonthFigures,
+} from "../src/lib/sube-karsilastirma";
 
 const fig = (o: Partial<BranchMonthFigures>): BranchMonthFigures => ({ ...EMPTY_FIGURES, ...o });
 
@@ -71,4 +82,28 @@ test("en iyi şube: ciroda büyük, giderde küçük, kasa farkında sıfıra ya
   assert.deepEqual(best("acik-gun"), [false, false, false], "yönü olmayan satır");
   assert.deepEqual(best("fis"), [false, false, false], "hiçbirinde fiş yok");
   assert.ok(COMPARE_ROWS.every((r) => r.hint.length > 0), "her satırın kaynağı yazılı");
+});
+
+test("fiş ve sepet Kıyas'ın hücresinden: fişi bilinmeyen günün cirosu sepete girmez; kasa farkı ay ay", () => {
+  assert.equal(monthDays("2026-02", "2026-12-31").length, 28);
+  assert.deepEqual(monthDays("2026-11", "2026-11-03"), ["2026-11-01", "2026-11-02", "2026-11-03"]);
+  assert.deepEqual(monthDays("2026-12", "2026-11-30"), [], "aydan önce biten aralık boş");
+  const r = receiptFigures([
+    { kind: "satis", revenue: 1000, receipts: 40 },
+    { kind: "satis", revenue: 500, receipts: null },
+    { kind: "bos", closed: true },
+    { kind: "yok" },
+    { kind: "satis", revenue: 200, receipts: 10 },
+  ]);
+  assert.deepEqual(r, { receipts: 50, receiptRevenue: 1200 });
+  assert.deepEqual(receiptFigures([{ kind: "satis", revenue: 500, receipts: null }]), { receipts: null, receiptRevenue: 0 }, "hiç fiş yok: bilinmiyor");
+  const d = cashDiffByMonth([
+    { branchId: "tuzla", date: "2026-11-01", cashDiff: -20.5 },
+    { branchId: "tuzla", date: "2026-11-02", cashDiff: 5 },
+    { branchId: "marina", date: "2026-11-02", cashDiff: 0 },
+    { branchId: "tuzla", date: "2026-10-31", cashDiff: -1 },
+  ]);
+  assert.deepEqual(d.get("tuzla|2026-11"), { sum: -15.5, days: 2 });
+  assert.deepEqual(d.get("marina|2026-11"), { sum: 0, days: 1 }, "farkı sıfır rapor da gün sayılır");
+  assert.deepEqual(d.get("tuzla|2026-10"), { sum: -1, days: 1 });
 });
