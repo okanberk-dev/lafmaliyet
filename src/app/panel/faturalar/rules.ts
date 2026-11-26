@@ -20,7 +20,10 @@ export type InvoiceRow = Invoice & {
   stockOnly?: boolean;
   /** Faturanın geldiği Paraşüt hesabı yalnız varsayılan hesap değilse (şube başına Paraşüt hesabı; bağlantının firması) */
   parasutAccount?: string | null;
-  /** Faturanın şubesinin adı (ayrı Paraşüt hesabından gelen fatura; birden çok kasa açıkken rozet); işletme genelinde yok */
+  /**
+   * Faturanın şubesinin rozeti (birden çok kasa açıkken; docs/SUBE.md › Faturanın şubesi): şubenin adı, "İşletme geneli"
+   * ya da "Şubesi seçilmemiş". Tek kasada yok
+   */
   branchName?: string | null;
 };
 
@@ -91,18 +94,20 @@ export function isEInvoiceOnly(i: { eInvoiceId?: string | null; externalId?: str
  * faturalar ve kalemi hammaddeye bağlı ama mal alışı sayılmayanlar (needsReview). Bildirimlerdeki bağlantılar
  * ?durum=odenmedi ve ?durum=kontrol kullanır.
  */
-export type InvoiceStatus = "tumu" | "kontrol" | "odenmedi" | "odendi";
-const STATUSES: readonly InvoiceStatus[] = ["tumu", "kontrol", "odenmedi", "odendi"];
+/** `subesiz`: şubesi seçilmemiş faturalar (docs/SUBE.md › Faturanın şubesi; "Tümü"de, birden çok kasa açıkken) */
+export type InvoiceStatus = "tumu" | "kontrol" | "subesiz" | "odenmedi" | "odendi";
+const STATUSES: readonly InvoiceStatus[] = ["tumu", "kontrol", "subesiz", "odenmedi", "odendi"];
 
 /** Elle yazılmış ya da eskimiş değer "tumu" olur: bozuk bağlantı listeyi boşaltmasın */
 export function parseStatus(raw: string | null | undefined): InvoiceStatus {
   return STATUSES.includes(raw as InvoiceStatus) ? (raw as InvoiceStatus) : "tumu";
 }
 
-type StatusFields = { unpaid: boolean; needsReview?: boolean | null };
+type StatusFields = { unpaid: boolean; needsReview?: boolean | null; branchId?: string | null; companyWide?: boolean | null };
 
 export function matchesStatus(i: StatusFields, status: InvoiceStatus): boolean {
   if (status === "kontrol") return Boolean(i.needsReview);
+  if (status === "subesiz") return !i.branchId && !i.companyWide;
   if (status === "odenmedi") return i.unpaid;
   if (status === "odendi") return !i.unpaid;
   return true;
@@ -112,11 +117,13 @@ export function matchesStatus(i: StatusFields, status: InvoiceStatus): boolean {
 export function statusCounts(list: StatusFields[]) {
   let review = 0;
   let unpaid = 0;
+  let unassigned = 0;
   for (const i of list) {
     if (i.needsReview) review++;
     if (i.unpaid) unpaid++;
+    if (!i.branchId && !i.companyWide) unassigned++;
   }
-  return { all: list.length, review, unpaid, paid: list.length - unpaid };
+  return { all: list.length, review, unpaid, paid: list.length - unpaid, unassigned };
 }
 
 /** Onay bildirimi: tek faturada tedarikçi ve kategori, çoğunda sayı */

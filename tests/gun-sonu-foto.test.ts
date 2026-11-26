@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { lafposPhotoCheck, lafposPhotoDone, photoSourceText, photoUnsureText, staffPhotoLine, type LafposPhotoCheck } from "../src/lib/lafpos/foto";
-import { photoCheckHash, photoMailNeeded, renderPhotoMail } from "../src/lib/lafpos/gun-sonu";
+import { photoCheckHash, photoMailFresh, photoMailNeeded, renderPhotoMail } from "../src/lib/lafpos/gun-sonu";
 import type { BankPos, PosOkc } from "../src/lib/lafpos/day";
 import { cheapReadingProblems, formFailureOf, runLafposRead, type ReadStep } from "../src/lib/photo-read/lafpos-read";
 import { OCR_MODEL, PHOTO_CHEAP_MODEL, PHOTO_STRONG_MODEL, photoModelsOf, readingSourceOf } from "../src/lib/photo-read/models";
@@ -409,13 +409,24 @@ test("'Yönetici baksın' metni doğru: satır okunup güvenle seçilmediyse ayr
 
 const farkCheck = (): LafposPhotoCheck => ({ ...check([{ photoId: 1, raw: detailedZ({ card: 850, cash: 340 }), error: null, source: "ai", model: PHOTO_STRONG_MODEL }]) });
 
-test("Fotoğraf e-postası (gün sonu e-postasından sonra eklenen fotoğraf): yalnız fark ya da 'yönetici baksın'da, satır satır, içerik başına bir kez", () => {
+test("Fotoğraf e-postası (gün sonu e-postasından sonra eklenen fotoğraf): her fotoğrafta (uyumlu da), satır satır, içerik başına bir kez", () => {
   const c = farkCheck();
   assert.equal(photoMailNeeded(c), true);
-  assert.equal(photoMailNeeded(check([{ photoId: 1, raw: detailedZ(), error: null }])), false, "uyumlu fotoğraf e-posta göndermez");
+  // Sahibin isteği (25 Kasım 2026): "z raporu yükleyince mail gelmedi" — uyumlu fotoğraf da bildirilir
+  const ok = check([{ photoId: 1, raw: detailedZ(), error: null }]);
+  assert.equal(ok.state, "uyumlu");
+  assert.equal(photoMailNeeded(ok), false, "taze olmayan (eski) uyumlu fotoğraf için e-posta yok");
+  assert.equal(photoMailNeeded(ok, { fresh: true }), true, "Z tutsa da 'tutuyor' raporu gider (sahibin isteği, 25 Kasım 2026)");
+  // Taze: son 48 saatte eklendi (yükseltmeden önceki eski günlere toplu e-posta yok)
+  assert.equal(photoMailFresh(new Date("2026-11-24T22:00:00Z"), new Date("2026-11-25T08:00:00Z")), true);
+  assert.equal(photoMailFresh(new Date("2026-11-24T22:00:00Z"), new Date("2026-11-27T08:00:00Z")), false, "48 saatten eski");
+  assert.equal(photoMailFresh(null, new Date()), false);
+  assert.equal(plain(renderPhotoMail({ branchName: "Marina", date: DAY, check: ok, link: "x" }).subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · Z raporu tutuyor");
   assert.equal(photoMailNeeded(null), false);
+  // İkinci fotoğraf (aynı okunuş) da yeni içeriktir
+  assert.notEqual(photoCheckHash(ok), photoCheckHash({ ...ok, photos: ok.photos + 1 }));
   const mail = renderPhotoMail({ branchName: "Marina", date: DAY, check: c, link: "https://ladmin.test/panel/kasa?gun=2026-11-24" });
-  assert.equal(plain(mail.subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · gün sonu fotoğrafı LafPOS'tan FARKLI");
+  assert.equal(plain(mail.subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · Z raporu LafPOS'tan FARKLI");
   const t = plain(mail.text);
   assert.match(t, /Yazarkasa kartı: fotoğrafta 850 ₺ · LafPOS'ta 800 ₺ · FARK/);
   assert.match(t, /Okuyan: Yapay zekâ \(Claude Opus 5\.5\)/);
@@ -427,5 +438,17 @@ test("Fotoğraf e-postası (gün sonu e-postasından sonra eklenen fotoğraf): y
   const unsure: LafposPhotoCheck = { ...check([{ photoId: 1, raw: parsePavoOcr([line("~~~(20)")]).raw, error: null, source: "kod", model: OCR_MODEL }]) };
   assert.equal(unsure.state, "belirsiz");
   assert.equal(photoMailNeeded(unsure), true);
-  assert.equal(plain(renderPhotoMail({ branchName: "Marina", date: DAY, check: unsure, link: "x" }).subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · gün sonu fotoğrafı okunamadı, yönetici baksın");
+  assert.equal(plain(renderPhotoMail({ branchName: "Marina", date: DAY, check: unsure, link: "x" }).subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · Z raporu okunamadı, yönetici baksın");
+});
+
+test("İnceleme: Z raporu özeti tek fotoğrafta eski formülle aynı (yükseltmede yeniden gönderim yok); fotoğraftan yazılan Z no'nun 'raporda' eki özeti değiştirmez", async () => {
+  const { photoCheckHashLegacy } = await import("../src/lib/lafpos/gun-sonu");
+  const c = farkCheck();
+  assert.equal(c.photos, 1);
+  assert.equal(photoCheckHash(c), photoCheckHashLegacy(c));
+  const z = { label: "Yazarkasa Z no", photo: "0011 (fotoğraftan okundu)", lafpos: "gönderilmedi", ok: true };
+  const a: LafposPhotoCheck = { ...c, rows: [...c.rows, z] };
+  const b: LafposPhotoCheck = { ...c, rows: [...c.rows, { ...z, lafpos: "gönderilmedi; raporda 0011" }] };
+  assert.equal(photoCheckHash(a), photoCheckHash(b));
+  assert.notEqual(photoCheckHash(a), photoCheckHash({ ...a, photos: 2 }), "ikinci fotoğraf yeni rapordur");
 });

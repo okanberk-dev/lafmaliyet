@@ -229,8 +229,11 @@ describe("Şube başına Paraşüt hesabı: veritabanında (iki firmalı sahte P
     await seedToken("tuzla");
   });
 
-  test("geçiş: Marina 'Tuzla ile aynı' (satırı yok) → tek hesap, tek eşitleme, faturalar işletme geneli", async () => {
+  test("geçiş: Marina 'Tuzla ile aynı' (satırı yok) → tek hesap, tek eşitleme; faturanın şubesi tedarikçinin varsayılanı, yoksa seçilmemiş", async () => {
     fake.companies.get(TUZLA_CO)!.set("700", bill("700"));
+    fake.companies.get(TUZLA_CO)!.set("701", bill("701", { supplier: "Pınar" }));
+    // Pınar'ın kartı Marina'yı varsayılan seçmiş (Tedarikçiler); Sütaş'ın kartı yok: tahminle şube yazılmaz
+    await db.insert(s.suppliers).values({ name: "Pınar", key: "pinar", defaultBranchId: "marina" });
     const list = await accounts.configuredParasutAccounts();
     assert.deepEqual(
       list.map((a) => [a.id, a.users]),
@@ -243,7 +246,10 @@ describe("Şube başına Paraşüt hesabı: veritabanında (iki firmalı sahte P
     assert.ok(fake.calls.every((c) => c.company === TUZLA_CO));
     assert.deepEqual(
       (await rows()).map((r) => [r.externalId, r.parasutAccount, r.branchId]),
-      [["700", "tuzla", null]],
+      [
+        ["700", "tuzla", null],
+        ["701", "tuzla", "marina"],
+      ],
     );
     // Hesap anahtarları eski adlarla (veri göçü yok)
     const keys = (await db.select({ key: s.integrationState.key }).from(s.integrationState)).map((k) => k.key);
@@ -310,7 +316,8 @@ describe("Şube başına Paraşüt hesabı: veritabanında (iki firmalı sahte P
     const keys = (await db.select({ key: s.integrationState.key }).from(s.integrationState)).map((k) => k.key);
     assert.ok(keys.includes("parasut.cursor") && keys.includes("parasut.cursor:marina"), keys.join(","));
 
-    // Ayrı hesabın faturaları "işletme geneli" seçilebilir: yalnız yeni faturalar
+    // Ayrı hesabın faturaları hesabın şubesine yazılmayabilir ("shared"): yalnız yeni faturalar, tedarikçinin varsayılanı
+    // yoksa şubesi seçilmemiş
     const scope = await actions.setParasutInvoiceScope("shared", "marina");
     assert.ok(scope.ok);
     fake.companies.get(MARINA_CO)!.set("702", bill("702", { supplier: "Pınar" }));
@@ -329,15 +336,16 @@ describe("Şube başına Paraşüt hesabı: veritabanında (iki firmalı sahte P
     assert.equal((await (await import("../src/server/parasut/config")).loadParasutSettings("marina")).resolved.clientSecret.value, "marina-GIZLI");
 
     // Faturanın şubesi okumada (sahibin kararı 2): Tuzla seçiliyken Marina'nın ayrı hesabının faturası modele (Maliyet,
-    // Gelir-gider, Faturalar) girmez; işletme geneli (şubesi boş) fatura her şubede, "Tümü"de hepsi
+    // Gelir-gider, Faturalar) girmez. Şubesi seçilmemiş fatura ("shared" seçimli 702; tedarikçinin varsayılanı yok) tek şubede görünmez, "Tümü"de hepsi (docs/SUBE.md › Faturanın şubesi)
     const { loadModel } = await import("../src/server/data/dataset");
     const ids = async (scope: string) =>
       (await loadModel({ scope })).ds.invoices
         .filter((i) => i.source === "parasut")
         .map((i) => `${i.externalId}:${i.supplier}`)
         .sort();
-    assert.deepEqual(await ids("tuzla"), ["700:Sütaş", "702:Pınar"]);
-    assert.deepEqual(await ids("marina"), ["700:Pınar", "701:Pınar", "702:Pınar"]);
+    // Marina ayrılınca Tuzla'nın hesabını yalnız Tuzla kullanır: 700 Tuzla'nın
+    assert.deepEqual(await ids("tuzla"), ["700:Sütaş"]);
+    assert.deepEqual(await ids("marina"), ["700:Pınar", "701:Pınar"]);
     assert.deepEqual(await ids("hepsi"), ["700:Pınar", "700:Sütaş", "701:Pınar", "702:Pınar"]);
 
     // Süre ikinci hesaba yetmezse hata değil "kısmen": hesap sonraki eşitlemeye kalır (tek hesapta süre dolması gibi)

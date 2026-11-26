@@ -1,18 +1,20 @@
 import "server-only";
 
 import { and, desc, eq, gte, lt, lte } from "drizzle-orm";
+import type { z } from "zod";
 
 import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { normalizeZ } from "@/lib/photo-read/kasa";
-import { formFailureOf } from "@/lib/photo-read/lafpos-read";
+import { cheapFirst, receiptReadProblems, zReadProblems, type CheapStep } from "@/lib/photo-read/cheap-first";
+import { cheapReadingProblems, formFailureOf } from "@/lib/photo-read/lafpos-read";
 import { normalizeOkc, okcReadingOnLafposDay, okcToLegacyPos, toStaffReading } from "@/lib/photo-read/okc";
 import { OKC_TASK, RECEIPT_TASK, SYSTEM, Z_TASK } from "@/lib/photo-read/prompts";
 import type { PhotoReading } from "@/lib/photo-read/reading";
 import { normalizeReceipt, receiptToStore } from "@/lib/photo-read/receipt";
 import { KasaOkcRaw, KasaZRaw, ReceiptRaw } from "@/lib/photo-read/schemas";
 import { addDays } from "@/lib/reminders";
-import { extractImage, type AiErrorCode } from "@/server/ai/claude";
-import { OKC_EFFORT, OKC_MAX_TOKENS, OKC_TIMEOUTS, RETRYABLE, type AiImageType } from "@/server/ai/run";
+import { extractImage, loadAiSettings, type AiErrorCode, type AiResult } from "@/server/ai/claude";
+import { OKC_EFFORT, OKC_MAX_TOKENS, RETRYABLE, type AiEffort, type AiImageType, type AiTimeouts } from "@/server/ai/run";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentTillBranch } from "@/server/branch-scope";
 import { cashOutCategories } from "@/server/data/cash-outs";
@@ -32,6 +34,13 @@ export interface ReadOutcome {
   /** "Yeniden dene" anlamlı mı */
   canRetry: boolean;
 }
+
+/**
+ * Ucuz okuma (önce): tek 15 sn'lik deneme. Güçlü okuma (gerekirse) 35 sn'ye sığar: fotoğraf yolu 60 sn'de kesilir
+ * (src/app/api/foto/route.ts), ucuz + güçlü + yanıt payı ona sığar
+ */
+const CHEAP_FIRST_TIMEOUTS: AiTimeouts = { timeout: 15_000, maxRetries: 1, totalMs: 15_000 };
+const STRONG_AFTER_CHEAP_TIMEOUTS: AiTimeouts = { timeout: 35_000, maxRetries: 0, totalMs: 35_000 };
 
 /**
  * Kasanın şubesinde bu günden önceki son raporun Z no'su (Z no sırası denetimi; "eski bir Z raporu olabilir"). Her
@@ -94,7 +103,10 @@ async function recentReceipts(day: string, staff: boolean) {
  * Fotoğrafı türüne göre okur ve forma gidecek hâle getirir. Okuma hatası isteği bozmaz: fotoğraf saklanmıştır,
  * personel rakamları elle yazar ya da yeniden dener.
  *
- * Yazarkasa Z'si (`kasa-okc`, plan §4.4, §7): `OKC_TASK` + `KasaOkcRaw`, efor `OKC_EFFORT`, tek 50 sn'lik deneme; önceki
+ * Her tür önce ucuz modelle okunur, okunuş eksik ya da tutarsızsa bir kez güçlü modelle (cheapFirst; ucuz 15 sn, güçlü
+ * 35 sn). LafPOS gününün kasa fotoğrafının kendi sırası var (readLafposDayPhoto: ucuz → güçlü → kod).
+ *
+ * Yazarkasa Z'si (`kasa-okc`, plan §4.4, §7): `OKC_TASK` + `KasaOkcRaw`, ucuzda efor `OKC_EFFORT`; önceki
  * Z ve son 28 günün toplamları okumayla paralel okunur, kimlikler ve zincir sunucuda. Personel kümülatifi, yazarkasa
  * dışı tahsilatı ve yöneticinin satırlarını almaz (toStaffReading, D17); ham sonuç ai_calls.result'ta tam durur.
  * `kasa-pos` geçiştir (D2): eski sayfanın isteği; fotoğraf çağıranda `kasa-okc` yapılmıştır, aynı okuma yapılır ve
@@ -107,9 +119,22 @@ export async function readPhotoFor(
   const feature = kind === "kasa-pos" ? "kasa-okc" : kind;
   const base = { feature, userId: input.me.id, photoId: input.photoId, image: { bytes: input.bytes, mediaType: input.contentType }, system: SYSTEM } as const;
   const failed = (code: AiErrorCode, message: string): ReadOutcome => ({ reading: null, readError: message, readCode: code, canRetry: RETRYABLE.includes(code) });
+  // Önce ucuz model, okunuş eksik ya da tutarsızsa bir kez güçlü model (src/lib/photo-read/cheap-first.ts; sahibin isteği,
+  // 25 Kasım 2026). Modeller Ayarlar'dan (ai.settings › photoModels)
+  const { cheap, strong } = (await loadAiSettings()).photoModels;
+  const twoStep = async <T,>(o: { task: string; schema: z.ZodType<T>; problems: (d: T) => string[]; cheapEffort?: AiEffort; maxTokens?: number; stored?: (d: T) => T }) => {
+    const step = (res: AiResult<T>, model: string): CheapStep<T> => (res.ok ? { ok: true, data: res.data, model: res.fallback ? res.servedModel : model } : { ok: false, code: res.code, message: res.message });
+    const common = { ...base, task: o.task, schema: o.schema, ...(o.maxTokens ? { maxTokens: o.maxTokens } : {}), ...(o.stored ? { stored: o.stored } : {}) };
+    return cheapFirst<T>({
+      cheap: async () => step(await extractImage({ ...common, model: cheap, ...(o.cheapEffort ? { effort: o.cheapEffort } : {}), timeouts: CHEAP_FIRST_TIMEOUTS }), cheap),
+      strong: async () => step(await extractImage({ ...common, model: strong, timeouts: STRONG_AFTER_CHEAP_TIMEOUTS }), strong),
+      problems: o.problems,
+    });
+  };
   if (kind === "kasa-z") {
-    const [prevZNo, res] = await Promise.all([previousZNo(input.day), extractImage({ ...base, task: Z_TASK(input.day), schema: KasaZRaw })]);
-    logPhotoRead({ photoId: input.photoId, kind, steps: ["z"], model: res.ok ? res.servedModel : null, documentType: res.ok ? res.data.documentType : null, ok: res.ok });
+    const [prevZNo, run] = await Promise.all([previousZNo(input.day), twoStep({ task: Z_TASK(input.day), schema: KasaZRaw, problems: zReadProblems })]);
+    const res = run.result;
+    logPhotoRead({ photoId: input.photoId, kind, steps: run.steps, model: res.ok ? res.model : null, documentType: res.ok ? res.data.documentType : null, ok: res.ok });
     if (!res.ok) return failed(res.code, res.message);
     return { reading: normalizeZ(res.data, { day: input.day, prevZNo }), readError: null, readCode: null, canRetry: false };
   }
@@ -132,7 +157,7 @@ export async function readPhotoFor(
       const reading = input.me.role === "admin" ? full : toStaffReading(full);
       return { reading: kind === "kasa-pos" ? okcToLegacyPos(reading) : reading, readError: null, readCode: null, canRetry: false };
     }
-    const [prev, recentTotals, lafposDay, res] = await Promise.all([
+    const [prev, recentTotals, lafposDay, run] = await Promise.all([
       previousOkc(input.day),
       okcTypical(input.day),
       // Günün kasası: LafPOS gününde ModPOS Z bölümü yok, oraya okutma önerilmez (denetim E-39). Kasanın şubesinin geçiş
@@ -144,9 +169,10 @@ export async function readPhotoFor(
           return { switchDay, device: isLafposDay(input.day, switchDay) ? await lafposOkcDeviceOf(getDb(), b).catch(() => null) : null };
         })
         .catch(() => ({ switchDay: null, device: null })),
-      extractImage({ ...base, task: OKC_TASK(input.day), schema: KasaOkcRaw, effort: OKC_EFFORT, maxTokens: OKC_MAX_TOKENS, timeouts: OKC_TIMEOUTS }),
+      twoStep({ task: OKC_TASK(input.day), schema: KasaOkcRaw, problems: (raw) => cheapReadingProblems(raw, { expectBatches: false }), cheapEffort: OKC_EFFORT, maxTokens: OKC_MAX_TOKENS }),
     ]);
-    logPhotoRead({ photoId: input.photoId, kind, steps: ["okc"], model: res.ok ? res.servedModel : null, documentType: res.ok ? res.data.documentType : null, ok: res.ok });
+    const res = run.result;
+    logPhotoRead({ photoId: input.photoId, kind, steps: run.steps, model: res.ok ? res.model : null, documentType: res.ok ? res.data.documentType : null, ok: res.ok });
     if (!res.ok) return failed(res.code, res.message);
     const normalized = normalizeOkc(res.data, { day: input.day, prev, recentTotals });
     const full = isLafposDay(input.day, lafposDay.switchDay) ? okcReadingOnLafposDay(normalized, lafposDay.device) : normalized;
@@ -155,7 +181,9 @@ export async function readPhotoFor(
   }
   const staff = input.me.role !== "admin";
   const [categories, recent] = await Promise.all([cashOutCategories(input.me.role), recentReceipts(input.day, staff)]);
-  const res = await extractImage({ ...base, task: RECEIPT_TASK(input.day, categories), schema: ReceiptRaw, stored: receiptToStore });
+  const run = await twoStep({ task: RECEIPT_TASK(input.day, categories), schema: ReceiptRaw, problems: receiptReadProblems, stored: receiptToStore });
+  const res = run.result;
+  logPhotoRead({ photoId: input.photoId, kind, steps: run.steps, model: res.ok ? res.model : null, documentType: res.ok ? res.data.documentType : null, ok: res.ok });
   if (!res.ok) return failed(res.code, res.message);
   return { reading: { kind: "fis", ...normalizeReceipt(res.data, { day: input.day, categories, recent, staff }) }, readError: null, readCode: null, canRetry: false };
 }

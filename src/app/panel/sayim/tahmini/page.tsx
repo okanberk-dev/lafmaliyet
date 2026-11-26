@@ -21,6 +21,7 @@ import {
   type SkippedRows,
   type StockEstimateLine,
 } from "@/lib/stock-estimate";
+import { INVOICE_SHARED } from "@/lib/invoice-branch";
 import { genitive } from "@/lib/recipe-change";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth/dal";
@@ -137,7 +138,7 @@ async function StockEstimateContent() {
           <Notice
             tone="neutral"
             title={`${num(unassigned)} faturanın şubesi seçilmedi`}
-            text="Marina'ya gelen faturayı seçin; seçilmeyen fatura tahmine girmez."
+            text="Marina'ya gelen faturayı seçin; seçilmeyen fatura tahmine girmez. Faturalar'daki “Şubesi seçilmemiş” kutusu da aynı seçimdir."
             action={<NoticeLink href="#faturalar">Faturalara git</NoticeLink>}
           />
         ) : null}
@@ -241,13 +242,13 @@ async function StockEstimateContent() {
             <CardHeader
               icon={<ReceiptText />}
               title="Marina'ya gelen faturalar"
-              description="Faturalar şubeye bölünmez: Marina'ya geleni seçin; yalnız tahmini stok değişir."
+              description="Faturanın şubesi: Marina'ya geleni seçin. Seçim Faturalar'daki şubeyle aynıdır; fatura o şubenin görünümüne geçer."
               meta={<span className="tabular">{`${dayAblativeTR(estimate.from)} bugüne · ${num(receipts.total)} fatura`}</span>}
             />
             <CardContent className="px-3 sm:px-5">
               {receipts.invoices.length ? (
                 <ul className="divide-y divide-line-strong/70">
-                  {/* Şubesi seçilmeyenler önce (sunucu sıralar), sonra seçilmişler; ikisi de en yeni önce */}
+                  {/* Şubesi seçilmeyenler önce (sunucu sıralar), sonra şubesi ya da işletme geneli seçilmişler; ikisi de en yeni önce */}
                   {receipts.invoices.map((inv) => (
                     <li key={inv.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
                       <span className="min-w-0">
@@ -259,7 +260,7 @@ async function StockEstimateContent() {
                           {inv.more ? ` ve ${num(inv.more)} kalem daha` : ""}
                         </span>
                       </span>
-                      <ReceiptChoice invoiceId={inv.id} label={`${inv.supplier} ${dateTR(inv.date)}`} value={inv.branchId} branches={physical} />
+                      <ReceiptChoice invoiceId={inv.id} label={`${inv.supplier} ${dateTR(inv.date)}`} value={inv.companyWide ? INVOICE_SHARED : inv.branchId} branches={physical} />
                     </li>
                   ))}
                 </ul>

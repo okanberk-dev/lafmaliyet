@@ -112,19 +112,26 @@ const OWN_CAP: Partial<Record<AiFeature, number>> = { [SHIFT_FEATURE]: SHIFT_DRA
 const OWN_CAP_FEATURES = Object.keys(OWN_CAP);
 /** Panel asistanı (docs/ASISTAN.md): okuma sınırına sayılmaz, yönetici başına kendi sınırı vardır (ASSISTANT_DAILY_CAP) */
 const ASSISTANT_FEATURE = "asistan" satisfies AiFeature;
+/**
+ * Fatura okuması (Hammaddeler, Paraşüt): Ayarlar'daki günlük sınır kadar KENDİ havuzu vardır (25 Kasım 2026). Eskiden
+ * fotoğraflarla ortaktı: gündüz okunan faturalar sınırı doldurunca akşam çekilen Z ve gün sonu fotoğrafı yapay zekâyla
+ * okunamıyor, koda (OCR) düşüyordu (sahibin şikâyeti: "z raporları okunmuyor"). Kasanın fotoğrafları faturadan etkilenmez
+ */
+const INVOICE_FEATURE = "fatura" satisfies AiFeature;
 
 /** Sorgu yapan: bağlantı havuzu ya da kapıların işlemi (extract) */
 type Q = Pick<DB, "select">;
 
 /**
- * Okumalar (fotoğraf ve fatura): günlük sınır bunları sayar. Kendi sınırı olan türler (vardiya taslakları, ürün
- * önerileri) ve asistanın soruları sayılmaz; kodla okuma (OCR_MODEL, yapay zekâ değil, ücretsiz) da sayılmaz
+ * Fotoğraf okumaları (kasa Z'si, yazarkasa, fiş): günlük sınır bunları sayar. Kendi sınırı olan türler (vardiya
+ * taslakları, ürün önerileri, fatura okuması) ve asistanın soruları sayılmaz; kodla okuma (OCR_MODEL, yapay zekâ değil,
+ * ücretsiz) da sayılmaz
  */
 async function readingsSince(since: Date, q: Q = getDb()): Promise<number> {
   const [row] = await q
     .select({ n: count() })
     .from(s.aiCalls)
-    .where(and(gte(s.aiCalls.at, since), notInArray(s.aiCalls.feature, [...OWN_CAP_FEATURES, ASSISTANT_FEATURE]), ne(s.aiCalls.model, OCR_MODEL)));
+    .where(and(gte(s.aiCalls.at, since), notInArray(s.aiCalls.feature, [...OWN_CAP_FEATURES, ASSISTANT_FEATURE, INVOICE_FEATURE]), ne(s.aiCalls.model, OCR_MODEL)));
   return row?.n ?? 0;
 }
 
@@ -139,9 +146,16 @@ async function featureCallsSince(feature: AiFeature, since: Date, q: Q = getDb()
 
 export type AiState = ReadingState;
 
-/** Ekranlar için: okuma yapılabilir mi ve bugün kaç okuma yapıldı */
+/** Ekranlar için: fotoğraftan okuma yapılabilir mi ve bugün kaç fotoğraf okuması yapıldı */
 export async function aiStatus(now = new Date()): Promise<{ state: AiState; usedToday: number; cap: number }> {
   const [settings, usedToday] = await Promise.all([loadAiSettings(), readingsSince(dayStart(now))]);
+  const state: AiState = !aiConfigured() ? "nokey" : !settings.enabled ? "off" : usedToday >= settings.dailyCap ? "cap" : "on";
+  return { state, usedToday, cap: settings.dailyCap };
+}
+
+/** Fatura okuması için: yapılabilir mi ve bugün kaç fatura okundu (kendi havuzu, sınır Ayarlar'dakiyle aynı sayı) */
+export async function invoiceAiStatus(now = new Date()): Promise<{ state: AiState; usedToday: number; cap: number }> {
+  const [settings, usedToday] = await Promise.all([loadAiSettings(), featureCallsSince(INVOICE_FEATURE, dayStart(now))]);
   const state: AiState = !aiConfigured() ? "nokey" : !settings.enabled ? "off" : usedToday >= settings.dailyCap ? "cap" : "on";
   return { state, usedToday, cap: settings.dailyCap };
 }
@@ -376,7 +390,8 @@ async function extract<T>(req: ExtractCall<T> & AiInput & { model: AiModel; tota
   const settings = await loadAiSettings();
   if (!settings.enabled) return gate("off");
   const db = getDb();
-  const ownCap = OWN_CAP[req.feature];
+  // Fatura okumasının kendi havuzu (sınır Ayarlar'daki sayı): fotoğrafların sınırını yemez
+  const ownCap = OWN_CAP[req.feature] ?? (req.feature === INVOICE_FEATURE ? settings.dailyCap : undefined);
   // Kapılar ve "running" satırı tek işlemde, sınırın danışma kilidiyle (kendi sınırı olan tür ya da okumalar): aynı anda
   // gelen iki istek sıraya girer, ikincisi ilkinin satırını görür; günlük sınır aşılmaz, "aynı anda tek istek"
   // (exclusiveMs) iki sekmeyi birden geçirmez. Kilit yalnız bu kısa işlemde tutulur, servis çağrısı işlemin dışında
