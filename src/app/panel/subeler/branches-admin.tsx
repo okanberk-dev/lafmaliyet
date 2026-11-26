@@ -86,8 +86,8 @@ export interface BranchActions {
 const BOS: Taslak = { id: "", name: "", kind: "fiziksel", posSource: "modpos", openedOn: "", active: true, posRate: oranMetni(DEFAULT_POS_RATE), email: "" };
 
 /** Şube kurulumunun sonucu (docs/LAFPOS.md › Şube kurulumu): bağlantı ekranda da gösterilir, e-posta gitmezse elle iletilir */
-type KurulumSonuc = { link: string; mailError: string | null; account: "acildi" | "vardi" };
-type InstallAction = (input: { id: string; email?: string }) => Promise<ActionResult<KurulumSonuc>>;
+export type KurulumSonuc = { link: string; mailError: string | null; account: "acildi" | "vardi" };
+export type InstallAction = (input: { id: string; email?: string }) => Promise<ActionResult<KurulumSonuc>>;
 
 /**
  * `settingsText`, `parasutText`: fiziksel şubenin şube ayarlarının durumu ("Kendi ayarı", "Tuzla ile aynı"; kasa raporu
@@ -393,7 +393,7 @@ function BranchDialog({
 }
 
 /** Şube kurulumunun sonucu: bağlantı (kopyalanır), e-posta gittiyse adresi, gitmediyse nedeni */
-function KurulumDialog({ name, kurulum, onClose }: { name: string; kurulum: KurulumSonuc; onClose: () => void }) {
+export function KurulumDialog({ name, kurulum, onClose }: { name: string; kurulum: KurulumSonuc; onClose: () => void }) {
   return (
     <Dialog
       open

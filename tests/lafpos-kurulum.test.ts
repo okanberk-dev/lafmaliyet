@@ -103,3 +103,15 @@ test("bağlantılar kurulu: şube eklemek ana yöneticide, uçlar herkese açık
   assert.ok(!proxy.includes("/lafpos/") && !proxy.includes("/api/lafpos"));
   assert.ok(read("drizzle/0095_lafpos_kurulum.sql").includes('CREATE TABLE "lafpos_installs"'));
 });
+
+test("LafPOS kasası kur: şube listeden seçilir ya da aynı pencerede yeni şube eklenir; kart yalnız ana yöneticiye", () => {
+  const page = read("src/app/panel/subeler/page.tsx");
+  assert.match(page, /canCreate \? <LafposInstallCard/);
+  const card = read("src/app/panel/subeler/lafpos-install.tsx");
+  assert.ok(card.includes("Kasa hangi şubeye bağlanacak"));
+  assert.ok(card.includes("+ Yeni şube ekle"));
+  // Var olan şubeye bağlantı, yeni şubede ekleme ve bağlantı tek eylemle
+  assert.ok(card.includes("installAction({ id: t.branch"));
+  assert.match(card, /createAction\(\{[^}]*email: t\.email\.trim\(\)/);
+});
+
