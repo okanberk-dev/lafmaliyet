@@ -20,6 +20,7 @@
  *   npm run tarama:olc -- --yalniz pavo    # adında geçenler
  *   npm run tarama:olc -- --cizim          # doğru (yeşil) ve bulunan (kırmızı) köşeler çizili küçük resimler
  *   npm run tarama:olc -- --ocr 0 --karsilastir .data/tarama-olcum/temel.json   # önceki ölçümle fark
+ *   npm run tarama:olc -- --rapor .data/tarama-olcum/son.json                   # kaydedilmiş sonucun raporu
  */
 
 import { execSync } from "node:child_process";
@@ -225,6 +226,14 @@ function grupla(ks: Kayit[], anahtar: (k: Kayit) => string[], sira?: readonly st
 /* ------------------------------------------------------------------ ana akış */
 
 async function main() {
+  // kaydedilmiş sonucun raporu (yeniden ölçmeden)
+  const raporYolu = arg("rapor");
+  if (raporYolu) {
+    const s = JSON.parse(readFileSync(raporYolu, "utf8")) as { veri: string; cekirdek: string | null; secenekler: { ocr: boolean; ideal: boolean }; kayitlar: Kayit[] };
+    const baslik = `${s.veri} (${s.kayitlar.length} görsel, çekirdek ${s.cekirdek ?? "?"})`;
+    console.log(raporYaz(s.kayitlar, { baslik, ocrAcik: s.secenekler.ocr, ideal: s.secenekler.ideal, karsilastir: arg("karsilastir") }));
+    return;
+  }
   const fixture = process.argv.includes("--fixture");
   const dizin = arg("veri") ?? (fixture ? "tests/fixtures/tarama" : ".data/tarama-veri");
   const ocrAcik = (arg("ocr") ?? "1") !== "0";
@@ -300,8 +309,46 @@ async function main() {
   await Promise.all(bekleyen);
   await ocr?.kapat();
   const sureSn = Math.round((Date.now() - t0) / 1000);
+  const metin = raporYaz(kayitlar, { baslik: `${dizin} (${kayitlar.length} görsel, ${sureSn} sn)`, ocrAcik, ideal, karsilastir: arg("karsilastir") });
+  console.log("\n" + metin);
 
-  // ---- rapor
+  const cekirdek = (() => {
+    try {
+      return execSync("git log -1 --format=%h -- src/lib/scan", { encoding: "utf8" }).trim();
+    } catch {
+      return null;
+    }
+  })();
+  const sonuc = {
+    tarih: new Date().toISOString(),
+    cekirdek,
+    veri: dizin,
+    tohum: veri.tohum,
+    secenekler: { ocr: ocrAcik, ideal, yalniz: yalniz ?? null },
+    ozet: {
+      kirp: ozetle(kayitlar.filter((k) => k.beklenen === "kirp")),
+      hepsi: ozetle(kayitlar),
+      belge: ozetle(kayitlar.filter((k) => k.beklenen !== "belge-degil")),
+    },
+    rapor: metin,
+    kayitlar,
+  };
+  const ad = `sonuc-${sonuc.tarih.slice(0, 16).replace(/[-:T]/g, "")}${fixture ? "-fixture" : ""}.json`;
+  writeFileSync(join(ciktiDizini, ad), JSON.stringify(sonuc, null, 1));
+  writeFileSync(join(ciktiDizini, fixture ? "son-fixture.json" : "son.json"), JSON.stringify(sonuc, null, 1));
+  console.log(`\nAyrıntı: ${join(ciktiDizini, ad)}`);
+}
+
+interface RaporSecenekleri {
+  baslik: string;
+  ocrAcik: boolean;
+  ideal: boolean;
+  /** Önceki sonuç dosyası (karşılaştırma) */
+  karsilastir?: string;
+}
+
+/** Özet, kırılım tabloları, karar matrisi, en kötüler (ölçümden ya da kaydedilmiş sonuçtan: --rapor) */
+function raporYaz(kayitlar: Kayit[], { baslik, ocrAcik, ideal, karsilastir }: RaporSecenekleri): string {
   const satir: string[] = [];
   const kirp = kayitlar.filter((k) => k.beklenen === "kirp");
   const yakin = kayitlar.filter((k) => k.beklenen === "tam-kare");
@@ -310,7 +357,7 @@ async function main() {
   const ok = ozetle(kirp);
   const hepsi = ozetle(kayitlar);
   const ob = ozetle(belge);
-  satir.push(`## Tarayıcı ölçümü — ${dizin} (${kayitlar.length} görsel, ${sureSn} sn)`);
+  satir.push(`## Tarayıcı ölçümü — ${baslik}`);
   satir.push("");
   satir.push(`- Köşe (kırpılması gereken ${kirp.length} görsel): başarı ${ok.dogru}/${kirp.length} (${yuzde(ok.dogru / kirp.length, 0)}; en kötü köşe < ${yuzde(BASARI_ESIGI, 0)}), kaçan ${ok.kacan}, yanlış dörtgen ${ok.yanlis}; hata ort ${yuzde(ok.hataOrt)}, p90 ${yuzde(ok.hataP90)}`);
   if (yakin.length) {
@@ -342,16 +389,22 @@ async function main() {
     const c = (kr: Karar) => ks.filter((k) => k.karar === kr).length;
     satir.push(`| ${b} | ${c("kirp")} | ${c("tam-kare")} | ${c("yok")} |`);
   }
-  // en kötü 10
-  const kotu = [...kayitlar]
-    .filter((k) => k.sonuc !== "dogru" || (k.hata ?? 0) > BASARI_ESIGI * 0.5)
-    .sort((a, b) => Number(b.sonuc !== "dogru") - Number(a.sonuc !== "dogru") || (b.hata ?? 1) - (a.hata ?? 1))
+  // en kötü 10 (köşe hatasına göre; belgeler) ve belge olmayanda yanlış pozitifler
+  const satirYaz = (k: Kayit) =>
+    `- ${k.ad}: ${k.sonuc} (${k.karar}${k.hata == null ? "" : `, hata ${yuzde(k.hata)}`}, ${k.yontem} ${k.guven}; ${k.nedenler.join(" ") || "–"}) [${k.senaryolar.join(", ")}]`;
+  const kotu = kayitlar
+    .filter((k) => k.hata != null && k.sonuc !== "dogru")
+    .sort((a, b) => (b.hata as number) - (a.hata as number))
     .slice(0, 10);
-  satir.push("\n### En kötü 10\n");
-  for (const k of kotu)
-    satir.push(`- ${k.ad}: ${k.sonuc} (${k.karar}${k.hata == null ? "" : `, hata ${yuzde(k.hata)}`}, ${k.yontem} ${k.guven}; ${k.nedenler.join(" ") || "–"}) [${k.senaryolar.join(", ")}]`);
+  satir.push("\n### En kötü 10 (köşe hatası)\n");
+  for (const k of kotu) satir.push(satirYaz(k));
+  const yp = kayitlar.filter((k) => k.beklenen === "belge-degil" && k.sonuc !== "dogru");
+  if (yp.length) {
+    satir.push(`\n### Belge olmayanda yanlış pozitif (${yp.length})\n`);
+    for (const k of yp) satir.push(satirYaz(k));
+  }
   // önceki ölçümle karşılaştırma (çekirdek değişince): kategori başına doğru ve hata, sonucu değişen görseller
-  const oncekiYolu = arg("karsilastir");
+  const oncekiYolu = karsilastir;
   if (oncekiYolu) {
     const once = JSON.parse(readFileSync(oncekiYolu, "utf8")) as { cekirdek: string | null; kayitlar: Kayit[] };
     const oncekiler = new Map(once.kayitlar.map((k) => [k.ad, k]));
@@ -373,30 +426,7 @@ async function main() {
       }
     }
   }
-  const metin = satir.join("\n");
-  console.log("\n" + metin);
-
-  const cekirdek = (() => {
-    try {
-      return execSync("git log -1 --format=%h -- src/lib/scan", { encoding: "utf8" }).trim();
-    } catch {
-      return null;
-    }
-  })();
-  const sonuc = {
-    tarih: new Date().toISOString(),
-    cekirdek,
-    veri: dizin,
-    tohum: veri.tohum,
-    secenekler: { ocr: ocrAcik, ideal, yalniz: yalniz ?? null },
-    ozet: { kirp: ok, hepsi, belge: ob },
-    rapor: metin,
-    kayitlar,
-  };
-  const ad = `sonuc-${sonuc.tarih.slice(0, 16).replace(/[-:T]/g, "")}${fixture ? "-fixture" : ""}.json`;
-  writeFileSync(join(ciktiDizini, ad), JSON.stringify(sonuc, null, 1));
-  writeFileSync(join(ciktiDizini, fixture ? "son-fixture.json" : "son.json"), JSON.stringify(sonuc, null, 1));
-  console.log(`\nAyrıntı: ${join(ciktiDizini, ad)}`);
+  return satir.join("\n");
 }
 
 main().catch((e) => {

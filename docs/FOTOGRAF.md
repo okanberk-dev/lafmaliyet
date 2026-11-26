@@ -387,6 +387,39 @@ ve kimlikleri plandan ve araştırma notlarından yazıldı, kafenin gerçek fi�
    ilk okuma p90 ≤ 20 sn. Sonuç `docs/planlar/ekler/okc-z/eval.md`'ye; geçerse `OKC_PREFILL_ENABLED = true`, okuma
    süresi metni ölçülen p50'yle, kalite ve çekim kararı (§ 3) ölçümle.
 
+### Tarayıcının ölçümü
+
+Belge tarayıcının çekirdeği (`src/lib/scan`) telefonla çekilmiş gibi üretilen sentetik fotoğraflarla ölçülür: köşeler
+ve kâğıttaki yazı bilindiği için hata kesin hesaplanır. Ağ, anahtar ve veritabanı gerekmez; görsel çözme sharp ile
+(next'in isteğe bağlı bağımlılığı; yalnız betikler ve test), kâğıtlar Playwright ile çizilir.
+
+```bash
+npm run tarama:veri                         # 96 görsel → .data/tarama-veri/ (depoya girmez; tohumlu, ~8 dk)
+npm run tarama:olc                          # köşe, karar, süre, okunabilirlik (OCR) → tablolar + .data/tarama-olcum/son.json
+npm run tarama:olc -- --ocr 0               # okunabilirliksiz, hızlı (köşe, karar, süre)
+npm run tarama:olc -- --ideal --cizim       # doğru köşelerle taramanın okunabilirliği; köşeleri çizili küçük resimler
+npm run tarama:olc -- --ocr 0 --karsilastir .data/tarama-olcum/temel.json   # çekirdek değişince öncekiyle fark
+npx tsx --test tests/tarama-regresyon.test.ts   # 10 küçük örnek (tests/fixtures/tarama), bugünkü sonuçla
+```
+
+- **Veri** (`scripts/tarama-veri.ts`, `scripts/tarama/kagit.ts`, `sahne.ts`): Pavo detaylı Z, LafPOS/Pavo gün sonu,
+  ModPOS Z, banka batch fişi, market fişi (80 mm, 58 mm, uzun rulo) ve A4 e-Arşiv fatura HTML'den çizilir (termal
+  kâğıt, soluk baskı; içerik uydurma). Kâğıt 3B bir ızgara olarak zemine bindirilir: ahşap, mermer, koyu tezgâh, beyaz
+  tezgâh, gri masa, elde tutulmuş (bulanık oda, başparmak); perspektif, döndürme, yana dönük fiş, kıvrılma / bükülme,
+  kıvrık köşe, kâğıdın gölgesi, gölge degradesi, el gölgesi, renkli ışık, parlama, karanlık, hareket ve odak
+  bulanıklığı, gürültü, JPEG %55–92. Ayrıca kareyi dolduran yakın çekim, bir ucu kadraj dışında kalan kâğıt ve belge
+  olmayan fotoğraflar (POS ekranı, ekranda tablo, telefon, koli, fincan, paketler). Doğru köşe kâğıdın köşesidir:
+  kıvrık köşede katlanmamış köşe (kenarların kesiştiği yer), kadraj dışında kâğıdın kenarının karenin kenarını
+  kestiği yer, yakın çekimde görüntünün köşeleri. `yanit.json`: köşeler, beklenen sonuç (kırp / kareyi dolduruyor /
+  belge değil), kategori, zemin, senaryolar, bilinen metin.
+- **Yöntem** (`scripts/tarama-olc.ts`): her görsel `scanDocument`'tan geçer. Köşe hatası en kötü köşenin uzaklığı /
+  köşegen (kırpılmayan görselde görüntünün köşeleriyle, kaçan belgenin hatası da sayılır); başarı < %2. Karar:
+  kırptı / kareyi dolduruyor / belge yok → doğru, kaçan, yanlış (belge olmayanı kırpmak yanlış pozitif).
+  Okunabilirlik: tesseract.js (kodla okumanın ayarı, Türkçe) ile asıl fotoğrafın ve taranmış hâlin bilinen metne
+  karakter doğruluğu (1 − düzenleme uzaklığı / uzunluk) ve tutarların (1.234,56) aynen bulunma oranı. Kategori,
+  zemin, durum ve senaryo kırılımı, karar matrisi, en kötü 10 görsel.
+TEMEL_OLCUM_YERI
+
 ## 9. Yeni bir fotoğraf türü
 
 1. `src/lib/photo-rules.ts`: `PhotoKind`, `PHOTO_KINDS`, `KEEP_DAYS`, `PHOTO_KIND_LABEL`.
