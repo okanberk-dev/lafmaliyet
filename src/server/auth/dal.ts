@@ -49,7 +49,7 @@ export interface CurrentUser {
 }
 
 /** Oturumun kullanıcısı ve iki adımlıyı kurmadan panele giremeyen yönetici mi (src/lib/admin-security.ts) */
-type SessionUser = CurrentUser & { needsTwoFactor: boolean };
+type SessionUser = CurrentUser & { needsTwoFactor: boolean; totpEnabled: boolean };
 
 /** Oturumu doğrular ve kullanıcı veritabanında hâlâ aktif mi diye bakar (iki adımlı zorunluluğunu söyler, uygulamaz) */
 async function readSessionUser(): Promise<SessionUser | null> {
@@ -76,10 +76,10 @@ async function readSessionUser(): Promise<SessionUser | null> {
   // Parola / iki adımlı doğrulama değiştiyse ya da yönetici oturumları kapattıysa eski çerez geçmez; çıkış yapılmış
   // oturumun çerezi de (kopyası alınmış olsa bile) geçmez
   if (!u || !u.active || (session.sv ?? 1) !== u.sessionVersion || u.revoked) return null;
-  return { id: u.id, name: u.name, email: u.email, role: u.role, branchId: u.role === "staff" ? u.branchId : null, needsTwoFactor: needsTwoFactorSetup(u) };
+  return { id: u.id, name: u.name, email: u.email, role: u.role, branchId: u.role === "staff" ? u.branchId : null, needsTwoFactor: needsTwoFactorSetup(u), totpEnabled: u.totpEnabled };
 }
 
-const toCurrent = ({ needsTwoFactor: _n, ...u }: SessionUser): CurrentUser => (void _n, u);
+const toCurrent = ({ id, name, email, role, branchId }: SessionUser): CurrentUser => ({ id, name, email, role, branchId });
 
 /**
  * Oturumdaki kullanıcı. İki adımlıyı kurmamış yönetici (zorunluluk açıkken; docs/DEPLOY.md › 6a) burada oturumsuz
@@ -89,6 +89,15 @@ const toCurrent = ({ needsTwoFactor: _n, ...u }: SessionUser): CurrentUser => (v
 export async function getCurrentUser(): Promise<CurrentUser | null> {
   const u = await readSessionUser();
   return u && !u.needsTwoFactor ? toCurrent(u) : null;
+}
+
+/**
+ * Oturum geçerli ama kişi iki adımlıyı kurmadan panele giremeyen yönetici mi. getCurrentUser'ın null'unu kendisi
+ * yönlendiren sayfa (Claude bağlantısının onay ekranı) bununla ayırır: bu kişi girişe "oturum bitti" diye gönderilmez
+ * (proxy geçerli oturumunu silerdi), kurulum ekranına gider.
+ */
+export async function awaitingTwoFactorSetup(): Promise<boolean> {
+  return (await readSessionUser())?.needsTwoFactor === true;
 }
 
 /** Oturum yoksa ya da geçersizse giriş sayfası (requireUser ve requireSignedIn ortak) */

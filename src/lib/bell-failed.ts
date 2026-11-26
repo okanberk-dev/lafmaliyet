@@ -23,6 +23,7 @@ const PARTS = {
   fatura: { group: "fatura", what: "faturalar", href: "/panel/faturalar" },
   komisyon: { group: "fatura", what: "komisyon hakedişleri", href: "/panel/komisyonlar" },
   sistem: { group: "sistem", what: "günlük işlerin durumu", href: "/panel/ayarlar" },
+  guvenlik: { group: "sistem", what: "yeni cihazdan girişler", href: "/panel/hesap" },
   alici: { group: "sistem", what: "bildirim alıcıları", href: "/panel/ayarlar" },
   modpos: { group: "sistem", what: "ModPOS anahtarı", href: "/panel/ayarlar" },
   fiyatsiz: { group: "uyari", what: "fiyatı girilmemiş hammaddeler", href: "/panel/hammaddeler?durum=fiyatsiz" },

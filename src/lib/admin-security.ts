@@ -28,6 +28,13 @@ export function needsTwoFactorSetup(u: { role: string; totpEnabled: boolean }, r
   return required && u.role === "admin" && !u.totpEnabled;
 }
 
+/** Kurulum ekranının açıklaması */
+export const ADMIN_2FA_REQUIRED_TEXT = "Yönetici hesaplarında iki adımlı doğrulama zorunludur. Kurulum bitince panel açılır.";
+
+/** Hesabım'da kapatma penceresinin uyarısı (zorunluyken yönetici) */
+export const ADMIN_2FA_DISABLE_NOTE =
+  "Yönetici hesaplarında iki adımlı doğrulama zorunludur: kapatınca panel yerine kurulum ekranı açılır, yeniden kurana kadar paneli kullanamazsınız (telefon değiştirirken böyle yapılır).";
+
 /**
  * Kurulumdan sonra gidilecek adres: yalnız panel içi ya da Claude bağlantısının onay ekranı (girişin `safeNext`'inden
  * gelir ama adresten okunur, yeniden denetlenir); değilse rolün ana sayfası
@@ -47,6 +54,12 @@ export const NEW_DEVICE_ACTION = "Yeni cihazdan giriş";
 
 /** Zil uyarıyı bu kadar gün gösterir */
 export const NEW_DEVICE_BELL_DAYS = 7;
+
+/**
+ * Yeni cihaz uyarısı bu hesaba gider mi: yalnız yönetici hesapları (istek yönetici hesapları içindi; personel ortak
+ * tablette sırayla giriş yapar, her biri o tablette ilk girişinde uyarı alırdı)
+ */
+export const alertsNewDevice = (u: { role: string }) => u.role === "admin";
 
 /** "Chrome · Windows", "Safari · iPhone" (tarayıcı kimliğinin kendisi saklanmaz) */
 export function userAgentLabel(ua: string | null | undefined): string {
