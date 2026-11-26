@@ -100,4 +100,5 @@ Bitince `claude/festive-goodall-sclggq`'ye birleştirilir (göç numarası çak�
 
 ## Bekleyen başka iş
 
-- [ ] Vardiyayla ilgili şube maddeleri (hazır vardiya saatleri şube ayarına, "Tümü"de şube seçimi). Başka bir oturumun açık PR'ı #120 birleşince yapılacak.
+- [ ] Vardiyayla ilgili şube maddeleri (hazır vardiya saatleri şube ayarına, "Tümü"de şube seçimi). PR #120 bu dala
+  birleştirildi (26 Kasım); artık yapılabilir.
