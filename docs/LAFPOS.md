@@ -1273,6 +1273,10 @@ Sahibin isteği: yeni şube panelden eklenince kasası da kendiliğinden kurulsu
      iptal eder);
    - ikisi tek e-postayla gider (`kurulumMail`; Resend kurulu değilse gitmez, bağlantı ekranda gösterilir, elle iletilir).
    Var olan şubeye (Marina gibi) şubenin düzenleme penceresinden **LafPOS kurulum bağlantısı gönder**.
+   Kısa yol: Şubeler'in üstündeki **LafPOS kasası kur** kartı (yalnız ana yönetici). "Kasa kur" penceresinde **kasanın
+   bağlanacağı şube** listeden seçilir ya da **+ Yeni şube ekle** ile aynı pencerede eklenir (ad, kimlik, kasa kaynağı,
+   açılış günü), e-posta yazılır; bağlantı gider. Kartta her açık fiziksel şubenin kurulum durumu ve "Bağlantı gönder" /
+   "Yeniden kur" düğmesi durur (`src/app/panel/subeler/lafpos-install.tsx`).
 3. Şube hesabı girince **Hesabım › LafPOS kurulumu** kartında bağlantı ve durum (Kurulum bekliyor / Kasa kuruldu).
 4. Bağlantı (`GET /lafpos/indir/<kod>`, oturumsuz) kanaldaki genel kurucuyu (`https://lafpos.laffogato.net/guncelleme/LafPOS-Kur.cmd`,
    `LAFPOS_KURUCU_URL`) indirir, içindeki iki boş satıra (`$KurulumAdresi = ''`, `$KurulumKodu = ''`) panelin adresini ve
@@ -1289,6 +1293,13 @@ Sahibin isteği: yeni şube panelden eklenince kasası da kendiliğinden kurulsu
 Kurallar `src/lib/lafpos/kurulum.ts` ve `kurulum-mail.ts` (saf, `tests/lafpos-kurulum.test.ts`), sunucu
 `src/server/lafpos/kurulum.ts`, uçlar `src/app/api/lafpos/kurulum/route.ts` ve `src/app/lafpos/indir/[kod]/route.ts`, göç
 `0095_lafpos_kurulum.sql`.
+
+**Anahtar değişimi:** kurulu kasalar Uzaktan ve site bağlantısını da buradan alır: `GET /api/panel/pos/baglanti`
+(LafPOS imzasıyla; `src/app/api/panel/pos/baglanti/route.ts`, değerler `dagitilanBaglantilar`,
+`src/lib/lafpos/baglanti-dagitim.ts`) panelin ortamındaki `LAFPOS_CLOUD_*` ve `LAFPOS_SITE_*`'ı ve kısa özetini
+(`surum`) verir. Kasa değişeni bekletir, gün kapanınca yazar ve sonraki sorgularda `uygulanan=<sürüm>` der; uç bunu
+günlüğe yazar (`[lafpos baglanti] sube=… uygulanan=… guncel=…`). Anahtar değişiminde sıra: önce panelin ortamına yeni
+değer, kasalar gece alır (günlükte `uygulanan` = `guncel`), sonra LafPOS Uzaktan'daki ve sitedeki anahtar değişir.
 
 **Sınır (bilerek ertelendi):** LafPOS bugün yalnız bir şubenin kasası (`lafposSourceError`, aşağıda "Şubeler"). Marina
 LafPOS'tayken yeni şube "Kasa kaynağı: LafPOS" ile eklenemez; ModPOS seçilip eklenir, kasa kurulur ve çalışır (satış,

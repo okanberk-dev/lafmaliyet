@@ -103,3 +103,26 @@ test("bağlantılar kurulu: şube eklemek ana yöneticide, uçlar herkese açık
   assert.ok(!proxy.includes("/lafpos/") && !proxy.includes("/api/lafpos"));
   assert.ok(read("drizzle/0095_lafpos_kurulum.sql").includes('CREATE TABLE "lafpos_installs"'));
 });
+
+test("LafPOS kasası kur: şube listeden seçilir ya da aynı pencerede yeni şube eklenir; kart yalnız ana yöneticiye", () => {
+  const page = read("src/app/panel/subeler/page.tsx");
+  assert.match(page, /canCreate \? <LafposInstallCard/);
+  const card = read("src/app/panel/subeler/lafpos-install.tsx");
+  assert.ok(card.includes("Kasa hangi şubeye bağlanacak"));
+  assert.ok(card.includes("+ Yeni şube ekle"));
+  // Var olan şubeye bağlantı, yeni şubede ekleme ve bağlantı tek eylemle
+  assert.ok(card.includes("installAction({ id: t.branch"));
+  assert.match(card, /createAction\(\{[^}]*email: t\.email\.trim\(\)/);
+});
+
+test("var olan kasalara giden bağlantılar: Uzaktan ve site (lafmaliyet hariç), sürüm değerlerin özeti", async () => {
+  const { dagitilanBaglantilar } = await import("../src/lib/lafpos/baglanti-dagitim");
+  assert.deepEqual(dagitilanBaglantilar({}), { surum: "", baglanti: {} });
+  const env = { LAFPOS_CLOUD_URL: "https://lafpos.laffogato.net", LAFPOS_CLOUD_SECRET: "c".repeat(40), LAFPOS_SITE_URL: "https://laffogato.net", LAFPOS_SITE_SECRET: "s".repeat(40) };
+  const a = dagitilanBaglantilar(env);
+  assert.deepEqual(Object.keys(a.baglanti), ["LAFFOGATO_SYNC_SECRET", "LAFFOGATO_URL", "LAFPOS_CLOUD_SECRET", "LAFPOS_CLOUD_URL"]);
+  assert.equal(a.surum.length, 16);
+  assert.notEqual(dagitilanBaglantilar({ ...env, LAFPOS_CLOUD_SECRET: "d".repeat(40) }).surum, a.surum);
+  assert.ok(read("src/app/api/panel/pos/baglanti/route.ts").includes("checkLafposRequest"));
+});
+
