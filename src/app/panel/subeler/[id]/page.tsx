@@ -10,12 +10,13 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { BRANCH_FEATURES, type BranchFeature, branchFeatures, featureBranches, hasFeature } from "@/lib/branch-features";
-import { BLIND_COUNT_GROUP, CALENDAR_GROUP, COMMISSION_GROUP, LAFPOS_GROUP, MODPOS_GROUP, SHARED_FOR_NOW, TILL_DEVICE_GROUP } from "@/lib/branch-settings/groups";
+import { BLIND_COUNT_GROUP, CALENDAR_GROUP, COMMISSION_GROUP, LAFPOS_GROUP, MODPOS_GROUP, SHARED_FOR_NOW, SHIFT_PRESET_GROUP, TILL_DEVICE_GROUP } from "@/lib/branch-settings/groups";
 import { BRANCH_ID_PATTERN, tillBranches } from "@/lib/branches";
 import { effectiveSettings } from "@/lib/commission/report";
 import { blindCountSettingOn } from "@/lib/kor-sayim";
 import { modposKeyProblem } from "@/lib/modpos/request";
 import { modposBranchIds, modposKeyEnv } from "@/lib/modpos/sube";
+import { shiftPresetsOf } from "@/lib/vardiya";
 import { requireAdmin } from "@/server/auth/dal";
 import { branchSettingView } from "@/server/branch-settings-view";
 import { listBranches } from "@/server/branches";
@@ -31,6 +32,7 @@ import { CalendarCard } from "./calendar-card";
 import { BranchFeaturesCard } from "./features-card";
 import { ParasutLinkCard } from "./parasut-card";
 import { LafposBranchCard, LafposOldSecretCard, ModposBranchCard } from "./pos-card";
+import { ShiftPresetsCard } from "./shift-presets-card";
 import { TillDeviceCard } from "./till-device-card";
 
 export const metadata: Metadata = { title: "Şube ayarları" };
@@ -87,7 +89,7 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
   // ModPOS'tan çekilen şubede ModPOS kartı. Sunucu (saveLafposSecret) ve Ayarlar › LafPOS da aynı şubeye bakar
   const lafposHere = branch.id === (await lafposBranchId());
   const modposHere = modposBranchIds(branches).includes(branch.id);
-  const [cash, parasut, commission, calendar, device, modpos, lafpos, secret, blindCount, lafposBranch] = await Promise.all([
+  const [cash, parasut, commission, calendar, device, modpos, lafpos, secret, blindCount, lafposBranch, shiftPresets] = await Promise.all([
     cashSettingsCardData(branch.id),
     parasutLinkCardData(branch.id),
     branchSettingView(COMMISSION_GROUP, branch.id),
@@ -99,6 +101,7 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
     lafposHere ? lafposSecretState() : Promise.resolve(null),
     branchSettingView(BLIND_COUNT_GROUP, branch.id),
     lafposBranchId(),
+    branchSettingView(SHIFT_PRESET_GROUP, branch.id),
   ]);
   // Tek şubelik özelliğin (karaoke) öbür şubedeki sahibi: kartta anahtar kapalı, "Marina şubesinde açık"
   const heldBy: Partial<Record<BranchFeature, string>> = {};
@@ -159,6 +162,13 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
           <ChannelSettingsCard settings={effectiveSettings(commission.value.channels)} branchId={branch.id} link={commission.link} anchor="komisyon" />
         ) : null}
         <CalendarCard view={calendar} />
+        {/* Sabahçı ve akşamcının saatleri (Vardiya ekranı); seçilmemişse bugünkü sabit saatler */}
+        <ShiftPresetsCard
+          branchId={branch.id}
+          branchName={branch.name}
+          presets={shiftPresetsOf(branch.id, shiftPresets.value.presets)}
+          isDefault={shiftPresets.value.presets === null}
+        />
         <Card>
           <CardHeader icon={<Layers />} title="Şimdilik bütün şubelerde ortak" description="Bu ayarlar şubeye göre değişmez; tek yerden düzenlenir." />
           <ul className="flex flex-wrap gap-2 px-5 pb-5">

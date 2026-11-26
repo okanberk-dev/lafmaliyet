@@ -135,7 +135,8 @@ test("işletme geneli ekranlar şube seçiminden bağımsız: vergi, nakit plan�
   assert.match(oku("src/app/panel/tutarlilik/page.tsx"), /loadModel\(\{ scope: ALL_BRANCHES \}\)/);
   // Seçimi geçersiz kılan kapsam isteğin seçiminden önce gelir
   const kapsam = oku("src/server/branch-scope.ts");
-  assert.match(kapsam, /return scopeOverride\.getStore\(\) \?\? requestBranchScope\(\);/);
+  // Müdürde verilen kapsam da şubesine daralır (managerLock; docs/ROLLER.md), öteki rollerde verilen kapsam geçerli
+  assert.match(kapsam, /const override = scopeOverride\.getStore\(\);\s*if \(override !== undefined\) \{[\s\S]*?return lock \?\? override;\s*\}\s*return requestBranchScope\(\);/);
 });
 
 test("stok sayımı şube başına: ekran ve kayıt aynı fiziksel şube (Tümü ya da online kanalda Tuzla)", () => {

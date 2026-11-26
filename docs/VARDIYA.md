@@ -20,9 +20,16 @@ Sahibin isteği (22 Kasım 2026): "ladmine de vardiya ayarlama diye ayrı sekme 
 
 - **Hafta:** `?hafta=YYYY-AA-GG` (haftanın herhangi bir günü; Pazartesi'ye yuvarlanır, yoksa bu hafta). Başlıkta
   **Önceki**, **Bu hafta**, **Sonraki**.
-- **Şube:** plan şube şubedir. Panelin şube seçicisindeki fiziksel şube gösterilir ("Tümü" ya da laffogato.net
-  seçiliyken Tuzla); birden çok şube açıkken sayfanın başında şube düğmeleri durur (seçim panelin seçicisine yazılır,
-  [SUBE.md](SUBE.md) › Seçici). Şubesine kilitli personel yalnız kendi şubesinin planını görür.
+- **Şube:** plan şube şubedir. Panelin şube seçicisindeki fiziksel şube gösterilir; birden çok şube açıkken sayfanın
+  başında şube düğmeleri durur (seçim panelin seçicisine yazılır, [SUBE.md](SUBE.md) › Seçici). Şubesine kilitli
+  personel yalnız kendi şubesinin planını görür.
+- **"Tümü"de şube sorulur (26 Kasım 2026):** "Tümü" ya da laffogato.net seçiliyken birden çok şube açıksa ızgara
+  çizilmez, önce **Hangi şubenin vardiyası?** sorulur (şube düğmeleri; adresteki hafta korunur). Seçilen şube panelin
+  seçicisine yazılır ve plan o şubeyle açılır. Kasa raporu ve stok sayımıyla aynı kural ([SUBE.md](SUBE.md) › Yazarken
+  hangi şube); asistanın vardiya kartı da "Tümü"de şubeyi sorar. Önceden "Tümü"de sessizce Tuzla'nın planı açılıyor,
+  Kaydet Tuzla'ya yazıyordu (kenar çubuğunda "Tümü" yazarken). Tek şube açıksa o şube (soru yok). Personel de (şubesiz
+  hesap) aynı soruyu görür: okuduğu planın şubesi belli olsun. **Kaydet** ve **Yazarak doldur** ızgaranın şubesini
+  gönderir, çerezi değil: başka sekmede seçici değişse de plan ekranda görünen şubeye yazılır.
 - **Satırlar (yönetici):** şubenin etkin personel hesapları (şubesi bu şube olan ya da şubesi boş olan), planı boş
   olsa da; o hafta planı olan herkes (hesabı olmayan, pasife alınan, başka şubeden gelen kişi de). **Kişi ekle:**
   yazılan ad bir hesabın adıysa (yönetici, başka şubenin personeli) o hesabın satırı açılır; değilse çalışan yalnız
@@ -75,17 +82,50 @@ saat ya da görev notu için üstteki **Elle yaz** seçilir: kutular klavyeyle y
 saatlerine açılır ("s kasa" → "09:00–18:00 · kasa"). Elle yazılmış başka saat Seçerek'te düğmelerin altında durur; bir
 harf seçilince onun yerine geçer. Telefonda da aynı (düğmeler parmak boyunda).
 
+Saatler şube başınadır (aşağıda "Şube ayarı"). Ayarı seçilmemiş şubenin saatleri (varsayılan; 26 Kasım 2026'ya kadar
+koddaki sabit saatlerdi, ayarı olmayan şubede davranış değişmedi):
+
 | Şube | Sabahçı | Akşamcı | Dayanak |
 |---|---|---|---|
 | Tuzla | 09:00–18:00 | 16:00–01:00 | 09:00 açılış, vardiya 9 saat, akşamcı 16:00'da gelir |
 | Marina | 09:30–18:30 | 13:00–22:00 | 09:30 açılış, vardiya 9 saat, akşamcı 13:00'te gelir, kapanış 22:00 |
+| Öbür şubeler | yok | yok | Ayardan girilene kadar ızgara elle yazmayla açılır |
 
-- Hazır vardiyası tanımlı olmayan şubede ızgara elle yazmayla açılır (seçim satırı çıkmaz).
+- Hazır vardiyası olmayan şubede ızgara elle yazmayla açılır (seçim satırı çıkmaz). Yalnız biri tanımlıysa (ör. yalnız
+  sabahçı) düğmeler S ve İ'dir.
 - Ad saatlerden türer (veritabanında ayrı alan yok): saatleri şubenin hazır vardiyasıyla aynı olan hücre, elle yazılsa
   da, ızgarada kutunun altında, personelin görünümünde ve PDF'te "Sabahçı" / "Akşamcı" diye görünür. Görev notu eklenebilir
   ("9-18 kasa" yine sabahçıdır).
-- Saatler `src/lib/vardiya.ts` › `SHIFT_PRESETS`'te; değişirse orası güncellenir, eski haftalar yazıldıkları saatlerle
-  kalır (yeni saatle eşleşmeyen eski hücre "başka saat" olarak görünür).
+- Saatler değişince kayıtlı haftalar değişmez: hücreler yazıldıkları saatlerle kalır, yeni saatle eşleşmeyen eski hücre
+  "başka saat" olarak görünür (PDF'te harfsiz daire).
+
+### Şube ayarı (26 Kasım 2026)
+
+Sabahçı ve akşamcının saatleri **Ayarlar › Şubeler › şubenin Ayarlar'ı › Hazır vardiyalar** kartında girilir
+(`/panel/subeler/[id]#vardiya`, yalnız yönetici). Vardiya ekranındaki seçim satırının sonunda da yöneticiye **Saatleri
+değiştir** (hazır vardiyası yoksa **Sabahçı ve akşamcı ekle**) bağlantısı durur.
+
+- **Kart:** Sabahçı (S) ve Akşamcı (A) için birer anahtar (kullanılıyor mu) ve başlangıç / bitiş saati. Ayar seçilmemişse
+  kart varsayılan saatleri söyler ("Varsayılan saatler: … Değiştirip kaydedince bu şubenin ayarı olur"); hazır vardiyası
+  olmayan şubede "Bu şubede hazır vardiya yok". **Kaydet** yalnız değişiklik varken açılır.
+- **Kurallar:** saatler kutunun okuyucusuyla okunur (`presetHours` → `parseShiftCell`): bitiş başlangıçtan önceyse ertesi
+  gün (akşamcı 16:00–01:00; 00:00 gece yarısı), en geç ertesi gün 06:00, en çok 16 saat; sabahçı ve akşamcı aynı
+  saatlerde olamaz (ad saatlerden türer). Hata kutunun altında yazar, sunucu aynı kuralla ayrıca reddeder
+  ("Akşamcı: Bitiş başlangıçla aynı olamaz.").
+- **İkisi kapatılınca** şubede hazır vardiya yoktur (varsayılana dönmez): ızgara elle yazmayla açılır, "s" / "a"
+  kısaltması açılmaz, yazarak doldurmada "sabahçı" işlenemeyenlere düşer.
+- **"Diğer şubeyle aynı" yok:** saatler şubenin açılışına bağlıdır (Tuzla ile Marina'nınki bugün de ayrı; örtük "aynı"
+  Marina'nın saatlerini Tuzla'nınkine çevirirdi). Her şube kendi saatini tutar.
+- **Kim kullanır:** ızgaranın S / A düğmeleri ve altındaki ad, elle yazarken "s" / "a" kısaltması, yazarak doldurmanın
+  isteği ("Preset shifts"; ad ve saatler servise gider) ve işlenmesi, PDF'in harfleri ve alt bilgisi, asistanın vardiya
+  kartı ("s kasa"). Hepsi listeyi aynı okuyucudan alır (`loadShiftPresets`, `src/server/vardiya/presets.ts`).
+- **Uyarı sesleri:** ses saatleri şimdilik bütün şubelerde ortaktır (09:00–01:00, [SUBE.md](SUBE.md) › Şube başına
+  ayarlar). Vardiya 01:00–09:00 arasına uzanıyorsa kart "Uyarı sesleri 01:00–09:00 arası çalmaz" notunu gösterir
+  (`alertQuietDuring`); kayıt engellenmez.
+- **Veri:** `branch_settings` satırı (grup `vardiya.hazir`; şema değişmedi, migration yok): `{ presets: [{ key:
+  "morning", startMin, endMin }, …] }`; satır yoksa varsayılan (`SHIFT_PRESETS`). Okuma satır yazmaz. Kayıt tek
+  işlemde, grup kilidiyle; işlem geçmişine "Şube ayarı · Marina · Hazır vardiyalar: Sabahçı 09:30–18:30 · Akşamcı
+  13:00–22:00 → Sabahçı 08:30–17:30". Yedeğe şube ayarlarıyla girer.
 
 ## Yazarak doldurma (22 Kasım 2026)
 
@@ -147,11 +187,12 @@ uyumlu yap". Kartın başındaki **Yazarak doldur** kutusuna hafta düz cümleyl
 | Yer | Ne |
 |---|---|
 | Kenar çubuğu, ⌘K, telefon başlığı | İki rolde üst düzeyde, Kasa raporu'nun altında. Yöneticide "Vardiya ayarlama", personelde "Vardiya" (aynı düğüm, role göre ad: `nav.ts` › `labelFor`); arama "vardiya ayarlama", "çizelge", "izin", "pdf" sözcükleriyle bulur |
-| Yetki (`src/lib/roles.ts`) | `/panel/vardiya` personele açık (`STAFF_PATHS`); planı yalnız yönetici yazar (eylem `requireAdmin`). Kullanıcılar & roller'deki tabloda iki satır |
+| Yetki (`src/lib/roles.ts`) | `/panel/vardiya` personele açık (`STAFF_PATHS`); planı yönetici ve müdür yazar (eylem `requireCan("vardiya.yaz")`; müdür yalnız şubesinin, [ROLLER.md](ROLLER.md)), "Geçen haftayı kopyala" yalnız yönetici. Kullanıcılar & roller'deki tabloda iki satır |
 | Bugün › Bugün kafede | "Vardiyada: Ayşe 10:00–18:00 · Çağrı 16:00–00:00 · ve 2 kişi" (iş gününün çalışanları, başlangıç saatine göre, ilk adlar; seçili şube, "Tümü"de bütün şubeler). Vardiya ekranına götürür; plan yoksa satır yok |
 | Karaoke personel e-postaları | Rezervasyon günü sabah ve 3 saat kala giden e-postalar o gün Tuzla'da çalışan olarak yazılmış, hesabı etkin kişilere gider (vardiyaya yazılan yönetici dahil; izinli sayılmaz); o güne plan yazılmadıysa Tuzla'nın bütün etkin personeline ([KARAOKE.md](KARAOKE.md)). Okuyan `src/server/karaoke/staff-mail.ts`, `shifts` tablosundan |
 | Kontrol listesi hatırlatmaları | Açılış, kapanış ve temizlik (tuvalet çizelgesi) listelerinin e-posta hatırlatmaları listenin şubesinde **o an vardiyada olan** kişilere gider; o an kimse yoksa o gün çalışacaklara, plan yoksa bütün personele ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md) § 6 › Kime; `alertRecipients`) |
-| Şube seçici | Plan seçili fiziksel şubenin; şubesine kilitli personel kendi şubesini görür ([SUBE.md](SUBE.md)) |
+| Şube seçici | Plan seçili fiziksel şubenin; "Tümü"de (birden çok şube açıkken) önce şube sorulur; şubesine kilitli personel kendi şubesini görür ([SUBE.md](SUBE.md)) |
+| Şube ayarları | Hazır vardiyaların (sabahçı / akşamcı) saatleri şube başına: Şubeler › şubenin Ayarlar'ı › Hazır vardiyalar (yukarıda) |
 | Yardım | Yöneticide "Vardiya planını yazmak ve PDF'ini almak", personelde "Bu hafta hangi gün, kaçta vardiyam var?" |
 | İşlem geçmişi | "Vardiya planı kaydedildi · Tuzla · 23–29 Kasım 2026 · 5 kişi · 28 vardiya · 3 izin" |
 | Yedek | `shifts` tablosu yedeğe girer (gizli alan yok) |
@@ -291,7 +332,9 @@ kartı da önizlemede gördüğü haftayı `seen` olarak gönderir (docs/ASISTAN
 
 | Dosya | Görev |
 |---|---|
-| `src/lib/vardiya.ts` | Saf kurallar: kutunun okunuşu ve yazılışı, hafta hesabı, kişi anahtarı, toplamlar, kaydın farkı, giriş şeması, Bugün satırının metni |
+| `src/lib/vardiya.ts` | Saf kurallar: kutunun okunuşu ve yazılışı, hazır vardiyalar (varsayılan saatler `SHIFT_PRESETS`, ayarın çözümü `shiftPresetsOf`, girilen saatin okunuşu `presetHours`), hafta hesabı, kişi anahtarı, toplamlar, kaydın farkı, giriş şeması, Bugün satırının metni |
+| `src/lib/branch-settings/groups.ts` › `SHIFT_PRESET_GROUP`, `src/server/vardiya/presets.ts` | Hazır vardiyaların şube ayarı (`vardiya.hazir`) ve okuyucusu (`loadShiftPresets`) |
+| `src/app/panel/subeler/[id]/shift-presets-card.tsx`, `src/server/actions/branch-settings.ts` › `saveShiftPresets` | Şube ayarları › Hazır vardiyalar kartı ve kaydı (yalnız yönetici) |
 | `src/server/vardiya/store.ts` | Haftanın okunması (personel + planı olanlar), kaydı (tek işlem, yalnız değişen), günün çalışanları (`shiftsOn`, `todayShifts`) |
 | `src/server/vardiya/pdf.ts`, `src/server/vardiya/fonts/` | PDF'in çizimi (pdf-lib); gömülen yazı tipi, lisansı ve nasıl üretildiği |
 | `src/lib/vardiya-taslak.ts` | Yazarak doldurmanın saf yarısı: istem, yanıtın şeması, atamaların kutu metnine çevrilmesi, taslağın ızgaraya uygulanması |
@@ -302,3 +345,4 @@ kartı da önizlemede gördüğü haftayı `seen` olarak gönderir (docs/ASISTAN
 | `tests/vardiya-taslak.test.ts` | Yazarak doldurma: atamaların çevrilmesi (hazır vardiya, izin, saat, herkes, yeni kişi, sıra, işlenemeyenler), taslağın uygulanması, isteğin biçimi ve şeması, sahte istemciyle okuma, hata metinleri, bağlantılar |
 | `tests/vardiya.test.ts` | Kutunun okunuşu (gece yarısı, izin, hatalar), biçim, hafta, toplamlar, kayıt farkı, rol ve menü, PDF (yazı tipinde Türkçe harfler, `%PDF`, A4 yatay, sayfalama) |
 | `tests/vardiya-kayit.test.ts`, `tests/vardiya-kayit-db.test.ts` | Eski ekrandan kaydetme: yalnız değiştirilen kutu yazılır, arada başkasının değiştirdiği kutuda red (saf fark ve gerçek Postgres) |
+| `tests/vardiya-sube.test.ts`, `tests/vardiya-sube-db.test.ts` | Hazır vardiyaların şube ayarı (okunuş, varsayılan, girilen saatler, kayıt, işlem geçmişi, ret kuralları; gerçek Postgres) ve "Tümü"de şube sorusu |

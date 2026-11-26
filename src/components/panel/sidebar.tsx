@@ -12,7 +12,7 @@ import { LafTile } from "@/components/brand";
 import { actionFailure, toastUnreachable } from "@/components/ui/action-error";
 import { forgetAssistantData } from "@/lib/assistant/history";
 import { BRANCH_FEATURE_IDS, featureInScope } from "@/lib/branch-features";
-import { ROLES } from "@/lib/constants";
+import { ROLES, type Role } from "@/lib/constants";
 import { ALERTS_REFRESH_EVENT } from "@/lib/live-poll";
 import { homeFor } from "@/lib/roles";
 import { cn } from "@/lib/utils";
@@ -31,7 +31,7 @@ import { NotificationMenu } from "./notifications";
 import { SidebarNav } from "./sidebar-nav";
 import { ThemeChoice } from "./theme-choice";
 
-type User = { id: number; name: string; email: string; role: "admin" | "staff" };
+type User = { id: number; name: string; email: string; role: Role };
 
 /** Tarayıcı deposu (kapalıysa null: gizli sekme, engelli site verisi) */
 function safeStore(kind: "localStorage" | "sessionStorage"): Storage | null {
@@ -170,7 +170,7 @@ export function Sidebar({ user, index = [], branch, assistant = false }: { user:
   const accountItems: ProfileDropdownItem[] = [
     { id: "hesap", label: "Hesabım", icon: <UserRound className="size-4" strokeWidth={1.75} />, onSelect: () => router.push("/panel/hesap") },
     ...(isAdmin ? [{ id: "ayarlar", label: "Ayarlar", icon: <Settings className="size-4" strokeWidth={1.75} />, onSelect: () => router.push("/panel/ayarlar") }] : []),
-    { id: "yardim", label: "Yardım", icon: <HelpCircle className="size-4" strokeWidth={1.75} />, onSelect: () => router.push(isAdmin ? "/panel/yardim" : "/panel/yardim/personel") },
+    { id: "yardim", label: "Yardım", icon: <HelpCircle className="size-4" strokeWidth={1.75} />, onSelect: () => router.push(isAdmin ? "/panel/yardim" : user.role === "accountant" ? "/panel/muhasebe#yardim" : "/panel/yardim/personel") },
   ];
   const cafeItems: ProfileDropdownItem[] = [
     { id: "site", label: "laffogato.net", icon: <ExternalLink className="size-4" strokeWidth={1.75} />, onSelect: () => window.open("https://laffogato.net", "_blank", "noopener") },

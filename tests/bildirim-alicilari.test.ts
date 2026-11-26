@@ -70,7 +70,7 @@ test("liste gidecek ve düşen adreslere ayrılır: sıra korunur, büyük-küç
   assert.deepEqual(splitByBlocked([], blocked), { to: [], dropped: [] });
   assert.equal(emailKey("  Ali@Ornek.COM "), "ali@ornek.com");
   assert.equal(droppedListText(out.dropped), "Ayse@Laffogato.net (personel hesabı), eski@laffogato.net (pasif hesap)");
-  assert.equal(droppedLogSuffix(out.dropped), " · 2 adres atlandı (personel ya da pasif hesap)");
+  assert.equal(droppedLogSuffix(out.dropped), " · 2 adres atlandı (personel, müdür ya da pasif hesap)");
   assert.equal(droppedLogSuffix([]), "");
 });
 
@@ -109,10 +109,10 @@ test("eski adres listede kaldı (yeni giriş e-postası, silinen hesap): artık 
 
 test("bütün adresler düştü: tek cümle, iç içe parantez yok", () => {
   const dropped = [{ email: "ayse@laffogato.net", reason: "staff" as const }];
-  assert.equal(allDroppedSentence("Alıcıların", dropped), "Alıcıların hepsi personel ya da pasif hesaba ait: ayse@laffogato.net (personel hesabı).");
+  assert.equal(allDroppedSentence("Alıcıların", dropped), "Alıcıların hepsi personel, müdür ya da pasif hesaba ait: ayse@laffogato.net (personel hesabı).");
   assert.equal(
     allDroppedSentence("Etkin bildirim adreslerinin", [...dropped, { email: "eski@laffogato.net", reason: "inactive" }]),
-    "Etkin bildirim adreslerinin hepsi personel ya da pasif hesaba ait: ayse@laffogato.net (personel hesabı), eski@laffogato.net (pasif hesap).",
+    "Etkin bildirim adreslerinin hepsi personel, müdür ya da pasif hesaba ait: ayse@laffogato.net (personel hesabı), eski@laffogato.net (pasif hesap).",
   );
 });
 

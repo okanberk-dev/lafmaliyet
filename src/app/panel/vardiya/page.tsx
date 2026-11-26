@@ -2,17 +2,19 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { BranchChooser } from "@/components/panel/branch-chooser";
 import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { addDays, todayTR } from "@/lib/reminders";
 import { buildRows, canEditShifts, formatShiftCell, userRef, VARDIYA_PATH, weekLabel, weekParam, type ShiftRow } from "@/lib/vardiya";
-import { requireUser } from "@/server/auth/dal";
-import { currentPhysicalBranch, staffBranchLock } from "@/server/branch-scope";
+import { requireCan } from "@/server/auth/dal";
+import { currentBranchScope, currentPhysicalBranch, staffBranchLock } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb } from "@/server/db";
 import { shiftDraftState } from "@/server/vardiya/draft";
+import { loadShiftPresets } from "@/server/vardiya/presets";
 import { loadShiftEntries, loadShiftWeek, shiftBranches } from "@/server/vardiya/store";
 
 import { ShiftGrid, type GridRow } from "./shift-grid";
@@ -32,8 +34,9 @@ const MORE =
 
 /**
  * Vardiya planı (docs/VARDIYA.md): hafta `?hafta=YYYY-AA-GG` (haftanın herhangi bir günü; yoksa bu hafta), şube panelin
- * seçicisinden (seçili fiziksel şube; "Tümü" ya da online kanal seçiliyken Tuzla; şubesine kilitli personelde kendi
- * şubesi). Yönetici ızgarayı düzenler; personel salt okunur görür.
+ * seçicisinden (seçili fiziksel şube; şubesine kilitli personelde kendi şubesi). "Tümü" ya da online kanal seçiliyken
+ * birden çok şube açıksa önce "Hangi şubenin vardiyası?" sorulur; tek şube açıksa o şube. Yönetici ızgarayı düzenler;
+ * personel salt okunur görür.
  */
 export default function VardiyaPage({ searchParams }: PageProps<"/panel/vardiya">) {
   return (
@@ -60,21 +63,44 @@ function updatedLine(u: { by: string | null; at: string } | null): string | null
 }
 
 async function VardiyaContent({ searchParams }: { searchParams: PageProps<"/panel/vardiya">["searchParams"] }) {
-  const user = await requireUser();
+  const user = await requireCan("kayit.yaz");
   const sp = await searchParams;
   const today = todayTR();
-  const monday = weekParam(Array.isArray(sp.hafta) ? sp.hafta[0] : sp.hafta, today);
+  const hafta = Array.isArray(sp.hafta) ? sp.hafta[0] : sp.hafta;
+  const monday = weekParam(hafta, today);
   const canEdit = canEditShifts(user.role);
-  const [branch, branches, lock] = await Promise.all([currentPhysicalBranch(), listBranches(), staffBranchLock()]);
+  // Başlık ve açıklama planı yazabilenin (yönetici, müdür) ya da yalnız görenin
+  const view = canEdit ? "admin" : "staff";
+  const [scope, branches, lock] = await Promise.all([currentBranchScope(), listBranches(), staffBranchLock()]);
   const physical = shiftBranches(branches);
+  // "Tümü" ya da online kanal seçiliyken birden çok şube açıksa plan çizilmeden önce şube sorulur (kasa ve sayımla aynı
+  // kural; docs/VARDIYA.md › Ekran): plan şube başına yazılır, önceden sessizce Tuzla'nın planı açılıyor ve Kaydet
+  // Tuzla'ya yazıyordu. Şubesine kilitli personelin seçimi zaten kendi şubesidir
+  if (physical.length > 1 && !physical.some((b) => b.id === scope)) {
+    return (
+      <>
+        <PageHeader path={VARDIYA_PATH} role={user.role} title={TITLE[view]} description={DESCRIPTION[view]} more={canEdit ? MORE : undefined} />
+        <BranchChooser
+          title="Hangi şubenin vardiyası?"
+          description={canEdit ? "Vardiya planı şube başına yazılır. Şubeyi seçin; plan o şubeyle açılır, Kaydet o şubeye yazar." : "Vardiya planı şube başına. Şubeyi seçin; o şubenin planı açılır."}
+          path={VARDIYA_PATH}
+          params={{ hafta: hafta ? monday : undefined }}
+          branches={physical}
+        />
+      </>
+    );
+  }
+  const branch = await currentPhysicalBranch();
   const db = getDb();
   const prevMonday = addDays(monday, -7);
-  const [week, previous, draft] = await Promise.all([
+  const [week, previous, draft, presets] = await Promise.all([
     loadShiftWeek(db, branch, monday, { roster: canEdit, includeUserId: user.id }),
     // "Geçen haftayı kopyala" (yalnız yönetici)
     canEdit ? loadShiftEntries(db, branch.id, prevMonday) : Promise.resolve(null),
     // "Yazarak doldur" kullanılabilir mi (yalnız yönetici; anahtarın kendisi sayfaya gelmez)
     canEdit ? shiftDraftState() : Promise.resolve(null),
+    // Sabahçı ve akşamcının saatleri: şubenin ayarı (Şube ayarları › Hazır vardiyalar), yoksa bugünkü sabit saatler
+    loadShiftPresets(branch.id, db),
   ]);
   const thisWeek = weekParam(null, today);
   const href = (m: string, sube?: string) => `${VARDIYA_PATH}?hafta=${m}${sube ? `&sube=${encodeURIComponent(sube)}` : ""}`;
@@ -83,8 +109,8 @@ async function VardiyaContent({ searchParams }: { searchParams: PageProps<"/pane
       <PageHeader
         path={VARDIYA_PATH}
         role={user.role}
-        title={TITLE[user.role]}
-        description={DESCRIPTION[user.role]}
+        title={TITLE[view]}
+        description={DESCRIPTION[view]}
         more={canEdit ? MORE : undefined}
         actions={
           <>
@@ -108,8 +134,11 @@ async function VardiyaContent({ searchParams }: { searchParams: PageProps<"/pane
         {physical.length > 1 && !lock ? (
           <SegmentedLinks label="Şube" value={branch.id} options={physical.map((b) => ({ value: b.id, label: b.name, href: href(monday, b.id) }))} />
         ) : null}
+        {/* Şube değişince ızgara baştan kurulur (doldurma biçimi şubenin hazır vardiyasına göre açılır) */}
         <ShiftGrid
+          key={week.branch.id}
           branch={week.branch}
+          presets={presets}
           monday={monday}
           today={today}
           canEdit={canEdit}

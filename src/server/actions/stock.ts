@@ -9,7 +9,8 @@ import { countFactor } from "@/lib/calc/engine";
 import { zFormBranch } from "@/lib/branches";
 import { monthRowEmpty } from "@/lib/cash-month";
 import { isCountable } from "@/lib/ingredient-usage";
-import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireAdmin, requireCan } from "@/server/auth/dal";
 import { hasTillRowsIn } from "@/server/data/cash-reports";
 import { activeProductsUsing } from "@/server/data/ingredient-usage";
 import { lockExtras } from "@/server/data/stock-extras";
@@ -34,7 +35,7 @@ import { attempt, UserError, zMonth, zText } from "./util";
  */
 export async function saveStockCounts(month: string, entries: { ingredientId: number; qty: number | null; base?: number | null }[], branchId?: string | null) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const m = zMonth.parse(month);
     // Personel bu ayı, geçen ayı yalnız ayın ilk 10 gününde değiştirir (sayim/logic.ts staffCountIssue)
     const monthIssue = staffCountIssue(me.role, m);

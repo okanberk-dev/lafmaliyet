@@ -1,4 +1,5 @@
 import type { Role } from "@/lib/constants";
+import { adminLevel } from "@/lib/roles";
 
 /**
  * Zilin okunamayan bölümleri (denetim bulgu 88). Zil bölüm bölüm paralel okunur; Neon uyanırken bir okuma zaman aşımına
@@ -40,7 +41,7 @@ export type BellPart = keyof typeof PARTS;
 export type BellGroup = (typeof PARTS)[BellPart]["group"];
 
 /** Grubun "yüklenemedi" başlığı (zildeki grup adlarıyla: personelde Onaylar "İsteklerim") */
-const TITLE: Record<BellGroup, string | Record<Role, string>> = {
+const TITLE: Record<BellGroup, string | Record<"admin" | "staff", string>> = {
   sistem: "Sistem uyarıları yüklenemedi",
   hatirlatici: "Hatırlatıcılar yüklenemedi",
   onay: { admin: "Onaylar yüklenemedi", staff: "İstekleriniz yüklenemedi" },
@@ -50,7 +51,9 @@ const TITLE: Record<BellGroup, string | Record<Role, string>> = {
   uyari: "Uyarılar yüklenemedi",
 };
 
-const byRole = <T>(v: T | Record<Role, T>, role: Role): T => (typeof v === "object" && v !== null && "admin" in v ? (v as Record<Role, T>)[role] : (v as T));
+/** Rolün metni: yalnız yöneticinin metni ayrı, öteki her rol personelinkini alır (src/lib/roles.ts › adminLevel) */
+const byRole = <T>(v: T | Record<"admin" | "staff", T>, role: Role): T =>
+  typeof v === "object" && v !== null && "admin" in v ? (v as Record<"admin" | "staff", T>)[adminLevel(role)] : (v as T);
 
 /** Zil satırının şekli (src/server/actions/notifications.ts PanelNotification ile aynı) */
 export interface FailedBellRow {

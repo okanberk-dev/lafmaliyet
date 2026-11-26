@@ -13,7 +13,7 @@ import { monthName, quarterLabel } from "@/lib/tax/calendar";
 import { filingFor, filingValue } from "@/lib/tax/corporate";
 import { ADJUSTMENT_LABELS, adjustmentPeriodLabel } from "@/lib/tax/pnl";
 import { PAYROLL_FULL_MONTH_NOTE } from "@/lib/tax/payroll";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireCan } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { withBranchScope } from "@/server/branch-scope";
 import { loadTaxView } from "@/server/data/tax";
@@ -60,7 +60,8 @@ const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
  * göre"): eksik belge uyarısı, çeyreğin tablosu, köprü, KDV beyannamesi satışları, eksik belgeler ve düzeltmeler. Nakit planını okumaz (K30): model ve vergi girdileri yeter.
  */
 async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel/vergi/gelir-gider">["searchParams"] }) {
-  await requireAdmin();
+  // Yönetici ve muhasebeci (salt okunur; docs/ROLLER.md): muhasebecinin yazma denemesini eylemler reddeder
+  await requireCan("muhasebe.oku");
   const sp = await searchParams;
   const rawYear = pick(sp.yil);
   const rawQuarter = pick(sp.ceyrek);

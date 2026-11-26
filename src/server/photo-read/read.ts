@@ -15,6 +15,7 @@ import { KasaOkcRaw, KasaZRaw, ReceiptRaw } from "@/lib/photo-read/schemas";
 import { addDays } from "@/lib/reminders";
 import { extractImage, loadAiSettings, type AiErrorCode, type AiResult } from "@/server/ai/claude";
 import { OKC_EFFORT, OKC_MAX_TOKENS, RETRYABLE, type AiEffort, type AiImageType, type AiTimeouts } from "@/server/ai/run";
+import { opsLevel } from "@/lib/roles";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentTillBranch } from "@/server/branch-scope";
 import { cashOutCategories } from "@/server/data/cash-outs";
@@ -154,7 +155,7 @@ export async function readPhotoFor(
       const [prev, recentTotals] = await Promise.all([previousOkc(input.day), okcTypical(input.day)]);
       // Pavo gününde yalnız banka gün sonu okunduysa "Z'yi de çekin" denmez (Pavo ayrı mali Z basmaz; rakamlar LafPOS'tan)
       const full = okcReadingOnLafposDay(normalizeOkc(lafpos.raw, { day: input.day, prev, recentTotals }), lafpos.device);
-      const reading = input.me.role === "admin" ? full : toStaffReading(full);
+      const reading = opsLevel(input.me.role) === "admin" ? full : toStaffReading(full);
       return { reading: kind === "kasa-pos" ? okcToLegacyPos(reading) : reading, readError: null, readCode: null, canRetry: false };
     }
     const [prev, recentTotals, lafposDay, run] = await Promise.all([
@@ -176,11 +177,11 @@ export async function readPhotoFor(
     if (!res.ok) return failed(res.code, res.message);
     const normalized = normalizeOkc(res.data, { day: input.day, prev, recentTotals });
     const full = isLafposDay(input.day, lafposDay.switchDay) ? okcReadingOnLafposDay(normalized, lafposDay.device) : normalized;
-    const reading = input.me.role === "admin" ? full : toStaffReading(full);
+    const reading = opsLevel(input.me.role) === "admin" ? full : toStaffReading(full);
     return { reading: kind === "kasa-pos" ? okcToLegacyPos(reading) : reading, readError: null, readCode: null, canRetry: false };
   }
-  const staff = input.me.role !== "admin";
-  const [categories, recent] = await Promise.all([cashOutCategories(input.me.role), recentReceipts(input.day, staff)]);
+  const staff = opsLevel(input.me.role) !== "admin";
+  const [categories, recent] = await Promise.all([cashOutCategories(opsLevel(input.me.role)), recentReceipts(input.day, staff)]);
   const run = await twoStep({ task: RECEIPT_TASK(input.day, categories), schema: ReceiptRaw, problems: receiptReadProblems, stored: receiptToStore });
   const res = run.result;
   logPhotoRead({ photoId: input.photoId, kind, steps: run.steps, model: res.ok ? res.model : null, documentType: res.ok ? res.data.documentType : null, ok: res.ok });

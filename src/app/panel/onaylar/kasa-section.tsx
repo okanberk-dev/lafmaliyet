@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 
 import { closedEvidenceText } from "@/lib/closed-days";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { cashOutCategories } from "@/server/data/cash-outs";
 import { cashCounters } from "@/server/data/cash-reports";
@@ -18,8 +18,9 @@ import { KasaRequestCards } from "./kasa-cards";
  * şubesini adıyla söyler).
  */
 export async function KasaRequests() {
-  await requireAdmin();
-  const [cards, counters, categories] = await Promise.all([loadCashRequestQueue(undefined, await currentBranchScope()), cashCounters(), cashOutCategories("admin")]);
+  // Yönetici ve müdür (docs/ROLLER.md): müdürün kapsamı şubesine kilitli; şubesi bilinmeyen kart da müdüre gösterilmez
+  const me = await requireCan("onay");
+  const [cards, counters, categories] = await Promise.all([loadCashRequestQueue(undefined, await currentBranchScope(), me.role !== "admin"), cashCounters(), cashOutCategories("admin")]);
   if (!cards.length) return null;
   const siteSlots = Object.fromEntries(
     cards.flatMap((c) =>
@@ -40,7 +41,7 @@ export async function KasaRequests() {
 
 /** Sitenin o günkü, bildirilen şubenin sipariş sayıları (tutar yok); site okunamazsa bilgi satırı */
 async function ClosedDaySite({ day, branchId }: { day: string; branchId: string }) {
-  await requireAdmin();
+  await requireCan("onay");
   const site = await fetchSiteDayCounts(day, branchId);
   if (!site) return <p className="text-ink-mute">Sitenin o günkü siparişleri okunamadı (bağlantı kapalı ya da site yanıt vermedi).</p>;
   const lines = closedEvidenceText({ report: false, cashOuts: 0, waste: 0, checklists: 0, karaoke: 0, staffWrites: 0, zGap: null, opening: null, site });

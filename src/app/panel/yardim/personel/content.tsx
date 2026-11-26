@@ -510,8 +510,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             <StaffPath href="/panel/vardiya" /> ekranında haftanın planı durur: üstte <B>Benim haftam</B> (gün gün saatleriniz ve haftalık toplam), altında bütün ekip.{" "}
-            <B>Önceki</B> ve <B>Sonraki</B> ile başka haftaya geçin, <B>PDF</B> ile planı açıp telefonunuza kaydedin. Planı yönetici yazar; değişmesi gereken bir gün
-            varsa yöneticiye söyleyin.
+            <B>Önceki</B> ve <B>Sonraki</B> ile başka haftaya geçin, <B>PDF</B> ile planı açıp telefonunuza kaydedin. Plan şube şubedir: hesabınız bir şubeye bağlı
+            değilse ve soldan “Tümü” seçiliyse önce şubeyi seçersiniz. Planı yönetici yazar; değişmesi gereken bir gün varsa yöneticiye söyleyin.
           </>
         ),
         icon: CalendarClock,

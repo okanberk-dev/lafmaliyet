@@ -6,7 +6,7 @@ import { KasaText } from "@/components/panel/kasa-text";
 import { PageHeader } from "@/components/panel/page-header";
 import { PosChecklist } from "@/components/panel/pos-checklist";
 import { PageSkeleton } from "@/components/ui/misc";
-import { requireUser } from "@/server/auth/dal";
+import { requireCan } from "@/server/auth/dal";
 import { loadMyPosMarks, loadStaffPosList } from "@/server/data/pos-staff";
 import { loadTillScopes } from "@/server/data/till-scope";
 
@@ -40,7 +40,8 @@ export default function StaffPosPage() {
 }
 
 async function StaffPosContent() {
-  const me = await requireUser();
+  // Muhasebeci giremez (işaretleme yazar; proxy de döndürür)
+  const me = await requireCan("kayit.yaz");
   if (me.role === "admin") redirect("/panel/urunler/fiyatlar?sekme=kasa");
   const now = new Date();
   // Kasa şube başınadır (şube kapsamı A3): seçili şubenin (kilitli personelde kendi şubesinin) kasası; "Tümü"de birden çok

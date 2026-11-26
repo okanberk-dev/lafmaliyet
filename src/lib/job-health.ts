@@ -252,7 +252,7 @@ export function digestStep(r: { status: "sent" | "skipped" | "error"; off?: "dis
     return {
       code: "norecipient",
       error: r.blocked
-        ? `gönderilecek bir şey vardı ama etkin bildirim adreslerinin hepsi personel ya da pasif hesaba ait: ${r.blocked}`
+        ? `gönderilecek bir şey vardı ama etkin bildirim adreslerinin hepsi personel, müdür ya da pasif hesaba ait: ${r.blocked}`
         : "gönderilecek bir şey vardı ama etkin bildirim adresi yok",
     };
   }

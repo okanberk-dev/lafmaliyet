@@ -20,6 +20,7 @@ import { effectiveSettings, parseCommissionSettings, type ChannelSettings } from
 import { DEFAULT_SETTINGS, readLafposSwitchDay } from "@/lib/constants";
 import { LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
 import { clockSuffixTR } from "@/lib/reminders";
+import { PRESET_KEYS, PRESET_LABELS, presetText, shiftPresetsError, validPresetMinutes, type SavedShiftPreset } from "@/lib/vardiya";
 
 type Env = Record<string, string | undefined>;
 
@@ -316,6 +317,46 @@ export const BLIND_COUNT_GROUP: BranchSettingGroup<BlindCountSetting> = {
   summary: (v) => (v.enabled === null ? "varsayılan" : v.enabled ? "açık" : "kapalı"),
 };
 
+/** Şubenin hazır vardiyaları (sabahçı / akşamcı) */
+export interface ShiftPresetSetting extends Record<string, unknown> {
+  /**
+   * Kaydedilmiş saatler (sıra sabahçı, akşamcı; boş liste: şubede hazır vardiya yok); null: hiç seçilmedi, bugünkü sabit
+   * saatler geçer (src/lib/vardiya.ts SHIFT_PRESETS: Tuzla ve Marina'nınki, öbür şubede yok). Çözüm shiftPresetsOf
+   */
+  presets: SavedShiftPreset[] | null;
+}
+
+/** Kayıttaki liste: tanınan anahtar ve geçerli saatler (bozuk öğe atlanır, anahtar başına bir); dizi değilse null */
+function readShiftPresets(v: unknown): SavedShiftPreset[] | null {
+  if (!Array.isArray(v)) return null;
+  const out: SavedShiftPreset[] = [];
+  for (const key of PRESET_KEYS) {
+    const p = v.find((x): x is Record<string, unknown> => !!x && typeof x === "object" && (x as Record<string, unknown>).key === key);
+    if (p && validPresetMinutes(p.startMin, p.endMin)) out.push({ key, startMin: p.startMin as number, endMin: p.endMin as number });
+  }
+  // Aynı saatli ikinci vardiya okunmaz (ad saatlerden türer; yazım bunu zaten reddeder)
+  return shiftPresetsError(out) ? out.slice(0, 1) : out;
+}
+
+/**
+ * Hazır vardiyalar (docs/VARDIYA.md › Hazır vardiyalar; 26 Kasım 2026): Vardiya ekranındaki S (sabahçı) ve A
+ * (akşamcı) düğmelerinin, "s" / "a" kısaltmasının, yazarak doldurmanın ve PDF'in saatleri. Saatler şubenin açılışına
+ * bağlıdır: "aynı" sunulmaz (Tuzla ile Marina'nın saatleri bugün de ayrı; örtük "aynı" Marina'nın saatlerini
+ * değiştirirdi). Eski kayıt yok: seçilmemişken bugünkü sabit saatler (SHIFT_PRESETS)
+ */
+export const SHIFT_PRESET_GROUP: BranchSettingGroup<ShiftPresetSetting> = {
+  id: "vardiya.hazir",
+  label: "Hazır vardiyalar",
+  description: "Vardiya ekranında S (sabahçı) ve A (akşamcı) düğmelerinin yazdığı saatler.",
+  linkable: false,
+  legacy: "default",
+  legacyKey: null,
+  secretFields: [],
+  read: (raw) => ({ presets: readShiftPresets(raw.presets) }),
+  summary: (v) =>
+    v.presets === null ? "varsayılan saatler" : v.presets.length ? v.presets.map((p) => `${PRESET_LABELS[p.key]} ${presetText(p)}`).join(" · ") : "hazır vardiya yok",
+};
+
 /** Şube başına tutulan gruplar (sıra Şube ayarları ekranının sırası) */
 export const BRANCH_SETTING_GROUPS = [
   CASH_REPORT_GROUP,
@@ -327,6 +368,7 @@ export const BRANCH_SETTING_GROUPS = [
   CALENDAR_GROUP,
   TILL_DEVICE_GROUP,
   BLIND_COUNT_GROUP,
+  SHIFT_PRESET_GROUP,
 ] as const;
 
 export type BranchSettingGroupId = (typeof BRANCH_SETTING_GROUPS)[number]["id"];
@@ -338,13 +380,12 @@ export function branchSettingGroup(id: string): BranchSettingGroup | null {
 /**
  * Henüz bütün şubelerde ortak olan ama şubeye göre değişebilecek ayarlar. Şube ayarları ekranı bunları "şimdilik ortak"
  * diye adıyla söyler: sahip hangisinin şubeye göre değişmediğini bilir. Uyarı sesi saatleri tarayıcıda ve bildirim
- * işçisinde (public/sw.js) sabit, kontrol listesi hatırlatmaları tek bir dilim takvimiyle gider; hazır vardiya saatleri
- * vardiya PR'ı (#120) birleştikten sonra
+ * işçisinde (public/sw.js) sabit, kontrol listesi hatırlatmaları tek bir dilim takvimiyle gider. Hazır vardiya saatleri
+ * 26 Kasım 2026'dan beri şube başına (SHIFT_PRESET_GROUP)
  */
 export const SHARED_FOR_NOW: readonly { id: string; label: string }[] = [
   { id: "uyari.saatleri", label: "Uyarı sesi saatleri (09:00–01:00)" },
   { id: "kontrol.saatleri", label: "Kontrol listesi hatırlatma saatleri" },
-  { id: "vardiya.hazir", label: "Hazır vardiya saatleri" },
 ];
 
 /**

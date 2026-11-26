@@ -765,7 +765,7 @@ test("kaynak: doldurma ekranı eylem atılırsa (ağ kesik, panel güncellendi) 
 test("kaynak: yönetici sayfaları ve eylemleri requireAdmin; işaretleme requireUser; 'use server' dosyası yalnız eylem dışa açar", () => {
   // Geçmiş iki rolde açık (dalga 10 §2.5): personel son 7 günü görür, pencere sunucuda (historyRange)
   const history = read("src/app/panel/kontrol/gecmis/page.tsx");
-  assert.match(history, /const user = await requireUser\(\);/);
+  assert.match(history, /const user = adminActor\(await requireCan\("kayit\.yaz"\)\);/);
   assert.doesNotMatch(history, /requireAdmin/);
   assert.match(history, /historyRange\(\{ role: user\.role,/);
   assert.match(history, /<KontrolTabs current="\/panel\/kontrol\/gecmis" role=\{user\.role\} \/>/);
@@ -773,8 +773,8 @@ test("kaynak: yönetici sayfaları ve eylemleri requireAdmin; işaretleme requir
   assert.match(history, /audit=\{admin\}/);
   assert.match(read("src/app/panel/kontrol/duzenle/page.tsx"), /await requireAdmin\(\)/);
   assert.match(read("src/app/panel/kontrol/duzenle/[id]/page.tsx"), /await requireAdmin\(\)/);
-  assert.match(read("src/app/panel/kontrol/page.tsx"), /await requireUser\(\)/);
-  assert.match(read("src/app/panel/kontrol/[id]/page.tsx"), /await requireUser\(\)/);
+  assert.match(read("src/app/panel/kontrol/page.tsx"), /await requireCan\("kayit\.yaz"\)/);
+  assert.match(read("src/app/panel/kontrol/[id]/page.tsx"), /await requireCan\("kayit\.yaz"\)/);
   const src = read("src/server/actions/checklists.ts");
   assert.ok(src.startsWith('"use server";'));
   const exported = [...src.matchAll(/^export (async function|const|function|class|let|type|interface) (\w+)/gm)];
@@ -783,7 +783,7 @@ test("kaynak: yönetici sayfaları ve eylemleri requireAdmin; işaretleme requir
     assert.equal(kind, "async function", `${name} dışa açık bir POST ucu olur: yalnız eylem`);
     const body = src.slice(src.indexOf(`export async function ${name}(`)).split(/\nexport async function /)[0];
     if (name === "answerChecklistItem") {
-      assert.match(body, /await requireUser\(\)/);
+      assert.match(body, /await requireCan\("kayit\.yaz"\)/);
       assert.doesNotMatch(body, /requireAdmin/);
     } else {
       assert.match(body, /await requireAdmin\(\)/, `${name} requireAdmin`);

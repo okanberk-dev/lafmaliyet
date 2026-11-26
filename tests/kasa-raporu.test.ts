@@ -449,7 +449,7 @@ test("varsayılan alıcılar ortamdan: ayrıştırılır, yoksa boş", () => {
 
 test("yetki: personel bugünü ve dünü gönderir, silme ve ayarlar yöneticinin; varsayılan alıcılar", () => {
   const src = readFileSync(join(process.cwd(), "src/server/actions/cash-report.ts"), "utf8");
-  assert.match(src, /export async function submitCashReport[\s\S]*?requireUser\(\)[\s\S]*?saveCashReport\(getDb\(\), me, data\)/);
+  assert.match(src, /export async function submitCashReport[\s\S]*?requireCan\("kayit\.yaz"\)[\s\S]*?saveCashReport\(getDb\(\), asActor\(me, opsLevel\(me\.role\)\), data\)/);
   // Yazım yolu ayrı (sunucu eylemi olmayan) modülde: personel kuralı ve sürüm denetimi orada
   const store = readFileSync(join(process.cwd(), "src/server/cash/report-store.ts"), "utf8");
   assert.match(store, /export async function saveCashReport[\s\S]*?me\.role !== "admin" && !staffCanReport\(data\.date, now\)/);
@@ -717,7 +717,7 @@ test("kilit her yerde aynı kural: rapor eylemi, kasa sayfası, kasadan çıkanl
   assert.match(read("src/server/cash-outs/guard.ts"), /staffDayOpen\(date, tx, now, /);
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /staffDayEditable\(date, \{ hasReport: Boolean\(report\), laterReport: next !== null \}\)/);
-  assert.match(page, /const canEdit = admin \|\| staffOpen;/);
+  assert.match(page, /const canEdit = !readOnly && \(admin \|\| staffOpen\);/);
 });
 
 test("kapanmış gün: personel fotoğrafları görmez (küçük resim ve büyütme yok, /api/foto 403 vermesin); WhatsApp satırları kalır", () => {

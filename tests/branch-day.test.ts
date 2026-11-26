@@ -126,8 +126,10 @@ test("kasa farkı: 1 ₺'den küçükse söylenmez", () => {
 test("kaynak: kart yalnız yöneticiye; yükleyici kapsam süzgecini değil şube kimliğini kullanır", () => {
   const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
   const page = read("src/app/panel/bugun/page.tsx");
-  assert.match(page, /user\.role === "admin" \? safe\(loadBranchDay\(\)\) : Promise\.resolve\(null\)/);
+  // Yönetici ve müdür (müdürde yalnız şubesinin satırı; docs/ROLLER.md)
+  assert.match(page, /can\(user\.role, "rapor\.sube"\) \? safe\(loadBranchDay\(\)\) : Promise\.resolve\(null\)/);
   const loader = read("src/server/data/branch-day.ts");
-  assert.match(loader, /await requireAdmin\(\)/);
+  assert.match(loader, /await requireCan\("rapor\.sube"\)/);
+  assert.match(loader, /lock === null \|\| b\.id === lock/);
   assert.doesNotMatch(loader, /currentBranchWhere/);
 });

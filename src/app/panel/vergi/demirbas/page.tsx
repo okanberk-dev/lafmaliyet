@@ -11,7 +11,7 @@ import { dateTR, money } from "@/lib/format";
 import { ASSET_KIND_LABELS, ASSET_METHOD_LABELS, assetRows, lifeMissingText, lineAssetCandidates, parseInvoiceLabel, QUARTER_DEPRECIATION_LABELS } from "@/lib/tax/assets";
 import { quarterLabel } from "@/lib/tax/calendar";
 import { rulesFor } from "@/lib/tax/rules";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireCan } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { withBranchScope } from "@/server/branch-scope";
 import { loadTaxView } from "@/server/data/tax";
@@ -54,7 +54,8 @@ const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
  * demirbaşlar. Ekranda "varlık" yerine "demirbaş" (yalnız söz; veri ve dışa aktarım aynı). Nakit planını okumaz (K30).
  */
 async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/panel/vergi/demirbas">["searchParams"] }) {
-  await requireAdmin();
+  // Yönetici ve muhasebeci (salt okunur; docs/ROLLER.md): muhasebecinin yazma denemesini eylemler reddeder
+  await requireCan("muhasebe.oku");
   const sp = await searchParams;
   const rawYear = pick(sp.yil);
   // Vergi işletmenindir: şube seçiciden bağımsız, bütün şubeler okunur (docs/SUBE.md › Neyi süzer)

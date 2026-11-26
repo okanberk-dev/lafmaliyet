@@ -49,11 +49,12 @@ async function adminCategoryOf(tx: CashOutTx, cashOutId: number): Promise<boolea
  * satır kilitlendikten sonra çağrılır: aynı anda gelen yazımla aynı olgulara bakar.
  */
 export async function staffCashOutGate(tx: CashOutTx, me: CashOutActor, target: CashOutTarget, now: Date = new Date()): Promise<"direct" | "request"> {
-  if (me.role === "admin") return "direct";
-  // Var olan satır (düzeltme, silme, istek, fiş): şubesine kilitli personel yalnız kendi şubesinin satırına dokunur.
-  // Satır kimliğiyle gelir; yalnız günün açıklığına bakmak başka şubenin açık gününü açıyordu (21 Kasım denetimi #14)
+  // Var olan satır (düzeltme, silme, istek, fiş): şubesine kilitli personel ve müdür yalnız kendi şubesinin satırına
+  // dokunur. Satır kimliğiyle gelir; yalnız günün açıklığına bakmak başka şubenin açık gününü açıyordu (21 Kasım denetimi
+  // #14). Kilit oturumdan okunur: müdür buraya "admin" düzeyinde gelir (src/lib/roles.ts › opsLevel), şubesi yine kilitli
   const refusal = target.op === "ekle" ? null : await staffBranchRefusal(me, target.row.branchId);
   if (refusal) throw new UserError(refusal);
+  if (me.role === "admin") return "direct";
   const date = target.op === "ekle" ? target.date : target.row.date;
   // LafPOS gününe personel satır eklemez (sahibin kararı, 24 Kasım 2026; staffLafposEntryClosed): kasadan çıkanlar LafPOS'un
   // kasa hareketlerinden gelir. Doğrudan ekleme, ekleme isteği ve satırı başka güne taşıma buradan geçer. Düzeltme ve fiş

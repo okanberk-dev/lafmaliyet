@@ -360,13 +360,15 @@ test("kaynak: eylemler kendi oturumunu ve rolünü denetler; yardımcı dışa v
   assert.match(closedActions, /^"use server";/);
   assert.deepEqual([...closedActions.matchAll(/^export (?:async function|function|const) (\w+)/gm)].map((m) => m[1]).sort(), ["markClosedDay", "requestClosedDay", "reviewClosedDay"]);
   const body = (src: string, name: string) => src.slice(src.indexOf(`export async function ${name}`));
-  assert.match(body(closedActions, "requestClosedDay"), /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*const me = await requireUser\(\);\s*if \(me\.role === "admin"\) throw new UserError/);
-  for (const n of ["reviewClosedDay", "markClosedDay"]) assert.match(body(closedActions, n), /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*const me = await requireAdmin\(\);/);
+  // Müdür yöneticinin düzeyinde: istek açmaz, doğrudan işaretler (opsLevel; docs/ROLLER.md)
+  assert.match(body(closedActions, "requestClosedDay"), /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*const me = await requireCan\("kayit\.yaz"\);\s*(?:\/\/[^\n]*\n\s*)*if \(opsLevel\(me\.role\) === "admin"\) throw new UserError/);
+  assert.match(body(closedActions, "reviewClosedDay"), /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*(?:\/\/[^\n]*\n\s*)*const me = await requireCan\("onay"\);/);
+  assert.match(body(closedActions, "markClosedDay"), /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*const me = await requireCan\("isletme\.yonet"\);/);
   const special = read("src/server/actions/special-days-staff.ts");
   assert.match(special, /^"use server";/);
   assert.deepEqual([...special.matchAll(/^export (?:async function|function|const) (\w+)/gm)].map((m) => m[1]).sort(), ["deleteStaffSpecialDay", "saveStaffSpecialDay"]);
   for (const n of ["saveStaffSpecialDay", "deleteStaffSpecialDay"]) {
-    assert.match(body(special, n), /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*const me = await requireUser\(\);\s*if \(me\.role === "admin"\) throw new UserError/);
+    assert.match(body(special, n), /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;\s*if \(me\.role === "admin"\) throw new UserError/);
   }
   // Personelin özel gün dönüşü yalnız kimlik; tutar ve tahmin yok
   assert.match(body(special, "saveStaffSpecialDay"), /return \{ id: out\.id \};/);

@@ -38,12 +38,12 @@ function walk(dir: string): string[] {
 
 const PAGES = [`${DIR}/page.tsx`, `${DIR}/gelir-gider/page.tsx`, `${DIR}/demirbas/page.tsx`, `${DIR}/kurallar/page.tsx`];
 
-test("dört vergi sayfası: yönetici denetimi sayfanın kendisinde, yükleme dosyası yok, Segmented yok", () => {
+test("dört vergi sayfası: yetki denetimi (yönetici ve salt okunur muhasebeci) sayfanın kendisinde, yükleme dosyası yok, Segmented yok", () => {
   const files = walk(DIR);
   assert.deepEqual(files.filter((f) => f.endsWith("/page.tsx")).sort(), [...PAGES].sort());
   for (const p of PAGES) {
     const src = read(p);
-    assert.match(src, /await requireAdmin\(\);/, p);
+    assert.match(src, /await requireCan\("muhasebe\.oku"\);/, p);
     // Yükleme: başlık ve iskeletli Suspense (panelin kalıbı)
     assert.match(src, /<Suspense\s+fallback=\{/, p);
     assert.match(src, /<PageSkeleton/, p);

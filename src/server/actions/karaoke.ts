@@ -24,7 +24,8 @@ import { extensionWindow, overlapConflict, siteOverlaps, type OverlapAction, typ
 import { reminderPlanned } from "@/lib/karaoke/reminder";
 import { DESK_BLOCK_CHANNEL, durationLabel, trClock } from "@/lib/karaoke/session";
 import { KARAOKE_ELSEWHERE } from "@/lib/branches";
-import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireAdmin, requireCan } from "@/server/auth/dal";
 import { staffBranchRefusal } from "@/server/branch-scope";
 import { karaokeBranchId } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
@@ -123,7 +124,7 @@ async function assertKaraokeBranch(me: { role: string }) {
  */
 export async function startKaraokeTimer(input: z.input<typeof timerSchema>): Promise<ActionResult<{ id: number; conflict?: undefined } | { id?: undefined; conflict: OverlapConflict }>> {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     await assertKaraokeBranch(me);
     const data = timerSchema.parse(input);
     const now = new Date();
@@ -169,7 +170,7 @@ export async function extendKaraokeSession(
   opts: { force?: boolean } = {},
 ): Promise<ActionResult<{ extraMinutes: number; conflict?: undefined } | { extraMinutes?: undefined; conflict: OverlapConflict }>> {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     await assertKaraokeBranch(me);
     const sid = zId.parse(id);
     const add = z.number().int().min(5).max(240).parse(minutes);
@@ -206,7 +207,7 @@ export async function extendKaraokeSession(
  */
 export async function endKaraokeSession(id: number) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     await assertKaraokeBranch(me);
     const sid = zId.parse(id);
     const row = await endKaraokeCore(getDb(), me, sid);
@@ -221,7 +222,7 @@ export async function endKaraokeSession(id: number) {
  */
 export async function reopenKaraokeSession(id: number) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     await assertKaraokeBranch(me);
     const sid = zId.parse(id);
     await reopenKaraokeCore(getDb(), me, sid);
@@ -237,7 +238,7 @@ export async function reopenKaraokeSession(id: number) {
  */
 export async function deleteKaraokeTimer(id: number) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     await assertKaraokeBranch(me);
     const sid = zId.parse(id);
     const out = await removeKaraokeTimerCore(getDb(), me, sid);
@@ -263,7 +264,7 @@ const deleteRequestSchema = z.object({
  */
 export async function requestKaraokeTimerDelete(input: z.input<typeof deleteRequestSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     await assertKaraokeBranch(me);
     if (me.role === "admin") throw new UserError("Yönetici doğrudan siler; istek gerekmez");
     const data = deleteRequestSchema.parse(input);
@@ -287,7 +288,7 @@ const reviewSchema = z.object({
  */
 export async function reviewKaraokeDeleteRequest(input: z.input<typeof reviewSchema>) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = adminActor(await requireAdmin());
     const data = reviewSchema.parse(input);
     const out = await reviewKaraokeDeleteCore(getDb(), me, data);
     refresh();
@@ -338,7 +339,7 @@ async function planDeskReminder(data: DeskData, knownId: string | null, by: stri
  */
 export async function addDeskKaraoke(input: DeskInput): Promise<ActionResult<DeskAddResult>> {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     await assertKaraokeBranch(me);
     const parsed = deskInputSchema.safeParse(input);
     if (!parsed.success) return { problem: { ...deskIssue(parsed.error), uncertain: false } };
@@ -373,7 +374,7 @@ export async function addDeskKaraoke(input: DeskInput): Promise<ActionResult<Des
  */
 export async function removeDeskKaraoke(id: number): Promise<ActionResult<{ kind: DeskKind; when: string; already: boolean }>> {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     await assertKaraokeBranch(me);
     const sid = zId.parse(id);
     const row = await getSession(sid);
@@ -404,7 +405,7 @@ export async function removeDeskKaraoke(id: number): Promise<ActionResult<{ kind
 /** "Şimdi eşitle": siteden hemen çeker */
 export async function syncKaraokeNow() {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     await assertKaraokeBranch(me);
     const r = await syncKaraoke("manual");
     // Kurulum ayrıntısı (anahtar adı, imza, sitenin sürümü) yalnız yöneticiye; personel Eşitle'de kısa söz görür

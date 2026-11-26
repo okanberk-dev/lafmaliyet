@@ -10,7 +10,7 @@ import { money } from "@/lib/format";
 import { todayTR } from "@/lib/reminders";
 import { accountantCheck, accountantChecksFor, checkDoneText, checksChipText, checkStatus } from "@/lib/tax/checks";
 import { allRules, INFO_STATUS_LABELS, overrideAllowed, overrideText, RULE_GROUPS, RULES_CHECK_NOTE, RULES_COMPILED_AT, rulesCompiledText, rulesFor, rulesStaleNotes, ruleValueText } from "@/lib/tax/rules";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireCan } from "@/server/auth/dal";
 import { loadSettings } from "@/server/data/dataset";
 import { loadTaxSettings } from "@/server/data/tax";
 
@@ -51,7 +51,8 @@ const dmy = (d: string) => d.split("-").reverse().join(".");
  * ayarlarını ve Ayarlar'ı (işveren SGK oranı, "Panelin varsaydığı" için; VG-05) okur (K30): model ve nakit planı yok.
  */
 async function TaxRulesContent() {
-  await requireAdmin();
+  // Yönetici ve muhasebeci (salt okunur; docs/ROLLER.md): muhasebecinin yazma denemesini eylemler reddeder
+  await requireCan("muhasebe.oku");
   const [settings, appSettings] = await Promise.all([loadTaxSettings(), loadSettings()]);
   const today = todayTR();
   const year = Number(today.slice(0, 4));

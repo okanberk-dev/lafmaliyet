@@ -4,7 +4,8 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { WITHDRAW_LOG } from "@/lib/staff-requests";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { getDb } from "@/server/db";
 import { withdrawRequestCore } from "@/server/karaoke/timer";
 
@@ -23,7 +24,7 @@ import { attempt } from "./util";
  */
 export async function withdrawStaffRequest(id: number) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const rid = z.number().int().positive().parse(id);
     const { row, traced } = await withdrawRequestCore(getDb(), me, rid);
     if (!traced) await logActivity(me, WITHDRAW_LOG[row.kind], row.title);

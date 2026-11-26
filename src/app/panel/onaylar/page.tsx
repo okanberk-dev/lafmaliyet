@@ -13,7 +13,7 @@ import { PACKAGING_CATEGORY } from "@/lib/constants";
 import { num } from "@/lib/format";
 import { isUnpriced } from "@/lib/count-item";
 import { estimateNames, negativeQtyIssue, proposalGroupKey, qtyLabel, sameRecipe, type RecipeSnapshot } from "@/lib/recipe-change";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireAdmin, requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadModelOnce } from "@/server/data/model-once";
@@ -50,27 +50,50 @@ export default function ApprovalsPage() {
           </ButtonLink>
         }
       />
-      <div className="space-y-6">
+      <Suspense fallback={<PageSkeleton rows={6} />}>
+        <ApprovalSections />
+      </Suspense>
+    </>
+  );
+}
+
+/**
+ * Rolün bölümleri (docs/ROLLER.md): müdür yalnız şubesinin kasa ve zayi / ikram isteklerini karara bağlar (bölümler
+ * kendi `requireCan("onay")`'ıyla, kartlar şubesine süzülür); öbür şubelerin sayısı, karaoke istekleri, reçete önerileri
+ * ve son kararlar yöneticinin
+ */
+async function ApprovalSections() {
+  const me = await requireCan("onay");
+  const admin = me.role === "admin";
+  return (
+    <div className="space-y-6">
+      {admin ? (
         <Suspense fallback={null}>
           <OtherBranchRequests />
         </Suspense>
-        <Suspense fallback={null}>
-          <KasaRequests />
-        </Suspense>
-        <Suspense fallback={null}>
-          <OpsRequests />
-        </Suspense>
-        <Suspense fallback={null}>
-          <KaraokeRequests />
-        </Suspense>
-        <Suspense fallback={<PageSkeleton rows={6} />}>
-          <ApprovalsContent />
-        </Suspense>
-        <Suspense fallback={null}>
-          <RecentDecisions />
-        </Suspense>
-      </div>
-    </>
+      ) : null}
+      <Suspense fallback={null}>
+        <KasaRequests />
+      </Suspense>
+      <Suspense fallback={null}>
+        <OpsRequests />
+      </Suspense>
+      {admin ? (
+        <>
+          <Suspense fallback={null}>
+            <KaraokeRequests />
+          </Suspense>
+          <Suspense fallback={<PageSkeleton rows={6} />}>
+            <ApprovalsContent />
+          </Suspense>
+          <Suspense fallback={null}>
+            <RecentDecisions />
+          </Suspense>
+        </>
+      ) : (
+        <Notice tone="neutral" size="sm" title="Şubenizin kasa ve zayi / ikram istekleri" text="Reçete önerileri ve karaoke istekleri yöneticinin Onaylar'ında. Bekleyen istek yoksa bu sayfa boştur." />
+      )}
+    </div>
   );
 }
 

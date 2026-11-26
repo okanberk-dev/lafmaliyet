@@ -14,7 +14,7 @@ import { businessDate } from "@/lib/cash-report";
 import { money, monthLabel } from "@/lib/format";
 import { dayMonthTR } from "@/lib/reminders";
 import { HANDOVER_TEXT, ledgerByRecipient, ledgerTotal, type HandoverRow } from "@/lib/teslim";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { handoverFirstDate, handoverLedger } from "@/server/data/handover-ledger";
@@ -47,7 +47,8 @@ export default function HandoverLedgerPage({ searchParams }: PageProps<"/panel/k
 }
 
 async function HandoverLedgerContent({ searchParams }: { searchParams: PageProps<"/panel/kasa/teslim">["searchParams"] }) {
-  await requireAdmin();
+  // Yönetici ve müdür (müdürde yalnız şubesinin teslimleri: okumalar şube kapsamıyla, kapsamı kilitli)
+  await requireCan("isletme.yonet");
   const sp = await searchParams;
   const current = businessDate().slice(0, 7);
   const ay = pick(sp.ay);

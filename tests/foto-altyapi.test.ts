@@ -359,7 +359,7 @@ test("kaynak: Claude isteğinde düşünme / sıcaklık / ön doldurma yok; Blob
   const route = read("src/app/api/foto/[id]/route.ts");
   assert.match(route, /canViewPhoto\(/);
   assert.doesNotMatch(route, /redirect/i);
-  assert.match(read("src/server/storage/photo-access.ts"), /photoViewDecision\(me, photo, now\)/);
+  assert.match(read("src/server/storage/photo-access.ts"), /photoViewDecision\(\{ id: me\.id, role: adminLevel\(me\.role\) \}, photo, now\)/);
 
   const src = walk(join(ROOT, "src"));
   for (const f of src) {
@@ -409,7 +409,7 @@ test("uploadRule: yönetici her güne; personel Z / POS'u açık güne ya da ge�
   const rules = readFileSync(join(process.cwd(), "src/server/photo-read/rules.ts"), "utf8");
   assert.match(rules, /if \(rule === "open-or-late" && \(await staffLateDayOpen\(day\)\)\) return true;/);
   // Gün sonu tam (24 Kasım 2026): LafPOS gününün gün sonu fotoğrafı (yalnız yazarkasa bölümü) 14 güne kadar
-  assert.match(rules, /return \(kind === "kasa-okc" \|\| kind === "kasa-pos"\) && lafposPhotoDayOpen\(getDb\(\), day, await currentTillBranch\(\), me\.role\);/);
+  assert.match(rules, /return \(kind === "kasa-okc" \|\| kind === "kasa-pos"\) && lafposPhotoDayOpen\(getDb\(\), day, await currentTillBranch\(\), opsLevel\(me\.role\)\);/);
   assert.match(rules, /export async function staffLateDayOpen[\s\S]*?if \(!staffLateDay\(day\)\) return false;[\s\S]*?first\.date >= day \|\| same[\s\S]*?isClosedDay\(day, db, till\)/);
 });
 

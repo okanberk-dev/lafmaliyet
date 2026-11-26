@@ -9,11 +9,12 @@ import { z } from "zod";
 import { nameTakenBy, sameName } from "@/lib/activity-person";
 import { needsTwoFactorSetup, twoFactorSetupHref } from "@/lib/admin-security";
 import { PROFILE_LIST_REFUSAL, PROFILE_OWN_LIST_REFUSAL } from "@/lib/notify-recipients";
+import type { Role } from "@/lib/constants";
 import { canOpen, homeFor } from "@/lib/roles";
 import { WRONG_PASSWORD } from "@/lib/step-up";
 import { openPendingSecret, pendingSecret, SETUP_EXPIRED, SETUP_MAX, SETUP_STOPPED } from "@/lib/two-factor-setup";
 import { hashPassword, passwordProblem, verifyPassword } from "@/server/auth/password";
-import { clearPending, endSession, readDevice, readPending, rememberDevice, requireSignedIn, requireUser, startPending, startSession } from "@/server/auth/dal";
+import { clearPending, endSession, managerWithoutBranch, readDevice, readPending, rememberDevice, requireSignedIn, requireUser, startPending, startSession } from "@/server/auth/dal";
 import { clearDeviceAttempts, consumeRecoveryList, consumeTotpStep, DEVICE_MAX_FAILED, refundDeviceAttempt, reserveDeviceAttempt, type Reservation } from "@/server/auth/login-locks";
 import { clientIp, createLimiter, createLockout } from "@/server/auth/rate-limit";
 import { noteNewDevice } from "@/server/auth/new-device";
@@ -79,11 +80,14 @@ const loginSchema = z.object({
  * Girişten sonra gidilecek adres: yalnız panel içi ve rolün açabildiği bir ekran ya da Claude bağlantısının onay ekranı
  * (/baglan?istek=…), yoksa rolün ana sayfası
  */
-function safeNext(next: string | undefined, role: "admin" | "staff") {
+function safeNext(next: string | undefined, role: Role) {
   const fallback = homeFor(role);
   if (!next || !(next.startsWith("/panel") || next.startsWith("/baglan?")) || next.startsWith("//") || next.includes("\\")) return fallback;
   return canOpen(role, next.split(/[?#]/)[0]) ? next : fallback;
 }
+
+/** Şubesi olmayan ya da şubesi pasif müdürün girişi */
+const MANAGER_NO_BRANCH = "Müdür hesabınızın şubesi seçili değil ya da şube kapalı. Yöneticiden Kullanıcılar & roller'de şubenizi seçmesini isteyin.";
 
 const slow = () => new Promise((r) => setTimeout(r, 600));
 
@@ -232,6 +236,16 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     return fail(r.locked ? lockedMessage(r.locked) : WRONG);
   }
   loginIp.undo(ip);
+
+  // Müdür şubesine kilitli olmak zorunda (docs/ROLLER.md): şubesi yoksa ya da pasifse giriş açılmaz (oturum da geçmez,
+  // src/server/auth/dal.ts › managerWithoutBranch). Parola doğru: nedeni söylenir
+  if (user.role === "manager") {
+    const [b] = user.branchId ? await db.select({ active: s.branches.active }).from(s.branches).where(eq(s.branches.id, user.branchId)).limit(1) : [];
+    if (managerWithoutBranch({ role: user.role, branchId: user.branchId, branchActive: b?.active ?? null })) {
+      await refund(user.id, deviceId);
+      return fail(MANAGER_NO_BRANCH);
+    }
+  }
 
   if (user.totpEnabled && user.totpSecret) {
     await refund(user.id, deviceId);

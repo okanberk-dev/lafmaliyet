@@ -23,6 +23,8 @@ import {
   tillBranches,
 } from "@/lib/branches";
 
+import { BRANCH_ROLES } from "@/lib/roles";
+
 import { getCurrentUser } from "./auth/dal";
 import { listBranches } from "./branches";
 import { getDb, type DB } from "./db";
@@ -68,9 +70,20 @@ const requestUser = cache(async () => {
  */
 async function lockedBranch(branches: readonly BranchRow[]): Promise<string | null> {
   const user = await requestUser();
-  if (!user || user.role !== "staff" || !user.branchId) return null;
+  if (!user || !(BRANCH_ROLES as readonly string[]).includes(user.role) || !user.branchId) return null;
+  // Müdürün şubesi hep etkindir (değilse oturumu açılmaz: src/server/auth/dal.ts › managerWithoutBranch)
   return branches.some((b) => b.id === user.branchId && b.active) ? user.branchId : null;
 }
+
+/**
+ * Müdürün kilidi (docs/ROLLER.md): müdür öteki şubeyi HİÇBİR yoldan okuyamaz. Personelin kilidi seçimi ve yazımı
+ * belirler; müdürde ayrıca `withBranchScope("hepsi" ya da başka şube, …)` ile açılan okumalar da (işletme geneli
+ * kartlar, şubeleri yan yana koyan yükleyiciler) şubesine daraltılır (`currentBranchScope`). İstek dışında null.
+ */
+const managerLock = cache(async (): Promise<string | null> => {
+  const user = await requestUser();
+  return user?.role === "manager" && user.branchId ? user.branchId : null;
+});
 
 /** Şubesi seçilmiş personelin kilitli şubesi (seçim ucu bununla başka şubeye geçişi reddeder); yoksa null */
 export async function staffBranchLock(): Promise<string | null> {
@@ -84,8 +97,9 @@ export async function staffBranchLock(): Promise<string | null> {
  * açan her personel yolu buna sorar: başka şubenin kaydında metin (eylem UserError atar, fotoğraf kuralı görmez der),
  * yoksa null. Yönetici, şubesiz personel ve şubesi pasif personel serbest (`otherBranchError`).
  */
-export async function staffBranchRefusal(me: { role: string }, branchId: string | null | undefined): Promise<string | null> {
-  if (me.role === "admin") return null;
+export async function staffBranchRefusal(_me: { role: string }, branchId: string | null | undefined): Promise<string | null> {
+  // Kilit eyleme gelen role değil OTURUMA bakar: müdür çekirdeğe "admin" düzeyinde girer (src/lib/roles.ts › opsLevel),
+  // şubesi yine kilitlidir. Yöneticinin ve şubesiz personelin kilidi yok (null)
   const branches = await listBranches();
   return otherBranchError(branchId, branches, await lockedBranch(branches));
 }
@@ -127,7 +141,13 @@ const requestBranchScope = cache(async (): Promise<BranchScope> => {
 const scopeOverride = new AsyncLocalStorage<BranchScope>();
 
 export async function currentBranchScope(): Promise<BranchScope> {
-  return scopeOverride.getStore() ?? requestBranchScope();
+  const override = scopeOverride.getStore();
+  if (override !== undefined) {
+    // Müdür: işletme geneli ya da başka şubenin okuması kendi şubesine daralır (öteki şube hiç okunmaz)
+    const lock = await managerLock();
+    return lock ?? override;
+  }
+  return requestBranchScope();
 }
 
 /**

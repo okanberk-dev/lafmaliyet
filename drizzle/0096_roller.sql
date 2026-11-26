@@ -1,0 +1,2 @@
+ALTER TABLE "users" ADD CONSTRAINT "users_role_ck" CHECK ("users"."role" in ('admin','manager','staff','accountant'));--> statement-breakpoint
+ALTER TABLE "users" ADD CONSTRAINT "users_manager_branch_ck" CHECK ("users"."role" <> 'manager' or "users"."branch_id" is not null);

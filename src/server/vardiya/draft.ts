@@ -8,6 +8,7 @@ import { listBranches } from "@/server/branches";
 import { schema as s, type DB } from "@/server/db";
 import { UserError } from "@/server/user-error";
 
+import { loadShiftPresets } from "./presets";
 import { shiftBranches, shiftCandidate } from "./store";
 
 /** Vardiya ekranı için: yazarak doldurma kullanılabilir mi ("on" | "nokey" | "off" | "cap"); anahtarın kendisi dönmez */
@@ -45,7 +46,8 @@ export async function draftShiftWeek(db: DB, me: { id: number }, raw: DraftWeekI
     });
     return [{ ref, userId: uid !== null && byId.has(uid) ? uid : null, name, cells }];
   });
-  const ctx = { branch: { id: branch.id, name: branch.name }, monday, today: todayTR(now), people: draftPeople(rows) };
+  // Hazır vardiyalar şubenin ayarından (ekrandaki S / A düğmeleriyle aynı saatler)
+  const ctx = { branch: { id: branch.id, name: branch.name }, presets: await loadShiftPresets(branch.id, db), monday, today: todayTR(now), people: draftPeople(rows) };
   const res = await extractText({ userId: me.id, system: SHIFT_DRAFT_SYSTEM, task: shiftDraftTask(ctx, data.prompt), schema: ShiftDraftRaw });
   if (!res.ok) throw new UserError(res.message);
   // Yeni kişi adı ızgarada olmayan etkin bir hesabınkiyse o hesabın satırı olur ("Kişi ekle" ile aynı)

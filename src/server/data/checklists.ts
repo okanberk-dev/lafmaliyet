@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 
 import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
+import { adminActor, adminLevel, can } from "@/lib/roles";
 import { kontrolDigestBox, photoAccess, rangeText, valueText, whoText } from "@/lib/checklists";
 import { closedDayDigestLists } from "@/lib/closed-days";
 import { KEEP_DAYS } from "@/lib/photo-rules";
@@ -81,13 +82,13 @@ export function firstChecklistDay() {
  */
 export async function writeChecklistAnswer(me: CurrentUser, input: store.AnswerInput, now: Date) {
   const lock = await staffBranchLock();
-  return store.writeAnswer(getDb(), { ...me, lock }, input, now, { photos: photoStorage().available, linkPhoto: (id, until, tx) => keepPhoto(id, until, tx) });
+  return store.writeAnswer(getDb(), { ...adminActor(me), lock }, input, now, { photos: photoStorage().available, linkPhoto: (id, until, tx) => keepPhoto(id, until, tx) });
 }
 
 /** Fotoğraf yüklemeden önce hedef madde fotoğraf alır mı (almazsa ChecklistError); şube kilidi yazımdaki gibi */
 export async function checkPhotoTarget(me: CurrentUser, target: { templateId: number; date: string; itemId: number }, now: Date) {
   const lock = await staffBranchLock();
-  return store.checkPhotoTarget(getDb(), { ...me, lock }, target, now, photoStorage().available);
+  return store.checkPhotoTarget(getDb(), { ...adminActor(me), lock }, target, now, photoStorage().available);
 }
 
 /**
@@ -125,8 +126,10 @@ export async function logAnswerActivity(me: CurrentUser, r: store.WriteResult): 
 export const kontrolPhotoRules: PhotoKindRules = {
   keepDays: KEEP_DAYS.kontrol,
   async canView(me, photo) {
+    // Muhasebeci kontrol listelerini görmez
+    if (!can(me.role, "kayit.yaz")) return false;
     const [run, lock] = await Promise.all([store.photoRun(getDb(), photo.id), staffBranchLock()]);
-    return photoAccess({ role: me.role, userId: me.id, createdBy: photo.createdBy, run, lock, now: new Date() });
+    return photoAccess({ role: adminLevel(me.role), userId: me.id, createdBy: photo.createdBy, run, lock, now: new Date() });
   },
 };
 

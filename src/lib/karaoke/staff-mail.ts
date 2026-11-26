@@ -1,4 +1,6 @@
 
+import type { Role } from "../constants";
+import { isShiftRole } from "../roles";
 import { holdsRoom } from "./overlap";
 import { isBlock, trClock, type KaraokeSessionDTO } from "./session";
 
@@ -82,9 +84,10 @@ export const staffSoonKey = (s: Pick<StaffMailSession, "id" | "startsAt">) => `k
  * karaoke odasının şubesinin personeli (şube özelliği, src/lib/branch-features.ts › karaokeBranchOf). Başka şubeye kilitli
  * personel karaoke haberini almaz: o şubede karaoke yok. Karaoke hiçbir şubede açık değilse (`branchId` null) kimse
  */
-export function karaokeAudience<U extends { role: "admin" | "staff"; branchId: string | null }>(users: readonly U[], branchId: string | null): U[] {
+export function karaokeAudience<U extends { role: Role; branchId: string | null }>(users: readonly U[], branchId: string | null): U[] {
   if (branchId === null) return [];
-  return users.filter((u) => u.role === "admin" || u.branchId === null || u.branchId === branchId);
+  // Muhasebeci sahada değil (docs/ROLLER.md)
+  return users.filter((u) => u.role !== "accountant" && (u.role === "admin" || u.branchId === null || u.branchId === branchId));
 }
 
 /**
@@ -92,7 +95,7 @@ export function karaokeAudience<U extends { role: "admin" | "staff"; branchId: s
  * olsun); plan boşsa ya da plandakilerin hesabı yoksa karaoke odasının şubesindeki bütün etkin personel (kitle
  * `karaokeAudience`'ın personeli; şubesi boş olan bütün şubelerde çalışır).
  */
-export function staffMailRecipients<U extends { id: number; email: string; role: "admin" | "staff"; branchId: string | null }>(
+export function staffMailRecipients<U extends { id: number; email: string; role: Role; branchId: string | null }>(
   users: readonly U[],
   onShiftIds: readonly number[],
   branchId: string | null,
@@ -100,5 +103,5 @@ export function staffMailRecipients<U extends { id: number; email: string; role:
   const withMail = users.filter((u) => u.email.trim());
   const planned = withMail.filter((u) => onShiftIds.includes(u.id));
   if (planned.length) return planned;
-  return karaokeAudience(withMail, branchId).filter((u) => u.role === "staff");
+  return karaokeAudience(withMail, branchId).filter((u) => isShiftRole(u.role));
 }

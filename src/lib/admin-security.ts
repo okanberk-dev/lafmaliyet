@@ -14,6 +14,8 @@
  *   kısaltılmış IP ("85.105.12.x"); tam IP ve tarayıcı kimliği saklanmaz.
  */
 
+import { TWO_FACTOR_ROLES } from "./roles";
+
 /** İki adımlı kurulum ekranı (panelin dışında: kabuk, zil ve canlı veri yüklenmez) */
 export const TWO_FACTOR_SETUP_PATH = "/giris/iki-adim";
 
@@ -31,18 +33,21 @@ export function adminTwoFactorRequired(env: Readonly<Record<string, string | und
   return env[ADMIN_2FA_REQUIRED_ENV]?.trim() === "1" && env[ADMIN_2FA_OPTIONAL_ENV]?.trim() !== "1";
 }
 
-/** Bu rolde iki adımlı zorunlu mu (yönetici ve zorunluluk açık); Hesabım ve Kullanıcılar metinleri buna göre */
+/**
+ * Bu rolde iki adımlı zorunlu mu (rakam gören rol: yönetici, müdür, muhasebeci; src/lib/roles.ts › TWO_FACTOR_ROLES; ve
+ * zorunluluk açık); Hesabım ve Kullanıcılar metinleri buna göre. Personel ortak tablette sırayla girer: isteğe bağlı.
+ */
 export function twoFactorRequiredFor(role: string, required: boolean = adminTwoFactorRequired()): boolean {
-  return required && role === "admin";
+  return required && (TWO_FACTOR_ROLES as readonly string[]).includes(role);
 }
 
-/** Bu hesap panele girmeden önce iki adımlıyı kurmalı mı (yönetici, kapalı, zorunluluk açık) */
+/** Bu hesap panele girmeden önce iki adımlıyı kurmalı mı (zorunlu rol, kapalı, zorunluluk açık) */
 export function needsTwoFactorSetup(u: { role: string; totpEnabled: boolean }, required: boolean = adminTwoFactorRequired()): boolean {
   return twoFactorRequiredFor(u.role, required) && !u.totpEnabled;
 }
 
 /** Kurulum ekranının açıklaması */
-export const ADMIN_2FA_REQUIRED_TEXT = "Yönetici hesaplarında iki adımlı doğrulama zorunludur. Kurulum bitince panel açılır.";
+export const ADMIN_2FA_REQUIRED_TEXT = "Yönetici, müdür ve muhasebeci hesaplarında iki adımlı doğrulama zorunludur. Kurulum bitince panel açılır.";
 
 /**
  * Kullanıcılar › Güvenlik › İki adımlı doğrulamayı sıfırla (telefonunu kaybeden yönetici): zorunluyken kişi girişte
@@ -50,13 +55,13 @@ export const ADMIN_2FA_REQUIRED_TEXT = "Yönetici hesaplarında iki adımlı do�
  */
 export function twoFactorResetText(required: boolean): string {
   return required
-    ? "Telefonunu kaybeden yönetici için. Girişte parolanın ardından kurulum ekranı açılır: yeni telefonuyla hemen yeniden kurar, kurana kadar paneli kullanamaz."
+    ? "Telefonunu kaybeden yönetici, müdür ya da muhasebeci için. Girişte parolanın ardından kurulum ekranı açılır: yeni telefonuyla hemen yeniden kurar, kurana kadar paneli kullanamaz."
     : "Telefonunu kaybeden kullanıcı için. Girişte yalnızca parola istenir; kişi Hesabım'dan yeniden kurabilir.";
 }
 
 /** Hesabım'da kapatma penceresinin uyarısı (zorunluyken yönetici) */
 export const ADMIN_2FA_DISABLE_NOTE =
-  "Yönetici hesaplarında iki adımlı doğrulama zorunludur: kapatınca panel yerine kurulum ekranı açılır, yeniden kurana kadar paneli kullanamazsınız (telefon değiştirirken böyle yapılır).";
+  "Yönetici, müdür ve muhasebeci hesaplarında iki adımlı doğrulama zorunludur: kapatınca panel yerine kurulum ekranı açılır, yeniden kurana kadar paneli kullanamazsınız (telefon değiştirirken böyle yapılır).";
 
 /**
  * Kurulumdan sonra gidilecek adres: yalnız panel içi ya da Claude bağlantısının onay ekranı (girişin `safeNext`'inden
@@ -79,10 +84,10 @@ export const NEW_DEVICE_ACTION = "Yeni cihazdan giriş";
 export const NEW_DEVICE_BELL_DAYS = 7;
 
 /**
- * Yeni cihaz uyarısı bu hesaba gider mi: yalnız yönetici hesapları (istek yönetici hesapları içindi; personel ortak
+ * Yeni cihaz uyarısı bu hesaba gider mi: iki adımlısı zorunlu (rakam gören) hesaplar, yönetici, müdür, muhasebeci (istek yönetici hesapları içindi; personel ortak
  * tablette sırayla giriş yapar, her biri o tablette ilk girişinde uyarı alırdı)
  */
-export const alertsNewDevice = (u: { role: string }) => u.role === "admin";
+export const alertsNewDevice = (u: { role: string }) => (TWO_FACTOR_ROLES as readonly string[]).includes(u.role);
 
 /** "Chrome · Windows", "Safari · iPhone" (tarayıcı kimliğinin kendisi saklanmaz) */
 export function userAgentLabel(ua: string | null | undefined): string {

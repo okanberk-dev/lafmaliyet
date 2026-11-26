@@ -60,11 +60,11 @@ test("kaynak: doldurma ekranı kilitli personeli başka şubenin listesinden ger
 test("kaynak: yazım ve fotoğraf hedefi kilidi her çağrıda alır; veritabanı katmanı reddeder; fotoğraf kuralı kilide bakar", () => {
   const data = read("src/server/data/checklists.ts");
   const write = data.slice(data.indexOf("export async function writeChecklistAnswer("), data.indexOf("export async function checkPhotoTarget("));
-  assert.match(write, /const lock = await staffBranchLock\(\);\s*return store\.writeAnswer\(getDb\(\), \{ \.\.\.me, lock \}/);
+  assert.match(write, /const lock = await staffBranchLock\(\);\s*return store\.writeAnswer\(getDb\(\), \{ \.\.\.adminActor\(me\), lock \}/);
   const target = data.slice(data.indexOf("export async function checkPhotoTarget("), data.indexOf("export async function logAnswerActivity("));
-  assert.match(target, /const lock = await staffBranchLock\(\);\s*return store\.checkPhotoTarget\(getDb\(\), \{ \.\.\.me, lock \}/);
+  assert.match(target, /const lock = await staffBranchLock\(\);\s*return store\.checkPhotoTarget\(getDb\(\), \{ \.\.\.adminActor\(me\), lock \}/);
   assert.match(data, /const \[run, lock\] = await Promise\.all\(\[store\.photoRun\(getDb\(\), photo\.id\), staffBranchLock\(\)\]\);/);
-  assert.match(data, /photoAccess\(\{ role: me\.role, userId: me\.id, createdBy: photo\.createdBy, run, lock, now: new Date\(\) \}\)/);
+  assert.match(data, /photoAccess\(\{ role: adminLevel\(me\.role\), userId: me\.id, createdBy: photo\.createdBy, run, lock, now: new Date\(\) \}\)/);
 
   const store = read("src/server/checklists/store.ts");
   const guard = 'if (me.role !== "admin" && !branchLockAllows(tpl.branchId, me.lock)) throw new ChecklistError(OTHER_BRANCH_TEXT, 403);';

@@ -2,6 +2,7 @@ import { after, connection, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { MAX_PHOTO_BYTES, PHOTO_MIMES, UPLOADS_PER_HOUR, type PhotoMime } from "@/lib/photo-rules";
+import { can, READ_ONLY_TEXT } from "@/lib/roles";
 import { getCurrentUser } from "@/server/auth/dal";
 import { ChecklistError, checkPhotoTarget, logAnswerActivity, writeChecklistAnswer, type WriteResult } from "@/server/data/checklists";
 import { sameOrigin } from "@/server/same-origin";
@@ -35,6 +36,8 @@ export async function POST(request: NextRequest) {
   // Proxy /api/kontrol'ü kapsamaz: giriş burada
   const me = await getCurrentUser();
   if (!me) return Response.json({ error: "Oturum kapanmış; sayfayı yenileyip yeniden giriş yapın." }, { status: 401 });
+  // Muhasebeci salt okur (docs/ROLLER.md): fotoğraf yükleyemez
+  if (!can(me.role, "kayit.yaz")) return Response.json({ error: READ_ONLY_TEXT }, { status: 403 });
   // Gövde okunmadan: 2 MB'tan çok büyük istek belleğe alınmasın (form alanlarına pay bırakılır)
   if (Number(request.headers.get("content-length") ?? 0) > MAX_PHOTO_BYTES + 64 * 1024) return Response.json({ error: TOO_BIG }, { status: 413 });
   let form: FormData;

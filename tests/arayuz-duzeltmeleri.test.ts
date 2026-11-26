@@ -296,7 +296,7 @@ test("küçük gri metin kart zemininde AA'yı geçer; personel ortam değişken
   assert.doesNotMatch(board.slice(board.indexOf("async function pullOrders"), board.indexOf("function useManualPull")), /toast\./);
   const actions = read("src/server/actions/karaoke.ts");
   const sync = actions.slice(actions.indexOf("export async function syncKaraokeNow"));
-  assert.match(sync, /const me = await requireUser\(\);/);
+  assert.match(sync, /const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;/);
   assert.match(sync, /throw new UserError\(me\.role === "admin" \? r\.error : "laffogato\.net'e ulaşılamadı; sorun sürerse yöneticiye haber verin\."\)/);
   assert.doesNotMatch(sync.slice(0, sync.indexOf("\n}\n")), /throw new UserError\("laffogato\.net bağlantısı kurulmamış \(KARAOKE_SYNC_SECRET\)"\)/);
 });

@@ -15,6 +15,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.ONERI_TEST_DATABASE_URL ?? process.env.FIFO_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_yeni_urun_${process.pid}`;
@@ -54,7 +55,7 @@ describe("yeni ürün önerisinin onayı: veritabanında", { skip: !SERVER_URL &
     const [b] = await db.insert(s.users).values({ email: "ayse@laffogato.net", name: ayse.name, passwordHash: "x", role: "staff" }).returning({ id: s.users.id });
     ali.id = a.id;
     ayse.id = b.id;
-    stub(require.resolve("../src/server/auth/dal"), { requireUser: async () => ayse, requireAdmin: async () => ali });
+    stub(require.resolve("../src/server/auth/dal"), { requireUser: async () => ayse, requireAdmin: async () => ali, ...dalCapabilities(async () => ayse) });
     actions = await import("../src/server/actions/recipe-requests");
     pairs = (await import("../src/server/data/recipe-requests")).approvedNewPairs;
 

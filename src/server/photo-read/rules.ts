@@ -5,6 +5,7 @@ import { and, asc, eq, gte } from "drizzle-orm";
 import { businessDate, staffCanReport, staffDayEditable, staffLateDay } from "@/lib/cash-report";
 import { KEEP_DAYS, uploadRule, type PhotoKind } from "@/lib/photo-rules";
 import type { CurrentUser } from "@/server/auth/dal";
+import { can, opsLevel } from "@/lib/roles";
 import { currentTillBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { isClosedDay } from "@/server/closed-days";
 import { getDb, schema as s } from "@/server/db";
@@ -51,6 +52,8 @@ export const cashPhotoRules: PhotoKindRules = {
       .innerJoin(s.cashReports, eq(s.cashReports.id, s.cashReportPhotos.reportId))
       .where(eq(s.cashReportPhotos.photoId, photo.id))
       .limit(1);
+    // Rakam gören rol (müdür şubesinin, muhasebeci bütün şubelerin) raporun fotoğrafını her gün görür; kilit oturumdan
+    if (can(me.role, "kasa.rakam")) return Boolean(row && !(await staffBranchRefusal(me, row.branchId)));
     return Boolean(row && !(await staffBranchRefusal(me, row.branchId)) && (await staffDayOpen(row.date, undefined, undefined, row.branchId)));
   },
 };
@@ -64,6 +67,7 @@ export const receiptPhotoRules: PhotoKindRules = {
   async canView(me, photo) {
     if (me.role === "admin") return true;
     const [row] = await getDb().select({ date: s.cashOuts.date, branchId: s.cashOuts.branchId }).from(s.cashOuts).where(eq(s.cashOuts.photoId, photo.id)).limit(1);
+    if (can(me.role, "kasa.rakam")) return Boolean(row && !(await staffBranchRefusal(me, row.branchId)));
     return Boolean(row && !(await staffBranchRefusal(me, row.branchId)) && (await staffDayOpen(row.date, undefined, undefined, row.branchId)));
   },
 };
@@ -94,12 +98,14 @@ export async function staffLateDayOpen(day: string, db: Db | Tx = getDb(), branc
  */
 export async function canUploadPhoto(me: CurrentUser, kind: PhotoKind, day: string | null): Promise<boolean> {
   if (kind === "kontrol") return false; // kontrol listelerinin kendi yolu var
-  const rule = uploadRule(me.role, kind, day, businessDate());
+  // Muhasebeci salt okur: fotoğraf yükleyemez (docs/ROLLER.md)
+  if (!can(me.role, "kayit.yaz")) return false;
+  const rule = uploadRule(opsLevel(me.role), kind, day, businessDate());
   if (rule === "no" || !day) return false;
   if (rule === "yes") return true;
   if (await staffDayOpen(day)) return true;
   if (rule === "open-or-late" && (await staffLateDayOpen(day))) return true;
   // Gün sonu tam (24 Kasım 2026): LafPOS gününün gün sonu fotoğrafı (yazarkasa bölümü) günden 14 gün içinde, ertesi günün
   // raporu girilmiş olsa da (rakam değişmez; src/server/lafpos/foto.ts)
-  return (kind === "kasa-okc" || kind === "kasa-pos") && lafposPhotoDayOpen(getDb(), day, await currentTillBranch(), me.role);
+  return (kind === "kasa-okc" || kind === "kasa-pos") && lafposPhotoDayOpen(getDb(), day, await currentTillBranch(), opsLevel(me.role));
 }

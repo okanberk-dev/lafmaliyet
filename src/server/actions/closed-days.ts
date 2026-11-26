@@ -6,7 +6,9 @@ import { z } from "zod";
 
 import { CLOSED_REASON_MAX, CLOSED_TEXT, closedRequestBranch } from "@/lib/closed-days";
 import { longDateTR } from "@/lib/reminders";
-import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { asActor, opsLevel } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
+import { reviewBranchRefusal } from "@/server/staff-requests/branch";
 import { formTillBranch, withBranchScope } from "@/server/branch-scope";
 import { markClosedDayCore, proposeClosedDay, reviewClosedDayCore } from "@/server/closed-day-requests";
 import { getDb, schema as s } from "@/server/db";
@@ -35,12 +37,13 @@ const requestInput = z.object({ date: zDate, reason: zOptText(CLOSED_REASON_MAX)
 /** Personel: dün kafe kapalıydı (yöneticinin onayına gider). Dönüşte yalnız isteğin kimliği */
 export async function requestClosedDay(input: z.input<typeof requestInput>) {
   return attempt(async () => {
-    const me = await requireUser();
-    if (me.role === "admin") throw new UserError(CLOSED_TEXT.adminOnly);
+    const me = await requireCan("kayit.yaz");
+    // Yönetici ve müdür doğrudan işaretler (markClosedDay)
+    if (opsLevel(me.role) === "admin") throw new UserError(CLOSED_TEXT.adminOnly);
     const { branchId, ...d } = requestInput.parse(input);
     // Bildirim formun kasasına (başka sekmede seçici değiştiyse de): kanıt ve işaret o şubenin
     const till = await formTillBranch(branchId);
-    const out = await withBranchScope(till, () => proposeClosedDay(getDb(), me, d));
+    const out = await withBranchScope(till, () => proposeClosedDay(getDb(), asActor(me, "staff"), d));
     pushNewRequest(out);
     if (out.created) await logActivity(me, "Kapalı gün bildirildi", [longDateTR(d.date), d.reason].filter(Boolean).join(" · "));
     refresh();
@@ -61,10 +64,13 @@ const reviewInput = z.object({
  */
 export async function reviewClosedDay(input: z.input<typeof reviewInput>) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    // Yönetici ve müdür (yalnız şubesinin bildirimi)
+    const me = await requireCan("onay");
     const d = reviewInput.parse(input);
+    const branchRefusal = await reviewBranchRefusal(getDb(), me, d.id);
+    if (branchRefusal) throw new UserError(branchRefusal);
     const site = d.decision === "approve" ? await fetchSiteDayCountsFor(d.id) : null;
-    const out = await reviewClosedDayCore(getDb(), me, { ...d, site });
+    const out = await reviewClosedDayCore(getDb(), asActor(me, opsLevel(me.role)), { ...d, site });
     const note = out.request.reviewNote ? ` · not: ${out.request.reviewNote}` : "";
     await logActivity(
       me,
@@ -88,13 +94,16 @@ async function fetchSiteDayCountsFor(id: number) {
 
 const markInput = z.object({ date: zDate, note: zOptText(CLOSED_REASON_MAX), branchId: tillId });
 
-/** Yönetici: raporsuz bir günü doğrudan kapalı işaretler (Kasa › raporsuz gün); o günün bekleyen bildirimleri onaylanır */
+/**
+ * Yönetici ve müdür: raporsuz bir günü doğrudan kapalı işaretler (Kasa › raporsuz gün); o günün bekleyen bildirimleri
+ * onaylanır. Müdürün kasası formTillBranch'te şubesine kilitli
+ */
 export async function markClosedDay(input: z.input<typeof markInput>) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = await requireCan("isletme.yonet");
     const { branchId, ...d } = markInput.parse(input);
     const till = await formTillBranch(branchId);
-    const out = await withBranchScope(till, () => markClosedDayCore(getDb(), me, d));
+    const out = await withBranchScope(till, () => markClosedDayCore(getDb(), asActor(me, opsLevel(me.role)), d));
     if (out.created) await logActivity(me, "Kapalı gün işaretlendi", [longDateTR(d.date), d.note].filter(Boolean).join(" · "));
     refresh();
     return { created: out.created };

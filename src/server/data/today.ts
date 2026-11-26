@@ -16,6 +16,7 @@ import {
   type OrdersLite,
 } from "@/app/panel/bugun/logic";
 import { featureInScope, karaokeBranchOf } from "@/lib/branch-features";
+import { adminLevel, cashAudience } from "@/lib/roles";
 import { CALENDAR_GROUP } from "@/lib/branch-settings/groups";
 import { ALL_BRANCHES, requestInScope, tillBranches } from "@/lib/branches";
 import { shiftMonth } from "@/lib/calc/engine";
@@ -318,7 +319,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const viewP = safe(cashView(admin));
   const tillScoped = <T>(fn: () => Promise<T>) => viewP.then((v) => (v?.till ? withBranchScope(v.till, fn) : fn()));
   // Kör kasa (bulgu 0): personelin LafPOS günü raporu sayımsız (fark satırda yok)
-  const cashP = safe(tillScoped(() => cashReportsBetween(c.yesterday, c.day).then((r) => blindForStaff(r, user.role))));
+  const cashP = safe(tillScoped(() => cashReportsBetween(c.yesterday, c.day).then((r) => blindForStaff(r, cashAudience(user.role)))));
   // Kasa raporunun beklendiği saat seçili şubenin (şube ayarı isletme.takvim; "Tümü"de ve online kanalda varsayılan şubenin)
   const eveningHourP = safe(resolveBranchSetting(CALENDAR_GROUP, karaokeScope).then((r) => r.value.eveningHour));
   // "Tümü"de kasa satırları her kasanın kendi saatiyle (zil gibi kasa kasa)
@@ -335,7 +336,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     karaokeHere ? safe(loadSessions(range.from, range.to, { admin })) : Promise.resolve(null),
     configured && ordersHere ? safe(Promise.all([readOrdersSnapshot(), readOrdersState()]).then(([snapshot, state]) => ordersLite(snapshot, state))) : Promise.resolve(null),
     // Bugünün ve dünün kontrol listeleri tek okumada (iki rol; personel yalnız kendi doldurabildiklerini alır)
-    safe(loadChecklistDays([c.day, c.yesterday], user.role, now)),
+    safe(loadChecklistDays([c.day, c.yesterday], adminLevel(user.role), now)),
     // Dün kafe kapalı mıydı (onaylı ya da onay bekleyen bildirim; kasa ve liste satırları buna bakar)
     safe(closedYesterday(user, now)),
     // Operasyonun olguları (kasadaki fiyatlar, Tükendi, taslak): iki rolde, rolün kendi yükleyicileriyle
@@ -380,7 +381,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const facts: DayFacts = {
     ...own.facts,
     ...ops,
-    role: user.role,
+    role: adminLevel(user.role),
     now,
     eveningHour,
     lafposSwitch,

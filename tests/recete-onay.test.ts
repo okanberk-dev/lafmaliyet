@@ -99,7 +99,7 @@ test("onay eylemi: reçete öneriden sonra değiştiyse önce bugünkü hâl dö
   assert.match(src, /export async function reviewRecipeChange[\s\S]*requireAdmin\(\)/);
   assert.match(src, /if \(!data\.force && !sameRecipe\(current, req\.before\)\) return \{ kind: "conflict"/);
   // Personel önerir (requireUser), kendi önerisini geri çeker
-  assert.match(src, /export async function proposeRecipeChanges[\s\S]*?requireUser\(\)/);
+  assert.match(src, /export async function proposeRecipeChanges[\s\S]*?requireCan\("kayit\.yaz"\)/);
   assert.match(src, /eq\(s\.recipeChangeRequests\.requestedBy, me\.id\), eq\(s\.recipeChangeRequests\.status, "pending"\)/);
   // Onay fiyat, ad, fire gibi alanlara dokunmaz: products'ta yalnız not yazılır
   assert.match(src, /tx\.update\(s\.products\)\.set\(\{ note: req\.after\.note, updatedAt: new Date\(\) \}\)/);

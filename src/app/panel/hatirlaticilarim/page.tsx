@@ -3,7 +3,8 @@ import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { loadMyReminders, assignablePeople } from "@/server/data/user-reminders";
 
 import { MyReminders } from "./my-reminders";
@@ -42,7 +43,7 @@ export default function MyRemindersPage() {
 }
 
 async function MyRemindersContent() {
-  const user = await requireUser();
+  const user = adminActor(await requireCan("kayit.yaz"));
   const [{ open, done }, people] = await Promise.all([
     loadMyReminders(user.id),
     // Yalnız yönetici başkasına hatırlatıcı kurabilir (src/server/actions/user-reminders.ts assignTarget)

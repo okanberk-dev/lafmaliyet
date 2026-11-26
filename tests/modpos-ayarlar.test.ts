@@ -188,7 +188,7 @@ test("eylemler: her dışa aktarım bir POST ucu, önce yönetici oturumu; zod; 
   assert.deepEqual(exported, ["fetchModposDay", "saveModposFallback"], "dosyada yardımcı dışa aktarım yok");
   for (const name of exported) {
     const body = actions.slice(actions.indexOf(`export async function ${name}`)).split(/\nexport /)[0];
-    assert.match(body, /return attempt\(async \(\) => \{\s*const me = await requireAdmin\(\);/, `${name}: önce yönetici oturumu`);
+    assert.match(body, /return attempt\(async \(\) => \{\s*const me = adminActor\(await requireAdmin\(\)\);/, `${name}: önce yönetici oturumu`);
   }
   const fetch = actions.slice(actions.indexOf("export async function fetchModposDay"), actions.indexOf("export async function saveModposFallback"));
   assert.match(fetch, /const day = zDate\.parse\(input\);/);

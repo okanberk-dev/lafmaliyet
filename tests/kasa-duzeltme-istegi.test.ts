@@ -323,9 +323,9 @@ test("eylemler: istekler requireUser ile başlar ve yöneticiyi reddeder, karar 
   assert.deepEqual(exported.sort(), ["requestCashCorrection", "requestCashDelete", "requestLateCashReport", "reviewCashRequest"].sort());
   for (const fn of ["requestCashCorrection", "requestCashDelete", "requestLateCashReport"]) {
     const body = fnBody(src, fn);
-    assert.match(body, /return attempt\(async \(\) => \{\s*const me = await requireUser\(\);\s*if \(me\.role === "admin"\) throw new UserError\(/, fn);
+    assert.match(body, /return attempt\(async \(\) => \{\s*const me = await requireCan\("kayit\.yaz"\);\s*(?:\/\/[^\n]*\n\s*)*if \(opsLevel\(me\.role\) === "admin"\) throw new UserError\(/, fn);
   }
-  assert.match(fnBody(src, "reviewCashRequest"), /return attempt\(async \(\) => \{\s*const me = await requireAdmin\(\);/);
+  assert.match(fnBody(src, "reviewCashRequest"), /return attempt\(async \(\) => \{\s*(?:\/\/[^\n]*\n\s*)*const me = await requireCan\("onay"\);/);
   // Yanıtlarda maliyet anahtarı yok
   assertNoCostKeys(src, "cash-requests eylemleri");
 });

@@ -11,7 +11,6 @@ import {
   SHIFT_NAME_MAX,
   SHIFT_NOTE_MAX,
   SHIFT_PEOPLE_MAX,
-  shiftPresets,
   userRef,
   weekDays,
   type ShiftPreset,
@@ -123,6 +122,8 @@ unclear: one short sentence in Turkish naming whatever you could not apply (an a
 
 export interface DraftContext {
   branch: { id: string; name: string };
+  /** Şubenin hazır vardiyaları (şube ayarı; src/server/vardiya/presets.ts loadShiftPresets) */
+  presets: readonly ShiftPreset[];
   monday: string;
   today: string;
   people: readonly DraftPerson[];
@@ -134,7 +135,7 @@ export interface DraftContext {
  */
 export function shiftDraftTask(ctx: DraftContext, prompt: string): string {
   const days = weekDays(ctx.monday);
-  const presets = shiftPresets(ctx.branch.id);
+  const presets = ctx.presets;
   const filled = ctx.people.flatMap((p) => p.cells.flatMap((t, i) => (t.trim() ? [`${p.key} ${DRAFT_DAYS[i]}: ${t.trim()}`] : [])));
   return [
     `Branch: ${ctx.branch.name}`,
@@ -170,7 +171,7 @@ const CLOCK = /^([01]?\d|2[0-4])[:.]([0-5]\d)$/;
 const SKIPPED_MAX = 8;
 
 /** Atamanın kutu metni (okuyucudan geçmeden önce); yazılamıyorsa nedeni */
-function draftText(branchId: string, a: ShiftDraftRaw["assignments"][number]): { text: string } | { error: string } {
+function draftText(presets: readonly ShiftPreset[], a: ShiftDraftRaw["assignments"][number]): { text: string } | { error: string } {
   const note = cleanName(a.note ?? "").slice(0, SHIFT_NOTE_MAX);
   const withNote = (head: string) => (note ? `${head} ${note}` : head);
   if (a.shift === "clear") return { text: "" };
@@ -180,7 +181,7 @@ function draftText(branchId: string, a: ShiftDraftRaw["assignments"][number]): {
     if (!CLOCK.test(start) || !CLOCK.test(end)) return { error: "saatleri anlaşılamadı" };
     return { text: withNote(`${start.replace(".", ":")}-${end.replace(".", ":")}`) };
   }
-  const preset = shiftPresets(branchId).find((p) => p.key === a.shift);
+  const preset = presets.find((p) => p.key === a.shift);
   if (!preset) return { error: `bu şubede hazır ${a.shift === "morning" ? "sabahçı" : "akşamcı"} vardiyası yok; saatleri yazın` };
   return { text: withNote(presetText(preset)) };
 }
@@ -191,7 +192,7 @@ function draftText(branchId: string, a: ShiftDraftRaw["assignments"][number]): {
  * de atlanır. Aynı kişi ve günde sonraki atama öncekinin üstüne yazar. Yeni kişi adı bir hesabınkiyle aynıysa o hesabın
  * satırı olur ("Kişi ekle" ile aynı kural).
  */
-export function draftToCells(raw: ShiftDraftRaw, ctx: Pick<DraftContext, "branch" | "people">, accounts: readonly { id: number; name: string }[] = []): DraftResult {
+export function draftToCells(raw: ShiftDraftRaw, ctx: Pick<DraftContext, "branch" | "people" | "presets">, accounts: readonly { id: number; name: string }[] = []): DraftResult {
   type Person = { ref: string; userId: number | null; name: string };
   const byKey = new Map(ctx.people.map((p) => [p.key, p]));
   const known = new Map<string, Person>(ctx.people.map((p) => [fold(p.name), { ref: p.ref, userId: p.userId, name: p.name }]));
@@ -238,7 +239,7 @@ export function draftToCells(raw: ShiftDraftRaw, ctx: Pick<DraftContext, "branch
       }
       targets = [person];
     }
-    const made = draftText(ctx.branch.id, a);
+    const made = draftText(ctx.presets, a);
     for (const t of targets) {
       for (const day of days) {
         if ("error" in made) {

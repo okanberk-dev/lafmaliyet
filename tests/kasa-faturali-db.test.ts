@@ -20,6 +20,7 @@ import { DEFAULT_BRANCHES } from "../src/lib/branches";
 import { businessDate } from "../src/lib/cash-report";
 import { addDays } from "../src/lib/reminders";
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.KASA_FATURALI_TEST_DATABASE_URL ?? process.env.CARI_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_kasa_faturali_${process.pid}`;
@@ -68,6 +69,7 @@ describe("kasadan faturalı alımlar: veritabanında", { skip: !SERVER_URL && "K
     // Yönetici eylemi personelle çağrılırsa requireAdmin yönlendirir: burada hata
     stub(require.resolve("../src/server/auth/dal"), {
       requireUser: async () => current,
+      ...dalCapabilities(async () => current),
       requireAdmin: async () => {
         if (current.role !== "admin") throw new Error("NEXT_REDIRECT yönetici değil");
         return current;

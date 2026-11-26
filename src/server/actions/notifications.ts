@@ -21,6 +21,7 @@ import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
 import { addDays, todayTR } from "@/lib/reminders";
 import { docBellRows } from "@/lib/staff-docs";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
+import { adminLevel } from "@/lib/roles";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { kasaBell } from "@/server/bell/kasa";
 import { lafposRejectionBell } from "@/server/bell/lafpos";
@@ -111,12 +112,12 @@ async function checklistNotifications(user: CurrentUser): Promise<PanelNotificat
   const day = businessDate(now);
   const yesterday = addDays(day, -1);
   const admin = user.role === "admin";
-  const [lists, marks] = await Promise.all([loadChecklistDays(admin ? [day, yesterday] : [day], user.role, now), admin ? closedMarksOn(yesterday) : null]);
+  const [lists, marks] = await Promise.all([loadChecklistDays(admin ? [day, yesterday] : [day], adminLevel(user.role), now), admin ? closedMarksOn(yesterday) : null]);
   // Dün onaylı kapalıysa (dalga 10 §2.9) hiç açılmamış listeler eksik sayılmaz; şube şube: listenin şubesi kapalıysa
   // (bütün şubelerin listesinde işletme kapalıysa). Marina'nın kapalı günü Tuzla'nın eksik listesini susturmaz
   const yLists = marks ? closedDayBellLists(lists.get(yesterday) ?? [], marks) : [];
   return checklistBell({
-    role: user.role,
+    role: adminLevel(user.role),
     now,
     today: { day, lists: lists.get(day) ?? [] },
     yesterday: admin ? { day: yesterday, lists: yLists } : null,
@@ -540,6 +541,8 @@ async function staffDocNotifications(): Promise<PanelNotification[]> {
 export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   const user = await getCurrentUser();
   if (!user) return [];
+  // Muhasebeci salt okur: günlük işlerin, onayların ve personelin zili ona gitmez (docs/ROLLER.md)
+  if (user.role === "accountant") return [];
   // Bir bölüm okunamazsa (Neon uyanırken zaman aşımı) sessizce boş görünmez: günlüğe yazılır ve kendi grubunda
   // "{Grup} yüklenemedi" satırı olur (src/lib/bell-failed.ts; bulgu 88). Satır okunmamış sayılmaz
   const failed: BellPart[] = [];

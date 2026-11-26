@@ -109,5 +109,6 @@ Bitince `claude/festive-goodall-sclggq`'ye birleştirilir (göç numarası çak�
 
 ## Bekleyen başka iş
 
-- [ ] Vardiyayla ilgili şube maddeleri (hazır vardiya saatleri şube ayarına, "Tümü"de şube seçimi). PR #120 bu dala
-  birleştirildi (26 Kasım); artık yapılabilir.
+- [x] Vardiyayla ilgili şube maddeleri (26 Kasım; `wip/vardiya-sube`): hazır vardiya saatleri şube ayarı (Şubeler ›
+  şube › Hazır vardiyalar; ayarı olmayan şubede bugünkü saatler); "Tümü"de Vardiya önce şubeyi sorar (önceden sessizce
+  Tuzla'ya yazıyordu). Sahibe söylenecek: "Tümü"deyken Vardiya'yı açan önce şube seçer.

@@ -46,6 +46,14 @@ const FOOTER_LINKS: Record<Role, { href: string; label: string }[]> = {
     { href: "/panel/kasa", label: "Kasa raporu" },
     { href: "/panel/hatirlaticilarim", label: "Hatırlatıcılarım" },
   ],
+  manager: [
+    { href: "/panel/kasa", label: "Kasa raporu" },
+    { href: "/panel/onaylar", label: "Onaylar" },
+  ],
+  accountant: [
+    { href: "/panel/muhasebe", label: "Muhasebe" },
+    { href: "/panel/kasa", label: "Kasa raporları" },
+  ],
 };
 
 export function NotificationMenu({

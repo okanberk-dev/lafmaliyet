@@ -15,6 +15,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.SAYIM_TEST_DATABASE_URL ?? process.env.EKLE_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_sayim_deger_${process.pid}`;
@@ -60,6 +61,7 @@ describe("sayım listesi, pasif malzeme ve silme: veritabanında", { skip: !SERV
     const me = async () => ({ ...users[who.role], role: who.role });
     stub(require.resolve("../src/server/auth/dal"), {
       requireUser: me,
+      ...dalCapabilities(me),
       requireAdmin: async () => {
         if (who.role !== "admin") throw new Error("yalnız yönetici");
         return me();

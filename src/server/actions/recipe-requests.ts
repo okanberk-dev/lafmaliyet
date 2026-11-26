@@ -24,7 +24,8 @@ import {
   summarizeDiff,
   type RecipeSnapshot,
 } from "@/lib/recipe-change";
-import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireAdmin, requireCan } from "@/server/auth/dal";
 import { CountItemExists, countItemSchema, createCountItem } from "@/server/data/count-item";
 import { loadSettings } from "@/server/data/dataset";
 import { withPassiveRelist } from "@/server/data/ingredient-usage";
@@ -69,7 +70,7 @@ const productLabel = (p: { name: string; size: string }) => `${p.name} · ${p.si
  */
 export async function proposeRecipeChanges(input: z.input<typeof proposalSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const data = proposalSchema.parse(input);
     const ids = [...new Set(data.changes.map((c) => c.productId))];
     if (ids.length !== data.changes.length) throw new UserError("Aynı boy iki kez gönderildi");
@@ -157,7 +158,7 @@ export async function proposeRecipeChanges(input: z.input<typeof proposalSchema>
 /** Personel kendi bekleyen önerisini geri çeker */
 export async function withdrawRecipeChange(id: number) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const rid = zId.parse(id);
     const [row] = await getDb()
       .update(s.recipeChangeRequests)
@@ -300,7 +301,7 @@ const newProductSchema = z.object({
  */
 export async function proposeNewProduct(input: z.input<typeof newProductSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const data = newProductSchema.parse(input);
     if (new Set(data.sizes.map((x) => x.size)).size !== data.sizes.length) throw new UserError("Aynı boy iki kez gönderildi");
     const settings = await loadSettings();
@@ -379,7 +380,7 @@ export async function proposeNewProduct(input: z.input<typeof newProductSchema>)
  */
 export async function addProposalIngredient(input: z.input<typeof countItemSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const data = countItemSchema.parse(input);
     const ref = (i: { id: number; name: string; unit: string; category: string }) => ({
       id: i.id,

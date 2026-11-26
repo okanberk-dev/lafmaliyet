@@ -32,7 +32,8 @@ import {
 import { INVOICE_SHARED } from "@/lib/invoice-branch";
 import { genitive } from "@/lib/recipe-change";
 import { cn } from "@/lib/utils";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope, staffBranchLock } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadReceiptInvoices, loadStockEstimate, type ReceiptList } from "@/server/data/stock-estimate";
@@ -85,7 +86,7 @@ export default function StockEstimatePage({ searchParams }: PageProps<"/panel/sa
 }
 
 async function StockEstimateContent({ searchParams }: { searchParams: PageProps<"/panel/sayim/tahmini">["searchParams"] }) {
-  const user = await requireUser();
+  const user = adminActor(await requireCan("kayit.yaz"));
   const leadDays = parseLeadDays((await searchParams).tedarik);
   const admin = user.role === "admin";
   // Başka şubeye kilitli personel Marina'nın stoğunu görmez (docs/SUBE.md › Personel hesabının şubesi)

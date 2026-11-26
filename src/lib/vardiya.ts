@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { Role } from "@/lib/constants";
+import { can } from "@/lib/roles";
 import { addDays, isCalendarDate } from "@/lib/reminders";
 
 /**
@@ -96,11 +98,11 @@ export function shiftTimes(cell: Extract<ShiftCell, { kind: "work" }>): string {
 // ---------------------------------------------------------------- Hazır vardiyalar (sabahçı / akşamcı)
 
 /**
- * Şubenin hazır vardiyaları (operatör, 22 Kasım 2026): ızgarada tıklamayla yazılır, planda ve PDF'te adıyla görünür.
- * Tuzla 09:00'da açılır, vardiya 9 saat: sabahçı 09:00–18:00, akşamcı 16:00'da gelir (16:00–01:00). Marina 09:30'da
- * açılır: sabahçı 09:30–18:30, akşamcı 13:00'te gelir ve 22:00'deki kapanışa kadar kalır. Ad saatlerden türetilir
- * (veritabanında ayrı alan yok): saatleri hazır vardiyayla aynı olan hücre o vardiyadır, elle yazılsa da. Saatler
- * değişirse burası güncellenir; eski haftaların hücreleri yazıldıkları saatlerle kalır.
+ * Şubenin hazır vardiyaları (operatör, 22 Kasım 2026): ızgarada tıklamayla yazılır, planda ve PDF'te adıyla görünür. Ad
+ * saatlerden türetilir (hücrede ayrı alan yok): saatleri şubenin hazır vardiyasıyla aynı olan hücre o vardiyadır, elle
+ * yazılsa da. Saatler 26 Kasım 2026'dan beri şube ayarıdır (`vardiya.hazir`, Şube ayarları › Hazır vardiyalar;
+ * src/lib/branch-settings/groups.ts SHIFT_PRESET_GROUP): sunucu (src/server/vardiya/presets.ts) şubenin listesini okuyup
+ * ızgaraya, PDF'e, taslağa ve asistanın kartına verir. Eski haftaların hücreleri yazıldıkları saatlerle kalır.
  */
 export interface ShiftPreset {
   key: "morning" | "evening";
@@ -109,6 +111,17 @@ export interface ShiftPreset {
   endMin: number;
 }
 
+/** Hazır vardiyaların anahtarları, ekrandaki sırayla */
+export const PRESET_KEYS = ["morning", "evening"] as const satisfies readonly ShiftPreset["key"][];
+/** Hazır vardiyanın adı: düğmenin harfi ve "s" / "a" kısaltması bundan */
+export const PRESET_LABELS: Record<ShiftPreset["key"], string> = { morning: "Sabahçı", evening: "Akşamcı" };
+
+/**
+ * Şube ayarı seçilmemiş şubenin hazır vardiyaları: şube başına ayardan önceki sabit saatler (ayarı olmayan şubenin
+ * davranışı değişmez). Tuzla 09:00'da açılır, vardiya 9 saat: sabahçı 09:00–18:00, akşamcı 16:00'da gelir (16:00–01:00).
+ * Marina 09:30'da açılır: sabahçı 09:30–18:30, akşamcı 13:00'te gelir ve 22:00'deki kapanışa kadar kalır. Öbür şubelerde
+ * hazır vardiya yok (ızgara elle yazmayla açılır), Şube ayarları'ndan girilene kadar.
+ */
 export const SHIFT_PRESETS: Record<string, readonly ShiftPreset[]> = {
   tuzla: [
     { key: "morning", label: "Sabahçı", startMin: 9 * 60, endMin: 18 * 60 },
@@ -120,17 +133,59 @@ export const SHIFT_PRESETS: Record<string, readonly ShiftPreset[]> = {
   ],
 };
 
-/** Şubenin hazır vardiyaları; tanımlı değilse boş (ızgarada yalnız İzin ve Sil kalır) */
-export const shiftPresets = (branchId: string): readonly ShiftPreset[] => SHIFT_PRESETS[branchId] ?? [];
+/** Şube ayarı seçilmemiş şubenin hazır vardiyaları (bugünkü sabit saatler); tanımlı değilse boş */
+export const defaultShiftPresets = (branchId: string): readonly ShiftPreset[] => SHIFT_PRESETS[branchId] ?? [];
+
+/** Şube ayarında saklanan hazır vardiya: anahtar ve saatler (ad koddan) */
+export type SavedShiftPreset = Pick<ShiftPreset, "key" | "startMin" | "endMin">;
+
+/**
+ * Şubenin kullandığı hazır vardiyalar: şube ayarı seçilmişse (`saved` liste) onun saatleri, boş listeyse hazır vardiya
+ * yok; seçilmemişse (null) bugünkü sabit saatler. Sıra hep sabahçı, akşamcı
+ */
+export function shiftPresetsOf(branchId: string, saved: readonly SavedShiftPreset[] | null): ShiftPreset[] {
+  if (saved === null) return defaultShiftPresets(branchId).map((p) => ({ ...p }));
+  return PRESET_KEYS.flatMap((key) => {
+    const p = saved.find((x) => x.key === key);
+    return p ? [{ key, label: PRESET_LABELS[key], startMin: p.startMin, endMin: p.endMin }] : [];
+  });
+}
+
+const CLOCK_TEXT = /^\d{1,2}[:.]\d{2}$/;
+
+/**
+ * Şube ayarına girilen saatler ("09:00", "18:00") → hazır vardiyanın dakikaları. Kutunun okuyucusuyla (parseShiftCell)
+ * aynı kural: bitiş başlangıçtan önceyse ertesi gün (akşamcı 16:00–01:00), en geç ertesi gün 06:00, en çok 16 saat
+ */
+export function presetHours(start: string, end: string): { startMin: number; endMin: number } | { error: string } {
+  if (!CLOCK_TEXT.test(start.trim()) || !CLOCK_TEXT.test(end.trim())) return { error: "Başlangıç ve bitiş saatini seçin." };
+  const p = parseShiftCell(`${start.trim()}-${end.trim()}`);
+  if (!p.ok) return { error: p.error };
+  if (p.cell?.kind !== "work") return { error: "Başlangıç ve bitiş saatini seçin." };
+  return { startMin: p.cell.startMin, endMin: p.cell.endMin };
+}
+
+/** Kayıtlı dakikalar hazır vardiya olabilir mi (okuyucunun sınırları; bozuk kayıt okunurken atlanır) */
+export function validPresetMinutes(startMin: unknown, endMin: unknown): boolean {
+  if (typeof startMin !== "number" || typeof endMin !== "number" || !Number.isInteger(startMin) || !Number.isInteger(endMin)) return false;
+  return startMin >= 0 && startMin < 1440 && endMin > startMin && endMin <= SHIFT_MAX_END_MIN && endMin - startMin <= SHIFT_MAX_MINUTES;
+}
+
+/** Hazır vardiyaların birlikte sorunu: sabahçı ve akşamcı aynı saatlerde olamaz (hücrenin adı saatlerden türer) */
+export function shiftPresetsError(list: readonly SavedShiftPreset[]): string | null {
+  const [a, b] = list;
+  if (a && b && a.startMin === b.startMin && a.endMin === b.endMin) return "Sabahçı ve akşamcı aynı saatlerde olamaz: hücrenin adı saatlerden türer.";
+  return null;
+}
 
 /** Hücre şubenin hazır vardiyalarından biri mi (saatleri birebir aynıysa); değilse null */
-export function presetOf(branchId: string, cell: ShiftCell | null): ShiftPreset | null {
+export function presetOf(presets: readonly ShiftPreset[], cell: ShiftCell | null): ShiftPreset | null {
   if (cell?.kind !== "work") return null;
-  return shiftPresets(branchId).find((p) => p.startMin === cell.startMin && p.endMin === cell.endMin) ?? null;
+  return presets.find((p) => p.startMin === cell.startMin && p.endMin === cell.endMin) ?? null;
 }
 
 /** Hazır vardiyanın kutuya yazılan metni: "09:00–18:00" */
-export const presetText = (p: ShiftPreset) => `${clockOf(p.startMin)}–${clockOf(p.endMin)}`;
+export const presetText = (p: Pick<ShiftPreset, "startMin" | "endMin">) => `${clockOf(p.startMin)}–${clockOf(p.endMin)}`;
 
 /** Hazır vardiyanın ızgaradaki tek harfli düğmesi: "S" (sabahçı), "A" (akşamcı) */
 export const presetShort = (p: ShiftPreset) => p.label.charAt(0);
@@ -145,10 +200,10 @@ const ABBR: Record<ShiftPreset["key"], RegExp> = {
  * açılır; ardından görev notu yazılabilir ("s kasa" → "09:00–18:00 kasa"). Hazır vardiyası olmayan şubede ve başka her
  * metinde metin olduğu gibi döner (saat olarak okunur).
  */
-export function expandShiftAbbr(branchId: string, text: string): string {
+export function expandShiftAbbr(presets: readonly ShiftPreset[], text: string): string {
   const raw = text.trim();
   const low = fold(raw);
-  for (const p of shiftPresets(branchId)) {
+  for (const p of presets) {
     const m = ABBR[p.key].exec(low);
     if (!m) continue;
     const note = raw.slice(m[1].length).trim();
@@ -454,5 +509,5 @@ export function todayShiftText(list: readonly { name: string; startMin: number; 
   return `Vardiyada: ${[...shown, more > 0 ? `ve ${more} kişi` : null].filter(Boolean).join(" · ")}`;
 }
 
-/** Bu rol planı değiştirebilir mi (personel yalnız görür ve PDF'ini alır) */
-export const canEditShifts = (role: "admin" | "staff") => role === "admin";
+/** Bu rol planı değiştirebilir mi (yönetici ve müdür şubesinin; personel yalnız görür ve PDF'ini alır) */
+export const canEditShifts = (role: Role) => can(role, "vardiya.yaz");

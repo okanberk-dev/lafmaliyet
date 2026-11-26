@@ -140,7 +140,7 @@ test("eylemler: her dışa açık işlev önce oturumu, karar yöneticiyi denetl
     const body = src.slice(src.indexOf(`export async function ${fn}`));
     const start = "return attempt(async () => {";
     const first = body.slice(body.indexOf(start) + start.length).trim().split("\n")[0];
-    assert.equal(first, fn === "reviewKaraokeDeleteRequest" ? "const me = await requireAdmin();" : "const me = await requireUser();", fn);
+    assert.equal(first, fn === "reviewKaraokeDeleteRequest" ? "const me = adminActor(await requireAdmin());" : 'const me = adminActor(await requireCan("kayit.yaz"));', fn);
   }
   const request = src.slice(src.indexOf("export async function requestKaraokeTimerDelete"));
   assert.match(request, /if \(me\.role === "admin"\) throw new UserError\("Yönetici doğrudan siler; istek gerekmez"\);/);

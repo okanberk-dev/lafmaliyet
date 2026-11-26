@@ -1,6 +1,7 @@
 "use client";
 
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
+import type { Role } from "@/lib/constants";
 import Link, { useLinkStatus } from "next/link";
 import { useEffect, type Ref } from "react";
 
@@ -147,7 +148,7 @@ export function BottomNav({
   assistant = false,
   features,
 }: {
-  role: "admin" | "staff";
+  role: Role;
   pathname: string;
   overdue?: number;
   menuOpen?: boolean;

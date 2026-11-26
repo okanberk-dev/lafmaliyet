@@ -288,5 +288,11 @@ export const MONTH_NAMES = [
   "Aralık",
 ];
 
-export const ROLES = { admin: "Yönetici", staff: "Personel" } as const;
+/**
+ * Hesap rolleri (docs/ROLLER.md). Yönetici her şey; Müdür şubesinin günlük işletmesi (şubesine kilitli); Personel
+ * günün işleri; Muhasebeci salt okunur muhasebe ekranları. Hangi rolün neyi açtığı TEK KAYNAKTA: src/lib/roles.ts.
+ */
+export const ROLES = { admin: "Yönetici", manager: "Müdür", staff: "Personel", accountant: "Muhasebeci" } as const;
 export type Role = keyof typeof ROLES;
+/** Rollerin sırası (seçici, süzgeç, tablo): yetkisi geniş olandan dara */
+export const ROLE_ORDER: readonly Role[] = ["admin", "manager", "staff", "accountant"];

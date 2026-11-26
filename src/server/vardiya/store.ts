@@ -4,6 +4,7 @@ import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
 import { ALL_BRANCHES, type BranchRow } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
+import { isShiftRole } from "@/lib/roles";
 import { addDays, todayTR } from "@/lib/reminders";
 import {
   buildRows,
@@ -75,7 +76,8 @@ export async function loadShiftEntries(db: Pick<DB, "select">, branchId: string,
  * hesapsız satır olabilir)
  */
 export function shiftCandidate(u: { role: string; branchId: string | null }, branchId: string): boolean {
-  return u.role === "admin" || u.branchId === null || u.branchId === branchId;
+  // Muhasebeci vardiyada çalışmaz (docs/ROLLER.md)
+  return u.role !== "accountant" && (u.role === "admin" || u.branchId === null || u.branchId === branchId);
 }
 
 /**
@@ -89,7 +91,7 @@ export async function loadShiftWeek(db: DB, branch: { id: string; name: string }
   const byId = new Map(users.map((u) => [u.id, u]));
   // Plandaki kullanıcı güncel adıyla (plandaki ad kaydedildiği andakidir)
   const named = entries.map((e) => (e.userId !== null && byId.has(e.userId) ? { ...e, name: byId.get(e.userId)!.name } : e));
-  const roster = opts.roster ? users.filter((u) => u.active && u.role === "staff" && (u.branchId === null || u.branchId === branch.id)) : users.filter((u) => u.id === opts.includeUserId);
+  const roster = opts.roster ? users.filter((u) => u.active && isShiftRole(u.role) && (u.branchId === null || u.branchId === branch.id)) : users.filter((u) => u.id === opts.includeUserId);
   const rows = buildRows(monday, roster, named);
   const inGrid = new Set(rows.map((r) => r.ref));
   // "Kişi ekle" önerileri: başka şubeye kilitli personel önerilmez (şube kapsamı C P2-11); yönetici ve şubesiz personel kalır

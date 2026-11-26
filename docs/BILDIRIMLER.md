@@ -282,12 +282,17 @@ fatura tutarları, maliyet, zam ve kâr rakamları, kasa farkı ve karaoke ön �
 E-53; `src/lib/notify-recipients.ts`, `src/server/notify/recipients.ts`):
 
 - **Gönderim anında süzülür.** Listedeki bir adres paneldeki bir hesaba aitse e-postayı yalnız **etkin bir
-  yöneticinin** hesabıysa alır: personel hesabının ve pasif hesabın adresi düşer. Hesabı olmayan adres (muhasebeci,
-  sahibin kişisel adresi) alır. Büyük-küçük harf fark etmez. Kayıttan sonra personele indirilen, pasif yapılan ya da
+  yöneticinin ya da muhasebecinin** hesabıysa alır: personel, **müdür** ve pasif hesabın adresi düşer. Hesabı olmayan
+  adres (muhasebeci, sahibin kişisel adresi) alır. Rollerin kararı ([ROLLER.md](ROLLER.md) › Kararlar): müdür kasa
+  raporunu panelde şubesinin rakamlarıyla görür, ama listeler şubeler arasında ortak olabilir ("Tuzla ile aynı"), kasa
+  e-postası karaoke ön ödemesini, sabah e-postası işletmenin ödemelerini ve maliyetini taşır: tutucu seçenek, müdür
+  hesabına gitmez. Muhasebeci hesabı salt okunur rolüyle bunları zaten görür; hesabı olmayan muhasebeci adresi gibi
+  alır. Büyük-küçük harf fark etmez. Kayıttan sonra personele indirilen, pasif yapılan ya da
   personel hesabı açılan adres de düşer: kural kaydı beklemez. Sıra korunur. Kural adresin hesabına bakar: adres
   hiçbir hesaba ait değilse (giriş e-postası değişti, hesap silindi) yeniden alır; bu yüzden aşağıdaki iki kapı var.
-- **Kaydederken reddedilir.** Kasa alıcılarına ve bildirim adreslerine personel ya da pasif hesabın adresi yazılmaz
-  ("ayse@… bir personel hesabının adresi; …", "eski@… pasif bir hesabın adresi; pasif hesaba e-posta gitmez. Hesabı
+- **Kaydederken reddedilir.** Kasa alıcılarına ve bildirim adreslerine personel, müdür ya da pasif hesabın adresi
+  yazılmaz ("ayse@… bir personel hesabının adresi; …", "mehmet@… bir müdür hesabının adresi; … Müdür kasa raporunu
+  panelde görür; …", "eski@… pasif bir hesabın adresi; pasif hesaba e-posta gitmez. Hesabı
   Kullanıcılar'dan silerseniz adres alıcı olabilir."). Duraklatılmış bir adres böyle bir hesaba aitse yeniden açılmaz.
 - **Personel Hesabım'da** giriş e-postasını bir listedeki adrese (kasa alıcıları, kapalıyken de; bildirim adresleri,
   duraklatılmış da) çeviremez: "Bu adres giriş e-postanız olamaz; başka bir adres yazın ya da yöneticiye sorun."

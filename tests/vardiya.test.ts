@@ -36,7 +36,7 @@ import {
   saveWeekSchema,
   SHIFT_TEXT,
   shiftMinutes,
-  shiftPresets,
+  defaultShiftPresets,
   todayShiftText,
   userRef,
   weekDays,
@@ -212,27 +212,31 @@ test("Bugün satırı: ilk adlar ve saatler, en çok üç kişi; plan yoksa sat�
   assert.equal(todayShiftText(many), "Vardiyada: Ayşe 10:00–02:00 · Çağrı 11:00–02:00 · İsmail 12:00–02:00 · ve 2 kişi");
 });
 
-test("rol ve menü: planı yalnız yönetici yazar; iki rol açar, yöneticide adı “Vardiya ayarlama”", () => {
+test("rol ve menü: planı yönetici ve müdür yazar; üç rol açar, yöneticide ve müdürde adı “Vardiya ayarlama”", () => {
   assert.equal(canEditShifts("admin"), true);
+  assert.equal(canEditShifts("manager"), true);
+  assert.equal(canEditShifts("accountant"), false);
+  assert.equal(canOpen("accountant", "/panel/vardiya"), false);
   assert.equal(canEditShifts("staff"), false);
   assert.ok((STAFF_PATHS as readonly string[]).includes("/panel/vardiya"));
   assert.ok(canOpen("staff", "/panel/vardiya") && canOpen("admin", "/panel/vardiya"));
-  assert.ok(ROLE_PERMISSIONS.some((p) => p.staff && p.paths?.includes("/panel/vardiya") && /yalnız yönetici yazar/.test(p.label)));
-  assert.ok(ROLE_PERMISSIONS.some((p) => !p.staff && /vardiya planını yazma/.test(p.label)));
+  assert.ok(ROLE_PERMISSIONS.some((p) => p.staff && p.paths?.includes("/panel/vardiya") && /yönetici ve müdür yazar/.test(p.label)));
+  assert.ok(ROLE_PERMISSIONS.some((p) => !p.staff && /[Vv]ardiya planını yazma/.test(p.label)));
   const label = (role: "admin" | "staff") => navTreeFor(role).find((n) => n.href === "/panel/vardiya")?.label;
   assert.equal(label("admin"), "Vardiya ayarlama");
   assert.equal(label("staff"), "Vardiya");
   const palette = NAV_GROUPS.flatMap((g) => g.items).find((i) => i.href === "/panel/vardiya");
-  assert.deepEqual(palette?.roles, ["admin", "staff"]);
+  assert.deepEqual(palette?.roles, ["admin", "manager", "staff"]);
+  assert.equal(navTreeFor("manager").find((n) => n.href === "/panel/vardiya")?.label, "Vardiya ayarlama");
   assert.match(palette?.keywords ?? "", /vardiya ayarlama/);
   assert.equal(mobileTitleFor("/panel/vardiya"), "Vardiya");
   // Alt menü değişmedi: Vardiya çekmecede
   for (const role of ["admin", "staff"] as const) assert.ok(!BOTTOM_NAV[role].some((b) => b.href === "/panel/vardiya"));
   // Kaynak: eylem yöneticiyi ister, ekran ve PDF oturumu; personelin görünümünde kutu yok
   const action = read("src/server/actions/vardiya.ts");
-  assert.match(action, /const me = await requireAdmin\(\);\s+const r = await saveShiftWeek\(/);
+  assert.match(action, /const me = await requireCan\("vardiya\.yaz"\);\s+const other = await staffBranchRefusal\(me, [^;]+;\s+if \(other\) throw new UserError\(other\);\s+const r = await saveShiftWeek\(/);
   const page = read("src/app/panel/vardiya/page.tsx");
-  assert.match(page, /await requireUser\(\)/);
+  assert.match(page, /await requireCan\("kayit\.yaz"\)/);
   assert.doesNotMatch(page, /requireAdmin/);
   assert.match(page, /loadShiftWeek\(db, branch, monday, \{ roster: canEdit, includeUserId: user\.id \}\)/);
   const route = read("src/app/api/vardiya/pdf/route.ts");
@@ -244,52 +248,58 @@ test("rol ve menü: planı yalnız yönetici yazar; iki rol açar, yöneticide a
   assert.doesNotMatch(staffView, /<Input|saveShiftWeekAction|cellInput\(/);
 });
 
-test("hazır vardiyalar: Tuzla 09:00–18:00 ve 16:00–01:00, Marina 09:30–18:30 ve 13:00–22:00; ad saatlerden türer", () => {
+test("hazır vardiyalar: ayarı olmayan Tuzla 09:00–18:00 ve 16:00–01:00, Marina 09:30–18:30 ve 13:00–22:00; ad saatlerden türer", () => {
   const cell = (t: string) => {
     const p = parseShiftCell(t);
     return p.ok ? p.cell : null;
   };
-  assert.deepEqual(shiftPresets("tuzla").map((p) => `${p.label} ${presetText(p)}`), ["Sabahçı 09:00–18:00", "Akşamcı 16:00–01:00"]);
-  assert.deepEqual(shiftPresets("marina").map((p) => `${p.label} ${presetText(p)}`), ["Sabahçı 09:30–18:30", "Akşamcı 13:00–22:00"]);
+  // Şube ayarı seçilmemiş şubenin saatleri bugünkü sabit saatler (davranış değişmez; şube ayarı tests/vardiya-sube.test.ts)
+  const T = defaultShiftPresets("tuzla");
+  const M = defaultShiftPresets("marina");
+  assert.deepEqual(T.map((p) => `${p.label} ${presetText(p)}`), ["Sabahçı 09:00–18:00", "Akşamcı 16:00–01:00"]);
+  assert.deepEqual(M.map((p) => `${p.label} ${presetText(p)}`), ["Sabahçı 09:30–18:30", "Akşamcı 13:00–22:00"]);
   // Her biri 9 saat; kutuya yazılan metin okununca aynı vardiya (tıklamayla yazılan da elle yazılan da)
-  for (const id of ["tuzla", "marina"]) {
-    for (const p of shiftPresets(id)) {
+  for (const presets of [T, M]) {
+    for (const p of presets) {
       assert.equal(p.endMin - p.startMin, 9 * 60);
-      assert.equal(presetOf(id, cell(presetText(p)))?.key, p.key);
+      assert.equal(presetOf(presets, cell(presetText(p)))?.key, p.key);
     }
   }
-  assert.equal(presetOf("tuzla", cell("9-18 kasa"))?.label, "Sabahçı");
-  assert.equal(presetOf("tuzla", cell("16-01"))?.label, "Akşamcı");
-  assert.equal(presetOf("marina", cell("13-22"))?.label, "Akşamcı");
+  assert.equal(presetOf(T, cell("9-18 kasa"))?.label, "Sabahçı");
+  assert.equal(presetOf(T, cell("16-01"))?.label, "Akşamcı");
+  assert.equal(presetOf(M, cell("13-22"))?.label, "Akşamcı");
   // Başka saat, izin, boş hücre ve başka şubenin saatleri adsız
-  assert.equal(presetOf("tuzla", cell("10-18")), null);
-  assert.equal(presetOf("tuzla", cell("izin")), null);
-  assert.equal(presetOf("tuzla", null), null);
-  assert.equal(presetOf("marina", cell("9-18")), null);
-  assert.deepEqual(shiftPresets("bilinmeyen"), []);
+  assert.equal(presetOf(T, cell("10-18")), null);
+  assert.equal(presetOf(T, cell("izin")), null);
+  assert.equal(presetOf(T, null), null);
+  assert.equal(presetOf(M, cell("9-18")), null);
+  assert.deepEqual(defaultShiftPresets("bilinmeyen"), []);
 });
 
 test("seçerek doldurma: her kutuda S / A / İ düğmeleri; elle yazarken “s” ve “a” kısaltması şubenin saatlerine açılır", () => {
-  assert.deepEqual(shiftPresets("tuzla").map(presetShort), ["S", "A"]);
-  // Kısaltma şubeye göre açılır; büyük harf, uzun yazım ve görev notu da
-  assert.equal(expandShiftAbbr("tuzla", "s"), "09:00–18:00");
-  assert.equal(expandShiftAbbr("tuzla", " A "), "16:00–01:00");
-  assert.equal(expandShiftAbbr("marina", "S"), "09:30–18:30");
-  assert.equal(expandShiftAbbr("marina", "a bar"), "13:00–22:00 bar");
-  assert.equal(expandShiftAbbr("tuzla", "Sabahçı Kasa"), "09:00–18:00 Kasa");
-  assert.equal(expandShiftAbbr("tuzla", "akşam"), "16:00–01:00");
+  const T = defaultShiftPresets("tuzla");
+  const M = defaultShiftPresets("marina");
+  assert.deepEqual(T.map(presetShort), ["S", "A"]);
+  // Kısaltma şubenin saatlerine açılır; büyük harf, uzun yazım ve görev notu da
+  assert.equal(expandShiftAbbr(T, "s"), "09:00–18:00");
+  assert.equal(expandShiftAbbr(T, " A "), "16:00–01:00");
+  assert.equal(expandShiftAbbr(M, "S"), "09:30–18:30");
+  assert.equal(expandShiftAbbr(M, "a bar"), "13:00–22:00 bar");
+  assert.equal(expandShiftAbbr(T, "Sabahçı Kasa"), "09:00–18:00 Kasa");
+  assert.equal(expandShiftAbbr(T, "akşam"), "16:00–01:00");
   // Açılan metin okununca o hazır vardiya (not korunur)
-  const opened = parseShiftCell(expandShiftAbbr("tuzla", "s kasa"));
-  assert.ok(opened.ok && opened.cell?.kind === "work" && opened.cell.note === "kasa" && presetOf("tuzla", opened.cell)?.key === "morning");
+  const opened = parseShiftCell(expandShiftAbbr(T, "s kasa"));
+  assert.ok(opened.ok && opened.cell?.kind === "work" && opened.cell.note === "kasa" && presetOf(T, opened.cell)?.key === "morning");
   // Saat, izin ve başka metin olduğu gibi kalır; hazır vardiyası olmayan şubede kısaltma yok
-  for (const t of ["10-18", "izin", "16-24 bar", "", "salı", "ayşe"]) assert.equal(expandShiftAbbr("tuzla", t), t);
-  assert.equal(expandShiftAbbr("bilinmeyen", "s"), "s");
-  // Izgara: hazır vardiyası olan şubede seçerek açılır; düğme yazıp seçili olana ikinci tıklama boşaltır; okuma kısaltmayı açar
+  for (const t of ["10-18", "izin", "16-24 bar", "", "salı", "ayşe"]) assert.equal(expandShiftAbbr(T, t), t);
+  assert.equal(expandShiftAbbr([], "s"), "s");
+  // Izgara: hazır vardiyası olan şubede seçerek açılır; düğme yazıp seçili olana ikinci tıklama boşaltır; okuma kısaltmayı
+  // şubenin ayarındaki saatlerle açar (liste sayfadan gelir)
   const grid = read("src/app/panel/vardiya/shift-grid.tsx");
   assert.match(grid, /useState<"pick" \| "type">\(presets\.length \? "pick" : "type"\)/);
   assert.match(grid, /aria-pressed=\{chosen === c\.key\}/);
   assert.match(grid, /onClick=\{\(\) => setText\(r\.ref, i, chosen === c\.key \? "" : c\.text\)\}/);
-  assert.match(grid, /const read = \(text: string\) => parseShiftCell\(expandShiftAbbr\(branch\.id, text\)\);/);
+  assert.match(grid, /const read = \(text: string\) => parseShiftCell\(expandShiftAbbr\(presets, text\)\);/);
 });
 
 test("PDF adresi ve dosya adı", () => {
@@ -318,7 +328,7 @@ test("PDF: kaydedilen plandan çizilir; %PDF ile başlar, A4 yatay, başlığı 
     row("n:gülşah ışık", "Gülşah Işık 😀", ["", "", "", "", "", "", "9-17 açılış ve temizlik işleri"]),
     row("u:3", "Planı boş", ["", "", "", "", "", "", ""], 3),
   ];
-  const input = { branchId: "tuzla", branchName: "Tuzla", monday: "2026-11-23", rows, updated: { by: "Okan", at: "2026-11-22T13:40:00Z" }, generatedAt: new Date("2026-11-22T13:45:00Z") };
+  const input = { presets: defaultShiftPresets("tuzla"), branchName: "Tuzla", monday: "2026-11-23", rows, updated: { by: "Okan", at: "2026-11-22T13:40:00Z" }, generatedAt: new Date("2026-11-22T13:45:00Z") };
   const bytes = await renderShiftPdf(input);
   assert.equal(Buffer.from(bytes.slice(0, 5)).toString("latin1"), "%PDF-");
   assert.ok(bytes.length > 20_000 && bytes.length < 400_000, `${bytes.length} bayt`);
@@ -332,8 +342,8 @@ test("PDF: kaydedilen plandan çizilir; %PDF ile başlar, A4 yatay, başlığı 
   assert.equal((await PDFDocument.load(await renderShiftPdf({ ...input, rows: many(13) }))).getPageCount(), 1);
   assert.equal((await PDFDocument.load(await renderShiftPdf({ ...input, rows: many(14) }))).getPageCount(), 2);
   assert.equal((await PDFDocument.load(await renderShiftPdf({ ...input, rows: [], updated: null }))).getPageCount(), 1);
-  // Şubesi bilinmeyen (hazır vardiyası olmayan) plan da çizilir
-  assert.equal((await PDFDocument.load(await renderShiftPdf({ ...input, branchId: undefined }))).getPageCount(), 1);
+  // Hazır vardiyası olmayan şubenin planı da çizilir (harfsiz daireler)
+  assert.equal((await PDFDocument.load(await renderShiftPdf({ ...input, presets: undefined }))).getPageCount(), 1);
   // Logo vektör (L'Af'ın harfleri ve çekirdeği ayrı yollar), dosya izine bağlı değil; harfler yeşil, çekirdek altın çizilir
   for (const path of [LAF_LETTERS_PATH, LAF_BEAN_PATH]) assert.match(path, /^M[\d. ]+C[\dA-Za-z. -]+Z?$/);
   assert.deepEqual(LAF_MARK_BOX, { width: 1035.2, height: 846 });

@@ -1,24 +1,29 @@
 "use server";
 
+import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { BRANCH_ID_MAX } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { CASH_OUT_REQUEST_TEXT } from "@/lib/cash-out-requests";
-import { cashOutLabel, cashOutUndoJson, readCashOutUndo, type CashOutSnapshot } from "@/lib/cash-outs";
+import { cashOutLabel, cashOutUndoJson, readCashOutUndo, staffCategory, type CashOutSnapshot } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
-import { requireUser } from "@/server/auth/dal";
-import { formTillBranch, withBranchScope } from "@/server/branch-scope";
+import { asActor, can, opsLevel } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
+import { formTillBranch, staffBranchRefusal, withBranchScope } from "@/server/branch-scope";
 import { assertCashOutDeletable, lockCashOutLink, syncLinkedCashOut } from "@/server/cari/kasa";
 import { staffCashOutGate } from "@/server/cash-outs/guard";
 import { cashOutSchema, lockCashOut, removeCashOut, writeCashOut, type CashOutActor, type CashOutData, type CashOutInput } from "@/server/cash-outs/write";
-import { getDb } from "@/server/db";
+import { getDb, schema as s } from "@/server/db";
 import { open, seal } from "@/server/secret-box";
 
 import { logActivity } from "./log";
 import { attempt, UserError } from "./util";
+
+/** Müdürün personel dışı kategoriye yazma denemesi (maaş, kira, reklam; docs/ROLLER.md › Kararlar) */
+const MANAGER_CATEGORY_TEXT = "Bu kategoriye yalnız yönetici yazabilir";
 
 // Gün içinde kasadan çıkanlar (docs/KASA-RAPORU.md, docs/FOTOGRAF.md): personel ve yönetici ekler. Alışveriş satırı
 // Aylık harcamalar'a da yazılabilir; o kayıt expense_entries.cash_out_id ile satıra ve fişin fotoğrafına bağlıdır.
@@ -48,6 +53,11 @@ async function persist(me: CashOutActor, d: CashOutData, opts: { restore?: boole
     const link = d.id ? await lockCashOutLink(tx, d.id, admin) : null;
     const prev = d.id ? await lockCashOut(tx, d.id) : null;
     if (d.id && !prev) throw new UserError("Satır bulunamadı; silinmiş olabilir");
+    // Müdür "admin" düzeyinde yazar ama şubesine kilitli: var olan satır kendi şubesinin olmalı (kilit oturumdan)
+    if (admin && prev) {
+      const refusal = await staffBranchRefusal(me, prev.branchId);
+      if (refusal) throw new UserError(refusal);
+    }
     if (!admin) {
       const gate = await staffCashOutGate(tx, me, prev ? { op: "duzelt", row: prev } : { op: "ekle", date: d.date, restore: opts.restore });
       const moved = prev && prev.date !== d.date ? await staffCashOutGate(tx, me, { op: "ekle", date: d.date }) : "direct";
@@ -73,11 +83,29 @@ const saveSchema = cashOutSchema.extend({
  */
 export async function saveCashOut(input: z.input<typeof saveSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = await requireCan("kayit.yaz");
     const { branchId, ...d } = saveSchema.parse(input);
+    if (opsLevel(me.role) === "admin" && !can(me.role, "kategori.tum")) await assertManagerCategory(d);
     const till = await formTillBranch(branchId);
-    return withBranchScope(till, () => persist(me, d));
+    return withBranchScope(till, () => persist(asActor(me, opsLevel(me.role)), d));
   });
+}
+
+/**
+ * Müdür kasaya "admin" düzeyinde yazar ama bütün kategorileri seçemez (src/lib/roles.ts › "kategori.tum"): yeni satır ya
+ * da değişen kategori personelin kategorilerinden olmalı (malzeme, bakım, temizlik); satırın şimdiki kategorisi kalabilir
+ * (tutarı düzeltir). Kasadan ödenen maaş ve avans kişisel ücrettir, müdür yazmaz.
+ */
+async function assertManagerCategory(d: CashOutData) {
+  if (!d.categoryId) return;
+  const db = getDb();
+  const [cat] = await db.select().from(s.expenseCategories).where(eq(s.expenseCategories.id, d.categoryId)).limit(1);
+  if (!cat || staffCategory(cat)) return;
+  if (d.id) {
+    const [cur] = await db.select({ categoryId: s.expenseEntries.categoryId }).from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, d.id)).limit(1);
+    if (cur?.categoryId === d.categoryId) return;
+  }
+  throw new UserError(MANAGER_CATEGORY_TEXT);
 }
 
 /**
@@ -87,11 +115,14 @@ export async function saveCashOut(input: z.input<typeof saveSchema>) {
  */
 export async function deleteCashOut(id: number) {
   return attempt(async (): Promise<{ undo: string }> => {
-    const me = await requireUser();
+    const actor = await requireCan("kayit.yaz");
+    const me = asActor(actor, opsLevel(actor.role));
     const cid = z.number().int().positive().parse(id);
     const snap = await getDb().transaction(async (tx) => {
       const row = await lockCashOut(tx, cid);
       if (!row) throw new UserError("Satır bulunamadı; silinmiş olabilir");
+      const otherBranch = await staffBranchRefusal(me, row.branchId);
+      if (otherBranch) throw new UserError(otherBranch);
       await assertCashOutDeletable(tx, cid, me.role === "admin");
       if (me.role !== "admin" && (await staffCashOutGate(tx, me, { op: "sil", row })) === "request") throw new UserError(CASH_OUT_REQUEST_TEXT.needsApproval);
       return removeCashOut(tx, row);
@@ -114,7 +145,8 @@ const constraintOf = (e: unknown) =>
  */
 export async function restoreCashOut(undo: string) {
   return attempt(async () => {
-    const me = await requireUser();
+    const actor = await requireCan("kayit.yaz");
+    const me = asActor(actor, opsLevel(actor.role));
     const sealed = z.string().max(8000).safeParse(undo);
     const opened = sealed.success ? readCashOutUndo(open(sealed.data, "cashout-undo"), me.id, Date.now()) : null;
     if (!opened) throw new UserError("Geri alma süresi doldu; satırı yeniden ekleyin");

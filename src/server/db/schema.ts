@@ -58,32 +58,43 @@ const branchId = () => text("branch_id").notNull().default(DEFAULT_BRANCH_ID).re
 const branchIdNullable = () => text("branch_id").references(() => branches.id);
 
 // ---------------------------------------------------------------- Kullanıcılar
-export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  email: text("email").notNull().unique(),
-  name: text("name").notNull(),
-  passwordHash: text("password_hash").notNull(),
-  role: text("role", { enum: ["admin", "staff"] }).notNull().default("staff"),
-  /**
-   * Personelin şubesi (docs/SUBE.md › Personel hesabının şubesi): doluysa personelin paneli bu şubede kilitli açılır
-   * (kasa raporu, kontrol listeleri o şubenin). Boş: bütün şubeler, seçici serbest. Yöneticide kullanılmaz.
-   */
-  branchId: text("branch_id").references(() => branches.id),
-  active: boolean("active").notNull().default(true),
-  createdAt: createdAt(),
-  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
-  /** İki adımlı doğrulama anahtarı (AES-GCM ile şifreli); kurulum onaylanana kadar totpEnabled false kalır */
-  totpSecret: text("totp_secret"),
-  totpEnabled: boolean("totp_enabled").notNull().default(false),
-  /** Son kabul edilen TOTP zaman adımı (aynı kod iki kez kullanılamaz) */
-  totpLastStep: integer("totp_last_step"),
-  /** Kullanılmamış kurtarma kodlarının sha256 özetleri */
-  recoveryCodes: jsonb("recovery_codes").$type<string[]>(),
-  failedLogins: integer("failed_logins").notNull().default(0),
-  lockedUntil: timestamp("locked_until", { withTimezone: true }),
-  /** Parola, iki adımlı doğrulama ya da yetki değişince artar; eski oturumlar geçersiz olur */
-  sessionVersion: integer("session_version").notNull().default(1),
-});
+export const users = pgTable(
+  "users",
+  {
+    id: serial("id").primaryKey(),
+    email: text("email").notNull().unique(),
+    name: text("name").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    /** Rol (docs/ROLLER.md, src/lib/roles.ts): yönetici, müdür, personel, muhasebeci; users_role_ck */
+    role: text("role", { enum: ["admin", "manager", "staff", "accountant"] }).notNull().default("staff"),
+    /**
+     * Personelin ve müdürün şubesi (docs/SUBE.md › Personel hesabının şubesi): doluysa paneli bu şubede kilitli açılır
+     * (kasa raporu, kontrol listeleri o şubenin). Personelde boş: bütün şubeler, seçici serbest. Müdürde ZORUNLU
+     * (users_manager_branch_ck). Yöneticide ve muhasebecide kullanılmaz.
+     */
+    branchId: text("branch_id").references(() => branches.id),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+    /** İki adımlı doğrulama anahtarı (AES-GCM ile şifreli); kurulum onaylanana kadar totpEnabled false kalır */
+    totpSecret: text("totp_secret"),
+    totpEnabled: boolean("totp_enabled").notNull().default(false),
+    /** Son kabul edilen TOTP zaman adımı (aynı kod iki kez kullanılamaz) */
+    totpLastStep: integer("totp_last_step"),
+    /** Kullanılmamış kurtarma kodlarının sha256 özetleri */
+    recoveryCodes: jsonb("recovery_codes").$type<string[]>(),
+    failedLogins: integer("failed_logins").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    /** Parola, iki adımlı doğrulama ya da yetki değişince artar; eski oturumlar geçersiz olur */
+    sessionVersion: integer("session_version").notNull().default(1),
+  },
+  (t) => [
+    // Tanınmayan rol yazılamaz (oturum da tanımaz: src/server/auth/session.ts)
+    check("users_role_ck", sql`${t.role} in ('admin','manager','staff','accountant')`),
+    // Müdür şubesine kilitli: şubesiz müdür olmaz (src/server/auth/dal.ts › managerWithoutBranch)
+    check("users_manager_branch_ck", sql`${t.role} <> 'manager' or ${t.branchId} is not null`),
+  ],
+);
 
 /**
  * Tek kullanımlık bağlantılar: davet (kişi ilk parolasını kendisi belirler) ve parola sıfırlama. Ham anahtar

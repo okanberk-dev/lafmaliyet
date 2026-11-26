@@ -175,8 +175,8 @@ test("Kasa (§8): personelin satır verisi beyaz listeyle kurulur; ödeme bağı
   assert.equal(row.locked, true);
   // Sayfa personelde yalnız staffCashOutRow'dan geçen satırı verir; yöneticinin ipucu personele hiç okunmaz
   const page = read("src/app/panel/kasa/page.tsx");
-  assert.match(page, /const dayOuts: CashOutView\[\] = admin\s+\? outs\s+: outs\.map\(\(o\) => staffCashOutRow\(/);
-  assert.match(page, /admin \? loadKasaCariHints\(ids, today\) : Promise\.resolve\(\{\}\)/);
+  assert.match(page, /const dayOuts: CashOutView\[\] = admin\s+\? allCategories\s+\? outs\s+: outs\.map\(hideName\)\s+: outs\.map\(\(o\) => staffCashOutRow\(/);
+  assert.match(page, /owner \? loadKasaCariHints\(ids, today\) : Promise\.resolve\(\{\}\)/);
   // Ad ipucu faturalardaki eşleşme kuralıyla aynı anahtarı kullanır (pencere fatura kurallarını yüklemez)
   const { supplierMatchKey } = await import("../src/app/panel/faturalar/rules");
   for (const n of ["Sütaş", "  SÜTAŞ   SÜT ", "Pınar (şube)", "IŞIK GIDA", "Metro Market (Tuzla)", "", "  "]) assert.equal(nameKey(n), supplierMatchKey(n), n);

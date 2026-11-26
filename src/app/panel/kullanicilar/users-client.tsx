@@ -21,10 +21,10 @@ import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { ToggleRow } from "@/components/ui/toggle-row";
-import { ROLES } from "@/lib/constants";
+import { ROLE_ORDER, ROLES, type Role } from "@/lib/constants";
 import { num } from "@/lib/format";
 import { PASSWORD_MIN, passwordProblem } from "@/lib/password-rules";
-import { ROLE_PERMISSIONS, STAFF_ROLE_HINT } from "@/lib/roles";
+import { ACCOUNTANT_ROLE_HINT, ADMIN_ROLE_HINT, BRANCH_REQUIRED_ROLES, BRANCH_ROLES, MANAGER_ROLE_HINT, ROLE_PERMISSIONS, STAFF_ROLE_HINT } from "@/lib/roles";
 import { isStepUpError, needsStepUp, STEP_UP_REQUIRED, stepUpChanges, type StepUpCase, type StepUpConfirm } from "@/lib/step-up";
 import { cn } from "@/lib/utils";
 import { createAccessLink } from "@/server/actions/invites";
@@ -58,13 +58,22 @@ function useBranchName(id: string | null): string | null {
  * Personelin şubesi (docs/SUBE.md › Personel hesabının şubesi). Şube seçilirse kişinin paneli o şubede kilitli açılır:
  * kasa raporu, kontrol listeleri o şubenin. Yönetici için gösterilmez; tek şube açıkken de gösterilmez.
  */
-function UserBranchField({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
+function UserBranchField({ id, value, onChange, required = false }: { id: string; value: string; onChange: (v: string) => void; required?: boolean }) {
   const branches = useContext(BranchesContext);
-  if (branches.length < 2 && !value) return null;
+  // Müdürde şube zorunlu (docs/ROLLER.md): tek şube açıkken de gösterilir, "Bütün şubeler" yok
+  if (branches.length < 2 && !value && !required) return null;
   return (
-    <Field label="Şube" htmlFor={id} hint="Personel paneli bu şubede açar; kasa raporu ve kontrol listeleri bu şubenin olur. Bütün şubeler: kişi şubeyi kendisi seçer.">
-      <Select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">Bütün şubeler</option>
+    <Field
+      label="Şube"
+      htmlFor={id}
+      hint={
+        required
+          ? "Müdür yalnız bu şubeyi görür ve yönetir; öteki şubeler ona kapalıdır. Zorunlu."
+          : "Personel paneli bu şubede açar; kasa raporu ve kontrol listeleri bu şubenin olur. Bütün şubeler: kişi şubeyi kendisi seçer."
+      }
+    >
+      <Select id={id} value={value} onChange={(e) => onChange(e.target.value)} required={required}>
+        <option value="">{required ? "Şube seçin" : "Bütün şubeler"}</option>
         {branches.map((b) => (
           <option key={b.id} value={b.id}>
             {b.name}
@@ -76,7 +85,7 @@ function UserBranchField({ id, value, onChange }: { id: string; value: string; o
 }
 
 function BranchBadge({ user }: { user: UserRow }) {
-  const name = useBranchName(user.role === "staff" ? user.branchId : null);
+  const name = useBranchName(hasBranch(user.role) ? user.branchId : null);
   return name ? <Badge tone="blue">{name}</Badge> : null;
 }
 
@@ -153,7 +162,7 @@ export type UserRow = {
   id: number;
   name: string;
   email: string;
-  role: "admin" | "staff";
+  role: Role;
   /** Personelin şubesi; boş: bütün şubeler */
   branchId: string | null;
   active: boolean;
@@ -167,8 +176,12 @@ export type UserRow = {
   liveLink: { kind: "invite" | "reset"; until: string } | null;
 };
 
-type RoleFilter = "all" | "admin" | "staff";
-const ROLE_FILTERS: readonly RoleFilter[] = ["all", "admin", "staff"];
+type RoleFilter = "all" | Role;
+const ROLE_FILTERS: readonly RoleFilter[] = ["all", ...ROLE_ORDER];
+
+/** Rolün hesabı şubeye bağlanır mı (personel isteğe bağlı, müdür zorunlu) */
+const hasBranch = (role: Role) => BRANCH_ROLES.includes(role);
+const branchRequired = (role: Role) => BRANCH_REQUIRED_ROLES.includes(role);
 
 /**
  * AkmanOS "User list": avatar + ad + soluk e-posta, rol rozeti, noktalı durum rozeti, iki adımlı doğrulama, son
@@ -338,8 +351,7 @@ function UsersList({
             label="Role göre süz"
             options={[
               { value: "all", label: "Hepsi" },
-              { value: "admin", label: ROLES.admin },
-              { value: "staff", label: ROLES.staff },
+              ...ROLE_ORDER.map((r) => ({ value: r, label: ROLES[r] })),
             ]}
           />
         </FilterBar>
@@ -617,9 +629,11 @@ function RowActions({
 
 // ---------------------------------------------------------------- Ortak form parçaları
 
-const ROLE_OPTIONS: { value: "staff" | "admin"; label: string; hint: string }[] = [
+const ROLE_OPTIONS: { value: Role; label: string; hint: string }[] = [
   { value: "staff", label: ROLES.staff, hint: STAFF_ROLE_HINT },
-  { value: "admin", label: ROLES.admin, hint: "Her şey (maliyet, kâr, ayarlar, reçete onayı dahil)" },
+  { value: "manager", label: ROLES.manager, hint: MANAGER_ROLE_HINT },
+  { value: "accountant", label: ROLES.accountant, hint: ACCOUNTANT_ROLE_HINT },
+  { value: "admin", label: ROLES.admin, hint: ADMIN_ROLE_HINT },
 ];
 
 /** Büyük, dokunması kolay seçenek kartları (radyo grubu) */
@@ -776,7 +790,7 @@ const NEW_IDS = { name: "nu-n", email: "nu-e", password: "nu-p" } as const;
 function NewUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (info: AccessInfo) => void }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "staff">("staff");
+  const [role, setRole] = useState<Role>("staff");
   const [branchId, setBranchId] = useState("");
   const [mode, setMode] = useState<Mode>("password");
   // Pencere açılınca hazır, okunur güçlü parola: yönetici olduğu gibi kullanabilir ya da değiştirebilir
@@ -800,7 +814,11 @@ function NewUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated:
     const found = validateUser({ name, email, password: mode === "password" ? password : "", needPassword: mode === "password" });
     setErrors(found);
     if (focusFirst(found, NEW_IDS)) return;
-    const branch = role === "staff" ? branchId || null : null;
+    if (branchRequired(role) && !branchId) {
+      toast.error("Müdürün şubesini seçin");
+      return;
+    }
+    const branch = hasBranch(role) ? branchId || null : null;
     const payload =
       mode === "password" ? ({ mode, name, email, role, active, password, branchId: branch } as const) : ({ mode, name, email, role, active: true, branchId: branch } as const);
     // Yönetici eklemek kendi parolanızı ister: önce parola penceresi açılır
@@ -880,9 +898,9 @@ function NewUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated:
             <StepLegend n={2}>Rol</StepLegend>
             <ChoiceCards name="nu-role" value={role} onChange={setRole} options={ROLE_OPTIONS} />
             {role === "admin" ? <p className="mt-1.5 text-xs text-ink-mute">Yönetici eklerken kendi parolanız sorulur.</p> : null}
-            {role === "staff" ? (
+            {hasBranch(role) ? (
               <div className="mt-3">
-                <UserBranchField id="nu-branch" value={branchId} onChange={setBranchId} />
+                <UserBranchField id="nu-branch" value={branchId} onChange={setBranchId} required={branchRequired(role)} />
               </div>
             ) : null}
           </fieldset>
@@ -975,7 +993,7 @@ function UserDialog({
 }) {
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
-  const [role, setRole] = useState<"admin" | "staff">(user.role);
+  const [role, setRole] = useState<Role>(user.role);
   const [branchId, setBranchId] = useState(user.branchId ?? "");
   const [active, setActive] = useState(user.active);
   const [password, setPassword] = useState("");
@@ -1012,7 +1030,7 @@ function UserDialog({
       async (confirm) => {
         setBusy(true);
         try {
-          return await saveUser({ id: user.id, name, email, role, active, branchId: role === "staff" ? branchId || null : null, password: password || undefined, seen }, confirm);
+          return await saveUser({ id: user.id, name, email, role, active, branchId: hasBranch(role) ? branchId || null : null, password: password || undefined, seen }, confirm);
         } finally {
           setBusy(false);
         }
@@ -1178,9 +1196,9 @@ function UserDialog({
             {/* Kendi yönetici yetkinizi kaldıramazsınız (sunucu da reddeder) */}
             <ChoiceCards name="u-role" value={role} onChange={setRole} options={ROLE_OPTIONS} disabled={(v) => self && v !== "admin"} />
             {self ? <p className="mt-1.5 text-xs text-ink-mute">Kendi yönetici yetkinizi kaldıramazsınız; başka bir yönetici değiştirebilir.</p> : null}
-            {role === "staff" ? (
+            {hasBranch(role) ? (
               <div className="mt-3">
-                <UserBranchField id="u-branch" value={branchId} onChange={setBranchId} />
+                <UserBranchField id="u-branch" value={branchId} onChange={setBranchId} required={branchRequired(role)} />
               </div>
             ) : null}
           </fieldset>
@@ -1261,8 +1279,8 @@ export function RolesCard({ twoFactorRequired = false }: { twoFactorRequired?: b
       <CardHeader
         icon={<ShieldCheck />}
         title="Roller"
-        description={`Her kullanıcının tek rolü vardır. Yetkiler hem menüde hem sunucuda denetlenir. Yönetici eklemek ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirmek kendi parolanızı ister.${
-          twoFactorRequired ? " Yönetici hesaplarında iki adımlı doğrulama zorunludur: kurmamış yönetici girişten sonra kurulum ekranına gider." : ""
+        description={`Her kullanıcının tek rolü vardır. Yetkiler hem menüde hem sunucuda denetlenir. Müdür yalnız şubesini görür (şubesi zorunlu); muhasebeci salt okur, hiçbir kaydı değiştiremez. Yönetici eklemek ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirmek kendi parolanızı ister.${
+          twoFactorRequired ? " Yönetici, müdür ve muhasebeci hesaplarında iki adımlı doğrulama zorunludur: kurmamış kişi girişten sonra kurulum ekranına gider." : ""
         }`}
       />
       <TableWrap>
@@ -1270,20 +1288,22 @@ export function RolesCard({ twoFactorRequired = false }: { twoFactorRequired?: b
           <THead>
             <tr>
               <TH>Yetki</TH>
-              <TH className="text-center">{ROLES.admin}</TH>
-              <TH className="text-center">{ROLES.staff}</TH>
+              {ROLE_ORDER.map((r) => (
+                <TH key={r} className="text-center">
+                  {ROLES[r]}
+                </TH>
+              ))}
             </tr>
           </THead>
           <tbody>
             {ROLE_PERMISSIONS.map((p) => (
               <TR key={p.label}>
                 <TD className="text-ink-soft">{p.label}</TD>
-                <TD className="text-center">
-                  <Mark on={p.admin} label={ROLES.admin} />
-                </TD>
-                <TD className="text-center">
-                  <Mark on={p.staff} label={ROLES.staff} />
-                </TD>
+                {ROLE_ORDER.map((r) => (
+                  <TD key={r} className="text-center">
+                    <Mark on={p[r]} label={ROLES[r]} />
+                  </TD>
+                ))}
               </TR>
             ))}
           </tbody>

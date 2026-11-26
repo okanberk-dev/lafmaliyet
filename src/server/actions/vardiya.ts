@@ -4,14 +4,15 @@ import { refresh } from "next/cache";
 
 import { pdfHref, type SaveWeekInput } from "@/lib/vardiya";
 import type { DraftResult, DraftWeekInput } from "@/lib/vardiya-taslak";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireCan } from "@/server/auth/dal";
+import { staffBranchRefusal } from "@/server/branch-scope";
 import { getDb } from "@/server/db";
 import { draftShiftWeek } from "@/server/vardiya/draft";
 import { notifyShiftChanges } from "@/server/vardiya/notify";
 import { saveShiftWeek, shiftLogDetail } from "@/server/vardiya/store";
 
 import { logActivity } from "./log";
-import { attempt, type ActionResult } from "./util";
+import { attempt, UserError, type ActionResult } from "./util";
 
 // Vardiya planı (docs/VARDIYA.md): haftayı yalnız yönetici kaydeder; personel planı görür ve PDF'ini alır. Kurallar
 // src/lib/vardiya.ts'te (hücrenin okunuşu ekranla aynı), yazım src/server/vardiya/store.ts'te.
@@ -31,7 +32,10 @@ export interface SaveShiftWeekResult {
  */
 export async function saveShiftWeekAction(input: SaveWeekInput): Promise<ActionResult<SaveShiftWeekResult>> {
   return attempt(async () => {
-    const me = await requireAdmin();
+    // Yönetici ve müdür (yalnız şubesinin planı; kilit oturumdan: staffBranchRefusal)
+    const me = await requireCan("vardiya.yaz");
+    const other = await staffBranchRefusal(me, typeof input?.branchId === "string" ? input.branchId : "?");
+    if (other) throw new UserError(other);
     const r = await saveShiftWeek(getDb(), me, input);
     if (r.written || r.removed) {
       await logActivity(me, "Vardiya planı kaydedildi", shiftLogDetail(r));
@@ -50,7 +54,9 @@ export async function saveShiftWeekAction(input: SaveWeekInput): Promise<ActionR
  */
 export async function draftShiftWeekAction(input: DraftWeekInput): Promise<ActionResult<DraftResult>> {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = await requireCan("vardiya.yaz");
+    const other = await staffBranchRefusal(me, typeof input?.branchId === "string" ? input.branchId : "?");
+    if (other) throw new UserError(other);
     return draftShiftWeek(getDb(), me, input);
   });
 }

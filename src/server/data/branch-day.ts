@@ -8,8 +8,8 @@ import { businessDate } from "@/lib/cash-report";
 import { posZSchema } from "@/lib/lafpos/day";
 import { foyZ } from "@/lib/modpos/z";
 import { addDays } from "@/lib/reminders";
-import { requireAdmin } from "@/server/auth/dal";
-import { withBranchScope } from "@/server/branch-scope";
+import { requireCan } from "@/server/auth/dal";
+import { staffBranchLock, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { modposFallbackSheets, modposTillRow } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
@@ -24,12 +24,14 @@ import { loadLafposSwitchDay } from "@/server/lafpos/status";
  * modposTillRow): Genel bakış'ın günlük grafiği o günü sayarken kartın çizgisi eksik göstermesin (denetim 13 Kasım HM-09).
  */
 export async function loadBranchDay(now: Date = new Date()): Promise<BranchDaySummary | null> {
-  await requireAdmin();
+  await requireCan("rapor.sube");
   const db = getDb();
   const today = businessDate(now);
   const from = addDays(today, -8);
-  const [all, switchDay] = await Promise.all([listBranches(db), loadLafposSwitchDay(db)]);
-  const branches = all.filter((b) => b.active && b.kind === "fiziksel");
+  const [all, switchDay, lock] = await Promise.all([listBranches(db), loadLafposSwitchDay(db), staffBranchLock()]);
+  // Müdür yalnız kendi şubesinin satırını görür (docs/ROLLER.md); kayıtlar aşağıda şube kimliğiyle okunur, kart yalnız
+  // bu şubelerin satırını kurar
+  const branches = all.filter((b) => b.active && b.kind === "fiziksel" && (lock === null || b.id === lock));
   if (!branches.length) return null;
 
   const lafposFrom = switchDay === null || switchDay > today ? null : switchDay > from ? switchDay : from;
@@ -106,9 +108,11 @@ export async function loadBranchDay(now: Date = new Date()): Promise<BranchDaySu
       ];
     }),
   ];
+  // Kartın şubeleri dışındaki kayıt hesaba hiç girmez (müdürde öteki şubeler)
+  const shown = new Set(branches.map((b) => b.id));
   const summary = branchDaySummary(
     branches.map((b) => ({ id: b.id, name: b.name, openedOn: b.openedOn })),
-    sources,
+    sources.filter((x) => shown.has(x.branchId)),
     today,
   );
   // Hiçbir şubenin gün sonu yoksa ve geçen hafta da veri yoksa kart çizilmez (kasa hiç kullanılmamış)
