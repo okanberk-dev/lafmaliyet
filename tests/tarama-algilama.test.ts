@@ -11,7 +11,7 @@ import type { Quad } from "../src/lib/scan/image";
 import { seededRandom } from "../src/lib/scan/image";
 import { lineThrough, signedDist } from "../src/lib/scan/geom";
 import { detectDocument, refineCorners, scanDocument } from "../src/lib/scan";
-import { cornerError, projectRect, renderScene, type Sahne } from "./helpers/tarama-sentetik";
+import { cornerError, projectRect, regionMean, renderScene, type Sahne } from "./helpers/tarama-sentetik";
 
 const W = 720;
 const H = 960;
@@ -77,6 +77,20 @@ const scenes = {
     noise: 3,
     blur: 0.8,
     seed: 4,
+  },
+  // beyaza yakın tezgâhta termal fiş: kâğıtla zemin arası ~22 gri düzeyi
+  fisBeyazTezgah: {
+    width: W,
+    height: H,
+    corners: projectRect({ width: W, height: H, aspect: 1 / 5, size: 0.18, rotDeg: 5, tiltX: 18 }),
+    paperAspect: 1 / 5,
+    background: "beyaz",
+    bgColor: [220, 219, 214],
+    paper: [244, 244, 242],
+    text: { rows: 50, strength: 0.75 },
+    noise: 2.5,
+    blur: 0.8,
+    seed: 302,
   },
 } satisfies Record<string, Sahne>;
 
@@ -160,6 +174,26 @@ test("algılama: kareden taşan uzun fiş — uzun kenarlar oturur, kısa kenarl
   const longDir = Math.atan2(truth[3].y - truth[0].y, truth[3].x - truth[0].x);
   const diff = Math.abs(((top - longDir) * 180) / Math.PI);
   assert.ok(Math.abs(diff - 90) < 1.5, `üst kenar uzun kenara dik olmalı: ${diff.toFixed(2)}°`);
+});
+
+test("algılama: kâğıdın iki köşesi kareden çıkmış — köşeler kenarların kesişimi, taramada dışarısı kâğıt rengi", () => {
+  const truth: Quad = [
+    { x: 147, y: -27 },
+    { x: 746, y: 155 },
+    { x: 496, y: 804 },
+    { x: 43, y: 745 },
+  ].map((p) => ({ x: (p.x * W) / 720, y: (p.y * H) / 960 })) as Quad;
+  // sağ üst köşe sağ kenarın dışında, sol üst köşe üst kenarın dışında
+  assert.ok(truth[1].x > W && truth[0].y < 0, "köşeler gerçekten kare dışında");
+  const img = renderScene({ width: W, height: H, corners: truth, paperAspect: A4, background: "gri", text: { rows: 30 }, noise: 3, blur: 0.8, seed: 125 });
+  const d = detectDocument(img);
+  assert.ok(d.corners && !d.fillsFrame, `kâğıt bulunmalı (${d.reasons.join(",")})`);
+  const err = cornerError(d.corners!, truth, W, H);
+  assert.ok(err < 0.015, `köşe hatası %${(err * 100).toFixed(2)}: ${JSON.stringify(d.corners)}`);
+  assert.ok(d.reasons.includes("kose-kare-disinda"), `kare dışı köşe söylenmeli: ${d.reasons}`);
+  const r = scanDocument(img, { deskew: false, mode: "orijinal", maxEdge: 800 });
+  // açılan sayfanın sağ üst köşesi fotoğrafta yok: kenar pikseli uzatılmaz, kâğıt rengiyle dolar
+  assert.ok(regionMean(r.image, r.image.width - 12, 0, r.image.width, 12) > 225, "kare dışı köşe kâğıt rengi");
 });
 
 test("köşe oturtma: kaba ipucu köşeleri (köşegenin ±%5'i) gerçek kenarlara oturur", () => {

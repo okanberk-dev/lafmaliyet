@@ -5,22 +5,31 @@
  */
 
 import type { Point, Quad, RgbaImage } from "./image";
-import { fitSize, resizeRgba, scaleQuad, toGray, unscaleQuad } from "./image";
+import { fitSize, histogram, histPercentile, resizeRgba, scaleQuad, toGray, unscaleQuad } from "./image";
 import { interiorAngles, isConvex, orderCorners, polygonArea } from "./geom";
-import { detectDocument, type DetectMethod, type DetectOptions } from "./detect";
+import { clampQuad, detectDocument, MAX_OUTSIDE, type DetectMethod, type DetectOptions } from "./detect";
 import { refineCorners } from "./refine";
 import { estimateSkew, enhance, type ScanMode } from "./enhance";
 import { estimateSize, rotationAbout, verticalShear, warpQuad, type Affine } from "./warp";
 
 export type { GrayImage, Point, Quad, RgbaImage } from "./image";
 export { orderCorners } from "./geom";
-export { detectDocument, type DetectMethod, type DetectOptions, type Detection } from "./detect";
+export { detectDocument, MAX_OUTSIDE, type DetectMethod, type DetectOptions, type Detection } from "./detect";
 export { refineCorners, type RefineOptions, type RefineResult } from "./refine";
 export { enhance, estimateSkew, SCAN_MODES, type ScanMode, type SkewEstimate } from "./enhance";
 export { applyHomography, estimateSize, homography, invert3, rotateQuarter, warpQuad, type Mat3, type OutputSize } from "./warp";
 
+/** Saat yönünde çeyrek dönüş (derece) */
+export type QuarterTurn = 0 | 90 | 180 | 270;
+
+/** Belgenin üst kenarı görüntünün hangi tarafında (yapay zekâ ipucu): up düz, right sağda, down ters, left solda */
+export type DocumentTop = "up" | "right" | "down" | "left";
+
 export interface ScanOptions {
-  /** Verilirse algılama yapılmaz (kullanıcının köşeleri ya da ipucudan çevrilmiş köşeler; asıl pikselde) */
+  /**
+   * Verilirse algılama yapılmaz (kullanıcının köşeleri ya da ipucudan çevrilmiş köşeler; asıl pikselde; sırası
+   * önemsiz). Köşe görüntünün en çok %10 dışında olabilir.
+   */
   corners?: Quad | null;
   /** Varsayılan "belge" */
   mode?: ScanMode;
@@ -30,6 +39,11 @@ export interface ScanOptions {
   deskew?: boolean;
   /** Verilen köşeleri önce gerçek kenarlara oturt (kaba köşe, yapay zekâ ipucu); varsayılan kapalı */
   refine?: boolean;
+  /**
+   * Çıktıyı saat yönünde çevir (yan ya da ters çekilmiş belge; yapay zekânın "top" ipucundan `rotationForTop`).
+   * Çevirme açmayla birlikte yapılır (ek geçiş yok); eğiklik çevrilmiş sayfada ölçülür. Varsayılan 0.
+   */
+  rotate?: QuarterTurn;
   detect?: DetectOptions;
 }
 
@@ -38,7 +52,11 @@ export type ScanMethod = DetectMethod | "verilen" | "yok";
 export interface ScanResult {
   /** Taranmış görüntü (RGBA) */
   image: RgbaImage;
-  /** Kullanılan köşeler (asıl pikselde); belge bulunamadıysa ya da kareyi dolduruyorsa görüntünün köşeleri */
+  /**
+   * Kullanılan köşeler (asıl pikselde, görüntüye göre sıralı: sol üst, sağ üst, sağ alt, sol alt); belge bulunamadıysa
+   * ya da kareyi dolduruyorsa görüntünün köşeleri. Kâğıdın köşesi kareden çıkmışsa o köşe görüntünün biraz dışında
+   * olabilir (en çok `MAX_OUTSIDE`); dışarıda kalan yer kâğıt rengiyle dolar.
+   */
   corners: Quad;
   /** 0–1; köşeler verildiyse 1 */
   confidence: number;
@@ -50,6 +68,8 @@ export interface ScanResult {
    * uygulanır (uzun kenarlar yerinde kalır, satırlar düzelir).
    */
   rotation: number;
+  /** Uygulanan çeyrek dönüş (seçenekteki `rotate`) */
+  rotate: QuarterTurn;
   reasons: string[];
   /** Ölçülen süreler (ms) */
   timings: { detect: number; warp: number; enhance: number; total: number };
@@ -70,15 +90,20 @@ export function fullFrame(width: number, height: number): Quad {
   ];
 }
 
+/** Verilen köşe görüntünün en çok bu oranında dışında olabilir (algılamanın sınırından biraz geniş) */
+const GIVEN_OUTSIDE = 0.1;
+
 /**
- * Dörtgen kullanılabilir mi: sıralı, dışbükey, görüntünün içinde (en çok %2 taşabilir), alanı görüntünün en az %1'i,
- * iç açılar 25°–155°.
+ * Dörtgen kullanılabilir mi: dört sayı noktası, sıralanınca dışbükey, görüntünün içinde (en çok %10 taşabilir: kareden
+ * çıkmış köşe), alanı görüntünün en az %1'i, iç açılar 25°–155°.
  */
 export function quadIsValid(q: readonly Point[] | null | undefined, width: number, height: number): boolean {
   if (!q || q.length !== 4) return false;
   for (const p of q) {
-    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return false;
-    if (p.x < -0.02 * width || p.y < -0.02 * height || p.x > 1.02 * width || p.y > 1.02 * height) return false;
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return false;
+    const ox = GIVEN_OUTSIDE * width;
+    const oy = GIVEN_OUTSIDE * height;
+    if (p.x < -ox || p.y < -oy || p.x > width - 1 + ox || p.y > height - 1 + oy) return false;
   }
   const o = orderCorners(q);
   if (!isConvex(o)) return false;
@@ -105,16 +130,27 @@ export function cornersFromHint(hint: readonly (readonly [number, number] | Poin
   return orderCorners(pts);
 }
 
-/** Pikseldeki köşeleri 0–1000 orana çevirir (kaydetmek, yapay zekâya ipucu vermek için) */
+/** Pikseldeki köşeleri 0–1000 orana çevirir (kaydetmek, yapay zekâya ipucu vermek için; kare dışı köşe kenetlenir) */
 export function cornersToHint(q: Quad, width: number, height: number): [number, number][] {
-  return q.map((p) => [Math.round((p.x / Math.max(1, width - 1)) * 1000), Math.round((p.y / Math.max(1, height - 1)) * 1000)] as [number, number]);
+  const r = (v: number, size: number) => Math.max(0, Math.min(1000, Math.round((v / Math.max(1, size - 1)) * 1000)));
+  return q.map((p) => [r(p.x, width), r(p.y, height)] as [number, number]);
 }
 
-/** Düzeltilmiş küçük kopyadan kâğıdın rengi (eğiklik düzeltmesinde kâğıt dışına düşen yer bununla dolar) */
+/** Yapay zekânın "top" ipucundan çıktının çevrilmesi gereken açı (saat yönünde): üst sağdaysa sola çevrilir (270°) */
+export function rotationForTop(top: DocumentTop | null | undefined): QuarterTurn {
+  return top === "right" ? 270 : top === "down" ? 180 : top === "left" ? 90 : 0;
+}
+
+/** Köşeleri, açılan görüntü saat yönünde `rotate` derece çevrilmiş çıksın diye kaydırır (sol üst yeni sol üst olur) */
+function turnCorners(q: Quad, rotate: QuarterTurn): Quad {
+  const k = rotate / 90;
+  return [0, 1, 2, 3].map((i) => q[(i - k + 4) % 4]) as Quad;
+}
+
+/** Düzeltilmiş küçük kopyadan kâğıdın rengi: en aydınlık çeyreğin ortalaması (kâğıt dışına düşen yer bununla dolar) */
 function paperColor(img: RgbaImage): [number, number, number] {
   const g = toGray(img).data;
-  const sorted = Float32Array.from(g).sort();
-  const thr = sorted[Math.floor(sorted.length * 0.75)];
+  const thr = histPercentile(histogram(g), 0.75);
   let r = 0;
   let gg = 0;
   let b = 0;
@@ -138,6 +174,7 @@ export function scanDocument(img: RgbaImage, opts: ScanOptions = {}): ScanResult
   const t0 = now();
   const mode = opts.mode ?? "belge";
   const maxEdge = opts.maxEdge ?? 2000;
+  const rotate: QuarterTurn = opts.rotate === 90 || opts.rotate === 180 || opts.rotate === 270 ? opts.rotate : 0;
   let corners: Quad;
   let confidence = 1;
   let method: ScanMethod = "verilen";
@@ -159,15 +196,10 @@ export function scanDocument(img: RgbaImage, opts: ScanOptions = {}): ScanResult
     const d = detectDocument(work, opts.detect);
     confidence = d.confidence;
     reasons.push(...d.reasons);
-    if (d.corners && !d.fillsFrame) {
-      corners = fromWork(d.corners).map((p) => ({
-        x: Math.max(0, Math.min(img.width - 1, p.x)),
-        y: Math.max(0, Math.min(img.height - 1, p.y)),
-      })) as Quad;
-      method = d.method ?? "yok";
-    } else {
+    method = d.method ?? "yok";
+    if (d.corners && !d.fillsFrame) corners = clampQuad(fromWork(d.corners), img.width, img.height, MAX_OUTSIDE);
+    else {
       corners = fullFrame(img.width, img.height);
-      method = d.method ?? "yok";
       fillsFrame = true;
     }
   }
@@ -175,33 +207,42 @@ export function scanDocument(img: RgbaImage, opts: ScanOptions = {}): ScanResult
   // köşeler görüntünün köşeleriyse açma birebir olsun (piksel merkezi 0 … W−1; kâğıdın kenarı −0,5 … W−0,5)
   const frame = fullFrame(img.width, img.height);
   const isFrame = corners.every((p, i) => Math.abs(p.x - frame[i].x) <= 0.75 && Math.abs(p.y - frame[i].y) <= 0.75);
-  const warpCorners: Quad = isFrame
-    ? [
-        { x: -0.5, y: -0.5 },
-        { x: img.width - 0.5, y: -0.5 },
-        { x: img.width - 0.5, y: img.height - 0.5 },
-        { x: -0.5, y: img.height - 0.5 },
-      ]
-    : corners;
-  const size = isFrame ? fitSize(img.width, img.height, maxEdge) : estimateSize(corners, img.width, img.height, maxEdge);
+  const pageCorners = turnCorners(
+    isFrame
+      ? [
+          { x: -0.5, y: -0.5 },
+          { x: img.width - 0.5, y: -0.5 },
+          { x: img.width - 0.5, y: img.height - 0.5 },
+          { x: -0.5, y: img.height - 0.5 },
+        ]
+      : corners,
+    rotate,
+  );
+  let size: { width: number; height: number };
+  if (isFrame) {
+    const f = fitSize(img.width, img.height, maxEdge);
+    size = rotate % 180 ? { width: f.height, height: f.width } : f;
+  } else size = estimateSize(pageCorners, img.width, img.height, maxEdge);
+  const outside = corners.some((p) => p.x < -0.5 || p.y < -0.5 || p.x > img.width - 0.5 || p.y > img.height - 0.5);
   let correction: Affine | undefined;
   let rotation = 0;
   let fill: [number, number, number] | undefined;
-  if (opts.deskew !== false) {
+  if (opts.deskew !== false || outside) {
     const pv = fitSize(size.width, size.height, 800);
-    const preview = warpQuad(work, toWork(warpCorners), pv.width, pv.height);
-    const sk = estimateSkew(preview);
-    if (sk.confidence >= 0.3 && Math.abs(sk.angle) >= 0.3) {
+    const preview = warpQuad(work, toWork(pageCorners), pv.width, pv.height);
+    if (outside) fill = paperColor(preview);
+    const sk = opts.deskew !== false ? estimateSkew(preview) : null;
+    if (sk && sk.confidence >= 0.3 && Math.abs(sk.angle) >= 0.3) {
       rotation = -sk.angle;
       const cx = (size.width - 1) / 2;
       const cy = (size.height - 1) / 2;
       // dar uzun fiş (boy ≥ 2 × en): uzun kenarlar yerinde kalsın diye yamultma; ötekiler merkez etrafında dönüş
       correction = size.height >= 2 * size.width ? verticalShear(rotation, cx) : rotationAbout(rotation, cx, cy);
-      fill = paperColor(preview);
+      fill ??= paperColor(preview);
       reasons.push(`egiklik-${sk.angle.toFixed(1)}`);
     }
   }
-  const warped = warpQuad(img, warpCorners, size.width, size.height, { correction, fill });
+  const warped = warpQuad(img, pageCorners, size.width, size.height, { correction, fill });
   const t2 = now();
   const image = enhance(warped, mode);
   const t3 = now();
@@ -212,6 +253,7 @@ export function scanDocument(img: RgbaImage, opts: ScanOptions = {}): ScanResult
     method,
     fillsFrame,
     rotation,
+    rotate,
     reasons,
     timings: { detect: t1 - t0, warp: t2 - t1, enhance: t3 - t2, total: t3 - t0 },
   };
