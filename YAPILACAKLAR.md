@@ -1,6 +1,6 @@
 # Yapılacaklar (ladmin)
 
-Son güncelleme: 25 Kasım 2026. Kaynak: 25 Kasım yönetim paneli denetimi ve sahibin istekleri.
+Son güncelleme: 26 Kasım 2026. Kaynak: 25 Kasım yönetim paneli denetimi ve sahibin istekleri.
 
 Etiketler:
 - **[Ladmin]**: yalnız panelde değişiklik.
@@ -13,11 +13,16 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 - **Dalga 1** (#146): kör kasa, fişsiz çıkış, kasa formu taslağı, vardiya çakışması, part-time silme koruması, 09:00 zili, "Tümü" kâr dönemi, şube oranı, zil ve rozetler, büyüme gösterimi, eski Excel kalıntılarının kaldırılması, dışa aktarımın profesyonelleşmesi.
 - **Uyarı satırları yalnız personelde** (#145).
-- **Faturanın şubesi ve fatura sınıflandırma** (dal `wip/fatura-sube`, `ai/fatura-sube`'nin devamı; güncel main dala alındı, doğrulandı; main'e PR'la gidecek):
+- **Faturanın şubesi ve fatura sınıflandırma** (`ai/fatura-sube`'nin devamı; güncel main ile birleştirildi, doğrulandı; `claude/festive-goodall-sclggq` dalında, main'e PR'la gidecek):
   - Her faturanın şubesi: şube, İşletme geneli ya da Şubesi seçilmemiş. Tedarikçinin varsayılan şubesi, Faturalar › Tümü'de öneri kutusu, toplu seçim. Faturalar, Gelir-gider, Maliyet ve Paraşüt şubeye göre süzülür.
   - Karışık fatura kalem kalem: hammaddeye bağlı kalem mal alışı, "hammadde değil" kalem nedeninin yerine (Sarf, Demirbaş, Hizmet, Deneme). Tedarikçi kuralı, Temizlik & Sarf kategorisi, aranabilir hammadde seçici, AI isteminde faturanın bağlamı.
   - Eski kuralla rakam karşılaştırması: `scripts/fatura-kalem-karsilastir.ts`; değişen rakamlar `tests/fatura-kalem-karsilastirma.test.ts`'te kilitli (docs/PARASUT.md › 5f).
   - Sahibe söylenecek: geçişten sonra tek şube seçiliyken eski faturalar görünmez, ta ki şubeleri seçilene kadar (Tümü değişmez). Hammaddeye bağlı kalemi olan mal dışı faturaların o kalemleri geçmiş aylarda da mal alışına geçer.
+- **Z raporu e-postası ve fotoğraf okuma** (26 Kasım; dal `claude/festive-goodall-sclggq`; docs/LAFPOS.md › Z raporu e-postası, docs/FOTOGRAF.md § 5):
+  - Marina'da eklenen her gün sonu fotoğrafı için yöneticiye ayrı "Z raporu" e-postası: Z tutsa da ("Z raporu tutuyor"), okunan rakamlar ve fotoğrafın kendisi ekli. Tuzla'nın kasa e-postasında fotoğraf yazılanlarla tutuyorsa yeşil satır.
+  - Yüklenirken okunamayan (ya da yalnız kodla okunan) fotoğraf sonradan yeniden okunur. Fatura okumaları fotoğrafların günlük yapay zekâ hakkını yemez (kendi havuzu).
+  - ModPOS Z'si, yazarkasa Z'si ve fiş önce ucuz modelle (Haiku), okunuş eksik ya da tutarsızsa bir kez güçlü modelle okunur.
+  - Sahibe söylenecek: "Z raporları okunmuyor"un canlıdaki nedeni günlüklerden doğrulanamadı (Vercel günlüklerine erişim yok); koddan bulunan iki neden kapatıldı. Yayından sonra bir gün izleyin; Ayarlar › Fotoğraftan okuma'da okuma açık ve `ANTHROPIC_API_KEY` tanımlı olmalı.
 
 ## Sahibin tarafında (kod değil)
 
