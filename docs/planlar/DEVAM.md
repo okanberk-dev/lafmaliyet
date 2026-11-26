@@ -82,6 +82,9 @@ Fatura kategorileri (mal / kafe dışı / demirbaş… rolüyle), hammadde kateg
 sabit (eski tablonun sütunları). `invoice_categories` gibi tablolar + Ayarlar'da düzenleme; mevcut değerler göçle
 tohumlanır. Sabit giderin "Para nereye gitti?" grubu ve stopaj tahmini kalemin adından bulunuyor: kalem kartında
 seçilsin. Muhasebeciye sorulacaklar listesindeki sabit tutar/tarihler (`src/lib/tax/checks.ts`) yıldan türesin.
+Kafe dışı faturaların ortağın adını taşıyan kategorisi (koddaki sabit liste, `SEPARATE_CATEGORIES`, belgeler ve testler)
+bir kişi adıdır: kategoriler tabloya taşınınca kod ve belgeler adı değil rolü ("ortak hesabı", kafe dışı) kullansın; ad
+yalnız veritabanında, sahibin yazdığı kategori adı olarak kalsın (P2 denetimi, 26 Kasım).
 
 ### P7. Dönem kapanışını genişlet (orta)
 Kapanış yalnız fatura ve harcamayı kilitliyor; sayım, ciro, gelir-gider hücresi ve kasa raporu kapalı ayı hâlâ

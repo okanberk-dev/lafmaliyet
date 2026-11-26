@@ -39,7 +39,7 @@ describe("personel bağlantısı: veritabanında", { skip: !SERVER_URL && "PERSO
   let status: typeof import("../src/server/lafpos/status");
   let personel: typeof import("../src/server/lafpos/personel");
   let dataset: typeof import("../src/server/data/dataset");
-  const ids = { alper: 0, cem: 0, ayseOld: 0, ayseNew: 0, damla: 0, tuzla: 0 };
+  const ids = { arda: 0, cenk: 0, ayseOld: 0, ayseNew: 0, derya: 0, tuzla: 0 };
 
   before(async () => {
     admin = postgres(SERVER_URL!, { max: 1, onnotice: () => {} });
@@ -61,17 +61,17 @@ describe("personel bağlantısı: veritabanında", { skip: !SERVER_URL && "PERSO
     await migrate(db, { migrationsFolder: "drizzle" });
     await seedBranches(db);
     const [yonetici] = await db.insert(s.users).values({ email: "yonetici@ornek.com", name: "Yönetici", passwordHash: "x", role: "admin" }).returning();
-    const [alperU] = await db.insert(s.users).values({ email: "alper@ornek.com", name: "Alper Kaya", passwordHash: "x", role: "staff", branchId: "marina" }).returning();
+    const [alperU] = await db.insert(s.users).values({ email: "arda@ornek.com", name: "Arda Kaya", passwordHash: "x", role: "staff", branchId: "marina" }).returning();
     const [ayseU] = await db.insert(s.users).values({ email: "ayse@ornek.com", name: "Ayşe Yılmaz", passwordHash: "x", role: "staff" }).returning();
     const me = async () => ({ ...yonetici, role: "admin" as const });
     stub(require.resolve("../src/server/auth/dal"), { getCurrentUser: me, requireUser: me, requireAdmin: me });
     const staff = async (v: Partial<typeof s.staff.$inferInsert> & { name: string }) => (await db.insert(s.staff).values({ branchId: "marina", netSalary: 30_000, ...v }).returning({ id: s.staff.id }))[0].id;
-    ids.alper = await staff({ name: "Alper", netSalary: 35_000, mealCard: true, userId: alperU.id });
-    ids.cem = await staff({ name: "Cem", netSalary: 32_000, mealCard: true });
+    ids.arda = await staff({ name: "Arda", netSalary: 35_000, mealCard: true, userId: alperU.id });
+    ids.cenk = await staff({ name: "Cenk", netSalary: 32_000, mealCard: true });
     // "Devam ettir": Ekim'de biten satır ve Kasım'dan yeni satır, ikisi de Ayşe'nin hesabına bağlı (aralıklar ayrık)
     ids.ayseOld = await staff({ name: "Ayşe", userId: ayseU.id, endMonth: "2026-10" });
     ids.ayseNew = await staff({ name: "Ayşe", userId: ayseU.id, startMonth: "2026-11" });
-    ids.damla = await staff({ name: "Damla", endMonth: "2026-09" });
+    ids.derya = await staff({ name: "Derya", endMonth: "2026-09" });
     ids.tuzla = await staff({ name: "Tuzla Personeli", branchId: "tuzla", mealCard: true });
     await db.insert(s.settings).values({ key: "lafposGecisGunu", value: SWITCH });
     status = await import("../src/server/lafpos/status");
@@ -134,12 +134,12 @@ describe("personel bağlantısı: veritabanında", { skip: !SERVER_URL && "PERSO
     assert.equal(r.body.sube, "marina");
     assert.equal(r.body.now, NOW.toISOString());
     assert.deepEqual(r.body.items, [
-      { ref: ref(ids.alper), name: "Alper", active: true, account: "Alper Kaya" },
+      { ref: ref(ids.arda), name: "Arda", active: true, account: "Arda Kaya" },
       { ref: ref(ids.ayseNew), name: "Ayşe", active: true, account: "Ayşe Yılmaz" },
-      { ref: ref(ids.cem), name: "Cem", active: true, account: null },
+      { ref: ref(ids.cenk), name: "Cenk", active: true, account: null },
     ]);
     const text = JSON.stringify(r.body);
-    for (const leak of ["35000", "30000", "ornek.com", "2026-10", "Damla", "Tuzla"]) assert.ok(!text.includes(leak), `sızmaz: ${leak}`);
+    for (const leak of ["35000", "30000", "ornek.com", "2026-10", "Derya", "Tuzla"]) assert.ok(!text.includes(leak), `sızmaz: ${leak}`);
     // Başka şube 409, imzasız 401 (okuma yapılmaz)
     const tuzla = await personel.servePosStaff(signedGet(new URL("https://ladmin.laffogato.net/api/panel/pos/personel?sube=tuzla")));
     assert.deepEqual([tuzla.status, tuzla.body], [409, { error: "wrong_branch", sube: "tuzla", expected: "marina" }]);
@@ -148,12 +148,12 @@ describe("personel bağlantısı: veritabanında", { skip: !SERVER_URL && "PERSO
   });
 
   test("gün sonu: workedStaffRefs saklanır, 200 yanıtı sınıflar (sayılan / bilinmeyen / başka şube); receivePosDay'in gövdesi değişmez", async () => {
-    const refs = [ref(ids.tuzla), ref(ids.alper), "s:999999", ref(ids.ayseOld), ref(ids.alper)];
+    const refs = [ref(ids.tuzla), ref(ids.arda), "s:999999", ref(ids.ayseOld), ref(ids.arda)];
     const r = await send(day("2026-10-05", { workedStaffRefs: refs }));
     assert.equal(r.status, 200, JSON.stringify(r.body));
     // Ayşe'nin eski satırı Ekim'de aralıkta: sayılır; yeni satırı Ekim'de yok
-    assert.deepEqual(r.body.staff, { counted: [ref(ids.alper), ref(ids.ayseOld)], unknown: ["s:999999"], otherBranch: [ref(ids.tuzla)] });
-    assert.deepEqual(await storedRefs("2026-10-05"), [ref(ids.alper), ref(ids.ayseOld), ref(ids.tuzla), "s:999999"].sort((a, b) => Number(a.slice(2)) - Number(b.slice(2))));
+    assert.deepEqual(r.body.staff, { counted: [ref(ids.arda), ref(ids.ayseOld)], unknown: ["s:999999"], otherBranch: [ref(ids.tuzla)] });
+    assert.deepEqual(await storedRefs("2026-10-05"), [ref(ids.arda), ref(ids.ayseOld), ref(ids.tuzla), "s:999999"].sort((a, b) => Number(a.slice(2)) - Number(b.slice(2))));
     // Kasım'da Ayşe'nin eski satırı biter: aynı kimlik bilinmeyen (yeniden bağlanmalı), yeni satırı sayılır
     const nov = await send(day("2026-11-21", { workedStaffRefs: [ref(ids.ayseOld), ref(ids.ayseNew)] }));
     assert.deepEqual(nov.body.staff, { counted: [ref(ids.ayseNew)], unknown: [ref(ids.ayseOld)], otherBranch: [] });
@@ -172,7 +172,7 @@ describe("personel bağlantısı: veritabanında", { skip: !SERVER_URL && "PERSO
     assert.equal(await storedRefs("2026-10-07"), null);
     // receivePosDay (uçtan önceki çekirdek) yanıta staff koymaz: ek alanlar handlePosDay'in
     const ingest = await import("../src/server/lafpos/ingest");
-    const raw = JSON.stringify(day("2026-10-09", { workedStaffRefs: [ref(ids.alper)] }));
+    const raw = JSON.stringify(day("2026-10-09", { workedStaffRefs: [ref(ids.arda)] }));
     const h = signedHeaders(SECRET, "POST", GUN, raw, NOW.getTime());
     const core = await ingest.receivePosDay(db, { secret: SECRET, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, NOW);
     assert.deepEqual(Object.keys(core.body).sort(), ["date", "lines", "matched", "ok", "unmatched"]);
@@ -182,11 +182,11 @@ describe("personel bağlantısı: veritabanında", { skip: !SERVER_URL && "PERSO
     assert.deepEqual(await storedRefs("2026-10-08"), []);
   });
 
-  test("yemek kartı: Ekim'in her LafPOS günü liste taşıyınca LafPOS'ta çalıştığı gün (Alper 20, Cem 18); bir gün eksikken 26", async () => {
+  test("yemek kartı: Ekim'in her LafPOS günü liste taşıyınca LafPOS'ta çalıştığı gün (Arda 20, Cenk 18); bir gün eksikken 26", async () => {
     const send31 = async (skip: string | null) => {
       for (let d = 1; d <= 31; d++) {
         const date = `2026-10-${String(d).padStart(2, "0")}`;
-        const refs = [...(d <= 20 ? [ref(ids.alper)] : []), ...(d <= 18 ? [ref(ids.cem)] : [])];
+        const refs = [...(d <= 20 ? [ref(ids.arda)] : []), ...(d <= 18 ? [ref(ids.cenk)] : [])];
         const r = await send(day(date, date === skip ? {} : { workedStaffRefs: refs }));
         assert.equal(r.status, 200, `${date}: ${JSON.stringify(r.body)}`);
       }
@@ -195,22 +195,22 @@ describe("personel bağlantısı: veritabanında", { skip: !SERVER_URL && "PERSO
     await send31(null);
     const model = await dataset.loadModel({ scope: "marina" });
     const rows = new Map(model.personnelFor("2026-10").rows.map((r) => [r.staff.name, r]));
-    assert.equal(rows.get("Alper")?.lafposDays, 20);
-    assert.ok(Math.abs((rows.get("Alper")?.mealCard ?? 0) - 330 * 20) < 0.01, "Alper 330 × 20");
-    assert.ok(Math.abs((rows.get("Cem")?.mealCard ?? 0) - 330 * 18) < 0.01, "Cem 330 × 18");
-    // Kasım (yalnız 21'i geldi, liste taşıyor): ayın tek sayılan günü 21, Alper o gün yok. Hiç geçmeyen kimlik "0 gün"
+    assert.equal(rows.get("Arda")?.lafposDays, 20);
+    assert.ok(Math.abs((rows.get("Arda")?.mealCard ?? 0) - 330 * 20) < 0.01, "Arda 330 × 20");
+    assert.ok(Math.abs((rows.get("Cenk")?.mealCard ?? 0) - 330 * 18) < 0.01, "Cenk 330 × 18");
+    // Kasım (yalnız 21'i geldi, liste taşıyor): ayın tek sayılan günü 21, Arda o gün yok. Hiç geçmeyen kimlik "0 gün"
     // değildir (bağlı değil ya da eski satıra bağlı olabilir): yemek kartı varsayılan 26, kişi "görünmüyor" diye işaretli
-    const novAlper = model.personnelFor("2026-11").rows.find((r) => r.staff.name === "Alper");
-    assert.equal(novAlper?.lafposDays, null, "Kasım: 21'i geldi, Alper listede yok");
+    const novAlper = model.personnelFor("2026-11").rows.find((r) => r.staff.name === "Arda");
+    assert.equal(novAlper?.lafposDays, null, "Kasım: 21'i geldi, Arda listede yok");
     assert.ok(Math.abs((novAlper?.mealCard ?? 0) - 330 * 26) < 0.01, "Kasım varsayılan 330 × 26 (0 değil)");
     assert.equal(model.lafposUnseenOf(novAlper!.staff, "2026-11"), true);
     assert.equal(model.lafposUnseenOf(novAlper!.staff, "2026-10"), false);
     // Ekim'in bir günü listesiz kalınca (eski LafPOS ya da bağlı kimse yokken gönderilmiş; sonra yeniden gönderilmedi)
     await db.update(s.posDayReports).set({ workedStaff: null }).where(and(eq(s.posDayReports.date, "2026-10-12"), eq(s.posDayReports.branchId, LAFPOS_SUBE)));
     const gap = await dataset.loadModel({ scope: "marina" });
-    const alper = gap.personnelFor("2026-10").rows.find((r) => r.staff.name === "Alper");
-    assert.equal(alper?.lafposDays, null);
-    assert.ok(Math.abs((alper?.mealCard ?? 0) - 330 * 26) < 0.01, "varsayılan 330 × 26");
+    const arda = gap.personnelFor("2026-10").rows.find((r) => r.staff.name === "Arda");
+    assert.equal(arda?.lafposDays, null);
+    assert.ok(Math.abs((arda?.mealCard ?? 0) - 330 * 26) < 0.01, "varsayılan 330 × 26");
     // Tuzla'nın kişisi ("Tümü"): hep varsayılan
     const all = await dataset.loadModel({ scope: "hepsi" });
     const tuzla = all.personnelFor("2026-10").rows.find((r) => r.staff.name === "Tuzla Personeli");
