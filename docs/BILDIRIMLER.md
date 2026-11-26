@@ -65,7 +65,9 @@ günün saklanan ModPOS kasa föyünden farklı yazılan raporları durur, "Kasa
 Pazartesi · Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺)" (kasası açıkken çekilen föy karşılaştırılmaz; rapor ya da föy
 değişince yeniden okunmamış olur), ModPOS anahtarı tanımlı ama çalışmıyorsa da **Sistem** başlığında "ModPOS kasa föyü
 çekilemiyor" ve hatanın metni, Ayarlar › ModPOS (kasa föyü)'ne götürür ([MODPOS-API.md](MODPOS-API.md) › Nerede
-görünür). Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
+görünür). Yöneticinin kendi hesabına yeni bir cihazdan giriş yapıldıysa yine **Sistem** başlığında 7 gün "Yeni cihazdan
+giriş: Chrome · Windows · IP 85.105.12.x" durur, Hesabım › Oturumlar'a götürür; aynı uyarı hesabın adresine e-postayla da
+gider ([DEPLOY.md](DEPLOY.md) › 6a). Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
 kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklemesi ("Ayşe özel gün ekledi") son 3 gün durur
 ([KASA-RAPORU.md](KASA-RAPORU.md) › Kafe kapalıydı). **Uyarılar** başlığının
 başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişecek N fiyat"** durur (**Ürünler › Fiyatlar ›
@@ -443,7 +445,7 @@ yüklenemedi"** satırı durur (okunmamış sayılmaz, rozeti şişirmez; kimli�
 paralel sorgularıyla okunur; düşerse Ödemeler grubu sessizce boşalmaz, yerinde tek bir **"Ödemeler yüklenemedi"**
 satırı durur (okunmamış sayılmaz; gecikmiş ödeme rozeti bu okumada sayılamaz). Öbür bölümler de öyle (bulgu 88):
 hatırlatıcılar, reçete önerileri, onay istekleri (kasa, zayi, karaoke), bekleyen fiyat onayları, kasa, kontrol
-listeleri, faturalar, komisyon, günlük işlerin durumu, bildirim alıcıları, ModPOS anahtarı, fiyatı girilmemiş
+listeleri, faturalar, komisyon, günlük işlerin durumu, yeni cihazdan girişler, bildirim alıcıları, ModPOS anahtarı, fiyatı girilmemiş
 hammaddeler, kasada değişecek fiyatlar, tükenenler ve sayım okunamazsa sessizce boş görünmez: hata günlüğe yazılır
 ve grubunda tek bir **"{Grup} yüklenemedi"** satırı durur ("Kasa yüklenemedi", "Kontrol listeleri yüklenemedi",
 "Onaylar yüklenemedi", personelde "İstekleriniz yüklenemedi", "Sistem uyarıları yüklenemedi"…). Aynı gruptan birden çok
