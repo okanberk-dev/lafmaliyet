@@ -154,7 +154,7 @@ test("kaynak: sohbet ucu hiçbir yazma eylemine uzanmaz; yazım yalnız kartın 
   // Onay eylemi bir Server Action; onay, vazgeç ve geri al yalnız orada
   const action = read("src/server/actions/assistant-ops.ts");
   assert.match(action, /^"use server";/);
-  for (const fn of ["confirmAssistantOp", "cancelAssistantOp", "undoAssistantOp"]) assert.match(action, new RegExp(`export async function ${fn}\\(opId: string\\)[\\s\\S]*?await requireUser\\(\\);`), fn);
+  for (const fn of ["confirmAssistantOp", "cancelAssistantOp", "undoAssistantOp"]) assert.match(action, new RegExp(`export async function ${fn}\\(opId: string\\)[\\s\\S]*?await requireAdmin\\(\\);`), fn);
   // Tüketim tek koşullu UPDATE: sahibi, durumu ve süresi aynı sorguda
   const store = code("src/server/assistant-ops/store.ts");
   assert.match(store, /eq\(s\.assistantOps\.id, id\), eq\(s\.assistantOps\.userId, userId\), eq\(s\.assistantOps\.status, "pending"\), gt\(s\.assistantOps\.expiresAt, now\)/);

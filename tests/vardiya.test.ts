@@ -212,27 +212,31 @@ test("Bugün satırı: ilk adlar ve saatler, en çok üç kişi; plan yoksa sat�
   assert.equal(todayShiftText(many), "Vardiyada: Ayşe 10:00–02:00 · Çağrı 11:00–02:00 · İsmail 12:00–02:00 · ve 2 kişi");
 });
 
-test("rol ve menü: planı yalnız yönetici yazar; iki rol açar, yöneticide adı “Vardiya ayarlama”", () => {
+test("rol ve menü: planı yönetici ve müdür yazar; üç rol açar, yöneticide ve müdürde adı “Vardiya ayarlama”", () => {
   assert.equal(canEditShifts("admin"), true);
+  assert.equal(canEditShifts("manager"), true);
+  assert.equal(canEditShifts("accountant"), false);
+  assert.equal(canOpen("accountant", "/panel/vardiya"), false);
   assert.equal(canEditShifts("staff"), false);
   assert.ok((STAFF_PATHS as readonly string[]).includes("/panel/vardiya"));
   assert.ok(canOpen("staff", "/panel/vardiya") && canOpen("admin", "/panel/vardiya"));
-  assert.ok(ROLE_PERMISSIONS.some((p) => p.staff && p.paths?.includes("/panel/vardiya") && /yalnız yönetici yazar/.test(p.label)));
-  assert.ok(ROLE_PERMISSIONS.some((p) => !p.staff && /vardiya planını yazma/.test(p.label)));
+  assert.ok(ROLE_PERMISSIONS.some((p) => p.staff && p.paths?.includes("/panel/vardiya") && /yönetici ve müdür yazar/.test(p.label)));
+  assert.ok(ROLE_PERMISSIONS.some((p) => !p.staff && /[Vv]ardiya planını yazma/.test(p.label)));
   const label = (role: "admin" | "staff") => navTreeFor(role).find((n) => n.href === "/panel/vardiya")?.label;
   assert.equal(label("admin"), "Vardiya ayarlama");
   assert.equal(label("staff"), "Vardiya");
   const palette = NAV_GROUPS.flatMap((g) => g.items).find((i) => i.href === "/panel/vardiya");
-  assert.deepEqual(palette?.roles, ["admin", "staff"]);
+  assert.deepEqual(palette?.roles, ["admin", "manager", "staff"]);
+  assert.equal(navTreeFor("manager").find((n) => n.href === "/panel/vardiya")?.label, "Vardiya ayarlama");
   assert.match(palette?.keywords ?? "", /vardiya ayarlama/);
   assert.equal(mobileTitleFor("/panel/vardiya"), "Vardiya");
   // Alt menü değişmedi: Vardiya çekmecede
   for (const role of ["admin", "staff"] as const) assert.ok(!BOTTOM_NAV[role].some((b) => b.href === "/panel/vardiya"));
   // Kaynak: eylem yöneticiyi ister, ekran ve PDF oturumu; personelin görünümünde kutu yok
   const action = read("src/server/actions/vardiya.ts");
-  assert.match(action, /const me = await requireAdmin\(\);\s+const r = await saveShiftWeek\(/);
+  assert.match(action, /const me = await requireCan\("vardiya\.yaz"\);\s+const other = await staffBranchRefusal\(me, [^;]+;\s+if \(other\) throw new UserError\(other\);\s+const r = await saveShiftWeek\(/);
   const page = read("src/app/panel/vardiya/page.tsx");
-  assert.match(page, /await requireUser\(\)/);
+  assert.match(page, /await requireCan\("kayit\.yaz"\)/);
   assert.doesNotMatch(page, /requireAdmin/);
   assert.match(page, /loadShiftWeek\(db, branch, monday, \{ roster: canEdit, includeUserId: user\.id \}\)/);
   const route = read("src/app/api/vardiya/pdf/route.ts");

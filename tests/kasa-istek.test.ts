@@ -191,15 +191,15 @@ test("kaynak: eylemler kendi oturumunu ve rolünü denetler; istek eylemleri yö
   assert.deepEqual(exported, ["attachCashOutReceipt", "requestCashOutChange", "requestPhotoRemoval", "reviewCashOutRequest", "reviewPhotoRemoval"]);
   for (const name of ["requestCashOutChange", "attachCashOutReceipt", "requestPhotoRemoval"]) {
     const body = src.slice(src.indexOf(`export async function ${name}`));
-    assert.match(body, /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*const me = await requireUser\(\);/);
+    assert.match(body, /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;/);
   }
   for (const name of ["requestCashOutChange", "requestPhotoRemoval"]) {
     const body = src.slice(src.indexOf(`export async function ${name}`));
-    assert.match(body.slice(0, 400), /if \(me\.role === "admin"\) throw new UserError/);
+    assert.match(body.slice(0, 400), /if \(opsLevel\(me\.role\) === "admin"\) throw new UserError/);
   }
   for (const name of ["reviewCashOutRequest", "reviewPhotoRemoval"]) {
     const body = src.slice(src.indexOf(`export async function ${name}`));
-    assert.match(body, /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*const me = await requireAdmin\(\);/);
+    assert.match(body, /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*(?:\/\/[^\n]*\n\s*)*const me = await requireCan\("onay"\);/);
   }
 });
 

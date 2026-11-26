@@ -227,7 +227,7 @@ test("genel eylem dosyası: tek eylem (withdrawStaffRequest), önce oturum; baş
   const exported = [...src.matchAll(/^export async function (\w+)/gm)].map((m) => m[1]);
   assert.deepEqual(exported, ["withdrawStaffRequest"]);
   assert.doesNotMatch(src, /^export (const|function|let|class|\{) /m);
-  assert.match(src, /export async function withdrawStaffRequest\(id: number\) \{\s+return attempt\(async \(\) => \{\s+const me = await requireUser\(\);/);
+  assert.match(src, /export async function withdrawStaffRequest\(id: number\) \{\s+return attempt\(async \(\) => \{\s+const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;/);
   assert.match(src, /refresh\(\);/);
   // Dönen değerde istek satırı yok (yalnız null)
   assert.match(src, /return null;/);
@@ -244,13 +244,19 @@ test("/panel/onaylar: adı Onaylar; bölümler sırasıyla kendi Suspense'inde, 
   const order = ["<KasaRequests />", "<OpsRequests />", "<KaraokeRequests />", "<ApprovalsContent />", "<RecentDecisions />"].map((tag) => page.indexOf(tag));
   for (const [i, at] of order.entries()) assert.ok(at > 0, `bölüm ${i + 1} yok`);
   assert.deepEqual([...order].sort((a, b) => a - b), order, "bölüm sırası");
-  // Beş bölüm ve tek şube seçiliyken "öbür şubelerde N istek daha" notu (şube kapsamı C P1-1)
-  assert.equal(page.match(/<Suspense /g)?.length, 6);
+  // Rolün bölümleri bir Suspense'te (müdür yalnız Kasa ve Zayi; docs/ROLLER.md), içinde beş bölüm ve tek şube seçiliyken
+  // "öbür şubelerde N istek daha" notu (şube kapsamı C P1-1)
+  assert.equal(page.match(/<Suspense /g)?.length, 7);
+  assert.match(page, /async function ApprovalSections\(\) \{\s+const me = await requireCan\("onay"\);/);
   assert.ok(page.indexOf("<OtherBranchRequests />") < order[0], "şube notu bölümlerden önce");
   assert.match(page.slice(page.indexOf("async function ApprovalsContent")), /^async function ApprovalsContent\(\) \{\s+await requireAdmin\(\);/);
   for (const [file, fn] of [
     ["src/app/panel/onaylar/kasa-section.tsx", "KasaRequests"],
     ["src/app/panel/onaylar/ops-section.tsx", "OpsRequests"],
+  ] as const) {
+    assert.match(read(file), new RegExp(`export async function ${fn}\\(\\) \\{\\s+(?:\\/\\/[^\\n]*\\n\\s+)?const me = await requireCan\\("onay"\\);`), file);
+  }
+  for (const [file, fn] of [
     ["src/app/panel/onaylar/karaoke-section.tsx", "KaraokeRequests"],
     ["src/app/panel/onaylar/recent-decisions.tsx", "RecentDecisions"],
   ] as const) {

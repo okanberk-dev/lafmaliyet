@@ -315,10 +315,10 @@ test("hata metinleri: her kod yöneticiyi kutuları elle doldurmaya ya da yenide
   assert.match(aiErrorText("nokey"), /Fotoğraftan okuma bu ortamda kurulu değil/);
 });
 
-test("bağlantılar: eylem yalnız yönetici ve kayıt yapmaz; günlük sınır okumadan ayrı; sayfa süresi 60 sn", () => {
+test("bağlantılar: eylem yönetici ve müdürün ve kayıt yapmaz; günlük sınır okumadan ayrı; sayfa süresi 60 sn", () => {
   const action = src("src/server/actions/vardiya.ts");
   const draftAction = action.slice(action.indexOf("export async function draftShiftWeekAction"));
-  assert.match(draftAction, /requireAdmin\(\)/);
+  assert.match(draftAction, /requireCan\("vardiya\.yaz"\)/);
   assert.doesNotMatch(draftAction, /logActivity|refresh\(\)|saveShiftWeek\(/);
   // Taslak sunucuda hiçbir tabloya yazmaz
   const draft = src("src/server/vardiya/draft.ts");

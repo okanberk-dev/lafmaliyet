@@ -75,7 +75,7 @@ test("isteği açan her yolun eylemi bildirimi çağırır (yeni bir istek yolu 
     assert.equal((src.match(/pushNewRequest\(/g) ?? []).length, n, `${file}: her istek yolu bir kez`);
   }
   // Her çağrı alanın çekirdeğinden hemen sonra (işlem bitmiş, istek yazılmış)
-  assert.match(read("src/server/actions/cash-requests.ts"), /const \{ row, changes, created \} = await inFormTill\(parsed\.branchId, \(\) => proposeCashCorrection\(getDb\(\), me, data\)\);\n\s+pushNewRequest\(\{ row, created \}\);/);
+  assert.match(read("src/server/actions/cash-requests.ts"), /const \{ row, changes, created \} = await inFormTill\(parsed\.branchId, \(\) => proposeCashCorrection\(getDb\(\), asActor\(me, "staff"\), data\)\);\n\s+pushNewRequest\(\{ row, created \}\);/);
   assert.match(read("src/server/actions/karaoke.ts"), /const out = await proposeKaraokeDelete\(getDb\(\), me, data\);\n\s+pushNewRequest\(out\);/);
 });
 

@@ -146,8 +146,8 @@ test("eylem: özelliği kapalı şubeye kilitli personel reddedilir; yönetici s
   assert.equal(staffFeatureError(staff, null, nowhere, "siparis"), "Uygulama siparişleri bu şubede kullanılmıyor");
   assert.equal(staffFeatureError({ role: "admin" }, null, nowhere, "siparis"), null);
   // Uçlar sorar (eylem kimliği istemci paketinde)
-  assert.match(read("src/server/actions/site-orders.ts"), /const me = await requireUser\(\);\n.*\n\s+await assertStaffFeature\(me, "siparis"\);/);
-  assert.match(read("src/server/actions/table-calls.ts"), /const me = await requireUser\(\);\n.*\n\s+await assertStaffFeature\(me, "garson"\);/);
+  assert.match(read("src/server/actions/site-orders.ts"), /const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;\n.*\n\s+await assertStaffFeature\(me, "siparis"\);/);
+  assert.match(read("src/server/actions/table-calls.ts"), /const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;\n.*\n\s+await assertStaffFeature\(me, "garson"\);/);
 });
 
 test("çip: kapalı özelliklerin adları; karaoke ve online kanal sayılmaz", () => {

@@ -139,7 +139,7 @@ test("personel istekleri: mal siparişi taslağı kaldırılan tür; Yardım'da 
   // Onaylar: zayi bölümü kalır, taslak kartları yok
   const ops = read("src/app/panel/onaylar/ops-section.tsx");
   assert.doesNotMatch(code(ops), /Draft|order-drafts/);
-  assert.match(ops, /export async function OpsRequests\(\) \{\s+await requireAdmin\(\);/);
+  assert.match(ops, /export async function OpsRequests\(\) \{\s+(?:\/\/[^\n]*\n\s+)?const me = await requireCan\("onay"\);/);
 });
 
 test("veritabanı: üç tablo şemada geçmiş için kalır, migration yok; jsonb biçimleri yalnız tip", () => {

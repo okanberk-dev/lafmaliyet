@@ -40,7 +40,8 @@ test("#14 otherBranchError: kilitli personel yalnız kendi şubesinin kaydına; 
 
 test("#14 staffBranchRefusal: yönetici sorgusuz serbest; kilit isteğin kullanıcısından (lockedBranch), kural saf dosyada", () => {
   const fn = body(read("src/server/branch-scope.ts"), "export async function staffBranchRefusal(");
-  assert.match(fn, /if \(me\.role === "admin"\) return null;/);
+  // Rol kısayolu yok: müdür çekirdeğe "admin" düzeyinde gelir, kilit oturumdan (yöneticide lockedBranch null, sorgu yok sayılır)
+  assert.doesNotMatch(fn, /if \(me\.role === "admin"\) return null;/);
   assert.match(fn, /return otherBranchError\(branchId, branches, await lockedBranch\(branches\)\);/);
 });
 
@@ -48,7 +49,8 @@ test("#14 kasadan çıkan: kapı var olan satırın her işleminde (düzeltme, s
   const gate = body(read("src/server/cash-outs/guard.ts"), "export async function staffCashOutGate(");
   const check = gate.indexOf('const refusal = target.op === "ekle" ? null : await staffBranchRefusal(me, target.row.branchId);');
   assert.ok(check > 0, "satırın şubesi kapıda");
-  assert.ok(check > gate.indexOf('if (me.role === "admin") return "direct";'), "yönetici kapıdan önce çıkar");
+  // Şube kilidi rol düzeyinden önce: müdür "admin" düzeyinde gelir ama şubesi kilitli (docs/ROLLER.md)
+  assert.ok(check < gate.indexOf('if (me.role === "admin") return "direct";'), "kilit yöneticinin doğrudan yolundan önce");
   assert.ok(check < gate.indexOf("staffDayOpen("), "başka şubenin açık günü satırı açmaz");
   assert.match(gate, /if \(refusal\) throw new UserError\(refusal\);/);
   // Personelin var olan satıra dokunan bütün yolları bu kapıdan geçer

@@ -115,8 +115,8 @@ test("karaoke: kilitli personelin eylemleri, canlı uç, Bugün ve bildirim kara
   assert.equal(karaokeBranchOf(DEFAULT_BRANCHES.map((b) => ({ ...b, active: true }))), "tuzla");
   const actions = read("src/server/actions/karaoke.ts");
   // requireUser çağıran her uç hemen ardından karaokenin şubesini sorar
-  const users = actions.match(/const me = await requireUser\(\);\n\s+await assertKaraokeBranch\(me\);/g) ?? [];
-  const all = actions.match(/const me = await requireUser\(\);/g) ?? [];
+  const users = actions.match(/const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;\n\s+await assertKaraokeBranch\(me\);/g) ?? [];
+  const all = actions.match(/const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;/g) ?? [];
   assert.equal(users.length, all.length);
   assert.equal(all.length, 9);
   assert.match(actions, /if \(at === null \|\| \(await staffBranchRefusal\(me, at\)\)\) throw new UserError\(KARAOKE_ELSEWHERE\);/);
