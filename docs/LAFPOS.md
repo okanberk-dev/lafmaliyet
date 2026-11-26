@@ -1273,6 +1273,10 @@ Sahibin isteği: yeni şube panelden eklenince kasası da kendiliğinden kurulsu
      iptal eder);
    - ikisi tek e-postayla gider (`kurulumMail`; Resend kurulu değilse gitmez, bağlantı ekranda gösterilir, elle iletilir).
    Var olan şubeye (Marina gibi) şubenin düzenleme penceresinden **LafPOS kurulum bağlantısı gönder**.
+   Kısa yol: Şubeler'in üstündeki **LafPOS kasası kur** kartı (yalnız ana yönetici). "Kasa kur" penceresinde **kasanın
+   bağlanacağı şube** listeden seçilir ya da **+ Yeni şube ekle** ile aynı pencerede eklenir (ad, kimlik, kasa kaynağı,
+   açılış günü), e-posta yazılır; bağlantı gider. Kartta her açık fiziksel şubenin kurulum durumu ve "Bağlantı gönder" /
+   "Yeniden kur" düğmesi durur (`src/app/panel/subeler/lafpos-install.tsx`).
 3. Şube hesabı girince **Hesabım › LafPOS kurulumu** kartında bağlantı ve durum (Kurulum bekliyor / Kasa kuruldu).
 4. Bağlantı (`GET /lafpos/indir/<kod>`, oturumsuz) kanaldaki genel kurucuyu (`https://lafpos.laffogato.net/guncelleme/LafPOS-Kur.cmd`,
    `LAFPOS_KURUCU_URL`) indirir, içindeki iki boş satıra (`$KurulumAdresi = ''`, `$KurulumKodu = ''`) panelin adresini ve
