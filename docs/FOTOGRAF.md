@@ -32,8 +32,8 @@ listesinin fotoğrafı taranmaz.
   bulunan kenarlara geri döner, **Tüm fotoğraf** kırpmadan kullanır, **Döndür** sonucu 90° çevirir.
 - Çekim sorunluysa başlığın altında tek satır uyarı çıkar: "Fotoğraf bulanık; telefonu sabit tutup yeniden çekin.",
   "Fişte parlama var; ışığı yandan alın.", "Raporun altı kesilmiş; tamamını çekin." gibi (turuncu: hafif, kırmızı:
-  yeniden çekmek önerilir) ve yanında **Yeniden çek**: kamera ekranın içinden açılır, yeni fotoğraf aynı ekranda
-  taranır. **Kullan** yine serbesttir.
+  yeniden çekmek önerilir) ve yanında **Yeniden çek**: kamera ekranın içinden açılır (canlı vizör, aşağıda), yeni
+  fotoğraf aynı ekranda taranır. **Kullan** yine serbesttir.
 - Uzun fiş (Z, banka POS Z'si, banka gün sonu, alışveriş fişi) tek fotoğrafa sığmıyorsa üst kısım çekilir, sonra
   **Devamını çek** ile alt kısım (en çok 3 parça). **Kullan** parçaları kodla hizalayıp tek uzun görüntüde birleştirir
   (en çok 4096 px, 2 MB; `src/lib/photo-rules.ts`); kod emin değilse parçalar ayrı fotoğraf olarak eklenir (bölümün
@@ -67,6 +67,68 @@ oranla 0–1000, görünüm, yöntem — `kagit` / `kenar` / `yazi` / `tam-kare`
 emin değilken sorulur: kâğıt yok ya da kareyi dolduruyor sanıldı, güven 0,6'nın altında, iki aday, kâğıda benzemiyor).
 `ai_calls`'a `tarama` olarak düşer; fotoğraf okumasının günlük sınırına sayılmaz, kendi sınırı var (günde 150,
 kişi başına saatte 30). Görüntü saklanmaz. Kurallar `src/lib/photo-scan.ts`, istem `src/lib/photo-read/scan-hint.ts`.
+
+### Canlı vizör
+
+Telefonda **Fotoğraf çek** (ve tarama ekranındaki **Yeniden çek**, **Devamını çek**) telefonun kamera uygulaması
+yerine panelin içinde **Belgeyi çek** vizörünü açar (26 Kasım 2026):
+
+- Arka kameranın görüntüsü tam ekran; kâğıt bulununca kenarları yeşil çizgiyle canlı çizilir, dışı hafif karartılır.
+  Çizgi titremez: dörtgen yumuşatılır, tek karelik yanlış dörtgen (başka bir nesne) atlanır, kâğıt bir an kaybolursa
+  kısa süre yerinde kalır.
+- Alttaki tek satır ne yapılacağını söyler: "Kâğıdı çerçeveye alın", "Biraz yaklaşın", "Kâğıdın tamamı görünsün;
+  biraz uzaklaşın", "Işık az; feneri açın ya da ışıklı bir yere geçin", "Netleşiyor; telefonu sabit tutun", "Sabit
+  tutun…".
+- **Otomatik çekim** (varsayılan açık): kâğıt yarım saniye kıpırdamazsa, karenin en az %15'iyse, kenarları kareden
+  taşmıyorsa, ışık ve netlik yeterliyse deklanşörün çevresinde kısa geri sayım (~1 sn) dolar ve fotoğraf
+  kendiliğinden çekilir (Android'de kısa titreşim). Arada kâğıt kıpırdarsa geri sayım baştan. Sağ alttaki
+  **Otomatik** düğmesi kapatır (bu telefonda hatırlanır); deklanşör her zaman elle de çalışır. Kenarlar görünmüyorsa
+  (kâğıt kareyi dolduruyor) otomatik çekmez, elle çekilir.
+- **Fener** (sağ üstte; yalnız destekleyen telefonda, çoğunlukla Android Chrome), **Galeriden** (sol altta) ve
+  **Kapat**. Uzun fişin sonraki parçasında başlık "2. parça", altında "Önceki parçanın son birkaç satırı da görünsün".
+- Çekilen fotoğraf tam çözünürlükte tarama ekranına gider (§ Belge tarama: kenarlar orada yeniden, büyük fotoğrafta
+  bulunur; köşeler yine sürüklenebilir).
+- İzin verilmezse, tarayıcı kamerayı desteklemezse, kamera açılamazsa (başka uygulama kullanıyor) ya da 10 saniyede
+  görüntü gelmezse sessizce eski yol: telefonun kendi kamerası (`<input capture>`). İzin reddi bu tarayıcıda
+  hatırlanır (`laf:canli-kamera:kapali`), sonraki çekimler doğrudan eski yoldan; izin sonradan tarayıcı ayarından
+  verilince (Permissions API'nin söylediği) kendiliğinden silinir. Bilgisayarda (ince imleç) vizör açılmaz, dosya
+  seçimi kalır. Kontrol listesinin fotoğrafı vizörsüz (belge değil).
+
+Nasıl çalışır (`src/components/panel/live-camera.tsx`, `camera-shot.ts`, `scan/live.worker.ts`, saf parçalar
+`src/lib/scan/live.ts`; testler `tests/tarama-canli.test.ts`):
+
+- `getUserMedia({ video: { facingMode: "environment", width: 2560, height: 1440 } })` (ideal değerler; telefon en
+  yakın çözünürlüğü verir, 2560 × 1440 okumanın girdisiyle aynı ölçü: § Belge tarama, en çok 2576 px / ~3,7 MP).
+  Destekleniyorsa sürekli odak istenir. Görüntü kırpılmadan (`object-contain`) gösterilir: ekranda görünen, çekilenin
+  tamamıdır.
+- Algılama: ana iş parçacığı videonun karesini küçük bir tuvale çizer (uzun kenar 192–384 px) ve baytlarını Web
+  Worker'a aktarır (kopyalamadan); Worker çekirdeğin `detectDocument`'ını o küçük karede çalıştırır, kâğıdın içinin
+  parlaklığını ve netliğini (gradyanların %90'lık değeri / karşıtlık) ölçer. Yanıt gelmeden yeni kare gitmez, iki kare
+  arası en az 80 ms (saniyede en çok ~12). Kopyanın ölçüsü süreye göre ayarlanır: algılama 100 ms'yi aşarsa küçülür,
+  45 ms'nin altındaysa büyür (yavaş telefonda ~8–12 kare/sn kalsın). Bu makinede 288 px'te bir algılama 40–90 ms.
+  OffscreenCanvas gerekmez (eski Safari'de de çalışır). Worker açılamazsa kenar çizilmez, deklanşör elle çalışır.
+- Çizim: yumuşatılmış dörtgen hedeftir; ekranda gösterilen dörtgen her ekran karesinde (requestAnimationFrame) ona
+  doğru kayar; React'e her karede dokunulmaz (SVG öznitelikleri doğrudan). Ana iş parçacığı akıcı kalır.
+- Yumuşatma (`QuadSmoother`): her köşe kendi kaymasına göre üstel ortalama (köşegenin %4'ünden az kayan köşe yavaş,
+  çok kayan doğrudan izlenir); köşegenin %12'sinden büyük sıçrama ancak ardışık iki kare aynı yeri gösterince kabul;
+  kâğıt kaybolursa 450 ms tutulur.
+- Otomatik çekim kararı (`AutoCapture`): kâğıt bulundu (güven ≥ 0,55), kareyi doldurmuyor, köşeler karenin
+  kenarından en az %0,6 içeride, alanı karenin ≥ %15'i, parlaklık ≥ 55, netlik son 2 saniyenin en iyisinin ≥ %60'ı
+  (odak arıyor ya da el titriyor), son 500 ms'de köşeler köşegenin %1,5'inden az kaymış → 900 ms geri sayım → bir kez
+  çek. Eşikler `tests/tarama-canli.test.ts` ile kilitli (sabit kâğıt ~1,2–1,6 sn'de çekilir; kıpırdayan, kesik,
+  küçük, karanlık, bulanık, kareyi dolduran kâğıtta çekilmez).
+- Çekim: `ImageCapture.takePhoto` varsa (Android Chrome; kameranın fotoğraf çözünürlüğü, çoğu telefonda videodan
+  büyük; flaş kapalı istenir, fişte parlama yapmasın), yoksa (iPhone Safari, Firefox), hata verirse, 3,5 sn'de
+  dönmezse, fener açıksa ya da fotoğrafın yönü videonunkini tutmazsa videonun karesi (tam çözünürlük, JPEG %92).
+  Dosya `kamera.jpg` olarak tarama ekranına gider; sonrası eskisi gibi (küçültme, yükleme).
+- Pil: sekme gizlenince (başka uygulamaya geçildi, ekran kilitlendi) kamera kapanır, algılama durur ("Kamera
+  duraklatıldı"); dönünce yeniden açılır. Vizör kapanınca (çekildi, galeriden seçildi, Kapat) akış hemen durur.
+- **Güvenlik ve izin:** panelin `Permissions-Policy` başlığı kamerayı yalnız bu site için açar (`camera=(self)`,
+  yalnız `/panel` sayfaları; giriş ve QR menüde `camera=()` kalır; [DEPLOY.md](DEPLOY.md) › Güvenlik başlıkları).
+  Görüntü telefonda işlenir, hiçbir kare sunucuya gitmez; yalnız çekilen fotoğraf, kullanıcı tarama ekranında
+  **Kullan**'a basınca eskisi gibi yüklenir. Video `srcObject` ile oynatılır (adres yok: CSP'nin `media-src`'si
+  devreye girmez); Worker kendi kökeninden derlenmiş dosyadır (`worker-src 'self' blob:` yeter). Tarayıcı kamera açıkken
+  kendi göstergesini (adres çubuğu, durum çubuğu) gösterir.
 
 ## 2. Okunan nasıl denetlenir
 
@@ -604,6 +666,7 @@ raporlarda `kasa-pos` kalmadığı denetlenerek).
 | `src/lib/scan/` | belge tarayıcı çekirdeği (§ 11): algılama, köşe oturtma, perspektif, taranmış görünüm |
 | `scripts/tarama-dene.ts` | tarayıcıyı gerçek fotoğrafla ya da sentetik sahneyle deneme (§ 11) |
 | `src/components/panel/scan-editor.tsx`, `src/components/panel/scan/` | tarama ekranı (§ 1 › Belge tarama), Web Worker ve motoru, fotoğrafı çözme ve taranmışı kodlama |
+| `src/components/panel/live-camera.tsx`, `camera-shot.ts`, `scan/live.worker.ts`, `src/lib/scan/live.ts` | canlı vizör (§ 1 › Canlı vizör): kamera, kenarların canlı çizimi, otomatik çekim; eski yola dönüş; Worker; yumuşatma ve çekim kararı (`tests/tarama-canli.test.ts`) |
 | `src/lib/photo-scan.ts`, `src/lib/photo-read/scan-hint.ts` | taranan türler, ölçüler, tarama bilgisinin denetimi, yapay zekâya sorma kararı; köşe ipucunun istemi ve doğrulaması |
 | `src/app/api/foto/kenar/`, `src/server/photo-read/scan-hint.ts` | yapay zekânın köşe ipucu (`ai_calls` `tarama`, kendi sınırı) |
 | `tests/foto-tarama.test.ts`, `tests/foto-tarama-db.test.ts` | taramanın kuralları ve motoru; asıl fotoğrafın yüklenmesi, erişimi, temizliği ve köşe ipucu (veritabanında) |

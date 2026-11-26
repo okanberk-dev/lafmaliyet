@@ -212,8 +212,14 @@ test("paneldeki bütün sesler tek yardımcıdan (sounds.ts) geçer", () => {
   };
   walk(join(process.cwd(), "src"));
   files.push(join(process.cwd(), "public/sw.js"));
-  // sounds.ts çalar; audio-output.ts yalnız saf kurallar (açıklamada setSinkId geçer)
-  const allowed = [join("src", "components", "panel", "live", "sounds.ts"), join("src", "lib", "audio-output.ts")];
+  // sounds.ts çalar; audio-output.ts yalnız saf kurallar (açıklamada setSinkId geçer); canlı vizör kameranın sessiz
+  // videosunu oynatır (ses istenmez, video susturulmuş; aşağıda denetlenir)
+  const camera = join("src", "components", "panel", "live-camera.tsx");
+  const allowed = [join("src", "components", "panel", "live", "sounds.ts"), join("src", "lib", "audio-output.ts"), camera];
+  const cam = readFileSync(join(process.cwd(), camera), "utf8");
+  assert.match(cam, /audio: false,/);
+  assert.match(cam, /<video [^>]*\bmuted\b/);
+  assert.doesNotMatch(cam, /new Audio\(|\bAudioContext\b|speechSynthesis|<audio\b|setSinkId/);
   const offenders = files
     .filter((f) => !allowed.some((a) => f.endsWith(a)))
     .filter((f) => /new Audio\(|\bAudioContext\b|webkitAudioContext|speechSynthesis|SpeechSynthesisUtterance|\.play\(|<audio\b|setSinkId/.test(readFileSync(f, "utf8")))

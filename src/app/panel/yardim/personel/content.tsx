@@ -290,6 +290,20 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         icon: Camera,
       },
       {
+        id: "kasa-kamera",
+        q: "Fotoğraf çek'e basınca açılan kamera",
+        a: (
+          <>
+            Telefonda <B>Fotoğraf çek</B>&apos;e basınca panelin kamerası açılır; ilk seferde tarayıcı kamera izni sorar, <B>İzin ver</B> deyin. Kâğıdı
+            çerçeveye alın: kenarları yeşil çizilir. Telefonu sabit tutunca deklanşörün çevresi dolar ve fotoğraf kendiliğinden çekilir; deklanşöre kendiniz
+            de basabilirsiniz. Alttaki satır ne yapacağınızı söyler (Biraz yaklaşın, Işık az…). Karanlıkta sağ üstteki fener (telefon destekliyorsa) ışığı
+            açar. <B>Otomatik</B> kendiliğinden çekmeyi kapatır, <B>Galeriden</B> kayıtlı fotoğrafı seçtirir. İzin vermezseniz telefonun kendi kamerası açılır,
+            her şey eskisi gibi sürer.
+          </>
+        ),
+        icon: Camera,
+      },
+      {
         id: "kasa-foto",
         q: "Rapora yanlış fotoğraf eklendi",
         a: (

@@ -175,7 +175,7 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
 ### Güvenlik başlıkları
 
 `next.config.ts` her yanıta `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`,
-`Permissions-Policy` (panelde mikrofon yalnız bu site) ve `Strict-Transport-Security` ekler. **Content-Security-Policy**
+`Permissions-Policy` (panelde mikrofon ve kamera yalnız bu site; aşağıda) ve `Strict-Transport-Security` ekler. **Content-Security-Policy**
 (26 Kasım 2026, güvenlik notu; kurallar `src/lib/csp.ts`, deneme `tests/csp.test.ts`) yalnız sayfalara gider (API
 yanıtları kendi başlığını taşır: fotoğrafın `default-src 'none'; sandbox`'ı ezilmez, PDF açılır):
 
@@ -225,6 +225,21 @@ yanıtları kendi başlığını taşır: fotoğrafın `default-src 'none'; sand
   eklentilerinin `chrome-extension://` satırları sayılmaz) Vercel'de `CSP_ENFORCE=1` eklenip yeniden deploy edilir.
   Bir şey bozulursa değişkeni silip yeniden deploy etmek geri alır. Yeni bir dış kaynak (CDN, analiz, harita)
   eklenecekse önce `src/lib/csp.ts`'e yazılır.
+
+
+**Kamera izni** (26 Kasım 2026, güvenlik notu): `Permissions-Policy` her yanıtta `camera=(), microphone=()` ile
+kapalıdır; yalnız `/panel` sayfalarında `camera=(self), microphone=(self)` olur (`next.config.ts`
+`PANEL_PERMISSIONS`, deneme `tests/ses-cikisi.test.ts`). **Neden:** belge tarayıcının canlı vizörü
+([FOTOGRAF.md](FOTOGRAF.md) › Canlı vizör) kâğıdın kenarlarını kamerada canlı gösterip sabit tutulunca kendiliğinden
+çeker; bunun için `getUserMedia` gerekir, `camera=()` onu tarayıcıda engeller. **Kapsam:** `self` yalnız panelin
+kendi kökeni demek; başka kökenden bir çerçeve (zaten `frame-ancestors 'none'` ve `X-Frame-Options: DENY` ile yok) ya
+da panelin dışındaki sayfalar (giriş, davet, QR menü) kamerayı açamaz. Kamera yalnız kullanıcı **Fotoğraf çek**'e
+bastığında açılır; tarayıcı izin sorar ve açıkken kendi göstergesini gösterir. Görüntü telefonda işlenir, hiçbir
+kare sunucuya gitmez (yalnız kullanıcının **Kullan** dediği fotoğraf eskisi gibi yüklenir); vizör kapanınca ya da
+sekme gizlenince akış durur. İzin verilmezse telefonun kendi kamerası (`<input capture>`, sayfaya izin gerektirmez)
+kullanılır. CSP ile uyum: video `srcObject` ile oynar (`media-src` devreye girmez), vizörün Worker'ı kendi kökeninden
+derlenmiş dosyadır (`worker-src 'self' blob:`); tam politika uygulanınca da değişiklik gerekmez. Geri almak:
+`PANEL_PERMISSIONS`'ta `camera=()` (vizör kendiliğinden eski yola döner).
 
 ## 6a. Kullanıcılar ve iki adımlı doğrulama
 
