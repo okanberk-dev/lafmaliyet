@@ -76,7 +76,7 @@ Bitince `claude/festive-goodall-sclggq`'ye birleştirilir (göç numarası çak�
 - [x] [Ladmin] KDV tahmini yazarkasa Z'sine ve LafPOS'un KDV dökümüne dayansın. (26 Kasım; kaynak satırı: "12 gün yazarkasa Z'sinden, 3 gün tahmin")
 - [x] [Ladmin] Vardiyası değişen personele bildirim gitsin. Gelecek haftanın planı yazılmadıysa hatırlatılsın. (26 Kasım)
 - [x] [Ladmin] Onay istekleri yöneticinin telefonuna bildirim olarak gitsin. (26 Kasım)
-- [x] [Ladmin] Yönetici hesaplarında iki adımlı doğrulama zorunlu olsun; yeni cihazdan girişte uyarı. (26 Kasım; acil durum: Vercel'de `ADMIN_2FA_OPTIONAL=1`)
+- [x] [Ladmin] Yönetici hesaplarında iki adımlı doğrulama zorunlu olsun; yeni cihazdan girişte uyarı. (26 Kasım; aynı gün sahibin isteğiyle zorunluluk kaldırıldı: iki adımlı isteğe bağlı, Vercel'de `ADMIN_2FA_REQUIRED=1` yeniden zorunlu yapar)
 - [x] [Ladmin] Telefonda üst çubukta hangi şubenin görüldüğü yazsın. (26 Kasım)
 
 ## Dalga 3 (sonra)

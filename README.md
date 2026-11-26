@@ -31,8 +31,8 @@ asistan ([docs/ASISTAN.md](docs/ASISTAN.md)).
 - **Backend:** Next.js Server Actions + Route Handlers (Vercel Functions), Postgres (Neon), Drizzle ORM
 - **Oturum:** imzalı JWT çerezi (jose) ve scrypt parola özeti. Roller: yönetici ve personel (**Ayarlar › Kullanıcılar &
   roller**). İki adımlı doğrulama (TOTP, Google/Microsoft Authenticator) ve kurtarma kodları (**Hesabım**):
-  yönetici hesaplarında zorunlu (kurmamış yönetici girişten sonra kurulum ekranına gider; acil durumda
-  `ADMIN_2FA_OPTIONAL=1`), personelde isteğe bağlı; yöneticinin yeni bir cihazdan girişi e-posta ve zille bildirilir
+  herkeste isteğe bağlı (`ADMIN_2FA_REQUIRED=1` yönetici hesaplarında zorunlu yapar: kurmamış yönetici girişten sonra
+  kurulum ekranına gider); yöneticinin yeni bir cihazdan girişi e-posta ve zille bildirilir
   ([docs/DEPLOY.md](docs/DEPLOY.md) › 6a); 5 hatalı denemede 15 dakika kilit; parola, rol ya da erişim değişince eski oturumlar kapanır;
   yönetici hesaplarını etkileyen işlemler (yönetici ekleme ya da yapma, bir yöneticinin parolası, e-postası, iki
   adımlısı, bağlantısı, pasif yapma, silme) işlemi yapanın kendi parolasıyla onaylanır
