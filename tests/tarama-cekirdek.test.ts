@@ -34,8 +34,12 @@ import {
   fullFrame,
   orderCorners,
   quadIsValid,
+  scaleQuad,
   SCAN_MODES,
   scanDocument,
+  thumbnail,
+  unscaleQuad,
+  type Quad,
   type RgbaImage,
 } from "../src/lib/scan";
 
@@ -319,6 +323,25 @@ test("dörtgen denetimi, ipucu köşeleri (0–1000) ve tam kare", () => {
     { x: 240, y: 2880 },
   ]);
   assert.equal(cornersFromHint([[1, 2], null as unknown as [number, number], [5, 6], [7, 8]], 100, 100), null, "bozuk öğe null");
+});
+
+test("önizleme kopyası: köşeler asıl fotoğrafa ve geri kaymadan taşınır", () => {
+  const img = createRgba(1670, 2220);
+  const th = thumbnail(img, 500);
+  assert.deepEqual([th.width, th.height], [376, 500], "uzun kenar 500, oran korunur");
+  assert.equal(thumbnail(th, 800), th, "küçükse kopyalanmaz");
+  const q: Quad = [
+    { x: 40.5, y: 30 },
+    { x: 340, y: 41 },
+    { x: 350, y: 470.25 },
+    { x: 35, y: 460 },
+  ];
+  const big = unscaleQuad(q, img.width, img.height, th.width, th.height);
+  // piksel merkezleri hizalı: önizlemenin (0, 0) pikseli asıl fotoğrafta ölçek / 2 − 0,5'te
+  const k = img.width / th.width;
+  assert.ok(Math.abs(big[0].x - ((40.5 + 0.5) * k - 0.5)) < 1e-9);
+  const back = scaleQuad(big, img.width, img.height, th.width, th.height);
+  for (let i = 0; i < 4; i++) assert.ok(Math.hypot(back[i].x - q[i].x, back[i].y - q[i].y) < 1e-9, `köşe ${i} gidiş-dönüş`);
 });
 
 test("tarama: küçük, çok ince, düz ve gürültü görüntüde çökmez; belge bulunamayınca kırpılmaz", () => {

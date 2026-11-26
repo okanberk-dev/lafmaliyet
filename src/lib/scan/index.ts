@@ -13,11 +13,24 @@ import { estimateSkew, enhance, type ScanMode } from "./enhance";
 import { applyHomography, estimateSize, homography, rotationAbout, verticalShear, warpQuad, type Affine } from "./warp";
 
 export type { GrayImage, Point, Quad, RgbaImage } from "./image";
+/** Köşeleri önizleme kopyası ile asıl fotoğraf arasında taşımak için (piksel merkezleri hizalı) */
+export { scaleQuad, unscaleQuad } from "./image";
 export { orderCorners } from "./geom";
 export { detectDocument, MAX_OUTSIDE, type DetectMethod, type DetectOptions, type Detection } from "./detect";
 export { refineCorners, type RefineOptions, type RefineResult } from "./refine";
 export { enhance, estimateSkew, SCAN_MODES, type ScanMode, type SkewEstimate } from "./enhance";
-export { applyHomography, estimateSize, homography, invert3, rotateQuarter, warpQuad, type Mat3, type OutputSize } from "./warp";
+export {
+  applyHomography,
+  estimateSize,
+  homography,
+  invert3,
+  rotateQuarter,
+  warpQuad,
+  type Affine,
+  type Mat3,
+  type OutputSize,
+  type WarpOptions,
+} from "./warp";
 
 /** Saat yönünde çeyrek dönüş (derece) */
 export type QuarterTurn = 0 | 90 | 180 | 270;

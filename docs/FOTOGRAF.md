@@ -470,7 +470,8 @@ bir Web Worker'da çalıştırılması önerilir (eşzamanlı; `ImageData.data.b
   yamultma (uzun kenarlar yerinde).
 - **Giriş noktası** (`index.ts`): `scanDocument(img, { corners?, refine?, mode?, maxEdge?, deskew?, rotate? })` →
   `{ image, corners, confidence, method, fillsFrame, rotation, rotate, reasons, timings }`; `detectDocument`,
-  `refineCorners`, `quadIsValid`, `orderCorners`, `cornersFromHint` / `cornersToHint` (0–1000 oran), `thumbnail`.
+  `refineCorners`, `quadIsValid`, `orderCorners`, `cornersFromHint` / `cornersToHint` (0–1000 oran), `thumbnail`,
+  `scaleQuad` / `unscaleQuad` (önizleme kopyası ile asıl fotoğraf arasında köşe taşıma).
 - **Doğruluk ve süre** (sentetik fotoğraflar, gerçek köşeler bilinir; `tests/tarama-*.test.ts`): köşe hatası köşegenin
   %1,5'inin altında (eğik A4, koyu / dokulu / tahta zemin, açık ve beyaza yakın tezgâhta termal fiş, gölgeli fiş, kareden
   taşan fiş, köşesi kareden çıkmış kâğıt, yanında POS cihazı olan fiş; çoğunda %0,1'in altında); rastgele 192 sahnede
