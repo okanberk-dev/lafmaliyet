@@ -70,13 +70,17 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
   kategorileri, sayım grupları) ekrandan; P7 dönem kapanışı sayım / ciro / kasaya da; P8 fotoğraf okuma doğruluğu;
   P9 temizlik.
 
+- AsilPOS: LafPOS'un adı her yerde AsilPOS (panel ve kasa deposu; eski adlar geçişte çalışır), Marina yalnız AsilPOS
+  (ModPOS bitti), her şubenin kendi AsilPOS kasası (sahibin 27 Kasım kararları; DEVAM.md).
+- Şube ayrımı: şube seçiliyken her ekranda yalnız o şube; firma geneli ekranlar kullanıcının kendi ayarıyla.
+- P8'e ek: banka POS Z'sinin ÖZET'indeki "Toplam KDV" okunmuyor (fiş yanlışlıkla "farklı" çıkıyor).
 ## Sahibin tarafında (kod değil)
 
 - [ ] **ACİL: Depo herkese açık (public).** Başlangıç verisi maaş, kira ve fatura rakamları taşıyor; kişi adları
   güncel dosyada uydurma, git geçmişinde gerçekleri duruyor. GitHub › Settings ›
   Danger Zone › Change visibility › Private; açığa düşmüş anahtarlar yenilensin.
 - [ ] GitHub › Settings › Branches: main için "Tip · Lint · Test · Derleme" zorunlu olsun (kırmızı CI'yla birleştirme olmasın).
-- [ ] GitHub sırrı `ANTHROPIC_API_KEY`: PR incelemesi her PR'da kırmızı.
+- [ ] GitHub sırrı `ANTHROPIC_API_KEY`: sahip 27 Kasım'da anahtarı ekledi ama inceleme yine düşüyor; depo düzeyindeki sır 23 Ekim tarihli, yeni anahtarla güncellenmeli (kuruluş düzeyindeki sırrı gölgeler).
 - [ ] Vercel planı (Hobby ticari kullanıma izin vermiyor, günlük 1 saat): Pro kararı. Vercel'de `ADMIN_2FA_REQUIRED=1`; CSP bir
   hafta temizse `CSP_ENFORCE=1`.
 - [ ] Yayından sonra el kontrolü ve belge tarayıcının gerçek iPhone / Android'de denenmesi; muhasebecinin adresi (Ayarlar ›

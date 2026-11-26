@@ -29,6 +29,25 @@ almaz; güncel ağaçtaki kişi adları P2'de uydurma adlarla değiştirildi (ge
 - Her PR'da YAPILACAKLAR.md güncellenir: biten madde PR numarasıyla "Bitenler"e (açık listede üstü çizili bırakılmaz),
   önemsiz / geçersiz olan silinir, yeni iş eklenir. Bu dosya (DEVAM.md) da güncel tutulur; iş bitince silinir.
 
+## 27 Kasım: sahibin yeni kararları ve sıra
+
+- **CI incelemesi:** sahip 27 Kasım'da CI için Anthropic anahtarını ekledi. Yeniden koşturulan inceleme yine düştü
+  (`is_error`); depo düzeyindeki `ANTHROPIC_API_KEY` sırrının tarihi 23 Ekim: anahtar kuruluş düzeyinde eklendiyse depo
+  sırrı onu gölgeler, depo sırrı yeni anahtarla güncellenmeli. Çalışınca "inceleme" engel sayılmaz ama yorumları okunur.
+- **LafPOS'un adı AsilPOS** (yazılış "AsilPOS"): panelde ve kasa deposunda her yerde (metin, kod, dosya, tablo, ortam
+  değişkeni); kurulu kasa ve Vercel bozulmasın diye eski adlar (LAFPOS_* değişkenleri, kasanın çağırdığı yollar, kasa
+  bilgisayarındaki klasör ve görev) bir süre daha tanınır. GitHub deposunun adı `lafpos` kalır.
+- **Marina yalnız AsilPOS:** Marina'da ModPOS tamamen bitti (kütükte kaynak AsilPOS, föy çekilmez).
+- **Her şubenin kendi AsilPOS kasası** olabilir (panel + kasa deposu; "LafPOS yalnız bir şubenin kasası" sınırı kalkar).
+- **Şube ayrımı:** şube seçiliyken her ekranda yalnız o şubenin bilgisi. Bugün firma geneli olan ekranlar (Vergi, Nakit
+  planı, Tutarlılık, Mutabakat, tedarikçi bakiyeleri, stok değeri, yedek) her kullanıcının kendi ayarıyla seçilsin.
+- **P8'e ek:** banka POS Z'sinin ÖZET bölümündeki "Toplam KDV" okunmadı ("fotoğrafta yok"), fiş yanlışlıkla "farklı"
+  çıktı: kodla okuma + istem örnekleri + regresyon seti.
+- **Sıra:** P1 → AsilPOS (panel adı, kasa adı, çoklu şube + Marina) → P2 → şube ayrımı → P3–P9. P2 (#165) hazır ve
+  main'in #164'ten beri düşen iki testini düzeltiyor: önce o birleşir.
+- **Durum (27 Kasım gece):** P1'in 12 bulgusu ve iki ek maddesi testleriyle düzeltildi (`wip/entegre3-fix`, #163);
+  ikinci bağımsız inceleme yarıda (kullanım limiti). Kasa deposunda ad değişikliği `asilpos-adi` dalında, incelemesi kaldı.
+
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 
 ### P1. Roller + vardiya şube ayarları (dal `wip/entegre3`; düzeltmeler `wip/entegre3-fix`'te başlamış olabilir)
