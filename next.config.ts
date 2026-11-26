@@ -45,6 +45,8 @@ const nextConfig: NextConfig = {
   // eklenir (iz sürme `process.cwd()` ile kurulan yolu kendiliğinden bulamayabilir; docs/VARDIYA.md › PDF)
   outputFileTracingIncludes: {
     "/api/vardiya/pdf": ["./src/server/vardiya/fonts/*.ttf"],
+    // Kontrol listelerinin aylık PDF'i vardiyanın yazı tipini kullanır (src/server/checklists/month-pdf.ts)
+    "/api/kontrol/pdf": ["./src/server/vardiya/fonts/*.ttf"],
     // Kodla okuma (OCR, src/server/photo-read/ocr.ts): tesseract.js işçisini kendi dosyasından açar, çekirdeği (WebAssembly)
     // ve Türkçe dil verisini diskten okur; iz sürme bunları kendiliğinden bulamayabilir. Yalnız fotoğrafı okuyan iki yol;
     // çekirdekten yalnız LSTM'li üç sürüm (işlemciye göre biri seçilir), dil verisinden yalnız LSTM'li tur (docs/FOTOGRAF.md)

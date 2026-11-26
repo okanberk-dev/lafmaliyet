@@ -25,7 +25,8 @@ const FONT_DIR = join(process.cwd(), "src", "server", "vardiya", "fonts");
 export const SHIFT_FONT_FILES = { regular: "Inter-Regular.subset.ttf", bold: "Inter-SemiBold.subset.ttf" } as const;
 
 let fontBytes: { regular: Buffer; bold: Buffer } | null = null;
-function loadFonts() {
+/** Inter'in Türkçe alt kümesi (normal ve kalın); kontrol listelerinin aylık PDF'i de kullanır (src/server/checklists/month-pdf.ts) */
+export function loadFonts() {
   fontBytes ??= { regular: readFileSync(join(FONT_DIR, SHIFT_FONT_FILES.regular)), bold: readFileSync(join(FONT_DIR, SHIFT_FONT_FILES.bold)) };
   return fontBytes;
 }
