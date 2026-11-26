@@ -67,6 +67,8 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
   ("Tümü"); müdürde kalkarsa öteki şubeleri görürdü.
 - Onaylar'da yalnız şubesinin kasa ve zayi / ikram isteklerini görür ve karara bağlar; şubesi bilinmeyen istek ona
   kapalı (`reviewBranchRefusal`, `loadCashRequestQueue(…, strict)`).
+- Canlı uçta (`/api/canli`) karaoke, uygulama siparişi ve masa çağrısı yalnız şubesinde açıksa gelir (seçici çerezi yok
+  sayılır); karaoke tutarı gitmez.
 
 **Görür ve yapar:** personelin her ekranı; kasa raporlarının rakamları ve geçmişi, onaysız düzeltme ve silme, kilitli
 ya da eski güne yazma, kafe kapalı günü işaretleme; kasadan çıkanı ve zayi / ikramı doğrudan; Onaylar (şubesinin
@@ -90,7 +92,8 @@ düğmeleri gizli.
 - Hiçbir kayıt değiştiremez: her sunucu eylemi reddeder. Geçenler yalnız kendi hesabının eylemleri (parola, iki
   adımlı, oturumlar, bu cihazın bildirim aboneliği) ve salt okumalar (şube seçimi çerezi, kasa raporunun WhatsApp
   metni). Veri uçları da: fotoğraf yükleyemez, sipariş eşitleyemez, vardiya PDF'ini alamaz.
-- Ayar görmez; zil ona boş döner; panel asistanı yok.
+- Ayar görmez; zil ona boş döner; canlı uç (`/api/canli`) ona karaoke oturumu, silme isteği, uygulama siparişi ve masa
+  çağrısı vermez (saha ekranları kapalı, `canOpen`; hiçbir şube seçiminde); panel asistanı yok.
 - Kişi verisi: kişi başı maaş (Maaşlar, bordro dökümü), avanslar ve personel belgeleri yok; gelir-gider ve vergide
   personel giderleri toplam olarak durur. Kasa raporunda kasadan çıkan satırları kategorileriyle görür (muhasebe kaydı).
 - Tam dışa aktarım (`/api/export`) ve yedek yöneticinin; muhasebecinin dışa aktarımı aylık **muhasebeci paketi**

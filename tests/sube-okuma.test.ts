@@ -121,7 +121,7 @@ test("karaoke: kilitli personelin eylemleri, canlı uç, Bugün ve bildirim kara
   assert.equal(all.length, 9);
   assert.match(actions, /if \(at === null \|\| \(await staffBranchRefusal\(me, at\)\)\) throw new UserError\(KARAOKE_ELSEWHERE\);/);
   const live = read("src/app/api/canli/route.ts");
-  assert.match(live, /const karaokeHere = featureInScope\("karaoke", scope, branchRows\);/);
+  assert.match(live, /const karaokeHere = canOpen\(me\.role, "\/panel\/karaoke"\) && featureInScope\("karaoke", scope, branchRows\);/);
   assert.match(live, /karaokeHere \? loadSessions\(from, to, \{ admin: me\.role === "admin" \}\) : Promise\.resolve\(\[\]\)/);
   assert.match(live, /const deleteAsks = karaokeHere \? asks : \[\];/);
   assert.match(live, /const here = `k\$\{karaokeHere \? 1 : 0\}\$\{ordersHere \? 1 : 0\}\$\{callsHere \? 1 : 0\}`;/, "özellik ETag'te");

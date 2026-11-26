@@ -1,8 +1,9 @@
 // Müdür ve Muhasebeci rolleri, gerçek Postgres'te (docs/ROLLER.md): veritabanı kısıtları (bilinmeyen rol, şubesiz
 // müdür), müdürün şube kilidi (seçici, işletme geneli okuma, öteki şubenin isteğine karar, öteki şubeye yazım; şubesi
 // pasife alınınca oturumu yok), muhasebecinin salt okunurluğu (sunucu eylemlerinin HEPSİ "salt okunur" diye reddeder ve
-// veritabanında hiçbir satır değişmez; eylem dışında ana ekranına yönlenir). Oturum gerçek src/server/auth/dal.ts'le,
-// çerezler ve istek başlıkları taklit edilerek.
+// veritabanında hiçbir satır değişmez; eylem dışında ana ekranına yönlenir), canlı uç (/api/canli; muhasebeciye saha
+// verisi gitmez, müdüre yalnız şubesininki). Oturum gerçek src/server/auth/dal.ts'le, çerezler ve istek başlıkları taklit
+// edilerek.
 //
 // ROLLER_TEST_DATABASE_URL verilmezse atlanır. Bir Postgres sunucusunun adresi (veritabanı oluşturabilen kullanıcı):
 // test kendi geçici veritabanını açar, migration'ları uygular, sonunda siler.
@@ -16,7 +17,9 @@ import { eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
-import { DEFAULT_BRANCHES } from "../src/lib/branches";
+import { BRANCH_COOKIE, DEFAULT_BRANCHES } from "../src/lib/branches";
+import type { LiveResponse } from "../src/lib/live";
+import { todayTR } from "../src/lib/reminders";
 import { READ_ONLY_TEXT } from "../src/lib/roles";
 import * as s from "../src/server/db/schema";
 import { allActionGates } from "./helpers/action-gates";
@@ -86,6 +89,7 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
   let waste: typeof import("../src/server/actions/waste");
   let settings: typeof import("../src/server/actions/settings");
   let reqBranch: typeof import("../src/server/staff-requests/branch");
+  let NextRequestCtor: typeof import("next/server").NextRequest;
   let jar = new Jar();
   /** İsteğin başlıkları: sunucu eyleminde `Next-Action` var */
   let reqHeaders = new Headers();
@@ -120,6 +124,10 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
       },
     });
     stub("next/cache", { ...require("next/cache"), refresh: () => {}, revalidatePath: () => {}, revalidateTag: () => {}, updateTag: () => {} });
+    // Canlı uç (route handler) istek dışında: connection() beklemez, after() işleri (karaoke tazeleme, e-postalar) koşmaz
+    const nextServer = require("next/server") as typeof import("next/server");
+    NextRequestCtor = nextServer.NextRequest;
+    stub("next/server", { ...nextServer, connection: async () => {}, after: () => {} });
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();
     await migrate(db, { migrationsFolder: "drizzle" });
@@ -368,6 +376,128 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
       await signIn("mehmet");
       await assert.rejects(dal.requireCan("muhasebe.oku"), (e: { to?: string }) => e.to === "/panel/bugun");
       await assert.rejects(dal.requireCan("maas"), (e: { to?: string }) => e.to === "/panel/bugun");
+    });
+  });
+
+  describe("canlı uç (/api/canli): muhasebeci saha verisi almaz, müdür yalnız şubesininkini (bulgu 7)", () => {
+    let route: typeof import("../src/app/api/canli/route");
+    const rows = { session: 0, ask: 0 };
+    const restoreFeatures = async () => {
+      for (const b of DEFAULT_BRANCHES) await db.update(s.branches).set({ features: [...(b.features ?? [])] }).where(eq(s.branches.id, b.id));
+    };
+
+    before(async () => {
+      // Site bağlı değilse (anahtar yok) liste ve çağrı herkese boş döner, test bir şey kanıtlamaz
+      process.env.KARAOKE_SYNC_SECRET = "canli-uc-testi-icin-en-az-otuz-iki-karakterlik-anahtar-01";
+      route = await import("../src/app/api/canli/route");
+      const now = Date.now();
+      const [k] = await db
+        .insert(s.karaokeSessions)
+        .values({
+          source: "panel",
+          date: todayTR(),
+          startsAt: new Date(now + 3_600_000),
+          endsAt: new Date(now + 3 * 3_600_000),
+          customerName: "Deniz",
+          guests: 4,
+          status: "confirmed",
+          paymentStatus: "none",
+          createdBy: "Ayşe",
+          totalMinor: 150_000,
+        })
+        .returning({ id: s.karaokeSessions.id });
+      rows.session = k.id;
+      const [a] = await db
+        .insert(s.staffRequests)
+        .values({ kind: "karaoke-sil", subject: `karaoke:${k.id}`, day: todayTR(), title: "Karaoke sayacı silme", payload: {}, requestedBy: ids.ayse, requestedByName: "Ayşe" })
+        .returning({ id: s.staffRequests.id });
+      rows.ask = a.id;
+      const snapshot = { at: new Date(now).toISOString(), complete: true, skipped: 0, orders: [{ id: "o-1" }], calls: [{ id: "c-1", tableCode: "K7" }], callsSkipped: 0 };
+      await db.insert(s.integrationState).values({ key: "site_orders", value: snapshot }).onConflictDoUpdate({ target: s.integrationState.key, set: { value: snapshot } });
+    });
+
+    after(async () => {
+      if (!db) return;
+      await db.delete(s.staffRequests).where(eq(s.staffRequests.id, rows.ask));
+      await db.delete(s.karaokeSessions).where(eq(s.karaokeSessions.id, rows.session));
+      await db.delete(s.integrationState).where(eq(s.integrationState.key, "site_orders"));
+      delete process.env.KARAOKE_SYNC_SECRET;
+      await restoreFeatures();
+    });
+
+    /** Oturumdan sonra şube seçimi çereziyle (undefined: çerez yok) canlı ucun yanıtı */
+    const live = async (cookie?: string): Promise<LiveResponse> => {
+      if (cookie === undefined) jar.values.delete(BRANCH_COOKIE);
+      else jar.values.set(BRANCH_COOKIE, cookie);
+      const res = await route.GET(new NextRequestCtor("http://panel.test/api/canli"));
+      assert.equal(res.status, 200, `canlı uç ${res.status} döndü`);
+      return (await res.json()) as LiveResponse;
+    };
+    /** Saha verisi yok: oturum, silme isteği, sipariş, çağrı; ekran "kullanılmıyor" der */
+    const nothing = (b: LiveResponse, why: string) => {
+      assert.deepEqual(b.karaoke.sessions, [], `${why}: karaoke oturumu`);
+      assert.deepEqual(b.karaoke.deleteAsks, [], `${why}: silme isteği`);
+      assert.equal(b.karaoke.error, null, `${why}: karaoke hatası`);
+      assert.deepEqual(b.orders.list, [], `${why}: sipariş`);
+      assert.deepEqual(b.orders.calls, [], `${why}: masa çağrısı`);
+      assert.deepEqual(b.orders.off, { orders: true, calls: true }, `${why}: kapalı işareti`);
+    };
+
+    test("muhasebeci hiçbir şube seçiminde karaoke, sipariş ve çağrı almaz", async () => {
+      // Önce tohumun gerçek olduğu: yönetici hepsini alır (tutarıyla)
+      await signIn("ali");
+      const a = await live();
+      assert.deepEqual(
+        a.karaoke.sessions.map((x) => [x.id, x.totalMinor]),
+        [[rows.session, 150_000]],
+        "yönetici oturumu tutarıyla alır",
+      );
+      assert.equal(a.karaoke.deleteAsks?.length, 1, "yönetici silme isteğini alır");
+      assert.equal(a.orders.list.length, 1, "yönetici siparişi alır");
+      assert.equal(a.orders.calls?.length, 1, "yönetici çağrıyı alır");
+
+      await signIn("zeynep");
+      for (const cookie of [undefined, "hepsi", "tuzla", "marina"]) {
+        const b = await live(cookie);
+        assert.equal(b.me.role, "accountant");
+        nothing(b, `muhasebeci, çerez ${cookie ?? "yok"}`);
+        assert.doesNotMatch(JSON.stringify(b), /Deniz|Ayşe|K7|"o-1"|"c-1"/, "misafir adı, isteyen, masa ve sipariş gitmez");
+      }
+    });
+
+    test("müdür yalnız kendi şubesinin özelliklerini alır (seçici çerezi yok sayılır), karaoke tutarı gitmez", async () => {
+      try {
+        // Tuzla'da her özellik açık: Marina çerezi yok sayılır, Tuzla'nınkiler gelir
+        await signIn("mehmet");
+        const m = await live("marina");
+        assert.deepEqual(
+          m.karaoke.sessions.map((x) => [x.id, x.totalMinor, x.refundMinor]),
+          [[rows.session, null, null]],
+          "müdür oturumu tutarsız alır",
+        );
+        assert.equal(m.orders.list.length, 1, "müdür şubesinin siparişini alır");
+        assert.equal(m.orders.calls?.length, 1, "müdür şubesinin çağrısını alır");
+
+        // Özellikler Marina'ya geçince müdüre (Tuzla) hiçbir çerezle gelmez
+        await db.update(s.branches).set({ features: ["yemek_karti"] }).where(eq(s.branches.id, "tuzla"));
+        await db.update(s.branches).set({ features: ["karaoke", "siparis", "garson", "yemek_karti"] }).where(eq(s.branches.id, "marina"));
+        await signIn("mehmet");
+        for (const cookie of ["marina", "hepsi", undefined]) nothing(await live(cookie), `müdür, çerez ${cookie ?? "yok"}`);
+
+        // Veri yalnız özelliğin açık olduğu yere akar: yönetici Marina'da, Marina personeli kendi şubesinde alır
+        await signIn("ali");
+        const a = await live("marina");
+        assert.deepEqual([a.karaoke.sessions.length, a.orders.list.length, a.orders.calls?.length], [1, 1, 1], "yönetici Marina'da alır");
+        await signIn("ayse");
+        const p = await live("tuzla");
+        assert.deepEqual(
+          [p.karaoke.sessions.map((x) => x.totalMinor), p.orders.list.length, p.orders.calls?.length],
+          [[null], 1, 1],
+          "Marina personeli (çerez yok sayılır) alır, tutarsız",
+        );
+      } finally {
+        await restoreFeatures();
+      }
     });
   });
 });

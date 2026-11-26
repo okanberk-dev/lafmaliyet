@@ -171,8 +171,8 @@ function sources(dir = join(root, "src")): string[] {
 test("kaynak: KARAOKE_BRANCH_ID sabiti kalktı; canlı uç, push, Bugün ve sayfalar özelliğe göre", () => {
   for (const f of sources()) assert.doesNotMatch(readFileSync(f, "utf8"), /KARAOKE_BRANCH_ID/, f);
   const live = read("src/app/api/canli/route.ts");
-  assert.match(live, /const ordersHere = featureInScope\("siparis", scope, branchRows\);/);
-  assert.match(live, /const callsHere = featureInScope\("garson", scope, branchRows\);/);
+  assert.match(live, /const ordersHere = canOpen\(me\.role, "\/panel\/siparisler"\) && featureInScope\("siparis", scope, branchRows\);/);
+  assert.match(live, /const callsHere = canOpen\(me\.role, "\/panel\/siparisler"\) && featureInScope\("garson", scope, branchRows\);/);
   assert.match(live, /list: linked && ordersHere \? snapshot\.orders : \[\],/);
   assert.match(live, /calls: linked && callsHere \? snapshot\.calls : \[\],/);
   const orders = read("src/server/site-orders/sync.ts");

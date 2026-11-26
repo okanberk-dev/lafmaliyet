@@ -239,7 +239,8 @@ aşağıda "Şube özellikleri"). Başka şubeye kilitli personel:
 - karaoke Web Push bildirimini almaz (`announce` › `featureAudienceIds("karaoke")`).
 
 Bugün'ün karaoke satırı, karaoke sayfası ve canlı uç "Tümü"de ve karaokenin şubesi seçiliyken karaokeyi gösterir; başka
-şube seçiliyken (kilitli personelde hep kendi şubesi) yoktur. Karaoke hiçbir şubede açık değilse personel (şubesiz de)
+şube seçiliyken (kilitli personelde ve müdürde hep kendi şubesi) yoktur. Muhasebeci sahada değil: canlı uç ona hiçbir
+seçimde karaoke, sipariş ve çağrı vermez ([ROLLER.md](ROLLER.md)). Karaoke hiçbir şubede açık değilse personel (şubesiz de)
 karaoke eylemi çağıramaz, bildirim kimseye gitmez. Kapalı gün kanıtında karaoke birden çok kasa açıkken yalnız karaokenin şubesinin kanıtıdır.
 Yönetici serbesttir; şubesiz personel ve şubesi pasife alınmış personel karaoke bir şubede açıkken serbesttir.
 
