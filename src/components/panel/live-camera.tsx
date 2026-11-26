@@ -136,6 +136,8 @@ export function LiveCamera({ opts, onDone }: { opts: LiveCameraOptions; onDone: 
   // Gösterilen dörtgen her ekran karesinde hedefe (yumuşatılmış algılama) doğru kayar; videonun pikselinde
   const targetRef = useRef<Quad | null>(null);
   const shownRef = useRef<Quad | null>(null);
+  // Çekim olmadıysa algılama döngüsünü yeniden başlatır (döngü effect'in içinde)
+  const resumeRef = useRef<() => void>(() => {});
 
   const [phase, setPhase] = useState<Phase>("aciliyor");
   const [video, setVideo] = useState<{ width: number; height: number } | null>(null);
@@ -221,7 +223,7 @@ export function LiveCamera({ opts, onDone }: { opts: LiveCameraOptions; onDone: 
     function tick() {
       timer = null;
       const v = videoRef.current;
-      if (!alive || !worker || !ctx || busy || capturingRef.current) return;
+      if (!alive || !worker || !ctx || busy || capturingRef.current || document.hidden) return;
       if (!v || !streamRef.current || v.readyState < 2 || !v.videoWidth) return schedule(100);
       const s = fitSize(v.videoWidth, v.videoHeight, edge);
       if (canvas.width !== s.width || canvas.height !== s.height) {
@@ -351,6 +353,10 @@ export function LiveCamera({ opts, onDone }: { opts: LiveCameraOptions; onDone: 
     };
 
     document.addEventListener("visibilitychange", onVisibility);
+    resumeRef.current = () => {
+      decide.reset();
+      schedule(LIVE_MIN_INTERVAL);
+    };
     raf = requestAnimationFrame(draw);
     void start();
     // Videonun ölçüsü dönünce değişir (telefon yan çevrildi)
@@ -389,7 +395,9 @@ export function LiveCamera({ opts, onDone }: { opts: LiveCameraOptions; onDone: 
     } catch {
       capturingRef.current = false;
       setError("Çekilemedi; yeniden deneyin.");
+      setTimeout(() => setError(null), 3000);
       setPhase("canli");
+      resumeRef.current();
     }
   }
 
