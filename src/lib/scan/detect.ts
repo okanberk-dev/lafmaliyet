@@ -124,6 +124,8 @@ interface Scored {
   area: number;
   /** kâğıda benzemezlik (0–1) */
   notPaper: number;
+  /** puanın bileşenleri (tanı için) */
+  parts?: Record<string, number>;
 }
 
 const DEFAULT_EDGE = 640;
@@ -385,29 +387,43 @@ function textOutside(ctx: Ctx, a: Point, b: Point, cx: number, cy: number): numb
     ny = -ny;
   }
   const reach = Math.max(6, ctx.diag * 0.025);
-  let hit = 0;
-  let tot = 0;
-  for (let k = 0; k < 24; k++) {
-    const t = 0.1 + (0.8 * k) / 23;
+  const K = 24;
+  // örnek başına dışarıdaki "yazı" piksellerinin uzaklıkları (kenardan dışa)
+  const offs: number[][] = [];
+  for (let k = 0; k < K; k++) {
+    const t = 0.1 + (0.8 * k) / (K - 1);
     const px = a.x + (b.x - a.x) * t;
     const py = a.y + (b.y - a.y) * t;
-    let found = false;
+    const hits: number[] = [];
     let any = false;
     for (let o = 3; o <= reach; o += 1.5) {
       const x = Math.round(px + nx * o);
       const y = Math.round(py + ny * o);
       if (x < 0 || y < 0 || x >= w || y >= h) break;
       any = true;
-      if (ctx.text[y * w + x]) {
-        found = true;
-        break;
+      if (ctx.text[y * w + x]) hits.push(o);
+    }
+    if (any) offs.push(hits);
+  }
+  if (!offs.length) return 0;
+  // kenar boyunca hep aynı uzaklıkta duran ince koyu çizgi yazı değildir: kâğıdın gölgesi (açık zeminde kenarın hemen
+  // dışında koyu şerit), tezgâhın ya da cihazın kenarı. Örneklerin çoğunda aynı ±2,5 px'te çıkan şerit sayılmaz.
+  const firsts = offs.filter((hs) => hs.length).map((hs) => hs[0]);
+  let band: [number, number] | null = null;
+  if (firsts.length >= offs.length * 0.4) {
+    let best = 0;
+    for (const c of firsts) {
+      const n = firsts.filter((f) => Math.abs(f - c) <= 2.5).length;
+      if (n > best) {
+        best = n;
+        band = [c - 2.5, c + 2.5 + 3];
       }
     }
-    if (!any) continue;
-    tot++;
-    if (found) hit++;
+    if (best < offs.length * 0.4) band = null;
   }
-  return tot ? hit / tot : 0;
+  let hit = 0;
+  for (const hs of offs) if (hs.some((o) => !band || o < band[0] || o > band[1])) hit++;
+  return hit / offs.length;
 }
 
 /** Yazının yüzde kaçı dörtgenin içinde (yazı azsa null) */
@@ -450,6 +466,9 @@ function evaluate(ctx: Ctx, q: Quad, how: DetectMethod): Scored | null {
     0.45 * minSide + 0.25 * meanSide + 0.12 * areaTerm + 0.08 * rect + 0.05 * pc + 0.05 * (tin ?? 0.5) - 0.6 * Math.max(0, cut - 0.15);
   const np = notPaper(ctx, lv.lum, lv.chroma, tin);
   score -= 0.45 * np;
+  // kareye dayanan aday yazının epey bir kısmını dışarıda bırakıyorsa kareyi dolduran sayfanın bir bölümüdür (tablo
+  // çizgisi, sütun): yakın çekimde sayfanın içinden dörtgen seçilmesin
+  if (real.length < 4 && tin !== null) score -= 0.4 * Math.max(0, 0.8 - tin);
   if (real.length === 2) score -= 0.06;
   else if (real.length === 3) score -= 0.02;
   // kareye dayanan kenarın içi zeminse kâğıt orada bitmiyordur
@@ -460,7 +479,7 @@ function evaluate(ctx: Ctx, q: Quad, how: DetectMethod): Scored | null {
     }
     score -= 0.5 * Math.max(0, bg - 0.4);
   }
-  return { q, how, score, sides, realSides: real.length, minSide, area, notPaper: np };
+  return { q, how, score, sides, realSides: real.length, minSide, area, notPaper: np, parts: { minSide, meanSide, areaTerm, rect, pc, tin: tin ?? -1, cut } };
 }
 
 // ---------------------------------------------------------------- a) kâğıt bölütleme
@@ -1077,4 +1096,24 @@ export function detectCandidates(img: RgbaImage, opts: DetectOptions = {}): { ho
   const tq = textCandidate(ctx);
   if (tq) push(tq, "yazi");
   return out.sort((a, b) => b.score - a.score);
+}
+
+/** Tanı için: verilen dörtgenin (asıl pikselde) algılama puanı ve bileşenleri (betik ve testler) */
+export function scoreQuad(
+  img: RgbaImage,
+  q: Quad,
+  opts: DetectOptions = {},
+): { score: number; sides: number[]; realSides: number; minSide: number; area: number; notPaper: number; parts?: Record<string, number> } | null {
+  const ctx = buildCtx(img, opts.maxEdge ?? DEFAULT_EDGE);
+  const s = evaluate(ctx, scaleQuad(q, img.width, img.height, ctx.w, ctx.h), "kagit");
+  if (!s) return null;
+  return {
+    score: s.score,
+    sides: s.sides.map((x) => (x.frame ? -1 : Math.round(x.quality * 1000) / 1000)),
+    realSides: s.realSides,
+    minSide: s.minSide,
+    area: s.area,
+    notPaper: s.notPaper,
+    parts: s.parts,
+  };
 }
