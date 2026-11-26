@@ -100,3 +100,11 @@ test("kaynak: başlıklar derlemede next.config'te, yalnız sayfalara; rapor ucu
   // Fotoğraf ucu kendi kısıtlı politikasını taşır
   assert.match(read("src/app/api/foto/[id]/route.ts"), /"Content-Security-Policy": "default-src 'none'; sandbox"/);
 });
+
+test("tarayıcıda zod eval denemesi yapmaz: politikada 'unsafe-eval' yok, her sayfa ihlal raporu ürettirmesin", () => {
+  // Yerel denetimde (next start + Chromium) her sayfada tek ihlal zod'un `Function("")` denemesiydi
+  const instrumentation = read("src/instrumentation-client.ts");
+  assert.match(instrumentation, /^import \{ config \} from "zod\/v4\/core";/m);
+  assert.match(instrumentation, /^config\(\{ jitless: true \}\);/m, "uygulama kodundan önce, üst düzeyde ve eşzamanlı");
+  assert.ok(!fullDirectives({ dev: false, env: {} })["script-src"].includes("'unsafe-eval'"), "üretimde eval'e izin verilmez");
+});
