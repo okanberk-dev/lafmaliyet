@@ -245,7 +245,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     title: "Kâr & ödemeler",
     items: [
       { href: "/panel/gelir-gider", label: "Gelir-gider", icon: CalendarRange, roles: ["admin", "accountant"], keywords: "aylık tablo kâr zarar online satış laffogato.net site uygulama ciro" },
-      { href: "/panel/gelir-gider#kar-zarar", label: "Kâr / zarar", icon: Scale, roles: ["admin", "accountant"], keywords: "kâr zarar kar zarar net kâr yıl" },
+      { href: "/panel/gelir-gider#kar-zarar", label: "Kâr / zarar", icon: Scale, roles: ["admin"], keywords: "kâr zarar kar zarar net kâr yıl" },
       {
         href: "/panel/hatirlaticilar",
         label: "Ödemeler",
@@ -297,12 +297,12 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         href: "/panel/vergi#kdv",
         label: "KDV",
         icon: Percent,
-        roles: ["admin", "accountant"],
+        roles: ["admin"],
         keywords: "kdv katma değer bu ay ne kadar devreden indirilecek hesaplanan beyanname damga",
       },
-      { href: "/panel/vergi#sgk", label: "SGK primi", icon: Users, roles: ["admin", "accountant"], keywords: "sgk prim işveren sigorta tahakkuk" },
-      { href: "/panel/vergi#muhtasar", label: "Maaş vergileri (muhtasar)", icon: Receipt, roles: ["admin", "accountant"], keywords: "muhtasar stopaj ücret gelir vergisi prim hizmet" },
-      { href: "/panel/vergi#kar-vergisi", label: "Kâr vergisi (geçici, kurumlar)", icon: Landmark, roles: ["admin", "accountant"], keywords: "geçici vergi kurumlar vergisi peşin mahsup matrah" },
+      { href: "/panel/vergi#sgk", label: "SGK primi", icon: Users, roles: ["admin"], keywords: "sgk prim işveren sigorta tahakkuk" },
+      { href: "/panel/vergi#muhtasar", label: "Maaş vergileri (muhtasar)", icon: Receipt, roles: ["admin"], keywords: "muhtasar stopaj ücret gelir vergisi prim hizmet" },
+      { href: "/panel/vergi#kar-vergisi", label: "Kâr vergisi (geçici, kurumlar)", icon: Landmark, roles: ["admin"], keywords: "geçici vergi kurumlar vergisi peşin mahsup matrah" },
       {
         href: "/panel/vergi/gelir-gider",
         label: "Vergi kârı",
@@ -315,7 +315,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         href: "/panel/vergi/gelir-gider#siniflandir",
         label: "Eksik belgeler",
         icon: FileWarning,
-        roles: ["admin", "accountant"],
+        roles: ["admin"],
         keywords: "belgesi seçilmemiş sınıflandır stopaj vergi kesintisi",
       },
       { href: "/panel/vergi/demirbas", label: "Demirbaş", icon: Package, roles: ["admin", "accountant"], keywords: "vergi demirbaş amortisman faydalı ömür varlık doğrudan gider demirbaş & amortisman varlık" },
@@ -326,7 +326,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         roles: ["admin", "accountant"],
         keywords: "vergi oran dayanak kaynak 2026 elle değer ayarlar vergi kuralları vergi ayarları şirket nasıl kuruldu",
       },
-      { href: "/panel/vergi/kurallar#sorular", label: "Muhasebeciye sorulacaklar", icon: ListChecks, roles: ["admin", "accountant"], keywords: "vergi muhasebeci soru konuştum gözden geçir" },
+      { href: "/panel/vergi/kurallar#sorular", label: "Muhasebeciye sorulacaklar", icon: ListChecks, roles: ["admin"], keywords: "vergi muhasebeci soru konuştum gözden geçir" },
     ],
   },
 ];
