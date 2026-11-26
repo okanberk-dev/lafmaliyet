@@ -15,7 +15,7 @@ import { monthLabel, pct, tl } from "@/lib/format";
 import { dayLabel, LABOR_METHOD, weekLabel, type LaborRow } from "@/lib/iscilik";
 import { shiftMonth } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireCan } from "@/server/auth/dal";
 import { monthParam } from "@/server/data/dataset";
 import { loadLaborReport, type LaborBranchReport, type LaborReport } from "@/server/data/iscilik";
 
@@ -49,16 +49,20 @@ export default function LaborPage({ searchParams }: PageProps<"/panel/raporlar/i
 }
 
 async function LaborContent({ searchParams }: { searchParams: PageProps<"/panel/raporlar/iscilik">["searchParams"] }) {
-  await requireAdmin();
+  // Yönetici ve müdür (docs/ROLLER.md): müdür yalnız kendi şubesini, haftalık ve aylık görür. Günlük görünüm müdüre kapalı:
+  // tek kişinin çalıştığı günün işçiliği o kişinin günlük ücretidir (kişisel ücret)
+  const me = await requireCan("rapor.sube");
+  const admin = me.role === "admin";
   const sp = await searchParams;
   const current = businessDate().slice(0, 7);
   const asked = monthParam(sp.ay);
   const month = asked && asked <= current ? asked : current;
-  const view: View = (Array.isArray(sp.gorunum) ? sp.gorunum[0] : sp.gorunum) === "gun" ? "gun" : "hafta";
+  const view: View = admin && (Array.isArray(sp.gorunum) ? sp.gorunum[0] : sp.gorunum) === "gun" ? "gun" : "hafta";
   const data = await loadLaborReport(month);
   const months = Array.from({ length: PICKER_MONTHS }, (_, i) => shiftMonth(current, i - PICKER_MONTHS + 1));
   const actions = (
     <>
+      {admin ? (
       <SegmentedLinks
         label="Görünüm"
         value={view}
@@ -67,13 +71,14 @@ async function LaborContent({ searchParams }: { searchParams: PageProps<"/panel/
           { value: "gun", label: "Günlük", href: `${PATH}?ay=${month}&gorunum=gun` },
         ]}
       />
+      ) : null}
       <MonthPicker months={months} value={month} />
     </>
   );
   if (!data) {
     return (
       <>
-        <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} />
+        <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} role={me.role} />
         <EmptyState icon={<Users />} title="Açık şube yok" description="Ayarlar › Şubeler'de açık bir fiziksel şube olmalı." />
       </>
     );
@@ -81,11 +86,11 @@ async function LaborContent({ searchParams }: { searchParams: PageProps<"/panel/
   const list = data.total ? [...data.branches, data.total] : data.branches;
   return (
     <>
-      <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} />
+      <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} role={me.role} />
       <p className="-mt-2 mb-4 text-xs text-pretty text-ink-mute" role="note">
         Yöntem: {LABOR_METHOD}
       </p>
-      <CompanyWideNotice screen="raporlar" className="mb-4" />
+      {admin ? <CompanyWideNotice screen="raporlar" className="mb-4" /> : null}
       {data.missing.length ? (
         <Notice
           tone="warn"
@@ -93,7 +98,7 @@ async function LaborContent({ searchParams }: { searchParams: PageProps<"/panel/
           risk="para"
           className="mb-4"
           title={`${data.missing.length} kişinin ücreti hesaba girmedi`}
-          action={<NoticeLink href="/panel/personel">Maaşlar</NoticeLink>}
+          action={admin ? <NoticeLink href="/panel/personel">Maaşlar</NoticeLink> : undefined}
         >
           {data.missing.map((m) => `${m.name} (${m.branch}): ${m.reason === "ucret-yok" ? "ücret yok" : "vardiya bağlantısı yok, çalıştığı gün bilinmiyor"}`).join(" · ")}. Uydurulmadı: işçilik
           olduğundan az görünür.

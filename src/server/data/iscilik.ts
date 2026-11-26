@@ -22,8 +22,8 @@ import {
 import { cellReader } from "@/lib/kiyas";
 import { lafposBranchOf } from "@/lib/lafpos/switch";
 import { addDays, shiftMonth } from "@/lib/reminders";
-import { requireAdmin } from "@/server/auth/dal";
-import { withBranchScope } from "@/server/branch-scope";
+import { requireCan } from "@/server/auth/dal";
+import { staffBranchLock, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { closedDaysBetween } from "@/server/closed-days";
 import { tillRows } from "@/server/data/cash-reports";
@@ -60,7 +60,9 @@ export interface LaborReport {
  * part-time'ın çalıştığı günler Vardiya'dan). Günün cirosu kasa satırından (Kıyas'ın hücresi). Açık şube yoksa null.
  */
 export async function loadLaborReport(month: string, now: Date = new Date()): Promise<LaborReport | null> {
-  await requireAdmin();
+  // Yönetici ve müdür; müdürde yalnız kendi şubesi (kilit oturumdan; withBranchScope("hepsi") da şubesine daralır)
+  await requireCan("rapor.sube");
+  const lock = await staffBranchLock();
   const db = getDb();
   const today = businessDate(now);
   const monthEnd = addDays(`${shiftMonth(month, 1)}-01`, -1);
@@ -72,7 +74,7 @@ export async function loadLaborReport(month: string, now: Date = new Date()): Pr
   if (`${month}-01` > today) return null;
 
   const all = await listBranches(db);
-  const branches = tillBranches(all);
+  const branches = tillBranches(all).filter((b) => lock === null || b.id === lock);
   if (!branches.length) return null;
   const range = dayRange(from, to);
   const months = [...new Set(range.map((d) => d.slice(0, 7)))];

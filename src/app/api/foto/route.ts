@@ -3,6 +3,7 @@ import { connection, type NextRequest } from "next/server";
 import { sniffMime } from "@/lib/documents";
 import { validDay } from "@/lib/photo-read/common";
 import { isPhotoKind, MAX_PHOTO_BYTES, PHOTO_MIMES, photoUrl, UPLOADS_PER_HOUR, type PhotoKind, type PhotoMime } from "@/lib/photo-rules";
+import { can, READ_ONLY_TEXT } from "@/lib/roles";
 import { getCurrentUser } from "@/server/auth/dal";
 import { readPhotoFor, type ReadOutcome } from "@/server/photo-read/read";
 import { canUploadPhoto } from "@/server/photo-read/rules";
@@ -31,6 +32,8 @@ export async function POST(request: NextRequest) {
   if (!sameOrigin(request)) return Response.json({ error: "Geçersiz istek" }, { status: 403 });
   const me = await getCurrentUser();
   if (!me) return Response.json({ error: "Oturum kapanmış; sayfayı yenileyip yeniden giriş yapın." }, { status: 401 });
+  // Muhasebeci salt okur (docs/ROLLER.md): fotoğraf yükleyemez
+  if (!can(me.role, "kayit.yaz")) return Response.json({ error: READ_ONLY_TEXT }, { status: 403 });
   // Gövde okunmadan: 2 MB'tan çok büyük istek belleğe alınmasın (form alanlarına pay bırakılır)
   if (Number(request.headers.get("content-length") ?? 0) > MAX_PHOTO_BYTES + 64 * 1024) return Response.json({ error: TOO_BIG }, { status: 413 });
   let form: FormData;

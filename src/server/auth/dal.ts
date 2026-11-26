@@ -3,13 +3,14 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 
 import { eq, lt, sql } from "drizzle-orm";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { needsTwoFactorSetup, TWO_FACTOR_SETUP_PATH } from "@/lib/admin-security";
 import type { Role } from "@/lib/constants";
-import { BRANCH_ROLES, can, homeFor, type Capability } from "@/lib/roles";
+import { BRANCH_ROLES, can, homeFor, READ_ONLY_TEXT, type Capability } from "@/lib/roles";
 import { getDb, schema as s } from "@/server/db";
+import { UserError } from "@/server/user-error";
 
 import {
   addDeviceUser,
@@ -147,10 +148,20 @@ export async function requireSignedIn(): Promise<SessionUser> {
   return user;
 }
 
+/**
+ * Yetkisiz istek: kişi kendi ana ekranına yönlendirilir (homeFor). Salt okunur muhasebeci bir sunucu eyleminde (istekte
+ * `Next-Action` başlığı) yönlendirilmez: eylem "salt okunur" hatasıyla döner (attempt onu kullanıcıya gösterir), ekranda
+ * kalan bir düğmeye bastığında başka sayfaya atılmaz
+ */
+async function refuse(user: CurrentUser): Promise<never> {
+  if (user.role === "accountant" && (await headers()).has("next-action")) throw new UserError(READ_ONLY_TEXT);
+  redirect(homeFor(user.role));
+}
+
 /** Yalnızca yönetici. Başka rol kendi ana ekranına yönlendirilir (homeFor). */
 export async function requireAdmin(): Promise<CurrentUser> {
   const user = await requireUser();
-  if (user.role !== "admin") redirect(homeFor(user.role));
+  if (user.role !== "admin") return refuse(user);
   return user;
 }
 
@@ -160,7 +171,7 @@ export async function requireAdmin(): Promise<CurrentUser> {
  */
 export async function requireRole(...roles: readonly Role[]): Promise<CurrentUser> {
   const user = await requireUser();
-  if (!roles.includes(user.role)) redirect(homeFor(user.role));
+  if (!roles.includes(user.role)) return refuse(user);
   return user;
 }
 
@@ -171,7 +182,7 @@ export async function requireRole(...roles: readonly Role[]): Promise<CurrentUse
  */
 export async function requireCan(cap: Capability): Promise<CurrentUser> {
   const user = await requireUser();
-  if (!can(user.role, cap)) redirect(homeFor(user.role));
+  if (!can(user.role, cap)) return refuse(user);
   return user;
 }
 

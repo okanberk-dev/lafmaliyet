@@ -864,6 +864,7 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/vergi/gelir-gider": "Vergi kârı",
   "/panel/vergi/demirbas": "Demirbaş",
   "/panel/vergi/kurallar": "Muhasebeci",
+  "/panel/muhasebe": "Muhasebe",
 };
 
 /** Üst çubuk başlığı: en uzun eşleşen yol kazanır (/panel/urunler/12 → "Ürünler") */

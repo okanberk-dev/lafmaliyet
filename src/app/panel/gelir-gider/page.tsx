@@ -24,7 +24,7 @@ import { periodSalesSource } from "@/lib/sales-source";
 import { cn } from "@/lib/utils";
 import { salesMonthsToPull, siteGross } from "@/lib/site-sales/calc";
 import { employerRateNotice, rateText } from "@/lib/tax/edit";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadExpectedDebtsInYear } from "@/server/data/cari";
@@ -79,7 +79,8 @@ export default function PnlPage({ searchParams }: PageProps<"/panel/gelir-gider"
 }
 
 async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/gelir-gider">["searchParams"] }) {
-  await requireAdmin();
+  // Yönetici ve muhasebeci (salt okunur; docs/ROLLER.md): muhasebecinin yazma denemesini eylemler reddeder
+  await requireCan("muhasebe.oku");
   const sp = await searchParams;
   // Vergi ayarları yalnız SGK oranı uyarısı için (K19); okunamazsa uyarı çıkmaz, tablo etkilenmez
   const [model, salesState, taxSettings, monthWrite, branchList] = await Promise.all([

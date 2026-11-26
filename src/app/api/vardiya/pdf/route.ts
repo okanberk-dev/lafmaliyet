@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { todayTR } from "@/lib/reminders";
 import { pdfFileName, weekParam } from "@/lib/vardiya";
+import { can } from "@/lib/roles";
 import { getCurrentUser } from "@/server/auth/dal";
 import { currentPhysicalBranch, staffBranchLock } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
@@ -19,6 +20,8 @@ import { loadShiftWeek, shiftBranches } from "@/server/vardiya/store";
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Giriş gerekli" }, { status: 401 });
+  // Vardiya planı sahadakilerin (yönetici, müdür, personel); muhasebecinin değil (docs/ROLLER.md)
+  if (!can(user.role, "kayit.yaz")) return Response.json({ error: "Bu planı göremezsiniz" }, { status: 403 });
   const params = request.nextUrl.searchParams;
   const [branches, lock] = await Promise.all([listBranches(), staffBranchLock()]);
   const wanted = params.get("sube");

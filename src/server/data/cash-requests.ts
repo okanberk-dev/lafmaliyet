@@ -286,7 +286,7 @@ export type CashRequestCard = CorrectionCard | DeleteCard | LateCard | CashOutCa
  * Bekleyen kasa isteklerinin kartları (düzeltme, silme, geç rapor, kasadan çıkan, fotoğraf kaldırma), en eski gün önce
  * (yalnız yönetici)
  */
-export async function loadCashRequestQueue(now = new Date(), scope: BranchScope = ALL_BRANCHES): Promise<CashRequestCard[]> {
+export async function loadCashRequestQueue(now = new Date(), scope: BranchScope = ALL_BRANCHES, strict = false): Promise<CashRequestCard[]> {
   const [day, late, outs, closed, branches] = await Promise.all([dayRequestCards(now), lateCards(now), cashOutCards(now), closedDayCards(), listBranches()]);
   // Birden çok kasa açıkken kasa günü kartları şubesini adıyla söyler; kasadan çıkan ve fotoğraf kaldırma kartları da
   // (önceden şubesizdi, "Günü aç" yöneticinin seçili kasasını açıyordu; denetim 21 Kasım #29)
@@ -297,7 +297,8 @@ export async function loadCashRequestQueue(now = new Date(), scope: BranchScope 
   };
   // Tek şube seçiliyken yalnız o şubenin kartları (şube kapsamı C P1-1); "Tümü"de hepsi, şube adıyla
   return [...day.map(named), ...late.map(named), ...outs.map(named), ...closed.map(named)]
-    .filter((c) => requestInScope(c.branchId, scope))
+    // `strict` (müdür, docs/ROLLER.md): şubesi bilinmeyen kart da düşer, yalnız kapsamın şubesininkiler
+    .filter((c) => requestInScope(c.branchId, scope) && (!strict || c.branchId === scope))
     .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
 }
 

@@ -335,3 +335,6 @@ export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; manager
 export const SHIFT_ROLES: readonly Role[] = ["manager", "staff"];
 
 export const isShiftRole = (role: Role | string): boolean => (SHIFT_ROLES as readonly string[]).includes(role);
+
+/** Salt okunur hesabın yazma denemesine yanıt (veri uçları; sunucu eylemleri requireCan ile ana ekrana gönderir) */
+export const READ_ONLY_TEXT = "Hesabınız salt okunur: bu işlemi yapamazsınız.";
