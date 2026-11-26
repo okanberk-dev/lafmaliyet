@@ -348,4 +348,136 @@ describe("yetki ve hesap ekranları: veritabanında", { skip: !SERVER_URL && "HE
     // Doğru kurtarma kodu girer (bir kez)
     await assert.rejects(auth.verifyLoginCodeAction({}, form({ code: recovery[0], mode: "recovery" })), (e: { to?: string }) => e.to === "/panel");
   });
+
+  // ---------------------------------------------------------------- Yönetici güvenliği (src/lib/admin-security.ts)
+
+  /** Yönlendirmenin hedefi (taklit redirect hatası) */
+  const to = (target: string) => (e: { to?: string }) => {
+    assert.equal(e.to, target);
+    return true;
+  };
+  const SETUP = "/giris/iki-adim";
+  const login = (k: Key, next?: string) => auth.loginAction({}, form({ email: BASE[k].email, password: PASSWORD, ...(next ? { next } : {}) }));
+
+  test("zorunlu iki adımlı: kurmamış yönetici girişten sonra kurulum ekranına; kurana kadar ekran ve eylem yok, kurunca panel", async () => {
+    delete process.env.ADMIN_2FA_OPTIONAL;
+    jar = new Jar();
+    await assert.rejects(login("ali", "/panel/kasa"), to(`${SETUP}?next=%2Fpanel%2Fkasa`), "panel yerine kurulum ekranı, dönülecek yerle");
+    // Oturum açıldı ama panel kapalı: veri uçları oturumsuz sayar, sayfa ve eylemler kurulum ekranına gönderir
+    assert.equal(await dal.getCurrentUser(), null, "canlı veri, dışa aktarma, fotoğraf… kurmamış yöneticiye bir şey vermez");
+    await assert.rejects(dal.requireUser(), to(SETUP));
+    await assert.rejects(dal.requireAdmin(), to(SETUP));
+    await assert.rejects(settings.unlockUser(ids.ayse), to(SETUP), "yönetici eylemi de çalışmaz (attempt yönlendirmeyi geri atar)");
+    await assert.rejects(auth.disableTotp(PASSWORD), to(SETUP), "Hesabım'ın öbür eylemleri de");
+    assert.equal(await dal.awaitingTwoFactorSetup(), true, "Claude onay ekranı girişe değil kuruluma gönderir");
+    const me = await dal.requireSignedIn();
+    assert.deepEqual([me.id, me.needsTwoFactor, me.totpEnabled], [ids.ali, true, false]);
+
+    // Kurulum hemen o ekranda: parola → kod → açılır; oturum yenilenir, panel açılır
+    const secret = await begin();
+    const done = await auth.confirmTotpSetup(codes(secret).right);
+    assert.ok(done.ok, done.ok ? "" : done.error);
+    assert.equal(done.data.codes.length, 8, "kurtarma kodları verilir");
+    assert.equal((await dal.requireUser()).id, ids.ali);
+    assert.equal((await dal.getCurrentUser())?.id, ids.ali);
+    assert.equal(await dal.awaitingTwoFactorSetup(), false);
+    assert.ok((await actions()).includes("İki adımlı doğrulama açıldı"));
+
+    // Kapatınca yeniden kurulum ekranı (telefon değiştirirken böyle yapılır); oturum düşmez
+    assert.deepEqual(await auth.disableTotp(PASSWORD), { ok: true, data: null });
+    await assert.rejects(dal.requireUser(), to(SETUP));
+    assert.equal((await dal.requireSignedIn()).id, ids.ali);
+  });
+
+  test("zorunlu iki adımlı: personel etkilenmez, kurmuş yönetici kod adımından panele, açık oturum düşmez, ADMIN_2FA_OPTIONAL=1 kapatır", async () => {
+    delete process.env.ADMIN_2FA_OPTIONAL;
+    jar = new Jar();
+    await assert.rejects(login("ayse"), to("/panel/bugun"), "personelde isteğe bağlı");
+    assert.equal((await dal.requireUser()).id, ids.ayse);
+
+    // Kurmuş yönetici: parola → kod → panel (kurulum ekranı yok)
+    const secret = totp.generateTotpSecret();
+    await db.update(s.users).set({ totpEnabled: true, totpSecret: box.seal(secret, "totp") }).where(eq(s.users.id, ids.veli));
+    jar = new Jar();
+    assert.deepEqual(await login("veli", "/panel/kasa"), { step: "totp", email: BASE.veli.email });
+    await assert.rejects(auth.verifyLoginCodeAction({}, form({ code: codes(secret).right })), to("/panel/kasa"));
+    assert.equal((await dal.requireAdmin()).id, ids.veli);
+
+    // Yayından önce açılmış oturum kapanmaz: kurulum ekranına gider, zorunluluk kalkınca aynı oturumla panel
+    await signIn("ali");
+    await assert.rejects(dal.requireUser(), to(SETUP));
+    process.env.ADMIN_2FA_OPTIONAL = "1";
+    assert.equal((await dal.requireAdmin()).id, ids.ali, "acil durum: zorunluluk kapalı, aynı oturum geçer");
+    jar = new Jar();
+    await assert.rejects(login("ali"), to("/panel"), "acil durumda giriş doğrudan panele");
+  });
+
+  const UA_CHROME = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+  const UA_IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1";
+  const deviceRows = async (k?: Key) =>
+    (await db.select({ userId: s.activityLog.userId, detail: s.activityLog.detail }).from(s.activityLog).where(eq(s.activityLog.action, "Yeni cihazdan giriş")))
+      .filter((r) => !k || r.userId === ids[k])
+      .map((r) => r.detail);
+
+  test("yeni cihaz: görülmemiş tarayıcıdan başarılı girişte işlem geçmişi ve zil; ilk giriş, aynı tarayıcı ve parola değişikliği uyarı değil", async () => {
+    reqHeaders = new Headers({ "user-agent": UA_CHROME, "x-forwarded-for": "85.105.12.34, 10.0.0.1" });
+    jar = new Jar();
+    const laptop = jar;
+    await assert.rejects(login("ali"), to("/panel"));
+    assert.deepEqual(await deviceRows(), [], "hesabın ilk girişi (davetten sonra) uyarı değil");
+    await assert.rejects(login("ali"), to("/panel"));
+    assert.deepEqual(await deviceRows(), [], "aynı tarayıcı");
+
+    // Telefon: yeni tarayıcı
+    reqHeaders = new Headers({ "user-agent": UA_IPHONE, "x-forwarded-for": "2a02:4e0:2d1:abcd::1" });
+    jar = new Jar();
+    await assert.rejects(login("ali"), to("/panel"));
+    assert.deepEqual(await deviceRows("ali"), ["Safari · iPhone · IP 2a02:4e0:2d1::/48"]);
+    // KVKK: tam IP ve tarayıcı kimliği hiçbir satırda yok
+    const log = JSON.stringify(await db.select().from(s.activityLog));
+    assert.doesNotMatch(log, /85\.105\.12\.34|abcd|Mozilla|AppleWebKit/);
+
+    // Zil: kişinin kendisinde, Hesabım › Oturumlar'a götürür; öteki yöneticide yok
+    const bell = await newDevice.newDeviceBellRows({ id: ids.ali, role: "admin" });
+    assert.equal(bell.length, 1);
+    assert.equal(bell[0].title, "Yeni cihazdan giriş: Safari · iPhone · IP 2a02:4e0:2d1::/48");
+    assert.deepEqual([bell[0].href, bell[0].group, bell[0].kind], ["/panel/hesap#oturumlar", "sistem", "warning"]);
+    assert.deepEqual(await newDevice.newDeviceBellRows({ id: ids.veli, role: "admin" }), []);
+
+    // Parola değişince (oturum sürümü artar) aynı dizüstü yeni sayılmaz; hesap kilidi için bilinmez olsa da
+    await db.update(s.users).set({ sessionVersion: sql`${s.users.sessionVersion} + 1` }).where(eq(s.users.id, ids.ali));
+    jar = laptop;
+    reqHeaders = new Headers({ "user-agent": UA_CHROME, "x-forwarded-for": "85.105.12.34" });
+    await assert.rejects(login("ali"), to("/panel"));
+    assert.equal((await deviceRows("ali")).length, 1, "parola değişikliğinden sonra her tarayıcıda uyarı gelmez");
+
+    // Zil 7 gün gösterir
+    await db.update(s.activityLog).set({ at: new Date(Date.now() - 8 * 86_400_000) }).where(eq(s.activityLog.action, "Yeni cihazdan giriş"));
+    assert.deepEqual(await newDevice.newDeviceBellRows({ id: ids.ali, role: "admin" }), []);
+  });
+
+  test("yeni cihaz: kod adımıyla girişte de; personele uyarı yok; ortak tablette sıradaki yönetici için tablet yeni", async () => {
+    // Ayşe'nin tableti: ilk giriş ve başka bir tarayıcı, personelde uyarı değil
+    reqHeaders = new Headers({ "user-agent": UA_CHROME, "x-forwarded-for": "85.105.12.34" });
+    jar = new Jar();
+    const tablet = jar;
+    await assert.rejects(login("ayse"), to("/panel/bugun"));
+    jar = new Jar();
+    await assert.rejects(login("ayse"), to("/panel/bugun"));
+    assert.deepEqual(await deviceRows("ayse"), [], "personel uyarı almaz");
+    assert.deepEqual(await newDevice.newDeviceBellRows({ id: ids.ayse, role: "staff" }), []);
+
+    // Veli (iki adımlı) daha önce başka yerden girmişti; Ayşe'nin tabletinden kodla girer: tablet Veli için yeni
+    const secret = totp.generateTotpSecret();
+    await db.update(s.users).set({ totpEnabled: true, totpSecret: box.seal(secret, "totp"), lastLoginAt: new Date(Date.now() - 86_400_000) }).where(eq(s.users.id, ids.veli));
+    jar = tablet;
+    assert.deepEqual(await login("veli"), { step: "totp", email: BASE.veli.email });
+    assert.deepEqual(await deviceRows("veli"), [], "parola doğru ama giriş henüz bitmedi");
+    await assert.rejects(auth.verifyLoginCodeAction({}, form({ code: codes(secret).right })), to("/panel"));
+    assert.deepEqual(await deviceRows("veli"), ["Chrome · Windows · IP 85.105.12.x"]);
+    // Ayşe aynı tablete yeniden girer: tablet onun için yeni değil (Veli'nin girişi cihaz kaydını silmez)
+    jar = tablet;
+    await assert.rejects(login("ayse"), to("/panel/bugun"));
+    assert.equal((await dal.requireUser()).id, ids.ayse);
+  });
 });
