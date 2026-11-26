@@ -8,11 +8,13 @@ import { z } from "zod";
 import { BRANCH_FEATURES, branchFeatures, withFeature } from "@/lib/branch-features";
 import { BRANCH_SETTING_GROUPS } from "@/lib/branch-settings/groups";
 import {
+  BRANCH_EMAIL_TAKEN,
   BRANCH_KINDS,
   BRANCH_NAME_MAX,
   BRANCH_POS_SOURCES,
   branchChangeError,
   branchDeleteError,
+  branchEmailTaken,
   branchIdError,
   branchSourceError,
   BRANCH_COOKIE,
@@ -104,10 +106,8 @@ export async function createBranch(input: z.input<typeof createInput>) {
       throw new UserError("Bu adda bir şube zaten var");
     }
     if (d.email && d.kind !== "fiziksel") throw new UserError("E-posta ve LafPOS kurulumu yalnız fiziksel şubede");
-    if (d.email) {
-      const [dup] = await db.select({ id: s.users.id, branchId: s.users.branchId, role: s.users.role }).from(s.users).where(eq(s.users.email, d.email)).limit(1);
-      if (dup && (dup.role === "admin" || (dup.branchId && dup.branchId !== d.id.trim()))) throw new UserError("Bu e-posta başka bir hesapta kayıtlı; şube için ayrı bir adres yazın");
-    }
+    // Adres reddedilirse şube kaydı da yazılmaz: denetim eklemeden önce
+    if (d.email) await assertBranchEmailFree(db, d.email, d.id.trim());
     const sortOrder = Math.max(0, ...mevcut.map((b) => b.sortOrder)) + 1;
     const { posRate: oran, email, ...alanlar } = d;
     const id = d.id.trim();
@@ -122,8 +122,19 @@ export async function createBranch(input: z.input<typeof createInput>) {
 }
 
 /**
+ * Şubenin e-postası şubenin panel hesabı olabilir mi (src/lib/branches.ts › branchEmailTaken): adres bir hesaptaysa o
+ * hesap yalnız şubesiz ya da bu şubedeki personel olabilir. Yönetici, müdür ya da muhasebecinin adresi reddedilir: kurulum
+ * bağlantısı oraya giderdi ve bağlantı kasanın eşitleme anahtarını verir. Dışa açık değil ("use server": dışa açık işlev uçtur)
+ */
+async function assertBranchEmailFree(db: ReturnType<typeof getDb>, email: string, branchId: string): Promise<void> {
+  const [dup] = await db.select({ branchId: s.users.branchId, role: s.users.role }).from(s.users).where(eq(s.users.email, email)).limit(1);
+  if (branchEmailTaken(dup, branchId)) throw new UserError(BRANCH_EMAIL_TAKEN);
+}
+
+/**
  * Şube kurulumu: şubenin panel hesabı (yoksa açılır: personel, şubede kilitli, davetle), yeni LafPOS kurulum bağlantısı
- * ve e-posta. Dönen bağlantı ekranda da gösterilir (e-posta gitmezse elle iletilir)
+ * ve e-posta. Dönen bağlantı ekranda da gösterilir (e-posta gitmezse elle iletilir). Adres bir hesaptaysa o hesap yeniden
+ * kullanılır; çağıran önce `assertBranchEmailFree`'den geçirir, yani bu hep şubesiz ya da bu şubedeki personel hesabıdır
  */
 async function onboard(by: number, b: { id: string; name: string; email: string }): Promise<{ link: string; mailError: string | null; account: "acildi" | "vardi" }> {
   const db = getDb();
@@ -157,8 +168,8 @@ export async function sendBranchInstall(input: z.input<typeof installInput>) {
     if (b.kind !== "fiziksel" || !b.active) throw new UserError("LafPOS kurulumu yalnız açık fiziksel şubede");
     const email = d.email ?? b.email;
     if (!email) throw new UserError("Şubenin e-postasını yazın");
-    const [dup] = await db.select({ branchId: s.users.branchId, role: s.users.role }).from(s.users).where(eq(s.users.email, email)).limit(1);
-    if (dup && (dup.role === "admin" || (dup.branchId && dup.branchId !== b.id))) throw new UserError("Bu e-posta başka bir hesapta kayıtlı; şube için ayrı bir adres yazın");
+    // Şubeye yazılmadan ve bağlantı üretilmeden önce (kayıtlı adres de: eskiden kabul edilmiş olabilir)
+    await assertBranchEmailFree(db, email, b.id);
     if (email !== b.email) await db.update(s.branches).set({ email }).where(eq(s.branches.id, b.id));
     const kurulum = await onboard(me.id, { id: b.id, name: b.name, email });
     await logActivity(me, "LafPOS kurulumu gönderildi", `${b.name} · ${email}${kurulum.mailError ? ` (e-posta gitmedi: ${kurulum.mailError})` : ""}`);

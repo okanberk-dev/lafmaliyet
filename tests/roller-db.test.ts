@@ -2,8 +2,8 @@
 // müdür), müdürün şube kilidi (seçici, işletme geneli okuma, öteki şubenin isteğine karar, öteki şubeye yazım; şubesi
 // pasife alınınca oturumu yok), muhasebecinin salt okunurluğu (sunucu eylemlerinin HEPSİ "salt okunur" diye reddeder ve
 // veritabanında hiçbir satır değişmez; eylem dışında ana ekranına yönlenir), canlı uç (/api/canli; muhasebeciye saha
-// verisi gitmez, müdüre yalnız şubesininki). Oturum gerçek src/server/auth/dal.ts'le, çerezler ve istek başlıkları taklit
-// edilerek.
+// verisi gitmez, müdüre yalnız şubesininki), şube kurulumu (e-posta müdür ya da muhasebeci hesabına gitmez). Oturum gerçek
+// src/server/auth/dal.ts'le, çerezler ve istek başlıkları taklit edilerek.
 //
 // ROLLER_TEST_DATABASE_URL verilmezse atlanır. Bir Postgres sunucusunun adresi (veritabanı oluşturabilen kullanıcı):
 // test kendi geçici veritabanını açar, migration'ları uygular, sonunda siler.
@@ -19,7 +19,7 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
-import { BRANCH_COOKIE, DEFAULT_BRANCHES } from "../src/lib/branches";
+import { BRANCH_COOKIE, BRANCH_EMAIL_TAKEN, DEFAULT_BRANCHES } from "../src/lib/branches";
 import type { LiveResponse } from "../src/lib/live";
 import { todayTR } from "../src/lib/reminders";
 import { READ_ONLY_TEXT } from "../src/lib/roles";
@@ -541,6 +541,55 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
         );
       } finally {
         await restoreFeatures();
+      }
+    });
+  });
+
+  // Sonda: sendBranchInstall şubenin e-postasını ve kurulum bağlantısını yazar
+  describe("şube kurulumu e-postası rol hesabına gitmez (bulgu 10)", () => {
+    test("müdür, muhasebeci, yönetici ve öteki şubenin personeli reddedilir; bu şubenin personeli kabul edilir", async () => {
+      const prev = process.env.LADMIN_ANA_ADMIN;
+      // Şube kurulumu yalnız ana yöneticinin (isAnaAdmin ortamı çağrı anında okur)
+      process.env.LADMIN_ANA_ADMIN = BASE.ali.email;
+      const branches = await import("../src/server/actions/branches");
+      const refused = { ok: false, error: BRANCH_EMAIL_TAKEN };
+      const branchEmail = async (id: string) => (await db.select({ email: s.branches.email }).from(s.branches).where(eq(s.branches.id, id)))[0]?.email ?? null;
+      const installs = (id: string) => db.select({ email: s.lafposInstalls.email }).from(s.lafposInstalls).where(eq(s.lafposInstalls.branchId, id));
+      const userCount = async () => (await db.select({ id: s.users.id }).from(s.users)).length;
+      try {
+        await signIn("ali");
+        asAction();
+        const users = await userCount();
+
+        // Yeni şube: adres reddedilince şube kaydı da kurulum bağlantısı da yazılmaz
+        for (const k of ["zeynep", "mehmet", "ali"] as const) {
+          const r = await branches.createBranch({ id: "bodrum", name: "Bodrum", kind: "fiziksel", posSource: "modpos", openedOn: null, email: BASE[k].email });
+          assert.deepEqual(r, refused, `${BASE[k].role} adresiyle şube açılmaz`);
+        }
+        assert.deepEqual(await db.select({ id: s.branches.id }).from(s.branches).where(eq(s.branches.id, "bodrum")), [], "şube kaydı yok");
+        assert.deepEqual(await db.select({ id: s.lafposInstalls.id }).from(s.lafposInstalls), [], "kurulum bağlantısı yok");
+
+        // Var olan şube: Tuzla müdürünün adresi Tuzla'ya da yazılmaz (eski denetim bunu geçiriyordu)
+        assert.deepEqual(await branches.sendBranchInstall({ id: "tuzla", email: BASE.mehmet.email }), refused, "şubesinin müdürü");
+        assert.deepEqual(await branches.sendBranchInstall({ id: "marina", email: BASE.zeynep.email }), refused, "muhasebeci");
+        assert.deepEqual(await branches.sendBranchInstall({ id: "tuzla", email: BASE.ayse.email }), refused, "öteki şubenin personeli");
+        assert.equal(await branchEmail("tuzla"), null, "Tuzla'nın e-postası değişmedi");
+        assert.equal(await branchEmail("marina"), null, "Marina'nın e-postası değişmedi");
+        assert.deepEqual(await installs("tuzla"), [], "Tuzla'ya kurulum bağlantısı yok");
+        assert.deepEqual(await installs("marina"), [], "Marina'ya kurulum bağlantısı yok");
+
+        // Bu şubenin personeli: hesabı yeniden açılmaz, bağlantı üretilir (e-posta kurulu değil, bağlantı ekranda)
+        const ok = await branches.sendBranchInstall({ id: "marina", email: BASE.ayse.email });
+        assert.equal(ok.ok, true, JSON.stringify(ok));
+        assert.equal(ok.ok && ok.data.account, "vardi", "var olan hesap kullanıldı");
+        assert.equal(await branchEmail("marina"), BASE.ayse.email);
+        assert.deepEqual(await installs("marina"), [{ email: BASE.ayse.email }], "tek kurulum bağlantısı");
+        assert.equal(await userCount(), users, "yeni hesap açılmadı");
+      } finally {
+        if (prev === undefined) delete process.env.LADMIN_ANA_ADMIN;
+        else process.env.LADMIN_ANA_ADMIN = prev;
+        await db.delete(s.lafposInstalls).where(inArray(s.lafposInstalls.branchId, ["tuzla", "marina"]));
+        await db.update(s.branches).set({ email: null }).where(inArray(s.branches.id, ["tuzla", "marina"]));
       }
     });
   });

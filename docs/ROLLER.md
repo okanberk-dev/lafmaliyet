@@ -135,6 +135,10 @@ oturumları kapanır (oturum sürümü).
   personel ve **müdür** hesabının adresine gitmez (listeler şubeler arasında ortak olabilir; kasa e-postası karaoke ön
   ödemesini, sabah e-postası işletmenin ödemelerini ve maliyetini taşır); **muhasebeci** hesabı alır (hesabı olmayan
   muhasebeci adresi gibi).
+- **Şube kurulumu e-postası** müdür ya da muhasebeci hesabının adresi olamaz (yöneticininki ve öteki şubenin
+  personelininki de; `src/lib/branches.ts` › `branchEmailTaken`, `createBranch` ve `sendBranchInstall`): kurulum
+  bağlantısı o adrese gider ve kasanın eşitleme anahtarını verir. Yalnız şubesiz ya da aynı şubedeki personel hesabı
+  şubenin panel hesabı sayılır ([LAFPOS.md](LAFPOS.md) › Şube kurulumu).
 - **Saha kitleleri:** vardiya planının kişileri, kontrol listesi ve karaoke uyarılarının personel alıcıları müdür ve
   personel (`SHIFT_ROLES`); muhasebeci sahada değil.
 - **Panel asistanı** yalnız yöneticinin (müdür ve muhasebeci "staff" düzeyinde reddedilir).
@@ -154,4 +158,5 @@ oturumları kapanır (oturum sürümü).
   izni vermez.
 - `tests/roller-db.test.ts` (gerçek Postgres, `ROLLER_TEST_DATABASE_URL`): kısıtlar; müdür öteki şubeyi okuyamaz,
   öteki şubenin isteğine karar veremez, öteki şubeye yazamaz, şubesi pasifken oturumu yok; muhasebecide **bütün** sunucu
-  eylemleri "salt okunur" döner ve veritabanının hiçbir tablosu değişmez.
+  eylemleri "salt okunur" döner ve veritabanının hiçbir tablosu değişmez; şube kurulumu e-postası müdür, muhasebeci,
+  yönetici ya da öteki şubenin personeli olamaz (şube kaydı, şubenin e-postası ve kurulum bağlantısı yazılmaz).
