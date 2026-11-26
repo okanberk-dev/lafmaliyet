@@ -18,6 +18,43 @@ düzeltir, **Raporu gönder** ya da **Kaydet**'e basar. Fotoğraf kanıt olarak 
 Kasadan çıkan alışveriş satırı **Aylık harcamalar**'a da yazılır (kurallar KASA-RAPORU.md › Gün içinde kasadan
 çıkanlar); orada fotoğraf simgesi ve **Kasadan** rozetiyle görünür, tutarı ve tarihi Kasa raporu'nda düzeltilir.
 
+### Belge tarama
+
+ModPOS Z raporu, yazarkasa Z'si, banka gün sonu fişi, alışveriş fişi ya da fatura fotoğrafı seçilince (**Fotoğraf
+çek** ya da **Galeriden seç**) önce **Belgeyi tara** ekranı açılır: telefonda tam ekran, bilgisayarda pencere. Kontrol
+listesinin fotoğrafı taranmaz.
+
+- Kâğıt kendiliğinden bulunur; kenarları yeşil çizgiyle belirgin çizilir, dışı karartılır. Köşe yanlışsa parmakla ya
+  da fareyle sürüklenir (sürüklerken köşenin büyütülmüş hâli görünür; klavyede köşeye gelip ok tuşları). Kenar
+  bulunamazsa "Kenarlar bulunamadı; köşeleri sürükleyin." yazar ve dörtgen fotoğrafın tamamıdır.
+- **Otomatik** bulunan kenarlara geri döner, **Tüm fotoğraf** kırpmadan kullanır, **Döndür** sonucu 90° çevirir (yan
+  çekilmiş fiş).
+- Görünüm: **Belge** (varsayılan; taranmış gibi: kâğıt beyaz, yazı koyu ve net, gölge ve sarı ışık gider), **Gri**,
+  **Renkli**, **Orijinal** (yalnız kırpılır ve düzeltilir). Sonuç önizlemede görünür (telefonda **Sonuç** sekmesi).
+- **Kullan**: taranmış hâl yüklenir, okunur ve her yerde o gösterilir; asıl fotoğraf küçültülüp yanında saklanır.
+  **Taramadan kullan**: fotoğraf eskisi gibi olduğu gibi yüklenir. Ekranı kapatmak fotoğrafı eklemez.
+- Kod kenardan emin değilse ve fotoğraftan okuma açıksa yapay zekâya (ucuz model) yalnız kâğıdın köşeleri ve üst
+  kenarı sorulur ("Kenarlar aranıyor…"); dönen köşeler fotoğraftaki gerçek kenara oturtulur. Yapay zekâ yoksa, okuma
+  kapalıysa ya da yanıt gelmezse ekranda bir şey değişmez, kodun bulduğu kalır. Köşeler elle düzeltildiyse yapay
+  zekânın yanıtı onları değiştirmez (**Otomatik** ile alınır).
+- Fotoğrafın büyük hâlinde (küçük resme dokununca) **Taranmış / Orijinal** seçimi asıl fotoğrafı gösterir.
+- **Faturalar**'da belge olarak seçilen fotoğraf da taranır; orada asıl fotoğraf ayrıca saklanmaz (asıl hâli isteyen
+  **Taramadan kullan**'ı seçer) ve yapay zekâya köşe sorulmaz.
+
+Nasıl çalışır: tarama telefonda, tarayıcıda yapılır (sunucu görseli çözmez; çekirdek § 11). Ağır iş bir Web Worker'da
+(`src/components/panel/scan/scan.worker.ts`; Turbopack `new Worker(new URL(…, import.meta.url))` kalıbını ayrı paket
+derler), açılamazsa ana iş parçacığında; ekran ve çekirdek yalnız ilk taramada iner. Fotoğraf okumanın ölçüsünde
+çözülür (en çok 2576 px / ~3,7 MP); kâğıt 1000 px'lik kopyada aranır, önizleme ~900 px, son tarama asıl çözünürlükte.
+Yükleme (`POST /api/foto`): `dosya` taranmış JPEG (%70; olağan belgede en uzun kenar 2576 px ve ~3,7 MP, dar uzun
+fişte kısa kenar en az 260 px kalsın diye uzun kenar 4096'ya kadar; daha darında iki yana beyaz pay: sunucunun 200 px
+alt sınırı), `asil` asıl fotoğraf (1800 px, %65), `tarama` taramanın bilgisi (`photos.scan`: köşeler asıl fotoğrafa
+oranla 0–1000, görünüm, yöntem — `kagit` / `kenar` / `yazi` / `tam-kare` / `yok` / `yapay-zeka` / `elle` /
+`tum-fotograf` —, kodun güveni, çeyrek dönüş, yapay zekâya soruldu mu; tutmazsa yok sayılır). Köşe ipucu: `POST
+/api/foto/kenar` (en çok 1024 px JPEG; Ayarlar'daki ilk okuma modeli, varsayılan Claude Haiku 5.5, efor low; kod
+emin değilken sorulur: kâğıt yok ya da kareyi dolduruyor sanıldı, güven 0,6'nın altında, iki aday, kâğıda benzemiyor).
+`ai_calls`'a `tarama` olarak düşer; fotoğraf okumasının günlük sınırına sayılmaz, kendi sınırı var (günde 150,
+kişi başına saatte 30). Görüntü saklanmaz. Kurallar `src/lib/photo-scan.ts`, istem `src/lib/photo-read/scan-hint.ts`.
+
 ## 2. Okunan nasıl denetlenir
 
 Model her tutarı fişte yazıldığı gibi (`text`), okuduğu sayı (`value`) ve güveniyle (`high` / `medium` / `low`) döner.
@@ -79,6 +116,8 @@ Kayıtlı raporda bütün farklar ayrıca listelenir.
 - **Yerelde:** `.data/photos` (`.gitignore`'da; `PHOTO_DIR` ile değişir).
 - Fotoğrafın paneldeki tek adresi `/api/foto/{id}`: giriş, sonra kural, sonra baytlar (Blob'a yönlendirme yok).
   Yanıt `Cache-Control: private, max-age=3600`, `nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`.
+  Taranarak yüklenen belgede bu adres taranmış hâli, `/api/foto/{id}?v=asil` asıl fotoğrafı verir (aynı kural, ayrı
+  ETag; taranmadan yüklenende 404); `HEAD` aynı kuralla yalnız var mı diye bakar (büyütme penceresinin seçimi).
 - **Kim görür:** yönetici hepsini; yükleyen kişi henüz kayda bağlanmamış kendi fotoğrafını (formdaki küçük resim);
   personel, hâlâ düzenleyebildiği günlerin (bugün ve dün; ertesi günün raporu girilince o gün kapanır,
   KASA-RAPORU.md) kasa raporu ve kasadan çıkan fotoğraflarını; şubesine kilitli personel yalnız kendi şubesininkileri
@@ -97,6 +136,8 @@ gün, yöneticinin satırı). Kural saf olarak
   kişi başına saatte 30 yükleme; bir fotoğraf en çok 3 kez okunur (hatalı ve zaman aşımına düşen okuma da sayılır); bir
   rapora en çok 6 fotoğraf, Banka POS Z bölümüne en çok 3 ("Banka POS Z bölümüne en çok 3 fotoğraf eklenir"); bir kontrol listesinde
   en çok 10 fotoğraflı madde (kontrol fotoğrafı okunmaz, yalnız saklanır; yüklemesi `POST /api/kontrol/foto`).
+  Taranan belgenin asıl fotoğrafı da aynı denetimden geçer (2 MB, içerikten tür, 200–4096 px; yalnız taranan
+  türlerde); biri tutmazsa hiçbir dosya kalmaz. Asıl fotoğraf depoya yazılamazsa taranmış hâl de geri silinir.
 - Telefonda fotoğraf JPEG'e (kalite 0,7) küçültülür; EXIF (konum dahil) düşer. Ölçü Claude'un ayrıntısını
   kaybetmeden okuduğu en büyük ölçüdür: en uzun kenar en çok 2576 px, alan en çok ~3,7 megapiksel
   (`src/lib/photo-compress.ts` › `PHOTO_COMPRESS`). Telefon fotoğrafı 3:4 olduğundan ~1670×2220 px olur, çoğu
@@ -122,7 +163,9 @@ gün, yöneticinin satırı). Kural saf olarak
 | Onay bekleyen kasadan çıkan isteğinin fişi | istek beklerken silinmez; onayda satıra bağlanır (400 gün); ret, geri çekme ya da süre dolması (14 gün) ile 7 gün sonra |
 | Yöneticinin onayıyla rapordan kaldırılan Z / POS fotoğrafı | 30 gün sonra (okuması kalır) |
 
-Geçmiş bir güne sonradan girilen rapor ya da satırın fotoğrafında süre eklendiği günden sayılır.
+Geçmiş bir güne sonradan girilen rapor ya da satırın fotoğrafında süre eklendiği günden sayılır. Taranan belgenin asıl
+fotoğrafı taranmış hâliyle aynı kayıttadır, onunla birlikte silinir (hemen silme de sabah işi de iki dosyayı siler;
+**Ayarlar › Fotoğraftan okuma**'daki toplam boyut ikisini de sayar).
 
 İstekte tutulan fotoğrafın süresi kalkar (`holdPhoto`: `expires_at` boş, bağlanmamış); yükleyen kişi küçük resmini
 görmeye devam eder. Başka bir istek ya da kayıt onu bağlayamaz: kasa raporu, kasadan çıkan ve harcama yolları
@@ -431,6 +474,10 @@ raporlarda `kasa-pos` kalmadığı denetlenerek).
 | `scripts/foto-eval/` | canlı değerlendirme (`scripts/okc-eval/` banka POS Z'si için, henüz yazılmadı; § 8) |
 | `src/lib/scan/` | belge tarayıcı çekirdeği (§ 11): algılama, köşe oturtma, perspektif, taranmış görünüm |
 | `scripts/tarama-dene.ts` | tarayıcıyı gerçek fotoğrafla ya da sentetik sahneyle deneme (§ 11) |
+| `src/components/panel/scan-editor.tsx`, `src/components/panel/scan/` | tarama ekranı (§ 1 › Belge tarama), Web Worker ve motoru, fotoğrafı çözme ve taranmışı kodlama |
+| `src/lib/photo-scan.ts`, `src/lib/photo-read/scan-hint.ts` | taranan türler, ölçüler, tarama bilgisinin denetimi, yapay zekâya sorma kararı; köşe ipucunun istemi ve doğrulaması |
+| `src/app/api/foto/kenar/`, `src/server/photo-read/scan-hint.ts` | yapay zekânın köşe ipucu (`ai_calls` `tarama`, kendi sınırı) |
+| `tests/foto-tarama.test.ts`, `tests/foto-tarama-db.test.ts` | taramanın kuralları ve motoru; asıl fotoğrafın yüklenmesi, erişimi, temizliği ve köşe ipucu (veritabanında) |
 
 ## 11. Belge tarama (çekirdek)
 
@@ -439,7 +486,8 @@ tarayıcıda** taranır: kâğıt bulunur, kenarları belli edilir, perspektif d
 "taranmış" görünüm üretilir; sonra `photo-compress.ts` ile küçültülüp `POST /api/foto`'ya gider. Sunucu görseli
 çözmez (güvenlik kararı), Python / OpenCV yok: `src/lib/scan/` dış bağımlılıksız saf TypeScript, DOM'a dokunmaz
 (görüntü `{ width, height, data: Uint8ClampedArray RGBA }`, canvas `ImageData` ile aynı); Node'da test edilir, telefonda
-bir Web Worker'da çalıştırılması önerilir (eşzamanlı; `ImageData.data.buffer` aktarılır). Arayüz bağlantısı henüz yok.
+bir Web Worker'da çalıştırılması önerilir (eşzamanlı; `ImageData.data.buffer` aktarılır). Ekranı ve yüklemesi § 1 ›
+Belge tarama.
 
 - **Algılama** (`detect.ts`, 640 px kopyada, son ince ayar 1000 px): üç yöntem aday dörtgen üretir, hepsi aynı puanla
   karşılaştırılır. *Kâğıt bölütleme* (aydınlık − doygunluk haritası, gölge çıkarılmış yerel hâli, Otsu, morfoloji, dış
