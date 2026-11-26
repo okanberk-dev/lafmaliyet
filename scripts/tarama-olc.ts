@@ -16,6 +16,7 @@
  *   npm run tarama:olc                     # .data/tarama-veri (önce: npx tsx scripts/tarama-veri.ts)
  *   npm run tarama:olc -- --ocr 0          # okunabilirliksiz (hızlı: yalnız köşe, karar, süre)
  *   npm run tarama:olc -- --ideal          # doğru köşelerle taramanın okunabilirliği de
+ *   npm run tarama:olc -- --yon 0          # taranmış hâl sayfa yönüne göre çevrilmeden okunur (tarama ekranı çevirir)
  *   npm run tarama:olc -- --fixture        # tests/fixtures/tarama (regresyon örnekleri)
  *   npm run tarama:olc -- --yalniz pavo    # adında geçenler
  *   npm run tarama:olc -- --cizim          # doğru (yeşil) ve bulunan (kırmızı) köşeler çizili küçük resimler
@@ -29,6 +30,7 @@ import { join } from "node:path";
 
 import { scanDocument, type ScanResult } from "../src/lib/scan";
 import type { Quad } from "../src/lib/scan/image";
+import { detectOrientation } from "../src/lib/scan/orientation";
 import { OCR_LANG_DIR } from "../src/server/photo-read/ocr";
 import {
   BASARI_ESIGI,
@@ -240,6 +242,8 @@ async function main() {
   const dizin = arg("veri") ?? (fixture ? "tests/fixtures/tarama" : ".data/tarama-veri");
   const ocrAcik = (arg("ocr") ?? "1") !== "0";
   const ideal = process.argv.includes("--ideal");
+  // tarama ekranı gibi: sayfa yönü bulunursa okunan taranmış hâl dik çevrilir (--yon 0: çevirmeden, eski ölçümle aynı)
+  const yonAcik = (arg("yon") ?? "1") !== "0";
   const cizim = process.argv.includes("--cizim");
   const yalniz = arg("yalniz");
   const isci = Number(arg("is") ?? 2);
@@ -291,8 +295,18 @@ async function main() {
     if (ocr && g.metin.length) {
       const bilinen = g.metin.join("\n");
       const asilBuf = readFileSync(yol);
-      const tarBuf = await pngYap(r.image);
-      const idealBuf = ideal && dogru && g.beklenen === "kirp" ? await pngYap(scanDocument(img, { corners: dogru }).image) : null;
+      let tarImg = r.image;
+      if (yonAcik) {
+        const o = detectOrientation(img, { corners: r.corners });
+        if (o.rotation !== "bilinmiyor" && o.rotation !== 0) tarImg = scanDocument(img, { corners: r.corners, rotate: o.rotation }).image;
+      }
+      const tarBuf = await pngYap(tarImg);
+      let idealBuf: Buffer | null = null;
+      if (ideal && dogru && g.beklenen === "kirp") {
+        const o = yonAcik ? detectOrientation(img, { corners: dogru }) : null;
+        const rotate = o && o.rotation !== "bilinmiyor" ? o.rotation : 0;
+        idealBuf = await pngYap(scanDocument(img, { corners: dogru, rotate }).image);
+      }
       bekleyen.push(
         (async () => {
           const [a, t, d] = await Promise.all([ocr.oku(asilBuf), ocr.oku(tarBuf), idealBuf ? ocr.oku(idealBuf) : Promise.resolve(null)]);
@@ -327,7 +341,7 @@ async function main() {
     cekirdek,
     veri: dizin,
     tohum: veri.tohum,
-    secenekler: { ocr: ocrAcik, ideal, yalniz: yalniz ?? null },
+    secenekler: { ocr: ocrAcik, ideal, yon: yonAcik, yalniz: yalniz ?? null },
     ozet: {
       kirp: ozetle(kayitlar.filter((k) => k.beklenen === "kirp")),
       hepsi: ozetle(kayitlar),

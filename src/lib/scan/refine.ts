@@ -11,7 +11,7 @@
 
 import type { GrayImage, Point, Quad, RgbaImage } from "./image";
 import { fitSize, gaussianBlur, resizeRgba, sampleBilinear, scaleQuad, seededRandom, toGray, unscaleQuad } from "./image";
-import { intersect, lineThrough, orderCorners, ransacLine, signedDist, type Line } from "./geom";
+import { intersect, isConvex, lineThrough, orderCorners, ransacLine, signedDist, type Line } from "./geom";
 
 export interface RefineOptions {
   /** "iki": geniş + dar şerit (kaba köşe, ipucu); "ince": yalnız dar şerit. Varsayılan "iki" */
@@ -60,6 +60,23 @@ export function sideOnFrame(a: Point, b: Point, w: number, h: number, tol: numbe
   const na = near(a);
   const nb = near(b);
   return (na.l && nb.l) || (na.r && nb.r) || (na.t && nb.t) || (na.b && nb.b);
+}
+
+/**
+ * Kenar kâğıdın kadraj dışında kalan tarafı mı: ya karenin kenarında (sideOnFrame) ya da bir ucu karenin kenarında,
+ * öteki ona `slack` kadar yakın. Algılama kareye dayanan kenarı karşısındaki gerçek kenara paralel bir doğruyla
+ * değiştirir (detect.ts squareFrameSides; eğik fişte kenar karenin içinden biraz geçer, köşegenin en çok %2'si): o
+ * kenar da kadrajın dışına uzanan taraftır (çekim kalitesinin "kesik" denetimi).
+ */
+export function sideLeavesFrame(a: Point, b: Point, w: number, h: number, tol: number, slack: number): boolean {
+  if (sideOnFrame(a, b, w, h, tol)) return true;
+  const gaps = (p: Point) => [p.x, w - 1 - p.x, p.y, h - 1 - p.y];
+  const ga = gaps(a);
+  const gb = gaps(b);
+  for (let e = 0; e < 4; e++) {
+    if ((ga[e] <= tol && gb[e] <= slack) || (gb[e] <= tol && ga[e] <= slack)) return true;
+  }
+  return false;
 }
 
 /** Bölgenin ortancası (0–255 histogramı ile) */
@@ -273,6 +290,179 @@ export function snapQuad(g: GrayImage, q: Quad, opts: { passes?: "iki" | "ince";
   return { q: cur, sides };
 }
 
+/** Kenarın köşeye yakın parçasında örnek sayısı */
+const POLISH_SAMPLES = 28;
+
+/**
+ * Bir kenarın köşe tarafındaki teğeti: köşeden kenar boyunun ~%35'ine kadar örneklerde kenara dik dar şeritte en güçlü
+ * geçiş (alt piksel: türevin tepesine parabol), noktalara ikinci derece eğri (kenar kıvrıksa) ya da doğru; köşedeki
+ * yeri ve yönü döner. Destek azsa ya da eğri şeride sığmıyorsa null.
+ */
+function cornerTangent(g: GrayImage, corner: Point, other: Point, n: Point, band: number, sign: number): { p: Point; d: Point; support: number } | null {
+  const L = Math.hypot(other.x - corner.x, other.y - corner.y);
+  if (L < 24) return null;
+  const d = { x: (other.x - corner.x) / L, y: (other.y - corner.y) / L };
+  const { width: W, height: H } = g;
+  const span = Math.min(0.35 * L, Math.max(40, 0.2 * L));
+  const us: number[] = [];
+  const os: number[] = [];
+  const ss: number[] = [];
+  const B = Math.ceil(band);
+  const prof = new Float32Array(2 * B + 7);
+  for (let k = 0; k < POLISH_SAMPLES; k++) {
+    const u = Math.max(4, 0.04 * L) + ((span - Math.max(4, 0.04 * L)) * k) / (POLISH_SAMPLES - 1);
+    const px = corner.x + d.x * u;
+    const py = corner.y + d.y * u;
+    // kare dışına düşen örnek NaN (köşe kareye yakınsa şeridin yalnız içi)
+    let valid = 0;
+    for (let c = 0; c < prof.length; c++) {
+      const o = c - B - 3;
+      const x = px + n.x * o;
+      const y = py + n.y * o;
+      const inside = x >= 0 && y >= 0 && x <= W - 1 && y <= H - 1;
+      prof[c] = inside ? sampleBilinear(g, x, y) : NaN;
+      if (inside) valid++;
+    }
+    if (valid < prof.length * 0.5) continue;
+    // türev (içerisi eksi dışarısı, 2 px aralık) işaretiyle; en güçlü tepe ve parabolle alt piksel yeri
+    let bv = 0;
+    let bc = -1;
+    const der = (c: number) => {
+      const v = sign * (prof[c - 2] - prof[c + 2]);
+      return Number.isNaN(v) ? 0 : v;
+    };
+    for (let c = 3; c < prof.length - 3; c++) {
+      const v = der(c);
+      if (v > bv) {
+        bv = v;
+        bc = c;
+      }
+    }
+    if (bc < 0) continue;
+    let off = 0;
+    if (bc > 3 && bc < prof.length - 4) {
+      const a0 = der(bc - 1);
+      const a2 = der(bc + 1);
+      const den = a0 - 2 * bv + a2;
+      if (den < 0) off = Math.max(-0.5, Math.min(0.5, (0.5 * (a0 - a2)) / den));
+    }
+    us.push(u);
+    os.push(bc - B - 3 + off);
+    ss.push(bv);
+  }
+  if (us.length < POLISH_SAMPLES * 0.6) return null;
+  const sorted = ss.slice().sort((a, b) => a - b);
+  const thr = Math.max(8, sorted[Math.floor(sorted.length * 0.75)] * 0.4);
+  let idx = us.map((_, i) => i).filter((i) => ss[i] >= thr);
+  if (idx.length < POLISH_SAMPLES * 0.5) return null;
+  // ikinci derece en küçük kareler (u köşeden uzaklık): o(u) = c0 + c1 u + c2 u²; aykırılar bir kez atılır
+  const fit = (sel: number[], deg: 1 | 2): number[] | null => {
+    const m = deg + 1;
+    const A = Array.from({ length: m }, () => new Float64Array(m + 1));
+    for (const i of sel) {
+      const u = us[i] / span;
+      const pw = [1, u, u * u];
+      for (let r = 0; r < m; r++) {
+        for (let c = 0; c < m; c++) A[r][c] += pw[r] * pw[c];
+        A[r][m] += pw[r] * os[i];
+      }
+    }
+    for (let c = 0; c < m; c++) {
+      let piv = c;
+      for (let r = c + 1; r < m; r++) if (Math.abs(A[r][c]) > Math.abs(A[piv][c])) piv = r;
+      if (Math.abs(A[piv][c]) < 1e-9) return null;
+      [A[c], A[piv]] = [A[piv], A[c]];
+      for (let r = 0; r < m; r++) {
+        if (r === c) continue;
+        const f = A[r][c] / A[c][c];
+        for (let k = c; k <= m; k++) A[r][k] -= f * A[c][k];
+      }
+    }
+    return A.map((row, r) => row[m] / row[r]);
+  };
+  const resid = (cf: number[], i: number) => {
+    const u = us[i] / span;
+    return os[i] - (cf[0] + cf[1] * u + (cf[2] ?? 0) * u * u);
+  };
+  let cf = fit(idx, 2);
+  if (!cf) return null;
+  idx = idx.filter((i) => Math.abs(resid(cf!, i)) < 1.5);
+  if (idx.length < POLISH_SAMPLES * 0.5) return null;
+  cf = fit(idx, 2);
+  if (!cf) return null;
+  // eğrilik gürültüden büyük değilse doğru (uzatmada ikinci derece terim yanıltmasın)
+  const lin = fit(idx, 1);
+  let rq = 0;
+  let rl = 0;
+  for (const i of idx) {
+    rq += resid(cf, i) ** 2;
+    if (lin) rl += resid(lin, i) ** 2;
+  }
+  // eğri iyi oturmuyorsa kenar köşede kırılıyor (katlanmış köşe): asıl köşe kenarların uzantısındadır, dokunma
+  if (Math.sqrt(rq / idx.length) > 0.35) return null;
+  if (lin && rl <= rq * 1.3 + idx.length * 0.05) cf = [lin[0], lin[1], 0];
+  if (Math.abs(cf[0]) > band) return null;
+  const slope = cf[1] / span;
+  const p = { x: corner.x + n.x * cf[0], y: corner.y + n.y * cf[0] };
+  const dd = { x: d.x + n.x * slope, y: d.y + n.y * slope };
+  const dl = Math.hypot(dd.x, dd.y);
+  return { p, d: { x: dd.x / dl, y: dd.y / dl }, support: idx.length / POLISH_SAMPLES };
+}
+
+/**
+ * Köşe ince ayarı (kıvrık ya da bükük kâğıt): kenar doğruları kenarın ortasından geçer; kâğıt kıvrıksa ya da ucu
+ * kalkıksa asıl köşe bu doğruların kesişiminden birkaç piksel uzaktadır. Her köşede iki komşu kenarın yalnız köşeye
+ * yakın parçasına (alt piksel) eğri oturtulur, köşe iki teğetin kesişimi olur. Kareye dayanan ya da sabit kenarın
+ * köşesine dokunulmaz; destek zayıfsa ya da köşe şeritten çok kayarsa o köşe yerinde kalır.
+ */
+export function polishCorners(g: GrayImage, q: Quad, opts: { fixed?: readonly number[] } = {}): { q: Quad; moved: number } {
+  const { width: W, height: H } = g;
+  const diag = Math.hypot(W, H);
+  const fixed = opts.fixed ?? [];
+  const frameTol = Math.max(2, Math.min(W, H) * 0.012);
+  const skip = [0, 1, 2, 3].map((i) => fixed.includes(i) || sideOnFrame(q[i], q[(i + 1) % 4], W, H, frameTol));
+  const cx = (q[0].x + q[1].x + q[2].x + q[3].x) / 4;
+  const cy = (q[0].y + q[1].y + q[2].y + q[3].y) / 4;
+  const band = Math.max(5, diag * 0.03);
+  // kâğıt içerisi aydınlık mı (kenar boyunca orta noktalarda içi − dışı)
+  const outward = (a: Point, b: Point): Point => {
+    const L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    let n = { x: (b.y - a.y) / L, y: -(b.x - a.x) / L };
+    if (((a.x + b.x) / 2 - cx) * n.x + ((a.y + b.y) / 2 - cy) * n.y < 0) n = { x: -n.x, y: -n.y };
+    return n;
+  };
+  const signOf = (a: Point, b: Point, n: Point): number => {
+    let s = 0;
+    for (let k = 1; k < 10; k++) {
+      const t = k / 10;
+      const x = a.x + (b.x - a.x) * t;
+      const y = a.y + (b.y - a.y) * t;
+      s += sampleBilinear(g, Math.max(0, Math.min(W - 1, x - n.x * 6)), Math.max(0, Math.min(H - 1, y - n.y * 6)));
+      s -= sampleBilinear(g, Math.max(0, Math.min(W - 1, x + n.x * 6)), Math.max(0, Math.min(H - 1, y + n.y * 6)));
+    }
+    return s >= 0 ? 1 : -1;
+  };
+  const normals = [0, 1, 2, 3].map((i) => outward(q[i], q[(i + 1) % 4]));
+  const signs = [0, 1, 2, 3].map((i) => signOf(q[i], q[(i + 1) % 4], normals[i]));
+  const out = q.slice() as Quad;
+  let moved = 0;
+  for (let i = 0; i < 4; i++) {
+    const prev = (i + 3) % 4;
+    if (skip[prev] || skip[i]) continue;
+    const t1 = cornerTangent(g, q[i], q[prev], normals[prev], band, signs[prev]);
+    const t2 = cornerTangent(g, q[i], q[(i + 1) % 4], normals[i], band, signs[i]);
+    if (!t1 || !t2) continue;
+    const c = intersect({ p: t1.p, d: t1.d }, { p: t2.p, d: t2.d });
+    if (!c || Math.hypot(c.x - q[i].x, c.y - q[i].y) > band * 1.2) continue;
+    out[i] = c;
+    moved++;
+  }
+  if (!moved) return { q, moved: 0 };
+  const r = orderCorners(out);
+  if (!isConvex(r)) return { q, moved: 0 };
+  return { q: r, moved };
+}
+
 /** Çalışma kopyası: gri, hafif bulanık (gürültü ve JPEG blokları türevi bozmasın) */
 export function workGray(img: RgbaImage, workEdge: number): GrayImage {
   const sz = fitSize(img.width, img.height, workEdge);
@@ -288,7 +478,9 @@ export function refineCorners(img: RgbaImage, corners: Quad, opts: RefineOptions
   const g = workGray(img, opts.workEdge ?? 1000);
   const q = scaleQuad(orderCorners(corners), img.width, img.height, g.width, g.height);
   const r = snapQuad(g, q, { passes: opts.passes, band: opts.band, outward: opts.outward, fixed: opts.fixed });
-  const out = unscaleQuad(r.q, img.width, img.height, g.width, g.height);
+  // oturan kenarların köşeleri kıvrık kâğıtta ayrıca köşeye yakın teğetlerle (oturmayan kenara dokunulmaz)
+  const pol = r.sides.some(Boolean) ? polishCorners(g, r.q, { fixed: [0, 1, 2, 3].filter((i) => !r.sides[i]) }).q : r.q;
+  const out = unscaleQuad(pol, img.width, img.height, g.width, g.height);
   const sides = r.sides.slice(0, 4) as [boolean, boolean, boolean, boolean];
   return { corners: out, sides, snapped: sides.filter(Boolean).length };
 }

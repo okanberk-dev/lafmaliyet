@@ -97,10 +97,11 @@ export const MATCH_RUNNING_MS = 70_000;
 export const MATCH_REQUEST = { model: AI_MATCH_MODEL, effort: MATCH_EFFORT, maxTokens: MATCH_MAX_TOKENS, timeouts: MATCH_TIMEOUTS, cacheSystem: true } as const;
 
 /**
- * ai_calls.feature: okumalar, vardiya taslağı, "eslestirme" (Paraşüt'te ürün → hammadde önerisi) ve "asistan" (panel
- * asistanı, src/server/ai/assistant); son ikisi okuma sınırına sayılmaz, kendi günlük sınırları var
+ * ai_calls.feature: okumalar, vardiya taslağı, "eslestirme" (Paraşüt'te ürün → hammadde önerisi), "asistan" (panel
+ * asistanı, src/server/ai/assistant) ve "tarama" (belge taramada köşe ipucu, src/lib/photo-read/scan-hint.ts); son üçü
+ * okuma sınırına sayılmaz, kendi günlük sınırları var
  */
-export type AiFeature = "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya" | "eslestirme" | "asistan";
+export type AiFeature = "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya" | "eslestirme" | "asistan" | "tarama";
 export type AiErrorCode =
   | "nokey"
   | "off"
@@ -182,7 +183,8 @@ const MATCH_TEXT: Partial<Record<AiErrorCode, string>> = {
   busy: "AI önerisi başka bir sekmede sürüyor; bitince sayfayı yenileyin.",
 };
 
-export type AiSubject = "foto" | "fatura" | "vardiya" | "eslestirme" | "asistan";
+/** "tarama": köşe ipucu; metni ekrana çıkmaz (yapay zekâ yoksa tarama sessizce kodun sonucuyla sürer) */
+export type AiSubject = "foto" | "fatura" | "vardiya" | "eslestirme" | "asistan" | "tarama";
 
 /**
  * Personelin göreceği metinler (ayrıntı günlüğe gider, ekrana değil); fatura okumasında, vardiyada ve ürün önerisinde

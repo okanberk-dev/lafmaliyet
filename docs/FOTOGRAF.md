@@ -19,6 +19,119 @@ düzeltir, **Raporu gönder** ya da **Kaydet**'e basar. Fotoğraf kanıt olarak 
 Kasadan çıkan alışveriş satırı **Aylık harcamalar**'a da yazılır (kurallar KASA-RAPORU.md › Gün içinde kasadan
 çıkanlar); orada fotoğraf simgesi ve **Kasadan** rozetiyle görünür, tutarı ve tarihi Kasa raporu'nda düzeltilir.
 
+### Belge tarama
+
+ModPOS Z raporu, yazarkasa Z'si, banka gün sonu fişi, alışveriş fişi ya da fatura fotoğrafı seçilince (**Fotoğraf
+çek** ya da **Galeriden seç**) önce **Belgeyi tara** ekranı açılır: telefonda tam ekran, bilgisayarda pencere. Kontrol
+listesinin fotoğrafı taranmaz.
+
+- Kâğıt kendiliğinden bulunur; kenarları yeşil çizgiyle belirgin çizilir, dışı karartılır. Köşe yanlışsa parmakla ya
+  da fareyle sürüklenir (sürüklerken köşenin büyütülmüş hâli görünür; klavyede köşeye gelip ok tuşları). Kenar
+  bulunamazsa "Kenarlar bulunamadı; köşeleri sürükleyin." yazar ve dörtgen fotoğrafın tamamıdır.
+- Yan ya da ters çekilmiş belge kendiliğinden dik çevrilir (yazıya bakılarak; emin olunamazsa çevrilmez). **Otomatik**
+  bulunan kenarlara geri döner, **Tüm fotoğraf** kırpmadan kullanır, **Döndür** sonucu 90° çevirir.
+- Çekim sorunluysa başlığın altında tek satır uyarı çıkar: "Fotoğraf bulanık; telefonu sabit tutup yeniden çekin.",
+  "Fişte parlama var; ışığı yandan alın.", "Raporun altı kesilmiş; tamamını çekin." gibi (turuncu: hafif, kırmızı:
+  yeniden çekmek önerilir) ve yanında **Yeniden çek**: kamera ekranın içinden açılır (canlı vizör, aşağıda), yeni
+  fotoğraf aynı ekranda taranır. **Kullan** yine serbesttir.
+- Uzun fiş (Z, banka POS Z'si, banka gün sonu, alışveriş fişi) tek fotoğrafa sığmıyorsa üst kısım çekilir, sonra
+  **Devamını çek** ile alt kısım (en çok 3 parça). **Kullan** parçaları kodla hizalayıp tek uzun görüntüde birleştirir
+  (en çok 4096 px, 2 MB; `src/lib/photo-rules.ts`); kod emin değilse parçalar ayrı fotoğraf olarak eklenir (bölümün
+  kalan yeri kadar; Z bölümü en çok 3 fotoğraf alır). Ekrandaki son parça birleştirmeye saklanmadan katılır
+  (birleştirme çöker de **Kullan** yeniden basılırsa parça iki kez girmez); tarayıcının Worker'ı çöküp saklanan
+  parçalar kaybolduysa eksik fiş yüklenmez, "Parçalar kayboldu; fişi baştan çekin." denir.
+- Fiş, rapor ya da fatura olmayan bir şey çekildiyse (POS ekranı, telefon, koli, fincan, ambalaj) kırpılmaz:
+  "Kenarlar bulunamadı" denir, köşeler elle seçilebilir.
+- Görünüm: **Belge** (varsayılan; taranmış gibi: kâğıt beyaz, yazı koyu ve net, gölge ve sarı ışık gider), **Gri**,
+  **Renkli**, **Orijinal** (yalnız kırpılır ve düzeltilir). Sonuç önizlemede görünür (telefonda **Sonuç** sekmesi).
+- **Kullan**: taranmış hâl yüklenir, okunur ve her yerde o gösterilir; asıl fotoğraf küçültülüp yanında saklanır.
+  **Taramadan kullan**: fotoğraf eskisi gibi olduğu gibi yüklenir. Ekranı kapatmak fotoğrafı eklemez.
+- Kod kenardan emin değilse ve fotoğraftan okuma açıksa yapay zekâya (ucuz model) yalnız kâğıdın köşeleri ve üst
+  kenarı sorulur ("Kenarlar aranıyor…"); dönen köşeler fotoğraftaki gerçek kenara oturtulur. Yapay zekâ yoksa, okuma
+  kapalıysa ya da yanıt gelmezse ekranda bir şey değişmez, kodun bulduğu kalır. Köşeler elle düzeltildiyse yapay
+  zekânın yanıtı onları değiştirmez (**Otomatik** ile alınır).
+- Fotoğrafın büyük hâlinde (küçük resme dokununca) **Taranmış / Orijinal** seçimi asıl fotoğrafı gösterir.
+- **Faturalar**'da belge olarak seçilen fotoğraf da taranır; orada asıl fotoğraf ayrıca saklanmaz (asıl hâli isteyen
+  **Taramadan kullan**'ı seçer) ve yapay zekâya köşe sorulmaz.
+
+Nasıl çalışır: tarama telefonda, tarayıcıda yapılır (sunucu görseli çözmez; çekirdek § 11). Ağır iş bir Web Worker'da
+(`src/components/panel/scan/scan.worker.ts`; Turbopack `new Worker(new URL(…, import.meta.url))` kalıbını ayrı paket
+derler), açılamazsa ana iş parçacığında; ekran ve çekirdek yalnız ilk taramada iner. Fotoğraf okumanın ölçüsünde
+çözülür (en çok 2576 px / ~3,7 MP); kâğıt 1000 px'lik kopyada aranır, önizleme ~900 px, son tarama asıl çözünürlükte.
+Kâğıt bulununca arka planda sayfa yönü ve çekim kalitesi ölçülür (§ 12 `detectOrientation`, `assessQuality`; uyarının
+adı türe göre: fiş, rapor, fatura).
+Yükleme (`POST /api/foto`): `dosya` taranmış JPEG (%70; olağan belgede en uzun kenar 2576 px ve ~3,7 MP, dar uzun
+fişte kısa kenar en az 260 px kalsın diye uzun kenar 4096'ya kadar; daha darında iki yana beyaz pay: sunucunun 200 px
+alt sınırı), `asil` asıl fotoğraf (1800 px, %65), `tarama` taramanın bilgisi (`photos.scan`: köşeler asıl fotoğrafa
+oranla 0–1000, görünüm, yöntem — `kagit` / `kenar` / `yazi` / `tam-kare` / `yok` / `yapay-zeka` / `elle` /
+`tum-fotograf` —, kodun güveni, çeyrek dönüş, yapay zekâya soruldu mu; tutmazsa yok sayılır). Köşe ipucu: `POST
+/api/foto/kenar` (en çok 1024 px JPEG; Ayarlar'daki ilk okuma modeli, varsayılan Claude Haiku 5.5, efor low; kod
+emin değilken sorulur: kâğıt yok ya da kareyi dolduruyor sanıldı, güven 0,6'nın altında, iki aday, kâğıda benzemiyor).
+`ai_calls`'a `tarama` olarak düşer; fotoğraf okumasının günlük sınırına sayılmaz, kendi sınırı var (günde 150,
+kişi başına saatte 30). Görüntü saklanmaz. Kurallar `src/lib/photo-scan.ts`, istem `src/lib/photo-read/scan-hint.ts`.
+
+### Canlı vizör
+
+Telefonda **Fotoğraf çek** (ve tarama ekranındaki **Yeniden çek**, **Devamını çek**) telefonun kamera uygulaması
+yerine panelin içinde **Belgeyi çek** vizörünü açar (26 Kasım 2026):
+
+- Arka kameranın görüntüsü tam ekran; kâğıt bulununca kenarları yeşil çizgiyle canlı çizilir, dışı hafif karartılır.
+  Çizgi titremez: dörtgen yumuşatılır, tek karelik yanlış dörtgen (başka bir nesne) atlanır, kâğıt bir an kaybolursa
+  kısa süre yerinde kalır.
+- Alttaki tek satır ne yapılacağını söyler: "Kâğıdı çerçeveye alın", "Biraz yaklaşın", "Kâğıdın tamamı görünsün;
+  biraz uzaklaşın", "Işık az; feneri açın ya da ışıklı bir yere geçin", "Netleşiyor; telefonu sabit tutun", "Sabit
+  tutun…".
+- **Otomatik çekim** (varsayılan açık): kâğıt yarım saniye kıpırdamazsa, karenin en az %15'iyse, kenarları kareden
+  taşmıyorsa, ışık ve netlik yeterliyse deklanşörün çevresinde kısa geri sayım (~1 sn) dolar ve fotoğraf
+  kendiliğinden çekilir (Android'de kısa titreşim). Arada kâğıt kıpırdarsa geri sayım baştan. Sağ alttaki
+  **Otomatik** düğmesi kapatır (bu telefonda hatırlanır); deklanşör her zaman elle de çalışır. Kenarlar görünmüyorsa
+  (kâğıt kareyi dolduruyor) otomatik çekmez, elle çekilir.
+- **Fener** (sağ üstte; yalnız destekleyen telefonda, çoğunlukla Android Chrome), **Galeriden** (sol altta) ve
+  **Kapat**. Uzun fişin sonraki parçasında başlık "2. parça", altında "Önceki parçanın son birkaç satırı da görünsün".
+- Çekilen fotoğraf tam çözünürlükte tarama ekranına gider (§ Belge tarama: kenarlar orada yeniden, büyük fotoğrafta
+  bulunur; köşeler yine sürüklenebilir).
+- İzin verilmezse, tarayıcı kamerayı desteklemezse, kamera açılamazsa (başka uygulama kullanıyor) ya da 10 saniyede
+  görüntü gelmezse sessizce eski yol: telefonun kendi kamerası (`<input capture>`). İzin reddi bu tarayıcıda
+  hatırlanır (`laf:canli-kamera:kapali`), sonraki çekimler doğrudan eski yoldan; izin sonradan tarayıcı ayarından
+  verilince (Permissions API'nin söylediği) kendiliğinden silinir. Bilgisayarda (ince imleç) vizör açılmaz, dosya
+  seçimi kalır. Kontrol listesinin fotoğrafı vizörsüz (belge değil).
+
+Nasıl çalışır (`src/components/panel/live-camera.tsx`, `camera-shot.ts`, `scan/live.worker.ts`, saf parçalar
+`src/lib/scan/live.ts`; testler `tests/tarama-canli.test.ts`):
+
+- `getUserMedia({ video: { facingMode: "environment", width: 2560, height: 1440 } })` (ideal değerler; telefon en
+  yakın çözünürlüğü verir, 2560 × 1440 okumanın girdisiyle aynı ölçü: § Belge tarama, en çok 2576 px / ~3,7 MP).
+  Destekleniyorsa sürekli odak istenir. Görüntü kırpılmadan (`object-contain`) gösterilir: ekranda görünen, çekilenin
+  tamamıdır.
+- Algılama: ana iş parçacığı videonun karesini küçük bir tuvale çizer (uzun kenar 192–384 px) ve baytlarını Web
+  Worker'a aktarır (kopyalamadan); Worker çekirdeğin `detectDocument`'ını o küçük karede çalıştırır, kâğıdın içinin
+  parlaklığını ve netliğini (gradyanların %90'lık değeri / karşıtlık) ölçer. Yanıt gelmeden yeni kare gitmez, iki kare
+  arası en az 80 ms (saniyede en çok ~12). Kopyanın ölçüsü süreye göre ayarlanır: algılama 100 ms'yi aşarsa küçülür,
+  45 ms'nin altındaysa büyür (yavaş telefonda ~8–12 kare/sn kalsın). Bu makinede 288 px'te bir algılama 40–90 ms.
+  OffscreenCanvas gerekmez (eski Safari'de de çalışır). Worker açılamazsa kenar çizilmez, deklanşör elle çalışır.
+- Çizim: yumuşatılmış dörtgen hedeftir; ekranda gösterilen dörtgen her ekran karesinde (requestAnimationFrame) ona
+  doğru kayar; React'e her karede dokunulmaz (SVG öznitelikleri doğrudan). Ana iş parçacığı akıcı kalır.
+- Yumuşatma (`QuadSmoother`): her köşe kendi kaymasına göre üstel ortalama (köşegenin %4'ünden az kayan köşe yavaş,
+  çok kayan doğrudan izlenir); köşegenin %12'sinden büyük sıçrama ancak ardışık iki kare aynı yeri gösterince kabul;
+  kâğıt kaybolursa 450 ms tutulur.
+- Otomatik çekim kararı (`AutoCapture`): kâğıt bulundu (güven ≥ 0,55), kareyi doldurmuyor, köşeler karenin
+  kenarından en az %0,6 içeride, alanı karenin ≥ %15'i, parlaklık ≥ 55, netlik son 2 saniyenin en iyisinin ≥ %60'ı
+  (odak arıyor ya da el titriyor), son 500 ms'de köşeler köşegenin %1,5'inden az kaymış → 900 ms geri sayım → bir kez
+  çek. Eşikler `tests/tarama-canli.test.ts` ile kilitli (sabit kâğıt ~1,2–1,6 sn'de çekilir; kıpırdayan, kesik,
+  küçük, karanlık, bulanık, kareyi dolduran kâğıtta çekilmez).
+- Çekim: `ImageCapture.takePhoto` varsa (Android Chrome; kameranın fotoğraf çözünürlüğü, çoğu telefonda videodan
+  büyük; flaş kapalı istenir, fişte parlama yapmasın), yoksa (iPhone Safari, Firefox), hata verirse, 3,5 sn'de
+  dönmezse, fener açıksa ya da fotoğrafın yönü videonunkini tutmazsa videonun karesi (tam çözünürlük, JPEG %92).
+  Dosya `kamera.jpg` olarak tarama ekranına gider; sonrası eskisi gibi (küçültme, yükleme).
+- Pil: sekme gizlenince (başka uygulamaya geçildi, ekran kilitlendi) kamera kapanır, algılama durur ("Kamera
+  duraklatıldı"); dönünce yeniden açılır. Vizör kapanınca (çekildi, galeriden seçildi, Kapat) akış hemen durur.
+- **Güvenlik ve izin:** panelin `Permissions-Policy` başlığı kamerayı yalnız bu site için açar (`camera=(self)`,
+  yalnız `/panel` sayfaları; giriş ve QR menüde `camera=()` kalır; [DEPLOY.md](DEPLOY.md) › Güvenlik başlıkları).
+  Görüntü telefonda işlenir, hiçbir kare sunucuya gitmez; yalnız çekilen fotoğraf, kullanıcı tarama ekranında
+  **Kullan**'a basınca eskisi gibi yüklenir. Video `srcObject` ile oynatılır (adres yok: CSP'nin `media-src`'si
+  devreye girmez); Worker kendi kökeninden derlenmiş dosyadır (`worker-src 'self' blob:` yeter). Tarayıcı kamera açıkken
+  kendi göstergesini (adres çubuğu, durum çubuğu) gösterir.
+
 ## 2. Okunan nasıl denetlenir
 
 Model her tutarı fişte yazıldığı gibi (`text`), okuduğu sayı (`value`) ve güveniyle (`high` / `medium` / `low`) döner.
@@ -80,6 +193,8 @@ Kayıtlı raporda bütün farklar ayrıca listelenir.
 - **Yerelde:** `.data/photos` (`.gitignore`'da; `PHOTO_DIR` ile değişir).
 - Fotoğrafın paneldeki tek adresi `/api/foto/{id}`: giriş, sonra kural, sonra baytlar (Blob'a yönlendirme yok).
   Yanıt `Cache-Control: private, max-age=3600`, `nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`.
+  Taranarak yüklenen belgede bu adres taranmış hâli, `/api/foto/{id}?v=asil` asıl fotoğrafı verir (aynı kural, ayrı
+  ETag; taranmadan yüklenende 404); `HEAD` aynı kuralla yalnız var mı diye bakar (büyütme penceresinin seçimi).
 - **Kim görür:** yönetici hepsini; yükleyen kişi henüz kayda bağlanmamış kendi fotoğrafını (formdaki küçük resim);
   personel, hâlâ düzenleyebildiği günlerin (bugün ve dün; ertesi günün raporu girilince o gün kapanır,
   KASA-RAPORU.md) kasa raporu ve kasadan çıkan fotoğraflarını; şubesine kilitli personel yalnız kendi şubesininkileri
@@ -98,6 +213,8 @@ gün, yöneticinin satırı). Kural saf olarak
   kişi başına saatte 30 yükleme; bir fotoğraf en çok 3 kez okunur (hatalı ve zaman aşımına düşen okuma da sayılır); bir
   rapora en çok 6 fotoğraf, Banka POS Z bölümüne en çok 3 ("Banka POS Z bölümüne en çok 3 fotoğraf eklenir"); bir kontrol listesinde
   en çok 10 fotoğraflı madde (kontrol fotoğrafı okunmaz, yalnız saklanır; yüklemesi `POST /api/kontrol/foto`).
+  Taranan belgenin asıl fotoğrafı da aynı denetimden geçer (2 MB, içerikten tür, 200–4096 px; yalnız taranan
+  türlerde); biri tutmazsa hiçbir dosya kalmaz. Asıl fotoğraf depoya yazılamazsa taranmış hâl de geri silinir.
 - Telefonda fotoğraf JPEG'e (kalite 0,7) küçültülür; EXIF (konum dahil) düşer. Ölçü Claude'un ayrıntısını
   kaybetmeden okuduğu en büyük ölçüdür: en uzun kenar en çok 2576 px, alan en çok ~3,7 megapiksel
   (`src/lib/photo-compress.ts` › `PHOTO_COMPRESS`). Telefon fotoğrafı 3:4 olduğundan ~1670×2220 px olur, çoğu
@@ -123,7 +240,9 @@ gün, yöneticinin satırı). Kural saf olarak
 | Onay bekleyen kasadan çıkan isteğinin fişi | istek beklerken silinmez; onayda satıra bağlanır (400 gün); ret, geri çekme ya da süre dolması (14 gün) ile 7 gün sonra |
 | Yöneticinin onayıyla rapordan kaldırılan Z / POS fotoğrafı | 30 gün sonra (okuması kalır) |
 
-Geçmiş bir güne sonradan girilen rapor ya da satırın fotoğrafında süre eklendiği günden sayılır.
+Geçmiş bir güne sonradan girilen rapor ya da satırın fotoğrafında süre eklendiği günden sayılır. Taranan belgenin asıl
+fotoğrafı taranmış hâliyle aynı kayıttadır, onunla birlikte silinir (hemen silme de sabah işi de iki dosyayı siler;
+**Ayarlar › Fotoğraftan okuma**'daki toplam boyut ikisini de sayar).
 
 İstekte tutulan fotoğrafın süresi kalkar (`holdPhoto`: `expires_at` boş, bağlanmamış); yükleyen kişi küçük resmini
 görmeye devam eder. Başka bir istek ya da kayıt onu bağlayamaz: kasa raporu, kasadan çıkan ve harcama yolları
@@ -451,11 +570,54 @@ npx tsx --test tests/tarama-regresyon.test.ts   # 10 küçük örnek (tests/fixt
   kırpmaların 4'ü nedensiz 0,27–0,29 güvenli; rapordaki "Güven eşiği" tablosu). A4'ün okunabilirliği düşük:
   1500×2000 fotoğrafta yazı ~10 px, kodla okuma zorlanıyor (yapay zekâ okur; tarayıcının değil ölçeğin sınırı). Yana
   dönük fişin yazısı çevrilmediği için okunmuyor.
+- **Ölçüyle ayar** (26 Kasım 2026, `wip/tarama-2`, çekirdek `f58341e6`; aynı 96 görsel): zayıf kategoriler tek tek
+  ele alındı, her değişiklik ölçüldü, kötüleştiren geri alındı (§ 11'deki adımlar: düşük eşikli ikinci Hough, gölge
+  şeridi yazı sayılmaz, alt piksel köşe, doygunluk maskesi, 8 adayda ince ayar, kâğıdın bütünü / kâğıdın kendisi,
+  belge değil kuralları). Okunabilirlikte taranmış hâl artık tarama ekranı gibi sayfa yönüne göre çevrilip okunur
+  (`--yon 0` eskisi). Önce → sonra:
+
+  | | önce | sonra |
+  |---|---:|---:|
+  | Genel doğru | 52/96 (%54) | **89/96 (%93)** |
+  | Köşe başarısı (76 görsel) | 41/76, kaçan 10, yanlış 25 | **71/76**, kaçan 2, yanlış 3 |
+  | Köşe hatası ort / p90 | %8,1 / %27,6 | %1,1 / %1,3 |
+  | Belge değil: "belge yok" | 3/12 | 10/12 |
+  | Yanlışlıkla "kareyi dolduruyor" | 5 | 1 |
+  | Kadraj dışı | 0/8 | 7/8 |
+  | OCR asıl → taranmış (doğru köşelerle) | %40 → %64 (%71) | %40 → **%69** (%71) |
+  | Tutar bulma asıl → taranmış | %23 → %53 | %23 → %59 |
+
+  | Kategori | doğru önce → sonra | köşe hatası ort | OCR taranmış önce → sonra | tutar taranmış önce → sonra |
+  |---|---:|---:|---:|---:|
+  | Pavo detaylı Z | 6 → 11/12 | %9,9 → %2,2 | %57 → %71 | %50 → %66 |
+  | Pavo / LafPOS gün sonu | 5 → 10/11 | %8,7 → %0,6 | %77 → %87 | %64 → %81 |
+  | ModPOS Z | 8 → 11/11 | %2,2 → %0,1 | %85 → %84 | %68 → %64 |
+  | Banka batch (58 mm) | 4 → 8/9 | %5,6 → %0,5 | %90 → %95 | %78 → %89 |
+  | Market fişi (80 mm) | 6 → 9/9 | %6,0 → %0,2 | %68 → %77 | %68 → %78 |
+  | Market fişi (58 mm) | 8 → 8/8 | %0,5 → %0,2 | %75 → %73 | %56 → %53 |
+  | Uzun market fişi | 4 → 10/12 | %16,0 → %3,3 | %52 → %55 | %38 → %39 |
+  | A4 e-Arşiv fatura | 8 → 12/12 | %6,2 → %0,1 | %20 → %21 | %17 → %17 |
+  | Belge değil | 3 → 10/12 | – | – | – |
+
+  Zemine göre doğru (önce → sonra): ahşap 13 → 17/18, mermer 8 → 15/18, koyu tezgâh 8 → 14/14, **beyaz tezgâh 3 →
+  16/18**, gri masa 11 → 15/16, elde 9 → 12/12. Senaryolar: gölge degradesi 14 → 31/32, parlama 16 → 24/26, karanlık
+  11 → 16/17, soluk baskı 9 → 17/19, kıvrılma 27 → 40/44, hareket bulanıklığı 6 → 11/14. Taranmış hâlin okunabilirliği
+  her kategoride asıl fotoğraftan iyi (en az: A4 %17 → %21; yana dönük fişte %5 → %27, sayfa yönü çevrildiği için).
+  ModPOS Z ve 58 mm fişte taranmış hâl önceki ölçümden 1–3 puan geride (asıl fotoğraftan yine çok iyi): köşeler
+  zaten doğruydu, fark tesseract'ın görselden görsele oynaması kadar.
+  Güven artık anlamlı: kırpılanlarda güven < 0,5 "emin değil" sayılsa 71 doğru kırpmadan 3'ü kaybedilir. Süre: bu
+  makinede (yük ~3) tarama ort ~570 ms, algılama ~300 ms (1500×2000; okunabilirlik ölçümü yanında koşarken ~800 / ~450).
+  **Kalan zayıflıklar:** ekranda tablo (2 görsel, ekran kâğıt gibi açık ve yazılı: kırpılıyor; zararsız), koyu gri
+  tezgâhta koyu kâğıtlı uzun fiş (054: yazı da kenar da bulunmuyor, belge yok), beyaz tezgâhta yana dönük parlamalı
+  Pavo Z (066: kareyi dolduruyor sanılıyor), kıvrık köşeli iki fiş (005, 089: katlanan köşe ya da kalkık alt kenar
+  dışarıda kalıyor, hata %3–4), kadraj dışında uzun fiş (081: %2,3). Hareket bulanıklığında okunabilirlik düşük
+  (%43; çekim uyarısı "bulanık, yeniden çekin" der).
 - **Regresyon:** `tests/tarama-regresyon.test.ts` on küçük örnekte (540×720, `npm run tarama:veri -- --fixture` ile
   yeniden üretilir; tohumlu, aynı baytlar) kararı ve köşe hatasını bugünkünün biraz gevşeğiyle sınar (doğru olanlarda
-  en kötü köşe ≤ %1,2–1,5; bugün, çekirdek `0096e18`'de de, 10'un 6'sı doğru). Bilinen yanlışlar (beyaz tezgâhta uzun fiş, karanlık ve bulanık
-  A4, POS ekranı, koli) yalnız kötüleşmesin diye gevşek; çekirdek iyileşince `BEKLENTI` ve `EN_AZ_DOGRU`
-  sıkılaştırılır.
+  en kötü köşe ≤ %1,2–1,5; POS ekranında ve kolide "belge yok"; bugün 10'un 9'u doğru, önce 6'sı). Bilinen tek yanlış
+  (beyaz tezgâhta parlamalı uzun fiş, hata %10,2) yalnız kötüleşmesin diye gevşek; çekirdek iyileşince `BEKLENTI` ve
+  `EN_AZ_DOGRU` sıkılaştırılır. `tests/tarama-algilama.test.ts` ayrıca renkli döşemeli paneli (belge değil) ve sarı
+  nüsha kâğıdını (bulunur) sınar.
 - **Çekirdek değişince:** `npm run tarama:olc -- --ocr 0 --karsilastir .data/tarama-olcum/temel.json` (temel:
   bir önceki `son.json`'ın kopyası) kategori başına doğru ve hatayı, sonucu değişen görselleri yazar; okunabilirlik
   için `--ocr` açık (96 görselde ~15–50 dk, makinenin yüküne göre).
@@ -505,6 +667,11 @@ raporlarda `kasa-pos` kalmadığı denetlenerek).
 | `scripts/tarama-veri.ts`, `scripts/tarama-olc.ts`, `scripts/tarama/`, `tests/tarama-regresyon.test.ts` | belge tarayıcının ölçümü: sentetik veri seti, ölçüm, regresyon örnekleri (§ 8 › Tarayıcının ölçümü) |
 | `src/lib/scan/` | belge tarayıcı çekirdeği (§ 11): algılama, köşe oturtma, perspektif, taranmış görünüm |
 | `scripts/tarama-dene.ts` | tarayıcıyı gerçek fotoğrafla ya da sentetik sahneyle deneme (§ 11) |
+| `src/components/panel/scan-editor.tsx`, `src/components/panel/scan/` | tarama ekranı (§ 1 › Belge tarama), Web Worker ve motoru, fotoğrafı çözme ve taranmışı kodlama |
+| `src/components/panel/live-camera.tsx`, `camera-shot.ts`, `scan/live.worker.ts`, `src/lib/scan/live.ts` | canlı vizör (§ 1 › Canlı vizör): kamera, kenarların canlı çizimi, otomatik çekim; eski yola dönüş; Worker; yumuşatma ve çekim kararı (`tests/tarama-canli.test.ts`) |
+| `src/lib/photo-scan.ts`, `src/lib/photo-read/scan-hint.ts` | taranan türler, ölçüler, tarama bilgisinin denetimi, yapay zekâya sorma kararı; köşe ipucunun istemi ve doğrulaması |
+| `src/app/api/foto/kenar/`, `src/server/photo-read/scan-hint.ts` | yapay zekânın köşe ipucu (`ai_calls` `tarama`, kendi sınırı) |
+| `tests/foto-tarama.test.ts`, `tests/foto-tarama-db.test.ts` | taramanın kuralları ve motoru; asıl fotoğrafın yüklenmesi, erişimi, temizliği ve köşe ipucu (veritabanında) |
 
 ## 11. Belge tarama (çekirdek)
 
@@ -513,16 +680,29 @@ tarayıcıda** taranır: kâğıt bulunur, kenarları belli edilir, perspektif d
 "taranmış" görünüm üretilir; sonra `photo-compress.ts` ile küçültülüp `POST /api/foto`'ya gider. Sunucu görseli
 çözmez (güvenlik kararı), Python / OpenCV yok: `src/lib/scan/` dış bağımlılıksız saf TypeScript, DOM'a dokunmaz
 (görüntü `{ width, height, data: Uint8ClampedArray RGBA }`, canvas `ImageData` ile aynı); Node'da test edilir, telefonda
-bir Web Worker'da çalıştırılması önerilir (eşzamanlı; `ImageData.data.buffer` aktarılır). Arayüz bağlantısı henüz yok.
+bir Web Worker'da çalıştırılması önerilir (eşzamanlı; `ImageData.data.buffer` aktarılır). Ekranı ve yüklemesi § 1 ›
+Belge tarama.
 
 - **Algılama** (`detect.ts`, 640 px kopyada, son ince ayar 1000 px): üç yöntem aday dörtgen üretir, hepsi aynı puanla
   karşılaştırılır. *Kâğıt bölütleme* (aydınlık − doygunluk haritası, gölge çıkarılmış yerel hâli, Otsu, morfoloji, dış
   hat, zarftan dörtgen, kenarlara RANSAC); *kenar* (Canny, eşikler görüntüden; yönlü Hough; görüntünün kenarı da doğru
   sayılır); *yazıdan başlama* (yoğun yazı bölgesi dışarı doğru en yakın kâğıt kenarına büyütülür: açık tezgâhta beyaz
-  fiş). Puan: her kenarın gradyan desteği ve içi / dışı basamağı (işaret tutarlı), alan, açılar, kâğıtlık karşıtlığı,
-  yazıyı kesiyor mu, içerisi kâğıda benziyor mu (koyu ya da çok renkli, yazısız dikdörtgen — telefon, POS cihazı,
-  kutu — seçilmez; tek başınaysa güveni en çok 0,3, neden "kagida-benzemiyor"). Puanı düşük kalan en iyi adaylar
-  kenarlara oturtulup yeniden puanlanır. Güven 0–1; birbirine
+  fiş). Kenarda ikinci, düşük eşikli bir Hough geçişi açık zeminde kâğıdın soluk kenarını da verir. Puan: her
+  kenarın gradyan desteği ve içi / dışı basamağı (işaret tutarlı), alan, açılar, kâğıtlık karşıtlığı, yazıyı kesiyor
+  mu (açık zeminde kâğıdın hemen dışındaki ince gölge şeridi, kenar boyunca hep aynı uzaklıkta durduğu için yazı
+  sayılmaz), içerisi kâğıda benziyor mu (koyu ya da çok renkli, yazısız dikdörtgen — telefon, POS cihazı,
+  kutu — seçilmez; tek başınaysa güveni en çok 0,3, neden "kagida-benzemiyor"). Puanı düşük kalan en iyi 8 aday
+  kenarlara oturtulup yeniden puanlanır. Bölütlemede ayrıca *doygunluk maskesi* (renk farkı / parlaklık, Otsu): kâğıt
+  renksiz, ahşap ve renkli zemin doygundur; yarısı gölgede kalan fiş parlaklıkla ayrılmasa da bununla bütün bulunur
+  (zemin de renksizse atlanır). Seçimden sonra iki düzeltme: seçilen dörtgen kâğıdın bir bölümüyse onu içeren, yazının
+  çok daha fazlasını kapsayan aday ("butunu-secildi"); seçilen aday kareye uzanıyorsa ve içinde yazının hepsini (ya
+  da dışarıda yalnız seyrek "yazı", mermer damarı) kapsayan, daha çok gerçek kenarlı bir aday varsa o aday
+  ("kagidin-kendisi"; kâğıtla kare arasındaki zemin şeridi kırpılmaz). **Belge değil**: seçilen dörtgenin içi 15×15
+  örneklenir; içerisi çok renkliyse (doygun örneklerin baskın ton dışındakiler: POS ekranının döşemeleri) ya da yalnız
+  bir bölümü doygunsa (ambalaj, fincan; sarı / pembe nüsha kâğıdın tamamı tek tondur, logo küçüktür) "renkli-icerik";
+  görüntüde yazı yokken içerisi koyu, doygun ya da dörtgen çok ince bir şeritse (telefon, kolinin bandı)
+  "yazisiz-nesne"; dörtgen karenin %2'sinden küçükse (koli etiketi; o boyda fiş okunmaz) "cok-kucuk". Üçünde de kırpılmaz,
+  köşe yok döner (neden "kagida-benzemiyor" + alt neden); ekran elle seçmeyi ve yapay zekâ ipucunu açar. Güven 0–1; birbirine
   yakın puanlı iki farklı aday, zayıf kenar güveni düşürür. Kâğıt kareyi dolduruyorsa `fillsFrame` (kırpılmaz).
   Kareden taşan uzun fişte kareye dayanan kenar, uzun kenarların kaçış noktasından bulunan kısa kenar yönüyle
   görüntünün içine alınır; köşesi kareden çıkmış ama iki kenarı görünen kâğıtta köşe kenarların kesişimidir (en çok
@@ -531,7 +711,10 @@ bir Web Worker'da çalıştırılması önerilir (eşzamanlı; `ImageData.data.b
   boyunca kenara dik şeritte aranan geçişe (önce içerisi aydınlık, tutmazsa tersi), RANSAC + en küçük karelerle
   oturtulur; geniş şerit (köşegenin %7,5'i), sonra dar şerit. Korumalar: destek zayıfsa, içeri kayılan şerit kâğıda
   benziyorsa (yazı satırı, tablo çizgisi), çizginin dışı içiyle aynıysa ya da kenar görüntünün kenarındaysa o kenar
-  değişmez; içeri arama karşı kenarın yarısına varmaz (dar fiş).
+  değişmez; içeri arama karşı kenarın yarısına varmaz (dar fiş). Sonra *alt piksel köşe* (`polishCorners`): kenar
+  doğrusu kenarın ortasından geçtiği için kıvrık ya da ucu kalkık fişte köşe kayar; her köşede iki komşu kenarın
+  yalnız köşeye yakın parçasında geçiş alt piksel bulunur, ikinci derece eğri oturtulur, köşe iki teğetin kesişimine
+  konur (köşe başına en çok %3; katlanmış köşede eğri oturmaz, dokunulmaz).
 - **Açma** (`warp.ts`): normalize DLT homografi; çıktının en/boy oranı perspektiften (Zhang–He, odak dörtgenden
   kestirilir), olmazsa kenar uzunluklarından; küçültürken önce alan ortalaması (örtüşme yok). Sayfa birkaç piksel
   içeriden açılır (kenarda koyu çizgi kalmaz). `rotate` (90 / 180 / 270; `rotationForTop` yapay zekânın "top"
@@ -558,28 +741,31 @@ bir Web Worker'da çalıştırılması önerilir (eşzamanlı; `ImageData.data.b
   çökmez (yöntem "yok", kırpılmaz).
 - **Bilinen sınırlar:** yalnız sentetik fotoğraflarla ölçüldü (gerçek fotoğraf deneme betiğiyle denenmeli); kâğıtla
   zemin arası ~10 gri düzeyinin altında kâğıt bulunmaz, görüntü kâğıda benziyorsa "tam-kare" (kırpılmaz); karede iki
-  belge varsa biri seçilir, güven düşer ("iki-aday"); 90° / 180° yön kendiliğinden bulunmaz (`rotate` ya da yapay
-  zekânın "top" ipucu gerekir), yalnız ±8° eğiklik düzeltilir.
+  belge varsa biri seçilir, güven düşer ("iki-aday"); çekirdek 90° / 180° yönü kendisi bulmaz (`rotate`; tarama ekranı
+  bunu § 12 `detectOrientation`'dan ya da yapay zekânın "top" ipucundan verir), kendisi yalnız ±8° eğikliği düzeltir.
 - **Deneme:** `npx tsx scripts/tarama-dene.ts <fotoğraf|klasör> [--mod hepsi] [--ipucu x1,y1,…,x4,y4] [--ust right]`
   ya da `--sentetik`; çıktı `.data/tarama-dene/` (köşe çizimi ve taranmış hâller). sharp yalnız bu betikte, dinamik
   yüklenir.
 
 ## 12. Belge tarama (kalite, yön, birleştirme)
 
-Çekirdeğin (§ 11) yanında üç saf modül; arayüz bağlantısı henüz yok. İmzalar, önerilen akış, kullanım örnekleri ve
+Çekirdeğin (§ 11) yanında üç saf modül, üçü de tarama ekranına bağlı (§ 1 › Belge tarama: kendiliğinden dik çevirme,
+çekim uyarısı ve **Yeniden çek**, uzun fişte **Devamını çek**). İmzalar, önerilen akış, kullanım örnekleri ve
 eşikler: [src/lib/scan/README.md](../src/lib/scan/README.md). Ortak yazı çözümlemesi `metin.ts`'te (kâğıdın yerel
 parlaklığına göre mürekkep haritası, harf boyu, satır yönü ve ölçüleri).
 
 - **Çekim kalitesi** (`quality.ts`, `assessQuality(img, { corners, noun, rotation })`): fotoğraf çekilir çekilmez
   kâğıdın içinde bulanıklık (yazı kenarının σ'sı harf boyuna oranla; Laplace varyansı da ölçülür), parlama (doymuş,
   çevresinden parlak leke; yazının üstündeyse ciddi), karanlık / soluk yazı, kesik (kadraj dışındaki kenara dayanan
-  satırlar), çok küçük yazı (okuyucunun göreceği 2576 px ölçekte) ve birden çok belge. Sonuç `{ ok, issues: [{ kind,
+  satırlar; eğik fişte algılama kareye dayanan kenarı karşı kenara paralel yapar, köşesi karenin biraz içinde kalır:
+  o kenar da kadraj dışına uzanan taraf sayılır, `refine.ts` `sideLeavesFrame`), çok küçük yazı (okuyucunun göreceği 2576 px ölçekte) ve birden çok belge. Sonuç `{ ok, issues: [{ kind,
   severity, text }] }`; metinler sade Türkçe ("Fişin altı kesilmiş; tamamını çekin."). Net çekimde uyarı çıkmaz
   (`tests/tarama-kalite.test.ts`).
 - **Sayfa yönü** (`orientation.ts`, `detectOrientation(img, { corners })`): 90 / 180 / 270° döndürülmüş belge; satır
   yönü, sonra düz / ters (nokta ve virgülün taban çizgisinde, harf noktalarının üstte olması; kısa satırların sola
   yaslanması; fişin ortalı başlığı). Emin değilse `"bilinmiyor"` (döndürülmez; yapay zekâ yönü kendisi bulur).
-  Arayüze bağlanınca § 11'deki "90° / 180° yön kendiliğinden bulunmaz" sınırı kalkar (`rotate` buradan verilir).
+  Tarama ekranı `rotate`'i buradan verir; yapay zekânın "top" ipucu gelirse o öne geçer, kullanıcı **Döndür**'e
+  bastıysa ikisi de dokunmaz.
 - **Uzun fiş birleştirme** (`stitch.ts`, `stitchParts(parts)`): parça parça çekilmiş uzun Z'nin taranmış parçaları
   örtüşen bölgeden tek görüntüde birleşir (satır profili ve koyuluk haritasında normalize çapraz ilinti, ölçek ve
   yatay kayma farkı tolere edilir; dikiş satır arasından). Örtüşme yoksa, yazısızsa, tekrarlayan satırlar yüzünden

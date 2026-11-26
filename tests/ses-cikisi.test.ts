@@ -96,10 +96,11 @@ test("sesi sekme çalıyorsa sistem bildirimi sessiz (işletim sisteminin sesi B
   assert.doesNotMatch(center, /silent: prefs\.sound/);
 });
 
-test("mikrofon izni yalnız panel sayfalarında ve yalnız bu site için", () => {
+test("mikrofon ve kamera izni yalnız panel sayfalarında ve yalnız bu site için", () => {
   const config = readFileSync(join(process.cwd(), "next.config.ts"), "utf8");
+  // Panelin dışında ikisi de kapalı; panelde yalnız bu site (kamera: belge tarayıcının canlı vizörü)
   assert.match(config, /\{ key: "Permissions-Policy", value: "camera=\(\), microphone=\(\), geolocation=\(\), payment=\(\), usb=\(\)" \}/);
-  assert.match(config, /const PANEL_PERMISSIONS = \{ key: "Permissions-Policy", value: "camera=\(\), microphone=\(self\), geolocation=\(\), payment=\(\), usb=\(\)" \}/);
+  assert.match(config, /const PANEL_PERMISSIONS = \{ key: "Permissions-Policy", value: "camera=\(self\), microphone=\(self\), geolocation=\(\), payment=\(\), usb=\(\)" \}/);
   assert.match(config, /\{ source: "\/panel\/:path\*", headers: \[PANEL_PERMISSIONS\] \}/);
   // Açılan mikrofon hemen kapatılır
   const client = readFileSync(join(process.cwd(), "src/components/panel/live/output-client.ts"), "utf8");
@@ -211,8 +212,14 @@ test("paneldeki bütün sesler tek yardımcıdan (sounds.ts) geçer", () => {
   };
   walk(join(process.cwd(), "src"));
   files.push(join(process.cwd(), "public/sw.js"));
-  // sounds.ts çalar; audio-output.ts yalnız saf kurallar (açıklamada setSinkId geçer)
-  const allowed = [join("src", "components", "panel", "live", "sounds.ts"), join("src", "lib", "audio-output.ts")];
+  // sounds.ts çalar; audio-output.ts yalnız saf kurallar (açıklamada setSinkId geçer); canlı vizör kameranın sessiz
+  // videosunu oynatır (ses istenmez, video susturulmuş; aşağıda denetlenir)
+  const camera = join("src", "components", "panel", "live-camera.tsx");
+  const allowed = [join("src", "components", "panel", "live", "sounds.ts"), join("src", "lib", "audio-output.ts"), camera];
+  const cam = readFileSync(join(process.cwd(), camera), "utf8");
+  assert.match(cam, /audio: false,/);
+  assert.match(cam, /<video [^>]*\bmuted\b/);
+  assert.doesNotMatch(cam, /new Audio\(|\bAudioContext\b|speechSynthesis|<audio\b|setSinkId/);
   const offenders = files
     .filter((f) => !allowed.some((a) => f.endsWith(a)))
     .filter((f) => /new Audio\(|\bAudioContext\b|webkitAudioContext|speechSynthesis|SpeechSynthesisUtterance|\.play\(|<audio\b|setSinkId/.test(readFileSync(f, "utf8")))
