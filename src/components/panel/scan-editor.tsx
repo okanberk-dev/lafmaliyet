@@ -139,6 +139,8 @@ export function ScanEditor({
   const rotatedRef = useRef(false);
   const aiTopRef = useRef(false);
   const previewSeq = useRef(0);
+  // Son istenen çözümleme (yapay zekânın köşeleri gelince yenisi istenir; eskisi geç dönerse yazılmaz)
+  const analyzeSeq = useRef(0);
   const grab = useRef<{ index: number; dx: number; dy: number } | null>(null);
   const doneRef = useRef(false);
 
@@ -253,9 +255,10 @@ export function ScanEditor({
         setDetecting(false);
         // Sayfa yönü ve çekim kalitesi kâğıdın içinden (arka planda; köşeler beklemeden görünür)
         const analyze = async (quad: Quad) => {
+          const n = ++analyzeSeq.current;
           try {
             const a = await client.call({ type: "analyze", corners: quad, noun });
-            if (cancelled || a.type !== "analyzed") return;
+            if (cancelled || n !== analyzeSeq.current || a.type !== "analyzed") return;
             setIssues(a.issues);
             if (a.rotate !== null && !rotatedRef.current && !aiTopRef.current) setRotate(a.rotate);
           } catch {
