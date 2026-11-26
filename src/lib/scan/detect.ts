@@ -40,6 +40,7 @@ import {
 } from "./image";
 import {
   convexHull,
+  growQuad,
   fitLine,
   hullToQuad,
   insideConvex,
@@ -56,7 +57,7 @@ import {
   simplifyClosed,
   type Line,
 } from "./geom";
-import { sideOnFrame, snapQuad, workGray } from "./refine";
+import { polishCorners, sideOnFrame, snapQuad, workGray } from "./refine";
 
 export type DetectMethod = "kagit" | "kenar" | "yazi" | "tam-kare";
 
@@ -124,6 +125,8 @@ interface Scored {
   area: number;
   /** kâğıda benzemezlik (0–1) */
   notPaper: number;
+  /** puanın bileşenleri (tanı için) */
+  parts?: Record<string, number>;
 }
 
 const DEFAULT_EDGE = 640;
@@ -348,6 +351,44 @@ function notPaper(ctx: Ctx, lum: number, chroma: number, textIn: number | null):
 }
 
 /**
+ * Dörtgenin içeriği (15×15 örnek): `variety` doygun örneklerden baskın renk tonunun (ve iki komşu tonun) dışında
+ * kalanların oranı: renkli döşemeli POS ekranı, ambalaj. Tek renk kâğıt (sarı ya da pembe nüsha) ve renkli ışık bunu
+ * yükseltmez. `saturated` doygun örneklerin, `dark` görüntünün aydınlığına göre koyu örneklerin oranı.
+ */
+function interiorContent(ctx: Ctx, q: Quad): { variety: number; saturated: number; dark: number } {
+  const { w, h, rgba } = ctx;
+  const N = 15;
+  const bins = new Array<number>(12).fill(0);
+  let saturated = 0;
+  let dark = 0;
+  for (let i = 1; i <= N; i++) {
+    for (let j = 1; j <= N; j++) {
+      const u = i / (N + 1);
+      const v = j / (N + 1);
+      const x = (1 - u) * (1 - v) * q[0].x + u * (1 - v) * q[1].x + u * v * q[2].x + (1 - u) * v * q[3].x;
+      const y = (1 - u) * (1 - v) * q[0].y + u * (1 - v) * q[1].y + u * v * q[2].y + (1 - u) * v * q[3].y;
+      const k = Math.max(0, Math.min(h - 1, Math.round(y))) * w + Math.max(0, Math.min(w - 1, Math.round(x)));
+      if (ctx.lum[k] < 0.5 * ctx.lumHigh) dark++;
+      if (ctx.chroma[k] <= 60) continue;
+      saturated++;
+      const r = rgba[k * 4];
+      const g = rgba[k * 4 + 1];
+      const b = rgba[k * 4 + 2];
+      // ton (0–360), 30°'lik kutular
+      const hue = (Math.atan2(Math.sqrt(3) * (g - b), 2 * r - g - b) * 180) / Math.PI + 360;
+      bins[Math.floor(hue / 30) % 12]++;
+    }
+  }
+  const n = N * N;
+  let dom = 0;
+  for (let i = 0; i < 12; i++) {
+    const s = bins[(i + 11) % 12] + bins[i] + bins[(i + 1) % 12];
+    if (s > dom) dom = s;
+  }
+  return { variety: (saturated - dom) / n, saturated: saturated / n, dark: dark / n };
+}
+
+/**
  * Kareye dayanan kenar gerçekten kâğıt mı: kâğıt o yönde kareden taşıyorsa karenin hemen içindeki şerit de kâğıttır.
  * Şerit zemine benziyorsa (örneklerin kâğıtlığı içeriden çok dışarıya yakın) dörtgen kâğıdı karenin kenarına kadar
  * boşuna uzatmıştır (dokulu zeminde iki gerçek kenar + iki kare kenarı, dört gerçek kenarlı adayı geçmesin). Döner:
@@ -385,29 +426,51 @@ function textOutside(ctx: Ctx, a: Point, b: Point, cx: number, cy: number): numb
     ny = -ny;
   }
   const reach = Math.max(6, ctx.diag * 0.025);
-  let hit = 0;
-  let tot = 0;
-  for (let k = 0; k < 24; k++) {
-    const t = 0.1 + (0.8 * k) / 23;
+  // kenar boyunca bir çizgi varsa ötesine daha uzun bakılır (aşağıda)
+  const reach2 = Math.max(reach, ctx.diag * 0.06);
+  const K = 24;
+  // örnek başına dışarıdaki "yazı" piksellerinin uzaklıkları (kenardan dışa)
+  const offs: number[][] = [];
+  for (let k = 0; k < K; k++) {
+    const t = 0.1 + (0.8 * k) / (K - 1);
     const px = a.x + (b.x - a.x) * t;
     const py = a.y + (b.y - a.y) * t;
-    let found = false;
+    const hits: number[] = [];
     let any = false;
-    for (let o = 3; o <= reach; o += 1.5) {
+    for (let o = 3; o <= reach2; o += 1.5) {
       const x = Math.round(px + nx * o);
       const y = Math.round(py + ny * o);
       if (x < 0 || y < 0 || x >= w || y >= h) break;
       any = true;
-      if (ctx.text[y * w + x]) {
-        found = true;
-        break;
+      if (ctx.text[y * w + x]) hits.push(o);
+    }
+    if (any) offs.push(hits);
+  }
+  if (!offs.length) return 0;
+  // kenar boyunca hep aynı uzaklıkta duran ince koyu çizgi yazı değildir: kâğıdın gölgesi (açık zeminde kenarın hemen
+  // dışında koyu şerit), tezgâhın ya da cihazın kenarı. Örneklerin çoğunda aynı ±2,5 px'te çıkan şerit sayılmaz.
+  const firsts = offs.filter((hs) => hs.length).map((hs) => hs[0]);
+  let band: [number, number] | null = null;
+  if (firsts.length >= offs.length * 0.4) {
+    let best = 0;
+    for (const c of firsts) {
+      const n = firsts.filter((f) => Math.abs(f - c) <= 2.5).length;
+      if (n > best) {
+        best = n;
+        band = [c - 2.5, c + 2.5 + 3];
       }
     }
-    if (!any) continue;
-    tot++;
-    if (found) hit++;
+    if (best < offs.length * 0.4) band = null;
   }
-  return tot ? hit / tot : 0;
+  // Çizginin ötesinde yazı varsa (kâğıdın içindeki tablo ya da kesik çizgisi, ötesi yine yazılı kâğıt) kesiyor sayılır;
+  // gölgenin ötesi zemindir, yazı çıkmaz
+  let hit = 0;
+  for (const hs of offs) {
+    const near = hs.some((o) => o <= reach && (!band || o < band[0] || o > band[1]));
+    const beyond = !!band && hs.some((o) => o > band![1] + 1.5);
+    if (near || beyond) hit++;
+  }
+  return hit / offs.length;
 }
 
 /** Yazının yüzde kaçı dörtgenin içinde (yazı azsa null) */
@@ -450,6 +513,9 @@ function evaluate(ctx: Ctx, q: Quad, how: DetectMethod): Scored | null {
     0.45 * minSide + 0.25 * meanSide + 0.12 * areaTerm + 0.08 * rect + 0.05 * pc + 0.05 * (tin ?? 0.5) - 0.6 * Math.max(0, cut - 0.15);
   const np = notPaper(ctx, lv.lum, lv.chroma, tin);
   score -= 0.45 * np;
+  // kareye dayanan aday yazının epey bir kısmını dışarıda bırakıyorsa kareyi dolduran sayfanın bir bölümüdür (tablo
+  // çizgisi, sütun): yakın çekimde sayfanın içinden dörtgen seçilmesin
+  if (real.length < 4 && tin !== null) score -= 0.4 * Math.max(0, 0.8 - tin);
   if (real.length === 2) score -= 0.06;
   else if (real.length === 3) score -= 0.02;
   // kareye dayanan kenarın içi zeminse kâğıt orada bitmiyordur
@@ -460,7 +526,7 @@ function evaluate(ctx: Ctx, q: Quad, how: DetectMethod): Scored | null {
     }
     score -= 0.5 * Math.max(0, bg - 0.4);
   }
-  return { q, how, score, sides, realSides: real.length, minSide, area, notPaper: np };
+  return { q, how, score, sides, realSides: real.length, minSide, area, notPaper: np, parts: { minSide, meanSide, areaTerm, rect, pc, tin: tin ?? -1, cut } };
 }
 
 // ---------------------------------------------------------------- a) kâğıt bölütleme
@@ -540,6 +606,19 @@ function segmentCandidates(ctx: Ctx): Quad[] {
   for (let i = 0; i < n; i++) local[i] = paper[i] - low[i] + mean;
   const tl = otsuIndex(histogram(local));
   masks.push(mk(local, tl + 0.5));
+  // renksizlik: kâğıt gri / beyazdır, ahşap ve renkli zemin doygun. Gölgenin kararttığı kâğıt parlaklıkla zeminden
+  // ayrılmasa da doygunlukla ayrılır (yarısı gölgede fiş). Zemin de renksizse (gri masa, mermer) iki tepe yoktur, atlanır.
+  // doygunluk ışığa göre (gölgede renk farkı da küçülür): renk farkı / parlaklık
+  const satRaw = new Float32Array(n);
+  for (let i = 0; i < n; i++) satRaw[i] = (255 * ctx.chroma[i]) / (ctx.lum[i] + 40);
+  const ch = gaussianBlur({ width: w, height: h, data: satRaw }, 1.5).data;
+  const chist = histogram(ch);
+  const tc = otsuIndex(chist);
+  if (tc >= 12) {
+    const m = new Uint8Array(n);
+    for (let i = 0; i < n; i++) m[i] = ch[i] < tc - 0.5 && ctx.lum[i] > 40 ? 1 : 0;
+    masks.push(m);
+  }
   for (const m of masks) maskCandidates(ctx, m, out);
   return out;
 }
@@ -551,7 +630,8 @@ interface HLine extends Line {
   frame: boolean;
 }
 
-function canny(ctx: Ctx): { xs: Int32Array; ys: Int32Array; ang: Float32Array; count: number } {
+/** `factor`: yüksek eşiğin çarpanı (düşük karşıtlıklı kâğıt kenarı için ikinci geçişte < 1) */
+function canny(ctx: Ctx, factor = 1): { xs: Int32Array; ys: Int32Array; ang: Float32Array; count: number } {
   const { w, h, n, gx, gy } = ctx;
   const mag = new Float32Array(n);
   for (let i = 0; i < n; i++) mag[i] = Math.hypot(gx[i], gy[i]);
@@ -582,7 +662,7 @@ function canny(ctx: Ctx): { xs: Int32Array; ys: Int32Array; ang: Float32Array; c
     }
   }
   const hist = histogram(nms.filter((v) => v > 0), 400, 0, 200);
-  const high = Math.max(5, Math.min(40, histPercentile(hist, 0.8, 0, 200)));
+  const high = Math.max(4, factor * Math.max(5, Math.min(40, histPercentile(hist, 0.8, 0, 200))));
   const low = high * 0.4;
   const edge = new Uint8Array(n);
   const stack: number[] = [];
@@ -714,7 +794,15 @@ function edgeCandidates(ctx: Ctx): Quad[] {
   const { w, h } = ctx;
   const e = canny(ctx);
   if (e.count < 50) return [];
+  // Yazının güçlü kenarları eşiği yükseltir: açık zeminde soluk kâğıt kenarı ilk geçişte kaçar. Düşük eşikli ikinci
+  // geçişin doğruları eklenir (yinelenenler atlanır)
   const lines = houghLines(ctx, e);
+  const low = canny(ctx, 0.35);
+  for (const l of houghLines(ctx, low, 16)) {
+    if (lines.length >= 36) break;
+    const dup = lines.some((m) => Math.abs(m.d.x * l.d.y - m.d.y * l.d.x) < Math.sin((2 * Math.PI) / 180) && Math.abs(signedDist(m, l.p)) < ctx.diag * 0.008);
+    if (!dup) lines.push(l);
+  }
   const frame: HLine[] = [
     { p: { x: 0, y: 0 }, d: { x: 1, y: 0 }, votes: 0, frame: true },
     { p: { x: 0, y: h - 1 }, d: { x: 1, y: 0 }, votes: 0, frame: true },
@@ -747,7 +835,7 @@ function edgeCandidates(ctx: Ctx): Quad[] {
       pairs.push({ i, j, ang: angs[i] });
     }
   }
-  const quick: { q: Quad; s: number }[] = [];
+  const quick: { q: Quad; s: number; v: number }[] = [];
   const margin = 0.02;
   for (let a = 0; a < pairs.length; a++) {
     for (let b = a + 1; b < pairs.length; b++) {
@@ -774,14 +862,16 @@ function edgeCandidates(ctx: Ctx): Quad[] {
       const an = interiorAngles(q);
       if (Math.min(...an) < 35 || Math.max(...an) > 145) continue;
       // hızlı ön puan: kenar desteği (oy) toplamı
-      const s = (all[A.i].votes + all[A.j].votes + all[B.i].votes + all[B.j].votes) / Math.sqrt(area);
-      quick.push({ q, s });
+      const votes = all[A.i].votes + all[A.j].votes + all[B.i].votes + all[B.j].votes;
+      quick.push({ q, s: votes / Math.sqrt(area), v: nFrame ? 0 : votes });
     }
   }
   quick.sort((x, y) => y.s - x.s);
   // pahalı puana yalnız en iyi ~40 aday; büyük alanlılar da kaçmasın diye alanla sıralı ilk 20 de
   const byArea = quick.slice().sort((x, y) => polygonArea(y.q) - polygonArea(x.q));
-  const picked = new Set<{ q: Quad; s: number }>([...quick.slice(0, 40), ...byArea.slice(0, 20)]);
+  // ve dört kenarı da gerçek doğru olanlardan oyu en çok 30 (orta büyüklükte kâğıt iki sıralamanın arasında kalmasın)
+  const byVotes = quick.filter((x) => x.v > 0).sort((x, y) => y.v - x.v);
+  const picked = new Set<{ q: Quad; s: number; v: number }>([...quick.slice(0, 40), ...byArea.slice(0, 20), ...byVotes.slice(0, 30)]);
   return [...picked].map((x) => x.q);
 }
 
@@ -922,7 +1012,14 @@ export function squareFrameSides(q: Quad, w: number, h: number): Quad {
         pick = cand;
       }
     }
-    if (pick) out[i] = pick;
+    // Doğru kâğıdı karenin içinden çok kesiyorsa (geniş kâğıt, belirgin eğiklik) yazı kaybolur: karenin kenarı kalır,
+    // kalan yamukluğu açma ve eğiklik düzeltmesi giderir. Küçük kesmede (dar fiş) kısa kenar uzun kenarlara uygun olur.
+    if (pick) {
+      const a = intersect(prev, pick)!;
+      const b = intersect(pick, next)!;
+      const cut = Math.max(Math.hypot(a.x - q[i].x, a.y - q[i].y), Math.hypot(b.x - q[(i + 1) % 4].x, b.y - q[(i + 1) % 4].y));
+      if (cut <= 0.02 * Math.hypot(w, h)) out[i] = pick;
+    }
   }
   const corners: Point[] = [];
   for (let i = 0; i < 4; i++) {
@@ -968,7 +1065,7 @@ function confidenceOf(s: Scored): number {
  * karşıtlıkta (açık tezgâhta beyaz fiş) bölütleme ve yazıdan büyütme kâğıdı kaba bulur; asıl kenarlar oradan
  * birkaç on piksel uzaktadır. Liste puana göre yeniden sıralanır.
  */
-function refineTop(ctx: Ctx, scored: Scored[], k = 4): void {
+function refineTop(ctx: Ctx, scored: Scored[], k = 8): void {
   const tried: Quad[] = [];
   const better: Scored[] = [];
   for (const s of scored) {
@@ -1010,19 +1107,64 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
   }
   if (!scored.length || scored[0].score < 0.75) refineTop(ctx, scored);
   let best = scored[0];
+  // Seçilen dörtgen kâğıdın yalnız bir bölümüyse (başlık, kesik çizgiyle ayrılan blok; kenarı gölgeli fişte) onu içeren,
+  // yazının çok daha fazlasını kapsayan dört kenarlı aday biraz düşük puanlı da olsa yeğlenir
+  if (best) {
+    const tinOf = (s: Scored) => s.parts?.tin ?? -1;
+    const grown = (s: Scored) => growQuad(s.q, 1.02);
+    const whole = scored.slice(0, 20).find((s) => s !== best && s.realSides === 4 && s.score >= best.score - 0.16 && tinOf(best) >= 0 && tinOf(s) - tinOf(best) >= 0.12 && tinOf(s) >= 1.6 * tinOf(best) && best.q.every((p) => insideConvex(grown(s), p)));
+    if (whole) {
+      best = whole;
+      reasons.push("butunu-secildi");
+    }
+    // Tersi: kareye dayanan aday, yazının hepsini kapsayan ve daha çok gerçek kenarı olan daha küçük bir adayı
+    // içeriyorsa kareye uzanan kısım zemindir (açık zeminde soluk kenarlı fiş): o aday biraz düşük puanlı da olsa seçilir
+    if (best.realSides < 4 && tinOf(best) >= 0) {
+      const b = best;
+      // dışarıda kalan yazı: hiç yok ya da kalan şeritte seyrek (mermer damarı, doku; asıl yazının yoğunluğunun 1/3'ünden az)
+      const leavesText = (s: Scored) => {
+        const lost = tinOf(b) - tinOf(s);
+        if (lost <= 0.03) return false;
+        const rest = Math.max(1e-3, b.area - s.area);
+        return lost / rest > (0.33 * tinOf(s)) / Math.max(1e-3, s.area);
+      };
+      const own = scored.slice(0, 30).find((s) => s !== b && s.realSides > b.realSides && s.score >= b.score - 0.1 && tinOf(s) >= 0 && !leavesText(s) && s.area <= 0.97 * b.area && s.q.every((p) => insideConvex(growQuad(b.q, 1.02), p)));
+      if (own) {
+        best = own;
+        reasons.push("kagidin-kendisi");
+      }
+    }
+  }
   if (best) {
     // ince ayar (dar şerit): köşeler gerçek kenara oturur; puan düşmüyorsa kabul
     const snapped = snapQuad(ctx.gray, best.q, { passes: "ince" });
     const re = evaluate(ctx, snapped.q, best.how);
     if (re && re.score >= best.score - 0.02) best = re;
   }
-  if (!best || best.minSide < 0.3 || confidenceOf(best) < 0.25) {
+  // kareye dayanan güçlü adayın içinden seçilen kâğıdın soluk kenarı daha zayıf olabilir (kenarın kendisi kanıtlı)
+  const minSideFloor = reasons.includes("kagidin-kendisi") ? 0.18 : 0.3;
+  if (!best || best.minSide < minSideFloor || confidenceOf(best) < 0.25) {
     if (looksLikePaper(ctx)) {
       reasons.push("kenar-yok", "kareyi-dolduruyor");
       return { corners: frameQuad(img.width, img.height), confidence: 0.45, method: "tam-kare", fillsFrame: true, reasons };
     }
     reasons.push(best ? "kenar-zayif" : "aday-yok");
     return { corners: null, confidence: best ? Math.min(0.2, confidenceOf(best)) : 0, method: null, fillsFrame: false, reasons };
+  }
+  // Belge değil: içerisi çok renkli (POS ekranının döşemeleri) ya da bir bölümü doygun renkli (ambalaj, fincan; tek renk
+  // nüsha kâğıdın tamamı renklidir, logo küçüktür), görüntüde yazı yokken içerisi koyu ya da doygun
+  // (telefon, fincan, paket) ya da dörtgen karenin %2'sinden küçük (koli etiketi; o boyda fiş okunmaz, yakından
+  // çekilmeli). Kırpmak yerine "belge yok": ekran elle seçmeyi ve yapay zekâ ipucunu açar.
+  const content = interiorContent(ctx, best.q);
+  const noText = (best.parts?.tin ?? -1) < 0;
+  const sideLens = [0, 1, 2, 3].map((i) => Math.hypot(best.q[(i + 1) % 4].x - best.q[i].x, best.q[(i + 1) % 4].y - best.q[i].y));
+  const aspect = (sideLens[0] + sideLens[2]) / 2 / Math.max(1, (sideLens[1] + sideLens[3]) / 2);
+  const slender = Math.max(aspect, 1 / aspect) >= 6;
+  const notDoc =
+    content.variety >= 0.15 || (content.saturated >= 0.15 && content.saturated <= 0.75) ? "renkli-icerik" : noText && (content.dark >= 0.4 || content.saturated >= 0.4 || slender) ? "yazisiz-nesne" : best.area < 0.02 ? "cok-kucuk" : null;
+  if (notDoc) {
+    reasons.push("kagida-benzemiyor", notDoc);
+    return { corners: null, confidence: Math.min(0.2, confidenceOf(best)), method: null, fillsFrame: false, reasons };
   }
   let confidence = confidenceOf(best);
   // birbirinden farklı iki aday yakın puanlıysa emin değiliz
@@ -1052,6 +1194,12 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
     const fq = unscaleQuad(fine.q, img.width, img.height, g.width, g.height);
     const diagOrig = Math.hypot(img.width, img.height);
     if (quadDistance(fq, corners) < diagOrig * 0.012) corners = fq;
+    // kıvrık kenarda köşe: komşu kenarların köşeye yakın parçasının teğetleri (köşe başına en çok %3)
+    const pol = polishCorners(g, scaleQuad(corners, img.width, img.height, g.width, g.height), { fixed });
+    if (pol.moved) {
+      corners = unscaleQuad(pol.q, img.width, img.height, g.width, g.height);
+      reasons.push(`kose-ince-${pol.moved}`);
+    }
   }
   corners = clampQuad(corners, img.width, img.height, MAX_OUTSIDE);
   if (corners.some((p) => p.x < -0.5 || p.y < -0.5 || p.x > img.width - 0.5 || p.y > img.height - 0.5)) reasons.push("kose-kare-disinda");
@@ -1072,3 +1220,24 @@ export function detectCandidates(img: RgbaImage, opts: DetectOptions = {}): { ho
   if (tq) push(tq, "yazi");
   return out.sort((a, b) => b.score - a.score);
 }
+
+/** Tanı için: verilen dörtgenin (asıl pikselde) algılama puanı ve bileşenleri (betik ve testler) */
+export function scoreQuad(
+  img: RgbaImage,
+  q: Quad,
+  opts: DetectOptions = {},
+): { score: number; sides: number[]; realSides: number; minSide: number; area: number; notPaper: number; parts?: Record<string, number> } | null {
+  const ctx = buildCtx(img, opts.maxEdge ?? DEFAULT_EDGE);
+  const s = evaluate(ctx, scaleQuad(q, img.width, img.height, ctx.w, ctx.h), "kagit");
+  if (!s) return null;
+  return {
+    score: s.score,
+    sides: s.sides.map((x) => (x.frame ? -1 : Math.round(x.quality * 1000) / 1000)),
+    realSides: s.realSides,
+    minSide: s.minSide,
+    area: s.area,
+    notPaper: s.notPaper,
+    parts: s.parts,
+  };
+}
+

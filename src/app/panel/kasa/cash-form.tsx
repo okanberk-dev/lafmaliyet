@@ -860,7 +860,10 @@ export function CashForm({
     if (savedCount + photos.length >= MAX_REPORT_PHOTOS) return void toast.error(`Bir rapora en çok ${MAX_REPORT_PHOTOS} fotoğraf eklenir`);
     if (kind === "kasa-okc" && savedOf("kasa-okc").length + photosOf("kasa-okc").length >= MAX_OKC_PHOTOS) return void toast.error(OKC_PHOTOS_TEXT);
     const up = kind === "kasa-z" ? zUp : okcUp;
-    const res = await up.upload(file, { kind, day: date, read: reading });
+    // Uzun fiş birleştirilemezse parçalar ayrı fotoğraf: bölümün ve raporun kalan yeri kadar
+    const left = MAX_REPORT_PHOTOS - savedCount - photos.length;
+    const room = kind === "kasa-okc" ? Math.min(left, MAX_OKC_PHOTOS - savedOf("kasa-okc").length - photosOf("kasa-okc").length) : left;
+    const res = await up.upload(file, { kind, day: date, read: reading, room, onMore: (more) => took(more, kind) });
     if (res) took(res, kind);
   }
 

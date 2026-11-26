@@ -23,11 +23,15 @@ const SECURITY_HEADERS = [
 ];
 
 /**
- * Panel sayfalarında mikrofon yalnız bu site için açık: Chrome hoparlörlerin adını (uyarıların hangi hoparlörden
- * çalacağı seçilsin diye, ör. müzik Bluetooth'tayken bilgisayarın kendi hoparlörü) ancak mikrofon izniyle gösterir.
- * Mikrofon hiçbir yerde kullanılmaz; izin istenince açılan akış hemen kapatılır (src/components/panel/live/output-client.ts).
+ * Panel sayfalarında mikrofon ve kamera yalnız bu site için açık (başka kökenden bir çerçeveye değil; panel zaten
+ * çerçeveye alınamaz). Mikrofon: Chrome hoparlörlerin adını (uyarıların hangi hoparlörden çalacağı seçilsin diye, ör.
+ * müzik Bluetooth'tayken bilgisayarın kendi hoparlörü) ancak mikrofon izniyle gösterir; mikrofon hiçbir yerde
+ * kullanılmaz, izin istenince açılan akış hemen kapatılır (src/components/panel/live/output-client.ts). Kamera: belge
+ * tarayıcının canlı vizörü (src/components/panel/live-camera.tsx; docs/FOTOGRAF.md › Canlı vizör): görüntü telefonda
+ * işlenir, akış ekrandan çıkınca ya da sekme gizlenince kapanır, yalnız çekilen kare yüklenir. Panelin dışında
+ * (giriş, QR menü) ikisi de kapalı.
  */
-const PANEL_PERMISSIONS = { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=(), payment=(), usb=()" };
+const PANEL_PERMISSIONS = { key: "Permissions-Policy", value: "camera=(self), microphone=(self), geolocation=(), payment=(), usb=()" };
 
 /** Kodla okumanın çalışma anında diskten okuduğu dosyalar (outputFileTracingIncludes) */
 const OCR_FILES = [

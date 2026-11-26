@@ -32,7 +32,7 @@ import { INVOICE_SOURCE_PHRASE } from "@/lib/import-labels";
 import { confirmInvoices, saveInvoice, type SameNumberInvoice } from "@/server/actions/invoices";
 import type { DocumentMeta } from "@/server/documents";
 
-import { canHaveDocument, documentKind, documentSummary, isParasutDocument, uploadPlan } from "./document-rules";
+import { canHaveDocument, documentKind, documentSummary, isParasutDocument, uploadKindOf, uploadPlan } from "./document-rules";
 import { DocumentPicker, UploadStatus, useDocumentUpload } from "./document-sheet";
 import { prepareDocument, uploadDocument, type UploadResult } from "./document-upload";
 import { InvoiceLines } from "./invoice-lines";
@@ -623,9 +623,9 @@ export function InvoiceDialog({
                 startTransition(() => router.refresh());
                 return;
               }
-              up.setPhase(uploadPlan(file).action === "compress" ? { kind: "preparing" } : { kind: "idle" });
+              up.setPhase(uploadPlan(file).action !== "reject" && uploadKindOf(file) === "image" ? { kind: "preparing" } : { kind: "idle" });
               const prepared = await prepareDocument(file);
-              if (!prepared.ok) return up.setPhase({ kind: "error", message: prepared.error });
+              if (!prepared.ok) return up.setPhase(prepared.cancelled ? { kind: "idle" } : { kind: "error", message: prepared.error });
               up.setPhase({ kind: "idle" });
               setAttachment(prepared.file);
             }}

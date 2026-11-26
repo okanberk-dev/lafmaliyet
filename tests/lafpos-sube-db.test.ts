@@ -92,6 +92,11 @@ describe("LafPOS'un şubesi kütükten: veritabanında", { skip: !SERVER_URL && 
         if (me.role !== "admin") throw new Error("NEXT_REDIRECT yönetici değil");
         return { ...me, email: `${me.name}@test.local`, active: true };
       },
+      // Şube ekleme ana yöneticinin (requireAnaAdmin, docs/LAFPOS.md › Şube kurulumu); testin yöneticisi ana yönetici sayılır
+      requireAnaAdmin: async () => {
+        if (me.role !== "admin") throw new Error("NEXT_REDIRECT yönetici değil");
+        return { ...me, email: `${me.name}@test.local`, active: true };
+      },
       requireUser: async () => ({ ...me, email: `${me.name}@test.local`, active: true }),
       getCurrentUser: async () => ({ ...me, email: `${me.name}@test.local`, active: true }),
     });

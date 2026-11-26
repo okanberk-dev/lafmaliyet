@@ -1,24 +1,51 @@
 "use client";
 
 import { Camera, ImagePlus, LoaderCircle, RotateCw, X } from "lucide-react";
-import { useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/documents";
 import { compressImage, COMPRESS_ERROR_TEXT, PhotoCompressError } from "@/lib/photo-compress";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import { photoUrl, uploadErrorText, type PhotoKind } from "@/lib/photo-rules";
+import { isScanKind, MAX_SCAN_PARTS, ORIGINAL_COMPRESS, scanPartsKind, type ScanInfo } from "@/lib/photo-scan";
 import { cn } from "@/lib/utils";
 
+import { refreshLiveCamera, shootPhoto } from "./camera-shot";
+import type { ScanChoice, ScannedPart } from "./scan-editor";
+
 /*
- * Fotoğraf ekleme (kasa raporu, kasadan çıkan fiş): telefonda "Fotoğraf çek" arka kamerayı açar (<input capture>:
- * getUserMedia değil, panelin camera=() kuralı değişmez), "Galeriden seç" galeriyi. Fotoğraf telefonda JPEG'e
- * küçültülür (en çok 2576 px / ~3,7 MP; EXIF ve konum düşer), POST /api/foto ile yüklenir ve aynı istekte okunur. Aşamalar ekranda:
- * küçültülüyor → yükleniyor → okunuyor; hata kırmızı. Kurallar ve hata metinleri src/lib/photo-rules.ts'te.
+ * Fotoğraf ekleme (kasa raporu, kasadan çıkan fiş): telefonda "Fotoğraf çek" panelin canlı vizörünü açar (kâğıdın
+ * kenarları canlı, sabit tutulunca kendiliğinden çeker; camera-shot.ts, live-camera.tsx); izin verilmezse ya da tarayıcı
+ * desteklemezse telefonun kendi kamerası (<input capture>). "Galeriden seç" galeriyi. Belge türlerinde (Z, yazarkasa Z,
+ * fiş; kontrol listesi değil) önce tarama ekranı açılır (scan-editor.tsx; docs/FOTOGRAF.md › Belge tarama): taranmış
+ * hâl okunan ve gösterilen dosya olur, asıl fotoğraf küçültülüp yanında saklanır. Fotoğraf telefonda JPEG'e
+ * küçültülür (en çok 2576 px / ~3,7 MP; EXIF ve konum düşer), POST /api/foto ile yüklenir ve aynı istekte okunur.
+ * Aşamalar ekranda: taranıyor → küçültülüyor → yükleniyor → okunuyor; hata kırmızı. Kurallar ve hata metinleri
+ * src/lib/photo-rules.ts'te.
  */
+
+/**
+ * Tarama ekranını açar (ilk açılışta yüklenir: tarayıcı çekirdeği ve Worker yalnız gerekince iner). Ekran yüklenemezse
+ * (bağlantı koptu) tarama atlanır, fotoğraf olduğu gibi yüklenir
+ */
+async function openScan(file: Blob, kind: PhotoKind, hint: boolean, room: number, keep: (close: () => void) => void): Promise<ScanChoice | null> {
+  let mod: typeof import("./scan-editor");
+  try {
+    mod = await import("./scan-editor");
+  } catch {
+    return { kind: "skip", file };
+  }
+  // Çekim uyarılarındaki ad: "Raporun altı kesilmiş", "Fişte parlama var". Uzun fişte "Devamını çek" (en çok 3 parça)
+  const parts = scanPartsKind(kind) ? { max: MAX_SCAN_PARTS, room } : undefined;
+  const { result, close } = mod.openScanEditor(file, { hint, noun: kind === "fis" ? "fis" : "rapor", parts });
+  keep(close);
+  return result;
+}
 
 export type PhotoPhase =
   | { kind: "idle" }
+  | { kind: "scanning" }
   | { kind: "compressing" }
   | { kind: "uploading"; size: number }
   | { kind: "reading" }
@@ -40,10 +67,20 @@ function post(url: string, body: FormData | string, onSent?: () => void): Promis
   });
 }
 
-/** Fotoğrafı küçültüp yükler (isteğe bağlı okumayla) ya da saklanmış fotoğrafı yeniden okutur; aşama ekranda */
+/**
+ * Fotoğrafı (belge türünde önce tarayıp) küçültür ve yükler (isteğe bağlı okumayla) ya da saklanmış fotoğrafı yeniden
+ * okutur; aşama ekranda. Tarama ekranı kapatılırsa hiçbir şey yüklenmez (null, aşama boş).
+ *
+ * Uzun fiş parça parça çekilip birleştirilemediyse parçalar ayrı fotoğraf olarak yüklenebilir: çağıran `room` (bu
+ * yüklemeye ayırabileceği fotoğraf sayısı, varsayılan 1) ve `onMore` (ilkinden sonraki her parçanın yanıtı) verir.
+ * Vermeyende ekran parçaları birleştiremezse uyarır, ayrı yüklemez.
+ */
 export function usePhotoUpload() {
   const [phase, setPhase] = useState<PhotoPhase>({ kind: "idle" });
-  const busy = phase.kind === "compressing" || phase.kind === "uploading" || phase.kind === "reading";
+  const busy = phase.kind === "scanning" || phase.kind === "compressing" || phase.kind === "uploading" || phase.kind === "reading";
+  // Açık tarama ekranı: sayfa değişirse kapanır
+  const closeScan = useRef<(() => void) | null>(null);
+  useEffect(() => () => closeScan.current?.(), []);
 
   function finish(res: { status: number; body: unknown }): PhotoUploadResponse | null {
     const ok = res.status === 200 && Boolean(res.body) && (res.body as { ok?: unknown }).ok === true;
@@ -55,21 +92,63 @@ export function usePhotoUpload() {
     return res.body as PhotoUploadResponse;
   }
 
-  async function upload(file: File, o: { kind: PhotoKind; day: string; read: boolean }): Promise<PhotoUploadResponse | null> {
+  async function upload(
+    file: File,
+    o: { kind: PhotoKind; day: string; read: boolean; room?: number; onMore?: (res: PhotoUploadResponse) => void },
+  ): Promise<PhotoUploadResponse | null> {
+    let source: Blob = file;
+    let scan: ScannedPart | null = null;
+    let more: ScannedPart[] = [];
+    if (isScanKind(o.kind)) {
+      setPhase({ kind: "scanning" });
+      // Kod emin değilse yapay zekâya köşe yalnız okuma açıkken sorulur
+      const room = o.onMore ? Math.max(1, o.room ?? 1) : 1;
+      const choice = await openScan(file, o.kind, o.read, room, (close) => (closeScan.current = close));
+      closeScan.current = null;
+      if (!choice) {
+        setPhase({ kind: "idle" });
+        return null;
+      }
+      if (choice.kind === "scan") {
+        scan = choice;
+        more = choice.more ?? [];
+      } else source = choice.file;
+    }
+    const first = await send(o, scan, source);
+    // Birleştirilemeyen uzun fişin sonraki parçaları: sırayla ayrı fotoğraf (biri olmazsa kalanlar bırakılır)
+    for (const part of more) {
+      if (!first) break;
+      const res = await send(o, part, part.original);
+      if (!res) break;
+      o.onMore?.(res);
+    }
+    return first;
+  }
+
+  /** Bir fotoğrafı (taranmışsa asıl hâli ve tarama bilgisiyle) küçültüp yükler */
+  async function send(o: { kind: PhotoKind; day: string; read: boolean }, scan: { scanned: Blob; info: ScanInfo; original: Blob } | null, source: Blob): Promise<PhotoUploadResponse | null> {
     setPhase({ kind: "compressing" });
     let blob: Blob;
+    let original: Blob | null = null;
     try {
-      blob = await compressImage(file);
+      if (scan) {
+        blob = scan.scanned;
+        original = await compressImage(scan.original, ORIGINAL_COMPRESS);
+      } else blob = await compressImage(source);
     } catch (e) {
       setPhase({ kind: "error", message: e instanceof PhotoCompressError ? e.message : COMPRESS_ERROR_TEXT });
       return null;
     }
     const form = new FormData();
     form.append("dosya", blob, "foto.jpg");
+    if (scan && original) {
+      form.append("asil", original, "asil.jpg");
+      form.append("tarama", JSON.stringify(scan.info));
+    }
     form.append("tur", o.kind);
     form.append("gun", o.day);
     if (o.read) form.append("oku", "1");
-    setPhase({ kind: "uploading", size: blob.size });
+    setPhase({ kind: "uploading", size: blob.size + (original?.size ?? 0) });
     return finish(await post("/api/foto", form, o.read ? () => setPhase({ kind: "reading" }) : undefined));
   }
 
@@ -93,9 +172,16 @@ export function PhotoPicker({ onPick, read, disabled, className }: { onPick: (fi
     e.target.value = "";
     if (file) onPick(file);
   };
+  // İzin sonradan verildiyse canlı vizör yeniden denenir
+  useEffect(() => refreshLiveCamera(), []);
+  // Canlı vizör (çekilen dosya döner) ya da telefonun kamerası (dosya alanın change olayıyla gelir)
+  const shoot = async () => {
+    const file = await shootPhoto(cameraRef.current);
+    if (file) onPick(file);
+  };
   return (
     <div className={cn("flex flex-wrap gap-2", className)}>
-      <Button variant="secondary" disabled={disabled} onClick={() => cameraRef.current?.click()} className="flex-1 text-ink pointer-fine:hidden max-sm:min-h-12">
+      <Button variant="secondary" disabled={disabled} onClick={() => void shoot()} className="flex-1 text-ink pointer-fine:hidden max-sm:min-h-12">
         <Camera size={16} aria-hidden="true" /> {read ? "Fotoğraf çek" : "Fotoğraf ekle"}
       </Button>
       <Button variant="secondary" disabled={disabled} onClick={() => galleryRef.current?.click()} className="flex-1 text-ink max-sm:min-h-12">
@@ -116,7 +202,7 @@ export function PhotoStatus({ phase, className }: { phase: PhotoPhase; className
       </p>
     );
   }
-  const text = phase.kind === "compressing" ? "Fotoğraf küçültülüyor…" : phase.kind === "uploading" ? `Yükleniyor… ${formatBytes(phase.size)}` : phase.kind === "reading" ? "Okunuyor… genelde 5–10 saniye" : null;
+  const text = phase.kind === "scanning" ? "Belge taranıyor…" : phase.kind === "compressing" ? "Fotoğraf küçültülüyor…" : phase.kind === "uploading" ? `Yükleniyor… ${formatBytes(phase.size)}` : phase.kind === "reading" ? "Okunuyor… genelde 5–10 saniye" : null;
   return (
     <p aria-live="polite" className={cn("flex items-center gap-2 text-[13px] text-ink-mute empty:hidden", className)}>
       {text ? (

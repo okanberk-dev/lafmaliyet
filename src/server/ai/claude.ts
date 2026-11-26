@@ -7,6 +7,7 @@ import type { z } from "zod";
 import { ASSISTANT_DAILY_CAP } from "@/lib/assistant/protocol";
 import { OCR_MODEL, photoModelsOf, type PhotoModels } from "@/lib/photo-read/models";
 import { MAX_READS_PER_PHOTO, type ReadingState } from "@/lib/photo-rules";
+import { SCAN_HINT_DAILY_CAP } from "@/lib/photo-scan";
 import { MATCH_DAILY_CAP } from "@/lib/product-match-ai";
 import { todayTR } from "@/lib/reminders";
 import { SHIFT_DRAFT_DAILY_CAP } from "@/lib/vardiya-taslak";
@@ -107,8 +108,13 @@ const monthStart = (now: Date) => new Date(`${todayTR(now).slice(0, 7)}-01T00:00
 const SHIFT_FEATURE = "vardiya" satisfies AiFeature;
 /** Paraşüt'te ürün → hammadde önerisi (parti başına bir satır); okuma sınırına sayılmaz, kendi sınırı vardır */
 const MATCH_FEATURE = "eslestirme" satisfies AiFeature;
+/**
+ * Belge taramada köşe ipucu (POST /api/foto/kenar; yalnız telefondaki kod emin değilken): okuma sınırına sayılmaz,
+ * kendi sınırı vardır (SCAN_HINT_DAILY_CAP). Taramaya sorulan ucuz çağrılar akşamki Z okumasının hakkını yemesin
+ */
+const SCAN_FEATURE = "tarama" satisfies AiFeature;
 /** Kendi günlük sınırı olan türler: fotoğraf ve fatura okumasının sınırına sayılmaz (kasadaki okumayı kesmesin) */
-const OWN_CAP: Partial<Record<AiFeature, number>> = { [SHIFT_FEATURE]: SHIFT_DRAFT_DAILY_CAP, [MATCH_FEATURE]: MATCH_DAILY_CAP };
+const OWN_CAP: Partial<Record<AiFeature, number>> = { [SHIFT_FEATURE]: SHIFT_DRAFT_DAILY_CAP, [MATCH_FEATURE]: MATCH_DAILY_CAP, [SCAN_FEATURE]: SCAN_HINT_DAILY_CAP };
 const OWN_CAP_FEATURES = Object.keys(OWN_CAP);
 /** Panel asistanı (docs/ASISTAN.md): okuma sınırına sayılmaz, yönetici başına kendi sınırı vardır (ASSISTANT_DAILY_CAP) */
 const ASSISTANT_FEATURE = "asistan" satisfies AiFeature;
@@ -124,7 +130,7 @@ type Q = Pick<DB, "select">;
 
 /**
  * Fotoğraf okumaları (kasa Z'si, yazarkasa, fiş): günlük sınır bunları sayar. Kendi sınırı olan türler (vardiya
- * taslakları, ürün önerileri, fatura okuması) ve asistanın soruları sayılmaz; kodla okuma (OCR_MODEL, yapay zekâ değil,
+ * taslakları, ürün önerileri, belge taramanın köşe ipucu, fatura okuması) ve asistanın soruları sayılmaz; kodla okuma (OCR_MODEL, yapay zekâ değil,
  * ücretsiz) da sayılmaz
  */
 async function readingsSince(since: Date, q: Q = getDb()): Promise<number> {
@@ -379,8 +385,15 @@ export async function extractMatch<T>(
   return extract({ ...req, ...MATCH_REQUEST, feature: MATCH_FEATURE, photoId: null, keepResult: false, exclusiveMs: MATCH_RUNNING_MS });
 }
 
-const SUBJECT: Partial<Record<AiFeature, AiSubject>> = { fatura: "fatura", [SHIFT_FEATURE]: "vardiya", [MATCH_FEATURE]: "eslestirme" };
-const TAG: Record<AiSubject, string> = { foto: "[foto] okuma", fatura: "[fatura] okuma", vardiya: "[vardiya] taslak", eslestirme: "[eslestirme] öneri", asistan: "[asistan] soru" };
+const SUBJECT: Partial<Record<AiFeature, AiSubject>> = { fatura: "fatura", [SHIFT_FEATURE]: "vardiya", [MATCH_FEATURE]: "eslestirme", [SCAN_FEATURE]: "tarama" };
+const TAG: Record<AiSubject, string> = {
+  foto: "[foto] okuma",
+  fatura: "[fatura] okuma",
+  vardiya: "[vardiya] taslak",
+  eslestirme: "[eslestirme] öneri",
+  asistan: "[asistan] soru",
+  tarama: "[tarama] köşe",
+};
 
 async function extract<T>(req: ExtractCall<T> & AiInput & { model: AiModel; totalMs?: number; keepResult: boolean }): Promise<AiResult<T>> {
   const subject: AiSubject = SUBJECT[req.feature] ?? "foto";
