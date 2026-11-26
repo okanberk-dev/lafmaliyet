@@ -3,6 +3,7 @@
  * çalıştırır. Her açıklama aynı cümleyle biter; neyin onaylandığı başlıkta ya da açıklamada adıyla yazar.
  */
 
+import { twoFactorResetText } from "@/lib/admin-security";
 import type { StepUpChange } from "@/lib/step-up";
 
 import { relinkText } from "./access";
@@ -28,7 +29,8 @@ export type StepUpTextCase =
   /** Listedeki aktif / pasif anahtarı (yönetici satırı) */
   | { kind: "toggle"; name: string; active: boolean; invite: Target["invite"] }
   | { kind: "link"; user: Target }
-  | { kind: "2fa" }
+  /** `required`: yöneticide iki adımlı zorunlu (src/lib/admin-security.ts); kişi girişte kurulum ekranına gider */
+  | { kind: "2fa"; required?: boolean }
   | { kind: "delete"; name: string }
   /** Sunucu parola istedi ama istemcinin kuralı beklemiyordu (eski satır, rol başka sekmede değişmiş) */
   | { kind: "fallback" };
@@ -114,7 +116,7 @@ export function stepUpText(c: StepUpTextCase): StepUpText {
     case "2fa":
       return {
         title: "İki adımlı doğrulama sıfırlansın mı?",
-        description: close("Telefonunu kaybeden kullanıcı için. Girişte yalnızca parola istenir; kişi Hesabım'dan yeniden kurabilir."),
+        description: close(twoFactorResetText(c.required === true)),
         confirmLabel: "Sıfırla",
         danger: true,
       };

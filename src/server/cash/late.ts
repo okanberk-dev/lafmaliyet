@@ -217,7 +217,11 @@ export async function reviewLate(tx: CashTx, me: CashActor, row: StaffRequestRow
   const submittedBy = { id: row.requestedBy, name: row.requestedByName };
   const counter = row.requestedBy ?? me.id;
   // Düzeltip onaylarken isteyenin hâli olduğu gibi 1. sürüm olur (açılış notu denetimi yöneticinin 2. sürümünde)
-  const first = await writeCashReport(tx, me, requested, { revision: 0, countedBy: counter, photos: link, submittedBy, prev: null, heldBy: row.id, keepCounter: true, skipOpeningNote: Boolean(input.fields), branchId });
+  // Teslim alan (isteyenin seçtiği kişi ya da banka) raporun "Kime"si olur (Teslim defteri): kişi adıyla yazılır (yönetici
+  // olmayan sayan da seçilebiliyordu), banka "Banka"
+  const to = payload.handedTo;
+  const handedTo = to ? (to.kind === "banka" ? ({ kind: "banka" } as const) : ({ kind: "ad", name: to.name } as const)) : undefined;
+  const first = await writeCashReport(tx, me, requested, { revision: 0, countedBy: counter, photos: link, submittedBy, prev: null, heldBy: row.id, keepCounter: true, skipOpeningNote: Boolean(input.fields), branchId, handedTo });
   const write = input.fields ? await writeCashReport(tx, me, finalFields, { revision: first.row.revision, countedBy: counter, prev: first.row, keepCounter: true, branchId }) : first;
   await supersede(tx, { kinds: ["kasa-gec"], subject: row.subject, exceptId: row.id }, "Bu günün raporu başka bir istekle girildi", now, DELETED_REPORT_DAYS);
   const skippedPhotos = payload.photos.length - link.length;

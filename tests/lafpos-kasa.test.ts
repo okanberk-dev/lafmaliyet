@@ -259,7 +259,7 @@ test("G7: LafPOS gününde form açılışta LafPOS'tan dolar (kaydetmez), Z bö
   const form = read("src/app/panel/kasa/cash-form.tsx");
   assert.match(
     form,
-    /const \[opening\] = useState\(\(\) => withLafpos\(initialValues\(report \?\? initial, carry, cashOuts\), report === null \? lafpos : null, initial === null \? "fill" : "compare"\)\);/,
+    /const \[opening\] = useState\(\(\) => \{\n\s+const o = withLafpos\(initialValues\(report \?\? initial, carry, cashOuts\), report === null \? lafpos : null, initial === null \? "fill" : "compare"\);/,
   );
   const fn = form.slice(form.indexOf("function withLafpos("), form.indexOf("interface PosPrompt"));
   assert.match(fn, /prefillPlan\(lafpos\.prefill, /);

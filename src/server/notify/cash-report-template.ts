@@ -39,6 +39,7 @@ import { okcHasFigures, okcReconcile, type OkcReconcileLine } from "@/lib/okc-z"
 import { photoDiffText } from "@/lib/photo-read/kasa";
 import { longDateTR } from "@/lib/reminders";
 import type { TillOnlineRow } from "@/lib/site-sales/calc";
+import { handedOverLine } from "@/lib/teslim";
 
 import { APP_URL } from "./digest-template";
 
@@ -141,6 +142,12 @@ export function renderCashReport(
      * yazarkasa bölümünün başlığında ("Pavo · sicil AB123"). Belirtilmediyse yazılmaz (bugünkü gibi)
      */
     device?: { label: string | null; registerNo: string | null } | null;
+    /**
+     * Kör sayımın uyarısı (Tuzla; src/lib/kor-sayim.ts countAttention, docs/KASA-RAPORU.md › Kör sayım): kilitli sayım
+     * sonradan değiştiyse ya da rapordaki sayılan kilitli sayımdan farklıysa Kasa (nakit) bölümünün turuncu kutusunda
+     * ("Sayım kilitlendikten sonra değişti: 6.400 ₺ → 6.450 ₺"). Yoksa yazılmaz
+     */
+    blindCount?: string | null;
   } & CashReportExtras &
     CashReportIntegrity,
 ) {
@@ -209,7 +216,7 @@ export function renderCashReport(
     row("= Olması gereken", money(c.expectedCash), { strong: true }),
     row("Sayılan", money(f.countedCash), { strong: true }),
     row("Fark", c.kind === "even" ? "Tutuyor" : `${money(Math.abs(c.cashDiff))} ${tone.label}`, { strong: true, color: tone.fg }),
-    ...(f.handedOver ? [row("Teslim edilen", money(f.handedOver))] : []),
+    ...(f.handedOver ? [row("Teslim edilen", handedOverLine(f.handedOver, f.handedToName ?? null))] : []),
     row("Ertesi güne devir", money(c.carryOver)),
   ].join("\n");
   const cardRows =
@@ -308,7 +315,7 @@ export function renderCashReport(
     ${changesBox}
     ${lafposBox}
     ${section(zSectionTitle(meta.kasa), zRows, paymentsWarning ?? ikramWarning)}
-    ${section("Kasa (nakit)", cashRows, [unreceiptedWarning, meta.carry ? carryWarning(meta.carry) : null, meta.next ? nextWarning(meta.next) : null, photoWarning])}
+    ${section("Kasa (nakit)", cashRows, [meta.blindCount ?? null, unreceiptedWarning, meta.carry ? carryWarning(meta.carry) : null, meta.next ? nextWarning(meta.next) : null, photoWarning])}
     ${okc ? `${section(`Banka POS Z raporu (yazarkasa)${okcHead ? ` · ${okcHead}` : ""}`, okcRows)}${okcLines}` : ""}
     ${cardRows ? section("Kart", cardRows, cardWarning) : ""}
     ${wasteRows ? section("Zayi & ikram", wasteRows) : ""}
@@ -325,6 +332,6 @@ export function renderCashReport(
 </td></tr></table>
 </body></html>`;
 
-  const text = `${meta.approval ? `${meta.approval}\n\n` : ""}${cashReportText(f, { ...meta, branchName }, "admin").replace(/\*/g, "")}${photoOk ? `\n\n✓ ${photoOk}` : ""}${meta.online ? `\n\n${meta.online.text}` : ""}\n\nPanelde aç: ${link}`;
+  const text = `${meta.approval ? `${meta.approval}\n\n` : ""}${cashReportText(f, { ...meta, branchName }, "admin").replace(/\*/g, "")}${meta.blindCount ? `\n\n⚠️ ${meta.blindCount}` : ""}${photoOk ? `\n\n✓ ${photoOk}` : ""}${meta.online ? `\n\n${meta.online.text}` : ""}\n\nPanelde aç: ${link}`;
   return { subject, html, text };
 }

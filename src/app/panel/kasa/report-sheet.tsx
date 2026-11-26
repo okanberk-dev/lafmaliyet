@@ -11,6 +11,7 @@ import { money } from "@/lib/format";
 import type { LafposDiff } from "@/lib/lafpos/diffs";
 import type { ModposDiff } from "@/lib/modpos/compare";
 import type { PhotoDiff } from "@/lib/photo-read/kasa";
+import { handedOverLine } from "@/lib/teslim";
 import { cn } from "@/lib/utils";
 import type { CashPhotoDTO } from "@/server/data/cash-photos";
 
@@ -42,7 +43,7 @@ export function ReportSheet({
   proposedBy,
   unreceipted = null,
 }: {
-  report: CashReportFields & { revision: number; cashDiff: number; countedByName: string | null; submittedByName: string; createdAt: string; updatedAt: string };
+  report: CashReportFields & { handedToName?: string | null; revision: number; cashDiff: number; countedByName: string | null; submittedByName: string; createdAt: string; updatedAt: string };
   kasa?: "ModPOS" | "LafPOS";
   cardExtra?: number | null;
   /** LafPOS gününde yazarkasadan geçmeyen satış ödemeleri (Faz 2): kart karşılaştırması düşer */
@@ -133,7 +134,7 @@ export function ReportSheet({
           ) : null}
           <Row label="= Olması gereken" value={money(c.expectedCash)} strong />
           <Row label="Sayılan" value={money(report.countedCash)} strong />
-          {report.handedOver ? <Row label="Teslim edilen" value={money(report.handedOver)} /> : null}
+          {report.handedOver ? <Row label="Teslim edilen" value={handedOverLine(report.handedOver, report.handedToName ?? null)} /> : null}
           <Row label="Ertesi güne devir" value={money(c.carryOver)} />
         </section>
       </div>

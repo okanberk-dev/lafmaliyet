@@ -161,6 +161,7 @@ const STEP_NAMES: Record<string, string> = {
   weekly: "Haftalık özet",
   requests: "Personel istekleri",
   gunSonu: "LafPOS gün sonu",
+  vardiya: "Vardiya hatırlatması",
   watchdog: "Sistem uyarısı e-postası",
   checklist: "Kontrol listesi e-postası",
   karaokeMail: "Karaoke e-postası",
@@ -201,6 +202,7 @@ export const STEP_LABELS: Record<string, Record<string, string>> = {
   },
   requests: { ok: "Süresi dolan personel istekleri kapandı", error: "Personel istekleri hata" },
   gunSonu: { ok: "LafPOS gün sonu: eksik rapor ya da e-posta tamamlandı", error: "LafPOS gün sonu hata" },
+  vardiya: { sent: "Gelecek haftanın vardiyası yazılmadı: yöneticilere bildirim gitti", nodevice: "Gelecek haftanın vardiyası yazılmadı (bildirim açık yönetici cihazı yok)", error: "Vardiya hatırlatması hata" },
   watchdog: { sent: "Sistem uyarısı e-postası gitti", error: "Sistem uyarısı e-postası gönderilemedi" },
   checklist: { sent: "Kontrol listesi e-postaları gitti", none: "Kontrol listesi: gönderilecek yok", failed: "Kontrol listesi e-postası bir kısmına gidemedi", error: "Kontrol listesi hata" },
   karaokeMail: { sent: "Karaoke e-postaları gitti", none: "Karaoke e-postası: gönderilecek yok", failed: "Karaoke e-postası bir kısmına gidemedi", error: "Karaoke e-postası hata" },
@@ -222,7 +224,7 @@ export type CoreStep = "sync" | "digest" | "reminders" | "karaoke" | "menu" | "s
  * Yalnız çalıştığı gün yazılan adımlar (yoksa hiçbir şey yazılmaz): satış tahmini, ModPOS kasa föyü (yalnız anahtar
  * varken), fotoğraf temizliği, ay sonu sayım bildirimi, haftalık özet, süresi dolan personel istekleri
  */
-export type OptionalStep = "forecast" | "modpos" | "photos" | "count" | "weekly" | "requests" | "gunSonu";
+export type OptionalStep = "forecast" | "modpos" | "photos" | "count" | "weekly" | "requests" | "gunSonu" | "vardiya";
 export type DailyStep = CoreStep | OptionalStep;
 export type StepResult = { code: string; error?: string | null };
 
@@ -265,7 +267,7 @@ const stepFailed = (k: DailyStep, s: StepResult) => s.code === "error" || (k ===
  * İsteğe bağlı adım verilmediyse hiç yazılmaz (o gün çalışmadı).
  */
 export function dailyOutcome(steps: Record<CoreStep, StepResult> & Partial<Record<OptionalStep, StepResult>>): JobOutcome {
-  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "modpos", "photos", "count", "weekly", "requests", "gunSonu"];
+  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "modpos", "photos", "count", "weekly", "requests", "gunSonu", "vardiya"];
   const present = order.filter((k) => steps[k] !== undefined);
   const failed = present.filter((k) => stepFailed(k, steps[k]!));
   const status = steps.digest.code === "error" ? "error" : failed.length ? "partial" : "ok";
@@ -328,6 +330,19 @@ export function gunSonuStep(r: { status: string; days: { date?: string; report: 
   const why = (d: (typeof failed)[number]) => d.error ?? (d.report !== "error" && d.email !== "error" && d.email !== "failed" ? "çalışanların e-postası gitmedi" : d.email);
   if (failed.length) return { code: "error", error: failed.map((d) => `${d.date ?? ""} ${why(d)}`.trim()).join(" · ") };
   return r.days.some((d) => d.report === "written" || d.report === "updated" || d.email === "sent") ? { code: "ok" } : undefined;
+}
+
+/**
+ * Vardiya hatırlatmasının adımı (src/server/vardiya/notify.ts pushPlanReminders; docs/VARDIYA.md › Bildirimler): yalnız
+ * gelecek haftanın planı yazılmamış bir şube için bildirim denendiyse (Cuma–Pazar sabahı, gün başına bir kez) ya da hata
+ * verdiyse yazılır. Bildirim açık yönetici cihazı yoksa "nodevice" (sorun sayılmaz: zil yine söyler); hiçbir cihaza
+ * gidemediyse hata.
+ */
+export function vardiyaStep(r: { status: "skip" | "sent"; tried: number; sent: number; failed: number } | { error: string }): StepResult | undefined {
+  if ("error" in r) return { code: "error", error: r.error };
+  if (r.status === "skip" || !r.tried) return undefined;
+  if (r.sent) return { code: "sent" };
+  return r.failed ? { code: "error", error: `${r.failed} cihaza gönderilemedi` } : { code: "nodevice" };
 }
 
 /** Fotoğraf temizliğinin adımı (src/server/storage/photos.ts cleanupPhotos) */

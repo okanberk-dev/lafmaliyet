@@ -35,9 +35,10 @@ export const STAFF_PATHS = [
 /**
  * Personel yolunun altında yalnız yöneticinin ekranı: proxy personeli buraya sokmaz, sayfa ve eylemleri ayrıca
  * requireAdmin ile denetler. canOpen önce buna bakar. Karaoke doluluğu tutar gösterir; kontrol listelerini düzenlemek
- * yöneticinin işidir (Geçmiş personele de açık).
+ * yöneticinin işidir (Geçmiş personele de açık); Teslim defteri bütün teslimleri ve alanlarını gösterir (Kasa raporu
+ * personele açık, defteri değil).
  */
-export const ADMIN_ONLY_PATHS = ["/panel/karaoke/doluluk", "/panel/kontrol/duzenle"] as const;
+export const ADMIN_ONLY_PATHS = ["/panel/karaoke/doluluk", "/panel/kontrol/duzenle", "/panel/kasa/teslim"] as const;
 
 /**
  * Personelin girişte açılan ve izinsiz bir adrese gidince döndüğü ekran: Bugün (günün işleri; ay sonu sayımı da orada
