@@ -26,6 +26,7 @@ const PARTS = {
   guvenlik: { group: "sistem", what: "yeni cihazdan girişler", href: "/panel/hesap" },
   alici: { group: "sistem", what: "bildirim alıcıları", href: "/panel/ayarlar" },
   modpos: { group: "sistem", what: "ModPOS anahtarı", href: "/panel/ayarlar" },
+  lafpos: { group: "sistem", what: "LafPOS gün sonu retleri", href: "/panel/ayarlar#lafpos" },
   fiyatsiz: { group: "uyari", what: "fiyatı girilmemiş hammaddeler", href: "/panel/hammaddeler?durum=fiyatsiz" },
   fiyat: { group: "uyari", what: "kasada değişecek fiyatlar", href: { admin: "/panel/urunler/fiyatlar?sekme=kasa", staff: "/panel/kasa/fiyatlar" } },
   tukendi: { group: "uyari", what: "tükenen ürünler", href: "/panel/urunler" },

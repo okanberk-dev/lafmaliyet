@@ -22,6 +22,7 @@ import { docBellRows } from "@/lib/staff-docs";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { kasaBell } from "@/server/bell/kasa";
+import { lafposRejectionBell } from "@/server/bell/lafpos";
 import { modposKeyBell } from "@/server/bell/modpos";
 import { opsBell } from "@/server/bell/ops";
 import { vardiyaBell } from "@/server/bell/vardiya";
@@ -540,8 +541,8 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   if (user.role !== "admin") return [...failedBellRows(failed, user.role, todayTR()), ...cash, ...kontrol, ...mine, ...recipes, ...ops];
   // Maliyet modeli zilin en ağır okuması: düşerse (E-49) öbür maddeler yine gelir, modelNotifications kendi satırını
   // koyar. Ödemeler de öyle: okunamazsa "Ödemeler yüklenemedi" satırı (upcomingFailed). ModPOS kasa föyünün anahtarı
-  // çalışmıyorsa Sistem başlığında (src/server/bell/modpos.ts)
-  const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos, vardiya, devices, staffDocs] = await Promise.all([
+  // çalışmıyorsa ve LafPOS'un gün sonu reddedildiyse Sistem başlığında (src/server/bell/modpos.ts, src/server/bell/lafpos.ts)
+  const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos, lafpos, vardiya, devices, staffDocs] = await Promise.all([
     modelNotifications().catch(modelFailed),
     // Şube seçiliyken o şubenin ve işletme genelinin ödemeleri (docs/SUBE.md › Ödemeler)
     currentBranchScope()
@@ -554,6 +555,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     safe("komisyon", commissionNotifications()),
     safe("alici", recipientNotifications()),
     safe("modpos", modposKeyBell()),
+    safe("lafpos", lafposRejectionBell()),
     // Gelecek haftanın vardiyası yazılmadıysa (Perşembe 18:00'den Pazar'a; docs/VARDIYA.md › Bildirimler)
     safe("vardiya", currentBranchScope().then((scope) => vardiyaBell(scope))),
     // Kişinin kendi hesabına yeni cihazdan giriş (son 7 gün; docs/DEPLOY.md › 6a)
@@ -581,7 +583,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     });
   }
 
-  // Sistem başlığında yeni cihazdan girişler ModPOS'tan sonra; vardiya hatırlatması Uyarılar başlığının ilk satırı, personel
-  // belgeleri (süresi dolan / yaklaşan) hemen ardından
-  return [...lost, ...system, ...recipients, ...modpos, ...devices, ...mine, ...recipes, ...holds, ...vardiya, ...staffDocs, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
+  // Sistem başlığında LafPOS'un reddi ModPOS'tan, yeni cihazdan girişler ondan sonra; vardiya hatırlatması Uyarılar başlığının
+  // ilk satırı, personel belgeleri (süresi dolan / yaklaşan) hemen ardından
+  return [...lost, ...system, ...recipients, ...modpos, ...lafpos, ...devices, ...mine, ...recipes, ...holds, ...vardiya, ...staffDocs, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
 }

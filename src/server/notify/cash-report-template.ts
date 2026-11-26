@@ -1,9 +1,10 @@
 /**
- * Gün sonu kasa raporu e-postası (saf; "server-only" yok, tests/kasa-raporu.test.ts sınar). Sabah e-postasıyla aynı
- * görünüm: üstte L'Af başlığı, büyük kasa sonucu (eksik kırmızı, fazla turuncu, tutuyor yeşil), ModPOS Z raporu, kasa
- * ve banka POS Z (yazarkasa) bölümleri, en altta "Panelde aç". Alıcıları yönetici seçer (personelin adresi düşer,
- * report-store.ts cashEmailRecipients): yazarkasanın toplamı, KDV'si ve ModPOS'la karşılaştırmalar yalnız burada
- * (docs/planlar/okc-z.md İlke 8, §8). Metin sürümü WhatsApp metninin yıldızsız, yöneticinin satırlarıyla hâli.
+ * Gün sonu kasa raporu e-postası (saf; "server-only" yok, tests/kasa-raporu.test.ts sınar). Bütün e-postaların ortak
+ * tasarımıyla (src/lib/email-kit.ts): üstte L'Af başlığı, büyük kasa sonucu (eksik kırmızı, fazla turuncu, tutuyor yeşil;
+ * kelimesi yanında), ModPOS Z raporu, kasa ve banka POS Z (yazarkasa) bölümleri, en altta "Panelde aç". Alıcıları
+ * yönetici seçer (personelin adresi düşer, report-store.ts cashEmailRecipients): yazarkasanın toplamı, KDV'si ve
+ * ModPOS'la karşılaştırmalar yalnız burada (docs/planlar/okc-z.md İlke 8, §8). Metin sürümü WhatsApp metninin
+ * yıldızsız, yöneticinin satırlarıyla hâli.
  */
 
 import {
@@ -32,6 +33,7 @@ import {
   type DayWaste,
   revenueWord,
 } from "@/lib/cash-report";
+import { button, C, callout, emailShell, esc, FONT, hero, section, TABLE, textRowHtml, type Row, type Tone } from "@/lib/email-kit";
 import { money } from "@/lib/format";
 import { lafposDiffsLine } from "@/lib/lafpos/diffs";
 import { lafposIkramCheck, type LafposZKinds } from "@/lib/lafpos/ikram";
@@ -43,56 +45,49 @@ import { handedOverLine } from "@/lib/teslim";
 
 import { APP_URL } from "./digest-template";
 
-const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Geist,Roboto,Helvetica,Arial,sans-serif";
+/** Kasa sonucunun tonu ve kelimesi (renk tek başına anlam taşımaz: "eksik", "fazla", "tutuyor" yanında) */
+const RESULT: Record<"short" | "over" | "even", { tone: Tone; label: string }> = {
+  short: { tone: "bad", label: "eksik" },
+  over: { tone: "warn", label: "fazla" },
+  even: { tone: "good", label: "tutuyor" },
+};
 
-const TONE = {
-  short: { bg: "#fef2f2", fg: "#dc2626", label: "eksik" },
-  over: { bg: "#fff7ed", fg: "#c2410c", label: "fazla" },
-  even: { bg: "#f0fdf4", fg: "#15803d", label: "tutuyor" },
-} as const;
+/** Karşılaştırma satırının tonu (yazarkasa ↔ kasa ↔ banka): bilgi gri kalır, renk yalnız iyi ve uyarıda */
+const LINE_TONE: Record<OkcReconcileLine["tone"], Tone> = { good: "good", info: "neutral", warn: "warn" };
 
-function row(label: string, value: string, opts: { strong?: boolean; color?: string; sub?: string } = {}) {
-  return `<tr>
-  <td style="padding:7px 0;font-family:${FONT};font-size:14px;line-height:19px;color:#3f3f46">${esc(label)}${opts.sub ? `<div style="font-size:12px;line-height:16px;color:#71717a">${esc(opts.sub)}</div>` : ""}</td>
-  <td align="right" style="padding:7px 0 7px 12px;font-family:${FONT};font-size:${opts.strong ? 16 : 14}px;line-height:19px;font-weight:${opts.strong ? 700 : 600};color:${opts.color ?? "#171717"};white-space:nowrap;vertical-align:top">${esc(value)}</td>
-</tr>`;
+/** Kartın üstündeki küçük satır (kim, saat, Z; fotoğraflar; onay). Yerel: kitte başlıksız üst satır yok */
+function metaLine(text: string, o: { top?: number; size?: number; color?: string; strong?: boolean } = {}) {
+  const size = o.size ?? 14;
+  return `<div style="margin-top:${o.top ?? 0}px;font-family:${FONT};font-size:${size}px;line-height:${size + 6}px;color:${o.color ?? C.mute};${o.strong ? "font-weight:600;" : ""}word-break:break-word">${esc(text)}</div>`;
 }
 
-/** Uzun metin satırı (kalem listesi): sarılır, sağa yaslanmaz */
-function textRow(label: string, text: string) {
-  return `<tr><td colspan="2" style="padding:7px 0;font-family:${FONT};font-size:14px;line-height:20px;color:#171717"><span style="color:#3f3f46">${esc(label)}:</span> ${esc(text)}</td></tr>`;
+/** Dikey boşluk (Outlook div kenar boşluğunu her zaman uygulamaz). Yerel: kitte yok */
+function space(px: number) {
+  return `<table ${TABLE}><tr><td style="height:${px}px;line-height:${px}px;font-size:0">&nbsp;</td></tr></table>`;
 }
 
-/** Turuncu uyarı kutusu; birden çok uyarı alt alta */
-function warnBox(lines: (string | null | undefined)[], marginTop = 6) {
+/** " · " ile ayrılmış parçalar kendi içinde bölünmez (telefonda "Z no" ile "1234" ayrı satıra düşmez); metin aynı */
+const keepParts = (text: string) =>
+  text
+    .split(" · ")
+    .map((p) => p.replace(/ /g, "\u00a0"))
+    .join(" · ");
+
+/** Turuncu uyarı kutusu; birden çok uyarı alt alta, aralarında boşlukla (boşsa boş metin) */
+function warnBox(lines: (string | null | undefined)[], top = 12) {
   const list = lines.filter((l): l is string => Boolean(l));
   if (!list.length) return "";
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:${marginTop}px"><tr><td style="background:#fff7ed;border-radius:12px;padding:10px 12px;font-family:${FONT};font-size:13px;line-height:18px;color:#9a3412">${list.map(esc).join("<br>")}</td></tr></table>`;
+  return callout("warn", [], { top, html: list.map((l, i) => `<div style="margin-top:${i ? 8 : 0}px">${esc(l)}</div>`).join("") });
 }
-
-const LINE_TONE: Record<OkcReconcileLine["tone"], { bg: string; fg: string }> = {
-  good: { bg: "#f0fdf4", fg: "#15803d" },
-  info: { bg: "#f4f4f5", fg: "#3f3f46" },
-  warn: { bg: "#fff7ed", fg: "#9a3412" },
-};
 
 /** Karşılaştırma satırları (yazarkasa ↔ ModPOS ↔ banka): tonuna göre renkli, alt alta kutular */
 function toneLines(lines: { tone: OkcReconcileLine["tone"]; text: string }[]) {
-  if (!lines.length) return "";
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:6px">${lines
-    .map(
-      (l) =>
-        `<tr><td style="padding:0 0 4px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td style="background:${LINE_TONE[l.tone].bg};border-radius:12px;padding:8px 12px;font-family:${FONT};font-size:13px;line-height:18px;color:${LINE_TONE[l.tone].fg}">${esc(l.text)}</td></tr></table></td></tr>`,
-    )
-    .join("")}</table>`;
+  return lines.map((l, i) => callout(LINE_TONE[l.tone], [l.text], { top: i === 0 ? 12 : 8 })).join("");
 }
 
-function section(title: string, rows: string, warning?: string | null | (string | null | undefined)[]) {
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:20px">
-  <tr><td style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT};font-size:13px;font-weight:600;color:#3f3f46">${esc(title)}</td></tr>
-</table>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">${rows}</table>${warnBox(Array.isArray(warning) ? warning : [warning])}`;
+/** Başlıklı bölüm; altında uyarılar (turuncu kutu) */
+function block(title: string, list: readonly (Row | string)[], warning?: string | null | (string | null | undefined)[], o: { top?: number; after?: string } = {}) {
+  return section(title, list, { top: o.top, after: `${warnBox(Array.isArray(warning) ? warning : [warning])}${o.after ?? ""}` });
 }
 
 export function renderCashReport(
@@ -154,7 +149,7 @@ export function renderCashReport(
   // LafPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını (G11) ve yazarkasadan geçmeyen ödemeyi (Faz 2) düşer
   f = withCardExtra(f, meta.cardExtra, meta.offDevice, meta.kasa);
   const c = computeCash(f);
-  const tone = TONE[c.kind];
+  const tone = RESULT[c.kind];
   const branchName = meta.branch?.name ?? null;
   const subject = reportSubject(f, meta.revision, branchName);
   const headline = c.kind === "even" ? "Kasa tutuyor" : `${money(Math.abs(c.cashDiff))} ${tone.label}`;
@@ -174,23 +169,23 @@ export function renderCashReport(
     bankDiff !== null && Math.abs(bankDiff) >= CASH_TOLERANCE ? `Banka POS ${kasa}'taki karttan ${money(Math.abs(bankDiff))} ${bankDiff > 0 ? "fazla" : "az"}.` : null;
 
   const laf = meta.lafposIkram ?? null;
-  const zRows = [
-    row("Toplam satış", money(f.zTotal), { strong: true }),
-    ...paymentLines(f).map((p) => row(p.label, money(p.amount))),
-    ...(f.discounts ? [row("İndirim", money(f.discounts))] : []),
-    ...(f.offRevenue ? [row("Ödenmez / ikram (ciro dışı)", money(f.offRevenue))] : []),
+  const zRows: Row[] = [
+    { label: "Toplam satış", value: money(f.zTotal), strong: true },
+    ...paymentLines(f).map((p) => ({ label: p.label, value: money(p.amount) })),
+    ...(f.discounts ? [{ label: "İndirim", value: money(f.discounts) }] : []),
+    ...(f.offRevenue ? [{ label: "Ödenmez / ikram (ciro dışı)", value: money(f.offRevenue) }] : []),
     ...(laf
       ? [
-          ...(laf.ikramValue ? [row("LafPOS'taki ikram", money(laf.ikramValue), { sub: "menü fiyatıyla" })] : []),
-          ...(laf.zayiValue ? [row("LafPOS'ta zayi yazılan", money(laf.zayiValue), { sub: "menü fiyatıyla" })] : []),
+          ...(laf.ikramValue ? [{ label: "LafPOS'taki ikram", value: money(laf.ikramValue), sub: "menü fiyatıyla" }] : []),
+          ...(laf.zayiValue ? [{ label: "LafPOS'ta zayi yazılan", value: money(laf.zayiValue), sub: "menü fiyatıyla" }] : []),
           // Faz 2: hazırlanmış iptal zayi tüketimidir; hazırlanmamış yalnız bilgi (ikisi de ödenmez tutarında yok)
-          ...(laf.iptalValue ? [row("İptal, hazırlanmıştı (zayi)", money(laf.iptalValue), { sub: "liste fiyatıyla" })] : []),
-          ...(laf.unprepared?.count ? [row("İptal, hazırlanmamıştı", money(laf.unprepared.value), { sub: `${laf.unprepared.count} kalem · tüketim değil` })] : []),
+          ...(laf.iptalValue ? [{ label: "İptal, hazırlanmıştı (zayi)", value: money(laf.iptalValue), sub: "liste fiyatıyla" }] : []),
+          ...(laf.unprepared?.count ? [{ label: "İptal, hazırlanmamıştı", value: money(laf.unprepared.value), sub: `${laf.unprepared.count} kalem · tüketim değil` }] : []),
         ]
       : meta.ikramValue
-        ? [row("Panelde kayıtlı ikram", money(meta.ikramValue), { sub: "menü fiyatıyla" })]
+        ? [{ label: "Panelde kayıtlı ikram", value: money(meta.ikramValue), sub: "menü fiyatıyla" }]
         : []),
-  ].join("\n");
+  ];
   // LafPOS gününde ikram LafPOS'ta işaretlenir: personel paneli atlar, uyarı LafPOS'un Z'si ile ikram listesini
   // karşılaştırır (ikisi de LafPOS'un; fark varsa bilgi), panele girilen ürün ikramı sayılmadığı söylenir
   const ikramWarning = laf
@@ -201,39 +196,39 @@ export function renderCashReport(
     : f.offRevenue !== null && meta.ikramValue != null && Math.abs(f.offRevenue - meta.ikramValue) >= CASH_TOLERANCE
       ? `${kasa}'un ödenmez tutarı panelde kayıtlı ikramdan ${money(Math.abs(f.offRevenue - meta.ikramValue))} ${f.offRevenue > meta.ikramValue ? "fazla" : "az"}: kaydı eksik ikram olabilir.`
       : null;
+  // Zayi ve ikram kalemleri uzun metin: sağa sıkışmaz, iki sütuna yayılıp sarılır
   const wasteRows = [
-    ...(meta.waste?.ikram ? [textRow("İkram", meta.waste.ikram)] : []),
-    ...(meta.waste?.zayi ? [textRow("Zayi", meta.waste.zayi)] : []),
-  ].join("\n");
-  // Kasadan çıkan satırlar "Gün içinde çıkan"ın altında; fotoğrafın kendisi e-postaya girmez (Panelde aç)
+    ...(meta.waste?.ikram ? [["İkram", meta.waste.ikram]] : []),
+    ...(meta.waste?.zayi ? [["Zayi", meta.waste.zayi]] : []),
+  ].map(([label, text], i) => textRowHtml(label, text, i === 0));
+  // Kasadan çıkan satırlar "Gün içinde çıkan"ın altında, küçük ve içeride; fotoğrafın kendisi e-postaya girmez (Panelde aç)
   const outs = cashOutLines(meta.cashOuts);
-  const outRows = outs.map((l) => `<tr><td colspan="2" style="padding:0 0 4px 12px;font-family:${FONT};font-size:12px;line-height:16px;color:#71717a">· ${esc(l)}</td></tr>`);
-  const cashRows = [
-    row("Açılış (dünden devir)", money(f.openingCash)),
-    row("+ Nakit satış", money(f.cash)),
-    ...(f.cashIn ? [row("+ Gün içinde giren", money(f.cashIn))] : []),
-    ...(f.cashOut || outs.length ? [row("− Gün içinde çıkan", money(f.cashOut), { sub: f.cashOutNote ?? undefined }), ...outRows] : []),
-    row("= Olması gereken", money(c.expectedCash), { strong: true }),
-    row("Sayılan", money(f.countedCash), { strong: true }),
-    row("Fark", c.kind === "even" ? "Tutuyor" : `${money(Math.abs(c.cashDiff))} ${tone.label}`, { strong: true, color: tone.fg }),
-    ...(f.handedOver ? [row("Teslim edilen", handedOverLine(f.handedOver, f.handedToName ?? null))] : []),
-    row("Ertesi güne devir", money(c.carryOver)),
-  ].join("\n");
-  const cardRows =
+  const outRows = outs.map((l) => textRowHtml(null, `· ${l}`, false, { muted: true, indent: true }));
+  const cashRows: (Row | string)[] = [
+    { label: "Açılış (dünden devir)", value: money(f.openingCash) },
+    { label: "+ Nakit satış", value: money(f.cash) },
+    ...(f.cashIn ? [{ label: "+ Gün içinde giren", value: money(f.cashIn) }] : []),
+    ...(f.cashOut || outs.length ? [{ label: "− Gün içinde çıkan", value: money(f.cashOut), sub: f.cashOutNote }, ...outRows] : []),
+    { label: "= Olması gereken", value: money(c.expectedCash), strong: true },
+    { label: "Sayılan", value: money(f.countedCash), strong: true },
+    { label: "Fark", value: c.kind === "even" ? "Tutuyor" : `${money(Math.abs(c.cashDiff))} ${tone.label}`, strong: true, tone: tone.tone },
+    ...(f.handedOver ? [{ label: "Teslim edilen", value: handedOverLine(f.handedOver, f.handedToName ?? null) }] : []),
+    { label: "Ertesi güne devir", value: money(c.carryOver) },
+  ];
+  const cardRows: Row[] =
     bankDiff === null
-      ? ""
+      ? []
       : [
-          row(`${kasa} kart`, money(f.card)),
+          { label: `${kasa} kart`, value: money(f.card) },
           // Faz 2: yazarkasadan geçmeyen kart banka gün sonunda yok; LafPOS kartından düşülür (5.030 − 870 = 4.160)
-          ...(meta.offDevice && meta.offDevice.card > 0 ? [row(OFF_DEVICE_CARD_LABEL, money(meta.offDevice.card))] : []),
-          row("Banka POS", money(f.bankPos)),
+          ...(meta.offDevice && meta.offDevice.card > 0 ? [{ label: OFF_DEVICE_CARD_LABEL, value: money(meta.offDevice.card) }] : []),
+          { label: "Banka POS", value: money(f.bankPos) },
           // Fark bunu düşerek (G11): 10.150 − 150 = 10.000 okunur
-          ...(meta.cardExtra && meta.cardExtra > 0 ? [row(CARD_EXTRA_LABEL, money(meta.cardExtra))] : []),
-          row("Fark", Math.abs(bankDiff) < CASH_TOLERANCE ? "Yok" : `${money(Math.abs(bankDiff))} ${bankDiff > 0 ? "fazla" : "az"}`, {
-            strong: true,
-            color: Math.abs(bankDiff) < CASH_TOLERANCE ? "#15803d" : "#c2410c",
-          }),
-        ].join("\n");
+          ...(meta.cardExtra && meta.cardExtra > 0 ? [{ label: CARD_EXTRA_LABEL, value: money(meta.cardExtra) }] : []),
+          Math.abs(bankDiff) < CASH_TOLERANCE
+            ? { label: "Fark", value: "Yok", strong: true, tone: "good" }
+            : { label: "Fark", value: `${money(Math.abs(bankDiff))} ${bankDiff > 0 ? "fazla" : "az"}`, strong: true, tone: "warn" },
+        ];
   // Fotoğraftan farklı yazılan: yazarkasa alanları ve banka gün sonu banka POS Z bölümünün altında (bölüm varsa),
   // ötekiler kasanın altında
   const okcDiff = (field: string) => okc && (field.startsWith("okc") || field === "bankPos");
@@ -254,83 +249,62 @@ export function renderCashReport(
   const okcHead = [
     meta.device?.label ?? null,
     meta.device?.registerNo ? `sicil\u00a0${meta.device.registerNo}` : null,
-    f.okcZNo ? `Z no\u00a0${f.okcZNo}` : null,
+    // "Z no 0188" bölünmez (telefonda başlık iki satıra iner; "Z" ile "no" ayrı satıra düşmesin)
+    f.okcZNo ? `Z\u00a0no\u00a0${f.okcZNo}` : null,
     f.okcReceipts ? `${f.okcReceipts}\u00a0fiş` : null,
   ]
     .filter(Boolean)
     .join(" · ");
-  const okcRows = okc
+  const okcRows: Row[] = okc
     ? [
-        ...(f.okcTotal != null ? [row("Günlük toplam", money(f.okcTotal), { strong: true, sub: f.okcVatTotal != null ? `KDV ${money(f.okcVatTotal)}` : undefined })] : []),
-        ...(f.okcVat ?? []).map((l) => row(`%${l.rate}`, money(l.total), { sub: `KDV ${money(l.vat)}` })),
-        ...(f.okcCash != null ? [row("Nakit", money(f.okcCash))] : []),
-        ...(f.okcCard != null ? [row("Kredi kartı", money(f.okcCard))] : []),
-        ...(f.okcMealCard ? [row("Yemek kartı", money(f.okcMealCard))] : []),
-        ...(f.okcOther ? [row("Diğer", money(f.okcOther))] : []),
-        ...(f.bankPos !== null ? [row("Banka gün sonu", money(f.bankPos))] : []),
-      ].join("\n")
-    : "";
-  const okcLines = okc ? `${toneLines(okcReconcile(f, "admin", kasa))}${warnBox([okcPhotoWarning])}` : "";
+        ...(f.okcTotal != null ? [{ label: "Günlük toplam", value: money(f.okcTotal), strong: true, sub: f.okcVatTotal != null ? `KDV ${money(f.okcVatTotal)}` : null }] : []),
+        ...(f.okcVat ?? []).map((l) => ({ label: `%${l.rate}`, value: money(l.total), sub: `KDV ${money(l.vat)}` })),
+        ...(f.okcCash != null ? [{ label: "Nakit", value: money(f.okcCash) }] : []),
+        ...(f.okcCard != null ? [{ label: "Kredi kartı", value: money(f.okcCard) }] : []),
+        ...(f.okcMealCard ? [{ label: "Yemek kartı", value: money(f.okcMealCard) }] : []),
+        ...(f.okcOther ? [{ label: "Diğer", value: money(f.okcOther) }] : []),
+        ...(f.bankPos !== null ? [{ label: "Banka gün sonu", value: money(f.bankPos) }] : []),
+      ]
+    : [];
   const photoList = photoNames(meta.photos).join(", ");
   // Fotoğraf okundu ve yazılanlarla tutuyor: yöneticiye olumlu satır (fark varsa yukarıdaki turuncu kutular)
   const photoOk = meta.photoRead && !(meta.photoDiffs ?? []).length ? PHOTO_OK_TEXT : null;
   // Raporun şubesi bağlantıda: seçici o şubeyi seçer, form o kasayı gösterir (yoksa çerezdeki şubenin raporu açılırdı)
   const link = `${APP_URL}/panel/kasa?gun=${f.date}${meta.branch ? `&sube=${encodeURIComponent(meta.branch.id)}` : ""}`;
   // laffogato.net: bilgi satırı, hesaba katılmaz (sitenin günü gece yarısında biter)
-  const onlineRows = meta.online
+  const onlineRows: Row[] = meta.online
     ? [
-        row("Online (site + uygulama)", money(meta.online.online), { sub: "uygulama ve web siparişleri, iadeler düşülmüş" }),
-        row("Karaoke ön ödeme", money(meta.online.karaoke)),
-      ].join("\n")
-    : "";
+        { label: "Online (site + uygulama)", value: money(meta.online.online), sub: "uygulama ve web siparişleri, iadeler düşülmüş" },
+        { label: "Karaoke ön ödeme", value: money(meta.online.karaoke) },
+      ]
+    : [];
 
-  const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(subject)}</title></head>
-<body style="margin:0;padding:0;background:#f4f4f5;-webkit-text-size-adjust:100%;font-family:${FONT}">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${esc(`${headline} · Z ${money(f.zTotal)} · ${meta.by}`)}</div>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4f4f5"><tr><td align="center" style="padding:20px 12px 28px">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px">
-  <tr><td style="padding:0 4px 14px">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
-      <td style="vertical-align:middle">
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr>
-          <td width="38" height="38" align="center" style="width:38px;height:38px;background:#171717;border-radius:11px;color:#c0f21e;font-family:${FONT};font-size:13px;font-weight:700;letter-spacing:-0.02em">L'Af</td>
-          <td style="padding-left:10px;font-family:${FONT}">
-            <div style="font-size:16px;line-height:20px;font-weight:600;color:#171717">L'Affogato</div>
-            <div style="font-size:12px;line-height:16px;color:#71717a">Gün sonu kasa raporu · ${esc(`${reportNo(f.date)}${branchPart(branchName)}`)}</div>
-          </td>
-        </tr></table>
-      </td>
-      <td align="right" style="vertical-align:middle;font-family:${FONT};font-size:13px;color:#71717a;white-space:nowrap">${esc(longDateTR(f.date))}</td>
-    </tr></table>
-  </td></tr>
-  <tr><td style="background:#ffffff;border-radius:24px;padding:24px 20px 22px">
-    <div style="font-family:${FONT};font-size:13px;line-height:18px;color:#71717a">${esc(`${byLine(meta.by, meta.countedBy)} · ${time}${meta.revision > 1 ? " · güncellendi" : ""}${zMeta ? ` · ${zMeta}` : ""}`)}</div>${
-      photoList ? `\n    <div style="font-family:${FONT};font-size:12px;line-height:17px;color:#71717a;margin-top:2px">${esc(`Fotoğraflar panelde: ${photoList}`)}</div>` : ""
-    }${photoOk ? `\n    <div style="font-family:${FONT};font-size:13px;line-height:18px;color:#15803d;font-weight:600;margin-top:4px">${esc(`✓ ${photoOk}`)}</div>` : ""}${meta.approval ? `\n    <div style="font-family:${FONT};font-size:13px;line-height:18px;color:#3f3f46;font-weight:600;margin-top:4px">${esc(meta.approval)}</div>` : ""}
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:10px"><tr><td style="background:${tone.bg};border-radius:16px;padding:14px 16px;font-family:${FONT}">
-      <div style="font-size:13px;line-height:18px;color:${tone.fg};font-weight:600">Kasa</div>
-      <div style="font-size:26px;line-height:32px;font-weight:700;letter-spacing:-0.02em;color:${tone.fg}">${esc(headline)}</div>
-      <div style="font-size:13px;line-height:18px;color:#3f3f46;margin-top:2px">Olması gereken ${esc(money(c.expectedCash))} · sayılan ${esc(money(f.countedCash))}</div>
-    </td></tr></table>
-    ${changesBox}
-    ${lafposBox}
-    ${section(zSectionTitle(meta.kasa), zRows, paymentsWarning ?? ikramWarning)}
-    ${section("Kasa (nakit)", cashRows, [meta.blindCount ?? null, unreceiptedWarning, meta.carry ? carryWarning(meta.carry) : null, meta.next ? nextWarning(meta.next) : null, photoWarning])}
-    ${okc ? `${section(`Banka POS Z raporu (yazarkasa)${okcHead ? ` · ${okcHead}` : ""}`, okcRows)}${okcLines}` : ""}
-    ${cardRows ? section("Kart", cardRows, cardWarning) : ""}
-    ${wasteRows ? section("Zayi & ikram", wasteRows) : ""}
-    ${onlineRows ? section("laffogato.net (kasadan geçmez)", onlineRows, "Bilgi için: kasa farkına ve Z raporuna girmez.") : ""}
-    ${f.note ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:18px"><tr><td style="background:#f4f4f5;border-radius:12px;padding:10px 12px;font-family:${FONT};font-size:14px;line-height:20px;color:#3f3f46"><strong>Not:</strong> ${esc(f.note)}</td></tr></table>` : ""}
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px">
-      <tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717">
-        <a href="${esc(link)}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Panelde aç</a>
-      </td></tr>
-    </table>
-  </td></tr>
-  <tr><td style="padding:16px 12px 0;font-family:${FONT};font-size:12px;line-height:17px;color:#a1a1aa;text-align:center">Bu e-posta kasa raporu alıcılarına gönderildi. Adresleri panelde Kasa raporu sayfasından değiştirebilirsiniz.</td></tr>
-</table>
-</td></tr></table>
-</body></html>`;
+  // Sıra: kim ve ne zaman, büyük kasa sonucu (eksik kırmızı, fazla turuncu, tutuyor yeşil), değişen ve LafPOS'tan farklı,
+  // Z, kasa, yazarkasa ya da kart, zayi ve ikram, laffogato.net, not, "Panelde aç"
+  const sections = [
+    block(zSectionTitle(meta.kasa), zRows, paymentsWarning ?? ikramWarning, { top: 30 }),
+    block("Kasa (nakit)", cashRows, [meta.blindCount ?? null, unreceiptedWarning, meta.carry ? carryWarning(meta.carry) : null, meta.next ? nextWarning(meta.next) : null, photoWarning]),
+    okc ? block(`Banka POS Z raporu (yazarkasa)${okcHead ? ` · ${okcHead}` : ""}`, okcRows, null, { after: `${toneLines(okcReconcile(f, "admin", kasa))}${warnBox([okcPhotoWarning])}` }) : "",
+    cardRows.length ? block("Kart", cardRows, cardWarning) : "",
+    wasteRows.length ? block("Zayi & ikram", wasteRows) : "",
+    onlineRows.length ? block("laffogato.net (kasadan geçmez)", onlineRows, null, { after: callout("neutral", ["Bilgi için: kasa farkına ve Z raporuna girmez."], { top: 12 }) }) : "",
+    f.note ? callout("neutral", [], { top: 28, html: `<strong style="font-weight:600;color:${C.ink}">Not:</strong> ${esc(f.note)}` }) : "",
+  ].filter(Boolean);
+
+  const html = emailShell({
+    subject,
+    preheader: `${headline} · Z ${money(f.zTotal)} · ${meta.by}`,
+    brandSubHtml: `Gün sonu kasa raporu · ${esc(`${reportNo(f.date)}${branchPart(branchName)}`)}`,
+    dateLabel: longDateTR(f.date),
+    cardHtml: `${metaLine(keepParts(`${byLine(meta.by, meta.countedBy)} · ${time}${meta.revision > 1 ? " · güncellendi" : ""}${zMeta ? ` · ${zMeta}` : ""}`))}${
+      photoList ? `\n${metaLine(`Fotoğraflar panelde: ${photoList}`, { top: 4, size: 13 })}` : ""
+    }${photoOk ? `\n${metaLine(`✓ ${photoOk}`, { top: 6, size: 13, color: C.goodInk, strong: true })}` : ""}${meta.approval ? `\n${metaLine(meta.approval, { top: 8, color: C.soft, strong: true })}` : ""}
+${space(16)}${hero({ label: "Kasa", value: headline, sub: keepParts(`Olması gereken ${money(c.expectedCash)} · sayılan ${money(f.countedCash)}`), tone: tone.tone })}
+${changesBox}${lafposBox}
+${sections.join("\n")}
+${button(link, "Panelde aç")}`,
+    footer: "Bu e-posta kasa raporu alıcılarına gönderildi. Adresleri panelde Kasa raporu sayfasından değiştirebilirsiniz.",
+  });
 
   const text = `${meta.approval ? `${meta.approval}\n\n` : ""}${cashReportText(f, { ...meta, branchName }, "admin").replace(/\*/g, "")}${meta.blindCount ? `\n\n⚠️ ${meta.blindCount}` : ""}${photoOk ? `\n\n✓ ${photoOk}` : ""}${meta.online ? `\n\n${meta.online.text}` : ""}\n\nPanelde aç: ${link}`;
   return { subject, html, text };

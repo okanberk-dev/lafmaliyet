@@ -545,6 +545,14 @@ test("yeni bağlantı e-postası: ne zaman, hangi uygulama, kendisi yapmadıysa 
   assert.match(m.text, /Bunu siz yapmadıysanız hemen Hesabım › Bağlı uygulamalar'dan kaldırın ve parolanızı değiştirin: https:\/\/ladmin\.laffogato\.net\/panel\/hesap#bagli-uygulamalar/);
   assert.match(m.html, /href="https:\/\/ladmin\.laffogato\.net\/panel\/hesap#bagli-uygulamalar"/);
   assert.match(m.html, />Bağlı uygulamalar</);
-  // Ad HTML'e kaçışla girer
+  // HTML'de aynı cümleler: uygulamanın adı kalın, ne yapılacağı uyarı kutusunda; tek h1 (konunun kendisi)
+  assert.match(m.html, /Okan, 22\.10\.2026 14:05 itibarıyla <strong[^>]*>Claude \(claude\.ai\)<\/strong> L&#39;Affogato panelinizi salt okunur olarak okuyabiliyor\./);
+  assert.match(m.html, /Bunu siz yapmadıysanız hemen Hesabım › Bağlı uygulamalar&#39;dan kaldırın ve parolanızı değiştirin\./);
+  assert.match(m.html, /<h1[^>]*>Panelinize Claude bağlandı<\/h1>/);
+  assert.equal(m.html.split("<h1").length - 1, 1);
+  // Ad ve uygulama HTML'e kaçışla girer
   assert.doesNotMatch(renderConnectedNotice({ name: "<b>x</b>", label: "Claude", host: "claude.ai", at: new Date(), base: BASE }).html, /<b>x<\/b>/);
+  const odd = renderConnectedNotice({ name: "Okan", label: "<i>y</i>", host: "claude.ai", at: new Date(), base: BASE }).html;
+  assert.doesNotMatch(odd, /<i>y<\/i>/);
+  assert.match(odd, /&lt;i&gt;y&lt;\/i&gt; \(claude\.ai\)/);
 });

@@ -1,5 +1,6 @@
 import { reportNo } from "@/lib/cash-report";
 import { money } from "@/lib/format";
+import { button, callout, emailShell, esc, heading, rows, sectionTitle, textRowHtml, type Row, type Tone } from "@/lib/email-kit";
 import { longDateTR } from "@/lib/reminders";
 
 import type { BankPos } from "./day";
@@ -133,23 +134,21 @@ export function pavoSubject(branchName: string, date: string, b: BankPos): strin
   return `Kasa raporu ${reportNo(date)} · ${branchName} · ${longDateTR(date)} · Pavo karşılaştırması${state === "fark" ? " · FARK VAR" : state === "yok" ? " · alınamadı" : ""}`;
 }
 
-const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+/** Uyarı kutusunun tonu: fark sorun (kırmızı), alınamadı uyarı (turuncu), uyumlu iyi (yeşil) */
+const BOX: Record<PavoState, Tone> = { fark: "bad", yok: "warn", uyumlu: "good" };
 
-/** Uyarı kutusunun renkleri: fark tehlike (kırmızı), alınamadı uyarı (turuncu), uyumlu iyi (yeşil) */
-const BOX: Record<PavoState, { bg: string; ink: string }> = {
-  fark: { bg: "#fef2f2", ink: "#b91c1c" },
-  yok: { bg: "#fff7ed", ink: "#9a3412" },
-  uyumlu: { bg: "#f0fdf4", ink: "#166534" },
-};
+/** Satırın kit karşılığı: "· banka" satırları küçük ve içeride, "FARK" ve eksik kırmızı */
+const pavoRow = ([label, value]: [string, string]): Row | string =>
+  label.startsWith("· ") ? textRowHtml(null, `${label.slice(2)}: ${value}`, false, { muted: true, indent: true }) : { label, value, tone: /FARK|eksik/.test(value) ? "bad" : null };
 
 /** E-postadaki bölüm (HTML): başlık, uyarı kutusu, satırlar ve banka dökümü */
-export function pavoSectionHtml(b: BankPos): string {
+export function pavoSectionHtml(b: BankPos, o: { top?: number } = {}): string {
   const v = pavoView(b);
-  const box = BOX[v.state];
-  const row = ([label, value]: [string, string], strong = true) =>
-    `<tr><td style="padding:6px 0;font-family:${FONT};font-size:14px;color:#3f3f46">${esc(label)}</td><td align="right" style="padding:6px 0 6px 12px;font-family:${FONT};font-size:14px;font-weight:${strong ? 600 : 400};color:#171717;white-space:nowrap">${esc(value)}</td></tr>`;
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:18px"><tr><td colspan="2" style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT};font-size:13px;font-weight:600;color:#3f3f46">${esc(PAVO_TITLE)}</td></tr><tr><td colspan="2" style="padding:8px 0 4px"><div style="background:${box.bg};border-radius:12px;padding:10px 12px;font-family:${FONT};font-size:${v.state === "fark" ? 15 : 13}px;line-height:20px;font-weight:${v.state === "fark" ? 700 : 600};color:${box.ink}">${esc(v.headline)}</div></td></tr>${v.rows.map((r) => row(r)).join("")}${v.batches.map((r) => row(r, false)).join("")}${v.acquirers.map((r) => row(r, false)).join("")}</table>`;
+  return `${sectionTitle(PAVO_TITLE, { top: o.top, dot: BOX[v.state] })}${callout(BOX[v.state], [v.headline], { top: 12 })}${rows([
+    ...v.rows.map(pavoRow),
+    ...v.batches.map(pavoRow),
+    ...v.acquirers.map(pavoRow),
+  ])}`;
 }
 
 /** E-postadaki bölüm (düz metin) */
@@ -164,18 +163,17 @@ export function pavoSectionText(b: BankPos): string[] {
  */
 export function renderPavoMail(m: { branchName: string; date: string; bankPos: BankPos; link: string }): { subject: string; html: string; text: string } {
   const subject = pavoSubject(m.branchName, m.date, m.bankPos);
-  const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(subject)}</title></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:${FONT}">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4f4f5"><tr><td align="center" style="padding:20px 12px 28px">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px">
-  <tr><td style="padding:0 4px 14px;font-family:${FONT}"><div style="font-size:16px;font-weight:600;color:#171717">L'Affogato ${esc(m.branchName)}</div><div style="font-size:12px;color:#71717a">Pavo karşılaştırması · ${esc(longDateTR(m.date))} ${m.date.slice(0, 4)} · gün sonu e-postası daha önce gitti</div></td></tr>
-  <tr><td style="background:#ffffff;border-radius:24px;padding:4px 20px 22px">
-    ${pavoSectionHtml(m.bankPos)}
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px"><tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717"><a href="${esc(m.link)}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Panelde aç</a></td></tr></table>
-  </td></tr>
-</table>
-</td></tr></table>
-</body></html>`;
+  const v = pavoView(m.bankPos);
+  const html = emailShell({
+    subject,
+    preheader: v.headline,
+    brandSubHtml: `Pavo karşılaştırması · ${esc(m.branchName)}`,
+    dateLabel: `${longDateTR(m.date)} ${m.date.slice(0, 4)}`,
+    cardHtml: `${heading("Pavo – LafPOS kart karşılaştırması", { eyebrow: "Gün sonu e-postası daha önce gitti" })}
+${pavoSectionHtml(m.bankPos, { top: 24 })}
+${button(m.link, "Panelde aç")}`,
+    footer: "Bu e-posta kasa raporu alıcılarına gönderildi.",
+  });
   const text = [subject, "", ...pavoSectionText(m.bankPos), "", `Panelde aç: ${m.link}`].join("\n");
   return { subject, html, text };
 }
