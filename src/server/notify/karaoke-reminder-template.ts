@@ -126,13 +126,17 @@ ${o.footerHtml}
  * altında adres. Saat masaüstünde 36 px: telefon ayarını okumayan istemcide de 390 px'e sığar
  */
 function ticketHtml(t: { from: string; to: string; dateLong: string; meta: string }): string {
-  return `<table ${TABLE} style="margin-top:24px"><tr><td class="g-ticket" style="border:1px solid ${TICKET_LINE};border-radius:18px;padding:20px 20px 20px;font-family:${FONT}">
+  // Kabuğun `table{border-collapse:collapse}` kuralı çerçeveli hücrenin köşesini düzleştirir: bilet ayrık kenarlı
+  return `<table ${TABLE} style="margin-top:24px;border-collapse:separate;border-spacing:0"><tr><td class="g-ticket" style="border:1px solid ${TICKET_LINE};border-radius:18px;padding:20px 20px 20px;font-family:${FONT}">
   <div style="font-size:11px;line-height:14px;font-weight:600;letter-spacing:0.14em;color:${SAGE}">REZERVASYONUNUZ</div>
   <div class="em-hero" style="padding-top:10px;font-size:36px;line-height:42px;font-weight:700;letter-spacing:-0.02em;color:${GOLD};white-space:nowrap;font-variant-numeric:tabular-nums">${esc(t.from)}&nbsp;–&nbsp;${esc(t.to)}</div>
   <div style="padding-top:8px;font-size:17px;line-height:24px;font-weight:600;color:#ffffff">${esc(t.dateLong)}</div>${t.meta ? `\n  <div style="padding-top:2px;font-size:15px;line-height:22px;color:${SAGE}">${esc(t.meta)}</div>` : ""}
   <div style="margin-top:16px;padding-top:14px;border-top:1px dashed ${TICKET_LINE};font-size:13px;line-height:20px;color:${SAGE};word-break:break-word">${esc(VENUE.address)}</div>
 </td></tr></table>`;
 }
+
+/** Açıklamadaki telefon numarası satır sonunda bölünmez (metin aynı; yalnız sarılma) */
+const keepPhone = (html: string) => html.split(esc(VENUE.phone)).join(`<span style="white-space:nowrap">${esc(VENUE.phone)}</span>`);
 
 /** Numaralı kısa bilgiler (kitte yok): yeşil halkada numara, kalın başlık, altında açıklama; aralar ferah */
 function stepsHtml(list: readonly { title: string; body: string }[]): string {
@@ -144,7 +148,7 @@ function stepsHtml(list: readonly { title: string; body: string }[]): string {
   </td>
   <td valign="top" style="padding:${top}px 0 0;font-family:${FONT};vertical-align:top;word-break:break-word">
     <div style="padding-top:3px;font-size:16px;line-height:22px;font-weight:600;color:${C.ink}">${esc(n.title)}</div>
-    <div style="margin-top:4px;font-size:15px;line-height:23px;color:${C.soft}">${esc(n.body)}</div>
+    <div style="margin-top:4px;font-size:15px;line-height:23px;color:${C.soft}">${keepPhone(esc(n.body))}</div>
   </td>
 </tr>`;
   });

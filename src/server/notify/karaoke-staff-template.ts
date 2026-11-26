@@ -42,7 +42,7 @@ function collectBox(count: number, single: boolean): string {
   const title = single ? "ÖDEME ALINMADI" : `ÖDEME ALINACAK: ${count} rezervasyon`;
   return callout("bad", [], {
     top: 0,
-    html: `<div style="font-size:18px;line-height:25px;font-weight:700;letter-spacing:0.01em">${esc(title)}</div>
+    html: `<div style="font-size:17px;line-height:24px;font-weight:700;letter-spacing:0.01em">${esc(title)}</div>
   <div style="margin-top:6px;font-size:15px;line-height:22px;font-weight:600">${esc(COLLECT_FIRST)}</div>
   <div style="margin-top:4px">${count === 1 ? "Bu rezervasyon" : "Bu rezervasyonlar"} sitede ödenmedi; ücret kasadan tahsil edilir.</div>`,
   });
@@ -50,14 +50,16 @@ function collectBox(count: number, single: boolean): string {
 
 /**
  * Bir rezervasyonun kutusu: büyük saat ve yanında ödeme rozeti (satıra sığmazsa alta iner), kim, ödenmediyse "önden
- * alın", not. Ödenmemiş rezervasyonun kutusu açık kırmızı, ötekiler gri
+ * alın", not. Ödenmemiş rezervasyonun kutusu açık kırmızı (yapılacak iş var), ödenmişinki beyaz ve ince çerçeveli (yeşil
+ * rozet seçilsin). Çerçeveli hücrenin köşesi için tablo ayrık kenarlı (kabuğun `border-collapse:collapse`'ı düzleştirir)
  */
 function sessionBlock(s: StaffMailSession, first: boolean): string {
   const collect = staffPay(s) === "collect";
   const note = s.note?.trim();
-  return `<table ${TABLE} style="margin-top:${first ? 0 : 12}px"><tr><td style="background:${collect ? TONE.bad.bg : C.note};border-radius:18px;padding:18px 20px 18px;font-family:${FONT};word-break:break-word">
+  const box = collect ? `background:${TONE.bad.bg};padding:18px 20px` : `background:${C.card};border:1px solid ${C.line};padding:17px 19px`;
+  return `<table ${TABLE} style="margin-top:${first ? 0 : 12}px;border-collapse:separate;border-spacing:0"><tr><td style="${box};border-radius:18px;font-family:${FONT};word-break:break-word">
   <div style="line-height:30px"><span style="font-size:22px;line-height:30px;font-weight:700;letter-spacing:-0.02em;color:${C.ink};white-space:nowrap;font-variant-numeric:tabular-nums;vertical-align:middle;padding-right:10px">${esc(range(s))}</span> ${payBadge(s)}</div>
-  <div style="margin-top:6px;font-size:15px;line-height:22px;color:${C.soft}">${esc(who(s))}${s.desk === "booking" ? ` <span style="color:${C.mute}">· elle eklendi</span>` : ""}</div>${collect ? `\n  <div style="margin-top:8px;font-size:15px;line-height:22px;font-weight:600;color:${TONE.bad.fg}">${esc(COLLECT_FIRST)}</div>` : ""}${note ? `\n  <div style="margin-top:10px;padding-top:10px;border-top:1px solid ${C.line};font-size:14px;line-height:21px;color:${C.soft}">Not: ${esc(note)}</div>` : ""}
+  <div style="margin-top:6px;font-size:15px;line-height:22px;color:${C.soft}">${esc(who(s))}${s.desk === "booking" ? ` <span style="color:${C.mute}">· elle eklendi</span>` : ""}</div>${collect ? `\n  <div style="margin-top:8px;font-size:15px;line-height:22px;font-weight:600;color:${TONE.bad.fg}">${esc(COLLECT_FIRST)}</div>` : ""}${note ? `\n  <div style="margin-top:10px;padding-top:10px;border-top:1px solid ${collect ? C.card : C.hair};font-size:14px;line-height:21px;color:${C.soft}">Not: ${esc(note)}</div>` : ""}
 </td></tr></table>`;
 }
 

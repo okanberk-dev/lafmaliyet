@@ -320,6 +320,24 @@ test("personel '3 saat kala' e-postası: ödeme alınmadıysa konu ve kırmızı
   assert.match(renderStaffSoon({ ...desk, desk: null, status: "requested" }, tr("2026-11-24", 17)).html, /ÖDEME ALINMADI · onay bekliyor/);
 });
 
+test("karaoke e-postaları ortak tasarımla: tek h1, telefon ayarı, ana eylem; personelde ad ve not HTML'e kaçışla girer", () => {
+  // Misafir: başlık kitin h1'i (telefonda küçülür), saat aralığı bölünmez, telefon ayarı kabukta
+  const guest = renderKaraokeReminder(guestInput);
+  assert.equal(guest.html.match(/<h1 /g)?.length, 1);
+  assert.match(guest.html, /<h1 class="em-h1"[^>]*>Yarın görüşüyoruz, Ayşe!<\/h1>/);
+  assert.match(guest.html, /@media only screen and \(max-width:620px\)/);
+  assert.match(guest.html, /<a href="https:\/\/calendar\.google\.com\/[^"]*"[^>]*>Takvime ekle<\/a>/);
+  // Personel: kullanıcının yazdığı ad ve not kaçışlanır; tek h1, düğme karaoke ekranına
+  const evil = session({ id: 7, date: "2026-11-24", hour: 14, paymentStatus: "none", desk: "booking", customerName: '<img src=x onerror="alert(1)">', note: "<script>x</script>" });
+  for (const m of [renderStaffMorning([evil], "2026-11-24"), renderStaffSoon(evil, tr("2026-11-24", 11))]) {
+    assert.doesNotMatch(m.html, /<img src=x|<script>/);
+    assert.match(m.html, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt; · 4 kişi/);
+    assert.match(m.html, /Not: &lt;script&gt;x&lt;\/script&gt;/);
+    assert.equal(m.html.match(/<h1 /g)?.length, 1);
+    assert.match(m.html, /<a href="[^"]*\/panel\/karaoke"[^>]*>Karaoke ekranını aç<\/a>/);
+  }
+});
+
 // ---------------------------------------------------------------- Bağlantılar (kaynak)
 
 test("adres yalnız şifreli sütunda: yedeğe girmez, günlüğe ve işlem geçmişine yazılmaz, ekrana gitmez", () => {

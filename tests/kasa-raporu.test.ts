@@ -246,6 +246,38 @@ test("e-posta: konu, sonuç, döküm; not kaçışlı, metin sürümü yıldızs
   assert.match(plain(m.text), /120 ₺ EKSİK/);
 });
 
+test("e-posta: yazılan her metin kaçışlı (ad, sayan, onay, şube, cihaz, neye çıktı, kasadan çıkan, zayi, ikram, not)", () => {
+  const evil = `<img src=x onerror="alert(1)">&'`;
+  const m = renderCashReport(
+    { ...okcDay, cashOut: 100, cashOutNote: evil, note: evil },
+    {
+      by: evil,
+      countedBy: `${evil}2`,
+      revision: 1,
+      submittedAt: new Date("2026-10-21T20:15:00Z"),
+      approval: evil,
+      branch: { id: "marina", name: evil },
+      device: { label: evil, registerNo: evil },
+      waste: { ikram: evil, zayi: evil },
+      cashOuts: [{ kind: "harcama", amount: 100, store: evil, description: evil, photo: false }],
+    },
+  );
+  assert.doesNotMatch(m.html, /<img\b/i, "ham etiket yok");
+  assert.doesNotMatch(m.html, /onerror="/);
+  const html = plain(m.html);
+  const E = "&lt;img src=x onerror=&quot;alert\\(1\\)&quot;&gt;&amp;&#39;";
+  assert.match(html, new RegExp(`<title>[^<]*${E}[^<]*</title>`), "konu (şube adı)");
+  assert.match(html, new RegExp(`Gün sonu kasa raporu · KR-20261021 · ${E}<`), "başlık (şube adı)");
+  assert.match(html, new RegExp(`>${E} · sayan ${E}2 · 23:15`), "gönderen ve sayan");
+  assert.match(html, new RegExp(`>${E}</div>`), "onay satırı");
+  assert.match(html, new RegExp(`>Banka POS Z raporu \\(yazarkasa\\) · ${E} · sicil ${E} · Z no 0188`), "cihaz adı ve sicil");
+  assert.match(html, new RegExp(`>− Gün içinde çıkan<div[^>]*>${E}</div>`), "neye çıktı");
+  assert.match(html, new RegExp(`· ${E} \\(${E}\\)`), "kasadan çıkan satır");
+  assert.match(html, new RegExp(`>İkram:</span> ${E}<`));
+  assert.match(html, new RegExp(`>Zayi:</span> ${E}<`));
+  assert.match(html, new RegExp(`>Not:</strong> ${E}<`));
+});
+
 /**
  * Yazarkasa Z'li gün (docs/planlar/okc-z.md §8): ModPOS nakdi yazarkasadan 120 ₺ fazla, ModPOS toplamı online satış ve
  * nakit farkı kadar fazla; kart ve banka gün sonu aynı; tek oranlı (%10) gün
