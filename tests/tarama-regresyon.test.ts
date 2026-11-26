@@ -30,8 +30,9 @@ const DIZIN = join(__dirname, "fixtures/tarama");
 const yanit = JSON.parse(readFileSync(join(DIZIN, "yanit.json"), "utf8")) as VeriYaniti;
 
 /**
- * Bugünkü sonuç (çekirdek: wip/tarama-cekirdek ac82331) ve eşik. `hata`: en kötü köşe, köşegenin oranı, en çok;
- * `karar`: kabul edilen kararlar; `bilinen`: bugün yanlış (eşik yalnız kötüleşmeyi yakalar; düzelince sıkılaştırın).
+ * Bugünkü sonuç (çekirdek: wip/tarama-cekirdek 0096e18; ac82331'deki sonuçla aynı) ve eşik. `hata`: en kötü köşe,
+ * köşegenin oranı, en çok; `karar`: kabul edilen kararlar; `bilinen`: bugün yanlış (eşik yalnız kötüleşmeyi yakalar;
+ * düzelince sıkılaştırın).
  */
 const BEKLENTI: Record<string, { karar?: Karar[]; hata?: number; bilinen?: string }> = {
   // bugün %0,01
