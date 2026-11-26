@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useActionTransition } from "@/components/ui/action-error";
@@ -26,15 +26,27 @@ export interface ConnectQuestion {
 export function ConnectQuestionDialog({ question }: { question: ConnectQuestion }) {
   const [pending, start] = useActionTransition();
   const [open, setOpen] = useState(true);
+  // Pencere kapanınca (`open` false, Esc, arka plan) <dialog> onClose'u yine çağırır: yanıt verildikten ya da yanıt
+  // giderken gelen kapanma ikinci bir yanıt sayılmaz ("Yine de bağla"nın ardından "bağlanmadı" yazılmasın)
+  const answered = useRef(false);
+  const inFlight = useRef(false);
 
-  const answer = (connect: boolean) =>
+  const answer = (connect: boolean) => {
+    if (answered.current || inFlight.current) return;
+    inFlight.current = true;
     start(async () => {
-      const r = connect ? await confirmParasutConnection(question.account) : await cancelParasutConnection(question.account);
-      if (!r.ok) return void toast.error(r.error);
-      setOpen(false);
-      if (connect) toast.success("Paraşüt hesabı bağlandı");
-      else toast("Paraşüt hesabı bağlanmadı", { description: "Paraşüt'ün verdiği yetki silindi." });
+      try {
+        const r = connect ? await confirmParasutConnection(question.account) : await cancelParasutConnection(question.account);
+        if (!r.ok) return void toast.error(r.error);
+        answered.current = true;
+        setOpen(false);
+        if (connect) toast.success("Paraşüt hesabı bağlandı");
+        else toast("Paraşüt hesabı bağlanmadı", { description: "Paraşüt'ün verdiği yetki silindi." });
+      } finally {
+        inFlight.current = false;
+      }
     });
+  };
 
   return (
     <ConfirmDialog

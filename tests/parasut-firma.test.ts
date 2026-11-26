@@ -130,3 +130,11 @@ test("kaynak: belirteç onaysız yazılmaz; soru yalnız başlatan yöneticiye; 
   // Onay kaydı yedeğe girmez (önek)
   assert.match(read("src/lib/backup/format.ts"), /"parasut\.connect": /);
 });
+
+test("kaynak: soru penceresi tek yanıt verir; kapanış yanıttan sonra ikinci bir 'vazgeç' göndermez", () => {
+  const dialog = read("src/app/panel/parasut/connect-question.tsx");
+  // <dialog> `open` false olunca da onClose'u çağırır: onaydan sonra cancelParasutConnection gitmemeli
+  assert.match(dialog, /if \(answered\.current \|\| inFlight\.current\) return;/, "yanıt verildiyse ya da giderken kapanış yok sayılır");
+  assert.match(dialog, /answered\.current = true;\s*setOpen\(false\);/, "pencere ancak yanıt kaydedildikten sonra kapanır");
+  assert.match(dialog, /finally \{\s*inFlight\.current = false;\s*\}/, "başarısız yanıt yeniden denenebilir");
+});
