@@ -74,13 +74,20 @@ export const DAY_END_LOOKBACK_DAYS = 7;
 const SENDING_STALE_MS = 5 * 60_000;
 /**
  * Pavo'nun banka gün sonu çoğu zaman günün kapanışından bir iki dakika sonra biter ve LafPOS günü yeniden gönderir (24
- * Kasım 2026: 58 sn). Cihaz Pavo'ysa ve önceki gün de sonucu geldiyse gün sonu e-postası en çok bu kadar bekler:
- * karşılaştırma aynı e-postaya girer, yöneticiye ikinci bir Pavo e-postası gitmez. Gelmezse beklemeyi canlı yoklama ve
- * kontrol işi bitirir (finishWaitingDayEnds); yoksa günlük iş gönderir
+ * Kasım 2026: 58 sn). Cihaz Pavo'ysa gün sonu e-postası Pavo'nun sonucunu en çok bu kadar bekler (günün İLK gelişinden;
+ * yeniden gönderim beklemeyi uzatmaz): karşılaştırma aynı e-postaya girer, yöneticiye ikinci bir Pavo e-postası gitmez.
+ *
+ * Bekleme hiçbir zaman sonraki bir tetiğe kalmaz (25 Kasım 2026 akşamı: LafPOS ikinci gönderimi yapmadı, gece hiçbir tetik
+ * yoktu, e-posta gitmedi): beklemeye alan gönderimin kendi after()'ı süresi içinde Pavo'nun sonucunu yoklar, gelmezse
+ * e-postayı Pavo'suz gönderir (settlePavoWait); sonuç sonra gelirse kısa Pavo e-postası gider. Yeni LafPOS ilk gövdeyi Pavo
+ * bitince (ya da atlanınca) gönderir ve `bankPosPending` ile beklenip beklenmeyeceğini açıkça söyler
  */
-export const PAVO_WAIT_MS = 10 * 60_000;
+export const PAVO_WAIT_MS = 2 * 60_000;
 /** Canlı yoklamanın bekleyen gün sonuna bakma aralığı (sunucu örneği başına) */
 const WAIT_POLL_GAP_MS = 5 * 60_000;
+
+/** Gün sonu otomasyonunun seçenekleri: `noPavoWait` Pavo beklemesini bitirir (settlePavoWait'in süresi doldu) */
+export type DayEndOptions = SendOptions & { noPavoWait?: boolean };
 
 export type AutoReportResult = "written" | "updated" | "unchanged" | "human" | "no-count" | "old" | "deleted" | "skipped";
 /** "waiting": Pavo'nun sonucu bekleniyor (PAVO_WAIT_MS), sonraki gönderim ya da günlük iş gönderir */
@@ -171,11 +178,36 @@ async function loadStoredDay(db: DB | CashTx, date: string, branchId: string): P
 }
 
 /**
- * Gün sonu e-postası Pavo'nun sonucunu mu bekler: sonuç henüz yok, günün yazarkasası Pavo, gün PAVO_WAIT_MS'den yeni
- * geldi ve şubenin önceki LafPOS gününde Pavo sonucu vardı (otomatik banka gün sonu açık; kapalıysa beklemek boşuna)
+ * Günün LafPOS'tan ilk gelişi (aynı Z'nin sürüm geçmişindeki en eski gönderim; yoksa son gelişi) ve son gövdenin Pavo
+ * beklentisi (`bankPosPending`; eski LafPOS göndermez)
+ */
+async function dayArrival(db: DB, date: string, branchId: string, day: StoredDay): Promise<{ firstAt: Date; pending: boolean | undefined }> {
+  const [first] = await db
+    .select({ at: sql<Date | string>`min(${s.posDayRevisions.receivedAt})` })
+    .from(s.posDayRevisions)
+    .where(and(eq(s.posDayRevisions.date, date), eq(s.posDayRevisions.branchId, branchId), eq(s.posDayRevisions.zNo, day.z.zNo)));
+  const [last] = await db
+    .select({ body: s.posDayRevisions.body })
+    .from(s.posDayRevisions)
+    .where(and(eq(s.posDayRevisions.date, date), eq(s.posDayRevisions.branchId, branchId)))
+    .orderBy(desc(s.posDayRevisions.id))
+    .limit(1);
+  const firstAt = first?.at ? new Date(first.at) : day.receivedAt;
+  const pending = (last?.body as { bankPosPending?: unknown } | undefined)?.bankPosPending;
+  return { firstAt: firstAt.getTime() < day.receivedAt.getTime() ? firstAt : day.receivedAt, pending: typeof pending === "boolean" ? pending : undefined };
+}
+
+/**
+ * Gün sonu e-postası Pavo'nun sonucunu mu bekler: sonuç henüz yok, günün yazarkasası Pavo ve gün ilk gelişinden bu yana
+ * PAVO_WAIT_MS geçmedi. LafPOS `bankPosPending` gönderdiyse ona uyulur (false: banka gün sonu başlamayacak ya da bitti,
+ * beklenmez); göndermediyse (eski LafPOS) şubenin önceki LafPOS gününde Pavo sonucu varsa beklenir (otomatik banka gün
+ * sonu açık; kapalıysa beklemek boşuna)
  */
 async function waitsForPavo(db: DB, date: string, branchId: string, day: StoredDay, now: Date): Promise<boolean> {
-  if (day.bankPos || day.okc?.provider !== "pavo" || now.getTime() - day.receivedAt.getTime() >= PAVO_WAIT_MS) return false;
+  if (day.bankPos || day.okc?.provider !== "pavo") return false;
+  const arrival = await dayArrival(db, date, branchId, day);
+  if (arrival.pending === false || now.getTime() - arrival.firstAt.getTime() >= PAVO_WAIT_MS) return false;
+  if (arrival.pending === true) return true;
   const [prev] = await db
     .select({ bankPos: s.posDayReports.bankPos })
     .from(s.posDayReports)
@@ -530,14 +562,14 @@ export async function sendStaffDayEnd(db: DB, date: string, now = new Date(), op
  * Pavo'nun sonucu bekleniyorsa "waiting" (waitsForPavo). Başarısızsa hata kaydedilir; bir sonraki tetik (düzeltme ya da
  * günlük iş) yeniden dener. Sayımsız giden günün ilk sayımlı e-postası "düzeltildi" değil "kasa sayıldı" der.
  */
-export async function sendDayEndEmail(db: DB, date: string, report: ReportState, now = new Date(), opts?: SendOptions): Promise<DayEndEmailResult> {
+export async function sendDayEndEmail(db: DB, date: string, report: ReportState, now = new Date(), opts?: DayEndOptions): Promise<DayEndEmailResult> {
   const branchId = await lafposBranchId(db);
   const switchDay = await loadLafposSwitchDay(db);
   if (!isLafposDay(date, switchDay)) return "skipped";
   const day = await loadStoredDay(db, date, branchId);
   if (!day) return "skipped";
   await db.insert(s.lafposDayEnds).values({ date, branchId }).onConflictDoNothing();
-  if (await waitsForPavo(db, date, branchId, day, now)) {
+  if (!opts?.noPavoWait && (await waitsForPavo(db, date, branchId, day, now))) {
     const [st] = await db.select({ emailedHash: s.lafposDayEnds.emailedHash }).from(s.lafposDayEnds).where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
     if (st?.emailedHash !== day.hash) return "waiting";
   }
@@ -796,7 +828,7 @@ export async function runLafposDayEnd(
   db: DB,
   date: string,
   now = new Date(),
-  opts?: SendOptions,
+  opts?: DayEndOptions,
   recheck?: StrongRecheckDeps,
 ): Promise<{
   date: string;
@@ -879,17 +911,18 @@ export function claimLafposWaitPoll(nowMs: number = Date.now()): boolean {
 }
 
 /**
- * Pavo'yu bekleyen gün sonu e-postasının sonu: LafPOS günü yeniden göndermezse (kasa bilgisayarı kapandı, ağ düştü)
- * bekleme kendiliğinden bitmez, yöneticinin ve çalışanların e-postası sabahki işe kalırdı. Dün ve bugünün LafPOS günü
- * Pavo'yu bekleyen hâldeyse (cihaz Pavo, sonuç yok, e-postası gitmedi ve düşmedi) ve geleli PAVO_WAIT_MS geçtiyse o günün
- * otomasyonu çalışır (runLafposDayEnd: bekleme dolduğu için e-posta gider, Pavo'nun sonucu sonra gelirse kısa Pavo
- * e-postası). Bekleyen gün yoksa tek sorgu. Tetik: canlı yoklama (claimLafposWaitPoll) ve kontrol işi
+ * Gönderilmemiş gün sonu e-postasının tamamlanması (canlı yoklama ve kontrol işi): dün ve bugünün LafPOS günü e-postası
+ * gitmemiş hâldeyse (içerik özeti gönderilenden farklı, gönderimi düşmemiş, başka gönderim sürmüyor ya da işareti bayat) ve
+ * geleli PAVO_WAIT_MS geçtiyse o günün otomasyonu çalışır. İki durum: Pavo'yu bekleyen gün (LafPOS günü yeniden göndermedi)
+ * ve gönderimi yarıda kalan gün (işlev süresi doldu, `sending_at` kaldı). Düşen gönderim (email_error) sabah işine kalır:
+ * her yoklamada yeniden denenmez. Bekleyen gün yoksa tek sorgu
  */
 export async function finishWaitingDayEnds(db: DB, now = new Date(), opts?: SendOptions): Promise<Awaited<ReturnType<typeof runLafposDayEnd>>[]> {
   const today = businessDate(now);
-  const branchId = await lafposBranchId(db);
+  const [branchId, switchDay] = await Promise.all([lafposBranchId(db), loadLafposSwitchDay(db)]);
+  const stale = new Date(now.getTime() - SENDING_STALE_MS);
   const rows = await db
-    .select({ date: s.posDayReports.date, emailedHash: s.lafposDayEnds.emailedHash, emailError: s.lafposDayEnds.emailError })
+    .select({ date: s.posDayReports.date, emailedHash: s.lafposDayEnds.emailedHash, emailError: s.lafposDayEnds.emailError, sendingAt: s.lafposDayEnds.sendingAt })
     .from(s.posDayReports)
     .leftJoin(s.lafposDayEnds, and(eq(s.lafposDayEnds.date, s.posDayReports.date), eq(s.lafposDayEnds.branchId, s.posDayReports.branchId)))
     .where(
@@ -903,13 +936,55 @@ export async function finishWaitingDayEnds(db: DB, now = new Date(), opts?: Send
     .orderBy(s.posDayReports.date);
   const out: Awaited<ReturnType<typeof runLafposDayEnd>>[] = [];
   for (const r of rows) {
-    // Düşen gönderim (email_error) sabahki işe kalır: her yoklamada yeniden denenmez
-    if (r.emailError) continue;
+    // Düşen gönderim (email_error) sabahki işe kalır: her yoklamada yeniden denenmez. Süren gönderime dokunulmaz
+    if (r.emailError || !isLafposDay(r.date, switchDay) || (r.sendingAt && r.sendingAt > stale)) continue;
     const day = await loadStoredDay(db, r.date, branchId);
-    if (!day || day.bankPos || day.okc?.provider !== "pavo" || r.emailedHash === day.hash) continue;
+    if (!day || r.emailedHash === day.hash) continue;
     out.push(await runLafposDayEnd(db, r.date, now, opts));
   }
   return out;
+}
+
+/** settlePavoWait'in e-postayı göndermek için süresinin sonunda bıraktığı pay (rapor, Resend; ms) */
+export const SETTLE_SEND_MARGIN_MS = 12_000;
+/** settlePavoWait'in Pavo'nun sonucuna bakma aralığı (ms) */
+const SETTLE_POLL_MS = 3_000;
+
+/**
+ * Pavo'yu bekleyen gün sonunun aynı istekte bitmesi (POST /api/pos/gun after()'ı, ilk gönderim "waiting" döndüyse): süre
+ * içinde (deadlineAt − SETTLE_SEND_MARGIN_MS) birkaç saniyede bir Pavo'nun sonucu gelmiş mi bakılır. Gelirse ("arrived")
+ * e-postayı o gönderimin after()'ı gönderir; e-posta başka yoldan gittiyse "done". Gelmezse e-posta Pavo'suz gider
+ * (`noPavoWait`), sonuç sonra gelirse kısa Pavo e-postası. Böylece e-posta hiçbir gece sonraki bir tetiğe kalmaz
+ */
+export async function settlePavoWait(
+  db: DB,
+  date: string,
+  o: { deadlineAt: number; pollMs?: number; nowMs?: () => number; sleep?: (ms: number) => Promise<void> },
+): Promise<"arrived" | "done" | Awaited<ReturnType<typeof runLafposDayEnd>>> {
+  const nowMs = o.nowMs ?? Date.now;
+  const sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const branchId = await lafposBranchId(db);
+  const sendBy = o.deadlineAt - SETTLE_SEND_MARGIN_MS;
+  const check = async () => {
+    const [row] = await db
+      .select({ bankPos: s.posDayReports.bankPos, emailedHash: s.lafposDayEnds.emailedHash, dayHash: s.lafposDayEnds.dayHash })
+      .from(s.posDayReports)
+      .leftJoin(s.lafposDayEnds, and(eq(s.lafposDayEnds.date, s.posDayReports.date), eq(s.lafposDayEnds.branchId, s.posDayReports.branchId)))
+      .where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, branchId)))
+      .limit(1);
+    if (row?.bankPos) return "arrived" as const;
+    if (row?.emailedHash && row.emailedHash === row.dayHash) return "done" as const;
+    return null;
+  };
+  for (;;) {
+    const left = sendBy - nowMs();
+    if (left <= 0) break;
+    await sleep(Math.min(o.pollMs ?? SETTLE_POLL_MS, left));
+    const seen = await check();
+    if (seen) return seen;
+  }
+  // Gönderimin son anı gerçek saatle (Resend onu Date.now()'la karşılaştırır); `nowMs` yalnız testte sahte
+  return runLafposDayEnd(db, date, new Date(nowMs()), { deadlineAt: Date.now() + (o.deadlineAt - nowMs()), noPavoWait: true });
 }
 
 /**

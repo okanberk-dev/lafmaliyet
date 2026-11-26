@@ -1,4 +1,5 @@
 import { carryCheck, carryDiffText, computeCash, openingNeedsNote, reportNo, type CashReportFields } from "@/lib/cash-report";
+import { button, callout, emailShell, esc, hero, heading, para, section, stats, textRowHtml, type Row, type Tone } from "@/lib/email-kit";
 import { money } from "@/lib/format";
 import { normalizeVat, sameVat, type OkcVatLine } from "@/lib/okc-z";
 import { addDays, longDateTR } from "@/lib/reminders";
@@ -385,12 +386,18 @@ export interface DayEndMail {
   detail?: LafposDayDetail | null;
 }
 
+/** Kıyasın kısa sözü: "%11 fazla" / "%7 az" / "aynı"; kıyas günü bilinmiyorsa ya da cirosu yoksa null */
+export function compareWord(today: number, other: number | null): string | null {
+  if (other === null || other <= 0) return null;
+  const pct = Math.round(((today - other) / other) * 100);
+  return pct === 0 ? "aynı" : `%${Math.abs(pct)} ${pct > 0 ? "fazla" : "az"}`;
+}
+
 /** Kıyas metni: "18.000 ₺ (%11 fazla)" / "bilinmiyor" */
 export function compareText(today: number, other: number | null): string {
   if (other === null) return "bilinmiyor";
-  if (other <= 0) return money(other);
-  const pct = Math.round(((today - other) / other) * 100);
-  return `${money(other)} (${pct === 0 ? "aynı" : `%${Math.abs(pct)} ${pct > 0 ? "fazla" : "az"}`})`;
+  const word = compareWord(today, other);
+  return word === null ? money(other) : `${money(other)} (${word})`;
 }
 
 /**
@@ -530,22 +537,18 @@ export function renderPhotoMail(m: { branchName: string; date: string; check: La
   const subject = `${dayEndSubjectHead(m.branchName, m.date)} · gün sonu fotoğrafı ${m.check.state === "fark" ? "LafPOS'tan FARKLI" : "okunamadı, yönetici baksın"}`;
   const rows = photoRows(m.check);
   const headline = m.check.state === "fark" ? "Fotoğraf LafPOS'un rakamlarından farklı okundu" : `${photoUnsureText(m.check)}: fotoğrafa bakın`;
-  const rowHtml = ([label, value]: [string, string]) =>
-    `<tr><td style="padding:6px 0;font-family:${FONT};font-size:14px;color:#3f3f46;vertical-align:top">${esc(label)}</td><td align="right" style="padding:6px 0 6px 12px;font-family:${FONT};font-size:14px;font-weight:${/· FARK$/.test(value) ? 700 : 600};color:${/· FARK$/.test(value) ? "#b91c1c" : "#171717"}">${esc(value)}</td></tr>`;
-  const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(subject)}</title></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:${FONT}">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4f4f5"><tr><td align="center" style="padding:20px 12px 28px">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px">
-  <tr><td style="padding:0 4px 14px;font-family:${FONT}"><div style="font-size:16px;font-weight:600;color:#171717">L'Affogato ${esc(m.branchName)}</div><div style="font-size:12px;color:#71717a">Gün sonu fotoğrafı · ${esc(longDateTR(m.date))} ${m.date.slice(0, 4)} · gün sonu e-postası daha önce gitti</div></td></tr>
-  <tr><td style="background:#ffffff;border-radius:24px;padding:22px 20px">
-    <div style="background:${m.check.state === "fark" ? "#fef2f2" : "#fff7ed"};border-radius:12px;padding:10px 12px;font-family:${FONT};font-size:15px;line-height:20px;font-weight:700;color:${m.check.state === "fark" ? "#991b1b" : "#9a3412"}">${esc(headline)}</div>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:18px"><tr><td colspan="2" style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT};font-size:13px;font-weight:600;color:#3f3f46">${esc(PHOTO_TITLE)}</td></tr>${rows.map(rowHtml).join("")}</table>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px"><tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717"><a href="${esc(m.link)}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Panelde aç</a></td></tr></table>
-  </td></tr>
-  <tr><td style="padding:16px 12px 0;font-family:${FONT};font-size:12px;color:#a1a1aa;text-align:center">Bu e-posta kasa raporu alıcılarına gönderildi.</td></tr>
-</table>
-</td></tr></table>
-</body></html>`;
+  const fark = m.check.state === "fark";
+  const html = emailShell({
+    subject,
+    preheader: headline,
+    brandSubHtml: `Gün sonu fotoğrafı · ${esc(m.branchName)}`,
+    dateLabel: `${longDateTR(m.date)} ${m.date.slice(0, 4)}`,
+    cardHtml: `${heading("Gün sonu fotoğrafı", { eyebrow: "Gün sonu e-postası daha önce gitti" })}
+${callout(fark ? "bad" : "warn", [headline], { top: 18 })}
+${section(PHOTO_TITLE, rows.map(mailRow), { top: 28 })}
+${button(m.link, "Panelde aç")}`,
+    footer: "Bu e-posta kasa raporu alıcılarına gönderildi.",
+  });
   const text = [subject, "", headline, "", PHOTO_TITLE, ...rows.map(([l, v]) => `${l}: ${v}`), "", `Panelde aç: ${m.link}`].join("\n");
   return { subject, html, text };
 }
@@ -603,34 +606,43 @@ export function dayEndNotes(m: DayEndMail): string[] {
   return out;
 }
 
-const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+/**
+ * E-postadaki satır (email-kit): "· ödeme türü" satırları küçük ve içeride; "FARK" ve "eksik" kırmızı, "fazla" turuncu,
+ * "tutuyor" yeşil (renk tek başına anlam taşımaz: kelime yanında)
+ */
+function mailRow([label, value]: [string, string]): Row | string {
+  if (label.startsWith("· ")) return textRowHtml(null, `${label.slice(2)}: ${value}`, false, { muted: true, indent: true });
+  const tone: Tone | null = /FARK/.test(value) || / eksik$/.test(value) ? "bad" : / fazla$/.test(value) ? "warn" : value === "tutuyor" ? "good" : null;
+  // Uzun açıklamalı değer (fotoğraf, yazarkasa) sağa sıkışmaz: etiketin altında satır olur
+  if (value.length > 34) return textRowHtml(label, value);
+  return { label, value, tone };
+}
 
 /** Gün sonu e-postası: konu, HTML ve düz metin. Maliyet ve kâr yok (alıcılar yönetici ya da hesabı olmayan adres) */
 export function renderDayEnd(m: DayEndMail): { subject: string; html: string; text: string } {
   const subject = `${dayEndSubject(m.branchName, m.date, { result: dayEndCashResult(m), corrected: m.corrected, recount: m.recount })}${m.bankPos && pavoState(m.bankPos) === "fark" ? " · Pavo FARK VAR" : ""}${m.photo?.check?.state === "fark" ? " · Fotoğraf FARKLI" : ""}`;
   const sections = dayEndSections(m);
   const notes = dayEndNotes(m);
-  const rowHtml = ([label, value]: [string, string]) =>
-    `<tr><td style="padding:6px 0;font-family:${FONT};font-size:14px;color:#3f3f46">${esc(label)}</td><td align="right" style="padding:6px 0 6px 12px;font-family:${FONT};font-size:14px;font-weight:600;color:#171717;white-space:nowrap">${esc(value)}</td></tr>`;
-  const sectionHtml = (s: { title: string; rows: [string, string][] }) =>
-    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:18px"><tr><td colspan="2" style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT};font-size:13px;font-weight:600;color:#3f3f46">${esc(s.title)}</td></tr>${s.rows.map(rowHtml).join("")}</table>`;
-  const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(subject)}</title></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:${FONT}">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4f4f5"><tr><td align="center" style="padding:20px 12px 28px">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px">
-  <tr><td style="padding:0 4px 14px;font-family:${FONT}"><div style="font-size:16px;font-weight:600;color:#171717">L'Affogato ${esc(m.branchName)}</div><div style="font-size:12px;color:#71717a">LafPOS gün sonu · ${esc(longDateTR(m.date))} ${m.date.slice(0, 4)}</div></td></tr>
-  <tr><td style="background:#ffffff;border-radius:24px;padding:22px 20px">
-    <div style="font-family:${FONT};font-size:13px;color:#71717a">Toplam satış</div>
-    <div style="font-family:${FONT};font-size:28px;line-height:34px;font-weight:700;color:#171717">${esc(money(m.z.zTotal))}</div>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:10px"><tr><td style="background:${m.corrected ? "#fff7ed" : "#f4f4f5"};border-radius:12px;padding:10px 12px;font-family:${FONT};font-size:13px;line-height:18px;color:${m.corrected ? "#9a3412" : "#3f3f46"}">${notes.map(esc).join("<br>")}</td></tr></table>
-    ${sections.map(sectionHtml).join("\n    ")}${m.bankPos ? `\n    ${pavoSectionHtml(m.bankPos)}` : ""}
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px"><tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717"><a href="${esc(m.link)}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Panelde aç</a></td></tr></table>
-  </td></tr>
-  <tr><td style="padding:16px 12px 0;font-family:${FONT};font-size:12px;color:#a1a1aa;text-align:center">Bu e-posta kasa raporu alıcılarına gönderildi.</td></tr>
-</table>
-</td></tr></table>
-</body></html>`;
+  const result = dayEndCashResult(m);
+  const resultTone: Tone = result === "kasa tutuyor" ? "good" : / eksik$/.test(result) ? "bad" : "warn";
+  const kasaValue = result === "kasa tutuyor" ? "tutuyor" : result;
+  const cmp = (c: DayCompare) => (c.zTotal === null ? "bilinmiyor" : (compareWord(m.z.zTotal, c.zTotal) ?? money(c.zTotal)));
+  const html = emailShell({
+    subject,
+    preheader: `Toplam satış ${money(m.z.zTotal)} · ${result}${m.corrected ? " · düzeltildi" : ""}`,
+    brandSubHtml: `LafPOS gün sonu · ${esc(m.branchName)}`,
+    dateLabel: `${longDateTR(m.date)} ${m.date.slice(0, 4)}`,
+    cardHtml: `${hero({ label: "Toplam satış", value: money(m.z.zTotal), sub: `Z ${m.z.zNo} · ${m.z.receipts} fiş` })}
+${stats([
+  { label: "Kasa", value: kasaValue, tone: resultTone },
+  { label: "Düne göre", value: cmp(m.yesterday) },
+  { label: "Geçen haftaya göre", value: cmp(m.lastWeek) },
+])}
+${callout(m.corrected || m.recount ? "warn" : "neutral", notes, { top: 14 })}
+${sections.map((x, i) => section(x.title, x.rows.map(mailRow), { top: i === 0 ? 30 : 32 })).join("\n")}${m.bankPos ? `\n${pavoSectionHtml(m.bankPos)}` : ""}
+${button(m.link, "Panelde aç")}`,
+    footer: "Bu e-posta kasa raporu alıcılarına gönderildi.",
+  });
   const text = [
     subject,
     "",
@@ -663,7 +675,15 @@ export function renderStaffDayEnd(m: { branchName: string; date: string; kind: "
   if (m.kind === "sayim-yok") {
     const subject = `${m.branchName} · kasa sayılmadı · ${day}`;
     const text = [`${m.branchName} gün sonu sayımsız geldi (${day}).`, "", STAFF_NO_COUNT_TEXT].join("\n");
-    const html = `<!doctype html><html lang="tr"><body style="font-family:Inter,Arial,sans-serif;color:#171a26"><h2 style="margin:0 0 12px">${esc(m.branchName)} · kasa sayılmadı</h2><p style="color:#5f6371;margin:0 0 12px">${esc(day)}</p><p style="margin:0">${esc(STAFF_NO_COUNT_TEXT)}</p></body></html>`;
+    const html = emailShell({
+      subject,
+      preheader: "Çekmece sayılmadı: LafPOS'ta Kasa föyü'nden sayın.",
+      brandSubHtml: `Gün sonu · ${esc(m.branchName)}`,
+      dateLabel: day,
+      cardHtml: `${heading(`${m.branchName} · kasa sayılmadı`, { eyebrow: day })}
+${callout("warn", [STAFF_NO_COUNT_TEXT], { top: 18 })}`,
+      footer: "Bu e-posta Kasa › Rapor alıcıları › Çalışanlar adreslerine gönderildi.",
+    });
     return { subject, html, text };
   }
   const z = m.z;
@@ -676,7 +696,16 @@ export function renderStaffDayEnd(m: { branchName: string; date: string; kind: "
   }
   const subject = `${m.branchName} · gün sonu alındı · ${day}`;
   const text = [`${m.branchName} gün sonu alındı (${day}).`, "", ...rows.map(([k, v]) => `${k}: ${v}`), "", "Emeğiniz için teşekkürler."].join("\n");
-  const html = `<!doctype html><html lang="tr"><body style="font-family:Inter,Arial,sans-serif;color:#171a26"><h2 style="margin:0 0 12px">${esc(m.branchName)} · gün sonu alındı</h2><p style="color:#5f6371;margin:0 0 12px">${esc(day)}</p><table style="border-collapse:collapse">${rows.map(([k, v]) => `<tr><td style="padding:4px 16px 4px 0;color:#5f6371">${esc(k)}</td><td style="padding:4px 0;font-weight:600">${esc(v)}</td></tr>`).join("")}</table><p style="margin-top:16px">Emeğiniz için teşekkürler.</p></body></html>`;
+  const html = emailShell({
+    subject,
+    preheader: `Z ${z.zNo} · ${z.receipts} fiş. Emeğiniz için teşekkürler.`,
+    brandSubHtml: `Gün sonu · ${esc(m.branchName)}`,
+    dateLabel: day,
+    cardHtml: `${heading(`${m.branchName} · gün sonu alındı`, { eyebrow: day })}
+${section("Gün sonu", rows.map(([label, value]) => ({ label, value })), { top: 24 })}
+${para("Emeğiniz için teşekkürler.", { top: 24 })}`,
+    footer: "Bu e-posta Kasa › Rapor alıcıları › Çalışanlar adreslerine gönderildi.",
+  });
   return { subject, html, text };
 }
 

@@ -1,8 +1,10 @@
 import { ALERT_MISSING_MAX, alertSubject, alertText, alertTitle, type ChecklistAlert } from "@/lib/checklist-alerts";
 import { listTitle } from "@/lib/checklists";
+import { button, C, divider, emailShell, esc, FONT, heading, para, pill, TABLE, type Tone } from "@/lib/email-kit";
 import { dateTR } from "@/lib/format";
+import { longDateTR } from "@/lib/reminders";
 
-import { APP_URL, emailLayout, esc, FONT } from "./digest-template";
+import { APP_URL } from "./digest-template";
 
 /** Personel e-postasının alt notu */
 export const ALERT_FOOTER = "Bu e-posta kontrol listelerini dolduran personele gönderildi. Liste tamamlanınca hatırlatma gelmez.";
@@ -10,36 +12,69 @@ export const ALERT_FOOTER = "Bu e-posta kontrol listelerini dolduran personele g
 /** Listenin doldurma ekranı */
 export const alertLink = (templateId: number) => `${APP_URL}/panel/kontrol/${templateId}`;
 
+/** Uyarının rozeti: gecikme kırmızı, zamanı gelen turuncu (sabah e-postasının "gecikmiş" ve "bugün"üyle aynı ton; kelime yanında) */
+const KIND: Record<ChecklistAlert["kind"], { word: string; tone: Tone }> = {
+  late: { word: "Gecikti", tone: "bad" },
+  due: { word: "Zamanı geldi", tone: "warn" },
+};
+
+/** İkinci ve sonraki uyarının başlığı (email-kit'in heading()'i h1; e-postada tek h1 kalsın diye kitin ölçüleriyle h2) */
+const subHeading = (text: string) =>
+  `<h2 style="margin:0;font-family:${FONT};font-size:20px;line-height:27px;font-weight:700;letter-spacing:-0.01em;color:${C.ink};word-break:break-word">${esc(text)}</h2>`;
+
 /**
- * Personele kontrol listesi hatırlatması (saatlik iş): bir ya da birkaç uyarı (gecikmeler önce), her biri başlık,
- * son saat, eksik maddeler (en çok ALERT_MISSING_MAX) ve "Listeyi aç" düğmesi. Sabah e-postasıyla aynı kabuk; ödeme ya
- * da maliyet taşımaz.
+ * Boş onay kutusu: 16 px'lik çerçeveli hücre. Tablo, çünkü Outlook masaüstü div'in genişlik ve yüksekliğini bilmez (kutu
+ * sütun boyu çizgiye dönerdi); `separate`, çünkü kabuğun `border-collapse:collapse`'ı köşe yuvarlamasını siler
+ */
+const CHECKBOX = `<table role="presentation" width="16" cellspacing="0" cellpadding="0" border="0" style="border-collapse:separate"><tr><td width="12" height="12" style="width:12px;height:12px;border:2px solid ${C.quiet};border-radius:5px;font-size:0;line-height:0;mso-line-height-rule:exactly">&nbsp;</td></tr></table>`;
+
+/**
+ * Yapılmayan maddeler (email-kit'te onay kutulu liste yok; kitin renk ve yazısıyla): her madde boş bir onay kutusuyla
+ * (doldurma ekranındaki gibi), satırlar ince çizgiyle ayrılır, metin sarılır; fazlası kutusuz gri "ve N madde daha"
+ */
+function todoList(items: readonly string[], more: number): string {
+  const row = (html: string, i: number, mark: boolean) => {
+    const border = `border-top:1px solid ${i ? C.hair : C.line};`;
+    return `<tr>
+  <td width="30" style="${border}width:30px;padding:15px 0 12px;vertical-align:top">${mark ? CHECKBOX : ""}</td>
+  <td style="${border}padding:12px 0;font-family:${FONT};font-size:${mark ? 15 : 14}px;line-height:22px;color:${mark ? C.ink : C.mute};vertical-align:top;word-break:break-word">${html}</td>
+</tr>`;
+  };
+  const list = [...items.map((m, i) => row(esc(m), i, true)), ...(more > 0 ? [row(esc(`ve ${more} madde daha`), items.length, false)] : [])];
+  return list.length ? `<table ${TABLE} style="border-collapse:collapse;margin-top:18px">${list.join("\n")}</table>` : "";
+}
+
+/** Bir uyarı: rozet, başlık (ilki h1), son saat ve eksik sayısı, yapılmayan maddeler, "Listeyi aç" (ilki ana düğme) */
+function alertBlock(a: ChecklistAlert, n: number): string {
+  const k = KIND[a.kind];
+  const missing = a.missing.slice(0, ALERT_MISSING_MAX);
+  const title = alertTitle(a, listTitle);
+  return [
+    n ? divider(36) : "",
+    `<div style="margin:${n ? 30 : 0}px 0 12px">${pill(k.word, k.tone)}</div>`,
+    n ? subHeading(title) : heading(title),
+    para(alertText(a), { top: 8 }),
+    todoList(missing, a.missing.length - missing.length),
+    button(alertLink(a.templateId), "Listeyi aç", { top: 22, secondary: n > 0 }),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
+ * Personele kontrol listesi hatırlatması (saatlik iş): bir ya da birkaç uyarı (gecikmeler önce), her biri rozet,
+ * başlık, son saat, eksik maddeler (en çok ALERT_MISSING_MAX) ve "Listeyi aç" düğmesi. E-postaların ortak tasarımı
+ * (src/lib/email-kit.ts); ödeme ya da maliyet taşımaz.
  */
 export function renderChecklistAlert(alerts: ChecklistAlert[], today: string) {
   const subject = alertSubject(alerts, listTitle);
   const late = alerts.some((a) => a.kind === "late");
-  const blocks = alerts
-    .map((a, n) => {
-      const color = a.kind === "late" ? "#b91c1c" : "#171717";
-      const missing = a.missing.slice(0, ALERT_MISSING_MAX);
-      const more = a.missing.length - missing.length;
-      return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="${n ? "margin-top:18px;border-top:1px solid #e4e4e7;padding-top:16px" : ""}"><tr><td style="font-family:${FONT}">
-  <div style="font-size:13px;line-height:18px;font-weight:600;color:${a.kind === "late" ? "#b91c1c" : "#71717a"}">${a.kind === "late" ? "Gecikti" : "Zamanı geldi"}</div>
-  <h1 style="margin:4px 0 6px;font-size:${n ? 18 : 22}px;line-height:${n ? 24 : 28}px;font-weight:600;letter-spacing:-0.02em;color:${color}">${esc(alertTitle(a, listTitle))}</h1>
-  <div style="font-size:14px;line-height:20px;color:#3f3f46">${esc(alertText(a))}</div>
-  <ul style="margin:10px 0 0;padding-left:18px;font-size:14px;line-height:21px;color:#3f3f46">${missing.map((m) => `<li>${esc(m)}</li>`).join("")}${more > 0 ? `<li>ve ${more} madde daha</li>` : ""}</ul>
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717">
-    <a href="${alertLink(a.templateId)}" style="display:block;padding:14px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Listeyi aç</a>
-  </td></tr></table>
-</td></tr></table>`;
-    })
-    .join("\n");
-  const html = emailLayout({
+  const html = emailShell({
     subject,
     preheader: alerts.map((a) => alertTitle(a, listTitle)).join(" · "),
-    brandSub: late ? "Kontrol listesi gecikti" : "Kontrol listesi hatırlatması",
-    today,
-    card: blocks,
+    brandSubHtml: esc(late ? "Kontrol listesi gecikti" : "Kontrol listesi hatırlatması"),
+    dateLabel: longDateTR(today),
+    cardHtml: alerts.map(alertBlock).join("\n"),
     footer: ALERT_FOOTER,
   });
   const text = [

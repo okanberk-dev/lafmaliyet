@@ -89,6 +89,7 @@ Gövde katı JSON, en çok 256 KB. Tutarlar TL (iki ondalık; fazlası yuvarlan�
 | `ikram[]` | `posName`, `siteMenuId`, `slot`, `qty`, `menuValue`, `reason` (en çok 200 karakteri saklanır) |
 | `payments[]` | `name`, `zField` (`cash`, `card`, `meal_card`, `online`, `other`), `channel` (komisyon anahtarı: `pluxee`, `multinet`, `edenred`, `setcard`, `metropol`, `yemeksepeti`…; `null` olabilir), `count`, `amount` |
 | `bankPos` | İsteğe bağlı: Pavo'nun banka gün sonu ve LafPOS kıyası (`status`, `batchNo`, `at`, `pavoCard`, `lafposCard`, `diff`, `acquirers[]`, `message`; Faz 2: `errorCode`, cihazın hata kodu, ör. `"5085"`, alındıysa `null`; aşağıda "Pavo – LafPOS kart karşılaştırması"). Okunamazsa gün yine yazılır |
+| `bankPosPending` | İsteğe bağlı (LafPOS, 25 Kasım 2026): Pavo'nun banka gün sonu bu gün için sürüyor ya da birazdan başlayacak mı. `false` gün sonu e-postası Pavo'yu beklemez, `true` en çok 2 dakika bekler ("Pavo'yu bekler"); yoksa önceki günün sonucuna bakılır. Okunamazsa yok sayılır |
 | `revision` | Faz 2: bu tarihin kaçıncı gönderimi (1'den; LafPOS'tan 200 almış gönderimler + 1). `pos_day_reports.revision` ve sürüm geçmişi |
 | `correction` | Faz 2: `{ kind: "reopen" \| "recount", reason }`, yalnız düzeltmeden sonraki ilk kabul edilen gövdede (gün yeniden açıldı ya da kapandıktan sonra sayım değişti); sonraki gönderim (Pavo sonucu) taşımaz, kayıtlı düzeltme silinmez |
 | `offDevice` | Faz 2: `{ card, cash }`, mali fişi yazarkasada kesilmeyen satış ödemeleri (bahşiş hariç) |
@@ -925,13 +926,19 @@ hazırlanmamışlar "tüketim değil", kapanmış adisyondan iade `refund` ayrı
 LafPOS'un gününde bu bölümler yok.
 
 - **Pavo'yu bekler** (25 Kasım 2026; canlıda 24 Kasım'da gün sonu 22:03'te, Pavo'nun sonucu 58 sn sonra ayrı e-postayla
-  gitmişti): Pavo'nun sonucu henüz yoksa, günün yazarkasası Pavo'ysa ve önceki LafPOS gününde sonucu geldiyse (otomatik
-  banka gün sonu açık) e-posta 10 dakika bekler (`PAVO_WAIT_MS`, sonuç `waiting`). Sonuç gelince LafPOS günü
-  yeniden gönderir ve tek e-posta karşılaştırmayla gider. LafPOS günü yeniden göndermezse (kasa bilgisayarı kapandı, ağ
-  düştü) beklemeyi panel bitirir (`finishWaitingDayEnds`): açık bir panel sekmesinin canlı yoklaması (en çok 5 dakikada
-  bir) ya da kontrol hatırlatma işi (22:07, 22:37) bekleme dolan dünkü ya da bugünkü günün yöneticisine ve çalışanlarına
-  e-postayı gönderir; Pavo'nun sonucu sonra gelirse kısa Pavo e-postası gider. Kimse panele bakmıyor ve GitHub işi de
-  gecikiyorsa e-posta sabahki günlük işe kalır.
+  gitmişti): Pavo'nun sonucu henüz yoksa ve günün yazarkasası Pavo'ysa e-posta en çok 2 dakika bekler (`PAVO_WAIT_MS`,
+  sonuç `waiting`; süre günün **ilk** gelişinden sayılır, sonucsuz yeniden gönderim beklemeyi uzatmaz). LafPOS gövdede
+  `bankPosPending` gönderirse ona uyulur: `false` (banka gün sonu başlamayacak, atlandı ya da bitti) beklenmez, `true`
+  beklenir; göndermeyen eski LafPOS'ta önceki LafPOS gününde sonuç geldiyse (otomatik banka gün sonu açık) beklenir. Sonuç
+  gelince LafPOS günü yeniden gönderir ve tek e-posta karşılaştırmayla gider.
+- **Bekleme sonraki bir tetiğe kalmaz** (25 Kasım 2026 akşamı e-posta bu yüzden gitmedi: LafPOS günü yeniden göndermedi,
+  gece ne açık panel sekmesi ne çalışan bir zamanlanmış iş vardı, e-posta sabahki işe kaldı). Beklemeye alan gönderimin
+  kendi işi (`POST /api/pos/gun` after()'ı, `settlePavoWait`) süresi içinde birkaç saniyede bir Pavo'nun sonucuna bakar;
+  sonuç gelirse e-postayı o gönderim gönderir, gelmezse isteğin başından ~38 sn sonra e-posta Pavo'suz gider (çalışanlarınki
+  de), sonuç sonra gelirse kısa Pavo e-postası. İşlevin süresi isteğin başından sayılır (60 sn).
+- Yedek: işlev yarıda kalırsa (süre doldu, `sending_at` bayatladı) ya da bekleme başka bir nedenle sürerse canlı yoklama
+  (açık panel sekmesi, en çok 5 dakikada bir; `maxDuration` 60) ve kontrol işi (`finishWaitingDayEnds`) dünkü ya da bugünkü
+  e-postası gitmemiş her LafPOS gününü tamamlar (gönderimi düşmüş gün, `email_error`, sabahki işe kalır).
 - Gün başına içerik başına bir kez: günün özeti (`dayHash`: Z, ödemeler, ikram) gönderilenle aynıysa gitmez. LafPOS
   düzeltip farklı rakamla yeniden gönderirse konu "· düzeltildi" ile ve başta "Düzeltildi: …" notuyla bir kez daha gider.
   Sayımsız giden gün sayımla gelince bu düzeltme sayılmaz: konu "· kasa sayıldı", başta "Önceki e-postada sayım yoktu"
