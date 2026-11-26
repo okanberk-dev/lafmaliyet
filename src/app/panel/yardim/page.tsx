@@ -433,9 +433,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Turuncu alanları fişle karşılaştırıp gönderin; hiçbir şey kendiliğinden kaydedilmez. LafPOS&apos;lu şubede rapor LafPOS&apos;un gün sonundan
             kendisi yazılır; personel yalnız Pavo&apos;nun gün sonu fişinin (detaylı Z) fotoğrafını Gün sonu fotoğrafı kartına ekler. Kasadan çıkan paranın fişini aynı ekranda Fiş ekle ile çekin;
             kaydedince Harcamalar&apos;a da yazılır. Okuma Claude ile yapılır (fotoğraf başına birkaç sent); aç / kapat ve bu ayın tutarı Ayarlar › Fotoğraftan
-            okuma&apos;da. Fotoğraf çekilince önce Belgeyi tara ekranı açılır: kâğıt kendiliğinden bulunup kırpılır ve düz çevrilir, taranmış gibi
-            görünür (köşe yanlışsa sürüklenir). Bulanık, parlamalı ya da kesik çekimde Yeniden çek önerilir; uzun fiş Devamını çek ile parça parça çekilip
-            tek fişte birleşir. Fiş, rapor ya da fatura olmayan bir şey çekilirse kırpılmaz.
+            okuma&apos;da.
           </>
         ),
         icon: Receipt,
@@ -443,6 +441,20 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           { href: "/panel/kasa", label: "Kasa raporu" },
           { href: "/panel/ayarlar#foto", label: "Fotoğraftan okuma" },
         ],
+      },
+      {
+        id: "belge-tara",
+        q: "Fotoğraf çekince açılan Belgeyi tara ekranı",
+        a: (
+          <>
+            Z raporu, fiş ya da fatura fotoğrafı çekilince önce Belgeyi tara ekranı açılır: kâğıt kendiliğinden bulunup kırpılır, yan çekildiyse düz
+            çevrilir ve taranmış gibi görünür (kâğıt beyaz, yazı koyu). Köşe yanlışsa sürüklenir. Bulanık, parlamalı, karanlık ya da kesik çekimde tek satır
+            uyarı ve Yeniden çek çıkar; Kullan yine serbesttir. Uzun fiş Devamını çek ile en çok 3 parçada çekilir, parçalar tek fişte birleşir (birleşemezse
+            ayrı fotoğraf olur). Fiş, rapor ya da fatura olmayan bir şey (ekran, telefon, koli) kırpılmaz. Taramadan kullan fotoğrafı olduğu gibi ekler.
+          </>
+        ),
+        icon: ScanText,
+        links: [{ href: "/panel/kasa", label: "Kasa raporu" }],
       },
       {
         id: "yazarkasa-z",
