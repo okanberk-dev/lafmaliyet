@@ -16,18 +16,50 @@ import {
   MAX_IMAGE_SIDE,
   sizeError,
   uploadErrorText,
+  uploadKindOf,
   uploadPlan,
 } from "./document-rules";
 
-export type Prepared = { ok: true; file: File; compressed: boolean } | { ok: false; error: string };
+/** `cancelled`: tarama ekranı kapatıldı (hata değil; hiçbir şey yüklenmez) */
+export type Prepared = { ok: true; file: File; compressed: boolean } | { ok: false; error: string; cancelled?: boolean };
 
 /** En uzun kenarı 2000px'i aşmayan JPEG (fatura yazısı okunur kalır); saydam alan beyaz olur */
 const toJpeg = (file: Blob) => compressImage(file, { maxEdge: MAX_IMAGE_SIDE, quality: JPEG_QUALITY });
 
-/** Seçilen dosyayı yüklemeye hazırlar: PDF ve küçük JPEG olduğu gibi, diğer fotoğraflar küçültülerek */
-export async function prepareDocument(file: File): Promise<Prepared> {
-  const plan = uploadPlan(file);
+/**
+ * Fotoğraf seçildiyse önce tarama ekranı (src/components/panel/scan-editor.tsx; docs/FOTOGRAF.md › Belge tarama):
+ * taranmış hâl faturanın belgesi olur. Faturanın belgesinde asıl fotoğraf ayrıca saklanmaz (asıl hâli isteyen
+ * "Taramadan kullan"ı seçer); yapay zekâya köşe sorulmaz. Ekran yüklenemezse fotoğraf taramasız sürer; kapatılırsa null.
+ */
+async function scanDocumentPhoto(file: File): Promise<File | "skip" | null> {
+  let mod: typeof import("@/components/panel/scan-editor");
+  try {
+    mod = await import("@/components/panel/scan-editor");
+  } catch {
+    return "skip";
+  }
+  const choice = await mod.openScanEditor(file, { hint: false }).result;
+  if (!choice) return null;
+  if (choice.kind === "skip") return "skip";
+  return new File([choice.scanned], jpegName(file.name), { type: "image/jpeg" });
+}
+
+/**
+ * Seçilen dosyayı yüklemeye hazırlar: PDF olduğu gibi; fotoğraf önce taranır (ya da taramadan), sonra küçük JPEG olduğu
+ * gibi, ötekiler küçültülerek
+ */
+export async function prepareDocument(input: File): Promise<Prepared> {
+  let file = input;
+  let plan = uploadPlan(file);
   if (plan.action === "reject") return { ok: false, error: plan.error };
+  if (uploadKindOf(file) === "image") {
+    const scanned = await scanDocumentPhoto(file);
+    if (!scanned) return { ok: false, error: "", cancelled: true };
+    if (scanned !== "skip") {
+      file = scanned;
+      plan = uploadPlan(file);
+    }
+  }
   if (plan.action === "send") return { ok: true, file, compressed: false };
   let blob: Blob;
   try {
