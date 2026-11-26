@@ -21,7 +21,6 @@ import {
   Grid3x3,
   HandCoins,
   HardDriveDownload,
-  HandCoins,
   HelpCircle,
   History,
   Landmark,
