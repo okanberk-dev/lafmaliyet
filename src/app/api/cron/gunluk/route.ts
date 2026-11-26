@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { countStep, dailyOutcome, digestStep, gunSonuStep, modposStep, photosStep, reminderStep, requestsStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
+import { countStep, dailyOutcome, digestStep, gunSonuStep, modposStep, photosStep, reminderStep, requestsStep, vardiyaStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
 import { weeklyStep, WEEKLY_DEADLINE_MS, type WeeklyRunResult } from "@/lib/weekly/core";
 import { capped, JOB_SEND_DEADLINE_MS, JOB_TAIL_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
@@ -20,6 +20,7 @@ import { syncSiteMenu } from "@/server/site-menu/sync";
 import { syncSiteSales } from "@/server/site-sales/sync";
 import { expireStaffRequests } from "@/server/staff-requests/core";
 import { cleanupPhotos } from "@/server/storage/photos";
+import { pushPlanReminders } from "@/server/vardiya/notify";
 import { runWeeklyStep } from "@/server/weekly/send";
 
 // Her sabah 08:00–09:00 (05:00 UTC; Vercel Hobby'de saat esnek, bir saatlik pencere): sabah e-postası (ödemeler +
@@ -31,7 +32,8 @@ import { runWeeklyStep } from "@/server/weekly/send";
 // Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md), ayın son günü ay sonu
 // stok sayımı bildirimi (tamamlanmadıysa). Pazartesi (gönderilemezse salı, çarşamba) yöneticilere haftalık özet
 // (docs/HAFTALIK-OZET.md). Süresi dolan personel istekleri (kasadan
-// çıkan) kapanır ve tuttukları fotoğraflar bırakılır (docs/ONAYLAR.md). ModPOS'un kasa föyü (dün ve bir geçmiş gün,
+// çıkan) kapanır ve tuttukları fotoğraflar bırakılır (docs/ONAYLAR.md). Cuma–Pazar gelecek haftanın vardiyası yazılmamış
+// şube için yöneticilere bildirim (docs/VARDIYA.md › Bildirimler). ModPOS'un kasa föyü (dün ve bir geçmiş gün,
 // günde 2 hak; docs/MODPOS-API.md) de Paraşüt'le aynı anda yalnız bir kez çekilir, sabah e-postasından önce beklenir.
 // Her çalışma ve adımlarının sonucu job_runs'a yazılır (Ayarlar › Günlük işler); e-posta gidemezse ya da iş hiç
 // çalışmazsa ertesi sabah Paraşüt işinin bekçisi söyler. Zaman bütçesi jobStart'tan: sabah e-postasının gönderimi en
@@ -154,8 +156,16 @@ export async function GET(request: NextRequest) {
       { error: "süre doldu" },
     );
   };
+  // Vardiya (docs/VARDIYA.md › Bildirimler): Cuma–Pazar sabahı gelecek haftanın planı yazılmamış şube için yöneticilere
+  // bildirim (şube ve gün başına bir kez); en çok 5 sn, kuyruğun 55 sn'sini aşmadan. Adım yalnız bildirim denenince yazılır
+  const vardiyaTask = () =>
+    capped(
+      pushPlanReminders(getDb(), new Date()).catch((e: Error) => ({ error: e.message })),
+      Math.min(5_000, tailStepDeadline(jobStart) - Date.now()),
+      { error: "süre doldu" },
+    );
   const extras = async () => {
-    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu] = await Promise.all([
+    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu, vardiya] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
       // Karaoke eşitlemesi ve KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (docs/KARAOKE.md › KVKK); ardından
       // karaoke e-postaları (misafirin hatırlatması, personelin sabah listesi), kuyruğun 55 sn'sini aşmadan
@@ -168,7 +178,9 @@ export async function GET(request: NextRequest) {
       weeklyTask(),
       requestsTask(),
       gunSonuTask(),
+      vardiyaTask(),
     ]);
+    const vardiyaResult = vardiyaStep(vardiya);
     const countResult = countStep(count);
     const weeklyResult = weeklyStep(weekly);
     const requestsResult = requestsStep(requests);
@@ -183,6 +195,7 @@ export async function GET(request: NextRequest) {
       ...(weeklyResult ? { weekly: weeklyResult } : {}),
       ...(requestsResult ? { requests: requestsResult } : {}),
       ...(gunSonuResult ? { gunSonu: gunSonuResult } : {}),
+      ...(vardiyaResult ? { vardiya: vardiyaResult } : {}),
     };
     return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp, requests }, steps, weekly: weekly.status };
   };
