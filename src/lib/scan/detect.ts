@@ -351,6 +351,44 @@ function notPaper(ctx: Ctx, lum: number, chroma: number, textIn: number | null):
 }
 
 /**
+ * Dörtgenin içeriği (15×15 örnek): `variety` doygun örneklerden baskın renk tonunun (ve iki komşu tonun) dışında
+ * kalanların oranı: renkli döşemeli POS ekranı, ambalaj. Tek renk kâğıt (sarı ya da pembe nüsha) ve renkli ışık bunu
+ * yükseltmez. `saturated` doygun örneklerin, `dark` görüntünün aydınlığına göre koyu örneklerin oranı.
+ */
+function interiorContent(ctx: Ctx, q: Quad): { variety: number; saturated: number; dark: number } {
+  const { w, h, rgba } = ctx;
+  const N = 15;
+  const bins = new Array<number>(12).fill(0);
+  let saturated = 0;
+  let dark = 0;
+  for (let i = 1; i <= N; i++) {
+    for (let j = 1; j <= N; j++) {
+      const u = i / (N + 1);
+      const v = j / (N + 1);
+      const x = (1 - u) * (1 - v) * q[0].x + u * (1 - v) * q[1].x + u * v * q[2].x + (1 - u) * v * q[3].x;
+      const y = (1 - u) * (1 - v) * q[0].y + u * (1 - v) * q[1].y + u * v * q[2].y + (1 - u) * v * q[3].y;
+      const k = Math.max(0, Math.min(h - 1, Math.round(y))) * w + Math.max(0, Math.min(w - 1, Math.round(x)));
+      if (ctx.lum[k] < 0.5 * ctx.lumHigh) dark++;
+      if (ctx.chroma[k] <= 60) continue;
+      saturated++;
+      const r = rgba[k * 4];
+      const g = rgba[k * 4 + 1];
+      const b = rgba[k * 4 + 2];
+      // ton (0–360), 30°'lik kutular
+      const hue = (Math.atan2(Math.sqrt(3) * (g - b), 2 * r - g - b) * 180) / Math.PI + 360;
+      bins[Math.floor(hue / 30) % 12]++;
+    }
+  }
+  const n = N * N;
+  let dom = 0;
+  for (let i = 0; i < 12; i++) {
+    const s = bins[(i + 11) % 12] + bins[i] + bins[(i + 1) % 12];
+    if (s > dom) dom = s;
+  }
+  return { variety: (saturated - dom) / n, saturated: saturated / n, dark: dark / n };
+}
+
+/**
  * Kareye dayanan kenar gerçekten kâğıt mı: kâğıt o yönde kareden taşıyorsa karenin hemen içindeki şerit de kâğıttır.
  * Şerit zemine benziyorsa (örneklerin kâğıtlığı içeriden çok dışarıya yakın) dörtgen kâğıdı karenin kenarına kadar
  * boşuna uzatmıştır (dokulu zeminde iki gerçek kenar + iki kare kenarı, dört gerçek kenarlı adayı geçmesin). Döner:
@@ -1080,6 +1118,18 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
     }
     reasons.push(best ? "kenar-zayif" : "aday-yok");
     return { corners: null, confidence: best ? Math.min(0.2, confidenceOf(best)) : 0, method: null, fillsFrame: false, reasons };
+  }
+  // Belge değil: içerisi çok renkli (POS ekranının döşemeleri) ya da bir bölümü doygun renkli (ambalaj, fincan; tek renk
+  // nüsha kâğıdın tamamı renklidir, logo küçüktür), görüntüde yazı yokken içerisi koyu ya da doygun
+  // (telefon, fincan, paket) ya da dörtgen karenin %2'sinden küçük (koli etiketi; o boyda fiş okunmaz, yakından
+  // çekilmeli). Kırpmak yerine "belge yok": ekran elle seçmeyi ve yapay zekâ ipucunu açar.
+  const content = interiorContent(ctx, best.q);
+  const noText = (best.parts?.tin ?? -1) < 0;
+  const notDoc =
+    content.variety >= 0.15 || (content.saturated >= 0.15 && content.saturated <= 0.75) ? "renkli-icerik" : noText && (content.dark >= 0.4 || content.saturated >= 0.4) ? "yazisiz-nesne" : best.area < 0.02 ? "cok-kucuk" : null;
+  if (notDoc) {
+    reasons.push("kagida-benzemiyor", notDoc);
+    return { corners: null, confidence: Math.min(0.2, confidenceOf(best)), method: null, fillsFrame: false, reasons };
   }
   let confidence = confidenceOf(best);
   // birbirinden farklı iki aday yakın puanlıysa emin değiliz
