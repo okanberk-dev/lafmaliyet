@@ -1,14 +1,15 @@
 import { verifySignature } from "@/lib/karaoke/signature";
 
+import { LAFPOS_SECRET_MIN } from "./secret-rules";
+
+export { LAFPOS_SECRET_MIN };
+
 /**
  * LafPOS'un imzalı isteklerinin denetimi (saf; uçlar ve testler paylaşır). İmza laffogato.net bağlantısınınkiyle aynı
  * kural ve aynı kod (src/lib/karaoke/signature.ts: zaman, yöntem, yol, sıralı sorgu, gövdenin SHA-256'sı; ±5 dakika,
  * sabit süreli karşılaştırma); anahtarı ayrı: LAFPOS_SYNC_SECRET (LafPOS'ta LAFMALIYET_SYNC_SECRET). Böylece kafedeki
  * makinede sitenin anahtarı durmaz, iki anahtar ayrı döndürülür. Ayrıntı: docs/LAFPOS.md.
  */
-
-/** Anahtar en az bu kadar karakter; kısaysa yok sayılır (uçlar 503) */
-export const LAFPOS_SECRET_MIN = 32;
 
 /**
  * Anahtarın neden kullanılmadığı (Ayarlar'daki LafPOS kartı söyler): yok, 32 karakterden kısa ya da sitenin anahtarıyla

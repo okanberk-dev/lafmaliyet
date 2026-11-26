@@ -82,6 +82,7 @@ import {
 } from "../logic";
 import { priceText } from "../price-text";
 import { PriceHistoryCard, type ProductPriceHistoryInfo } from "./price-history-card";
+import { RecipeHistoryCard, type RecipeHistoryRow } from "./recipe-history-card";
 import { SiteMenuCard, type ProductSiteInfo } from "./site-menu-card";
 
 interface IngredientOption {
@@ -207,6 +208,7 @@ export function RecipeEditor({
   priceImpact = null,
   site = null,
   priceHistory = null,
+  recipeHistory = null,
   soldOutNote = null,
 }: {
   product: {
@@ -256,6 +258,8 @@ export function RecipeEditor({
   site?: ProductSiteInfo | null;
   /** Satış fiyatı geçmişi ve kasanın (ModPOS) durumu (docs/FIYATLAR.md); okunamadıysa kart gösterilmez */
   priceHistory?: ProductPriceHistoryInfo | null;
+  /** Reçete geçmişi (docs/DONEM-KAPANISI.md › Reçete geçmişi); okunamadıysa kart gösterilmez */
+  recipeHistory?: RecipeHistoryRow[] | null;
   /** Siparişler ekranının Tükenenler kartıyla kapatıldıysa: "Personel tükendi yaptı · Selin 21:40" (dalga 10 §2.1) */
   soldOutNote?: string | null;
 }) {
@@ -1142,6 +1146,13 @@ export function RecipeEditor({
           {priceHistory ? (
             <motion.div {...rise(4, reduce)}>
               <PriceHistoryCard product={{ id: product.id, name: product.name, size: product.size }} history={priceHistory} />
+            </motion.div>
+          ) : null}
+
+          {/* Reçete geçmişi: kim, ne zaman, ne değişti (dokununca önce / sonra) */}
+          {recipeHistory ? (
+            <motion.div {...rise(5, reduce)}>
+              <RecipeHistoryCard rows={recipeHistory} />
             </motion.div>
           ) : null}
         </div>

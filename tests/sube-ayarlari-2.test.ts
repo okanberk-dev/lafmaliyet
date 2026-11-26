@@ -192,8 +192,9 @@ test("kaynak: LafPOS'un imzalı uçları anahtarı şube ayarından okur (paneld
   const routes = ["src/app/api/pos/gun/route.ts", ...readdirSync("src/app/api/panel/pos").map((d) => `src/app/api/panel/pos/${d}/route.ts`)];
   for (const f of routes) {
     const src = read(f);
-    assert.match(src, /await lafposSecret\(\)/, f);
-    assert.doesNotMatch(src, /[^t] lafposSecret\(\)/, `${f}: senkron okuma kalmadı`);
+    // İsteğin anahtarı: önbellek ön süzgeç, imza tutarsa veritabanından yeniden (döndürülen eski anahtar geçmez)
+    assert.match(src, /await lafposRequestSecret\(request(, body)?\)/, f);
+    assert.doesNotMatch(src, /[^t] lafpos(Request)?Secret\(/, `${f}: senkron okuma kalmadı`);
   }
   const branch = read("src/server/lafpos/branch.ts");
   assert.match(branch, /if \(stored\) return \{ env: \{ \.\.\.env, LAFPOS_SYNC_SECRET: stored \}, source: "panel" \};/);
@@ -207,7 +208,7 @@ test("kaynak: LafPOS'un imzalı uçları anahtarı şube ayarından okur (paneld
   assert.ok(save.indexOf("await requireStepUp(me, confirm,") < save.indexOf("db.transaction("));
   assert.ok(save.indexOf("forgetLafposSecret();") > save.indexOf("db.transaction("), "kayıttan sonra önbellek düşer");
   // İmzalı uçların okuması önbellekli ve veritabanı hatasında null (503)
-  assert.match(branch, /if \(hit && now - hit\.at < LAFPOS_BRANCH_CACHE_MS\) stored = hit\.stored;/);
+  assert.match(branch, /if \(hit && now - hit\.at < LAFPOS_BRANCH_CACHE_MS\) entry = hit;/);
   assert.match(branch, /console\.error\("\[lafpos\] anahtar okunamadı", e\);\s*return null;/);
   assert.match(branch, /export function forgetLafposBranch\(\): void \{\s*cache = new WeakMap\(\);\s*forgetLafposSecret\(\);/);
   assert.match(save, /d\.secret === process\.env\.KARAOKE_SYNC_SECRET\?\.trim\(\)/);

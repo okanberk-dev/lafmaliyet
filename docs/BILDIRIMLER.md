@@ -233,8 +233,13 @@ işler'de "Resend yanıt vermedi; e-posta yine de gitmiş olabilir." diye görü
 yalnız Vercel günlüğündedir. Aynı gün **Bugünküleri şimdi gönder** aynı tekil anahtarla gider: ilk ileti ulaştıysa
 Resend ikinci kez göndermez.
 
+**Personel belgeleri** (yalnız yönetici; [PERSONEL-BELGE.md](PERSONEL-BELGE.md)): zilin **Uyarılar** başlığında süresi
+dolan belgeler tek satır ("2 personel belgesinin süresi doldu"), 30 gün içinde bitecekler tek satır; sabah e-postasında
+"Personel belgeleri" kutusu, her belge her aşamada bir kez (`belge:<id>:<bitiş>:30`, `belge:<id>:<bitiş>:bitti`).
+Yenilenen belge ve ayrılan kişinin belgesi hatırlatılmaz; seçili şubenin (şubeye bağlı alıcıda o şubenin) kişileri.
+
 **Ek kutular (geliştirici notu).** Başka ekranların sabah e-postasına eklediği kutular (komisyon ve hakediş, dünkü
-kontrol listeleri, onay bekleyenler) `src/server/notify/digest-extras.ts` › `DIGEST_EXTRA_SOURCES` listesinde birer
+kontrol listeleri, onay bekleyenler, personel belgeleri) `src/server/notify/digest-extras.ts` › `DIGEST_EXTRA_SOURCES` listesinde birer
 satırdır: `{ key, news, load(today, { preview }) }`; kutunun kendisi (`DigestBox`: başlık, satırlar, panel yolu,
 bağlantı metni, konu parçası, başlık) grubun kendi saf modülünde kurulur ve sınanır. Kaynaklar ötekilerle aynı anda,
 her biri en çok 4 saniye yüklenir; hata veren ya da geciken kutu düşer, e-postayı bozmaz. `news: true` kutu e-postayı
@@ -242,7 +247,7 @@ tek başına gönderir; `news: false` kutu yalnız zaten giden e-postaya eklenir
 böyle bir kaynak yok, satış tahmini 4 Kasım 2026'da kalktı). Kutunun anahtarları (`komisyon:<uyarı>`, `kontrol:<gün>`) tekil anahtara girer ve yalnız başarılı
 gönderimden sonra `notification_log`'a yazılır; daha önce bildirileni kaynak kendisi eler (onay bekleyenlerin anahtarı
 yok: karar verilene kadar her sabah). Gövdedeki sıra: sistem uyarıları, ödemeler, faturalar, kontrol bekleyen, fiyat
-onayı, komisyon, kontrol, onay bekleyenler, zam, düğme. Konuda kutunun
+onayı, komisyon, kontrol, onay bekleyenler, personel belgeleri, zam, düğme. Konuda kutunun
 parçası zamdan sonra eklenir ("Ödeme hatırlatması: 1 bugün · 1 hammaddeye zam · dünkü kapanış listesi eksik"); ödeme,
 sistem uyarısı, fatura ve fiyat onayı yoksa konu "Sabah özeti: <kutunun parçası>" olur, başlık ve düğme kutunun.
 Konu parçası ya da başlığı olmayan kutu e-postanın tek içeriğiyse konu ve başlık kutunun parçasını, o da yoksa adını
@@ -350,6 +355,15 @@ dener (adım "LafPOS gün sonu"). Ayrıntı:
   ÖNCE, kasada alın."); tutar yazmaz. **E-posta hatırlatmaları** kapalıysa gitmez.
 
 Tetikleyiciler kontrol listesi hatırlatmalarınınki (açık sekmenin canlı yoklaması, saatlik iş) ve sabah işi.
+
+## Muhasebeci paketi ve dönem kapanışı (26 Kasım 2026)
+
+- **Muhasebeci e-postası:** ayın 1'inde (sabah işi kaçarsa 2'si, 3'ü) geçen ayın paketi (.xlsx ekli) Ayarlar ›
+  Muhasebeci paketi'ndeki adreslere; adres yoksa ya da "Ay kapanınca gönder" kapalıysa gitmez. Personel ya da pasif
+  hesabın adresi düşer. Günlük işlerde adım "Muhasebe paketi" yalnız gönderilince ya da hata verince yazılır. Ayrıntı:
+  [MUHASEBE-PAKETI.md](MUHASEBE-PAKETI.md).
+- **Zil (yönetici, Fatura grubu):** "Kapalı döneme düşen kayıt var" (kapanmış aya sonradan gelen fatura ya da harcama,
+  kararı bekliyor); Ayarlar › Dönem kapanışı'na götürür. Ayrıntı: [DONEM-KAPANISI.md](DONEM-KAPANISI.md).
 
 ## Haftalık özet (pazartesi)
 

@@ -20,6 +20,8 @@ import { ALL_BRANCHES } from "@/lib/branches";
 import { currentPhysicalBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
+import { advanceCounts } from "@/server/staff-advances";
+import { dropStaffDocFiles, staffDocKeys } from "@/server/staff-docs";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zMonth, zOptText, zRate, zText } from "./util";
@@ -169,6 +171,8 @@ export async function saveStaff(
     const cur = currentMonthTR();
     const db = getDb();
     const changes: StaffChange[] = [];
+    /** Silinen kişilerin belge dosyaları: satırlar kişiyle birlikte gider (cascade), dosyalar işlemden sonra silinir */
+    let docKeys: string[] = [];
     /** Yemek kartı işaretinin taşındığı sonraki sürümler (kişi adı, aylar; inceleme bulgusu 8) */
     const carried: { name: string; months: string[] }[] = [];
     // Şubeler işlemden önce doğrulanır; yeni kişinin şubesi verilmezse seçili fiziksel şube
@@ -188,6 +192,7 @@ export async function saveStaff(
       const firstData = (await dataMonths(tx))[0] ?? null;
       // Bağlantılar (Faz 5): hesap var mı, hesabın şubesi satırın şubesi mi, aynı kişi aynı ayda iki satırda mı
       await checkStaffLinks(tx, data, removed, (i, before) => branchOf.get(i) ?? before ?? newcomerBranch!, cur);
+      const advances = await advanceCounts(tx, removed);
       for (const id of removed) {
         const [row] = await tx.select().from(s.staff).where(eq(s.staff.id, id));
         if (!row) continue;
@@ -197,6 +202,9 @@ export async function saveStaff(
             `${row.name} ${spanText(used)} maaş hesabına girdi; silinirse o ayların personel gideri değişir. Silmek yerine ayrıldığı ayı (bitiş ayı) girin.`,
           );
         }
+        // Avans hareketleri kişiyle birlikte giderdi (docs/PERSONEL-BELGE.md › Avans): önce hareketler silinir ya da bitiş ayı girilir
+        if (advances.get(id)) throw new UserError(`${row.name} için avans hareketi var; silmek yerine ayrıldığı ayı (bitiş ayı) girin.`);
+        docKeys = [...docKeys, ...(await staffDocKeys(tx, [id]))];
         await tx.delete(s.staff).where(eq(s.staff.id, id));
       }
       for (const [i, r] of data.entries()) {
@@ -303,6 +311,8 @@ export async function saveStaff(
         if (mode !== "none") changes.push({ id: r.id, name: r.name, mode, fromMonth });
       }
     });
+    // Silinen kişilerin belge dosyaları (satırlar gitti; silinemezse günlüğe yazılır, kayıt bozulmaz)
+    await dropStaffDocFiles(docKeys);
     const changed = changes.filter((c) => c.mode === "version" && c.fromMonth);
     const added = changes.filter((c) => !data.some((r) => r.id === c.id) && c.fromMonth);
     const message =
@@ -398,9 +408,11 @@ export async function staffDeleteBlockers(ids: number[]) {
       const rows = await tx.select().from(s.staff).where(inArray(s.staff.id, list));
       const past = await dataMonths(tx, cur);
       const out: Record<number, string> = {};
+      const advances = await advanceCounts(tx, list);
       for (const row of rows) {
         const used = staffUsedMonths(row, past);
         if (used.length) out[row.id] = `${spanText(used)} maaş hesabına girdi`;
+        else if (advances.get(row.id)) out[row.id] = "avans hareketi var";
       }
       return out;
     });

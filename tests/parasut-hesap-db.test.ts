@@ -51,11 +51,38 @@ class FakeParasut {
   /** Hangi firmaya hangi belirteçle gidildi */
   calls: { company: string; bearer: string }[] = [];
   grants: { grant: string; clientId: string }[] = [];
+  /** Firmaların vergi numarası (/v4/me › included › companies) */
+  taxNumbers = new Map<string, string | null>();
+  /** Belirteç (içinde geçen hesap adıyla) hangi firmaları görüyor; verilmezse yalnız kendi firması */
+  sees = new Map<string, string[]>();
+  /** /v4/me'yi 403 ile reddeden belirteçler (içinde geçen hesap adı) */
+  meRefused = new Set<string>();
+  /** /v4/me isteklerinin belirteçleri */
+  meCalls: string[] = [];
 
   reset() {
     for (const m of this.companies.values()) m.clear();
     this.calls = [];
     this.grants = [];
+    this.taxNumbers = new Map([
+      [TUZLA_CO, "1111111111"],
+      [MARINA_CO, "2222222222"],
+    ]);
+    this.sees = new Map();
+    this.meRefused = new Set();
+    this.meCalls = [];
+  }
+
+  /** `GET /v4/me?include=companies`: belirtecin hesabının firması (ya da `sees`), vergi numaralarıyla */
+  private me(bearer: string) {
+    this.meCalls.push(bearer);
+    const who = bearer.includes("marina") ? "marina" : "tuzla";
+    if (this.meRefused.has(who)) return this.json({ errors: [{ title: "Forbidden" }] }, 403);
+    const ids = this.sees.get(who) ?? [who === "marina" ? MARINA_CO : TUZLA_CO];
+    return this.json({
+      data: { id: "1", type: "users", attributes: { name: "Patron" } },
+      included: ids.map((id) => ({ id, type: "companies", attributes: { name: id === TUZLA_CO ? "Laf Tuzla" : "Laf Marina", tax_number: this.taxNumbers.get(id) ?? null } })),
+    });
   }
 
   private json(body: unknown, status = 200) {
@@ -105,6 +132,7 @@ class FakeParasut {
       this.grants.push({ grant: body.get("grant_type") ?? "", clientId: body.get("client_id") ?? "" });
       return this.json({ access_token: `t-${body.get("client_id")}`, refresh_token: `r-${body.get("client_id")}`, expires_in: 7200, created_at: Math.floor(Date.now() / 1000) });
     }
+    if (url.pathname === "/v4/me") return this.me(String((init?.headers as Record<string, string> | undefined)?.Authorization ?? "").replace(/^Bearer /, ""));
     const m = /^\/v4\/(\d+)\/(.+)$/.exec(url.pathname);
     assert.ok(m, url.pathname);
     const [, company, path] = m;
@@ -429,8 +457,9 @@ describe("Şube başına Paraşüt hesabı: veritabanında (iki firmalı sahte P
     // Tuzla'nın oturumunu sıfırlamak Marina'nın süren bağlanmasını bozmaz
     await connect.forgetParasutConnect("tuzla");
     const done = await connect.finishParasutConnect({ code: "kod-m", state: to.searchParams.get("state") }, (a) => accounts.isParasutAccount(a));
-    assert.deepEqual(done, { by: "Patron", account: "marina" });
+    assert.deepEqual(done, { by: "Patron", account: "marina", question: null }, "vergi numaraları farklı: sorulmadan bağlandı");
     assert.deepEqual(fake.grants, [{ grant: "authorization_code", clientId: "marina-istemci" }]);
+    assert.deepEqual(fake.meCalls, ["t-marina-istemci", "a-tuzla"], "Marina'nınki yeni belirteçle, Tuzla'nınki kendi oturumuyla okundu");
     assert.equal((await client.parasutConnection(undefined, undefined, "marina")).connected, true);
     const [tuzlaToken] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, "parasut.token"));
     assert.ok(tuzlaToken, "Tuzla'nın oturumu yerinde");
@@ -442,6 +471,72 @@ describe("Şube başına Paraşüt hesabı: veritabanında (iki firmalı sahte P
     const link = await links.setBranchSettingLink({ branchId: "marina", group: "parasut", sameAs: "tuzla" });
     assert.equal(link.ok, false);
     assert.match(!link.ok ? link.error : "", /kendi Paraşüt hesabından fatura geldi/);
+  });
+
+  test("aynı vergi numarası: Marina'nın yetkisi yazılmadan sorulur; vazgeçilince silinir, onaylanınca yazılır", async () => {
+    const off = await links.setBranchSettingLink({ branchId: "marina", group: "parasut", sameAs: null });
+    assert.ok(off.ok);
+    assert.ok((await actions.saveParasutSettings({ clientId: "marina-istemci", clientSecret: "marina-GIZLI", companyId: MARINA_CO, syncFrom: "" }, "marina")).ok);
+    const connect = await import("../src/server/parasut/connect");
+    const client = await import("../src/server/parasut/client");
+    const [me] = await db.select({ id: s.users.id }).from(s.users).limit(1);
+    const marinaConnected = async () => (await client.parasutConnection(undefined, undefined, "marina")).connected;
+    const begin = async () => new URL(await connect.startParasutConnect("marina", "Patron", me.id)).searchParams.get("state");
+    const finish = async (code: string) => connect.finishParasutConnect({ code, state: await begin() }, (a) => accounts.isParasutAccount(a), { userId: me.id });
+
+    // Aynı işletmenin iki Paraşüt firması: vergi numaraları aynı
+    fake.taxNumbers.set(MARINA_CO, "1111111111");
+    const done = await finish("kod-1");
+    assert.deepEqual(done.question, { kind: "same", taxNumber: "1111111111", others: ["Tuzla"] });
+    assert.equal(await marinaConnected(), false, "yetki onaysız yazılmadı");
+    assert.deepEqual(await connect.parasutConnectQuestion(me.id), { account: "marina", question: done.question });
+    assert.equal(await connect.parasutConnectQuestion(me.id + 1), null, "başka yöneticiye gösterilmez");
+    const [held] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, "parasut.connect.onay:marina"));
+    assert.ok(held && !JSON.stringify(held.value).includes("t-marina-istemci"), "bekletilen belirteç şifreli");
+
+    // Vazgeç: kayıt silinir, bağlanmaz; onay da tek kullanımlık (kayıt yokken onaylanamaz)
+    const no = await actions.cancelParasutConnection("marina");
+    assert.ok(no.ok, JSON.stringify(no));
+    assert.equal(await connect.parasutConnectQuestion(me.id), null);
+    assert.equal(await marinaConnected(), false);
+    const late = await actions.confirmParasutConnection("marina");
+    assert.equal(late.ok, false);
+    assert.match(!late.ok ? late.error : "", /bulunamadı ya da süresi doldu/);
+
+    // Yeniden bağla, bu kez "Yine de bağla": yetki yazılır, işlem geçmişinde iki karar da durur
+    await finish("kod-2");
+    const yes = await actions.confirmParasutConnection("marina");
+    assert.ok(yes.ok, JSON.stringify(yes));
+    assert.equal(await marinaConnected(), true, "onaylanınca yazıldı");
+    assert.equal(await connect.parasutConnectQuestion(me.id), null);
+    const logs = (await db.select({ action: s.activityLog.action, detail: s.activityLog.detail }).from(s.activityLog).orderBy(s.activityLog.id)).filter((l) => l.action.startsWith("Paraşüt hesabı"));
+    assert.deepEqual(
+      logs.map((l) => l.action),
+      ["Paraşüt hesabı bağlanmadı", "Paraşüt hesabı bağlandı"],
+    );
+    assert.match(logs[0].detail ?? "", /aynı vergi numarası \(1111111111; Tuzla\)/);
+    assert.match(logs[1].detail ?? "", /aynı vergi numarası uyarısı onaylandı \(1111111111; Tuzla\)/);
+
+    // Aynı Paraşüt kullanıcısı iki firmayı da görüyorsa Tuzla'nınki yeni belirteçle okunur (Tuzla'nın oturumu kullanılmaz)
+    fake.meCalls = [];
+    fake.sees.set("marina", [MARINA_CO, TUZLA_CO]);
+    assert.equal((await finish("kod-3")).question?.kind, "same");
+    assert.deepEqual(fake.meCalls, ["t-marina-istemci"]);
+    // Ayarlar değişince (istemci) onay bekleyen bağlantı da silinir
+    assert.ok((await actions.saveParasutSettings({ clientId: "marina-istemci-2", clientSecret: "marina-GIZLI-2", companyId: MARINA_CO, syncFrom: "" }, "marina")).ok);
+    assert.equal(await connect.parasutConnectQuestion(me.id), null);
+
+    // Okunamayan vergi numarası da sorulur: Tuzla'nın oturumu /me'yi reddediyor
+    fake.sees.clear();
+    fake.taxNumbers.set(MARINA_CO, "2222222222");
+    fake.meRefused.add("tuzla");
+    const unknown = await finish("kod-4");
+    assert.deepEqual(unknown.question, { kind: "unknown", taxNumber: "2222222222", others: ["Tuzla"] });
+    // Farklı ve okunabiliyorsa sorulmaz
+    fake.meRefused.clear();
+    assert.equal((await finish("kod-5")).question, null);
+    assert.equal(await marinaConnected(), true);
+    assert.equal(await connect.parasutConnectQuestion(me.id), null, "yeni istek eski soruyu sildi");
   });
 
   test("faturası yokken 'aynı' açılınca şubenin hesabı temizlenir; kapatılınca kopyalanmaz", async () => {

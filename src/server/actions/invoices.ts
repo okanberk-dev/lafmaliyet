@@ -47,6 +47,7 @@ import { lockCashOut } from "@/server/cash-outs/write";
 import { loadHandledCashOuts, loadPendingCashOutInvoices, updateHandledCashOuts, type PendingCashOutInvoice } from "@/server/data/cash-out-invoices";
 import { forgetPaid, rememberPaid } from "@/server/data/recent-paid";
 import { acceptedStockOnly, flagStockOnlyInvoices, stockOnlyIds, updateAcceptedStockOnly } from "@/server/data/stock-only-invoices";
+import { assertPeriodOpen } from "@/server/closed-period";
 import { getDb, schema as s } from "@/server/db";
 import { storeUpload } from "@/server/documents";
 import { invoiceAccountOf, invoiceAccountWhere } from "@/server/parasut/accounts";
@@ -262,6 +263,13 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
     }
     const [cur] = await db.select().from(s.invoices).where(eq(s.invoices.id, id)).limit(1);
     if (!cur) throw new UserError("Fatura bulunamadı; başka bir oturumda silinmiş olabilir. Sayfayı yenileyin.");
+    // Dönem kapanışı (docs/DONEM-KAPANISI.md): kapalı ayda sayılan faturanın tarihi, tutarları ve kategorisi değişmez,
+    // fatura kapalı aya taşınamaz. Ödeme, vade, şube ve not serbest; bekleyen fatura kilitli değil
+    const moneyMoved = (a: number, b: number) => Math.abs(a - b) >= 0.005;
+    const accountingChanged =
+      cur.category !== data.category ||
+      (!isParasutLinked(cur) && (cur.date !== data.date || moneyMoved(cur.amount, data.amount) || moneyMoved(cur.discount, data.discount) || moneyMoved(cur.payable, data.payable)));
+    if (accountingChanged) await assertPeriodOpen(db, cur, isParasutLinked(cur) ? [] : [data.date]);
     // Cari ödemesi sayılmış faturanın tutarı sayılandan aşağı inemez (Paraşüt'e bağlıda tutar kilitli)
     const floor = isParasutLinked(cur) ? null : payableFloorProblem(cur, data.payable);
     if (floor) throw new UserError(floor);
@@ -442,13 +450,25 @@ export async function setInvoiceCategory(changes: z.input<typeof categoryChanges
     // reddedilirse toplu değişiklikten hiçbiri yazılmaz ("Geri al" yarım bir listeyi geri yazmasın)
     const { rows, changed, byCategory } = await db.transaction(async (tx) => {
       const rows = await tx
-        .select({ id: s.invoices.id, category: s.invoices.category, supplier: s.invoices.supplier, date: s.invoices.date, invoiceNo: s.invoices.invoiceNo, payable: s.invoices.payable })
+        .select({
+          id: s.invoices.id,
+          category: s.invoices.category,
+          supplier: s.invoices.supplier,
+          date: s.invoices.date,
+          invoiceNo: s.invoices.invoiceNo,
+          payable: s.invoices.payable,
+          createdAt: s.invoices.createdAt,
+          periodDate: s.invoices.periodDate,
+        })
         .from(s.invoices)
         .where(inArray(s.invoices.id, [...wanted.keys()]))
         .orderBy(s.invoices.id)
         .for("update");
       if (!rows.length) throw new UserError("Faturalar bulunamadı; silinmiş olabilir. Sayfayı yenileyin.");
       const changed = rows.filter((r) => wanted.get(r.id) !== r.category);
+      // Kapalı ayda sayılan faturanın kategorisi değişmez (docs/DONEM-KAPANISI.md); toplu değişiklikte biri bile
+      // kapalı aydaysa hiçbiri yazılmaz
+      await assertPeriodOpen(tx, changed);
       // Birden çok fatura (toplu değişiklik ya da "N faturaya da uygula"): hiçbiri değişmez, hangisinin ayrılacağı söylenir
       await assertLinkedStayLinkable(
         tx,
@@ -1067,6 +1087,9 @@ export async function deleteInvoice(id: number) {
     const me = await requireAdmin();
     const invoiceId = zId.parse(id);
     const db = getDb();
+    // Kapalı ayda sayılan fatura silinmez (docs/DONEM-KAPANISI.md)
+    const [prior] = await db.select({ date: s.invoices.date, createdAt: s.invoices.createdAt, periodDate: s.invoices.periodDate }).from(s.invoices).where(eq(s.invoices.id, invoiceId)).limit(1);
+    if (prior) await assertPeriodOpen(db, prior);
     const result = await db.transaction(async (tx) => {
       // Önce cari bağları (K11): bağlı faturasız alımlar eski hâline döner, borçtan gelen ödemeler borca geri taşınır;
       // faturaya sayılan öteki ödemeler fatura silinince hesaba geçer

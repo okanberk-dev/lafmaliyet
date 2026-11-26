@@ -1,0 +1,612 @@
+{
+ "surum": 1,
+ "tohum": 4242,
+ "gorseller": [
+  {
+   "ad": "000-pavo-z-ahsap",
+   "dosya": "000-pavo-z-ahsap.jpg",
+   "genislik": 540,
+   "yukseklik": 720,
+   "kategori": "pavo-z",
+   "zemin": "ahsap",
+   "durum": "normal",
+   "beklenen": "kirp",
+   "koseler": [
+    [
+     91,
+     223.2
+    ],
+    [
+     253.5,
+     154.3
+    ],
+    [
+     341.9,
+     603.5
+    ],
+    [
+     123.9,
+     656
+    ]
+   ],
+   "senaryolar": [
+    "perspektif-guclu",
+    "donuk",
+    "golge-degrade"
+   ],
+   "jpegKalite": 78,
+   "tohum": 4242000,
+   "metin": [
+    "DENEME DONDURMA VE KAHVE A.Ş.",
+    "YALI MAH. SAHİL YOLU SOK. NO:7",
+    "KARTAL / İSTANBUL",
+    "KARTAL V.D. 2910456738",
+    "TARİH : 24.04.2026 SAAT : 21:50",
+    "FİŞ NO : 0185 Z NO : 0306",
+    "DETAYLI Z RAPORU",
+    "TOPLAM %1 *8.401,00",
+    "KDV %1 *83,18",
+    "TOPLAM %10 *1.293,00",
+    "KDV %10 *117,55",
+    "TOPLAM %20 *8.735,50",
+    "KDV %20 *1.455,92",
+    "TOPLAM *18.429,50",
+    "TOPLAM KDV *1.656,65",
+    "NAKİT *7.023,25",
+    "KREDİ KARTI *10.682,75",
+    "YEMEK KARTI *723,50",
+    "DEPARTMAN SATIŞLARI",
+    "KAHVE x144 *1.938,50",
+    "SOĞUK İÇECEK x38 *1.874,25",
+    "DONDURMA x144 *1.423,00",
+    "TATLI x70 *1.752,75",
+    "PAKET ÜRÜN x167 *1.057,75",
+    "ÇAY x88 *1.410,25",
+    "ATIŞTIRMALIK x74 *2.985,00",
+    "DİĞER x83 *1.342,25",
+    "SATIŞ FİŞ ADEDİ 216",
+    "İPTAL FİŞ ADEDİ 3",
+    "İPTAL TUTARI *137,75",
+    "İNDİRİM TOPLAMI *324,25",
+    "ARTIRIM TOPLAMI *0,00",
+    "FATURA ADEDİ 2",
+    "FATURA TOPLAMI *444,50",
+    "KÜMÜLATİF TOPLAM *3.248.482,25",
+    "KÜMÜLATİF KDV *360.500,25",
+    "EKÜ NO 0006",
+    "EKÜ KALAN %20",
+    "MF PV 00029838",
+    "MALİ DEĞERİ YOKTUR YAZMAZ"
+   ]
+  },
+  {
+   "ad": "001-market-uzun-beyaz-tezgah",
+   "dosya": "001-market-uzun-beyaz-tezgah.jpg",
+   "genislik": 540,
+   "yukseklik": 720,
+   "kategori": "market-uzun",
+   "zemin": "beyaz-tezgah",
+   "durum": "normal",
+   "beklenen": "kirp",
+   "koseler": [
+    [
+     282.2,
+     17.5
+    ],
+    [
+     441.9,
+     56.1
+    ],
+    [
+     259.8,
+     701.9
+    ],
+    [
+     59.9,
+     633.3
+    ]
+   ],
+   "senaryolar": [
+    "kivrilma",
+    "renkli-isik",
+    "parlama",
+    "uzun"
+   ],
+   "jpegKalite": 78,
+   "tohum": 4242001,
+   "metin": [
+    "ÜÇ YILDIZ SÜPERMARKET",
+    "MERKEZ MAH. ÇARŞI CAD. NO:5",
+    "TUZLA / İSTANBUL",
+    "ANADOLU KURUMLAR V.D. 7340012986",
+    "24.06.2026 FİŞ NO: 0229",
+    "SAAT: 21:40 KASA: 9",
+    "2 AD x 113,50",
+    "ÇÖP TORBASI %01 *227,00",
+    "MUZ KG %20 *425,50",
+    "DOMATES KG %20 *453,75",
+    "MUZ KG %10 *42,00",
+    "BULAŞIK DETERJANI %20 *96,25",
+    "6 AD x 142,50",
+    "MAKARNA 500 GR %10 *285,00",
+    "2 AD x 195,63",
+    "SALATALIK KG %10 *391,25",
+    "4 AD x 86,75",
+    "MUZ KG %20 *173,50",
+    "2 AD x 34,63",
+    "KREMA 200 ML %20 *69,25",
+    "BEYAZ PEYNİR KG %01 *398,25",
+    "4 AD x 211,63",
+    "TOZ ŞEKER 5 KG %20 *423,25",
+    "MUZ KG %10 *96,75",
+    "SU 5 LT %01 *83,50",
+    "ÇÖP TORBASI %20 *117,00",
+    "MADEN SUYU 6'LI %10 *233,50",
+    "PEÇETE 100'LÜ %20 *444,00",
+    "SU 5 LT %10 *388,00",
+    "YUMURTA 15'Lİ %01 *67,75",
+    "AYÇİÇEK YAĞI 5 LT %20 *154,75",
+    "MADEN SUYU 6'LI %01 *178,75",
+    "MUZ KG %20 *316,75",
+    "BEYAZ PEYNİR KG %10 *242,25",
+    "KREMA 200 ML %01 *99,25",
+    "2 AD x 228,88",
+    "ÇÖP TORBASI %10 *457,75",
+    "KREMA 200 ML %10 *452,50",
+    "TAM BUĞDAY EKMEK %01 *114,50",
+    "TAM BUĞDAY EKMEK %10 *309,75",
+    "SU 5 LT %10 *115,25",
+    "LİMON KG %10 *15,25",
+    "3 AD x 124,00",
+    "SÜT 1 LT %20 *248,00",
+    "ISLAK MENDİL %10 *141,00",
+    "YUMURTA 15'Lİ %01 *261,25",
+    "3 AD x 44,38",
+    "FINDIK EZMESİ %20 *88,75",
+    "KREMA 200 ML %01 *379,50",
+    "KAĞIT HAVLU 6'LI %20 *128,50",
+    "PEÇETE 100'LÜ %01 *367,50",
+    "2 AD x 156,50",
+    "SÜT 1 LT %01 *313,00",
+    "TAM BUĞDAY EKMEK %01 *13,25",
+    "SALATALIK KG %10 *211,50",
+    "TOZ ŞEKER 5 KG %01 *109,25",
+    "MADEN SUYU 6'LI %10 *307,25",
+    "4 AD x 223,88",
+    "KAŞAR PEYNİRİ 600G %10 *447,75",
+    "4 AD x 204,63",
+    "ISLAK MENDİL %20 *409,25",
+    "TOPKDV *993,35",
+    "TOPLAM *10.298,00",
+    "NAKİT *10.300,00",
+    "PARA ÜSTÜ *2,00",
+    "EKÜ NO: 2 Z NO: 514",
+    "MF YK 17740459",
+    "TEŞEKKÜR EDERİZ"
+   ]
+  },
+  {
+   "ad": "002-banka-batch-koyu-tezgah",
+   "dosya": "002-banka-batch-koyu-tezgah.jpg",
+   "genislik": 540,
+   "yukseklik": 720,
+   "kategori": "banka-batch",
+   "zemin": "koyu-tezgah",
+   "durum": "normal",
+   "beklenen": "kirp",
+   "koseler": [
+    [
+     46.9,
+     116.6
+    ],
+    [
+     392.5,
+     49.8
+    ],
+    [
+     502.8,
+     619.4
+    ],
+    [
+     181.9,
+     698.2
+    ]
+   ],
+   "senaryolar": [
+    "golge-degrade",
+    "parlama",
+    "58mm"
+   ],
+   "jpegKalite": 72,
+   "tohum": 4242002,
+   "metin": [
+    "ÜÇÜNCÜ KATILIM",
+    "ÖRNEK KAHVE GIDA SAN. TİC.",
+    "TUZLA / İSTANBUL",
+    "İŞYERİ NO 927396140",
+    "TERMİNAL NO PV746903",
+    "04.02.2026 22:21",
+    "BATCH NO 000417",
+    "GÜN SONU RAPORU",
+    "GRUP KAPAMA BAŞARILI",
+    "VISA  43 1.270,50 TL",
+    "MASTERCARD  56 217,75 TL",
+    "TROY  51 5.330,00 TL",
+    "AMEX  30 5.609,25 TL",
+    "SATIŞ ADET 180",
+    "SATIŞ TUTAR 12.427,50 TL",
+    "İADE ADET 0",
+    "İADE TUTAR 0,00 TL",
+    "İPTAL ADET 2",
+    "NET TOPLAM 12.427,50 TL",
+    "BU BELGEYİ SAKLAYINIZ"
+   ]
+  },
+  {
+   "ad": "003-fatura-a4-mermer",
+   "dosya": "003-fatura-a4-mermer.jpg",
+   "genislik": 540,
+   "yukseklik": 720,
+   "kategori": "fatura-a4",
+   "zemin": "mermer",
+   "durum": "normal",
+   "beklenen": "kirp",
+   "koseler": [
+    [
+     87.3,
+     207.7
+    ],
+    [
+     373.5,
+     195.7
+    ],
+    [
+     431.3,
+     624.6
+    ],
+    [
+     88,
+     658.2
+    ]
+   ],
+   "senaryolar": [
+    "karanlik",
+    "golge-degrade",
+    "odak"
+   ],
+   "jpegKalite": 78,
+   "tohum": 4242003,
+   "metin": [
+    "1 Karton bardak 8 oz (1000 adet) 9 Adet 925,50 %10 832,95 8.329,50",
+    "2 Karton bardak 8 oz (1000 adet) 37 Adet 266,50 %1 98,61 9.860,50",
+    "3 Karton bardak 8 oz (1000 adet) 13 Adet 278,00 %1 36,14 3.614,00",
+    "4 Karamel sosu 1 kg 38 Adet 939,75 %10 3.571,05 35.710,50",
+    "5 Karamel sosu 1 kg 9 Adet 586,50 %10 527,85 5.278,50",
+    "6 Peçete baskılı (koli) 35 Adet 333,25 %1 116,64 11.663,75",
+    "7 Karamel sosu 1 kg 7 Adet 937,75 %1 65,64 6.564,25",
+    "8 Çikolata sosu 1 kg 40 Adet 803,50 %20 6.428,00 32.140,00",
+    "9 Toz şeker stick (1000 adet) 31 Adet 657,50 %20 4.076,50 20.382,50",
+    "10 Temizlik seti 26 Adet 482,75 %20 2.510,30 12.551,50",
+    "11 Islak mendil tekli (koli) 5 Adet 790,25 %1 39,51 3.951,25",
+    "12 Temizlik seti 29 Adet 23,75 %1 6,89 688,75",
+    "DENEME AMBALAJ SANAYİ LTD. ŞTİ.",
+    "Organize Sanayi Bölgesi 4. Cadde No:18",
+    "Gebze / KOCAELİ",
+    "Vergi Dairesi: İlyasbey VKN: 5018689440",
+    "Tel: 0262 555 01 23 E-Posta: muhasebe@ornek.example",
+    "SAYIN",
+    "ÖRNEK KAHVE GIDA SAN. TİC. LTD. ŞTİ.",
+    "Cumhuriyet Mah. İstasyon Cad. No:14/A Tuzla / İSTANBUL",
+    "Vergi Dairesi: Tuzla VKN: 9076565643",
+    "e-ARŞİV FATURA",
+    "Fatura No: GIB2026234123262",
+    "Fatura Tarihi: 04.03.2026 23:44",
+    "Senaryo: EARSIVFATURA",
+    "Fatura Tipi: SATIŞ",
+    "ETTN: 10f45f2-4c1e-8a2b-789193f3d2",
+    "Not: İrsaliye yerine geçer. Ödeme vadesi fatura tarihinden itibaren 30 gündür.",
+    "Bu fatura e-Arşiv izni kapsamında elektronik ortamda iletilmiştir.",
+    "Sıra Mal / Hizmet Miktar Birim Birim Fiyat KDV KDV Tutarı Mal Hizmet Tutarı",
+    "Mal Hizmet Toplam Tutarı 150.735,00 TL",
+    "Hesaplanan KDV 18.310,08 TL",
+    "Ödenecek Tutar 169.045,08 TL"
+   ]
+  },
+  {
+   "ad": "004-modpos-z-gri-masa",
+   "dosya": "004-modpos-z-gri-masa.jpg",
+   "genislik": 540,
+   "yukseklik": 720,
+   "kategori": "modpos-z",
+   "zemin": "gri-masa",
+   "durum": "normal",
+   "beklenen": "kirp",
+   "koseler": [
+    [
+     48.7,
+     162.7
+    ],
+    [
+     515.7,
+     148.1
+    ],
+    [
+     436.2,
+     680.7
+    ],
+    [
+     152.1,
+     680
+    ]
+   ],
+   "senaryolar": [
+    "perspektif-guclu",
+    "parlama"
+   ],
+   "jpegKalite": 78,
+   "tohum": 4242004,
+   "metin": [
+    "MODPOS",
+    "DENEME DONDURMA VE KAHVE A.Ş.",
+    "YALI MAH. SAHİL YOLU SOK. NO:7",
+    "KARTAL / İSTANBUL",
+    "KARTAL V.D. 2910456738",
+    "Z RAPORU",
+    "Tarih: 11.03.2026 Saat: 21:23",
+    "Z No: 676 Kasa: 1",
+    "Kasiyer: KASA 1",
+    "ÜRÜN GRUPLARI",
+    "Espresso Bazlı (100) 2.270,25",
+    "Filtre Kahve (20) 4.524,00",
+    "Soğuk Kahve (105) 4.761,50",
+    "Affogato (121) 3.061,00",
+    "Dondurma (67) 4.763,75",
+    "Pasta & Tatlı (77) 801,00",
+    "Sandviç (68) 883,00",
+    "Şişe İçecek (106) 2.580,50",
+    "Çekirdek Kahve (74) 341,75",
+    "GENEL TOPLAM 23.986,75",
+    "Nakit 8.631,50",
+    "Kredi Kartı 13.819,75",
+    "Yemek Çeki 1.535,50",
+    "KDV %1 Matrah 4.797,35",
+    "KDV %10 Matrah 16.790,73",
+    "KDV %20 Matrah 2.398,68",
+    "İkram 254,50",
+    "İptal 196,00",
+    "Adisyon Sayısı 87",
+    "Kişi Başı 99,25",
+    "Bu belge bilgi amaçlıdır"
+   ]
+  },
+  {
+   "ad": "005-market-58-elde",
+   "dosya": "005-market-58-elde.jpg",
+   "genislik": 540,
+   "yukseklik": 720,
+   "kategori": "market-58",
+   "zemin": "elde",
+   "durum": "normal",
+   "beklenen": "kirp",
+   "koseler": [
+    [
+     97.8,
+     59.5
+    ],
+    [
+     416.7,
+     35
+    ],
+    [
+     444.8,
+     612.7
+    ],
+    [
+     158.8,
+     636.9
+    ]
+   ],
+   "senaryolar": [
+    "golge-degrade",
+    "parlama",
+    "odak",
+    "58mm"
+   ],
+   "jpegKalite": 78,
+   "tohum": 4242005,
+   "metin": [
+    "DENEME GROSS MARKET",
+    "MERKEZ MAH. ÇARŞI CAD. NO:5",
+    "TUZLA / İSTANBUL",
+    "ANADOLU KURUMLAR V.D. 7340012986",
+    "28.01.2026 FİŞ NO: 0380",
+    "SAAT: 22:04 KASA: 8",
+    "BEYAZ PEYNİR KG %20 *140,25",
+    "MUZ KG %20 *143,75",
+    "BULAŞIK DETERJA %20 *328,75",
+    "SÜT 1 LT %10 *384,50",
+    "SÜT 1 LT %01 *413,25",
+    "DOMATES KG %01 *294,25",
+    "TOPKDV *144,08",
+    "TOPLAM *1.704,75",
+    "NAKİT *1.800,00",
+    "PARA ÜSTÜ *95,25",
+    "EKÜ NO: 3 Z NO: 257",
+    "MF YK 23024561",
+    "TEŞEKKÜR EDERİZ"
+   ]
+  },
+  {
+   "ad": "006-pavo-gunsonu-ahsap-kadraj-disi",
+   "dosya": "006-pavo-gunsonu-ahsap-kadraj-disi.jpg",
+   "genislik": 540,
+   "yukseklik": 720,
+   "kategori": "pavo-gunsonu",
+   "zemin": "ahsap",
+   "durum": "kadraj-disi",
+   "beklenen": "kirp",
+   "koseler": [
+    [
+     35.9,
+     0
+    ],
+    [
+     521.9,
+     0
+    ],
+    [
+     508.6,
+     603
+    ],
+    [
+     73.7,
+     625.9
+    ]
+   ],
+   "senaryolar": [
+    "kadraj-disi",
+    "kivrik-kose",
+    "karanlik",
+    "renkli-isik",
+    "odak",
+    "gurultu",
+    "soluk"
+   ],
+   "jpegKalite": 72,
+   "tohum": 4242006,
+   "metin": [
+    "DENEME DONDURMA VE KAHVE A.Ş.",
+    "GÜN SONU · Z 49",
+    "28.04.2026 22:42",
+    "BRÜT SATIŞ 17.142,50",
+    "İNDİRİM -33,75",
+    "İADE -78,25",
+    "NET CİRO 17.030,50",
+    "NAKİT 6.910,00",
+    "KART 10.120,50",
+    "FİŞ ADEDİ 249",
+    "ORTALAMA FİŞ 133,50",
+    "KASA AÇILIŞ 1.043,25",
+    "KASADAN ÇIKAN 501,00",
+    "LafPOS yönetim raporudur, mali Z değildir",
+    "BANKA GÜN SONU · PAVO",
+    "Bankalar Adet   Tutar",
+    "ÖRNEKBANK 14   3.827,25",
+    "DENEME BANKASI 18   4.918,50",
+    "ÜÇÜNCÜ KATILIM 62   5.419,25",
+    "BANKA TOPLAMI 14.165,00",
+    "PAVO - LAFPOS KARŞILAŞTIRMA",
+    "LafPOS kart 14.165,00",
+    "Pavo banka 14.165,00",
+    "Fark 0,00"
+   ]
+  },
+  {
+   "ad": "007-fatura-a4-gri-masa-yakin",
+   "dosya": "007-fatura-a4-gri-masa-yakin.jpg",
+   "genislik": 540,
+   "yukseklik": 720,
+   "kategori": "fatura-a4",
+   "zemin": "gri-masa",
+   "durum": "yakin",
+   "beklenen": "tam-kare",
+   "koseler": [
+    [
+     0,
+     0
+    ],
+    [
+     539,
+     0
+    ],
+    [
+     539,
+     719
+    ],
+    [
+     0,
+     719
+    ]
+   ],
+   "senaryolar": [
+    "yakin",
+    "gurultu"
+   ],
+   "jpegKalite": 66,
+   "tohum": 4242007,
+   "metin": [
+    "1 Süt 1 L (koli 12) 3 Adet 922,75 %20 553,65 2.768,25",
+    "2 Bardak kapağı (1000 adet) 36 Adet 620,75 %20 4.469,40 22.347,00",
+    "3 Pipet kağıt (500 adet) 4 Adet 214,50 %10 85,80 858,00",
+    "4 Bardak kapağı (1000 adet) 4 Adet 328,75 %10 131,50 1.315,00",
+    "5 Karamel sosu 1 kg 35 Adet 155,00 %20 1.085,00 5.425,00",
+    "6 Peçete baskılı (koli) 18 Adet 882,50 %1 158,85 15.885,00",
+    "7 Çikolata sosu 1 kg 15 Adet 723,25 %1 108,49 10.848,75",
+    "8 Çikolata sosu 1 kg 20 Adet 47,25 %10 94,50 945,00",
+    "9 Dondurma külahı (koli) 29 Adet 790,50 %1 229,25 22.924,50",
+    "DENEME AMBALAJ SANAYİ LTD. ŞTİ.",
+    "Organize Sanayi Bölgesi 4. Cadde No:18",
+    "Gebze / KOCAELİ",
+    "Vergi Dairesi: İlyasbey VKN: 9187725211",
+    "Tel: 0262 555 01 23 E-Posta: muhasebe@ornek.example",
+    "SAYIN",
+    "ÖRNEK KAHVE GIDA SAN. TİC. LTD. ŞTİ.",
+    "Cumhuriyet Mah. İstasyon Cad. No:14/A Tuzla / İSTANBUL",
+    "Vergi Dairesi: Tuzla VKN: 6664060163",
+    "e-ARŞİV FATURA",
+    "Fatura No: GIB2026026538571",
+    "Fatura Tarihi: 24.04.2026 21:00",
+    "Senaryo: EARSIVFATURA",
+    "Fatura Tipi: SATIŞ",
+    "ETTN: 3cdecaa-4c1e-8a2b-396951f3d2",
+    "Not: İrsaliye yerine geçer. Ödeme vadesi fatura tarihinden itibaren 30 gündür.",
+    "Bu fatura e-Arşiv izni kapsamında elektronik ortamda iletilmiştir.",
+    "Sıra Mal / Hizmet Miktar Birim Birim Fiyat KDV KDV Tutarı Mal Hizmet Tutarı",
+    "Mal Hizmet Toplam Tutarı 83.316,50 TL",
+    "Hesaplanan KDV 6.916,43 TL",
+    "Ödenecek Tutar 90.232,93 TL"
+   ]
+  },
+  {
+   "ad": "008-degil-ekran-pos-koyu-tezgah",
+   "dosya": "008-degil-ekran-pos-koyu-tezgah.jpg",
+   "genislik": 540,
+   "yukseklik": 720,
+   "kategori": "belge-degil",
+   "nesne": "ekran-pos",
+   "zemin": "koyu-tezgah",
+   "durum": "normal",
+   "beklenen": "belge-degil",
+   "koseler": null,
+   "senaryolar": [
+    "perspektif-guclu",
+    "el-golgesi",
+    "renkli-isik",
+    "hareket"
+   ],
+   "jpegKalite": 78,
+   "tohum": 4242008,
+   "metin": []
+  },
+  {
+   "ad": "009-degil-kutu-ahsap",
+   "dosya": "009-degil-kutu-ahsap.jpg",
+   "genislik": 540,
+   "yukseklik": 720,
+   "kategori": "belge-degil",
+   "nesne": "kutu",
+   "zemin": "ahsap",
+   "durum": "normal",
+   "beklenen": "belge-degil",
+   "koseler": null,
+   "senaryolar": [
+    "perspektif-guclu",
+    "karanlik",
+    "golge-degrade"
+   ],
+   "jpegKalite": 78,
+   "tohum": 4242009,
+   "metin": []
+  }
+ ]
+}

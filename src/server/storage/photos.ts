@@ -76,6 +76,14 @@ function selectDriver(): PhotoDriver | null {
   return fsDriver(process.env.PHOTO_DIR?.trim() || join(process.cwd(), ".data", "photos"));
 }
 
+/**
+ * Deponun sürücüsü (yoksa null): fotoğraflarla aynı depoyu kullanan öteki dosyalar için (personel belgeleri;
+ * src/server/staff-docs.ts). Testte __setPhotoDriverForTests'in verdiği
+ */
+export function storageDriver(): PhotoDriver | null {
+  return selectDriver();
+}
+
 /** Depo hangisi ve fotoğraf eklenebilir mi (değilse fotoğraf düğmeleri hiç görünmez) */
 export function photoStorage(): { driver: PhotoDriver["name"] | "none"; available: boolean } {
   const d = selectDriver();

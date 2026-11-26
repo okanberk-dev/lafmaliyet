@@ -64,6 +64,8 @@ export interface OpCard {
   note: string | null;
   /** Son geçerlilik (ISO) */
   expiresAt: string;
+  /** Sohbete eklenen fiş fotoğrafı (kartta küçük resmi; onaylanınca kayda bağlanır; docs/ASISTAN-ISLEMLER.md › Fiş fotoğrafı) */
+  photoId?: number | null;
 }
 
 /** Planın durumu (assistant_ops.status) */

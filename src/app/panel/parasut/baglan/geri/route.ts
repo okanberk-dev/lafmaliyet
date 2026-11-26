@@ -7,9 +7,11 @@ import { finishParasutConnect } from "@/server/parasut/connect";
 
 /*
  * Paraşüt'ün dönüş adresi (DevHub'a bu adres kaydedilir): yetki kodu burada refresh_token'a çevrilir ve şifreli
- * saklanır. state eşleşmezse ya da istek bayatladıysa kod kullanılmaz. Belirteç bağlanmanın başlatıldığı hesaba
- * (mühürlü bekleyen istekteki şube) yazılır; o şube bu arada başka şubenin hesabına bağlandıysa reddedilir.
- * docs/PARASUT.md
+ * saklanır. Bekleyen istek yalnız dönen state'le bulunur ve bulunduğu anda silinir (tek kullanımlık); bulunamazsa,
+ * istek bayatladıysa ya da başka bir yöneticinin oturumunda başlatıldıysa kod kullanılmaz. Belirteç bağlanmanın
+ * başlatıldığı hesaba (mühürlü bekleyen istekteki şube) yazılır; o şube bu arada başka şubenin hesabına bağlandıysa
+ * reddedilir. Başka hesabın firmasıyla aynı vergi numarası (ya da karşılaştırılamadı) çıkarsa belirteç yazılmaz, onay
+ * bekler: Paraşüt ekranı "Aynı vergi numarası mı?" diye sorar (connect.ts). docs/PARASUT.md
  */
 
 const NO_STORE = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
@@ -31,7 +33,10 @@ export async function GET(request: NextRequest) {
     return back({ baglanti: "hata", mesaj: desc || `Paraşüt bağlantıyı reddetti (${error.slice(0, 80)}).` });
   }
   try {
-    const { account } = await finishParasutConnect({ code: params.get("code"), state: params.get("state") }, (a) => isParasutAccount(a));
+    // Hesap adresten değil, state'e bağlı tek kullanımlık bekleyen istekten; istek bu yöneticinin oturumunda başlamış olmalı
+    const { account, question } = await finishParasutConnect({ code: params.get("code"), state: params.get("state") }, (a) => isParasutAccount(a), { userId: user.id });
+    // Aynı vergi numarası (ya da karşılaştırılamadı): belirteç onay bekliyor, Paraşüt ekranı soruyu açar
+    if (question) return back({ baglanti: "onay" });
     const accounts = await loadParasutAccounts();
     const label = accounts.length > 1 ? `${accounts.find((a) => a.id === account)?.name ?? account} hesabı · ` : "";
     await logActivity(user, "Paraşüt hesabı bağlandı", `${label}Authorization Code + PKCE ile yetkilendirildi`);

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Notice, type NoticeTone } from "@/components/ui/notice";
 import { cardExpired, isSettled, OP_EFFECTS, OP_STATUS_LABEL, type OpCardState, type OpOutcome, type OpStatus } from "@/lib/assistant/ops";
+import { photoUrl } from "@/lib/photo-rules";
 import { cn } from "@/lib/utils";
 import { cancelAssistantOp, confirmAssistantOp, readAssistantOp, undoAssistantOp } from "@/server/actions/assistant-ops";
 
@@ -104,6 +105,22 @@ export function OpCardView({ state, onChange }: { state: OpCardState; onChange: 
             {[card.subject, card.branch, card.day].filter(Boolean).join(" · ")}
           </p>
         </div>
+        {card.photoId ? (
+          // Sohbete eklenen fiş: onaylanınca kayda bağlanır (panelin yetkili yolundan; süresi dolmuşsa gizlenir)
+          <a href={photoUrl(card.photoId)} target="_blank" rel="noopener" aria-label="Fiş fotoğrafını aç" className="shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element -- yetkili yol; görsel iyileştirici giriş çerezini taşımaz */}
+            <img
+              src={photoUrl(card.photoId)}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              onError={(e) => {
+                e.currentTarget.hidden = true;
+              }}
+              className="size-12 rounded-lg object-cover ring-1 ring-line"
+            />
+          </a>
+        ) : null}
       </div>
 
       <dl className="mt-3 space-y-1.5">

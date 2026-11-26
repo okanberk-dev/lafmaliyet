@@ -202,6 +202,70 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     assert.deepEqual(await lafposSecretState(db), { problem: null, source: "ortam" });
   });
 
+  test("döndürülen LafPOS anahtarı başka sunucu örneğinin önbelleğinde de hemen geçmez; yenisi en geç 10 sn'de geçer", async () => {
+    const branch = await import("../src/server/lafpos/branch");
+    const { putBranchSetting } = await import("../src/server/branch-settings");
+    const { signedHeaders, SIGNATURE_HEADER, TIMESTAMP_HEADER } = await import("../src/lib/karaoke/signature");
+    const OLD = "eski-lafpos-anahtari-en-az-otuz-iki-karakterlik-metin";
+    const NEW = "yeni-lafpos-anahtari-en-az-otuz-iki-karakterlik-metin";
+    // Başka bir sunucu örneğinin yazması: bu örneğin önbelleği düşmez (forgetLafposSecret çağrılmaz)
+    const store = (secret: string | null) => db.transaction((tx) => putBranchSetting(tx, LAFPOS_GROUP, "marina", { secret }, "Başka örnek"));
+    const url = new URL("https://ladmin.laffogato.net/api/panel/pos/urunler");
+    const t0 = Date.now();
+    const req = (secret: string, now: number) => {
+      const h = signedHeaders(secret, "GET", url, "", now);
+      return { method: "GET", url, body: "", timestamp: h[TIMESTAMP_HEADER], signature: h[SIGNATURE_HEADER] };
+    };
+    const reads: string[] = [];
+    const counted = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === "select") reads.push("select");
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    try {
+      await store(OLD);
+      branch.forgetLafposSecret();
+      assert.equal(await branch.lafposSecret(counted, process.env, t0), OLD, "önbellek eski anahtarla doldu");
+
+      // İmzasız ya da yanlış imzalı istek veritabanını okutmaz (önbellek ön süzgeç)
+      reads.length = 0;
+      assert.equal(await branch.lafposSecretFor({ method: "GET", url, body: "", timestamp: null, signature: null }, counted, process.env, t0 + 1_000), OLD);
+      assert.equal(await branch.lafposSecretFor(req("baska-bir-anahtar-en-az-otuz-iki-karakterlik", t0 + 1_000), counted, process.env, t0 + 1_000), OLD);
+      assert.deepEqual(reads, [], "imzası tutmayan istekte okuma yok");
+
+      // Anahtar başka örnekte döndürüldü: eski anahtarla imzalı istek artık eski anahtarı almaz (uç 401 verir)
+      await store(NEW);
+      assert.equal(await branch.lafposSecret(counted, process.env, t0 + 2_000), OLD, "önbellek henüz eski");
+      const old = req(OLD, t0 + 2_000);
+      const got = await branch.lafposSecretFor(old, counted, process.env, t0 + 2_000);
+      assert.equal(got, NEW, "imza tutunca anahtar veritabanından yeniden okundu");
+      const { checkLafposRequest } = await import("../src/lib/lafpos/request");
+      assert.deepEqual(checkLafposRequest({ ...old, secret: got, method: "GET", maxBytes: 0, now: t0 + 2_000 }), { ok: false, status: 401, error: "unauthorized" });
+      assert.equal(await branch.lafposSecret(counted, process.env, t0 + 2_500), NEW, "önbellek de yenilendi");
+
+      // Yeni anahtarla imzalı istek: imza tutar, okunan anahtar aynı
+      assert.equal(await branch.lafposSecretFor(req(NEW, t0 + 3_000), counted, process.env, t0 + 3_000), NEW);
+
+      // Ters yön: yeni anahtar başka örnekte kaydedildi, bu örneğin önbelleği eski. Yeni anahtarla gelen istek ilk
+      // LAFPOS_SECRET_RELOAD_MS içinde önbellektekini alır (401), sonra bir kez yeniden okunur ve geçer
+      await store(OLD);
+      branch.forgetLafposSecret();
+      assert.equal(await branch.lafposSecret(counted, process.env, t0), OLD);
+      await store(NEW);
+      assert.equal(await branch.lafposSecretFor(req(NEW, t0 + 1_000), counted, process.env, t0 + 1_000), OLD);
+      const later = t0 + branch.LAFPOS_SECRET_RELOAD_MS;
+      assert.equal(await branch.lafposSecretFor(req(NEW, later), counted, process.env, later), NEW, "en geç 10 sn sonra yeni anahtar");
+
+      // Panelden silinince ortamdaki: eski panel anahtarıyla imzalı istek geçmez
+      await store(null);
+      assert.equal(await branch.lafposSecretFor(req(NEW, later + 1), counted, process.env, later + 1), ENV_SECRET);
+    } finally {
+      await store(null);
+      branch.forgetLafposSecret();
+    }
+  });
+
   test("komisyon: Tuzla'nın süresi 'aynı' Marina'da; bağlı şubeye yazılmaz; ayırınca kopyalanır, sonra ayrı", async () => {
     const commission = await import("../src/server/actions/commission");
     const link = await import("../src/server/actions/branch-settings");

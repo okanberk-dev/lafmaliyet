@@ -30,6 +30,13 @@ const zSube = z
   .optional()
   .describe("Şubenin adı (ör. 'Tuzla', 'Marina'). Verilmezse paneldeki seçili şube; panelde 'Tümü' seçiliyse kullanıcıya sor, kendin seçme");
 const zSize = z.enum(["M", "L", "Tek"]);
+/** Sohbete eklenen fiş fotoğrafı (src/lib/assistant/receipt.ts RECEIPT_FIELD): kimliği yalnız mesajdaki <fis_fotografi> bloğundan */
+const zReceiptPhoto = z
+  .number()
+  .int()
+  .positive()
+  .optional()
+  .describe("Kullanıcının sohbete eklediği fiş fotoğrafının kimliği: yalnız mesajdaki <fis_fotografi fisFotografi=N> bloğundaki N; fotoğraf yoksa verme, uydurma");
 const zMoney = (what: string) => z.number({ message: `${what} sayı olmalı` }).finite().max(100_000_000, `${what} çok büyük`);
 
 export const OP_INPUTS = {
@@ -112,6 +119,7 @@ export const OP_INPUTS = {
       belge: z.enum(["fis", "e_arsiv", "fatura", "yok"]),
       kategori: z.string().trim().min(2).max(80).optional().describe("Gider kategorisinin adı (Aylık harcamalar'a yazılacaksa zorunlu)"),
       harcamalaraYaz: z.boolean().describe("Aylık harcamalar'a da gider olarak yazılsın mı"),
+      fisFotografi: zReceiptPhoto,
       not: zNote,
     })
     .strict(),
@@ -123,6 +131,7 @@ export const OP_INPUTS = {
       odemeSekli: z.enum(["nakit", "kart", "havale", "diger"]).optional(),
       aciklama: z.string().trim().max(200).optional(),
       sube: z.string().trim().min(2).max(40).optional().describe("Şube adı ya da 'işletme geneli'. Verilmezse seçili şube; 'Tümü'de işletme geneli"),
+      fisFotografi: zReceiptPhoto,
       not: zNote,
     })
     .strict(),
@@ -231,20 +240,21 @@ export const OP_SPECS: readonly OpSpec[] = [
     label: "Ürün fiyatı kartı",
     title: "Ürünün satış fiyatını değiştir",
     description:
-      "TEK bir ürünün (bir boyun) satış fiyatını değiştirmek için onay kartı hazırlar: eski → yeni fiyat, % fark, maliyet ve marj, siteye ve LafPOS'a etkisi. Siteye bağlı ürünün fiyatı önce sitede değişir. Toplu fiyat değişikliği yok.",
+      "TEK bir ürünün (bir boyun) satış fiyatını değiştirmek için onay kartı hazırlar: eski → yeni fiyat, % fark, maliyet ve marj, siteye ve LafPOS'a etkisi. Siteye bağlı ürünün fiyatı önce sitede değişir. Kart TABAN fiyatı değiştirir (Tuzla ve kendi fiyatı olmayan şubeler): kendi şube fiyatı olan şubede (ör. Marina) fiyat değişmez, kart bunu ve planlı şube fiyatını gösterir. Kullanıcı bir şubenin fiyatını istiyorsa (\"Marina'da Latte 205 olsun\") kart açma; islem_rehberi ile Şube fiyatı ekranını göster. Toplu fiyat değişikliği yok.",
   },
   {
     name: "kasadan_cikan_ekle",
     label: "Kasadan çıkan kartı",
     title: "Bugünün kasasına kasadan çıkan ekle",
     description:
-      "Bugünün kasasından çıkan parayı (alışveriş ya da teslim) eklemek için onay kartı hazırlar; akşam kasa raporunun 'Gün içinde kasadan çıkan' toplamına girer. Geçmiş güne ya da raporu girilmiş güne eklenmez. Şube zorunlu: panelde 'Tümü' seçiliyse kullanıcıya sor.",
+      "Bugünün kasasından çıkan parayı (alışveriş ya da teslim) eklemek için onay kartı hazırlar; akşam kasa raporunun 'Gün içinde kasadan çıkan' toplamına girer. Geçmiş güne ya da raporu girilmiş güne eklenmez. Şube zorunlu: panelde 'Tümü' seçiliyse kullanıcıya sor. Kullanıcı sohbete fiş fotoğrafı eklediyse fisFotografi ile ver: fiş kayda bağlanır, tarihi, numarası ve KDV'si okunandan yazılır.",
   },
   {
     name: "harcama_ekle",
     label: "Harcama kartı",
     title: "Aylık harcamalara gider ekle",
-    description: "Aylık harcamalar'a yeni bir gider kaydı eklemek için onay kartı hazırlar (kategori, tutar, gün, ödeme şekli, şube ya da işletme geneli). Düzeltme ve silme bu araçla olmaz.",
+    description:
+      "Aylık harcamalar'a yeni bir gider kaydı eklemek için onay kartı hazırlar (kategori, tutar, gün, ödeme şekli, şube ya da işletme geneli). Düzeltme ve silme bu araçla olmaz. Kullanıcı sohbete fiş fotoğrafı eklediyse fisFotografi ile ver: fiş kayda bağlanır, KDV'si okunandan yazılır.",
   },
   {
     name: "zayi_ikram_ekle",

@@ -515,9 +515,11 @@ export function monthWriteNote(scope: BranchScope, known: readonly BranchRow[]):
 }
 
 /** Firma geneli ekranlar (şube kapsamı C P1-12, P2-1): şube seçiliyken de bütün şubelerin verisini gösterir */
-export type CompanyWideScreen = "vergi" | "nakit" | "tedarikciler" | "tutarlilik" | "mutabakat";
+export type CompanyWideScreen = "vergi" | "nakit" | "tedarikciler" | "tutarlilik" | "mutabakat" | "raporlar";
 
 const COMPANY_WIDE_TEXT: Record<CompanyWideScreen, string> = {
+  // Raporlar (docs/RAPORLAR.md): şubeler yan yana; Kaçak raporu hep Marina'nın
+  raporlar: "Raporlar şubeleri yan yana gösterir: her açık şube kendi görünümüyle okunur, soldaki seçim raporu süzmez.",
   vergi: "Vergi ve KDV firmanın: bütün şubelerin satışı, faturaları ve giderleri birlikte hesaplanır (tek vergi numarası).",
   nakit: "Nakit planı firmanın: bütün şubelerin kasası, ödemeleri ve faturaları birlikte.",
   tedarikciler:

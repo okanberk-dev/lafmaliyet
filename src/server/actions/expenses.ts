@@ -15,6 +15,7 @@ import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
 import { linkedUntil } from "@/lib/photo-rules";
 import { addDays, todayTR } from "@/lib/reminders";
+import { assertPeriodOpen } from "@/server/closed-period";
 import { getDb, schema as s } from "@/server/db";
 import { getPhoto, keepPhoto, releasePhoto } from "@/server/storage/photos";
 import { assertNotHeld } from "@/server/staff-requests/core";
@@ -38,6 +39,12 @@ const entrySchema = z.object({
    * seçili şube, "Tümü"de işletme geneli; düzeltmede şube değişmez
    */
   branchId: zFormBranch,
+  /**
+   * Yeni kayda bağlanacak fiş fotoğrafı ve fişten okunan KDV (panel asistanının fiş kartı; docs/ASISTAN-ISLEMLER.md ›
+   * Fiş fotoğrafı). Fotoğraf fiş türünde, bağlanmamış, süresi işleyen ve bir isteğin tutmadığı olmalı; düzeltmede yok sayılır
+   */
+  photoId: z.number().int().positive().nullish(),
+  vat: zAmount.nullish(),
 });
 
 /** Harcamanın en ileri tarihi: bugünden bu kadar gün sonrası (gelecek ayın ödemesi önceden girilebilir; 2030 girilemez) */
@@ -57,7 +64,7 @@ async function ownerName(supplierEntryId: number): Promise<string> {
 export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const { id, branchId: rawBranch, ...data } = entrySchema.parse(input);
+    const { id, branchId: rawBranch, photoId, vat, ...data } = entrySchema.parse(input);
     if (data.date > addDays(todayTR(), EXPENSE_AHEAD_DAYS)) throw new UserError("Tarih bir aydan daha ileri olamaz");
 
     const db = getDb();
@@ -78,6 +85,14 @@ export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
       // Cari borcun gideri: tutarı, günü ve kategorisi borçla birlikte Tedarikçiler'de değişir (açıklama ve not serbest)
       if (prev?.supplierEntryId && (Math.abs(prev.amount - data.amount) >= 0.005 || prev.date !== data.date || prev.categoryId !== data.categoryId)) {
         throw new UserError(`Bu harcama ${await ownerName(prev.supplierEntryId)} faturasız alımından; tutarını, gününü ve kategorisini Tedarikçiler'de düzeltin`);
+      }
+      // Dönem kapanışı (docs/DONEM-KAPANISI.md): kapalı ayda sayılan kaydın tutarı, günü, kategorisi ve şubesi değişmez,
+      // kayıt kapalı aya da taşınamaz (açıklama ve not serbest). Bekleyen kayıt kilitli değil
+      if (
+        prev &&
+        (Math.abs(prev.amount - data.amount) >= 0.005 || prev.date !== data.date || prev.categoryId !== data.categoryId || (rawBranch && rawBranch !== (prev.branchId ?? EXPENSE_SHARED)))
+      ) {
+        await assertPeriodOpen(db, prev, [data.date]);
       }
       // Şube formda değiştiyse (gönderilmediyse ya da aynıysa dokunulmaz: kapanmış şubenin eski kaydı da düzeltilir).
       // Kaynağa bağlı kaydın şubesi kaynağın şubesidir: kasadan çıkanınki o kasanın, cari giderinki Tedarikçiler'de seçilen
@@ -105,7 +120,25 @@ export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
       // Yeni harcama formun şubesine (docs/SUBE.md › Yazarken hangi şube): gönderim anındaki seçim değil. Şube
       // göndermeyen eski sekmede ve asistanda seçili şube, "Tümü"nde işletme geneli
       moved = { branch: await formBranch(rawBranch, "expense") };
-      [saved] = await db.insert(s.expenseEntries).values({ ...values, branchId: moved.branch, createdBy: me.name }).returning({ id: s.expenseEntries.id });
+      const branch = moved.branch;
+      if (photoId) {
+        // Fişli yeni kayıt (asistanın fiş kartı): fotoğraf aynı işlemde denetlenir ve bağlanır (kasadan çıkanın fişi gibi)
+        saved = await db.transaction(async (tx) => {
+          const p = await getPhoto(photoId, tx);
+          if (!p || p.kind !== "fis" || p.linkedAt !== null || p.expiresAt === null || p.expiresAt.getTime() <= Date.now()) {
+            throw new UserError("Fiş fotoğrafı bulunamadı, süresi doldu ya da başka bir kayda bağlandı; fotoğrafı yeniden ekleyin");
+          }
+          await assertNotHeld(tx, p.id);
+          await keepPhoto(p.id, linkedUntil("fis", data.date, todayTR()), tx);
+          const [row] = await tx
+            .insert(s.expenseEntries)
+            .values({ ...values, branchId: branch, createdBy: me.name, photoId: p.id, vat: vat ?? null })
+            .returning({ id: s.expenseEntries.id });
+          return row;
+        });
+      } else {
+        [saved] = await db.insert(s.expenseEntries).values({ ...values, branchId: branch, createdBy: me.name }).returning({ id: s.expenseEntries.id });
+      }
     }
     const where = moved ? ` · ${moved.branch ? ((await listBranches()).find((b) => b.id === moved.branch)?.name ?? moved.branch) : "İşletme geneli"}` : "";
     await logActivity(me, id ? "Harcama düzeltildi" : "Harcama eklendi", `${cat.name} · ${dateTR(data.date)} · ${tl(data.amount, 2)}${where}${data.description ? ` · ${data.description}` : ""}`);
@@ -138,8 +171,14 @@ export async function deleteExpenseEntry(id: number) {
     const me = await requireAdmin();
     const entryId = z.number().int().positive().parse(id);
     // Cari borcun gideri burada silinmez: borç silinince ya da "Faturası gelecek" yapılınca kalkar
-    const [owned] = await getDb().select({ owner: s.expenseEntries.supplierEntryId }).from(s.expenseEntries).where(eq(s.expenseEntries.id, entryId)).limit(1);
+    const [owned] = await getDb()
+      .select({ owner: s.expenseEntries.supplierEntryId, date: s.expenseEntries.date, createdAt: s.expenseEntries.createdAt, periodDate: s.expenseEntries.periodDate })
+      .from(s.expenseEntries)
+      .where(eq(s.expenseEntries.id, entryId))
+      .limit(1);
     if (owned?.owner) throw new UserError(`Bu harcama ${await ownerName(owned.owner)} faturasız alımının gideri; orada silin ya da 'Faturası gelecek' yapın`);
+    // Kapalı ayda sayılan harcama silinmez (docs/DONEM-KAPANISI.md)
+    if (owned) await assertPeriodOpen(getDb(), owned);
     const row = await getDb().transaction(async (tx) => {
       const [row] = await tx.delete(s.expenseEntries).where(and(eq(s.expenseEntries.id, entryId), isNull(s.expenseEntries.supplierEntryId))).returning();
       if (!row) throw new UserError("Harcama bulunamadı; silinmiş olabilir");

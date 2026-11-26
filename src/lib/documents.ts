@@ -31,6 +31,10 @@ export function extensionFor(mime: DocumentMime): string {
 const TR_ASCII: Record<string, string> = { ç: "c", Ç: "C", ğ: "g", Ğ: "G", ı: "i", İ: "I", ö: "o", Ö: "O", ş: "s", Ş: "S", ü: "u", Ü: "U" };
 
 /** Dosya adında sorun çıkarmayacak ASCII parça: Türkçe harfler sadeleşir, geri kalan işaretler "-" olur */
+export function fileSlug(text: string, max = 40): string {
+  return slug(text, max);
+}
+
 function slug(text: string, max = 40): string {
   const ascii = text
     .replace(/[çÇğĞıİöÖşŞüÜ]/g, (c) => TR_ASCII[c] ?? c)

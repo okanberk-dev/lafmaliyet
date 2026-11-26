@@ -77,7 +77,9 @@ Yukarıdaki not görsel dilin kaynağıdır (LafPOS için yazıldı). ladmin'de 
   (`localStorage` › `ladmin-tema`), hesaba bağlı değildir. QR menü (`/menu`) müşterinin ekranı olduğu için hep açık.
 - **Beyaz parlama yok:** kök düzende (`src/app/layout.tsx`) `<head>` içindeki küçük betik (`THEME_SCRIPT`,
   `src/lib/theme.ts`) sayfa boyanmadan önce `<html class="dark" data-theme="dark">` yapar; sistem tercihi ve başka
-  sekmedeki seçim değişince de günceller. Panelde CSP yok; ileride eklenirse betiğe nonce ya da karma gerekir.
+  sekmedeki seçim değişince de günceller. Panelin CSP'si (`src/lib/csp.ts`, [DEPLOY.md](DEPLOY.md) › Güvenlik
+  başlıkları) satır içi betiklere `'unsafe-inline'` ile izin verir (önceden çizilmiş kabuklar nonce alamaz); betik
+  değişirse CSP'ye dokunmak gerekmez.
 - **Açık tema değişmez.** Bütün koyu kurallar `html.dark` altında ya da `dark:` önekiyle. `dark:` öneki işletim
   sisteminin tercihine değil `html.dark`'a bağlı (`@custom-variant dark`, globals.css) ve yalnız ekranda: baskı hep açık.
 
