@@ -69,6 +69,8 @@ interface Kayit {
   /** En kötü köşe, köşegenin oranı (doğru köşe yoksa null) */
   hata: number | null;
   hataOrt: number | null;
+  /** Tarayıcının kullandığı köşeler (piksel; kırpmada bulunan, kırpılmayanda görüntünün köşeleri) */
+  bulunan?: [number, number][];
   guven: number;
   yontem: string;
   nedenler: string[];
@@ -274,6 +276,7 @@ async function main() {
       sonuc: sonucu(g.beklenen, karar, h?.enKotu ?? null),
       hata: h?.enKotu ?? null,
       hataOrt: h?.ort ?? null,
+      bulunan: r.corners.map((p) => [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10] as [number, number]),
       guven: Math.round(r.confidence * 1000) / 1000,
       yontem: r.method,
       nedenler: r.reasons,
