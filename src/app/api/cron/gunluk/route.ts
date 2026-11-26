@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { backupStep, countStep, dailyOutcome, digestStep, gunSonuStep, modposStep, photosStep, quotaStep, reminderStep, requestsStep, vardiyaStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
+import { todayTR } from "@/lib/reminders";
 import { weeklyStep, WEEKLY_DEADLINE_MS, type WeeklyRunResult } from "@/lib/weekly/core";
 import { capped, JOB_SEND_DEADLINE_MS, JOB_TAIL_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
@@ -13,6 +14,7 @@ import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/run
 import { dailyKaraoke } from "@/server/karaoke/history";
 import { catchUpLafposDayEnds } from "@/server/lafpos/gun-sonu";
 import { pruneMcp } from "@/server/mcp/store";
+import { purgeExpiredStatements } from "@/server/mutabakat/store";
 import { isModposConfigured } from "@/server/modpos/client";
 import { syncModposAll, type ModposSyncResult } from "@/server/modpos/sync";
 import { pushMonthEndCount } from "@/server/notify/count-push";
@@ -33,7 +35,8 @@ import { runWeeklyStep } from "@/server/weekly/send";
 // kişisel hatırlatıcıların sabah bildirimi, karaoke rezervasyonlarının ve laffogato.net menüsünün (fiyat, Satışta /
 // Tükendi; docs/SITE-MENU.md) günlük yedek eşitlemesi (ping kaçtıysa) ve laffogato.net'in online satışları (bu ay ve
 // önceki iki ay: geç iadeler; salesMonthsToPull, docs/SITE-SATIS.md), süresi dolan fotoğrafların silinmesi (docs/FOTOGRAF.md),
-// Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md), ayın son günü ay sonu
+// Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md), saklama süresi dolan
+// mutabakat ekstrelerinin silinmesi (docs/MUTABAKAT.md), ayın son günü ay sonu
 // stok sayımı bildirimi (tamamlanmadıysa). Pazartesi (gönderilemezse salı, çarşamba) yöneticilere haftalık özet
 // (docs/HAFTALIK-OZET.md). Süresi dolan personel istekleri (kasadan
 // çıkan) kapanır ve tuttukları fotoğraflar bırakılır (docs/ONAYLAR.md). Cuma–Pazar gelecek haftanın vardiyası yazılmamış
@@ -147,6 +150,17 @@ export async function GET(request: NextRequest) {
       Math.min(3_000, tailStepDeadline(jobStart) - Date.now()),
       "süre doldu" as const,
     );
+  // Mutabakat ekstrelerinin saklama süresi (KVKK; docs/MUTABAKAT.md › Saklama): yüklendikten 90 gün sonra ekstre ve
+  // satırları silinir. En çok 3 sn, sonucu yalnız yanıtta (body.mutabakat); iş adımı değil, aksarsa ertesi gün yeniden
+  const reconTask = () =>
+    capped<number | "error" | "süre doldu">(
+      purgeExpiredStatements(getDb(), todayTR()).catch((e: Error) => {
+        console.error("[mutabakat] saklama süresi", e);
+        return "error" as const;
+      }),
+      Math.min(3_000, tailStepDeadline(jobStart) - Date.now()),
+      "süre doldu" as const,
+    );
   // Ay sonu stok sayımı bildirimi (ayın son günü, sayım tamamlanmadıysa): en çok 8 sn, kuyruğun 55 sn'sini aşmadan;
   // adım yalnız bildirim gönderilince yazılır
   const countTask = () =>
@@ -192,7 +206,7 @@ export async function GET(request: NextRequest) {
       { error: "süre doldu" },
     );
   const extras = async () => {
-    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu, vardiya, backup, quota] = await Promise.all([
+    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu, vardiya, backup, quota, mutabakat] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
       // Karaoke eşitlemesi ve KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (docs/KARAOKE.md › KVKK); ardından
       // karaoke e-postaları (misafirin hatırlatması, personelin sabah listesi), kuyruğun 55 sn'sini aşmadan
@@ -208,6 +222,7 @@ export async function GET(request: NextRequest) {
       vardiyaTask(),
       backupP,
       quotaP,
+      reconTask(),
     ]);
     const vardiyaResult = vardiyaStep(vardiya);
     const countResult = countStep(count);
@@ -230,7 +245,7 @@ export async function GET(request: NextRequest) {
       ...(backupResult ? { backup: backupResult } : {}),
       ...(quotaResult ? { quota: quotaResult } : {}),
     };
-    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp, requests, backup: backup.status, quota: quota.status === "ok" ? { pct: Math.floor(quota.pct), level: quota.level } : "error" }, steps, weekly: weekly.status };
+    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp, requests, backup: backup.status, quota: quota.status === "ok" ? { pct: Math.floor(quota.pct), level: quota.level } : "error", mutabakat }, steps, weekly: weekly.status };
   };
   // Paraşüt bitince çoğunlukla bitmiştir; adım yalnız anahtar varken yazılır
   const modpos = await modposP;

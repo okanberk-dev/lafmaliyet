@@ -1,5 +1,6 @@
 import {
   AlarmClock,
+  ArrowLeftRight,
   Banknote,
   BarChart3,
   BellRing,
@@ -257,6 +258,14 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         roles: ["admin"],
         keywords: "nakit akış tahmin bakiye kalan para haftalık plan sıkışık kdv devreden kdv hesabı devreden kdv param yeter mi",
       },
+      // Banka ve tedarikçi ekstresi ile panel kayıtları, kart satışı ile bankaya gelen POS hakedişi (docs/MUTABAKAT.md)
+      {
+        href: "/panel/mutabakat",
+        label: "Mutabakat",
+        icon: ArrowLeftRight,
+        roles: ["admin"],
+        keywords: "mutabakat banka ekstresi hesap hareketleri cari ekstre tedarikçi ekstresi eşleştirme pos hakediş bloke valör kart satışı bankaya gelen excel csv",
+      },
     ],
   },
   {
@@ -459,6 +468,7 @@ export const NAV_TREE: NavNode[] = [
       { id: "gelir-gider", label: "Gelir-gider", href: "/panel/gelir-gider", roles: ["admin"] },
       { id: "hatirlaticilar", label: "Ödemeler", href: "/panel/hatirlaticilar", roles: ["admin"] },
       { id: "nakit", label: "Nakit planı", href: "/panel/hatirlaticilar/nakit", roles: ["admin"] },
+      { id: "mutabakat", label: "Mutabakat", href: "/panel/mutabakat", roles: ["admin"] },
     ],
   },
   {

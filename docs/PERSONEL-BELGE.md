@@ -19,7 +19,7 @@ Ekranlar Giderler & maaşlar'ın sekmeleri: **Sabit giderler · Aylık harcamala
 | Sunucu eylemleri (yalnız yönetici, işlem geçmişi) | `src/server/actions/staff-docs.ts` |
 | Dosyanın kendisi (yalnız yönetici, `no-store`) | `GET /api/personel/belge/{id}` (`?indir=1` indirir) |
 | Ekranlar | `/panel/personel/belgeler`, `/panel/personel/avans` |
-| Tablolar | `staff_documents`, `staff_advances` (migration `0092_personel_belge_avans`) |
+| Tablolar | `staff_documents`, `staff_advances` (migration `0093_personel_belge_avans`) |
 | Testler | `tests/personel-belge.test.ts`, `tests/personel-avans.test.ts` (saf), `tests/personel-belge-db.test.ts` (Postgres) |
 
 ## Belgeler
