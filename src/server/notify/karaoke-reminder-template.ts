@@ -135,8 +135,9 @@ function ticketHtml(t: { from: string; to: string; dateLong: string; meta: strin
 </td></tr></table>`;
 }
 
-/** Açıklamadaki telefon numarası satır sonunda bölünmez (metin aynı; yalnız sarılma) */
-const keepPhone = (html: string) => html.split(esc(VENUE.phone)).join(`<span style="white-space:nowrap">${esc(VENUE.phone)}</span>`);
+/** Kaçışlı metindeki parçalar (telefon numarası, saat aralığı) satır sonunda bölünmez: metin aynı, yalnız sarılma */
+const keepTogether = (html: string, ...pieces: string[]) =>
+  pieces.reduce((h, p) => h.split(esc(p)).join(`<span style="white-space:nowrap">${esc(p)}</span>`), html);
 
 /** Numaralı kısa bilgiler (kitte yok): yeşil halkada numara, kalın başlık, altında açıklama; aralar ferah */
 function stepsHtml(list: readonly { title: string; body: string }[]): string {
@@ -148,7 +149,7 @@ function stepsHtml(list: readonly { title: string; body: string }[]): string {
   </td>
   <td valign="top" style="padding:${top}px 0 0;font-family:${FONT};vertical-align:top;word-break:break-word">
     <div style="padding-top:3px;font-size:16px;line-height:22px;font-weight:600;color:${C.ink}">${esc(n.title)}</div>
-    <div style="margin-top:4px;font-size:15px;line-height:23px;color:${C.soft}">${keepPhone(esc(n.body))}</div>
+    <div style="margin-top:4px;font-size:15px;line-height:23px;color:${C.soft}">${keepTogether(esc(n.body), VENUE.phone)}</div>
   </td>
 </tr>`;
   });
@@ -203,7 +204,7 @@ export function renderKaraokeReminder(i: KaraokeReminderInput): { subject: strin
 </td></tr><tr><td align="center" style="padding-top:10px;font-family:${FONT};font-size:11px;line-height:16px;font-weight:600;letter-spacing:0.22em;color:${SAGE}">KARAOKE</td></tr></table>
 <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin-top:28px"><tr><td bgcolor="${GOLD}" style="background:${GOLD};border-radius:999px;padding:5px 12px;font-family:${FONT};font-size:11px;line-height:14px;font-weight:700;letter-spacing:0.14em;color:${GREEN}">${esc(eyebrow)}</td></tr></table>
 <div style="margin-top:14px">${heading(headline, { color: "#ffffff" })}</div>
-<div style="margin-top:8px;font-family:${FONT};font-size:16px;line-height:24px;color:${SAGE};word-break:break-word">${esc(lead)}</div>
+<div style="margin-top:8px;font-family:${FONT};font-size:16px;line-height:24px;color:${SAGE};word-break:break-word">${keepTogether(esc(lead), `${from}–${to}`)}</div>
 ${ticketHtml({ from, to, dateLong, meta })}`;
 
   const card = `${stepsHtml(notes)}
@@ -211,7 +212,7 @@ ${button(calendar, "Takvime ekle", { top: 30 })}
 <div style="margin-top:20px;text-align:center;font-family:${FONT};font-size:14px;line-height:26px;color:${C.quiet}">${linkHtml(maps, "Yol tarifi")}&nbsp;&nbsp;·&nbsp; ${linkHtml(`tel:${VENUE.phoneTel}`, VENUE.phone, false)}&nbsp;&nbsp;·&nbsp; ${linkHtml(site, siteLabel)}</div>`;
 
   const foot = `<div style="font-family:${SERIF};font-size:15px;line-height:20px;color:${C.soft}">L&#39;Affogato · Tuzla</div>
-<div style="padding-top:4px">${esc(VENUE.address)} · ${esc(VENUE.phone)}</div>
+<div style="padding-top:4px">${esc(VENUE.address)} · ${keepTogether(esc(VENUE.phone), VENUE.phone)}</div>
 <div style="padding-top:10px">${esc(footer)}</div>`;
 
   const html = guestDocument({ subject, preheader, bandHtml: band, cardHtml: card, footerHtml: foot });
