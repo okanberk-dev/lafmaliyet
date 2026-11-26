@@ -360,7 +360,7 @@ gönder). Haftada en çok bir kez (`haftalik:<hafta>`). Ayrıntı: [HAFTALIK-OZE
 
 Her sabah iki zamanlanmış iş çalışır (`vercel.json`, Vercel Cron, yalnız canlıda): 07:00–08:00 **Paraşüt eşitlemesi**
 (`/api/cron/parasut`), 08:00–09:00 **sabah işi** (`/api/cron/gunluk`: sabah e-postası, hatırlatıcı bildirimi,
-karaoke / menü / online satış eşitlemeleri). Her çalışma başlarken ve biterken `job_runs` tablosuna yazılır (adımların
+karaoke / menü / online satış eşitlemeleri, pazartesi otomatik yedek, veritabanı kotasının ölçümü). Her çalışma başlarken ve biterken `job_runs` tablosuna yazılır (adımların
 sonucu ve hatasıyla; 90 gün tutulur). Ekran: **Ayarlar › Günlük işler** (`/panel/ayarlar#isler`): iki işin son
 çalışması, rozeti (Çalıştı, Atlandı, Sürüyor, Bekleniyor, Çalışmadı, Hata, Yarıda kesildi, Kısmen), adımları ve hatası.
 
@@ -374,6 +374,8 @@ Pencere sonundan 30 dakika sonra (Hobby planında saat esnek) o günün çalış
 | Paraşüt işi hata verdi / yarıda kesildi | kırmızı (eşitlemenin kendi hatası zaten "Paraşüt eşitlemesi başarısız" olarak görünüyorsa yinelenmez) | kırmızı şerit | — (hata sabah e-postasında) |
 | `CRON_SECRET` tanımlı değil | kırmızı, tek iş uyarısı | kırmızı şerit | — (hiçbir iş çalışmaz) |
 | Son yedek 30 günden eski ya da hiç yedek yok (işlerden bağımsız) | mavi, Ayarlar › Yedek'e götürür ([YEDEK.md](YEDEK.md)) | — | — |
+| Otomatik haftalık yedek alınamadı (sabah işinin "Otomatik yedek" adımı) | turuncu, "Sabah işinde bir adım hata verdi" ("Otomatik yedek: <hata>") | — | ertesi sabahın sabah e-postasında ([YEDEK.md](YEDEK.md) § 13) |
+| Veritabanı kotasının %70'i / %90'ı doldu (işlerden bağımsız; sabah işinin ölçümü) | turuncu, Ayarlar › Veritabanı'na götürür; seviye düşene kadar durur | %90'da kırmızı şerit ("Veritabanı") | eşiğin ilk geçildiği sabah ayrı sistem uyarısı e-postası, eşik başına bir kez ([YEDEK.md](YEDEK.md) § 14) |
 
 - **Bugün ekranı** ([BUGUN.md](BUGUN.md)): kırmızı uyarılar yöneticiye listenin ilk satırında ("Günlük işler", sorun
   var) görünür ve Ayarlar › Günlük işler'e götürür. Bugün'de ayrı bir "Paraşüt eşitlemesi başarısız" satırı olmadığı
