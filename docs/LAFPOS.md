@@ -746,8 +746,10 @@ sonu e-postası bugünkü içerikle gitmemiş gün (`dayEndPending`, `catchUpOrd
 gün adımda hata olur ("2026-11-22 süre yetmedi"; Ayarlar › Günlük işler), sonraki tetik dener; işlenmiş gün sessizce
 kalır. Davranış idempotenttir: ikinci çalışma rapor yazmaz, e-posta göndermez. Kasa zinciri bozulmaz: yeni gün eski
 günden önce yazıldığından devir denetimi (açılış ↔ önceki raporun devri, raporun notunda) eski günü görmemiş olabilir;
-aynı çalışmada birden çok gün yazıldıysa en eskisinden sonrakilerin raporu eskiden yeniye bir kez daha hesaplanır
-(devir değişmediyse hiçbir şey yazılmaz).
+aynı çalışmada bir gün yazıldıysa (ya da düzeltildiyse) ondan sonraki ve ondan önce işlenen günlerin (yalnız e-postası
+düşmüş dünkü gün de) raporu eskiden yeniye bir kez daha hesaplanır (devir değişmediyse hiçbir şey yazılmaz). Yöneticinin
+sildiği otomatik raporun günü sonradan düzeltme gelince de işlenmiş sayılır (rapor yeniden yazılmaz, gün her sabah öne
+geçmez).
 
 **Kasa raporu kendiliğinden yazılır** (`writeAutoReport`, tek işlem, geç raporun ve raporun kilidi altında):
 

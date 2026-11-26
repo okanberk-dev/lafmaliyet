@@ -276,8 +276,18 @@ export async function writeAutoReport(db: DB, date: string, now = new Date()): P
         .set({ dayHash: day.hash, missing: missingFor(null), updatedAt: now, ...patch })
         .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
 
-    // Otomatik rapor yönetici tarafından silindiyse yeniden yazılmaz
-    if (!prev && state.autoValues) return "deleted";
+    // Otomatik rapor yönetici tarafından silindiyse yeniden yazılmaz. Rapor adımı yine de bu içeriği işledi (day_hash): silinen
+    // günün sonradan gelen düzeltmesi sabah işinde her gün "işi bekleyen" sayılmasın (dayEndPending; yoksa öne geçip süreyi
+    // yer, süre yetmezse adım boşuna hata verir)
+    if (!prev && state.autoValues) {
+      if (state.dayHash !== day.hash) {
+        await tx
+          .update(s.lafposDayEnds)
+          .set({ dayHash: day.hash, updatedAt: now })
+          .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
+      }
+      return "deleted";
+    }
     if (!prev) {
       if (next.countedCash === null) {
         await setState({ reportId: null, autoValues: null });
@@ -1003,9 +1013,9 @@ export const CATCH_UP_MIN_MS = 2_000;
  * günler sessizce kalır.
  *
  * Kasa zinciri: yeni gün önce yazıldığından raporunun devir denetimi (açılış ↔ önceki raporun devri, notta) ondan sonra
- * yazılan eski günü görmemiş olabilir. Bu çalışmada birden çok gün yazıldıysa (ya da düzeltildiyse) en eskisinden
- * sonrakilerin raporu eskiden yeniye bir kez daha hesaplanır (writeAutoReport); devir değişmediyse hiçbir şey yazılmaz,
- * ertesi çalışma da yazmaz
+ * yazılan eski günü görmemiş olabilir. Bu çalışmada bir gün yazıldıysa (ya da düzeltildiyse), en eskisinden sonra ve
+ * ondan önce işlenen günlerin (yazılan, düzeltilen ya da değişmeyen; ör. yalnız e-postası düşmüş dünkü gün) raporu eskiden
+ * yeniye bir kez daha hesaplanır (writeAutoReport); devir değişmediyse hiçbir şey yazılmaz, ertesi çalışma da yazmaz
  */
 export async function catchUpLafposDayEnds(
   db: DB,
@@ -1040,8 +1050,16 @@ export async function catchUpLafposDayEnds(
     if (timeLeft()) days.push(await runLafposDayEnd(db, d.date, now, opts));
     else left.push(d.date);
   }
+  // Devir yalnız önceki raporun sayım ve teslimine bakar: yazılan ya da düzeltilen en eski günden sonra bu çalışmada
+  // ondan önce işlenen her gün (yazılan, düzeltilen ve değişmeyen; ör. e-postası düşmüş dünkü gün) yeniden hesaplanır
   const wrote = days.filter((d) => d.report === "written" || d.report === "updated").map((d) => d.date).sort();
-  for (const date of wrote.slice(1)) {
+  const redo = wrote.length
+    ? days
+        .filter((d) => d.date > wrote[0] && (d.report === "written" || d.report === "updated" || d.report === "unchanged"))
+        .map((d) => d.date)
+        .sort()
+    : [];
+  for (const date of redo) {
     if (!timeLeft()) break;
     try {
       await writeAutoReport(db, date, now);
