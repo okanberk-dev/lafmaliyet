@@ -988,6 +988,39 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     await assert.rejects(connect.finishParasutConnect({ code: "kod-2", state: to.searchParams.get("state") }), /bulunamadı ya da süresi doldu/);
   });
 
+  test("bağlanma isteği state'e ve başlatan oturuma bağlı: uydurma state harcayamaz, başka oturum tamamlayamaz", async () => {
+    const connect = await import("../src/server/parasut/connect");
+    await forgetOidc();
+    const pendingKeys = async () =>
+      (await db.select({ key: s.integrationState.key }).from(s.integrationState)).map((r) => r.key).filter((k) => k.startsWith("parasut.connect"));
+
+    const first = new URL(await connect.startParasutConnect("tuzla", "Patron", 7));
+    const second = new URL(await connect.startParasutConnect("tuzla", "Patron", 7));
+    assert.equal((await pendingKeys()).length, 1, "aynı hesabın yeni isteği öncekinin yerine geçti");
+    assert.ok(!(await pendingKeys()).some((k) => k.includes(second.searchParams.get("state")!)), "state'in kendisi yazılmadı");
+    await assert.rejects(connect.finishParasutConnect({ code: "k", state: first.searchParams.get("state") }, undefined, { userId: 7 }), /bulunamadı/);
+
+    // Uydurma state: kayıt bulunmaz, gerçek istek yerinde kalır
+    await assert.rejects(connect.finishParasutConnect({ code: "k", state: "uydurma" }, undefined, { userId: 7 }), /bulunamadı/);
+    await assert.rejects(connect.finishParasutConnect({ code: "k", state: null }, undefined, { userId: 7 }), /state yok/);
+    assert.equal((await pendingKeys()).length, 1, "yanlış state başkasının isteğini harcamadı");
+
+    // Başka bir yöneticinin oturumu tamamlayamaz; istek de harcanır (yeniden başlatılır)
+    await assert.rejects(connect.finishParasutConnect({ code: "k", state: second.searchParams.get("state") }, undefined, { userId: 8 }), /başka bir oturumda/);
+    assert.deepEqual(await pendingKeys(), []);
+    assert.deepEqual(fake.grants, [], "kod belirtece çevrilmedi");
+
+    const third = new URL(await connect.startParasutConnect("tuzla", "Patron", 7));
+    assert.deepEqual(await connect.finishParasutConnect({ code: "kod-3", state: third.searchParams.get("state") }, undefined, { userId: 7 }), { by: "Patron", account: "tuzla" });
+    assert.deepEqual(fake.grants, ["authorization_code"]);
+
+    // Eski sürümün tek kaydı ve süresi geçmiş istekler temizlenir
+    await db.insert(s.integrationState).values({ key: "parasut.connect", value: { sealed: "x" } });
+    await db.insert(s.integrationState).values({ key: "parasut.connect:eski", value: { sealed: "x" }, updatedAt: new Date(Date.now() - 11 * 60_000) });
+    await connect.startParasutConnect("tuzla", "Patron", 7);
+    assert.equal((await pendingKeys()).length, 1, "yalnız yeni istek kaldı");
+  });
+
   test("yanlış yazılmış isteğe bağlı adres eşitlemeyi durdurmaz; hesabı bağlama açık hatayla başlamaz", async () => {
     const connect = await import("../src/server/parasut/connect");
     process.env.PARASUT_REDIRECT_URI = "http://ladmin.laffogato.net/geri";

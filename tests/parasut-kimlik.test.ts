@@ -160,8 +160,10 @@ test("bağlanma akışı: state doğrulanır, bekleyen istek tek kullanımlık, 
   const connect = read("src/server/parasut/connect.ts");
   assert.match(connect, /sameToken\(input\.state, pending\.state\)/, "state karşılaştırılıyor");
   assert.match(connect, /code_verifier: pending\.verifier/, "PKCE doğrulayıcısı kod değişiminde gidiyor");
-  // Bekleyen istek okunurken siliniyor: aynı state ile ikinci dönüş kabul edilmez
-  assert.match(connect, /delete\(s\.integrationState\)[\s\S]{0,120}PENDING_KEY/);
+  // Bekleyen istek state'in özetiyle anılır ve okunurken siliniyor: aynı state ile ikinci dönüş kabul edilmez, uydurma
+  // state başkasının isteğini harcayamaz; state'in kendisi veritabanına yazılmaz
+  assert.match(connect, /delete\(s\.integrationState\)\.where\(eq\(s\.integrationState\.key, pendingKey\(state\)\)\)\.returning\(\)/);
+  assert.match(connect, /createHash\("sha256"\)\.update\(state\)/);
   for (const f of ["src/server/parasut/oidc.ts", "src/server/parasut/connect.ts", "src/server/parasut/config.ts", "src/server/parasut/client.ts"]) {
     assert.match(read(f), /^import "server-only";/, f);
   }
@@ -175,7 +177,9 @@ test("dönüş adresi DevHub'a kaydedilen yolla aynı ve rota o yolda duruyor", 
   assert.match(back, /finishParasutConnect/);
   // Yalnız yönetici: personel ve oturumsuz istek kod değişimine giremez
   assert.match(back, /user\.role !== "admin"/);
-  assert.match(read("src/app/panel/parasut/baglan/route.ts"), /user\.role !== "admin"/);
+  const start = read("src/app/panel/parasut/baglan/route.ts");
+  assert.match(start, /user\.role !== "admin"/);
+  assert.match(start, /sameOrigin\(request\)/, "başka siteden başlatılamaz");
 });
 
 // ---------------------------------------------------------------- varsayılan ayarlar (config.ts "server-only" olduğu için kaynaktan)

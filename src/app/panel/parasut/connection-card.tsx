@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronDown, Copy, PlugZap, Save, Unplug } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { useActionTransition } from "@/components/ui/action-error";
@@ -74,7 +74,14 @@ export function ConnectionCard({
 }) {
   const [resetting, startReset] = useActionTransition();
   const [scoping, startScope] = useActionTransition();
-  const connectHref = account ? `/panel/parasut/baglan?hesap=${encodeURIComponent(account)}` : "/panel/parasut/baglan";
+  // Form gönderildi, Paraşüt'e gidiliyor: ikinci basış ikinci bağlanma isteği açmasın
+  const [connecting, setConnecting] = useState(false);
+  useEffect(() => {
+    // Paraşüt'ten Geri ile dönülünce sayfa önbellekten gelir: düğme yeniden basılabilsin
+    const reset = (e: PageTransitionEvent) => e.persisted && setConnecting(false);
+    window.addEventListener("pageshow", reset);
+    return () => window.removeEventListener("pageshow", reset);
+  }, []);
   const [confirmReset, setConfirmReset] = useState(false);
   const { copied, copy } = useCopied();
 
@@ -128,10 +135,14 @@ export function ConnectionCard({
           <span className="min-w-0 flex-1 basis-56 text-[13px] leading-5 text-pretty text-ink-mute">{status.text}</span>
           <span className="flex flex-wrap gap-2 max-sm:w-full">
             {configured ? (
-              /* Tam sayfa gidiş: rota Paraşüt'ün onay ekranına 302 verir (Next yönlendirmesi değil, önden yüklenmez) */
-              <a href={connectHref} className={buttonClass(connection.connected ? "secondary" : "primary", "md", "max-sm:flex-1")}>
-                <PlugZap size={16} aria-hidden="true" /> {connection.connected ? "Yeniden bağla" : "Paraşüt hesabını bağla"}
-              </a>
+              /* Düğmeyle POST (aynı köken): rota bağlanma isteğini kaydedip Paraşüt'ün onay ekranına 303 verir. Tam sayfa
+                 form gönderimi, Next yönlendirmesi değil; adres çubuğundan ya da bağlantıdan başlatılamaz (baglan/route.ts) */
+              <form method="post" action="/panel/parasut/baglan" className="contents" onSubmit={() => setConnecting(true)}>
+                {account ? <input type="hidden" name="hesap" value={account} /> : null}
+                <Button type="submit" variant={connection.connected ? "secondary" : "primary"} disabled={connecting} className="max-sm:flex-1">
+                  <PlugZap size={16} aria-hidden="true" /> {connection.connected ? "Yeniden bağla" : "Paraşüt hesabını bağla"}
+                </Button>
+              </form>
             ) : (
               <Button disabled title="Önce ayarları kaydedin" className="max-sm:flex-1">
                 <PlugZap size={16} aria-hidden="true" /> Paraşüt hesabını bağla

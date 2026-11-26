@@ -149,16 +149,27 @@ test("kaynak: eşitleme durumu hesap adıyla; sync.ts'te düz 'parasut.' anahtar
 
 test("kaynak: bağlanma isteği hesabı mühürlü taşır, dönüşte belirteç o hesaba yazılır", () => {
   const connect = read("src/server/parasut/connect.ts");
-  assert.match(connect, /await writePending\(\{ state, verifier, redirectUri: cfg\.redirectUri, at: Date\.now\(\), by, account \}\);/);
-  // Önce bekleyen istek (tek kullanımlık) ve state, sonra o hesabın ayarları
+  assert.match(connect, /const pending: Pending = \{ state, verifier, redirectUri: cfg\.redirectUri, at: Date\.now\(\), by, [^}]*userId[^}]*account \};/);
+  assert.match(connect, /seal\(JSON\.stringify\(pending\), "parasut-connect"\)/);
+  // Önce bekleyen istek (state'iyle, tek kullanımlık) ve oturum, sonra o hesabın ayarları
   const finish = connect.slice(connect.indexOf("export async function finishParasutConnect"));
-  assert.ok(finish.indexOf("takePending()") < finish.indexOf("readParasutConfig(account)"), "hesap bekleyen istekten");
-  assert.ok(finish.indexOf("sameToken(input.state, pending.state)") < finish.indexOf("readParasutConfig(account)"));
+  assert.ok(finish.indexOf("takePending(input.state)") < finish.indexOf("readParasutConfig(account)"), "hesap bekleyen istekten");
+  assert.ok(finish.indexOf("pending.userId !== session.userId") < finish.indexOf("readParasutConfig(account)"), "başka oturum tamamlayamaz");
   assert.match(finish, /await isAccount\(account\)/, "hesap bu arada geçersizleştiyse reddedilir");
+  // Başlatma yalnız aynı kökenden POST; hesap formdan, sunucuda doğrulanır; GET hiçbir şey başlatmaz
   const start = read("src/app/panel/parasut/baglan/route.ts");
-  assert.match(start, /searchParams\.get\("hesap"\)/);
-  assert.match(start, /isParasutAccount\(account\)/, "adresteki hesap sunucuda doğrulanır");
-  assert.match(read("src/app/panel/parasut/baglan/geri/route.ts"), /finishParasutConnect\([\s\S]{0,120}isParasutAccount\(a\)/);
+  assert.match(start, /export async function POST\(request: NextRequest\) \{\s*await connection\(\);\s*\/\/[^\n]*\n\s*if \(!sameOrigin\(request\)\) return/);
+  assert.match(start, /formData\(\)\)\.get\("hesap"\)/);
+  assert.doesNotMatch(start, /searchParams/, "hesap adresten okunmaz");
+  assert.match(start, /isParasutAccount\(account\)/, "formdaki hesap sunucuda doğrulanır");
+  assert.match(start, /startParasutConnect\(account, user\.name, user\.id\)/);
+  const get = start.slice(start.indexOf("export async function GET"), start.indexOf("export async function POST"));
+  assert.doesNotMatch(get, /startParasutConnect/, "GET bağlanmayı başlatmaz");
+  assert.match(read("src/app/panel/parasut/baglan/geri/route.ts"), /finishParasutConnect\([\s\S]{0,120}isParasutAccount\(a\), \{ userId: user\.id \}/);
+  // Kart bağlantı değil form: adres çubuğuna düşecek bir adres yok
+  const card = read("src/app/panel/parasut/connection-card.tsx");
+  assert.match(card, /<form method="post" action="\/panel\/parasut\/baglan"/);
+  assert.doesNotMatch(card, /baglan\?hesap=/);
   // Oturum hesap adıyla; kilit hesap başına
   const client = read("src/server/parasut/client.ts");
   assert.match(client, /parasutKey\(TOKEN_KEY, account\)/);
