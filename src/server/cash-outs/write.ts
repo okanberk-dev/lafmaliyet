@@ -3,6 +3,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
+import { CASH_OUT_REQUEST_TEXT } from "@/lib/cash-out-requests";
 import { cashOutWritesExpense, isInvoiceDoc, staffCategory, staffExpenseLocked, staffToExpenses, type CashOutSnapshot } from "@/lib/cash-outs";
 import { LAFPOS_CASH_OUT_TEXT, lafposCashOutChange } from "@/lib/lafpos/cash-moves";
 import { expenseDateFor } from "@/lib/photo-read/receipt";
@@ -86,6 +87,33 @@ export async function lockCashOut(tx: CashOutTx, id: number): Promise<CashOutRow
   return row ?? null;
 }
 
+/**
+ * Bütün kategorileri (maaş, kira, reklam) yazar mı: düzey "admin" ve gerçek rol `kategori.tum` (yönetici evet, "admin"
+ * düzeyindeki müdür hayır). Elle kurulan kişi (LafPOS, fatura eşleme) yöneticidir
+ */
+const writesAllCategories = (me: CashOutActor) => me.role === "admin" && can(realRoleOf(me), "kategori.tum");
+
+/** Satırın bağlı harcama kaydı yöneticinin kategorisinde mi (personelin seçemediği; maaş, avans, kapatılmış kategori) */
+export async function adminCategoryOf(tx: CashOutTx, cashOutId: number): Promise<boolean> {
+  const [cur] = await tx
+    .select({ section: s.expenseCategories.section, panelGroup: s.expenseCategories.panelGroup, active: s.expenseCategories.active })
+    .from(s.expenseEntries)
+    .innerJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
+    .where(eq(s.expenseEntries.cashOutId, cashOutId))
+    .limit(1);
+  return staffExpenseLocked(cur);
+}
+
+/**
+ * Müdür ("admin" düzeyinde yazar ama bütün kategorileri yazamaz) yöneticinin kategorisindeki satıra dokunamaz: silmesi
+ * ve personelin o satır için isteğine karar (onay da ret de) yöneticinin (docs/ROLLER.md › Kararlar); düzeltmesini
+ * writeCashOut reddeder. Yönetici ve personel buradan geçer (personelin kuralı guard.ts: istek). İşlemin içinde, satır
+ * kilitlendikten sonra
+ */
+export async function assertOwnerRowOpen(tx: CashOutTx, me: CashOutActor, cashOutId: number, text: string = CASH_OUT_REQUEST_TEXT.ownerRow): Promise<void> {
+  if (me.role === "admin" && !writesAllCategories(me) && (await adminCategoryOf(tx, cashOutId))) throw new UserError(text);
+}
+
 export interface WriteCashOutOptions {
   /**
    * Satırın şubesi. Verilmezse panelde seçili şubeye iner (`currentTillBranch`). Personelin isteği
@@ -114,13 +142,13 @@ export interface WriteCashOutOptions {
  * (satırın gününden 400 gün) ya da değiştiyse eskisini bırakır. İşlemin içinde. Personelin kuralları yazana göre:
  * kategori yalnız personelin kategorilerinden (satırın şimdiki kategorisi kalabilir), yöneticinin kategorisindeki kaydı
  * kaldıramaz ve taşıyamaz, fotoğraf kendisinin. Yönetici (doğrudan ya da bir isteği onaylarken) serbest. Müdür "admin"
- * düzeyinde yazar ama kategoride personelin kuralına bağlı, doğrudan da bir isteği onaylarken de (docs/ROLLER.md ›
- * Kararlar); geri almada silinen kaydın kategorisi geri gelir.
+ * düzeyinde yazar ama kategoride personelin kuralına bağlı, doğrudan da bir isteği onaylarken de, ve yöneticinin
+ * kategorisindeki satırı hiç düzeltemez (docs/ROLLER.md › Kararlar); geri almada silinen kaydın kategorisi geri gelir.
  */
 export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutData, o: WriteCashOutOptions = {}): Promise<{ id: number; expenseId: number | null; updated: boolean }> {
   const admin = me.role === "admin";
   // Bütün kategoriler (maaş, kira, reklam) gerçek role bakar: yönetici evet, "admin" düzeyindeki müdür hayır
-  const allCategories = admin && can(realRoleOf(me), "kategori.tum");
+  const allCategories = writesAllCategories(me);
   const harcama = d.kind === "harcama";
   const prev = o.prev !== undefined ? o.prev : d.id ? await lockCashOut(tx, d.id) : null;
   if (d.id && !prev) throw new UserError("Satır bulunamadı; silinmiş olabilir");
@@ -151,10 +179,12 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
     lafposAwaitingCategory: lafposAwaiting,
   });
 
-  // Yöneticinin kategorisindeki kayıt: personel tutarı düzeltir, kaydı kaldıramaz (teslime çevirerek) ve taşıyamaz
-  if (!admin && existing && (!toExpenses || d.categoryId !== existing.categoryId)) {
+  // Yöneticinin kategorisindeki kayıt (maaş, kira; gerçek role göre). Personel tutarı düzeltir, kaydı kaldıramaz
+  // (teslime çevirerek) ve taşıyamaz. Müdür ("admin" düzeyinde) satıra hiç dokunmaz: tutarı, metni, türü ve kategorisi
+  // yöneticinin, doğrudan da bir isteği onaylarken de (docs/ROLLER.md › Kararlar)
+  if (!allCategories && existing && (admin || !toExpenses || d.categoryId !== existing.categoryId)) {
     const [cur] = await tx.select().from(s.expenseCategories).where(eq(s.expenseCategories.id, existing.categoryId)).limit(1);
-    if (staffExpenseLocked(cur)) throw new UserError(EXPENSE_LOCKED_EDIT);
+    if (staffExpenseLocked(cur)) throw new UserError(admin ? CASH_OUT_REQUEST_TEXT.ownerRow : EXPENSE_LOCKED_EDIT);
   }
 
   // Kategori: personel yalnız alım kategorilerinden (satırın şimdiki kategorisi kalabilir). Geri almada silinen

@@ -38,7 +38,7 @@ import { getPhoto, holdPhoto, linkable, releasePhoto } from "@/server/storage/ph
 import { UserError } from "@/server/user-error";
 
 import { staffCashOutGate } from "./guard";
-import { attachReceiptPhoto, lockCashOut, removeCashOut, writeCashOut, type CashOutActor, type CashOutRow, type CashOutTx } from "./write";
+import { assertOwnerRowOpen, attachReceiptPhoto, lockCashOut, removeCashOut, writeCashOut, type CashOutActor, type CashOutRow, type CashOutTx } from "./write";
 
 /** Onayda: satır istekten sonra yöneticinin bir tedarikçi ödemesine bağlandı */
 const CASH_OUT_LINKED_REVIEW = "Bu satır istekten sonra bir tedarikçi ödemesine bağlandı; isteği reddedin, değişikliği Tedarikçiler'den yapın.";
@@ -301,7 +301,7 @@ export type CashOutReviewOutcome =
  * görülen sürüm). Ekleme onayı satırı isteyenin adıyla yazar (yöneticinin yazım yolu: kategori, harcama kaydı, fiş);
  * düzeltme ve silme onayında satır kilitlenir, istekten sonra değiştiyse yalnız "Yine de uygula" ile (`force`). Fişli
  * işaretlenmiş satırın fotoğrafı olmalı. Aynı satırın öteki bekleyen istekleri kapanır. Ret fişi 7 gün tutar. Onay
- * kasa raporunu asla değiştirmez.
+ * kasa raporunu asla değiştirmez. Müdür yöneticinin kategorisindeki satırın isteğine karar vermez (assertOwnerRowOpen).
  */
 export async function reviewCashOutRequestCore(db: DB, me: CashOutActor, input: CashOutReviewInput, now = new Date()): Promise<CashOutReviewOutcome> {
   if (me.role !== "admin") throw new UserError(REQUEST_TEXT.adminOnly);
@@ -313,6 +313,9 @@ export async function reviewCashOutRequestCore(db: DB, me: CashOutActor, input: 
     if (input.decision === "approve" && target !== null) await lockCashOut(tx, target);
     const row = await lockForReview(tx, me, { id: input.id, seenVersion: input.seenVersion, peeked }, now);
     const payload = CashOutRequestPayload.parse(row.payload);
+    // Yöneticinin kategorisindeki (maaş, kira) satırın düzeltme ve silme isteği: "admin" düzeyindeki müdür karar vermez,
+    // onay da ret de yöneticinin (gerçek rol; docs/ROLLER.md › Kararlar). Kategori satırın şimdiki kaydından
+    if (payload.cashOutId !== null) await assertOwnerRowOpen(tx, me, payload.cashOutId, CASH_OUT_REQUEST_TEXT.ownerReview);
     if (input.decision === "reject") return { status: "rejected" as const, payload, request: await decide(tx, row, me, "rejected", { note: input.note }, now) };
     const author = { id: row.requestedBy, name: row.requestedByName };
     if (payload.op === "ekle") {

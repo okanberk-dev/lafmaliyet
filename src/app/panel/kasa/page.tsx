@@ -428,10 +428,12 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const [linked, supplierNames, cariHints] = showForm
     ? await Promise.all([owner ? Promise.resolve(new Set<number>()) : loadLinkedCashOuts(ids), loadSupplierNames(), owner ? loadKasaCariHints(ids, today) : Promise.resolve({})])
     : [new Set<number>(), [], {}];
-  const hideName = (o: (typeof outs)[number]) => (o.categoryId !== null && !staffCats.has(o.categoryId) ? { ...o, categoryName: null } : o);
+  const adminCategoryRow = (o: (typeof outs)[number]) => o.categoryId !== null && !staffCats.has(o.categoryId);
+  const hideName = (o: (typeof outs)[number]) => (adminCategoryRow(o) ? { ...o, categoryName: null } : o);
   // Tedarikçi ödemesine bağlı satır yöneticiden başkasına kilitli görünür (cari yalnız yöneticinin; sunucu da reddeder:
-  // persist › lockCashOutLink, deleteCashOut › assertCashOutDeletable gerçek role bakar)
-  const lockRow = <T extends { id: number }>(o: T) => (owner ? o : { ...o, locked: linked.has(o.id) });
+  // persist › lockCashOutLink, deleteCashOut › assertCashOutDeletable gerçek role bakar). Müdüre yöneticinin
+  // kategorisindeki (maaş, kira) satır da kilitli: düzeltmesi ve silinmesi yöneticinin (writeCashOut, assertOwnerRowOpen)
+  const lockRow = (o: (typeof outs)[number]) => (owner ? o : { ...o, locked: linked.has(o.id) || (!allCategories && adminCategoryRow(o)) });
   const dayOuts: CashOutView[] = admin
     ? allCategories
       ? outs.map(lockRow)

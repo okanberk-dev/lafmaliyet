@@ -176,9 +176,10 @@ test("Kasa (§8): personelin satır verisi beyaz listeyle kurulur; ödeme bağı
   // Sayfa personelde yalnız staffCashOutRow'dan geçen satırı verir; yöneticinin ipucu personele hiç okunmaz
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /const dayOuts: CashOutView\[\] = admin\s+\? allCategories\s+\? outs\.map\(lockRow\)\s+: outs\.map\(\(o\) => lockRow\(hideName\(o\)\)\)\s+: outs\.map\(\(o\) => staffCashOutRow\(/);
-  // Bağlı satır müdüre de kilitli görünür (yalnız yönetici bağlı satırı düzeltir)
+  // Bağlı satır müdüre de kilitli görünür (yalnız yönetici bağlı satırı düzeltir); müdüre yöneticinin kategorisindeki
+  // satır da (docs/ROLLER.md › Kararlar)
   assert.match(page, /owner \? Promise\.resolve\(new Set<number>\(\)\) : loadLinkedCashOuts\(ids\)/);
-  assert.match(page, /const lockRow = <T extends \{ id: number \}>\(o: T\) => \(owner \? o : \{ \.\.\.o, locked: linked\.has\(o\.id\) \}\);/);
+  assert.match(page, /const lockRow = \(o: \(typeof outs\)\[number\]\) => \(owner \? o : \{ \.\.\.o, locked: linked\.has\(o\.id\) \|\| \(!allCategories && adminCategoryRow\(o\)\) \}\);/);
   assert.match(page, /owner \? loadKasaCariHints\(ids, today\) : Promise\.resolve\(\{\}\)/);
   // Ad ipucu faturalardaki eşleşme kuralıyla aynı anahtarı kullanır (pencere fatura kurallarını yüklemez)
   const { supplierMatchKey } = await import("../src/app/panel/faturalar/rules");

@@ -85,16 +85,16 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
   gitmedi; yöneticiye haber verin…"; `src/lib/staff-errors.ts` › `emailErrorFor`, okuyanın gerçek rolüyle).
 
 **Görür ve yapar:** personelin her ekranı; kasa raporlarının rakamları ve geçmişi, onaysız düzeltme ve silme, kilitli
-ya da eski güne yazma, kafe kapalı günü işaretleme; kasadan çıkanı ve zayi / ikramı doğrudan; Onaylar (şubesinin
-istekleri); vardiya planını yazma; Teslim defteri; Bugün'de şubesinin günü (ciro, kasa farkı, geçen hafta); İşçilik /
-ciro (haftalık ve aylık, yalnız şubesi).
+ya da eski güne yazma, kafe kapalı günü işaretleme; kasadan çıkanı (yöneticinin kategorisindeki satır hariç) ve zayi /
+ikramı doğrudan; Onaylar (şubesinin istekleri); vardiya planını yazma; Teslim defteri; Bugün'de şubesinin günü (ciro,
+kasa farkı, geçen hafta); İşçilik / ciro (haftalık ve aylık, yalnız şubesi).
 
 **Görmez / yapamaz:** maaşlar ve kişisel ücretler (Maaşlar, avanslar, bordro, personel belgeleri, İşçilik'in günlük
-görünümü, kasadan çıkanın maaş / kira kategorileri), vergi, Paraşüt, ayarlar, kullanıcı yönetimi, yedek, anahtarlar,
-şube ayarları, Genel bakış, Şube karşılaştırma, Kaçak ve Kayıp önleme raporları, maliyet / kâr / hammadde fiyatı
-ekranları, reçeteyi doğrudan düzenleme ve reçete önerisine karar, karaoke doluluğu (tutar) ve Kasa raporunun site
-satırındaki karaoke ön ödemesi (online toplamı görür; `karaoke.tutar`), kontrol listelerini düzenleme, panel asistanı
-(yalnız yönetici), öteki şubeler.
+görünümü, kasadan çıkanın maaş / kira kategorileri: seçmek, adını görmek, o kategorideki satırı düzeltmek, silmek ve
+isteğine karar vermek), vergi, Paraşüt, ayarlar, kullanıcı yönetimi, yedek, anahtarlar, şube ayarları, Genel bakış, Şube
+karşılaştırma, Kaçak ve Kayıp önleme raporları, maliyet / kâr / hammadde fiyatı ekranları, reçeteyi doğrudan düzenleme
+ve reçete önerisine karar, karaoke doluluğu (tutar) ve Kasa raporunun site satırındaki karaoke ön ödemesi (online
+toplamı görür; `karaoke.tutar`), kontrol listelerini düzenleme, panel asistanı (yalnız yönetici), öteki şubeler.
 
 ## Muhasebeci
 
@@ -131,11 +131,18 @@ oturumları kapanır (oturum sürümü).
   yalnız adı, tutarı ve fişi gider; `src/lib/cash-outs.ts` › `sheetCashOutsByDate`); sunucu da müdürün maaş, kira gibi
   kategoriye yazmasını reddeder: kural yazım yolunda (`src/server/cash-outs/write.ts` › `writeCashOut`, gerçek rol),
   doğrudan kayıt da Onaylar'da isteğin onayı da ondan geçer (Onaylar'ın kategori seçicisi ve fiş fotoğrafının okuması
-  müdüre yalnız personelin kategorilerini verir, `src/server/photo-read/read.ts` › `readPhotoFor`; düzeltmede satırın
-  şimdiki kategorisi kalabilir, geri almada silinen kaydınki geri gelir). Onaylar'ın kasadan çıkan kartında da
-  yöneticinin kategorisinin adı müdüre gitmez ("Bağlı gider: yöneticinin kategorisi"); olası tekrar listesi ona yalnız
-  isteğin şubesinin satırlarını ve personelin kategorisindeki harcama kayıtlarını gösterir (öteki şubenin satırı, maaş
-  ve kira kaydı gitmez; `src/server/data/cash-out-requests.ts` › `cashOutCards`).
+  müdüre yalnız personelin kategorilerini verir, `src/server/photo-read/read.ts` › `readPhotoFor`; geri almada silinen
+  kaydınki geri gelir). **Yöneticinin kategorisindeki satıra** (bağlı harcama kaydı maaş, kira gibi personelin
+  seçemediği ya da kapatılmış bir kategoride) müdür hiç dokunmaz: tutarını, metnini ve türünü düzeltemez, personelin
+  kategorisine taşıyamaz, teslime çevirip kaydı kaldıramaz, silemez; personelin o satır için düzeltme ve silme isteğine
+  de karar vermez (onay da ret de yöneticinin; kartında düğme yok, "isteğe yönetici karar verir"). Kasa'da satır ona
+  kilitli görünür (kilit simgesi, dokununca "yöneticiye haber verin"). Sunucu gerçek role bakar: düzeltme
+  `writeCashOut`, silme ve Onaylar'daki karar `assertOwnerRowOpen` (`src/server/cash-outs/write.ts`); hatanın sonu
+  "düzeltmesini ve silinmesini yönetici yapar" / "isteğe yönetici karar verir" (`CASH_OUT_REQUEST_TEXT.ownerRow`,
+  `ownerReview`). Onaylar'ın kasadan çıkan kartında da yöneticinin kategorisinin adı müdüre gitmez ("Bağlı gider:
+  yöneticinin kategorisi"); olası tekrar listesi ona yalnız isteğin şubesinin satırlarını ve personelin kategorisindeki
+  harcama kayıtlarını gösterir (öteki şubenin satırı, maaş ve kira kaydı gitmez; `src/server/data/cash-out-requests.ts`
+  › `cashOutCards`).
 - **Genel bakış, Şube karşılaştırma, Kaçak ve Kayıp önleme müdüre açılmadı:** işletme geneli kâr, kira ve maaşı ve
   öteki şubeleri bir arada gösteriyorlar. Müdürün şube raporları: Bugün'deki şube günü ve İşçilik / ciro.
 - **Muhasebeci kişi başı maaş görmez**; bordro toplamları, SGK ve muhtasar toplamları vergide görünür. Personel
@@ -176,6 +183,8 @@ oturumları kapanır (oturum sürümü).
   dosyasının dışa verdiği her eylem bir kapı çağırır (`tests/helpers/action-gates.ts`) ve hiçbiri muhasebeciye yazma
   izni vermez.
 - `tests/roller-db.test.ts` (gerçek Postgres, `ROLLER_TEST_DATABASE_URL`): kısıtlar; müdür öteki şubeyi okuyamaz,
-  öteki şubenin isteğine karar veremez, öteki şubeye yazamaz, şubesi pasifken oturumu yok; muhasebecide **bütün** sunucu
-  eylemleri "salt okunur" döner ve veritabanının hiçbir tablosu değişmez; şube kurulumu e-postası müdür, muhasebeci,
-  yönetici ya da öteki şubenin personeli olamaz (şube kaydı, şubenin e-postası ve kurulum bağlantısı yazılmaz).
+  öteki şubenin isteğine karar veremez, öteki şubeye yazamaz, yöneticinin kategorisindeki kasadan çıkanı düzeltemez,
+  taşıyamaz, silemez (`tests/kasa-cikan-istek-db.test.ts`: o satırın isteğine de karar veremez), şubesi pasifken oturumu
+  yok; muhasebecide **bütün** sunucu eylemleri "salt okunur" döner ve veritabanının hiçbir tablosu değişmez; şube
+  kurulumu e-postası müdür, muhasebeci, yönetici ya da öteki şubenin personeli olamaz (şube kaydı, şubenin e-postası ve
+  kurulum bağlantısı yazılmaz).

@@ -368,7 +368,8 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
 - Personelin düzeltmesi Aylık harcamalar kaydını açmaz ve silmez: yöneticinin oradan sildiği kayıt geri gelmez,
   faturaya açtığı kayıt kalır; tutar ve tarih kayda yansır, yöneticinin yazdığı açıklama, ödeme şekli ve not kalır.
   Kaydı yöneticinin kategorisindeki (maaş, kira gibi) satırın her değişikliği ve silinmesi yöneticinin onayıyla
-  (aşağıda); kategoriyi yalnız yönetici değiştirir.
+  (aşağıda); kategoriyi yalnız yönetici değiştirir. Müdür bu satırı düzeltemez ve silemez, isteğine de karar vermez:
+  Kasa'da ona kilitli görünür ([ROLLER.md](ROLLER.md) › Kararlar).
 - Aylık harcamalar'da bu kayıtlarda fotoğraf simgesi ve **Kasadan** rozeti görünür; tutarı ve tarihi Kasa raporu'nda
   düzeltilir. Aylık harcamalar'dan silinen kayıt kasa satırını silmez.
 
@@ -424,12 +425,13 @@ kategorisindeki satır (maaş, avans) kârı değiştirir. Bunlar yöneticinin o
 - Kapanmış güne kasadan çıkan eklenmesini yöneticinin kategorisi seçilerek istemek olmaz: kategori personelin
   kategorilerinden biridir, yönetici onayda değiştirebilir.
 - **Onaylar › Kasa** kartı: satır ve fişi, düzeltmede değişecekler ve bağlı gider; bağlam olarak günün kasa farkı, o
-  günün bütün satırları ("satırlar onaydan sonra …"), olası tekrar (aynı tutar, ±1 gün), kırmızı işaretler (tutar
-  günün açığına ±1 ₺ eşit; kapanmış güne teslim ya da fişsiz çıkış) ve gider ayı bu ay değilse uyarı. Eklemede ve
-  düzeltmede "Aylık harcamalar'a da yaz" ve kategori (bütün etkin kategoriler). İstekten sonra satır, fişi ya da bağlı
-  gider kaydı değiştiyse amber "İstekten sonra değişti" ve **Yine de uygula**. Fiş belgeli işaretlenen satırın fotoğrafı
-  yoksa onay reddedilir. Onay satırı isteyenin adıyla yazar ve kasa raporunu **asla** değiştirmez: rapordaki fark kartta
-  görünür, rapor normal yoldan düzeltilir.
+  günün bütün satırları ("satırlar onaydan sonra …"), olası tekrar (aynı tutar, ±1 gün), kırmızı işaretler (tutar günün
+  açığına ±1 ₺ eşit; kapanmış güne teslim ya da fişsiz çıkış) ve gider ayı bu ay değilse uyarı. Eklemede ve düzeltmede
+  "Aylık harcamalar'a da yaz" ve kategori (bütün etkin kategoriler; müdüre personelinkiler). Yöneticinin kategorisindeki
+  satırın isteğinde müdürün kartı karar düğmesi çizmez: "isteğe yönetici karar verir". İstekten sonra satır, fişi ya da
+  bağlı gider kaydı değiştiyse amber "İstekten sonra değişti" ve **Yine de uygula**. Fiş belgeli işaretlenen satırın
+  fotoğrafı yoksa onay reddedilir. Onay satırı isteyenin adıyla yazar ve kasa raporunu **asla** değiştirmez: rapordaki
+  fark kartta görünür, rapor normal yoldan düzeltilir.
 - **Fotoğraf kaldırma kartı:** küçük resim, okuma farkları ve neden. Onayda okuma farkı işlem geçmişine yazılır
   ("Fotoğraf rapordan çıkarıldı · … · okuma: …"), fotoğrafın rapor bağı silinir ve fotoğraf 30 gün saklanır; okumanın
   kendisi kalır. Yönetici fotoğrafı doğrudan silerse bekleyen kaldırma isteği kapanır.

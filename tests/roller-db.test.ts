@@ -283,6 +283,77 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
       }
     });
 
+    test("yöneticinin kategorisindeki (maaş) kasadan çıkanı düzeltemez, personelin kategorisine taşıyamaz, silemez; personelinkini düzeltir", async () => {
+      const outs = await import("../src/server/actions/cash-outs");
+      const { CASH_OUT_REQUEST_TEXT } = await import("../src/lib/cash-out-requests");
+      const date = "2026-01-07";
+      const cats = await db
+        .insert(s.expenseCategories)
+        .values([
+          { name: "Maaş (müdür kilidi)", section: "personel", panelGroup: "personel" },
+          { name: "Market (müdür kilidi)", section: "mal", panelGroup: "diger" },
+        ])
+        .returning({ id: s.expenseCategories.id });
+      const [salaryCat, staffCat] = cats.map((c) => c.id);
+      const rows = await db
+        .insert(s.cashOuts)
+        .values([
+          { date, kind: "harcama", amount: 5_000, description: "Avans", branchId: "tuzla", createdBy: ids.ali, createdByName: "Ali" },
+          { date, kind: "harcama", amount: 40, store: "Bim", branchId: "tuzla", createdBy: ids.ali, createdByName: "Ali" },
+        ])
+        .returning({ id: s.cashOuts.id });
+      const [salary, plain] = rows.map((r) => r.id);
+      await db.insert(s.expenseEntries).values([
+        { branchId: "tuzla", date, categoryId: salaryCat, description: "Avans", amount: 5_000, cashOutId: salary },
+        { branchId: "tuzla", date, categoryId: staffCat, description: "Bim", amount: 40, cashOutId: plain },
+      ]);
+      const line = (id: number, o: { amount: number; categoryId: number | null; kind?: "harcama" | "teslim" }) => ({
+        id,
+        date,
+        kind: o.kind ?? ("harcama" as const),
+        amount: o.amount,
+        store: null,
+        description: "Avans",
+        receiptDate: null,
+        receiptNo: null,
+        vat: null,
+        docType: "yok" as const,
+        categoryId: o.categoryId,
+        toExpenses: o.categoryId !== null,
+        photoId: null,
+        branchId: "tuzla",
+      });
+      const state = async (id: number) => {
+        const [o] = await db.select().from(s.cashOuts).where(eq(s.cashOuts.id, id));
+        const [e] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, id));
+        return [o?.kind, o?.amount, e?.categoryId, e?.amount];
+      };
+      try {
+        await signIn("mehmet");
+        asAction();
+        const refused = { ok: false, error: CASH_OUT_REQUEST_TEXT.ownerRow };
+        assert.deepEqual(await outs.saveCashOut(line(salary, { amount: 5_500, categoryId: salaryCat })), refused, "tutarı düzeltemez");
+        assert.deepEqual(await outs.saveCashOut(line(salary, { amount: 5_000, categoryId: staffCat })), refused, "personelin kategorisine taşıyamaz");
+        assert.deepEqual(await outs.saveCashOut(line(salary, { amount: 5_000, categoryId: null, kind: "teslim" })), refused, "teslime çevirip kaydı kaldıramaz");
+        assert.deepEqual(await outs.deleteCashOut(salary), refused, "silemez");
+        assert.deepEqual(await state(salary), ["harcama", 5_000, salaryCat, 5_000], "satır ve maaş kaydı değişmedi");
+        // Personelin kategorisindeki satırı doğrudan düzeltir ve siler (kıyas)
+        assert.equal((await outs.saveCashOut(line(plain, { amount: 45, categoryId: staffCat }))).ok, true);
+        assert.deepEqual(await state(plain), ["harcama", 45, staffCat, 45]);
+        assert.equal((await outs.deleteCashOut(plain)).ok, true);
+        assert.deepEqual(await state(plain), [undefined, undefined, undefined, undefined]);
+        // Yönetici düzeltir
+        await signIn("ali");
+        asAction();
+        assert.equal((await outs.saveCashOut(line(salary, { amount: 5_500, categoryId: salaryCat }))).ok, true);
+        assert.deepEqual(await state(salary), ["harcama", 5_500, salaryCat, 5_500]);
+      } finally {
+        await db.delete(s.expenseEntries).where(inArray(s.expenseEntries.cashOutId, [salary, plain]));
+        await db.delete(s.cashOuts).where(inArray(s.cashOuts.id, [salary, plain]));
+        await db.delete(s.expenseCategories).where(inArray(s.expenseCategories.id, [salaryCat, staffCat]));
+      }
+    });
+
     test("Kasa ay görünümü: pencereye giden kasadan çıkanda maaş kategorisinin adı yok, tutarı var; öteki şubenin satırı yok (bulgu 8)", async () => {
       const { cashOutsBetween } = await import("../src/server/data/cash-outs");
       const { sheetCashOutsByDate } = await import("../src/lib/cash-outs");

@@ -14,7 +14,7 @@ import { requireCan } from "@/server/auth/dal";
 import { formTillBranch, staffBranchRefusal, withBranchScope } from "@/server/branch-scope";
 import { assertCashOutDeletable, lockCashOutLink, syncLinkedCashOut } from "@/server/cari/kasa";
 import { staffCashOutGate } from "@/server/cash-outs/guard";
-import { cashOutSchema, lockCashOut, removeCashOut, writeCashOut, type CashOutActor, type CashOutData, type CashOutInput } from "@/server/cash-outs/write";
+import { assertOwnerRowOpen, cashOutSchema, lockCashOut, removeCashOut, writeCashOut, type CashOutActor, type CashOutData, type CashOutInput } from "@/server/cash-outs/write";
 import { getDb } from "@/server/db";
 import { open, seal } from "@/server/secret-box";
 
@@ -93,7 +93,8 @@ export async function saveCashOut(input: z.input<typeof saveSchema>) {
 /**
  * Siler (bağlı harcama kaydıyla); fotoğraf 7 gün daha saklanır. Geri almak için silinenin mühürlü kopyası döner
  * (`undo`; istemci içini okuyamaz ve değiştiremez). Personel kapanmış günün ve yöneticinin kategorisindeki satırı
- * silmez: silinmesini ister (kayıt onunla giderdi; geri alma da o kategoriye yazamazdı).
+ * silmez: silinmesini ister (kayıt onunla giderdi; geri alma da o kategoriye yazamazdı). Müdür yöneticinin
+ * kategorisindeki satırı hiç silmez (istek de açmaz; yönetici siler).
  */
 export async function deleteCashOut(id: number) {
   return attempt(async (): Promise<{ undo: string }> => {
@@ -107,6 +108,8 @@ export async function deleteCashOut(id: number) {
       if (otherBranch) throw new UserError(otherBranch);
       // Bağlı satır: müdüre de personel gibi kilitli (tedarikçinin adı ve ödeme günü yalnız yöneticiye)
       await assertCashOutDeletable(tx, cid, actor.role === "admin");
+      // Yöneticinin kategorisindeki (maaş, kira) satır: "admin" düzeyindeki müdür de silemez (gerçek rol; docs/ROLLER.md)
+      await assertOwnerRowOpen(tx, me, cid);
       if (me.role !== "admin" && (await staffCashOutGate(tx, me, { op: "sil", row })) === "request") throw new UserError(CASH_OUT_REQUEST_TEXT.needsApproval);
       return removeCashOut(tx, row);
     });

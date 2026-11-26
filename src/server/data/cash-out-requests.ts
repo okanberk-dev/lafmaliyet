@@ -189,6 +189,11 @@ export interface CashOutCard extends CardBase {
    * (maaş, kira gibi) adı gitmez: `categoryName` null (docs/ROLLER.md › Kararlar; Kasa sayfasındaki kuralla aynı)
    */
   expense: { categoryName: string | null; admin: boolean } | null;
+  /**
+   * Kararı yalnız yönetici verir: satır yöneticinin kategorisinde ve kartı okuyan bütün kategorileri yazamıyor (müdür).
+   * Kart onay ve ret düğmesi çizmez; sunucu da reddeder (src/server/cash-outs/write.ts › assertOwnerRowOpen)
+   */
+  ownerDecides: boolean;
   /** Fiş fotoğrafı (eklemede istekte tutulan, düzeltme ve silmede satırınki) */
   photoId: number | null;
   /** Onayın varsayılanları: Aylık harcamalar'a yazılsın mı ve kategori */
@@ -380,6 +385,7 @@ async function cashOutCard(base: Omit<CardBase, "branchId">, p: ReturnType<typeo
     changedSince: p.op !== "ekle" && !rowGone && changedSince,
     rowGone,
     expense,
+    ownerDecides: !allCategories && expense?.admin === true,
     photoId: p.op === "ekle" ? (p.line?.photoId ?? null) : (current?.photoId ?? p.before?.photoId ?? null),
     defaults: {
       toExpenses: p.op === "ekle" ? (p.line ? staffToExpenses(p.line.kind, p.line.docType) : false) : current?.expenseEntryId != null,

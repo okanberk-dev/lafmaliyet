@@ -42,7 +42,8 @@ export interface CashOutDTO {
 
 /**
  * Kasa kartının ve penceresinin satırı: yöneticide bütün satır, personelde yalnız beyaz listedeki alanlar
- * (staffCashOutRow). `locked`: satır yöneticinin bir tedarikçi ödemesine bağlı (personel düzeltemez, silemez)
+ * (staffCashOutRow). `locked`: satır yöneticinin bir tedarikçi ödemesine bağlı (personel ve müdür düzeltemez, silemez);
+ * müdürde ayrıca yöneticinin kategorisindeki (maaş, kira) satır
  */
 export type CashOutView = Pick<CashOutDTO, StaffCashOutField> & { locked?: boolean };
 

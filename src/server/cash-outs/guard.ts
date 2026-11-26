@@ -1,22 +1,18 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
-
 import { staffCanReport } from "@/lib/cash-report";
 import { CASH_OUT_REQUEST_TEXT, cashOutNeedsApproval, requestDayAllowed, type CashOutOp } from "@/lib/cash-out-requests";
-import { staffExpenseLocked } from "@/lib/cash-outs";
 import { LAFPOS_CASH_OUT_TEXT, staffLafposEntryClosed } from "@/lib/lafpos/cash-moves";
 import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { currentTillBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { CARI_LOCKED_STAFF, cashOutPayment } from "@/server/cari/kasa";
 import { closedDayRefusal } from "@/server/closed-days";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
-import { schema as s } from "@/server/db";
 import { lafposBranchId } from "@/server/lafpos/branch";
 import { staffDayOpen } from "@/server/photo-read/rules";
 import { UserError } from "@/server/user-error";
 
-import type { CashOutActor, CashOutRow, CashOutTx } from "./write";
+import { adminCategoryOf, type CashOutActor, type CashOutRow, type CashOutTx } from "./write";
 
 /*
  * Personelin kasadan çıkan kapısı (docs/KASA-RAPORU.md › Kasadan çıkan: kapanmış gün, yöneticinin satırı; plan
@@ -31,17 +27,6 @@ import type { CashOutActor, CashOutRow, CashOutTx } from "./write";
  * LafPOS gününün ekleme reddi uygulanmaz (personelin az önce sildiği elle girilmiş satır geri gelir)
  */
 export type CashOutTarget = { op: "ekle"; date: string; restore?: boolean } | { op: Exclude<CashOutOp, "ekle"> | "fis"; row: CashOutRow };
-
-/** Satırın bağlı harcama kaydı yöneticinin kategorisinde mi (personelin seçemediği; maaş, avans, kapatılmış kategori) */
-async function adminCategoryOf(tx: CashOutTx, cashOutId: number): Promise<boolean> {
-  const [cur] = await tx
-    .select({ section: s.expenseCategories.section, panelGroup: s.expenseCategories.panelGroup, active: s.expenseCategories.active })
-    .from(s.expenseEntries)
-    .innerJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
-    .where(eq(s.expenseEntries.cashOutId, cashOutId))
-    .limit(1);
-  return staffExpenseLocked(cur);
-}
 
 /**
  * Personelin değişikliği doğrudan mı yazılır ("direct") yoksa yöneticinin onayına mı gider ("request"); hiç olmuyorsa

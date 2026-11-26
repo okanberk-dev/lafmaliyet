@@ -172,9 +172,11 @@ describe("müdür: şubesinin günlük işletmesi", () => {
     for (const cap of ["kayit.yaz", "isletme.yonet", "kasa.rakam", "onay", "vardiya.yaz", "rapor.sube"] as const) assert.ok(can("manager", cap), cap);
     for (const cap of ["maas", "yonetim", "muhasebe.oku", "sube.tumu", "kategori.tum"] as const) assert.equal(can("manager", cap), false, cap);
     // Kasadan çıkanda maaş, kira gibi kategorileri seçemez ve adını görmez; sunucu da reddeder. Kural yazım yolunda
-    // (writeCashOut, gerçek rol): doğrudan kayıt da Onaylar'daki isteğin onayı da aynı kuraldan geçer
+    // (writeCashOut, gerçek rol): doğrudan kayıt da Onaylar'daki isteğin onayı da aynı kuraldan geçer. O kategorideki
+    // satırı düzeltemez, silemez, isteğine karar veremez (davranışı tests/roller-db.test.ts, tests/kasa-cikan-istek-db.test.ts)
     const write = read("src/server/cash-outs/write.ts");
-    assert.match(write, /const allCategories = admin && can\(realRoleOf\(me\), "kategori\.tum"\);/);
+    assert.match(write, /const writesAllCategories = \(me: CashOutActor\) => me\.role === "admin" && can\(realRoleOf\(me\), "kategori\.tum"\);/);
+    assert.match(write, /const allCategories = writesAllCategories\(me\);/);
     assert.match(write, /if \(\(!admin \|\| \(!allCategories && !o\.restore\)\) && !staffCategory\(cat\) && !unchanged\) throw new UserError\(CATEGORY_ADMIN_ONLY\);/);
     assert.match(read("src/server/actions/cash-out-requests.ts"), /reviewCashOutRequestCore\(getDb\(\), asActor\(me, opsLevel\(me\.role\)\), /);
     assert.match(read("src/app/panel/kasa/page.tsx"), /cashOutCategories\(allCategories \? "admin" : "staff"\)/);

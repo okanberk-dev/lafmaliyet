@@ -15,7 +15,7 @@ import { Field, Select, Textarea } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
 import { diffText, stampTR } from "@/lib/cash-report";
-import { cashOutCardTitle, lineText, photoCardTitle, type CashOutLineT } from "@/lib/cash-out-requests";
+import { CASH_OUT_REQUEST_TEXT, cashOutCardTitle, lineText, photoCardTitle, type CashOutLineT } from "@/lib/cash-out-requests";
 import { money } from "@/lib/format";
 import { photoCaption } from "@/lib/photo-rules";
 import { genitive } from "@/lib/recipe-change";
@@ -75,7 +75,8 @@ function NoteField({ id, note, setNote }: { id: number; note: string; setNote: (
 /**
  * Kasadan çıkan isteği: ekleme (satır ve fiş), düzeltme (değişecekler) ya da silme; satır istekten sonra değiştiyse
  * amber uyarı ve "Yine de uygula". Ekleme ve düzeltmede "Aylık harcamalar'a da yaz" ve kategori (yöneticiye bütün etkin
- * kategoriler, müdüre personelinkiler; düzeltmede satırın şimdiki kategorisi kalabilir).
+ * kategoriler, müdüre personelinkiler; düzeltmede satırın şimdiki kategorisi kalabilir). Yöneticinin kategorisindeki
+ * satırın isteğinde müdürün kartı karar çizmez, "isteğe yönetici karar verir" der (`ownerDecides`).
  */
 export function CashOutItem({ card, categories }: { card: CashOutCard; categories: { id: number; name: string }[] }) {
   const [note, setNote] = useState("");
@@ -88,7 +89,7 @@ export function CashOutItem({ card, categories }: { card: CashOutCard; categorie
   const harcama = l?.kind === "harcama";
   const who = genitive(card.requestedByName);
   const c = card.context;
-  // Düzeltmede satırın şimdiki kategorisi seçicide yoksa (müdür yalnız personelin kategorilerini seçer)
+  // Düzeltmede satırın şimdiki kategorisi seçicide yoksa (yöneticide kapatılmış kategori; müdürde kart karar çizmez)
   const currentHidden = card.op === "duzelt" && card.defaults.categoryId !== null && !categories.some((k) => k.id === card.defaults.categoryId);
 
   function decide(decision: "approve" | "reject") {
@@ -157,6 +158,8 @@ export function CashOutItem({ card, categories }: { card: CashOutCard; categorie
         </p>
       ) : null}
       {card.rowGone ? <Notice tone="bad" size="sm" title="Satır silinmiş; isteği reddedin" /> : null}
+      {/* Müdür yöneticinin kategorisindeki satırın isteğine karar vermez: onay da ret de yöneticinin (sunucu da reddeder) */}
+      {card.ownerDecides ? <Notice tone="neutral" size="sm" title={CASH_OUT_REQUEST_TEXT.ownerReview} /> : null}
       {card.changedSince ? (
         <Notice
           tone="warn"
@@ -217,7 +220,7 @@ export function CashOutItem({ card, categories }: { card: CashOutCard; categorie
           <ExternalLink size={14} aria-hidden="true" /> Günü aç
         </Link>
       </section>
-      {harcama && card.op !== "sil" && !card.rowGone ? (
+      {harcama && card.op !== "sil" && !card.rowGone && !card.ownerDecides ? (
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Switch checked={toExpenses} onChange={setToExpenses} label="Aylık harcamalar'a da yaz" showText onText="Aylık harcamalar'a da yaz" offText="Aylık harcamalar'a yazılmaz" />
@@ -226,7 +229,7 @@ export function CashOutItem({ card, categories }: { card: CashOutCard; categorie
             <Field label="Kategori" htmlFor={`kat-${card.id}`} className="sm:col-span-2">
               <Select id={`kat-${card.id}`} value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
                 <option value="">Kategori seçin</option>
-                {/* Satırın şimdiki kategorisi listede yoksa (müdüre yöneticinin kategorisi): adı yazmadan kalabilir */}
+                {/* Satırın şimdiki kategorisi listede yoksa (kapatılmış kategori): kalabilir. Müdürde böyle satırın kararı yöneticinin (ownerDecides) */}
                 {currentHidden ? <option value={card.defaults.categoryId!}>{card.expense?.categoryName ?? "Yöneticinin kategorisi"} (şimdiki)</option> : null}
                 {categories.map((k) => (
                   <option key={k.id} value={k.id}>
@@ -238,23 +241,27 @@ export function CashOutItem({ card, categories }: { card: CashOutCard; categorie
           ) : null}
         </div>
       ) : null}
-      <NoteField id={card.id} note={note} setNote={setNote} />
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button variant="ghost" onClick={() => decide("reject")} disabled={pending}>
-          <X size={15} /> Reddet
-        </Button>
-        {!card.rowGone ? (
-          card.op === "sil" ? (
-            <Button variant="danger" onClick={() => setConfirm(true)} disabled={pending}>
-              <Trash2 size={15} /> {card.changedSince ? "Yine de sil" : "Onayla ve sil"}
+      {card.ownerDecides ? null : (
+        <>
+          <NoteField id={card.id} note={note} setNote={setNote} />
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="ghost" onClick={() => decide("reject")} disabled={pending}>
+              <X size={15} /> Reddet
             </Button>
-          ) : (
-            <Button onClick={() => decide("approve")} disabled={pending}>
-              <Check size={15} /> {card.changedSince ? "Yine de uygula" : "Onayla"}
-            </Button>
-          )
-        ) : null}
-      </div>
+            {!card.rowGone ? (
+              card.op === "sil" ? (
+                <Button variant="danger" onClick={() => setConfirm(true)} disabled={pending}>
+                  <Trash2 size={15} /> {card.changedSince ? "Yine de sil" : "Onayla ve sil"}
+                </Button>
+              ) : (
+                <Button onClick={() => decide("approve")} disabled={pending}>
+                  <Check size={15} /> {card.changedSince ? "Yine de uygula" : "Onayla"}
+                </Button>
+              )
+            ) : null}
+          </div>
+        </>
+      )}
       <ConfirmDialog
         open={confirm}
         onClose={() => setConfirm(false)}

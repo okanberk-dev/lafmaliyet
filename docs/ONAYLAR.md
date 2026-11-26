@@ -2,9 +2,10 @@
 
 Ekran: **Onaylar** (`/panel/onaylar`; yönetici, menüde **Bugün**'ün hemen altında). **Müdür** de açar
 ([ROLLER.md](ROLLER.md)): yalnız şubesinin Kasa ve Zayi ve ikram isteklerini görür ve karara bağlar (şubesi bilinmeyen
-istek ona kapalı; karar eylemleri `reviewBranchRefusal`); öbür şubelerin sayısı, Karaoke, Reçete önerileri ve Son
-kararlar yöneticinin. Personelin yöneticinin
-onayına giden istekleri ve reçete önerileri tek yerde. Karar: dalga 10, sahibin isteği "önemli olan onaydan geçsin"
+istek ona kapalı; karar eylemleri `reviewBranchRefusal`). Yöneticinin kategorisindeki (maaş, kira) kasadan çıkan satırın
+düzeltme ve silme isteğinin kartını görür ama karar yöneticinin (kartta düğme yok; `assertOwnerRowOpen`); öbür şubelerin
+sayısı, Karaoke, Reçete önerileri ve Son kararlar yöneticinin. Personelin yöneticinin onayına giden istekleri ve reçete
+önerileri tek yerde. Karar: dalga 10, sahibin isteği "önemli olan onaydan geçsin"
 ([planlar/personel-yetki.md](planlar/personel-yetki.md) §0, §3).
 
 ## Ne zaman onay istenir

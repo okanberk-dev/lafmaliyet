@@ -205,6 +205,12 @@ export const CASH_OUT_REQUEST_TEXT = {
   receiptMissing: "Fiş fotoğrafı olmayan satır fişli onaylanamaz",
   needsApproval: "Bu değişiklik yöneticinin onayıyla olur; onaya gönderin",
   rowLocked: "Bu satır yöneticinin bir kaydına bağlı; yalnız yönetici değiştirir",
+  /**
+   * Müdür ("admin" düzeyinde, `kategori.tum` yok; docs/ROLLER.md › Kararlar): yöneticinin kategorisindeki (maaş, kira
+   * gibi) satırı düzeltemez, taşıyamaz, silemez; o satırın isteğine de karar vermez
+   */
+  ownerRow: "Bu satır yöneticinin kategorisindeki bir harcama kaydına bağlı; düzeltmesini ve silinmesini yönetici yapar",
+  ownerReview: "Bu satır yöneticinin kategorisindeki bir harcama kaydına bağlı; isteğe yönetici karar verir",
 } as const;
 
 export const CASH_OUT_OP_LABEL: Record<CashOutOp, string> = { ekle: "ekleme", duzelt: "düzeltme", sil: "silme" };

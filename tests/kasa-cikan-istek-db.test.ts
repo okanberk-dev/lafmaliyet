@@ -574,7 +574,7 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
     assert.deepEqual(card(removal.row.id).branch, { id: "marina", name: "Marina" });
   });
 
-  test("müdür ('admin' düzeyinde) kategoride personelin kuralına bağlı: onayda ve doğrudan kayıtta yöneticinin kategorisine yazamaz, şimdikini korur", async () => {
+  test("müdür ('admin' düzeyinde) kategoride personelin kuralına bağlı: onayda ve doğrudan kayıtta yöneticinin kategorisine yazamaz; o kategorideki satıra dokunamaz, isteğine karar veremez", async () => {
     const ADMIN_CAT = "Bu kategoriye yalnız yönetici yazabilir";
     // Ekleme isteğinin onayı: yöneticinin kategorisi (maaş, avans) reddedilir, istek bekler; personelin kategorisiyle yazılır
     const add = await propose(users.fatma, { date: YESTERDAY, line: line({ amount: 61.5 }), clientKey: key() });
@@ -590,13 +590,58 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
     await refused(review(mudur, fix.row.id, fix.row.version, "approve", { toExpenses: true, categoryId: cats.admin }), ADMIN_CAT);
     assert.equal((await expenseOf(plain))?.categoryId, cats.staff);
     await review(mudur, fix.row.id, fix.row.version, "reject");
-    // Yöneticinin kategorisindeki satırın tutarını düzeltir, kategorisi kalır (kartın "şimdiki" seçeneği: categoryId boş)
+    // Personelin kategorisindeki satırı doğrudan düzeltir (kıyas)
+    const edit = (id: number, o: { amount: number; categoryId: number | null; kind?: "harcama" | "teslim" }) =>
+      db.transaction(async (tx) => {
+        const prev = await write.lockCashOut(tx, id);
+        const harcama = (o.kind ?? "harcama") === "harcama";
+        return write.writeCashOut(
+          tx,
+          mudur,
+          { id, date: YESTERDAY, kind: o.kind ?? "harcama", amount: o.amount, store: "Bim", description: "buz", receiptDate: null, receiptNo: null, vat: null, docType: "yok", categoryId: harcama ? o.categoryId : null, toExpenses: harcama && o.categoryId !== null, photoId: null },
+          { prev },
+        );
+      });
+    assert.equal((await edit(plain, { amount: 32, categoryId: cats.staff })).updated, true);
+    assert.equal((await expenseOf(plain))?.amount, 32);
+
+    // Yöneticinin kategorisindeki satır (maaş, avans): müdür düzeltme isteğine karar vermez; onay (kategori kalsa, personelin
+    // kategorisine taşınsa, kaydı kaldırılsa) da ret de yöneticinin, istek bekler
     const salary = await adminRow(YESTERDAY, { amount: 1_000, categoryId: cats.admin });
     const fix2 = await propose(users.fatma, { op: "duzelt", cashOutId: salary, line: line({ amount: 1_100, store: "Bim", description: "buz", categoryId: null }), clientKey: key() });
-    const r2 = await review(mudur, fix2.row.id, fix2.row.version, "approve", { toExpenses: true, categoryId: null });
+    for (const o of [{ toExpenses: true, categoryId: null }, { toExpenses: true, categoryId: cats.staff }, { toExpenses: false }]) {
+      await refused(review(mudur, fix2.row.id, fix2.row.version, "approve", o), CASH_OUT_REQUEST_TEXT.ownerReview);
+    }
+    await refused(review(mudur, fix2.row.id, fix2.row.version, "reject"), CASH_OUT_REQUEST_TEXT.ownerReview);
+    assert.equal((await requestOf(fix2.row.id)).status, "pending");
+    assert.deepEqual([(await outOf(salary)).amount, (await expenseOf(salary))?.categoryId, (await expenseOf(salary))?.amount], [1_000, cats.admin, 1_000]);
+    // Yönetici onaylar: tutar düzelir, kategori kalır
+    const r2 = await review(users.ali, fix2.row.id, fix2.row.version, "approve", { toExpenses: true, categoryId: null });
     assert.ok(r2.status === "approved" && r2.op === "duzelt");
-    assert.equal((await expenseOf(salary))?.categoryId, cats.admin);
-    assert.equal((await expenseOf(salary))?.amount, 1_100);
+    assert.deepEqual([(await expenseOf(salary))?.categoryId, (await expenseOf(salary))?.amount], [cats.admin, 1_100]);
+    // Silme isteğinin onayı da yöneticinin: satır ve maaş kaydı kalır
+    const del2 = await propose(users.fatma, { op: "sil", cashOutId: salary, clientKey: key() });
+    await refused(review(mudur, del2.row.id, del2.row.version, "approve"), CASH_OUT_REQUEST_TEXT.ownerReview);
+    assert.equal((await requestOf(del2.row.id)).status, "pending");
+    assert.ok(await outOf(salary), "satır silinmedi");
+    assert.equal((await expenseOf(salary))?.categoryId, cats.admin, "maaş kaydı silinmedi");
+    await review(users.ali, del2.row.id, del2.row.version, "reject");
+    // Doğrudan da: tutarı düzeltemez, personelin kategorisine taşıyamaz, teslime çevirip kaydı kaldıramaz
+    for (const o of [
+      { amount: 1_200, categoryId: cats.admin },
+      { amount: 1_100, categoryId: cats.staff },
+      { amount: 1_100, categoryId: null, kind: "teslim" as const },
+    ]) {
+      await refused(edit(salary, o), CASH_OUT_REQUEST_TEXT.ownerRow);
+    }
+    assert.deepEqual([(await outOf(salary)).kind, (await outOf(salary)).amount, (await expenseOf(salary))?.categoryId, (await expenseOf(salary))?.amount], ["harcama", 1_100, cats.admin, 1_100]);
+    // Silme kapısı (deleteCashOut çağırır): müdür reddedilir, yönetici ve personel geçer (personelin kuralı kapıda: istek)
+    await db.transaction(async (tx) => {
+      await refused(write.assertOwnerRowOpen(tx, mudur, salary), CASH_OUT_REQUEST_TEXT.ownerRow);
+      await write.assertOwnerRowOpen(tx, mudur, plain);
+      await write.assertOwnerRowOpen(tx, users.ali, salary);
+      await write.assertOwnerRowOpen(tx, { id: 0, name: "LafPOS", role: "admin" }, salary);
+    });
     // Doğrudan kayıt: yeni satır yöneticinin kategorisine yazılmaz; geri alma silinen kaydın kategorisini getirir
     const direct = (restore: boolean) =>
       db.transaction((tx) =>
@@ -654,6 +699,8 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
       const m = await loadCashRequestQueue(NOW, "tuzla", true, false);
       assert.deepEqual(cardIn(m, fix.row.id).expense, { categoryName: null, admin: true });
       assert.deepEqual(cardIn(m, del.row.id).expense, { categoryName: `Test market ${tag}`, admin: false });
+      // Yöneticinin kategorisindeki satırın isteğine müdür karar vermez (kart düğme çizmez; sunucu da reddeder)
+      assert.deepEqual([cardIn(m, fix.row.id).ownerDecides, cardIn(m, del.row.id).ownerDecides, cardIn(m, add.row.id).ownerDecides], [true, false, false]);
       // Olası tekrar: yalnız Tuzla'nın satırı ve personel kategorisindeki kayıt
       const mDup = cardIn(m, add.row.id).context.duplicates;
       assert.equal(mDup.length, 2, mDup.join(" | "));
@@ -665,6 +712,7 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
       // Yönetici: adı da, bütün şubelerin ve kategorilerin olası tekrarı da gelir
       const a = await loadCashRequestQueue(NOW);
       assert.deepEqual(cardIn(a, fix.row.id).expense, { categoryName: ADMIN_NAME, admin: true });
+      assert.equal(cardIn(a, fix.row.id).ownerDecides, false, "yönetici karar verir");
       const aDup = cardIn(a, add.row.id).context.duplicates;
       assert.equal(aDup.length, 4, aDup.join(" | "));
       for (const want of [`Marina dükkân ${tag}`, `Maaş avansı ${tag}`, `Buz faturası ${tag}`]) assert.ok(aDup.some((d) => d.startsWith(want)), want);

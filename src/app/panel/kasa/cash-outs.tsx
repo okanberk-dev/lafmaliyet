@@ -32,7 +32,10 @@ import { CashOutDialog, type CashOutDialogMode, type CashOutRequestMode } from "
 
 const time = (iso: string) => new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
-/** Personelin, yöneticinin tedarikçi ödemesine bağladığı satırda gördüğü sabit mesaj (tutar ve tedarikçi yok) */
+/**
+ * Kilitli satırda (`locked`) görünen sabit mesaj (tutar, tedarikçi ve kategori yok): personel ve müdür yöneticinin
+ * tedarikçi ödemesine bağladığı satırda, müdür ayrıca yöneticinin kategorisindeki (maaş, kira) satırda görür
+ */
 const LOCKED_TEXT = "Bu satır yöneticinin kaydına bağlı; düzeltmek için yöneticiye haber verin.";
 
 /** Satırın ikinci satırı: "14:32 · Ayşe · Nakit malzeme alımı" (harcamaya yazılmadıysa nedeni) */
@@ -314,7 +317,8 @@ export function CashOutsCard({
             return (
               <li key={o.id}>
                 {o.locked && (canEdit || staffActs) ? (
-                  // Yöneticinin tedarikçi ödemesine bağlı satır: personel düzeltemez, silemez, istek de açamaz
+                  // Yöneticinin tedarikçi ödemesine bağlı satır (personel düzeltemez, silemez, istek de açamaz) ve müdürde
+                  // yöneticinin kategorisindeki satır (düzeltmesi, silinmesi yöneticinin)
                   <button type="button" onClick={() => toast.info(LOCKED_TEXT)} className="flex w-full cursor-pointer items-center gap-3 px-5 py-2.5 text-left hover:bg-panel/60 pointer-coarse:min-h-11">
                     {body}
                   </button>
