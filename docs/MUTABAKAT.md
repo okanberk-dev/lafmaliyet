@@ -164,3 +164,7 @@ Migration `0091_mutabakat` (entegrasyonda numara yeniden üretilebilir):
 - Ekstre bakiyesi panelde bir bakiyeyle karşılaştırılmaz (panelde banka bakiyesi yok; Nakit planı'nın başlangıç
   bakiyesi elle).
 - Yemek kartı ve platform hakedişleri banka hareketinden otomatik işaretlenmez (Komisyon & hakediş'te elle).
+- Paraşüt'te kısmen ödenmiş faturanın ödemesi aday değildir: panelde yalnız kalan tutar var, ödemenin günü ve tutarı
+  yok. Böyle bir hareket "Eşleşmedi" kalır; elle eşleştirilir ya da yok sayılır.
+- Birden çok faturayı kapatan tek havale (toplu ödeme) tek kayıtla eşleşir: cari ödeme kaydı olarak girildiyse o kayıtla
+  eşleşir, faturalara tek tek "Ödendi" denmişse tutarı farklı ya da eşleşmedi görünür.

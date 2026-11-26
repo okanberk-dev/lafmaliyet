@@ -50,6 +50,8 @@ function UploadDialog({ suppliers, accounts, onClose }: { suppliers: SupplierOpt
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showMap, setShowMap] = useState(false);
+  // Önizlemesi gösterilen sütun seçimi: seçim değişip yeniden okunmadıysa kaydedilmez
+  const [previewed, setPreviewed] = useState<string | null>(null);
   const [pending, start] = useActionTransition();
 
   function formData(o: { kind?: StatementKind; file?: File | null; flip?: boolean; map?: ColumnMap | null; supplier?: string }) {
@@ -78,8 +80,11 @@ function UploadDialog({ suppliers, accounts, onClose }: { suppliers: SupplierOpt
       setError(null);
       setPreview(r.data);
       const data = r.data;
-      if (data.status === "ready") setMap(data.map);
-      else {
+      if (data.status === "ready") {
+        setMap(data.map);
+        setPreviewed(JSON.stringify(data.map));
+      } else {
+        setPreviewed(null);
         setShowMap(true);
         setMap((m) => m ?? EMPTY_MAP(data.headerRow));
       }
@@ -101,6 +106,7 @@ function UploadDialog({ suppliers, accounts, onClose }: { suppliers: SupplierOpt
   }
 
   const ready = preview?.status === "ready";
+  const stale = ready && JSON.stringify(map) !== previewed;
   const hasAccount = kind === "banka" ? account.trim().length > 0 : supplier.length > 0;
 
   function save() {
@@ -131,7 +137,7 @@ function UploadDialog({ suppliers, accounts, onClose }: { suppliers: SupplierOpt
           <Button variant="ghost" onClick={onClose} disabled={pending} className="max-sm:bg-panel">
             Vazgeç
           </Button>
-          <Button onClick={save} disabled={!ready || !hasAccount || pending}>
+          <Button onClick={save} disabled={!ready || stale || !hasAccount || pending}>
             {pending ? "Bekleyin…" : "Kaydet"}
           </Button>
         </>
@@ -255,6 +261,7 @@ function UploadDialog({ suppliers, accounts, onClose }: { suppliers: SupplierOpt
             </div>
           </div>
         ) : null}
+        {stale ? <p className="text-xs text-warn">Sütun seçimi değişti: kaydetmeden önce yeniden okuyun.</p> : null}
         {showMap && preview && map ? <ColumnPicker preview={preview} map={map} onChange={setMap} pending={pending} onApply={() => runPreview({ map })} /> : null}
       </div>
     </Dialog>
