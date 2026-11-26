@@ -111,10 +111,10 @@ satışı "Tümü"de ve online kanal seçiliyken okunur, fiziksel şubede yoktur
 `loadModel({ scope: ALL_BRANCHES })`): Vergi (özet, gelir-gider, demirbaş), Ödemeler › Nakit planı ve Genel bakış'ın
 nakit planı kartı, Tutarlılık (alınan mal şubeye bölünmez; tek şubenin tüketimiyle karşılaştırılmaz), Ayarlar'daki
 tam yedek (Dışa aktar, seçicisiz) ve Ayarlar › Stok değerleme önizlemesi (ayar "Tümü"nün kâr-zararını değiştirir;
-denetim 21 Kasım #32). Para ve beyan işletmenindir. Şube seçiliyken bu ekranlar ve Faturalar, Tedarikçiler
-başlığın altında **"Marina seçili: bu ekran firma geneli"** notunu gösterir (`companyWideNote`, `CompanyWideNotice`;
-şube kapsamı C, sahibin varsayılanı: tek firma). Paraşüt ekranı firma geneli değildir: seçili şubenin Paraşüt hesabını
-gösterir ([PARASUT.md](PARASUT.md#şube-başına-paraşüt-hesabı)). Genel bakış'ın **Dışa aktar** düğmesi ise
+denetim 21 Kasım #32). Para ve beyan işletmenindir. Şube seçiliyken bu ekranlar ve Tedarikçiler başlığın altında
+**"Marina seçili: bu ekran firma geneli"** notunu gösterir (`companyWideNote`, `CompanyWideNotice`; şube kapsamı C,
+sahibin varsayılanı: tek firma). Paraşüt ekranı ve Faturalar firma geneli değildir (25 Kasım 2026): seçili şubenin
+Paraşüt hesabını ve faturalarını gösterir ([Faturanın şubesi](#faturanın-şubesi-25-kasım-2026)). Genel bakış'ın **Dışa aktar** düğmesi ise
 ekranın şubesini gönderir (`?sube=`): satış, kasa, personel ve giderler o şubenin, Vergi ve Cari hareketleri firma
 geneli; dosyanın ilk sayfası (Nasıl Okunur) kapsamı yazar, dosya adı şubeyle biter.
 
@@ -153,13 +153,13 @@ Soldan bir şube seçilince Genel bakış ve Gelir-gider **o şubenin** gelir-gi
 | Satır | Tek şube seçiliyken |
 |---|---|
 | Ciro, kasa, ödenmez | Şubenin kasa raporları / ay satırı |
-| Mal maliyeti | **Şubenin satışından reçeteye göre**: tüketim (fire hariç) × (1 + genel fire) + ödenmezlerin malzeme maliyeti (`engine.ts` `stockFlow`, yöntem `sube`). Faturalar ve stok devri işletme genelinde, şubeye bölünmez |
+| Mal maliyeti | **Şubenin satışından reçeteye göre**: tüketim (fire hariç) × (1 + genel fire) + ödenmezlerin malzeme maliyeti (`engine.ts` `stockFlow`, yöntem `sube`). Mal faturaları (şubesi seçilmiş olsa da) ve stok devri şubenin mal maliyetine girmez |
 | Ürün ve reçete maliyeti | Şubeye göre değişmez. Su + buz litre fiyatı işletme geneli: SU GİDERİ (işletmenin faturası) ÷ **bütün şubelerin** ve laffogato.net'in o ayki su + buz litresi (`Dataset.waterSales`, `engine.ts` `waterUsage`; denetim 21 Kasım #4). Önceden fatura yalnız seçili şubenin litresine bölünüyordu: Marina seçiliyken Americano M'nin maliyeti şişiyor, iki şubenin mal maliyeti faturayı iki kez sayıyordu |
-| Mal alımı (faturalar) | Bilgi olarak görünür, "işletme geneli"; mal maliyetine girmez. Genel bakış'ta faturaya göre maliyet oranı, "Faturaya göre alım" ve "Fark (alınan − harcanan)" çizilmez, yerinde "Tümü'nde" yazar; Gelir-gider'in kârı "faturaya göre" değil **"Gelir-gider'e göre"** adıyla, bitmiş ayın dökümünde mal maliyeti tek satır (reçeteye göre); dışa aktarımda da öyle (`profitBasisOf`, `src/lib/calc/insights.ts`). 25 Kasım 2026'ya kadar işletmenin bütün mal alımı şubenin satışına bölünüyor, büyük bir oran ve fark kaçak gibi görünüyordu (denetim bulgusu 64). Şubenin ayrı Paraşüt hesabından gelen faturası da bu kurala uyar: şubeye yazmak sahibin kararı (aşağıda, Kalanlar) |
+| Mal alımı (faturalar) | Bilgi olarak görünür: şubenin ve işletme geneli seçilmiş mal faturaları ([Faturanın şubesi](#faturanın-şubesi-25-kasım-2026)); mal maliyetine girmez. Genel bakış'ta faturaya göre maliyet oranı, "Faturaya göre alım" ve "Fark (alınan − harcanan)" çizilmez, yerinde "Tümü'nde" yazar; Gelir-gider'in kârı "faturaya göre" değil **"Gelir-gider'e göre"** adıyla, bitmiş ayın dökümünde mal maliyeti tek satır (reçeteye göre); dışa aktarımda da öyle (`profitBasisOf`, `src/lib/calc/insights.ts`). 25 Kasım 2026'ya kadar işletmenin bütün mal alımı şubenin satışına bölünüyor, büyük bir oran ve fark kaçak gibi görünüyordu (denetim bulgusu 64). Şubesi seçilmiş mal faturası da şubenin mal maliyetine girmez: bunun için sayım ve devir şube başına olmalı (aşağıda, Kalanlar) |
 | Personel | Şubeye bağlı kişilerin maaşı (Maaşlar'da kişinin **Şube** alanı) |
 | Sabit gider | Şubeye bağlı kalemler (Sabit giderler'de kalemin **Şube** alanı). İşletme geneli kalemler (şube boş; var olan kalemler işletme geneli kaldı) Faz 5'ten beri **şubenin kârına girmez**: "İşletme geneli payı (bilgi)" satırında |
-| Harcama | Şubenin kendi harcamaları. Şubesi boş (işletme geneli) harcamalar ve kategoriye bağlı faturalar bilgi satırında (Faz 5) |
-| Komisyon faturaları | İşletme geneli (faturalar şubeye bölünmez): bilgi satırında (Faz 5); banka POS komisyonu şubenin kartıyla |
+| Harcama | Şubenin kendi harcamaları ve şubesi bu şube olan, harcamaya bağlı faturalar (25 Kasım 2026). Şubesi boş (işletme geneli) harcamalar ve işletme geneli seçilmiş faturalar bilgi satırında (Faz 5) |
+| Komisyon faturaları | Şubenin kârına girmez: bilgi satırında (Faz 5). Tek şubede yalnız o şubeye ya da İşletme geneli seçilmiş komisyon faturası görünür ([Faturanın şubesi](#faturanın-şubesi-25-kasım-2026)); banka POS komisyonu şubenin kartıyla |
 | Elle yazılan Gelir-gider hücresi | `manual:*` işletme genelidir: şubede satırı yok, bilgi satırında sayılır, Tümü'de yazılır (Faz 5); `fixed:` / `stopaj:` kalemin şubesindeyse; **devir, personel, POS komisyonu** işletmenin toplamıdır, şubede yazılamaz (ekran kilitler, sunucu reddeder) |
 | "Sayım yok" uyarısı | Yok: şubenin mal maliyeti sayıma bağlı değil |
 
@@ -175,7 +175,7 @@ gösterir, şubeye düşen bir pay değildir (`src/lib/calc/engine.ts` pnlMonth 
 
 | Ne | Kural |
 |---|---|
-| İşletme geneli sayılanlar | Şubesi boş sabit gider ve stopajı, silinmiş kalemin elle girişi, Gelir-gider'e elle yazılan hücreler (`manual:*`; pnl_entries şubesiz), şubesi boş harcamalar ve harcama kategorisine bağlı faturalar, komisyon faturaları (Komisyon kategorisi) |
+| İşletme geneli sayılanlar | Şubesi boş sabit gider ve stopajı, silinmiş kalemin elle girişi, Gelir-gider'e elle yazılan hücreler (`manual:*`; pnl_entries şubesiz), şubesi boş harcamalar ve harcama kategorisine bağlı **işletme geneli** faturalar (şubesi seçilmiş fatura şubenin; 25 Kasım 2026), komisyon faturaları (Komisyon kategorisi) |
 | Tek şube seçiliyken | Bunlar bölümlere, giderlere ve kâra girmez; satırları çizilmez. Gelir-gider'de "İşletme geneli (bilgi)" bölümünde tek satır **İŞLETME GENELİ PAYI (bilgi)**: ipucu "Şubenin kârına girmez; Tümü'de bir kez sayılır", hücresi en büyük kalemleri yazar. Genel bakış'ın sabit gider dökümü de onları saymaz, altında bilgi olarak toplamı yazar. Harcama satırı şubenin kendi kayıtlarıdır |
 | Günü | İşletmenin günü: şube seçiliyken veri kümesi "Tümü"nün ay bilgisini de taşır (`Dataset.companyMonths`), oranlanan kalem Tümü'deki tutarla görünür (Marina'nın açılış ayında da) |
 | "Tümü" | Bölümlerinde bir kez sayılır (bilgi satırı yok). Gelir-gider'de birden çok fiziksel şube açıkken **Şube kırılımı** kartı (`src/lib/branch-breakdown.ts`): her şubenin ciro, gider ve kârı kendi görünümündeki gibi; fiziksel şube olmayan kanala (online) yazılan sabit gider, harcama ve personel varsa kendi sütununda (`PnlMonthCalc.byBranch`; tek kanalsa onun adıyla, yoksa **Diğer kanallar**; inceleme bulgusu 5: önceden farka düşüyordu); **İşletme geneli** sütunu (giderler: işletme geneli toplamı; ciro: laffogato.net online satışı) ve Tümü. Kabul: Marina kârı + Tuzla kârı − işletme geneli = Tümü kârı. Mal maliyetinin yöntemi farklı olduğundan (Tümü sayımla, şube satışından reçeteye göre) ya da Tümü'de elle yazılan personel / POS komisyonu şubeye bölünmediğinden kalan fark kartın altında yazılır; hiçbir gider iki kez sayılmaz |
@@ -261,8 +261,8 @@ birden çok kasa açıkken şubenin adıyla.
 | Kasa raporu silindi (işlem geçmişi) | Birden çok kasa açıkken kasanın adı |
 
 Sahibin varsayılanları (24 Kasım 2026, sonra Ayarlar'dan şube başına değiştirilebilir olacak): tek firma (Vergi, Nakit,
-cari firma geneli, etiketli); Paraşüt hesabı ortak (faturalar işletme geneli; 25 Kasım'dan beri şube başına seçilebilir:
-ayrı hesabın faturaları o şubenin, aşağıda); karaoke Tuzla'da; komisyon ve yemek kartı şubeler arasında aynı. Karaoke,
+cari firma geneli, etiketli); Paraşüt hesabı ortak (25 Kasım'dan beri şube başına seçilebilir: ayrı hesabın faturaları o
+şubenin; ortak hesabın faturası tedarikçinin varsayılan şubesini alır, aşağıda "Faturanın şubesi"); karaoke Tuzla'da; komisyon ve yemek kartı şubeler arasında aynı. Karaoke,
 uygulama siparişi, garson çağır ve yemek kartı 25 Kasım'dan beri şube başına açılıp kapanır ("Şube özellikleri").
 
 ## Şube özellikleri (25 Kasım 2026)
@@ -357,9 +357,9 @@ yazma `src/server/branch-settings.ts`.
 - **Yedek**: değerler ve bağ dosyaya girer, `secrets` sütunu girmez ([YEDEK.md](YEDEK.md)).
 - **Paraşüt hesabı**: Şube ayarları ekranındaki Paraşüt kartı "Tuzla ile aynı" anahtarını ve kullanılan hesabın
   durumunu gösterir; hesabın bilgileri Paraşüt ekranında o şube seçiliyken girilir. Ayrı hesabın faturaları o şubenin
-  (`invoices.branch_id`; Bağlantı kartından "işletme geneli" seçilebilir), ortak hesabınki işletme geneli. Tek şube
-  seçiliyken öbür şubenin faturası Faturalar'a, Gelir-gider'e ve Maliyet'e girmez (Vergi, Nakit ve Ödemeler firma
-  geneli; [PARASUT.md](PARASUT.md)). Şubeler
+  (`invoices.branch_id`; Bağlantı kartından kapatılabilir), ortak hesabınki tedarikçinin varsayılan şubesini alır
+  ([Faturanın şubesi](#faturanın-şubesi-25-kasım-2026)). Tek şube seçiliyken öbür şubenin faturası Faturalar'a,
+  Gelir-gider'e ve Maliyet'e girmez (Vergi, Nakit ve Ödemeler firma geneli; [PARASUT.md](PARASUT.md)). Şubeler
   listesinde "Paraşüt: Tuzla ile aynı" çipi. Şubenin hesabından fatura gelmişse şube silinemez.
 - **İkinci tur (25 Kasım 2026): komisyon, LafPOS, ModPOS, çalışma takvimi, banka POS.** Hepsi Şube ayarları ekranında
   birer kart (`src/app/panel/subeler/[id]/`; "Diğer şubeyle aynı" anahtarı tek bileşen,
@@ -400,6 +400,51 @@ yazma `src/server/branch-settings.ts`.
   Tuzla'nın açılışı; tarayıcıda ve bildirim işçisinde, `public/sw.js`, sabit), kontrol listesi hatırlatma saatleri (tek
   dilim takvimi), hazır vardiya saatleri (#120 vardiya PR'ı birleştikten sonra). Şube başına olmayacaklar: KDV, reçete parametreleri, fire, hedef maliyet, FIFO başlangıcı,
   kategori ve POS eşlemeleri, site bağlantı sırrı, bildirim gönderen ve vade günleri.
+
+## Faturanın şubesi (25 Kasım 2026)
+
+Sahibin isteği: "Tuzla seçiminde Tuzla'ya ait, Marina seçiminde yalnız Marina'ya ait bilgiler çıksın; Tümü'nü seçersem
+karışık çıksın." İki şube aynı Paraşüt hesabını kullandığı için faturalar şubesiz (işletme geneli) geliyor, iki şubede de
+görünüyordu. Artık her faturanın üç hâlinden biri var (kurallar `src/lib/invoice-branch.ts`, `tests/fatura-sube.test.ts`;
+veritabanı `tests/fatura-sube-db.test.ts`):
+
+| Hâl | Sütunlar | Tek şube seçiliyken | Gelir-gider |
+|---|---|---|---|
+| Şube (Tuzla, Marina, laffogato.net) | `invoices.branch_id` | Yalnız o şubede | Şubenin hücresinde; Tümü'nün şube kırılımında şubenin sütununda |
+| **İşletme geneli** (bilinçli: muhasebe, ortak hizmet) | `branch_id` boş, `company_wide` açık | Her şubede, "İşletme geneli" rozetiyle | Şubede "İşletme geneli payı (bilgi)" satırında; Tümü'de bir kez |
+| **Şubesi seçilmemiş** | ikisi de boş | Görünmez; uyarı sayar | Tümü'de sayılır (şube kırılımında İşletme geneli sütununda); hiçbir şubede yok |
+
+- **Yeni fatura** (eşitleme, `newInvoiceBranch`): ayrı Paraşüt hesabının faturası hesabın şubesine (Bağlantı kartındaki
+  anahtar açıkken); değilse **tedarikçinin varsayılan şubesi** (Tedarikçiler › Düzenle › Faturaların şubesi:
+  şube, İşletme geneli ya da seçilmedi; `suppliers.default_branch_id`, `default_company_wide`); o da yoksa şubesi
+  seçilmemiş. Elle eklenen fatura pencerenin seçimini, seçilmediyse tedarikçinin varsayılanını alır. Var olan faturanın
+  şubesi eşitlemede değişmez.
+- **Elle seçim**: Faturalar'da fatura penceresinin **Şube** alanı, toplu seçimde **Şube ata…** (Geri al'lı), "Şubesi
+  seçilmemiş" süzgeci; Tahmini stok › Marina'ya gelen faturalar; tedarikçi sayfasında "Hepsini … yap". Hepsi tek eylem
+  (`setInvoiceBranch`: yalnız yönetici, tek işlem, işlem geçmişine "Faturanın şubesi"). Tutar, ödeme ve cari değişmez.
+- **"Şubesi seçilmemiş" kutusu** (Faturalar, "Tümü"de, birden çok kasa açıkken): faturalar tedarikçi tedarikçi ve
+  **kanıta dayalı öneri** (`suggestInvoiceBranch`): tedarikçinin varsayılanı; faturanın günü yalnız bir şubenin açık olduğu
+  döneme düşüyorsa o şube (Marina'nın açılış gününden önce Tuzla; açılış günü kütükte boşsa bu kanıt yok); tedarikçinin
+  şubesi seçilmiş öteki faturaları ve kasadan ödemeleri (Kasadan çıkanlar'ın mağaza adı) tek bir şubeyi gösteriyorsa o
+  şube. Kanıt karışık ya da yoksa öneri yok. **Öneri yazılmaz**: satırdaki düğme ya da "Önerilenleri uygula" (onaylı
+  pencere) yazar; "Seçilen şube tedarikçinin varsayılanı da olsun" açıkken kart da güncellenir (tarih kanıtı kartı
+  değiştirmez). Tek şube seçiliyken Faturalar ve Paraşüt ekranı "N faturanın şubesi seçilmemiş" uyarısını gösterir.
+- **Süzülenler**: Faturalar (liste ve toplamlar), Gelir-gider, Genel bakış ve Maliyet (`loadModel`; `invoiceScopeWhere`,
+  `src/server/invoice-scope.ts`), Paraşüt ekranının fatura sayıları ve bekleyen ürünleri, tahmini stok (yalnız Marina'nın
+  faturaları). Tedarikçiler'de bakiye ve ödemeler **firma geneli** kalır (tek firma); tedarikçi sayfası her faturanın
+  şubesini rozetinde yazar, şube seçiliyken o şubenin fatura sayısını ve tutarını söyler. Vergi, KDV, Nakit planı ve
+  Ödemeler firma geneli (bütün faturalar).
+- **Geçiş** (`0087_fatura_sube`, `0088_fatura_sube_veri`, `0089`): tahminle şube yazılmadı. Ayrı Paraşüt hesabından
+  "işletme geneli" seçimiyle gelmiş faturalar bilinçli işletme geneli sayıldı; tahmini stoğun "Marina'ya gelen faturalar"
+  seçimi (`stock_receipts`) faturanın şubesi oldu ve tablo kalktı (tek doğruluk kaynağı `invoices.branch_id`). Gerisi
+  (bugüne kadarki bütün ortak hesap faturaları) **şubesi seçilmemiş**: kutuda öneriyle bekler.
+- **Davranış değişikliği** (sahibe söylenecek): geçişten sonra tek şube seçiliyken Faturalar ve Gelir-gider'de eski
+  faturalar görünmez, ta ki şubeleri seçilene kadar; "Tümü"nün rakamları değişmez. Şubesi seçilen harcamaya bağlı fatura
+  (ör. Temizlik & Sarf) o şubenin kârına girer (önceden her şubede bilgi satırındaydı). Aynı veride eski kuralla
+  karşılaştırma (`scripts/fatura-kalem-karsilastir.ts`, [PARASUT.md › 5f](PARASUT.md)): başlangıç verisinde şube
+  seçiliyken şubenin mal alışı (bilgi) 0'a, "İşletme geneli payı (bilgi)" şubesi seçilmemiş komisyon faturaları kadar
+  iner; şubenin kârı değişmez. Rakamlar `tests/fatura-kalem-karsilastirma.test.ts`'te kilitli.
+- Şubenin varsayılanı olarak seçilmiş şube silinemez (verisi var sayılır; `branchUsageCount`).
 
 ## "Tümü"nün ay bilgisi (denetim 13 Kasım 2026, P02)
 
@@ -613,9 +658,9 @@ süzülmesini ve şube görünümünde maliyeti kurdu. Şube başına ModPOS ana
   ayarıyla değiştirilmelidir.
 - **`checklist_runs.branch_id`** (ortak kontrol listesinin şube başına koşusu): davranış değişikliği; bugün şubesiz
   şablonun koşusu kapalı gün kanıtında "uyarı" sayılır.
-- **Faturanın şubesi okumada** kuruldu (tek şubede öbür şubenin ayrı hesap faturası okunmaz), ama şubenin kendi faturası
-  Gelir-gider'de yine "işletme geneli" satırında ve mal maliyeti tek şubede reçeteden; şubenin hücresine bölmek sahibin
-  kararıdır.
+- **Faturanın şubesi** kuruldu (25 Kasım 2026, aşağıda): şubenin faturası Gelir-gider'de şubenin harcama hücresinde.
+  Mal maliyeti tek şubede yine reçeteden (mal faturası bilgi satırında); faturayı şubenin mal maliyetine katmak sayım ve
+  devrin şube başına olmasını ister.
 - **Kasa, sayım, kasadan çıkan ve kapalı gün** şube göndermeyen yazımda (eski sekme) "Tümü"de hâlâ Tuzla'ya iner; her
   biri sunucu günlüğüne uyarı yazar (`[şube] … şube göndermedi`). Eski sekmeler bitince `requireExplicit` açılabilir.
 - **Tükendi** sitenin sözleşmesinde şubesiz: şubeye kilitli personelin Tükendi'si bütün şubelerde kapanır. Bu, "kilitli

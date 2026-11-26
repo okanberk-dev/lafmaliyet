@@ -179,10 +179,11 @@ async function receiptLots(db: DB, from: string, to: string) {
     .from(bl)
     .innerJoin(inv, eq(inv.id, bl.invoiceId))
     .innerJoin(ln, eq(ln.productKey, bl.productKey))
-    .innerJoin(s.stockReceipts, eq(s.stockReceipts.invoiceId, inv.id))
     .where(
       and(
-        eq(s.stockReceipts.branchId, STOCK_ESTIMATE_BRANCH),
+        // Faturanın şubesi tek kaynak (invoices.branch_id; docs/SUBE.md › Faturanın şubesi): işletme geneli ve şubesi
+        // seçilmemiş fatura hiçbir şubenin tahminine girmez
+        eq(inv.branchId, STOCK_ESTIMATE_BRANCH),
         gte(inv.date, from),
         lte(inv.date, to),
         notInArray(inv.category, SEPARATE_CATEGORIES),
@@ -213,8 +214,10 @@ export interface ReceiptInvoice {
   id: number;
   date: string;
   supplier: string;
-  /** Seçilen şube; seçilmediyse null */
+  /** Faturanın şubesi (invoices.branch_id); işletme geneli ya da seçilmediyse null */
   branchId: string | null;
+  /** Bilinçli işletme geneli (hiçbir şubenin tahminine girmez) */
+  companyWide: boolean;
   /** Hammaddeler ve miktarları ("Süt 24 LT"), en çok üçü */
   items: string[];
   more: number;
@@ -247,16 +250,16 @@ export async function loadReceiptInvoices(from: string, to: string, db: DB = get
       id: inv.id,
       date: inv.date,
       supplier: inv.supplier,
-      branchId: s.stockReceipts.branchId,
+      branchId: inv.branchId,
+      companyWide: inv.companyWide,
       ingredientId: ln.ingredientId,
       qty: sql<number>`sum(${bl.quantity} * ${ln.factor})`.mapWith(Number),
     })
     .from(bl)
     .innerJoin(inv, eq(inv.id, bl.invoiceId))
     .innerJoin(ln, eq(ln.productKey, bl.productKey))
-    .leftJoin(s.stockReceipts, eq(s.stockReceipts.invoiceId, inv.id))
     .where(and(gte(inv.date, from), lte(inv.date, to), notInArray(inv.category, SEPARATE_CATEGORIES), sql`not ${suspectFactorLine(bl)}`))
-    .groupBy(inv.id, inv.date, inv.supplier, s.stockReceipts.branchId, ln.ingredientId)
+    .groupBy(inv.id, inv.date, inv.supplier, inv.branchId, inv.companyWide, ln.ingredientId)
     .orderBy(desc(inv.date), desc(inv.id));
   const ids = [...new Set(rows.map((r) => r.ingredientId))];
   const ings = ids.length
@@ -267,13 +270,15 @@ export async function loadReceiptInvoices(from: string, to: string, db: DB = get
   for (const r of rows) {
     const ing = ingById.get(r.ingredientId);
     if (!ing || !Number.isFinite(r.qty)) continue;
-    const cur = out.get(r.id) ?? { id: r.id, date: r.date, supplier: r.supplier, branchId: r.branchId ?? null, items: [], more: 0, all: [] };
+    const cur = out.get(r.id) ?? { id: r.id, date: r.date, supplier: r.supplier, branchId: r.branchId ?? null, companyWide: r.companyWide, items: [], more: 0, all: [] };
     cur.all.push(`${ing.name} ${stockQty(r.qty, displayUnit(ing))}`);
     out.set(r.id, cur);
   }
   const list = [...out.values()];
-  const open = list.filter((i) => i.branchId === null);
-  const ordered = [...open, ...list.filter((i) => i.branchId !== null)];
+  // Şubesi seçilmemiş: ne şube ne işletme geneli (işletme geneli bilinçli bir seçimdir, iş beklemez)
+  const isOpen = (i: { branchId: string | null; companyWide: boolean }) => i.branchId === null && !i.companyWide;
+  const open = list.filter(isOpen);
+  const ordered = [...open, ...list.filter((i) => !isOpen(i))];
   return {
     invoices: ordered.slice(0, Math.max(0, limit)).map(({ all, ...x }) => {
       const sorted = all.sort((a, b) => a.localeCompare(b, "tr"));

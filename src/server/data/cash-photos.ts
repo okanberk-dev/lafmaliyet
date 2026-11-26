@@ -175,6 +175,7 @@ export function extrasFrom(info: CashPhotoInfo | undefined, outs: CashOutDTO[], 
       ? { z: info.photos.some((p) => p.kind === "kasa-z"), okc: info.photos.some((p) => p.kind === "kasa-okc"), pos: info.photos.some((p) => p.kind === "kasa-pos") }
       : null,
     photoDiffs: info ? suspiciousDiffs(info.readings, savedFields(report)) : null,
+    photoRead: Boolean(info?.readings.length),
     cashOuts: outs.map((o) => ({ kind: o.kind, amount: o.amount, store: o.store, description: o.description, photo: o.photoId !== null })),
     // Fişsiz çıkış (bulgu 2): onay kartlarıyla aynı hesap; LafPOS gününde girilmemiş teslim fişsiz sayılmaz, gün sonu
     // gelmemişse (hareketler bekleniyor) ve Kasadan çıkanlar'dan önceki günde hesaplanmaz

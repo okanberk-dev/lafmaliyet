@@ -228,7 +228,8 @@ describe("kasa zinciri: veritabanında", { skip: !SERVER_URL && "KASA_ZINCIRI_TE
     assert.equal(body.now, NOW.toISOString());
     assert.deepEqual(
       body.items.map((i) => i.name),
-      ["Nakit malzeme alımı", "Bakım & onarım", "Diğer fatura dışı"],
+      // "Temizlik & sarf malzemesi": göç 0090'ın açtığı satır (genel, diğer grubu); kasadan alınan deterjan da seçilir
+      ["Nakit malzeme alımı", "Bakım & onarım", "Diğer fatura dışı", "Temizlik & sarf malzemesi"],
     );
     assert.ok(!body.items.some((i) => i.id === cats.maas), "yöneticinin kategorisi yok");
     assert.deepEqual(Object.keys(body.items[0]).sort(), ["id", "name", "section"], "tutar ve ayar yok");
