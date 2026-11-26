@@ -505,6 +505,7 @@ parlaklığına göre mürekkep haritası, harf boyu, satır yönü ve ölçüle
 - **Sayfa yönü** (`orientation.ts`, `detectOrientation(img, { corners })`): 90 / 180 / 270° döndürülmüş belge; satır
   yönü, sonra düz / ters (nokta ve virgülün taban çizgisinde, harf noktalarının üstte olması; kısa satırların sola
   yaslanması; fişin ortalı başlığı). Emin değilse `"bilinmiyor"` (döndürülmez; yapay zekâ yönü kendisi bulur).
+  Arayüze bağlanınca § 11'deki "90° / 180° yön kendiliğinden bulunmaz" sınırı kalkar (`rotate` buradan verilir).
 - **Uzun fiş birleştirme** (`stitch.ts`, `stitchParts(parts)`): parça parça çekilmiş uzun Z'nin taranmış parçaları
   örtüşen bölgeden tek görüntüde birleşir (satır profili ve koyuluk haritasında normalize çapraz ilinti, ölçek ve
   yatay kayma farkı tolere edilir; dikiş satır arasından). Örtüşme yoksa, yazısızsa, tekrarlayan satırlar yüzünden
