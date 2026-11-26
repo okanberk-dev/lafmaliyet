@@ -125,7 +125,7 @@ function UploadDialog({ suppliers, accounts, onClose }: { suppliers: SupplierOpt
       onClose={onClose}
       size="xl"
       title="Ekstre yükle"
-      description="Excel (.xlsx) ya da CSV. Dosya saklanmaz: yalnız hareketler (gün, açıklama, tutar) okunur, 90 gün sonra silinir."
+      description=".xlsx ya da CSV dosyası. Dosya saklanmaz: yalnız hareketler (gün, açıklama, tutar) okunur, 90 gün sonra silinir."
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={pending} className="max-sm:bg-panel">
@@ -188,7 +188,7 @@ function UploadDialog({ suppliers, accounts, onClose }: { suppliers: SupplierOpt
             </Select>
           </Field>
         )}
-        <Field label="Dosya" htmlFor={ids.file} hint="Bankanın internet şubesinden “Hesap hareketleri” ya da tedarikçinin cari ekstresi. Eski Excel (.xls) okunmaz: .xlsx olarak kaydedin.">
+        <Field label="Dosya" htmlFor={ids.file} hint="Bankanın internet şubesinden “Hesap hareketleri” ya da tedarikçinin cari ekstresi. Eski .xls biçimi okunmaz: dosyayı .xlsx olarak kaydedin.">
           <Input id={ids.file} type="file" accept=".xlsx,.csv,.txt,.tsv" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
         </Field>
         {pending && !preview ? <p className="text-sm text-ink-mute">Dosya okunuyor…</p> : null}

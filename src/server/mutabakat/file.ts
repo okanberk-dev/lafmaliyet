@@ -30,7 +30,7 @@ async function readXlsx(bytes: ArrayBuffer): Promise<Grid> {
   try {
     await wb.xlsx.load(bytes);
   } catch {
-    throw new UserError("Excel dosyası okunamadı. Dosyayı Excel'de açıp yeniden .xlsx olarak kaydedin ya da CSV indirin.");
+    throw new UserError(".xlsx dosyası okunamadı. Dosyayı tablo programında açıp yeniden .xlsx olarak kaydedin ya da CSV indirin.");
   }
   // En çok dolu satırı olan sayfa (bazı bankalar ilk sayfaya yalnız kapak yazar)
   const sheet = [...wb.worksheets].sort((a, b) => b.actualRowCount - a.actualRowCount)[0];
@@ -47,7 +47,7 @@ async function readXlsx(bytes: ArrayBuffer): Promise<Grid> {
 
 /**
  * Yüklenen dosya → tablo. .xlsx (exceljs) ve CSV / TXT / TSV (ayraç ve kodlama kendiliğinden: UTF-8 ya da Windows-1254).
- * Eski Excel biçimi (.xls) okunmaz: bankalar çoğunlukla .xlsx ya da CSV de verir.
+ * Eski .xls biçimi okunmaz: bankalar çoğunlukla .xlsx ya da CSV de verir.
  */
 export async function readStatementFile(file: unknown): Promise<{ grid: Grid; name: string }> {
   if (!(file instanceof File) || !file.size) throw new UserError("Dosya seçin");
@@ -59,6 +59,6 @@ export async function readStatementFile(file: unknown): Promise<{ grid: Grid; na
     const rows = parseCsv(decodeCsv(new Uint8Array(await file.arrayBuffer())));
     return { grid: rows.slice(0, MAX_ROWS), name };
   }
-  if (lower.endsWith(".xls")) throw new UserError("Eski Excel biçimi (.xls) okunamıyor: dosyayı Excel'de açıp .xlsx olarak kaydedin ya da bankadan CSV indirin");
+  if (lower.endsWith(".xls")) throw new UserError("Eski .xls biçimi okunamıyor: dosyayı tablo programında açıp .xlsx olarak kaydedin ya da bankadan CSV indirin");
   throw new UserError("Desteklenen dosyalar: .xlsx, .csv, .txt");
 }

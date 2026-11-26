@@ -32,7 +32,7 @@ const TITLE = "Mutabakat";
 const DESCRIPTION = "Banka ve tedarikçi ekstresini panel kayıtlarıyla, kart satışını bankaya gelen parayla karşılaştırın.";
 // Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
 const MORE =
-  "Bankanın ya da tedarikçinin ekstresini (Excel ya da CSV) yükleyin: hareketler harcamalar, tedarikçi ödemeleri, ödendi işaretli faturalar ve kasadan teslimlerle (tedarikçi ekstresinde faturalar ve ödemelerle) eşleşir. Eşleşmeyeni elle eşleştirin ya da yok sayın. POS hakediş sekmesi kasa raporlarının kart satışını bankaya gelen POS parasıyla karşılaştırır. Panel kaydına hiçbir şey yazılmaz; dosya saklanmaz, okunan hareketler 90 gün sonra silinir.";
+  "Bankanın ya da tedarikçinin ekstresini (.xlsx ya da CSV) yükleyin: hareketler harcamalar, tedarikçi ödemeleri, ödendi işaretli faturalar ve kasadan teslimlerle (tedarikçi ekstresinde faturalar ve ödemelerle) eşleşir. Eşleşmeyeni elle eşleştirin ya da yok sayın. POS hakediş sekmesi kasa raporlarının kart satışını bankaya gelen POS parasıyla karşılaştırır. Panel kaydına hiçbir şey yazılmaz; dosya saklanmaz, okunan hareketler 90 gün sonra silinir.";
 
 const BASE = "/panel/mutabakat";
 
@@ -102,7 +102,7 @@ async function ReconContent({ searchParams }: { searchParams: PageProps<"/panel/
           <EmptyState
             icon={<FileSpreadsheet />}
             title="Henüz ekstre yok"
-            description="Bankanın hesap hareketlerini ya da tedarikçinin cari ekstresini Excel (.xlsx) ya da CSV olarak indirip yükleyin: hareketler panel kayıtlarıyla eşleşir."
+            description="Bankanın hesap hareketlerini ya da tedarikçinin cari ekstresini .xlsx ya da CSV olarak indirip yükleyin: hareketler panel kayıtlarıyla eşleşir."
             action={upload}
           />
         </Card>
