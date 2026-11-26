@@ -294,22 +294,29 @@ export function LiveCamera({ opts, onDone }: { opts: LiveCameraOptions; onDone: 
       shade.style.opacity = "1";
     };
 
+    // Kamera isteniyor: sekme izin beklerken gizlenip geri gelirse ikinci istek gitmez (ikinci akış birinciyi ezer,
+    // birincinin kamerası açık kalırdı)
+    let starting = false;
+
     async function start() {
-      if (!alive || streamRef.current) return;
+      if (!alive || streamRef.current || starting) return;
       setPhase("aciliyor");
       let stream: MediaStream;
+      starting = true;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: { facingMode: { ideal: "environment" }, width: { ideal: 2560 }, height: { ideal: 1440 } },
         });
       } catch (err) {
+        starting = false;
         const name = err instanceof DOMException ? err.name : "";
         // İzin reddedildi ya da kamera yok: bu tarayıcıda hatırlanır; kamera meşgul (başka uygulama): yalnız bu sefer
         finish({ kind: "fallback", remember: name === "NotAllowedError" || name === "SecurityError" || name === "NotFoundError" || name === "OverconstrainedError" });
         return;
       }
-      if (!alive || document.hidden) {
+      starting = false;
+      if (!alive || document.hidden || streamRef.current) {
         for (const t of stream.getTracks()) t.stop();
         return;
       }
