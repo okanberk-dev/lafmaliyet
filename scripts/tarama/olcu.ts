@@ -166,12 +166,12 @@ export function ortalama(xs: readonly number[]): number {
 
 /* ------------------------------------------------------------------ görsel */
 
-type Sharp = typeof import("sharp");
+type Sharp = (typeof import("sharp"))["default"];
 
 let sharpYuku: Promise<Sharp> | null = null;
 /** sharp (next'in isteğe bağlı bağımlılığı); yalnız betik ve testlerde, dinamik */
 export function sharpAl(): Promise<Sharp> {
-  sharpYuku ??= import("sharp").then((m) => (m as unknown as { default?: Sharp }).default ?? (m as unknown as Sharp));
+  sharpYuku ??= import("sharp").then((m) => m.default);
   return sharpYuku;
 }
 

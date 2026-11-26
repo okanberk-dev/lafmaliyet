@@ -713,7 +713,7 @@ function planDene(girdi: SahneGirdisi, rnd: Rnd, tohum: number): SahnePlani | nu
   const guclu = durum === "normal" && rnd() < 0.3;
   const egim = durum === "yakin" ? 8 : guclu ? 34 : 18;
   let pitch = ara(rnd, -egim, egim);
-  let yaw = ara(rnd, -egim * 0.7, egim * 0.7);
+  const yaw = ara(rnd, -egim * 0.7, egim * 0.7);
   if (guclu) {
     pitch = (rnd() < 0.5 ? -1 : 1) * ara(rnd, 22, 36);
     etiketler.push("perspektif-guclu");
