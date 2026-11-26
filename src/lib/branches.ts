@@ -143,6 +143,18 @@ export function branchChangeError(
   return null;
 }
 
+/** Şubenin e-postası başka bir hesapta (createBranch, sendBranchInstall) */
+export const BRANCH_EMAIL_TAKEN = "Bu e-posta başka bir hesapta kayıtlı; şube için ayrı bir adres yazın";
+
+/**
+ * Şubenin e-postası var olan bir hesapta mı (kurulum o hesabı şubenin panel hesabı sayar, LafPOS kurulum bağlantısı
+ * oraya gider; docs/LAFPOS.md › Şube kurulumu). Beyaz liste: yalnız personel hesabı kabul edilir, o da şubesizse ya da
+ * bu şubedeyse. Yönetici, müdür, muhasebeci ve tanınmayan rol hep reddedilir (varsayılan kapalı)
+ */
+export function branchEmailTaken(dup: { role: string; branchId: string | null } | null | undefined, branchId: string): boolean {
+  return !!dup && (dup.role !== "staff" || (dup.branchId !== null && dup.branchId !== branchId));
+}
+
 /** Silinebilir mi: sabit kayıtlar ve üzerinde verisi olan şube silinmez (veri sayısı çağırandan gelir) */
 export function branchDeleteError(branch: BranchRow, usageCount: number): string | null {
   if (FIXED_BRANCH_IDS.includes(branch.id)) return `${branch.name} silinemez`;
