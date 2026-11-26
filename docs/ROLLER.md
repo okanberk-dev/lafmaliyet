@@ -96,8 +96,9 @@ düğmeleri gizli.
 - Hiçbir kayıt değiştiremez: her sunucu eylemi reddeder. Geçenler yalnız kendi hesabının eylemleri (parola, iki
   adımlı, oturumlar, bu cihazın bildirim aboneliği) ve salt okumalar (şube seçimi çerezi, kasa raporunun WhatsApp
   metni). Veri uçları da: fotoğraf yükleyemez, sipariş eşitleyemez, vardiya PDF'ini alamaz.
-- Ayar görmez; zil ona boş döner; canlı uç (`/api/canli`) ona karaoke oturumu, silme isteği, uygulama siparişi ve masa
-  çağrısı vermez (saha ekranları kapalı, `canOpen`; hiçbir şube seçiminde); panel asistanı yok.
+- Ayar görmez; zilinde yalnız kendi hesabının güvenlik uyarısı (yeni cihazdan giriş) durur; canlı uç (`/api/canli`)
+  ona karaoke oturumu, silme isteği, uygulama siparişi ve masa çağrısı vermez (saha ekranları kapalı, `canOpen`; hiçbir
+  şube seçiminde); panel asistanı yok.
 - Kişi verisi: kişi başı maaş (Maaşlar, bordro dökümü), avanslar ve personel belgeleri yok; gelir-gider ve vergide
   personel giderleri toplam olarak durur. Kasa raporunda kasadan çıkan satırları kategorileriyle görür (muhasebe kaydı).
 - Tam dışa aktarım (`/api/export`) ve yedek yöneticinin; muhasebecinin dışa aktarımı aylık **muhasebeci paketi**
@@ -130,7 +131,8 @@ oturumları kapanır (oturum sürümü).
   belgeleri ona kapalı.
 - **İki adımlı doğrulama** rakam gören her rolde zorunlu: yönetici, müdür, muhasebeci (`TWO_FACTOR_ROLES`;
   `src/lib/admin-security.ts`). Personel ortak tablette sırayla girer; onda isteğe bağlı. Yeni cihaz uyarısı da bu üç
-  rolde.
+  rolde: işlem geçmişi, kişinin kendi adresine e-posta ve zilinin Sistem başlığı, her birinde yalnız kendi hesabının
+  girişleri (`src/server/actions/notifications.ts` › `loadPanelNotifications`).
 - **E-posta alıcıları** ([BILDIRIMLER.md](BILDIRIMLER.md) › Alıcılar ve hesaplar): kasa raporu ve sabah e-postası
   personel ve **müdür** hesabının adresine gitmez (listeler şubeler arasında ortak olabilir; kasa e-postası karaoke ön
   ödemesini, sabah e-postası işletmenin ödemelerini ve maliyetini taşır); **muhasebeci** hesabı alır (hesabı olmayan

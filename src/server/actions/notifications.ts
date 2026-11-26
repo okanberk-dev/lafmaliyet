@@ -536,13 +536,12 @@ async function staffDocNotifications(): Promise<PanelNotification[]> {
  * da çağrılır: kasa (src/server/bell/kasa.ts) ve operasyon (src/server/bell/ops.ts). Personel kendi hatırlatıcılarını,
  * önerilerinin ve isteklerinin sonucunu ("İsteklerim"), akşam bekleyen kasa raporunu ve bekleyen kontrol listesini
  * görür; maliyet, ödeme, fatura ve sistem bilgisi ona gitmez. Okunamayan bölüm kendi grubunda "… yüklenemedi" satırı
- * bırakır (failedBellRows; bulgu 88).
+ * bırakır (failedBellRows; bulgu 88). Yeni cihazdan giriş satırları iki adımlısı zorunlu üç rolün (yönetici, müdür,
+ * muhasebeci) zilinde, her birinde yalnız kendi hesabınınki; muhasebecinin zilinde başka satır yok (docs/ROLLER.md).
  */
 export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   const user = await getCurrentUser();
   if (!user) return [];
-  // Muhasebeci salt okur: günlük işlerin, onayların ve personelin zili ona gitmez (docs/ROLLER.md)
-  if (user.role === "accountant") return [];
   // Bir bölüm okunamazsa (Neon uyanırken zaman aşımı) sessizce boş görünmez: günlüğe yazılır ve kendi grubunda
   // "{Grup} yüklenemedi" satırı olur (src/lib/bell-failed.ts; bulgu 88). Satır okunmamış sayılmaz
   const failed: BellPart[] = [];
@@ -551,18 +550,27 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     failed.push(part);
   };
   const safe = (part: BellPart, p: Promise<PanelNotification[]>) => p.catch((e: unknown) => (onFailed(part, e), [] as PanelNotification[]));
-  const [mine, recipes, cash, kontrol, ops] = await Promise.all([
+  // Muhasebeci salt okur: günlük işlerin, onayların ve personelin zili ona gitmez; yalnız kendi hesabının yeni cihaz
+  // uyarısı (docs/ROLLER.md)
+  if (user.role === "accountant") {
+    const devices = await safe("guvenlik", newDeviceBellRows(user));
+    return [...failedBellRows(failed, user.role, todayTR()), ...devices];
+  }
+  // Kişinin kendi hesabına yeni cihazdan giriş (son 7 gün; docs/DEPLOY.md › 6a): yönetici ve müdürde (personele
+  // alertsNewDevice sorgusuz boş döner); Sistem başlığında
+  const [mine, recipes, cash, kontrol, ops, devices] = await Promise.all([
     safe("hatirlatici", reminderNotifications(user)),
     safe("recete", recipeNotifications(user)),
     safe("kasa", kasaBell(user, onFailed)),
     safe("kontrol", checklistNotifications(user)),
     safe("operasyon", opsBell(user, onFailed)),
+    safe("guvenlik", newDeviceBellRows(user)),
   ]);
-  if (user.role !== "admin") return [...failedBellRows(failed, user.role, todayTR()), ...cash, ...kontrol, ...mine, ...recipes, ...ops];
+  if (user.role !== "admin") return [...failedBellRows(failed, user.role, todayTR()), ...devices, ...cash, ...kontrol, ...mine, ...recipes, ...ops];
   // Maliyet modeli zilin en ağır okuması: düşerse (E-49) öbür maddeler yine gelir, modelNotifications kendi satırını
   // koyar. Ödemeler de öyle: okunamazsa "Ödemeler yüklenemedi" satırı (upcomingFailed). ModPOS kasa föyünün anahtarı
   // çalışmıyorsa ve LafPOS'un gün sonu reddedildiyse Sistem başlığında (src/server/bell/modpos.ts, src/server/bell/lafpos.ts)
-  const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos, lafpos, vardiya, devices, staffDocs] = await Promise.all([
+  const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos, lafpos, vardiya, staffDocs] = await Promise.all([
     modelNotifications().catch(modelFailed),
     // Şube seçiliyken o şubenin ve işletme genelinin ödemeleri (docs/SUBE.md › Ödemeler)
     currentBranchScope()
@@ -578,8 +586,6 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     safe("lafpos", lafposRejectionBell()),
     // Gelecek haftanın vardiyası yazılmadıysa (Perşembe 18:00'den Pazar'a; docs/VARDIYA.md › Bildirimler)
     safe("vardiya", currentBranchScope().then((scope) => vardiyaBell(scope))),
-    // Kişinin kendi hesabına yeni cihazdan giriş (son 7 gün; docs/DEPLOY.md › 6a)
-    safe("guvenlik", newDeviceBellRows(user)),
     safe("belge", staffDocNotifications()),
   ]);
   const lost = failedBellRows(failed, user.role, todayTR());

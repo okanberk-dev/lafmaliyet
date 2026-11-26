@@ -545,6 +545,65 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
     });
   });
 
+  describe("zil: yeni cihaz uyarısı üç rolde (bulgu 11)", () => {
+    test("zil: yeni cihaz uyarısı müdürde ve muhasebecide de, yalnız kendi hesabının; muhasebecinin zilinde başka satır yok", async () => {
+      const newDevice = await import("../src/server/auth/new-device");
+      const bell = await import("../src/server/actions/notifications");
+      const ACTION = "Yeni cihazdan giriş";
+      const UA: Record<Key, string> = {
+        ali: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        mehmet: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1",
+        zeynep: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.6; rv:132.0) Gecko/20100101 Firefox/132.0",
+        ayse: "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36 EdgA/131.0.0.0 Edg/131.0.0.0",
+      };
+      const devices = <T extends { id: string }>(items: T[]) => items.filter((i) => i.id.startsWith("yeni-cihaz-"));
+      try {
+        // Her hesap kendi yeni cihazından girdi (RESEND_API_KEY yok: e-posta gitmez, yalnız işlem geçmişi ve zil)
+        for (const k of Object.keys(BASE) as Key[]) {
+          await newDevice.noteNewDevice({ id: ids[k], ...BASE[k] }, new Headers({ "user-agent": UA[k], "x-forwarded-for": "85.105.12.34" }));
+        }
+        // Yazım: iki adımlısı zorunlu üç rolde satır var, personelde yok
+        const logged = await db.select({ userId: s.activityLog.userId, detail: s.activityLog.detail }).from(s.activityLog).where(eq(s.activityLog.action, ACTION));
+        const byUser = new Map(logged.map((r) => [r.userId, r.detail]));
+        assert.equal(byUser.get(ids.ali), "Chrome · Windows · IP 85.105.12.x");
+        assert.equal(byUser.get(ids.mehmet), "Safari · iPhone · IP 85.105.12.x");
+        assert.equal(byUser.get(ids.zeynep), "Firefox · Mac · IP 85.105.12.x");
+        assert.equal(byUser.has(ids.ayse), false, "personele uyarı yazılmaz");
+        assert.equal(logged.length, 3, JSON.stringify(logged));
+
+        // Muhasebeci: zilinde yalnız kendi hesabının uyarısı, başka satır yok
+        await signIn("zeynep");
+        const mine = await bell.loadPanelNotifications();
+        assert.equal(mine.length, 1, JSON.stringify(mine));
+        assert.equal(mine[0].title, "Yeni cihazdan giriş: Firefox · Mac · IP 85.105.12.x");
+        assert.deepEqual([mine[0].href, mine[0].group, mine[0].kind], ["/panel/hesap#oturumlar", "sistem", "warning"]);
+        assert.ok(mine[0].id.startsWith("yeni-cihaz-"), mine[0].id);
+
+        // Müdür: kendi hesabının uyarısı (yöneticininki ve muhasebecininki değil)
+        await signIn("mehmet");
+        const manager = devices(await bell.loadPanelNotifications());
+        assert.deepEqual(
+          manager.map((i) => i.title),
+          ["Yeni cihazdan giriş: Safari · iPhone · IP 85.105.12.x"],
+        );
+        assert.deepEqual([manager[0].href, manager[0].group], ["/panel/hesap#oturumlar", "sistem"]);
+
+        // Personel: uyarı yok
+        await signIn("ayse");
+        assert.deepEqual(devices(await bell.loadPanelNotifications()), [], "personelin zilinde yeni cihaz satırı yok");
+
+        // Yönetici (kıyas): yalnız kendi hesabınınki
+        await signIn("ali");
+        assert.deepEqual(
+          devices(await bell.loadPanelNotifications()).map((i) => i.title),
+          ["Yeni cihazdan giriş: Chrome · Windows · IP 85.105.12.x"],
+        );
+      } finally {
+        await db.delete(s.activityLog).where(eq(s.activityLog.action, ACTION));
+      }
+    });
+  });
+
   // Sonda: sendBranchInstall şubenin e-postasını ve kurulum bağlantısını yazar
   describe("şube kurulumu e-postası rol hesabına gitmez (bulgu 10)", () => {
     test("müdür, muhasebeci, yönetici ve öteki şubenin personeli reddedilir; bu şubenin personeli kabul edilir", async () => {

@@ -405,10 +405,10 @@ derlenmiş dosyadır (`worker-src 'self' blob:`); tam politika uygulanınca da d
   - Zorunluluk açılınca iki adımlısı olmayan yöneticiler ilk sayfa açılışında kurulum ekranına düşer (açık oturumları
     kapanmaz; kurulum öteki cihazlardaki oturumları, iki adımlıyı açmak gibi, kapatır). Önceden kurulmuş bir Claude
     bağlantısı salt okunurdur ve kurulumla (oturum sürümü artınca) kapanır; kurulumdan önce yenisi kurulamaz.
-- **Yeni cihazdan giriş uyarısı** (yalnız yönetici hesapları; personel ortak tablette sırayla girer, her biri ilk
-  girişinde uyarı alırdı): bu tarayıcıdan bu hesapla daha önce hiç giriş yapılmadıysa (bilinen cihaz çerezi
-  `__Host-laf_cihaz`; oturum sürümü fark etmez, parola değişince aynı tarayıcı yeniden "yeni" sayılmaz) başarılı
-  girişte (iki adımlı kodla ya da kurtarma koduyla girişte de):
+- **Yeni cihazdan giriş uyarısı** (yönetici, müdür ve muhasebeci hesapları: iki adımlısı zorunlu roller; personel
+  ortak tablette sırayla girer, her biri ilk girişinde uyarı alırdı): bu tarayıcıdan bu hesapla daha önce hiç giriş
+  yapılmadıysa (bilinen cihaz çerezi `__Host-laf_cihaz`; oturum sürümü fark etmez, parola değişince aynı tarayıcı
+  yeniden "yeni" sayılmaz) başarılı girişte (iki adımlı kodla ya da kurtarma koduyla girişte de):
   - İşlem geçmişine **Yeni cihazdan giriş** yazılır ("Chrome · Windows · IP 85.105.12.x");
   - kişinin zilinde Sistem başlığında 7 gün "Yeni cihazdan giriş: …" durur, Hesabım › Oturumlar'a götürür;
   - Resend kuruluysa hesabın kendi adresine **"Hesabınıza yeni bir cihazdan giriş yapıldı"** e-postası gider (ne
@@ -419,7 +419,7 @@ derlenmiş dosyadır (`worker-src 'self' blob:`); tam politika uygulanınca da d
   - **KVKK:** saklanan yalnız tarayıcı ve işletim sisteminin adı ile kısaltılmış IP (IPv4'te son hane "x", IPv6'da ilk
     üç blok "/48"); tam IP ve tarayıcı kimliği (user-agent) hiçbir yere yazılmaz. Kod `src/server/auth/new-device.ts`,
     e-posta `src/server/auth/new-device-notice.ts`, kurallar `src/lib/admin-security.ts`; testler
-    `tests/yonetici-guvenlik.test.ts` ve `tests/hesap-yetki-db.test.ts`.
+    `tests/yonetici-guvenlik.test.ts`, `tests/hesap-yetki-db.test.ts` ve (müdür, muhasebeci) `tests/roller-db.test.ts`.
 - Kurtarma kodları kişiye özel tuzlu, yavaş bir özetle (scrypt) saklanır; veritabanı sızsa bile kodlar denenerek
   bulunamaz. Önceki biçimde saklanmış kodlar yenilenene kadar çalışır.
 - Doğrulama anahtarı veritabanında `AUTH_SECRET`'tan türetilen anahtarla şifrelidir; `AUTH_SECRET` değişirse iki

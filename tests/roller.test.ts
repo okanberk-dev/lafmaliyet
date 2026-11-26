@@ -519,8 +519,9 @@ describe("sunucu eylemleri: her biri bir yetki kapısından geçer; muhasebeciye
     requestPasswordReset: null,
     approveConnection: /if \(me\.role !== "admin"\) throw new UserError/,
     denyConnection: /if \(me\.role !== "admin"\) throw new UserError/,
-    // Zil: yalnız okur; muhasebeciye boş liste döner
-    loadPanelNotifications: /if \(user\.role === "accountant"\) return \[\];/,
+    // Zil: yalnız okur; muhasebeciye yalnız kendi hesabının yeni cihaz uyarısı
+    loadPanelNotifications:
+      /if \(user\.role === "accountant"\) \{\n\s+const devices = await safe\("guvenlik", newDeviceBellRows\(user\)\);\n\s+return \[\.\.\.failedBellRows\(failed, user\.role, todayTR\(\)\), \.\.\.devices\];/,
   };
   /**
    * Muhasebecinin de geçtiği kapılar (requireUser, requireSignedIn): yalnız kendi hesabı (parola, iki adımlı, oturumlar,

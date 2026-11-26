@@ -96,8 +96,10 @@ test("metinler: sıfırlama penceresi zorunluyken kurulum ekranını söyler, de
 
 // ---------------------------------------------------------------- Yeni cihaz
 
-test("yeni cihaz uyarısı yalnız yönetici hesaplarına (personel ortak tablette sırayla girer)", () => {
+test("yeni cihaz uyarısı iki adımlısı zorunlu rollere (yönetici, müdür, muhasebeci); personele yok (ortak tablette sırayla girer)", () => {
   assert.equal(alertsNewDevice({ role: "admin" }), true);
+  assert.equal(alertsNewDevice({ role: "manager" }), true);
+  assert.equal(alertsNewDevice({ role: "accountant" }), true);
   assert.equal(alertsNewDevice({ role: "staff" }), false);
 });
 

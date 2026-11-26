@@ -67,7 +67,7 @@ değişince yeniden okunmamış olur), ModPOS anahtarı tanımlı ama çalışm�
 çekilemiyor" ve hatanın metni, Ayarlar › ModPOS (kasa föyü)'ne götürür ([MODPOS-API.md](MODPOS-API.md) › Nerede
 görünür); LafPOS'un sayılan günü reddedilince (Z çakışması, sözleşmeye uymayan gövde, başka şubeye
 ayarlı kasa) aynı başlıkta "Marina gün sonu alınamadı: <neden>", gün ve ne yapılacağıyla, Ayarlar › LafPOS'a götürür
-(gün ve neden başına bir satır, son 7 gün; [LAFPOS.md](LAFPOS.md) › Durum ve onarım). Yöneticinin kendi hesabına yeni bir cihazdan giriş yapıldıysa yine **Sistem** başlığında 7 gün "Yeni cihazdan
+(gün ve neden başına bir satır, son 7 gün; [LAFPOS.md](LAFPOS.md) › Durum ve onarım). Yöneticinin, müdürün ve muhasebecinin kendi hesabına yeni bir cihazdan giriş yapıldıysa yine **Sistem** başlığında 7 gün "Yeni cihazdan
 giriş: Chrome · Windows · IP 85.105.12.x" durur, Hesabım › Oturumlar'a götürür; aynı uyarı hesabın adresine e-postayla da
 gider ([DEPLOY.md](DEPLOY.md) › 6a). Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
 kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklemesi ("Ayşe özel gün ekledi") son 3 gün durur
