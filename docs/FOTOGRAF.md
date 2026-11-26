@@ -506,11 +506,54 @@ npx tsx --test tests/tarama-regresyon.test.ts   # 10 küçük örnek (tests/fixt
   kırpmaların 4'ü nedensiz 0,27–0,29 güvenli; rapordaki "Güven eşiği" tablosu). A4'ün okunabilirliği düşük:
   1500×2000 fotoğrafta yazı ~10 px, kodla okuma zorlanıyor (yapay zekâ okur; tarayıcının değil ölçeğin sınırı). Yana
   dönük fişin yazısı çevrilmediği için okunmuyor.
+- **Ölçüyle ayar** (26 Kasım 2026, `wip/tarama-2`, çekirdek `f58341e6`; aynı 96 görsel): zayıf kategoriler tek tek
+  ele alındı, her değişiklik ölçüldü, kötüleştiren geri alındı (§ 11'deki adımlar: düşük eşikli ikinci Hough, gölge
+  şeridi yazı sayılmaz, alt piksel köşe, doygunluk maskesi, 8 adayda ince ayar, kâğıdın bütünü / kâğıdın kendisi,
+  belge değil kuralları). Okunabilirlikte taranmış hâl artık tarama ekranı gibi sayfa yönüne göre çevrilip okunur
+  (`--yon 0` eskisi). Önce → sonra:
+
+  | | önce | sonra |
+  |---|---:|---:|
+  | Genel doğru | 52/96 (%54) | **89/96 (%93)** |
+  | Köşe başarısı (76 görsel) | 41/76, kaçan 10, yanlış 25 | **71/76**, kaçan 2, yanlış 3 |
+  | Köşe hatası ort / p90 | %8,1 / %27,6 | %1,1 / %1,3 |
+  | Belge değil: "belge yok" | 3/12 | 10/12 |
+  | Yanlışlıkla "kareyi dolduruyor" | 5 | 1 |
+  | Kadraj dışı | 0/8 | 7/8 |
+  | OCR asıl → taranmış (doğru köşelerle) | %40 → %64 (%71) | %40 → **%69** (%71) |
+  | Tutar bulma asıl → taranmış | %23 → %53 | %23 → %59 |
+
+  | Kategori | doğru önce → sonra | köşe hatası ort | OCR taranmış önce → sonra | tutar taranmış önce → sonra |
+  |---|---:|---:|---:|---:|
+  | Pavo detaylı Z | 6 → 11/12 | %9,9 → %2,2 | %57 → %71 | %50 → %66 |
+  | Pavo / LafPOS gün sonu | 5 → 10/11 | %8,7 → %0,6 | %77 → %87 | %64 → %81 |
+  | ModPOS Z | 8 → 11/11 | %2,2 → %0,1 | %85 → %84 | %68 → %64 |
+  | Banka batch (58 mm) | 4 → 8/9 | %5,6 → %0,5 | %90 → %95 | %78 → %89 |
+  | Market fişi (80 mm) | 6 → 9/9 | %6,0 → %0,2 | %68 → %77 | %68 → %78 |
+  | Market fişi (58 mm) | 8 → 8/8 | %0,5 → %0,2 | %75 → %73 | %56 → %53 |
+  | Uzun market fişi | 4 → 10/12 | %16,0 → %3,3 | %52 → %55 | %38 → %39 |
+  | A4 e-Arşiv fatura | 8 → 12/12 | %6,2 → %0,1 | %20 → %21 | %17 → %17 |
+  | Belge değil | 3 → 10/12 | – | – | – |
+
+  Zemine göre doğru (önce → sonra): ahşap 13 → 17/18, mermer 8 → 15/18, koyu tezgâh 8 → 14/14, **beyaz tezgâh 3 →
+  16/18**, gri masa 11 → 15/16, elde 9 → 12/12. Senaryolar: gölge degradesi 14 → 31/32, parlama 16 → 24/26, karanlık
+  11 → 16/17, soluk baskı 9 → 17/19, kıvrılma 27 → 40/44, hareket bulanıklığı 6 → 11/14. Taranmış hâlin okunabilirliği
+  her kategoride asıl fotoğraftan iyi (en az: A4 %17 → %21; yana dönük fişte %5 → %27, sayfa yönü çevrildiği için).
+  ModPOS Z ve 58 mm fişte taranmış hâl önceki ölçümden 1–3 puan geride (asıl fotoğraftan yine çok iyi): köşeler
+  zaten doğruydu, fark tesseract'ın görselden görsele oynaması kadar.
+  Güven artık anlamlı: kırpılanlarda güven < 0,5 "emin değil" sayılsa 71 doğru kırpmadan 3'ü kaybedilir. Süre: bu
+  makinede (yük ~3) tarama ort ~570 ms, algılama ~300 ms (1500×2000; okunabilirlik ölçümü yanında koşarken ~800 / ~450).
+  **Kalan zayıflıklar:** ekranda tablo (2 görsel, ekran kâğıt gibi açık ve yazılı: kırpılıyor; zararsız), koyu gri
+  tezgâhta koyu kâğıtlı uzun fiş (054: yazı da kenar da bulunmuyor, belge yok), beyaz tezgâhta yana dönük parlamalı
+  Pavo Z (066: kareyi dolduruyor sanılıyor), kıvrık köşeli iki fiş (005, 089: katlanan köşe ya da kalkık alt kenar
+  dışarıda kalıyor, hata %3–4), kadraj dışında uzun fiş (081: %2,3). Hareket bulanıklığında okunabilirlik düşük
+  (%43; çekim uyarısı "bulanık, yeniden çekin" der).
 - **Regresyon:** `tests/tarama-regresyon.test.ts` on küçük örnekte (540×720, `npm run tarama:veri -- --fixture` ile
   yeniden üretilir; tohumlu, aynı baytlar) kararı ve köşe hatasını bugünkünün biraz gevşeğiyle sınar (doğru olanlarda
-  en kötü köşe ≤ %1,2–1,5; bugün, çekirdek `0096e18`'de de, 10'un 6'sı doğru). Bilinen yanlışlar (beyaz tezgâhta uzun fiş, karanlık ve bulanık
-  A4, POS ekranı, koli) yalnız kötüleşmesin diye gevşek; çekirdek iyileşince `BEKLENTI` ve `EN_AZ_DOGRU`
-  sıkılaştırılır.
+  en kötü köşe ≤ %1,2–1,5; POS ekranında ve kolide "belge yok"; bugün 10'un 9'u doğru, önce 6'sı). Bilinen tek yanlış
+  (beyaz tezgâhta parlamalı uzun fiş, hata %10,2) yalnız kötüleşmesin diye gevşek; çekirdek iyileşince `BEKLENTI` ve
+  `EN_AZ_DOGRU` sıkılaştırılır. `tests/tarama-algilama.test.ts` ayrıca renkli döşemeli paneli (belge değil) ve sarı
+  nüsha kâğıdını (bulunur) sınar.
 - **Çekirdek değişince:** `npm run tarama:olc -- --ocr 0 --karsilastir .data/tarama-olcum/temel.json` (temel:
   bir önceki `son.json`'ın kopyası) kategori başına doğru ve hatayı, sonucu değişen görselleri yazar; okunabilirlik
   için `--ocr` açık (96 görselde ~15–50 dk, makinenin yüküne göre).
