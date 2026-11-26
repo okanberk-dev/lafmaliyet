@@ -9,13 +9,24 @@ import { ConfirmPasswordDialog } from "@/components/panel/confirm-password-dialo
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/form";
 import { documentsDownloadBytes, documentsTooBigText, PANEL_DOCUMENTS_MAX_BYTES, sizeText, type LastBackup } from "@/lib/backup/format";
-import { prepareBackupDownload } from "@/server/actions/backup";
+import { prepareBackupDownload, prepareStoredBackupDownload } from "@/server/actions/backup";
 
 /**
  * İndirme bitince kart son yedeği göstersin diye sayfa bir kez yenilenir: belgesiz yedek ~1 MB, birkaç saniyede iner
  * (son yedek kaydını rota dosyanın sonunda yazar). Daha uzun sürerse kart bir sonraki açılışta güncellenir.
  */
 const REFRESH_AFTER_MS = 5_000;
+
+/** Dosya düz bir bağlantıyla iner (tarayıcı kendisi kaydeder; sayfa yönlendirmesi değil) */
+function startDownload(url: string, fileName: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  toast.success("Yedek iniyor", { description: fileName });
+}
 
 /**
  * Ayarlar › Yedek › Yedeği indir: parolayla onaylanır, sonra dosya düz bir bağlantıyla iner (tarayıcı kendisi
@@ -57,13 +68,7 @@ export function BackupDownload({ uploads, last }: { uploads: { count: number; by
             // Önce pencere kapanır, sonra indirme başlar
             setAsking(false);
             setDocuments(false);
-            const a = document.createElement("a");
-            a.href = res.data.url;
-            a.download = res.data.fileName;
-            document.body.append(a);
-            a.click();
-            a.remove();
-            toast.success("Yedek iniyor", { description: res.data.fileName });
+            startDownload(res.data.url, res.data.fileName);
             if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current);
             refreshTimer.current = window.setTimeout(() => router.refresh(), REFRESH_AFTER_MS);
             return null;
@@ -84,6 +89,58 @@ export function BackupDownload({ uploads, last }: { uploads: { count: number; by
             </div>
           ) : null}
         </ConfirmPasswordDialog>
+      ) : null}
+    </>
+  );
+}
+
+/** Ayarlar › Yedek › Otomatik haftalık yedek: listedeki bir satır (sunucu biçimler) */
+export interface StoredBackupRow {
+  name: string;
+  /** "23 Kasım 2026 Pazartesi 08:12" */
+  label: string;
+  /** "1,2 MB" */
+  size: string;
+}
+
+/**
+ * Depodaki otomatik yedekler (yeni önce) ve her birinin İndir'i: elle indirmeyle aynı kalıp, parola penceresinden sonra
+ * iki dakika geçerli, bu kişiye özel bağlantı (prepareStoredBackupDownload; dosyayı /api/yedek/kayitli verir).
+ */
+export function StoredBackupList({ items }: { items: StoredBackupRow[] }) {
+  const [asking, setAsking] = useState<StoredBackupRow | null>(null);
+  return (
+    <>
+      <ul className="mt-2 divide-y divide-line border-t border-line">
+        {items.map((b, i) => (
+          <li key={b.name} className="flex items-center justify-between gap-3 py-2">
+            <div className="min-w-0">
+              <p className="text-sm text-pretty text-ink">
+                {b.label}
+                {i === 0 ? <span className="ml-1.5 text-[13px] text-ink-mute">(en yeni)</span> : null}
+              </p>
+              <p className="text-[13px] text-ink-mute tabular">{b.size}</p>
+            </div>
+            <Button variant="secondary" size="sm" onClick={() => setAsking(b)} aria-label={`${b.label} yedeğini indir`}>
+              <Download size={14} aria-hidden="true" /> İndir
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {asking ? (
+        <ConfirmPasswordDialog
+          title="Otomatik yedeği indir"
+          description={`Parolanızı girin: ${asking.label} yedeği paneldeki bütün veriyi taşır.`}
+          confirmLabel="İndir"
+          onClose={() => setAsking(null)}
+          onConfirm={async (password) => {
+            const res = await prepareStoredBackupDownload({ password, name: asking.name });
+            if (!res.ok) return res.error;
+            setAsking(null);
+            startDownload(res.data.url, res.data.fileName);
+            return null;
+          }}
+        />
       ) : null}
     </>
   );
