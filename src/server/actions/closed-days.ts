@@ -11,6 +11,7 @@ import { formTillBranch, withBranchScope } from "@/server/branch-scope";
 import { markClosedDayCore, proposeClosedDay, reviewClosedDayCore } from "@/server/closed-day-requests";
 import { getDb, schema as s } from "@/server/db";
 import { fetchSiteDayCounts } from "@/server/site-sales/sync";
+import { pushNewRequest } from "@/server/staff-requests/push";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zDate, zOptText } from "./util";
@@ -40,6 +41,7 @@ export async function requestClosedDay(input: z.input<typeof requestInput>) {
     // Bildirim formun kasasına (başka sekmede seçici değiştiyse de): kanıt ve işaret o şubenin
     const till = await formTillBranch(branchId);
     const out = await withBranchScope(till, () => proposeClosedDay(getDb(), me, d));
+    pushNewRequest(out);
     if (out.created) await logActivity(me, "Kapalı gün bildirildi", [longDateTR(d.date), d.reason].filter(Boolean).join(" · "));
     refresh();
     return { id: out.row.id };

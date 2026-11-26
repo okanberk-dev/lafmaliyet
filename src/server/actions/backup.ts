@@ -2,9 +2,11 @@
 
 import { z } from "zod";
 
+import { isAutoBackupName } from "@/lib/backup/auto";
 import { backupFileName, documentsDownloadBytes, documentsTooBigText, PANEL_DOCUMENTS_MAX_BYTES } from "@/lib/backup/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { requirePassword } from "@/server/auth/step-up";
+import { storedBackupHandle } from "@/server/backup/auto";
 import { backupHandle, readLastBackup, uploadsTotal } from "@/server/backup/state";
 
 import { attempt, UserError } from "./util";
@@ -31,5 +33,20 @@ export async function prepareBackupDownload(input: z.input<typeof schema>) {
     }
     const fileName = backupFileName(new Date());
     return { url: `/api/yedek?t=${encodeURIComponent(backupHandle(me.id, data.documents, fileName))}`, fileName };
+  });
+}
+
+const storedSchema = z.object({ password: z.string().max(200, "Parola hatalı"), name: z.string().max(120).refine(isAutoBackupName, "Yedek bulunamadı") });
+
+/**
+ * Ayarlar › Yedek › Otomatik yedekler › İndir: saklanan haftalık yedeğin indirme bağlantısı. Elle indirmeyle aynı
+ * kalıp: yöneticinin kendi parolası, iki dakika geçerli ve bu kişiye özel bağlantı; dosyayı /api/yedek/kayitli verir.
+ */
+export async function prepareStoredBackupDownload(input: z.input<typeof storedSchema>) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const data = storedSchema.parse(input);
+    await requirePassword(me, data.password, "Yedek", data.name);
+    return { url: `/api/yedek/kayitli?t=${encodeURIComponent(storedBackupHandle(me.id, data.name))}`, fileName: data.name };
   });
 }

@@ -35,6 +35,7 @@ import { addExtraMinutes, MAX_EXTRA_MINUTES } from "@/server/karaoke/extend";
 import { cancelKaraokeReminder, findDeskExternalId, scheduleKaraokeReminder } from "@/server/karaoke/reminders";
 import { ensureKaraokeFresh, syncKaraoke } from "@/server/karaoke/sync";
 import { endKaraokeCore, proposeKaraokeDelete, removeKaraokeTimerCore, reopenKaraokeCore, reviewKaraokeDeleteCore } from "@/server/karaoke/timer";
+import { pushNewRequest } from "@/server/staff-requests/push";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zOptText, type ActionResult } from "./util";
@@ -267,6 +268,7 @@ export async function requestKaraokeTimerDelete(input: z.input<typeof deleteRequ
     if (me.role === "admin") throw new UserError("Yönetici doğrudan siler; istek gerekmez");
     const data = deleteRequestSchema.parse(input);
     const out = await proposeKaraokeDelete(getDb(), me, data);
+    pushNewRequest(out);
     if (out.wrote) refresh();
     return { id: out.row.id, version: out.row.version };
   });
