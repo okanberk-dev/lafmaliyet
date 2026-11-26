@@ -27,7 +27,9 @@ import { isLafposDay } from "@/lib/lafpos/switch";
 import { normalizeVat, OKC_KNOWN_RATES, okcCumulativeToStore, okcFormError, type OkcVatInput, type OkcVatLine } from "@/lib/okc-z";
 import { DELETED_REPORT_DAYS, linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
 import { longDateTR, todayTR } from "@/lib/reminders";
+import { HANDED_TO_BANK, HANDED_TO_MAX, handedToMissing, handedToName, HANDOVER_TEXT, type HandedToInput } from "@/lib/teslim";
 import { zAmount, zDate, zOptText } from "@/server/actions/util";
+import { assertBlindCount } from "@/server/cash/blind-count";
 import { onNextReport, onReportSaved } from "@/server/closed-days";
 import { okcReadOfReport } from "@/server/data/cash-photos";
 import { previousOkc } from "@/server/data/cash-reports";
@@ -66,6 +68,13 @@ const okcAmount = zAmount.nullable().optional();
 /** Formdan gelen yazarkasa tutarları ve dökümü (oranın toplamı ya da KDV'si boş olabilir) */
 type OkcInput = Parameters<typeof okcFormError>[0] & { okcVat?: readonly OkcVatInput[] | null };
 
+/** "Kime" (src/lib/teslim.ts HandedToInput) */
+export const zHandedTo = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("user"), id: z.number().int().positive() }),
+  z.object({ kind: z.literal("banka") }),
+  z.object({ kind: z.literal("ad"), name: z.string().trim().min(1, HANDOVER_TEXT.nameMissing).max(HANDED_TO_MAX * 2) }),
+]);
+
 export const reportSchema = z.object({
   date: zDate,
   zNo: zOptText(30),
@@ -90,6 +99,11 @@ export const reportSchema = z.object({
   note: zOptText(1000),
   /** Kasayı sayan (etkin bir kullanıcı); gönderilmezse gönderen */
   countedBy: z.number().int().positive().nullish(),
+  /**
+   * Sayımdan sonra teslim edileni alan ("Kime"; Teslim defteri): yönetici kullanıcı, banka ya da elle yazılan ad.
+   * Gönderilmezse (eski sayfa) kayıtlı değer kalır; null: yok
+   */
+  handedTo: zHandedTo.nullish(),
   /** Formun açıldığı andaki sürüm (0: yeni): arada başkası gönderdiyse üzerine yazılmaz */
   revision: z.number().int().min(0),
   /** Bu gönderimle eklenen Z ve banka POS fotoğrafları (henüz bağlanmamış; eskileri bağlı kalır) */
@@ -276,6 +290,11 @@ export interface WriteOptions {
   branchId: string;
   /** Kasayı sayan; boşsa raporu gönderen */
   countedBy?: number | null;
+  /**
+   * Sayımdan sonra teslim edileni alan ("Kime"; Teslim defteri). Verilmezse (eski sayfa, düzeltme onayı) kayıtlı değer
+   * kalır; null: seçilmedi (teslim varsa ve yeni ya da tutarı değiştiyse ret, handedToMissing)
+   */
+  handedTo?: HandedToInput | null;
   /** Bu gönderimle eklenen fotoğraflar (bağlanmamış) */
   photos?: readonly number[];
   /** Raporu gönderen; verilmezse yazan hesap (geç raporun onayında isteyen personel) */
@@ -294,6 +313,33 @@ export interface WriteOptions {
    * yazılan 2. sürüm denetlenir)
    */
   skipOpeningNote?: boolean;
+}
+
+/**
+ * Teslimin "Kime"si (Teslim defteri; src/lib/teslim.ts): teslim yoksa boş. Verilmezse kayıtlı değer kalır. Yönetici
+ * kullanıcı etkin bir yönetici olmalı (raporda zaten kayıtlı olan sonradan pasif olsa da kalır); adı kayıt anında
+ * yazılır. Banka "Banka", elle yazılan ad boşlukları teke inmiş, en çok 60 karakter. Teslim var, Kime yoksa: yeni raporda
+ * ya da teslim tutarı değiştiyse ret (handedToMissing)
+ */
+export async function resolveHandedTo(
+  tx: CashTx,
+  handedOver: number,
+  input: HandedToInput | null | undefined,
+  prev: Pick<CashReportRow, "handedOver" | "handedTo" | "handedToUserId"> | null,
+): Promise<{ name: string | null; userId: number | null }> {
+  if (!(handedOver > 0)) return { name: null, userId: null };
+  if (input === undefined) return { name: prev?.handedTo ?? null, userId: prev?.handedToUserId ?? null };
+  let out: { name: string | null; userId: number | null } = { name: null, userId: null };
+  if (input?.kind === "banka") out = { name: HANDED_TO_BANK, userId: null };
+  else if (input?.kind === "ad") out = { name: handedToName(input.name), userId: null };
+  else if (input?.kind === "user") {
+    const [u] = await tx.select({ id: s.users.id, name: s.users.name, role: s.users.role, active: s.users.active }).from(s.users).where(eq(s.users.id, input.id)).limit(1);
+    const kept = prev?.handedToUserId === input.id;
+    if (!u || (!kept && (!u.active || u.role !== "admin"))) throw new UserError(HANDOVER_TEXT.userMissing);
+    out = { name: kept && prev?.handedTo ? prev.handedTo : u.name, userId: u.id };
+  }
+  if (handedToMissing({ handedOver, to: out.name, prev })) throw new UserError(HANDOVER_TEXT.required);
+  return out;
 }
 
 export interface WriteResult {
@@ -320,6 +366,7 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
   const okcError = okcFormError(okc);
   if (okcError) throw new UserError(okcError);
   const okcVat = normalizeVat(okc.okcVat);
+  const handed = await resolveHandedTo(tx, data.handedOver, o.handedTo, prev);
   const submitter = o.submittedBy ?? { id: actor.id, name: actor.name };
   // Kasayı sayan: etkin bir kullanıcı ya da raporda zaten kayıtlı olan (sonradan pasif olsa da)
   const counterId = o.countedBy ?? submitter.id ?? actor.id;
@@ -346,6 +393,8 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
     discounts: data.discounts ?? null,
     okcVat: okcVat.length ? okcVat : null,
     cashDiff: computeCash(okc).cashDiff,
+    handedTo: handed.name,
+    handedToUserId: handed.userId,
     submittedBy: submitter.id,
     submittedByName: submitter.name,
     countedBy: counter.id,
@@ -514,7 +563,7 @@ export type SaveResult =
  * Yeni rapor aynı günün bekleyen geç rapor isteklerini kapatır ("Yönetici günü kendisi girdi"; fotoğrafları 30 gün).
  */
 export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, now = new Date()): Promise<SaveResult> {
-  const { revision, photos, countedBy, ...form } = input;
+  const { revision, photos, countedBy, handedTo, ...form } = input;
   // Raporun şubesi: formun gösterdiği kasa (docs/SUBE.md › Yazarken hangi şube). submitCashReport formun kasasını
   // doğrular ve bunu onun kapsamında çağırır (formTillBranch, withBranchScope): gönderim anındaki çerez başka sekmede
   // değişmiş olabilir. Gün bir kez değil, şube başına bir kez girilir
@@ -555,7 +604,10 @@ export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, 
       if (gate === "closed") throw new UserError(CASH_REQUEST_TEXT.closed);
       if (gate === "request") return { kind: "needsApproval" as const, request: "kasa-duzeltme" as const, gate: laterReport ? ("kilitli" as const) : ("gec" as const) };
     }
-    const out = await writeCashReport(tx, me, data, { revision, countedBy, photos, prev, branchId });
+    // Kör sayım (Tuzla; docs/KASA-RAPORU.md › Kör sayım): personelin doğrudan yazımında sayılan nakit kilitli sayıma eşit
+    // (değişmeyen kayıtlı sayılan da geçer). Onaya giden değişiklik yukarıda döndü: yöneticinin onayından geçer
+    if (me.role !== "admin") await assertBlindCount(tx, data.date, branchId, data.countedCash, prev?.countedCash ?? null);
+    const out = await writeCashReport(tx, me, data, { revision, countedBy, photos, prev, branchId, handedTo });
     // Gün artık raporlu: bekleyen geç rapor istekleri kapanır (reddedilmez), Z fotoğrafları kanıt olarak 30 gün kalır
     if (!prev) {
       // Yalnız bu şubenin günü: başka şubenin aynı gün için bekleyen geç raporu açık kalır

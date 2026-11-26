@@ -14,6 +14,7 @@ import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { formTillBranch, withBranchScope } from "@/server/branch-scope";
 import { attachCashOutReceiptCore, proposeCashOutChange, proposePhotoRemoval, reviewCashOutRequestCore, reviewPhotoRemovalCore } from "@/server/cash-outs/requests";
 import { getDb } from "@/server/db";
+import { pushNewRequest } from "@/server/staff-requests/push";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zAmount, zDate, zOptText } from "./util";
@@ -65,6 +66,7 @@ export async function requestCashOutChange(input: z.input<typeof changeSchema>) 
     if (me.role === "admin") throw new UserError(CASH_OUT_REQUEST_TEXT.adminDirect);
     const data = changeSchema.parse(input);
     const out = await withBranchScope(await formTillBranch(data.branchId), () => proposeCashOutChange(getDb(), me, data));
+    pushNewRequest(out);
     if (out.created || out.row.version > 1) {
       await logActivity(me, "Kasadan çıkan isteği", cashOutRequestLog({ op: out.payload.op, day: out.payload.day, line: out.payload.line, before: out.payload.before, note: data.message }));
     }
@@ -96,6 +98,7 @@ export async function requestPhotoRemoval(input: z.input<typeof removalSchema>) 
     if (me.role === "admin") throw new UserError(CASH_OUT_REQUEST_TEXT.adminDirect);
     const data = removalSchema.parse(input);
     const out = await proposePhotoRemoval(getDb(), me, data);
+    pushNewRequest(out);
     if (out.created) {
       await logActivity(me, "Fotoğraf kaldırma istendi", [PHOTO_KIND_LABEL[out.payload.photoKind], longDateTR(out.payload.day), data.message].filter(Boolean).join(" · "));
     }

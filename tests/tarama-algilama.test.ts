@@ -9,9 +9,9 @@ import { test } from "node:test";
 
 import type { Quad } from "../src/lib/scan/image";
 import { seededRandom } from "../src/lib/scan/image";
-import { lineThrough, signedDist } from "../src/lib/scan/geom";
+import { insideConvex, lineThrough, signedDist } from "../src/lib/scan/geom";
 import { detectDocument, refineCorners, scanDocument } from "../src/lib/scan";
-import { cornerError, projectRect, renderScene, type Sahne } from "./helpers/tarama-sentetik";
+import { cornerError, projectRect, regionMean, renderScene, type Sahne } from "./helpers/tarama-sentetik";
 
 const W = 720;
 const H = 960;
@@ -78,6 +78,20 @@ const scenes = {
     blur: 0.8,
     seed: 4,
   },
+  // beyaza yakın tezgâhta termal fiş: kâğıtla zemin arası ~22 gri düzeyi
+  fisBeyazTezgah: {
+    width: W,
+    height: H,
+    corners: projectRect({ width: W, height: H, aspect: 1 / 5, size: 0.18, rotDeg: 5, tiltX: 18 }),
+    paperAspect: 1 / 5,
+    background: "beyaz",
+    bgColor: [220, 219, 214],
+    paper: [244, 244, 242],
+    text: { rows: 50, strength: 0.75 },
+    noise: 2.5,
+    blur: 0.8,
+    seed: 302,
+  },
 } satisfies Record<string, Sahne>;
 
 for (const [name, s] of Object.entries(scenes)) {
@@ -137,6 +151,30 @@ test("algılama: belge yok (doku, tahta) → köşe yok ya da güven düşük", 
   }
 });
 
+test("algılama: kâğıda benzemeyen dikdörtgen (telefon, POS cihazı) — güven düşük; yanında fiş varsa fiş seçilir", () => {
+  const phone = projectRect({ width: W, height: H, aspect: 0.5, size: 0.4, rotDeg: 7, tiltX: 10 });
+  const img = renderScene({ width: W, height: H, corners: phone, paper: [30, 30, 34], background: "acik", text: false, noise: 3, blur: 0.8, seed: 77 });
+  const d = detectDocument(img);
+  assert.ok(!d.corners || d.confidence < 0.4, `koyu yazısız dikdörtgen kâğıt sayılmamalı: ${d.method} ${d.confidence}`);
+  // açık tezgâhta fiş ve yanında koyu POS cihazı (keskin kenarlı, büyük)
+  const fis = projectRect({ width: W, height: H, aspect: 1 / 5, size: 0.2, rotDeg: -4, tiltX: 12, cx: 230, cy: 520 });
+  const dev = projectRect({ width: W, height: H, aspect: 0.55, size: 0.36, rotDeg: 8, tiltX: 12, cx: 560, cy: 600 });
+  const both = renderScene({ width: W, height: H, corners: fis, paperAspect: 1 / 5, background: "acik", text: { rows: 50, strength: 0.8 }, noise: 3, blur: 0.8, seed: 90 });
+  const device = renderScene({ width: W, height: H, corners: dev, paper: [35, 36, 40], background: "acik", text: false, noise: 3, blur: 0.8, seed: 90 });
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (!insideConvex(dev, { x, y })) continue;
+      const p = (y * W + x) * 4;
+      both.data.set(device.data.subarray(p, p + 4), p);
+    }
+  }
+  const d2 = detectDocument(both);
+  assert.ok(d2.corners, "fiş bulunmalı");
+  const err = cornerError(d2.corners!, fis, W, H);
+  assert.ok(err < 0.015, `cihaz değil fiş: köşe hatası %${(err * 100).toFixed(2)} (${d2.method})`);
+  assert.ok(d2.confidence >= 0.6, `güven ${d2.confidence}`);
+});
+
 test("algılama: kareden taşan uzun fiş — uzun kenarlar oturur, kısa kenarlar görüntüde ve uzun kenarlara uygun", () => {
   const truth: Quad = [
     { x: 300, y: -30 },
@@ -160,6 +198,26 @@ test("algılama: kareden taşan uzun fiş — uzun kenarlar oturur, kısa kenarl
   const longDir = Math.atan2(truth[3].y - truth[0].y, truth[3].x - truth[0].x);
   const diff = Math.abs(((top - longDir) * 180) / Math.PI);
   assert.ok(Math.abs(diff - 90) < 1.5, `üst kenar uzun kenara dik olmalı: ${diff.toFixed(2)}°`);
+});
+
+test("algılama: kâğıdın iki köşesi kareden çıkmış — köşeler kenarların kesişimi, taramada dışarısı kâğıt rengi", () => {
+  const truth: Quad = [
+    { x: 147, y: -27 },
+    { x: 746, y: 155 },
+    { x: 496, y: 804 },
+    { x: 43, y: 745 },
+  ].map((p) => ({ x: (p.x * W) / 720, y: (p.y * H) / 960 })) as Quad;
+  // sağ üst köşe sağ kenarın dışında, sol üst köşe üst kenarın dışında
+  assert.ok(truth[1].x > W && truth[0].y < 0, "köşeler gerçekten kare dışında");
+  const img = renderScene({ width: W, height: H, corners: truth, paperAspect: A4, background: "gri", text: { rows: 30 }, noise: 3, blur: 0.8, seed: 125 });
+  const d = detectDocument(img);
+  assert.ok(d.corners && !d.fillsFrame, `kâğıt bulunmalı (${d.reasons.join(",")})`);
+  const err = cornerError(d.corners!, truth, W, H);
+  assert.ok(err < 0.015, `köşe hatası %${(err * 100).toFixed(2)}: ${JSON.stringify(d.corners)}`);
+  assert.ok(d.reasons.includes("kose-kare-disinda"), `kare dışı köşe söylenmeli: ${d.reasons}`);
+  const r = scanDocument(img, { deskew: false, mode: "orijinal", maxEdge: 800 });
+  // açılan sayfanın sağ üst köşesi fotoğrafta yok: kenar pikseli uzatılmaz, kâğıt rengiyle dolar
+  assert.ok(regionMean(r.image, r.image.width - 12, 0, r.image.width, 12) > 225, "kare dışı köşe kâğıt rengi");
 });
 
 test("köşe oturtma: kaba ipucu köşeleri (köşegenin ±%5'i) gerçek kenarlara oturur", () => {

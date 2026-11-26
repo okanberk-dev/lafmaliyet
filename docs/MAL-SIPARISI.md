@@ -13,8 +13,9 @@ kısmını kaldır, gereksiz çünkü normal sayım olsun". Stok, ayda bir yapı
   kontrolü (Paraşüt eşitlemesindeki fatura karşılaştırması), personelin taslağı ve yöneticinin onayı.
 - Bugün satırları (`hizli-sayim`, `mal-siparisi`, `mal-taslak`), zil satırları (taslak onayı, teslim farkı, gelmeyen
   sipariş), sabah bildirimi "Bugün hızlı sayım günü" ve onay push'u. Onaylar'daki "Mal siparişi" kartları.
-- Cihaz ayarlarındaki "Onay bildirimleri" anahtarı (tek gönderen taslaktı; tesisat kalır, yeniden bir gönderen olunca
-  anahtar döner).
+- Cihaz ayarlarındaki "Onay bildirimleri" anahtarı (tek gönderen taslaktı; tesisat kaldı). 25 Kasım 2026'da yeniden
+  bir gönderen geldi: personelin yeni onay isteği yöneticinin telefonuna ([ONAYLAR.md](ONAYLAR.md) › Bildirimler);
+  anahtar yönetici cihazında döndü.
 
 ## Ne kaldı
 

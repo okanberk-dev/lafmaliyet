@@ -780,3 +780,10 @@ Dokunulmayanlar:
 - **Hatırlatıcı tutarının silinmesi** sahibi şaşırtabilir. Bildirim bunu söyler, geri al geri getirir.
 - **Paylaşılan dosyalar:** `reminders.ts` eylemleri (bugün planı yalnız çağırıyor), `payment-ui.tsx` (insight dokunmuyor)
   ve insight'ın kendi dosyaları. Dokunuşlar yerel ve ekleyicidir.
+
+## Ek: kasa KDV'si yazarkasa Z'sinden (26 Kasım 2026, Dalga 2)
+
+Kasa satış KDV'si artık gün gün kaynağından: kasa raporunda yazarkasa Z'sinin KDV'si girilmiş gün Z'den, LafPOS'un
+dökümü olan gün LafPOS'tan, kalanı bu plandaki oranlı hesapla (`posVatByDays`). Kaynak ekranda yazar ("12 gün yazarkasa
+Z'sinden, 3 gün tahmin"). Bu yüzden §"Kasa (ModPOS) satış KDV'si" satırındaki "Gelir-gider'deki farkla aynı çıkar" yalnız
+Z'si girilmemiş aylarda geçerlidir. Ayrıntı: [../NAKIT-PLANI.md](../NAKIT-PLANI.md) › Kasa KDV'sinin kaynağı.

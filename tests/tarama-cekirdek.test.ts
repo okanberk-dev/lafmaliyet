@@ -290,4 +290,23 @@ test("dörtgen denetimi, ipucu köşeleri (0–1000) ve tam kare", () => {
     101,
   );
   assert.ok(clamped!.every((p) => p.x >= 0 && p.x <= 100 && p.y >= 0 && p.y <= 100), "aralık dışı ipucu kenetlenir");
+  // ucuz model oran yerine gönderilen 1201×1601 görüntünün pikselini vermiş (1000'i aşan değer)
+  const px = cornersFromHint(
+    [
+      [120, 160],
+      [1080, 160],
+      [1080, 1440],
+      [120, 1440],
+    ],
+    2401,
+    3201,
+    { width: 1201, height: 1601 },
+  );
+  assert.deepEqual(px, [
+    { x: 240, y: 320 },
+    { x: 2160, y: 320 },
+    { x: 2160, y: 2880 },
+    { x: 240, y: 2880 },
+  ]);
+  assert.equal(cornersFromHint([[1, 2], null as unknown as [number, number], [5, 6], [7, 8]], 100, 100), null, "bozuk öğe null");
 });

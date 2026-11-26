@@ -10,8 +10,10 @@
  *    doğru en yakın kâğıt kenarına büyütülür (açık renk tezgâhta beyaz fiş).
  *
  * Adaylar tek puanla karşılaştırılır: her kenarın gradyan desteği ve içi / dışı parlaklık basamağı (işaret tutarlı),
- * alan oranı, açılar, kâğıtlık karşıtlığı, yazı kesiyor mu. Emin değilse (zayıf kenar, birbirine yakın puanlı iki
- * farklı aday) güven düşer. Kâğıt kareyi dolduruyorsa `fillsFrame` ve kırpma önerilmez.
+ * alan oranı, açılar, kâğıtlık karşıtlığı, yazı kesiyor mu, içerisi kâğıda benziyor mu (koyu ya da çok renkli,
+ * yazısız dikdörtgen: telefon, POS cihazı, kutu). Puanı düşük kalan en iyi adaylar kenarlara oturtulup yeniden
+ * puanlanır. Emin değilse (zayıf kenar, birbirine yakın puanlı iki farklı aday, kâğıda benzemiyor) güven düşer. Kâğıt
+ * kareyi dolduruyorsa `fillsFrame` ve kırpma önerilmez.
  */
 
 import type { GrayImage, Point, Quad, RgbaImage } from "./image";
@@ -25,6 +27,7 @@ import {
   histPercentile,
   labelComponents,
   maxFilter,
+  median,
   minFilter,
   otsuIndex,
   resizeGray,
@@ -63,7 +66,10 @@ export interface DetectOptions {
 }
 
 export interface Detection {
-  /** Sol üst, sağ üst, sağ alt, sol alt; asıl görüntünün pikselinde. Bulunamazsa null */
+  /**
+   * Sol üst, sağ üst, sağ alt, sol alt; asıl görüntünün pikselinde. Kâğıdın köşesi kareden çıkmışsa o köşe görüntünün
+   * en çok `MAX_OUTSIDE` oranında dışında olabilir (neden: "kose-kare-disinda"). Bulunamazsa null.
+   */
   corners: Quad | null;
   /** 0–1 */
   confidence: number;
@@ -97,6 +103,8 @@ interface Ctx {
   textTotal: number;
   /** yazı piksellerinden seyrek örnek (en çok ~3000; dörtgenin içindeki yazı oranı için) */
   textPts: Point[];
+  /** görüntünün aydınlık düzeyi (parlaklığın %95'liği): kâğıt genelde en aydınlık şeydir */
+  lumHigh: number;
 }
 
 interface SideStat {
@@ -114,9 +122,17 @@ interface Scored {
   realSides: number;
   minSide: number;
   area: number;
+  /** kâğıda benzemezlik (0–1) */
+  notPaper: number;
 }
 
 const DEFAULT_EDGE = 640;
+/**
+ * Köşe kareden en çok bu oranda (genişliğin / yüksekliğin) taşabilir: kâğıdın köşesi kareden çıkmış ama iki kenarı da
+ * görünüyorsa köşe kenarların kesişimidir (kareye kenetlenen köşe açılan görüntüyü yamultur). Daha çok taşan kâğıtta
+ * o taraf kareye dayanan kenar sayılır.
+ */
+export const MAX_OUTSIDE = 0.08;
 /** son ince ayarın çözünürlüğü (uzun kenar) */
 const REFINE_EDGE = 1000;
 const STEP_OFFSETS = [2, 4, 6, 8, 10, 12, 14];
@@ -185,7 +201,8 @@ function buildCtx(img: RgbaImage, maxEdge: number): Ctx {
     if (!text[i]) continue;
     if (k++ % every === 0) textPts.push({ x: i % w, y: Math.floor(i / w) });
   }
-  return { w, h, n, diag: Math.hypot(w, h), rgba: data, lum, chroma, gray, paper, gx, gy, gradThr, stepThr, text, textTotal, textPts };
+  const lumHigh = Math.max(40, histPercentile(histogram(lum, 256, 0, 256, 3), 0.95));
+  return { w, h, n, diag: Math.hypot(w, h), rgba: data, lum, chroma, gray, paper, gx, gy, gradThr, stepThr, text, textTotal, textPts, lumHigh };
 }
 
 // ---------------------------------------------------------------- puan
@@ -272,11 +289,16 @@ function sideStats(ctx: Ctx, a: Point, b: Point, cx: number, cy: number): SideSt
   return { frame: false, quality: Math.max(0, Math.max(qPos, qNeg)), brightInside: qPos >= qNeg };
 }
 
-/** Dörtgenin içinden ve hemen dışından örnek: kâğıtlık ortalamaları (içerisi kâğıda daha çok benziyorsa `inside` büyük) */
-function paperLevels(ctx: Ctx, q: Quad): { inside: number; outside: number | null } {
+/**
+ * Dörtgenin içinden ve hemen dışından örnek: kâğıtlık ortalamaları (içerisi kâğıda daha çok benziyorsa `inside`
+ * büyük); içerinin parlaklık ve doygunluk ortancası (kâğıt kanıtı)
+ */
+function paperLevels(ctx: Ctx, q: Quad): { inside: number; outside: number | null; lum: number; chroma: number } {
   const { w, h } = ctx;
   let sin = 0;
   let nin = 0;
+  const lums: number[] = [];
+  const chromas: number[] = [];
   for (let i = 1; i < 8; i++) {
     for (let j = 1; j < 8; j++) {
       const u = i / 8;
@@ -284,6 +306,8 @@ function paperLevels(ctx: Ctx, q: Quad): { inside: number; outside: number | nul
       const x = (1 - u) * (1 - v) * q[0].x + u * (1 - v) * q[1].x + u * v * q[2].x + (1 - u) * v * q[3].x;
       const y = (1 - u) * (1 - v) * q[0].y + u * (1 - v) * q[1].y + u * v * q[2].y + (1 - u) * v * q[3].y;
       sin += nearest(ctx.paper, w, h, x, y);
+      lums.push(nearest(ctx.lum, w, h, x, y));
+      chromas.push(nearest(ctx.chroma, w, h, x, y));
       nin++;
     }
   }
@@ -309,7 +333,18 @@ function paperLevels(ctx: Ctx, q: Quad): { inside: number; outside: number | nul
       nout++;
     }
   }
-  return { inside: sin / nin, outside: nout ? sout / nout : null };
+  return { inside: sin / nin, outside: nout ? sout / nout : null, lum: median(lums), chroma: median(chromas) };
+}
+
+/**
+ * Kâğıda benzemezlik (0–1): içerisi görüntünün aydınlığına göre koyu (telefon, POS cihazı, cüzdan) ya da çok renkli
+ * (kutu, ambalaj). İçinde yazı varsa (renkli nüsha, etiket) ceza azalır.
+ */
+function notPaper(ctx: Ctx, lum: number, chroma: number, textIn: number | null): number {
+  const rel = lum / ctx.lumHigh;
+  const dark = Math.max(0, Math.min(1, (0.55 - rel) / 0.25));
+  const colored = Math.max(0, Math.min(1, (chroma - 70) / 60));
+  return Math.max(dark, colored) * (1 - 0.7 * Math.min(1, (textIn ?? 0) / 0.6));
 }
 
 /**
@@ -385,7 +420,9 @@ function textInside(ctx: Ctx, q: Quad): number | null {
 
 function evaluate(ctx: Ctx, q: Quad, how: DetectMethod): Scored | null {
   const { w, h } = ctx;
-  for (const p of q) if (p.x < -0.03 * w || p.y < -0.03 * h || p.x > 1.03 * w || p.y > 1.03 * h) return null;
+  const ow = MAX_OUTSIDE * w;
+  const oh = MAX_OUTSIDE * h;
+  for (const p of q) if (p.x < -ow || p.y < -oh || p.x > w - 1 + ow || p.y > h - 1 + oh) return null;
   if (!isConvex(q)) return null;
   const area = polygonArea(q) / ctx.n;
   if (area < 0.01 || area > 0.995) return null;
@@ -411,6 +448,8 @@ function evaluate(ctx: Ctx, q: Quad, how: DetectMethod): Scored | null {
   const pc = lv.outside === null ? 0.5 : Math.max(0, Math.min(1, (lv.inside - lv.outside) / 40));
   let score =
     0.45 * minSide + 0.25 * meanSide + 0.12 * areaTerm + 0.08 * rect + 0.05 * pc + 0.05 * (tin ?? 0.5) - 0.6 * Math.max(0, cut - 0.15);
+  const np = notPaper(ctx, lv.lum, lv.chroma, tin);
+  score -= 0.45 * np;
   if (real.length === 2) score -= 0.06;
   else if (real.length === 3) score -= 0.02;
   // kareye dayanan kenarın içi zeminse kâğıt orada bitmiyordur
@@ -421,7 +460,7 @@ function evaluate(ctx: Ctx, q: Quad, how: DetectMethod): Scored | null {
     }
     score -= 0.5 * Math.max(0, bg - 0.4);
   }
-  return { q, how, score, sides, realSides: real.length, minSide, area };
+  return { q, how, score, sides, realSides: real.length, minSide, area, notPaper: np };
 }
 
 // ---------------------------------------------------------------- a) kâğıt bölütleme
@@ -897,6 +936,13 @@ export function squareFrameSides(q: Quad, w: number, h: number): Quad {
 
 // ---------------------------------------------------------------- akış
 
+/** Köşeleri görüntünün en çok `out` oranında dışına kenetler */
+export function clampQuad(q: Quad, w: number, h: number, out = 0): Quad {
+  const ox = out * w;
+  const oy = out * h;
+  return q.map((p) => ({ x: Math.max(-ox, Math.min(w - 1 + ox, p.x)), y: Math.max(-oy, Math.min(h - 1 + oy, p.y)) })) as Quad;
+}
+
 function frameQuad(w: number, h: number): Quad {
   return [
     { x: 0, y: 0 },
@@ -915,6 +961,28 @@ function looksLikePaper(ctx: Ctx): boolean {
 
 function confidenceOf(s: Scored): number {
   return Math.max(0, Math.min(1, (s.score - 0.35) / 0.4));
+}
+
+/**
+ * En iyi birkaç farklı aday (geniş + dar şeritle) kenarlara oturtulur; puanı artan aday listeye eklenir. Düşük
+ * karşıtlıkta (açık tezgâhta beyaz fiş) bölütleme ve yazıdan büyütme kâğıdı kaba bulur; asıl kenarlar oradan
+ * birkaç on piksel uzaktadır. Liste puana göre yeniden sıralanır.
+ */
+function refineTop(ctx: Ctx, scored: Scored[], k = 4): void {
+  const tried: Quad[] = [];
+  const better: Scored[] = [];
+  for (const s of scored) {
+    if (tried.length >= k) break;
+    if (tried.some((q) => quadDistance(q, s.q) < ctx.diag * 0.01)) continue;
+    tried.push(s.q);
+    const sn = snapQuad(ctx.gray, s.q, { passes: "iki" });
+    if (!sn.sides.some(Boolean)) continue;
+    const re = evaluate(ctx, sn.q, s.how);
+    if (re && re.score > s.score + 0.01) better.push(re);
+  }
+  if (!better.length) return;
+  scored.push(...better);
+  scored.sort((a, b) => b.score - a.score);
 }
 
 /**
@@ -940,6 +1008,7 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
       scored.sort((a, b) => b.score - a.score);
     }
   }
+  if (!scored.length || scored[0].score < 0.75) refineTop(ctx, scored);
   let best = scored[0];
   if (best) {
     // ince ayar (dar şerit): köşeler gerçek kenara oturur; puan düşmüyorsa kabul
@@ -962,6 +1031,10 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
     confidence *= 0.75;
     reasons.push("iki-aday");
   }
+  if (best.notPaper >= 0.5) {
+    confidence = Math.min(confidence, 0.3);
+    reasons.push("kagida-benzemiyor");
+  }
   if (best.realSides < 4) reasons.push(`kareye-dayaniyor-${4 - best.realSides}`);
   if (best.minSide < 0.5) reasons.push("kenar-zayif");
   // kâğıt kareyi dolduruyor: köşelerden en az üçü kenarda ve alan büyük
@@ -980,10 +1053,8 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
     const diagOrig = Math.hypot(img.width, img.height);
     if (quadDistance(fq, corners) < diagOrig * 0.012) corners = fq;
   }
-  corners = corners.map((p) => ({
-    x: Math.max(0, Math.min(img.width - 1, p.x)),
-    y: Math.max(0, Math.min(img.height - 1, p.y)),
-  })) as Quad;
+  corners = clampQuad(corners, img.width, img.height, MAX_OUTSIDE);
+  if (corners.some((p) => p.x < -0.5 || p.y < -0.5 || p.x > img.width - 0.5 || p.y > img.height - 0.5)) reasons.push("kose-kare-disinda");
   return { corners, confidence: Math.round(confidence * 1000) / 1000, method: best.how, fillsFrame: false, reasons };
 }
 

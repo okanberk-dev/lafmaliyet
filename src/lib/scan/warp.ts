@@ -212,7 +212,10 @@ export function verticalShear(deg: number, cx: number): Affine {
 export interface WarpOptions {
   /** Çıktı düzleminde eğiklik düzeltmesi (çıktı pikseli → düzeltilmemiş çıktı) */
   correction?: Affine;
-  /** Düzeltmeden sonra kâğıdın dışına düşen yerin rengi (verilmezse kenar pikseli uzatılır) */
+  /**
+   * Görüntünün dışına düşen yerin rengi: düzeltmeden sonra kâğıdın dışı ve kareden taşan köşenin çevresi (verilmezse
+   * kenar pikseli uzatılır)
+   */
   fill?: [number, number, number];
 }
 
@@ -284,6 +287,13 @@ export function warpQuad(img: RgbaImage, corners: Quad, width: number, height: n
       const wd = h6 * u + h7 * v + h8;
       let sx = (h0 * u + h1 * v + h2) / wd;
       let sy = (h3 * u + h4 * v + h5) / wd;
+      if (fill && (sx < -0.5 || sy < -0.5 || sx > SW - 0.5 || sy > SH - 0.5)) {
+        o[oi] = fill[0];
+        o[oi + 1] = fill[1];
+        o[oi + 2] = fill[2];
+        o[oi + 3] = 255;
+        continue;
+      }
       if (sx < 0) sx = 0;
       else if (sx > SW - 1) sx = SW - 1;
       if (sy < 0) sy = 0;

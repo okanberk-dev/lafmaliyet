@@ -234,7 +234,10 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     me = users.ayse;
     const { businessDate } = await import("../src/lib/cash-report");
     const day = businessDate();
-    const res = await cashActions.submitCashReport({ ...fields(day), countedBy: null, revision: 0, photos: [] });
+    // Tuzla'da kör sayım (Dalga 2; docs/KASA-RAPORU.md › Kör sayım): personel önce sayımı kilitler; teslimin Kime'si zorunlu
+    const lock = await cashActions.lockCashCount({ date: day, amount: fields(day).countedCash });
+    assert.ok(lock.ok, lock.ok ? "" : lock.error);
+    const res = await cashActions.submitCashReport({ ...fields(day), countedBy: null, revision: 0, photos: [], handedTo: { kind: "banka" } });
     assert.ok(res.ok, res.ok ? "" : res.error);
     assert.ok(!res.data.needsApproval);
     if (res.data.needsApproval) return;

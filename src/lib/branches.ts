@@ -430,6 +430,15 @@ export function branchScopeLabel(scope: BranchScope, known: readonly BranchRow[]
   return known.find((b) => b.id === scope)?.name ?? "Tümü";
 }
 
+/**
+ * Telefonun üst çubuğundaki şube satırı (docs/SUBE.md › Telefonda üst çubuk): birden çok şube açıkken seçili kapsamın
+ * adı ("Tümü", "Marina"); tek şube açıkken null (seçici de çizilmez, satır gürültü olurdu)
+ */
+export function topBarBranchLabel(scope: BranchScope, known: readonly BranchRow[]): string | null {
+  if (known.filter((b) => b.active).length < 2) return null;
+  return branchScopeLabel(scope, known);
+}
+
 /** Seçime giren şube kimlikleri: "hepsi" bütün etkinleri, tek seçim yalnız kendini verir */
 export function branchScopeIds(scope: BranchScope, known: readonly BranchRow[]): string[] {
   if (scope === ALL_BRANCHES) return sortBranches(known.filter((b) => b.active)).map((b) => b.id);

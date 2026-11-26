@@ -14,6 +14,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
+import { ADMIN_2FA_DISABLE_NOTE } from "@/lib/admin-security";
 import { isSetupEnded } from "@/lib/two-factor-setup";
 import { beginTotpSetup, cancelTotpSetup, confirmTotpSetup, disableTotp, regenerateRecoveryCodes } from "@/server/actions/auth";
 
@@ -22,13 +23,13 @@ import { sessionsNote } from "./session-note";
 type Setup = { qr: string; secret: string; uri: string };
 
 /**
- * İki adımlı doğrulama (isteğe bağlı): açıkken girişte parolanın ardından telefondaki uygulamanın 6 haneli kodu
+ * İki adımlı doğrulama (personelde isteğe bağlı; yöneticide zorunlu, `required`: src/lib/admin-security.ts): açıkken girişte parolanın ardından telefondaki uygulamanın 6 haneli kodu
  * istenir. Kurulum: parola → QR'ı okut → kodu gir → kurtarma kodlarını sakla. Açmak, kapatmak ve yeni kurtarma kodu
  * parola ister: açık kalmış bir oturumla başkası kendi telefonunu bağlayamasın. Açmak ve kapatmak diğer cihazlardaki
  * oturumları (yöneticide Claude bağlantısını da) kapatır; pencereler bunu önceden söyler. `claude`: etkin bir Claude
  * bağlantısı var.
  */
-export function TwoFactorCard({ enabled, recoveryLeft, claude = false }: { enabled: boolean; recoveryLeft: number; claude?: boolean }) {
+export function TwoFactorCard({ enabled, recoveryLeft, claude = false, required = false }: { enabled: boolean; recoveryLeft: number; claude?: boolean; required?: boolean }) {
   const router = useRouter();
   const [setup, setSetup] = useState<Setup | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
@@ -39,7 +40,7 @@ export function TwoFactorCard({ enabled, recoveryLeft, claude = false }: { enabl
       <CardHeader
         icon={<ShieldCheck />}
         title="İki adımlı doğrulama"
-        description="İsteğe bağlı. Açıkken girişte parolanın ardından telefonunuzdaki doğrulama uygulamasının 6 haneli kodu istenir."
+        description={`${required ? "Yönetici hesaplarında zorunlu" : "İsteğe bağlı"}. Açıkken girişte parolanın ardından telefonunuzdaki doğrulama uygulamasının 6 haneli kodu istenir.`}
         meta={
           enabled ? (
             <Badge dot tone="green">
@@ -116,7 +117,7 @@ export function TwoFactorCard({ enabled, recoveryLeft, claude = false }: { enabl
       ) : askPassword === "disable" ? (
         <ConfirmPasswordDialog
           title="İki adımlı doğrulama kapatılsın mı?"
-          description={`Girişte yalnızca parola istenir. ${sessionsNote(claude)}`}
+          description={required ? `${ADMIN_2FA_DISABLE_NOTE} ${sessionsNote(claude)}` : `Girişte yalnızca parola istenir. ${sessionsNote(claude)}`}
           confirmLabel="Kapat"
           danger
           onClose={() => setAskPassword(null)}
@@ -125,6 +126,7 @@ export function TwoFactorCard({ enabled, recoveryLeft, claude = false }: { enabl
             if (!res.ok) return res.error;
             toast.success("İki adımlı doğrulama kapatıldı");
             setAskPassword(null);
+            // Zorunluyken (yönetici) yenileme kurulum ekranına götürür
             router.refresh();
             return null;
           }}
