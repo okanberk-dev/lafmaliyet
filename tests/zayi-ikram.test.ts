@@ -144,6 +144,10 @@ test("yetki: personel bugüne ve düne (dün kilitlenene kadar) girer, kendi kay
   const page = readFileSync(join(root, "src/app/panel/zayi/page.tsx"), "utf8");
   // Ay özeti (maliyet) yalnız yöneticiye: personel dalı ondan önce döner
   assert.ok(page.indexOf("if (!admin)") < page.indexOf("<WasteMonth"), "personel maliyet özetini görmez");
+  // Müdür "admin" düzeyinde yazar (opsLevel) ama ay özeti gerçek role bakar; özetin kendisi de yöneticiyi ister (bulgu 4)
+  assert.match(page, /const costs = user\.role === "admin";/, "müdür ('admin' düzeyi) ay özetinin malzeme maliyetini görmez");
+  assert.match(page, /\{costs \? <WasteMonth month=\{month\} today=\{today\} \/> : null\}/, "müdür ('admin' düzeyi) ay özetinin malzeme maliyetini görmez");
+  assert.match(page.slice(page.indexOf("async function WasteMonth(")), /^async function WasteMonth\([^)]*\) \{\s+await requireAdmin\(\);/, "müdür ('admin' düzeyi) ay özetinin malzeme maliyetini görmez");
   const choices = readFileSync(join(root, "src/server/data/waste.ts"), "utf8");
   assert.doesNotMatch(choices.slice(0, choices.indexOf("export interface WasteEntryDTO")), /price|cost/i, "seçenekler fiyat taşımaz");
 });

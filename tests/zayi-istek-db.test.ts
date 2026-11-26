@@ -4,6 +4,7 @@
 // silme aynı kaydın bekleyen isteklerini kapatır; eşzamanlı iki onaydan tek sonuç; 10 gün bekleyen istek yine
 // onaylanır; kapalı işaretli güne personel yazamaz; kipler (doğrudan / istek / kapalı) ve aynı isteğin tekrarı. Şube
 // (denetim 21 Kasım #13, #28): günün kilidi kaydın şubesinin kasasından; Onaylar kartının bağlamı isteğin şubesinden.
+// Müdüre (docs/ROLLER.md) yalnız şubesinin kartları gider, malzeme maliyeti olmadan (bulgu 4).
 //
 // Kendi kullanıcılarını, ürününü, raporlarını, kayıtlarını, özel gününü ve isteklerini açar, sonunda siler (Marina
 // şubesi yoksa açar ve siler). Günler
@@ -29,6 +30,7 @@ import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 import { UserError } from "../src/server/user-error";
 
+import { assertNoCostKeys } from "./helpers/leak-scan";
 import { raceOnRequest } from "./helpers/lock-race";
 
 const URL = process.env.ZAYI_ISTEK_TEST_DATABASE_URL;
@@ -47,12 +49,14 @@ describe("Geç zayi / ikram ve silme isteği: veritabanında istek, karar ve do�
   let marinaAdded = false;
   const tag =`${process.pid}-${randomBytes(3).toString("hex")}`;
   type Who = { id: number; name: string; role: "admin" | "staff" };
-  const users: Record<"ali" | "veli" | "ayse" | "mehmet" | "donen", Who> = {
+  const users: Record<"ali" | "veli" | "ayse" | "mehmet" | "donen" | "fatma", Who> = {
     ali: { id: 0, name: "Ali", role: "admin" },
     veli: { id: 0, name: "Veli", role: "admin" },
     ayse: { id: 0, name: "Ayşe", role: "staff" },
     mehmet: { id: 0, name: "Mehmet", role: "staff" },
     donen: { id: 0, name: "Dönen", role: "staff" },
+    // Bulgu 4'ün istekleri: öteki testlerin bekleyen isteklerinden ayrı kişi
+    fatma: { id: 0, name: "Fatma", role: "staff" },
   };
   let categoryId = 0;
   let latte = 0;
@@ -447,5 +451,57 @@ describe("Geç zayi / ikram ve silme isteği: veritabanında istek, karar ve do�
     assert.deepEqual(md.branch, { id: "marina", name: "Marina" });
     assert.equal(td.inReportMail, true);
     assert.deepEqual(td.branch, { id: "tuzla", name: "Tuzla" });
+  });
+
+  test("müdür Onaylar › Zayi kartında malzeme maliyetini almaz; yalnız şubesinin kartları (bulgu 4)", async () => {
+    // İki şubeden birer geç zayi isteği (ayrı gün: konu ve kart ayrı) ve kaydı sonradan giden bir silme isteği (şubesi
+    // bilinmeyen kart)
+    const tuzla = await late(users.fatma);
+    const marina = await withBranchScope("marina", () => late(users.fatma, { date: "2029-03-02" }));
+    const [goneRow] = await db
+      .insert(s.wasteEntries)
+      .values({ date: "2029-03-03", kind: "zayi", productId: latte, name: `Latte ${tag} M`, qty: 1, unit: "adet", branchId: "tuzla", createdBy: users.mehmet.id, createdByName: "Mehmet" })
+      .returning({ id: s.wasteEntries.id });
+    const gone = await askDelete(users.fatma, goneRow.id);
+    await db.delete(s.wasteEntries).where(eq(s.wasteEntries.id, goneRow.id));
+    const ids = [tuzla.row.id, marina.row.id, gone.row.id];
+
+    const cards = await wasteRequests.loadWasteRequestQueue(async (b) => createModel(await dataset.loadDataset({ scope: b })), NOW);
+    const mine = cards.filter((c) => ids.includes(c.id));
+    assert.equal(mine.length, 3, "üç kart da kuyrukta");
+    assert.equal(mine.find((c) => c.id === gone.row.id)?.branchId, null, "kaydı giden silme isteğinin şubesi bilinmiyor");
+
+    // Müdür (Tuzla): yalnız şubesinin kartı; malzeme maliyeti anahtarı yok (RSC yüküne giden bu), bağlam ve menü değeri kalır
+    const m = wasteRequests.wasteCardsFor({ role: "manager", branchId: "tuzla" }, mine);
+    assert.deepEqual(
+      m.map((c) => c.id),
+      [tuzla.row.id],
+      "öteki şubenin ve şubesi bilinmeyen kart müdüre gitmez",
+    );
+    for (const c of m) {
+      assert.ok(c.kind === "zayi-gec", "geç kayıt kartı");
+      assert.ok(!("cost" in c), "müdürün kartında malzeme maliyeti yok");
+      assert.ok("menuValue" in c && "report" in c && "sameDay" in c, "menü değeri ve günün bağlamı kalır");
+      assert.equal(c.branchId, "tuzla");
+    }
+    assertNoCostKeys(JSON.stringify(m), "müdürün zayi kartları");
+    // Kuyruğun kendisi değişmez (süzme kopya üzerinde)
+    const source = mine.find((c) => c.id === tuzla.row.id);
+    assert.ok(source?.kind === "zayi-gec" && typeof source.cost === "number", "kaynak kart maliyetini korur");
+    // Öteki şubenin müdürü yalnız kendi şubesininkini alır, o da maliyetsiz
+    const mm = wasteRequests.wasteCardsFor({ role: "manager", branchId: "marina" }, mine);
+    assert.deepEqual(
+      mm.map((c) => c.id),
+      [marina.row.id],
+    );
+    assertNoCostKeys(JSON.stringify(mm), "Marina müdürünün zayi kartları");
+
+    // Yönetici: üç kart, geç kayıtta malzeme maliyetiyle (latte'nin reçetesi yok: değer 0, anahtar var)
+    const a = wasteRequests.wasteCardsFor({ role: "admin", branchId: null }, mine);
+    assert.deepEqual(
+      a.map((c) => c.id).sort((x, y) => x - y),
+      [...ids].sort((x, y) => x - y),
+    );
+    for (const c of a) if (c.kind === "zayi-gec") assert.equal(typeof c.cost, "number", "yöneticinin kartında malzeme maliyeti var");
   });
 });

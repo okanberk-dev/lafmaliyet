@@ -374,8 +374,8 @@ test("Stok sekmeleri Sayım, Zayi & ikram ve Tutarlılık sayfalarında; rol say
   assert.match(page("sayim"), /<StockHeader month=\{null\} role="staff" \/>/);
   assert.match(page("zayi"), /<SectionTabs section="stok" current="\/panel\/zayi" role=\{role\} \/>/);
   // Birden çok kasa açıkken başlık formun şubesini yazar (24 Kasım şube kapsamı)
-  // Müdür zayiyi yönetici düzeyinde yönetir: başlığın rolü çekirdeğin düzeyi (opsLevel)
-  assert.match(page("zayi"), /<WasteHeader role=\{level\}( lafpos=\{[^}]+\})?( branch=\{[^}]+\})? \/>/);
+  // Müdür zayiyi yönetici düzeyinde yönetir (opsLevel) ama başlığın rolü gerçek rol: Tutarlılık sekmesi ona yok (bulgu 4)
+  assert.match(page("zayi"), /<WasteHeader role=\{user\.role\}( lafpos=\{[^}]+\})?( branch=\{[^}]+\})? \/>/);
   assert.match(page("zayi"), /const level = opsLevel\(user\.role\);/);
   assert.match(page("zayi"), /<WasteHeader role="staff" \/>/);
   // Tutarlılık yalnız yönetici

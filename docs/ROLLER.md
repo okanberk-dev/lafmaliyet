@@ -67,6 +67,10 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
   ("Tümü"); müdürde kalkarsa öteki şubeleri görürdü.
 - Onaylar'da yalnız şubesinin kasa ve zayi / ikram isteklerini görür ve karara bağlar; şubesi bilinmeyen istek ona
   kapalı (`reviewBranchRefusal`, `loadCashRequestQueue(…, strict)`).
+- Zayi ve ikramın malzeme maliyeti yöneticinin: müdür zayiyi "admin" düzeyinde yazsa da Zayi & ikram'ın ay özeti
+  (malzeme maliyeti, en çok giden kalemler, Tutarlılık bağlantısı) ona çizilmez, sekmelerde Tutarlılık yok; Onaylar'ın
+  geç kayıt kartında malzeme maliyeti yok, ikramda menü değeri kalır (müdürün kartında `cost` anahtarı gitmez;
+  `src/server/data/waste-requests.ts` › `wasteCardsFor`).
 - Canlı uçta (`/api/canli`) karaoke, uygulama siparişi ve masa çağrısı yalnız şubesinde açıksa gelir (seçici çerezi yok
   sayılır); karaoke tutarı gitmez.
 
