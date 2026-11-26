@@ -23,6 +23,12 @@ const subHeading = (text: string) =>
   `<h2 style="margin:0;font-family:${FONT};font-size:20px;line-height:27px;font-weight:700;letter-spacing:-0.01em;color:${C.ink};word-break:break-word">${esc(text)}</h2>`;
 
 /**
+ * Boş onay kutusu: 16 px'lik çerçeveli hücre. Tablo, çünkü Outlook masaüstü div'in genişlik ve yüksekliğini bilmez (kutu
+ * sütun boyu çizgiye dönerdi); `separate`, çünkü kabuğun `border-collapse:collapse`'ı köşe yuvarlamasını siler
+ */
+const CHECKBOX = `<table role="presentation" width="16" cellspacing="0" cellpadding="0" border="0" style="border-collapse:separate"><tr><td width="12" height="12" style="width:12px;height:12px;border:2px solid ${C.quiet};border-radius:5px;font-size:0;line-height:0;mso-line-height-rule:exactly">&nbsp;</td></tr></table>`;
+
+/**
  * Yapılmayan maddeler (email-kit'te onay kutulu liste yok; kitin renk ve yazısıyla): her madde boş bir onay kutusuyla
  * (doldurma ekranındaki gibi), satırlar ince çizgiyle ayrılır, metin sarılır; fazlası kutusuz gri "ve N madde daha"
  */
@@ -30,7 +36,7 @@ function todoList(items: readonly string[], more: number): string {
   const row = (html: string, i: number, mark: boolean) => {
     const border = `border-top:1px solid ${i ? C.hair : C.line};`;
     return `<tr>
-  <td width="30" style="${border}width:30px;padding:16px 0 12px;vertical-align:top">${mark ? `<div style="width:16px;height:16px;border:2px solid ${C.quiet};border-radius:5px;box-sizing:border-box;font-size:0;line-height:0">&nbsp;</div>` : ""}</td>
+  <td width="30" style="${border}width:30px;padding:15px 0 12px;vertical-align:top">${mark ? CHECKBOX : ""}</td>
   <td style="${border}padding:12px 0;font-family:${FONT};font-size:${mark ? 15 : 14}px;line-height:22px;color:${mark ? C.ink : C.mute};vertical-align:top;word-break:break-word">${html}</td>
 </tr>`;
   };

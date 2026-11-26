@@ -15,11 +15,11 @@ export const CONNECTIONS_HREF = "/panel/hesap#bagli-uygulamalar";
 export function renderConnectedNotice(i: { name: string; label: string; host: string; at: Date; base: string }) {
   const subject = "Panelinize Claude bağlandı";
   const link = `${i.base}${CONNECTIONS_HREF}`;
-  const when = dateTimeTR(i.at).replace(/ /g, " ");
+  const when = dateTimeTR(i.at).replace(/\u00a0/g, " ");
   const app = i.label === i.host ? i.host : `${i.label} (${i.host})`;
   const body = `${i.name}, ${when} itibarıyla ${app} L'Affogato panelinizi salt okunur olarak okuyabiliyor. Bunu siz yapmadıysanız hemen Hesabım › Bağlı uygulamalar'dan kaldırın ve parolanızı değiştirin: ${link}`;
   // Uygulamanın adı kalın (email-kit'in para()'sı düz metin alır: aynı ölçülerle yerel paragraf)
-  const lead = `<p style="margin:16px 0 0;font-family:${FONT};font-size:16px;line-height:25px;color:${C.soft};word-break:break-word">${esc(`${i.name}, ${when} itibarıyla `)}<strong style="font-weight:600;color:${C.ink}">${esc(app)}</strong>${esc(" L'Affogato panelinizi salt okunur olarak okuyabiliyor.")}</p>`;
+  const lead = `<p style="margin:14px 0 0;font-family:${FONT};font-size:15px;line-height:23px;color:${C.soft};word-break:break-word">${esc(`${i.name}, ${when} itibarıyla `)}<strong style="font-weight:600;color:${C.ink}">${esc(app)}</strong>${esc(" L'Affogato panelinizi salt okunur olarak okuyabiliyor.")}</p>`;
   const html = emailShell({
     subject,
     preheader: `${app} panelinizi salt okunur olarak okuyabiliyor`,

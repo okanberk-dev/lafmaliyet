@@ -272,7 +272,8 @@ test("e-posta: yazılan her metin kaçışlı (ad, sayan, onay, şube, cihaz, ne
   assert.match(html, new RegExp(`>${E}</div>`), "onay satırı");
   assert.match(html, new RegExp(`>Banka POS Z raporu \\(yazarkasa\\) · ${E} · sicil ${E} · Z no 0188`), "cihaz adı ve sicil");
   assert.match(html, new RegExp(`>− Gün içinde çıkan<div[^>]*>${E}</div>`), "neye çıktı");
-  assert.match(html, new RegExp(`· ${E} \\(${E}\\)`), "kasadan çıkan satır");
+  // Kasadan çıkan satır: yer tam, açıklama 30 karakterde kesilir (cashOutShortLine); ikisi de kaçışlı
+  assert.match(html, new RegExp(`· ${E} \\(&lt;img src=x onerror=&quot;alert\\(1\\)&quot;…\\) 100 ₺<`), "kasadan çıkan satır");
   assert.match(html, new RegExp(`>İkram:</span> ${E}<`));
   assert.match(html, new RegExp(`>Zayi:</span> ${E}<`));
   assert.match(html, new RegExp(`>Not:</strong> ${E}<`));

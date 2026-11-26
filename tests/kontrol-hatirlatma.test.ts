@@ -244,6 +244,8 @@ test("e-posta: konu, gecikme önce, eksik maddeler, listeyi aç bağlantısı; �
   assert.doesNotMatch(many.html, />f</);
   assert.match(many.html, />ve 2 madde daha</);
   assert.match(many.text, /\nve 2 madde daha\nListeyi aç: .*\/panel\/kontrol\/2\n/);
+  // Outlook masaüstü: düzen tablo; ölçülü div (onay kutusu tablo hücresi), flex/grid ve resim yok
+  for (const h of [m.html, many.html]) assert.doesNotMatch(h, /display:\s*(?:flex|grid)|<img\b|<div[^>]*style="(?:[^"]*;)?\s*(?:width|height):/);
 });
 
 test("kaynak: saatlik tetikleyici, yetki, tek tek gönderim ve sahiplenme", () => {

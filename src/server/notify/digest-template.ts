@@ -283,6 +283,8 @@ function boxHtml(b: DigestBox, key: keyof DigestExtras, top: number): string {
 // ---------------------------------------------------------------- Sabah e-postasının yerel parçaları
 
 const NUM = "font-variant-numeric:tabular-nums";
+/** Bölünmez boşluk (U+00A0; kaçış gerekmez): "faturalar · 3" telefonda bölünmesin, sayı tek başına alt satıra düşmesin */
+const NB = "\u00a0";
 
 /**
  * Liste satırı (ödeme, fatura, zam, ürün): solda isteğe bağlı karo, ortada kalın ad ve altında gri ayrıntı (sarılır),
@@ -439,10 +441,11 @@ export function renderDigest(
                   : (boxLast ?? "Bugün yeni bir şey yok");
   const preheader = rows.length ? `${parts.join(", ")} · toplam ${money(total)}${extra ? ` · ${extra}` : ""}` : headline;
 
-  // Aşamaların rozetleri (kelime yanında: renk tek başına anlam taşımaz)
+  // Aşamaların rozetleri (kelime yanında: renk tek başına anlam taşımaz). Aralarında boşluk: inline-block'u ve span
+  // dolgusunu tanımayan Outlook'ta da "1 gecikmiş 1 bugün" ayrı okunur ("gecikmiş1" değil)
   const pills = STAGE_ORDER.filter((st) => counts[st])
-    .map((st) => `<span style="display:inline-block;margin:0 6px 6px 0">${pill(`${counts[st]} ${STAGE[st].word}`, STAGE[st].tone)}</span>`)
-    .join("");
+    .map((st) => `<span style="display:inline-block;margin:0 2px 6px 0">${pill(`${counts[st]} ${STAGE[st].word}`, STAGE[st].tone)}</span>`)
+    .join(" ");
 
   const row = ({ item, stage }: { item: UpcomingItem; stage: NotifyStage }, i: number) => {
     const tone = STAGE[stage].tone;
@@ -490,7 +493,7 @@ ${listTable(group.map(row))}`;
     ? [
         inv.syncError ? callout("bad", [inv.syncError], { title: "Paraşüt eşitlemesi başarısız.", linkHref: `${APP_URL}/panel/parasut`, linkLabel: "Paraşüt sayfasını aç", top: 22 }) : "",
         inv.items.length
-          ? `${sectionTitle(`Paraşüt'ten gelen yeni faturalar · ${inv.items.length}`, { aside: money(invoiceTotal), dot: "info", top: rows.length || sys || inv.syncError ? 32 : 24 })}
+          ? `${sectionTitle(`Paraşüt'ten gelen yeni faturalar${NB}·${NB}${inv.items.length}`, { aside: money(invoiceTotal), dot: "info", top: rows.length || sys || inv.syncError ? 32 : 24 })}
 ${listTable(inv.items.slice(0, MAX_INVOICE_ROWS).map(invoiceRow))}${inv.items.length > MAX_INVOICE_ROWS ? `\n${para(`ve ${inv.items.length - MAX_INVOICE_ROWS} fatura daha`, { top: 2, muted: true, size: 13 })}` : ""}`
           : "",
         ...invNotes.map((html, i) => callout("warn", [], { html, top: i === 0 && (inv.items.length || !inv.syncError) ? 22 : 12 })),
@@ -573,7 +576,7 @@ ${linkLine(`${APP_URL}/panel/urunler#zamlar`, "Önerilen fiyatlara bak")}`
     card: [
       heading(headline, { eyebrow: `${rows.length ? "Günlük ödeme hatırlatması" : "Günlük sabah özeti"}${branch ? ` · ${branch}` : ""}` }),
       branch ? para(branchDigestNote(branch), { top: 10, muted: true, size: 14 }) : "",
-      pills ? `<div style="margin-top:16px;line-height:0">${pills}</div>` : "",
+      pills ? `<div style="margin-top:16px">${pills}</div>` : "",
       systemSection,
       sections,
       totalHtml,

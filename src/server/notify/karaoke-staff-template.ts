@@ -63,8 +63,8 @@ function sessionBlock(s: StaffMailSession, first: boolean): string {
 </td></tr></table>`;
 }
 
-/** Kırmızı kutu varsa başlığın üstünde ondan ayıran boşluk */
-const gap = (px: number) => `<div style="height:${px}px;line-height:${px}px;font-size:0">&nbsp;</div>`;
+/** Dikey boşluk (kırmızı kutu ile başlık, başlık ile rezervasyonlar arası): tablo hücresi, Outlook div yüksekliğini bilmez */
+const gap = (px: number) => `<table ${TABLE}><tr><td style="height:${px}px;line-height:${px}px;font-size:0">&nbsp;</td></tr></table>`;
 
 function sessionText(s: StaffMailSession): string[] {
   const collect = staffPay(s) === "collect";

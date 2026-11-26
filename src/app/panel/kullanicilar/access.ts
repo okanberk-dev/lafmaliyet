@@ -250,7 +250,7 @@ ${para("Giriş yaptıktan sonra Hesabım'dan parolanızı değiştirebilir, iki 
           ? `L'Affogato yönetim paneli için yeni davet bağlantınız hazır.${again} Aşağıdaki düğmeyle parolanızı kendiniz belirleyin.`
           : "L'Affogato yönetim paneline davet edildiniz. Aşağıdaki düğmeyle parolanızı kendiniz belirleyin."
         : `Panel parolanızı sıfırlamak için bir bağlantı istendi.${again} Aşağıdaki düğmeyle yeni parolanızı belirleyin.`;
-    body = `${button(link, info.kind === "invite" ? "Parolamı belirle" : "Yeni parola belirle", { top: 26 })}
+    body = `${button(link, info.kind === "invite" ? "Parolamı belirle" : "Yeni parola belirle", { top: 24 })}
 ${noteHtml(`Bağlantı tek kullanımlıktır${until ? `; son geçerlilik: <strong style="color:${C.soft};font-weight:600;white-space:nowrap">${until}</strong>` : ""}.`, { top: 12, center: true })}
 ${fieldsBox(
   [

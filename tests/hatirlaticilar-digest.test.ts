@@ -57,6 +57,8 @@ test("e-posta: konu aşamaları sayar, gruplar gecikmiş → bugün → yaklaşa
   assert.ok(order.every((i) => i > 0));
   assert.deepEqual([...order].sort((a, b) => a - b), order);
   assert.match(html, /<h1[^>]*>3 ödeme sizi bekliyor<\/h1>/);
+  // Rozetler etiketsiz okununca da ayrı (inline-block'u tanımayan Outlook'ta "gecikmiş1 bugün" olmaz)
+  assert.ok(html.replace(/<[^>]+>/g, "").includes("1 gecikmiş 1 bugün 1 yaklaşan"));
   assert.ok(html.includes("20 Ekim Salı"));
   assert.ok(text.startsWith("L'Affogato · 20.10.2026\nÖdeme hatırlatması"));
 });
@@ -355,12 +357,13 @@ test("kutusuz sabah e-postasının içeriği korunur: konu ve düz metnin özeti
   // 2026: yalnız alt not değişti ("Ödemeler & hatırlatıcılar" → "Ödemeler", docs/planlar/ux-sade.md §3.10). 30 Eki 2026:
   // kapanış notu düğmenin yeni adıyla ("“Ödedim” ile işaretleyin", K18). 25 Kas 2026: e-postalar ortak tasarıma geçti
   // (src/lib/email-kit.ts: ferah kart, telefonda tek sütun); yalnız HTML'in görünümü değişti. Konu ve düz metin (içerik
-  // özeti) birebir aynı kaldı; HTML'deki görünen metin, bağlantılar ve ön metin de aynı (bu dosyanın öteki testleri)
+  // özeti) birebir aynı kaldı; HTML'deki görünen metin, bağlantılar ve ön metin de aynı (bu dosyanın öteki testleri).
+  // 26 Kas 2026: rozetlerin arasında boşluk (Outlook) ve fatura başlığında bölünmez boşluk; yalnız ilkinin HTML özeti değişti
   const hash = (parts: string[]) => createHash("sha256").update(parts.join("\u0000").replaceAll(APP_URL, "{APP_URL}")).digest("hex").slice(0, 16);
   const content = (r: { subject: string; text: string }) => hash([r.subject, r.text]);
   const sha = (r: { subject: string; html: string; text: string }) => hash([r.subject, r.html, r.text]);
   const cases = [
-    { r: renderDigest(rows, "2026-10-22", { ...invoices, priceHolds: holds(1).priceHolds }, prices, system), content: "0d90646efcacffef", sha: "56b28c4a364ea5aa" },
+    { r: renderDigest(rows, "2026-10-22", { ...invoices, priceHolds: holds(1).priceHolds }, prices, system), content: "0d90646efcacffef", sha: "69ff0b4d1c42cb43" },
     { r: renderDigest([], "2026-10-22", holds(1)), content: "dcc37a632772f9ef", sha: "0eb06d21550ac2d4" },
     { r: renderDigest([], "2026-10-22", { items: [], reviewCount: 0, syncError: "401" }, prices), content: "04a29ea7f09a312f", sha: "c7ae94a6d1aae21b" },
     { r: renderDigest([], "2026-10-22"), content: "faafe460fd049918", sha: "3e6128da0fd4f07b" },
@@ -376,7 +379,8 @@ test("ek kutular: gövde sırası sistem, ödemeler, faturalar, kontrol bekleyen
   const marks = [
     "Sistem uyarıları · 2",
     "Gecikenler · 1",
-    "Paraşüt&#39;ten gelen yeni faturalar · 2",
+    // "faturalar · 2" bölünmez boşlukla (telefonda sayı tek başına alt satıra düşmez)
+    `Paraşüt&#39;ten gelen yeni faturalar${NBSP}·${NBSP}2`,
     "faturanın kategorisi tahminle yazıldı",
     "hammadde fiyatı onay bekliyor (",
     ">Komisyon ve hakediş</div>",

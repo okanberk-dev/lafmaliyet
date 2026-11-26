@@ -1,9 +1,10 @@
 /**
  * Gün sonu kasa raporu e-postası (saf; "server-only" yok, tests/kasa-raporu.test.ts sınar). Bütün e-postaların ortak
  * tasarımıyla (src/lib/email-kit.ts): üstte L'Af başlığı, büyük kasa sonucu (eksik kırmızı, fazla turuncu, tutuyor yeşil;
- * kelimesi yanında), ModPOS Z raporu, kasa ve banka POS Z (yazarkasa) bölümleri, en altta "Panelde aç". Alıcıları yönetici seçer (personelin adresi düşer,
- * report-store.ts cashEmailRecipients): yazarkasanın toplamı, KDV'si ve ModPOS'la karşılaştırmalar yalnız burada
- * (docs/planlar/okc-z.md İlke 8, §8). Metin sürümü WhatsApp metninin yıldızsız, yöneticinin satırlarıyla hâli.
+ * kelimesi yanında), ModPOS Z raporu, kasa ve banka POS Z (yazarkasa) bölümleri, en altta "Panelde aç". Alıcıları
+ * yönetici seçer (personelin adresi düşer, report-store.ts cashEmailRecipients): yazarkasanın toplamı, KDV'si ve
+ * ModPOS'la karşılaştırmalar yalnız burada (docs/planlar/okc-z.md İlke 8, §8). Metin sürümü WhatsApp metninin
+ * yıldızsız, yöneticinin satırlarıyla hâli.
  */
 
 import {
@@ -240,7 +241,8 @@ export function renderCashReport(
   const okcHead = [
     meta.device?.label ?? null,
     meta.device?.registerNo ? `sicil\u00a0${meta.device.registerNo}` : null,
-    f.okcZNo ? `Z no\u00a0${f.okcZNo}` : null,
+    // "Z no 0188" bölünmez (telefonda başlık iki satıra iner; "Z" ile "no" ayrı satıra düşmesin)
+    f.okcZNo ? `Z\u00a0no\u00a0${f.okcZNo}` : null,
     f.okcReceipts ? `${f.okcReceipts}\u00a0fiş` : null,
   ]
     .filter(Boolean)

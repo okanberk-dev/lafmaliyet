@@ -141,6 +141,8 @@ test("davet, sıfırlama ve hoş geldin e-postası ortak tasarımda (email-kit):
           ? [`${URL_BASE}/giris`, "Panele giriş yap"]
           : [`${URL_BASE}/davet?t=${RAW}`, info.kind === "invite" ? "Parolamı belirle" : "Yeni parola belirle"];
       assert.match(html, new RegExp(`<a href="${reRaw(href)}" style="display:block;[^"]*">${label}</a>`), tag);
+      // E-posta istemcisi: tablo düzeni, satır içi stil; Outlook'ta bozulan flex / grid / konumlama ve görsel yok
+      assert.doesNotMatch(html, /display:\s*(flex|grid)|position:|float:|<img|<svg/i, tag);
     }
   }
 
@@ -163,6 +165,16 @@ test("davet, sıfırlama ve hoş geldin e-postası ortak tasarımda (email-kit):
   }
   assert.ok(accessEmail(invite).html.includes("L&#39;Affogato yönetim paneline davet edildiniz. Aşağıdaki düğmeyle parolanızı kendiniz belirleyin."));
   assert.ok(accessEmail(reset).html.includes("Panel parolanızı sıfırlamak için bir bağlantı istendi. Aşağıdaki düğmeyle yeni parolanızı belirleyin."));
+  assert.ok(
+    accessEmail({ ...invite, reason: "renewed" }).html.includes(
+      "L&#39;Affogato yönetim paneli için yeni davet bağlantınız hazır. Daha önce gönderilen bağlantı artık çalışmaz. Aşağıdaki düğmeyle parolanızı kendiniz belirleyin.",
+    ),
+  );
+  assert.ok(
+    accessEmail({ ...reset, reason: "renewed" }).html.includes(
+      "Panel parolanızı sıfırlamak için bir bağlantı istendi. Daha önce gönderilen bağlantı artık çalışmaz. Aşağıdaki düğmeyle yeni parolanızı belirleyin.",
+    ),
+  );
   assert.ok(accessEmail(reset).html.includes("Bu isteği siz yapmadıysanız e-postayı yok sayın; parolanız değişmez."));
   assert.ok(!accessEmail(invite).html.includes("yok sayın"));
   // Son geçerliliği bilinmeyen bağlantı: yalnız "tek kullanımlık"
@@ -174,4 +186,9 @@ test("davet, sıfırlama ve hoş geldin e-postası ortak tasarımda (email-kit):
   assert.ok(evil.includes("Merhaba &lt;img"));
   assert.ok(evil.includes("&quot;a&quot;@x.com") && evil.includes("&lt;b&gt;p&lt;/b&gt;"));
   assert.ok(evil.includes(`href="${URL_BASE}/giris?a=&quot;b&quot;"`));
+  // Tek kullanımlık bağlantı da: düğmenin href'i ve kopyalanacak adres kutusu
+  const evilLink = accessEmail({ ...invite, link: `${URL_BASE}/davet?t=a"b<i>c` }).html;
+  assert.ok(!evilLink.includes("<i>c"));
+  assert.ok(evilLink.includes(`<a href="${URL_BASE}/davet?t=a&quot;b&lt;i&gt;c" `));
+  assert.ok(evilLink.includes(`>${URL_BASE}/davet?t=a&quot;b&lt;i&gt;c</td>`));
 });

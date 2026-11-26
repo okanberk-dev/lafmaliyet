@@ -243,13 +243,16 @@ export function callout(
   return `<table ${TABLE} style="margin-top:${o.top ?? 14}px"><tr><td style="background:${t.bg};border-radius:16px;padding:14px 18px;font-family:${FONT};font-size:14px;line-height:21px;color:${t.fg};word-break:break-word">${o.title ? `<div style="font-weight:600">${esc(o.title)}</div>` : ""}${body}${o.html ?? ""}${link}</td></tr></table>`;
 }
 
-/** Ana eylem düğmesi: tam genişlik, 52 px (parmakla rahat); `secondary` beyaz zeminde çerçeveli */
-export function button(href: string, label: string, o: { top?: number; secondary?: boolean } = {}): string {
-  const bg = o.secondary ? C.card : C.ink;
+/**
+ * Ana eylem düğmesi: tam genişlik, 52 px (parmakla rahat); `secondary` beyaz zeminde çerçeveli. `color`: markalı e-postanın
+ * kendi rengi (misafirin karaoke e-postası sitenin yeşili); yazı beyaz. `newTab`: bağlantı yeni sekmede açılır
+ */
+export function button(href: string, label: string, o: { top?: number; secondary?: boolean; color?: string; newTab?: boolean } = {}): string {
+  const bg = o.secondary ? C.card : (o.color ?? C.ink);
   const fg = o.secondary ? C.ink : "#ffffff";
   const border = o.secondary ? `border:1px solid ${C.line};` : "";
   return `<table ${TABLE} style="margin-top:${o.top ?? 30}px"><tr><td align="center" bgcolor="${bg}" style="border-radius:14px;background:${bg};${border}">
-  <a href="${esc(href)}" style="display:block;padding:16px 24px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:${fg};text-decoration:none;border-radius:14px">${esc(label)}</a>
+  <a href="${esc(href)}"${o.newTab ? ` target="_blank" rel="noopener noreferrer"` : ""} style="display:block;padding:16px 24px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:${fg};text-decoration:none;border-radius:14px">${esc(label)}</a>
 </td></tr></table>`;
 }
 
