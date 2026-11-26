@@ -670,8 +670,15 @@
     {
       "idx": 95,
       "version": "7",
-      "when": 1795693406666,
-      "tag": "0095_foto_tarama",
+      "when": 1795705106137,
+      "tag": "0095_lafpos_kurulum",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1795706529860,
+      "tag": "0096_foto_tarama",
       "breakpoints": true
     }
   ]

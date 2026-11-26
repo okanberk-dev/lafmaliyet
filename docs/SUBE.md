@@ -48,7 +48,8 @@ Hepsi `src/lib/branches.ts`'te ve hem ekran hem eylem aynı işlevi çağırır;
 ## Ekran
 
 **Ayarlar › Şubeler** (`/panel/subeler`, yalnız yönetici): liste, "Şube ekle" ve satıra dokununca düzenleme
-penceresi. Ad yazılırken kimlik kendiliğinden önerilir ("Laffogato Marina" → `laffogato-marina`), tür değişince
+penceresi. **26 Kasım 2026:** şube eklemek yalnız ana yöneticide (`info@nextgenlab.com.tr`); e-postayla eklenen
+şubenin panel hesabı açılır ve LafPOS kurulum bağlantısı gider ([LAFPOS.md › Şube kurulumu](LAFPOS.md#şube-kurulumu-26-kasım-2026)). Ad yazılırken kimlik kendiliğinden önerilir ("Laffogato Marina" → `laffogato-marina`), tür değişince
 kasa kaynağı uyar. Her değişiklik işlem geçmişine yazılır.
 
 ## Dalga 2'nin kararları (4 Kasım 2026)

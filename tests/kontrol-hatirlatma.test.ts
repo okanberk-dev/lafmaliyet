@@ -8,6 +8,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { withoutLogo } from "./helpers/html-metin";
+
 import {
   ALERT_FIRST_MIN,
   ALERT_LAST_MIN,
@@ -244,8 +246,8 @@ test("e-posta: konu, gecikme önce, eksik maddeler, listeyi aç bağlantısı; �
   assert.doesNotMatch(many.html, />f</);
   assert.match(many.html, />ve 2 madde daha</);
   assert.match(many.text, /\nve 2 madde daha\nListeyi aç: .*\/panel\/kontrol\/2\n/);
-  // Outlook masaüstü: düzen tablo; ölçülü div (onay kutusu tablo hücresi), flex/grid ve resim yok
-  for (const h of [m.html, many.html]) assert.doesNotMatch(h, /display:\s*(?:flex|grid)|<img\b|<div[^>]*style="(?:[^"]*;)?\s*(?:width|height):/i);
+  // Outlook masaüstü: düzen tablo; ölçülü div (onay kutusu tablo hücresi), flex/grid ve resim yok (kabuğun logosu dışında)
+  for (const h of [m.html, many.html]) assert.doesNotMatch(withoutLogo(h), /display:\s*(?:flex|grid)|<img\b|<div[^>]*style="(?:[^"]*;)?\s*(?:width|height):/i);
 });
 
 test("kaynak: saatlik tetikleyici, yetki, tek tek gönderim ve sahiplenme", () => {

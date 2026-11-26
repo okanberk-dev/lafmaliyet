@@ -179,6 +179,11 @@ export const branches = pgTable(
      * (karaoke tek şubede); Tuzla'ya karaoke migration 0085'te. Online kanalda anlamı yok (boş)
      */
     features: text("features").array().notNull().default(sql`'{siparis,garson,yemek_karti}'::text[]`),
+    /**
+     * Şubenin e-postası (şube kurulumu, docs/LAFPOS.md › Şube kurulumu): şubenin panel hesabı bu adresle açılır, LafPOS
+     * kurulum bağlantısı buraya gider. Boşsa kurulum bağlantısı gönderilmez (eski şubeler)
+     */
+    email: text("email"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -192,6 +197,34 @@ export const branches = pgTable(
       sql`(${t.kind} = 'online' and ${t.posSource} = 'yok') or (${t.kind} = 'fiziksel' and ${t.posSource} <> 'yok')`,
     ),
   ],
+);
+
+// ---------------------------------------------------------------- LafPOS şube kurulumu
+/**
+ * Şubeye özel LafPOS kurulum kodu (docs/LAFPOS.md › Şube kurulumu): indirme bağlantısında ve kurucunun içinde durur;
+ * kasa ilk açılışta bir kez verir, karşılığında şubesini ve bağlantı bilgilerini alır. `tokenHash` (sha256) ile
+ * bulunur; ham kod yalnız şube hesabına bağlantıyı yeniden göstermek için mühürlü durur (`tokenSealed`, secret-box
+ * "lafpos-kurulum"). Kullanılınca (`usedAt`) ya da süresi dolunca bir daha geçmez; yenisi eskisini iptal eder
+ */
+export const lafposInstalls = pgTable(
+  "lafpos_installs",
+  {
+    id: serial("id").primaryKey(),
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    tokenSealed: text("token_sealed").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    /** İndirme sayısı (bilgi için) */
+    downloads: integer("downloads").notNull().default(0),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("lafpos_installs_branch_idx").on(t.branchId, t.createdAt)],
 );
 
 // ---------------------------------------------------------------- Hammaddeler

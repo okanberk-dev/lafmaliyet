@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { mock, test } from "node:test";
 
+import { EMAIL_LOGO_HTML, EMAIL_LOGO_URL } from "../src/lib/email-kit";
 import { SYSTEM_ALERT_HELP } from "../src/lib/job-health";
 import { digestSummary, type UpcomingItem } from "../src/lib/reminders";
 import {
@@ -360,19 +361,32 @@ test("kutusuz sabah e-postasının içeriği korunur: konu ve düz metnin özeti
   // (src/lib/email-kit.ts: ferah kart, telefonda tek sütun); yalnız HTML'in görünümü değişti. Konu ve düz metin (içerik
   // özeti) birebir aynı kaldı; HTML'deki görünen metin, bağlantılar ve ön metin de aynı (bu dosyanın öteki testleri).
   // 26 Kas 2026: rozetlerin arasında boşluk (Outlook) ve fatura başlığında bölünmez boşluk; yalnız ilkinin HTML özeti değişti
+  // 26 Kas 2026 (2): başta şirketin logosu ve sade kabuk (ince çerçeveli kart, açık zemin); yalnız HTML'in özetleri değişti
   const hash = (parts: string[]) => createHash("sha256").update(parts.join("\u0000").replaceAll(APP_URL, "{APP_URL}")).digest("hex").slice(0, 16);
   const content = (r: { subject: string; text: string }) => hash([r.subject, r.text]);
   const sha = (r: { subject: string; html: string; text: string }) => hash([r.subject, r.html, r.text]);
   const cases = [
-    { r: renderDigest(rows, "2026-10-22", { ...invoices, priceHolds: holds(1).priceHolds }, prices, system), content: "0d90646efcacffef", sha: "69ff0b4d1c42cb43" },
-    { r: renderDigest([], "2026-10-22", holds(1)), content: "dcc37a632772f9ef", sha: "0eb06d21550ac2d4" },
-    { r: renderDigest([], "2026-10-22", { items: [], reviewCount: 0, syncError: "401" }, prices), content: "04a29ea7f09a312f", sha: "c7ae94a6d1aae21b" },
-    { r: renderDigest([], "2026-10-22"), content: "faafe460fd049918", sha: "3e6128da0fd4f07b" },
+    { r: renderDigest(rows, "2026-10-22", { ...invoices, priceHolds: holds(1).priceHolds }, prices, system), content: "0d90646efcacffef", sha: "5455043dcf1707bf" },
+    { r: renderDigest([], "2026-10-22", holds(1)), content: "dcc37a632772f9ef", sha: "713592105973f5f7" },
+    { r: renderDigest([], "2026-10-22", { items: [], reviewCount: 0, syncError: "401" }, prices), content: "04a29ea7f09a312f", sha: "3a81b037c0fe09be" },
+    { r: renderDigest([], "2026-10-22"), content: "faafe460fd049918", sha: "329078f0539fce94" },
   ];
   for (const c of cases) {
     assert.equal(content(c.r), c.content, `içerik değişti: ${c.r.subject}`);
     assert.equal(sha(c.r), c.sha, `HTML değişti: ${c.r.subject}`);
   }
+});
+
+test("kabuk: başta ortada şirketin logosu (bir kez, alt metinli, ölçülü, panelin herkese açık dosyası); başka görsel yok", () => {
+  const r = renderDigest(rows, "2026-10-22", { ...invoices, priceHolds: holds(1).priceHolds }, prices, system);
+  assert.equal(EMAIL_LOGO_URL, "https://ladmin.laffogato.net/brand/logo-wordmark.png");
+  assert.ok(readFileSync(join(process.cwd(), "public/brand/logo-wordmark.png")).length > 0, "logo dosyası yayında (public/brand)");
+  assert.equal(r.html.split(EMAIL_LOGO_HTML).length - 1, 1, "logo bir kez");
+  assert.equal(r.html.match(/<img\b/g)?.length, 1, "logodan başka görsel yok");
+  assert.match(EMAIL_LOGO_HTML, / width="140" height="35" alt="L'Affogato" style="display:block;margin:0 auto;/);
+  // Logo kartın üstünde, ön metinden sonra; altında ne e-postası olduğu satırı
+  const at = r.html.indexOf(EMAIL_LOGO_HTML);
+  assert.ok(at > r.html.indexOf("display:none;max-height:0") && at < r.html.indexOf('class="em-card"'));
 });
 
 test("ek kutular: gövde sırası sistem, ödemeler, faturalar, kontrol bekleyen, fiyat onayı, komisyon, kontrol, zam, karaoke, düğme", () => {

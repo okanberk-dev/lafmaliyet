@@ -1,5 +1,5 @@
 {
-  "id": "79ae6eba-348d-470f-8950-6e5dfefdd8ab",
+  "id": "686e513a-c67b-429e-a8a2-f58a000c27c2",
   "prevId": "be594637-c5fe-4678-9887-ea11bc223b9c",
   "version": "7",
   "dialect": "postgresql",
@@ -603,6 +603,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{siparis,garson,yemek_karti}'::text[]"
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -4695,6 +4701,144 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.lafpos_installs": {
+      "name": "lafpos_installs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_sealed": {
+          "name": "token_sealed",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "downloads": {
+          "name": "downloads",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "lafpos_installs_branch_idx": {
+          "name": "lafpos_installs_branch_idx",
+          "columns": [
+            {
+              "expression": "branch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "lafpos_installs_branch_id_branches_id_fk": {
+          "name": "lafpos_installs_branch_id_branches_id_fk",
+          "tableFrom": "lafpos_installs",
+          "tableTo": "branches",
+          "columnsFrom": [
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "lafpos_installs_created_by_users_id_fk": {
+          "name": "lafpos_installs_created_by_users_id_fk",
+          "tableFrom": "lafpos_installs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "lafpos_installs_token_hash_unique": {
+          "name": "lafpos_installs_token_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.login_device_locks": {
       "name": "login_device_locks",
       "schema": "",
@@ -6202,24 +6346,6 @@
         "linked_at": {
           "name": "linked_at",
           "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "original_key": {
-          "name": "original_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "original_size": {
-          "name": "original_size",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "scan": {
-          "name": "scan",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         }

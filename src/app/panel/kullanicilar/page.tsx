@@ -81,7 +81,7 @@ async function UsersContent() {
   const branches = all.filter((b) => b.kind === "fiziksel" && (b.active || branchIds.has(b.id))).map((b) => ({ id: b.id, name: b.name }));
   const live = new Map(links.map((l) => [l.userId, { kind: l.kind, until: dateTimeTR(l.until) }]));
   const deviceLocked = new Set(deviceLocks.map((l) => l.userId));
-  // Yönetici hesaplarında iki adımlı zorunlu mu (docs/DEPLOY.md › 6a; ADMIN_2FA_OPTIONAL=1 kapatır)
+  // Yönetici hesaplarında iki adımlı zorunlu mu (docs/DEPLOY.md › 6a; varsayılan hayır, ADMIN_2FA_REQUIRED=1 açar)
   const twoFactor = adminTwoFactorRequired();
   // Birden çok kasa açıkken şubesi seçilmemiş etkin personel (şube kapsamı C P2-10): bütün şubeleri görür, kasa ve sayım
   // formu "Tümü"de şubeyi sorar, akşam zili her kasa için ayrı satır verir
