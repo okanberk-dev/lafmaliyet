@@ -118,6 +118,7 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `PHOTO_DIR` | (yalnız yerel, isteğe bağlı) Fotoğrafların yerel klasörü; yoksa `.data/photos` |
 | `MCP_DISABLED` | (isteğe bağlı) `1` ise Claude bağlantısı kapalı (bütün uçlar 404, verilmiş anahtarlar çalışmaz). Önizlemelerde zaten kapalı ([CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md)) |
 | `MCP_ALLOW_LOCALHOST` | (isteğe bağlı) `1` ise Claude Code / MCP Inspector'ın localhost dönüş adresine canlıda da izin verilir; varsayılan kapalı |
+| `CSP_ENFORCE` | (isteğe bağlı) `1`: Content-Security-Policy'nin kaynak politikası **uygulanır**; yoksa Report-Only (yalnız raporlar). Derlemede okunur: değiştirince yeniden deploy. Ne zaman açılacağı § 6 › Güvenlik başlıkları |
 | `DATABASE_SSL` | (isteğe bağlı, yalnız acil durumda) `require`: veritabanı sunucusunun sertifikası doğrulanmaz. Varsayılan doğrulamalı bağlantıdır (`verify-full`; Neon'un sertifikası Let's Encrypt'ten, Node tanır): şifreli ama sertifikası denetlenmeyen bağlantıda araya giren biri kendi sertifikasıyla bütün veriyi okuyabilirdi. Canlı derleme önce havuzlu adresi, sonra migration için doğrudan adresi doğrulamalı açar; biri açılmazsa derleme migration'dan önce durur, ne veritabanı ne yayındaki sürüm değişir. Neon sertifikasını değiştirdiği için derleme durursa geçici olarak `require` yazılır |
 
 `DATABASE_URL` / `DATABASE_URL_UNPOOLED` Neon entegrasyonundan gelir. Paraşüt değişkenleri (`PARASUT_*`; istemci
@@ -167,6 +168,40 @@ başlığı ve sayfalarda `noindex` etiketi vardır. `robots.txt` taramayı bile
 Google sayfaları açamaz, noindex'i göremez ve başka yerden bağlantı alan adresi "açıklama yok" diye listeleyebilirdi.
 Adres daha önce dizine girdiyse Search Console › Kaldırmalar'dan hemen gizlenir; noindex kalıcı olarak çıkarır. `lafmaliyet.vercel.app` adresi sayfalar için `ladmin.laffogato.net`'e
 yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
+
+### Güvenlik başlıkları
+
+`next.config.ts` her yanıta `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`,
+`Permissions-Policy` (panelde mikrofon yalnız bu site) ve `Strict-Transport-Security` ekler. **Content-Security-Policy**
+(26 Kasım 2026, güvenlik notu; kurallar `src/lib/csp.ts`, deneme `tests/csp.test.ts`) yalnız sayfalara gider (API
+yanıtları kendi başlığını taşır: fotoğrafın `default-src 'none'; sandbox`'ı ezilmez, PDF açılır):
+
+- **Uygulanan çekirdek** (her zaman): `frame-ancestors 'none'` (panel başka sitede çerçeveye alınamaz),
+  `base-uri 'self'` (sayfaya sokulan `<base>` bağlantıları kaçıramaz), `form-action 'self'` + Paraşüt'ün kimlik
+  sunucusu (`https://id.parasut.com`, `https://*.parasut.com`, ortamda verilmişse `PARASUT_ISSUER` /
+  `PARASUT_AUTHORIZE_URL` kökeni): "Paraşüt hesabını bağla" formu POST'tan sonra Paraşüt'ün onay ekranına 303 ile
+  gider ve tarayıcılar form hedefini yönlendirmede de denetler. Bu üçü hiçbir kaynak yüklemesine dokunmaz.
+- **Tam politika** (kaynaklar): her şey kendi kökeninden; `script-src 'self' 'unsafe-inline'`, `style-src 'self'
+  'unsafe-inline'`, `img-src 'self' blob: data:`, `connect-src 'self'`, `frame-src 'self' blob:` (fatura belgesinin
+  PDF önizlemesi), `worker-src 'self' blob:` (servis çalışanı `/sw.js`), `object-src 'none'`. `CSP_ENFORCE=1`
+  değilken **Report-Only** gider: tarayıcı hiçbir şeyi engellemez, engelleyeceği her kaynağı `/api/csp-rapor`'a
+  bildirir (oturumsuz, hep 204, dakikada en çok 30 satır; adresler köken + yola indirilir). Vercel › Logs'ta `[csp]`
+  ile aranır: `[csp] report img-src https://… · /panel/kasa`.
+- **Neden nonce yok:** panel `cacheComponents` ve `partialPrefetching` ile önceden çizilmiş kabuklar sunar; Next'in CSP
+  kılavuzuna göre nonce her sayfayı her istekte çizmeye zorlar ve önceden çizilmiş kabukla (PPR) bağdaşmaz. Next'in
+  sayfaya gömdüğü satır içi betikler (RSC verisi) ve koyu tema betiği bu yüzden `'unsafe-inline'` ile çalışır; motion,
+  Recharts ve Sonner satır içi stil yazar. Kazanç yine de: başka kökenden betik, istek, görsel, çerçeve ve eklenti
+  yüklenemez, sızdırılan veri başka bir sunucuya `fetch` ya da görselle gönderilemez.
+- **Karar: tam politika Report-Only ile başlar.** Panel her gün kasa raporu, sayım ve faturalar için kullanılıyor;
+  tarayıcıda denenemeyen yollar var (fatura PDF'inin tarayıcıdaki önizlemesi `blob:` çerçevede, cihaz bildirimi,
+  başka oturumların yarım işleri: belge tarayıcı işçi ya da WebAssembly isteyebilir). Uygulanan bir CSP'de bunlardan
+  biri sessizce bozulur ve sahibin fark etmesi günler sürebilir; Report-Only'de hiçbir şey bozulmaz, aynı ihlaller
+  günlüğe düşer. Çekirdek ise hiçbir yüklemeye dokunmadığı için baştan uygulanır. Yerel denetim (26 Kasım 2026,
+  `next build` + `next start`, Chromium): giriş, davet, menü ve panelin başlıca ekranlarında ihlal yok.
+- **Uygulamaya geçiş:** yayından sonra bir hafta Vercel › Logs'ta `[csp]` aranır. Beklenmeyen satır yoksa (tarayıcı
+  eklentilerinin `chrome-extension://` satırları sayılmaz) Vercel'de `CSP_ENFORCE=1` eklenip yeniden deploy edilir.
+  Bir şey bozulursa değişkeni silip yeniden deploy etmek geri alır. Yeni bir dış kaynak (CDN, analiz, harita)
+  eklenecekse önce `src/lib/csp.ts`'e yazılır.
 
 ## 6a. Kullanıcılar ve iki adımlı doğrulama
 
