@@ -114,19 +114,30 @@ export function quadIsValid(q: readonly Point[] | null | undefined, width: numbe
 
 /**
  * Yapay zekânın 0–1000 oranlı köşelerini (x, y) piksele çevirir ve sıralar. Dizi [[x, y], …] ya da {x, y} olabilir;
- * dört nokta değilse ya da sayı değilse null.
+ * dört nokta değilse ya da sayı değilse null. Ucuz model bazen oran yerine yapay zekâya gönderilen görüntünün
+ * pikselini verir (1000'i aşan değer): `sent` (o görüntünün ölçüsü) verilmişse değerler ona bölünür.
  */
-export function cornersFromHint(hint: readonly (readonly [number, number] | Point)[] | null | undefined, width: number, height: number): Quad | null {
+export function cornersFromHint(
+  hint: readonly (readonly [number, number] | Point)[] | null | undefined,
+  width: number,
+  height: number,
+  sent?: { width: number; height: number },
+): Quad | null {
   if (!hint || hint.length !== 4) return null;
-  const pts: Point[] = [];
+  const raw: [number, number][] = [];
   for (const h of hint) {
+    if (!h || typeof h !== "object") return null;
     const x = Array.isArray(h) ? h[0] : (h as Point).x;
     const y = Array.isArray(h) ? h[1] : (h as Point).y;
     if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) return null;
-    const cx = Math.max(0, Math.min(1000, x));
-    const cy = Math.max(0, Math.min(1000, y));
-    pts.push({ x: (cx / 1000) * (width - 1), y: (cy / 1000) * (height - 1) });
+    raw.push([x, y]);
   }
+  const pixels = !!sent && sent.width > 0 && sent.height > 0 && raw.some(([x, y]) => x > 1000 || y > 1000);
+  const pts = raw.map(([x, y]) => {
+    const fx = Math.max(0, Math.min(1, pixels ? x / (sent!.width - 1) : x / 1000));
+    const fy = Math.max(0, Math.min(1, pixels ? y / (sent!.height - 1) : y / 1000));
+    return { x: fx * (width - 1), y: fy * (height - 1) };
+  });
   return orderCorners(pts);
 }
 

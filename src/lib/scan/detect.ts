@@ -10,8 +10,10 @@
  *    doğru en yakın kâğıt kenarına büyütülür (açık renk tezgâhta beyaz fiş).
  *
  * Adaylar tek puanla karşılaştırılır: her kenarın gradyan desteği ve içi / dışı parlaklık basamağı (işaret tutarlı),
- * alan oranı, açılar, kâğıtlık karşıtlığı, yazı kesiyor mu. Emin değilse (zayıf kenar, birbirine yakın puanlı iki
- * farklı aday) güven düşer. Kâğıt kareyi dolduruyorsa `fillsFrame` ve kırpma önerilmez.
+ * alan oranı, açılar, kâğıtlık karşıtlığı, yazı kesiyor mu, içerisi kâğıda benziyor mu (koyu ya da çok renkli,
+ * yazısız dikdörtgen: telefon, POS cihazı, kutu). Puanı düşük kalan en iyi adaylar kenarlara oturtulup yeniden
+ * puanlanır. Emin değilse (zayıf kenar, birbirine yakın puanlı iki farklı aday, kâğıda benzemiyor) güven düşer. Kâğıt
+ * kareyi dolduruyorsa `fillsFrame` ve kırpma önerilmez.
  */
 
 import type { GrayImage, Point, Quad, RgbaImage } from "./image";
@@ -25,6 +27,7 @@ import {
   histPercentile,
   labelComponents,
   maxFilter,
+  median,
   minFilter,
   otsuIndex,
   resizeGray,
@@ -100,6 +103,8 @@ interface Ctx {
   textTotal: number;
   /** yazı piksellerinden seyrek örnek (en çok ~3000; dörtgenin içindeki yazı oranı için) */
   textPts: Point[];
+  /** görüntünün aydınlık düzeyi (parlaklığın %95'liği): kâğıt genelde en aydınlık şeydir */
+  lumHigh: number;
 }
 
 interface SideStat {
@@ -117,6 +122,8 @@ interface Scored {
   realSides: number;
   minSide: number;
   area: number;
+  /** kâğıda benzemezlik (0–1) */
+  notPaper: number;
 }
 
 const DEFAULT_EDGE = 640;
@@ -194,7 +201,8 @@ function buildCtx(img: RgbaImage, maxEdge: number): Ctx {
     if (!text[i]) continue;
     if (k++ % every === 0) textPts.push({ x: i % w, y: Math.floor(i / w) });
   }
-  return { w, h, n, diag: Math.hypot(w, h), rgba: data, lum, chroma, gray, paper, gx, gy, gradThr, stepThr, text, textTotal, textPts };
+  const lumHigh = Math.max(40, histPercentile(histogram(lum, 256, 0, 256, 3), 0.95));
+  return { w, h, n, diag: Math.hypot(w, h), rgba: data, lum, chroma, gray, paper, gx, gy, gradThr, stepThr, text, textTotal, textPts, lumHigh };
 }
 
 // ---------------------------------------------------------------- puan
@@ -281,11 +289,16 @@ function sideStats(ctx: Ctx, a: Point, b: Point, cx: number, cy: number): SideSt
   return { frame: false, quality: Math.max(0, Math.max(qPos, qNeg)), brightInside: qPos >= qNeg };
 }
 
-/** Dörtgenin içinden ve hemen dışından örnek: kâğıtlık ortalamaları (içerisi kâğıda daha çok benziyorsa `inside` büyük) */
-function paperLevels(ctx: Ctx, q: Quad): { inside: number; outside: number | null } {
+/**
+ * Dörtgenin içinden ve hemen dışından örnek: kâğıtlık ortalamaları (içerisi kâğıda daha çok benziyorsa `inside`
+ * büyük); içerinin parlaklık ve doygunluk ortancası (kâğıt kanıtı)
+ */
+function paperLevels(ctx: Ctx, q: Quad): { inside: number; outside: number | null; lum: number; chroma: number } {
   const { w, h } = ctx;
   let sin = 0;
   let nin = 0;
+  const lums: number[] = [];
+  const chromas: number[] = [];
   for (let i = 1; i < 8; i++) {
     for (let j = 1; j < 8; j++) {
       const u = i / 8;
@@ -293,6 +306,8 @@ function paperLevels(ctx: Ctx, q: Quad): { inside: number; outside: number | nul
       const x = (1 - u) * (1 - v) * q[0].x + u * (1 - v) * q[1].x + u * v * q[2].x + (1 - u) * v * q[3].x;
       const y = (1 - u) * (1 - v) * q[0].y + u * (1 - v) * q[1].y + u * v * q[2].y + (1 - u) * v * q[3].y;
       sin += nearest(ctx.paper, w, h, x, y);
+      lums.push(nearest(ctx.lum, w, h, x, y));
+      chromas.push(nearest(ctx.chroma, w, h, x, y));
       nin++;
     }
   }
@@ -318,7 +333,18 @@ function paperLevels(ctx: Ctx, q: Quad): { inside: number; outside: number | nul
       nout++;
     }
   }
-  return { inside: sin / nin, outside: nout ? sout / nout : null };
+  return { inside: sin / nin, outside: nout ? sout / nout : null, lum: median(lums), chroma: median(chromas) };
+}
+
+/**
+ * Kâğıda benzemezlik (0–1): içerisi görüntünün aydınlığına göre koyu (telefon, POS cihazı, cüzdan) ya da çok renkli
+ * (kutu, ambalaj). İçinde yazı varsa (renkli nüsha, etiket) ceza azalır.
+ */
+function notPaper(ctx: Ctx, lum: number, chroma: number, textIn: number | null): number {
+  const rel = lum / ctx.lumHigh;
+  const dark = Math.max(0, Math.min(1, (0.55 - rel) / 0.25));
+  const colored = Math.max(0, Math.min(1, (chroma - 70) / 60));
+  return Math.max(dark, colored) * (1 - 0.7 * Math.min(1, (textIn ?? 0) / 0.6));
 }
 
 /**
@@ -422,6 +448,8 @@ function evaluate(ctx: Ctx, q: Quad, how: DetectMethod): Scored | null {
   const pc = lv.outside === null ? 0.5 : Math.max(0, Math.min(1, (lv.inside - lv.outside) / 40));
   let score =
     0.45 * minSide + 0.25 * meanSide + 0.12 * areaTerm + 0.08 * rect + 0.05 * pc + 0.05 * (tin ?? 0.5) - 0.6 * Math.max(0, cut - 0.15);
+  const np = notPaper(ctx, lv.lum, lv.chroma, tin);
+  score -= 0.45 * np;
   if (real.length === 2) score -= 0.06;
   else if (real.length === 3) score -= 0.02;
   // kareye dayanan kenarın içi zeminse kâğıt orada bitmiyordur
@@ -432,7 +460,7 @@ function evaluate(ctx: Ctx, q: Quad, how: DetectMethod): Scored | null {
     }
     score -= 0.5 * Math.max(0, bg - 0.4);
   }
-  return { q, how, score, sides, realSides: real.length, minSide, area };
+  return { q, how, score, sides, realSides: real.length, minSide, area, notPaper: np };
 }
 
 // ---------------------------------------------------------------- a) kâğıt bölütleme
@@ -1002,6 +1030,10 @@ export function detectDocument(img: RgbaImage, opts: DetectOptions = {}): Detect
   if (rival && rival.score > best.score - 0.04) {
     confidence *= 0.75;
     reasons.push("iki-aday");
+  }
+  if (best.notPaper >= 0.5) {
+    confidence = Math.min(confidence, 0.3);
+    reasons.push("kagida-benzemiyor");
   }
   if (best.realSides < 4) reasons.push(`kareye-dayaniyor-${4 - best.realSides}`);
   if (best.minSide < 0.5) reasons.push("kenar-zayif");

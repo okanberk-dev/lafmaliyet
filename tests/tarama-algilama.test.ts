@@ -9,7 +9,7 @@ import { test } from "node:test";
 
 import type { Quad } from "../src/lib/scan/image";
 import { seededRandom } from "../src/lib/scan/image";
-import { lineThrough, signedDist } from "../src/lib/scan/geom";
+import { insideConvex, lineThrough, signedDist } from "../src/lib/scan/geom";
 import { detectDocument, refineCorners, scanDocument } from "../src/lib/scan";
 import { cornerError, projectRect, regionMean, renderScene, type Sahne } from "./helpers/tarama-sentetik";
 
@@ -149,6 +149,30 @@ test("algılama: belge yok (doku, tahta) → köşe yok ya da güven düşük", 
     assert.ok(!d.corners || d.confidence < 0.4, `${bg}: ${d.method} güven ${d.confidence}`);
     assert.equal(d.fillsFrame, false, `${bg}: kâğıt sanılmamalı`);
   }
+});
+
+test("algılama: kâğıda benzemeyen dikdörtgen (telefon, POS cihazı) — güven düşük; yanında fiş varsa fiş seçilir", () => {
+  const phone = projectRect({ width: W, height: H, aspect: 0.5, size: 0.4, rotDeg: 7, tiltX: 10 });
+  const img = renderScene({ width: W, height: H, corners: phone, paper: [30, 30, 34], background: "acik", text: false, noise: 3, blur: 0.8, seed: 77 });
+  const d = detectDocument(img);
+  assert.ok(!d.corners || d.confidence < 0.4, `koyu yazısız dikdörtgen kâğıt sayılmamalı: ${d.method} ${d.confidence}`);
+  // açık tezgâhta fiş ve yanında koyu POS cihazı (keskin kenarlı, büyük)
+  const fis = projectRect({ width: W, height: H, aspect: 1 / 5, size: 0.2, rotDeg: -4, tiltX: 12, cx: 230, cy: 520 });
+  const dev = projectRect({ width: W, height: H, aspect: 0.55, size: 0.36, rotDeg: 8, tiltX: 12, cx: 560, cy: 600 });
+  const both = renderScene({ width: W, height: H, corners: fis, paperAspect: 1 / 5, background: "acik", text: { rows: 50, strength: 0.8 }, noise: 3, blur: 0.8, seed: 90 });
+  const device = renderScene({ width: W, height: H, corners: dev, paper: [35, 36, 40], background: "acik", text: false, noise: 3, blur: 0.8, seed: 90 });
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (!insideConvex(dev, { x, y })) continue;
+      const p = (y * W + x) * 4;
+      both.data.set(device.data.subarray(p, p + 4), p);
+    }
+  }
+  const d2 = detectDocument(both);
+  assert.ok(d2.corners, "fiş bulunmalı");
+  const err = cornerError(d2.corners!, fis, W, H);
+  assert.ok(err < 0.015, `cihaz değil fiş: köşe hatası %${(err * 100).toFixed(2)} (${d2.method})`);
+  assert.ok(d2.confidence >= 0.6, `güven ${d2.confidence}`);
 });
 
 test("algılama: kareden taşan uzun fiş — uzun kenarlar oturur, kısa kenarlar görüntüde ve uzun kenarlara uygun", () => {
