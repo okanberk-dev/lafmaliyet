@@ -103,8 +103,11 @@ export function deleteProblem(rows: readonly AdvanceRow[], id: number): string |
   return rest.some((r) => r.balanceAfter < -0.005) ? "Bu avansın kesintisi yazılmış; önce kesintiyi silin" : null;
 }
 
-/** Kalan avans net maaşı aşıyorsa uyarı (tek maaşla kapanmaz); maaşı bilinmeyende (part-time) uyarı yok */
-export function balanceWarning(balance: number, net: number | null): string | null {
+/**
+ * Kalan avans net maaşı aşıyorsa uyarı (tek maaşla kapanmaz); maaşı bilinmeyende (part-time) uyarı yok. Ekranda
+ * Notice'in başlığı ve satırı
+ */
+export function balanceWarning(balance: number, net: number | null): { title: string; text: string } | null {
   if (net === null || net <= 0 || balance <= net + 0.005) return null;
-  return "Kalan avans bir aylık net maaşı aşıyor; tek maaştan düşülemez.";
+  return { title: "Kalan avans bir aylık net maaşı aşıyor", text: "Tek maaştan düşülemez; birkaç aya bölüp düşün." };
 }

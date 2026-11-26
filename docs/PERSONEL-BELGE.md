@@ -51,8 +51,8 @@ Ekranlar Giderler & maaşlar'ın sekmeleri: **Sabit giderler · Aylık harcamala
 
 ## Hatırlatma
 
-- **Zil (yalnız yönetici, Uyarılar):** süresi dolan belgeler tek satır ("2 personel belgesinin süresi doldu"), 30 gün
-  içinde bitecekler tek satır; gövdede en çok üç "kişi · belge (durum)", fazlası "ve N belge daha". Bağlantı
+- **Zil (yalnız yönetici, Uyarılar; vardiya hatırlatmasının hemen ardından):** süresi dolan belgeler tek satır
+  ("2 personel belgesinin süresi doldu"), 30 gün içinde bitecekler tek satır; gövdede en çok üç "kişi · belge (durum)", fazlası "ve N belge daha". Bağlantı
   Personel belgeleri. Kimlik belgelerden ve bitişlerden türer: yeni bir belge bitince ya da yaklaşınca satır yeniden
   okunmamış olur, gün geçti diye olmaz. Seçili şubenin kişileri ("Tümü"de hepsi). Okunamazsa "Uyarılar yüklenemedi"
   satırı (`src/lib/bell-failed.ts` › `belge`).

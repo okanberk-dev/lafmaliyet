@@ -581,6 +581,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     });
   }
 
-  // Sistem başlığında yeni cihazdan girişler ModPOS'tan sonra; vardiya hatırlatması Uyarılar başlığının ilk satırı
-  return [...lost, ...system, ...recipients, ...modpos, ...devices, ...mine, ...recipes, ...holds, ...vardiya, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...staffDocs, ...costs.warnings];
+  // Sistem başlığında yeni cihazdan girişler ModPOS'tan sonra; vardiya hatırlatması Uyarılar başlığının ilk satırı, personel
+  // belgeleri (süresi dolan / yaklaşan) hemen ardından
+  return [...lost, ...system, ...recipients, ...modpos, ...devices, ...mine, ...recipes, ...holds, ...vardiya, ...staffDocs, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
 }

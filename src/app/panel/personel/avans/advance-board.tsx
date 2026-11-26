@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { EmptyState, Stat } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTR, tl } from "@/lib/format";
 import {
@@ -173,7 +174,7 @@ function PersonCard({
             <dd className="font-medium text-ink tabular-nums">{person.net === null ? "Günlük ücretli" : tl(payableThisMonth(person.net, person.extras, deducted), 2)}</dd>
           </div>
         </dl>
-        {warning ? <p className="rounded-xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn-ink">{warning}</p> : null}
+        {warning ? <Notice tone="warn" size="sm" title={warning.title} text={warning.text} /> : null}
         {history.length ? (
           <ul className="divide-y divide-line rounded-2xl bg-surface">
             {history.map((r) => (

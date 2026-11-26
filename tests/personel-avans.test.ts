@@ -75,7 +75,7 @@ test("silme: kesinti her zaman; avans ancak sonraki bakiye hiçbir anda eksiye d
 });
 
 test("kalan bir aylık net maaşı aşarsa uyarı; part-time'da (maaşı yok) uyarı yok", () => {
-  assert.equal(balanceWarning(30001, 30000), "Kalan avans bir aylık net maaşı aşıyor; tek maaştan düşülemez.");
+  assert.deepEqual(balanceWarning(30001, 30000), { title: "Kalan avans bir aylık net maaşı aşıyor", text: "Tek maaştan düşülemez; birkaç aya bölüp düşün." });
   assert.equal(balanceWarning(30000, 30000), null);
   assert.equal(balanceWarning(5000, null), null);
   assert.equal(balanceWarning(5000, 0), null);
