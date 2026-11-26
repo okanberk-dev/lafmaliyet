@@ -99,6 +99,17 @@ function context(c: HTMLCanvasElement): CanvasRenderingContext2D {
   return ctx;
 }
 
+/**
+ * Tuvalin belleği hemen bırakılır: iOS Safari tuvallerin toplam belleğini sınırlar (~384 MB) ve çöp toplayıcıyı
+ * beklemeden dolabilir ("Total canvas memory use exceeds the maximum limit"; birkaç tarama ve uzun fiş yeter)
+ */
+function release(...cs: HTMLCanvasElement[]) {
+  for (const c of cs) {
+    c.width = 0;
+    c.height = 0;
+  }
+}
+
 function toBlob(c: HTMLCanvasElement, quality: number): Promise<Blob> {
   return new Promise((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new PhotoCompressError(COMPRESS_ERROR_TEXT))), "image/jpeg", quality));
 }
@@ -112,6 +123,7 @@ function drawImage(img: RgbaImage, width = img.width, height = img.height): HTML
   const ctx = context(c);
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(full, 0, 0, width, height);
+  release(full);
   return c;
 }
 
@@ -143,7 +155,9 @@ export async function decodePhoto(file: Blob): Promise<DecodedPhoto> {
     const sctx = context(shown);
     sctx.imageSmoothingQuality = "high";
     sctx.drawImage(c, 0, 0, d.width, d.height);
+    release(c);
     const displayUrl = URL.createObjectURL(await toBlob(shown, 0.85));
+    release(shown);
     return { image: { width, height, data }, displayUrl };
   } finally {
     URL.revokeObjectURL(url);
@@ -164,22 +178,37 @@ export async function encodeScan(img: RgbaImage): Promise<Blob> {
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, c.width, c.height);
     ctx.drawImage(drawn, box.x, box.y);
+    release(drawn);
   }
-  let blob = await toBlob(c, SCAN_OUTPUT.quality);
-  for (const q of [0.6, 0.5]) {
-    if (blob.size <= SCAN_OUTPUT.maxBytes) break;
-    blob = await toBlob(c, q);
+  try {
+    let blob = await toBlob(c, SCAN_OUTPUT.quality);
+    for (const q of [0.6, 0.5]) {
+      if (blob.size <= SCAN_OUTPUT.maxBytes) break;
+      blob = await toBlob(c, q);
+    }
+    return blob;
+  } finally {
+    release(c);
   }
-  return blob;
 }
 
 /** Önizleme görüntüsünün nesne adresi (kalite önemsiz, hızlı) */
 export async function previewUrl(img: RgbaImage): Promise<string> {
-  return URL.createObjectURL(await toBlob(drawImage(img), 0.85));
+  const c = drawImage(img);
+  try {
+    return URL.createObjectURL(await toBlob(c, 0.85));
+  } finally {
+    release(c);
+  }
 }
 
 /** Yapay zekâya gidecek kopya: en uzun kenar 1024 px JPEG */
 export async function hintJpeg(img: RgbaImage): Promise<{ blob: Blob; width: number; height: number }> {
   const s = fitWithin(img.width, img.height, HINT_IMAGE.maxEdge);
-  return { blob: await toBlob(drawImage(img, s.width, s.height), HINT_IMAGE.quality), width: s.width, height: s.height };
+  const c = drawImage(img, s.width, s.height);
+  try {
+    return { blob: await toBlob(c, HINT_IMAGE.quality), width: s.width, height: s.height };
+  } finally {
+    release(c);
+  }
 }

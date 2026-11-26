@@ -87,7 +87,22 @@ function videoFrame(video: HTMLVideoElement): Promise<Blob> {
   const ctx = c.getContext("2d");
   if (!ctx) return Promise.reject(new Error("tuval"));
   ctx.drawImage(video, 0, 0, c.width, c.height);
-  return new Promise((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new Error("kodlama"))), "image/jpeg", 0.92));
+  // tuvalin belleği hemen bırakılır (iOS Safari tuvallerin toplam belleğini sınırlar)
+  const release = () => {
+    c.width = 0;
+    c.height = 0;
+  };
+  return new Promise((resolve, reject) =>
+    c.toBlob(
+      (b) => {
+        release();
+        if (b) resolve(b);
+        else reject(new Error("kodlama"));
+      },
+      "image/jpeg",
+      0.92,
+    ),
+  );
 }
 
 /**
@@ -378,6 +393,8 @@ export function LiveCamera({ opts, onDone }: { opts: LiveCameraOptions; onDone: 
       cancelAnimationFrame(raf);
       worker?.terminate();
       stopStream();
+      canvas.width = 0;
+      canvas.height = 0;
     };
     // Açılışta bir kez; `capture` ve `finish` ref'lerle çalışır
     // eslint-disable-next-line react-hooks/exhaustive-deps
