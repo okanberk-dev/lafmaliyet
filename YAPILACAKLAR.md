@@ -13,6 +13,12 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 - **Dalga 1** (#146): kör kasa, fişsiz çıkış, kasa formu taslağı, vardiya çakışması, part-time silme koruması, 09:00 zili, "Tümü" kâr dönemi, şube oranı, zil ve rozetler, büyüme gösterimi, eski Excel kalıntılarının kaldırılması, dışa aktarımın profesyonelleşmesi.
 - **Uyarı satırları yalnız personelde** (#145).
+- **Marina gün sonu e-postası gece kaybolmaz** (dal `claude/peaceful-maxwell-ov7ms7`): 25 Kasım akşamı e-posta gitmedi.
+  Pavo beklemesi (#141) sonraki bir tetiğe kalıyordu ve gece tetik yoktu. Bekleme artık aynı istekte biter
+  (`settlePavoWait`): sonuç gelmezse e-posta ~38 sn'de Pavo'suz gider. LafPOS'un `bankPosPending` alanına uyulur;
+  bekleme ilk gelişten sayılır. Ayrıntı: docs/LAFPOS.md "Pavo'yu bekler". LafPOS tarafı lafpos aynı adlı dalda.
+- **E-postalar ortak tasarımda** (aynı dal): `src/lib/email-kit.ts`. Ferah kart, telefonda tek sütun; bütün e-postalar
+  aynı kabuk ve parçaları kullanır. İçerik, bağlantı ve düz metin aynı kaldı.
 
 ## Yarım kalan: dal `ai/fatura-sube` (main'e GİTMEDİ)
 
@@ -77,6 +83,8 @@ Sürdürürken yapılacaklar:
 
 - [ ] laffogato.net veritabanının (Neon) kotası 24 Kasım'da doldu. Online sipariş, karaoke ve menü eşitlemesi duruyor. Ücretli plana geçin ya da Coolify'a taşıyın.
 - [ ] GitHub'a `CRON_SECRET` ekleyin ve GitHub ödeme sorununu çözün. Kontrol listesi hatırlatmalarının yedek tetikleyicisi bunlar yüzünden çalışmıyor.
+- [ ] Marina gün sonu e-postasının alıcılarına bakın: 25 Kasım'dan (#141) beri yalnız Kasa › Rapor alıcıları alır (sabah
+  e-postasının adresleri artık almaz). Gün sonu e-postasını almak isteyen adres Rapor alıcıları'nda olmalı.
 - [ ] Panelin veritabanı da ücretsiz planda. Ücretli plana geçin. Geçilmeyecekse %70 ve %90 kota uyarısı eklensin.
 - [ ] Vercel'de artık kullanılmayan `PARASUT_USERNAME` ve `PARASUT_PASSWORD` silinsin.
 - [ ] Fotoğraf okuma istemleri canlı modelle denensin (`FOTO_EVAL=1`). 24 Kasım'ın gerçek Z fotoğrafı değerlendirmeye eklensin.
