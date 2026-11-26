@@ -128,8 +128,8 @@ export const AXIS_MIN_ANISOTROPY = 0.12;
  */
 export function textAxis(mask: Uint8Array, w: number, h: number, glyph: number): AxisEstimate {
   if (!(glyph > 0)) return { axis: null, anisotropy: 0, confidence: 0 };
-  // harf boyu ~8 piksel olacak biçimde küçült (alan ortalaması: yoğunluk)
-  const f = Math.max(1, glyph / 8);
+  // harf boyu ~6 piksel olacak biçimde küçült (alan ortalaması: yoğunluk)
+  const f = Math.max(1, glyph / 6);
   const sw = Math.max(8, Math.round(w / f));
   const sh = Math.max(8, Math.round(h / f));
   const src = new Float32Array(w * h);
@@ -177,7 +177,7 @@ export function lineMetrics(mask: Uint8Array, w: number, h: number, axis: TextAx
   if (!(glyph > 0)) return { glyphHeight: 0, linePitch: 0, lines: 0 };
   const along = axis === "yatay" ? w : h; // satır boyunca uzunluk
   const across = axis === "yatay" ? h : w;
-  const stripW = Math.max(24, Math.min(along, Math.round(6 * glyph)));
+  const stripW = Math.max(20, Math.min(along, Math.round(4 * glyph)));
   const strips = Math.max(1, Math.floor(along / stripW));
   const runs: number[] = [];
   const gaps: number[] = [];
@@ -234,22 +234,87 @@ export function lineMetrics(mask: Uint8Array, w: number, h: number, axis: TextAx
   };
 }
 
+/** Harf boyunda bileşenlerin maskesi (leke, çerçeve çizgisi, kâğıt kenarının gölgesi, zemin dokusu ayıklanmış) */
+export interface TextMask {
+  mask: Uint8Array;
+  /** bileşen etiketi → harf mi (1) */
+  ok: Uint8Array;
+  /** maskedeki piksel */
+  count: number;
+  /** harf bileşeni sayısı */
+  glyphs: number;
+  /** yazının kutusu [x0, y0, x1, y1] (yoksa null) ve kutudaki yoğunluk (piksel / alan) */
+  box: [number, number, number, number] | null;
+  density: number;
+}
+
+/**
+ * Yalnız harf ya da birleşmiş sözcük olabilecek bileşenler: kısa kenarı harf boyunun 0,3–2,5 katı, uzun kenarı 12
+ * harften ve görüntünün yarısından kısa, kutusunun en az %8'i dolu (ince uzun çizgi ya da halka değil).
+ */
+export function textMaskOf(c: Components, w: number, h: number, glyph: number): TextMask {
+  const ok = new Uint8Array(c.count + 1);
+  const mask = new Uint8Array(w * h);
+  let x0 = w;
+  let y0 = h;
+  let x1 = -1;
+  let y1 = -1;
+  let glyphs = 0;
+  if (glyph > 0) {
+    for (let l = 1; l <= c.count; l++) {
+      const bw = c.maxX[l] - c.minX[l] + 1;
+      const bh = c.maxY[l] - c.minY[l] + 1;
+      const lo = Math.min(bw, bh);
+      const hi = Math.max(bw, bh);
+      if (c.areas[l] < 4 || lo < 0.3 * glyph || lo > 2.5 * glyph || hi > 0.5 * Math.max(w, h) || hi > 12 * glyph) continue;
+      if (c.areas[l] < 0.08 * bw * bh) continue;
+      ok[l] = 1;
+      glyphs++;
+      x0 = Math.min(x0, c.minX[l]);
+      y0 = Math.min(y0, c.minY[l]);
+      x1 = Math.max(x1, c.maxX[l]);
+      y1 = Math.max(y1, c.maxY[l]);
+    }
+  }
+  let count = 0;
+  const L = c.labels;
+  for (let i = 0; i < w * h; i++) {
+    if (L[i] && ok[L[i]]) {
+      mask[i] = 1;
+      count++;
+    }
+  }
+  const box: TextMask["box"] = x1 >= 0 ? [x0, y0, x1, y1] : null;
+  const density = box ? count / ((x1 - x0 + 1) * (y1 - y0 + 1)) : 0;
+  return { mask, ok, count, glyphs, box, density };
+}
+
 export interface TextLayout {
   ink: InkMap;
   components: Components;
   /** Yönden bağımsız kaba harf boyu (piksel); yazı yoksa 0 */
   glyph: number;
+  /** Harf bileşenlerinin maskesi (yön ve satır ölçüleri bununla: kâğıt kenarı ve zemin karışmaz) */
+  text: TextMask;
   axis: AxisEstimate;
   /** Satır ölçüleri (yön bulunduysa) */
   lines: LineMetrics;
+  /**
+   * Harf yüksekliği (piksel): satır ölçüsü ile bileşen ölçüsünün küçüğü (eğiklik satırı, bulanıklık bileşeni büyütür);
+   * yazı yoksa 0
+   */
+  glyphHeight: number;
 }
 
-/** Gri görüntünün yazı düzeni: mürekkep haritası, bileşenler, harf boyu, satır yönü ve ölçüleri */
+/** Gri görüntünün yazı düzeni: mürekkep haritası, bileşenler, harf boyu, harf maskesi, satır yönü ve ölçüleri */
 export function analyzeText(g: GrayImage): TextLayout {
   const ink = inkMap(g);
   const components = labelComponents(ink.mask, g.width, g.height, true);
   const glyph = glyphSize(components, g.width, g.height);
-  const axis = textAxis(ink.mask, g.width, g.height, glyph);
-  const lines = axis.axis ? lineMetrics(ink.mask, g.width, g.height, axis.axis, glyph) : { glyphHeight: 0, linePitch: 0, lines: 0 };
-  return { ink, components, glyph, axis, lines };
+  const text = textMaskOf(components, g.width, g.height, glyph);
+  const enough = text.glyphs >= 8;
+  const axis = enough ? textAxis(text.mask, g.width, g.height, glyph) : { axis: null, anisotropy: 0, confidence: 0 };
+  const lines = axis.axis ? lineMetrics(text.mask, g.width, g.height, axis.axis, glyph) : { glyphHeight: 0, linePitch: 0, lines: 0 };
+  const glyphHeight = lines.glyphHeight > 0 ? Math.min(lines.glyphHeight, glyph) : axis.axis ? glyph : 0;
+  return { ink, components, glyph, text, axis, lines, glyphHeight };
 }
