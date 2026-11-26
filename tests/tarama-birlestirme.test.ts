@@ -8,11 +8,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { scanDocument } from "../src/lib/scan";
 import { resizeRgba, toGray, type RgbaImage } from "../src/lib/scan/image";
 import { inkMap } from "../src/lib/scan/metin";
 import { findOverlap, probeOverlap, stitchParts, STITCH_MIN_CONFIDENCE } from "../src/lib/scan/stitch";
 import { MAX_PHOTO_EDGE } from "../src/lib/photo-rules";
-import { dilim, fisSatirlari, kagitRgba, yaziCiz, zSatirlari, type Kagit, type SahneAyari } from "./helpers/tarama-yazi";
+import { dikdortgen, dilim, dondur, fisSatirlari, kagitRgba, sahne, yaziCiz, zSatirlari, type Kagit, type SahneAyari } from "./helpers/tarama-yazi";
 
 const Z = yaziCiz(zSatirlari(2, 20), { width: 576, size: 22 });
 /** Aynı şablon, başka tutarlar (başka günün Z'si) */
@@ -180,4 +181,20 @@ test("uzun kenar sınırı: aşan birleşme küçültülür (varsayılan MAX_PHO
   // tek parça ya da çok küçük parça: birleştirilecek bir şey yok
   assert.equal(stitchParts([ust]), null);
   assert.equal(stitchParts([ust, { width: 40, height: 40, data: new Uint8ClampedArray(40 * 40 * 4) }]), null);
+});
+
+test("fotoğraftan: kadraja sığmayan Z iki fotoğrafta çekilir, taranır, birleşir (ters sırayla da)", () => {
+  // kâğıt 0,9 ölçekte; ilk fotoğrafta altı, ikincisinde üstü kadraj dışında; ayrı ışık, eğiklik ve kayma
+  const k = 0.9;
+  const pw = Z.width * k;
+  const ph = Z.height * k;
+  const ust = sahne(Z, { width: 820, height: 1150, corners: dondur(dikdortgen((820 - pw) / 2, 60, pw, ph), 1.5), noise: 3, blur: 0.8, shadow: 0.2, seed: 21 });
+  const alt = sahne(Z, { width: 820, height: 1150, corners: dondur(dikdortgen((820 - pw) / 2 + 12, -760, pw, ph), -1), noise: 3.5, blur: 1, warm: 0.1, light: 0.9, seed: 22 });
+  const s1 = scanDocument(ust).image;
+  const s2 = scanDocument(alt).image;
+  const r = stitchParts([s2, s1]);
+  assert.ok(r, "birleşmeli");
+  assert.deepEqual(r.order, [1, 0]);
+  assert.ok(Math.abs(r.image.height - ph) <= 0.01 * ph, `boy ${r.image.height} / ${ph.toFixed(0)}`);
+  assert.ok(r.confidence >= 0.8, `güven ${r.confidence}`);
 });
