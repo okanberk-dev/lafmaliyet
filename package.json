@@ -32,7 +32,7 @@
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.4",
     "exceljs": "^4.4.0",
-    "fast-xml-parser": "^5.11.1",
+    "fast-xml-parser": "^5.12.1",
     "jose": "^6.2.12",
     "lucide-react": "^1.59.0",
     "motion": "^12.43.0",
@@ -65,6 +65,12 @@
   "overrides": {
     "@vercel/cli-config": {
       "zod": "$zod"
+    },
+    "exceljs": {
+      "uuid": "^11.1.1"
+    },
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.0"
     }
   },
   "engines": {

@@ -534,9 +534,27 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
 - `package.json` › `overrides`: `@vercel/blob`'un zinciri (`@vercel/oidc` 3.x › `@vercel/cli-config` 0.3.1) zod'u
   4.1.11'e sabitliyor; bu sürümde yüksek önemli bir açık var (GHSA-mrhx-c7xc-m3w5, 4.6.6'da kapandı). Zincirdeki zod
   projenin kendi zod'una bağlanır (`"zod": "$zod"`, aynı ana sürüm). `@vercel/blob` `@vercel/oidc` 4.0.6 ya da
-  üstünü kullanmaya başlayınca (`npm ls zod` iç içe zod göstermez) bu satır silinebilir. `npm audit --omit=dev`'de kalan
-  iki açık bilerek bırakıldı: `uuid` (`exceljs` 4.4.0 üzerinden, düzeltmesi exceljs'i 3.4.0'a indirmek) ve
-  `fast-xml-parser` (düşük önem, düzeltmesi 5.12 ara sürümü).
+  üstünü kullanmaya başlayınca (`npm ls zod` iç içe zod göstermez) bu satır silinebilir.
+- **Bağımlılık açıkları (26 Kasım 2026): `npm audit` geliştirme araçları dahil 0 açık.** Önceden bilerek bırakılan
+  ikisi ve Dependabot'un öbür ikisi kapandı:
+  - `overrides` › `exceljs` › `uuid` `^11.1.1`: exceljs 4.4.0 (son kararlı sürüm, 2023; 4.4.1 yalnız ön sürüm) uuid'i
+    `^8.3.0`'a bağlıyor; 11.1.1'den önceki uuid'de orta önemli bir açık var (GHSA-w5hq-g745-h8pq: `buf` verilen
+    v3/v5/v6'da sınır denetimi yok). exceljs yalnız `v4()`'ü `buf`'sız çağırır (genişletilmiş koşullu biçimin kimliği),
+    açık bu yola dokunmaz; yine de düzeltmenin geldiği 11.1.1'e zorlanır (CommonJS'i olan son ana sürüm; 12 ve sonrası
+    yalnız ESM, exceljs `require` eder). `npm audit fix --force`'un önerdiği exceljs 3.4.0'a inmek dışa aktarımı
+    geriletirdi. exceljs uuid'i 11.1.1 ya da üstüne bağlayan bir sürüm çıkarınca satır silinir. Deneme: dışa aktarım
+    testleri (`tests/export-*.test.ts`, `tests/muhasebe-paketi.test.ts`, `tests/eski-veri-adlari.test.ts`).
+  - `overrides` › `@esbuild-kit/core-utils` › `esbuild` `^0.25.0`: drizzle-kit 0.31 kullanmadığı
+    `@esbuild-kit/esm-loader`'a hâlâ bağımlı; onun zinciri esbuild 0.18.20'yi getiriyordu (GHSA-67mh-4wv8-2f99, orta;
+    esbuild'in geliştirme sunucusunda, yalnız geliştirme aracı). Zincir drizzle-kit'in kendi esbuild'ine (0.25.x) bağlanır;
+    drizzle-kit bu paketi hiç yüklemez (`drizzle-kit check` aynı sonucu verir). Bağımlılık drizzle-kit'ten kalkınca satır
+    silinir.
+  - `fast-xml-parser` `^5.12.1` (GHSA-474x-hrwr-fgx4, düşük: kapanmamış durdurma düğümünde ikinci dereceden işlemci
+    tüketimi; 5.12.0'da kapandı; Paraşüt e-faturası ve ModPOS föyü okuması, `tests/ubl.test.ts`, `tests/modpos-*.test.ts`)
+    yükseltildi. Geliştirme araçlarında `typescript-eslint` 8.71.2 → 8.74.0 (içindeki `minimatch` 10.2.6 → 11.0.9;
+    GHSA-g3hv-75wg-m249, orta) yalnız kilit dosyasında yükseltildi (`eslint-config-next`'in aralığı içinde).
+
+  Yeni bir açık bilerek bırakılırsa gerekçesiyle buraya yazılır.
 - Veri yedeği: Neon'un otomatik nokta-zaman geri yüklemesi (point-in-time restore) küçük planlarda yalnız birkaç saat
   ya da gün geriye gider. Uzun süreli yedek: **Ayarlar › Yedek › Yedeği indir** (parolayla) paneldeki bütün veriyi tek
   `.json.gz` dosyasında indirir; ayda bir alınır, 30 günü geçince zil hatırlatır. Sabah işi her pazartesi aynı yedeği
