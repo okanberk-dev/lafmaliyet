@@ -180,9 +180,11 @@ test("günlük iş: hızlı sayım bildirimi yerine ay sonu sayım bildirimi; ad
   assert.deepEqual(countStep({ error: "süre doldu" }), { code: "error", error: "süre doldu" });
 });
 
-test("bildirim: onay anahtarı yok (gönderen kalmadı), canlı yenileme yalnız Onaylar'ı; zil ve Paraşüt teslim kontrolü yapmaz", () => {
+test("bildirim: onay anahtarı taslakla gitti, yeni gönderenle (personelin yeni isteği, 25 Kasım) yalnız yöneticide döndü; canlı yenileme yalnız Onaylar'ı; zil ve Paraşüt teslim kontrolü yapmaz", () => {
   const device = read("src/components/panel/live/device-alerts.tsx");
-  assert.doesNotMatch(device, /title="Onay bildirimleri"|changeTopic\("approvals"/);
+  // Taslak gönderen yok; tek gönderen onay isteğinin bildirimi (src/server/staff-requests/push.ts, tests/onay-bildirimi.test.ts)
+  assert.match(read("src/server/staff-requests/push.ts"), /sendPush\("approvals"/);
+  assert.match(device, /\{role === "admin" \? \(\s+<ToggleRow\s+title="Onay bildirimleri"/);
   assert.equal(refreshesScreen("/panel/onaylar", "approvals"), true);
   assert.equal(refreshesScreen("/panel/hizli-sayim/siparis", "approvals"), false);
   assert.doesNotMatch(code(read("src/server/bell/ops.ts")), /draft|Draft|taslak/);

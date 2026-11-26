@@ -116,6 +116,8 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `ANTHROPIC_API_KEY` | (isteğe bağlı, **yalnız Production**) Fotoğraftan okuma (Claude): kasa raporunda Z raporu, banka POS fişi ve kasadan çıkan fişler. Yoksa fotoğraf yine eklenir, rakamlar elle yazılır; LafPOS gününün gün sonu fotoğrafı (Pavo'nun detaylı Z'si) anahtarsız da kodla (OCR) okunur, öteki fotoğraflar okunmaz. Aynı anahtar Vardiya'daki **Yazarak doldur**u da çalıştırır ([VARDIYA.md](VARDIYA.md) › Yazarak doldurma); yoksa kutular elle doldurulur. Ayrıntı [FOTOGRAF.md](FOTOGRAF.md) |
 | `BLOB_READ_WRITE_TOKEN` | (isteğe bağlı, **yalnız Production**) Fotoğraf deposu: Vercel › Storage › Blob, erişim **Private**, bölge Frankfurt (fra1). Depoyu projeye bağlayınca kendiliğinden eklenir (yeni bağlantı anahtar yerine `BLOB_STORE_ID` verirse o da yeter). Yoksa fotoğraf düğmeleri görünmez ([FOTOGRAF.md](FOTOGRAF.md)) |
 | `PHOTO_DIR` | (yalnız yerel, isteğe bağlı) Fotoğrafların yerel klasörü; yoksa `.data/photos` |
+| `DB_QUOTA_MB` | (isteğe bağlı) Veritabanının kotası, MB: sabah işi boyutu buna göre ölçer, %70 ve %90'da zil ve e-postayla uyarır. Yoksa 512 (Neon ücretsiz planı); plan yükseltilince yeni kotayı yazın (ör. 10 GB için `10240`). [YEDEK.md](YEDEK.md) § 14 |
+| `BACKUP_DIR` | (yalnız yerel, isteğe bağlı) Otomatik haftalık yedeklerin yerel klasörü; yoksa `.data/backups`. Canlıda yedekler fotoğraflarla aynı özel Blob deposunda (`yedek/haftalik/`); depo bağlı değilse otomatik yedek kapalı ([YEDEK.md](YEDEK.md) § 13) |
 | `MCP_DISABLED` | (isteğe bağlı) `1` ise Claude bağlantısı kapalı (bütün uçlar 404, verilmiş anahtarlar çalışmaz). Önizlemelerde zaten kapalı ([CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md)) |
 | `MCP_ALLOW_LOCALHOST` | (isteğe bağlı) `1` ise Claude Code / MCP Inspector'ın localhost dönüş adresine canlıda da izin verilir; varsayılan kapalı |
 | `DATABASE_SSL` | (isteğe bağlı, yalnız acil durumda) `require`: veritabanı sunucusunun sertifikası doğrulanmaz. Varsayılan doğrulamalı bağlantıdır (`verify-full`; Neon'un sertifikası Let's Encrypt'ten, Node tanır): şifreli ama sertifikası denetlenmeyen bağlantıda araya giren biri kendi sertifikasıyla bütün veriyi okuyabilirdi. Canlı derleme önce havuzlu adresi, sonra migration için doğrudan adresi doğrulamalı açar; biri açılmazsa derleme migration'dan önce durur, ne veritabanı ne yayındaki sürüm değişir. Neon sertifikasını değiştirdiği için derleme durursa geçici olarak `require` yazılır |
@@ -238,7 +240,7 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
   (`LEGACY_DEVICE_UNTIL`): o zamana kadar herkes en az bir kez girer (oturum en çok 30 gün) ve kayıt yeni biçimde
   yazılır. Bir IP adresinden 15 dakikada en çok 20 deneme yapılabilir (başarılı giriş sayılmaz).
 - **Çerezler:** üretimde `__Host-laf_session` (oturum, 30 gün), `__Host-laf_2fa` (kod adımı, 10 dakika) ve
-  `__Host-laf_cihaz` (bilinen cihaz, 1 yıl): `__Host-` öneki sayesinde laffogato.net ya da başka bir alt alan adı bu
+  `__Host-laf_cihaz` (bilinen cihaz, 1 yıl; yeni cihaz uyarısı da buna bakar): `__Host-` öneki sayesinde laffogato.net ya da başka bir alt alan adı bu
   çerezleri yerine koyamaz. Önceki sürümün öneksiz çerezleri (`laf_session`…) bir süre okunur, yenisi yazılınca
   silinir; kimsenin oturumu düşmez.
 - **Fatura belgesi yükleme** (`POST /api/faturalar/<id>/belge`) yalnız panelin kendi sayfasından gelen isteği kabul
@@ -269,6 +271,43 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
   bilgisayarında ya da kaybolan telefonda açık kalan oturumları parolayı değiştirmeden kapatır. Hesabım'daki parola
   onayları kişi başına 15 dakikada 5 hatayla sınırlıdır (Kullanıcılar'daki yönetici onaylarıyla aynı pay;
   `src/server/auth/step-up.ts`); hatalar işlem geçmişine yazılır.
+- **Yönetici hesaplarında iki adımlı doğrulama zorunlu** (Dalga 2, 26 Kasım 2026; sahibin isteği "Yönetici
+  hesaplarında iki adımlı doğrulama zorunlu olsun; yeni cihazdan girişte uyarı"). İki adımlısı kapalı yönetici
+  girişten sonra panel yerine **İki adımlı doğrulamayı kurun** ekranına (`/giris/iki-adim`) gider: parola → QR'ı
+  okut, kodu gir → kurtarma kodlarını sakla (indir / kopyala, "kaydettim" işaretlenmeden geçilmez) → **Panele geç**
+  (giriş adresindeki hedefe, Claude bağlantısının onay ekranı dahil). Kurulum Hesabım'dakiyle aynı eylemler ve
+  sınırlardır (15 dakika, 5 hatalı kod; `src/lib/two-factor-setup.ts`); ekranda **Çıkış yap** da vardır. Kurana kadar
+  panelin hiçbir ekranı ve eylemi açılmaz (`requireUser` kurulum ekranına gönderir), veri uçları (canlı veri, dışa
+  aktarma, fotoğraflar, yedek…) ona oturumsuz gibi 401 verir (`getCurrentUser`); yalnız kurulum ekranı ve kurulumun üç
+  eylemi `requireSignedIn`'den geçer (`tests/yonetici-guvenlik.test.ts` tutar). Personelde iki adımlı isteğe bağlı
+  kalır.
+  - **Kilitlenme olmasın:** kurulum hemen, aynı ekranda yapılır (telefona doğrulama uygulaması yeter). Telefonunu
+    kaybeden yönetici kurtarma koduyla girer; kodu da yoksa başka bir yönetici Kullanıcılar › Güvenlik › **İki
+    adımlı doğrulamayı sıfırla** der (kendi parolasıyla): kişi parolasıyla girer, kurulum ekranı açılır, yeni
+    telefonuyla kurar. Hesabım'da kapatmak da serbesttir (telefon değiştirirken), pencere kurulum ekranının açılacağını
+    söyler.
+  - **Acil durum:** başka yönetici de yoksa Vercel'de ortam değişkeni `ADMIN_2FA_OPTIONAL=1` (yeniden yayın gerekir)
+    zorunluluğu kapatır; iki adımlı yeniden isteğe bağlı olur. İki adımlısı **açık** hesabın girişte kod adımı bu
+    değişkenle kalkmaz: o hesabın iki adımlısını sıfırlamak gerekir. İş bitince değişkeni silin. Kural
+    `src/lib/admin-security.ts` (`adminTwoFactorRequired`; yalnız tam `1` kapatır).
+  - Yayından sonra iki adımlısı olmayan yöneticiler ilk sayfa açılışında kurulum ekranına düşer (açık oturumları
+    kapanmaz; kurulum öteki cihazlardaki oturumları, iki adımlıyı açmak gibi, kapatır). Önceden kurulmuş bir Claude
+    bağlantısı salt okunurdur ve kurulumla (oturum sürümü artınca) kapanır; kurulumdan önce yenisi kurulamaz.
+- **Yeni cihazdan giriş uyarısı** (yalnız yönetici hesapları; personel ortak tablette sırayla girer, her biri ilk
+  girişinde uyarı alırdı): bu tarayıcıdan bu hesapla daha önce hiç giriş yapılmadıysa (bilinen cihaz çerezi
+  `__Host-laf_cihaz`; oturum sürümü fark etmez, parola değişince aynı tarayıcı yeniden "yeni" sayılmaz) başarılı
+  girişte (iki adımlı kodla ya da kurtarma koduyla girişte de):
+  - İşlem geçmişine **Yeni cihazdan giriş** yazılır ("Chrome · Windows · IP 85.105.12.x");
+  - kişinin zilinde Sistem başlığında 7 gün "Yeni cihazdan giriş: …" durur, Hesabım › Oturumlar'a götürür;
+  - Resend kuruluysa hesabın kendi adresine **"Hesabınıza yeni bir cihazdan giriş yapıldı"** e-postası gider (ne
+    zaman, hangi tarayıcı, kısaltılmış IP; "Giriş sizinse bir şey yapmanız gerekmez"; değilse parolanızı değiştirin ve
+    diğer cihazlardaki oturumları kapatın; **Oturumlarım** düğmesi). Güvenlik bildirimidir: hatırlatma e-postalarının
+    açık / kapalı ayarına bağlı değildir. Yanıttan sonra gider, girişi bekletmez; hiçbir hatası girişi bozmaz.
+  - Hesabın ilk girişi (davetten sonra) uyarı değildir. Çerezleri silinen, gizli sekmede açılan tarayıcı yeni sayılır.
+  - **KVKK:** saklanan yalnız tarayıcı ve işletim sisteminin adı ile kısaltılmış IP (IPv4'te son hane "x", IPv6'da ilk
+    üç blok "/48"); tam IP ve tarayıcı kimliği (user-agent) hiçbir yere yazılmaz. Kod `src/server/auth/new-device.ts`,
+    e-posta `src/server/auth/new-device-notice.ts`, kurallar `src/lib/admin-security.ts`; testler
+    `tests/yonetici-guvenlik.test.ts` ve `tests/hesap-yetki-db.test.ts`.
 - Kurtarma kodları kişiye özel tuzlu, yavaş bir özetle (scrypt) saklanır; veritabanı sızsa bile kodlar denenerek
   bulunamaz. Önceki biçimde saklanmış kodlar yenilenene kadar çalışır.
 - Doğrulama anahtarı veritabanında `AUTH_SECRET`'tan türetilen anahtarla şifrelidir; `AUTH_SECRET` değişirse iki
@@ -387,7 +426,9 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   `fast-xml-parser` (düşük önem, düzeltmesi 5.12 ara sürümü).
 - Veri yedeği: Neon'un otomatik nokta-zaman geri yüklemesi (point-in-time restore) küçük planlarda yalnız birkaç saat
   ya da gün geriye gider. Uzun süreli yedek: **Ayarlar › Yedek › Yedeği indir** (parolayla) paneldeki bütün veriyi tek
-  `.json.gz` dosyasında indirir; ayda bir alınır, 30 günü geçince zil hatırlatır. Geri yükleme yalnız bilgisayardan:
+  `.json.gz` dosyasında indirir; ayda bir alınır, 30 günü geçince zil hatırlatır. Sabah işi her pazartesi aynı yedeği
+  özel Blob deposuna da yazar, son 8 haftayı saklar (Ayarlar › Yedek'te parolayla iner; [YEDEK.md](YEDEK.md) § 13);
+  veritabanının boyutu her sabah ölçülür, `DB_QUOTA_MB`'nin %70 ve %90'ında uyarılır (§ 14). Geri yükleme yalnız bilgisayardan:
   `npm run db:restore -- <dosya>` (dolu veritabanına `--sil`, önce onun yedeğini alır). Biçim, adımlar, prova ve geri
   yüklemeden sonra olanlar: [YEDEK.md](YEDEK.md). Kasa ve fiş fotoğraflarının dosyaları yedekte yoktur (yalnız
   kayıtları); dosyalar özel Vercel Blob deposunda kalır ([FOTOGRAF.md](FOTOGRAF.md)). Aynı karttaki **Dışa aktar (.xlsx)** okunabilir bir çalışma kitabıdır ([YEDEK.md](YEDEK.md) § 12): panel

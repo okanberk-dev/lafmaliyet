@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, HelpCircle, Menu, QrCode, Settings, UserRound, X } from "lucide-react";
+import { ChevronDown, ExternalLink, HelpCircle, Menu, QrCode, Settings, Store, UserRound, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -18,7 +18,7 @@ import { homeFor } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { logoutAction } from "@/server/actions/auth";
 import { loadPanelNotifications, type PanelNotification } from "@/server/actions/notifications";
-import type { BranchRow, BranchScope } from "@/lib/branches";
+import { topBarBranchLabel, type BranchRow, type BranchScope } from "@/lib/branches";
 import type { SearchEntry } from "@/server/data/search";
 
 import { BottomNav, BottomNavSkeleton } from "./bottom-nav";
@@ -161,6 +161,8 @@ export function Sidebar({ user, index = [], branch, assistant = false }: { user:
   const features = branch ? BRANCH_FEATURE_IDS.filter((f) => featureInScope(f, branch.scope, branch.branches)) : undefined;
   const tree = navTreeFor(user.role, features);
   const title = mobileTitleFor(pathname);
+  // Telefonun üst çubuğunda görülen şube (tek şube açıkken yok)
+  const barBranch = branch ? topBarBranchLabel(branch.scope, branch.branches) : null;
   const allowed = (i: NavItem) => i.roles.includes(user.role) && screenFeatureOn(i.href, features);
   const pages = [...NAV_GROUPS.flatMap((g) => g.items.filter(allowed)), ...NAV_FOOTER.filter(allowed)];
 
@@ -305,7 +307,33 @@ export function Sidebar({ user, index = [], branch, assistant = false }: { user:
         >
           <LafTile className="size-8 rounded-lg" />
         </Link>
-        <p className="min-w-0 flex-1 truncate pl-0.5 text-[15px] leading-5 font-semibold tracking-tight text-foreground">{title}</p>
+        {/* Sayfa başlığı ve altında görülen şube (birden çok şube açıkken; docs/SUBE.md › Telefonda üst çubuk). Seçici
+            çekmecede: şubeye dokununca çekmece açılır; şubesi kilitli personelde yalnız ad */}
+        <div className="flex min-w-0 flex-1 flex-col justify-center pl-0.5">
+          <p className="truncate text-[15px] leading-5 font-semibold tracking-tight text-foreground">{title}</p>
+          {barBranch ? (
+            branch?.locked ? (
+              <p className="flex min-w-0 items-center gap-1 text-xs leading-4 text-ink-mute" data-top-branch>
+                <Store className="size-3 shrink-0" strokeWidth={1.75} aria-hidden />
+                <span className="sr-only">Şube: </span>
+                <span className="truncate">{barBranch}</span>
+              </p>
+            ) : (
+              <button
+                type="button"
+                onClick={openDrawer}
+                data-top-branch
+                className="-my-1 flex min-w-0 cursor-pointer items-center gap-1 self-start rounded-md py-1 text-xs leading-4 text-ink-mute outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-foreground/30"
+                aria-label={`Şube: ${barBranch}. Değiştirmek için menüyü açın`}
+                aria-haspopup="dialog"
+              >
+                <Store className="size-3 shrink-0" strokeWidth={1.75} aria-hidden />
+                <span className="truncate">{barBranch}</span>
+                <ChevronDown className="size-3 shrink-0" strokeWidth={1.75} aria-hidden />
+              </button>
+            )
+          ) : null}
+        </div>
         {isAdmin ? (
           <>
             <SearchTrigger compact onClick={openSearch} />
