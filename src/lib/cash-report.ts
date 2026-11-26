@@ -725,6 +725,11 @@ export interface CashReportExtras {
   photos?: { z: boolean; okc: boolean; pos: boolean } | null;
   /** Net okunmuş ama farklı yazılan alanlar (src/lib/photo-read/kasa.ts suspiciousDiffs) */
   photoDiffs?: PhotoDiff[] | null;
+  /**
+   * Rapora bağlı fotoğraflardan en az biri okundu (yapay zekâ okunuşu var). Fark yoksa yöneticinin e-postası "Z fotoğrafı
+   * okundu, yazılanlarla tutuyor" der (sahibin isteği, 25 Kasım 2026: "z tutsa da tutuyor diye yine rapor şeklinde")
+   */
+  photoRead?: boolean;
   /** Günün kasadan çıkan satırları */
   cashOuts?: (CashOutLine & { photo: boolean })[] | null;
   /**
@@ -801,6 +806,9 @@ export function photoNames(p: CashReportExtras["photos"]): string[] {
   if (!p) return [];
   return [p.z ? "ModPOS Z" : null, p.okc ? "banka POS Z" : null, p.pos ? "banka fişi" : null].filter((n): n is string => n !== null);
 }
+
+/** Fotoğraf okundu ve yazılanlarla tutuyor (yöneticinin e-postası; sahibin isteği, 25 Kasım 2026) */
+export const PHOTO_OK_TEXT = "Z fotoğrafı okundu: yazılan rakamlarla tutuyor";
 
 /** "📷 ModPOS Z ve banka POS Z fotoğrafı panelde" (docs/planlar/okc-z.md §8) */
 export function photosLine(p: CashReportExtras["photos"]): string | null {

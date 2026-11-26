@@ -2,13 +2,16 @@ import "server-only";
 
 import { and, desc, eq, gte, inArray, isNotNull, like, lt, notInArray, notLike, or, sql } from "drizzle-orm";
 
+import { supplierMatchKey } from "@/app/panel/faturalar/rules";
 import { cleanTaxNumber } from "@/app/panel/tedarikciler/logic";
 import { takesCreditOnArrival } from "@/lib/cari/balance";
 import { COMMISSION_CATEGORY, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { LINKABLE_CATEGORIES } from "@/lib/invoice-linking";
 import { appliedKeyOf, firstPriceCertain, holdLogText, livePct, previousInvoicePrice, priceStep, reopenApplied, repeatCount, staleHolds } from "@/lib/price-hold";
 import { packEvidence } from "@/lib/product-match";
-import { parseIgnored, type IgnoredProduct } from "@/lib/product-ignore";
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
+import { newInvoiceBranch, supplierDefaultValue, type InvoiceBranchValue } from "@/lib/invoice-branch";
+import { parseIgnored, parseIgnoredSuppliers, type IgnoredProduct, type IgnoredSupplier } from "@/lib/product-ignore";
 import { addDays, syncedDueDate, todayTR } from "@/lib/reminders";
 import { bulkPrice } from "@/lib/supplier-prices";
 import { logActivity } from "@/server/actions/log";
@@ -17,6 +20,7 @@ import { suspectFactorLine } from "@/server/data/purchase-lots-query";
 import { flagStockOnlyInvoices } from "@/server/data/stock-only-invoices";
 import { applyCreditOnArrival, arrivalLedgerBase, cardResolver, releaseInvoiceLinks, resettleAfterSync, trackedCardResolver, type TrackedCard } from "@/server/cari/settle";
 import { loadPaidOnDelivery, loadPaymentsSince, type PaidOnDelivery } from "@/server/data/suppliers";
+import { invoiceScopeWhere } from "@/server/invoice-scope";
 import { getDb, schema as s } from "@/server/db";
 
 import { PAGE_SIZE, ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "./client";
@@ -65,6 +69,7 @@ import {
   PRICE_KEY,
   PRODUCT_IGNORE_KEY,
   RESUME_KEY,
+  SUPPLIER_IGNORE_KEY,
   RETURNS_KEY,
 } from "./keys";
 
@@ -183,8 +188,10 @@ interface Ctx {
   account: string;
   /** Kalem kimliklerinin ve ürün anahtarlarının hesap öneki (varsayılan hesapta boş; accountNs) */
   ns: string;
-  /** Bu hesaptan yeni açılan faturanın şubesi (ayrı hesap → o şube; ortak hesap → null, işletme geneli) */
+  /** Bu hesaptan yeni açılan faturanın şubesi (ayrı hesap → o şube; ortak hesap → null: tedarikçinin varsayılanı) */
   invoiceBranch: string | null;
+  /** Tedarikçi kartının varsayılan şubesi (Tedarikçiler; yoksa null: şubesi seçilmemiş gelir) */
+  supplierBranch: (supplier: string, taxNumber?: string | null) => InvoiceBranchValue;
   /** Hesabın gördüğü faturalar: kendi hesabındakiler ve Paraşüt'e bağlanmamış elle girilmiş ve içe aktarılmış kayıtlar (invoiceAccountWhere) */
   existing: Existing[];
   rules: Awaited<ReturnType<typeof loadRules>>;
@@ -510,8 +517,8 @@ async function applyDraft(d: BillDraft, ctx: Ctx): Promise<"deferred" | undefine
       .values({
         ...common,
         ...pay,
-        // Ayrı Paraşüt hesabının faturası o şubenin; ortak hesabınki işletme geneli (null)
-        branchId: ctx.invoiceBranch,
+        // Ayrı Paraşüt hesabının faturası o şubenin; yoksa tedarikçinin varsayılanı, o da yoksa şubesi seçilmemiş
+        ...newInvoiceBranch({ accountBranch: ctx.invoiceBranch, supplierDefault: ctx.supplierBranch(supplier, taxRaw) }),
         dueDate: d.dueDate,
         origin: "parasut",
         supplier,
@@ -604,7 +611,7 @@ async function openRun(trigger: "cron" | "manual" | "history", started: number, 
  */
 async function loadCtx(account: string, listed: Iterable<string> = [], client: ParasutClient | null = null): Promise<Ctx> {
   const db = getDb();
-  const [existingRows, rules, ignoredList, dueSeen, ublRows, paidOnDelivery, paymentsSince, trackedCard, cardOf, invoiceBranch] = await Promise.all([
+  const [existingRows, rules, ignoredList, dueSeen, ublRows, paidOnDelivery, paymentsSince, trackedCard, cardOf, invoiceBranch, cardDefaults] = await Promise.all([
     db
       .select({
         id: s.invoices.id,
@@ -643,7 +650,9 @@ async function loadCtx(account: string, listed: Iterable<string> = [], client: P
     trackedCardResolver(),
     cardResolver(db),
     accountInvoiceBranch(account),
+    db.select({ id: s.suppliers.id, defaultBranchId: s.suppliers.defaultBranchId, defaultCompanyWide: s.suppliers.defaultCompanyWide }).from(s.suppliers),
   ]);
+  const defaultOf = new Map(cardDefaults.map((c) => [c.id, supplierDefaultValue(c)]));
   // Kısa adlar kaydı ilk açanın (origin) Paraşüt olmadığı faturalardan öğrenilir. Tedarikçi geçmişine eşitlemenin
   // açıp kontrol edilmiş (onaylanmış, kategorisi değiştirilmiş ya da kurala/geçmişe dayanan) faturaları da katılır;
   // kontrol bekleyen tahminler katılmaz (yanlış bir tahmin kendini çoğaltmasın)
@@ -654,6 +663,10 @@ async function loadCtx(account: string, listed: Iterable<string> = [], client: P
     account,
     ns: accountNs(account),
     invoiceBranch,
+    supplierBranch: (supplier, taxNumber) => {
+      const card = cardOf(supplier, taxNumber);
+      return card === null ? null : (defaultOf.get(card) ?? null);
+    },
     existing: existingRows as Existing[],
     rules,
     history,
@@ -1542,8 +1555,8 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
       eInvoiceId: d.eInvoiceId,
       eInvoiceUuid: d.uuid,
       parasutAccount: ctx.account,
-      // Ayrı Paraşüt hesabının faturası o şubenin; ortak hesabınki işletme geneli (null)
-      branchId: ctx.invoiceBranch,
+      // Ayrı Paraşüt hesabının faturası o şubenin; yoksa tedarikçinin varsayılanı, o da yoksa şubesi seçilmemiş
+      ...newInvoiceBranch({ accountBranch: ctx.invoiceBranch, supplierDefault: ctx.supplierBranch(supplier, d.supplierTaxNo) }),
       syncedAt: now,
       needsReview: categoryNeedsReview(reason) || d.withholding || clash !== null,
       note,
@@ -1842,29 +1855,51 @@ export async function updateIgnoredProducts(change: (list: IgnoredProduct[]) => 
   });
 }
 
+/** "Hep hammadde değil" kuralı açık tedarikçiler (anahtar: supplierMatchKey) */
+export async function ignoredSuppliers(): Promise<IgnoredSupplier[]> {
+  return parseIgnoredSuppliers(await getState(SUPPLIER_IGNORE_KEY));
+}
+
+/** Tedarikçi kuralı listesini kilitleyip değiştirir; önceki listeyi döner */
+export async function updateIgnoredSuppliers(change: (list: IgnoredSupplier[]) => IgnoredSupplier[]): Promise<IgnoredSupplier[]> {
+  return getDb().transaction(async (tx) => {
+    const [row] = await tx.select().from(s.integrationState).where(eq(s.integrationState.key, SUPPLIER_IGNORE_KEY)).for("update").limit(1);
+    const before = parseIgnoredSuppliers(row?.value);
+    const value = change(before);
+    await tx
+      .insert(s.integrationState)
+      .values({ key: SUPPLIER_IGNORE_KEY, value })
+      .onConflictDoUpdate({ target: s.integrationState.key, set: { value, updatedAt: new Date() } });
+    return before;
+  });
+}
+
 /** Hammaddeye bağlanmayı bekleyen ürün sayısı (zil ve ana sayfa için; listeyle aynı süzgeç) */
 export async function countUnlinkedProducts(): Promise<number> {
   const db = getDb();
-  const ignored = (await ignoredProducts()).map((i) => i.productKey);
-  const [row] = await db
-    .select({ n: sql<number>`count(distinct ${s.parasutBillLines.productKey})`.mapWith(Number) })
+  const [ignored, rules] = await Promise.all([ignoredProducts(), ignoredSuppliers()]);
+  const ignoredKeys = ignored.map((i) => i.productKey);
+  const rows = await db
+    .selectDistinct({ productKey: s.parasutBillLines.productKey, supplier: s.invoices.supplier })
     .from(s.parasutBillLines)
     .innerJoin(s.invoices, eq(s.invoices.id, s.parasutBillLines.invoiceId))
     .where(
       and(
         inArray(s.invoices.category, LINKABLE_CATEGORIES),
         notInArray(s.parasutBillLines.productKey, db.select({ k: s.parasutProductLinks.productKey }).from(s.parasutProductLinks)),
-        ignored.length ? notInArray(s.parasutBillLines.productKey, ignored) : undefined,
+        ignoredKeys.length ? notInArray(s.parasutBillLines.productKey, ignoredKeys) : undefined,
       ),
     );
-  return row?.n ?? 0;
+  // Tedarikçi kuralı ("hep hammadde değil"): o tedarikçinin kalemi bekleyen sayılmaz
+  const ruled = new Set(rules.map((r) => r.supplierKey));
+  return new Set(rows.filter((r) => !ruled.has(supplierMatchKey(r.supplier))).map((r) => r.productKey)).size;
 }
 
 /**
  * Ekran için: bağlanmamış Paraşüt ürünleri (en çok geçenler önce); `total` kesilmeden önceki sayı. En yeni kalemin
  * açıklaması ve miktarı paket boyunun kanıtı için (src/lib/product-match.ts packEvidence: "150 AD." 1 adet mi 150 mi)
  */
-export async function unlinkedProducts(limit = 40) {
+export async function unlinkedProducts(limit = 40, scope: BranchScope = ALL_BRANCHES) {
   const db = getDb();
   const [lines, links, ignored] = await Promise.all([
     db
@@ -1880,12 +1915,14 @@ export async function unlinkedProducts(limit = 40) {
       })
       .from(s.parasutBillLines)
       .innerJoin(s.invoices, eq(s.invoices.id, s.parasutBillLines.invoiceId))
-      .where(and(isNotNull(s.parasutBillLines.productKey), inArray(s.invoices.category, LINKABLE_CATEGORIES)))
+      // Tek şube seçiliyken o şubenin ve işletme genelinin faturalarının kalemleri (docs/SUBE.md › Faturanın şubesi)
+      .where(and(isNotNull(s.parasutBillLines.productKey), inArray(s.invoices.category, LINKABLE_CATEGORIES), invoiceScopeWhere(scope)))
       .orderBy(desc(s.invoices.date)),
     db.select({ productKey: s.parasutProductLinks.productKey }).from(s.parasutProductLinks),
     ignoredProducts(),
   ]);
-  // Bağlı ve "hammadde değil" denen ürünler bekleyen sayılmaz
+  // Bağlı ve "hammadde değil" denen ürünler bekleyen sayılmaz; "hep hammadde değil" kuralı açık tedarikçinin kalemi de
+  const ruled = new Set((await ignoredSuppliers()).map((r) => r.supplierKey));
   const linked = new Set([...links.map((l) => l.productKey), ...ignored.map((i) => i.productKey)]);
   const agg = new Map<
     string,
@@ -1893,7 +1930,7 @@ export async function unlinkedProducts(limit = 40) {
   >();
   const unitPrice = (l: (typeof lines)[number]) => (l.quantity > 0 && l.netTotal > 0 ? l.netTotal / l.quantity : 0);
   for (const l of lines) {
-    if (linked.has(l.productKey)) continue;
+    if (linked.has(l.productKey) || ruled.has(supplierMatchKey(l.supplier))) continue;
     const a = agg.get(l.productKey);
     if (a) {
       a.count++;

@@ -5,7 +5,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { sniffMime } from "@/lib/documents";
 import { autoReadAllowed, INVOICE_SYSTEM, invoiceTask, InvoiceReadingRaw, normalizeInvoiceReading, readingFits, type InvoiceReading, type ReadingUnit } from "@/lib/invoice-reading";
 import type { ReadingState } from "@/lib/photo-rules";
-import { AI_INVOICE_MODEL, aiStatus, extractDocument } from "@/server/ai/claude";
+import { AI_INVOICE_MODEL, extractDocument, invoiceAiStatus } from "@/server/ai/claude";
 import { aiErrorText } from "@/server/ai/run";
 import { getDb, schema as s } from "@/server/db";
 import { DocumentError, getInvoiceDocument } from "@/server/documents";
@@ -53,12 +53,12 @@ export type ReadOutcome =
 
 /** Ekranlar için okuma durumu (anahtar, Ayarlar › Fotoğraftan okuma, bugünkü sınır) */
 export async function invoiceReadingState(): Promise<ReadingState> {
-  return (await aiStatus()).state;
+  return (await invoiceAiStatus()).state;
 }
 
 /** Hammaddeler kartı: okuma durumu ve kendiliğinden okumanın bugün yapılıp yapılamayacağı (fotoğraf payı) */
 export async function holdReadingState(): Promise<{ state: ReadingState; auto: boolean }> {
-  const st = await aiStatus();
+  const st = await invoiceAiStatus();
   return { state: st.state, auto: st.state === "on" && autoReadAllowed(st.usedToday, st.cap) };
 }
 
@@ -131,10 +131,10 @@ async function documentFor(invoiceId: number): Promise<{ ok: true; input: Parame
  */
 export async function readInvoiceLine(t: ReadTarget): Promise<ReadOutcome> {
   const started = Date.now();
-  const st = await aiStatus();
+  const st = await invoiceAiStatus();
   if (st.state !== "on") return { status: "error", message: aiErrorText(st.state, st.cap, "fatura"), stored: false };
-  // Kendiliğinden okuma fotoğrafların payına girmez; saklanmaz, düğme yine okur
-  if (t.mode === "auto" && !autoReadAllowed(st.usedToday, st.cap)) return { status: "error", message: "Bugünkü okumaların kalanı fotoğraflara ayrıldı; faturayı düğmeyle okuyun.", stored: false };
+  // Kendiliğinden okuma faturaların günlük havuzunun yarısından fazlasını yemez; saklanmaz, düğme yine okur
+  if (t.mode === "auto" && !autoReadAllowed(st.usedToday, st.cap)) return { status: "error", message: "Bugünkü kendiliğinden okuma payı doldu; faturayı düğmeyle okuyun.", stored: false };
   const c = await claim(t);
   if (c.kind === "busy") return { status: "busy" };
   if (c.kind === "cached") return c.row.status === "ok" && c.row.result ? { status: "ok", reading: c.row.result, cached: true } : { status: "error", message: c.row.error ?? "Fatura okunamadı.", stored: true };

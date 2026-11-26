@@ -151,8 +151,8 @@ export function ConnectionCard({
             title={`Faturalar ${invoiceScope.branchName} şubesinin`}
             description={
               invoiceScope.value === "branch"
-                ? `Bu hesaptan gelen yeni faturalar ${invoiceScope.branchName} şubesine yazılır. Kapalıyken işletme geneli kalır.`
-                : "Bu hesaptan gelen yeni faturalar işletme geneli kalır (şubeye yazılmaz). Var olan faturaların şubesi değişmez."
+                ? `Bu hesaptan gelen yeni faturalar ${invoiceScope.branchName} şubesine yazılır. Kapalıyken tedarikçinin varsayılan şubesini alır (yoksa “Şubesi seçilmemiş”).`
+                : "Bu hesaptan gelen yeni faturalar tedarikçinin varsayılan şubesini alır (yoksa “Şubesi seçilmemiş”). Var olan faturaların şubesi değişmez."
             }
             label={`Faturalar ${invoiceScope.branchName} şubesinin`}
             checked={invoiceScope.value === "branch"}
@@ -161,7 +161,7 @@ export function ConnectionCard({
               startScope(async () => {
                 const r = await setParasutInvoiceScope(v ? "branch" : "shared", account);
                 if (!r.ok) return void toast.error(r.error);
-                toast.success(v ? `Yeni faturalar ${invoiceScope.branchName} şubesinin` : "Yeni faturalar işletme geneli");
+                toast.success(v ? `Yeni faturalar ${invoiceScope.branchName} şubesinin` : "Yeni faturalar tedarikçinin şubesiyle");
               })
             }
           />

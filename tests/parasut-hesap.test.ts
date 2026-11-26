@@ -117,7 +117,7 @@ test("kaynak: eşitleme durumu hesap adıyla; sync.ts'te düz 'parasut.' anahtar
   const sync = read("src/server/parasut/sync.ts");
   assert.doesNotMatch(sync, /["'`]parasut\./, "anahtarlar keys.ts'te; sync.ts yalnız adlarını kullanır");
   // getState/setState: hesap başına anahtar ak(hesap, …) ile; hesapsız yalnız işletme geneli listeler
-  const shared = new Set(["PRICE_KEY", "IGNORE_KEY", "PRODUCT_IGNORE_KEY"]);
+  const shared = new Set(["PRICE_KEY", "IGNORE_KEY", "PRODUCT_IGNORE_KEY", "SUPPLIER_IGNORE_KEY"]);
   let checked = 0;
   for (const m of sync.matchAll(/(?:await getState(?:<[^>]*>)?|getState<[^>]*>|setState)\(([^,)]+)/g)) {
     const arg = m[1].trim();
@@ -133,7 +133,8 @@ test("kaynak: eşitleme durumu hesap adıyla; sync.ts'te düz 'parasut.' anahtar
   // Bir hesabın eşitlemesi yalnız kendi faturalarını görür (kaldırır), yeni faturaya hesabı ve şubesi yazılır
   assert.match(sync, /\.where\(invoiceAccountWhere\(account\)\)/);
   assert.match(sync, /parasutAccount: ctx\.account,/);
-  assert.equal(sync.match(/branchId: ctx\.invoiceBranch,/g)?.length, 2, "gider faturası ve e-fatura");
+  // Şube: ayrı hesabın şubesi, yoksa tedarikçinin varsayılanı (docs/SUBE.md › Faturanın şubesi)
+  assert.equal(sync.match(/newInvoiceBranch\(\{ accountBranch: ctx\.invoiceBranch,/g)?.length, 2, "gider faturası ve e-fatura");
   assert.match(sync, /insert\(s\.parasutSyncRuns\)\.values\(\{ trigger, account \}\)/);
   // Kalemleri okuma ve vergi no tamamlama da istemcinin hesabıyla
   assert.match(read("src/server/parasut/lines.ts"), /pendingWhere\(client\.account\)/);

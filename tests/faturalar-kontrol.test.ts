@@ -33,8 +33,9 @@ test("matchesStatus: kontrol bekleyen ödeme durumundan bağımsız", () => {
 });
 
 test("statusCounts: çip sayaçları", () => {
-  assert.deepEqual(statusCounts(rows), { all: 4, review: 2, unpaid: 2, paid: 2 });
-  assert.deepEqual(statusCounts([]), { all: 0, review: 0, unpaid: 0, paid: 0 });
+  // Şubesi alanı olmayan satır seçilmemiş sayılır (çip yalnız birden çok kasa açıkken çizilir)
+  assert.deepEqual(statusCounts(rows), { all: 4, review: 2, unpaid: 2, paid: 2, unassigned: 4 });
+  assert.deepEqual(statusCounts([]), { all: 0, review: 0, unpaid: 0, paid: 0, unassigned: 0 });
 });
 
 test("confirmToast: tek faturada tedarikçi (parantezli not atılır) ve kategori, çoğunda sayı", () => {
