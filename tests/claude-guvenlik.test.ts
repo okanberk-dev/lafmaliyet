@@ -242,7 +242,8 @@ test("sabah işi: temizlik en çok 3 sn, sonucu yalnız yanıtta (body.mcp); iş
   assert.match(route, /pruneMcp\(getDb\(\), new Date\(\)\)/);
   assert.match(route, /Math\.min\(3_000, tailStepDeadline\(jobStart\) - Date\.now\(\)\)/);
   // Dalga 10: süresi dolan personel isteklerinin sonucu da yanıtta (adımı ayrıca yazılır)
-  assert.match(route, /body: \{ reminders, karaoke: karaoke\.status, menu: menu\.status, sales: sales\.status, photos, mcp, requests \}/);
+  // Mutabakat ekstrelerinin saklama süresi de yalnız yanıtta (docs/MUTABAKAT.md › KVKK ve saklama)
+  assert.match(route, /body: \{ reminders, karaoke: karaoke\.status, menu: menu\.status, sales: sales\.status, photos, mcp, requests, mutabakat \}/);
   const steps = route.slice(route.indexOf("const steps"), route.indexOf("return { body"));
   assert.doesNotMatch(steps, /\bmcp\b/);
   assert.doesNotMatch(read("src/lib/job-health.ts"), /"mcp"/);
