@@ -14,7 +14,7 @@ işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları 
   dün ve geçen haftayla kıyas
 - "Dün en çok ne sattı?", "Bu hafta kaç San Sebastian sattık?" → LafPOS'un gün gün ürün satışı
 - "Bugün kim çalışıyor?" → vardiya
-- "Ne bitmek üzere?" → Marina'nın tahmini stoğu, kritik malzemeler
+- "Ne bitmek üzere?", "Süt kaç gün yeter?" → Marina'nın tahmini stoğu, kritik malzemeler, kaç gün yeteceği
 - "LafPOS bağlantısı çalışıyor mu?", "Ne tükendi?", "Bekleyen ne var?", "Bugün ne yapmam lazım?"
 - "Bu ay nasıl gidiyor?" → ayın cirosu, gideri, kârı, ay sonu tahmini
 - "En çok kime borcumuz var?" → tedarikçilerin kalan borcu, büyükten küçüğe
@@ -200,7 +200,7 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
 | Vardiya | Bir gün kim çalışıyor; bir haftanın planı kişi kişi |
 | Bugün | Bugün ekranının özeti: sıradaki iş, Şimdi, Sonra, Tamamlananlar, Bugün kafede |
 | Bekleyen işler | Zildeki bekleyen işler başlık başlık ve bugünkü hatırlatıcılarınız |
-| Stok tahmini | Marina'nın tahmini stoğu, kritik malzemeler, tek malzemenin ayrıntısı (yaklaşık) |
+| Stok tahmini | Marina'nın tahmini stoğu (LafPOS satışı ve kasadan geçmeyen online sipariş düşülmüş), kritik malzemeler, kaç gün yeteceği, önerilen eşik (öneri; eşiği yönetici ekranda kaydeder), tek malzemenin ayrıntısı (yaklaşık) |
 | İşlem rehberi | Asistanın yapmadığı işlerde (silme, toplu, şifreli, riskli, ayar, güvenlik) ekran ve adımlar |
 
 - **Şube:** araçlar panelde seçili şubeyle okur (üstteki seçici). "Tümü" işletme genelidir. Asistan yanıtında hangi
