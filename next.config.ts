@@ -1,7 +1,16 @@
 import type { NextConfig } from "next";
 
+import { cspEnforced, cspHeaders } from "./src/lib/csp";
+
 /** Panelin tek adresi; Vercel'in proje adresi (lafmaliyet.vercel.app) buraya yönlenir */
 const PANEL_HOST = "ladmin.laffogato.net";
+
+/**
+ * Content-Security-Policy (src/lib/csp.ts; docs/DEPLOY.md › Güvenlik başlıkları): çekirdek (çerçeve, base, form hedefi)
+ * uygulanır, kaynak politikası `CSP_ENFORCE=1` olana dek Report-Only. Derlemede kurulur (değişken değişince yeniden
+ * deploy). Yalnız sayfalara: API yanıtları kendi başlığını taşır (fotoğrafın `sandbox` CSP'si ezilmesin, PDF açılsın)
+ */
+const CSP_HEADERS = cspHeaders({ enforce: cspEnforced(process.env), dev: process.env.NODE_ENV === "development", env: process.env });
 
 const SECURITY_HEADERS = [
   // Arama motorlarına kapalı: dizine ekleme, bağlantı izleme, önbellek, önizleme, görsel yok
@@ -67,6 +76,8 @@ const nextConfig: NextConfig = {
     // Aynı başlık iki kurala uyarsa sonraki geçerli: panelde yalnız Permissions-Policy değişir
     return [
       { source: "/:path*", headers: SECURITY_HEADERS },
+      // Sayfalar (API ve Next'in derlenmiş dosyaları hariç)
+      { source: "/((?!api/|_next/).*)", headers: CSP_HEADERS },
       { source: "/panel/:path*", headers: [PANEL_PERMISSIONS] },
       { source: "/panel", headers: [PANEL_PERMISSIONS] },
     ];
