@@ -11,11 +11,13 @@ import { photoUrl, uploadErrorText, type PhotoKind } from "@/lib/photo-rules";
 import { isScanKind, MAX_SCAN_PARTS, ORIGINAL_COMPRESS, scanPartsKind, type ScanInfo } from "@/lib/photo-scan";
 import { cn } from "@/lib/utils";
 
+import { refreshLiveCamera, shootPhoto } from "./camera-shot";
 import type { ScanChoice, ScannedPart } from "./scan-editor";
 
 /*
- * Fotoğraf ekleme (kasa raporu, kasadan çıkan fiş): telefonda "Fotoğraf çek" arka kamerayı açar (<input capture>:
- * getUserMedia değil, panelin camera=() kuralı değişmez), "Galeriden seç" galeriyi. Belge türlerinde (Z, yazarkasa Z,
+ * Fotoğraf ekleme (kasa raporu, kasadan çıkan fiş): telefonda "Fotoğraf çek" panelin canlı vizörünü açar (kâğıdın
+ * kenarları canlı, sabit tutulunca kendiliğinden çeker; camera-shot.ts, live-camera.tsx); izin verilmezse ya da tarayıcı
+ * desteklemezse telefonun kendi kamerası (<input capture>). "Galeriden seç" galeriyi. Belge türlerinde (Z, yazarkasa Z,
  * fiş; kontrol listesi değil) önce tarama ekranı açılır (scan-editor.tsx; docs/FOTOGRAF.md › Belge tarama): taranmış
  * hâl okunan ve gösterilen dosya olur, asıl fotoğraf küçültülüp yanında saklanır. Fotoğraf telefonda JPEG'e
  * küçültülür (en çok 2576 px / ~3,7 MP; EXIF ve konum düşer), POST /api/foto ile yüklenir ve aynı istekte okunur.
@@ -170,9 +172,16 @@ export function PhotoPicker({ onPick, read, disabled, className }: { onPick: (fi
     e.target.value = "";
     if (file) onPick(file);
   };
+  // İzin sonradan verildiyse canlı vizör yeniden denenir
+  useEffect(() => refreshLiveCamera(), []);
+  // Canlı vizör (çekilen dosya döner) ya da telefonun kamerası (dosya alanın change olayıyla gelir)
+  const shoot = async () => {
+    const file = await shootPhoto(cameraRef.current);
+    if (file) onPick(file);
+  };
   return (
     <div className={cn("flex flex-wrap gap-2", className)}>
-      <Button variant="secondary" disabled={disabled} onClick={() => cameraRef.current?.click()} className="flex-1 text-ink pointer-fine:hidden max-sm:min-h-12">
+      <Button variant="secondary" disabled={disabled} onClick={() => void shoot()} className="flex-1 text-ink pointer-fine:hidden max-sm:min-h-12">
         <Camera size={16} aria-hidden="true" /> {read ? "Fotoğraf çek" : "Fotoğraf ekle"}
       </Button>
       <Button variant="secondary" disabled={disabled} onClick={() => galleryRef.current?.click()} className="flex-1 text-ink max-sm:min-h-12">

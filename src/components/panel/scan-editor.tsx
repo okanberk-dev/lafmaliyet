@@ -13,6 +13,7 @@ import { cornersFromHint, cornersToHint, estimateSize, fullFrame, orderCorners, 
 import type { DocNoun, QualityIssue } from "@/lib/scan/quality";
 import { cn } from "@/lib/utils";
 
+import { shootPhoto } from "./camera-shot";
 import { decodePhoto, encodeScan, hintJpeg, previewUrl, ScanClient } from "./scan/client";
 
 /*
@@ -24,8 +25,9 @@ import { decodePhoto, encodeScan, hintJpeg, previewUrl, ScanClient } from "./sca
  * taranmış görüntüyü, "Taramadan kullan" fotoğrafı olduğu gibi yükletir; kapatmak yüklemeyi bırakır.
  *
  * Çekim sorunu (bulanık, parlama, karanlık, kesik, küçük yazı) tek satır uyarıyla "Yeniden çek" önerir: kamera ekranın
- * içinden açılır, yeni fotoğraf aynı ekranda taranır ("Kullan" yine serbest). Uzun fişte "Devamını çek": o anki parça
- * açılıp saklanır, sonraki parça çekilir (en çok `parts.max`); "Kullan" parçaları kodla hizalayıp tek uzun görüntüde
+ * içinden açılır (canlı vizör, live-camera.tsx; olmazsa telefonun kamerası), yeni fotoğraf aynı ekranda taranır
+ * ("Kullan" yine serbest). Uzun fişte "Devamını çek": o anki parça açılıp saklanır, sonraki parça canlı vizörle
+ * çekilir (en çok `parts.max`); "Kullan" parçaları kodla hizalayıp tek uzun görüntüde
  * birleştirir (src/lib/scan/stitch.ts). Emin değilse parçalar ayrı fotoğraf olarak döner (çağıran alabiliyorsa).
  */
 
@@ -443,10 +445,18 @@ export function ScanEditor({
     setSrc(next);
   }
 
-  /** Kamerayı ekranın içinden açar (dokunuşun kendisinde; tarayıcı başka türlü açtırmaz) */
-  function openCamera(why: "again" | "next") {
+  /**
+   * Kamerayı ekranın içinden açar (dokunuşun kendisinde; tarayıcı başka türlü açtırmaz): canlı vizör çekilen dosyayı
+   * döndürür, telefonun kamerası ise dosya alanının change olayıyla getirir
+   */
+  async function openCamera(why: "again" | "next") {
     cameraFor.current = why;
-    cameraRef.current?.click();
+    const opts =
+      why === "next"
+        ? { title: `${partCount + 2}. parça`, note: "Önceki parçanın son birkaç satırı da görünsün" }
+        : { title: "Yeniden çek" };
+    const file = await shootPhoto(cameraRef.current, opts);
+    if (file) await onShot(file);
   }
 
   /** O anki köşelerle tarama bilgisi */
@@ -457,7 +467,12 @@ export function ScanEditor({
   async function onCamera(e: ChangeEvent<HTMLInputElement>) {
     const next = e.target.files?.[0];
     e.target.value = "";
-    if (!next || finishing) return;
+    if (next) await onShot(next);
+  }
+
+  /** Yeni çekilen fotoğraf: aynı parça yeniden ya da uzun fişin sonraki parçası */
+  async function onShot(next: Blob) {
+    if (finishing) return;
     if (cameraFor.current === "again") return startPhoto(next);
     // Sonraki parça: o anki parça (köşeleri, dönüşü) motorda açılıp saklanır, sonra yeni fotoğraf
     const client = clientRef.current;
@@ -698,7 +713,7 @@ export function ScanEditor({
           {issues.length && !error ? (
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
               <Notice tone={issues[0].severity === "ciddi" ? "bad" : "warn"} size="line" live="polite" title={issues[0].text} className="min-w-0 flex-1 text-[13px]" />
-              <Button size="xs" variant="secondary" onClick={() => openCamera("again")} disabled={busy} className="shrink-0 text-ink">
+              <Button size="xs" variant="secondary" onClick={() => void openCamera("again")} disabled={busy} className="shrink-0 text-ink">
                 <Camera size={13} aria-hidden="true" /> Yeniden çek
               </Button>
             </div>
@@ -709,7 +724,7 @@ export function ScanEditor({
             </p>
           ) : null}
         </div>
-        {/* Yeniden çek ve Devamını çek: arka kamera (dokunmatikte), masaüstünde dosya seçimi */}
+        {/* Yeniden çek ve Devamını çek: canlı vizör ya da arka kamera (dokunmatikte), masaüstünde dosya seçimi */}
         <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void onCamera(e)} />
         <Button size="icon" variant="ghost" onClick={() => finish(null)} disabled={finishing} aria-label="Kapat (fotoğraf eklenmez)" className="-mr-1">
           <X size={18} aria-hidden="true" />
@@ -761,7 +776,7 @@ export function ScanEditor({
       <footer className="flex flex-wrap gap-2 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:justify-end sm:px-5 sm:pb-4">
         {canContinue ? (
           // Uzun fiş kareye sığmadı: alt kısmı ayrıca çekilir, "Kullan" birleştirir
-          <Button variant="secondary" onClick={() => openCamera("next")} disabled={!valid || busy} className="text-ink max-sm:min-h-12 max-sm:basis-full sm:mr-auto">
+          <Button variant="secondary" onClick={() => void openCamera("next")} disabled={!valid || busy} className="text-ink max-sm:min-h-12 max-sm:basis-full sm:mr-auto">
             <ScrollText size={16} aria-hidden="true" /> Devamını çek
           </Button>
         ) : null}
