@@ -2,6 +2,7 @@ import { Users } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { MonthPicker, MonthPickerSkeleton } from "@/components/panel/month-picker";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
@@ -84,6 +85,7 @@ async function LaborContent({ searchParams }: { searchParams: PageProps<"/panel/
       <p className="-mt-2 mb-4 text-xs text-pretty text-ink-mute" role="note">
         Yöntem: {LABOR_METHOD}
       </p>
+      <CompanyWideNotice screen="raporlar" className="mb-4" />
       {data.missing.length ? (
         <Notice
           tone="warn"

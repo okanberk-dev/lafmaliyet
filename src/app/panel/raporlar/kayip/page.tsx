@@ -2,6 +2,7 @@ import { ShieldAlert } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { MonthPicker, MonthPickerSkeleton } from "@/components/panel/month-picker";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -90,6 +91,7 @@ async function LossContent({ searchParams }: { searchParams: PageProps<"/panel/r
       <p className="-mt-2 mb-4 text-xs text-pretty text-ink-mute" role="note">
         {dateTR(data.from)} – {dateTR(data.to)} · {data.branches.map((b) => b.name).join(", ")}
       </p>
+      <CompanyWideNotice screen="raporlar" className="mb-4" />
       <Notice tone="neutral" size="sm" className="mb-6" title="LafPOS'tan gelmeyenler: kişiye yazılamaz">
         LafPOS şunları göndermiyor: {NOT_FROM_LAFPOS.join("; ")}. ModPOS (föy ve kasa raporu) iptal göndermez. Bu yüzden iptal, ikram ve indirim aşağıda kişinin
         çalıştığı günlerle karşılaştırılır; kasa farkı ve panelde girilen zayi / ikram doğrudan kişinindir.

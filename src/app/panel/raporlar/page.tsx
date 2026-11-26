@@ -2,6 +2,7 @@ import { Store } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
 import { MonthPicker, MonthPickerSkeleton } from "@/components/panel/month-picker";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, InfoTip, PageSkeleton } from "@/components/ui/misc";
@@ -75,6 +76,7 @@ async function BranchCompareContent({ searchParams }: { searchParams: PageProps<
   return (
     <>
       <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} />
+      <CompanyWideNotice screen="raporlar" className="mb-4" />
       {data.branches.length < 2 ? (
         <Notice tone="neutral" size="sm" className="mb-4" title="Tek şube açık">
           Karşılaştırma birden çok şube açıkken anlamlıdır; tek şubenin ayları yine aşağıda.
