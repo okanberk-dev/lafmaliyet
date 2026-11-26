@@ -73,6 +73,9 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
   `src/server/data/waste-requests.ts` › `wasteCardsFor`).
 - Canlı uçta (`/api/canli`) karaoke, uygulama siparişi ve masa çağrısı yalnız şubesinde açıksa gelir (seçici çerezi yok
   sayılır); karaoke tutarı gitmez.
+- Kasa e-postasının neden gitmediği (Resend anahtarı, alıcı listesi) yalnız yöneticinin: müdür "admin" DTO'sunu alsa
+  da günün formunda, ayın penceresinde ve Onaylar'da onayladığı düzeltmenin yanıtında sabit metni görür ("E-posta
+  gitmedi; yöneticiye haber verin…"; `src/lib/staff-errors.ts` › `emailErrorFor`, okuyanın gerçek rolüyle).
 
 **Görür ve yapar:** personelin her ekranı; kasa raporlarının rakamları ve geçmişi, onaysız düzeltme ve silme, kilitli
 ya da eski güne yazma, kafe kapalı günü işaretleme; kasadan çıkanı ve zayi / ikramı doğrudan; Onaylar (şubesinin
@@ -100,7 +103,8 @@ düğmeleri gizli.
   ona karaoke oturumu, silme isteği, uygulama siparişi ve masa çağrısı vermez (saha ekranları kapalı, `canOpen`; hiçbir
   şube seçiminde); panel asistanı yok.
 - Kişi verisi: kişi başı maaş (Maaşlar, bordro dökümü), avanslar ve personel belgeleri yok; gelir-gider ve vergide
-  personel giderleri toplam olarak durur. Kasa raporunda kasadan çıkan satırları kategorileriyle görür (muhasebe kaydı).
+  personel giderleri toplam olarak durur. Kasa raporunda kasadan çıkan satırları kategorileriyle görür (muhasebe kaydı);
+  e-postanın neden gitmediğini görmez, sabit metni görür (ham hata yalnız yöneticinin; `emailErrorFor`).
 - Tam dışa aktarım (`/api/export`) ve yedek yöneticinin; muhasebecinin dışa aktarımı aylık **muhasebeci paketi**
   (`/api/muhasebe/paket`, [MUHASEBE-PAKETI.md](MUHASEBE-PAKETI.md)).
 

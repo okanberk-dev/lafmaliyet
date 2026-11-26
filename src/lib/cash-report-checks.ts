@@ -5,6 +5,7 @@ import { modposDiffText, type ModposDiff } from "./modpos/compare";
 import { okcHasFigures, okcReconcile } from "./okc-z";
 import { photoDiffText, type PhotoDiff } from "./photo-read/kasa";
 import { dayMonthTR } from "./reminders";
+import { emailFailedLine } from "./staff-errors";
 
 /**
  * Yöneticinin kasa raporu penceresinin "Kontrol" listesi (sahibin kararı, 4 Kasım 2026: sade, profesyonel, gereksiz
@@ -37,7 +38,8 @@ export function reportChecks(i: {
   const f = withCardExtra(i.report, i.cardExtra, i.offDevice, kasa);
   const c = computeCash(f);
   const out: ReportCheck[] = [];
-  if (i.emailError) out.push({ key: "email", tone: "bad", text: `E-posta gitmedi: ${i.emailError}` });
+  // Müdürün ve muhasebecinin sabit metni zaten tam cümle: "E-posta gitmedi:" yinelenmez (emailFailedLine; bulgu 9)
+  if (i.emailError) out.push({ key: "email", tone: "bad", text: emailFailedLine(i.emailError) });
   if (Math.abs(c.paymentsDiff) >= CASH_TOLERANCE) {
     out.push({
       key: "payments",

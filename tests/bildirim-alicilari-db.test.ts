@@ -222,7 +222,10 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     // Formdaki satır "E-posta gitmedi: " ile başlar (emailFailedLine): metin onu yinelemez, iç içe parantez yok
     assert.equal(none.error, "Alıcıların hepsi personel, müdür ya da pasif hesaba ait: veli@laffogato.net (personel hesabı), eski@laffogato.net (pasif hesap). Kasa › Rapor alıcıları'na yöneticinin ya da muhasebecinin adresini yazın.");
     assert.equal(sent.length, 0);
-    assert.equal((await reports.getCashReport(date, "admin"))?.emailError, none.error);
+    assert.equal((await reports.getCashReport(date, "admin", undefined, "admin"))?.emailError, none.error);
+    // Rakamları gören müdür "admin" DTO'sunu alsa da sabit metni; rol verilmezse de sabit metin (bulgu 9)
+    assert.equal((await reports.getCashReport(date, "admin", undefined, "manager"))?.emailError, STAFF_EMAIL_ERROR);
+    assert.equal((await reports.getCashReport(date, "admin"))?.emailError, STAFF_EMAIL_ERROR);
     assert.equal((await reports.getCashReport(date, "staff"))?.emailError, STAFF_EMAIL_ERROR);
     assert.equal((await reports.cashReportsBetween(date, date))[0].emailError, STAFF_EMAIL_ERROR, "personelin son 7 günü de");
     // E-posta kapalı: "kapalı" kalır
@@ -255,7 +258,7 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     const adminAgain = await cashActions.resendCashReportEmail(res.data.id);
     assert.ok(adminAgain.ok);
     assert.match(adminAgain.ok ? (adminAgain.data.error ?? "") : "", /RESEND_API_KEY/);
-    assert.match((await reports.getCashReport(day, "admin"))?.emailError ?? "", /RESEND_API_KEY/);
+    assert.match((await reports.getCashReport(day, "admin", undefined, "admin"))?.emailError ?? "", /RESEND_API_KEY/);
   });
 
   test("kasa alıcıları kaydedilirken personel ve pasif hesabın adresi reddedilir; deneme e-postası düşenleri söyler", async () => {

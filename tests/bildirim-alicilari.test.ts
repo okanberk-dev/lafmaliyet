@@ -301,6 +301,9 @@ test("kasa e-postası: personel nedenini (Resend anahtarı, alıcılar) görmez;
   const raw = "E-posta kurulmamış (RESEND_API_KEY); rapor kaydedildi, WhatsApp ile gönderebilirsiniz.";
   assert.equal(emailErrorFor("admin", raw), raw);
   assert.equal(emailErrorFor("staff", raw), STAFF_EMAIL_ERROR);
+  // Rakamları gören müdür ve muhasebeci de nedeni görmez (bulgu 9): ham metin yalnız yöneticiye
+  assert.equal(emailErrorFor("manager", raw), STAFF_EMAIL_ERROR);
+  assert.equal(emailErrorFor("accountant", raw), STAFF_EMAIL_ERROR);
   assert.equal(emailErrorFor("staff", null), null);
   assert.doesNotMatch(STAFF_EMAIL_ERROR, SETUP_DETAIL);
   assert.equal(emailFailedLine(STAFF_EMAIL_ERROR), STAFF_EMAIL_ERROR, "personelin satırı tekrar etmez");
@@ -310,7 +313,8 @@ test("kasa e-postası: personel nedenini (Resend anahtarı, alıcılar) görmez;
   assert.match(fnBody(actions, "submitCashReport"), /email: outcomeFor\(me\.role, email\),/);
   assert.match(fnBody(actions, "resendCashReportEmail"), /return outcomeFor\(me\.role, email\);/);
   assert.match(actions, /^const outcomeFor = /m, "dışa açılmaz");
-  // Kayıtlı raporun DTO'su: personelinki sabit metin (sayfa, son 7 gün)
-  assert.match(read("src/server/data/cash-reports.ts"), /emailError: emailErrorFor\(audience, r\.emailError\),/);
+  // Kayıtlı raporun DTO'su: DTO'nun düzeyine değil okuyanın gerçek rolüne bakar, rol verilmezse sabit metin (bulgu 9;
+  // davranışı tests/roller-db.test.ts ve tests/bildirim-alicilari-db.test.ts)
+  assert.match(read("src/server/data/cash-reports.ts"), /emailError: emailErrorFor\(viewer \?\? "staff", r\.emailError\),/);
   assert.match(read("src/app/panel/kasa/cash-form.tsx"), /text: emailFailedLine\(error\)/);
 });

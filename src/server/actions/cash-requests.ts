@@ -10,6 +10,7 @@ import { MAX_REPORT_PHOTOS } from "@/lib/photo-rules";
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
 import { asActor, opsLevel } from "@/lib/roles";
+import { emailErrorFor } from "@/lib/staff-errors";
 import { requireCan } from "@/server/auth/dal";
 import { reviewBranchRefusal } from "@/server/staff-requests/branch";
 import { formTillBranch, withBranchScope } from "@/server/branch-scope";
@@ -207,6 +208,8 @@ export async function reviewCashRequest(input: z.input<typeof reviewSchema>) {
       await logActivity(me, "Kasa düzeltmesi kapatıldı", `${out.request.title} (${who} önerdi) · rapor zaten bu hâlde`);
     }
     refresh();
-    return { status: out.status, revision, next, nextBroken, email, skippedPhotos: out.status === "approved" && out.kind === "kasa-gec" ? out.skippedPhotos : 0 };
+    // E-postanın neden gitmediği (Resend anahtarı, alıcı listesi) yalnız yöneticiye; onaylayan müdür sabit metni alır (bulgu 9)
+    const emailOut = email && { ...email, error: emailErrorFor(me.role, email.error) };
+    return { status: out.status, revision, next, nextBroken, email: emailOut, skippedPhotos: out.status === "approved" && out.kind === "kasa-gec" ? out.skippedPhotos : 0 };
   });
 }

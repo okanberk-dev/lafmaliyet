@@ -359,8 +359,9 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const mailTo = showForm ? await cashMailTo(settings) : 0;
   const storage = photoStorage();
   const [report, carry, recent, waste, ai, outs, categories, next, counters, prevOkc, lafposRead, lafposBranch] = await Promise.all([
-    // Sunucu sütunları (yazarkasa kümülatifi, yazarkasa dışı tahsilat) yalnız yöneticinin DTO'sunda
-    showForm ? getCashReport(date, audience) : Promise.resolve(null),
+    // Sunucu sütunları (yazarkasa kümülatifi, yazarkasa dışı tahsilat) yalnız yöneticinin DTO'sunda; e-postanın ham hatası
+    // yalnız gerçek yöneticiye (müdür ve muhasebeci sabit metni alır; bulgu 9)
+    showForm ? getCashReport(date, audience, undefined, user.role) : Promise.resolve(null),
     showForm ? previousCarryOver(date) : Promise.resolve(null),
     // Kör kasa (bulgu 0): LafPOS günlerinin sayımı personelin listesine gelmez
     admin ? Promise.resolve([]) : cashReportsBetween(addDays(today, -6), today).then((r) => blindForStaff(r, "staff")),
@@ -712,7 +713,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const month = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) && ay <= today.slice(0, 7) ? ay : today.slice(0, 7);
   const monthEnd = addDays(`${shiftMonth(month, 1)}-01`, -1);
   const [monthReports, monthOuts, before, after, firstEver, entry, monthOkc, okcFirst, okcBefore, lafposOf, monthLafpos] = await Promise.all([
-    cashReportsBetween(`${month}-01`, monthEnd, "admin"),
+    // Pencereye giden DTO'lar: e-postanın ham hatası yalnız gerçek yöneticiye (bulgu 9)
+    cashReportsBetween(`${month}-01`, monthEnd, "admin", user.role),
     cashOutsBetween(`${month}-01`, monthEnd),
     // Açılış ↔ devir zinciri: ayın ilk raporu önceki ayın son raporuyla, son raporu sonraki ayın ilkiyle karşılaştırılır
     previousCarryOver(`${month}-01`),
@@ -775,7 +777,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
       tillMonths([...monthReports, ...monthLafpos, ...monthModpos], addDays(today, -1), firstRow, undefined, undefined, firstEver ?? undefined, firstModpos, opened, undefined, lafposBranchOf(branchList))[0],
     ),
   );
-  const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today, "admin"));
+  const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today, "admin", undefined, user.role));
   // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları
   const [infos, photoBadges] = await Promise.all([cashReportPhotoInfo(monthReports, "admin"), lafposPhotoBadges(getDb(), monthReports.map((r) => r.id)).catch(() => new Map())]);
   // Sunucuda kalır (extrasFrom): tarayıcıya giden pencere satırı sheetCashOutsByDate'ten (kategori adı gitmez)

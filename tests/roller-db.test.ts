@@ -15,14 +15,16 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { after, before, beforeEach, describe, test } from "node:test";
 
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import { BRANCH_COOKIE, BRANCH_EMAIL_TAKEN, DEFAULT_BRANCHES } from "../src/lib/branches";
+import type { CashReportFields } from "../src/lib/cash-report";
 import type { LiveResponse } from "../src/lib/live";
-import { todayTR } from "../src/lib/reminders";
-import { READ_ONLY_TEXT } from "../src/lib/roles";
+import { addDays, todayTR } from "../src/lib/reminders";
+import { cashAudience, READ_ONLY_TEXT } from "../src/lib/roles";
+import { STAFF_EMAIL_ERROR } from "../src/lib/staff-errors";
 import * as s from "../src/server/db/schema";
 import { allActionGates } from "./helpers/action-gates";
 
@@ -541,6 +543,114 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
         );
       } finally {
         await restoreFeatures();
+      }
+    });
+  });
+
+  describe("kasa e-postasının ham hatası yalnız yöneticide (bulgu 9)", () => {
+    test("müdür ve muhasebeci rakamları görse de nedeni (Resend anahtarı) görmez: sayfanın DTO'su, ay penceresi, Onaylar ve yeniden dene", async () => {
+      const { businessDate } = await import("../src/lib/cash-report");
+      const reports = await import("../src/server/data/cash-reports");
+      const store = await import("../src/server/cash/report-store");
+      const email = await import("../src/server/cash/report-email");
+      const cashRequests = await import("../src/server/cash/requests");
+      const reviewActions = await import("../src/server/actions/cash-requests");
+      const reportActions = await import("../src/server/actions/cash-report");
+      // Dünün raporu: personelin kasa düzeltmesi onaya gider (iş günü kapandı, sayılan değişiyor)
+      const date = addDays(businessDate(), -1);
+      const fields: CashReportFields & { discounts: number | null } = {
+        date,
+        zNo: null,
+        receipts: null,
+        zTotal: 10_000,
+        cash: 3_000,
+        card: 7_000,
+        mealCard: 0,
+        online: 0,
+        other: 0,
+        openingCash: 500,
+        cashIn: 0,
+        cashOut: 0,
+        cashOutNote: null,
+        countedCash: 3_500,
+        handedOver: 2_400,
+        bankPos: null,
+        offRevenue: null,
+        note: "deneme",
+        discounts: null,
+      };
+      const ACTIONS = ["Kasa düzeltmesi onaylandı"];
+      // Tuzla'nın rapor alıcıları testten önceki hâline döner
+      const settingWhere = and(eq(s.branchSettings.branchId, "tuzla"), eq(s.branchSettings.grp, "kasa.rapor"));
+      const savedSetting = await db.select().from(s.branchSettings).where(settingWhere);
+      let reportId = 0;
+      let requestId = 0;
+      try {
+        await signIn("ali");
+        const raw = await scope.withBranchScope("tuzla", async () => {
+          await reports.saveCashSettings({ recipients: ["muhasebe@ornek.com"], emailEnabled: true, whatsapp: null }, "tuzla");
+          const saved = await store.saveCashReport(db, { id: ids.ali, name: "Ali", role: "admin" }, { ...fields, countedBy: null, revision: 0, photos: [] });
+          assert.equal(saved.kind, "saved");
+          reportId = saved.kind === "saved" ? saved.row.id : 0;
+          // RESEND_API_KEY yok (before): e-posta gitmedi, nedeni kayıtlı satırda
+          const out = await email.emailReport(reportId);
+          assert.equal(out.status, "failed");
+          assert.match(out.error ?? "", /RESEND_API_KEY/);
+          return out.error!;
+        });
+
+        // Yükleyiciler: rakamları gören rol "admin" DTO'sunu alır ama ham metni yalnız gerçek yönetici
+        for (const k of ["mehmet", "zeynep"] as const) {
+          await signIn(k);
+          const role = BASE[k].role;
+          assert.equal(cashAudience(role), "admin", `${role} rakamları görür`);
+          await scope.withBranchScope("tuzla", async () => {
+            const day = await reports.getCashReport(date, cashAudience(role), "tuzla", role);
+            assert.equal(day?.emailError, STAFF_EMAIL_ERROR, `${role}: günün formu`);
+            const month = await reports.cashReportsBetween(date, date, "admin", role);
+            assert.deepEqual(month.map((r) => r.emailError), [STAFF_EMAIL_ERROR], `${role}: ayın penceresi`);
+            assert.doesNotMatch(JSON.stringify([day, month]), /RESEND|Resend/, `${role}: tarayıcıya giden DTO'da ayrıntı yok`);
+          });
+        }
+        await signIn("ali");
+        await scope.withBranchScope("tuzla", async () => {
+          assert.equal((await reports.getCashReport(date, "admin", "tuzla"))?.emailError, STAFF_EMAIL_ERROR, "rol verilmezse sabit metin");
+          assert.equal((await reports.cashReportsBetween(date, date, "admin"))[0].emailError, STAFF_EMAIL_ERROR);
+          assert.equal((await reports.getCashReport(date, "admin", "tuzla", "admin"))?.emailError, raw, "yönetici nedeni görür");
+          assert.equal((await reports.cashReportsBetween(date, date, "admin", "admin"))[0].emailError, raw);
+        });
+
+        // Onaylar: müdür şubesinin kasa düzeltmesini onaylar, rapor yeniden e-postalanır; yanıtta neden yok
+        const proposal = await scope.withBranchScope("tuzla", () =>
+          cashRequests.proposeCashCorrection(
+            db,
+            { id: ids.ayse, name: "Ayşe", role: "staff" },
+            { date, baseRevision: 1, fields: { ...fields, countedCash: 3_400 }, countedBy: null, message: "Sayımı yanlış yazmışım", clientKey: null },
+          ),
+        );
+        requestId = proposal.row.id;
+        await signIn("mehmet");
+        asAction();
+        const res = await reviewActions.reviewCashRequest({ id: requestId, seenVersion: proposal.row.version, seenRevision: 1, decision: "approve", note: null });
+        assert.ok(res.ok, res.ok ? "" : res.error);
+        assert.equal(res.data.status, "approved");
+        assert.deepEqual(res.data.email, { status: "failed", error: STAFF_EMAIL_ERROR, to: 0 });
+        assert.doesNotMatch(JSON.stringify(res), /RESEND|Resend/);
+        // Yeniden dene: müdüre yine sabit metin, yöneticiye ayrıntı
+        const again = await reportActions.resendCashReportEmail(reportId);
+        assert.ok(again.ok, again.ok ? "" : again.error);
+        assert.equal(again.data.error, STAFF_EMAIL_ERROR);
+        await signIn("ali");
+        asAction();
+        const adminAgain = await reportActions.resendCashReportEmail(reportId);
+        assert.ok(adminAgain.ok, adminAgain.ok ? "" : adminAgain.error);
+        assert.match(adminAgain.data.error ?? "", /RESEND_API_KEY/);
+      } finally {
+        if (requestId) await db.delete(s.staffRequests).where(eq(s.staffRequests.id, requestId));
+        if (reportId) await db.delete(s.cashReports).where(eq(s.cashReports.id, reportId));
+        await db.delete(s.activityLog).where(inArray(s.activityLog.action, ACTIONS));
+        await db.delete(s.branchSettings).where(settingWhere);
+        if (savedSetting.length) await db.insert(s.branchSettings).values(savedSetting);
       }
     });
   });

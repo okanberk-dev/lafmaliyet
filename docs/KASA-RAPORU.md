@@ -634,7 +634,8 @@ değiştirmek doğrudan kaydedilir.
 - **Personel e-postanın neden gitmediğini görmez** (denetim E-64): Resend anahtarı ya da alıcı listesi yöneticinin
   işidir. Gönderimde, "Yeniden dene"de ve kayıtlı raporun satırında personel "E-posta gitmedi; yöneticiye haber verin.
   Raporu WhatsApp ile gönderebilirsiniz." görür (`src/lib/staff-errors.ts`; personelin DTO'sunda da bu metin);
-  yönetici ayrıntıyı.
+  yönetici ayrıntıyı. Kural okuyanın gerçek rolüne bakar, DTO'nun düzeyine değil: rakamları gören müdür ve muhasebeci
+  de (günün formu, ayın penceresi, müdürün Onaylar'daki kararının yanıtı) sabit metni görür ([ROLLER.md](ROLLER.md)).
 
 Dosyalar: `src/lib/cash-requests.ts` (yük, birleştirme, metinler), `src/server/cash/report-store.ts` (yazım yolu,
 kapı), `src/server/cash/requests.ts` (istek ve karar), `src/server/actions/cash-requests.ts` (uçlar),

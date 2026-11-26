@@ -15,6 +15,7 @@ import {
   type CashRevisionData,
   type CashRevisionRow,
 } from "@/lib/cash-report";
+import type { Role } from "@/lib/constants";
 import { posZSchema } from "@/lib/lafpos/day";
 import { blindReport, staffBlindDay } from "@/lib/lafpos/kor-kasa";
 import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
@@ -136,8 +137,11 @@ type Row = typeof s.cashReports.$inferSelect;
 /** Kim okuyor: yönetici sunucu sütunlarını da alır (kümülatif, yazarkasa dışı tahsilat), personel almaz */
 export type CashAudience = "admin" | "staff";
 
-/** Raporun DTO'su; sunucu sütunları yalnız `"admin"` ile (varsayılan personelinki: anahtar yok) */
-export function toCashDTO(r: Row, audience: CashAudience = "staff"): CashReportDTO {
+/**
+ * Raporun DTO'su; sunucu sütunları yalnız `"admin"` ile (varsayılan personelinki: anahtar yok). `viewer` okuyanın gerçek
+ * rolü: e-postanın ham hatası yalnız ona göre (verilmezse sabit metin)
+ */
+export function toCashDTO(r: Row, audience: CashAudience = "staff", viewer?: Role): CashReportDTO {
   const dto: CashReportDTO = {
     id: r.id,
     branchId: r.branchId,
@@ -178,8 +182,9 @@ export function toCashDTO(r: Row, audience: CashAudience = "staff"): CashReportD
     countedBy: r.countedBy,
     countedByName: r.countedByName,
     emailStatus: r.emailStatus,
-    // E-postanın neden gitmediği (Resend anahtarı, alıcı listesi) yalnız yöneticiye; personele sabit metin (E-64)
-    emailError: emailErrorFor(audience, r.emailError),
+    // E-postanın neden gitmediği (Resend anahtarı, alıcı listesi) yalnız gerçek yöneticiye; personele sabit metin (E-64).
+    // Rakamları gören müdür ve muhasebeci "admin" DTO'sunu alsa da sabit metni görür (bulgu 9): düzey değil gerçek rol
+    emailError: emailErrorFor(viewer ?? "staff", r.emailError),
     emailedAt: r.emailedAt?.toISOString() ?? null,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
@@ -200,21 +205,24 @@ export async function blindForStaff(reports: CashReportDTO[], role: CashAudience
   return reports.map((r) => (staffBlindDay({ admin: false, branchId: r.branchId, lafposDay: isLafposDay(r.date, switchDay), lafposBranch: branch }) ? blindReport(r) : r));
 }
 
-/** Günün raporu: tek kasanın (verilen şube; yoksa seçili şube, "Tümü"nde raporun yazılacağı şube) */
-export async function getCashReport(date: string, audience: CashAudience = "staff", branchId?: string): Promise<CashReportDTO | null> {
+/**
+ * Günün raporu: tek kasanın (verilen şube; yoksa seçili şube, "Tümü"nde raporun yazılacağı şube). `viewer`: okuyanın
+ * gerçek rolü (e-postanın ham hatası yalnız yöneticiye; toCashDTO)
+ */
+export async function getCashReport(date: string, audience: CashAudience = "staff", branchId?: string, viewer?: Role): Promise<CashReportDTO | null> {
   const [row] = await getDb().select().from(s.cashReports).where(and(eq(s.cashReports.date, date), await kasaSubesi(branchId))).limit(1);
-  return row ? toCashDTO(row, audience) : null;
+  return row ? toCashDTO(row, audience, viewer) : null;
 }
 
-/** [from, to] (ikisi de dahil) günlerinin raporları, en yeni önce */
-export async function cashReportsBetween(from: string, to: string, audience: CashAudience = "staff"): Promise<CashReportDTO[]> {
+/** [from, to] (ikisi de dahil) günlerinin raporları, en yeni önce. `viewer` getCashReport'taki gibi */
+export async function cashReportsBetween(from: string, to: string, audience: CashAudience = "staff", viewer?: Role): Promise<CashReportDTO[]> {
   const rows = await getDb()
     .select()
     .from(s.cashReports)
     .where(andWhere(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to)), await subeKosulu()))
     .orderBy(desc(s.cashReports.date))
     .limit(400);
-  return rows.map((r) => toCashDTO(r, audience));
+  return rows.map((r) => toCashDTO(r, audience, viewer));
 }
 
 /**

@@ -180,7 +180,8 @@ test("yazarkasa Z'si: kasa sayfası personele önceki Z'den yalnız gün ve numa
   assert.match(page, /prevOkcZ=\{prevOkc\.z\}/g);
   assert.equal([...page.matchAll(/prevOkcZ=\{([^}]*)\}/g)].filter((m) => m[1] !== "prevOkc.z").length, 0);
   assert.match(page, /\{\.\.\.\(admin && report \? \{ okcAdmin: okcAdminView\(/);
-  assert.match(page, /getCashReport\(date, audience\)/);
+  // Düzey (sunucu sütunları) ve okuyanın gerçek rolü (e-postanın ham hatası yalnız yöneticiye; bulgu 9)
+  assert.match(page, /getCashReport\(date, audience, undefined, user\.role\)/);
   // DTO: sunucu sütunları yalnız "admin" ile
   const dto = read("src/server/data/cash-reports.ts");
   assert.match(dto, /if \(audience === "admin"\) return \{ \.\.\.dto, okcCumTotal: r\.okcCumTotal, okcCumVat: r\.okcCumVat, okcOutside: r\.okcOutside \};/);
