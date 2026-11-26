@@ -48,9 +48,13 @@ export interface StockEstimateData {
   estimate: StockEstimate;
 }
 
-/** Marina'nın tahmini stoğu; geçiş günü yoksa null */
-export async function loadStockEstimate(db: DB = getDb(), now: Date = new Date()): Promise<StockEstimateData | null> {
-  const today = businessDate(now);
+/**
+ * Marina'nın tahmini stoğu; geçiş günü yoksa null. `asOf` (YYYY-MM-DD) verilirse tahmin o günün sonundaki stoktur: o
+ * ayın sayımı başlangıç sayılmaz (yalnız önceki ayların), dönem o güne kadar. Kaçak raporu (docs/RAPORLAR.md) ayın son
+ * günüyle okur ve ayın sayımıyla karşılaştırır
+ */
+export async function loadStockEstimate(db: DB = getDb(), now: Date = new Date(), asOf?: string): Promise<StockEstimateData | null> {
+  const today = asOf ?? businessDate(now);
   const [settingRows, ingredients, products, recipeRows, counts, thresholds] = await Promise.all([
     db.select({ key: s.settings.key, value: s.settings.value }).from(s.settings),
     db
