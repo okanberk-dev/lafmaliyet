@@ -12,7 +12,7 @@ Paraşüt güvenliği ve CSP, tarayıcı çekirdeği), #160 (belge tarayıcı: e
 fatura, satış ve kişi adları taşıyor; git geçmişinde de duruyor. GitHub › okanberk-dev/lafmaliyet › Settings › General ›
 Danger Zone › Change visibility › **Private**. Sonra: sohbete ya da depoya hiç düşmüş anahtar varsa (denetim D-06:
 sohbete yapıştırılmış Anthropic anahtarı) iptal edilip yenisi verilsin. Gizli yapmak geçmişte kopyalanmış olanı geri
-almaz; kişi adlarının anonimleştirilmesi (aşağıda P2) yine yapılmalı.
+almaz; güncel ağaçtaki kişi adları P2'de uydurma adlarla değiştirildi (geçmişte gerçekleri duruyor).
 
 ## Çalışma kuralları (sahibin)
 
@@ -53,12 +53,7 @@ yönetici ekranı bağlantısı; ROLLER.md'deki göç numarası. Düzeltmelerden
 (sahip: Ayarlar › Yedek ya da Neon'da dal/anlık kopya). Yeni roller kimseye kendiliğinden verilmez; CHECK kısıtları
 canlıdaki admin/staff verisiyle uyumlu.
 
-### P2. Excel'den tam bağımsızlık (dal `wip/excel-bagimsiz`, büyük kısmı yapıldı)
-Yapılanlar: başlangıç verisi `tests/fixtures/baslangic/`'e taşındı (f81de5d2); canlıda boş veritabanına kendiliğinden
-yüklenmiyor (98f5ed2f); Excel çıkarma betiği kalktı (27990e7f). Kalanlar: (a) exceljs / uuid, fast-xml-parser,
-minimatch, esbuild açıkları (Dependabot 4) `overrides` ya da yükseltmeyle; (b) **kişi adlarını anonimleştir** (rakamlar
-kalsın: hesap motorunun altın testleri rakamlara bağlı, adlara değil); (c) docs/DEPLOY.md ve README'yi yeni davranışa
-göre güncelle; (d) dalın kalan ARA KAYIT'ı varsa bitir. Hedefli testler, PR, birleştir.
+### P2. Excel'den tam bağımsızlık — BİTTİ (#164 ve bu PR)
 
 ### P3. Hata izleme ve kayıt (yüksek)
 Canlıda hata yalnız Vercel günlüğüne (Hobby'de 1 saat) düşüyor. `src/instrumentation.ts`'e `onRequestError` kancası;

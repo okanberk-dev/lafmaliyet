@@ -223,7 +223,8 @@ drizzle/               SQL migration'ları
 
 `tests/golden.json`, ilk kurulumdaki eski tablonun kendi hesapladığı değerlerden bir kez üretildi; girdisi başlangıç
 verisidir (`tests/fixtures/baslangic/veri.json`). İkisi de donmuştur: kaynak tablo ve çıkarma betiği depoda yok (betik
-26 Kasım 2026'da kaldırıldı), değerleri elle değiştirilmez. `npm test` şunları karşılaştırır: 129 ürün
+26 Kasım 2026'da kaldırıldı), rakamları elle değiştirilmez. Başlangıç verisindeki kişi adları aynı gün uydurma adlarla
+değiştirildi; karşılaştırmalar adlara değil rakamlara bağlı. `npm test` şunları karşılaştırır: 129 ürün
 kartının maliyet, kâr, marj, önerilen fiyat ve durumu; 125 satış satırının maliyeti ve brüt kârı; Panel'deki Eylül
 kâr/zararı, başabaş ve kategori ortalamaları; Temmuz–Ekim gelir-gider tablosu; personel ve sabit gider toplamları;
 tutarlılık kontrolündeki kullanım ve fark tutarları. Hepsi o değerlerle aynıdır.
