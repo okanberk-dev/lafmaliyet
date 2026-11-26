@@ -19,6 +19,9 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   bekleme ilk gelişten sayılır. Ayrıntı: docs/LAFPOS.md "Pavo'yu bekler". LafPOS tarafı lafpos aynı adlı dalda.
 - **E-postalar ortak tasarımda** (aynı dal): `src/lib/email-kit.ts`. Ferah kart, telefonda tek sütun; bütün e-postalar
   aynı kabuk ve parçaları kullanır. İçerik, bağlantı ve düz metin aynı kaldı.
+- **Gün sonu zinciri sağlamlaştı** (dal `wt/lm-takip`, 26 Kasım): sabah işi işi bekleyen günleri önce ve yeniden eskiye
+  işler (dünkü gün ilk; süre yetmezse adım hata); LafPOS'un reddedilen günü yöneticinin zilinde ("Marina gün sonu
+  alınamadı: …", gün ve neden başına bir kez). Ayrıntı: docs/LAFPOS.md "Sabah işinin sırası", "Zil".
 
 ## Yarım kalan: dal `ai/fatura-sube` (main'e GİTMEDİ)
 
