@@ -40,7 +40,7 @@ import { paidQuartersOf, taxViewInputFromModel, type TaxInputs, zMonthOf } from 
 import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
 import { buildTaxView, taxPlanFeed } from "../src/lib/tax/view";
 import type { VatPaidEntry } from "../src/lib/vat-paid";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -241,8 +241,8 @@ test("Ödendi kaydından geçici vergi dönemleri: tutar ilk dönemin, KDV kayı
   assert.deepEqual(zMonthOf({ byRate: [{ base: 100.004 }, { base: 50 }], days: 3, complete: true }), { base: 150, days: 3, complete: true });
 });
 
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const model = createModel(ds);
 const inputs = (over: Partial<TaxInputs> = {}): TaxInputs => ({
   settings: DEFAULT_TAX_SETTINGS,

@@ -14,14 +14,14 @@ import { buildWorkbook, cellWidth, GUIDE_SHEET, HEADER_ARGB, REPORT_TITLE, TOTAL
 import { createModel } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
 import { dateTimeTR } from "../src/lib/format";
-import { excelToDataset, investmentSeed, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, investmentSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
 const NOW = new Date("2026-10-20T10:00:00Z");
 
 function dataset(): Dataset {
-  const ds = excelToDataset(data);
+  const ds = datasetFromSeed(data);
   ds.currentMonth = "2026-10";
   return ds;
 }

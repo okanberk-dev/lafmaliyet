@@ -30,13 +30,13 @@ import {
   yearTrend,
 } from "../src/lib/calc/insights";
 import type { Dataset, PnlEntry } from "../src/lib/calc/types";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
 const golden = JSON.parse(readFileSync(join(root, "tests/golden.json"), "utf8"));
 // Excel bütün satışa tek KDV oranı uyguluyordu (karaoke dahil %10): Excel'le karşılaştırma onun varsayımıyla (calc.test.ts)
-const seed = excelToDataset(data);
+const seed = datasetFromSeed(data);
 const ds = { ...seed, settings: { ...seed.settings, kdvHizmet: seed.settings.kdv } };
 const model = createModel(ds);
 

@@ -18,12 +18,12 @@ import { priceLoss } from "../src/lib/calc/price-loss";
 import type { Dataset } from "../src/lib/calc/types";
 import { siteGross, siteRevenue, siteVat } from "../src/lib/site-sales/calc";
 import type { SiteSalesLine, SiteSalesMonth } from "../src/lib/site-sales/schema";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 
 function close(actual: number | null | undefined, expected: number, label: string, eps = 1e-6) {
   assert.ok(actual !== null && actual !== undefined && Math.abs(actual - expected) < eps, `${label}: beklenen ${expected}, bulunan ${actual}`);

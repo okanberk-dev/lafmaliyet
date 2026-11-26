@@ -9,11 +9,11 @@ import { test } from "node:test";
 
 import { COGS_METHOD_LABELS, createModel, uncountedCogsSummary, uncountedCogsText } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const excel: Dataset = excelToDataset(data);
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const excel: Dataset = datasetFromSeed(data);
 const esp = excel.ingredients.find((i) => i.name === "Espresso çekirdeği")!;
 const close = (a: number, b: number, msg: string, eps = 0.01) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} ≠ ${b}`);
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);

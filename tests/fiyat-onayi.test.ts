@@ -41,7 +41,7 @@ import {
   unitPriceFor,
   vsCurrentText,
 } from "../src/lib/price-hold";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 test("priceStep: ilk fiyat çarpanı kesinse yazılır, %0,5'ten küçük fark yazılmaz, %40'tan büyük fark onaya düşer", () => {
   // İlk fiyat (şimdiki fiyat yok): çarpan faturanın ölçü biriminden geliyorsa yazılır, addan ya da elle geldiyse onaya
@@ -249,8 +249,8 @@ test("previousInvoicePrice: hammaddenin bütün bağlı ürünlerinde önceki en
   assert.equal(previousInvoicePrice(lines, links, 2, { invoiceId: 6, date: "2026-10-20" }), null);
 });
 
-const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
-const ds: Dataset = excelToDataset(data);
+const data: SeedData = JSON.parse(readFileSync(join(__dirname, "..", "tests/fixtures/baslangic/veri.json"), "utf8"));
+const ds: Dataset = datasetFromSeed(data);
 const milk = ds.ingredients.find((i) => i.name === "Süt %2,5")!;
 
 test("holdImpact: sütü kullanan etkin ürünler, en çok değişen önce; düşüşte maliyet düşer", () => {

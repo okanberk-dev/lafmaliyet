@@ -31,11 +31,11 @@ import { monthNumbers, numberChanges, oldRuleDataset, taxNumbers } from "../src/
 import { notIngredientOf, type IgnoredProduct, type IgnoredSupplier } from "../src/lib/product-ignore";
 import { bridge, taxMonths, taxPnlInputFromModel } from "../src/lib/tax/pnl";
 import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const excel = excelToDataset(data);
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const excel = datasetFromSeed(data);
 const sarf: ExpenseCategory = { id: 90, name: "Temizlik & sarf malzemesi", section: "genel", panelGroup: "diger", invoiceCategory: SUPPLIES_CATEGORY, monthly: false, active: true, sortOrder: 90 };
 
 // ---------------------------------------------------------------- Örnek veri (yükleyicinin kuralıyla kalemler)

@@ -23,7 +23,7 @@ import { emptyMonth, revenueDocumented } from "../src/lib/tax/pnl";
 import { TAX_DOC_LABELS } from "../src/lib/tax/rules";
 import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
 import { buildTaxView } from "../src/lib/tax/view";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -90,8 +90,8 @@ test("istemci dosyaları: yalnız vergi eylemlerini çağırır, sunucu yükleyi
 
 // ---------------------------------------------------------------- Vergiye göre tablosu ve sınıflandırma
 
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const model = createModel(ds);
 const TODAY = "2026-10-28";
 const inputs: TaxInputs = { settings: DEFAULT_TAX_SETTINGS, filings: [], adjustments: [], assets: [], zMonths: new Map(), invoicedCashOuts: new Set(), vatPaid: [] };

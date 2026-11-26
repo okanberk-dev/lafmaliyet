@@ -12,12 +12,12 @@ import { coverageSplit, coverageText, layerText, lineAmount, liveTotals, type Co
 import { countFactor, createModel, type Model } from "../src/lib/calc/engine";
 import { buildLots, closingLayers, layersValue, lotPool, valuationFor, type PurchaseLot } from "../src/lib/calc/fifo";
 import type { Dataset, Ingredient } from "../src/lib/calc/types";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
 const golden = JSON.parse(readFileSync(join(root, "tests/golden.json"), "utf8"));
-const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 
 function close(actual: number | null | undefined, expected: number, label: string, tol = 1e-9) {
   assert.ok(actual !== null && actual !== undefined, `${label}: değer yok`);

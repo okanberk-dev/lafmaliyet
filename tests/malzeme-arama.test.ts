@@ -12,7 +12,7 @@ import { test } from "node:test";
 import { catOrder } from "../src/app/panel/hammaddeler/categories";
 import { searchIngredients, type SearchIngredient } from "../src/lib/ingredient-search";
 
-const seed = JSON.parse(readFileSync(join(__dirname, "../src/server/db/seed/excel-data.json"), "utf8")) as { ingredients: { name: string; category: string }[] };
+const seed = JSON.parse(readFileSync(join(__dirname, "../tests/fixtures/baslangic/veri.json"), "utf8")) as { ingredients: { name: string; category: string }[] };
 
 /** useRecipeKit'in gruplaması: kategoriler sabit sırayla, malzemeler adına göre */
 function groupLikeKit(list: SearchIngredient[]) {

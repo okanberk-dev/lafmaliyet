@@ -1,9 +1,9 @@
 // Veritabanı testlerini gerçek bir Postgres'te koşar: `npm run test:db` (CI: .github/workflows/ci.yml › veritabani).
 //
 // `npm test` bu testleri atlar: her biri kendi `*_TEST_DATABASE_URL` değişkenini ister (LAFPOS_, MODPOS_, CARI_, …). Bu
-// betik o değişkenlerin hepsini tek adrese (`TEST_DATABASE_URL`) bağlar, o veritabanını canlıdaki gibi hazırlar
-// (migration'lar, boşsa Excel verisi ve şubeler) ve değişkeni okuyan her test dosyasını TEK TEK, SIRAYLA çalıştırır: bir
-// kısmı aynı veritabanını paylaşır (yan yana koşarlarsa birbirinin satırını görür), bir kısmı aynı sunucuda kendi geçici
+// betik o değişkenlerin hepsini tek adrese (`TEST_DATABASE_URL`) bağlar, o veritabanını hazırlar (migration'lar, boşsa
+// başlangıç verisi ve şubeler) ve değişkeni okuyan her test dosyasını TEK TEK, SIRAYLA çalıştırır: bir kısmı aynı
+// veritabanını paylaşır (yan yana koşarlarsa birbirinin satırını görür), bir kısmı aynı sunucuda kendi geçici
 // veritabanını açıp siler.
 //
 // Dosya başına süre sınırı vardır. Sebebi bilinen bir tuzak (21 Kasım 2026, tests/lafpos-db.test.ts): tsx altında
@@ -121,9 +121,10 @@ async function main(): Promise<number> {
   delete process.env.DATABASE_URL_UNPOOLED;
   delete process.env.POSTGRES_URL;
   process.env.DATABASE_URL = url;
-  // Paylaşılan veritabanı canlıdaki gibi hazırlanır (scripts/predeploy.ts): migration'lar uygulanır, boşsa Excel verisi
-  // ve şube kütüğü yüklenir. Bir kısım test "dolu" veritabanı ister (sayım kalemleri migration'ı boş veritabanında
-  // hiçbir şey eklemez); kendi geçici veritabanını açan testler onu kendileri kurar
+  // Paylaşılan veritabanı hazırlanır: migration'lar uygulanır, boşsa başlangıç verisi (tests/fixtures/baslangic) ve
+  // şube kütüğü yüklenir (canlı derlemenin aksine her zaman: runSeed'e emptySkip verilmez). Bir kısım test "dolu"
+  // veritabanı ister (sayım kalemleri migration'ı boş veritabanında hiçbir şey eklemez); kendi geçici veritabanını açan
+  // testler onu kendileri kurar
   const { runMigrations } = await import("./migrate");
   await runMigrations();
   const { runSeed } = await import("./seed");

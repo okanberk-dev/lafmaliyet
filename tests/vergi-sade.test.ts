@@ -19,7 +19,7 @@ import { overdueTaxNotice, overdueTaxReminders, taxReminderKind } from "../src/l
 import { managementBadge, type TaxPnlInput, taxPnlInputFromModel } from "../src/lib/tax/pnl";
 import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
 import { buildTaxView, laterOnCard, NOTE_VAT_NONE, profitTaxTitle, type TaxCalendarRow, type TaxView } from "../src/lib/tax/view";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -139,8 +139,8 @@ test("overdueTaxNotice: tek ödemede başlık adıyla, çoğunda sayıyla; en ç
 
 // ---------------------------------------------------------------- view.ts'in eklemeli alanları (§7.5)
 
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-const excel = excelToDataset(data);
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+const excel = datasetFromSeed(data);
 const base: Dataset = { ...excel, currentMonth: "2026-10", invoices: excel.invoices.map((i) => (i.supplier === "Beyza Karaman" ? { ...i, vat: 6000 } : i)) };
 
 function view(today: string, reminders: ReminderRow[] = [], tweak?: (pnl: TaxPnlInput) => TaxPnlInput): TaxView {

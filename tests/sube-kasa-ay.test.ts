@@ -15,7 +15,7 @@ import { createModel, prorationDays } from "../src/lib/calc/engine";
 import { ALL_BRANCHES, DEFAULT_BRANCHES, monthTotalsLocked, type BranchRow } from "../src/lib/branches";
 import { kasaMonthLine, manualOf, resolveBranchMonths, resolveMonths, tillMonths, tillOpenedOn, type MonthEntry, type TillRow } from "../src/lib/cash-month";
 import { addDays } from "../src/lib/reminders";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const row = (date: string, branchId: string, o: Partial<TillRow> = {}): TillRow => ({
   date,
@@ -220,8 +220,8 @@ test("oran ayın gününü aşmaz; biten ay ayın sonuna kadar oranlanır (KP-X1
 });
 
 test("motor: biten ay ayın sonuna kadar oranlanır; ayın 1'inde 00:00-05:00 arası kira ve maaş bir gün eksik kalmaz (HM-10)", () => {
-  const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
-  const base = excelToDataset(data);
+  const data: SeedData = JSON.parse(readFileSync(join(__dirname, "..", "tests/fixtures/baslangic/veri.json"), "utf8"));
+  const base = datasetFromSeed(data);
   // 1 Aralık 01:00: iş günü daha 30 Kasım, kasa raporları 29 Kasım'a kadar (dün); takvim ayı Aralık
   const [nov] = resolveMonths([], tillMonths(span("2026-11-01", "2026-11-29").map((d) => row(d, "tuzla")), "2026-11-29"));
   assert.equal(nov.kasa?.till.to, "2026-11-29");
@@ -234,8 +234,8 @@ test("motor: biten ay ayın sonuna kadar oranlanır; ayın 1'inde 00:00-05:00 ar
 });
 
 test("motor: Tümü'de iki şubenin günü personeli ve oranlanan sabit gideri katlamaz (oran 1; KP-X1)", () => {
-  const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
-  const base = excelToDataset(data);
+  const data: SeedData = JSON.parse(readFileSync(join(__dirname, "..", "tests/fixtures/baslangic/veri.json"), "utf8"));
+  const base = datasetFromSeed(data);
   const [all] = tumu(
     span("2026-11-01", "2026-11-30").flatMap((d) => [row(d, "tuzla"), row(d, "marina")]),
     "2026-11-30",

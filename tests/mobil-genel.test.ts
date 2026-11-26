@@ -9,15 +9,15 @@ import { test } from "node:test";
 
 import { createModel, type WaterCost } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 import { checklistFold, phoneChecklist, taskSummary, type MonthTask } from "../src/app/panel/dashboard-tasks";
 import { needsPin, pinTarget } from "../src/app/panel/ayarlar/pin-scroll";
 import { categoriesSummary, logSummary, measuresSummary, ratesSummary, waterSummary } from "../src/app/panel/ayarlar/summaries";
 import { hasSizeColumns, menuPrice, menuPrices, type MenuItem } from "../src/app/menu/menu-rows";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const model = createModel(ds);
 
 const NBSP = " ";

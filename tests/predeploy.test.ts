@@ -2,7 +2,8 @@
 // için migration ve seed yalnız canlı dağıtımda çalışır; önizlemelerin kendi veritabanı varsa MIGRATE_ON_PREVIEW=1.
 // Production derlemesi yalnız main dalından: Production'a terfi ya da redeploy edilen dal önizlemesi derlemeyi durdurur
 // (denetim E-10); bilerek yapılan dağıtım ALLOW_BRANCH_PRODUCTION=1 ister. vercel.json'ın `claude/**` önizleme kuralı da
-// burada tutulur (DEPLOY.md § 3).
+// burada tutulur (DEPLOY.md § 3). Canlıda boş veritabanına başlangıç verisi kendiliğinden yüklenmez (26 Kas 2026;
+// emptySeedSkipReason, DEPLOY.md § 5); betiğin kendisiyle gerçek Postgres'te: tests/predeploy-db.test.ts.
 // Çalıştırma: npx tsx --test tests/predeploy.test.ts
 
 import assert from "node:assert/strict";
@@ -11,9 +12,67 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { PRODUCTION_BRANCH, predeploySkipReason, productionBranchOverride, productionBranchRefusal } from "../scripts/predeploy-guard";
+import {
+  emptySeedOverride,
+  emptySeedSkipReason,
+  emptySeedWarning,
+  PRODUCTION_BRANCH,
+  predeploySkipReason,
+  productionBranchOverride,
+  productionBranchRefusal,
+} from "../scripts/predeploy-guard";
 
 const DB = "postgres://u:p@host/db";
+const LOCAL = { host: "localhost", local: true };
+const NEON = { host: "ep-ornek-123.eu-central-1.aws.neon.tech", local: false };
+
+test("boş veritabanına başlangıç verisi: canlıda, önizlemede ve uzak veritabanında yüklenmez; yerelde yüklenir", () => {
+  // Canlı: Vercel'in canlı derlemesi ya da NODE_ENV=production; yerel veritabanını gösterse bile
+  for (const target of [LOCAL, NEON]) {
+    assert.equal(emptySeedSkipReason({ VERCEL_ENV: "production" }, target), "canlı derleme (VERCEL_ENV=production)");
+    assert.equal(emptySeedSkipReason({ NODE_ENV: "production" }, target), "canlı ortam (NODE_ENV=production)");
+    assert.equal(emptySeedSkipReason({ VERCEL_ENV: "preview", MIGRATE_ON_PREVIEW: "1" }, target), "önizleme derlemesi (VERCEL_ENV=preview)");
+  }
+  // Uzak veritabanı (.env.local canlının ya da yeni açılmış bir Neon'un adresini gösterebilir)
+  assert.equal(emptySeedSkipReason({}, NEON), "veritabanı bu bilgisayarda değil (ep-ornek-123.eu-central-1.aws.neon.tech)");
+  assert.equal(emptySeedSkipReason({ VERCEL_ENV: "development" }, NEON), "veritabanı bu bilgisayarda değil (ep-ornek-123.eu-central-1.aws.neon.tech)");
+  // Yerel geliştirme: bugünkü gibi yüklenir
+  assert.equal(emptySeedSkipReason({}, LOCAL), null);
+  assert.equal(emptySeedSkipReason({ NODE_ENV: "development", VERCEL_ENV: "development" }, LOCAL), null);
+  // Açık bayrak her şeyin önünde: 1 yükler (canlıda da), 0 hiçbir yerde yüklemez; başka değer bayrak değildir
+  assert.equal(emptySeedSkipReason({ VERCEL_ENV: "production", SEED_ON_EMPTY: "1" }, NEON), null);
+  assert.equal(emptySeedSkipReason({ NODE_ENV: "production", SEED_ON_EMPTY: " 1 " }, LOCAL), null);
+  assert.equal(emptySeedSkipReason({ SEED_ON_EMPTY: "0" }, LOCAL), "SEED_ON_EMPTY=0");
+  for (const v of ["true", "evet", "", "yes"]) {
+    assert.equal(emptySeedSkipReason({ VERCEL_ENV: "production", SEED_ON_EMPTY: v }, LOCAL), "canlı derleme (VERCEL_ENV=production)", v);
+  }
+});
+
+test("SEED_ON_EMPTY=1 canlıda ve uzak veritabanında günlüğe uyarı yazar; yerelde ve bayraksız yazmaz", () => {
+  const warned = emptySeedOverride({ VERCEL_ENV: "production", SEED_ON_EMPTY: "1" }, NEON) ?? "";
+  assert.match(warned, /^SEED_ON_EMPTY=1: veritabanı boşsa başlangıç verisi \(maaşlar, kira, faturalar, satışlar\) yüklenir\. Değişkeni bu derlemeden sonra kaldırın$/);
+  assert.ok(emptySeedOverride({ SEED_ON_EMPTY: "1" }, NEON));
+  assert.equal(emptySeedOverride({ SEED_ON_EMPTY: "1" }, LOCAL), null, "yerelde zaten yüklenir");
+  assert.equal(emptySeedOverride({ VERCEL_ENV: "production" }, NEON), null);
+  assert.equal(emptySeedOverride({ VERCEL_ENV: "production", SEED_ON_EMPTY: "0" }, NEON), null);
+  // Uyarı metni: neden, yedekten geri yükleme ve bilerek yükleme yolu
+  const w = emptySeedWarning("canlı derleme (VERCEL_ENV=production)");
+  assert.match(w, /^Veritabanı boş; başlangıç verisi yüklenmedi: canlı derleme \(VERCEL_ENV=production\)\. /);
+  assert.ok(w.includes("npm run db:restore") && w.includes("SEED_ON_EMPTY=1") && w.includes("npm run db:seed"));
+});
+
+test("tohum betiği kararı runSeed'e verir: boş veritabanında emptySkip varsa veri yüklenmez, temel kayıtlar yazılır", () => {
+  const seed = readFileSync(join(process.cwd(), "scripts/seed.ts"), "utf8");
+  const run = seed.slice(seed.indexOf("export async function runSeed"));
+  // Boşluk denetimi (hammadde sayısı) → dolu ise temel kayıtlar → emptySkip ise uyarı + temel kayıtlar → veri
+  const full = run.indexOf("if (n > 0 && !reset) {");
+  const skip = run.indexOf("if (emptySkip && !reset) {");
+  const load = run.indexOf("const raw = readSeedData();");
+  assert.ok(full > 0 && full < skip && skip < load, "sıra");
+  assert.match(run.slice(skip, load), /console\.warn\(`! \$\{emptySeedWarning\(emptySkip\)\}`\);\s*await ensureBasics\(db\);\s*return;/);
+  // db:seed ve test:db (emptySkip vermez) bugünkü gibi yükler; varsayılan null
+  assert.match(run, /emptySkip = null,/);
+});
 
 test("veritabanı yoksa atlanır", () => {
   assert.match(predeploySkipReason({}) ?? "", /DATABASE_URL yok/);
@@ -81,7 +140,7 @@ test("betik kararı bu fonksiyonlara bırakır: önce dal, sonra atlama, sonra v
   // Havuzlu bağlantının denetimi de kararın arkasında ve migration'dan önce (açılmazsa şemaya dokunulmadan durulur)
   assert.match(
     src,
-    /const skip = predeploySkipReason\(process\.env\);\s*if \(skip\) \{[\s\S]*?return;\s*\}\s*const url = databaseUrl\(shell, process\.env\);\s*await checkRuntimeConnection\(url\);\s*await runMigrations\(url\);\s*await runSeed\(\{ url \}\);/,
+    /const skip = predeploySkipReason\(process\.env\);\s*if \(skip\) \{[\s\S]*?return;\s*\}\s*const url = databaseUrl\(shell, process\.env\);\s*await checkRuntimeConnection\(url\);\s*await runMigrations\(url\);[^\n]*\n(\s*\/\/[^\n]*\n)*\s*const target = databaseTarget\(url \?\? ""\);\s*const seedOverride = emptySeedOverride\(process\.env, target\);\s*if \(seedOverride\) console\.warn\(`! \$\{seedOverride\}`\);\s*await runSeed\(\{ url, emptySkip: emptySeedSkipReason\(process\.env, target\) \}\);/,
   );
   // Hedef db:migrate gibi: kabuktaki adres .env.local'dakinden önce (kopya loadEnvConfig'ten önce alınır; denetim AL-02)
   assert.ok(src.indexOf("const shell = { ...process.env };") < src.indexOf("loadEnvConfig(process.cwd());"));

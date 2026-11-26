@@ -24,11 +24,11 @@ import type { Dataset, Product, SalesLine } from "../src/lib/calc/types";
 import { productProfitability } from "../src/lib/mcp/answers/products";
 import { urunKarliligiInput } from "../src/lib/mcp/schemas";
 import type { SiteSalesLine, SiteSalesMonth } from "../src/lib/site-sales/schema";
-import { excelToDataset, investmentSeed, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, investmentSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const M = "2026-09";
 
 function close(actual: number | null | undefined, expected: number, label: string, eps = 1e-6) {

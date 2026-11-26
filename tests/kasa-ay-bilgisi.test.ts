@@ -29,7 +29,7 @@ import {
 } from "../src/lib/cash-month";
 import { prorationDays } from "../src/lib/calc/engine";
 import { addDays } from "../src/lib/reminders";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 /** Boşlukları (₺ ve gün-ay arasındaki bölünmez boşluk dahil) düz boşluğa çevirir */
 const plain = (s: string) => s.replace(/ /g, " ");
@@ -258,8 +258,8 @@ test("eksik günler, ay ortası ve Kasa sayfasındaki tek satır", () => {
 // ---------------------------------------------------------------- Motor
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 
 test("motor: POS komisyonu ayın banka kartı payıyla (kasa raporu yoksa Ayarlar'daki kartlı oran); oranın kaynağı", () => {
   const base = createModel(ds);

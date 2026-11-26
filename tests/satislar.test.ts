@@ -32,11 +32,11 @@ import {
 import { createModel } from "../src/lib/calc/engine";
 import { describeSkipped, parsePastedSales } from "../src/lib/calc/pos-paste";
 import { tillMonths } from "../src/lib/cash-month";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const model = createModel(excelToDataset(data));
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const model = createModel(datasetFromSeed(data));
 
 // ---------------------------------------------------------------- Açık gün
 

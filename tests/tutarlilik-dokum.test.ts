@@ -13,11 +13,11 @@ import { prepareBreakdown, type BreakdownGroup } from "../src/lib/breakdown";
 import { createModel } from "../src/lib/calc/engine";
 import { consistency } from "../src/lib/calc/insights";
 import type { Dataset } from "../src/lib/calc/types";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
-const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
-const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslangic/veri.json"), "utf8"));
+const ds: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-10" };
 const MONTH = "2026-09";
 const ingId = (name: string) => {
   const i = ds.ingredients.find((x) => x.name === name);

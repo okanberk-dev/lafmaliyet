@@ -12,10 +12,10 @@ import { resetCheck } from "../scripts/seed";
 import { databaseTarget } from "../src/lib/backup/format";
 import { defaultFireRate, FIRE_DEFAULTS, withFireDefaults } from "../src/lib/fire-defaults";
 import { relinkWaste } from "../src/lib/waste";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
-const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
+const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
 
 test("kurallar 0012_zayi_oranlari.sql ile aynı: oranlar, kategoriler, sıra", () => {
   const sql = read("drizzle/0012_zayi_oranlari.sql")
@@ -35,7 +35,7 @@ test("kurallar 0012_zayi_oranlari.sql ile aynı: oranlar, kategoriler, sıra", (
 });
 
 test("Excel'in 129 ürününün hepsi oran alır; tatlı %20, çay %40, sandviç %15, öteki atıştırmalık %3", () => {
-  const ds = excelToDataset(data);
+  const ds = datasetFromSeed(data);
   const seeded = withFireDefaults(ds.products, ds.categories);
   assert.equal(seeded.length, 129);
   assert.equal(seeded.filter((p) => p.fireOverride === null).length, 0);

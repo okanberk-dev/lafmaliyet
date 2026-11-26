@@ -16,7 +16,7 @@ import { createModel } from "../src/lib/calc/engine";
 import type { Dataset, ExpenseCategory, ExpenseEntry, Invoice } from "../src/lib/calc/types";
 import { branchesClosed, digestGroups, digestItemInGroup } from "../src/lib/notify-recipients";
 import { soldOutAllBranchesText } from "../src/lib/site-menu/sold-out";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
 const read = (p: string) => readFileSync(join(root, p), "utf8");
@@ -44,8 +44,8 @@ test("sayım kaydının şubesi: ayrıntının sonunda adıyla; eski kayıt ve t
 });
 
 test("Aylık harcamalar: şubenin toplamı Gelir-gider'in harcama hücresiyle aynı; işletme geneli ve faturalar ayrı", () => {
-  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
-  const excel = excelToDataset(data);
+  const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
+  const excel = datasetFromSeed(data);
   const reklam: ExpenseCategory = { id: 1, name: "Reklam", section: "genel", panelGroup: "reklam", invoiceCategory: "Reklam & Tabela", monthly: false, active: true, sortOrder: 1 };
   const entry = (id: number, amount: number, branchId: string | null): ExpenseEntry => ({ id, date: "2026-11-10", categoryId: 1, description: null, amount, paymentMethod: null, note: null, branchId });
   const entries = [entry(1, 3_000, "marina"), entry(2, 4_000, null), entry(3, 5_000, "tuzla")];
