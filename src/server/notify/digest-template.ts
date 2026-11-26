@@ -170,6 +170,8 @@ export interface DigestExtras {
   kontrol?: DigestBox | null;
   forecast?: DigestBox | null;
   approvals?: DigestBox | null;
+  /** Personel belgeleri: bitişe 30 gün kala ve bitince, her aşama bir kez (docs/PERSONEL-BELGE.md) */
+  staffDocs?: DigestBox | null;
 }
 
 /** Kaynağın bulduğu kutu ve gönderimden sonra notification_log'a yazılacak anahtarlar (ör. "komisyon:<uyarı>", "kontrol:<gün>") */
@@ -194,7 +196,7 @@ export interface DigestExtraCtx {
  * dönerse (null) kutu yok.
  */
 export type DigestExtraSource =
-  | { key: "commission" | "kontrol" | "approvals"; news: boolean; load(today: string, ctx: DigestExtraCtx): Promise<DigestExtraLoad | null> }
+  | { key: "commission" | "kontrol" | "approvals" | "staffDocs"; news: boolean; load(today: string, ctx: DigestExtraCtx): Promise<DigestExtraLoad | null> }
   | { key: "forecast"; news: false; load(today: string, ctx: DigestExtraCtx): Promise<DigestExtraLoad | null> };
 
 /** Kaynakların toplu sonucu: e-postanın kutuları, "yeni bir şey var mı"ya katkısı, tekil anahtara ve günlüğe giden anahtarlar */
@@ -254,6 +256,7 @@ const BOX_TONE: Record<keyof DigestExtras, { bg: string; fg: string }> = {
   kontrol: { bg: "#fff7ed", fg: "#9a3412" },
   forecast: { bg: "#f4f4f5", fg: "#3f3f46" },
   approvals: { bg: "#fff7ed", fg: "#9a3412" },
+  staffDocs: { bg: "#fff7ed", fg: "#9a3412" },
 };
 const LINE_TONE: Record<NonNullable<DigestBox["lines"][number]["tone"]>, string> = { bad: "#b91c1c", warn: "#c2410c", muted: "#71717a" };
 /** İlk harf büyük, Türkçe ("i" → "İ"): konu parçası küçük harfle başlayabilir ("dünkü kapanış listesi eksik") */
@@ -370,21 +373,23 @@ export function renderDigest(
   const com = extras?.commission ?? null;
   const kon = extras?.kontrol ?? null;
   const apv = extras?.approvals ?? null;
+  const doc = extras?.staffDocs ?? null;
   const fc = extras?.forecast ?? null;
   const comPart = com?.subjectPart || null;
   const konPart = kon?.subjectPart || null;
   const apvPart = apv?.subjectPart || null;
+  const docPart = doc?.subjectPart || null;
   // Konuya eklenen parçaların tek sırası
-  const tail = [invPart, holdPart, zamPart, comPart, konPart, apvPart];
+  const tail = [invPart, holdPart, zamPart, comPart, konPart, apvPart, docPart];
   const extra = [sys ? "sistem uyarısı" : null, ...tail].filter(Boolean).join(" · ");
   const sysExtra = tail.filter(Boolean).join(" · ");
-  const failExtra = [holdPart, zamPart, comPart, konPart, apvPart].filter(Boolean).join(" · ");
+  const failExtra = [holdPart, zamPart, comPart, konPart, apvPart, docPart].filter(Boolean).join(" · ");
   // "Sabah özeti: <ilk haber>": adayın kuyruktaki yeri (kontrol bekleyen kuyrukta yok); ilk haber kuyruktan çıkar
-  const lead = ([[invPart, 0], [reviewPart, -1], [holdPart, 1], [comPart, 3], [konPart, 4], [apvPart, 5]] as const).find(([p]) => p);
+  const lead = ([[invPart, 0], [reviewPart, -1], [holdPart, 1], [comPart, 3], [konPart, 4], [apvPart, 5], [docPart, 6]] as const).find(([p]) => p);
   // Başlığı ya da konu parçası olmayan kutu e-postanın tek içeriğiyse konu ve başlık "yeni bir şey yok" demesin: kutunun
   // parçası (başlıkta ilk harfi büyük), o da yoksa adı. Konunun son dalında parça zaten yoktur (varsa `lead` olurdu)
-  const boxPart = comPart || konPart || apvPart;
-  const boxLast = boxPart ? upperFirst(boxPart) : com?.title || kon?.title || apv?.title || null;
+  const boxPart = comPart || konPart || apvPart || docPart;
+  const boxLast = boxPart ? upperFirst(boxPart) : com?.title || kon?.title || apv?.title || doc?.title || null;
   const subjectOf = rows.length
     ? `Ödeme hatırlatması: ${parts.join(", ")}${extra ? ` · ${extra}` : ""}`
     : sys
@@ -397,7 +402,7 @@ export function renderDigest(
   const subject = branch ? `${branch}: ${subjectOf}` : subjectOf;
   const total = rows.reduce((a, r) => a + (r.item.amount ?? 0), 0);
   const link = `${APP_URL}/panel/hatirlaticilar`;
-  const boxHeadline = com?.headline || kon?.headline || apv?.headline || null;
+  const boxHeadline = com?.headline || kon?.headline || apv?.headline || doc?.headline || null;
   const headline = rows.length
     ? rows.length === 1
       ? "1 ödeme sizi bekliyor"
@@ -536,7 +541,7 @@ export function renderDigest(
       }<div style="font-family:${FONT};font-size:14px;padding:10px 0 0"><a href="${APP_URL}/panel/urunler#zamlar" style="color:#c2410c;font-weight:600">Önerilen fiyatlara bak →</a></div>`
     : "";
   // Düğme kutunun bağlantısına: fiyat onayından sonra, zamdan önce (komisyon, sonra kontrol, sonra onay bekleyenler)
-  const actionBox = com ?? kon ?? apv;
+  const actionBox = com ?? kon ?? apv ?? doc;
   const button = rows.length
     ? { href: link, label: "Panelde aç" }
     : inv && (inv.items.length || inv.reviewCount || inv.syncError || cashOuts)
@@ -548,7 +553,7 @@ export function renderDigest(
           : zam || !sys
             ? { href: `${APP_URL}/panel/urunler#zamlar`, label: "Ürünleri aç" }
             : { href: JOBS_LINK, label: "Günlük işleri aç" };
-  const boxes = [com ? boxHtml(com, "commission") : "", kon ? boxHtml(kon, "kontrol") : "", apv ? boxHtml(apv, "approvals") : ""].join("");
+  const boxes = [com ? boxHtml(com, "commission") : "", kon ? boxHtml(kon, "kontrol") : "", apv ? boxHtml(apv, "approvals") : "", doc ? boxHtml(doc, "staffDocs") : ""].join("");
   const forecastBox = fc ? boxHtml(fc, "forecast") : "";
   // Kapanış notu gövdenin asıl bölümüne göre; yalnız ek kutu varsa not yok (kutular kendi bağlantısını taşır)
   const note = rows.length
@@ -619,6 +624,7 @@ export function renderDigest(
     ...(com ? boxText(com) : []),
     ...(kon ? boxText(kon) : []),
     ...(apv ? boxText(apv) : []),
+    ...(doc ? boxText(doc) : []),
     ...(zam
       ? [
           "",

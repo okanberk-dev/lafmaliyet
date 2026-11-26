@@ -8,7 +8,7 @@
  * belge yenilenip tarihi değişince aşamalar yeniden işler. İşten ayrılmış kişinin belgesi hatırlatılmaz.
  */
 
-import { MAX_UPLOAD_BYTES, UPLOAD_MIMES, type DocumentMime } from "./documents";
+import { extensionFor, fileSlug, MAX_UPLOAD_BYTES, UPLOAD_MIMES, type DocumentMime } from "./documents";
 import { dateTR, num } from "./format";
 import { daysBetween, isCalendarDate } from "./reminders";
 
@@ -75,6 +75,8 @@ export interface DocFact {
   staffName: string;
   /** Kişinin son ayı ("YYYY-MM"); geçmişse kişi ayrılmıştır, belgesi hatırlatılmaz */
   staffEndMonth?: string | null;
+  /** Kişinin kaydı etkin mi (pasif kişinin belgesi hatırlatılmaz; verilmezse etkin) */
+  staffActive?: boolean;
   branchId?: string | null;
   kind: string;
   label?: string | null;
@@ -97,15 +99,41 @@ export interface DocAlert {
 
 export const docLogKey = (id: number, validUntil: string, stage: "soon" | "expired") => `belge:${id}:${validUntil}:${stage === "soon" ? "30" : "bitti"}`;
 
+/** Aynı belgenin yenisiyle eşleşme anahtarı: kişi + tür ("diger"de adı da; büyük-küçük harf ve aksan farkı gözetilmez) */
+function sameDocKey(d: Pick<DocFact, "staffId" | "kind" | "label">): string {
+  const label = d.kind === "diger" ? (d.label ?? "").toLocaleLowerCase("tr-TR").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim() : "";
+  return `${d.staffId}|${d.kind}|${label}`;
+}
+
 /**
- * Hatırlatılacak belgeler: bitmiş ya da 30 gün içinde bitecek, kişisi hâlâ çalışan. Sıra: bitenler önce (en eski
- * bitiş başta), sonra yaklaşanlar (en yakın başta); eşitlikte kişinin adı.
+ * Yenilenmiş (eskimiş) belgeler: aynı kişinin aynı türden (öteki belgelerde aynı addan) daha geç biten belgesi varsa
+ * eskisi "yenilendi" sayılır, hatırlatılmaz. Süresiz belge en geç biten sayılır; bitişler eşitse sonra eklenen geçer.
+ * Böylece sağlık raporu yenilenince eskisini silmek gerekmez (geçmiş olarak kalır).
+ */
+export function supersededIds(docs: readonly Pick<DocFact, "id" | "staffId" | "kind" | "label" | "validUntil">[]): Set<number> {
+  const latest = new Map<string, { id: number; until: string }>();
+  for (const d of docs) {
+    const key = sameDocKey(d);
+    const until = d.validUntil ?? "9999-12-31";
+    const cur = latest.get(key);
+    if (!cur || until > cur.until || (until === cur.until && d.id > cur.id)) latest.set(key, { id: d.id, until });
+  }
+  const current = new Set([...latest.values()].map((v) => v.id));
+  return new Set(docs.filter((d) => !current.has(d.id)).map((d) => d.id));
+}
+
+/** Kişi ayrılmış mı: son ayı bu aydan önce (ya da kaydı pasif) */
+export const staffLeft = (endMonth: string | null | undefined, today: string, active = true) => !active || Boolean(endMonth && endMonth < today.slice(0, 7));
+
+/**
+ * Hatırlatılacak belgeler: bitmiş ya da 30 gün içinde bitecek, yenilenmemiş, kişisi hâlâ çalışan. Sıra: bitenler önce
+ * (en eski bitiş başta), sonra yaklaşanlar (en yakın başta); eşitlikte kişinin adı.
  */
 export function docAlerts(docs: readonly DocFact[], today: string): DocAlert[] {
-  const month = today.slice(0, 7);
+  const old = supersededIds(docs);
   const out: DocAlert[] = [];
   for (const d of docs) {
-    if (d.staffEndMonth && d.staffEndMonth < month) continue;
+    if (old.has(d.id) || staffLeft(d.staffEndMonth, today, d.staffActive ?? true)) continue;
     const stage = docStage(d.validUntil, today);
     if (stage !== "soon" && stage !== "expired") continue;
     const validUntil = d.validUntil!;
@@ -176,12 +204,59 @@ export function docBellRows(alerts: readonly DocAlert[], today: string): DocBell
   return rows;
 }
 
-/** E-postanın konusu: "Personel belgeleri: 2 belgenin süresi doldu · 1 belge 30 gün içinde bitiyor" */
-export function docEmailSubject(alerts: readonly DocAlert[]): string {
+/** Sabah e-postasının kutusu (src/server/notify/digest-template.ts DigestBox ile aynı biçim) */
+export interface DocDigestBox {
+  title: string;
+  lines: { strong?: string; text: string; tone?: "bad" | "warn" | "muted" }[];
+  href: string;
+  link: string;
+  subjectPart: string | null;
+  headline: string | null;
+}
+
+const DIGEST_ROWS = 8;
+
+/**
+ * Sabah e-postasının "Personel belgeleri" kutusu: yalnız bu sabah ilk kez bildirilenler (freshDocAlerts), bitenler
+ * kırmızı, yaklaşanlar turuncu; en çok 8 satır, kalanı "ve N belge daha". Hatırlatma yoksa null.
+ */
+export function docDigestBox(alerts: readonly DocAlert[], today: string): DocDigestBox | null {
+  if (!alerts.length) return null;
   const expired = alerts.filter((a) => a.stage === "expired").length;
   const soon = alerts.length - expired;
-  const parts = [expired ? `${num(expired)} belgenin süresi doldu` : null, soon ? `${num(soon)} belge 30 gün içinde bitiyor` : null].filter(Boolean);
-  return `Personel belgeleri: ${parts.join(" · ")}`;
+  const parts = [
+    expired ? `${num(expired)} personel belgesinin süresi doldu` : null,
+    soon ? (soon === 1 ? "1 personel belgesi 30 gün içinde bitiyor" : `${num(soon)} personel belgesi 30 gün içinde bitiyor`) : null,
+  ].filter((p): p is string => Boolean(p));
+  const lines: DocDigestBox["lines"] = alerts.slice(0, DIGEST_ROWS).map((a) => ({
+    strong: `${a.staffName} · ${a.title}`,
+    text: `${docStatusText(a.validUntil, today)} (bitiş ${dateTR(a.validUntil)})`,
+    tone: a.stage === "expired" ? "bad" : "warn",
+  }));
+  if (alerts.length > DIGEST_ROWS) lines.push({ text: `ve ${num(alerts.length - DIGEST_ROWS)} belge daha`, tone: "muted" });
+  const subject = parts.join(" · ");
+  return {
+    title: "Personel belgeleri",
+    lines,
+    href: DOCS_HREF,
+    link: "Personel belgelerini aç",
+    subjectPart: subject,
+    headline: subject.charAt(0).toLocaleUpperCase("tr-TR") + subject.slice(1),
+  };
+}
+
+/** İndirilen dosyanın adı: "Ayse-Yilmaz_Saglik-raporu_2027-03-12.pdf" (kişi, belge, bitiş) */
+export function staffDocFileName(d: { staffName: string; kind: string; label?: string | null; validUntil?: string | null }, mime: DocumentMime): string {
+  const parts = [fileSlug(d.staffName) || "personel", fileSlug(docTitle(d)) || "belge", d.validUntil ?? ""].filter(Boolean);
+  return `${parts.join("_")}.${extensionFor(mime)}`;
+}
+
+/** Her çalışanda beklenen belgeler (eksikse kişinin satırında "Eksik" yazar; hatırlatma değil, bilgi) */
+export const EXPECTED_KINDS: readonly DocKind[] = ["hijyen", "saglik", "sgk"];
+
+/** Kişinin hiç girilmemiş beklenen belgeleri */
+export function missingKinds(docs: readonly { kind: string }[]): DocKind[] {
+  return EXPECTED_KINDS.filter((k) => !docs.some((d) => d.kind === k));
 }
 
 /** Daha önce bildirilmemiş hatırlatmalar (anahtarı `sent`te olmayan) */

@@ -4,13 +4,16 @@ import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { featureHere } from "@/server/branches";
 import { loadKontrolDigest } from "@/server/data/checklists";
 import { loadCommissionDigest } from "@/server/data/commission";
+import { getDb } from "@/server/db";
+import { loadDocDigest } from "@/server/staff-docs";
 import { loadApprovalsDigest } from "@/server/staff-requests/digest";
 
 import { collectDigestExtras, type DigestExtrasResult, type DigestExtraSource } from "./digest-template";
 
 /**
  * Sabah e-postasının ek kutularının kaynakları (docs/planlar/CRITIQUE2.md R11): komisyon ve hakediş (komisyon grubu),
- * dünkü kontrol listeleri (kontrol), onay bekleyen personel istekleri (dalga 10). Her grup kutusunu kendi saf modülünde kurup sınar ve buraya
+ * dünkü kontrol listeleri (kontrol), onay bekleyen personel istekleri (dalga 10), personel belgeleri (biten ve 30 gün
+ * içinde bitecek). Her grup kutusunu kendi saf modülünde kurup sınar ve buraya
  * bir satır ekler; e-postanın konusu, başlığı, düğmesi, gövdedeki yeri ve tekil anahtarı digest-template.ts'te tek
  * yerde. Kurallar:
  *
@@ -37,6 +40,9 @@ export const DIGEST_EXTRA_SOURCES: DigestExtraSource[] = [
   // Onay bekleyenler: personel istekleri (başlık ve isteyenin adı, tutarsız) ve operasyonun bilgi satırları (Tükendi);
   // karar verilene kadar her sabah (docs/ONAYLAR.md)
   { key: "approvals", news: true, load: (_today, ctx) => loadApprovalsDigest(undefined, ctx.scope) },
+  // Personel belgeleri (hijyen, sağlık raporu, SGK…): bitişe 30 gün kala bir kez, bitince bir kez
+  // (belge:<id>:<bitiş>:30|bitti; docs/PERSONEL-BELGE.md). Şubeye bağlı alıcıya yalnız o şubenin kişileri
+  { key: "staffDocs", news: true, load: (today, ctx) => loadDocDigest(getDb(), today, ctx.scope ?? ALL_BRANCHES) },
 ];
 
 /**
