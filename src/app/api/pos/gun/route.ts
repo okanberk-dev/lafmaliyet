@@ -3,7 +3,7 @@ import { after, connection, type NextRequest } from "next/server";
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER } from "@/lib/karaoke/signature";
 import { POS_DAY_MAX_BYTES } from "@/lib/lafpos/day";
 import { getDb } from "@/server/db";
-import { runLafposDayEnd } from "@/server/lafpos/gun-sonu";
+import { runLafposDayEnd, settlePavoWait } from "@/server/lafpos/gun-sonu";
 import { lafposRequestSecret, lafposSecret } from "@/server/lafpos/ingest";
 import { handlePosDay, noteUnverified } from "@/server/lafpos/status";
 
@@ -25,6 +25,8 @@ export const maxDuration = 60;
  * Sayılan günde yanıttan sonra Kasa raporu ve gün sonu e-postası (src/server/lafpos/gun-sonu.ts).
  */
 export async function POST(request: NextRequest) {
+  // İşlevin süresi (maxDuration) isteğin başından sayılır: after()'ın son anı da buradan (Vercel 60. saniyede keser)
+  const start = Date.now();
   await connection();
   // Ön süzgeç (önbellekli): anahtar yoksa gövde okunmaz
   if (!(await lafposSecret())) return Response.json({ error: "not_configured" }, { status: 503, headers: NO_STORE });
@@ -48,8 +50,21 @@ export async function POST(request: NextRequest) {
     // Sayılan LafPOS günü (geçiş gününden itibaren, LafPOS'un şubesi): Kasa raporu ve gün sonu e-postası yanıttan sonra
     // (docs/LAFPOS.md › Gün sonu otomasyonu). Kasa e-postayı beklemez; başarısızsa günlük iş yeniden dener
     if (r.status === 200 && r.body.counted === true && typeof r.body.date === "string") {
-      const date = r.body.date;
-      after(() => runLafposDayEnd(getDb(), date, new Date(), { deadlineAt: Date.now() + 50_000 }).then((x) => console.info("[lafpos] gün sonu otomasyonu", x)));
+      // Tarih gövdeden gelir (biçimi denetlendi: YYYY-AA-GG); günlük satırlarına satır sonu taşıyamasın
+      const date = r.body.date.replace(/[\r\n]/g, "");
+      // Pavo'yu bekleyen gün (ilk gönderim, karşılaştırma birazdan gelecek) bu istekte biter: sonuç süre içinde gelmezse
+      // e-posta Pavo'suz gider (settlePavoWait). Gece başka tetik yok; e-posta sabaha kalmaz
+      after(async () => {
+        const deadlineAt = start + 50_000;
+        const x = await runLafposDayEnd(getDb(), date, new Date(), { deadlineAt });
+        console.info("[lafpos] gün sonu otomasyonu", x);
+        if (x.email !== "waiting") return;
+        try {
+          console.info("[lafpos] Pavo beklemesi", await settlePavoWait(getDb(), date, { deadlineAt }));
+        } catch (e) {
+          console.error("[lafpos] Pavo beklemesi bitirilemedi:", e);
+        }
+      });
     }
     return Response.json(r.body, { status: r.status, headers: NO_STORE });
   } catch (e) {

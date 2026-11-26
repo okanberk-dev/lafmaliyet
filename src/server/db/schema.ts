@@ -2761,3 +2761,80 @@ export const branchSettings = pgTable(
     check("branch_settings_linked_empty_ck", sql`${t.sameAs} is null or (${t.value} = '{}'::jsonb and ${t.secrets} is null)`),
   ],
 );
+
+// ---------------------------------------------------------------- Mutabakat (banka ve tedarikçi ekstresi)
+/**
+ * Yüklenen ekstre (docs/MUTABAKAT.md): banka hesabının ya da tedarikçinin cari ekstresi. DOSYA SAKLANMAZ (KVKK, veri
+ * en azı): yalnız okunan satırlar recon_lines'ta durur ve `expires_on`'dan sonra günlük işte silinir (yüklendiği gün +
+ * 90; src/lib/mutabakat/match.ts KEEP_DAYS). Panel kaydına hiçbir şey yazılmaz: mutabakat bir karşılaştırmadır.
+ */
+export const reconStatements = pgTable(
+  "recon_statements",
+  {
+    id: serial("id").primaryKey(),
+    kind: text("kind", { enum: ["banka", "tedarikci"] }).notNull(),
+    /** Banka: yöneticinin yazdığı hesap adı ("Garanti TL"); tedarikçi: tedarikçinin yükleme anındaki adı */
+    account: text("account").notNull(),
+    /** Tedarikçi ekstresinin kartı (kartsız tedarikçide boş; o zaman `supplierNames`'ten bulunur) */
+    supplierCardId: integer("supplier_card_id").references(() => suppliers.id, { onDelete: "set null" }),
+    /** Tedarikçinin ad anahtarları (faturalardaki adlar, kartın adları): kartsız tedarikçiyi bulmak için */
+    supplierNames: jsonb("supplier_names").$type<string[]>().notNull().default([]),
+    /** Yüklenen dosyanın adı (yalnız ekranda; içeriği saklanmaz) */
+    fileName: text("file_name"),
+    /** Ekstrenin ilk ve son hareket günü (YYYY-MM-DD) */
+    periodFrom: text("period_from").notNull(),
+    periodTo: text("period_to").notNull(),
+    /** Yazılan satır sayısı; dosyada olup önceki yüklemede yazılmış (aynı) satırlar `duplicates`'ta */
+    lineCount: integer("line_count").notNull().default(0),
+    duplicates: integer("duplicates").notNull().default(0),
+    /** Yüklendiği gün (Türkiye) ve satırların saklandığı son gün (ertesi gün silinir) */
+    uploadedOn: text("uploaded_on").notNull(),
+    expiresOn: text("expires_on").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdByName: text("created_by_name").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("recon_statements_expires_idx").on(t.expiresOn),
+    check("recon_statements_period_ck", sql`${t.periodFrom} <= ${t.periodTo}`),
+    check("recon_statements_supplier_ck", sql`${t.kind} = 'tedarikci' or (${t.supplierCardId} is null and ${t.supplierNames} = '[]'::jsonb)`),
+  ],
+);
+
+/**
+ * Ekstrenin satırı ve yöneticinin kararı. Eşleşme okuma anında hesaplanır (saklanmaz); yalnız karar durur: `elle`
+ * (bu kayıtla eşleşir: `match_kind` + `match_id`), `yoksay`, `ayir` (kendiliğinden eşleşmez), `pos` (POS hakedişi say).
+ * Tutar işaretlidir: banka + giren / − çıkan; tedarikçi + fatura / − ödeme. Açıklamadaki IBAN, kart ve uzun numaralar
+ * yazılmadan örtülür (src/lib/mutabakat/parse.ts maskSensitive). `scope` + `fingerprint`: aynı hesabın aynı hareketi
+ * ikinci yüklemede yeniden yazılmaz.
+ */
+export const reconLines = pgTable(
+  "recon_lines",
+  {
+    id: serial("id").primaryKey(),
+    statementId: integer("statement_id")
+      .notNull()
+      .references(() => reconStatements.id, { onDelete: "cascade" }),
+    /** Hesabın kimliği: "banka:<hesap adı>" ya da "tedarikci:<kart ya da ad>" */
+    scope: text("scope").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    /** Dosyadaki satır (1'den) */
+    rowNo: integer("row_no").notNull(),
+    date: text("date").notNull(),
+    description: text("description").notNull().default(""),
+    amount: doublePrecision("amount").notNull(),
+    balance: doublePrecision("balance"),
+    ref: text("ref"),
+    decision: text("decision", { enum: ["elle", "yoksay", "ayir", "pos"] }),
+    matchKind: text("match_kind", { enum: ["harcama", "odeme", "fatura-odeme", "teslim", "fatura"] }),
+    matchId: integer("match_id"),
+    decidedByName: text("decided_by_name"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("recon_lines_statement_idx").on(t.statementId, t.date),
+    uniqueIndex("recon_lines_fingerprint_uq").on(t.scope, t.fingerprint),
+    check("recon_lines_amount_ck", sql`${t.amount} <> 0`),
+    check("recon_lines_match_ck", sql`(${t.decision} is not distinct from 'elle') = (${t.matchKind} is not null and ${t.matchId} is not null)`),
+  ],
+);

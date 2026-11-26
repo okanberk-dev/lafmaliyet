@@ -36,6 +36,9 @@ import { ordersVersion, readOrdersSnapshot, readOrdersState } from "@/server/sit
  * (src/server/notify/checklist-alerts.ts) ve karaoke e-postaları (misafirin "bir gün kaldı" hatırlatması, personelin
  * sabah ve 3 saat kala e-postaları; src/server/karaoke/staff-mail.ts) gönderilir.
  */
+
+/** Yanıttan sonraki işler (gün sonu, kontrol listesi, karaoke e-postaları) bu sürede biter; tanımsızken plan varsayılanı keserdi */
+export const maxDuration = 60;
 export async function GET(request: NextRequest) {
   await connection();
   const headers = { "Cache-Control": "private, no-cache" };

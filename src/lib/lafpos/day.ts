@@ -440,6 +440,12 @@ export const posDaySchema = z.object({
    * "bağlı var, o gün kimse çalışmadı". Ad ve kullanıcı kimliği gitmez. Bozuksa yok sayılır, gün reddedilmez
    */
   workedStaffRefs: soft(workedStaffRefsSchema),
+  /**
+   * Pavo'nun banka gün sonu bu gün için sürüyor ya da birazdan başlayacak mı (LafPOS 25 Kasım 2026; docs/LAFPOS.md › Gün
+   * sonu otomasyonu). `false`: başlamayacak, atlandı ya da bitti; gün sonu e-postası Pavo'yu beklemez. `true`: bekler (en
+   * çok PAVO_WAIT_MS). Eski LafPOS göndermez (önceki günün sonucuna bakılır). Bozuksa yok sayılır
+   */
+  bankPosPending: soft(z.boolean()),
 });
 
 export type PosDayPush = z.output<typeof posDaySchema>;
@@ -498,7 +504,7 @@ export function parsePosDay(body: string, now: Date = new Date()): PosDayParse {
   return { ok: true, data: r.data };
 }
 
-const TOP_SOFT = ["revision", "correction", "offDevice", "refunds", "iptal", "cashMoves", "okc", "collections", "shiftCounts", "discountLines", "workedStaffRefs"] as const;
+const TOP_SOFT = ["revision", "correction", "offDevice", "refunds", "iptal", "cashMoves", "okc", "collections", "shiftCounts", "discountLines", "workedStaffRefs", "bankPosPending"] as const;
 const Z_SOFT = [
   "listValue",
   "ikramTotal",

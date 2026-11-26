@@ -185,6 +185,13 @@ test("QR menü: tek boylu kategoride tek fiyat; binlik ayırıcı ve bölünmez 
   assert.equal(menuPrice(5), `5${NBSP}₺`);
 });
 
+test("QR menü: içerik önce bağlantıyı bekler, menüyü sonra okur (ön işlemede saat okunmaz)", () => {
+  const page = readFileSync(join(root, "src/app/menu/page.tsx"), "utf8");
+  const content = page.slice(page.indexOf("async function MenuContent"));
+  const at = ["await connection();", "await loadPublicMenu()"].map((s) => content.indexOf(s));
+  assert.ok(at[0] > 0 && at[1] > at[0], "MenuContent: await connection() → loadPublicMenu()");
+});
+
 test("QR menü: yayında değilken ya da boşken laffogato.net/menu'ye gider (önizleme hariç); yayındayken alerjen bağlantısı", () => {
   const page = readFileSync(join(root, "src/app/menu/page.tsx"), "utf8");
   assert.match(page, /const siteMenu = `\$\{siteUrl\(\)\}\/menu`;\s*if \(!preview && \(!menu\.published \|\| menu\.categories\.length === 0\)\) redirect\(siteMenu\);/);

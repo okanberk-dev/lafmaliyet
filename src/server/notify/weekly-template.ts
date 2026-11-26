@@ -1,14 +1,16 @@
 /**
- * Haftalık özetin e-postası (saf; "server-only" yok, tests/haftalik-ozet.test.ts sınar): sabah e-postasıyla aynı kabuk
- * (emailLayout), satır içi stiller ve tablolar, açık tema, en çok 560 px, telefonda tek sütun. Maddeler numaralı; başlık
- * ve "… →" bağlantısı aynı panel ekranını açar (Outlook blok bağlantıyı tanımaz, iki ayrı <a>). Bütün kullanıcı metni
- * (ürün, hammadde, kanal adı) esc()'ten geçer. Veriyi src/server/weekly/collect.ts toplar, gönderim send.ts'te.
+ * Haftalık özetin e-postası (saf; "server-only" yok, tests/haftalik-ozet.test.ts sınar): e-postaların ortak tasarımı
+ * (src/lib/email-kit.ts: ferah kart, en çok 600 px, telefonda tek sütun). Maddeler numaralı; başlık ve "… →" bağlantısı
+ * aynı panel ekranını açar (Outlook blok bağlantıyı tanımaz, iki ayrı <a>). Bütün kullanıcı metni (ürün, hammadde, kanal
+ * adı) esc()'ten geçer. Veriyi src/server/weekly/collect.ts toplar, gönderim send.ts'te.
  */
 
-import type { WeeklySummary } from "@/lib/weekly/core";
+import { button, C, callout, emailShell, esc, FONT, heading, para, TABLE } from "@/lib/email-kit";
+import { longDateTR } from "@/lib/reminders";
+import type { WeeklyItem, WeeklySummary } from "@/lib/weekly/core";
 import { failedText, headlineOf, subjectOf, weekRangeText } from "@/lib/weekly/text";
 
-import { APP_URL, emailLayout, esc, FONT } from "./digest-template";
+import { APP_URL } from "./digest-template";
 
 /** E-postanın alt notu (kabuğun alıcı notunun yerine) */
 export const WEEKLY_FOOTER = "Bu özet her pazartesi panel yöneticilerine gider. Kapatmak için: Ödemeler › E-posta bildirimleri › Haftalık özet.";
@@ -23,6 +25,26 @@ const SAMPLE_LINE = "Bu bir örnektir; asıl özet pazartesi sabahı gider.";
 const PANEL_PATH = /^\/panel(?:\/[\w-]+)*\/?(?:[?#]\S*)?$/;
 export const weeklyUrl = (href: string) => `${APP_URL}${PANEL_PATH.test(href) ? href : "/panel"}`;
 
+/**
+ * Numaralı madde (email-kit'te numaralı liste yok; kitin renk ve yazısıyla): solda sıra karosu, sağda başlık
+ * (bağlantı), açıklama ve "… →" bağlantısı. İki bağlantı aynı adresi açar; metin sarılır (telefonda taşmaz)
+ */
+function itemRow(item: WeeklyItem, i: number): string {
+  const url = esc(weeklyUrl(item.href));
+  const border = `border-top:1px solid ${i ? C.hair : C.line};`;
+  return `<tr>
+  <td width="42" style="${border}width:42px;padding:18px 14px 18px 0;vertical-align:top">
+    <table role="presentation" width="28" cellspacing="0" cellpadding="0" border="0"><tr><td width="28" height="28" align="center" style="width:28px;height:28px;border-radius:14px;background:${C.note};color:${C.soft};font-family:${FONT};font-size:13px;line-height:28px;font-weight:700">${i + 1}</td></tr></table>
+  </td>
+  <td style="${border}padding:20px 0 18px;vertical-align:top;font-family:${FONT};word-break:break-word">
+    <a href="${url}" style="font-size:16px;line-height:23px;font-weight:600;color:${C.ink};text-decoration:none">${esc(item.title)}</a>${
+      item.detail ? `\n    <div style="font-size:14px;line-height:21px;color:${C.mute};margin-top:4px">${esc(item.detail)}</div>` : ""
+    }
+    <div style="margin-top:10px"><a href="${url}" style="font-size:14px;line-height:21px;font-weight:600;color:${C.ink};text-decoration:underline">${esc(item.action)} →</a></div>
+  </td>
+</tr>`;
+}
+
 export function renderWeekly(s: WeeklySummary, o: { today: string; sample?: boolean }): { subject: string; html: string; text: string } {
   const sample = Boolean(o.sample);
   const range = weekRangeText(s.week.lastFrom, s.week.lastTo);
@@ -35,40 +57,29 @@ export function renderWeekly(s: WeeklySummary, o: { today: string; sample?: bool
   const eyebrow = `${sample ? "Örnek · " : ""}Haftalık özet · ${range}`;
   const panel = `${APP_URL}/panel`;
 
-  const rows = s.items
-    .map((item, i) => {
-      const url = esc(weeklyUrl(item.href));
-      return `<tr>
-  <td width="28" style="width:28px;padding:12px 6px 12px 0;border-top:1px solid #e4e4e7;vertical-align:top">
-    <table role="presentation" width="22" cellspacing="0" cellpadding="0" border="0"><tr><td width="22" height="22" align="center" style="width:22px;height:22px;border-radius:11px;background:#f4f4f5;color:#3f3f46;font-family:${FONT};font-size:12px;line-height:22px;font-weight:600">${i + 1}</td></tr></table>
-  </td>
-  <td style="padding:12px 0;border-top:1px solid #e4e4e7;vertical-align:top;font-family:${FONT};word-break:break-word">
-    <a href="${url}" style="font-size:15px;line-height:20px;font-weight:600;color:#171717;text-decoration:none">${esc(item.title)}</a>
-    ${item.detail ? `<div style="font-size:13px;line-height:18px;color:#71717a;margin-top:2px">${esc(item.detail)}</div>` : ""}
-    <div style="margin-top:4px"><a href="${url}" style="font-size:13px;line-height:18px;font-weight:600;color:#171717;text-decoration:underline">${esc(item.action)} →</a></div>
-  </td>
-</tr>`;
-    })
+  // Sakin hafta yeşil kutuda; bir kaynak okunamadıysa nötr (okunamayan turuncu kutuda ayrıca söylenir). Haftanın
+  // satırları (ciro, tahmin) gri kutuda, aralarında boşlukla
+  const linesHtml = s.lines.map((l, i) => `<div style="margin-top:${i ? 8 : 0}px">${esc(l)}</div>`).join("");
+  const cardHtml = [
+    heading(headline, { eyebrow }),
+    sample ? callout("warn", [SAMPLE_LINE], { top: 18 }) : "",
+    n ? "" : callout(failed ? "neutral" : "good", [QUIET_LINE], { top: 18 }),
+    s.lines.length ? callout("neutral", [], { html: linesHtml, top: sample || !n ? 10 : 18 }) : "",
+    n ? `<table ${TABLE} style="border-collapse:collapse;margin-top:24px">${s.items.map(itemRow).join("\n")}</table>` : "",
+    n ? para(WEEKLY_NOTE, { top: 6, muted: true, size: 13 }) : "",
+    failed ? callout("warn", [failed], { top: n ? 14 : 10 }) : "",
+    button(panel, "Paneli aç", { top: 28 }),
+  ]
+    .filter(Boolean)
     .join("\n");
 
-  const html = emailLayout({
+  const html = emailShell({
     subject,
     preheader,
-    brandSub: "Haftalık özet",
-    today: o.today,
+    brandSubHtml: "Haftalık özet",
+    dateLabel: longDateTR(o.today),
+    cardHtml,
     footer: WEEKLY_FOOTER,
-    card: `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#71717a">${esc(eyebrow)}</div>
-    <h1 style="margin:4px 0 10px;font-family:${FONT};font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.02em;color:#171717">${esc(headline)}</h1>
-    ${sample ? `<p style="margin:0 0 10px;font-family:${FONT};font-size:13px;line-height:18px;color:#c2410c">${esc(SAMPLE_LINE)}</p>` : ""}
-    ${n ? "" : `<p style="margin:0 0 10px;font-family:${FONT};font-size:14px;line-height:20px;color:#3f3f46">${esc(QUIET_LINE)}</p>`}
-    ${s.lines.map((l) => `<div style="font-family:${FONT};font-size:13px;line-height:19px;color:#3f3f46;margin-top:2px">${esc(l)}</div>`).join("\n    ")}
-    ${n ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:14px">${rows}</table>` : ""}
-    ${note ? `<p style="margin:12px 0 0;font-family:${FONT};font-size:12px;line-height:17px;color:#a1a1aa">${esc(note)}</p>` : ""}
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:20px">
-      <tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717">
-        <a href="${panel}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Paneli aç</a>
-      </td></tr>
-    </table>`,
   });
 
   const text = [

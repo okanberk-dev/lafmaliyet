@@ -33,6 +33,8 @@ import {
   missingLafposDays,
   parseLafposState,
   peekPosDay,
+  REJECTION_BELL_DAYS,
+  rejectionBells,
   rejectionText,
   unverifiedText,
   withDayRejection,
@@ -862,6 +864,66 @@ test("durum: günlü retler güne göre (en çok MAX_DAY_REJECTIONS, en eskisi d
   assert.equal(dayRejectionStatus({ ...e, clearedAt: "2026-11-08T10:00:00.000Z" }, { ...old, receivedAt: "2026-11-08T11:00:00.000Z" }), "resolved", "silindikten sonra geldi");
   const bad = rej("2026-11-09", "2026-11-09T22:00:00.000Z", { status: 400, error: "invalid", zNo: null, sentZNo: null });
   assert.equal(dayRejectionStatus(bad, null), "open", "400'ün günü hiç gelmedi: açık");
+});
+
+test("Zil: sayılan LafPOS gününün açık reddi bir satır (gün ve neden başına); deneme günü, çözülen, silinen ve eski ret düşmez", () => {
+  const rej = (date: string, at: string, o: Partial<LafposRejection> = {}) =>
+    ({ at, status: 409, error: "z_conflict", field: null, date, zNo: 127, sentZNo: 128, clearedAt: null, ...o }) as LafposRejection & { date: string };
+  const now = new Date("2026-11-26T09:00:00+03:00");
+  const rejections = {
+    // Sayılan gün, panelde eski Z duruyor: açık
+    "2026-11-25": rej("2026-11-25", "2026-11-25T20:10:00.000Z"),
+    // Sözleşmeye uymayan gün: kaydı yok, açık
+    "2026-11-24": rej("2026-11-24", "2026-11-24T20:00:00.000Z", { status: 400, error: "invalid", field: "lines.0.qty", zNo: null, sentZNo: null }),
+    // Kasa başka şubeye ayarlı
+    "2026-11-23": rej("2026-11-23", "2026-11-23T20:00:00.000Z", { error: "wrong_branch", zNo: null, sentZNo: null, sube: "tuzla", expected: "marina" }),
+    // Retten sonra yeniden yazıldı: çözüldü
+    "2026-11-22": rej("2026-11-22", "2026-11-22T20:00:00.000Z"),
+    // Yönetici kaydı sildi, LafPOS'tan Gönder bekleniyor (kart söyler)
+    "2026-11-21": rej("2026-11-21", "2026-11-21T20:00:00.000Z", { clearedAt: "2026-11-21T21:00:00.000Z" }),
+    // Deneme günü (geçişten önce)
+    "2026-11-10": rej("2026-11-10", "2026-11-25T08:00:00.000Z"),
+    // Sayılan ama ret REJECTION_BELL_DAYS'ten eski
+    "2026-11-18": rej("2026-11-18", "2026-11-18T20:00:00.000Z", { status: 400, error: "invalid", field: "z", zNo: null, sentZNo: null }),
+  };
+  const received = {
+    "2026-11-25": "2026-11-25T19:50:00.000Z",
+    "2026-11-22": "2026-11-23T07:00:00.000Z",
+    "2026-11-18": "2026-11-17T20:00:00.000Z",
+  };
+  assert.equal(REJECTION_BELL_DAYS, 7);
+  const rows = rejectionBells({ rejections, switchDay: "2026-11-15", received, branchName: "Marina", today: "2026-11-26", now });
+  assert.deepEqual(
+    rows.map((r) => [r.id, r.title]),
+    [
+      ["lafpos-ret-2026-11-25-z_conflict", "Marina gün sonu alınamadı: Z numarası çakıştı"],
+      ["lafpos-ret-2026-11-24-invalid", "Marina gün sonu alınamadı: gönderim sözleşmeye uymadı"],
+      ["lafpos-ret-2026-11-23-wrong_branch", "Marina gün sonu alınamadı: kasa başka şubeye ayarlı"],
+    ],
+  );
+  // Gövde: gün, ne oldu, ne yapılacağı (LafPOS'tan elle Gönder)
+  assert.equal(rows[0].body.replace(/\s/g, " "), "25 Kasım: panelde Z 127 kayıtlı, LafPOS Z 128 gönderdi. LafPOS'taki doğruysa Ayarlar › LafPOS'ta bu günün kaydını silin, sonra LafPOS'tan o günü Gönder'e basın.");
+  assert.match(rows[1].body, /^24\sKasım: ilk sorunlu alan lines\.0\.qty\. .*Gönder'e basın\.$/);
+  assert.match(rows[2].body, /^23\sKasım: LafPOS "tuzla" için gönderdi, panel "marina" bekliyor\. LafPOS'ta Yönetim › Ayarlar ve yedek › Şube'yi düzeltin/);
+  // Aynı gün aynı nedenle yeniden reddedilince (yeni an) kimlik aynı: satır yinelenmez; başka neden yeni satır
+  const again = rejectionBells({ rejections: { ...rejections, "2026-11-25": rej("2026-11-25", "2026-11-26T05:00:00.000Z", { sentZNo: 129 }) }, switchDay: "2026-11-15", received, branchName: "Marina", today: "2026-11-26", now });
+  assert.equal(again[0].id, rows[0].id);
+  const other = rejectionBells({ rejections: { "2026-11-25": rej("2026-11-25", "2026-11-26T05:00:00.000Z", { status: 400, error: "invalid", field: "z", zNo: null, sentZNo: null }) }, switchDay: "2026-11-15", received, branchName: "Marina", today: "2026-11-26", now });
+  assert.equal(other[0].id, "lafpos-ret-2026-11-25-invalid");
+  // Geçiş günü yokken (kasa ModPOS) hiçbiri sayılmaz
+  assert.deepEqual(rejectionBells({ rejections, switchDay: null, received, branchName: "Marina", today: "2026-11-26", now }), []);
+});
+
+test("kaynak: LafPOS retlerinin zil satırı yalnız yönetici dalında, Sistem başlığında; okunamazsa Sistem'in 'yüklenemedi' satırı", () => {
+  const src = read("src/server/actions/notifications.ts");
+  const load = src.slice(src.indexOf("export async function loadPanelNotifications"));
+  const staffReturn = load.indexOf('if (user.role !== "admin") return');
+  assert.ok(staffReturn > 0);
+  assert.ok(load.indexOf('safe("lafpos", lafposRejectionBell())') > staffReturn, "personel dalında yok");
+  assert.match(load, /\.\.\.modpos, \.\.\.lafpos, /);
+  const srv = read("src/server/bell/lafpos.ts");
+  assert.match(srv, /href: lafposSettingsHref\(branchId\),\s+group: "sistem",/);
+  assert.match(read("src/lib/bell-failed.ts"), /lafpos: \{ group: "sistem",/);
 });
 
 test("Ayarlar kartı: sakin durumlar (kurulmadı / bağlı, deneme / geçiş bekliyor / kasa LafPOS); kırmızı yalnız iki durumda", () => {
