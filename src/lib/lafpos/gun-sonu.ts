@@ -660,12 +660,13 @@ const MAIL_FOOTER = "Bu e-posta kasa raporu alıcılarına gönderildi.";
 const CMP_TONE: Record<string, Tone> = { aynı: "good", FARK: "bad", okunamadı: "warn", bilgi: "neutral" };
 
 /**
- * Satırın HTML'i (gün sonu ve fotoğraf e-postası): karşılaştırma satırında ("fotoğrafta X · LafPOS'ta Y · FARK") sonuç
- * rozet olur, kasa farkı tonlu ve kalın; ötekiler düz satır. Sözcükler düz metindekiyle aynı
+ * Satırın HTML'i (gün sonu ve fotoğraf e-postası): karşılaştırma satırında ("fotoğrafta X · LafPOS'ta Y · FARK")
+ * fotoğrafın değeri kalın ve sonucu rozet, LafPOS'taki değer altında gri (telefonda hepsi etiketin altında, bölüm tek
+ * düzende); kasa farkı tonlu ve kalın; ötekiler düz satır. Sözcükler düz metindekiyle aynı
  */
 function mailRow([label, value]: readonly [string, string]): string {
-  const cmp = /^(fotoğrafta .*) · (aynı|FARK|okunamadı|bilgi)$/.exec(value);
-  if (cmp) return kvRow(label, cmp[1], { badge: { text: cmp[2], tone: CMP_TONE[cmp[2]] } });
+  const cmp = /^(fotoğrafta .*?) · (LafPOS'ta .*) · (aynı|FARK|okunamadı|bilgi)$/.exec(value);
+  if (cmp) return kvRow(label, cmp[1], { badge: { text: cmp[3], tone: CMP_TONE[cmp[3]] }, valueSub: cmp[2], stack: true });
   if (label === "Kasa farkı") return kvRow(label, value, { tone: diffTone(value), strong: true });
   return kvRow(label, value);
 }
@@ -686,7 +687,8 @@ const KPI_ROWS = [
 
 /**
  * Z raporu e-postasının büyük rakamları: fotoğrafta okunan günün toplamı, nakit ve kart (okunduysa; toplamı okunan ilk
- * fotoğraftan), altında LafPOS'taki değer ve sonuç. Okunan yoksa karşılaştırmanın fotoğraf değeri; o da yoksa kutu yok
+ * fotoğraftan), altında LafPOS'taki değer ve sonuç rozeti. Okunan yoksa karşılaştırmanın fotoğraf değeri; o da yoksa
+ * kutu yok
  */
 function photoKpis(reads: readonly (readonly (readonly [string, string])[])[], check: LafposPhotoCheck): Kpi[] {
   const read = reads.find((r) => r.some(([l]) => l === "Günün toplamı")) ?? reads[0] ?? [];
@@ -696,8 +698,17 @@ function photoKpis(reads: readonly (readonly (readonly [string, string])[])[], c
     if (!raw) return [];
     const unsure = raw.endsWith(UNSURE);
     const state = row ? (row.ok ? "aynı" : row.unread ? "okunamadı" : "FARK") : null;
-    const sub = [row ? `LafPOS'ta ${row.lafpos}` : null, state, unsure ? "belirsiz" : null].filter(Boolean).join(" · ");
-    return [{ label, value: unsure ? raw.slice(0, -UNSURE.length) : raw, sub: sub || null, tone: state === "FARK" ? "bad" : null, subTone: state ? CMP_TONE[state] : unsure ? "warn" : null }];
+    const sub = [row ? `LafPOS'ta ${row.lafpos}` : null, unsure ? "belirsiz" : null].filter(Boolean).join(" · ");
+    return [
+      {
+        label,
+        value: unsure ? raw.slice(0, -UNSURE.length) : raw,
+        sub: sub || null,
+        tone: state === "FARK" ? "bad" : null,
+        subTone: unsure && !state ? "warn" : null,
+        badge: state ? { text: state, tone: CMP_TONE[state] } : null,
+      },
+    ];
   });
 }
 const UNSURE = " (belirsiz)";

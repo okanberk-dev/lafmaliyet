@@ -114,7 +114,10 @@ export interface LayoutOptions {
 /** Sağdaki tarih: YYYY-MM-DD ise "22 Kasım Pazar", değilse olduğu gibi */
 const dateText = (date: string) => (/^\d{4}-\d{2}-\d{2}$/.test(date) ? longDateTR(date) : date);
 
-/** L'Af karosu, marka adı, şube, meta satırı ve sağda tarih */
+/**
+ * L'Af karosu, marka adı, şube, meta satırı ve sağda tarih. Karo kendi tablosunda: meta satırı telefonda sarılınca
+ * satırla birlikte uzamasın
+ */
 function header(o: LayoutOptions): string {
   const date = o.date ? esc(dateText(o.date)) : "";
   const branch = o.branch ? `<span class="e-mute" style="font-weight:500;color:${LIGHT.mute}"> · ${esc(o.branch)}</span>` : "";
@@ -124,7 +127,7 @@ function header(o: LayoutOptions): string {
   const datePhone = date ? `<div class="e-mute e-date-phone" style="display:none;max-height:0;overflow:hidden;font-size:13px;line-height:18px;color:${LIGHT.mute}">${date}</div>` : "";
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
 <td style="vertical-align:middle"><table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr>
-<td class="e-tile" width="40" height="40" align="center" bgcolor="${LIGHT.tile}" style="width:40px;height:40px;background:${LIGHT.tile};border-radius:12px;color:${LIGHT.tileInk};font-size:13px;line-height:40px;font-weight:700;letter-spacing:-0.02em;text-align:center;vertical-align:middle">L'Af</td>
+<td width="40" valign="top" style="width:40px;vertical-align:top"><table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td class="e-tile" width="40" height="40" align="center" bgcolor="${LIGHT.tile}" style="width:40px;height:40px;background:${LIGHT.tile};border-radius:12px;color:${LIGHT.tileInk};font-size:13px;line-height:40px;font-weight:700;letter-spacing:-0.02em;text-align:center;vertical-align:middle">L'Af</td></tr></table></td>
 <td style="padding-left:12px;vertical-align:middle"><div class="e-ink" style="font-size:16px;line-height:22px;font-weight:600;color:${LIGHT.ink}">L'Affogato${branch}</div>${meta}${datePhone}</td>
 </tr></table></td>
 ${date ? `<td class="e-mute e-date" align="right" style="vertical-align:middle;padding-left:12px;font-size:13px;line-height:18px;color:${LIGHT.mute};white-space:nowrap">${date}</td>` : ""}

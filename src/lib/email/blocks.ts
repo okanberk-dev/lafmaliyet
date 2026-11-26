@@ -47,7 +47,7 @@ export interface StatusBannerOptions {
   sub?: string | null;
   /** Başlığın üstündeki küçük etiket: "Kasa" */
   eyebrow?: string | null;
-  /** "lg" büyük rakam (28 px), "md" varsayılan (20 px), "sm" bölüm içi (16 px) */
+  /** "lg" büyük rakam (28 px), "md" varsayılan (20 px; 44 karakterden uzun başlıkta 18), "sm" bölüm içi (16 px) */
   size?: "lg" | "md" | "sm";
   /** Soldaki işaret dairesi (✓ ! × i); verilmezse var ("sm"de yok) */
   mark?: boolean;
@@ -61,7 +61,10 @@ export interface StatusBannerOptions {
 export function statusBanner(o: StatusBannerOptions): string {
   const t = TONES[o.tone];
   const size = o.size ?? "md";
-  const title = size === "lg" ? { fs: 28, lh: 34, ls: "-0.02em" } : size === "md" ? { fs: 20, lh: 27, ls: "-0.01em" } : { fs: 16, lh: 23, ls: "0" };
+  // Uzun başlık (cümle) bir boy küçük yazılır: bant ağırlaşmasın
+  const long = o.title.length > 44;
+  const title =
+    size === "lg" && !long ? { fs: 28, lh: 34, ls: "-0.02em" } : size !== "sm" ? (long ? { fs: 18, lh: 25, ls: "-0.01em" } : { fs: 20, lh: 27, ls: "-0.01em" }) : { fs: 16, lh: 23, ls: "0" };
   const mark = o.mark ?? size !== "sm";
   const pad = size === "sm" ? "14px 16px" : "20px 22px";
   // İşaret başlığın ortasına hizalanır
@@ -90,11 +93,14 @@ export interface Kpi {
   tone?: Tone | null;
   /** Alt satırın rengi; verilmezse gri */
   subTone?: Tone | null;
+  /** Alt satırın sonunda rozet ("aynı", "FARK"); sığmazsa bütün olarak alt satıra geçer */
+  badge?: { text: string; tone: Tone } | null;
 }
 
 /**
  * 1–3 büyük rakam kutusu yan yana (telefonda alt alta). Örnek: kpiGrid([{ label: "Günün toplamı", value: "1.190 ₺" },
- * { label: "Nakit", value: "390 ₺" }, { label: "Kart", value: "800 ₺" }])
+ * { label: "Nakit", value: "390 ₺", sub: "LafPOS'ta 420 ₺", tone: "bad", badge: { text: "FARK", tone: "bad" } },
+ * { label: "Kart", value: "800 ₺" }])
  */
 export function kpiGrid(items: readonly Kpi[]): string {
   const list = items.slice(0, 3);
@@ -107,8 +113,8 @@ export function kpiGrid(items: readonly Kpi[]): string {
     return `<td class="e-kpi e-well" width="${width}%" valign="top" bgcolor="${LIGHT.well}" style="width:${width}%;background:${LIGHT.well};border-radius:${SPACE.radiusInner}px;padding:16px 18px 15px;vertical-align:top">
 <div class="e-mute" style="font-size:13px;line-height:18px;color:${LIGHT.mute}">${esc(k.label)}</div>
 <div class="${valueTone ? `e-v-${valueTone}` : "e-ink"}" style="margin-top:4px;font-size:24px;line-height:30px;font-weight:700;letter-spacing:-0.02em;color:${valueTone ? TONES[valueTone].value : LIGHT.ink};white-space:nowrap;${NUM}">${esc(k.value)}</div>${
-      k.sub
-        ? `\n<div class="${subTone ? `e-v-${subTone}` : "e-mute"}" style="margin-top:4px;font-size:13px;line-height:18px;color:${subTone ? TONES[subTone].value : LIGHT.mute};${NUM}">${esc(k.sub)}</div>`
+      k.sub || k.badge
+        ? `\n<div class="${subTone ? `e-v-${subTone}` : "e-mute"}" style="margin-top:6px;font-size:13px;line-height:20px;color:${subTone ? TONES[subTone].value : LIGHT.mute};${NUM}">${k.sub ? esc(k.sub) : ""}${k.sub && k.badge ? " " : ""}${k.badge ? badge(k.badge.text, k.badge.tone) : ""}</div>`
         : ""
     }
 </td>`;
@@ -135,10 +141,10 @@ export interface KvOptions {
   /** Değerin yanında rozet */
   badge?: { text: string; tone: Tone } | null;
   /**
-   * Telefonda değer etiketin altına iner. Verilmezse değer uzunsa (görünür 22 karakterden fazla) iner, kısaysa
-   * (tutar) yanında kalır
+   * Değer etiketin altına iner: true telefonda, "always" her genişlikte. Verilmezse değerin görünür uzunluğuna göre:
+   * kısa (tutar, 22 karaktere kadar) yanında kalır, uzun telefonda iner, çok uzun (48 karakterden fazla) her yerde
    */
-  stack?: boolean;
+  stack?: boolean | "always";
   /** `value` hazır HTML (kaçışlanmaz) */
   html?: boolean;
   /** Üst çizgi yok (bölümün dışında tek başına satır) */
@@ -147,12 +153,16 @@ export interface KvOptions {
 
 /**
  * Etiket solda, değer sağda bir satır (üstünde ince çizgi). Tutar gibi kısa değer kaydırılmaz; uzun değer masaüstünde
- * sarılır, telefonda etiketin altına iner. Örnek: kvRow("Kasa farkı", "120 ₺ eksik", { tone: "bad", strong: true })
+ * sarılır, telefonda etiketin altına iner; çok uzun değer (cümle) her genişlikte etiketin altında, sola dayalı (sağa
+ * dayalı çok satırlı metin zor okunur). Örnek: kvRow("Kasa farkı", "120 ₺ eksik", { tone: "bad", strong: true }) ya da
+ * kvRow("Yazarkasa nakdi", "fotoğrafta 3.270 ₺", { badge: { text: "FARK", tone: "bad" }, valueSub: "LafPOS'ta 3.390 ₺" })
  */
 export function kvRow(label: string, value: string, o: KvOptions = {}): string {
   const valueHtml = o.html ? value : esc(value);
-  const long = visibleLength(valueHtml) + (o.badge ? o.badge.text.length + 2 : 0) > 22;
-  const stacked = o.stack ?? long;
+  const length = visibleLength(valueHtml) + (o.badge ? o.badge.text.length + 2 : 0);
+  const long = length > 22;
+  const always = o.stack === "always" || (o.stack === undefined && length > 48);
+  const stacked = o.stack === undefined ? long : o.stack !== false;
   const tone = o.tone && o.tone !== "neutral" ? o.tone : null;
   const line = o.bare ? "" : `border-top:1px solid ${LIGHT.line};`;
   const lineCls = o.bare ? "" : " e-line";
@@ -161,12 +171,19 @@ export function kvRow(label: string, value: string, o: KvOptions = {}): string {
   const weight = o.strong ? 700 : o.quiet ? 400 : 600;
   const size = o.strong ? 16 : 15;
   const labelSub = o.sub ? `<div class="e-mute" style="font-size:13px;line-height:18px;color:${LIGHT.mute}">${esc(o.sub)}</div>` : "";
-  const valueSub = o.valueSub ? `<div class="e-mute" style="font-size:13px;line-height:18px;font-weight:400;color:${LIGHT.mute}">${esc(o.valueSub)}</div>` : "";
+  const valueSub = o.valueSub ? `<div class="e-mute" style="margin-top:2px;font-size:13px;line-height:18px;font-weight:400;color:${LIGHT.mute}">${esc(o.valueSub)}</div>` : "";
   const badgeHtml = o.badge ? `${long ? " " : "&nbsp;"}${badge(o.badge.text, o.badge.tone)}` : "";
-  // Kısa değer kendi genişliğinde (1%), etiket kalan yerde; uzun değerde etiket en az %42
-  const labelWidth = long ? ' width="42%"' : "";
+  const labelStyle = `${line}font-size:15px;line-height:22px;color:${LIGHT.soft};vertical-align:top`;
+  const valueStyle = `font-size:${size}px;line-height:22px;font-weight:${weight};color:${color};vertical-align:top;${NUM}`;
+  if (always) {
+    // Etiket üstte, değer altında (iki satır, her genişlikte)
+    return `<table ${TABLE} class="e-kv"><tr><td class="e-kv-l e-soft${lineCls}" style="padding:${SPACE.rowPad}px 0 2px;${labelStyle}">${esc(label)}${labelSub}</td></tr><tr><td class="e-kv-v ${valueCls}" style="padding:0 0 ${SPACE.rowPad}px;${valueStyle};word-break:break-word">${valueHtml}${badgeHtml}${valueSub}</td></tr></table>`;
+  }
+  // Kısa değer kendi genişliğinde (1%), etiket kalan yerde; uzun değerde etiket etiketin boyuna göre %28–42 (kısa
+  // etiketin yanında uzun değer tek satıra sığsın)
+  const labelWidth = long ? ` width="${label.length <= 12 ? 28 : label.length <= 20 ? 36 : 42}%"` : "";
   const valueWidth = long ? "" : ' width="1%"';
-  return `<table ${TABLE} class="e-kv${stacked ? " e-kv-s" : ""}"><tr><td class="e-kv-l e-soft${lineCls}"${labelWidth} style="padding:${SPACE.rowPad}px 16px ${SPACE.rowPad}px 0;${line}font-size:15px;line-height:22px;color:${LIGHT.soft};vertical-align:top">${esc(label)}${labelSub}</td><td class="e-kv-v ${valueCls}${lineCls}"${valueWidth} align="right" style="padding:${SPACE.rowPad}px 0;${line}font-size:${size}px;line-height:22px;font-weight:${weight};color:${color};text-align:right;vertical-align:top;${long ? "" : "white-space:nowrap;"}${NUM}">${valueHtml}${badgeHtml}${valueSub}</td></tr></table>`;
+  return `<table ${TABLE} class="e-kv${stacked ? " e-kv-s" : ""}"><tr><td class="e-kv-l e-soft${lineCls}"${labelWidth} style="padding:${SPACE.rowPad}px 16px ${SPACE.rowPad}px 0;${labelStyle}">${esc(label)}${labelSub}</td><td class="e-kv-v ${valueCls}${lineCls}"${valueWidth} align="right" style="padding:${SPACE.rowPad}px 0;${line}text-align:right;${long ? "" : "white-space:nowrap;"}${valueStyle}">${valueHtml}${badgeHtml}${valueSub}</td></tr></table>`;
 }
 
 /** Bölümün satırı: hazır HTML (kvRow, list…) ya da [etiket, değer] (varsayılan kvRow) */

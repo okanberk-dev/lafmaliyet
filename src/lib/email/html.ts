@@ -16,12 +16,22 @@ export const compact = <T>(xs: readonly (T | null | undefined | false | "")[]): 
 export const visibleLength = (html: string): number => html.replace(/<[^>]*>/g, "").replace(/&[#a-z0-9]+;/gi, "x").length;
 
 /**
- * "Z raporu tutuyor: fotoğraftaki rakamlar LafPOS'la aynı" → başlık "Z raporu tutuyor", alt satır "Fotoğraftaki rakamlar
- * LafPOS'la aynı". İki nokta yoksa hepsi başlık. Durum bandında uzun cümle büyük yazılmasın diye; metin aynı kalır
- * (yalnız alt satırın ilk harfi büyür)
+ * Durum bandının başlığı ve alt satırı: cümle ilk ": " ya da "; " ayracından (parantez dışında) bölünür. "Z raporu
+ * tutuyor: fotoğraftaki rakamlar LafPOS'la aynı" → başlık "Z raporu tutuyor", alt satır "Fotoğraftaki rakamlar LafPOS'la
+ * aynı"; "Z raporu okunamadı ya da yanlış belge; personelden yeniden çekmesi istendi" → "Z raporu okunamadı ya da yanlış
+ * belge" + "Personelden yeniden çekmesi istendi". Ayraç yoksa hepsi başlık. Bantta uzun cümle büyük yazılmasın diye;
+ * sözcükler aynı kalır (yalnız alt satırın ilk harfi büyür)
  */
 export function splitHeadline(text: string): { title: string; sub?: string } {
-  const i = text.indexOf(": ");
-  if (i <= 0) return { title: text };
-  return { title: text.slice(0, i), sub: upperFirst(text.slice(i + 2)) };
+  let depth = 0;
+  for (let i = 0; i < text.length - 1; i++) {
+    const c = text[i];
+    if (c === "(") depth++;
+    else if (c === ")") depth = Math.max(0, depth - 1);
+    else if ((c === ":" || c === ";") && text[i + 1] === " " && depth === 0 && i > 0) {
+      const sub = text.slice(i + 2).trim();
+      return sub ? { title: text.slice(0, i), sub: upperFirst(sub) } : { title: text.slice(0, i) };
+    }
+  }
+  return { title: text };
 }

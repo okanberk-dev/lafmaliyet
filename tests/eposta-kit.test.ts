@@ -36,3 +36,28 @@ test("bileşenler: metin kaçışlanır, ton sınıfı ve rengi satır içinde, 
   assert.deepEqual(splitHeadline("Z raporu tutuyor: fotoğraftaki rakamlar aynı"), { title: "Z raporu tutuyor", sub: "Fotoğraftaki rakamlar aynı" });
   assert.deepEqual(splitHeadline("Tek cümle"), { title: "Tek cümle" });
 });
+
+test("durum bandı başlığı: ilk ': ' ya da '; ' ayracından bölünür, parantezin içi bölünmez; uzun başlık bir boy küçük", () => {
+  assert.deepEqual(splitHeadline("Z raporu okunamadı ya da yanlış belge; personelden yeniden çekmesi istendi"), {
+    title: "Z raporu okunamadı ya da yanlış belge",
+    sub: "Personelden yeniden çekmesi istendi",
+  });
+  assert.deepEqual(splitHeadline("Yapay zekâ kullanılamadı; fotoğraf kodla okundu: fotoğrafa bakın"), { title: "Yapay zekâ kullanılamadı", sub: "Fotoğraf kodla okundu: fotoğrafa bakın" });
+  assert.deepEqual(splitHeadline("Pavo sonucu alınamadı (Bağlantı yok; hata kodu 5085)."), { title: "Pavo sonucu alınamadı (Bağlantı yok; hata kodu 5085)." });
+  assert.deepEqual(splitHeadline("Saat 23:10"), { title: "Saat 23:10" });
+  assert.match(statusBanner({ tone: "warn", title: "Yapay zekâ kullanılamadı ve fotoğraf kodla da okunamadı" }), /font-size:18px/);
+  assert.match(statusBanner({ tone: "good", title: "Z raporu tutuyor" }), /font-size:20px/);
+});
+
+test("satırlar: çok uzun değer her genişlikte etiketin altında, karşılaştırma satırı rozet ve gri alt satırla; büyük rakamda rozet", () => {
+  const long = kvRow("Fotoğraf", "alındı · LafPOS'tan farklı: Yazarkasa nakdi: fotoğrafta 3.270 ₺; LafPOS'ta 3.390 ₺");
+  // Etiket ve değer ayrı satırlarda (iki <tr>), değer sola dayalı
+  assert.equal(long.split("<tr>").length - 1, 2);
+  assert.ok(!long.includes("text-align:right"));
+  const cmp = kvRow("Yazarkasa nakdi", "fotoğrafta 3.270 ₺", { badge: { text: "FARK", tone: "bad" }, valueSub: "LafPOS'ta 3.390 ₺", stack: true });
+  assert.match(cmp, /e-kv-s/);
+  assert.match(cmp, /fotoğrafta 3.270 ₺[^]*FARK[^]*LafPOS&#39;ta 3.390 ₺/);
+  // Kısa etiketin yanındaki uzun değer geniş sütunda
+  assert.match(kvRow("Banka POS", "7.920 ₺ (000278 2.400 ₺ + 000279 5.520 ₺)"), /width="28%"/);
+  assert.match(kpiGrid([{ label: "Nakit", value: "3.270 ₺", sub: "LafPOS'ta 3.390 ₺", tone: "bad", badge: { text: "FARK", tone: "bad" } }]), /LafPOS&#39;ta 3.390 ₺ <span class="e-t-bad"[^>]*>FARK</);
+});
