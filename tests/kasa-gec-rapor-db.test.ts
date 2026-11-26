@@ -50,6 +50,8 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
     ayse: { id: 0, name: "Ayşe", role: "staff" },
     mehmet: { id: 0, name: "Mehmet", role: "staff" },
   };
+  /** Müdür (docs/ROLLER.md): çekirdeğe "admin" düzeyinde girer, gerçek rolü `realRole` (src/lib/roles.ts › asActor) */
+  const mudur = { id: 0, name: "Müdür", role: "admin" as const, realRole: "manager" as const };
   const dates: string[] = [];
   const photoIds: number[] = [];
   // Taban rapor 1 Mart; "bugün" 15 Mart (pencere 1–13 Mart); D−5 = 10 Mart, D−4 = 11 Mart
@@ -148,12 +150,17 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
         .returning({ id: s.users.id });
       users[k].id = u.id;
     }
+    const [m] = await db
+      .insert(s.users)
+      .values({ email: `kasa-gec-mudur-${tag}@ornek.com`, name: mudur.name, passwordHash: "x", role: "manager", branchId: "tuzla" })
+      .returning({ id: s.users.id });
+    mudur.id = m.id;
     await report(D0, { openingCash: 0 });
   });
 
   after(async () => {
     if (!db) return;
-    const ids = Object.values(users).map((u) => u.id);
+    const ids = [...Object.values(users).map((u) => u.id), mudur.id];
     await db.delete(s.staffRequests).where(inArray(s.staffRequests.requestedBy, ids));
     if (dates.length) await db.delete(s.cashReports).where(inArray(s.cashReports.date, dates));
     if (photoIds.length) await db.delete(s.photos).where(inArray(s.photos.id, photoIds));
@@ -386,5 +393,34 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
     assert.equal(approve2.status, "fulfilled");
     assert.equal(direct.status, "rejected", "gün onayla raporlanmıştı");
     assert.equal((await reportOf(DAY2)).submittedByName, "Ayşe");
+  });
+
+  test("müdür ('admin' düzeyinde) kendi raporuna başkasının bağsız fotoğrafını bağlayamaz (öteki şubenin Z'si); onayladığı geç raporun fotoğraflarını bağlar", async () => {
+    const BASE = "2030-09-01";
+    const DAY = "2030-09-10";
+    const OWN = "2030-09-14";
+    const AT = tr("2030-09-15T10:00");
+    await report(BASE, {}, tr(`${BASE}T22:00`));
+    // Onay: isteğin tuttuğu personel fotoğrafları bağlanır
+    const held = await photo(users.ayse);
+    const out = await propose(users.ayse, DAY, { photoIds: [held], now: AT });
+    const r = await review(mudur, out.row.id, out.row.version, "approve", { now: AT });
+    assert.equal(r.status, "approved");
+    const links = await db.select().from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, (await reportOf(DAY)).id));
+    assert.deepEqual(
+      links.map((l) => l.photoId),
+      [held],
+    );
+    // Doğrudan rapor: Ayşe'nin bağsız Z fotoğrafı (fotoğrafta şube yok) müdürün raporuna bağlanmaz, rapor da yazılmaz
+    const foreign = await photo(users.ayse);
+    if (!dates.includes(OWN)) dates.push(OWN);
+    await refused(store.saveCashReport(db, mudur, { ...fields(OWN, { note: "deneme" }), countedBy: null, revision: 0, photos: [foreign] }, AT), /Fotoğraf bulunamadı/);
+    assert.equal((await photoOf(foreign)).linkedAt, null, "fotoğraf bağlanmadı");
+    assert.equal(await reportOf(OWN), undefined);
+    // Kendi yüklediği bağlanır
+    const own = await photo(mudur);
+    const saved = await store.saveCashReport(db, mudur, { ...fields(OWN, { note: "deneme" }), countedBy: null, revision: 0, photos: [own] }, AT);
+    assert.equal(saved.kind, "saved");
+    assert.notEqual((await photoOf(own)).linkedAt, null);
   });
 });

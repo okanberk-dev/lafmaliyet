@@ -33,6 +33,7 @@ import {
   cashAudience,
   homeFor,
   isRole,
+  linksAnyPhoto,
   MANAGER_CLOSED_PATHS,
   MANAGER_EXTRA_PATHS,
   opsLevel,
@@ -210,6 +211,24 @@ describe("müdür: şubesinin günlük işletmesi", () => {
       assert.match(read(`src/server/actions/${f}.ts`), /reviewBranchRefusal\(getDb\(\), me, /, f);
     }
   });
+});
+
+test("müdür başkasının fotoğrafını bağlayamaz ('admin' düzeyi değil gerçek rol); onayladığı isteğinkini bağlar", () => {
+  const manager = asActor({ id: 2, role: "manager" as Role }, opsLevel("manager"));
+  assert.equal(linksAnyPhoto(manager), false);
+  assert.equal(linksAnyPhoto(manager, true), true, "onayladığı isteğin tuttuğu fotoğraf");
+  assert.equal(linksAnyPhoto(asActor({ id: 1, role: "admin" as Role }, "admin")), true);
+  assert.equal(linksAnyPhoto({ role: "admin" }), true, "elle kurulan yönetici (LafPOS, fatura eşleme)");
+  assert.equal(linksAnyPhoto({ role: "staff" }, true), false);
+  // Fotoğraf sahipliğinin dört yeri aynı kurala bakar
+  assert.match(read("src/server/cash/report-store.ts"), /\(!linksAnyPhoto\(actor, o\.heldBy !== undefined\) && p\.createdBy !== actor\.id\)/);
+  const write = read("src/server/cash-outs/write.ts");
+  assert.match(write, /const foreign = !linksAnyPhoto\(me, o\.heldBy !== undefined\) && p\?\.createdBy !== me\.id/);
+  assert.match(write, /\(!linksAnyPhoto\(me\) && p\.createdBy !== me\.id\)\) throw new UserError\(PHOTO_GONE\)/);
+  assert.match(read("src/server/lafpos/foto.ts"), /\(!linksAnyPhoto\(me\) && p\.createdBy !== me\.id\)/);
+  for (const f of ["src/server/cash/report-store.ts", "src/server/cash-outs/write.ts", "src/server/lafpos/foto.ts"]) {
+    assert.doesNotMatch(read(f), /role !== "admin" && p\??\.createdBy !== /, f);
+  }
 });
 
 describe("muhasebeci: salt okunur", () => {

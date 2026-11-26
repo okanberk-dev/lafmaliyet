@@ -43,7 +43,7 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
   (karaoke, kontrol listesi, sayım, reçete önerisi, sipariş, özel gün, kasadaki fiyatlar) "staff" düzeyinde
   (`adminLevel`, `adminActor`). Kasa okumalarının düzeyi `cashAudience` (rakam gören "admin" DTO'sunu alır).
   Çekirdeğe giden kişi gerçek rolünü de taşır (`asActor` › `realRole`, `realRoleOf`): düzey yazım yolunu seçer, yalnız
-  yöneticinin olanlara (bütün kategoriler) çekirdek gerçek role bakar.
+  yöneticinin olanlara (bütün kategoriler, başkasının fotoğrafı) çekirdek gerçek role bakar.
 - **Varsayılan kapalı.** Emin olunmayan her eylem ve ekran yalnız yöneticinin. `requireAdmin` çağrıları tek tek gözden
   geçirildi; yalnız müdüre ya da muhasebeciye açılan okuma ve işletme yolları `requireCan`'a geçti, gerisi aynen kaldı.
 
@@ -56,6 +56,9 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
   Personel hesabının şubesi) ve ayrıca: `withBranchScope("hepsi" ya da başka şube, …)` ile açılan okumalar da
   (işletme geneli kartlar, şubeleri yan yana koyan yükleyiciler) şubesine daralır (`currentBranchScope`). Müdür öteki
   şubeyi hiçbir yoldan okuyamaz.
+- Fotoğrafta şube yok: müdür "admin" düzeyinde yazsa da kasa raporuna, kasadan çıkana ve LafPOS gün sonuna yalnız kendi
+  yüklediği fotoğrafı bağlar (öteki şubenin bağsız Z'sini kendi kaydına bağlayıp göremesin); onayladığı isteğin tuttuğu
+  fotoğraf bağlanır (`src/lib/roles.ts` › `linksAnyPhoto`).
 - Şubesi pasife alınırsa oturumu yok sayılır, giriş de reddedilir (`managerWithoutBranch`). Personelde kilit kalkar
   ("Tümü"); müdürde kalkarsa öteki şubeleri görürdü.
 - Onaylar'da yalnız şubesinin kasa ve zayi / ikram isteklerini görür ve karara bağlar; şubesi bilinmeyen istek ona

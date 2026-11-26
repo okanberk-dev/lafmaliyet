@@ -124,6 +124,16 @@ export function realRoleOf(actor: { role: Role; realRole?: Role }): Role {
   return actor.realRole ?? actor.role;
 }
 
+/**
+ * Başkasının yüklediği fotoğrafı bir kayda (kasa raporu, kasadan çıkan, LafPOS gün sonu) bağlayabilir mi: yalnız gerçek
+ * yönetici; "admin" düzeyindeki müdür yalnız onayladığı isteğin tuttuğu fotoğrafı (`held`), öbür her yolda kendi
+ * yüklediğini. Fotoğrafta şube yok: müdür öteki şubenin bağsız fotoğrafını kendi kaydına bağlayıp okuyamasın
+ * (docs/ROLLER.md › Müdür)
+ */
+export function linksAnyPhoto(actor: { role: Role; realRole?: Role }, held = false): boolean {
+  return realRoleOf(actor) === "admin" || (actor.role === "admin" && held);
+}
+
 /** Müdürün personel gibi kullandığı ekranların eylemleri: yalnız yönetici "admin" düzeyinde (`adminLevel`) */
 export function adminActor<T extends { role: Role }>(me: T): Actor<T> {
   return asActor(me, adminLevel(me.role));

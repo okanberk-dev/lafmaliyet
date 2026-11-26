@@ -9,7 +9,7 @@ import { expenseDateFor } from "@/lib/photo-read/receipt";
 import { linkedUntil, RELEASED_DAYS } from "@/lib/photo-rules";
 import type { Role } from "@/lib/constants";
 import { longDateTR, todayTR } from "@/lib/reminders";
-import { can, realRoleOf } from "@/lib/roles";
+import { can, linksAnyPhoto, realRoleOf } from "@/lib/roles";
 import { zAmount, zDate, zOptText } from "@/server/actions/util";
 import { currentTillBranch } from "@/server/branch-scope";
 import { loadPendingCashOutInvoices } from "@/server/data/cash-out-invoices";
@@ -170,7 +170,8 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
   if (d.photoId && d.photoId !== prev?.photoId) {
     const p = await getPhoto(d.photoId, tx);
     const expired = !p || (p.expiresAt !== null && p.expiresAt.getTime() <= Date.now());
-    const foreign = !admin && p?.createdBy !== me.id && !(o.restore && justReleased(p?.expiresAt ?? null));
+    // Başkasının fotoğrafı: yalnız yönetici; müdür onayladığı isteğin fişini (heldBy) bağlar (src/lib/roles.ts › linksAnyPhoto)
+    const foreign = !linksAnyPhoto(me, o.heldBy !== undefined) && p?.createdBy !== me.id && !(o.restore && justReleased(p?.expiresAt ?? null));
     if (expired || p.kind !== "fis" || p.linkedAt !== null || foreign) throw new UserError(PHOTO_GONE);
     // Onay bekleyen bir isteğin tuttuğu fotoğraf (geç kasa raporu, kasadan çıkan isteği) satıra bağlanmaz; onaylanan
     // isteğin kendi fişi (heldBy) bağlanır
@@ -290,7 +291,7 @@ export async function attachReceiptPhoto(tx: CashOutTx, me: CashOutActor, row: C
   if (row.kind !== "harcama" || row.photoId !== null) throw new UserError("Fiş yalnız fotoğrafsız alışveriş satırına eklenir");
   const p = await getPhoto(photoId, tx);
   const expired = !p || (p.expiresAt !== null && p.expiresAt.getTime() <= Date.now());
-  if (expired || p.kind !== "fis" || p.linkedAt !== null || (me.role !== "admin" && p.createdBy !== me.id)) throw new UserError(PHOTO_GONE);
+  if (expired || p.kind !== "fis" || p.linkedAt !== null || (!linksAnyPhoto(me) && p.createdBy !== me.id)) throw new UserError(PHOTO_GONE);
   await assertNotHeld(tx, photoId);
   await tx
     .update(s.cashOuts)

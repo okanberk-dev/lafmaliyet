@@ -612,4 +612,36 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
     outIds.push(back.id);
     assert.equal((await expenseOf(back.id))?.categoryId, cats.admin);
   });
+
+  test("müdür ('admin' düzeyinde) başkasının bağsız fişini kendi satırına bağlayamaz (öteki şubenin fotoğrafı); onayladığı isteğin fişini bağlar", async () => {
+    const gone = /Fotoğraf bulunamadı/;
+    const foreign = await photo(users.fatma);
+    // Doğrudan yeni satır
+    await refused(
+      db.transaction((tx) =>
+        write.writeCashOut(
+          tx,
+          mudur,
+          { id: null, date: OPEN_DAY, kind: "harcama", amount: 12, store: null, description: "buz", receiptDate: null, receiptNo: null, vat: null, docType: "fis", categoryId: cats.staff, toExpenses: true, photoId: foreign },
+          { branchId: "tuzla" },
+        ),
+      ),
+      gone,
+    );
+    // Fotoğrafsız satıra fiş: başkasınınki hayır, kendi yüklediği evet
+    const bare = await adminRow(OPEN_DAY, { amount: 14 });
+    await refused(reqs.attachCashOutReceiptCore(db, mudur, { cashOutId: bare, photoId: foreign }, OPEN_NOW), gone);
+    assert.equal((await photoOf(foreign)).linkedAt, null, "fotoğraf bağlanmadı");
+    const own = await photo(mudur);
+    await reqs.attachCashOutReceiptCore(db, mudur, { cashOutId: bare, photoId: own }, OPEN_NOW);
+    assert.equal((await outOf(bare)).photoId, own);
+    // Onay: isteğin tuttuğu personel fişi bağlanır
+    const held = await photo(users.fatma);
+    const out = await propose(users.fatma, { date: YESTERDAY, line: line({ amount: 23, photoId: held, docType: "fis" }), clientKey: key() });
+    const r = await review(mudur, out.row.id, out.row.version, "approve");
+    assert.ok(r.status === "approved" && r.op === "ekle");
+    outIds.push(r.cashOutId);
+    assert.equal((await outOf(r.cashOutId)).photoId, held);
+    assert.notEqual((await photoOf(held)).linkedAt, null);
+  });
 });
