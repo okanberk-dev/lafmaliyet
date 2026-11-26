@@ -1355,7 +1355,8 @@ Anahtar yokken altı uç da `503` döner; panelin geri kalanı ve Kasa raporu es
 |-------|-------|
 | `src/lib/lafpos/day.ts` | Gövdenin şeması (beyaz liste; Faz 2 alanları bozuksa yok sayılır), okunması ve hata alanı, ürünün bulunma sırası (saf) |
 | `src/lib/lafpos/gun-ayrinti.ts`, `src/app/panel/kasa/lafpos-day-card.tsx` | Faz 2 ayrıntısı: yazarkasadan geçmeyen, ödeme iptalleri, iptal edilen kalemler, yazarkasa Z no, KDV, gönderim ve düzeltme (gün görünümü kartı ve gün sonu e-postası; saf) |
-| `src/lib/lafpos/request.ts` | Anahtar ve imzalı isteğin denetimi (saf) |
+| `src/lib/lafpos/request.ts` | Anahtar ve imzalı isteğin denetimi (saf; `node:crypto`, yalnız sunucu) |
+| `src/lib/lafpos/secret-rules.ts` | Anahtarın en kısa uzunluğu (Şube ayarları kartı da okur; tarayıcı `request.ts`'i içe aktarmaz, CSP: [DEPLOY.md](DEPLOY.md) › Güvenlik başlıkları) |
 | `src/lib/lafpos/prefill.ts` | Z → Kasa formunun alanları (`CashPrefill`), bandın metni, harcama ve teslimin bilgi satırı, kartla bahşiş ve cari tahsilatı, yazarkasadan geçmeyen ödeme (`LafposDay.offDevice`; saf) |
 | `src/lib/lafpos/diffs.ts` | Gönderilmiş raporun LafPOS'tan farklı yazılanları ve metni (saf) |
 | `src/lib/lafpos/costs.ts` | Maliyet listesinin beyaz listesi (saf) |

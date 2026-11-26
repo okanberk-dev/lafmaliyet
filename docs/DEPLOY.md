@@ -188,18 +188,38 @@ yanıtları kendi başlığını taşır: fotoğrafın `default-src 'none'; sand
   PDF önizlemesi), `worker-src 'self' blob:` (servis çalışanı `/sw.js`), `object-src 'none'`. `CSP_ENFORCE=1`
   değilken **Report-Only** gider: tarayıcı hiçbir şeyi engellemez, engelleyeceği her kaynağı `/api/csp-rapor`'a
   bildirir (oturumsuz, hep 204, dakikada en çok 30 satır; adresler köken + yola indirilir). Vercel › Logs'ta `[csp]`
-  ile aranır: `[csp] report img-src https://… · /panel/kasa`.
+  ile aranır: `[csp] report img-src https://… · /panel/kasa`. Chrome raporu Reporting API ile (`report-to`,
+  `Reporting-Endpoints`; yalnız HTTPS'te, birkaç saniye içinde) gönderir, Firefox ve Safari `report-uri` ile; uç iki
+  biçimi de okur. Yerelde `http://localhost`'ta Chrome `Reporting-Endpoints`'i yok sayar, `report-to` varken
+  `report-uri`'ye de göndermez: yerel denetimde ihlal tarayıcı konsolunda görülür (sunucu günlüğünde değil).
+- **Paketlere dair iki kural** (CSP'de `'unsafe-eval'` yok): tarayıcıya giden kod `eval` / `new Function` kullanmaz.
+  zod 4 nesne şemalarını hızlandırmak için ilk ayrıştırmada `Function("")` dener; `src/instrumentation-client.ts`
+  React canlanmadan önce zod'u `jitless` yapar, deneme hiç yapılmaz. Tarayıcı bileşeni (`"use client"`) `node:crypto`'ya
+  ulaşan bir modülü içe aktarmaz: paketleyici sayfaya crypto-browserify (~0,5 MB) koyar, onunla gelen `Function(...)`
+  denemesi de ihlal ürettirir (sınır `tests/csp.test.ts`; ör. LafPOS anahtarının uzunluğu
+  `src/lib/lafpos/secret-rules.ts`'te, imza denetimi `request.ts`'te).
 - **Neden nonce yok:** panel `cacheComponents` ve `partialPrefetching` ile önceden çizilmiş kabuklar sunar; Next'in CSP
   kılavuzuna göre nonce her sayfayı her istekte çizmeye zorlar ve önceden çizilmiş kabukla (PPR) bağdaşmaz. Next'in
   sayfaya gömdüğü satır içi betikler (RSC verisi) ve koyu tema betiği bu yüzden `'unsafe-inline'` ile çalışır; motion,
   Recharts ve Sonner satır içi stil yazar. Kazanç yine de: başka kökenden betik, istek, görsel, çerçeve ve eklenti
   yüklenemez, sızdırılan veri başka bir sunucuya `fetch` ya da görselle gönderilemez.
 - **Karar: tam politika Report-Only ile başlar.** Panel her gün kasa raporu, sayım ve faturalar için kullanılıyor;
-  tarayıcıda denenemeyen yollar var (fatura PDF'inin tarayıcıdaki önizlemesi `blob:` çerçevede, cihaz bildirimi,
-  başka oturumların yarım işleri: belge tarayıcı işçi ya da WebAssembly isteyebilir). Uygulanan bir CSP'de bunlardan
-  biri sessizce bozulur ve sahibin fark etmesi günler sürebilir; Report-Only'de hiçbir şey bozulmaz, aynı ihlaller
-  günlüğe düşer. Çekirdek ise hiçbir yüklemeye dokunmadığı için baştan uygulanır. Yerel denetim (26 Kasım 2026,
-  `next build` + `next start`, Chromium): giriş, davet, menü ve panelin başlıca ekranlarında ihlal yok.
+  yerelde denenemeyen yollar var (personelin telefonundaki Safari, kamerayla çekilen fotoğrafın küçültülmesi, gerçek
+  push servisiyle cihaz bildirimi, Safari/Firefox'un PDF önizlemesi, başka dallarda süren işler: belge tarayıcı işçi
+  ya da WebAssembly isteyebilir). Uygulanan bir CSP'de bunlardan biri sessizce bozulur ve sahibin fark etmesi günler
+  sürebilir; Report-Only'de hiçbir şey bozulmaz, aynı ihlaller günlüğe düşer. Çekirdek ise hiçbir yüklemeye
+  dokunmadığı için baştan uygulanır.
+- **Yerel denetim** (26 Kasım 2026, `next build` + `next start`, Playwright'la Chromium, yönetici oturumu): giriş,
+  davet, Claude bağlantısı, 404, QR menünün yönetici önizlemesi ve panelin 50 ekranı (şube, ürün ve kontrol listesi
+  sayfaları dahil); koyu tema (satır içi betik), Recharts grafiği, profil menüsündeki gölgelendirici (WebGL), servis
+  çalışanının kaydı ve canlı akış, fotoğraf yükleme ve `/api/foto` görseli (kendi `sandbox` politikası yerinde),
+  `blob:` / `data:` görsel ve `blob:` çerçeve, fatura PDF'inin `blob:` çerçevede Chromium PDF görüntüleyicisiyle açılması
+  (uygulanan tam politikayla da), "Paraşüt hesabını bağla" formunun Paraşüt'e 303 ile gitmesi (form hedefi). İlk
+  turda iki ihlal çıktı, ikisi de düzeltildi (yukarıdaki iki kural): her sayfada zod'un eval denemesi, Şube
+  ayarları'nda crypto-browserify. Son turda ihlal yok; kasıtlı ihlal (başka kökenden görsel) HTTPS'te Chrome'dan
+  `/api/csp-rapor`'a ulaşıp `[csp] report img-src https://iz.example.com/p.gif · /giris` olarak günlüğe düştü
+  (sorgu dizgesi atıldı). `CSP_ENFORCE=1` derlemesiyle de giriş, 12 ekran (grafik, şube ayarları, Paraşüt dahil),
+  koyu tema, servis çalışanı, fotoğraf ve Paraşüt formu çalıştı; kasıtlı görsel engellendi.
 - **Uygulamaya geçiş:** yayından sonra bir hafta Vercel › Logs'ta `[csp]` aranır. Beklenmeyen satır yoksa (tarayıcı
   eklentilerinin `chrome-extension://` satırları sayılmaz) Vercel'de `CSP_ENFORCE=1` eklenip yeniden deploy edilir.
   Bir şey bozulursa değişkeni silip yeniden deploy etmek geri alır. Yeni bir dış kaynak (CDN, analiz, harita)
