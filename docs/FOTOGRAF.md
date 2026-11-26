@@ -32,7 +32,14 @@ listesinin fotoğrafı taranmaz.
   bulunan kenarlara geri döner, **Tüm fotoğraf** kırpmadan kullanır, **Döndür** sonucu 90° çevirir.
 - Çekim sorunluysa başlığın altında tek satır uyarı çıkar: "Fotoğraf bulanık; telefonu sabit tutup yeniden çekin.",
   "Fişte parlama var; ışığı yandan alın.", "Raporun altı kesilmiş; tamamını çekin." gibi (turuncu: hafif, kırmızı:
-  yeniden çekmek önerilir). Yükleme yine serbesttir; yeniden çekmek için ekran kapatılır.
+  yeniden çekmek önerilir) ve yanında **Yeniden çek**: kamera ekranın içinden açılır, yeni fotoğraf aynı ekranda
+  taranır. **Kullan** yine serbesttir.
+- Uzun fiş (Z, banka POS Z'si, banka gün sonu, alışveriş fişi) tek fotoğrafa sığmıyorsa üst kısım çekilir, sonra
+  **Devamını çek** ile alt kısım (en çok 3 parça). **Kullan** parçaları kodla hizalayıp tek uzun görüntüde birleştirir
+  (en çok 4096 px, 2 MB; `src/lib/photo-rules.ts`); kod emin değilse parçalar ayrı fotoğraf olarak eklenir (bölümün
+  kalan yeri kadar; Z bölümü en çok 3 fotoğraf alır).
+- Fiş, rapor ya da fatura olmayan bir şey çekildiyse (POS ekranı, telefon, koli, fincan, ambalaj) kırpılmaz:
+  "Kenarlar bulunamadı" denir, köşeler elle seçilebilir.
 - Görünüm: **Belge** (varsayılan; taranmış gibi: kâğıt beyaz, yazı koyu ve net, gölge ve sarı ışık gider), **Gri**,
   **Renkli**, **Orijinal** (yalnız kırpılır ve düzeltilir). Sonuç önizlemede görünür (telefonda **Sonuç** sekmesi).
 - **Kullan**: taranmış hâl yüklenir, okunur ve her yerde o gösterilir; asıl fotoğraf küçültülüp yanında saklanır.
@@ -572,10 +579,22 @@ Belge tarama.
   karşılaştırılır. *Kâğıt bölütleme* (aydınlık − doygunluk haritası, gölge çıkarılmış yerel hâli, Otsu, morfoloji, dış
   hat, zarftan dörtgen, kenarlara RANSAC); *kenar* (Canny, eşikler görüntüden; yönlü Hough; görüntünün kenarı da doğru
   sayılır); *yazıdan başlama* (yoğun yazı bölgesi dışarı doğru en yakın kâğıt kenarına büyütülür: açık tezgâhta beyaz
-  fiş). Puan: her kenarın gradyan desteği ve içi / dışı basamağı (işaret tutarlı), alan, açılar, kâğıtlık karşıtlığı,
-  yazıyı kesiyor mu, içerisi kâğıda benziyor mu (koyu ya da çok renkli, yazısız dikdörtgen — telefon, POS cihazı,
-  kutu — seçilmez; tek başınaysa güveni en çok 0,3, neden "kagida-benzemiyor"). Puanı düşük kalan en iyi adaylar
-  kenarlara oturtulup yeniden puanlanır. Güven 0–1; birbirine
+  fiş). Kenarda ikinci, düşük eşikli bir Hough geçişi açık zeminde kâğıdın soluk kenarını da verir. Puan: her
+  kenarın gradyan desteği ve içi / dışı basamağı (işaret tutarlı), alan, açılar, kâğıtlık karşıtlığı, yazıyı kesiyor
+  mu (açık zeminde kâğıdın hemen dışındaki ince gölge şeridi, kenar boyunca hep aynı uzaklıkta durduğu için yazı
+  sayılmaz), içerisi kâğıda benziyor mu (koyu ya da çok renkli, yazısız dikdörtgen — telefon, POS cihazı,
+  kutu — seçilmez; tek başınaysa güveni en çok 0,3, neden "kagida-benzemiyor"). Puanı düşük kalan en iyi 8 aday
+  kenarlara oturtulup yeniden puanlanır. Bölütlemede ayrıca *doygunluk maskesi* (renk farkı / parlaklık, Otsu): kâğıt
+  renksiz, ahşap ve renkli zemin doygundur; yarısı gölgede kalan fiş parlaklıkla ayrılmasa da bununla bütün bulunur
+  (zemin de renksizse atlanır). Seçimden sonra iki düzeltme: seçilen dörtgen kâğıdın bir bölümüyse onu içeren, yazının
+  çok daha fazlasını kapsayan aday ("butunu-secildi"); seçilen aday kareye uzanıyorsa ve içinde yazının hepsini (ya
+  da dışarıda yalnız seyrek "yazı", mermer damarı) kapsayan, daha çok gerçek kenarlı bir aday varsa o aday
+  ("kagidin-kendisi"; kâğıtla kare arasındaki zemin şeridi kırpılmaz). **Belge değil**: seçilen dörtgenin içi 15×15
+  örneklenir; içerisi çok renkliyse (doygun örneklerin baskın ton dışındakiler: POS ekranının döşemeleri) ya da yalnız
+  bir bölümü doygunsa (ambalaj, fincan; sarı / pembe nüsha kâğıdın tamamı tek tondur, logo küçüktür) "renkli-icerik";
+  görüntüde yazı yokken içerisi koyu, doygun ya da dörtgen çok ince bir şeritse (telefon, kolinin bandı)
+  "yazisiz-nesne"; dörtgen karenin %2'sinden küçükse (koli etiketi; o boyda fiş okunmaz) "cok-kucuk". Üçünde de kırpılmaz,
+  köşe yok döner (neden "kagida-benzemiyor" + alt neden); ekran elle seçmeyi ve yapay zekâ ipucunu açar. Güven 0–1; birbirine
   yakın puanlı iki farklı aday, zayıf kenar güveni düşürür. Kâğıt kareyi dolduruyorsa `fillsFrame` (kırpılmaz).
   Kareden taşan uzun fişte kareye dayanan kenar, uzun kenarların kaçış noktasından bulunan kısa kenar yönüyle
   görüntünün içine alınır; köşesi kareden çıkmış ama iki kenarı görünen kâğıtta köşe kenarların kesişimidir (en çok
@@ -584,7 +603,10 @@ Belge tarama.
   boyunca kenara dik şeritte aranan geçişe (önce içerisi aydınlık, tutmazsa tersi), RANSAC + en küçük karelerle
   oturtulur; geniş şerit (köşegenin %7,5'i), sonra dar şerit. Korumalar: destek zayıfsa, içeri kayılan şerit kâğıda
   benziyorsa (yazı satırı, tablo çizgisi), çizginin dışı içiyle aynıysa ya da kenar görüntünün kenarındaysa o kenar
-  değişmez; içeri arama karşı kenarın yarısına varmaz (dar fiş).
+  değişmez; içeri arama karşı kenarın yarısına varmaz (dar fiş). Sonra *alt piksel köşe* (`polishCorners`): kenar
+  doğrusu kenarın ortasından geçtiği için kıvrık ya da ucu kalkık fişte köşe kayar; her köşede iki komşu kenarın
+  yalnız köşeye yakın parçasında geçiş alt piksel bulunur, ikinci derece eğri oturtulur, köşe iki teğetin kesişimine
+  konur (köşe başına en çok %3; katlanmış köşede eğri oturmaz, dokunulmaz).
 - **Açma** (`warp.ts`): normalize DLT homografi; çıktının en/boy oranı perspektiften (Zhang–He, odak dörtgenden
   kestirilir), olmazsa kenar uzunluklarından; küçültürken önce alan ortalaması (örtüşme yok). Sayfa birkaç piksel
   içeriden açılır (kenarda koyu çizgi kalmaz). `rotate` (90 / 180 / 270; `rotationForTop` yapay zekânın "top"
@@ -619,8 +641,8 @@ Belge tarama.
 
 ## 12. Belge tarama (kalite, yön, birleştirme)
 
-Çekirdeğin (§ 11) yanında üç saf modül; yön ve kalite tarama ekranına bağlı (§ 1 › Belge tarama), birleştirme henüz
-bağlı değil. İmzalar, önerilen akış, kullanım örnekleri ve
+Çekirdeğin (§ 11) yanında üç saf modül, üçü de tarama ekranına bağlı (§ 1 › Belge tarama: kendiliğinden dik çevirme,
+çekim uyarısı ve **Yeniden çek**, uzun fişte **Devamını çek**). İmzalar, önerilen akış, kullanım örnekleri ve
 eşikler: [src/lib/scan/README.md](../src/lib/scan/README.md). Ortak yazı çözümlemesi `metin.ts`'te (kâğıdın yerel
 parlaklığına göre mürekkep haritası, harf boyu, satır yönü ve ölçüleri).
 
