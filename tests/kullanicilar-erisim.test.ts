@@ -119,7 +119,6 @@ test("davet, sıfırlama ve hoş geldin e-postası ortak tasarımda (email-kit):
   assert.doesNotMatch(src, /const esc = |<!doctype/i, "kaçış ve kabuk kitten (esc, emailShell)");
 
   const attr = (v: string) => v.replace(/'/g, "&#39;");
-  const reRaw = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   for (const base of [pw, invite, reset]) {
     for (const reason of ACCESS_REASONS) {
       const info: AccessInfo = { ...base, reason };
@@ -140,7 +139,11 @@ test("davet, sıfırlama ve hoş geldin e-postası ortak tasarımda (email-kit):
         info.kind === "password"
           ? [`${URL_BASE}/giris`, "Panele giriş yap"]
           : [`${URL_BASE}/davet?t=${RAW}`, info.kind === "invite" ? "Parolamı belirle" : "Yeni parola belirle"];
-      assert.match(html, new RegExp(`<a href="${reRaw(href)}" style="display:block;[^"]*">${label}</a>`), tag);
+      // Düz metinle aranır (adresten regex kurulmaz): bağlantının başı, düğme biçimi ve yazısı aynı <a> içinde
+      const at = html.indexOf(`<a href="${href}" style="display:block;`);
+      assert.ok(at >= 0, `${tag}: düğmenin bağlantısı`);
+      const anchor = html.slice(at, html.indexOf("</a>", at));
+      assert.ok(anchor.endsWith(`">${label}`) && !anchor.slice(0, -label.length - 2).includes(">"), `${tag}: düğmenin yazısı`);
       // E-posta istemcisi: tablo düzeni, satır içi stil; Outlook'ta bozulan flex / grid / konumlama ve görsel yok
       assert.doesNotMatch(html, /display:\s*(flex|grid)|position:|float:|<img|<svg/i, tag);
     }
