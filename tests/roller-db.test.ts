@@ -430,6 +430,74 @@ describe("Müdür ve Muhasebeci: veritabanında", { skip: !SERVER_URL && "ROLLER
       }
     });
 
+    test("fiş okumasının kopya denetimi müdüre öteki şubenin, işletme genelinin ve yöneticinin kategorisinin kayıtlarını okumaz", async () => {
+      const read = await import("../src/server/photo-read/read");
+      // Kayıtlı yanıt (tests/fixtures/foto/fis-soluk.json): MİGROS TİCARET A.Ş., 412,50 ₺, 21 Ekim 2026, fiş no 0045. Kasadan
+      // çıkan fiş no ile, harcama kaydı mağaza adıyla eşleşir; uyarı eşleşen satırın adını, tutarını ve tarihini söyler
+      const day = "2026-10-21";
+      const env = process.env as Record<string, string | undefined>;
+      const saved = { NODE_ENV: env.NODE_ENV, AI_REPLAY: env.AI_REPLAY };
+      const photoIds: number[] = [];
+      const outIds: number[] = [];
+      const entryIds: number[] = [];
+      /** Kişinin yüklediği fişin okumasındaki tekrar uyarısı (yoksa null) */
+      const dupAs = async (k: Key): Promise<string | null> => {
+        await signIn(k);
+        const me = (await dal.getCurrentUser())!;
+        const [p] = await db
+          .insert(s.photos)
+          .values({ kind: "fis", storageKey: `fis/2099/kopya-${k}-${photoIds.length}.jpg`, contentType: "image/jpeg", sizeBytes: 100, createdBy: me.id, createdByName: me.name, expiresAt: new Date("2100-01-01T00:00:00Z") })
+          .returning({ id: s.photos.id });
+        photoIds.push(p.id);
+        const out = await read.readPhotoFor("fis", { photoId: p.id, bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), contentType: "image/jpeg", day, me });
+        const reading = out.reading as import("../src/lib/photo-read/receipt").ReceiptReading | null;
+        assert.equal(reading?.ok, true, JSON.stringify(out));
+        return reading!.checks.find((c) => c.text.startsWith("Bu fiş zaten eklenmiş olabilir"))?.text ?? null;
+      };
+      const addOut = async (branchId: string, store: string) => {
+        const [o] = await db
+          .insert(s.cashOuts)
+          .values({ date: day, kind: "harcama", amount: 412.5, store, receiptNo: "0045", branchId, createdBy: ids.ali, createdByName: "Ali" })
+          .returning({ id: s.cashOuts.id });
+        outIds.push(o.id);
+      };
+      const addEntry = async (branchId: string | null, categoryId: number) => {
+        const [e] = await db.insert(s.expenseEntries).values({ branchId, date: day, categoryId, description: "Migros", amount: 412.5 }).returning({ id: s.expenseEntries.id });
+        entryIds.push(e.id);
+      };
+      const cats = await db
+        .insert(s.expenseCategories)
+        .values([
+          { name: "Temizlik (kopya testi)", section: "genel", panelGroup: "diger" },
+          { name: "Maaş (kopya testi)", section: "personel", panelGroup: "personel" },
+        ])
+        .returning({ id: s.expenseCategories.id });
+      const [staffCat, salaryCat] = cats.map((c) => c.id);
+      Object.assign(env, { NODE_ENV: "development", AI_REPLAY: "1" });
+      try {
+        assert.equal(await dupAs("mehmet"), null, "kayıt yokken uyarı yok");
+        // Öteki şubenin kasadan çıkanı, işletme geneli harcama kaydı (personelin kategorisinde bile) ve müdürün şubesinde
+        // yöneticinin kategorisindeki (maaş) kayıt
+        await addOut("marina", "Marina dükkânı");
+        await addEntry(null, staffCat);
+        await addEntry("tuzla", salaryCat);
+        assert.equal(await dupAs("mehmet"), null, "müdür öteki şubenin, işletme genelinin ve maaş kaydının tekrarını görmez");
+        assert.match((await dupAs("ali")) ?? "", /^Bu fiş zaten eklenmiş olabilir: Marina dükkânı · 412,50/, "yönetici bütün şubeleri görür");
+        // Kendi şubesinin personel kategorisindeki harcama kaydı ve kasadan çıkanı uyarır
+        await addEntry("tuzla", staffCat);
+        assert.match((await dupAs("mehmet")) ?? "", /^Bu fiş zaten eklenmiş olabilir: Migros · 412,50/, "şubesinin personel kategorisindeki kayıt");
+        await addOut("tuzla", "Tuzla dükkânı");
+        assert.match((await dupAs("mehmet")) ?? "", /^Bu fiş zaten eklenmiş olabilir: Tuzla dükkânı · 412,50/, "şubesinin kasadan çıkanı");
+      } finally {
+        Object.assign(env, saved);
+        await db.delete(s.expenseEntries).where(inArray(s.expenseEntries.id, entryIds));
+        await db.delete(s.cashOuts).where(inArray(s.cashOuts.id, outIds));
+        await db.delete(s.expenseCategories).where(inArray(s.expenseCategories.id, [staffCat, salaryCat]));
+        await db.delete(s.aiCalls).where(inArray(s.aiCalls.photoId, photoIds));
+        await db.delete(s.photos).where(inArray(s.photos.id, photoIds));
+      }
+    });
+
     test("şubesi pasife alınan müdürün oturumu yok (öteki şubelere açılmaz)", async () => {
       await signIn("mehmet");
       assert.ok(await dal.getCurrentUser());
