@@ -42,14 +42,18 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
   let guard: typeof import("../src/server/cash-outs/guard");
   const tag = `${process.pid}-${randomBytes(3).toString("hex")}`;
   type Who = { id: number; name: string; role: "admin" | "staff" };
-  const users: Record<"ali" | "ayse" | "mehmet" | "donen" | "zeynep", Who> = {
+  const users: Record<"ali" | "ayse" | "mehmet" | "donen" | "zeynep" | "fatma", Who> = {
     ali: { id: 0, name: "Ali", role: "admin" },
     ayse: { id: 0, name: "Ayşe", role: "staff" },
     mehmet: { id: 0, name: "Mehmet", role: "staff" },
     donen: { id: 0, name: "Dönen", role: "staff" },
     // Şube testinin personeli (öteki testlerin açık istek sınırına takılmasın)
     zeynep: { id: 0, name: "Zeynep", role: "staff" },
+    // Müdür testinin personeli
+    fatma: { id: 0, name: "Fatma", role: "staff" },
   };
+  /** Müdür (docs/ROLLER.md): çekirdeğe "admin" düzeyinde girer, gerçek rolü `realRole` (src/lib/roles.ts › asActor) */
+  const mudur = { id: 0, name: "Müdür", role: "admin" as const, realRole: "manager" as const };
   const cats = { staff: 0, admin: 0 };
   const dates: string[] = [];
   const photoIds: number[] = [];
@@ -170,6 +174,11 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
         .returning({ id: s.users.id });
       users[k].id = u.id;
     }
+    const [m] = await db
+      .insert(s.users)
+      .values({ email: `kasa-cikan-mudur-${tag}@ornek.com`, name: mudur.name, passwordHash: "x", role: "manager", branchId: "tuzla" })
+      .returning({ id: s.users.id });
+    mudur.id = m.id;
     const [a] = await db.insert(s.expenseCategories).values({ name: `Test market ${tag}`, section: "mal", panelGroup: "diger" }).returning({ id: s.expenseCategories.id });
     const [b] = await db.insert(s.expenseCategories).values({ name: `Test avans ${tag}`, section: "personel", panelGroup: "personel" }).returning({ id: s.expenseCategories.id });
     cats.staff = a.id;
@@ -180,7 +189,7 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
 
   after(async () => {
     if (!db) return;
-    const ids = Object.values(users).map((u) => u.id);
+    const ids = [...Object.values(users).map((u) => u.id), mudur.id];
     await db.delete(s.staffRequests).where(inArray(s.staffRequests.requestedBy, ids));
     const outs = await db.select({ id: s.cashOuts.id }).from(s.cashOuts).where(inArray(s.cashOuts.date, [TODAY, YESTERDAY, OLD, OPEN_DAY]));
     const all = [...new Set([...outIds, ...outs.map((o) => o.id)])];
@@ -563,5 +572,44 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
     assert.equal(card(removal.row.id).kind, "foto-kaldir");
     assert.equal(card(removal.row.id).branchId, "marina");
     assert.deepEqual(card(removal.row.id).branch, { id: "marina", name: "Marina" });
+  });
+
+  test("müdür ('admin' düzeyinde) kategoride personelin kuralına bağlı: onayda ve doğrudan kayıtta yöneticinin kategorisine yazamaz, şimdikini korur", async () => {
+    const ADMIN_CAT = "Bu kategoriye yalnız yönetici yazabilir";
+    // Ekleme isteğinin onayı: yöneticinin kategorisi (maaş, avans) reddedilir, istek bekler; personelin kategorisiyle yazılır
+    const add = await propose(users.fatma, { date: YESTERDAY, line: line({ amount: 61.5 }), clientKey: key() });
+    await refused(review(mudur, add.row.id, add.row.version, "approve", { toExpenses: true, categoryId: cats.admin }), ADMIN_CAT);
+    assert.equal((await requestOf(add.row.id)).status, "pending");
+    const ok = await review(mudur, add.row.id, add.row.version, "approve", { toExpenses: true, categoryId: cats.staff });
+    assert.ok(ok.status === "approved" && ok.op === "ekle");
+    outIds.push(ok.cashOutId);
+    assert.equal((await expenseOf(ok.cashOutId))?.categoryId, cats.staff);
+    // Düzeltme onayı: satırı yöneticinin kategorisine taşıyamaz
+    const plain = await adminRow(YESTERDAY, { amount: 30 });
+    const fix = await propose(users.fatma, { op: "duzelt", cashOutId: plain, line: line({ amount: 31, store: "Bim", description: "buz" }), clientKey: key() });
+    await refused(review(mudur, fix.row.id, fix.row.version, "approve", { toExpenses: true, categoryId: cats.admin }), ADMIN_CAT);
+    assert.equal((await expenseOf(plain))?.categoryId, cats.staff);
+    await review(mudur, fix.row.id, fix.row.version, "reject");
+    // Yöneticinin kategorisindeki satırın tutarını düzeltir, kategorisi kalır (kartın "şimdiki" seçeneği: categoryId boş)
+    const salary = await adminRow(YESTERDAY, { amount: 1_000, categoryId: cats.admin });
+    const fix2 = await propose(users.fatma, { op: "duzelt", cashOutId: salary, line: line({ amount: 1_100, store: "Bim", description: "buz", categoryId: null }), clientKey: key() });
+    const r2 = await review(mudur, fix2.row.id, fix2.row.version, "approve", { toExpenses: true, categoryId: null });
+    assert.ok(r2.status === "approved" && r2.op === "duzelt");
+    assert.equal((await expenseOf(salary))?.categoryId, cats.admin);
+    assert.equal((await expenseOf(salary))?.amount, 1_100);
+    // Doğrudan kayıt: yeni satır yöneticinin kategorisine yazılmaz; geri alma silinen kaydın kategorisini getirir
+    const direct = (restore: boolean) =>
+      db.transaction((tx) =>
+        write.writeCashOut(
+          tx,
+          mudur,
+          { id: null, date: OPEN_DAY, kind: "harcama", amount: 45, store: null, description: "avans", receiptDate: null, receiptNo: null, vat: null, docType: "yok", categoryId: cats.admin, toExpenses: true, photoId: null },
+          { restore, branchId: "tuzla" },
+        ),
+      );
+    await refused(direct(false), ADMIN_CAT);
+    const back = await direct(true);
+    outIds.push(back.id);
+    assert.equal((await expenseOf(back.id))?.categoryId, cats.admin);
   });
 });

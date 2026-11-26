@@ -24,6 +24,7 @@ import {
   ACCOUNTANT_PATHS,
   ADMIN_ONLY_PATHS,
   adminLevel,
+  asActor,
   BRANCH_REQUIRED_ROLES,
   BRANCH_ROLES,
   can,
@@ -35,6 +36,7 @@ import {
   MANAGER_CLOSED_PATHS,
   MANAGER_EXTRA_PATHS,
   opsLevel,
+  realRoleOf,
   ROLE_HINTS,
   ROLE_PERMISSIONS,
   rolePaths,
@@ -166,10 +168,18 @@ describe("müdür: şubesinin günlük işletmesi", () => {
   test("yetenekleri: işletmeyi yönetir, maaş, vergi, yönetim ve öteki şubeler yok", () => {
     for (const cap of ["kayit.yaz", "isletme.yonet", "kasa.rakam", "onay", "vardiya.yaz", "rapor.sube"] as const) assert.ok(can("manager", cap), cap);
     for (const cap of ["maas", "yonetim", "muhasebe.oku", "sube.tumu", "kategori.tum"] as const) assert.equal(can("manager", cap), false, cap);
-    // Kasadan çıkanda maaş, kira gibi kategorileri seçemez ve adını görmez; sunucu da reddeder
-    const outs = read("src/server/actions/cash-outs.ts");
-    assert.match(outs, /if \(opsLevel\(me.role\) === "admin" && !can\(me.role, "kategori.tum"\)\) await assertManagerCategory\(d\);/);
+    // Kasadan çıkanda maaş, kira gibi kategorileri seçemez ve adını görmez; sunucu da reddeder. Kural yazım yolunda
+    // (writeCashOut, gerçek rol): doğrudan kayıt da Onaylar'daki isteğin onayı da aynı kuraldan geçer
+    const write = read("src/server/cash-outs/write.ts");
+    assert.match(write, /const allCategories = admin && can\(realRoleOf\(me\), "kategori\.tum"\);/);
+    assert.match(write, /if \(\(!admin \|\| \(!allCategories && !o\.restore\)\) && !staffCategory\(cat\) && !unchanged\) throw new UserError\(CATEGORY_ADMIN_ONLY\);/);
+    assert.match(read("src/server/actions/cash-out-requests.ts"), /reviewCashOutRequestCore\(getDb\(\), asActor\(me, opsLevel\(me\.role\)\), /);
     assert.match(read("src/app/panel/kasa/page.tsx"), /cashOutCategories\(allCategories \? "admin" : "staff"\)/);
+    assert.match(read("src/app/panel/onaylar/kasa-section.tsx"), /const allCategories = can\(me\.role, "kategori\.tum"\);[\s\S]*cashOutCategories\(allCategories \? "admin" : "staff"\)/);
+    // Çekirdeğe giden kişi gerçek rolünü taşır; elle kurulan kişide (LafPOS, fatura eşleme) düzeyin kendisi
+    assert.deepEqual(asActor({ id: 1, role: "manager" as Role }, "admin"), { id: 1, role: "admin", realRole: "manager" });
+    assert.equal(realRoleOf(asActor(asActor({ id: 1, role: "manager" as Role }, "admin"), "staff")), "manager");
+    assert.equal(realRoleOf({ role: "admin" }), "admin");
     assert.equal(opsLevel("manager"), "admin");
     assert.equal(adminLevel("manager"), "staff");
     assert.equal(cashAudience("manager"), "admin");

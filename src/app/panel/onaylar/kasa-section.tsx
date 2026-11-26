@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 
 import { closedEvidenceText } from "@/lib/closed-days";
+import { can } from "@/lib/roles";
 import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { cashOutCategories } from "@/server/data/cash-outs";
@@ -20,7 +21,13 @@ import { KasaRequestCards } from "./kasa-cards";
 export async function KasaRequests() {
   // Yönetici ve müdür (docs/ROLLER.md): müdürün kapsamı şubesine kilitli; şubesi bilinmeyen kart da müdüre gösterilmez
   const me = await requireCan("onay");
-  const [cards, counters, categories] = await Promise.all([loadCashRequestQueue(undefined, await currentBranchScope(), me.role !== "admin"), cashCounters(), cashOutCategories("admin")]);
+  // Kategori seçicisi: müdüre personelin kategorileri (maaş, kira yöneticinin; sunucu da reddeder, writeCashOut)
+  const allCategories = can(me.role, "kategori.tum");
+  const [cards, counters, categories] = await Promise.all([
+    loadCashRequestQueue(undefined, await currentBranchScope(), me.role !== "admin"),
+    cashCounters(),
+    cashOutCategories(allCategories ? "admin" : "staff"),
+  ]);
   if (!cards.length) return null;
   const siteSlots = Object.fromEntries(
     cards.flatMap((c) =>

@@ -74,8 +74,8 @@ function NoteField({ id, note, setNote }: { id: number; note: string; setNote: (
 
 /**
  * Kasadan çıkan isteği: ekleme (satır ve fiş), düzeltme (değişecekler) ya da silme; satır istekten sonra değiştiyse
- * amber uyarı ve "Yine de uygula". Ekleme ve düzeltmede "Aylık harcamalar'a da yaz" ve kategori (bütün etkin
- * kategoriler).
+ * amber uyarı ve "Yine de uygula". Ekleme ve düzeltmede "Aylık harcamalar'a da yaz" ve kategori (yöneticiye bütün etkin
+ * kategoriler, müdüre personelinkiler; düzeltmede satırın şimdiki kategorisi kalabilir).
  */
 export function CashOutItem({ card, categories }: { card: CashOutCard; categories: { id: number; name: string }[] }) {
   const [note, setNote] = useState("");
@@ -88,6 +88,8 @@ export function CashOutItem({ card, categories }: { card: CashOutCard; categorie
   const harcama = l?.kind === "harcama";
   const who = genitive(card.requestedByName);
   const c = card.context;
+  // Düzeltmede satırın şimdiki kategorisi seçicide yoksa (müdür yalnız personelin kategorilerini seçer)
+  const currentHidden = card.op === "duzelt" && card.defaults.categoryId !== null && !categories.some((k) => k.id === card.defaults.categoryId);
 
   function decide(decision: "approve" | "reject") {
     if (decision === "approve" && harcama && toExpenses && !categoryId) return void toast.error("Kategori seçin");
@@ -223,6 +225,8 @@ export function CashOutItem({ card, categories }: { card: CashOutCard; categorie
             <Field label="Kategori" htmlFor={`kat-${card.id}`} className="sm:col-span-2">
               <Select id={`kat-${card.id}`} value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
                 <option value="">Kategori seçin</option>
+                {/* Satırın şimdiki kategorisi listede yoksa (müdüre yöneticinin kategorisi): adı yazmadan kalabilir */}
+                {currentHidden ? <option value={card.defaults.categoryId!}>{card.expense?.categoryName ?? "Yöneticinin kategorisi"} (şimdiki)</option> : null}
                 {categories.map((k) => (
                   <option key={k.id} value={k.id}>
                     {k.name}

@@ -42,6 +42,8 @@ büyük plan [planlar/personel-yetki.md](planlar/personel-yetki.md).
   Müdür işletme çekirdeklerine "admin" düzeyinde girer (`opsLevel`, `opsActor`), personelin ekranlarının çekirdeklerine
   (karaoke, kontrol listesi, sayım, reçete önerisi, sipariş, özel gün, kasadaki fiyatlar) "staff" düzeyinde
   (`adminLevel`, `adminActor`). Kasa okumalarının düzeyi `cashAudience` (rakam gören "admin" DTO'sunu alır).
+  Çekirdeğe giden kişi gerçek rolünü de taşır (`asActor` › `realRole`, `realRoleOf`): düzey yazım yolunu seçer, yalnız
+  yöneticinin olanlara (bütün kategoriler) çekirdek gerçek role bakar.
 - **Varsayılan kapalı.** Emin olunmayan her eylem ve ekran yalnız yöneticinin. `requireAdmin` çağrıları tek tek gözden
   geçirildi; yalnız müdüre ya da muhasebeciye açılan okuma ve işletme yolları `requireCan`'a geçti, gerisi aynen kaldı.
 
@@ -99,7 +101,9 @@ oturumları kapanır (oturum sürümü).
 - **Maaş ve kişisel ücret müdürde yok** (en tutucusu). İşçilik / ciro'da yalnız haftalık ve aylık şube toplamı; günlük
   görünüm tek kişinin gününü (kişisel ücret) gösterdiği için kapalı. Kasadan çıkanda müdür personelin kategorilerini
   seçer, öbür satırların tutarını görür ama kategori adını görmez; sunucu da müdürün maaş, kira gibi kategoriye
-  yazmasını reddeder (`saveCashOut` › `assertManagerCategory`).
+  yazmasını reddeder: kural yazım yolunda (`src/server/cash-outs/write.ts` › `writeCashOut`, gerçek rol), doğrudan
+  kayıt da Onaylar'da isteğin onayı da ondan geçer (Onaylar'ın kategori seçicisi müdüre personelin kategorileri;
+  düzeltmede satırın şimdiki kategorisi kalabilir, geri almada silinen kaydınki geri gelir).
 - **Genel bakış, Şube karşılaştırma, Kaçak ve Kayıp önleme müdüre açılmadı:** işletme geneli kâr, kira ve maaşı ve
   öteki şubeleri bir arada gösteriyorlar. Müdürün şube raporları: Bugün'deki şube günü ve İşçilik / ciro.
 - **Muhasebeci kişi başı maaş görmez**; bordro toplamları, SGK ve muhtasar toplamları vergide görünür. Personel

@@ -103,21 +103,34 @@ export function adminLevel(role: Role): "admin" | "staff" {
   return role === "admin" ? "admin" : "staff";
 }
 
+/** Çekirdeğe giden kişi: düzeyi (`role`) ve gerçek rolü (`realRole`) */
+export type Actor<T extends { role: Role }> = Omit<T, "role" | "realRole"> & { role: "admin" | "staff"; realRole: Role };
+
 /**
  * Çekirdeğe giden kişi: rolü çekirdeğin iki düzeyinden birine çevrilmiş (`opsLevel` ya da `adminLevel`). Çekirdekler
  * "admin" | "staff" bekler; gerçek rol eylemin kapısında (requireCan) denetlenmiştir, şube kilidi oturumdan okunur.
+ * Gerçek rol `realRole`'de kalır: düzey yazım yolunu seçer, yalnız yöneticinin olanlara (bütün kategoriler, başkasının
+ * yüklediği fotoğraf, tedarikçi ödemesine bağlı satır) çekirdek gerçek role bakar (`realRoleOf`; docs/ROLLER.md).
  */
-export function asActor<T extends { role: Role }>(me: T, level: "admin" | "staff"): Omit<T, "role"> & { role: "admin" | "staff" } {
-  return { ...me, role: level };
+export function asActor<T extends { role: Role }>(me: T, level: "admin" | "staff"): Actor<T> {
+  return { ...me, role: level, realRole: (me as { realRole?: Role }).realRole ?? me.role };
+}
+
+/**
+ * Çekirdekteki kişinin gerçek rolü: `asActor`'ın yazdığı `realRole`; elle kurulan kişide (LafPOS eşitlemesi, fatura
+ * eşleme, testler) düzeyin kendisi. Müdür "admin" düzeyinde yazar ama yöneticinin yetkileri onda yoktur.
+ */
+export function realRoleOf(actor: { role: Role; realRole?: Role }): Role {
+  return actor.realRole ?? actor.role;
 }
 
 /** Müdürün personel gibi kullandığı ekranların eylemleri: yalnız yönetici "admin" düzeyinde (`adminLevel`) */
-export function adminActor<T extends { role: Role }>(me: T): Omit<T, "role"> & { role: "admin" | "staff" } {
+export function adminActor<T extends { role: Role }>(me: T): Actor<T> {
   return asActor(me, adminLevel(me.role));
 }
 
 /** Şubenin günlük işletmesi (kasa, zayi, kasadan çıkan, kapalı gün, onay): müdür "admin" düzeyinde (`opsLevel`) */
-export function opsActor<T extends { role: Role }>(me: T): Omit<T, "role"> & { role: "admin" | "staff" } {
+export function opsActor<T extends { role: Role }>(me: T): Actor<T> {
   return asActor(me, opsLevel(me.role));
 }
 

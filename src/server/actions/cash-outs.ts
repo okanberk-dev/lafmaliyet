@@ -1,29 +1,25 @@
 "use server";
 
-import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { BRANCH_ID_MAX } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { CASH_OUT_REQUEST_TEXT } from "@/lib/cash-out-requests";
-import { cashOutLabel, cashOutUndoJson, readCashOutUndo, staffCategory, type CashOutSnapshot } from "@/lib/cash-outs";
+import { cashOutLabel, cashOutUndoJson, readCashOutUndo, type CashOutSnapshot } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
-import { asActor, can, opsLevel } from "@/lib/roles";
+import { asActor, opsLevel } from "@/lib/roles";
 import { requireCan } from "@/server/auth/dal";
 import { formTillBranch, staffBranchRefusal, withBranchScope } from "@/server/branch-scope";
 import { assertCashOutDeletable, lockCashOutLink, syncLinkedCashOut } from "@/server/cari/kasa";
 import { staffCashOutGate } from "@/server/cash-outs/guard";
 import { cashOutSchema, lockCashOut, removeCashOut, writeCashOut, type CashOutActor, type CashOutData, type CashOutInput } from "@/server/cash-outs/write";
-import { getDb, schema as s } from "@/server/db";
+import { getDb } from "@/server/db";
 import { open, seal } from "@/server/secret-box";
 
 import { logActivity } from "./log";
 import { attempt, UserError } from "./util";
-
-/** Müdürün personel dışı kategoriye yazma denemesi (maaş, kira, reklam; docs/ROLLER.md › Kararlar) */
-const MANAGER_CATEGORY_TEXT = "Bu kategoriye yalnız yönetici yazabilir";
 
 // Gün içinde kasadan çıkanlar (docs/KASA-RAPORU.md, docs/FOTOGRAF.md): personel ve yönetici ekler. Alışveriş satırı
 // Aylık harcamalar'a da yazılabilir; o kayıt expense_entries.cash_out_id ile satıra ve fişin fotoğrafına bağlıdır.
@@ -85,27 +81,11 @@ export async function saveCashOut(input: z.input<typeof saveSchema>) {
   return attempt(async () => {
     const me = await requireCan("kayit.yaz");
     const { branchId, ...d } = saveSchema.parse(input);
-    if (opsLevel(me.role) === "admin" && !can(me.role, "kategori.tum")) await assertManagerCategory(d);
     const till = await formTillBranch(branchId);
+    // Müdür "admin" düzeyinde yazar ama bütün kategorileri seçemez: kural yazım yolunda (writeCashOut, gerçek rol
+    // `realRole`), isteğin onayı da aynı kuraldan geçer (docs/ROLLER.md › Kararlar)
     return withBranchScope(till, () => persist(asActor(me, opsLevel(me.role)), d));
   });
-}
-
-/**
- * Müdür kasaya "admin" düzeyinde yazar ama bütün kategorileri seçemez (src/lib/roles.ts › "kategori.tum"): yeni satır ya
- * da değişen kategori personelin kategorilerinden olmalı (malzeme, bakım, temizlik); satırın şimdiki kategorisi kalabilir
- * (tutarı düzeltir). Kasadan ödenen maaş ve avans kişisel ücrettir, müdür yazmaz.
- */
-async function assertManagerCategory(d: CashOutData) {
-  if (!d.categoryId) return;
-  const db = getDb();
-  const [cat] = await db.select().from(s.expenseCategories).where(eq(s.expenseCategories.id, d.categoryId)).limit(1);
-  if (!cat || staffCategory(cat)) return;
-  if (d.id) {
-    const [cur] = await db.select({ categoryId: s.expenseEntries.categoryId }).from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, d.id)).limit(1);
-    if (cur?.categoryId === d.categoryId) return;
-  }
-  throw new UserError(MANAGER_CATEGORY_TEXT);
 }
 
 /**

@@ -7,7 +7,9 @@ import { cashOutWritesExpense, isInvoiceDoc, staffCategory, staffExpenseLocked, 
 import { LAFPOS_CASH_OUT_TEXT, lafposCashOutChange } from "@/lib/lafpos/cash-moves";
 import { expenseDateFor } from "@/lib/photo-read/receipt";
 import { linkedUntil, RELEASED_DAYS } from "@/lib/photo-rules";
+import type { Role } from "@/lib/constants";
 import { longDateTR, todayTR } from "@/lib/reminders";
+import { can, realRoleOf } from "@/lib/roles";
 import { zAmount, zDate, zOptText } from "@/server/actions/util";
 import { currentTillBranch } from "@/server/branch-scope";
 import { loadPendingCashOutInvoices } from "@/server/data/cash-out-invoices";
@@ -33,6 +35,11 @@ export interface CashOutActor {
   id: number;
   name: string;
   role: "admin" | "staff";
+  /**
+   * Gerçek rol (src/lib/roles.ts › asActor): müdür "admin" düzeyinde yazar ama bütün kategorileri seçemez, başkasının
+   * fotoğrafını bağlayamaz. Elle kurulan kişide (LafPOS, fatura eşleme) yok: düzeyin kendisi sayılır
+   */
+  realRole?: Role;
 }
 
 export type CashOutRow = typeof s.cashOuts.$inferSelect;
@@ -62,6 +69,8 @@ export type CashOutInput = z.input<typeof cashOutSchema>;
 export type CashOutData = z.output<typeof cashOutSchema>;
 
 const PHOTO_GONE = "Fotoğraf bulunamadı ya da süresi doldu; yeniden çekin";
+/** Personel ve müdür personelin kategorileri dışına (maaş, kira, reklam) yazamaz */
+const CATEGORY_ADMIN_ONLY ="Bu kategoriye yalnız yönetici yazabilir";
 const EXPENSE_LOCKED_EDIT = "Bu satır yöneticinin harcama kaydına bağlı; türünü ve kategorisini yönetici değiştirir";
 
 /**
@@ -104,10 +113,14 @@ export interface WriteCashOutOptions {
  * Satırı yazar (yeni ya da düzeltme) ve bağlı harcama kaydını kurar, günceller ya da siler; fiş fotoğrafını bağlar
  * (satırın gününden 400 gün) ya da değiştiyse eskisini bırakır. İşlemin içinde. Personelin kuralları yazana göre:
  * kategori yalnız personelin kategorilerinden (satırın şimdiki kategorisi kalabilir), yöneticinin kategorisindeki kaydı
- * kaldıramaz ve taşıyamaz, fotoğraf kendisinin. Yönetici (doğrudan ya da bir isteği onaylarken) serbest.
+ * kaldıramaz ve taşıyamaz, fotoğraf kendisinin. Yönetici (doğrudan ya da bir isteği onaylarken) serbest. Müdür "admin"
+ * düzeyinde yazar ama kategoride personelin kuralına bağlı, doğrudan da bir isteği onaylarken de (docs/ROLLER.md ›
+ * Kararlar); geri almada silinen kaydın kategorisi geri gelir.
  */
 export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutData, o: WriteCashOutOptions = {}): Promise<{ id: number; expenseId: number | null; updated: boolean }> {
   const admin = me.role === "admin";
+  // Bütün kategoriler (maaş, kira, reklam) gerçek role bakar: yönetici evet, "admin" düzeyindeki müdür hayır
+  const allCategories = admin && can(realRoleOf(me), "kategori.tum");
   const harcama = d.kind === "harcama";
   const prev = o.prev !== undefined ? o.prev : d.id ? await lockCashOut(tx, d.id) : null;
   if (d.id && !prev) throw new UserError("Satır bulunamadı; silinmiş olabilir");
@@ -151,7 +164,7 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
     const [cat] = await tx.select().from(s.expenseCategories).where(eq(s.expenseCategories.id, d.categoryId)).limit(1);
     const unchanged = existing?.categoryId === d.categoryId;
     if (!cat || (!cat.active && !unchanged && !o.restore)) throw new UserError("Kategori bulunamadı; sayfayı yenileyin");
-    if (!admin && !staffCategory(cat) && !unchanged) throw new UserError("Bu kategoriye yalnız yönetici yazabilir");
+    if ((!admin || (!allCategories && !o.restore)) && !staffCategory(cat) && !unchanged) throw new UserError(CATEGORY_ADMIN_ONLY);
   }
 
   if (d.photoId && d.photoId !== prev?.photoId) {
