@@ -33,7 +33,7 @@ export async function PackageCard() {
       icon={<FileArchive />}
       title="Muhasebeci paketi"
       summary={summary}
-      description="Ayın faturaları, harcamaları, kasa raporları, yazarkasa Z'lerinin KDV dökümü ve sabit giderleri tek Excel dosyasında. Ay kapanınca muhasebeciye ekli e-postayla gider; istediğiniz ayı indirip ya da şimdi gönderebilirsiniz."
+      description="Ayın faturaları, harcamaları, kasa raporları, yazarkasa Z'lerinin KDV dökümü ve sabit giderleri tek çalışma kitabında (.xlsx). Ay kapanınca muhasebeciye ekli e-postayla gider; istediğiniz ayı indirip ya da şimdi gönderebilirsiniz."
     >
       <CardContent className="space-y-3">
         {!emailReady ? <Notice tone="neutral" size="sm" title="E-posta kurulmadı (RESEND_API_KEY)" text="Paket indirilebilir; e-posta gitmez." /> : null}

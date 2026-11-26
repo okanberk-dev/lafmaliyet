@@ -4,7 +4,7 @@ Son güncelleme: 26 Kasım 2026. Yapılacaklar › Dalga 3: "Muhasebeciye aylık
 
 ## 1. Paket
 
-Ayın muhasebeye giden kayıtları **tek Excel dosyasında** (`laffogato-muhasebe-YYYY-MM.xlsx`), **bütün şubeler** (muhasebe
+Ayın muhasebeye giden kayıtları **tek çalışma kitabında** (.xlsx; `laffogato-muhasebe-YYYY-MM.xlsx`), **bütün şubeler** (muhasebe
 şirketindir; seçili şubeden bağımsız). Sekmeler:
 
 | Sekme | İçerik |
@@ -16,7 +16,7 @@ Ayın muhasebeye giden kayıtları **tek Excel dosyasında** (`laffogato-muhaseb
 | Z KDV dökümü | Yazarkasa (banka POS) Z'lerinin oran oran satışı ve KDV'si (kasa raporuna girilen ya da fotoğraftan okunan), sonunda oran oran toplam |
 | Sabit giderler | Ayın sabit gider kalemleri: tutar, dönem, ayın karşılığı, şube |
 
-Her tablonun başlığı donuk ve süzgeçli, tarihler Excel tarihi, tutarlar ₺ biçimli sayı, sonunda TOPLAM. Boş tablo
+Her tablonun başlığı donuk ve süzgeçli, tarihler tablonun tarih biçiminde, tutarlar ₺ biçimli sayı, sonunda TOPLAM. Boş tablo
 "Bu ay … yok" der.
 
 **Dönem kapanışıyla ([DONEM-KAPANISI.md](DONEM-KAPANISI.md))**: faturalar ve harcamalar hesap gününe göre. Belgesi bu
@@ -50,7 +50,7 @@ Kod: `src/lib/muhasebe/paket.ts` (saf: ayarlar, gönderim günü, özet, çalı�
 
 ## 4. Kararlar
 
-- Biçim: çok sayfalı Excel (zip değil): tek dosya, muhasebecinin açtığı program; fatura belgelerinin PDF'leri pakete
+- Biçim: çok sekmeli çalışma kitabı (.xlsx; zip değil): tek dosya, muhasebecinin açtığı program; fatura belgelerinin PDF'leri pakete
   girmez (Paraşüt'te zaten muhasebecide).
 - Paket dönem kapanışından bağımsız gider: ay kapatılmasa da 1'inde gönderilir, e-posta "Dönem panelde henüz kapatılmadı"
   der. Kapatmak yöneticinin kararıdır (beyandan sonra).
