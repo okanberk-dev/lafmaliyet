@@ -44,7 +44,8 @@ test("rapor numarası: iş gününden KR-YYYYAAGG; e-posta konusu ve WhatsApp ba
   assert.ok(read("src/app/panel/kasa/cash-history.tsx").includes('<span className="tabular">{reportNo(report.date)}</span> · {whoOf(report)}'));
   assert.ok(read("src/app/panel/kasa/cash-form.tsx").includes("title={`Kasa raporu · ${reportNo(date)}`}"));
   assert.ok(read("src/app/panel/kasa/ladmin-report.tsx").includes("Panelde yazılan kasa raporu ${reportNo(report.date)}"));
-  assert.ok(read("src/server/notify/cash-report-template.ts").includes("Gün sonu kasa raporu · ${esc(`${reportNo(f.date)}${branchPart(branchName)}`)}"));
+  // E-posta kitinin başlığında meta satırı (layout() kaçışlar)
+  assert.ok(read("src/server/notify/cash-report-template.ts").includes("meta: `Gün sonu kasa raporu · ${reportNo(f.date)}${branchPart(branchName)}`"));
 });
 
 test("kontrol listesi: sorunsuz raporda boş; her uyarı tek satır, e-posta hatası önce ve kırmızı", () => {

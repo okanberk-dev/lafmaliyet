@@ -18,7 +18,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { accessEmail, type AccessInfo } from "../src/app/panel/kullanicilar/access";
-import type { CashReportFields } from "../src/lib/cash-report";
+import { carryCheck, type CashReportFields } from "../src/lib/cash-report";
 import type { ChecklistAlert } from "../src/lib/checklist-alerts";
 import type { StaffMailSession } from "../src/lib/karaoke/staff-mail";
 import { renderPavoMail } from "../src/lib/lafpos/bank-pos";
@@ -199,6 +199,67 @@ const CASH_DAY: CashReportFields = {
   offRevenue: null,
   note: "Bir müşteri bozuk para eksik verdi",
 };
+/** Tuzla'nın raporunun fotoğrafları, kasadan çıkanları ve zayi / ikram özeti */
+const CASH_EXTRAS = {
+  photos: { z: true, okc: false, pos: true },
+  cashOuts: [
+    { kind: "harcama" as const, amount: 112.5, store: "Örnek Market", description: "süt, buz", photo: true },
+    { kind: "harcama" as const, amount: 37.5, store: null, description: "limon", photo: false },
+  ],
+  waste: { ikram: "2× Latte M, 1× Cheesecake", zayi: "Süt 1 LT, 3× Kruvasan (bayat)" },
+  ikramValue: 340,
+};
+
+/** Marina'nın LafPOS günü: yazarkasa Z'si, Pavo, düzeltme ve onay, LafPOS'tan farklı yazılan, online satış */
+const CASH_OKC_DAY: CashReportFields = {
+  ...CASH_DAY,
+  zNo: "7",
+  receipts: 63,
+  zTotal: 11_190,
+  cash: 3_390,
+  card: 7_800,
+  mealCard: 0,
+  online: 0,
+  openingCash: 1_500,
+  cashOut: 450,
+  cashOutNote: "temizlik malzemesi",
+  countedCash: 4_520,
+  handedOver: 4_000,
+  bankPos: 7_800,
+  offRevenue: 250,
+  discounts: 120,
+  note: "Gece masası geç kapandı",
+  okcZNo: "0007",
+  okcReceipts: 63,
+  okcTotal: 11_190,
+  okcVatTotal: 1_017.27,
+  okcVat: [{ rate: 10, total: 11_190, vat: 1_017.27 }],
+  okcCash: 3_270,
+  okcCard: 7_920,
+  okcMealCard: 0,
+  okcOther: 0,
+};
+const CASH_OKC_META = {
+  by: "Mehmet",
+  countedBy: "Ayşe",
+  revision: 2,
+  submittedAt: new Date("2026-11-24T21:05:00Z"),
+  branch: { id: "marina", name: "Marina" },
+  kasa: "LafPOS" as const,
+  device: { label: "Pavo", registerNo: "AB123456" },
+  approval: "Yönetici onayıyla düzeltildi: Mehmet önerdi, Ayşe onayladı.",
+  photos: { z: false, okc: true, pos: false },
+  photoRead: true,
+  photoDiffs: [{ field: "okcCard" as const, label: "Yazarkasa kredi kartı", photo: 7_920, saved: 7_800, confidence: "high" as const, excused: false }],
+  changes: [
+    { key: "countedCash" as const, label: "Sayılan nakit", from: "4.420 ₺", to: "4.520 ₺", sensitive: true },
+    { key: "note" as const, label: "Not", from: "", to: "", sensitive: false },
+  ],
+  carry: carryCheck("2026-11-24", 1_500, { date: "2026-11-23", amount: 1_620 }),
+  lafposDiffs: [{ field: "countedCash" as const, label: "Sayılan nakit", saved: 4_520, lafpos: 4_420 }],
+  lafposIkram: { offRevenue: 250, ikramValue: 250, notCounted: 1 },
+  online: { day: "2026-11-24", online: 640, karaoke: 500, text: "Online (site + uygulama): 640 ₺ · Karaoke ön ödeme: 500 ₺ — kasadan geçmez" },
+};
 
 // ---------------------------------------------------------------- Sabah e-postası
 
@@ -281,7 +342,22 @@ const SAMPLES: { name: string; title: string; mail: () => Mail }[] = [
   { name: "pavo", title: "Pavo karşılaştırması · fark", mail: () => renderPavoMail({ branchName: "Marina", date: DAY, bankPos: BANK_FARK, link: LINK }) },
   { name: "personel-gun-sonu", title: "Personel · gün sonu alındı", mail: () => renderStaffDayEnd({ branchName: "Marina", date: DAY, kind: "alindi", z: Z, amounts: true }) },
   { name: "personel-sayim-yok", title: "Personel · kasa sayılmadı", mail: () => renderStaffDayEnd({ branchName: "Marina", date: DAY, kind: "sayim-yok", z: Z, amounts: false }) },
-  { name: "kasa-raporu", title: "Kasa raporu (Tuzla, ModPOS)", mail: () => renderCashReport(CASH_DAY, { by: "Zeynep", revision: 1, submittedAt: new Date("2026-11-24T20:15:00Z"), branch: { id: "tuzla", name: "Tuzla" } }) },
+  {
+    name: "kasa-raporu",
+    title: "Kasa raporu (Tuzla, ModPOS) · eksik, fotoğraflar, kasadan çıkanlar, zayi",
+    mail: () => renderCashReport(CASH_DAY, { by: "Zeynep", revision: 1, submittedAt: new Date("2026-11-24T20:15:00Z"), branch: { id: "tuzla", name: "Tuzla" }, ...CASH_EXTRAS }),
+  },
+  {
+    name: "kasa-raporu-yazarkasa",
+    title: "Kasa raporu (Marina, LafPOS) · fazla, yazarkasa, düzeltme, onay, online",
+    mail: () => renderCashReport(CASH_OKC_DAY, CASH_OKC_META),
+  },
+  {
+    name: "kasa-raporu-tutuyor",
+    title: "Kasa raporu · tutuyor, Z fotoğrafı okundu, banka POS farkı",
+    mail: () =>
+      renderCashReport({ ...CASH_DAY, countedCash: 3_550, bankPos: 8_050, note: null }, { by: "Zeynep", revision: 1, submittedAt: new Date("2026-11-24T20:15:00Z"), photos: { z: true, okc: false, pos: false }, photoRead: true, photoDiffs: [] }),
+  },
   {
     name: "sabah-ozeti",
     title: "Sabah e-postası · ödemeler, faturalar, zam",
@@ -300,6 +376,24 @@ const SAMPLES: { name: string; title: string; mail: () => Mail }[] = [
     mail: () => {
       const alert: ChecklistAlert = { key: "k", kind: "late", templateId: 3, listName: "Açılış", branchId: "marina", slot: "10:00", until: "11:00", missing: ["Buzdolabı ısısı", "Kahve makinesi temizliği", "Vitrin düzeni"] };
       return renderChecklistAlert([alert], "2026-11-25");
+    },
+  },
+  {
+    name: "kontrol-listesi-coklu",
+    title: "Kontrol listesi · gecikti ve zamanı geldi, uzun eksik listesi",
+    mail: () => {
+      const late: ChecklistAlert = {
+        key: "a",
+        kind: "late",
+        templateId: 5,
+        listName: "Tuvalet çizelgesi",
+        branchId: "marina",
+        slot: "10:00",
+        until: "11:00",
+        missing: ["10:00 Tuvalet fotoğrafı", "Lavabo ve ayna", "Sabun ve kâğıt havlu", "Çöp kovası", "Zemin", "Klozet", "Koku giderici", "Kapı kolu"],
+      };
+      const due: ChecklistAlert = { key: "b", kind: "due", templateId: 3, listName: "Açılış", branchId: "marina", slot: null, until: "12:00", missing: ["Buzdolabı ısısı", "Vitrin düzeni"] };
+      return renderChecklistAlert([late, due], "2026-11-25");
     },
   },
   { name: "karaoke-personel-sabah", title: "Karaoke · personel sabah listesi", mail: () => renderStaffMorning(KARAOKE, "2026-11-25") },

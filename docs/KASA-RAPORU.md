@@ -829,7 +829,8 @@ onu okur); değişen yalnız ciroya girmemesidir. **Kartlı satış oranı** da 
 - **E-posta:** yöneticinin seçtiği adreslere gider. Hiç kaydedilmediyse Vercel'deki `CASH_REPORT_RECIPIENTS` (virgülle ayrılmış adresler; adresler kodda durmaz, yerel kurulum gerçek kişilere rapor göndermez); o da yoksa rapor e-postasız kaydedilir.
   Konu örneği: "Kasa raporu · 21 Ekim Salı · 120 ₺ eksik". İçinde kasa sonucu, ModPOS Z raporu, kasa, Banka POS Z
   raporu (yazarkasa; yazarkasa alanı olmayan eski raporda "Kart"), günün zayi ve ikramı ve (site o an yanıt verdiyse)
-  "laffogato.net (kasadan geçmez)" bölümü yer alır. Başlıkta gönderen ve (başkaysa) sayan: "Mehmet · sayan Ayşe";
+  "laffogato.net (kasadan geçmez)" bölümü yer alır. En üstte büyük kasa sonucu (eksik kırmızı, fazla turuncu, tutuyor
+  yeşil), altında toplam satış, nakit ve kart; uyarılar ilgili bölümün altında turuncu kutuda. Başlıkta gönderen ve (başkaysa) sayan: "Mehmet · sayan Ayşe";
   güncellenen raporda "Değişen: …"; açılış ya da devir tutmuyorsa kasa bölümünde uyarı ([Açılış ve
   devir](#açılış-ve-devir)). Panelde kayıtlı ikramın menü fiyatıyla değeri ModPOS'un ödenmez tutarıyla karşılaştırılır.
   E-posta gitmezse rapor yine kaydedilir; ekranda "Yeniden dene" çıkar. Resend'e rapor satırına ve sürümüne özgü
@@ -861,7 +862,7 @@ onu okur); değişen yalnız ciroya girmemesidir. **Kartlı satış oranı** da 
 | Başlık | `*Banka POS Z raporu*` | "Banka POS Z raporu (yazarkasa) · Z no 0188 · 143 fiş" |
 | Rakamlar | Z no, Nakit, Kredi kartı, Banka gün sonu (varsa) | Günlük toplam ve KDV, oran oran KDV dökümü, Nakit, Kredi kartı, Yemek kartı, Diğer, Banka gün sonu |
 | Kart satırı | "✅ Kart ModPOS ile aynı" / "⚠️ Yazarkasa kartı ModPOS'tan 120 ₺ fazla" | aynı |
-| Öteki satırlar | yok (günlük toplam, KDV, fiş sayısı, kendi içinde ve ModPOS'la toplam, nakit, yemek kartı, banka karşılaştırmaları girmez) | hepsi, renkli kutular (✅ / ℹ️ / ⚠️) |
+| Öteki satırlar | yok (günlük toplam, KDV, fiş sayısı, kendi içinde ve ModPOS'la toplam, nakit, yemek kartı, banka karşılaştırmaları girmez) | hepsi, işaretli satırlar (✓ yeşil, i gri, ! turuncu) |
 | "Değişen" ve "Fotoğraftan farklı" | yazarkasanın Z no'su, nakdi, kartı ve banka gün sonu değeriyle; günlük toplam, KDV, döküm, fiş sayısı, yemek kartı ve diğer yalnız adıyla ("Yazarkasa toplam değişti", "Yazarkasa fiş sayısı") | değerleriyle |
 
   Yönetici "WhatsApp ile gönder"e bassa da metin personelinkidir (`whatsappText` → `cashReportText(…, "staff")`).

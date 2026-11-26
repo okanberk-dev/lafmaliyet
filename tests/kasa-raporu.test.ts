@@ -643,7 +643,8 @@ test("WhatsApp ve e-posta: sayan, değişenler, açılış ↔ devir, ertesi gü
   assert.match(html, /Mehmet · sayan Ayşe · 23:15 · güncellendi/);
   assert.match(html, /Değişen: Sayılan nakit 3\.430 ₺ → 3\.530 ₺; Not değişti/);
   assert.match(html, />İndirim</);
-  assert.match(html, /Önceki devir 620 ₺ \(20 Ekim\): açılış 120 ₺ az<br>22 Ekim açılışı \(1\.200 ₺\) bu devirle tutmuyor/);
+  // İki uyarı aynı turuncu kutuda alt alta (e-posta kitinin notu: her satır kendi <div>'inde)
+  assert.match(html, /Önceki devir 620 ₺ \(20 Ekim\): açılış 120 ₺ az<\/div><div[^>]*>22 Ekim açılışı \(1\.200 ₺\) bu devirle tutmuyor/);
   assert.doesNotMatch(m.html, /<b>x<\/b>/);
   assert.equal(m.subject, renderCashReport(f, { by: "Mehmet", revision: 2, submittedAt: new Date() }).subject, "konu değişmez");
   assert.match(plain(m.text), /⚠️ 22 Ekim açılışı/);
