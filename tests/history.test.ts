@@ -468,8 +468,8 @@ test("Yatırım dönemleri fatura tarihlerinden", () => {
   const byName = new Map(data.investments.map((x) => [x.name, investmentSeed(x)]));
   assert.equal(byName.get("Dekorasyon & ekipman (XND Teknoloji)")?.date, "2026-07");
   assert.equal(byName.get("POS / yazarkasa / ModPOS (Aria)")?.date, "2026-07");
-  assert.equal(byName.get("Reklam (Beyza Karaman)")?.date, "2026-09");
-  assert.equal(byName.get("Tabela, baskı (Murat Şeimen, Tuzla Baskı)")?.date, null);
-  assert.ok(byName.get("Tabela, baskı (Murat Şeimen, Tuzla Baskı)")?.note?.includes("Temmuz–Eylül"));
+  assert.equal(byName.get("Reklam (Berna Kalaycı)")?.date, "2026-09");
+  assert.equal(byName.get("Tabela, baskı (Musa Şenkaya, Tuzla Baskı)")?.date, null);
+  assert.ok(byName.get("Tabela, baskı (Musa Şenkaya, Tuzla Baskı)")?.note?.includes("Temmuz–Eylül"));
   assert.equal(byName.get("Bardak baskı klişe bedelleri (Serendi)")?.date, null);
 });

@@ -421,7 +421,7 @@ describe("taze db:seed: sayım listesinin sekiz kalemi", { skip: !SERVER_URL && 
       if (env.email !== undefined) process.env.ADMIN_EMAIL = env.email;
       if (env.password !== undefined) process.env.ADMIN_PASSWORD = env.password;
     }
-    assert.ok(lines.some((l) => /✓ Excel verisi yüklendi: 74 hammadde \(\+8 sayım kalemi\)/.test(l)), lines.join("\n"));
+    assert.ok(lines.some((l) => /✓ Başlangıç verisi yüklendi: 74 hammadde \(\+8 sayım kalemi\)/.test(l)), lines.join("\n"));
     target = postgres(url.href, { max: 1, onnotice: () => {} });
     const eight = ["Çilek şurubu", "Cookie şurubu", "Lemon tea şurubu", "Hazelnut şurubu", "Vanilya sos", "Yaban mersini püre", "Böğürtlen püre", "Klips kapak"];
     const rows = await target<{ id: number; name: string; count_from: string; is_estimate: boolean; active: boolean; count_unit: string }[]>`

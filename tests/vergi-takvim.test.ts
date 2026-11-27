@@ -142,9 +142,9 @@ test("G: varsayılan yıl ve çeyrek; yıl seçicisi 2026 boyunca yok", () => {
 
 const data: SeedData = JSON.parse(readFileSync(join(__dirname, "..", "tests/fixtures/baslangic/veri.json"), "utf8"));
 const excel = datasetFromSeed(data);
-// Excel faturalarının KDV'si boş; Eylül KDV-2'si (1.800) yalnız Paraşüt'ün KDV toplamıyla çıkar: Beyza Karaman faturasına
+// Excel faturalarının KDV'si boş; Eylül KDV-2'si (1.800) yalnız Paraşüt'ün KDV toplamıyla çıkar: Berna Kalaycı faturasına
 // (30.000 + 4.200 ödenecek) KDV 6.000 yazılır, tevkifat 1.800 (denetim notu, drift §3)
-const base: Dataset = { ...excel, currentMonth: "2026-10", invoices: excel.invoices.map((i) => (i.supplier === "Beyza Karaman" ? { ...i, vat: 6000 } : i)) };
+const base: Dataset = { ...excel, currentMonth: "2026-10", invoices: excel.invoices.map((i) => (i.supplier === "Berna Kalaycı" ? { ...i, vat: 6000 } : i)) };
 const TODAY = "2026-10-24";
 
 type Paid = { id: number; dueDate: string | null; next?: string | null; amount?: number | null };

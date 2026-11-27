@@ -156,7 +156,7 @@ test("E: demirbaş adayı: 12.000 ₺'yi aşan ve önceki 90 günde aynı tedari
     assetCandidates(invoices, [], R).map((c) => [c.invoice.supplier, c.invoice.date, c.net]),
     [
       ["Aria Yazılım", "2026-07-07", 39780],
-      ["Beyza Karaman", "2026-09-17", 30000],
+      ["Berna Kalaycı", "2026-09-17", 30000],
     ],
   );
   // Kuruluş & Demirbaş: 4 fatura varlık listesinde değil, 951.430,41

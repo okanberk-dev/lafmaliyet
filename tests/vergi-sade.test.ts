@@ -141,7 +141,7 @@ test("overdueTaxNotice: tek ödemede başlık adıyla, çoğunda sayıyla; en ç
 
 const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
 const excel = datasetFromSeed(data);
-const base: Dataset = { ...excel, currentMonth: "2026-10", invoices: excel.invoices.map((i) => (i.supplier === "Beyza Karaman" ? { ...i, vat: 6000 } : i)) };
+const base: Dataset = { ...excel, currentMonth: "2026-10", invoices: excel.invoices.map((i) => (i.supplier === "Berna Kalaycı" ? { ...i, vat: 6000 } : i)) };
 
 function view(today: string, reminders: ReminderRow[] = [], tweak?: (pnl: TaxPnlInput) => TaxPnlInput): TaxView {
   const settings = DEFAULT_TAX_SETTINGS;

@@ -92,7 +92,7 @@ test("Excel parity: ödenmemiş toplam I27 = 11.516,77 ₺ (kalan borç; kısmi 
   assert.deepEqual(partial, { count: 1, total: 6000, payableTotal: 10000, partialCount: 1 });
 });
 
-test("guessVat: Excel'deki oranlar (%0 Opera AVM, %1 Sütaş, %10 Sinan Siner, %20 Opera kira)", () => {
+test("guessVat: Excel'deki oranlar (%0 Opera AVM, %1 Sütaş, %10 Sibel Akyol, %20 Opera kira)", () => {
   assert.equal(guessVat({ amount: 793.8, discount: 0, payable: 793.8 }), "0");
   assert.equal(guessVat({ amount: 7968, discount: 557.76, payable: 7484.34 }), "1");
   assert.equal(guessVat({ amount: 10000, discount: 0, payable: 11000 }), "10");

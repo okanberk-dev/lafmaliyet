@@ -32,8 +32,8 @@ const fixed: FixedExpense[] = [
   { ...kira, id: 501, name: "Marina güvenlik", section: "faturalar", amount: 2_500, branchId: "marina", officialAmount: null, prorate: true, sortOrder: 51 },
 ];
 const staff: Staff[] = [
-  { id: 1, name: "Alper", netSalary: 35_000, extras: 0, mealCard: true, active: true, startMonth: null, endMonth: null, branchId: "marina" },
-  { id: 2, name: "Berkan", netSalary: 32_000, extras: 0, active: true, startMonth: null, endMonth: null, branchId: "tuzla" },
+  { id: 1, name: "Arda", netSalary: 35_000, extras: 0, mealCard: true, active: true, startMonth: null, endMonth: null, branchId: "marina" },
+  { id: 2, name: "Burak", netSalary: 32_000, extras: 0, active: true, startMonth: null, endMonth: null, branchId: "tuzla" },
 ];
 const reklam: ExpenseCategory = { id: 1, name: "Reklam", section: "genel", panelGroup: "reklam", invoiceCategory: "Reklam & Tabela", monthly: false, active: true, sortOrder: 1 };
 const entry = (id: number, amount: number, branchId: string | null): ExpenseEntry => ({ id, date: "2026-11-10", categoryId: 1, description: null, amount, paymentMethod: null, note: null, branchId });
@@ -211,8 +211,8 @@ test("Tümü'nün şube kırılımı: şubeler + 'İşletme geneli' sütunu = T�
 });
 
 test("şube seçiliyken 'Excel temeli' net kâr ve başabaş işletme genelini saymaz (kârın temeliyle aynı); Tümü değişmez", () => {
-  // İnceleme bulgusu 3: Marina görünümü, Excel'in sabit giderlerinin hepsi işletme geneli, Alper (35.000 net + yemek kartı).
-  // Şubenin sabit gideri yalnız Alper'in 57.065'i; işletme geneli (bilgi) Tümü'de bir kez sayılır
+  // İnceleme bulgusu 3: Marina görünümü, Excel'in sabit giderlerinin hepsi işletme geneli, Arda (35.000 net + yemek kartı).
+  // Şubenin sabit gideri yalnız Arda'in 57.065'i; işletme geneli (bilgi) Tümü'de bir kez sayılır
   const sharedFixed = excel.fixedExpenses.map((f) => ({ ...f, branchId: null }));
   const monthly: ExpenseCategory = { ...reklam, monthly: true };
   const ds = (id: "marina" | "tuzla", months: Month[]): Dataset => ({
@@ -224,20 +224,20 @@ test("şube seçiliyken 'Excel temeli' net kâr ve başabaş işletme genelini s
   const marina = createModel(ds("marina", marinaMonths));
   const tuzla = createModel(ds("tuzla", tuzlaMonths));
   const all = createModel({ ...ALL, salesLines: excel.salesLines, fixedExpenses: sharedFixed, expenseCategories: [monthly] });
-  const alper = staffCost(staff[0], marina.settings).total;
-  close(alper, 57_065.29, "Alper'in işveren maliyeti (§6)");
-  close(fixedCostsForMonth(marina, "2026-11").standard, alper, "kârın temeli");
-  close(marina.fixedStandardTotalFor("2026-11"), alper, "Excel temeli: şubenin standart sabit gideri 57.065 (351.760 değil)");
+  const arda = staffCost(staff[0], marina.settings).total;
+  close(arda, 57_065.29, "Arda'in işveren maliyeti (§6)");
+  close(fixedCostsForMonth(marina, "2026-11").standard, arda, "kârın temeli");
+  close(marina.fixedStandardTotalFor("2026-11"), arda, "Excel temeli: şubenin standart sabit gideri 57.065 (351.760 değil)");
   // Başabaş: şubenin sabit gideri + şubenin kendi her ay girilen harcaması (3.000; işletme geneli 4.000 ve bağlı fatura yok)
   const be = breakEvenOf(marina, "2026-11");
-  close(be.standard, alper, "başabaşın standart sabit gideri");
+  close(be.standard, arda, "başabaşın standart sabit gideri");
   close(be.expensesTotal, 3_000, "başabaşın aylık harcaması: şubenin kendi kaydı");
-  close(be.fixed, alper + 3_000, "başabaşın sabit gideri");
+  close(be.fixed, arda + 3_000, "başabaşın sabit gideri");
   // Genel bakış'ın "Excel temeli" net kârı aynı sabit giderle
   const d = dashboard(marina, "2026-09");
-  close(d.fixedStandardTotal, alper, "Genel bakış: standart sabit gider");
+  close(d.fixedStandardTotal, arda, "Genel bakış: standart sabit gider");
   const t = d.theoretical!;
-  close(t.netProfitStandard, t.grossProfit - t.discountsNet - alper, "Excel temeli net kâr");
+  close(t.netProfitStandard, t.grossProfit - t.discountsNet - arda, "Excel temeli net kâr");
   // Analiz'in başabaş dökümü: işletme geneli kalem yok, toplam başabaşın sabit gideri ("Diğer" düzeltmesi yok)
   const items = scenarioBreakEvenItems(marina, "2026-11");
   assert.equal(items.some((r) => sharedFixed.some((f) => r.key === `fixed:${f.id}`)), false, "Analiz: işletme geneli kalem yok");
@@ -246,7 +246,7 @@ test("şube seçiliyken 'Excel temeli' net kâr ve başabaş işletme genelini s
   // Tümü değişmez: işletme geneli bir kez; Marina + Tuzla + işletme geneli = Tümü
   const excluded = marina.fixedStandardSharedFor("2026-11");
   close(excluded, tuzla.fixedStandardSharedFor("2026-11"), "iki şubede aynı işletme geneli");
-  close(alper + excluded, 351_760.46, "inceleme senaryosu: eski toplam 351.760");
+  close(arda + excluded, 351_760.46, "inceleme senaryosu: eski toplam 351.760");
   close(marina.fixedStandardTotalFor("2026-11") + tuzla.fixedStandardTotalFor("2026-11") + excluded, all.fixedStandardTotalFor("2026-11"), "Tümü");
   assert.equal(all.fixedStandardSharedFor("2026-11"), 0, "Tümü'de dışarıda kalan yok");
   close(breakEvenOf(all, "2026-11").expensesTotal, 3_000 + 4_000 + 5_000 + 6_000, "Tümü'nün aylık harcaması hepsi");

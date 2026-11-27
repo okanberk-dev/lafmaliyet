@@ -17,7 +17,7 @@ import { attempt, UserError, zDate, zOptText, zText } from "./util";
 // kaydı değil).
 //
 // Tek istisna EKLEME (4 Kasım 2026, sahibin isteği): yönetici hatırlatıcıyı başka bir kullanıcıya atayabilir
-// (İbrahim, Damla ...). Atanan kayıt o kişinindir — yalnız o görür, erteler, tamamlar ve siler; atayan onu
+// (Ayşe, Mehmet ...). Atanan kayıt o kişinindir — yalnız o görür, erteler, tamamlar ve siler; atayan onu
 // sonradan göremez ve değiştiremez. Kim kurduğu `createdByName`'de durur, ekranda "… kurdu" diye görünür.
 
 const zId = z.number().int().positive();

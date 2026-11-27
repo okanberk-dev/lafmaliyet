@@ -323,7 +323,7 @@ describe("vergi eylemleri: veritabanında", { skip: !SERVER_URL && "VERGI_TEST_D
     const [kira] = await db.insert(s.fixedExpenses).values({ name: "Kira", section: "kira", amount: 160_000, vatRate: 0.2 }).returning();
     const [muhasebeci] = await db.insert(s.fixedExpenses).values({ name: "Muhasebeci", section: "personel", amount: 10_000, vatRate: 0.2 }).returning();
     const [cat] = await db.insert(s.expenseCategories).values({ name: "Market", section: "mal", panelGroup: "diger" }).returning();
-    const candidate = await invoice({ amount: 30_000, category: "Diğer", supplier: "Beyza Karaman" });
+    const candidate = await invoice({ amount: 30_000, category: "Diğer", supplier: "Berna Kalaycı" });
     const rent = await invoice({ amount: 30_000, category: "Kira & AVM", supplier: "AVM" });
     const next = `${shiftMonth(CUR, 1)}-01`;
     const follow = await reminder({ title: "Kira", kind: "kira", amount: 192_000, dueDate: next, anchorDate: next, repeat: "monthly", note: FIXED_REMINDER_NOTE });

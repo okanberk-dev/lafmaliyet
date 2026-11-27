@@ -39,7 +39,7 @@ Listede "Sürekli ses" ve "Sessiz" rozetle görünür.
 
 ## Başkasına kurma (4 Kasım 2026)
 
-**Yönetici** yeni bir hatırlatıcıyı başka bir kullanıcıya kurabilir ("Kime": Kendime · İbrahim · Damla …).
+**Yönetici** yeni bir hatırlatıcıyı başka bir kullanıcıya kurabilir ("Kime": Kendime · Ayşe · Mehmet …).
 
 - Kayıt **o kişinindir**: yalnız o görür, erteler, tamamlar ve siler. Kuran sonradan göremez ve değiştiremez.
 - Hatırlatıcıda "… kurdu" rozeti çıkar.
