@@ -230,7 +230,7 @@ staffCost); testleri `tests/personel-part-time.test.ts`, `tests/personel-baglant
   (`pg_advisory_xact_lock`, `saveStaff` ve `endStaff`; `lockStaffLinks`): iki yönetici aynı anda kaydederse ikincisi
   öncekini bekler ve onun bağladığını görür (inceleme bulgusu 6).
 - **Bağlı hesap silinmez** (denetim bulgusu 47, 25 Kasım 2026): `staff.user_id` hesap silinince boşalır (ON DELETE SET
-  NULL); part-time'ın günü Vardiya'dan sayılamaz, ücreti bütün aylarda 0'a düşer, tam zamanlının LafPOS yemek kartı günü
+  NULL); part-time'ın günü Vardiya'dan sayılamaz, ücreti bütün aylarda 0'a düşer, tam zamanlının AsilPOS yemek kartı günü
   de bağlantıyı kaybederdi. Kullanıcılar › Sil, Maaşlar'da bir satıra (biten satır da) bağlı hesabı reddeder: "Bu hesap
   Maaşlar'da “Ayşe” satırına bağlı; … Silmek yerine hesabı pasif yapın." Pasif hesapla giriş yapılamaz, bağlantı ve
   geçmiş aylar kalır. Denetim ve silme aynı kilit altında, tek işlemde (`deleteUser`; o an bağlanan hesap da silinmez).
@@ -238,7 +238,7 @@ staffCost); testleri `tests/personel-part-time.test.ts`, `tests/personel-baglant
   `u:<id>` anahtarıyla durur, bağlanacak hesap kalmadı); bağlantısız part-time'ı Maaşlar uyarır.
 - **LM-4b notu (personel listesi):** biten satır ile "Devam ettir"in açtığı yeni satır aynı hesaba bağlı olabilir (aralıkları
   ayrık). `GET /api/panel/pos/personel?sube=…` "bu ay ve geçen ay aralıktaki satırlar"ı okurken o şubede bir hesaba iki satır
-  düşebilir; liste **şubede hesap başına tek öğe** vermelidir (o ayın satırı, yoksa en yeni satır). Aksi hâlde LafPOS'un seçicisi aynı
+  düşebilir; liste **şubede hesap başına tek öğe** vermelidir (o ayın satırı, yoksa en yeni satır). Aksi hâlde AsilPOS'un seçicisi aynı
   hesabı iki kez gösterir.
 - **Part-time** (Maaşlar › Çalışma: Part-time; tür yalnız yeni kişide seçilir, maaş hesabına girmiş satırın türü
   değişmez): günlük ücret (işletmenin çağrılan gün başına maliyeti; **SGK brütleştirmesi yok**), yemek kartı (Ayarlar'daki
@@ -259,11 +259,11 @@ staffCost); testleri `tests/personel-part-time.test.ts`, `tests/personel-baglant
 - **Haftalık "Part-time çalışan" sabit gideri** Kasım 2026 için kalır (sahibin veri işi: son ayı 2026-11). Aynı ayda
   hem bu kalem (işletme geneli ya da kişinin şubesinin) hem de çağrıldığı günü olan günlük part-time satırı sayılıyorsa
   Genel bakış ve Maaşlar uyarır ("Part-time iki kez sayılabilir"); tutarlar kendiliğinden değişmez.
-- **Yemek kartı ve LafPOS (LM-4b):** tam zamanlı kişide yemek kartının günü Ayarlar'daki gündür (26); ayın tamamı LafPOS
-  dönemiyse, ay bittiyse, ayın her sayılan LafPOS günü çalışan kimliklerini taşıyorsa ve kişi en az bir günde geçiyorsa
-  LafPOS'ta çalıştığı gündür (`staffCost`'un `lafposDays` seçeneği; kural ve ayrıntı docs/LAFPOS.md › Personel bağlantısı).
-  Hiç geçmeyen kişi 0 gün sayılmaz: 26 kalır, Maaşlar ve Genel bakış uyarır. Maaşlar kişinin altında "LafPOS'ta çalıştığı
-  gün" yazar. LafPOS'un `GET /api/panel/pos/personel` listesi yukarıdaki notla hesap başına tek öğe verir.
+- **Yemek kartı ve AsilPOS (LM-4b):** tam zamanlı kişide yemek kartının günü Ayarlar'daki gündür (26); ayın tamamı AsilPOS
+  dönemiyse, ay bittiyse, ayın her sayılan AsilPOS günü çalışan kimliklerini taşıyorsa ve kişi en az bir günde geçiyorsa
+  AsilPOS'ta çalıştığı gündür (`staffCost`'un `asilposDays` seçeneği; kural ve ayrıntı docs/ASILPOS.md › Personel bağlantısı).
+  Hiç geçmeyen kişi 0 gün sayılmaz: 26 kalır, Maaşlar ve Genel bakış uyarır. Maaşlar kişinin altında "AsilPOS'ta çalıştığı
+  gün" yazar. AsilPOS'un `GET /api/panel/pos/personel` listesi yukarıdaki notla hesap başına tek öğe verir.
 
 ## Bildirimler (Dalga 2, 25 Kasım 2026)
 

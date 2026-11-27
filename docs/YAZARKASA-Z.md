@@ -147,11 +147,11 @@ tutmazsa yine "tutmadı" yapar, tutarsa yalnız "çelişki yok" verir. K3'ün pa
   yapamaz. Yönetici yanlış saklananı **Kümülatifi temizle** ile siler.
 - Personele giden metinlerde "kümülatif", "zincir", "KÜM.", "MATRAH" sözcükleri yoktur; alan başına tek, sade bir neden
   ve kartın altında tek özet satırı. Ayrıntılı metinler yalnız yöneticide (plan D16, D17).
-- **LafPOS günü** (geçiş gününden sonra; [LAFPOS.md](LAFPOS.md) › Kasa raporu): kart satırı yazarkasa kartını (yoksa banka
-  gün sonunu) LafPOS'un Z kartıyla karşılaştırır ve LafPOS'un gönderdiği kartla bahşişi ve kartla cari tahsilatını düşer
+- **AsilPOS günü** (geçiş gününden sonra; [ASILPOS.md](ASILPOS.md) › Kasa raporu): kart satırı yazarkasa kartını (yoksa banka
+  gün sonunu) AsilPOS'un Z kartıyla karşılaştırır ve AsilPOS'un gönderdiği kartla bahşişi ve kartla cari tahsilatını düşer
   (Z'nin kartında yok, banka POS'unda var; tutar yalnız yöneticinin metninde); yazarkasadan geçmeyen kart (Faz 2,
-  `offDevice.card`) LafPOS'un kartından düşülür, yazarkasanın nakit ve toplam satırları da yazarkasadan geçmeyen
-  ödemeyi düşer. LafPOS'un gün sonu gelmediyse geç rapor
+  `offDevice.card`) AsilPOS'un kartından düşülür, yazarkasanın nakit ve toplam satırları da yazarkasadan geçmeyen
+  ödemeyi düşer. AsilPOS'un gün sonu gelmediyse geç rapor
   yazarkasa Z fotoğrafıyla girilir ve o fotoğraf (tek ise) kaldırılamaz.
 
 ## 5. Okuma tuzakları

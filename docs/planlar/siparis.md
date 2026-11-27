@@ -1307,7 +1307,7 @@ Not touched: `src/lib/calc/*` (engine, insights, price-impact), `src/server/data
   - data (three tables, `reorder.settings`);
   - **the usage seam**: `loadDailyProductSales` returns `[]` today. When the ModPOS daily export arrives, add the import
     (table plus loader) and nothing else changes: `pickUsage` switches to daily when ≥ 14 days exist in the last 28.
-    (26 Oct: the table and loader exist; LafPOS's day-close push fills them instead of a ModPOS export, `docs/LAFPOS.md`.)
+    (26 Oct: the table and loader exist; AsilPOS's day-close push fills them instead of a ModPOS export, `docs/ASILPOS.md`.)
 - **`README.md`**:
   - Screens table, two rows:
     - "Hızlı sayım: haftalık kritik kalem sayımı (personel de), gelen mal işareti" | `/panel/hizli-sayim` | —;

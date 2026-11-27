@@ -3,19 +3,19 @@
 Ekran: **yalnız yöneticide**. Masaüstünde her panel sayfasının sağ altında küçük yuvarlak düğme (parıltı simgesi,
 "Panel asistanı"); tıklayınca sağ altta 400 × 560'lık bir pencere açılır. **Telefon ve tablette** (lg altı) yüzen düğme
 yoktur: asistan **alt menünün ortasındaki "Asistan" sekmesinden** açılır, alt menünün üstünde biten sade bir tam ekran
-sayfadır (aşağıda Telefonda). Panelin verisine (LafPOS'un gün sonları ve günlük satışları dahil) bakarak soruları
+sayfadır (aşağıda Telefonda). Panelin verisine (AsilPOS'un gün sonları ve günlük satışları dahil) bakarak soruları
 yanıtlar ve panelin nasıl kullanılacağını gösterir. **Kendisi hiçbir şeyi değiştirmez:** birkaç risksiz işi (Tükendi, fiyat, ödendi işareti, hatırlatıcı, kasadan çıkan, vardiya…) bir **onay kartıyla** hazırlar;
 siz karttaki **Onayla**'ya basmadan hiçbir şey değişmez (aşağıda İşlemler). Silme, toplu işlem, şifre isteyen ve riskli
 işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları verir (aşağıda Yapmadığı işler).
 
 Örnek sorular (pencere boşken açık ekrana özel 3–4 tanesi çip olarak durur; aşağıda Sayfa bağlamı):
 
-- "Dünkü gün sonu nasıldı?", "Dün kasa tuttu mu?" → LafPOS'un gün sonu: Z, ödeme türleri, kasa farkı, ikram, Pavo,
+- "Dünkü gün sonu nasıldı?", "Dün kasa tuttu mu?" → AsilPOS'un gün sonu: Z, ödeme türleri, kasa farkı, ikram, Pavo,
   dün ve geçen haftayla kıyas
-- "Dün en çok ne sattı?", "Bu hafta kaç San Sebastian sattık?" → LafPOS'un gün gün ürün satışı
+- "Dün en çok ne sattı?", "Bu hafta kaç San Sebastian sattık?" → AsilPOS'un gün gün ürün satışı
 - "Bugün kim çalışıyor?" → vardiya
 - "Ne bitmek üzere?", "Süt kaç gün yeter?" → Marina'nın tahmini stoğu, kritik malzemeler, kaç gün yeteceği
-- "LafPOS bağlantısı çalışıyor mu?", "Ne tükendi?", "Bekleyen ne var?", "Bugün ne yapmam lazım?"
+- "AsilPOS bağlantısı çalışıyor mu?", "Ne tükendi?", "Bekleyen ne var?", "Bugün ne yapmam lazım?"
 - "Bu ay nasıl gidiyor?" → ayın cirosu, gideri, kârı, ay sonu tahmini
 - "En çok kime borcumuz var?" → tedarikçilerin kalan borcu, büyükten küçüğe
 - "Hangi ürünler hammaddeye bağlanmayı bekliyor?" → Paraşüt'ten gelip bağlanmamış ürünler ve **Ürün → hammadde
@@ -42,7 +42,7 @@ işleri yapmaz; ilgili ekranın bağlantısını ve kısa, numaralı adımları 
 - Yanıttaki panel bağlantıları aynı sekmede açılır (telefonda pencere kapanır, sayfa görünsün); dış bağlantı yalnız
   izin listesindeki sitelere (laffogato.net, Paraşüt, Claude), https ve yeni sekmede. Başka her adres (javascript:,
   http:, panelin dışına çıkan yol, listede olmayan site) bağlantısız yazı kalır (yalnız etiketi); yanıtta HTML
-  çizilmez. Neden liste: araç sonuçlarında dışarıdan gelen metin var (Paraşüt kalem adları, LafPOS adları); onlarla
+  çizilmez. Neden liste: araç sonuçlarında dışarıdan gelen metin var (Paraşüt kalem adları, AsilPOS adları); onlarla
   yapılan istem enjeksiyonu panel verisini taşıyan bir bağlantı ürettirse bile tıklanamaz.
 - **Esc** pencereyi kapatır (masaüstünde odak sayfadayken de). Masaüstünde pencere modal değildir: sayfa kullanılabilir.
   Telefonda sayfa modal değildir (alt menü kullanılabilir, aşağıda Telefonda). Ekran okuyucu yanıt bitince ilk
@@ -143,18 +143,18 @@ Asistanın onay kartıyla hazırlayabildiği işler:
 
 | İş | Örnek |
 |---|---|
-| Ürünü Tükendi yapmak ya da yeniden satışa açmak (siteye bağlı ürün; LafPOS'a yansır) | "Ice Latte bitti, tükendi yap" |
+| Ürünü Tükendi yapmak ya da yeniden satışa açmak (siteye bağlı ürün; AsilPOS'a yansır) | "Ice Latte bitti, tükendi yap" |
 | Paraşüt'teki bir ürünü hammaddeye bağlamak (tek ürün, çarpanıyla) | "LAKTOZSUZ SÜT 1 LT'yi Süt Laktozsuz'a 1000 çarpanla bağla" |
 | Ödeme hatırlatıcısı eklemek; bir hatırlatıcının bu dönemini ödendi işaretlemek | "Her ayın 5'inde kira hatırlatıcısı ekle", "Kira ödendi" |
 | Faturayı ödendi (ya da ödemesi talep edildi) işaretlemek | "Sütaş'ın 12 Kasım faturası havaleyle ödendi" |
 | Tedarikçiye ödeme kaydı girmek (havale, elden, kart, çek; kasadan değil) | "Ambalajcı'ya bugün 3.000 ₺ havale yaptık" |
 | Hammaddenin paket fiyatını değiştirmek | "Süt paketi artık 48 ₺" |
-| Bir ürünün (tek boy) satış fiyatını (taban) değiştirmek; kart siteye ve LafPOS'a etkisini, kendi fiyatı olan şubeyi gösterir | "Latte M 90 ₺ olsun" |
+| Bir ürünün (tek boy) satış fiyatını (taban) değiştirmek; kart siteye ve AsilPOS'a etkisini, kendi fiyatı olan şubeyi gösterir | "Latte M 90 ₺ olsun" |
 | Bugünün kasasına kasadan çıkan eklemek; Aylık harcamalar'a gider eklemek | "Tuzla kasasından Migros'a 85 ₺ süt aldık" |
 | Zayi ya da ikram kaydı | "Marina'da 2 cheesecake döküldü" |
 | Tek kişinin vardiyasını ayarlamak (aynı haftanın günleri) | "Ayşe Cuma 10-18, Pazar izinli" |
 
-- **Kart:** ne yapılacağı, eski → yeni değerler, şube, gün, kişi / ürün, dış etki rozetleri (Site / QR menü, LafPOS,
+- **Kart:** ne yapılacağı, eski → yeni değerler, şube, gün, kişi / ürün, dış etki rozetleri (Site / QR menü, AsilPOS,
   ModPOS kasası, Kasa raporu, Gelir-gider…), geri alma yolu ve 10 dakikalık süre. Kartı sunucu yazar; asistanın
   açıklaması ayrıca "Asistanın notu" olarak durur. **Onayla** işlemi yapar, **Vazgeç** kartı kapatır; süre dolunca kart
   hiçbir şey yapmaz.
@@ -188,10 +188,10 @@ hazırlayabilir). Rehberin her girdisinde konu, asistanın neden yapmadığı, e
 
 | Tür | Örnekler |
 |---|---|
-| Rehber (riskli; yol gösterir) | Her türlü silme ve bildirimdeki Geri al, toplu fiyat, bir şubenin kendi fiyatı (şube fiyatı), faturayı ödenmedi yapma, çok dönemi birden ödendi, kasadan tedarikçi ödemesi ve elle dağıtım, tedarikçi kartı ve IBAN, fatura ekleme / düzenleme, geçmiş günün kasası, kasa raporu ve onaylar, kapalı gün, reçete, siteye bağlama, satış eşleştirme, personelin isteklerine karar, Paraşüt eşitleme, hammadde birimi, vergi, karaoke rezervasyonu, ayarlar, LafPOS gününü silme (409 onarımı), şube, kullanıcılar, Hesabım |
+| Rehber (riskli; yol gösterir) | Her türlü silme ve bildirimdeki Geri al, toplu fiyat, bir şubenin kendi fiyatı (şube fiyatı), faturayı ödenmedi yapma, çok dönemi birden ödendi, kasadan tedarikçi ödemesi ve elle dağıtım, tedarikçi kartı ve IBAN, fatura ekleme / düzenleme, geçmiş günün kasası, kasa raporu ve onaylar, kapalı gün, reçete, siteye bağlama, satış eşleştirme, personelin isteklerine karar, Paraşüt eşitleme, hammadde birimi, vergi, karaoke rezervasyonu, ayarlar, AsilPOS gününü silme (409 onarımı), şube, kullanıcılar, Hesabım |
 | Hariç (hiç önermez; sorulursa yalnız ekran) | Giriş, çıkış ve parola sıfırlama, iki adımlı doğrulama kurulumu ve sıfırlama, davet bağlantısı, yedek, uygulama bağlama onayı, Paraşüt bağlantı ayarları, kasa e-posta alıcıları, bildirim alıcıları ve testleri, sistem geneli oranlar, cihaz bildirimleri, vardiya taslağı, personelin kendi istekleri |
 
-Şifre isteyen işlerde (LafPOS gününü silme, kullanıcılar, Hesabım, yedek, davet) parola yalnız ekrandaki alana girilir;
+Şifre isteyen işlerde (AsilPOS gününü silme, kullanıcılar, Hesabım, yedek, davet) parola yalnız ekrandaki alana girilir;
 asistan sohbette parola, kod ya da anahtar istemez.
 
 ## Hangi verilere bakar
@@ -210,22 +210,22 @@ Okuma araçlarının ilk yedisi Claude bağlantısınınkilerle aynıdır
 | Arama | Ürün, hammadde, tedarikçi adları |
 | Panel rehberi | Panelin belgelerinde arama (aşağıda Bilgi tabanı) |
 | Paraşüt'te bekleyen ürünler | Hammaddeye bağlanmayı bekleyen Paraşüt ürünleri (Paraşüt sayfasındaki liste) |
-| Gün sonu | LafPOS'un gün sonu (en çok 14 gün, varsayılan dün): Z no, fiş, Z toplamı, nakit / kart / yemek kartı / online, indirim, ödeme türleri, kasa sayımı ve kasa farkı, ikram / ödenmez / zayi ve iptaller, Pavo kart karşılaştırması, otomatik raporun eksikleri, dün ve geçen haftayla kıyas |
-| Günlük satışlar | LafPOS'un gün gün ürün satışı (en çok 31 gün, bugün hariç): en çok satanlar, tek ürünün günlük adedi, hafta günleri, ürüne bağlanamayan adlar |
-| LafPOS durumu | Bağlantı: geçiş günü, son gün sonu, reddedilen gönderimler ve onarımı, gelmeyen günler, eşleşmeyen adlar |
+| Gün sonu | AsilPOS'un gün sonu (en çok 14 gün, varsayılan dün): Z no, fiş, Z toplamı, nakit / kart / yemek kartı / online, indirim, ödeme türleri, kasa sayımı ve kasa farkı, ikram / ödenmez / zayi ve iptaller, Pavo kart karşılaştırması, otomatik raporun eksikleri, dün ve geçen haftayla kıyas |
+| Günlük satışlar | AsilPOS'un gün gün ürün satışı (en çok 31 gün, bugün hariç): en çok satanlar, tek ürünün günlük adedi, hafta günleri, ürüne bağlanamayan adlar |
+| AsilPOS durumu | Bağlantı: geçiş günü, son gün sonu, reddedilen gönderimler ve onarımı, gelmeyen günler, eşleşmeyen adlar |
 | Menü durumu | Tükendi ürünler (kim, ne zaman), sitede kapalı olanlar, kasada eski fiyatı duran ürün sayısı |
 | Vardiya | Bir gün kim çalışıyor; bir haftanın planı kişi kişi |
 | Bugün | Bugün ekranının özeti: sıradaki iş, Şimdi, Sonra, Tamamlananlar, Bugün kafede |
 | Bekleyen işler | Zildeki bekleyen işler başlık başlık ve bugünkü hatırlatıcılarınız |
-| Stok tahmini | Marina'nın tahmini stoğu (LafPOS satışı ve kasadan geçmeyen online sipariş düşülmüş), kritik malzemeler, kaç gün yeteceği, önerilen eşik (öneri; eşiği yönetici ekranda kaydeder), tek malzemenin ayrıntısı (yaklaşık) |
+| Stok tahmini | Marina'nın tahmini stoğu (AsilPOS satışı ve kasadan geçmeyen online sipariş düşülmüş), kritik malzemeler, kaç gün yeteceği, önerilen eşik (öneri; eşiği yönetici ekranda kaydeder), tek malzemenin ayrıntısı (yaklaşık) |
 | İşlem rehberi | Asistanın yapmadığı işlerde (silme, toplu, şifreli, riskli, ayar, güvenlik) ekran ve adımlar |
 
 - **Şube:** araçlar açık ekranın şubesiyle okur (üstteki seçicinin bu sekmedeki değeri; yukarıda Sayfa bağlamı).
   "Tümü" işletme genelidir. Asistan yanıtında hangi şubeye baktığını söyler. Soruda şube adı geçerse ("Marina'da bugün
   kim var?") o şubeye bakar.
-- **LafPOS:** kafedeki kasa programıdır (Marina). Ürün ve fiyatı siteden alır, her gün kapanınca gün sonunu (Z, ödeme
+- **AsilPOS:** kafedeki kasa programıdır (Marina). Ürün ve fiyatı siteden alır, her gün kapanınca gün sonunu (Z, ödeme
   türleri, kasa sayımı, ikram, satış listesi) panele iter; maliyet, reçete ve kâr panelde hesaplanır. Gün sonu ve günlük
-  satışlar yalnız LafPOS'a geçilen günden sonrası içindir; öncesi denemedir. ModPOS'ta kalan şubenin (Tuzla) günleri
+  satışlar yalnız AsilPOS'a geçilen günden sonrası içindir; öncesi denemedir. ModPOS'ta kalan şubenin (Tuzla) günleri
   Kasa raporları aracındadır.
 - **Salt okur:** okuma araçları hiçbir şey yazmaz, eşitlemez, e-posta göndermez; onay kartı istemez.
 - Kasa notu, ikram ve iptal gerekçesi, vardiya notu, hatırlatıcı notu, misafir adı, parola, anahtar, iki adımlı kod
@@ -375,16 +375,16 @@ satırlar düşer, asistan bu ekranlara bağlantı vermez. Belge değişince `np
   değiştirilmeden geri gönderilir; bütün araç sonuçları tek mesajda, hata `is_error: true` ile. Önceki turlar yalnız
   görünen metin olarak gider: düşünme bloğu taşımadıkları için Sonnet 5.5'in geçmiş denetimi sorun çıkarmaz.
 - Araçlar: `src/server/ai/assistant/tool-defs.ts` (MCP'nin yedi aracı aynen + `panel_rehberi`, `parasut_bekleyenler`),
-  `read-tools.ts` (saf: `gun_sonu`, `gunluk_satislar`, `lafpos_durumu`, `menu_durumu`, `vardiya`, `bugun_ozeti`,
+  `read-tools.ts` (saf: `gun_sonu`, `gunluk_satislar`, `asilpos_durumu`, `menu_durumu`, `vardiya`, `bugun_ozeti`,
   `bekleyen_isler`, `stok_tahmini`; okuyucular dışarıdan verilir), `op-tools.ts` (işlem araçları ve `islem_rehberi`;
   rehberin girdileri `src/lib/assistant/guides.ts`), `tool-adapter.ts` (zod → `strict: true` araç tanımı; karmaşıklık
   sınırına önce işlem araçları, sonra okuma araçları sığdıkça strict, az karmaşık olan önce; girdi doğrulama, süre
   sınırı ve aracın iptal sinyali, hata sonucu), `tools.ts` (gerçek okuyucular). Araç sonuçları yalnız veri taşır
   (durum, satırlar); ne söyleneceği sistem isteminde ve aracın açıklamasındadır.
-- LafPOS ve operasyon okuyucuları: `src/server/assistant-reads/index.ts`. Yalnız panelin mevcut okuma işlevleri
-  (`loadLafposDayEnd`, `loadLafposZTotals`, `loadDayLafposIkram`, `dailyBranchSalesFrom`, `loadLafposCard`,
+- AsilPOS ve operasyon okuyucuları: `src/server/assistant-reads/index.ts`. Yalnız panelin mevcut okuma işlevleri
+  (`loadAsilposDayEnd`, `loadAsilposZTotals`, `loadDayAsilposIkram`, `dailyBranchSalesFrom`, `loadAsilposCard`,
   `loadSoldOut`, `posPendingSummary`, `shiftsOn`, `loadShiftWeek`, `loadToday` ve Bugün'ün kuralları,
-  `loadPanelNotifications`, `loadDueReminders`, `loadStockEstimate`); LafPOS'un yazıcıları (`gun-sonu.ts`, `ingest.ts`,
+  `loadPanelNotifications`, `loadDueReminders`, `loadStockEstimate`); AsilPOS'un yazıcıları (`gun-sonu.ts`, `ingest.ts`,
   `handlePosDay`) içe aktarılmaz. Serbest metinler burada atılır. Strict araç tanımları yapılandırılmış girdinin
   karmaşıklık sınırına sığan önektir; isteğe bağlı alanı çok olan okuma araçları (vardiya, günlük satışlar, stok) sınırın
   dışında kalır, girdileri yine zod'dan geçer.
@@ -393,7 +393,7 @@ satırlar düşer, asistan bu ekranlara bağlantı vermez. Belge değişince `np
   hesabı kaynağıyla), nasıl çalışır (çok adımlı soruda önce veriyi topla, bağımsız araçlar aynı turda, sonra kısa sonuç
   + gerekçe; örnek araç birleşimleri; belirsizlikte tek kısa soru ya da söylenen varsayım; açık ekran satırının
   anlamı), işlemler (bir yanıtta en çok bir işlem aracı, riskli işte rehber), araç seçimi (hangi soru hangi araç), takip
-  önerilerinin biçimi, LafPOS, ekranlar, kavramlar. İstem **bayt bayt sabittir**: tarih, şube, açık ekran ve efor
+  önerilerinin biçimi, AsilPOS, ekranlar, kavramlar. İstem **bayt bayt sabittir**: tarih, şube, açık ekran ve efor
   değişken blokta ya da isteğin kendisinde; testi `tests/asistan-gelismis.test.ts`.
 - Kapı ve kayıt: `src/server/ai/claude.ts` (`assistantStatus`, `startAssistantCall`, `finishAssistantCall`).
 - Ekran: `src/components/panel/assistant/` (düğme ve pencere, güvenli markdown; panel düzenine bir kez eklenir,

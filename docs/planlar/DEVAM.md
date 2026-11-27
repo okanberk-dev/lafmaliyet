@@ -34,11 +34,11 @@ almaz; güncel ağaçtaki kişi adları P2'de uydurma adlarla değiştirildi (ge
 - **CI incelemesi:** sahip 27 Kasım'da CI için Anthropic anahtarını ekledi. Yeniden koşturulan inceleme yine düştü
   (`is_error`); depo düzeyindeki `ANTHROPIC_API_KEY` sırrının tarihi 23 Ekim: anahtar kuruluş düzeyinde eklendiyse depo
   sırrı onu gölgeler, depo sırrı yeni anahtarla güncellenmeli. Çalışınca "inceleme" engel sayılmaz ama yorumları okunur.
-- **LafPOS'un adı AsilPOS** (yazılış "AsilPOS"): panelde ve kasa deposunda her yerde (metin, kod, dosya, tablo, ortam
-  değişkeni); kurulu kasa ve Vercel bozulmasın diye eski adlar (LAFPOS_* değişkenleri, kasanın çağırdığı yollar, kasa
-  bilgisayarındaki klasör ve görev) bir süre daha tanınır. GitHub deposunun adı `lafpos` kalır.
+- **AsilPOS'un adı AsilPOS** (yazılış "AsilPOS"): panelde ve kasa deposunda her yerde (metin, kod, dosya, tablo, ortam
+  değişkeni); kurulu kasa ve Vercel bozulmasın diye eski adlar (ASILPOS_* değişkenleri, kasanın çağırdığı yollar, kasa
+  bilgisayarındaki klasör ve görev) bir süre daha tanınır. GitHub deposunun adı `asilpos` kalır.
 - **Marina yalnız AsilPOS:** Marina'da ModPOS tamamen bitti (kütükte kaynak AsilPOS, föy çekilmez).
-- **Her şubenin kendi AsilPOS kasası** olabilir (panel + kasa deposu; "LafPOS yalnız bir şubenin kasası" sınırı kalkar).
+- **Her şubenin kendi AsilPOS kasası** olabilir (panel + kasa deposu; "AsilPOS yalnız bir şubenin kasası" sınırı kalkar).
 - **Şube ayrımı:** şube seçiliyken her ekranda yalnız o şubenin bilgisi. Bugün firma geneli olan ekranlar (Vergi, Nakit
   planı, Tutarlılık, Mutabakat, tedarikçi bakiyeleri, stok değeri, yedek) her kullanıcının kendi ayarıyla seçilsin.
 - **P8'e ek:** banka POS Z'sinin ÖZET bölümündeki "Toplam KDV" okunmadı ("fotoğrafta yok"), fiş yanlışlıkla "farklı"
@@ -107,8 +107,8 @@ Ağır veri yolu ve Faturalar listesinin sayfalanması; ModPOS föyünden kasa f
 araçları (kasadan_cikanlar, zayi_ikram, komisyon_kanallari) ve ~60 işlem uyarlayıcısı; mutabakatta resmi tatiller
 ("Geç geldi" yanlış uyarısı); şube başına kalan ayarlar (uyarı sesi / kontrol hatırlatma saatleri); Tükendi'nin şube
 başına tutulması; karaoke "Gelmedi"; senkron Faz 2'nin panel tarafı; tedarikçi "Birleştir"; cari v2.
-LafPOS deposu gerektirenler (sahip onayı): kayıp önleme için iptal / ikramı yapan kişi; iki şubeli LafPOS;
-`bankPosPending` değişikliğinin LafPOS'ta birleşmesi.
+AsilPOS deposu gerektirenler (sahip onayı): kayıp önleme için iptal / ikramı yapan kişi; iki şubeli AsilPOS;
+`bankPosPending` değişikliğinin AsilPOS'ta birleşmesi.
 
 ## Sahibin tarafında (kod değil)
 

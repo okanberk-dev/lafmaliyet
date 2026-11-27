@@ -7,6 +7,8 @@
  * test düşer.
  */
 
+import { ESKI_URUN_ADI } from "@/lib/asilpos/eski-adlar";
+
 export interface KnowledgeSection {
   /** Belgenin dosya adı (ör. KASA-RAPORU.md) */
   doc: string;
@@ -36,6 +38,8 @@ export const EXCLUDED_DOCS = [
   "MAL-SIPARISI.md",
   // Asistanın işlem kataloğu (geliştirici belgesi: eylem adları, uyarlayıcılar); kullanıcıya dönük özeti ASISTAN.md'de
   "ASISTAN-ISLEMLER.md",
+  // Ad değişikliğinde eski adla kalan tek satırlık yönlendirme (docs/ASILPOS.md'ye): bilgisi yeni belgede
+  `${ESKI_URUN_ADI.toUpperCase()}.md`,
 ] as const;
 
 /**

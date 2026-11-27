@@ -14,12 +14,12 @@ B01-B20 ve sahibe 11 soru. Partilerin durumu, sahibin yanıtları ve yanıt gele
   #20 (diğer oturum: sitenin 409 `single_size` yanıtı kopuk bağlantı olarak), #21 ve #26 (KDV düzeltmeleri), #22
   (sabit giderlerden ekle), #23 (belgeler), #24 (Dalga 8: mal siparişi, komisyon), #25 (Dalga 9: satış tahmini,
   haftalık özet), #27 (Dalga 7–8 düzeltmeleri), #28 (Dalga 11: cari), #29 (planlar: vergi, yazarkasa Z, senkron,
-  denetim listesi), #30 (Dalga 10a), #31 (panel Google'da görünmez), #32 (Dalga 10b), #33 (Dalga 13 PR-a), #34 (LafPOS
-  bağlantısı), #36 (LafPOS migration düzeltmesi; aynı iş için açılan #37 birleşmeden kapandı), #35 (Dalga 13 PR-b),
+  denetim listesi), #30 (Dalga 10a), #31 (panel Google'da görünmez), #32 (Dalga 10b), #33 (Dalga 13 PR-a), #34 (AsilPOS
+  bağlantısı), #36 (AsilPOS migration düzeltmesi; aynı iş için açılan #37 birleşmeden kapandı), #35 (Dalga 13 PR-b),
   #38 (Dalga 14: stok değerleme FIFO), #39 (Dalga 15: kenar çubuğu). Her birinin ayrıntısı §2'de kendi başlığında.
-- **LafPOS (#34, #36) canlıda, bilerek kapalı:** kafede bugün ModPOS var (sahip, 26 Ekim); `LAFPOS_SYNC_SECRET`
+- **AsilPOS (#34, #36) canlıda, bilerek kapalı:** kafede bugün ModPOS var (sahip, 26 Ekim); `ASILPOS_SYNC_SECRET`
   Vercel Production'da yok, iki uç 503 döner (denetim E-31: hata değil, "henüz kurulmadı"). Açma sırası
-  `docs/LAFPOS.md` › "Açılış sırası" (anahtarlar → deneme gönderimi → geçiş günü); durum Ayarlar › LafPOS (kasa) (B07).
+  `docs/ASILPOS.md` › "Açılış sırası" (anahtarlar → deneme gönderimi → geçiş günü); durum Ayarlar › AsilPOS (kasa) (B07).
 - **Stok değerleme Dalga 14'ten (#38) beri FIFO** (başlangıç ayından itibaren, varsayılan Ekim 2026;
   `docs/STOK-DEGERLEME.md`); reçete ve menü maliyeti son alış fiyatında kalır.
 - Dalga 1–6 (23 Ekim; sahip birleştirmeyi oturuma bıraktı, squash): #8 (ops-backup, vkn),
@@ -63,11 +63,11 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B04 | Stok sayımı 4: yazım hızı ve Stok sekmeleri | E-21, E-56 | yok |  | PR (dal `claude/denetim-b04-sayim-hiz`) |
 | B05 | Canlı güvence: dal derlemesi, Neon yeniden deneme, plan notu | E-10, E-50, E-67 | yok | 10 | PR (dal `claude/denetim-b05-canli-guvence`) |
 | B06 | Belgeler: KALAN-ISLER ve bu denetimin planı | E-54 | yok |  | PR (dal `claude/denetim-b06-belgeler`) |
-| B07 | LafPOS 1: bağlantı görünür ve onarılabilir; geçiş günü ayarı | E-31, E-32 | yok | 1 (yanıtlandı) | PR (dal `claude/denetim-b07-lafpos-durum`) |
-| B08 | LafPOS 2: günlük satış aylık modele; eşleşmeyenler; silme engeli | E-08, E-33, E-34, E-66 | **evet** (`0044_lafpos_satir_site_kalemi`) | 2 | PR (dal `claude/denetim-b08-lafpos-satis`) |
-| B09 | LafPOS 3: kasa raporu ve gün kayıtları LafPOS'la uzlaşsın | E-09, E-35, E-36, E-40 | yok | 5 | PR (dal `claude/denetim-b09-lafpos-kasa`) |
-| B10 | LafPOS 4: ödeme kanalları komisyona, ikram tüketime | E-37, E-38, E-68 | yok | 6 (yanıtlandı) | PR (dal `claude/denetim-b10-lafpos-odeme-ikram`) |
-| B11 | LafPOS 5: kasa kipi ve ModPOS metinleri | E-39 | yok | 2 (yanıtlandı) | PR (dal `claude/denetim-b11-lafpos-metin`) |
+| B07 | AsilPOS 1: bağlantı görünür ve onarılabilir; geçiş günü ayarı | E-31, E-32 | yok | 1 (yanıtlandı) | PR (dal `claude/denetim-b07-asilpos-durum`) |
+| B08 | AsilPOS 2: günlük satış aylık modele; eşleşmeyenler; silme engeli | E-08, E-33, E-34, E-66 | **evet** (`0044_lafpos_satir_site_kalemi`) | 2 | PR (dal `claude/denetim-b08-asilpos-satis`) |
+| B09 | AsilPOS 3: kasa raporu ve gün kayıtları AsilPOS'la uzlaşsın | E-09, E-35, E-36, E-40 | yok | 5 | PR (dal `claude/denetim-b09-asilpos-kasa`) |
+| B10 | AsilPOS 4: ödeme kanalları komisyona, ikram tüketime | E-37, E-38, E-68 | yok | 6 (yanıtlandı) | PR (dal `claude/denetim-b10-asilpos-odeme-ikram`) |
+| B11 | AsilPOS 5: kasa kipi ve ModPOS metinleri | E-39 | yok | 2 (yanıtlandı) | PR (dal `claude/denetim-b11-asilpos-metin`) |
 | B12 | Senkron P1: panel fiyatı başkasının değişikliğini ezmesin | E-11 | yok |  | PR (dal `claude/denetim-b12-senkron-fiyat`) |
 | B13 | Menü maliyeti: reçetesiz ürün ve su | E-47, E-57 | yok |  | PR (dal `claude/denetim-b13-menu-maliyet`) |
 | B14 | Ürün açma ve öneri onayı | E-48, E-55 | yok |  | PR (dal `claude/denetim-b14-urun-onay`) |
@@ -107,20 +107,20 @@ sayfasının kendisi (yalnız rakamları, E-13 / E-46) ve site ping alıcıları
 
 **Sahibe sorular (26 Ekim; 1, 2 ve 6 yanıtlandı, gerisi yanıt yok).** Yanıt gelene kadar partisi aşağıdaki varsayılanı uygular; varsayılanı
 yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine yazar.
-1. **LafPOS anahtarı** (E-31, B07): kafede LafPOS kullanılıyor mu; `LAFPOS_SYNC_SECRET` Vercel'e eklenebilir mi?
-   **Yanıt (26 Ekim):** henüz değil, kafede ModPOS var; LafPOS bütün sistemlerde açılınca kullanılacak, o güne kadar
+1. **AsilPOS anahtarı** (E-31, B07): kafede AsilPOS kullanılıyor mu; `ASILPOS_SYNC_SECRET` Vercel'e eklenebilir mi?
+   **Yanıt (26 Ekim):** henüz değil, kafede ModPOS var; AsilPOS bütün sistemlerde açılınca kullanılacak, o güne kadar
    hiçbir şey değişmesin. B07 bunu "henüz kurulmadı" diye sakin gösterir; anahtar sahibin açılış sırasının ilk adımı.
-2. **ModPOS'tan LafPOS'a geçiş günü** (E-08, E-39; B08, B11): hangi gün; ModPOS'un aylık ürün satış listesi gelmeye
+2. **ModPOS'tan AsilPOS'a geçiş günü** (E-08, E-39; B08, B11): hangi gün; ModPOS'un aylık ürün satış listesi gelmeye
    devam edecek mi; Ekim listesi hangi güne kadar? (Aynı gün iki kez sayılmasın; ModPOS metinleri ne zaman kalksın.)
-   **Yanıt (26 Ekim):** belli değil; panelde bir ayar olsun. B07: Ayarlar › LafPOS (kasa) › "LafPOS'a geçiş günü",
-   varsayılan boş (kasa ModPOS, LafPOS'un günleri hiçbir hesaba girmez); B08-B11 okuyucularını bu güne bağlar.
-   **Yapıldı (B11):** E-39'un "kasa kipi" ayrı bir ayar değil, bu gündür (son günlerde LafPOS günü var mı sezgisi
+   **Yanıt (26 Ekim):** belli değil; panelde bir ayar olsun. B07: Ayarlar › AsilPOS (kasa) › "AsilPOS'a geçiş günü",
+   varsayılan boş (kasa ModPOS, AsilPOS'un günleri hiçbir hesaba girmez); B08-B11 okuyucularını bu güne bağlar.
+   **Yapıldı (B11):** E-39'un "kasa kipi" ayrı bir ayar değil, bu gündür (son günlerde AsilPOS günü var mı sezgisi
    kullanılmadı: deneme günleri kipi değiştirmesin). Geçiş gününden itibaren "Kasadaki fiyatlar" yalnız siteye bağlı
-   olmayan ürünler için çalışır ve ModPOS metinleri LafPOS der; boşken her şey bugünkü gibi.
-   **Açık (B11 incelemesi):** (a) LafPOS gününde bağsız ürünün fiyat işi yalnız yöneticide (LafPOS'ta ürün fiyatını
-   `menu.yonet` olmadan kasiyer değiştiremez); LafPOS'ta kasiyere fiyat yetkisi verilecekse personelin listesi geri
+   olmayan ürünler için çalışır ve ModPOS metinleri AsilPOS der; boşken her şey bugünkü gibi.
+   **Açık (B11 incelemesi):** (a) AsilPOS gününde bağsız ürünün fiyat işi yalnız yöneticide (AsilPOS'ta ürün fiyatını
+   `menu.yonet` olmadan kasiyer değiştiremez); AsilPOS'ta kasiyere fiyat yetkisi verilecekse personelin listesi geri
    açılabilir. (b) Geçiş gününden sonra siteye bağlı olmayan ürünler Kasaya işle'de kalsın mı, yoksa hepsi siteye
-   bağlansın ve liste kapansın mı? **Varsayılan:** kalsın, metin bağlamayı ya da LafPOS'ta elle değiştirmeyi söyler.
+   bağlansın ve liste kapansın mı? **Varsayılan:** kalsın, metin bağlamayı ya da AsilPOS'ta elle değiştirmeyi söyler.
 3. **Geçen ayın sayımı ayın 10'undan sonra** (E-19, B01): personelin düzeltmesi reddedilsin mi, Onaylar'a "sayım
    düzeltme" isteği mi düşsün? **Varsayılan:** reddedilir, personel "Geçen ayın sayımı ayın 10'undan sonra yalnız
    yönetici tarafından düzeltilebilir; yöneticiye haber verin." görür; yönetici düzeltebilir.
@@ -129,13 +129,13 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
    ve böğürtlen püreyi hangi ürünler kullanıyor? **Varsayılan:** sekiz kalem yalnız başlangıç verisine (seed) eklenir,
    hiçbir reçete değişmez.
 5. **Kasadan çıkan para nereye girilecek** (E-35, B09): fişli harcamalar ve sahibe teslim edilen nakit panelin "Kasadan
-   çıkanlar"ına mı, LafPOS'a mı, ikisine birden mi?
-   **Yanıt (23 Kasım, Faz 3 kararı 3):** LafPOS'ta girilir, satır satır "Kasadan çıkanlar"a gelir. **Yapıldı (LM-3):**
-   `cashMoves[]` → `cash_outs` (`lafpos_id`; elle girilmiş eşi sahiplenilir, tutar / tür / gün kilitli; fiş ve kategori
-   panelden), `docs/LAFPOS.md` › Kasadan çıkanlar LafPOS'tan.
-6. **LafPOS ikramları** (E-38, B10): Zayi & ikram'a yeniden girilmesin, LafPOS'tan mı alınsın?
-   **Yanıt (26 Ekim):** evet, LafPOS'a geçilince ikram kendiliğinden LafPOS'tan gelir (B10). **Yapıldı (B10):** geçiş
-   gününden itibaren ürün ikramı yalnız LafPOS'tan; panelde hammadde ikramı ve zayi kalır.
+   çıkanlar"ına mı, AsilPOS'a mı, ikisine birden mi?
+   **Yanıt (23 Kasım, Faz 3 kararı 3):** AsilPOS'ta girilir, satır satır "Kasadan çıkanlar"a gelir. **Yapıldı (LM-3):**
+   `cashMoves[]` → `cash_outs` (`asilpos_id`; elle girilmiş eşi sahiplenilir, tutar / tür / gün kilitli; fiş ve kategori
+   panelden), `docs/ASILPOS.md` › Kasadan çıkanlar AsilPOS'tan.
+6. **AsilPOS ikramları** (E-38, B10): Zayi & ikram'a yeniden girilmesin, AsilPOS'tan mı alınsın?
+   **Yanıt (26 Ekim):** evet, AsilPOS'a geçilince ikram kendiliğinden AsilPOS'tan gelir (B10). **Yapıldı (B10):** geçiş
+   gününden itibaren ürün ikramı yalnız AsilPOS'tan; panelde hammadde ikramı ve zayi kalır.
 7. **Aylık girişe çevrilen giderler** (E-13, B15): reklam, influencer gibi değişen giderler başabaşta ve nakit planında
    geçen ayın gerçekleşeniyle mi, son 3 ayın ortalamasıyla mı sayılsın?
    **Varsayılan (B15):** geçen ayın gerçekleşeni: biten ayda o ay girilen; süren ve gelecek ayda o ay girilen, daha
@@ -393,7 +393,7 @@ ModPOS ↔ mali belge mutabakat ekranı; KDV tahmininin yazarkasa tabanına geç
 
 Plan `okc-z.md` (§17 adım tablosu, her adımın "Durum (26 Ekim)" notu), araştırma notları `okc-z-notlar.md`. PR-a
 (#33) ve PR-b (#35, 0a951dd) main'de; PR-b'nin migration'ı `0042_okc_z` (yalnız `ADD COLUMN`: `cash_reports`'a 12,
-`ai_calls`'a `effort`). PR-b LafPOS'la (#34, #36) birleştirildi: LafPOS bandı, kasaya giren ve fotoğraf işaretleri mali
+`ai_calls`'a `effort`). PR-b AsilPOS'la (#34, #36) birleştirildi: AsilPOS bandı, kasaya giren ve fotoğraf işaretleri mali
 Z kartıyla çalışır. Belgeler: `docs/KASA-RAPORU.md` › Banka POS Z raporu (yazarkasa) ve Gönderince,
 `docs/FOTOGRAF.md` (§ 1–§ 10), `docs/YAZARKASA-Z.md` (yeni: kâğıdın düzeni, etiketler, kimlikler, tuzaklar,
 doğrulanacak cihaz gerçekleri), README; Yardım'da personele "Banka POS Z raporu (yazarkasa)", yöneticiye "ModPOS Z ve
@@ -441,65 +441,65 @@ banka POS Z raporu (yazarkasa)" ve "Banka POS Z'sinin fotoğraftan doldurulması
 - **Kümülatif:** fotoğraftan okunur, yalnız önceki Z'yle tutuyorsa saklanır; yanlış saklandıysa gün ayrıntısındaki
   **Kümülatifi temizle**.
 
-### LafPOS bağlantısı (#34, #36)
+### AsilPOS bağlantısı (#34, #36)
 
-LafPOS (kafenin kasası, `RiosenBeq/lafpos`) ModPOS'un yerine geçer. Her iş gününü kapanışta imzalı `POST /api/pos/gun`
+AsilPOS (kafenin kasası, `RiosenBeq/lafpos`) ModPOS'un yerine geçer. Her iş gününü kapanışta imzalı `POST /api/pos/gun`
 ile iter (günlük ürün satışı, Z ve kasa alanları, ödemeler, ikram); ürünlerin reçete maliyetini
-`GET /api/panel/pos/urunler`'den okur (fiyat, kâr ve reçete gitmez). Kasa raporunda **LafPOS'tan doldur**; Kasa
+`GET /api/panel/pos/urunler`'den okur (fiyat, kâr ve reçete gitmez). Kasa raporunda **AsilPOS'tan doldur**; Kasa
 raporuna "Gün içinde kasaya giren" (`cash_in`) eklendi. Migration'lar `0040_lafpos_baglantisi` ve `0041_kasaya_giren`
 (#36: 0040 bir dal yayınıyla canlıya önceden uygulanmıştı, canlıdaki hâline döndü; dal yayınının canlıya çıkması
-denetimde E-10, B05). Belge `docs/LAFPOS.md`.
+denetimde E-10, B05). Belge `docs/ASILPOS.md`.
 
-**Durum (26 Ekim denetimi):** canlıda bilerek kapalı (E-31; sahip: kafede bugün ModPOS var, LafPOS bütün sistemlerde
-açılınca kullanılacak): `LAFPOS_SYNC_SECRET` Vercel Production'da yok, iki uç 503 `not_configured`, `pos_day_reports`
-ve `pos_daily_sales` boş. B07 (E-32): uç her sonucu `integration_state › lafpos`'a yazar, 200 yanıtı `counted` ve
-`switchDay` taşır; Ayarlar › LafPOS (kasa) kartı durumu sakin dille, son reddi ve çözümünü ("Bu günün LafPOS kaydını
-sil", parolayla), gelen ve gelmeyen günleri gösterir; "LafPOS'a geçiş günü" ayarı (varsayılan boş) geldi ve Kasa
-raporunun LafPOS bandı yalnız o günden sonra açılır; sitenin anahtarıyla aynı `LAFPOS_SYNC_SECRET` bağlantıyı açmaz.
+**Durum (26 Ekim denetimi):** canlıda bilerek kapalı (E-31; sahip: kafede bugün ModPOS var, AsilPOS bütün sistemlerde
+açılınca kullanılacak): `ASILPOS_SYNC_SECRET` Vercel Production'da yok, iki uç 503 `not_configured`, `pos_day_reports`
+ve `pos_daily_sales` boş. B07 (E-32): uç her sonucu `integration_state › asilpos`'a yazar, 200 yanıtı `counted` ve
+`switchDay` taşır; Ayarlar › AsilPOS (kasa) kartı durumu sakin dille, son reddi ve çözümünü ("Bu günün AsilPOS kaydını
+sil", parolayla), gelen ve gelmeyen günleri gösterir; "AsilPOS'a geçiş günü" ayarı (varsayılan boş) geldi ve Kasa
+raporunun AsilPOS bandı yalnız o günden sonra açılır; sitenin anahtarıyla aynı `ASILPOS_SYNC_SECRET` bağlantıyı açmaz.
 B08 (E-08, E-33, E-34, E-66): geçiş gününden itibaren günlük satış satırları aylık modele ay toplamı olarak girer (her
-gün tek kaynak: geçiş ayında ModPOS listesi kendi son gününe kadar, sonraki aylarda yalnız LafPOS), Satışlar'da salt
+gün tek kaynak: geçiş ayında ModPOS listesi kendi son gününe kadar, sonraki aylarda yalnız AsilPOS), Satışlar'da salt
 okunur görünür ve eşleştirilir, ürünsüz satırlar ürün siteye bağlanınca ya da ad eşleştirilince yeniden gönderimsiz
-bağlanır (Ayarlar kartında "Bağla"), LafPOS satırı olan ürün silinmez; geçiş günü boşken hiçbir okuma değişmez.
-B09 (E-09, E-35, E-36, E-40; plan G6-G8, G11): geçiş gününden itibaren Kasa raporu LafPOS'un gün sonuyla açılır (Z
-bölümü "LafPOS gün sonu (Z)", ModPOS Z fotoğrafı yok), kayıtlı rapor, günden güne, e-posta, WhatsApp ve zil
-"LafPOS'tan farklı yazılan"ı söyler; Gün içinde çıkan'ın kaynağı panelin Kasadan çıkanlar'ı, LafPOS'un teslimi farkı
-bilgi satırıdır ve geç / düzeltme kartında fişsiz sayılmaz; satışlı LafPOS günü kapalı gün kanıtıdır ve kapalı işareti
-kaldırır; geç rapor LafPOS'un gün sonuyla fotoğrafsız (gelmediyse yazarkasa Z fotoğrafıyla); raporsuz LafPOS günü ay
+bağlanır (Ayarlar kartında "Bağla"), AsilPOS satırı olan ürün silinmez; geçiş günü boşken hiçbir okuma değişmez.
+B09 (E-09, E-35, E-36, E-40; plan G6-G8, G11): geçiş gününden itibaren Kasa raporu AsilPOS'un gün sonuyla açılır (Z
+bölümü "AsilPOS gün sonu (Z)", ModPOS Z fotoğrafı yok), kayıtlı rapor, günden güne, e-posta, WhatsApp ve zil
+"AsilPOS'tan farklı yazılan"ı söyler; Gün içinde çıkan'ın kaynağı panelin Kasadan çıkanlar'ı, AsilPOS'un teslimi farkı
+bilgi satırıdır ve geç / düzeltme kartında fişsiz sayılmaz; satışlı AsilPOS günü kapalı gün kanıtıdır ve kapalı işareti
+kaldırır; geç rapor AsilPOS'un gün sonuyla fotoğrafsız (gelmediyse yazarkasa Z fotoğrafıyla); raporsuz AsilPOS günü ay
 rakamına girer; kart karşılaştırması kartla bahşiş ve cari tahsilatını düşer. Geçiş günü boşken bunların hiçbiri
 çalışmaz. ModPOS'ta da: kasa e-postasının Resend anahtarı rapor satırına özgü (silinip yeniden girilen günün e-postası
 gider, E-40).
-B10 (E-37, E-38, E-68): geçiş gününden itibaren Komisyon & hakediş kart kart satışı LafPOS'un ödeme türlerinden alır
-(elle > lafpos > tek; geçiş ayının önceki günleri kasa raporu kuralıyla; kanalı seçilmemiş ödeme ve gün sonu gelmeyen
-gün uyarılır; LafPOS'ta satışı olan kanalın faturası gelmediyse kartı çıkar); ürün ikramı LafPOS'ta işaretlenir:
-LafPOS'un ikramı Tutarlılık'ın kayıtlı tüketimine, Zayi'nin ay özetine, haftalık özete ve kasa özetine bir kez girer,
+B10 (E-37, E-38, E-68): geçiş gününden itibaren Komisyon & hakediş kart kart satışı AsilPOS'un ödeme türlerinden alır
+(elle > asilpos > tek; geçiş ayının önceki günleri kasa raporu kuralıyla; kanalı seçilmemiş ödeme ve gün sonu gelmeyen
+gün uyarılır; AsilPOS'ta satışı olan kanalın faturası gelmediyse kartı çıkar); ürün ikramı AsilPOS'ta işaretlenir:
+AsilPOS'un ikramı Tutarlılık'ın kayıtlı tüketimine, Zayi'nin ay özetine, haftalık özete ve kasa özetine bir kez girer,
 gün sonu gelen günde panele girilmiş ürün ikramı sayılmaz, yenisi (doğrudan, geç kayıt ve onayı) reddedilir; Zayi'nin
-günü LafPOS'un ikramını salt okunur gösterir; kasa e-postası LafPOS'un ödenmez tutarını ikram listesiyle karşılaştırır.
-İnceleme turunda: LafPOS'ta "Zayi: …" nedenli satır zayi sayılır (ikram değil); ürün ikramı yalnız gün sonu gelen günde
-ve bugün reddedilir (gün sonu gelmeyen geçmiş günde girilir); ikramda ürüne bağlanamayan ad Ayarlar › LafPOS'tan
-bağlanır; sonraki ayın 15'ine kadar kesilen fatura "fatura gelmedi" yerine bilgi olur. Açık soru (sahibe): LafPOS'ta da
+günü AsilPOS'un ikramını salt okunur gösterir; kasa e-postası AsilPOS'un ödenmez tutarını ikram listesiyle karşılaştırır.
+İnceleme turunda: AsilPOS'ta "Zayi: …" nedenli satır zayi sayılır (ikram değil); ürün ikramı yalnız gün sonu gelen günde
+ve bugün reddedilir (gün sonu gelmeyen geçmiş günde girilir); ikramda ürüne bağlanamayan ad Ayarlar › AsilPOS'tan
+bağlanır; sonraki ayın 15'ine kadar kesilen fatura "fatura gelmedi" yerine bilgi olur. Açık soru (sahibe): AsilPOS'ta da
 zayi yazılan ürünün panel zayisi gün sonu gelen günde sayılmasın mı (şimdilik ikisi sayılır, gün listesi işaretler).
 Geçiş günü boşken bunların hiçbiri çalışmaz. ModPOS'ta da: komisyon zili gecikenleri en eski son gün önce alır, beşe
 sığmayanları tek satırda özetler (E-68).
 B11 (E-39): geçiş gününden itibaren siteye bağlı ürün "Kasadaki fiyatlar"da (Kasaya işle, zil, Bugün, haftalık özet,
-ürün kartı) görünmez, LafPOS fiyatı siteden alır; kasanın ModPOS durumu yine yazılır, gizlenen işaretler silinmez
-(geçiş günü kaldırılır ya da ileri alınırsa LafPOS günlerindeki değişikliklerle birlikte geri gelir). Bağlı olmayan ürün
-yalnız fiyatı LafPOS günü panelde değiştiyse görünür; metin "siteden geliyorsa Site menüsü'nde bağlayın, yerelse
-LafPOS'ta elle" der. LafPOS gününde bu iş yalnız yöneticinindir (kasiyer LafPOS'ta fiyat değiştiremez).
-Bugün'ün ve zilin akşam kasa satırı "LafPOS'ta Günü kapat" der; Kasa raporu, e-posta ve WhatsApp karşılaştırmaları,
+ürün kartı) görünmez, AsilPOS fiyatı siteden alır; kasanın ModPOS durumu yine yazılır, gizlenen işaretler silinmez
+(geçiş günü kaldırılır ya da ileri alınırsa AsilPOS günlerindeki değişikliklerle birlikte geri gelir). Bağlı olmayan ürün
+yalnız fiyatı AsilPOS günü panelde değiştiyse görünür; metin "siteden geliyorsa Site menüsü'nde bağlayın, yerelse
+AsilPOS'ta elle" der. AsilPOS gününde bu iş yalnız yöneticinindir (kasiyer AsilPOS'ta fiyat değiştiremez).
+Bugün'ün ve zilin akşam kasa satırı "AsilPOS'ta Günü kapat" der; Kasa raporu, e-posta ve WhatsApp karşılaştırmaları,
 kapalı gün kartı günün kasasını, aylık rapor etiketleri (Genel bakış, Gelir-gider, Tutarlılık, Ürünler, Analiz, KDV
-tahmini, Excel, Claude) ayın kasasını yazar (geçiş ayında "Kasa (ModPOS 1–9 · LafPOS 10–30)"). Geçiş günü boşken
+tahmini, Excel, Claude) ayın kasasını yazar (geçiş ayında "Kasa (ModPOS 1–9 · AsilPOS 10–30)"). Geçiş günü boşken
 metinlerin hepsi bugünkünün aynısı.
 Kalan: yok (sahibe soru 5, 23 Kasım 2026'da yanıtlandı; LM-3).
 
-**Açılış sırası (sahibin adımları, `docs/LAFPOS.md` › "Açılış sırası"):** B07-B11 yayına girmeden geçiş günü seçilmez;
+**Açılış sırası (sahibin adımları, `docs/ASILPOS.md` › "Açılış sırası"):** B07-B11 yayına girmeden geçiş günü seçilmez;
 anahtarlar en erken B07 yayındayken girilir.
 1. Anahtarlar: `openssl rand -base64 48` (en az 32 karakter; sitenin `KARAOKE_SYNC_SECRET`'ından **ayrı**); Vercel ›
-   lafmaliyet › Settings › Environment Variables: `LAFPOS_SYNC_SECRET`, **yalnız Production**; LafPOS'un `.env`'ine
+   lafmaliyet › Settings › Environment Variables: `ASILPOS_SYNC_SECRET`, **yalnız Production**; AsilPOS'un `.env`'ine
    aynı değerle `LAFMALIYET_SYNC_SECRET` ve `LAFMALIYET_URL=https://ladmin.laffogato.net`; paneli yeniden yayınlayın.
-   Sitenin kendi `LAFPOS_SYNC_SECRET`'ı başka bir değerdir.
-2. Deneme gönderimi: LafPOS'ta gerçek bir gün kapatılır; Ayarlar › LafPOS (kasa)'da "Deneme" görünür, başka hiçbir
+   Sitenin kendi `LAFPOS_SYNC_SECRET`'ı (sitede eski adla; panelin `ASILPOS_SYNC_SECRET`'ı değil) başka bir değerdir.
+2. Deneme gönderimi: AsilPOS'ta gerçek bir gün kapatılır; Ayarlar › AsilPOS (kasa)'da "Deneme" görünür, başka hiçbir
    yerde görünmez.
-3. Geçiş günü: Ayarlar › LafPOS (kasa) › "LafPOS'a geçiş günü" (tercihen ayın 1'i).
+3. Geçiş günü: Ayarlar › AsilPOS (kasa) › "AsilPOS'a geçiş günü" (tercihen ayın 1'i).
 
 ### Dalga 14: stok değerleme FIFO (#38)
 
@@ -631,26 +631,26 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
   ürünler, para vs. yazacak". API kitapçığı sahipten bekleniyor; bağlantı ayrı PR'dır (istemci, ayar kartı, geçmiş
   ayların aktarımı, elle rapor ile çakışma kuralı). Plan hazır: `modpos-api.md` (Faz 1-5). **30 Ekim:** sahip "modpos
   gelince sana söyleyeceğim" dedi; Faz 1 dahil hiçbiri kitapçıktan önce başlamaz. Panelde yeri ayrıldı (`ux-sade.md` §10, `src/lib/sales-source.ts`):
-  - `salesSourceOf(ay, geçiş günü, lafposSales, connectedMonths)`: bağlantının yazdığı aylar `connectedMonths` olarak
+  - `salesSourceOf(ay, geçiş günü, asilposSales, connectedMonths)`: bağlantının yazdığı aylar `connectedMonths` olarak
     verilince o aylar "ModPOS bağlantısı" olur; başlıkların satış kaynağı satırı ("Satışlar: ModPOS bağlantısı
     (kendiliğinden)"), "satış raporunu yükleyin" metinleri (`missing`) ve Genel bakış'ın "Satış raporu" işi (`manual`
-    false: "yükle" demez) kendiliğinden döner. Öncelik: bağlantı > LafPOS / geçiş > ModPOS raporu.
-  - Ayarlar › Bağlantılar: LafPOS kartının (`#lafpos`) yanında "ModPOS bağlantısı" kartı, çapa `#modpos`; ⌘K kaydı
+    false: "yükle" demez) kendiliğinden döner. Öncelik: bağlantı > AsilPOS / geçiş > ModPOS raporu.
+  - Ayarlar › Bağlantılar: AsilPOS kartının (`#asilpos`) yanında "ModPOS bağlantısı" kartı, çapa `#modpos`; ⌘K kaydı
     ("ModPOS bağlantısı" → `/panel/ayarlar#modpos`) kart gelince eklenir.
   - Satışlar `ImportCard`: `manual === false` ayda "Bu ayın satışı ModPOS bağlantısından geldi"; elle yükleme "Raporu
     yine de yükle" ikincil düğmesine iner.
   - Kasa raporu ModPOS Z karşılaştırması ve Genel bakış "Kasa · {kaynak}" etiketleri `monthKasa` üstünden aydan türer;
-    bağlantı `monthSource`'a dördüncü değer eklerse etiketler tek yerden değişir (`docs/LAFPOS.md` › Metinler).
+    bağlantı `monthSource`'a dördüncü değer eklerse etiketler tek yerden değişir (`docs/ASILPOS.md` › Metinler).
   - Kenar çubuğu, ⌘K grupları ve adresler değişmez: Satışlar "Satış" grubunda; geçmiş aylar (açılıştan beri) aynı ay
     seçiciyle açılır.
   - Bilerek bağlanmayanlar (bağlantı PR'ının işi): `src/lib/calc/insights.ts` (hesap katmanı), `src/lib/weekly/items.ts`
-    (haftalık e-posta), `src/lib/lafpos/sales.ts` (ModPOS listesi ile LafPOS çakışma cümleleri), Genel bakış'ın
+    (haftalık e-posta), `src/lib/asilpos/sales.ts` (ModPOS listesi ile AsilPOS çakışma cümleleri), Genel bakış'ın
     "Patron'dan … yükleyin" iş metni (yalnız elle yüklenen aylarda görünür).
   - Sahibe soru (§16 madde 10): bağlantı gelince elle yüklenmiş eski aylar bağlantının rakamıyla değiştirilsin mi?
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis
   ve doluluk planlarında bunun için bir giriş noktası (seam) var; o zamana kadar aylık veriyle çalışırlar.
-  **26 Ekim:** ModPOS'un günlük dökümü gelmeyecek; ağzı LafPOS'un gün sonu doldurur (`docs/LAFPOS.md`). B08'den
-  beri satırlar geçiş gününden itibaren aylık modele ay toplamı olarak girer (`docs/LAFPOS.md` › Günlük satış); gün gün
+  **26 Ekim:** ModPOS'un günlük dökümü gelmeyecek; ağzı AsilPOS'un gün sonu doldurur (`docs/ASILPOS.md`). B08'den
+  beri satırlar geçiş gününden itibaren aylık modele ay toplamı olarak girer (`docs/ASILPOS.md` › Günlük satış); gün gün
   okuyan (hafta gününe göre tatlı oranı gibi) henüz yok.
 
 ## 3. Kurallar (kısaca; tamamı CRITIQUE.md §1)
@@ -671,8 +671,8 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
 
 ## 4. Altyapı
 
-- `LAFPOS_SYNC_SECRET`: canlıda **yok** (26 Ekim, bilerek: kafede ModPOS var); LafPOS'un iki ucu 503 döner. Açma
-  sırası §2 › "LafPOS bağlantısı" ve `docs/LAFPOS.md` › "Açılış sırası". `KARAOKE_SYNC_SECRET`'la aynı değer
+- `ASILPOS_SYNC_SECRET`: canlıda **yok** (26 Ekim, bilerek: kafede ModPOS var); AsilPOS'un iki ucu 503 döner. Açma
+  sırası §2 › "AsilPOS bağlantısı" ve `docs/ASILPOS.md` › "Açılış sırası". `KARAOKE_SYNC_SECRET`'la aynı değer
   bağlantıyı açmaz.
   Vercel Preview'da yalnız `DATABASE_*` ile `ADMIN_EMAIL` / `ADMIN_NAME` var; gizli değerler yalnız Production'da
   (`docs/DEPLOY.md` §4).

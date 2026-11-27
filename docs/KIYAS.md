@@ -22,8 +22,8 @@ Dosyalar: `src/lib/kiyas.ts` (saf hesap), `src/server/data/kiyas.ts` (yükleyici
 ## Kaynak
 
 Ay bilgisinin okuduğu kasa satırları (`src/server/data/cash-reports.ts` `tillRows`), şube başına günde bir satır:
-**kasa raporu > LafPOS gün sonu > ModPOS föyü** (föy yalnız Ayarlar › ModPOS › Ay rakamına yedek açıkken). Fiş sayısı
-kasa raporundan (rapor satırı), LafPOS gün sonundan ya da föyden. Satış varken fiş sayısı 0 ise "bilinmiyor" sayılır
+**kasa raporu > AsilPOS gün sonu > ModPOS föyü** (föy yalnız Ayarlar › ModPOS › Ay rakamına yedek açıkken). Fiş sayısı
+kasa raporundan (rapor satırı), AsilPOS gün sonundan ya da föyden. Satış varken fiş sayısı 0 ise "bilinmiyor" sayılır
 (girilmemiştir): "Fiş 40 → 0" ve şişkin ortalama yazılmaz. Genel bakış zaten okuduğu satırları verir (yeniden
 okunmaz); Bugün'de yükleyici kendisi okur (`tillRows`'un tarih aralığı yok, geçmişin tamamı gelir) ve son 70 güne
 bakar. Kapalı günler Özel günler'in `kapali` satırlarından
@@ -72,10 +72,10 @@ Gösterilen günde açılmamış şube kıyasın konusu değildir (notta yok).
 
 ## Geçiş günü
 
-Marina'nın kasası LafPOS'a geçiş gününden (Ayarlar › LafPOS › LafPOS'a geçiş günü; canlıda 22 Kasım 2026) itibaren
-LafPOS'tur ([LAFPOS.md › Geçiş günü](LAFPOS.md#geçiş-günü)). Geçiş gününden önceki LafPOS gün sonları deneme günüdür,
+Marina'nın kasası AsilPOS'a geçiş gününden (Ayarlar › AsilPOS › AsilPOS'a geçiş günü; canlıda 22 Kasım 2026) itibaren
+AsilPOS'tur ([ASILPOS.md › Geçiş günü](ASILPOS.md#geçiş-günü)). Geçiş gününden önceki AsilPOS gün sonları deneme günüdür,
 hiç sayılmaz (`tillRows` zaten süzer; kart da ayrıca süzer); o günler Marina'nın ModPOS föyüyle sayılır. Geçiş günü
-boşken LafPOS günleri hiç sayılmaz. Geçiş günü yalnız Marina'nın kasasınındır: Tuzla'nın raporları her gün sayılır.
+boşken AsilPOS günleri hiç sayılmaz. Geçiş günü yalnız Marina'nın kasasınındır: Tuzla'nın raporları her gün sayılır.
 
 ## Gösterilen gün
 

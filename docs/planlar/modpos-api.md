@@ -4,7 +4,7 @@
 > vermiyor; yalnız kasa gününün **kasa föyünü** (ciro, ödeme yöntemleri, kasa, gider, uyarılar) ve günde 2 istek.
 > Yazılan bağlantı ve kararları: [../MODPOS-API.md](../MODPOS-API.md) (belge: [../modpos-kasa-foyu-api.md](../modpos-kasa-foyu-api.md)).
 > Bu plandan geçerli kalanlar: panel çeker (M1), yeni cron yok, sabah işinde isteğe bağlı adım (M22), kişisel veri
-> saklanmaz, önizleme çekmez (M26), anahtar yalnız Production, LafPOS geçiş gününden sonra LafPOS kazanır (M17), elle
+> saklanmaz, önizleme çekmez (M26), anahtar yalnız Production, AsilPOS geçiş gününden sonra AsilPOS kazanır (M17), elle
 > yazılan ay bilgisi kazanır (M13'ün ilkesi). Geçmeyenler: dört tablo, ürün eşlemesi, `modposApiBaslangic`, Satışlar'ın
 > kaynağının değişmesi (Faz 2) ve fiş toplama (Faz 3). Aşağıdaki metin tarihî kayıttır.
 
@@ -22,7 +22,7 @@ değişmez. Boyut ≈ 1.400–1.700 satır. Faz 2 (tüketiciler, başlangıç ay
 görünür bir şey vermez; Faz 3 API belgesini bekler.
 
 Kaynak notlar (aynı klasörde): `harita-veri.md` (satış tabloları ve öncelikler), `harita-tuketici.md` (okuyan
-ekranlar), `harita-altyapi.md` (LafPOS, Paraşüt, site desenleri, Hobby sınırları), `arastirma-modpos.md` (ModPOS kim,
+ekranlar), `harita-altyapi.md` (AsilPOS, Paraşüt, site desenleri, Hobby sınırları), `arastirma-modpos.md` (ModPOS kim,
 API var mı, sorular). `dosya:satır` aksi yazılmadıkça `origin/main` @ 1947c7c'dir.
 
 Uygulamadan önce okunacaklar:
@@ -31,18 +31,18 @@ Uygulamadan önce okunacaklar:
 - `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/02-route-segment-config/maxDuration.md`
   (bugün `src/app/panel/ayarlar/page.tsx`'te `maxDuration` yok; Paraşüt sayfasında var: `src/app/panel/parasut/page.tsx:21`);
 - `node_modules/next/dist/docs/01-app/03-api-reference/04-functions/refresh.md`, `01-directives/use-server.md`;
-- `docs/LAFPOS.md` › Günlük satış (`:116`), Kart: kartla bahşiş ve cari tahsilatı (`:248-258`), Geçiş günü (`:359`),
+- `docs/ASILPOS.md` › Günlük satış (`:116`), Kart: kartla bahşiş ve cari tahsilatı (`:248-258`), Geçiş günü (`:359`),
   Durum ve onarım (`:415`), Açılış sırası (`:474`);
 - `docs/PARASUT.md` (imleç, sürdürme), `docs/SITE-SATIS.md` › Saklama (`:196`), `docs/KASA-RAPORU.md` › Ay bilgisine
   aktarım, `docs/KOMISYON.md`, `docs/YEDEK.md`, `docs/DEPLOY.md` (ortam değişkenleri `:80-92`).
 
 Mevcut kalıplar (kopyalanmaz, genelleştirilir ya da yanına yazılır):
-- LafPOS gün yazımı: tek işlem + gün danışma kilidi + satırları sil / yaz (`src/server/lafpos/ingest.ts:45-97`); kilit
+- AsilPOS gün yazımı: tek işlem + gün danışma kilidi + satırları sil / yaz (`src/server/asilpos/ingest.ts:45-97`); kilit
   bekleme sınırı `set local lock_timeout` + `55P03` (`src/server/site-menu/sold-out-core.ts:117-125`);
-- "Her gün tek kaynak" ve geçiş günü (`src/lib/lafpos/switch.ts:31-86`, `src/lib/lafpos/sales.ts:84-112`,
-  `src/server/data/lafpos-sales.ts:88-115`); yedek ay satırı (`src/server/data/cash-reports.ts:265-304`,
+- "Her gün tek kaynak" ve geçiş günü (`src/lib/asilpos/switch.ts:31-86`, `src/lib/asilpos/sales.ts:84-112`,
+  `src/server/data/asilpos-sales.ts:88-115`); yedek ay satırı (`src/server/data/cash-reports.ts:265-304`,
   `src/lib/cash-month.ts:17-32`, `:59-61`);
-- POS adı eşlemesi ve LafPOS kartının **Bağla**'sı (`src/server/actions/sales.ts:211-253`, `:371` `matchLafposName`;
+- POS adı eşlemesi ve AsilPOS kartının **Bağla**'sı (`src/server/actions/sales.ts:211-253`, `:371` `matchAsilposName`;
   `src/lib/calc/pos-paste.ts:241-273` `posMatchKey`, `createPosMappingIndex`);
 - Paraşüt istemcisi (Faz 3): tempo, `Retry-After`, son an (`src/server/parasut/client.ts:30-34`, `:101-112`, `:196-238`);
   karaoke geçmişi "Geçmişi al / Devam et" (`src/server/karaoke/history.ts:147-223`);
@@ -72,11 +72,11 @@ girilmemiş günlerin rakamı, satış tahmini ve nakit planı için açılışt
 Yapılmayanlar:
 - ModPOS'a **yazılmaz** (fiyat, ürün, stok). "Kasaya işle" elle kalır (`docs/FIYATLAR.md:110-127`).
 - **Fiş (adisyon) saklanmaz**; fiş adaptörün içinde güne toplanır (M2). Müşteri, kasiyer, garson adı, telefon, adres,
-  kart son hanesi hiç yazılmaz (`docs/LAFPOS.md:73-75` kuralı).
+  kart son hanesi hiç yazılmaz (`docs/ASILPOS.md:73-75` kuralı).
 - Yazarkasa (ÖKC) mali Z'si, banka gün sonu, sayılan nakit ve teslim **API'den gelmez**, elle kalır
   (`docs/YAZARKASA-Z.md:24-27`).
 - Vergi gelirinin kaynağı değişmez: ModPOS (API'si dahil) **yönetim verisidir** (`src/lib/tax/pnl.ts:223-231`, K11).
-- LafPOS'un tabloları ve ucu değişmez (`src/server/db/schema.ts:2031-2073`, `src/app/api/pos/gun/route.ts`).
+- AsilPOS'un tabloları ve ucu değişmez (`src/server/db/schema.ts:2031-2073`, `src/app/api/pos/gun/route.ts`).
 - Bugünün (kapanmamış günün) canlı satışı gösterilmez; yalnız kapanmış günler (M5).
 - Gerçek ModPOS adaptörü, fiş → gün toplama, saat dağılımı ve sabah adımı API belgesi gelmeden **yazılmaz** (Faz 3).
 
@@ -86,25 +86,25 @@ Yapılmayanlar:
 
 | # | Konu | Karar | Neden |
 |---|---|---|---|
-| M1 | Yön | **Panel çeker** (ModPOS bulutu → panel). Webhook varsa sonradan ping + `after()` (§11) | ModPOS bulut (Integra, `arastirma-modpos.md` §1); LafPOS gibi itmez; Paraşüt çekme deseni en yakını |
+| M1 | Yön | **Panel çeker** (ModPOS bulutu → panel). Webhook varsa sonradan ping + `after()` (§11) | ModPOS bulut (Integra, `arastirma-modpos.md` §1); AsilPOS gibi itmez; Paraşüt çekme deseni en yakını |
 | M2 | Kayıt | Kaynaktan bağımsız **gün toplamı**: gün özeti + ürün satırları + ödeme türleri. Fiş veren API'de fişler Faz 3'te adaptörün içinde `foldReceipts` (saf) ile güne toplanır; depo ve birleştirme yalnız günü bilir | Bütün tüketiciler gün ya da ay ister (`harita-tuketici.md` §1); fiş düzeyi yılda ≈ 400 bin satır olurdu |
 | M3 | Para | Saklamada **kuruş tam sayı** (`integer`; `net_kurus` işaretli, öbürleri ≥ 0). Adet `double precision` (`schema.ts:266`, `:2045`). Modelin sınırında TL'ye tek fonksiyon `kurusToTl` | Site ve karaoke zaten kuruş (`src/lib/site-sales/schema.ts:22-33`) |
 | M4 | KDV (R14) | Satır oranı API ne verdiyse (`vat_rate_pct`), yoksa `null`; **dondurma yok**. Soru 4'ün yanıtı "ürünün bugünkü oranı" ise adaptör `vatPerLine: false` der ve oran hiç okunmaz. Aynı satırın oranı yeniden çekmede değişirse gün sorunu yazılır (API bugünkü oranı veriyor demektir) | İlk geçmiş doldurma zaten ilk çekmedir: dondurma geçmişi korumaz; doğrusu soruyu baştan yanıtlatmak |
-| M5 | İş günü (R2) | Fişin günü: ModPOS fişin gün sonu (Z) gününü veriyorsa o; yoksa kapanış anından `businessDate` (05:00, `src/lib/cash-report.ts:145`, `:164-167`). `fetchDay(D)`'nin penceresi **[D 05:00, D+1 07:00) TR**: hem Z günü D olan fişler (06:00–06:00, lafpos `docs/01-ANALIZ.md:9`) hem 05:00 kuralıyla D'ye düşenler bu pencerededir; bu yüzden pencereye giren ama başka güne ait fiş atılabilir (kendi gününün penceresinde zaten vardır). `closedAt` ofsetsiz gelirse reddedilir (`/(Z\|[+-]\d{2}:\d{2})$/`). Gün **D+1 07:00 TR'den sonra** tam sayılır ve çekilir. UTC dilimleme yasak | 05:00 penceresi 05:00–06:00 arasındaki Z günü D fişini iki günden de düşürürdü; UTC Vercel'de ofsetsiz zaman yanlış güne düşer |
-| M6 | Saklama (R20) | **Dört yeni tablo** `pos_api_days`, `pos_api_day_lines`, `pos_api_day_payments`, `pos_api_payment_maps` (§2.3), `source` sütunlu (`'modpos'`). `pos_daily_sales` / `pos_day_reports` kullanılmaz. Kod `src/lib/pos-api/*`, `src/server/pos-api/*`. Gün durumu `satisli` \| `satissiz` | Oradaki tekillik `(date, pos_name)` iki kaynağı tutamaz (`schema.ts:2055`), LafPOS'un 409 kuralı ModPOS'a uymaz; `Till*` adları (`src/lib/cash-month.ts:17`, `:54`) ve `kapali` (özel günler) başka şey demek |
-| M7 | İdempotency (R13, R16) | Gün anahtarı `(source, day)`; gün **tek işlemde**: `set local lock_timeout = '5s'` + `pg_advisory_xact_lock(hashtext('pos-api-day:<source>:<day>'))`; `55P03` → o gün `busy` (hata değil, sonraki gün). Özet upsert, satır ve ödemeleri sil / yaz. **Parmak izi** (sha256, sıradan bağımsız) aynıysa yalnız `checked_at`. Satır anahtarı `line_ref` = `ürün kimliği ?? "ad:"+posMatchKey(ad)` + varyant + tür + birim fiyat. Değişen günde `revision` + 1, önceki özet `previous` sütununa (yalnız sonuncusu), değişiklik işlem geçmişine | LafPOS'un "günü yenile" kuralı (`ingest.ts:45-97`); `capped` işi beklemeden döner (`src/server/jobs/capped.ts:14-18`), askıya alınan işlev kilidi tutarsa sonraki yazan sonsuza dek beklemesin |
+| M5 | İş günü (R2) | Fişin günü: ModPOS fişin gün sonu (Z) gününü veriyorsa o; yoksa kapanış anından `businessDate` (05:00, `src/lib/cash-report.ts:145`, `:164-167`). `fetchDay(D)`'nin penceresi **[D 05:00, D+1 07:00) TR**: hem Z günü D olan fişler (06:00–06:00, AsilPOS deposunda `docs/01-ANALIZ.md:9`) hem 05:00 kuralıyla D'ye düşenler bu pencerededir; bu yüzden pencereye giren ama başka güne ait fiş atılabilir (kendi gününün penceresinde zaten vardır). `closedAt` ofsetsiz gelirse reddedilir (`/(Z\|[+-]\d{2}:\d{2})$/`). Gün **D+1 07:00 TR'den sonra** tam sayılır ve çekilir. UTC dilimleme yasak | 05:00 penceresi 05:00–06:00 arasındaki Z günü D fişini iki günden de düşürürdü; UTC Vercel'de ofsetsiz zaman yanlış güne düşer |
+| M6 | Saklama (R20) | **Dört yeni tablo** `pos_api_days`, `pos_api_day_lines`, `pos_api_day_payments`, `pos_api_payment_maps` (§2.3), `source` sütunlu (`'modpos'`). `pos_daily_sales` / `pos_day_reports` kullanılmaz. Kod `src/lib/pos-api/*`, `src/server/pos-api/*`. Gün durumu `satisli` \| `satissiz` | Oradaki tekillik `(date, pos_name)` iki kaynağı tutamaz (`schema.ts:2055`), AsilPOS'un 409 kuralı ModPOS'a uymaz; `Till*` adları (`src/lib/cash-month.ts:17`, `:54`) ve `kapali` (özel günler) başka şey demek |
+| M7 | İdempotency (R13, R16) | Gün anahtarı `(source, day)`; gün **tek işlemde**: `set local lock_timeout = '5s'` + `pg_advisory_xact_lock(hashtext('pos-api-day:<source>:<day>'))`; `55P03` → o gün `busy` (hata değil, sonraki gün). Özet upsert, satır ve ödemeleri sil / yaz. **Parmak izi** (sha256, sıradan bağımsız) aynıysa yalnız `checked_at`. Satır anahtarı `line_ref` = `ürün kimliği ?? "ad:"+posMatchKey(ad)` + varyant + tür + birim fiyat. Değişen günde `revision` + 1, önceki özet `previous` sütununa (yalnız sonuncusu), değişiklik işlem geçmişine | AsilPOS'un "günü yenile" kuralı (`ingest.ts:45-97`); `capped` işi beklemeden döner (`src/server/jobs/capped.ts:14-18`), askıya alınan işlev kilidi tutarsa sonraki yazan sonsuza dek beklemesin |
 | M8 | Satır türleri (R3) | `satis`, `iade`, `ikram`, `odenmez`, `zayi`. **Aylık ürün satırı = yalnız `satis`** (adet ve ciro). `iade` kendi gününde bir olaydır: yalnız o günün `refund` ve `net`'ine girer, ürün adedinden düşmez (yapılmış içecek tüketimdir) ve satış gününü değiştirmez; böylece eksi adet olamaz (`src/lib/calc/engine.ts:890-918` eksi adedi ters tüketime çevirirdi). Liste ↔ POS farkı = indirim + iade (metin bunu söyler). `ikram` / `odenmez` ciroya girmez; tüketime yalnız Faz 4'te ve `ikramLines` varsa. `zayi` saklanır, hiçbir hesaba girmez (`docs/ZAYI-IKRAM.md:13`) | Durumu sonradan "iade"ye dönen fiş satış gününü (kapanmış ayı) yeniden yazar ve brüt 0 / iade X ile net'i eksiye düşürürdü |
-| M9 | Gün denetimi (R8) | Ödeme türünün **sınıfı** (`pay_class`): `satis` \| `bahsis` \| `tahsilat` \| `cari` (açık hesaba satış). Değişmezler: Σ ödeme (`satis` + `cari` sınıfı) = `net` ± tol; Σ `satis` brüt − Σ `iade` brüt − `discount` = `net` ± tol; `net` ≥ 0; tol = max(100 kuruş, net'in %0,5'i). Servis ve kuver ürün satırıdır (HİZMET'e eşlenir). Tutmayan gün **yazılır** ve kartta "sorunlu gün" olur; yönetici **Kabul et (not)** der: kabul gün düzeyinde, günün parmak iziyle saklanır (`accepted`: kim, ne zaman, not, parmak izi; işlem geçmişine); gün değişmeden yeniden yazılırsa kabul kalır, değişirse düşer. Kuruş olmayan sayı, eksi brüt, boş ad **reddedilir** | Kartla bahşiş ve cari tahsilatı POS'tan geçer ama satış değildir (`src/lib/lafpos/day.ts:68-73`, `docs/LAFPOS.md:248-258`); sabit 1 TL toleransla her gün "tutarsız" olur ve başlangıç ayı hiç kaydedilemezdi |
-| M10 | Anahtar (varsayılan kapalı) | **(a)** ortam değişkeni yok → "Kurulmadı", hiçbir istek yok; **(b)** değişkenler var → veri çekilir ve saklanır ama **deneme**: yalnız Ayarlar › ModPOS kartında, hiçbir hesaba girmez; **(c)** `settings.modposApiBaslangic` (YYYY-MM) dolu → o aydan itibaren hesaplara girer (Faz 2). Varsayılan `null` (`src/lib/constants.ts:3-30`); bozuk değer `null` (`readModposApiStart`) | LafPOS'un deseni (`src/lib/lafpos/switch.ts:4-11`): ayar veri yazmaz / silmez, yalnız okuyanları değiştirir |
+| M9 | Gün denetimi (R8) | Ödeme türünün **sınıfı** (`pay_class`): `satis` \| `bahsis` \| `tahsilat` \| `cari` (açık hesaba satış). Değişmezler: Σ ödeme (`satis` + `cari` sınıfı) = `net` ± tol; Σ `satis` brüt − Σ `iade` brüt − `discount` = `net` ± tol; `net` ≥ 0; tol = max(100 kuruş, net'in %0,5'i). Servis ve kuver ürün satırıdır (HİZMET'e eşlenir). Tutmayan gün **yazılır** ve kartta "sorunlu gün" olur; yönetici **Kabul et (not)** der: kabul gün düzeyinde, günün parmak iziyle saklanır (`accepted`: kim, ne zaman, not, parmak izi; işlem geçmişine); gün değişmeden yeniden yazılırsa kabul kalır, değişirse düşer. Kuruş olmayan sayı, eksi brüt, boş ad **reddedilir** | Kartla bahşiş ve cari tahsilatı POS'tan geçer ama satış değildir (`src/lib/asilpos/day.ts:68-73`, `docs/ASILPOS.md:248-258`); sabit 1 TL toleransla her gün "tutarsız" olur ve başlangıç ayı hiç kaydedilemezdi |
+| M10 | Anahtar (varsayılan kapalı) | **(a)** ortam değişkeni yok → "Kurulmadı", hiçbir istek yok; **(b)** değişkenler var → veri çekilir ve saklanır ama **deneme**: yalnız Ayarlar › ModPOS kartında, hiçbir hesaba girmez; **(c)** `settings.modposApiBaslangic` (YYYY-MM) dolu → o aydan itibaren hesaplara girer (Faz 2). Varsayılan `null` (`src/lib/constants.ts:3-30`); bozuk değer `null` (`readModposApiStart`) | AsilPOS'un deseni (`src/lib/asilpos/switch.ts:4-11`): ayar veri yazmaz / silmez, yalnız okuyanları değiştirir |
 | M11 | Başlangıç ay düzeyinde (R9, R14) | Ayar **ay**. Kaydetme koşulları (`modposStartProblem`, saf): ay ≥ `2026-07`; **A-01'den dünün tam gününe kadar her gün** `pos_api_days`'te (satışsız gün de kapsamdır; "çekmenin başından" istisnası yok); o aralıkta eşlenmemiş ödeme türü ve **kabul edilmemiş** sorunlu gün yok. Önizleme (engel değil, uyarı): ay ay eski → yeni (POS cirosu, ürün adedi, hizmet cirosu, liste ↔ POS farkı), eşleşmeyen adların ciro payı, HİZMET olabilecek eşleşmeyen adlar (`/karaoke\|etkinlik/i`). İşlem geçmişine yazılır. Boşaltmak geri alır | Ayın ilk günleri ne listede ne API'de olursa ay eksik sayılırken kapsam tam görünürdü; eşleşmeyen ad bugün de liste yolunda var, kapı ondan sıkı olmamalı |
-| M12 | Gün gün kaynak (R19) | Tablo §3.1. Ürün satırları: **LafPOS günü** (S'den) > **API günü** (A'dan) > **elle liste** (ay). Ay bilgisi: **elle `months`** > **kasa raporu** > LafPOS Z yedeği > **API yedeği**. Raporlu günde rapor satırı kazanır, ama raporun **boş** `discounts` / `offRevenue` alanı API'nin o günkü değeriyle dolar (kaynak gösterilir). Komisyon kanal satışı: elle > lafpos > **modpos** > tek | Bugünkü sıralar (`src/lib/cash-month.ts:136-164`, `docs/KOMISYON.md:87-108`); boş indirim alanı aya hiç girmez (`cash-month.ts:90-91`, `:105-107`), kâr şişerdi (`src/lib/calc/insights.ts:634`) |
+| M12 | Gün gün kaynak (R19) | Tablo §3.1. Ürün satırları: **AsilPOS günü** (S'den) > **API günü** (A'dan) > **elle liste** (ay). Ay bilgisi: **elle `months`** > **kasa raporu** > AsilPOS Z yedeği > **API yedeği**. Raporlu günde rapor satırı kazanır, ama raporun **boş** `discounts` / `offRevenue` alanı API'nin o günkü değeriyle dolar (kaynak gösterilir). Komisyon kanal satışı: elle > asilpos > **modpos** > tek | Bugünkü sıralar (`src/lib/cash-month.ts:136-164`, `docs/KOMISYON.md:87-108`); boş indirim alanı aya hiç girmez (`cash-month.ts:90-91`, `:105-107`), kâr şişerdi (`src/lib/calc/insights.ts:634`) |
 | M13 | Elle düzeltmeler korunur (R6) | `months`'a elle yazılan değer (0 dahil) **her zaman kazanır** (`cash-month.ts:140-152`). Karşılaştırma tablosunda ve başlangıç önizlemesinde ay başına **"Bu ayı ModPOS'a bırak"**: `openDays` + `posRevenue` + `discounts` + `offRevenue` + `cardShare` birlikte boşalır (not kalır), tek işlem, işlem geçmişine. Elle 0 yazılmış ama API'de sıfırdan büyük alan vurgulanır; aynı ayda açık gün elle, ciro API'den (ya da tersi) karışık çifti uyarı alır. Alan alan boşaltma yine mümkün ama önerilmez | Tohum Temmuz / Ağustos / Ekim'i indirim ve ödenmez 0 ile elle yazdı (`scripts/seed.ts:275-277`, `src/server/db/seed/excel-data.json` months; Ekim "1-16 Ekim (16 gün)"); tek alanı boşaltmak günlük ortalamayı ikiye katlar (`insights.ts:708`) |
 | M14 | Kapanmış aylar | Geçmişin değişmesi tek onaylı noktada: başlangıç ayının kaydı. Sonradan ModPOS geçmiş bir günü düzeltirse gün yeniden yazılır (`revision`, `previous`), işlem geçmişinde "Sistem · ModPOS: 14 Eylül değişti (12.400 → 11.900 ₺)"; **engellenmez**. M8 sayesinde sonraki aydaki iade önceki ayı değiştirmez | Panelde kapanmış ay kilidi yok; gerçek düzeltmeyi gizlemek yanlış |
 | M15 | Eksik gün ve ay ortası (R4) | `tillMonths` iki ayrı girdi alır: **`firstReport`** (eksik "rapor yok" günleri buradan aranır; öncesindeki API günleri "ModPOS'tan" yazılır, eksik değildir) ve bugünkü `firstEver` (ay ortası başlangıç `partialFrom`, bütün kaynakların en eski satırı). API satırları A-01'den satışsız günleriyle geldiği (M11) için API ayı hiç "ay ortası" olmaz. Kasa'nın ay satırı da aynı yükleyiciden ve aynı iki girdiyle | Bugün tek `first` ikisini birden belirler (`cash-month.ts:62`, `:76`, `:114`) ve veri kümesi ile Kasa farklı `first` verir (`src/server/data/dataset.ts:232-235`; `src/app/panel/kasa/page.tsx:406`, `:436`) |
-| M16 | Kasa raporu | (Faz 4) API'nin günü kapanmışsa form yalnız boş alanları API Z'sinden doldurur (`CashPrefill.source: "modpos"`, `src/lib/photo-read/kasa.ts:153-159`); farklar `src/lib/lafpos/diffs.ts` deseniyle; API günü gelmişse ModPOS Z fotoğrafı istenmez. Personele yalnız Z alanları; beklenen nakit API'den alınmaz | LafPOS günlerinin aynısı (`src/lib/lafpos/prefill.ts:77`) |
-| M17 | LafPOS | Geçiş gününden (S) itibaren **LafPOS kazanır**; API'nin o günleri saklanır, sayılmaz. Geçiş ayında API kapsamı `min(son API günü, S − 1)` | Her gün tek kaynak (`src/lib/lafpos/sales.ts:9-20`) |
+| M16 | Kasa raporu | (Faz 4) API'nin günü kapanmışsa form yalnız boş alanları API Z'sinden doldurur (`CashPrefill.source: "modpos"`, `src/lib/photo-read/kasa.ts:153-159`); farklar `src/lib/asilpos/diffs.ts` deseniyle; API günü gelmişse ModPOS Z fotoğrafı istenmez. Personele yalnız Z alanları; beklenen nakit API'den alınmaz | AsilPOS günlerinin aynısı (`src/lib/asilpos/prefill.ts:77`) |
+| M17 | AsilPOS | Geçiş gününden (S) itibaren **AsilPOS kazanır**; API'nin o günleri saklanır, sayılmaz. Geçiş ayında API kapsamı `min(son API günü, S − 1)` | Her gün tek kaynak (`src/lib/asilpos/sales.ts:9-20`) |
 | M18 | laffogato.net | **Değişmez.** Kasada ödenen site siparişi ModPOS'ta çalınır; site zaten kendi toplamından düşer (`docs/SITE-SATIS.md:84-89`) | Çift sayım yok |
-| M19 | Ürün eşleme (R7) | API satırında **ürün saklanmaz**. Ay toplamı okunurken ad (`posMatchKey(ad)`, varyant ayrıysa `ad + " " + varyant`) `pos_mappings`'ten çözülür (`createPosMappingIndex`); ürün kimliği bağı tablosu yok. Satışlar'da ya da kartta bir adın eşlemesi değişince **bütün API günleri, geçmiş dahil, anında** izler. ModPOS'ta adı değişen ürün eşleşmeyenlerde görünür, bir kez **Bağla** (`matchLafposName` deseni, `src/server/actions/sales.ts:371`). `writeMapping` (`sales.ts:240`) `"use server"` dosyasından `src/server/sales/mapping.ts`'e taşınır (ortak yazıcı). Silme engeli API'de bu ürüne çıkan adları sayar (`pos_mappings.product_id` cascade, `schema.ts:281`: silinirse bağ sessizce koparırdı) | Bağlı satırı yeniden bağlamayan bugünkü yol (`src/server/lafpos/rematch.ts:8-13`, `sales.ts:211-233`) ~110 günün yanlış bağını kalıcı yapardı; okurken çözmek düzeltmeyi bedavaya verir, ay başına birkaç yüz ad |
+| M19 | Ürün eşleme (R7) | API satırında **ürün saklanmaz**. Ay toplamı okunurken ad (`posMatchKey(ad)`, varyant ayrıysa `ad + " " + varyant`) `pos_mappings`'ten çözülür (`createPosMappingIndex`); ürün kimliği bağı tablosu yok. Satışlar'da ya da kartta bir adın eşlemesi değişince **bütün API günleri, geçmiş dahil, anında** izler. ModPOS'ta adı değişen ürün eşleşmeyenlerde görünür, bir kez **Bağla** (`matchAsilposName` deseni, `src/server/actions/sales.ts:371`). `writeMapping` (`sales.ts:240`) `"use server"` dosyasından `src/server/sales/mapping.ts`'e taşınır (ortak yazıcı). Silme engeli API'de bu ürüne çıkan adları sayar (`pos_mappings.product_id` cascade, `schema.ts:281`: silinirse bağ sessizce koparırdı) | Bağlı satırı yeniden bağlamayan bugünkü yol (`src/server/asilpos/rematch.ts:8-13`, `sales.ts:211-233`) ~110 günün yanlış bağını kalıcı yapardı; okurken çözmek düzeltmeyi bedavaya verir, ay başına birkaç yüz ad |
 | M20 | Ödeme türleri ve Komisyon (R8) | `pos_api_payment_maps` (`source`, ModPOS ödeme adı → `z_field` cash / card / meal_card / online / other + `channel` + `pay_class` + `confirmed`). Eşleme okurken birleştirilir (gün satırına kopyalanmaz: değişiklik geçmişe anında). Öneri: `channelOf([ad])` (`src/lib/commission/channels.ts`), "NAKİT" → cash, "KREDİ KARTI" / "BANKA" → card, "BAHŞİŞ" → bahsis, "CARİ" / "AÇIK HESAP" → cari; öneri kartta **onaylanır**, onaysız tür `satis`/`other` sayılır ve listede kalır. Komisyon kaynağı yeni değer `modpos` (`src/lib/commission/report.ts:154`) | ModPOS Z'si yemek kartlarını tek toplam verir; kanal kanal ayrım API'nin asıl kazancıdır (`docs/KOMISYON.md:83-85`) |
 | M21 | Koşucu | (Faz 3) Tek fonksiyon `runPosApiSync(trigger, { deadlineAt })`. Tek çalışma: `integration_state › modpos.lease` koşullu güncellemeyle alınır, 120 sn'den eskisi bırakılmış sayılır; ikinci çağrı `busy`. Ayrı çalışma tablosu yok: son 10 çalışma `integration_state › modpos.runs`'ta | Askıya alınan işlev oturum kilidini bırakmaz, süreli kira bırakır; tablo yalnız "son 5 çalışma" için gereksiz |
 | M22 | Cron (R1, R12) | **Yeni cron yok.** (Faz 3) `/api/cron/gunluk`'ta `modposP` **jobStart'ta**, satış tahmini ve Paraşüt yeniden denemesiyle aynı anda başlar; kendi son anı `jobStart + 45_000`, `capped` ile; `extras()` içinde beklenir (kuyruk 55 sn'de biter, `src/server/jobs/capped.ts:8-12`). Sabah e-postası **beklemez** (e-posta API rakamı okumaz: `src/server/notify/digest.ts` modelin satış ayını ve tahmini okur). Adım `modpos` `OptionalStep` (`src/lib/job-health.ts:203`), sıra listesi (`:244`), `STEP_NAMES` (`:143`), `STEP_LABELS` (`:159`); kurulmamışken yazılmaz. **Deneme modunda (A boş) hata `deneme-hata`** yazılır (`stepFailed` saymaz, `:236`); `error` yalnız A doluyken | 8 sn'lik son an 10 sn'lik gün bütçesinden kısaydı: hiçbir gün çekilmezdi; kuyruk adımları zaten paraleldir (`route.ts:128-140`); deneme hatası zil ve e-postaya "Sabah işinde bir adım hata verdi" düşürürdü (`job-health.ts:127`, `:383`) |
@@ -116,8 +116,8 @@ Yapılmayanlar:
 | M28 | Yetki | Kart, eylemler, tablolar **yalnız yönetici** (`requireAdmin`). Personele hiçbir ürün cirosu, ödeme kanalı, API satırı gitmez; Faz 4'te yalnız kasa formunun Z alanları. `scripts/personel-sizinti.ts` her fazda koşulur (`/panel/kasa` zaten listede, `:31-33`) | `docs/planlar/personel-yetki.md:28-32` |
 | M29 | Vergi | K11 değişmez; rozet "Yönetim verisi (ModPOS), mali belge değil" kalır (`src/lib/tax/pnl.ts:224-231`) | `docs/VERGI.md:21-36` |
 | M30 | Basitleştirme | API'den sayılan ayda: Satışlar'ın içe aktarma kartı salt okunur bantla yer değiştirir, Genel bakış'ın "Satış raporu" ve "Açık gün ve POS cirosu" işleri (`src/app/panel/dashboard-tasks.tsx:266-400`) o ay için düşer, ModPOS Z fotoğrafı istenmez (Faz 4). Kod silinmez; kaldırma sahibin onayıyla Faz 5'te | API henüz yok, elle yol tek güvence |
-| M31 | Günlük satış tek yükleyici (R5) | (Faz 2) `loadDailySales(from, to)`: gün başına rapor > LafPOS Z > API `net` (+ kart, yemek kartı, online), A ve S kurallarıyla. Okuyanlar: satış tahmini (`src/server/forecast/load.ts:51-72` bunun üstüne yazılır), nakit planının satış tabanı (`src/server/data/cash-plan.ts:83` → `src/lib/cash-plan.ts:754-765`), haftalık özetin satış satırı (`src/server/weekly/collect.ts:136-137`, `:318`; `src/lib/weekly/items.ts:178-193`). **Bugün raporla kalır** (`src/server/data/today.ts:238`: "rapor girildi mi" işlemsel bilgidir; test sabitler) | Bunlar `cash_reports`'u doğrudan okuyor: API günleri Gelir-gider'de sayılıp nakit planında ve haftalıkta görünmezdi |
-| M32 | Etiketler (R17) | (Faz 2) `monthKasa` / `salesMonthKasa` / `periodKasa` / `managementBadge` (`src/lib/lafpos/kasa.ts:40-71`, `src/lib/tax/pnl.ts:224-231`) tek `switchDay` yerine `KasaSources = Pick<Settings, "lafposGecisGunu" \| "modposApiBaslangic">` alır; bütün çağıranlar `st` / `model.settings` geçer (mekanik). API ayında yalnız `report` ve `long` değişir ("ModPOS API"; listeli ayda "Patron (ModPOS)", `kasa.ts:29`); `short`, `both` ve vergi rozeti "ModPOS" kalır (kasa yine ModPOS) | ≈ 15 çağıran (`src/app/panel/page.tsx:209`, `dashboard-breakdowns.ts:359-363`, `tutarlilik/page.tsx:86`, `urunler/page.tsx:68`, `analiz/page.tsx:115`, `engine.ts:2053`, `lib/mcp/answers/month.ts:82`, `:245`, `products.ts:120`, `api/export/workbook.ts:559`, `:603` …) |
+| M31 | Günlük satış tek yükleyici (R5) | (Faz 2) `loadDailySales(from, to)`: gün başına rapor > AsilPOS Z > API `net` (+ kart, yemek kartı, online), A ve S kurallarıyla. Okuyanlar: satış tahmini (`src/server/forecast/load.ts:51-72` bunun üstüne yazılır), nakit planının satış tabanı (`src/server/data/cash-plan.ts:83` → `src/lib/cash-plan.ts:754-765`), haftalık özetin satış satırı (`src/server/weekly/collect.ts:136-137`, `:318`; `src/lib/weekly/items.ts:178-193`). **Bugün raporla kalır** (`src/server/data/today.ts:238`: "rapor girildi mi" işlemsel bilgidir; test sabitler) | Bunlar `cash_reports`'u doğrudan okuyor: API günleri Gelir-gider'de sayılıp nakit planında ve haftalıkta görünmezdi |
+| M32 | Etiketler (R17) | (Faz 2) `monthKasa` / `salesMonthKasa` / `periodKasa` / `managementBadge` (`src/lib/asilpos/kasa.ts:40-71`, `src/lib/tax/pnl.ts:224-231`) tek `switchDay` yerine `KasaSources = Pick<Settings, "asilposGecisGunu" \| "modposApiBaslangic">` alır; bütün çağıranlar `st` / `model.settings` geçer (mekanik). API ayında yalnız `report` ve `long` değişir ("ModPOS API"; listeli ayda "Patron (ModPOS)", `kasa.ts:29`); `short`, `both` ve vergi rozeti "ModPOS" kalır (kasa yine ModPOS) | ≈ 15 çağıran (`src/app/panel/page.tsx:209`, `dashboard-breakdowns.ts:359-363`, `tutarlilik/page.tsx:86`, `urunler/page.tsx:68`, `analiz/page.tsx:115`, `engine.ts:2053`, `lib/mcp/answers/month.ts:82`, `:245`, `products.ts:120`, `api/export/workbook.ts:559`, `:603` …) |
 
 ---
 
@@ -126,7 +126,7 @@ Yapılmayanlar:
 ### 2.1 Gün toplamı (`src/lib/pos-api/types.ts`, saf; Faz 1)
 
 ```ts
-export type PosApiSource = "modpos"; // LafPOS sonradan eklenebilir (§11)
+export type PosApiSource = "modpos"; // AsilPOS sonradan eklenebilir (§11)
 export type ApiLineKind = "satis" | "iade" | "ikram" | "odenmez" | "zayi";
 export type ApiZField = "cash" | "card" | "meal_card" | "online" | "other";
 /** Ödemenin sınıfı (M9): gün cirosuyla yalnız satis + cari karşılaştırılır */
@@ -230,16 +230,16 @@ Boyut: ≈ 80–150 satır / gün × 120 gün ≈ 16 bin satır bugün, yılda �
 
 ## 3. Kaynak önceliği ve çift sayım
 
-### 3.1 Gün gün (S = LafPOS geçiş günü, A = `modposApiBaslangic`, `null` = yok)
+### 3.1 Gün gün (S = AsilPOS geçiş günü, A = `modposApiBaslangic`, `null` = yok)
 
 | Gün | Ürün satırları (aylık model) | Ay bilgisi alanları | Günlük satış (M31) | Kasa formu (Faz 4) | Komisyon (Faz 4) |
 |---|---|---|---|---|---|
-| `S` dolu ve gün ≥ S | LafPOS | elle > rapor > LafPOS Z | rapor > LafPOS Z | LafPOS ön doldurma | elle > lafpos > tek |
+| `S` dolu ve gün ≥ S | AsilPOS | elle > rapor > AsilPOS Z | rapor > AsilPOS Z | AsilPOS ön doldurma | elle > asilpos > tek |
 | A dolu, gün ≥ A-01, (S yok ya da gün < S) | **API, yalnız `satis`** (ayın listesi sayılmaz) | elle > rapor (boş indirim / ödenmez API'den) > **API** | rapor > **API net** | **API** ön doldurma | elle > **modpos** > tek |
 | öteki | elle liste (bugünkü gibi) | elle > rapor | rapor | fotoğraf | elle > tek |
 
-- Geçiş ayında (S'nin ayı ≥ A): API günleri ayın 1'i … S − 1, LafPOS S … ay sonu; API ayının kapsamı
-  `min(son API günü, S − 1)`, bugünkü `lafposSalesFrom` (`src/lib/lafpos/switch.ts:67-75`) değişmez.
+- Geçiş ayında (S'nin ayı ≥ A): API günleri ayın 1'i … S − 1, AsilPOS S … ay sonu; API ayının kapsamı
+  `min(son API günü, S − 1)`, bugünkü `asilposSalesFrom` (`src/lib/asilpos/switch.ts:67-75`) değişmez.
 - A dolu ama ay < A: bugünkü kurallar aynen.
 
 ### 3.2 Çift sayım yolları ve kapatılması (testlerin hepsi saf, `npm test`'te her zaman koşar; R18)
@@ -247,7 +247,7 @@ Boyut: ≈ 80–150 satır / gün × 120 gün ≈ 16 bin satır bugün, yılda �
 | Yol | Kapanış | Test |
 |---|---|---|
 | Aynı ay hem liste hem API | A'dan itibaren liste düşer (`mergeApiSales`) | `tests/modpos-kaynak.test.ts` |
-| API + LafPOS aynı gün | Gün ≥ S ise API satırı okunmaz | aynı |
+| API + AsilPOS aynı gün | Gün ≥ S ise API satırı okunmaz | aynı |
 | API toplamı + kasa raporu `zTotal` | Yedek satır yalnız raporsuz günde; `tillMonths` raporu öne alır | aynı + `tests/kasa-ay-bilgisi.test.ts` |
 | Raporlu günde boş indirim + API indirimi | Yalnız boş alan dolar; dolu alan raporun (M12) | `tests/kasa-ay-bilgisi.test.ts` |
 | `months` elle + API | Elle kazanır; "Bu ayı ModPOS'a bırak" hepsini birlikte boşaltır | `tests/kasa-ay-bilgisi.test.ts`, `tests/modpos-baslangic.test.ts` (Faz 2) |
@@ -318,7 +318,7 @@ türü, seçenek satırları (LATTE + Karamel şurup + Yulaf sütü), adı deği
 
 ### 4.5 Ayarlar › ModPOS (kasa) kartı (`src/app/panel/ayarlar/modpos-card.tsx`)
 
-`SETTINGS_SECTIONS`'a `lafpos`'tan sonra `{ id: "modpos", label: "ModPOS (kasa)", icon: Store }`
+`SETTINGS_SECTIONS`'a `asilpos`'tan sonra `{ id: "modpos", label: "ModPOS (kasa)", icon: Store }`
 (`src/app/panel/ayarlar/sections.ts:22-23`).
 
 - **Faz 1 (salt okunur):** akordeon özeti "Kurulmadı · satışlar elle" | "Deneme · 120 gün geldi, hesaba girmiyor";
@@ -337,9 +337,9 @@ türü, seçenek satırları (LATTE + Karamel şurup + Yulaf sütü), adı deği
 ### 4.6 Satışlar ve öteki yerlerdeki tek satır (Faz 2)
 
 - Satışlar başında, A doluysa ve ay ≥ A: nötr bant "Bu ayın ürün satışları ModPOS API'den (28 Ekim'e kadar). Yüklenen
-  liste sayılmıyor." + "Ayarlar"; içe aktarma ve satır ekleme yerine salt okunur tablo (LafPOS ayının yolu,
+  liste sayılmıyor." + "Ayarlar"; içe aktarma ve satır ekleme yerine salt okunur tablo (AsilPOS ayının yolu,
   `src/app/panel/satislar/page.tsx:126-136`, `:256-311`). Red (`importSales`, `saveLine`): "Eylül ModPOS API'den
-  geliyor; liste yüklenmez." (`modposImportRule` deseni, `src/lib/lafpos/sales.ts:244-252`). "Her sabah kendiliğinden
+  geliyor; liste yüklenmez." (`modposImportRule` deseni, `src/lib/asilpos/sales.ts:244-252`). "Her sabah kendiliğinden
   gelir" cümlesi yalnız sabah adımı (Faz 3) kuruluyken.
 - Kasa'da ay satırı (`kasaMonthLine`) yalnız yönetici bölümünde değişir; personel görünümü değişmez.
 - Deneme (A boş) iken Satışlar'da hiçbir şey değişmez.
@@ -351,13 +351,13 @@ türü, seçenek satırları (LATTE + Karamel şurup + Yulaf sütü), adı deği
 1. **Aylık model: ürün satırları** (Faz 2; saf çekirdek Faz 1). `mergeApiSales` (`src/lib/pos-api/merge.ts`): API
    ayının liste satırlarını düşürür, API ay toplamlarını (`satis`, `(ay, pos_name, varyant)` başına; ürün okurken
    `pos_mappings`'ten) sentetik `SalesLine`'a çevirir (kimlik `-(100_000 + i)`, `modpos: { days }`;
-   `src/lib/calc/types.ts:200-216`), kapsamı son API gününe yazar; sonra bugünkü `mergeSalesSources` (LafPOS) aynen.
-   SQL ay toplamı `loadApiMonthSales` (`src/server/pos-api/load.ts`). Tek giriş: `dataset.ts`'in `mergeWithLafpos`
+   `src/lib/calc/types.ts:200-216`), kapsamı son API gününe yazar; sonra bugünkü `mergeSalesSources` (AsilPOS) aynen.
+   SQL ay toplamı `loadApiMonthSales` (`src/server/pos-api/load.ts`). Tek giriş: `dataset.ts`'in `mergeWithAsilpos`
    çağrısı (`src/server/data/dataset.ts:147-172`) ve tatlı payı (`src/server/forecast/mix.ts`) aynı `mergeSales(db, …)`.
    Okuyanlar kendiliğinden: Satışlar, Genel bakış, Ürünler, Tutarlılık tüketimi, menü mühendisliği, Analiz, KDV
    tahmininin hizmet payı, Excel "Satış Kayıtları" (+ "Kaynak" sütunu), Claude araçları.
 2. **Ay bilgisi yedeği** (Faz 2; `tillMonths` değişikliği Faz 1). `tillRows()` (`src/server/data/cash-reports.ts:265-283`)
-   `apiTillRows()`'u ekler: A-01'den (S'den önce) LafPOS satırı olmayan **bütün** günler (satışsız dahil, `zTotal` 0),
+   `apiTillRows()`'u ekler: A-01'den (S'den önce) AsilPOS satırı olmayan **bütün** günler (satışsız dahil, `zTotal` 0),
    `TillRow.source: "modpos"`, `zTotal = net`, `card` / `mealCard` / online eşlemeden, `discounts`, `offRevenue`,
    `receipts`; raporlu günde yalnız raporun boş alanını dolduran yarım satır (M12). Kasa ayın satırını da aynı yükleyiciden
    (`tillRowsBetween(from, to)`) okur (`src/app/panel/kasa/page.tsx:416`, `:436` değişir). Okuyanlar: Gelir-gider, Genel
@@ -370,9 +370,9 @@ türü, seçenek satırları (LATTE + Karamel şurup + Yulaf sütü), adı deği
    sayar (M19).
 5. **Etiketler** (Faz 2, M32).
 6. **Kasa raporu** (Faz 4, M16): ön doldurma, farklar, ModPOS Z fotoğrafının gizlenmesi, "Kafe kapalıydı" kanıtı
-   (`satissiz` gün kapalı, `satisli` gün açık; `cash-month.ts:82-87` `soldLafpos` gibi). **Elle kalır:** açılış, sayılan
+   (`satissiz` gün kapalı, `satisli` gün açık; `cash-month.ts:82-87` `soldAsilpos` gibi). **Elle kalır:** açılış, sayılan
    nakit, teslim, kasadan çıkan, yazarkasa Z, banka gün sonu.
-7. **Komisyon & hakediş** (Faz 4, M20): `lafposMonth` (`src/lib/commission/report.ts:476-553`) `source`'lu gün girdisine;
+7. **Komisyon & hakediş** (Faz 4, M20): `asilposMonth` (`src/lib/commission/report.ts:476-553`) `source`'lu gün girdisine;
    `SalesSource` + `modpos`. **Elle kalır:** ekstre, hakediş.
 8. **Stok: ikram** (Faz 4, yalnız `ikramLines`).
 9. **KDV satır oranıyla** (Faz 4, R14): yalnız ay API'den **tam** kapsanıyorsa ve bütün satırlarda oran varsa,
@@ -424,14 +424,14 @@ M10 (c), M11, M13 eylemi, M15 bağlantısı, M19 kart eylemleri, M31, M32 ve §5
 (`modposStartProblem`, önizleme), `src/server/pos-api/load.ts` (`loadApiMonthSales`, `loadApiDays`), `src/server/data/sales-merge.ts`
 (`mergeSales`), `src/server/data/daily-sales.ts` (`loadDailySales`), `src/server/data/dataset.ts`,
 `src/server/forecast/{load,mix}.ts`, `src/server/data/cash-reports.ts` (`apiTillRows`, `tillRowsBetween`),
-`src/app/panel/kasa/page.tsx`, `src/server/data/cash-plan.ts`, `src/server/weekly/collect.ts`, `src/lib/lafpos/kasa.ts` +
+`src/app/panel/kasa/page.tsx`, `src/server/data/cash-plan.ts`, `src/server/weekly/collect.ts`, `src/lib/asilpos/kasa.ts` +
 `src/lib/tax/pnl.ts` ve bütün çağıranlar (M32), `src/server/sales/mapping.ts` (`writeMapping` taşınır),
 `src/server/actions/sales.ts` (retler), `src/server/actions/modpos.ts` (Bağla, ödeme eşle, gün kabul, ayı bırak,
 başlangıç önizle / kaydet), kart, `src/app/panel/satislar/*`, `src/app/panel/dashboard-tasks.tsx`,
 `src/server/data/product-history.ts`, `src/app/api/export/workbook.ts`.
 Kabul: A boşken veri kümesi, tahmin, tatlı payı, nakit planı, haftalık bayt bayt aynı (saf testler + bir DB testi); A
 dolu sahte veriyle Genel bakış, Gelir-gider, Kasa ay satırı, Satışlar, Tutarlılık, Satış tahmini, nakit planı API ayını
-aynı rakamla gösterir; LafPOS geçiş ayı karışımı doğru; `scripts/personel-sizinti.ts` temiz. **Boyut ≈ 1.500–1.900 satır.**
+aynı rakamla gösterir; AsilPOS geçiş ayı karışımı doğru; `scripts/personel-sizinti.ts` temiz. **Boyut ≈ 1.500–1.900 satır.**
 
 ### Faz 3: API belgesi gelince
 
@@ -520,7 +520,7 @@ Z fotoğraf okuması API günlerinde kalkar (yazarkasa Z kalır), `sales.coverag
    karşılaştırmadan bakıp "Bu ayı ModPOS'a bırak" der. Tohumdaki 0 indirim / ödenmez ve Ekim'in 16 günü vurgulanır.)
 6. API gelince Satışlar'ın elle yüklemesi ve ModPOS Z fotoğrafı kalksın mı? (Varsayılan: API ayında gizlenir, kod Faz
    5'e kadar kalır; yazarkasa Z fotoğrafı kalır.)
-7. LafPOS'a geçiş planı: ModPOS ne zamana kadar? (Faz 3–4'ün kapsamını belirler.)
+7. AsilPOS'a geçiş planı: ModPOS ne zamana kadar? (Faz 3–4'ün kapsamını belirler.)
 8. ModPOS'ta kaç şube var? (Varsayılan: `MODPOS_BRANCH_ID` zorunlu, tek şube.)
 9. Ödeme türü eşlemesini ilk açılışta birlikte onaylayalım mı? (Varsayılan: kart önerir, sahip onaylar.)
 
@@ -545,7 +545,7 @@ Partiler yayına çıkmak hiçbir şeyi açmaz: anahtar ve başlangıç ayı yok
   `npm run build`.
 - Faz 1: yerelde `npm run modpos:sahte`, Ayarlar › ModPOS kartı telefonda (390 px) ve masaüstünde (1440 px); başka
   ekranın değişmediği (A boş).
-- Faz 2: A dolu sahte veriyle Genel bakış, Gelir-gider, Kasa, Satışlar (API ayı, LafPOS geçiş ayı), Tutarlılık, Ürünler,
+- Faz 2: A dolu sahte veriyle Genel bakış, Gelir-gider, Kasa, Satışlar (API ayı, AsilPOS geçiş ayı), Tutarlılık, Ürünler,
   Satış tahmini, Nakit planı; canlı verinin kopyasıyla A boşken `loadDataset` önce / sonra aynı.
 - `scripts/personel-sizinti.ts`; yedek indirme (yeni tablolar içinde, belirteç dışında).
 
@@ -553,7 +553,7 @@ Partiler yayına çıkmak hiçbir şeyi açmaz: anahtar ve başlangıç ayı yok
 
 ## 11. Sonraya
 
-- LafPOS'un `pos_api_*`'e yazması (`source: 'lafpos'`) ve `pos_daily_sales` / `pos_day_reports`'un emekliye ayrılması.
+- AsilPOS'un `pos_api_*`'e yazması (`source: 'asilpos'`) ve `pos_daily_sales` / `pos_day_reports`'un emekliye ayrılması.
 - ModPOS webhook'u (ping → `after()` → o günü çek, `src/lib/ping-work.ts:14-60`).
 - Bugün'de canlı satış; fiş düzeyi analiz (ayrı, yaşlandırmalı tablo).
 - ModPOS ↔ yazarkasa Z mutabakatı (`okcReconcile`, `src/lib/okc-z.ts:793-830`).
@@ -571,9 +571,9 @@ Partiler yayına çıkmak hiçbir şeyi açmaz: anahtar ve başlangıç ayı yok
 | R5 | **Kabul** (M31) | Nakit planı, haftalık, Bugün `cashReportsBetween` okuyor (`cash-plan.ts:83`, `collect.ts:318`, `today.ts:238`); ilk ikisi tek günlük yükleyiciye, Bugün bilerek raporla kalır (işlemsel), `costs.ts` `dataMonths` listede. |
 | R6 | **Kabul, kısmen** (M13) | Tohum 0'ları ve Ekim'in 16 günü elle sayılıyor (`seed.ts:275-277`, `cash-month.ts:143-148`); tek eylemli "Bu ayı ModPOS'a bırak" + elle 0 / karışık çift vurgusu alındı; tohum kökenini tanıma reddedildi (güvenilir işaret yok, değerler sonradan düzenlenmiş olabilir). |
 | R7 | **Kabul, daha basit biçimde** (M19) | Bağlı satırı yeniden bağlamayan yol doğrulandı (`rematch.ts:8-13`, `sales.ts:211-233`); ürünü satırda saklamamak ve okurken `pos_mappings`'ten çözmek, kimlik bağı tablosunu ve "öğrenme"yi kaldırır, düzeltme her güne anında gider. |
-| R8 | **Kabul** (M9, M20) | Bahşiş / cari POS'tan geçer ama satış değil (`lafpos/day.ts:68-73`); ödeme sınıfı, oransal tolerans ve kayıtlı "Kabul et" olmadan başlangıç kapısı hiç açılmazdı. |
-| R9 | **Kabul** (M11, M23) | "Çekmenin başından" istisnası ayın ilk günlerini kapsam dışı bırakırdı (`lafpos/switch.ts:67-75` benzeri bölme yok); A-01'den her gün (satışsız dahil) zorunlu, adaptörün `firstDay()`'i kaldırıldı; açılış günü ayarı eklenmedi (gerekirse Faz 3, Soru 5'in yanıtına göre). |
-| R10 | **Kabul** (§2.1, §2.3) | ModPOS'ta şurup / süt seçenek grupları var (lafpos `docs/01-ANALIZ.md:30-31`), panel seçenekleri ayrı ürün sayar (`site-sales/calc.ts:107-118`); seçenek ayrı satır, `variant` yalnız boy. |
+| R8 | **Kabul** (M9, M20) | Bahşiş / cari POS'tan geçer ama satış değil (`asilpos/day.ts:68-73`); ödeme sınıfı, oransal tolerans ve kayıtlı "Kabul et" olmadan başlangıç kapısı hiç açılmazdı. |
+| R9 | **Kabul** (M11, M23) | "Çekmenin başından" istisnası ayın ilk günlerini kapsam dışı bırakırdı (`asilpos/switch.ts:67-75` benzeri bölme yok); A-01'den her gün (satışsız dahil) zorunlu, adaptörün `firstDay()`'i kaldırıldı; açılış günü ayarı eklenmedi (gerekirse Faz 3, Soru 5'in yanıtına göre). |
+| R10 | **Kabul** (§2.1, §2.3) | ModPOS'ta şurup / süt seçenek grupları var (AsilPOS deposunda `docs/01-ANALIZ.md:30-31`), panel seçenekleri ayrı ürün sayar (`site-sales/calc.ts:107-118`); seçenek ayrı satır, `variant` yalnız boy. |
 | R11 | **Kabul** (§6) | Fiş yolu, saat, revizyon tablosu, koşucu ve sabah adımı bilinmeyen semantiğe bağlı; Faz 1 gün toplamı + saklama + saf çekirdek + salt okunur kart. Patron'un gün gün dışa aktarımlarıyla besleme **reddedildi**: ≈ 120 elle yükleme ve `pos-paste.ts` yalnız ürün listesini okur, Ciro toplamını değil. |
 | R12 | **Kabul** (M22) | `stepFailed` `error`'u hata sayar (`job-health.ts:236`), zil ve e-posta "Sabah işinde bir adım hata verdi" der (`:127`, `:383`); deneme modunda `deneme-hata`, adım `OptionalStep` (`:203`), sıra (`:244`), `STEP_NAMES` (`:143`) listelerine. |
 | R13 | **Kabul** (M7, §2.4) | `SECRET_NAME` `key` içerir (`tests/yedek.test.ts:144`); sütun `line_ref`. |

@@ -175,7 +175,7 @@ satışların KDV'si, alışların KDV'si, devreden ve sonuç açılır.
 |---|---|
 | Dönem ve gün | Ay P'nin KDV'si P+1'in **28'inde**. Hafta sonu kaydırması yok: 28 Kasım 2026 Cumartesi, yasal son gün 30 Kasım; plan 28'ine yazar (para iki gün erken çıkmış görünür, güvenli taraf). Üç aylık KDV desteklenmez. |
 | Kasa (ModPOS) | Satışlar'daki ay cirosu (KDV dahil): ciro − KDV hariç ciro, gelir-giderdeki kuralla. Ürünler satış oranıyla (%10), HİZMET satırları yani karaoke hizmet oranıyla (%20). |
-| Kasa KDV'sinin kaynağı | Gün gün (Dalga 2, 26 Kasım 2026; aşağıda *Kasa KDV'sinin kaynağı*): kasa raporunda **yazarkasa Z'sinin KDV'si** girilmiş gün Z'den, **LafPOS'un KDV dökümü** olan gün LafPOS'tan, ikisi de olmayan gün yukarıdaki oranla. Satırda ve dökümde yazar: “Kasa KDV'si: 12 gün yazarkasa Z'sinden, 3 gün tahmin”. |
+| Kasa KDV'sinin kaynağı | Gün gün (Dalga 2, 26 Kasım 2026; aşağıda *Kasa KDV'sinin kaynağı*): kasa raporunda **yazarkasa Z'sinin KDV'si** girilmiş gün Z'den, **AsilPOS'un KDV dökümü** olan gün AsilPOS'tan, ikisi de olmayan gün yukarıdaki oranla. Satırda ve dökümde yazar: “Kasa KDV'si: 12 gün yazarkasa Z'sinden, 3 gün tahmin”. |
 | Süren ay | Ciro Genel bakış'taki ay sonu tahminiyle aya tamamlanır (÷ açık gün × ayın gün sayısı; açık gün yoksa ÷ geçen gün). Ekranda “Ekim bitmedi: 16 günün satışıyla tahmin”. |
 | Ciro girilmemiş ay | Önceki, cirosu ve açık günü olan son ayın günlük KDV'si × ayın açık günü (ayın gün sayısı − Özel günler'de kafe kapalı işaretli günler; E-41) (“Ekim cirosu yok: Eylül'ün günlük ortalamasıyla”). Süren ayın ilk kasa raporundan önce de bu kural geçer. |
 | laffogato.net | Sitenin her siparişte sakladığı KDV; oranı saklı olmayanlara panelin oranı (kafe ve mağaza %10, karaoke %20; `siteVat`, `src/lib/site-sales/calc.ts`). Süren ayın açık kaydı çekildiği günün dününe kadardır, aya tamamlanır. Kayıt yoksa 0; site bağlıysa dökümde “laffogato.net: bu ay çekilmedi”. Elle girilen siparişler ModPOS'tadır, sayılmaz. |
@@ -239,25 +239,25 @@ derse 28 Ekim ≈ 27.300 ₺, 28 Kasım ≈ 42.100 ₺.
 
 ### Kasa KDV'sinin kaynağı
 
-Sahibin isteği (Dalga 2): "KDV tahmini yazarkasa Z'sine ve LafPOS'un KDV dökümüne dayansın." Ayın kasa KDV'si artık
+Sahibin isteği (Dalga 2): "KDV tahmini yazarkasa Z'sine ve AsilPOS'un KDV dökümüne dayansın." Ayın kasa KDV'si artık
 gün gün üç kaynaktan toplanır (`posVatByDays`, `src/lib/kdv.ts`; günlerin ayrımı `vatDaysOf`, `src/lib/cash-month.ts`;
 testleri `tests/kdv-kaynak.test.ts`):
 
 | Gün | KDV'si |
 |---|---|
-| LafPOS'un KDV dökümü (`z.vat`) günün cirosunu tutuyor | LafPOS'un dökümü (23 Kasım 2026'dan beri; motorun gün gün hesabı, [hesap-sozlesmesi.md](hesap-sozlesmesi.md)). O günün yazarkasa Z'si girilmiş olsa da LafPOS kalır: döküm günün bütün satışını kapsar. |
+| AsilPOS'un KDV dökümü (`z.vat`) günün cirosunu tutuyor | AsilPOS'un dökümü (23 Kasım 2026'dan beri; motorun gün gün hesabı, [hesap-sozlesmesi.md](hesap-sozlesmesi.md)). O günün yazarkasa Z'si girilmiş olsa da AsilPOS kalır: döküm günün bütün satışını kapsar. |
 | Kasa raporunda yazarkasa Z'sinin KDV'si girilmiş (**Toplam KDV**; yoksa KDV dökümünün satırları: `okcVatTotal`, `okcVat`) | Z'nin KDV'si. Cironun yazarkasadan geçmeyen kısmı (ciro − yazarkasa toplamı, artıysa: online platform, yazarkasadan geçmeyen satış) oranla tahmin edilmeye devam eder; yazarkasa toplamı cirodan büyükse kapsanan kısım ciroyla sınırlıdır. |
 | İkisi de yok | Bugünkü yöntem: oranla (ürünler %10, karaoke %20). |
 
 - Hesap: ayın bugünkü yöntemle KDV'sinden, Z'li günlerde cironun yazarkasadan geçen kısmının oranlı tahmini çıkar,
-  yerine Z'lerin KDV toplamı girer. Oran, LafPOS dışı cironun o ayki etkin oranıdır (karaoke payı ay toplamında
+  yerine Z'lerin KDV toplamı girer. Oran, AsilPOS dışı cironun o ayki etkin oranıdır (karaoke payı ay toplamında
   bilindiği için gün gün ayrılamaz). Örnek: ciro 33.633,75 ₺, üç günün yazarkasa toplamı 7.060 ₺ ve KDV'si 699,09 ₺ →
   3.057,61 − 641,82 + 699,09 = **3.114,89 ₺**.
 - Z'nin KDV'si akla yatkın değilse (eksi ya da toplamın %20'lik payından büyük: yanlış okunmuş fiş) o gün tahminle kalır.
 - Yalnız ciro **kasa raporlarından** geliyorsa: Satışlar'da ciro elle yazılmışsa kasa günleri ayın tamamı olmayabilir,
   bütün ay oranla tahmin edilir ve kaynak satırı çıkmaz.
-- **Kaynak görünür:** KDV kartının satırında "Kasa KDV'si: 12 gün yazarkasa Z'sinden, 3 gün tahmin" (LafPOS günleri
-  varsa "…, 5 gün LafPOS'un KDV dökümünden, …"), dökümde "Kaynak: …", Haftalar listesindeki KDV satırının ⓘ'sinde aynı
+- **Kaynak görünür:** KDV kartının satırında "Kasa KDV'si: 12 gün yazarkasa Z'sinden, 3 gün tahmin" (AsilPOS günleri
+  varsa "…, 5 gün AsilPOS'un KDV dökümünden, …"), dökümde "Kaynak: …", Haftalar listesindeki KDV satırının ⓘ'sinde aynı
   cümle. Gün sayısı satışlı kasa günüdür ("Tümü"de şube × gün). Bütün ay tahminse satır çıkmaz (bugünkü görünüm).
 - **Değişmeyenler:** Gelir-gider'in AYLIK CİRO (KDV hariç)'i (`posNet`) ve Vergi kârının geliri (kendi kaynak sırası,
   [VERGI.md](VERGI.md) §2) aynıdır; değişen yalnız nakit planının KDV tahmini ve onu okuyan Vergi takvimindeki KDV
@@ -306,7 +306,7 @@ Sonuç: panelin kendi zinciri beyannameyi tutturamaz; **muhasebecinin son beyann
 güncellenir.
 
 Karaoke payı (`monthSales(ay).serviceRevenue`) ayın satış satırlarındaki hizmet satırlarıdır: ModPOS listesi yüklenince,
-LafPOS'a geçiş günü seçildikten sonra her gün sonunda (LafPOS'un karaoke satırları; [LAFPOS.md](LAFPOS.md) › Günlük
+AsilPOS'a geçiş günü seçildikten sonra her gün sonunda (AsilPOS'un karaoke satırları; [ASILPOS.md](ASILPOS.md) › Günlük
 satış) kendiliğinden kesinleşir; ek iş yok.
 
 ## Muhtasar, geçici vergi ve damga

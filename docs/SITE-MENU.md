@@ -68,8 +68,8 @@ Sitenin tohum menüsüyle panelin tohum verisindeki 129 üründen 115'i öneri a
 
 **Bağlama** sitenin listesini imzalı yeniden çeker, bağlantıyı yazar ve listeyi bütün bağlı satırlara uygular: yeni
 bağlanan ürün sitenin fiyatını ve menü durumunu alır (pencere bunu önceden gösterir: "Bağlanınca: fiyat 300 ₺ → 280 ₺").
-Aynı işlemde bu kalem ve yuvayla gelmiş ürünsüz LafPOS satırları (`pos_daily_sales`) ürüne bağlanır, LafPOS günleri
-yeniden göndermeden ([LAFPOS.md](LAFPOS.md) › Gün sonu, "Sonradan bağlama"); bağlı satırların ürünü değişmez.
+Aynı işlemde bu kalem ve yuvayla gelmiş ürünsüz AsilPOS satırları (`pos_daily_sales`) ürüne bağlanır, AsilPOS günleri
+yeniden göndermeden ([ASILPOS.md](ASILPOS.md) › Gün sonu, "Sonradan bağlama"); bağlı satırların ürünü değişmez.
 Kartta kaydedilmemiş değişiklik varken bağlantı değiştirilmez. **Bağlantıyı kaldırmak** fiyatı ve durumu olduğu gibi
 bırakır; ürün bundan sonra yalnız panelde değişir. Bağlantı ürün açmaz, adı ya da kategoriyi değiştirmez.
 
@@ -82,7 +82,7 @@ değiştirilebilir). Fiyat pencerede yazılmaz, sitenindir. "Aç, bağla ve reç
 `src/server/site-menu/link.ts` › `createLinkedProducts`) listeyi imzalı yeniden çeker ve menü kilidi altında tek
 işlemde her boyu Yeni ürün'ün kuralıyla (zayi oranı kategoriden, fiyat geçmişinin ilk satırı) sitenin fiyatıyla açar,
 bağlama çekirdeğiyle (`linkUnderLock`: liste uygulanır, sitede Tükendi kalem QR menüde gizli açılır, bu kalemle gelmiş
-ürünsüz LafPOS satırları ürüne bağlanır) yuvasına bağlar; sonra ilk boyun reçete kartı açılır. Aynı ad + boyda panel
+ürünsüz AsilPOS satırları ürüne bağlanır) yuvasına bağlar; sonra ilk boyun reçete kartı açılır. Aynı ad + boyda panel
 ürünü varsa (Türkçe büyük/küçük harf ve boşluk farkı gözetmeden), aynı ad + boyda bekleyen yeni ürün önerisi varsa
 (menü kilidinden sonra yeni ürün kilidi altında okunur; önce Onaylar'da onaylanır, ürün personelin reçetesiyle açılır,
 sonra Öneriler'den bağlanır; Ürünler › Yeni ürün de aynı kuralla), yuva bu arada dolduysa, kalem sitede yoksa ya da

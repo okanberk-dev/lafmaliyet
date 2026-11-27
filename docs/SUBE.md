@@ -8,9 +8,9 @@ Sahibin kararları (4 Kasım 2026):
 
 | Soru | Karar |
 |---|---|
-| Menü, reçete, hammadde, tedarikçi | **Ortak**; şubeye göre değişen yalnız satış fiyatı ve "Satışta / Tükendi". **24 Kasım 2026:** şube fiyatı yapıldı (sitede satır, panelde Fiyatlar › Şube fiyatı ve Toplu değiştir › Şube, LafPOS siteden alır; [FIYATLAR.md › Şube fiyatı](FIYATLAR.md#şube-fiyatı-24-kasım-2026)) |
+| Menü, reçete, hammadde, tedarikçi | **Ortak**; şubeye göre değişen yalnız satış fiyatı ve "Satışta / Tükendi". **24 Kasım 2026:** şube fiyatı yapıldı (sitede satır, panelde Fiyatlar › Şube fiyatı ve Toplu değiştir › Şube, AsilPOS siteden alır; [FIYATLAR.md › Şube fiyatı](FIYATLAR.md#şube-fiyatı-24-kasım-2026)) |
 | Panel | **Tek panel** (`ladmin.laffogato.net`) + üstte şube / kanal seçici |
-| Marina'nın kasası | **ModPOS** (Tuzla gibi); **21 Kasım 2026'da değişti:** önce Marina LafPOS'a geçer, Tuzla ModPOS'ta kalır. LafPOS'un şubesi kütükte kasa kaynağı LafPOS olan şube, yoksa Marina (`lafposBranchOf`; 25 Kasım 2026); geçiş gününden sonra sayılan LafPOS'un günüdür. **23 Kasım 2026:** Marina'da ModPOS bir daha kullanılmaz (ModPOS dönemi 13–21 Kasım 2026); föyün yedek çekimi sürerse (kasa kaynağı ModPOS) saklanır ama sayılmaz |
+| Marina'nın kasası | **ModPOS** (Tuzla gibi); **21 Kasım 2026'da değişti:** önce Marina AsilPOS'a geçer, Tuzla ModPOS'ta kalır. AsilPOS'un şubesi kütükte kasa kaynağı AsilPOS olan şube, yoksa Marina (`asilposBranchOf`; 25 Kasım 2026); geçiş gününden sonra sayılan AsilPOS'un günüdür. **23 Kasım 2026:** Marina'da ModPOS bir daha kullanılmaz (ModPOS dönemi 13–21 Kasım 2026); föyün yedek çekimi sürerse (kasa kaynağı ModPOS) saklanır ama sayılmaz |
 | Bugüne kadarki veri | Hepsi **Tuzla**'ya |
 
 ## Kütük
@@ -22,7 +22,7 @@ Sahibin kararları (4 Kasım 2026):
 | `id` | Kısa kimlik (`tuzla`, `marina`, `online`); adreste, çerezde ve kayıtlarda geçer. **Eklendikten sonra değişmez** |
 | `name` | Ekranda görünen ad ("Marina", "laffogato.net") |
 | `kind` | `fiziksel` (şube) ya da `online` (kanal) |
-| `pos_source` | Gün sonu nereden gelir: `modpos`, `lafpos` ya da `yok` (online). LafPOS'un şubesi buradan türetilir (en çok bir şube; yoksa Marina, [LAFPOS.md › Şubeler](LAFPOS.md#şubeler-denetim-21-kasım-5)) |
+| `pos_source` | Gün sonu nereden gelir: `modpos`, `asilpos` ya da `yok` (online). AsilPOS'un şubesi buradan türetilir (en çok bir şube; yoksa Marina, [ASILPOS.md › Şubeler](ASILPOS.md#şubeler-denetim-21-kasım-5)) |
 | `active` | Kapalı şube seçicide ve toplamlarda görünmez; kayıtları durur |
 | `opened_on` | Açılış günü; boşsa "başından beri" (Tuzla). Şube görünümünde açılış ayı "kasa raporları ay ortasında başladı" sayılmaz: ilk rapor açılış gününde ya da öncesindeyse ay tamdır; sonradan açılan şubede boşsa ilk raporu açılıştır ([KASA-RAPORU.md › Ay bilgisine aktarım](KASA-RAPORU.md#ay-bilgisine-aktarım)) |
 | `sort_order` | Seçicideki ve listedeki sıra |
@@ -38,18 +38,18 @@ Hepsi `src/lib/branches.ts`'te ve hem ekran hem eylem aynı işlevi çağırır;
 - **Online kanalın kasası olmaz**, fiziksel şube kasasız kalmaz (`branches_source_kind_ck`).
 - **Tuzla ve laffogato.net** silinemez, kapatılamaz, türü değişmez: panelin ciroyu bölmesi bunlara bağlı.
 - **Son açık şube** kapatılamaz (online kanal "açık şube" sayılmaz).
-- **LafPOS en çok bir şubenin kasası** (`lafposSourceError`, `src/lib/lafpos/switch.ts`): başka bir açık şubenin kaynağı
-  LafPOS'ken ikinci şube LafPOS'a geçirilemez; önce öbürünün kaynağı değiştirilir. LafPOS'un şubesi geri düşüşle Marina
-  olduğunda da (kütükte kaynağı ModPOS) Marina geçiş günü ya da kayıtlı LafPOS günü taşıyorsa Tuzla ya da yeni şube LafPOS
-  yapılamaz ("LafPOS günleri Marina şubesine yazılıyor"): kaydedilseydi LafPOS'un şubesi sessizce taşınır, Marina'nın
-  LafPOS günleri ay rakamından ve komisyondan düşer, kasası 409 alırdı. Marina'nın kendisi LafPOS yapılabilir.
+- **AsilPOS en çok bir şubenin kasası** (`asilposSourceError`, `src/lib/asilpos/switch.ts`): başka bir açık şubenin kaynağı
+  AsilPOS'ken ikinci şube AsilPOS'a geçirilemez; önce öbürünün kaynağı değiştirilir. AsilPOS'un şubesi geri düşüşle Marina
+  olduğunda da (kütükte kaynağı ModPOS) Marina geçiş günü ya da kayıtlı AsilPOS günü taşıyorsa Tuzla ya da yeni şube AsilPOS
+  yapılamaz ("AsilPOS günleri Marina şubesine yazılıyor"): kaydedilseydi AsilPOS'un şubesi sessizce taşınır, Marina'nın
+  AsilPOS günleri ay rakamından ve komisyondan düşer, kasası 409 alırdı. Marina'nın kendisi AsilPOS yapılabilir.
 - Verisi olan şube **silinmez**, yalnız kapatılır.
 
 ## Ekran
 
 **Ayarlar › Şubeler** (`/panel/subeler`, yalnız yönetici): liste, "Şube ekle" ve satıra dokununca düzenleme
 penceresi. **26 Kasım 2026:** şube eklemek yalnız ana yöneticide (`info@nextgenlab.com.tr`); e-postayla eklenen
-şubenin panel hesabı açılır ve LafPOS kurulum bağlantısı gider ([LAFPOS.md › Şube kurulumu](LAFPOS.md#şube-kurulumu-26-kasım-2026)). Ad yazılırken kimlik kendiliğinden önerilir ("Laffogato Marina" → `laffogato-marina`), tür değişince
+şubenin panel hesabı açılır ve AsilPOS kurulum bağlantısı gider ([ASILPOS.md › Şube kurulumu](ASILPOS.md#şube-kurulumu-26-kasım-2026)). Ad yazılırken kimlik kendiliğinden önerilir ("Laffogato Marina" → `laffogato-marina`), tür değişince
 kasa kaynağı uyar. Her değişiklik işlem geçmişine yazılır.
 
 ## Dalga 2'nin kararları (4 Kasım 2026)
@@ -103,7 +103,7 @@ açıkken satır yoktur (seçici de çizilmez). Kural `topBarBranchLabel` (src/l
 
 ### Neyi süzer, neyi süzmez
 
-Süzülen (dalga 3 ile hepsi): kasa raporu, gün özeti, ModPOS föyü, LafPOS gün sonu, ay satırı, satış satırı, personel,
+Süzülen (dalga 3 ile hepsi): kasa raporu, gün özeti, ModPOS föyü, AsilPOS gün sonu, ay satırı, satış satırı, personel,
 stok sayımı, zayi — yani **görünümler**. Harcama ve sabit gider tek şube seçiliyken **o şubenin ve işletme genelinin**
 kalemleriyle gelir (`branchWhereWithShared`): kira, muhasebe, abonelik hiçbir şubede kaybolmaz. laffogato.net'in online
 satışı "Tümü"de ve online kanal seçiliyken okunur, fiziksel şubede yoktur.
@@ -127,7 +127,7 @@ Kayıp önleme "soldaki seçim raporu süzmez" notunu gösterir (`companyWideNot
 (tahmini stoğun şubesi).
 
 **Komisyon & hakediş** (23 Kasım 2026, [KOMISYON.md](KOMISYON.md) › Şube): satış seçili şubenin kasa raporlarından,
-LafPOS'undan ve ModPOS föyünden; komisyon faturaları, oran ve hakediş işletmenin (faturalar şubeye bölünmez). Şube
+AsilPOS'undan ve ModPOS föyünden; komisyon faturaları, oran ve hakediş işletmenin (faturalar şubeye bölünmez). Şube
 seçiliyken ekran işletmenin raporunu gösterir ve üstte şubenin payını (şube satışı × işletmenin oranı) notuyla ekler.
 Şubenin satışı "Tümü"nün kuralıyla sayılır: ModPOS'ta kalan şubenin Z'si de geçiş ayından itibaren tek kanala yazılmaz
 (föyde markası olan kanalına, kalan markası belirsiz), sonradan açılan şubenin açılış ayı yarım sayılmaz, elle yazılan
@@ -204,8 +204,8 @@ sayımı (Tuzla)"); sayım toplamı ve elle yazılmamış açılış şubenin ke
 | Kasa raporu, kasadan çıkan para | Formun gösterdiği kasa: sayfa açılırken seçili şube (kasadan çıkanın harcaması da o şubenin). "Tümü" ya da online kanal seçiliyken birden çok kasa açıksa form çizilmez, önce **"Hangi şubenin kasası?"** sorulur (şube kapsamı C; önceden sessizce Tuzla'nın formu açılıyordu); tek kasada o kasa. Form kasanın kimliğini gönderir; gönderim anındaki seçim değil o yazılır ([aşağıda](#kasa-raporu-tümüde-20-kasım-2026)). "Kasayı sayan" listesi o kasayı sayabilecekler: yönetici, şubesiz personel, şubenin personeli ve son 60 günde o kasayı saymış olan |
 | Tedarikçiye kasadan ödeme (yeni Teslim satırı) | Pencerede seçilen kasa: varsayılanı seçili fiziksel şube (tek kasa açıksa o). "Tümü" ya da online kanal seçiliyken birden çok kasa açıksa varsayılan yok, şube seçilmeden kaydedilmez; sunucu da seçimsiz kaydı reddeder (`chooseTill`, denetim 21 Kasım #31). Var olan satır listesinde her satır kasasının şubesini yazar |
 | Ay bilgisi (ciro, açık gün, indirim, ödenmez, ay notu; Satışlar ve Gelir-gider) | **Formun gösterdiği şubenin** ay satırı: form şubenin kimliğini gönderir, gönderim anındaki seçim değil o yazılır (`formBranch(…, "sales")`; 24 Kasım şube kapsamı). Etkin fiziksel şube olmalı: online kanal seçiliyken ay yazılmaz (kanalın kasa satışı yok; önceden ay "online" şubesine iniyordu), Satışlar'da İçe aktar ve ay formu yerine "kasa satışı yok" satırı çıkar, Gelir-gider'in ay hücreleri kilitlidir (`monthWriteLock`). Önceden Gelir-gider'in ciro, açık gün ve ay notu hücreleri şubesiz yazıyor, her şubede Tuzla'nın satırını eziyordu (denetim 21 Kasım #6). Birden çok kasa açıkken "Tümü"de Gelir-gider'in ciro, açık gün **ve ay notu** kilitlidir ("şubeyi seçin"; sunucu da reddeder): hücre şubelerin toplamını gösterir, yazılan Tuzla'nın ayına inip öteki şubenin cirosunu iki kez saydırırdı; ay notu da artık sessizce Tuzla'ya inmez. Tek kasa açıkken "Tümü" o kasadır, yazılır (`monthWriteBranch`). Satışlar'ın ay formu da birden çok kasa açıkken "Tümü"de çizilmez, yerinde "Hangi şubenin ay bilgisi?" sorusu çıkar (25 Kasım 2026; önceden form başlığında Tuzla yazıp Tuzla'nın ayına yazıyordu, Gelir-gider'le aynı kural değildi). Tek kasa açıkken form o kasanındır, liste ↔ POS kutusu çıkmaz (denetim 13 Kasım HM-02). Şubeyi göndermeyen eski sekme tek şube seçiliyken o şubeye yazar, "Tümü"de birden çok kasa açıkken reddedilir |
-| Satışlar › İçe aktar, Satır ekle | Formun gösterdiği şubenin listesi (`formBranch(…, "sales")`). "Tümü"de birden çok kasa açıkken kart ve pencere şubeyi sorar, varsayılan yok; ayı LafPOS'tan gelen şube listede yer almaz (bugün "Tümü"de yalnız Tuzla kalır). "Yenisiyle değiştir"in onayı seçilen şubenin satırlarını sayar. Düzeltilen satır kendi şubesinde kalır |
-| Satışlar › Ayı temizle | Gösterilen şubenin listesi ve (seçilirse) ay bilgisi; "Tümü"nde bütün şubelerinki. Kapsam çerezden değil pencerenin gösterdiğinden kurulur: pencere kapsamı ve saydığı satır sayısını gönderir, seçim başka sekmede değiştiyse ya da liste bu arada değiştiyse silme reddedilir (`assertShownScope`, 24 Kasım şube kapsamı); içi boşalan ay satırları kapsamdaki her şubede kalkar. Listenin son günü: ayın ortak kaydı yalnız ayda hiçbir şubenin listesi kalmadıysa silinir (denetim 21 Kasım #7), şubenin kendi kaydı (`sales.coverage.sube`) listesi silinen şubenin ayından silinir. Şube seçiliyken liste dönemi şubenin kendi kaydını, Marina'nın LafPOS'unun sayıldığı ilk gün her görünümde Marina'nın kaydını, içe aktarma kartının "… tarihine kadar"ı yazılan şubenin kaydını okur ("Tümü"de birden çok şubeye yüklenebiliyorsa kart şubeyi sorar, tek gün yazmaz). Onaydaki satır sayısı sunucunun sileceği ve denetlediği sayıdır (kapsamdaki bütün liste satırları; LafPOS'un satırları ayrı tabloda, silinmez) ([LAFPOS.md](LAFPOS.md) › Günlük satış) |
+| Satışlar › İçe aktar, Satır ekle | Formun gösterdiği şubenin listesi (`formBranch(…, "sales")`). "Tümü"de birden çok kasa açıkken kart ve pencere şubeyi sorar, varsayılan yok; ayı AsilPOS'tan gelen şube listede yer almaz (bugün "Tümü"de yalnız Tuzla kalır). "Yenisiyle değiştir"in onayı seçilen şubenin satırlarını sayar. Düzeltilen satır kendi şubesinde kalır |
+| Satışlar › Ayı temizle | Gösterilen şubenin listesi ve (seçilirse) ay bilgisi; "Tümü"nde bütün şubelerinki. Kapsam çerezden değil pencerenin gösterdiğinden kurulur: pencere kapsamı ve saydığı satır sayısını gönderir, seçim başka sekmede değiştiyse ya da liste bu arada değiştiyse silme reddedilir (`assertShownScope`, 24 Kasım şube kapsamı); içi boşalan ay satırları kapsamdaki her şubede kalkar. Listenin son günü: ayın ortak kaydı yalnız ayda hiçbir şubenin listesi kalmadıysa silinir (denetim 21 Kasım #7), şubenin kendi kaydı (`sales.coverage.sube`) listesi silinen şubenin ayından silinir. Şube seçiliyken liste dönemi şubenin kendi kaydını, Marina'nın AsilPOS'unun sayıldığı ilk gün her görünümde Marina'nın kaydını, içe aktarma kartının "… tarihine kadar"ı yazılan şubenin kaydını okur ("Tümü"de birden çok şubeye yüklenebiliyorsa kart şubeyi sorar, tek gün yazmaz). Onaydaki satır sayısı sunucunun sileceği ve denetlediği sayıdır (kapsamdaki bütün liste satırları; AsilPOS'un satırları ayrı tabloda, silinmez) ([ASILPOS.md](ASILPOS.md) › Günlük satış) |
 | Stok sayımı, zayi | Seçili **fiziksel** şube; "Tümü" ya da online kanal seçiliyken birden çok kasa açıksa sayım formu çizilmez, önce **"Hangi şubeyi sayıyorsunuz?"** sorulur (şube kapsamı C), tek kasada o kasa. **Zayi ve ikram** formun şubesine (`formBranch(…, "waste")`, 24 Kasım şube kapsamı): kayıt ve geç kayıt isteği formun gösterdiği şubeyi gönderir; "Tümü" ya da online kanal seçiliyken birden çok kasa açıksa form şubeyi sorar (varsayılan yok, şubesiz kayıt reddedilir), başlık birden çok kasa açıkken şubeyi yazar ("Tuzla · Zayi & ikram"); sayfanın kilidi de formun şubesinin. Stok sayımı başlığı birden çok açık şube varken hangi şubenin sayıldığını yazar. Sayımın **"Listede olmayanlar"ı** (ek kalemler) da şubenin: okuma, eşleme, silme ve kayıt o şubenin listesiyle, "Tümü" bütün şubelerinkini toplar (`stock_extras.branch_id`, migration 0059; eski satırlar Tuzla'nın). Önceden liste şubesizdi: Marina'nın formu Tuzla'nın ek kalemlerini gösteriyor, aynı adlı kalemi ezip fiyatsız olanı siliyordu (denetim 21 Kasım #19/#24). Yalnız yeni kalemin fiyatını bulan geçmiş işletme genelidir (fiyat şubeye göre değişmez). Kaydedilmemiş sayımın bu cihazdaki taslağı da şube başına (anahtar `laf:sayim-taslak:<şube>:<ay>`, taslak şubesini de yazar): bir şubenin taslağı öbür şubenin formunda önerilmez, oraya kaydedilmez (#8). Şubesiz eski anahtardaki taslak hangi şubenin olduğu bilinmediği için okunmaz. **Sayım formu şubesini taşır** (kasa formları gibi): sayım, ek kalemler ve "Listeye ekle" formun gösterdiği şubeyi gönderir, sunucu onu doğrular (etkin fiziksel şube; şubesine kilitli personelde yalnız kendi şubesi, `formCountBranch` › `formCountError`) ve yazımı o şubenin kapsamında çalıştırır. Önceden kayıt gönderim anındaki çereze iniyordu: başka sekmede seçici Marina'ya geçince açık kalan Tuzla sayımı Marina'ya yazılıyordu. Şubeyi göndermeyen eski sekme seçili fiziksel şubeye yazar |
 | Harcama, cari "Faturası yok · gider yaz" | Formda seçilen şube ya da **İşletme geneli** (`formBranch(…, "expense")`, 24 Kasım şube kapsamı): varsayılan seçili şube, "Tümü"de görünür biçimde işletme geneli; tek şube açıkken seçim çizilmez. Düzeltme şubeyi değiştirebilir; kasadan çıkan fişin gideri kasanın şubesinde, cari borcun gideri Tedarikçiler'de seçilen şubede kalır (Aylık harcamalar'dan değişmez). Cari giderinde şube seçilmezse düzeltmede kalır, mod değişip yeni kayıt açılırsa önceki gider kaydının şubesi. Şubeyi göndermeyen eski sekme ve asistan: seçili şube, "Tümü"nde işletme geneli |
 | Kasaya işle işareti ("Kasada değiştirdim", Kasadaki fiyatlar) | Listenin gösterdiği kasa (`formBranch(…, "till", { requireExplicit })`; şube kapsamı A3): işaret yalnız o şubenin kasasından düşer, öbür şubenin listesi kalır. "Tümü"de birden çok kasa açıkken her kasa ayrı liste; kasası gelmeyen istek reddedilir. Kasada bekleyen fiyat şube başına (`pos_stale`; [FIYATLAR.md › Şube başına kasa](FIYATLAR.md#şube-başına-kasa-şube-kapsamı-a3-24-kasım-2026)) |
@@ -261,7 +261,7 @@ birden çok kasa açıkken şubenin adıyla.
 | Ödemeler › Sabit giderlerden ekle | Şubenin ve işletme genelinin kalemleri; "Tümü"de kalemin şubesi rozette |
 | Tükendi | Sitede şube başına durum yok: birden çok şube açıkken pencere "Bütün şubelerde kapanır" der, şubesine kilitli personelin Tükendi'si önce onay ister |
 | Sabah e-postası | Bildirim adresinin şubesi (Ödemeler › E-posta bildirimleri; `notification_recipients.branch_ids`, migration 0080; boş = bütün şubeler). Şubeye bağlı adres ayrı e-posta alır: konu şubenin adıyla başlar ("Marina: …"), ödemeler şubenin ve işletme genelinin; onay bekleyenler, kontrol listeleri, yarım sayım, ModPOS föy farkı ve kasadan çıkan faturalı alımlar şubenin; faturalar, zam, komisyon ve Tükendi firma geneli. Şubesi kapanan adres hiçbir e-postayı almaz. Bütün grupların içeriği gönderimden önce kurulur; birden çok grubun anahtarı yalnız hepsi gidince yazılır, düşen grup Günlük işler'de hata ([BILDIRIMLER.md](BILDIRIMLER.md#alıcılar-ve-hesaplar)) |
-| Zayi "Tümü"de | Satır kaydın şubesini yazar; LafPOS'un ikram listesi LafPOS günü olan kasanın, adıyla (önceden "Tümü"de Tuzla'nınki okunuyordu) |
+| Zayi "Tümü"de | Satır kaydın şubesini yazar; AsilPOS'un ikram listesi AsilPOS günü olan kasanın, adıyla (önceden "Tümü"de Tuzla'nınki okunuyordu) |
 | Şubesiz personel "Tümü"de | Akşam zili raporu girilmemiş her kasa için ayrı satır ("Marina: Bugünün kasa raporu bekliyor"); Kullanıcılar ekranı şubesi seçilmemiş personeli sayar |
 | Vardiya "Kişi ekle" ve yazarak doldurma | Başka şubeye kilitli hesap önerilmez (`shiftCandidate`) |
 | Fiyatlar › Şube fiyatı, Eski fiyattan satılanlar | Panelin seçimi (önceden adresteki `?sube=` okunuyordu; seçici onu adresten düşürünce ilk şubeye dönüyordu). Geçmiş sekmesi sitedeki şube fiyatı kayıtlarını ayrı kartta gösterir |
@@ -313,7 +313,7 @@ veri). Kurallar saf dosyada (`src/lib/branch-features.ts`), okuma `src/server/br
 - **Geçiş**: sütun eklenince her şube sipariş, garson ve yemek kartıyla başlar; veri adımı Tuzla'ya karaoke ekler (başka
   şubede karaoke yoksa), online kanalı boşaltır. Yeni şube karaokesiz başlar. Özelliği okunmamış satır (eski okuyucu)
   bugünkü davranışı alır (`branchFeatures`). `KARAOKE_BRANCH_ID` sabiti kalktı (`tests/sube-ozellik.test.ts`).
-- **Henüz özellik değil**: tahmini stok LafPOS'un şubesine bağlı kalır (`STOCK_ESTIMATE_BRANCH`; LafPOS şubesinin
+- **Henüz özellik değil**: tahmini stok AsilPOS'un şubesine bağlı kalır (`STOCK_ESTIMATE_BRANCH`; AsilPOS şubesinin
   türetilmesiyle birlikte taşınacak). Komisyon kanallarının ödeme süreleri 25 Kasım 2026'dan beri şube başına (aşağıda,
   Şube başına ayarlar; varsayılan "Tuzla ile aynı").
 
@@ -326,31 +326,31 @@ yazma `src/server/branch-settings.ts`.
 | Grup | Alanlar | "Diğer şubeyle aynı" | Eski kaydın sahibi |
 |---|---|---|---|
 | `kasa.rapor` Kasa raporu alıcıları | e-posta adresleri, e-posta açık / kapalı, WhatsApp numarası | evet | Tuzla (varsayılan şube) |
-| `kasa.calisan` Çalışanların gün sonu e-postası | çalışan adresleri, tutarlar görünsün mü | hayır: liste şubenin kendisinin | Marina (LafPOS'un şubesi) |
+| `kasa.calisan` Çalışanların gün sonu e-postası | çalışan adresleri, tutarlar görünsün mü | hayır: liste şubenin kendisinin | Marina (AsilPOS'un şubesi) |
 | `parasut` Paraşüt hesabı | yalnız bağ; hesabın ayarları ve oturumu Paraşüt ekranında, hesap adıyla ([PARASUT.md](PARASUT.md#şube-başına-paraşüt-hesabı)) | evet (= aynı hesap, tek eşitleme); kapatılınca **kopyalanmaz**, boş hesapla başlar | Tuzla (varsayılan şube; `parasut.settings` ve `PARASUT_*`) |
 | `komisyon` Komisyon ve yemek kartı kanalları | kanal başına ödeme süresi ([KOMISYON.md](KOMISYON.md)) | evet; sahibin varsayılanı "aynı" | Tuzla (`integration_state` › `komisyon.ayar`) |
-| `pos.lafpos` LafPOS bağlantısı ve geçiş günü | geçiş günü; LafPOS'un imza anahtarı (**şifreli**, isteğe bağlı; yoksa `LAFPOS_SYNC_SECRET`) | hayır: geçiş günü şubenin kendi kasasının, LafPOS en çok bir şubenin kasası | Marina (`settings` › `lafposGecisGunu`; değeri yalnız LafPOS'un şubesininki okunur) |
+| `pos.lafpos` AsilPOS bağlantısı ve geçiş günü | geçiş günü; AsilPOS'un imza anahtarı (**şifreli**, isteğe bağlı; yoksa `ASILPOS_SYNC_SECRET`) | hayır: geçiş günü şubenin kendi kasasının, AsilPOS en çok bir şubenin kasası | Marina (`settings` › `asilposGecisGunu`; değeri yalnız AsilPOS'un şubesininki okunur) |
 | `modpos` ModPOS ay yedeği | ay rakamına yedek ([MODPOS-API.md](MODPOS-API.md) › Ay rakamına yedek); anahtar şube başına ortamda kalır | evet | Tuzla (`settings` › `modposAyYedegi`) |
 | `isletme.takvim` Çalışma takvimi | ayda açık gün (başabaş, günlük giderler); kasa raporunun beklendiği saat (zil ve Bugün; 12:00–23:00, varsayılan 20:00) | evet | Tuzla (`settings` › `acikGun`; saat bugün sabitti) |
 | `kasa.cihaz` Banka POS ve yazarkasa | cihaz (Pavo, TokenX, başka), yazarkasa sicil no, bankası | hayır: cihaz şubenin kendisinin | yok (boşken her şey bugünkü gibi) |
-| `kasa.kor` Kör sayım | açık / kapalı ([KASA-RAPORU.md](KASA-RAPORU.md#kör-sayım)): personel önce sayılan nakdi kilitler, fark sonra görünür | hayır: ayar şubenin kendisinin | yok; seçilmemişken varsayılan: kasası ModPOS olan şubede açık, LafPOS'un şubesinde kapalı |
+| `kasa.kor` Kör sayım | açık / kapalı ([KASA-RAPORU.md](KASA-RAPORU.md#kör-sayım)): personel önce sayılan nakdi kilitler, fark sonra görünür | hayır: ayar şubenin kendisinin | yok; seçilmemişken varsayılan: kasası ModPOS olan şubede açık, AsilPOS'un şubesinde kapalı |
 | `vardiya.hazir` Hazır vardiyalar | sabahçı ve akşamcı: kullanılıyor mu, başlangıç ve bitiş ([VARDIYA.md](VARDIYA.md#şube-ayarı-26-kasım-2026)); Vardiya ekranının S / A düğmeleri, "s" / "a" kısaltması, yazarak doldurma, PDF ve asistanın vardiya kartı | hayır: saatler şubenin açılışına bağlı (Tuzla ile Marina'nınki bugün de ayrı) | yok; seçilmemişken bugünkü sabit saatler (`SHIFT_PRESETS`: Tuzla 09:00–18:00 / 16:00–01:00, Marina 09:30–18:30 / 13:00–22:00, öbür şubede hazır vardiya yok) |
 
 - **"Diğer şubeyle aynı"**: açıkken şube kendi değerini tutmaz (satırda `same_as`), bağlandığı şubenin değerini kullanır;
   değer tek yerden düzenlenir. Kapatılınca o anki değer şubeye kopyalanır, sonra ayrı düzenlenir. Gizli alanlar
-  (şifreli, `secrets` sütunu) kopyalanmaz, yeniden girilir; istemciye yalnız "kayıtlı mı" gider. Bugün yalnız LafPOS'un
+  (şifreli, `secrets` sütunu) kopyalanmaz, yeniden girilir; istemciye yalnız "kayıtlı mı" gider. Bugün yalnız AsilPOS'un
   anahtarı gizli alan.
 - **Bağ tek adımlıdır**: hedef başka şubeye bağlı olamaz, kendine bağ ve döngü yok (sunucu ve veritabanı denetler).
   Varsayılan şube (Tuzla) öbürlerinin örtük hedefidir, kendisi bağlanamaz. Başka şube bir şubenin ayarını kullanıyorsa o
   şube kapatılamaz ve silinemez ("Marina, kasa raporu alıcıları için Bodrum şubesinin ayarını kullanıyor; önce ayırın").
 - **Geçiş: veri göçü yok, hiçbir şey yapmadan çalışır.** Satırı olmayan şube eski genel kayıttan (`integration_state` ›
-  `cash.settings`, `komisyon.ayar`; `settings` tablosunun alanları grubun `legacySettings`'iyle: `lafposGecisGunu`,
+  `cash.settings`, `komisyon.ayar`; `settings` tablosunun alanları grubun `legacySettings`'iyle: `asilposGecisGunu`,
   `modposAyYedegi`, `acikGun`) okur, ama yalnız kaydın sahibi şube: alıcılar Tuzla'nın, çalışan listesi Marina'nın. "Aynı" sunulan
   grupta öbür şubeler örtük olarak Tuzla'ya bağlı başlar (bugünkü tek liste). Kayıt yoksa ortamın alıcıları
   (`CASH_REPORT_RECIPIENTS`). İlk kayıtta satır yazılır, eski kayıt bırakılır (geri dönüş güvenli).
 - **Okuyanlar şubeyi verir** (`loadCashSettings(şube)`; şubesiz çağrı kalmadı, `tests/branch-settings.test.ts`): kasa
   raporu e-postası raporun şubesinin alıcılarına, deneme e-postası kartın şubesininkine, WhatsApp metni raporun şubesinin
-  numarasına; LafPOS gün sonu, Pavo ve fotoğraf e-postaları gün sonunun şubesinin alıcılarına ve o şubeye açık bildirim
+  numarasına; AsilPOS gün sonu, Pavo ve fotoğraf e-postaları gün sonunun şubesinin alıcılarına ve o şubeye açık bildirim
   adreslerine (bütün şubeler ya da o şube; `dayEndRecipients(db, şube)`, şube zorunlu), çalışanların kısa e-postası
   gün sonunun şubesinin çalışan listesine. Zil ve "bu adres hangi listede" (Hesabım, Kullanıcılar) bütün açık
   şubelerin listelerine bakar.
@@ -362,7 +362,7 @@ yazma `src/server/branch-settings.ts`.
   alıcıları kartı aynı bileşen (`src/app/panel/kasa/cash-settings.tsx`, verisi `src/server/cash/settings-card.ts`);
   "Tümü"de her şube bölümünde kendi kartı. Birden çok kasa açıkken kartın ilk satırı "Tuzla ile aynı" anahtarı; açıkken
   form çizilmez, Tuzla'nın alıcıları salt okunur görünür ve "Tuzla şubesinde düzenle" bağlantısı çıkar. Tuzla'nın
-  kartı "Marina şubesi de bu alıcıları kullanıyor" der. Çalışan listesi alanı LafPOS'lu şubede (ya da listesi doluysa);
+  kartı "Marina şubesi de bu alıcıları kullanıyor" der. Çalışan listesi alanı AsilPOS'lu şubede (ya da listesi doluysa);
   alanı olmayan kartın kaydı çalışan listesini göndermez, liste değişmez.
 - **Yazım**: yalnız yönetici; değer, bağ ve işlem geçmişi tek işlemde, aynı grubun yazımları sıraya girer (grup başına
   işlem kilidi). Başka şubenin alıcılarını kullanan şubeye alıcı yazılmaz (eski sekme bağlı şubenin değerini sessizce
@@ -377,7 +377,7 @@ yazma `src/server/branch-settings.ts`.
   bağlanırken vergi numarası öbür hesabın firmasınınkiyle aynı çıkarsa (ya da okunamazsa) yetki yazılmadan "Aynı vergi
   numarası mı?" diye sorulur: aynı işletmeyse doğru yol "Tuzla ile aynı"dır, faturalar iki kez sayılmasın
   ([PARASUT.md › Aynı vergi numarası mı?](PARASUT.md#şube-başına-paraşüt-hesabı)).
-- **İkinci tur (25 Kasım 2026): komisyon, LafPOS, ModPOS, çalışma takvimi, banka POS.** Hepsi Şube ayarları ekranında
+- **İkinci tur (25 Kasım 2026): komisyon, AsilPOS, ModPOS, çalışma takvimi, banka POS.** Hepsi Şube ayarları ekranında
   birer kart (`src/app/panel/subeler/[id]/`; "Diğer şubeyle aynı" anahtarı tek bileşen,
   `src/components/panel/same-as-toggle.tsx`; kart verisi `branchSettingView`, `src/server/branch-settings-view.ts`, gizli
   alan değerden çıkarılır). Okuyanlar şubeyi verir:
@@ -388,18 +388,18 @@ yazma `src/server/branch-settings.ts`.
     gibi. Kanallar kartı iki ekranda aynı bileşen (`ChannelSettingsCard`), seçili şubenin kendi sürelerini düzenler;
     kartın kaydı kartın şubesine, bağlı şubeye yazılmaz. Kart yemek kartı özelliği açık şubede (ya da başka şube bu
     şubenin sürelerini kullanıyorsa: "X şubesinde düzenle" boş sayfaya çıkmasın; ModPOS kartı da öyle).
-  - **LafPOS**: geçiş günü yalnız LafPOS'un şubesinin değeri (`lafposSwitchDay`, `src/server/lafpos/branch.ts`; panelin
+  - **AsilPOS**: geçiş günü yalnız AsilPOS'un şubesinin değeri (`asilposSwitchDay`, `src/server/asilpos/branch.ts`; panelin
     geçiş gününü okuyan her yer buna iner, eski kayıt doğrudan okunmaz: `tests/sube-ayarlari-2.test.ts`). Ayarlar ›
-    LafPOS geçiş gününü bu satıra yazar; kasa kaynağı başka şubeye geçerse Marina'nın günü ona geçmez, o şube kendi gününü
-    alır. Anahtar panelde şifreli saklanabilir: ortamdakinin önüne geçer (`lafposSecret`; imzalı uçlar için önbellekli,
+    AsilPOS geçiş gününü bu satıra yazar; kasa kaynağı başka şubeye geçerse Marina'nın günü ona geçmez, o şube kendi gününü
+    alır. Anahtar panelde şifreli saklanabilir: ortamdakinin önüne geçer (`asilposSecret`; imzalı uçlar için önbellekli,
     kayıtta düşer; önbellek ön süzgeç: imza tutunca anahtar veritabanından yeniden okunur, döndürülen eski anahtar başka
-    sunucu örneğinde de hemen geçmez, [LAFPOS.md](LAFPOS.md); veritabanı okunamazsa uç 503), tarayıcıya, işlem
+    sunucu örneğinde de hemen geçmez, [ASILPOS.md](ASILPOS.md); veritabanı okunamazsa uç 503), tarayıcıya, işlem
     geçmişine ve yedeğe gitmez. Kaydetme ve silme
-    yöneticinin parolasıyla (anahtar gün sonu yazımlarının güven kökü). Kart LafPOS'un (türetilmiş) şubesinde: bugünkü
+    yöneticinin parolasıyla (anahtar gün sonu yazımlarının güven kökü). Kart AsilPOS'un (türetilmiş) şubesinde: bugünkü
     kurulumda kütükte kaynağı ModPOS olsa da Marina'da ("Kasa kaynağı Şubeler'de hâlâ ModPOS" notuyla); geçiş günü orada
-    gösterilir, Ayarlar › LafPOS'ta değişir. Ayarlar › LafPOS anahtarın nereden okunduğunu yazar, şube sayfasına bağlanır.
-    Kasa kaynağı başka şubeye geçerse eski şubede kalan anahtar o şubenin sayfasından silinir ("Eski LafPOS anahtarı").
-    Kütükte LafPOS'un şubesi yoksa (tek şubeli eski kurulum) geçiş günü eski genel kayda yazılır, okuyan da oradan okur.
+    gösterilir, Ayarlar › AsilPOS'ta değişir. Ayarlar › AsilPOS anahtarın nereden okunduğunu yazar, şube sayfasına bağlanır.
+    Kasa kaynağı başka şubeye geçerse eski şubede kalan anahtar o şubenin sayfasından silinir ("Eski AsilPOS anahtarı").
+    Kütükte AsilPOS'un şubesi yoksa (tek şubeli eski kurulum) geçiş günü eski genel kayda yazılır, okuyan da oradan okur.
   - **ModPOS**: ay rakamına yedek şube başına; föy yalnız anahtarı açık şubenin föyüyse aya girer, hiçbir şubede açık
     değilse föy tablosu okunmaz. Ayarlar › ModPOS API'de her şube bölümünün kendi anahtarı (bağlıysa salt okunur). Kart
     yalnız ModPOS'tan çekilen şubede; anahtarın yalnız durumu.
@@ -409,7 +409,7 @@ yazma `src/server/branch-settings.ts`.
     bekliyor"), Bugün seçili şubenin saatiyle, "Tümü"de kasa satırları her kasanın kendi saatiyle (ekran her birinde
     kendini yeniler). Personel Yardım'ı varsayılan saati yazar, şubeye göre değişebildiğini söyler.
   - **Banka POS ve yazarkasa**: kasa raporu e-postasının yazarkasa başlığı ("Pavo · sicil AB123 · Z no 12"), akşam
-    hatırlatmasının fişi ("TokenX'in gün sonu fişi"; belirtilmediyse Pavo, bugünkü metin) ve LafPOS cihazı henüz
+    hatırlatmasının fişi ("TokenX'in gün sonu fişi"; belirtilmediyse Pavo, bugünkü metin) ve AsilPOS cihazı henüz
     göndermediyse gün sonu fotoğrafının okunması (TokenX ayrı mali Z basar, Pavo basmaz). ModPOS şubesinde cihaz yalnız
     e-postanın başlığına girer; "Başka bir cihaz" başlığa yazılmaz, yalnız sicil no.
   - **Tek kasa açıkken** (ör. kapalı şubenin sayfası) şube başka şubeye bağlıysa "aynı" anahtarı yine çizilir: form
@@ -473,14 +473,14 @@ veritabanı `tests/fatura-sube-db.test.ts`):
 
 ## "Tümü"nün ay bilgisi (denetim 13 Kasım 2026, P02)
 
-"Tümü" şubelerin toplamıdır. Kasa satırları (rapor, LafPOS gün sonu, ModPOS föyü) şubesini taşır (`tillRows`,
+"Tümü" şubelerin toplamıdır. Kasa satırları (rapor, AsilPOS gün sonu, ModPOS föyü) şubesini taşır (`tillRows`,
 `src/server/data/cash-reports.ts`); ay bilgisi şöyle kurulur (`src/lib/cash-month.ts`, `src/server/data/dataset.ts`):
 
 | Ne | Kural |
 |---|---|
 | Açık gün, raporlu gün | **Günde bir kez**: Tuzla ve Marina aynı gün açıksa bir gün. Personel ve oranlanan sabit gider bu günle bölünür, oran en çok 1 (iki şube açıkken maaş ve kira iki kat sayılmaz); günlük ortalama ve ay sonu öngörüsü de bu günle |
 | Ciro, indirim, ödenmez | Şubelerin toplamı |
-| Kaynak önceliği | Rapor > LafPOS gün sonu > föy, **aynı şubenin aynı gününde**: bir şubenin raporu ötekinin föyünü düşürmez |
+| Kaynak önceliği | Rapor > AsilPOS gün sonu > föy, **aynı şubenin aynı gününde**: bir şubenin raporu ötekinin föyünü düşürmez |
 | Elle yazılan ay bilgisi | Her şube kendi elle yazdığı ve kasasıyla çözülür, sonra toplanır (`resolveBranchMonths`): Marina'nın elle yazdığı ciro Tuzla'nın kasa cirosunu silmez. Elle yazılan açık günün hangi günler olduğu bilinmediği için şubelerin en büyüğü alınır; kasadan gelen günler yalnız açık günü kasadan gelen şubelerin satırlarıyla birleşir (elle daha az gün yazan şubenin kasa günleri girmez). Kartlı oran ciro ağırlıklı |
 | Açılış ayı | Her şube kendi açılış günüyle (`tillOpenedOn`): raporlar açılış gününden beri girildiyse ay yarım sayılmaz, cirosu "Tümü"nün toplamına da girer |
 | Personel ve sabit gider | Şubeye bağlı kişi ve kalem "Tümü"de de kendi şubesinin günüyle oranlanır (açılış ayında açılış gününden; şube görünümüyle aynı); işletme geneli kalem işletmenin günüyle |
@@ -500,11 +500,11 @@ diyecekti.
 |---|---|
 | Yeni şube | Açılış günü (Şube ayarları) önceki ayın 1'inden sonra olan şube; açılış günü yazılmamışsa ilk verisi önceki ayda ya da bu ayda başlayan şube (Tuzla hep eski) (`sameBranchBasis`, `src/lib/same-branches.ts`) |
 | Genel bakış, "Tümü" | Yeni şube varsa POS cirosu ve günlük ortalama rozeti iki ayda da açık şubelerin ay bilgisiyle (`Month.byBranch`; günlük ortalama şube şube POS ÷ açık gün, toplanır); ipucu "Rozet: Ekim 2026 ayına göre yalnız iki ayda da açık şubelerle (Tuzla); Marina 13 Kasım'da açıldı, kıyas dışı." der. Şubeye bölünemeyen rakamların (net satış, brüt ve net kâr) rozeti çizilmez, ipucu nedenini söyler. Yeni şube yoksa ve şube seçiliyken rozetler eskisi gibi |
-| Haftalık özet, kasa cirosu satırı | Kaynak Genel bakış'ın ay rakamıyla aynı kasa satırları (`tillRows`: raporu olmayan LafPOS günü gün sonundan; önceden yalnız kasa raporları). Geçen haftanın her günü önceki dört haftanın aynı günüyle şube şube eşlenir (Kıyas kartının şube-gün eşlemesi, `comparePairs`; [KIYAS.md](KIYAS.md#şube-eşleme)); iki günü de bilinen şube-gün iki tarafa girer. Önceki bir haftada hiç günü olmayan şube adıyla söylenir: "… önceki 4 haftayla aynı (aynı şubelerle: Marina önceki haftalarda yoktu)" ([HAFTALIK-OZET.md](HAFTALIK-OZET.md)) |
+| Haftalık özet, kasa cirosu satırı | Kaynak Genel bakış'ın ay rakamıyla aynı kasa satırları (`tillRows`: raporu olmayan AsilPOS günü gün sonundan; önceden yalnız kasa raporları). Geçen haftanın her günü önceki dört haftanın aynı günüyle şube şube eşlenir (Kıyas kartının şube-gün eşlemesi, `comparePairs`; [KIYAS.md](KIYAS.md#şube-eşleme)); iki günü de bilinen şube-gün iki tarafa girer. Önceki bir haftada hiç günü olmayan şube adıyla söylenir: "… önceki 4 haftayla aynı (aynı şubelerle: Marina önceki haftalarda yoktu)" ([HAFTALIK-OZET.md](HAFTALIK-OZET.md)) |
 
 ## Kasa raporu "Tümü"de (20 Kasım 2026)
 
-Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sırası, ModPOS föyü, LafPOS gün sonu, kasadan
+Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sırası, ModPOS föyü, AsilPOS gün sonu, kasadan
 çıkanlar ve ay satırı şubenin kendi kasasınındır. "Tümü" bunları birleştirmez:
 
 - **Kasa raporu sayfası**: "Tümü"de yöneticinin günden güne görünümü her açık şubeyi kendi bölümünde gösterir (üstte
@@ -523,7 +523,7 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
   kasasında rapor arıyordu: dünün eksik raporu görünmüyor, girilmiş bugünkü rapor "Henüz girilmedi" kalıyordu; Kasa
   sayfası ve zil Tuzla'yı gösteriyordu (denetim 21 Kasım #26).
 - **Tek kasa okumaları** (`getCashReport`, `previousCarryOver`, `nextReportAfter`, `previousOkc`, `nextOkc`,
-  `loadMonthEntry`, LafPOS günü, kasadan çıkanlar, zayi) verilen şubeyle ya da kasanın şubesiyle okur; kayıtlı raporun
+  `loadMonthEntry`, AsilPOS günü, kasadan çıkanlar, zayi) verilen şubeyle ya da kasanın şubesiyle okur; kayıtlı raporun
   e-postası, WhatsApp metni ve bütünlük denetimi raporun kendi şubesiyle.
 - **E-posta ve WhatsApp şubeyi yazar** (21 Kasım denetimi #2): iki şubenin aynı günkü raporu aynı numarayı taşır ve
   aynı alıcılara, aynı sohbete düşer. Birden çok kasa açıkken konu, başlık ve metnin ilk satırı numaranın yanına şubenin
@@ -549,17 +549,17 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
   ve personelin bildirimi formun kasasını yazar; bildirimin onayı bildirimin şubesine (yöneticinin seçimine değil; konu
   Tuzla'da `gun:G`, ötekinde `gun:G:şube`). Şubesi boş satır işletme genelidir (Özel günler'de "Bütün şubeler", eski
   satırlar) ve her şubede kapalı sayılır; Özel günler'de kapalı günün şubesi seçilir, ikiz denetimi şube içinde, "Geri
-  al" aynı şubeye döner. Kanıt (rapor, LafPOS gün sonu, kasadan çıkan, zayi) o şubenin kayıtlarıdır: Marina'nın raporu
+  al" aynı şubeye döner. Kanıt (rapor, AsilPOS gün sonu, kasadan çıkan, zayi) o şubenin kayıtlarıdır: Marina'nın raporu
   Tuzla'nın işaretini kaldırmaz, Tuzla'nın bildirimini engellemez. Bir şubenin kanıtı işletme geneli tek günlük işareti
   yalnız o şube için kaldırır: satır o gün raporu olmayan öteki etkin fiziksel şubelere şubeli kalır, onaylı
-  bildirimleri oraya geçer (`clearClosedMark`). Bugün, zil ve LafPOS durumu her kasanın eksiğini kendi şubesinin
+  bildirimleri oraya geçer (`clearClosedMark`). Bugün, zil ve AsilPOS durumu her kasanın eksiğini kendi şubesinin
   işaretiyle susturur. Zilin ve sabah e-postasının **dünkü kontrol listeleri** de şube şube (22 Kasım 2026;
   `closedMarksOn`, `closedForBranch`): hiç açılmamış liste yalnız kendi şubesi kapalı işaretliyse eksik sayılmaz; bütün
   şubelerin listesi işletme kapalıysa (işletme geneli işaret ya da o gün açık her şubenin kendi işareti). E-postada
   kapalı şubede günün izi varsa (şubenin raporu ya da başlamış listesi) eksikler yine yazılır. Önceden ikisi de herhangi
   bir şubenin işaretine bakıyordu: Marina dün kapalıyken Tuzla'nın eksik listesi zile düşmüyor, Tuzla'nın kapalı
-  gününün listesi Marina'nın raporu yüzünden e-postada eksik yazılıyordu. LafPOS'un gün sonu kanıtı şube verilmeyen
-  okumada da yalnız LafPOS'un şubesinindir (Tuzla'nın eski deneme satırı sayılmaz). Birden çok kasa açıkken kontrol
+  gününün listesi Marina'nın raporu yüzünden e-postada eksik yazılıyordu. AsilPOS'un gün sonu kanıtı şube verilmeyen
+  okumada da yalnız AsilPOS'un şubesinindir (Tuzla'nın eski deneme satırı sayılmaz). Birden çok kasa açıkken kontrol
   listesi ve işlem geçmişi de şube şubedir (24 Kasım 2026 şube kapsamı; `branchChecklistRuns`, `branchStaffWrites`,
   `src/lib/closed-days.ts`): şubenin listesi (şablonun şubesi) ve şubenin personelinin yazımı kırmızı; bütün şubelerin
   listesi ve şubesiz personelin yazımı yalnız uyarıdır ("Şubesi belli olmayan N iz", `sharedTraces`; onayı ve personelin
@@ -578,26 +578,26 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
 
 ## Ayarlar'da kasa kartları (25 Kasım 2026)
 
-Ayarlar'daki **LafPOS (kasa)** ve **ModPOS API** kartları seçili şubeye göre (`src/lib/pos-cards.ts`; şube kapsamı C
+Ayarlar'daki **AsilPOS (kasa)** ve **ModPOS API** kartları seçili şubeye göre (`src/lib/pos-cards.ts`; şube kapsamı C
 P2-2): tek şube seçiliyken yalnız o şubenin kasası çizilir (ModPOS kartında o şubenin bölümü); kasası o sistem olmayan
-şube ya da laffogato.net seçiliyken kart tek satıra iner: "Bu şubede kullanılmıyor", açılınca "LafPOS Marina şubesinin
+şube ya da laffogato.net seçiliyken kart tek satıra iner: "Bu şubede kullanılmıyor", açılınca "AsilPOS Marina şubesinin
 kasası; ayarları Marina seçiliyken ya da Tümü'nde görünür." ve o şubeyi seçtiren düğme (`?sube=`, bölüm açık gelir).
 Satıra inen kart durumu hiç okumaz. "Tümü"de birden çok kasa açıkken iki kart da şube adıyla (özet "Marina: …", bölüm
-başlığı şubenin adı). Hangi şubenin kasasının ne olduğu kütükten: LafPOS'un şubesi (yukarıda), ModPOS'tan çekilenler
+başlığı şubenin adı). Hangi şubenin kasasının ne olduğu kütükten: AsilPOS'un şubesi (yukarıda), ModPOS'tan çekilenler
 kaynağı ModPOS olan şubeler (hiç yoksa Tuzla). Bugünkü veride Marina'nın kaynağı ModPOS'sa ModPOS kartı Marina'da da
-bölümüyle görünür (föyün yedek çekimi); kaynak LafPOS yapılınca satıra iner. Tek şubeli kurulumda kartlar bugünkü gibi.
+bölümüyle görünür (föyün yedek çekimi); kaynak AsilPOS yapılınca satıra iner. Tek şubeli kurulumda kartlar bugünkü gibi.
 
-## LafPOS'a geçiş günü şubenin kasasınındır (21 Kasım 2026)
+## AsilPOS'a geçiş günü şubenin kasasınındır (21 Kasım 2026)
 
-LafPOS 21 Kasım 2026'dan beri Marina'da kurulu (gün sonunu Marina'ya yazar); Ayarlar › LafPOS'taki geçiş günü yalnız
-**Marina'nın kasasınındır** (`branchSwitchDay`, `src/lib/lafpos/switch.ts`; canlıda 22 Kasım 2026). 25 Kasım 2026'dan
-beri LafPOS'un şubesi sabit değil, kütükten türetilir (kasa kaynağı LafPOS olan şube, yoksa Marina). Tuzla'nın kasası
+AsilPOS 21 Kasım 2026'dan beri Marina'da kurulu (gün sonunu Marina'ya yazar); Ayarlar › AsilPOS'taki geçiş günü yalnız
+**Marina'nın kasasınındır** (`branchSwitchDay`, `src/lib/asilpos/switch.ts`; canlıda 22 Kasım 2026). 25 Kasım 2026'dan
+beri AsilPOS'un şubesi sabit değil, kütükten türetilir (kasa kaynağı AsilPOS olan şube, yoksa Marina). Tuzla'nın kasası
 ModPOS'ta kalır: föyü çekilir, Kasa raporu, föy karşılaştırması, ürün listesi, ürün ikramı ve kasadaki fiyatlar Tuzla'da
 bugünkü gibidir. Marina'da ModPOS bir daha kullanılmaz (sahip, 23 Kasım 2026; ModPOS dönemi 13–21 Kasım): föyün yedek
 çekimi sürerse geçiş gününden sonraki günü saklanır ama sayılmaz. Ay ekranları Tuzla seçiliyken
 geçiş gününü yok sayar, "Tümü"de iki şubenin satırlarını şube şube ayırır. Marina'nın gün sonu Kasa raporuna
-kendiliğinden yazılır ve e-postası gider ([LAFPOS.md › Gün sonu otomasyonu](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026)). Ayrıntı:
-[LAFPOS.md › Şubeler](LAFPOS.md#şubeler-denetim-21-kasım-5).
+kendiliğinden yazılır ve e-postası gider ([ASILPOS.md › Gün sonu otomasyonu](ASILPOS.md#gün-sonu-otomasyonu-22-kasım-2026)). Ayrıntı:
+[ASILPOS.md › Şubeler](ASILPOS.md#şubeler-denetim-21-kasım-5).
 
 ## Personel hesabının şubesi (16 Kasım 2026)
 
@@ -679,11 +679,11 @@ süzülmesini ve şube görünümünde maliyeti kurdu. Şube başına ModPOS ana
   değiştirirdi, ayrı alan ister), komisyon takibinin başladığı gün (`komisyon.since`; hakediş işletmenin, bilerek ortak).
   Ekran "Şimdilik bütün şubelerde ortak" kartında adıyla yazar. Komisyonun şube başına süresi işletmenin hakedişine
   "en kısası" kuralıyla girer; hakedişi şube payına bölmek faturanın şubesi bilinince.
-- **LafPOS'un şubesi** kütükten türetildi (yukarıda, [LAFPOS.md › Şubeler](LAFPOS.md#şubeler-denetim-21-kasım-5)) ve
-  Ayarlar'daki kasa kartları seçime göre (yukarıda, "Ayarlar'da kasa kartları"). Kalanlar: **iki şube birden LafPOS'ta**
+- **AsilPOS'un şubesi** kütükten türetildi (yukarıda, [ASILPOS.md › Şubeler](ASILPOS.md#şubeler-denetim-21-kasım-5)) ve
+  Ayarlar'daki kasa kartları seçime göre (yukarıda, "Ayarlar'da kasa kartları"). Kalanlar: **iki şube birden AsilPOS'ta**
   (gün sonu otomasyonu, sabah işi ve Ayarlar kartı tek şubeye göre; ikinci şube şimdilik kaydedilmez), `stok_tahmini`
-  özelliği (`STOCK_ESTIMATE_BRANCH` Marina; tahmin LafPOS'un şubesi değilse kendiliğinden kapanır), **kasa kaynağı
-  değişince** eski şubenin kayıtlı LafPOS günleri yerinde kalır (taşınmaz, sayılmaz), LafPOS kasası da kendi `sube`
+  özelliği (`STOCK_ESTIMATE_BRANCH` Marina; tahmin AsilPOS'un şubesi değilse kendiliğinden kapanır), **kasa kaynağı
+  değişince** eski şubenin kayıtlı AsilPOS günleri yerinde kalır (taşınmaz, sayılmaz), AsilPOS kasası da kendi `sube`
   ayarıyla değiştirilmelidir.
 - **`checklist_runs.branch_id`** (ortak kontrol listesinin şube başına koşusu): davranış değişikliği; bugün şubesiz
   şablonun koşusu kapalı gün kanıtında "uyarı" sayılır.

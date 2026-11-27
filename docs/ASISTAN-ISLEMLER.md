@@ -14,7 +14,7 @@ Katman kararları 273 eylemin taramasına dayanıyor; "uygula" denen her eylem k
 Şu an çalışan 13 işlem aracı: `urun_tukendi_yap`, `urun_satisa_ac`, `parasut_urun_bagla`, `hatirlatici_ekle`,
 `hatirlatici_odendi`, `fatura_odendi`, `tedarikci_odemesi_ekle`, `hammadde_fiyati_degistir`, `urun_fiyati_degistir`, `kasadan_cikan_ekle`,
 `harcama_ekle`, `zayi_ikram_ekle`, `vardiya_hucre_yaz`. Bunlara ek olarak salt okunur `islem_rehberi` (§ 3 ve § 4) ve
-LafPOS ile operasyonun 8 okuma aracı (§ 5.2): `gun_sonu`, `gunluk_satislar`, `lafpos_durumu`, `menu_durumu`, `vardiya`,
+AsilPOS ile operasyonun 8 okuma aracı (§ 5.2): `gun_sonu`, `gunluk_satislar`, `asilpos_durumu`, `menu_durumu`, `vardiya`,
 `bugun_ozeti`, `bekleyen_isler`, `stok_tahmini`.
 
 Doğrulanan dayanaklar:
@@ -23,7 +23,7 @@ Doğrulanan dayanaklar:
   çağırmaz (§ 1.2).
 - **Hata yakalama:** `attempt()` (`src/server/actions/util.ts`) yalnız yönlendirmeyi geçiriyor; diğer bütün hataları
   `{ok:false}`'a çeviriyor.
-- **Şifre onayı:** `requireStepUp` yalnız `settings.ts`, `invites.ts`, `lafpos.ts` (ve `auth.ts`, `backup.ts`,
+- **Şifre onayı:** `requireStepUp` yalnız `settings.ts`, `invites.ts`, `asilpos.ts` (ve `auth.ts`, `backup.ts`,
   `mcp.ts`) içinde geçiyor; hiçbiri asistanın araç listesinde yok.
 
 ## Dosyalar
@@ -33,7 +33,7 @@ Doğrulanan dayanaklar:
 | Araçların adı, açıklaması, girdi şeması (zod) | `src/lib/assistant/op-specs.ts` |
 | Onay kartının biçimi, durumlar, süreler, rozetler | `src/lib/assistant/ops.ts` |
 | Rehber konuları (`islem_rehberi`): yapılandırılmış girdiler (konu, tür, neden, yol, adımlar, eylemler) | `src/lib/assistant/guides.ts` |
-| LafPOS ve operasyon okuma araçları (saf) | `src/server/ai/assistant/read-tools.ts` |
+| AsilPOS ve operasyon okuma araçları (saf) | `src/server/ai/assistant/read-tools.ts` |
 | Onların gerçek okuyucuları (yalnız okur) | `src/server/assistant-reads/index.ts` |
 | Sohbetin araçları (kart açar, yazmaz) | `src/server/ai/assistant/op-tools.ts`, bağlanışı `tools.ts` |
 | Önizleme: salt okur, kartı yazar, bayatlığı denetler | `src/server/assistant-ops/preview.ts` (+ `resolve.ts`) |
@@ -72,7 +72,7 @@ Doğrulanan dayanaklar:
 ### 1.3 Onay kartı
 - Kartın içeriğini model değil sunucu yazar, önizleme okumasından. Modelin açıklaması kartta ayrı, "Asistanın notu".
 - Kartta her zaman: **ne yapılacak** (tek cümle), **eski → yeni** (alan alan; yeni kayıtta yalnız yeni), **şube**,
-  **tarih/gün**, **kişi, tedarikçi ya da ürün**, **dış etki rozetleri** (Site / QR menü, LafPOS, ModPOS kasası,
+  **tarih/gün**, **kişi, tedarikçi ya da ürün**, **dış etki rozetleri** (Site / QR menü, AsilPOS, ModPOS kasası,
   E-posta, Kasa raporu, Gelir-gider, Nakit planı, Ürün maliyetleri, Stok / alınan miktar, Personelin vardiyası),
   **geri alma yolu**, **son geçerlilik** (10 dakika) ve sunucunun uyarıları.
 - Kullanıcı Onayla'ya basmadan hiçbir şey değişmez. Vazgeç planı `cancelled` yapar.
@@ -230,14 +230,14 @@ Kısaltmalar:
 
 Bütün araçlarda geçerli olanlar: yönetici, tek kayıt, şifre onayı yok, silme dalı yasak, `runViaAssistant` içinde ve `withBranchScope(plan.branch)` ile çalışma.
 
-### 2.1 Menü, fiyat ve LafPOS
+### 2.1 Menü, fiyat ve AsilPOS
 
 | Araç | Eylem | Girdi ve sınır | K | GA | DE |
 |---|---|---|---|---|---|
-| `urun_tukendi_yap` (**var**) | menu-status.ts:setSoldOut | {urunId} → `products.siteMenuId` sunucuda çözülür; soldOut:true. Siteye bağlı değilse rehber ("Site menüsü'nden bağlayın"). | Ürün, iki boy birlikte kapanır (M+L), şu anki durum | urun_satisa_ac (aynı eylem, soldOut:false) | Site, uygulama ve QR menüde hemen. LafPOS kasasında gün açıkken en geç 15 dk. |
-| `urun_satisa_ac` (**var**) | menu-status.ts:setSoldOut | soldOut:false | Ürün, boylar, kim kapatmıştı | urun_tukendi_yap | Site ve LafPOS (15 dk) |
-| `urun_kapali_tut` (henüz yok) | menu-status.ts:holdSoldOut | {siteMenuId} sunucuda çözülür | "Personel artık satışa açamaz" uyarısı | urun_satisa_ac | Site ve LafPOS |
-| `urun_fiyati_degistir` (**var**) | products.ts:updateProductPrice | (id, price, ackAlert=false, source 'manual'; zam önerisinden geliyorsa 'suggestion', seenPrice). **seenPrice zorunlu**: önizlemedeki fiyat. | Ürün ve boy, eski → yeni fiyat, % fark, birim maliyet ve marj eski → yeni, siteye bağlı mı. **Şube fiyatı** (26 Kasım 2026): kart tabanı değiştirir; kendi şube fiyatı olan şube ayrı satır ("Marina'da 205 ₺ → 205 ₺ (şube fiyatı, değişmez)"), kartın şubesi "Taban fiyat (Marina hariç…)", o boyu değiştiren planlı şube satırı uyarıda; açık ekranın şubesi kendi fiyatlıysa uyarı en başta (`branchSlotFacts`, src/lib/prices/branch.ts; sitenin son okumasının kopyasından, siteye gidilmez). Şubenin fiyatını yazmak rehberdir ("Bir şubenin kendi fiyatı") | Aynı eylem: eski fiyat, seenPrice=yeni (`undo.previous`) | Bağlıysa önce laffogato.net'e yazar; site yazımı başarısızsa hiçbir şey değişmez. LafPOS geçiş gününden beri fiyatı siteden alır. Bağlı değilse "Kasaya işle" listesine ve zile düşer: seçili şube LafPOS'taysa (Marina) kart LafPOS rozetini ve "LafPOS'ta yerel ürünse orada elle değiştirin" uyarısını verir. Sonuç iletisi ekranın ortak metnidir (`priceReminder`: fiyat listesinin tarihi, LafPOS / ModPOS). |
+| `urun_tukendi_yap` (**var**) | menu-status.ts:setSoldOut | {urunId} → `products.siteMenuId` sunucuda çözülür; soldOut:true. Siteye bağlı değilse rehber ("Site menüsü'nden bağlayın"). | Ürün, iki boy birlikte kapanır (M+L), şu anki durum | urun_satisa_ac (aynı eylem, soldOut:false) | Site, uygulama ve QR menüde hemen. AsilPOS kasasında gün açıkken en geç 15 dk. |
+| `urun_satisa_ac` (**var**) | menu-status.ts:setSoldOut | soldOut:false | Ürün, boylar, kim kapatmıştı | urun_tukendi_yap | Site ve AsilPOS (15 dk) |
+| `urun_kapali_tut` (henüz yok) | menu-status.ts:holdSoldOut | {siteMenuId} sunucuda çözülür | "Personel artık satışa açamaz" uyarısı | urun_satisa_ac | Site ve AsilPOS |
+| `urun_fiyati_degistir` (**var**) | products.ts:updateProductPrice | (id, price, ackAlert=false, source 'manual'; zam önerisinden geliyorsa 'suggestion', seenPrice). **seenPrice zorunlu**: önizlemedeki fiyat. | Ürün ve boy, eski → yeni fiyat, % fark, birim maliyet ve marj eski → yeni, siteye bağlı mı. **Şube fiyatı** (26 Kasım 2026): kart tabanı değiştirir; kendi şube fiyatı olan şube ayrı satır ("Marina'da 205 ₺ → 205 ₺ (şube fiyatı, değişmez)"), kartın şubesi "Taban fiyat (Marina hariç…)", o boyu değiştiren planlı şube satırı uyarıda; açık ekranın şubesi kendi fiyatlıysa uyarı en başta (`branchSlotFacts`, src/lib/prices/branch.ts; sitenin son okumasının kopyasından, siteye gidilmez). Şubenin fiyatını yazmak rehberdir ("Bir şubenin kendi fiyatı") | Aynı eylem: eski fiyat, seenPrice=yeni (`undo.previous`) | Bağlıysa önce laffogato.net'e yazar; site yazımı başarısızsa hiçbir şey değişmez. AsilPOS geçiş gününden beri fiyatı siteden alır. Bağlı değilse "Kasaya işle" listesine ve zile düşer: seçili şube AsilPOS'taysa (Marina) kart AsilPOS rozetini ve "AsilPOS'ta yerel ürünse orada elle değiştirin" uyarısını verir. Sonuç iletisi ekranın ortak metnidir (`priceReminder`: fiyat listesinin tarihi, AsilPOS / ModPOS). |
 | `zam_uyarisini_kapat` (henüz yok) | products.ts:acknowledgePriceAlert | (productId, false) | Ürün, bugünkü maliyet ve fiyat | Aynı eylem, undo=true | Yok |
 | `urun_ac` (henüz yok) | products.ts:createProduct | productSchema {name, size, categoryId, price}, copyFromId isteğe bağlı | Kategori, boy, fiyat, kopyalanacak reçete | Ürün kartında Aktif'i kapatmak (rehber). Geçmişi yoksa silme (rehber). | Yok (siteye bağlanmaz) |
 | `kasaya_islendi` (henüz yok) | pos-marks.ts:markPosDone | [1] {productId, price=önizlemedeki fiyat} | "Kasada (ModPOS) fiyatı X ₺ yaptınız mı?" Asistan bunu doğrulayamaz, beyandır. | kasaya_islendi_geri_al: undoPosMarks [1], `undo.markId` ile | Kasaya yazmaz |
@@ -247,7 +247,7 @@ Bütün araçlarda geçerli olanlar: yönetici, tek kayıt, şifre onayı yok, s
 
 | Araç | Eylem | Girdi ve sınır | K | GA | DE |
 |---|---|---|---|---|---|
-| `hammadde_fiyati_degistir` (**var**) | ingredients.ts:updateIngredientPrice | (id, packagePrice, clearEstimate açıkça verilir). id'yi eylem zod ile doğrulamıyor, uyarlayıcı doğrular. Görülen fiyat denetimi yok, onayda yeniden okunup karşılaştırılır. priceSource 'water' reddedilir. | Paket fiyatı eski → yeni, birim fiyat, Tahmini kalkacak mı, etkilenen aktif ürün sayısı | Aynı eylem, eski fiyatla (geçmişte iki satır kalır) | Ürün maliyetleri, zam uyarıları ve LafPOS maliyet ucu (`/api/panel/pos/urunler`) dolaylı etkilenir |
+| `hammadde_fiyati_degistir` (**var**) | ingredients.ts:updateIngredientPrice | (id, packagePrice, clearEstimate açıkça verilir). id'yi eylem zod ile doğrulamıyor, uyarlayıcı doğrular. Görülen fiyat denetimi yok, onayda yeniden okunup karşılaştırılır. priceSource 'water' reddedilir. | Paket fiyatı eski → yeni, birim fiyat, Tahmini kalkacak mı, etkilenen aktif ürün sayısı | Aynı eylem, eski fiyatla (geçmişte iki satır kalır) | Ürün maliyetleri, zam uyarıları ve AsilPOS maliyet ucu (`/api/panel/pos/urunler`) dolaylı etkilenir |
 | `hammadde_tahmini` (henüz yok) | ingredients.ts:setIngredientEstimate | (id, bool) | Ad, eski → yeni | Ters değer | Yok |
 | `hammadde_aktiflik` (henüz yok) | ingredients.ts:setIngredientActive | (id, bool). Reçete engelini eylem kendisi denetler; ret metni sohbete aynen aktarılır. | "Sayım listesinden düşer" | Ters değer | Sayım listesi |
 | `hammadde_ac` (henüz yok) | ingredients.ts:saveIngredient | id:null. unit, countUnit ve priceSource kullanıcıdan açıkça alınır. | Bütün alanlar | Pasif yapmak | Sayım listesine girer |
@@ -302,7 +302,7 @@ Vardiyada boşaltma silme sayılmaz, hücre değişikliğidir. Ama kullanıcı a
 
 | Araç | Eylem | Girdi ve sınır | K | GA | DE |
 |---|---|---|---|---|---|
-| `kasadan_cikan_ekle` (**var**) | cash-outs.ts:saveCashOut | id=null, **date = bugünün iş günü** (`businessDate`), **branchId açıkça**, photoId yalnız sohbete eklenen fişten (`fisFotografi`; § 1.13; yoksa null). Kind 'harcama' ise categoryId etkin kategoriden. O günün o kasası için kasa raporu zaten girilmişse rehbere düşer. | **Şube (kasa), gün, tür, tutar, yer, belge türü, kategori, "Aylık harcamalar'a da yazılır mı"** | Kasa › satır › Sil (kullanıcı yapar, 15 dk Geri al) | Akşam kasa raporunun "Gün içinde kasadan çıkan" toplamı. LafPOS'a gitmez: şubenin günü LafPOS'taysa (Marina) kart uyarır, kasadan çıkan LafPOS'ta (Kasa › Harcama / Teslim) girilir; aynı tür ve tutarda LafPOS hareketi bu satırı sahiplenir, girilmezse LafPOS'un kasa sayımı eksik çıkar. |
+| `kasadan_cikan_ekle` (**var**) | cash-outs.ts:saveCashOut | id=null, **date = bugünün iş günü** (`businessDate`), **branchId açıkça**, photoId yalnız sohbete eklenen fişten (`fisFotografi`; § 1.13; yoksa null). Kind 'harcama' ise categoryId etkin kategoriden. O günün o kasası için kasa raporu zaten girilmişse rehbere düşer. | **Şube (kasa), gün, tür, tutar, yer, belge türü, kategori, "Aylık harcamalar'a da yazılır mı"** | Kasa › satır › Sil (kullanıcı yapar, 15 dk Geri al) | Akşam kasa raporunun "Gün içinde kasadan çıkan" toplamı. AsilPOS'a gitmez: şubenin günü AsilPOS'taysa (Marina) kart uyarır, kasadan çıkan AsilPOS'ta (Kasa › Harcama / Teslim) girilir; aynı tür ve tutarda AsilPOS hareketi bu satırı sahiplenir, girilmezse AsilPOS'un kasa sayımı eksik çıkar. |
 | `harcama_ekle` (**var**) | expenses.ts:saveExpenseEntry | Yalnız yeni (id=null). Fiş fotoğrafı ve KDV yalnız sohbete eklenen fişten (`fisFotografi`; § 1.13). Tarih ≤ bugün, tutar > 0 (iade yalnız açıkça istenirse), kategori etkin. `withBranchScope`: şube ya da ALL (işletme geneli). | **Şube ("işletme geneli" de olabilir), gün, kategori, tutar, ödeme şekli, açıklama** | Aylık harcamalar › kayıt › Sil (kullanıcı yapar, Geri al'ı var) | Gelir-gider |
 | `kasa_epostasini_yeniden_gonder` (henüz yok) | cash-report.ts:resendCashReportEmail | (id) | Gün, şube, alıcı sayısı, "e-posta gidecek" | Geri alınamaz (aynı sürüm için çift gönderim anahtarla engelli) | E-posta |
 | `nakit_bakiye` (henüz yok) | cash-plan.ts:saveCashBalance | amount. null (kaldırma) kullanılmaz. | Eski → yeni | Eski değerle aynı eylem | Yok |
@@ -322,7 +322,7 @@ Vardiyada boşaltma silme sayılmaz, hücre değişikliğidir. Ama kullanıcı a
 
 | Araç | Eylem | Girdi ve sınır | K | GA | DE |
 |---|---|---|---|---|---|
-| `zayi_ikram_ekle` (**var**) | waste.ts:addWasteEntry | clientKey=opId. Şube `withBranchScope(fiziksel şube)` ile verilir. | **Şube, gün, tür (zayi ya da ikram), ürün veya hammadde, miktar ve birim, neden** | Zayi › kayıt › Sil (kullanıcı) | Zayi maliyeti, Marina tahmini stoğu. LafPOS gününde ikram reddedilebilir (refuseLafposIkram); ret metni aktarılır. |
+| `zayi_ikram_ekle` (**var**) | waste.ts:addWasteEntry | clientKey=opId. Şube `withBranchScope(fiziksel şube)` ile verilir. | **Şube, gün, tür (zayi ya da ikram), ürün veya hammadde, miktar ve birim, neden** | Zayi › kayıt › Sil (kullanıcı) | Zayi maliyeti, Marina tahmini stoğu. AsilPOS gününde ikram reddedilebilir (refuseAsilposIkram); ret metni aktarılır. |
 | `sayim_miktari` (henüz yok) | stock.ts:saveStockCounts | (month, [1] {ingredientId, qty ≥ 0, base=önizlemedeki miktar}, branchId açıkça). qty=null yasak. | Şube, ay, kalem, eski → yeni miktar ve sayım birimi | Eski miktarla aynı eylem (ilk sayım ancak silinerek geri alınır, kullanıcı yapar) | Yok |
 | `kritik_stok_esigi` (henüz yok) | stock-estimate.ts:saveStockThreshold | Boş değer yasak | Kalem, eşik eski → yeni ve birimi | Eski değerle aynı eylem | Yok |
 | `faturanin_geldigi_sube` (henüz yok) | stock-estimate.ts:setStockReceipt | branchId ≠ null | Fatura (tedarikçi, tarih), şube eski → yeni | Önceki şubeyle aynı eylem | Tahmini stok |
@@ -373,9 +373,9 @@ olduğunu ve bu iki tablodaki her eylemin bir girdide (§ 4'tekilerin `haric` gi
 | Konu (eylem) | Neden riskli | Panel yolu | Kısa yönerge |
 |---|---|---|---|
 | Alınan miktarı elle yaz (consistency:setPurchaseQty) | Satır elle yazılınca Paraşüt eşitlemesi artık üzerine yazmaz. Bu durum geri alınamaz. Görülen değer denetimi de yok. | /panel/tutarlilik | Tutarlılık › ay › kalemin "Alınan" hücresi › miktarı yazın › Kaydet. Not: "bundan sonra Paraşüt bu satırı güncellemez". |
-| ModPOS satırını ürünle eşleştir (sales:setLineMatch) | Aynı adlı bütün satırlara, POS hafızasına ve bütün ayların ürünsüz LafPOS satırlarına uygulanıyor. Geri alması kısmi. | /panel/satislar | Satışlar › ay › Satış satırları › satırın ürün seçicisi › ürünü seçin. |
-| LafPOS adını ürüne bağla (sales:matchLafposName) | Bütün aylardaki ürünsüz LafPOS satırlarını bağlıyor. Bağlanan satırlar geri dönmüyor. | /panel/satislar ya da /panel/ayarlar#lafpos | Satışlar › LafPOS ay toplamı › eşleşmeyen ad › ürünü ya da HİZMET'i seçin. Ret metni çıkarsa Site menüsü'nden düzeltin. |
-| Ürünü siteye bağla (site-menu:linkProductToSite) / siteden ürün aç (createProductsFromSite) | Panel fiyatının üzerine sitenin fiyatı yazılır ve kaldırınca geri gelmez. Ürünsüz LafPOS satırları bağlanır. | /panel/urunler/[id] › Site menüsü kartı; /panel/urunler/site | Ürün kartı › Site menüsü › Bağla › kalemi ve boyu seçin › fiyat farkını kontrol edin. |
+| ModPOS satırını ürünle eşleştir (sales:setLineMatch) | Aynı adlı bütün satırlara, POS hafızasına ve bütün ayların ürünsüz AsilPOS satırlarına uygulanıyor. Geri alması kısmi. | /panel/satislar | Satışlar › ay › Satış satırları › satırın ürün seçicisi › ürünü seçin. |
+| AsilPOS adını ürüne bağla (sales:matchAsilposName) | Bütün aylardaki ürünsüz AsilPOS satırlarını bağlıyor. Bağlanan satırlar geri dönmüyor. | /panel/satislar ya da /panel/ayarlar#asilpos | Satışlar › AsilPOS ay toplamı › eşleşmeyen ad › ürünü ya da HİZMET'i seçin. Ret metni çıkarsa Site menüsü'nden düzeltin. |
+| Ürünü siteye bağla (site-menu:linkProductToSite) / siteden ürün aç (createProductsFromSite) | Panel fiyatının üzerine sitenin fiyatı yazılır ve kaldırınca geri gelmez. Ürünsüz AsilPOS satırları bağlanır. | /panel/urunler/[id] › Site menüsü kartı; /panel/urunler/site | Ürün kartı › Site menüsü › Bağla › kalemi ve boyu seçin › fiyat farkını kontrol edin. |
 | Personel reçete önerisini onayla (reviewRecipeChange), yeni ürün önerisini onayla (approveNewProduct), zayi isteğine karar (reviewWasteRequest) | Başkasının isteğine verilen karar. Karşı eylemi yok, onay ekranında görsel karşılaştırma gerekiyor. Zayi silme isteğinin onayı silme demek. | /panel/onaylar | Onaylar › istek kartı › farkı ya da maliyeti kontrol edin › Onayla/Reddet (not yazın). Asistan kartı açıklayabilir. |
 | Kontrol maddesini kaldır (setChecklistItemActive false) | Arayüzde "Kaldır" adıyla görünüyor; kullanıcı silme olarak algılar. | /panel/kontrol/duzenle/[id] | Madde › Kaldır. Geri eklemek için asistandan isteyin. |
 | Kapalı tek seferlik hatırlatıcıyı yeniden aç (setReminderActive true) | Ödendi ve KDV ödendi kayıtlarını kalıcı siler. | /panel/hatirlaticilar | Hatırlatıcılar › kapalılar › satır › Aç. |
@@ -402,19 +402,19 @@ olduğunu ve bu iki tablodaki her eylemin bir girdide (§ 4'tekilerin `haric` gi
 | Fatura ekle/düzenle (saveInvoice) | Borç, KDV, cari dağıtım, aynı numara denetimi, Paraşüt kilitli alanları. | /panel/faturalar | Fatura ekle / satır › Düzenle. |
 | Personel ve maaş listesi (saveStaff) | Bütün listeyi yazar, silme içerir, 'all' geçmişi değiştirir. | /panel/personel | Maaşlar › kişi › net maaş › "şu aydan itibaren" › Kaydet. |
 | Kategoriler (saveExpenseCategory, saveCategories), sabit gideri aylığa çevir (convertFixedToMonthly) | Muhasebe yapısı, bütün aylar. Hücre siler, geri alınamaz. | /panel/harcamalar › Kategoriler; /panel/ayarlar#kategoriler | Kategoriler › Ekle/Düzenle. |
-| Ayın cirosu, açık gün, ay bilgileri, elle satış satırı, ModPOS satış içe aktarma (setMonthField, saveMonthInfo, saveLine, importSales, parseSalesFile, applyLineMatches, applyLafposMatches) | Ciroyu ve kârı doğrudan değiştirir. Şube çerezden gelir, toplu ya da silmeli işler. | /panel/satislar | Satışlar › ay ve şube seç › ay bilgileri / Satır ekle / İçe aktar. |
+| Ayın cirosu, açık gün, ay bilgileri, elle satış satırı, ModPOS satış içe aktarma (setMonthField, saveMonthInfo, saveLine, importSales, parseSalesFile, applyLineMatches, applyAsilposMatches) | Ciroyu ve kârı doğrudan değiştirir. Şube çerezden gelir, toplu ya da silmeli işler. | /panel/satislar | Satışlar › ay ve şube seç › ay bilgileri / Satır ekle / İçe aktar. |
 | Vergi sınıflandırma, düzeltme, demirbaş, var olan muhasebeci kaydının üzerine yazma (saveTaxClassifications, saveTaxAdjustment, saveTaxAsset, saveTaxFiling) | Muhasebe yargısı ve toplu kayıt. Üzerine yazınca önceki değer dönmez. | /panel/vergi/gelir-gider, /panel/vergi/demirbas, /panel/vergi | Türü muhasebecinin söylediği gibi seçin › Kaydet. |
 | Kasa raporu gönder ya da düzelt (submitCashReport), ÖKC temizle, kasa ve fotoğraf onayları (reviewCashRequest, reviewCashOutRequest, reviewPhotoRemoval), fiş ekle (attachCashOutReceipt) | Sayım ve fotoğraf gerekir, e-posta gider, devir zinciri bozulabilir, kanıt kaldırılır. | /panel/kasa; /panel/onaylar › Kasa | Kasa › formu doldurun › fotoğraf › Gönder. Onaylar › kartta farkı ve fotoğrafı kontrol edin. |
 | KDV ödendi kaydını kaldır (forgetVatPayment) | Ödeme kaydını siler, geri alınamaz. | /panel/hatirlaticilar/nakit › KDV kartı | Dönem › "Ödendi kaydını kaldır". |
 | Paraşüt eşitle, kalemleri oku, kategori kuralı, toplu ürün bağlama, bağlantı sil (runParasutSync, readParasutLines, saveCategoryRule, saveProductLinks, deleteProductLink) | Ağır ve geniş etkili, önizlenemez, fiyatları kendiliğinden değiştirebilir. | /panel/parasut | Paraşüt › Şimdi eşitle / Kategori kuralları / Ürün → hammadde bağlantıları. |
-| Site menüsünü eşitle, toplu bağla, bağlantıyı kaldır, bağlantıları sına (syncSiteMenuNow, linkSuggestedProducts, unlinkProductFromSite, testSiteLinks) | Çok ürünü birden değiştirir. Bağlantıyı koparmak Tükendi'yi ve LafPOS eşleşmesini koparır. | /panel/urunler/site; /panel/ayarlar#site | Site menüsü › Siteyle eşitle / Öneriler / Bağlı ürünler. |
+| Site menüsünü eşitle, toplu bağla, bağlantıyı kaldır, bağlantıları sına (syncSiteMenuNow, linkSuggestedProducts, unlinkProductFromSite, testSiteLinks) | Çok ürünü birden değiştirir. Bağlantıyı koparmak Tükendi'yi ve AsilPOS eşleşmesini koparır. | /panel/urunler/site; /panel/ayarlar#site | Site menüsü › Siteyle eşitle / Öneriler / Bağlı ürünler. |
 | Online sipariş aşaması, masa çağrısı (advanceSiteOrder, ackTableCall) | Müşteriye dönük ve geri alınamaz. Yanlış siparişe dokunma riski var. | /panel/siparisler | Sipariş kartı › aşama düğmesi; Masa çağrıları › Gördüm. |
 | Karaoke rezervasyonu ve köşk bloğu (addDeskKaraoke, removeDeskKaraoke), karaoke silme isteği kararı | Halka açık site takvimine yazar, misafirin kişisel verisi, misafire e-posta gider, zaman aşımında çift kayıt riski. | /panel/karaoke; /panel/onaylar › Karaoke | Karaoke › Elle ekle › bilgileri girin. |
 | Stok "Listede olmayanlar" (saveStockExtras), karaoke geçmişini al | Bütün listeyi yazar ve silme içerir; toplu içe aktarma. | /panel/sayim; /panel/karaoke/doluluk | Sayım › Listede olmayanlar › Kaydet. |
 | Sabah e-postasını şimdi gönder (runDigestNow) | Birden çok alıcıya, geri alınamaz. | /panel/hatirlaticilar › E-posta bildirimleri | Şimdi gönder. |
 | Bu cihazın bildirim konuları (setPushTopics) | Cihaza özgü, endpoint tarayıcıda. | /panel/hatirlaticilarim › cihaz bildirim kartı | Anahtarları açın ya da kapatın. |
-| Genel ayarlar, FIFO başlangıcı, LafPOS geçiş günü, ModPOS günü çek, ModPOS yedeği (saveSettings, saveStockValuationStart, saveLafposSwitchDay, fetchModposDay, saveModposFallback) | Geçmiş aylar dahil bütün hesapları değiştirir. Kasa kaynağı. Geri alınamaz API kotası. | /panel/ayarlar#oranlar, #stok, #lafpos, #modpos | "Ayarlar › Oranlar › alan › Kaydet". Sahip ileride tek tek alanları (ör. mealCardDaily) uygula'ya alabilir. |
-| LafPOS gününü sil (deleteLafposDay) | Silme ve şifre onayı. | /panel/ayarlar#lafpos › Durum ve onarım | 409 z_conflict'te: "Bu günün LafPOS kaydını sil" › parola › LafPOS'ta Kasa › Geçmiş günler › Z raporu › Gönder (`LAFPOS_RESEND_HINT`). |
+| Genel ayarlar, FIFO başlangıcı, AsilPOS geçiş günü, ModPOS günü çek, ModPOS yedeği (saveSettings, saveStockValuationStart, saveAsilposSwitchDay, fetchModposDay, saveModposFallback) | Geçmiş aylar dahil bütün hesapları değiştirir. Kasa kaynağı. Geri alınamaz API kotası. | /panel/ayarlar#oranlar, #stok, #asilpos, #modpos | "Ayarlar › Oranlar › alan › Kaydet". Sahip ileride tek tek alanları (ör. mealCardDaily) uygula'ya alabilir. |
+| AsilPOS gününü sil (deleteAsilposDay) | Silme ve şifre onayı. | /panel/ayarlar#asilpos › Durum ve onarım | 409 z_conflict'te: "Bu günün AsilPOS kaydını sil" › parola › AsilPOS'ta Kasa › Geçmiş günler › Z raporu › Gönder (`ASILPOS_RESEND_HINT`). |
 | Şube aç/düzenle/sil (createBranch, updateBranch, deleteBranch) | Yapısal ayar, kalıcı kimlik, POS oranı ve kasa kaynağı. | /panel/subeler | Yeni şube ya da satır › Düzenle. |
 | Kullanıcı yönetimi (saveUser, setUserActive, createUser, deleteUser, unlockUser, signOutUserEverywhere) | Yetki ve erişim. Kimi şifre onayı ister, kimi sır döndürür. | /panel/kullanicilar | Kişi › Düzenle / Aktif anahtarı / Kilidi aç (önce İşlem geçmişine bakın). |
 | Kendi hesabı (changePasswordAction, updateProfile, signOutOtherSessions, beginTotpSetup, disableTotp, regenerateRecoveryCodes) | Şifre onayı ister ve sır döndürür. Asistan parola istemez. | /panel/hesap | Hesabım › Parola / Hesap bilgileri / Oturumlar / İki adımlı doğrulama. |
@@ -445,7 +445,7 @@ verir (türü `haric`).
 
 ---
 
-## 5) LafPOS ve diğer salt okuma araçları
+## 5) AsilPOS ve diğer salt okuma araçları
 
 Okuma araçları onay kartı istemez ve sohbet rotasında doğrudan çalışır: yazmazlar, `refresh()` çağırmazlar. Kurallar:
 - Yalnız yönetici. Şube parametresi alırlar; verilmezse seçili kapsam kullanılır.
@@ -453,7 +453,7 @@ Okuma araçları onay kartı istemez ve sohbet rotasında doğrudan çalışır:
 - Serbest metin gönderilmez; adlar `cleanName` ile en çok 80 karakter.
 - Ağır okuyucular (loadModel, loadToday'in yönetici dalı, loadStockEstimate) bir turda bir kez çağrılır.
 - İş günü 05:00'te döner (`businessDate`). Gün sonu araçlarında varsayılan gün dündür.
-- `tests/claude-guvenlik.test.ts`'teki ad izin listesinin bir benzeri asistan araçları için kurulur: yalnız okuyucu adları. `src/server/lafpos/gun-sonu.ts` ve `ingest.ts` asistan araçlarına **import edilmez**: bu modüller yazıcıdır.
+- `tests/claude-guvenlik.test.ts`'teki ad izin listesinin bir benzeri asistan araçları için kurulur: yalnız okuyucu adları. `src/server/asilpos/gun-sonu.ts` ve `ingest.ts` asistan araçlarına **import edilmez**: bu modüller yazıcıdır.
 
 ### 5.1 Mevcut MCP araçları (var)
 `src/server/mcp/tools.ts` + `src/lib/mcp/schemas.ts` + `src/lib/mcp/answers/*`:
@@ -467,32 +467,32 @@ Okuma araçları onay kartı istemez ve sohbet rotasında doğrudan çalışır:
 
 Panelde bu araçlar çerez yüzünden **seçili şubeye göre** okur; MCP'de "Tümü" okunuyordu. Bu fark araç açıklamasına yazılmalı.
 
-### 5.2 Yeni LafPOS ve operasyon okuma araçları
+### 5.2 Yeni AsilPOS ve operasyon okuma araçları
 
 İlk sekizi **var** (`src/server/ai/assistant/read-tools.ts`, okuyucular `src/server/assistant-reads/index.ts`);
 `kasadan_cikanlar`, `zayi_ikram`, `komisyon_kanallari` ve `gunluk_ciro_kiyas` **henüz yok**. Uygulananlarda:
-- Yeni yönetici okuyucu modülü `src/server/data/lafpos-day-end.ts`: salt okunur `loadLafposDayEnd(date, branchId)` (Z, ödeme türleri, Pavo, gönderim sırası,
-  `lafpos_day_ends`'in rapor ve eksikleri) ve kıyas için `loadLafposZTotals` eklendi; `daily-sales.ts`'e şube koşullu
+- Yeni yönetici okuyucu modülü `src/server/data/asilpos-day-end.ts`: salt okunur `loadAsilposDayEnd(date, branchId)` (Z, ödeme türleri, Pavo, gönderim sırası,
+  `asilpos_day_ends`'in rapor ve eksikleri) ve kıyas için `loadAsilposZTotals` eklendi; `daily-sales.ts`'e şube koşullu
   `dailyBranchSalesFrom` (gross ve isAddon ile). Var olan okuyucuların imzası değişmedi.
 - Gün sonu ModPOS gününde föy okumaz: "ModPOS günü, kasa_raporlari'na bak" der (Z, fark ve ödemeler orada).
 - İkram ve iptal gerekçesi, vardiya notu, hatırlatıcı notu ve karaoke misafirinin adı okuyucuda atılır; araca gelmez.
-- Okuyucu modülü yalnız izin listesindeki okuyucuları içe aktarır (test); LafPOS yazıcıları yok. Veritabanı testi
+- Okuyucu modülü yalnız izin listesindeki okuyucuları içe aktarır (test); AsilPOS yazıcıları yok. Veritabanı testi
   bütün araçları çalıştırıp hiçbir tablonun satır sayısının değişmediğini denetler.
 
 | Araç | Ne verir | Yeniden kullanılacaklar | Not |
 |---|---|---|---|
-| gun_sonu (var) | Bir gün (en çok 14) için: LafPOS Z, ödeme türleri, kasa zinciri, ikram/ödenmez/zayi, iptaller, Pavo–LafPOS kart karşılaştırması, rapor ile LafPOS farkı, otomatik raporun eksikleri, dün ve geçen haftaya kıyas. ModPOS gününde föy ve kasa raporu. | `src/server/data/lafpos-day.ts` (loadKasaLafpos, loadLafposDayDetail, loadLafposBankPos), `src/lib/lafpos/bank-pos.ts` (pavoView, pavoDiff), `src/server/data/cash-reports.ts` (getCashReport(date,"admin",branch), previousCarryOver), `src/lib/lafpos/diffs.ts`, `src/server/data/lafpos-ikram.ts` (loadDayLafposIkram), `src/server/data/waste.ts` (dayWaste), `src/lib/lafpos/gun-sonu.ts` (dayEndSections, compareDays), `src/server/data/modpos-day.ts` | Ödeme türleri ve lafpos_day_ends satırı için dışa açık okuyucu yok: `loadStoredDay` (`src/server/lafpos/gun-sonu.ts:74`) dışa açık değil. `lafpos-day.ts`'e salt okunur `loadLafposDayEnd(date, branchId)` eklenmeli. "Tümü"de kasa kasa okunur. LafPOS'un şubesi kütükten (`lafposBranchId`; bugün Marina); geçiş gününden önceki deneme günleri gösterilmez. Gerekçe metinleri ve kişi adları gönderilmez. |
-| gunluk_satislar (var) | LafPOS gün gün ürün satışı: en çok satanlar, tek ürünün gün gün adedi, gün ve hafta günü toplamları, eşleşmeyen adlar, satırlar ile Z karşılaştırması | `src/server/data/daily-sales.ts` dailyProductSalesFrom, `src/lib/lafpos/sales.ts` lafposSalesCountFrom, isLafposDay/branchSwitchDay, `src/lib/waste.ts` productLabel, `lafpos-sales.ts` linesVsZ mantığı | **dailyProductSalesFrom şubeye göre süzmüyor ve deneme günlerini ayırmıyor** (doğrulandı: yalnız tarih koşulu var). Şube parametresi, gross/isAddon ve isLafposDay süzgeci eklenmeli. Bugün dahil edilmez. Aylık soru için urun_karliligi'ye yönlendirir. |
-| lafpos_durumu (var) | Bağlantı sağlığı: rozet, geçiş günü, son gün sonu, retler (400/409), imzasız istekler, gelmeyen günler, eşleşmeyen adlar, isteğe bağlı ay bandı. Onarım rehberi. | `src/server/lafpos/status.ts` loadLafposCard, loadLafposSwitchDay; `src/lib/lafpos/status.ts` lafposCardSummary, rejectionText, LAFPOS_RESEND_HINT; loadModel().lafposSales.months | status.ts'te yazıcı da var (handlePosDay, noteUnverified): izin listesine yalnız iki okuyucu adı girer. Anahtar, imza ve gövde dönmez. 409 onarımı şifre onaylı olduğu için rehberdir. |
-| menu_durumu (var) | Tükendi olanlar (kim, ne zaman), kopuk site bağlantıları, kasaya işlenmeyi bekleyen fiyatlar, günün kasası (LafPOS ya da ModPOS) | `src/server/data/menu-status.ts` soldOutFacts, loadSoldOut; till-scope loadTillScope; `src/server/data/prices.ts` posPendingSummary; `src/lib/lafpos/switch.ts` kasaName | Siteye ağ isteği atılmaz, yerel kopya okunur. Tükendi ve fiyat araçlarının önizlemesi de bunu kullanır. |
+| gun_sonu (var) | Bir gün (en çok 14) için: AsilPOS Z, ödeme türleri, kasa zinciri, ikram/ödenmez/zayi, iptaller, Pavo–AsilPOS kart karşılaştırması, rapor ile AsilPOS farkı, otomatik raporun eksikleri, dün ve geçen haftaya kıyas. ModPOS gününde föy ve kasa raporu. | `src/server/data/asilpos-day.ts` (loadKasaAsilpos, loadAsilposDayDetail, loadAsilposBankPos), `src/lib/asilpos/bank-pos.ts` (pavoView, pavoDiff), `src/server/data/cash-reports.ts` (getCashReport(date,"admin",branch), previousCarryOver), `src/lib/asilpos/diffs.ts`, `src/server/data/asilpos-ikram.ts` (loadDayAsilposIkram), `src/server/data/waste.ts` (dayWaste), `src/lib/asilpos/gun-sonu.ts` (dayEndSections, compareDays), `src/server/data/modpos-day.ts` | Ödeme türleri ve asilpos_day_ends satırı için dışa açık okuyucu yok: `loadStoredDay` (`src/server/asilpos/gun-sonu.ts:74`) dışa açık değil. `asilpos-day.ts`'e salt okunur `loadAsilposDayEnd(date, branchId)` eklenmeli. "Tümü"de kasa kasa okunur. AsilPOS'un şubesi kütükten (`asilposBranchId`; bugün Marina); geçiş gününden önceki deneme günleri gösterilmez. Gerekçe metinleri ve kişi adları gönderilmez. |
+| gunluk_satislar (var) | AsilPOS gün gün ürün satışı: en çok satanlar, tek ürünün gün gün adedi, gün ve hafta günü toplamları, eşleşmeyen adlar, satırlar ile Z karşılaştırması | `src/server/data/daily-sales.ts` dailyProductSalesFrom, `src/lib/asilpos/sales.ts` asilposSalesCountFrom, isAsilposDay/branchSwitchDay, `src/lib/waste.ts` productLabel, `asilpos-sales.ts` linesVsZ mantığı | **dailyProductSalesFrom şubeye göre süzmüyor ve deneme günlerini ayırmıyor** (doğrulandı: yalnız tarih koşulu var). Şube parametresi, gross/isAddon ve isAsilposDay süzgeci eklenmeli. Bugün dahil edilmez. Aylık soru için urun_karliligi'ye yönlendirir. |
+| asilpos_durumu (var) | Bağlantı sağlığı: rozet, geçiş günü, son gün sonu, retler (400/409), imzasız istekler, gelmeyen günler, eşleşmeyen adlar, isteğe bağlı ay bandı. Onarım rehberi. | `src/server/asilpos/status.ts` loadAsilposCard, loadAsilposSwitchDay; `src/lib/asilpos/status.ts` asilposCardSummary, rejectionText, ASILPOS_RESEND_HINT; loadModel().asilposSales.months | status.ts'te yazıcı da var (handlePosDay, noteUnverified): izin listesine yalnız iki okuyucu adı girer. Anahtar, imza ve gövde dönmez. 409 onarımı şifre onaylı olduğu için rehberdir. |
+| menu_durumu (var) | Tükendi olanlar (kim, ne zaman), kopuk site bağlantıları, kasaya işlenmeyi bekleyen fiyatlar, günün kasası (AsilPOS ya da ModPOS) | `src/server/data/menu-status.ts` soldOutFacts, loadSoldOut; till-scope loadTillScope; `src/server/data/prices.ts` posPendingSummary; `src/lib/asilpos/switch.ts` kasaName | Siteye ağ isteği atılmaz, yerel kopya okunur. Tükendi ve fiyat araçlarının önizlemesi de bunu kullanır. |
 | vardiya (var) | Bugün ya da bir gün kim çalışıyor; bir haftanın planı kişi kişi, saatler, son değişiklik | `src/server/vardiya/store.ts` todayShifts, shiftsOn, loadShiftWeek, loadShiftEntries; `src/lib/vardiya.ts` | vardiya_hucre_yaz önizlemesinin okuyucusu. Not alanı serbest metin. |
 | bugun_ozeti (var) | Bugün ekranının birebir özeti: sıradaki iş, Şimdi, Sonra, Tamamlanan, Bugün kafede | `src/server/data/today.ts` loadToday; `src/app/panel/bugun/logic.ts` dayTasks, splitTasks, daySummary, cafeLines; `src/server/data/branch-day.ts` loadBranchDay; loadStockAlert | `loadBranchDay` ve `loadKiyas` içeride `requireAdmin()` çağırır. Satırların href'i rehber bağlantısı olur. |
 | bekleyen_isler (var) | Zil satırları, kişinin hatırlatıcıları, Onaylar'da bekleyenler, geç raporlar | `src/server/actions/notifications.ts` loadPanelNotifications (refresh yok, rotada güvenli), `src/server/data/user-reminders.ts`, `src/server/staff-requests/core.ts` countPendingByKind, `src/server/data/cash-late.ts` lateCards, `src/server/data/checklists.ts` loadChecklistDay | Hatırlatıcı notu gönderilmez. |
 | stok_tahmini (var) | Marina'nın kritik kalemleri, kalemin tahmini, gelmeyen günler, atlanan satırlar | `src/server/data/stock-estimate.ts` loadStockEstimate, loadStockAlert; `src/lib/stock-estimate.ts` | Tutar, tedarikçi ve fatura döndürmez. "Yaklaşık" der. Tuzla seçiliyse "yalnız Marina" der. |
-| kasadan_cikanlar (henüz yok) | Gün ya da en çok 31 gün: tür, tutar, kategori, belge, fotoğraf var mı, LafPOS'tan mı (kilitli), kategorisi bekleyen LafPOS harcaması, faturası gelmeyenler | `src/server/data/cash-outs.ts` cashOutsBetween, cashOutsOn; `src/server/data/cash-out-invoices.ts` loadCashOutInvoiceState | description ve kişi adı gönderilmez. LafPOS satırının tutarı, türü ve günü kilitlidir; asistan düzeltme önermez. |
-| zayi_ikram (henüz yok) | Panel zayisi ve ikramı + LafPOS ikram/ödenmez/zayi satırları, iptaller, Z ile karşılaştırma | `waste.ts` dayWaste, wasteEntriesBetween; `lafpos-ikram.ts` loadLafposIkram; `src/lib/lafpos/ikram.ts` lafposIkramCheck | Neden metinleri gönderilmez. |
+| kasadan_cikanlar (henüz yok) | Gün ya da en çok 31 gün: tür, tutar, kategori, belge, fotoğraf var mı, AsilPOS'tan mı (kilitli), kategorisi bekleyen AsilPOS harcaması, faturası gelmeyenler | `src/server/data/cash-outs.ts` cashOutsBetween, cashOutsOn; `src/server/data/cash-out-invoices.ts` loadCashOutInvoiceState | description ve kişi adı gönderilmez. AsilPOS satırının tutarı, türü ve günü kilitlidir; asistan düzeltme önermez. |
+| zayi_ikram (henüz yok) | Panel zayisi ve ikramı + AsilPOS ikram/ödenmez/zayi satırları, iptaller, Z ile karşılaştırma | `waste.ts` dayWaste, wasteEntriesBetween; `asilpos-ikram.ts` loadAsilposIkram; `src/lib/asilpos/ikram.ts` asilposIkramCheck | Neden metinleri gönderilmez. |
 | komisyon_kanallari (henüz yok) | Kanal kanal satış, gerçek oran, beklenen hakediş ve vadesi, gecikenler | `src/server/data/commission.ts` loadCommissionReports, loadOverduePayouts, loadCommissionAlerts | hakedis_ay_kaydi önizlemesinin okuyucusu. |
-| gunluk_ciro_kiyas (henüz yok) | Gün gün Z ve kaynağı (rapor, LafPOS ya da ModPOS), kıyas, şubeler yan yana | `cash-reports.ts` tillRows, lafposTillRows; `src/server/data/kiyas.ts` loadKiyas; loadBranchDay | Raporsuz LafPOS günü "LafPOS Z'si, rapor yok" diye görünür. |
+| gunluk_ciro_kiyas (henüz yok) | Gün gün Z ve kaynağı (rapor, AsilPOS ya da ModPOS), kıyas, şubeler yan yana | `cash-reports.ts` tillRows, asilposTillRows; `src/server/data/kiyas.ts` loadKiyas; loadBranchDay | Raporsuz AsilPOS günü "AsilPOS Z'si, rapor yok" diye görünür. |
 
 ### 5.3 Okuma olarak kullanılacak mevcut eylemler (refresh çağırmıyor, doğrulandı)
 
@@ -524,7 +524,7 @@ Panelde bu araçlar çerez yüzünden **seçili şubeye göre** okur; MCP'de "T�
 4. **Hammadde fiyatı.** `updateIngredientPrice(id, fiyat, tahminiKalksin)`; su/buz reddedilir; %40'tan büyük değişimde
    uyarı; etkilenen aktif ürünler kartta. Geri al eski fiyatı yazar, "Tahmini" işaretini de geri koyar.
 5. **Ürün fiyatı.** `updateProductPrice(id, fiyat, false, "manual", seenPrice)`; kartta % fark, birim maliyet, marj eski →
-   yeni (ayarların KDV, komisyon ve kartlı oranıyla), siteye bağlı mı. Bağlıysa rozetler Site + LafPOS + ModPOS
+   yeni (ayarların KDV, komisyon ve kartlı oranıyla), siteye bağlı mı. Bağlıysa rozetler Site + AsilPOS + ModPOS
    ("ModPOS kullanan kasada Kasaya işle"), değilse ModPOS. Geri al `seenPrice` = yazılan fiyatla.
 6. **Kasadan çıkan.** Gün her zaman bugünün iş günü (`businessDate`, 05:00'te döner); o kasanın raporu girilmişse kart
    açılmaz (rehber: `/panel/kasa?gun=…`). Onayda iş günü değiştiyse ya da rapor bu arada girildiyse bayat sayılır.
@@ -567,7 +567,7 @@ Panelde bu araçlar çerez yüzünden **seçili şubeye göre** okur; MCP'de "T�
 
 | Eylem | Tarayıcının kararı | Bu belgedeki | Neden |
 |---|---|---|---|
-| setPurchaseQty, setLineMatch, matchLafposName, linkProductToSite, createProductsFromSite | uygula | rehber | Tam geri alınamıyor; çok satıra ve aya yayılıyor. |
+| setPurchaseQty, setLineMatch, matchAsilposName, linkProductToSite, createProductsFromSite | uygula | rehber | Tam geri alınamıyor; çok satıra ve aya yayılıyor. |
 | reviewRecipeChange, approveNewProduct, reviewWasteRequest | uygula | rehber | Başkasının isteğine verilen kararın karşı eylemi yok. Diğer onay kararlarıyla (kasa) tutarlı olsun diye. |
 | setChecklistItemActive(false) | uygula | rehber | Arayüzde adı "Kaldır"; kullanıcı silme olarak algılar. |
 | proposeNewProduct, addProposalIngredient | uygula | hariç | Yönetici için yinelenen yol. |
