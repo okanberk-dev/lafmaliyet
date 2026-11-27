@@ -660,6 +660,12 @@ export const DB_QUOTA_ABOUT: SystemAlertAbout = {
   help: "Ne yapmalı: Neon konsolunda (console.neon.tech) projenin planını yükseltin ya da geliştiriciden eski kayıtların temizlenmesini isteyin. Plan yükseltilince Vercel'de DB_QUOTA_MB'yi yeni kotaya göre güncelleyin. Paneldeki durum: Ayarlar › Veritabanı.",
   link: { href: `${APP_URL}/panel/ayarlar#veritabani`, label: "Veritabanı kullanımını aç" },
 };
+/** Panelde kritik hata (src/server/errors/alert.ts; docs/HATA-KAYDI.md): günde en çok bir e-posta */
+export const ERROR_LOG_ABOUT: SystemAlertAbout = {
+  label: "Hata kaydı",
+  help: "Ne yapmalı: Ayarlar › Hata kaydı'nda hatanın yerine, sayısına ve son görülüşüne bakın. Sürüyorsa geliştiriciye satırdaki hata kodunu ve yeri iletin; düzelince satırı Çözüldü işaretleyin. Bu e-posta günde en çok bir kez gelir.",
+  link: { href: `${APP_URL}/panel/ayarlar#hatalar`, label: "Hata kaydını aç" },
+};
 
 /**
  * Bekçi e-postası (Paraşüt işi, 07:00–08:00): dünkü sabah işi çalışmadıysa ya da hata verdiyse kısa uyarı. Sabah
