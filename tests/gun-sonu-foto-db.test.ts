@@ -118,7 +118,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     const body: Record<string, unknown> = { ...kabul(), bankPos: BANK, okc: OKC };
     const parsed = parsePosDay(JSON.stringify(body), NOW);
     assert.ok(parsed.ok, "gövde geçerli");
-    return ingest.storePosDay(db, parsed.data, NOW);
+    return ingest.storePosDay(db, parsed.data, NOW, "marina");
   };
   const newPhoto = async (by = ayse) => {
     const [p] = await db
@@ -191,7 +191,9 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     await db.execute(sql`TRUNCATE asilpos_day_ends, pos_daily_sales, pos_day_reports, pos_day_revisions, activity_log, staff_requests, cash_report_photos, cash_reports, cash_outs, ai_calls, photos, notification_log, integration_state RESTART IDENTITY CASCADE`);
     await db.delete(s.settings).where(eq(s.settings.key, "asilposGecisGunu"));
     await db.insert(s.settings).values({ key: "asilposGecisGunu", value: DAY });
-    await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: true, whatsapp: null, staffRecipients: ["kasa@ornek.com"], staffAmounts: true });
+    await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: true, whatsapp: null });
+    // Çalışan listesi kasanın şubesiyle (çok şube)
+    await reports.saveCashSettings({ staffRecipients: ["kasa@ornek.com"], staffAmounts: true }, "marina");
     sent.length = 0;
     delete process.env.ANTHROPIC_API_KEY;
   });
@@ -199,7 +201,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
   test("Önce ucuz model (Haiku); tutarsız okunuş bir kez güçlü modele (Opus); iki çağrı modeli ve tutarıyla kayıtlı; aynı fotoğraf yeniden okunmaz", async () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-test-sahte";
     assert.ok((await push()).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "written");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "written");
     const id = await newPhoto();
     const models: string[] = [];
     const client = fakeClient({ "claude-haiku-5-5": detailed({ card: 4_000 }), "claude-opus-5-5": detailed() }, models);
@@ -234,7 +236,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
   test("Ucuz okunuş kendi içinde tutarlı ama AsilPOS'tan farklıysa yöneticiye 'fark' gitmeden bir kez güçlü model okur", async () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-test-sahte";
     assert.ok((await push()).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     const id = await newPhoto();
     const models: string[] = [];
     // Haiku: nakit + kart = toplam (tutarlı), kart AsilPOS'tan farklı; Opus AsilPOS'u tutan okunuş
@@ -253,8 +255,8 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     const body: Record<string, unknown> = { ...kabul(), okc: OKC };
     delete body.bankPos;
     const parsed = parsePosDay(JSON.stringify(body), NOW);
-    assert.ok(parsed.ok && (await ingest.storePosDay(db, parsed.data, NOW)).ok, "Pavo'suz gün yazıldı");
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "written");
+    assert.ok(parsed.ok && (await ingest.storePosDay(db, parsed.data, NOW, "marina")).ok, "Pavo'suz gün yazıldı");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "written");
     const id = await newPhoto();
     const models: string[] = [];
     // Haiku batch'in netini 4.000 okudu (o an karşılaştırılacak Banka POS yok: ikinci okuma yok); Opus 4.160
@@ -268,7 +270,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     // AsilPOS günü Pavo'nun sonucuyla yeniden gönderir: kayıtlı ucuz okunuş artık farklı, e-postadan önce güçlü model bakar
     assert.ok((await push()).ok);
     const read = async () => ({ bytes: slipPng(["X"]), contentType: "image/png" });
-    const r = await gun.runAsilposDayEnd(db, DAY, NOW, undefined, { client, read });
+    const r = await gun.runAsilposDayEnd(db, DAY, "marina", NOW, undefined, { client, read });
     assert.deepEqual(models, ["claude-haiku-5-5", "claude-opus-5-5"], "bir kez güçlü model");
     assert.equal((await state())?.photoCheck?.state, "uyumlu", "yanlış 'fark' zile ve e-postaya gitmedi");
     assert.equal(r.email, "sent");
@@ -280,13 +282,13 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     assert.equal(r.photo, "sent");
     assert.ok(sent.some((m) => /Z raporu tutuyor$/.test(plain(m.subject))), "Z raporu tutuyor e-postası");
     // Güçlü model bir kez: günlük iş yeniden okumaz
-    await gun.runAsilposDayEnd(db, DAY, NOW, undefined, { client, read });
+    await gun.runAsilposDayEnd(db, DAY, "marina", NOW, undefined, { client, read });
     assert.equal(models.length, 2);
   });
 
   test("Güçlü okuma bu fotoğrafta denendiyse ya da yapay zekâ kapalıysa sonradan gelen fark yeniden okunmaz (kayıtlı karşılaştırma gider)", async () => {
     assert.ok((await push()).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     const id = await newPhoto();
     await db.insert(s.aiCalls).values({ feature: "kasa-okc", model: "claude-haiku-5-5", status: "ok", photoId: id, userId: ayse.id, result: detailed({ card: 4_000, cash: 1_215 }) });
     await foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: id }, NOW);
@@ -294,18 +296,18 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     const client = fakeClient({ "claude-opus-5-5": detailed() }, models);
     const read = async () => ({ bytes: slipPng(["X"]), contentType: "image/png" });
     // Anahtar yok: hiçbir şey okunmaz
-    assert.equal(await okuma.strongRecheckDayPhotos(db, DAY, { client, read }), 0);
+    assert.equal(await okuma.strongRecheckDayPhotos(db, DAY, "marina", { client, read }), 0);
     // Güçlü model daha önce denendi (düştü): yeniden denenmez
     process.env.ANTHROPIC_API_KEY = "sk-ant-test-sahte";
     await db.insert(s.aiCalls).values({ feature: "kasa-okc", model: "claude-opus-5-5", status: "error", photoId: id, userId: ayse.id, error: "zaman aşımı" });
-    assert.equal(await okuma.strongRecheckDayPhotos(db, DAY, { client, read }), 0);
+    assert.equal(await okuma.strongRecheckDayPhotos(db, DAY, "marina", { client, read }), 0);
     assert.deepEqual(models, []);
     assert.equal((await state())?.photoCheck?.state, "fark");
   });
 
   test("'Uyumlu' ama sessiz: ucuz okuma detaylı Z'yi yalnız banka fişi okuduysa (Z izi) günün işi bir kez güçlü modelle okur; AsilPOS'un kör kâğıdı okunmaz", async () => {
     assert.ok((await push()).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     // Eski (bu düzeltmeden önceki) ucuz okunuşlar: biri detaylı Z'yi banka fişi sanmış (Z no okunmuş), biri AsilPOS'un kör kâğıdı
     const quiet = await newPhoto();
     await db.insert(s.aiCalls).values({ feature: "kasa-okc", model: "claude-haiku-5-5", status: "ok", photoId: quiet, userId: ayse.id, result: { ...detailed(), documentType: "batch_slip" } });
@@ -326,20 +328,20 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     const models: string[] = [];
     const client = fakeClient({ "claude-opus-5-5": detailed() }, models);
     const read = async () => ({ bytes: slipPng(["X"]), contentType: "image/png" });
-    await gun.runAsilposDayEnd(db, DAY, NOW, undefined, { client, read });
+    await gun.runAsilposDayEnd(db, DAY, "marina", NOW, undefined, { client, read });
     assert.deepEqual(models, ["claude-opus-5-5"], "yalnız Z izi olan fotoğraf, bir kez");
     assert.deepEqual((await calls(kor)).map((c) => c.model), ["claude-haiku-5-5"], "kör kâğıt için Opus yok");
     const after = (await state())!.photoCheck!;
     assert.equal(after.state, "uyumlu", JSON.stringify(after.rows));
     assert.ok(after.rows.some((r) => r.label === "Yazarkasa toplamı" && r.ok), JSON.stringify(after.rows));
-    await gun.runAsilposDayEnd(db, DAY, NOW, undefined, { client, read });
+    await gun.runAsilposDayEnd(db, DAY, "marina", NOW, undefined, { client, read });
     assert.equal(models.length, 1, "yeniden okunmaz");
   });
 
   test("Ucuz okuma tam ve AsilPOS'u tutuyorsa tek çağrı (Haiku)", async () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-test-sahte";
     assert.ok((await push()).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     const id = await newPhoto();
     const models: string[] = [];
     await okuma.readAsilposDayPhoto(db, { photoId: id, bytes: slipPng(["X"]), contentType: "image/png", day: DAY, userId: ayse.id, branchId: ASILPOS_SUBE }, { client: fakeClient({ "claude-haiku-5-5": detailed() }, models) });
@@ -352,7 +354,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
 
   test("Anahtar yokken kodla okunur (OCR, ağsız): ai_calls'ta 'kod-ocr' satırı, ücretsiz; karşılaştırmanın kaynağı 'Kodla okundu'", { timeout: 90_000 }, async () => {
     assert.ok((await push()).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     const id = await newPhoto();
     const r = await okuma.readAsilposDayPhoto(db, { photoId: id, bytes: slipPng(SLIP, { size: 36, width: 980 }), contentType: "image/png", day: DAY, userId: ayse.id, branchId: ASILPOS_SUBE });
     assert.deepEqual([r?.source, r?.model], ["kod", "kod-ocr"]);
@@ -373,7 +375,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
 
   test("Fark yöneticiye satır satır e-postayla (gün sonu e-postasından sonra eklenen fotoğraf), içerik başına bir kez; çalışanların e-postasında fotoğraf yok", async () => {
     assert.ok((await push()).ok);
-    const first = await gun.runAsilposDayEnd(db, DAY, NOW);
+    const first = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
     assert.equal(first.email, "sent");
     assert.equal(first.photo, "skipped", "fotoğraf yok");
     const staffMails = sent.filter((m) => m.to.includes("kasa@ornek.com"));
@@ -384,7 +386,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     await db.insert(s.aiCalls).values({ feature: "kasa-okc", model: "claude-opus-5-5", status: "ok", photoId: id, userId: ayse.id, result: detailed({ card: 4_000, cash: 1_215 }) });
     await foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: id }, NOW);
     assert.equal((await state())?.photoCheck?.state, "fark");
-    assert.equal(await gun.sendPhotoEmail(db, DAY, NOW), "sent");
+    assert.equal(await gun.sendPhotoEmail(db, DAY, "marina", NOW), "sent");
     assert.equal(sent.length, 1);
     const mail = sent[0];
     assert.deepEqual(mail.to, ["sahip@ornek.com"], "yalnız yöneticinin alıcıları");
@@ -394,8 +396,8 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     assert.match(t, /Yazarkasa nakdi: fotoğrafta 1\.215 ₺ · AsilPOS'ta 1\.055 ₺ · FARK/);
     assert.match(t, /Okuyan: Yapay zekâ \(Claude Opus 5\.5\)/);
     // Aynı karşılaştırma ikinci kez gitmez; günlük iş de göndermez
-    assert.equal(await gun.sendPhotoEmail(db, DAY, NOW), "same");
-    const again = await gun.runAsilposDayEnd(db, DAY, NOW);
+    assert.equal(await gun.sendPhotoEmail(db, DAY, "marina", NOW), "same");
+    const again = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
     assert.equal(again.photo, "same");
     assert.equal(sent.length, 1);
     // Çalışanlara giden hiçbir e-postada fotoğraf ya da fark yok
@@ -404,11 +406,11 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
 
   test("Gün sonu e-postası fotoğraftan sonra giderse fark onun içinde satır satır; Z raporu e-postası da ayrıca gider (bir kez)", async () => {
     assert.ok((await push()).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     const id = await newPhoto();
     await db.insert(s.aiCalls).values({ feature: "kasa-okc", model: "claude-haiku-5-5", status: "ok", photoId: id, userId: ayse.id, result: detailed({ card: 4_000, cash: 1_215 }) });
     await foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: id }, NOW);
-    const r = await gun.runAsilposDayEnd(db, DAY, NOW);
+    const r = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
     assert.deepEqual([r.email, r.photo], ["sent", "sent"]);
     const admin = sent.filter((m) => m.to.includes("sahip@ornek.com"));
     assert.equal(admin.length, 2, "gün sonu e-postası ve Z raporu");
@@ -416,7 +418,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     assert.match(plain(admin[0].text), /Yazarkasa kartı: fotoğrafta 4\.000 ₺ · AsilPOS'ta 4\.160 ₺ · FARK/);
     assert.match(plain(admin[1].subject), /Z raporu AsilPOS'tan FARKLI$/);
     // Günlük iş aynı Z raporunu yeniden göndermez
-    assert.equal((await gun.runAsilposDayEnd(db, DAY, NOW)).photo, "same");
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW)).photo, "same");
     for (const m of sent.filter((x) => x.to.includes("kasa@ornek.com"))) assert.doesNotMatch(m.text, /fotoğraf|AsilPOS'ta/i);
   });
   test("Uyumlu fotoğraf da yöneticiye e-postayla gider (sahibin isteği, 25 Kasım 2026): okunan rakamlar, ekleyen ve fotoğrafın kendisi ek olarak; bir kez", async () => {
@@ -425,7 +427,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     photos.__setPhotoDriverForTests({ name: "memory", put: async (k, b) => void store.set(k, b), get: async (k) => store.get(k) ?? null, del: async (ks) => ks.forEach((k) => store.delete(k)) });
     try {
       assert.ok((await push()).ok);
-      const first = await gun.runAsilposDayEnd(db, DAY, NOW);
+      const first = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
       assert.equal(first.email, "sent");
       sent.length = 0;
       const id = await newPhoto();
@@ -434,7 +436,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
       await db.insert(s.aiCalls).values({ feature: "kasa-okc", model: "claude-haiku-5-5", status: "ok", photoId: id, userId: ayse.id, result: detailed() });
       await foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: id }, NOW);
       assert.equal((await state())?.photoCheck?.state, "uyumlu");
-      assert.equal(await gun.sendPhotoEmail(db, DAY, NOW), "sent");
+      assert.equal(await gun.sendPhotoEmail(db, DAY, "marina", NOW), "sent");
       assert.equal(sent.length, 1);
       const mail = sent[0];
       assert.deepEqual(mail.to, ["sahip@ornek.com"], "yalnız yöneticinin alıcıları");
@@ -448,7 +450,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
         [[`gun-sonu-${DAY}.png`, "image/png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]).toString("base64")]],
       );
       // Aynı karşılaştırma ikinci kez gitmez
-      assert.equal(await gun.sendPhotoEmail(db, DAY, NOW), "same");
+      assert.equal(await gun.sendPhotoEmail(db, DAY, "marina", NOW), "same");
       assert.equal(sent.length, 1);
       for (const m of sent.filter((x) => x.to.includes("kasa@ornek.com"))) assert.equal(m.attachments, undefined, "çalışanlara fotoğraf gitmez");
     } finally {
@@ -459,7 +461,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
   test("Yüklenirken okunamayan fotoğraf sonradan bir kez okunur (readUnreadDayPhotos): karşılaştırma ve e-posta rakamı görür", async () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-test-sahte";
     assert.ok((await push()).ok);
-    assert.equal((await gun.runAsilposDayEnd(db, DAY, NOW)).email, "sent");
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW)).email, "sent");
     sent.length = 0;
     const id = await newPhoto();
     // Yüklemedeki okuma zaman aşımına düştü: başarılı okunuş yok
@@ -469,14 +471,14 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     const models: string[] = [];
     const client = fakeClient({ "claude-haiku-5-5": detailed() }, models);
     const read = async () => ({ bytes: slipPng(["X"]), contentType: "image/png" });
-    assert.equal(await okuma.readUnreadDayPhotos(db, DAY, { client, read }), 1);
+    assert.equal(await okuma.readUnreadDayPhotos(db, DAY, "marina", { client, read }), 1);
     assert.deepEqual(models, ["claude-haiku-5-5"], "ucuz model okudu");
     await foto.refreshDayPhotoCheck(db, DAY, ASILPOS_SUBE, NOW);
     assert.equal((await state())?.photoCheck?.state, "uyumlu");
     // Okunmuş fotoğraf yeniden okunmaz
-    assert.equal(await okuma.readUnreadDayPhotos(db, DAY, { client, read }), 0);
+    assert.equal(await okuma.readUnreadDayPhotos(db, DAY, "marina", { client, read }), 0);
     assert.equal(models.length, 1);
-    assert.equal(await gun.sendPhotoEmail(db, DAY, NOW), "sent");
+    assert.equal(await gun.sendPhotoEmail(db, DAY, "marina", NOW), "sent");
     assert.match(plain(sent[0].text), /Fotoğrafta okunan/);
   });
   test("Fatura okumaları fotoğrafların günlük sınırını yemez (kendi havuzu): 40 fatura okunsa da Z fotoğrafı yapay zekâyla okunur", async () => {
@@ -487,7 +489,7 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     assert.equal((await ai.invoiceAiStatus()).state, "cap", "faturanın havuzu doldu");
     assert.deepEqual([(await ai.aiStatus()).state, (await ai.aiStatus()).usedToday], ["on", 0], "fotoğrafların sınırı boş");
     assert.ok((await push()).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     const id = await newPhoto();
     const models: string[] = [];
     const r = await okuma.readAsilposDayPhoto(db, { photoId: id, bytes: slipPng(["X"]), contentType: "image/png", day: DAY, userId: ayse.id, branchId: ASILPOS_SUBE }, { client: fakeClient({ "claude-haiku-5-5": detailed() }, models) });
@@ -498,35 +500,35 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     const body: Record<string, unknown> & { z: Record<string, unknown> } = { ...kabul(), bankPos: BANK, okc: OKC };
     body.z = { ...body.z, okcZNo: null };
     const parsed = parsePosDay(JSON.stringify(body), NOW);
-    assert.ok(parsed.ok && (await ingest.storePosDay(db, parsed.data, NOW)).ok, "Z no'suz gün yazıldı");
-    assert.equal((await gun.runAsilposDayEnd(db, DAY, NOW)).email, "sent");
+    assert.ok(parsed.ok && (await ingest.storePosDay(db, parsed.data, NOW, "marina")).ok, "Z no'suz gün yazıldı");
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW)).email, "sent");
     sent.length = 0;
     const id = await newPhoto();
     await db.insert(s.aiCalls).values({ feature: "kasa-okc", model: "claude-haiku-5-5", status: "ok", photoId: id, userId: ayse.id, result: detailed() });
     await foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: id }, NOW);
-    assert.equal(await gun.sendPhotoEmail(db, DAY, NOW), "sent");
+    assert.equal(await gun.sendPhotoEmail(db, DAY, "marina", NOW), "sent");
     // Günlük iş karşılaştırmayı yeniden kurar (satır artık "gönderilmedi; raporda …"): aynı özet, ikinci e-posta yok
-    assert.equal((await gun.runAsilposDayEnd(db, DAY, NOW)).photo, "same");
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW)).photo, "same");
     assert.equal(sent.filter((m) => /Z raporu/.test(m.subject)).length, 1);
   });
 
   test("İnceleme: yükseltmeden önce eski özetle gitmiş Z raporu yeniden gitmez; yalnız kodla okunan fotoğraf yapay zekâ açıkken yeniden okunur", async () => {
     const lib = await import("../src/lib/asilpos/gun-sonu");
     assert.ok((await push()).ok);
-    assert.equal((await gun.runAsilposDayEnd(db, DAY, NOW)).email, "sent");
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW)).email, "sent");
     const id = await newPhoto();
     await db.insert(s.aiCalls).values({ feature: "kasa-okc", model: "claude-haiku-5-5", status: "ok", photoId: id, userId: ayse.id, result: detailed({ card: 4_000, cash: 1_215 }) });
     await foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: id }, NOW);
     const check = (await state())!.photoCheck!;
     assert.equal(check.state, "fark");
     await db.insert(s.notificationLog).values({ key: `${BILDIRIM_ONEKI.foto}${ASILPOS_SUBE}:${DAY}:${lib.photoCheckHashLegacy(check)}`, channel: "email", ok: true });
-    assert.equal(await gun.sendPhotoEmail(db, DAY, NOW), "same", "eski özetle gitmişti");
+    assert.equal(await gun.sendPhotoEmail(db, DAY, "marina", NOW), "same", "eski özetle gitmişti");
 
     // Yüklemede yapay zekâ düştü, kod okudu: yapay zekâ açıkken bir kez daha (yapay zekâyla) okunur
     await db.execute(sql`TRUNCATE asilpos_day_ends, pos_daily_sales, pos_day_reports, pos_day_revisions, cash_report_photos, cash_reports, ai_calls, photos, notification_log RESTART IDENTITY CASCADE`);
     process.env.ANTHROPIC_API_KEY = "sk-ant-test-sahte";
     assert.ok((await push()).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     const p2 = await newPhoto();
     await db.insert(s.aiCalls).values([
       { feature: "kasa-okc", model: "claude-haiku-5-5", status: "error", errorCode: "timeout", error: "zaman aşımı", photoId: p2, userId: ayse.id },
@@ -535,13 +537,13 @@ describe("Gün sonu fotoğrafı: ekonomik okuma ve fotoğraf e-postası (veritab
     await foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: p2 }, NOW);
     const models: string[] = [];
     const read = async () => ({ bytes: slipPng(["X"]), contentType: "image/png" });
-    assert.equal(await okuma.readUnreadDayPhotos(db, DAY, { client: fakeClient({ "claude-haiku-5-5": detailed() }, models), read }), 1);
+    assert.equal(await okuma.readUnreadDayPhotos(db, DAY, "marina", { client: fakeClient({ "claude-haiku-5-5": detailed() }, models), read }), 1);
     assert.deepEqual(models, ["claude-haiku-5-5"]);
     // Son an yetmiyorsa yapay zekâ adımı atlanır (kayıtlı kod okunuşu kalır)
     const p3 = await newPhoto();
     await db.insert(s.aiCalls).values({ feature: "kasa-okc", model: "kod-ocr", servedModel: "kod-ocr", status: "ok", photoId: p3, userId: ayse.id, costUsd: 0, result: detailed() });
     await foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: p3 }, NOW);
-    assert.equal(await okuma.readUnreadDayPhotos(db, DAY, { client: fakeClient({ "claude-haiku-5-5": detailed() }, models), read, deadlineAt: Date.now() + 1_000 }), 0);
+    assert.equal(await okuma.readUnreadDayPhotos(db, DAY, "marina", { client: fakeClient({ "claude-haiku-5-5": detailed() }, models), read, deadlineAt: Date.now() + 1_000 }), 0);
     assert.equal(models.length, 1, "süre yetmedi: yeni çağrı yok");
   });
 });

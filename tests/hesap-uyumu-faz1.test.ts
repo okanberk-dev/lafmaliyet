@@ -88,13 +88,13 @@ function marinaNovember(o: { till?: TillRow[]; month?: (till: ReturnType<typeof 
   const base: Dataset = { ...datasetFromSeed(seed), currentMonth: "2026-12" };
   const sept = base.salesLines.filter((l) => l.month === "2026-09");
   const merged = mergeSalesSources({
-    switchDay: S,
+    switchDays: { marina: S },
     salesLines: [...base.salesLines, mline(9001, "MODPOS LATTE", 20_000, sept[0].productId), mline(9002, "MODPOS TÜRK KAHVESİ", 9_415, sept[1].productId)],
     coverage: { "2026-11": "2026-11-21" },
     asilposLines: [lafLine("LATTE M", 570, sept[0].productId), lafLine("SYRUP", 92.5, null), lafLine("TÜRK KAHVESİ", 5_622.5, sept[1].productId)],
     asilposDays: [{ month: "2026-11", days: 1, last: S }],
   });
-  const [till] = tillMonths(o.till ?? marinaTill(), o.through ?? "2026-11-22", undefined, undefined, undefined, undefined, undefined, true, S);
+  const [till] = tillMonths(o.till ?? marinaTill(), o.through ?? "2026-11-22", undefined, undefined, undefined, undefined, undefined, true, { froms: { marina: S }, tills: ["marina"] });
   const nov = o.month ? o.month(till) : resolveMonth("2026-11", undefined, till);
   const ds: Dataset = {
     ...base,
@@ -124,7 +124,7 @@ test("−90 ₺: kasa ayının AsilPOS günündeki indirim (90) listeden bir dah
   assert.equal(till.posRevenue, 33633.75);
   assert.equal(till.asilposDiscounts, 90, "AsilPOS satırlarında zaten düşülmüş indirim");
   assert.equal(nov.discounts, 2156.25, "ayın indirimi yine bütün günlerin toplamı");
-  assert.equal(listDiscountOf(nov, S), 2066.25);
+  assert.equal(listDiscountOf(nov, { marina: S }), 2066.25);
   assert.equal(model.listDiscounts("2026-11"), 2066.25);
 });
 
@@ -133,14 +133,14 @@ test("−90 ₺: elle yazılmış ay indirimi geçiş ayında AsilPOS günlerini
   const typed = marinaNovember({ month: (till) => ({ ...resolveMonth("2026-11", { month: "2026-11", openDays: null, posRevenue: null, discounts: 2156.25, offRevenue: null, cardShare: null, note: null }, till) }) });
   assert.equal(typed.nov.sources?.discounts, "manual");
   assert.equal(consistency(typed.model, "2026-11").sales.diff, 0);
-  assert.equal(listDiscountOf(typed.nov, S), 2066.25);
+  assert.equal(listDiscountOf(typed.nov, { marina: S }), 2066.25);
   // Aralık bütünüyle AsilPOS: elle yazılan 1.500 indirim de satırlarda; liste − 0 − POS
   const dec: Month = { month: "2026-12", openDays: 31, posRevenue: 50_000, discounts: 1500, offRevenue: 0, cardShare: null, note: null };
-  assert.equal(listDiscountOf(dec, S), 0);
+  assert.equal(listDiscountOf(dec, { marina: S }), 0);
   assert.equal(listDiscountOf(dec, null), 1500, "geçiş günü yok (ModPOS şubesi): indirim listeden düşülür");
   // "Tümü": şube şube; Tuzla'nın (ModPOS) indirimi düşülür, Marina'nınki satırlarda
   const all: Month = { ...dec, discounts: 1800, byBranch: { marina: dec, tuzla: { ...dec, discounts: 300, posRevenue: 10_000 } } };
-  assert.equal(listDiscountOf(all, S), 300);
+  assert.equal(listDiscountOf(all, { marina: S }), 300);
 });
 
 test("−90 ₺: AsilPOS ayında indirim ≥ 1.000 iken 'Satış listesi ile POS cirosu tutmuyor' uyarısı çıkmaz", () => {
@@ -156,10 +156,10 @@ test("−90 ₺: AsilPOS ayında indirim ≥ 1.000 iken 'Satış listesi ile POS
     payments: 5000,
     branchId: "marina",
   }));
-  const [decTill] = tillMonths(rows, "2026-12-10", undefined, undefined, undefined, undefined, undefined, true, S);
+  const [decTill] = tillMonths(rows, "2026-12-10", undefined, undefined, undefined, undefined, undefined, true, { froms: { marina: S }, tills: ["marina"] });
   const sept = ds.salesLines.filter((l) => l.month === "2026-09");
   const decLines = mergeSalesSources({
-    switchDay: S,
+    switchDays: { marina: S },
     salesLines: [],
     coverage: {},
     asilposLines: [lafLine("LATTE M", 30_000, sept[0].productId, "2026-12"), lafLine("TÜRK KAHVESİ", 20_000, sept[1].productId, "2026-12")],
@@ -173,7 +173,7 @@ test("−90 ₺: AsilPOS ayında indirim ≥ 1.000 iken 'Satış listesi ile POS
 test("−90 ₺: süren ayda listenin dönemi (listPeriod) de yalnız ModPOS günlerinin indirimini taşır", () => {
   // Kasım sürüyor (bugün 30 Kasım): satırlar 22 Kasım'a kadar, kasa raporları 30 Kasım'a kadar aranıyor
   const { ds } = marinaNovember({ through: "2026-11-30" });
-  const [upto] = tillMonths(marinaTill(), S, undefined, undefined, undefined, undefined, undefined, true, S);
+  const [upto] = tillMonths(marinaTill(), S, undefined, undefined, undefined, undefined, undefined, true, { froms: { marina: S }, tills: ["marina"] });
   const model = createModel({ ...ds, salesCoverage: [{ month: "2026-11", through: S, till: upto }] });
   const lp = model.listPeriod("2026-11");
   assert.ok(lp, "liste kasa raporlarından kısa");
@@ -280,8 +280,8 @@ test("POS komisyonu: yemek kartı komisyona girmez, şube oranı ayardan (Ayarla
 test("POS komisyonu: 'Tümü' şubelerin toplamı (her şube kendi kartı ve oranıyla), iki sayfada aynı", () => {
   const { ds } = marinaNovember();
   const tuzlaRows: TillRow[] = [{ date: "2026-11-20", zTotal: 15_000, card: 10_000, mealCard: 2_000, discounts: 0, offRevenue: 0, payments: 15_000, branchId: "tuzla" }];
-  const [marinaT] = tillMonths(marinaTill(), S, undefined, undefined, undefined, undefined, undefined, true, S);
-  const [tuzlaT] = tillMonths(tuzlaRows, S, undefined, undefined, undefined, undefined, undefined, null, S);
+  const [marinaT] = tillMonths(marinaTill(), S, undefined, undefined, undefined, undefined, undefined, true, { froms: { marina: S }, tills: ["marina"] });
+  const [tuzlaT] = tillMonths(tuzlaRows, S, undefined, undefined, undefined, undefined, undefined, null, { froms: { marina: S }, tills: ["marina"] });
   const marina = resolveMonth("2026-11", undefined, marinaT);
   const tuzla = resolveMonth("2026-11", { month: "2026-11", openDays: null, posRevenue: null, discounts: null, offRevenue: null, cardShare: null, note: null }, tuzlaT);
   // Tuzla'nın ayı ay ortasında başladığı için kasadan uygulanmaz: o şube eski kuralla (ciro yok → 0)
@@ -496,10 +496,10 @@ test("şube görünümü: satış şubenin, oran işletmenin (faturalar ortak); 
 
 test("şube görünümü: ModPOS'ta kalan şube (Tuzla) seçiliyken de geçiş ayından itibaren Z tek karta yığılmaz", () => {
   // Loader'ın Tuzla kapsamı: yalnız Tuzla'nın kasa raporları, AsilPOS okunmaz; geçiş günü Marina'nın (commissionScopeDays)
-  assert.deepEqual(commissionScopeDays("2026-11-01", "tuzla"), { asilpos: null, modpos: "2026-11-01" });
-  assert.deepEqual(commissionScopeDays("2026-11-01", "marina"), { asilpos: "2026-11-01", modpos: null });
-  assert.deepEqual(commissionScopeDays("2026-11-01", "hepsi"), { asilpos: "2026-11-01", modpos: null });
-  assert.deepEqual(commissionScopeDays(null, "tuzla"), { asilpos: null, modpos: null });
+  assert.deepEqual(commissionScopeDays({ marina: "2026-11-01" }, "tuzla"), { asilpos: null, modpos: "2026-11-01" });
+  assert.deepEqual(commissionScopeDays({ marina: "2026-11-01" }, "marina"), { asilpos: "2026-11-01", modpos: null });
+  assert.deepEqual(commissionScopeDays({ marina: "2026-11-01" }, "hepsi"), { asilpos: "2026-11-01", modpos: null });
+  assert.deepEqual(commissionScopeDays({}, "tuzla"), { asilpos: null, modpos: null });
   const tuzlaTill = [...tillDays("2026-10-01", "2026-10-31", { mealCard: 100, online: 0, branchId: "tuzla" }), ...tillDays("2026-11-01", "2026-11-30", { mealCard: 200, online: 0, branchId: "tuzla" })];
   const tuzlaInput = (o: Partial<CommissionInput> = {}) => commissionInput({ till: tuzlaTill, asilpos: null, modposScope: { switchDay: "2026-11-01" }, ...o });
   const all = buildCommissionReport(commissionInput());
@@ -602,7 +602,7 @@ test("Komisyon ekranı: markası belirsiz satırı ve şube görünümünün not
   const data = read("src/server/data/commission.ts");
   assert.match(data, /return withBranchScope\(ALL_BRANCHES, async \(\) => buildCommissionReport\(await loadCommissionInput\(\{ resolveNames: false, today \}\)\)\);/);
   assert.match(data, /\.where\(andWhere\(gte\(s\.cashReports\.date, fromDay\), branchWhere\(s\.cashReports\.branchId, scope\)\)\)/);
-  assert.match(data, /const \{ asilpos: switchDay, modpos: modposFrom \} = commissionScopeDays\(switchRow, scope, asilposBranch\);/);
+  assert.match(data, /const \{ asilpos: switchDay, modpos: modposFrom \} = commissionScopeDays\(switchRow, scope\);/);
   // Şube seçiliyken şubenin açılışı ve ModPOS'ta kalan şubenin föy kuralı loader'dan
   assert.match(data, /\.\.\.\(branchOnly \? \{ openedOn: tillOpenedOn\(branchRow\[0\] \?\? null\) \} : \{\}\),/);
   assert.match(data, /\.\.\.\(modposFrom \? \{ modposScope: \{ switchDay: modposFrom \} \} : \{\}\),/);

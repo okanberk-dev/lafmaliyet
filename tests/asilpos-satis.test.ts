@@ -28,7 +28,8 @@ import {
   type AsilposMonthLine,
   type OtherBranchList,
 } from "../src/lib/asilpos/sales";
-import { branchSwitchDay, ASILPOS_BRANCH_ID, asilposCountFrom, asilposSalesFrom, modposListCounts, monthSource } from "../src/lib/asilpos/switch";
+import { asilposCountFrom, asilposSalesFrom, modposListCounts, monthSource } from "../src/lib/asilpos/switch";
+import { LEGACY_POS_BRANCH_ID as ASILPOS_BRANCH_ID, switchDayFor } from "../src/lib/pos/tills";
 import { addDays, dayAblativeTR, monthEnd, shiftMonth } from "../src/lib/reminders";
 import { readCoverage } from "../src/lib/sales-coverage";
 import { datasetFromSeed, type SeedData } from "./fixtures/baslangic";
@@ -65,10 +66,10 @@ test("geçiş günü: ayın AsilPOS'u hangi günden sayılır, ModPOS listesi sa
   assert.equal(modposThroughOf("2026-11", { "2026-11": "2026-11-09" }), "2026-11-09");
   assert.equal(modposThroughOf("2026-11", {}), "2026-11-30");
   const lines = [line({ id: 1, month: "2026-11", posName: "LATTE" })];
-  assert.equal(asilposSalesCountFrom(S, lines, {}), "2026-12-01", "kayıtsız liste ayın tamamı");
-  assert.equal(asilposSalesCountFrom(S, lines, { "2026-11": "2026-11-09" }), S);
-  assert.equal(asilposSalesCountFrom(S, [], {}), S, "liste yok");
-  assert.equal(asilposSalesCountFrom(null, lines, {}), null);
+  assert.equal(asilposSalesCountFrom(S, lines, {}, "marina"), "2026-12-01", "kayıtsız liste ayın tamamı");
+  assert.equal(asilposSalesCountFrom(S, lines, { "2026-11": "2026-11-09" }, "marina"), S);
+  assert.equal(asilposSalesCountFrom(S, [], {}, "marina"), S, "liste yok");
+  assert.equal(asilposSalesCountFrom(null, lines, {}, "marina"), null);
 });
 
 test("AsilPOS'un sayıldığı ilk gün Marina'nın kendi kapsam kaydından: Tuzla'nın aynı aya 27 Kasım'a kadar yüklediği liste ve Aralık'ta yüklediği ayın tamamı kaydırmaz", () => {
@@ -76,8 +77,8 @@ test("AsilPOS'un sayıldığı ilk gün Marina'nın kendi kapsam kaydından: Tuz
   const lines = [line({ id: 1, month: "2026-11", posName: "LATTE" }), line({ id: 2, month: "2026-11", posName: "TUZLA LATTE", branchId: "tuzla" })];
   // Ortak kayıt (sales.coverage) ayın tek, şubesiz kaydıdır: son yükleyenin günü. Onu okuyan sınır Tuzla'nın yüklemesiyle
   // kayardı: 27 Kasım'a kadar liste Marina'nın 22–27 Kasım AsilPOS günlerini, Aralık'taki ayın tamamı bütün Kasım'ı düşürürdü
-  assert.equal(asilposSalesCountFrom(G, lines, { "2026-11": "2026-11-27" }), "2026-11-28");
-  assert.equal(asilposSalesCountFrom(G, lines, {}), "2026-12-01");
+  assert.equal(asilposSalesCountFrom(G, lines, { "2026-11": "2026-11-27" }, "marina"), "2026-11-28");
+  assert.equal(asilposSalesCountFrom(G, lines, {}, "marina"), "2026-12-01");
   const marina = (shared: unknown, perBranch: unknown) => readCoverage(shared, perBranch, ASILPOS_BRANCH_ID);
   const cases: [string, Record<string, string>][] = [
     ["Marina 21 Kasım'a kadar yükledi", marina({ "2026-11": "2026-11-21" }, { marina: { "2026-11": "2026-11-21" } })],
@@ -86,7 +87,7 @@ test("AsilPOS'un sayıldığı ilk gün Marina'nın kendi kapsam kaydından: Tuz
     ["şube kaydından önce yüklenen liste: ortak kayıt", marina({ "2026-11": "2026-11-21" }, {})],
   ];
   for (const [name, coverage] of cases) {
-    assert.equal(asilposSalesCountFrom(G, lines, coverage), G, name);
+    assert.equal(asilposSalesCountFrom(G, lines, coverage, "marina"), G, name);
     // Satışlar'ın bandı: ModPOS 1–21 Kasım, AsilPOS 22 Kasım'dan; çakışma yok, 22–27 Kasım sayılır
     const st = asilposMonthStatus({
       month: "2026-11",
@@ -98,7 +99,7 @@ test("AsilPOS'un sayıldığı ilk gün Marina'nın kendi kapsam kaydından: Tuz
     assert.deepEqual([st?.from, st?.modpos?.through, st?.overlap], [G, "2026-11-21", null], name);
   }
   // Marina'nın kendi kaydı ayın tamamıysa (null) ortak kayıt yok sayılır: liste ayın tamamı, AsilPOS Aralık'tan
-  assert.equal(asilposSalesCountFrom(G, lines, marina({ "2026-11": "2026-11-21" }, { marina: { "2026-11": null } })), "2026-12-01");
+  assert.equal(asilposSalesCountFrom(G, lines, marina({ "2026-11": "2026-11-21" }, { marina: { "2026-11": null } }), "marina"), "2026-12-01");
 });
 
 test("her gün tek kaynak: rastgele geçiş günü ve liste kapsamında hiçbir gün iki kaynaktan sayılmaz; tam listede her gün bir kaynakta", () => {
@@ -121,7 +122,7 @@ test("her gün tek kaynak: rastgele geçiş günü ve liste kapsamında hiçbir 
     if (kind === 2) coverage[sm] = addDays(first, rnd(Math.max(1, Number(S.slice(8)) - 1)));
     if (kind === 3) coverage[sm] = addDays(S, rnd(dim - Number(S.slice(8)) + 1));
     const lines = hasList ? [line({ id: 1, month: sm, posName: "X" })] : [];
-    const countFrom = asilposSalesCountFrom(S, lines, coverage)!;
+    const countFrom = asilposSalesCountFrom(S, lines, coverage, "marina")!;
     for (let m = shiftMonth(sm, -1); m <= shiftMonth(sm, 2); m = shiftMonth(m, 1)) {
       const through = modposThroughOf(m, coverage);
       const listHere = m < sm || (m === sm && hasList);
@@ -144,7 +145,7 @@ test("her gün tek kaynak: rastgele geçiş günü ve liste kapsamında hiçbir 
 test("birleştirme: geçiş günü yoksa girdi aynen döner (aynı satırlar, aynı sıra, aynı kapsam)", () => {
   const lines = [line({ id: 7, month: "2026-11", posName: "LATTE" }), line({ id: 3, month: "2026-12", posName: "MOCHA" })];
   const coverage = { "2026-12": "2026-12-15" };
-  const r = mergeSalesSources({ switchDay: null, salesLines: lines, coverage, asilposLines: [laf({ month: "2026-12", posName: "X" })], asilposDays: [{ month: "2026-12", days: 3, last: "2026-12-03" }] });
+  const r = mergeSalesSources({ switchDays: {}, salesLines: lines, coverage, asilposLines: [laf({ month: "2026-12", posName: "X" })], asilposDays: [{ month: "2026-12", days: 3, last: "2026-12-03" }] });
   assert.equal(r.salesLines, lines, "aynı dizi");
   assert.deepEqual(r.coverage, coverage);
   assert.notEqual(r.coverage, coverage, "kopya: çağıranın kaydı değişmez");
@@ -158,7 +159,7 @@ test("birleştirme: geçiş ayında liste + AsilPOS, sonraki ayda yalnız AsilPO
     line({ id: 3, month: "2026-12", posName: "ARALIK MODPOS (sayılmaz)" }),
   ];
   const r = mergeSalesSources({
-    switchDay: S,
+    switchDays: { marina: S },
     salesLines: lines,
     coverage: { "2026-11": "2026-11-09", "2026-12": "2026-12-05" },
     asilposLines: [
@@ -191,7 +192,7 @@ test("birleştirme: geçiş ayında liste + AsilPOS, sonraki ayda yalnız AsilPO
   // sayılmayan kaydı düşer
   assert.deepEqual(r.coverage, { "2026-12": "2026-12-03" });
   // Geçiş ayına henüz AsilPOS günü gelmediyse listenin kaydı kalır
-  const early = mergeSalesSources({ switchDay: S, salesLines: lines, coverage: { "2026-11": "2026-11-09" }, asilposLines: [], asilposDays: [] });
+  const early = mergeSalesSources({ switchDays: { marina: S }, salesLines: lines, coverage: { "2026-11": "2026-11-09" }, asilposLines: [], asilposDays: [] });
   assert.deepEqual(early.coverage, { "2026-11": "2026-11-09" });
   assert.deepEqual(early.salesLines.map((l) => l.id), [1, 2]);
 });
@@ -205,7 +206,7 @@ test("birleştirme: geçiş günü yalnız Marina'nın listesini düşürür; Tu
     line({ id: 4, month: "2026-11", posName: "KASIM TUZLA", branchId: "tuzla" }),
   ];
   const r = mergeSalesSources({
-    switchDay: S,
+    switchDays: { marina: S },
     salesLines: lines,
     coverage: {},
     asilposLines: [laf({ month: "2026-12", posName: "LATTE", revenue: 500, productId: 4, days: 3 })],
@@ -221,21 +222,20 @@ test("birleştirme: geçiş günü yalnız Marina'nın listesini düşürür; Tu
     ],
   );
   // AsilPOS'un sayıldığı ilk gün yalnız Marina'nın geçiş ayı listesine bakar: Tuzla'nın (şubesiz de) Kasım listesi AsilPOS'u kesmez
-  assert.equal(asilposSalesCountFrom(S, [line({ id: 4, month: "2026-11", posName: "KASIM TUZLA", branchId: "tuzla" })], { "2026-11": "2026-11-30" }), S);
-  assert.equal(asilposSalesCountFrom(S, [{ ...line({ id: 6, month: "2026-11", posName: "KASIM ŞUBESİZ" }), branchId: undefined }], { "2026-11": "2026-11-30" }), S);
-  assert.equal(asilposSalesCountFrom(S, [line({ id: 5, month: "2026-11", posName: "KASIM MARINA", branchId: "marina" })], { "2026-11": "2026-11-12" }), "2026-11-13");
+  assert.equal(asilposSalesCountFrom(S, [line({ id: 4, month: "2026-11", posName: "KASIM TUZLA", branchId: "tuzla" })], { "2026-11": "2026-11-30" }, "marina"), S);
+  assert.equal(asilposSalesCountFrom(S, [{ ...line({ id: 6, month: "2026-11", posName: "KASIM ŞUBESİZ" }), branchId: undefined }], { "2026-11": "2026-11-30" }, "marina"), S);
+  assert.equal(asilposSalesCountFrom(S, [line({ id: 5, month: "2026-11", posName: "KASIM MARINA", branchId: "marina" })], { "2026-11": "2026-11-12" }, "marina"), "2026-11-13");
   // Tuzla'nın listesinin kuralı Tuzla'nın geçiş günüyle (yok): Aralık listesi yüklenir, Marina'nınki reddedilir
-  assert.deepEqual(modposImportRule("2026-12", branchSwitchDay(S, "tuzla"), "2027-01-05"), { ok: true, through: null });
-  assert.deepEqual(modposImportRule("2026-12", branchSwitchDay(S, null), "2027-01-05"), { ok: true, through: null });
-  assert.equal(modposImportRule("2026-12", branchSwitchDay(S, "marina"), "2027-01-05").ok, false);
+  assert.deepEqual(modposImportRule("2026-12", switchDayFor({ marina: S }, "tuzla"), "2027-01-05"), { ok: true, through: null });
+  assert.deepEqual(modposImportRule("2026-12", switchDayFor({ marina: S }, null), "2027-01-05"), { ok: true, through: null });
+  assert.equal(modposImportRule("2026-12", switchDayFor({ marina: S }, "marina"), "2027-01-05").ok, false);
 });
 
 test("Tümü'nün ortak dönemi: ModPOS'ta kalan şubenin listeleri ve kasa raporları, en kısa liste (bulgu 62)", () => {
   const S = "2026-11-21";
   const coverage: Record<string, Record<string, string>> = { tuzla: { "2026-12": "2026-12-15" } };
   const others = otherBranchLists({
-    switchDay: S,
-    asilposBranch: "marina",
+    switchDays: { marina: S },
     salesLines: [
       { month: "2026-10", branchId: "tuzla" }, // geçiş ayından önce: bakılmaz
       { month: "2026-11", branchId: undefined }, // şubesiz satır Tuzla'nın
@@ -254,7 +254,7 @@ test("Tümü'nün ortak dönemi: ModPOS'ta kalan şubenin listeleri ve kasa rapo
     { branchId: "tuzla", month: "2026-12", through: "2026-12-15" },
     { branchId: "tuzla", month: "2027-01", through: null },
   ]);
-  assert.deepEqual(otherBranchLists({ switchDay: null, salesLines: [{ month: "2026-12", branchId: "tuzla" }], reportDays: [], coverageOf: () => ({}) }), [], "geçiş günü yokken ortak dönem yok");
+  assert.deepEqual(otherBranchLists({ switchDays: {}, salesLines: [{ month: "2026-12", branchId: "tuzla" }], reportDays: [], coverageOf: () => ({}) }), [], "geçiş günü yokken ortak dönem yok");
   // Ayın en kısa listesi kesilir; listesi olmayan şube en kısasıdır; ayın sonuna kadar olan liste kesmez
   const three: OtherBranchList[] = [...others, { branchId: "kadikoy", month: "2026-12", through: "2026-12-09" }, { branchId: "kadikoy", month: "2027-01", through: "2027-01-05" }];
   assert.deepEqual(commonListCuts(three), [
@@ -271,7 +271,7 @@ test("birleştirme: Tümü'de Tuzla'nın yarım listesi ve Marina'nın AsilPOS g
   const lines = [line({ id: 1, month: "2026-12", posName: "ARALIK TUZLA", branchId: "tuzla" }), line({ id: 2, month: "2027-01", posName: "OCAK MARINA (sayılmaz)", branchId: "marina" })];
   // AsilPOS satırları okuyucuda ortak döneme kesilmiş gelir (commonListCuts): Aralık 1-15
   const input = {
-    switchDay: S,
+    switchDays: { marina: S },
     salesLines: lines,
     coverage: { "2026-12": "2026-12-15" },
     asilposLines: [laf({ month: "2026-12", posName: "LATTE", revenue: 1_500, days: 15 }), laf({ month: "2027-01", posName: "LATTE", revenue: 500, days: 5 })],
@@ -279,7 +279,6 @@ test("birleştirme: Tümü'de Tuzla'nın yarım listesi ve Marina'nın AsilPOS g
       { month: "2026-12", days: 15, last: "2026-12-15" },
       { month: "2027-01", days: 5, last: "2027-01-05" },
     ],
-    asilposBranch: "marina",
   };
   // Önceden: Aralık'ın dönemi Marina'nın son AsilPOS günüydü, Tuzla'nın kaydı düşüyordu (ayın tamamı sayılırdı)
   const before = mergeSalesSources({ ...input, asilposDays: [{ month: "2026-12", days: 24, last: "2026-12-24" }, input.asilposDays[1]] });
@@ -317,7 +316,7 @@ test("model: yalnız AsilPOS olan ayda satır, reçeteye göre tüketim ve karao
   const sept = base.salesLines.filter((l) => l.month === "2026-09");
   // Kasım AsilPOS'tan: Eylül'ün satırları AsilPOS ay toplamı olarak; aynı aya yüklenmiş eski bir ModPOS listesi sayılmaz
   const r = mergeSalesSources({
-    switchDay: "2026-11-01",
+    switchDays: { marina: "2026-11-01" },
     salesLines: [...base.salesLines, line({ id: 9999, month: "2026-11", posName: "ESKİ MODPOS", revenue: 1_000_000, productId: sept[0].productId })],
     coverage: {},
     asilposLines: sept.map((l) => laf({ month: "2026-11", posName: l.posName, productId: l.productId, isService: l.isService, qty: l.qty, revenue: l.revenue, days: 30 })),
@@ -435,7 +434,7 @@ test("kaynak: veri kümesi geçiş günü yokken AsilPOS'u hiç okumaz; Satışl
   const fn = merged.slice(merged.indexOf("export async function mergeWithAsilpos"));
   assert.ok(fn.indexOf("if (S === null || countFrom === null) return") < fn.indexOf("await loadAsilposMonthSales("));
   const dataset = read("src/server/data/dataset.ts");
-  assert.match(dataset, /switchDay: settings\.asilposGecisGunu/);
+  assert.match(dataset, /switchDays: viewSwitchDays/);
   assert.match(dataset, /\.\.\.\(sales\.asilposSales \? \{ asilposSales: sales\.asilposSales \} : \{\}\)/);
   const actions = read("src/server/actions/sales.ts");
   assert.match(actions, /const rule = modposImportRule\(month, switchDay, todayTR\(\)/);
@@ -447,12 +446,13 @@ test("kaynak: veri kümesi geçiş günü yokken AsilPOS'u hiç okumaz; Satışl
   assert.match(actions, /if \(n === 0 && monthSource\(month, switchDay\) === "gecis"\) \{\n\s+const rule = modposImportRule\(month, switchDay, todayTR\(\), null\);\n\s+if \(rule\.ok\) await writeCoverage\(tx, sube, month, rule\.through\);/);
   // AsilPOS'un sayıldığı ilk gün ve ayların ModPOS listesi Marina'nın kendi kapsam kaydından (readCoverage), görünümün
   // listelerinin son günü görünümün şubesinden ("Tümü"de ortak kayıt)
-  assert.match(merged, /const countFrom = asilposSalesCountFrom\(S, input\.salesLines, input\.asilposCoverage, asilposBranch\);/);
-  assert.match(merged, /const through = modposThroughOf\(m, input\.asilposCoverage\);/);
+  // Çok şube: her kasanın sayılma günü kendi şubesinin kaydıyla (posCountFroms, coverageOf)
+  assert.match(merged, /const froms = posCountFroms\(input\.switchDays, input\.salesLines, input\.coverageOf\);/);
+  assert.match(merged, /const through = modposThroughOf\(m, ownCoverage\);/);
   assert.doesNotMatch(merged, /asilposSalesCountFrom\(S, input\.salesLines, input\.coverage\)|modposThroughOf\(m, input\.coverage\)/);
   assert.match(dataset, /const coverage = coverageOf\(scope === ALL_BRANCHES \? null : scope\);/);
-  assert.match(dataset, /const asilposCoverage = coverageOf\(asilposBranch\);/);
-  assert.match(dataset, /const asilposBranch = asilposBranchOf\(branches\);/, "AsilPOS'un şubesi kütükten");
+  assert.match(dataset, /const tillCoverage = \(branchId: string\) => coverageOf\(branchId\);/);
+  assert.match(dataset, /loadPosTills\(db\)/, "AsilPOS kasaları kütükten");
   assert.match(dataset, /readCoverage\(storedCoverage\(SALES_COVERAGE_KEY\), storedCoverage\(SALES_COVERAGE_BRANCH_KEY\), branchId\)/);
   assert.match(read("src/server/data/stock-estimate.ts"), /readCoverage\(stored\(SALES_COVERAGE_KEY\), stored\(SALES_COVERAGE_BRANCH_KEY\), STOCK_ESTIMATE_BRANCH\)/);
   assert.doesNotMatch(dataset + read("src/server/data/stock-estimate.ts"), /parseCoverage\(/, "ortak kayıt yalnız readCoverage'dan");
@@ -467,10 +467,11 @@ test("kaynak: veri kümesi geçiş günü yokken AsilPOS'u hiç okumaz; Satışl
   // Süren ayın kasa raporundan sonraki AsilPOS günleri bekler (kasa raporlarının son günü; AsilPOS'un yedek ay satırları,
   // B09 G6, rapor sayılmaz)
   assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);
-  assert.match(dataset, /const reportRows = input\.till\.filter\(\(r\) => isReportRow\(r\) && isAsilposBranch\(r\.branchId, input\.asilposBranch\)\);/);
+  assert.match(dataset, /const reportRows = input\.till\.filter\(\(r\) => isReportRow\(r\) && tills\.has\(r\.branchId \?\? DEFAULT_BRANCH_ID\)\);/);
   assert.match(dataset, /lastTillDay: reportRows\.at\(-1\)\?\.date \?\? null/);
   // Görünümün geçiş günü: ModPOS'ta kalan şube seçiliyken yok (denetim 21 Kasım #5)
-  assert.match(dataset, /const settings = \{ \.\.\.storedSettings, asilposGecisGunu: scopeSwitchDay\(storedSettings\.asilposGecisGunu, scope, asilposBranch\), acikGun: calendar\.value\.openDays \};/);
+  assert.match(dataset, /const settings = \{ \.\.\.storedSettings, asilposGecisGunu: scopeSwitchDay\(allSwitchDays, scope\), acikGun: calendar\.value\.openDays \};/);
+  assert.match(dataset, /const viewSwitchDays: SwitchDays = scopeSwitchDays\(allSwitchDays, scope\);/);
   // Tahmin: kullanılmayan günlük satır okunmaz, istek başına uyarı yazılmaz (denetim E-08 hız kısmı)
   for (const f of ["src/server/data/dataset.ts"]) {
     const src = read(f);

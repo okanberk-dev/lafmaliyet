@@ -43,21 +43,18 @@ import {
   type AsilposRejection,
 } from "../src/lib/asilpos/status";
 import {
-  branchSwitchDay,
   dayMonthYearTR,
   daysUntilText,
-  isAsilposBranch,
   isAsilposDay,
   kasaName,
-  ASILPOS_BRANCH_ID,
   ASILPOS_SWITCH_EFFECTS,
   ASILPOS_SWITCH_MIN,
   monthSource,
   readSwitchDay,
-  scopeSwitchDay,
   switchAffectedMonths,
   switchDayProblem,
 } from "../src/lib/asilpos/switch";
+import { isCountedPosDay, LEGACY_POS_BRANCH_ID, scopeSwitchDay, switchDayFor } from "../src/lib/pos/tills";
 import { prefillPlan, type CashPrefill } from "../src/lib/photo-read/kasa";
 import { addDays } from "../src/lib/reminders";
 
@@ -517,13 +514,13 @@ test("maliyet listesi: yalnız siteye bağlı ürünler, yalnız altı alan; mal
 
 test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; maliyet ucu yalnız imzayla", () => {
   const gun = read("src/app/api/pos/gun/route.ts");
-  const order = ["await connection()", "await asilposSecret()", "content-length", "request.text()", "await asilposRequestSecret(request, body)", "handlePosDay("];
+  const order = ["await connection()", "await posKeysConfigured()", "content-length", "request.text()", "await posRequestCaller(request, body)", "handlePosDay("];
   const at = order.map((s) => gun.indexOf(s));
   assert.ok(at.every((i, k) => i > 0 && (k === 0 || i > at[k - 1])), `sıra: ${order.join(" → ")}`);
   assert.match(gun, /"Cache-Control": "no-store"/);
   // Uç gün sonunu durum kaydından geçirir (src/server/asilpos/status.ts): o da denetimi ve yazımı receivePosDay'e bırakır;
   // anahtar yokken (503) durum satırına hiçbir şey yazılmaz
-  assert.ok(gun.indexOf("if (!(await asilposSecret())) return") < gun.indexOf("noteUnverified("), "anahtar yokken sayaç da yazılmaz");
+  assert.ok(gun.indexOf("if (!(await posKeysConfigured())) return") < gun.indexOf("noteUnverified("), "anahtar yokken sayaç da yazılmaz");
   const status = read("src/server/asilpos/status.ts");
   const handle = status.slice(status.indexOf("export async function handlePosDay"));
   assert.match(handle, /r = await receivePosDay\(db, input, now\);/);
@@ -542,14 +539,14 @@ test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; 
   const urunler = read("src/app/api/panel/pos/urunler/route.ts");
   assert.match(urunler, /export async function GET\(request: NextRequest\) \{\s*await connection\(\);/);
   assert.match(urunler, /"Cache-Control": "no-store"/);
-  // Anahtar isteğe bağlı okunur (asilposRequestSecret): imza önbellekteki anahtarla tutarsa veritabanından yeniden
-  assert.match(urunler, /servePosProducts\(\{\s*(?:\/\/[^\n]*\n\s*)?secret: await asilposRequestSecret\(request\),/);
+  // Kasanın şubesi ve anahtarı isteğe göre okunur (posRequestCaller): imza önbellekteki anahtarla tutarsa veritabanından yeniden
+  assert.match(urunler, /servePosProducts\(\{\s*(?:\/\/[^\n]*\n\s*)?\.\.\.\(await posRequestCaller\(request\)\),/);
   assert.doesNotMatch(urunler, /getCurrentUser|requireUser|requireAdmin/, "oturumla açılmaz");
   // ModPOS dönemi ucu: aynı kalıp (bağlantı, imza, önbelleksiz, oturumsuz); denetim sırası imza → şube → okuma
   const modpos = read("src/app/api/panel/pos/modpos-gunler/route.ts");
   assert.match(modpos, /export async function GET\(request: NextRequest\) \{\s*await connection\(\);/);
   assert.match(modpos, /"Cache-Control": "no-store"/);
-  assert.match(modpos, /serveModposDays\(\{\s*(?:\/\/[^\n]*\n\s*)?secret: await asilposRequestSecret\(request\),/);
+  assert.match(modpos, /serveModposDays\(\{\s*(?:\/\/[^\n]*\n\s*)?\.\.\.\(await posRequestCaller\(request\)\),/);
   assert.doesNotMatch(modpos, /getCurrentUser|requireUser|requireAdmin/, "oturumla açılmaz");
   const serve = read("src/server/asilpos/modpos-gunler.ts");
   const handler = serve.slice(serve.indexOf("export async function serveModposDays"));
@@ -565,7 +562,7 @@ test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; 
     const route = read(file);
     assert.match(route, /export async function GET\(request: NextRequest\) \{\s*await connection\(\);/, file);
     assert.match(route, /"Cache-Control": "no-store"/, file);
-    assert.match(route, new RegExp(`${fn}\\(getDb\\(\\), \\{\\s*(?:\\/\\/[^\\n]*\\n\\s*)?secret: await asilposRequestSecret\\(request\\),`), file);
+    assert.match(route, new RegExp(`${fn}\\(getDb\\(\\), \\{\\s*(?:\\/\\/[^\\n]*\\n\\s*)?\\.\\.\\.\\(await posRequestCaller\\(request\\)\\),`), file);
     assert.doesNotMatch(route, /getCurrentUser|requireUser|requireAdmin/, `${file}: oturumla açılmaz`);
   }
   // Oturum ara katmanı bu uçlara dokunmaz (imza tek kapı)
@@ -632,54 +629,56 @@ test("geçiş günü: gün ve ayın kaynağı; boşken her gün ModPOS", () => {
   }
 });
 
-test("geçiş günü yalnız AsilPOS'un şubesinin (Marina) kasasınındır: Tuzla ve online kanal ModPOS'ta kalır (21 Kasım kararı)", () => {
+test("geçiş günü şubenin kendi kasasınındır (çok şube, 27 Kasım kararı): kasası ModPOS olan şube ve online kanal ModPOS'ta kalır", () => {
   const S = "2026-12-01";
-  assert.equal(ASILPOS_BRANCH_ID, "marina");
-  assert.deepEqual([isAsilposBranch("marina"), isAsilposBranch("tuzla"), isAsilposBranch(null), isAsilposBranch(undefined)], [true, false, false, false], "şubesiz eski kayıt Tuzla'nın");
-  assert.equal(branchSwitchDay(S, "marina"), S);
-  assert.equal(branchSwitchDay(S, "tuzla"), null);
-  assert.equal(branchSwitchDay(S, null), null, "şubesiz kayıt Tuzla'nın");
-  assert.equal(branchSwitchDay(null, "marina"), null);
-  assert.equal(isAsilposDay("2026-12-02", branchSwitchDay(S, "tuzla")), false, "Tuzla'nın her günü ModPOS günü");
-  assert.equal(kasaName("2026-12-02", branchSwitchDay(S, "tuzla")), "ModPOS");
-  assert.equal(kasaName("2026-12-02", branchSwitchDay(S, "marina")), "AsilPOS");
-  assert.equal(kasaName("2026-11-30", branchSwitchDay(S, "marina")), "ModPOS", "geçişten önce Marina da ModPOS");
-  // Görünüm: "Tümü"de ayar, şube ya da kanal seçiliyken o kasanınki
-  assert.equal(scopeSwitchDay(S, ALL_BRANCHES), S);
-  assert.equal(scopeSwitchDay(S, "marina"), S);
-  assert.equal(scopeSwitchDay(S, "tuzla"), null);
-  assert.equal(scopeSwitchDay(S, "online"), null);
-  // AsilPOS gün sonunu bu şubeye yazar; kilit ve Z denetimi şube başına; başka şubeye ayarlı kasanın günü reddedilir
+  const days = { marina: S };
+  assert.equal(LEGACY_POS_BRANCH_ID, "marina");
+  assert.equal(switchDayFor(days, "marina"), S);
+  assert.equal(switchDayFor(days, "tuzla"), null);
+  assert.equal(switchDayFor(days, null), null, "şubesiz kayıt Tuzla'nın");
+  assert.equal(switchDayFor({ marina: null }, "marina"), null);
+  assert.equal(isAsilposDay("2026-12-02", switchDayFor(days, "tuzla")), false, "Tuzla'nın her günü ModPOS günü");
+  assert.equal(kasaName("2026-12-02", switchDayFor(days, "tuzla")), "ModPOS");
+  assert.equal(kasaName("2026-12-02", switchDayFor(days, "marina")), "AsilPOS");
+  assert.equal(kasaName("2026-11-30", switchDayFor(days, "marina")), "ModPOS", "geçişten önce Marina da ModPOS");
+  // İki kasa: her biri kendi günüyle
+  const two = { marina: S, tuzla: "2027-01-10" };
+  assert.deepEqual([isCountedPosDay(two, "tuzla", "2027-01-09"), isCountedPosDay(two, "tuzla", "2027-01-10"), isCountedPosDay(two, "marina", "2027-01-09")], [false, true, true]);
+  // Görünüm: "Tümü"de kasaların en erkeni (metinler), şube ya da kanal seçiliyken o kasanınki
+  assert.equal(scopeSwitchDay(two, ALL_BRANCHES), S);
+  assert.equal(scopeSwitchDay(days, "marina"), S);
+  assert.equal(scopeSwitchDay(days, "tuzla"), null);
+  assert.equal(scopeSwitchDay(days, "online"), null);
+  // Gün sonu anahtarın şubesine yazılır; kilit ve Z denetimi şube başına; başka şubeye ayarlı kasanın günü reddedilir
   const ingest = read("src/server/asilpos/ingest.ts");
-  // Şube kütükten türetilir (asilposBranchId; kasa kaynağı AsilPOS olan şube, yoksa Marina): uç bir kez okur ve yazıma verir
-  assert.match(ingest, /const branchId = branch \?\? \(await asilposBranchId\(db\)\);/);
   assert.match(ingest, /eq\(s\.posDayReports\.branchId, branchId\)/);
   assert.match(ingest, /\$\{GUN_KILIDI_ONEKI\}\$\{branchId\}:\$\{day\.date\}/);
-  assert.match(ingest, /const expected = await asilposBranchId\(db\);\n\s+if \(parsed\.data\.sube && parsed\.data\.sube !== expected\) return \{ status: 409, body: \{ error: "wrong_branch"/);
+  assert.match(ingest, /const expected = input\.branchId;/);
+  assert.match(ingest, /if \(parsed\.data\.sube && parsed\.data\.sube !== expected\) return \{ status: 409, body: \{ error: "wrong_branch"/);
   assert.match(ingest, /storePosDay\(db, parsed\.data, now, expected\)/, "kabul eden ve yazan aynı şube");
-  assert.doesNotMatch(ingest, /ASILPOS_BRANCH_ID/, "sabit yalnız geri düşüş (switch.ts)");
+  assert.doesNotMatch(ingest, /LEGACY_POS_BRANCH_ID/, "eski kurulumun şubesi yalnız anahtar ve eski kayıt için");
 });
 
-test("kaynak: tek kasanın gününe bakan okuyucular geçiş gününü kasanın şubesinden geçirir (denetim 21 Kasım #5)", () => {
+test("kaynak: tek kasanın gününe bakan okuyucular geçiş gününü kasanın kendi şubesinden alır (çok şube)", () => {
   const day = read("src/server/data/asilpos-day.ts");
   // Kasa raporunun AsilPOS bandı, geç raporun kanıtı ve günden güne liste
-  assert.match(day, /if \(!isAsilposDay\(date, branchSwitchDay\(switchDay, sube, asilposBranch\)\)\) return \{ asilpos: false, day: null \};/);
-  assert.match(day, /if \(!isAsilposDay\(date, branchSwitchDay\(switchDay, sube, asilposBranch\)\)\) return "modpos-z";/);
+  assert.match(day, /if \(!isAsilposDay\(date, await loadBranchSwitchDay\(sube, db\)\)\) return \{ asilpos: false, day: null \};/);
+  assert.match(day, /if \(!isAsilposDay\(date, await loadBranchSwitchDay\(sube, db\)\)\) return "modpos-z";/);
   assert.ok(day.indexOf("const sube = branchId ?? (await currentTillBranch());") < day.indexOf('return "modpos-z"'), "kanıtın şubesi önce");
-  assert.match(day, /return isAsilposDay\(date, branchSwitchDay\(switchDay, b, asilposBranch\)\) \?/);
+  assert.match(day, /return isAsilposDay\(date, switchDayFor\(switchDays, b\)\) \?/);
   // Geç rapor kartı, zayi reddi, günün AsilPOS ikramı, kasadaki fiyatlar, föy yedeği, fotoğraf okuma, metinler
   assert.match(read("src/server/data/cash-late.ts"), /const switchDay = await loadBranchSwitchDay\(branchId, db\);/);
   assert.match(read("src/server/waste/core.ts"), /const switchDay = await loadBranchSwitchDay\(branchId, tx\);/);
   assert.match(read("src/server/waste/core.ts"), /eq\(s\.posDayReports\.date, data\.date\), eq\(s\.posDayReports\.branchId, branchId\)/);
-  assert.match(read("src/server/data/asilpos-ikram.ts"), /const switchDay = branchSwitchDay\(setting, sube, asilposBranch\);/);
-  assert.match(read("src/server/data/till-scope.ts"), /\.\.\.tillScope\(businessDate\(now\), branchSwitchDay\(switchDay, branchId, asilposBranch\)\)/);
-  assert.match(read("src/server/data/cash-reports.ts"), /isAsilposDay\(sh\.day, branchSwitchDay\(fallback\.switchDay, sh\.branchId, fallback\.asilposBranch\)\)/);
-  assert.match(read("src/server/photo-read/read.ts"), /const switchDay = branchSwitchDay\(d, b, l\);/);
-  assert.match(read("src/server/data/today.ts"), /\.then\(\(\[d, b, l\]\) => branchSwitchDay\(d, b, l\)\)/);
-  assert.match(read("src/server/bell/kasa.ts"), /kasaName\(day, branchSwitchDay\(/);
+  assert.match(read("src/server/data/asilpos-ikram.ts"), /const switchDay = switchDayFor\(await asilposSwitchDaysOf\(db\), sube\);/);
+  assert.match(read("src/server/data/till-scope.ts"), /\.\.\.tillScope\(businessDate\(now\), switchDayFor\(switchDays, branchId\)\)/);
+  assert.match(read("src/server/data/cash-reports.ts"), /isAsilposDay\(sh\.day, switchDayFor\(fallback\.switchDays, sh\.branchId\)\)/);
+  assert.match(read("src/server/photo-read/read.ts"), /const switchDay = await switchDayOf\(b\);/);
+  assert.match(read("src/server/data/today.ts"), /\.then\(\(\[d, b\]\) => switchDayFor\(d, b\)\)/);
+  assert.match(read("src/server/bell/kasa.ts"), /kasaName\(day, switchDayFor\(/);
   assert.match(read("src/server/modpos/status.ts"), /loadBranchSwitchDay\(branchId, db\),/);
   // Onaylar'ın zayi kartı isteğin şubesiyle
-  assert.match(read("src/server/data/waste-requests.ts"), /productIkramRefusal\(p, branchSwitchDay\(switchDay, p\.branchId, asilposBranch\)/);
+  assert.match(read("src/server/data/waste-requests.ts"), /productIkramRefusal\(p, switchDayFor\(switchDays, p\.branchId\)/);
 });
 
 test("geçiş günü: kaynağı değişen günlerin ayları (onay penceresi), bugüne kadar", () => {
@@ -736,7 +735,7 @@ test("altın gövde: AsilPOS'un buildDayPayload biçimi (şube, iki boy, ekler, 
   const r = parsePosDay(raw, NOW);
   assert.ok(r.ok, r.ok ? "" : r.field);
   assert.equal(r.data.date, "2026-10-26");
-  assert.equal(r.data.sube, ASILPOS_BRANCH_ID, "AsilPOS kasası şubesini yazar (Marina)");
+  assert.equal(r.data.sube, LEGACY_POS_BRANCH_ID, "AsilPOS kasası şubesini yazar (Marina)");
   assert.deepEqual(
     r.data.lines.map((l) => [l.posName, l.siteMenuId, l.slot, l.isService]),
     [
@@ -1068,7 +1067,7 @@ test("eylemler ve çekirdekler: yalnız yönetici; günü silme parolayla ve gü
   assert.ok(del.indexOf("requireStepUp(") < del.indexOf("removeAsilposDay("), "parola yazımdan önce");
   assert.ok(del.indexOf("if (!rep) throw") < del.indexOf("requireStepUp("), "olmayan gün için parola sorulmaz");
   // Ön denetim çekirdekle aynı satıra bakar: yalnız AsilPOS'un şubesinin günü (öteki şubenin eski satırı "kayıtlı" sayılmaz)
-  assert.match(del.slice(0, del.indexOf("if (!rep) throw")), /\.where\(and\(eq\(s\.posDayReports\.date, data\.date\), eq\(s\.posDayReports\.branchId, await asilposBranchId\(db\)\)\)\)/);
+  assert.match(del.slice(0, del.indexOf("if (!rep) throw")), /\.where\(and\(eq\(s\.posDayReports\.date, data\.date\), eq\(s\.posDayReports\.branchId, data\.branchId\)\)\)/);
   const admin = read("src/server/asilpos/admin.ts");
   assert.match(admin, /^import "server-only";/m);
   for (const fn of ["writeAsilposSwitchDay", "removeAsilposDay"]) {
@@ -1076,7 +1075,7 @@ test("eylemler ve çekirdekler: yalnız yönetici; günü silme parolayla ve gü
     assert.match(body, /if \(me\.role !== "admin"\) throw new UserError\(ADMIN_ONLY\);/, `${fn}: rol çekirdekte de`);
   }
   // Günü silme, gün sonunun yazımıyla aynı danışma kilidi altında (ingest.ts)
-  assert.match(admin, /const branchId = await asilposBranchId\(db\);/);
+  assert.match(admin, /export async function removeAsilposDay\(db: DB, me: Actor, branchId: string, date: string, zNo: number/);
   assert.match(admin, /pg_advisory_xact_lock\(hashtext\(\$\{`\$\{GUN_KILIDI_ONEKI\}\$\{branchId\}:\$\{date\}`\}\)\)/);
   assert.match(read("src/server/asilpos/ingest.ts"), /pg_advisory_xact_lock\(hashtext\(\$\{`\$\{GUN_KILIDI_ONEKI\}\$\{branchId\}:\$\{day\.date\}`\}\)\)/);
   // Ayar ekranı: yalnız yöneticinin Ayarlar sayfasında

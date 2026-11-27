@@ -315,14 +315,14 @@ test("kaynak: yedek kapalıyken föy tablosu okunmaz; yükleyici rapor > AsilPOS
   assert.ok(fn.indexOf("if (fallback === null) return [];") > 0);
   assert.ok(fn.indexOf("if (fallback === null) return [];") < fn.indexOf("await loadModposSheets("), "ayar okunmadan föy okunmaz");
   // Geçiş gününden önce; geçiş günü yalnız AsilPOS'un şubesinin föyünü keser (ModPOS'ta kalan şube sayılmaya devam eder)
-  assert.match(fn, /sheets\.filter\(\(sh\) => fallback\.branches\.has\(sh\.branchId\) && !isAsilposDay\(sh\.day, branchSwitchDay\(fallback\.switchDay, sh\.branchId, fallback\.asilposBranch\)\)\)/, "anahtarı açık şubenin, geçiş gününden önce, şube şube");
+  assert.match(fn, /sheets\.filter\(\(sh\) => fallback\.branches\.has\(sh\.branchId\) && !isAsilposDay\(sh\.day, switchDayFor\(fallback\.switchDays, sh\.branchId\)\)\)/, "anahtarı açık şubenin, geçiş gününden önce, şube şube");
   const first = loader.slice(loader.indexOf("export async function firstModposTillDay("));
   assert.ok(first.indexOf("if ((await modposFallbackSwitch(db)) === null) return null;") > 0);
   assert.ok(first.indexOf("if ((await modposFallbackSwitch(db)) === null) return null;") < first.indexOf("modposTillRows(db)"), "ayar okunmadan föy okunmaz");
   const scope = loader.slice(loader.indexOf("async function modposFallbackSwitch("));
   // Anahtar şube başına (şube ayarı modpos): hiçbir şubede açık değilse föy tablosu okunmaz
   assert.match(scope, /const branches = await modposFallbackBranches\(db\);\s+if \(!branches\.size\) return null;/);
-  assert.match(scope, /const \[switchDay, asilposBranch\] = await Promise\.all\(\[asilposSwitchDay\(db\), asilposBranchId\(db\)\]\);/);
+  assert.match(scope, /return \{ switchDays: await loadSwitchDays\(db\), branches \};/);
   assert.match(loader, /if \(sheet\.state === "ACIK"\) return null;/);
   assert.match(loader, /sheet\.state === "BOS" && !\(z && z\.foysuz && z\.zTotal > 0\)/);
   // Kesinleşmiş satışsız gün sıfır satır (kesintisiz sayımda kapalı gün boşluk değil)
@@ -342,10 +342,10 @@ test("kaynak: yedek kapalıyken föy tablosu okunmaz; yükleyici rapor > AsilPOS
   const dataset = read("src/server/data/dataset.ts");
   assert.match(dataset, /till\.filter\(\(r\) => isReportRow\(r\) \|\| r\.zTotal > 0 \|\| \(r\.receipts \?\? 0\) > 0\)/, "kapalı gün: satışlı yedek de açar");
   // Satış dönemi de ilk rapordan arar; şube görünümünde şubenin açılışıyla (denetim 21 Kasım #21)
-  assert.match(dataset, /upto, firstEver, undefined, undefined, firstReport, undefined, opened, asilposFrom, asilposBranch\)\[0\] \?\? null/, "satış dönemi de ilk rapordan arar");
+  assert.match(dataset, /upto, firstEver, undefined, undefined, firstReport, undefined, opened, posFroms\)\[0\] \?\? null/, "satış dönemi de ilk rapordan arar");
   // Kasa'nın ay satırı Gelir-gider'le aynı satırlar ve ilk günle
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /modposTillRows\(getDb\(\), `\$\{month\}-01`, monthEnd\),\s*firstModposTillDay\(getDb\(\)\)/);
   // Şubenin açılışıyla (sonradan açılan şubenin açılış ayı yarım değil; denetim 21 Kasım #21)
-  assert.match(page, /tillMonths\(\[\.\.\.monthReports, \.\.\.monthAsilpos, \.\.\.monthModpos\], addDays\(today, -1\), firstRow, undefined, undefined, firstEver \?\? undefined, firstModpos, opened, undefined, asilposBranchOf\(branchList\)\)/);
+  assert.match(page, /tillMonths\(\[\.\.\.monthReports, \.\.\.monthAsilpos, \.\.\.monthModpos\], addDays\(today, -1\), firstRow, undefined, undefined, firstEver \?\? undefined, firstModpos, opened, \{ froms: null, tills: posTillIds\(branchList\) \}\)/);
 });

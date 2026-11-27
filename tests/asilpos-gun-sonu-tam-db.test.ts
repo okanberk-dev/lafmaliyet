@@ -104,7 +104,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
     if (body.bankPos === undefined) delete body.bankPos;
     const parsed = parsePosDay(JSON.stringify(body), NOW);
     assert.ok(parsed.ok, "gövde geçerli");
-    return ingest.storePosDay(db, parsed.data, NOW);
+    return ingest.storePosDay(db, parsed.data, NOW, "marina");
   };
   const report = async () => {
     const [row] = await db.select().from(s.cashReports).where(and(eq(s.cashReports.date, DAY), eq(s.cashReports.branchId, ASILPOS_SUBE)));
@@ -175,7 +175,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
 
   test("22.11 kabul günü: Banka POS Pavo'dan, yazarkasa alanları AsilPOS'un cihaz belgelerinden; not eksik söylemez, personelden yalnız fotoğraf", async () => {
     assert.ok((await push()).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "written");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "written");
     const rep = (await report())!;
     assert.ok(rep, "rapor yazıldı");
     assert.deepEqual(
@@ -202,7 +202,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
 
   test("Personel yalnız fotoğraf ekler: kayıt, sürüm, sayan ve onay yok; okunuş AsilPOS'la karşılaştırılır (fark yöneticinin)", async () => {
     assert.ok((await push()).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     const before = (await report())!;
     const id = await photo(slip([{ no: "0001", net: 4_160 }]));
     // Ertesi gün (rapor günü kapanmış, sonraki günün raporu girilmiş olsa da) personel ekler
@@ -258,13 +258,13 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
 
   test("Okuma kapalıyken fotoğraf yine alınır (personel 'alındı' görür, yöneticiye 'okunmadı'); yanlış belge yeniden çekilir", async () => {
     assert.ok((await push()).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     const off = await foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: await photo(null) }, NOW);
     assert.equal(off.line, "Fotoğraf alındı");
     assert.equal((await state())?.photoCheck?.state, "okunmadi");
     assert.deepEqual((await state())?.missing, []);
     await db.execute(sql`TRUNCATE cash_report_photos, asilpos_day_ends, cash_reports RESTART IDENTITY CASCADE`);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     const wrong = await foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: await photo({ ...slip([]), documentType: "other" }) }, NOW);
     assert.equal(wrong.line, "Fotoğraf okunamadı / yanlış belge, yeniden çekin");
     assert.deepEqual((await state())?.missing, ["photo"], "gün tamamlanmadı");
@@ -273,25 +273,25 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
   test("Pavo sonradan: boş Banka POS dolar; alınamayan gün sonu kayıtlıyı silmez ve tam nedeni yazar; elle yazılan alan kalır", async () => {
     // Kapanışta Pavo sonucu henüz yok
     assert.ok((await push({ bankPos: undefined })).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "written");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "written");
     assert.equal((await report())?.bankPos, null, "uydurulmaz");
     assert.equal((await report())?.note, "AsilPOS gün sonundan otomatik yazıldı. Eksik: Banka POS: AsilPOS'tan Pavo gün sonu gelmedi.");
     // Pavo'nun sonucu gelmedi, fotoğraf da yok: gün tamam sayılmaz (fotoğraf bekleniyor)
     assert.deepEqual((await state())?.missing, ["bankPos", "photo"]);
     // Otomatik gün sonu alınamadı (5085)
     assert.ok((await push({ bankPos: FAILED })).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "updated");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "updated");
     assert.equal((await report())?.bankPos, null);
     assert.match((await report())?.note ?? "", /Banka POS: Pavo gün sonu alınamadı \(hata 5085: Günsonu alınamadı \(kod 5085\)\); AsilPOS'ta Yönetim › Yazarkasa POS › Cihazda gün sonu al\.$/);
     assert.deepEqual((await state())?.missing, ["bankPos", "photo"]);
     // Elle yeniden alındı: Banka POS dolar, not temizlenir
     assert.ok((await push({ bankPos: okBank() })).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "updated");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "updated");
     assert.equal((await report())?.bankPos, 4_160);
     assert.equal((await report())?.note, "AsilPOS gün sonundan otomatik yazıldı.");
     // Sonra yine alınamayan bir sonuç gelse de kayıtlı Banka POS silinmez
     assert.ok((await push({ bankPos: FAILED })).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     assert.equal((await report())?.bankPos, 4_160, "boş değer kayıtlıyı silmez");
     // Yönetici Banka POS'u elle 4.200 yaptı: sonraki otomatik değer ezmez
     const rep = (await report())!;
@@ -328,13 +328,13 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
     );
     assert.equal(saved.kind, "saved");
     assert.ok((await push({ bankPos: okBank(4_150) })).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     assert.equal((await report())?.bankPos, 4_200, "elle yazılan kalır");
   });
 
   test("Pavo detaylı Z: tek fotoğraf; batch ve Z rakamları AsilPOS'la karşılaştırılır, AsilPOS Z no göndermediyse fotoğraftaki yazılır (AsilPOS'unki gelince o geçer); kart farkı yalnız yöneticiye", async () => {
     assert.ok((await push({}, { okcZNo: null })).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     assert.equal((await report())?.okcZNo, null);
     const staffState = (await foto.asilposPhotoState(db, DAY, ASILPOS_SUBE, "staff"))!;
     assert.deepEqual(staffState.need, { slip: true, z: false, count: 1 }, "Pavo gününde tek fotoğraf (zReport false olsa da)");
@@ -360,7 +360,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
     assert.equal((await foto.asilposPhotoState(db, DAY, ASILPOS_SUBE, "staff"))?.check, null, "personel görmez");
     // AsilPOS sonradan Z no gönderdi: onunki geçer (fotoğraftaki elle düzeltilmiş sayılmaz), fark yöneticiye
     assert.ok((await push({}, { okcZNo: "12" })).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     assert.equal((await report())?.okcZNo, "12");
     const st3 = (await state())!;
     assert.equal(st3.photoCheck?.zNoFromPhoto ?? null, null);
@@ -369,7 +369,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
 
   test("AsilPOS'un kendi kâğıdı (24 Kasım, Marina): Z no'su ve NET CİRO'su yazarkasa alanlarına yazılmaz; banka kısmı karşılaştırılır, Z yok bilgi satırıdır", async () => {
     assert.ok((await push({}, { okcZNo: null })).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     // Rakamı gören basınca: "GÜN SONU · Z 31" (AsilPOS'un sayacı) + NET CİRO + altında "BANKA GÜN SONU · PAVO"; ucuz
     // model z_report okumuş olsun
     const asilposZ = {
@@ -400,7 +400,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
 
   test("Fotoğraftan Z no: başka günün Z'si yazılmaz; yöneticinin sildiği Z no geri yazılmaz (yeniden gönderim, yeni fotoğraf); otomatik rapor kendi kaydından tanınır", async () => {
     assert.ok((await push({}, { okcZNo: null })).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     // Dünün detaylı Z'si (21.11): fark, Z no boş kalır
     const yesterday = { ...detailed(), date: "2026-11-21", time: "23:30", zNo: { text: "0006", value: 6, confidence: "high" } };
     await foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: await photo(yesterday) }, NOW);
@@ -414,7 +414,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
     assert.equal(await foto.asilposAutoReport(db, rep.id), true);
     await db.update(s.cashReports).set({ okcZNo: null }).where(eq(s.cashReports.id, rep.id));
     assert.ok((await push({}, { okcZNo: null })).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     assert.equal((await report())?.okcZNo, null, "yeniden gönderim geri yazmaz");
     await foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: await photo(detailed()) }, NOW);
     assert.equal((await report())?.okcZNo, null, "yeni fotoğraf geri yazmaz");
@@ -422,7 +422,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
 
   test("Pavo alınamadıysa yönetici fotoğrafta okunan toplamı 'Banka POS'a yaz'la yazar; sonraki otomatik değer ezmez", async () => {
     assert.ok((await push({ bankPos: FAILED })).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     await foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: await photo(slip([{ no: "0001", net: 4_160 }])) }, NOW);
     const check = (await state())!.photoCheck!;
     assert.equal(check.readBankPos, 4_160);
@@ -431,13 +431,13 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
     const rep = (await report())!;
     assert.deepEqual([rep.bankPos, rep.revision, rep.submittedByName, rep.countedBy], [4_160, 2, "Ali", null]);
     assert.ok((await push({ bankPos: okBank(4_100) })).ok);
-    await gun.writeAutoReport(db, DAY, NOW);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
     assert.equal((await report())?.bankPos, 4_160, "yöneticinin yazdığı kalır");
   });
 
   test("Sayım yokken fotoğraf bekler, AsilPOS sayınca yazılan rapora bağlanır", async () => {
     assert.ok((await push({}, { countedCash: null, cashDiff: null })).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "no-count");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "no-count");
     const id = await photo(slip([{ no: "0001", net: 4_160 }]));
     const res = await foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: id }, NOW);
     assert.equal(res.status, "pending");
@@ -445,7 +445,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
     assert.equal(await report(), null);
     // AsilPOS föyde saydı ve yeniden gönderdi
     assert.ok((await push()).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "written");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "written");
     const rep = (await report())!;
     const links = await db.select().from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, rep.id));
     assert.deepEqual(links.map((l) => l.photoId), [id]);
@@ -455,7 +455,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
 
   test("Sayım yokken bekleyen fotoğraf, rapor elle girilince o rapora bağlanır (sahipsiz kalmaz)", async () => {
     assert.ok((await push({}, { countedCash: null, cashDiff: null })).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "no-count");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "no-count");
     const id = await photo(slip([{ no: "0001", net: 4_160 }]));
     assert.equal((await foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: id }, NOW)).status, "pending");
     const r0 = await scope.withBranchScope(ASILPOS_SUBE, () =>
@@ -475,7 +475,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
     const id2 = await photo(slip([{ no: "0001", net: 4_160 }]));
     await db.update(s.asilposDayEnds).set({ pendingPhotos: [id2] }).where(and(eq(s.asilposDayEnds.date, DAY), eq(s.asilposDayEnds.branchId, ASILPOS_SUBE)));
     assert.ok((await push()).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "human");
     const after2 = await db.select().from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, rep.id));
     assert.deepEqual(after2.map((l) => l.photoId).sort(), [id, id2].sort());
     assert.deepEqual((await state())?.pendingPhotos, []);
@@ -492,7 +492,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
     );
     assert.equal(r0.kind, "saved");
     assert.ok((await push()).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "human");
     assert.equal(await foto.asilposPhotoState(db, DAY, ASILPOS_SUBE, "staff"), null);
     await refused(foto.attachAsilposDayPhotoCore(db, ayse, { date: DAY, branchId: ASILPOS_SUBE, photoId: await photo(null) }, NOW), /elle girildi/);
   });
@@ -512,7 +512,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
     const before = (await report())!;
     // Kapanış: Pavo'nun sonucu henüz yok; yazarkasa alanları cihaz belgelerinden dolar, Z ve kasa yöneticininki kalır
     assert.ok((await push({ bankPos: undefined })).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "human");
     let r = (await report())!;
     assert.deepEqual([r.okcReceipts, r.okcTotal, r.okcCash, r.okcCard, r.okcVatTotal], [19, 5_215, 1_055, 4_160, 474.09]);
     assert.deepEqual(r.okcVat, [{ rate: 10, total: 5_215, vat: 474.09 }]);
@@ -527,15 +527,15 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
     assert.equal((await db.select().from(s.cashReportRevisions).where(eq(s.cashReportRevisions.reportId, r.id))).length, 1);
     // Pavo'nun sonucu ikinci gönderimle gelir: boş Banka POS dolar; aynı gönderim yeniden işlenince bir şey yazılmaz
     assert.ok((await push()).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "human");
     r = (await report())!;
     assert.equal(r.bankPos, 4_160);
     const rev = r.revision;
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "human");
     assert.equal((await report())?.revision, rev, "dolan alan yeniden yazılmaz");
     // Pavo düzeltip başka bir toplam gönderse de bir kez dolan alan kalır; otomatik rapora dönülmez
     assert.ok((await push({ bankPos: okBank(4_150) })).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "human");
     assert.equal((await report())?.bankPos, 4_160);
     assert.equal((await state())?.autoValues, null, "rapor elle girilmiş kalır");
   });
@@ -551,7 +551,7 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
     );
     const before = (await report())!;
     assert.ok((await push()).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "human");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "human");
     const r = (await report())!;
     assert.deepEqual([r.bankPos, r.okcTotal, r.okcCash, r.okcCard, r.okcReceipts, r.okcVat], [4_200, 5_000, 1_000, 4_000, null, null]);
     assert.equal(r.revision, before.revision, "yazılacak alan yok: sürüm de yok");
@@ -568,11 +568,11 @@ describe("Gün sonu tam: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_D
     assert.equal(await report(), null);
     // Gün sonu geldi, AsilPOS'ta sayım yok: rapor yine AsilPOS'tan gelir
     assert.ok((await push({}, { countedCash: null, cashDiff: null })).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "no-count");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "no-count");
     await refused(asStaff(0), /AsilPOS'tan gelir/);
     // Otomatik rapor: rakamlarını yalnız yönetici düzeltir (salt okunur sunucuda da)
     assert.ok((await push()).ok);
-    assert.equal(await gun.writeAutoReport(db, DAY, NOW), "written");
+    assert.equal(await gun.writeAutoReport(db, DAY, "marina", NOW), "written");
     const rep = (await report())!;
     await refused(asStaff(rep.revision, ASILPOS_SUBE, "deneme"), /yalnız yönetici/);
     assert.equal((await report())?.note, rep.note, "rapor değişmedi");

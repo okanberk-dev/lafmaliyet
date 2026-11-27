@@ -1,56 +1,65 @@
-// AsilPOS'un şubesi kütükten (şube kapsamı B6; docs/ASILPOS.md › Şubeler), gerçek Postgres'te:
-// - bugünkü veri: kütükte Marina'nın kasa kaynağı ModPOS'ken de AsilPOS'un şubesi Marina (geri düşüş); AsilPOS'a
-//   geçirilince yine Marina;
-// - kasa kaynağı başka şubeye (Tuzla) geçince okuyucu önbellekten eskisini en çok süresi kadar verir, şube eylemi
-//   önbelleği hemen düşürür;
-// - Tuzla AsilPOS'tayken gün sonu Tuzla'ya yazılır, Marina'ya ayarlı kasa 409 alır, geçiş günü yalnız Tuzla'nın kasasının;
-// - ikinci şube AsilPOS'a geçirilemez (geri düşüşle tutan Marina AsilPOS'u kullanıyorsa da); zaten AsilPOS olan şubenin
-//   adı düzenlenebilir; yalnız yönetici.
+// Çok şubeli AsilPOS kasaları (sahibin kararı, 27 Kasım 2026; docs/ASILPOS.md › Şubeler), gerçek Postgres'te:
+// - göç 0099 idempotent: eski genel geçiş günü Marina'nın satırına, Marina'nın kasa kaynağı AsilPOS'a; iki kez
+//   çalışınca aynı sonuç, var olan satır kazanır, geçiş günü olmayan Marina ModPOS'ta kalır;
+// - her anahtar kendi şubesini bulur; şube göndermeyen eski kasanın günü anahtarın şubesine yazılır; başka şube bildiren
+//   kasa 409 eski gövdeyle ({ error: "wrong_branch", sube, expected });
+// - kasası ModPOS olan şubenin deneme günü hiçbir hesaba girmez;
+// - iki kasa farklı geçiş günleriyle: "Tümü"de satışlar, kasa satırları, komisyon ve ikram her kasanın kendi gününden,
+//   çift sayım yok;
+// - kurulum kodu şubenin kendi anahtarını verir, başka şubeninkini hiçbir zaman.
 //
 // ASILPOS_SUBE_TEST_DATABASE_URL verilmezse atlanır (ör. postgres://postgres:postgres@localhost:5432/postgres). Test o
 // sunucuda kendi geçici veritabanını (lm_asilpos_sube_<pid>) açar, sonunda siler.
 // Çalıştırma: ASILPOS_SUBE_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx tsx --test tests/asilpos-sube-db.test.ts
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { after, before, describe, test } from "node:test";
+import { join } from "node:path";
+import { after, before, beforeEach, describe, test } from "node:test";
 
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
-import { DEFAULT_BRANCHES } from "../src/lib/branches";
-import { signedHeaders } from "../src/lib/karaoke/signature";
-import { ASILPOS_SWITCH_KEY } from "../src/lib/asilpos/switch";
+import { ASILPOS_GROUP } from "../src/lib/branch-settings/groups";
+import { ALL_BRANCHES, DEFAULT_BRANCHES } from "../src/lib/branches";
+import { signedHeaders, SIGNATURE_HEADER, TIMESTAMP_HEADER } from "../src/lib/karaoke/signature";
+import { DURUM_ANAHTARI, ESKI_KASA_KAYNAGI, GECIS_GUNU_AYARI, SUBE_AYAR_GRUBU } from "../src/lib/asilpos/eski-adlar";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 
 const SERVER_URL = process.env.ASILPOS_SUBE_TEST_DATABASE_URL;
 const DB_NAME = `lm_asilpos_sube_${process.pid}`;
 const SECRET = "asilpos-sube-testi-0123456789-abcdefghij";
+const KEY_M = "marina-kasasi-anahtari-0123456789-abcdefghij";
+const KEY_T = "tuzla-kasasi-anahtari-0123456789-abcdefghijkl";
 const GUN = new URL("https://ladmin.laffogato.net/api/pos/gun");
 const NOW = new Date("2029-06-20T12:00:00+03:00");
 const SWITCH = "2029-06-01";
+const T_SWITCH = "2029-06-15";
 const D = "2029-06-10";
+const D2 = "2029-06-16";
 
-describe("AsilPOS'un şubesi kütükten: veritabanında", { skip: !SERVER_URL && "ASILPOS_SUBE_TEST_DATABASE_URL yok" }, () => {
+describe("Çok şubeli AsilPOS: veritabanında", { skip: !SERVER_URL && "ASILPOS_SUBE_TEST_DATABASE_URL yok" }, () => {
   let admin: postgres.Sql;
   let db: DB;
   let me = { id: 0, name: "Ali", role: "admin" as "admin" | "staff", branchId: null as string | null };
   let branch: typeof import("../src/server/asilpos/branch");
+  let tills: typeof import("../src/server/pos/tills");
 
-  const body = (sube?: string) => ({
+  const body = (date: string, o: { sube?: string; total?: number; zNo?: number } = {}) => ({
     version: 1,
     source: "asilpos",
-    date: D,
-    ...(sube ? { sube } : {}),
+    date,
+    ...(o.sube ? { sube: o.sube } : {}),
     z: {
-      zNo: 41,
+      zNo: o.zNo ?? 41,
       receipts: 12,
-      zTotal: 2400,
-      cash: 900,
-      card: 1500,
-      mealCard: 0,
+      zTotal: o.total ?? 2400,
+      cash: (o.total ?? 2400) - 1500,
+      card: 1000,
+      mealCard: 500,
       online: 0,
       other: 0,
       offRevenue: 0,
@@ -61,17 +70,23 @@ describe("AsilPOS'un şubesi kütükten: veritabanında", { skip: !SERVER_URL &&
       handedOver: 0,
       cashDiff: 0,
     },
-    lines: [{ posName: "LATTE", siteMenuId: null, slot: null, qty: 2, revenue: 400, isService: false }],
-    ikram: [],
-    payments: [],
+    lines: [{ posName: "LATTE", siteMenuId: null, slot: null, qty: 2, revenue: o.total ?? 2400, isService: false }],
+    ikram: [{ posName: "LATTE", siteMenuId: null, slot: null, qty: 1, menuValue: 200, reason: "Müşteri" }],
+    payments: [{ name: "Multinet", zField: "meal_card", channel: "multinet", count: 2, amount: 500 }],
   });
-  const send = async (b: unknown) => {
+  /** Gün sonu ucunun yolu: anahtar şubeyi bulur (resolvePosCaller), sonra handlePosDay */
+  const push = async (key: string, b: unknown) => {
     const raw = JSON.stringify(b);
-    const h = signedHeaders(SECRET, "POST", GUN, raw, NOW.getTime());
-    const { receivePosDay } = await import("../src/server/asilpos/ingest");
-    return receivePosDay(db, { secret: SECRET, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, NOW);
+    const h = signedHeaders(key, "POST", GUN, raw, NOW.getTime());
+    const req = { method: "POST", url: GUN, body: raw, timestamp: h[TIMESTAMP_HEADER], signature: h[SIGNATURE_HEADER] };
+    const caller = await branch.resolvePosCaller(req, db, process.env, NOW.getTime());
+    const { handlePosDay } = await import("../src/server/asilpos/status");
+    return handlePosDay(db, { ...caller, url: GUN, body: raw, timestamp: req.timestamp, signature: req.signature }, NOW);
   };
   const setSource = (id: string, posSource: "modpos" | "asilpos") => db.update(s.branches).set({ posSource }).where(eq(s.branches.id, id));
+  const storeKey = (id: string, secret: string | null) => db.transaction(async (tx) => (await import("../src/server/branch-settings")).putBranchSetting(tx, ASILPOS_GROUP, id, { secret }, "test"));
+  const storeSwitch = (id: string, switchDay: string | null) => db.transaction(async (tx) => (await import("../src/server/branch-settings")).putBranchSetting(tx, ASILPOS_GROUP, id, { switchDay }, "test"));
+  const all = <T>(fn: () => Promise<T>) => import("../src/server/branch-scope").then((m) => m.withBranchScope(ALL_BRANCHES, fn));
 
   before(async () => {
     admin = postgres(SERVER_URL!, { max: 1, onnotice: () => {} });
@@ -103,12 +118,13 @@ describe("AsilPOS'un şubesi kütükten: veritabanında", { skip: !SERVER_URL &&
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();
     await migrate(db, { migrationsFolder: "drizzle" });
-    // Tohum: Marina'nın kasa kaynağı ModPOS (bugünkü kurulumun olası hâli: föyün yedek çekimi için)
+    // Tohum: Marina AsilPOS'ta (DEFAULT_BRANCHES), Tuzla ModPOS'ta; Marina'nın geçiş günü eski genel kayıtta
     await db.insert(s.branches).values(DEFAULT_BRANCHES.map((b) => ({ ...b }))).onConflictDoNothing();
-    await db.insert(s.settings).values({ key: ASILPOS_SWITCH_KEY, value: SWITCH }).onConflictDoNothing();
+    await db.insert(s.settings).values({ key: GECIS_GUNU_AYARI, value: SWITCH }).onConflictDoNothing();
     const [u] = await db.insert(s.users).values({ email: "ali@test.local", name: "Ali", passwordHash: "x", role: "admin" }).returning({ id: s.users.id });
     me = { ...me, id: u.id };
     branch = await import("../src/server/asilpos/branch");
+    tills = await import("../src/server/pos/tills");
   });
 
   after(async () => {
@@ -117,111 +133,168 @@ describe("AsilPOS'un şubesi kütükten: veritabanında", { skip: !SERVER_URL &&
     await admin?.end();
   });
 
-  test("bugünkü veri: Marina'nın kaynağı ModPOS'ken de AsilPOS'un şubesi Marina; AsilPOS'a geçince yine Marina", async () => {
-    branch.forgetAsilposBranch();
-    assert.equal(await branch.asilposBranchId(db), "marina", "kütükte AsilPOS kasalı şube yok: geri düşüş");
-    assert.equal(await branch.loadBranchSwitchDay("marina", db), SWITCH);
-    assert.equal(await branch.loadBranchSwitchDay("tuzla", db), null, "Tuzla ModPOS'ta");
-    assert.equal(await branch.loadBranchSwitchDay(null, db), null, "şubesiz eski kayıt Tuzla'nın");
+  beforeEach(async () => {
+    await db.execute(sql`DELETE FROM pos_daily_sales`);
+    await db.execute(sql`DELETE FROM pos_day_revisions`);
+    await db.execute(sql`DELETE FROM pos_day_reports`);
+    await db.execute(sql`DELETE FROM integration_state`);
     await setSource("marina", "asilpos");
-    branch.forgetAsilposBranch();
-    assert.equal(await branch.asilposBranchId(db), "marina");
-  });
-
-  test("kasa kaynağı Tuzla'ya geçince: önbellek süresi kadar eskisi, sonra yenisi; forgetAsilposBranch hemen düşürür", async () => {
-    const t0 = Date.now();
-    branch.forgetAsilposBranch();
-    assert.equal(await branch.asilposBranchId(db, t0), "marina");
-    await setSource("marina", "modpos");
-    await setSource("tuzla", "asilpos");
-    assert.equal(await branch.asilposBranchId(db, t0 + 1_000), "marina", "önbellekten");
-    assert.equal(await branch.asilposBranchId(db, t0 + branch.ASILPOS_BRANCH_CACHE_MS + 1), "tuzla", "süre dolunca kütükten");
     await setSource("tuzla", "modpos");
-    assert.equal(await branch.asilposBranchId(db, t0 + branch.ASILPOS_BRANCH_CACHE_MS + 2), "tuzla", "yeni önbellek");
-    branch.forgetAsilposBranch();
-    assert.equal(await branch.asilposBranchId(db), "marina", "kütükte AsilPOS kasalı şube yok: geri düşüş");
+    await storeKey("marina", KEY_M);
+    await storeKey("tuzla", null);
+    await storeSwitch("tuzla", null);
+    branch.forgetPosBranches();
   });
 
-  test("Marina geri düşüşle AsilPOS'un şubesi (kütükte ModPOS) ve geçiş günü var: Tuzla da yeni şube de AsilPOS yapılamaz", async () => {
-    const actions = await import("../src/server/actions/branches");
-    branch.forgetAsilposBranch();
-    assert.equal(await branch.asilposBranchId(db), "marina");
-    assert.equal(await branch.asilposInUse("marina", db), true, "eski kaydın geçiş günü Marina'nın");
-    const base = { kind: "fiziksel" as const, openedOn: null, active: true };
-    const tuzla = await actions.updateBranch({ ...base, id: "tuzla", name: "Tuzla", posSource: "asilpos" });
-    assert.ok(!tuzla.ok && /AsilPOS günleri Marina şubesine yazılıyor/.test(tuzla.error), tuzla.ok ? "kabul edildi" : tuzla.error);
-    const created = await actions.createBranch({ id: "bodrum", name: "Bodrum", kind: "fiziksel", posSource: "asilpos", openedOn: null });
-    assert.ok(!created.ok && /Marina/.test(created.error), created.ok ? "kabul edildi" : created.error);
-    branch.forgetAsilposBranch();
-    assert.equal(await branch.asilposBranchId(db), "marina", "AsilPOS'un şubesi yerinde");
-    assert.equal(await branch.loadBranchSwitchDay("marina", db), SWITCH, "Marina'nın geçiş günü yerinde");
-    // Marina'nın kendisi AsilPOS yapılabilir (açık sahip olur), sonra geri alınır
-    const marina = await actions.updateBranch({ ...base, id: "marina", name: "Marina", posSource: "asilpos" });
-    assert.ok(marina.ok, marina.ok ? "" : marina.error);
-    assert.ok((await actions.updateBranch({ ...base, id: "marina", name: "Marina", posSource: "modpos" })).ok);
-    // Panelde anahtar saklama Marina'nın sayfasında (kaynağı ModPOS olsa da AsilPOS'un şubesi): sunucu da Marina'yı kabul eder
-    assert.equal(await branch.asilposBranchId(db), "marina");
+  test("göç 0099 idempotent: geçiş günü Marina'nın satırına, kasa kaynağı AsilPOS'a; durum genel satırda kalır", async () => {
+    const sqlText = readFileSync(join(process.cwd(), "drizzle/0099_pos_cok_sube.sql"), "utf8");
+    const run = async () => {
+      for (const st of sqlText.split("--> statement-breakpoint")) if (st.trim()) await db.execute(sql.raw(st));
+    };
+    // Göç öncesi: Marina'nın kaynağı ModPOS, satırı yok, eski genel kayıt ve genel durum satırı var
+    await db.execute(sql`DELETE FROM branch_settings WHERE branch_id = 'marina' AND grp = ${SUBE_AYAR_GRUBU}`);
+    await db.execute(sql`UPDATE branches SET pos_source = 'modpos' WHERE id = 'marina'`);
+    await db.insert(s.integrationState).values({ key: DURUM_ANAHTARI, value: { lastOk: { at: NOW.toISOString(), date: D, zNo: 1, lines: 1, counted: true } } });
+    const snapshot = async () => ({
+      setting: (await db.select({ value: s.branchSettings.value }).from(s.branchSettings).where(and(eq(s.branchSettings.branchId, "marina"), eq(s.branchSettings.grp, SUBE_AYAR_GRUBU))))[0]?.value ?? null,
+      source: (await db.execute<{ pos_source: string }>(sql`SELECT pos_source FROM branches WHERE id = 'marina'`))[0]?.pos_source,
+      tuzla: (await db.execute<{ pos_source: string }>(sql`SELECT pos_source FROM branches WHERE id = 'tuzla'`))[0]?.pos_source,
+      states: (await db.select({ key: s.integrationState.key }).from(s.integrationState)).map((r) => r.key).sort(),
+    });
+    await run();
+    const once = await snapshot();
+    assert.deepEqual(once.setting, { switchDay: SWITCH });
+    assert.equal(once.source, ESKI_KASA_KAYNAGI, "eski adla yazılır");
+    assert.equal(once.tuzla, "modpos", "Tuzla değişmez");
+    assert.deepEqual(once.states, [DURUM_ANAHTARI], "Marina'nın durumu genel satırda (eski sürüm ve geri dönüş okur)");
+    const status = await import("../src/server/asilpos/status");
+    assert.equal((await status.readAsilposState(db, "marina")).lastOk?.date, D);
+    await run();
+    assert.deepEqual(await snapshot(), once, "ikinci çalışma hiçbir şeyi değiştirmez");
+    branch.forgetPosBranches();
+    assert.equal(await tills.switchDayOf("marina", db), SWITCH);
+    // Var olan satır kazanır: açıkça boşaltılmış gün eski kayıtla dolmaz; geçiş günü olmayan Marina ModPOS'ta kalır
+    await storeSwitch("marina", null);
+    await db.execute(sql`UPDATE branches SET pos_source = 'modpos' WHERE id = 'marina'`);
+    await run();
+    assert.deepEqual((await snapshot()).setting, { switchDay: null });
+    assert.equal((await snapshot()).source, "modpos", "geçiş günü yokken föyün çekimi kesilmez");
+    await storeSwitch("marina", SWITCH);
   });
 
-  test("Tuzla AsilPOS'tayken: gün sonu Tuzla'ya yazılır, Marina'ya ayarlı kasa 409 alır; geçiş günü yalnız Tuzla'nın", async () => {
+  test("her anahtar kendi şubesini bulur; şubesiz eski kasa anahtarın şubesine yazar; başka şube 409 eski gövdeyle", async () => {
     await setSource("tuzla", "asilpos");
-    branch.forgetAsilposBranch();
-    const wrong = await send(body("marina"));
-    assert.equal(wrong.status, 409);
-    assert.deepEqual(wrong.body, { error: "wrong_branch", sube: "marina", expected: "tuzla" });
-    assert.equal((await db.select().from(s.posDayReports)).length, 0, "reddedilen gün yazılmaz");
-    const ok = await send(body("tuzla"));
-    assert.equal(ok.status, 200, JSON.stringify(ok.body));
-    const rows = await db.select({ branchId: s.posDayReports.branchId, date: s.posDayReports.date }).from(s.posDayReports);
-    assert.deepEqual(rows, [{ branchId: "tuzla", date: D }]);
-    const lines = await db.select({ branchId: s.posDailySales.branchId }).from(s.posDailySales);
-    assert.deepEqual(lines, [{ branchId: "tuzla" }], "satırlar da Tuzla'nın");
-    // Eski kasa şube göndermez: kütüğün şubesine yazılır
-    const old = await send({ ...body(), z: { ...body().z } });
-    assert.equal(old.status, 200);
-    // Geçiş günü AsilPOS'un şubesinin şube ayarı (grup SUBE_AYAR_GRUBU; eski kayıt Marina'nın): Marina'nın günü Tuzla'ya geçmez,
-    // Tuzla kendi gününü Ayarlar › AsilPOS'tan alır (docs/SUBE.md › Şube başına ayarlar)
-    assert.equal(await branch.loadBranchSwitchDay("tuzla", db), null, "Marina'nın günü Tuzla'ya geçmez");
-    const { writeAsilposSwitchDay } = await import("../src/server/asilpos/admin");
-    assert.ok(await writeAsilposSwitchDay(db, { id: me.id, name: me.name, role: "admin" }, SWITCH, D), "Tuzla'nın günü yazılır");
-    assert.equal(await branch.loadBranchSwitchDay("tuzla", db), SWITCH);
-    assert.equal(await branch.loadBranchSwitchDay("marina", db), null, "Marina artık ModPOS günü");
-    const { loadKasaAsilpos } = await import("../src/server/data/asilpos-day");
-    assert.equal((await loadKasaAsilpos(D, db, "tuzla")).asilpos, true);
-    assert.equal((await loadKasaAsilpos(D, db, "marina")).asilpos, false);
-    const { loadAsilposCard } = await import("../src/server/asilpos/status");
-    const card = await loadAsilposCard(db, NOW);
-    assert.equal(card.branchId, "tuzla");
-    assert.deepEqual(
-      card.days.map((d) => d.date),
-      [D],
-      "kart AsilPOS'un şubesinin günlerini sayar",
-    );
+    await storeKey("tuzla", KEY_T);
+    await storeSwitch("tuzla", T_SWITCH);
+    branch.forgetPosBranches();
+    const req = (key: string) => {
+      const h = signedHeaders(key, "GET", new URL("https://ladmin.laffogato.net/api/panel/pos/urunler"), "", NOW.getTime());
+      return { method: "GET", url: new URL("https://ladmin.laffogato.net/api/panel/pos/urunler"), body: "", timestamp: h[TIMESTAMP_HEADER], signature: h[SIGNATURE_HEADER] };
+    };
+    assert.equal((await branch.resolvePosCaller(req(KEY_M), db, process.env, NOW.getTime())).branchId, "marina");
+    assert.equal((await branch.resolvePosCaller(req(KEY_T), db, process.env, NOW.getTime())).branchId, "tuzla");
+    const stranger = await branch.resolvePosCaller(req(SECRET), db, process.env, NOW.getTime());
+    assert.equal(stranger.branchId, null, "tanınmayan anahtar şubeye bağlanmaz (uç 401)");
+    // Şube göndermeyen eski kasa: gün anahtarın şubesine
+    const old = await push(KEY_T, body(D2, { total: 3000 }));
+    assert.equal(old.status, 200, JSON.stringify(old.body));
+    const [row] = await db.select({ branchId: s.posDayReports.branchId }).from(s.posDayReports).where(eq(s.posDayReports.date, D2));
+    assert.equal(row.branchId, "tuzla");
+    assert.equal(old.body.counted, true);
+    // Başka şube bildiren kasa: 409, gövde eski biçimde
+    const wrong = await push(KEY_T, body(D2, { sube: "marina" }));
+    assert.deepEqual([wrong.status, wrong.body], [409, { error: "wrong_branch", sube: "marina", expected: "tuzla" }]);
+    // Devir de anahtarın şubesiyle; ?sube farklıysa 409
+    const devir = await import("../src/server/asilpos/devir");
+    const at = new URL(`https://ladmin.laffogato.net/api/panel/pos/devir?date=${D2}&sube=marina`);
+    const h = signedHeaders(KEY_T, "GET", at, "", NOW.getTime());
+    assert.deepEqual(await devir.servePosDevir(db, { branchId: "tuzla", secret: KEY_T, url: at, timestamp: h[TIMESTAMP_HEADER], signature: h[SIGNATURE_HEADER], now: NOW }), {
+      status: 409,
+      body: { error: "wrong_branch", sube: "marina", expected: "tuzla" },
+    });
+    // Durum şube şube: Tuzla'nın reddi Marina'nın satırına yazılmaz
+    const status = await import("../src/server/asilpos/status");
+    assert.equal((await status.readAsilposState(db, "tuzla")).lastError?.error, "wrong_branch");
+    assert.equal((await status.readAsilposState(db, "marina")).lastError, null);
+    // İki şubenin anahtarı aynıysa ikisi de kullanılmaz (bir şubenin günü öbürüne yazılmasın)
+    await storeKey("tuzla", KEY_M);
+    branch.forgetPosKeys();
+    assert.equal((await branch.resolvePosCaller(req(KEY_M), db, process.env, NOW.getTime())).branchId, null);
+    assert.equal((await branch.posKeyState("tuzla", db)).problem, "same_as_other_branch");
   });
 
-  test("şube eylemi: ikinci şube AsilPOS'a geçirilemez; AsilPOS'taki şubenin adı düzenlenir; önbellek eylemle düşer", async () => {
-    const actions = await import("../src/server/actions/branches");
-    const base = { kind: "fiziksel" as const, openedOn: null, active: true };
-    // Tuzla AsilPOS'ta (önceki test); Marina'yı da AsilPOS yapmak reddedilir
-    const refused = await actions.updateBranch({ ...base, id: "marina", name: "Marina", posSource: "asilpos" });
-    assert.ok(!refused.ok && /yalnız bir şubenin kasası/.test(refused.error), refused.ok ? "" : refused.error);
-    const created = await actions.createBranch({ id: "bodrum", name: "Bodrum", kind: "fiziksel", posSource: "asilpos", openedOn: null });
-    assert.ok(!created.ok && /Tuzla şubesinin kasası zaten AsilPOS/.test(created.error), created.ok ? "" : created.error);
-    const renamed = await actions.updateBranch({ ...base, id: "tuzla", name: "Tuzla", posSource: "asilpos" });
-    assert.ok(renamed.ok, renamed.ok ? "" : renamed.error);
-    // Önbelleği dolu tut, sonra eylemle değiştir: elle düşürmeden yeni değer
-    assert.equal(await branch.asilposBranchId(db), "tuzla");
-    const back = await actions.updateBranch({ ...base, id: "tuzla", name: "Tuzla", posSource: "modpos" });
-    assert.ok(back.ok, back.ok ? "" : back.error);
-    const marina = await actions.updateBranch({ ...base, id: "marina", name: "Marina", posSource: "asilpos" });
-    assert.ok(marina.ok, marina.ok ? "" : marina.error);
-    assert.equal(await branch.asilposBranchId(db), "marina", "eylem önbelleği düşürdü");
-    me = { ...me, role: "staff" };
-    try {
-      const staff = await actions.updateBranch({ ...base, id: "tuzla", name: "Tuzla", posSource: "asilpos" });
-      assert.ok(!staff.ok, "personel şubeyi değiştiremez");
-    } finally {
-      me = { ...me, role: "admin" };
+  test("kasası ModPOS olan şubenin deneme günü hiçbir hesaba girmez", async () => {
+    // Tuzla ModPOS'ta ama anahtarı var (kurulum yapıldı, geçiş henüz yok): günü saklanır, sayılmaz
+    await storeKey("tuzla", KEY_T);
+    await storeSwitch("tuzla", T_SWITCH);
+    branch.forgetPosBranches();
+    const r = await push(KEY_T, body(D2, { total: 5000 }));
+    assert.equal(r.status, 200);
+    assert.equal(r.body.counted, false, "kasası ModPOS: deneme");
+    assert.equal(r.body.switchDay, null);
+    assert.equal((await push(KEY_M, body(D2, { total: 2000 }))).body.counted, true);
+    const reports = await import("../src/server/data/cash-reports");
+    const rows = await all(() => reports.asilposTillRows(db));
+    assert.deepEqual(rows.map((x) => [x.branchId, x.date, x.zTotal]), [["marina", D2, 2000]], "yalnız Marina'nın sayılan günü");
+    const ikram = await import("../src/server/data/asilpos-ikram");
+    const data = await all(async () => ikram.loadAsilposIkram(db, await tills.loadSwitchDays(db)));
+    assert.deepEqual(data.tillDays, [`marina|${D2}`]);
+    const { loadCommissionInput } = await import("../src/server/data/commission");
+    const input = await all(() => loadCommissionInput({ resolveNames: false, today: "2029-06-20" }));
+    assert.deepEqual(input.asilpos?.days.map((d) => [d.branchId, d.date]), [["marina", D2]]);
+  });
+
+  test("iki kasa farklı geçiş günleriyle: \"Tümü\"de satış, kasa satırı, komisyon ve ikram her kasanın kendi gününden; çift sayım yok", async () => {
+    await setSource("tuzla", "asilpos");
+    await storeKey("tuzla", KEY_T);
+    await storeSwitch("tuzla", T_SWITCH);
+    branch.forgetPosBranches();
+    // Marina 10 ve 16 Haziran, Tuzla 10 (geçiş gününden önce: deneme) ve 16 Haziran; tutarlar ayrı
+    for (const [key, date, total] of [[KEY_M, D, 2000], [KEY_M, D2, 3000], [KEY_T, D, 4000], [KEY_T, D2, 8000]] as const) {
+      assert.equal((await push(key, body(date, { total }))).status, 200);
     }
+    const days = await tills.loadSwitchDays(db);
+    assert.deepEqual(days, { tuzla: T_SWITCH, marina: SWITCH });
+    // Kasa satırları (ay rakamı, Bugün): Tuzla'nın denemesi yok
+    const reports = await import("../src/server/data/cash-reports");
+    const rows = await all(() => reports.asilposTillRows(db));
+    assert.deepEqual(rows.map((x) => x.zTotal).sort((a, b) => a - b), [2000, 3000, 8000]);
+    // Satışlar: her kasa kendi sayılma gününden; satır ↔ Z denetimi (şube, gün) başına
+    const sales = await import("../src/server/data/asilpos-sales");
+    const month = await all(() => sales.loadAsilposMonthSales(db, { marina: SWITCH, tuzla: T_SWITCH }));
+    assert.equal(month.lines.reduce((a, l) => a + l.revenue, 0), 13_000, "2000 + 3000 + 8000; Tuzla'nın 4000'i yok");
+    assert.deepEqual(month.linesVsZ.map((x) => [x.branchId, x.date, x.lines, x.z]).sort(), [["marina", D, 2000, 2000], ["marina", D2, 3000, 3000], ["tuzla", D2, 8000, 8000]]);
+    assert.deepEqual(month.days, [{ month: "2029-06", days: 2, last: D2 }], "ayın günleri tekil");
+    // Komisyon: gün sonları kasa başına, Tuzla 16'dan
+    const { loadCommissionInput } = await import("../src/server/data/commission");
+    const input = await all(() => loadCommissionInput({ resolveNames: false, today: "2029-06-20" }));
+    assert.deepEqual(input.asilpos?.switchDays, { tuzla: T_SWITCH, marina: SWITCH });
+    assert.deepEqual(input.asilpos?.days.map((d) => `${d.branchId}|${d.date}`).sort(), [`marina|${D}`, `marina|${D2}`, `tuzla|${D2}`]);
+    // İkram: (şube, gün) anahtarlı
+    const ikram = await import("../src/server/data/asilpos-ikram");
+    const data = await all(() => ikram.loadAsilposIkram(db, days));
+    assert.deepEqual([...(data.tillDays ?? [])].sort(), [`marina|${D}`, `marina|${D2}`, `tuzla|${D2}`]);
+    assert.equal(data.lines.length, 3);
+    // Tek şube seçiliyken yalnız onunki
+    const { withBranchScope } = await import("../src/server/branch-scope");
+    const tuzlaOnly = await withBranchScope("tuzla", () => reports.asilposTillRows(db));
+    assert.deepEqual(tuzlaOnly.map((x) => x.zTotal), [8000]);
+  });
+
+  test("kurulum kodu şubenin kendi anahtarını verir, başka şubeninkini hiçbir zaman", async () => {
+    const kurulum = await import("../src/server/asilpos/kurulum");
+    const { raw } = await kurulum.issueInstallCode(db, { branchId: "tuzla", email: "tuzla@test.local", by: me.id }, NOW);
+    const tuzlaKey = await branch.posKeyOf("tuzla", db);
+    assert.ok(tuzlaKey && tuzlaKey.length >= 32, "kod üretilirken Tuzla'nın anahtarı saklandı");
+    assert.notEqual(tuzlaKey, KEY_M);
+    const r = await kurulum.redeemInstallCode(raw, db, NOW);
+    assert.equal(r.status, 200);
+    const values = r.status === 200 ? Object.values(r.body.baglanti) : [];
+    assert.ok(values.includes(tuzlaKey!), "Tuzla'nın kendi anahtarı");
+    assert.ok(!values.includes(KEY_M), "Marina'nın anahtarı verilmez");
+    // Marina'nın kodu Marina'nın anahtarını verir (var olan anahtar değişmez)
+    const m = await kurulum.issueInstallCode(db, { branchId: "marina", email: "marina@test.local", by: me.id }, NOW);
+    const rm = await kurulum.redeemInstallCode(m.raw, db, NOW);
+    assert.ok(rm.status === 200 && Object.values(rm.body.baglanti).includes(KEY_M));
   });
 });

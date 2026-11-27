@@ -29,10 +29,10 @@ const staff = (now: Date, o: Partial<DayFacts> = {}): DayFacts => ({ role: "staf
 // ---------------------------------------------------------------- Gün sonundan önce personel
 
 test("personel: AsilPOS'un şubesinde, AsilPOS gününde, gün sonu gelmeden ve rapor yokken form yerine bilgi", () => {
-  const base = { admin: false, branchId: "marina", asilposDay: true, dayEnd: false, hasReport: false };
+  const base = { admin: false, asilposDay: true, dayEnd: false, hasReport: false };
   assert.equal(staffBeforeAsilposDayEnd(base), true);
   assert.equal(staffBeforeAsilposDayEnd({ ...base, admin: true }), false, "yönetici formu görür (AsilPOS göndermezse yedek)");
-  assert.equal(staffBeforeAsilposDayEnd({ ...base, branchId: "tuzla" }), false, "ModPOS'ta kalan şube");
+  assert.equal(staffBeforeAsilposDayEnd({ ...base, asilposDay: false }), false, "ModPOS'ta kalan şube (şubenin günü AsilPOS günü değil)");
   assert.equal(staffBeforeAsilposDayEnd({ ...base, asilposDay: false }), false, "geçiş gününden önce");
   assert.equal(staffBeforeAsilposDayEnd({ ...base, dayEnd: true }), false, "gün sonu geldi: fotoğraf yolu");
   assert.equal(staffBeforeAsilposDayEnd({ ...base, hasReport: true }), false, "elle girilmiş rapor eski yolla");
@@ -136,11 +136,10 @@ test("fotoğraf kaldırma: otomatik AsilPOS gününde personelin düğmesi ve is
 // ---------------------------------------------------------------- AsilPOS günü: harcama ve ikram/zayi AsilPOS'tan
 
 test("personel: AsilPOS'un şubesinde AsilPOS gününde Kasa sayfasından kasadan çıkan ve ikram/zayi eklemez", () => {
-  const base = { admin: false, branchId: "marina", asilposDay: true };
+  const base = { admin: false, asilposDay: true };
   assert.equal(staffAsilposEntryClosed(base), true);
   assert.equal(staffAsilposEntryClosed({ ...base, admin: true }), false, "yönetici her zaman ekler");
-  assert.equal(staffAsilposEntryClosed({ ...base, branchId: "tuzla" }), false, "ModPOS'ta kalan şube");
-  assert.equal(staffAsilposEntryClosed({ ...base, branchId: null }), false, "şubesiz (Tuzla)");
+  assert.equal(staffAsilposEntryClosed({ ...base, asilposDay: false }), false, "ModPOS'ta kalan şube (şubenin günü AsilPOS günü değil)");
   assert.equal(staffAsilposEntryClosed({ ...base, asilposDay: false }), false, "geçiş gününden önce");
   assert.equal(ASILPOS_STAFF_ENTRY_LINE, "AsilPOS günü: harcama ve ikram/zayi AsilPOS'tan girilir");
   assert.match(ASILPOS_CASH_OUT_TEXT.staffAdd, /AsilPOS/);
@@ -149,12 +148,12 @@ test("personel: AsilPOS'un şubesinde AsilPOS gününde Kasa sayfasından kasada
 
 test("Kasa sayfası: AsilPOS gününde personel ekle düğmeleri yerine kısa satırı görür; fiş fotoğrafı ekle kalır", () => {
   const page = read("src/app/panel/kasa/page.tsx");
-  assert.match(page, /const entryClosed = staffAsilposEntryClosed\(\{ admin, branchId: view\.till, asilposDay: asilposState\.asilpos, asilposBranch \}\);/);
+  assert.match(page, /const entryClosed = staffAsilposEntryClosed\(\{ admin, asilposDay: asilposState\.asilpos \}\);/);
   assert.match(page, /asilposEntryClosed=\{entryClosed\}/, "kasadan çıkanlar kartı");
   // Zayi / ikram satırı: AsilPOS gününde personelde Ekle yok (kısa satır Kasadan çıkanlar kartında, iki kez yazılmaz)
   assert.match(page, /\{entryClosed \? null : \(\n\s+<ButtonLink href=\{`\/panel\/zayi\?gun=\$\{date\}`\}/, "zayi / ikram kartı");
   // Geç rapor görünümü de aynı kuralla
-  assert.match(page, /staffAsilposEntryClosed\(\{ admin: false, branchId: view\.till, asilposDay: asilposState\.asilpos, asilposBranch \}\)/);
+  assert.match(page, /staffAsilposEntryClosed\(\{ admin: false, asilposDay: asilposState\.asilpos \}\)/);
   const outs = read("src/app/panel/kasa/cash-outs.tsx");
   assert.match(outs, /\{asilposEntryClosed \? \(\n\s+<p[^>]*>\n\s+<Info[^>]*\/>\n\s+\{ASILPOS_STAFF_ENTRY_LINE\}\n\s+<\/p>\n\s+\) : canEdit \|\| \(staffActs && locked\) \? \(/);
   // Fiş fotoğrafı ekle (AsilPOS satırına da) ekleme kuralından bağımsız

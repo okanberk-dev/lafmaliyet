@@ -172,10 +172,10 @@ test("E-36: AsilPOS'un satışlı gün sonu kapalı gün kanıtı (kırmızı sa
   // Sunucu: kanıt yalnız AsilPOS gününde okunur (şube şube; şube verilmezse AsilPOS'un şubesinin günü); gün sonu yazımı
   // kapalı işareti yalnız satışlı AsilPOS gününde kaldırır (geçiş günü gün sonunun şubesinin kasasından)
   const server = read("src/server/closed-days.ts");
-  assert.match(server, /if \(!isAsilposDay\(date, branchSwitchDay\(switchDay, branch, asilposBranch\)\)\) return null;/);
+  assert.match(server, /if \(!isAsilposDay\(date, switchDayFor\(switchDays, branch\)\)\) continue;/);
   assert.match(
     server,
-    /if \(z\.receipts <= 0 && z\.zTotal <= 0\) return;\n\s+const \[switchDay, asilposBranch\] = await Promise\.all\(\[asilposSwitchDay\(tx\), asilposBranchId\(tx\)\]\);[\s\S]*?if \(!isAsilposDay\(date, branchSwitchDay\(switchDay, branchId, asilposBranch\)\)\) return;\n\s+await lockClosedDay\(tx, date\);/,
+    /if \(z\.receipts <= 0 && z\.zTotal <= 0\) return;\n[\s\S]*?if \(!isAsilposDay\(date, await switchDayOf\(branchId, tx\)\)\) return;\n\s+await lockClosedDay\(tx, date\);/,
   );
   const ingest = read("src/server/asilpos/ingest.ts");
   assert.match(ingest, /const soldSince = stored && \(stored\.z\.receipts > 0 \|\| stored\.z\.zTotal > 0\) \? stored\.receivedAt : null;/);
@@ -204,7 +204,9 @@ test("G6: raporsuz AsilPOS günü ayın rakamına girer, gün yine 'rapor yok'; 
   assert.equal(plain(missingSentence(plainMonth)), "1 gün rapor yok: 3 Kasım. O günler açıksanız ciro ve açık gün eksik kalır.");
   // Yükleyici: geçiş gününden itibaren, raporu olan günü rapora bırakır; dataset'in AsilPOS satış sınırları yalnız raporlara bakar
   const loader = read("src/server/data/cash-reports.ts");
-  assert.match(loader, /if \(switchDay === null \|\| \(to !== undefined && to < switchDay\)\) return \[\];/);
+  // Çok şube: her kasa kendi geçiş gününden (R1)
+  assert.match(loader, /const tills = Object\.entries\(await loadSwitchDays\(db\)\)\.filter\(/);
+  assert.match(loader, /if \(!tills\.length\) return \[\];/);
   // ModPOS föyü (ay rakamına yedek) AsilPOS'tan da sonra gelir: rapor > AsilPOS > ModPOS (docs/MODPOS-API.md › Ay rakamına yedek)
   // Öncelik şube içinde (tillKey: şube, gün): "Tümü"de bir şubenin raporu öteki şubenin aynı günkü yedek satırını düşürmez
   assert.match(loader, /\.\.\.asilpos\.filter\(\(r\) => !have\.has\(tillKey\(r\)\)\),\n\s+\.\.\.modpos\.filter\(\(r\) => !taken\.has\(tillKey\(r\)\) && r\.date >= \(runFrom\.get\(r\.branchId \?\? ""\) \?\? ""\)\),/);
@@ -213,7 +215,7 @@ test("G6: raporsuz AsilPOS günü ayın rakamına girer, gün yine 'rapor yok'; 
   assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);
   // AsilPOS'un günleriyle yalnız AsilPOS'un şubesinin raporları (denetim 21 Kasım #5: Marina'nın raporu Tuzla'nın AsilPOS'unu beklemez).
   // Birleşme mergeSales'te: hem görünümün satışı hem su litresinin "Tümü" satışı aynı kuralı kullanır (#4)
-  assert.match(dataset, /const reportRows = input\.till\.filter\(\(r\) => isReportRow\(r\) && isAsilposBranch\(r\.branchId, input\.asilposBranch\)\);/);
+  assert.match(dataset, /const reportRows = input\.till\.filter\(\(r\) => isReportRow\(r\) && tills\.has\(r\.branchId \?\? DEFAULT_BRANCH_ID\)\);/);
   assert.match(dataset, /lastTillDay: reportRows\.at\(-1\)\?\.date \?\? null,/);
 });
 

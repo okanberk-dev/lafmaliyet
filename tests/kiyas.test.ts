@@ -26,7 +26,7 @@ function row(branchId: string, date: string, zTotal: number, over: Partial<TillR
 }
 
 function input(rows: TillRow[], over: Partial<KiyasInput> = {}): KiyasInput {
-  return { rows, branches: [TUZLA], today: TODAY, switchDay: null, ...over };
+  return { rows, branches: [TUZLA], today: TODAY, switchDays: {}, ...over };
 }
 
 const find = (s: KiyasSummary, key: string) => [...s.days, ...s.periods].find((r) => r.key === key)!;
@@ -343,7 +343,7 @@ test("fiş: satış varken 0 fiş bilinmiyor sayılır; sayılar Türkçe biçim
   assert.doesNotMatch(html, /Fiş 40 → 0/);
   assert.match(html, /Fiş sayısı girilmedi/);
   // AsilPOS gün sonunda 0 fiş de bilinmiyor
-  const l = kiyasSummary(input([row("marina", DAY, 4_000, { source: "asilpos", receipts: 0 })], { branches: [MARINA], switchDay: "2026-11-01" }));
+  const l = kiyasSummary(input([row("marina", DAY, 4_000, { source: "asilpos", receipts: 0 })], { branches: [MARINA], switchDays: { marina: "2026-11-01" } }));
   assert.equal(l.day.revenue, 4_000);
   assert.equal(l.day.receipts, null);
   // Binlik ayırıcı: 3.150 fiş, "Fiş 2.800 → 3.150"
@@ -426,24 +426,24 @@ test("Marina: geçiş günü tam 22 Kasım; öncesindeki AsilPOS gün sonu (dene
   const modpos21 = row("marina", "2026-11-21", 2_800, { source: "modpos", receipts: 14 });
   const opts = { branches: [MARINA], today };
   // Geçiş günü 22 Kasım: 22 sayılır, 21'in AsilPOS'u deneme (yok sayılır); 21'in ModPOS föyü varsa o sayılır
-  const s = kiyasSummary(input(asilpos, { ...opts, switchDay: SWITCH }));
+  const s = kiyasSummary(input(asilpos, { ...opts, switchDays: { marina: SWITCH } }));
   assert.equal(s.day.date, "2026-11-22");
   assert.equal(s.day.revenue, 5_000);
   assert.equal(s.day.receipts, 25);
   assert.equal(find(s, "dun").state, "veri-yok");
-  const withModpos = kiyasSummary(input([...asilpos, modpos21], { ...opts, switchDay: SWITCH }));
+  const withModpos = kiyasSummary(input([...asilpos, modpos21], { ...opts, switchDays: { marina: SWITCH } }));
   assert.equal(find(withModpos, "dun").prev?.revenue, 2_800);
   assert.equal(find(withModpos, "dun").prev?.receipts, 14);
   // Geçiş günü bir gün sonra (23 Kasım): 22'nin AsilPOS'u da deneme
-  assert.equal(kiyasSummary(input(asilpos, { ...opts, switchDay: "2026-11-23" })).day.state, "veri-yok");
+  assert.equal(kiyasSummary(input(asilpos, { ...opts, switchDays: { marina: "2026-11-23" } })).day.state, "veri-yok");
   // Ayar boş (null): AsilPOS günleri hiç sayılmaz, ModPOS föyü sayılır
-  const none = kiyasSummary(input([...asilpos, modpos21], { ...opts, switchDay: null }));
+  const none = kiyasSummary(input([...asilpos, modpos21], { ...opts, switchDays: {} }));
   assert.equal(none.day.date, "2026-11-22");
   assert.equal(none.day.state, "veri-yok");
   assert.equal(find(none, "dun").state, "veri-yok");
   assert.equal(find(none, "bu-hafta").curAll?.revenue, 2_800);
   // Geçiş günü yalnız Marina'nın kasasının: Tuzla'nın satırı (kasa raporu) her gün sayılır
-  const t = kiyasSummary(input([row("tuzla", DAY, 1_000), row("tuzla", addDays(DAY, -1), 1_000)], { switchDay: SWITCH }));
+  const t = kiyasSummary(input([row("tuzla", DAY, 1_000), row("tuzla", addDays(DAY, -1), 1_000)], { switchDays: { marina: SWITCH } }));
   assert.equal(find(t, "dun").state, "ok");
 });
 

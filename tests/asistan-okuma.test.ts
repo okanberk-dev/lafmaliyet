@@ -186,7 +186,7 @@ function fakeDeps(state: FakeState = { scope: "marina", calls: [] }, over: Parti
   ]);
   return {
     branches: async () => ({ scope: state.scope, rows: BRANCHES }),
-    switchDay: async () => SWITCH,
+    switchDays: async () => ({ marina: SWITCH }),
     dayEnd: async (date, branchId) => {
       state.calls.push(`dayEnd:${date}:${branchId}`);
       return date === "2026-11-23" && branchId === "marina"
@@ -716,7 +716,8 @@ test("kaynak: okuyucu modülü yalnız izinli okuyucuları içe aktarır; AsilPO
     "@/server/data/today-safe": ["safe"],
     "@/server/data/user-reminders": ["loadDueReminders"],
     "@/server/db": ["getDb", "schema as s"],
-    "@/server/asilpos/status": ["loadAsilposCard", "loadAsilposSwitchDay"],
+    "@/server/asilpos/status": ["loadAsilposCard"],
+    "@/server/pos/tills": ["loadPosTills", "loadSwitchDays"],
     "@/server/vardiya/store": ["loadShiftWeek", "shiftsOn", "todayShifts"],
   });
   const body = code("src/server/assistant-reads/index.ts");

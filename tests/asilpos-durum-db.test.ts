@@ -69,7 +69,8 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
     const h = signedHeaders(o.signWith ?? SECRET, "POST", GUN, raw, now.getTime());
     return status.handlePosDay(
       o.db ?? db,
-      { secret: o.secret === undefined ? SECRET : o.secret, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] },
+      // Kasanın şubesi anahtardan (resolvePosCaller): imza tutmazsa şube yok
+      { branchId: o.signWith && o.signWith !== SECRET ? null : "marina", secret: o.secret === undefined ? SECRET : o.secret, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] },
       now,
       { unverifiedWindowMs: o.windowMs ?? 0 },
     );
@@ -132,7 +133,7 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
   test("200: gün yazılır, son gün durum satırına; yanıtta counted ve switchDay geçiş gününe göre", async () => {
     assert.deepEqual(await send(push("2026-11-05", 31)), { status: 200, body: { ok: true, date: "2026-11-05", lines: 1, matched: 0, unmatched: ["LATTE 2026-11-05"], counted: false, switchDay: null, nextOpening: null } });
     assert.deepEqual((await stateRow())?.lastOk, { at: NOW.toISOString(), date: "2026-11-05", zNo: 31, lines: 1, counted: false });
-    assert.equal(await core.writeAsilposSwitchDay(db, users.admin, "2026-11-06", "2026-11-12"), "AsilPOS'a geçiş günü: yok (kasa ModPOS) → 6 Kasım 2026");
+    assert.equal(await core.writeAsilposSwitchDay(db, users.admin, "marina", "2026-11-06", "2026-11-12"), "AsilPOS'a geçiş günü: yok (kasa ModPOS) → 6 Kasım 2026");
     assert.deepEqual((await send(push("2026-11-05", 31), { now: later(1) })).body, { ok: true, date: "2026-11-05", lines: 1, matched: 0, unmatched: ["LATTE 2026-11-05"], counted: false, switchDay: "2026-11-06", nextOpening: null });
     assert.deepEqual((await send(push("2026-11-06", 32), { now: later(2) })).body, { ok: true, date: "2026-11-06", lines: 1, matched: 0, unmatched: ["LATTE 2026-11-06"], counted: true, switchDay: "2026-11-06", nextOpening: { amount: 900, source: TEL_KAYNAK } });
     const st = (await stateRow()) as { lastOk: { date: string; counted: boolean }; lastError?: unknown };
@@ -148,7 +149,7 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
     assert.deepEqual(r, { status: 409, body: { error: "z_conflict", date: "2026-11-07", zNo: 127 } });
     assert.deepEqual(await reportOf("2026-11-07"), before);
     assert.deepEqual((await linesOf("2026-11-07")).map((l) => l.posName), ["LATTE 2026-11-07"]);
-    const st = await status.readAsilposState(db);
+    const st = await status.readAsilposState(db, "marina");
     assert.deepEqual(st.lastError, { at: later(5).toISOString(), status: 409, error: "z_conflict", field: null, date: "2026-11-07", zNo: 127, sentZNo: 128, clearedAt: null });
     assert.deepEqual(st.rejections, { "2026-11-07": st.lastError }, "günlü ret güne göre de saklanır");
     assert.equal(st.lastOk?.date, "2026-11-07", "son başarılı gün kalır");
@@ -159,11 +160,11 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
   test("400: son ret alan ve gün ile; bozuk gövdede gün yok", async () => {
     const bad = { ...push("2026-11-08", 40), lines: [line("X", { qty: -1 })] };
     assert.deepEqual(await send(bad), { status: 400, body: { error: "invalid", field: "lines.0.qty" } });
-    let st = await status.readAsilposState(db);
+    let st = await status.readAsilposState(db, "marina");
     assert.deepEqual([st.lastError?.status, st.lastError?.field, st.lastError?.date, st.lastError?.sentZNo], [400, "lines.0.qty", "2026-11-08", null]);
     assert.equal(st.rejections["2026-11-08"]?.field, "lines.0.qty");
     assert.equal(await send("{bozuk").then((x) => x.status), 400);
-    st = await status.readAsilposState(db);
+    st = await status.readAsilposState(db, "marina");
     assert.deepEqual([st.lastError?.field, st.lastError?.date], ["body", null]);
     assert.deepEqual(Object.keys(st.rejections), ["2026-11-08"], "günsüz ret güne göre yazılmaz, günlüyü silmez");
     assert.equal(await reportOf("2026-11-08"), undefined);
@@ -190,7 +191,7 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
     const broken = Object.create(db) as DB;
     broken.transaction = (() => Promise.reject(new Error("bağlantı koptu"))) as DB["transaction"];
     await assert.rejects(send(push("2026-11-10", 60), { db: broken }), /bağlantı koptu/);
-    const st = await status.readAsilposState(db);
+    const st = await status.readAsilposState(db, "marina");
     assert.deepEqual([st.lastError?.status, st.lastError?.error, st.lastError?.date, st.lastError?.sentZNo], [500, "server_error", "2026-11-10", 60]);
   });
 
@@ -198,30 +199,30 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
     await send(push("2026-11-07", 127, [line("A"), line("B")]));
     await send(push("2026-11-08", 128));
     await send(push("2026-11-07", 3), { now: later(1) });
-    assert.equal((await status.readAsilposState(db)).lastError?.error, "z_conflict");
-    await refused(core.removeAsilposDay(db, users.staff, "2026-11-07", 127), /yalnız yönetici/);
-    await refused(core.removeAsilposDay(db, users.admin, "2026-11-07", 3), /bu arada Z 127 ile yeniden gönderildi/);
-    await refused(core.removeAsilposDay(db, users.admin, "2026-11-01", 1), /kaydı yok/);
+    assert.equal((await status.readAsilposState(db, "marina")).lastError?.error, "z_conflict");
+    await refused(core.removeAsilposDay(db, users.staff, "marina", "2026-11-07", 127), /yalnız yönetici/);
+    await refused(core.removeAsilposDay(db, users.admin, "marina", "2026-11-07", 3), /bu arada Z 127 ile yeniden gönderildi/);
+    await refused(core.removeAsilposDay(db, users.admin, "marina", "2026-11-01", 1), /kaydı yok/);
     assert.equal((await linesOf("2026-11-07")).length, 2, "reddedilen silme bir şey silmez");
-    assert.deepEqual(await core.removeAsilposDay(db, users.admin, "2026-11-07", 127, later(2)), { zNo: 127, lines: 2 });
+    assert.deepEqual(await core.removeAsilposDay(db, users.admin, "marina", "2026-11-07", 127, later(2)), { zNo: 127, lines: 2 });
     assert.equal(await reportOf("2026-11-07"), undefined);
     assert.deepEqual(await linesOf("2026-11-07"), []);
     assert.ok(await reportOf("2026-11-08"), "öteki gün kalır");
     assert.equal((await linesOf("2026-11-08")).length, 1);
-    assert.equal((await status.readAsilposState(db)).rejections["2026-11-07"]?.clearedAt, later(2).toISOString());
+    assert.equal((await status.readAsilposState(db, "marina")).rejections["2026-11-07"]?.clearedAt, later(2).toISOString());
     // AsilPOS'ta Gönder'e basılır: yeni Z ile yazılır, o günün reddi kapanır
     assert.deepEqual((await send(push("2026-11-07", 3), { now: later(3) })).body, { ok: true, date: "2026-11-07", lines: 1, matched: 0, unmatched: ["LATTE 2026-11-07"], counted: false, switchDay: null, nextOpening: null });
     assert.equal((await reportOf("2026-11-07")).z.zNo, 3);
-    assert.deepEqual((await status.readAsilposState(db)).rejections, {});
+    assert.deepEqual((await status.readAsilposState(db, "marina")).rejections, {});
     // Aynı anda gelen gün sonu ile silme aynı kilitte sırayla: sonuç ya silinmiş ya da yeni gün (yarım değil)
-    await Promise.allSettled([core.removeAsilposDay(db, users.admin, "2026-11-07", 3), send(push("2026-11-07", 3, [line("C")]), { now: later(4) })]);
+    await Promise.allSettled([core.removeAsilposDay(db, users.admin, "marina", "2026-11-07", 3), send(push("2026-11-07", 3, [line("C")]), { now: later(4) })]);
     const rep = await reportOf("2026-11-07");
     const names = (await linesOf("2026-11-07")).map((l) => l.posName);
     assert.ok((rep === undefined && names.length === 0) || (rep?.z.zNo === 3 && names.length === 1), `${rep?.z.zNo} ${names}`);
   });
 
   test("açık 409 güne göre kalır: sonraki günün 200'ü ve başka günün 400'ü / 500'ü onu örtmez; silme düğmesi gününde", async () => {
-    const summary = async (now: Date) => asilposCardSummary(await status.loadAsilposCard(db, now));
+    const summary = async (now: Date) => asilposCardSummary(await status.loadAsilposCard(db, "marina", now));
     await send(push("2026-11-07", 127));
     assert.equal((await send(push("2026-11-07", 128), { now: later(1) })).status, 409);
     assert.equal((await send(push("2026-11-08", 129), { now: later(2) })).status, 200);
@@ -251,7 +252,7 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
   test("zil: sayılan AsilPOS gününün reddi yöneticinin zilinde bir kez (gün ve neden başına); deneme günü düşmez, gün yeniden yazılınca kalkar", async () => {
     const rows = async (now: Date) => (await bell.asilposRejectionBell(db, now)).map((n) => [n.id, n.title, n.group, n.kind, n.href, n.timeLabel]);
     assert.deepEqual(await bell.asilposRejectionBell(db, later(1)), [], "ret yokken satır yok");
-    assert.match((await core.writeAsilposSwitchDay(db, users.admin, "2026-11-06", "2026-11-12")) ?? "", /→ 6\sKasım 2026$/);
+    assert.match((await core.writeAsilposSwitchDay(db, users.admin, "marina", "2026-11-06", "2026-11-12")) ?? "", /→ 6\sKasım 2026$/);
     // Deneme günü (geçişten önce) reddedilse de zile düşmez (kart gösterir)
     await send(push("2026-11-05", 31));
     assert.equal((await send(push("2026-11-05", 32), { now: later(1) })).status, 409);
@@ -278,35 +279,35 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
     assert.deepEqual((await rows(later(11))).map((r) => r[0]), [`${ZIL_ONEKI}-ret-2026-11-09-wrong_branch`, `${ZIL_ONEKI}-ret-2026-11-08-invalid`]);
     // Bir hafta sonra zilden düşer (kart göstermeye devam eder)
     assert.deepEqual(await rows(new Date(NOW.getTime() + 8 * 86_400_000)), []);
-    assert.equal(asilposCardSummary(await status.loadAsilposCard(db, new Date(NOW.getTime() + 8 * 86_400_000))).dayRejections.length, 3);
+    assert.equal(asilposCardSummary(await status.loadAsilposCard(db, "marina", new Date(NOW.getTime() + 8 * 86_400_000))).dayRejections.length, 3);
   });
 
   test("AsilPOS panelin Z'sini yeniden gönderince (200) o günün 409'u kapanır: kart doğru kaydı silmeyi önermez", async () => {
     await send(push("2026-11-07", 12));
     assert.equal((await send(push("2026-11-07", 13), { now: later(1) })).status, 409);
-    let sum = asilposCardSummary(await status.loadAsilposCard(db, later(2)));
+    let sum = asilposCardSummary(await status.loadAsilposCard(db, "marina", later(2)));
     assert.deepEqual(
       sum.dayRejections.map((x) => [x.rejection.date, x.status, x.day?.zNo]),
       [["2026-11-07", "open", 12]],
     );
     assert.equal((await send(push("2026-11-07", 12), { now: later(3) })).status, 200);
-    assert.deepEqual((await status.readAsilposState(db)).rejections, {});
-    sum = asilposCardSummary(await status.loadAsilposCard(db, later(4)));
+    assert.deepEqual((await status.readAsilposState(db, "marina")).rejections, {});
+    sum = asilposCardSummary(await status.loadAsilposCard(db, "marina", later(4)));
     assert.deepEqual([sum.dayRejections, sum.undated, sum.alerts, sum.short], [[], null, 0, sum.headline]);
     // Durum yazımı kaybolsa bile (eski satır) gün retten sonra yazıldığı için ret çözülmüş sayılır
     await db.execute(sql`update integration_state set value = jsonb_set(value, '{rejections}', jsonb_build_object('2026-11-07', value->'lastError')) where key = 'asilpos'`);
-    sum = asilposCardSummary(await status.loadAsilposCard(db, later(5)));
+    sum = asilposCardSummary(await status.loadAsilposCard(db, "marina", later(5)));
     assert.deepEqual(sum.dayRejections, []);
   });
 
   test("günü silmek yalnız çözdüğü 409'u 'silindi' yapar: aynı günün 400'ü ve başka Z'nin çakışması olduğu gibi kalır", async () => {
     await send(push("2026-11-07", 127, [line("A"), line("B")]));
     assert.equal((await send({ ...push("2026-11-07", 127), lines: [line("A"), line("A")] }, { now: later(1) })).status, 400);
-    assert.equal((await status.readAsilposState(db)).rejections["2026-11-07"]?.field, "lines.1.posName");
-    assert.deepEqual(await core.removeAsilposDay(db, users.admin, "2026-11-07", 127, later(2)), { zNo: 127, lines: 2 });
-    let st = await status.readAsilposState(db);
+    assert.equal((await status.readAsilposState(db, "marina")).rejections["2026-11-07"]?.field, "lines.1.posName");
+    assert.deepEqual(await core.removeAsilposDay(db, users.admin, "marina", "2026-11-07", 127, later(2)), { zNo: 127, lines: 2 });
+    let st = await status.readAsilposState(db, "marina");
     assert.equal(st.rejections["2026-11-07"]?.clearedAt, null, "400 silmeyle çözülmez: alanı ve nedeni görünmeye devam eder");
-    let sum = asilposCardSummary(await status.loadAsilposCard(db, later(3)));
+    let sum = asilposCardSummary(await status.loadAsilposCard(db, "marina", later(3)));
     assert.deepEqual(
       sum.dayRejections.map((x) => [x.rejection.date, x.rejection.status, x.status]),
       [["2026-11-07", 400, "open"]],
@@ -315,16 +316,16 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
     await send(push("2026-11-08", 4));
     assert.equal((await send(push("2026-11-08", 9), { now: later(4) })).status, 409);
     await db.execute(sql`update pos_day_reports set z = jsonb_set(z, '{zNo}', '5') where date = '2026-11-08'`);
-    await core.removeAsilposDay(db, users.admin, "2026-11-08", 5, later(5));
-    st = await status.readAsilposState(db);
+    await core.removeAsilposDay(db, users.admin, "marina", "2026-11-08", 5, later(5));
+    st = await status.readAsilposState(db, "marina");
     assert.equal(st.rejections["2026-11-08"]?.clearedAt, null);
     // Doğru çakışma: silinince "Gönder bekleniyor" (kırmızı değil)
     await send(push("2026-11-09", 21));
     assert.equal((await send(push("2026-11-09", 22), { now: later(6) })).status, 409);
-    await core.removeAsilposDay(db, users.admin, "2026-11-09", 21, later(7));
-    st = await status.readAsilposState(db);
+    await core.removeAsilposDay(db, users.admin, "marina", "2026-11-09", 21, later(7));
+    st = await status.readAsilposState(db, "marina");
     assert.equal(st.rejections["2026-11-09"]?.clearedAt, later(7).toISOString());
-    sum = asilposCardSummary(await status.loadAsilposCard(db, later(8)));
+    sum = asilposCardSummary(await status.loadAsilposCard(db, "marina", later(8)));
     assert.deepEqual(
       sum.dayRejections.map((x) => [x.rejection.date, x.status, x.rejection.clearedAt]),
       [
@@ -338,22 +339,22 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
   });
 
   test("geçiş günü: yalnız yönetici, geçerli gün; aynı değer kayıt değildir; şube ayarına yazılır, eski kayıt yazılmaz", async () => {
-    await refused(core.writeAsilposSwitchDay(db, users.staff, "2026-11-10", "2026-11-12"), /yalnız yönetici/);
-    await refused(core.writeAsilposSwitchDay(db, users.admin, "2026-09-01", "2026-11-12"), /en erken/);
-    await refused(core.writeAsilposSwitchDay(db, users.admin, "2027-03-01", "2026-11-12"), /90 gün/);
-    assert.equal(await core.writeAsilposSwitchDay(db, users.admin, null, "2026-11-12"), null, "zaten boş");
-    assert.match((await core.writeAsilposSwitchDay(db, users.admin, "2026-11-10", "2026-11-12")) ?? "", /yok \(kasa ModPOS\) → 10 Kasım 2026/);
-    assert.equal(await core.writeAsilposSwitchDay(db, users.admin, "2026-11-10", "2026-11-12"), null);
-    assert.equal(await status.loadAsilposSwitchDay(db), "2026-11-10");
-    assert.equal(await core.writeAsilposSwitchDay(db, users.admin, null, "2026-11-12"), "AsilPOS'a geçiş günü: 10 Kasım 2026 → yok (kasa ModPOS)");
+    await refused(core.writeAsilposSwitchDay(db, users.staff, "marina", "2026-11-10", "2026-11-12"), /yalnız yönetici/);
+    await refused(core.writeAsilposSwitchDay(db, users.admin, "marina", "2026-09-01", "2026-11-12"), /en erken/);
+    await refused(core.writeAsilposSwitchDay(db, users.admin, "marina", "2027-03-01", "2026-11-12"), /90 gün/);
+    assert.equal(await core.writeAsilposSwitchDay(db, users.admin, "marina", null, "2026-11-12"), null, "zaten boş");
+    assert.match((await core.writeAsilposSwitchDay(db, users.admin, "marina", "2026-11-10", "2026-11-12")) ?? "", /yok \(kasa ModPOS\) → 10 Kasım 2026/);
+    assert.equal(await core.writeAsilposSwitchDay(db, users.admin, "marina", "2026-11-10", "2026-11-12"), null);
+    assert.equal(await (await import("../src/server/pos/tills")).switchDayOf("marina", db), "2026-11-10");
+    assert.equal(await core.writeAsilposSwitchDay(db, users.admin, "marina", null, "2026-11-12"), "AsilPOS'a geçiş günü: 10 Kasım 2026 → yok (kasa ModPOS)");
     // Yazım AsilPOS'un şubesinin şube ayarına (Marina'nın satırı); eski genel kayıt (settings) yazılmaz
     assert.equal((await db.select().from(s.settings).where(eq(s.settings.key, "asilposGecisGunu"))).length, 0);
     assert.deepEqual((await db.select({ value: s.branchSettings.value }).from(s.branchSettings).where(eq(s.branchSettings.grp, SUBE_AYAR_GRUBU)))[0]?.value, { switchDay: null });
     // Satırı olmayan Marina eski kaydı okur: bozuk değer okunurken ModPOS; boşaltmak değişiklik değildir
     await db.execute(sql`DELETE FROM branch_settings`);
     await db.insert(s.settings).values({ key: "asilposGecisGunu", value: "bozuk" });
-    assert.equal(await status.loadAsilposSwitchDay(db), null);
-    assert.equal(await core.writeAsilposSwitchDay(db, users.admin, null, "2026-11-12"), null);
+    assert.equal(await (await import("../src/server/pos/tills")).switchDayOf("marina", db), null);
+    assert.equal(await core.writeAsilposSwitchDay(db, users.admin, "marina", null, "2026-11-12"), null);
     const { loadSettings } = await import("../src/server/data/dataset");
     assert.equal((await loadSettings()).asilposGecisGunu, null);
   });
@@ -365,7 +366,7 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
     assert.equal(await kasa.loadKasaAsilposDay("2026-11-05", db, ASILPOS_SUBE), null, "geçiş günü yok: deneme günü Kasa'ya girmez");
     assert.equal(await kasa.loadKasaAsilposDay("2026-11-09", db, ASILPOS_SUBE), null);
     assert.ok(await kasa.loadAsilposDay("2026-11-09", db, ASILPOS_SUBE), "veri saklı");
-    await core.writeAsilposSwitchDay(db, users.admin, "2026-11-08", "2026-11-12");
+    await core.writeAsilposSwitchDay(db, users.admin, "marina", "2026-11-08", "2026-11-12");
     assert.equal(await kasa.loadKasaAsilposDay("2026-11-05", db, ASILPOS_SUBE), null, "geçiş gününden önce");
     const day = await kasa.loadKasaAsilposDay("2026-11-09", db, ASILPOS_SUBE);
     assert.equal(day?.prefill.values.zNo?.value, "35");
@@ -379,15 +380,15 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
   });
 
   test("Ayarlar kartının verisi: deneme ve sayılan günler, gelmeyen günler (kapalı gün hariç), eşleşmeyen adlar, ret günü", async () => {
-    let card = await status.loadAsilposCard(db, NOW);
+    let card = await status.loadAsilposCard(db, "marina", NOW);
     assert.deepEqual([card.switchDay, card.totalDays, card.trialDays, card.days, card.missing, card.unmatchedCount, card.rejectionDays], [null, 0, 0, [], [], 0, {}]);
     await send(push("2026-11-05", 31, [line("YENİ ÜRÜN", { qty: 3 }), line("ODA", { isService: true })]));
     await send(push("2026-11-09", 35, [line("YENİ ÜRÜN", { qty: 2 })]));
     await send(push("2026-11-10", 36));
     await send(push("2026-11-10", 99), { now: later(1) });
-    await core.writeAsilposSwitchDay(db, users.admin, "2026-11-08", "2026-11-12");
+    await core.writeAsilposSwitchDay(db, users.admin, "marina", "2026-11-08", "2026-11-12");
     await db.insert(s.specialDays).values({ kind: "kapali", dateFrom: "2026-11-08", dateTo: "2026-11-08", title: "Kapalı", createdByName: "Yönetici" });
-    card = await status.loadAsilposCard(db, NOW);
+    card = await status.loadAsilposCard(db, "marina", NOW);
     assert.equal(card.switchDay, "2026-11-08");
     assert.equal(card.today, "2026-11-12");
     assert.deepEqual([card.totalDays, card.trialDays], [3, 1]);
@@ -411,15 +412,15 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
   });
 
   test("eylemler: geçiş günü işlem geçmişine; günü silme parolasız STEP_UP_REQUIRED, yanlışı 'Hatalı parola onayı (AsilPOS)', doğrusu siler", async () => {
-    const saved = await actions.saveAsilposSwitchDay("2026-11-10");
+    const saved = await actions.saveAsilposSwitchDay({ branchId: "marina", day: "2026-11-10" });
     assert.ok(saved.ok);
     assert.match(saved.data.change ?? "", /10 Kasım 2026/);
-    assert.deepEqual(await actions.saveAsilposSwitchDay("10.11.2026"), { ok: false, error: "Geçersiz tarih" });
+    assert.deepEqual(await actions.saveAsilposSwitchDay({ branchId: "marina", day: "10.11.2026" }), { ok: false, error: "Geçersiz tarih" });
     await send(push("2026-11-07", 127));
-    assert.deepEqual(await actions.deleteAsilposDay({ date: "2026-11-07", zNo: 127 }), { ok: false, error: STEP_UP_REQUIRED });
-    assert.deepEqual(await actions.deleteAsilposDay({ date: "2026-11-07", zNo: 127 }, { password: "yanlis" }), { ok: false, error: WRONG_PASSWORD });
+    assert.deepEqual(await actions.deleteAsilposDay({ branchId: "marina", date: "2026-11-07", zNo: 127 }), { ok: false, error: STEP_UP_REQUIRED });
+    assert.deepEqual(await actions.deleteAsilposDay({ branchId: "marina", date: "2026-11-07", zNo: 127 }, { password: "yanlis" }), { ok: false, error: WRONG_PASSWORD });
     assert.ok(await reportOf("2026-11-07"), "yanlış parola silmez");
-    assert.deepEqual(await actions.deleteAsilposDay({ date: "2026-11-01", zNo: 1 }, { password: PASSWORD }), { ok: false, error: "Bu günün AsilPOS kaydı yok (silinmiş olabilir); sayfayı yenileyin" });
+    assert.deepEqual(await actions.deleteAsilposDay({ branchId: "marina", date: "2026-11-01", zNo: 1 }, { password: PASSWORD }), { ok: false, error: "Bu günün AsilPOS kaydı yok (silinmiş olabilir); sayfayı yenileyin" });
     // Ön denetim şube şube: ModPOS'taki şubenin (Tuzla) aynı günkü eski deneme satırı "gün kayıtlı" sayılmaz, parola
     // sorulmaz; AsilPOS'un şubesinin satırı silinince Tuzla'nınki yerinde kalır
     const [asilposZ] = await db.select({ z: s.posDayReports.z }).from(s.posDayReports).where(eq(s.posDayReports.date, "2026-11-07"));
@@ -427,8 +428,8 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
       { date: "2026-11-03", branchId: MODPOS_SUBE, z: { ...asilposZ.z, zNo: 90 }, payments: [], ikram: [], source: "asilpos" },
       { date: "2026-11-07", branchId: MODPOS_SUBE, z: { ...asilposZ.z, zNo: 91 }, payments: [], ikram: [], source: "asilpos" },
     ]);
-    assert.deepEqual(await actions.deleteAsilposDay({ date: "2026-11-03", zNo: 90 }), { ok: false, error: "Bu günün AsilPOS kaydı yok (silinmiş olabilir); sayfayı yenileyin" });
-    assert.deepEqual(await actions.deleteAsilposDay({ date: "2026-11-07", zNo: 127 }, { password: PASSWORD }), { ok: true, data: { zNo: 127, lines: 1 } });
+    assert.deepEqual(await actions.deleteAsilposDay({ branchId: "marina", date: "2026-11-03", zNo: 90 }), { ok: false, error: "Bu günün AsilPOS kaydı yok (silinmiş olabilir); sayfayı yenileyin" });
+    assert.deepEqual(await actions.deleteAsilposDay({ branchId: "marina", date: "2026-11-07", zNo: 127 }, { password: PASSWORD }), { ok: true, data: { zNo: 127, lines: 1 } });
     assert.deepEqual(
       (await db.select({ date: s.posDayReports.date, branchId: s.posDayReports.branchId }).from(s.posDayReports).orderBy(s.posDayReports.date)).map((r) => [r.date, r.branchId]),
       [
@@ -467,15 +468,15 @@ describe("AsilPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "
     assert.equal((await send(push("2026-11-07", 128), { now: later(2) })).status, 409);
     r = await rows();
     for (const k of [DURUM_ANAHTARI, YENI]) assert.deepEqual([r[k].rejections?.["2026-11-07"]?.error, r[k].lastError?.sentZNo], ["z_conflict", 128], k);
-    assert.equal((await status.readAsilposState(db)).rejections["2026-11-07"]?.sentZNo, 128);
+    assert.equal((await status.readAsilposState(db, "marina")).rejections["2026-11-07"]?.sentZNo, 128);
     // Günü silmek reddi iki satırda da kapatır
-    await core.removeAsilposDay(db, users.admin, "2026-11-07", 127, later(3));
+    await core.removeAsilposDay(db, users.admin, "marina", "2026-11-07", 127, later(3));
     r = await rows();
     for (const k of [DURUM_ANAHTARI, YENI]) assert.equal(r[k].rejections?.["2026-11-07"]?.clearedAt, later(3).toISOString(), k);
     // 401: sayaç iki satırda
     assert.equal((await send(push("2026-11-09", 50), { signWith: `${SECRET}x`, now: later(4) })).status, 401);
     r = await rows();
     for (const k of [DURUM_ANAHTARI, YENI]) assert.equal(r[k].unverified?.count, 1, k);
-    assert.equal((await status.readAsilposState(db)).unverified?.count, 1);
+    assert.equal((await status.readAsilposState(db, "marina")).unverified?.count, 1);
   });
 });

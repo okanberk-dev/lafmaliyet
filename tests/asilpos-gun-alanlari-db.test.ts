@@ -68,7 +68,7 @@ describe("AsilPOS Faz 2 alanları: veritabanında", { skip: !SERVER_URL && "ASIL
   const send = (body: unknown) => {
     const raw = JSON.stringify(body);
     const h = signedHeaders(SECRET, "POST", GUN, raw, NOW.getTime());
-    return ingest.receivePosDay(db, { secret: SECRET, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, NOW);
+    return ingest.receivePosDay(db, { branchId: "marina", secret: SECRET, url: GUN, body: raw, timestamp: h["x-laf-timestamp"], signature: h["x-laf-signature"] }, NOW);
   };
   const report = async (date = DATE) => {
     const [r] = await db.select().from(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, ASILPOS_SUBE)));
@@ -162,7 +162,7 @@ describe("AsilPOS Faz 2 alanları: veritabanında", { skip: !SERVER_URL && "ASIL
 
   test("günü silmek (409'un çözümü) geçmişi silmez: yeni Z'nin gövdesi de aynı güne eklenir", async () => {
     const me = { id: 1, name: "Yönetici", role: "admin" as const };
-    await asilposAdmin.removeAsilposDay(db, me, DATE, 1, NOW);
+    await asilposAdmin.removeAsilposDay(db, me, "marina", DATE, 1, NOW);
     assert.equal(await report(), undefined);
     assert.equal((await revisions()).length, 2, "geçmiş kalır");
     const other = golden();

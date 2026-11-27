@@ -313,7 +313,7 @@ test("kaynak: kasadaki fiyatların okuyucuları ve yazımı bugünün kasasına 
   // Kasanın durumu geçiş gününden bağımsız yazılır (B11 incelemesi D1), her etkin fiziksel şubeye (şube kapsamı A3);
   // geçiş günü yalnız bildirimin `posPending`'i için ve yalnız siteye bağlı üründe okunur
   assert.match(record, /for \(const till of tills\) \{\n      const cur = [^\n]*\n      const next = posAfterPriceChange/);
-  assert.match(record, /if \(next\.stalePrice !== null && \(row\.siteMenuId === null \|\| tillPriceManual\(branchTill\(switchDay, till\.id, at, \[\], asilposBranch\), true\)\)\) posPending = true;/);
+  assert.match(record, /if \(next\.stalePrice !== null && \(row\.siteMenuId === null \|\| tillPriceManual\(branchTill\(switchDays, till\.id, at, \[\]\), true\)\)\) posPending = true;/);
   const scope = read("src/server/data/till-scope.ts");
   assert.match(scope, /return and\(isNull\(s\.products\.siteMenuId\), changedSinceStart\);/);
   const prices = read("src/server/data/prices.ts");

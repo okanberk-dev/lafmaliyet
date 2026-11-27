@@ -101,6 +101,7 @@ describe("AsilPOS ModPOS dönemi ucu: veritabanında", { skip: !SERVER_URL && "A
     const url = new URL(`${ENDPOINT}${query}`);
     const h = signedHeaders(SECRET, "GET", url, "", NOW.getTime());
     return modpos.serveModposDays({
+      branchId: "marina",
       secret: o.secret === undefined ? SECRET : o.secret,
       url,
       timestamp: h["x-laf-timestamp"],

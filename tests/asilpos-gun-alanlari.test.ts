@@ -441,7 +441,7 @@ const KABUL_VAT = [{ rate: 10, base: 5713.64, vat: 571.36 }];
 function novemberModel(rows: TillRow[], switchDay: string | null = "2026-11-22") {
   const data: SeedData = JSON.parse(read("tests/fixtures/baslangic/veri.json"));
   const base: Dataset = { ...datasetFromSeed(data), currentMonth: "2026-12" };
-  const [till] = tillMonths(rows, "2026-11-30", undefined, undefined, undefined, undefined, undefined, true, switchDay);
+  const [till] = tillMonths(rows, "2026-11-30", undefined, undefined, undefined, undefined, undefined, true, { froms: switchDay ? { marina: switchDay } : null, tills: ["marina"] });
   const nov = resolveMonth("2026-11", undefined, till);
   const ds: Dataset = { ...base, settings: { ...base.settings, asilposGecisGunu: switchDay }, salesLines: base.salesLines.filter((l) => l.month !== "2026-11"), months: [...base.months.filter((m) => m.month !== "2026-11"), nov] };
   return { model: createModel(ds), till };
@@ -533,7 +533,7 @@ test("Satışlar: indirimden önceki (brüt) ve sonraki tutar ayrı sütun; ModP
   );
   // AsilPOS ay satırı brütü toplar
   const merged = mergeSalesSources({
-    switchDay: "2026-11-22",
+    switchDays: { marina: "2026-11-22" },
     salesLines: [],
     coverage: {},
     asilposLines: [{ month: "2026-11", posName: "LATTE MEDIUM", productId: null, isService: false, qty: 3, revenue: 570, gross: 585, isAddon: false, days: 1 }],

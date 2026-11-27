@@ -107,11 +107,13 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
 
   test("geçiş: hiçbir şey yapmadan bugünkü değerler; öbür şubeler Tuzla'yla aynı; okuma satır yazmaz", async () => {
     const { resolveBranchSetting } = await import("../src/server/branch-settings");
-    const { asilposSwitchDay, asilposSecret } = await import("../src/server/asilpos/branch");
+    const { posKeyOf } = await import("../src/server/asilpos/branch");
+    const { switchDayOf } = await import("../src/server/pos/tills");
     const { loadModposFallback, modposFallbackBranches } = await import("../src/server/modpos/fallback");
     const { loadSettings } = await import("../src/server/data/dataset");
-    assert.equal(await asilposSwitchDay(db), "2026-11-21", "geçiş günü Marina'nın (eski kayıt)");
-    assert.equal(await asilposSecret(db), ENV_SECRET, "anahtar ortamdan");
+    assert.equal(await switchDayOf("marina", db), "2026-11-21", "geçiş günü Marina'nın (eski kayıt)");
+    assert.equal(await posKeyOf("marina", db), ENV_SECRET, "anahtar ortamdan (yalnız Marina'nın)");
+    assert.equal(await posKeyOf("tuzla", db), null, "ortamdaki anahtar öbür şubenin değil");
     assert.equal(await loadModposFallback(db, "tuzla"), true);
     assert.equal(await loadModposFallback(db, "bodrum"), true, "Bodrum Tuzla'yla aynı başlar");
     assert.deepEqual([...(await modposFallbackBranches(db))].sort(), ["bodrum", "marina", "tuzla"]);
@@ -126,33 +128,40 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     assert.equal((await db.select().from(s.branchSettings)).length, 0, "okuma satır yazmaz");
   });
 
-  test("AsilPOS geçiş günü AsilPOS'un şubesine yazılır; kaynak başka şubeye geçerse Marina'nın günü ona geçmez", async () => {
+  test("AsilPOS geçiş günü kasanın kendi şubesine yazılır; kaynak başka şubeye geçerse Marina'nın günü ona geçmez", async () => {
     const { writeAsilposSwitchDay } = await import("../src/server/asilpos/admin");
-    const { forgetAsilposBranch, asilposSwitchDay } = await import("../src/server/asilpos/branch");
-    const change = await writeAsilposSwitchDay(db, users.ali, "2026-11-22", "2026-11-25");
-    assert.match(change ?? "", /21\sKasım\s2026 → 22\sKasım\s2026/);
+    const { forgetPosBranches } = await import("../src/server/asilpos/branch");
+    const { switchDayOf } = await import("../src/server/pos/tills");
+    const change = await writeAsilposSwitchDay(db, users.ali, "marina", "2026-11-22", "2026-11-25");
+    assert.match(change ?? "", /^Marina: .*21\sKasım\s2026 → 22\sKasım\s2026/);
     assert.deepEqual((await rowOf(ASILPOS_GROUP.id, "marina"))?.value, { switchDay: "2026-11-22" });
     assert.equal((await db.select().from(s.settings).where(eq(s.settings.key, GECIS_GUNU_AYARI)))[0]?.value, "2026-11-21", "eski kayıt bırakılır");
-    assert.equal(await asilposSwitchDay(db), "2026-11-22");
-    assert.equal(await writeAsilposSwitchDay(db, users.ali, "2026-11-22", "2026-11-25"), null, "değişiklik yok");
-    await assert.rejects(writeAsilposSwitchDay(db, users.ayse, null, "2026-11-25"), /yalnız yönetici/);
+    assert.equal(await switchDayOf("marina", db), "2026-11-22");
+    assert.equal(await writeAsilposSwitchDay(db, users.ali, "marina", "2026-11-22", "2026-11-25"), null, "değişiklik yok");
+    await assert.rejects(writeAsilposSwitchDay(db, users.ayse, "marina", null, "2026-11-25"), /yalnız yönetici/);
     // Kasa kaynağı Tuzla'ya geçer: Tuzla'nın kendi günü yok
     await db.update(s.branches).set({ posSource: "modpos" }).where(eq(s.branches.id, "marina"));
     await db.update(s.branches).set({ posSource: "asilpos" }).where(eq(s.branches.id, "tuzla"));
-    forgetAsilposBranch();
+    forgetPosBranches();
     try {
-      assert.equal(await asilposSwitchDay(db), null, "Marina'nın günü Tuzla'ya geçmez");
+      assert.equal(await switchDayOf("tuzla", db), null, "Marina'nın günü Tuzla'ya geçmez");
+      assert.equal(await switchDayOf("marina", db), null, "kasası ModPOS olan şubenin günü sayılmaz");
+      await assert.rejects(writeAsilposSwitchDay(db, users.ali, "marina", "2026-11-23", "2026-11-25"), /kasası AsilPOS değil/);
     } finally {
       await db.update(s.branches).set({ posSource: "modpos" }).where(eq(s.branches.id, "tuzla"));
       await db.update(s.branches).set({ posSource: "asilpos" }).where(eq(s.branches.id, "marina"));
-      forgetAsilposBranch();
+      forgetPosBranches();
     }
-    assert.equal(await asilposSwitchDay(db), "2026-11-22");
+    assert.equal(await switchDayOf("marina", db), "2026-11-22");
   });
 
   test("AsilPOS anahtarı şifreli, ortamdakinin önüne geçer, istemciye gitmez; ret kuralları; silinince ortamdaki", async () => {
     const actions = await import("../src/server/actions/branch-settings");
-    const { asilposSecret, asilposSecretState } = await import("../src/server/asilpos/branch");
+    const { posKeyOf, posKeyState } = await import("../src/server/asilpos/branch");
+    const stateOf = async (id: string) => {
+      const st = await posKeyState(id, db);
+      return { problem: st.problem, source: st.source, envName: st.envName };
+    };
     const { branchSettingView } = await import("../src/server/branch-settings-view");
     const no = async (input: Parameters<typeof actions.saveAsilposSecret>[0], re: RegExp) => {
       const r = await actions.saveAsilposSecret(input);
@@ -160,7 +169,7 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     };
     await no({ branchId: "marina", secret: "kisa" }, /en az 32/);
     await no({ branchId: "marina", secret: SITE_SECRET }, /sitenin anahtarı/);
-    await no({ branchId: "tuzla", secret: PANEL_SECRET }, /yalnız kasası AsilPOS olan şubede/);
+    await no({ branchId: "tuzla", secret: PANEL_SECRET }, /yalnız kasası AsilPOS olan/);
     await no({ branchId: "tuzla", secret: null }, /panelde saklanan AsilPOS anahtarı yok/);
     // Parolayla: onaysız ve yanlış parolayla yazılmaz
     assert.deepEqual(await actions.saveAsilposSecret({ branchId: "marina", secret: PANEL_SECRET }), { ok: false, error: STEP_UP_REQUIRED });
@@ -168,8 +177,8 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     assert.equal(await rowOf(ASILPOS_GROUP.id, "marina").then((r) => r?.secrets ?? null), null, "parolasız yazılmadı");
     const r = await actions.saveAsilposSecret({ branchId: "marina", secret: PANEL_SECRET }, { password: PASSWORD });
     assert.ok(r.ok, r.ok ? "" : r.error);
-    assert.equal(await asilposSecret(db), PANEL_SECRET);
-    assert.deepEqual(await asilposSecretState(db), { problem: null, source: "panel", envName: "ASILPOS_SYNC_SECRET" });
+    assert.equal(await posKeyOf("marina", db), PANEL_SECRET);
+    assert.deepEqual(await stateOf("marina"), { problem: null, source: "panel", envName: "ASILPOS_SYNC_SECRET" });
     const row = await rowOf(ASILPOS_GROUP.id, "marina");
     assert.ok(row?.secrets && typeof (row.secrets as Record<string, unknown>).secret === "string", "şifreli alan");
     assert.ok(!JSON.stringify(row).includes(PANEL_SECRET), "anahtar açık metin olarak durmaz");
@@ -185,23 +194,26 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     } finally {
       me = users.ali;
     }
-    // Kasa kaynağı başka şubeye geçerse eski şubedeki anahtar kullanılmaz; yenisi yazılamaz ama silinebilir
-    const { forgetAsilposBranch } = await import("../src/server/asilpos/branch");
+    // Kasa kaynağı başka şubeye geçerse (çok şube): her şubenin anahtarı kendisinin; Marina'nınki Tuzla'ya geçmez, Tuzla
+    // aynı anahtarı alamaz (anahtar şubeyi tanıtır); eski şubedeki anahtar silinebilir
+    const { forgetPosBranches } = await import("../src/server/asilpos/branch");
     await db.update(s.branches).set({ posSource: "modpos" }).where(eq(s.branches.id, "marina"));
     await db.update(s.branches).set({ posSource: "asilpos" }).where(eq(s.branches.id, "tuzla"));
-    forgetAsilposBranch();
+    forgetPosBranches();
     try {
-      assert.equal(await asilposSecret(db), ENV_SECRET, "Tuzla'nın panel anahtarı yok: ortamdaki");
-      await no({ branchId: "marina", secret: PANEL_SECRET }, /yalnız kasası AsilPOS olan şubede/);
+      assert.equal(await posKeyOf("tuzla", db), null, "Tuzla'nın anahtarı yok; Marina'nınki ona geçmez");
+      assert.equal(await posKeyOf("marina", db), PANEL_SECRET, "Marina'nın anahtarı kendisinin");
+      await no({ branchId: "tuzla", secret: PANEL_SECRET }, /Marina şubesinin AsilPOS anahtarı/);
+      await no({ branchId: "tuzla", secret: ENV_SECRET }, /Marina şubesinin AsilPOS anahtarı/);
       assert.ok((await actions.saveAsilposSecret({ branchId: "marina", secret: null }, { password: PASSWORD })).ok, "eski şubedeki anahtar silinir");
       assert.equal((await branchSettingView(ASILPOS_GROUP, "marina")).secrets.secret, "none");
     } finally {
       await db.update(s.branches).set({ posSource: "modpos" }).where(eq(s.branches.id, "tuzla"));
       await db.update(s.branches).set({ posSource: "asilpos" }).where(eq(s.branches.id, "marina"));
-      forgetAsilposBranch();
+      forgetPosBranches();
     }
-    assert.equal(await asilposSecret(db), ENV_SECRET, "silinince ortamdaki");
-    assert.deepEqual(await asilposSecretState(db), { problem: null, source: "ortam", envName: "ASILPOS_SYNC_SECRET" });
+    assert.equal(await posKeyOf("marina", db), ENV_SECRET, "silinince ortamdaki");
+    assert.deepEqual(await stateOf("marina"), { problem: null, source: "ortam", envName: "ASILPOS_SYNC_SECRET" });
   });
 
   test("döndürülen AsilPOS anahtarı başka sunucu örneğinin önbelleğinde de hemen geçmez; yenisi en geç 10 sn'de geçer", async () => {
@@ -210,7 +222,7 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     const { signedHeaders, SIGNATURE_HEADER, TIMESTAMP_HEADER } = await import("../src/lib/karaoke/signature");
     const OLD = "eski-asilpos-anahtari-en-az-otuz-iki-karakterlik-metin";
     const NEW = "yeni-asilpos-anahtari-en-az-otuz-iki-karakterlik-metin";
-    // Başka bir sunucu örneğinin yazması: bu örneğin önbelleği düşmez (forgetAsilposSecret çağrılmaz)
+    // Başka bir sunucu örneğinin yazması: bu örneğin önbelleği düşmez (forgetPosKeys çağrılmaz)
     const store = (secret: string | null) => db.transaction((tx) => putBranchSetting(tx, ASILPOS_GROUP, "marina", { secret }, "Başka örnek"));
     const url = new URL("https://ladmin.laffogato.net/api/panel/pos/urunler");
     const t0 = Date.now();
@@ -227,44 +239,42 @@ describe("şube ayarları 2. tur: veritabanında", { skip: !SERVER_URL && "SUBE_
     });
     try {
       await store(OLD);
-      branch.forgetAsilposSecret();
-      assert.equal(await branch.asilposSecret(counted, process.env, t0), OLD, "önbellek eski anahtarla doldu");
+      branch.forgetPosKeys();
+      assert.deepEqual(await branch.resolvePosCaller(req(OLD, t0), counted, process.env, t0), { branchId: "marina", secret: OLD }, "önbellek eski anahtarla doldu");
 
       // İmzasız ya da yanlış imzalı istek veritabanını okutmaz (önbellek ön süzgeç)
       reads.length = 0;
-      assert.equal(await branch.asilposSecretFor({ method: "GET", url, body: "", timestamp: null, signature: null }, counted, process.env, t0 + 1_000), OLD);
-      assert.equal(await branch.asilposSecretFor(req("baska-bir-anahtar-en-az-otuz-iki-karakterlik", t0 + 1_000), counted, process.env, t0 + 1_000), OLD);
+      assert.deepEqual(await branch.resolvePosCaller({ method: "GET", url, body: "", timestamp: null, signature: null }, counted, process.env, t0 + 1_000), { branchId: null, secret: OLD });
+      assert.deepEqual(await branch.resolvePosCaller(req("baska-bir-anahtar-en-az-otuz-iki-karakterlik", t0 + 1_000), counted, process.env, t0 + 1_000), { branchId: null, secret: OLD });
       assert.deepEqual(reads, [], "imzası tutmayan istekte okuma yok");
 
-      // Anahtar başka örnekte döndürüldü: eski anahtarla imzalı istek artık eski anahtarı almaz (uç 401 verir)
+      // Anahtar başka örnekte döndürüldü: eski anahtarla imzalı istek artık şubeye bağlanmaz (uç 401 verir)
       await store(NEW);
-      assert.equal(await branch.asilposSecret(counted, process.env, t0 + 2_000), OLD, "önbellek henüz eski");
       const old = req(OLD, t0 + 2_000);
-      const got = await branch.asilposSecretFor(old, counted, process.env, t0 + 2_000);
-      assert.equal(got, NEW, "imza tutunca anahtar veritabanından yeniden okundu");
+      const got = await branch.resolvePosCaller(old, counted, process.env, t0 + 2_000);
+      assert.deepEqual(got, { branchId: null, secret: NEW }, "imza tutunca anahtarlar veritabanından yeniden okundu");
       const { checkAsilposRequest } = await import("../src/lib/asilpos/request");
-      assert.deepEqual(checkAsilposRequest({ ...old, secret: got, method: "GET", maxBytes: 0, now: t0 + 2_000 }), { ok: false, status: 401, error: "unauthorized" });
-      assert.equal(await branch.asilposSecret(counted, process.env, t0 + 2_500), NEW, "önbellek de yenilendi");
+      assert.deepEqual(checkAsilposRequest({ ...old, secret: got.secret, method: "GET", maxBytes: 0, now: t0 + 2_000 }), { ok: false, status: 401, error: "unauthorized" });
 
-      // Yeni anahtarla imzalı istek: imza tutar, okunan anahtar aynı
-      assert.equal(await branch.asilposSecretFor(req(NEW, t0 + 3_000), counted, process.env, t0 + 3_000), NEW);
+      // Yeni anahtarla imzalı istek: imza tutar, şube Marina
+      assert.deepEqual(await branch.resolvePosCaller(req(NEW, t0 + 3_000), counted, process.env, t0 + 3_000), { branchId: "marina", secret: NEW });
 
       // Ters yön: yeni anahtar başka örnekte kaydedildi, bu örneğin önbelleği eski. Yeni anahtarla gelen istek ilk
-      // ASILPOS_SECRET_RELOAD_MS içinde önbellektekini alır (401), sonra bir kez yeniden okunur ve geçer
+      // POS_KEYS_RELOAD_MS içinde şubeye bağlanmaz (401), sonra bir kez yeniden okunur ve geçer
       await store(OLD);
-      branch.forgetAsilposSecret();
-      assert.equal(await branch.asilposSecret(counted, process.env, t0), OLD);
+      branch.forgetPosKeys();
+      await branch.resolvePosCaller(req(OLD, t0), counted, process.env, t0);
       await store(NEW);
-      assert.equal(await branch.asilposSecretFor(req(NEW, t0 + 1_000), counted, process.env, t0 + 1_000), OLD);
-      const later = t0 + branch.ASILPOS_SECRET_RELOAD_MS;
-      assert.equal(await branch.asilposSecretFor(req(NEW, later), counted, process.env, later), NEW, "en geç 10 sn sonra yeni anahtar");
+      assert.deepEqual(await branch.resolvePosCaller(req(NEW, t0 + 1_000), counted, process.env, t0 + 1_000), { branchId: null, secret: OLD });
+      const later = t0 + branch.POS_KEYS_RELOAD_MS;
+      assert.deepEqual(await branch.resolvePosCaller(req(NEW, later), counted, process.env, later), { branchId: "marina", secret: NEW }, "en geç 10 sn sonra yeni anahtar");
 
-      // Panelden silinince ortamdaki: eski panel anahtarıyla imzalı istek geçmez
+      // Panelden silinince ortamdaki (Marina'nın): eski panel anahtarıyla imzalı istek geçmez
       await store(null);
-      assert.equal(await branch.asilposSecretFor(req(NEW, later + 1), counted, process.env, later + 1), ENV_SECRET);
+      assert.deepEqual(await branch.resolvePosCaller(req(NEW, later + 1), counted, process.env, later + 1), { branchId: null, secret: ENV_SECRET });
     } finally {
       await store(null);
-      branch.forgetAsilposSecret();
+      branch.forgetPosKeys();
     }
   });
 

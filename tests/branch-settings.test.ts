@@ -161,7 +161,7 @@ test("kaynak: kasa raporu ayarını okuyan her yer şubeyi verir; eski kayda yal
   const dayEnd = read("src/server/asilpos/gun-sonu.ts");
   assert.match(dayEnd, /dayEndRecipients\(db: DB, branchId: string\)/, "şube zorunlu: varsayılan Marina'ya düşmez");
   assert.doesNotMatch(dayEnd, /dayEndRecipients\(db\)/, "gün sonu, Pavo ve fotoğraf e-postası kendi şubesinin alıcılarına");
-  assert.match(dayEnd, /async function sendStaffDayEnd\([\s\S]*?const branchId = await asilposBranchId\(db\);[\s\S]*?loadCashSettings\(branchId, db\)/, "çalışan listesi gün sonunun şubesinin");
+  assert.match(dayEnd, /async function sendStaffDayEnd\(db: DB, date: string, branchId: string[\s\S]*?loadCashSettings\(branchId, db\)/, "çalışan listesi gün sonunun şubesinin");
   assert.match(read("src/server/asilpos/gun-sonu.ts"), /r\.branchIds\.includes\(branchId\)/, "gün sonu yalnız o şubeye açık bildirim adreslerine");
   assert.match(read("src/app/panel/kasa/page.tsx"), /loadCashSettings\(view\.till\)/);
   // "Tümü"de her şube bölümünde kendi kartı (eskiden yalnız ilkinde)

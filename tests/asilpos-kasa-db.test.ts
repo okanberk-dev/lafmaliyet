@@ -102,7 +102,7 @@ describe("Kasa raporu AsilPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL
     };
     const parsed = parsePosDay(JSON.stringify(body), NOW);
     assert.ok(parsed.ok, "gövde geçerli");
-    return ingest.storePosDay(db, parsed.data, NOW);
+    return ingest.storePosDay(db, parsed.data, NOW, "marina");
   };
   const fields = (date: string, o: Partial<CashReportFields> = {}): CashReportFields & { discounts: number | null } => ({
     date,

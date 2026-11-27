@@ -38,15 +38,18 @@ const plain = (s: string | null | undefined) =>
 const S = "2026-11-10";
 
 test("kural: AsilPOS'un gün sonu gelen günde paneldeki ürün ikramı sayılmaz; zayi ve hammadde ikramı sayılır", () => {
-  const days = new Set(["2026-11-12"]);
+  // Gün sonu gelen (şube, gün) anahtarları (çok şube: tillDayKey)
+  const days = new Set(["marina|2026-11-12"]);
   const m = "marina";
   assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5, branchId: m }, days), false);
   assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: null, branchId: m }, days), true, "hammadde ikramı");
   assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "zayi", productId: 5, branchId: m }, days), true, "ürün zayisi");
   assert.equal(panelWasteCounts({ date: "2026-11-11", kind: "ikram", productId: 5, branchId: m }, days), true, "gün sonu gelmeyen gün");
   assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5, branchId: m }, new Set()), true, "geçiş günü boş");
-  // Gün sonları AsilPOS'un şubesinin (Marina): ModPOS'ta kalan Tuzla'nın (şubesiz eski kayıt da Tuzla'nın) aynı günkü ürün
-  // ikramı sayılır (21 Kasım kararı)
+  // Gün sonları Marina'nın kasasının: ModPOS'ta kalan Tuzla'nın (şubesiz eski kayıt da Tuzla'nın) aynı günkü ürün ikramı
+  // sayılır (21 Kasım kararı); iki kasa varken her kayıt yalnız kendi şubesinin gün sonuyla düşer
+  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5, branchId: "tuzla" }, new Set(["marina|2026-11-12", "tuzla|2026-11-12"])), false, "iki kasa: Tuzla'nın günü de geldi");
+  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5, branchId: "tuzla" }, new Set(["tuzla|2026-11-11"])), true, "Tuzla'nın o günü gelmedi");
   assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5, branchId: "tuzla" }, days), true, "Tuzla");
   assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5 }, days), true, "şubesiz (Tuzla)");
   assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5, branchId: null }, days), true, "şubesi null (Tuzla)");
