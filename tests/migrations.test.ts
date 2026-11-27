@@ -8,6 +8,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { ESKI_SUTUNLAR, ESKI_TABLOLAR, TEL_KAYNAK } from "../src/lib/asilpos/eski-adlar";
+
 import { duration, lockWaitMessage, MIGRATION_LIMITS, MIGRATION_LOCK, poolerRefusal, tableLockMessage } from "../scripts/migrate";
 import { migrationGaps, migrationReport, readJournal, type JournalEntry } from "../scripts/migration-check";
 
@@ -167,12 +169,12 @@ test("dalga 10 (personel yetkileri): tek migration; ortak onay kuyruğu, kasaya 
   assert.doesNotMatch(sql, /(^|--> statement-breakpoint\n?)\s*(UPDATE|INSERT INTO|DELETE FROM) /m);
 });
 
-test("LafPOS bağlantısı: tek migration; günlük satış ve gün sonu özeti tabloları, yalnız ekleme (geri dönüşe uygun)", () => {
-  const entry = readJournal().find((e) => e.tag.endsWith("_lafpos_baglantisi"));
-  assert.ok(entry, "lafpos_baglantisi migration'ı yok");
+test("AsilPOS bağlantısı: tek migration; günlük satış ve gün sonu özeti tabloları, yalnız ekleme (geri dönüşe uygun)", () => {
+  const entry = readJournal().find((e) => e.tag.endsWith(`_${TEL_KAYNAK}_baglantisi`));
+  assert.ok(entry, "AsilPOS bağlantısının migration'ı yok");
   // 26 Eki 2026'da canlı veritabanına uygulandı: günlükteki zamanı ve içeriği bir daha değişmez. Yeniden üretilince
   // drizzle onu yeni migration sayıp tabloları yeniden kurmaya çalıştı, canlı derleme durdu; değişiklik yeni migration'la
-  assert.equal(entry.when, 1792997178951, "0040_lafpos_baglantisi canlıda uygulandı; yeniden üretmeyin, yeni migration ekleyin");
+  assert.equal(entry.when, 1792997178951, `${entry.tag} canlıda uygulandı; yeniden üretmeyin, yeni migration ekleyin`);
   const sql = readFileSync(join(process.cwd(), "drizzle", `${entry.tag}.sql`), "utf8");
   for (const re of [
     /CREATE TABLE "pos_daily_sales"/,
@@ -202,13 +204,13 @@ test("karaokenin iade tutarı (29 Ekim 2026): tek boş olabilen sütun, yalnız 
   assert.equal(sql, 'ALTER TABLE "karaoke_sessions" ADD COLUMN "refund_minor" integer;');
 });
 
-test("LafPOS satırının site kalemi ve hizmet işareti (denetim B08, E-33): iki boş olabilen, bir varsayılanlı sütun, yalnız ekleme (Instant Rollback'e uygun)", () => {
-  const entry = readJournal().find((e) => e.tag.endsWith("_lafpos_satir_site_kalemi"));
-  assert.ok(entry, "lafpos_satir_site_kalemi migration'ı yok");
+test("AsilPOS satırının site kalemi ve hizmet işareti (denetim B08, E-33): iki boş olabilen, bir varsayılanlı sütun, yalnız ekleme (Instant Rollback'e uygun)", () => {
+  const entry = readJournal().find((e) => e.tag.endsWith(`_${TEL_KAYNAK}_satir_site_kalemi`));
+  assert.ok(entry, "satırın site kalemi migration'ı yok");
   const sql = readFileSync(join(process.cwd(), "drizzle", `${entry.tag}.sql`), "utf8").trim();
   assert.equal(
     sql,
-    'ALTER TABLE "pos_daily_sales" ADD COLUMN "site_menu_id" text;--> statement-breakpoint\nALTER TABLE "pos_daily_sales" ADD COLUMN "slot" text;--> statement-breakpoint\nALTER TABLE "pos_daily_sales" ADD COLUMN "lafpos_service" boolean DEFAULT false NOT NULL;',
+    `ALTER TABLE "pos_daily_sales" ADD COLUMN "site_menu_id" text;--> statement-breakpoint\nALTER TABLE "pos_daily_sales" ADD COLUMN "slot" text;--> statement-breakpoint\nALTER TABLE "pos_daily_sales" ADD COLUMN "${ESKI_SUTUNLAR.hizmet}" boolean DEFAULT false NOT NULL;`,
   );
 });
 
@@ -219,13 +221,35 @@ test("şubenin banka POS oranı (23 Kasım 2026): tek varsayılanlı NOT NULL s�
   assert.equal(sql, 'ALTER TABLE "branches" ADD COLUMN "pos_rate" double precision DEFAULT 0.02 NOT NULL;');
 });
 
-test("LafPOS gün sonunun Faz 2 alanları (23 Kasım 2026): yalnız ekleyen migration (yeni tablo, boş olabilen ya da varsayılanlı sütunlar; Instant Rollback'e uygun)", () => {
-  const entry = readJournal().find((e) => e.tag.endsWith("_lafpos_gun_alanlari"));
-  assert.ok(entry, "lafpos_gun_alanlari migration'ı yok");
+test("AsilPOS gün sonunun Faz 2 alanları (23 Kasım 2026): yalnız ekleyen migration (yeni tablo, boş olabilen ya da varsayılanlı sütunlar; Instant Rollback'e uygun)", () => {
+  const entry = readJournal().find((e) => e.tag.endsWith(`_${TEL_KAYNAK}_gun_alanlari`));
+  assert.ok(entry, "gün sonunun Faz 2 alanlarının migration'ı yok");
   const sql = readFileSync(join(process.cwd(), "drizzle", `${entry.tag}.sql`), "utf8");
   assert.doesNotMatch(sql, /\b(DROP|RENAME|ALTER COLUMN)\b/);
   assert.match(sql, /CREATE TABLE "pos_day_revisions"/);
   for (const col of ['"off_device" jsonb;', '"refunds" jsonb;', '"iptal" jsonb;', '"correction" jsonb;', '"revision" integer;', '"gross" double precision;', '"is_addon" boolean DEFAULT false NOT NULL;']) {
     assert.ok(sql.includes(`ADD COLUMN ${col}`), `${col} eksik`);
   }
+});
+
+test("AsilPOS ad değişikliği (0098, 26 Kasım 2026): yalnız genişletme; eski sürüm build sırasında eski adlarla okuyup yazabilir", () => {
+  const entry = readJournal().find((e) => e.tag === "0098_asilpos_adi");
+  assert.ok(entry, "0098_asilpos_adi migration'ı yok");
+  const sql = readFileSync(join(process.cwd(), "drizzle", `${entry.tag}.sql`), "utf8");
+  // Hiçbir tablo, sütun ya da değer silinmez; değer değiştirilmez (yazılan eski değer, A3'e kadar)
+  assert.doesNotMatch(sql, /DROP (TABLE|COLUMN|VIEW|INDEX|FUNCTION)|ALTER COLUMN|(^|\n)\s*DELETE /);
+  assert.doesNotMatch(sql, /UPDATE "branches"|UPDATE "integration_state"|UPDATE "settings"|UPDATE "branch_settings"/);
+  // Tablolar yeni adına taşınır, eski adla görünüm kalır (varsayılansız: geri yükleme nextval'li sütunları tarar)
+  for (const [eski, yeni] of [[ESKI_TABLOLAR.kurulum, "asilpos_installs"], [ESKI_TABLOLAR.gunSonu, "asilpos_day_ends"]]) {
+    assert.ok(sql.includes(`ALTER TABLE "${eski}" RENAME TO "${yeni}";`), yeni);
+    assert.ok(sql.includes(`CREATE VIEW "${eski}" AS SELECT * FROM "${yeni}";`), `${eski} görünümü`);
+  }
+  assert.doesNotMatch(sql, /ALTER VIEW|SET DEFAULT/);
+  // Yeni sütunlar doldurulur, tetikleyici eşit tutar; geri yüklemede yeniden oynatılabilir (fonksiyonlar silinmez)
+  for (const col of ["asilpos_id", "asilpos_service"]) assert.ok(sql.includes(`ADD COLUMN "${col}"`), col);
+  assert.equal((sql.match(/CREATE OR REPLACE FUNCTION/g) ?? []).length, 2);
+  assert.equal((sql.match(/DROP TRIGGER IF EXISTS/g) ?? []).length, 2);
+  assert.doesNotMatch(sql, /CREATE FUNCTION/);
+  // CHECK eski ve yeni değeri kabul eder
+  assert.ok(sql.includes(`CHECK ("branches"."pos_source" in ('modpos','${TEL_KAYNAK}','asilpos','yok'))`));
 });

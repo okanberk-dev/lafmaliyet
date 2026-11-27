@@ -1,5 +1,5 @@
 import { dayRevenue } from "@/lib/cash-revenue";
-import { lafposChannel, type ChannelKey } from "@/lib/commission/channels";
+import { asilposChannel, type ChannelKey } from "@/lib/commission/channels";
 
 import type { FoyKasa, FoyOdeme, KasaFoyu } from "./foy";
 
@@ -79,11 +79,11 @@ export function modposChannels(o: FoyOdeme): { channel: ChannelKey | null; amoun
   const direct = CHANNELS[o.kod];
   if (direct) return [{ channel: direct, amount: o.satis }];
   if (o.kod === "YEMEK_KARTI" && o.kirilim.length) {
-    const parts = o.kirilim.map((k) => ({ channel: lafposChannel(k.ad), amount: k.tutar }));
+    const parts = o.kirilim.map((k) => ({ channel: asilposChannel(k.ad), amount: k.tutar }));
     const rest = round2(o.satis - parts.reduce((a, p) => a + p.amount, 0));
     return Math.abs(rest) >= 0.01 ? [...parts, { channel: null, amount: rest }] : parts;
   }
-  return [{ channel: lafposChannel(o.yontem), amount: o.satis }];
+  return [{ channel: asilposChannel(o.yontem), amount: o.satis }];
 }
 
 const round2 = (v: number) => {

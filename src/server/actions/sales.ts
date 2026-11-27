@@ -9,8 +9,8 @@ import { daysInMonth } from "@/lib/calc/engine";
 import { createPosMappingIndex, describeSkipped, extractSalesRows, isSummaryRow, posMatchKey, samePosName } from "@/lib/calc/pos-paste";
 import { monthRowEmpty } from "@/lib/cash-month";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
-import { modposImportRule, modposOverZText, modposZBetween } from "@/lib/lafpos/sales";
-import { monthSource } from "@/lib/lafpos/switch";
+import { modposImportRule, modposOverZText, modposZBetween } from "@/lib/asilpos/sales";
+import { monthSource } from "@/lib/asilpos/switch";
 import { todayTR } from "@/lib/reminders";
 import { ALL_BRANCHES, zFormBranch } from "@/lib/branches";
 import { legacyCoveragePins, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
@@ -19,8 +19,8 @@ import { hasTillRowsIn } from "@/server/data/cash-reports";
 import { andWhere, assertShownScope, branchWhere, formBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
-import { loadBranchSwitchDay } from "@/server/lafpos/branch";
-import { rematchPosSalesByName } from "@/server/lafpos/rematch";
+import { loadBranchSwitchDay } from "@/server/asilpos/branch";
+import { rematchPosSalesByName } from "@/server/asilpos/rematch";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zMonth, zOptText, zText } from "./util";
@@ -46,7 +46,7 @@ async function setCoverage(db: Db | Tx, month: string, through: string | null) {
 
 /**
  * Şubenin kendi kaydı (`sales.coverage.sube`, src/lib/sales-coverage.ts): ortak kayıt ayın tek kaydıdır, öteki şubenin
- * yüklemesi onu ezer. Şubeye bakan okuyucu (LafPOS'un ModPOS dönemi ucu) bunu okur. through null: ayın tamamı (açıkça
+ * yüklemesi onu ezer. Şubeye bakan okuyucu (AsilPOS'un ModPOS dönemi ucu) bunu okur. through null: ayın tamamı (açıkça
  * yazılır: ortak kayıttan kalanı örter). Tek ifadeyle, ortak kayıtla aynı işlemde
  */
 async function setBranchCoverage(db: Db | Tx, branchId: string, month: string, through: string | null) {
@@ -233,8 +233,8 @@ async function zTotalBetween(from: string, through: string, branchId: string): P
 /**
  * Satış listesini aya yükler. Toplam satırları ("TOPLAM", "Genel toplam (KDV dahil)") istemcide zaten
  * atlanır; buraya gelirse de ürün satırı olarak yazılmaz ve kaç tane atlandığı döner (ciro iki kez sayılmasın).
- * LafPOS'a geçiş günü seçiliyse (docs/LAFPOS.md › Günlük satış): ayın tamamı geçiş gününden sonraysa liste
- * reddedilir (satışlar LafPOS'tan gelir); geçiş ayında liste en çok geçiş gününden önceki güne kadardır ve toplamı o
+ * AsilPOS'a geçiş günü seçiliyse (docs/ASILPOS.md › Günlük satış): ayın tamamı geçiş gününden sonraysa liste
+ * reddedilir (satışlar AsilPOS'tan gelir); geçiş ayında liste en çok geçiş gününden önceki güne kadardır ve toplamı o
  * günlerin kasa raporu Z toplamını %5'ten fazla aşarsa uyarı döner (liste sonraki günleri de içeriyor olabilir).
  */
 export async function importSales(input: {
@@ -253,7 +253,7 @@ export async function importSales(input: {
       // Geçiş günü listenin şubesininki (branchSwitchDay): ModPOS'ta kalan şubenin (Tuzla) listesi her ay yüklenir
       const switchDay = await loadBranchSwitchDay(sube);
       // Süren ayda listenin son günü (verilmezse dün); biten aya yüklenen liste ayın tamamı (src/lib/sales-coverage.ts);
-      // geçiş ayında en çok geçiş gününden önceki gün, LafPOS'un ayında red (src/lib/lafpos/sales.ts)
+      // geçiş ayında en çok geçiş gününden önceki gün, AsilPOS'un ayında red (src/lib/asilpos/sales.ts)
       const rule = modposImportRule(month, switchDay, todayTR(), z.string().max(10).nullish().parse(input.through));
       if (!rule.ok) throw new UserError(rule.error);
       const through = rule.through;
@@ -345,7 +345,7 @@ async function writeMatch(
     others = ids.length;
   }
   await writeMapping(tx, line.posName, productId, isService, storedNames);
-  // Aynı adla gelmiş ürünsüz LafPOS satırları da bağlanır (denetim E-33; yalnız ürünsüzler, ekranda sayılmaz)
+  // Aynı adla gelmiş ürünsüz AsilPOS satırları da bağlanır (denetim E-33; yalnız ürünsüzler, ekranda sayılmaz)
   await rematchPosSalesByName(tx, line.posName, { productId, isService });
   return others;
 }
@@ -433,8 +433,8 @@ export async function applyLineMatches(month: string, items: { lineId: number; p
   });
 }
 
-const lafposMatchSchema = z.object({
-  /** Satışlar'ın ayı: o ayın satırı (current) ve aynı adlı ürünsüz satırları seçilene geçer; null (Ayarlar › LafPOS) yalnız ürünsüzler */
+const asilposMatchSchema = z.object({
+  /** Satışlar'ın ayı: o ayın satırı (current) ve aynı adlı ürünsüz satırları seçilene geçer; null (Ayarlar › AsilPOS) yalnız ürünsüzler */
   month: zMonth.nullable(),
   posName: zText("Ürün adı", 160),
   productId: z.number().int().positive().nullable(),
@@ -444,8 +444,8 @@ const lafposMatchSchema = z.object({
 });
 
 /**
- * Gün sonu satırı her yazışta (sonraki gün, düzeltme gönderimi) önce LafPOS'un hizmet işaretiyle, sonra sitenin kalemi
- * ve boyuyla, en son POS adı eşleştirmesiyle bulunur (src/lib/lafpos/day.ts resolvePosLine). Hizmet işaretli ya da sitenin
+ * Gün sonu satırı her yazışta (sonraki gün, düzeltme gönderimi) önce AsilPOS'un hizmet işaretiyle, sonra sitenin kalemi
+ * ve boyuyla, en son POS adı eşleştirmesiyle bulunur (src/lib/asilpos/day.ts resolvePosLine). Hizmet işaretli ya da sitenin
  * bağlı kalemiyle gelen satırı Satışlar'da başka ürüne bağlamak kalıcı olmaz: sonraki gün sonu eski ürüne yazar, ad
  * hafızası da aynı adlı ModPOS satırlarını yeni ürüne bağlardı. Bu yüzden reddedilir, düzeltmenin yeri söylenir
  * (denetim B08 incelemesi)
@@ -453,13 +453,13 @@ const lafposMatchSchema = z.object({
 async function refuseUnstableMatch(
   tx: Tx,
   posName: string,
-  rows: readonly { siteMenuId: string | null; slot: "M" | "L" | null; lafposService: boolean }[],
+  rows: readonly { siteMenuId: string | null; slot: "M" | "L" | null; asilposService: boolean }[],
   productId: number | null,
   isService: boolean,
 ) {
-  if (!isService && rows.some((x) => x.lafposService)) {
+  if (!isService && rows.some((x) => x.asilposService)) {
     throw new UserError(
-      `“${posName}” LafPOS'tan hizmet (karaoke) olarak geliyor; gün sonları onu hep HİZMET yazar, burada ürüne bağlanamaz. Değiştirmek için kalemin hizmet işaretini LafPOS'ta kaldırın.`,
+      `“${posName}” AsilPOS'tan hizmet (karaoke) olarak geliyor; gün sonları onu hep HİZMET yazar, burada ürüne bağlanamaz. Değiştirmek için kalemin hizmet işaretini AsilPOS'ta kaldırın.`,
     );
   }
   const keys = new Set(rows.flatMap((x) => (x.siteMenuId && x.slot ? [`${x.siteMenuId}|${x.slot}`] : [])));
@@ -471,24 +471,24 @@ async function refuseUnstableMatch(
   const site = linked.find((p) => keys.has(`${p.siteMenuId}|${p.slot}`) && (isService || p.id !== productId));
   if (site) {
     throw new UserError(
-      `“${posName}” LafPOS'tan sitenin kalemiyle geliyor ve ${site.name} · ${site.size} ürününe bağlı; gün sonları onu hep bu ürüne yazar. Kalıcı değiştirmek için kalemin bağlantısını Ürünler › Site menüsü'nden düzeltin.`,
+      `“${posName}” AsilPOS'tan sitenin kalemiyle geliyor ve ${site.name} · ${site.size} ürününe bağlı; gün sonları onu hep bu ürüne yazar. Kalıcı değiştirmek için kalemin bağlantısını Ürünler › Site menüsü'nden düzeltin.`,
     );
   }
 }
 
 /**
- * LafPOS satırını (ay toplamı ya da kartın eşleşmeyen adı) bir ürüne ya da HİZMET'e bağlar (docs/LAFPOS.md › Günlük
+ * AsilPOS satırını (ay toplamı ya da kartın eşleşmeyen adı) bir ürüne ya da HİZMET'e bağlar (docs/ASILPOS.md › Günlük
  * satış; denetim E-33). POS adı hafızaya yazılır (ModPOS satırının eşleştirmesiyle aynı hafıza, anahtar posMatchKey) ve
- * adı aynı anahtara düşen ürünsüz LafPOS satırları her ayda, yeniden gönderim olmadan bağlanır. `month` verilirse
+ * adı aynı anahtara düşen ürünsüz AsilPOS satırları her ayda, yeniden gönderim olmadan bağlanır. `month` verilirse
  * (Satışlar) ModPOS satırındaki gibi: tıklanan ay toplamının satırları (bu ad, `current` eşleşmesi; bağlıysa da) ve o ayın
  * aynı adlı ürünsüz satırları seçilene geçer; aynı adın başka ürüne bağlı satırı (ör. sitenin öteki boyu) değişmez. Ürün
- * seçilmez ve hizmet değilse tıklanan satırlar ürünsüz kalır, ad hafızadan silinir. LafPOS'un hizmet işaretli ya da
+ * seçilmez ve hizmet değilse tıklanan satırlar ürünsüz kalır, ad hafızadan silinir. AsilPOS'un hizmet işaretli ya da
  * sitenin bağlı kalemiyle gelen satırı başka ürüne geçmez (refuseUnstableMatch): sonraki gün sonu geri alırdı.
  */
-export async function matchLafposName(input: z.input<typeof lafposMatchSchema>) {
+export async function matchAsilposName(input: z.input<typeof asilposMatchSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const data = lafposMatchSchema.parse(input);
+    const data = asilposMatchSchema.parse(input);
     const posName = data.posName.replace(/\s+/g, " ");
     const pid = data.isService ? null : data.productId;
     const clearing = pid === null && !data.isService;
@@ -508,7 +508,7 @@ export async function matchLafposName(input: z.input<typeof lafposMatchSchema>) 
         const unmatched = and(isNull(t.productId), eq(t.isService, false));
         const same = cur ? and(cur.productId === null ? isNull(t.productId) : eq(t.productId, cur.productId), eq(t.isService, cur.isService)) : undefined;
         const rows = await tx
-          .select({ id: t.id, posName: t.posName, productId: t.productId, isService: t.isService, siteMenuId: t.siteMenuId, slot: t.slot, lafposService: t.lafposService })
+          .select({ id: t.id, posName: t.posName, productId: t.productId, isService: t.isService, siteMenuId: t.siteMenuId, slot: t.slot, asilposService: t.asilposService })
           .from(t)
           .where(and(gte(t.date, `${data.month}-01`), lte(t.date, `${data.month}-31`), same ? or(same, unmatched) : unmatched));
         const key = posMatchKey(posName);
@@ -517,7 +517,7 @@ export async function matchLafposName(input: z.input<typeof lafposMatchSchema>) 
           cur !== null && x.posName.replace(/\s+/g, " ").trim() === posName && x.productId === cur.productId && x.isService === cur.isService;
         const open = (x: (typeof rows)[number]) => !clearing && x.productId === null && !x.isService && posMatchKey(x.posName) === key;
         const chosen = rows.filter((x) => clicked(x) || open(x));
-        if (!rows.some((x) => (cur ? clicked(x) : open(x)))) throw new UserError("Bu LafPOS satırı bu arada değişmiş; sayfayı yenileyin.");
+        if (!rows.some((x) => (cur ? clicked(x) : open(x)))) throw new UserError("Bu AsilPOS satırı bu arada değişmiş; sayfayı yenileyin.");
         await refuseUnstableMatch(tx, posName, chosen, pid, data.isService);
         const ids = chosen.map((x) => x.id);
         month = await tx.update(t).set({ productId: pid, isService: data.isService }).where(inArray(t.id, ids)).returning({ date: t.date });
@@ -530,7 +530,7 @@ export async function matchLafposName(input: z.input<typeof lafposMatchSchema>) 
     await logActivity(
       me,
       "POS eşleştirmesi",
-      `${posName} (LafPOS) → ${target}${data.month ? ` · ${monthLabel(data.month)}: ${r.days} gün` : ""}${r.others ? ` · ürünsüz ${r.others} satır daha` : ""}`,
+      `${posName} (AsilPOS) → ${target}${data.month ? ` · ${monthLabel(data.month)}: ${r.days} gün` : ""}${r.others ? ` · ürünsüz ${r.others} satır daha` : ""}`,
     );
     refresh();
     return r;
@@ -538,11 +538,11 @@ export async function matchLafposName(input: z.input<typeof lafposMatchSchema>) 
 }
 
 /**
- * LafPOS satırları için önerilen eşleşmeler tek seferde (Satışlar › "Önerileri uygula"; ModPOS satırları
- * applyLineMatches'le): her biri matchLafposName gibi, ama yalnız o ayın hâlâ ürünsüz satırlarına (bu arada eşleştirilen ad
+ * AsilPOS satırları için önerilen eşleşmeler tek seferde (Satışlar › "Önerileri uygula"; ModPOS satırları
+ * applyLineMatches'le): her biri matchAsilposName gibi, ama yalnız o ayın hâlâ ürünsüz satırlarına (bu arada eşleştirilen ad
  * atlanır). Ad hafızaya yazılır, başka aylardaki ürünsüz satırlar da bağlanır.
  */
-export async function applyLafposMatches(month: string, items: { posName: string; productId: number }[]) {
+export async function applyAsilposMatches(month: string, items: { posName: string; productId: number }[]) {
   return attempt(async () => {
     const me = await requireAdmin();
     const m = zMonth.parse(month);
@@ -574,7 +574,7 @@ export async function applyLafposMatches(month: string, items: { posName: string
       }
     });
     if (!applied) throw new UserError("Öneriler uygulanamadı; satırlar değişmiş olabilir. Sayfayı yenileyin.");
-    await logActivity(me, "POS eşleştirmesi", `${monthLabel(m)}: LafPOS'ta ${applied} öneri uygulandı${others ? ` (ürünsüz ${others} satır daha)` : ""}`);
+    await logActivity(me, "POS eşleştirmesi", `${monthLabel(m)}: AsilPOS'ta ${applied} öneri uygulandı${others ? ` (ürünsüz ${others} satır daha)` : ""}`);
     refresh();
     return { applied, skipped: list.length - applied };
   });
@@ -589,14 +589,14 @@ export async function saveLine(input: { id: number | null; month: string; posNam
     const me = await requireAdmin();
     const data = lineSchema.parse(input);
     const month = zMonth.parse(input.month);
-    // Ayın tamamı LafPOS'tansa elle ModPOS satırı sayılmaz (docs/LAFPOS.md › Günlük satış). Satırın şubesine göre
+    // Ayın tamamı AsilPOS'tansa elle ModPOS satırı sayılmaz (docs/ASILPOS.md › Günlük satış). Satırın şubesine göre
     // (düzeltilen satırın kendi şubesi, yeni satırda formun şubesi): ModPOS'ta kalan şubenin satırı her ay yazılır
     const lineBranch = input.id
       ? (await getDb().select({ b: s.salesLines.branchId }).from(s.salesLines).where(eq(s.salesLines.id, z.number().int().parse(input.id))))[0]?.b
       : await salesBranch(input.branchId);
     const switchDay = await loadBranchSwitchDay(lineBranch);
-    if (monthSource(month, switchDay) === "lafpos") {
-      throw new UserError(`${monthLabel(month)} LafPOS'tan geliyor; satırlar her gün sonunda LafPOS'tan gelir, elle ModPOS satırı eklenmez.`);
+    if (monthSource(month, switchDay) === "asilpos") {
+      throw new UserError(`${monthLabel(month)} AsilPOS'tan geliyor; satırlar her gün sonunda AsilPOS'tan gelir, elle ModPOS satırı eklenmez.`);
     }
     const note = zOptText(300).parse(input.note);
     if (isSummaryRow(data.posName)) {
@@ -637,7 +637,7 @@ export async function saveLine(input: { id: number | null; month: string; posNam
           sortOrder: (m ?? 0) + 1,
         });
         // Geçiş ayının ilk elle satırı ModPOS listesini başlatır: kapsamı içe aktarmadaki gibi en çok geçiş gününden
-        // önceki gün (src/lib/lafpos/sales.ts modposImportRule). Kayıt yazılmazsa liste ayın tamamı sayılır ve LafPOS'un o
+        // önceki gün (src/lib/asilpos/sales.ts modposImportRule). Kayıt yazılmazsa liste ayın tamamı sayılır ve AsilPOS'un o
         // ayki bütün günleri hesaptan düşer (denetim B08 incelemesi)
         if (n === 0 && monthSource(month, switchDay) === "gecis") {
           const rule = modposImportRule(month, switchDay, todayTR(), null);

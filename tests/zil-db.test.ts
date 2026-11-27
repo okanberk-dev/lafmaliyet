@@ -6,7 +6,7 @@
 // Kendi geçici veritabanını açar (migration'larla), sonunda siler; oturum ve maliyet modeli taklit edilir
 // (src/server/auth/dal, src/server/data/dataset loadModel'i istenince atar).
 //
-// ZIL_TEST_DATABASE_URL (yoksa LAFPOS_TEST_DATABASE_URL) verilmezse atlanır: bir Postgres sunucusu (geçici veritabanı
+// ZIL_TEST_DATABASE_URL (yoksa ASILPOS_TEST_DATABASE_URL) verilmezse atlanır: bir Postgres sunucusu (geçici veritabanı
 // onun üstünde açılır).
 // Çalıştırma: ZIL_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx tsx --test tests/zil-db.test.ts
 
@@ -22,7 +22,7 @@ import { addDays, todayTR } from "../src/lib/reminders";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 
-const SERVER_URL = process.env.ZIL_TEST_DATABASE_URL ?? process.env.LAFPOS_TEST_DATABASE_URL;
+const SERVER_URL = process.env.ZIL_TEST_DATABASE_URL ?? process.env.ASILPOS_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_zil_${process.pid}`;
 
 type Who = { id: number; name: string; email: string; role: "admin" | "staff" };

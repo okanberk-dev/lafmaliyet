@@ -3,14 +3,15 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 
 import { eq, lt, sql } from "drizzle-orm";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { needsTwoFactorSetup, TWO_FACTOR_SETUP_PATH } from "@/lib/admin-security";
-import { ANA_ADMIN_ONLY, isAnaAdmin } from "@/lib/lafpos/kurulum";
-import { STAFF_HOME } from "@/lib/roles";
-import { UserError } from "@/server/user-error";
+import type { Role } from "@/lib/constants";
+import { ANA_ADMIN_ONLY, isAnaAdmin } from "@/lib/asilpos/kurulum";
+import { BRANCH_ROLES, can, homeFor, READ_ONLY_TEXT, type Capability } from "@/lib/roles";
 import { getDb, schema as s } from "@/server/db";
+import { UserError } from "@/server/user-error";
 
 import {
   addDeviceUser,
@@ -45,12 +46,16 @@ export interface CurrentUser {
   id: number;
   name: string;
   email: string;
-  role: "admin" | "staff";
-  /** Personelin şubesi (doluysa panel bu şubede kilitli, src/server/branch-scope.ts); yöneticide hep boş */
+  /** Rol (src/lib/roles.ts): yetki her zaman buradan, `can(role, …)` ile sorulur */
+  role: Role;
+  /**
+   * Personelin ve müdürün şubesi (doluysa panel bu şubede kilitli, src/server/branch-scope.ts); müdürde hep dolu ve
+   * etkin (değilse oturum açılmaz), yöneticide ve muhasebecide hep boş
+   */
   branchId?: string | null;
 }
 
-/** Oturumun kullanıcısı ve iki adımlıyı kurmadan panele giremeyen yönetici mi (src/lib/admin-security.ts) */
+/** Oturumun kullanıcısı ve iki adımlıyı kurmadan panele giremeyen kişi mi (zorunluluk açıkken yönetici, müdür, muhasebeci; src/lib/admin-security.ts) */
 type SessionUser = CurrentUser & { needsTwoFactor: boolean; totpEnabled: boolean };
 
 /** Oturumu doğrular ve kullanıcı veritabanında hâlâ aktif mi diye bakar (iki adımlı zorunluluğunu söyler, uygulamaz) */
@@ -70,21 +75,34 @@ async function readSessionUser(): Promise<SessionUser | null> {
       sessionVersion: s.users.sessionVersion,
       totpEnabled: s.users.totpEnabled,
       revoked: s.revokedSessions.id,
+      branchActive: s.branches.active,
     })
     .from(s.users)
     .leftJoin(s.revokedSessions, jti ? eq(s.revokedSessions.id, jti) : sql`false`)
+    .leftJoin(s.branches, eq(s.branches.id, s.users.branchId))
     .where(eq(s.users.id, Number(session.sub)))
     .limit(1);
   // Parola / iki adımlı doğrulama değiştiyse ya da yönetici oturumları kapattıysa eski çerez geçmez; çıkış yapılmış
-  // oturumun çerezi de (kopyası alınmış olsa bile) geçmez
+  // oturumun çerezi de (kopyası alınmış olsa bile) geçmez. Rol değişince oturum sürümü artar (settings.ts › saveUser)
   if (!u || !u.active || (session.sv ?? 1) !== u.sessionVersion || u.revoked) return null;
-  return { id: u.id, name: u.name, email: u.email, role: u.role, branchId: u.role === "staff" ? u.branchId : null, needsTwoFactor: needsTwoFactorSetup(u), totpEnabled: u.totpEnabled };
+  if (managerWithoutBranch(u)) return null;
+  const branchId = (BRANCH_ROLES as readonly string[]).includes(u.role) ? u.branchId : null;
+  return { id: u.id, name: u.name, email: u.email, role: u.role, branchId, needsTwoFactor: needsTwoFactorSetup(u), totpEnabled: u.totpEnabled };
+}
+
+/**
+ * Müdür şubesine kilitli olmak ZORUNDA (docs/ROLLER.md): şubesi yoksa (veritabanı kısıtı bunu zaten engeller) ya da şubesi
+ * pasife alındıysa oturumu yok sayılır. Personelde şube pasife alınınca kilit kalkar ("Tümü"); müdürde kalkarsa öteki
+ * şubeleri görürdü, o yüzden kapalı. Giriş de aynı kuralla reddedilir (src/server/actions/auth.ts).
+ */
+export function managerWithoutBranch(u: { role: string; branchId: string | null; branchActive: boolean | null }): boolean {
+  return u.role === "manager" && (!u.branchId || u.branchActive !== true);
 }
 
 const toCurrent = ({ id, name, email, role, branchId }: SessionUser): CurrentUser => ({ id, name, email, role, branchId });
 
 /**
- * Oturumdaki kullanıcı. İki adımlıyı kurmamış yönetici (zorunluluk açıkken; docs/DEPLOY.md › 6a) burada oturumsuz
+ * Oturumdaki kullanıcı. İki adımlıyı kurmamış yönetici, müdür ya da muhasebeci (zorunluluk açıkken; docs/DEPLOY.md › 6a) burada oturumsuz
  * sayılır: veri uçları (canlı veri, dışa aktarma, fotoğraflar…) ona hiçbir şey vermez; sayfalar ve eylemler requireUser
  * ile kurulum ekranına gönderir.
  */
@@ -94,7 +112,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 }
 
 /**
- * Oturum geçerli ama kişi iki adımlıyı kurmadan panele giremeyen yönetici mi. getCurrentUser'ın null'unu kendisi
+ * Oturum geçerli ama kişi iki adımlıyı kurmadan panele giremeyen (zorunlu roldeki) hesap mı. getCurrentUser'ın null'unu kendisi
  * yönlendiren sayfa (Claude bağlantısının onay ekranı) bununla ayırır: bu kişi girişe "oturum bitti" diye gönderilmez
  * (proxy geçerli oturumunu silerdi), kurulum ekranına gider.
  */
@@ -112,7 +130,7 @@ async function toLogin(): Promise<never> {
  * Sayfa ve eylemlerde: giriş yapmamışsa giriş sayfasına yönlendirir. Çerez duruyor ama geçersizse (parola değişti,
  * hesap pasif, çıkış yapıldı) "oturum bitti" ve çerezin özetiyle gider; proxy o zaman yalnız bu çerezi siler (yoksa
  * /giris ↔ /panel arasında döngü olurdu; özetsiz `?oturum=bitti` geçerli oturumu silemez). İki adımlıyı kurmamış
- * yönetici (zorunluluk açıkken) panel yerine kurulum ekranına gider: kurmadan hiçbir ekranı ve eylemi kullanamaz.
+ * yönetici, müdür ya da muhasebeci (zorunluluk açıkken) panel yerine kurulum ekranına gider: kurmadan hiçbir ekranı ve eylemi kullanamaz.
  */
 export async function requireUser(): Promise<CurrentUser> {
   const user = await readSessionUser();
@@ -123,7 +141,7 @@ export async function requireUser(): Promise<CurrentUser> {
 
 /**
  * Yalnız iki adımlı kurulum ekranı ve kurulum eylemleri (başlat, onayla, vazgeç): giriş yapmış herkes geçer, iki
- * adımlıyı henüz kurmamış yönetici de. Başka hiçbir yerde kullanılmaz (tests/yonetici-guvenlik.test.ts tutar).
+ * adımlıyı henüz kurmamış yönetici, müdür ya da muhasebeci de. Başka hiçbir yerde kullanılmaz (tests/yonetici-guvenlik.test.ts tutar).
  */
 export async function requireSignedIn(): Promise<SessionUser> {
   const user = await readSessionUser();
@@ -131,16 +149,47 @@ export async function requireSignedIn(): Promise<SessionUser> {
   return user;
 }
 
-/** Yalnızca yönetici. Personel ise kendi sayfasına yönlendirilir. */
+/**
+ * Yetkisiz istek: kişi kendi ana ekranına yönlendirilir (homeFor). Salt okunur muhasebeci bir sunucu eyleminde (istekte
+ * `Next-Action` başlığı) yönlendirilmez: eylem "salt okunur" hatasıyla döner (attempt onu kullanıcıya gösterir), ekranda
+ * kalan bir düğmeye bastığında başka sayfaya atılmaz
+ */
+async function refuse(user: CurrentUser): Promise<never> {
+  if (user.role === "accountant" && (await headers()).has("next-action")) throw new UserError(READ_ONLY_TEXT);
+  redirect(homeFor(user.role));
+}
+
+/** Yalnızca yönetici. Başka rol kendi ana ekranına yönlendirilir (homeFor). */
 export async function requireAdmin(): Promise<CurrentUser> {
   const user = await requireUser();
-  if (user.role !== "admin") redirect(STAFF_HOME);
+  if (user.role !== "admin") return refuse(user);
   return user;
 }
 
 /**
- * Ana yönetici (şube ekleme; docs/LAFPOS.md › Şube kurulumu): yönetici ve e-postası ana yöneticininki
- * (src/lib/lafpos/kurulum.ts `isAnaAdmin`). Değilse eylemde okunur hata (sayfa açılır, yalnız ekleme kapalıdır)
+ * Yalnız verilen roller (src/lib/roles.ts); başka rol kendi ana ekranına yönlendirilir. Yetenek tablosuyla anlatılabilen
+ * her yerde requireCan tercih edilir.
+ */
+export async function requireRole(...roles: readonly Role[]): Promise<CurrentUser> {
+  const user = await requireUser();
+  if (!roles.includes(user.role)) return refuse(user);
+  return user;
+}
+
+/**
+ * Yetenek kapısı (src/lib/roles.ts › CAPABILITIES): rol bu yeteneğe sahip değilse kendi ana ekranına yönlendirilir.
+ * Her yazan sunucu eylemi en az `requireCan("kayit.yaz")` (ya da requireAdmin) ister: muhasebeci hiçbir kaydı
+ * değiştiremez (tests/roller.test.ts eylemleri tarar).
+ */
+export async function requireCan(cap: Capability): Promise<CurrentUser> {
+  const user = await requireUser();
+  if (!can(user.role, cap)) return refuse(user);
+  return user;
+}
+
+/**
+ * Ana yönetici (şube ekleme; docs/ASILPOS.md › Şube kurulumu): yönetici ve e-postası ana yöneticininki
+ * (src/lib/asilpos/kurulum.ts `isAnaAdmin`). Değilse eylemde okunur hata (sayfa açılır, yalnız ekleme kapalıdır)
  */
 export async function requireAnaAdmin(): Promise<CurrentUser> {
   const user = await requireAdmin();
@@ -165,7 +214,7 @@ async function revokeSession(session: SessionPayload | null) {
  * Bu tarayıcıya yeni oturum. Tarayıcıda önceki bir oturum varsa (ad değişikliği, oturumların yenilenmesi, ortak
  * tablette sıradaki kişinin girişi) o oturum da kapatılır: yerine yenisi geldi, eski çerezin kopyası geçmesin.
  */
-export async function startSession(user: { id: number; name: string; role: "admin" | "staff"; sessionVersion: number }) {
+export async function startSession(user: { id: number; name: string; role: Role; sessionVersion: number }) {
   const token = await signSession({ sub: String(user.id), name: user.name, role: user.role, sv: user.sessionVersion });
   const jar = await cookies();
   await revokeSession(await verifySession(readCookie(jar, SESSION_COOKIE, LEGACY_COOKIES.session.name)));

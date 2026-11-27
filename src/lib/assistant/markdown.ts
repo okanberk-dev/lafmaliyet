@@ -9,7 +9,7 @@
  * olur (`num`): ekranda vurgulanır, satır sonunda bölünmez. Bağlantı yalnız panelin kendi ekranlarına (`/panel`, `/panel/...`) ya da
  * izin listesindeki sitelerin https adresine olur (EXTERNAL_HOSTS: laffogato.net, Paraşüt, Claude); başka her adres
  * (javascript:, data:, http:, //başka-site, göreli yol, listede olmayan site) bağlantısız yazı kalır (yalnız etiketi).
- * Neden liste: araç çıktılarında dışarıdan gelen metin var (Paraşüt kalem adları, LafPOS adları); onlarla yapılan istem
+ * Neden liste: araç çıktılarında dışarıdan gelen metin var (Paraşüt kalem adları, AsilPOS adları); onlarla yapılan istem
  * enjeksiyonu, içine panel verisi gömülmüş bir bağlantı ürettirse bile tıklanamaz.
  * Akış sırasında yarım gelen metin de ayrışır (kapanmamış ** düz yazı kalır).
  */

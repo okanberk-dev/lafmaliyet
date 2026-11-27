@@ -19,12 +19,13 @@ import { manualOf } from "@/lib/cash-month";
 import { missingRevenueText, yearTotals } from "@/lib/calc/insights";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
-import { periodKasa } from "@/lib/lafpos/kasa";
+import { periodKasa } from "@/lib/asilpos/kasa";
+import { can } from "@/lib/roles";
 import { periodSalesSource } from "@/lib/sales-source";
 import { cn } from "@/lib/utils";
 import { salesMonthsToPull, siteGross } from "@/lib/site-sales/calc";
 import { employerRateNotice, rateText } from "@/lib/tax/edit";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadExpectedDebtsInYear } from "@/server/data/cari";
@@ -79,11 +80,16 @@ export default function PnlPage({ searchParams }: PageProps<"/panel/gelir-gider"
 }
 
 async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/gelir-gider">["searchParams"] }) {
-  await requireAdmin();
+  // Yönetici ve muhasebeci (salt okunur; docs/ROLLER.md): muhasebecinin yazma denemesini eylemler reddeder
+  const viewer = await requireCan("muhasebe.oku");
+  // Personel hücrelerinin kişi kişi metni (part-time'ın adı, günü, günlük ücreti; yemek kartının AsilPOS'lularının adı)
+  // yalnız maaşı görenin: muhasebeci personel giderlerini toplam olarak görür (docs/ROLLER.md › Muhasebeci). Hücreler
+  // istemciye (PnlGrid, ay görünümü) ipucu ve uyarısıyla gider, metin motorda kişisiz kurulur
+  const personal = can(viewer.role, "maas");
   const sp = await searchParams;
   // Vergi ayarları yalnız SGK oranı uyarısı için (K19); okunamazsa uyarı çıkmaz, tablo etkilenmez
   const [model, salesState, taxSettings, monthWrite, branchList] = await Promise.all([
-    loadModel(),
+    loadModel({ personal }),
     readSalesState(),
     loadTaxSettings().catch((e) => {
       console.error("[gelir-gider] vergi ayarları", e);
@@ -114,7 +120,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   // ayların sütunlarını yine gösterir
   const indexes = (keep: (m: string) => boolean) => months.flatMap((m, i) => (keep(m) ? [i] : []));
   const throughIdx = indexes((m) => m <= current);
-  // Başlığın satış kaynağı satırı yılın bu aya kadarki aylarından (yıl tablosu; karışık yılda "ModPOS / LafPOS"). Henüz
+  // Başlığın satış kaynağı satırı yılın bu aya kadarki aylarından (yıl tablosu; karışık yılda "ModPOS / AsilPOS"). Henüz
   // başlamamış yılda yılın ilk ayı
   const sourceMonths = throughIdx.length ? throughIdx.map((i) => months[i]) : months.slice(0, 1);
   const yt = yearTotals(model, year);
@@ -126,7 +132,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   const physical = branchList.filter((b) => b.active && b.kind === "fiziksel");
   const branchSplit =
     !model.ds.branchView && physical.length > 1 && yt.counted.length
-      ? await Promise.all(physical.map(async (b) => ({ id: b.id, name: b.name, model: await loadModel({ scope: b.id }) })))
+      ? await Promise.all(physical.map(async (b) => ({ id: b.id, name: b.name, model: await loadModel({ scope: b.id, personal }) })))
           .then((list) =>
             branchBreakdown(
               list.map((x) => ({ id: x.id, name: x.name, months: yt.counted.map((m) => x.model.pnlMonth(m)) })),
@@ -246,7 +252,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
     sitePanelUrl: `${siteUrl()}/admin`,
     kdvRate: model.settings.kdv,
     serviceKdvRate: model.settings.kdvHizmet,
-    switchDay: model.settings.lafposGecisGunu,
+    switchDay: model.settings.asilposGecisGunu,
     current,
   };
 
@@ -272,7 +278,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
       countedIdx.map((i) => calcs[i]),
       periodKasa(
         countedIdx.map((i) => months[i]),
-        model.settings.lafposGecisGunu,
+        model.settings.asilposGecisGunu,
       ).short,
     ),
     revenue: revenueBreakdown(
@@ -295,7 +301,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         title="Gelir-gider"
         description={DESCRIPTION}
         more={MORE}
-        meta={<SalesSourceLine source={periodSalesSource(sourceMonths, model.settings.lafposGecisGunu, model.ds.lafposSales)} />}
+        meta={<SalesSourceLine source={periodSalesSource(sourceMonths, model.settings.asilposGecisGunu, model.ds.asilposSales)} />}
         actions={
           // Tek yıl varsa seçim göstermeyiz (tek seçenekli sekme düğme gibi durur, bir şey yapmaz)
           years.length < 2 ? null : years.length <= MAX_YEAR_TABS ? (
@@ -442,7 +448,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         strip={strip}
         latestMonth={latestMonth}
         expectedDebts={expected}
-        lafposSwitch={model.settings.lafposGecisGunu}
+        asilposSwitch={model.settings.asilposGecisGunu}
         openDaysLocked={monthWrite.lock}
         writeBranch={monthWrite.branch}
         yearNote={

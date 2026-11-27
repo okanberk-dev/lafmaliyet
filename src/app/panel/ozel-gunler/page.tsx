@@ -9,7 +9,8 @@ import { STAFF_SPECIAL_LIMITS } from "@/lib/closed-days";
 import { addDays } from "@/lib/reminders";
 import { deleteSpecialDay, saveSpecialDay } from "@/server/actions/special-days";
 import { deleteStaffSpecialDay, saveStaffSpecialDay } from "@/server/actions/special-days-staff";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { ownClosedRequests } from "@/server/closed-days";
@@ -51,12 +52,12 @@ function SpecialDaysHeader({ role }: { role: "admin" | "staff" }) {
 }
 
 async function SpecialDaysHeaderWithRole() {
-  const user = await requireUser();
+  const user = adminActor(await requireCan("kayit.yaz"));
   return <SpecialDaysHeader role={user.role === "admin" ? "admin" : "staff"} />;
 }
 
 async function SpecialDaysContent() {
-  const user = await requireUser();
+  const user = adminActor(await requireCan("kayit.yaz"));
   return user.role === "admin" ? <AdminContent /> : <StaffContent />;
 }
 
@@ -113,7 +114,7 @@ async function AdminContent() {
 }
 
 async function StaffContent() {
-  const user = await requireUser();
+  const user = adminActor(await requireCan("kayit.yaz"));
   // Kişinin şubesinin kapalı günleri (kilitli personelde kendi şubesi, değilse seçici; docs/SUBE.md › Kapalı gün). "Tümü"de
   // birden çok kasa açıkken kapalı günün şubesi satırda yazar
   const scope = await currentBranchScope();

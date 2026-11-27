@@ -1,3 +1,4 @@
+import { GECIS_GUNU_AYARI } from "./asilpos/eski-adlar";
 import type { CountUnit, FixedPeriod, FixedSection, LandlordType, Settings, Size, Unit } from "./calc/types";
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -31,8 +32,8 @@ export const DEFAULT_SETTINGS: Settings = {
   publicMenu: false,
   // FIFO Ekim 2026'dan: önceki kapanmış ayların stok değeri ve kârı değişmez (docs/STOK-DEGERLEME.md)
   stokFifoBaslangic: "2026-10",
-  // LafPOS'a geçiş günü: boş = kasa ModPOS, LafPOS'un günleri hiçbir hesaba girmez (docs/LAFPOS.md › Geçiş günü)
-  lafposGecisGunu: null,
+  // AsilPOS'a geçiş günü: boş = kasa ModPOS, AsilPOS'un günleri hiçbir hesaba girmez (docs/ASILPOS.md › Geçiş günü)
+  asilposGecisGunu: null,
 };
 
 /**
@@ -45,8 +46,8 @@ export const RECIPE_COST_NOTE =
 /** Stok değerleme ayarının veritabanındaki "kapalı" değeri (satır silinirse varsayılan ay geri gelir) */
 export const FIFO_OFF = "kapali";
 
-/** LafPOS'a geçiş günü bundan önce olamaz (bağlantı 26 Ekim 2026'da yayına girdi; öncesinde LafPOS günü yok) */
-export const LAFPOS_SWITCH_MIN = "2026-10-01";
+/** AsilPOS'a geçiş günü bundan önce olamaz (bağlantı 26 Ekim 2026'da yayına girdi; öncesinde AsilPOS günü yok) */
+export const ASILPOS_SWITCH_MIN = "2026-10-01";
 
 /** Takvimde olan bir gün mü ("2026-02-30" değil) */
 export function isCalendarDay(v: unknown): v is string {
@@ -58,11 +59,11 @@ export function isCalendarDay(v: unknown): v is string {
 }
 
 /**
- * Kayıtlı LafPOS geçiş gününün okunması: takvimde olan ve LAFPOS_SWITCH_MIN'den önce olmayan gün; başka her şey
- * (bozuk, boş, başka biçim) null, yani kasa ModPOS. Üst sınır yalnız kaydederken denetlenir (src/lib/lafpos/switch.ts).
+ * Kayıtlı AsilPOS geçiş gününün okunması: takvimde olan ve ASILPOS_SWITCH_MIN'den önce olmayan gün; başka her şey
+ * (bozuk, boş, başka biçim) null, yani kasa ModPOS. Üst sınır yalnız kaydederken denetlenir (src/lib/asilpos/switch.ts).
  */
-export function readLafposSwitchDay(v: unknown): string | null {
-  return isCalendarDay(v) && v >= LAFPOS_SWITCH_MIN ? v : null;
+export function readAsilposSwitchDay(v: unknown): string | null {
+  return isCalendarDay(v) && v >= ASILPOS_SWITCH_MIN ? v : null;
 }
 
 /**
@@ -71,11 +72,19 @@ export function readLafposSwitchDay(v: unknown): string | null {
  */
 export function settingsFromRows(rows: Iterable<{ key: string; value: unknown }>): Settings {
   const out: Record<string, unknown> = { ...DEFAULT_SETTINGS };
-  for (const r of rows) if (Object.hasOwn(DEFAULT_SETTINGS, r.key)) out[r.key] = r.value;
+  // Geçiş gününün eski anahtarı (ad değişikliği, AsilPOS; src/lib/asilpos/eski-adlar.ts): yeni anahtar yoksa okunur
+  let legacySwitch: { value: unknown } | null = null;
+  let newSwitch = false;
+  for (const r of rows) {
+    if (Object.hasOwn(DEFAULT_SETTINGS, r.key)) out[r.key] = r.value;
+    if (r.key === "asilposGecisGunu") newSwitch = true;
+    else if (r.key === GECIS_GUNU_AYARI) legacySwitch = { value: r.value };
+  }
+  if (!newSwitch && legacySwitch) out.asilposGecisGunu = legacySwitch.value;
   // FIFO başlangıcı: geçerli bir ay ya da "kapali" (eski yöntem); bozuk değer de eski yöntem sayılır
   if (out.stokFifoBaslangic !== null && !(typeof out.stokFifoBaslangic === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(out.stokFifoBaslangic))) out.stokFifoBaslangic = null;
-  // LafPOS'a geçiş günü: bozuk değer ModPOS sayılır (null)
-  out.lafposGecisGunu = readLafposSwitchDay(out.lafposGecisGunu);
+  // AsilPOS'a geçiş günü: bozuk değer ModPOS sayılır (null)
+  out.asilposGecisGunu = readAsilposSwitchDay(out.asilposGecisGunu);
   // Sayım gruplarının alış KDV'si: 0 ile 1 arası sayı değilse varsayılan (bozuk değer sayımın değerini NaN yapmasın)
   for (const k of ["alisKdvAmbalaj", "alisKdvGida"] as const) {
     const v = out[k];
@@ -288,5 +297,11 @@ export const MONTH_NAMES = [
   "Aralık",
 ];
 
-export const ROLES = { admin: "Yönetici", staff: "Personel" } as const;
+/**
+ * Hesap rolleri (docs/ROLLER.md). Yönetici her şey; Müdür şubesinin günlük işletmesi (şubesine kilitli); Personel
+ * günün işleri; Muhasebeci salt okunur muhasebe ekranları. Hangi rolün neyi açtığı TEK KAYNAKTA: src/lib/roles.ts.
+ */
+export const ROLES = { admin: "Yönetici", manager: "Müdür", staff: "Personel", accountant: "Muhasebeci" } as const;
 export type Role = keyof typeof ROLES;
+/** Rollerin sırası (seçici, süzgeç, tablo): yetkisi geniş olandan dara */
+export const ROLE_ORDER: readonly Role[] = ["admin", "manager", "staff", "accountant"];

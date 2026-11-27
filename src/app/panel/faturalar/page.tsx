@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { namedTill, tillBranches } from "@/lib/branches";
 import { invoiceBranchLabel, invoiceBranchOptions, invoiceBranchValue } from "@/lib/invoice-branch";
 import { DEFAULT_PARASUT_ACCOUNT } from "@/lib/parasut/accounts";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadInvoiceCariLinks } from "@/server/data/cari";
@@ -89,7 +89,8 @@ export default function InvoicesPage() {
 }
 
 async function InvoicesContent() {
-  await requireAdmin();
+  // Yönetici ve muhasebeci (salt okunur; docs/ROLLER.md): muhasebecinin yazma denemesini eylemler reddeder
+  await requireCan("muhasebe.oku");
   const db = getDb();
   const [model, state, docs, cards, taxRows, cariLinks, stockOnly, cashOutState, cashOutCats, parasutCompanies, scope, branches, accountRows, unassigned] = await Promise.all([
     loadModel(),

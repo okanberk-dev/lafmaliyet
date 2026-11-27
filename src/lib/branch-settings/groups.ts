@@ -8,7 +8,7 @@
  * olamaz.
  *
  * Geçiş: veri göçü yok. Satırı olmayan şube eski genel kayıttan okur, ama yalnız kaydın sahibi şube (`legacy`):
- * kasa raporu alıcıları Tuzla'nın (varsayılan şube), çalışanların kısa e-postası LafPOS'un şubesinin (Marina). Öbür
+ * kasa raporu alıcıları Tuzla'nın (varsayılan şube), çalışanların kısa e-postası AsilPOS'un şubesinin (Marina). Öbür
  * şubeler "aynı" sunulan grupta örtük olarak varsayılan şubeye bağlı başlar, bugünkü davranış hiçbir şey yapmadan
  * sürer. Kayıt yoksa ortam değişkeni (CASH_REPORT_RECIPIENTS) ya da grubun varsayılanı.
  */
@@ -17,14 +17,16 @@ import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { CASH_EVENING_HOUR, defaultCashRecipients } from "@/lib/cash-report";
 import type { ChannelKey } from "@/lib/commission/channels";
 import { effectiveSettings, parseCommissionSettings, type ChannelSettings } from "@/lib/commission/report";
-import { DEFAULT_SETTINGS, readLafposSwitchDay } from "@/lib/constants";
-import { LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
+import { DEFAULT_SETTINGS, readAsilposSwitchDay } from "@/lib/constants";
+import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
+import { GECIS_GUNU_AYARI, SUBE_AYAR_GRUBU } from "@/lib/asilpos/eski-adlar";
 import { clockSuffixTR } from "@/lib/reminders";
+import { PRESET_KEYS, PRESET_LABELS, presetText, shiftPresetsError, validPresetMinutes, type SavedShiftPreset } from "@/lib/vardiya";
 
 type Env = Record<string, string | undefined>;
 
-/** Eski genel kaydın sahibi: varsayılan şube (Tuzla) ya da LafPOS'un şubesi (Marina) */
-export type LegacyOwner = "default" | "lafpos";
+/** Eski genel kaydın sahibi: varsayılan şube (Tuzla) ya da AsilPOS'un şubesi (Marina) */
+export type LegacyOwner = "default" | "asilpos";
 
 export interface BranchSettingGroup<T extends Record<string, unknown> = Record<string, unknown>> {
   id: string;
@@ -39,10 +41,17 @@ export interface BranchSettingGroup<T extends Record<string, unknown> = Record<s
   /** Eski genel kaydın anahtarı (integration_state); yoksa null */
   legacyKey: string | null;
   /**
-   * Eski genel kaydın settings tablosundaki alanları (alan → settings anahtarı; ör. geçiş günü `lafposGecisGunu`):
+   * Eski genel kaydın settings tablosundaki alanları (alan → settings anahtarı; ör. geçiş günü `asilposGecisGunu`):
    * satırı yokken sahibi şube bunları da okur
    */
   legacySettings?: Readonly<Record<string, string>>;
+  /**
+   * Ad değişikliği (AsilPOS, plan A1): `id`'den önce okunan yeni grup adları. Satırlar ve kilit `id` (eski ad) ile
+   * yazılır; yeni adlı satır varsa (temizlik PR'ı A3 taşıdıktan sonra) o okunur
+   */
+  readIds?: readonly string[];
+  /** Ad değişikliği: `legacySettings` alanlarının yeni settings anahtarları, eskisinden önce okunur (yazılan eski anahtar) */
+  legacySettingsNew?: Readonly<Record<string, string>>;
   /** Şifreli tutulan alanlar: istemciye yalnız "kayıtlı mı" gider, "aynı" kapatılınca kopyalanmaz, yedeğe girmez */
   secretFields: readonly string[];
   /** Kayıttan (satır ya da eski kayıt; eksik ya da bozuk alan varsayılana düşer) grubun değeri; `raw` boşsa varsayılan */
@@ -61,7 +70,7 @@ export interface CashReportSetting extends Record<string, unknown> {
   whatsapp: string | null;
 }
 
-/** LafPOS gün sonunun çalışanlara giden kısa e-postası */
+/** AsilPOS gün sonunun çalışanlara giden kısa e-postası */
 export interface CashStaffSetting extends Record<string, unknown> {
   staffRecipients: string[];
   /** Çalışan e-postasında tutarlar (ciro, ödeme türleri) görünsün mü; kapalıyken yalnız "gün sonu alındı", fiş sayısı */
@@ -87,10 +96,10 @@ export const CASH_REPORT_GROUP: BranchSettingGroup<CashReportSetting> = {
 export const CASH_STAFF_GROUP: BranchSettingGroup<CashStaffSetting> = {
   id: "kasa.calisan",
   label: "Çalışanların gün sonu e-postası",
-  description: "LafPOS gün sonu alınınca şubenin çalışanlarına kısa özet gider; rapor ayrıntısı gitmez.",
+  description: "AsilPOS gün sonu alınınca şubenin çalışanlarına kısa özet gider; rapor ayrıntısı gitmez.",
   // Çalışan listesi şubenin kendisinin: Tuzla'nın çalışanları Marina'nın gün sonunu almaz
   linkable: false,
-  legacy: "lafpos",
+  legacy: "asilpos",
   legacyKey: "cash.settings",
   secretFields: [],
   read: (raw) => ({
@@ -146,31 +155,34 @@ export const COMMISSION_GROUP: BranchSettingGroup<CommissionSetting> = {
   },
 };
 
-/** LafPOS'un kasası olan şubenin ayarı: geçiş günü ve (isteğe bağlı) panelde saklanan anahtar */
-export interface LafposSetting extends Record<string, unknown> {
-  /** LafPOS'a geçiş günü (YYYY-MM-DD); boşsa kasa ModPOS sayılır (docs/LAFPOS.md › Geçiş günü) */
+/** AsilPOS'un kasası olan şubenin ayarı: geçiş günü ve (isteğe bağlı) panelde saklanan anahtar */
+export interface AsilposSetting extends Record<string, unknown> {
+  /** AsilPOS'a geçiş günü (YYYY-MM-DD); boşsa kasa ModPOS sayılır (docs/ASILPOS.md › Geçiş günü) */
   switchDay: string | null;
-  /** LafPOS'un imza anahtarı (şifreli; yalnız sunucuda açılır). Yoksa ortamdaki LAFPOS_SYNC_SECRET */
+  /** AsilPOS'un imza anahtarı (şifreli; yalnız sunucuda açılır). Yoksa ortamdaki ASILPOS_SYNC_SECRET */
   secret?: string;
 }
 
 /**
- * LafPOS bağlantısı ve geçiş günü (docs/LAFPOS.md › Şubeler). Değeri yalnız LafPOS'un şubesinin (kütükte kasa kaynağı
- * LafPOS olan şube, en çok bir) değeri okunur. "Diğer şubeyle aynı" sunulmaz: geçiş günü şubenin kendi kasasının
- * günüdür, LafPOS da en çok bir şubenin kasasıdır; kaynak başka şubeye geçerse o şube kendi gününü ve anahtarını alır.
- * Eski kayıt (settings › lafposGecisGunu) Marina'nın (geçildiği gün LafPOS'un şubesi); anahtar yoksa ortamınki
+ * AsilPOS bağlantısı ve geçiş günü (docs/ASILPOS.md › Şubeler; çok şube, 27 Kasım 2026): her AsilPOS kasasının kendi
+ * geçiş günü ve imza anahtarı. "Diğer şubeyle aynı" sunulmaz: geçiş günü şubenin kendi kasasının günüdür, anahtar da
+ * şubeyi tanıtır (iki şubenin anahtarı aynı olamaz).
+ * Eski kayıt (settings › GECIS_GUNU_AYARI) Marina'nın (geçildiği gün AsilPOS'un şubesi); anahtar yoksa ortamınki. Grubun
+ * adı ve eski kaydın anahtarı eski adla yazılır (satırlar, kilit; src/lib/asilpos/eski-adlar.ts), yeni adlar önce okunur
  */
-export const LAFPOS_GROUP: BranchSettingGroup<LafposSetting> = {
-  id: "pos.lafpos",
-  label: "LafPOS bağlantısı ve geçiş günü",
-  description: "Kasası LafPOS olan şubenin geçiş günü ve LafPOS'un imza anahtarı.",
+export const ASILPOS_GROUP: BranchSettingGroup<AsilposSetting> = {
+  id: SUBE_AYAR_GRUBU,
+  readIds: ["pos.asilpos"],
+  label: "AsilPOS bağlantısı ve geçiş günü",
+  description: "Şubenin AsilPOS kasasının geçiş günü ve imza anahtarı (her kasanın kendi anahtarı; panel şubeyi anahtardan tanır).",
   linkable: false,
-  legacy: "lafpos",
+  legacy: "asilpos",
   legacyKey: null,
-  legacySettings: { switchDay: "lafposGecisGunu" },
+  legacySettings: { switchDay: GECIS_GUNU_AYARI },
+  legacySettingsNew: { switchDay: "asilposGecisGunu" },
   secretFields: ["secret"],
   read: (raw) => ({
-    switchDay: readLafposSwitchDay(raw.switchDay),
+    switchDay: readAsilposSwitchDay(raw.switchDay),
     ...(typeof raw.secret === "string" && raw.secret.trim() ? { secret: raw.secret.trim() } : {}),
   }),
   summary: (v) => (v.switchDay ? `geçiş günü ${v.switchDay.split("-").reverse().join(".")}` : "geçiş günü yok"),
@@ -245,7 +257,7 @@ export type TillDevice = (typeof TILL_DEVICES)[number]["id"];
 
 /** Şubenin banka POS'u ve yazarkasası */
 export interface TillDeviceSetting extends Record<string, unknown> {
-  /** Cihazın türü; boşsa bilinmiyor (LafPOS'lu şubede LafPOS'un gönderdiği) */
+  /** Cihazın türü; boşsa bilinmiyor (AsilPOS'lu şubede AsilPOS'un gönderdiği) */
   device: TillDevice | null;
   /** Yazarkasanın sicil (seri) numarası: e-postada ve Kasa'da hangi cihazın Z'si olduğu */
   registerNo: string | null;
@@ -257,7 +269,7 @@ const text = (v: unknown, max: number): string | null => (typeof v === "string" 
 
 /**
  * Banka POS ve yazarkasa (docs/SUBE.md › Şube başına ayarlar): cihaz şubenin kendisinin, "aynı" sunulmaz. Eski kayıt
- * yok: boşken her şey bugünkü gibi (LafPOS'lu şubede cihaz LafPOS'un gönderdiğinden, yoksa Pavo)
+ * yok: boşken her şey bugünkü gibi (AsilPOS'lu şubede cihaz AsilPOS'un gönderdiğinden, yoksa Pavo)
  */
 export const TILL_DEVICE_GROUP: BranchSettingGroup<TillDeviceSetting> = {
   id: "kasa.cihaz",
@@ -282,7 +294,7 @@ export function tillDeviceLabel(device: TillDevice): string {
 
 /**
  * Gün sonu fişinin sahibi, ilgi ekiyle ("Pavo'nun", "TokenX'in", "banka POS'unun"): akşam hatırlatmasının metni. Cihaz
- * belirtilmediyse bugünkü metin (LafPOS'lu şubenin cihazı Pavo)
+ * belirtilmediyse bugünkü metin (AsilPOS'lu şubenin cihazı Pavo)
  */
 export function tillDeviceGenitive(device: TillDevice | null): string {
   if (device === "tokenx") return "TokenX'in";
@@ -293,8 +305,8 @@ export function tillDeviceGenitive(device: TillDevice | null): string {
 /** Şubenin kör sayım ayarı */
 export interface BlindCountSetting extends Record<string, unknown> {
   /**
-   * Kör sayım açık mı; null: hiç seçilmedi, varsayılan geçer (kasası ModPOS olan şubede açık, LafPOS'un şubesinde
-   * kapalı: orada sayım zaten LafPOS'ta kördür). Kural src/lib/kor-sayim.ts blindCountOn
+   * Kör sayım açık mı; null: hiç seçilmedi, varsayılan geçer (kasası ModPOS olan şubede açık, AsilPOS'un şubesinde
+   * kapalı: orada sayım zaten AsilPOS'ta kördür). Kural src/lib/kor-sayim.ts blindCountOn
    */
   enabled: boolean | null;
 }
@@ -316,44 +328,89 @@ export const BLIND_COUNT_GROUP: BranchSettingGroup<BlindCountSetting> = {
   summary: (v) => (v.enabled === null ? "varsayılan" : v.enabled ? "açık" : "kapalı"),
 };
 
+/** Şubenin hazır vardiyaları (sabahçı / akşamcı) */
+export interface ShiftPresetSetting extends Record<string, unknown> {
+  /**
+   * Kaydedilmiş saatler (sıra sabahçı, akşamcı; boş liste: şubede hazır vardiya yok); null: hiç seçilmedi, bugünkü sabit
+   * saatler geçer (src/lib/vardiya.ts SHIFT_PRESETS: Tuzla ve Marina'nınki, öbür şubede yok). Çözüm shiftPresetsOf
+   */
+  presets: SavedShiftPreset[] | null;
+}
+
+/** Kayıttaki liste: tanınan anahtar ve geçerli saatler (bozuk öğe atlanır, anahtar başına bir); dizi değilse null */
+function readShiftPresets(v: unknown): SavedShiftPreset[] | null {
+  if (!Array.isArray(v)) return null;
+  const out: SavedShiftPreset[] = [];
+  for (const key of PRESET_KEYS) {
+    const p = v.find((x): x is Record<string, unknown> => !!x && typeof x === "object" && (x as Record<string, unknown>).key === key);
+    if (p && validPresetMinutes(p.startMin, p.endMin)) out.push({ key, startMin: p.startMin as number, endMin: p.endMin as number });
+  }
+  // Aynı saatli ikinci vardiya okunmaz (ad saatlerden türer; yazım bunu zaten reddeder)
+  return shiftPresetsError(out) ? out.slice(0, 1) : out;
+}
+
+/**
+ * Hazır vardiyalar (docs/VARDIYA.md › Hazır vardiyalar; 26 Kasım 2026): Vardiya ekranındaki S (sabahçı) ve A
+ * (akşamcı) düğmelerinin, "s" / "a" kısaltmasının, yazarak doldurmanın ve PDF'in saatleri. Saatler şubenin açılışına
+ * bağlıdır: "aynı" sunulmaz (Tuzla ile Marina'nın saatleri bugün de ayrı; örtük "aynı" Marina'nın saatlerini
+ * değiştirirdi). Eski kayıt yok: seçilmemişken bugünkü sabit saatler (SHIFT_PRESETS)
+ */
+export const SHIFT_PRESET_GROUP: BranchSettingGroup<ShiftPresetSetting> = {
+  id: "vardiya.hazir",
+  label: "Hazır vardiyalar",
+  description: "Vardiya ekranında S (sabahçı) ve A (akşamcı) düğmelerinin yazdığı saatler.",
+  linkable: false,
+  legacy: "default",
+  legacyKey: null,
+  secretFields: [],
+  read: (raw) => ({ presets: readShiftPresets(raw.presets) }),
+  summary: (v) =>
+    v.presets === null ? "varsayılan saatler" : v.presets.length ? v.presets.map((p) => `${PRESET_LABELS[p.key]} ${presetText(p)}`).join(" · ") : "hazır vardiya yok",
+};
+
 /** Şube başına tutulan gruplar (sıra Şube ayarları ekranının sırası) */
 export const BRANCH_SETTING_GROUPS = [
   CASH_REPORT_GROUP,
   CASH_STAFF_GROUP,
   PARASUT_GROUP,
   COMMISSION_GROUP,
-  LAFPOS_GROUP,
+  ASILPOS_GROUP,
   MODPOS_GROUP,
   CALENDAR_GROUP,
   TILL_DEVICE_GROUP,
   BLIND_COUNT_GROUP,
+  SHIFT_PRESET_GROUP,
 ] as const;
 
 export type BranchSettingGroupId = (typeof BRANCH_SETTING_GROUPS)[number]["id"];
 
 export function branchSettingGroup(id: string): BranchSettingGroup | null {
-  return (BRANCH_SETTING_GROUPS as readonly BranchSettingGroup[]).find((g) => g.id === id) ?? null;
+  return (BRANCH_SETTING_GROUPS as readonly BranchSettingGroup[]).find((g) => g.id === id || g.readIds?.includes(id)) ?? null;
 }
 
 /**
  * Henüz bütün şubelerde ortak olan ama şubeye göre değişebilecek ayarlar. Şube ayarları ekranı bunları "şimdilik ortak"
  * diye adıyla söyler: sahip hangisinin şubeye göre değişmediğini bilir. Uyarı sesi saatleri tarayıcıda ve bildirim
- * işçisinde (public/sw.js) sabit, kontrol listesi hatırlatmaları tek bir dilim takvimiyle gider; hazır vardiya saatleri
- * vardiya PR'ı (#120) birleştikten sonra
+ * işçisinde (public/sw.js) sabit, kontrol listesi hatırlatmaları tek bir dilim takvimiyle gider. Hazır vardiya saatleri
+ * 26 Kasım 2026'dan beri şube başına (SHIFT_PRESET_GROUP)
  */
 export const SHARED_FOR_NOW: readonly { id: string; label: string }[] = [
   { id: "uyari.saatleri", label: "Uyarı sesi saatleri (09:00–01:00)" },
   { id: "kontrol.saatleri", label: "Kontrol listesi hatırlatma saatleri" },
-  { id: "vardiya.hazir", label: "Hazır vardiya saatleri" },
 ];
 
 /**
- * Eski genel kaydın sahibi şubenin kimliği. Tarihsel bir gerçek: eski kayıt şube başına ayarlara geçildiği gün LafPOS'un
- * şubesinindi (Marina, `LAFPOS_BRANCH_ID`). Bu yüzden kütükten türetilen LafPOS şubesine (lafposBranchOf) bağlanmaz;
- * kasa kaynağı sonradan değişse de eski kaydı okuyan şube değişmez
+ * Eski genel kaydın sahibi şubenin kimliği. Tarihsel bir gerçek: eski kayıt şube başına ayarlara geçildiği gün AsilPOS'un
+ * şubesinindi (Marina, `LEGACY_POS_BRANCH_ID`). Bu yüzden kütükteki AsilPOS kasalarına bağlanmaz; kasa kaynağı sonradan
+ * değişse de eski kaydı okuyan şube değişmez
  */
 export function legacyOwnerId(group: Pick<BranchSettingGroup, "legacy">): string {
-  return group.legacy === "lafpos" ? LAFPOS_BRANCH_ID : DEFAULT_BRANCH_ID;
+  return group.legacy === "asilpos" ? LEGACY_POS_BRANCH_ID : DEFAULT_BRANCH_ID;
+}
+
+/** Grubun okunan adları, öncelik sırasıyla: yeni adlar (`readIds`), sonra yazılan ad (`id`) */
+export function groupReadIds(group: Pick<BranchSettingGroup, "id" | "readIds">): string[] {
+  return [...(group.readIds ?? []), group.id];
 }
 
 /** Değerin şifresiz alanları (satırın `value`'su; gizli alanlar `secrets`'ta) */

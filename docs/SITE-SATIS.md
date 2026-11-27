@@ -199,9 +199,11 @@ işletme genelidir (Marina'nın masa siparişi de dahil); fiziksel şube seçili
 > Bilgi için: kasa farkına ve Z raporuna girmez; ModPOS'un "Online" ödemesi (Yemeksepeti, Getir…) ayrı. Sitenin günü
 > gece yarısında biter.
 
-- Tutarlar KDV dahil, iadeler düşülmüş (`netMinor`): online = kafe + mağaza. Personel karaoke tutarını görmez
-  (karaoke tutarları personele gösterilmez); yöneticiye giden e-postada ikisi de var ("laffogato.net (kasadan
-  geçmez)" bölümü; düz metinde son satır). WhatsApp metnine girmez.
+- Tutarlar KDV dahil, iadeler düşülmüş (`netMinor`): online = kafe + mağaza. Personel ve müdür karaoke tutarını
+  görmez: başlık sunucuda kurulur (`siteDayTitle`), karaoke ön ödemesi yalnız `karaoke.tutar` yeteneğinde (yönetici,
+  muhasebeci; [ROLLER.md](ROLLER.md)), öbürlerinin tarayıcısına tutar gitmez; online toplamı herkes görür. Kasa
+  e-postasında ikisi de var ("laffogato.net (kasadan geçmez)" bölümü; düz metinde son satır; e-posta personel ve müdür
+  hesabına gitmez). WhatsApp metnine girmez.
 - **Hiçbir kasa rakamını değiştirmez**: kasa farkı, Z kontrolü, devir aynen.
 - **Raporu asla bekletmez:** sayfada satır akışla sonradan gelir (form hemen açılır); gönderimde istek kayıtla aynı
   anda başlar, yalnız e-posta onu bekler. Site düşük, yavaş (8 saniye; gövdeyle en çok 8,5) ya da yanıtı bozuksa satır

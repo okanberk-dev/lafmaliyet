@@ -7,7 +7,8 @@ import { z } from "zod";
 import { dateTR } from "@/lib/format";
 import { todayTR } from "@/lib/reminders";
 import { anchorTimeOnEdit, completeTarget, isTime, postponeTarget, type UserRepeat } from "@/lib/user-reminders";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 
 import { attempt, UserError, zDate, zOptText, zText } from "./util";
@@ -45,7 +46,7 @@ const mine = (id: number, userId: number) => and(eq(s.userReminders.id, id), eq(
 
 export async function saveUserReminder(input: z.input<typeof reminderSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const { id, forUserId, ...data } = reminderSchema.parse(input);
     const db = getDb();
     if (id) {
@@ -106,7 +107,7 @@ async function assignTarget(me: { id: number; role: string }, forUserId: number 
 
 export async function deleteUserReminder(id: number) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const [d] = await getDb().delete(s.userReminders).where(mine(zId.parse(id), me.id)).returning({ id: s.userReminders.id });
     if (!d) throw new UserError("Hatırlatıcı bulunamadı");
     refresh();
@@ -123,7 +124,7 @@ type Snapshot = { dueDate: string; dueTime: string | null; active: boolean; done
  */
 export async function completeUserReminder(id: number) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const rid = zId.parse(id);
     const db = getDb();
     const [r] = await db.select().from(s.userReminders).where(mine(rid, me.id)).limit(1);
@@ -155,7 +156,7 @@ const snapshotSchema = z.object({
 /** Geri al: "Tamamlandı" ya da "Ertele"den önceki hâl */
 export async function restoreUserReminder(id: number, prev: z.input<typeof snapshotSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const snap = snapshotSchema.parse(prev);
     const [r] = await getDb()
       .update(s.userReminders)
@@ -171,7 +172,7 @@ export async function restoreUserReminder(id: number, prev: z.input<typeof snaps
 /** Ertele: bir saat (saatliyse) ya da ertesi gün. Yalnız bu dönemin tarih ve saati kayar; çapalar (gün, saat) kalır */
 export async function postponeUserReminder(id: number, by: "hour" | "day") {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const rid = zId.parse(id);
     const step = z.enum(["hour", "day"]).parse(by);
     const db = getDb();

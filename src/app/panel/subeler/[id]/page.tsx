@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { ArrowLeft, Layers } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -10,17 +11,21 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { BRANCH_FEATURES, type BranchFeature, branchFeatures, featureBranches, hasFeature } from "@/lib/branch-features";
-import { BLIND_COUNT_GROUP, CALENDAR_GROUP, COMMISSION_GROUP, LAFPOS_GROUP, MODPOS_GROUP, SHARED_FOR_NOW, TILL_DEVICE_GROUP } from "@/lib/branch-settings/groups";
+import { BLIND_COUNT_GROUP, CALENDAR_GROUP, COMMISSION_GROUP, ASILPOS_GROUP, MODPOS_GROUP, SHARED_FOR_NOW, SHIFT_PRESET_GROUP, TILL_DEVICE_GROUP } from "@/lib/branch-settings/groups";
 import { BRANCH_ID_PATTERN, tillBranches } from "@/lib/branches";
 import { effectiveSettings } from "@/lib/commission/report";
 import { blindCountSettingOn } from "@/lib/kor-sayim";
 import { modposKeyProblem } from "@/lib/modpos/request";
 import { modposBranchIds, modposKeyEnv } from "@/lib/modpos/sube";
+import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
+import { shiftPresetsOf } from "@/lib/vardiya";
 import { requireAdmin } from "@/server/auth/dal";
 import { branchSettingView } from "@/server/branch-settings-view";
 import { listBranches } from "@/server/branches";
 import { cashSettingsCardData } from "@/server/cash/settings-card";
-import { lafposBranchId, lafposSecretState } from "@/server/lafpos/branch";
+import { posKeyState } from "@/server/asilpos/branch";
+import { getDb, schema as dbs } from "@/server/db";
+import { loadPosTillIds } from "@/server/pos/tills";
 import { isEmailConfigured } from "@/server/notify/resend";
 import { parasutLinkCardData } from "@/server/parasut/link-card";
 
@@ -30,7 +35,8 @@ import { BlindCountCard } from "./blind-count-card";
 import { CalendarCard } from "./calendar-card";
 import { BranchFeaturesCard } from "./features-card";
 import { ParasutLinkCard } from "./parasut-card";
-import { LafposBranchCard, LafposOldSecretCard, ModposBranchCard } from "./pos-card";
+import { AsilposBranchCard, AsilposOldSecretCard, ModposBranchCard } from "./pos-card";
+import { ShiftPresetsCard } from "./shift-presets-card";
 import { TillDeviceCard } from "./till-device-card";
 
 export const metadata: Metadata = { title: "Şube ayarları" };
@@ -83,11 +89,17 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
       </>
     );
   }
-  // Kasa bağlantısı: LafPOS'un şubesinde (türetilmiş; kütükte kaynağı ModPOS görünse de geri düşüşle Marina) LafPOS kartı,
-  // ModPOS'tan çekilen şubede ModPOS kartı. Sunucu (saveLafposSecret) ve Ayarlar › LafPOS da aynı şubeye bakar
-  const lafposHere = branch.id === (await lafposBranchId());
+  // Kasa bağlantısı (çok şube): kasası AsilPOS olan şubede ya da AsilPOS kurulumu yapılmış şubede (deneme günleri) AsilPOS
+  // kartı (şubenin kendi geçiş günü ve anahtarı), ModPOS'tan çekilen şubede ModPOS kartı. Sunucu (saveAsilposSecret) aynı
+  // kurala bakar
+  const [{ ids: tillIds }, [installed]] = await Promise.all([
+    loadPosTillIds(),
+    getDb().select({ id: dbs.asilposInstalls.id }).from(dbs.asilposInstalls).where(eq(dbs.asilposInstalls.branchId, branch.id)).limit(1),
+  ]);
+  const tillHere = tillIds.includes(branch.id);
+  const asilposHere = tillHere || Boolean(installed);
   const modposHere = modposBranchIds(branches).includes(branch.id);
-  const [cash, parasut, commission, calendar, device, modpos, lafpos, secret, blindCount, lafposBranch] = await Promise.all([
+  const [cash, parasut, commission, calendar, device, modpos, asilpos, secret, blindCount, shiftPresets] = await Promise.all([
     cashSettingsCardData(branch.id),
     parasutLinkCardData(branch.id),
     branchSettingView(COMMISSION_GROUP, branch.id),
@@ -95,10 +107,10 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
     branchSettingView(TILL_DEVICE_GROUP, branch.id),
     branchSettingView(MODPOS_GROUP, branch.id),
     // Öbür şubede yalnız eski anahtarın durumu (kasa kaynağı başka şubeye geçtiyse silinebilsin)
-    branchSettingView(LAFPOS_GROUP, branch.id),
-    lafposHere ? lafposSecretState() : Promise.resolve(null),
+    branchSettingView(ASILPOS_GROUP, branch.id),
+    asilposHere ? posKeyState(branch.id) : Promise.resolve(null),
     branchSettingView(BLIND_COUNT_GROUP, branch.id),
-    lafposBranchId(),
+    branchSettingView(SHIFT_PRESET_GROUP, branch.id),
   ]);
   // Tek şubelik özelliğin (karaoke) öbür şubedeki sahibi: kartta anahtar kapalı, "Marina şubesinde açık"
   const heldBy: Partial<Record<BranchFeature, string>> = {};
@@ -124,19 +136,22 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
         <BranchFeaturesCard branchId={branch.id} branchName={branch.name} features={branchFeatures(branch)} heldBy={heldBy} />
         <CashSettingsCard {...cash} emailConfigured={isEmailConfigured()} />
         <ParasutLinkCard data={parasut} />
-        {lafposHere && secret ? (
-          <LafposBranchCard
+        {asilposHere && secret ? (
+          <AsilposBranchCard
             data={{
               branchId: branch.id,
-              switchDay: lafpos.value.switchDay,
-              stored: lafpos.secrets.secret ?? "none",
+              switchDay: asilpos.value.switchDay,
+              stored: asilpos.secrets.secret ?? "none",
               source: secret.source,
               problem: secret.problem,
-              sourceModpos: branch.posSource !== "lafpos",
+              envName: secret.envName,
+              sourceModpos: branch.posSource !== "asilpos",
+              till: tillHere,
+              legacy: branch.id === LEGACY_POS_BRANCH_ID,
             }}
           />
-        ) : (lafpos.secrets.secret ?? "none") !== "none" ? (
-          <LafposOldSecretCard branchId={branch.id} />
+        ) : (asilpos.secrets.secret ?? "none") !== "none" ? (
+          <AsilposOldSecretCard branchId={branch.id} />
         ) : null}
         {/* Kasası ModPOS olmayan şubede de, başka şube bu şubenin ay yedeğini kullanıyorsa ("X ile aynı"; oradaki "X şubesinde
             düzenle" buraya gelir) */}
@@ -145,13 +160,13 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
             data={{ view: modpos, keyEnv: modposKeyEnv(branch.id), keyProblem: modposHere ? modposKeyProblem(process.env, branch.id, modposBranchIds(branches)) : null, ownTill: modposHere }}
           />
         ) : null}
-        <TillDeviceCard view={device} lafpos={lafposHere} />
+        <TillDeviceCard view={device} asilpos={tillHere} />
         <BlindCountCard
           branchId={branch.id}
           branchName={branch.name}
-          on={blindCountSettingOn(blindCount.value.enabled, branch.id, lafposBranch)}
+          on={blindCountSettingOn(blindCount.value.enabled, tillHere)}
           isDefault={blindCount.value.enabled === null}
-          lafpos={lafposHere}
+          asilpos={tillHere}
         />
         {/* Yemek kartı ve platformlar bu şubede kullanılıyorsa (şube özelliği yemek_karti) ya da başka şube bu şubenin
             sürelerini kullanıyorsa (oradaki "X şubesinde düzenle" buraya gelir) */}
@@ -159,6 +174,13 @@ async function BranchSettingsContent({ params }: { params: PageProps<"/panel/sub
           <ChannelSettingsCard settings={effectiveSettings(commission.value.channels)} branchId={branch.id} link={commission.link} anchor="komisyon" />
         ) : null}
         <CalendarCard view={calendar} />
+        {/* Sabahçı ve akşamcının saatleri (Vardiya ekranı); seçilmemişse bugünkü sabit saatler */}
+        <ShiftPresetsCard
+          branchId={branch.id}
+          branchName={branch.name}
+          presets={shiftPresetsOf(branch.id, shiftPresets.value.presets)}
+          isDefault={shiftPresets.value.presets === null}
+        />
         <Card>
           <CardHeader icon={<Layers />} title="Şimdilik bütün şubelerde ortak" description="Bu ayarlar şubeye göre değişmez; tek yerden düzenlenir." />
           <ul className="flex flex-wrap gap-2 px-5 pb-5">

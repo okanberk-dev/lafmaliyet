@@ -1,7 +1,7 @@
 // "Yalnız sitede" kalemden panel ürünü açma (denetim 26 Eki 2026 B14, E-48) gerçek Postgres'te ve sitenin sahte
 // ucuyla: laffogato.net'e hiç gidilmez, imzalı GET /api/panel/menu bellekteki bir siteye yönlenir. Kalemin iki fiyatı
 // iki boy olarak sitenin fiyatıyla açılır ve (siteMenuId, M/L)'ye bağlanır; tek boylu Tükendi kalem QR menüde gizli
-// açılır; bu kalemle gelmiş ürünsüz LafPOS satırı ürüne bağlanır. Aynı ad + boy, dolu yuva, sitede olmayan kalem, tek
+// açılır; bu kalemle gelmiş ürünsüz AsilPOS satırı ürüne bağlanır. Aynı ad + boy, dolu yuva, sitede olmayan kalem, tek
 // boylu kalemin L'si ve siteye ulaşılamaması ürün açmaz. Aynı ad + boyda bekleyen yeni ürün önerisi de ürün açtırmaz
 // (inceleme B14-D1): öneri onaylanır, ürün reçetesiyle açılır ve kaleme bağlanır.
 //
@@ -136,8 +136,8 @@ describe("Yalnız sitede kalemden ürün açma: sahte siteyle", { skip: !SERVER_
       .orderBy(s.products.size);
   const productCount = async () => (await db.select({ id: s.products.id }).from(s.products)).length;
 
-  test("E-48: iki fiyatlı kalem iki boy olarak sitenin fiyatıyla açılır ve (kalem, M/L)'ye bağlanır; ürünsüz LafPOS satırı bağlanır", async () => {
-    // LafPOS bu kalemi ürünü yokken sattı: satır ürünsüz saklandı
+  test("E-48: iki fiyatlı kalem iki boy olarak sitenin fiyatıyla açılır ve (kalem, M/L)'ye bağlanır; ürünsüz AsilPOS satırı bağlanır", async () => {
+    // AsilPOS bu kalemi ürünü yokken sattı: satır ürünsüz saklandı
     await db.insert(s.posDailySales).values({ date: "2026-10-27", posName: "MATCHA LATTE M", siteMenuId: "mnu-0100", slot: "M", qty: 3, revenue: 555 });
     const res = await actions.createProductsFromSite({
       siteMenuId: "mnu-0100",
@@ -169,7 +169,7 @@ describe("Yalnız sitede kalemden ürün açma: sahte siteyle", { skip: !SERVER_
     const history = await db.select({ source: s.productPrices.source, price: s.productPrices.price }).from(s.productPrices).where(eq(s.productPrices.productId, got[1].id));
     assert.deepEqual(history, [{ source: "create", price: 185 }]);
     const [pos] = await db.select({ productId: s.posDailySales.productId }).from(s.posDailySales).where(eq(s.posDailySales.posName, "MATCHA LATTE M"));
-    assert.equal(pos.productId, got[1].id, "ürünsüz LafPOS satırı M'ye bağlandı");
+    assert.equal(pos.productId, got[1].id, "ürünsüz AsilPOS satırı M'ye bağlandı");
     const [log] = await db.select({ detail: s.activityLog.detail }).from(s.activityLog).where(eq(s.activityLog.action, "Yeni ürün (siteden)"));
     assert.equal(log?.detail, "Matcha Latte M, L → Matcha Latte (mnu-0100): M 185\u00a0₺, L 205\u00a0₺");
   });

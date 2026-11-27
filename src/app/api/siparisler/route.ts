@@ -2,6 +2,7 @@ import { connection, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { siteErrorFor } from "@/lib/staff-errors";
+import { can, READ_ONLY_TEXT } from "@/lib/roles";
 import { getCurrentUser } from "@/server/auth/dal";
 import { ensureOrdersFresh } from "@/server/site-orders/sync";
 
@@ -27,6 +28,8 @@ export async function POST(request: NextRequest) {
   const headers = { "Cache-Control": "no-store" };
   const me = await getCurrentUser();
   if (!me) return Response.json({ error: "Giriş gerekli" }, { status: 401, headers });
+  // Muhasebeci salt okur (docs/ROLLER.md): siteyle eşitleme yazar
+  if (!can(me.role, "kayit.yaz")) return Response.json({ error: READ_ONLY_TEXT }, { status: 403, headers });
   let maxAgeMs: number;
   try {
     maxAgeMs = bodySchema.parse(await request.json()).maxAgeMs;

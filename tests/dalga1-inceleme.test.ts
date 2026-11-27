@@ -1,7 +1,7 @@
 // Dalga 1'in incelemesi (25 Kasım 2026): üç bağımsız incelemenin bulguları. Kör kasa okuma düşünce kapalı kalır, ortak
 // telefonda taslak başkasının fotoğrafını getirmez, ayrılma penceresi hedefe göre konuşur, fişsiz çıkış eski günlerde ve
-// LafPOS gün sonu gelmeden hesaplanmaz, "Tümü"nün ortak dönemi olmayan ayında Genel bakış çelişmez, standart sabit
-// giderle net kâr dışa aktarımda kalır. Sunucu yolları (gönderen korunur) tests/lafpos-gun-sonu-tam-db.test.ts'te.
+// AsilPOS gün sonu gelmeden hesaplanmaz, "Tümü"nün ortak dönemi olmayan ayında Genel bakış çelişmez, standart sabit
+// giderle net kâr dışa aktarımda kalır. Sunucu yolları (gönderen korunur) tests/asilpos-gun-sonu-tam-db.test.ts'te.
 // Çalıştırma: npx tsx --test tests/dalga1-inceleme.test.ts
 
 import assert from "node:assert/strict";
@@ -15,9 +15,9 @@ import { droppedPhotosText, leaveDialogText, leaveDropsDraft, restorableDraftPho
 import { createModel } from "../src/lib/calc/engine";
 import { dashboard } from "../src/lib/calc/insights";
 import type { Dataset } from "../src/lib/calc/types";
-import { BLIND_TEXT, staffBlindView } from "../src/lib/lafpos/kor-kasa";
-import { lafposMovesPending, UNRECEIPTED_SINCE, unreceiptedCashOut } from "../src/lib/lafpos/prefill";
-import { commonListSourceLine, commonListWaitText } from "../src/lib/lafpos/sales";
+import { BLIND_TEXT, staffBlindView } from "../src/lib/asilpos/kor-kasa";
+import { asilposMovesPending, UNRECEIPTED_SINCE, unreceiptedCashOut } from "../src/lib/asilpos/prefill";
+import { commonListSourceLine, commonListWaitText } from "../src/lib/asilpos/sales";
 import { datasetFromSeed, investmentSeed, type SeedData } from "./fixtures/baslangic";
 
 const root = join(__dirname, "..");
@@ -25,19 +25,19 @@ const data: SeedData = JSON.parse(readFileSync(join(root, "tests/fixtures/baslan
 
 // ---------------------------------------------------------------- Kör kasa
 
-test("kör kasa: LafPOS okunamayınca (null) LafPOS'un şubesinde personele kör; Tuzla ve yönetici değişmez", () => {
-  assert.equal(staffBlindView({ admin: false, branchId: "marina", lafposDay: null }), true, "okuma düştü: kapalı");
-  assert.equal(staffBlindView({ admin: false, branchId: "tuzla", lafposDay: null }), false, "ModPOS şubesi kör değil");
-  assert.equal(staffBlindView({ admin: true, branchId: "marina", lafposDay: null }), false, "yönetici görür");
-  // Kütükten gelen LafPOS şubesi geri düşüşün yerine geçer
-  assert.equal(staffBlindView({ admin: false, branchId: "tuzla", lafposDay: null, lafposBranch: "tuzla" }), true);
+test("kör kasa: AsilPOS okunamayınca (null) AsilPOS'un şubesinde personele kör; Tuzla ve yönetici değişmez", () => {
+  assert.equal(staffBlindView({ admin: false, till: true, asilposDay: null }), true, "okuma düştü: kapalı");
+  assert.equal(staffBlindView({ admin: false, till: false, asilposDay: null }), false, "ModPOS şubesi kör değil");
+  assert.equal(staffBlindView({ admin: true, till: true, asilposDay: null }), false, "yönetici görür");
+  // Kütükten gelen AsilPOS şubesi geri düşüşün yerine geçer
+  assert.equal(staffBlindView({ admin: false, till: true, asilposDay: null }), true);
   // Okunduysa geçiş gününün kuralı
-  assert.equal(staffBlindView({ admin: false, branchId: "marina", lafposDay: false }), false, "geçiş gününden önce");
-  assert.equal(staffBlindView({ admin: false, branchId: "marina", lafposDay: true }), true);
+  assert.equal(staffBlindView({ admin: false, till: true, asilposDay: false }), false, "geçiş gününden önce");
+  assert.equal(staffBlindView({ admin: false, till: true, asilposDay: true }), true);
 });
 
-test("kör kasa: elle girilmiş raporun satırı 'Rakamlar LafPOS'tan geldi' demez; alt başlık 'nakdi sayın' demez", () => {
-  assert.doesNotMatch(BLIND_TEXT.manualLine, /LafPOS'tan geldi/);
+test("kör kasa: elle girilmiş raporun satırı 'Rakamlar AsilPOS'tan geldi' demez; alt başlık 'nakdi sayın' demez", () => {
+  assert.doesNotMatch(BLIND_TEXT.manualLine, /AsilPOS'tan geldi/);
   assert.match(BLIND_TEXT.manualLine, /yönetici kontrol eder/);
   assert.doesNotMatch(BLIND_TEXT.description, /sayın|girin/);
 });
@@ -90,20 +90,20 @@ test("fişsiz çıkış: Kasadan çıkanlar'dan (23 Ekim 2026) önceki gün say�
   assert.equal(unreceiptedCashOut(200, [], null).unreceipted, 200, "gün verilmezse eskisi gibi");
 });
 
-test("fişsiz çıkış: LafPOS gününde gün sonu gelmeden hesaplanmaz (hareketler bekleniyor)", () => {
-  assert.equal(lafposMovesPending({ lafpos: true, day: null }), true);
-  assert.equal(lafposMovesPending({ lafpos: false, day: null }), false, "ModPOS günü");
-  assert.equal(lafposMovesPending(null), false);
-  assert.equal(lafposMovesPending(undefined), false);
+test("fişsiz çıkış: AsilPOS gününde gün sonu gelmeden hesaplanmaz (hareketler bekleniyor)", () => {
+  assert.equal(asilposMovesPending({ asilpos: true, day: null }), true);
+  assert.equal(asilposMovesPending({ asilpos: false, day: null }), false, "ModPOS günü");
+  assert.equal(asilposMovesPending(null), false);
+  assert.equal(asilposMovesPending(undefined), false);
 });
 
 // ---------------------------------------------------------------- "Tümü"nün ortak dönemi olmayan ay (bulgu 62)
 
-test("Tümü: listesi olmayan ayda kaynak satırı ve iş 'LafPOS sayılıyor' demez", () => {
+test("Tümü: listesi olmayan ayda kaynak satırı ve iş 'AsilPOS sayılıyor' demez", () => {
   assert.equal(commonListWaitText("2026-11", "Tuzla", true), "Tümü'de bu ayın satışları Tuzla'nın listesi gelince sayılır; şubeyi seçince gün gün görünür.");
   assert.match(commonListWaitText("2026-11", "Tuzla", false), /^Tuzla'nın Kasım 2026 satış listesi yüklenmedi/);
   assert.equal(commonListSourceLine("Tuzla"), "Satışlar: Tümü'de Tuzla'nın listesi gelince (şube seçiliyken gün gün)");
-  assert.doesNotMatch(commonListSourceLine("Tuzla"), /LafPOS/);
+  assert.doesNotMatch(commonListSourceLine("Tuzla"), /AsilPOS/);
 });
 
 function tasksFor(month: string, current: string, commonMissing: boolean) {
@@ -124,7 +124,7 @@ test("Tümü: Genel bakış'ın Satış raporu işi ortak dönemi olmayan ayda l
   assert.equal(running.state, "running");
   assert.equal(running.task.status, "later");
   assert.match(running.task.detail, /Tuzla'nın listesi gelince sayılır/);
-  assert.doesNotMatch(running.task.detail, /LafPOS/);
+  assert.doesNotMatch(running.task.detail, /AsilPOS/);
   const closed = tasksFor("2026-09", "2026-10", true);
   assert.equal(closed.state, "closed");
   assert.equal(closed.task.status, "todo");

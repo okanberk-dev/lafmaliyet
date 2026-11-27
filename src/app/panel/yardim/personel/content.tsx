@@ -106,8 +106,8 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
     body: (
       <>
         Atılan ya da ikram edilen her şeyi <StaffPath href="/panel/zayi" /> ekranına, kasadan çıkan her parayı fişiyle <StaffPath href="/panel/kasa" /> ekranına
-        girin. Akşama bırakmayın; akşam hatırlamak zordur. Kasada LafPOS kullanılmaya başlandıysa ürün ikramı LafPOS&apos;ta işaretlenir; panele yalnız zayi
-        ve hammadde ikramı girilir. Kasadan çıkan para da LafPOS&apos;ta girilir; siz gelen satıra fişin fotoğrafını eklersiniz.
+        girin. Akşama bırakmayın; akşam hatırlamak zordur. Kasada AsilPOS kullanılmaya başlandıysa ürün ikramı AsilPOS&apos;ta işaretlenir; panele yalnız zayi
+        ve hammadde ikramı girilir. Kasadan çıkan para da AsilPOS&apos;ta girilir; siz gelen satıra fişin fotoğrafını eklersiniz.
       </>
     ),
     href: "/panel/zayi",
@@ -118,7 +118,7 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
     body: (
       <>
         Kapanışta ModPOS&apos;tan ve banka POS&apos;tan (yazarkasa) Z raporunu alın, kasadaki nakdi sayın ve <StaffPath href="/panel/kasa" /> ekranına girin. Kasada
-        LafPOS kullanılıyorsa LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın; rapor panele kendisi yazılır, siz Pavo&apos;dan gün sonu fişini (detaylı Z) alıp
+        AsilPOS kullanılıyorsa AsilPOS&apos;ta <B>Günü kapat</B>&apos;a basın; rapor panele kendisi yazılır, siz Pavo&apos;dan gün sonu fişini (detaylı Z) alıp
         fotoğrafını <B>Gün sonu fotoğrafı</B> kartına eklersiniz.{" "}
         {clockSuffixTR(hour(CASH_EVENING_HOUR), "abl")} sonra (saati yönetici şubeye göre değiştirebilir)
         Bugün ekranı hatırlatır.
@@ -175,8 +175,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             <StaffPath href="/panel/kasa" /> ekranında ModPOS Z raporunun ve banka POS Z raporunun (yazarkasa) fotoğrafını çekin; ModPOS&apos;un rakamları
             forma dolar. Turuncu alanları fişle karşılaştırın; hiçbir şey kendiliğinden kaydedilmez, <B>Raporu gönder</B>&apos;e siz basarsınız. Sayılan nakdi,
             teslim edileni ve kasayı kimin saydığını yazın; satış dışında kasaya konan parayı (bozuk para, tahsilat, nakit bahşiş) <B>Kasaya giren ekle</B> ile
-            girin. Kasa farkı varsa nedenini nota yazın. Kasada LafPOS kullanılıyorsa bunların hiçbiri yok: LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın, rapor
-            panele kendisi yazılır ve salt okunurdur (düzeltme LafPOS&apos;ta yapılır). Sizin tek işiniz Pavo&apos;dan gün sonu fişini (detaylı Z) alıp fotoğrafını{" "}
+            girin. Kasa farkı varsa nedenini nota yazın. Kasada AsilPOS kullanılıyorsa bunların hiçbiri yok: AsilPOS&apos;ta <B>Günü kapat</B>&apos;a basın, rapor
+            panele kendisi yazılır ve salt okunurdur (düzeltme AsilPOS&apos;ta yapılır). Sizin tek işiniz Pavo&apos;dan gün sonu fişini (detaylı Z) alıp fotoğrafını{" "}
             <B>Gün sonu fotoğrafı</B> kartına eklemek.
           </>
         ),
@@ -199,7 +199,7 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
               </>
             )}{" "}
             Elle yazarken <B>Günlük toplam</B> NET SATIŞ ya da TOPLAM satırıdır, <B>Z no</B> fiş no değildir, <B>Kredi kartı</B> K.KARTI satırıdır. Kartın altında
-            yazarkasanın kartı ModPOS&apos;taki kartla karşılaştırılır; farklıysa bir kart ödemesi başka türle girilmiş olabilir. Kasada LafPOS kullanılıyorsa bu kart çıkmaz: Pavo&apos;nun gün sonu fişi{" "}
+            yazarkasanın kartı ModPOS&apos;taki kartla karşılaştırılır; farklıysa bir kart ödemesi başka türle girilmiş olabilir. Kasada AsilPOS kullanılıyorsa bu kart çıkmaz: Pavo&apos;nun gün sonu fişi{" "}
             <B>Gün sonu fotoğrafı</B> kartına eklenir.
           </>
         ),
@@ -215,7 +215,7 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             <B>Kaydet</B>&apos;e basın. Fişiniz yoksa <B>Fişsiz ekle</B>. Tedarikçinin şoförüne verilen para <B>Teslim · ödeme</B>&apos;dir (kime verildiğini yazın).
             Akşam raporunun &quot;Gün içinde kasadan çıkan&quot; alanı bu satırlardan dolar. Satıra dokununca düzeltir ya da silersiniz; silince bildirimdeki{" "}
             <B>Geri al</B> {seconds(CASH_OUT_UNDO_TOAST_MS)} görünür. Kilit simgeli satır yöneticinin kaydına bağlıdır; değişmesi gerekiyorsa yöneticiye haber verin.
-            Yöneticinin seçtiği bir kategorideki satırı değiştirmek ya da silmek de yöneticinin onayıyla olur. Kasada LafPOS kullanılmaya başlandıysa kasadan çıkan para LafPOS&apos;ta girilir; satır gün sonuyla buraya yazılır, siz
+            Yöneticinin seçtiği bir kategorideki satırı değiştirmek ya da silmek de yöneticinin onayıyla olur. Kasada AsilPOS kullanılmaya başlandıysa kasadan çıkan para AsilPOS&apos;ta girilir; satır gün sonuyla buraya yazılır, siz
             yalnız <B>Fiş fotoğrafı ekle</B> ile fişini eklersiniz.
           </>
         ),
@@ -256,9 +256,9 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Dünün raporunu bugün doğrudan girersiniz. Daha eski bir gün, son {LATE_REPORT_DAYS} günün içindeyse, <StaffPath href="/panel/kasa" /> ekranındaki{" "}
             <B>Girilmemiş günler</B> kartında çip olarak durur: güne dokunun, Z raporunun fotoğrafını ekleyin, Z no&apos;yu ve neden geç girildiğini yazıp{" "}
             <B>Onaya gönder</B>&apos;e basın. Rapor yönetici onaylayınca kayda geçer. Fotoğrafsız gönderilemez. Daha eski bir günü yönetici girer; Z raporunu ona
-            iletin. Kasada LafPOS kullanılıyorsa LafPOS&apos;un gönderdiği güne geç rapor girilmez: o günde yalnız <B>Gün sonu fotoğrafı</B> kartı çıkar, Pavo&apos;nun
-            gün sonu fişini ekleyin. LafPOS o günü göndermediyse
-            banka POS Z raporunun fotoğrafını ekleyin ve Z no&apos;yu LafPOS&apos;un Kasa › Geçmiş günler ekranından yazın.
+            iletin. Kasada AsilPOS kullanılıyorsa AsilPOS&apos;un gönderdiği güne geç rapor girilmez: o günde yalnız <B>Gün sonu fotoğrafı</B> kartı çıkar, Pavo&apos;nun
+            gün sonu fişini ekleyin. AsilPOS o günü göndermediyse
+            banka POS Z raporunun fotoğrafını ekleyin ve Z no&apos;yu AsilPOS&apos;un Kasa › Geçmiş günler ekranından yazın.
           </>
         ),
         icon: History,
@@ -269,8 +269,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             <StaffPath href="/panel/kasa" /> ekranında dünün raporu yokken formun üstünde &quot;Dün kafe kapalı mıydı?&quot; ve <B>Kafe kapalıydı</B> çıkar. Yönetici
-            onaylayınca dünün eksik rapor ve liste uyarıları kalkar. O gün panelde bir kayıt varsa (rapor, kasadan çıkan, zayi, açılan liste, karaoke; LafPOS
-            kullanılıyorsa LafPOS&apos;taki satış) bildirim açılmaz: kafe açıktıysa raporu girin.
+            onaylayınca dünün eksik rapor ve liste uyarıları kalkar. O gün panelde bir kayıt varsa (rapor, kasadan çıkan, zayi, açılan liste, karaoke; AsilPOS
+            kullanılıyorsa AsilPOS&apos;taki satış) bildirim açılmaz: kafe açıktıysa raporu girin.
           </>
         ),
         icon: CalendarX2,
@@ -322,8 +322,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Kasada ModPOS kullanılıyorsa menüde satış fiyatı değişince ModPOS&apos;ta da elle değiştirilir. Bekleyenler <StaffPath href="/panel/kasa/fiyatlar" /> ekranında, kasadaki adlarıyla
             durur; Bugün&apos;de satır olarak da çıkar. ModPOS&apos;ta değiştirdikçe ürüne tek tek dokunun: satır listeden düşer, bildirimde <B>Geri al</B> vardır.
             Son işaretledikleriniz listenin üstünde {minutes(POS_UNDO_WINDOW_MS)} kalır, oradan da geri alırsınız; sonrasını yönetici geri alır. Her işaret adınızla
-            kaydedilir. Kasada LafPOS kullanılıyorsa bu iş size düşmez: menüdeki ürünlerin satış fiyatını LafPOS siteden kendisi alır, öbürlerini
-            LafPOS&apos;ta yönetici değiştirir. Kasada yanlış bir satış fiyatı görürseniz yöneticinize haber verin.
+            kaydedilir. Kasada AsilPOS kullanılıyorsa bu iş size düşmez: menüdeki ürünlerin satış fiyatını AsilPOS siteden kendisi alır, öbürlerini
+            AsilPOS&apos;ta yönetici değiştirir. Kasada yanlış bir satış fiyatı görürseniz yöneticinize haber verin.
           </>
         ),
         icon: Tags,
@@ -368,8 +368,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             <StaffPath href="/panel/siparisler" /> ekranındaki <B>Tükenenler</B> kartında <B>Tükendi işaretle</B>: ürünü arayıp seçin. Ürün laffogato.net&apos;te, uygulamada ve QR menüde hemen
             kapanır; M ve L birlikte kapanır. Ürün gelince aynı kartta <B>Satışa aç</B>. Onay gerekmez, her dokunuş adınızla kaydedilir. Aynı anda en çok{" "}
-            {STAFF_SOLD_OUT_MAX} ürün tükendi olabilir. Yöneticinin kapattığı ürünü yönetici açar. Kasada LafPOS kullanılıyorsa ürün en geç 15 dakika içinde
-            (gün açıkken) kasada da tükendi görünür; acilse LafPOS&apos;ta da Tükendi işaretleyin.
+            {STAFF_SOLD_OUT_MAX} ürün tükendi olabilir. Yöneticinin kapattığı ürünü yönetici açar. Kasada AsilPOS kullanılıyorsa ürün en geç 15 dakika içinde
+            (gün açıkken) kasada da tükendi görünür; acilse AsilPOS&apos;ta da Tükendi işaretleyin.
           </>
         ),
         icon: PackageX,
@@ -456,7 +456,7 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             <StaffPath href="/panel/zayi" /> ekranında türü seçin: zayi (atılan, bozulan, dökülen, yanlış hazırlanan) ya da ikram (müşteriye, ekibe, tadım). Menü
             ürününü adetle (2× Latte M), malzemeyi sayım biriminde (Süt 1,5 LT) yazın, nedeni seçin. Uygulamadaki ödülle verilen içecek ikram değildir; buraya
-            girmeyin. Kasada LafPOS kullanılmaya başlandıysa ürün ikramı LafPOS&apos;ta işaretlenir; burada yalnız zayi ve hammadde ikramı girilir. LafPOS&apos;ta
+            girmeyin. Kasada AsilPOS kullanılmaya başlandıysa ürün ikramı AsilPOS&apos;ta işaretlenir; burada yalnız zayi ve hammadde ikramı girilir. AsilPOS&apos;ta
             “Zayi yaz” ile işaretlenen ürünü burada ayrıca girmeyin.
           </>
         ),
@@ -538,8 +538,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             <StaffPath href="/panel/vardiya" /> ekranında haftanın planı durur: üstte <B>Benim haftam</B> (gün gün saatleriniz ve haftalık toplam), altında bütün ekip.{" "}
-            <B>Önceki</B> ve <B>Sonraki</B> ile başka haftaya geçin, <B>PDF</B> ile planı açıp telefonunuza kaydedin. Planı yönetici yazar; değişmesi gereken bir gün
-            varsa yöneticiye söyleyin.
+            <B>Önceki</B> ve <B>Sonraki</B> ile başka haftaya geçin, <B>PDF</B> ile planı açıp telefonunuza kaydedin. Plan şube şubedir: hesabınız bir şubeye bağlı
+            değilse ve soldan “Tümü” seçiliyse önce şubeyi seçersiniz. Planı yönetici yazar; değişmesi gereken bir gün varsa yöneticiye söyleyin.
           </>
         ),
         icon: CalendarClock,

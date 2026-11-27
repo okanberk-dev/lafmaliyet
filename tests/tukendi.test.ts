@@ -314,7 +314,7 @@ test("eylem dosyası: yalnız setSoldOut (requireUser) ve holdSoldOut (requireAd
   assert.deepEqual(exports, ["setSoldOut", "holdSoldOut"]);
   assert.doesNotMatch(src, /^export (type|interface|\{)/m);
   const set = src.slice(src.indexOf("export async function setSoldOut"), src.indexOf("export async function holdSoldOut"));
-  assert.match(set, /await requireUser\(\)/);
+  assert.match(set, /await requireCan\("kayit\.yaz"\)/);
   const hold = src.slice(src.indexOf("export async function holdSoldOut"));
   assert.match(hold, /await requireAdmin\(\)/);
   assert.match(src, /SITE_MENU_ID/);

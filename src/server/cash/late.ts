@@ -9,8 +9,8 @@ import { REQUEST_TEXT } from "@/lib/staff-requests";
 import { currentTillBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
 import { isClosedDay } from "@/server/closed-days";
-import { kasaEvidence } from "@/server/data/lafpos-day";
-import { staffBlindOn } from "@/server/lafpos/branch";
+import { kasaEvidence } from "@/server/data/asilpos-day";
+import { staffBlindOn } from "@/server/asilpos/branch";
 import { createOrUpdateRequest, decide, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { getPhoto, holdPhoto, linkable, releasePhoto } from "@/server/storage/photos";
 import { UserError } from "@/server/user-error";
@@ -46,7 +46,7 @@ export interface LateInput {
  * pencere (staffLateDay), teslim ≤ sayılan ve teslim alan, günün kilidi altında: o gün rapor yok, ilk rapordan sonra,
  * kapalı işaretli değil, aynı gün için iki kapanmış istek yok, ekranda görülen sürüm, zincirin önceki halkasına göre
  * açılış notu; fotoğraflar kişinin kendisinin, Z ya da POS, bağlanmamış, başka bir istekte değil (önceki isteğinin
- * tuttukları serbest), en çok 6; kanıt günün kasasına göre (kasaEvidence: ModPOS Z, LafPOS gün sonu ya da yazarkasa Z). Tutulanlar beklerken silinmez; düşürülenler 7 gün sonra silinir.
+ * tuttukları serbest), en çok 6; kanıt günün kasasına göre (kasaEvidence: ModPOS Z, AsilPOS gün sonu ya da yazarkasa Z). Tutulanlar beklerken silinmez; düşürülenler 7 gün sonra silinir.
  */
 export async function proposeLateReport(db: DB, me: CashActor, input: LateInput, now = new Date()): Promise<{ row: StaffRequestRow; created: boolean; cashDiff: number }> {
   if (me.role === "admin") throw new UserError(CASH_REQUEST_TEXT.adminDirect);
@@ -96,7 +96,7 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
     // Aynı gün için iki ret ya da geri çekmeden sonra yeni istek açılmaz (bekleyeni güncellemek serbest)
     if (!pending && closed >= 2) throw new UserError(CASH_REQUEST_TEXT.lateTwice);
     // Açılış zincirin önceki halkasının (rapor ya da bekleyen geç rapor) devriyle tutmuyorsa nedeni nota. Önceki halka
-    // LafPOS'un kör günüyse sorulmaz: hata metni devirden farkı söyler, kör günün devri personele gitmez (bulgu 0);
+    // AsilPOS'un kör günüyse sorulmaz: hata metni devirden farkı söyler, kör günün devri personele gitmez (bulgu 0);
     // yönetici onayda devirle karşılaştırır
     const { prev } = await chainNeighbours(tx, date, { prefer: me.id, branchId });
     const prevBlind = prev ? await staffBlindOn(prev.date, branchId, tx) : false;
@@ -115,12 +115,12 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
       if (!ok) throw new UserError(CASH_REQUEST_TEXT.latePhoto);
       photos.push({ id, kind: p.kind as "kasa-z" | "kasa-pos" | "kasa-okc" });
     }
-    // Kanıt (G8, docs/LAFPOS.md › Kasa raporu): ModPOS gününde Z raporunun fotoğrafı; LafPOS gününde LafPOS'un gün sonu
+    // Kanıt (G8, docs/ASILPOS.md › Kasa raporu): ModPOS gününde Z raporunun fotoğrafı; AsilPOS gününde AsilPOS'un gün sonu
     // (geldiyse fotoğraf gerekmez), gelmediyse yazarkasa (Banka POS) Z'sinin fotoğrafı
     const evidence = await kasaEvidence(tx, date, branchId);
-    // Gün sonu tam (24 Kasım 2026): LafPOS gününün gün sonu geldiyse rapor LafPOS'tan yazılır; personel yalnız gün sonu
-    // fotoğrafını ekler (src/server/lafpos/foto.ts), geç rapor isteği açılmaz
-    if (evidence === "lafpos") throw new UserError(CASH_REQUEST_TEXT.lateLafpos);
+    // Gün sonu tam (24 Kasım 2026): AsilPOS gününün gün sonu geldiyse rapor AsilPOS'tan yazılır; personel yalnız gün sonu
+    // fotoğrafını ekler (src/server/asilpos/foto.ts), geç rapor isteği açılmaz
+    if (evidence === "asilpos") throw new UserError(CASH_REQUEST_TEXT.lateAsilpos);
     if (evidence === "modpos-z" && !photos.some((p) => p.kind === "kasa-z")) throw new UserError(CASH_REQUEST_TEXT.lateZPhoto);
     if (evidence === "okc-z" && !photos.some((p) => p.kind === "kasa-okc")) throw new UserError(CASH_REQUEST_TEXT.lateOkcPhoto);
     if (photos.filter((p) => p.kind === "kasa-okc").length > MAX_OKC_PHOTOS) throw new UserError(OKC_PHOTOS_TEXT);

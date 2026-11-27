@@ -4,6 +4,7 @@ import { featureInScope } from "@/lib/branch-features";
 import { needsCatchUp } from "@/lib/karaoke/freshness";
 import type { LiveResponse } from "@/lib/live";
 import { todayTR } from "@/lib/reminders";
+import { canOpen } from "@/lib/roles";
 import { awaitingUntil } from "@/lib/site-orders/follow";
 import { siteErrorFor } from "@/lib/staff-errors";
 import { kontrolOutcome } from "@/lib/job-health";
@@ -15,7 +16,7 @@ import { getDb } from "@/server/db";
 import { loadDueReminders, remindersMarker } from "@/server/data/user-reminders";
 import { recordJobRun } from "@/server/jobs/runs";
 import { liveWindow, loadSessions } from "@/server/karaoke/board";
-import { claimLafposWaitPoll, finishWaitingDayEnds } from "@/server/lafpos/gun-sonu";
+import { claimAsilposWaitPoll, finishWaitingDayEnds } from "@/server/asilpos/gun-sonu";
 import { claimKaraokeMailPoll, runKaraokeMails } from "@/server/karaoke/staff-mail";
 import { ensureKaraokeFresh, karaokeSecret, readKaraokeLive } from "@/server/karaoke/sync";
 import { claimChecklistAlertPoll, runChecklistAlerts } from "@/server/notify/checklist-alerts";
@@ -94,15 +95,15 @@ export async function GET(request: NextRequest) {
       }
     });
   }
-  // Pavo'yu bekleyen LafPOS gün sonu (docs/LAFPOS.md › Pavo'yu bekler): LafPOS günü yeniden göndermediyse bekleme dolunca
+  // Pavo'yu bekleyen AsilPOS gün sonu (docs/ASILPOS.md › Pavo'yu bekler): AsilPOS günü yeniden göndermediyse bekleme dolunca
   // yöneticinin ve çalışanların e-postası buradan gider (en çok 5 dakikada bir; bekleyen gün yoksa tek sorgu)
-  if (claimLafposWaitPoll()) {
+  if (claimAsilposWaitPoll()) {
     after(async () => {
       try {
         const days = await finishWaitingDayEnds(getDb(), new Date(), { deadlineAt: Date.now() + 25_000 });
-        if (days.length) console.info("[lafpos] Pavo beklemesi bitti", days);
+        if (days.length) console.info("[asilpos] Pavo beklemesi bitti", days);
       } catch (e) {
-        console.error("[lafpos] Pavo beklemesi", e);
+        console.error("[asilpos] Pavo beklemesi", e);
       }
     });
   }
@@ -112,9 +113,12 @@ export async function GET(request: NextRequest) {
   // Kapalıysa oturum, silme isteği, sipariş ve çağrı gitmez (misafir adı, alarm, zil). Üç işaret ETag'te: seçim, kişinin
   // şubesi ya da şubenin özelliği değişince eski yanıt 304 ile onaylanmaz
   const [scope, branchRows] = await Promise.all([currentBranchScope(), listBranches()]);
-  const karaokeHere = featureInScope("karaoke", scope, branchRows);
-  const ordersHere = featureInScope("siparis", scope, branchRows);
-  const callsHere = featureInScope("garson", scope, branchRows);
+  // Saha verisi yalnız ekranı açabilene (docs/ROLLER.md): muhasebeci sahada değil, karaoke ve Siparişler ona kapalı; canlı
+  // uç da ona oturum, silme isteği, sipariş ve çağrı vermez (yanıt 200, listeler boş: kabuk bağlantı hatası göstermez).
+  // Müdürde kapsam şubesine kilitli (seçici çerezi yok sayılır)
+  const karaokeHere = canOpen(me.role, "/panel/karaoke") && featureInScope("karaoke", scope, branchRows);
+  const ordersHere = canOpen(me.role, "/panel/siparisler") && featureInScope("siparis", scope, branchRows);
+  const callsHere = canOpen(me.role, "/panel/siparisler") && featureInScope("garson", scope, branchRows);
   const here = `k${karaokeHere ? 1 : 0}${ordersHere ? 1 : 0}${callsHere ? 1 : 0}`;
   // Kişi de ETag'te: aynı tarayıcıda başka hesapla girilince önceki kişinin yanıtı 304 ile onaylanmaz
   const etag = `W/"${version}.o${orders}.${marker}.${here}.${today}.u${me.id}.${me.role}"`;

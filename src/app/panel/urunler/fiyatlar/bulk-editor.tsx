@@ -38,7 +38,7 @@ import {
   type PriceSettings,
   type RoundingId,
 } from "@/lib/prices/bulk";
-import type { KasaName } from "@/lib/lafpos/kasa";
+import type { KasaName } from "@/lib/asilpos/kasa";
 import { branchBulkRows, effectiveFromText, effectiveLocalValue, parseEffectiveLocal } from "@/lib/prices/branch";
 import { batchPosNote } from "@/lib/prices/pos";
 import type { SiteBranchPrice } from "@/lib/site-menu/schema";
@@ -131,7 +131,7 @@ export function BulkEditor({
   basis: SalesBasis | null;
   /** Satış verisi yokken ne yapılır (src/lib/sales-source.ts `missing`, bugünün ayı) */
   salesMissing: string;
-  /** Bugünün kasası (src/lib/lafpos/kasa.ts): LafPOS gününde siteye bağlı ürünün fiyatını LafPOS siteden alır */
+  /** Bugünün kasası (src/lib/asilpos/kasa.ts): AsilPOS gününde siteye bağlı ürünün fiyatını AsilPOS siteden alır */
   kasa?: KasaName;
   /**
    * Şube seçimi (şube fiyatı, src/lib/prices/branch.ts): yazılabilen şubeler, kalemlerin tabanı (kuruş) ve sitenin şube
@@ -284,7 +284,7 @@ export function BulkEditor({
         setOutcome({ kind: "branch", batchId: "", note: label, applied: res.applied.map((a) => ({ ...a, site: true, posPending: false })), failed: res.failed, skipped: [], target });
         setShowApplied(false);
         resetRule();
-        if (res.applied.length) toast.success(`${num(res.applied.length)} şube fiyatı yazıldı`, { description: `${branch.name}, ${effectiveFromText(target.effectiveFrom)}; LafPOS o anda siteden alır` });
+        if (res.applied.length) toast.success(`${num(res.applied.length)} şube fiyatı yazıldı`, { description: `${branch.name}, ${effectiveFromText(target.effectiveFrom)}; AsilPOS o anda siteden alır` });
         else toast.error("Hiçbir şube fiyatı yazılmadı", { description: res.failed[0]?.reason });
       });
     }
@@ -694,16 +694,16 @@ export function BulkEditor({
         description={(branch && effective.ok
           ? [
               `${note}.`,
-              `${locativeTR(branch.name)} ${effectiveFromText(effective.iso)} geçerli; taban (Tuzla) değişmez. Fiyatlar siteye kalem kalem yazılır, LafPOS o anda siteden alır.`,
+              `${locativeTR(branch.name)} ${effectiveFromText(effective.iso)} geçerli; taban (Tuzla) değişmez. Fiyatlar siteye kalem kalem yazılır, AsilPOS o anda siteden alır.`,
               "Anı gelmeden Şube fiyatı sekmesinden iptal edebilirsiniz.",
             ]
           : [
           `${note}.`,
           summary.linked ? `${num(summary.linked)} ürün laffogato.net menüsünde de değişir (siteye tek tek yazılır, birkaç saniye sürebilir).` : null,
-          kasa === "LafPOS"
+          kasa === "AsilPOS"
             ? summary.count > summary.linked
-              ? `LafPOS siteye bağlı ürünlerin fiyatını siteden alır. Bağlı olmayan ${num(summary.count - summary.linked)} ürün Kasaya işle sekmesinde: LafPOS onları siteden alıyorsa Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin, LafPOS'ta yerelse orada elle değiştirin.`
-              : "LafPOS yeni fiyatları siteden alır; kasada bir şey yapmanız gerekmez."
+              ? `AsilPOS siteye bağlı ürünlerin fiyatını siteden alır. Bağlı olmayan ${num(summary.count - summary.linked)} ürün Kasaya işle sekmesinde: AsilPOS onları siteden alıyorsa Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin, AsilPOS'ta yerelse orada elle değiştirin.`
+              : "AsilPOS yeni fiyatları siteden alır; kasada bir şey yapmanız gerekmez."
             : "Kasadaki (ModPOS) fiyatları elle değiştirmeniz gerekecek; liste Kasaya işle sekmesinde.",
           summary.decreases ? `${num(summary.decreases)} ürünün fiyatı düşüyor.` : null,
             ]

@@ -51,9 +51,9 @@ const STAFF_SOURCES = [
   "src/app/panel/kasa/closed-day.tsx",
   "src/app/panel/ozel-gunler/page.tsx",
   "src/app/panel/ozel-gunler/staff-special-days.tsx",
-  // LafPOS'tan doldur (docs/LAFPOS.md): okuyucu ve formun alanlarına eşleme
-  "src/server/data/lafpos-day.ts",
-  "src/lib/lafpos/prefill.ts",
+  // AsilPOS'tan doldur (docs/ASILPOS.md): okuyucu ve formun alanlarına eşleme
+  "src/server/data/asilpos-day.ts",
+  "src/lib/asilpos/prefill.ts",
 ];
 
 test("kasa: personele giden kaynaklarda maliyet / tutar anahtarı yok", () => {
@@ -83,10 +83,10 @@ test("kasa: personelin istek okuyucuları sabit sütunla; başkasının isteğin
 test("kasa: yöneticinin kartları yalnız Onaylar'da; personel sayfası yönetici okuyucusunu çağırmaz", () => {
   const page = read("src/app/panel/kasa/page.tsx");
   assert.doesNotMatch(page, /loadCashRequestQueue|pendingCashBellRows/);
-  assert.match(page, /admin && showForm \? pendingCashForDayAdmin\(date\)/);
+  assert.match(page, /admin && showForm && !readOnly \? pendingCashForDayAdmin\(date\)/);
   assert.match(page, /!admin && report \? pendingCashForDay\(date, user\)/);
   const section = read("src/app/panel/onaylar/kasa-section.tsx");
-  assert.match(section, /export async function KasaRequests\(\) \{\s*await requireAdmin\(\);/);
+  assert.match(section, /export async function KasaRequests\(\) \{\s*(?:\/\/[^\n]*\n\s*)?const me = await requireCan\("onay"\);/);
 });
 
 test("geç rapor: personelin okuyucuları sabit sütunla; başkasının isteğinden yalnız ad ve an; yönetici kartı personel sayfasında yok", () => {
@@ -103,7 +103,7 @@ test("geç rapor: personelin okuyucuları sabit sütunla; başkasının isteğin
   const page = read("src/app/panel/kasa/page.tsx");
   assert.doesNotMatch(page, /lateCards|lateBellRows/);
   const section = read("src/app/panel/onaylar/kasa-section.tsx");
-  assert.match(section, /export async function KasaRequests\(\) \{\s*await requireAdmin\(\);/);
+  assert.match(section, /export async function KasaRequests\(\) \{\s*(?:\/\/[^\n]*\n\s*)?const me = await requireCan\("onay"\);/);
 });
 
 test("kasadan çıkan istekleri: personelin okuyucuları sabit sütunla; kendi isteğinden yalnız satır, başkasınınkinden yalnız satırın kimliği ve ad", () => {
@@ -180,7 +180,8 @@ test("yazarkasa Z'si: kasa sayfası personele önceki Z'den yalnız gün ve numa
   assert.match(page, /prevOkcZ=\{prevOkc\.z\}/g);
   assert.equal([...page.matchAll(/prevOkcZ=\{([^}]*)\}/g)].filter((m) => m[1] !== "prevOkc.z").length, 0);
   assert.match(page, /\{\.\.\.\(admin && report \? \{ okcAdmin: okcAdminView\(/);
-  assert.match(page, /getCashReport\(date, user\.role\)/);
+  // Düzey (sunucu sütunları) ve okuyanın gerçek rolü (e-postanın ham hatası yalnız yöneticiye; bulgu 9)
+  assert.match(page, /getCashReport\(date, audience, undefined, user\.role\)/);
   // DTO: sunucu sütunları yalnız "admin" ile
   const dto = read("src/server/data/cash-reports.ts");
   assert.match(dto, /if \(audience === "admin"\) return \{ \.\.\.dto, okcCumTotal: r\.okcCumTotal, okcCumVat: r\.okcCumVat, okcOutside: r\.okcOutside \};/);
@@ -266,17 +267,17 @@ test("yazarkasa Z'si: WhatsApp metni (personel de gönderir) yöneticinin satır
   assert.ok(a2.includes("Yazarkasa toplam 11.540 ₺ → 11.640,50 ₺") && a2.includes("Yazarkasa fiş sayısı (fotoğrafta 149)"), a2);
 });
 
-test("LafPOS'tan doldur: personelin okuyucusu yalnız Z, yazarkasadan geçmeyen ödeme ve geliş anı (sabit sütunlar); ödeme kanalları ve ikram okunmaz", () => {
-  const loader = stripComments(read("src/server/data/lafpos-day.ts"));
+test("AsilPOS'tan doldur: personelin okuyucusu yalnız Z, yazarkasadan geçmeyen ödeme ve geliş anı (sabit sütunlar); ödeme kanalları ve ikram okunmaz", () => {
+  const loader = stripComments(read("src/server/data/asilpos-day.ts"));
   assert.match(loader, /^import "server-only";/);
   // Faz 2: yazarkasadan geçmeyen kart ve nakit (iki tutar) da gider: personelin kart karşılaştırması yöneticininkiyle aynı
   // sonucu versin (kartla bahşiş gibi, G11; tutarı metinde yalnız yöneticininki yazar)
   // Gün sonu tam: yazarkasanın belgeleri (okc) yalnız cihazda iptal edileni yazarkasadan geçmeyene eklemek için okunur
   assert.match(loader, /\.select\(\{ z: s\.posDayReports\.z, offDevice: s\.posDayReports\.offDevice, okc: s\.posDayReports\.okc, receivedAt: s\.posDayReports\.receivedAt \}\)/);
   assert.doesNotMatch(loader, /\.select\(\)|payments|ikram|posDailySales/);
-  // Forma giden yalnız formun alanları: kasa farkı (LafPOS'un hesabı) da gitmez, form kendisi hesaplar
-  const prefill = read("src/lib/lafpos/prefill.ts");
-  const map = prefill.slice(prefill.indexOf("export function lafposPrefill"), prefill.indexOf("export function lafposSummary"));
+  // Forma giden yalnız formun alanları: kasa farkı (AsilPOS'un hesabı) da gitmez, form kendisi hesaplar
+  const prefill = read("src/lib/asilpos/prefill.ts");
+  const map = prefill.slice(prefill.indexOf("export function asilposPrefill"), prefill.indexOf("export function asilposSummary"));
   const keys = [...map.matchAll(/put\("(\w+)"/g)].map((m) => m[1]);
   assert.deepEqual(keys, ["zNo", "receipts", "zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "discounts", "openingCash", "cashIn", "cashOut", "countedCash", "handedOver"]);
 });
@@ -302,20 +303,20 @@ test("ModPOS API: personele giden kasa kaynaklarında föyün anahtarları yok",
 });
 
 /**
- * Kör kasa (bulgu 0; docs/LAFPOS.md › Kör kasa): LafPOS gününde personele giden her rapor yükü sayımsızdır. Davranışı
- * tests/kor-kasa.test.ts (saf) ve tests/lafpos-gun-sonu-tam-db.test.ts (yükleyici, ret) sınar; burada personele rapor
+ * Kör kasa (bulgu 0; docs/ASILPOS.md › Kör kasa): AsilPOS gününde personele giden her rapor yükü sayımsızdır. Davranışı
+ * tests/kor-kasa.test.ts (saf) ve tests/asilpos-gun-sonu-tam-db.test.ts (yükleyici, ret) sınar; burada personele rapor
  * götüren yolların hepsinin süzgeçten geçtiği kilitlenir (yeni bir yol eklenirse süzgeçsiz kalmasın)
  */
-test("kör kasa: personele rapor götüren yollar sayımı süzer (kart, Son 7 gün, eski LafPOS günü, Bugün)", () => {
+test("kör kasa: personele rapor götüren yollar sayımı süzer (kart, Son 7 gün, eski AsilPOS günü, Bugün)", () => {
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /const shownReport = report && blind \? blindReport\(report\) : report;/);
   assert.match(page, /report=\{shownReport\}/);
   assert.match(page, /carry=\{blind \? null : carry\}/);
   assert.match(page, /next=\{blind \? null : next\}/);
   assert.match(page, /revisions=\{blind \? \[\] : revisions\}/);
-  assert.match(page, /lafpos=\{blind && lafposState\.day \? blindLafposDay\(lafposState\.day\) : lafposState\.day\}/);
+  assert.match(page, /asilpos=\{blind && asilposState\.day \? blindAsilposDay\(asilposState\.day\) : asilposState\.day\}/);
   assert.match(page, /const whatsapp = report && !blind/);
   assert.match(page, /cashReportsBetween\(addDays\(today, -6\), today\)\.then\(\(r\) => blindForStaff\(r, "staff"\)\)/);
   assert.match(page, /getCashReport\(date, "staff"\)\.then\(async \(r\) => \(r \? \(await blindForStaff\(\[r\], "staff"\)\)\[0\] : null\)\)/);
-  assert.match(read("src/server/data/today.ts"), /cashReportsBetween\(c\.yesterday, c\.day\)\.then\(\(r\) => blindForStaff\(r, user\.role\)\)/);
+  assert.match(read("src/server/data/today.ts"), /cashReportsBetween\(c\.yesterday, c\.day\)\.then\(\(r\) => blindForStaff\(r, cashAudience\(user\.role\)\)\)/);
 });

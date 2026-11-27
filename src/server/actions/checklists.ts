@@ -6,7 +6,8 @@ import { after } from "next/server";
 import { z } from "zod";
 
 import { activityChange, listTitle, MAX_ITEMS, MAX_PHOTO_ITEMS, NOTE_MAX, rangeText, staffSinceChange, weekdaysText, windowError } from "@/lib/checklists";
-import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireAdmin, requireCan } from "@/server/auth/dal";
 import { ChecklistError, logAnswerActivity, writeChecklistAnswer } from "@/server/data/checklists";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
@@ -48,7 +49,7 @@ const answerSchema = z.discriminatedUnion("op", [
  */
 export async function answerChecklistItem(input: z.input<typeof answerSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const data = answerSchema.parse(input);
     const now = new Date();
     const op = data.op === "text" && !data.text ? { ...data, op: "clear" as const } : data;

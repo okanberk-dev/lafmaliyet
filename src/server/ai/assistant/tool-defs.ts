@@ -123,7 +123,7 @@ export function assistantTools(mcp: readonly ToolDef[], deps: AssistantToolDeps)
 }
 
 /**
- * Bütün liste, sabit sırada: okuma araçları (Claude bağlantısınınkiler, panel rehberi, Paraşüt; sonra LafPOS ve
+ * Bütün liste, sabit sırada: okuma araçları (Claude bağlantısınınkiler, panel rehberi, Paraşüt; sonra AsilPOS ve
  * operasyon: read-tools.ts), işlem rehberi, sonra işlem araçları (onay kartı). Yapılandırılmış girdinin karmaşıklık
  * sınırına sığan önek strict gider (toolParams): okuma araçları önce.
  */

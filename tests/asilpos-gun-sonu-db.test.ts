@@ -1,0 +1,881 @@
+// Marina gün sonu otomasyonu gerçek Postgres'te (docs/ASILPOS.md › Gün sonu otomasyonu): AsilPOS'un şubesinin (Marina)
+// gün sonu geçiş gününden itibaren Kasa raporuna kendiliğinden yazılır ve e-postası gider; aynı içerik ikinci kez gitmez,
+// düzeltme "düzeltildi" notuyla bir kez daha gider ve elle düzeltilen alanı ezmez; geçiş gününden önce hiçbir şey olmaz;
+// gönderim düşerse kaydı kalır ve günlük iş yeniden dener; geçiş günü sonradan girilince günlük iş eksik günü yakalar;
+// personelin girdiği rapora dokunulmaz. Kasa raporunun laffogato.net satırı kasanın şubesiyle sorulur (Tuzla'nınki
+// eskisi gibi, `&branch=tuzla`).
+//
+// Kendi geçici veritabanını açar (ASILPOS_TEST_DATABASE_URL'in sunucusunda), sonunda siler. Değişken yoksa atlanır.
+// Çalıştırma: ASILPOS_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx tsx --test tests/asilpos-gun-sonu-db.test.ts
+
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import { after, before, beforeEach, describe, test } from "node:test";
+
+import { and, eq, sql } from "drizzle-orm";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
+import postgres from "postgres";
+
+import { parsePosDay } from "../src/lib/asilpos/day";
+import { BILDIRIM_ONEKI, TEL_KART_ALANI } from "../src/lib/asilpos/eski-adlar";
+import { ASILPOS_AUTO_BY } from "../src/lib/asilpos/gun-sonu";
+import type { DB } from "../src/server/db";
+import * as s from "../src/server/db/schema";
+
+import { ASILPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
+
+const SERVER_URL = process.env.ASILPOS_TEST_DATABASE_URL;
+const DB_NAME = `laffogato_asilpos_gun_sonu_${process.pid}`;
+/** Testin "şimdi"si: 23 Kasım 2026 00:30 (iş günü hâlâ 22 Kasım) */
+const NOW = new Date("2026-11-23T00:30:00+03:00");
+const DAY = "2026-11-22";
+const SWITCH = "2026-11-22";
+
+describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "ASILPOS_TEST_DATABASE_URL yok" }, () => {
+  let admin: postgres.Sql;
+  let db: DB;
+  let ingest: typeof import("../src/server/asilpos/ingest");
+  let gun: typeof import("../src/server/asilpos/gun-sonu");
+  let store: typeof import("../src/server/cash/report-store");
+  let reports: typeof import("../src/server/data/cash-reports");
+  let site: typeof import("../src/server/site-sales/sync");
+  let scope: typeof import("../src/server/branch-scope");
+  const ali = { id: 0, name: "Ali", role: "admin" as const, email: "gun-sonu-ali@ornek.com" };
+  const sent: { key: string | null; to: string[]; subject: string; text: string }[] = [];
+  const siteCalls: string[] = [];
+  let resendStatus = 200;
+  /** Sitenin şubeye göre yanıtı: `branch` yazılmazsa eski (şubesiz) site */
+  let siteEcho = true;
+  const realFetch = globalThis.fetch;
+
+  const setSwitch = async (day: string | null) => {
+    await db.delete(s.settings).where(eq(s.settings.key, "asilposGecisGunu"));
+    if (day) await db.insert(s.settings).values({ key: "asilposGecisGunu", value: day });
+  };
+  const push = (date: string, zNo: number, z: Record<string, unknown> = {}, extra: Record<string, unknown> = {}, at = NOW) => {
+    const body = {
+      version: 1,
+      source: "asilpos",
+      sube: "marina",
+      date,
+      z: {
+        zNo,
+        receipts: 63,
+        zTotal: 20_000,
+        cash: 12_000,
+        card: 8_000,
+        mealCard: 0,
+        online: 0,
+        other: 0,
+        offRevenue: 0,
+        discounts: 0,
+        openingCash: 1_500,
+        cashOut: 450,
+        countedCash: 9_350,
+        handedOver: 5_000,
+        cashDiff: 0,
+        cashIn: 1_300,
+        expectedCash: 9_350,
+        ...z,
+      },
+      lines: [{ posName: "LATTE", siteMenuId: null, slot: null, qty: 2, revenue: 400, isService: false }],
+      ikram: [],
+      payments: [{ name: "Nakit", zField: "cash", channel: null, count: 40, amount: 12_000 }],
+      ...extra,
+    };
+    const parsed = parsePosDay(JSON.stringify(body), at);
+    assert.ok(parsed.ok, "gövde geçerli");
+    return ingest.storePosDay(db, parsed.data, at, "marina");
+  };
+  const marinaReport = async (date = DAY) => {
+    const [row] = await db.select().from(s.cashReports).where(and(eq(s.cashReports.date, date), eq(s.cashReports.branchId, ASILPOS_SUBE)));
+    return row ?? null;
+  };
+  const state = async (date = DAY) => {
+    const [row] = await db.select().from(s.asilposDayEnds).where(and(eq(s.asilposDayEnds.date, date), eq(s.asilposDayEnds.branchId, ASILPOS_SUBE)));
+    return row ?? null;
+  };
+
+  before(async () => {
+    admin = postgres(SERVER_URL!, { max: 1, onnotice: () => {} });
+    await admin.unsafe(`DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)`);
+    await admin.unsafe(`CREATE DATABASE ${DB_NAME}`);
+    const url = new URL(SERVER_URL!);
+    url.pathname = `/${DB_NAME}`;
+    Object.assign(process.env, {
+      DATABASE_URL: url.href,
+      AUTH_SECRET: "gun-sonu-testi-icin-en-az-otuz-iki-karakterlik-anahtar",
+      RESEND_API_KEY: "re_test_gun_sonu",
+      KARAOKE_SYNC_SECRET: "gun-sonu-site-anahtari-en-az-otuz-iki-karakter",
+      LAFFOGATO_URL: "https://site.test",
+    });
+    const require = createRequire(import.meta.url);
+    const stub = (id: string, exports: unknown) => {
+      const p = require.resolve(id);
+      require.cache[p] = { id: p, filename: p, loaded: true, exports } as unknown as NodeJS.Module;
+    };
+    stub("server-only", {});
+    stub("next/cache", { ...require("next/cache"), refresh: () => {}, revalidatePath: () => {}, revalidateTag: () => {} });
+    const dbModule = await import("../src/server/db");
+    db = dbModule.getDb();
+    await migrate(db, { migrationsFolder: "drizzle" });
+    await seedBranches(db);
+    const [u] = await db.insert(s.users).values({ email: ali.email, name: ali.name, passwordHash: "x", role: ali.role }).returning({ id: s.users.id });
+    ali.id = u.id;
+    ingest = await import("../src/server/asilpos/ingest");
+    gun = await import("../src/server/asilpos/gun-sonu");
+    store = await import("../src/server/cash/report-store");
+    reports = await import("../src/server/data/cash-reports");
+    site = await import("../src/server/site-sales/sync");
+    scope = await import("../src/server/branch-scope");
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const href = String(input instanceof Request ? input.url : input);
+      if (href.startsWith("https://api.resend.com/")) {
+        if (resendStatus !== 200) return new Response(JSON.stringify({ message: "olmadı" }), { status: resendStatus, headers: { "Content-Type": "application/json" } });
+        const headers = new Headers(init?.headers);
+        const body = JSON.parse(String(init?.body)) as { to: string[]; subject: string; text: string };
+        sent.push({ key: headers.get("Idempotency-Key"), to: body.to, subject: body.subject, text: body.text });
+        return new Response(JSON.stringify({ id: `em_${sent.length}` }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (href.startsWith("https://site.test/api/panel/sales")) {
+        siteCalls.push(href);
+        const u = new URL(href);
+        const branch = u.searchParams.get("branch");
+        const day = u.searchParams.get("from")!;
+        // Tuzla'nın kafesi 1.000 ₺ + mağaza 200 ₺, Marina'nınki 300 ₺; şubesiz toplam ikisi
+        const cafe = branch === "marina" ? 30_000 : branch === "tuzla" ? 100_000 : 130_000;
+        const totals = (net: number) => ({ orders: 1, grossMinor: net, discountMinor: 0, deliveryMinor: 0, refundedMinor: 0, netMinor: net, kdvMinor: 0, unknownKdvNetMinor: 0 });
+        const body = {
+          now: NOW.toISOString(),
+          version: 1,
+          from: day,
+          to: day,
+          closed: false,
+          ...(siteEcho ? { branch: branch ?? null } : {}),
+          cafe: { ...totals(cafe), lines: [] },
+          shop: totals(branch === "marina" ? 0 : 20_000),
+          karaoke: { bookings: 0, collectedMinor: 0, refundedMinor: 0, netMinor: 0, refundPendingMinor: 0, kdvMinor: 0, unknownKdvNetMinor: 0 },
+          manual: { orders: 0, grossMinor: 0, netMinor: 0 },
+        };
+        return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return realFetch(input, init);
+    }) as typeof fetch;
+  });
+
+  after(async () => {
+    globalThis.fetch = realFetch;
+    await db?.$client.end();
+    await admin?.unsafe(`DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)`);
+    await admin?.end();
+  });
+
+  beforeEach(async () => {
+    await db.execute(sql`TRUNCATE asilpos_day_ends, pos_daily_sales, pos_day_reports, pos_day_revisions, activity_log, staff_requests, cash_reports, cash_outs, notification_log, integration_state, branch_settings RESTART IDENTITY CASCADE`);
+    await setSwitch(SWITCH);
+    await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: true, whatsapp: null });
+    sent.length = 0;
+    siteCalls.length = 0;
+    resendStatus = 200;
+    siteEcho = true;
+  });
+
+  test("geçiş gününden önce: rapor yazılmaz, e-posta gitmez", async () => {
+    await setSwitch("2026-11-23");
+    assert.ok((await push(DAY, 14)).ok);
+    const r = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([r.report, r.email], ["skipped", "skipped"]);
+    assert.equal(await marinaReport(), null);
+    assert.equal(sent.length, 0);
+  });
+
+  test("gün sonu gelince: Kasa raporu kendiliğinden yazılır, e-posta bir kez gider (yeniden tetik göndermez)", async () => {
+    assert.ok((await push(DAY, 14)).ok);
+    const r = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([r.report, r.email], ["written", "sent"]);
+    const rep = await marinaReport();
+    assert.ok(rep, "rapor yazıldı");
+    assert.equal(rep.submittedByName, ASILPOS_AUTO_BY);
+    assert.equal(rep.zNo, "14");
+    assert.equal(rep.zTotal, 20_000);
+    assert.equal(rep.cashOut, 5_450);
+    assert.equal(rep.countedCash, 9_350);
+    assert.equal(rep.cashDiff, 0);
+    assert.equal(rep.bankPos, null, "Banka POS uydurulmaz");
+    // Gün sonu tam: not cihazın boşluğunu tam söyler, "panelden ekleyin" yok
+    assert.match(rep.note ?? "", /Eksik: Banka POS: AsilPOS'tan Pavo gün sonu gelmedi/);
+    assert.doesNotMatch(rep.note ?? "", /panelden/);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].subject, "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · kasa tutuyor");
+    assert.deepEqual(sent[0].to, ["sahip@ornek.com"]);
+    assert.match(sent[0].text, /laffogato\.net/);
+    // Aynı içerik: ne rapor değişir ne e-posta gider (günlük iş de)
+    const again = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([again.report, again.email], ["unchanged", "same"]);
+    const daily = await gun.catchUpAsilposDayEnds(db, NOW);
+    assert.deepEqual(daily.days.map((d) => d.email), ["same"]);
+    assert.equal(sent.length, 1);
+    assert.equal((await state())?.emailCount, 1);
+    // Marina'nın online satırı Marina'nın şubesiyle soruldu
+    assert.ok(siteCalls.every((c) => new URL(c).searchParams.get("branch") === "marina"), siteCalls.join(" "));
+  });
+
+  test("düzeltme: elle düzeltilen alan ezilmez, e-posta 'düzeltildi' notuyla bir kez daha gider", async () => {
+    assert.ok((await push(DAY, 14)).ok);
+    await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    // Yönetici sayılan nakdi düzeltti ve Banka POS'u ekledi
+    const rep = (await marinaReport())!;
+    const saved = await scope.withBranchScope(ASILPOS_SUBE, () =>
+      store.saveCashReport(
+        db,
+        ali,
+        { date: DAY, zNo: rep.zNo, receipts: rep.receipts, zTotal: rep.zTotal, cash: rep.cash, card: rep.card, mealCard: 0, online: 0, other: 0, openingCash: 1_500, cashIn: 1_300, cashOut: 5_450, cashOutNote: null, countedCash: 9_300, handedOver: 0, bankPos: 8_000, offRevenue: 0, discounts: 0, note: rep.note, countedBy: null, revision: rep.revision, photos: [] },
+        NOW,
+      ),
+    );
+    assert.equal(saved.kind, "saved");
+    // AsilPOS aynı Z ile düzeltip yeniden gönderdi: satış 21.000, nakit 13.000
+    assert.ok((await push(DAY, 14, { zTotal: 21_000, cash: 13_000, countedCash: 10_350, expectedCash: 10_350 })).ok);
+    const r = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([r.report, r.email], ["updated", "sent"]);
+    const now = (await marinaReport())!;
+    assert.equal(now.zTotal, 21_000);
+    assert.equal(now.cash, 13_000);
+    assert.equal(now.countedCash, 9_300, "elle düzeltilen sayım kaldı");
+    assert.equal(now.bankPos, 8_000, "Banka POS'a dokunulmadı");
+    assert.equal(now.revision, 3);
+    assert.equal(sent.length, 2);
+    assert.equal(sent[1].subject.replace(/[\u00a0\u202f]/g, " "), "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · 1.050 ₺ eksik · düzeltildi");
+    assert.match(sent[1].text, /Düzeltildi: AsilPOS bu günü yeniden gönderdi/);
+    assert.notEqual(sent[0].key, sent[1].key);
+    // Aynı düzeltme yeniden: e-posta yok
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW)).email, "same");
+    assert.equal(sent.length, 2);
+  });
+
+  test("kıyas: geçiş gününden önceki günün AsilPOS kaydı (deneme) sayılmaz, kasa raporu okunur", async () => {
+    // 21 Kasım deneme günü Marina'nın kasasından gelmiş (Z 999 ₺); o günün gerçek kaynağı ModPOS'tan girilen kasa raporu
+    assert.ok((await push("2026-11-21", 13, { zTotal: 999, cash: 999, card: 0, countedCash: null, cashDiff: null })).ok);
+    assert.ok((await push("2026-11-15", 12, { zTotal: 888, cash: 888, card: 0, countedCash: null, cashDiff: null })).ok);
+    assert.ok((await push(DAY, 14)).ok);
+    const r = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.equal(r.email, "sent");
+    // Kasa raporu yokken: deneme rakamı değil "bilinmiyor"
+    assert.match(sent[0].text, /Dün \(21 Kasım Cumartesi\): bilinmiyor/);
+    assert.match(sent[0].text, /Geçen hafta \(15 Kasım Pazar\): bilinmiyor/);
+    assert.doesNotMatch(sent[0].text, /999|888/);
+
+    await db.insert(s.cashReports).values({ date: "2026-11-21", branchId: ASILPOS_SUBE, zTotal: 500, submittedByName: "Ayşe" });
+    assert.ok((await push(DAY, 14, { receipts: 64 })).ok);
+    await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.equal(sent.length, 2);
+    assert.match(sent[1].text, /Dün \(21 Kasım Cumartesi\): 500\s₺ \(%3900 fazla\)/);
+    assert.doesNotMatch(sent[1].text, /999/);
+  });
+
+  test("personelin girdiği rapora dokunulmaz; e-posta yine gider", async () => {
+    const r0 = await scope.withBranchScope(ASILPOS_SUBE, () =>
+      store.saveCashReport(
+        db,
+        ali,
+        { date: DAY, zNo: "14", receipts: 63, zTotal: 19_000, cash: 11_000, card: 8_000, mealCard: 0, online: 0, other: 0, openingCash: 1_500, cashIn: 0, cashOut: 0, cashOutNote: null, countedCash: 12_500, handedOver: 0, bankPos: null, offRevenue: 0, discounts: 0, note: null, countedBy: null, revision: 0, photos: [] },
+        NOW,
+      ),
+    );
+    assert.equal(r0.kind, "saved");
+    assert.ok((await push(DAY, 14)).ok);
+    const r = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([r.report, r.email], ["human", "sent"]);
+    const rep = (await marinaReport())!;
+    assert.equal(rep.zTotal, 19_000);
+    assert.equal(rep.submittedByName, "Ali");
+    assert.match(sent[0].text, /Kasa raporunu personel girdi/);
+  });
+
+  test("sayım yoksa rapor yazılmaz (uydurulmaz); e-posta sayım olmadığını söyler", async () => {
+    assert.ok((await push(DAY, 14, { countedCash: null, cashDiff: null })).ok);
+    const r = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([r.report, r.email], ["no-count", "sent"]);
+    assert.equal(await marinaReport(), null);
+    assert.deepEqual((await state())?.missing, ["bankPos", "okc", "countedCash"]);
+    assert.match(sent[0].text, /Kasa raporu yazılmadı/);
+    assert.equal(sent[0].subject, "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · sayım yok");
+  });
+
+  test("çalışanlar: sayımsız günde teşekkür değil uyarı; sayım gelince 'alındı' bir kez, düzeltme yeniden göndermez", async () => {
+    await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: true, whatsapp: null });
+    // Çalışan listesi kasanın şubesiyle (çok şube)
+    await reports.saveCashSettings({ staffRecipients: ["kasa@ornek.com"], staffAmounts: false }, "marina");
+    const toStaff = () => sent.filter((m) => m.to.includes("kasa@ornek.com"));
+    assert.ok((await push(DAY, 14, { countedCash: null, cashDiff: null })).ok);
+    const r = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([r.report, r.email, r.staff], ["no-count", "sent", "sent"]);
+    assert.equal(toStaff().length, 1);
+    assert.equal(toStaff()[0].subject, "Marina · kasa sayılmadı · 22 Kasım Pazar");
+    assert.doesNotMatch(toStaff()[0].text, /teşekkür|alındı/i);
+    // Çekmece AsilPOS'ta sayıldı, gün yeniden geldi: rapor yazılır; yöneticiye "kasa sayıldı" (düzeltildi değil), çalışana "alındı"
+    assert.ok((await push(DAY, 14)).ok);
+    const counted = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([counted.report, counted.email, counted.staff], ["written", "sent", "sent"]);
+    const admin = sent.filter((m) => m.to.includes("sahip@ornek.com"));
+    assert.equal(admin.length, 2);
+    assert.equal(admin[1].subject, "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · kasa tutuyor · kasa sayıldı");
+    assert.doesNotMatch(admin[1].text, /Düzeltildi/);
+    assert.equal(toStaff().length, 2);
+    assert.equal(toStaff()[1].subject, "Marina · gün sonu alındı · 22 Kasım Pazar");
+    // AsilPOS bir kez daha düzeltti: yöneticiye "düzeltildi", çalışana ikinci "alındı" gitmez
+    assert.ok((await push(DAY, 14, { receipts: 64 })).ok);
+    const again = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([again.email, again.staff], ["sent", "same"]);
+    assert.match(sent.at(-1)!.subject, /· düzeltildi$/);
+    assert.equal(toStaff().length, 2);
+    // Personelin adresi yöneticinin e-postasına girmez
+    assert.ok(admin.every((m) => !m.to.includes("kasa@ornek.com")));
+  });
+
+  test("sayımsız gün Bugün ve zil için bulunur (asilposNoCountDays); sayım gelince ya da rapor girilince kalkar", async () => {
+    const { asilposNoCountDays } = await import("../src/server/data/asilpos-day");
+    assert.ok((await push(DAY, 14, { countedCash: null, cashDiff: null })).ok);
+    await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([...(await asilposNoCountDays(["2026-11-21", DAY], ASILPOS_SUBE, db))], [DAY]);
+    assert.deepEqual([...(await asilposNoCountDays([DAY], MODPOS_SUBE, db))], [], "Tuzla'nın günü AsilPOS günü değil");
+    assert.ok((await push(DAY, 14)).ok);
+    await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([...(await asilposNoCountDays([DAY], ASILPOS_SUBE, db))], [], "rapor yazıldı");
+  });
+
+  test("sayımsız günden sonraki ilk sayımlı e-posta düşüp yeniden denenince de 'kasa sayıldı' der (düzeltildi değil)", async () => {
+    assert.ok((await push(DAY, 14, { countedCash: null, cashDiff: null })).ok);
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW)).email, "sent");
+    assert.ok((await push(DAY, 14)).ok);
+    resendStatus = 422;
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW, { attempts: 1 })).email, "failed");
+    const [log] = await db.select().from(s.notificationLog).where(eq(s.notificationLog.key, `${BILDIRIM_ONEKI.gun}${ASILPOS_SUBE}:${DAY}`));
+    assert.match(log?.subject ?? "", /sayım yok$/, "düşen gönderim konuyu değiştirmez");
+    resendStatus = 200;
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW)).email, "sent");
+    assert.equal(sent.at(-1)!.subject, "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · kasa tutuyor · kasa sayıldı");
+  });
+
+  test("çalışanların e-postası düşerse kaydı kalır ve sabah işi yeniden dener", async () => {
+    await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: true, whatsapp: null });
+    // Çalışan listesi kasanın şubesiyle (çok şube)
+    await reports.saveCashSettings({ staffRecipients: ["kasa@ornek.com"], staffAmounts: false }, "marina");
+    assert.ok((await push(DAY, 14)).ok);
+    // Yöneticinin e-postası gider, çalışanınki düşer
+    let failStaff = true;
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const body = init?.body ? (JSON.parse(String(init.body)) as { to?: string[] }) : null;
+      if (failStaff && String(input).startsWith("https://api.resend.com/") && body?.to?.includes("kasa@ornek.com"))
+        return new Response(JSON.stringify({ message: "olmadı" }), { status: 422, headers: { "Content-Type": "application/json" } });
+      return origFetch(input, init);
+    }) as typeof fetch;
+    try {
+      const r = await gun.runAsilposDayEnd(db, DAY, "marina", NOW, { attempts: 1 });
+      assert.deepEqual([r.email, r.staff], ["sent", "failed"]);
+      const [log] = await db.select().from(s.notificationLog).where(eq(s.notificationLog.key, `${BILDIRIM_ONEKI.calisan}${ASILPOS_SUBE}:${DAY}:alindi`));
+      assert.equal(log?.ok, false, "düşen gönderim kayıtlı");
+      assert.ok(log?.error, "hatası yazıldı");
+      // Yeniden tetik yöneticiye göndermez; çalışanın düşen kaydı yeniden denenir
+      failStaff = false;
+      const daily = await gun.catchUpAsilposDayEnds(db, new Date("2026-11-23T08:00:00+03:00"));
+      assert.deepEqual(daily.days.map((d) => [d.email, d.staff]), [["same", "sent"]]);
+      assert.equal(sent.filter((m) => m.to.includes("kasa@ornek.com")).length, 1);
+      assert.equal(sent.filter((m) => m.to.includes("sahip@ornek.com")).length, 1);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  test("alıcılar: yalnız Kasa › Rapor alıcıları (sabah e-postasının adresleri girmez; Tuzla'nınkiyle aynı)", async () => {
+    await db.insert(s.notificationRecipients).values({ email: "muhasebe@ornek.com", active: true }).onConflictDoNothing();
+    try {
+      assert.ok((await push(DAY, 14)).ok);
+      await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+      assert.deepEqual(sent.map((m) => m.to), [["sahip@ornek.com"]]);
+    } finally {
+      await db.delete(s.notificationRecipients).where(eq(s.notificationRecipients.email, "muhasebe@ornek.com"));
+    }
+  });
+
+  test("Pavo bekleniyorsa (cihaz Pavo, önceki gün geldi) gün sonu e-postası bekler; sonuç gelince tek e-posta gider", async () => {
+    const OKC = { provider: "pavo", zReport: false, docs: 19, cash: 12_000, card: 8_000, mealCard: 0, other: 0, total: 20_000, voided: { count: 0, cash: 0, card: 0 }, vat: null };
+    // Önceki gün Pavo'nun sonucu geldi (otomatik banka gün sonu açık)
+    assert.ok((await push("2026-11-21", 13, {}, { okc: OKC, bankPos: bankPos(8_000) })).ok);
+    assert.ok((await push(DAY, 14, { countedCash: null, cashDiff: null }, { okc: OKC })).ok);
+    const first = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([first.report, first.email, first.pavo], ["no-count", "waiting", "skipped"]);
+    assert.equal(sent.length, 0, "Pavo beklenirken e-posta yok");
+    // Bir dakika sonra Pavo'nun sonucuyla yeniden geldi: tek e-posta, karşılaştırma içinde
+    assert.ok((await push(DAY, 14, { countedCash: null, cashDiff: null }, { okc: OKC, bankPos: bankPos(8_000) })).ok);
+    const second = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([second.email, second.pavo], ["sent", "same"]);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].subject, /sayım yok$/);
+    assert.match(sent[0].text, /Pavo – AsilPOS kart karşılaştırması/);
+  });
+
+  test("Pavo hiç gelmezse bekleme PAVO_WAIT_MS'de biter: sonraki tetik (sabah işi) gönderir", async () => {
+    const OKC = { provider: "pavo", zReport: false, docs: 19, cash: 12_000, card: 8_000, mealCard: 0, other: 0, total: 20_000, voided: { count: 0, cash: 0, card: 0 }, vat: null };
+    assert.ok((await push("2026-11-21", 13, {}, { okc: OKC, bankPos: bankPos(8_000) })).ok);
+    assert.ok((await push(DAY, 14, {}, { okc: OKC })).ok);
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW)).email, "waiting");
+    const later = await gun.runAsilposDayEnd(db, DAY, "marina", new Date(NOW.getTime() + gun.PAVO_WAIT_MS));
+    assert.equal(later.email, "sent");
+    assert.equal(sent.length, 1);
+  });
+
+  test("Pavo hiç gelmezse ve AsilPOS günü yeniden göndermezse canlı yoklama beklemeyi bitirir (finishWaitingDayEnds); çalışanlar da alır", async () => {
+    await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: true, whatsapp: null });
+    // Çalışan listesi kasanın şubesiyle (çok şube)
+    await reports.saveCashSettings({ staffRecipients: ["kasa@ornek.com"], staffAmounts: false }, "marina");
+    const OKC = { provider: "pavo", zReport: false, docs: 19, cash: 12_000, card: 8_000, mealCard: 0, other: 0, total: 20_000, voided: { count: 0, cash: 0, card: 0 }, vat: null };
+    assert.ok((await push("2026-11-21", 13, {}, { okc: OKC, bankPos: bankPos(8_000) })).ok);
+    assert.ok((await push(DAY, 14, {}, { okc: OKC })).ok);
+    const first = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([first.email, first.staff], ["waiting", "skipped"]);
+    // Bekleme dolmadan yoklama bir şey yapmaz
+    assert.deepEqual(await gun.finishWaitingDayEnds(db, new Date(NOW.getTime() + 60_000)), []);
+    assert.equal(sent.length, 0);
+    // Dolunca: yöneticiye ve çalışana birer e-posta
+    const done = await gun.finishWaitingDayEnds(db, new Date(NOW.getTime() + gun.PAVO_WAIT_MS));
+    assert.deepEqual(done.map((d) => [d.date, d.email, d.staff]), [[DAY, "sent", "sent"]]);
+    assert.deepEqual(sent.map((m) => m.to), [["sahip@ornek.com"], ["kasa@ornek.com"]]);
+    // Sonraki yoklama yeniden göndermez (gün artık beklemiyor)
+    assert.deepEqual(await gun.finishWaitingDayEnds(db, new Date(NOW.getTime() + 2 * gun.PAVO_WAIT_MS)), []);
+    assert.equal(sent.length, 2);
+    // Pavo'nun sonucu sonradan gelirse kısa Pavo e-postası gider (gün sonu e-postası yinelenmez)
+    assert.ok((await push(DAY, 14, {}, { okc: OKC, bankPos: bankPos(8_000) })).ok);
+    const late = await gun.runAsilposDayEnd(db, DAY, "marina", new Date(NOW.getTime() + 3 * gun.PAVO_WAIT_MS));
+    assert.deepEqual([late.email, late.pavo], ["same", "sent"]);
+  });
+
+  test("bekleyen gün yoksa ya da gönderimi düştüyse yoklama dokunmaz (düşen gönderim sabah işine kalır)", async () => {
+    const OKC = { provider: "pavo", zReport: false, docs: 19, cash: 12_000, card: 8_000, mealCard: 0, other: 0, total: 20_000, voided: { count: 0, cash: 0, card: 0 }, vat: null };
+    // Pavo'suz gün: hiç beklemez, yoklama da dokunmaz
+    assert.ok((await push(DAY, 14)).ok);
+    resendStatus = 422;
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW, { attempts: 1 })).email, "failed");
+    resendStatus = 200;
+    assert.deepEqual(await gun.finishWaitingDayEnds(db, new Date(NOW.getTime() + gun.PAVO_WAIT_MS)), []);
+    // Pavo günü ama gönderimi düşmüş (email_error): yoklama yeniden denemez
+    assert.ok((await push("2026-11-21", 13, {}, { okc: OKC, bankPos: bankPos(8_000) })).ok);
+    assert.ok((await push(DAY, 14, { receipts: 70 }, { okc: OKC })).ok);
+    assert.deepEqual(await gun.finishWaitingDayEnds(db, new Date(NOW.getTime() + gun.PAVO_WAIT_MS)), []);
+    assert.equal(sent.length, 0);
+  });
+
+  // 25 Kasım 2026 akşamı: ilk gönderim Pavo'yu beklemeye aldı, AsilPOS ikinci gönderimi yapmadı ve gece hiçbir tetik yoktu;
+  // gün sonu e-postası gitmedi. Bekleme artık aynı istekte biter (settlePavoWait), AsilPOS beklenip beklenmeyeceğini söyler
+  const OKC_PAVO = { provider: "pavo", zReport: false, docs: 19, cash: 12_000, card: 8_000, mealCard: 0, other: 0, total: 20_000, voided: { count: 0, cash: 0, card: 0 }, vat: null };
+  /** Sahte saat: uyku saati ilerletir, gerçekten beklemez */
+  const fakeClock = (startMs: number) => {
+    let t = startMs;
+    return { nowMs: () => t, sleep: async (ms: number) => void (t += ms) };
+  };
+
+  test("Pavo'nun sonucu süre içinde gelmezse aynı istek e-postayı Pavo'suz gönderir (settlePavoWait); çalışanlar da alır, sonuç sonra gelirse kısa Pavo e-postası", async () => {
+    await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: true, whatsapp: null });
+    // Çalışan listesi kasanın şubesiyle (çok şube)
+    await reports.saveCashSettings({ staffRecipients: ["kasa@ornek.com"], staffAmounts: false }, "marina");
+    assert.ok((await push("2026-11-21", 13, {}, { okc: OKC_PAVO, bankPos: bankPos(8_000) })).ok);
+    assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO })).ok);
+    const first = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([first.email, first.staff], ["waiting", "skipped"]);
+    const clock = fakeClock(NOW.getTime());
+    const settled = await gun.settlePavoWait(db, DAY, "marina", { deadlineAt: NOW.getTime() + 50_000, ...clock });
+    assert.ok(typeof settled === "object", "Pavo gelmedi: e-posta gönderildi");
+    assert.deepEqual([settled.email, settled.staff], ["sent", "sent"]);
+    assert.ok(clock.nowMs() >= NOW.getTime() + 50_000 - gun.SETTLE_SEND_MARGIN_MS, "süre sonuna kadar beklendi");
+    assert.ok(clock.nowMs() < NOW.getTime() + 50_000, "işlevin süresi içinde");
+    assert.deepEqual(sent.map((m) => m.to), [["sahip@ornek.com"], ["kasa@ornek.com"]]);
+    // Pavo'nun sonucu sonra gelirse gün sonu yinelenmez, kısa Pavo e-postası gider
+    assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO, bankPos: bankPos(8_000) })).ok);
+    const late = await gun.runAsilposDayEnd(db, DAY, "marina", new Date(NOW.getTime() + 60_000));
+    assert.deepEqual([late.email, late.pavo], ["same", "sent"]);
+    assert.equal(sent.length, 3);
+  });
+
+  test("Pavo'nun sonucu beklerken gelirse settlePavoWait göndermez ('arrived'); e-postayı sonucun gönderimi tek ve karşılaştırmalı gönderir", async () => {
+    assert.ok((await push("2026-11-21", 13, {}, { okc: OKC_PAVO, bankPos: bankPos(8_000) })).ok);
+    assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO })).ok);
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW)).email, "waiting");
+    let polls = 0;
+    const clock = fakeClock(NOW.getTime());
+    const settled = await gun.settlePavoWait(db, DAY, "marina", {
+      deadlineAt: NOW.getTime() + 50_000,
+      nowMs: clock.nowMs,
+      sleep: async (ms) => {
+        await clock.sleep(ms);
+        // Üçüncü bakıştan önce AsilPOS günü Pavo'nun sonucuyla yeniden gönderir
+        if (++polls === 3) assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO, bankPos: bankPos(8_000) })).ok);
+      },
+    });
+    assert.equal(settled, "arrived");
+    assert.equal(sent.length, 0);
+    const second = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([second.email, second.pavo], ["sent", "same"]);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].text, /Pavo – AsilPOS kart karşılaştırması/);
+  });
+
+  test("AsilPOS 'bankPosPending: false' derse (banka gün sonu başlamayacak ya da atlandı) beklenmez; 'true' derse önceki gün sonucsuz olsa da beklenir", async () => {
+    assert.ok((await push("2026-11-21", 13, {}, { okc: OKC_PAVO, bankPos: bankPos(8_000) })).ok);
+    assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO, bankPosPending: false })).ok);
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW)).email, "sent");
+    assert.equal(sent.length, 1);
+    // Önceki günde sonuç yok (eski kurala göre beklenmezdi) ama AsilPOS bekleniyor diyor
+    await db.execute(sql`TRUNCATE asilpos_day_ends, pos_day_reports, pos_day_revisions, cash_reports, notification_log RESTART IDENTITY CASCADE`);
+    sent.length = 0;
+    assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO, bankPosPending: true })).ok);
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW)).email, "waiting");
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", new Date(NOW.getTime() + gun.PAVO_WAIT_MS))).email, "sent");
+  });
+
+  test("bekleme günün ilk gelişinden sayılır: sonucsuz yeniden gönderim (sayım düzeltmesi) beklemeyi uzatmaz", async () => {
+    assert.ok((await push("2026-11-21", 13, {}, { okc: OKC_PAVO, bankPos: bankPos(8_000) })).ok);
+    assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO })).ok);
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW)).email, "waiting");
+    const later = new Date(NOW.getTime() + gun.PAVO_WAIT_MS - 1_000);
+    assert.ok((await push(DAY, 14, { countedCash: 9_300, cashDiff: -50 }, { okc: OKC_PAVO }, later)).ok);
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", later)).email, "waiting");
+    // İlk gelişten PAVO_WAIT_MS sonra (son gönderimden yalnız 1 sn sonra) gider
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", new Date(NOW.getTime() + gun.PAVO_WAIT_MS))).email, "sent");
+  });
+
+  test("yarıda kalan gönderim (işlev kesildi, sending_at kaldı) Pavo'nun sonucu gelmiş olsa da canlı yoklamada tamamlanır", async () => {
+    assert.ok((await push(DAY, 14, {}, { okc: OKC_PAVO, bankPos: bankPos(8_000) })).ok);
+    await gun.writeAutoReport(db, DAY, "marina", NOW);
+    await db.insert(s.asilposDayEnds).values({ date: DAY, branchId: ASILPOS_SUBE }).onConflictDoNothing();
+    await db.update(s.asilposDayEnds).set({ sendingAt: NOW }).where(and(eq(s.asilposDayEnds.date, DAY), eq(s.asilposDayEnds.branchId, ASILPOS_SUBE)));
+    // İşaret tazeyken dokunulmaz (başka gönderim sürüyor olabilir)
+    assert.deepEqual(await gun.finishWaitingDayEnds(db, new Date(NOW.getTime() + gun.PAVO_WAIT_MS)), []);
+    // İşaret bayatlayınca tamamlanır
+    const done = await gun.finishWaitingDayEnds(db, new Date(NOW.getTime() + 6 * 60_000));
+    assert.deepEqual(done.map((d) => [d.date, d.email]), [[DAY, "sent"]]);
+    assert.equal(sent.length, 1);
+    assert.deepEqual(await gun.finishWaitingDayEnds(db, new Date(NOW.getTime() + 12 * 60_000)), []);
+  });
+
+  test("yöneticinin e-postası düşse de çalışanlar e-postasını alır; giden çalışan kaydı sonraki düşen gönderimle (409) ezilmez", async () => {
+    await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: true, whatsapp: null });
+    // Çalışan listesi kasanın şubesiyle (çok şube)
+    await reports.saveCashSettings({ staffRecipients: ["kasa@ornek.com"], staffAmounts: false }, "marina");
+    assert.ok((await push(DAY, 14)).ok);
+    let failAdmin = true;
+    let conflictStaff = false;
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const body = init?.body ? (JSON.parse(String(init.body)) as { to?: string[] }) : null;
+      const resend = String(input).startsWith("https://api.resend.com/");
+      if (resend && failAdmin && body?.to?.includes("sahip@ornek.com"))
+        return new Response(JSON.stringify({ message: "olmadı" }), { status: 422, headers: { "Content-Type": "application/json" } });
+      if (resend && conflictStaff && body?.to?.includes("kasa@ornek.com")) {
+        await db.update(s.notificationLog).set({ ok: true, error: null }).where(eq(s.notificationLog.key, `${BILDIRIM_ONEKI.calisan}${ASILPOS_SUBE}:${DAY}:alindi`));
+        return new Response(JSON.stringify({ message: "idempotency" }), { status: 409, headers: { "Content-Type": "application/json" } });
+      }
+      return origFetch(input, init);
+    }) as typeof fetch;
+    try {
+      const r = await gun.runAsilposDayEnd(db, DAY, "marina", NOW, { attempts: 1 });
+      assert.deepEqual([r.email, r.staff], ["failed", "sent"]);
+      assert.deepEqual(sent.map((m) => m.to), [["kasa@ornek.com"]]);
+      // Yarış: kayıt düşmüş görünürken başka bir tetik aynı anahtarla gönderdi; bu gönderim Resend'den 409 alır. Kayıt
+      // "gitti" kalır (ezilmez), sonuç "same"
+      const key = `${BILDIRIM_ONEKI.calisan}${ASILPOS_SUBE}:${DAY}:alindi`;
+      await db.update(s.notificationLog).set({ ok: false, error: "önceki" }).where(eq(s.notificationLog.key, key));
+      conflictStaff = true;
+      assert.equal(await gun.sendStaffDayEnd(db, DAY, "marina", NOW, { attempts: 1 }), "same");
+      const [log] = await db.select().from(s.notificationLog).where(eq(s.notificationLog.key, key));
+      assert.deepEqual([log?.ok, log?.error], [true, null]);
+      conflictStaff = false;
+      // Sabah işi: yöneticiye yeniden dener, çalışana ikinci kez göndermez
+      failAdmin = false;
+      const daily = await gun.catchUpAsilposDayEnds(db, new Date("2026-11-23T08:00:00+03:00"));
+      assert.deepEqual(daily.days.map((d) => [d.email, d.staff]), [["sent", "same"]]);
+      assert.equal(sent.filter((m) => m.to.includes("kasa@ornek.com")).length, 1);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  test("sayımsız giden gün yine sayımsız düzeltilince konu ve not 'düzeltildi' der (ilkinden ayrılır)", async () => {
+    assert.ok((await push(DAY, 14, { countedCash: null, cashDiff: null })).ok);
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW)).email, "sent");
+    assert.ok((await push(DAY, 14, { countedCash: null, cashDiff: null, zTotal: 20_500, cash: 12_500 })).ok);
+    assert.equal((await gun.runAsilposDayEnd(db, DAY, "marina", NOW)).email, "sent");
+    assert.equal(sent.length, 2);
+    assert.equal(sent[1].subject, "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · sayım yok · düzeltildi");
+    assert.match(sent[1].text, /Düzeltildi/);
+    // Sonra sayım gelince yine "kasa sayıldı"
+    assert.ok((await push(DAY, 14)).ok);
+    await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.match(sent.at(-1)!.subject, /· kasa sayıldı$/);
+  });
+
+  test("gönderim düşerse kaydı kalır, günlük iş yeniden dener ve bir kez gönderir", async () => {
+    assert.ok((await push(DAY, 14)).ok);
+    resendStatus = 422;
+    const r = await gun.runAsilposDayEnd(db, DAY, "marina", NOW, { attempts: 1 });
+    assert.deepEqual([r.report, r.email], ["written", "failed"]);
+    const st = (await state())!;
+    assert.equal(st.emailedHash, null);
+    assert.ok(st.emailError, "hata kaydedildi");
+    assert.equal(st.sendingAt, null);
+    resendStatus = 200;
+    const daily = await gun.catchUpAsilposDayEnds(db, new Date("2026-11-23T08:00:00+03:00"));
+    assert.deepEqual(daily.days.map((d) => [d.date, d.report, d.email]), [[DAY, "unchanged", "sent"]]);
+    assert.equal(sent.length, 1);
+    assert.doesNotMatch(sent[0].subject, /düzeltildi/);
+    assert.equal((await state())?.emailError, null);
+  });
+
+  test("geçiş günü sonradan girilince günlük iş eksik günleri yakalar (en çok 7 gün geriye)", async () => {
+    await setSwitch(null);
+    assert.ok((await push("2026-11-21", 13)).ok);
+    assert.ok((await push(DAY, 14)).ok);
+    assert.deepEqual(await gun.catchUpAsilposDayEnds(db, NOW), { status: "off", days: [], left: [] });
+    assert.equal(sent.length, 0);
+    await setSwitch("2026-11-21");
+    const daily = await gun.catchUpAsilposDayEnds(db, NOW);
+    // İşi bekleyen günler yeniden eskiye: en yeni gün önce
+    assert.deepEqual(daily.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "written", "sent"],
+      ["2026-11-21", "written", "sent"],
+    ]);
+    assert.equal(sent.length, 2);
+    // Yeni günün e-postası dünle kıyaslar (dünkü gün AsilPOS'un gün sonundan okunur, sıradan bağımsız)
+    assert.match(sent[0].text.replace(/[  ]/g, " "), /Dün \(21 Kasım Cumartesi\): 20\.000 ₺ \(aynı\)/);
+    // Kasa zinciri: yeni gün eski günden önce yazıldı; devir denetimi aynı çalışmada eski günün raporuyla yeniden yapılır
+    const rep = (await marinaReport())!;
+    assert.match(rep.note ?? "", /Açılış önceki raporun devrinden 7\.850\s₺ az/);
+    // İkinci çalışma hiçbir şey yazmaz, göndermez (idempotent)
+    const again = await gun.catchUpAsilposDayEnds(db, NOW);
+    assert.deepEqual(again.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "unchanged", "same"],
+      ["2026-11-21", "unchanged", "same"],
+    ]);
+    assert.equal(sent.length, 2);
+    assert.equal((await marinaReport())!.revision, rep.revision);
+  });
+
+  test("sabah işi: işi bekleyen günler önce ve yeniden eskiye (dünkü gün ilk), işlenmiş günler sona; ikinci çalışma bir şey yapmaz", async () => {
+    await setSwitch("2026-11-20");
+    const morning = new Date("2026-11-23T08:00:00+03:00");
+    assert.ok((await push("2026-11-20", 12)).ok);
+    const first = await gun.runAsilposDayEnd(db, "2026-11-20", "marina", NOW);
+    assert.deepEqual([first.report, first.email], ["written", "sent"]);
+    // 21'in e-postası düştü (rapor yazıldı), 22 hiç işlenmedi (ör. gönderimin after()'ı kesildi)
+    assert.ok((await push("2026-11-21", 13)).ok);
+    resendStatus = 422;
+    assert.equal((await gun.runAsilposDayEnd(db, "2026-11-21", "marina", NOW, { attempts: 1 })).email, "failed");
+    resendStatus = 200;
+    assert.ok((await push(DAY, 14)).ok);
+    sent.length = 0;
+    const daily = await gun.catchUpAsilposDayEnds(db, morning);
+    assert.deepEqual(daily.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "written", "sent"],
+      ["2026-11-21", "unchanged", "sent"],
+      ["2026-11-20", "unchanged", "same"],
+    ]);
+    assert.deepEqual([daily.status, daily.left], ["ok", []]);
+    assert.deepEqual(
+      sent.map((m) => m.subject.match(/2[0-2] Kasım/)?.[0]),
+      ["22 Kasım", "21 Kasım"],
+      "dünkü günün e-postası önce",
+    );
+    const revisions = async () =>
+      (await db.select({ date: s.cashReports.date, revision: s.cashReports.revision }).from(s.cashReports).where(eq(s.cashReports.branchId, ASILPOS_SUBE)).orderBy(s.cashReports.date)).map(
+        (r) => `${r.date}:${r.revision}`,
+      );
+    const before = await revisions();
+    assert.equal(before.length, 3);
+    const again = await gun.catchUpAsilposDayEnds(db, morning);
+    assert.deepEqual(again.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "unchanged", "same"],
+      ["2026-11-21", "unchanged", "same"],
+      ["2026-11-20", "unchanged", "same"],
+    ]);
+    assert.equal(sent.length, 2, "ikinci çalışma e-posta göndermez");
+    assert.deepEqual(await revisions(), before, "ikinci çalışma raporu yeniden yazmaz");
+  });
+
+  test("sabah işi: son ana az kalınca yeni güne başlanmaz; başlanamayan bekleyen gün `left`te, adım hata; işlenmiş gün sessizce kalır", async () => {
+    const { gunSonuStep } = await import("../src/lib/job-health");
+    await setSwitch("2026-11-21");
+    assert.ok((await push("2026-11-21", 13)).ok);
+    await gun.runAsilposDayEnd(db, "2026-11-21", "marina", NOW);
+    assert.ok((await push(DAY, 14)).ok);
+    sent.length = 0;
+    const late = await gun.catchUpAsilposDayEnds(db, NOW, { attempts: 1, deadlineAt: Date.now() + gun.CATCH_UP_MIN_MS - 500 });
+    assert.deepEqual(late, { status: "error", days: [], left: [DAY] });
+    assert.deepEqual(gunSonuStep(late), { code: "error", error: `${DAY} süre yetmedi` });
+    assert.equal(sent.length, 0);
+    assert.equal(await marinaReport(), null);
+    // Süre varken (sonraki tetik) önce bekleyen gün
+    const daily = await gun.catchUpAsilposDayEnds(db, NOW, { attempts: 1, deadlineAt: Date.now() + 30_000 });
+    assert.deepEqual(daily.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "written", "sent"],
+      ["2026-11-21", "unchanged", "same"],
+    ]);
+    assert.deepEqual([daily.status, daily.left], ["ok", []]);
+  });
+
+  test("sabah işi, kasa zinciri: eski gün yazılınca ondan önce işlenen dünkü günün (yalnız e-postası düşmüş) devri de yeniden hesaplanır", async () => {
+    const morning = new Date("2026-11-23T08:00:00+03:00");
+    assert.ok((await push("2026-11-21", 13)).ok);
+    assert.ok((await push(DAY, 14)).ok);
+    resendStatus = 422;
+    const night = await gun.runAsilposDayEnd(db, DAY, "marina", NOW, { attempts: 1 });
+    assert.deepEqual([night.report, night.email], ["written", "failed"]);
+    resendStatus = 200;
+    assert.doesNotMatch((await marinaReport())?.note ?? "", /devrinden/, "önceki rapor yokken devir denetimi yok");
+    // Geçiş günü bir gün geriye alındı: 21 Kasım hiç işlenmedi; 22'nin raporu yazılı, yalnız e-postası bekliyor
+    await setSwitch("2026-11-21");
+    sent.length = 0;
+    const daily = await gun.catchUpAsilposDayEnds(db, morning);
+    assert.deepEqual(daily.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "unchanged", "sent"],
+      ["2026-11-21", "written", "sent"],
+    ]);
+    const rep = await marinaReport();
+    assert.match(rep?.note ?? "", /Açılış önceki raporun devrinden 7\.850\s₺ az/, "22'nin devri 21'in raporuyla");
+    // İkinci çalışma hiçbir şey yazmaz, göndermez
+    const again = await gun.catchUpAsilposDayEnds(db, morning);
+    assert.deepEqual(again.days.map((d) => [d.date, d.report, d.email]), [
+      [DAY, "unchanged", "same"],
+      ["2026-11-21", "unchanged", "same"],
+    ]);
+    assert.equal(sent.length, 2);
+    assert.equal((await marinaReport())?.revision, rep?.revision);
+  });
+
+  test("yöneticinin sildiği otomatik raporun günü düzeltme gelince işlenmiş sayılır: sabah işinde öne geçmez, süre yetmese de hata vermez", async () => {
+    const morning = new Date("2026-11-23T08:00:00+03:00");
+    assert.ok((await push(DAY, 14)).ok);
+    const first = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([first.report, first.email], ["written", "sent"]);
+    const rep = await marinaReport();
+    assert.ok(rep, "rapor yazıldı");
+    await db.delete(s.cashReports).where(eq(s.cashReports.id, rep.id));
+    // AsilPOS günü düzeltip yeniden gönderdi (aynı Z)
+    assert.ok((await push(DAY, 14, { receipts: 64 })).ok);
+    const fixed = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([fixed.report, fixed.email], ["deleted", "sent"]);
+    assert.equal(await marinaReport(), null, "silinen rapor yeniden yazılmaz");
+    const st = await state();
+    assert.ok(st?.dayHash, "rapor adımı bu içeriği işledi");
+    assert.equal(st.dayHash, st.emailedHash);
+    sent.length = 0;
+    const late = await gun.catchUpAsilposDayEnds(db, morning, { attempts: 1, deadlineAt: Date.now() + gun.CATCH_UP_MIN_MS - 500 });
+    assert.deepEqual(late, { status: "ok", days: [], left: [] });
+    assert.equal(sent.length, 0);
+  });
+
+  test("Tuzla'ya dokunulmaz: Tuzla'nın raporu ve online satırı eskisi gibi (&branch=tuzla)", async () => {
+    const tuzla = await scope.withBranchScope(MODPOS_SUBE, () =>
+      store.saveCashReport(
+        db,
+        ali,
+        { date: DAY, zNo: "900", receipts: 10, zTotal: 5_000, cash: 5_000, card: 0, mealCard: 0, online: 0, other: 0, openingCash: 0, cashIn: 0, cashOut: 0, cashOutNote: null, countedCash: 5_000, handedOver: 0, bankPos: null, offRevenue: 0, discounts: 0, note: null, countedBy: null, revision: 0, photos: [] },
+        NOW,
+      ),
+    );
+    assert.equal(tuzla.kind, "saved");
+    assert.ok((await push(DAY, 14)).ok);
+    await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    const [t] = await db.select().from(s.cashReports).where(and(eq(s.cashReports.date, DAY), eq(s.cashReports.branchId, MODPOS_SUBE)));
+    assert.equal(t.zTotal, 5_000);
+    assert.equal(t.revision, 1);
+    // Online satır: Tuzla (verilmeyen şube de Tuzla) 1.000 + 200; Marina 300
+    siteCalls.length = 0;
+    const plain = await site.fetchTillOnlineRow(DAY);
+    const tz = await site.fetchTillOnlineRow(DAY, MODPOS_SUBE);
+    const mr = await site.fetchTillOnlineRow(DAY, ASILPOS_SUBE);
+    assert.equal(plain?.online, 1_200);
+    assert.equal(tz?.online, 1_200);
+    assert.equal(mr?.online, 300);
+    assert.deepEqual(
+      siteCalls.map((c) => new URL(c).searchParams.get("branch")),
+      ["tuzla", "tuzla", "marina"],
+    );
+    // Şubesiz eski site: Tuzla'nın satırı eskisi gibi, Marina'ya Tuzla'nın rakamı yazılmaz
+    siteEcho = false;
+    assert.equal((await site.fetchTillOnlineRow(DAY, MODPOS_SUBE))?.online, 1_200);
+    assert.equal(await site.fetchTillOnlineRow(DAY, ASILPOS_SUBE), null);
+    // Online kanal seçiliyse satır yok
+    assert.equal(await site.fetchTillOnlineRow(DAY, "online"), null);
+  });
+  const bankPos = (pavoCard: number, posCard = 8_000) => ({
+    status: "ok",
+    batchNo: "0042",
+    at: "2026-11-22T23:58:00+03:00",
+    pavoCard,
+    [TEL_KART_ALANI]: posCard,
+    diff: Math.round((pavoCard - posCard) * 100) / 100,
+    acquirers: [{ name: "Garanti", count: 30, total: pavoCard }],
+    message: null,
+  });
+
+  test("Pavo: gün sonu e-postası gittikten sonra gelen karşılaştırma yalnız kısa e-postayla gider (fark varsa konuda FARK VAR)", async () => {
+    assert.ok((await push(DAY, 14)).ok);
+    const first = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([first.email, first.pavo], ["sent", "skipped"]);
+    assert.equal(sent.length, 1);
+    // Aynı gün Pavo sonucuyla ikinci kez gelir
+    assert.ok((await push(DAY, 14, {}, { bankPos: bankPos(8_120) })).ok);
+    const second = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    // Gün sonu tam: Pavo sonucu raporun boş Banka POS'unu doldurur (rapor güncellenir), gün sonu e-postası yinelenmez
+    assert.deepEqual([second.report, second.email, second.pavo], ["updated", "same", "sent"]);
+    assert.equal((await marinaReport())?.bankPos, 8_120, "Banka POS Pavo'nun sonucundan");
+    assert.equal(sent.length, 2, "gün sonu yeniden gitmez, yalnız Pavo e-postası");
+    assert.equal(sent[1].subject, "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · Pavo karşılaştırması · FARK VAR");
+    assert.match(sent[1].text.replace(/[\u00a0\u202f]/g, " "), /Pavo kart toplamı: 8\.120 ₺/);
+    assert.match(sent[1].text, /FARK VAR/);
+    // Aynı karşılaştırma ikinci kez gitmez; bankPos'suz düzeltme kayıtlı karşılaştırmayı silmez
+    assert.ok((await push(DAY, 14)).ok);
+    const [row] = await db.select({ bankPos: s.posDayReports.bankPos }).from(s.posDayReports).where(eq(s.posDayReports.date, DAY));
+    assert.equal(row.bankPos?.pavoCard, 8_120);
+    const third = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([third.email, third.pavo], ["same", "same"]);
+    assert.equal(sent.length, 2);
+  });
+
+  test("Pavo: karşılaştırma gün sonu e-postasından önce geldiyse onun içinde gider, kısa e-posta gitmez", async () => {
+    assert.ok((await push(DAY, 14, {}, { bankPos: bankPos(8_000) })).ok);
+    const r = await gun.runAsilposDayEnd(db, DAY, "marina", NOW);
+    assert.deepEqual([r.email, r.pavo], ["sent", "same"]);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].subject, "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar · kasa tutuyor");
+    assert.match(sent[0].text, /Pavo – AsilPOS kart karşılaştırması/);
+    assert.match(sent[0].text, /Uyumlu/);
+  });
+
+  test("alıcılar: Rapor alıcıları kapalı ya da boşsa e-posta susmaz, etkin bildirim adreslerine gider", async () => {
+    await db.execute(sql`TRUNCATE notification_recipients RESTART IDENTITY CASCADE`);
+    await db.insert(s.notificationRecipients).values([
+      { email: "muhasebe@ornek.com", active: true },
+      { email: "eski@ornek.com", active: false },
+      // Yalnız Tuzla'ya bağlı adres Marina'nın gün sonunu yedek olarak da almaz (şube kapsamı C P1-11)
+      { email: "tuzlaci@ornek.com", active: true, branchIds: [MODPOS_SUBE] },
+      { email: "marinaci@ornek.com", active: true, branchIds: [ASILPOS_SUBE] },
+    ]);
+    try {
+      assert.deepEqual(await gun.dayEndRecipients(db, ASILPOS_SUBE), ["sahip@ornek.com"], "liste kuruluysa yalnız o");
+      await reports.saveCashSettings({ recipients: ["sahip@ornek.com"], emailEnabled: false, whatsapp: null });
+      assert.deepEqual((await gun.dayEndRecipients(db, ASILPOS_SUBE)).sort(), ["marinaci@ornek.com", "muhasebe@ornek.com"]);
+      await reports.saveCashSettings({ recipients: [], emailEnabled: true, whatsapp: null });
+      assert.deepEqual((await gun.dayEndRecipients(db, ASILPOS_SUBE)).sort(), ["marinaci@ornek.com", "muhasebe@ornek.com"]);
+      assert.deepEqual((await gun.dayEndRecipients(db, MODPOS_SUBE)).sort(), ["muhasebe@ornek.com", "tuzlaci@ornek.com"]);
+    } finally {
+      await db.execute(sql`TRUNCATE notification_recipients RESTART IDENTITY CASCADE`);
+    }
+  });
+
+  test("Pavo: bozuk karşılaştırma günü reddetmez, yalnız yok sayılır", async () => {
+    assert.ok((await push(DAY, 14, {}, { bankPos: { status: "belki" } })).ok);
+    const [row] = await db.select({ bankPos: s.posDayReports.bankPos }).from(s.posDayReports).where(eq(s.posDayReports.date, DAY));
+    assert.equal(row.bankPos, null);
+  });
+});

@@ -2,11 +2,13 @@ import "server-only";
 
 import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
 
-import { staffCategory, type CashOutDocType, type CashOutKind, type StaffCashOutField } from "@/lib/cash-outs";
-import { lafposAwaitingCategory, lafposInsertedRow } from "@/lib/lafpos/cash-moves";
+import { ownerRowsAmountOnly, staffCategory, type CashOutDocType, type CashOutKind, type StaffCashOutField } from "@/lib/cash-outs";
+import type { Role } from "@/lib/constants";
+import { asilposAwaitingCategory, asilposInsertedRow } from "@/lib/asilpos/cash-moves";
+import { ownerRowAmountOnly } from "@/lib/roles";
 import { currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
-import { lafposBranchId } from "@/server/lafpos/branch";
+import { loadPosTillIds } from "@/server/pos/tills";
 
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
 
@@ -31,18 +33,19 @@ export interface CashOutDTO {
   expenseEntryId: number | null;
   categoryId: number | null;
   categoryName: string | null;
-  /** LafPOS'un kasa hareketinin kimliği (Faz 3): tutar, tür ve gün LafPOS'tan, satır silinmez; elle girilen satırda null */
-  lafposId: string | null;
+  /** AsilPOS'un kasa hareketinin kimliği (Faz 3): tutar, tür ve gün AsilPOS'tan, satır silinmez; elle girilen satırda null */
+  asilposId: string | null;
   /**
-   * Kategorisini bekleyen LafPOS harcaması (lafposAwaitingCategoryIds): personel kategori seçince Aylık harcamalar'a
+   * Kategorisini bekleyen AsilPOS harcaması (asilposAwaitingCategoryIds): personel kategori seçince Aylık harcamalar'a
    * yazılır (pencere kategoriyi sorar)
    */
-  lafposAwaitingCategory: boolean;
+  asilposAwaitingCategory: boolean;
 }
 
 /**
  * Kasa kartının ve penceresinin satırı: yöneticide bütün satır, personelde yalnız beyaz listedeki alanlar
- * (staffCashOutRow). `locked`: satır yöneticinin bir tedarikçi ödemesine bağlı (personel düzeltemez, silemez)
+ * (staffCashOutRow). `locked`: satır yöneticinin bir tedarikçi ödemesine bağlı (personel ve müdür düzeltemez, silemez);
+ * müdürde ayrıca yöneticinin kategorisindeki (maaş, kira) satır
  */
 export type CashOutView = Pick<CashOutDTO, StaffCashOutField> & { locked?: boolean };
 
@@ -65,7 +68,7 @@ const columns = {
   expenseEntryId: s.expenseEntries.id,
   categoryId: s.expenseEntries.categoryId,
   categoryName: s.expenseCategories.name,
-  lafposId: s.cashOuts.lafposId,
+  asilposId: s.cashOuts.asilposId,
 };
 
 /**
@@ -83,40 +86,52 @@ export async function cashOutsBetween(from: string, to: string, branchId?: strin
     .where(and(gte(s.cashOuts.date, from), lte(s.cashOuts.date, to), sube))
     .orderBy(asc(s.cashOuts.date), asc(s.cashOuts.createdAt), asc(s.cashOuts.id))
     .limit(2000);
-  const awaiting = await lafposAwaitingCategoryIds(
+  // Satırın şubesi yalnız kategori denetimi için (çok şube: her satır kendi şubesinin gün sonuyla); istemciye gitmez
+  const fromPos = rows.filter((r) => r.asilposId !== null).map((r) => r.id);
+  const branchOf = fromPos.length
+    ? new Map((await getDb().select({ id: s.cashOuts.id, branchId: s.cashOuts.branchId }).from(s.cashOuts).where(inArray(s.cashOuts.id, fromPos))).map((r) => [r.id, r.branchId]))
+    : new Map<number, string>();
+  const awaiting = await asilposAwaitingCategoryIds(
     getDb(),
-    rows.map((r) => ({ ...r, hasExpense: r.expenseEntryId !== null })),
+    rows.map((r) => ({ ...r, branchId: branchOf.get(r.id) ?? "", hasExpense: r.expenseEntryId !== null })),
   );
-  return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString(), lafposAwaitingCategory: awaiting.has(r.id) }));
+  return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString(), asilposAwaitingCategory: awaiting.has(r.id) }));
 }
 
 /**
- * Kategorisini bekleyen LafPOS harcamaları (src/lib/lafpos/cash-moves.ts lafposAwaitingCategory; inceleme LM-3): LafPOS'un
+ * Kategorisini bekleyen AsilPOS harcamaları (src/lib/asilpos/cash-moves.ts asilposAwaitingCategory; inceleme LM-3): AsilPOS'un
  * açtığı, kaydı olmayan harcama satırlarının hareketi günün saklı gövdesinde (pos_day_reports.cash_moves) aranır;
- * LafPOS'un personelin kategorisiyle göndermediği harcama bekler. Aday yoksa sorgu yok. Kasa kartı (cashOutsBetween) ve
+ * AsilPOS'un personelin kategorisiyle göndermediği harcama bekler. Aday yoksa sorgu yok. Kasa kartı (cashOutsBetween) ve
  * satırın yazımı (writeCashOut, personelin düzeltmesi) aynı kuralı okur
  */
-export async function lafposAwaitingCategoryIds(
+export async function asilposAwaitingCategoryIds(
   db: DB | Tx,
-  rows: readonly { id: number; date: string; kind: CashOutKind; lafposId: string | null; createdBy: number | null; createdByName: string; hasExpense: boolean }[],
+  rows: readonly { id: number; branchId: string; date: string; kind: CashOutKind; asilposId: string | null; createdBy: number | null; createdByName: string; hasExpense: boolean }[],
 ): Promise<Set<number>> {
-  const candidates = rows.filter((r) => lafposInsertedRow(r) && r.kind === "harcama" && !r.hasExpense);
+  const candidates = rows.filter((r) => asilposInsertedRow(r) && r.kind === "harcama" && !r.hasExpense);
   if (!candidates.length) return new Set();
+  // Her satırın kendi şubesinin gün sonu (çok şube): yalnız AsilPOS kasalarının günleri
+  const tills = (await loadPosTillIds(db)).ids;
   const days = await db
-    .select({ cashMoves: s.posDayReports.cashMoves })
+    .select({ branchId: s.posDayReports.branchId, cashMoves: s.posDayReports.cashMoves })
     .from(s.posDayReports)
-    .where(and(eq(s.posDayReports.branchId, await lafposBranchId(db)), inArray(s.posDayReports.date, [...new Set(candidates.map((r) => r.date))])));
+    .where(
+      and(
+        inArray(s.posDayReports.branchId, [...new Set(candidates.map((r) => r.branchId))].filter((b) => tills.includes(b))),
+        inArray(s.posDayReports.date, [...new Set(candidates.map((r) => r.date))]),
+      ),
+    );
   const categories = await db.select().from(s.expenseCategories);
   // Hareketin kategorisi (saklı gövde şemadan geçmişti; yine de gevşek okunur): kimlik → kategori ya da null
   const moveCategory = new Map<string, number | null>();
   for (const d of days) {
     for (const m of Array.isArray(d.cashMoves) ? (d.cashMoves as unknown[]) : []) {
       const move = m as { id?: unknown; categoryId?: unknown } | null;
-      if (move && typeof move.id === "string") moveCategory.set(move.id, typeof move.categoryId === "number" ? move.categoryId : null);
+      if (move && typeof move.id === "string") moveCategory.set(`${d.branchId}|${move.id}`, typeof move.categoryId === "number" ? move.categoryId : null);
     }
   }
   const usable = (id: number) => categories.some((c) => c.id === id && staffCategory(c));
-  return new Set(candidates.filter((r) => lafposAwaitingCategory(r, moveCategory.get(r.lafposId!), usable)).map((r) => r.id));
+  return new Set(candidates.filter((r) => asilposAwaitingCategory(r, moveCategory.get(`${r.branchId}|${r.asilposId!}`), usable)).map((r) => r.id));
 }
 
 /** Günün kasadan çıkanları: verilen şubenin kasası, yoksa seçili şube ("Tümü"de hepsi) */
@@ -134,4 +149,20 @@ export interface CashOutCategory {
 export async function cashOutCategories(role: "admin" | "staff"): Promise<CashOutCategory[]> {
   const rows = await getDb().select().from(s.expenseCategories).orderBy(asc(s.expenseCategories.sortOrder), asc(s.expenseCategories.id));
   return rows.filter((c) => (role === "admin" ? c.active : staffCategory(c))).map((c) => ({ id: c.id, name: c.name, section: c.section }));
+}
+
+/** Personelin seçebildiği kategorilerin kimlikleri (staffCategory): dışındaki kategori yöneticinin (maaş, kira, kapatılmış) */
+export async function staffCategoryIds(): Promise<Set<number>> {
+  return new Set((await cashOutCategories("staff")).map((c) => c.id));
+}
+
+/**
+ * Okuyana giden satırlar (docs/ROLLER.md › Kararlar): müdürde (`ownerRowAmountOnly`) yöneticinin kategorisindeki satır
+ * yalnız türü ve tutarıyla (yer, açıklama, fiş ve fotoğrafı, kategori adı null; src/lib/cash-outs.ts › amountOnlyRow);
+ * öbür rollerde olduğu gibi. Kasa'nın gün ve ay görünümü (satırlar, formun özeti, rapor penceresi) ve WhatsApp metni
+ * (sayfa ve eylemler) bundan geçer
+ */
+export async function cashOutsShownTo<T extends { categoryId: number | null }>(role: Role, rows: T[]): Promise<T[]> {
+  if (!ownerRowAmountOnly(role) || rows.every((o) => o.categoryId === null)) return rows;
+  return ownerRowsAmountOnly(rows, await staffCategoryIds());
 }

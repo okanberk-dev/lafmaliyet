@@ -22,12 +22,13 @@ import type { LateWasteCard, WasteDeleteCard, WasteRequestCard } from "@/server/
 import { BranchBadge, branchDayHref } from "./branch-badge";
 
 /*
- * Onaylar › Zayi ve ikram (yalnız yönetici; docs/ZAYI-IKRAM.md › Geç kayıt ve silme isteği). Geç kayıtta kalem ve gün,
- * neden ve not, isteyen, malzeme maliyeti (bugünkü fiyatlarla; ikramda menü değeri) ve bağlam: o gün aynı kalemden
- * kayıt, aynı gün ve kalem için başka bekleyen istek, ikramda Z ödenmez karşılaştırması, kasa raporu, ayın sayımı.
- * Silmede önce kaydı kimin ne zaman girdiği, sonra isteyen ve neden; kayıt kasa e-postasına girdiyse uyarı, kayıt
- * yoksa tek düğme "Kapat". Not personele görünür (tutar yazılmaz). Bağlam isteğin şubesinden; birden çok kasa açıkken
- * kart şubeyi adıyla yazar, "Günü aç" o şubenin gününü açar (`?sube=`; denetim 21 Kasım #28).
+ * Onaylar › Zayi ve ikram (yönetici ve müdür; docs/ZAYI-IKRAM.md › Geç kayıt ve silme isteği). Geç kayıtta kalem ve
+ * gün, neden ve not, isteyen, malzeme maliyeti (bugünkü fiyatlarla; yalnız yöneticinin kartında, müdürün kartında
+ * `cost` yok: docs/ROLLER.md › Müdür), ikramda menü değeri ve bağlam: o gün aynı kalemden kayıt, aynı gün ve kalem
+ * için başka bekleyen istek, ikramda Z ödenmez karşılaştırması, kasa raporu, ayın sayımı. Silmede önce kaydı kimin ne
+ * zaman girdiği, sonra isteyen ve neden; kayıt kasa e-postasına girdiyse uyarı, kayıt yoksa tek düğme "Kapat". Not
+ * personele görünür (tutar yazılmaz). Bağlam isteğin şubesinden; birden çok kasa açıkken kart şubeyi adıyla yazar,
+ * "Günü aç" o şubenin gününü açar (`?sube=`; denetim 21 Kasım #28).
  */
 
 export function WasteRequestCards({ cards }: { cards: WasteRequestCard[] }) {
@@ -107,9 +108,14 @@ function LateWasteItem({ card }: { card: LateWasteCard }) {
         {p.note ? <p className="break-words">Not: {p.note}</p> : null}
         {card.message ? <p className="break-words">Açıklama: {card.message}</p> : null}
       </div>
-      <p className="text-sm text-ink tabular">
-        Malzeme maliyeti {money(card.cost)} (KDV hariç, bugünkü fiyatlarla){card.menuValue !== null ? ` · menü değeri ${money(card.menuValue)}` : ""}
-      </p>
+      {/* Malzeme maliyeti yalnız yöneticinin kartında (müdürün kartında anahtar yok); menü değeri ikisinde */}
+      {card.cost !== undefined ? (
+        <p className="text-sm text-ink tabular">
+          Malzeme maliyeti {money(card.cost)} (KDV hariç, bugünkü fiyatlarla){card.menuValue !== null ? ` · menü değeri ${money(card.menuValue)}` : ""}
+        </p>
+      ) : card.menuValue !== null ? (
+        <p className="text-sm text-ink tabular">Menü değeri {money(card.menuValue)}</p>
+      ) : null}
       <section aria-label="O gün" className="space-y-1 rounded-xl bg-panel px-3 py-2.5 text-[13px] leading-5">
         {card.sameDay.length ? (
           <p className="font-medium text-warn">
@@ -119,12 +125,12 @@ function LateWasteItem({ card }: { card: LateWasteCard }) {
           <p className="text-ink-soft">O gün aynı kalemden kayıt yok.</p>
         )}
         {card.otherPending.length ? <p className="font-medium text-warn">Aynı gün ve kalem için başka bekleyen istek var ({card.otherPending.join(", ")})</p> : null}
-        {card.lafposRefusal ? <p className="font-medium text-warn">{card.lafposRefusal} Bu isteği reddedin.</p> : null}
-        {ikram && !card.lafposRefusal && z !== null && card.ikramRecorded !== null ? (
-          card.ikramFromLafpos ? (
-            // LafPOS'un gün sonu gelen gün: ödenmez tutarı ve liste LafPOS'un; bu kayıt (hammadde ikramı) ikisini değiştirmez
+        {card.asilposRefusal ? <p className="font-medium text-warn">{card.asilposRefusal} Bu isteği reddedin.</p> : null}
+        {ikram && !card.asilposRefusal && z !== null && card.ikramRecorded !== null ? (
+          card.ikramFromAsilpos ? (
+            // AsilPOS'un gün sonu gelen gün: ödenmez tutarı ve liste AsilPOS'un; bu kayıt (hammadde ikramı) ikisini değiştirmez
             <p className="text-ink tabular">
-              Z ödenmez {money(z)} · LafPOS&apos;un ikram ve zayi listesi {money(card.ikramRecorded)}
+              Z ödenmez {money(z)} · AsilPOS&apos;un ikram ve zayi listesi {money(card.ikramRecorded)}
             </p>
           ) : (
             <p className="text-ink tabular">
@@ -143,7 +149,7 @@ function LateWasteItem({ card }: { card: LateWasteCard }) {
         <Button variant="ghost" onClick={() => decide("reject", () => `${who} isteği reddedildi`)} disabled={pending}>
           <X size={15} /> Reddet
         </Button>
-        {card.lafposRefusal ? null : (
+        {card.asilposRefusal ? null : (
           <Button onClick={() => decide("approve", () => `${card.item} ${card.dayLong} gününe eklendi`)} disabled={pending}>
             <Check size={15} /> Onayla ve ekle
           </Button>

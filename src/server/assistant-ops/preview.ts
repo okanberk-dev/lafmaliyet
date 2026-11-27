@@ -6,7 +6,7 @@ import { z } from "zod";
 import { EPS, openBalance, paidViaOf, round2, type BalanceInvoice, type CariMethod } from "@/lib/cari/balance";
 import { businessDate } from "@/lib/cash-report";
 import { tillBranches, type BranchRow } from "@/lib/branches";
-import { isLafposDay } from "@/lib/lafpos/switch";
+import { isAsilposDay } from "@/lib/asilpos/switch";
 import { dateTR, locativeTR, num, pct, tl, tlUnit } from "@/lib/format";
 import { branchPriceTargets, branchSlotFacts, effectiveFromText, OPTION_MENU_ITEM_IDS, rowsOf, type BranchSlotFacts } from "@/lib/prices/branch";
 import { genitive } from "@/lib/recipe-change";
@@ -33,13 +33,14 @@ import {
 import { loadModel } from "@/server/data/dataset";
 import { cardResolver, paymentCredits } from "@/server/cari/settle";
 import { activeProductsUsing } from "@/server/data/ingredient-usage";
-import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
+import { asilposSwitchDaysOf } from "@/server/data/asilpos-ikram";
 import { branchTill } from "@/server/data/till-scope";
 import { soldOutNoteFor } from "@/server/data/menu-status";
 import { getDb, schema as s } from "@/server/db";
-import { loadBranchSwitchDay } from "@/server/lafpos/branch";
+import { loadBranchSwitchDay } from "@/server/asilpos/branch";
 import { siteLinkSecret } from "@/server/site-link";
 import { readBranchPrices, readSiteSnapshot } from "@/server/site-menu/sync";
+import { loadShiftPresets } from "@/server/vardiya/presets";
 import { loadShiftEntries, loadShiftWeek } from "@/server/vardiya/store";
 
 import { chatReceipt, chatReceiptStale } from "./receipt";
@@ -127,13 +128,13 @@ function soldOutPreview(soldOut: boolean): OpPreview<"urun_tukendi_yap" | "urun_
           branch: "Bütün şubeler (menü ortak)",
           day: dayText(today(ctx)),
           lines,
-          effects: ["site", "lafpos"],
+          effects: ["site", "asilpos"],
           undo: soldOut ? "Sonuç kartındaki Geri al ürünü yeniden satışa açar." : "Sonuç kartındaki Geri al ürünü yeniden Tükendi yapar.",
           undoable: true,
           warnings: [
             soldOut
-              ? "Sitede, uygulamada ve QR menüde hemen kapanır (M ve L birlikte); LafPOS kasası gün açıkken en geç 15 dakikada görür."
-              : "Sitede, uygulamada ve QR menüde hemen açılır; LafPOS kasası en geç 15 dakikada görür.",
+              ? "Sitede, uygulamada ve QR menüde hemen kapanır (M ve L birlikte); AsilPOS kasası gün açıkken en geç 15 dakikada görür."
+              : "Sitede, uygulamada ve QR menüde hemen açılır; AsilPOS kasası en geç 15 dakikada görür.",
           ],
         },
         args: { siteMenuId, soldOut, name: hit.name },
@@ -653,12 +654,12 @@ const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof prod
     const change = p.price > 0 ? (input.yeniFiyat - p.price) / p.price : null;
     const linked = p.siteMenuId !== null;
     // Menü ortak, kasa şube başına (şube kapsamı A3): değişiklik her açık kasanın Kasaya işle listesine düşer. Kasaların
-    // bugünkü türü (Fiyatlar › Kasaya işle ile aynı kural): LafPOS gününde bağlı olmayan ürün de listeye düşer, LafPOS'ta
+    // bugünkü türü (Fiyatlar › Kasaya işle ile aynı kural): AsilPOS gününde bağlı olmayan ürün de listeye düşer, AsilPOS'ta
     // yerel ürünse fiyat orada elle değişir
-    const switchDay = await lafposSwitchDayOf(db());
-    const tills = tillBranches(ctx.branches).map((b) => branchTill(switchDay, b.id, ctx.now, ctx.branches));
-    const lafposTill = tills.some((t) => t.lafpos);
-    const modposTill = !tills.length || tills.some((t) => !t.lafpos);
+    const switchDays = await asilposSwitchDaysOf(db());
+    const tills = tillBranches(ctx.branches).map((b) => branchTill(switchDays, b.id, ctx.now, ctx.branches));
+    const asilposTill = tills.some((t) => t.asilpos);
+    const modposTill = !tills.length || tills.some((t) => !t.asilpos);
     const lines: OpCardLine[] = [
       { label: "Satış fiyatı", from: tl(p.price, 2), to: `${tl(input.yeniFiyat, 2)}${change !== null ? ` (${change >= 0 ? "+" : ""}${pct(change)})` : ""}` },
       { label: "Birim maliyet", to: calc?.cost ? tl(calc.cost, 2) : "Reçete yok" },
@@ -668,13 +669,13 @@ const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof prod
     const warnings = linked
       ? [
           "Önce siteye yazılır; site kabul etmezse hiçbir şey değişmez.",
-          "LafPOS fiyatı siteden alır (en geç 15 dakika). ModPOS kullanan kasada fiyatı elle değiştirin: Fiyatlar › Kasaya işle listesine düşer.",
+          "AsilPOS fiyatı siteden alır (en geç 15 dakika). ModPOS kullanan kasada fiyatı elle değiştirin: Fiyatlar › Kasaya işle listesine düşer.",
         ]
-      : lafposTill
+      : asilposTill
         ? [
             modposTill
-              ? "Sitede değişmez. ModPOS kullanan kasada elle değiştirin; LafPOS ürünü siteden alıyorsa fiyat LafPOS'ta da değişmez: Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; LafPOS'ta yerel ürünse orada elle değiştirin. Her kasanın Kasaya işle listesine düşer."
-              : "Sitede değişmez. LafPOS ürünü siteden alıyorsa fiyat LafPOS'ta da değişmez: Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; LafPOS'ta yerel ürünse orada elle değiştirin. Fiyatlar › Kasaya işle listesine düşer.",
+              ? "Sitede değişmez. ModPOS kullanan kasada elle değiştirin; AsilPOS ürünü siteden alıyorsa fiyat AsilPOS'ta da değişmez: Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; AsilPOS'ta yerel ürünse orada elle değiştirin. Her kasanın Kasaya işle listesine düşer."
+              : "Sitede değişmez. AsilPOS ürünü siteden alıyorsa fiyat AsilPOS'ta da değişmez: Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; AsilPOS'ta yerel ürünse orada elle değiştirin. Fiyatlar › Kasaya işle listesine düşer.",
           ]
         : ["Sitede değişmez. Kasada elle değiştirilecek: Fiyatlar › Kasaya işle listesine düşer."];
     if (change !== null && Math.abs(change) > 0.3) warnings.unshift(`Fiyat ${pct(change)} değişiyor: tutarı kontrol edin.`);
@@ -710,7 +711,7 @@ const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof prod
         branch: own.length ? `Taban fiyat (${own.map((f) => f.branch.name).join(", ")} hariç: kendi fiyatı var)` : "Bütün şubeler (menü ortak)",
         day: dayText(today(ctx)),
         lines,
-        effects: linked ? ["site", "lafpos", "modpos"] : [...(lafposTill ? (["lafpos"] as const) : []), ...(modposTill ? (["modpos"] as const) : [])],
+        effects: linked ? ["site", "asilpos", "modpos"] : [...(asilposTill ? (["asilpos"] as const) : []), ...(modposTill ? (["modpos"] as const) : [])],
         undo: "Sonuç kartındaki Geri al eski fiyatı geri yazar (fiyat bu arada başka yerde değişmediyse).",
         undoable: true,
         warnings,
@@ -801,15 +802,15 @@ const cashOutAdd: OpPreview<"kasadan_cikan_ekle", z.output<typeof cashOutArgs>, 
     const docType = receipt ? (input.belge === "yok" ? (receipt.docType ?? "fis") : input.belge) : input.belge;
     if (input.harcamalaraYaz && !input.kategori) throw new ToolInputError("Aylık harcamalar'a yazılacaksa gider kategorisi gerekli; kullanıcıya sor.");
     const cat = !teslim && input.kategori ? pickByName(await activeCategories(), input.kategori, (c) => c.name, "Gider kategorisi", "Kategoriler Aylık harcamalar › Kategoriler'de.") : null;
-    // Şubenin bu günü LafPOS'taysa kasadan çıkan LafPOS'ta girilir (docs/LAFPOS.md, KASA-RAPORU.md): panelden eklenen
-    // satır LafPOS'un nakit sayımına girmez; aynı tür ve tutarda LafPOS hareketi gün sonunda bu satırı sahiplenir
-    const lafposDay = isLafposDay(date, await loadBranchSwitchDay(b.id, db()));
-    const warnings = lafposDay
+    // Şubenin bu günü AsilPOS'taysa kasadan çıkan AsilPOS'ta girilir (docs/ASILPOS.md, KASA-RAPORU.md): panelden eklenen
+    // satır AsilPOS'un nakit sayımına girmez; aynı tür ve tutarda AsilPOS hareketi gün sonunda bu satırı sahiplenir
+    const asilposDay = isAsilposDay(date, await loadBranchSwitchDay(b.id, db()));
+    const warnings = asilposDay
       ? [
-          `${b.name} bu gün LafPOS'ta: kasadan çıkanı LafPOS'ta (Kasa › Harcama / Teslim) girin. Aynı tür ve tutarda LafPOS girişi gün sonunda bu satırı sahiplenir; LafPOS'a girilmezse LafPOS'un kasa sayımı eksik çıkar, tutarı farklıysa panelde ayrı bir satır olarak kalır.`,
+          `${b.name} bu gün AsilPOS'ta: kasadan çıkanı AsilPOS'ta (Kasa › Harcama / Teslim) girin. Aynı tür ve tutarda AsilPOS girişi gün sonunda bu satırı sahiplenir; AsilPOS'a girilmezse AsilPOS'un kasa sayımı eksik çıkar, tutarı farklıysa panelde ayrı bir satır olarak kalır.`,
           "Akşam kasa raporunun “Gün içinde kasadan çıkan” toplamına girer.",
         ]
-      : ["Akşam kasa raporunun “Gün içinde kasadan çıkan” toplamına girer; LafPOS'a gitmez."];
+      : ["Akşam kasa raporunun “Gün içinde kasadan çıkan” toplamına girer; AsilPOS'a gitmez."];
     const lines: OpCardLine[] = [
       { label: "Kasa", to: b.name },
       { label: "Gün", to: dayText(date) },
@@ -1009,7 +1010,7 @@ const shiftCells: OpPreview<"vardiya_hucre_yaz", z.output<typeof shiftArgs>, z.o
     const monday = weekStart(input.gunler[0].gun);
     if (input.gunler.some((g) => weekStart(g.gun) !== monday)) throw new ToolInputError("Günler aynı haftada olmalı (Pazartesi–Pazar); başka haftayı ayrı kartla iste.");
     if (new Set(input.gunler.map((g) => g.gun)).size !== input.gunler.length) throw new ToolInputError("Aynı gün iki kez verildi.");
-    const week = await loadShiftWeek(db(), { id: b.id, name: b.name }, monday, { roster: true });
+    const [week, presets] = await Promise.all([loadShiftWeek(db(), { id: b.id, name: b.name }, monday, { roster: true }), loadShiftPresets(b.id, db())]);
     const people = [...week.rows.map((r) => ({ ref: r.ref, name: r.name })), ...week.others.map((o) => ({ ref: userRef(o.id), name: o.name }))];
     const person = pickByName(people, input.kisi, (p) => p.name, "Kişi", "Kişinin adını Vardiya ekranındaki gibi yazın.");
     const days = weekDays(monday);
@@ -1019,7 +1020,7 @@ const shiftCells: OpPreview<"vardiya_hucre_yaz", z.output<typeof shiftArgs>, z.o
     const changes: { date: string; text: string }[] = [];
     for (const g of input.gunler) {
       const i = days.indexOf(g.gun);
-      const parsed = parseShiftCell(expandShiftAbbr(b.id, g.metin));
+      const parsed = parseShiftCell(expandShiftAbbr(presets, g.metin));
       if (!parsed.ok) throw new ToolInputError(`${dayLong(g.gun, i)}: ${parsed.error}`);
       next[i] = parsed.cell;
       changes.push({ date: g.gun, text: formatShiftCell(parsed.cell) });

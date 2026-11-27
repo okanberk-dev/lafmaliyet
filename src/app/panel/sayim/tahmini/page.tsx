@@ -32,7 +32,8 @@ import {
 import { INVOICE_SHARED } from "@/lib/invoice-branch";
 import { genitive } from "@/lib/recipe-change";
 import { cn } from "@/lib/utils";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope, staffBranchLock } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadReceiptInvoices, loadStockEstimate, type ReceiptList } from "@/server/data/stock-estimate";
@@ -45,7 +46,7 @@ import { ThresholdInput } from "./threshold-input";
 export const metadata: Metadata = { title: "Tahmini stok" };
 
 /** Tek cümle, 100 harfi geçmez (docs/planlar/ux-sade.md §8) */
-const DESCRIPTION = "Marina'da son sayımdan bu yana gelen mal, LafPOS ve online satış, zayi ve ikramla hesaplanan stok.";
+const DESCRIPTION = "Marina'da son sayımdan bu yana gelen mal, AsilPOS ve online satış, zayi ve ikramla hesaplanan stok.";
 
 /**
  * Başlık ve Stok sekmeleri (ekran Stok sayımı'nın alt ekranı: sekmede Sayım seçili). Rol bilinmeden (yükleniyor)
@@ -65,7 +66,7 @@ function Header({ role, meta }: { role: "admin" | "staff"; meta?: ReactNode }) {
 }
 
 /**
- * Tahmini stok (docs/STOK-TAHMINI.md): yalnız Marina, yalnız LafPOS'a geçildiyse. İki rol açar (Stok sayımı'nın alt
+ * Tahmini stok (docs/STOK-TAHMINI.md): yalnız Marina, yalnız AsilPOS'a geçildiyse. İki rol açar (Stok sayımı'nın alt
  * ekranı); eşik, eşik önerisi, online siparişleri yenileme ve faturanın şubesi yalnız yöneticide. Ekranda para yok: tutar,
  * fiyat ve fatura tutarı gösterilmez. `?tedarik=` eşik önerisinin tedarik süresidir (gün; LEAD_DAY_CHOICES).
  */
@@ -85,7 +86,7 @@ export default function StockEstimatePage({ searchParams }: PageProps<"/panel/sa
 }
 
 async function StockEstimateContent({ searchParams }: { searchParams: PageProps<"/panel/sayim/tahmini">["searchParams"] }) {
-  const user = await requireUser();
+  const user = adminActor(await requireCan("kayit.yaz"));
   const leadDays = parseLeadDays((await searchParams).tedarik);
   const admin = user.role === "admin";
   // Başka şubeye kilitli personel Marina'nın stoğunu görmez (docs/SUBE.md › Personel hesabının şubesi)
@@ -98,16 +99,29 @@ async function StockEstimateContent({ searchParams }: { searchParams: PageProps<
       </>
     );
   }
+  // Başka şube seçiliyken (ör. Tuzla) Marina'nın rakamları gösterilmez (çok şube, 27 Kasım 2026: seçili şube yalnız kendi
+  // bilgisini görür; tahmin yalnız Marina'nın)
+  const [selected, all] = await Promise.all([currentBranchScope(), listBranches()]);
+  const chosen = selected !== ALL_BRANCHES && selected !== STOCK_ESTIMATE_BRANCH ? all.find((b) => b.id === selected) : undefined;
+  if (chosen) {
+    const marina = all.find((b) => b.id === STOCK_ESTIMATE_BRANCH)?.name ?? "Marina";
+    return (
+      <>
+        <Header role={user.role} />
+        <Notice tone="neutral" title={`${chosen.name} için tahmin yok`} text={`Tahmini stok yalnız ${marina} için tutulur; ${marina} ya da Tümü seçiliyken görünür.`} />
+      </>
+    );
+  }
   const data = await loadStockEstimate(undefined, undefined, { leadDays });
   if (!data) {
     return (
       <>
         <Header role={user.role} />
-        <Notice tone="neutral" title="Marina LafPOS'a geçmedi: tahmin yok" text="Satışlar LafPOS'tan gün gün gelmeye başlayınca tahmin açılır." />
+        <Notice tone="neutral" title="Marina AsilPOS'a geçmedi: tahmin yok" text="Satışlar AsilPOS'tan gün gün gelmeye başlayınca tahmin açılır." />
       </>
     );
   }
-  const { estimate, today, lafposFrom } = data;
+  const { estimate, today, asilposFrom } = data;
   // Faturanın şubesi kartı yalnız yöneticide ve tahmin başladıysa (dönemin faturaları)
   const siteBranch = siteBranchOf(STOCK_ESTIMATE_BRANCH);
   const [receipts, branches, scope, onlineState] = await Promise.all([
@@ -126,8 +140,8 @@ async function StockEstimateContent({ searchParams }: { searchParams: PageProps<
     estimate.from !== null
       ? `${estimate.lastDay ? `Son gün sonu ${dayMonthTR(estimate.lastDay)}` : "Henüz gün sonu gelmedi"} · bugünün satışı gün sonuyla gelir`
       : undefined;
-  // Tahmin hiç başlamadıysa hangi sayımla başlayacağı: LafPOS'un sayıldığı ilk günü kapsayan ay ya da bitmiş son ay
-  const firstMonth = addDays(lafposFrom, -1).slice(0, 7);
+  // Tahmin hiç başlamadıysa hangi sayımla başlayacağı: AsilPOS'un sayıldığı ilk günü kapsayan ay ya da bitmiş son ay
+  const firstMonth = addDays(asilposFrom, -1).slice(0, 7);
   const lastFinished = shiftMonth(today.slice(0, 7), -1);
   const startMonth = lastFinished > firstMonth ? lastFinished : firstMonth;
   const online = estimate.online;
@@ -146,9 +160,9 @@ async function StockEstimateContent({ searchParams }: { searchParams: PageProps<
             tone="neutral"
             title={`Tahmin ${monthLabel(startMonth)} sayımı girilince başlar`}
             text={
-              lafposFrom > today
-                ? `LafPOS'un satışı ${dayAblativeTR(lafposFrom)} itibaren sayılacak; ay sonu sayımı tahminin başlangıcıdır.`
-                : `LafPOS'un satışı ${dayAblativeTR(lafposFrom)} beri gün gün geliyor; ay sonu sayımı tahminin başlangıcıdır.`
+              asilposFrom > today
+                ? `AsilPOS'un satışı ${dayAblativeTR(asilposFrom)} itibaren sayılacak; ay sonu sayımı tahminin başlangıcıdır.`
+                : `AsilPOS'un satışı ${dayAblativeTR(asilposFrom)} beri gün gün geliyor; ay sonu sayımı tahminin başlangıcıdır.`
             }
           />
         ) : null}
@@ -161,9 +175,9 @@ async function StockEstimateContent({ searchParams }: { searchParams: PageProps<
           />
         ) : null}
         {admin && estimate.missingDays.length ? (
-          <Notice tone="neutral" title={`${num(estimate.missingDays.length)} günün LafPOS gün sonu gelmedi`} text="O günlerin satışı tahmine girmedi; stok olduğundan fazla görünür.">
+          <Notice tone="neutral" title={`${num(estimate.missingDays.length)} günün AsilPOS gün sonu gelmedi`} text="O günlerin satışı tahmine girmedi; stok olduğundan fazla görünür.">
             <p>
-              {estimate.missingDays.map(dayMonthTR).join(", ")}. LafPOS&apos;ta Kasa › Geçmiş günler&apos;de o günün Z raporundan Gönder&apos;e basın.
+              {estimate.missingDays.map(dayMonthTR).join(", ")}. AsilPOS&apos;ta Kasa › Geçmiş günler&apos;de o günün Z raporundan Gönder&apos;e basın.
             </p>
           </Notice>
         ) : null}
@@ -182,7 +196,7 @@ async function StockEstimateContent({ searchParams }: { searchParams: PageProps<
         ) : null}
         {admin && skipped ? (
           <Notice tone="neutral" title={`${num(skipped)} satır tüketime girmedi`} text="Ürüne bağlı olmayan ya da reçetesi boş: malzemesi düşülmedi, stok fazla görünür.">
-            {estimate.unmatched.lines ? <p>{skippedText("Ürüne bağlı değil", estimate.unmatched)} Ayarlar › LafPOS (kasa)&apos;da bağlanır.</p> : null}
+            {estimate.unmatched.lines ? <p>{skippedText("Ürüne bağlı değil", estimate.unmatched)} Ayarlar › AsilPOS (kasa)&apos;da bağlanır.</p> : null}
             {online?.unmatched.lines ? <p>{skippedText("Online, panel ürününe bağlı değil", online.unmatched)} Ürünler › Site menüsü&apos;nde bağlanır.</p> : null}
             {estimate.noRecipe.lines ? <p>{skippedText("Reçetesi boş", estimate.noRecipe)} Ürünler & kârlılık&apos;ta reçete yazılır.</p> : null}
           </Notice>
@@ -336,10 +350,10 @@ async function StockEstimateContent({ searchParams }: { searchParams: PageProps<
   );
 }
 
-/** "Online: kasadan geçmeyen 34 sipariş düşüldü · kasada ödenen 5 sipariş LafPOS satışında sayıldı · bu ayın kaydı 9 Aralık gününe kadar." */
+/** "Online: kasadan geçmeyen 34 sipariş düşüldü · kasada ödenen 5 sipariş AsilPOS satışında sayıldı · bu ayın kaydı 9 Aralık gününe kadar." */
 function onlineText(o: EstimateOnlineSummary): string {
   const parts = [`Online: kasadan geçmeyen ${num(o.orders)} sipariş düşüldü`];
-  if (o.tillOrders) parts.push(`kasada ödenen ${num(o.tillOrders)} sipariş LafPOS satışında sayıldı`);
+  if (o.tillOrders) parts.push(`kasada ödenen ${num(o.tillOrders)} sipariş AsilPOS satışında sayıldı`);
   if (o.through) parts.push(`bu ayın kaydı ${dayMonthTR(o.through)} gününe kadar`);
   return `${parts.join(" · ")}.`;
 }
@@ -376,7 +390,7 @@ function StatusBadge({ line }: { line: StockEstimateLine }) {
       </Badge>
     );
   if (line.status === "sayim-yok") return <Badge tone="gray">Sayım yok</Badge>;
-  if (line.status === "lafpos-oncesi") return <Badge tone="gray">Sayım LafPOS&apos;tan önce</Badge>;
+  if (line.status === "asilpos-oncesi") return <Badge tone="gray">Sayım AsilPOS&apos;tan önce</Badge>;
   return null;
 }
 

@@ -1,5 +1,5 @@
 // Şube fiyatı (LM-5; hesap sözleşmesi §8, sitenin docs/PANEL-MENU.md "Şube fiyatı"): sitenin okumasındaki şube
-// satırları (`branchPrices`) ve yazma duyurusu (`writes.branchPrice`), LafPOS gün sonundaki dondurulan liste fiyatları
+// satırları (`branchPrices`) ve yazma duyurusu (`writes.branchPrice`), AsilPOS gün sonundaki dondurulan liste fiyatları
 // (`lines[].listPrices`), şube fiyatı yazımının gövdesi (tek ve toplu, iptal), "Geçerlilik"in varsayılanı (sonraki iş
 // günü 05:00 İstanbul), toplu değişikliğin şube engelleri, "Eski fiyattan satılanlar" ve değişikliğin durumu (Bekliyor /
 // Uygulandı · gün / Uygulanmadı / Bilinmiyor; yalnız listPrices'tan, ciro / adetten asla). Saf; veritabanı tarafı
@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { mock, test } from "node:test";
 
 import { tabOf } from "../src/app/panel/urunler/fiyatlar/logic";
-import { parsePosDay } from "../src/lib/lafpos/day";
+import { parsePosDay } from "../src/lib/asilpos/day";
 import { blockReason, previewRows, type BulkRow } from "../src/lib/prices/bulk";
 import {
   branchBulkRows,
@@ -86,18 +86,18 @@ test("yazma yanıtı: 200 ve 409 stale gövdesindeki branchPrices okunur; kalem 
   assert.equal(parseBranchPriceAnswer({ error: "stale" }).branchPrices, null);
 });
 
-// ---------------------------------------------------------------- LafPOS gün sonu: listPrices
+// ---------------------------------------------------------------- AsilPOS gün sonu: listPrices
 
 const NOW = new Date("2026-11-23T12:00:00+03:00");
 
-test("gün sonu: lines[].listPrices okunur (altın gövde LafPOS claude/sube-fiyati-kasa'dan); bozuk alan günü reddetmez", () => {
-  const r = parsePosDay(read("tests/fixtures/lafpos-gun.golden.json"), NOW);
+test("gün sonu: lines[].listPrices okunur (altın gövde AsilPOS claude/sube-fiyati-kasa'dan); bozuk alan günü reddetmez", () => {
+  const r = parsePosDay(read("tests/fixtures/asilpos-gun.golden.json"), NOW);
   assert.ok(r.ok, r.ok ? "" : r.field);
   const priced = r.data.lines.filter((l) => l.listPrices);
   assert.ok(priced.length > 0, "altın gövdenin satırlarında listPrices var");
   assert.deepEqual(r.data.lines.find((l) => l.posName === priced[0].posName)?.listPrices, priced[0].listPrices);
   assert.ok(r.data.lines.filter((l) => l.isService).every((l) => l.listPrices === undefined), "hizmet satırında alan yok");
-  const body = JSON.parse(read("tests/fixtures/lafpos-gun.golden.json")) as { lines: Record<string, unknown>[] };
+  const body = JSON.parse(read("tests/fixtures/asilpos-gun.golden.json")) as { lines: Record<string, unknown>[] };
   body.lines[0].listPrices = [{ price: -1, qty: 2 }];
   body.lines[1].listPrices = Array.from({ length: 21 }, (_, i) => ({ price: i, qty: 1 }));
   body.lines[2].listPrices = "195";
@@ -107,7 +107,7 @@ test("gün sonu: lines[].listPrices okunur (altın gövde LafPOS claude/sube-fiy
 });
 
 test("gün sonu: okunamayan lines[].listPrices günlüğe yazılır (öteki Faz 2 satır alanları gibi)", () => {
-  const body = JSON.parse(read("tests/fixtures/lafpos-gun.golden.json")) as { lines: Record<string, unknown>[] };
+  const body = JSON.parse(read("tests/fixtures/asilpos-gun.golden.json")) as { lines: Record<string, unknown>[] };
   body.lines[0].listPrices = [{ price: -1, qty: 2 }];
   body.lines[1].listPrices = Array.from({ length: 21 }, (_, i) => ({ price: i, qty: 1 }));
   const warn = mock.method(console, "warn", () => {});
@@ -347,7 +347,7 @@ test("durum: sonraki tam günlerde yalnız eski fiyat Uygulanmadı; satış yoks
   assert.deepEqual(status([sale("2026-11-25", [[195, 4]]), sale("2026-11-26", [[195, 6]])]), { kind: "uygulanmadi", day: "2026-11-25" });
   assert.deepEqual(status([sale("2026-11-24", [[195, 4]])]), { kind: "bekliyor" }, "geçiş gününden önceki satış sayılmaz");
   assert.deepEqual(status([sale("2026-11-26", [[205, 1]])], Date.parse("2026-11-24T12:00:00+03:00")), { kind: "bekliyor" }, "an gelmedi");
-  assert.deepEqual(status([sale("2026-11-25", null), sale("2026-11-26", null)]), { kind: "bilinmiyor" }, "eski LafPOS: ciro / adetten çıkarılmaz");
+  assert.deepEqual(status([sale("2026-11-25", null), sale("2026-11-26", null)]), { kind: "bilinmiyor" }, "eski AsilPOS: ciro / adetten çıkarılmaz");
   // Eski günde yalnız eski fiyat, sonra yeni fiyat: Uygulandı ve gün yeni fiyatın ilk günü
   assert.deepEqual(status([sale("2026-11-25", [[195, 4]]), sale("2026-11-27", [[205, 2]])]), { kind: "uygulandi", day: "2026-11-27" });
   assert.deepEqual([statusText({ kind: "bekliyor" }), statusText({ kind: "uygulanmadi", day: "2026-11-25" }), statusText({ kind: "bilinmiyor" })], ["Bekliyor", "Uygulanmadı", "Bilinmiyor"]);

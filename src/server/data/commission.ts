@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, gte, inArray, min } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, min, or } from "drizzle-orm";
 
 import { channelNameResolver, type SupplierRef } from "@/app/panel/tedarikciler/logic";
 import { COMMISSION_GROUP } from "@/lib/branch-settings/groups";
@@ -9,7 +9,7 @@ import { ALL_BRANCHES, DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { tillOpenedOn } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn, closedRowApplies } from "@/lib/closed-days";
-import { channelOf, isChannelKey, lafposChannel, type ChannelKey } from "@/lib/commission/channels";
+import { channelOf, isChannelKey, asilposChannel, type ChannelKey } from "@/lib/commission/channels";
 import {
   buildCommissionReport,
   commissionAlerts,
@@ -26,11 +26,11 @@ import {
   type CommissionAlert,
   type CommissionInput,
   type CommissionReport,
-  type LafposDayIn,
+  type AsilposDayIn,
   type ModposBrandDay,
 } from "@/lib/commission/report";
 import { COMMISSION_CATEGORY } from "@/lib/constants";
-import { posDaySchema, posZSchema } from "@/lib/lafpos/day";
+import { posDaySchema, posZSchema } from "@/lib/asilpos/day";
 import { modposChannels } from "@/lib/modpos/z";
 import { addDays, todayTR } from "@/lib/reminders";
 import { andWhere, branchWhere, currentBranchScope, withBranchScope } from "@/server/branch-scope";
@@ -38,7 +38,8 @@ import { resolveBranchSetting, resolveForTills } from "@/server/branch-settings"
 import { listBranches } from "@/server/branches";
 import { loadSupplierRefs } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
-import { lafposBranchId, lafposSwitchDay } from "@/server/lafpos/branch";
+import { scopeSwitchDays, type SwitchDays } from "@/lib/pos/tills";
+import { loadSwitchDays } from "@/server/pos/tills";
 import { loadModposSheets } from "@/server/modpos/store";
 import type { DigestExtraCtx, DigestExtraLoad } from "@/server/notify/digest-template";
 
@@ -51,11 +52,11 @@ import type { DigestExtraCtx, DigestExtraLoad } from "@/server/notify/digest-tem
  *   bağlanmayan fatura varsa (ör. "Diğer adlar"a eklenen unvan) bir küçük sorgu daha: tedarikçi kartlarının adları ve
  *   kartta yazılı vergi no; öteki faturalar üzerinden vergi no eşleşmesi yalnız ekranda.
  * Okuyan yollar hiçbir şey yazmaz; takibin başladığı gün (`komisyon.since`) yalnız yazma yollarında kaydedilir.
- * LafPOS'a geçiş günü seçiliyse o günden itibaren LafPOS'un gün sonları (Z'deki yemek kartı ve online, ödeme türleri)
- * da okunur (denetim E-37); geçiş günü boşken LafPOS tablosuna hiç bakılmaz, rapor bugünküyle aynıdır.
+ * AsilPOS'a geçiş günü seçiliyse o günden itibaren AsilPOS'un gün sonları (Z'deki yemek kartı ve online, ödeme türleri)
+ * da okunur (denetim E-37); geçiş günü boşken AsilPOS tablosuna hiç bakılmaz, rapor bugünküyle aynıdır.
  *
- * Şube (23 Kasım 2026; docs/SUBE.md): satış seçili şubenin kasa raporlarından ve LafPOS'undan (ilk rapor, açılış günü ve
- * kapalı günler de şubenin), faturalar ve hakediş işletme geneli. ModPOS'ta kalan şube (Tuzla) seçiliyken LafPOS okunmaz
+ * Şube (23 Kasım 2026; docs/SUBE.md): satış seçili şubenin kasa raporlarından ve AsilPOS'undan (ilk rapor, açılış günü ve
+ * kapalı günler de şubenin), faturalar ve hakediş işletme geneli. ModPOS'ta kalan şube (Tuzla) seçiliyken AsilPOS okunmaz
  * ama geçiş ayından itibaren Z'si "Tümü"deki gibi tek kanala yığılmaz (modposScope; föyde markası olan kanalına). Ekran
  * şube seçiliyken işletmenin raporunu da okur (oran işletmenin; şubenin payı = şube satışı × oran). Zil, Bugün, sabah
  * e-postası ve haftalık özet her zaman işletme geneli ("Tümü"; seçiciden bağımsız).
@@ -82,7 +83,7 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
   const db = getDb();
   const today = opts.today ?? todayTR();
   const { fromMonth, fromDay } = reportWindow(today);
-  // Seçili şube: satış (kasa raporları, LafPOS) onun; "Tümü"de koşul yok
+  // Seçili şube: satış (kasa raporları, AsilPOS) onun; "Tümü"de koşul yok
   const scope = await currentBranchScope();
   const branchOnly = scope === ALL_BRANCHES ? null : scope;
   const [invoiceRows, marks, state, till, firstRow, pageNames, closedRows, switchRow, branchRow, channelSettings] = await Promise.all([
@@ -127,7 +128,7 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
         date: s.cashReports.date,
         mealCard: s.cashReports.mealCard,
         online: s.cashReports.online,
-        // LafPOS'un girdiği ayda ModPOS'ta kalan şubenin raporu ayrıca sayılır (lafposMonth `modpos`)
+        // AsilPOS'un girdiği ayda ModPOS'ta kalan şubenin raporu ayrıca sayılır (asilposMonth `modpos`)
         branchId: s.cashReports.branchId,
       })
       .from(s.cashReports)
@@ -141,8 +142,8 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
       .select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo, branchId: s.specialDays.branchId })
       .from(s.specialDays)
       .where(and(eq(s.specialDays.kind, "kapali"), gte(s.specialDays.dateTo, fromDay))),
-    // LafPOS'a geçiş günü (yoksa LafPOS okunmaz)
-    lafposSwitchDay(db),
+    // Kasa başına AsilPOS'a geçiş günü (çok şube; yoksa AsilPOS okunmaz)
+    loadSwitchDays(db),
     // Seçili şubenin açılışı: sonradan açılan şubenin açılış ayı "kasa raporları ay ortasında başladı" sayılmaz
     branchOnly
       ? db.select({ id: s.branches.id, openedOn: s.branches.openedOn }).from(s.branches).where(eq(s.branches.id, branchOnly)).limit(1)
@@ -150,16 +151,18 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
     // Kanalların ödeme süresi: hakediş işletmenin, seçiciden bağımsız (şubelerin en kısa süresi; businessPayDays)
     loadBusinessPayDays(db),
   ]);
-  // Geçiş günü seçili şubenin kasasınınki: ModPOS'ta kalan şube (Tuzla) seçiliyken LafPOS hiç okunmaz, Z'si geçiş ayından
-  // itibaren föyün markasıyla (modposScope)
-  const lafposBranch = await lafposBranchId(db);
-  const { lafpos: switchDay, modpos: modposFrom } = commissionScopeDays(switchRow, scope, lafposBranch);
-  const lafposFrom = switchDay ? (switchDay > fromDay ? switchDay : fromDay) : null;
-  // Föyün markası geçiş ayının başından (geçiş gününden önceki günler de kasa raporu kuralıyla sayılır)
-  const brandsFrom = switchDay ?? modposFrom;
+  // Geçiş günleri görünümün kasalarınınki (çok şube): kasası ModPOS olan şube (Tuzla) seçiliyken AsilPOS hiç okunmaz, Z'si
+  // kasaların en erken geçiş ayından itibaren föyün markasıyla (modposScope); geçiş günü sonra olan kasa seçiliyken kendi
+  // geçiş ayına dek öyle, sonra AsilPOS'tan. "Tümü"de her kasa kendi geçiş gününden
+  const switchDays = scopeSwitchDays(switchRow, scope);
+  const { asilpos: switchDay, modpos: modposFrom } = commissionScopeDays(switchRow, scope);
+  const asilposFrom = switchDay ? (switchDay > fromDay ? switchDay : fromDay) : null;
+  // Föyün markası ilk geçiş ayının başından (geçiş gününden önceki günler de kasa raporu kuralıyla sayılır): iki gün de
+  // varsa erkeni
+  const brandsFrom = switchDay && modposFrom ? (modposFrom < switchDay ? modposFrom : switchDay) : (switchDay ?? modposFrom);
   const brandsStart = brandsFrom ? (`${brandsFrom.slice(0, 7)}-01` > fromDay ? `${brandsFrom.slice(0, 7)}-01` : fromDay) : null;
-  const [lafposDays, modposBrands] = await Promise.all([
-    lafposFrom ? loadLafposPaymentDays(lafposFrom, scope) : Promise.resolve([]),
+  const [asilposDays, modposBrands] = await Promise.all([
+    asilposFrom ? loadAsilposPaymentDays(switchDays, fromDay, scope) : Promise.resolve([]),
     brandsStart ? loadModposBrands(brandsStart, today) : Promise.resolve([]),
   ]);
   // Hafif yol: faturadaki adı bir kanala bağlanmayan fatura varsa kartların adları da aranır (Kanalı bulunamayan
@@ -185,18 +188,17 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
     ),
     marks: marks.filter((m): m is ChannelMonthIn => isChannelKey(m.channel)),
     settings: channelSettings,
-    lafpos: switchDay ? { switchDay, days: lafposDays } : null,
+    asilpos: switchDay ? { switchDay, switchDays, days: asilposDays } : null,
     ...(modposBrands.length ? { modposBrands } : {}),
     ...(branchOnly ? { openedOn: tillOpenedOn(branchRow[0] ?? null) } : {}),
     ...(modposFrom ? { modposScope: { switchDay: modposFrom } } : {}),
-    lafposBranch,
   };
 }
 
 /**
  * ModPOS föylerinin markalı ödemeleri (`from`'dan bugüne, seçili şubenin; `from` geçiş ayının başı): kasa raporu kuralıyla
  * sayılan günün (geçiş gününden önce ya da ModPOS'ta kalan şubede) Z'sindeki yemek kartı ve online kanal kanal bölünür
- * (modposChannels; markası olmayan ödeme sayılmaz). LafPOS'un şubesinin geçiş gününden sonraki föyü eşleşmez (o günlerin
+ * (modposChannels; markası olmayan ödeme sayılmaz). AsilPOS'un şubesinin geçiş gününden sonraki föyü eşleşmez (o günlerin
  * kasa raporu Z kuralıyla sayılmaz; Marina'da ModPOS bir daha kullanılmaz). Föy yoksa boş: markası belirsiz kalır
  */
 async function loadModposBrands(from: string, to: string): Promise<ModposBrandDay[]> {
@@ -216,26 +218,35 @@ async function loadModposBrands(from: string, to: string): Promise<ModposBrandDa
 const paymentsSchema = posDaySchema.shape.payments;
 
 /**
- * LafPOS'un `from` gününden itibaren gelen gün sonları: Z'deki yemek kartı ve online, ödeme türleri (kanalı
- * lafposChannel ile tanınır, tanınmayan null). Özeti okunamayan gün atlanır (gelmemiş sayılır); ödemeleri okunamayan
- * günün Z'si sayılır, ödemeleri boş. Yalnız yönetici okur (zil ve ekran); ikram ve satır okunmaz.
+ * AsilPOS kasalarının gelen gün sonları, her kasanın kendi geçiş gününden (ve `from`'dan) itibaren (çok şube; R1: kasası
+ * ModPOS olan şubenin deneme günü okunmaz): Z'deki yemek kartı ve online, ödeme türleri (kanalı asilposChannel ile tanınır,
+ * tanınmayan null). Özeti okunamayan gün atlanır (gelmemiş sayılır); ödemeleri okunamayan günün Z'si sayılır, ödemeleri
+ * boş. Yalnız yönetici okur (zil ve ekran); ikram ve satır okunmaz.
  */
-async function loadLafposPaymentDays(from: string, scope: string): Promise<LafposDayIn[]> {
+async function loadAsilposPaymentDays(switchDays: SwitchDays, from: string, scope: string): Promise<AsilposDayIn[]> {
+  const tills = Object.entries(switchDays).filter((e): e is [string, string] => e[1] !== null);
+  if (!tills.length) return [];
   const rows = await getDb()
-    .select({ date: s.posDayReports.date, z: s.posDayReports.z, payments: s.posDayReports.payments })
+    .select({ date: s.posDayReports.date, branchId: s.posDayReports.branchId, z: s.posDayReports.z, payments: s.posDayReports.payments })
     .from(s.posDayReports)
-    .where(andWhere(gte(s.posDayReports.date, from), branchWhere(s.posDayReports.branchId, scope)))
-    .orderBy(asc(s.posDayReports.date));
-  const out: LafposDayIn[] = [];
+    .where(
+      andWhere(
+        or(...tills.map(([id, sd]) => and(eq(s.posDayReports.branchId, id), gte(s.posDayReports.date, sd > from ? sd : from)))),
+        branchWhere(s.posDayReports.branchId, scope),
+      ),
+    )
+    .orderBy(asc(s.posDayReports.date), asc(s.posDayReports.branchId));
+  const out: AsilposDayIn[] = [];
   for (const r of rows) {
     const z = posZSchema.safeParse(r.z);
     if (!z.success) continue;
     const payments = paymentsSchema.safeParse(r.payments);
     out.push({
       date: r.date,
+      branchId: r.branchId,
       mealCard: z.data.mealCard,
       online: z.data.online,
-      payments: payments.success ? payments.data.map((p) => ({ name: p.name, zField: p.zField, channel: lafposChannel(p.channel), rawChannel: p.channel, amount: p.amount })) : [],
+      payments: payments.success ? payments.data.map((p) => ({ name: p.name, zField: p.zField, channel: asilposChannel(p.channel), rawChannel: p.channel, amount: p.amount })) : [],
     });
   }
   return out;

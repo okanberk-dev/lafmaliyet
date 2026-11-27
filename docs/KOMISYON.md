@@ -14,8 +14,8 @@ ve kalemlerini okur.
 
 ## 1. Ekran
 
-**Şube** (23 Kasım 2026; [SUBE.md](SUBE.md)): satış seçili şubenin kasa raporlarından, LafPOS gün sonlarından ve ModPOS
-föyünden okunur (ilk rapor, açılış günü ve kapalı günler de şubenin; ModPOS'ta kalan şube seçiliyken LafPOS okunmaz). Komisyon
+**Şube** (23 Kasım 2026; [SUBE.md](SUBE.md)): satış seçili şubenin kasa raporlarından, AsilPOS gün sonlarından ve ModPOS
+föyünden okunur (ilk rapor, açılış günü ve kapalı günler de şubenin; ModPOS'ta kalan şube seçiliyken AsilPOS okunmaz). Komisyon
 faturaları, oran, beklenen hakediş ve uyarılar işletmenindir: faturalar şubeye bölünmez, oran bütün şubelerin satışıyla
 hesaplanır. Şube seçiliyken ekran işletmenin raporunu gösterir; üstte "Marina seçili: satış yalnız bu şubenin, faturalar
 ve hakediş işletmenin" notu ve **Marina payı** kartı (kanal kanal şubenin satışı, işletmenin oranı, pay = satış × oran;
@@ -26,12 +26,16 @@ ve hakediş işletmenin" notu ve **Marina payı** kartı (kanal kanal şubenin s
 - **ModPOS'ta kalan şube** (Tuzla) seçiliyken de geçiş ayından itibaren Z'deki yemek kartı ve online tek kanala yazılmaz
   (`modposScope`, `commissionScopeDays`): föyde markası olan kısım kanalına ("ModPOS föyünden"), kalan **Marka belirsiz**.
   Önceden şube görünümünde `tek` kuralı sürüyordu: Tuzla'nın bütün Z'si tek karta yazılır, "Tuzla payı" işletmenin bütün
-  faturasından büyük çıkabilirdi. Geçiş ayından önceki aylar eski kuralla (tek kanal).
+  faturasından büyük çıkabilirdi. Geçiş ayından önceki aylar eski kuralla (tek kanal). **Geçiş günü sonra olan kasa**
+  (çok şube, inceleme 27 Kasım 2026; ör. Kadıköy 10 Aralık'ta, Marina 22 Kasım'da geçer) seçiliyken de kasaların ilk
+  geçiş ayından kendi geçiş ayına dek aynı kural (`commissionScopeDays`: `modpos` ilk geçiş günü, kendi geçiş ayından
+  itibaren AsilPOS ayı kazanır; föyün markası ilk geçiş ayının başından okunur): önceden bu aylar `tek` yazılır, şubelerin
+  payı faturayı aşardı ve ileri bir geçiş günü kaydetmek geçmiş ayları değiştirirdi.
 - **Sonradan açılan şubenin açılış ayı** (Marina, 13 Kasım 2026) "kasa raporları ay ortasında başladı" sayılmaz
   (`openedOn`, Kasa'nın kuralı `tillOpenedOn` / `partialStart`); önceden Marina'nın Kasım'ındaki bütün kanallar "Satış
   bilinmiyor" çıkıyordu.
 - **Elle yazılan ekstre satışı işletmenindir** (`commission_months` şubesiz): şubenin payı şubenin kendi kaynağından
-  (LafPOS, föy, Z) gelir, ekstreden değil; yoksa ekstrenin tamamı her şubenin payına girerdi.
+  (AsilPOS, föy, Z) gelir, ekstreden değil; yoksa ekstrenin tamamı her şubenin payına girerdi.
 - **Yemek kartı kullanılmayan şube** (şube özelliği `yemek_karti`, Şube ayarları › Özellikler; [SUBE.md › Şube
   özellikleri](SUBE.md#şube-özellikleri-25-kasım-2026)) seçiliyken menüde Komisyon & hakediş yoktur, sayfa "bu şubede
   kullanılmıyor" der; zilin ve Bugün'ün komisyon satırları ile o şubeye bağlı alıcının sabah e-postasındaki kutu çıkmaz.
@@ -72,8 +76,8 @@ faturası ve Z'de yemek kartı / online yoksa yalnız "Henüz komisyon faturası
 
 **Hakediş penceresi** (`{Pluxee} · {Ekim 2026}`): *Geldi* / *Henüz gelmedi*; geldiği gün (ayın başından yarına kadar)
 ve gelen tutar (beklenenle dolu gelir; formülü altında); **Bu ayki satış (isteğe bağlı)**: kanalın kendi ekranındaki
-(ekstre, hakediş raporu) satış, KDV dahil; boş bırakılırsa LafPOS'tan önceki aylarda Z toplamı (grupta tek kanal
-varsa), LafPOS'un girdiği ayda kanalın LafPOS ödemeleri ve ModPOS föyündeki markalı ödemeleri, yoksa bilinmez; not.
+(ekstre, hakediş raporu) satış, KDV dahil; boş bırakılırsa AsilPOS'tan önceki aylarda Z toplamı (grupta tek kanal
+varsa), AsilPOS'un girdiği ayda kanalın AsilPOS ödemeleri ve ModPOS föyündeki markalı ödemeleri, yoksa bilinmez; not.
 Kaydet'e basınca önce pencere kapanır; bildirimdeki **Geri al** (10 sn) önceki değerleri yazar. Haftalık ödeyen
 platformda ayın havalelerinin toplamı ve son havalenin günü yazılır: ayda tek işaret.
 
@@ -113,8 +117,8 @@ satışı (KDV dahil, müşterinin o kanaldan ödediği), sırayla:
 | Kaynak | Kural | Ekranda |
 |---|---|---|
 | `elle` | Hakediş penceresinde yazılan aylık satış (kanalın ekstresi) | Kanalın ekstresinden (elle) |
-| `lafpos` | LafPOS'a geçiş günü seçili ve ay o günden itibaren LafPOS'un gün sonlarını içeriyor (aşağıda, "LafPOS'tan kart kart"): kanalın LafPOS ödemeleri + ModPOS föyünde markası bulunan ödemeleri (geçiş gününden önceki günler, ModPOS'ta kalan şube); markası belirsiz tutar tek kanala da yazılmaz | LafPOS ödemelerinden / LafPOS ödemeleri ve ModPOS föyünden / ModPOS föyünden |
-| `tek` | Yalnız LafPOS'un girmediği aylarda (geçiş ayından önce ya da geçiş günü yokken): o ay grubunda (yemek kartı ya da platform) etkin tek kanal bu ve faturası var; ayın kasa raporu var, ay ortasında başlamadı, Z'de grubun tutarı > 0 → grubun bütün Z toplamı | Z'deki yemek kartı toplamı (tek kart) / Z'deki online (platformlar) toplamı (tek platform) |
+| `asilpos` | AsilPOS'a geçiş günü seçili ve ay o günden itibaren AsilPOS'un gün sonlarını içeriyor (aşağıda, "AsilPOS'tan kart kart"): kanalın AsilPOS ödemeleri + ModPOS föyünde markası bulunan ödemeleri (geçiş gününden önceki günler, ModPOS'ta kalan şube); markası belirsiz tutar tek kanala da yazılmaz | AsilPOS ödemelerinden / AsilPOS ödemeleri ve ModPOS föyünden / ModPOS föyünden |
+| `tek` | Yalnız AsilPOS'un girmediği aylarda (geçiş ayından önce ya da geçiş günü yokken): o ay grubunda (yemek kartı ya da platform) etkin tek kanal bu ve faturası var; ayın kasa raporu var, ay ortasında başlamadı, Z'de grubun tutarı > 0 → grubun bütün Z toplamı | Z'deki yemek kartı toplamı (tek kart) / Z'deki online (platformlar) toplamı (tek platform) |
 | – | Yoksa | *Satış bilinmiyor* ve nedeni: bu ay kasa raporu yok; kasa raporları 16 Ekim'de başladı; Z'de yemek kartları tek toplam ve bu ay 2 kart var; Z'deki online (platformlar) tek toplam ve 14 Kasım tarihli Yemeksepeti faturası Ekim satışlarını da kapsıyor olabilir; bu ayın kasa raporlarında yemek kartı tutarı yok. Hepsinin sonu: "Kanalın ekstresindeki satışı yazarsanız oran hesaplanır." |
 
 - **Etkin kanal:** o ay faturası, yazılmış satışı (> 0) ya da gelen hakedişi olan. Satışı 0 yazılan kanal etkin
@@ -132,62 +136,63 @@ satışı (KDV dahil, müşterinin o kanaldan ödediği), sırayla:
 - **Yemek kartlarının toplamı** her zaman hesaplanır: Z'deki yemek kartı (yarım ayda yok) ÷ bütün yemek kartı
   faturaları. Ortalama %6'yı aşıyorsa en az bir kart aşıyordur; kart kart oran için her kartın ekstresindeki satış yazılır.
 
-### LafPOS'tan kart kart (denetim E-37)
+### AsilPOS'tan kart kart (denetim E-37)
 
-LafPOS gün sonunda her ödeme türünü kanalıyla yollar (`pos_day_reports.payments`: ad, Z alanı, kanal, tutar;
-[LAFPOS.md](LAFPOS.md) › Komisyon). Ayarlar › LafPOS › **LafPOS'a geçiş günü** seçilince o günden itibaren bir kanalın
-satışı, yazılmadıysa, kendi ödemelerinden gelir: **elle > lafpos > tek**. Geçiş günü boşken LafPOS tablosu hiç okunmaz,
-ekran ve uyarılar bugünkü gibi; geçiş gününden önceki LafPOS günleri (deneme) hiçbir aya girmez.
+AsilPOS gün sonunda her ödeme türünü kanalıyla yollar (`pos_day_reports.payments`: ad, Z alanı, kanal, tutar;
+[ASILPOS.md](ASILPOS.md) › Komisyon). Ayarlar › AsilPOS › **AsilPOS'a geçiş günü** seçilince o günden itibaren bir kanalın
+satışı, yazılmadıysa, kendi ödemelerinden gelir: **elle > asilpos > tek**. Geçiş günü boşken AsilPOS tablosu hiç okunmaz,
+ekran ve uyarılar bugünkü gibi; geçiş gününden önceki AsilPOS günleri (deneme) hiçbir aya girmez.
 
-- **Hangi ay:** ayın LafPOS kısmı geçiş gününden (ya da ayın 1'inden) başlar (`lafposMonth`). Geçiş günü ileride ve o
+- **Hangi ay:** ayın AsilPOS kısmı geçiş gününden (ya da ayın 1'inden) başlar (`asilposMonth`). Geçiş günü ileride ve o
   aydan henüz gün sonu gelmediyse ay bugünkü gibidir. Ayın önceki ayları hep kasa raporlarından.
-- **Kanal:** LafPOS'taki kanal yazısı anahtar ("pluxee") ya da kanalın adı ("Sodexo", "Ticket Restaurant",
-  "Trendyol Go") olarak tanınır (`lafposChannel`); kanalın türü grubu belirler. Kanalı seçilmemiş ya da tanınmayan
+- **Kanal:** AsilPOS'taki kanal yazısı anahtar ("pluxee") ya da kanalın adı ("Sodexo", "Ticket Restaurant",
+  "Trendyol Go") olarak tanınır (`asilposChannel`); kanalın türü grubu belirler. Kanalı seçilmemiş ya da tanınmayan
   ödeme türü Z alanına göre gruba gider (yemek kartı ya da online; nakit, kart ve diğer komisyona girmez): grup kartında
-  bilgi satırı "LafPOS'ta kanalı seçilmemiş ya da tanınmayan ödeme türü: “Ticket kart” (kanal “Ticket”) 300 ₺. Bu tutar
-  hiçbir karta yazılmaz, markası belirsiz satırda; LafPOS'ta ödeme türünün kanalını seçin." (Platformlar satırının
+  bilgi satırı "AsilPOS'ta kanalı seçilmemiş ya da tanınmayan ödeme türü: “Ticket kart” (kanal “Ticket”) 300 ₺. Bu tutar
+  hiçbir karta yazılmaz, markası belirsiz satırda; AsilPOS'ta ödeme türünün kanalını seçin." (Platformlar satırının
   altında da). Grupta tek kanal olsa da o tutar ona yazılmaz (23 Kasım 2026; eskiden "Bu ay tek kart olduğu için ona
   yazıldı": kartın oranı düşük, beklenen hakedişi yüksek görünürdü).
 - **Geçiş ayı:** geçiş gününden önceki günlerin Z'si (grubun tek toplamı) hiçbir kanala yazılmaz, tek kanal olsa da
-  (23 Kasım 2026; eskiden tek kanalda kanalın LafPOS ödemelerine eklenirdi, birden çok kanalda ay bilinmezdi): grubun
-  **Marka belirsiz** satırında durur, kanalın satışı LafPOS ödemeleridir ve `kasa-eksik` bilgisi "Z'de markası belirsiz
+  (23 Kasım 2026; eskiden tek kanalda kanalın AsilPOS ödemelerine eklenirdi, birden çok kanalda ay bilinmezdi): grubun
+  **Marka belirsiz** satırında durur, kanalın satışı AsilPOS ödemeleridir ve `kasa-eksik` bilgisi "Z'de markası belirsiz
   900 ₺ var; satış eksik kaldıysa oran yüksek görünür." der. O günlerin ModPOS föyünde markası olan ödeme (Pluxee,
-  Multinet, Yemeksepeti …; `modposChannels`) kanalına yazılır. Önceki günlerin hiç kasa raporu yoksa "LafPOS 10
+  Multinet, Yemeksepeti …; `modposChannels`) kanalına yazılır. Önceki günlerin hiç kasa raporu yoksa "AsilPOS 10
   Kasım'da başladı, öncesinin kasa raporu yok"; kasa raporları geç başladıysa bugünkü "kasa raporları … başladı".
-- **ModPOS'ta kalan şube** (Tuzla; geçiş günü yalnız Marina'nın kasasınındır, [LAFPOS.md](LAFPOS.md) › Şubeler):
-  kasa raporları LafPOS'un girdiği ayda da sayılır, geçiş gününden önceki günler gibi (Z'de grubun tek toplamı;
-  `lafposMonth` `modpos`): grubun Z toplamına eklenir; hiçbir kanala yazılmaz, tek kanal olsa da (23 Kasım 2026;
-  eskiden tek kanalda kanalın LafPOS ödemelerine eklenirdi): **Marka belirsiz** satırında durur. Tuzla'nın ModPOS
+- **ModPOS'ta kalan şube** (Tuzla; geçiş günü yalnız Marina'nın kasasınındır, [ASILPOS.md](ASILPOS.md) › Şubeler):
+  kasa raporları AsilPOS'un girdiği ayda da sayılır, geçiş gününden önceki günler gibi (Z'de grubun tek toplamı;
+  `asilposMonth` `modpos`): grubun Z toplamına eklenir; hiçbir kanala yazılmaz, tek kanal olsa da (23 Kasım 2026;
+  eskiden tek kanalda kanalın AsilPOS ödemelerine eklenirdi): **Marka belirsiz** satırında durur. Tuzla'nın ModPOS
   föyünde markası olan ödeme kanalına yazılır (föyün markalı tutarı o günün Z'sini aşıyorsa o gün bölünmez). Marina'nın
   raporu yalnız gün sonu gelmeyen günün yedeğidir (denetim 21 Kasım #5: önceden Tuzla'nın raporu bu yedeğin yerine
   geçiyor ya da hiç sayılmıyordu).
-- **Marka belirsiz** (`GroupMonth.unbranded`; yalnız LafPOS'un girdiği ayda): geçiş gününden önceki günlerin ve
-  ModPOS'ta kalan şubenin Z'sinden föyde markası bulunmayan kısım, LafPOS'ta kanalı seçilmemiş ödeme ve gün sonu
+- **Marka belirsiz** (`GroupMonth.unbranded`; yalnız AsilPOS'un girdiği ayda): geçiş gününden önceki günlerin ve
+  ModPOS'ta kalan şubenin Z'sinden föyde markası bulunmayan kısım, AsilPOS'ta kanalı seçilmemiş ödeme ve gün sonu
   gelmemiş günün kasa raporu. Yemek kartları kartının ve Platformlar satırının altında: "Marka belirsiz: 6.300 ₺
-  (ModPOS'ta kalan şubenin Z'si 6.000 ₺, LafPOS'ta kanalı seçilmemiş ödeme 300 ₺). Hiçbir karta yazılmaz; kartın oranı
+  (ModPOS'ta kalan şubenin Z'si 6.000 ₺, AsilPOS'ta kanalı seçilmemiş ödeme 300 ₺). Hiçbir karta yazılmaz; kartın oranı
   yalnız markası bilinen satışla hesaplanır." Grubun Z toplamı ve ortalama oranı onu da içerir.
 - **Eksik gün:** gün sonu gelmeyen gün kasa raporu varsa grubun toplamına rapordan girer (kart kart bilinmez), ikisi de
-  yoksa eksik sayılır (kapalı işaretli gün değil). Kanalın satışı o zaman ödemelerinin toplamıdır; `kasa-eksik` bilgisi
-  ne eksik kaldığını söyler ("9 gün LafPOS gün sonu yok ve kanalı seçilmemiş 300 ₺ ödeme var ve Z'de markası belirsiz
-  6.000 ₺ var; satış eksik kaldıysa oran yüksek görünür.") ve %6 aşımını kırmızıdan turuncuya indirir ("… 9 gün LafPOS gün sonu yok; kesin değil, kontrol
-  edin."). Eksiksiz LafPOS ayında aşım kesindir (LafPOS kartın ödemesini kendisi yollar).
-- **Etkin kanal:** LafPOS'ta o ay ödemesi olan kanal da etkindir; faturası gelmemişse de kartı çıkar ("Fatura bekleniyor",
+  yoksa eksik sayılır (kapalı işaretli gün değil). Günler takvim günüdür: "Tümü"de iki kasanın aynı eksik günü "N gün"
+  metninde bir kez, kayıtlı gün sayısı da takvim günü (çok şube, inceleme 27 Kasım 2026). Kanalın satışı o zaman ödemelerinin toplamıdır; `kasa-eksik` bilgisi
+  ne eksik kaldığını söyler ("9 gün AsilPOS gün sonu yok ve kanalı seçilmemiş 300 ₺ ödeme var ve Z'de markası belirsiz
+  6.000 ₺ var; satış eksik kaldıysa oran yüksek görünür.") ve %6 aşımını kırmızıdan turuncuya indirir ("… 9 gün AsilPOS gün sonu yok; kesin değil, kontrol
+  edin."). Eksiksiz AsilPOS ayında aşım kesindir (AsilPOS kartın ödemesini kendisi yollar).
+- **Etkin kanal:** AsilPOS'ta o ay ödemesi olan kanal da etkindir; faturası gelmemişse de kartı çıkar ("Fatura bekleniyor",
   hakediş "fatura gelince son gün belli olur") ve sonraki ayın 15'inden sonra `fatura-yok` uyarır ("Kasım ayında 900 ₺
   satış var ama komisyon faturası gelmedi."). Kanalın sonraki ayın ilk yarısında (en geç 15'i) kesilmiş faturası varsa
   uyarı yerine bilgi çıkar (`fatura-kayan`): "8 Aralık tarihli fatura Kasım satışlarını kapsıyor olabilir; Aralık ayında
-  sayılıyor." (yemek kartında 1–5'inde kesilen zaten önceki aya sayılır). Faturası olup LafPOS'ta ödemesi olmayan kanal:
-  "Satış bilinmiyor: LafPOS'ta bu ay Edenred ödemesi yok." Ayın tamamı LafPOS'tansa Yemek kartları kartının altındaki
-  not Z'nin tek toplam olduğunu söylemez, satışı bilinmeyen kartları adlandırır: "Edenred için LafPOS'ta ödeme yok:
-  ödeme türünün kanalını LafPOS'ta seçin ya da kartın aylık ekstresindeki satışı kartın altındaki Satışı yaz ile girin."
-  (geçiş ayında "LafPOS 10 Kasım'da başladı; öncesinde Z raporunda yemek kartları tek toplam. …"). Sayfanın açıklaması
-  geçiş günü seçiliyken satışın LafPOS'un ödemelerinden de geldiğini söyler.
-- **Grubun toplamı** (Yemek kartları kartı, Platformlar satırı): geçiş gününden önceki kasa raporları + LafPOS'un
+  sayılıyor." (yemek kartında 1–5'inde kesilen zaten önceki aya sayılır). Faturası olup AsilPOS'ta ödemesi olmayan kanal:
+  "Satış bilinmiyor: AsilPOS'ta bu ay Edenred ödemesi yok." Ayın tamamı AsilPOS'tansa Yemek kartları kartının altındaki
+  not Z'nin tek toplam olduğunu söylemez, satışı bilinmeyen kartları adlandırır: "Edenred için AsilPOS'ta ödeme yok:
+  ödeme türünün kanalını AsilPOS'ta seçin ya da kartın aylık ekstresindeki satışı kartın altındaki Satışı yaz ile girin."
+  (geçiş ayında "AsilPOS 10 Kasım'da başladı; öncesinde Z raporunda yemek kartları tek toplam. …"). Sayfanın açıklaması
+  geçiş günü seçiliyken satışın AsilPOS'un ödemelerinden de geldiğini söyler.
+- **Grubun toplamı** (Yemek kartları kartı, Platformlar satırı): geçiş gününden önceki kasa raporları + AsilPOS'un
   Z'sindeki yemek kartı / online (gün sonu gelmeyen raporlu günde rapordan). Alt satır "30 / 30 gün kayıtlı ·
-  LafPOS'tan", geçiş ayında "… · 10 Kasım'dan LafPOS", eksikte "2 gün kayıt yok · LafPOS'tan".
-- Hakediş penceresinde satış boşsa kullanılacak tutar: "Boş bırakırsanız LafPOS'taki ödemeler kullanılır: 1.550 ₺.";
-  ModPOS föyünden markalı ödeme de varsa "Boş bırakırsanız LafPOS ödemeleri ve ModPOS föyündeki markalı ödemeler
+  AsilPOS'tan", geçiş ayında "… · 10 Kasım'dan AsilPOS", eksikte "2 gün kayıt yok · AsilPOS'tan".
+- Hakediş penceresinde satış boşsa kullanılacak tutar: "Boş bırakırsanız AsilPOS'taki ödemeler kullanılır: 1.550 ₺.";
+  ModPOS föyünden markalı ödeme de varsa "Boş bırakırsanız AsilPOS ödemeleri ve ModPOS föyündeki markalı ödemeler
   kullanılır: 29.000 ₺ (föyden 9.000 ₺)." (`autoSales.foy`). Markası belirsiz tutar hiçbir zaman kanala yazılmaz.
-  "Kurallar ve hesap"ın Gerçek oran maddesi geçiş günü seçiliyken LafPOS'u da anar.
+  "Kurallar ve hesap"ın Gerçek oran maddesi geçiş günü seçiliyken AsilPOS'u da anar.
 
 ## 4. Kalemler
 
@@ -232,8 +237,8 @@ Sınır %6, yuvarlamayı yutan payla **%6,05**'in üstü.
 | `erken-odeme` | yemek kartı | Erken ödeme > 0 | Turuncu | "Erken ödeme ücreti 300 ₺ (oranı %3,2 artırıyor). Erken ödemeyi siz mi seçtiniz? Seçmediyseniz kapattırın." |
 | `asli-ucret` | platform | 1 Nisan 2026 ve sonraki faturada sipariş / ödeme altyapısı ücreti | Turuncu | "“Online Ödeme Hizmet Bedeli” 40 ₺: sipariş ya da ödeme altyapısı ücreti olabilir. 1 Nisan 2026'dan beri bunlar için ayrı ücret alınamıyor." |
 | `reklam` | platform | Reklam / kampanya > 0 | Mavi | "Reklam / kampanya ücreti olabilir: 60 ₺. Bunlar isteğe bağlıdır; onay vermediyseniz itiraz edin." |
-| `fatura-yok` | ikisi | Elle yazılan (ya da LafPOS'tan gelen) satış > 0, o ay faturası yok, sonraki ayın 15'i geldi | Turuncu | "Ekim ayında 2.000 ₺ satış var ama komisyon faturası gelmedi." |
-| `fatura-kayan` | ikisi | `fatura-yok`'un koşulu, satış LafPOS'tan ve kanalın sonraki ayın 15'ine kadar kesilmiş faturası var | Mavi | "8 Aralık tarihli fatura Kasım satışlarını kapsıyor olabilir; Aralık ayında sayılıyor." |
+| `fatura-yok` | ikisi | Elle yazılan (ya da AsilPOS'tan gelen) satış > 0, o ay faturası yok, sonraki ayın 15'i geldi | Turuncu | "Ekim ayında 2.000 ₺ satış var ama komisyon faturası gelmedi." |
+| `fatura-kayan` | ikisi | `fatura-yok`'un koşulu, satış AsilPOS'tan ve kanalın sonraki ayın 15'ine kadar kesilmiş faturası var | Mavi | "8 Aralık tarihli fatura Kasım satışlarını kapsıyor olabilir; Aralık ayında sayılıyor." |
 | `kasa-eksik` | ikisi | Satış Z toplamından (tek kanal) ve ayın eksik günü var | Mavi | "3 gün kasa raporu yok; satış eksik kaldıysa oran yüksek görünür." |
 
 Yemek kartlarının toplamında: `oran-sinir` ("Ortalama kesinti %6,3: en az bir yemek kartı %6'yı aşıyor."; eksik günde
@@ -360,7 +365,7 @@ metni mevzuat.gov.tr'den denetleyin; "Kurallar ve hesap" kartındaki cümleler o
 |---|---|
 | `src/lib/commission/channels.ts` | Kanal kaydı, adın kanalı, kalemin sınıfı |
 | `src/lib/commission/report.ts` | Rapor (satış, oran, uyarılar, hakediş, gruplar), zil ve e-posta uyarıları, e-posta kutusu ve daha önce gönderilenlerin elenmesi, kanal ayarları, sorgunun satırlarından faturalar, hakediş kaydının farkı (Geri al ve işlem geçmişi) |
-| `src/server/data/commission.ts` | Okuma (ekran ve hafif yol; seçili şubenin satışı, işletmenin faturaları; geçiş günü seçiliyse LafPOS'un ödemeleri ve ModPOS föyünün markalı ödemeleri de), sabah e-postası kaynağı, takibin başlangıcı |
+| `src/server/data/commission.ts` | Okuma (ekran ve hafif yol; seçili şubenin satışı, işletmenin faturaları; geçiş günü seçiliyse AsilPOS'un ödemeleri ve ModPOS föyünün markalı ödemeleri de), sabah e-postası kaynağı, takibin başlangıcı |
 | `src/server/actions/commission.ts` | `saveChannelMonth` (hakediş, satış, not; Geri al için öncekiler), `saveCommissionSettings` |
 | `src/app/panel/komisyonlar/` | Ekran: `page.tsx`, kanal kartı, yemek kartları toplamı, bekleyen hakedişler, hakediş penceresi, şubenin payı (`branch-share-card.tsx`), Kanallar, `texts.ts` (saf metinler) |
 | `src/server/notify/digest-extras.ts`, `src/server/actions/notifications.ts`, `src/server/data/today.ts`, `src/app/panel/bugun/logic.ts` | Sabah e-postası kutusu, zil, Bugün satırı |
@@ -370,8 +375,8 @@ uyarılar, ay sonunda kesilmeyen fatura, toplam, Z'de 0, hakediş, geciken haked
 aylık tek pencere, 90 günlük platform), uyarı sırası ve anahtarları, e-posta kutusu, konu ve
 daha önce gönderilenler, tohum verisindeki 10 fatura, ekran metinleri, kaydın farkı ve Geri al, sorgunun satırları,
 kaynak denetimi),
-`tests/lafpos-komisyon.test.ts` (LafPOS'un kanalları: geçiş günü boşken aynı rapor, LafPOS ayı, elle > lafpos, eksik gün,
-geçiş ayı, kanalsız ödeme, faturası gelmeyen kanal), `tests/lafpos-komisyon-ikram-db.test.ts` (okuyucu: deneme günü
+`tests/asilpos-komisyon.test.ts` (AsilPOS'un kanalları: geçiş günü boşken aynı rapor, AsilPOS ayı, elle > asilpos, eksik gün,
+geçiş ayı, kanalsız ödeme, faturası gelmeyen kanal), `tests/asilpos-komisyon-ikram-db.test.ts` (okuyucu: deneme günü
 hariç, kanalın tanınması), `tests/hesap-uyumu-faz1.test.ts` ve `tests/hesap-uyumu-faz1-db.test.ts` (marka belirsiz,
 föyden marka, şube görünümü ve şubenin payı, hafif yolların işletme geneli kalması), `tests/bugun.test.ts` (Hakedişler
 satırı), `tests/mobile-nav.test.ts`, `tests/yardim.test.ts`.

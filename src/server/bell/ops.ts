@@ -1,6 +1,7 @@
 import "server-only";
 
 import { pastCountReminder, pastCountReminders, staffLateEditNotice, unpricedExtrasNotice } from "@/app/panel/sayim/logic";
+import { adminLevel } from "@/lib/roles";
 import { logBellFailed, type BellFailed, type BellPart } from "@/lib/bell-failed";
 import { featureInScope } from "@/lib/branch-features";
 import { ALL_BRANCHES, BRANCH_PARAM, type BranchScope } from "@/lib/branches";
@@ -37,9 +38,9 @@ import type { DigestBox } from "@/server/notify/digest-template";
 /**
  * Kasada (ModPOS) elle değiştirilecek fiyatlar (docs/FIYATLAR.md; posBell). Yönetici bütün ürünlerden, Fiyatlar ›
  * Kasaya işle'ye (Uyarılar); personel kendi sabit sütunlu özetinden (yalnız etkin ürünler), Kasadaki fiyatlar'a (Kasa).
- * Kimlik en yeni geri kalıştan: işaret zili yeniden okunmamış yapmaz, listeye yeni bir fiyat girmesi yapar. LafPOS
- * gününde (geçiş gününden itibaren) yalnız siteye bağlı olmayan ürünler ve yalnız yöneticide; siteye bağlınınkini LafPOS
- * siteden alır, öbürünü LafPOS'ta menüyü yöneten değiştirir (E-39). Kasa şube başınadır (şube kapsamı A3): seçimin her
+ * Kimlik en yeni geri kalıştan: işaret zili yeniden okunmamış yapmaz, listeye yeni bir fiyat girmesi yapar. AsilPOS
+ * gününde (geçiş gününden itibaren) yalnız siteye bağlı olmayan ürünler ve yalnız yöneticide; siteye bağlınınkini AsilPOS
+ * siteden alır, öbürünü AsilPOS'ta menüyü yöneten değiştirir (E-39). Kasa şube başınadır (şube kapsamı A3): seçimin her
  * kasası ayrı satır; "Tümü"de birden çok kasa açıkken başlık şubeyle başlar ("Marina: Kasada değişecek 2 fiyat"),
  * kimlik şubeyi taşır ve bağlantı o şubeyi seçer.
  */
@@ -47,10 +48,10 @@ async function posNotifications(user: CurrentUser, now: Date): Promise<PanelNoti
   const tills = await loadTillScopes(undefined, now);
   const out: PanelNotification[] = [];
   for (const scope of tills) {
-    // LafPOS gününde personele fiyat görevi yok (LafPOS'ta ürün fiyatını kasiyer değiştiremez; posBell)
-    if (user.role !== "admin" && scope.lafpos) continue;
+    // AsilPOS gününde personele fiyat görevi yok (AsilPOS'ta ürün fiyatını kasiyer değiştiremez; posBell)
+    if (user.role !== "admin" && scope.asilpos) continue;
     const summary = user.role === "admin" ? await posPendingSummary(scope) : await staffPosSummary(scope);
-    const item = posBell(user.role, summary, now, scope.kasa);
+    const item = posBell(adminLevel(user.role), summary, now, scope.kasa);
     if (!item) continue;
     out.push(scope.name ? { ...item, id: `${item.id}-${scope.branchId}`, title: `${scope.name}: ${item.title}`, href: withBranchParam(item.href, scope.branchId) } : item);
   }

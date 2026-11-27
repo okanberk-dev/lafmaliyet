@@ -2,10 +2,10 @@
  * Tahmini stok ve kritik stok uyarısı (docs/STOK-TAHMINI.md). Saf: veritabanı yok; okuyucu
  * src/server/data/stock-estimate.ts, ekran src/app/panel/sayim/tahmini/, testler tests/stok-tahmini.test.ts.
  *
- * Yalnız LafPOS'un şubesi (Marina) için: satış gün gün yalnız LafPOS'tan gelir; ModPOS'un listesi aylıktır, gün gün
+ * Yalnız AsilPOS'un şubesi (Marina) için: satış gün gün yalnız AsilPOS'tan gelir; ModPOS'un listesi aylıktır, gün gün
  * bölünemez. Her malzeme için, malzemenin kendi biriminde (gr, ml, adet, dilim):
  *
- *   tahmini = son sayım + şubeye gelen faturalı alış − (LafPOS satışı + kasadan geçmeyen online sipariş) reçeteye
+ *   tahmini = son sayım + şubeye gelen faturalı alış − (AsilPOS satışı + kasadan geçmeyen online sipariş) reçeteye
  *             göre × (1 + genel fire) − zayi ve ikram
  *
  * "Kaç gün yeter" son günlerin ortalama günlük kullanımıyla; eşik önerisi günlük kullanım × (tedarik süresi + emniyet
@@ -20,15 +20,18 @@ import { evaluateExpression, parseNumberTR } from "./calc/expr";
 import type { CountUnit, RecipeItem, Settings, Unit } from "./calc/types";
 import { PACKAGING_CATEGORY } from "./constants";
 import { num } from "./format";
-import { panelWasteCounts } from "./lafpos/ikram";
-import { missingLafposDays } from "./lafpos/status";
-import { LAFPOS_BRANCH_ID } from "./lafpos/switch";
+import { panelWasteCounts } from "./asilpos/ikram";
+import { missingAsilposDays } from "./asilpos/status";
+import { LEGACY_POS_BRANCH_ID, tillDayKey } from "./pos/tills";
 import { addDays, shiftMonth, todayTR } from "./reminders";
 import { OPTION_KINDS, OPTION_PRODUCTS, optionProductId, optionTotals, productForLine, sizeLabel } from "./site-sales/calc";
 import type { SiteSalesMonth } from "./site-sales/schema";
 
-/** Tahmini stoğun şubesi: LafPOS'un kurulu olduğu şube (Marina). Tuzla'nın kasası ModPOS: tahmin yok */
-export const STOCK_ESTIMATE_BRANCH = LAFPOS_BRANCH_ID;
+/**
+ * Tahmini stoğun şubesi: Marina (ilk AsilPOS kasası). Öteki kasalar için tahmin henüz yok (ayrı iş; docs/SUBE.md); Tuzla
+ * seçiliyken "Tuzla için tahmin yok"
+ */
+export const STOCK_ESTIMATE_BRANCH = LEGACY_POS_BRANCH_ID;
 
 /** Ekranın adresi (Stok sayımı'nın alt ekranı: personel de açar, src/lib/roles.ts) */
 export const STOCK_ESTIMATE_PATH = "/panel/sayim/tahmini";
@@ -74,7 +77,7 @@ export interface EstimatePurchase {
   qty: number;
 }
 
-/** LafPOS'un bir gün sonu satırı (pos_daily_sales, şubenin) */
+/** AsilPOS'un bir gün sonu satırı (pos_daily_sales, şubenin) */
 export interface EstimateSale {
   date: string;
   posName: string;
@@ -98,8 +101,8 @@ export interface EstimatePanelWaste {
   factor: number;
 }
 
-/** LafPOS'un gün sonuyla gelen ikram ya da zayi satırı (şubenin) */
-export interface EstimateLafposWaste {
+/** AsilPOS'un gün sonuyla gelen ikram ya da zayi satırı (şubenin) */
+export interface EstimateAsilposWaste {
   date: string;
   kind: "zayi" | "ikram";
   posName: string;
@@ -112,7 +115,7 @@ export interface EstimateLafposWaste {
 /**
  * Şubenin bir ayının laffogato.net online siparişleri (sitenin şubeye göre ay kaydı, `site_sales_sube:<şube>:YYYY-MM`;
  * docs/STOK-TAHMINI.md § 2). Yalnız **kasadan geçmeyen** kafe siparişleri: site kasada ödenen (`counter`) ve panelden
- * elle girilen (`manual`) siparişi kafe satırlarından (`cafe.lines`) çıkarır, onlar LafPOS'ta çalınıp gün sonuyla gelir.
+ * elle girilen (`manual`) siparişi kafe satırlarından (`cafe.lines`) çıkarır, onlar AsilPOS'ta çalınıp gün sonuyla gelir.
  * Satırlar menü bağlantısıyla ürüne eşlenmiş gelir, seçenekler (ekstra shot, şurup, alternatif süt) kendi ürünleriyle
  * (Tutarlılık'la aynı kural, src/lib/site-sales/calc.ts). Gün gün gelmez: dönem hep ayın 1'inde başladığı için ay yeter.
  */
@@ -123,7 +126,7 @@ export interface EstimateOnlineMonth {
   through: string;
   /** Kasadan geçmeyen kafe siparişi */
   orders: number;
-  /** Kasada ödenen ya da panelden elle girilen online sipariş: LafPOS'un gün sonunda, burada düşülmez */
+  /** Kasada ödenen ya da panelden elle girilen online sipariş: AsilPOS'un gün sonunda, burada düşülmez */
   tillOrders: number;
   /** Ürüne eşlenmiş satırlar ve seçenekler; menüye bağlı değilse ya da seçeneğin ürünü yoksa productId null */
   lines: readonly { productId: number | null; name: string; qty: number }[];
@@ -139,9 +142,9 @@ export interface EstimateRecipeItem {
 export interface StockEstimateInput {
   /** İş günü (YYYY-MM-DD, 05:00 kuralı) */
   today: string;
-  /** LafPOS satışlarının sayıldığı ilk gün (lafposSalesCountFrom); null: geçiş günü yok, tahmin yok */
-  lafposFrom: string | null;
-  /** Şubenin gelen LafPOS gün sonları */
+  /** AsilPOS satışlarının sayıldığı ilk gün (asilposSalesCountFrom); null: geçiş günü yok, tahmin yok */
+  asilposFrom: string | null;
+  /** Şubenin gelen AsilPOS gün sonları */
   receivedDays: readonly string[];
   /** Şubenin kapalı işaretli günleri (gün sonu gelmeyen gün sayılırken düşülür) */
   closedDays?: readonly string[];
@@ -150,7 +153,7 @@ export interface StockEstimateInput {
   purchases: readonly EstimatePurchase[];
   sales: readonly EstimateSale[];
   panelWaste: readonly EstimatePanelWaste[];
-  lafposWaste: readonly EstimateLafposWaste[];
+  asilposWaste: readonly EstimateAsilposWaste[];
   /**
    * Şubenin online siparişleri ay ay; null ya da verilmezse site bağlantısı yok: düşülmez, uyarı da çıkmaz. Gereken ama
    * kaydı olmayan ay "çekilmedi" sayılır (`online.missingMonths`)
@@ -172,10 +175,10 @@ export interface StockEstimateInput {
 // ---------------------------------------------------------------- Çıktı
 
 /**
- * Malzemenin durumu: `tahmin` hesaplandı; `sayim-yok` şubede bitmiş bir ayda hiç sayılmadı; `lafpos-oncesi` son
- * sayımdan sonraki dönem LafPOS'un sayıldığı ilk günden önce başlıyor (o günlerin satışı gün gün bilinmiyor)
+ * Malzemenin durumu: `tahmin` hesaplandı; `sayim-yok` şubede bitmiş bir ayda hiç sayılmadı; `asilpos-oncesi` son
+ * sayımdan sonraki dönem AsilPOS'un sayıldığı ilk günden önce başlıyor (o günlerin satışı gün gün bilinmiyor)
  */
-export type EstimateStatus = "tahmin" | "sayim-yok" | "lafpos-oncesi";
+export type EstimateStatus = "tahmin" | "sayim-yok" | "asilpos-oncesi";
 
 export interface StockEstimateLine {
   ingredientId: number;
@@ -192,7 +195,7 @@ export interface StockEstimateLine {
   counted: number | null;
   purchased: number | null;
   sold: number | null;
-  /** Kasadan geçmeyen online siparişin tüketimi (fire dahil; LafPOS satışından ayrı, çift sayılmaz) */
+  /** Kasadan geçmeyen online siparişin tüketimi (fire dahil; AsilPOS satışından ayrı, çift sayılmaz) */
   online: number | null;
   wasted: number | null;
   estimate: number | null;
@@ -251,7 +254,7 @@ export interface EstimateOnlineSummary {
   orders: number;
   /** Tüketime giren adet (ürüne bağlı, reçetesi olan satırlar ve seçenekler) */
   qty: number;
-  /** Kasada ödenen ya da elle girilen online sipariş: LafPOS'un satışında sayıldı, ayrıca düşülmedi */
+  /** Kasada ödenen ya da elle girilen online sipariş: AsilPOS'un satışında sayıldı, ayrıca düşülmedi */
   tillOrders: number;
   /** Panel ürününe bağlı olmayan satırlar ve ürünü olmayan seçenekler (atlandı; Ürünler › Site menüsü'nde bağlanır) */
   unmatched: SkippedRows;
@@ -446,9 +449,9 @@ const add = (m: Map<number, number>, id: number, v: number) => m.set(id, (m.get(
 
 /**
  * Şubenin tahmini stoğu. Her malzeme kendi son sayımından başlar: şubenin o malzemeyi saydığı en son bitmiş ay (süren
- * ayın sayımı ay bitince girer). Dönem sayımın ertesi ayının 1'inden bugüne; dönem LafPOS'un sayıldığı ilk günden önce
- * başlıyorsa tahmin yok (`lafpos-oncesi`). Satış reçeteye göre × (1 + genel fire); zayi ve ikram reçeteden ya da
- * hammadde olarak, fire eklenmeden. Panele girilmiş ürün ikramı LafPOS'un gün sonu gelen gününde sayılmaz (her gün tek
+ * ayın sayımı ay bitince girer). Dönem sayımın ertesi ayının 1'inden bugüne; dönem AsilPOS'un sayıldığı ilk günden önce
+ * başlıyorsa tahmin yok (`asilpos-oncesi`). Satış reçeteye göre × (1 + genel fire); zayi ve ikram reçeteden ya da
+ * hammadde olarak, fire eklenmeden. Panele girilmiş ürün ikramı AsilPOS'un gün sonu gelen gününde sayılmaz (her gün tek
  * kaynak, panelWasteCounts). Ürüne bağlı olmayan ve reçetesi boş ürünün satırları atlanır ve sayılır; hizmet satırı
  * (karaoke) sayılmaz. Kasadan geçmeyen online sipariş satış gibi × (1 + genel fire) ayrıca düşülür.
  *
@@ -457,9 +460,10 @@ const add = (m: Map<number, number>, id: number, v: number) => m.set(id, (m.get(
  * (tedarik süresi + emniyet günü). En az MIN_AVG_DAYS gün yoksa ikisi de yok.
  */
 export function estimateStock(input: StockEstimateInput): StockEstimate {
-  const { today, lafposFrom } = input;
+  const { today, asilposFrom } = input;
   const running = today.slice(0, 7);
   const received = new Set(input.receivedDays);
+  const receivedKeys = new Set(input.receivedDays.map((d) => tillDayKey(STOCK_ESTIMATE_BRANCH, d)));
 
   // Son sayım: bitmiş ayların en yenisi (malzeme başına)
   const lastCount = new Map<number, EstimateCount>();
@@ -478,7 +482,7 @@ export function estimateStock(input: StockEstimateInput): StockEstimate {
       continue;
     }
     const from = periodStart(c.month);
-    const status: EstimateStatus = lafposFrom !== null && from >= lafposFrom ? "tahmin" : "lafpos-oncesi";
+    const status: EstimateStatus = asilposFrom !== null && from >= asilposFrom ? "tahmin" : "asilpos-oncesi";
     period.set(ing.id, { status, from, count: c });
   }
   const starts = [...period.values()].filter((p) => p.status === "tahmin").map((p) => p.from as string);
@@ -527,7 +531,7 @@ export function estimateStock(input: StockEstimateInput): StockEstimate {
     return true;
   };
 
-  // Satış: LafPOS'un gün sonu satırları
+  // Satış: AsilPOS'un gün sonu satırları
   for (const s of input.sales) {
     if (s.isService) continue;
     if (s.productId !== null && inAvg(s.date)) recent(s.productId, s.qty, recentSold);
@@ -536,9 +540,9 @@ export function estimateStock(input: StockEstimateInput): StockEstimate {
     else if (!consume(s.productId, s.qty, s.date, sold)) noRecipe.add(s.productName ?? s.posName, s.qty);
   }
 
-  // Zayi ve ikram: panel (her gün tek kaynak) ve LafPOS'un gün sonu
+  // Zayi ve ikram: panel (her gün tek kaynak) ve AsilPOS'un gün sonu
   for (const w of input.panelWaste) {
-    if (!panelWasteCounts({ ...w, branchId: STOCK_ESTIMATE_BRANCH }, received, STOCK_ESTIMATE_BRANCH)) continue;
+    if (!panelWasteCounts({ ...w, branchId: STOCK_ESTIMATE_BRANCH }, receivedKeys)) continue;
     if (inAvg(w.date)) {
       if (w.productId !== null) recent(w.productId, w.qty, recentWasted);
       else if (w.ingredientId !== null) add(recentWasted, w.ingredientId, w.qty * w.factor);
@@ -550,7 +554,7 @@ export function estimateStock(input: StockEstimateInput): StockEstimate {
       add(wasted, w.ingredientId, w.qty * w.factor);
     }
   }
-  for (const l of input.lafposWaste) {
+  for (const l of input.asilposWaste) {
     if (l.isService) continue;
     if (l.productId !== null && inAvg(l.date)) recent(l.productId, l.qty, recentWasted);
     if (!inWindow(l.date)) continue;
@@ -560,7 +564,7 @@ export function estimateStock(input: StockEstimateInput): StockEstimate {
 
   // Online sipariş (docs/STOK-TAHMINI.md § 2): yalnız kasadan geçmeyenler, ay ay. Dönem ayın 1'inde başladığı için ay
   // dönemin ayından eski değilse malzemeye düşülür. Kasada ödenen ve elle girilen sipariş kaydın satırlarında yoktur
-  // (LafPOS'un gün sonunda): satışla çift sayılmaz
+  // (AsilPOS'un gün sonunda): satışla çift sayılmaz
   const windowMonth = windowFrom?.slice(0, 7) ?? null;
   const onlineMonths = input.online ? input.online.months.filter((m) => m.month <= running) : [];
   /** Ay başına malzemenin online tüketimi (fire hariç) ve kaydın kapsadığı gün: günlük ortalamanın online payı için */
@@ -654,14 +658,14 @@ export function estimateStock(input: StockEstimateInput): StockEstimate {
   const rest = lines.filter((l) => !l.critical).sort((a, b) => (order.get(a.ingredientId) ?? 0) - (order.get(b.ingredientId) ?? 0));
 
   const days = input.receivedDays.filter(inWindow);
-  const counts: Record<EstimateStatus, number> = { tahmin: 0, "sayim-yok": 0, "lafpos-oncesi": 0 };
+  const counts: Record<EstimateStatus, number> = { tahmin: 0, "sayim-yok": 0, "asilpos-oncesi": 0 };
   for (const l of lines) counts[l.status]++;
   return {
     lines: [...critical, ...rest],
     critical,
     from: windowFrom,
     lastDay: days.length ? days.reduce((a, b) => (b > a ? b : a)) : null,
-    missingDays: missingLafposDays(windowFrom, today, received, input.closedDays ?? [], 62),
+    missingDays: missingAsilposDays(windowFrom, today, received, input.closedDays ?? [], 62),
     unmatched: unmatched.done(),
     noRecipe: noRecipe.done(),
     counts,

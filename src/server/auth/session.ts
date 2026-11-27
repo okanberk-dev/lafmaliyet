@@ -1,5 +1,8 @@
 import { jwtVerify, SignJWT, type JWTPayload } from "jose";
 
+import type { Role } from "@/lib/constants";
+import { isRole } from "@/lib/roles";
+
 // Oturum: imzalı JWT, httpOnly çerezde. proxy.ts (Node runtime) ve sunucu kodu birlikte kullanır.
 
 /** Üretimde çerezler yalnız HTTPS'te gider */
@@ -31,7 +34,7 @@ export function readCookie(jar: { get(name: string): { value: string } | undefin
 export interface SessionPayload extends JWTPayload {
   sub: string;
   name: string;
-  role: "admin" | "staff";
+  role: Role;
   /** Kullanıcının oturum sürümü; veritabanındakiyle aynı değilse oturum geçersiz (eski oturumlarda yok = 1) */
   sv?: number;
   /**
@@ -52,7 +55,7 @@ function secretKey(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
-export async function signSession(payload: { sub: string; name: string; role: "admin" | "staff"; sv: number }) {
+export async function signSession(payload: { sub: string; name: string; role: Role; sv: number }) {
   return new SignJWT({ name: payload.name, role: payload.role, sv: payload.sv, typ: "session" })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(payload.sub)
@@ -66,7 +69,8 @@ export async function verifySession(token: string | undefined): Promise<SessionP
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secretKey(), { algorithms: ["HS256"] });
-    if (!payload.sub || (payload.role !== "admin" && payload.role !== "staff")) return null;
+    // Tanınmayan rol (eski ya da elle yazılmış çerez) oturum sayılmaz
+    if (!payload.sub || !isRole(payload.role)) return null;
     if (payload.typ !== undefined && payload.typ !== "session") return null;
     return payload as SessionPayload;
   } catch {

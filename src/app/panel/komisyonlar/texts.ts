@@ -12,14 +12,14 @@ import { dayAblativeTR, dayLocativeTR, dayMonthTR } from "@/lib/reminders";
 import type { ChannelMonthData } from "./channel-month-dialog";
 
 /**
- * Satışın kaynağı (Satış satırının altında, sönük): yazılan ekstre, LafPOS'un ödemeleri (ModPOS föyünde markası bulunan
- * ödemeler de; markası belirsiz tutar kanala yazılmaz) ya da (LafPOS'tan önceki ayda, grupta tek kanal varken) Z toplamı
+ * Satışın kaynağı (Satış satırının altında, sönük): yazılan ekstre, AsilPOS'un ödemeleri (ModPOS föyünde markası bulunan
+ * ödemeler de; markası belirsiz tutar kanala yazılmaz) ya da (AsilPOS'tan önceki ayda, grupta tek kanal varken) Z toplamı
  */
 export function sourceLabel(sales: Pick<ChannelSales, "source"> & Partial<Pick<ChannelSales, "foy" | "amount">>, kind: ChannelKind): string {
   if (sales.source === "elle") return "Kanalın ekstresinden (elle)";
-  if (sales.source === "lafpos") {
-    if (!sales.foy) return "LafPOS ödemelerinden";
-    return sales.amount !== undefined && sales.amount <= sales.foy ? "ModPOS föyünden" : "LafPOS ödemeleri ve ModPOS föyünden";
+  if (sales.source === "asilpos") {
+    if (!sales.foy) return "AsilPOS ödemelerinden";
+    return sales.amount !== undefined && sales.amount <= sales.foy ? "ModPOS föyünden" : "AsilPOS ödemeleri ve ModPOS föyünden";
   }
   return kind === "meal" ? "Z'deki yemek kartı toplamı (tek kart)" : "Z'deki online (platformlar) toplamı (tek platform)";
 }
@@ -136,13 +136,13 @@ export function openPayoutsSub(o: ReturnType<typeof openPayouts>): { text: strin
 
 /**
  * Z toplamının alt satırı: "31 / 31 gün raporlu", "3 gün rapor yok", "kasa raporları 16 Ekim'de başladı", "kasa raporu
- * yok". LafPOS'un girdiği ayda (geçiş gününden itibaren) günler kasa raporu ya da LafPOS gün sonuyla kayıtlıdır:
- * "30 / 30 gün kayıtlı · LafPOS'tan", "2 gün kayıt yok · 10 Kasım'dan LafPOS"
+ * yok". AsilPOS'un girdiği ayda (geçiş gününden itibaren) günler kasa raporu ya da AsilPOS gün sonuyla kayıtlıdır:
+ * "30 / 30 gün kayıtlı · AsilPOS'tan", "2 gün kayıt yok · 10 Kasım'dan AsilPOS"
  */
-export function tillSub(g: (Pick<GroupMonth, "zTotal" | "reportDays" | "missing" | "partialFrom"> & { closed?: readonly string[]; lafposFrom?: string | null }) | null): string {
+export function tillSub(g: (Pick<GroupMonth, "zTotal" | "reportDays" | "missing" | "partialFrom"> & { closed?: readonly string[]; asilposFrom?: string | null }) | null): string {
   if (!g || g.zTotal === null) return "kasa raporu yok";
-  if (g.lafposFrom) {
-    const from = g.lafposFrom.endsWith("-01") ? "LafPOS'tan" : `${dayAblativeTR(g.lafposFrom)} LafPOS`;
+  if (g.asilposFrom) {
+    const from = g.asilposFrom.endsWith("-01") ? "AsilPOS'tan" : `${dayAblativeTR(g.asilposFrom)} AsilPOS`;
     const closedText = g.closed?.length ? `${g.closed.length} gün kapalı` : null;
     if (g.partialFrom) return `${from} · öncesinin kasa raporu yok`;
     const days = g.missing.length ? `${g.missing.length} gün kayıt yok` : `${g.reportDays} / ${g.reportDays + (g.closed?.length ?? 0)} gün kayıtlı`;
@@ -156,20 +156,20 @@ export function tillSub(g: (Pick<GroupMonth, "zTotal" | "reportDays" | "missing"
 }
 
 /** Platformlar bölümünün satırı: "Z'deki online (platformlar): 0 ₺ · 31 / 31 gün raporlu"; o ay kasa raporu yoksa "Kasa raporu yok" */
-export function platformTillLine(g: (Pick<GroupMonth, "zTotal" | "reportDays" | "missing" | "partialFrom"> & { closed?: readonly string[]; lafposFrom?: string | null }) | null): string {
+export function platformTillLine(g: (Pick<GroupMonth, "zTotal" | "reportDays" | "missing" | "partialFrom"> & { closed?: readonly string[]; asilposFrom?: string | null }) | null): string {
   return g?.zTotal != null ? `Z'deki online (platformlar): ${money(g.zTotal)} · ${tillSub(g)}` : "Kasa raporu yok";
 }
 
 /**
- * Grubun markası belirsiz satırı (LafPOS'un girdiği ayda; GroupMonth.unbranded): hiçbir kanala yazılmayan tutar ve
+ * Grubun markası belirsiz satırı (AsilPOS'un girdiği ayda; GroupMonth.unbranded): hiçbir kanala yazılmayan tutar ve
  * nereden geldiği. Belirsiz tutar yoksa null
  */
 export function unbrandedLine(u: GroupMonth["unbranded"], kind: ChannelKind): string | null {
   if (!u || !(u.amount > 0)) return null;
   const parts = [
-    u.pre > 0 ? `LafPOS'tan önceki günlerin Z'si ${money(u.pre)}` : null,
+    u.pre > 0 ? `AsilPOS'tan önceki günlerin Z'si ${money(u.pre)}` : null,
     u.modpos > 0 ? `ModPOS'ta kalan şubenin Z'si ${money(u.modpos)}` : null,
-    u.loose > 0 ? `LafPOS'ta kanalı seçilmemiş ödeme ${money(u.loose)}` : null,
+    u.loose > 0 ? `AsilPOS'ta kanalı seçilmemiş ödeme ${money(u.loose)}` : null,
     u.fallback > 0 ? `gün sonu gelmemiş günlerin kasa raporu ${money(u.fallback)}` : null,
   ].filter((p): p is string => p !== null);
   const [to, what] = kind === "meal" ? ["karta", "kartın"] : ["platforma", "platformun"];

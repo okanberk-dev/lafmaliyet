@@ -184,7 +184,8 @@ export type PackageSendResult =
 /**
  * Paketi muhasebeci alıcılarına ekli e-postayla gönderir. `trigger` "cron": yalnız gönderim günüyse (autoSendMonth) ve
  * o ay kendiliğinden gönderilmediyse; aynı ayın anahtarıyla (Resend ikinci gönderimi yutar). "manual": istenen ay, her
- * basışta yeniden. Personel ya da pasif hesabın adresi düşer (sabah e-postasıyla aynı kural). Son gönderim ayara yazılır.
+ * basışta yeniden. Personel, müdür ya da pasif hesabın adresi düşer (sabah e-postasıyla aynı kural). Son gönderim ayara
+ * yazılır.
  */
 export async function sendAccountingPackage(
   o: { trigger: "cron"; today: string; opts?: SendOptions } | { trigger: "manual"; month: string; by: { id?: number; name: string }; opts?: SendOptions },
@@ -202,7 +203,7 @@ export async function sendAccountingPackage(
   }
   if (!isEmailConfigured()) return o.trigger === "cron" ? { status: "skip", reason: "nokey" } : { status: "error", error: "E-posta kurulmadı (RESEND_API_KEY)" };
   const { to, dropped } = await sendableRecipients(db, settings.recipients);
-  if (!to.length) return { status: "error", error: "Muhasebeci adreslerinin hepsi personel ya da pasif hesaba ait; e-posta gitmedi" };
+  if (!to.length) return { status: "error", error: "Muhasebeci adreslerinin hepsi personel, müdür ya da pasif hesaba ait; e-posta gitmedi" };
   const now = new Date();
   const [file, notify] = await Promise.all([packageFile(month, now), loadNotifySettings()]);
   const msg = renderPackageMail(file.data, packageSummary(file.data), { auto: o.trigger === "cron" });

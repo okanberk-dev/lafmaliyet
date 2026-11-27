@@ -12,8 +12,8 @@ import { getCurrentUser } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { dailyBranchSalesFrom } from "@/server/data/daily-sales";
-import { loadDayLafposIkram } from "@/server/data/lafpos-ikram";
-import { loadLafposDayEnd, loadLafposZTotals } from "@/server/data/lafpos-day-end";
+import { loadDayAsilposIkram } from "@/server/data/asilpos-ikram";
+import { loadAsilposDayEnd, loadAsilposZTotals } from "@/server/data/asilpos-day-end";
 import { loadSoldOut } from "@/server/data/menu-status";
 import { posPendingSummaries } from "@/server/data/prices";
 import { loadStockEstimate } from "@/server/data/stock-estimate";
@@ -21,13 +21,14 @@ import { loadToday } from "@/server/data/today";
 import { safe } from "@/server/data/today-safe";
 import { loadDueReminders } from "@/server/data/user-reminders";
 import { getDb, schema as s } from "@/server/db";
-import { loadLafposCard, loadLafposSwitchDay } from "@/server/lafpos/status";
+import { loadAsilposCard } from "@/server/asilpos/status";
+import { loadPosTills, loadSwitchDays } from "@/server/pos/tills";
 import { loadShiftWeek, shiftsOn, todayShifts } from "@/server/vardiya/store";
 
 /*
- * Panel asistanının LafPOS ve operasyon okuma araçlarının gerçek okuyucuları (araçlar ve kuralları
+ * Panel asistanının AsilPOS ve operasyon okuma araçlarının gerçek okuyucuları (araçlar ve kuralları
  * src/server/ai/assistant/read-tools.ts; docs/ASISTAN.md). YALNIZ OKUR: buradaki her içe aktarım panelin mevcut okuma
- * işlevidir (tests/asistan-okuma.test.ts izin listesiyle denetler). LafPOS'un yazıcıları (src/server/lafpos/gun-sonu.ts,
+ * işlevidir (tests/asistan-okuma.test.ts izin listesiyle denetler). AsilPOS'un yazıcıları (src/server/asilpos/gun-sonu.ts,
  * ingest.ts, status.ts'in handlePosDay / noteUnverified) içe aktarılmaz. Serbest metinler (ikram ve iptal gerekçesi,
  * vardiya ve hatırlatıcı notu) burada atılır: asistanın aracına hiç gelmez. Okumalar uçta seçili şubeyle
  * (withBranchScope) çalışır; şubeyi parametre alan okuyuculara şube açıkça verilir.
@@ -35,7 +36,7 @@ import { loadShiftWeek, shiftsOn, todayShifts } from "@/server/vardiya/store";
 
 const taskRead = (t: DayTask): TaskRead => ({ title: t.title, status: t.status, ...(t.badge ? { badge: t.badge } : {}), detail: t.detail, href: t.href });
 
-function ikramRead(ik: Awaited<ReturnType<typeof loadDayLafposIkram>>): DayIkramRead | null {
+function ikramRead(ik: Awaited<ReturnType<typeof loadDayAsilposIkram>>): DayIkramRead | null {
   if (!ik || !ik.received) return null;
   return {
     // Gerekçe (reason, detail) ve kişi türü okunmaz
@@ -49,12 +50,12 @@ export const assistantReads: ReadToolDeps = {
     const [scope, rows] = await Promise.all([currentBranchScope(), listBranches()]);
     return { scope, rows };
   },
-  switchDay: () => loadLafposSwitchDay(),
+  switchDays: () => loadSwitchDays(),
   dayEnd: async (date, branchId) => {
-    const [end, ikram] = await Promise.all([loadLafposDayEnd(date, branchId), loadDayLafposIkram(date, getDb(), branchId)]);
+    const [end, ikram] = await Promise.all([loadAsilposDayEnd(date, branchId), loadDayAsilposIkram(date, getDb(), branchId)]);
     return { end, ikram: ikramRead(ikram) };
   },
-  zTotals: (dates, branchId) => loadLafposZTotals(dates, branchId),
+  zTotals: (dates, branchId) => loadAsilposZTotals(dates, branchId),
   dailySales: async (from, to, branchId) => {
     const db = getDb();
     const [rows, products] = await Promise.all([
@@ -67,7 +68,11 @@ export const assistantReads: ReadToolDeps = {
       return { date: r.date, name: p ? productLabel(p) : r.posName, matched: Boolean(p) || r.isService, qty: r.qty, revenue: r.revenue, gross: r.gross, isService: r.isService };
     });
   },
-  lafposCard: () => loadLafposCard(),
+  // Kasanın bölümü (çok şube): seçili şubenin kasası, "Tümü"de ya da kasası ModPOS olan şubede ilk açık kasa
+  asilposCard: async () => {
+    const [scope, { active, ids }] = await Promise.all([currentBranchScope(), loadPosTills()]);
+    return loadAsilposCard(undefined, active.includes(scope) ? scope : (active[0] ?? ids[0]));
+  },
   menu: async () => {
     // Seçimin kasaları (şube kapsamı A3): tek şubede onunki, "Tümü"de birden çok kasa açıkken toplam ve kasa başına
     const [soldOut, tills] = await Promise.all([loadSoldOut(), posPendingSummaries()]);

@@ -26,6 +26,7 @@ import {
 } from "@/lib/count-item";
 import { dateTR } from "@/lib/format";
 import { UserError, zMonth, zOptText, zText } from "@/server/actions/util";
+import { adminLevel } from "@/lib/roles";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentPhysicalBranch } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
@@ -119,7 +120,7 @@ export interface CreatedCountItem extends CountItemRef {
  */
 export async function createCountItem(me: CurrentUser, data: CountItemInput, source: CountItemSource = "sayim"): Promise<CreatedCountItem> {
   const m = data.month;
-  const monthIssue = staffCountIssue(me.role, m);
+  const monthIssue = staffCountIssue(adminLevel(me.role), m);
   if (monthIssue) throw new UserError(monthIssue);
   const unit = BASE_UNIT[data.countUnit];
   if (!countUnitsFor(unit).includes(data.countUnit)) throw new UserError("Sayım birimini seçin");
@@ -151,7 +152,7 @@ export async function createCountItem(me: CurrentUser, data: CountItemInput, sou
     if (dup) {
       // Adlar benzersiz (ad sütununun dizini): eşleşen kayıt tektir
       const row = rows.find((r) => r.name === dup.name);
-      throw new CountItemExists(duplicateMessage(dup, me.role), {
+      throw new CountItemExists(duplicateMessage(dup, adminLevel(me.role)), {
         id: row?.id ?? 0,
         name: dup.name,
         unit: row?.unit ?? "",
@@ -161,7 +162,7 @@ export async function createCountItem(me: CurrentUser, data: CountItemInput, sou
       });
     }
     if (!rows.some((r) => r.countGroup === data.group)) throw new UserError("Bu sayım grubu bulunamadı; sayfayı yenileyin");
-    const note = countItemNote(me.name, dateTR(todayTR()), { pricedBy: data.packagePrice !== null ? me.role : null, source });
+    const note = countItemNote(me.name, dateTR(todayTR()), { pricedBy: data.packagePrice !== null ? adminLevel(me.role) : null, source });
     // Personelin yazdığı fiş fiyatı KDV dahil: hammaddeye KDV hariç yazılır (netPackagePrice)
     const values = newCountItemValues(data, rows, from, note, { priceIncludesVat: me.role !== "admin" });
     const [row] = await tx

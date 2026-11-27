@@ -14,7 +14,7 @@ import type { ExpenseCategory, ExpenseEntry, FixedExpense, FixedSection, Invoice
 import { COMMISSION_CATEGORY, FIXED_ESTIMATE_DESCRIPTION, fixedVatRate, GOODS_CATEGORIES, MANUAL_PNL_ROWS, SEPARATE_CATEGORIES } from "../constants";
 import { GOODS_PART, invoiceParts, splittable } from "../invoice-split";
 import { money, tl } from "../format";
-import { monthSource } from "../lafpos/switch";
+import { monthSource } from "../asilpos/switch";
 import { monthEnd } from "../reminders";
 
 import { allocatedByInvoice, ASSET_CATEGORY, assetCandidates, assetTotals, type TaxAsset } from "./assets";
@@ -140,7 +140,7 @@ export interface TaxPnlInput {
   /** Sayılan aylar ve ay sonu stoğu (elle girilen devreden dahil) */
   counts: ReadonlyMap<string, number>;
   payroll: ReadonlyMap<string, PayrollMonth>;
-  /** LafPOS'a geçiş günü (yönetim verisinin rozeti: ModPOS / LafPOS) */
+  /** AsilPOS'a geçiş günü (yönetim verisinin rozeti: ModPOS / AsilPOS) */
   switchDay: string | null;
 }
 
@@ -239,7 +239,7 @@ export function managementBadge(month: string, switchDay: string | null): string
 
 function kasaLabel(month: string, switchDay: string | null): string {
   const s = monthSource(month, switchDay);
-  return s === "lafpos" ? "LafPOS" : s === "gecis" ? "ModPOS ve LafPOS" : "ModPOS";
+  return s === "asilpos" ? "AsilPOS" : s === "gecis" ? "ModPOS ve AsilPOS" : "ModPOS";
 }
 
 export const EXCLUDE_REASON_TEXT: Record<Exclude<ExcludeReason, null>, string> & { none: string } = {
@@ -349,7 +349,7 @@ export function taxPnlInputFromModel(
     zMonths: extras.zMonths,
     counts,
     payroll,
-    switchDay: st.lafposGecisGunu ?? null,
+    switchDay: st.asilposGecisGunu ?? null,
   };
 }
 

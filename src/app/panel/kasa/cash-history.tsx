@@ -29,11 +29,11 @@ import {
 import type { ModposDayView } from "@/lib/cash-modpos";
 import { money } from "@/lib/format";
 import { cardDiffLabel, reportFlags } from "@/lib/cash-attention";
+import type { SheetCashOutRow } from "@/lib/cash-outs";
 import { okcHasFigures } from "@/lib/okc-z";
 import { longDateTR } from "@/lib/reminders";
 import { deleteCashReport, resendCashReportEmail } from "@/server/actions/cash-report";
 import type { PhotoDiff } from "@/lib/photo-read/kasa";
-import type { CashOutDTO } from "@/server/data/cash-outs";
 import type { CashPhotoDTO } from "@/server/data/cash-photos";
 import type { CashReportDTO } from "@/server/data/cash-reports";
 
@@ -49,10 +49,10 @@ export type CashHistoryPhotos = Record<
     suspicious: PhotoDiff[];
     extras: CashReportExtras;
     /**
-     * LafPOS gününün otomatik raporunda gün sonu fotoğrafı (gün sonu tam): LafPOS'tan farklı, bekleniyor, okunamadı ya da
+     * AsilPOS gününün otomatik raporunda gün sonu fotoğrafı (gün sonu tam): AsilPOS'tan farklı, bekleniyor, okunamadı ya da
      * kodla okunup güvenle seçilmedi (yönetici baksın)
      */
-    lafposPhoto?: "fark" | "bekliyor" | "okunamadi" | "bakin" | null;
+    asilposPhoto?: "fark" | "bekliyor" | "okunamadi" | "bakin" | null;
   }
 >;
 
@@ -96,7 +96,10 @@ export function CashHistory({
   okcFirst = null,
   okcLine = null,
   branch = null,
+  readOnly = false,
 }: {
+  /** Salt okunur (muhasebeci, docs/ROLLER.md): Sil, Düzenle ve e-postayı yeniden gönder yok */
+  readOnly?: boolean;
   monthLabel: string;
   prevHref: string | null;
   nextHref: string | null;
@@ -104,8 +107,8 @@ export function CashHistory({
   totals: CashMonthTotals;
   whatsappPhone: string | null;
   photos?: CashHistoryPhotos;
-  /** Günlerin kasadan çıkanları (tarihe göre) */
-  cashOuts?: Record<string, CashOutDTO[]>;
+  /** Günlerin kasadan çıkanları (tarihe göre): yalnız adı, tutarı ve fişi (sheetCashOutsByDate; kategori adı gelmez) */
+  cashOuts?: Record<string, SheetCashOutRow[]>;
   /** Açılışı önceki devirle tutmayan raporlar (denetlenen raporun gününe göre; sonraki ayın ilk raporu dahil) */
   carry?: Record<string, CarryCheck>;
   /** Raporların önceki sürümleri (rapor kimliğine göre) */
@@ -303,11 +306,11 @@ export function CashHistory({
                     {photos[report.id]?.photos.length ? <Camera size={14} className="text-ink-mute" aria-label="Fotoğraflı" role="img" /> : null}
                     {lateApproved[report.id] ? <Badge tone="gray">Geç girildi</Badge> : null}
                     {photos[report.id]?.suspicious.length ? <Badge tone="amber">Fotoğraftan farklı</Badge> : null}
-                    {photos[report.id]?.extras.lafposDiffs?.length ? <Badge tone="amber">LafPOS&apos;tan farklı</Badge> : null}
-                    {photos[report.id]?.lafposPhoto === "fark" ? <Badge tone="amber">Fiş LafPOS&apos;tan farklı</Badge> : null}
-                    {photos[report.id]?.lafposPhoto === "okunamadi" ? <Badge tone="amber">Gün sonu fotoğrafı okunamadı</Badge> : null}
-                    {photos[report.id]?.lafposPhoto === "bakin" ? <Badge tone="amber">Gün sonu fotoğrafına bakın</Badge> : null}
-                    {photos[report.id]?.lafposPhoto === "bekliyor" ? <Badge tone="gray">Gün sonu fotoğrafı yok</Badge> : null}
+                    {photos[report.id]?.extras.asilposDiffs?.length ? <Badge tone="amber">AsilPOS&apos;tan farklı</Badge> : null}
+                    {photos[report.id]?.asilposPhoto === "fark" ? <Badge tone="amber">Fiş AsilPOS&apos;tan farklı</Badge> : null}
+                    {photos[report.id]?.asilposPhoto === "okunamadi" ? <Badge tone="amber">Gün sonu fotoğrafı okunamadı</Badge> : null}
+                    {photos[report.id]?.asilposPhoto === "bakin" ? <Badge tone="amber">Gün sonu fotoğrafına bakın</Badge> : null}
+                    {photos[report.id]?.asilposPhoto === "bekliyor" ? <Badge tone="gray">Gün sonu fotoğrafı yok</Badge> : null}
                     {modposDays[date]?.diffs.length ? <Badge tone="amber">ModPOS API&apos;den farklı</Badge> : null}
                     {carry[report.date] ? <Badge tone="amber">Açılış devirden farklı</Badge> : null}
                     {lateEdited(report) ? <Badge tone="amber">Ertesi gün düzeltildi</Badge> : null}
@@ -337,20 +340,22 @@ export function CashHistory({
         description={open ? `${longDateTR(open.date)} · ${whoOf(open)}${open.revision > 1 ? ` · ${open.revision - 1} kez düzeltildi` : ""}` : undefined}
         size="lg"
         footerStart={
-          <Button variant="ghost" onClick={() => setConfirmDelete(true)} disabled={pending} className="text-bad">
-            <Trash2 size={15} /> Sil
-          </Button>
+          readOnly ? undefined : (
+            <Button variant="ghost" onClick={() => setConfirmDelete(true)} disabled={pending} className="text-bad">
+              <Trash2 size={15} /> Sil
+            </Button>
+          )
         }
         footer={
           <>
-            {open?.emailStatus === "failed" ? (
+            {open?.emailStatus === "failed" && !readOnly ? (
               <Button variant="secondary" onClick={resend} disabled={pending}>
                 <RotateCw size={15} /> E-postayı yeniden gönder
               </Button>
             ) : null}
             {open ? (
               <ButtonLink href={dayHref(open.date)} variant="secondary">
-                <Pencil size={15} /> Düzenle
+                {readOnly ? null : <Pencil size={15} />} {readOnly ? "Günü aç" : "Düzenle"}
               </ButtonLink>
             ) : null}
             {wa ? (
@@ -372,7 +377,7 @@ export function CashHistory({
             carry={openCarry}
             next={openNext}
             modposDiffs={modposDays[open.date]?.diffs}
-            lafposDiffs={openPhotos?.extras.lafposDiffs}
+            asilposDiffs={openPhotos?.extras.asilposDiffs}
             unreceipted={openPhotos?.extras.unreceipted ?? null}
             photos={openPhotos?.photos ?? []}
             photoDiffs={openPhotos?.diffs ?? []}

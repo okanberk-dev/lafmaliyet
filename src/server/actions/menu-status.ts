@@ -4,7 +4,8 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { SITE_MENU_ID } from "@/lib/site-menu/schema";
-import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireAdmin, requireCan } from "@/server/auth/dal";
 import { holdSoldOutCore, setSoldOutCore } from "@/server/site-menu/sold-out-core";
 
 import { attempt } from "./util";
@@ -21,7 +22,7 @@ const zHold = z.object({ siteMenuId: zSiteMenuId });
 /** Biten ürünü sitede, uygulamada ve QR menüde "Tükendi" yapar ya da satışa açar (personel ve yönetici; onaysız) */
 export async function setSoldOut(input: z.input<typeof zSet>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const data = zSet.parse(input);
     const r = await setSoldOutCore({ id: me.id, name: me.name, role: me.role }, data);
     refresh();
@@ -34,7 +35,7 @@ export async function holdSoldOut(input: z.input<typeof zHold>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const data = zHold.parse(input);
-    const r = await holdSoldOutCore({ id: me.id, name: me.name, role: me.role }, data);
+    const r = await holdSoldOutCore({ id: me.id, name: me.name, role: "admin" }, data);
     refresh();
     return { changed: r.changed, message: r.message, name: r.name };
   });

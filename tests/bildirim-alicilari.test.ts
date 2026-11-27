@@ -70,7 +70,7 @@ test("liste gidecek ve düşen adreslere ayrılır: sıra korunur, büyük-küç
   assert.deepEqual(splitByBlocked([], blocked), { to: [], dropped: [] });
   assert.equal(emailKey("  Ali@Ornek.COM "), "ali@ornek.com");
   assert.equal(droppedListText(out.dropped), "Ayse@Laffogato.net (personel hesabı), eski@laffogato.net (pasif hesap)");
-  assert.equal(droppedLogSuffix(out.dropped), " · 2 adres atlandı (personel ya da pasif hesap)");
+  assert.equal(droppedLogSuffix(out.dropped), " · 2 adres atlandı (personel, müdür ya da pasif hesap)");
   assert.equal(droppedLogSuffix([]), "");
 });
 
@@ -85,6 +85,12 @@ test("kaydederken ret metni: adresi adıyla söyler; personelde nedeni listeye g
     "eski@laffogato.net pasif bir hesabın adresi; pasif hesaba e-posta gitmez. Hesabı Kullanıcılar'dan silerseniz adres alıcı olabilir.",
   );
   assert.equal(PROFILE_LIST_REFUSAL, "Bu adres giriş e-postanız olamaz; başka bir adres yazın ya da yöneticiye sorun.");
+  // Muhasebeci paketi: müdür paketi panelde de görmez, "kasa raporunu görür" demez
+  assert.equal(
+    recipientRefusal("package", { email: "mudur@laffogato.net", reason: "manager" }),
+    "mudur@laffogato.net bir müdür hesabının adresi; muhasebeci paketinde bütün şubelerin faturaları, alış fiyatları, maaş ve kira harcamaları ve sabit giderleri var. Yöneticinin ya da muhasebecinin adresini girin.",
+  );
+  assert.match(recipientRefusal("cash", { email: "mudur@laffogato.net", reason: "manager" }), /Müdür kasa raporunu panelde görür; yöneticinin ya da muhasebecinin adresini girin\.$/);
 });
 
 test("Kullanıcılar uyarısı: personele indirilen ya da pasif yapılan hesabın adresi listede", () => {
@@ -93,6 +99,10 @@ test("Kullanıcılar uyarısı: personele indirilen ya da pasif yapılan hesabı
     "Mehmet (mehmet@laffogato.net) kasa raporu alıcıları ve sabah e-postasının bildirim adresleri arasında; pasif hesaba bu e-posta gitmez. Gerekmiyorsa listeden kaldırın.",
   );
   assert.match(userListNotice({ name: "Ayşe", email: "a@b.co" }, "staff", ["digest"]), /^Ayşe \(a@b\.co\) sabah e-postasının bildirim adresleri arasında; personel hesabına bu e-posta gitmez\./);
+  assert.equal(
+    userListNotice({ name: "Veli", email: "v@b.co" }, "manager", ["cash", "digest", "package"]),
+    "Veli (v@b.co) kasa raporu alıcıları, sabah e-postasının bildirim adresleri ve muhasebeci paketinin alıcıları arasında; müdür hesabına bu e-posta gitmez. Gerekmiyorsa listeden kaldırın.",
+  );
 });
 
 test("eski adres listede kaldı (yeni giriş e-postası, silinen hesap): artık hesabı yok, e-posta gider; personelin ret metni", () => {
@@ -109,10 +119,10 @@ test("eski adres listede kaldı (yeni giriş e-postası, silinen hesap): artık 
 
 test("bütün adresler düştü: tek cümle, iç içe parantez yok", () => {
   const dropped = [{ email: "ayse@laffogato.net", reason: "staff" as const }];
-  assert.equal(allDroppedSentence("Alıcıların", dropped), "Alıcıların hepsi personel ya da pasif hesaba ait: ayse@laffogato.net (personel hesabı).");
+  assert.equal(allDroppedSentence("Alıcıların", dropped), "Alıcıların hepsi personel, müdür ya da pasif hesaba ait: ayse@laffogato.net (personel hesabı).");
   assert.equal(
     allDroppedSentence("Etkin bildirim adreslerinin", [...dropped, { email: "eski@laffogato.net", reason: "inactive" }]),
-    "Etkin bildirim adreslerinin hepsi personel ya da pasif hesaba ait: ayse@laffogato.net (personel hesabı), eski@laffogato.net (pasif hesap).",
+    "Etkin bildirim adreslerinin hepsi personel, müdür ya da pasif hesaba ait: ayse@laffogato.net (personel hesabı), eski@laffogato.net (pasif hesap).",
   );
 });
 
@@ -129,6 +139,9 @@ test("zil satırı: listeye göre başlık, adresler ve nedenleri, ayarın adres
   assert.equal(two.title, "Sabah e-postası 2 adrese gitmiyor");
   assert.equal(two.href, "/panel/hatirlaticilar#e-posta-bildirimleri");
   assert.match(two.body, /Hatırlatıcılar › E-posta bildirimleri'nden kaldırın/);
+  const pkg = blockedBell("package", [{ email: "v@b.co", reason: "manager" }]);
+  assert.deepEqual([pkg.title, pkg.href, pkg.id], ["Muhasebeci paketi bir adrese gitmiyor", "/panel/ayarlar#muhasebe", "alici-package-v@b.co:manager"]);
+  assert.match(pkg.body, /^v@b\.co \(müdür hesabı\): .* Adresi Ayarlar › Muhasebeci paketi'nden kaldırın/);
   // Neden değişince (personel → pasif) yeniden okunmamış olur
   assert.notEqual(blockedBell("cash", [{ email: "a@b.co", reason: "inactive" }]).id, blockedBell("cash", [{ email: "a@b.co", reason: "staff" }]).id);
 });
@@ -301,6 +314,9 @@ test("kasa e-postası: personel nedenini (Resend anahtarı, alıcılar) görmez;
   const raw = "E-posta kurulmamış (RESEND_API_KEY); rapor kaydedildi, WhatsApp ile gönderebilirsiniz.";
   assert.equal(emailErrorFor("admin", raw), raw);
   assert.equal(emailErrorFor("staff", raw), STAFF_EMAIL_ERROR);
+  // Rakamları gören müdür ve muhasebeci de nedeni görmez (bulgu 9): ham metin yalnız yöneticiye
+  assert.equal(emailErrorFor("manager", raw), STAFF_EMAIL_ERROR);
+  assert.equal(emailErrorFor("accountant", raw), STAFF_EMAIL_ERROR);
   assert.equal(emailErrorFor("staff", null), null);
   assert.doesNotMatch(STAFF_EMAIL_ERROR, SETUP_DETAIL);
   assert.equal(emailFailedLine(STAFF_EMAIL_ERROR), STAFF_EMAIL_ERROR, "personelin satırı tekrar etmez");
@@ -310,7 +326,8 @@ test("kasa e-postası: personel nedenini (Resend anahtarı, alıcılar) görmez;
   assert.match(fnBody(actions, "submitCashReport"), /email: outcomeFor\(me\.role, email\),/);
   assert.match(fnBody(actions, "resendCashReportEmail"), /return outcomeFor\(me\.role, email\);/);
   assert.match(actions, /^const outcomeFor = /m, "dışa açılmaz");
-  // Kayıtlı raporun DTO'su: personelinki sabit metin (sayfa, son 7 gün)
-  assert.match(read("src/server/data/cash-reports.ts"), /emailError: emailErrorFor\(audience, r\.emailError\),/);
+  // Kayıtlı raporun DTO'su: DTO'nun düzeyine değil okuyanın gerçek rolüne bakar, rol verilmezse sabit metin (bulgu 9;
+  // davranışı tests/roller-db.test.ts ve tests/bildirim-alicilari-db.test.ts)
+  assert.match(read("src/server/data/cash-reports.ts"), /emailError: emailErrorFor\(viewer \?\? "staff", r\.emailError\),/);
   assert.match(read("src/app/panel/kasa/cash-form.tsx"), /text: emailFailedLine\(error\)/);
 });

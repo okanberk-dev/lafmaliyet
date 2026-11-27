@@ -19,7 +19,7 @@ import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { ALL_BRANCHES } from "@/lib/branches";
 import { alerts, consistency, listDaysText, type Alert } from "@/lib/calc/insights";
 import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
-import { monthKasa, type MonthKasa } from "@/lib/lafpos/kasa";
+import { monthKasa, type MonthKasa } from "@/lib/asilpos/kasa";
 import { HOLDS_HREF } from "@/lib/price-hold";
 import { salesSourceOf } from "@/lib/sales-source";
 import { sizeLabel } from "@/lib/site-sales/calc";
@@ -90,11 +90,11 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
   const c = consistency(model, month);
   const autos = alerts(model, month);
   const st = model.settings;
-  // Ayın kasası (metinler; geçiş günü boşken ve öncesinde "ModPOS", sonra "LafPOS"; denetim E-39)
-  const mk = monthKasa(month, st.lafposGecisGunu);
+  // Ayın kasası (metinler; geçiş günü boşken ve öncesinde "ModPOS", sonra "AsilPOS"; denetim E-39)
+  const mk = monthKasa(month, st.asilposGecisGunu);
   const ml = monthLabel(month);
   // Ayın satış kaynağı (docs/planlar/ux-sade.md §10): "yükleyin" yalnız elle yüklenen ayda
-  const source = salesSourceOf(month, st.lafposGecisGunu, model.ds.lafposSales);
+  const source = salesSourceOf(month, st.asilposGecisGunu, model.ds.asilposSales);
 
   const listDays = c.sales.listPeriod ? listDaysText(c.sales.listPeriod) : null;
   const salesRows: { label: string; value: string; note?: string; strong?: boolean }[] = [
@@ -106,7 +106,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
       note:
         [
           listDays ? `${listDays} kasa raporları: satış listesi bu günleri kapsıyor` : null,
-          c.sales.lafposLines ? "Yalnız ModPOS listesinin günleri: LafPOS satırları indirimden sonradır, indirimi bir daha düşülmez" : null,
+          c.sales.asilposLines ? "Yalnız ModPOS listesinin günleri: AsilPOS satırları indirimden sonradır, indirimi bir daha düşülmez" : null,
         ]
           .filter(Boolean)
           .join(". ") || undefined,
@@ -264,7 +264,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
                   <Link href={`/panel/zayi?ay=${month}`} className="-my-3 block py-3 font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
                     {c.hasStockComparison
                       ? `Kayıtlı zayi + ikram ${tl(c.totalRecorded)} · açıklanamayan ${tl(c.totalUnexplained)}`
-                      : `Kayıtlı zayi ${num(c.waste.zayi.count)}${c.waste.zayi.lafpos ? ` (${num(c.waste.zayi.lafpos)} LafPOS'tan)` : ""} · ikram ${num(c.waste.ikram.count)}${c.waste.ikram.lafpos ? ` (${num(c.waste.ikram.lafpos)} LafPOS'tan)` : ""}`}
+                      : `Kayıtlı zayi ${num(c.waste.zayi.count)}${c.waste.zayi.asilpos ? ` (${num(c.waste.zayi.asilpos)} AsilPOS'tan)` : ""} · ikram ${num(c.waste.ikram.count)}${c.waste.ikram.asilpos ? ` (${num(c.waste.ikram.asilpos)} AsilPOS'tan)` : ""}`}
                   </Link>
                 ) : null}
               </>

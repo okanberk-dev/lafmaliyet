@@ -9,12 +9,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { ESKI_KASA_KAYNAGI } from "../src/lib/asilpos/eski-adlar";
+
 import {
   ALL_BRANCHES,
+  BRANCH_EMAIL_TAKEN,
   BRANCH_KINDS,
   BRANCH_POS_SOURCES,
   branchChangeError,
   branchDeleteError,
+  branchEmailTaken,
   branchIdError,
   branchScopeIds,
   branchScopeLabel,
@@ -52,8 +56,8 @@ test("tohum: Tuzla, Marina ve laffogato.net; sabitler listede", () => {
   const online = DEFAULT_BRANCHES.find((b) => b.id === ONLINE_BRANCH_ID)!;
   assert.equal(online.kind, "online");
   assert.equal(online.posSource, "yok");
-  // Marina ModPOS kullanır (sahibin kararı, 4 Kasım 2026)
-  assert.equal(DEFAULT_BRANCHES.find((b) => b.id === "marina")!.posSource, "modpos");
+  // Marina'nın kasası AsilPOS (sahibin kararı, 27 Kasım 2026: Marina'da ModPOS tamamen bitti)
+  assert.equal(DEFAULT_BRANCHES.find((b) => b.id === "marina")!.posSource, "asilpos");
   // Her tohum kaydı kendi kurallarını geçmeli
   for (const b of DEFAULT_BRANCHES) {
     assert.equal(branchIdError(b.id), null, b.id);
@@ -84,7 +88,7 @@ test("kimlik önerisi: Türkçe harfler sadeleşir, boşluk tireye döner", () =
 
 test("tür ↔ kasa kaynağı: online kanalın kasası olmaz, şube kasasız kalmaz", () => {
   assert.equal(branchSourceError("fiziksel", "modpos"), null);
-  assert.equal(branchSourceError("fiziksel", "lafpos"), null);
+  assert.equal(branchSourceError("fiziksel", "asilpos"), null);
   assert.equal(branchSourceError("online", "yok"), null);
   assert.notEqual(branchSourceError("online", "modpos"), null);
   assert.notEqual(branchSourceError("fiziksel", "yok"), null);
@@ -93,7 +97,9 @@ test("tür ↔ kasa kaynağı: online kanalın kasası olmaz, şube kasasız kal
 test("0053_subeler.sql CHECK kuralları saf işlevlerle aynı şeyi söyler", () => {
   const sql = readFileSync(join(process.cwd(), "drizzle/0053_subeler.sql"), "utf8");
   for (const k of BRANCH_KINDS) assert.ok(sql.includes(`'${k}'`), k);
-  for (const p of BRANCH_POS_SOURCES) assert.ok(sql.includes(`'${p}'`), p);
+  // Kasa kaynağının değeri veritabanında eski adla (ESKI_KASA_KAYNAGI; şemanın sütunu çevirir), yeni ad 0098'de eklendi
+  for (const p of BRANCH_POS_SOURCES) assert.ok(sql.includes(`'${p === "asilpos" ? ESKI_KASA_KAYNAGI : p}'`), p);
+  assert.ok(readFileSync(join(process.cwd(), "drizzle/0098_asilpos_adi.sql"), "utf8").includes(`'${ESKI_KASA_KAYNAGI}','asilpos'`));
   assert.ok(sql.includes("branches_source_kind_ck"), "tür ↔ kaynak kuralı şemada da olmalı");
 });
 
@@ -107,7 +113,7 @@ test("sabit kayıtlar: Tuzla ve laffogato.net kapatılamaz, türü değişmez, s
 });
 
 test("sıradan şube: kapatılabilir, güncellenebilir; son açık şube kapatılamaz", () => {
-  assert.equal(branchChangeError(MARINA, { kind: "fiziksel", posSource: "lafpos", active: true }, [TUZLA, ONLINE]), null);
+  assert.equal(branchChangeError(MARINA, { kind: "fiziksel", posSource: "asilpos", active: true }, [TUZLA, ONLINE]), null);
   assert.equal(branchChangeError(MARINA, { kind: "fiziksel", posSource: "modpos", active: false }, [TUZLA, ONLINE]), null);
   // Tuzla da kapalıysa Marina son açık şubedir: kapatılamaz
   const tuzlaKapali = { ...TUZLA, active: false };
@@ -126,6 +132,27 @@ test("silme: yalnız kaydı olmayan sıradan şube silinir", () => {
   assert.equal(branchDeleteError(MARINA, 0), null);
   assert.notEqual(branchDeleteError(MARINA, 1), null);
   assert.match(branchDeleteError(MARINA, 12) ?? "", /12/);
+});
+
+test("şube kurulumu e-postası: yalnız şubesiz ya da bu şubedeki personel hesabı kabul edilir", () => {
+  // Kurulum bağlantısı adresin hesabına gider ve kasanın eşitleme anahtarını verir (docs/ASILPOS.md › Şube kurulumu)
+  const hesap = (role: string, branchId: string | null) => ({ role, branchId });
+  assert.equal(branchEmailTaken(null, "marina"), false, "adres boşta");
+  assert.equal(branchEmailTaken(undefined, "marina"), false, "adres boşta");
+  assert.equal(branchEmailTaken(hesap("staff", null), "marina"), false, "şubesiz personel");
+  assert.equal(branchEmailTaken(hesap("staff", "marina"), "marina"), false, "bu şubenin personeli");
+  assert.equal(branchEmailTaken(hesap("staff", "tuzla"), "marina"), true, "öteki şubenin personeli");
+  assert.equal(branchEmailTaken(hesap("admin", null), "marina"), true, "yönetici");
+  assert.equal(branchEmailTaken(hesap("admin", "marina"), "marina"), true, "şubeli yönetici");
+  // Eski denetim (yalnız yönetici ve öteki şube) bunları geçiriyordu
+  assert.equal(branchEmailTaken(hesap("manager", "marina"), "marina"), true, "bu şubenin müdürü");
+  assert.equal(branchEmailTaken(hesap("manager", "tuzla"), "marina"), true, "öteki şubenin müdürü");
+  assert.equal(branchEmailTaken(hesap("manager", null), "marina"), true, "şubesiz müdür");
+  assert.equal(branchEmailTaken(hesap("accountant", null), "marina"), true, "muhasebeci");
+  assert.equal(branchEmailTaken(hesap("accountant", "marina"), "marina"), true, "şube yazılmış muhasebeci");
+  // Varsayılan kapalı: tanınmayan rol de reddedilir
+  assert.equal(branchEmailTaken(hesap("patron", null), "marina"), true, "tanınmayan rol");
+  assert.match(BRANCH_EMAIL_TAKEN, /başka bir hesapta/);
 });
 
 test("süzgeç: tanınmayan, kapalı ve boş değer “hepsi”ye düşer", () => {

@@ -1,6 +1,6 @@
 import { diffKind } from "@/lib/cash-report";
 import { money, num } from "@/lib/format";
-import { dayMonthYearTR } from "@/lib/lafpos/switch";
+import { dayMonthYearTR } from "@/lib/asilpos/switch";
 
 import type { ModposDayResult, ModposTone } from "./status";
 import { finalAfter, type ModposZ } from "./z";

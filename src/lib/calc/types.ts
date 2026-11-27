@@ -5,8 +5,9 @@
 import type { SiteSalesMonth } from "../site-sales/schema";
 import type { TaxDoc, Withholding } from "../tax/rules";
 
-import type { LafposIkramData } from "../lafpos/ikram";
-import type { LafposWorked } from "../lafpos/personel";
+import type { AsilposIkramData } from "../asilpos/ikram";
+import type { AsilposWorked } from "../asilpos/personel";
+import type { PosFroms, SwitchDays } from "../pos/tills";
 
 import type { PurchaseLot } from "./fifo";
 
@@ -72,10 +73,10 @@ export interface Settings {
    */
   stokFifoBaslangic: string | null;
   /**
-   * LafPOS'a geçiş günü (iş günü, YYYY-MM-DD): bu günden itibaren kasanın kaynağı LafPOS. null = kasa ModPOS, LafPOS'un
-   * gönderdiği günler saklanır ama hiçbir hesaba girmez. Okuyanlar src/lib/lafpos/switch.ts'ten geçer; docs/LAFPOS.md
+   * AsilPOS'a geçiş günü (iş günü, YYYY-MM-DD): bu günden itibaren kasanın kaynağı AsilPOS. null = kasa ModPOS, AsilPOS'un
+   * gönderdiği günler saklanır ama hiçbir hesaba girmez. Okuyanlar src/lib/asilpos/switch.ts'ten geçer; docs/ASILPOS.md
    */
-  lafposGecisGunu: string | null;
+  asilposGecisGunu: string | null;
 }
 
 export interface Ingredient {
@@ -165,11 +166,11 @@ export interface TillMonth {
   discounts: number | null;
   discountDays: number;
   /**
-   * İndirimin LafPOS günlerindeki kısmı (LafPOS'un şubesinin, LafPOS satışlarının sayıldığı ilk günden itibaren): LafPOS'un
+   * İndirimin AsilPOS günlerindeki kısmı (AsilPOS'un şubesinin, AsilPOS satışlarının sayıldığı ilk günden itibaren): AsilPOS'un
    * satırları indirimden sonradır, satış listesinden bir daha düşülmez (cash-month.ts listDiscountOf). Yalnız tillMonths'a
-   * LafPOS'un ilk günü verildiyse; yoksa alan yok (geçiş günü yok: bütün günler ModPOS listesi)
+   * AsilPOS'un ilk günü verildiyse; yoksa alan yok (geçiş günü yok: bütün günler ModPOS listesi)
    */
-  lafposDiscounts?: number;
+  asilposDiscounts?: number;
   offRevenue: number | null;
   offDays: number;
   /** (Kart + yemek kartı) ÷ Z toplamı; Z toplamı 0 ise null */
@@ -188,22 +189,22 @@ export interface TillMonth {
   /** Banka kartı şube şube (satırların hepsi şubeliyse): "Tümü"de her şube kendi oranıyla */
   cardByBranch?: Record<string, number>;
   /**
-   * LafPOS'un şubesinin günlerinin KDV'si (23 Kasım 2026; src/lib/cash-month.ts dayVatOf, engine.ts posNet): `known`
-   * LafPOS'un KDV dökümü günün cirosunu tutan günler (matrah ve KDV oradan), `days` dökümü olmayan günlerin cirosu (ModPOS
-   * günleri; her biri günün oranıyla ayrı ayrı). Yalnız satırlar şubeliyse ve LafPOS'un şubesinin satırı varsa; yoksa alan
+   * AsilPOS'un şubesinin günlerinin KDV'si (23 Kasım 2026; src/lib/cash-month.ts dayVatOf, engine.ts posNet): `known`
+   * AsilPOS'un KDV dökümü günün cirosunu tutan günler (matrah ve KDV oradan), `days` dökümü olmayan günlerin cirosu (ModPOS
+   * günleri; her biri günün oranıyla ayrı ayrı). Yalnız satırlar şubeliyse ve AsilPOS'un şubesinin satırı varsa; yoksa alan
    * yok, KDV ay toplamından (bugünkü gibi)
    */
   dayVat?: { known: { days: number; revenue: number; base: number; vat: number }; days: number[] };
   /**
    * Ayın satışlı günlerinin KDV kaynağı (KDV tahmini; src/lib/cash-month.ts vatDaysOf, src/lib/kdv.ts; Dalga 2, 26 Kasım
-   * 2026). `lafpos`: KDV'si LafPOS'un dökümünden gelen günler (dayVat.known ile aynı günler). `z`: kasa raporunda
+   * 2026). `asilpos`: KDV'si AsilPOS'un dökümünden gelen günler (dayVat.known ile aynı günler). `z`: kasa raporunda
    * yazarkasa Z'sinin KDV'si girilmiş öteki günler: `revenue` günlerin cirosu, `covered` o cironun yazarkasadan geçen
    * kısmı (yazarkasa toplamıyla sınırlı), `vat` Z'lerin KDV toplamı. `estimate`: ikisi de olmayan günler (oranla).
    * Gün sayıları satırdır ("Tümü"de şube × gün). Yoksa (eski kayıt, test) bütün ay oranla
    */
-  vatDays?: { z: { days: number; revenue: number; covered: number; vat: number }; lafpos: number; estimate: number };
+  vatDays?: { z: { days: number; revenue: number; covered: number; vat: number }; asilpos: number; estimate: number };
   /**
-   * [from, to] içinde raporu olmayan günler. Yalnız ilk kasa raporundan (ya da LafPOS gün sonundan) itibaren aranır:
+   * [from, to] içinde raporu olmayan günler. Yalnız ilk kasa raporundan (ya da AsilPOS gün sonundan) itibaren aranır:
    * raporlar başlamadan önceki ModPOS föy günleri eksik değildir (docs/MODPOS-API.md › Ay rakamına yedek)
    */
   missing: string[];
@@ -222,16 +223,16 @@ export interface TillMonth {
    * kısmını kapsar, uygulanmaz
    */
   partialFrom: string | null;
-  /** Son raporun günü (LafPOS'un ve ModPOS'un yedek satırı da sayılır) */
+  /** Son raporun günü (AsilPOS'un ve ModPOS'un yedek satırı da sayılır) */
   lastDate: string;
   /**
-   * Kasa raporu olmayan ama rakamları LafPOS'un gün sonundan sayılan günler (G6; yalnız geçiş gününden sonra): eksik
-   * günlerin içindedir, yanına "LafPOS'tan" yazılır. Yoksa alan yok
+   * Kasa raporu olmayan ama rakamları AsilPOS'un gün sonundan sayılan günler (G6; yalnız geçiş gününden sonra): eksik
+   * günlerin içindedir, yanına "AsilPOS'tan" yazılır. Yoksa alan yok
    */
-  lafpos?: string[];
+  asilpos?: string[];
   /**
-   * Kasa raporu (ve LafPOS gün sonu) olmayan ama rakamları kapanmış ModPOS kasa föyünden sayılan günler (Ayarlar › ModPOS
-   * › Ay rakamına yedek açıkken; yalnız LafPOS'a geçiş gününden önce; docs/MODPOS-API.md › Ay rakamına yedek). İlk kasa
+   * Kasa raporu (ve AsilPOS gün sonu) olmayan ama rakamları kapanmış ModPOS kasa föyünden sayılan günler (Ayarlar › ModPOS
+   * › Ay rakamına yedek açıkken; yalnız AsilPOS'a geçiş gününden önce; docs/MODPOS-API.md › Ay rakamına yedek). İlk kasa
    * raporundan sonrakiler eksik günlerin içindedir ("ModPOS föyünden sayıldı"); öncekiler eksik aranmaz. O günlerin
    * indirimi bilinmez (föyde yok). Yoksa alan yok
    */
@@ -278,22 +279,22 @@ export interface SalesLine {
   isService: boolean;
   note: string | null;
   /**
-   * Listenin şubesi (veri kümesi; yoksa Tuzla): LafPOS'a geçiş günü yalnız LafPOS'un şubesinin ModPOS listesini düşürür,
-   * ModPOS'ta kalan şubenin (Tuzla) listesi her ay sayılır (src/lib/lafpos/sales.ts mergeSalesSources)
+   * Listenin şubesi (veri kümesi; yoksa Tuzla): AsilPOS'a geçiş günü yalnız AsilPOS'un şubesinin ModPOS listesini düşürür,
+   * ModPOS'ta kalan şubenin (Tuzla) listesi her ay sayılır (src/lib/asilpos/sales.ts mergeSalesSources)
    */
   branchId?: string;
   /**
-   * LafPOS'un günlük satışlarından kurulan ay toplamı (src/lib/lafpos/sales.ts; geçiş gününden itibaren): `days` satırın
+   * AsilPOS'un günlük satışlarından kurulan ay toplamı (src/lib/asilpos/sales.ts; geçiş gününden itibaren): `days` satırın
    * geçtiği gün sayısı. Yalnız okunur: kimliği eksi, sales_lines'ta satırı yok, eşleştirmesi POS adıyla yapılır.
    * Yoksa Satışlar'a yüklenen ModPOS listesinin satırı.
    */
-  lafpos?: { days: number };
+  asilpos?: { days: number };
   /**
-   * LafPOS satırının indirimden önceki liste değeri (Faz 2; `revenue` LafPOS'ta indirimden sonradır). Bir günü eski
-   * LafPOS'tan gelmişse null (bilinmez). ModPOS listesinin satırında yok: liste zaten indirimden öncedir
+   * AsilPOS satırının indirimden önceki liste değeri (Faz 2; `revenue` AsilPOS'ta indirimden sonradır). Bir günü eski
+   * AsilPOS'tan gelmişse null (bilinmez). ModPOS listesinin satırında yok: liste zaten indirimden öncedir
    */
   gross?: number | null;
-  /** LafPOS satırında içeceğin seçeneğinden ayrılan ek parçası var (EXTRA SHOT, SYRUP, ALTERNATIF SÜT; Faz 2) */
+  /** AsilPOS satırında içeceğin seçeneğinden ayrılan ek parçası var (EXTRA SHOT, SYRUP, ALTERNATIF SÜT; Faz 2) */
   isAddon?: boolean;
 }
 
@@ -578,7 +579,7 @@ export interface ExpenseEntry {
 /**
  * Personelin girdiği zayi ya da ikram (src/server/db/schema.ts wasteEntries): menü ürünü (malzemesi reçeteden) ya da
  * hammadde (qty × factor = malzemenin kendi birimi). Motorun saydığı kayıtlarda (Model.countedWaste) geçiş gününden
- * itibaren LafPOS'un ikramı da bulunur: `source: "lafpos"`, LafPOS'taki ad ve menü değeriyle.
+ * itibaren AsilPOS'un ikramı da bulunur: `source: "asilpos"`, AsilPOS'taki ad ve menü değeriyle.
  */
 export interface WasteEntry {
   date: string;
@@ -588,18 +589,18 @@ export interface WasteEntry {
   qty: number;
   factor: number;
   /**
-   * Panel kaydının şubesi (veri kümesi): LafPOS'un gün sonu gelen günde yalnız LafPOS'un şubesinin ürün ikramı düşer,
-   * ModPOS'ta kalan şubeninki sayılır (src/lib/lafpos/ikram.ts panelWasteCounts). Yoksa Tuzla'nın
+   * Panel kaydının şubesi (veri kümesi): AsilPOS'un gün sonu gelen günde yalnız AsilPOS'un şubesinin ürün ikramı düşer,
+   * ModPOS'ta kalan şubeninki sayılır (src/lib/asilpos/ikram.ts panelWasteCounts). Yoksa Tuzla'nın
    */
   branchId?: string;
-  /** LafPOS'un ikram satırı (yalnız motorun saydığı kayıtlarda; paneldekilerde yok) */
-  source?: "lafpos";
-  /** LafPOS'taki ad (ürünü bulunamasa da gösterilir) */
+  /** AsilPOS'un ikram satırı (yalnız motorun saydığı kayıtlarda; paneldekilerde yok) */
+  source?: "asilpos";
+  /** AsilPOS'taki ad (ürünü bulunamasa da gösterilir) */
   name?: string;
-  /** LafPOS'un menü değeri, KDV dahil */
+  /** AsilPOS'un menü değeri, KDV dahil */
   menuValue?: number;
   /**
-   * LafPOS'un hazırlanmış iptalinden gelen zayi (Faz 2; src/lib/lafpos/ikram.ts iptalWasteLines): tüketimdir ama Z'nin
+   * AsilPOS'un hazırlanmış iptalinden gelen zayi (Faz 2; src/lib/asilpos/ikram.ts iptalWasteLines): tüketimdir ama Z'nin
    * ödenmez tutarında (offRevenue) yoktur, onunla karşılaştırılan kayıtlı değere girmez (recordedOffRevenue)
    */
   iptal?: boolean;
@@ -674,7 +675,7 @@ export interface Dataset {
   monthLockText?: string | null;
   /**
    * Su + buz litre fiyatının işletme geneli satışı (denetim 21 Kasım #4): tek şube seçiliyken SU GİDERİ girilmiş ayların
-   * bütün şubelerdeki satış satırları (LafPOS dahil, "Tümü"deki gibi) ve laffogato.net online satışları. SU GİDERİ
+   * bütün şubelerdeki satış satırları (AsilPOS dahil, "Tümü"deki gibi) ve laffogato.net online satışları. SU GİDERİ
    * işletmenin faturasıdır (`manual:su` her şubede görünür); yalnız şubenin litresine bölünseydi su ve buz içeren her
    * ürünün maliyeti seçili şubeye göre şişerdi. "Tümü"de yok: veri kümesinin kendi satışları zaten işletme genelidir
    * (engine.ts waterUsage)
@@ -686,8 +687,8 @@ export interface Dataset {
    */
   salesCoverage?: { month: string; through: string; till: TillMonth | null }[];
   /**
-   * Yalnız "Tümü": dönemi kısaltan şube, ay ay (src/lib/lafpos/sales.ts mergeSalesSources › short; bulgu 62). ModPOS'ta
-   * kalan şubenin listesi ayın öteki satırlarından önce bitiyorsa (`through`) ayın dönemi o gün, LafPOS'un sonraki günleri
+   * Yalnız "Tümü": dönemi kısaltan şube, ay ay (src/lib/asilpos/sales.ts mergeSalesSources › short; bulgu 62). ModPOS'ta
+   * kalan şubenin listesi ayın öteki satırlarından önce bitiyorsa (`through`) ayın dönemi o gün, AsilPOS'un sonraki günleri
    * sayılmaz; listesi yoksa (`through` null) ayın satırları "Tümü"de sayılmaz. `branch` şubenin adı
    */
   commonLists?: { month: string; branch: string; through: string | null }[];
@@ -699,28 +700,39 @@ export interface Dataset {
    */
   writeCoverage?: Record<string, string>;
   /**
-   * LafPOS'a geçiş günü seçiliyse satış kaynaklarının özeti (src/lib/lafpos/sales.ts): geçiş ayından itibaren her ayın
-   * ModPOS listesi ve LafPOS günleri. Yoksa (varsayılan) kasa ModPOS'tur, satışlar yalnız sales_lines'tan
+   * AsilPOS'a geçiş günü seçiliyse satış kaynaklarının özeti (src/lib/asilpos/sales.ts): geçiş ayından itibaren her ayın
+   * ModPOS listesi ve AsilPOS günleri. Yoksa (varsayılan) kasa ModPOS'tur, satışlar yalnız sales_lines'tan
    */
-  lafposSales?: { switchDay: string; countFrom: string; months: LafposSalesMonth[] };
+  asilposSales?: {
+    switchDay: string;
+    /** Kasaların en erken sayılma günü (metinler) */
+    countFrom: string;
+    /**
+     * Kasa başına AsilPOS satışlarının sayıldığı ilk gün (çok şube; para hesapları bunu okur: listDiscountOf). Okuyucu her
+     * zaman verir; verilmemiş eski veride (tek kasa) Marina'nın `countFrom`'u (salesFroms)
+     */
+    froms?: PosFroms;
+    months: AsilposSalesMonth[];
+  };
   /**
-   * LafPOS'un şubesi (kütükten türetilir: kasa kaynağı LafPOS olan şube, yoksa Marina; src/lib/lafpos/switch.ts
-   * lafposBranchOf). Geçiş günü yalnız bu şubenin kasasınındır; okunmamışsa (test verisi) geri düşüş değeri
+   * AsilPOS kasaları (çok şube; kütükten: kasa kaynağı AsilPOS olan fiziksel şubeler, src/lib/pos/tills.ts) ve geçiş
+   * günleri. "Tümü"de her kasa kendi geçiş günüyle; okunmamışsa (test verisi) yok
    */
-  lafposBranch?: string;
+  posTills?: readonly string[];
+  posSwitchDays?: SwitchDays;
   /**
-   * LafPOS'a geçiş günü seçiliyse o günden itibaren LafPOS'un ikramları ve gün sonu gelen günler
-   * (src/lib/lafpos/ikram.ts): ikram satırları kayıtlı tüketime girer, o günlerde paneldeki ürün ikramı sayılmaz. Yoksa
+   * AsilPOS'a geçiş günü seçiliyse o günden itibaren AsilPOS'un ikramları ve gün sonu gelen günler
+   * (src/lib/asilpos/ikram.ts): ikram satırları kayıtlı tüketime girer, o günlerde paneldeki ürün ikramı sayılmaz. Yoksa
    * (varsayılan) ikram yalnız Zayi & ikram'dan
    */
-  lafposIkram?: LafposIkramData;
+  asilposIkram?: AsilposIkramData;
   /**
-   * LafPOS personel bağlantısı (LM-4b): LafPOS'un şubesinin geçiş gününden itibaren gelen gün sonları ve her günün
-   * çalışan kimlikleri (pos_day_reports.worked_staff). Yemek kartının günü bundan (src/lib/lafpos/personel.ts
-   * lafposWorkedDays): ayın her sayılan günü liste taşıyorsa LafPOS'ta çalıştığı gün, yoksa Ayarlar'daki gün. Geçiş günü
-   * yoksa (ya da görünüm LafPOS'un şubesini içermiyorsa) yok
+   * AsilPOS personel bağlantısı (LM-4b): AsilPOS'un şubesinin geçiş gününden itibaren gelen gün sonları ve her günün
+   * çalışan kimlikleri (pos_day_reports.worked_staff). Yemek kartının günü bundan (src/lib/asilpos/personel.ts
+   * asilposWorkedDays): ayın her sayılan günü liste taşıyorsa AsilPOS'ta çalıştığı gün, yoksa Ayarlar'daki gün. Geçiş günü
+   * yoksa (ya da görünüm AsilPOS'un şubesini içermiyorsa) yok
    */
-  lafposWorked?: LafposWorked;
+  asilposWorked?: AsilposWorked;
   /**
    * Kafe kapalı işaretli günler (Özel günler'in `kapali` satırı, kasa raporu olmayan; geçmiş ve ileri tarihli,
    * YYYY-MM-DD, sıralı). Süren ayın ay sonu öngörüsü bu günleri açık saymaz (denetim E-41). Yoksa boş
@@ -735,25 +747,26 @@ export interface Dataset {
 }
 
 /**
- * Geçiş gününden itibaren bir ayın satış kaynakları (src/lib/lafpos/sales.ts › lafposMonthStatus; Satışlar okur). Her
- * gün tek kaynaktan sayılır: geçiş ayında ModPOS listesi kendi son gününe kadar, LafPOS `from`'dan; sonraki aylarda
- * yalnız LafPOS (yüklü ModPOS listesi sayılmaz, silinmez).
+ * Geçiş gününden itibaren bir ayın satış kaynakları (src/lib/asilpos/sales.ts › asilposMonthStatus; Satışlar okur). Her
+ * gün tek kaynaktan sayılır: geçiş ayında ModPOS listesi kendi son gününe kadar, AsilPOS `from`'dan; sonraki aylarda
+ * yalnız AsilPOS (yüklü ModPOS listesi sayılmaz, silinmez).
  */
-export interface LafposSalesMonth {
+export interface AsilposSalesMonth {
   month: string;
-  /** gecis: geçiş günü ayın ortasında; lafpos: ayın tamamı geçiş gününden sonra */
-  source: "gecis" | "lafpos";
-  /** LafPOS satışlarının sayıldığı ilk gün; bu ay LafPOS sayılmıyorsa null (geçiş ayının listesi ayın sonuna kadar) */
+  /** gecis: geçiş günü ayın ortasında; asilpos: ayın tamamı geçiş gününden sonra */
+  source: "gecis" | "asilpos";
+  /** AsilPOS satışlarının sayıldığı ilk gün; bu ay AsilPOS sayılmıyorsa null (geçiş ayının listesi ayın sonuna kadar) */
   from: string | null;
-  /** Gelen LafPOS gün sonları (sayılan ve kasa raporunu bekleyen): kaç gün geldi, son gün; hiç gelmediyse null */
-  lafpos: { days: number; last: string } | null;
+  /** Gelen AsilPOS gün sonları (sayılan ve kasa raporunu bekleyen): kaç gün geldi, son gün; hiç gelmediyse null */
+  asilpos: { days: number; last: string } | null;
   /**
-   * Süren ayda gelmiş ama kasa raporu girilmediği için henüz sayılmayan LafPOS günleri (kasa raporlarının son gününden
-   * sonra; docs/LAFPOS.md › Kapsam); yoksa null ya da yok
+   * Süren ayda gelmiş ama kasa raporu girilmediği için henüz sayılmayan AsilPOS günleri (kasanın kendi kasa raporlarının
+   * son gününden sonra; docs/ASILPOS.md › Kapsam); yoksa null ya da yok. Birden çok kasa bekliyorsa ("Tümü") `from` → `to`
+   * ilk bekleyen günden son gelen güne, `tills` kasa kasa
    */
-  held?: { from: string; to: string } | null;
+  held?: { from: string; to: string; tills?: { branchId: string; from: string; to: string }[] } | null;
   /**
-   * LafPOS'un sayılması gereken (`from`'dan dünden önceye) ama gün sonu gelmemiş, kasa raporu olan günler: o günlerin
+   * AsilPOS'un sayılması gereken (`from`'dan dünden önceye) ama gün sonu gelmemiş, kasa raporu olan günler: o günlerin
    * satışı hiçbir kaynakta yok; yoksa alan yok
    */
   missing?: string[];
@@ -771,10 +784,10 @@ export interface LafposSalesMonth {
   modposDiscounts?: number | null;
   /** Hiçbir kaynakta olmayan geçmiş günler: geçiş ayında liste geçiş gününden önce bitiyor ya da hiç yok */
   gap: { from: string; to: string } | null;
-  /** Liste geçiş gününü aştığı için sayılmayan LafPOS günleri (aynı gün iki kez sayılmasın diye) */
+  /** Liste geçiş gününü aştığı için sayılmayan AsilPOS günleri (aynı gün iki kez sayılmasın diye) */
   overlap: { from: string; to: string } | null;
   /**
-   * LafPOS günlerinin ürün satırları ↔ Z (hesap sözleşmesi: Σ ciro = zTotal; 23 Kasım 2026): denetlenen gün sayısı ve
+   * AsilPOS günlerinin ürün satırları ↔ Z (hesap sözleşmesi: Σ ciro = zTotal; 23 Kasım 2026): denetlenen gün sayısı ve
    * tutmayan günler (satırların toplamı, Z). Yükleyici vermediyse (test, eski çağıran) yok
    */
   zCheck?: { days: number; off: { date: string; lines: number; z: number }[] };

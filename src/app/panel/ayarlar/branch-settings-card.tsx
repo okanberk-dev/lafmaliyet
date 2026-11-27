@@ -55,7 +55,7 @@ export async function BranchSettingsLinkCard() {
       icon={<Building2 />}
       title="Şube ayarları"
       summary={summary}
-      description="Şubede kullanılan özellikler (karaoke, uygulama siparişleri, garson çağır, yemek kartı) ve şubeye göre değişen ayarlar: kasa raporu alıcıları, çalışanların gün sonu e-postası, Paraşüt hesabı, LafPOS ya da ModPOS bağlantısı, banka POS ve yazarkasa, komisyon kanalları ve çalışma takvimi. Bir şube öbürüyle aynı ayarı kullanabilir; değer tek yerden düzenlenir."
+      description="Şubede kullanılan özellikler (karaoke, uygulama siparişleri, garson çağır, yemek kartı) ve şubeye göre değişen ayarlar: kasa raporu alıcıları, çalışanların gün sonu e-postası, Paraşüt hesabı, AsilPOS ya da ModPOS bağlantısı, banka POS ve yazarkasa, komisyon kanalları ve çalışma takvimi. Bir şube öbürüyle aynı ayarı kullanabilir; değer tek yerden düzenlenir."
       actions={
         <ButtonLink href={href} variant="primary">
           {selected ? `${selected.name} ayarları` : "Şubeleri aç"} <ChevronRight size={16} />

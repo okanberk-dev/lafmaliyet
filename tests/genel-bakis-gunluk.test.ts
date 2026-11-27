@@ -26,7 +26,7 @@ test("günler: yalnız seçili ay ve açık gün, sıralı; ödenmez Z'nin için
 });
 
 test("toplam ve gün sayısı ay bilgisiyle aynı (tillMonths posRevenue, openDays)", () => {
-  const rows = [row("2026-11-01"), row("2026-11-02", { zTotal: 1500, offRevenue: 100, payments: 1400 }), row("2026-11-04", { source: "lafpos", zTotal: 800, payments: 800 })];
+  const rows = [row("2026-11-01"), row("2026-11-02", { zTotal: 1500, offRevenue: 100, payments: 1400 }), row("2026-11-04", { source: "asilpos", zTotal: 800, payments: 800 })];
   const [m] = tillMonths(rows, "2026-11-04");
   const days = monthDays(rows, "2026-11");
   assert.equal(days.length, m.openDays);

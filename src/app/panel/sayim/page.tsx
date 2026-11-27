@@ -15,7 +15,8 @@ import { stockVatSummary } from "@/lib/calc/insights";
 import { countGroupOptions } from "@/lib/count-item";
 import { monthLabel, monthShort } from "@/lib/format";
 import { STOCK_ESTIMATE_BRANCH, STOCK_ESTIMATE_PATH } from "@/lib/stock-estimate";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope, currentPhysicalBranch } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { availableMonths, loadModel } from "@/server/data/dataset";
@@ -73,7 +74,7 @@ export default function StockPage({ searchParams }: PageProps<"/panel/sayim">) {
 }
 
 async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/sayim">["searchParams"] }) {
-  const user = await requireUser();
+  const user = adminActor(await requireCan("kayit.yaz"));
   const sp = await searchParams;
   // Sayım şube başına (docs/SUBE.md): seçili fiziksel şubenin sayımı gösterilir ve ona yazılır ("Tümü" ya da online
   // kanal seçiliyken Tuzla). Birden çok açık şube varken başlık hangi şubenin sayıldığını söyler
@@ -197,11 +198,11 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         role={user.role}
         branch={branchLabel}
         // Kaydedilmemiş sayım varken ay geçişi önce sorulur (form ay değişince baştan kurulur). Tahmini stok yalnız
-        // Marina'nın (LafPOS'un şubesi, geçiş günü seçiliyken; docs/STOK-TAHMINI.md): Tuzla'nın başlığı aynı kalır.
+        // Marina'nın (AsilPOS'un şubesi, geçiş günü seçiliyken; docs/STOK-TAHMINI.md): Tuzla'nın başlığı aynı kalır.
         // Kaydedilmemiş sayım varken bağlantıyı da form durdurup sorar (useLeaveGuard)
         picker={
           <>
-            {branch.id === STOCK_ESTIMATE_BRANCH && model.settings.lafposGecisGunu ? (
+            {branch.id === STOCK_ESTIMATE_BRANCH && model.settings.asilposGecisGunu ? (
               <ButtonLink href={STOCK_ESTIMATE_PATH} variant="secondary">
                 Tahmini stok
               </ButtonLink>

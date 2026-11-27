@@ -235,7 +235,7 @@ const productPriceChange: OpApplier<ProductPriceArgs, { price: number }> = {
     // Eylemin kendi bayatlık denetimi: önizlemede görülen fiyat (seenPrice)
     const r = await updateProductPrice(args.productId, args.price, false, "manual", before.price);
     if (notOk(r)) return r;
-    // Ekranın kullandığı ortak metin (Ürünler, Reçete): site, fiyat listesinin tarihi ve günün kasası (LafPOS / ModPOS)
+    // Ekranın kullandığı ortak metin (Ürünler, Reçete): site, fiyat listesinin tarihi ve günün kasası (AsilPOS / ModPOS)
     const reminder = priceReminder({ site: r.data.site, posPending: r.data.posPending, kasa: r.data.kasa });
     return { ok: true, message: `Fiyat ${tl(r.data.price, 2)} oldu.${reminder ? ` ${reminder}` : ""}`, undo: { price: r.data.price } };
   },

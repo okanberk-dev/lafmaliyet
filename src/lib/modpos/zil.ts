@@ -1,6 +1,7 @@
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { branchDayKey } from "@/lib/cash-report";
-import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
+import { isAsilposDay } from "@/lib/asilpos/switch";
+import { switchDayFor, type SwitchDays } from "@/lib/pos/tills";
 import { dayMonthTR, longDateTR } from "@/lib/reminders";
 
 import { modposDiffs, modposDiffText, type ModposDiff, type ModposSavedFields } from "./compare";
@@ -14,7 +15,7 @@ import { sheetZ } from "./z";
  * Nerede görünür, docs/BILDIRIMLER.md, docs/BUGUN.md. Personele hiçbiri gitmez: föyün tutarları yalnız yöneticinindir.
  *
  * - **Kasa raporu ModPOS föyünden farklı**: raporun Z alanları, açılışı ya da sayılan nakdi saklanan föyden farklı
- *   (src/lib/modpos/compare.ts modposDiffs; 1 kuruş hassasiyet). Yalnız ModPOS günlerinde (LafPOS'a geçiş günü boşken ya
+ *   (src/lib/modpos/compare.ts modposDiffs; 1 kuruş hassasiyet). Yalnız ModPOS günlerinde (AsilPOS'a geçiş günü boşken ya
  *   da gün ondan önceyken) ve yalnız kasası kapanmış föyde: gün açıkken "Bu günü çek"le alınan föy o anki tutarlardır,
  *   akşamki raporla karşılaştırılsa her alan farklı görünürdü (ertesi sabah kendiliğinden yeniden çekilir).
  * - **ModPOS kasa föyü çekilemiyor**: anahtar tanımlı ama çalışmıyor (geçersiz, kapalı, süresi dolmuş, IP kısıtı,
@@ -43,7 +44,7 @@ export interface ModposMismatch<R> {
 export const MODPOS_MISMATCH_TITLE = "Kasa raporu ModPOS API'den farklı";
 /** Anahtar çalışmıyorken zilin ve e-postanın başlığı */
 export const MODPOS_KEY_TITLE = "ModPOS API'den veri çekilemiyor";
-/** Zilin gövdesinin en çok uzunluğu (LafPOS satırıyla aynı) */
+/** Zilin gövdesinin en çok uzunluğu (AsilPOS satırıyla aynı) */
 export const MODPOS_BELL_BODY_MAX = 220;
 
 /** Rapor ile föyün eşleşme anahtarı: (şube, gün). Şubesi verilmeyen kayıt Tuzla'nındır (şubeler öncesi) */
@@ -52,22 +53,21 @@ export function modposPairKey(branchId: string | null | undefined, day: string):
 }
 
 /**
- * Föyünden farklı yazılan raporlar, raporların sırasıyla. LafPOS günü (geçiş gününden itibaren), föyü olmayan, satışsız
+ * Föyünden farklı yazılan raporlar, raporların sırasıyla. AsilPOS günü (geçiş gününden itibaren), föyü olmayan, satışsız
  * (foyZ null) ya da kasası hâlâ açık föyün günü atlanır (docs/MODPOS-API.md › Nerede görünür, karşılaştırma kuralları).
  * Rapor yalnız **kendi şubesinin** föyüyle karşılaştırılır (şube, gün): "Tümü" seçiliyken Marina'nın raporu Tuzla'nın
- * föyüyle karşılaştırılmaz (docs/MODPOS-API.md › Şubeler). Geçiş günü yalnız LafPOS'un şubesinin kasasınındır
- * (branchSwitchDay): ModPOS'ta kalan şubenin raporu geçiş gününden sonra da föyüyle karşılaştırılır.
+ * föyüyle karşılaştırılmaz (docs/MODPOS-API.md › Şubeler). Geçiş günü şubenin kendi kasasınındır (çok şube; switchDayFor):
+ * ModPOS'ta kalan şubenin raporu föyüyle karşılaştırılmaya devam eder, AsilPOS'a geçen şubeninki geçiş gününden sonra hiç.
  */
 export function modposMismatches<R extends ModposSavedFields & { date: string; branchId?: string | null }>(
   reports: readonly R[],
   sheets: readonly ModposSheetLite[],
-  switchDay: string | null,
-  lafposBranch?: string,
+  switchDays: SwitchDays,
 ): ModposMismatch<R>[] {
   const byDay = new Map(sheets.map((x) => [modposPairKey(x.branchId, x.day), x]));
   const out: ModposMismatch<R>[] = [];
   for (const report of reports) {
-    if (isLafposDay(report.date, branchSwitchDay(switchDay, report.branchId, lafposBranch))) continue;
+    if (isAsilposDay(report.date, switchDayFor(switchDays, report.branchId))) continue;
     const sheet = byDay.get(modposPairKey(report.branchId, report.date));
     const z = sheet ? sheetZ(sheet) : null;
     if (!sheet || !z || z.durum === "ACIK") continue;
@@ -81,10 +81,9 @@ export function modposMismatches<R extends ModposSavedFields & { date: string; b
 export function modposMismatchDates(
   reports: readonly (ModposSavedFields & { date: string; branchId?: string | null })[],
   sheets: readonly ModposSheetLite[],
-  switchDay: string | null,
-  lafposBranch?: string,
+  switchDays: SwitchDays,
 ): Set<string> {
-  return new Set(modposMismatches(reports, sheets, switchDay, lafposBranch).map((m) => m.report.date));
+  return new Set(modposMismatches(reports, sheets, switchDays).map((m) => m.report.date));
 }
 
 /**
@@ -94,10 +93,9 @@ export function modposMismatchDates(
 export function modposMismatchBranchDays(
   reports: readonly (ModposSavedFields & { date: string; branchId?: string | null })[],
   sheets: readonly ModposSheetLite[],
-  switchDay: string | null,
-  lafposBranch?: string,
+  switchDays: SwitchDays,
 ): Set<string> {
-  return new Set(modposMismatches(reports, sheets, switchDay, lafposBranch).map((m) => branchDayKey(m.report.branchId ?? DEFAULT_BRANCH_ID, m.report.date)));
+  return new Set(modposMismatches(reports, sheets, switchDays).map((m) => branchDayKey(m.report.branchId ?? DEFAULT_BRANCH_ID, m.report.date)));
 }
 
 /**

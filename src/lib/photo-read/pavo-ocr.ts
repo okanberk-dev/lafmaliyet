@@ -2,9 +2,9 @@
  * Kodla okuma: OCR satırlarından Pavo'nun gün sonu fişinin (istenince basılan detaylı Z: banka gün sonu ve Z'nin rakamları
  * tek fişte) kural tabanlı ayrıştırıcısı (saf; tests/gun-sonu-foto.test.ts, gerçek OCR'la tests/gun-sonu-foto-ocr.test.ts).
  * Sahibin isteği (24 Kasım 2026): "eğer AI token biterse de kod ile bir şey yaz ... ondan en doğru sonucu alabileceği
- * şekilde okusun". Yapay zekâ yokken (anahtar, kredi, sınır, hata; src/lib/photo-read/lafpos-read.ts) fotoğraf
+ * şekilde okusun". Yapay zekâ yokken (anahtar, kredi, sınır, hata; src/lib/photo-read/asilpos-read.ts) fotoğraf
  * src/server/photo-read/ocr.ts ile okunur, satırlar buraya gelir; çıktı yapay zekânın şemasıyla aynıdır (KasaOkcRaw), aynı
- * karşılaştırmadan geçer (src/lib/lafpos/foto.ts lafposPhotoCheck).
+ * karşılaştırmadan geçer (src/lib/asilpos/foto.ts asilposPhotoCheck).
  *
  * Kurallar: rakam yalnız basıldığı gibi alınır, hiçbir rakam hesaplanmaz ya da tamamlanmaz. Tutar Türkçe biçimde
  * ("1.234,56", "*4160,00", sonda TL / ₺) olmalı; OCR'ın sözcük güveni OCR_MIN_CONFIDENCE'ın altındaysa ya da etiketin
@@ -16,6 +16,7 @@
 
 import { round2 } from "./common";
 import type { AmountRaw, KasaOkc } from "./schemas";
+import { ESKI_KAGIT_ADI } from "@/lib/asilpos/eski-adlar";
 
 export interface OcrWord {
   text: string;
@@ -92,30 +93,41 @@ function merge(prev: AmountRaw, next: AmountRaw): AmountRaw {
 const bankHit = (f: string) => BANKS.some((b) => new RegExp(`(^|\\s)${b}(\\s|$)`).test(f));
 
 /**
- * LafPOS'un kendi gün sonu kâğıdının işaretleri (katlanmış metinde): "GÜN SONU · Z n" başlığı, "LafPOS yönetim
- * raporudur, mali Z değildir", "BANKA GÜN SONU · PAVO", "PAVO - LAFPOS KARŞILAŞTIRMA", "Pavo cihazının banka gün sonu
- * özetidir"; gün açıkken basılan ara raporun başlığı "ARA RAPOR (X)" (LafPOS src/lib/print.tsx ZReceipt, BankEodReceipt)
+ * Kâğıtta basılı kasa adı: yeni ad ya da eski ad (ESKI_KAGIT_ADI; eski kasalar ve eski fotoğraflar, banka kısmının kıyas
+ * başlığı yeni kasada da eski adla basılır). Katlanmış metinde
  */
-const LAFPOS_MARK = /^GUN SONU Z \d+$|^ARA RAPOR \(?X\)?$|LAFPOS YONETIM RAPORUDUR|MALI Z DEGILDIR|BANKA GUN SONU PAVO|PAVO LAFPOS KARSILASTIRMA|PAVO CIHAZININ BANKA GUN SONU/;
+const KAGIT_ADI = `(?:ASILPOS|${ESKI_KAGIT_ADI})`;
+
+/**
+ * AsilPOS'un kendi gün sonu kâğıdının işaretleri (katlanmış metinde): "GÜN SONU · Z n" başlığı, "<ad> yönetim
+ * raporudur, mali Z değildir", "BANKA GÜN SONU · PAVO", "PAVO - <ad> KARŞILAŞTIRMA", "Pavo cihazının banka gün sonu
+ * özetidir"; gün açıkken basılan ara raporun başlığı "ARA RAPOR (X)" (AsilPOS src/lib/print.tsx ZReceipt, BankEodReceipt).
+ * <ad>: KAGIT_ADI (iki ad da)
+ */
+const ASILPOS_MARK = new RegExp(
+  `^GUN SONU Z \\d+$|^ARA RAPOR \\(?X\\)?$|${KAGIT_ADI} YONETIM RAPORUDUR|MALI Z DEGILDIR|BANKA GUN SONU PAVO|PAVO ${KAGIT_ADI} KARSILASTIRMA|PAVO CIHAZININ BANKA GUN SONU`,
+);
+/** Banka kısmının bittiği yer: kıyas başlığı ya da Pavo'nun dipnotu */
+const BANK_END = new RegExp(`PAVO ${KAGIT_ADI} KARSILASTIRMA|PAVO CIHAZININ`);
 
 /** İşaret karşılaştırması: ayraçlar ("·" OCR'da ":" ya da "." okunabilir) boşluk */
 const markOf = (s: string) => fold(s).replace(/[.:/]/g, " ").replace(/\s+/g, " ").trim();
 
-/** Kâğıt LafPOS'un kendi gün sonu kâğıdı mı (OCR satırlarından) */
-export function isLafposPaperOcr(lines: readonly OcrLine[]): boolean {
-  return lines.some((l) => LAFPOS_MARK.test(markOf(l.text)));
+/** Kâğıt AsilPOS'un kendi gün sonu kâğıdı mı (OCR satırlarından) */
+export function isAsilposPaperOcr(lines: readonly OcrLine[]): boolean {
+  return lines.some((l) => ASILPOS_MARK.test(markOf(l.text)));
 }
 
 /**
- * LafPOS'un kâğıdı → KasaOkcRaw. Mali değildir: Z no'su, NET CİRO'su, ödemeleri ve KDV'si (LafPOS'un kendi rakamları)
+ * AsilPOS'un kâğıdı → KasaOkcRaw. Mali değildir: Z no'su, NET CİRO'su, ödemeleri ve KDV'si (AsilPOS'un kendi rakamları)
  * okunmaz, Z sayılmaz. Banka kısmı ("BANKA GÜN SONU · PAVO") varsa banka gün sonu fişidir: "Bankalar" altındaki her satır
  * aynı batch'in bir bankası (batch no "Batch" satırından, net = satırın tutarı); banka satırı yoksa TOPLAM tek satır.
- * Bankaların toplamı TOPLAM'ı tutmuyorsa hepsi şüpheli. "PAVO - LAFPOS KARŞILAŞTIRMA" satırları (Pavo kart toplamı,
- * LafPOS kart toplamı, FARK) okunmaz. Banka kısmı yoksa yazılım Z'si (yanlış belge; ARA RAPOR (X) de); banka kısmı var ama
- * satırı yoksa okunamamış banka fişi. Başlık aynen (okc.ts isLafposPaper)
+ * Bankaların toplamı TOPLAM'ı tutmuyorsa hepsi şüpheli. "PAVO - <ad> KARŞILAŞTIRMA" satırları (Pavo kart toplamı,
+ * AsilPOS kart toplamı, FARK) okunmaz. Banka kısmı yoksa yazılım Z'si (yanlış belge; ARA RAPOR (X) de); banka kısmı var ama
+ * satırı yoksa okunamamış banka fişi. Başlık aynen (okc.ts isAsilposPaper)
  */
-function parseLafposPaperOcr(lines: readonly OcrLine[]): { raw: KasaOkc; found: string[] } {
-  const found = new Set<string>(["lafpos"]);
+function parseAsilposPaperOcr(lines: readonly OcrLine[]): { raw: KasaOkc; found: string[] } {
+  const found = new Set<string>(["asilpos"]);
   let title: string | null = null;
   let date: string | null = null;
   let time: string | null = null;
@@ -155,7 +167,7 @@ function parseLafposPaperOcr(lines: readonly OcrLine[]): { raw: KasaOkc; found: 
     }
     if (!inBank) continue;
     // Karşılaştırma ve sonrası banka kısmı değil
-    if (/PAVO LAFPOS KARSILASTIRMA|PAVO CIHAZININ/.test(mark)) {
+    if (BANK_END.test(mark)) {
       inBank = false;
       continue;
     }
@@ -215,10 +227,10 @@ function parseLafposPaperOcr(lines: readonly OcrLine[]): { raw: KasaOkc; found: 
 
 /**
  * OCR satırları → KasaOkcRaw. `found` hangi alanların okunduğunu söyler (günlük ve yöneticinin ayrıntısı için). Hiçbir
- * şey seçilmediyse belge türü "other" ve okunamaz. LafPOS'un kendi kâğıdı ayrı kurallarla okunur (Z sayılmaz)
+ * şey seçilmediyse belge türü "other" ve okunamaz. AsilPOS'un kendi kâğıdı ayrı kurallarla okunur (Z sayılmaz)
  */
 export function parsePavoOcr(lines: readonly OcrLine[]): { raw: KasaOkc; found: string[] } {
-  if (isLafposPaperOcr(lines)) return parseLafposPaperOcr(lines);
+  if (isAsilposPaperOcr(lines)) return parseAsilposPaperOcr(lines);
   const found = new Set<string>();
   let date: string | null = null;
   let time: string | null = null;

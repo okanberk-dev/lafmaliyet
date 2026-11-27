@@ -14,7 +14,8 @@ import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
 import { percentText, WEEKDAY_NAMES } from "@/lib/karaoke/occupancy-text";
 import { cellReader, comparePairs, type KiyasBranch } from "@/lib/kiyas";
-import type { KasaName } from "@/lib/lafpos/kasa";
+import type { KasaName } from "@/lib/asilpos/kasa";
+import type { SwitchDays } from "@/lib/pos/tills";
 import { addDays, daysBetween, longDateTR } from "@/lib/reminders";
 
 import { WEEKLY_BALANCE_MAX_AGE, WEEKLY_CASH_DAYS, WEEKLY_KARAOKE_EMPTY, WEEKLY_MIN_TL, WEEKLY_POS_MIN_DAYS, WEEKLY_SALES_FULL_DAYS, WEEKLY_STOCK_MIN_TL, WEEKLY_WASTE_FACTOR, type WeekInfo, type WeeklyItem } from "./core";
@@ -201,21 +202,20 @@ export function kasaItem(i: KasaIn): WeeklyItem | null {
 export interface SalesLineIn {
   week: WeekInfo;
   /**
-   * Geçen hafta ve önceki dört haftanın kasa satırları (tillRows: kasa raporu, yoksa LafPOS gün sonu ya da ModPOS föyü;
+   * Geçen hafta ve önceki dört haftanın kasa satırları (tillRows: kasa raporu, yoksa AsilPOS gün sonu ya da ModPOS föyü;
    * günün cirosu Z'nin içindeki ödenmez düşülerek, src/lib/cash-revenue.ts dayRevenue). Şubesiz satır Tuzla'nın
    */
   rows: readonly TillRow[];
   /** Kasası olan fiziksel şubeler ve açılış günleri (Kıyas kartıyla aynı: src/lib/kiyas.ts) */
   branches: readonly KiyasBranch[];
-  /** LafPOS'a geçiş günü: öncesindeki LafPOS gün sonu deneme günüdür */
-  switchDay: string | null;
-  lafposBranch?: string;
+  /** Kasa başına AsilPOS'a geçiş günü (çok şube): öncesindeki AsilPOS gün sonu deneme günüdür */
+  switchDays: SwitchDays;
 }
 
 /**
  * Bağlam satırı: geçen haftanın kasa cirosu (KDV dahil, ödenmez / ikram hariç: Genel bakış ve Bugün'ün cirosuyla aynı
  * kural, denetim 13 Kasım HM-08; laffogato.net online kasadan geçmez). Kaynak Genel bakış'ın ay rakamıyla aynı kasa
- * satırları: raporu olmayan LafPOS günü LafPOS'un gün sonundan (bulgu 65; önceden yalnız kasa raporları okunuyordu).
+ * satırları: raporu olmayan AsilPOS günü AsilPOS'un gün sonundan (bulgu 65; önceden yalnız kasa raporları okunuyordu).
  *
  * Karşılaştırma aynı şube ve günlerle (Kıyas kartının şube-gün eşlemesi, src/lib/kiyas.ts comparePairs; bulgu 65):
  * geçen haftanın her günü önceki dört haftanın aynı günüyle, şube şube, iki günü de bilinen şube-gün iki tarafa da
@@ -225,7 +225,7 @@ export interface SalesLineIn {
  * hafta tek şubeli dört haftayla kıyaslanıp "önceki 4 haftaya göre %X fazla" deniyordu.
  */
 export function salesLine(i: SalesLineIn): string | null {
-  const read = cellReader({ rows: i.rows, branches: i.branches, today: i.week.lastTo, switchDay: i.switchDay, lafposBranch: i.lafposBranch });
+  const read = cellReader({ rows: i.rows, branches: i.branches, today: i.week.lastTo, switchDays: i.switchDays });
   const days: string[] = [];
   for (let d = i.week.lastFrom; d <= i.week.lastTo; d = addDays(d, 1)) days.push(d);
   // Geçen hafta bütün şubelerle: raporlu gün tekil (iki şubenin aynı günü bir gün, ciro ikisinin toplamı)
@@ -342,7 +342,7 @@ export interface PosPriceIn {
    * ModPOS'ta satılan adet (salesBasis ölçeğiyle; online kafe siparişi sitenin fiyatını öder, sayılmaz); dayanak yoksa null
    */
   rows: { label: string; price: number; posPrice: number; since: string; perMonth: number | null }[];
-  /** Bugünün kasası (src/lib/lafpos/kasa.ts; verilmezse ModPOS): LafPOS gününde satırlar yalnız siteye bağlı olmayanlar */
+  /** Bugünün kasası (src/lib/asilpos/kasa.ts; verilmezse ModPOS): AsilPOS gününde satırlar yalnız siteye bağlı olmayanlar */
   kasa?: KasaName;
 }
 

@@ -117,7 +117,7 @@ export function CashSettingsCard({
                 ))}
                 {/* Neden kişiye göre: personele karaoke ön ödemesi gitmesin; pasif hesaba e-posta hiç gitmez */}
                 <span className="block">
-                  {blocked.some((b) => b.reason === "staff") ? "Kasa e-postasında karaoke ön ödemesi var; personel hesabına gitmez." : "Pasif hesaba e-posta gitmez."}{" "}
+                  {blocked.some((b) => b.reason === "staff" || b.reason === "manager") ? "Kasa e-postasında karaoke ön ödemesi var; personel ve müdür hesabına gitmez." : "Pasif hesaba e-posta gitmez."}{" "}
                   {blocked.length > 1 ? "Bu adresleri" : "Bu adresi"} listeden çıkarın ya da doğru adresi yazın.
                 </span>
               </>
@@ -168,7 +168,7 @@ export function CashSettingsCard({
         )}
         {showStaff ? (
           <>
-            <Field label="Çalışanlar (LafPOS gün sonu, kısa e-posta)" htmlFor={`${anchor}-calisan`} hint="Her satıra bir adres (en çok 20). Gün sonu alınınca kısa özet gider; rapor ayrıntısı gitmez. Bu liste şubenin kendisinin">
+            <Field label="Çalışanlar (AsilPOS gün sonu, kısa e-posta)" htmlFor={`${anchor}-calisan`} hint="Her satıra bir adres (en çok 20). Gün sonu alınınca kısa özet gider; rapor ayrıntısı gitmez. Bu liste şubenin kendisinin">
               <Textarea id={`${anchor}-calisan`} value={staffRecipients} onChange={(e) => setStaffRecipients(e.target.value)} rows={3} spellCheck={false} autoCapitalize="none" />
             </Field>
             <ToggleRow title="Çalışan e-postasında tutarlar" description="Açıkken ciro ve ödeme türleri de yazar; kapalıyken yalnız gün sonu alındı ve fiş sayısı" label="Çalışan e-postasında tutarlar" checked={staffAmounts} onChange={setStaffAmounts} />

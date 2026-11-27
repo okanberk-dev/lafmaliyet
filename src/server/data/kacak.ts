@@ -16,8 +16,8 @@ import { getDb, schema as s } from "@/server/db";
 export type LeakState =
   /** Rapor var */
   | "ok"
-  /** Marina LafPOS'a geçmedi (geçiş günü yok): satış gün gün bilinmiyor, tahmin yok */
-  | "lafpos-yok"
+  /** Marina AsilPOS'a geçmedi (geçiş günü yok): satış gün gün bilinmiyor, tahmin yok */
+  | "asilpos-yok"
   /** Seçilen ay Marina'da sayılmadı */
   | "sayim-yok"
   /** Ay bitmedi: ay sonu sayımı ay bitince */
@@ -30,14 +30,14 @@ export interface LeakData {
   branchName: string;
   /** Marina'nın sayıldığı bitmiş aylar (seçici) */
   months: string[];
-  /** LafPOS satışlarının sayıldığı ilk gün: tahmin bu günden sonra başlayan dönemde var */
-  lafposFrom: string | null;
+  /** AsilPOS satışlarının sayıldığı ilk gün: tahmin bu günden sonra başlayan dönemde var */
+  asilposFrom: string | null;
   report: LeakReport | null;
 }
 
 /**
  * Marina ay sonu kaçak raporu (docs/RAPORLAR.md › Kaçak raporu; hesap src/lib/kacak.ts). Yalnız yönetici; hep Marina'nın
- * (tahmini stoğun şubesi, LafPOS'un şubesi; soldaki seçimden bağımsız). Tahmin ayın son günüyle okunur
+ * (tahmini stoğun şubesi, AsilPOS'un şubesi; soldaki seçimden bağımsız). Tahmin ayın son günüyle okunur
  * (loadStockEstimate, o ayın sayımı başlangıç sayılmaz), ayın sayımıyla karşılaştırılır, fark Stok sayımı'nın ay sonu
  * birim maliyetiyle (unitCostAtMonthEnd) TL'ye çevrilir. Yalnız okur.
  */
@@ -57,12 +57,12 @@ export async function loadLeakReport(month: string | null, now: Date = new Date(
   const branchName = branches.find((b) => b.id === STOCK_ESTIMATE_BRANCH)?.name ?? "Marina";
   // Varsayılan: Marina'nın sayıldığı son bitmiş ay; hiç yoksa geçen ay
   const chosen = month ?? months[months.length - 1] ?? shiftMonth(current, -1);
-  const base = { month: chosen, branchName, months, lafposFrom: null, report: null };
+  const base = { month: chosen, branchName, months, asilposFrom: null, report: null };
   if (chosen >= current) return { ...base, state: "ay-bitmedi" };
 
   const monthEnd = addDays(`${shiftMonth(chosen, 1)}-01`, -1);
   const data = await loadStockEstimate(db, now, { asOf: monthEnd });
-  if (!data) return { ...base, state: "lafpos-yok" };
+  if (!data) return { ...base, state: "asilpos-yok" };
 
   const [countRows, model, monthEndReceived, monthEndClosed] = await Promise.all([
     db
@@ -77,7 +77,7 @@ export async function loadLeakReport(month: string | null, now: Date = new Date(
       .limit(1),
     closedDaysBetween(monthEnd, monthEnd, db, STOCK_ESTIMATE_BRANCH),
   ]);
-  if (!countRows.length) return { ...base, lafposFrom: data.lafposFrom, state: "sayim-yok" };
+  if (!countRows.length) return { ...base, asilposFrom: data.asilposFrom, state: "sayim-yok" };
 
   const ids = [...new Set(countRows.map((r) => r.ingredientId))];
   const ings = await db.select({ id: s.ingredients.id, countUnit: s.ingredients.countUnit }).from(s.ingredients).where(inArray(s.ingredients.id, ids));
@@ -95,5 +95,5 @@ export async function loadLeakReport(month: string | null, now: Date = new Date(
     },
     { extraMissing },
   );
-  return { ...base, lafposFrom: data.lafposFrom, state: "ok", report };
+  return { ...base, asilposFrom: data.asilposFrom, state: "ok", report };
 }

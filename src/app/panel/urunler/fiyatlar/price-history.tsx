@@ -17,7 +17,7 @@ import type { Size } from "@/lib/calc/types";
 import { SIZE_LABELS } from "@/lib/constants";
 import { money, num, numPossessive, pct } from "@/lib/format";
 import { groupHistory, historyDayLabel, PRICE_SOURCE_LABEL, timeTR, undoPlan, type HistoryEntry, type HistoryRow } from "@/lib/prices/history";
-import type { KasaName } from "@/lib/lafpos/kasa";
+import type { KasaName } from "@/lib/asilpos/kasa";
 import { batchPosNote } from "@/lib/prices/pos";
 import { todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -55,7 +55,7 @@ export function PriceHistory({
 }: {
   rows: HistoryRow[];
   products: { id: number; price: number; linked: boolean }[];
-  /** Bugünün kasası (geri almanın kasa cümlesi; src/lib/lafpos/kasa.ts) */
+  /** Bugünün kasası (geri almanın kasa cümlesi; src/lib/asilpos/kasa.ts) */
   kasa?: KasaName;
 }) {
   const [q, setQ] = useQueryText("ara");

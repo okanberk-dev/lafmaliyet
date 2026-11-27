@@ -1,16 +1,16 @@
 import { FEATURE_ELSEWHERE } from "./branch-features";
 import { ALL_BRANCHES, type BranchRow, type BranchScope, DEFAULT_BRANCH_ID, tillBranches } from "./branches";
-import { lafposBranchOf } from "./lafpos/switch";
+import { activePosTillIds } from "./pos/tills";
 import { modposBranchIds } from "./modpos/sube";
 
 /**
- * Ayarlar'ın LafPOS ve ModPOS kartları seçili şubeye göre (şube kapsamı C P2-2; docs/SUBE.md › Ayarlar'da kasa kartları):
+ * Ayarlar'ın AsilPOS ve ModPOS kartları seçili şubeye göre (şube kapsamı C P2-2; docs/SUBE.md › Ayarlar'da kasa kartları):
  * kasası o sistem olmayan şube seçiliyken kart "Bu şubede kullanılmıyor" satırına iner ve sistemin kullanıldığı şubeyi
  * seçtiren bağlantıyı gösterir; "Tümü"de kartlar şube adıyla çizilir. Hangi şubenin kasasının ne olduğu kütükten:
- * LafPOS'un şubesi `lafposBranchOf` (kasa kaynağı LafPOS olan şube, yoksa Marina), ModPOS'tan çekilenler `modposBranchIds`
+ * AsilPOS kasaları `activePosTillIds` (kasa kaynağı AsilPOS olan açık şubeler, hiç yoksa Marina; çok şube), ModPOS'tan çekilenler `modposBranchIds`
  * (hiç yoksa Tuzla, kartın bugünkü kuralı).
  *
- * Saf: veritabanına ve Next'e bağlı değil; `tests/lafpos-sube.test.ts` doğrudan çalıştırır.
+ * Saf: veritabanına ve Next'e bağlı değil; `tests/asilpos-sube.test.ts` doğrudan çalıştırır.
  */
 
 type CardBranch = Pick<BranchRow, "id" | "name" | "kind" | "posSource" | "active" | "sortOrder">;
@@ -32,7 +32,7 @@ function namedAll(scope: BranchScope, branches: readonly CardBranch[]): boolean 
 /**
  * Kartın görünümü: `used` sistemin kullanıldığı şubeler (sıralı). Seçim "Tümü"yse ya da kütükte yoksa bütün bölümler;
  * seçili şube kullanıyorsa yalnız onunki; kullanmıyorsa "kullanılmıyor". Kullanan şubelerin hiçbiri açık fiziksel şube
- * değilse (tek şubeli eski kurulum: LafPOS'un geri düşüş şubesi kütükte yok) kart bugünkü gibi çizilir, satıra inmez
+ * değilse (tek şubeli eski kurulum: AsilPOS'un geri düşüş şubesi kütükte yok) kart bugünkü gibi çizilir, satıra inmez
  */
 function cardView(scope: BranchScope, branches: readonly CardBranch[], used: readonly string[]): PosCardView {
   const tills = tillBranches(branches);
@@ -43,9 +43,12 @@ function cardView(scope: BranchScope, branches: readonly CardBranch[], used: rea
   return { kind: "elsewhere", users };
 }
 
-/** LafPOS kartı: LafPOS'un şubesi (lafposBranchOf) seçiliyken ya da "Tümü"de çizilir */
-export function lafposCardView(scope: BranchScope, branches: readonly CardBranch[]): PosCardView {
-  return cardView(scope, branches, [lafposBranchOf(branches)]);
+/**
+ * AsilPOS kartı (çok şube): kasası AsilPOS olan şube seçiliyken yalnız onun bölümü, "Tümü"de her kasanın adıyla bir bölüm;
+ * kasası ModPOS olan şube seçiliyken "kullanılmıyor"
+ */
+export function asilposCardView(scope: BranchScope, branches: readonly CardBranch[]): PosCardView {
+  return cardView(scope, branches, activePosTillIds(branches));
 }
 
 /** ModPOS kartı: ModPOS'tan çekilen şubeler (hiç yoksa Tuzla); tek şube seçiliyken yalnız onun bölümü */
@@ -54,7 +57,7 @@ export function modposCardView(scope: BranchScope, branches: readonly CardBranch
   return cardView(scope, branches, ids.length ? ids : [DEFAULT_BRANCH_ID]);
 }
 
-/** "Kullanılmıyor" kartının açıklaması: "LafPOS Marina şubesinin kasası; ayarları Marina seçiliyken ya da Tümü'nde görünür." */
+/** "Kullanılmıyor" kartının açıklaması: "AsilPOS Marina şubesinin kasası; ayarları Marina seçiliyken ya da Tümü'nde görünür." */
 export function posElsewhereText(system: string, users: readonly { name: string }[]): string {
   const names = users.map((u) => u.name);
   const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} ve ${names.at(-1)}` : (names[0] ?? "");

@@ -8,6 +8,7 @@ import { MODPOS_DAY_INVALID, MODPOS_KEY_BROKEN, MODPOS_NOT_CONFIGURED, MODPOS_PR
 import { modposKeyProblem, quotaLeft, quotaRenewsAt, renewText, requestableDay } from "@/lib/modpos/request";
 import { modposBranchIds, modposKeyEnv } from "@/lib/modpos/sube";
 import { foyZ } from "@/lib/modpos/z";
+import { adminActor } from "@/lib/roles";
 import { requireAdmin } from "@/server/auth/dal";
 import { listBranches } from "@/server/branches";
 import { getDb } from "@/server/db";
@@ -36,11 +37,11 @@ const FETCH_BUDGET_MS = 50_000;
  * (son hata ve kalan hak değişir); alınan gün işlem geçmişine "gün · alındı / değişti / değişmedi · kalan hak" diye düşer.
  *
  * Şube başına (docs/MODPOS-API.md › Şubeler): kartın şubesinin anahtarı ve hakkıyla çekilir (verilmezse Tuzla). Şube
- * ModPOS'tan çekilen bir şube değilse (pasif, online kanal, kasası LafPOS) istek gitmez.
+ * ModPOS'tan çekilen bir şube değilse (pasif, online kanal, kasası AsilPOS) istek gitmez.
  */
 export async function fetchModposDay(input: string, branchInput: string = DEFAULT_BRANCH_ID) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = adminActor(await requireAdmin());
     const day = zDate.parse(input);
     const branchId = z.string().max(24).parse(branchInput);
     const now = new Date();
@@ -76,7 +77,7 @@ export async function fetchModposDay(input: string, branchInput: string = DEFAUL
  */
 export async function saveModposFallback(input: boolean, branchInput: string = DEFAULT_BRANCH_ID) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    const me = adminActor(await requireAdmin());
     const on = z.boolean({ message: "Geçersiz değer" }).parse(input);
     const branchId = z.string().trim().min(1).max(BRANCH_ID_MAX).parse(branchInput);
     const change = await writeModposFallback(getDb(), me, on, branchId);

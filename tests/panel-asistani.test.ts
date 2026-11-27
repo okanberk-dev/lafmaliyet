@@ -803,7 +803,7 @@ test("kayıtlı yanıt (AI_REPLAY): soruya göre araç, sonra aracın sonucundan
 });
 
 test("kaynak: araçlar yalnız izinli okuyucuları çağırır; istemci dosyaları sunucuya uzanmaz; düğme yalnız yöneticiye; istekte düşünme / sıcaklık yok", () => {
-  // tools.ts: yalnız MCP araçları, Paraşüt'ün bekleyen listesi, LafPOS ve operasyon okuyucuları (okur, yazmaz;
+  // tools.ts: yalnız MCP araçları, Paraşüt'ün bekleyen listesi, AsilPOS ve operasyon okuyucuları (okur, yazmaz;
   // kendi izin listesi tests/asistan-okuma.test.ts) ve işlem kartının planı
   const tools = read("src/server/ai/assistant/tools.ts");
   const imports = [...tools.matchAll(/import\s+\{([^}]*)\}\s+from\s+"(@\/server\/[^"]+)"/g)].map((m) => [m[2], m[1].split(",").map((x) => x.trim().replace(/^type\s+/, "")).filter(Boolean).sort()]);

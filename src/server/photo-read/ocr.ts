@@ -1,6 +1,6 @@
 /*
  * Kodla okuma: yerel OCR (tesseract.js, WebAssembly; docs/FOTOGRAF.md › Kodla okuma). Yapay zekâ yokken (anahtar, kredi,
- * sınır, hata) LafPOS gününün gün sonu fotoğrafı burada okunur, satırlar Pavo fişinin ayrıştırıcısına gider
+ * sınır, hata) AsilPOS gününün gün sonu fotoğrafı burada okunur, satırlar Pavo fişinin ayrıştırıcısına gider
  * (src/lib/photo-read/pavo-ocr.ts). Çalışma anında ağ yok: Türkçe dil verisi pakette (@tesseract.js-data/tur, yalnız
  * LSTM'li 4.0.0_best_int, ~2 MB), çekirdek tesseract.js-core'dan; ikisi de Vercel işlevinin izine next.config.ts ›
  * outputFileTracingIncludes ile konur, tesseract.js serverExternalPackages'tadır (worker_threads ile kendi dosyasını
@@ -16,7 +16,7 @@ import type { OcrLine } from "@/lib/photo-read/pavo-ocr";
 
 /** Paketle gelen Türkçe dil verisi (LSTM, tur.traineddata.gz) */
 export const OCR_LANG_DIR = join(process.cwd(), "node_modules/@tesseract.js-data/tur/4.0.0_best_int");
-/** Fotoğraf yolunun bütçesinde kodla okumanın payı (src/server/photo-read/lafpos.ts) */
+/** Fotoğraf yolunun bütçesinde kodla okumanın payı (src/server/photo-read/asilpos.ts) */
 export const OCR_TIMEOUT_MS = 15_000;
 
 /**

@@ -1,7 +1,7 @@
 # Plan: şubeler, kanallar ve Marina (4 Kasım 2026)
 
 **İstek (sahip):** "şube yönetimi de yap ve laffogato.net cirosunu da ayrı tut; şimdi Laffogato Marina şubesi de
-açılıyor, ona göre de bir sekme aç, güzel bir detay yap LafPOS, lafmaliyet için."
+açılıyor, ona göre de bir sekme aç, güzel bir detay yap AsilPOS, lafmaliyet için."
 
 Kararlar `docs/SUBE.md`'nin başındaki tabloda. Bu dosya işin dalgalara bölünmüş hâli; kurallar `CRITIQUE.md` §1
 (main'e doğrudan push yok, R2 migration protokolü, her dalga bir PR).
@@ -40,14 +40,14 @@ Yapıldı (`0056_sube_kirilimi.sql`). Notlar:
 - `branchUsageCount` gerçek sayımı yapıyor; `tests/subeler.test.ts` şube sütunlu her tablonun sayıma girdiğini
   denetler (yeni para tablosu sessizce kaçamaz).
 - **Çakışma hedefleri:** bileşik anahtara tek sütunlu `ON CONFLICT` çalışma anında düşer ("no unique or exclusion
-  constraint matching"). Dört yer düzeltildi (`pnl.ts` ×2, `sales.ts`, `lafpos/ingest.ts`) ve bekçi test eklendi.
+  constraint matching"). Dört yer düzeltildi (`pnl.ts` ×2, `sales.ts`, `asilpos/ingest.ts`) ve bekçi test eklendi.
 - Seçici dalga 3'ten buraya alındı: şema şubeye bölünüp de süzgeç gelmeseydi, aynı güne iki şube rapor
   girebildiği için `getCashReport(gün)` yanlış şubenin satırını döndürebilirdi. Ayrıntı: `docs/SUBE.md` › Seçici.
 
 ## Dalga 3 — kalan okumaların süzülmesi (BİTTİ, 4 Kasım 2026)
 
 Yapıldı: personel, sayım, zayi, harcama (işletme geneliyle), sabit gider (`0057_sabit_gider_subesi.sql`, boş =
-işletme geneli), LafPOS gün sonu okumaları seçime göre; şube görünümünde mal maliyeti şubenin satışından reçeteye göre;
+işletme geneli), AsilPOS gün sonu okumaları seçime göre; şube görünümünde mal maliyeti şubenin satışından reçeteye göre;
 vergi, nakit planı, tutarlılık ve Excel seçiciden bağımsız "Tümü"; Maaşlar ve Sabit giderler pencerelerinde **Şube**
 alanı; harcama / zayi / sayım / kasadan çıkan seçili şubeye yazılır. Ayrıntı: `docs/SUBE.md` › Şube görünümünde maliyet.
 Kalan: laffogato.net kanalının `/panel/gelir-gider` ayrımının bu kanala taşınması (dalga 4'ün sekmeleriyle).
@@ -80,13 +80,13 @@ bugün "Tümü" gibi davranıyorlar — gerileme değil, eksik:
   fiyat geçerli. "Satışta / Tükendi" de şube başına (`docs/SITE-MENU.md` ile birlikte).
 - Fiyatlar ekranında şube sütunu ve toplu değişiklikte şube seçimi.
 
-## LafPOS tarafı (ayrı depo, `RiosenBeq/lafpos`)
+## AsilPOS tarafı (ayrı depo, `RiosenBeq/lafpos`)
 
-Marina ModPOS kullanacağı için LafPOS'ta acil bir iş yok; yine de gün sonu gönderimi şubesiz kalmamalı:
+Marina ModPOS kullanacağı için AsilPOS'ta acil bir iş yok; yine de gün sonu gönderimi şubesiz kalmamalı:
 
 - Kasanın ayarlarına **şube kimliği** (`sube_id`) eklenir, kurulumda yazılır ve gün sonu özetine konur.
 - `POST /api/pos/gun` yükünde `sube` alanı: panel yoksa `tuzla` sayar (geri uyumlu), varsa o şubenin satırını
-  yazar. Böylece ileride bir şubeye LafPOS kurulursa panel tarafında iş kalmaz.
+  yazar. Böylece ileride bir şubeye AsilPOS kurulursa panel tarafında iş kalmaz.
 
 ## Kararlar (4 Kasım 2026, sahip)
 

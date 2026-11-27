@@ -15,6 +15,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { ESKI_URUN_ADI } from "@/lib/asilpos/eski-adlar";
 import { imageSize } from "@/lib/photo-rules";
 import { guessLinkFactor, packEvidence, suggestIngredient } from "@/lib/product-match";
 
@@ -237,7 +238,8 @@ const shiftDay = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:0
 const ASSISTANT_ROUTES: [RegExp, string, (today: string, question: string) => Record<string, unknown>][] = [
   [/\bsil\b|silmek|toplu|parolamı|şifremi/i, "islem_rehberi", (_t, q) => ({ konu: q.slice(0, 200) })],
   [/gün sonu|gun sonu|kasa tuttu/i, "gun_sonu", () => ({})],
-  [/lafpos/i, "lafpos_durumu", () => ({})],
+  // Eski adla soran da aynı araca (ad değişikliği)
+  [new RegExp(`asilpos|${ESKI_URUN_ADI}`, "i"), "asilpos_durumu", () => ({})],
   [/en çok ne sat|kaç .*sattı|sattık/i, "gunluk_satislar", () => ({})],
   [/tüken|tuken/i, "menu_durumu", () => ({})],
   [/kim çalışıyor|vardiya/i, "vardiya", () => ({})],

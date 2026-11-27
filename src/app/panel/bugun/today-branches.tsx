@@ -54,7 +54,7 @@ function BranchLine({ row, day }: { row: BranchDayRow; day: string }) {
   const facts = [
     row.receipts !== null ? `${row.receipts} fiş` : null,
     row.avgReceipt !== null ? `ort. ${tl(row.avgReceipt)}` : null,
-    row.source === "lafpos" ? "LafPOS gün sonu" : row.source === "modpos" ? "ModPOS API'den" : null,
+    row.source === "asilpos" ? "AsilPOS gün sonu" : row.source === "modpos" ? "ModPOS API'den" : null,
   ].filter(Boolean);
   return (
     <li>

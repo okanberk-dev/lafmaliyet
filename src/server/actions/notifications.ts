@@ -15,15 +15,16 @@ import { CLOSED_PERIOD_HREF, heldSummary } from "@/lib/closed-period";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { dateTR, dayTR, monthShort, num, tl } from "@/lib/format";
-import { blockedBell } from "@/lib/notify-recipients";
+import { blockedBell, RECIPIENT_LISTS } from "@/lib/notify-recipients";
 import { holdReason, holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
 import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
 import { addDays, todayTR } from "@/lib/reminders";
 import { docBellRows } from "@/lib/staff-docs";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
+import { adminLevel } from "@/lib/roles";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { kasaBell } from "@/server/bell/kasa";
-import { lafposRejectionBell } from "@/server/bell/lafpos";
+import { asilposRejectionBell } from "@/server/bell/asilpos";
 import { modposKeyBell } from "@/server/bell/modpos";
 import { opsBell } from "@/server/bell/ops";
 import { vardiyaBell } from "@/server/bell/vardiya";
@@ -86,14 +87,14 @@ async function systemNotifications(): Promise<PanelNotification[]> {
 }
 
 /**
- * Bildirim alıcıları (E-52, E-53): kasa raporu alıcılarında ya da sabah e-postasının etkin bildirim adreslerinde duran
- * ama personel ya da pasif hesabın olduğu için gönderimde düşen adresler. Durumdan türer (ayar ve hesaplar; iki küçük
- * sorgu): adres listeden çıkınca ya da hesap yeniden yönetici olunca satır kalkar. Kimlik adreslerden: yeni bir adres
- * düşünce yeniden okunmamış olur.
+ * Bildirim alıcıları (E-52, E-53): kasa raporu alıcılarında, sabah e-postasının etkin bildirim adreslerinde ya da
+ * muhasebeci paketinin alıcılarında duran ama personel, müdür ya da pasif hesabın olduğu için gönderimde düşen adresler.
+ * Durumdan türer (ayar ve hesaplar; birkaç küçük sorgu): adres listeden çıkınca ya da hesap yeniden yönetici olunca
+ * satır kalkar. Kimlik adreslerden: yeni bir adres düşünce yeniden okunmamış olur.
  */
 async function recipientNotifications(): Promise<PanelNotification[]> {
   const now = await blockedRecipientsNow();
-  return (["cash", "digest"] as const).flatMap((list) => {
+  return RECIPIENT_LISTS.flatMap((list) => {
     if (!now[list].length) return [];
     const b = blockedBell(list, now[list]);
     return [{ id: b.id, kind: "warning" as const, title: b.title, body: b.body, timeLabel: "", unread: true, href: b.href, group: "sistem" as const }];
@@ -111,12 +112,12 @@ async function checklistNotifications(user: CurrentUser): Promise<PanelNotificat
   const day = businessDate(now);
   const yesterday = addDays(day, -1);
   const admin = user.role === "admin";
-  const [lists, marks] = await Promise.all([loadChecklistDays(admin ? [day, yesterday] : [day], user.role, now), admin ? closedMarksOn(yesterday) : null]);
+  const [lists, marks] = await Promise.all([loadChecklistDays(admin ? [day, yesterday] : [day], adminLevel(user.role), now), admin ? closedMarksOn(yesterday) : null]);
   // Dün onaylı kapalıysa (dalga 10 §2.9) hiç açılmamış listeler eksik sayılmaz; şube şube: listenin şubesi kapalıysa
   // (bütün şubelerin listesinde işletme kapalıysa). Marina'nın kapalı günü Tuzla'nın eksik listesini susturmaz
   const yLists = marks ? closedDayBellLists(lists.get(yesterday) ?? [], marks) : [];
   return checklistBell({
-    role: user.role,
+    role: adminLevel(user.role),
     now,
     today: { day, lists: lists.get(day) ?? [] },
     yesterday: admin ? { day: yesterday, lists: yLists } : null,
@@ -535,7 +536,8 @@ async function staffDocNotifications(): Promise<PanelNotification[]> {
  * da çağrılır: kasa (src/server/bell/kasa.ts) ve operasyon (src/server/bell/ops.ts). Personel kendi hatırlatıcılarını,
  * önerilerinin ve isteklerinin sonucunu ("İsteklerim"), akşam bekleyen kasa raporunu ve bekleyen kontrol listesini
  * görür; maliyet, ödeme, fatura ve sistem bilgisi ona gitmez. Okunamayan bölüm kendi grubunda "… yüklenemedi" satırı
- * bırakır (failedBellRows; bulgu 88).
+ * bırakır (failedBellRows; bulgu 88). Yeni cihazdan giriş satırları iki adımlısı zorunlu üç rolün (yönetici, müdür,
+ * muhasebeci) zilinde, her birinde yalnız kendi hesabınınki; muhasebecinin zilinde başka satır yok (docs/ROLLER.md).
  */
 export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   const user = await getCurrentUser();
@@ -548,18 +550,27 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     failed.push(part);
   };
   const safe = (part: BellPart, p: Promise<PanelNotification[]>) => p.catch((e: unknown) => (onFailed(part, e), [] as PanelNotification[]));
-  const [mine, recipes, cash, kontrol, ops] = await Promise.all([
+  // Muhasebeci salt okur: günlük işlerin, onayların ve personelin zili ona gitmez; yalnız kendi hesabının yeni cihaz
+  // uyarısı (docs/ROLLER.md)
+  if (user.role === "accountant") {
+    const devices = await safe("guvenlik", newDeviceBellRows(user));
+    return [...failedBellRows(failed, user.role, todayTR()), ...devices];
+  }
+  // Kişinin kendi hesabına yeni cihazdan giriş (son 7 gün; docs/DEPLOY.md › 6a): yönetici ve müdürde (personele
+  // alertsNewDevice sorgusuz boş döner); Sistem başlığında
+  const [mine, recipes, cash, kontrol, ops, devices] = await Promise.all([
     safe("hatirlatici", reminderNotifications(user)),
     safe("recete", recipeNotifications(user)),
     safe("kasa", kasaBell(user, onFailed)),
     safe("kontrol", checklistNotifications(user)),
     safe("operasyon", opsBell(user, onFailed)),
+    safe("guvenlik", newDeviceBellRows(user)),
   ]);
-  if (user.role !== "admin") return [...failedBellRows(failed, user.role, todayTR()), ...cash, ...kontrol, ...mine, ...recipes, ...ops];
+  if (user.role !== "admin") return [...failedBellRows(failed, user.role, todayTR()), ...devices, ...cash, ...kontrol, ...mine, ...recipes, ...ops];
   // Maliyet modeli zilin en ağır okuması: düşerse (E-49) öbür maddeler yine gelir, modelNotifications kendi satırını
   // koyar. Ödemeler de öyle: okunamazsa "Ödemeler yüklenemedi" satırı (upcomingFailed). ModPOS kasa föyünün anahtarı
-  // çalışmıyorsa ve LafPOS'un gün sonu reddedildiyse Sistem başlığında (src/server/bell/modpos.ts, src/server/bell/lafpos.ts)
-  const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos, lafpos, vardiya, devices, staffDocs] = await Promise.all([
+  // çalışmıyorsa ve AsilPOS'un gün sonu reddedildiyse Sistem başlığında (src/server/bell/modpos.ts, src/server/bell/asilpos.ts)
+  const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos, asilpos, vardiya, staffDocs] = await Promise.all([
     modelNotifications().catch(modelFailed),
     // Şube seçiliyken o şubenin ve işletme genelinin ödemeleri (docs/SUBE.md › Ödemeler)
     currentBranchScope()
@@ -572,11 +583,9 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     safe("komisyon", commissionNotifications()),
     safe("alici", recipientNotifications()),
     safe("modpos", modposKeyBell()),
-    safe("lafpos", lafposRejectionBell()),
+    safe("asilpos", asilposRejectionBell()),
     // Gelecek haftanın vardiyası yazılmadıysa (Perşembe 18:00'den Pazar'a; docs/VARDIYA.md › Bildirimler)
     safe("vardiya", currentBranchScope().then((scope) => vardiyaBell(scope))),
-    // Kişinin kendi hesabına yeni cihazdan giriş (son 7 gün; docs/DEPLOY.md › 6a)
-    safe("guvenlik", newDeviceBellRows(user)),
     safe("belge", staffDocNotifications()),
   ]);
   const lost = failedBellRows(failed, user.role, todayTR());
@@ -600,7 +609,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     });
   }
 
-  // Sistem başlığında LafPOS'un reddi ModPOS'tan, yeni cihazdan girişler ondan sonra; vardiya hatırlatması Uyarılar başlığının
+  // Sistem başlığında AsilPOS'un reddi ModPOS'tan, yeni cihazdan girişler ondan sonra; vardiya hatırlatması Uyarılar başlığının
   // ilk satırı, personel belgeleri (süresi dolan / yaklaşan) hemen ardından
-  return [...lost, ...system, ...recipients, ...modpos, ...lafpos, ...devices, ...mine, ...recipes, ...holds, ...vardiya, ...staffDocs, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
+  return [...lost, ...system, ...recipients, ...modpos, ...asilpos, ...devices, ...mine, ...recipes, ...holds, ...vardiya, ...staffDocs, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
 }

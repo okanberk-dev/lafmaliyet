@@ -4,18 +4,46 @@ Son güncelleme: 27 Kasım 2026. Kaynak: 25 Kasım yönetim paneli denetimi ve s
 
 Etiketler:
 - **[Ladmin]**: yalnız panelde değişiklik.
-- **[İkisi]**: panelle birlikte LafPOS'ta da değişiklik gerekir.
+- **[İkisi]**: panelle birlikte AsilPOS'ta da değişiklik gerekir.
 - **[Sahip]**: kodla değil, ayarla ya da hesapla çözülür.
 
-LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
+AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
 ## Bitenler (25–27 Kasım 2026)
+
+- **Çok şubeli AsilPOS kasası ve Marina yalnız AsilPOS** (#167, 27 Kasım; docs/ASILPOS.md › Şubeler): her fiziksel
+  şubenin kendi AsilPOS kasası olabilir ("yalnız bir şube" sınırı kalktı); her kasanın kendi anahtarı, geçiş günü, gün
+  sonu, kasa e-postası, komisyonu ve durumu var, panel şubeyi anahtardan tanır (başka şube bildiren kasa 409). Bir günün
+  sayılma kuralı tek: şubenin kasası AsilPOS ve gün o şubenin geçiş gününden önce değil; "Tümü"de her kasa kendi
+  gününden, (şube, gün) anahtarlı, çift sayım yok. Marina'da ModPOS bitti (föyü çekilmez, zil ve istemler geçiş gününden
+  susar; 22 Kasım'dan önceki föy sayılmaya devam eder), Tuzla ModPOS'ta. Göç 0099 yalnız veri, iki kez çalışsa da aynı.
+  Bugünkü veride (yalnız Marina kasası) rakam değişmez. İnceleme düzeltmeleri: süren ayın kasa raporu beklemesi kasa
+  başına ("Tümü" şube görünümlerinin toplamı); geçiş günü sonra olan kasa kendi geçiş ayına dek komisyonda föyün
+  markasıyla (`tek` değil); komisyonun eksik günleri takvim günü; Marina dışındaki şubede anahtar metinleri ortamdaki
+  değişkeni önermez; bir anahtar başka şubenin kasa hareketi satırını yazmaz; kurulum kodunun anahtarı kilit altında.
+  Kasa tarafı kasa deposunun #188'i (ikinci kasa açılmadan önce birleşmeli).
+
+- **AsilPOS: kasanın yeni adı panelde her yerde** (#166, 27 Kasım; docs/ASILPOS.md › Ad değişikliği (teknik)):
+  ekran, e-posta, belge, kod, tablo ve ortam değişkeni; kurulu kasa, Vercel'deki eski adlı değişkenler ve eski derleme çalışmaya
+  devam eder (göç 0098 yalnız genişletir). Kasa tarafı kasa deposunun #187'si. Sahibe söylenecek: Vercel'de
+  `ASILPOS_SYNC_SECRET` (varsa CLOUD / SITE / KURUCU de) aynı değerle eklensin, sonra eski adlı değişkenler silinebilir; eski adları
+  kaldıran daraltma göçü (A3) en erken 7 gün sonra.
+
+- **Roller: Müdür ve salt okunur Muhasebeci; vardiyanın şube ayarları** (#163, 27 Kasım; docs/ROLLER.md): müdür şubesine
+  kilitli, maaş, kişisel ücret, maliyet, karaoke tutarı ve öteki şubeleri görmez; muhasebeci yalnız okur (Muhasebe,
+  Faturalar, Gelir-gider, Vergi, Aylık harcamalar, Kasa raporu). İlk incelemenin 12 bulgusu ve ikinci bağımsız yetki
+  incelemesinin doğruladığı 6 bulgu testleriyle düzeltildi. Göç 0097_roller (yalnız CHECK kısıtları; yeni roller kimseye
+  kendiliğinden verilmez). Sahibe söylenecek: (1) iki adımlı doğrulama `ADMIN_2FA_REQUIRED=1` ile yönetici, müdür ve
+  muhasebecide zorunlu, yoksa isteğe bağlı; (2) Hesabım'daki AsilPOS kurulum bağlantısı şubeye kilitli personele de
+  görünüyordu: bekleyen bir kurulum kodu varken personel Hesabım'ı açmış olabilirse yayından sonra AsilPOS anahtarını
+  döndürün; (3) bir şubenin e-postası müdür ya da muhasebeci hesabındaysa kurulum bağlantısı o adrese gitmez, başka adres
+  yazılır.
 
 - **Hata kaydı** (P3; bu PR, 27 Kasım): sunucu hataları (Next'in `onRequestError` kancası), işlemlerin beklenmeyen
   hataları (`attempt()`), tarayıcı hataları ve CSP ihlal raporları panelin veritabanında 30 gün; aynı hata tek satır
   (sayısı, ilk ve son görülüşü, hata kodu). Ekran **Ayarlar › Hata kaydı** (yalnız yönetici; Çözüldü / Hepsi çözüldü).
   Kişisel veri ve anahtar yazılmaz; kayıt isteği bekletmez ve bozamaz; günlük satır sınırı ve 2.000 satır tavanı. Göç
-  `0097_hata_kaydi` (main ilerlediyse birleştirmede yeniden üretilir). docs/HATA-KAYDI.md. Sahibe söylenecek:
+  `0100_hata_kaydi`. docs/HATA-KAYDI.md. Sahibe söylenecek:
   - Sunucuda hata olunca sabah e-postasının alıcılarına günde en çok bir "Panelde hata: …" e-postası gelir (yalnız
     canlıda, e-posta açıkken); ayrıntı Ayarlar › Hata kaydı'nda. Kullanıcı "Bir şeyler ters gitti" ekranındaki hata
     kodunu söylerse satır o kodla bulunur (satır son beş görülüşün kodunu tutar; kod her yayında değişir).
@@ -42,7 +70,7 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   - Karışık fatura kalem kalem: hammaddeye bağlı kalem mal alışı, "hammadde değil" kalem nedeninin yerine (Sarf, Demirbaş, Hizmet, Deneme). Tedarikçi kuralı, Temizlik & Sarf kategorisi, aranabilir hammadde seçici, AI isteminde faturanın bağlamı.
   - Eski kuralla rakam karşılaştırması: `scripts/fatura-kalem-karsilastir.ts`; değişen rakamlar `tests/fatura-kalem-karsilastirma.test.ts`'te kilitli (docs/PARASUT.md › 5f).
   - Sahibe söylenecek: geçişten sonra tek şube seçiliyken eski faturalar görünmez, ta ki şubeleri seçilene kadar (Tümü değişmez). Hammaddeye bağlı kalemi olan mal dışı faturaların o kalemleri geçmiş aylarda da mal alışına geçer.
-- **Z raporu e-postası ve fotoğraf okuma** (26 Kasım; dal `claude/festive-goodall-sclggq`; docs/LAFPOS.md › Z raporu e-postası, docs/FOTOGRAF.md § 5):
+- **Z raporu e-postası ve fotoğraf okuma** (26 Kasım; dal `claude/festive-goodall-sclggq`; docs/ASILPOS.md › Z raporu e-postası, docs/FOTOGRAF.md § 5):
   - Marina'da eklenen her gün sonu fotoğrafı için yöneticiye ayrı "Z raporu" e-postası: Z tutsa da ("Z raporu tutuyor"), okunan rakamlar ve fotoğrafın kendisi ekli. Tuzla'nın kasa e-postasında fotoğraf yazılanlarla tutuyorsa yeşil satır.
   - Yüklenirken okunamayan (ya da yalnız kodla okunan) fotoğraf sonradan yeniden okunur. Fatura okumaları fotoğrafların günlük yapay zekâ hakkını yemez (kendi havuzu).
   - ModPOS Z'si, yazarkasa Z'si ve fiş önce ucuz modelle (Haiku), okunuş eksik ya da tutarsızsa bir kez güçlü modelle okunur.
@@ -55,13 +83,13 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   hemen açılır (istenmezse Şubeler › Tuzla › Kör sayım).
 - **Marina gün sonu e-postası gece kaybolmaz** (dal `claude/peaceful-maxwell-ov7ms7`): 25 Kasım akşamı e-posta gitmedi.
   Pavo beklemesi (#141) sonraki bir tetiğe kalıyordu ve gece tetik yoktu. Bekleme artık aynı istekte biter
-  (`settlePavoWait`): sonuç gelmezse e-posta ~38 sn'de Pavo'suz gider. LafPOS'un `bankPosPending` alanına uyulur;
-  bekleme ilk gelişten sayılır. Ayrıntı: docs/LAFPOS.md "Pavo'yu bekler". LafPOS tarafı lafpos aynı adlı dalda.
+  (`settlePavoWait`): sonuç gelmezse e-posta ~38 sn'de Pavo'suz gider. AsilPOS'un `bankPosPending` alanına uyulur;
+  bekleme ilk gelişten sayılır. Ayrıntı: docs/ASILPOS.md "Pavo'yu bekler". AsilPOS tarafı AsilPOS deposunda (`lafpos`) aynı adlı dalda.
 - **E-postalar ortak tasarımda** (aynı dal): `src/lib/email-kit.ts`. Ferah kart, telefonda tek sütun; bütün e-postalar
   aynı kabuk ve parçaları kullanır. İçerik, bağlantı ve düz metin aynı kaldı.
 - **Gün sonu zinciri sağlamlaştı** (dal `wt/lm-takip`, 26 Kasım): sabah işi işi bekleyen günleri önce ve yeniden eskiye
-  işler (dünkü gün ilk; süre yetmezse adım hata); LafPOS'un reddedilen günü yöneticinin zilinde ("Marina gün sonu
-  alınamadı: …", gün ve neden başına bir kez). Ayrıntı: docs/LAFPOS.md "Sabah işinin sırası", "Zil".
+  işler (dünkü gün ilk; süre yetmezse adım hata); AsilPOS'un reddedilen günü yöneticinin zilinde ("Marina gün sonu
+  alınamadı: …", gün ve neden başına bir kez). Ayrıntı: docs/ASILPOS.md "Sabah işinin sırası", "Zil".
 
 - **Dalga 2/3 paketleri (ikinci grup)** (26 Kasım; `wip/entegre`, sonraki PR): Raporlar (şube karşılaştırma, işçilik /
   ciro, Marina kaçak raporu, kayıp önlemenin panel tarafı); stok tahmininde Marina'nın online siparişi, kaç gün yeter ve
@@ -69,11 +97,13 @@ LafPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
   PDF'i, dönem kapanışı ve reçete geçmişi; personel belgeleri, avans ve asistana fiş fotoğrafı. Göçler 0093 (muhasebe),
   0094 (personel). Sahibe söylenecek: Ayarlar › Muhasebeci paketi'ne muhasebecinin adresi yazılmadıkça paket gitmez;
   Marina'nın online ay kaydı yayından sonra işletmeninkiyle bir kez karşılaştırılmalı (site şubeyi süzmüyorsa tahmin
-  online tüketimi fazla düşer). Paraşüt güvenliği (aynı vergi no sorusu, POST + tek kullanımlık bağlantı, LafPOS anahtarı hemen
+  online tüketimi fazla düşer). Paraşüt güvenliği (aynı vergi no sorusu, POST + tek kullanımlık bağlantı, AsilPOS anahtarı hemen
   geçersiz) ve CSP: tam politika önce yalnız raporlar (Report-Only); raporlar 27 Kasım'dan beri hata kaydında, karar
   Ayarlar › Hata kaydı'nda (yukarıda).
 
 ## Devam eden (26 Kasım akşamı)
+
+- [ ] [Ladmin] Şube seçiliyken her ekranda yalnız o şubenin bilgisi ("Tümü"de şube şube); firma geneli ekranlar için sahibin kararı.
 
 Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Kod paketleri:
 - P1 Roller (Müdür, salt okunur Muhasebeci) + vardiyanın şube ayarları (`wip/entegre3`): incelemenin doğruladığı 12
@@ -83,7 +113,7 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
   kategorileri, sayım grupları) ekrandan; P7 dönem kapanışı sayım / ciro / kasaya da; P8 fotoğraf okuma doğruluğu;
   P9 temizlik.
 
-- AsilPOS: LafPOS'un adı her yerde AsilPOS (panel ve kasa deposu; eski adlar geçişte çalışır), Marina yalnız AsilPOS
+- AsilPOS: kasa programının adı her yerde AsilPOS (26 Kasım 2026'ya kadar adı LafPOS; panel ve kasa deposu; eski adlar geçişte çalışır), Marina yalnız AsilPOS
   (ModPOS bitti), her şubenin kendi AsilPOS kasası (sahibin 27 Kasım kararları; DEVAM.md).
 - Şube ayrımı: şube seçiliyken her ekranda yalnız o şube; firma geneli ekranlar kullanıcının kendi ayarıyla.
 - P8'e ek: banka POS Z'sinin ÖZET'indeki "Toplam KDV" okunmuyor (fiş yanlışlıkla "farklı" çıkıyor).
@@ -109,12 +139,12 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 
 - [x] [Ladmin] Otomatik haftalık yedek; son 8 hafta saklanır. (26 Kasım; Ayarlar › Yedek, docs/YEDEK.md § 13)
 - [x] [Ladmin] Tuzla'da kör sayım. Önce sayılan nakit girilip kilitlenir, fark sonra görünür. (26 Kasım; şube ayarı Şubeler › Kör sayım, ModPOS şubesinde varsayılan açık)
-- [x] [İkisi] Teslim defteri: teslim edilen nakdi kimin aldığı kaydedilir. (26 Kasım; Tuzla'da Kime, iki şube Kasa › Teslim defteri'nde; Marina'nınki LafPOS #144'ün alıcısından)
+- [x] [İkisi] Teslim defteri: teslim edilen nakdi kimin aldığı kaydedilir. (26 Kasım; Tuzla'da Kime, iki şube Kasa › Teslim defteri'nde; Marina'nınki AsilPOS #144'ün alıcısından)
 - [x] [Ladmin] Şube karşılaştırma ekranı: şubeler ay ay yan yana. (26 Kasım; Raporlar › Şubeler, docs/RAPORLAR.md)
 - [x] [Ladmin] Stok tahmini Marina'nın online siparişlerini düşsün; "kaç gün yeter" ve eşik önerisi eklensin. (26 Kasım; docs/STOK-TAHMINI.md)
 - [x] [Ladmin] Asistanın fiyat kartı şube fiyatını bilsin. Asistan şubeyi açık ekrandan okusun; "bugün" iş günü (05:00) olsun. (26 Kasım)
 - [x] [Ladmin] Ayrı Paraşüt firması bağlanırken "Aynı vergi numarası mı?" diye sorulsun. (26 Kasım; docs/PARASUT.md)
-- [x] [Ladmin] KDV tahmini yazarkasa Z'sine ve LafPOS'un KDV dökümüne dayansın. (26 Kasım; kaynak satırı: "12 gün yazarkasa Z'sinden, 3 gün tahmin")
+- [x] [Ladmin] KDV tahmini yazarkasa Z'sine ve AsilPOS'un KDV dökümüne dayansın. (26 Kasım; kaynak satırı: "12 gün yazarkasa Z'sinden, 3 gün tahmin")
 - [x] [Ladmin] Vardiyası değişen personele bildirim gitsin. Gelecek haftanın planı yazılmadıysa hatırlatılsın. (26 Kasım)
 - [x] [Ladmin] Onay istekleri yöneticinin telefonuna bildirim olarak gitsin. (26 Kasım)
 - [x] [Ladmin] Yönetici hesaplarında iki adımlı doğrulama zorunlu olsun; yeni cihazdan girişte uyarı. (26 Kasım; aynı gün sahibin isteğiyle zorunluluk kaldırıldı: iki adımlı isteğe bağlı, Vercel'de `ADMIN_2FA_REQUIRED=1` yeniden zorunlu yapar)
@@ -122,15 +152,15 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 
 ## Dalga 3 (sonra)
 
-- [ ] [Ladmin] "Müdür" ve salt okunur "Muhasebeci" rolleri.
+- [x] [Ladmin] "Müdür" ve salt okunur "Muhasebeci" rolleri. (27 Kasım, #163; docs/ROLLER.md)
 - [x] [Ladmin] Marina ay sonu kaçak raporu: tahmini stokla sayım arasındaki fark TL olarak, en çok kaçan kalemlerle. (26 Kasım; Raporlar › Kaçak; ilk gerçek rapor Aralık sonu sayımıyla)
-- [ ] [İkisi] Kişi bazında kayıp önleme özeti: kasa farkı, iptal, ikram ve indirimin kişiye göre sapması. LafPOS iptali yapanı ve ikram edeni göndermiyorsa LafPOS'a da ekleme gerekir. (26 Kasım: panel tarafı bitti, Raporlar › Kayıp önleme; kasa farkı sayana, zayi / ikram girene göre. LafPOS'un iptal ve ikramı kişiyle göndermesi sahibin onayını bekliyor)
+- [ ] [İkisi] Kişi bazında kayıp önleme özeti: kasa farkı, iptal, ikram ve indirimin kişiye göre sapması. AsilPOS iptali yapanı ve ikram edeni göndermiyorsa AsilPOS'a da ekleme gerekir. (26 Kasım: panel tarafı bitti, Raporlar › Kayıp önleme; kasa farkı sayana, zayi / ikram girene göre. AsilPOS'un iptal ve ikramı kişiyle göndermesi sahibin onayını bekliyor)
 - [x] [Ladmin] Banka ve tedarikçi ekstresiyle mutabakat. (26 Kasım; Kâr & ödemeler › Mutabakat, docs/MUTABAKAT.md)
 - [x] [Ladmin] Banka POS hakediş mutabakatı: kart satışı ile bankaya gelen para karşılaştırılır. (26 Kasım; Mutabakat › POS hakediş)
 - [x] [Ladmin] Muhasebeciye aylık tek paket ve ay kapanış e-postası. (26 Kasım; Ayarlar › Muhasebeci paketi, docs/MUHASEBE-PAKETI.md)
 - [x] [Ladmin] Kontrol listelerinin denetime hazır aylık PDF'i. (26 Kasım; Kontrol › Geçmiş › Aylık PDF)
 - [x] [Ladmin] Asistana fiş fotoğrafı: telefonda çekince kart hazırlanır. (26 Kasım; docs/ASISTAN-ISLEMLER.md › Fiş fotoğrafı)
-- [ ] [İkisi] Tuzla LafPOS'a geçecekse iki şubeli LafPOS.
+- [ ] [Sahip] Çok şubeli kasa canlıya çıkınca: Ayarlar › AsilPOS › Marina bölümünde geçiş günü 22 Kasım 2026 mı bakın; Marina dışındaki şubede Marina'nın anahtarını almış kasa varsa yeni kurulum kodu gönderin; Vercel'de `MODPOS_API_KEY_MARINA`'yı silin (artık okunmuyor). Gün sonu penceresinde (22:00–03:00) birleştirmeyin. İkinci AsilPOS kasası açılmadan önce kasa deposunun #188'i birleşmeli.
 - [x] [Ladmin] Dönem kapanışı: beyan edilmiş aya sonradan fatura girmesin. Reçete geçmişi tutulsun. (26 Kasım; Ayarlar › Dönem kapanışı, docs/DONEM-KAPANISI.md)
 - [x] [Ladmin] İşçilik maliyeti / ciro oranı: günlük, haftalık ve şube şube. (26 Kasım; Raporlar › İşçilik)
 - [x] [Ladmin] Personel belgeleri (hijyen eğitimi, sağlık raporu, SGK) ve avans takibi. (26 Kasım; Giderler & maaşlar › Belgeler, Avanslar; docs/PERSONEL-BELGE.md)
@@ -138,10 +168,11 @@ Sıra, kurallar ve ayrıntı: [docs/planlar/DEVAM.md](docs/planlar/DEVAM.md). Ko
 ## Düşük öncelikli güvenlik notları
 
 - [x] Paraşüt bağlantısı adres çubuğundan başlatılabiliyor. Bir düğmeyle (POST) başlatılmalı ve hesabı tek kullanımlık bir değerle seçmeli. (26 Kasım)
-- [x] Döndürülen LafPOS anahtarı önbellek yüzünden en çok 60 saniye daha geçerli kalıyor. (26 Kasım; imzası tutan istek anahtarı veritabanından taze okur)
+- [x] Döndürülen AsilPOS anahtarı önbellek yüzünden en çok 60 saniye daha geçerli kalıyor. (26 Kasım; imzası tutan istek anahtarı veritabanından taze okur)
 - [x] Content-Security-Policy başlığı yok. (26 Kasım; çekirdek uygulanır, tam politika önce yalnız raporlar; docs/DEPLOY.md › Güvenlik başlıkları)
 
 ## Bekleyen başka iş
 
-- [ ] Vardiyayla ilgili şube maddeleri (hazır vardiya saatleri şube ayarına, "Tümü"de şube seçimi). PR #120 bu dala
-  birleştirildi (26 Kasım); artık yapılabilir.
+- [x] Vardiyayla ilgili şube maddeleri (26 Kasım; `wip/vardiya-sube`): hazır vardiya saatleri şube ayarı (Şubeler ›
+  şube › Hazır vardiyalar; ayarı olmayan şubede bugünkü saatler); "Tümü"de Vardiya önce şubeyi sorar (önceden sessizce
+  Tuzla'ya yazıyordu). Sahibe söylenecek: "Tümü"deyken Vardiya'yı açan önce şube seçer.

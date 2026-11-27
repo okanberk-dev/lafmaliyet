@@ -13,17 +13,17 @@ import { Field } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
 import { PasswordInput } from "@/components/ui/password-input";
 import type { ModposSetting } from "@/lib/branch-settings/groups";
-import { LAFPOS_SECRET_MIN } from "@/lib/lafpos/secret-rules";
-import { dayMonthYearTR } from "@/lib/lafpos/switch";
+import { ASILPOS_SECRET_MIN } from "@/lib/asilpos/secret-rules";
+import { dayMonthYearTR } from "@/lib/asilpos/switch";
 import { isStepUpError } from "@/lib/step-up";
-import { saveLafposSecret } from "@/server/actions/branch-settings";
+import { saveAsilposSecret } from "@/server/actions/branch-settings";
 import type { SecretState } from "@/server/branch-settings";
 import type { BranchSettingView } from "@/server/branch-settings-view";
 
 import { ModposFallbackSwitch } from "../../ayarlar/modpos-client";
 
-/** LafPOS kartının verisi: geçiş günü ve anahtarın yalnız durumu (anahtarın kendisi tarayıcıya hiç gelmez) */
-export interface LafposBranchData {
+/** AsilPOS kartının verisi: geçiş günü ve anahtarın yalnız durumu (anahtarın kendisi tarayıcıya hiç gelmez) */
+export interface AsilposBranchData {
   branchId: string;
   switchDay: string | null;
   /** Panelde saklanan anahtarın durumu */
@@ -31,35 +31,49 @@ export interface LafposBranchData {
   /** Kullanılan anahtar nereden ("panel", "ortam"); yoksa null */
   source: "panel" | "ortam" | null;
   /** Kullanılan anahtarın sorunu (yok, kısa, sitenin anahtarıyla aynı); null: bağlantı açık */
-  problem: "missing" | "short" | "same_as_site" | null;
-  /** Kütükte kasa kaynağı hâlâ ModPOS (LafPOS'un şubesi geri düşüşle bu şube; föyün yedek çekimi sürüyor) */
+  problem: "missing" | "short" | "same_as_site" | "same_as_other_branch" | null;
+  /** Ortamda anahtarın okunduğu değişkenin adı (sahip yeni adı eklemediyse eski adı; src/lib/asilpos/env.ts posEnvName) */
+  envName: string;
+  /** Kütükte kasa kaynağı hâlâ ModPOS (AsilPOS'un şubesi geri düşüşle bu şube; föyün yedek çekimi sürüyor) */
   sourceModpos: boolean;
+  /** Şubenin günleri sayılıyor mu (kasası AsilPOS: posTillIds); değilse yalnız kurulum yapılmış, günleri deneme */
+  till: boolean;
+  /**
+   * Eski tek kasalı kurulumun şubesi mi (Marina, LEGACY_POS_BRANCH_ID): yalnız onda paneldeki anahtar yokken ortamdaki
+   * kullanılır (src/server/asilpos/branch.ts readKeys). Öbür şubede anahtar silinirse kasa bağlantısız kalır
+   */
+  legacy: boolean;
 }
 
 const PROBLEM_TEXT = {
-  missing: "Anahtar yok: LafPOS'un gönderdiği gün sonları reddedilir",
+  missing: "Anahtar yok: AsilPOS'un gönderdiği gün sonları reddedilir",
   short: "Sunucudaki anahtar 32 karakterden kısa: bağlantı kapalı",
   same_as_site: "Sunucudaki anahtar sitenin anahtarıyla aynı: bağlantı kapalı",
+  same_as_other_branch: "Anahtar başka bir şubenin AsilPOS anahtarıyla aynı: bağlantı kapalı, yeni anahtar kaydedin",
 } as const;
 
 // Teknik adlar yalnız `tech`'te (ekran gövdesinde geliştirici sözcüğü yok; tests/uyari-goc.test.ts)
-const SECRET_TECH = "Panelde saklanan anahtar sunucudaki LAFPOS_SYNC_SECRET'ın önüne geçer; LafPOS'ta LAFMALIYET_SYNC_SECRET aynı olmalı."; // tech-metni
+const secretTech = (envName: string) => `Panelde saklanan anahtar sunucudaki ${envName}'ın önüne geçer; AsilPOS'ta LAFMALIYET_SYNC_SECRET aynı olmalı.`; // tech-metni
+
+/** Anahtar silinince ne olur: Marina'da sunucudaki eski anahtar, öbür şubede kasa bağlantısız kalır */
+const dropText = (legacy: boolean) => (legacy ? "Sunucudaki anahtar kullanılır." : "Bu şubenin kasası bağlantısız kalır: yeni anahtar kaydedin ya da kurulum kodu gönderin.");
 
 /**
- * Şube ayarları › LafPOS (şube ayarı pos.lafpos; docs/SUBE.md › Şube başına ayarlar): yalnız kasası LafPOS olan şubede.
- * Geçiş günü Ayarlar › LafPOS'ta değişir (denetimleri orada); burada yalnız gösterilir. Anahtar panelde şifreli saklanabilir:
- * ortamdaki LAFPOS_SYNC_SECRET'ın önüne geçer, LafPOS'taki LAFMALIYET_SYNC_SECRET ile aynı olmalıdır. Saklanan anahtar
- * bir daha gösterilmez; yalnız "kayıtlı" der, değiştirilir ya da silinir. "Diğer şubeyle aynı" yok: LafPOS en çok bir
- * şubenin kasasıdır.
+ * Şube ayarları › AsilPOS (şube ayarı SUBE_AYAR_GRUBU; docs/SUBE.md › Şube başına ayarlar): kasası AsilPOS olan ya da
+ * AsilPOS kurulumu yapılmış şubede. Geçiş günü Ayarlar › AsilPOS'ta değişir (denetimleri orada); burada yalnız gösterilir.
+ * Anahtar panelde şifreli saklanır, AsilPOS'taki LAFMALIYET_SYNC_SECRET ile aynı olmalıdır; her şubenin kasası kendi
+ * anahtarını kullanır (çok şube). Ortamdaki ASILPOS_SYNC_SECRET yalnız eski kurulumun şubesine (Marina) hizmet eder,
+ * onun da saklanan anahtarı yokken (`legacy`); öbür şubede anahtar silinirse kasa bağlantısız kalır. Saklanan anahtar bir
+ * daha gösterilmez; yalnız "kayıtlı" der, değiştirilir ya da silinir. "Diğer şubeyle aynı" yok: anahtar şubeyi tanıtır.
  */
-export function LafposBranchCard({ data }: { data: LafposBranchData }) {
+export function AsilposBranchCard({ data }: { data: AsilposBranchData }) {
   const [secret, setSecret] = useState("");
   /** Parola penceresi: yeni anahtarı kaydet ya da paneldekini sil */
   const [ask, setAsk] = useState<"save" | "drop" | null>(null);
-  const short = secret.trim().length > 0 && secret.trim().length < LAFPOS_SECRET_MIN;
+  const short = secret.trim().length > 0 && secret.trim().length < ASILPOS_SECRET_MIN;
 
   async function save(value: string | null, password: string): Promise<string | null> {
-    const res = await saveLafposSecret({ branchId: data.branchId, secret: value }, { password });
+    const res = await saveAsilposSecret({ branchId: data.branchId, secret: value }, { password });
     if (!res.ok) {
       // Parola hataları pencerede kalır; öteki hatalar bildirimle
       if (isStepUpError(res.error)) return res.error;
@@ -69,8 +83,8 @@ export function LafposBranchCard({ data }: { data: LafposBranchData }) {
     }
     setSecret("");
     setAsk(null);
-    toast.success(res.data.saved ? "LafPOS anahtarı kaydedildi" : "Paneldeki LafPOS anahtarı silindi", {
-      description: res.data.saved ? "LafPOS'taki bağlantı anahtarı da aynı olmalı." : "Sunucudaki anahtar kullanılır.",
+    toast.success(res.data.saved ? "AsilPOS anahtarı kaydedildi" : "Paneldeki AsilPOS anahtarı silindi", {
+      description: res.data.saved ? "AsilPOS'taki bağlantı anahtarı da aynı olmalı." : dropText(data.legacy),
     });
     return null;
   }
@@ -81,15 +95,15 @@ export function LafposBranchCard({ data }: { data: LafposBranchData }) {
       : { tone: data.problem === "missing" ? ("gray" as const) : ("amber" as const), text: data.problem === "missing" ? "Anahtar yok" : "Anahtar kullanılmıyor" };
 
   return (
-    <Card id="lafpos" className="scroll-mt-20">
-      <CardHeader icon={<KeyRound />} title="LafPOS bağlantısı" description="Bu şubenin kasası LafPOS: gün sonu, personel ve ürünler LafPOS'un imzalı istekleriyle gelir." />
+    <Card id="asilpos" className="scroll-mt-20">
+      <CardHeader icon={<KeyRound />} title="AsilPOS bağlantısı" description="Bu şubenin kasası AsilPOS: gün sonu, personel ve ürünler AsilPOS'un imzalı istekleriyle gelir." />
       <div className="space-y-3 px-5 pb-5">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-surface px-4 py-3 text-sm ring-1 ring-line">
           <span className="min-w-0 flex-1 basis-48 text-ink">
             <span className="text-ink-mute">Geçiş günü:</span> {data.switchDay ? dayMonthYearTR(data.switchDay) : "yok (kasa ModPOS sayılır)"}
           </span>
-          <ButtonLink href={`/panel/ayarlar?sube=${encodeURIComponent(data.branchId)}#lafpos`} variant="secondary" size="sm" className="max-sm:w-full">
-            Ayarlar › LafPOS
+          <ButtonLink href={`/panel/ayarlar?sube=${encodeURIComponent(data.branchId)}#asilpos`} variant="secondary" size="sm" className="max-sm:w-full">
+            Ayarlar › AsilPOS
           </ButtonLink>
         </div>
         {data.sourceModpos ? (
@@ -97,7 +111,11 @@ export function LafposBranchCard({ data }: { data: LafposBranchData }) {
             tone="neutral"
             size="sm"
             title="Kasa kaynağı Şubeler'de hâlâ ModPOS"
-            text="LafPOS'un gün sonları yine bu şubeye yazılır; ModPOS föyü yalnız yedektir, geçiş gününden sonra hesaba girmez."
+            text={
+              data.till
+                ? "AsilPOS'un gün sonları yine bu şubeye yazılır; ModPOS föyü yalnız yedektir, geçiş gününden sonra hesaba girmez."
+                : "AsilPOS'un gün sonları saklanır ama hiçbir hesaba girmez (deneme). Şubeler'de kasa kaynağı AsilPOS olunca geçiş gününden itibaren sayılır."
+            }
           />
         ) : null}
         <p className="flex flex-wrap items-center gap-2 text-sm">
@@ -111,18 +129,18 @@ export function LafposBranchCard({ data }: { data: LafposBranchData }) {
             tone="warn"
             size="sm"
             title="Paneldeki anahtar açılamıyor"
-            text="Sunucunun şifreleme anahtarı değişmiş olabilir; anahtarı yeniden girin. O zamana dek sunucudaki anahtar kullanılır."
+            text={`Sunucunun şifreleme anahtarı değişmiş olabilir; anahtarı yeniden girin. ${data.legacy ? "O zamana dek sunucudaki anahtar kullanılır." : "O zamana dek bu şubenin kasasının istekleri reddedilir."}`}
             tech="AUTH_SECRET değişti"
           />
         ) : null}
         <Field
           label={data.stored === "saved" ? "Anahtarı değiştir" : "Anahtarı panelde sakla"}
-          htmlFor="lafpos-anahtar"
-          hint={`En az ${LAFPOS_SECRET_MIN} karakter; LafPOS'taki bağlantı anahtarıyla aynı. Şifreli saklanır, bir daha gösterilmez.`}
-          error={short ? `En az ${LAFPOS_SECRET_MIN} karakter` : undefined}
+          htmlFor="asilpos-anahtar"
+          hint={`En az ${ASILPOS_SECRET_MIN} karakter; AsilPOS'taki bağlantı anahtarıyla aynı. Şifreli saklanır, bir daha gösterilmez.`}
+          error={short ? `En az ${ASILPOS_SECRET_MIN} karakter` : undefined}
         >
           <PasswordInput
-            id="lafpos-anahtar"
+            id="asilpos-anahtar"
             toggleLabels={{ show: "Anahtarı göster", hide: "Anahtarı gizle" }}
             autoComplete="new-password"
             value={secret}
@@ -132,7 +150,16 @@ export function LafposBranchCard({ data }: { data: LafposBranchData }) {
             aria-invalid={short ? true : undefined}
           />
         </Field>
-        <Notice tone="neutral" size="sm" title="Anahtar nereden okunur" text="Panelde saklanan anahtar sunucudakinin önüne geçer; silinirse sunucudaki kullanılır." tech={SECRET_TECH} />
+        {data.legacy ? (
+          <Notice tone="neutral" size="sm" title="Anahtar nereden okunur" text="Panelde saklanan anahtar sunucudakinin önüne geçer; silinirse sunucudaki kullanılır." tech={secretTech(data.envName)} />
+        ) : (
+          <Notice
+            tone="neutral"
+            size="sm"
+            title="Anahtar nereden okunur"
+            text="Yalnız burada saklanan anahtar kullanılır. Silinirse kasa bağlantısız kalır: yeni anahtar ya da kurulum kodu gerekir."
+          />
+        )}
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => setAsk("save")} disabled={!secret.trim() || short} className="max-sm:w-full">
             Kaydet
@@ -146,11 +173,13 @@ export function LafposBranchCard({ data }: { data: LafposBranchData }) {
       </div>
       {ask ? (
         <ConfirmPasswordDialog
-          title={ask === "save" ? "LafPOS anahtarı kaydedilsin mi?" : "Paneldeki LafPOS anahtarı silinsin mi?"}
+          title={ask === "save" ? "AsilPOS anahtarı kaydedilsin mi?" : "Paneldeki AsilPOS anahtarı silinsin mi?"}
           description={
             ask === "save"
-              ? "Kaydedince LafPOS'un istekleri bu anahtarla denetlenir; LafPOS'taki bağlantı anahtarı aynı değilse gün sonları reddedilir. Parolanızla onaylayın."
-              : "Bundan sonra sunucudaki anahtar kullanılır; o yoksa LafPOS'un istekleri reddedilir. Parolanızla onaylayın."
+              ? "Kaydedince AsilPOS'un istekleri bu anahtarla denetlenir; AsilPOS'taki bağlantı anahtarı aynı değilse gün sonları reddedilir. Parolanızla onaylayın."
+              : data.legacy
+                ? "Bundan sonra sunucudaki anahtar kullanılır; o yoksa AsilPOS'un istekleri reddedilir. Parolanızla onaylayın."
+                : "Bu şubenin kasasının istekleri reddedilir (bağlantısız kalır); yeni anahtar ya da kurulum kodu gerekir. Parolanızla onaylayın."
           }
           confirmLabel={ask === "save" ? "Kaydet" : "Sil"}
           danger={ask === "drop"}
@@ -163,28 +192,28 @@ export function LafposBranchCard({ data }: { data: LafposBranchData }) {
 }
 
 /**
- * Kasa kaynağı başka şubeye geçtikten sonra eski şubede kalan, panelde saklanmış LafPOS anahtarı: kullanılmaz ama kaynak
- * geri dönerse yine ortamdakinin önüne geçerdi. Burada yalnız silinir (parolayla); yeni anahtar LafPOS'un şubesinde
+ * Kasası artık AsilPOS olmayan (ve kurulumu olmayan) şubede kalan, panelde saklanmış AsilPOS anahtarı: kullanılmaz ama
+ * kasa kaynağı AsilPOS'a dönerse yine geçerli olurdu. Burada yalnız silinir (parolayla); öbür şubelerin anahtarları değişmez
  */
-export function LafposOldSecretCard({ branchId }: { branchId: string }) {
+export function AsilposOldSecretCard({ branchId }: { branchId: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <Card id="lafpos" className="scroll-mt-20">
-      <CardHeader icon={<KeyRound />} title="Eski LafPOS anahtarı" description="Bu şubenin kasası artık LafPOS değil, ama panelde saklanan LafPOS anahtarı duruyor. Kullanılmıyor; silebilirsiniz." />
+    <Card id="asilpos" className="scroll-mt-20">
+      <CardHeader icon={<KeyRound />} title="Eski AsilPOS anahtarı" description="Bu şubenin kasası artık AsilPOS değil, ama panelde saklanan AsilPOS anahtarı duruyor. Kullanılmıyor; silebilirsiniz." />
       <div className="px-5 pb-5">
         <Button variant="secondary" onClick={() => setOpen(true)} className="max-sm:w-full">
-          Paneldeki eski LafPOS anahtarını sil
+          Paneldeki eski AsilPOS anahtarını sil
         </Button>
       </div>
       {open ? (
         <ConfirmPasswordDialog
-          title="Eski LafPOS anahtarı silinsin mi?"
-          description="Anahtar bu şubeden silinir; LafPOS'un bugünkü şubesinin anahtarı değişmez. Parolanızla onaylayın."
+          title="Eski AsilPOS anahtarı silinsin mi?"
+          description="Anahtar bu şubeden silinir; öbür şubelerin AsilPOS anahtarları değişmez. Parolanızla onaylayın."
           confirmLabel="Sil"
           danger
           onClose={() => setOpen(false)}
           onConfirm={async (password) => {
-            const res = await saveLafposSecret({ branchId, secret: null }, { password });
+            const res = await saveAsilposSecret({ branchId, secret: null }, { password });
             if (!res.ok) {
               if (isStepUpError(res.error)) return res.error;
               setOpen(false);
@@ -192,7 +221,7 @@ export function LafposOldSecretCard({ branchId }: { branchId: string }) {
               return null;
             }
             setOpen(false);
-            toast.success("Eski LafPOS anahtarı silindi");
+            toast.success("Eski AsilPOS anahtarı silindi");
             return null;
           }}
         />

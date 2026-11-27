@@ -6,7 +6,6 @@ import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
 import type { MonthField } from "@/lib/calc/types";
 import { businessDate } from "@/lib/cash-report";
 import { cellReader } from "@/lib/kiyas";
-import { lafposBranchOf } from "@/lib/lafpos/switch";
 import { addDays, shiftMonth } from "@/lib/reminders";
 import { branchCompare, cashDiffByMonth, EMPTY_FIGURES, monthDays, receiptFigures, type BranchMonthFigures, type ComparePeriod } from "@/lib/sube-karsilastirma";
 import { requireAdmin } from "@/server/auth/dal";
@@ -16,7 +15,7 @@ import { closedDaysBetween } from "@/server/closed-days";
 import { tillRows } from "@/server/data/cash-reports";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
-import { loadLafposSwitchDay } from "@/server/lafpos/status";
+import { loadSwitchDays } from "@/server/pos/tills";
 
 export interface BranchCompareData {
   /** Seçilen aylar, eskiden yeniye */
@@ -35,7 +34,7 @@ export interface BranchCompareData {
  * - ödenmez ve indirim: ayın bilgisi (Gelir-gider / Satışlar; girilmemişse bilinmiyor);
  * - zayi ve ikramın malzeme maliyeti: Zayi & ikram'ın ay özeti (`wasteSummary`);
  * - kasa farkı: kasa raporlarının farkı (eksik eksi);
- * - fiş ve ortalama sepet: Kıyas'ın şube-gün hücresi (rapor > LafPOS gün sonu > ModPOS föyü).
+ * - fiş ve ortalama sepet: Kıyas'ın şube-gün hücresi (rapor > AsilPOS gün sonu > ModPOS föyü).
  * Seçilen son ay bu aydan sonraysa bu aya çekilir. Açık fiziksel şube yoksa null.
  */
 export async function loadBranchCompare(lastMonth: string, span: number, now: Date = new Date()): Promise<BranchCompareData | null> {
@@ -56,7 +55,7 @@ export async function loadBranchCompare(lastMonth: string, span: number, now: Da
     // Her şube kendi görünümüyle (soldaki seçimden bağımsız): Gelir-gider'de o şube seçiliyken görünen ay hesabı
     Promise.all(branches.map((b) => loadModel({ scope: b.id }))),
     withBranchScope(ALL_BRANCHES, () => tillRows(db)),
-    loadLafposSwitchDay(db),
+    loadSwitchDays(db),
     db
       .select({ branchId: s.cashReports.branchId, date: s.cashReports.date, cashDiff: s.cashReports.cashDiff, receipts: s.cashReports.receipts })
       .from(s.cashReports)
@@ -69,8 +68,7 @@ export async function loadBranchCompare(lastMonth: string, span: number, now: Da
     rows: rows.filter((r) => r.date >= from && r.date <= to),
     branches: branches.map((b) => ({ id: b.id, name: b.name, openedOn: b.openedOn })),
     today,
-    switchDay,
-    lafposBranch: lafposBranchOf(all),
+    switchDays: switchDay,
     receipts: new Map(reports.map((r) => [`${r.branchId}|${r.date}`, r.receipts])),
     isClosed: (branchId, date) => closedBy.get(branchId)?.has(date) ?? false,
   });

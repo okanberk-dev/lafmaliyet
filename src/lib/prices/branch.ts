@@ -17,9 +17,9 @@ import type { SiteMarkerKind } from "@/lib/site-menu/view";
  * gelmemiş satır geri alınabilir (iptal). Panel satırları sitenin okumasından (`branchPrices`) alır, yazımı tek tek
  * gönderir (bir kalemin M ve L'si tek gövdede); site `writes.branchPrice` duyurmadıysa önermez.
  *
- * "Eski fiyattan satılanlar" ve değişikliğin durumu yalnız LafPOS gün sonunun `lines[].listPrices`'ından (satılan
+ * "Eski fiyattan satılanlar" ve değişikliğin durumu yalnız AsilPOS gün sonunun `lines[].listPrices`'ından (satılan
  * parçaların dondurulan liste fiyatları) çıkar; `revenue / qty` liste fiyatı değildir (indirim, mutlu saat, ek), ondan
- * hiçbir şey çıkarılmaz. Liste fiyatı olmayan gün (eski LafPOS) "Bilinmiyor"dur.
+ * hiçbir şey çıkarılmaz. Liste fiyatı olmayan gün (eski AsilPOS) "Bilinmiyor"dur.
  */
 
 /** Sitenin ana şubesi: fiyatı kalemin kendisidir, şube fiyatı yazılmaz (sitenin HOME_BRANCH'ı) */
@@ -319,7 +319,7 @@ export interface PriceSources {
   rows: readonly BranchPriceRule[];
 }
 
-/** LafPOS gün sonunun bir satırı (pos_daily_sales): listPrices yoksa (eski LafPOS) null */
+/** AsilPOS gün sonunun bir satırı (pos_daily_sales): listPrices yoksa (eski AsilPOS) null */
 export interface BranchSaleRow {
   date: string;
   siteMenuId: string;
@@ -374,7 +374,7 @@ export interface BranchChangeReport {
  * - yeni fiyatla satılan ilk gün: **Uygulandı · gün**
  * - yoksa, anından sonra başlayan tam bir günde yalnız başka fiyat: **Uygulanmadı** (gün: ilk böyle gün). Geçiş
  *   gününün eski fiyatı sayılmaz (anından önce satılmış olabilir)
- * - yoksa liste fiyatı olmayan satır (eski LafPOS): **Bilinmiyor**
+ * - yoksa liste fiyatı olmayan satır (eski AsilPOS): **Bilinmiyor**
  * - yoksa (satış yok ya da an gelmedi): **Bekliyor**
  * Ciro ve adetten hiçbir şey çıkarılmaz.
  */
@@ -446,7 +446,7 @@ export interface OldPriceSale {
 /**
  * Eski fiyattan satılanlar: gün sonu satırının liste fiyatlarından, o gün geçerli fiyatlardan hiçbiri olmayanlar. Gün
  * içinde fiyat değiştiyse (şube satırı ya da tabanın değişikliği) o gün geçiş günüdür, iki fiyat da doğrudur. Liste
- * fiyatı olmayan satır (eski LafPOS) sayılmaz. Yeniden eskiye.
+ * fiyatı olmayan satır (eski AsilPOS) sayılmaz. Yeniden eskiye.
  */
 export function oldPriceSales(input: { sales: readonly BranchSaleRow[]; sources: ReadonlyMap<string, PriceSources> }): OldPriceSale[] {
   const out: OldPriceSale[] = [];

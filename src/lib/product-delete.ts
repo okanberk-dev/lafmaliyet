@@ -1,8 +1,8 @@
 /**
  * Ürünü silmenin engeli (saf; sunucu eylemi ve reçete kartı paylaşır; tests/urunler.test.ts). Satışı (ModPOS listesi ya
- * da LafPOS'un günlük satırı), zayi / ikram kaydı, fiyat geçmişi ya da online satışı olan ürün silinmez: silinirse
+ * da AsilPOS'un günlük satırı), zayi / ikram kaydı, fiyat geçmişi ya da online satışı olan ürün silinmez: silinirse
  * geçmiş ayların satış satırları eşleşmesiz kalır ve ortalama maliyet oranıyla hesaplanır (kapanmış ayların maliyeti ve
- * kârı değişir; LafPOS satırının ürün bağı veritabanında sessizce kopar, denetim E-34), zayi kaydı değerlenemez, fiyat
+ * kârı değişir; AsilPOS satırının ürün bağı veritabanında sessizce kopar, denetim E-34), zayi kaydı değerlenemez, fiyat
  * geçmişi kaybolur. Hammadde ve personel de aynı nedenle silinmez (deleteIngredient, staffDeleteBlockers); menüden
  * kaldırmanın yolu "Menüde aktif" anahtarıdır.
  */
@@ -11,7 +11,7 @@ export interface ProductHistoryCounts {
   /** Satışlar'daki (ModPOS) eşlenmiş satış satırı */
   salesLines: number;
   /**
-   * LafPOS'un bu ürüne bağlı günlük satış satırı (pos_daily_sales; geçiş gününden önceki deneme günleri dahil: bağ
+   * AsilPOS'un bu ürüne bağlı günlük satış satırı (pos_daily_sales; geçiş gününden önceki deneme günleri dahil: bağ
    * koparsa o günler sayılmaya başladığında ürünsüz kalırdı)
    */
   posDailySales: number;
@@ -26,7 +26,7 @@ export interface ProductHistoryCounts {
 export function productDeleteBlocker(c: ProductHistoryCounts): string | null {
   const parts = [
     c.salesLines ? `${c.salesLines} satış satırı` : "",
-    c.posDailySales ? `${c.posDailySales} LafPOS günlük satış satırı` : "",
+    c.posDailySales ? `${c.posDailySales} AsilPOS günlük satış satırı` : "",
     c.onlineMonths ? `${c.onlineMonths} ayda online satış` : "",
     c.waste ? `${c.waste} zayi / ikram` : "",
     c.priceChanges ? `${c.priceChanges} fiyat değişikliği` : "",

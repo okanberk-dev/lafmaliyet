@@ -17,6 +17,7 @@ import postgres from "postgres";
 import { DEFAULT_BRANCHES } from "../src/lib/branches";
 import { formatShiftCell, SHIFT_STALE } from "../src/lib/vardiya";
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.VARDIYA_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_vardiya_${process.pid}`;
@@ -55,7 +56,7 @@ describe("vardiya kaydı: veritabanında", { skip: !SERVER_URL && "VARDIYA_TEST_
     const [u] = await db.insert(s.users).values({ email: "ayse@laffogato.net", name: "Ayşe Kaya", passwordHash: "x", role: "staff", branchId: "tuzla" }).returning();
     ayse = { id: u.id, name: u.name };
     const me = async () => ({ ...a, role: "admin" as const });
-    stub(require.resolve("../src/server/auth/dal"), { getCurrentUser: me, requireUser: me, requireAdmin: me });
+    stub(require.resolve("../src/server/auth/dal"), { getCurrentUser: me, requireUser: me, requireAdmin: me, ...dalCapabilities(me) });
     action = await import("../src/server/actions/vardiya");
     store = await import("../src/server/vardiya/store");
   });

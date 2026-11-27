@@ -16,6 +16,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { z } from "zod";
 
+import { ESKI_ARAC_ADI } from "@/lib/asilpos/eski-adlar";
 import { errorTag } from "@/lib/assistant/error-tag";
 import { fitOutput, ToolInputError } from "@/lib/mcp/answers/common";
 import { claudeToolSchema, fitsStructuredOutputs, schemaComplexity } from "@/lib/photo-read/claude-schema";
@@ -68,6 +69,8 @@ export function toolParams(tools: readonly AssistantTool[]): Anthropic.Beta.Beta
 
 /** Adıyla araç; tam ad yoksa büyük / küçük harf farkıyla tek bir araç (Claude bazen "Ay_ozeti" yazar) */
 export function findTool(tools: readonly AssistantTool[], name: string): AssistantTool | null {
+  // Ad değişikliği: eski adlı araç (kayıtlı sohbet, tekrar oynatma) yenisine gider
+  if (name === ESKI_ARAC_ADI) name = "asilpos_durumu";
   const exact = tools.find((t) => t.name === name);
   if (exact) return exact;
   const loose = tools.filter((t) => t.name.toLowerCase() === name.toLowerCase());

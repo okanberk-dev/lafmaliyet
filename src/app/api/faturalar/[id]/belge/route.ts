@@ -2,6 +2,7 @@ import { connection, type NextRequest } from "next/server";
 
 import { contentDisposition, MAX_UPLOAD_BYTES, sniffMime } from "@/lib/documents";
 import { logActivity } from "@/server/actions/log";
+import { can } from "@/lib/roles";
 import { getCurrentUser } from "@/server/auth/dal";
 import { DocumentError, getInvoiceDocument, storeUpload } from "@/server/documents";
 import { ParasutError } from "@/server/parasut/client";
@@ -23,6 +24,12 @@ async function admin() {
   return me && me.role === "admin" ? me : null;
 }
 
+/** Belgeyi okuyabilen: yönetici ve muhasebeci (salt okunur; docs/ROLLER.md). Yüklemek yalnız yöneticinin */
+async function reader() {
+  const me = await getCurrentUser();
+  return me && can(me.role, "muhasebe.oku") ? me : null;
+}
+
 function invoiceIdOf(raw: string): number | null {
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? n : null;
@@ -30,7 +37,7 @@ function invoiceIdOf(raw: string): number | null {
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await connection();
-  if (!(await admin())) return Response.json({ error: "Bu işlem için yönetici girişi gerekli" }, { status: 403 });
+  if (!(await reader())) return Response.json({ error: "Bu işlem için yönetici girişi gerekli" }, { status: 403 });
   const invoiceId = invoiceIdOf((await params).id);
   if (!invoiceId) return Response.json({ error: "Geçersiz fatura" }, { status: 400 });
   const sp = request.nextUrl.searchParams;

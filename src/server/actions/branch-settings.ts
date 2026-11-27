@@ -1,5 +1,6 @@
 "use server";
 
+import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -10,22 +11,26 @@ import {
   CALENDAR_GROUP,
   EVENING_HOUR_MAX,
   EVENING_HOUR_MIN,
-  LAFPOS_GROUP,
+  ASILPOS_GROUP,
   PARASUT_GROUP,
+  SHIFT_PRESET_GROUP,
   TILL_DEVICE_GROUP,
   tillDeviceLabel,
   type TillDevice,
 } from "@/lib/branch-settings/groups";
 import { BRANCH_ID_MAX } from "@/lib/branches";
-import { LAFPOS_SECRET_MIN } from "@/lib/lafpos/request";
+import { ASILPOS_SECRET_MIN } from "@/lib/asilpos/request";
+import { LEGACY_POS_BRANCH_ID } from "@/lib/pos/tills";
 import type { StepUpConfirm } from "@/lib/step-up";
+import { PRESET_KEYS, PRESET_LABELS, presetHours, presetText, shiftPresetsError, shiftPresetsOf, type SavedShiftPreset } from "@/lib/vardiya";
 import { requireAdmin } from "@/server/auth/dal";
 import { requireStepUp } from "@/server/auth/step-up";
 import { setBranchFeatureTx } from "@/server/branch-features";
 import { linkBranchSetting, lockGroup, logSetting, putBranchSetting, resolveBranchSetting, unlinkBranchSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
-import { getDb } from "@/server/db";
-import { forgetLafposSecret, lafposBranchId } from "@/server/lafpos/branch";
+import { getDb, schema as s } from "@/server/db";
+import { forgetPosKeys, posKeyTaken } from "@/server/asilpos/branch";
+import { loadPosTillIds } from "@/server/pos/tills";
 import { beforeParasutLink } from "@/server/parasut/accounts";
 
 import { attempt, UserError } from "./util";
@@ -144,7 +149,7 @@ const deviceInput = z.object({
 
 /**
  * Şubenin banka POS'u ve yazarkasası (şube ayarı kasa.cihaz): cihazın türü, sicil no ve bankası. Kasa raporu
- * e-postasının yazarkasa başlığı, akşam hatırlatmasının metni ve LafPOS'un cihazı henüz göndermediği gündeki fotoğraf
+ * e-postasının yazarkasa başlığı, akşam hatırlatmasının metni ve AsilPOS'un cihazı henüz göndermediği gündeki fotoğraf
  * okuması bunu kullanır. Yalnız yönetici; tek işlem, işlem geçmişine yazılır
  */
 export async function saveTillDevice(input: z.input<typeof deviceInput>) {
@@ -191,35 +196,98 @@ export async function saveBlindCount(input: z.input<typeof blindInput>) {
   });
 }
 
+/** Hazır vardiyanın saatleri ("09:00", "18:00"); null: şubede bu vardiya yok */
+const presetClock = z.object({ start: z.string().trim().max(5), end: z.string().trim().max(5) }).nullable();
+const presetInput = z.object({ branchId: zBranch, morning: presetClock, evening: presetClock });
+
+/** Hazır vardiyaların işlem geçmişindeki metni: "Sabahçı 09:00–18:00 · Akşamcı 16:00–01:00" ya da "hazır vardiya yok" */
+const presetsLogText = (list: readonly SavedShiftPreset[]) => (list.length ? list.map((p) => `${PRESET_LABELS[p.key]} ${presetText(p)}`).join(" · ") : "hazır vardiya yok");
+
+/**
+ * Şubenin hazır vardiyaları (şube ayarı vardiya.hazir; docs/VARDIYA.md › Hazır vardiyalar): Vardiya ekranındaki S
+ * (sabahçı) ve A (akşamcı) düğmelerinin saatleri. Saatler kutunun okuyucusuyla aynı kuralla okunur (bitiş başlangıçtan
+ * önceyse ertesi gün, en çok 16 saat, en geç 06:00); iki vardiya aynı saatte olamaz. Yalnız yönetici; tek işlem, işlem
+ * geçmişine eski → yeni. Kayıtlı haftaların hücreleri değişmez (yeni saatle eşleşmeyen eski hücre "başka saat" görünür)
+ */
+export async function saveShiftPresets(input: z.input<typeof presetInput>) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const d = presetInput.parse(input);
+    const list: SavedShiftPreset[] = [];
+    for (const key of PRESET_KEYS) {
+      const v = d[key];
+      if (!v) continue;
+      const hours = presetHours(v.start, v.end);
+      if ("error" in hours) throw new UserError(`${PRESET_LABELS[key]}: ${hours.error}`);
+      list.push({ key, ...hours });
+    }
+    const clash = shiftPresetsError(list);
+    if (clash) throw new UserError(clash);
+    const name = (await listBranches()).find((b) => b.id === d.branchId)?.name ?? d.branchId;
+    const changed = await getDb().transaction(async (tx) => {
+      await lockGroup(tx, SHIFT_PRESET_GROUP.id);
+      const prev = (await resolveBranchSetting(SHIFT_PRESET_GROUP, d.branchId, tx)).value.presets;
+      const before = presetsLogText(shiftPresetsOf(d.branchId, prev));
+      const after = presetsLogText(list);
+      // Varsayılan saatlerle aynısı da bir kez yazılır (seçim kaydedilir); kayıtlı değerle aynıysa yazılmaz
+      if (prev !== null && before === after) return false;
+      await putBranchSetting(tx, SHIFT_PRESET_GROUP, d.branchId, { presets: list }, me.name);
+      await logSetting(tx, me, "Şube ayarı", `${name} · ${SHIFT_PRESET_GROUP.label}: ${before === after ? after : `${before} → ${after}`}`);
+      return true;
+    });
+    if (changed) refresh();
+    return { changed };
+  });
+}
+
 const secretInput = z.object({
   branchId: zBranch,
-  /** Yeni anahtar; null: panelde saklanan anahtar silinir (ortamdaki LAFPOS_SYNC_SECRET kullanılır) */
-  secret: z.string().trim().min(LAFPOS_SECRET_MIN, `Anahtar en az ${LAFPOS_SECRET_MIN} karakter olmalı`).max(256, "Anahtar çok uzun").nullable(),
+  /**
+   * Yeni anahtar; null: panelde saklanan anahtar silinir (Marina'da ortamdaki ASILPOS_SYNC_SECRET kullanılır, öbür şubede
+   * kasa bağlantısız kalır)
+   */
+  secret: z.string().trim().min(ASILPOS_SECRET_MIN, `Anahtar en az ${ASILPOS_SECRET_MIN} karakter olmalı`).max(256, "Anahtar çok uzun").nullable(),
 });
 
 /**
- * LafPOS'un imza anahtarı, LafPOS'un şubesinde (şube ayarı pos.lafpos; şifreli, secret-box). Saklanan anahtar ortamdaki
- * LAFPOS_SYNC_SECRET'ın önüne geçer; LafPOS'ta aynı anahtar (LAFMALIYET_SYNC_SECRET) yazılmalıdır. Sitenin anahtarıyla
+ * AsilPOS'un imza anahtarı, kasanın şubesinde (şube ayarı SUBE_AYAR_GRUBU; şifreli, secret-box). Eski kurulumun şubesinde
+ * (Marina) saklanan anahtar ortamdaki ASILPOS_SYNC_SECRET'ın önüne geçer; öbür şubeye ortamdaki anahtar hiç hizmet etmez
+ * (silinirse kasa bağlantısız kalır). AsilPOS'ta aynı anahtar (LAFMALIYET_SYNC_SECRET) yazılmalıdır. Sitenin anahtarıyla
  * (KARAOKE_SYNC_SECRET) aynısı reddedilir. Anahtar hiçbir yere yazılmaz: işlem geçmişine yalnız "değişti" ya da
  * "silindi", istemciye yalnız durumu döner. Yalnız yönetici ve parolasıyla (anahtar makinenin gün sonu yazımlarının
- * güven kökü: açık kalmış bir oturum sahte gün sonu imzalayamasın, gerçek kasayı 401'e düşüremesin). Yeni anahtar yalnız
- * LafPOS'un şubesine yazılır; silme her şubede (kasa kaynağı başka şubeye geçtiyse eski şubede kalan anahtar silinebilsin)
+ * güven kökü: açık kalmış bir oturum sahte gün sonu imzalayamasın, gerçek kasayı 401'e düşüremesin). Çok şube: yeni anahtar
+ * kasası AsilPOS olan ya da AsilPOS kurulumu yapılmış şubeye yazılır (kurulu kasanın deneme günleri için); başka şubenin
+ * anahtarıyla ya da ortamdaki eski kurulum anahtarıyla aynı olamaz (anahtar şubeyi tanıtır: aynı anahtar bir şubenin
+ * günlerini öbürüne yazdırırdı). Silme her şubede (kasa kaynağı değiştiyse eski şubede kalan anahtar silinebilsin)
  */
-export async function saveLafposSecret(input: z.input<typeof secretInput>, confirm?: StepUpConfirm) {
+export async function saveAsilposSecret(input: z.input<typeof secretInput>, confirm?: StepUpConfirm) {
   return attempt(async () => {
     const me = await requireAdmin();
     const d = secretInput.parse(input);
     const db = getDb();
-    if (d.secret !== null && d.branchId !== (await lafposBranchId(db))) throw new UserError("LafPOS anahtarı yalnız kasası LafPOS olan şubede saklanır (Ayarlar › Şubeler › kasa kaynağı)");
-    if (d.secret && d.secret === process.env.KARAOKE_SYNC_SECRET?.trim()) throw new UserError("Bu, sitenin anahtarı (KARAOKE_SYNC_SECRET); LafPOS için ayrı bir anahtar üretin");
-    if (d.secret === null && (await resolveBranchSetting(LAFPOS_GROUP, d.branchId, db)).secrets.secret === "none") throw new UserError("Bu şubede panelde saklanan LafPOS anahtarı yok");
-    await requireStepUp(me, confirm, `LafPOS anahtarı ${d.secret ? "değiştirme" : "silme"}`, "LafPOS");
+    if (d.secret !== null) {
+      const [{ ids }, [install]] = await Promise.all([
+        loadPosTillIds(db, Date.now(), true),
+        db.select({ id: s.asilposInstalls.id }).from(s.asilposInstalls).where(eq(s.asilposInstalls.branchId, d.branchId)).limit(1),
+      ]);
+      if (!ids.includes(d.branchId) && !install) throw new UserError("AsilPOS anahtarı yalnız kasası AsilPOS olan (ya da AsilPOS kurulumu yapılmış) şubede saklanır (Ayarlar › Şubeler › kasa kaynağı)");
+      const taken = await posKeyTaken(d.branchId, d.secret, db);
+      if (taken) {
+        const owner = (await listBranches()).find((b) => b.id === taken)?.name ?? taken;
+        throw new UserError(`Bu anahtar ${owner} şubesinin AsilPOS anahtarı; her şubenin kasası kendi anahtarını kullanır, yeni bir anahtar üretin`);
+      }
+    }
+    if (d.secret && d.secret === process.env.KARAOKE_SYNC_SECRET?.trim()) throw new UserError("Bu, sitenin anahtarı (KARAOKE_SYNC_SECRET); AsilPOS için ayrı bir anahtar üretin");
+    if (d.secret === null && (await resolveBranchSetting(ASILPOS_GROUP, d.branchId, db)).secrets.secret === "none") throw new UserError("Bu şubede panelde saklanan AsilPOS anahtarı yok");
+    await requireStepUp(me, confirm, `AsilPOS anahtarı ${d.secret ? "değiştirme" : "silme"}`, "AsilPOS");
     const name = (await listBranches()).find((b) => b.id === d.branchId)?.name ?? d.branchId;
     await db.transaction(async (tx) => {
-      await putBranchSetting(tx, LAFPOS_GROUP, d.branchId, { secret: d.secret }, me.name);
-      await logSetting(tx, me, "Şube ayarı", `${name} · LafPOS anahtarı ${d.secret ? "değiştirildi (panelde, şifreli)" : "silindi (ortamdaki anahtar kullanılır)"}`);
+      await putBranchSetting(tx, ASILPOS_GROUP, d.branchId, { secret: d.secret }, me.name);
+      // Silinince: ortamdaki anahtar yalnız eski kurulumun şubesine (Marina) hizmet eder; öbür şubenin kasası bağlantısız kalır
+      const dropped = d.branchId === LEGACY_POS_BRANCH_ID ? "silindi (ortamdaki anahtar kullanılır)" : "silindi (şubenin kasası bağlantısız kalır)";
+      await logSetting(tx, me, "Şube ayarı", `${name} · AsilPOS anahtarı ${d.secret ? "değiştirildi (panelde, şifreli)" : dropped}`);
     });
-    forgetLafposSecret();
+    forgetPosKeys();
     refresh();
     return { saved: d.secret !== null };
   });

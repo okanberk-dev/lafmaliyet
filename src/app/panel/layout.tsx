@@ -5,8 +5,10 @@ import { Suspense } from "react";
 import "@/components/arc/foundation.css";
 import { PanelAssistantGate } from "@/components/panel/assistant/assistant-gate";
 import { Sidebar, SidebarSkeleton } from "@/components/panel/sidebar";
+import { Notice } from "@/components/ui/notice";
 import { assistantEnabled } from "@/lib/assistant/protocol";
-import { requireUser } from "@/server/auth/dal";
+import { can } from "@/lib/roles";
+import { getCurrentUser, requireUser } from "@/server/auth/dal";
 import { branchScope } from "@/server/branch-scope";
 import { loadSearchIndex } from "@/server/data/search";
 
@@ -33,6 +35,16 @@ async function SidebarWithUser() {
 }
 
 /**
+ * Salt okunur hesabın şeridi (muhasebeci; docs/ROLLER.md): her ekranın başında bir satır. Ekranda kalan bir düğmeye
+ * basınca sunucu "salt okunur" diye reddeder (src/server/auth/dal.ts); şerit bunu önceden söyler
+ */
+async function ReadOnlyBanner() {
+  const user = await getCurrentUser();
+  if (!user || can(user.role, "kayit.yaz")) return null;
+  return <Notice tone="neutral" size="sm" className="mb-4" title="Salt okunur hesap" text="Kayıtları rakamlarıyla görürsünüz; değiştiremez, silemez, ekleyemezsiniz. Düzeltme için yöneticiye yazın." />;
+}
+
+/**
  * AkmanOS "App Shell": solda 17.5rem zinc-100 kenar çubuğu, sağda beyaz içerik. Telefon ve tablette (lg altı) üstte
  * yapışkan çubuk, altta alt menü; içeriğin altında alt menü kadar boşluk bırakılır (globals.css, --mobile-nav-space).
  */
@@ -55,6 +67,9 @@ export default function PanelLayout({ children }: LayoutProps<"/panel">) {
           {/* Ses yuvası: ses kilitliyken AlertCenter "Sesli uyarılar kapalı" satırını buraya çizer (sayfayla kayar,
               içeriği örtmez; docs/planlar/ux-sade.md §4.6). Boşken yer kaplamaz. */}
           <div id="ses-yuvasi" />
+          <Suspense fallback={null}>
+            <ReadOnlyBanner />
+          </Suspense>
           {children}
         </div>
       </main>

@@ -126,7 +126,7 @@ function sources(dir: string, out = new Map<string, string>()): Map<string, stri
 }
 
 test("tarayıcı bileşenleri node:crypto'ya ulaşmaz: paketleyicinin crypto-browserify'ı her açılışta eval ihlali ürettirir", () => {
-  // Yerel denetimde Şube ayarları'nın LafPOS kartı imza modülünü (node:crypto) içe aktarıyordu: sayfaya ~0,5 MB
+  // Yerel denetimde Şube ayarları'nın AsilPOS kartı imza modülünü (node:crypto) içe aktarıyordu: sayfaya ~0,5 MB
   // crypto-browserify ve onunla gelen `Function(...)` denemesi (script-src eval) gidiyordu
   const src = join(root, "src");
   const text = sources(src);
@@ -165,6 +165,6 @@ test("tarayıcı bileşenleri node:crypto'ya ulaşmaz: paketleyicinin crypto-bro
   const clients = [...text.keys()].filter((f) => /^\s*["']use client["']/.test(text.get(f)!));
   assert.ok(clients.length > 50, `tarayıcı bileşenleri bulunamadı (${clients.length})`);
   assert.deepEqual(clients.map((f) => pathToCrypto(f, new Set())).filter(Boolean), [], "tarayıcı bileşeninden node:crypto'ya giden yol");
-  // Denetimin kendisi: LafPOS isteğinin denetimi imza modülü üzerinden node:crypto'ya ulaşır
-  assert.equal(pathToCrypto(join(src, "lib/lafpos/request.ts"), new Set()), "lib/lafpos/request.ts → lib/karaoke/signature.ts → node:crypto");
+  // Denetimin kendisi: AsilPOS isteğinin denetimi imza modülü üzerinden node:crypto'ya ulaşır
+  assert.equal(pathToCrypto(join(src, "lib/asilpos/request.ts"), new Set()), "lib/asilpos/request.ts → lib/karaoke/signature.ts → node:crypto");
 });

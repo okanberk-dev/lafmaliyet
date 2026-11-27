@@ -156,12 +156,12 @@ test("kasa: gün içinde giren olması gerekene eklenir (açılış + nakit sat�
   assert.equal(c.carryOver, 850, "devir sayılan − teslim (giren devri ayrıca değiştirmez)");
   assert.equal(computeCash({ ...day, cashIn: 300 }).cashDiff, -420, "giren yazılıp sayılmadıysa eksik");
   // İncelemenin örneği: 1.500 açılış, 12.000 nakit, 300 nakit bahşiş + 1.000 nakit tahsilat = 1.300 giren, 450 harcama
-  const lafposDay = { ...day, openingCash: 1_500, cash: 12_000, cashIn: 1_300, handedOver: 0 };
-  // Gün ortasında 5.000 teslim (gün içinde çıkan 5.450): LafPOS 9.350 bekler, 9.350 sayıldı
-  const withHandover = computeCash({ ...lafposDay, cashOut: 5_450, countedCash: 9_350 });
+  const asilposDay = { ...day, openingCash: 1_500, cash: 12_000, cashIn: 1_300, handedOver: 0 };
+  // Gün ortasında 5.000 teslim (gün içinde çıkan 5.450): AsilPOS 9.350 bekler, 9.350 sayıldı
+  const withHandover = computeCash({ ...asilposDay, cashOut: 5_450, countedCash: 9_350 });
   assert.deepEqual([withHandover.expectedCash, withHandover.cashDiff, withHandover.carryOver], [9_350, 0, 9_350]);
-  // Teslim yok (gün içinde çıkan 450, giren çıkandan 850 fazla): LafPOS 14.350 bekler, 14.350 sayıldı
-  const noHandover = computeCash({ ...lafposDay, cashOut: 450, countedCash: 14_350 });
+  // Teslim yok (gün içinde çıkan 450, giren çıkandan 850 fazla): AsilPOS 14.350 bekler, 14.350 sayıldı
+  const noHandover = computeCash({ ...asilposDay, cashOut: 450, countedCash: 14_350 });
   assert.deepEqual([noHandover.expectedCash, noHandover.cashDiff, noHandover.carryOver], [14_350, 0, 14_350]);
   // Kuruşlarda kayan nokta hatası yok
   assert.equal(computeCash({ ...day, openingCash: 0.1, cash: 0.2, cashIn: 0.1, cashOut: 0, countedCash: 0.4 }).cashDiff, 0);
@@ -449,7 +449,7 @@ test("varsayılan alıcılar ortamdan: ayrıştırılır, yoksa boş", () => {
 
 test("yetki: personel bugünü ve dünü gönderir, silme ve ayarlar yöneticinin; varsayılan alıcılar", () => {
   const src = readFileSync(join(process.cwd(), "src/server/actions/cash-report.ts"), "utf8");
-  assert.match(src, /export async function submitCashReport[\s\S]*?requireUser\(\)[\s\S]*?saveCashReport\(getDb\(\), me, data\)/);
+  assert.match(src, /export async function submitCashReport[\s\S]*?requireCan\("kayit\.yaz"\)[\s\S]*?saveCashReport\(getDb\(\), asActor\(me, opsLevel\(me\.role\)\), data\)/);
   // Yazım yolu ayrı (sunucu eylemi olmayan) modülde: personel kuralı ve sürüm denetimi orada
   const store = readFileSync(join(process.cwd(), "src/server/cash/report-store.ts"), "utf8");
   assert.match(store, /export async function saveCashReport[\s\S]*?me\.role !== "admin" && !staffCanReport\(data\.date, now\)/);
@@ -717,7 +717,7 @@ test("kilit her yerde aynı kural: rapor eylemi, kasa sayfası, kasadan çıkanl
   assert.match(read("src/server/cash-outs/guard.ts"), /staffDayOpen\(date, tx, now, /);
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /staffDayEditable\(date, \{ hasReport: Boolean\(report\), laterReport: next !== null \}\)/);
-  assert.match(page, /const canEdit = admin \|\| staffOpen;/);
+  assert.match(page, /const canEdit = !readOnly && \(admin \|\| staffOpen\);/);
 });
 
 test("kapanmış gün: personel fotoğrafları görmez (küçük resim ve büyütme yok, /api/foto 403 vermesin); WhatsApp satırları kalır", () => {

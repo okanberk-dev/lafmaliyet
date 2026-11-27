@@ -1,12 +1,12 @@
 // ModPOS kasa föyünün zil, Bugün ve sabah e-postası satırları gerçek Postgres'te (docs/MODPOS-API.md › Nerede görünür):
 // dünün kasa raporu saklanan föyden farklıysa yöneticinin zilinde Kasa başlığında "Kasa raporu ModPOS API'den farklı",
 // Bugün'ün dünkü kasa satırında "ModPOS API'den farklı" işareti ve sabah e-postasının kutusunda satır; anahtar
-// çalışmıyorsa Sistem başlığında "ModPOS API'den veri çekilemiyor". Personelin zili ve Bugün'ü hiçbirini almaz. LafPOS
+// çalışmıyorsa Sistem başlığında "ModPOS API'den veri çekilemiyor". Personelin zili ve Bugün'ü hiçbirini almaz. AsilPOS
 // gününde, aynı yazılan raporda, sonradan başarılı çekimde ve anahtar yokken satır yok. Hiçbir istek gitmez (fetch
 // çağrılırsa test düşer).
 //
 // Kendi geçici veritabanını açar (migration'larla), sonunda siler; oturum taklit edilir (src/server/auth/dal).
-// MODPOS_TEST_DATABASE_URL (yoksa ZIL_TEST_DATABASE_URL, LAFPOS_TEST_DATABASE_URL) verilmezse atlanır.
+// MODPOS_TEST_DATABASE_URL (yoksa ZIL_TEST_DATABASE_URL, ASILPOS_TEST_DATABASE_URL) verilmezse atlanır.
 // Çalıştırma: MODPOS_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx tsx --test tests/modpos-zil-db.test.ts
 
 import assert from "node:assert/strict";
@@ -26,9 +26,9 @@ import { addDays, dayMonthTR, longDateTR } from "../src/lib/reminders";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 
-import { LAFPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
+import { ASILPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
 
-const SERVER_URL = process.env.MODPOS_TEST_DATABASE_URL ?? process.env.ZIL_TEST_DATABASE_URL ?? process.env.LAFPOS_TEST_DATABASE_URL;
+const SERVER_URL = process.env.MODPOS_TEST_DATABASE_URL ?? process.env.ZIL_TEST_DATABASE_URL ?? process.env.ASILPOS_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_modpos_zil_${process.pid}`;
 const plain = (v: string) => v.replace(/ /g, " ");
 
@@ -70,8 +70,8 @@ describe("ModPOS API: zil, Bugün ve sabah e-postası veritabanında", { skip: !
   const setState = (value: object) =>
     db.insert(s.integrationState).values({ key: MODPOS_STATE_KEY, value }).onConflictDoUpdate({ target: s.integrationState.key, set: { value } });
   const setSwitch = async (v: string | null) => {
-    await db.delete(s.settings).where(eq(s.settings.key, "lafposGecisGunu"));
-    if (v) await db.insert(s.settings).values({ key: "lafposGecisGunu", value: v });
+    await db.delete(s.settings).where(eq(s.settings.key, "asilposGecisGunu"));
+    if (v) await db.insert(s.settings).values({ key: "asilposGecisGunu", value: v });
   };
   const ids = async (who: Who) => {
     me = who;
@@ -226,25 +226,25 @@ describe("ModPOS API: zil, Bugün ve sabah e-postası veritabanında", { skip: !
     }
   });
 
-  test("LafPOS gününde ve aynı yazılan raporda föy satırı yok; rapor yeniden gönderilince kimlik değişir", async () => {
-    // LafPOS'un şubesi Marina (LAFPOS_BRANCH_ID): onun da dünkü raporu föyünden nakitte farklı. Öteki testler tek
+  test("AsilPOS gününde ve aynı yazılan raporda föy satırı yok; rapor yeniden gönderilince kimlik değişir", async () => {
+    // AsilPOS'un şubesi Marina (ASILPOS_BRANCH_ID): onun da dünkü raporu föyünden nakitte farklı. Öteki testler tek
     // kasayla çalışır (satırda şube adı yok); Marina yalnız burada açılır, sonunda kaldırılır
     await seedBranches(db);
     const [marina] = await db
       .insert(s.cashReports)
-      .values({ date: Y, branchId: LAFPOS_SUBE, zNo: "312", receipts: 214, zTotal: 28450.5, cash: 8190, card: 16120.5, offRevenue: 145, openingCash: 500, cashOut: 870, countedCash: 7820, handedOver: 7320, cashDiff: 0, submittedBy: users.ayse.id, submittedByName: "Ayşe" })
+      .values({ date: Y, branchId: ASILPOS_SUBE, zNo: "312", receipts: 214, zTotal: 28450.5, cash: 8190, card: 16120.5, offRevenue: 145, openingCash: 500, cashOut: 870, countedCash: 7820, handedOver: 7320, cashDiff: 0, submittedBy: users.ayse.id, submittedByName: "Ayşe" })
       .returning({ id: s.cashReports.id });
-    await store.storeFoy(db, foy(), new Date(), null, LAFPOS_SUBE);
-    const marinaId = `kasa-modpos-${Y}-${LAFPOS_SUBE}-r1-s1`;
+    await store.storeFoy(db, foy(), new Date(), null, ASILPOS_SUBE);
+    const marinaId = `kasa-modpos-${Y}-${ASILPOS_SUBE}-r1-s1`;
     const tuzlaId = `kasa-modpos-${Y}-r1-s1`;
     try {
       // Geçiş günü boş: iki kasa da ModPOS, iki raporun da föy satırı var
       const both = await ids(users.ali);
       assert.ok(both.includes(marinaId) && both.includes(tuzlaId), JSON.stringify(both));
       await setSwitch(Y);
-      // Geçiş günü LafPOS'un şubesinin kasasınındır: Marina'nın günü LafPOS günü, föy satırı yok; Tuzla ModPOS'ta kalır
+      // Geçiş günü AsilPOS'un şubesinin kasasınındır: Marina'nın günü AsilPOS günü, föy satırı yok; Tuzla ModPOS'ta kalır
       const after = await ids(users.ali);
-      assert.ok(!after.some((id) => id.startsWith(`kasa-modpos-${Y}-${LAFPOS_SUBE}-`)), "geçiş günü LafPOS");
+      assert.ok(!after.some((id) => id.startsWith(`kasa-modpos-${Y}-${ASILPOS_SUBE}-`)), "geçiş günü AsilPOS");
       assert.ok(after.includes(tuzlaId), "Tuzla'nın föyü karşılaştırılmaya devam eder");
       const box = await digest.loadApprovalsDigest(new Date());
       const lines = (box?.box.lines ?? []).map((l) => l.text).filter((x) => x.startsWith("Kasa raporu ModPOS"));
@@ -254,7 +254,7 @@ describe("ModPOS API: zil, Bugün ve sabah e-postası veritabanında", { skip: !
     } finally {
       await setSwitch(null);
       await db.delete(s.cashReports).where(eq(s.cashReports.id, marina.id));
-      await db.delete(s.modposCashSheets).where(eq(s.modposCashSheets.branchId, LAFPOS_SUBE));
+      await db.delete(s.modposCashSheets).where(eq(s.modposCashSheets.branchId, ASILPOS_SUBE));
       await db.delete(s.branches).where(ne(s.branches.id, MODPOS_SUBE));
     }
     await db.update(s.cashReports).set({ cash: 8000, revision: 2 }).where(eq(s.cashReports.id, reportId));

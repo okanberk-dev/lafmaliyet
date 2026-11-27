@@ -55,7 +55,7 @@ export async function emailReport(
   // anında düşer (E-53). Düşen adres yöneticinin zilinde ve Rapor alıcıları kartında görünür; hepsi düştüyse e-posta
   // gitmedi sayılır (kapalı değil): yönetici nedenini formda görür, personel sabit metni (staff-errors.ts)
   const { to: recipients, dropped } = settings.emailEnabled ? await sendableRecipients(getDb(), settings.recipients) : { to: [], dropped: [] };
-  if (dropped.length) console.warn(`[kasa e-postası] ${dropped.length} alıcı atlandı (personel ya da pasif hesap)`);
+  if (dropped.length) console.warn(`[kasa e-postası] ${dropped.length} alıcı atlandı (personel, müdür ya da pasif hesap)`);
   let outcome: CashEmailOutcome;
   if (!settings.emailEnabled || !settings.recipients.length) {
     outcome = { status: "off", error: null, to: 0 };
@@ -71,7 +71,7 @@ export async function emailReport(
     // kasa açıkken raporun şubesi konuda, başlıkta ve "Panelde aç"ta (iki şubenin aynı günkü e-postası ayırt edilir)
     // Şubenin banka POS'u ve yazarkasa sicil no'su (şube ayarı kasa.cihaz): yazarkasa bölümünün başlığında
     // Kör sayımın sayım geçmişi (docs/KASA-RAPORU.md › Kör sayım): kilitli sayım sonradan değiştiyse ya da raporla
-    // tutmuyorsa Kasa (nakit) bölümünde uyarı. Sayım yoksa (ayar kapalı, LafPOS günü, yöneticinin girdiği rapor) satır yok
+    // tutmuyorsa Kasa (nakit) bölümünde uyarı. Sayım yoksa (ayar kapalı, AsilPOS günü, yöneticinin girdiği rapor) satır yok
     const [extras, integrity, branches, device, counts] = await Promise.all([
       cashReportExtras(dto),
       cashReportIntegrity(dto),
@@ -87,8 +87,8 @@ export async function emailReport(
       submittedAt: row.updatedAt,
       waste,
       ikramValue: waste.ikramValue || null,
-      // LafPOS gününde gün sonu geldiyse ikram denetimi LafPOS'un rakamlarıyla (geçiş günü boşken null)
-      lafposIkram: waste.lafpos?.received ? waste.lafpos : null,
+      // AsilPOS gününde gün sonu geldiyse ikram denetimi AsilPOS'un rakamlarıyla (geçiş günü boşken null)
+      asilposIkram: waste.asilpos?.received ? waste.asilpos : null,
       online,
       approval: o.approval ?? null,
       branch: namedTill(branches, row.branchId),

@@ -211,7 +211,7 @@ test("sabah e-postası › kontrol kutusu şube şube: kapalı şubenin açılma
   assert.deepEqual(names(closedDayDigestLists(solo, marks([], kutuk("2026-11-20")), new Set())), ["Tuzla açılış", "Kapanış"], "kapalı değilse hepsi");
 });
 
-test("kaynak: zil, sabah e-postası ve LafPOS kanıtı şubesiz okumaz", () => {
+test("kaynak: zil, sabah e-postası ve AsilPOS kanıtı şubesiz okumaz", () => {
   // Zil ve e-posta kapalı günü şube şube okur (önceden şubesiz isClosedDay: herhangi bir şubenin işareti)
   const bell = read("src/server/actions/notifications.ts");
   assert.doesNotMatch(bell, /isClosedDay\(/);
@@ -223,16 +223,15 @@ test("kaynak: zil, sabah e-postası ve LafPOS kanıtı şubesiz okumaz", () => {
   assert.match(data, /closedDayDigestLists\(lists, marks, new Set\(reports\.map\(\(r\) => r\.branchId\)\)\)/);
   // Listenin şubesi günün listesiyle gelir
   assert.match(read("src/server/checklists/store.ts"), /run: summary,\n {4}branchId: t\.branchId,/);
-  // LafPOS'un gün sonu kanıtı: şube verilmezse LafPOS'un şubesininki (günün herhangi bir satırı değil)
+  // AsilPOS'un gün sonu kanıtı: şube verilmezse AsilPOS'un şubesininki (günün herhangi bir satırı değil)
   const closed = read("src/server/closed-days.ts");
-  const ev = closed.slice(closed.indexOf("async function lafposEvidence"), closed.indexOf("/** İş gününün penceresi"));
-  assert.match(ev, /const branch = branchId \?\? lafposBranch;/);
-  assert.match(ev, /lafposBranchId\(db\)/, "LafPOS'un şubesi kütükten (lafposBranchId)");
+  const ev = closed.slice(closed.indexOf("async function asilposEvidence"), closed.indexOf("/** İş gününün penceresi"));
+  assert.match(ev, /const branches = branchId \? \[branchId\] : countedTillIds\(switchDays\);/, "şube verilmezse sayılan kasalar (çok şube)");
   assert.match(ev, /\.where\(and\(eq\(s\.posDayReports\.date, date\), eq\(s\.posDayReports\.branchId, branch\)\)\)/);
-  assert.match(ev, /branchSwitchDay\(switchDay, branch, lafposBranch\)/);
-  assert.match(ev, /lafposSwitchDay\(db\)/, "geçiş günü LafPOS'un şubesinin şube ayarından");
-  const saved = closed.slice(closed.indexOf("export async function onLafposDaySaved"), closed.indexOf("export async function onNextReport"));
-  assert.match(saved, /branchSwitchDay\(switchDay, branchId, lafposBranch\)/);
+  assert.match(ev, /switchDayFor\(switchDays, branch\)/);
+  assert.match(ev, /loadSwitchDays\(db\)/, "geçiş günü şubenin şube ayarından");
+  const saved = closed.slice(closed.indexOf("export async function onAsilposDaySaved"), closed.indexOf("export async function onNextReport"));
+  assert.match(saved, /await switchDayOf\(branchId, tx\)/);
 });
 
 // ---------------------------------------------------------------- Personelin özel günleri
@@ -360,13 +359,15 @@ test("kaynak: eylemler kendi oturumunu ve rolünü denetler; yardımcı dışa v
   assert.match(closedActions, /^"use server";/);
   assert.deepEqual([...closedActions.matchAll(/^export (?:async function|function|const) (\w+)/gm)].map((m) => m[1]).sort(), ["markClosedDay", "requestClosedDay", "reviewClosedDay"]);
   const body = (src: string, name: string) => src.slice(src.indexOf(`export async function ${name}`));
-  assert.match(body(closedActions, "requestClosedDay"), /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*const me = await requireUser\(\);\s*if \(me\.role === "admin"\) throw new UserError/);
-  for (const n of ["reviewClosedDay", "markClosedDay"]) assert.match(body(closedActions, n), /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*const me = await requireAdmin\(\);/);
+  // Müdür yöneticinin düzeyinde: istek açmaz, doğrudan işaretler (opsLevel; docs/ROLLER.md)
+  assert.match(body(closedActions, "requestClosedDay"), /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*const me = await requireCan\("kayit\.yaz"\);\s*(?:\/\/[^\n]*\n\s*)*if \(opsLevel\(me\.role\) === "admin"\) throw new UserError/);
+  assert.match(body(closedActions, "reviewClosedDay"), /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*(?:\/\/[^\n]*\n\s*)*const me = await requireCan\("onay"\);/);
+  assert.match(body(closedActions, "markClosedDay"), /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*const me = await requireCan\("isletme\.yonet"\);/);
   const special = read("src/server/actions/special-days-staff.ts");
   assert.match(special, /^"use server";/);
   assert.deepEqual([...special.matchAll(/^export (?:async function|function|const) (\w+)/gm)].map((m) => m[1]).sort(), ["deleteStaffSpecialDay", "saveStaffSpecialDay"]);
   for (const n of ["saveStaffSpecialDay", "deleteStaffSpecialDay"]) {
-    assert.match(body(special, n), /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*const me = await requireUser\(\);\s*if \(me\.role === "admin"\) throw new UserError/);
+    assert.match(body(special, n), /^export async function \w+\([^)]*\) \{\s*return attempt\(async \(\) => \{\s*const me = (?:adminActor\()?await requireCan\("kayit\.yaz"\)\)?;\s*if \(me\.role === "admin"\) throw new UserError/);
   }
   // Personelin özel gün dönüşü yalnız kimlik; tutar ve tahmin yok
   assert.match(body(special, "saveStaffSpecialDay"), /return \{ id: out\.id \};/);

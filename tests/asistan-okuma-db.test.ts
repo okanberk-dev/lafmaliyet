@@ -1,6 +1,6 @@
-// Panel asistanının LafPOS ve operasyon okuma araçları gerçek Postgres'te (docs/ASISTAN.md › LafPOS ve operasyon):
+// Panel asistanının AsilPOS ve operasyon okuma araçları gerçek Postgres'te (docs/ASISTAN.md › AsilPOS ve operasyon):
 // gerçek okuyucularla (src/server/assistant-reads) gün sonu (Z, ödeme türleri, kasa farkı, ikram gerekçesiz, otomatik
-// raporun eksikleri, kıyas; Tuzla ModPOS), günlük satışlar (yalnız Marina, deneme günü yok), LafPOS durumu, menü
+// raporun eksikleri, kıyas; Tuzla ModPOS), günlük satışlar (yalnız Marina, deneme günü yok), AsilPOS durumu, menü
 // durumu, vardiya (not gitmez), Bugün özeti ve bekleyen işler (hatırlatıcı notu gitmez), stok tahmini. Araçların hiçbiri
 // yazmaz: bütün tabloların satır sayısı önce ve sonra aynı. Claude'a istek gitmez; oturum taklit edilir.
 //
@@ -84,7 +84,7 @@ describe("asistanın okuma araçları: veritabanında", { skip: !SERVER_URL && "
     await db.insert(s.branches).values(DEFAULT_BRANCHES.map((b) => ({ ...b }))).onConflictDoNothing();
     const [u] = await db.insert(s.users).values({ email: "ali@test.local", name: me.name, passwordHash: "x", role: "admin" }).returning({ id: s.users.id });
     me.id = u.id;
-    await db.insert(s.settings).values({ key: "lafposGecisGunu", value: SWITCH });
+    await db.insert(s.settings).values({ key: "asilposGecisGunu", value: SWITCH });
     const [cat] = await db.insert(s.categories).values({ name: "Kahveler" }).returning();
     const [latte] = await db.insert(s.products).values({ categoryId: cat.id, name: "Latte", size: "M", price: 100 }).returning();
     // Marina: dün (tam), önceki gün, geçen hafta ve geçiş gününden önceki deneme günü; Tuzla: dün (ModPOS'ta kalan şube)
@@ -102,15 +102,15 @@ describe("asistanın okuma araçları: veritabanında", { skip: !SERVER_URL && "
           { posName: "SU", siteMenuId: null, slot: null, qty: 1, menuValue: 20, reason: SECRET, kind: "odenmez", personKind: "personel" },
         ] as never,
         iptal: [{ posName: "LATTE M", siteMenuId: null, slot: null, qty: 1, listValue: 100, prepared: false, reason: SECRET, refund: false }] as never,
-        source: "lafpos",
+        source: "asilpos",
         revision: 3,
       },
-      { date: D2, branchId: "marina", z: zOf(11, 5_000) as never, payments: [], ikram: [], source: "lafpos" },
-      { date: addDays(D1, -7), branchId: "marina", z: zOf(5, 4_000) as never, payments: [], ikram: [], source: "lafpos" },
-      { date: TRIAL, branchId: "marina", z: zOf(1, 999) as never, payments: [], ikram: [], source: "lafpos" },
+      { date: D2, branchId: "marina", z: zOf(11, 5_000) as never, payments: [], ikram: [], source: "asilpos" },
+      { date: addDays(D1, -7), branchId: "marina", z: zOf(5, 4_000) as never, payments: [], ikram: [], source: "asilpos" },
+      { date: TRIAL, branchId: "marina", z: zOf(1, 999) as never, payments: [], ikram: [], source: "asilpos" },
       { date: D1, branchId: "tuzla", z: zOf(7, 9_999) as never, payments: [], ikram: [], source: "modpos" },
     ]);
-    await db.insert(s.lafposDayEnds).values({ date: D1, branchId: "marina", missing: ["photo", "bankPos"] });
+    await db.insert(s.asilposDayEnds).values({ date: D1, branchId: "marina", missing: ["photo", "bankPos"] });
     await db.insert(s.posDailySales).values([
       { date: D1, branchId: "marina", posName: "LATTE M", productId: latte.id, qty: 20, revenue: 2_000, gross: 2_100 },
       { date: D1, branchId: "marina", posName: "BILINMEYEN KEK", productId: null, qty: 3, revenue: 300 },
@@ -194,8 +194,8 @@ describe("asistanın okuma araçları: veritabanında", { skip: !SERVER_URL && "
     assert.doesNotMatch(raw, /TUZLA LATTE/);
   });
 
-  test("lafpos_durumu, menu_durumu, vardiya, stok_tahmini: gerçek okuyucularla; vardiya notu gitmez", async () => {
-    const st = await call("lafpos_durumu");
+  test("asilpos_durumu, menu_durumu, vardiya, stok_tahmini: gerçek okuyucularla; vardiya notu gitmez", async () => {
+    const st = await call("asilpos_durumu");
     assert.equal(st.json.gecisGunu, SWITCH);
     assert.equal(st.json.sonGunSonu.gun, D1);
     assert.equal(st.json.denemeGunu, 1);
@@ -227,7 +227,7 @@ describe("asistanın okuma araçları: veritabanında", { skip: !SERVER_URL && "
     for (const [name, input, scope] of [
       ["gun_sonu", {}, ALL_BRANCHES],
       ["gunluk_satislar", { baslangic: D2, bitis: D1 }, "marina"],
-      ["lafpos_durumu", {}, "marina"],
+      ["asilpos_durumu", {}, "marina"],
       ["menu_durumu", {}, "tuzla"],
       ["vardiya", { hafta: true }, ALL_BRANCHES],
       ["bugun_ozeti", {}, "marina"],
@@ -238,7 +238,7 @@ describe("asistanın okuma araçları: veritabanında", { skip: !SERVER_URL && "
     }
     assert.deepEqual(await counts(), before);
     // Ayar da değişmedi
-    const [sw] = await db.select().from(s.settings).where(eq(s.settings.key, "lafposGecisGunu"));
+    const [sw] = await db.select().from(s.settings).where(eq(s.settings.key, "asilposGecisGunu"));
     assert.equal(sw.value, SWITCH);
   });
 });

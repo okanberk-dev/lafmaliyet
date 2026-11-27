@@ -34,50 +34,40 @@ almaz; güncel ağaçtaki kişi adları P2'de uydurma adlarla değiştirildi (ge
 - **CI incelemesi:** sahip 27 Kasım'da CI için Anthropic anahtarını ekledi. Yeniden koşturulan inceleme yine düştü
   (`is_error`); depo düzeyindeki `ANTHROPIC_API_KEY` sırrının tarihi 23 Ekim: anahtar kuruluş düzeyinde eklendiyse depo
   sırrı onu gölgeler, depo sırrı yeni anahtarla güncellenmeli. Çalışınca "inceleme" engel sayılmaz ama yorumları okunur.
-- **LafPOS'un adı AsilPOS** (yazılış "AsilPOS"): panelde ve kasa deposunda her yerde (metin, kod, dosya, tablo, ortam
-  değişkeni); kurulu kasa ve Vercel bozulmasın diye eski adlar (LAFPOS_* değişkenleri, kasanın çağırdığı yollar, kasa
-  bilgisayarındaki klasör ve görev) bir süre daha tanınır. GitHub deposunun adı `lafpos` kalır.
+- **Kasa programının adı AsilPOS** (yazılış "AsilPOS"; 26 Kasım 2026'ya kadar adı LafPOS): panelde ve kasa deposunda
+  her yerde (metin, kod, dosya, tablo, ortam değişkeni); kurulu kasa ve Vercel bozulmasın diye eski adlar
+  (ASILPOS_* yerine LAFPOS_* değişkenleri, kasanın çağırdığı yollar, kasa bilgisayarındaki klasör ve görev) bir süre
+  daha tanınır. GitHub deposunun adı `lafpos` kalır.
 - **Marina yalnız AsilPOS:** Marina'da ModPOS tamamen bitti (kütükte kaynak AsilPOS, föy çekilmez).
-- **Her şubenin kendi AsilPOS kasası** olabilir (panel + kasa deposu; "LafPOS yalnız bir şubenin kasası" sınırı kalkar).
+- **Her şubenin kendi AsilPOS kasası** olabilir (panel + kasa deposu; "AsilPOS yalnız bir şubenin kasası" sınırı kalkar).
 - **Şube ayrımı:** şube seçiliyken her ekranda yalnız o şubenin bilgisi. Bugün firma geneli olan ekranlar (Vergi, Nakit
   planı, Tutarlılık, Mutabakat, tedarikçi bakiyeleri, stok değeri, yedek) her kullanıcının kendi ayarıyla seçilsin.
 - **P8'e ek:** banka POS Z'sinin ÖZET bölümündeki "Toplam KDV" okunmadı ("fotoğrafta yok"), fiş yanlışlıkla "farklı"
   çıktı: kodla okuma + istem örnekleri + regresyon seti.
-- **Sıra:** P1 → AsilPOS (panel adı, kasa adı, çoklu şube + Marina) → P2 → şube ayrımı → P3–P9. P2 (#165) hazır ve
+- **Sıra:** P1 (bitti) → AsilPOS (panel adı, kasa adı, çoklu şube + Marina) → P2 → şube ayrımı → P3–P9. P2 (#165) hazır ve
   main'in #164'ten beri düşen iki testini düzeltiyor: önce o birleşir.
 - **Durum (27 Kasım gece):** P1'in 12 bulgusu ve iki ek maddesi testleriyle düzeltildi (`wip/entegre3-fix`, #163);
   ikinci bağımsız inceleme yarıda (kullanım limiti). Kasa deposunda ad değişikliği `asilpos-adi` dalında, incelemesi kaldı.
+- **AsilPOS ilerleme:** panelin ad değişikliği #166 (P1'in üstünde), kasa deposunda ad değişikliği #187 ve çoklu şube
+  kasa tarafı #188 hazır. Panel çoklu şube (B1) + Marina yalnız AsilPOS `cok-sube-kasa` dalında hazır (#166'nın üstünde;
+  göç 0099): üç bağımsız incelemenin (para, anahtar, geçiş) doğrulanan bulguları testleriyle düzeltildi (süren ayın
+  kasa raporu beklemesi kasa başına, geçiş günü sonra olan kasanın komisyonu föyün markasıyla, komisyonun günleri takvim
+  günü, Marina dışı anahtar metinleri, anahtarın başka şubenin kasa hareketini yazmaması, kurulum kodunun kilidi). Dal
+  gönderilmedi, PR açılmadı: #166'dan sonra birleşir, gün sonu penceresinin (22:00–03:00) dışında. Sonra sahip:
+  YAPILACAKLAR.md › Dalga 3'teki [Sahip] maddesi. Şube ayrımı (plan B adım 9) ayrı paket. Daraltma (A3) ≥ 7 gün sonra.
 
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 
-### P1. Roller + vardiya şube ayarları (dal `wip/entegre3`; düzeltmeler `wip/entegre3-fix`'te başlamış olabilir)
-"Müdür" (şubesine kilitli, maaş görmez) ve salt okunur "Muhasebeci" (docs/ROLLER.md); hazır vardiya saatleri şube ayarı,
-"Tümü"de Vardiya şubeyi sorar. Göç `0096_roller` → main'de 0096 (#160) olduğu için **0097 olarak yeniden üret**.
-PR'dan önce bağımsız incelemenin DOĞRULADIĞI 12 bulguyu düzelt (her birine test):
-1. Müdür, Onaylar'da kasadan çıkan isteğini onaylarken maaş / kira kategorisine yazabiliyor.
-2. Müdürün "admin" düzeyi fotoğraf sahipliği denetimini atlıyor (öteki şubenin fotoğrafını kendi kaydına bağlar).
-3. Müdür kasadan çıkan satırını düzelterek cari ödemesini ve faturaların ödeme durumunu değiştirebiliyor.
-4. Müdür Zayi sayfasında ve Onaylar'daki zayi kartlarında malzeme maliyetini görüyor.
-5. Müdür Kasa raporu sayfasında karaoke ön ödemesini görüyor.
-6. Onaylar'daki kasadan çıkan kartı müdüre yöneticinin kategori adını / bütün listeyi gösteriyor.
-7. Muhasebeci `/api/canli`'dan bütün şubelerin karaoke rezervasyonlarını ve site siparişlerini alıyor.
-8. Kasa ay görünümü müdürün tarayıcısına ayın bütün kasadan çıkan satırlarını kategori adlarıyla gönderiyor.
-9. Kasa e-postasının ham hata metni müdüre / muhasebeciye gidiyor.
-10. Şube kurulumunun e-posta çakışma kapısı muhasebeci hesabını görmüyor.
-11. Yeni cihaz uyarısı müdür / muhasebecinin zilinde yok.
-12. İki adımlı doğrulamanın metinleri ve belgeleri davranışla tutarsız (#154: zorunluluk `ADMIN_2FA_REQUIRED=1` ile).
-Ayrıca bak: Hesabım'daki LafPOS kurulum bağlantısının şubeye kilitli personele görünmesi; vardiya ızgarasında müdüre
-yönetici ekranı bağlantısı; ROLLER.md'deki göç numarası. Düzeltmelerden sonra **ikinci bir bağımsız inceleme** yap
-(yetki: eylemler, okuma sızıntısı, API uçları, e-posta/zil). Birleştirmeden önce canlı veritabanının yedeği alınsın
-(sahip: Ayarlar › Yedek ya da Neon'da dal/anlık kopya). Yeni roller kimseye kendiliğinden verilmez; CHECK kısıtları
-canlıdaki admin/staff verisiyle uyumlu.
+### P1. Roller + vardiya şube ayarları — BİTTİ (#163)
+İlk incelemenin 12 bulgusu ve ikinci bağımsız yetki incelemesinin (eylemler, okuma sızıntısı, API uçları, e-posta / zil)
+doğruladığı 6 bulgu testleriyle düzeltildi; göç 0097_roller. Ayrıntı: YAPILACAKLAR.md › Bitenler.
 
 ### P2. Excel'den tam bağımsızlık — BİTTİ (#164 ve bu PR)
 
 ### P3. Hata izleme ve kayıt — BİTTİ (bu PR)
 `src/instrumentation.ts` › `onRequestError`, `attempt()`, tarayıcı (`/api/hata`) ve CSP raporları `error_log`'a (30 gün,
 aynı hata tek satır); ekran Ayarlar › Hata kaydı ("Sistem" yerine adı bu); kritik hatada günde bir sistem uyarısı
-e-postası; CSP_ENFORCE kararı kartta (7 gün kanıt). Göç `0097_hata_kaydi`: main ilerlediyse birleştirmede yeniden
+e-postası; CSP_ENFORCE kararı kartta (7 gün kanıt). Göç `0100_hata_kaydi`: main ilerlediyse birleştirmede yeniden
 üretilir. Sentry eklenmedi (docs/HATA-KAYDI.md § 7). İnceleme düzeltmeleri (aynı PR): sorgu parametresi hiç alınmaz,
 kapı kaynak başına (CSP yağmuru sunucu hatasını düşürmez), NUL ve uzun girdi, eklentinin CSP ihlali kayda girmez,
 Çözüldü 7 günü atlatmaz, son beş hata kodu, takılan e-postanın anahtarı yeniden alınır. Ayrıntı docs/HATA-KAYDI.md.
@@ -126,8 +116,8 @@ Ağır veri yolu ve Faturalar listesinin sayfalanması; ModPOS föyünden kasa f
 araçları (kasadan_cikanlar, zayi_ikram, komisyon_kanallari) ve ~60 işlem uyarlayıcısı; mutabakatta resmi tatiller
 ("Geç geldi" yanlış uyarısı); şube başına kalan ayarlar (uyarı sesi / kontrol hatırlatma saatleri); Tükendi'nin şube
 başına tutulması; karaoke "Gelmedi"; senkron Faz 2'nin panel tarafı; tedarikçi "Birleştir"; cari v2.
-LafPOS deposu gerektirenler (sahip onayı): kayıp önleme için iptal / ikramı yapan kişi; iki şubeli LafPOS;
-`bankPosPending` değişikliğinin LafPOS'ta birleşmesi.
+AsilPOS deposu gerektirenler (sahip onayı): kayıp önleme için iptal / ikramı yapan kişi; çok şubeli kasanın kasa tarafı
+(#188, ikinci kasa açılmadan önce); `bankPosPending` değişikliğinin AsilPOS'ta birleşmesi.
 
 ## Sahibin tarafında (kod değil)
 

@@ -31,7 +31,7 @@ export interface CashSettingsCardData {
   /** Birden çok kasa açıkken şubenin adı (başlıkta); tek kasada null */
   branchName: string | null;
   link: CashSettingsLink | null;
-  /** Çalışan listesi alanı: LafPOS'lu şubede ya da listesi doluysa (ModPOS'lu şubede çalışan e-postası gitmez) */
+  /** Çalışan listesi alanı: AsilPOS'lu şubede ya da listesi doluysa (ModPOS'lu şubede çalışan e-postası gitmez) */
   showStaff: boolean;
 }
 
@@ -59,6 +59,6 @@ export async function cashSettingsCardData(branchId: string): Promise<CashSettin
           sharedWith: settingDependents(CASH_REPORT_GROUP, branchId, links, branches).map((b) => b.name),
         }
       : null,
-    showStaff: branch?.posSource === "lafpos" || Boolean(view.settings.staffRecipients?.length),
+    showStaff: branch?.posSource === "asilpos" || Boolean(view.settings.staffRecipients?.length),
   };
 }

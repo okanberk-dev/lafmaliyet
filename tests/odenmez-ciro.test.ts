@@ -203,7 +203,7 @@ test("günün hesabı tek yerden: computeCash ödemeleri ciroyla karşılaştır
   assert.match(src, /const \{ revenue, offInZTotal \} = dayRevenue\(\{ zTotal: f\.zTotal, offRevenue: f\.offRevenue \?\? null, payments: paymentsTotal \}\);/);
 });
 
-test("üç kaynağın hepsi ödeme dökümünü taşır: kasa raporu, LafPOS gün sonu, ModPOS föyü", () => {
+test("üç kaynağın hepsi ödeme dökümünü taşır: kasa raporu, AsilPOS gün sonu, ModPOS föyü", () => {
   const loader = read("src/server/data/cash-reports.ts");
   assert.equal(loader.match(/payments: Math\.round\(/g)?.length, 3);
 });

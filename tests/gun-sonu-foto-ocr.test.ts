@@ -8,8 +8,9 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 
-import { lafposPhotoCheck } from "../src/lib/lafpos/foto";
-import type { BankPos, PosOkc } from "../src/lib/lafpos/day";
+import { asilposPhotoCheck } from "../src/lib/asilpos/foto";
+import type { BankPos, PosOkc } from "../src/lib/asilpos/day";
+import { ESKI_KAGIT_ADI, TEL_KART_ALANI } from "../src/lib/asilpos/eski-adlar";
 import { parsePavoOcr } from "../src/lib/photo-read/pavo-ocr";
 import { OCR_LANG_DIR, ocrImage } from "../src/server/photo-read/ocr";
 
@@ -59,7 +60,7 @@ const BANK: BankPos = {
   batchNo: "0001",
   at: "2026-11-22T21:26:00.000Z",
   pavoCard: 4_160,
-  lafposCard: 4_160,
+  [TEL_KART_ALANI]: 4_160,
   diff: 0,
   acquirers: [],
   message: null,
@@ -68,11 +69,11 @@ const BANK: BankPos = {
   dayCard: 4_160,
 };
 const OKC: PosOkc = { provider: "pavo", zReport: false, docs: 19, cash: 1_055, card: 4_160, mealCard: 0, other: 0, total: 5_215, voided: { count: 0, cash: 0, card: 0 }, vat: [{ rate: 10, total: 5_215, vat: 474.09 }] };
-const REPORT = { bankPos: 4_160, okcZNo: "11", okcTotal: 5_215, okcCash: 1_055, okcCard: 4_160, okcMealCard: 0, okcOther: 0, okcVat: OKC.vat, lafposZNo: "11" };
+const REPORT = { bankPos: 4_160, okcZNo: "11", okcTotal: 5_215, okcCash: 1_055, okcCard: 4_160, okcMealCard: 0, okcOther: 0, okcVat: OKC.vat, asilposZNo: "11" };
 /** Telefonda küçültülen fotoğrafta (uzun kenar 2576 px) termal fişin satırı ~36 px */
 const image = () => slipPng(SLIP, { size: 36, width: 980 });
 
-test("Sentetik Pavo fişi kodla okunur: Z no, tarih, toplam, nakit, kart, batch; LafPOS'u tutuyor (uyumlu)", { timeout: 60_000 }, async () => {
+test("Sentetik Pavo fişi kodla okunur: Z no, tarih, toplam, nakit, kart, batch; AsilPOS'u tutuyor (uyumlu)", { timeout: 60_000 }, async () => {
   const lines = await ocrImage(image(), { timeoutMs: 45_000 });
   const { raw } = parsePavoOcr(lines);
   const seen = lines.map((l) => l.text).join("\n");
@@ -88,14 +89,14 @@ test("Sentetik Pavo fişi kodla okunur: Z no, tarih, toplam, nakit, kart, batch;
     [["0001", 4_160]],
   );
   // KDV dökümü karşılaştırılmayan raporda (yazarkasa KDV'si boş) bütün satırlar yüksek güvenle okundu: uyumlu
-  const c = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw, error: null, source: "kod" }], bankPos: BANK, okc: OKC, report: { ...REPORT, okcVat: null } });
+  const c = asilposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw, error: null, source: "kod" }], bankPos: BANK, okc: OKC, report: { ...REPORT, okcVat: null } });
   assert.equal(c.state, "uyumlu", JSON.stringify(c.rows));
   assert.equal(c.source, "kod");
 });
 
 test("Gerçek OCR'ın şüphelendiği satır (ör. '%10' işareti) 'fark' üretmez: okunamadı — yönetici baksın", { timeout: 60_000 }, async () => {
   const { raw } = parsePavoOcr(await ocrImage(image(), { timeoutMs: 45_000 }));
-  const c = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw, error: null, source: "kod" }], bankPos: BANK, okc: OKC, report: REPORT });
+  const c = asilposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw, error: null, source: "kod" }], bankPos: BANK, okc: OKC, report: REPORT });
   assert.notEqual(c.state, "fark", JSON.stringify(c.rows));
   // OCR % işaretini güvenle okuduysa uyumlu; okuyamadıysa yalnız KDV satırı okunmamış ve sonuç "yönetici baksın"
   if (c.state !== "uyumlu") {
@@ -107,8 +108,8 @@ test("Gerçek OCR'ın şüphelendiği satır (ör. '%10' işareti) 'fark' üretm
   }
 });
 
-/** LafPOS'un kör kasada bastığı kâğıt (24 Kasım, Marina): yalnız "BANKA GÜN SONU · PAVO"; Garanti 3.000 + Akbank 1.160 */
-const LAFPOS_KOR = [
+/** AsilPOS'un kör kasada bastığı kâğıt (24 Kasım, Marina): yalnız "BANKA GÜN SONU · PAVO"; Garanti 3.000 + Akbank 1.160 */
+const ASILPOS_KOR = [
   "L'AFFOGATO",
   "BANKA GÜN SONU · PAVO",
   "Batch|0001",
@@ -117,15 +118,15 @@ const LAFPOS_KOR = [
   "Garanti BBVA (3)|3.000,00",
   "Akbank (2)|1.160,00",
   "TOPLAM|4.160,00 TL",
-  "PAVO - LAFPOS KARŞILAŞTIRMA",
+  `PAVO - ${ESKI_KAGIT_ADI} KARŞILAŞTIRMA`,
   "Pavo kart toplamı|4.160,00",
-  "LafPOS kart toplamı|4.160,00",
+  "AsilPOS kart toplamı|4.160,00",
   "FARK|0,00",
   "Pavo cihazının banka gün sonu özetidir",
 ];
 
-test("Sentetik LafPOS kör kâğıdı kodla okunur: banka gün sonu fişi, iki banka satırı; Z yok, karşılaştırma satırları batch değil", { timeout: 60_000 }, async () => {
-  const lines = await ocrImage(slipPng(LAFPOS_KOR, { size: 36, width: 980 }), { timeoutMs: 45_000 });
+test("Sentetik AsilPOS kör kâğıdı kodla okunur: banka gün sonu fişi, iki banka satırı; Z yok, karşılaştırma satırları batch değil", { timeout: 60_000 }, async () => {
+  const lines = await ocrImage(slipPng(ASILPOS_KOR, { size: 36, width: 980 }), { timeoutMs: 45_000 });
   const { raw } = parsePavoOcr(lines);
   const seen = lines.map((l) => l.text).join("\n");
   assert.equal(raw.documentType, "batch_slip", seen);
@@ -139,7 +140,7 @@ test("Sentetik LafPOS kör kâğıdı kodla okunur: banka gün sonu fişi, iki b
     seen,
   );
   const bank = { ...BANK, acquirers: [{ name: "Garanti BBVA", count: 3, total: 3_000 }, { name: "Akbank", count: 2, total: 1_160 }] };
-  const c = lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw, error: null, source: "kod" }], bankPos: bank, okc: OKC, report: { ...REPORT, lafposZNo: null, okcZNo: null } });
+  const c = asilposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw, error: null, source: "kod" }], bankPos: bank, okc: OKC, report: { ...REPORT, asilposZNo: null, okcZNo: null } });
   assert.equal(c.state, "uyumlu", JSON.stringify(c.rows));
   assert.equal(c.zNoFromPhoto, null);
 });

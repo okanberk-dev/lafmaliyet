@@ -14,7 +14,7 @@ import { businessDate } from "@/lib/cash-report";
 import { money, monthLabel } from "@/lib/format";
 import { dayMonthTR } from "@/lib/reminders";
 import { HANDOVER_TEXT, ledgerByRecipient, ledgerTotal, type HandoverRow } from "@/lib/teslim";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { handoverFirstDate, handoverLedger } from "@/server/data/handover-ledger";
@@ -22,7 +22,7 @@ import { handoverFirstDate, handoverLedger } from "@/server/data/handover-ledger
 export const metadata: Metadata = { title: "Teslim defteri" };
 
 const TITLE = "Teslim defteri";
-const DESCRIPTION = "Kasadan teslim edilen nakit ve kimin aldığı: kasa raporunun sayımdan sonra teslimi ve gün içindeki teslim satırları (LafPOS'tan gelenler dahil).";
+const DESCRIPTION = "Kasadan teslim edilen nakit ve kimin aldığı: kasa raporunun sayımdan sonra teslimi ve gün içindeki teslim satırları (AsilPOS'tan gelenler dahil).";
 
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
@@ -47,7 +47,8 @@ export default function HandoverLedgerPage({ searchParams }: PageProps<"/panel/k
 }
 
 async function HandoverLedgerContent({ searchParams }: { searchParams: PageProps<"/panel/kasa/teslim">["searchParams"] }) {
-  await requireAdmin();
+  // Yönetici ve müdür (müdürde yalnız şubesinin teslimleri: okumalar şube kapsamıyla, kapsamı kilitli)
+  await requireCan("isletme.yonet");
   const sp = await searchParams;
   const current = businessDate().slice(0, 7);
   const ay = pick(sp.ay);
@@ -128,7 +129,7 @@ function LedgerRow({ row, branch }: { row: HandoverRow; branch: string | null })
       <span className="col-span-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ink-mute">
         <span className={row.to ? "text-ink" : "text-warn"}>Kime: {row.to ?? "yazılmamış"}</span>
         <span>· Kaydeden: {row.by}</span>
-        <Badge tone={row.lafpos ? "blue" : "gray"}>{row.lafpos ? "LafPOS" : row.kind === "sayim" ? "Sayımdan sonra" : "Gün içinde"}</Badge>
+        <Badge tone={row.asilpos ? "blue" : "gray"}>{row.asilpos ? "AsilPOS" : row.kind === "sayim" ? "Sayımdan sonra" : "Gün içinde"}</Badge>
       </span>
     </li>
   );

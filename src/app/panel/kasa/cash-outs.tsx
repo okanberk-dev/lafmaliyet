@@ -15,7 +15,7 @@ import { CASH_OUT_REQUEST_TEXT, CASH_OUT_OP_LABEL } from "@/lib/cash-out-request
 import { cashOutLabel, cashOutShortLabel, cashOutsTotal } from "@/lib/cash-outs";
 import { shortDayTR } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
-import { LAFPOS_STAFF_ENTRY_LINE } from "@/lib/lafpos/cash-moves";
+import { ASILPOS_STAFF_ENTRY_LINE } from "@/lib/asilpos/cash-moves";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import { photoCaption, photoUrl, type ReadingState } from "@/lib/photo-rules";
 import { genitive } from "@/lib/recipe-change";
@@ -32,7 +32,10 @@ import { CashOutDialog, type CashOutDialogMode, type CashOutRequestMode } from "
 
 const time = (iso: string) => new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
-/** Personelin, yöneticinin tedarikçi ödemesine bağladığı satırda gördüğü sabit mesaj (tutar ve tedarikçi yok) */
+/**
+ * Kilitli satırda (`locked`) görünen sabit mesaj (tutar, tedarikçi ve kategori yok): personel ve müdür yöneticinin
+ * tedarikçi ödemesine bağladığı satırda, müdür ayrıca yöneticinin kategorisindeki (maaş, kira) satırda görür
+ */
 const LOCKED_TEXT = "Bu satır yöneticinin kaydına bağlı; düzeltmek için yöneticiye haber verin.";
 
 /** Satırın ikinci satırı: "14:32 · Ayşe · Nakit malzeme alımı" (harcamaya yazılmadıysa nedeni) */
@@ -76,15 +79,15 @@ export function CashOutsCard({
   supplierNames = [],
   hints = {},
   branchId = null,
-  lafposEntryClosed = false,
+  asilposEntryClosed = false,
 }: {
   date: string;
   /**
-   * Personel, LafPOS gününde (staffLafposEntryClosed): satır eklemez, kasadan çıkanlar LafPOS'un kasa hareketlerinden
+   * Personel, AsilPOS gününde (staffAsilposEntryClosed): satır eklemez, kasadan çıkanlar AsilPOS'un kasa hareketlerinden
    * gelir; ekleme düğmeleri yerine kısa satır. Gelen satıra fiş fotoğrafı ve kategori eklenir (satıra dokunma ve "Fiş
    * fotoğrafı ekle" açık kalır); sunucu da eklemeyi reddeder (staffCashOutGate)
    */
-  lafposEntryClosed?: boolean;
+  asilposEntryClosed?: boolean;
   /**
    * Kartın kasası (docs/SUBE.md › Yazarken hangi şube): yeni satır ve ekleme isteği bu şubeye gider, gönderim anındaki
    * seçime değil (başka sekmede seçici değişmiş olabilir). Yoksa sunucu seçili kasayı kullanır
@@ -238,8 +241,8 @@ export function CashOutsCard({
         title="Gün içinde kasadan çıkanlar"
         // Bugünün kartında tarih yok (sayfanın gün düğmesi söyler); başka günde başta
         description={`${today ? "" : `${longDateTR(date)} · `}${
-          lafposEntryClosed
-            ? "LafPOS'un kasa hareketlerinden; gelen satıra fişin fotoğrafını ekleyin"
+          asilposEntryClosed
+            ? "AsilPOS'un kasa hareketlerinden; gelen satıra fişin fotoğrafını ekleyin"
             : storage && read
               ? "Market, buz, tamir: fişin fotoğrafını çekin, tutar ve KDV dolar"
               : "Market, buz, tamir… kasadan ödenenleri ekleyin"
@@ -272,9 +275,9 @@ export function CashOutsCard({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm text-ink">{label}</span>
                   <span className="block truncate text-xs text-ink-mute">{rowSub(o)}</span>
-                  {o.lafposId ? (
-                    <Badge tone="gray" className="mt-1 mr-1.5" title="LafPOS'un kasa hareketinden: tutar, tür ve gün LafPOS'tan">
-                      LafPOS
+                  {o.asilposId ? (
+                    <Badge tone="gray" className="mt-1 mr-1.5" title="AsilPOS'un kasa hareketinden: tutar, tür ve gün AsilPOS'tan">
+                      AsilPOS
                     </Badge>
                   ) : null}
                   {mine ? (
@@ -314,7 +317,8 @@ export function CashOutsCard({
             return (
               <li key={o.id}>
                 {o.locked && (canEdit || staffActs) ? (
-                  // Yöneticinin tedarikçi ödemesine bağlı satır: personel düzeltemez, silemez, istek de açamaz
+                  // Yöneticinin tedarikçi ödemesine bağlı satır (personel düzeltemez, silemez, istek de açamaz) ve müdürde
+                  // yöneticinin kategorisindeki satır (düzeltmesi, silinmesi yöneticinin)
                   <button type="button" onClick={() => toast.info(LOCKED_TEXT)} className="flex w-full cursor-pointer items-center gap-3 px-5 py-2.5 text-left hover:bg-panel/60 pointer-coarse:min-h-11">
                     {body}
                   </button>
@@ -343,7 +347,7 @@ export function CashOutsCard({
             );
           })}
         </ul>
-      ) : reported?.amount || !canEdit || lafposEntryClosed ? (
+      ) : reported?.amount || !canEdit || asilposEntryClosed ? (
         // Boş bugünde satır yok: düğmeler hemen başlığın altında (telefonda "çıkmadı" satırı bir ekranın onda birini alıyordu)
         <p className="border-t border-line px-5 py-4 text-sm text-ink-mute">
           {reported && reported.amount > 0
@@ -371,10 +375,10 @@ export function CashOutsCard({
           ))}
         </ul>
       ) : null}
-      {lafposEntryClosed ? (
+      {asilposEntryClosed ? (
         <p className="flex items-start gap-2 border-t border-line px-5 py-3 text-[13px] leading-5 text-ink-mute">
           <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-          {LAFPOS_STAFF_ENTRY_LINE}
+          {ASILPOS_STAFF_ENTRY_LINE}
         </p>
       ) : canEdit || (staffActs && locked) ? (
         <div className={cn("flex gap-2 border-t border-line px-5 py-4", !admin && locked ? "flex-col" : "flex-wrap")}>{addButtons(date, !admin && locked)}</div>

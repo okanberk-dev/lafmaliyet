@@ -19,7 +19,7 @@ bağlantılar kapalı, panelin geri kalanı çalışır).
 | Online satış (kâr-zarar, tüketim, kasa raporu) | site | `GET /api/panel/sales` (günlük iş, Gelir-gider › Siteden yenile) | Yazmaz | [SITE-SATIS.md](SITE-SATIS.md) |
 | Ad, kategori, görsel, alerjen, yeni kalem | site | Yalnız ad ve kategori listede görünür | Yazmaz (eşleştirme ve kalem açma elle) | [SITE-MENU.md](SITE-MENU.md) |
 
-Kafenin kasası LafPOS ayrı bir bağlantıdır (kendi anahtarı, kendi uçları): [LAFPOS.md](LAFPOS.md).
+Kafenin kasası AsilPOS ayrı bir bağlantıdır (kendi anahtarı, kendi uçları): [ASILPOS.md](ASILPOS.md).
 
 ## Çakışma: iki yer aynı anda değişince
 

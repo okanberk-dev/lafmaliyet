@@ -62,7 +62,7 @@ export function cashOutsTotal(lines: { amount: number }[]): number {
   return Math.round(lines.reduce((a, l) => a + l.amount, 0) * 100) / 100;
 }
 
-/** Satırların "Teslim" olanlarının toplamı (LafPOS'un tesliminin panele girilmiş kısmı; lafposHandedGap) */
+/** Satırların "Teslim" olanlarının toplamı (AsilPOS'un tesliminin panele girilmiş kısmı; asilposHandedGap) */
 export function teslimTotalOf(lines: { kind: CashOutKind; amount: number }[]): number {
   return cashOutsTotal(lines.filter((l) => l.kind === "teslim"));
 }
@@ -70,7 +70,7 @@ export function teslimTotalOf(lines: { kind: CashOutKind; amount: number }[]): n
 /**
  * Raporun "Gün içinde kasadan çıkan" tutarı satırların toplamından 1 ₺'den fazla azsa uyarı (engellemez: fişin parası
  * kasadan çıkmamış olabilir). Fazlası burada uyarılmaz (fişsiz çıkan para da olur): personel neye çıktığını yazar
- * (cashOutNoteMissing), yöneticiye "Fişsiz çıkış" işaretlenir (src/lib/lafpos/prefill.ts unreceiptedCashOut).
+ * (cashOutNoteMissing), yöneticiye "Fişsiz çıkış" işaretlenir (src/lib/asilpos/prefill.ts unreceiptedCashOut).
  */
 export function cashOutCheck(cashOut: number, lines: number[]): string | null {
   if (!lines.length) return null;
@@ -152,19 +152,19 @@ export function cashOutWritesExpense(o: {
    */
   awaitingInvoice?: boolean;
   /**
-   * Satır kategorisini bekleyen LafPOS harcaması (Faz 3; src/lib/lafpos/cash-moves.ts lafposAwaitingCategory: LafPOS'un
-   * açtığı, kaydı olmayan, LafPOS'un personelin kategorisiyle göndermediği harcama). Sunucu saklı gövdeden bilir, pencereye
+   * Satır kategorisini bekleyen AsilPOS harcaması (Faz 3; src/lib/asilpos/cash-moves.ts asilposAwaitingCategory: AsilPOS'un
+   * açtığı, kaydı olmayan, AsilPOS'un personelin kategorisiyle göndermediği harcama). Sunucu saklı gövdeden bilir, pencereye
    * satırla gelir. Personelin düzeltmesi yeni satırın kuralıyla: kategori seçilince kayıt açılır. Kaydı yöneticinin
-   * kaldırdığı LafPOS satırında ve sahiplenilen elle girilmiş satırda verilmez: kayıt geri gelmez (inceleme LM-3)
+   * kaldırdığı AsilPOS satırında ve sahiplenilen elle girilmiş satırda verilmez: kayıt geri gelmez (inceleme LM-3)
    */
-  lafposAwaitingCategory?: boolean;
+  asilposAwaitingCategory?: boolean;
 }): boolean {
   if (o.kind !== "harcama") return false;
   if (o.admin || o.mode === "restore") return o.requested;
   if (o.mode === "edit") {
     const leftInvoice = o.prevDocType != null && isInvoiceDoc(o.prevDocType) && staffToExpenses(o.kind, o.docType) && o.awaitingInvoice !== false;
-    const lafposCategory = o.lafposAwaitingCategory === true && staffToExpenses(o.kind, o.docType);
-    return o.hasExpense || leftInvoice || lafposCategory;
+    const asilposCategory = o.asilposAwaitingCategory === true && staffToExpenses(o.kind, o.docType);
+    return o.hasExpense || leftInvoice || asilposCategory;
   }
   return staffToExpenses(o.kind, o.docType);
 }
@@ -279,10 +279,10 @@ export const STAFF_CASH_OUT_FIELDS = [
   "expenseEntryId",
   "categoryId",
   "categoryName",
-  // Faz 3: satır LafPOS'un kasa hareketinden geldi (kimlik ULID; kişisel değil): tutar, tür ve gün kilitli
-  "lafposId",
-  // Faz 3: LafPOS'un kategorisiz yazdığı harcama, kategori seçilince Aylık harcamalar'a yazılır (yalnız işaret)
-  "lafposAwaitingCategory",
+  // Faz 3: satır AsilPOS'un kasa hareketinden geldi (kimlik ULID; kişisel değil): tutar, tür ve gün kilitli
+  "asilposId",
+  // Faz 3: AsilPOS'un kategorisiz yazdığı harcama, kategori seçilince Aylık harcamalar'a yazılır (yalnız işaret)
+  "asilposAwaitingCategory",
 ] as const;
 
 export type StaffCashOutField = (typeof STAFF_CASH_OUT_FIELDS)[number];
@@ -292,6 +292,45 @@ export function staffCashOutRow<T extends Record<StaffCashOutField, unknown>>(ro
   const out: Partial<Pick<T, StaffCashOutField>> = {};
   for (const k of STAFF_CASH_OUT_FIELDS) out[k] = row[k];
   return { ...(out as Pick<T, StaffCashOutField>), locked };
+}
+
+/**
+ * Yöneticinin kategorisindeki satırdan müdüre gitmeyen alanlar (src/lib/roles.ts › ownerRowAmountOnly): serbest metin
+ * (yer ya da kime, açıklama), fişin bilgileri ve fotoğrafı, kategorinin adı. Tür, tutar ve kimlikler kalır (kasanın
+ * hesabı ve satırın kilidi onlarla)
+ */
+export const OWNER_ROW_HIDDEN_FIELDS = ["store", "description", "receiptDate", "receiptNo", "vat", "photoId", "categoryName"] as const;
+
+/** Satırın yalnız türü ve tutarıyla hâli: OWNER_ROW_HIDDEN_FIELDS'ten satırda olanlar null */
+export function amountOnlyRow<T extends object>(row: T): T {
+  const out = { ...row } as Record<string, unknown>;
+  for (const k of OWNER_ROW_HIDDEN_FIELDS) if (k in out) out[k] = null;
+  return out as T;
+}
+
+/** Satır yöneticinin kategorisinde mi: bağlı harcama kaydının kategorisi personelin kategorileri (staffCategory) arasında değil */
+export function ownerCategoryRow(o: { categoryId: number | null }, staffCategoryIds: ReadonlySet<number>): boolean {
+  return o.categoryId !== null && !staffCategoryIds.has(o.categoryId);
+}
+
+/** Müdüre giden satırlar: yöneticinin kategorisindekiler yalnız türü ve tutarıyla (amountOnlyRow), öbürleri olduğu gibi */
+export function ownerRowsAmountOnly<T extends { categoryId: number | null }>(rows: readonly T[], staffCategoryIds: ReadonlySet<number>): T[] {
+  return rows.map((o) => (ownerCategoryRow(o, staffCategoryIds) ? amountOnlyRow(o) : o));
+}
+
+/** Kasa ay görünümünün rapor penceresindeki satır (ReportSheet): adı, tutarı, fişi; kategori ve kayıt bağı yok */
+export type SheetCashOutRow = CashOutLine & { id: number; photoId: number | null };
+
+/**
+ * Ay görünümünün (Günden güne) tarayıcıya giden kasadan çıkanları, güne göre (beyaz liste): pencere yalnız adı, tutarı ve
+ * fiş simgesini yazar; kategori adı ve kimliği, harcama kaydı, yazanın kimliği gitmez. Pencere kimseye kategori yazmaz;
+ * müdürün satırları buraya ownerRowsAmountOnly'den geçmiş gelir: maaş, kira gibi kategorideki satırın yalnız tutarı
+ * (docs/ROLLER.md › Kararlar)
+ */
+export function sheetCashOutsByDate(rows: readonly (SheetCashOutRow & { date: string })[]): Record<string, SheetCashOutRow[]> {
+  const out: Record<string, SheetCashOutRow[]> = {};
+  for (const o of rows) (out[o.date] ??= []).push({ id: o.id, kind: o.kind, amount: o.amount, store: o.store, description: o.description, photoId: o.photoId });
+  return out;
 }
 
 /**

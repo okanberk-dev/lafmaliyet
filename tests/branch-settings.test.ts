@@ -8,6 +8,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { SUBE_AYAR_GRUBU } from "../src/lib/asilpos/eski-adlar";
 import { TABLE_RULES } from "../src/lib/backup/format";
 import {
   BRANCH_SETTING_GROUPS,
@@ -36,7 +37,7 @@ const read = (p: string) => readFileSync(join(root, p), "utf8");
 
 const b = (id: string, name: string, o: Partial<BranchRow> = {}): BranchRow => ({ id, name, kind: "fiziksel", posSource: "modpos", active: true, openedOn: null, sortOrder: 0, ...o });
 const TUZLA = b("tuzla", "Tuzla");
-const MARINA = b("marina", "Marina", { posSource: "lafpos" });
+const MARINA = b("marina", "Marina", { posSource: "asilpos" });
 const BODRUM = b("bodrum", "Bodrum");
 const ONLINE = b("online", "laffogato.net", { kind: "online", posSource: "yok" });
 const ALL = [TUZLA, MARINA, BODRUM, ONLINE];
@@ -104,14 +105,16 @@ test("gruplar: alıcılar 'aynı' sunulur ve Tuzla'nın, çalışan listesi şub
       ["kasa.calisan", false, "marina", "cash.settings"],
       // Paraşüt hesabı (B4): satır yalnız bağı tutar; eski kayıt varsayılan şubenin tek hesabı
       ["parasut", true, "tuzla", "parasut.settings"],
-      // Şube ayarları 2. tur (25 Kasım 2026): sahibin varsayılanı komisyonda "aynı"; LafPOS ve cihaz şubenin kendisinin
+      // Şube ayarları 2. tur (25 Kasım 2026): sahibin varsayılanı komisyonda "aynı"; AsilPOS ve cihaz şubenin kendisinin
       ["komisyon", true, "tuzla", "komisyon.ayar"],
-      ["pos.lafpos", false, "marina", null],
+      [SUBE_AYAR_GRUBU, false, "marina", null],
       ["modpos", true, "tuzla", null],
       ["isletme.takvim", true, "tuzla", null],
       ["kasa.cihaz", false, "tuzla", null],
       // Kör sayım (Dalga 2): şubenin kendisinin; seçilmemişken varsayılan (ModPOS'taki şubede açık)
       ["kasa.kor", false, "tuzla", null],
+      // Hazır vardiyalar (26 Kasım 2026): saatler şubenin açılışına bağlı, "aynı" yok; seçilmemişken bugünkü sabit saatler
+      ["vardiya.hazir", false, "tuzla", null],
     ],
   );
   assert.equal(branchSettingGroup("kasa.rapor"), CASH_REPORT_GROUP);
@@ -126,10 +129,10 @@ test("gruplar: alıcılar 'aynı' sunulur ve Tuzla'nın, çalışan listesi şub
   assert.deepEqual(CASH_STAFF_GROUP.read({ recipients: ["a@b.c"], staffRecipients: ["k@o.com", 3], staffAmounts: "evet" }, {}), { staffRecipients: ["k@o.com"], staffAmounts: false });
   // Gizli alan satırın değerine yazılmaz (secrets sütununda şifreli)
   assert.deepEqual(plainFields({ secretFields: ["secret"] }, { id: "x", secret: "gizli" }), { id: "x" });
-  // Şifreli alan yalnız LafPOS'un anahtarı
-  for (const g of BRANCH_SETTING_GROUPS) assert.deepEqual(g.secretFields, g.id === "pos.lafpos" ? ["secret"] : [], `${g.id}: şifreli alanlar`);
+  // Şifreli alan yalnız AsilPOS'un anahtarı
+  for (const g of BRANCH_SETTING_GROUPS) assert.deepEqual(g.secretFields, g.id === SUBE_AYAR_GRUBU ? ["secret"] : [], `${g.id}: şifreli alanlar`);
   assert.ok(SHARED_FOR_NOW.length > 0 && SHARED_FOR_NOW.every((g) => !branchSettingGroup(g.id)), "henüz ortak olanlar ayrı listede");
-  for (const id of ["pos.lafpos", "komisyon", "modpos", "isletme.takvim"]) assert.ok(!SHARED_FOR_NOW.some((g) => g.id === id), `${id} artık şube başına`);
+  for (const id of [SUBE_AYAR_GRUBU, "komisyon", "modpos", "isletme.takvim", "vardiya.hazir"]) assert.ok(!SHARED_FOR_NOW.some((g) => g.id === id), `${id} artık şube başına`);
   assert.equal(branchSettingGroup("parasut"), PARASUT_GROUP, "Paraşüt hesabı şube başına (B4)");
 });
 
@@ -155,11 +158,11 @@ test("kaynak: kasa raporu ayarını okuyan her yer şubeyi verir; eski kayda yal
   assert.match(read("src/server/cash/report-email.ts"), /loadCashSettings\(row\.branchId\)/);
   assert.match(read("src/server/actions/cash-report.ts"), /loadCashSettings\(saved\.branchId\)/);
   assert.match(read("src/server/actions/cash-report.ts"), /loadCashSettings\(r\.branchId\)/);
-  const dayEnd = read("src/server/lafpos/gun-sonu.ts");
+  const dayEnd = read("src/server/asilpos/gun-sonu.ts");
   assert.match(dayEnd, /dayEndRecipients\(db: DB, branchId: string\)/, "şube zorunlu: varsayılan Marina'ya düşmez");
   assert.doesNotMatch(dayEnd, /dayEndRecipients\(db\)/, "gün sonu, Pavo ve fotoğraf e-postası kendi şubesinin alıcılarına");
-  assert.match(dayEnd, /async function sendStaffDayEnd\([\s\S]*?const branchId = await lafposBranchId\(db\);[\s\S]*?loadCashSettings\(branchId, db\)/, "çalışan listesi gün sonunun şubesinin");
-  assert.match(read("src/server/lafpos/gun-sonu.ts"), /r\.branchIds\.includes\(branchId\)/, "gün sonu yalnız o şubeye açık bildirim adreslerine");
+  assert.match(dayEnd, /async function sendStaffDayEnd\(db: DB, date: string, branchId: string[\s\S]*?loadCashSettings\(branchId, db\)/, "çalışan listesi gün sonunun şubesinin");
+  assert.match(read("src/server/asilpos/gun-sonu.ts"), /r\.branchIds\.includes\(branchId\)/, "gün sonu yalnız o şubeye açık bildirim adreslerine");
   assert.match(read("src/app/panel/kasa/page.tsx"), /loadCashSettings\(view\.till\)/);
   // "Tümü"de her şube bölümünde kendi kartı (eskiden yalnız ilkinde)
   assert.doesNotMatch(read("src/app/panel/kasa/page.tsx"), /settings: i === 0 }/);

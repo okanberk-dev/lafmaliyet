@@ -123,7 +123,7 @@ export function SavedPhotos({
   diffs: PhotoDiff[];
   admin: boolean;
   removal?: Record<number, "ok" | "pending" | "blocked">;
-  /** LafPOS gününde yazarkasa bölümünün fotoğrafının adı ("Pavo gün sonu fişi"; "Banka POS Z" yerine) */
+  /** AsilPOS gününde yazarkasa bölümünün fotoğrafının adı ("Pavo gün sonu fişi"; "Banka POS Z" yerine) */
   dayEndLabel?: string;
 }) {
   const [viewer, setViewer] = useState<{ id: number; caption: string } | null>(null);

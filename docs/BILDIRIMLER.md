@@ -54,20 +54,20 @@ silindi: Süt 1,5 LT (15 Eki) · Ayşe istedi" ([ZAYI-IKRAM.md](ZAYI-IKRAM.md)).
 yöneticide tek satırdır ("1 karaoke sayacı silme isteği onay bekliyor", ilk karta); personelde sonucu "Silme onaylandı:
 karaoke sayacı 24 Eki 21:00–23:00", Karaoke ekranına ([KARAOKE.md](KARAOKE.md) › Sayacı silmek). Personel
 kapalıydık dediyse yöneticinin "Dünkü kasa raporu girilmedi" satırının gövdesine "· Personel: kapalıydık dedi (onay
-bekliyor)" eklenir; dün onaylı kapalıysa satır çıkmaz. LafPOS gün sonu gelip çekmece sayılmadıysa satır "Dünkü kasa
-sayılmadı" der ve nedenini yazar; personelin zilinde "Kasa sayılmadı" (LafPOS'ta nereden sayılacağı) ve otomatik raporun
-fotoğrafı eklenene kadar "Gün sonu fotoğrafı bekliyor" durur ([LAFPOS.md](LAFPOS.md)). LafPOS'a geçildiyse (geçiş gününden sonraki günler) yöneticinin
-kasa başlığında son 7 günün LafPOS'un gün sonundan farklı yazılan raporları da durur: "Kasa raporu LafPOS'tan farklı ·
-11 Kasım · Sayılan nakit 9.350 ₺ (LafPOS'ta 9.000 ₺)"; LafPOS günü rapordan sonra farklı rakamla yeniden gönderdiyse
-"LafPOS rapordan sonra farklı rakamla geldi" (yeniden gönderim ya da düzeltme satırı yeniden okunmamış yapar;
-[LAFPOS.md](LAFPOS.md) › Kasa raporu). ModPOS günlerinde (geçiş günü boşken ya da ondan önce) aynı başlıkta son 7
+bekliyor)" eklenir; dün onaylı kapalıysa satır çıkmaz. AsilPOS gün sonu gelip çekmece sayılmadıysa satır "Dünkü kasa
+sayılmadı" der ve nedenini yazar; personelin zilinde "Kasa sayılmadı" (AsilPOS'ta nereden sayılacağı) ve otomatik raporun
+fotoğrafı eklenene kadar "Gün sonu fotoğrafı bekliyor" durur ([ASILPOS.md](ASILPOS.md)). AsilPOS'a geçildiyse (geçiş gününden sonraki günler) yöneticinin
+kasa başlığında son 7 günün AsilPOS'un gün sonundan farklı yazılan raporları da durur: "Kasa raporu AsilPOS'tan farklı ·
+11 Kasım · Sayılan nakit 9.350 ₺ (AsilPOS'ta 9.000 ₺)"; AsilPOS günü rapordan sonra farklı rakamla yeniden gönderdiyse
+"AsilPOS rapordan sonra farklı rakamla geldi" (yeniden gönderim ya da düzeltme satırı yeniden okunmamış yapar;
+[ASILPOS.md](ASILPOS.md) › Kasa raporu). ModPOS günlerinde (geçiş günü boşken ya da ondan önce) aynı başlıkta son 7
 günün saklanan ModPOS kasa föyünden farklı yazılan raporları durur, "Kasa raporu ModPOS API'den farklı · 2 Kasım
 Pazartesi · Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺)" (kasası açıkken çekilen föy karşılaştırılmaz; rapor ya da föy
 değişince yeniden okunmamış olur), ModPOS anahtarı tanımlı ama çalışmıyorsa da **Sistem** başlığında "ModPOS kasa föyü
 çekilemiyor" ve hatanın metni, Ayarlar › ModPOS (kasa föyü)'ne götürür ([MODPOS-API.md](MODPOS-API.md) › Nerede
-görünür); LafPOS'un sayılan günü reddedilince (Z çakışması, sözleşmeye uymayan gövde, başka şubeye
-ayarlı kasa) aynı başlıkta "Marina gün sonu alınamadı: <neden>", gün ve ne yapılacağıyla, Ayarlar › LafPOS'a götürür
-(gün ve neden başına bir satır, son 7 gün; [LAFPOS.md](LAFPOS.md) › Durum ve onarım). Yöneticinin kendi hesabına yeni bir cihazdan giriş yapıldıysa yine **Sistem** başlığında 7 gün "Yeni cihazdan
+görünür); AsilPOS'un sayılan günü reddedilince (Z çakışması, sözleşmeye uymayan gövde, başka şubeye
+ayarlı kasa) aynı başlıkta "Marina gün sonu alınamadı: <neden>", gün ve ne yapılacağıyla, Ayarlar › AsilPOS'a götürür
+(gün ve neden başına bir satır, son 7 gün; [ASILPOS.md](ASILPOS.md) › Durum ve onarım). Yöneticinin, müdürün ve muhasebecinin kendi hesabına yeni bir cihazdan giriş yapıldıysa yine **Sistem** başlığında 7 gün "Yeni cihazdan
 giriş: Chrome · Windows · IP 85.105.12.x" durur, Hesabım › Oturumlar'a götürür; aynı uyarı hesabın adresine e-postayla da
 gider ([DEPLOY.md](DEPLOY.md) › 6a). Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
 kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklemesi ("Ayşe özel gün ekledi") son 3 gün durur
@@ -75,12 +75,12 @@ kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklem
 başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişecek N fiyat"** durur (**Ürünler › Fiyatlar ›
 Kasaya işle**'ye götürür, listeye yeni fiyat girince yeniden okunmamış olur, işaret onu yeniden okunmamış yapmaz;
 e-postaya girmez, `docs/FIYATLAR.md`); personelde aynı satır **Kasa** başlığında, "ModPOS'ta değiştirip Kasadaki
-fiyatlar'da işaretleyin" diye **Kasadaki fiyatlar**'a götürür (dalga 10 §2.2). LafPOS'a geçiş gününden itibaren
-satır yalnız yöneticide ve yalnız siteye bağlı olmayan, fiyatı LafPOS günü panelde değişen ürünleri sayar ("Siteye
-bağlı olmayan ürün: LafPOS'ta yerelse orada elle değiştirip …; LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde
-bağlayın"); siteye bağlı ürünün fiyatını LafPOS siteden alır, zil çıkmaz. Personelde satır yok: LafPOS'ta ürün fiyatını
-kasiyer değiştiremez (denetim B11). Personelin akşam kasa zili o günden itibaren (yalnız Marina) "Kapanışta LafPOS'ta
-Günü kapat'a basın; rapor LafPOS'tan gelir, sonra Pavo'nun gün sonu fişinin fotoğrafını ekleyin" der. Yöneticinin **Uyarılar** başlığında
+fiyatlar'da işaretleyin" diye **Kasadaki fiyatlar**'a götürür (dalga 10 §2.2). AsilPOS'a geçiş gününden itibaren
+satır yalnız yöneticide ve yalnız siteye bağlı olmayan, fiyatı AsilPOS günü panelde değişen ürünleri sayar ("Siteye
+bağlı olmayan ürün: AsilPOS'ta yerelse orada elle değiştirip …; AsilPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde
+bağlayın"); siteye bağlı ürünün fiyatını AsilPOS siteden alır, zil çıkmaz. Personelde satır yok: AsilPOS'ta ürün fiyatını
+kasiyer değiştiremez (denetim B11). Personelin akşam kasa zili o günden itibaren (yalnız Marina) "Kapanışta AsilPOS'ta
+Günü kapat'a basın; rapor AsilPOS'tan gelir, sonra Pavo'nun gün sonu fişinin fotoğrafını ekleyin" der. Yöneticinin **Uyarılar** başlığında
 personelin Siparişler ekranında tükendi yaptığı ve hâlâ satışta olmayan ürünler: "Tükendi: Tiramisu, Cheesecake" (en çok 3
 ad), gövdesi "Personel kapattı: Selin 21:40 · Ali 22:05. Sitede, uygulamada ve QR menüde satışta değil.", Siparişler
 ekranının Tükenenler kartına (`/panel/siparisler#tukenenler`) götürür; bir kayıt 24 saatten eskiyse ya da son bir saatte personel 3 ya da daha çok ürün
@@ -277,33 +277,41 @@ Ekrandan (sağdaki **E-posta bildirimleri** kutusu; kapalıyken tek satır özet
 
 ### Alıcılar ve hesaplar
 
-Kasa raporu e-postası (Kasa › Rapor alıcıları), sabah e-postası, bekçi uyarısı ve iki deneme e-postası ödemeler,
-fatura tutarları, maliyet, zam ve kâr rakamları, kasa farkı ve karaoke ön ödemesi taşır. Bu yüzden (denetim E-52,
-E-53; `src/lib/notify-recipients.ts`, `src/server/notify/recipients.ts`):
+Kasa raporu e-postası (Kasa › Rapor alıcıları), sabah e-postası, bekçi uyarısı, iki deneme e-postası ve muhasebeci
+paketi (Ayarlar › Muhasebeci paketi; bütün şubelerin faturaları, alış fiyatları, maaş ve kira harcamaları;
+[MUHASEBE-PAKETI.md](MUHASEBE-PAKETI.md)) ödemeler, fatura tutarları, maliyet, zam ve kâr rakamları, kasa farkı ve
+karaoke ön ödemesi taşır. Bu yüzden (denetim E-52, E-53; `src/lib/notify-recipients.ts`,
+`src/server/notify/recipients.ts`; üç liste: `RECIPIENT_LISTS`):
 
 - **Gönderim anında süzülür.** Listedeki bir adres paneldeki bir hesaba aitse e-postayı yalnız **etkin bir
-  yöneticinin** hesabıysa alır: personel hesabının ve pasif hesabın adresi düşer. Hesabı olmayan adres (muhasebeci,
-  sahibin kişisel adresi) alır. Büyük-küçük harf fark etmez. Kayıttan sonra personele indirilen, pasif yapılan ya da
+  yöneticinin ya da muhasebecinin** hesabıysa alır: personel, **müdür** ve pasif hesabın adresi düşer. Hesabı olmayan
+  adres (muhasebeci, sahibin kişisel adresi) alır. Rollerin kararı ([ROLLER.md](ROLLER.md) › Kararlar): müdür kasa
+  raporunu panelde şubesinin rakamlarıyla görür, ama listeler şubeler arasında ortak olabilir ("Tuzla ile aynı"), kasa
+  e-postası karaoke ön ödemesini, sabah e-postası işletmenin ödemelerini ve maliyetini taşır: tutucu seçenek, müdür
+  hesabına gitmez. Muhasebeci hesabı salt okunur rolüyle bunları zaten görür; hesabı olmayan muhasebeci adresi gibi
+  alır. Büyük-küçük harf fark etmez. Kayıttan sonra personele indirilen, pasif yapılan ya da
   personel hesabı açılan adres de düşer: kural kaydı beklemez. Sıra korunur. Kural adresin hesabına bakar: adres
   hiçbir hesaba ait değilse (giriş e-postası değişti, hesap silindi) yeniden alır; bu yüzden aşağıdaki iki kapı var.
-- **Kaydederken reddedilir.** Kasa alıcılarına ve bildirim adreslerine personel ya da pasif hesabın adresi yazılmaz
-  ("ayse@… bir personel hesabının adresi; …", "eski@… pasif bir hesabın adresi; pasif hesaba e-posta gitmez. Hesabı
+- **Kaydederken reddedilir.** Kasa alıcılarına, bildirim adreslerine ve muhasebeci paketinin alıcılarına personel,
+  müdür ya da pasif hesabın adresi yazılmaz ("ayse@… bir personel hesabının adresi; …", "mehmet@… bir müdür hesabının adresi; … Müdür kasa raporunu
+  panelde görür; …", "eski@… pasif bir hesabın adresi; pasif hesaba e-posta gitmez. Hesabı
   Kullanıcılar'dan silerseniz adres alıcı olabilir."). Duraklatılmış bir adres böyle bir hesaba aitse yeniden açılmaz.
-- **Personel Hesabım'da** giriş e-postasını bir listedeki adrese (kasa alıcıları, kapalıyken de; bildirim adresleri,
-  duraklatılmış da) çeviremez: "Bu adres giriş e-postanız olamaz; başka bir adres yazın ya da yöneticiye sorun."
+- **Personel ve müdür Hesabım'da** giriş e-postasını bir listedeki adrese (kasa alıcıları, kapalıyken de; bildirim
+  adresleri, duraklatılmış da; muhasebeci paketinin alıcıları, "Ay kapanınca gönder" kapalıyken de) çeviremez: "Bu adres giriş e-postanız olamaz; başka bir adres yazın ya da yöneticiye sorun."
   Başka bir hesabın adresinde de aynı metin: personel adres deneyerek kimin listede olduğunu öğrenemez. Parola önce
   sorulur. Kendi adresi bir listedeyken giriş e-postasını hiç değiştiremez: "Giriş e-postanız bildirim listesinde;
   değiştirmek için yöneticiye yazın." (personele indirilen vardiya sorumlusu adresini değiştirince eski kutusu hesapsız
-  kalır, kasa ve sabah e-postası ona yeniden giderdi, zil susardı). Yönetici kendi adresini çevirebilir (alıcı olmaya
+  kalır, kasa ve sabah e-postası ona yeniden giderdi, zil susardı; paketin alıcısıyken müdüre indirilen yönetici de
+  böyle bütün şubelerin paketini eski kutusuna yeniden aldırırdı). Yönetici kendi adresini çevirebilir (alıcı olmaya
   devam eder).
-- **Kullanıcılar'da eski adres.** Yönetici personel ya da pasif hesabın (ya da personele indirdiği hesabın) giriş
+- **Kullanıcılar'da eski adres.** Yönetici personel, müdür ya da pasif hesabın (ya da personele indirdiği hesabın) giriş
   e-postasını değiştirince ya da böyle bir hesabı silince eski adres listede kaldıysa uyarı verir ("Mehmet hesabının
   eski adresi … kasa raporu alıcıları arasında; adres artık hiçbir hesaba ait değil, bu adrese e-posta gider.
   Gerekmiyorsa listeden kaldırın."). Engellemez: pasif hesabı silmek muhasebecinin adresini alıcı yapmanın yolu.
 - **Yönetici görür.** Zilde, Sistem başlığında: "Kasa raporu e-postası bir adrese gitmiyor" / "Sabah e-postası 2 adrese
-  gitmiyor" (adresler ve nedenleri; Rapor alıcıları kartına ya da bu kutuya götürür). Durumdan türer: adres listeden
-  çıkınca ya da hesap yeniden yönetici olunca kalkar. Rapor alıcıları kartında ve bildirim adresinin satırında aynı
-  not. Kullanıcılar'da bir hesabı personele indirmek, pasif yapmak ya da listedeki bir adresle personel hesabı açmak
+  gitmiyor" / "Muhasebeci paketi bir adrese gitmiyor" (adresler ve nedenleri; Rapor alıcıları kartına, bu kutuya ya da
+  Ayarlar › Muhasebeci paketi'ne götürür). Durumdan türer: adres listeden çıkınca ya da hesap yeniden yönetici olunca
+  kalkar. Rapor alıcıları kartında, Muhasebeci paketi kartında ve bildirim adresinin satırında aynı not. Kullanıcılar'da bir hesabı personele indirmek, pasif yapmak ya da listedeki bir adresle personel hesabı açmak
   uyarı verir ("Mehmet (…) kasa raporu alıcıları arasında; personel hesabına bu e-posta gitmez. Gerekmiyorsa listeden
   kaldırın."). İşlem geçmişindeki "Sabah e-postası" ve "Sistem uyarısı e-postası" satırı atlananları sayar ("→ 2 adres
   · 1 adres atlandı (personel ya da pasif hesap)").
@@ -331,17 +339,17 @@ gönder"de uyarı olarak görünür (`partialError`); hiçbiri gitmediyse sonuç
 
 ## Marina gün sonu e-postası (22 Kasım 2026)
 
-LafPOS'un şubesinin (Marina) gün sonu geçiş gününden itibaren geldiğinde o şubenin kasa raporu alıcılarına (şube başına;
+AsilPOS'un şubesinin (Marina) gün sonu geçiş gününden itibaren geldiğinde o şubenin kasa raporu alıcılarına (şube başına;
 "Tuzla ile aynı"ysa Tuzla'nınkine; personel ve pasif hesap düşer) "Kasa raporu KR-20261122 · Marina · 22 Kasım Pazar ·
 120 ₺ eksik" gider: satış, ödemeler, ikram / ödenmez, kasa farkı, Z no, dün ve geçen haftayla kıyas, Pavo
 karşılaştırması, panele bağlantı; maliyet ve kâr yok. Rapor alıcıları boş ya da kapalıysa e-posta susmasın diye o şubeye
 açık etkin bildirim adreslerine gider ("Bütün şubeler" ya da "Yalnız Marina"; "Yalnız Tuzla" adresi almaz). Pavo'nun
-sonucu birkaç dakika içinde bekleniyorsa onu bekler (tek e-posta). İçerik başına bir kez; LafPOS düzeltip yeniden
+sonucu birkaç dakika içinde bekleniyorsa onu bekler (tek e-posta). İçerik başına bir kez; AsilPOS düzeltip yeniden
 gönderirse "· düzeltildi", sayımsız giden gün sayılınca "· kasa sayıldı" ile bir kez daha. Pavo ya da fotoğraf sonradan
 farklı gelirse kısa e-posta aynı konu başıyla gider. Çalışanlara (o şubenin Kasa › Rapor alıcıları › Çalışanlar) "gün
 sonu alındı" günde bir kez; sayım yoksa teşekkür değil "kasa sayılmadı" uyarısı. Gidemezse sabahki günlük iş yeniden
-dener (adım "LafPOS gün sonu"). Ayrıntı:
-[LAFPOS.md › Gün sonu otomasyonu](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026).
+dener (adım "AsilPOS gün sonu"). Ayrıntı:
+[ASILPOS.md › Gün sonu otomasyonu](ASILPOS.md#gün-sonu-otomasyonu-22-kasım-2026).
 
 ## Karaoke e-postaları (22 Kasım 2026)
 

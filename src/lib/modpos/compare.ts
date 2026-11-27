@@ -4,7 +4,7 @@ import type { ModposZ } from "./z";
 
 /**
  * Kasa raporu ile ModPOS kasa föyü (saf; yöneticinin Kasa görünümü, zil ve Bugün aynı kuralı okur;
- * tests/modpos-foy.test.ts). Yalnız ModPOS günlerinde çağrılır (LafPOS geçiş gününden önce ya da geçiş günü boşken).
+ * tests/modpos-foy.test.ts). Yalnız ModPOS günlerinde çağrılır (AsilPOS geçiş gününden önce ya da geçiş günü boşken).
  *
  * - **Farklı yazılan** (uyarı): Z alanları (Z no, fiş sayısı, toplam satış, nakit, kart, yemek kartı, online, diğer,
  *   ödenmez / ikram) ve sayılan nakit. Personel bunları ModPOS'un Z raporundan yazar; föy aynı Z'nin rakamıdır,

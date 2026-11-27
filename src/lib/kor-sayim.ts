@@ -8,8 +8,8 @@ import { clockTR } from "./ozel-gun";
  * görünümünde "Kör sayım" kutusu, işlem geçmişi). Sunucu da zorlar: personelin raporundaki sayılan nakit
  * geçerli (en son) sayıma eşit olmalıdır (src/server/cash/blind-count.ts).
  *
- * Şube ayarıdır (kasa.kor, Şube ayarları › Kör sayım); seçilmemişken kasası ModPOS olan şubede açık. LafPOS'un şubesinin
- * LafPOS gününde uygulanmaz: orada sayım zaten LafPOS'ta kördür (src/lib/lafpos/kor-kasa.ts). Yönetici kör değildir;
+ * Şube ayarıdır (kasa.kor, Şube ayarları › Kör sayım); seçilmemişken kasası ModPOS olan şubede açık. AsilPOS'un şubesinin
+ * AsilPOS gününde uygulanmaz: orada sayım zaten AsilPOS'ta kördür (src/lib/asilpos/kor-kasa.ts). Yönetici kör değildir;
  * geç rapor ve düzeltme önerisi yöneticinin onayına gittiği için kilit istemez. Saf: tests/kor-sayim.test.ts
  */
 
@@ -41,16 +41,17 @@ export interface BlindCountLock {
 
 /**
  * Bu kasa gününde kör sayım geçerli mi. `setting`: şube ayarı (null: seçilmedi, varsayılan); varsayılan kasası ModPOS
- * olan şubede açık, LafPOS'un şubesinde kapalı. LafPOS'un şubesinin LafPOS gününde hiçbir zaman (sayım LafPOS'ta kör)
+ * olan şubede açık, kasası AsilPOS olan şubede (`till`) kapalı. Şubenin kendi AsilPOS gününde (`asilposDay`, şubenin geçiş
+ * günüyle) hiçbir zaman (sayım AsilPOS'ta kör)
  */
-export function blindCountOn(o: { setting: boolean | null; branchId: string; lafposBranch: string | null | undefined; lafposDay: boolean }): boolean {
-  if (o.lafposDay && o.branchId === o.lafposBranch) return false;
-  return o.setting ?? o.branchId !== o.lafposBranch;
+export function blindCountOn(o: { setting: boolean | null; till: boolean; asilposDay: boolean }): boolean {
+  if (o.asilposDay) return false;
+  return o.setting ?? !o.till;
 }
 
-/** Ayarın etkin değeri, ekranın anahtarı için (varsayılan çözülmüş) */
-export function blindCountSettingOn(setting: boolean | null, branchId: string, lafposBranch: string | null | undefined): boolean {
-  return setting ?? branchId !== lafposBranch;
+/** Ayarın etkin değeri, ekranın anahtarı için (varsayılan çözülmüş); `till`: şubenin kasası AsilPOS */
+export function blindCountSettingOn(setting: boolean | null, till: boolean): boolean {
+  return setting ?? !till;
 }
 
 /** Sayım satırlarından formun kilidi (geçerli sayım en son satır); sayım yoksa null */
@@ -116,7 +117,7 @@ export const BLIND_COUNT_TEXT = {
   lockFirst: "Önce çekmecedeki nakdi sayıp kilitleyin; kasa farkı sonra görünür.",
   /** Değişikliğin nedeni eksik */
   reason: `Sayımı neden değiştirdiğinizi yazın (en az ${COUNT_REASON_MIN} karakter); yönetici görür.`,
-  /** Ayar kapalı ya da LafPOS günü */
+  /** Ayar kapalı ya da AsilPOS günü */
   off: "Bu kasada kör sayım yok; sayılan nakdi rapora yazın.",
   /** Kasa kartının alt başlığı (kilitlenmeden önce) */
   card: "Önce çekmecedeki bütün nakdi sayıp kilitleyin; olması gereken ve fark sonra görünür.",

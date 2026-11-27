@@ -16,7 +16,7 @@ const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 const at = (iso: string) => new Date(iso);
 
 const tuzla = (o: Partial<TillPosSummary> = {}): TillPosSummary => ({ count: 3, oldest: at("2026-11-20T10:00:00Z"), newest: at("2026-11-23T10:00:00Z"), kasa: "ModPOS", name: "Tuzla", ...o });
-const marina = (o: Partial<TillPosSummary> = {}): TillPosSummary => ({ count: 1, oldest: at("2026-11-22T02:00:00Z"), newest: at("2026-11-24T10:00:00Z"), kasa: "LafPOS", name: "Marina", ...o });
+const marina = (o: Partial<TillPosSummary> = {}): TillPosSummary => ({ count: 1, oldest: at("2026-11-22T02:00:00Z"), newest: at("2026-11-24T10:00:00Z"), kasa: "AsilPOS", name: "Marina", ...o });
 
 test("toplam: tek kasada bugünkü gibi (kasa başına sayı yok)", () => {
   const one = combineTillPos([{ ...tuzla(), name: null }]);
@@ -26,7 +26,7 @@ test("toplam: tek kasada bugünkü gibi (kasa başına sayı yok)", () => {
   assert.equal(one.oldest?.toISOString(), "2026-11-20T10:00:00.000Z");
   const empty = combineTillPos([{ ...marina(), count: 0, oldest: null, newest: null, name: null }]);
   assert.equal(empty.count, 0);
-  assert.equal(empty.kasa, "LafPOS", "bekleyen yokken de kasanın adı");
+  assert.equal(empty.kasa, "AsilPOS", "bekleyen yokken de kasanın adı");
   assert.equal(empty.oldest, null);
 });
 
@@ -40,9 +40,9 @@ test("toplam: Tümü'de iki kasa; sayı toplanır, en eski ve en yeni kasalar ar
     { name: "Tuzla", count: 3 },
     { name: "Marina", count: 1 },
   ]);
-  // Yalnız Marina bekliyorsa: kasa LafPOS, Tuzla sayılmaz
+  // Yalnız Marina bekliyorsa: kasa AsilPOS, Tuzla sayılmaz
   const onlyMarina = combineTillPos([tuzla({ count: 0, oldest: null, newest: null }), marina()]);
-  assert.equal(onlyMarina.kasa, "LafPOS");
+  assert.equal(onlyMarina.kasa, "AsilPOS");
   assert.deepEqual(onlyMarina.byBranch, [{ name: "Marina", count: 1 }]);
   assert.equal(tillPosCounts(both.byBranch), "Tuzla 3, Marina 1");
   assert.equal(tillPosCounts(null), "");
@@ -114,7 +114,7 @@ test("kaynak: göç tek veri adımı; Tuzla'ya hepsi, Marina'ya okuyucunun süzg
   assert.match(data, /ON CONFLICT \("branch_id", "product_id"\) DO NOTHING;/);
   assert.doesNotMatch(data, /UPDATE "products"|DELETE FROM/);
   // Şube kimliği ve geçiş gününün en erkeni kodla aynı
-  assert.match(read("src/lib/lafpos/switch.ts"), /export const LAFPOS_BRANCH_ID = "marina";/);
-  assert.match(read("src/lib/constants.ts"), /export const LAFPOS_SWITCH_MIN = "2026-10-01";/);
+  assert.match(read("src/lib/pos/tills.ts"), /export const LEGACY_POS_BRANCH_ID = "marina";/);
+  assert.match(read("src/lib/constants.ts"), /export const ASILPOS_SWITCH_MIN = "2026-10-01";/);
   assert.match(data, />= '2026-10-01'/);
 });

@@ -6,13 +6,15 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 
 import { BRANCH_FEATURES, branchFeatures, withFeature } from "@/lib/branch-features";
-import { BRANCH_SETTING_GROUPS } from "@/lib/branch-settings/groups";
+import { ASILPOS_GROUP, BRANCH_SETTING_GROUPS } from "@/lib/branch-settings/groups";
 import {
+  BRANCH_EMAIL_TAKEN,
   BRANCH_KINDS,
   BRANCH_NAME_MAX,
   BRANCH_POS_SOURCES,
   branchChangeError,
   branchDeleteError,
+  branchEmailTaken,
   branchIdError,
   branchSourceError,
   BRANCH_COOKIE,
@@ -20,18 +22,18 @@ import {
   posRateError,
   type BranchKind,
   type BranchPosSource,
-  type BranchRow,
 } from "@/lib/branches";
-import { lafposBranchOf, lafposSourceError } from "@/lib/lafpos/switch";
+import { ESKI_KASA_KAYNAGI } from "@/lib/asilpos/eski-adlar";
+import { posOffConfirmText } from "@/lib/pos/tills";
 import { requireAdmin, requireAnaAdmin, requireUser } from "@/server/auth/dal";
 import { INVITE_PASSWORD_HASH, TOKEN_HOURS } from "@/server/auth/tokens";
 import { issueUserToken } from "@/server/auth/user-tokens";
-import { issueInstallCode, sendInstallMail } from "@/server/lafpos/kurulum";
+import { issueInstallCode, sendInstallMail } from "@/server/asilpos/kurulum";
 import { staffBranchLock } from "@/server/branch-scope";
-import { branchSettingsCloseError } from "@/server/branch-settings";
+import { branchSettingsCloseError, putBranchSetting } from "@/server/branch-settings";
 import { branchUsageCount, getBranch, listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
-import { forgetLafposBranch, lafposInUse } from "@/server/lafpos/branch";
+import { forgetPosBranches, asilposInUse } from "@/server/asilpos/branch";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zDate, zText } from "./util";
@@ -41,9 +43,13 @@ import { attempt, UserError, zDate, zText } from "./util";
 // eylemler yalnız yetki, doğrulama, yazma ve işlem geçmişi. "use server" dosyasındaki her dışa açık işlev bir uçtur.
 
 const kind = z.enum(BRANCH_KINDS as unknown as [BranchKind, ...BranchKind[]], { message: "Tür seçin" });
-const posSource = z.enum(BRANCH_POS_SOURCES as unknown as [BranchPosSource, ...BranchPosSource[]], {
-  message: "Kasa kaynağı seçin",
-});
+const posSource = z.preprocess(
+  // Eski sekmenin formu eski değeri gönderebilir (ad değişikliği; ESKI_KASA_KAYNAGI): yenisine çevrilir
+  (v) => (v === ESKI_KASA_KAYNAGI ? "asilpos" : v),
+  z.enum(BRANCH_POS_SOURCES as unknown as [BranchPosSource, ...BranchPosSource[]], {
+    message: "Kasa kaynağı seçin",
+  }),
+);
 const openedOn = zDate.nullish().transform((v) => v ?? null);
 /**
  * Banka POS komisyon oranı (0,02 = %2; branches.pos_rate). İsteğe bağlı: verilmezse eklemede veritabanının varsayılanı
@@ -60,7 +66,7 @@ const posRate = z
 const oranMetni = (v: number) => `%${(Math.round(v * 10_000) / 100).toLocaleString("tr-TR")}`;
 const scopeInput = z.object({ scope: z.string().trim().max(24) });
 
-/** Şubenin e-postası (isteğe bağlı): verilirse şube hesabı açılır ve LafPOS kurulum bağlantısı gider */
+/** Şubenin e-postası (isteğe bağlı): verilirse şube hesabı açılır ve AsilPOS kurulum bağlantısı gider */
 const branchEmail = z
   .string()
   .trim()
@@ -82,8 +88,8 @@ const createInput = z.object({
 
 /**
  * Yeni şube ya da kanal açar. Kimlik bir daha değişmez: kayıtlar ona bağlanır. Yalnız ana yönetici (sahibin kararı,
- * 26 Kasım 2026). Fiziksel şubeye e-posta verilirse şube kurulumu da yapılır (docs/LAFPOS.md › Şube kurulumu): şubenin
- * panel hesabı açılır (personel, şubede kilitli, davetle), LafPOS kurulum bağlantısı üretilir ve ikisi tek e-postayla
+ * 26 Kasım 2026). Fiziksel şubeye e-posta verilirse şube kurulumu da yapılır (docs/ASILPOS.md › Şube kurulumu): şubenin
+ * panel hesabı açılır (personel, şubede kilitli, davetle), AsilPOS kurulum bağlantısı üretilir ve ikisi tek e-postayla
  * gider; e-posta gitmese de şube ve bağlantı kalır (Hesabım'da ve Şubeler'de görünür)
  */
 export async function createBranch(input: z.input<typeof createInput>) {
@@ -97,33 +103,40 @@ export async function createBranch(input: z.input<typeof createInput>) {
     const db = getDb();
     const mevcut = await listBranches(db);
     if (mevcut.some((b) => b.id === d.id)) throw new UserError("Bu kimlikte bir şube zaten var");
-    // LafPOS bugün tek şubenin kasası (LafPOS'un şubesi kütükten türetilir: lafposBranchOf)
-    const lafposHata = lafposSourceError({ id: d.id.trim(), kind: d.kind, posSource: d.posSource, active: true }, mevcut, await implicitHolderUsed(db, mevcut, d.posSource));
-    if (lafposHata) throw new UserError(lafposHata);
+    // Çok şube (27 Kasım 2026): her fiziksel şubenin kendi AsilPOS kasası olabilir; kasanın anahtarı kurulum kodunda üretilir
     if (mevcut.some((b) => b.name.localeCompare(d.name, "tr", { sensitivity: "base" }) === 0)) {
       throw new UserError("Bu adda bir şube zaten var");
     }
-    if (d.email && d.kind !== "fiziksel") throw new UserError("E-posta ve LafPOS kurulumu yalnız fiziksel şubede");
-    if (d.email) {
-      const [dup] = await db.select({ id: s.users.id, branchId: s.users.branchId, role: s.users.role }).from(s.users).where(eq(s.users.email, d.email)).limit(1);
-      if (dup && (dup.role === "admin" || (dup.branchId && dup.branchId !== d.id.trim()))) throw new UserError("Bu e-posta başka bir hesapta kayıtlı; şube için ayrı bir adres yazın");
-    }
+    if (d.email && d.kind !== "fiziksel") throw new UserError("E-posta ve AsilPOS kurulumu yalnız fiziksel şubede");
+    // Adres reddedilirse şube kaydı da yazılmaz: denetim eklemeden önce
+    if (d.email) await assertBranchEmailFree(db, d.email, d.id.trim());
     const sortOrder = Math.max(0, ...mevcut.map((b) => b.sortOrder)) + 1;
     const { posRate: oran, email, ...alanlar } = d;
     const id = d.id.trim();
     await db.insert(s.branches).values({ ...alanlar, id, email, sortOrder, ...(oran !== undefined ? { posRate: oran } : {}) });
-    forgetLafposBranch();
+    forgetPosBranches();
     await logActivity(me, "Şube eklendi", `${d.name} (${d.id})${email ? ` · ${email}` : ""}`);
     const kurulum = email ? await onboard(me.id, { id, name: d.name, email }) : null;
-    if (kurulum) await logActivity(me, "LafPOS kurulumu gönderildi", `${d.name} · ${email}${kurulum.mailError ? ` (e-posta gitmedi: ${kurulum.mailError})` : ""}`);
+    if (kurulum) await logActivity(me, "AsilPOS kurulumu gönderildi", `${d.name} · ${email}${kurulum.mailError ? ` (e-posta gitmedi: ${kurulum.mailError})` : ""}`);
     refresh();
     return { id, kurulum };
   });
 }
 
 /**
- * Şube kurulumu: şubenin panel hesabı (yoksa açılır: personel, şubede kilitli, davetle), yeni LafPOS kurulum bağlantısı
- * ve e-posta. Dönen bağlantı ekranda da gösterilir (e-posta gitmezse elle iletilir)
+ * Şubenin e-postası şubenin panel hesabı olabilir mi (src/lib/branches.ts › branchEmailTaken): adres bir hesaptaysa o
+ * hesap yalnız şubesiz ya da bu şubedeki personel olabilir. Yönetici, müdür ya da muhasebecinin adresi reddedilir: kurulum
+ * bağlantısı oraya giderdi ve bağlantı kasanın eşitleme anahtarını verir. Dışa açık değil ("use server": dışa açık işlev uçtur)
+ */
+async function assertBranchEmailFree(db: ReturnType<typeof getDb>, email: string, branchId: string): Promise<void> {
+  const [dup] = await db.select({ branchId: s.users.branchId, role: s.users.role }).from(s.users).where(eq(s.users.email, email)).limit(1);
+  if (branchEmailTaken(dup, branchId)) throw new UserError(BRANCH_EMAIL_TAKEN);
+}
+
+/**
+ * Şube kurulumu: şubenin panel hesabı (yoksa açılır: personel, şubede kilitli, davetle), yeni AsilPOS kurulum bağlantısı
+ * ve e-posta. Dönen bağlantı ekranda da gösterilir (e-posta gitmezse elle iletilir). Adres bir hesaptaysa o hesap yeniden
+ * kullanılır; çağıran önce `assertBranchEmailFree`'den geçirir, yani bu hep şubesiz ya da bu şubedeki personel hesabıdır
  */
 async function onboard(by: number, b: { id: string; name: string; email: string }): Promise<{ link: string; mailError: string | null; account: "acildi" | "vardi" }> {
   const db = getDb();
@@ -144,7 +157,7 @@ async function onboard(by: number, b: { id: string; name: string; email: string 
 const installInput = z.object({ id: z.string().trim().min(1), email: branchEmail });
 
 /**
- * Var olan şubeye LafPOS kurulum bağlantısı (yeni bağlantı eskisini iptal eder). E-posta verilirse şubeye yazılır;
+ * Var olan şubeye AsilPOS kurulum bağlantısı (yeni bağlantı eskisini iptal eder). E-posta verilirse şubeye yazılır;
  * verilmezse şubenin kayıtlı e-postası. Yalnız ana yönetici
  */
 export async function sendBranchInstall(input: z.input<typeof installInput>) {
@@ -154,26 +167,17 @@ export async function sendBranchInstall(input: z.input<typeof installInput>) {
     const db = getDb();
     const [b] = await db.select({ id: s.branches.id, name: s.branches.name, kind: s.branches.kind, active: s.branches.active, email: s.branches.email }).from(s.branches).where(eq(s.branches.id, d.id)).limit(1);
     if (!b) throw new UserError("Şube bulunamadı");
-    if (b.kind !== "fiziksel" || !b.active) throw new UserError("LafPOS kurulumu yalnız açık fiziksel şubede");
+    if (b.kind !== "fiziksel" || !b.active) throw new UserError("AsilPOS kurulumu yalnız açık fiziksel şubede");
     const email = d.email ?? b.email;
     if (!email) throw new UserError("Şubenin e-postasını yazın");
-    const [dup] = await db.select({ branchId: s.users.branchId, role: s.users.role }).from(s.users).where(eq(s.users.email, email)).limit(1);
-    if (dup && (dup.role === "admin" || (dup.branchId && dup.branchId !== b.id))) throw new UserError("Bu e-posta başka bir hesapta kayıtlı; şube için ayrı bir adres yazın");
+    // Şubeye yazılmadan ve bağlantı üretilmeden önce (kayıtlı adres de: eskiden kabul edilmiş olabilir)
+    await assertBranchEmailFree(db, email, b.id);
     if (email !== b.email) await db.update(s.branches).set({ email }).where(eq(s.branches.id, b.id));
     const kurulum = await onboard(me.id, { id: b.id, name: b.name, email });
-    await logActivity(me, "LafPOS kurulumu gönderildi", `${b.name} · ${email}${kurulum.mailError ? ` (e-posta gitmedi: ${kurulum.mailError})` : ""}`);
+    await logActivity(me, "AsilPOS kurulumu gönderildi", `${b.name} · ${email}${kurulum.mailError ? ` (e-posta gitmedi: ${kurulum.mailError})` : ""}`);
     refresh();
     return kurulum;
   });
-}
-
-/**
- * Geri düşüşle LafPOS'un şubesi olan (kütükte kaynağı ModPOS) şube LafPOS'u kullanıyor mu (geçiş günü ya da kayıtlı
- * gün): kullanıyorsa başka şubenin kasası LafPOS yapılamaz (lafposSourceError). Yalnız LafPOS seçilirken sorulur
- */
-async function implicitHolderUsed(db: ReturnType<typeof getDb>, others: readonly BranchRow[], source: BranchPosSource): Promise<boolean> {
-  if (source !== "lafpos") return false;
-  return lafposInUse(lafposBranchOf(others), db);
 }
 
 const updateInput = z.object({
@@ -184,11 +188,14 @@ const updateInput = z.object({
   openedOn,
   active: z.boolean(),
   posRate,
+  /** Kasası AsilPOS olan şube ModPOS'a dönerken onay (posOffConfirmText) */
+  confirmPosOff: z.boolean().optional(),
 });
 
 /**
  * Adı, türü, kasa kaynağını, açılış gününü, banka POS oranını ve açık / kapalı durumunu değiştirir (kimlik değişmez).
- * POS oranı verilmezse eskisi kalır
+ * POS oranı verilmezse eskisi kalır. Kasa AsilPOS'tan ModPOS'a dönerken şube AsilPOS'u kullanıyorsa (geçiş günü ya da
+ * kayıtlı gün) onay istenir; onaylanınca şubenin geçiş günü aynı işlemde silinir (çok şube, 27 Kasım 2026)
  */
 export async function updateBranch(input: z.input<typeof updateInput>) {
   return attempt(async () => {
@@ -204,13 +211,9 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
       hepsi.filter((b) => b.id !== d.id),
     );
     if (hata) throw new UserError(hata);
-    // Kasası LafPOS'a geçen (ya da LafPOS kasasıyla yeniden açılan) şube: LafPOS bugün tek şubenin kasası. Zaten LafPOS
-    // olan şubenin başka alanı düzenlenirken sorulmaz
-    const lafposOlur = d.posSource === "lafpos" && d.active && (mevcut.posSource !== "lafpos" || !mevcut.active);
-    const lafposHata = lafposOlur
-      ? lafposSourceError({ id: d.id, kind: d.kind, posSource: d.posSource, active: d.active }, hepsi, await implicitHolderUsed(db, hepsi, d.posSource))
-      : null;
-    if (lafposHata) throw new UserError(lafposHata);
+    // AsilPOS'tan ModPOS'a dönüş: şube AsilPOS'u kullanıyorsa onay; onaylanınca geçiş günü silinir (günleri deneme olur)
+    const posOff = mevcut.posSource === "asilpos" && d.posSource !== "asilpos" && (await asilposInUse(d.id, db));
+    if (posOff && !d.confirmPosOff) throw new UserError(posOffConfirmText(mevcut.name));
     // Başka şube bu şubenin ayarını kullanıyorsa ("Marina ile aynı") kapatılmaz: bağ tek adımlı, bağlı şube değersiz kalırdı
     if (mevcut.active && !d.active) {
       const bagli = await branchSettingsCloseError(db, mevcut, BRANCH_SETTING_GROUPS);
@@ -223,7 +226,9 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
     // birden açık kalmasın (src/lib/branch-features.ts featureChangeError)
     const closing = mevcut.active && !d.active;
     const kept = closing ? BRANCH_FEATURES.filter((f) => f.single).reduce((acc, f) => withFeature(acc, f.id, false), branchFeatures(mevcut)) : null;
-    await db
+    await db.transaction(async (tx) => {
+      if (posOff) await putBranchSetting(tx, ASILPOS_GROUP, d.id, { switchDay: null }, me.name);
+      await tx
       .update(s.branches)
       .set({
         name: d.name,
@@ -236,13 +241,15 @@ export async function updateBranch(input: z.input<typeof updateInput>) {
         updatedAt: new Date(),
       })
       .where(eq(s.branches.id, d.id));
-    // Kasa kaynağı ya da durum değiştiyse LafPOS'un şubesi değişmiş olabilir: bu sunucunun önbelleği hemen düşer
-    forgetLafposBranch();
+    });
+    // Kasa kaynağı ya da durum değiştiyse AsilPOS kasaları değişmiş olabilir: bu sunucunun önbelleği hemen düşer
+    forgetPosBranches();
     const degisen = [
       mevcut.name === d.name ? null : `ad: ${mevcut.name} → ${d.name}`,
       mevcut.posSource === d.posSource ? null : `kasa: ${mevcut.posSource} → ${d.posSource}`,
       d.posRate === undefined || mevcut.posRate === d.posRate ? null : `POS oranı: ${mevcut.posRate === undefined ? "?" : oranMetni(mevcut.posRate)} → ${oranMetni(d.posRate)}`,
       mevcut.active === d.active ? null : d.active ? "açıldı" : "kapatıldı",
+      posOff ? "AsilPOS geçiş günü silindi" : null,
     ].filter(Boolean);
     await logActivity(me, "Şube güncellendi", [d.name, ...degisen].join(" · "));
     refresh();
@@ -265,7 +272,7 @@ export async function deleteBranch(input: z.input<typeof deleteInput>) {
     const hata = branchDeleteError(mevcut, await branchUsageCount(db, id)) ?? (await branchSettingsCloseError(db, mevcut, BRANCH_SETTING_GROUPS));
     if (hata) throw new UserError(hata);
     await db.delete(s.branches).where(eq(s.branches.id, id));
-    forgetLafposBranch();
+    forgetPosBranches();
     await logActivity(me, "Şube silindi", `${mevcut.name} (${id})`);
     refresh();
     return { id };

@@ -13,7 +13,7 @@ import { EmptyState } from "@/components/ui/misc";
 import type { Size } from "@/lib/calc/types";
 import { SIZE_LABELS } from "@/lib/constants";
 import { money, num } from "@/lib/format";
-import type { KasaName } from "@/lib/lafpos/kasa";
+import type { KasaName } from "@/lib/asilpos/kasa";
 import { PRICE_SOURCE_LABEL } from "@/lib/prices/history";
 import { agoLabel, groupByCategory, posChangedText, posChecklistText, staleForText, type MyPosMark, type StaffPosItem } from "@/lib/prices/pos";
 import { todayTR } from "@/lib/reminders";
@@ -32,8 +32,8 @@ const clock = (iso: string) => new Date(iso).toLocaleTimeString("tr-TR", { hour:
  *   dakikada işaretledikleri listenin üstünde ("Son işaretledikleriniz", Geri al).
  * İşaretlenen satır hemen gizlenir; bildirimdeki "Geri al" işareti geri alır (istemciden fiyat gitmez, yalnız işaretin
  * kimliği). Liste düz metin olarak kopyalanıp WhatsApp'a yapıştırılabilir (posChecklistText).
- * `kasa` bugünün kasası (src/lib/lafpos/kasa.ts; verilmezse ModPOS): LafPOS gününde listede yalnız siteye bağlı olmayan
- * ürünler var, LafPOS öbürlerinin fiyatını siteden alır; metinler bunu söyler (denetim E-39).
+ * `kasa` bugünün kasası (src/lib/asilpos/kasa.ts; verilmezse ModPOS): AsilPOS gününde listede yalnız siteye bağlı olmayan
+ * ürünler var, AsilPOS öbürlerinin fiyatını siteden alır; metinler bunu söyler (denetim E-39).
  * `branchId` listenin kasası (şube kapsamı A3): işaret yalnız o şubenin kasasından düşer (markPosDone). `branchName`
  * yalnız "Tümü"de birden çok kasa yan yanayken başlığa girer ("Marina · Kasaya işle").
  */
@@ -46,7 +46,7 @@ export function PosChecklist(
 ) {
   const { items } = props;
   const staff = props.staff === true;
-  const lafpos = props.kasa === "LafPOS";
+  const asilpos = props.kasa === "AsilPOS";
   // İşaretlenenler hemen gizlenir (sunucu yanıtını beklemeden); kasanın geri kalış anıyla tutulur: aynı ürün sonra
   // yeniden listeye girerse (yeni bir fiyat) yine görünür
   const [done, setDone] = useState<ReadonlyMap<number, string>>(() => new Map());
@@ -152,21 +152,21 @@ export function PosChecklist(
     <Card>
       <CardHeader
         icon={<Store />}
-        title={`${props.branchName ? `${props.branchName} · ` : ""}${staff ? (lafpos ? "LafPOS'taki fiyatlar" : "ModPOS'ta değişecek fiyatlar") : "Kasaya işle"}`}
+        title={`${props.branchName ? `${props.branchName} · ` : ""}${staff ? (asilpos ? "AsilPOS'taki fiyatlar" : "ModPOS'ta değişecek fiyatlar") : "Kasaya işle"}`}
         description={
           staff
-            ? lafpos
+            ? asilpos
               ? undefined
               : "Kasada değiştirdiğiniz fiyatı işaretleyin; işaretlenen listeden düşer."
-            : lafpos
+            : asilpos
               ? (
                   <>
-                    LafPOS siteye bağlı ürünlerin fiyatını siteden kendisi alır; burada yalnız siteye bağlı olmayan ve fiyatı LafPOS başladıktan sonra değişen
-                    ürünler çıkar. LafPOS ürünü siteden alıyorsa (orada fiyatı değiştirilemez){" "}
+                    AsilPOS siteye bağlı ürünlerin fiyatını siteden kendisi alır; burada yalnız siteye bağlı olmayan ve fiyatı AsilPOS başladıktan sonra değişen
+                    ürünler çıkar. AsilPOS ürünü siteden alıyorsa (orada fiyatı değiştirilemez){" "}
                     <Link href="/panel/urunler/site" className="font-medium text-ink underline underline-offset-2">
                       Ürünler › Site menüsü
                     </Link>
-                    &apos;nde bağlayın ya da fiyatı sitede değiştirin; LafPOS&apos;ta yerel ürünse orada elle değiştirip işaretleyin. LafPOS&apos;ta fiyatı
+                    &apos;nde bağlayın ya da fiyatı sitede değiştirin; AsilPOS&apos;ta yerel ürünse orada elle değiştirip işaretleyin. AsilPOS&apos;ta fiyatı
                     yönetici değiştirir, personele bu iş düşmez.
                   </>
                 )
@@ -243,12 +243,12 @@ export function PosChecklist(
       ) : (
         <EmptyState
           icon={<CheckCheck />}
-          title={lafpos && staff ? "Burada işaretlenecek bir şey yok" : "Kasa güncel"}
+          title={asilpos && staff ? "Burada işaretlenecek bir şey yok" : "Kasa güncel"}
           description={
-            lafpos
+            asilpos
               ? staff
                 ? "Kasada yanlış bir satış fiyatı görürseniz yöneticinize haber verin."
-                : "LafPOS siteye bağlı ürünlerin fiyatını siteden alır. Siteye bağlı olmayan bir ürünün fiyatı panelde değişince burada listelenir."
+                : "AsilPOS siteye bağlı ürünlerin fiyatını siteden alır. Siteye bağlı olmayan bir ürünün fiyatı panelde değişince burada listelenir."
               : staff
                 ? "Panelde değişen bütün fiyatlar kasada da değişti."
                 : "Panelde ya da sitede değişen bütün fiyatlar kasada da değiştirildi. Yeni bir fiyat değişince burada listelenir."

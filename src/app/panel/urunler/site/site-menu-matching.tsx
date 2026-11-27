@@ -15,7 +15,7 @@ import { EmptyState, KeyValue } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { dateTimeTR, num, tl } from "@/lib/format";
-import type { KasaName } from "@/lib/lafpos/kasa";
+import type { KasaName } from "@/lib/asilpos/kasa";
 import { CONFIDENCE_LABEL, type LinkSuggestion, type SiteGap } from "@/lib/site-menu/names";
 import type { NewFromSiteDraft } from "@/lib/site-menu/new-product";
 import type { SiteMenuItem } from "@/lib/site-menu/schema";
@@ -94,7 +94,7 @@ export function SiteMenuMatching({
   categories?: { id: number; name: string }[];
   /** Bekleyen yeni ürün önerileri (aynı ad + boyda öneri varken pencere ürün açmaz) */
   pendingNew?: { name: string; size: "M" | "L" | "Tek"; by: string }[];
-  /** Bugünün kasası (src/lib/lafpos/kasa.ts): LafPOS fiyatı siteden kendisi alır */
+  /** Bugünün kasası (src/lib/asilpos/kasa.ts): AsilPOS fiyatı siteden kendisi alır */
   kasa?: KasaName;
 }) {
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
@@ -591,7 +591,7 @@ function StatusCard({
             ) : null}
             <p className="text-[13px] leading-5 text-ink-mute">
               Sitede bir kalem değişince panel birkaç saniyede alır. Fiyat panelde değişince önce siteye yazılır;{" "}
-              {kasa === "LafPOS" ? "LafPOS yeni fiyatı siteden kendisi alır." : "kasadaki (ModPOS) fiyat elle değişir."}
+              {kasa === "AsilPOS" ? "AsilPOS yeni fiyatı siteden kendisi alır." : "kasadaki (ModPOS) fiyat elle değişir."}
             </p>
           </>
         ) : (

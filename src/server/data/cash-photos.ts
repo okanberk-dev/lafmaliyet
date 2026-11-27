@@ -3,13 +3,14 @@ import "server-only";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import type { CashReportExtras, CashReportFields } from "@/lib/cash-report";
+import type { Role } from "@/lib/constants";
 import { normalizePos, normalizeZ, savedFields, suspiciousDiffs, type CashPhotoKind, type CashReading } from "@/lib/photo-read/kasa";
 import { normalizeOkc, okcReadFigures, toStaffReading, type OkcReadFigures } from "@/lib/photo-read/okc";
 import { KasaOkcRaw, KasaPosRaw, KasaZRaw } from "@/lib/photo-read/schemas";
-import { lafposDiffs } from "@/lib/lafpos/diffs";
-import { lafposMovesPending, unreceiptedCashOut, type LafposDay } from "@/lib/lafpos/prefill";
-import { cashOutsOn, type CashOutDTO } from "@/server/data/cash-outs";
-import { loadKasaLafpos } from "@/server/data/lafpos-day";
+import { asilposDiffs } from "@/lib/asilpos/diffs";
+import { asilposMovesPending, unreceiptedCashOut, type AsilposDay } from "@/lib/asilpos/prefill";
+import { cashOutsOn, cashOutsShownTo, type CashOutDTO } from "@/server/data/cash-outs";
+import { loadKasaAsilpos } from "@/server/data/asilpos-day";
 import { getDb, schema as s } from "@/server/db";
 
 /** Rapora bağlı fotoğraf (ekranda küçük resim ve "Z raporu · 23:52 · Ayşe") */
@@ -163,12 +164,12 @@ function readingOf(kind: CashPhotoKind, result: unknown, day: string): CashReadi
 
 /**
  * Yüklenmiş bilgiden WhatsApp ve e-posta ekleri: fotoğraflar, net okunmuş ama farklı yazılan alanlar, kasadan çıkanlar;
- * LafPOS gününde (`lafpos`: gün LafPOS günü mü ve gelen özeti; src/server/data/lafpos-day.ts loadKasaLafpos) Z
- * bölümünün adı ve LafPOS'tan farklı yazılanlar (E-09). Verilmezse ModPOS: metin bugünkü gibi
+ * AsilPOS gününde (`asilpos`: gün AsilPOS günü mü ve gelen özeti; src/server/data/asilpos-day.ts loadKasaAsilpos) Z
+ * bölümünün adı ve AsilPOS'tan farklı yazılanlar (E-09). Verilmezse ModPOS: metin bugünkü gibi
  */
-export function extrasFrom(info: CashPhotoInfo | undefined, outs: CashOutDTO[], report: CashReportFields, lafpos?: { lafpos: boolean; day: LafposDay | null } | null): CashReportExtras {
+export function extrasFrom(info: CashPhotoInfo | undefined, outs: CashOutDTO[], report: CashReportFields, asilpos?: { asilpos: boolean; day: AsilposDay | null } | null): CashReportExtras {
   return {
-    ...(lafpos?.lafpos ? { kasa: "LafPOS" as const, lafposDiffs: lafpos.day ? lafposDiffs(report, lafpos.day) : null, cardExtra: lafpos.day?.cardExtra || null, offDevice: lafpos.day?.offDevice ?? null } : {}),
+    ...(asilpos?.asilpos ? { kasa: "AsilPOS" as const, asilposDiffs: asilpos.day ? asilposDiffs(report, asilpos.day) : null, cardExtra: asilpos.day?.cardExtra || null, offDevice: asilpos.day?.offDevice ?? null } : {}),
     // ModPOS Z'si, banka POS Z'si (yazarkasa; geçişte eski sayfanın yüklemesi de kasa-okc olur) ve eski banka fişi ayrı
     // adlarla (photosLine; docs/planlar/okc-z.md §8)
     photos: info?.photos.length
@@ -177,15 +178,19 @@ export function extrasFrom(info: CashPhotoInfo | undefined, outs: CashOutDTO[], 
     photoDiffs: info ? suspiciousDiffs(info.readings, savedFields(report)) : null,
     photoRead: Boolean(info?.readings.length),
     cashOuts: outs.map((o) => ({ kind: o.kind, amount: o.amount, store: o.store, description: o.description, photo: o.photoId !== null })),
-    // Fişsiz çıkış (bulgu 2): onay kartlarıyla aynı hesap; LafPOS gününde girilmemiş teslim fişsiz sayılmaz, gün sonu
+    // Fişsiz çıkış (bulgu 2): onay kartlarıyla aynı hesap; AsilPOS gününde girilmemiş teslim fişsiz sayılmaz, gün sonu
     // gelmemişse (hareketler bekleniyor) ve Kasadan çıkanlar'dan önceki günde hesaplanmaz
-    unreceipted: lafposMovesPending(lafpos) ? null : unreceiptedCashOut(report.cashOut, outs, lafpos?.lafpos ? (lafpos.day?.till ?? null) : null, report.date).unreceipted || null,
+    unreceipted: asilposMovesPending(asilpos) ? null : unreceiptedCashOut(report.cashOut, outs, asilpos?.asilpos ? (asilpos.day?.till ?? null) : null, report.date).unreceipted || null,
   };
 }
 
-/** Kayıtlı raporun WhatsApp ve e-posta ekleri (LafPOS gününde LafPOS'tan farklı yazılanlar da) */
-export async function cashReportExtras(report: { id: number; branchId: string } & CashReportFields): Promise<CashReportExtras> {
-  // Raporun kendi kasası: kasadan çıkanlar ve LafPOS günü raporun şubesinin
-  const [info, outs, lafpos] = await Promise.all([cashReportPhotoInfo([report]), cashOutsOn(report.date, report.branchId), loadKasaLafpos(report.date, undefined, report.branchId)]);
-  return extrasFrom(info.get(report.id), outs, report, lafpos);
+/**
+ * Kayıtlı raporun WhatsApp ve e-posta ekleri (AsilPOS gününde AsilPOS'tan farklı yazılanlar da). `viewer`: metni ekranda
+ * alan kişinin rolü (WhatsApp); müdüre yöneticinin kategorisindeki satır yalnız tutarıyla (cashOutsShownTo). E-posta
+ * (alıcıları yönetici ve muhasebe) verilmeden bütün satırla
+ */
+export async function cashReportExtras(report: { id: number; branchId: string } & CashReportFields, viewer?: Role): Promise<CashReportExtras> {
+  // Raporun kendi kasası: kasadan çıkanlar ve AsilPOS günü raporun şubesinin
+  const [info, outs, asilpos] = await Promise.all([cashReportPhotoInfo([report]), cashOutsOn(report.date, report.branchId), loadKasaAsilpos(report.date, undefined, report.branchId)]);
+  return extrasFrom(info.get(report.id), viewer ? await cashOutsShownTo(viewer, outs) : outs, report, asilpos);
 }

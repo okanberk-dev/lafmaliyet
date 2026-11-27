@@ -26,6 +26,7 @@ import { addDays, todayTR } from "../src/lib/reminders";
 import type { SiteMenuItem } from "../src/lib/site-menu/schema";
 import { weekStart } from "../src/lib/vardiya";
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.ASISTAN_TEST_DATABASE_URL;
 const DB_NAME = `lm_asistan_islem_${process.pid}`;
@@ -92,6 +93,7 @@ describe("asistanın işlemleri: veritabanında", { skip: !SERVER_URL && "ASISTA
         return { ...me, branchId: null };
       },
       requireUser: async () => ({ ...me, branchId: null }),
+      ...dalCapabilities(async () => ({ ...me, branchId: null })),
       getCurrentUser: async () => ({ ...me, branchId: null }),
     });
     const dbModule = await import("../src/server/db");
@@ -279,7 +281,7 @@ describe("asistanın işlemleri: veritabanında", { skip: !SERVER_URL && "ASISTA
     await assert.rejects(open("urun_tukendi_yap", { urun: "Filtre Kahve" }), /Site menüsü/);
     await assert.rejects(open("urun_satisa_ac", { urun: "Ice Latte" }), /zaten satışta/);
     const { card } = await ok("urun_tukendi_yap", { urun: "ice latte" });
-    assert.deepEqual(card.effects, ["site", "lafpos"]);
+    assert.deepEqual(card.effects, ["site", "asilpos"]);
     assert.ok(card.lines.some((l) => l.label === "Boylar" && l.to === "M, L"));
     assert.equal(site.get("ice-latte")!.isActive, false);
     const undo = await confirm.undoOp(users.ali, card.id);
@@ -645,6 +647,14 @@ describe("asistanın işlemleri: veritabanında", { skip: !SERVER_URL && "ASISTA
       back.map((r) => [r.date, r.startMin]),
       [[day(0), 540]],
     );
+    // "s" kısaltması şubenin hazır vardiya ayarına açılır (Şube ayarları › Hazır vardiyalar; ayarsızken 09:00–18:00)
+    await db.insert(s.branchSettings).values({ branchId: "tuzla", grp: "vardiya.hazir", value: { presets: [{ key: "morning", startMin: 510, endMin: 1050 }] }, updatedBy: "Ali" });
+    try {
+      const preview = await open("vardiya_hucre_yaz", { sube: "Tuzla", kisi: "ayşe", gunler: [{ gun: day(2), metin: "s kasa" }] });
+      assert.equal(preview.lines[0]?.to, "08:30–17:30 · kasa");
+    } finally {
+      await db.delete(s.branchSettings).where(and(eq(s.branchSettings.branchId, "tuzla"), eq(s.branchSettings.grp, "vardiya.hazir")));
+    }
   });
 
   test("işlem geçmişi: onaydan gelen her satır asistan aracılığıyla; ekrandan yapılan iş öyle işaretlenmez", async () => {

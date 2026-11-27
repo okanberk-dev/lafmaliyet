@@ -161,7 +161,7 @@ doluluktan ve aylık özetten çıkar: ikisi de iz bırakır.
 
 Operatör: "Ladminden de girilebilsin aynı şekilde". Telefonla ya da kasada gelen grup ve köşkün kapattığı saatler
 (etkinlik, bakım) bar ekranından laffogato.net'in odasının takvimine yazılır; saatler **sitede, uygulamada ve kasada
-(LafPOS) hemen dolu** görünür. Sitenin kendi panelindeki **Karaoke › Elle ekle** ile aynı iş, aynı kural (sitede
+(AsilPOS) hemen dolu** görünür. Sitenin kendi panelindeki **Karaoke › Elle ekle** ile aynı iş, aynı kural (sitede
 `src/lib/mobile/karaoke-desk.ts`; sözleşme laffogato `docs/PANEL-KARAOKE.md` › Elle rezervasyon ve kapalı saat).
 
 - **Kim:** yönetici ve personel (telefonla gelen rezervasyon bara gelir). Karaoke ekranında **Bugün** kartının
@@ -480,8 +480,8 @@ personele hiç gitmez. Oda hangi gün ve saatte dolu, hangisinde boş:
 - **Henüz yapılamayanlar:** gelmeyenler ("Gelmedi" düğmesi yok; personel **Erken bitir**'e basarsa oda o andan boş
   sayılır, basılmazsa rezervasyonun süresi dolu sayılır), odadaki siparişler (uygulama siparişi bar ekranına "Masa"
   olarak gelir, odaya ait olduğu ayrılmıyor ve panel sipariş geçmişi tutmuyor), kasadaki karaoke parası (oturuma
-  bağlı değil; LafPOS'a geçildikten sonra kasanın karaoke satırları günlük gelir, `pos_daily_sales`, ama doluluk
-  onları okumaz: oturumla eşleştirmek ayrı bir iş, docs/LAFPOS.md). Oda tek kabul edilir (site oda bilgisi göndermez);
+  bağlı değil; AsilPOS'a geçildikten sonra kasanın karaoke satırları günlük gelir, `pos_daily_sales`, ama doluluk
+  onları okumaz: oturumla eşleştirmek ayrı bir iş, docs/ASILPOS.md). Oda tek kabul edilir (site oda bilgisi göndermez);
   hesap oda sayısını parametre alır.
 
 ## Sorun giderme

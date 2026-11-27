@@ -7,9 +7,9 @@ import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
 import { fixedMonthly, monthOfDate, shiftMonth } from "@/lib/calc/engine";
 import { panelGroupOf } from "@/lib/calc/insights";
-import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
+import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES, type Role } from "@/lib/constants";
 import { EXPENSE_SHARED, sortBranches, tillBranches } from "@/lib/branches";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireCan } from "@/server/auth/dal";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { availableMonths, loadModel } from "@/server/data/dataset";
@@ -27,14 +27,16 @@ const DESCRIPTION = "Her ay değişen ve faturasız giderler: reklam, influencer
 const MORE =
   "Her ay farklı olan (reklam, influencer) ve fatura dışı (nakit alım, bakım) giderler. Girdiğiniz tutar o ayın gelir-giderine ve Genel bakış'taki “Para nereye gitti”ye kendiliğinden yansır.";
 
-function Header({ actions }: { actions?: React.ReactNode }) {
+function Header({ actions, role = "admin" }: { actions?: React.ReactNode; role?: Role }) {
   return (
     <PageHeader
       path="/panel/harcamalar"
       title="Aylık harcamalar"
       description={DESCRIPTION}
       more={MORE}
-      tabs={<SectionTabs section="giderler" current="/panel/harcamalar" role="admin" />}
+      role={role}
+      // Muhasebecide sekme yok: Giderler & maaşlar'ın öteki sekmeleri (sabit giderler, maaşlar) ona kapalı
+      tabs={<SectionTabs section="giderler" current="/panel/harcamalar" role={role} />}
       actions={actions}
     />
   );
@@ -59,7 +61,8 @@ export default function ExpensesMonthPage({ searchParams }: PageProps<"/panel/ha
 const MAPPABLE = INVOICE_CATEGORIES.filter((c) => !GOODS_CATEGORIES.includes(c) && c !== COMMISSION_CATEGORY && !SEPARATE_CATEGORIES.includes(c));
 
 async function Content({ searchParams }: { searchParams: PageProps<"/panel/harcamalar">["searchParams"] }) {
-  await requireAdmin();
+  // Yönetici ve muhasebeci (salt okunur; docs/ROLLER.md): muhasebecinin yazma denemesini eylemler reddeder
+  const viewer = await requireCan("muhasebe.oku");
   const sp = await searchParams;
   const model = await loadModel();
   const raw = Array.isArray(sp.ay) ? sp.ay[0] : sp.ay;
@@ -149,7 +152,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
 
   return (
     <>
-      <Header actions={<MonthPicker months={months} value={month} />} />
+      <Header actions={<MonthPicker months={months} value={month} />} role={viewer.role} />
       {/* Ay değişince form baştan kurulur: tarih yeni ayın tarihi olur (yalnız ?ay= değişince istemci durumu korunurdu) */}
       <MonthlyExpenses
         key={month}

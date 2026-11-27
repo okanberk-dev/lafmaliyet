@@ -2,15 +2,15 @@ import "server-only";
 
 import { and, eq, gt, gte, isNotNull, lte } from "drizzle-orm";
 
-import { LAFPOS_CASH_OUT_BY } from "@/lib/lafpos/cash-moves";
+import { isAsilposCashOutBy } from "@/lib/asilpos/cash-moves";
 import { sortLedger, type HandoverRow } from "@/lib/teslim";
 import { currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 
 /**
  * Teslim defterinin satırları (docs/KASA-RAPORU.md › Teslim defteri; kurallar src/lib/teslim.ts): ayın kasa raporlarının
- * "Sayımdan sonra teslim"i (Kime'siyle) ve Kasadan çıkanlar'ın "Teslim · ödeme" satırları (Marina'nın LafPOS'tan gelen
- * teslimleri dahil; Kime'si LafPOS'un alıcısı). Şube seçiciye göre ("Tümü"de bütün şubeler). Yalnız yönetici ekranı okur
+ * "Sayımdan sonra teslim"i (Kime'siyle) ve Kasadan çıkanlar'ın "Teslim · ödeme" satırları (Marina'nın AsilPOS'tan gelen
+ * teslimleri dahil; Kime'si AsilPOS'un alıcısı). Şube seçiciye göre ("Tümü"de bütün şubeler). Yalnız yönetici ekranı okur
  */
 export async function handoverLedger(month: string): Promise<HandoverRow[]> {
   const from = `${month}-01`;
@@ -36,14 +36,14 @@ export async function handoverLedger(month: string): Promise<HandoverRow[]> {
         amount: s.cashOuts.amount,
         to: s.cashOuts.store,
         by: s.cashOuts.createdByName,
-        lafposId: s.cashOuts.lafposId,
+        asilposId: s.cashOuts.asilposId,
       })
       .from(s.cashOuts)
       .where(and(gte(s.cashOuts.date, from), lte(s.cashOuts.date, to), eq(s.cashOuts.kind, "teslim"), await currentBranchWhere(s.cashOuts.branchId))),
   ]);
   const clean = (v: string | null) => v?.replace(/\s+/g, " ").trim() || null;
   return sortLedger([
-    ...reports.map((r): HandoverRow => ({ date: r.date, branchId: r.branchId, amount: r.amount, to: clean(r.to), by: r.by, kind: "sayim", lafpos: false, ref: { report: r.id } })),
+    ...reports.map((r): HandoverRow => ({ date: r.date, branchId: r.branchId, amount: r.amount, to: clean(r.to), by: r.by, kind: "sayim", asilpos: false, ref: { report: r.id } })),
     ...outs.map(
       (o): HandoverRow => ({
         date: o.date,
@@ -52,7 +52,7 @@ export async function handoverLedger(month: string): Promise<HandoverRow[]> {
         to: clean(o.to),
         by: o.by,
         kind: "gun-ici",
-        lafpos: o.lafposId !== null && o.by === LAFPOS_CASH_OUT_BY,
+        asilpos: o.asilposId !== null && isAsilposCashOutBy(o.by),
         ref: { cashOut: o.id },
       }),
     ),

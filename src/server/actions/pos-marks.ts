@@ -7,7 +7,8 @@ import { tl } from "@/lib/format";
 import { genitive } from "@/lib/recipe-change";
 import { toMinor } from "@/lib/site-menu/slot";
 import { namedTill, zFormBranch } from "@/lib/branches";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { formBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadTillScope } from "@/server/data/till-scope";
@@ -45,8 +46,8 @@ const posText = (r: { label: string; price: number }) => `${r.label} ${tl(r.pric
 /**
  * Kasada (ModPOS) değiştirildi: ürünler listeden düşer, her biri için işaret yazılır. Personel bir seferde tek ürün ve
  * yalnız etkin ürün. Fiyatı bu arada yeniden değişen `changed`'de bugünkü satış fiyatıyla döner; başkasının az önce
- * işaretlediği `already`'de (yalnız kimlik). `done` "Geri al" içindir (işaretin kimliği). LafPOS gününde (geçiş
- * gününden itibaren; denetim E-39) personel işaretlemez: LafPOS'ta ürün fiyatını kasiyer değiştiremez, liste ve görev
+ * işaretlediği `already`'de (yalnız kimlik). `done` "Geri al" içindir (işaretin kimliği). AsilPOS gününde (geçiş
+ * gününden itibaren; denetim E-39) personel işaretlemez: AsilPOS'ta ürün fiyatını kasiyer değiştiremez, liste ve görev
  * personelde yok; kendi işaretini geri alması (undoPosMarks) sürer.
  *
  * `branchId`: listenin gösterdiği kasa (şube kapsamı A3; docs/SUBE.md › Yazarken hangi şube): işaret yalnız o şubenin
@@ -55,10 +56,10 @@ const posText = (r: { label: string; price: number }) => `${r.label} ${tl(r.pric
  */
 export async function markPosDone(items: z.input<typeof zPosDone>, branchId?: string | null) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const data = zPosDone.parse(items);
     const till = await formBranch(zFormBranch.parse(branchId), "till", { requireExplicit: true });
-    if (me.role !== "admin" && (await loadTillScope(undefined, undefined, till)).lafpos) throw new UserError("Kasada LafPOS kullanılıyor: fiyatı LafPOS'ta yönetici değiştirir, işaretlemeniz gerekmez");
+    if (me.role !== "admin" && (await loadTillScope(undefined, undefined, till)).asilpos) throw new UserError("Kasada AsilPOS kullanılıyor: fiyatı AsilPOS'ta yönetici değiştirir, işaretlemeniz gerekmez");
     const r = await markPos(getDb(), { id: me.id, name: me.name, role: me.role }, data, new Date(), till);
     if (r.done.length) await logActivity(me, "Kasaya işlendi", `${await tillPrefix(till)}${r.done.map(posText).join(", ")}`);
     refresh();
@@ -77,7 +78,7 @@ export async function markPosDone(items: z.input<typeof zPosDone>, branchId?: st
  */
 export async function undoPosMarks(ids: z.input<typeof zUndo>) {
   return attempt(async () => {
-    const me = await requireUser();
+    const me = adminActor(await requireCan("kayit.yaz"));
     const data = zUndo.parse(ids);
     // Şubeye kilitli personel yalnız kendi şubesinin işaretini geri alır (hesabı sonradan başka şubeye kilitlenmiş olsa da)
     const refusals = new Map(me.role === "admin" ? [] : await Promise.all((await listBranches()).map(async (b) => [b.id, await staffBranchRefusal(me, b.id)] as const)));

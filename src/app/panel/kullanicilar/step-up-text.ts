@@ -29,7 +29,7 @@ export type StepUpTextCase =
   /** Listedeki aktif / pasif anahtarı (yönetici satırı) */
   | { kind: "toggle"; name: string; active: boolean; invite: Target["invite"] }
   | { kind: "link"; user: Target }
-  /** `required`: yöneticide iki adımlı zorunlu (src/lib/admin-security.ts); kişi girişte kurulum ekranına gider */
+  /** `required`: hedef rolde iki adımlı zorunlu (twoFactorRequiredFor, src/lib/admin-security.ts); kişi girişte kurulum ekranına gider */
   | { kind: "2fa"; required?: boolean }
   | { kind: "delete"; name: string }
   /** Sunucu parola istedi ama istemcinin kuralı beklemiyordu (eski satır, rol başka sekmede değişmiş) */

@@ -1,6 +1,6 @@
 // Teslim defteri (Dalga 2, 25 Kasım 2026; docs/KASA-RAPORU.md › Teslim defteri): kasa raporunun "Sayımdan sonra
 // teslim"inin "Kime"si (yönetici, banka ya da elle yazılan ad) ve iki şubenin teslimlerinin tek listesi (Marina'nın
-// LafPOS'tan gelen alıcıları dahil). Saf kurallar burada; yazım ve defterin okunuşu tests/kor-sayim-db.test.ts'te.
+// AsilPOS'tan gelen alıcıları dahil). Saf kurallar burada; yazım ve defterin okunuşu tests/kor-sayim-db.test.ts'te.
 // Çalıştırma: npx tsx --test tests/teslim-defteri.test.ts
 
 import assert from "node:assert/strict";
@@ -37,7 +37,7 @@ test("Kime: seçici ↔ kayıt (yönetici hesabı, banka, elle yazılan ad)", ()
   assert.deepEqual(handedToInputOf("ad", "  Okan   Bey "), { kind: "ad", name: "Okan Bey" });
   assert.equal(handedToInputOf("ad", "   "), null, "boş ad seçilmemiş sayılır");
   assert.equal(handedToInputOf("", ""), null);
-  // Elle yazılan ad: boşluklar teke iner, en çok 60 karakter (LafPOS'un alıcısıyla aynı sınır)
+  // Elle yazılan ad: boşluklar teke iner, en çok 60 karakter (AsilPOS'un alıcısıyla aynı sınır)
   assert.equal(handedToName("a".repeat(80))?.length, 60);
   assert.equal(handedToName(" \n "), null);
 });
@@ -56,7 +56,7 @@ const row = (o: Partial<HandoverRow> & Pick<HandoverRow, "date" | "amount">): Ha
   to: null,
   by: "Ayşe",
   kind: "sayim",
-  lafpos: false,
+  asilpos: false,
   ref: { report: 1 },
   ...o,
 });
@@ -64,7 +64,7 @@ const row = (o: Partial<HandoverRow> & Pick<HandoverRow, "date" | "amount">): Ha
 test("defter: yeni gün üstte; alıcıya göre toplam (harf farkı aynı kişi), Kime'siz en sonda", () => {
   const rows = [
     row({ date: "2031-03-02", amount: 2_000, to: "Okan" }),
-    row({ date: "2031-03-04", amount: 1_500, to: "patron ", branchId: "marina", kind: "gun-ici", lafpos: true, by: "LafPOS", ref: { cashOut: 9 } }),
+    row({ date: "2031-03-04", amount: 1_500, to: "patron ", branchId: "marina", kind: "gun-ici", asilpos: true, by: "AsilPOS", ref: { cashOut: 9 } }),
     row({ date: "2031-03-04", amount: 3_000, to: null }),
     row({ date: "2031-03-04", amount: 500, to: "Patron", branchId: "marina", kind: "sayim", ref: { report: 7 } }),
     row({ date: "2031-03-03", amount: 4_000, to: "Banka" }),
@@ -119,16 +119,18 @@ test("kayıtlı raporun metni teslimin yanında Kime'yi yazar", () => {
   assert.match(plain(cashReportText(f, { by: "Ayşe" }, "admin")), /Teslim edilen: 2\.000 ₺ · Kime: Okan · Ertesi güne devir: 1\.500 ₺/);
 });
 
-test("ekran: Teslim defteri yalnız yöneticinin; ⌘K'da ve telefon başlığında adıyla", () => {
+test("ekran: Teslim defteri yöneticinin ve müdürün (şubesinin); ⌘K'da ve telefon başlığında adıyla", () => {
   assert.equal(canOpen("staff", "/panel/kasa/teslim"), false);
+  assert.equal(canOpen("accountant", "/panel/kasa/teslim"), false);
   assert.equal(canOpen("admin", "/panel/kasa/teslim"), true);
+  assert.equal(canOpen("manager", "/panel/kasa/teslim"), true);
   const item = NAV_GROUPS.flatMap((g) => g.items).find((i) => i.href === "/panel/kasa/teslim");
   assert.ok(item, "⌘K'da Teslim defteri");
-  assert.deepEqual(item.roles, ["admin"]);
+  assert.deepEqual(item.roles, ["admin", "manager"]);
   assert.equal(mobileTitleFor("/panel/kasa/teslim"), "Teslim defteri");
   const page = read("src/app/panel/kasa/teslim/page.tsx");
-  assert.match(page, /await requireAdmin\(\)/);
-  // Kaynaklar: kasa raporunun teslimi ve Kasadan çıkanlar'ın teslim satırları (LafPOS'unkiler dahil), şube seçiciye göre
+  assert.match(page, /await requireCan\("isletme\.yonet"\)/);
+  // Kaynaklar: kasa raporunun teslimi ve Kasadan çıkanlar'ın teslim satırları (AsilPOS'unkiler dahil), şube seçiciye göre
   const data = read("src/server/data/handover-ledger.ts");
   assert.match(data, /gt\(s\.cashReports\.handedOver, 0\)/);
   assert.match(data, /eq\(s\.cashOuts\.kind, "teslim"\)/);

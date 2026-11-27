@@ -1,5 +1,5 @@
 // Kişi bazında kayıp önleme (src/lib/kayip-onleme.ts): kasa farkı sayana göre, zayi / ikram kaydedene göre (doğrudan);
-// iptal, ikram, indirim ve kasa farkı çalıştığı günlere göre (dolaylı, kişiye yazılmaz). LafPOS'un göndermediği alanın
+// iptal, ikram, indirim ve kasa farkı çalıştığı günlere göre (dolaylı, kişiye yazılmaz). AsilPOS'un göndermediği alanın
 // ekranda ve raporda yazılı olduğu, sayfanın yalnız yöneticinin olduğu.
 // Çalıştırma: npx tsx --test tests/kayip-onleme.test.ts
 
@@ -19,7 +19,7 @@ test("kasa farkı sayana göre: ortalama, eksik gün, en büyük eksik; sapma ba
   const reports: LossCashReport[] = [
     ...[-200, -150, -100, 0].map((d, i) => ({ branchId: "tuzla", date: day(i + 1), cashDiff: d, person: ali })),
     ...[0, 5, -0.5, 0].map((d, i) => ({ branchId: "tuzla", date: day(i + 10), cashDiff: d, person: ece })),
-    // LafPOS'un otomatik raporu: kişi yok
+    // AsilPOS'un otomatik raporu: kişi yok
     { branchId: "marina", date: day(3), cashDiff: -40, person: null },
   ];
   const { rows, branches } = cashByPerson(reports);
@@ -36,7 +36,7 @@ test("kasa farkı sayana göre: ortalama, eksik gün, en büyük eksik; sapma ba
   assert.equal(e.flag, false, "fazla çıkan kişi kaçak işareti almaz");
   assert.equal(rows[0].person.name, "Ali", "en çok eksik çıkan önce");
   const marina = branches.find((b) => b.branchId === "marina")!;
-  assert.deepEqual([marina.unknown, marina.unknownTotal], [1, -40], "kasayı sayanı LafPOS göndermiyor");
+  assert.deepEqual([marina.unknown, marina.unknownTotal], [1, -40], "kasayı sayanı AsilPOS göndermiyor");
   assert.ok(!rows.some((r) => r.branchId === "marina"));
   // Az raporla sapma yazılmaz
   const few = cashByPerson(reports.slice(0, 2).concat(reports.slice(4, 6)));
@@ -68,7 +68,7 @@ test("çalıştığı günlere göre: çalıştığı ve çalışmadığı günl
       branchId: "marina",
       date: day(i),
       workers: i <= 4 ? ["u:1"] : ["u:2"],
-      workersFrom: "lafpos",
+      workersFrom: "asilpos",
       values: { cashDiff: 0, iptal: i <= 4 ? 300 : 20, ikram: 50, discount: 10 },
     });
   }
@@ -91,7 +91,7 @@ test("çalıştığı günlere göre: çalıştığı ve çalışmadığı günl
   assert.equal(ece.metrics.iptal.deviation, -280);
   assert.equal(ece.metrics.iptal.flag, false, "az iptal kötü yön değil");
   const m = branches.find((b) => b.branchId === "marina")!;
-  assert.deepEqual([m.days, m.lafposDays, m.vardiyaDays, m.unknownDays], [8, 8, 0, 1]);
+  assert.deepEqual([m.days, m.asilposDays, m.vardiyaDays, m.unknownDays], [8, 8, 0, 1]);
   assert.deepEqual(m.missingMetrics, []);
   const t = branches.find((b) => b.branchId === "tuzla")!;
   assert.deepEqual(t.missingMetrics, ["iptal"], "ModPOS iptal göndermez");
@@ -130,20 +130,21 @@ test("kör sayım: ilk satır kilit, sonrakiler değişiklik (yeni − önceki),
   assert.deepEqual(recountByPerson([]), { rows: [], branches: [] }, "kör sayım yoksa boş");
 });
 
-test("LafPOS'un çalışan kimliği kişinin anahtarına: hesap, Vardiya adı, yoksa kendisi", () => {
+test("AsilPOS'un çalışan kimliği kişinin anahtarına: hesap, Vardiya adı, yoksa kendisi", () => {
   assert.equal(staffPersonKey({ id: 7, userId: 3, personRef: null }), "u:3");
   assert.equal(staffPersonKey({ id: 7, userId: null, personRef: "n:ayşe" }), "n:ayşe");
   assert.equal(staffPersonKey({ id: 7, userId: null, personRef: null }), "s:7");
 });
 
-test("ekran ve yükleyici: yalnız yönetici; LafPOS'un göndermediği alanlar yazılı; otomatik rapor kişiye yazılmaz", () => {
+test("ekran ve yükleyici: yalnız yönetici; AsilPOS'un göndermediği alanlar yazılı; otomatik rapor kişiye yazılmaz", () => {
   const page = read("src/app/panel/raporlar/kayip/page.tsx");
   assert.match(page, /await requireAdmin\(\)/);
-  for (const what of ["iptali yapan", "indirimi yapan", "ikramı ve ödenmezi veren", "LafPOS'ta kasayı sayan"]) assert.ok(page.includes(what), what);
+  for (const what of ["iptali yapan", "indirimi yapan", "ikramı ve ödenmezi veren", "AsilPOS'ta kasayı sayan"]) assert.ok(page.includes(what), what);
   assert.match(page, /ModPOS \(föy ve kasa raporu\) iptal göndermez/);
   const loader = read("src/server/data/kayip-onleme.ts");
   assert.match(loader, /await requireAdmin\(\);/);
-  assert.match(loader, /r\.submittedByName === LAFPOS_AUTO_BY \? null/);
-  // Geçiş gününden önceki LafPOS günü (deneme) sayılmaz
-  assert.match(loader, /isLafposDay\(date, switchOf\)/);
+  // Otomatik raporun gönderenini (okunan yeni ad ya da ham eski ad) kişi saymaz
+  assert.match(loader, /isAsilposAutoBy\(r\.submittedByName\) \? null/);
+  // Geçiş gününden önceki AsilPOS günü (deneme) sayılmaz
+  assert.match(loader, /isAsilposDay\(date, switchOf\)/);
 });

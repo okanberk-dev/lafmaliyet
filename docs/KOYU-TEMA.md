@@ -69,7 +69,7 @@ mavisi bilgi/grafik rengi korunur**, ana eylem yeşil kalır. Bordo hiç yok.
 
 ## Uyarlama: ladmin (bu depo)
 
-Yukarıdaki not görsel dilin kaynağıdır (LafPOS için yazıldı). ladmin'de şöyle uygulandı:
+Yukarıdaki not görsel dilin kaynağıdır (AsilPOS için yazıldı). ladmin'de şöyle uygulandı:
 
 - **Yazı tipi:** Geist kalır (notta Inter yazıyor; ladmin'in yazısı baştan Geist). Ağırlık ve ölçü taklit edilir.
 - **Seçim:** Ayarlar › Görünüm ve profil menüsünde (kenar çubuğunun altı, telefonda "Tümü" çekmecesinin altı)

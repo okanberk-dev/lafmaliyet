@@ -1,8 +1,8 @@
 /**
  * Gün sonu fotoğrafını okuyan modeller ve okunuşun kaynağı (saf; tests/gun-sonu-foto.test.ts). Sahibin isteği (24 Kasım
  * 2026): "AI kullanarak okursa çok iyi olur ama fazla token harcamayan ve sonuç verecek şekilde olsun; eğer AI token
- * biterse de kod ile". LafPOS gününün fotoğrafı önce ucuz modelle okunur, okunuş eksik / kendi içinde tutarsız ya da
- * LafPOS'tan farklıysa bir kez güçlü modelle (src/lib/photo-read/lafpos-read.ts); yapay zekâ yoksa kodla (OCR,
+ * biterse de kod ile". AsilPOS gününün fotoğrafı önce ucuz modelle okunur, okunuş eksik / kendi içinde tutarsız ya da
+ * AsilPOS'tan farklıysa bir kez güçlü modelle (src/lib/photo-read/asilpos-read.ts); yapay zekâ yoksa kodla (OCR,
  * src/server/photo-read/ocr.ts). Modeller ayardan okunur (integration_state `ai.settings` › `photoModels`), yoksa ya da
  * bilinmeyen bir modelse aşağıdaki sabitler; ayar yalnız bu listedeki modelleri kabul eder (src/server/ai/run.ts
  * MODEL_REQUEST'in modelleri).

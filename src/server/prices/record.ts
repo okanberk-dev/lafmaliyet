@@ -2,14 +2,13 @@ import "server-only";
 
 import { and, eq } from "drizzle-orm";
 
-import { tillPriceManual } from "@/lib/lafpos/kasa";
+import { tillPriceManual } from "@/lib/asilpos/kasa";
 import type { PriceChange } from "@/lib/prices/history";
 import { posAfterPriceChange } from "@/lib/prices/pos";
 import { toMinor } from "@/lib/site-menu/slot";
-import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
+import { asilposSwitchDaysOf } from "@/server/data/asilpos-ikram";
 import { branchTill } from "@/server/data/till-scope";
 import { getDb, schema as s } from "@/server/db";
-import { lafposBranchId } from "@/server/lafpos/branch";
 
 /**
  * Satış fiyatı geçmişi ve kasanın (ModPOS) durumu (docs/FIYATLAR.md). Satış fiyatını yazan her yol bunu fiyatla aynı
@@ -28,10 +27,10 @@ type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
  * Kasanın durumu şube başınadır (pos_stale; şube kapsamı A3): her etkin fiziksel şubenin satırı aynı kuralla
  * (posAfterPriceChange) açılır, güncellenir ya da fiyat o kasadaki fiyata döndüyse silinir. Şubeler birbirinden
  * bağımsız ilerler: Tuzla'da işaretlenen fiyat Marina'nın satırını değiştirmez. Durum geçiş gününden bağımsız yazılır
- * (src/lib/lafpos/switch.ts: ayar değişince yalnız okuyanlar değişir): LafPOS gününde siteye bağlı ürünün satırı da
- * güncellenir ama okuyucular onu göstermez (till-scope.ts tillProductFilter; LafPOS fiyatı siteden alır, denetim E-39).
+ * (src/lib/asilpos/switch.ts: ayar değişince yalnız okuyanlar değişir): AsilPOS gününde siteye bağlı ürünün satırı da
+ * güncellenir ama okuyucular onu göstermez (till-scope.ts tillProductFilter; AsilPOS fiyatı siteden alır, denetim E-39).
  * Dönen `posPending`: bu değişiklikten sonra bir şubenin bugünkü kasasında elle değiştirilecek fiyat kaldı mı (bildirim
- * "Kasaya işle" der); LafPOS gününde siteye bağlı üründe ve fiyat değişmediyse o şube sayılmaz.
+ * "Kasaya işle" der); AsilPOS gününde siteye bağlı üründe ve fiyat değişmediyse o şube sayılmaz.
  */
 export async function recordPriceChange(tx: Tx, c: PriceChange, at: Date, opts: { pos?: boolean } = {}): Promise<{ posPending: boolean }> {
   if (c.before !== null && toMinor(c.before) === toMinor(c.after)) return { posPending: false };
@@ -48,7 +47,7 @@ export async function recordPriceChange(tx: Tx, c: PriceChange, at: Date, opts: 
       .select({ branchId: s.posStale.branchId, stalePrice: s.posStale.stalePrice, since: s.posStale.staleSince })
       .from(s.posStale)
       .where(eq(s.posStale.productId, c.productId));
-    const [switchDay, lafposBranch] = await Promise.all([lafposSwitchDayOf(tx), lafposBranchId(tx)]);
+    const switchDays = await asilposSwitchDaysOf(tx);
     for (const till of tills) {
       const cur = current.find((x) => x.branchId === till.id) ?? null;
       const next = posAfterPriceChange({ stalePrice: cur?.stalePrice ?? null, since: cur?.since ?? null }, c.before, c.after, at);
@@ -64,7 +63,7 @@ export async function recordPriceChange(tx: Tx, c: PriceChange, at: Date, opts: 
           .where(where);
       }
       // Geçiş günü yalnız siteye bağlı üründe okunur (bağlı olmayanın fiyatı kasada her zaman elle değişir)
-      if (next.stalePrice !== null && (row.siteMenuId === null || tillPriceManual(branchTill(switchDay, till.id, at, [], lafposBranch), true))) posPending = true;
+      if (next.stalePrice !== null && (row.siteMenuId === null || tillPriceManual(branchTill(switchDays, till.id, at, []), true))) posPending = true;
     }
   }
   await tx.insert(s.productPrices).values({

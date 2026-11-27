@@ -71,7 +71,7 @@ test("açık gün günde bir kez: iki şube aynı gün açıkken bir gün; ciro 
   assert.equal(u.reported, 13);
 });
 
-test("kaynak önceliği (gün, şube): Tuzla'nın raporu Marina'nın aynı günkü föyünü ve LafPOS gün sonunu düşürmez (HM-03)", () => {
+test("kaynak önceliği (gün, şube): Tuzla'nın raporu Marina'nın aynı günkü föyünü ve AsilPOS gün sonunu düşürmez (HM-03)", () => {
   const rows = [
     ...twelve().filter((r) => !(r.branchId === "marina" && r.date === "2026-11-12")),
     row("2026-11-12", "marina", { source: "modpos", zTotal: 9_000, card: 5_000, receipts: 70 }),
@@ -82,9 +82,9 @@ test("kaynak önceliği (gün, şube): Tuzla'nın raporu Marina'nın aynı günk
   assert.equal(t.posRevenue, 120_000 + 66_000 + 9_000, "Marina'nın föyü sayıldı, Tuzla'nın föyü raporun altında kaldı");
   assert.equal(t.openDays, 12);
   assert.deepEqual(t.modpos, ["2026-11-12"]);
-  // LafPOS gün sonu da şube şube
-  const lafpos = [...twelve().filter((r) => !(r.branchId === "marina" && r.date === "2026-11-05")), row("2026-11-05", "marina", { source: "lafpos", zTotal: 7_000, receipts: 40 })];
-  assert.equal(tillMonths(lafpos, "2026-11-12")[0].posRevenue, 120_000 + 66_000 + 7_000);
+  // AsilPOS gün sonu da şube şube
+  const asilpos = [...twelve().filter((r) => !(r.branchId === "marina" && r.date === "2026-11-05")), row("2026-11-05", "marina", { source: "asilpos", zTotal: 7_000, receipts: 40 })];
+  assert.equal(tillMonths(asilpos, "2026-11-12")[0].posRevenue, 120_000 + 66_000 + 7_000);
 });
 
 test("föyün kesintisiz başı şube şube: öteki şubenin raporu bir şubenin eski föylerini saydırmaz", () => {

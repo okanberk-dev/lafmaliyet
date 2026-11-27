@@ -12,40 +12,44 @@ import { EmptyState, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { businessDate } from "@/lib/cash-report";
 import { num, tl } from "@/lib/format";
-import { LAFPOS_IKRAM_TEXT, lafposReasonText, panelWasteCounts, productIkramClosed, productIkramNote } from "@/lib/lafpos/ikram";
-import { monthSource } from "@/lib/lafpos/switch";
+import { ASILPOS_IKRAM_TEXT, asilposReasonText, ikramTillDays, panelWasteCounts, productIkramClosed, productIkramNote } from "@/lib/asilpos/ikram";
+import { tillDayKey } from "@/lib/pos/tills";
+import { monthSource } from "@/lib/asilpos/switch";
 import { addDays, isCalendarDate, longDateTR, monthShortTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { productLabel, qtyText, WASTE_KIND_LABEL, type WasteKind } from "@/lib/waste";
 import { lateWasteDays, staffDeleteMode, staffWasteMode, WASTE_REQUEST_TEXT, wasteDayLabel, wasteItemText, type WasteDeleteMode, type WasteLock } from "@/lib/waste-requests";
-import { requireUser } from "@/server/auth/dal";
+import type { Role } from "@/lib/constants";
+import { openableHref, opsLevel } from "@/lib/roles";
+import { requireAdmin, requireCan } from "@/server/auth/dal";
 import { DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
 import { currentBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
-import { loadDayLafposIkram } from "@/server/data/lafpos-ikram";
+import { loadDayAsilposIkram } from "@/server/data/asilpos-ikram";
 import { wasteChoices, wasteEntriesBetween } from "@/server/data/waste";
 import { myWasteRequests, pendingWasteSummary, wasteDayMarks } from "@/server/data/waste-requests";
 import { getDb } from "@/server/db";
 import { wasteLock } from "@/server/waste/core";
 
 import { WasteDayStrip } from "./day-picker";
-import { WasteBoard, type LafposDayView } from "./waste-board";
+import { WasteBoard, type AsilposDayView } from "./waste-board";
 
 export const metadata: Metadata = { title: "Zayi & ikram" };
 
 /**
  * Başlık ve Stok sekmeleri (Sayım, Zayi & ikram, yöneticide Tutarlılık; nav.ts SECTION_TABS). Rol bilinmeden (yükleniyor)
  * iki rolün de gördüğü sekmeler çizilir; yöneticinin Tutarlılık'ı içerik gelince eklenir, sekme satırı yer değiştirmez.
+ * Rol kişinin gerçek rolü (çekirdeğin düzeyi değil): müdür zayiyi "admin" düzeyinde yazar ama Tutarlılık ona kapalı.
  */
-function WasteHeader({ role, branch = null }: { role: "admin" | "staff"; branch?: string | null }) {
+function WasteHeader({ role, branch = null }: { role: Role; branch?: string | null }) {
   return (
     <PageHeader
       // Birden çok kasa açıkken formun şubesi başlıkta ("Tuzla · Zayi & ikram"); "Tümü"de form şubeyi sorar
       title={branch ? `${branch} · Zayi & ikram` : "Zayi & ikram"}
       path="/panel/zayi"
       role={role}
-      // İki rolde tek cümle (docs/planlar/ux-sade.md §8): yöneticinin karşılaştırma ekranı anılmaz, personel açamaz. LafPOS gününde
-      // ürün ikramının LafPOS'ta işaretlendiğini İkram seçilince formun notu söyler (productIkramNote, lafpos.note)
+      // İki rolde tek cümle (docs/planlar/ux-sade.md §8): yöneticinin karşılaştırma ekranı anılmaz, personel açamaz. AsilPOS gününde
+      // ürün ikramının AsilPOS'ta işaretlendiğini İkram seçilince formun notu söyler (productIkramNote, asilpos.note)
       description="Atılan, bozulan (zayi) ve ödenmeden verilen (ikram) ürünleri girin."
       tabs={<SectionTabs section="stok" current="/panel/zayi" role={role} />}
     />
@@ -70,8 +74,10 @@ export default function WastePage({ searchParams }: PageProps<"/panel/zayi">) {
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/zayi">["searchParams"] }) {
-  const user = await requireUser();
-  const admin = user.role === "admin";
+  const user = await requireCan("kayit.yaz");
+  // Müdür şubesinin zayi / ikramını yönetici gibi yönetir (src/lib/roles.ts › opsLevel); şubesi oturumdan kilitli
+  const level = opsLevel(user.role);
+  const admin = level === "admin";
   const sp = await searchParams;
   const now = new Date();
   const today = businessDate(now);
@@ -132,19 +138,19 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
     admin ? Promise.resolve([]) : myWasteRequests(user.id, now),
     // Tek şube seçiliyken o şubenin istekleri (şube kapsamı C P1-1)
     admin ? pendingWasteSummary({ day: date, scope }) : Promise.resolve(null),
-    // LafPOS gününde (geçiş gününden itibaren) ürün ikramı LafPOS'tan; geçiş günü boşken null, ekran bugünkü gibi. Şube
-    // şube (şube kapsamı C P2-7): seçili kasanınki; "Tümü"de LafPOS günü olan ilk kasanınki, adıyla (önceden "Tümü"de
-    // Tuzla'nınki okunuyordu: LafPOS Marina'daysa liste hiç görünmüyordu)
+    // AsilPOS gününde (geçiş gününden itibaren) ürün ikramı AsilPOS'tan; geçiş günü boşken null, ekran bugünkü gibi. Şube
+    // şube (şube kapsamı C P2-7): seçili kasanınki; "Tümü"de AsilPOS günü olan ilk kasanınki, adıyla (önceden "Tümü"de
+    // Tuzla'nınki okunuyordu: AsilPOS Marina'daysa liste hiç görünmüyordu)
     chosen
-      ? loadDayLafposIkram(date, undefined, chosen.id).then((d) => (d ? { ...d, branchId: chosen.id, branchName: null } : null))
-      : Promise.all(tills.map((t) => loadDayLafposIkram(date, undefined, t.id).then((d) => (d ? { ...d, branchId: t.id, branchName: t.name } : null)))).then(
+      ? loadDayAsilposIkram(date, undefined, chosen.id).then((d) => (d ? { ...d, branchId: chosen.id, branchName: null } : null))
+      : Promise.all(tills.map((t) => loadDayAsilposIkram(date, undefined, t.id).then((d) => (d ? { ...d, branchId: t.id, branchName: t.name } : null)))).then(
           (all) => all.find((d) => d !== null) ?? null,
         ),
   ]);
-  // LafPOS'un ikram ve zayi satırları salt okunur: personele ad ve adet, yöneticiye nedeni, menü değeri ve ürüne bağlı
+  // AsilPOS'un ikram ve zayi satırları salt okunur: personele ad ve adet, yöneticiye nedeni, menü değeri ve ürüne bağlı
   // olmayanlar da. Ürün ikramı gün sonu geldiyse ya da gün bugünse panelden kapalı (gün sonu gelmeyen geçmiş günde açık)
-  const lafposZayi = new Set(laf?.lines.filter((l) => l.kind === "zayi" && l.productId !== null).map((l) => l.productId) ?? []);
-  const lafpos: LafposDayView | null = laf
+  const asilposZayi = new Set(laf?.lines.filter((l) => l.kind === "zayi" && l.productId !== null).map((l) => l.productId) ?? []);
+  const asilpos: AsilposDayView | null = laf
     ? {
         note: productIkramNote(laf.switchDay),
         received: laf.received,
@@ -154,16 +160,18 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
           kind: l.kind,
           name: l.name,
           qty: l.qty,
-          // Yöneticiye nedeni: iptalde iptal nedeni, ödenmezde kişinin türü (lafposReasonText)
-          reason: admin ? lafposReasonText(l) : null,
+          // Yöneticiye nedeni: iptalde iptal nedeni, ödenmezde kişinin türü (asilposReasonText)
+          reason: admin ? asilposReasonText(l) : null,
           menuValue: admin ? l.menuValue : null,
           unmatched: admin && l.productId === null && !l.isService,
           service: admin && l.isService,
         })),
-        notCounted: laf.received ? entries.filter((e) => e.branchId === laf.branchId && !panelWasteCounts(e, new Set([date]), laf.branchId)).map((e) => e.id) : [],
-        // Paneldeki ürün zayisi, aynı gün aynı ürün LafPOS'ta da zayi yazıldıysa: ikisi de sayılır, aynıysa biri silinir
-        maybeTwice: entries.filter((e) => e.branchId === laf.branchId && e.kind === "zayi" && e.productId !== null && lafposZayi.has(e.productId)).map((e) => e.id),
+        notCounted: laf.received ? entries.filter((e) => e.branchId === laf.branchId && !panelWasteCounts(e, new Set([tillDayKey(laf.branchId, date)]))).map((e) => e.id) : [],
+        // Paneldeki ürün zayisi, aynı gün aynı ürün AsilPOS'ta da zayi yazıldıysa: ikisi de sayılır, aynıysa biri silinir
+        maybeTwice: entries.filter((e) => e.branchId === laf.branchId && e.kind === "zayi" && e.productId !== null && asilposZayi.has(e.productId)).map((e) => e.id),
         branchName: laf.branchName,
+        // Ayarlar yöneticinin: müdür zayiyi "admin" düzeyinde görse de bağlanmamış satırın Ayarlar bağlantısı ona çizilmez
+        settingsHref: openableHref(user.role, "/panel/ayarlar#asilpos"),
       }
     : null;
   // Satırın silme kipi kaydın kendi şubesinin kilidiyle (removeWaste gibi): "Tümü"deki şubesiz personel öteki şubenin
@@ -193,7 +201,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
       deleteAsks={deleteAsks}
       lateBadges={lateBadges}
       pendingLate={pendingLate}
-      lafpos={lafpos}
+      asilpos={asilpos}
       branches={formBranches}
     />
   );
@@ -207,7 +215,10 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
     );
   }
 
-  const ay = pick(sp.ay);
+  // Ay özeti malzeme maliyeti taşır: müdür "admin" düzeyinde yazar ama maliyet görmez (docs/ROLLER.md › Müdür); özet
+  // ona hiç çizilmez, maliyet RSC yüküne girmez
+  const costs = user.role === "admin";
+  const ay = costs ? pick(sp.ay) : undefined;
   const month = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) && ay <= today.slice(0, 7) ? ay : today.slice(0, 7);
   return (
     <div className="space-y-6">
@@ -217,26 +228,29 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
         <Notice tone="warn" title={`Bu gün ${num(waiting.count)} istek onay bekliyor`} action={<NoticeLink href={`/panel/onaylar#istek-${waiting.firstId}`}>Onaylar</NoticeLink>} />
       ) : null}
       {board}
-      <WasteMonth month={month} today={today} />
+      {costs ? <WasteMonth month={month} today={today} /> : null}
     </div>
   );
 }
 
 /** Ayın kasası, ödenmez tutarının etiketi için: geçiş ayında iki kasa birden */
-const OFF_LABEL = { modpos: "ModPOS ödenmez / ikram", gecis: "Kasa ödenmez / ikram", lafpos: "LafPOS ödenmez / ikram" } as const;
+const OFF_LABEL = { modpos: "ModPOS ödenmez / ikram", gecis: "Kasa ödenmez / ikram", asilpos: "AsilPOS ödenmez / ikram" } as const;
 
-/** Yöneticinin ay özeti: zayi ve ikramın malzeme maliyeti, ikramın menü değeri ve kasanın ödenmez tutarı, en çok giden
- * kalemler. Geçiş gününden itibaren LafPOS'un ikram ve zayi satırları da sayılır (adın yanında "LafPOS"); LafPOS'un gün sonu gelen günde
- * panele girilmiş ürün ikramı sayılmaz (src/lib/lafpos/ikram.ts). Geçiş günü boşken bugünkü gibi yalnız panel.
+/** Yöneticinin ay özeti (yalnız yönetici; müdürde yok): zayi ve ikramın malzeme maliyeti, ikramın menü değeri ve kasanın
+ * ödenmez tutarı, en çok giden kalemler. Geçiş gününden itibaren AsilPOS'un ikram ve zayi satırları da sayılır (adın
+ * yanında "AsilPOS"); AsilPOS'un gün sonu gelen günde panele girilmiş ürün ikramı sayılmaz (src/lib/asilpos/ikram.ts).
+ * Geçiş günü boşken bugünkü gibi yalnız panel.
  */
 async function WasteMonth({ month, today }: { month: string; today: string }) {
+  await requireAdmin();
   const end = addDays(`${shiftMonth(month, 1)}-01`, -1);
   const [model, entries] = await Promise.all([loadModel(), wasteEntriesBetween(`${month}-01`, end)]);
   const sum = model.wasteSummary(month);
-  const lafposDays = new Set(model.ds.lafposIkram?.days ?? []);
+  // Gün sonu gelen (şube, gün) anahtarları (çok şube: kayıt yalnız kendi kasasının günü geldiyse düşer)
+  const asilposDays = ikramTillDays(model.ds.asilposIkram);
   // Kalem başına: adet / miktar ve malzeme maliyeti (ürün: reçetenin malzeme toplamı, fire payı olmadan)
-  const rows = new Map<string, { kind: WasteKind; lafpos: boolean; name: string; unit: string; qty: number; cost: number; count: number }>();
-  const add = (key: string, base: { kind: WasteKind; lafpos: boolean; name: string; unit: string }, qty: number, cost: number) => {
+  const rows = new Map<string, { kind: WasteKind; asilpos: boolean; name: string; unit: string; qty: number; cost: number; count: number }>();
+  const add = (key: string, base: { kind: WasteKind; asilpos: boolean; name: string; unit: string }, qty: number, cost: number) => {
     const r = rows.get(key) ?? { ...base, qty: 0, cost: 0, count: 0 };
     r.qty += qty;
     r.cost += cost;
@@ -244,18 +258,18 @@ async function WasteMonth({ month, today }: { month: string; today: string }) {
     rows.set(key, r);
   };
   for (const e of entries) {
-    if (!panelWasteCounts(e, lafposDays, model.ds.lafposBranch)) continue;
-    add(`${e.kind}|${e.name}|${e.unit}`, { kind: e.kind, lafpos: false, name: e.name, unit: e.unit }, e.qty, model.wasteCost(e));
+    if (!panelWasteCounts(e, asilposDays)) continue;
+    add(`${e.kind}|${e.name}|${e.unit}`, { kind: e.kind, asilpos: false, name: e.name, unit: e.unit }, e.qty, model.wasteCost(e));
   }
   for (const w of model.countedWaste) {
-    if (w.source !== "lafpos" || w.date < `${month}-01` || w.date > end) continue;
+    if (w.source !== "asilpos" || w.date < `${month}-01` || w.date > end) continue;
     const p = w.productId !== null ? model.productById.get(w.productId) : undefined;
-    const name = p ? productLabel(p) : (w.name ?? (w.kind === "zayi" ? "LafPOS zayisi" : "LafPOS ikramı"));
-    add(`lafpos|${w.kind}|${name}`, { kind: w.kind, lafpos: true, name, unit: "adet" }, w.qty, model.wasteCost(w));
+    const name = p ? productLabel(p) : (w.name ?? (w.kind === "zayi" ? "AsilPOS zayisi" : "AsilPOS ikramı"));
+    add(`asilpos|${w.kind}|${name}`, { kind: w.kind, asilpos: true, name, unit: "adet" }, w.qty, model.wasteCost(w));
   }
   const top = [...rows.values()].sort((a, b) => b.cost - a.cost).slice(0, 15);
   const off = model.monthInfo.get(month)?.offRevenue ?? 0;
-  const source = monthSource(month, model.ds.settings.lafposGecisGunu ?? null);
+  const source = monthSource(month, model.ds.settings.asilposGecisGunu ?? null);
   return (
     <Card>
       <CardHeader
@@ -279,14 +293,14 @@ async function WasteMonth({ month, today }: { month: string; today: string }) {
         <Stat
           label="Zayi"
           value={tl(sum.zayi.cost)}
-          sub={`${num(sum.zayi.count)} kayıt${sum.zayi.lafpos ? ` (${num(sum.zayi.lafpos)} LafPOS'tan)` : ""} · malzeme maliyeti`}
+          sub={`${num(sum.zayi.count)} kayıt${sum.zayi.asilpos ? ` (${num(sum.zayi.asilpos)} AsilPOS'tan)` : ""} · malzeme maliyeti`}
           tone={sum.zayi.cost > 0 ? "bad" : "default"}
           compact
         />
         <Stat
           label="İkram"
           value={tl(sum.ikram.cost)}
-          sub={`${num(sum.ikram.count)} kayıt${sum.ikram.lafpos ? ` (${num(sum.ikram.lafpos)} LafPOS'tan)` : ""} · malzeme maliyeti`}
+          sub={`${num(sum.ikram.count)} kayıt${sum.ikram.asilpos ? ` (${num(sum.ikram.asilpos)} AsilPOS'tan)` : ""} · malzeme maliyeti`}
           compact
         />
         <Stat label="İkramın menü değeri" value={tl(sum.ikram.menuValue)} sub="Menü fiyatıyla, KDV dahil" compact />
@@ -305,12 +319,12 @@ async function WasteMonth({ month, today }: { month: string; today: string }) {
         <ul className="divide-y divide-line border-t border-line">
           {top.map((r) => (
             // Telefonda miktar adın altına iner: ad sütunu daralıp harf harf kırılmasın
-            <li key={`${r.lafpos ? "lafpos|" : ""}${r.kind}|${r.name}|${r.unit}`} className="flex items-center gap-x-3 px-5 py-2.5 text-sm">
+            <li key={`${r.asilpos ? "asilpos|" : ""}${r.kind}|${r.name}|${r.unit}`} className="flex items-center gap-x-3 px-5 py-2.5 text-sm">
               <Badge tone={r.kind === "zayi" ? "red" : "blue"}>{WASTE_KIND_LABEL[r.kind]}</Badge>
               <span className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-3">
                 <span className="block font-medium break-words text-ink sm:flex-1">
                   {r.name}
-                  {r.lafpos ? <span className="ml-1.5 text-xs font-normal text-ink-mute">LafPOS</span> : null}
+                  {r.asilpos ? <span className="ml-1.5 text-xs font-normal text-ink-mute">AsilPOS</span> : null}
                 </span>
                 <span className="block text-xs text-ink-mute tabular sm:text-sm">
                   {qtyText(r.qty, r.unit)} · {num(r.count)} kayıt
@@ -325,7 +339,7 @@ async function WasteMonth({ month, today }: { month: string; today: string }) {
       )}
       {sum.notCounted ? (
         <p className="border-t border-line px-5 py-3 text-[13px] text-ink-mute">
-          Panele girilen {num(sum.notCounted)} ürün ikramı sayılmıyor: o günlerin ikramı LafPOS&apos;tan geldi (gün listesinde “{LAFPOS_IKRAM_TEXT.notCounted}”).
+          Panele girilen {num(sum.notCounted)} ürün ikramı sayılmıyor: o günlerin ikramı AsilPOS&apos;tan geldi (gün listesinde “{ASILPOS_IKRAM_TEXT.notCounted}”).
         </p>
       ) : null}
       <p className="border-t border-line px-5 py-3 text-[13px] text-ink-mute">

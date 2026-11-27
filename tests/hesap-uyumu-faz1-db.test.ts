@@ -1,6 +1,6 @@
 // Hesap uyumu, Faz 1, gerçek Postgres'te (23 Kasım 2026; docs/hesap-sozlesmesi.md; saf kısım tests/hesap-uyumu-faz1.test.ts).
 // Marina'nın Kasım 2026'sı (sözleşme §6): ModPOS listesi 13–21 Kasım (indirim öncesi 29.415,00, indirim 2.066,25,
-// Z 27.348,75), LafPOS 22 Kasım (ciro 6.285,00, indirim 90, kart 5.030). Veri kümesinden:
+// Z 27.348,75), AsilPOS 22 Kasım (ciro 6.285,00, indirim 90, kart 5.030). Veri kümesinden:
 // - Satışlar ve Gelir-gider'in banka POS komisyonu aynı: kart 24.774,25 × Marina'nın POS oranı (%2) = 495,49; oran
 //   Şubeler'den (yalnız yönetici) değişir
 // - Tutarlılık: liste − yalnız ModPOS günlerinin indirimi − POS = 0 (eskiden −90)
@@ -24,13 +24,13 @@ import { branchCommissionShare, groupOf, rowOf } from "../src/lib/commission/rep
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 
-import { LAFPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
+import { ASILPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
 
 const SERVER_URL = process.env.HESAP_UYUMU_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_hesap_uyumu_${process.pid}`;
 /** Testin "şimdi"si: 10 Aralık 2026 öğlen (Kasım bitti) */
 const NOW = "2026-12-10T12:00:00+03:00";
-/** Marina'nın LafPOS'a geçiş günü */
+/** Marina'nın AsilPOS'a geçiş günü */
 const S = "2026-11-22";
 
 /** ModPOS günleri (sözleşme §6): gün, ciro (Z), kart, nakit, indirim */
@@ -83,33 +83,33 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
     branchScope = await import("../src/server/branch-scope");
     commission = await import("../src/server/data/commission");
 
-    // Marina: LafPOS'a 22 Kasım'da geçti; ModPOS listesi 13–21 Kasım (indirim öncesi), kasa raporları 13–22 Kasım
-    await db.insert(s.settings).values({ key: "lafposGecisGunu", value: S });
+    // Marina: AsilPOS'a 22 Kasım'da geçti; ModPOS listesi 13–21 Kasım (indirim öncesi), kasa raporları 13–22 Kasım
+    await db.insert(s.settings).values({ key: "asilposGecisGunu", value: S });
     const [cat] = await db.insert(s.categories).values({ name: "Kahveler", sortOrder: 1 }).returning();
     const [latte] = await db.insert(s.products).values({ categoryId: cat.id, name: "Latte", size: "M", price: 190 }).returning();
-    await db.insert(s.months).values({ month: "2026-11", branchId: LAFPOS_SUBE });
+    await db.insert(s.months).values({ month: "2026-11", branchId: ASILPOS_SUBE });
     await db.insert(s.salesLines).values([
-      { month: "2026-11", branchId: LAFPOS_SUBE, posName: "LATTE MEDIUM", productId: latte.id, qty: 100, revenue: 20_000, isService: false, sortOrder: 1 },
-      { month: "2026-11", branchId: LAFPOS_SUBE, posName: "TÜRK KAHVESİ", productId: null, qty: 47, revenue: 9_415, isService: false, sortOrder: 2 },
+      { month: "2026-11", branchId: ASILPOS_SUBE, posName: "LATTE MEDIUM", productId: latte.id, qty: 100, revenue: 20_000, isService: false, sortOrder: 1 },
+      { month: "2026-11", branchId: ASILPOS_SUBE, posName: "TÜRK KAHVESİ", productId: null, qty: 47, revenue: 9_415, isService: false, sortOrder: 2 },
     ]);
     await db.insert(s.integrationState).values({ key: "sales.coverage", value: { "2026-11": "2026-11-21" } });
     for (const [date, zTotal, card, cash, discounts] of MODPOS_DAYS) {
-      await db.insert(s.cashReports).values({ date, branchId: LAFPOS_SUBE, zTotal, card, cash, discounts, submittedByName: "Ayşe" });
+      await db.insert(s.cashReports).values({ date, branchId: ASILPOS_SUBE, zTotal, card, cash, discounts, submittedByName: "Ayşe" });
     }
-    await db.insert(s.cashReports).values({ date: S, branchId: LAFPOS_SUBE, zTotal: 6_285, card: 5_030, cash: 1_255, discounts: 90, submittedByName: "Ayşe" });
-    // LafPOS 22 Kasım: satırlar indirimden sonra (Σ = Z)
+    await db.insert(s.cashReports).values({ date: S, branchId: ASILPOS_SUBE, zTotal: 6_285, card: 5_030, cash: 1_255, discounts: 90, submittedByName: "Ayşe" });
+    // AsilPOS 22 Kasım: satırlar indirimden sonra (Σ = Z)
     await db.insert(s.posDayReports).values({
       date: S,
-      branchId: LAFPOS_SUBE,
+      branchId: ASILPOS_SUBE,
       z: { zNo: 1, receipts: 26, zTotal: 6_285, cash: 1_255, card: 5_030, mealCard: 0, online: 0, other: 0, offRevenue: 1_065, discounts: 90, openingCash: 1_120, cashOut: 800, countedCash: 1_279.5, handedOver: 0, cashDiff: -295.5 },
       payments: [],
       ikram: [],
-      source: "lafpos",
+      source: "asilpos",
     });
     await db.insert(s.posDailySales).values([
-      { date: S, branchId: LAFPOS_SUBE, posName: "LATTE M", productId: latte.id, qty: 3, revenue: 570, isService: false },
-      { date: S, branchId: LAFPOS_SUBE, posName: "SYRUP", productId: null, qty: 2, revenue: 92.5, isService: false },
-      { date: S, branchId: LAFPOS_SUBE, posName: "TÜRK KAHVESİ", productId: null, qty: 40, revenue: 5_622.5, isService: false },
+      { date: S, branchId: ASILPOS_SUBE, posName: "LATTE M", productId: latte.id, qty: 3, revenue: 570, isService: false },
+      { date: S, branchId: ASILPOS_SUBE, posName: "SYRUP", productId: null, qty: 2, revenue: 92.5, isService: false },
+      { date: S, branchId: ASILPOS_SUBE, posName: "TÜRK KAHVESİ", productId: null, qty: 40, revenue: 5_622.5, isService: false },
     ]);
   });
 
@@ -120,7 +120,7 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
     await admin?.end();
   });
 
-  const inMarina = <T>(fn: () => Promise<T>) => branchScope.withBranchScope(LAFPOS_SUBE, fn);
+  const inMarina = <T>(fn: () => Promise<T>) => branchScope.withBranchScope(ASILPOS_SUBE, fn);
 
   /**
    * Tuzla'nın 23–30 Kasım kasa raporları (Z'de yemek kartı 200; Tuzla'nın raporları Ekim'den beri: ay yarım değil),
@@ -143,7 +143,7 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
     const model = await inMarina(() => dataset.loadModel());
     assert.equal(model.pnlMonth("2026-11").cells.get("commission:pos")?.value, 495.49, "Gelir-gider");
     assert.equal(round2(model.monthSales("2026-11").commission), 495.49, "Satışlar");
-    // −90 ₺: LafPOS gününün indirimi satırlarda zaten düşülmüş
+    // −90 ₺: AsilPOS gününün indirimi satırlarda zaten düşülmüş
     const c = consistency(model, "2026-11");
     assert.deepEqual([c.sales.listTotal, c.sales.discounts, c.sales.pos, c.sales.diff], [35_700, 2_066.25, 33_633.75, 0]);
     // "Tümü" de aynı (yalnız Marina'nın kasa raporu var)
@@ -153,7 +153,7 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
   });
 
   test("şubenin POS oranı Şubeler'den (yalnız yönetici, %0–%10): değişince iki sayfa birlikte değişir", async () => {
-    const [marina] = await db.select().from(s.branches).where(eq(s.branches.id, LAFPOS_SUBE));
+    const [marina] = await db.select().from(s.branches).where(eq(s.branches.id, ASILPOS_SUBE));
     const base = { id: marina.id, name: marina.name, kind: marina.kind, posSource: marina.posSource, openedOn: marina.openedOn, active: marina.active };
     assert.equal(marina.posRate, 0.02, "migration'ın varsayılanı %2");
     const bad = await branches.updateBranch({ ...base, posRate: 0.2 });
@@ -167,9 +167,9 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
     assert.match(log?.detail ?? "", /POS oranı: %2 → %1,5/);
     // Oranı göndermeyen düzenleme eskisini korur
     assert.ok((await branches.updateBranch(base)).ok);
-    const [after] = await db.select({ posRate: s.branches.posRate }).from(s.branches).where(eq(s.branches.id, LAFPOS_SUBE));
+    const [after] = await db.select({ posRate: s.branches.posRate }).from(s.branches).where(eq(s.branches.id, ASILPOS_SUBE));
     assert.equal(after.posRate, 0.015);
-    await db.update(s.branches).set({ posRate: 0.02 }).where(eq(s.branches.id, LAFPOS_SUBE));
+    await db.update(s.branches).set({ posRate: 0.02 }).where(eq(s.branches.id, ASILPOS_SUBE));
     // Tuzla'nın oranı Marina'nın komisyonunu değiştirmez
     await db.update(s.branches).set({ posRate: 0.05 }).where(eq(s.branches.id, MODPOS_SUBE));
     const again = await inMarina(() => dataset.loadModel());
@@ -182,7 +182,7 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
     const r = await branchScope.withBranchScope("hepsi", () => commission.loadCommissionReport());
     const p = rowOf(r, "pluxee", "2026-11");
     // Tuzla 8 gün × 200 = 1.600; föyde 4 gün × 150 = 600 Pluxee, kalan 1.000 markası belirsiz (eskiden 1.600'ü Pluxee'nin)
-    assert.deepEqual(p?.sales, { amount: 600, source: "lafpos", foy: 600 });
+    assert.deepEqual(p?.sales, { amount: 600, source: "asilpos", foy: 600 });
     assert.deepEqual(groupOf(r, "meal", "2026-11")?.unbranded, { amount: 1000, pre: 0, modpos: 1000, loose: 0, fallback: 0 });
   });
 
@@ -195,13 +195,13 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
     // başladı" diye yarım sayılmaz (eskiden partialFrom 13 Kasım, şubenin bütün kanalları "Satış bilinmiyor")
     assert.equal(groupOf(marina, "meal", "2026-11")?.partialFrom, null);
     assert.doesNotMatch(rowOf(marina, "pluxee", "2026-11")?.salesReason ?? "", /kasa raporları/);
-    // Tuzla seçili: LafPOS okunmaz (geçiş günü Marina'nın), Z Tuzla'nın
+    // Tuzla seçili: AsilPOS okunmaz (geçiş günü Marina'nın), Z Tuzla'nın
     const tuzla = await branchScope.withBranchScope(MODPOS_SUBE, () => commission.loadCommissionReport());
     assert.equal(tuzla.switchDay, null);
     assert.equal(groupOf(tuzla, "meal", "2026-11")?.zTotal, 1600);
     // Geçiş ayından itibaren Tuzla'nın Z'si de tek karta yığılmaz ("Tümü"yle aynı): föyde 600 Pluxee, 1.000 markası belirsiz.
     // Eskiden 1.600 (tek kart) × %10 = 160 ₺ pay, işletmenin bütün faturası 60 ₺
-    assert.deepEqual(rowOf(tuzla, "pluxee", "2026-11")?.sales, { amount: 600, source: "lafpos", foy: 600 });
+    assert.deepEqual(rowOf(tuzla, "pluxee", "2026-11")?.sales, { amount: 600, source: "asilpos", foy: 600 });
     assert.deepEqual(groupOf(tuzla, "meal", "2026-11")?.unbranded, { amount: 1000, pre: 0, modpos: 1000, loose: 0, fallback: 0 });
     const tuzlaBoth = await branchScope.withBranchScope(MODPOS_SUBE, () => commission.loadCommissionReports());
     assert.ok(tuzlaBoth.branch, "Tuzla'nın raporu");
@@ -215,7 +215,7 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
     });
     // Ekran şube seçiliyken iki raporu okur: oran işletmenin, şubenin payı satış × oran
     const both = await inMarina(() => commission.loadCommissionReports());
-    assert.equal(both.scope, LAFPOS_SUBE);
+    assert.equal(both.scope, ASILPOS_SUBE);
     assert.equal(rowOf(both.all, "pluxee", "2026-11")?.rate, 0.1, "60 ÷ 600 (işletmenin bilinen Pluxee satışı)");
     assert.ok(both.branch, "şubenin raporu");
     assert.deepEqual(branchCommissionShare(both.all, both.branch, "2026-11").find((x) => x.channel === "pluxee"), {
@@ -235,7 +235,7 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
     // Sahibin kararı (sözleşme §1.12): haftalık "Part-time çalışan" Kasım 2026'da kalır, Aralık'tan günlük model
     const [pt] = await db
       .insert(s.fixedExpenses)
-      .values({ name: "Part-time çalışan", section: "personel", period: "haftalik", amount: 2_500, startMonth: "2026-10", endMonth: "2026-11", branchId: LAFPOS_SUBE })
+      .values({ name: "Part-time çalışan", section: "personel", period: "haftalik", amount: 2_500, startMonth: "2026-10", endMonth: "2026-11", branchId: ASILPOS_SUBE })
       .returning();
     const key = `fixed:${pt.id}`;
     const refused = await pnl.setPnlCell("2026-12", key, 10_000);
@@ -265,9 +265,9 @@ describe("hesap uyumu Faz 1: veritabanında", { skip: !SERVER_URL && "HESAP_UYUM
     const [cat] = await db.insert(s.expenseCategories).values({ name: "Muhasebe", section: "genel" }).returning();
     const [fe] = await db
       .insert(s.fixedExpenses)
-      .values({ name: "Muhasebe", section: "genel", period: "aylik", amount: 5_000, startMonth: "2026-01", branchId: LAFPOS_SUBE })
+      .values({ name: "Muhasebe", section: "genel", period: "aylik", amount: 5_000, startMonth: "2026-01", branchId: ASILPOS_SUBE })
       .returning();
-    const [entry] = await db.insert(s.expenseEntries).values({ date: "2026-11-05", categoryId: cat.id, description: "Kasım muhasebe", amount: 5_000, branchId: LAFPOS_SUBE }).returning();
+    const [entry] = await db.insert(s.expenseEntries).values({ date: "2026-11-05", categoryId: cat.id, description: "Kasım muhasebe", amount: 5_000, branchId: ASILPOS_SUBE }).returning();
     const title = "Aynı gider iki kez sayılıyor olabilir";
     const all = await branchScope.withBranchScope("hepsi", () => dataset.loadModel());
     const { alerts } = await import("../src/lib/calc/insights");

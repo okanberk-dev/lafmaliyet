@@ -1,15 +1,15 @@
 // Kişi bazında kayıp önleme özeti (Raporlar › Kayıp önleme; docs/RAPORLAR.md). Saf; yükleyici
 // src/server/data/kayip-onleme.ts, testi tests/kayip-onleme.test.ts.
 //
-// LafPOS deposu değiştirilmeden, panelde var olan kişi bilgisiyle üç bölüm:
-// 1. Kasa farkı, kasayı sayana göre (doğrudan): kasa raporunun "Kasayı sayan"ı (eski raporda gönderen). LafPOS'un kendiliğinden
-//    yazdığı raporda kişi yok: LafPOS kasayı sayanı göndermiyor, satır "kişi bilinmiyor" sayılır.
+// AsilPOS deposu değiştirilmeden, panelde var olan kişi bilgisiyle üç bölüm:
+// 1. Kasa farkı, kasayı sayana göre (doğrudan): kasa raporunun "Kasayı sayan"ı (eski raporda gönderen). AsilPOS'un kendiliğinden
+//    yazdığı raporda kişi yok: AsilPOS kasayı sayanı göndermiyor, satır "kişi bilinmiyor" sayılır.
 // 2. Zayi ve ikram, kaydı girene göre (doğrudan): panelde zayi / ikram kaydını giren kişi (kaydeden; ikramı yapan olmayabilir).
-//    LafPOS'tan gelen ikram ve zayi satırlarında kişi yok (ödenmezde yalnız kişinin türü).
-// 3. İptal, ikram, indirim ve kasa farkı, çalıştığı günlere göre (dolaylı): LafPOS iptal edeni, ikram edeni ve indirimi
+//    AsilPOS'tan gelen ikram ve zayi satırlarında kişi yok (ödenmezde yalnız kişinin türü).
+// 3. İptal, ikram, indirim ve kasa farkı, çalıştığı günlere göre (dolaylı): AsilPOS iptal edeni, ikram edeni ve indirimi
 //    yapanı göndermiyor; gönderdiği tek kişi bilgisi o gün çalışanların listesi (personel bağlantısı). Kişinin çalıştığı
 //    günlerin günlük ortalaması, aynı şubede çalışmadığı günlerinkiyle karşılaştırılır. Kişiye yazılmaz, tek başına kanıt
-//    değildir: aynı gün çalışanların hepsi aynı sapmayı alır. LafPOS'un listesi olmayan günde Vardiya planı.
+//    değildir: aynı gün çalışanların hepsi aynı sapmayı alır. AsilPOS'un listesi olmayan günde Vardiya planı.
 //
 // Kör sayım (Tuzla; docs/KASA-RAPORU.md › Kör sayım) açık şubede bir de sayımı kilitleyen ve kilitten sonra değiştiren
 // (doğrudan): değişiklik farkı gördükten sonra yapılır, neden zorunludur. Kişi değişikliği yazandır.
@@ -33,7 +33,7 @@ export interface LossCashReport {
   branchId: string;
   date: string;
   cashDiff: number;
-  /** Kasayı sayan (yoksa gönderen); LafPOS'un otomatik raporunda null */
+  /** Kasayı sayan (yoksa gönderen); AsilPOS'un otomatik raporunda null */
   person: LossPerson | null;
 }
 
@@ -66,8 +66,8 @@ export interface LossDay {
   date: string;
   /** O gün çalışanların anahtarları; bilinmiyorsa null */
   workers: readonly string[] | null;
-  /** Kaynağı: LafPOS'un çalışan listesi ya da Vardiya planı */
-  workersFrom?: "lafpos" | "vardiya";
+  /** Kaynağı: AsilPOS'un çalışan listesi ya da Vardiya planı */
+  workersFrom?: "asilpos" | "vardiya";
   /** Günün değerleri (TL); bilinmeyen null (iptal ModPOS'tan gelmez) */
   values: Partial<Record<LossMetric, number | null>>;
 }
@@ -90,7 +90,7 @@ export interface CashBranchSummary {
   branchId: string;
   reports: number;
   mean: number | null;
-  /** Kişisi olmayan rapor (LafPOS'un otomatik raporu) */
+  /** Kişisi olmayan rapor (AsilPOS'un otomatik raporu) */
   unknown: number;
   unknownTotal: number;
 }
@@ -127,7 +127,7 @@ export interface DayBranchSummary {
   branchId: string;
   /** Çalışanı bilinen gün, kaynağına göre */
   days: number;
-  lafposDays: number;
+  asilposDays: number;
   vardiyaDays: number;
   /** Çalışanı bilinmeyen gün */
   unknownDays: number;
@@ -314,7 +314,7 @@ export function dayAssociation(days: readonly LossDay[], names: ReadonlyMap<stri
     summaries.push({
       branchId: b,
       days: known.length,
-      lafposDays: known.filter((d) => d.workersFrom === "lafpos").length,
+      asilposDays: known.filter((d) => d.workersFrom === "asilpos").length,
       vardiyaDays: known.filter((d) => d.workersFrom === "vardiya").length,
       unknownDays: list.length - known.length,
       missingMetrics: METRICS.filter((m) => !list.some((d) => typeof d.values[m] === "number")),
@@ -357,7 +357,7 @@ export function lossSummary(input: {
   };
 }
 
-/** LafPOS'un çalışan kimliği ("s:<personel>") → kişinin anahtarı: bağlı hesap "u:<id>", Vardiya adı "n:…", yoksa kendisi */
+/** AsilPOS'un çalışan kimliği ("s:<personel>") → kişinin anahtarı: bağlı hesap "u:<id>", Vardiya adı "n:…", yoksa kendisi */
 export function staffPersonKey(staff: { id: number; userId: number | null; personRef: string | null }): string {
   if (staff.userId) return `u:${staff.userId}`;
   if (staff.personRef && /^n:./.test(staff.personRef)) return staff.personRef;

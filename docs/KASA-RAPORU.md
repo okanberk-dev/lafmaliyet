@@ -17,16 +17,16 @@ görünür ([BUGUN.md](BUGUN.md)).
 
 ### Ekranın düzeni (telefon önce)
 
-Sahibin isteği ve ekran incelemesi (24 Kasım 2026): personelin boş formu iPhone'da 6,7, yöneticinin LafPOS'tan dolu
-formu 12,6 ekrandı. Kurallar aynı kaldı (kör kasa, yazarkasa karşılaştırması, kapalı gün, geç rapor, LafPOS günü),
+Sahibin isteği ve ekran incelemesi (24 Kasım 2026): personelin boş formu iPhone'da 6,7, yöneticinin AsilPOS'tan dolu
+formu 12,6 ekrandı. Kurallar aynı kaldı (kör kasa, yazarkasa karşılaştırması, kapalı gün, geç rapor, AsilPOS günü),
 yalnız düzen ve metin sadeleşti (`src/app/panel/kasa/cash-form.tsx`, `page.tsx`):
 
 - **Sıra.** ModPOS gününde yeni raporda: Gün içinde kasadan çıkanlar, **Zayi & ikram** (tek satır, formdan önce: metni
   "raporu göndermeden ekleyin" der), **Fiş fotoğrafları**, ModPOS Z, Kasa (nakit), Yazarkasa Z, Sonuç. Gönderilmiş
-  raporda rapor kartı en üstte. LafPOS gününde personelin tek işi olan **Gün sonu fotoğrafı** kartı en üstte;
+  raporda rapor kartı en üstte. AsilPOS gününde personelin tek işi olan **Gün sonu fotoğrafı** kartı en üstte;
   yöneticide de formdan önce (Yazarkasa kartı fotoğrafın o karttan eklendiğini söyler).
 - **Fiş fotoğrafları tek kartta.** ModPOS Z'sinin ve yazarkasa Z'sinin seçicisi formun başında, aynı kartta iki
-  bölüm. LafPOS gününde ModPOS Z bölümü yok; gün sonu geldiyse yazarkasa fişi yalnız **Gün sonu fotoğrafı** kartından
+  bölüm. AsilPOS gününde ModPOS Z bölümü yok; gün sonu geldiyse yazarkasa fişi yalnız **Gün sonu fotoğrafı** kartından
   eklenir (formda ikinci seçici çizilmez).
 - **Katlı alanlar.** ModPOS Z'nin yemek kartı, online, diğer, ödenmez / ikram, indirim, fiş sayısı ve Z no'su
   **Diğer ödemeler ve Z ayrıntısı** altında; başlıkta dolu olanların özeti ("Z no 11 · İndirim 90 ₺ · 26 fiş").
@@ -36,8 +36,8 @@ yalnız düzen ve metin sadeleşti (`src/app/panel/kasa/cash-form.tsx`, `page.ts
 - **Tek satırlık ipuçları.** "isteğe bağlı" ModPOS alanlarında alanın içinde (yer tutucu); fişteki satırın adı ("NET
   SATIŞ / TOPLAM satırı", "K.KARTI satırı") yazarkasa alanının yer tutucusunda. Yazarkasanın Günlük toplam ve Kredi
   kartı alanlarında doğruluk ipucu alanın altında kısa satır ("İsteğe bağlı; en büyük rakam (KÜMÜLATİF) değil",
-  "İsteğe bağlı; altındaki banka satırları değil"): yer tutucu alan dolunca kaybolur. LafPOS'tan dolan alanlara rozet basılmaz
-  (bant söyler); fotoğraftan dolan alan "Fotoğraftan" rozetini taşır, LafPOS'tan farklı olan turuncu kalır.
+  "İsteğe bağlı; altındaki banka satırları değil"): yer tutucu alan dolunca kaybolur. AsilPOS'tan dolan alanlara rozet basılmaz
+  (bant söyler); fotoğraftan dolan alan "Fotoğraftan" rozetini taşır, AsilPOS'tan farklı olan turuncu kalır.
 - **Kasa (nakit).** "Neye çıktı" fişlerden gelen kalemlerle yetinildiğinde gizli (adları kendiliğinden yazılır); elle
   yazılan çıkışta, adlar değiştirildiyse ya da fişlerin toplamının üstüne elle tutar eklendiyse görünür; fişlerden
   fazlası varken personelde zorunlu ([fişsiz çıkış](#gün-içinde-kasadan-çıkanlar)). Sayımdan sonraki alanın adı **Sayımdan sonra teslim** ("Gün içinde çıkan"ın ipucunda "teslim" geçmez).
@@ -62,23 +62,23 @@ yalnız düzen ve metin sadeleşti (`src/app/panel/kasa/cash-form.tsx`, `page.ts
   başka güne ya da şubeye geçerken "… bu taslak silinir" ve kırmızı **Taslağı silip geç**; Zayi & ikram, Bugün gibi başka
   bir sayfaya giderken "Bu cihazda kalır; sayfaya dönünce geri yükleyebilirsiniz" ve nötr **Sayfadan çık**. Yöneticinin
   Onaylar'daki "Düzeltip onayla"sı taslak tutmaz; düzenlenemeyen raporda (kör kasa, kilitli gün) taslak yok.
-- **Gönderilmiş rapor.** Kartın üstünde fark (bir kez; başlıktaki rozet kalktı; LafPOS gününde personele fark yerine
-  "Gün sonu alındı", açılış ve sayılan da yok: [kör kasa](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026)), e-posta durumu ve eylemler; satır
+- **Gönderilmiş rapor.** Kartın üstünde fark (bir kez; başlıktaki rozet kalktı; AsilPOS gününde personele fark yerine
+  "Gün sonu alındı", açılış ve sayılan da yok: [kör kasa](ASILPOS.md#gün-sonu-otomasyonu-22-kasım-2026)), e-posta durumu ve eylemler; satır
   satır döküm **Rapor dökümü** altında katlı ("Z 18.450 ₺ · nakit 6.200 ₺ · sayılan 6.400 ₺"). Açılış ya da ertesi
   günün açılışı devirle tutmuyorsa ya da yöneticinin dikkat etmesi gereken bir şey varsa açık gelir ve özet onu söyler
   ("… · Z tutmuyor · Yazarkasa tutmuyor"): ay listesinin rozetleriyle aynı kural (`src/lib/cash-attention.ts`;
-  fotoğraftan ya da LafPOS'tan farklı, fişsiz çıkış, Z tutmuyor, kart farkı, yazarkasa tutmuyor).
-- **Yöneticinin gün görünümü** (`?gun=`): ayın listesi ve rapor ayarları yok (**Günden güne** ile dönülür). LafPOS
-  gününün Pavo kart karşılaştırması ve LafPOS gün sonu dökümü **Ayrıntı** altında katlı; Pavo farkı varsa,
-  karşılaştırılamadıysa ya da LafPOS'un dökümünde hassas işlem varsa (günü düzeltti, ödeme iptali) açık gelir ve özet
-  söyler ("… · LafPOS düzeltti · 2 ödeme iptali").
-- **Dil.** Aynı cihaz tek adla: **Yazarkasa Z raporu** (fotoğrafın türü "Yazarkasa Z"). Düz Türkçe: "Fiş LafPOS'la
-  aynı / LafPOS'tan farklı", "Fiş fotoğrafı yok", "Açılış devirden farklı" (ok ve ≠ işaretleri yerine).
+  fotoğraftan ya da AsilPOS'tan farklı, fişsiz çıkış, Z tutmuyor, kart farkı, yazarkasa tutmuyor).
+- **Yöneticinin gün görünümü** (`?gun=`): ayın listesi ve rapor ayarları yok (**Günden güne** ile dönülür). AsilPOS
+  gününün Pavo kart karşılaştırması ve AsilPOS gün sonu dökümü **Ayrıntı** altında katlı; Pavo farkı varsa,
+  karşılaştırılamadıysa ya da AsilPOS'un dökümünde hassas işlem varsa (günü düzeltti, ödeme iptali) açık gelir ve özet
+  söyler ("… · AsilPOS düzeltti · 2 ödeme iptali").
+- **Dil.** Aynı cihaz tek adla: **Yazarkasa Z raporu** (fotoğrafın türü "Yazarkasa Z"). Düz Türkçe: "Fiş AsilPOS'la
+  aynı / AsilPOS'tan farklı", "Fiş fotoğrafı yok", "Açılış devirden farklı" (ok ve ≠ işaretleri yerine).
 
 Yazarken hesaplananlar:
 
 - **Olması gereken nakit** = açılış + nakit satış + gün içinde giren − gün içinde çıkan (`computeCash`; form, döküm,
-  e-posta, WhatsApp, düzeltme ve geç rapor istekleri, LafPOS'tan doldur ve Claude bağlantısı aynı hesabı kullanır)
+  e-posta, WhatsApp, düzeltme ve geç rapor istekleri, AsilPOS'tan doldur ve Claude bağlantısı aynı hesabı kullanır)
 - **Kasa farkı** = sayılan − olması gereken. 1 ₺'nin altı "tutuyor", eksi **eksik** (kırmızı), artı **fazla** (turuncu).
 - **Ertesi güne devir** = sayılan − teslim edilen. Ertesi günün açılışı buradan dolar.
 - **Kart farkı** = yazarkasanın kredi kartı (yoksa banka gün sonu) − ModPOS kart. Yazarkasa bölümünden önceki
@@ -89,7 +89,7 @@ Yazarken hesaplananlar:
   ModPOS ile yazarkasanın toplam, nakit, yemek kartı ve banka gün sonu karşılaştırması yalnız yöneticide
   ([Yazarkasa Z raporu](#yazarkasa-z-raporu)).
 
-**Gün içinde kasaya giren** çoğu gün yoktur: alan tutarı varken (kayıtlı raporda da), LafPOS'tan dolunca ya da
+**Gün içinde kasaya giren** çoğu gün yoktur: alan tutarı varken (kayıtlı raporda da), AsilPOS'tan dolunca ya da
 **Kasaya giren ekle**'ye basınca görünür (ipucu: "Satış dışı: bozuk para, tahsilat, nakit bahşiş").
 Varsa dökümde, e-postada ve WhatsApp'ta nakit satışın altında "+ Gün içinde giren" satırıdır. Gün içinde çıkan gibi
 kasa alanıdır: ertesi gün değişirse onaya gider ([Sonradan düzeltme](#sonradan-düzeltme-ve-silme-isteği)). Alan 26 Ekim
@@ -115,7 +115,7 @@ birden çok kasa açıkken e-postanın konusu ve başlığı, WhatsApp metninin 
 
 Yöneticinin rapor penceresi sadedir (`src/app/panel/kasa/report-sheet.tsx`): üç rakam (toplam satış, sayılan nakit,
 kasa), tek **Kontrol** listesi (`src/lib/cash-report-checks.ts` `reportChecks`: e-posta hatası, ödeme türleri ↔ Z,
-fişsiz çıkış, açılış ↔ devir, kart / yazarkasa, ModPOS API, LafPOS ve fotoğraftan farklı yazılanlar; her biri tek satır, yoksa
+fişsiz çıkış, açılış ↔ devir, kart / yazarkasa, ModPOS API, AsilPOS ve fotoğraftan farklı yazılanlar; her biri tek satır, yoksa
 "Kontroller tamam"), satış ve nakit kasa dökümü (satır içi uyarı yok), not ve kapalı **Ayrıntılar** (kart ve
 yazarkasa, fotoğraflar, değişiklikler). Personelin kayıtlı rapor kartı ve Onaylar'daki döküm aynı kalır.
 
@@ -173,10 +173,10 @@ yazarkasa Z'si okunurken ModPOS Z'sinin fotoğrafı çekilebilir; **Raporu gönd
   zaman kendiliğinden yazılmaz. Z no önceki yazarkasa Z'siyle aynıysa okumanın bütünü durur:
   "Bu Z no (0187) 21 Ekim raporunda da var; dünkü Z raporu olabilir." Aynı şeritte banka gün sonu da basılıysa **Banka
   gün sonu** da okunur ("Aynı fişte banka gün sonu da var: …"); yalnız banka gün sonu fişi çekilirse yalnız o alan:
-  "Bu banka gün sonu fişi; yalnız Banka gün sonu okundu. Yazarkasanın Z raporunu da çekin." LafPOS gününde ayrı mali Z
-  basmayan cihazda (Pavo) bunun yerine "Banka gün sonu okundu; yazarkasa rakamları LafPOS'tan gelir." LafPOS'un kendi
+  "Bu banka gün sonu fişi; yalnız Banka gün sonu okundu. Yazarkasanın Z raporunu da çekin." AsilPOS gününde ayrı mali Z
+  basmayan cihazda (Pavo) bunun yerine "Banka gün sonu okundu; yazarkasa rakamları AsilPOS'tan gelir." AsilPOS'un kendi
   gün sonu kâğıdı ("GÜN SONU · Z n", "BANKA GÜN SONU · PAVO") Z sayılmaz, yalnız banka kısmı okunur (FOTOGRAF.md ›
-  LafPOS'un kendi gün sonu kâğıdı). Doldurma kapısı kapalıyken
+  AsilPOS'un kendi gün sonu kâğıdı). Doldurma kapısı kapalıyken
   alan dolmaz, öneri olur; özet satırı "Banka gün sonu fişi okundu; turuncu alanı fişle karşılaştırıp yazın." (Z raporu
   demez).
 - İki banka gün sonu fişi varsa ikincisinde **Toplama ekle** ya da **Yerine yaz** sorulur. İkinci fişin rakamı net
@@ -192,16 +192,16 @@ yazarkasa Z'si okunurken ModPOS Z'sinin fotoğrafı çekilebilir; **Raporu gönd
 
 Ayrıntı (depo, kim görür, saklama, maliyet, KVKK): [FOTOGRAF.md](FOTOGRAF.md).
 
-**LafPOS günü** (yalnız LafPOS'a geçiş gününden itibaren, Ayarlar › LafPOS (kasa); boşken kasa ModPOS, form ve metinler
-bugünkü gibi; denetim B09): Z bölümünün adı **LafPOS gün sonu (Z)**, ModPOS Z fotoğrafı çekilmez (Banka POS Z bölümü
-kalır). LafPOS günün sonunu gönderdiyse yeni form açılırken Z ve kasa rakamları fotoğrafınkiyle aynı kuralla yalnız
-boş alanlara kendiliğinden yazılır; Düzenle'de (ve düzeltme önerisinde) form yalnız karşılaştırır, LafPOS'tan farklı
-olanlar turuncu ve öneri olarak durur; bant **LafPOS'tan doldur** ile boş alanları doldurur; hiçbir şey kaydedilmez. Kayıtlı rapor, günden güne görünüm, e-posta ve WhatsApp "LafPOS'tan farklı yazılan"ı gösterir
-([LAFPOS.md](LAFPOS.md) › Kasa raporu). LafPOS gününde metinler de günün kasasıyla yazılır (denetim B11): sayfanın
-açıklaması ve Bugün'ün / zilin akşam satırı "LafPOS'ta Günü kapat", yazarkasa karşılaştırmaları ("Kart: yazarkasa ile
-LafPOS aynı.", "LafPOS kart") form, kayıtlı görünüm, onay kartı, e-posta ve WhatsApp'ta; kapalı gün kartının ipucu "o
-günün LafPOS / banka POS'una bakın". Yazarkasa bölümüne çekilen kasa çıktısına "ModPOS bölümüne okut" önerilmez
-([LAFPOS.md](LAFPOS.md) › Metinler ve kasadaki fiyatlar).
+**AsilPOS günü** (yalnız AsilPOS'a geçiş gününden itibaren, Ayarlar › AsilPOS (kasa); boşken kasa ModPOS, form ve metinler
+bugünkü gibi; denetim B09): Z bölümünün adı **AsilPOS gün sonu (Z)**, ModPOS Z fotoğrafı çekilmez (Banka POS Z bölümü
+kalır). AsilPOS günün sonunu gönderdiyse yeni form açılırken Z ve kasa rakamları fotoğrafınkiyle aynı kuralla yalnız
+boş alanlara kendiliğinden yazılır; Düzenle'de (ve düzeltme önerisinde) form yalnız karşılaştırır, AsilPOS'tan farklı
+olanlar turuncu ve öneri olarak durur; bant **AsilPOS'tan doldur** ile boş alanları doldurur; hiçbir şey kaydedilmez. Kayıtlı rapor, günden güne görünüm, e-posta ve WhatsApp "AsilPOS'tan farklı yazılan"ı gösterir
+([ASILPOS.md](ASILPOS.md) › Kasa raporu). AsilPOS gününde metinler de günün kasasıyla yazılır (denetim B11): sayfanın
+açıklaması ve Bugün'ün / zilin akşam satırı "AsilPOS'ta Günü kapat", yazarkasa karşılaştırmaları ("Kart: yazarkasa ile
+AsilPOS aynı.", "AsilPOS kart") form, kayıtlı görünüm, onay kartı, e-posta ve WhatsApp'ta; kapalı gün kartının ipucu "o
+günün AsilPOS / banka POS'una bakın". Yazarkasa bölümüne çekilen kasa çıktısına "ModPOS bölümüne okut" önerilmez
+([ASILPOS.md](ASILPOS.md) › Metinler ve kasadaki fiyatlar).
 
 ## Yazarkasa Z raporu
 
@@ -338,28 +338,28 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
     yazılan adları ("Migros, buz") fişsiz kısmı açıklamaz, not onlardan farklı olmalı. Kural yeni raporda ve çıkış ya da
     açıklaması değişince uygulanır (dokunulmayan eski satır yeniden sorulmaz); düzeltme önerisi ve geç rapor da aynı
     kuralla (geç rapor formunda günün satırları olmadığı için kararı sunucu verir). Yönetici serbest.
-  - Yöneticiye her yerde aynı hesapla (`src/lib/lafpos/prefill.ts` › `unreceiptedCashOut`; onay kartlarındaki "Fişsiz
+  - Yöneticiye her yerde aynı hesapla (`src/lib/asilpos/prefill.ts` › `unreceiptedCashOut`; onay kartlarındaki "Fişsiz
     çıkış" da bu): rapor penceresinin **Kontrol** listesinde "Fişsiz çıkış: 500 ₺ (kasadan çıkan satırlarından fazla);
     neye çıktı: …", ay listesinde ve tek gün görünümünün döküm özetinde **Fişsiz çıkış: 500 ₺** rozeti, kasa
     e-postasında kasanın altında turuncu kutu (metin sürümünde satır), zilde dünün ve bugünün raporu için "Fişsiz çıkış:
     500 ₺" (gövdede gün, çıkan ve satırların toplamı, neye çıktığı, gönderen; rapor düzeltilince yeniden okunmamış olur).
-    Personelin WhatsApp metninde yok. LafPOS gününde farkın Kasadan çıkanlar'a girilmemiş LafPOS teslimi kadarı fişsiz
+    Personelin WhatsApp metninde yok. AsilPOS gününde farkın Kasadan çıkanlar'a girilmemiş AsilPOS teslimi kadarı fişsiz
     sayılmaz (aşağıda, E-35).
   - **Ne zamandan** (inceleme, 25 Kasım 2026): yalnız 23 Ekim 2026'dan (`UNRECEIPTED_SINCE`; Kasadan çıkanlar o gün
     geldi) itibaren. Önceki günlerde satır girilemezdi; eski aylar rozetle dolmaz.
-  - **LafPOS gün sonu gelmeden** girilmiş raporda (yönetici LafPOS gününde erken girdi) hesaplanmaz: LafPOS'un
-    harcamaları Kasadan çıkanlar'a gün sonuyla düşer, o arada her çıkış fişsiz görünürdü (`lafposMovesPending`; zil,
+  - **AsilPOS gün sonu gelmeden** girilmiş raporda (yönetici AsilPOS gününde erken girdi) hesaplanmaz: AsilPOS'un
+    harcamaları Kasadan çıkanlar'a gün sonuyla düşer, o arada her çıkış fişsiz görünürdü (`asilposMovesPending`; zil,
     Kontrol, ay listesi, e-posta). Gün sonu gelince hesaplanır.
-- **LafPOS gününde de kaynak bu satırlardır** (denetim E-35): Aylık harcamalar ve tedarikçi ödemeleri buradan
-  okunur. **Sahip sorusu 5 yanıtlandı (23 Kasım 2026, Faz 3):** kasadan çıkan para LafPOS'ta girilir, harcama ve
-  teslim gün sonunda buraya satır satır gelir ("LafPOS" rozetli; tutar, tür ve gün LafPOS'tan, satır silinmez; fiş
+- **AsilPOS gününde de kaynak bu satırlardır** (denetim E-35): Aylık harcamalar ve tedarikçi ödemeleri buradan
+  okunur. **Sahip sorusu 5 yanıtlandı (23 Kasım 2026, Faz 3):** kasadan çıkan para AsilPOS'ta girilir, harcama ve
+  teslim gün sonunda buraya satır satır gelir ("AsilPOS" rozetli; tutar, tür ve gün AsilPOS'tan, satır silinmez; fiş
   fotoğrafı, yer, belge ve kategori buradan eklenir; elle girilmiş eşi bire bir sahiplenilir, iki kez sayılmaz;
-  [LAFPOS.md](LAFPOS.md) › Kasadan çıkanlar LafPOS'tan). Eski LafPOS'un (yalnız toplam yollayan) gününde ve LafPOS'ta
-  olmayan elle satırda: LafPOS'un harcama + teslimi tutmuyorsa formda bilgi satırı:
-  "LafPOS'ta harcama 450 ₺ + teslim 5.000 ₺; Kasadan çıkanlar'da 450 ₺. Teslimi Kasadan çıkanlar'a "Teslim" olarak
-  ekleyin; Gün içinde çıkan kendiliğinden 5.450 ₺ olur." Fişler varken alanın altında "LafPOS'ta 5.450 ₺" görünür ama
-  **LafPOS'takini yaz** yoktur (fişsiz çıkış olurdu). Geç rapor ve düzeltme kartında fişlerden fazlası LafPOS'taki teslim
-  kadarsa "fişsiz" sayılmaz: "Fark LafPOS'taki teslim (5.000 ₺), fişsiz değil".
+  [ASILPOS.md](ASILPOS.md) › Kasadan çıkanlar AsilPOS'tan). Eski AsilPOS'un (yalnız toplam yollayan) gününde ve AsilPOS'ta
+  olmayan elle satırda: AsilPOS'un harcama + teslimi tutmuyorsa formda bilgi satırı:
+  "AsilPOS'ta harcama 450 ₺ + teslim 5.000 ₺; Kasadan çıkanlar'da 450 ₺. Teslimi Kasadan çıkanlar'a "Teslim" olarak
+  ekleyin; Gün içinde çıkan kendiliğinden 5.450 ₺ olur." Fişler varken alanın altında "AsilPOS'ta 5.450 ₺" görünür ama
+  **AsilPOS'takini yaz** yoktur (fişsiz çıkış olurdu). Geç rapor ve düzeltme kartında fişlerden fazlası AsilPOS'taki teslim
+  kadarsa "fişsiz" sayılmaz: "Fark AsilPOS'taki teslim (5.000 ₺), fişsiz değil".
 - Satıra dokununca düzeltilir ya da silinir (Geri al 8 saniye; satır harcama kaydıyla birlikte, olduğu gibi ve eski
   numarasıyla geri gelir). Geri al'ın taşıdığı kopya sunucunun mühürüdür (`src/lib/cash-outs.ts` › `cashOutUndoJson`):
   yalnız silen kişi, 15 dakika içinde ve bir kez kullanır; istemcinin yazdığı bir kopya kabul edilmez. Gün personele
@@ -368,7 +368,9 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
 - Personelin düzeltmesi Aylık harcamalar kaydını açmaz ve silmez: yöneticinin oradan sildiği kayıt geri gelmez,
   faturaya açtığı kayıt kalır; tutar ve tarih kayda yansır, yöneticinin yazdığı açıklama, ödeme şekli ve not kalır.
   Kaydı yöneticinin kategorisindeki (maaş, kira gibi) satırın her değişikliği ve silinmesi yöneticinin onayıyla
-  (aşağıda); kategoriyi yalnız yönetici değiştirir.
+  (aşağıda); kategoriyi yalnız yönetici değiştirir. Müdür bu satırı düzeltemez ve silemez, isteğine de karar vermez:
+  Kasa'da ona kilitli ve yalnız türü ve tutarıyla görünür ("Harcama"; yeri, açıklaması, fişi ve fotoğrafı ne satırda,
+  ne ay penceresinde, ne WhatsApp metninde; [ROLLER.md](ROLLER.md) › Kararlar).
 - Aylık harcamalar'da bu kayıtlarda fotoğraf simgesi ve **Kasadan** rozeti görünür; tutarı ve tarihi Kasa raporu'nda
   düzeltilir. Aylık harcamalar'dan silinen kayıt kasa satırını silmez.
 
@@ -424,12 +426,14 @@ kategorisindeki satır (maaş, avans) kârı değiştirir. Bunlar yöneticinin o
 - Kapanmış güne kasadan çıkan eklenmesini yöneticinin kategorisi seçilerek istemek olmaz: kategori personelin
   kategorilerinden biridir, yönetici onayda değiştirebilir.
 - **Onaylar › Kasa** kartı: satır ve fişi, düzeltmede değişecekler ve bağlı gider; bağlam olarak günün kasa farkı, o
-  günün bütün satırları ("satırlar onaydan sonra …"), olası tekrar (aynı tutar, ±1 gün), kırmızı işaretler (tutar
-  günün açığına ±1 ₺ eşit; kapanmış güne teslim ya da fişsiz çıkış) ve gider ayı bu ay değilse uyarı. Eklemede ve
-  düzeltmede "Aylık harcamalar'a da yaz" ve kategori (bütün etkin kategoriler). İstekten sonra satır, fişi ya da bağlı
-  gider kaydı değiştiyse amber "İstekten sonra değişti" ve **Yine de uygula**. Fiş belgeli işaretlenen satırın fotoğrafı
-  yoksa onay reddedilir. Onay satırı isteyenin adıyla yazar ve kasa raporunu **asla** değiştirmez: rapordaki fark kartta
-  görünür, rapor normal yoldan düzeltilir.
+  günün bütün satırları ("satırlar onaydan sonra …"), olası tekrar (aynı tutar, ±1 gün), kırmızı işaretler (tutar günün
+  açığına ±1 ₺ eşit; kapanmış güne teslim ya da fişsiz çıkış) ve gider ayı bu ay değilse uyarı. Eklemede ve düzeltmede
+  "Aylık harcamalar'a da yaz" ve kategori (bütün etkin kategoriler; müdüre personelinkiler). Yöneticinin kategorisindeki
+  satırın isteğinde müdürün kartı karar düğmesi çizmez: "isteğe yönetici karar verir"; kart ona satırı ve öneriyi yalnız
+  türü ve tutarıyla gösterir (yeri, açıklaması, fişi ve personelin notu yok). İstekten sonra satır, fişi ya da
+  bağlı gider kaydı değiştiyse amber "İstekten sonra değişti" ve **Yine de uygula**. Fiş belgeli işaretlenen satırın
+  fotoğrafı yoksa onay reddedilir. Onay satırı isteyenin adıyla yazar ve kasa raporunu **asla** değiştirmez: rapordaki
+  fark kartta görünür, rapor normal yoldan düzeltilir.
 - **Fotoğraf kaldırma kartı:** küçük resim, okuma farkları ve neden. Onayda okuma farkı işlem geçmişine yazılır
   ("Fotoğraf rapordan çıkarıldı · … · okuma: …"), fotoğrafın rapor bağı silinir ve fotoğraf 30 gün saklanır; okumanın
   kendisi kalır. Yönetici fotoğrafı doğrudan silerse bekleyen kaldırma isteği kapanır.
@@ -452,10 +456,10 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
   Pencere: "Yönetici onaylayınca … için eksik kasa raporu ve kontrol listesi uyarıları kalkar. Kafe açıktıysa bunun yerine
   raporu girin.", "Neden? (isteğe bağlı)" (60 karakter), **Yöneticiye gönder**. Düğme yalnız dün için, o günün geri
   çekilmemiş bildirimi yokken ve kişinin son 30 günde 3'ten az bildirimi varken görünür. Bildirim geri alındıysa ya da
-  kapandıysa (yönetici işareti kaldırdı ya da değiştirdi, LafPOS'un gün sonu geldi) düğme yerine nedeni yazar:
+  kapandıysa (yönetici işareti kaldırdı ya da değiştirdi, AsilPOS'un gün sonu geldi) düğme yerine nedeni yazar:
   "Kapalı gün bildirimi geri alındı: Yönetici kapalı işaretini kaldırdı. Raporu girin." (denetim SB-X1; aynı gün
   yeniden bildirilemez). O gün panelde iz
-  varsa (kasa raporu, LafPOS'un satışlı gün sonu, kasadan çıkan, zayi / ikram, açılan kontrol listesi, karaoke,
+  varsa (kasa raporu, AsilPOS'un satışlı gün sonu, kasadan çıkan, zayi / ikram, açılan kontrol listesi, karaoke,
   personelin işlem geçmişi kaydı, Z no boşluğu) istek açılmaz: "O gün panelde kayıt var; kafe açık görünüyor. Raporu girin ya da yöneticiye söyleyin."
   Bekleyen durumda "Kapalıydı dediniz · onay bekliyor" ve **Geri çek** (kişi başına günde bir); form yerinde kalır.
 - **Kanıt** (`src/server/closed-days.ts` › `closedDayEvidence`, canlı): iş günü penceresi [D 05:00, D+1 05:00).
@@ -467,9 +471,9 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
   olur (Tuzla'nın Z'si Marina'nınkiyle, Marina'nın açılışı Tuzla'nın devriyle karşılaştırılmaz); bir şubede kırmızı
   boşluk kanıtı kırmızı yapar (denetim 21 Kasım #1). Sitenin o günkü
   kafe, elle girilen ve kasada ödenen sipariş sayıları yöneticinin kartında ayrı bir Suspense'te sorulur (tutar yok;
-  mağaza kolisi yalnız bilgi; site okunamazsa onayı kapatmaz). **LafPOS'un gün sonu** (denetim E-36; yalnız LafPOS
-  günlerinde, geçiş günü boşken ya da önceki günde hiç okunmaz): satışlıysa kırmızı "LafPOS'ta Z 14 · 63 fiş" (tutar
-  yok), satışsızsa uyarı "LafPOS'ta Z 15 alınmış, satış yok".
+  mağaza kolisi yalnız bilgi; site okunamazsa onayı kapatmaz). **AsilPOS'un gün sonu** (denetim E-36; yalnız AsilPOS
+  günlerinde, geçiş günü boşken ya da önceki günde hiç okunmaz): satışlıysa kırmızı "AsilPOS'ta Z 14 · 63 fiş" (tutar
+  yok), satışsızsa uyarı "AsilPOS'ta Z 15 alınmış, satış yok".
 - **Onaylar › Kasa › Kapalı gün** kartı: kanıt listesi (kırmızı varsa **Onayla** kapalı), üst üste günler "3 gün üst
   üste kapalı bildirimi", ipucu "Onaylamadan önce o günün ModPOS / banka POS'una bakın; satış varsa reddedin.", not
   "Not (bütün personele görünür; tutar yazmayın)". Onayda kanıt yeniden sayılır; satır onaylayan yöneticinin adıyla
@@ -484,10 +488,10 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
   günlük kapalı satırı silinir ve onu onaylayan bildirim "geri alındı" olur (yöneticinin zilinde "Kapalı gün işareti
   kaldırıldı (kanıt geldi)"); çok günlük aralıkta yalnız zil. Ertesi günün raporu gelince, aynı şubenin önceki raporuyla
   arasında Z no boşluğu varsa işaret kalkar; açılış farkı varsa yalnız zil (öteki şubenin raporu işareti kaldırmaz,
-  zile yazmaz). **LafPOS'un satışlı gün sonu** geldiğinde de aynısı (`onLafposDaySaved`, gün
-  sonunun yazımıyla aynı işlemde, günün kapalı gün kilidi altında): bekleyen bildirim "LafPOS gün sonu geldi (Z 14 · 63
-  fiş)" notuyla kapanır, tek günlük işaret kalkar. Yalnız LafPOS gününde; geçiş günü boşken (deneme günü) hiçbir kayıt
-  değişmez. LafPOS'a geçişte Z numarası 1'den başlar: Z no boşluğu kuralı eksi boşlukta zaten susar.
+  zile yazmaz). **AsilPOS'un satışlı gün sonu** geldiğinde de aynısı (`onAsilposDaySaved`, gün
+  sonunun yazımıyla aynı işlemde, günün kapalı gün kilidi altında): bekleyen bildirim "AsilPOS gün sonu geldi (Z 14 · 63
+  fiş)" notuyla kapanır, tek günlük işaret kalkar. Yalnız AsilPOS gününde; geçiş günü boşken (deneme günü) hiçbir kayıt
+  değişmez. AsilPOS'a geçişte Z numarası 1'den başlar: Z no boşluğu kuralı eksi boşlukta zaten susar.
 - **Bugün:** personelin `kasa-dun` satırı bekleyende "Onayda", onaylandıysa yok, reddedildiyse "Yönetici bildirimi
   reddetti{: not}. Raporu bugün girin."; yöneticinin `kasa-dun` ve `liste-dun` satırları "Onaya bak". Zil: yöneticide
   "Kapalı gün onayı bekliyor" ve "Dünkü kasa raporu girilmedi · Personel: kapalıydık dedi (onay bekliyor)"; personelde
@@ -510,36 +514,36 @@ Formun altında, site bağlıysa o günün online satışı tek satır olarak g�
 
 Uygulama ve web siparişleri (kafe + mağaza) ile ön ödemeli karaoke, KDV dahil, iadeler düşülmüş. Parası sanal POS'tan
 alındığı için **kasadan geçmez**: kasa farkına, Z kontrolüne ve devre girmez; ModPOS'un "Online" ödemesi (Yemeksepeti,
-Getir…) ayrıdır. Personel karaoke tutarını görmez. Rapor açılınca, gönderilince ve e-postası gönderilince siteden
-sorulur (saklanmaz); site düşük ya da yavaşsa (8 saniye) satır görünmez, form ve gönderim hiç beklemez. Sitenin günü
-gece yarısında biter (kasanınki 05:00'te). Satır kasanın şubesinindir (site 21 Kasım'dan beri şubeli): Tuzla'nın
-kasası `&branch=tuzla`, Marina'nınki `&branch=marina` ile sorar; Marina'nın masa siparişi Tuzla'nın satırına yazılmaz.
-Ayrıntı: [SITE-SATIS.md](SITE-SATIS.md).
+Getir…) ayrıdır. Personel ve müdür karaoke tutarını görmez (yalnız online toplamı; `karaoke.tutar`, [ROLLER.md](ROLLER.md)).
+Rapor açılınca, gönderilince ve e-postası gönderilince siteden sorulur (saklanmaz); site düşük ya da yavaşsa (8 saniye)
+satır görünmez, form ve gönderim hiç beklemez. Sitenin günü gece yarısında biter (kasanınki 05:00'te). Satır kasanın
+şubesinindir (site 21 Kasım'dan beri şubeli): Tuzla'nın kasası `&branch=tuzla`, Marina'nınki `&branch=marina` ile
+sorar; Marina'nın masa siparişi Tuzla'nın satırına yazılmaz. Ayrıntı: [SITE-SATIS.md](SITE-SATIS.md).
 
-**Marina (LafPOS) gün sonu:** geçiş gününden itibaren Marina'nın raporu LafPOS'un gün sonu gelince kendiliğinden yazılır
-(gönderen "LafPOS (otomatik)"; sayım yoksa rapor yazılmaz) ve gün sonu e-postası gider. **Gün sonu tam (24 Kasım 2026):**
-Banka POS Pavo'nun kendi gün sonlarından (günün bütün batch'lerinin toplamı), yazarkasa alanları LafPOS'un cihaz
-belgelerinden kendiliğinden yazılır; eski "Uydurma değer yok: Banka POS ve yazarkasa alanları boş kalır" kuralı LafPOS
+**Marina (AsilPOS) gün sonu:** geçiş gününden itibaren Marina'nın raporu AsilPOS'un gün sonu gelince kendiliğinden yazılır
+(gönderen "AsilPOS (otomatik)", veritabanında eski adıyla; sayım yoksa rapor yazılmaz) ve gün sonu e-postası gider. **Gün sonu tam (24 Kasım 2026):**
+Banka POS Pavo'nun kendi gün sonlarından (günün bütün batch'lerinin toplamı), yazarkasa alanları AsilPOS'un cihaz
+belgelerinden kendiliğinden yazılır; eski "Uydurma değer yok: Banka POS ve yazarkasa alanları boş kalır" kuralı AsilPOS
 günlerinde bunun yerine geçti (Tuzla / ModPOS günleri değişmedi). Cihazın rakamı yoksa (Pavo alınamadı ya da belirsiz,
 cihaz yok) alan boş kalır ve not tam nedenini yazar, "panelden ekleyin" demez. **Personelin tek işi gün sonu
-fotoğrafıdır:** rapor personelde salt okunur (Düzenle, silme isteği, WhatsApp ve metin yok; düzeltme LafPOS'ta), alt
-başlık "Rakamlar LafPOS'tan geldi; Pavo'dan gün sonu fişini (detaylı Z) alıp fotoğrafını ekleyin." ve "Gün sonu
+fotoğrafıdır:** rapor personelde salt okunur (Düzenle, silme isteği, WhatsApp ve metin yok; düzeltme AsilPOS'ta), alt
+başlık "Rakamlar AsilPOS'tan geldi; Pavo'dan gün sonu fişini (detaylı Z) alıp fotoğrafını ekleyin." ve "Gün sonu
 fotoğrafı" kartından tek fotoğraf eklenir: Pavo istenince detaylı Z basar (sahibin yanıtı, 24 Kasım 2026), banka gün sonu
 da Z'nin rakamları da aynı fişte (ayrı mali Z basan cihazda yazarkasa Z'si de); kayıt, sürüm, sayan ve onay yok, günden
-14 gün içinde. Fotoğrafın adı "Pavo gün sonu fişi". Fotoğraf hiçbir alanı yazmaz (LafPOS yazarkasa Z no göndermediyse
+14 gün içinde. Fotoğrafın adı "Pavo gün sonu fişi". Fotoğraf hiçbir alanı yazmaz (AsilPOS yazarkasa Z no göndermediyse
 okunan Z no boş alana yazılır, yöneticiye "fotoğraftan okundu"): okunuşu, batch'ler Banka POS'la, Z'nin rakamları (Z no,
 toplam, nakit, kart, yemek kartı / diğer, KDV) yazarkasa alanlarıyla karşılaştırılır; fark yalnız yöneticinin uyarısıdır
 (Kasa gün görünümü, zil, gün sonu e-postasında satır satır, ay satırının rozeti). Fotoğraf gün sonu e-postasından sonra
 Eklenen her gün sonu fotoğrafı için yöneticiye ayrı "Z raporu" e-postası gider, Z tutsa da ("Z raporu tutuyor"): durum,
-okunan rakamlar ve fotoğrafın kendisi ek olarak ([LAFPOS.md](LAFPOS.md) › Z raporu e-postası). Elle yazılan raporun
+okunan rakamlar ve fotoğrafın kendisi ek olarak ([ASILPOS.md](ASILPOS.md) › Z raporu e-postası). Elle yazılan raporun
 e-postasında fotoğraf okunup yazılanlarla tutuyorsa yeşil "✓ Z fotoğrafı okundu: yazılan rakamlarla tutuyor" satırı. Fotoğraf önce ucuz modelle, gerekirse bir kez güçlü modelle, yapay zekâ yoksa
 kodla (OCR) okunur; kodla okunan bir satır güvenle seçilmediyse ya da OCR okuyamadıysa "okunamadı — yönetici baksın"
 (rakam uydurulmaz; okuyan yöneticiye "Yapay zekâ" / "Kodla okundu" diye yazar; [FOTOGRAF.md](FOTOGRAF.md)). Elle girilen
 raporun formunu yalnız yapay zekâ okunuşu doldurur; kodla okunduysa ya da okunamadıysa form "rakamları elle yazın" der. Personel farkı görmez: eski "Fotoğraftan farklı
-yazılan" kutusu ve WhatsApp satırı LafPOS'un otomatik gününde personelden süzülür, notun yönetici yönergesi yerine "Banka
+yazılan" kutusu ve WhatsApp satırı AsilPOS'un otomatik gününde personelden süzülür, notun yönetici yönergesi yerine "Banka
 POS henüz gelmedi; yönetici ilgileniyor" yazar. Pavo'nun gün sonu alınamadıysa Banka POS boş kalır, föyde personelin
 yazdığı kart sayımı onu doldurmaz. Ayrıntı:
-[LAFPOS.md › Gün sonu otomasyonu](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026).
+[ASILPOS.md › Gün sonu otomasyonu](ASILPOS.md#gün-sonu-otomasyonu-22-kasım-2026).
 
 ## Düzeltmeler
 
@@ -634,7 +638,8 @@ değiştirmek doğrudan kaydedilir.
 - **Personel e-postanın neden gitmediğini görmez** (denetim E-64): Resend anahtarı ya da alıcı listesi yöneticinin
   işidir. Gönderimde, "Yeniden dene"de ve kayıtlı raporun satırında personel "E-posta gitmedi; yöneticiye haber verin.
   Raporu WhatsApp ile gönderebilirsiniz." görür (`src/lib/staff-errors.ts`; personelin DTO'sunda da bu metin);
-  yönetici ayrıntıyı.
+  yönetici ayrıntıyı. Kural okuyanın gerçek rolüne bakar, DTO'nun düzeyine değil: rakamları gören müdür ve muhasebeci
+  de (günün formu, ayın penceresi, müdürün Onaylar'daki kararının yanıtı) sabit metni görür ([ROLLER.md](ROLLER.md)).
 
 Dosyalar: `src/lib/cash-requests.ts` (yük, birleştirme, metinler), `src/server/cash/report-store.ts` (yazım yolu,
 kapı), `src/server/cash/requests.ts` (istek ve karar), `src/server/actions/cash-requests.ts` (uçlar),
@@ -659,29 +664,29 @@ değişmez. Karar: dalga 10 ([planlar/personel-yetki.md](planlar/personel-yetki.
 
 - **Girilmemiş günler** kartı: "Kafe açıktıysa Z raporunun fotoğrafıyla girin; yöneticinin onayıyla kayda geçer." Gün
   çipleri ("14 Eki Sal", "· onay bekliyor", "· reddedildi"); telefonda 4'ten fazla gün tek çipte ("5 gün") toplanır.
-  Fotoğraf deposu yoksa çip yerine "Fotoğraf eklenemiyor; bu günleri yöneticiye yazın". LafPOS'un gün sonu gelen LafPOS
-  gününde (G8) fotoğraf gerekmez: açıklama bunu söyler ("… LafPOS'un gün sonu gelen günlerde fotoğraf gerekmez, ötekilerde
+  Fotoğraf deposu yoksa çip yerine "Fotoğraf eklenemiyor; bu günleri yöneticiye yazın". AsilPOS'un gün sonu gelen AsilPOS
+  gününde (G8) fotoğraf gerekmez: açıklama bunu söyler ("… AsilPOS'un gün sonu gelen günlerde fotoğraf gerekmez, ötekilerde
   Z raporunun fotoğrafıyla …") ve o günlerin çipi fotoğraf deposu yokken de görünür ("Fotoğraf eklenemiyor; öteki
   günleri yöneticiye yazın.").
 - **`/panel/kasa?gun=D`** geç rapor kipinde açılır: ModPOS Z no'su ve en az bir ModPOS Z fotoğrafı zorunlu (Banka POS Z
-  raporu kartı da görünür; fotoğrafı ve rakamları isteğe bağlı). **LafPOS gününde** (geçiş gününden sonra; B09, G8)
-  kanıt LafPOS'un gün sonudur: geldiyse (gün sonu tam, 24 Kasım 2026) geç rapor yoktur, rapor LafPOS'tan yazılır ve
-  sayfa yalnız "Gün sonu fotoğrafı" kartını açar; geç rapor isteği reddedilir ("LafPOS'un bu günün sonu geldi: rapor
-  LafPOS'tan yazılır…"). Gelmediyse yazarkasa (Banka POS) Z
-  raporunun fotoğrafı zorunlu ("LafPOS'un bu günün sonu gelmedi: …"). Kural istemcide ve sunucuda aynı
-  (`kasaEvidence`, `src/server/data/lafpos-day.ts`); fotoğraf kaldırma isteği de ona bakar (LafPOS gününde ModPOS Z
-  fotoğrafı kanıt değildir, gün sonu gelmediyse tek yazarkasa Z fotoğrafı kaldırılamaz). Yöneticinin kartı LafPOS'un
-  Z'sini ("LafPOS gün sonu · Z 13 · 63 fiş · …") ve personelin ondan farklı yazdıklarını gösterir, **Düzeltip onayla**
-  formu personelin yazdıklarıyla açılır ve LafPOS'la yalnız karşılaştırır (farklı olanlar turuncu, öneri olarak). Gün
-  sonu gelmeyen LafPOS gününde not: "… yazarkasa (Banka POS) Z raporunun fotoğrafı zorunlu; LafPOS gün sonu bölümündeki
-  Z no'yu LafPOS › Kasa › Geçmiş günler'den yazın." (zorunlu Z no LafPOS'unkidir); zorunlu **Neden geç
+  raporu kartı da görünür; fotoğrafı ve rakamları isteğe bağlı). **AsilPOS gününde** (geçiş gününden sonra; B09, G8)
+  kanıt AsilPOS'un gün sonudur: geldiyse (gün sonu tam, 24 Kasım 2026) geç rapor yoktur, rapor AsilPOS'tan yazılır ve
+  sayfa yalnız "Gün sonu fotoğrafı" kartını açar; geç rapor isteği reddedilir ("AsilPOS'un bu günün sonu geldi: rapor
+  AsilPOS'tan yazılır…"). Gelmediyse yazarkasa (Banka POS) Z
+  raporunun fotoğrafı zorunlu ("AsilPOS'un bu günün sonu gelmedi: …"). Kural istemcide ve sunucuda aynı
+  (`kasaEvidence`, `src/server/data/asilpos-day.ts`); fotoğraf kaldırma isteği de ona bakar (AsilPOS gününde ModPOS Z
+  fotoğrafı kanıt değildir, gün sonu gelmediyse tek yazarkasa Z fotoğrafı kaldırılamaz). Yöneticinin kartı AsilPOS'un
+  Z'sini ("AsilPOS gün sonu · Z 13 · 63 fiş · …") ve personelin ondan farklı yazdıklarını gösterir, **Düzeltip onayla**
+  formu personelin yazdıklarıyla açılır ve AsilPOS'la yalnız karşılaştırır (farklı olanlar turuncu, öneri olarak). Gün
+  sonu gelmeyen AsilPOS gününde not: "… yazarkasa (Banka POS) Z raporunun fotoğrafı zorunlu; AsilPOS gün sonu bölümündeki
+  Z no'yu AsilPOS › Kasa › Geçmiş günler'den yazın." (zorunlu Z no AsilPOS'unkidir); zorunlu **Neden geç
   giriliyor?** (3–300), kasayı sayan isteyendir (seçici yok; başka biri saydıysa nedene yazılır), teslim varsa
   **Teslim alan** (etkin kullanıcı ya da Banka). Kasadan çıkanlar kartı çizilmez ve "Gün içinde kasadan çıkan" elle
   yazılır (satırlar personele gitmez); e-posta, WhatsApp ve karaoke yok; zayi / ikram için Zayi sayfasının istek yolu.
   Açılış önerisi zincirin önceki **halkasından** gelir: önceki rapor ya da önceki bekleyen geç rapor
   (`src/server/cash/late-chain.ts`). Düğme **Onaya gönder**; "Onaya gönderildi · 120 ₺ eksik".
-- Gönderdikten sonra kart: "Onay bekliyor", özet, "Neden: …", "2 fotoğraf eklendi" (LafPOS gün sonuyla gönderilen
-  fotoğrafsız raporda "LafPOS gün sonuyla gönderildi; fotoğraf gerekmez"), **Düzenle** ("Güncelle ve
+- Gönderdikten sonra kart: "Onay bekliyor", özet, "Neden: …", "2 fotoğraf eklendi" (AsilPOS gün sonuyla gönderilen
+  fotoğrafsız raporda "AsilPOS gün sonuyla gönderildi; fotoğraf gerekmez"), **Düzenle** ("Güncelle ve
   gönder"; tutulan fotoğraflar yalnız önceki isteğin fotoğraflarından) ve **Geri çek**. Başkasının isteği beklerken
   "Mehmet bu günü 21 Ekim'de gönderdi; yöneticinin onayını bekliyor."; istek kişi başınadır. Reddedilen istekte
   "Reddedildi · Ali: …" ve önceki değerlerle dolu form (fotoğraflar yine kişinin kendi küçük resimleri). Aynı gün için
@@ -749,7 +754,7 @@ silinen rapor ayın rakamını hemen değiştirir.
   (`src/lib/cash-month.ts` `tillOpenedOn`, `partialStart`; Gelir-gider, Satışlar, Kasa'nın ay satırı ve geç rapor kartı
   aynı kural). Tuzla bugünkü gibi (denetim 21 Kasım #21).
 - **Şubeler ve "Tümü"** ([SUBE.md](SUBE.md) › "Tümü"nün ay bilgisi): her satır şubesini taşır. Aynı günün iki şubesi
-  ayrı satırdır; açık gün ve raporlu gün günde bir kez sayılır, ciro, indirim ve ödenmez toplanır. Rapor > LafPOS >
+  ayrı satırdır; açık gün ve raporlu gün günde bir kez sayılır, ciro, indirim ve ödenmez toplanır. Rapor > AsilPOS >
   föy önceliği **aynı şubenin** gününde geçerlidir: Tuzla'nın raporu Marina'nın o günkü föyünü düşürmez. Elle
   yazılanlar şube şube çözülüp toplanır (her şube kendi açılış günüyle): Marina'nın elle yazdığı ciro Tuzla'nın kasa
   cirosunun yerine geçmez (denetim 13 Kasım HM-02). Birden çok kasa açıkken "Tümü"de Gelir-gider'in ciro ve açık gün
@@ -757,13 +762,13 @@ silinen rapor ayın rakamını hemen değiştirir.
 - Raporu girilmemiş günler (süren ayda düne kadar) Satışlar'da sayılır: "3 gün rapor yok: 5, 12, 20 Kasım. O günler
   açıksanız ciro ve açık gün eksik kalır." **Kasa raporuna git**. Kapanmış ayda Genel bakış'ın "Bu ayın işleri"
   kartı uyarır.
-- **LafPOS günü raporsuz kaldıysa** (yalnız geçiş gününden sonra; denetim B09, G6): o günün rakamları LafPOS'un gün
+- **AsilPOS günü raporsuz kaldıysa** (yalnız geçiş gününden sonra; denetim B09, G6): o günün rakamları AsilPOS'un gün
   sonundan (Z toplamı, kart, yemek kartı, indirim, ödenmez) aya girer, gün yine "rapor yok" sayılır: "1 gün rapor yok:
-  3 Kasım. Ciro ve açık gün bu günlerde LafPOS'un gün sonundan sayıldı." Rapor girilince rapor kazanır. Tek yükleyici
+  3 Kasım. Ciro ve açık gün bu günlerde AsilPOS'un gün sonundan sayıldı." Rapor girilince rapor kazanır. Tek yükleyici
   (`tillRows`, `src/server/data/cash-reports.ts`): Gelir-gider, Satışlar, sabit gider sürümü ve Kasa'nın ay satırı aynı
-  rakamı görür. Geçiş günü boşken LafPOS günleri ay bilgisine girmez.
+  rakamı görür. Geçiş günü boşken AsilPOS günleri ay bilgisine girmez.
 - **ModPOS kasa föyü yedeği** (isteğe bağlı, varsayılan kapalı; Ayarlar › ModPOS (kasa föyü) › Ay rakamına yedek):
-  açıkken raporu ve LafPOS gün sonu olmayan günün kapanmış ModPOS föyü aynı kuralla aya girer (ciro, kart, yemek
+  açıkken raporu ve AsilPOS gün sonu olmayan günün kapanmış ModPOS föyü aynı kuralla aya girer (ciro, kart, yemek
   kartı, ödenmez; indirim föyde yok). Raporlar başlamadan önceki föy günleri "rapor yok" sayılmaz. Ayrıntı:
   [MODPOS-API.md](MODPOS-API.md) › Ay rakamına yedek.
 - laffogato.net'in online satırı (kasadan geçmez) hiçbir rakama girmez.
@@ -781,11 +786,11 @@ silinen rapor ayın rakamını hemen değiştirir.
   tamamının listesi yüklenir; biten aya yüklenen liste ayın tamamı sayılır (kayıt silinir), Ayı temizle de siler
   (yalnız ayda hiçbir şubenin listesi kalmadıysa: Ayı temizle gösterilen şubenin listesini siler; [SUBE.md](SUBE.md)). Listenin
   son günü şube şube de yazılır (`sales.coverage.sube`): şube seçiliyken bu hesaplar şubenin kendi listesinin son gününü
-  okur, öteki şubenin aynı aya yüklemesi onu ezmez; ortak kayıt yalnız "Tümü" içindir ([LAFPOS.md](LAFPOS.md) › Günlük
+  okur, öteki şubenin aynı aya yüklemesi onu ezmez; ortak kayıt yalnız "Tümü" içindir ([ASILPOS.md](ASILPOS.md) › Günlük
   satış › Şubenin kendi kaydı).
-  **LafPOS'a geçildiyse** (Ayarlar › LafPOS › geçiş günü) bu kural geçiş gününden önceki aylar içindir: geçiş ayında
+  **AsilPOS'a geçildiyse** (Ayarlar › AsilPOS › geçiş günü) bu kural geçiş gününden önceki aylar içindir: geçiş ayında
   liste ay bittikten sonra da en çok geçiş gününden önceki güne kadar sayılır, sonraki aylara liste yüklenmez (satışlar
-  her gün sonunda LafPOS'tan gelir). Ayrıntı: [LAFPOS.md › Günlük satış](LAFPOS.md#günlük-satış-aylık-model).
+  her gün sonunda AsilPOS'tan gelir). Ayrıntı: [ASILPOS.md › Günlük satış](ASILPOS.md#günlük-satış-aylık-model).
 - Kasa sayfasının ay görünümünde tek satır: "Bu ayın açık gün ve cirosu kasa raporlarından → Satışlar". Genel
   bakış'ta POS cirosu "· kasa raporlarından"; dışa aktarımın (.xlsx) Ay Bilgileri sayfasında "Kartlı satış oranı" ve "Kasa
   raporundan" sütunları.
@@ -808,7 +813,7 @@ kart + yemek kartı + online + diğer; ödenmez / ikram bunların hiçbirine gir
 | İkisini de tutmuyor (1 ₺'tan büyük fark) | Gün kendi içinde tutmuyor | Z toplamı (değişmez) |
 
 Son satırda tahmin yürütülmez: o gün zaten "Ödeme türleri toplamı … cirodan / Z toplamından … az" uyarısı verir ve
-düzeltilmesi istenir. Kural üç kaynakta da aynıdır: elle girilen kasa raporu, LafPOS gün sonu ve ModPOS kasa föyü
+düzeltilmesi istenir. Kural üç kaynakta da aynıdır: elle girilen kasa raporu, AsilPOS gün sonu ve ModPOS kasa föyü
 (`tillRows`, `src/server/data/cash-reports.ts`; üçü de ödeme dökümünü taşır).
 
 **Nerede görünür**
@@ -827,7 +832,7 @@ onu okur); değişen yalnız ciroya girmemesidir. **Kartlı satış oranı** da 
 ## Kör sayım
 
 Dalga 2 (25 Kasım 2026), sahibin isteği: "Tuzla'da kör sayım. Önce sayılan nakit girilip kilitlenir, fark sonra
-görünür." Marina'da sayım zaten LafPOS'ta kördür ([LAFPOS.md](LAFPOS.md) › Kör kasa); bu bölüm kasa raporu panelde
+görünür." Marina'da sayım zaten AsilPOS'ta kördür ([ASILPOS.md](ASILPOS.md) › Kör kasa); bu bölüm kasa raporu panelde
 girilen (ModPOS) günleri anlatır. Kurallar `src/lib/kor-sayim.ts` (testleri `tests/kor-sayim.test.ts`), sunucu yolu
 `src/server/cash/blind-count.ts` (`tests/kor-sayim-db.test.ts`).
 
@@ -856,8 +861,8 @@ girilen (ModPOS) günleri anlatır. Kurallar `src/lib/kor-sayim.ts` (testleri `t
   istemez. Personel sayımı yalnız raporunu doğrudan yazabildiği günde (bugün ve dün, ertesi günün raporu girilmemişken)
   kilitler ya da değiştirir; sonrası yöneticinindir ("Bu günün sayımını artık yalnız yönetici değiştirir.").
 - **Şube ayarı** (`kasa.kor`, Şubeler › şube › **Kör sayım** anahtarı; [SUBE.md](SUBE.md) › Şube ayarları): seçilmemişken
-  kasası ModPOS olan şubede **açık**, LafPOS'un şubesinde kapalıdır; LafPOS'un şubesinin LafPOS gününde anahtar ne olursa
-  olsun uygulanmaz (sayım LafPOS'ta kör). Anahtar hemen kaydedilir ve işlem geçmişine yazılır. Kapatılınca personelin
+  kasası ModPOS olan şubede **açık**, AsilPOS'un şubesinde kapalıdır; AsilPOS'un şubesinin AsilPOS gününde anahtar ne olursa
+  olsun uygulanmaz (sayım AsilPOS'ta kör). Anahtar hemen kaydedilir ve işlem geçmişine yazılır. Kapatılınca personelin
   raporu kilidi beklemez; o güne kadarki sayım geçmişi yerinde kalır ve yöneticiye görünür.
 - **Bilinen sınır:** kör sayım personelin Z'deki nakit satıştan olması gerekeni kendisinin hesaplamasını engellemez
   (Z rakamlarını o giriyor); engellediği, ekranın farkı gösterip sayımın ona göre yazılmasıdır.
@@ -878,13 +883,13 @@ panelde yapılır." Kurallar `src/lib/teslim.ts` (`tests/teslim-defteri.test.ts`
   2.000 ₺ · Kime: Okan".
 - **Defter** (`/panel/kasa/teslim`, yalnız yönetici; Kasa raporu'nun ay görünümündeki **Teslim defteri** kartından ve
   ⌘K'dan): ayın teslimleri tek listede, yeni gün üstte: tarih, şube ("Tümü"de), tutar, **Kime**, **Kaydeden** ve türü
-  (Sayımdan sonra, Gün içinde, LafPOS). Üstte ayın toplamı ve alana göre toplamlar ("Okan: 14.000 ₺ (6)"; büyük / küçük
+  (Sayımdan sonra, Gün içinde, AsilPOS). Üstte ayın toplamı ve alana göre toplamlar ("Okan: 14.000 ₺ (6)"; büyük / küçük
   harf farkı aynı kişi sayılır, Kime'si yazılmamışlar turuncu "Kime yazılmamış"). **Ay** başlıktaki ay seçicisinden
   (`?ay=`), **şube** panelin şube seçicisinden ("Tümü"de iki şube birlikte; [SUBE.md](SUBE.md)).
 - **İki kaynak:** (1) kasa raporlarının Sayımdan sonra teslim'i (Kime'siyle; panelde girilen kasa, Tuzla); (2) Kasadan
   çıkanlar'ın **Teslim · ödeme** satırları (`cash_outs`, tür teslim; Kime'si satırın "Kime" alanı). Marina'nın
-  LafPOS'tan gelen teslimleri ikinci kaynaktadır: LafPOS'un `cashMoves[].recipient`'i satırın Kime'si olur
-  ([LAFPOS.md](LAFPOS.md) › Kasadan çıkanlar LafPOS'tan), defterde "LafPOS" rozetiyle, kaydeden "LafPOS".
+  AsilPOS'tan gelen teslimleri ikinci kaynaktadır: AsilPOS'un `cashMoves[].recipient`'i satırın Kime'si olur
+  ([ASILPOS.md](ASILPOS.md) › Kasadan çıkanlar AsilPOS'tan), defterde "AsilPOS" rozetiyle, kaydeden "AsilPOS".
 - **Personel defteri görmez:** `/panel/kasa/teslim` `ADMIN_ONLY_PATHS`'tedir (`src/lib/roles.ts`), sayfa `requireAdmin`
   ile açılır (`tests/roller.test.ts`).
 
@@ -905,17 +910,17 @@ panelde yapılır." Kurallar `src/lib/teslim.ts` (`tests/teslim-defteri.test.ts`
   (`/panel/kasa?gun=G&sube=marina`, zilin bağlantısı gibi). Bağlantıda şube olmasaydı tarayıcıdaki seçim hangi şubeyi
   gösteriyorsa onun raporu açılırdı (21 Kasım denetimi #2). İşlem geçmişinin anahtarı şubenin günüdür (`cashLogKey`:
   Tuzla `cash:G:rN`, öteki `cash:G:rN:şube`): iki şubenin aynı günkü gönderimi birbirinin kaydını ezmez.
-- **LafPOS günü** (geçiş gününden sonra; denetim E-09): e-postanın ve WhatsApp metninin başında rapor LafPOS'un gün
-  sonundan farklıysa "⚠️ LafPOS'tan farklı yazılan: Sayılan nakit 9.350 ₺ (LafPOS'ta 9.000 ₺)"; Z bölümünün adı "LafPOS
+- **AsilPOS günü** (geçiş gününden sonra; denetim E-09): e-postanın ve WhatsApp metninin başında rapor AsilPOS'un gün
+  sonundan farklıysa "⚠️ AsilPOS'tan farklı yazılan: Sayılan nakit 9.350 ₺ (AsilPOS'ta 9.000 ₺)"; Z bölümünün adı "AsilPOS
   gün sonu (Z)". Teslim sayımdan sonra yazıldıysa (Teslim edilen) aynı para iki biçimde yazılmıştır: çıkan + teslim ve
-  devir (sayılan − teslim) LafPOS'unkiyle karşılaştırılır, ayrı ayrı fark sayılmaz. Kayıtlı rapor ve günden güne
-  görünüm aynı listeyi gösterir ("LafPOS'tan farklı" rozeti); yöneticinin zilinde "Kasa raporu LafPOS'tan farklı", LafPOS
-  günü rapordan sonra farklı rakamla yeniden gönderdiyse "LafPOS rapordan sonra farklı rakamla geldi". Kart
-  karşılaştırması LafPOS'un kartla bahşişini ve kartla cari tahsilatını düşer (Z'nin kartında yok, banka POS'unda var;
+  devir (sayılan − teslim) AsilPOS'unkiyle karşılaştırılır, ayrı ayrı fark sayılmaz. Kayıtlı rapor ve günden güne
+  görünüm aynı listeyi gösterir ("AsilPOS'tan farklı" rozeti); yöneticinin zilinde "Kasa raporu AsilPOS'tan farklı", AsilPOS
+  günü rapordan sonra farklı rakamla yeniden gönderdiyse "AsilPOS rapordan sonra farklı rakamla geldi". Kart
+  karşılaştırması AsilPOS'un kartla bahşişini ve kartla cari tahsilatını düşer (Z'nin kartında yok, banka POS'unda var;
   personelin formunda ve WhatsApp'ında da, aynı sonuçla; tutar yalnız yöneticinin metninde, Kart bölümünde ve
-  e-postada ayrı satır "− LafPOS kartla bahşiş + cari tahsilatı"). LafPOS'un yazarkasadan geçmeyen ödemesi (Faz 2,
-  `offDevice`: Z'nin kartında ve nakdinde var, yazarkasada ve banka gün sonunda yok) aynı yoldan LafPOS'un kartından ve
-  nakdinden düşülür (ayrı satır "− Yazarkasadan geçmeyen kart"; [LAFPOS.md](LAFPOS.md) › Kart: yazarkasadan geçmeyen
+  e-postada ayrı satır "− AsilPOS kartla bahşiş + cari tahsilatı"). AsilPOS'un yazarkasadan geçmeyen ödemesi (Faz 2,
+  `offDevice`: Z'nin kartında ve nakdinde var, yazarkasada ve banka gün sonunda yok) aynı yoldan AsilPOS'un kartından ve
+  nakdinden düşülür (ayrı satır "− Yazarkasadan geçmeyen kart"; [ASILPOS.md](ASILPOS.md) › Kart: yazarkasadan geçmeyen
   ödeme). Geçiş günü boşken metin bugünkü gibi.
 - **Banka POS Z bloğu: kim neyi görür.** Kart satırının kaynağı formdakiyle aynı (yazarkasa kartı, yoksa banka gün
   sonu).
@@ -944,7 +949,7 @@ panelde yapılır." Kurallar `src/lib/teslim.ts` (`tests/teslim-defteri.test.ts`
   da dolu bir örnek raporla.
 - **Zil:**
   - Personele: akşam 20:00'den sonra bugünün raporu girilmediyse hatırlatma. Saat şube başına (Şube ayarları › Çalışma
-    takvimi); LafPOS'lu kasada metin şubenin banka POS'unun fişini söyler (Şube ayarları › Banka POS ve yazarkasa;
+    takvimi); AsilPOS'lu kasada metin şubenin banka POS'unun fişini söyler (Şube ayarları › Banka POS ve yazarkasa;
     belirtilmediyse Pavo). Kasa raporu e-postasının yazarkasa bölümü başlığında cihaz ve sicil no ([SUBE.md](SUBE.md) ›
     Şube başına ayarlar).
   - Yöneticiye: dünün raporu girilmediyse, son raporda fark varsa, bugünün ya da dünün açılışı devirle tutmuyorsa

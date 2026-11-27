@@ -1,14 +1,15 @@
-// Gün sonu e-postasında fotoğraf ↔ LafPOS farkı satır satır (sahibin isteği, 24 Kasım 2026: "mail olarak vs. bilgilerde
-// de farklı olunca belirsin"; docs/LAFPOS.md › Gün sonu otomasyonu). Yalnız yöneticinin e-postası; okuyanın kaynağı
+// Gün sonu e-postasında fotoğraf ↔ AsilPOS farkı satır satır (sahibin isteği, 24 Kasım 2026: "mail olarak vs. bilgilerde
+// de farklı olunca belirsin"; docs/ASILPOS.md › Gün sonu otomasyonu). Yalnız yöneticinin e-postası; okuyanın kaynağı
 // ("Yapay zekâ" / "Kodla okundu") yazılır. Fotoğraf sonradan eklenince giden kısa fotoğraf e-postası ve veritabanıyla uçtan
 // uca tests/gun-sonu-foto.test.ts ve tests/gun-sonu-foto-db.test.ts'te.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { BankPos, PosDayZ, PosOkc } from "../src/lib/lafpos/day";
-import { lafposPhotoCheck, type LafposPhotoCheck } from "../src/lib/lafpos/foto";
-import { renderDayEnd, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
+import type { BankPos, PosDayZ, PosOkc } from "../src/lib/asilpos/day";
+import { asilposPhotoCheck, type AsilposPhotoCheck } from "../src/lib/asilpos/foto";
+import { renderDayEnd, type DayEndMail } from "../src/lib/asilpos/gun-sonu";
+import { TEL_KART_ALANI } from "../src/lib/asilpos/eski-adlar";
 import type { KasaOkc } from "../src/lib/photo-read/schemas";
 
 const PHOTO_STRONG_MODEL = "claude-opus-5-5";
@@ -56,7 +57,7 @@ const BANK: BankPos = {
   batchNo: "000279",
   at: "2026-11-24T22:10:00.000Z",
   pavoCard: 755,
-  lafposCard: 755,
+  [TEL_KART_ALANI]: 755,
   diff: 0,
   acquirers: [{ name: "Garanti BBVA", count: 3, total: 755 }],
   message: null,
@@ -76,8 +77,8 @@ const OKC: PosOkc = {
   voided: { count: 0, cash: 0, card: 0 },
   vat: [{ rate: 10, total: 1_190, vat: 108.18 }],
 };
-const REPORT = { bankPos: 995, okcZNo: "7", okcTotal: 1_190, okcCash: 390, okcCard: 800, okcMealCard: 0, okcOther: 0, okcVat: [{ rate: 10, total: 1_190, vat: 108.18 }], lafposZNo: "7" };
-const check = (reads: Parameters<typeof lafposPhotoCheck>[0]["reads"]) => lafposPhotoCheck({ day: DAY, reads, bankPos: BANK, okc: OKC, report: REPORT }, NOW);
+const REPORT = { bankPos: 995, okcZNo: "7", okcTotal: 1_190, okcCash: 390, okcCard: 800, okcMealCard: 0, okcOther: 0, okcVat: [{ rate: 10, total: 1_190, vat: 108.18 }], asilposZNo: "7" };
+const check = (reads: Parameters<typeof asilposPhotoCheck>[0]["reads"]) => asilposPhotoCheck({ day: DAY, reads, bankPos: BANK, okc: OKC, report: REPORT }, NOW);
 
 const Z: PosDayZ = {
   zNo: 3,
@@ -102,9 +103,9 @@ const Z: PosDayZ = {
   okcZNo: null,
 };
 
-const farkCheck = (): LafposPhotoCheck => ({ ...check([{ photoId: 1, raw: detailedZ({ card: 850, cash: 340 }), error: null, source: "ai", model: PHOTO_STRONG_MODEL }]) });
+const farkCheck = (): AsilposPhotoCheck => ({ ...check([{ photoId: 1, raw: detailedZ({ card: 850, cash: 340 }), error: null, source: "ai", model: PHOTO_STRONG_MODEL }]) });
 
-test("Gün sonu e-postası: fotoğraf ↔ LafPOS farkı satır satır ve okuyanın kaynağıyla; konuda 'Fotoğraf FARKLI'", () => {
+test("Gün sonu e-postası: fotoğraf ↔ AsilPOS farkı satır satır ve okuyanın kaynağıyla; konuda 'Fotoğraf FARKLI'", () => {
   const c = farkCheck();
   assert.equal(c.state, "fark");
   const m: DayEndMail = {
@@ -128,12 +129,12 @@ test("Gün sonu e-postası: fotoğraf ↔ LafPOS farkı satır satır ve okuyan�
   const out = renderDayEnd(m);
   const t = plain(out.text);
   assert.match(out.subject, /Fotoğraf FARKLI/);
-  assert.match(t, /\nFotoğraf ↔ LafPOS\n/);
+  assert.match(t, /\nFotoğraf ↔ AsilPOS\n/);
   assert.match(t, /Okuyan: Yapay zekâ \(Claude Opus 5\.5\)/);
-  assert.match(t, /Yazarkasa kartı: fotoğrafta 850 ₺ · LafPOS'ta 800 ₺ · FARK/);
-  assert.match(t, /Yazarkasa nakdi: fotoğrafta 340 ₺ · LafPOS'ta 390 ₺ · FARK/);
-  assert.match(t, /Banka POS toplamı: fotoğrafta 995 ₺ · LafPOS'ta 995 ₺ · aynı/);
-  assert.match(plain(out.html), /Fotoğraf ↔ LafPOS/);
+  assert.match(t, /Yazarkasa kartı: fotoğrafta 850 ₺ · AsilPOS'ta 800 ₺ · FARK/);
+  assert.match(t, /Yazarkasa nakdi: fotoğrafta 340 ₺ · AsilPOS'ta 390 ₺ · FARK/);
+  assert.match(t, /Banka POS toplamı: fotoğrafta 995 ₺ · AsilPOS'ta 995 ₺ · aynı/);
+  assert.match(plain(out.html), /Fotoğraf ↔ AsilPOS/);
   // Uyumlu fotoğrafta da satırlar (kısa), konu değişmez
   const ok = renderDayEnd({ ...m, photo: { ...m.photo!, check: check([{ photoId: 1, raw: detailedZ(), error: null, source: "kod", model: "kod-ocr" }]) } });
   assert.doesNotMatch(ok.subject, /FARKLI/);

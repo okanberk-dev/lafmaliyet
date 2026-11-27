@@ -28,6 +28,7 @@ import { parseKasaFoyu } from "../src/lib/modpos/foy";
 import { MODPOS_FALLBACK_KEY } from "../src/lib/modpos/status";
 import { addDays } from "../src/lib/reminders";
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.SUBE_TEST_DATABASE_URL ?? process.env.SAYIM_TEST_DATABASE_URL ?? process.env.EKLE_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_sube_kasa_ay_${process.pid}`;
@@ -79,7 +80,7 @@ describe("iki şubeli ay: veritabanında", { skip: !SERVER_URL && "SUBE_TEST_DAT
       .onConflictDoUpdate({ target: s.branches.id, set: { active: true } });
     const [a] = await db.insert(s.users).values({ email: "yonetici@laffogato.net", name: "Yönetici", passwordHash: "x", role: "admin" }).returning();
     const me = async () => ({ ...a, role: "admin" as const });
-    stub(require.resolve("../src/server/auth/dal"), { getCurrentUser: me, requireUser: me, requireAdmin: me });
+    stub(require.resolve("../src/server/auth/dal"), { getCurrentUser: me, requireUser: me, requireAdmin: me, ...dalCapabilities(me) });
     dataset = await import("../src/server/data/dataset");
     withBranchScope = (await import("../src/server/branch-scope")).withBranchScope;
     store = await import("../src/server/modpos/store");

@@ -33,9 +33,10 @@ import { hasFeature, offFeatureLabels } from "@/lib/branch-features";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { num } from "@/lib/format";
 import { shortDateTR } from "@/lib/takvim";
-import { KURULUM_DURUM_ETIKET } from "@/lib/lafpos/kurulum";
+import { KURULUM_DURUM_ETIKET } from "@/lib/asilpos/kurulum";
+import { POS_OFF_CONFIRM_PREFIX } from "@/lib/pos/tills";
 import type { ActionResult } from "@/server/actions/util";
-import type { KurulumView } from "@/server/lafpos/kurulum";
+import type { KurulumView } from "@/server/asilpos/kurulum";
 
 /** Kapalı özelliklerin çip metni (yoksa null; `offFeatureLabels`) */
 function offFeatures(b: BranchRow): string | null {
@@ -79,13 +80,15 @@ export interface BranchActions {
     openedOn: string | null;
     active: boolean;
     posRate?: number;
+    /** Kasası AsilPOS olan şube ModPOS'a dönerken onay (sunucu posOffConfirmText ile sorar) */
+    confirmPosOff?: boolean;
   }) => Promise<ActionResult<{ id: string }>>;
   deleteAction: (input: { id: string }) => Promise<ActionResult<{ id: string }>>;
 }
 
 const BOS: Taslak = { id: "", name: "", kind: "fiziksel", posSource: "modpos", openedOn: "", active: true, posRate: oranMetni(DEFAULT_POS_RATE), email: "" };
 
-/** Şube kurulumunun sonucu (docs/LAFPOS.md › Şube kurulumu): bağlantı ekranda da gösterilir, e-posta gitmezse elle iletilir */
+/** Şube kurulumunun sonucu (docs/ASILPOS.md › Şube kurulumu): bağlantı ekranda da gösterilir, e-posta gitmezse elle iletilir */
 export type KurulumSonuc = { link: string; mailError: string | null; account: "acildi" | "vardi" };
 export type InstallAction = (input: { id: string; email?: string }) => Promise<ActionResult<KurulumSonuc>>;
 
@@ -108,7 +111,7 @@ export function BranchesAdmin({
   rows: BranchRow[];
   settingsText?: Record<string, string>;
   parasutText?: Record<string, string>;
-  /** Ana yönetici: şube ekler ve LafPOS kurulum bağlantısı gönderir */
+  /** Ana yönetici: şube ekler ve AsilPOS kurulum bağlantısı gönderir */
   canCreate?: boolean;
   /** Fiziksel şubenin son kurulum bağlantısı (yalnız ana yöneticiye) */
   installs?: Record<string, KurulumView | null>;
@@ -118,6 +121,8 @@ export function BranchesAdmin({
   const [sonuc, setSonuc] = useState<{ name: string; kurulum: KurulumSonuc } | null>(null);
   const [yeni, setYeni] = useState(false);
   const [silinecek, setSilinecek] = useState<BranchRow | null>(null);
+  // AsilPOS'tan ModPOS'a dönüş onayı (çok şube): sunucunun sorduğu metin ve kaydedilecek taslak
+  const [posOff, setPosOff] = useState<{ taslak: Taslak; text: string } | null>(null);
   const [bekliyor, basla] = useActionTransition();
 
   function duzenle(b: BranchRow) {
@@ -130,17 +135,20 @@ export function BranchesAdmin({
     setAcik({ ...BOS });
   }
 
-  function kaydet(t: Taslak) {
+  function kaydet(t: Taslak, confirmPosOff = false) {
     // Online kanalın kasası yok: POS oranı yalnız fiziksel şubede gider
     const gonder = { name: t.name.trim(), kind: t.kind, posSource: t.posSource, openedOn: t.openedOn || null, ...(t.kind === "fiziksel" ? { posRate: oranOf(t.posRate) } : {}) };
     basla(async () => {
       const sonuc = yeni
         ? await createAction({ ...gonder, id: t.id.trim(), ...(t.kind === "fiziksel" && t.email.trim() ? { email: t.email.trim() } : {}) })
-        : await updateAction({ ...gonder, id: t.id, active: t.active });
+        : await updateAction({ ...gonder, id: t.id, active: t.active, ...(confirmPosOff ? { confirmPosOff } : {}) });
       if (!sonuc.ok) {
+        // Kasası AsilPOS olan şube ModPOS'a dönüyor: geçiş günü silinecek, onay sorulur
+        if (!yeni && !confirmPosOff && sonuc.error.startsWith(POS_OFF_CONFIRM_PREFIX)) return void setPosOff({ taslak: t, text: sonuc.error.slice(POS_OFF_CONFIRM_PREFIX.length).trim() });
         toast.error(sonuc.error);
         return;
       }
+      setPosOff(null);
       toast.success(yeni ? "Şube eklendi" : "Şube güncellendi");
       setAcik(null);
       const kurulum = yeni ? (sonuc.data as { kurulum?: KurulumSonuc | null }).kurulum : null;
@@ -207,7 +215,7 @@ export function BranchesAdmin({
                   {/* Şube özellikleri (docs/SUBE.md › Şube özellikleri): karaoke tek şubede; kapalı özellikler ayrı çipte */}
                   {hasFeature(b, "karaoke") ? <Badge tone="violet">Karaoke</Badge> : null}
                   {offFeatures(b) ? <Badge tone="gray">Kullanılmıyor: {offFeatures(b)}</Badge> : null}
-                  {installs[b.id] ? <Badge tone={installs[b.id]!.durum === "kuruldu" ? "green" : installs[b.id]!.durum === "bekliyor" ? "blue" : "gray"}>LafPOS: {KURULUM_DURUM_ETIKET[installs[b.id]!.durum]}</Badge> : null}
+                  {installs[b.id] ? <Badge tone={installs[b.id]!.durum === "kuruldu" ? "green" : installs[b.id]!.durum === "bekliyor" ? "blue" : "gray"}>AsilPOS: {KURULUM_DURUM_ETIKET[installs[b.id]!.durum]}</Badge> : null}
                 </button>
                 {b.kind === "fiziksel" ? (
                   <ButtonLink href={`/panel/subeler/${encodeURIComponent(b.id)}`} variant="secondary" size="sm" className="shrink-0" aria-label={`${b.name} şube ayarları`}>
@@ -238,6 +246,15 @@ export function BranchesAdmin({
       {sonuc ? <KurulumDialog name={sonuc.name} kurulum={sonuc.kurulum} onClose={() => setSonuc(null)} /> : null}
 
       <ConfirmDialog
+        open={!!posOff}
+        onClose={() => setPosOff(null)}
+        onConfirm={() => posOff && kaydet(posOff.taslak, true)}
+        pending={bekliyor}
+        title="Kasa ModPOS'a dönsün mü?"
+        description={posOff?.text ?? ""}
+      />
+
+      <ConfirmDialog
         open={!!silinecek}
         onClose={() => setSilinecek(null)}
         onConfirm={() => silinecek && sil(silinecek)}
@@ -266,7 +283,7 @@ function BranchDialog({
   onClose: () => void;
   onSave: (t: Taslak) => void;
   onDelete?: () => void;
-  /** Ana yöneticiye: şubenin e-postası ve LafPOS kurulumu (yoksa alan çizilmez) */
+  /** Ana yöneticiye: şubenin e-postası ve AsilPOS kurulumu (yoksa alan çizilmez) */
   kurulum?: { view: KurulumView | null; onSend?: (t: Taslak) => void };
 }) {
   const [t, setT] = useState(taslak);
@@ -367,7 +384,7 @@ function BranchDialog({
               htmlFor="sube-eposta"
               hint={
                 yeni
-                  ? "Yazılırsa şubenin panel hesabı açılır ve LafPOS kurulum bağlantısı bu adrese gider. Boş bırakılabilir."
+                  ? "Yazılırsa şubenin panel hesabı açılır ve AsilPOS kurulum bağlantısı bu adrese gider. Boş bırakılabilir."
                   : "Kurulum bağlantısı ve şubenin panel hesabı bu adresle."
               }
             >
@@ -375,13 +392,13 @@ function BranchDialog({
             </Field>
             {!yeni && kurulum.view ? (
               <p className="text-[13px] text-ink-soft">
-                LafPOS: {KURULUM_DURUM_ETIKET[kurulum.view.durum]}
+                AsilPOS: {KURULUM_DURUM_ETIKET[kurulum.view.durum]}
                 {kurulum.view.usedAt ? ` · ${shortDateTR(kurulum.view.usedAt.slice(0, 10))}` : ""}
               </p>
             ) : null}
             {!yeni && kurulum.onSend ? (
               <Button variant="secondary" size="sm" onClick={() => kurulum.onSend!(t)} disabled={bekliyor || !t.email.trim()}>
-                <Send className="size-4" /> LafPOS kurulum bağlantısı gönder
+                <Send className="size-4" /> AsilPOS kurulum bağlantısı gönder
               </Button>
             ) : null}
           </div>
@@ -398,13 +415,13 @@ export function KurulumDialog({ name, kurulum, onClose }: { name: string; kurulu
     <Dialog
       open
       onClose={onClose}
-      title={`${name}: LafPOS kurulumu`}
+      title={`${name}: AsilPOS kurulumu`}
       description={kurulum.mailError ? `E-posta gitmedi (${kurulum.mailError}). Bağlantıyı şubeye kendiniz iletin.` : "Kurulum bağlantısı ve panel hesabı şubenin e-postasına gönderildi."}
       footer={<Button onClick={onClose}>Tamam</Button>}
     >
       <div className="space-y-3 text-sm">
         <p className="text-ink-soft">
-          Bağlantı kasa bilgisayarında açılır; inen dosya LafPOS&apos;u kurar ve kasa şubeye kendiliğinden bağlanır. Tek kurulumluktur, 14 gün geçerlidir.
+          Bağlantı kasa bilgisayarında açılır; inen dosya AsilPOS&apos;u kurar ve kasa şubeye kendiliğinden bağlanır. Tek kurulumluktur, 14 gün geçerlidir.
           {kurulum.account === "acildi" ? " Şubenin panel hesabı açıldı (davet e-postayla)." : ""}
         </p>
         <code className="block break-all rounded-lg bg-surface-soft p-3 text-[12px] text-ink">{kurulum.link}</code>

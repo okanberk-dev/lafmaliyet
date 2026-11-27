@@ -1,4 +1,4 @@
-import { CalendarCheck, Info } from "lucide-react";
+import { BriefcaseBusiness, CalendarCheck, Info } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
@@ -12,6 +12,7 @@ import { buildFaq } from "../faq-build";
 import { HelpFaq, HelpFaqFallback } from "../faq-search";
 import { RoutineSteps } from "../routine-steps";
 import { STAFF_FAQ_GROUPS, STAFF_ROUTINE, staffPathText } from "./content";
+import { ManagerHelpList } from "./mudur";
 
 export const metadata: Metadata = { title: "Yardım" };
 
@@ -19,6 +20,7 @@ const FAQ = buildFaq(STAFF_FAQ_GROUPS, staffPathText);
 
 /**
  * Personelin Yardım'ı (plan docs/planlar/personel-yetki.md §2.10): yalnız personelin ekranları, içerik content.tsx'te.
+ * Müdür de bunu açar; ona en üstte "Müdür olarak" kartı eklenir (mudur.tsx).
  * Yöneticinin Yardım'ının süzülmüş bir kopyası değildir; yönetici bölümleri bu sayfanın verisine hiç girmez. Menüde
  * (ağacın en altında) ve profil menüsünde; yönetici de açabilir (Yardım başlığındaki "Personelin Yardım'ı"). İçerik bir
  * Suspense çocuğunda, oturum okunduktan sonra çizilir: pasif ya da çıkış yapmış hesap içeriği göremez.
@@ -35,9 +37,16 @@ export default function StaffHelpPage() {
 }
 
 async function StaffHelpContent() {
-  await requireUser();
+  const me = await requireUser();
   return (
     <div className="space-y-4">
+      {/* Müdür (docs/ROLLER.md): personelin her ekranına ek olarak yaptıkları; personelin içeriği aynı kalır */}
+      {me.role === "manager" ? (
+        <Card>
+          <CardHeader icon={<BriefcaseBusiness />} title="Müdür olarak" description="Personelin ekranlarına ek olarak şubenizde yaptıklarınız." />
+          <ManagerHelpList />
+        </Card>
+      ) : null}
       <Card>
         <CardHeader icon={<CalendarCheck />} title="Ne zaman ne yapılır?" description="Bir günün sırası; her adım ilgili ekranı açar." />
         <CardContent>

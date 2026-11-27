@@ -13,15 +13,15 @@ import { OLD_PRICE_DAYS, type OldPriceReport } from "@/server/data/branch-prices
 const STATUS_TONE: Record<ChangeStatus["kind"], Tone> = { bekliyor: "gray", uygulandi: "green", uygulanmadi: "red", bilinmiyor: "amber" };
 const STATUS_TITLE: Record<ChangeStatus["kind"], string> = {
   bekliyor: "Anı gelmedi ya da o andan sonra bu boy satılmadı",
-  uygulandi: "LafPOS bu günden itibaren yeni fiyattan sattı",
-  uygulanmadi: "O andan sonraki tam günlerde yalnız başka fiyattan satıldı: LafPOS fiyatı almamış olabilir",
-  bilinmiyor: "Gün sonu liste fiyatı taşımıyor (eski LafPOS): ciro ya da adetten çıkarılmaz",
+  uygulandi: "AsilPOS bu günden itibaren yeni fiyattan sattı",
+  uygulanmadi: "O andan sonraki tam günlerde yalnız başka fiyattan satıldı: AsilPOS fiyatı almamış olabilir",
+  bilinmiyor: "Gün sonu liste fiyatı taşımıyor (eski AsilPOS): ciro ya da adetten çıkarılmaz",
 };
 
 /**
  * Fiyatlar › Eski fiyattan satılanlar (docs/FIYATLAR.md › Şube fiyatı): şubenin fiyat değişiklikleri ve her birinin
  * durumu (Bekliyor / Uygulandı · gün / Uygulanmadı / Bilinmiyor), altında o gün geçerli fiyatlardan farklı bir liste
- * fiyatıyla satılanlar. Hepsi LafPOS gün sonunun dondurulan liste fiyatlarından; ciro / adetten çıkarılmaz.
+ * fiyatıyla satılanlar. Hepsi AsilPOS gün sonunun dondurulan liste fiyatlarından; ciro / adetten çıkarılmaz.
  */
 export function OldPriceReportView({ report }: { report: OldPriceReport }) {
   const { branch, changes, sales, names } = report;
@@ -33,12 +33,12 @@ export function OldPriceReportView({ report }: { report: OldPriceReport }) {
       {!report.hasListPrices ? (
         <Notice
           tone="neutral"
-          title="LafPOS liste fiyatı göndermiyor"
-          text={`${branch.name} gün sonlarında satılan fiyatlar yok (LafPOS güncel değil ya da henüz gün sonu gelmedi): durum "Bilinmiyor", eski fiyattan satış bulunamaz.`}
+          title="AsilPOS liste fiyatı göndermiyor"
+          text={`${branch.name} gün sonlarında satılan fiyatlar yok (AsilPOS güncel değil ya da henüz gün sonu gelmedi): durum "Bilinmiyor", eski fiyattan satış bulunamaz.`}
         />
       ) : null}
       <Card>
-        <CardHeader icon={<History />} title="Fiyat değişiklikleri" description={`${branch.name} şube fiyatları ve LafPOS'ta uygulanıp uygulanmadığı.`} meta={<span className="tabular">{num(changes.length)}</span>} />
+        <CardHeader icon={<History />} title="Fiyat değişiklikleri" description={`${branch.name} şube fiyatları ve AsilPOS'ta uygulanıp uygulanmadığı.`} meta={<span className="tabular">{num(changes.length)}</span>} />
         {changes.length ? (
           <TableWrap>
             <Table>
@@ -113,7 +113,7 @@ export function OldPriceReportView({ report }: { report: OldPriceReport }) {
             </Table>
           </TableWrap>
         ) : (
-          <EmptyState title="Eski fiyattan satış yok" description={report.hasListPrices ? `Son ${num(OLD_PRICE_DAYS)} günde her satış o gün geçerli fiyattan.` : "LafPOS liste fiyatı gönderince burada görünür."} />
+          <EmptyState title="Eski fiyattan satış yok" description={report.hasListPrices ? `Son ${num(OLD_PRICE_DAYS)} günde her satış o gün geçerli fiyattan.` : "AsilPOS liste fiyatı gönderince burada görünür."} />
         )}
       </Card>
     </div>

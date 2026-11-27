@@ -70,17 +70,20 @@ test("#28 kaynak: zayi kartının bağlamı isteğin şubesinden, model şube ba
   assert.match(queue, /const report = reportOf\.get\(`\$\{p\.date\}\|\$\{sube\}`\);/);
   assert.match(queue, /const report = current \? reportOf\.get\(`\$\{current\.date\}\|\$\{current\.branchId\}`\) : undefined;/);
   assert.doesNotMatch(queue, /reportOf\.get\(r\.day\)/);
-  // O günün kayıtları ve bekleyen öteki istekler aynı şubenin; kayıtlı ikram ve LafPOS günleri şubenin modelinden
+  // O günün kayıtları ve bekleyen öteki istekler aynı şubenin; kayıtlı ikram ve AsilPOS günleri şubenin modelinden
   assert.match(queue, /entries\.filter\(\(e\) => e\.date === p\.date && e\.branchId === sube\)/);
   assert.match(queue, /same\(op\.data\) && lateBranch\(op\.data\) === sube/);
   assert.match(queue, /const model = models\.get\(sube\)!;/);
   assert.match(queue, /ikramValueOf\(model, p\.date\)/);
-  assert.match(queue, /const lafposDays = new Set\(model\.ds\.lafposIkram\?\.days \?\? \[\]\);/);
+  assert.match(queue, /const asilposDays = ikramTillDays\(model\.ds\.asilposIkram\);/);
   // Onaylar: yöneticinin seçimiyle kurulan model değil, şubenin modeli (istek başına şube başına bir kez)
   assert.match(read("src/server/data/model-once.ts"), /export const loadBranchModelOnce = cache\(\(branchId: string\) => loadModel\(\{ scope: branchId \}\)\);/);
   const section = read("src/app/panel/onaylar/ops-section.tsx");
   assert.match(section, /loadWasteRequestQueue\(loadBranchModelOnce, now, await currentBranchScope\(\)\)/);
   assert.doesNotMatch(section, /loadModelOnce/);
+  // Bakana giden kartlar sunucuda süzülür: müdüre yalnız şubesininkiler, malzeme maliyeti olmadan (bulgu 4)
+  assert.match(section, /const waste = wasteCardsFor\(me, all\);/);
+  assert.doesNotMatch(section, /me\.role === "admin" \? all/);
   // Kart şubeyi adıyla yazar, "Günü aç" o şubenin zayi gününü açar
   const cards = read("src/app/panel/onaylar/ops-cards.tsx");
   assert.equal(cards.match(/<BranchBadge branch=\{card\.branch\} \/>/g)?.length, 2);

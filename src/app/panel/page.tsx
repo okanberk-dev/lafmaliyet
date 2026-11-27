@@ -53,8 +53,8 @@ import {
 } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { monthLabel, monthShort, num, numPossessive, pct, tl } from "@/lib/format";
-import { salesMonthKasa } from "@/lib/lafpos/kasa";
-import { commonListSourceLine, commonListText } from "@/lib/lafpos/sales";
+import { salesMonthKasa } from "@/lib/asilpos/kasa";
+import { commonListSourceLine, commonListText } from "@/lib/asilpos/sales";
 import { longDateTR } from "@/lib/reminders";
 import { sameBranchBasis } from "@/lib/same-branches";
 import { salesSourceOf } from "@/lib/sales-source";
@@ -259,9 +259,9 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const st = model.settings;
   // Ayın günlük cirosu (Arc çubuk grafiği): yalnız ayın POS cirosu kasa raporlarından geliyorsa; günlerin toplamı o ciro
   const days = till && d.info?.sources?.posRevenue === "kasa" ? monthDays(till, month) : [];
-  // Ayın kasası (ürün satışlarının metinleri; geçiş günü boşken ve öncesinde "ModPOS", sonra "LafPOS", geçiş ayında
+  // Ayın kasası (ürün satışlarının metinleri; geçiş günü boşken ve öncesinde "ModPOS", sonra "AsilPOS", geçiş ayında
   // modelin saydığı bölünmeyle; denetim E-39)
-  const mk = salesMonthKasa(month, st.lafposGecisGunu, model.ds.lafposSales);
+  const mk = salesMonthKasa(month, st.asilposGecisGunu, model.ds.asilposSales);
 
   // Süren ayın gidişatı (ay sonu tahmini): yalnızca bugünün ayı için, bitmiş aylar için asla
   const forecastMonth = forecastMonthOf(model);
@@ -281,8 +281,8 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
     : "";
   // "Tümü"nün dönemi şubelerin en kısa listesiyle (bulgu 62): ayın satırları bir şubenin listesi olmadığı için sayılmıyorsa
   const commonMissing = model.ds.commonLists?.find((c) => c.month === month && c.through === null) ?? null;
-  // Başlığın kaynak satırı: ortak dönemi olmayan ayda "LafPOS … itibaren" değil, liste gelince sayıldığı
-  const ownSource = salesSourceOf(month, st.lafposGecisGunu, model.ds.lafposSales);
+  // Başlığın kaynak satırı: ortak dönemi olmayan ayda "AsilPOS … itibaren" değil, liste gelince sayıldığı
+  const ownSource = salesSourceOf(month, st.asilposGecisGunu, model.ds.asilposSales);
   const salesSource = commonMissing ? { ...ownSource, line: commonListSourceLine(commonMissing.branch) } : ownSource;
   // "Para nereye gitti?": sabit giderin 4 grubu (Kira, Personel, Reklam, Diğer) + varsa bu aya özel giderler; online
   // satış (laffogato.net) net satışın içinde: kâr-zarardaki gibi ModPOS + online
@@ -862,7 +862,7 @@ function DailyRevenueCard({ month, days }: { month: string; days: { date: string
         description={
           <span className="inline-flex items-center gap-1.5">
             Kasa raporlarından, KDV dahil · {days.length} açık gün
-            <InfoTip text="Her açık günün cirosu: Z toplamı, ödenmez / ikram hariç (raporu girilmemiş günde LafPOS gün sonu ya da ModPOS föyü). Günlerin toplamı ayın POS cirosudur. Yatay çizgi açık günlerin ortalaması; çubuğa gelin ya da dokunun, o günün cirosu yazar." />
+            <InfoTip text="Her açık günün cirosu: Z toplamı, ödenmez / ikram hariç (raporu girilmemiş günde AsilPOS gün sonu ya da ModPOS föyü). Günlerin toplamı ayın POS cirosudur. Yatay çizgi açık günlerin ortalaması; çubuğa gelin ya da dokunun, o günün cirosu yazar." />
           </span>
         }
         actions={

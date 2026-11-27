@@ -12,7 +12,7 @@ import { Select } from "@/components/ui/form";
 import { InfoTip } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { dateTimeTR, monthLabel, money, num, pct, tl } from "@/lib/format";
-import { monthKasa } from "@/lib/lafpos/kasa";
+import { monthKasa } from "@/lib/asilpos/kasa";
 import { cn } from "@/lib/utils";
 import { refreshSiteSales } from "@/server/actions/site-sales";
 
@@ -68,7 +68,7 @@ export interface SiteSalesCardData {
   kdvRate: number;
   /** Oranı saklı olmayan karaoke rezervasyonlarının oranı (Ayarlar › Hizmet satışı KDV) */
   serviceKdvRate: number;
-  /** LafPOS'a geçiş günü ve bu ay (metinlerde ayın kasası: src/lib/lafpos/kasa.ts monthKasa; denetim E-39) */
+  /** AsilPOS'a geçiş günü ve bu ay (metinlerde ayın kasası: src/lib/asilpos/kasa.ts monthKasa; denetim E-39) */
   switchDay: string | null;
   current: string;
 }
@@ -91,7 +91,7 @@ export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
         ? { tone: "green" as const, text: "Bağlı" }
         : { tone: "amber" as const, text: "Henüz çekilmedi" };
 
-  // Ayın kasası: geçiş günü boşken her metin ModPOS der; sonra LafPOS, geçiş ayında "kasada"
+  // Ayın kasası: geçiş günü boşken her metin ModPOS der; sonra AsilPOS, geçiş ayında "kasada"
   const headKasa = monthKasa(data.current, data.switchDay).both;
   const tillIn = (month: string) => {
     const k = monthKasa(month, data.switchDay);

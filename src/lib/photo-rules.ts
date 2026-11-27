@@ -195,7 +195,7 @@ export function photoViewDecision(
   return "rules";
 }
 
-/** "Z raporu · 23:52 · Ayşe"; `label` türün adının yerine (LafPOS gününde "Pavo gün sonu fişi") */
+/** "Z raporu · 23:52 · Ayşe"; `label` türün adının yerine (AsilPOS gününde "Pavo gün sonu fişi") */
 export function photoCaption(kind: PhotoKind, createdAt: Date | string, byName: string | null, label?: string): string {
   const time = new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(new Date(createdAt));
   return [label ?? PHOTO_KIND_LABEL[kind], time, byName].filter(Boolean).join(" · ");

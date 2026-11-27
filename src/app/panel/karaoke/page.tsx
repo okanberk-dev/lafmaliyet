@@ -11,7 +11,8 @@ import { featureBranches, featureInScope } from "@/lib/branch-features";
 import { KARAOKE_ELSEWHERE } from "@/lib/branches";
 import { monthStats } from "@/lib/karaoke/month";
 import { isBlock, sessionEnd, trClock } from "@/lib/karaoke/session";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { branchScope } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 import { loadSessions } from "@/server/karaoke/board";
@@ -58,7 +59,7 @@ export default function KaraokePage() {
 const DAY_MS = 86_400_000;
 
 async function KaraokeContent() {
-  const user = await requireUser();
+  const user = adminActor(await requireCan("kayit.yaz"));
   const admin = user.role === "admin";
   // Karaoke yalnız karaokesi açık şubede (şube özelliği; docs/SUBE.md › Şube özellikleri): başka şube seçiliyken (şubesine
   // kilitli personelde hep kendi şubesi) rezervasyonlar ve misafir adları görünmez, eşitleme de tetiklenmez. Siparişlerin

@@ -16,13 +16,14 @@ import {
   type OrdersLite,
 } from "@/app/panel/bugun/logic";
 import { featureInScope, karaokeBranchOf } from "@/lib/branch-features";
+import { adminLevel, cashAudience } from "@/lib/roles";
 import { CALENDAR_GROUP } from "@/lib/branch-settings/groups";
 import { ALL_BRANCHES, requestInScope, tillBranches } from "@/lib/branches";
 import { shiftMonth } from "@/lib/calc/engine";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { branchDayKey, businessDate } from "@/lib/cash-report";
 import { pendingCashOutSummary } from "@/lib/cash-outs";
-import { branchSwitchDay } from "@/lib/lafpos/switch";
+import { switchDayFor } from "@/lib/pos/tills";
 import { modposMismatchBranchDays, modposMismatchDates } from "@/lib/modpos/zil";
 import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
@@ -44,17 +45,16 @@ import { loadCashOutInvoiceState, scopeCashOutInvoiceState } from "@/server/data
 import { countPendingRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders, type UserReminderDTO } from "@/server/data/user-reminders";
-import { lafposNoCountDays } from "@/server/data/lafpos-day";
+import { asilposNoCountDays } from "@/server/data/asilpos-day";
 import { dayWaste } from "@/server/data/waste";
 import { countProgress } from "@/server/data/count-progress";
 import { getDb, schema as s } from "@/server/db";
-import { lafposPhotoMarks } from "@/server/lafpos/foto";
-import { lafposBranchId } from "@/server/lafpos/branch";
+import { asilposPhotoMarks } from "@/server/asilpos/foto";
 import { isProductionRuntime, loadJobsOverview } from "@/server/jobs/alerts";
 import { lastParasutSyncOkAt } from "@/server/jobs/runs";
 import { loadSessions } from "@/server/karaoke/board";
 import { karaokeSecret } from "@/server/karaoke/sync";
-import { loadLafposSwitchDay } from "@/server/lafpos/status";
+import { loadSwitchDays } from "@/server/pos/tills";
 import { loadModposSheets } from "@/server/modpos/store";
 import { loadUpcoming } from "@/server/notify/digest";
 import { countUnlinkedProducts } from "@/server/parasut/sync";
@@ -172,8 +172,8 @@ async function cashView(admin: boolean): Promise<CashView> {
 async function staffFacts(c: DayContext): Promise<RoleFacts> {
   const [waste] = await Promise.all([safe(dayWaste(c.day))]);
   return {
-    // LafPOS günü (geçiş günü seçili ve iş günü ondan önce değil): ürün ikramı kasada işaretlenir, satırın metni söyler
-    facts: { waste: waste ? { count: waste.count, zayi: waste.zayi, ikram: waste.ikram, lafpos: waste.lafpos !== null } : null },
+    // AsilPOS günü (geçiş günü seçili ve iş günü ondan önce değil): ürün ikramı kasada işaretlenir, satırın metni söyler
+    facts: { waste: waste ? { count: waste.count, zayi: waste.zayi, ikram: waste.ikram, asilpos: waste.asilpos !== null } : null },
     cashFlags: null,
   };
 }
@@ -273,10 +273,8 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
           tills ? null : previousCarryOver(oldest, v?.till ?? undefined),
           tills ? previousCarryOverByBranch(oldest, tills.map((b) => b.id)) : null,
           cashRevisionsFor(reports.filter((r) => r.revision > 1).map((r) => r.id)),
-          Promise.all([loadModposSheets(oldest, businessDate(now), undefined, v?.till ? { branchId: v.till } : {}), loadLafposSwitchDay(), lafposBranchId()])
-            .then(([sheets, switchDay, lafposBranch]) =>
-              tills ? modposMismatchBranchDays(reports, sheets, switchDay, lafposBranch) : modposMismatchDates(reports, sheets, switchDay, lafposBranch),
-            )
+          Promise.all([loadModposSheets(oldest, businessDate(now), undefined, v?.till ? { branchId: v.till } : {}), loadSwitchDays()])
+            .then(([sheets, switchDays]) => (tills ? modposMismatchBranchDays(reports, sheets, switchDays) : modposMismatchDates(reports, sheets, switchDays)))
             .catch(() => new Set<string>()),
         ]);
         return beforeOf ? cashFlagsByBranch(reports, beforeOf, revisions, viewer, modpos) : cashFlags(reports, before, revisions, viewer, modpos);
@@ -317,13 +315,13 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   // okur, satırlar şube şube kurulur (ilk raporun günü de şubenin); değilse tek kasanın (online kanalda Tuzla'nın)
   const viewP = safe(cashView(admin));
   const tillScoped = <T>(fn: () => Promise<T>) => viewP.then((v) => (v?.till ? withBranchScope(v.till, fn) : fn()));
-  // Kör kasa (bulgu 0): personelin LafPOS günü raporu sayımsız (fark satırda yok)
-  const cashP = safe(tillScoped(() => cashReportsBetween(c.yesterday, c.day).then((r) => blindForStaff(r, user.role))));
+  // Kör kasa (bulgu 0): personelin AsilPOS günü raporu sayımsız (fark satırda yok)
+  const cashP = safe(tillScoped(() => cashReportsBetween(c.yesterday, c.day).then((r) => blindForStaff(r, cashAudience(user.role)))));
   // Kasa raporunun beklendiği saat seçili şubenin (şube ayarı isletme.takvim; "Tümü"de ve online kanalda varsayılan şubenin)
   const eveningHourP = safe(resolveBranchSetting(CALENDAR_GROUP, karaokeScope).then((r) => r.value.eveningHour));
   // "Tümü"de kasa satırları her kasanın kendi saatiyle (zil gibi kasa kasa)
   const tillHoursP = safe(viewP.then((v) => (v?.tills?.length ? resolveForTills(CALENDAR_GROUP) : null)));
-  const [reports, firstDate, view, tillFirsts, tillClosed, stock, due, sessions, orders, checklists, closed, ops, own, lafposSwitch, switchRaw, noCounts, lafposBranch] = await Promise.all([
+  const [reports, firstDate, view, tillFirsts, tillClosed, stock, due, sessions, orders, checklists, closed, ops, own, asilposSwitch, switchRaw, noCounts] = await Promise.all([
     cashP,
     safe(tillScoped(() => firstCashReportDate())),
     viewP,
@@ -335,32 +333,30 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     karaokeHere ? safe(loadSessions(range.from, range.to, { admin })) : Promise.resolve(null),
     configured && ordersHere ? safe(Promise.all([readOrdersSnapshot(), readOrdersState()]).then(([snapshot, state]) => ordersLite(snapshot, state))) : Promise.resolve(null),
     // Bugünün ve dünün kontrol listeleri tek okumada (iki rol; personel yalnız kendi doldurabildiklerini alır)
-    safe(loadChecklistDays([c.day, c.yesterday], user.role, now)),
+    safe(loadChecklistDays([c.day, c.yesterday], adminLevel(user.role), now)),
     // Dün kafe kapalı mıydı (onaylı ya da onay bekleyen bildirim; kasa ve liste satırları buna bakar)
     safe(closedYesterday(user, now)),
     // Operasyonun olguları (kasadaki fiyatlar, Tükendi, taslak): iki rolde, rolün kendi yükleyicileriyle
     opsFacts(user, now),
     admin ? adminFacts(now, user.id, cashP, viewP) : staffFacts(c),
-    // LafPOS'a geçiş günü: yalnız metinler (günün kasası; okunamazsa ModPOS, bugünkü gibi). Kasanın şubesinin geçiş
-    // günü (branchSwitchDay): ModPOS'ta kalan şubede metinler ModPOS der
-    safe(Promise.all([loadLafposSwitchDay(), currentTillBranch(), lafposBranchId()]).then(([d, b, l]) => branchSwitchDay(d, b, l))),
+    // AsilPOS'a geçiş günü: yalnız metinler (günün kasası; okunamazsa ModPOS, bugünkü gibi). Kasanın şubesinin geçiş
+    // günü (çok şube): ModPOS'ta kalan şubede metinler ModPOS der
+    safe(Promise.all([loadSwitchDays(), currentTillBranch()]).then(([d, b]) => switchDayFor(d, b))),
     // "Tümü"de her şubenin kendi geçiş günü (metinler şubenin kasasına göre)
-    safe(loadLafposSwitchDay()),
-    // LafPOS gün sonu geldi ama çekmece sayılmadı (rapor yok): dün ve bugün, kasa başına (tek kasada view.till)
-    safe(viewP.then((v) => Promise.all((v?.tills ?? (v?.till ? [{ id: v.till }] : [])).map((b) => lafposNoCountDays([c.yesterday, c.day], b.id).then((d) => [...d]))))),
-    // LafPOS'un şubesi (kütükten; okunamazsa geri düşüş değeri, branchSwitchDay)
-    safe(lafposBranchId()),
+    safe(loadSwitchDays()),
+    // AsilPOS gün sonu geldi ama çekmece sayılmadı (rapor yok): dün ve bugün, kasa başına (tek kasada view.till)
+    safe(viewP.then((v) => Promise.all((v?.tills ?? (v?.till ? [{ id: v.till }] : [])).map((b) => asilposNoCountDays([c.yesterday, c.day], b.id).then((d) => [...d]))))),
   ]);
 
-  // Personel: LafPOS'un otomatik raporunda tek iş gün sonu fotoğrafı (gün sonu tam; src/server/lafpos/foto.ts)
-  const photoMarks = !admin && reports?.length ? await safe(lafposPhotoMarks(getDb(), reports.map((r) => r.id))) : null;
+  // Personel: AsilPOS'un otomatik raporunda tek iş gün sonu fotoğrafı (gün sonu tam; src/server/asilpos/foto.ts)
+  const photoMarks = !admin && reports?.length ? await safe(asilposPhotoMarks(getDb(), reports.map((r) => r.id))) : null;
   // Günün raporu; şube verilince o şubenin (işaretler de branchDayKey'le)
   const lite = (date: string, branchId?: string): CashLite | null => {
     const r = reports?.find((x) => x.date === date && (branchId === undefined || x.branchId === branchId));
     if (!r) return null;
     const flags = own.cashFlags?.get(branchId === undefined ? date : branchDayKey(branchId, date));
     const mark = photoMarks?.get(r.id);
-    const base = mark ? { ...toLite(r), lafposPhoto: mark } : toLite(r);
+    const base = mark ? { ...toLite(r), asilposPhoto: mark } : toLite(r);
     return flags?.length ? { ...base, flags } : base;
   };
   const tillHours = await tillHoursP;
@@ -372,7 +368,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
         firstDate: tillFirsts ? (tillFirsts[i] ?? null) : firstDate,
         ...(tillClosed ? { closed: tillClosed[i]?.yesterday ?? null } : {}),
         ...(noCounts ? { noCount: noCounts[i] ?? [] } : {}),
-        ...(switchRaw !== null ? { lafposSwitch: branchSwitchDay(switchRaw, b.id, lafposBranch ?? undefined) } : {}),
+        ...(switchRaw !== null ? { asilposSwitch: switchDayFor(switchRaw, b.id) } : {}),
         ...(tillHours?.get(b.id) ? { eveningHour: tillHours.get(b.id)!.value.eveningHour } : {}),
       }))
     : null;
@@ -380,10 +376,10 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const facts: DayFacts = {
     ...own.facts,
     ...ops,
-    role: user.role,
+    role: adminLevel(user.role),
     now,
     eveningHour,
-    lafposSwitch,
+    asilposSwitch,
     cash: reports
       ? {
           today: tills ? (tills[0]?.today ?? null) : lite(c.day),

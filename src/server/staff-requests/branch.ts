@@ -130,3 +130,22 @@ export async function requestsInScope<T extends { id: number }>(db: Reader, rows
   const branchOf = await requestBranches(db, full);
   return rows.filter((x) => requestInScope(branchOf.get(x.id) ?? null, scope));
 }
+
+/** Müdürün öteki şubenin isteğine karar vermeye çalışması */
+export const OTHER_BRANCH_REVIEW = "Bu istek başka bir şubenin; yalnız kendi şubenizin isteklerini karara bağlayabilirsiniz";
+
+/**
+ * Karar eyleminin başında (docs/ROLLER.md): yönetici her isteği, müdür yalnız KENDİ şubesinin isteğini karara bağlar.
+ * İsteğin şubesi `requestBranches`'tan; şubesi bilinmeyen istek müdüre kapalı (varsayılan kapalı). Öteki roller hiç
+ * (eylem zaten requireCan("onay") ister). İstek arada değişirse çekirdeğin sürüm denetimi (lockForReview) reddeder.
+ * Engel yoksa null, varsa kullanıcıya gösterilecek metin.
+ */
+export async function reviewBranchRefusal(db: Reader, me: { role: string; branchId?: string | null }, id: number): Promise<string | null> {
+  if (me.role === "admin") return null;
+  if (me.role !== "manager" || !me.branchId) return OTHER_BRANCH_REVIEW;
+  const r = s.staffRequests;
+  const [row] = await db.select({ id: r.id, kind: r.kind, subject: r.subject, payload: r.payload }).from(r).where(eq(r.id, id)).limit(1);
+  if (!row) return null;
+  const branch = (await requestBranches(db, [row])).get(row.id) ?? null;
+  return branch === me.branchId ? null : OTHER_BRANCH_REVIEW;
+}

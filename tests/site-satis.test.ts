@@ -10,6 +10,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { computeCash, type CashReportFields } from "../src/lib/cash-report";
+import { ROLE_ORDER } from "../src/lib/constants";
+import { can, cashAudience } from "../src/lib/roles";
 import { sign } from "../src/lib/karaoke/signature";
 import { createModel } from "../src/lib/calc/engine";
 import { alerts, consistency, dashboard, yearTrend } from "../src/lib/calc/insights";
@@ -23,6 +25,7 @@ import {
   optionTotals,
   productForLine,
   salesMonthsToPull,
+  siteDayTitle,
   siteRevenue,
   tillOnlineRow,
   tillRowOrNull,
@@ -277,6 +280,27 @@ test("kasa raporu satırı: o günün online toplamı (kafe + mağaza) ve karaok
   assert.ok(Date.now() - started < 1000, "beklemez");
 });
 
+test("kasa sayfasının satırı: karaoke ön ödemesi müdüre ve personele gitmez; online toplamı herkese", () => {
+  const row = { day: "2026-10-22", online: 1240, karaoke: 500, text: "Online (site + uygulama): 1.240 ₺ · Karaoke ön ödeme: 500 ₺ — kasadan geçmez" };
+  const titles = Object.fromEntries(ROLE_ORDER.map((r) => [r, siteDayTitle(row, "22 Ekim 2026", can(r, "karaoke.tutar")).replace(/\u00a0/g, " ")]));
+  for (const r of ROLE_ORDER) {
+    assert.match(titles[r], /online 1\.240 ₺/, r);
+    assert.match(titles[r], /kasadan geçmez$/, r);
+  }
+  // Müdür kasa rakamlarını "admin" kitlesiyle görür (cashAudience); karaoke tutarı o kapıya bağlı değil
+  assert.equal(cashAudience("manager"), "admin");
+  for (const r of ["manager", "staff"] as const) {
+    assert.doesNotMatch(titles[r], /karaoke/i, r);
+    assert.doesNotMatch(titles[r], /500/, r);
+  }
+  for (const r of ["admin", "accountant"] as const) assert.match(titles[r], /karaoke ön ödeme 500 ₺/, r);
+  // Yöneticinin başlığı eskisiyle bayt bayt aynı; müdürün başlığı yalnız online toplamı
+  assert.equal(titles.admin, "laffogato.net · 22 Ekim 2026: online 1.240 ₺ · karaoke ön ödeme 500 ₺, kasadan geçmez");
+  assert.equal(titles.manager, "laffogato.net · 22 Ekim 2026: online 1.240 ₺, kasadan geçmez");
+  // Kapalıyken karaoke tutarı başlığa hiç girmez: tutar ne olursa olsun müdürün ve personelin başlığı aynı
+  assert.equal(siteDayTitle({ ...row, karaoke: 99_999 }, "22 Ekim 2026", false), siteDayTitle(row, "22 Ekim 2026", false));
+});
+
 test("kasa e-postası: online satır bilgi bölümü; kasa farkı ve Z rakamları değişmez; satır yoksa bölüm yok", () => {
   const f: CashReportFields = {
     date: "2026-10-22",
@@ -339,12 +363,15 @@ test("sunucu: ay başına tek kayıt (üzerine yazılır, eski yanıt yazılmaz)
   assert.match(read("src/app/api/export/workbook.ts"), /c\.revenueTotalNet \?\? 0/);
   // Kasa sayfası: satır ayrı Suspense'te (sayfa beklemez); personele karaoke tutarı yok
   const kasa = read("src/app/panel/kasa/page.tsx");
-  assert.match(kasa, /<Suspense fallback=\{null\}>\s*<SiteDayRow date=\{date\} till=\{view\.till\} admin=\{admin\} kasa=\{lafposState\.lafpos \? "LafPOS" : "ModPOS"\} \/>/);
+  assert.match(kasa, /<Suspense fallback=\{null\}>\s*<SiteDayRow date=\{date\} till=\{view\.till\} karaoke=\{can\(user\.role, "karaoke\.tutar"\)\} kasa=\{asilposState\.asilpos \? "AsilPOS" : "ModPOS"\} \/>/);
   // Satır kasanın şubesinin (site #279: &branch=tuzla|marina); e-posta ve gönderim de raporun şubesiyle sorar
   assert.match(kasa, /fetchTillOnlineRow\(date, till\)/);
   assert.match(read("src/server/cash/report-email.ts"), /fetchTillOnlineRow\(row\.date, row\.branchId\)/);
-  // ux-sade Ek A 122: tek satır başlık; karaoke tutarı yalnız yöneticide
-  assert.match(kasa, /\$\{admin \? ` · karaoke ön ödeme \$\{money\(row\.karaoke\)\}` : ""\}/);
+  // ux-sade Ek A 122: tek satır başlık sunucuda kurulur; karaoke tutarı yalnız "karaoke.tutar"da (müdürün "admin"
+  // düzeyindeki kasa kitlesi bu kapıyı açmaz)
+  assert.match(kasa, /title=\{siteDayTitle\(row, longDateTR\(date\), karaoke\)\}/);
+  assert.doesNotMatch(kasa, /admin \? ` · karaoke/);
+  assert.doesNotMatch(kasa, /SiteDayRow[^>]*admin=/);
   // Gönderim: site isteği kayıtla aynı anda başlar, e-posta en çok 8 saniye bekler
   const actions = read("src/server/actions/cash-report.ts");
   // (kayıt formun kasasının kapsamında: withBranchScope(till, () => saveCashReport(…)))

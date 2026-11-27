@@ -1,7 +1,7 @@
 /**
  * Önce ucuz model, gerekirse bir kez güçlü model (saf; tests/foto-ucuz-once.test.ts). Sahibin isteği (25 Kasım 2026):
- * "rapor ve z raporlarını ai okusun ama ucuz model ile okut". LafPOS gününün gün sonu fotoğrafı zaten böyle okunuyordu
- * (lafpos-read.ts); ModPOS'un Z raporu (kasa-z), elle girilen raporun yazarkasa Z'si (kasa-okc) ve kasadan çıkan fiş (fis)
+ * "rapor ve z raporlarını ai okusun ama ucuz model ile okut". AsilPOS gününün gün sonu fotoğrafı zaten böyle okunuyordu
+ * (asilpos-read.ts); ModPOS'un Z raporu (kasa-z), elle girilen raporun yazarkasa Z'si (kasa-okc) ve kasadan çıkan fiş (fis)
  * de aynı sıraya geçti:
  *
  * 1. Ucuz model (ayardan, varsayılan Claude Haiku 5.5) aynı şema ve istemle okur.

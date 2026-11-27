@@ -109,7 +109,7 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     body: (
       <>
         ModPOS Patron › Raporlar › Satış ekranındaki ürün listesini <Path href="/panel/satislar" /> ekranındaki İçe aktar kartına yapıştırın ya da dosyasını
-        seçin; eşleşmeyen satırları bir kez eşleştirin, sonraki aylar hatırlanır. LafPOS&apos;lu şubenin satışları her gün sonunda LafPOS&apos;tan gelir, ona
+        seçin; eşleşmeyen satırları bir kez eşleştirin, sonraki aylar hatırlanır. AsilPOS&apos;lu şubenin satışları her gün sonunda AsilPOS&apos;tan gelir, ona
         liste yüklenmez.
       </>
     ),
@@ -195,9 +195,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             Panelde, toplu ya da laffogato.net&apos;te değişen satış fiyatı <Path href="/panel/urunler" /> › Fiyatlar › Kasaya işle listesine kasadaki adı, eski
             ve yeni fiyatıyla girer; zil de söyler. ModPOS&apos;lu şubede fiyatı ModPOS&apos;ta elle değiştirip işaretleyin (personel de Bugün&apos;den işaretler,
-            bildirimdeki Geri al geri getirir); Metni kopyala listeyi WhatsApp&apos;a hazırlar. LafPOS&apos;lu şubede siteye bağlı ürünlerin fiyatını LafPOS
-            siteden kendisi alır: listede yalnız siteye bağlı olmayanlar kalır, onları Ürünler › Site menüsü&apos;nde bağlayın ya da LafPOS&apos;ta elle
-            değiştirip işaretleyin. LafPOS&apos;ta fiyatı kasiyer değiştiremez.
+            bildirimdeki Geri al geri getirir); Metni kopyala listeyi WhatsApp&apos;a hazırlar. AsilPOS&apos;lu şubede siteye bağlı ürünlerin fiyatını AsilPOS
+            siteden kendisi alır: listede yalnız siteye bağlı olmayanlar kalır, onları Ürünler › Site menüsü&apos;nde bağlayın ya da AsilPOS&apos;ta elle
+            değiştirip işaretleyin. AsilPOS&apos;ta fiyatı kasiyer değiştiremez.
           </>
         ),
         icon: Receipt,
@@ -431,7 +431,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             {OKC_PREFILL_ENABLED
               ? "Banka POS Z'sinde yalnız birbirini tutan ve net okunan rakamlar dolar."
               : "Banka POS Z'sinin rakamları şimdilik forma yazılmaz, her alanın altında öneri olarak çıkar."}{" "}
-            Turuncu alanları fişle karşılaştırıp gönderin; hiçbir şey kendiliğinden kaydedilmez. LafPOS&apos;lu şubede rapor LafPOS&apos;un gün sonundan
+            Turuncu alanları fişle karşılaştırıp gönderin; hiçbir şey kendiliğinden kaydedilmez. AsilPOS&apos;lu şubede rapor AsilPOS&apos;un gün sonundan
             kendisi yazılır; personel yalnız Pavo&apos;nun gün sonu fişinin (detaylı Z) fotoğrafını Gün sonu fotoğrafı kartına ekler. Kasadan çıkan paranın fişini aynı ekranda Fiş ekle ile çekin;
             kaydedince Harcamalar&apos;a da yazılır. Okuma Claude ile yapılır (fotoğraf başına birkaç sent); aç / kapat ve bu ayın tutarı Ayarlar › Fotoğraftan
             okuma&apos;da.
@@ -462,11 +462,11 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "ModPOS Z ve banka POS Z raporu (yazarkasa)",
         a: (
           <>
-            İki ayrı sayaçtır: kasanın Z&apos;si (ModPOS ya da LafPOS gün sonu) satış programınındır, banka POS Z raporu yazarkasanın mali Z&apos;sidir
+            İki ayrı sayaçtır: kasanın Z&apos;si (ModPOS ya da AsilPOS gün sonu) satış programınındır, banka POS Z raporu yazarkasanın mali Z&apos;sidir
             (üstünde Z RAPORU ve KDV dökümü yazar; banka gün sonu fişi değil). ModPOS&apos;lu şubede banka POS Z&apos;si isteğe bağlıdır; raporda
             yazarkasa kasayla karşılaştırılır: kart, nakit, toplam, yemek kartı ve yazarkasanın kendi içindeki denetimleri. Toplam ve nakit farkı
-            kendiliğinden hata değildir (online satış, faturalı satış, Z&apos;nin saati); personel yalnız kart satırını görür. LafPOS&apos;lu şubede
-            Pavo&apos;nun gün sonu fişi istenir ve LafPOS&apos;la batch batch karşılaştırılır; fark yalnız size görünür (Gün sonu fotoğrafı kartı ve
+            kendiliğinden hata değildir (online satış, faturalı satış, Z&apos;nin saati); personel yalnız kart satırını görür. AsilPOS&apos;lu şubede
+            Pavo&apos;nun gün sonu fişi istenir ve AsilPOS&apos;la batch batch karşılaştırılır; fark yalnız size görünür (Gün sonu fotoğrafı kartı ve
             zil). Günden güne&apos;de Yazarkasa tutmuyor ve Yazarkasa Z yok rozetleri çıkar. Yanlış saklanan kümülatifi gün
             ayrıntısındaki Kümülatifi temizle siler.
           </>
@@ -522,11 +522,16 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             <Path href="/panel/vardiya" /> ekranında haftayı kişi kişi yazın: günün kutusuna saatleri (“10-18”, gece yarısını geçen vardiyada “18-02”), isterseniz
             görevi (“10-18 kasa”), izin için “izin”. Okunamayan kutu kırmızı olur. Kaydet bütün haftayı yazar; PDF kaydedilen plandan çizilir. Geçen haftayı
-            kopyala boş kutuları doldurur, hesabı olmayan çalışanı Kişi ekle ile yazarsınız. Personel planı görür, değiştiremez. Plan şube şubedir.
+            kopyala boş kutuları doldurur, hesabı olmayan çalışanı Kişi ekle ile yazarsınız. Personel planı görür, değiştiremez. Plan şube şubedir: soldan
+            “Tümü” seçiliyken önce şube sorulur, Kaydet ekranda görünen şubeye yazar. Sabahçı ve akşamcının (S, A) saatleri şube başınadır:{" "}
+            <Path href="/panel/subeler" /> › şubenin Ayarlar&apos;ı › Hazır vardiyalar.
           </>
         ),
         icon: CalendarClock,
-        links: [{ href: "/panel/vardiya", label: "Vardiya ayarlama" }],
+        links: [
+          { href: "/panel/vardiya", label: "Vardiya ayarlama" },
+          { href: "/panel/subeler", label: "Şubeler" },
+        ],
       },
       {
         id: "tedarikci",
@@ -550,8 +555,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             <Path href="/panel/komisyonlar" /> ekranında her kart ve platformun o ay kestiği her şey (komisyon, erken ödeme, diğer ücretler; KDV hariç) satışa
             bölünür: gerçek oran. Yemek kartında %6&apos;yı aşan oran ve komisyon dışı ücretler işaretlenir; uyarılar kalem adlarına bakar, kesin hüküm değildir.
-            Satış Z toplamından gelir; aynı ay birden çok yemek kartı varsa kanalın ekstresindeki satışı Satışı yaz ile girin. LafPOS&apos;lu şubede satış
-            LafPOS&apos;un ödeme türlerinden kart kart gelir. Hakediş bankaya gelince Hakediş geldi&apos;ye dokunun; son gün geçerse zil çalar.
+            Satış Z toplamından gelir; aynı ay birden çok yemek kartı varsa kanalın ekstresindeki satışı Satışı yaz ile girin. AsilPOS&apos;lu şubede satış
+            AsilPOS&apos;un ödeme türlerinden kart kart gelir. Hakediş bankaya gelince Hakediş geldi&apos;ye dokunun; son gün geçerse zil çalar.
           </>
         ),
         icon: Percent,
@@ -677,6 +682,22 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         ],
       },
       {
+        id: "roller",
+        q: "Müdür ve muhasebeci hesabı",
+        a: (
+          <>
+            <Path href="/panel/kullanicilar" /> › Kullanıcı ekle, rol <strong className="font-semibold text-ink">Müdür</strong>: şubesini seçmek zorunludur, hesap
+            o şubeye kilitlidir. Personelin her ekranına ek olarak kasa raporlarını rakamlarıyla görür ve onaysız düzeltir, şubesinin isteklerini Onaylar&apos;da
+            karara bağlar, vardiyayı yazar, Teslim defterini ve İşçilik / ciro&apos;yu görür; maaş, vergi, Paraşüt, ayarlar ve öteki şubeler yok. Rol{" "}
+            <strong className="font-semibold text-ink">Muhasebeci</strong>: salt okunur; faturalar, gelir-gider, vergi, aylık harcamalar, kasa raporları ve
+            muhasebeci paketi; hiçbir kaydı değiştiremez, ayar ve kişi başı maaş görmez. İki adımlı doğrulama isteğe bağlıdır; zorunluluk açıksa
+            (ADMIN_2FA_REQUIRED=1) ikisi de yönetici gibi kurmadan paneli kullanamaz. Yeni bir cihazdan girişleri bildirilir.
+          </>
+        ),
+        icon: UserPlus,
+        links: [{ href: "/panel/kullanicilar", label: "Kullanıcılar & roller" }],
+      },
+      {
         id: "claude",
         q: "Claude'dan panele soru sormak",
         a: (
@@ -788,14 +809,14 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             Ay sürerken ModPOS&apos;un satış raporunu <Path href="/panel/satislar" /> ekranına yüklerken Liste hangi güne kadar? alanına raporun son gününü yazın
             (varsayılan dün); Genel bakış günlük ortalamayı, indirimi ve sabit gideri listenin günleriyle hesaplar. Ay bitince ayın tamamının listesini Yenisiyle
-            değiştir ile yükleyin. LafPOS&apos;lu şubenin satışları her gün sonunda LafPOS&apos;tan gelir; geçiş ayında ModPOS listesi yalnız geçiş gününden
+            değiştir ile yükleyin. AsilPOS&apos;lu şubenin satışları her gün sonunda AsilPOS&apos;tan gelir; geçiş ayında ModPOS listesi yalnız geçiş gününden
             önceki günleri sayar (fazlası iki kez sayılırdı).
           </>
         ),
         icon: CalendarCheck,
         links: [
           { href: "/panel/satislar", label: "Satışlar" },
-          { href: "/panel/ayarlar#lafpos", label: "Ayarlar › LafPOS" },
+          { href: "/panel/ayarlar#asilpos", label: "Ayarlar › AsilPOS" },
         ],
       },
       {

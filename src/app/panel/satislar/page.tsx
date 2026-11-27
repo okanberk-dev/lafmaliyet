@@ -13,11 +13,12 @@ import { Notice } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { ALL_BRANCHES, DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
 import { listDaysText } from "@/lib/calc/insights";
-import { lafposListPart, manualOf, MONTH_FIELDS } from "@/lib/cash-month";
+import { asilposListPart, manualOf, MONTH_FIELDS } from "@/lib/cash-month";
 import { RECIPE_COST_NOTE } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
-import { commonListText, dayRangeTR, lafposMonthNotes, lafposMonthStatus, type LafposMonthNotes } from "@/lib/lafpos/sales";
-import { branchSwitchDay, isLafposBranch, lafposBranchOf, monthSource } from "@/lib/lafpos/switch";
+import { commonListText, dayRangeTR, asilposMonthNotes, asilposMonthStatus, type AsilposMonthNotes } from "@/lib/asilpos/sales";
+import { monthSource } from "@/lib/asilpos/switch";
+import { posFromOf, salesFroms, switchDayFor } from "@/lib/pos/tills";
 import { addDays, dayAblativeTR, todayTR } from "@/lib/reminders";
 import { coverageFor } from "@/lib/sales-coverage";
 import { salesSourceOf, type SalesSourceKind } from "@/lib/sales-source";
@@ -38,16 +39,16 @@ export const metadata: Metadata = { title: "Satışlar" };
  */
 const DESCRIPTION: Record<SalesSourceKind, string> = {
   "modpos-rapor": "Ay sonunda ModPOS ürün satış raporunu yükleyin, eşleşmeyen ürünleri bağlayın.",
-  lafpos: "LafPOS'un gün sonları her gece gelir; eşleşmeyen ürünleri bağlayın.",
-  gecis: "Geçiş ayı: önce ModPOS raporu, sonra LafPOS gün sonları; eşleşmeyenleri bağlayın.",
+  asilpos: "AsilPOS'un gün sonları her gece gelir; eşleşmeyen ürünleri bağlayın.",
+  gecis: "Geçiş ayı: önce ModPOS raporu, sonra AsilPOS gün sonları; eşleşmeyenleri bağlayın.",
   "modpos-baglanti": "ModPOS bağlantısından kendiliğinden gelir; eşleşmeyen ürünleri bağlayın.",
 };
 
-/** Eski uzun açıklamalar: başlıktaki ⓘ "Nasıl çalışır?", kaynağa göre (docs/LAFPOS.md › Günlük satış) */
+/** Eski uzun açıklamalar: başlıktaki ⓘ "Nasıl çalışır?", kaynağa göre (docs/ASILPOS.md › Günlük satış) */
 const MORE: Record<SalesSourceKind, string> = {
   "modpos-rapor": `ModPOS ürün satış raporu. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır ve sonraki aylarda otomatik uygulanır. ${RECIPE_COST_NOTE}`,
-  lafpos: `LafPOS'un gün sonlarından gelen ürün satışları, ay toplamı. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır. ${RECIPE_COST_NOTE}`,
-  gecis: `Geçiş ayı: geçiş gününden önceki günler ModPOS ürün satış raporundan, sonrası LafPOS'un gün sonlarından. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır. ${RECIPE_COST_NOTE}`,
+  asilpos: `AsilPOS'un gün sonlarından gelen ürün satışları, ay toplamı. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır. ${RECIPE_COST_NOTE}`,
+  gecis: `Geçiş ayı: geçiş gününden önceki günler ModPOS ürün satış raporundan, sonrası AsilPOS'un gün sonlarından. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır. ${RECIPE_COST_NOTE}`,
   "modpos-baglanti": `ModPOS bağlantısından gelen ürün satışları. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır. ${RECIPE_COST_NOTE}`,
 };
 
@@ -75,19 +76,18 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   const info = model.monthInfo.get(month);
   // Süren ayda yüklenen listenin son günü (varsayılan dün) ve liste kasa raporlarından kısaysa dönemi (sales-coverage.ts)
   const today = todayTR();
-  // LafPOS'a geçiş günü seçiliyse ayın kaynağı (src/lib/lafpos/sales.ts); seçilmediyse ya da ay ondan önceyse null ve
-  // sayfa bugünkü gibi: LafPOS'un deneme günleri burada hiç görünmez
-  const switchDay = model.settings.lafposGecisGunu;
-  const lafpos = switchDay
-    ? (model.ds.lafposSales?.months.find((m) => m.month === month) ?? lafposMonthStatus({ month, switchDay, today, modpos: null, lafpos: null }))
+  // AsilPOS'a geçiş günü seçiliyse ayın kaynağı (src/lib/asilpos/sales.ts); seçilmediyse ya da ay ondan önceyse null ve
+  // sayfa bugünkü gibi: AsilPOS'un deneme günleri burada hiç görünmez
+  const switchDay = model.settings.asilposGecisGunu;
+  const asilpos = switchDay
+    ? (model.ds.asilposSales?.months.find((m) => m.month === month) ?? asilposMonthStatus({ month, switchDay, today, modpos: null, asilpos: null }))
     : null;
-  const notes = lafpos && switchDay ? lafposMonthNotes(lafpos, switchDay) : null;
   // Ayın satış kaynağı: başlığın açıklaması ve altındaki satır (docs/planlar/ux-sade.md §10)
-  const source = salesSourceOf(month, switchDay, model.ds.lafposSales);
+  const source = salesSourceOf(month, switchDay, model.ds.asilposSales);
   const defaultThrough = coverageFor(month, today);
   // Geçiş ayında liste en çok geçiş gününden önceki güne kadar (biten ayda da gün seçilir; sunucu aynı kuralla kırpar)
   const lastModpos = switchDay ? addDays(switchDay, -1) : null;
-  const gecisMax = lafpos?.source === "gecis" && lastModpos ? (defaultThrough && today < lastModpos ? today : lastModpos) : null;
+  const gecisMax = asilpos?.source === "gecis" && lastModpos ? (defaultThrough && today < lastModpos ? today : lastModpos) : null;
   const runningImport =
     gecisMax && lastModpos
       ? { today: gecisMax, defaultThrough: defaultThrough && defaultThrough < gecisMax ? defaultThrough : gecisMax }
@@ -108,7 +108,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   }));
   const rows: SalesRow[] = sales.lines.map((l) => ({
     id: l.line.id,
-    lafposDays: l.line.lafpos?.days ?? null,
+    asilposDays: l.line.asilpos?.days ?? null,
     posName: l.line.posName,
     qty: l.line.qty,
     revenue: l.line.revenue,
@@ -126,7 +126,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
     note: l.line.note,
     avgPrice: l.line.qty ? l.line.revenue / l.line.qty : 0,
     menuPrice: l.product?.price ?? null,
-    // LafPOS satırının indirimden önceki liste değeri ve eki (Faz 2); ModPOS satırında yok
+    // AsilPOS satırının indirimden önceki liste değeri ve eki (Faz 2); ModPOS satırında yok
     gross: l.line.gross ?? null,
     isAddon: l.line.isAddon ?? false,
   }));
@@ -137,6 +137,8 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   // sayılırdı; denetim 13 Kasım HM-02). "Tümü"de birden çok kasa açıkken form çizilmez, şube sorulur (aşağıda); tek kasada
   // o kasanın
   const [writeId, scope, branches] = await Promise.all([currentWriteBranch(), currentBranchScope(), listBranches()]);
+  // Bandın metinleri; "Tümü"de birden çok kasa kasa raporunu bekliyorsa şube şube
+  const notes = asilpos && switchDay ? asilposMonthNotes(asilpos, switchDay, (id) => branches.find((b) => b.id === id)?.name ?? id) : null;
   const formInfo = info?.byBranch ? info.byBranch[writeId] : info;
   // Birden çok kasanın toplamıyken form hangi şubeye yazdığını adıyla söyler; liste ↔ POS kutusu çıkmaz (liste bütün
   // şubelerin, POS cirosu yalnız yazılan şubenin olurdu)
@@ -144,14 +146,13 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   // Online kanal seçili: kanalın kasa satışı yok, liste ve ay bilgisi yazılmaz (sunucu da reddeder, formBranch "sales")
   const channel = branches.find((b) => b.id === scope && b.kind !== "fiziksel") ?? null;
   // Listenin ve elle satırın yazılabileceği şubeler (docs/SUBE.md › Yazarken hangi şube): tek şubede o şube; "Tümü"de
-  // açık kasalar, ayı LafPOS'tan gelen şube hariç. Birden çoksa form şubeyi sorar, varsayılan yok. Her şubenin bu ayki
+  // açık kasalar, ayı AsilPOS'tan gelen şube hariç. Birden çoksa form şubeyi sorar, varsayılan yok. Her şubenin bu ayki
   // ModPOS satırları "Yenisiyle değiştir"in onayı için
   const tills = channel ? [] : scope === ALL_BRANCHES ? tillBranches(branches) : branches.filter((b) => b.id === scope);
-  const linesOf = (id: string) => sales.lines.filter((l) => !l.line.lafpos && (l.line.branchId ?? DEFAULT_BRANCH_ID) === id).length;
-  // LafPOS'un şubesi kütükten (lafposBranchOf): ayı LafPOS'tan gelen şube yalnız o
-  const lafposBranch = lafposBranchOf(branches);
+  const linesOf = (id: string) => sales.lines.filter((l) => !l.line.asilpos && (l.line.branchId ?? DEFAULT_BRANCH_ID) === id).length;
+  // Ayı AsilPOS'tan gelen şube (çok şube: her kasa kendi geçiş günüyle) yazılamaz
   const writable = tills
-    .filter((b) => monthSource(month, branchSwitchDay(model.settings.lafposGecisGunu, b.id, lafposBranch)) !== "lafpos")
+    .filter((b) => monthSource(month, switchDayFor(model.ds.posSwitchDays ?? {}, b.id)) !== "asilpos")
     .map((b) => ({ id: b.id, name: b.name, lines: linesOf(b.id) }));
   // "Ayı temizle"nin sileceği satırlar (pencerenin kapsamı; sunucu aynı sayımla karşılaştırır)
   const [{ n: clearCount }] = await getDb()
@@ -176,23 +177,23 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   // Kartların dökümü (karta dokununca açılan pencere): aynı ay satırlarından, yeni sorgu yok
   const breakdown = salesBreakdowns(sales, model.settings, month, model.cardShareOf(month).rate, model.salesPosCommission(month));
   const label = monthLabel(month);
-  // ModPOS listesinin satırları (LafPOS'un ay toplamları ayrı); LafPOS ayında sayılmayan listenin satırları
-  const modposLines = lafpos?.source === "lafpos" ? (lafpos.modpos?.lines ?? 0) : rows.filter((r) => r.lafposDays === null).length;
-  // Tablodaki LafPOS satırları (geçiş ayında kartın metinleri iki kaynağı ayrı söyler)
-  const lafposLines = rows.filter((r) => r.lafposDays !== null).length;
+  // ModPOS listesinin satırları (AsilPOS'un ay toplamları ayrı); AsilPOS ayında sayılmayan listenin satırları
+  const modposLines = asilpos?.source === "asilpos" ? (asilpos.modpos?.lines ?? 0) : rows.filter((r) => r.asilposDays === null).length;
+  // Tablodaki AsilPOS satırları (geçiş ayında kartın metinleri iki kaynağı ayrı söyler)
+  const asilposLines = rows.filter((r) => r.asilposDays !== null).length;
   // Yüklü listenin son günü (kartın "… tarihine kadar"ı): yeni yüklemenin değiştireceği ya da ekleneceği liste, yani
-  // yazılan şubeninki: kendi kaydı (writeCoverage; ay yoksa ayın tamamı), Marina'nın listesinin günü (lafpos.modpos) ya
-  // da son yükleyenin ortak kaydı değil. Yazılan şubenin listesi yoksa geçiş gününden sonra LafPOS'un şubesinin listesi,
+  // yazılan şubeninki: kendi kaydı (writeCoverage; ay yoksa ayın tamamı), Marina'nın listesinin günü (asilpos.modpos) ya
+  // da son yükleyenin ortak kaydı değil. Yazılan şubenin listesi yoksa geçiş gününden sonra AsilPOS'un şubesinin listesi,
   // öncesinde görünümün kapsamı. "Tümü"de birden çok şubeye yüklenebiliyorsa kart şubeyi sorar: tek bir gün (Tuzla'nınki)
   // yazılmaz, satır sayısı bütün şubelerin
-  const writeHasList = sales.lines.some((l) => !l.line.lafpos && (l.line.branchId ?? DEFAULT_BRANCH_ID) === writeId);
+  const writeHasList = sales.lines.some((l) => !l.line.asilpos && (l.line.branchId ?? DEFAULT_BRANCH_ID) === writeId);
   const coveredThrough =
     writable.length > 1
       ? null
       : writeHasList
         ? (model.ds.writeCoverage?.[month] ?? null)
-        : lafpos
-          ? (lafpos.modpos?.through ?? null)
+        : asilpos
+          ? (asilpos.modpos?.through ?? null)
           : (model.ds.salesCoverage?.find((c) => c.month === month)?.through ?? null);
 
   return (
@@ -206,7 +207,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
         actions={<MonthPicker months={availableMonths(model)} value={month} />}
       />
 
-      {notes ? <LafposBand notes={notes} source={lafpos!.source} /> : null}
+      {notes ? <AsilposBand notes={notes} source={asilpos!.source} /> : null}
       {/* "Tümü"nün dönemi şubelerin en kısa listesiyle (bulgu 62): kısaltan şube adıyla */}
       {common ? <Notice tone="neutral" size="sm" title="Tümü'de satışlar şubelerin ortak döneminden" text={commonListText(month, common.branch, common.through)} /> : null}
 
@@ -328,20 +329,20 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
             scope={scope}
             clearCount={clearCount}
             lineCount={modposLines}
-            lafposLines={lafposLines}
+            asilposLines={asilposLines}
             mappings={mappingList}
             products={products}
             hasInfo={hasInfo}
             running={runningImport}
             coveredThrough={coveredThrough}
             listDays={listPeriod ? listDaysText(listPeriod) : null}
-            lafpos={
-              lafpos?.source === "lafpos"
-                ? { source: "lafpos", days: lafpos.lafpos?.days ?? 0, last: lafpos.lafpos?.last ?? null }
-                : lafpos?.source === "gecis" && switchDay && lastModpos
+            asilpos={
+              asilpos?.source === "asilpos"
+                ? { source: "asilpos", days: asilpos.asilpos?.days ?? 0, last: asilpos.asilpos?.last ?? null }
+                : asilpos?.source === "gecis" && switchDay && lastModpos
                   ? {
                       source: "gecis",
-                      throughHint: `Geçiş ayı: ModPOS listesi en çok ${dayRangeTR(`${month}-01`, lastModpos)} günlerini kapsar, LafPOS ${dayAblativeTR(switchDay)} itibaren sayılır. Liste daha kısaysa son gününü seçin; aradaki günler hiçbir kaynakta olmaz.`,
+                      throughHint: `Geçiş ayı: ModPOS listesi en çok ${dayRangeTR(`${month}-01`, lastModpos)} günlerini kapsar, AsilPOS ${dayAblativeTR(switchDay)} itibaren sayılır. Liste daha kısaysa son gününü seçin; aradaki günler hiçbir kaynakta olmaz.`,
                     }
                   : null
             }
@@ -375,9 +376,11 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
               listPeriod={
                 !formBranch && listPeriod ? { label: listDaysText(listPeriod), posRevenue: listPeriod.posRevenue, discounts: listPeriod.discounts } : null
               }
-              // LafPOS günlerinin indirimi satırlarda zaten düşülmüş (engine listDiscounts); "Tümü"de yalnız formun şubesi LafPOS'unsa
-              lafposList={
-                !formBranch && formInfo && (!info?.byBranch || isLafposBranch(writeId, lafposBranch)) ? lafposListPart(formInfo, model.ds.lafposSales?.countFrom ?? null) : null
+              // AsilPOS günlerinin indirimi satırlarda zaten düşülmüş (engine listDiscounts); "Tümü"de yalnız formun şubesi AsilPOS'unsa
+              asilposList={
+                !formBranch && formInfo
+                  ? asilposListPart(formInfo, info?.byBranch ? posFromOf(salesFroms(model.ds.asilposSales), writeId) : (model.ds.asilposSales?.countFrom ?? null))
+                  : null
               }
               currentMonth={model.currentMonth}
               recordedIkram={model.wasteSummary(month).ikram}
@@ -393,7 +396,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           products={products}
           mappings={mappingList}
           month={month}
-          lafposMonth={lafpos?.source === "lafpos"}
+          asilposMonth={asilpos?.source === "asilpos"}
           lineBranches={writable.map((b) => ({ id: b.id, name: b.name }))}
           totals={{
             qty: sales.qty,
@@ -411,16 +414,16 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
 }
 
 /**
- * LafPOS'a geçildiyse ayın kaynağı ve sorunları (src/lib/lafpos/sales.ts › lafposMonthNotes): geçiş ayında bilgi satırı
- * ve uyarılar (eksik günler, sayılmayan LafPOS günleri, liste ↔ Z farkı); LafPOS ayında bilgi İçe aktar kartında, burada
+ * AsilPOS'a geçildiyse ayın kaynağı ve sorunları (src/lib/asilpos/sales.ts › asilposMonthNotes): geçiş ayında bilgi satırı
+ * ve uyarılar (eksik günler, sayılmayan AsilPOS günleri, liste ↔ Z farkı); AsilPOS ayında bilgi İçe aktar kartında, burada
  * yalnız uyarı (sayılmayan ModPOS listesi). Yalnız yönetici (sayfa requireAdmin)
  */
-function LafposBand({ notes, source }: { notes: LafposMonthNotes; source: "gecis" | "lafpos" }) {
+function AsilposBand({ notes, source }: { notes: AsilposMonthNotes; source: "gecis" | "asilpos" }) {
   // Tutmayan denetim (ModPOS listesi − indirim ↔ Z) bilgi kutusu: %5'i aşan fark ayrıca uyarılarda (modposOverZText),
   // aynı fark iki kez uyarı tonunda görünmez. Tutanlar tek satır (sakin)
   const off = notes.checks.filter((c) => !c.ok);
   const ok = notes.checks.filter((c) => c.ok);
-  if (source === "lafpos" && !notes.warnings.length && !off.length && !ok.length) return null;
+  if (source === "asilpos" && !notes.warnings.length && !off.length && !ok.length) return null;
   return (
     <div className="mb-4 space-y-2">
       {source === "gecis" ? <Notice tone="neutral" title={notes.info} /> : null}

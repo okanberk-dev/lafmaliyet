@@ -114,10 +114,10 @@ test("eski listenin son günü korunur (legacyCoveragePins): ortak kayıt ezilme
 
 test("kapsam kaydı: yükleme süren ayda günü yazar, biten aya yükleme ve 'Ayı temizle' siler; tek ifadeyle (iki ay birbirini ezmez)", () => {
   const sales = read("src/server/actions/sales.ts");
-  // Kural src/lib/lafpos/sales.ts › modposImportRule'da: geçiş günü yokken ya da ondan önceki ayda coverageFor'un kendisi
-  // (geçiş ayında en çok geçiş gününden önceki güne kadar, LafPOS ayında red; tests/lafpos-satis.test.ts)
+  // Kural src/lib/asilpos/sales.ts › modposImportRule'da: geçiş günü yokken ya da ondan önceki ayda coverageFor'un kendisi
+  // (geçiş ayında en çok geçiş gününden önceki güne kadar, AsilPOS ayında red; tests/asilpos-satis.test.ts)
   assert.match(sales, /const rule = modposImportRule\(month, switchDay, todayTR\(\), z\.string\(\)\.max\(10\)\.nullish\(\)\.parse\(input\.through\)\);/);
-  assert.match(read("src/lib/lafpos/sales.ts"), /if \(src === "modpos" \|\| switchDay === null\) return \{ ok: true, through: coverageFor\(month, today, given\) \};/);
+  assert.match(read("src/lib/asilpos/sales.ts"), /if \(src === "modpos" \|\| switchDay === null\) return \{ ok: true, through: coverageFor\(month, today, given\) \};/);
   assert.match(sales, /await writeCoverage\(tx, sube, month, through\);/, "satırlarla aynı işlemde, şubenin kendi kaydıyla");
   // Önce eski listelerin son günü şubelerine (ortak kayıt ezilmeden), sonra ortak kayıt ve yazanın kendi kaydı
   assert.match(sales, /await pinLegacyCoverage\(db, branchId, month\);\n\s*await setCoverage\(db, month, through\);\n\s*await setBranchCoverage\(db, branchId, month, through\);/);

@@ -141,18 +141,18 @@ export interface CashReading {
   extraTakings?: true;
 }
 
-/** Kasa bölümünün alanları: fotoğrafta yok, yalnız LafPOS'un gün sonu doldurur */
+/** Kasa bölümünün alanları: fotoğrafta yok, yalnız AsilPOS'un gün sonu doldurur */
 export type TillField = "openingCash" | "cashIn" | "cashOut" | "countedCash" | "handedOver";
-/** Ön doldurmanın yazabildiği alanlar: Z alanları (fotoğraf, LafPOS) ve kasa alanları (LafPOS) */
+/** Ön doldurmanın yazabildiği alanlar: Z alanları (fotoğraf, AsilPOS) ve kasa alanları (AsilPOS) */
 export type PrefillField = ReadField | TillField;
 
 /**
- * Forma uygulanan ön doldurma: fotoğraf okuması ya da LafPOS'un gün sonu (`lafpos`, docs/LAFPOS.md; ModPOS'un günlük
- * dökümü hiç gelmedi, yerini LafPOS aldı). Okuma da bu biçimdedir (değerler, denetimler, eksikler); form ikisini aynı
+ * Forma uygulanan ön doldurma: fotoğraf okuması ya da AsilPOS'un gün sonu (`asilpos`, docs/ASILPOS.md; ModPOS'un günlük
+ * dökümü hiç gelmedi, yerini AsilPOS aldı). Okuma da bu biçimdedir (değerler, denetimler, eksikler); form ikisini aynı
  * kuralla uygular (prefillPlan): yalnız boş alanlar dolar, yazılmış ve farklı olanın altında öneri çıkar.
  */
 export interface CashPrefill {
-  source: "photo" | "modpos" | "lafpos";
+  source: "photo" | "modpos" | "asilpos";
   values: Partial<Record<PrefillField, ReadValue>>;
   checks: ReadCheck[];
   /** Kaynakta olması gerekirken olmayanlar (formda boşsa turuncu) */
@@ -411,9 +411,9 @@ export const UNSURE_TEXT = "Fotoğrafta net değil; fişle karşılaştırın.";
 export const MISSING_TEXT = "Fotoğrafta okunamadı; fişten yazın.";
 
 export interface PrefillPlan {
-  /** Boş alanlara yazılacaklar; `warn` turuncu nedeni (yoksa yalnız "Fotoğraftan" ya da "LafPOS'tan") */
+  /** Boş alanlara yazılacaklar; `warn` turuncu nedeni (yoksa yalnız "Fotoğraftan" ya da "AsilPOS'tan") */
   fill: { field: PrefillField; text: string; warn: string | null }[];
-  /** Yazılanla farklı olanlar: değer kalır, "Fotoğrafta …" ve "Fotoğraftakini yaz" (LafPOS'ta: "LafPOS'takini yaz") görünür */
+  /** Yazılanla farklı olanlar: değer kalır, "Fotoğrafta …" ve "Fotoğraftakini yaz" (AsilPOS'ta: "AsilPOS'takini yaz") görünür */
   differs: { field: PrefillField; photo: number | string; text: string }[];
   /**
    * Güveni düşük (tahmin) ya da bir kimliği tutmayan (yazarkasa, `reason` ile): doldurulmaz, turuncu "fişten yazın" ve
@@ -425,7 +425,7 @@ export interface PrefillPlan {
 }
 
 /**
- * Okumanın (ya da LafPOS'un gün sonunun, CashPrefill) forma uygulanışı: yalnız boş alanlar dolar; yazılmış ve farklı
+ * Okumanın (ya da AsilPOS'un gün sonunun, CashPrefill) forma uygulanışı: yalnız boş alanlar dolar; yazılmış ve farklı
  * olan değer kalır. Güveni düşük okuma (fotoğrafta tahmin) alana yazılmaz: personel fişe bakıp yazar ya da
  * "Fotoğraftakini yaz"a basar. `current` formdaki alanlar: formda olmayan alan atlanır.
  */

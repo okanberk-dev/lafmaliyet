@@ -11,7 +11,7 @@
  * Şubeler (docs/SUBE.md): satırlar şubelidir. "Tümü"de açık gün günde bir kez sayılır, kaynak önceliği (gün, şube) için
  * uygulanır; elle yazılanlar şube şube çözülüp toplanır (resolveBranchMonths).
  *
- * Raporu olmayan gün yedek satırla gelebilir: LafPOS'un gün sonu (geçiş gününden sonra, G6) ya da ayar açıkken kapanmış
+ * Raporu olmayan gün yedek satırla gelebilir: AsilPOS'un gün sonu (geçiş gününden sonra, G6) ya da ayar açıkken kapanmış
  * ModPOS kasa föyü (geçiş gününden önce; docs/MODPOS-API.md › Ay rakamına yedek). Yedek satır ayın rakamına girer, gün
  * yine "rapor yok" sayılır; raporlar başlamadan önceki föy günleri eksik aranmaz.
  */
@@ -21,7 +21,7 @@ import type { FieldSource, Month, MonthField, TillMonth } from "./calc/types";
 import { dayRevenue } from "./cash-revenue";
 import { MONTH_NAMES } from "./constants";
 import { money } from "./format";
-import { isLafposBranch } from "./lafpos/switch";
+import { posFromOf, type PosFroms } from "./pos/tills";
 import { addDays, dayAblativeTR, dayLocativeTR, monthEnd } from "./reminders";
 
 /** Ay bilgisine giden alanlar (kasa raporundan bunlar okunur) */
@@ -40,24 +40,24 @@ export interface TillRow {
   payments?: number | null;
   /**
    * Yedek satırın kaynağı; yoksa kasa raporu (isReportRow). Yedek satırın rakamları aya girer, gün yine "rapor yok"
-   * sayılır; aynı günde rapor > LafPOS > ModPOS (tillMonths; yükleyici zaten tek satır verir):
-   * - "lafpos": kasa raporu girilmemiş LafPOS gününün yedek satırı, LafPOS'un Z'sinden (docs/LAFPOS.md › Kasa raporu,
+   * sayılır; aynı günde rapor > AsilPOS > ModPOS (tillMonths; yükleyici zaten tek satır verir):
+   * - "asilpos": kasa raporu girilmemiş AsilPOS gününün yedek satırı, AsilPOS'un Z'sinden (docs/ASILPOS.md › Kasa raporu,
    *   G6; yalnız geçiş gününden sonra, src/server/data/cash-reports.ts tillRows).
-   * - "modpos": kasa raporu (ve LafPOS gün sonu) olmayan günün kapanmış ModPOS kasa föyü (docs/MODPOS-API.md › Ay
-   *   rakamına yedek; yalnız Ayarlar'daki anahtar açıkken ve LafPOS'a geçiş gününden önce, modposTillRows). Föyde indirim
+   * - "modpos": kasa raporu (ve AsilPOS gün sonu) olmayan günün kapanmış ModPOS kasa föyü (docs/MODPOS-API.md › Ay
+   *   rakamına yedek; yalnız Ayarlar'daki anahtar açıkken ve AsilPOS'a geçiş gününden önce, modposTillRows). Föyde indirim
    *   olmadığı için `discounts` null.
    */
-  source?: "lafpos" | "modpos";
+  source?: "asilpos" | "modpos";
   /**
-   * Satırın şubesi (docs/SUBE.md). Aynı günün öncelik ayıklaması (rapor > LafPOS > ModPOS) şube içindedir: "Tümü"de
+   * Satırın şubesi (docs/SUBE.md). Aynı günün öncelik ayıklaması (rapor > AsilPOS > ModPOS) şube içindedir: "Tümü"de
    * Tuzla'nın raporu Marina'nın aynı günkü föyünü düşürmez (docs/MODPOS-API.md › Şubeler). Verilmezse (eski kayıt,
    * test) bütün satırlar tek şubeden sayılır.
    */
   branchId?: string;
-  /** Yedek satırda fiş (adisyon) sayısı: satışsız gün sonu kapalı işaretini bozmaz (lafposSold ile aynı kural) */
+  /** Yedek satırda fiş (adisyon) sayısı: satışsız gün sonu kapalı işaretini bozmaz (asilposSold ile aynı kural) */
   receipts?: number | null;
   /**
-   * Günün KDV dökümü (oran, matrah, KDV; TL): LafPOS gününde LafPOS'un z.vat'ı (Faz 2, 23 Kasım 2026; yükleyici kasa
+   * Günün KDV dökümü (oran, matrah, KDV; TL): AsilPOS gününde AsilPOS'un z.vat'ı (Faz 2, 23 Kasım 2026; yükleyici kasa
    * raporunun satırına da koyar). Gün KDV'si bundan (tillMonths dayVat; engine.ts posNet), yoksa günün oranıyla
    */
   vat?: readonly { rate: number; base: number; vat: number }[] | null;
@@ -71,27 +71,27 @@ export interface TillRow {
 /** En yüksek KDV oranının (%20) KDV dahil tutardaki payı: Z'nin KDV'si bundan büyük olamaz */
 const MAX_VAT_SHARE = 0.2 / 1.2;
 
-/** Günün LafPOS dökümü cirosunu tutuyor mu (±0,01): tutuyorsa günün KDV'si dökümden (dayVatOf ile aynı sınama) */
-function lafposVatKnown(r: TillRow, rev: number): boolean {
+/** Günün AsilPOS dökümü cirosunu tutuyor mu (±0,01): tutuyorsa günün KDV'si dökümden (dayVatOf ile aynı sınama) */
+function asilposVatKnown(r: TillRow, rev: number): boolean {
   return Boolean(r.vat?.length) && Math.abs(r.vat!.reduce((a, x) => a + x.base + x.vat, 0) - rev) < 0.01;
 }
 
 /**
- * Ayın satışlı günlerinin KDV kaynağı (KDV tahmini, src/lib/kdv.ts): LafPOS'un dökümü cirosunu tutan gün LafPOS'tan
- * (`lafposRows`: LafPOS'un şubesinin satırları, motorun gün gün hesabındakiler); kasa raporunda yazarkasa Z'sinin KDV'si
+ * Ayın satışlı günlerinin KDV kaynağı (KDV tahmini, src/lib/kdv.ts): AsilPOS'un dökümü cirosunu tutan gün AsilPOS'tan
+ * (`asilposRows`: AsilPOS'un şubesinin satırları, motorun gün gün hesabındakiler); kasa raporunda yazarkasa Z'sinin KDV'si
  * girilmiş öteki gün Z'den; kalanı oranla. Z'nin KDV'si akla yatkın değilse (eksi ya da toplamın %20'lik payından büyük:
  * yanlış okunmuş fiş) gün oranla kalır. Yazarkasa toplamı günün cirosunu aşsa da (ödenmez yazarkasadan geçmiş) kapsanan
  * kısım ciroyla sınırlıdır; cironun yazarkasa dışında kalanı (online platform, yazarkasadan geçmeyen satış) oranla
  */
-export function vatDaysOf(rows: readonly TillRow[], lafposRows: readonly TillRow[] = []): NonNullable<TillMonth["vatDays"]> {
-  const laf = new Set(lafposRows);
+export function vatDaysOf(rows: readonly TillRow[], asilposRows: readonly TillRow[] = []): NonNullable<TillMonth["vatDays"]> {
+  const laf = new Set(asilposRows);
   const z = { days: 0, revenue: 0, covered: 0, vat: 0 };
-  let lafpos = 0;
+  let asilpos = 0;
   let estimate = 0;
   for (const r of rows) {
     const rev = dayRevenue({ zTotal: r.zTotal, offRevenue: r.offRevenue ?? null, payments: r.payments ?? null }).revenue;
     if (!(rev > 0)) continue;
-    if (laf.has(r) && lafposVatKnown(r, rev)) lafpos++;
+    if (laf.has(r) && asilposVatKnown(r, rev)) asilpos++;
     else if (r.okc && r.okc.total > 0 && r.okc.vat >= 0 && r.okc.vat <= r.okc.total * MAX_VAT_SHARE + 0.01) {
       z.days++;
       z.revenue += rev;
@@ -99,12 +99,12 @@ export function vatDaysOf(rows: readonly TillRow[], lafposRows: readonly TillRow
       z.vat += r.okc.vat;
     } else estimate++;
   }
-  return { z: { days: z.days, revenue: r2(z.revenue), covered: r2(z.covered), vat: r2(z.vat) }, lafpos, estimate };
+  return { z: { days: z.days, revenue: r2(z.revenue), covered: r2(z.covered), vat: r2(z.vat) }, asilpos, estimate };
 }
 
 /**
- * LafPOS'un şubesinin günlerinin KDV'si gün gün (hesap sözleşmesi; engine.ts posNet): LafPOS'un dökümü günün cirosunu
- * tutuyorsa (±0,01) o (`known`), tutmuyorsa ya da döküm yoksa (ModPOS günü, eski LafPOS) günün cirosu (`days`; motor her
+ * AsilPOS'un şubesinin günlerinin KDV'si gün gün (hesap sözleşmesi; engine.ts posNet): AsilPOS'un dökümü günün cirosunu
+ * tutuyorsa (±0,01) o (`known`), tutmuyorsa ya da döküm yoksa (ModPOS günü, eski AsilPOS) günün cirosu (`days`; motor her
  * birini günün oranıyla ayrı ayrı yuvarlar, ay günlerin toplamıdır)
  */
 export function dayVatOf(rows: readonly TillRow[]): NonNullable<TillMonth["dayVat"]> {
@@ -124,9 +124,9 @@ export function dayVatOf(rows: readonly TillRow[]): NonNullable<TillMonth["dayVa
 }
 
 /**
- * Satır kasa raporu mu (kaynağı yok). Yedek satırlar (LafPOS gün sonu, ModPOS föyü) rapor sayılmaz: günü "girildi"
- * yapmaz, raporlu gün sayısına, son rapor gününe ve LafPOS satışlarının sınırlarına girmez (docs/MODPOS-API.md › Ay
- * rakamına yedek; G6). Raporu ayırmanın tek yolu budur: `source !== "lafpos"` gibi bir sınama üçüncü kaynağı (ModPOS)
+ * Satır kasa raporu mu (kaynağı yok). Yedek satırlar (AsilPOS gün sonu, ModPOS föyü) rapor sayılmaz: günü "girildi"
+ * yapmaz, raporlu gün sayısına, son rapor gününe ve AsilPOS satışlarının sınırlarına girmez (docs/MODPOS-API.md › Ay
+ * rakamına yedek; G6). Raporu ayırmanın tek yolu budur: `source !== "asilpos"` gibi bir sınama üçüncü kaynağı (ModPOS)
  * rapor sanırdı
  */
 export function isReportRow(r: Pick<TillRow, "source">): boolean {
@@ -169,8 +169,8 @@ function keepModposRuns(rows: TillRow[], branchOf: (r: TillRow) => string): Till
   });
 }
 
-/** Aynı günün önceliği: kasa raporu (0) > LafPOS gün sonu (1) > ModPOS föyü (2) */
-const rankOf = (r: TillRow) => (isReportRow(r) ? 0 : r.source === "lafpos" ? 1 : 2);
+/** Aynı günün önceliği: kasa raporu (0) > AsilPOS gün sonu (1) > ModPOS föyü (2) */
+const rankOf = (r: TillRow) => (isReportRow(r) ? 0 : r.source === "asilpos" ? 1 : 2);
 
 /** Satırların en eski günü (boşsa null) */
 const earliest = (rows: readonly TillRow[]): string | null => rows.reduce<string | null>((a, r) => (a === null || r.date < a ? r.date : a), null);
@@ -227,7 +227,7 @@ export function tillOpenedOn(branch: { id: string; openedOn: string | null } | n
  * girildiyse o da sayılır). `firstEver`: ilk satırın günü, kaynağı ne olursa olsun (verilmezse satırların en eskisi);
  * yalnız bir ayın satırları verilince ay ortasında başlayan ilk ay (partialFrom) buna göre tanınır.
  *
- * `firstReport`: eksik (ve kapalı işaretli) günlerin arandığı ilk gün, yani ilk kasa raporu ya da LafPOS gün sonu
+ * `firstReport`: eksik (ve kapalı işaretli) günlerin arandığı ilk gün, yani ilk kasa raporu ya da AsilPOS gün sonu
  * (docs/MODPOS-API.md › Ay rakamına yedek): ModPOS föyleri raporlar başlamadan önceye uzanınca o günler "eksik rapor"
  * sayılmaz; null: hiç rapor yok, eksik gün aranmaz. Verilmezse `firstEver`, o da yoksa satırların ModPOS olmayan en
  * eskisi; ModPOS satırı yokken bu ilk satırla aynıdır, sonuç bugünküyle birebir aynı kalır. Yalnız bir ayın satırlarını
@@ -243,10 +243,10 @@ export function tillOpenedOn(branch: { id: string; openedOn: string | null } | n
  * öncesindeyse (ya da açılış günü yazılmamış sonradan açılan şubede) ilk ay yarım sayılmaz (partialStart). Verilmezse
  * ("Tümü", Tuzla) bugünkü kural.
  *
- * `lafposFrom`: LafPOS satışlarının sayıldığı ilk gün (Dataset.lafposSales.countFrom; geçiş günü yoksa null). Verilirse
- * ayın `lafposDiscounts`'u LafPOS'un şubesinin o günden itibarenki satırlarının indirimidir: LafPOS'un satırları
- * indirimden sonradır, bu indirim satış listesinden bir daha düşülmez (listDiscountOf; hesap sözleşmesi §11).
- * `lafposBranch`: LafPOS'un şubesi (kütükten türetilmiş, Dataset.lafposBranch); verilmezse geri düşüş değeri
+ * `pos` (çok şube): AsilPOS kasaları (`tills`: şubeleri; günleri KDV'de gün gün) ve kasa başına AsilPOS satışlarının
+ * sayıldığı ilk gün (`froms`, Dataset.asilposSales.froms; yoksa null). `froms` verilirse ayın `asilposDiscounts`'u her
+ * kasanın kendi ilk gününden itibarenki satırlarının indirimidir: AsilPOS'un satırları indirimden sonradır, bu indirim satış
+ * listesinden bir daha düşülmez (listDiscountOf; hesap sözleşmesi §11).
  */
 export function tillMonths(
   rows: TillRow[],
@@ -257,9 +257,10 @@ export function tillMonths(
   firstReport?: string | null,
   modposFrom?: string | null,
   openedOn?: TillOpening,
-  lafposFrom?: string | null,
-  lafposBranch?: string,
+  pos?: { froms: PosFroms | null; tills: readonly string[] },
 ): TillMonth[] {
+  const froms = pos?.froms && Object.keys(pos.froms).length ? pos.froms : null;
+  const tillSet = new Set(pos?.tills ?? []);
   const waiting = pendingLate ? new Set(pendingLate) : null;
   // Kapalı işaretli günler eksik sayılmaz, ayrı yazılır (raporu olan gün zaten eksik değil)
   const shut = closedDays ? new Set(closedDays) : null;
@@ -269,7 +270,7 @@ export function tillMonths(
   const branched = rows.every((r) => r.branchId !== undefined);
   const branchOf = (r: TillRow) => (branched ? r.branchId! : "");
   const slot = (r: TillRow) => (branched ? tillKey(r) : r.date);
-  // Yedek satırlar (LafPOS G6, ModPOS föyü) yalnız daha öncelikli kaynağı olmayan günde sayılır: rapor > LafPOS > ModPOS
+  // Yedek satırlar (AsilPOS G6, ModPOS föyü) yalnız daha öncelikli kaynağı olmayan günde sayılır: rapor > AsilPOS > ModPOS
   // (yükleyici zaten böyle verir). Aynı kaynağın aynı günkü satırları olduğu gibi kalır. Ayıklama şube içinde (tillKey):
   // başka şubenin raporu bu şubenin föyünü düşürmez (denetim 13 Kasım HM-03)
   const best = new Map<string, number>();
@@ -284,7 +285,7 @@ export function tillMonths(
   } else if (firstReport === undefined) rows = keepModposRuns(rows, branchOf);
   if (!rows.length) return [];
   const first = firstEver ?? earliest(rows)!;
-  // Eksik gün araması ilk kasa raporundan (ya da LafPOS gün sonundan); hiçbiri yoksa (yalnız ModPOS föyü) aranmaz
+  // Eksik gün araması ilk kasa raporundan (ya da AsilPOS gün sonundan); hiçbiri yoksa (yalnız ModPOS föyü) aranmaz
   const searchFrom = firstReport !== undefined ? firstReport : (firstEver ?? earliest(rows.filter((r) => r.source !== "modpos")));
   const byMonth = new Map<string, TillRow[]>();
   for (const r of rows) {
@@ -302,7 +303,7 @@ export function tillMonths(
     const from = first > start ? first : start;
     const upto = through > lastDate ? through : lastDate;
     const to = upto < end ? upto : end;
-    // Gün yalnız kasa raporuyla "girildi" sayılır; yedek satırı olan gün eksik kalır (yanına "LafPOS'tan" ya da "ModPOS
+    // Gün yalnız kasa raporuyla "girildi" sayılır; yedek satırı olan gün eksik kalır (yanına "AsilPOS'tan" ya da "ModPOS
     // föyünden"). Gün sayıları işletmenin günüdür: "Tümü"de birden çok şubenin satırları gelince aynı günün iki şubesi bir
     // gün sayılır (açık gün: herhangi bir kasa açıktı; girildi: herhangi bir kasa raporladı; eksik: hiçbir kasa
     // raporlamadı). Şube şube eksik gün aranmaz; tek şubede satırlar bugünkü gibi sayılır (altın dosya)
@@ -310,9 +311,9 @@ export function tillMonths(
     const multi = new Set(list.map(branchOf)).size > 1;
     const dayCount = (xs: readonly TillRow[]) => (multi ? new Set(xs.map((r) => r.date)).size : xs.length);
     const datesOf = (xs: readonly TillRow[]) => (multi ? [...new Set(xs.map((r) => r.date))] : xs.map((r) => r.date));
-    const fromLafpos = datesOf(list.filter((r) => r.source === "lafpos"));
+    const fromAsilpos = datesOf(list.filter((r) => r.source === "asilpos"));
     const fromModpos = datesOf(list.filter((r) => r.source === "modpos"));
-    // Kapalı işaretli günü yalnız satışlı yedek satır açar (src/lib/closed-days.ts lafposSold ile aynı kural; LafPOS gün
+    // Kapalı işaretli günü yalnız satışlı yedek satır açar (src/lib/closed-days.ts asilposSold ile aynı kural; AsilPOS gün
     // sonu da ModPOS föyü de): satışsız Z kafenin açık olduğunu göstermez, gün kapalı sayılmaya devam eder
     const sold = new Set(list.filter((r) => !isReportRow(r) && (r.zTotal > 0 || (r.receipts ?? 0) > 0)).map((r) => r.date));
     const missing: string[] = [];
@@ -327,8 +328,13 @@ export function tillMonths(
     const offInPos = r2(revenues.reduce((a, d) => a + d.offInZTotal, 0));
     const posRevenue = r2(zTotalSum - offInPos);
     const disc = list.filter((r) => r.discounts != null);
-    // LafPOS'un satırlarında zaten düşülmüş indirim: LafPOS'un şubesinin satış sayılan günleri (rapor ya da gün sonu)
-    const lafposDisc = lafposFrom ? disc.filter((r) => isLafposBranch(r.branchId, lafposBranch) && r.date >= lafposFrom) : [];
+    // AsilPOS'un satırlarında zaten düşülmüş indirim: AsilPOS'un şubesinin satış sayılan günleri (rapor ya da gün sonu)
+    const asilposDisc = froms
+      ? disc.filter((r) => {
+          const from = posFromOf(froms, r.branchId);
+          return from !== null && r.date >= from;
+        })
+      : [];
     const off = list.filter((r) => r.offRevenue != null);
     // Kart + yemek kartı (kartlı satış oranı: satış raporunun tahmini komisyonu); online ve diğer komisyonsuz. Banka POS
     // komisyonu yalnız banka kartından (yemek kartının komisyonu kendi faturasıyla; denetim E-43). Yanlış yazılmış bir
@@ -338,8 +344,8 @@ export function tillMonths(
     // Banka kartı şube şube (banka POS komisyonu her şubenin kendi oranıyla; engine posCommission)
     const bankByBranch = branched ? Object.fromEntries([...new Set(list.map(branchOf))].map((b) => [b, sum(list.filter((r) => branchOf(r) === b), (r) => r.card)])) : null;
     const share = (v: number) => (posRevenue > 0 ? Math.min(1, Math.round((v / posRevenue) * 10_000) / 10_000) : null);
-    // LafPOS'un şubesinin günleri: KDV gün gün (dayVatOf); öteki şubelerin satırları ay toplamıyla
-    const lafposRows = branched ? list.filter((r) => isLafposBranch(r.branchId, lafposBranch)) : [];
+    // AsilPOS'un şubesinin günleri: KDV gün gün (dayVatOf); öteki şubelerin satırları ay toplamıyla
+    const asilposRows = branched ? list.filter((r) => tillSet.has(r.branchId!)) : [];
     return {
       month,
       from,
@@ -351,7 +357,7 @@ export function tillMonths(
       offInPos,
       discounts: disc.length ? sum(disc, (r) => r.discounts!) : null,
       discountDays: dayCount(disc),
-      ...(lafposFrom ? { lafposDiscounts: sum(lafposDisc, (r) => r.discounts!) } : {}),
+      ...(froms ? { asilposDiscounts: sum(asilposDisc, (r) => r.discounts!) } : {}),
       offRevenue: off.length ? sum(off, (r) => r.offRevenue!) : null,
       offDays: dayCount(off),
       cardShare: share(card),
@@ -359,15 +365,15 @@ export function tillMonths(
       card: bank,
       mealCard: sum(list, (r) => r.mealCard),
       ...(bankByBranch ? { cardByBranch: bankByBranch } : {}),
-      ...(lafposRows.length ? { dayVat: dayVatOf(lafposRows) } : {}),
-      // Günlerin KDV kaynağı (KDV tahmini): yazarkasa Z'si ya da LafPOS dökümü olan bir gün varsa
-      ...(list.some((r) => r.okc) || lafposRows.some((r) => r.vat?.length) ? { vatDays: vatDaysOf(list, lafposRows) } : {}),
+      ...(asilposRows.length ? { dayVat: dayVatOf(asilposRows) } : {}),
+      // Günlerin KDV kaynağı (KDV tahmini): yazarkasa Z'si ya da AsilPOS dökümü olan bir gün varsa
+      ...(list.some((r) => r.okc) || asilposRows.some((r) => r.vat?.length) ? { vatDays: vatDaysOf(list, asilposRows) } : {}),
       missing,
       ...(waiting ? { pending: missing.filter((d) => waiting.has(d)) } : {}),
       ...(shut ? { closed } : {}),
       partialFrom: partialStart(month, first, openedOn),
       lastDate,
-      ...(fromLafpos.length ? { lafpos: fromLafpos } : {}),
+      ...(fromAsilpos.length ? { asilpos: fromAsilpos } : {}),
       ...(fromModpos.length ? { modpos: fromModpos } : {}),
     };
   });
@@ -550,44 +556,46 @@ function combineMonths(month: string, parts: readonly [string, Month][], till: T
 }
 
 /**
- * Ayın indiriminin LafPOS satırlarında zaten düşülmüş kısmı (listDiscount): `whole` ayın bütün satış günleri LafPOS'tan
- * (ayın 1'i LafPOS satışlarının sayıldığı ilk günden önce değil), `inLines` kasa satırlarından bilinen LafPOS günü
- * indirimi (TillMonth.lafposDiscounts). Geçiş günü yoksa (ModPOS şubesi) null
+ * Ayın indiriminin AsilPOS satırlarında zaten düşülmüş kısmı (listDiscount): `whole` ayın bütün satış günleri AsilPOS'tan
+ * (ayın 1'i AsilPOS satışlarının sayıldığı ilk günden önce değil), `inLines` kasa satırlarından bilinen AsilPOS günü
+ * indirimi (TillMonth.asilposDiscounts). Geçiş günü yoksa (ModPOS şubesi) null
  */
-export interface LafposListPart {
+export interface AsilposListPart {
   whole: boolean;
   inLines: number;
 }
 
-/** Ayın LafPOS payı (listDiscountOf); `lafposFrom` LafPOS satışlarının sayıldığı ilk gün, yoksa null */
-export function lafposListPart(m: Pick<Month, "month" | "kasa">, lafposFrom: string | null): LafposListPart | null {
-  if (!lafposFrom) return null;
-  return { whole: `${m.month}-01` >= lafposFrom, inLines: m.kasa?.till.lafposDiscounts ?? 0 };
+/** Ayın AsilPOS payı (listDiscountOf); `asilposFrom` AsilPOS satışlarının sayıldığı ilk gün, yoksa null */
+export function asilposListPart(m: Pick<Month, "month" | "kasa">, asilposFrom: string | null): AsilposListPart | null {
+  if (!asilposFrom) return null;
+  return { whole: `${m.month}-01` >= asilposFrom, inLines: m.kasa?.till.asilposDiscounts ?? 0 };
 }
 
 /**
- * Satış listesinden düşülecek indirim (hesap sözleşmesi §11): ModPOS'un ürün listesi indirimden öncedir, LafPOS'un
- * satırları indirimden sonra. Ayın tamamı LafPOS'sa 0; geçiş ayında ayın indiriminden LafPOS günlerininki düşülür (elle
- * yazılan ay toplamında da: kasanın bildiği LafPOS günü indirimi); LafPOS yoksa ayın indirimi
+ * Satış listesinden düşülecek indirim (hesap sözleşmesi §11): ModPOS'un ürün listesi indirimden öncedir, AsilPOS'un
+ * satırları indirimden sonra. Ayın tamamı AsilPOS'sa 0; geçiş ayında ayın indiriminden AsilPOS günlerininki düşülür (elle
+ * yazılan ay toplamında da: kasanın bildiği AsilPOS günü indirimi); AsilPOS yoksa ayın indirimi
  */
-export function listDiscount(discount: number, lafpos: LafposListPart | null): number {
-  if (!lafpos) return discount;
-  if (lafpos.whole) return 0;
-  return Math.max(0, r2(discount - lafpos.inLines));
+export function listDiscount(discount: number, asilpos: AsilposListPart | null): number {
+  if (!asilpos) return discount;
+  if (asilpos.whole) return 0;
+  return Math.max(0, r2(discount - asilpos.inLines));
 }
 
 /**
  * Ayın satış listesinden düşülecek indirimi (Tutarlılık, uyarılar, Genel bakış'ın reçeteye göre kârı; −90 ₺ hatası,
- * 23 Kasım 2026). "Tümü"de şube şube: yalnız LafPOS'un şubesinin LafPOS günleri satırlarda indirimli. `lafposBranch`:
- * LafPOS'un şubesi (Dataset.lafposBranch; verilmezse geri düşüş değeri)
+ * 23 Kasım 2026). "Tümü"de şube şube: her kasanın AsilPOS günleri kendi ilk gününden (`froms`, Dataset.asilposSales.froms;
+ * çok şube) satırlarda indirimli. Şube ayrımı olmayan ayda (tek şubenin satırları) görünümün kasasının ilk günü (birden
+ * çok kasa varsa en erkeni)
  */
-export function listDiscountOf(info: Month | undefined, lafposFrom: string | null, lafposBranch?: string): number {
+export function listDiscountOf(info: Month | undefined, froms: PosFroms | null): number {
   if (!info) return 0;
   if (info.byBranch) {
-    const parts = Object.entries(info.byBranch).map(([id, m]) => listDiscount(m.discounts, lafposListPart(m, isLafposBranch(id, lafposBranch) ? lafposFrom : null)));
+    const parts = Object.entries(info.byBranch).map(([id, m]) => listDiscount(m.discounts, asilposListPart(m, posFromOf(froms, id))));
     return r2(parts.reduce((a, v) => a + v, 0));
   }
-  return listDiscount(info.discounts, lafposListPart(info, lafposFrom));
+  const only = Object.values(froms ?? {}).reduce<string | null>((a, d) => (a === null || d < a ? d : a), null);
+  return listDiscount(info.discounts, asilposListPart(info, only));
 }
 
 /**
@@ -631,20 +639,20 @@ export function missingText(days: string[], max = 5, pending: readonly string[] 
 /**
  * "3 gün rapor yok: 5, 12, 20 Kasım. O günler açıksanız ciro ve açık gün eksik kalır." Kapalı işaretli günler ayrı
  * cümle: "2 gün kapalı işaretli: 3, 4 Kasım." (eksik gün yoksa yalnız o). Eksik günlerin yedekten sayılanları
- * söylenir: "… LafPOS'un gün sonundan sayıldı", "… ModPOS föyünden sayıldı" (docs/MODPOS-API.md › Ay rakamına yedek)
+ * söylenir: "… AsilPOS'un gün sonundan sayıldı", "… ModPOS föyünden sayıldı" (docs/MODPOS-API.md › Ay rakamına yedek)
  */
-export function missingSentence(t: Pick<TillMonth, "missing" | "pending" | "closed" | "lafpos" | "modpos">): string {
+export function missingSentence(t: Pick<TillMonth, "missing" | "pending" | "closed" | "asilpos" | "modpos">): string {
   const parts: string[] = [];
-  const lafpos = t.lafpos ?? [];
+  const asilpos = t.asilpos ?? [];
   const modpos = t.modpos ?? [];
   // Yalnız eksik günlerin yedekten sayılanları (kapalı işaretli satışsız yedek gün burada sayılmaz)
-  const fromLafpos = t.missing.filter((d) => lafpos.includes(d)).length;
+  const fromAsilpos = t.missing.filter((d) => asilpos.includes(d)).length;
   const fromModpos = t.missing.filter((d) => modpos.includes(d)).length;
-  const covered = fromLafpos + fromModpos;
+  const covered = fromAsilpos + fromModpos;
   if (t.missing.length) {
-    const src = fromLafpos && fromModpos ? "LafPOS'un gün sonundan ve ModPOS API'den" : fromModpos ? "ModPOS API'den" : "LafPOS'un gün sonundan";
+    const src = fromAsilpos && fromModpos ? "AsilPOS'un gün sonundan ve ModPOS API'den" : fromModpos ? "ModPOS API'den" : "AsilPOS'un gün sonundan";
     const counted =
-      fromLafpos && fromModpos ? `${fromLafpos} günün cirosu LafPOS'un gün sonundan, ${fromModpos} günün cirosu ModPOS API'den` : `${covered} günün cirosu ${src}`;
+      fromAsilpos && fromModpos ? `${fromAsilpos} günün cirosu AsilPOS'un gün sonundan, ${fromModpos} günün cirosu ModPOS API'den` : `${covered} günün cirosu ${src}`;
     const tail =
       covered === t.missing.length
         ? `Ciro ve açık gün bu günlerde ${src} sayıldı.`
@@ -687,7 +695,7 @@ export function kasaMonthLine(info: Month | undefined): string | null {
   if (!info || !t) return null;
   if (t.partialFrom) return `${partialHead(t)}; bu ayın açık gün ve cirosu elle girilir`;
   const foy = t.modpos?.length ?? 0;
-  const onlyFoy = foy > 0 && !t.reported && !t.lafpos?.length;
+  const onlyFoy = foy > 0 && !t.reported && !t.asilpos?.length;
   const fromTill = onlyFoy ? "ModPOS API'den" : foy ? `kasa raporlarından (${foy} gün ModPOS API'den sayıldı)` : "kasa raporlarından";
   const inTill = onlyFoy ? "ModPOS API'de" : "kasa raporlarında";
   const days = info.sources?.openDays;

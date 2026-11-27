@@ -29,6 +29,7 @@ import {
   sectionTabsFor,
   type NavNode,
 } from "../src/components/panel/nav";
+import { ROLE_ORDER } from "../src/lib/constants";
 import { canOpen } from "../src/lib/roles";
 import { wordHit } from "../src/lib/word-hit";
 
@@ -302,7 +303,8 @@ test("src/app/panel altındaki her ekran menüden ya da bir menü öğesinin alt
   walk(join(process.cwd(), "src/app/panel"), "/panel");
   assert.ok(routes.length > 40, `${routes.length} ekran`);
   for (const route of routes) {
-    const ok = reaches(navTreeFor("admin"), route) || reaches(navTreeFor("staff"), route) || NAV_FOOTER.some((i) => pathMatches(route, i.href, i.match));
+    // Dört rolün ağacı (docs/ROLLER.md): muhasebecinin ana ekranı (/panel/muhasebe) yalnız onun ağacında
+    const ok = ROLE_ORDER.some((r) => reaches(navTreeFor(r), route)) || NAV_FOOTER.some((i) => pathMatches(route, i.href, i.match));
     assert.ok(ok, `${route} menüde yok`);
   }
 });
@@ -372,7 +374,9 @@ test("Stok sekmeleri Sayım, Zayi & ikram ve Tutarlılık sayfalarında; rol say
   assert.match(page("sayim"), /<StockHeader month=\{null\} role="staff" \/>/);
   assert.match(page("zayi"), /<SectionTabs section="stok" current="\/panel\/zayi" role=\{role\} \/>/);
   // Birden çok kasa açıkken başlık formun şubesini yazar (24 Kasım şube kapsamı)
-  assert.match(page("zayi"), /<WasteHeader role=\{user\.role\}( lafpos=\{[^}]+\})?( branch=\{[^}]+\})? \/>/);
+  // Müdür zayiyi yönetici düzeyinde yönetir (opsLevel) ama başlığın rolü gerçek rol: Tutarlılık sekmesi ona yok (bulgu 4)
+  assert.match(page("zayi"), /<WasteHeader role=\{user\.role\}( asilpos=\{[^}]+\})?( branch=\{[^}]+\})? \/>/);
+  assert.match(page("zayi"), /const level = opsLevel\(user\.role\);/);
   assert.match(page("zayi"), /<WasteHeader role="staff" \/>/);
   // Tutarlılık yalnız yönetici
   assert.match(page("tutarlilik"), /requireAdmin\(\)/);

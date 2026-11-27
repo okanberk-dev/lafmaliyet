@@ -15,10 +15,11 @@ import { channelOf } from "../commission/channels";
 import { paidWithholdingRate } from "../tax/rules";
 import { money, monthLabel, num, pct, tl } from "../format";
 import { isCountable } from "../ingredient-usage";
-import { panelWasteCounts } from "../lafpos/ikram";
-import { periodKasa } from "../lafpos/kasa";
-import { lafposWorkedDays, lafposWorkedUnseen } from "../lafpos/personel";
-import { dayRangeTR } from "../lafpos/sales";
+import { ikramTillDays, panelWasteCounts } from "../asilpos/ikram";
+import { salesFroms } from "../pos/tills";
+import { periodKasa } from "../asilpos/kasa";
+import { asilposWorkedDays, asilposWorkedUnseen } from "../asilpos/personel";
+import { dayRangeTR } from "../asilpos/sales";
 import { buildSiteLinkIndex, mapSiteLines, OPTION_KINDS, optionProductId, optionTotals, siteRevenue, type OptionKind, type SiteRevenue } from "../site-sales/calc";
 import type { SiteSalesLine, SiteSalesMonth } from "../site-sales/schema";
 import { evaluateExpression } from "./expr";
@@ -374,27 +375,27 @@ export interface StaffCost {
   /** Part-time: Vardiya'da çağrıldığı gün; bağlantısız part-time ve tam zamanlıda null */
   calledDays: number | null;
   /**
-   * LafPOS'ta çalıştığı gün (LM-4b; model.lafposMealDaysOf, yalnız biten ay): ayın her sayılan LafPOS günü çalışan
+   * AsilPOS'ta çalıştığı gün (LM-4b; model.asilposMealDaysOf, yalnız biten ay): ayın her sayılan AsilPOS günü çalışan
    * listesini taşıyorsa. Tam zamanlıda yemek kartının günü budur (gün oranıyla bir daha oranlanmaz); part-time'da yalnız
    * bilgi (yemek kartı çağrıldığı günle). Bilinmiyorsa null
    */
-  lafposDays: number | null;
+  asilposDays: number | null;
   total: number;
 }
 
 export interface StaffCostOptions {
   /**
-   * Yemek kartının günü (Faz 5 kancası, LM-4b): verilirse Ayarlar'daki gün yerine bu (LafPOS'un çalışılan günleri ayın
+   * Yemek kartının günü (Faz 5 kancası, LM-4b): verilirse Ayarlar'daki gün yerine bu (AsilPOS'un çalışılan günleri ayın
    * her sayılan gününde geldiğinde). Verilmezse Ayarlar › Yemek kartı günü (26). Part-time'da kullanılmaz
    */
   mealDays?: number;
   /** Part-time: Vardiya'da çağrıldığı gün (model.calledDaysOf); bağlantısızsa null ya da verilmez (tutar tahmin edilmez) */
   calledDays?: number | null;
   /**
-   * LafPOS'ta çalıştığı gün (LM-4b, model.lafposMealDaysOf): verilirse tam zamanlının yemek kartı bu günle (mealDays'ten önce);
+   * AsilPOS'ta çalıştığı gün (LM-4b, model.asilposMealDaysOf): verilirse tam zamanlının yemek kartı bu günle (mealDays'ten önce);
    * null ya da verilmezse Ayarlar'daki gün. Part-time'da yalnız satıra yazılır
    */
-  lafposDays?: number | null;
+  asilposDays?: number | null;
 }
 
 /** Yemek kartı ayda: günlük tutar × gün (işaretsiz kişide 0) */
@@ -437,7 +438,7 @@ export function staffCost(s: Staff, st: Settings, opts: StaffCostOptions = {}): 
       mealDays: s.mealCard ? days : 0,
       dailyWages,
       calledDays,
-      lafposDays: opts.lafposDays ?? null,
+      asilposDays: opts.asilposDays ?? null,
       total: dailyWages + mealCard + s.extras,
     };
   }
@@ -445,8 +446,8 @@ export function staffCost(s: Staff, st: Settings, opts: StaffCostOptions = {}): 
   const deductions = gross * (st.isciSgk + st.isciIssizlik);
   const employerSgk = gross * st.isverenSgk;
   const employerUnemployment = gross * st.isverenIssizlik;
-  const lafposDays = opts.lafposDays ?? null;
-  const mealDays = s.mealCard ? (lafposDays ?? opts.mealDays ?? st.mealCardDays) : 0;
+  const asilposDays = opts.asilposDays ?? null;
+  const mealDays = s.mealCard ? (asilposDays ?? opts.mealDays ?? st.mealCardDays) : 0;
   const mealCard = mealCardOf(s, st, mealDays);
   return {
     staff: s,
@@ -458,7 +459,7 @@ export function staffCost(s: Staff, st: Settings, opts: StaffCostOptions = {}): 
     mealDays,
     dailyWages: 0,
     calledDays: null,
-    lafposDays,
+    asilposDays,
     total: gross + employerSgk + employerUnemployment + s.extras + mealCard,
   };
 }
@@ -470,7 +471,7 @@ export type PersonnelSummary = ReturnType<typeof personnelSummary>;
  * verilmezse (eski kullanım) yalnızca active bakılır ve taban değerler kullanılır. Net, brüt, kesintiler, işveren
  * payları, ekler ve `mealCard` tam zamanlıların (Gelir-gider'in maaş, maliyet − net ve yemek kartı satırları); part-time
  * kişiler `partTime`'da (ücret, yemek kartı, ek; Faz 5). `total` hepsini içerir. `calledDays`: part-time'ın çağrıldığı
- * gün (model.calledDaysOf; verilmezse bilinmiyor). `lafposDays`: LafPOS'ta çalıştığı gün (model.lafposMealDaysOf, LM-4b;
+ * gün (model.calledDaysOf; verilmezse bilinmiyor). `asilposDays`: AsilPOS'ta çalıştığı gün (model.asilposMealDaysOf, LM-4b;
  * verilmezse ya da null ise yemek kartı Ayarlar'daki günle)
  */
 export function personnelSummary(
@@ -479,11 +480,11 @@ export function personnelSummary(
   month?: string,
   versions?: StaffVersion[],
   calledDays?: (s: Staff) => number | null,
-  lafposDays?: (s: Staff) => number | null,
+  asilposDays?: (s: Staff) => number | null,
 ) {
   const list = month === undefined ? staff.filter((s) => s.active) : staff.filter((s) => inRange(s, month)).map((s) => staffAt(s, versions, month));
   const rows = list.map((s) =>
-    staffCost(s, st, isPartTime(s) ? { calledDays: calledDays?.(s) ?? null, lafposDays: lafposDays?.(s) ?? null } : { lafposDays: lafposDays?.(s) ?? null }),
+    staffCost(s, st, isPartTime(s) ? { calledDays: calledDays?.(s) ?? null, asilposDays: asilposDays?.(s) ?? null } : { asilposDays: asilposDays?.(s) ?? null }),
   );
   const full = rows.filter((r) => !isPartTime(r.staff));
   const part = rows.filter((r) => isPartTime(r.staff));
@@ -496,8 +497,8 @@ export function personnelSummary(
     employerUnemployment: sum(full.map((r) => r.employerUnemployment)),
     extras: sum(full.map((r) => r.staff.extras)),
     mealCard: sum(full.map((r) => r.mealCard)),
-    /** `mealCard`'ın LafPOS'ta çalıştığı günle sayılan kısmı (LM-4b): Gelir-gider'de gün oranıyla bir daha oranlanmaz */
-    mealCardLafpos: sum(full.filter((r) => r.lafposDays !== null).map((r) => r.mealCard)),
+    /** `mealCard`'ın AsilPOS'ta çalıştığı günle sayılan kısmı (LM-4b): Gelir-gider'de gün oranıyla bir daha oranlanmaz */
+    mealCardAsilpos: sum(full.filter((r) => r.asilposDays !== null).map((r) => r.mealCard)),
     partTime: {
       people: part.length,
       wages: sum(part.map((r) => r.dailyWages)),
@@ -751,32 +752,50 @@ export function partTimeText(rows: readonly Pick<StaffCost, "staff" | "calledDay
   return parts.length ? `${parts.join(" · ")}. Vardiya'daki çalışma günleri; brütleştirilmez.` : "Vardiya'ya bağlı part-time kişi yok.";
 }
 
+/**
+ * Part-time hücresinin kişisiz bileşimi (maaşı görmeyen rol; docs/ROLLER.md › Muhasebeci): yalnız kişi sayısı. Ad, gün,
+ * günlük ücret ve ek ödeme yok (tek kişide gün ya da ücret, toplamla birlikte öbürünü verirdi)
+ */
+export function partTimeCountText(rows: readonly Pick<StaffCost, "calledDays">[]): string {
+  const linked = rows.filter((r) => r.calledDays !== null).length;
+  return linked
+    ? `${linked} part-time kişi: günlük ücret × Vardiya'daki çalışma günü + ek ödeme; brütleştirilmez. Kişi kişi döküm yöneticide.`
+    : "Vardiya'ya bağlı part-time kişi yok.";
+}
+
 /** Bağlantısız part-time uyarısı (hücre ve Maaşlar) */
 export function partTimeUnlinkedText(people: readonly Pick<Staff, "name">[]): string {
   return `${people.map((p) => p.name).join(", ")}: Vardiya kişisi bağlı değil, çağrıldığı gün bilinmiyor; günlük ücret sayılmadı (tahmin yok). Maaşlar'da Vardiya bağlantısını seçin.`;
 }
+
+/** Bağlantısız part-time uyarısının kişisiz hâli (maaşı görmeyen rol): kişi sayısı, ad yok; Maaşlar yöneticinin */
+export function partTimeUnlinkedCountText(count: number): string {
+  return `${count} part-time kişinin Vardiya kişisi bağlı değil, çağrıldığı gün bilinmiyor; günlük ücreti sayılmadı (tahmin yok). Bağlantıyı yönetici Maaşlar'da seçer.`;
+}
 export const MEAL_CARD_ROW_LABEL = "PERSONEL YEMEK KARTI";
 export const MEAL_CARD_HINT =
-  "Maaşlar'da yemek kartı işaretli kişiler: günlük tutar × ayda gün (Ayarlar › Personel yemek kartı, 330 ₺ × 26); brütleştirilmez, SGK'ya girmez. × (açık gün ÷ ayın gün sayısı), maaş satırı gibi; biten ayın her LafPOS günü çalışanlarıyla geldiyse gün LafPOS'ta çalıştığı gündür, oranlanmaz. İşletme geneli \"Personel yemeği\" sabit gideri de varsa aynı yemek iki kez sayılabilir (Genel bakış uyarır).";
+  "Maaşlar'da yemek kartı işaretli kişiler: günlük tutar × ayda gün (Ayarlar › Personel yemek kartı, 330 ₺ × 26); brütleştirilmez, SGK'ya girmez. × (açık gün ÷ ayın gün sayısı), maaş satırı gibi; biten ayın her AsilPOS günü çalışanlarıyla geldiyse gün AsilPOS'ta çalıştığı gündür, oranlanmaz. İşletme geneli \"Personel yemeği\" sabit gideri de varsa aynı yemek iki kez sayılabilir (Genel bakış uyarır).";
 
 /**
- * Yemek kartı hücresinin bu ayki bileşimi: "2 kişi × 330 ₺ × 26 gün = 17.160 ₺" (gün oranıyla). LafPOS'ta çalıştığı
- * günle sayılan kişiler (LM-4b) adıyla ve günüyle yazılır; onların payı oranlanmaz (`ratio` yalnız ötekilere)
+ * Yemek kartı hücresinin bu ayki bileşimi: "2 kişi × 330 ₺ × 26 gün = 17.160 ₺" (gün oranıyla). AsilPOS'ta çalıştığı
+ * günle sayılan kişiler (LM-4b) adıyla ve günüyle yazılır; onların payı oranlanmaz (`ratio` yalnız ötekilere).
+ * `names: false` (maaşı görmeyen rol; ModelOptions.personal): AsilPOS'lular da yalnız sayıyla ("2 kişi = 13.200 ₺")
  */
 export function mealCardText(
-  rows: readonly (Pick<StaffCost, "mealCard" | "mealDays"> & Partial<Pick<StaffCost, "lafposDays">> & { staff?: Pick<Staff, "name" | "kind"> })[],
+  rows: readonly (Pick<StaffCost, "mealCard" | "mealDays"> & Partial<Pick<StaffCost, "asilposDays">> & { staff?: Pick<Staff, "name" | "kind"> })[],
   st: Pick<Settings, "mealCardDaily">,
   ratio: number,
   days: number,
   dim: number,
+  opts: { names?: boolean } = {},
 ): string {
   const flagged = rows.filter((r) => r.mealCard > 0);
-  const isLafpos = (r: (typeof flagged)[number]) => r.lafposDays != null && r.staff?.kind !== "part_time";
-  // Oran yalnız varsayılan günle sayılanlara: baş onların toplamı, LafPOS'lular ayrı (hücre değeri = baş × oran + LafPOS)
-  const rest = flagged.filter((r) => !isLafpos(r));
-  const fromLafpos = flagged.filter(isLafpos);
+  const isAsilpos = (r: (typeof flagged)[number]) => r.asilposDays != null && r.staff?.kind !== "part_time";
+  // Oran yalnız varsayılan günle sayılanlara: baş onların toplamı, AsilPOS'lular ayrı (hücre değeri = baş × oran + AsilPOS)
+  const rest = flagged.filter((r) => !isAsilpos(r));
+  const fromAsilpos = flagged.filter(isAsilpos);
   const parts: string[] = [];
-  if (rest.length || !fromLafpos.length) {
+  if (rest.length || !fromAsilpos.length) {
     const total = sum(rest.map((r) => r.mealCard));
     const dayCounts = [...new Set(rest.map((r) => r.mealDays))];
     const head =
@@ -785,9 +804,9 @@ export function mealCardText(
         : `${rest.length} kişi, günlük ${tl(st.mealCardDaily)}: ${tl(total)}`;
     parts.push(`${head}${Math.abs(ratio - 1) > 1e-9 ? ` × ${days} / ${dim} gün` : ""}`);
   }
-  if (fromLafpos.length) {
-    const who = fromLafpos.map((r) => `${r.staff?.name ?? "kişi"} ${r.lafposDays} gün`).join(", ");
-    parts.push(`LafPOS'ta çalıştığı günle (oranlanmaz): ${who} = ${tl(sum(fromLafpos.map((r) => r.mealCard)))}`);
+  if (fromAsilpos.length) {
+    const who = opts.names === false ? `${fromAsilpos.length} kişi` : fromAsilpos.map((r) => `${r.staff?.name ?? "kişi"} ${r.asilposDays} gün`).join(", ");
+    parts.push(`AsilPOS'ta çalıştığı günle (oranlanmaz): ${who} = ${tl(sum(fromAsilpos.map((r) => r.mealCard)))}`);
   }
   return `Yemek kartı ${parts.join("; ")}; brütleştirilmez.`;
 }
@@ -1164,7 +1183,7 @@ export interface WaterCost {
   perLiter: number;
   month: string | null;
   bill: number;
-  /** Faturanın bölündüğü su + buz litresi: satış listesi (ModPOS / LafPOS) ve laffogato.net online siparişleri */
+  /** Faturanın bölündüğü su + buz litresi: satış listesi (ModPOS / AsilPOS) ve laffogato.net online siparişleri */
   liters: number;
   /** liters'ın online siparişlerden gelen kısmı (reçeteye göre; denetim E-57) */
   onlineLiters: number;
@@ -1196,19 +1215,31 @@ export interface StaffView extends Staff {
   history: StaffHistoryEntry[];
   cost: StaffCost;
   /**
-   * Gösterilen ayda LafPOS'ta çalıştığı gün (LM-4b; model.lafposDaysOf; süren ayda bugüne kadar). Yemek kartının günü
-   * `cost.lafposDays`'tir (yalnız biten ayda); bu yalnız bilgi. Bilinmiyorsa null
+   * Gösterilen ayda AsilPOS'ta çalıştığı gün (LM-4b; model.asilposDaysOf; süren ayda bugüne kadar). Yemek kartının günü
+   * `cost.asilposDays`'tir (yalnız biten ayda); bu yalnız bilgi. Bilinmiyorsa null
    */
-  lafposDays: number | null;
-  /** Ay biliniyor ama kişinin kimliği ayın LafPOS günlerinde hiç yok (bağlı değil ya da eski satıra bağlı; model.lafposUnseenOf) */
-  lafposUnseen: boolean;
+  asilposDays: number | null;
+  /** Ay biliniyor ama kişinin kimliği ayın AsilPOS günlerinde hiç yok (bağlı değil ya da eski satıra bağlı; model.asilposUnseenOf) */
+  asilposUnseen: boolean;
   inRangeNow: boolean;
   status: RangeStatus;
   valueMonth: string;
   nextChange: StaffHistoryEntry | null;
 }
 
-export function createModel(ds: Dataset) {
+/** Modelin seçenekleri (createModel, loadModel) */
+export interface ModelOptions {
+  /**
+   * Gelir-gider'in personel hücrelerinin metni kişi kişi mi (part-time'ın adı, günü, günlük ücreti ve eki; yemek kartını
+   * AsilPOS gününe göre alanların adı ve günü; bağlantısız part-time'ın adı). Varsayılan kapalı: yalnız maaşı gören rol
+   * (`can(rol, "maas")`, yönetici) için açılır; muhasebeci personel giderlerini toplam olarak görür (docs/ROLLER.md ›
+   * Muhasebeci). Tutarlar ve hesap aynı, yalnız metin kişisiz
+   */
+  personal?: boolean;
+}
+
+export function createModel(ds: Dataset, opts: ModelOptions = {}) {
+  const personal = opts.personal === true;
   const st = ds.settings;
   const ingById = new Map(ds.ingredients.map((i) => [i.id, i]));
   const catById = new Map(ds.categories.map((c) => [c.id, c]));
@@ -1375,14 +1406,15 @@ export function createModel(ds: Dataset) {
     return u;
   }
 
-  // --- Zayi ve ikram (personelin kaydı; geçiş gününden itibaren LafPOS'un ikramı ve zayisi) ----------
-  // LafPOS'un gün sonu gelen günde ürün ikramı LafPOS'tan sayılır, paneldeki o günkü ürün ikramı sayılmaz (her gün tek
-  // kaynak; src/lib/lafpos/ikram.ts). LafPOS'un "Zayi: …" satırı zayi olarak girer (kendi türüyle). Geçiş günü yoksa
-  // lafposIkram yok: kayıtlar bugünkü gibi yalnız panelden
-  const lafposIkramDays = new Set(ds.lafposIkram?.days ?? []);
+  // --- Zayi ve ikram (personelin kaydı; geçiş gününden itibaren AsilPOS'un ikramı ve zayisi) ----------
+  // AsilPOS'un gün sonu gelen günde ürün ikramı AsilPOS'tan sayılır, paneldeki o günkü ürün ikramı sayılmaz (her gün tek
+  // kaynak; src/lib/asilpos/ikram.ts). AsilPOS'un "Zayi: …" satırı zayi olarak girer (kendi türüyle). Geçiş günü yoksa
+  // asilposIkram yok: kayıtlar bugünkü gibi yalnız panelden
+  // Gün sonu gelen (şube, gün) anahtarları (çok şube: kayıt yalnız kendi şubesinin kasasının günü geldiyse düşer)
+  const asilposIkramDays = ikramTillDays(ds.asilposIkram);
   const countedWaste: WasteEntry[] = [
-    ...(ds.wasteEntries ?? []).filter((w) => panelWasteCounts(w, lafposIkramDays, ds.lafposBranch)),
-    ...(ds.lafposIkram?.lines ?? []).map(
+    ...(ds.wasteEntries ?? []).filter((w) => panelWasteCounts(w, asilposIkramDays)),
+    ...(ds.asilposIkram?.lines ?? []).map(
       (l): WasteEntry => ({
         date: l.date,
         kind: l.kind,
@@ -1390,7 +1422,7 @@ export function createModel(ds: Dataset) {
         ingredientId: null,
         qty: l.qty,
         factor: 1,
-        source: "lafpos",
+        source: "asilpos",
         name: l.posName,
         menuValue: l.menuValue,
         // Hazırlanmış iptal: zayi tüketimi, ödenmez tutarında yok (recordedOffRevenue onu saymaz)
@@ -1405,8 +1437,8 @@ export function createModel(ds: Dataset) {
     if (list) list.push(w);
     else wasteByMonth.set(m, [w]);
   }
-  /** Ayın sayılmayan panel kayıtları: LafPOS'un gün sonu gelen günde girilmiş ürün ikramı */
-  const notCountedOf = (month: string) => (ds.wasteEntries ?? []).filter((w) => w.date.slice(0, 7) === month && !panelWasteCounts(w, lafposIkramDays, ds.lafposBranch)).length;
+  /** Ayın sayılmayan panel kayıtları: AsilPOS'un gün sonu gelen günde girilmiş ürün ikramı */
+  const notCountedOf = (month: string) => (ds.wasteEntries ?? []).filter((w) => w.date.slice(0, 7) === month && !panelWasteCounts(w, asilposIkramDays)).length;
   /**
    * Kayıtlı zayi ve ikramın malzeme tüketimi (malzemenin kendi biriminde): ürün reçetesinden (fire payı olmadan),
    * hammadde doğrudan. Satış raporu yalnız ödenen satışları taşır; bunlar ona eklenmez, ayrı gösterilir.
@@ -1455,10 +1487,10 @@ export function createModel(ds: Dataset) {
       openDays: c.till.openDays,
       posRevenue: c.till.posRevenue,
       // İndirim kasadan geliyorsa listenin günlerine kadarki; elle yazıldıysa ayın yazılan tutarı. İkisinde de yalnız
-      // ModPOS listesi günlerininki: LafPOS'un satırları indirimden sonradır (listDiscounts)
+      // ModPOS listesi günlerininki: AsilPOS'un satırları indirimden sonradır (listDiscounts)
       discounts:
         info.sources.discounts === "kasa"
-          ? Math.max(0, Math.round(((c.till.discounts ?? 0) - (c.till.lafposDiscounts ?? 0)) * 100) / 100)
+          ? Math.max(0, Math.round(((c.till.discounts ?? 0) - (c.till.asilposDiscounts ?? 0)) * 100) / 100)
           : listDiscounts(month),
       days: Math.max(1, days),
       ...(commonByMonth.get(month)?.through === c.through ? { short: commonByMonth.get(month)!.branch } : {}),
@@ -1467,11 +1499,11 @@ export function createModel(ds: Dataset) {
 
   /**
    * Ayın satış listesinden düşülecek indirim (hesap sözleşmesi §11; −90 ₺ hatası, 23 Kasım 2026): ModPOS listesi
-   * indirimden öncedir, LafPOS'un satırları indirimden sonra; LafPOS günlerinin indirimi satırlardan bir daha düşülmez.
+   * indirimden öncedir, AsilPOS'un satırları indirimden sonra; AsilPOS günlerinin indirimi satırlardan bir daha düşülmez.
    * Geçiş günü yoksa ayın indirimi (Month.discounts)
    */
   function listDiscounts(month: string): number {
-    return listDiscountOf(monthInfo.get(month), ds.lafposSales?.countFrom ?? null, ds.lafposBranch);
+    return listDiscountOf(monthInfo.get(month), salesFroms(ds.asilposSales));
   }
 
   /** Ayın "aynı gider iki kez" bulguları (pnlMonth'un hesabından; duplicate-expense.ts) */
@@ -1559,7 +1591,7 @@ export function createModel(ds: Dataset) {
   // SU GİDERİ girilmiş ve satış listesinden (reçeteye göre) su kullanımı çıkan en son ay: o ayın faturası ÷ o ayın
   // su + buz litresi.
   // Fatura kafede harcanan bütün suyu kapsar: litreye aynı ayın laffogato.net / uygulama siparişlerinin su ve buzu da
-  // girer (denetim E-57; LafPOS'un satırları satış listesinin içinde). Ay yine satış listesiyle seçilir: listesi
+  // girer (denetim E-57; AsilPOS'un satırları satış listesinin içinde). Ay yine satış listesiyle seçilir: listesi
   // yüklenmemiş ayın faturası yalnız online litreye bölünürse litre fiyatı katlarca şişerdi.
   // Fatura işletmenindir (manual:su her şubede): tek şube seçiliyken litre de bütün şubelerin ve laffogato.net'in
   // satışından (ds.waterSales; denetim 21 Kasım #4). Şubenin litresine bölünseydi ürün maliyeti şubeye göre değişirdi.
@@ -1574,7 +1606,7 @@ export function createModel(ds: Dataset) {
   const companySite = new Map((ds.waterSales?.siteSales ?? []).map((r) => [r.month, r]));
   const waterUsageCache = new Map<string, { list: Map<number, number>; online: Map<number, number> }>();
   /**
-   * Su faturasının bölündüğü ayın reçeteye göre tüketimi: `list` satış listesinin (ModPOS / LafPOS), `online`
+   * Su faturasının bölündüğü ayın reçeteye göre tüketimi: `list` satış listesinin (ModPOS / AsilPOS), `online`
    * laffogato.net siparişlerinin. "Tümü"de ingredientUsage / onlineUsage; tek şube seçiliyken işletme genelinin
    * satışından (ds.waterSales). Hammaddeler'in su dökümü de bunu kullanır, kart ile döküm aynı litreyi gösterir.
    */
@@ -1720,20 +1752,20 @@ export function createModel(ds: Dataset) {
   }
 
   /**
-   * `ikram.lafpos` / `zayi.lafpos`: LafPOS'tan gelen ikram ve zayi satırı sayısı (count'un içinde; ikramın menü değeri
-   * LafPOS'unki); `notCounted`: LafPOS'un gün sonu gelen günde panele girilmiş, sayılmayan ürün ikramı kaydı. Geçiş günü
+   * `ikram.asilpos` / `zayi.asilpos`: AsilPOS'tan gelen ikram ve zayi satırı sayısı (count'un içinde; ikramın menü değeri
+   * AsilPOS'unki); `notCounted`: AsilPOS'un gün sonu gelen günde panele girilmiş, sayılmayan ürün ikramı kaydı. Geçiş günü
    * yoksa hepsi 0
    */
   function wasteSummary(month: string) {
-    const out = { zayi: { count: 0, cost: 0, lafpos: 0 }, ikram: { count: 0, cost: 0, menuValue: 0, lafpos: 0 }, notCounted: notCountedOf(month) };
+    const out = { zayi: { count: 0, cost: 0, asilpos: 0 }, ikram: { count: 0, cost: 0, menuValue: 0, asilpos: 0 }, notCounted: notCountedOf(month) };
     for (const w of wasteByMonth.get(month) ?? []) {
       const product = w.productId !== null ? productById.get(w.productId) : undefined;
       const cost = wasteCost(w);
       out[w.kind].count += 1;
       out[w.kind].cost += cost;
-      if (w.source === "lafpos") out[w.kind].lafpos += 1;
-      // İkramın menü değeri: LafPOS'unki kendi hesabıyla, panelinki menü fiyatıyla (zayinin menü değeri yok)
-      if (w.kind === "ikram" && w.source === "lafpos") out.ikram.menuValue += w.menuValue ?? 0;
+      if (w.source === "asilpos") out[w.kind].asilpos += 1;
+      // İkramın menü değeri: AsilPOS'unki kendi hesabıyla, panelinki menü fiyatıyla (zayinin menü değeri yok)
+      if (w.kind === "ikram" && w.source === "asilpos") out.ikram.menuValue += w.menuValue ?? 0;
       else if (w.kind === "ikram" && product) out.ikram.menuValue += product.price * w.qty;
     }
     return out;
@@ -1978,28 +2010,28 @@ export function createModel(ds: Dataset) {
   }
 
   /**
-   * Kişinin ayda LafPOS'ta çalıştığı gün (LM-4b; src/lib/lafpos/personel.ts lafposWorkedDays): LafPOS'un şubesinde, ayın
-   * tamamı LafPOS döneminde, ayın her sayılan günü çalışan listesini taşıyor ve kişinin kimliği en az bir günde geçiyorsa;
+   * Kişinin ayda AsilPOS'ta çalıştığı gün (LM-4b; src/lib/asilpos/personel.ts asilposWorkedDays): AsilPOS'un şubesinde, ayın
+   * tamamı AsilPOS döneminde, ayın her sayılan günü çalışan listesini taşıyor ve kişinin kimliği en az bir günde geçiyorsa;
    * yoksa null. Süren ayda bugüne kadar gelen gün sonları (bilgi; Maaşlar gösterir)
    */
-  function lafposDaysOf(x: Pick<Staff, "id" | "branchId">, month: string): number | null {
-    return lafposWorkedDays(ds.lafposWorked, x, month);
+  function asilposDaysOf(x: Pick<Staff, "id" | "branchId">, month: string): number | null {
+    return asilposWorkedDays(ds.asilposWorked, x, month);
   }
   /**
-   * Yemek kartının LafPOS günü: yalnız biten ayda lafposDaysOf; süren ve ileri ayda null (Ayarlar'daki gün). Süren ayın
+   * Yemek kartının AsilPOS günü: yalnız biten ayda asilposDaysOf; süren ve ileri ayda null (Ayarlar'daki gün). Süren ayın
    * aylık / standart rakamları (başa baş, sabit gider standardı, Maaşlar'ın "Size maliyeti") bugüne kadar gelen günle
    * küçülmesin. Gelir-gider, Maaşlar, dışa aktarım ve vergi bordrosu bunu okur
    */
-  function lafposMealDaysOf(x: Pick<Staff, "id" | "branchId">, month: string): number | null {
-    return month < currentMonth ? lafposDaysOf(x, month) : null;
+  function asilposMealDaysOf(x: Pick<Staff, "id" | "branchId">, month: string): number | null {
+    return month < currentMonth ? asilposDaysOf(x, month) : null;
   }
-  /** Ay biliniyor ama kişinin kimliği ayın LafPOS günlerinde hiç yok (src/lib/lafpos/personel.ts lafposWorkedUnseen) */
-  function lafposUnseenOf(x: Pick<Staff, "id" | "branchId">, month: string): boolean {
-    return lafposWorkedUnseen(ds.lafposWorked, x, month);
+  /** Ay biliniyor ama kişinin kimliği ayın AsilPOS günlerinde hiç yok (src/lib/asilpos/personel.ts asilposWorkedUnseen) */
+  function asilposUnseenOf(x: Pick<Staff, "id" | "branchId">, month: string): boolean {
+    return asilposWorkedUnseen(ds.asilposWorked, x, month);
   }
 
   const personnelCache = new Map<string, PersonnelSummary>();
-  /** O ayda çalışan personel, o ayın maaşıyla (part-time: Vardiya'da çağrıldığı günle; yemek kartı LafPOS'un günüyle) */
+  /** O ayda çalışan personel, o ayın maaşıyla (part-time: Vardiya'da çağrıldığı günle; yemek kartı AsilPOS'un günüyle) */
   function personnelFor(month: string): PersonnelSummary {
     let p = personnelCache.get(month);
     if (!p) {
@@ -2009,7 +2041,7 @@ export function createModel(ds: Dataset) {
         month,
         ds.staffVersions,
         (x) => calledDaysOf(x, month),
-        (x) => lafposMealDaysOf(x, month),
+        (x) => asilposMealDaysOf(x, month),
       );
       personnelCache.set(month, p);
     }
@@ -2081,10 +2113,10 @@ export function createModel(ds: Dataset) {
       cost: staffCost(
         cur,
         st,
-        isPartTime(cur) ? { calledDays: calledDaysOf(cur, valueMonth), lafposDays: lafposMealDaysOf(cur, valueMonth) } : { lafposDays: lafposMealDaysOf(cur, valueMonth) },
+        isPartTime(cur) ? { calledDays: calledDaysOf(cur, valueMonth), asilposDays: asilposMealDaysOf(cur, valueMonth) } : { asilposDays: asilposMealDaysOf(cur, valueMonth) },
       ),
-      lafposDays: lafposDaysOf(cur, valueMonth),
-      lafposUnseen: lafposUnseenOf(cur, valueMonth),
+      asilposDays: asilposDaysOf(cur, valueMonth),
+      asilposUnseen: asilposUnseenOf(cur, valueMonth),
       inRangeNow: inRange(x, currentMonth),
       status: rangeStatus(x, currentMonth),
       valueMonth,
@@ -2666,11 +2698,11 @@ export function createModel(ds: Dataset) {
   const pnlCache = new Map<string, PnlMonthCalc>();
   /**
    * Ayın kasa cirosunun KDV hariç tutarı ve KDV'si (Gelir-gider'in AYLIK CİRO (KDV hariç)'i, KDV tahmini; hesap
-   * sözleşmesi, 23 Kasım 2026). Ciro kasadan geliyor ve ayda LafPOS'un şubesinin günü varsa gün gün (`byDay`): LafPOS
-   * gününün KDV'si LafPOS'un kendi dökümünden (z.vat; yeniden hesaplanmaz), ModPOS günü günün oranıyla (satış KDV'si,
+   * sözleşmesi, 23 Kasım 2026). Ciro kasadan geliyor ve ayda AsilPOS'un şubesinin günü varsa gün gün (`byDay`): AsilPOS
+   * gününün KDV'si AsilPOS'un kendi dökümünden (z.vat; yeniden hesaplanmaz), ModPOS günü günün oranıyla (satış KDV'si,
    * %10) ayrı ayrı kuruşa yuvarlanır, ay günlerin toplamıdır (Marina Kasım: 30.576,15; ay toplamından 30.576,14 olurdu).
    * Öteki şubelerin günleri ve elle yazılan ciro bugünkü gibi ay toplamından: HİZMET satırları (karaoke) hizmet KDV'siyle,
-   * gerisi satış KDV'siyle. LafPOS'un dökümü hizmeti zaten kendi oranıyla taşır: o günlerin HİZMET satırları bir daha
+   * gerisi satış KDV'siyle. AsilPOS'un dökümü hizmeti zaten kendi oranıyla taşır: o günlerin HİZMET satırları bir daha
    * ayrılmaz. Ciro yoksa null
    */
   function posNet(month: string): { net: number; vat: number; byDay: boolean } | null {
@@ -2684,8 +2716,8 @@ export function createModel(ds: Dataset) {
       return { net, vat: revenue - net, byDay: false };
     }
     const r2 = (v: number) => Math.round(v * 100) / 100;
-    // LafPOS'un dökümü bilinen günlerin HİZMET satırları (LafPOS'un ay satırları) o dökümün içinde
-    const lafService = dv.known.days ? sum((linesByMonth.get(month) ?? []).filter((l) => l.lafpos && l.isService).map((l) => l.revenue)) : 0;
+    // AsilPOS'un dökümü bilinen günlerin HİZMET satırları (AsilPOS'un ay satırları) o dökümün içinde
+    const lafService = dv.known.days ? sum((linesByMonth.get(month) ?? []).filter((l) => l.asilpos && l.isService).map((l) => l.revenue)) : 0;
     const rest = Math.max(0, revenue - dv.known.revenue);
     const restService = Math.min(rest, Math.max(0, service - lafService));
     const daysNet = sum(dv.days.map((d) => r2(d / (1 + st.kdv))));
@@ -2824,23 +2856,27 @@ export function createModel(ds: Dataset) {
       : personnelExtraText(pers, ratio, days, dim);
     // Yemek kartı (Faz 5): işaretli kişilerin günlük tutar × günü, brütleştirilmez; tam zamanlıda maaş gibi gün oranıyla,
     // part-time'da çağrıldığı günle. Kimsede yoksa (ve elle yazılmamışsa) hücre yok: eski tablo değişmez
-    // LafPOS'ta çalıştığı günle sayılan yemek kartı (LM-4b; yalnız biten ay) gerçek gündür: gün oranıyla bir daha
+    // AsilPOS'ta çalıştığı günle sayılan yemek kartı (LM-4b; yalnız biten ay) gerçek gündür: gün oranıyla bir daha
     // oranlanmaz. Süren ayda yemek kartı Ayarlar'daki günle, maaş gibi oranlanır
     const mealAll = pers.mealCard + pers.partTime.mealCard;
     if (mealAll > 0 || overrides.has(MEAL_CARD_KEY)) {
       const fullMeal = scaled
-        ? sum(fullRows.map((r) => (r.lafposDays !== null ? r.mealCard : r.mealCard * rowRatio(r))))
-        : (pers.mealCard - pers.mealCardLafpos) * ratio + pers.mealCardLafpos;
+        ? sum(fullRows.map((r) => (r.asilposDays !== null ? r.mealCard : r.mealCard * rowRatio(r))))
+        : (pers.mealCard - pers.mealCardAsilpos) * ratio + pers.mealCardAsilpos;
       sections.personel += auto(MEAL_CARD_KEY, fullMeal + pers.partTime.mealCard);
       cells.get(MEAL_CARD_KEY)!.info =
-        mealCardText(pers.rows, st, scaled || pers.mealCard === pers.mealCardLafpos ? 1 : ratio, days, dim) + (scaled ? " Tam zamanlılar kendi şubesinin günüyle oranlandı." : "");
+        mealCardText(pers.rows, st, scaled || pers.mealCard === pers.mealCardAsilpos ? 1 : ratio, days, dim, { names: personal }) +
+        (scaled ? " Tam zamanlılar kendi şubesinin günüyle oranlandı." : "");
     }
-    // Part-time (Faz 5): günlük ücret × çağrıldığı gün + ek ödeme; gün oranı yok. Bağlantısız kişi uyarılır (tahmin yok)
+    // Part-time (Faz 5): günlük ücret × çağrıldığı gün + ek ödeme; gün oranı yok. Bağlantısız kişi uyarılır (tahmin yok).
+    // Kişi kişi döküm yalnız maaşı görene (ModelOptions.personal); öteki rolde kişi sayısı
     if (partRows.length || overrides.has(PART_TIME_KEY)) {
       sections.personel += auto(PART_TIME_KEY, pers.partTime.wages + pers.partTime.extras);
       const cell = cells.get(PART_TIME_KEY)!;
-      cell.info = partTimeText(partRows);
-      if (pers.partTime.unlinked.length) cell.warn = partTimeUnlinkedText(pers.partTime.unlinked);
+      cell.info = personal ? partTimeText(partRows) : partTimeCountText(partRows);
+      if (pers.partTime.unlinked.length) {
+        cell.warn = personal ? partTimeUnlinkedText(pers.partTime.unlinked) : partTimeUnlinkedCountText(pers.partTime.unlinked.length);
+      }
     }
     // Şubeye yazılan giderler (Tümü'nün şube kırılımı): personel kişinin şubesine, tam zamanlı kendi şubesinin günüyle
     const byBranch: Record<string, number> = {};
@@ -2995,7 +3031,7 @@ export function createModel(ds: Dataset) {
     const expenses = cogs + sections.personel + sections.faturalar + sections.kira + sections.genel + sections.komisyon;
     // Kasadan geçen hizmet satışı (karaoke odası) %20, ürünler %10: ayın satış listesindeki HİZMET satırları kadarı
     // hizmet KDV oranıyla ayrılır (ay cirosundan büyük olamaz); satış listesi yüklenmemiş ayda bütün ciro satış KDV'siyle.
-    // LafPOS'un şubesinin günleri gün gün (posNet): LafPOS gününün KDV'si kendi dökümünden, ay günlerin toplamı
+    // AsilPOS'un şubesinin günleri gün gün (posNet): AsilPOS gününün KDV'si kendi dökümünden, ay günlerin toplamı
     const serviceRevenue = revenue === null ? 0 : Math.min(Math.max(revenue, 0), monthSales(month).serviceRevenue);
     const revenueNet = posNet(month)?.net ?? null;
     // Online satış: ModPOS cirosuna dokunmadan ayrı gelir satırları (KDV hariç); çekilmemiş ayda hücre yok (boş)
@@ -3221,12 +3257,12 @@ export function createModel(ds: Dataset) {
       label: "AYLIK CİRO (KDV hariç)",
       kind: "total",
       editable: false,
-      hint: `AYLIK CİRO'dan ${pctOf(st.kdv)} KDV düşülür; Satışlar'da HİZMET işaretli satırların (karaoke odası) cirosu ${pctOf(st.kdvHizmet)} ile ayrılır (Ayarlar › Oranlar). Ciro kasa raporlarından geliyorsa LafPOS'un şubesinin günleri gün gün: LafPOS gününün KDV'si kendi dökümünden, öteki günler günün oranıyla; ay günlerin toplamı.`,
+      hint: `AYLIK CİRO'dan ${pctOf(st.kdv)} KDV düşülür; Satışlar'da HİZMET işaretli satırların (karaoke odası) cirosu ${pctOf(st.kdvHizmet)} ile ayrılır (Ayarlar › Oranlar). Ciro kasa raporlarından geliyorsa AsilPOS'un şubesinin günleri gün gün: AsilPOS gününün KDV'si kendi dökümünden, öteki günler günün oranıyla; ay günlerin toplamı.`,
     });
     // laffogato.net online satışları: yalnız bu aylardan en az biri siteden çekildiyse (çekilmemiş ay boş kalır, 0 değil)
     if (months.some((m) => siteByMonth.has(m))) {
-      // Yılın kasası (metinler; geçiş günü boşken "ModPOS", sonra "LafPOS", iki kasalı yılda ikisi; denetim E-39)
-      const yk = periodKasa(months, st.lafposGecisGunu);
+      // Yılın kasası (metinler; geçiş günü boşken "ModPOS", sonra "AsilPOS", iki kasalı yılda ikisi; denetim E-39)
+      const yk = periodKasa(months, st.asilposGecisGunu);
       const from = "laffogato.net'ten çekilir (Gelir-gider › laffogato.net online satışları, her sabah ve Siteden yenile).";
       const vat = (what: string, r: number) => `KDV hariç: net − KDV − oranı bilinmeyen ${what} ${pctOf(r)} KDV'si. Kasadan (${yk.both}) geçmez; AYLIK CİRO'ya eklenmez.`;
       sonuc({ key: "site:cafe", label: "KAFE ONLİNE (SİTE + UYGULAMA)", sub: "laffogato.net · KDV hariç", kind: "auto", editable: false, hint: `Uygulama ve web kafe siparişleri (masa, gel-al, kurye), iadeler düşülmüş. Panelden elle girilen siparişler ${yk.short === "Kasa" ? "kasada" : `${yk.short}'ta`} olduğu için girmez. ${vat("siparişlerin", st.kdv)} ${from}` });
@@ -3341,7 +3377,7 @@ export function createModel(ds: Dataset) {
     monthSales,
     /** Süren ayda yapıştırılan satış listesinin dönemi (kasa raporlarından kısaysa; yoksa null) */
     listPeriod,
-    /** Ayın satış listesinden düşülecek indirim: yalnız ModPOS listesi günlerininki (LafPOS satırları indirimden sonra) */
+    /** Ayın satış listesinden düşülecek indirim: yalnız ModPOS listesi günlerininki (AsilPOS satırları indirimden sonra) */
     listDiscounts,
     /**
      * Ayın "aynı gider iki kez" bulguları: sabit gider kalemi aynı adla fatura, harcama ya da elle hücre olarak da sayılıyor
@@ -3355,7 +3391,7 @@ export function createModel(ds: Dataset) {
     soldByProduct,
     ingredientUsage,
     recordedUsage,
-    /** Sayılan zayi ve ikram kayıtları: panelinkiler (LafPOS gününde ürün ikramı hariç) ve LafPOS'un ikramı */
+    /** Sayılan zayi ve ikram kayıtları: panelinkiler (AsilPOS gününde ürün ikramı hariç) ve AsilPOS'un ikramı */
     countedWaste,
     wasteCost,
     wasteSummary,
@@ -3384,10 +3420,10 @@ export function createModel(ds: Dataset) {
     staffAtMonth,
     /** Part-time kişinin aydaki çağrıldığı gün (Vardiya; bağlantısızsa null; `planned`: ayın bütün planı) */
     calledDaysOf,
-    /** LafPOS'ta çalıştığı gün (LM-4b): `lafposDaysOf` bilgi (süren ayda bugüne kadar), `lafposMealDaysOf` yemek kartının günü (yalnız biten ay) */
-    lafposDaysOf,
-    lafposMealDaysOf,
-    lafposUnseenOf,
+    /** AsilPOS'ta çalıştığı gün (LM-4b): `asilposDaysOf` bilgi (süren ayda bugüne kadar), `asilposMealDaysOf` yemek kartının günü (yalnız biten ay) */
+    asilposDaysOf,
+    asilposMealDaysOf,
+    asilposUnseenOf,
     strayPartTimeShifts,
     /** Bütün sabit giderler (bitmiş / başlamamış dahil), bugünkü tutar + geçmiş */
     fixedList,

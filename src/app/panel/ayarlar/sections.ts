@@ -31,8 +31,8 @@ export const SETTINGS_SECTIONS = [
   { id: "hatalar", label: "Hata kaydı", icon: Bug },
   // laffogato.net bağlantılarının durumu (karaoke, menü, siparişler, online satışlar) ve sitenin paneli
   { id: "site", label: "laffogato.net", icon: Globe },
-  // Kafenin kasası LafPOS: bağlantının durumu, son ret ve günü silme, LafPOS'a geçiş günü (docs/LAFPOS.md)
-  { id: "lafpos", label: "LafPOS (kasa)", icon: Store },
+  // Kafenin kasası AsilPOS: bağlantının durumu, son ret ve günü silme, AsilPOS'a geçiş günü (docs/ASILPOS.md)
+  { id: "asilpos", label: "AsilPOS (kasa)", icon: Store },
   // ModPOS'un kasa föyü (API, günde 2 çekim): durum, kalan hak, "Bu günü çek", son günler, ay rakamına yedek (docs/MODPOS-API.md)
   { id: "modpos", label: "ModPOS API", icon: ReceiptTurkishLira },
   // Z raporu, POS fişi ve kasadan çıkan fişlerin fotoğraftan okunması (Claude): aç / kapat, günlük sınır, tutar

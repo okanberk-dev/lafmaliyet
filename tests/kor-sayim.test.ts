@@ -27,18 +27,18 @@ import { renderCashReport } from "../src/server/notify/cash-report-template";
 const plain = (t: string) => t.replace(/ /g, " ");
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 
-test("ayar: seçilmemişken ModPOS'taki şubede açık, LafPOS'un şubesinde kapalı; LafPOS gününde hiçbir zaman", () => {
-  assert.equal(blindCountOn({ setting: null, branchId: "tuzla", lafposBranch: "marina", lafposDay: false }), true, "Tuzla varsayılan açık");
-  assert.equal(blindCountOn({ setting: null, branchId: "marina", lafposBranch: "marina", lafposDay: false }), false, "Marina varsayılan kapalı");
-  assert.equal(blindCountOn({ setting: false, branchId: "tuzla", lafposBranch: "marina", lafposDay: false }), false, "kapatılan kapalı");
-  assert.equal(blindCountOn({ setting: true, branchId: "marina", lafposBranch: "marina", lafposDay: false }), true, "Marina'nın ModPOS günü açılabilir");
-  // LafPOS'un şubesinin LafPOS gününde sayım LafPOS'ta kör: panelin kör sayımı yok
-  assert.equal(blindCountOn({ setting: true, branchId: "marina", lafposBranch: "marina", lafposDay: true }), false, "LafPOS günü");
-  // Başka şubenin günü LafPOS günü sayılmaz (lafposDay yalnız LafPOS'un şubesinde anlamlı)
-  assert.equal(blindCountOn({ setting: null, branchId: "tuzla", lafposBranch: "marina", lafposDay: true }), true, "Tuzla");
-  assert.equal(blindCountSettingOn(null, "tuzla", "marina"), true);
-  assert.equal(blindCountSettingOn(null, "marina", "marina"), false);
-  assert.equal(blindCountSettingOn(false, "tuzla", "marina"), false);
+test("ayar: seçilmemişken ModPOS'taki şubede açık, kasası AsilPOS olan şubede kapalı; şubenin AsilPOS gününde hiçbir zaman", () => {
+  assert.equal(blindCountOn({ setting: null, till: false, asilposDay: false }), true, "Tuzla varsayılan açık");
+  assert.equal(blindCountOn({ setting: null, till: true, asilposDay: false }), false, "Marina varsayılan kapalı");
+  assert.equal(blindCountOn({ setting: false, till: false, asilposDay: false }), false, "kapatılan kapalı");
+  assert.equal(blindCountOn({ setting: true, till: true, asilposDay: false }), true, "Marina'nın ModPOS günü açılabilir");
+  // Şubenin kendi AsilPOS gününde sayım AsilPOS'ta kör: panelin kör sayımı yok (çok şube: asilposDay çağıranın şubenin
+  // geçiş günüyle hesapladığı; kasası ModPOS olan şubede hep false)
+  assert.equal(blindCountOn({ setting: true, till: true, asilposDay: true }), false, "AsilPOS günü");
+  assert.equal(blindCountOn({ setting: null, till: false, asilposDay: false }), true, "Tuzla");
+  assert.equal(blindCountSettingOn(null, false), true);
+  assert.equal(blindCountSettingOn(null, true), false);
+  assert.equal(blindCountSettingOn(false, false), false);
   // Şube ayarı grubu: bozuk değer seçilmemiş sayılır
   assert.deepEqual(BLIND_COUNT_GROUP.read({}, {}), { enabled: null });
   assert.deepEqual(BLIND_COUNT_GROUP.read({ enabled: "evet" }, {}), { enabled: null });

@@ -145,12 +145,12 @@ test("#4: elle girilen litre fiyatı önce gelir; Ayarlar önizlemesi şubede de
 test("#4 kaynak: yükleyici şube seçiliyken faturalı ayların satışını 'Tümü' kapsamında okur; döküm motorun litresini kullanır", () => {
   const d = oku("src/server/data/dataset.ts");
   assert.match(d, /const billMonths = new Set\(pnlEntries\.filter\(\(e\) => e\.rowKey === "manual:su" && e\.amount > 0\)/);
-  assert.match(d, /branch && billMonths\.size\n\s+\? (?:\/\/[^\n]*\n\s+)?companyWaterSales\(db, \{ switchDay: scopeSwitchDay\(storedSettings\.lafposGecisGunu, ALL_BRANCHES, lafposBranch\),/);
-  // Su litresi "Tümü"nün satışıyla: geçiş günü görünümün şubesine göre kısılmaz (Marina seçiliyken Tuzla'nın LafPOS'u da sayılır)
+  assert.match(d, /branch && billMonths\.size\n\s+\? (?:\/\/[^\n]*\n\s+)?companyWaterSales\(db, \{ switchDays: allSwitchDays,/);
+  // Su litresi "Tümü"nün satışıyla: geçiş günü görünümün şubesine göre kısılmaz (Marina seçiliyken Tuzla'nın AsilPOS'u da sayılır)
   assert.match(d, /\.\.\.\(waterSales \? \{ waterSales \} : \{\}\)/);
   const fn = d.slice(d.indexOf("async function companyWaterSales"));
   assert.match(fn, /return withBranchScope\(ALL_BRANCHES, async \(\) => \{/);
-  // Bütün şubelerin satış satırları (şube süzgeci yok), LafPOS'la aynı yoldan birleşir
+  // Bütün şubelerin satış satırları (şube süzgeci yok), AsilPOS'la aynı yoldan birleşir
   assert.match(fn, /db\.select\(\)\.from\(s\.salesLines\)\.where\(inArray\(s\.salesLines\.month, read\)\)/);
   assert.match(fn, /await mergeSales\(db, \{/);
   const engine = oku("src/lib/calc/engine.ts");

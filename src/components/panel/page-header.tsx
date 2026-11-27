@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { Role } from "@/lib/constants";
 
 import { InfoTip } from "@/components/ui/info-tip";
 
@@ -32,7 +33,7 @@ export function PageHeader({
   /** Ekranın adresi: bağlam satırı rolün ağacından (contextLineOf); üst düzey ekranda çizilmez */
   path?: string;
   /** Ekranı açan rol; iki rolün açtığı sayfada kullanıcınınki, yükleme iskeletinde "staff" (ortak olan en dar bağlam) */
-  role?: "admin" | "staff";
+  role?: Role;
   tabs?: ReactNode;
 }) {
   const group = path ? contextLineOf(path, role, title) : undefined;

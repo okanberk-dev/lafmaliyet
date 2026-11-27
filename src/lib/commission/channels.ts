@@ -76,12 +76,12 @@ export function channelOf(names: readonly (string | null | undefined)[]): Channe
 }
 
 /**
- * LafPOS'taki ödeme türünün kanal yazısı (pos_day_reports.payments[].channel; docs/LAFPOS.md) → komisyon kanalı:
+ * AsilPOS'taki ödeme türünün kanal yazısı (pos_day_reports.payments[].channel; docs/ASILPOS.md) → komisyon kanalı:
  * anahtarın kendisi ("pluxee", büyük / küçük harf farkı yok) ya da bir kanalın adı ("Sodexo", "Ticket Restaurant",
- * "Trendyol Go"); boşsa ya da tanınmıyorsa null. LafPOS ödeme türünde kanalı listeden seçtirir (aynı anahtarlar), eski
- * LafPOS serbest metin yazabilir.
+ * "Trendyol Go"); boşsa ya da tanınmıyorsa null. AsilPOS ödeme türünde kanalı listeden seçtirir (aynı anahtarlar), eski
+ * AsilPOS serbest metin yazabilir.
  */
-export function lafposChannel(raw: string | null | undefined): ChannelKey | null {
+export function asilposChannel(raw: string | null | undefined): ChannelKey | null {
   const v = raw?.trim();
   if (!v) return null;
   const key = v.toLocaleLowerCase("tr-TR").replace(/ı/g, "i");

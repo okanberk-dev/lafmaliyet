@@ -42,7 +42,7 @@ const zSize = z.enum(["M", "L", "Tek"], { message: "Boy seçin" });
  * Ürün laffogato.net menüsüne bağlıysa fiyat önce siteye yazılır (docs/SITE-MENU.md); site kabul etmezse fiyat
  * değişmez ve hata döner. Dönen `price` yazılan fiyattır (sitenin kuruşu), `site` fiyatın sitede de değiştiği,
  * `posPending` kasada (ModPOS) değiştirilecek fiyat kaldığı (Fiyatlar › Kasaya işle; docs/FIYATLAR.md), `kasa` bugünün
- * kasası (geçiş gününden itibaren LafPOS: siteye bağlı ürünün fiyatını siteden alır; src/lib/lafpos/kasa.ts).
+ * kasası (geçiş gününden itibaren AsilPOS: siteye bağlı ürünün fiyatını siteden alır; src/lib/asilpos/kasa.ts).
  *
  * `source`: fiyat geçmişindeki kaynak. Hammadde zamları kartındaki "Fiyatı X yap" iki dayanakta da "suggestion"
  * gönderir: `ackAlert` yalnız "zammın payı"nda verilir, hedef orana çekilen fiyat da öneridir. Fiyat hücresi ve
@@ -88,7 +88,7 @@ export async function updateProductPrice(id: number, price: number, ackAlert = f
       `${before.name} ${before.size}: ${tl(before.price)} → ${tl(written.price)}${from === "suggestion" ? " (zam önerisi)" : ""}${written.site ? " (sitede de)" : ""}`,
     );
     refresh();
-    // Bugünün kasası: bildirim "ModPOS'ta" ya da (geçiş gününden itibaren) "LafPOS siteden alır" der (denetim E-39)
+    // Bugünün kasası: bildirim "ModPOS'ta" ya da (geçiş gününden itibaren) "AsilPOS siteden alır" der (denetim E-39)
     const { kasa } = await loadTillScope();
     return { price: written.price, site: written.site, posPending, kasa };
   });

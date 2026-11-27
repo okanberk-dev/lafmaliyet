@@ -66,7 +66,7 @@ test("hesap: ikram edilen ürünün malzemesi reçeteden, zayi hammadde doğruda
   assert.equal(sum.ikram.menuValue, product.price * 2);
   // Kayıtsız aylar ve eski veri kümesi (wasteEntries yok) bozulmaz
   assert.equal(model0.recordedUsage("2026-09").size, 0);
-  assert.deepEqual(model0.wasteSummary("2026-09"), { zayi: { count: 0, cost: 0, lafpos: 0 }, ikram: { count: 0, cost: 0, menuValue: 0, lafpos: 0 }, notCounted: 0 });
+  assert.deepEqual(model0.wasteSummary("2026-09"), { zayi: { count: 0, cost: 0, asilpos: 0 }, ikram: { count: 0, cost: 0, menuValue: 0, asilpos: 0 }, notCounted: 0 });
 });
 
 test("tutarlılık: sapmadan kayıtlı zayi ve ikram düşülür; eski alanlar değişmez", () => {
@@ -144,12 +144,16 @@ test("yetki: personel bugüne ve düne (dün kilitlenene kadar) girer, kendi kay
   const page = readFileSync(join(root, "src/app/panel/zayi/page.tsx"), "utf8");
   // Ay özeti (maliyet) yalnız yöneticiye: personel dalı ondan önce döner
   assert.ok(page.indexOf("if (!admin)") < page.indexOf("<WasteMonth"), "personel maliyet özetini görmez");
+  // Müdür "admin" düzeyinde yazar (opsLevel) ama ay özeti gerçek role bakar; özetin kendisi de yöneticiyi ister (bulgu 4)
+  assert.match(page, /const costs = user\.role === "admin";/, "müdür ('admin' düzeyi) ay özetinin malzeme maliyetini görmez");
+  assert.match(page, /\{costs \? <WasteMonth month=\{month\} today=\{today\} \/> : null\}/, "müdür ('admin' düzeyi) ay özetinin malzeme maliyetini görmez");
+  assert.match(page.slice(page.indexOf("async function WasteMonth(")), /^async function WasteMonth\([^)]*\) \{\s+await requireAdmin\(\);/, "müdür ('admin' düzeyi) ay özetinin malzeme maliyetini görmez");
   const choices = readFileSync(join(root, "src/server/data/waste.ts"), "utf8");
   assert.doesNotMatch(choices.slice(0, choices.indexOf("export interface WasteEntryDTO")), /price|cost/i, "seçenekler fiyat taşımaz");
 });
 
 test("ikram formu: uygulamanın ödül içeceği ikram değildir (online satışta sayılır; iki kez düşülmesin)", () => {
   const board = readFileSync(join(root, "src/app/panel/zayi/waste-board.tsx"), "utf8");
-  // LafPOS gününde (ürün ikramı LafPOS'ta) not LafPOS'unkiyle yer değiştirir; öteki günlerde bu not
+  // AsilPOS gününde (ürün ikramı AsilPOS'ta) not AsilPOS'unkiyle yer değiştirir; öteki günlerde bu not
   assert.match(board, /kind === "ikram" \? \(\s*<p[^>]*>\s*Uygulamadaki ödülle \(damga kartı, davet kuponu\) verilen içecek ikram değildir/);
 });

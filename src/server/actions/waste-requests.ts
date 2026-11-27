@@ -7,7 +7,9 @@ import { genitive } from "@/lib/recipe-change";
 import { longDateTR } from "@/lib/reminders";
 import { wasteRequestLog } from "@/lib/waste-requests";
 import { zFormBranch } from "@/lib/branches";
-import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { asActor, opsLevel } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
+import { reviewBranchRefusal } from "@/server/staff-requests/branch";
 import { formBranch, withBranchScope } from "@/server/branch-scope";
 import { getDb } from "@/server/db";
 import { pushNewRequest } from "@/server/staff-requests/push";
@@ -53,12 +55,13 @@ const lateSchema = z
  */
 export async function requestLateWaste(input: z.input<typeof lateSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
-    if (me.role === "admin") throw new UserError("Yönetici doğrudan girer; istek gerekmez");
+    const me = await requireCan("kayit.yaz");
+    // Yönetici ve müdür doğrudan girer
+    if (opsLevel(me.role) === "admin") throw new UserError("Yönetici doğrudan girer; istek gerekmez");
     const { branchId, ...data } = lateSchema.parse(input);
     // Kaydın ineceği şube formun gösterdiği (addWasteEntry ile aynı kapı); kilit de o şubenin kasasından
     const sube = await formBranch(branchId, "waste", { requireExplicit: true });
-    const out = await withBranchScope(sube, () => proposeLateWaste(getDb(), me, data, undefined, sube));
+    const out = await withBranchScope(sube, () => proposeLateWaste(getDb(), asActor(me, "staff"), data, undefined, sube));
     pushNewRequest(out);
     if (out.created) {
       const p = out.payload;
@@ -74,10 +77,10 @@ const deleteSchema = z.object({ id: z.number().int().positive(), message: zMessa
 /** Personel: başkasının ya da kilitli günün kaydının silinmesini ister (14 güne kadar) */
 export async function requestWasteDelete(input: z.input<typeof deleteSchema>) {
   return attempt(async () => {
-    const me = await requireUser();
-    if (me.role === "admin") throw new UserError("Yönetici doğrudan siler; istek gerekmez");
+    const me = await requireCan("kayit.yaz");
+    if (opsLevel(me.role) === "admin") throw new UserError("Yönetici doğrudan siler; istek gerekmez");
     const data = deleteSchema.parse(input);
-    const out = await proposeWasteDelete(getDb(), me, data);
+    const out = await proposeWasteDelete(getDb(), asActor(me, "staff"), data);
     pushNewRequest(out);
     if (out.created || out.row.version > 1) {
       const e = out.payload.entry;
@@ -101,9 +104,12 @@ const reviewSchema = z.object({
  */
 export async function reviewWasteRequest(input: z.input<typeof reviewSchema>) {
   return attempt(async () => {
-    const me = await requireAdmin();
+    // Yönetici ve müdür (yalnız şubesinin isteği)
+    const me = await requireCan("onay");
     const data = reviewSchema.parse(input);
-    const out = await reviewWasteRequestCore(getDb(), me, data);
+    const branchRefusal = await reviewBranchRefusal(getDb(), me, data.id);
+    if (branchRefusal) throw new UserError(branchRefusal);
+    const out = await reviewWasteRequestCore(getDb(), asActor(me, opsLevel(me.role)), data);
     const r = out.request;
     const tail = `(${r.requestedByName} istedi${r.reviewNote && out.status !== "gone" ? ` · not: ${r.reviewNote}` : ""})`;
     const late = out.kind === "zayi-gec";

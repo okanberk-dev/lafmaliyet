@@ -185,32 +185,32 @@ OKC_Z = [
 ]
 photo(receipt(OKC_Z, fade=0.15), "yazarkasa-z.jpg", angle=2.0)
 
-# ── LafPOS günü (24 Kasım 2026, Marina: Z fotoğrafı "Z raporu" olarak tanınmadı) ──
-# LafPOS'un kapanışta fiş yazıcısından bastığı kâğıt (LafPOS src/lib/print.tsx ZReceipt, BankEodReceipt). Kör kasada
-# (kasa.rakam yok) yalnız banka kısmı; rakamı gören basınca önce LafPOS'un yönetim raporu ("GÜN SONU · Z 31", NET CİRO,
-# "mali Z değildir"), altında banka kısmı. İkisi de mali değildir: Z no'su LafPOS'un sayacı, yazarkasa alanlarına gitmez;
+# ── AsilPOS günü (24 Kasım 2026, Marina: Z fotoğrafı "Z raporu" olarak tanınmadı) ──
+# AsilPOS'un kapanışta fiş yazıcısından bastığı kâğıt (AsilPOS src/lib/print.tsx ZReceipt, BankEodReceipt). Kör kasada
+# (kasa.rakam yok) yalnız banka kısmı; rakamı gören basınca önce AsilPOS'un yönetim raporu ("GÜN SONU · Z 31", NET CİRO,
+# "mali Z değildir"), altında banka kısmı. İkisi de mali değildir: Z no'su AsilPOS'un sayacı, yazarkasa alanlarına gitmez;
 # banka kısmı Banka gün sonudur (Garanti 500 + Akbank 255 = 755, batch 000279). Pavo'nun istenince bastığı detaylı Z
 # (Z no 0007, toplam 1.190, banka gün sonu 240 + 755) ve yazarkasada basılmış, kendi Z no'su olan ModPOS Z'si (BİLGİ
 # FİŞİ, MF logosu; mali değil). En sonda: öncekilerin rastgele sırası değişmesin
-LAFPOS_HEAD = ["**^L'AFFOGATO", "^Marina Şubesi", "^Tel 0216 000 00 00"]
-LAFPOS_BANK = LAFPOS_HEAD + [
+ASILPOS_HEAD = ["**^L'AFFOGATO", "^Marina Şubesi", "^Tel 0216 000 00 00"]
+ASILPOS_BANK = ASILPOS_HEAD + [
     "**^BANKA GÜN SONU · PAVO", "Batch|000279", "Cihaz saati|24.11.2026 22:03", "Alınış|Gün kapanınca",
     "Yazdırma|24.11.2026 22:03", "-" * 40, "^Bankalar", "Garanti BBVA (3)|500,00", "Akbank (2)|255,00",
     "**TOPLAM|755,00 TL", "-" * 40, "^PAVO - LAFPOS KARŞILAŞTIRMA", "Pavo kart toplamı|755,00",
-    "LafPOS kart toplamı|755,00", "**FARK|0,00", "**UYUMLU|OK", "-" * 40, "^Pavo cihazının banka gün sonu özetidir",
+    "AsilPOS kart toplamı|755,00", "**FARK|0,00", "**UYUMLU|OK", "-" * 40, "^Pavo cihazının banka gün sonu özetidir",
 ]
-photo(receipt(LAFPOS_BANK, fade=0.1), "lafpos-kor-kagit.jpg", angle=1.5)
+photo(receipt(ASILPOS_BANK, fade=0.1), "asilpos-kor-kagit.jpg", angle=1.5)
 
-LAFPOS_Z = LAFPOS_HEAD + [
+ASILPOS_Z = ASILPOS_HEAD + [
     "**^GÜN SONU · Z 31", "İş günü|2026-11-24", "Kapanış|24.11.2026 22:03", "Yazdırma|24.11.2026 22:03", "-" * 40,
     "Brüt satış|1.250,00", "İndirim|-60,00", "**NET CİRO|1.190,00 TL", "Adisyon / kişi|17 / 29", "-" * 40,
     "^Ödemeler", "Nakit (12)|390,00", "Kart (5)|800,00", "-" * 40,
     "KDV oranı / matrah|KDV", "%10 / 1.081,82|108,18", "-" * 40,
     "^Ciro dışı", "İkram|45,00", "İptal (0 hazırlandıktan sonra)|0,00", "-" * 40,
     "^Kasa", "Açılış nakiti|1.500,00", "Kasa girişi|0,00", "Harcama|-0,00", "Teslim|-0,00",
-    "**Beklenen nakit|1.890,00", "-" * 40, "^LafPOS yönetim raporudur, mali Z değildir", "",
+    "**Beklenen nakit|1.890,00", "-" * 40, "^AsilPOS yönetim raporudur, mali Z değildir", "",
 ]
-photo(receipt(LAFPOS_Z + LAFPOS_BANK, fade=0.1), "lafpos-rakamli-kagit.jpg", angle=-1.0)
+photo(receipt(ASILPOS_Z + ASILPOS_BANK, fade=0.1), "asilpos-rakamli-kagit.jpg", angle=-1.0)
 
 PAVO_Z = [
     "^PAVO", "^L'AFFOGATO MARİNA", "^KADIKÖY VD  VKN: 1234567890", "",
@@ -241,13 +241,13 @@ OKC_Z_FOLDED = OKC_Z[:7] + [
 ]
 photo(receipt(OKC_Z_FOLDED, fade=0.15), "yazarkasa-z-katli.jpg", angle=-1.5)
 
-# LafPOS'un gün açıkken bastığı ara rapor: başlık "ARA RAPOR (X)", NET CİRO, "mali Z değildir"; Z sayılmaz
-LAFPOS_X = LAFPOS_HEAD + [
+# AsilPOS'un gün açıkken bastığı ara rapor: başlık "ARA RAPOR (X)", NET CİRO, "mali Z değildir"; Z sayılmaz
+ASILPOS_X = ASILPOS_HEAD + [
     "**^ARA RAPOR (X)", "İş günü|2026-11-24", "Yazdırma|24.11.2026 18:40", "-" * 40,
     "Brüt satış|820,00", "İndirim|-20,00", "**NET CİRO|800,00 TL", "Adisyon / kişi|11 / 18", "-" * 40,
     "^Ödemeler", "Nakit (7)|260,00", "Kart (4)|540,00", "-" * 40,
     "KDV oranı / matrah|KDV", "%10 / 727,27|72,73", "-" * 40,
     "^Kasa", "Açılış nakiti|1.500,00", "**Beklenen nakit|1.760,00", "-" * 40,
-    "^LafPOS yönetim raporudur, mali Z değildir", "",
+    "^AsilPOS yönetim raporudur, mali Z değildir", "",
 ]
-photo(receipt(LAFPOS_X, fade=0.1), "lafpos-ara-rapor.jpg", angle=1.0)
+photo(receipt(ASILPOS_X, fade=0.1), "asilpos-ara-rapor.jpg", angle=1.0)

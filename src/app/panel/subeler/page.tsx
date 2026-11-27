@@ -6,16 +6,16 @@ import { PageSkeleton } from "@/components/ui/misc";
 import { CASH_REPORT_GROUP, PARASUT_GROUP } from "@/lib/branch-settings/groups";
 import { settingMode, settingModeText } from "@/lib/branch-settings/rules";
 import { tillBranches } from "@/lib/branches";
-import { isAnaAdmin } from "@/lib/lafpos/kurulum";
+import { isAnaAdmin } from "@/lib/asilpos/kurulum";
 import { createBranch, deleteBranch, sendBranchInstall, updateBranch } from "@/server/actions/branches";
 import { requireAdmin } from "@/server/auth/dal";
-import { listInstalls } from "@/server/lafpos/kurulum";
+import { listInstalls } from "@/server/asilpos/kurulum";
 import { settingLinks } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 
 import { BranchesAdmin } from "./branches-admin";
-import { LafposInstallCard } from "./lafpos-install";
+import { AsilposInstallCard } from "./asilpos-install";
 
 export const metadata: Metadata = { title: "Şubeler" };
 
@@ -43,7 +43,7 @@ export default function BranchesPage() {
 async function BranchesContent() {
   const me = await requireAdmin();
   const [rows, links, parasutLinks] = await Promise.all([listBranches(getDb()), settingLinks(CASH_REPORT_GROUP.id), settingLinks(PARASUT_GROUP.id)]);
-  // Şube kurulumu (docs/LAFPOS.md › Şube kurulumu): şube eklemek ve kurulum bağlantısı göndermek yalnız ana yöneticide;
+  // Şube kurulumu (docs/ASILPOS.md › Şube kurulumu): şube eklemek ve kurulum bağlantısı göndermek yalnız ana yöneticide;
   // her fiziksel şubenin son bağlantısı ve e-postası satırda
   const canCreate = isAnaAdmin(me);
   const installs = canCreate
@@ -57,7 +57,7 @@ async function BranchesContent() {
   const emails = canCreate ? Object.fromEntries((await getDb().select({ id: s.branches.id, email: s.branches.email }).from(s.branches)).map((r) => [r.id, r.email])) : {};
   return (
     <div className="space-y-4">
-      {canCreate ? <LafposInstallCard rows={rows} installs={installs} emails={emails} createAction={createBranch} installAction={sendBranchInstall} /> : null}
+      {canCreate ? <AsilposInstallCard rows={rows} installs={installs} emails={emails} createAction={createBranch} installAction={sendBranchInstall} /> : null}
       <BranchesAdmin rows={rows} settingsText={settingsText} parasutText={parasutText} createAction={createBranch} updateAction={updateBranch} deleteAction={deleteBranch} canCreate={canCreate} installs={installs} installAction={sendBranchInstall} />
     </div>
   );

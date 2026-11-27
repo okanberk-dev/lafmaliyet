@@ -1,5 +1,5 @@
 // Kasada bekleyen fiyat şube başına (şube kapsamı A3, 24 Kasım 2026; docs/FIYATLAR.md › Kasaya işle), gerçek Postgres'te:
-// - göç (0078 + 0079): ürünün eski pos_stale_* değerleri Tuzla'ya olduğu gibi, Marina'ya (LafPOS'un şubesi) yalnız
+// - göç (0078 + 0079): ürünün eski pos_stale_* değerleri Tuzla'ya olduğu gibi, Marina'ya (AsilPOS'un şubesi) yalnız
 //   okuyucunun süzgecine uyanlar kopyalanır; eski işaretler Tuzla'nın olur, ürün sütunlarına dokunulmaz;
 // - fiyat yazımı her etkin fiziksel şubenin satırını açar (online kanal ve pasif şube yok), fiyat geri dönünce siler;
 // - Marina'da işaretlenince Tuzla'nın listesi kalır; geri alma yalnız o şubede ve "son işaret" şube başına;
@@ -21,10 +21,12 @@ import { and, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import { GECIS_GUNU_AYARI } from "../src/lib/asilpos/eski-adlar";
 import { ALL_BRANCHES, BRANCH_REQUIRED, DEFAULT_BRANCHES } from "../src/lib/branches";
 import { POS_UNDO_TEXT } from "../src/lib/prices/pos";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.KASA_FIYAT_TEST_DATABASE_URL;
 const DB_NAME = `lm_kasa_fiyat_${process.pid}`;
@@ -92,6 +94,7 @@ describe("kasada bekleyen fiyat şube başına: veritabanında", { skip: !SERVER
         return { ...me, email: `${me.name}@test.local`, active: true };
       },
       requireUser: async () => ({ ...me, email: `${me.name}@test.local`, active: true }),
+      ...dalCapabilities(async () => ({ ...me, email: `${me.name}@test.local`, active: true })),
       getCurrentUser: async () => ({ ...me, email: `${me.name}@test.local`, active: true }),
     });
     const dbModule = await import("../src/server/db");
@@ -107,8 +110,10 @@ describe("kasada bekleyen fiyat şube başına: veritabanında", { skip: !SERVER
     writeFileSync(journalPath, JSON.stringify(journal));
     await migrate(db, { migrationsFolder: join(tmp, "drizzle") });
     // Şube satırları düz SQL ile: 0077'de `branches.features` yok (0084), Drizzle'ın insert'ü şemanın her sütununu adlandırır
+    // 0077'nin kütüğü AsilPOS'un yeni değerini tanımaz: o günkü tohum gibi Marina ModPOS (AsilPOS kasası geri düşüşle Marina)
     for (const b of DEFAULT_BRANCHES) {
-      await db.execute(sql`INSERT INTO branches (id, name, kind, pos_source, sort_order) VALUES (${b.id}, ${b.name}, ${b.kind}, ${b.posSource}, ${b.sortOrder}) ON CONFLICT DO NOTHING`);
+      const source = b.posSource === "asilpos" ? "modpos" : b.posSource;
+      await db.execute(sql`INSERT INTO branches (id, name, kind, pos_source, sort_order) VALUES (${b.id}, ${b.name}, ${b.kind}, ${source}, ${b.sortOrder}) ON CONFLICT DO NOTHING`);
     }
     await db.execute(sql`INSERT INTO branches (id, name, kind, pos_source, active, sort_order) VALUES ('eski', 'Eski', 'fiziksel', 'modpos', false, 9)`);
     for (const k of Object.keys(users) as (keyof typeof users)[]) {
@@ -127,9 +132,9 @@ describe("kasada bekleyen fiyat şube başına: veritabanında", { skip: !SERVER
     await admin?.end();
   });
 
-  test("göç: Tuzla'ya her işaret, Marina'ya yalnız LafPOS'un işi; eski işaretler Tuzla'nın, ürün sütunları yerinde", async () => {
+  test("göç: Tuzla'ya her işaret, Marina'ya yalnız AsilPOS'un işi; eski işaretler Tuzla'nın, ürün sütunları yerinde", async () => {
     // Eski kurulum (0077): tek kasanın durumu ürün satırında; geçiş günü 22 Kasım, bugün 24 Kasım
-    await db.execute(sql`INSERT INTO settings (key, value) VALUES ('lafposGecisGunu', '"2026-11-22"')`);
+    await db.execute(sql`INSERT INTO settings (key, value) VALUES (${GECIS_GUNU_AYARI}, '"2026-11-22"')`);
     await db.execute(sql`INSERT INTO categories (id, name) VALUES (900, 'Göç')`);
     await db.execute(sql`INSERT INTO products (id, category_id, name, size, price, site_menu_id, site_menu_slot, pos_stale_price, pos_stale_since) VALUES
       (901, 900, 'Latte', 'M', 205, null, null, 195, '2026-11-01T10:00:00Z'),
@@ -151,7 +156,7 @@ describe("kasada bekleyen fiyat şube başına: veritabanında", { skip: !SERVER
     assert.deepEqual(
       rows.map((r) => [r.branch_id, r.product_id, r.stale_price]),
       [
-        // Marina: yalnız siteye bağlı olmayan ve fiyatı LafPOS başladıktan sonra panelde değişen (Latte)
+        // Marina: yalnız siteye bağlı olmayan ve fiyatı AsilPOS başladıktan sonra panelde değişen (Latte)
         [MARINA, 901, 195],
         [TUZLA, 901, 195],
         [TUZLA, 902, 205],
@@ -186,7 +191,7 @@ describe("kasada bekleyen fiyat şube başına: veritabanında", { skip: !SERVER
     beforeEach(async () => {
       me = users.ali;
       await db.execute(sql`TRUNCATE products, categories, product_prices, pos_marks, pos_stale, activity_log RESTART IDENTITY CASCADE`);
-      await db.delete(s.settings).where(eq(s.settings.key, "lafposGecisGunu"));
+      await db.delete(s.settings).where(eq(s.settings.key, GECIS_GUNU_AYARI));
       const [c] = await db.insert(s.categories).values({ name: "Kahve", sortOrder: 1 }).returning({ id: s.categories.id });
       categoryId = c.id;
     });

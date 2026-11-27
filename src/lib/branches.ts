@@ -31,10 +31,10 @@ export const BRANCH_KIND_LABEL: Record<BranchKind, string> = { fiziksel: "Şube"
 
 /** Gün sonu hangi sistemden gelir (docs/SUBE.md › Kasa kaynağı) */
 export type BranchPosSource = (typeof BRANCH_POS_SOURCES)[number];
-export const BRANCH_POS_SOURCES = ["modpos", "lafpos", "yok"] as const;
+export const BRANCH_POS_SOURCES = ["modpos", "asilpos", "yok"] as const;
 export const BRANCH_POS_SOURCE_LABEL: Record<BranchPosSource, string> = {
   modpos: "ModPOS (Gafdigi)",
-  lafpos: "LafPOS",
+  asilpos: "AsilPOS",
   yok: "Kasa yok",
 };
 
@@ -63,7 +63,8 @@ export interface BranchRow {
 export const DEFAULT_BRANCHES: readonly Omit<BranchRow, "active">[] = [
   // Özellikler sahibin varsayılanı (src/lib/branch-features.ts): karaoke Tuzla'da, sipariş, garson ve yemek kartı her şubede
   { id: DEFAULT_BRANCH_ID, name: "Tuzla", kind: "fiziksel", posSource: "modpos", openedOn: null, sortOrder: 1, features: ["karaoke", "siparis", "garson", "yemek_karti"] },
-  { id: "marina", name: "Marina", kind: "fiziksel", posSource: "modpos", openedOn: null, sortOrder: 2, features: ["siparis", "garson", "yemek_karti"] },
+  // Marina'nın kasası AsilPOS (sahibin kararı, 27 Kasım 2026: Marina'da ModPOS tamamen bitti; göç 0099 canlıdakini çevirir)
+  { id: "marina", name: "Marina", kind: "fiziksel", posSource: "asilpos", openedOn: null, sortOrder: 2, features: ["siparis", "garson", "yemek_karti"] },
   { id: ONLINE_BRANCH_ID, name: "laffogato.net", kind: "online", posSource: "yok", openedOn: null, sortOrder: 3, features: [] },
 ];
 /** Tohumun bir kez çalıştığının işareti (integration_state) */
@@ -118,7 +119,7 @@ export function posRateError(rate: number): string | null {
 /** Tip ile kasa kaynağı birbirine uymalı: online kanalın kasası olmaz, fiziksel şube kasasız kalmaz */
 export function branchSourceError(kind: BranchKind, posSource: BranchPosSource): string | null {
   if (kind === "online" && posSource !== "yok") return "Online kanalın kasası olmaz; kasa kaynağını “Kasa yok” seçin";
-  if (kind === "fiziksel" && posSource === "yok") return "Şubenin kasa kaynağını seçin (ModPOS ya da LafPOS)";
+  if (kind === "fiziksel" && posSource === "yok") return "Şubenin kasa kaynağını seçin (ModPOS ya da AsilPOS)";
   return null;
 }
 
@@ -141,6 +142,18 @@ export function branchChangeError(
     if (!kalan.length) return "En az bir şube açık kalmalı";
   }
   return null;
+}
+
+/** Şubenin e-postası başka bir hesapta (createBranch, sendBranchInstall) */
+export const BRANCH_EMAIL_TAKEN = "Bu e-posta başka bir hesapta kayıtlı; şube için ayrı bir adres yazın";
+
+/**
+ * Şubenin e-postası var olan bir hesapta mı (kurulum o hesabı şubenin panel hesabı sayar, AsilPOS kurulum bağlantısı
+ * oraya gider; docs/ASILPOS.md › Şube kurulumu). Beyaz liste: yalnız personel hesabı kabul edilir, o da şubesizse ya da
+ * bu şubedeyse. Yönetici, müdür, muhasebeci ve tanınmayan rol hep reddedilir (varsayılan kapalı)
+ */
+export function branchEmailTaken(dup: { role: string; branchId: string | null } | null | undefined, branchId: string): boolean {
+  return !!dup && (dup.role !== "staff" || (dup.branchId !== null && dup.branchId !== branchId));
 }
 
 /** Silinebilir mi: sabit kayıtlar ve üzerinde verisi olan şube silinmez (veri sayısı çağırandan gelir) */

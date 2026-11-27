@@ -161,7 +161,7 @@ const STEP_NAMES: Record<string, string> = {
   count: "Sayım bildirimi",
   weekly: "Haftalık özet",
   requests: "Personel istekleri",
-  gunSonu: "LafPOS gün sonu",
+  gunSonu: "AsilPOS gün sonu",
   vardiya: "Vardiya hatırlatması",
   backup: "Otomatik yedek",
   quota: "Veritabanı kotası",
@@ -205,7 +205,7 @@ export const STEP_LABELS: Record<string, Record<string, string>> = {
     error: "Haftalık özet gönderilemedi",
   },
   requests: { ok: "Süresi dolan personel istekleri kapandı", error: "Personel istekleri hata" },
-  gunSonu: { ok: "LafPOS gün sonu: eksik rapor ya da e-posta tamamlandı", error: "LafPOS gün sonu hata" },
+  gunSonu: { ok: "AsilPOS gün sonu: eksik rapor ya da e-posta tamamlandı", error: "AsilPOS gün sonu hata" },
   vardiya: { sent: "Gelecek haftanın vardiyası yazılmadı: yöneticilere bildirim gitti", nodevice: "Gelecek haftanın vardiyası yazılmadı (bildirim açık yönetici cihazı yok)", error: "Vardiya hatırlatması hata" },
   backup: { ok: "Haftalık yedek alındı", off: "Otomatik yedek: depo yok", error: "Otomatik yedek alınamadı" },
   quota: { warn70: "Veritabanı kotası %70'i geçti", warn90: "Veritabanı kotası %90'ı geçti", error: "Veritabanı kotası ölçülemedi" },
@@ -229,7 +229,7 @@ const cut = (v: string, n: number) => (v.length > n ? `${v.slice(0, n - 1)}…` 
 export type CoreStep = "sync" | "digest" | "reminders" | "karaoke" | "menu" | "sales";
 /**
  * Yalnız çalıştığı gün yazılan adımlar (yoksa hiçbir şey yazılmaz): satış tahmini, ModPOS kasa föyü (yalnız anahtar
- * varken), fotoğraf temizliği, ay sonu sayım bildirimi, haftalık özet, süresi dolan personel istekleri, LafPOS gün sonu,
+ * varken), fotoğraf temizliği, ay sonu sayım bildirimi, haftalık özet, süresi dolan personel istekleri, AsilPOS gün sonu,
  * otomatik haftalık yedek (alındığı ya da alınamadığı gün), veritabanı kotası (eşik geçildiği gün), muhasebeci paketi
  * (gönderildiği ya da gönderilemediği gün)
  */
@@ -252,7 +252,7 @@ export function digestStep(r: { status: "sent" | "skipped" | "error"; off?: "dis
     return {
       code: "norecipient",
       error: r.blocked
-        ? `gönderilecek bir şey vardı ama etkin bildirim adreslerinin hepsi personel ya da pasif hesaba ait: ${r.blocked}`
+        ? `gönderilecek bir şey vardı ama etkin bildirim adreslerinin hepsi personel, müdür ya da pasif hesaba ait: ${r.blocked}`
         : "gönderilecek bir şey vardı ama etkin bildirim adresi yok",
     };
   }
@@ -330,17 +330,20 @@ export function requestsStep(r: { expired: number } | { error: string }): StepRe
 }
 
 /**
- * LafPOS gün sonu otomasyonunun adımı (src/server/lafpos/gun-sonu.ts catchUpLafposDayEnds): yalnız bir şey yapıldıysa
+ * AsilPOS gün sonu otomasyonunun adımı (src/server/asilpos/gun-sonu.ts catchUpAsilposDayEnds): yalnız bir şey yapıldıysa
  * (rapor yazıldı ya da e-posta gitti) ya da hata varsa yazılır. Süre yetmediği için başlanamayan, işi bekleyen gün
- * (`left`) de hatadır: e-postası ya da raporu bu sabah tamamlanmadı
+ * (`left`) de hatadır: e-postası ya da raporu bu sabah tamamlanmadı. Çok şube: birden çok kasanın günü varsa metin günü
+ * şubesiyle yazar (`left` zaten `<şube>:<gün>`)
  */
 export function gunSonuStep(
-  r: { status: string; days: { date?: string; report: string; email: string; staff?: string; error?: string }[]; left?: string[] } | { error: string },
+  r: { status: string; days: { date?: string; branchId?: string; report: string; email: string; staff?: string; error?: string }[]; left?: string[] } | { error: string },
 ): StepResult | undefined {
   if ("error" in r) return { code: "error", error: r.error };
   const failed = r.days.filter((d) => d.report === "error" || d.email === "error" || d.email === "failed" || d.staff === "error" || d.staff === "failed");
   const why = (d: (typeof failed)[number]) => d.error ?? (d.report !== "error" && d.email !== "error" && d.email !== "failed" ? "çalışanların e-postası gitmedi" : d.email);
-  const problems = [...failed.map((d) => `${d.date ?? ""} ${why(d)}`.trim()), ...(r.left ?? []).map((d) => `${d} süre yetmedi`)];
+  const multi = new Set(r.days.flatMap((d) => (d.branchId ? [d.branchId] : []))).size > 1;
+  const dayOf = (d: (typeof failed)[number]) => (multi && d.branchId ? `${d.branchId}:${d.date ?? ""}` : (d.date ?? ""));
+  const problems = [...failed.map((d) => `${dayOf(d)} ${why(d)}`.trim()), ...(r.left ?? []).map((d) => `${d} süre yetmedi`)];
   if (problems.length) return { code: "error", error: problems.join(" · ") };
   return r.days.some((d) => d.report === "written" || d.report === "updated" || d.email === "sent") ? { code: "ok" } : undefined;
 }

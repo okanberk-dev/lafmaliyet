@@ -23,6 +23,7 @@ import postgres from "postgres";
 import { parseFeatures } from "../src/lib/branch-features";
 import { BRANCH_COOKIE, DEFAULT_BRANCHES, KARAOKE_ELSEWHERE } from "../src/lib/branches";
 import * as s from "../src/server/db/schema";
+import { dalCapabilities } from "./helpers/dal-stub";
 
 const SERVER_URL = process.env.SUBE_OZELLIK_TEST_DATABASE_URL;
 const DB_NAME = `lm_sube_ozellik_${process.pid}`;
@@ -76,6 +77,7 @@ describe("Şube özellikleri", { skip: !SERVER_URL && "SUBE_OZELLIK_TEST_DATABAS
     stub(require.resolve("../src/server/auth/dal"), {
       getCurrentUser: session,
       requireUser: session,
+      ...dalCapabilities(session),
       requireAdmin: async () => {
         if (me.role !== "admin") throw new Error("yönetici değil");
         return session();

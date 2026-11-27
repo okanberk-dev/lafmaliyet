@@ -298,27 +298,27 @@ test("kasa bütünlüğü (yönetici): ModPOS API'den farklı dünkü rapor 'sor
   assert.equal(byKey(dayTasks(staff(EVENING, { cash: { today: null, yesterday: report("2026-10-21", { flags: [CASH_FLAGS.modpos] }), firstDate: "2026-10-01" } })))["kasa-dun"], undefined);
 });
 
-test("LafPOS günü: yöneticiye 'personel girer' değil 'LafPOS gün sonu gelince yazılır'; sayımsız gün 'Sayım yok' ve LafPOS'ta nereden sayılacağı", () => {
+test("AsilPOS günü: yöneticiye 'personel girer' değil 'AsilPOS gün sonu gelince yazılır'; sayımsız gün 'Sayım yok' ve AsilPOS'ta nereden sayılacağı", () => {
   const S = "2026-10-01";
-  // Yönetici, rapor gelmeden: gündüz ve akşam metni LafPOS'u söyler
-  assert.equal(byKey(dayTasks(admin(NOON, { lafposSwitch: S }))).kasa.detail, "LafPOS gün sonu gelince kendiliğinden yazılır.");
-  assert.match(byKey(dayTasks(admin(EVENING, { lafposSwitch: S }))).kasa.detail, /Henüz gelmedi; LafPOS gün sonu gelince kendiliğinden yazılır\.$/);
-  // "Tümü"de şubenin kendi geçiş günü: Tuzla (ModPOS) eski metin, Marina LafPOS metni
+  // Yönetici, rapor gelmeden: gündüz ve akşam metni AsilPOS'u söyler
+  assert.equal(byKey(dayTasks(admin(NOON, { asilposSwitch: S }))).kasa.detail, "AsilPOS gün sonu gelince kendiliğinden yazılır.");
+  assert.match(byKey(dayTasks(admin(EVENING, { asilposSwitch: S }))).kasa.detail, /Henüz gelmedi; AsilPOS gün sonu gelince kendiliğinden yazılır\.$/);
+  // "Tümü"de şubenin kendi geçiş günü: Tuzla (ModPOS) eski metin, Marina AsilPOS metni
   const tills = [
-    { id: "tuzla", name: "Tuzla", today: null, yesterday: null, firstDate: S, lafposSwitch: null },
-    { id: "marina", name: "Marina", today: null, yesterday: null, firstDate: S, lafposSwitch: S },
+    { id: "tuzla", name: "Tuzla", today: null, yesterday: null, firstDate: S, asilposSwitch: null },
+    { id: "marina", name: "Marina", today: null, yesterday: null, firstDate: S, asilposSwitch: S },
   ];
   const many = byKey(dayTasks(admin(NOON, { cash: { today: null, yesterday: null, firstDate: S, tills } })));
   assert.equal(many["kasa:tuzla"].detail, "Personel kapanışta girer.");
-  assert.equal(many["kasa:marina"].detail, "LafPOS gün sonu gelince kendiliğinden yazılır.");
-  // Gün sonu geldi, sayım yok: bugünün ve dünün satırı "Sayım yok"; personele LafPOS'ta sayma yolu, "Dünü gir" değil
+  assert.equal(many["kasa:marina"].detail, "AsilPOS gün sonu gelince kendiliğinden yazılır.");
+  // Gün sonu geldi, sayım yok: bugünün ve dünün satırı "Sayım yok"; personele AsilPOS'ta sayma yolu, "Dünü gir" değil
   const noCount = ["2026-10-21", "2026-10-22"];
-  const st = byKey(dayTasks(staff(EVENING, { lafposSwitch: S, cash: { today: null, yesterday: null, firstDate: S, noCount } })));
+  const st = byKey(dayTasks(staff(EVENING, { asilposSwitch: S, cash: { today: null, yesterday: null, firstDate: S, noCount } })));
   assert.equal(st.kasa.badge, "Sayım yok");
   assert.match(st.kasa.detail, /Kasa › Geçmiş günler › Kasa föyü/);
   assert.equal(st["kasa-dun"].badge, "Sayım yok");
   assert.notEqual(st["kasa-dun"].action, "Dünü gir");
-  const ad = byKey(dayTasks(admin(EVENING, { lafposSwitch: S, cash: { today: null, yesterday: null, firstDate: S, noCount } })));
+  const ad = byKey(dayTasks(admin(EVENING, { asilposSwitch: S, cash: { today: null, yesterday: null, firstDate: S, noCount } })));
   assert.equal(ad["kasa-dun"].badge, "Sayım yok");
   assert.match(ad["kasa-dun"].detail, /çekmece sayılmadı/);
   assert.equal(ad.kasa.badge, "Sayım yok");
@@ -1032,7 +1032,7 @@ function bodyOf(src: string, name: string): string {
 
 test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız adminFacts'te, zayi yalnız staffFacts'te", () => {
   const page = read("src/app/panel/bugun/page.tsx");
-  assert.match(page, /await requireUser\(\)/);
+  assert.match(page, /await requireCan\("kayit\.yaz"\)/);
   assert.doesNotMatch(page, /requireAdmin/);
 
   const src = read("src/server/data/today.ts");
@@ -1086,7 +1086,7 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
   assert.match(admin, /cashFlagsByBranch\(reports, beforeOf, revisions, viewer, modpos\)/);
   assert.match(
     admin,
-    /\.then\(\(\[sheets, switchDay, lafposBranch\]\) =>\s+tills \? modposMismatchBranchDays\(reports, sheets, switchDay, lafposBranch\) : modposMismatchDates\(reports, sheets, switchDay, lafposBranch\),\s+\)\s+\.catch\(\(\) => new Set<string>\(\)\)/,
+    /\.then\(\(\[sheets, switchDays\]\) => \(tills \? modposMismatchBranchDays\(reports, sheets, switchDays\) : modposMismatchDates\(reports, sheets, switchDays\)\)\)\s+\.catch\(\(\) => new Set<string>\(\)\)/,
   );
 });
 
@@ -1094,7 +1094,7 @@ test("kaynak: bugünün ve dünün kontrol listeleri iki rolde tek okumada (pers
   const src = read("src/server/data/today.ts");
   const adminBody = bodyOf(src, "adminFacts");
   const load = bodyOf(src, "loadToday");
-  assert.match(load, /safe\(loadChecklistDays\(\[c\.day, c\.yesterday\], user\.role, now\)\)/);
+  assert.match(load, /safe\(loadChecklistDays\(\[c\.day, c\.yesterday\], adminLevel\(user\.role\), now\)\)/);
   assert.match(load, /checklists: checklists \? \{ day: c\.day, lists: checklists\.get\(c\.day\) \?\? \[\] \} : null,/);
   assert.match(load, /checklistsYesterday: checklists \? \{ day: c\.yesterday, lists: checklists\.get\(c\.yesterday\) \?\? \[\] \} : null,/);
   assert.doesNotMatch(adminBody, /loadChecklistDay/);
@@ -1281,14 +1281,14 @@ test("kaynak: operasyon ve kapalı gün olguları iki rolde; kasa fiyatı okumas
   assert.doesNotMatch(src, /posPendingSummary/);
   const ops = read("src/server/data/today-ops.ts");
   assert.match(ops, /^import "server-only";/);
-  // Bugünün kasaları bir kez okunur (geçiş gününden itibaren LafPOS: siteye bağlı ürün sayılmaz; denetim E-39; kasa şube
+  // Bugünün kasaları bir kez okunur (geçiş gününden itibaren AsilPOS: siteye bağlı ürün sayılmaz; denetim E-39; kasa şube
   // başına, şube kapsamı A3)
   assert.match(ops, /const scope = loadTillScopes\(undefined, now\);/);
   assert.match(ops, /safe\(scope\.then\(\(t\) => each\(t, posPendingSummary\)\)\)/);
   // Personel dalı yönetici olgusu yüklemez: kasa fiyatları personelin sabit sütunlu özetinden (§2.2), yalnız ModPOS kasaları
   const staffAt = ops.indexOf('if (user.role !== "admin")');
   assert.ok(staffAt > 0 && staffAt < ops.indexOf("each(t, posPendingSummary)"));
-  assert.match(ops.slice(staffAt, ops.indexOf("each(t, posPendingSummary)")), /each\(t\.filter\(\(x\) => !x\.lafpos\), staffPosSummary\)/);
+  assert.match(ops.slice(staffAt, ops.indexOf("each(t, posPendingSummary)")), /each\(t\.filter\(\(x\) => !x\.asilpos\), staffPosSummary\)/);
 });
 
 test("Tümü, iki kasa (yönetici): dünün ve bugünün satırı şube başına, adında şube, adresinde ?sube=; tek kasada bugünkü gibi", () => {

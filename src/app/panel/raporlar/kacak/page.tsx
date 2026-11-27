@@ -24,7 +24,7 @@ const PATH = "/panel/raporlar/kacak";
 const TITLE = "Kaçak raporu";
 const DESCRIPTION = "Marina'nın ay sonu sayımıyla tahmini stok arasındaki fark, TL olarak.";
 const MORE =
-  "Tahmini stok (Stok sayımı › Tahmini stok'un hesabı): önceki ay sonu sayımı + Marina'ya gelen faturalı alış − LafPOS satışının reçeteye göre tüketimi × (1 + genel fire) − girilen zayi ve ikram. Ayın sayımı bundan azsa fark kaçaktır (olağan firenin üstünde kayıp), fazlaysa çoğu kez Marina'ya işaretlenmemiş bir faturadır. TL, malzemenin ay sonu birim maliyetiyle (Stok sayımı'nın fiyatı, KDV hariç).";
+  "Tahmini stok (Stok sayımı › Tahmini stok'un hesabı): önceki ay sonu sayımı + Marina'ya gelen faturalı alış − AsilPOS satışının reçeteye göre tüketimi × (1 + genel fire) − girilen zayi ve ikram. Ayın sayımı bundan azsa fark kaçaktır (olağan firenin üstünde kayıp), fazlaysa çoğu kez Marina'ya işaretlenmemiş bir faturadır. TL, malzemenin ay sonu birim maliyetiyle (Stok sayımı'nın fiyatı, KDV hariç).";
 
 export default function LeakPage({ searchParams }: PageProps<"/panel/raporlar/kacak">) {
   return (
@@ -78,19 +78,19 @@ async function LeakContent({ searchParams }: { searchParams: PageProps<"/panel/r
           </details>
         </div>
       ) : (
-        <EmptyState icon={<PackageSearch />} title="Karşılaştırılacak kalem yok" description="Bu ay sayılan malzemelerin tahmini yok (önceki sayım LafPOS'tan önce ya da hiç sayılmamış)." />
+        <EmptyState icon={<PackageSearch />} title="Karşılaştırılacak kalem yok" description="Bu ay sayılan malzemelerin tahmini yok (önceki sayım AsilPOS'tan önce ya da hiç sayılmamış)." />
       )}
     </>
   );
 }
 
 function LeakEmpty({ data }: { data: LeakData }) {
-  if (data.state === "lafpos-yok") {
+  if (data.state === "asilpos-yok") {
     return (
       <EmptyState
         icon={<PackageSearch />}
-        title="LafPOS'a geçilmedi"
-        description={`Satış gün gün LafPOS'tan gelmeden (${data.branchName}) tahmini stok, dolayısıyla kaçak raporu yok.`}
+        title="AsilPOS'a geçilmedi"
+        description={`Satış gün gün AsilPOS'tan gelmeden (${data.branchName}) tahmini stok, dolayısıyla kaçak raporu yok.`}
       />
     );
   }
@@ -115,8 +115,8 @@ function LeakEmpty({ data }: { data: LeakData }) {
       icon={<PackageSearch />}
       title={`${locativeTR(data.branchName)} ${monthLabel(data.month)} sayımı yok`}
       description={
-        data.lafposFrom
-          ? `Kaçak, ayın sayımı tahminle karşılaştırılarak çıkar. Tahmin LafPOS satışlarının sayıldığı ilk günden (${dateTR(data.lafposFrom)}) sonra başlayan dönemde var: ilk rapor, o günden sonraki ilk ay sonu sayımına dayanan ayın sayımıyla.`
+        data.asilposFrom
+          ? `Kaçak, ayın sayımı tahminle karşılaştırılarak çıkar. Tahmin AsilPOS satışlarının sayıldığı ilk günden (${dateTR(data.asilposFrom)}) sonra başlayan dönemde var: ilk rapor, o günden sonraki ilk ay sonu sayımına dayanan ayın sayımıyla.`
           : "Kaçak, ayın sayımı tahminle karşılaştırılarak çıkar."
       }
       action={
@@ -132,7 +132,7 @@ function LeakWarnings({ report: r, month }: { report: LeakReport; month: string 
   const notes: string[] = [];
   if (r.missingDays.length) {
     notes.push(
-      `${num(r.missingDays.length)} gün LafPOS gün sonu gelmedi (${r.missingDays.slice(0, 5).map(dateTR).join(", ")}${r.missingDays.length > 5 ? " …" : ""}): o günlerin satışı düşülmedi, kaçak olduğundan büyük görünür.`,
+      `${num(r.missingDays.length)} gün AsilPOS gün sonu gelmedi (${r.missingDays.slice(0, 5).map(dateTR).join(", ")}${r.missingDays.length > 5 ? " …" : ""}): o günlerin satışı düşülmedi, kaçak olduğundan büyük görünür.`,
     );
   }
   if (r.skippedLines) {
@@ -140,7 +140,7 @@ function LeakWarnings({ report: r, month }: { report: LeakReport; month: string 
   }
   if (r.unpriced.length) notes.push(`Fiyatı olmayan ${num(r.unpriced.length)} kalemin farkı TL'ye çevrilmedi: ${r.unpriced.slice(0, 5).join(", ")}${r.unpriced.length > 5 ? " …" : ""}.`);
   if (r.notCounted) notes.push(`Tahmini olan ${num(r.notCounted)} malzeme ${monthLabel(month)} sonunda sayılmadı: rapora girmedi.`);
-  if (r.noEstimate) notes.push(`${num(r.noEstimate)} malzemenin tahmini yok (önceki sayımı yok ya da LafPOS'tan önce): rapora girmedi.`);
+  if (r.noEstimate) notes.push(`${num(r.noEstimate)} malzemenin tahmini yok (önceki sayımı yok ya da AsilPOS'tan önce): rapora girmedi.`);
   if (!notes.length) return null;
   const risky = r.missingDays.length > 0 || r.skippedLines > 0;
   return (

@@ -46,6 +46,7 @@ import {
   type LastBackup,
   type SavedCredentials,
 } from "../src/lib/backup/format";
+import { ESKI_TABLOLAR } from "../src/lib/asilpos/eski-adlar";
 import { DEFAULT_BRANCH_ID } from "../src/lib/branches";
 import { jobHealth, systemAlerts, type JobKey } from "../src/lib/job-health";
 import { backupStream, type BackupSummary } from "../src/server/backup/core";
@@ -152,9 +153,13 @@ const NOT_SECRET: Record<string, string> = {
   "integration_state.key": "durum anahtarının adı (gizli değerli anahtarlar EXCLUDED_STATE_KEYS'te)",
   "suppliers.key": "tedarikçi adının eşleşme anahtarı",
   "notification_log.key": "aynı bildirimin iki kez gitmemesi için anahtar",
-  "lafpos_day_ends.day_hash": "LafPOS gün sonunun içerik özeti (aynı içerik e-postası yinelenmesin; gizli değer değil)",
-  "lafpos_day_ends.emailed_hash": "e-postası giden gün sonunun içerik özeti (gizli değer değil)",
-  "lafpos_day_ends.pavo_emailed_hash": "e-postası giden Pavo karşılaştırmasının içerik özeti (gizli değer değil)",
+  "asilpos_day_ends.day_hash": "AsilPOS gün sonunun içerik özeti (aynı içerik e-postası yinelenmesin; gizli değer değil)",
+  "asilpos_day_ends.emailed_hash": "e-postası giden gün sonunun içerik özeti (gizli değer değil)",
+  "asilpos_day_ends.pavo_emailed_hash": "e-postası giden Pavo karşılaştırmasının içerik özeti (gizli değer değil)",
+  // Aynı tablonun migration 0098'den önceki adı (ESKI_TABLOLAR; 0098 uygulanmamış veritabanının yedeği)
+  [`${ESKI_TABLOLAR.gunSonu}.day_hash`]: "AsilPOS gün sonunun içerik özeti, tablonun eski adı (gizli değer değil)",
+  [`${ESKI_TABLOLAR.gunSonu}.emailed_hash`]: "e-postası giden gün sonunun içerik özeti, tablonun eski adı (gizli değer değil)",
+  [`${ESKI_TABLOLAR.gunSonu}.pavo_emailed_hash`]: "e-postası giden Pavo karşılaştırmasının içerik özeti, tablonun eski adı (gizli değer değil)",
   "parasut_bill_lines.product_key": "Paraşüt ürününün adından anahtar",
   "parasut_product_links.product_key": "Paraşüt ürününün adından anahtar",
   "ingredient_price_holds.product_key": "Paraşüt ürününün adından anahtar (onay bekleyen fiyatın ürünü)",
@@ -198,12 +203,16 @@ test("yedek dışı: adı gizli görünen her tablo ve sütun ya dışarıda ya 
 
 test("yedek dışı: kurallar şemada var olan tablo ve sütunları gösterir; izin listesi bayatlamamış", () => {
   const byName = new Map(tables.map((t) => [t.name, new Set(t.columns.map((c) => c.name))]));
+  // Ad değişikliğinden önceki tablo adları şemada yok (migration 0098 taşıdı, eski adla görünüm kaldı): kural ikisine de
+  const eskiTablo = (t: string) => (Object.values(ESKI_TABLOLAR) as string[]).includes(t);
   for (const [name, rule] of Object.entries(TABLE_RULES)) {
+    if (eskiTablo(name)) continue;
     assert.ok(byName.has(name), `TABLE_RULES › ${name}: şemada yok`);
     for (const c of rule.dropColumns ?? []) assert.ok(byName.get(name)!.has(c), `${name}.${c}: şemada yok`);
   }
   for (const id of Object.keys(NOT_SECRET)) {
     const [t, c] = id.split(".");
+    if (eskiTablo(t)) continue;
     assert.ok(byName.get(t)?.has(c), `NOT_SECRET › ${id}: şemada yok`);
   }
   // Parola özeti, iki adımlı anahtar, kurtarma kodları, tek kullanımlık bağlantılar ve cihaz anahtarları
@@ -218,6 +227,8 @@ test("yedek dışı: kurallar şemada var olan tablo ve sütunları gösterir; i
     "totp_secret",
   ]);
   assert.ok(TABLE_RULES.user_tokens.skip && TABLE_RULES.push_subscriptions.skip);
+  // AsilPOS kurulum bağlantıları dışarıda: yeni ve eski tablo adıyla (ad değişikliği, migration 0098)
+  assert.ok(TABLE_RULES.asilpos_installs.skip && TABLE_RULES[ESKI_TABLOLAR.kurulum].skip);
   // IBAN ve vergi numarası dosyada (sahibin kendi kaydı); karaoke müşterisinin yalnız adı da
   assert.ok(byName.get("suppliers")!.has("iban") && !TABLE_RULES.suppliers);
   assert.ok(byName.get("karaoke_sessions")!.has("customer_name") && !TABLE_RULES.karaoke_sessions);

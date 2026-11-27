@@ -1,7 +1,7 @@
 // Gün sonu fotoğrafının ekonomik okunuşu ve yöneticinin e-postası (sahibin isteği, 24 Kasım 2026: "mail olarak vs.
 // bilgilerde de farklı olunca belirsin ve bunu AI kullanarak okursa çok iyi olur ama fazla token harcamayan ve sonuç
-// verecek şekilde olsun; eğer AI token biterse de kod ile bir şey yaz"; docs/FOTOGRAF.md › LafPOS gününün fotoğrafı).
-// Saf kurallar: önce ucuz model, eksik / kendi içinde tutarsız ya da LafPOS'tan farklı okunuşta bir kez güçlü model;
+// verecek şekilde olsun; eğer AI token biterse de kod ile bir şey yaz"; docs/FOTOGRAF.md › AsilPOS gününün fotoğrafı).
+// Saf kurallar: önce ucuz model, eksik / kendi içinde tutarsız ya da AsilPOS'tan farklı okunuşta bir kez güçlü model;
 // yapay zekâ yoksa kodla okuma (OCR + Pavo fişinin kural tabanlı ayrıştırıcısı); kodla okunan her karşılaştırılan satır
 // yüksek güvenle okunmadıysa "okunamadı — yönetici baksın"; fark e-postada satır satır, yalnız yöneticiye. Canlı yapay
 // zekâ yok: okunuşlar sabit. Gerçek OCR sentetik görselle tests/gun-sonu-foto-ocr.test.ts'te, veritabanıyla uçtan uca
@@ -10,10 +10,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { lafposPhotoCheck, lafposPhotoDone, photoSourceText, photoUnsureText, staffPhotoLine, type LafposPhotoCheck } from "../src/lib/lafpos/foto";
-import { photoCheckHash, photoMailFresh, photoMailNeeded, renderPhotoMail } from "../src/lib/lafpos/gun-sonu";
-import type { BankPos, PosOkc } from "../src/lib/lafpos/day";
-import { cheapReadingProblems, formFailureOf, runLafposRead, type ReadStep } from "../src/lib/photo-read/lafpos-read";
+import { asilposPhotoCheck, asilposPhotoDone, photoSourceText, photoUnsureText, staffPhotoLine, type AsilposPhotoCheck } from "../src/lib/asilpos/foto";
+import { photoCheckHash, photoMailFresh, photoMailNeeded, renderPhotoMail } from "../src/lib/asilpos/gun-sonu";
+import type { BankPos, PosOkc } from "../src/lib/asilpos/day";
+import { TEL_KART_ALANI } from "../src/lib/asilpos/eski-adlar";
+import { cheapReadingProblems, formFailureOf, runAsilposRead, type ReadStep } from "../src/lib/photo-read/asilpos-read";
 import { OCR_MODEL, PHOTO_CHEAP_MODEL, PHOTO_STRONG_MODEL, photoModelsOf, readingSourceOf } from "../src/lib/photo-read/models";
 import { parseAmountTR, parsePavoOcr, type OcrLine } from "../src/lib/photo-read/pavo-ocr";
 import { OKC_SHORT_TASK, OKC_TASK } from "../src/lib/photo-read/prompts";
@@ -63,7 +64,7 @@ const BANK: BankPos = {
   batchNo: "000279",
   at: "2026-11-24T22:10:00.000Z",
   pavoCard: 755,
-  lafposCard: 755,
+  [TEL_KART_ALANI]: 755,
   diff: 0,
   acquirers: [{ name: "Garanti BBVA", count: 3, total: 755 }],
   message: null,
@@ -83,8 +84,8 @@ const OKC: PosOkc = {
   voided: { count: 0, cash: 0, card: 0 },
   vat: [{ rate: 10, total: 1_190, vat: 108.18 }],
 };
-const REPORT = { bankPos: 995, okcZNo: "7", okcTotal: 1_190, okcCash: 390, okcCard: 800, okcMealCard: 0, okcOther: 0, okcVat: [{ rate: 10, total: 1_190, vat: 108.18 }], lafposZNo: "7" };
-const check = (reads: Parameters<typeof lafposPhotoCheck>[0]["reads"]) => lafposPhotoCheck({ day: DAY, reads, bankPos: BANK, okc: OKC, report: REPORT }, NOW);
+const REPORT = { bankPos: 995, okcZNo: "7", okcTotal: 1_190, okcCash: 390, okcCard: 800, okcMealCard: 0, okcOther: 0, okcVat: [{ rate: 10, total: 1_190, vat: 108.18 }], asilposZNo: "7" };
+const check = (reads: Parameters<typeof asilposPhotoCheck>[0]["reads"]) => asilposPhotoCheck({ day: DAY, reads, bankPos: BANK, okc: OKC, report: REPORT }, NOW);
 
 // ——— Modeller: ayardan, sabitler varsayılan ———
 
@@ -126,11 +127,11 @@ const fakeDeps = (o: {
   cheap?: ReadStep;
   strong?: ReadStep;
   ocr?: ReadStep;
-  previous?: Parameters<typeof runLafposRead>[0]["previous"];
+  previous?: Parameters<typeof runAsilposRead>[0]["previous"];
   differs?: (raw: KasaOkc) => boolean;
 }) => {
   const calls: Calls = { cheap: 0, strong: 0, ocr: 0 };
-  const deps: Parameters<typeof runLafposRead>[0] = {
+  const deps: Parameters<typeof runAsilposRead>[0] = {
     previous: o.previous ?? { reading: null, model: null, strongTried: false, ocr: null },
     strongModel: PHOTO_STRONG_MODEL,
     cheap: async () => (calls.cheap++, o.cheap ?? { ok: true, data: detailedZ(), model: PHOTO_CHEAP_MODEL }),
@@ -141,9 +142,9 @@ const fakeDeps = (o: {
   return { deps, calls };
 };
 
-test("Okuma sırası: ucuz okuma tam ve LafPOS'u tutuyorsa güçlü model çağrılmaz", async () => {
+test("Okuma sırası: ucuz okuma tam ve AsilPOS'u tutuyorsa güçlü model çağrılmaz", async () => {
   const { deps, calls } = fakeDeps({});
-  const r = await runLafposRead(deps);
+  const r = await runAsilposRead(deps);
   assert.deepEqual(calls, { cheap: 1, strong: 0, ocr: 0 });
   assert.deepEqual([r.source, r.model], ["ai", PHOTO_CHEAP_MODEL]);
 });
@@ -151,15 +152,15 @@ test("Okuma sırası: ucuz okuma tam ve LafPOS'u tutuyorsa güçlü model çağr
 test("Okuma sırası: tutarsız ucuz okuma bir kez güçlü modele; güçlünün okunuşu geçer", async () => {
   const strong = detailedZ({ card: 800, total: 1_190 });
   const { deps, calls } = fakeDeps({ cheap: { ok: true, data: detailedZ({ card: 700 }), model: PHOTO_CHEAP_MODEL }, strong: { ok: true, data: strong, model: PHOTO_STRONG_MODEL } });
-  const r = await runLafposRead(deps);
+  const r = await runAsilposRead(deps);
   assert.deepEqual(calls, { cheap: 1, strong: 1, ocr: 0 });
   assert.equal(r.model, PHOTO_STRONG_MODEL);
   assert.equal(r.raw, strong);
 });
 
-test("Okuma sırası: LafPOS'tan farklı okunan ucuz okuma yöneticiye gitmeden güçlü modelle yeniden okunur (yanlış 'fark' olmasın)", async () => {
+test("Okuma sırası: AsilPOS'tan farklı okunan ucuz okuma yöneticiye gitmeden güçlü modelle yeniden okunur (yanlış 'fark' olmasın)", async () => {
   const { deps, calls } = fakeDeps({ cheap: { ok: true, data: detailedZ({ card: 850, cash: 340 }), model: PHOTO_CHEAP_MODEL }, differs: (raw) => check([{ photoId: 1, raw, error: null }]).state === "fark" });
-  const r = await runLafposRead(deps);
+  const r = await runAsilposRead(deps);
   assert.deepEqual(calls, { cheap: 1, strong: 1, ocr: 0 });
   assert.equal(check([{ photoId: 1, raw: r.raw, error: null }]).state, "uyumlu");
 });
@@ -167,7 +168,7 @@ test("Okuma sırası: LafPOS'tan farklı okunan ucuz okuma yöneticiye gitmeden 
 test("Okuma sırası: güçlü okuma düşerse ucuz okunuş kalır; kodla okumaya gidilmez", async () => {
   const cheap = detailedZ({ card: 700 });
   const { deps, calls } = fakeDeps({ cheap: { ok: true, data: cheap, model: PHOTO_CHEAP_MODEL }, strong: { ok: false, code: "timeout", message: "x" } });
-  const r = await runLafposRead(deps);
+  const r = await runAsilposRead(deps);
   assert.deepEqual(calls, { cheap: 1, strong: 1, ocr: 0 });
   assert.deepEqual([r.raw, r.model], [cheap, PHOTO_CHEAP_MODEL]);
 });
@@ -175,20 +176,20 @@ test("Okuma sırası: güçlü okuma düşerse ucuz okunuş kalır; kodla okumay
 test("Okuma sırası: aynı fotoğraf aynı iş için iki kez okunmaz (kayıtlı okunuş kullanılır)", async () => {
   const saved = detailedZ();
   const { deps, calls } = fakeDeps({ previous: { reading: saved, model: PHOTO_CHEAP_MODEL, strongTried: false, ocr: null } });
-  const r = await runLafposRead(deps);
+  const r = await runAsilposRead(deps);
   assert.deepEqual(calls, { cheap: 0, strong: 0, ocr: 0 });
   assert.equal(r.raw, saved);
   // Güçlü okunuş kayıtlıysa o; ucuz okunuş tutarsız ve güçlü model denendiyse yeniden denenmez
   const tried = fakeDeps({ previous: { reading: detailedZ({ card: 700 }), model: PHOTO_CHEAP_MODEL, strongTried: true, ocr: null } });
-  await runLafposRead(tried.deps);
+  await runAsilposRead(tried.deps);
   assert.deepEqual(tried.calls, { cheap: 0, strong: 0, ocr: 0 });
   // Tutarsız ucuz okunuş, güçlü model hiç denenmediyse bir kez
   const once = fakeDeps({ previous: { reading: detailedZ({ card: 700 }), model: PHOTO_CHEAP_MODEL, strongTried: false, ocr: null } });
-  await runLafposRead(once.deps);
+  await runAsilposRead(once.deps);
   assert.deepEqual(once.calls, { cheap: 0, strong: 1, ocr: 0 });
   // Kodla okunmuşsa ve yapay zekâ yine yoksa kod okunuşu kullanılır (OCR yeniden koşmaz)
   const ocr = fakeDeps({ previous: { reading: null, model: null, strongTried: false, ocr: saved }, cheap: { ok: false, code: "nokey", message: "x" } });
-  const o = await runLafposRead(ocr.deps);
+  const o = await runAsilposRead(ocr.deps);
   assert.deepEqual(ocr.calls, { cheap: 1, strong: 0, ocr: 0 });
   assert.deepEqual([o.raw, o.source], [saved, "kod"]);
 });
@@ -196,38 +197,38 @@ test("Okuma sırası: aynı fotoğraf aynı iş için iki kez okunmaz (kayıtlı
 test("Kodla okumaya düşme: yapay zekâ olmayınca her hata türünde (anahtar, kapalı, sınır, kredi, yoğunluk, zaman aşımı, bağlantı…) OCR", async () => {
   for (const code of ["nokey", "off", "cap", "photo-limit", "billing", "auth", "rate", "overloaded", "timeout", "connection", "badrequest", "toolarge"] as const) {
     const { deps, calls } = fakeDeps({ cheap: { ok: false, code, message: "x" } });
-    const r = await runLafposRead(deps);
+    const r = await runAsilposRead(deps);
     assert.deepEqual(calls, { cheap: 1, strong: 0, ocr: 1 }, code);
     assert.deepEqual([r.source, r.model], ["kod", OCR_MODEL], code);
   }
   // Ucuz model yanıt verdi ama okunuş yok (ret, yarım, şema dışı): önce bir kez güçlü model, o da olmazsa OCR
   for (const code of ["refusal", "incomplete", "invalid"] as const) {
     const ok = fakeDeps({ cheap: { ok: false, code, message: "x" } });
-    assert.equal((await runLafposRead(ok.deps)).model, PHOTO_STRONG_MODEL, code);
+    assert.equal((await runAsilposRead(ok.deps)).model, PHOTO_STRONG_MODEL, code);
     assert.deepEqual(ok.calls, { cheap: 1, strong: 1, ocr: 0 }, code);
     const both = fakeDeps({ cheap: { ok: false, code, message: "x" }, strong: { ok: false, code: "billing", message: "x" } });
-    assert.equal((await runLafposRead(both.deps)).source, "kod", code);
+    assert.equal((await runAsilposRead(both.deps)).source, "kod", code);
     assert.deepEqual(both.calls, { cheap: 1, strong: 1, ocr: 1 }, code);
   }
   // OCR da olmazsa okunuş yok, yapay zekânın hatası kalır (uydurma yok)
   const none = fakeDeps({ cheap: { ok: false, code: "nokey", message: "anahtar yok" }, ocr: { ok: false, code: "ocr", message: "OCR çalışmadı" } });
-  const r = await runLafposRead(none.deps);
+  const r = await runAsilposRead(none.deps);
   assert.deepEqual([r.raw, r.source, r.error?.code], [null, null, "nokey"]);
 });
 
 test("Kasa formu (elle girilen raporun yazarkasa bölümü): yalnız yapay zekâ okunuşu alanları doldurur; kodla okunduysa ya da okunamadıysa yapay zekânın hatası eskisi gibi görünür", async () => {
   // Yapay zekâ okudu: form doldurulur
-  const ok = await runLafposRead(fakeDeps({}).deps);
+  const ok = await runAsilposRead(fakeDeps({}).deps);
   assert.equal(formFailureOf(ok), null);
   // Yapay zekâ yok, kodla okundu: rakamlar forma yazılmaz (kaynağı görünmeyen OCR rakamı yok); yapay zekânın metni ve kodu
-  const kod = await runLafposRead(fakeDeps({ cheap: { ok: false, code: "billing", message: "Yapay zekâ kredisi bitti; rakamları elle yazın." } }).deps);
+  const kod = await runAsilposRead(fakeDeps({ cheap: { ok: false, code: "billing", message: "Yapay zekâ kredisi bitti; rakamları elle yazın." } }).deps);
   assert.equal(kod.source, "kod");
   assert.deepEqual(formFailureOf(kod), { code: "billing", message: "Yapay zekâ kredisi bitti; rakamları elle yazın." });
   // Kayıtlı kod okunuşu yeniden kullanıldıysa da aynı
-  const reuse = await runLafposRead(fakeDeps({ previous: { reading: null, model: null, strongTried: false, ocr: detailedZ() }, cheap: { ok: false, code: "timeout", message: "Zaman aşımı" } }).deps);
+  const reuse = await runAsilposRead(fakeDeps({ previous: { reading: null, model: null, strongTried: false, ocr: detailedZ() }, cheap: { ok: false, code: "timeout", message: "Zaman aşımı" } }).deps);
   assert.deepEqual(formFailureOf(reuse), { code: "timeout", message: "Zaman aşımı" });
   // Hiç okunuş yok (OCR da düştü): yapay zekânın hatası, sessiz boşluk değil
-  const none = await runLafposRead(fakeDeps({ cheap: { ok: false, code: "nokey", message: "Fotoğraftan okuma kapalı; rakamları elle yazın." }, ocr: { ok: false, code: "ocr", message: "OCR süresi doldu" } }).deps);
+  const none = await runAsilposRead(fakeDeps({ cheap: { ok: false, code: "nokey", message: "Fotoğraftan okuma kapalı; rakamları elle yazın." }, ocr: { ok: false, code: "ocr", message: "OCR süresi doldu" } }).deps);
   assert.deepEqual(formFailureOf(none), { code: "nokey", message: "Fotoğraftan okuma kapalı; rakamları elle yazın." });
 });
 
@@ -299,7 +300,7 @@ test("Pavo detaylı Z (OCR satırları): Z no, tarih, toplam, nakit, kart, yemek
       ["000279", 755, 755],
     ],
   );
-  // Kodla okunan fiş LafPOS'u tutuyor: uyumlu, kaynağı "Kodla okundu"
+  // Kodla okunan fiş AsilPOS'u tutuyor: uyumlu, kaynağı "Kodla okundu"
   const c = check([{ photoId: 1, raw, error: null, source: "kod" }]);
   assert.equal(c.state, "uyumlu", JSON.stringify(c.rows));
   assert.equal(c.source, "kod");
@@ -317,7 +318,7 @@ test("Kodla okuma: güveni düşük rakam okunmuş sayılmaz (uydurulmaz); karş
   assert.equal(c.zNoFromPhoto, null);
   // Personel için iş bitti (fotoğraf alındı); yönetici bakar
   assert.equal(staffPhotoLine({ slip: true, z: false, count: 1 }, 1, c), "Fotoğraf alındı");
-  assert.equal(lafposPhotoDone({ slip: true, z: false, count: 1 }, 1, c), true);
+  assert.equal(asilposPhotoDone({ slip: true, z: false, count: 1 }, 1, c), true);
   // Aynı okunuş yapay zekâdan gelse "fark" olurdu (kod okunuşunun güveni ayrıdır)
   assert.equal(check([{ photoId: 1, raw: { ...raw, payments: raw.payments.map((p) => (p.kind === "card" ? { ...p, amount: amt(850) } : p)) }, error: null, source: "ai" }]).state, "fark");
 });
@@ -327,7 +328,7 @@ test("Kodla okuma: tutarsız satırlar (ödemeler toplamı tutmuyor) yüksek gü
   const { raw } = parsePavoOcr(lines);
   assert.equal(raw.dailyTotal.confidence, "low", "nakit + kart toplamı tutmuyor: toplam ve ödemeler şüpheli");
   assert.equal(check([{ photoId: 1, raw, error: null, source: "kod" }]).state, "belirsiz");
-  // Fişin kendisi tutarlı ama LafPOS'tan farklı: kodla da "fark"
+  // Fişin kendisi tutarlı ama AsilPOS'tan farklı: kodla da "fark"
   const other = PAVO_LINES.map((l) => (l.text === "NAKİT *390,00" ? line("NAKİT *340,00") : l.text === "TOPLAM *1.190,00" ? line("TOPLAM *1.140,00") : l.text === "%10 TOPLAM *1.190,00" ? line("%10 TOPLAM *1.140,00") : l.text === "%10 KDV *108,18" ? line("%10 KDV *103,64") : l.text === "TOPKDV *108,18" ? line("TOPKDV *103,64") : l));
   const r2 = parsePavoOcr(other).raw;
   const c = check([{ photoId: 1, raw: r2, error: null, source: "kod" }]);
@@ -352,7 +353,7 @@ test("Kodla okuma: basılmış ama güvenle okunmamış İADE ya da NET batch tu
   const bank: BankPos = { ...BANK, batchNo: "000279", batches: [batch("000279", 755)], dayCard: 755, acquirers: [{ name: "Garanti BBVA", count: 3, total: 755 }] };
   const slip = (refund: string, net: string) =>
     parsePavoOcr(["PAVO", "TARİH: 24.11.2026 SAAT: 23:10", "BANKA GÜN SONU", "GARANTİ BBVA", "BATCH NO: 000279", "SATIŞ TOPLAMI 800,00", refund, net].map((l) => line(l))).raw;
-  const run = (raw: KasaOkc, bankPos: number | null) => lafposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw, error: null, source: "kod" }], bankPos: bank, okc: OKC, report: { ...REPORT, bankPos } }, NOW);
+  const run = (raw: KasaOkc, bankPos: number | null) => asilposPhotoCheck({ day: DAY, reads: [{ photoId: 1, raw, error: null, source: "kod" }], bankPos: bank, okc: OKC, report: { ...REPORT, bankPos } }, NOW);
   // İADE ve NET basılmış, ikisi de düşük güvenle okunmuş
   const both = run(slip("İADE TOPLAMI 45,00(50)", "NET TOPLAM 755,00(50)"), 755);
   assert.equal(both.state, "belirsiz", JSON.stringify(both.rows));
@@ -371,7 +372,7 @@ test("Kodla okuma: basılmış ama güvenle okunmamış İADE ya da NET batch tu
   assert.ok(plainSlip.rows.some((r) => r.label === "Banka POS toplamı" && plain(r.photo) === "800 ₺" && !r.unread), JSON.stringify(plainSlip.rows));
 });
 
-test("Kodla okuma: ödeme satırı OCR'da tanınmadıysa '0 ₺' uydurulmaz, okunamadı sayılır; LafPOS'ta 0 olan basılmamış satır tutar", () => {
+test("Kodla okuma: ödeme satırı OCR'da tanınmadıysa '0 ₺' uydurulmaz, okunamadı sayılır; AsilPOS'ta 0 olan basılmamış satır tutar", () => {
   const lines = PAVO_LINES.map((l) => (l.text === "KREDİ KARTI *800,00" ? line("KREDl KARTl *800,00") : l));
   const c = check([{ photoId: 1, raw: parsePavoOcr(lines).raw, error: null, source: "kod" }]);
   assert.equal(c.state, "belirsiz", JSON.stringify(c.rows));
@@ -379,7 +380,7 @@ test("Kodla okuma: ödeme satırı OCR'da tanınmadıysa '0 ₺' uydurulmaz, oku
   assert.ok(card, JSON.stringify(c.rows));
   assert.deepEqual([card.photo, card.unread], ["okunamadı", true]);
   assert.ok(!c.rows.some((r) => plain(r.photo) === "0 ₺" && !r.ok), JSON.stringify(c.rows));
-  // Cihaz sıfır satırını basmaz: YEMEK satırı yok, LafPOS'ta yemek kartı 0 → tutar (uyumlu kalır)
+  // Cihaz sıfır satırını basmaz: YEMEK satırı yok, AsilPOS'ta yemek kartı 0 → tutar (uyumlu kalır)
   const noMeal = check([{ photoId: 1, raw: parsePavoOcr(PAVO_LINES.filter((l) => !l.text.startsWith("YEMEK"))).raw, error: null, source: "kod" }]);
   assert.equal(noMeal.state, "uyumlu", JSON.stringify(noMeal.rows));
   // Yapay zekâ okunuşunda basılmayan satır 0 sayılmaya devam eder (cihaz sıfırı basmaz)
@@ -407,7 +408,7 @@ test("'Yönetici baksın' metni doğru: satır okunup güvenle seçilmediyse ayr
 
 
 
-const farkCheck = (): LafposPhotoCheck => ({ ...check([{ photoId: 1, raw: detailedZ({ card: 850, cash: 340 }), error: null, source: "ai", model: PHOTO_STRONG_MODEL }]) });
+const farkCheck = (): AsilposPhotoCheck => ({ ...check([{ photoId: 1, raw: detailedZ({ card: 850, cash: 340 }), error: null, source: "ai", model: PHOTO_STRONG_MODEL }]) });
 
 test("Fotoğraf e-postası (gün sonu e-postasından sonra eklenen fotoğraf): her fotoğrafta (uyumlu da), satır satır, içerik başına bir kez", () => {
   const c = farkCheck();
@@ -426,29 +427,29 @@ test("Fotoğraf e-postası (gün sonu e-postasından sonra eklenen fotoğraf): h
   // İkinci fotoğraf (aynı okunuş) da yeni içeriktir
   assert.notEqual(photoCheckHash(ok), photoCheckHash({ ...ok, photos: ok.photos + 1 }));
   const mail = renderPhotoMail({ branchName: "Marina", date: DAY, check: c, link: "https://ladmin.test/panel/kasa?gun=2026-11-24" });
-  assert.equal(plain(mail.subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · Z raporu LafPOS'tan FARKLI");
+  assert.equal(plain(mail.subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · Z raporu AsilPOS'tan FARKLI");
   const t = plain(mail.text);
-  assert.match(t, /Yazarkasa kartı: fotoğrafta 850 ₺ · LafPOS'ta 800 ₺ · FARK/);
+  assert.match(t, /Yazarkasa kartı: fotoğrafta 850 ₺ · AsilPOS'ta 800 ₺ · FARK/);
   assert.match(t, /Okuyan: Yapay zekâ \(Claude Opus 5\.5\)/);
   assert.match(t, /Panelde aç: https:\/\/ladmin\.test/);
   assert.match(plain(mail.html), /Yazarkasa kartı/);
   // Aynı karşılaştırma aynı özet (yeniden gönderilmez); anı farklı olsa da
   assert.equal(photoCheckHash(c), photoCheckHash({ ...c, at: "2026-11-25T09:00:00.000Z" }));
   assert.notEqual(photoCheckHash(c), photoCheckHash(check([{ photoId: 1, raw: detailedZ({ card: 860, cash: 330 }), error: null }])));
-  const unsure: LafposPhotoCheck = { ...check([{ photoId: 1, raw: parsePavoOcr([line("~~~(20)")]).raw, error: null, source: "kod", model: OCR_MODEL }]) };
+  const unsure: AsilposPhotoCheck = { ...check([{ photoId: 1, raw: parsePavoOcr([line("~~~(20)")]).raw, error: null, source: "kod", model: OCR_MODEL }]) };
   assert.equal(unsure.state, "belirsiz");
   assert.equal(photoMailNeeded(unsure), true);
   assert.equal(plain(renderPhotoMail({ branchName: "Marina", date: DAY, check: unsure, link: "x" }).subject), "Kasa raporu KR-20261124 · Marina · 24 Kasım Salı · Z raporu okunamadı, yönetici baksın");
 });
 
 test("İnceleme: Z raporu özeti tek fotoğrafta eski formülle aynı (yükseltmede yeniden gönderim yok); fotoğraftan yazılan Z no'nun 'raporda' eki özeti değiştirmez", async () => {
-  const { photoCheckHashLegacy } = await import("../src/lib/lafpos/gun-sonu");
+  const { photoCheckHashLegacy } = await import("../src/lib/asilpos/gun-sonu");
   const c = farkCheck();
   assert.equal(c.photos, 1);
   assert.equal(photoCheckHash(c), photoCheckHashLegacy(c));
-  const z = { label: "Yazarkasa Z no", photo: "0011 (fotoğraftan okundu)", lafpos: "gönderilmedi", ok: true };
-  const a: LafposPhotoCheck = { ...c, rows: [...c.rows, z] };
-  const b: LafposPhotoCheck = { ...c, rows: [...c.rows, { ...z, lafpos: "gönderilmedi; raporda 0011" }] };
+  const z = { label: "Yazarkasa Z no", photo: "0011 (fotoğraftan okundu)", asilpos: "gönderilmedi", ok: true };
+  const a: AsilposPhotoCheck = { ...c, rows: [...c.rows, z] };
+  const b: AsilposPhotoCheck = { ...c, rows: [...c.rows, { ...z, asilpos: "gönderilmedi; raporda 0011" }] };
   assert.equal(photoCheckHash(a), photoCheckHash(b));
   assert.notEqual(photoCheckHash(a), photoCheckHash({ ...a, photos: 2 }), "ikinci fotoğraf yeni rapordur");
 });

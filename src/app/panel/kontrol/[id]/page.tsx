@@ -9,7 +9,8 @@ import { EmptyState, PageSkeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { ANSWER_GRACE_MIN, branchLockAllows, checklistDay, clockInstant, listTitle, nowBusinessMinute } from "@/lib/checklists";
 import { addDays, longDateTR } from "@/lib/reminders";
-import { requireUser } from "@/server/auth/dal";
+import { adminActor } from "@/lib/roles";
+import { requireCan } from "@/server/auth/dal";
 import { staffBranchLock } from "@/server/branch-scope";
 import { loadRunView } from "@/server/data/checklists";
 import { photoStorage } from "@/server/storage/photos";
@@ -46,7 +47,7 @@ const ADMIN_HINT: Record<string, string> = {
 };
 
 async function RunContent({ params }: { params: PageProps<"/panel/kontrol/[id]">["params"] }) {
-  const user = await requireUser();
+  const user = adminActor(await requireCan("kayit.yaz"));
   const admin = user.role === "admin";
   const { id } = await params;
   const tid = Number(id);

@@ -434,7 +434,7 @@ export function NotificationsSection({
               <p className="px-1 text-xs text-ink-mute">Gönderim düğmeleri Resend anahtarı girilince açılır; önizleme her zaman çalışır.</p>
             ) : activeRecipients === 0 ? (
               <p className="px-1 text-xs text-ink-mute">
-                {allBlocked ? "Etkin adreslerin hepsi personel ya da pasif hesaba ait; yöneticinin ya da muhasebecinin adresini ekleyin." : "Deneme için en az bir etkin adres ekleyin."}
+                {allBlocked ? "Etkin adreslerin hepsi personel, müdür ya da pasif hesaba ait; yöneticinin ya da muhasebecinin adresini ekleyin." : "Deneme için en az bir etkin adres ekleyin."}
               </p>
             ) : null}
           </div>

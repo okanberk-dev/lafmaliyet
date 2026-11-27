@@ -134,26 +134,26 @@ export type PhotoRemovalPayloadT = z.output<typeof PhotoRemovalPayload>;
 export type RemovablePhotoKind = PhotoRemovalPayloadT["photoKind"];
 
 /**
- * Günün kasa kanıtı (G8; src/server/data/lafpos-day.ts kasaEvidence): ModPOS gününde ModPOS Z fotoğrafı, LafPOS gününde
- * LafPOS'un gün sonu ya da (gelmediyse) yazarkasa Z fotoğrafı
+ * Günün kasa kanıtı (G8; src/server/data/asilpos-day.ts kasaEvidence): ModPOS gününde ModPOS Z fotoğrafı, AsilPOS gününde
+ * AsilPOS'un gün sonu ya da (gelmediyse) yazarkasa Z fotoğrafı
  */
-export type KasaEvidence = "modpos-z" | "lafpos" | "okc-z";
+export type KasaEvidence = "modpos-z" | "asilpos" | "okc-z";
 
 /**
  * Fotoğrafın okunuşu rapordan farklıysa (net okunmuş alan, suspiciousDiffs) kaldırma kapalı mı: fotoğraf kanıttır. Otomatik
- * LafPOS gününde personelin düğmesi ve isteği buna bakmaz (son denetim, 24 Kasım 2026): o fark fotoğraf ↔ LafPOS
+ * AsilPOS gününde personelin düğmesi ve isteği buna bakmaz (son denetim, 24 Kasım 2026): o fark fotoğraf ↔ AsilPOS
  * karşılaştırmasıdır, yalnız yöneticinin; düğmenin kaybolması personele farkı ele verirdi. Yöneticinin onayı yine bakar
  */
-export function readingBlocksRemoval(o: { suspicious: number; staff: boolean; lafposAuto: boolean }): boolean {
+export function readingBlocksRemoval(o: { suspicious: number; staff: boolean; asilposAuto: boolean }): boolean {
   if (o.suspicious === 0) return false;
-  return !(o.staff && o.lafposAuto);
+  return !(o.staff && o.asilposAuto);
 }
 
 /**
  * Fotoğrafın türü yüzünden kaldırılamaması (null: tür engel değil; okuma farkı ayrıca denetlenir): raporun tek ModPOS Z
  * fotoğrafı ve, yazarkasa bölümü yazılmışken, tek Banka POS Z (yazarkasa) fotoğrafı kanıttır (docs/planlar/okc-z.md
  * §16 S4: ModPOS Z'siyle aynı kural). Yazarkasa bölümü boşken o fotoğraf hiçbir rakamın kanıtı değildir, kaldırılabilir.
- * LafPOS gününde (`evidence`, G8) ModPOS Z fotoğrafı kanıt değildir; LafPOS'un gün sonu gelmediyse tek yazarkasa Z
+ * AsilPOS gününde (`evidence`, G8) ModPOS Z fotoğrafı kanıt değildir; AsilPOS'un gün sonu gelmediyse tek yazarkasa Z
  * fotoğrafı, bölüm yazılmamış olsa da, günün kanıtıdır.
  */
 export function photoKindRefusal(kind: RemovablePhotoKind, o: { zCount: number; okcCount: number; okcFigures: boolean; evidence?: KasaEvidence }): string | null {
@@ -205,6 +205,12 @@ export const CASH_OUT_REQUEST_TEXT = {
   receiptMissing: "Fiş fotoğrafı olmayan satır fişli onaylanamaz",
   needsApproval: "Bu değişiklik yöneticinin onayıyla olur; onaya gönderin",
   rowLocked: "Bu satır yöneticinin bir kaydına bağlı; yalnız yönetici değiştirir",
+  /**
+   * Müdür ("admin" düzeyinde, `kategori.tum` yok; docs/ROLLER.md › Kararlar): yöneticinin kategorisindeki (maaş, kira
+   * gibi) satırı düzeltemez, taşıyamaz, silemez; o satırın isteğine de karar vermez
+   */
+  ownerRow: "Bu satır yöneticinin kategorisindeki bir harcama kaydına bağlı; düzeltmesini ve silinmesini yönetici yapar",
+  ownerReview: "Bu satır yöneticinin kategorisindeki bir harcama kaydına bağlı; isteğe yönetici karar verir",
 } as const;
 
 export const CASH_OUT_OP_LABEL: Record<CashOutOp, string> = { ekle: "ekleme", duzelt: "düzeltme", sil: "silme" };

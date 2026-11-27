@@ -79,7 +79,7 @@ test("kaynak yalıtımı: personelin sayfası yöneticinin Yardım'ını almaz, 
   assert.doesNotMatch(BUILD, /FAQ_GROUPS|STAFF_FAQ_GROUPS|ROUTINE|from "\.\/page"|from "\.\/personel/);
   // İçerik bir Suspense çocuğunda, requireUser'dan sonra
   assert.match(STAFF_PAGE, /<Suspense[\s\S]*<StaffHelpContent \/>/);
-  assert.match(STAFF_PAGE, /async function StaffHelpContent\(\) \{\s*await requireUser\(\);/);
+  assert.match(STAFF_PAGE, /async function StaffHelpContent\(\) \{\s*(const me = )?await requireUser\(\);/);
   // Yöneticinin sayfası içeriği requireAdmin ile başlayan iç bileşende çizer; sabitler yalnız orada kullanılır
   assert.match(ADMIN_PAGE, /async function HelpContent\(\) \{\s*await requireAdmin\(\);/);
   const outer = ADMIN_PAGE.slice(ADMIN_PAGE.indexOf("export default function HelpPage"), ADMIN_PAGE.indexOf("async function HelpContent"));
@@ -221,12 +221,12 @@ test("banka POS Z (yazarkasa): ayırt edici cümle, doldurma kapısı; yönetici
   assert.doesNotMatch(aksam, /gün sonu fişinin fotoğrafını|Banka POS'a yazarkasanın/);
 });
 
-test("LafPOS: ürün ikramı LafPOS'ta işaretlenir cümlesi zayi sorusunda ve günün sırasında (koşullu; denetim B10)", () => {
+test("AsilPOS: ürün ikramı AsilPOS'ta işaretlenir cümlesi zayi sorusunda ve günün sırasında (koşullu; denetim B10)", () => {
   const zayi = FAQ_TEXTS.find((t) => t.id === "zayi-gir")?.text ?? "";
-  assert.match(zayi, /Kasada LafPOS kullanılmaya başlandıysa ürün ikramı LafPOS'ta işaretlenir; burada yalnız zayi ve hammadde ikramı girilir\./);
+  assert.match(zayi, /Kasada AsilPOS kullanılmaya başlandıysa ürün ikramı AsilPOS'ta işaretlenir; burada yalnız zayi ve hammadde ikramı girilir\./);
   assert.match(zayi, /“Zayi yaz” ile işaretlenen ürünü burada ayrıca girmeyin/);
   const gun = ROUTINE_TEXTS.find((t) => t.startsWith("Gün içinde")) ?? "";
-  assert.match(gun, /Kasada LafPOS kullanılmaya başlandıysa ürün ikramı LafPOS'ta işaretlenir; panele yalnız zayi ve hammadde ikramı girilir\./);
+  assert.match(gun, /Kasada AsilPOS kullanılmaya başlandıysa ürün ikramı AsilPOS'ta işaretlenir; panele yalnız zayi ve hammadde ikramı girilir\./);
 });
 
 test("sade metin (24.11.2026): her cevap en çok 800, her adım en çok 400 harf; başlık açıklaması aramayı yeniden anlatmaz", () => {
@@ -239,7 +239,7 @@ test("sade metin (24.11.2026): her cevap en çok 800, her adım en çok 400 harf
   assert.doesNotMatch(STAFF_PAGE, /[Ss]oruya dokunun ya da arayın/);
 });
 
-test("LafPOS günü (gün sonu tam, #132): rapor LafPOS'tan salt okunur gelir, personelin tek işi Pavo'nun gün sonu fotoğrafı", () => {
+test("AsilPOS günü (gün sonu tam, #132): rapor AsilPOS'tan salt okunur gelir, personelin tek işi Pavo'nun gün sonu fotoğrafı", () => {
   const aksam = FAQ_TEXTS.find((t) => t.id === "kasa-aksam")?.text ?? "";
   const routine = ROUTINE_TEXTS.find((t) => t.startsWith("Akşam kasa raporu")) ?? "";
   for (const [name, t] of [["kasa-aksam", aksam], ["Akşam kasa raporu", routine]] as const) {
@@ -247,10 +247,10 @@ test("LafPOS günü (gün sonu tam, #132): rapor LafPOS'tan salt okunur gelir, p
     assert.match(t, /Gün sonu fotoğrafı/, name);
   }
   assert.match(aksam, /salt okunur/);
-  assert.match(aksam, /düzeltme LafPOS'ta yapılır/);
-  // Eski akış (form LafPOS'tan dolar, personel karşılaştırıp gönderir) ve personelin görmediği karşılaştırma anlatılmaz
-  assert.doesNotMatch(ALL_TEXT, /form (ondan|LafPOS'un gün sonundan) dolar/);
-  assert.doesNotMatch(ALL_TEXT, /LafPOS'takiyle/);
+  assert.match(aksam, /düzeltme AsilPOS'ta yapılır/);
+  // Eski akış (form AsilPOS'tan dolar, personel karşılaştırıp gönderir) ve personelin görmediği karşılaştırma anlatılmaz
+  assert.doesNotMatch(ALL_TEXT, /form (ondan|AsilPOS'un gün sonundan) dolar/);
+  assert.doesNotMatch(ALL_TEXT, /AsilPOS'takiyle/);
   assert.doesNotMatch(ALL_TEXT, /fotoğraf gerekmez/);
   const gec = FAQ_TEXTS.find((t) => t.id === "kasa-gec")?.text ?? "";
   assert.match(gec, /Gün sonu fotoğrafı/);
@@ -269,5 +269,5 @@ test("Kasadaki satış fiyatları: Marina'nın ModPOS dönemi kapandı (CONTRACT
   assert.doesNotMatch(item.q, /ModPOS/);
   const text = FAQ_TEXTS.find((t) => t.id === "kasa-fiyatlar")?.text ?? "";
   assert.match(text, /Kasada ModPOS kullanılıyorsa/);
-  assert.match(text, /Kasada LafPOS kullanılıyorsa/);
+  assert.match(text, /Kasada AsilPOS kullanılıyorsa/);
 });

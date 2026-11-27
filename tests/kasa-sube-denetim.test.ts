@@ -122,21 +122,21 @@ test("#12 formTillBranch: kimlik yoksa seçili kasa, varsa doğrulanır (kilit d
 test("#12 yazımlar formun kasasının kapsamında: rapor, istekler, geç rapor ve kasadan çıkan", () => {
   const report = read("src/server/actions/cash-report.ts");
   assert.match(report, /const till = await formTillBranch\(branchId\);/);
-  assert.match(report, /withBranchScope\(till, \(\) => saveCashReport\(getDb\(\), me, data\)\)/);
+  assert.match(report, /withBranchScope\(till, \(\) => saveCashReport\(getDb\(\), asActor\(me, opsLevel\(me\.role\)\), data\)\)/);
   const requests = read("src/server/actions/cash-requests.ts");
   assert.match(requests, /withBranchScope\(await formTillBranch\(raw\), fn\)/);
   assert.match(requests, /inFormTill\(parsed\.branchId, \(\) => proposeCashCorrection\(/);
   assert.match(requests, /inFormTill\(data\.branchId, \(\) => proposeCashDelete\(/);
   assert.match(requests, /inFormTill\(branchId, \(\) => proposeLateReport\(/);
   const outs = read("src/server/actions/cash-outs.ts");
-  assert.match(outs, /const till = await formTillBranch\(branchId\);\n\s*return withBranchScope\(till, \(\) => persist\(me, d\)\);/);
+  assert.match(outs, /const till = await formTillBranch\(branchId\);\n\s*return withBranchScope\(till, \(\) => persist\(asActor\(me, opsLevel\(me\.role\)\), d\)\);/);
   assert.match(read("src/server/actions/cash-out-requests.ts"), /withBranchScope\(await formTillBranch\(data\.branchId\), \(\) => proposeCashOutChange\(/);
 });
 
 test("#12 sayfa formlara kasayı koyar, formlar gönderir; form anahtarı kasayı da taşır", () => {
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /key=\{`\$\{view\.till\}:\$\{date\}:\$\{report\?\.revision \?\? 0\}`\}/);
-  assert.equal(page.match(/branchId=\{view\.till\}/g)?.length, 5, "CashForm, CashOutsCard, LateReport, gün sonu fotoğrafı (gün ve eski LafPOS günü)");
+  assert.equal(page.match(/branchId=\{view\.till\}/g)?.length, 5, "CashForm, CashOutsCard, LateReport, gün sonu fotoğrafı (gün ve eski AsilPOS günü)");
   assert.match(page, /chainNeighbours\(getDb\(\), date, \{ prefer: user\.id, branchId: view\.till \}\)/);
   const form = read("src/app/panel/kasa/cash-form.tsx");
   assert.match(form, /submitCashReport\(\{\n\s+\.\.\.fields,\n(?:\s+[^\n]*\n){0,4}?\s+branchId,\n/);
@@ -155,7 +155,7 @@ test("WhatsApp metni formun kasasının raporundan (24 Kasım şube kapsamı, pl
   const src = read("src/server/actions/cash-report.ts");
   const fn = src.slice(src.indexOf("export async function cashReportWhatsapp("));
   assert.match(fn, /export async function cashReportWhatsapp\(date: string, branchId\?: string \| null\)/);
-  // Arada yalnız kör kasanın reddi (bulgu 0: personele LafPOS gününün metni verilmez)
-  assert.match(fn, /const till = await formTillBranch\(zFormBranch\.parse\(branchId\)\);\s*(?:\/\/[^\n]*\n\s*)?if \(me\.role !== "admin" && \(await isLafposTillDay\(getDb\(\), d, till\)\)\) throw new UserError\(BLIND_TEXT\.whatsapp\);\s*const r = await getCashReport\(d, "staff", till\);/);
+  // Arada yalnız kör kasanın reddi (bulgu 0: personele AsilPOS gününün metni verilmez)
+  assert.match(fn, /const till = await formTillBranch\(zFormBranch\.parse\(branchId\)\);\s*(?:\/\/[^\n]*\n\s*)?if \(cashAudience\(me\.role\) !== "admin" && \(await isAsilposTillDay\(getDb\(\), d, till\)\)\) throw new UserError\(BLIND_TEXT\.whatsapp\);\s*const r = await getCashReport\(d, "staff", till\);/);
   assert.doesNotMatch(fn.slice(0, fn.indexOf("\n}\n")), /getCashReport\(d\)/, "şubesiz okuma kalmadı");
 });
