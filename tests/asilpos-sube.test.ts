@@ -35,7 +35,6 @@ const b = (id: string, name: string, o: Partial<BranchRow> = {}): BranchRow => (
 const TUZLA = b("tuzla", "Tuzla", { sortOrder: 1 });
 const MARINA = b("marina", "Marina", { sortOrder: 2 });
 const ONLINE = b("online", "laffogato.net", { kind: "online", posSource: "yok", sortOrder: 3 });
-const S = "2026-12-01";
 
 test("saf kural: kasalar kasa kaynağı AsilPOS olan fiziksel şubeler; hiç yoksa Marina (göç 0099 öncesi)", () => {
   assert.equal(LEGACY_POS_BRANCH_ID, "marina");
