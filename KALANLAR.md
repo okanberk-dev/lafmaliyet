@@ -1,4 +1,4 @@
-# Kalanlar ve devam (28 Kasım 2026, 01:15)
+# Kalanlar ve devam (28 Kasım 2026, 01:25)
 
 Kullanıcı **"kalanlardan devam et"** derse bu dosyayı baştan sona oku ve aşağıdaki sıradan devam et. Her oturum bitmeden
 (ya da kullanım limiti %95'e varmadan) bu dosyayı güncel duruma getirir: biten iş "Şu anki durum"dan çıkar, PR numarası
@@ -55,16 +55,26 @@ ve tam yetki verdi; yalnız gerçekten onun vereceği kararları sor, gerisini e
 - Kasa **#193** müşteri ekranında Google Translate balonu çıkmaz; **#194** rayda ve Araçlar'da "Ekranı yenile" (squash).
 - Panel **#173**: bu dosya ve `docs/planlar/` tasarımları.
 
-**Açık kasa PR'ları (sahibin talimatı: hepsi gönderilsin; squash ile, "denetim" ve "windows" yeşilse):**
-- **#192** Token sürücüsü: "Cihaz görünmedi; Token sürücüsü kuruluyor" adımında kalma sorunu (kök neden
-  `docs/planlar/tokenx-surucu.md`). Gerçek Windows sürücü denemesi ve "windows" yeşil; ilk CI'da tarayıcı demosu
-  açılmıyordu ("Buffer is not defined"), düzeltildi (ddd8380, yerelde demo 7/7); "denetim" son bakışta sürüyordu.
-- **#195** kasa penceresi kapatınca kapanır (sahibin isteği: "kapattığımda kapansın, ben açınca açılsın"). Bekçi
+**Kasa (bu oturumda):**
+- **#192** Token sürücüsü sessiz kurulum: **birleşti** (56de96c, 28 Kas 01:20); kanal derleme 1795817204'ü sunuyor.
+  Sahip kasada denemedi: siteden indirilen kurulum dosyasını çalıştırdı, o da yarıda kaldı (aşağıda). Sahibe söylendi:
+  Yönetim › Ayarlar ve yedek › Güncelleme › **Şimdi güncelle**, sonra Yazarkasa POS › Token kablolu › **Kurulumu yap**.
+  Sonucunu sor.
+- **#195** (açık) kasa penceresi kapatınca kapanır (sahibin isteği: "kapattığımda kapansın, ben açınca açılsın"). Bekçi
   (sürüm 6) kullanıcının kapattığı pencereyi yeniden açmaz, müşteri ekranını da kapatır; kısayolun açma isteği
-  (`kasa-ac.istek`) varsa sunucu gelince açar. Windows CI adımları (ci-kurulum.mjs D3, D5, D6) buna göre güncellendi.
-  "windows" işi gerçek Windows'ta yeni kuralı dener: düşerse günlüğe bak (`mcp__github__get_job_logs`), düzelt.
-- Birleşince kanalı gör (`https://lafpos.laffogato.net/guncelleme/surum.json` › commit) ve sahibe söyle: "Şimdi
-  güncelle; sonra Yazarkasa POS › Token kablolu › Kurulumu yap. Pencereyi kapatınca artık kapalı kalır."
+  (`kasa-ac.istek`) varsa sunucu gelince açar. İlk CI'da iki test düştü (eski adlı yol işaretsizdi, bakım testi eski
+  satırı arıyordu), düzeltildi (c230a2c; yerelde ilgili 24 dosya 298 test geçti). "denetim" ve "windows" yeşilse squash
+  ile birleştir; "windows" gerçek Windows'ta yeni kuralı dener (ci-kurulum.mjs D3, D5, D6), düşerse günlüğe bak.
+- **YENİ KUSUR, siteden kurulum dosyası** (`scripts/kasa/windows/kurulum/web-kurucu.ps1`): gün açık bir kasada
+  "Çalışan AsilPOS sunucusu durduruluyor → AsilPOS kuruluyor → Kurulum yarıda kaldı: The process cannot access the file
+  because it is being used by another process." (sahibin fotoğrafı, 28 Kas 01:08). Ekranda "Eski AsilPOS sunucusu yeniden
+  başlatıldı" satırı yoktu: büyük olasılıkla `schtasks /Query` sunucu görevini (`$Gorev`) bulamadı (`$GorevVardi`
+  yanlış), sunucu durdurulmadı, çalışan node `app\` içindeki yerel modülü kilitlediği için `Rename-Item app → app.eski`
+  düştü (hiçbir şey değişmedi, eski sürüm çalışıyor). Düzeltilecekler: (1) görev bulunamasa da kurulum klasöründen
+  (`$Kur\node\node.exe`) çalışan süreçler durdurulsun ve sonra yeniden açılsın; (2) dış `catch` `app.eski` / `node.eski`'yi
+  geri koysun (bugün `node` yeniden adlandırması düşerse `app` geri gelmez, sunucu açılamaz); (3) "Kurulum yarıda kaldı"
+  iletisi ne olduğunu ve "programın içinden Şimdi güncelle"yi söylesin. `tests/web-kurucu.test.ts` ve Windows CI'daki
+  "siteden kurulum" adımına çalışan sunucuyla bir durum eklensin.
 
 **Açık panel PR'ları (kod içerir: 03:00–22:00 İstanbul arasında, CI yeşilse merge commit):**
 - **#174** denetimin beş küçük hatası (ReDoS, muhasebeci salt okunur, yükleme sekmeleri, kapalı şubenin müdürüne
@@ -85,7 +95,7 @@ kaydı (`api/_merkez.ts` › `SET_KEY`, `statusKey`). Yalnız zamanları ve buil
 
 Aynı anda en çok iki iş: biri panel, biri kasa ya da site.
 
-1. **Kasa #192 ve #195** birleşmediyse birleştir (yukarıda); sahibin denemesini bekle.
+1. **Kasa #195** birleştir (yukarıda); sahibin Token denemesinin sonucunu sor; **siteden kurulum dosyası kusurunu** düzelt (yukarıda).
 2. **Panel #174 ve #175** (yukarıda): 03:00'ten sonra sırayla birleştir.
 3. **Kasa: "Kurulumu yap" fiş yazıcısını da bulsun ve denenebilsin** (sahibin isteği). Yönetim › Yazarkasa POS kurulum
    adımlarına bir "Fiş yazıcısı" adımı: `server/lib/yazici.ts` (`pickReceiptPrinter`, kasa betiğinin bildirdiği liste
