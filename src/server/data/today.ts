@@ -23,7 +23,7 @@ import { shiftMonth } from "@/lib/calc/engine";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { branchDayKey, businessDate } from "@/lib/cash-report";
 import { pendingCashOutSummary } from "@/lib/cash-outs";
-import { branchSwitchDay } from "@/lib/asilpos/switch";
+import { switchDayFor } from "@/lib/pos/tills";
 import { modposMismatchBranchDays, modposMismatchDates } from "@/lib/modpos/zil";
 import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
@@ -50,12 +50,11 @@ import { dayWaste } from "@/server/data/waste";
 import { countProgress } from "@/server/data/count-progress";
 import { getDb, schema as s } from "@/server/db";
 import { asilposPhotoMarks } from "@/server/asilpos/foto";
-import { asilposBranchId } from "@/server/asilpos/branch";
 import { isProductionRuntime, loadJobsOverview } from "@/server/jobs/alerts";
 import { lastParasutSyncOkAt } from "@/server/jobs/runs";
 import { loadSessions } from "@/server/karaoke/board";
 import { karaokeSecret } from "@/server/karaoke/sync";
-import { loadAsilposSwitchDay } from "@/server/asilpos/status";
+import { loadSwitchDays } from "@/server/pos/tills";
 import { loadModposSheets } from "@/server/modpos/store";
 import { loadUpcoming } from "@/server/notify/digest";
 import { countUnlinkedProducts } from "@/server/parasut/sync";
@@ -274,10 +273,8 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
           tills ? null : previousCarryOver(oldest, v?.till ?? undefined),
           tills ? previousCarryOverByBranch(oldest, tills.map((b) => b.id)) : null,
           cashRevisionsFor(reports.filter((r) => r.revision > 1).map((r) => r.id)),
-          Promise.all([loadModposSheets(oldest, businessDate(now), undefined, v?.till ? { branchId: v.till } : {}), loadAsilposSwitchDay(), asilposBranchId()])
-            .then(([sheets, switchDay, asilposBranch]) =>
-              tills ? modposMismatchBranchDays(reports, sheets, switchDay, asilposBranch) : modposMismatchDates(reports, sheets, switchDay, asilposBranch),
-            )
+          Promise.all([loadModposSheets(oldest, businessDate(now), undefined, v?.till ? { branchId: v.till } : {}), loadSwitchDays()])
+            .then(([sheets, switchDays]) => (tills ? modposMismatchBranchDays(reports, sheets, switchDays) : modposMismatchDates(reports, sheets, switchDays)))
             .catch(() => new Set<string>()),
         ]);
         return beforeOf ? cashFlagsByBranch(reports, beforeOf, revisions, viewer, modpos) : cashFlags(reports, before, revisions, viewer, modpos);
@@ -324,7 +321,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const eveningHourP = safe(resolveBranchSetting(CALENDAR_GROUP, karaokeScope).then((r) => r.value.eveningHour));
   // "Tümü"de kasa satırları her kasanın kendi saatiyle (zil gibi kasa kasa)
   const tillHoursP = safe(viewP.then((v) => (v?.tills?.length ? resolveForTills(CALENDAR_GROUP) : null)));
-  const [reports, firstDate, view, tillFirsts, tillClosed, stock, due, sessions, orders, checklists, closed, ops, own, asilposSwitch, switchRaw, noCounts, asilposBranch] = await Promise.all([
+  const [reports, firstDate, view, tillFirsts, tillClosed, stock, due, sessions, orders, checklists, closed, ops, own, asilposSwitch, switchRaw, noCounts] = await Promise.all([
     cashP,
     safe(tillScoped(() => firstCashReportDate())),
     viewP,
@@ -343,14 +340,12 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     opsFacts(user, now),
     admin ? adminFacts(now, user.id, cashP, viewP) : staffFacts(c),
     // AsilPOS'a geçiş günü: yalnız metinler (günün kasası; okunamazsa ModPOS, bugünkü gibi). Kasanın şubesinin geçiş
-    // günü (branchSwitchDay): ModPOS'ta kalan şubede metinler ModPOS der
-    safe(Promise.all([loadAsilposSwitchDay(), currentTillBranch(), asilposBranchId()]).then(([d, b, l]) => branchSwitchDay(d, b, l))),
+    // günü (çok şube): ModPOS'ta kalan şubede metinler ModPOS der
+    safe(Promise.all([loadSwitchDays(), currentTillBranch()]).then(([d, b]) => switchDayFor(d, b))),
     // "Tümü"de her şubenin kendi geçiş günü (metinler şubenin kasasına göre)
-    safe(loadAsilposSwitchDay()),
+    safe(loadSwitchDays()),
     // AsilPOS gün sonu geldi ama çekmece sayılmadı (rapor yok): dün ve bugün, kasa başına (tek kasada view.till)
     safe(viewP.then((v) => Promise.all((v?.tills ?? (v?.till ? [{ id: v.till }] : [])).map((b) => asilposNoCountDays([c.yesterday, c.day], b.id).then((d) => [...d]))))),
-    // AsilPOS'un şubesi (kütükten; okunamazsa geri düşüş değeri, branchSwitchDay)
-    safe(asilposBranchId()),
   ]);
 
   // Personel: AsilPOS'un otomatik raporunda tek iş gün sonu fotoğrafı (gün sonu tam; src/server/asilpos/foto.ts)
@@ -373,7 +368,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
         firstDate: tillFirsts ? (tillFirsts[i] ?? null) : firstDate,
         ...(tillClosed ? { closed: tillClosed[i]?.yesterday ?? null } : {}),
         ...(noCounts ? { noCount: noCounts[i] ?? [] } : {}),
-        ...(switchRaw !== null ? { asilposSwitch: branchSwitchDay(switchRaw, b.id, asilposBranch ?? undefined) } : {}),
+        ...(switchRaw !== null ? { asilposSwitch: switchDayFor(switchRaw, b.id) } : {}),
         ...(tillHours?.get(b.id) ? { eveningHour: tillHours.get(b.id)!.value.eveningHour } : {}),
       }))
     : null;

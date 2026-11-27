@@ -21,7 +21,7 @@ import type { FieldSource, Month, MonthField, TillMonth } from "./calc/types";
 import { dayRevenue } from "./cash-revenue";
 import { MONTH_NAMES } from "./constants";
 import { money } from "./format";
-import { isAsilposBranch } from "./asilpos/switch";
+import { posFromOf, type PosFroms } from "./pos/tills";
 import { addDays, dayAblativeTR, dayLocativeTR, monthEnd } from "./reminders";
 
 /** Ay bilgisine giden alanlar (kasa raporundan bunlar okunur) */
@@ -243,10 +243,10 @@ export function tillOpenedOn(branch: { id: string; openedOn: string | null } | n
  * öncesindeyse (ya da açılış günü yazılmamış sonradan açılan şubede) ilk ay yarım sayılmaz (partialStart). Verilmezse
  * ("Tümü", Tuzla) bugünkü kural.
  *
- * `asilposFrom`: AsilPOS satışlarının sayıldığı ilk gün (Dataset.asilposSales.countFrom; geçiş günü yoksa null). Verilirse
- * ayın `asilposDiscounts`'u AsilPOS'un şubesinin o günden itibarenki satırlarının indirimidir: AsilPOS'un satırları
- * indirimden sonradır, bu indirim satış listesinden bir daha düşülmez (listDiscountOf; hesap sözleşmesi §11).
- * `asilposBranch`: AsilPOS'un şubesi (kütükten türetilmiş, Dataset.asilposBranch); verilmezse geri düşüş değeri
+ * `pos` (çok şube): AsilPOS kasaları (`tills`: şubeleri; günleri KDV'de gün gün) ve kasa başına AsilPOS satışlarının
+ * sayıldığı ilk gün (`froms`, Dataset.asilposSales.froms; yoksa null). `froms` verilirse ayın `asilposDiscounts`'u her
+ * kasanın kendi ilk gününden itibarenki satırlarının indirimidir: AsilPOS'un satırları indirimden sonradır, bu indirim satış
+ * listesinden bir daha düşülmez (listDiscountOf; hesap sözleşmesi §11).
  */
 export function tillMonths(
   rows: TillRow[],
@@ -257,9 +257,10 @@ export function tillMonths(
   firstReport?: string | null,
   modposFrom?: string | null,
   openedOn?: TillOpening,
-  asilposFrom?: string | null,
-  asilposBranch?: string,
+  pos?: { froms: PosFroms | null; tills: readonly string[] },
 ): TillMonth[] {
+  const froms = pos?.froms && Object.keys(pos.froms).length ? pos.froms : null;
+  const tillSet = new Set(pos?.tills ?? []);
   const waiting = pendingLate ? new Set(pendingLate) : null;
   // Kapalı işaretli günler eksik sayılmaz, ayrı yazılır (raporu olan gün zaten eksik değil)
   const shut = closedDays ? new Set(closedDays) : null;
@@ -328,7 +329,12 @@ export function tillMonths(
     const posRevenue = r2(zTotalSum - offInPos);
     const disc = list.filter((r) => r.discounts != null);
     // AsilPOS'un satırlarında zaten düşülmüş indirim: AsilPOS'un şubesinin satış sayılan günleri (rapor ya da gün sonu)
-    const asilposDisc = asilposFrom ? disc.filter((r) => isAsilposBranch(r.branchId, asilposBranch) && r.date >= asilposFrom) : [];
+    const asilposDisc = froms
+      ? disc.filter((r) => {
+          const from = posFromOf(froms, r.branchId);
+          return from !== null && r.date >= from;
+        })
+      : [];
     const off = list.filter((r) => r.offRevenue != null);
     // Kart + yemek kartı (kartlı satış oranı: satış raporunun tahmini komisyonu); online ve diğer komisyonsuz. Banka POS
     // komisyonu yalnız banka kartından (yemek kartının komisyonu kendi faturasıyla; denetim E-43). Yanlış yazılmış bir
@@ -339,7 +345,7 @@ export function tillMonths(
     const bankByBranch = branched ? Object.fromEntries([...new Set(list.map(branchOf))].map((b) => [b, sum(list.filter((r) => branchOf(r) === b), (r) => r.card)])) : null;
     const share = (v: number) => (posRevenue > 0 ? Math.min(1, Math.round((v / posRevenue) * 10_000) / 10_000) : null);
     // AsilPOS'un şubesinin günleri: KDV gün gün (dayVatOf); öteki şubelerin satırları ay toplamıyla
-    const asilposRows = branched ? list.filter((r) => isAsilposBranch(r.branchId, asilposBranch)) : [];
+    const asilposRows = branched ? list.filter((r) => tillSet.has(r.branchId!)) : [];
     return {
       month,
       from,
@@ -351,7 +357,7 @@ export function tillMonths(
       offInPos,
       discounts: disc.length ? sum(disc, (r) => r.discounts!) : null,
       discountDays: dayCount(disc),
-      ...(asilposFrom ? { asilposDiscounts: sum(asilposDisc, (r) => r.discounts!) } : {}),
+      ...(froms ? { asilposDiscounts: sum(asilposDisc, (r) => r.discounts!) } : {}),
       offRevenue: off.length ? sum(off, (r) => r.offRevenue!) : null,
       offDays: dayCount(off),
       cardShare: share(card),
@@ -578,16 +584,18 @@ export function listDiscount(discount: number, asilpos: AsilposListPart | null):
 
 /**
  * Ayın satış listesinden düşülecek indirimi (Tutarlılık, uyarılar, Genel bakış'ın reçeteye göre kârı; −90 ₺ hatası,
- * 23 Kasım 2026). "Tümü"de şube şube: yalnız AsilPOS'un şubesinin AsilPOS günleri satırlarda indirimli. `asilposBranch`:
- * AsilPOS'un şubesi (Dataset.asilposBranch; verilmezse geri düşüş değeri)
+ * 23 Kasım 2026). "Tümü"de şube şube: her kasanın AsilPOS günleri kendi ilk gününden (`froms`, Dataset.asilposSales.froms;
+ * çok şube) satırlarda indirimli. Şube ayrımı olmayan ayda (tek şubenin satırları) görünümün kasasının ilk günü (birden
+ * çok kasa varsa en erkeni)
  */
-export function listDiscountOf(info: Month | undefined, asilposFrom: string | null, asilposBranch?: string): number {
+export function listDiscountOf(info: Month | undefined, froms: PosFroms | null): number {
   if (!info) return 0;
   if (info.byBranch) {
-    const parts = Object.entries(info.byBranch).map(([id, m]) => listDiscount(m.discounts, asilposListPart(m, isAsilposBranch(id, asilposBranch) ? asilposFrom : null)));
+    const parts = Object.entries(info.byBranch).map(([id, m]) => listDiscount(m.discounts, asilposListPart(m, posFromOf(froms, id))));
     return r2(parts.reduce((a, v) => a + v, 0));
   }
-  return listDiscount(info.discounts, asilposListPart(info, asilposFrom));
+  const only = Object.values(froms ?? {}).reduce<string | null>((a, d) => (a === null || d < a ? d : a), null);
+  return listDiscount(info.discounts, asilposListPart(info, only));
 }
 
 /**

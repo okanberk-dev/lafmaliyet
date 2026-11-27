@@ -17,18 +17,18 @@ import type { AsilposDay } from "./prefill";
 /** Personelin yükünde sıfırlanan alanlar (sayımın rakamları) */
 export const BLIND_FIELDS = ["openingCash", "countedCash", "handedOver", "cashDiff"] as const;
 
-/** Bu kasa günü personele kör mü: AsilPOS'un şubesinde AsilPOS günü, okuyan personel */
-export function staffBlindDay(o: { admin: boolean; branchId: string | null | undefined; asilposDay: boolean; asilposBranch?: string }): boolean {
+/** Bu kasa günü personele kör mü: şubenin kendi AsilPOS günü (`asilposDay`, şubenin geçiş günüyle), okuyan personel */
+export function staffBlindDay(o: { admin: boolean; asilposDay: boolean }): boolean {
   return staffAsilposEntryClosed(o);
 }
 
 /**
  * Kasa sayfasının kör kararı, okuma düşse de kapalı (inceleme, 25 Kasım 2026): `asilposDay` null ise günün AsilPOS günü
- * olup olmadığı okunamadı; AsilPOS'un şubesinin kasasında personele kör sayılır (geçici bir okuma hatası sayımı açmaz).
- * Yönetici ve öteki şube değişmez
+ * olup olmadığı okunamadı; kasası AsilPOS olan şubede (`till`) personele kör sayılır (geçici bir okuma hatası sayımı açmaz).
+ * Yönetici ve kasası ModPOS olan şube değişmez
  */
-export function staffBlindView(o: { admin: boolean; branchId: string | null | undefined; asilposDay: boolean | null; asilposBranch?: string }): boolean {
-  return staffBlindDay({ ...o, asilposDay: o.asilposDay ?? true });
+export function staffBlindView(o: { admin: boolean; till: boolean; asilposDay: boolean | null }): boolean {
+  return staffBlindDay({ admin: o.admin, asilposDay: o.asilposDay ?? o.till });
 }
 
 /** Personelin gördüğü metinler */

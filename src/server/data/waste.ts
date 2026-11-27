@@ -6,9 +6,9 @@ import { countFactor } from "@/lib/calc/engine";
 import type { DayWaste } from "@/lib/cash-report";
 import { asilposListByKind, panelWasteCounts, type AsilposZKinds } from "@/lib/asilpos/ikram";
 import { productLabel, summarize, type WasteChoice, type WasteKind, type WasteLine } from "@/lib/waste";
-import { currentBranchWhere } from "@/server/branch-scope";
+import { currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
-import { asilposBranchId } from "@/server/asilpos/branch";
+import { tillDayKey } from "@/lib/pos/tills";
 import { UserError } from "@/server/user-error";
 
 import { loadDayAsilposIkram } from "./asilpos-ikram";
@@ -121,15 +121,16 @@ export interface DayWasteAsilpos {
  */
 export async function dayWaste(date: string, branchId?: string): Promise<DayWaste & { ikramValue: number; count: number; asilpos: DayWasteAsilpos | null }> {
   const db = getDb();
-  const [entries, prices, laf, asilposBranch] = await Promise.all([
+  const [entries, prices, laf, till] = await Promise.all([
     wasteEntriesBetween(date, date, branchId),
     db.select({ id: s.products.id, price: s.products.price }).from(s.products),
     loadDayAsilposIkram(date, db, branchId),
-    asilposBranchId(db),
+    branchId ?? currentTillBranch(),
   ]);
   const price = new Map(prices.map((p) => [p.id, p.price]));
   const received = Boolean(laf?.received);
-  const counted = entries.filter((e) => panelWasteCounts(e, received ? new Set([date]) : new Set<string>(), asilposBranch));
+  // Gün sonu gelen kasa: günün kasasının şubesi (çok şube; öteki şubenin ürün ikramı sayılmaya devam eder)
+  const counted = entries.filter((e) => panelWasteCounts(e, received ? new Set([tillDayKey(till, date)]) : new Set<string>()));
   // AsilPOS'un satırları kendi türüyle: "Zayi: …" zayi, öteki (ödenmez dahil) ikram
   const lafLines: WasteLine[] = received ? laf!.lines.map((l) => ({ kind: l.kind, name: l.name, qty: l.qty, unit: "adet" })) : [];
   const lines = [...counted, ...lafLines];

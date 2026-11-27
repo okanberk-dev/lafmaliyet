@@ -17,7 +17,8 @@ import { asilposListPart, manualOf, MONTH_FIELDS } from "@/lib/cash-month";
 import { RECIPE_COST_NOTE } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { commonListText, dayRangeTR, asilposMonthNotes, asilposMonthStatus, type AsilposMonthNotes } from "@/lib/asilpos/sales";
-import { branchSwitchDay, isAsilposBranch, asilposBranchOf, monthSource } from "@/lib/asilpos/switch";
+import { monthSource } from "@/lib/asilpos/switch";
+import { posFromOf, switchDayFor } from "@/lib/pos/tills";
 import { addDays, dayAblativeTR, todayTR } from "@/lib/reminders";
 import { coverageFor } from "@/lib/sales-coverage";
 import { salesSourceOf, type SalesSourceKind } from "@/lib/sales-source";
@@ -148,10 +149,9 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   // ModPOS satırları "Yenisiyle değiştir"in onayı için
   const tills = channel ? [] : scope === ALL_BRANCHES ? tillBranches(branches) : branches.filter((b) => b.id === scope);
   const linesOf = (id: string) => sales.lines.filter((l) => !l.line.asilpos && (l.line.branchId ?? DEFAULT_BRANCH_ID) === id).length;
-  // AsilPOS'un şubesi kütükten (asilposBranchOf): ayı AsilPOS'tan gelen şube yalnız o
-  const asilposBranch = asilposBranchOf(branches);
+  // Ayı AsilPOS'tan gelen şube (çok şube: her kasa kendi geçiş günüyle) yazılamaz
   const writable = tills
-    .filter((b) => monthSource(month, branchSwitchDay(model.settings.asilposGecisGunu, b.id, asilposBranch)) !== "asilpos")
+    .filter((b) => monthSource(month, switchDayFor(model.ds.posSwitchDays ?? {}, b.id)) !== "asilpos")
     .map((b) => ({ id: b.id, name: b.name, lines: linesOf(b.id) }));
   // "Ayı temizle"nin sileceği satırlar (pencerenin kapsamı; sunucu aynı sayımla karşılaştırır)
   const [{ n: clearCount }] = await getDb()
@@ -377,7 +377,9 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
               }
               // AsilPOS günlerinin indirimi satırlarda zaten düşülmüş (engine listDiscounts); "Tümü"de yalnız formun şubesi AsilPOS'unsa
               asilposList={
-                !formBranch && formInfo && (!info?.byBranch || isAsilposBranch(writeId, asilposBranch)) ? asilposListPart(formInfo, model.ds.asilposSales?.countFrom ?? null) : null
+                !formBranch && formInfo
+                  ? asilposListPart(formInfo, info?.byBranch ? posFromOf(model.ds.asilposSales?.froms, writeId) : (model.ds.asilposSales?.countFrom ?? null))
+                  : null
               }
               currentMonth={model.currentMonth}
               recordedIkram={model.wasteSummary(month).ikram}

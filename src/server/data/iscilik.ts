@@ -22,7 +22,6 @@ import {
   type MissingWage,
 } from "@/lib/iscilik";
 import { cellReader } from "@/lib/kiyas";
-import { asilposBranchOf } from "@/lib/asilpos/switch";
 import { addDays, shiftMonth } from "@/lib/reminders";
 import { can } from "@/lib/roles";
 import { requireCan } from "@/server/auth/dal";
@@ -32,7 +31,7 @@ import { closedDaysBetween } from "@/server/closed-days";
 import { tillRows } from "@/server/data/cash-reports";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
-import { loadAsilposSwitchDay } from "@/server/asilpos/status";
+import { loadSwitchDays } from "@/server/pos/tills";
 
 /** Gelir-gider'in ayı: personel (işveren maliyeti, part-time'ın Vardiya'daki günleriyle) ve ciro (KDV hariç) */
 type WageMonth = { labor: number; revenue: number | null; ratio: number | null };
@@ -103,7 +102,7 @@ export async function loadLaborReport(month: string, now: Date = new Date()): Pr
   const [models, rows, switchDay, reports, closed] = await Promise.all([
     Promise.all(branches.map((b) => loadModel({ scope: b.id }))),
     withBranchScope(ALL_BRANCHES, () => tillRows(db)),
-    loadAsilposSwitchDay(db),
+    loadSwitchDays(db),
     db
       .select({ branchId: s.cashReports.branchId, date: s.cashReports.date, receipts: s.cashReports.receipts })
       .from(s.cashReports)
@@ -115,8 +114,7 @@ export async function loadLaborReport(month: string, now: Date = new Date()): Pr
     rows: rows.filter((r) => r.date >= from && r.date <= to),
     branches: branches.map((b) => ({ id: b.id, name: b.name, openedOn: b.openedOn })),
     today,
-    switchDay,
-    asilposBranch: asilposBranchOf(all),
+    switchDays: switchDay,
     receipts: new Map(reports.map((r) => [`${r.branchId}|${r.date}`, r.receipts])),
     isClosed: (branchId, date) => closedBy.get(branchId)?.has(date) ?? false,
   });

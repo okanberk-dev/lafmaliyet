@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, or } from "drizzle-orm";
 
 import { channelNameResolver } from "@/app/panel/tedarikciler/logic";
 import { CALENDAR_GROUP } from "@/lib/branch-settings/groups";
@@ -16,7 +16,7 @@ import { channelOf } from "@/lib/commission/channels";
 import { COMMISSION_CATEGORY, settingsFromRows } from "@/lib/constants";
 import { modposZBetween, otherBranchLists, type OtherBranchList } from "@/lib/asilpos/sales";
 import type { AsilposWorked } from "@/lib/asilpos/personel";
-import { isAsilposBranch, asilposBranchOf, scopeSwitchDay } from "@/lib/asilpos/switch";
+import { earliestSwitchDay, scopeSwitchDay, scopeSwitchDays, type SwitchDays } from "@/lib/pos/tills";
 import { addDays } from "@/lib/reminders";
 import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import type { SiteSalesMonth } from "@/lib/site-sales/schema";
@@ -27,7 +27,7 @@ import { loadSplitLines } from "./invoice-split";
 import { resolveBranchSetting } from "@/server/branch-settings";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s, type DB } from "@/server/db";
-import { asilposSwitchDay } from "@/server/asilpos/branch";
+import { loadPosTills, loadSwitchDays } from "@/server/pos/tills";
 import { loadSiteSales } from "@/server/site-sales/sync";
 
 import { tillRows } from "./cash-reports";
@@ -37,13 +37,14 @@ import { loadHeldPurchases, loadPurchaseLots } from "./purchase-lots";
 
 /**
  * Kaydı olmayan ayar varsayılanı okur (settingsFromRows): yeni bir ayar için veri taşıması gerekmez. Şube başına
- * tutulan iki alan şube ayarından gelir (docs/SUBE.md › Şube başına ayarlar): AsilPOS'a geçiş günü AsilPOS'un şubesinin
- * (grup SUBE_AYAR_GRUBU), ayda açık gün varsayılan şubenin (grup isletme.takvim; veri kümesi seçili şubeninkini koyar)
+ * tutulan iki alan şube ayarından gelir (docs/SUBE.md › Şube başına ayarlar): AsilPOS'a geçiş günü kasaların en erkeni
+ * (çok şube; grup SUBE_AYAR_GRUBU, her kasanın kendi günü: veri kümesi görünümün kasasınınkini koyar), ayda açık gün
+ * varsayılan şubenin (grup isletme.takvim; veri kümesi seçili şubeninkini koyar)
  */
 export async function loadSettings(): Promise<Settings> {
   const db = getDb();
-  const [rows, switchDay, calendar] = await Promise.all([db.select().from(s.settings), asilposSwitchDay(db), resolveBranchSetting(CALENDAR_GROUP, DEFAULT_BRANCH_ID, db)]);
-  return { ...settingsFromRows(rows), asilposGecisGunu: switchDay, acikGun: calendar.value.openDays };
+  const [rows, switchDays, calendar] = await Promise.all([db.select().from(s.settings), loadSwitchDays(db), resolveBranchSetting(CALENDAR_GROUP, DEFAULT_BRANCH_ID, db)]);
+  return { ...settingsFromRows(rows), asilposGecisGunu: earliestSwitchDay(switchDays), acikGun: calendar.value.openDays };
 }
 
 /** Veri kümesinin şube kapsamı: verilmezse seçicinin seçimi (docs/SUBE.md › Seçici) */
@@ -68,7 +69,7 @@ export async function loadDataset(opts: DatasetOptions = {}): Promise<Dataset> {
 async function readDataset(): Promise<Dataset> {
   const db = getDb();
   // Satışlar'ın içe aktarmasının yazdığı şube (seçili şube, "Tümü"de Tuzla): kartın listesinin son günü (writeCoverage)
-  const [scope, branches, writeBranch] = await Promise.all([currentBranchScope(), listBranches(), currentWriteBranch()]);
+  const [scope, branches, writeBranch, posTills] = await Promise.all([currentBranchScope(), listBranches(), currentWriteBranch(), loadPosTills(db)]);
   const branch = scope === ALL_BRANCHES ? null : (branches.find((b) => b.id === scope) ?? null);
   const [
     storedSettings,
@@ -198,13 +199,15 @@ async function readDataset(): Promise<Dataset> {
   const invoices = countedRecords(rawInvoices, periods.p);
   const purchaseLots = redateLots(rawLots, periods.lotDates);
 
-  // AsilPOS'a geçiş günü görünümün kasasınınki (scopeSwitchDay; denetim 21 Kasım #5): ModPOS'ta kalan şube (Tuzla) ya da
-  // online kanal seçiliyken yok (AsilPOS hiç okunmaz, ekranlar ModPOS der); "Tümü"de ve AsilPOS'un şubesinde ayar. Veri
-  // kümesini okuyan her ekran (Satışlar, Genel bakış, Gelir-gider, Ürünler, Analiz, Zayi) bunu görür
-  // AsilPOS'un şubesi kütükten (asilposBranchOf; kasa kaynağı AsilPOS olan şube, yoksa Marina): okunan şube listesinden
-  const asilposBranch = asilposBranchOf(branches);
+  // AsilPOS'a geçiş günleri görünümün kasalarınınki (çok şube, 27 Kasım 2026; denetim 21 Kasım #5): kasası ModPOS olan
+  // şube (Tuzla) ya da online kanal seçiliyken yok (AsilPOS hiç okunmaz, ekranlar ModPOS der); kasası AsilPOS olan şube
+  // seçiliyken yalnız onunki; "Tümü"de her kasa kendi geçiş günüyle (para hesapları şube şube: R1, R2). Settings'in tek
+  // geçiş günü metinler içindir: tek şubede o şubenin, "Tümü"de kasaların en erkeni. Veri kümesini okuyan her ekran
+  // (Satışlar, Genel bakış, Gelir-gider, Ürünler, Analiz, Zayi) bunu görür
+  const allSwitchDays = posTills.switchDays;
+  const viewSwitchDays: SwitchDays = scopeSwitchDays(allSwitchDays, scope);
   // Ayda açık gün seçili şubenin (şube ayarı isletme.takvim; "Tümü"de ve online kanalda varsayılan şubenin)
-  const settings = { ...storedSettings, asilposGecisGunu: scopeSwitchDay(storedSettings.asilposGecisGunu, scope, asilposBranch), acikGun: calendar.value.openDays };
+  const settings = { ...storedSettings, asilposGecisGunu: scopeSwitchDay(allSwitchDays, scope), acikGun: calendar.value.openDays };
   // Kalem kalem sınıflandırma (src/lib/invoice-split.ts): payı faturanın kategorisinden ayrılan kalemler
   const splitOf = await loadSplitLines(db, invoices);
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
@@ -230,12 +233,12 @@ async function readDataset(): Promise<Dataset> {
   const reportRows = till.filter(isReportRow);
   // Listelerin son günü (src/lib/sales-coverage.ts readCoverage): şube seçiliyken şubenin kendi kaydı (Tuzla'nın listesi
   // Marina'nın son gününü kaydırmaz), "Tümü"de ayın ortak kaydı. AsilPOS'un sayıldığı ilk gün ve geçiş ayının çakışması her
-  // görünümde Marina'nın kendi kaydından (asilposCoverage). Satışlar'ın içe aktarma kartının "… tarihine kadar"ı yazılan
+  // görünümde kasanın şubesinin kendi kaydından (tillCoverage). Satışlar'ın içe aktarma kartının "… tarihine kadar"ı yazılan
   // şubenin kaydından (writeCoverage; "Tümü"de Tuzla'nın)
   const storedCoverage = (key: string) => coverageRows.find((r) => r.key === key)?.value;
   const coverageOf = (branchId: string | null) => readCoverage(storedCoverage(SALES_COVERAGE_KEY), storedCoverage(SALES_COVERAGE_BRANCH_KEY), branchId);
   const coverage = coverageOf(scope === ALL_BRANCHES ? null : scope);
-  const asilposCoverage = coverageOf(asilposBranch);
+  const tillCoverage = (branchId: string) => coverageOf(branchId);
   // SU GİDERİ girilmiş aylar: tek şube seçiliyken litre fiyatı bu ayların işletme geneli satışıyla (waterSales)
   const billMonths = new Set(pnlEntries.filter((e) => e.rowKey === "manual:su" && e.amount > 0).map((e) => e.month));
   // Satış satırları AsilPOS'la birleşir (mergeSales). AsilPOS'un ikramları geçiş gününden itibaren kayıtlı tüketime
@@ -244,19 +247,18 @@ async function readDataset(): Promise<Dataset> {
   // raporu olan ayları, şubenin kendi kaydıyla. Şube seçiliyken yok (görünümün kendi kaydı)
   const others =
     scope === ALL_BRANCHES
-      ? otherBranchLists({ switchDay: settings.asilposGecisGunu, asilposBranch, salesLines, reportDays: reportRows, coverageOf: (b) => coverageOf(b) })
+      ? otherBranchLists({ switchDays: viewSwitchDays, salesLines, reportDays: reportRows, coverageOf: (b) => coverageOf(b) })
       : [];
   const [sales, asilposIkram, waterSales, asilposWorked] = await Promise.all([
-    mergeSales(db, { switchDay: settings.asilposGecisGunu, salesLines: salesLines.map(salesLineOf), coverage, asilposCoverage, today, till, asilposBranch, others }),
-    settings.asilposGecisGunu ? loadAsilposIkram(db, settings.asilposGecisGunu) : Promise.resolve(null),
+    mergeSales(db, { switchDays: viewSwitchDays, salesLines: salesLines.map(salesLineOf), coverage, coverageOf: tillCoverage, today, till, others }),
+    settings.asilposGecisGunu ? loadAsilposIkram(db, viewSwitchDays) : Promise.resolve(null),
     branch && billMonths.size
-      ? // Su litresi "Tümü" kapsamında: geçiş günü şubeye göre kısılmış değil, işletmenin ayarı (Tuzla'nın AsilPOS satışı da sayılsın)
-        companyWaterSales(db, { switchDay: scopeSwitchDay(storedSettings.asilposGecisGunu, ALL_BRANCHES, asilposBranch), coverage: coverageOf(null), asilposCoverage, today, months: billMonths, siteSales: branch.kind === "online" ? siteSales : null, asilposBranch })
+      ? // Su litresi "Tümü" kapsamında: bütün kasalar kendi geçiş günleriyle (her şubenin AsilPOS satışı da sayılsın)
+        companyWaterSales(db, { switchDays: allSwitchDays, coverage: coverageOf(null), coverageOf: tillCoverage, today, months: billMonths, siteSales: branch.kind === "online" ? siteSales : null })
       : Promise.resolve(null),
-    // Personel bağlantısı (LM-4b): AsilPOS'un şubesinin sayılan günlerinin çalışan kimlikleri (yemek kartının günü);
-    // görünümün geçiş günü yoksa (AsilPOS'un şubesi görünümde değil) okunmaz
-    // AsilPOS'un şubesinin geçiş günü ayarın kendisidir (branchSwitchDay)
-    settings.asilposGecisGunu ? loadAsilposWorked(db, storedSettings.asilposGecisGunu, asilposBranch) : Promise.resolve(null),
+    // Personel bağlantısı (LM-4b): görünümün kasalarının sayılan günlerinin çalışan kimlikleri (yemek kartının günü);
+    // görünümde kasa yoksa okunmaz
+    settings.asilposGecisGunu ? loadAsilposWorked(db, viewSwitchDays) : Promise.resolve(null),
   ]);
   // Satış listesinin son gününe kadarki kasa raporları (aynı ilk rapor günüyle: ay ortasında başlayan ilk ay aynı tanınır).
   // Eksik gün, ay bilgisindeki gibi ilk kasa raporundan (ya da AsilPOS gün sonundan) aranır: raporlar başlamadan önceki
@@ -268,11 +270,11 @@ async function readDataset(): Promise<Dataset> {
   const opened = tillOpenedOn(branch);
   // AsilPOS satışlarının sayıldığı ilk gün: o günden itibaren AsilPOS'un şubesinin indirimi satırlarda zaten düşülmüş
   // (TillMonth.asilposDiscounts; satış listesi ↔ POS karşılaştırması, engine listDiscounts)
-  const asilposFrom = sales.asilposSales?.countFrom ?? null;
+  const posFroms = { froms: sales.asilposSales?.froms ?? null, tills: posTills.ids };
   const salesCoverage = Object.entries(sales.coverage).map(([month, upto]) => ({
     month,
     through: upto,
-    till: tillMonths(till.filter((r) => r.date.slice(0, 7) === month && r.date <= upto), upto, firstEver, undefined, undefined, firstReport, undefined, opened, asilposFrom, asilposBranch)[0] ?? null,
+    till: tillMonths(till.filter((r) => r.date.slice(0, 7) === month && r.date <= upto), upto, firstEver, undefined, undefined, firstReport, undefined, opened, posFroms)[0] ?? null,
   }));
 
   // Etkin ay bilgisi: elle yazılan, yoksa kasa raporlarından (hiçbir şey months'a kopyalanmaz); yalnız kasa raporu olan
@@ -286,7 +288,7 @@ async function readDataset(): Promise<Dataset> {
   const closedFor = (rows: typeof closedRows, reports: readonly TillRow[]) => closedDaysIn(rows, "2000-01-01", through, reports.filter(isReportRow).map((r) => r.date));
   const closedPast = closedFor(scopeClosedRows, reportRows);
   const monthsOf = (rows: TillRow[], openedOn: ReturnType<typeof tillOpenedOn>, closed: string[] = closedPast) =>
-    tillMonths(rows, through, undefined, lateDays, closed, undefined, undefined, openedOn, asilposFrom, asilposBranch);
+    tillMonths(rows, through, undefined, lateDays, closed, undefined, undefined, openedOn, posFroms);
   const entriesOf = (rows: typeof months): MonthEntry[] =>
     rows.map((m) => ({ month: m.month, openDays: m.openDays, posRevenue: m.posRevenue, discounts: m.discounts, offRevenue: m.offRevenue, cardShare: m.cardShare, note: m.note }));
   // "Tümü": her şube kendi elle yazılanı ve kasasıyla (açılış günüyle: tillOpenedOn) çözülür, sonra toplanır; bir şubenin
@@ -331,7 +333,8 @@ async function readDataset(): Promise<Dataset> {
 
   return {
     settings,
-    asilposBranch,
+    posTills: posTills.ids,
+    posSwitchDays: allSwitchDays,
     currentMonth,
     branchView: branch ? { id: branch.id, name: branch.name, kind: branch.kind } : null,
     // Ay hücreleri yazılmaz: "Tümü"de birden çok kasanın toplamı, online kanalda kasa satışı yok (monthWriteLock)
@@ -528,18 +531,22 @@ async function readDataset(): Promise<Dataset> {
 
 /** Veritabanının satış satırı → modelin satış satırı */
 /**
- * AsilPOS'un şubesinin geçiş gününden itibaren gelen gün sonları ve her günün çalışan kimlikleri (LM-4b;
- * pos_day_reports.worked_staff, gelmediyse null). Yemek kartının günü bundan (src/lib/asilpos/personel.ts
- * asilposWorkedDays). Yalnız gün ve kimlik okunur
+ * Kasaların her birinin kendi geçiş gününden itibaren gelen gün sonları ve her günün çalışan kimlikleri (LM-4b; çok şube:
+ * "Tümü"de kasa başına; pos_day_reports.worked_staff, gelmediyse null). Yemek kartının günü bundan
+ * (src/lib/asilpos/personel.ts asilposWorkedDays). Yalnız gün ve kimlik okunur
  */
-async function loadAsilposWorked(db: DB, switchDay: string | null, asilposBranch: string): Promise<AsilposWorked | null> {
-  if (!switchDay) return null;
+async function loadAsilposWorked(db: DB, switchDays: SwitchDays): Promise<AsilposWorked | null> {
+  const tills = Object.entries(switchDays).filter((e): e is [string, string] => e[1] !== null);
+  if (!tills.length) return null;
   const rows = await db
-    .select({ date: s.posDayReports.date, refs: s.posDayReports.workedStaff })
+    .select({ date: s.posDayReports.date, branchId: s.posDayReports.branchId, refs: s.posDayReports.workedStaff })
     .from(s.posDayReports)
-    .where(and(eq(s.posDayReports.branchId, asilposBranch), gte(s.posDayReports.date, switchDay)))
-    .orderBy(asc(s.posDayReports.date));
-  return { switchDay, branchId: asilposBranch, days: rows.map((r) => ({ date: r.date, refs: Array.isArray(r.refs) ? r.refs.filter((x): x is string => typeof x === "string") : null })) };
+    .where(or(...tills.map(([id, sd]) => and(eq(s.posDayReports.branchId, id), gte(s.posDayReports.date, sd)))))
+    .orderBy(asc(s.posDayReports.date), asc(s.posDayReports.branchId));
+  return {
+    switchDays: Object.fromEntries(tills),
+    days: rows.map((r) => ({ branchId: r.branchId, date: r.date, refs: Array.isArray(r.refs) ? r.refs.filter((x): x is string => typeof x === "string") : null })),
+  };
 }
 
 function salesLineOf(l: typeof s.salesLines.$inferSelect): SalesLine {
@@ -561,32 +568,32 @@ function salesLineOf(l: typeof s.salesLines.$inferSelect): SalesLine {
  * Satış satırları: Satışlar'a yüklenen ModPOS listeleri; AsilPOS'a geçiş günü seçiliyse o günden itibaren AsilPOS'un
  * günlük satışları ay toplamı olarak (her gün tek kaynak; src/lib/asilpos/sales.ts). Geçiş günü yoksa AsilPOS okunmaz,
  * satırlar ve kapsam bugünkü gibi. AsilPOS gün sonları ve `till` (kasa raporları) o anki kapsamın şubesinden. `coverage`
- * görünümün listelerinin son günü (engine listPeriod), `asilposCoverage` AsilPOS'un şubesininki (sayıldığı ilk gün).
+ * görünümün listelerinin son günü (engine listPeriod), `coverageOf(kasa)` kasanın şubesininki (sayıldığı ilk gün).
+ * `switchDays`: görünümün kasaları (çok şube)
  */
 function mergeSales(
   db: DB,
   input: {
-    switchDay: string | null;
+    switchDays: SwitchDays;
     salesLines: SalesLine[];
     coverage: Record<string, string>;
-    asilposCoverage: Record<string, string>;
+    coverageOf: (branchId: string) => Record<string, string>;
     today: string;
     till: readonly TillRow[];
-    asilposBranch: string;
     /** Yalnız "Tümü": ModPOS'ta kalan şubelerin listeleri (ortak dönem; bulgu 62) */
     others?: readonly OtherBranchList[];
   },
 ) {
   // Yalnız kasa raporları: AsilPOS'un yedek ay satırları (G6, source "asilpos") ve ModPOS föyü rapor değildir. AsilPOS'un
-  // günleriyle yalnız AsilPOS'un şubesinin kasa raporları karşılaştırılır ("Tümü"de ModPOS'ta kalan şubeninki değil;
-  // isAsilposBranch, denetim 21 Kasım #5)
-  const reportRows = input.till.filter((r) => isReportRow(r) && isAsilposBranch(r.branchId, input.asilposBranch));
+  // günleriyle yalnız kasası AsilPOS olan şubelerin kasa raporları karşılaştırılır ("Tümü"de ModPOS'ta kalan şubeninki
+  // değil; denetim 21 Kasım #5)
+  const tills = new Set(Object.keys(input.switchDays));
+  const reportRows = input.till.filter((r) => isReportRow(r) && tills.has(r.branchId ?? DEFAULT_BRANCH_ID));
   return mergeWithAsilpos(db, {
-    switchDay: input.switchDay,
+    switchDays: input.switchDays,
     salesLines: input.salesLines,
     coverage: input.coverage,
-    asilposCoverage: input.asilposCoverage,
-    asilposBranch: input.asilposBranch,
+    coverageOf: input.coverageOf,
     today: input.today,
     // Kasa raporlarının son günü (tarihe göre sıralı): süren ayın sonraki AsilPOS günleri rapor girilince sayılır
     lastTillDay: reportRows.at(-1)?.date ?? null,
@@ -607,30 +614,29 @@ function mergeSales(
 async function companyWaterSales(
   db: DB,
   input: {
-    switchDay: string | null;
+    switchDays: SwitchDays;
     coverage: Record<string, string>;
-    asilposCoverage: Record<string, string>;
+    coverageOf: (branchId: string) => Record<string, string>;
     today: string;
     months: ReadonlySet<string>;
     siteSales: SiteSalesMonth[] | null;
-    asilposBranch: string;
   },
 ): Promise<NonNullable<Dataset["waterSales"]>> {
-  const read = [...input.months, ...(input.switchDay ? [input.switchDay.slice(0, 7)] : [])];
+  const switchMonths = Object.values(input.switchDays).flatMap((d) => (d ? [d.slice(0, 7)] : []));
+  const read = [...new Set([...input.months, ...switchMonths])];
   return withBranchScope(ALL_BRANCHES, async () => {
     const [lines, till, site] = await Promise.all([
       db.select().from(s.salesLines).where(inArray(s.salesLines.month, read)).orderBy(asc(s.salesLines.sortOrder), asc(s.salesLines.id)),
-      input.switchDay ? tillRows() : Promise.resolve([]),
+      switchMonths.length ? tillRows() : Promise.resolve([]),
       input.siteSales ? Promise.resolve(input.siteSales) : loadSiteSales(),
     ]);
     const sales = await mergeSales(db, {
-      switchDay: input.switchDay,
+      switchDays: input.switchDays,
       salesLines: lines.map(salesLineOf),
       coverage: input.coverage,
-      asilposCoverage: input.asilposCoverage,
+      coverageOf: input.coverageOf,
       today: input.today,
       till,
-      asilposBranch: input.asilposBranch,
     });
     return {
       salesLines: sales.salesLines.filter((l) => input.months.has(l.month)),

@@ -1409,9 +1409,10 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
   // AsilPOS'un gün sonu gelen günde ürün ikramı AsilPOS'tan sayılır, paneldeki o günkü ürün ikramı sayılmaz (her gün tek
   // kaynak; src/lib/asilpos/ikram.ts). AsilPOS'un "Zayi: …" satırı zayi olarak girer (kendi türüyle). Geçiş günü yoksa
   // asilposIkram yok: kayıtlar bugünkü gibi yalnız panelden
-  const asilposIkramDays = new Set(ds.asilposIkram?.days ?? []);
+  // Gün sonu gelen (şube, gün) anahtarları (çok şube: kayıt yalnız kendi şubesinin kasasının günü geldiyse düşer)
+  const asilposIkramDays = new Set(ds.asilposIkram?.tillDays ?? []);
   const countedWaste: WasteEntry[] = [
-    ...(ds.wasteEntries ?? []).filter((w) => panelWasteCounts(w, asilposIkramDays, ds.asilposBranch)),
+    ...(ds.wasteEntries ?? []).filter((w) => panelWasteCounts(w, asilposIkramDays)),
     ...(ds.asilposIkram?.lines ?? []).map(
       (l): WasteEntry => ({
         date: l.date,
@@ -1436,7 +1437,7 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
     else wasteByMonth.set(m, [w]);
   }
   /** Ayın sayılmayan panel kayıtları: AsilPOS'un gün sonu gelen günde girilmiş ürün ikramı */
-  const notCountedOf = (month: string) => (ds.wasteEntries ?? []).filter((w) => w.date.slice(0, 7) === month && !panelWasteCounts(w, asilposIkramDays, ds.asilposBranch)).length;
+  const notCountedOf = (month: string) => (ds.wasteEntries ?? []).filter((w) => w.date.slice(0, 7) === month && !panelWasteCounts(w, asilposIkramDays)).length;
   /**
    * Kayıtlı zayi ve ikramın malzeme tüketimi (malzemenin kendi biriminde): ürün reçetesinden (fire payı olmadan),
    * hammadde doğrudan. Satış raporu yalnız ödenen satışları taşır; bunlar ona eklenmez, ayrı gösterilir.
@@ -1501,7 +1502,7 @@ export function createModel(ds: Dataset, opts: ModelOptions = {}) {
    * Geçiş günü yoksa ayın indirimi (Month.discounts)
    */
   function listDiscounts(month: string): number {
-    return listDiscountOf(monthInfo.get(month), ds.asilposSales?.countFrom ?? null, ds.asilposBranch);
+    return listDiscountOf(monthInfo.get(month), ds.asilposSales?.froms ?? null);
   }
 
   /** Ayın "aynı gider iki kez" bulguları (pnlMonth'un hesabından; duplicate-expense.ts) */

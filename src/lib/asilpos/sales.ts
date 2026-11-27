@@ -6,7 +6,9 @@ import { genitive } from "@/lib/recipe-change";
 import { coverageFor } from "@/lib/sales-coverage";
 import { addDays, dayAblativeTR, dayMonthTR, monthEnd } from "@/lib/reminders";
 
-import { branchSwitchDay, isAsilposBranch, asilposCountFrom, asilposSalesFrom, modposListCounts, monthSource } from "./switch";
+import { countedTillIds, earliestSwitchDay, switchDayFor, type PosFroms, type SwitchDays } from "@/lib/pos/tills";
+
+import { asilposCountFrom, asilposSalesFrom, modposListCounts, monthSource } from "./switch";
 
 /**
  * AsilPOS satışlarının aylık maliyet modeline girmesi (docs/ASILPOS.md › Günlük satış; denetim E-08). Model satışı ay ay
@@ -54,20 +56,37 @@ export function modposThroughOf(month: string, coverage: Readonly<Record<string,
  * AsilPOS günlük satırlarının sayıldığı ilk gün (bütün aylar için tek sınır, docs/ASILPOS.md › Günlük satış): geçiş ayında
  * o ayın ModPOS listesinin son gününden sonra (liste varsa), sonraki aylarda her gün. Geçiş günü yoksa null. `coverage`
  * AsilPOS'un şubesinin (Marina) kendi kaydıdır (src/lib/sales-coverage.ts readCoverage(…, AsilPOS'un şubesi)), ayın ortak
- * kaydı değil: ortak kayıt son yükleyenindir, Tuzla'nın aynı aya yüklediği liste sınırı kaydırırdı. `asilposBranch`:
- * AsilPOS'un şubesi (kütükten türetilmiş; verilmezse ASILPOS_BRANCH_ID)
+ * kaydı değil: ortak kayıt son yükleyenindir, Tuzla'nın aynı aya yüklediği liste sınırı kaydırırdı. `tillBranch`: kasanın
+ * şubesi (çok şube: her kasanın kendi sınırı)
  */
 export function asilposSalesCountFrom(
   switchDay: string | null,
   salesLines: readonly Pick<SalesLine, "month" | "branchId">[],
   coverage: Readonly<Record<string, string>>,
-  asilposBranch?: string,
+  tillBranch: string,
 ): string | null {
   if (switchDay === null) return null;
   const month = switchDay.slice(0, 7);
-  // Yalnız AsilPOS'un şubesinin listesi: ModPOS'ta kalan şubenin listesi AsilPOS'un günlerini kesmez
-  const hasList = salesLines.some((l) => l.month === month && isAsilposBranch(l.branchId, asilposBranch));
+  // Yalnız kasanın şubesinin listesi: öteki şubenin listesi bu kasanın günlerini kesmez
+  const hasList = salesLines.some((l) => l.month === month && (l.branchId ?? DEFAULT_BRANCH_ID) === tillBranch);
   return asilposCountFrom(switchDay, hasList ? modposThroughOf(month, coverage) : null);
+}
+
+/**
+ * Kasa başına AsilPOS satışlarının sayıldığı ilk gün (çok şube; asilposSalesCountFrom her kasanın kendi geçiş günü ve
+ * kendi listesinin kaydıyla, `coverageOf`). Hiç sayılmayan kasa sonuçta yoktur
+ */
+export function posCountFroms(
+  switchDays: SwitchDays,
+  salesLines: readonly Pick<SalesLine, "month" | "branchId">[],
+  coverageOf: (branchId: string) => Readonly<Record<string, string>>,
+): PosFroms {
+  const out: Record<string, string> = {};
+  for (const id of countedTillIds(switchDays)) {
+    const from = asilposSalesCountFrom(switchDayFor(switchDays, id), salesLines, coverageOf(id), id);
+    if (from !== null) out[id] = from;
+  }
+  return out;
 }
 
 /**
@@ -81,25 +100,30 @@ export interface OtherBranchList {
 }
 
 /**
- * "Tümü"nün ortak döneminin girdisi (bulgu 62): geçiş ayından itibaren ModPOS'ta kalan her şubenin (AsilPOS'un şubesi
- * dışındakiler; şubesiz satır ve rapor Tuzla'nın) listesi ya da kasa raporu olan her ayı. Listesi olan ayda son günü
- * şubenin kendi kaydından (`coverageOf`: readCoverage(…, şube); kayıt yoksa ayın tamamı), listesi olmayıp kasa raporu
- * olan ayda null. Geçiş günü yoksa boş: ortak dönem AsilPOS'la birlikte gelir (ModPOS listeleri öncesi bugünkü gibi).
+ * "Tümü"nün ortak döneminin girdisi (bulgu 62): ilk geçiş ayından itibaren o ay ModPOS'ta olan her şubenin (o ay geçiş
+ * ayında ya da sonrasında olan AsilPOS kasaları dışındakiler; şubesiz satır ve rapor Tuzla'nın) listesi ya da kasa
+ * raporu olan her ayı. Listesi olan ayda son günü şubenin kendi kaydından (`coverageOf`: readCoverage(…, şube); kayıt
+ * yoksa ayın tamamı), listesi olmayıp kasa raporu olan ayda null. Geçiş günü yoksa boş: ortak dönem AsilPOS'la birlikte
+ * gelir (ModPOS listeleri öncesi bugünkü gibi). Çok şube: geçiş günü sonra olan kasa, o güne kadar ModPOS şubesi sayılır
  */
 export function otherBranchLists(i: {
-  switchDay: string | null;
-  asilposBranch?: string;
+  switchDays: SwitchDays;
   salesLines: readonly Pick<SalesLine, "month" | "branchId">[];
   /** Kasa raporu olan günler, şubesiyle (yalnız rapor satırları: yedek ay satırları ve föy değil) */
   reportDays: readonly { branchId?: string | null; date: string }[];
   coverageOf: (branchId: string) => Readonly<Record<string, string>>;
 }): OtherBranchList[] {
-  if (i.switchDay === null) return [];
-  const from = i.switchDay.slice(0, 7);
+  const first = earliestSwitchDay(i.switchDays);
+  if (first === null) return [];
+  const from = first.slice(0, 7);
+  const onPos = (branchId: string, month: string) => {
+    const sd = switchDayFor(i.switchDays, branchId);
+    return sd !== null && month >= sd.slice(0, 7);
+  };
   const withList = new Set<string>();
   const keys = new Map<string, { branchId: string; month: string }>();
   const add = (branchId: string, month: string) => {
-    if (month < from || isAsilposBranch(branchId, i.asilposBranch)) return false;
+    if (month < from || onPos(branchId, month)) return false;
     keys.set(`${month}|${branchId}`, { branchId, month });
     return true;
   };
@@ -148,7 +172,8 @@ export function commonListCuts(others: readonly OtherBranchList[]): CommonListCu
 }
 
 export interface SalesSourcesInput {
-  switchDay: string | null;
+  /** Görünümün kasaları ve geçiş günleri (çok şube; tek şube seçiliyken yalnız onunki, ModPOS şubesinde boş) */
+  switchDays: SwitchDays;
   /** Satışlar'a yüklenmiş ModPOS listeleri (sales_lines), veritabanındaki sırayla */
   salesLines: SalesLine[];
   /**
@@ -160,8 +185,6 @@ export interface SalesSourcesInput {
   asilposLines: readonly AsilposMonthLine[];
   /** Sayılan AsilPOS gün sonları, ay ay */
   asilposDays: readonly AsilposDaysOfMonth[];
-  /** AsilPOS'un şubesi (kütükten türetilmiş, asilposBranchOf); verilmezse ASILPOS_BRANCH_ID */
-  asilposBranch?: string;
   /**
    * Yalnız "Tümü": ModPOS'ta kalan şubelerin listeleri (otherBranchLists; bulgu 62). Verilince ayın dönemi şubelerin en
    * kısasıdır; AsilPOS satırları o güne kadar kesilmiş gelmelidir (mergeWithAsilpos, commonListCuts)
@@ -187,14 +210,15 @@ export interface SalesSources {
 
 /**
  * ModPOS listeleriyle AsilPOS ay toplamlarını birleştirir (her gün tek kaynak). Geçiş günü yoksa girdi olduğu gibi döner
- * (aynı satırlar, aynı sıra): AsilPOS hiçbir hesaba girmez. Geçiş günü yalnız AsilPOS'un şubesinindir: ModPOS'ta kalan
- * şubenin (Tuzla) listesi her ay sayılır ("Tümü"de iki şubenin satırları yan yana; denetim 21 Kasım #5).
+ * (aynı satırlar, aynı sıra): AsilPOS hiçbir hesaba girmez. Geçiş günü şubenin kendi kasasınındır (çok şube): her
+ * şubenin ModPOS listesi kendi geçiş gününe göre sayılır, ModPOS'ta kalan şubenin (Tuzla) listesi her ay ("Tümü"de
+ * şubelerin satırları yan yana; denetim 21 Kasım #5). Görünümün kapsamı ve ilk ayı en erken geçiş gününe göre.
  */
 export function mergeSalesSources(input: SalesSourcesInput): SalesSources {
-  const S = input.switchDay;
+  const S = earliestSwitchDay(input.switchDays);
   if (S === null) return { salesLines: input.salesLines, coverage: { ...input.coverage }, short: {} };
   const switchMonth = S.slice(0, 7);
-  const kept = input.salesLines.filter((l) => modposListCounts(l.month, branchSwitchDay(S, l.branchId, input.asilposBranch)));
+  const kept = input.salesLines.filter((l) => modposListCounts(l.month, switchDayFor(input.switchDays, l.branchId)));
   const asilpos = input.asilposLines
     .filter((l) => l.month >= switchMonth)
     .slice()

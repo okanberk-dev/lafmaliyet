@@ -6,7 +6,6 @@ import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
 import type { MonthField } from "@/lib/calc/types";
 import { businessDate } from "@/lib/cash-report";
 import { cellReader } from "@/lib/kiyas";
-import { asilposBranchOf } from "@/lib/asilpos/switch";
 import { addDays, shiftMonth } from "@/lib/reminders";
 import { branchCompare, cashDiffByMonth, EMPTY_FIGURES, monthDays, receiptFigures, type BranchMonthFigures, type ComparePeriod } from "@/lib/sube-karsilastirma";
 import { requireAdmin } from "@/server/auth/dal";
@@ -16,7 +15,7 @@ import { closedDaysBetween } from "@/server/closed-days";
 import { tillRows } from "@/server/data/cash-reports";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
-import { loadAsilposSwitchDay } from "@/server/asilpos/status";
+import { loadSwitchDays } from "@/server/pos/tills";
 
 export interface BranchCompareData {
   /** Seçilen aylar, eskiden yeniye */
@@ -56,7 +55,7 @@ export async function loadBranchCompare(lastMonth: string, span: number, now: Da
     // Her şube kendi görünümüyle (soldaki seçimden bağımsız): Gelir-gider'de o şube seçiliyken görünen ay hesabı
     Promise.all(branches.map((b) => loadModel({ scope: b.id }))),
     withBranchScope(ALL_BRANCHES, () => tillRows(db)),
-    loadAsilposSwitchDay(db),
+    loadSwitchDays(db),
     db
       .select({ branchId: s.cashReports.branchId, date: s.cashReports.date, cashDiff: s.cashReports.cashDiff, receipts: s.cashReports.receipts })
       .from(s.cashReports)
@@ -69,8 +68,7 @@ export async function loadBranchCompare(lastMonth: string, span: number, now: Da
     rows: rows.filter((r) => r.date >= from && r.date <= to),
     branches: branches.map((b) => ({ id: b.id, name: b.name, openedOn: b.openedOn })),
     today,
-    switchDay,
-    asilposBranch: asilposBranchOf(all),
+    switchDays: switchDay,
     receipts: new Map(reports.map((r) => [`${r.branchId}|${r.date}`, r.receipts])),
     isClosed: (branchId, date) => closedBy.get(branchId)?.has(date) ?? false,
   });

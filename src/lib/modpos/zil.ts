@@ -1,6 +1,7 @@
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { branchDayKey } from "@/lib/cash-report";
-import { branchSwitchDay, isAsilposDay } from "@/lib/asilpos/switch";
+import { isAsilposDay } from "@/lib/asilpos/switch";
+import { switchDayFor, type SwitchDays } from "@/lib/pos/tills";
 import { dayMonthTR, longDateTR } from "@/lib/reminders";
 
 import { modposDiffs, modposDiffText, type ModposDiff, type ModposSavedFields } from "./compare";
@@ -55,19 +56,18 @@ export function modposPairKey(branchId: string | null | undefined, day: string):
  * Föyünden farklı yazılan raporlar, raporların sırasıyla. AsilPOS günü (geçiş gününden itibaren), föyü olmayan, satışsız
  * (foyZ null) ya da kasası hâlâ açık föyün günü atlanır (docs/MODPOS-API.md › Nerede görünür, karşılaştırma kuralları).
  * Rapor yalnız **kendi şubesinin** föyüyle karşılaştırılır (şube, gün): "Tümü" seçiliyken Marina'nın raporu Tuzla'nın
- * föyüyle karşılaştırılmaz (docs/MODPOS-API.md › Şubeler). Geçiş günü yalnız AsilPOS'un şubesinin kasasınındır
- * (branchSwitchDay): ModPOS'ta kalan şubenin raporu geçiş gününden sonra da föyüyle karşılaştırılır.
+ * föyüyle karşılaştırılmaz (docs/MODPOS-API.md › Şubeler). Geçiş günü şubenin kendi kasasınındır (çok şube; switchDayFor):
+ * ModPOS'ta kalan şubenin raporu föyüyle karşılaştırılmaya devam eder, AsilPOS'a geçen şubeninki geçiş gününden sonra hiç.
  */
 export function modposMismatches<R extends ModposSavedFields & { date: string; branchId?: string | null }>(
   reports: readonly R[],
   sheets: readonly ModposSheetLite[],
-  switchDay: string | null,
-  asilposBranch?: string,
+  switchDays: SwitchDays,
 ): ModposMismatch<R>[] {
   const byDay = new Map(sheets.map((x) => [modposPairKey(x.branchId, x.day), x]));
   const out: ModposMismatch<R>[] = [];
   for (const report of reports) {
-    if (isAsilposDay(report.date, branchSwitchDay(switchDay, report.branchId, asilposBranch))) continue;
+    if (isAsilposDay(report.date, switchDayFor(switchDays, report.branchId))) continue;
     const sheet = byDay.get(modposPairKey(report.branchId, report.date));
     const z = sheet ? sheetZ(sheet) : null;
     if (!sheet || !z || z.durum === "ACIK") continue;
@@ -81,10 +81,9 @@ export function modposMismatches<R extends ModposSavedFields & { date: string; b
 export function modposMismatchDates(
   reports: readonly (ModposSavedFields & { date: string; branchId?: string | null })[],
   sheets: readonly ModposSheetLite[],
-  switchDay: string | null,
-  asilposBranch?: string,
+  switchDays: SwitchDays,
 ): Set<string> {
-  return new Set(modposMismatches(reports, sheets, switchDay, asilposBranch).map((m) => m.report.date));
+  return new Set(modposMismatches(reports, sheets, switchDays).map((m) => m.report.date));
 }
 
 /**
@@ -94,10 +93,9 @@ export function modposMismatchDates(
 export function modposMismatchBranchDays(
   reports: readonly (ModposSavedFields & { date: string; branchId?: string | null })[],
   sheets: readonly ModposSheetLite[],
-  switchDay: string | null,
-  asilposBranch?: string,
+  switchDays: SwitchDays,
 ): Set<string> {
-  return new Set(modposMismatches(reports, sheets, switchDay, asilposBranch).map((m) => branchDayKey(m.report.branchId ?? DEFAULT_BRANCH_ID, m.report.date)));
+  return new Set(modposMismatches(reports, sheets, switchDays).map((m) => branchDayKey(m.report.branchId ?? DEFAULT_BRANCH_ID, m.report.date)));
 }
 
 /**

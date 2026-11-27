@@ -37,7 +37,7 @@ import { okcReadOfReport } from "@/server/data/cash-photos";
 import { previousOkc } from "@/server/data/cash-reports";
 import { currentTillBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
-import { asilposBranchId, asilposSwitchDay } from "@/server/asilpos/branch";
+import { switchDayOf } from "@/server/pos/tills";
 import { assertNotHeld, supersede } from "@/server/staff-requests/core";
 import { sendableRecipients } from "@/server/notify/recipients";
 import { getPhoto, keepPhoto, linkable, releasePhoto } from "@/server/storage/photos";
@@ -188,13 +188,11 @@ export async function lockCashReport(tx: CashTx, date: string, branchId: string)
 }
 
 /**
- * Gün AsilPOS'un şubesinin AsilPOS günü mü (geçiş gününden itibaren; AsilPOS'un şubesi kütükten, asilposBranchId; onun geçiş
- * günü ayarın kendisidir). Personele kör kasa günüdür (src/lib/asilpos/kor-kasa.ts): yazım, düzeltme önerisi ve WhatsApp
- * metni reddedilir
+ * Gün şubenin kendi kasasının AsilPOS günü mü (çok şube: şubenin kasası AsilPOS ve gün şubenin geçiş gününden önce değil).
+ * Personele kör kasa günüdür (src/lib/asilpos/kor-kasa.ts): yazım, düzeltme önerisi ve WhatsApp metni reddedilir
  */
 export async function isAsilposTillDay(db: Pick<DB, "select"> | CashTx, date: string, branchId: string): Promise<boolean> {
-  if (branchId !== (await asilposBranchId(db))) return false;
-  return isAsilposDay(date, await asilposSwitchDay(db));
+  return isAsilposDay(date, await switchDayOf(branchId, db));
 }
 
 /**

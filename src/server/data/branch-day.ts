@@ -13,7 +13,8 @@ import { staffBranchLock, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { modposFallbackSheets, modposTillRow } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
-import { loadAsilposSwitchDay } from "@/server/asilpos/status";
+import { earliestSwitchDay, isCountedPosDay } from "@/lib/pos/tills";
+import { loadSwitchDays } from "@/server/pos/tills";
 
 /**
  * Bugün › "Şubelerde gün" kartının verisi (src/lib/branch-day.ts, docs/BUGUN.md). Yalnız yönetici: tutar, ödeme ve kasa
@@ -28,7 +29,9 @@ export async function loadBranchDay(now: Date = new Date()): Promise<BranchDaySu
   const db = getDb();
   const today = businessDate(now);
   const from = addDays(today, -8);
-  const [all, switchDay, lock] = await Promise.all([listBranches(db), loadAsilposSwitchDay(db), staffBranchLock()]);
+  const [all, switchDays, lock] = await Promise.all([listBranches(db), loadSwitchDays(db), staffBranchLock()]);
+  // Çok şube (R1): her kasanın günü kendi geçiş gününden itibaren; kasası ModPOS olan şubenin deneme günü ciro sayılmaz
+  const switchDay = earliestSwitchDay(switchDays);
   // Müdür yalnız kendi şubesinin satırını görür (docs/ROLLER.md); kayıtlar aşağıda şube kimliğiyle okunur, kart yalnız
   // bu şubelerin satırını kurar
   const branches = all.filter((b) => b.active && b.kind === "fiziksel" && (lock === null || b.id === lock));
@@ -57,7 +60,8 @@ export async function loadBranchDay(now: Date = new Date()): Promise<BranchDaySu
       : db
           .select({ branchId: s.posDayReports.branchId, date: s.posDayReports.date, z: s.posDayReports.z })
           .from(s.posDayReports)
-          .where(and(gte(s.posDayReports.date, asilposFrom), lte(s.posDayReports.date, today))),
+          .where(and(gte(s.posDayReports.date, asilposFrom), lte(s.posDayReports.date, today)))
+          .then((rows) => rows.filter((r) => isCountedPosDay(switchDays, r.branchId, r.date))),
     // Bütün şubelerin föyleri (kart seçili şubeden bağımsız); anahtar kapalıyken föy tablosu okunmaz
     withBranchScope(ALL_BRANCHES, () => modposFallbackSheets(db, from, today)),
   ]);

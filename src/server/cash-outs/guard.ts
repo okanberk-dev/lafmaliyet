@@ -3,12 +3,11 @@ import "server-only";
 import { staffCanReport } from "@/lib/cash-report";
 import { CASH_OUT_REQUEST_TEXT, cashOutNeedsApproval, requestDayAllowed, type CashOutOp } from "@/lib/cash-out-requests";
 import { ASILPOS_CASH_OUT_TEXT, staffAsilposEntryClosed } from "@/lib/asilpos/cash-moves";
-import { branchSwitchDay, isAsilposDay } from "@/lib/asilpos/switch";
+import { isAsilposDay } from "@/lib/asilpos/switch";
 import { currentTillBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { CARI_LOCKED_STAFF, cashOutPayment } from "@/server/cari/kasa";
 import { closedDayRefusal } from "@/server/closed-days";
-import { asilposSwitchDayOf } from "@/server/data/asilpos-ikram";
-import { asilposBranchId } from "@/server/asilpos/branch";
+import { switchDayOf } from "@/server/pos/tills";
 import { staffDayOpen } from "@/server/photo-read/rules";
 import { UserError } from "@/server/user-error";
 
@@ -45,9 +44,10 @@ export async function staffCashOutGate(tx: CashOutTx, me: CashOutActor, target: 
   // kasa hareketlerinden gelir. Doğrudan ekleme, ekleme isteği ve satırı başka güne taşıma buradan geçer. Düzeltme ve fiş
   // (AsilPOS satırına fiş fotoğrafı, kategori) açık kalır; yönetici her zaman ekler
   if (target.op === "ekle" && !target.restore) {
-    const [till, switchDay, asilposBranch] = await Promise.all([currentTillBranch(), asilposSwitchDayOf(tx), asilposBranchId(tx)]);
-    const asilposDay = isAsilposDay(date, branchSwitchDay(switchDay, till, asilposBranch));
-    if (staffAsilposEntryClosed({ admin: false, branchId: till, asilposDay, asilposBranch })) throw new UserError(ASILPOS_CASH_OUT_TEXT.staffAdd);
+    // Kasanın şubesinin kendi AsilPOS günü (çok şube; kasası ModPOS olan şubede geçiş günü yok)
+    const till = await currentTillBranch();
+    const asilposDay = isAsilposDay(date, await switchDayOf(till, tx));
+    if (staffAsilposEntryClosed({ admin: false, asilposDay })) throw new UserError(ASILPOS_CASH_OUT_TEXT.staffAdd);
   }
   const [dayOpen, adminCategory, payment] = await Promise.all([
     // Satırın kasası: var olan satırda satırın şubesi, yeni satırda kasanın şubesi (yazım da oraya iner)

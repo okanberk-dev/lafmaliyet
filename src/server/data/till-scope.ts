@@ -5,12 +5,11 @@ import { and, eq, exists, gte, isNull, type SQL } from "drizzle-orm";
 import { ALL_BRANCHES, namedTill, tillBranches, type BranchRow } from "@/lib/branches";
 import { businessDate, DAY_TURN_HOUR } from "@/lib/cash-report";
 import { tillScope, type TillScope } from "@/lib/asilpos/kasa";
-import { branchSwitchDay, asilposBranchOf } from "@/lib/asilpos/switch";
+import { switchDayFor, type SwitchDays } from "@/lib/pos/tills";
 import { currentBranchScope, currentTillBranch } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
-import { asilposSwitchDayOf } from "@/server/data/asilpos-ikram";
 import { getDb, schema as s, type DB } from "@/server/db";
-import { asilposBranchId } from "@/server/asilpos/branch";
+import { loadSwitchDays } from "@/server/pos/tills";
 
 /**
  * Bir şubenin bugünkü kasası (şube kapsamı A3, 24 Kasım 2026): kasada bekleyen fiyat şube başına tutulur (pos_stale),
@@ -26,8 +25,8 @@ export interface BranchTill extends TillScope {
  * Şubenin kasası, geçiş günü verilmiş (saf; işlem içinden ve döngüde tek okuma için). `asilposBranch`: AsilPOS'un şubesi
  * (asilposBranchId); verilmezse `branches`'tan türetilir (asilposBranchOf; liste de yoksa geri düşüş değeri)
  */
-export function branchTill(switchDay: string | null, branchId: string, now: Date, branches: readonly BranchRow[] = [], asilposBranch: string = asilposBranchOf(branches)): BranchTill {
-  return { ...tillScope(businessDate(now), branchSwitchDay(switchDay, branchId, asilposBranch)), branchId, name: namedTill(branches, branchId)?.name ?? null };
+export function branchTill(switchDays: SwitchDays, branchId: string, now: Date, branches: readonly BranchRow[] = []): BranchTill {
+  return { ...tillScope(businessDate(now), switchDayFor(switchDays, branchId)), branchId, name: namedTill(branches, branchId)?.name ?? null };
 }
 
 /**
@@ -38,8 +37,8 @@ export function branchTill(switchDay: string | null, branchId: string, now: Date
  * ModPOS'ta kalan şubede (Tuzla) liste ModPOS'a göredir (branchSwitchDay; denetim 21 Kasım #5)
  */
 export async function loadTillScope(db: Pick<DB, "select"> = getDb(), now: Date = new Date(), branchId?: string): Promise<BranchTill> {
-  const [switchDay, sube, asilposBranch] = await Promise.all([asilposSwitchDayOf(db), branchId ?? currentTillBranch(), asilposBranchId(db)]);
-  return branchTill(switchDay, sube, now, [], asilposBranch);
+  const [switchDays, sube] = await Promise.all([loadSwitchDays(db), branchId ?? currentTillBranch()]);
+  return branchTill(switchDays, sube, now, []);
 }
 
 /**
@@ -51,8 +50,8 @@ export async function loadTillScopes(db: Pick<DB, "select"> = getDb(), now: Date
   const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
   const tills = tillBranches(branches);
   if (scope !== ALL_BRANCHES || tills.length < 2) return [await loadTillScope(db, now)];
-  const switchDay = await asilposSwitchDayOf(db);
-  return tills.map((b) => branchTill(switchDay, b.id, now, branches));
+  const switchDays = await loadSwitchDays(db);
+  return tills.map((b) => branchTill(switchDays, b.id, now, branches));
 }
 
 /** Ürünün bu şubenin kasasında bekleyen fiyatı var (pos_stale); kasa listesinin okuyucuları ve sayıları */

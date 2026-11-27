@@ -18,7 +18,8 @@ import {
 import type { Role } from "@/lib/constants";
 import { posZSchema } from "@/lib/asilpos/day";
 import { blindReport, staffBlindDay } from "@/lib/asilpos/kor-kasa";
-import { branchSwitchDay, isAsilposDay } from "@/lib/asilpos/switch";
+import { isAsilposDay } from "@/lib/asilpos/switch";
+import { switchDayFor, type SwitchDays } from "@/lib/pos/tills";
 import { foyZ } from "@/lib/modpos/z";
 import { okcDayVat, type OkcPrev, type OkcRow, type OkcVatLine } from "@/lib/okc-z";
 import { addDays } from "@/lib/reminders";
@@ -26,7 +27,7 @@ import { emailErrorFor } from "@/lib/staff-errors";
 import { andWhere, currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
 import { putBranchSetting, resolveBranchSetting } from "@/server/branch-settings";
 import { getDb, schema as s } from "@/server/db";
-import { asilposBranchId, asilposSwitchDay } from "@/server/asilpos/branch";
+import { loadSwitchDays } from "@/server/pos/tills";
 import { modposFallbackBranches } from "@/server/modpos/fallback";
 import { loadModposSheets, type ModposSheet } from "@/server/modpos/store";
 
@@ -68,9 +69,9 @@ export async function loadCashSettingsView(branchId: string, db?: SettingsReader
 
 /**
  * Yazar; verilen alanların grubu yazılır (alıcılar ya da çalışanlar). Şube verilmezse eski kaydın sahipleri: alıcılar
- * varsayılan şubenin (öbürleri "aynı"ysa onlar da kullanır), çalışan listesi AsilPOS'un şubesinin (asilposBranchId); tek kasalı eski
- * çağrının anlamı. Alıcıları başka şubeninkini kullanan şubeye yazmaz (putBranchSetting). `tx`: çağıranın işlemi (işlem
- * geçmişi aynı işlemde), `by`: yazanın adı
+ * varsayılan şubenin (öbürleri "aynı"ysa onlar da kullanır). Çalışan listesi (AsilPOS gün sonunun kısa e-postası) yalnız
+ * şubesiyle yazılır (çok şube: her kasanın kendi listesi; şubesiz çağrı hata). Alıcıları başka şubeninkini kullanan şubeye
+ * yazmaz (putBranchSetting). `tx`: çağıranın işlemi (işlem geçmişi aynı işlemde), `by`: yazanın adı
  */
 export async function saveCashSettings(value: Partial<CashSettings>, branchId?: string, o: { tx?: SettingsTx; by?: string } = {}): Promise<void> {
   const by = o.by ?? "Sistem";
@@ -79,7 +80,8 @@ export async function saveCashSettings(value: Partial<CashSettings>, branchId?: 
       await putBranchSetting(t, CASH_REPORT_GROUP, branchId ?? DEFAULT_BRANCH_ID, { recipients: value.recipients, emailEnabled: value.emailEnabled, whatsapp: value.whatsapp }, by);
     }
     if (value.staffRecipients !== undefined || value.staffAmounts !== undefined) {
-      await putBranchSetting(t, CASH_STAFF_GROUP, branchId ?? (await asilposBranchId(t)), { staffRecipients: value.staffRecipients, staffAmounts: value.staffAmounts }, by);
+      if (!branchId) throw new Error("Çalışan listesi şubesiyle yazılır (AsilPOS kasası başına)");
+      await putBranchSetting(t, CASH_STAFF_GROUP, branchId, { staffRecipients: value.staffRecipients, staffAmounts: value.staffAmounts }, by);
     }
   };
   if (o.tx) await run(o.tx);
@@ -194,15 +196,15 @@ export function toCashDTO(r: Row, audience: CashAudience = "staff", viewer?: Rol
 }
 
 /**
- * Kör kasa (bulgu 0; docs/ASILPOS.md › Kör kasa): personele giden raporlardan AsilPOS'un şubesinin AsilPOS günlerinin sayım
+ * Kör kasa (bulgu 0; docs/ASILPOS.md › Kör kasa): personele giden raporlardan her şubenin kendi AsilPOS günlerinin sayım
  * rakamları çıkar (blindReport: açılış, sayılan, teslim, fark; notun açılış cümleleri). Yönetici olduğu gibi alır; Tuzla
  * (ModPOS) ve geçiş gününden önceki gün değişmez. Personele rapor gösteren her yükleyici bundan geçirir (Kasa sayfası,
  * Bugün)
  */
 export async function blindForStaff(reports: CashReportDTO[], role: CashAudience): Promise<CashReportDTO[]> {
   if (role === "admin" || !reports.length) return reports;
-  const [branch, switchDay] = await Promise.all([asilposBranchId(), asilposSwitchDay()]);
-  return reports.map((r) => (staffBlindDay({ admin: false, branchId: r.branchId, asilposDay: isAsilposDay(r.date, switchDay), asilposBranch: branch }) ? blindReport(r) : r));
+  const switchDays = await loadSwitchDays();
+  return reports.map((r) => (staffBlindDay({ admin: false, asilposDay: isAsilposDay(r.date, switchDayFor(switchDays, r.branchId)) }) ? blindReport(r) : r));
 }
 
 /**
@@ -433,18 +435,19 @@ function modposRunStarts(modpos: readonly TillRow[], reports: readonly TillRow[]
 }
 
 /**
- * AsilPOS'un yedek ay satırları (G6): geçiş gününden itibaren gelen gün sonlarının Z'si, [from, to] içinde. Geçiş günü
- * boşken boş (deneme günleri hiçbir hesaba girmez). Raporu olan günü süzmez: tillRows ve tillMonths raporu öne alır
+ * AsilPOS'un yedek ay satırları (G6): her kasanın kendi geçiş gününden itibaren gelen gün sonlarının Z'si, [from, to]
+ * içinde (çok şube, R1: kasası ModPOS olan şubenin deneme günü ay cirosu olmaz, kasa raporu ve föyüyle çift sayılmaz).
+ * Geçiş günü boşken boş (deneme günleri hiçbir hesaba girmez). Raporu olan günü süzmez: tillRows ve tillMonths raporu öne alır
  */
 export async function asilposTillRows(db: Db | Tx = getDb(), from?: string, to?: string): Promise<TillRow[]> {
-  const switchDay = await asilposSwitchDay(db);
-  if (switchDay === null || (to !== undefined && to < switchDay)) return [];
-  const start = from !== undefined && from > switchDay ? from : switchDay;
+  const tills = Object.entries(await loadSwitchDays(db)).filter((e): e is [string, string] => e[1] !== null && (to === undefined || e[1] <= to));
+  if (!tills.length) return [];
+  const perTill = or(...tills.map(([id, sd]) => and(eq(s.posDayReports.branchId, id), gte(s.posDayReports.date, from !== undefined && from > sd ? from : sd))));
   const rows = await db
     .select({ date: s.posDayReports.date, branchId: s.posDayReports.branchId, z: s.posDayReports.z })
     .from(s.posDayReports)
-    .where(and(gte(s.posDayReports.date, start), to !== undefined ? lte(s.posDayReports.date, to) : undefined, await currentBranchWhere(s.posDayReports.branchId)))
-    .orderBy(asc(s.posDayReports.date));
+    .where(and(perTill, to !== undefined ? lte(s.posDayReports.date, to) : undefined, await currentBranchWhere(s.posDayReports.branchId)))
+    .orderBy(asc(s.posDayReports.date), asc(s.posDayReports.branchId));
   return rows.flatMap((r) => {
     const z = posZSchema.safeParse(r.z);
     if (!z.success) return [];
@@ -475,15 +478,14 @@ const MODPOS_LAST_DAY = "9999-12-31";
 /**
  * Ay rakamına yedeğin kapsamı (docs/MODPOS-API.md › Ay rakamına yedek): anahtar hiçbir şubede açık değilse null (föy
  * tablosu hiç okunmaz); açıksa anahtarı açık şubeler (şube ayarı `modpos`; öbür şubeler "aynı" başlar, bugünkü tek
- * anahtar) ve AsilPOS'a geçiş günü (boşsa null: föyün her günü sayılır). Geçiş gününden itibaren AsilPOS'un şubesinin
- * kasası AsilPOS'tur, o şubenin föyü aya girmez (docs/MODPOS-API.md › Nerede görünür); ModPOS'ta kalan şubenin föyü
- * girmeye devam eder (branchSwitchDay; denetim 21 Kasım #5)
+ * anahtar) ve kasa başına AsilPOS'a geçiş günü (boşsa föyün her günü sayılır). Bir şubenin geçiş gününden itibaren kasası
+ * AsilPOS'tur, o şubenin föyü aya girmez (docs/MODPOS-API.md › Nerede görünür; Marina'nın 22 Kasım'dan önceki föyü
+ * sayılmaya devam eder, R4); ModPOS'ta kalan şubenin föyü girmeye devam eder (switchDayFor; denetim 21 Kasım #5)
  */
-async function modposFallbackSwitch(db: Db | Tx): Promise<{ switchDay: string | null; asilposBranch: string; branches: Set<string> } | null> {
+async function modposFallbackSwitch(db: Db | Tx): Promise<{ switchDays: SwitchDays; branches: Set<string> } | null> {
   const branches = await modposFallbackBranches(db);
   if (!branches.size) return null;
-  const [switchDay, asilposBranch] = await Promise.all([asilposSwitchDay(db), asilposBranchId(db)]);
-  return { switchDay, asilposBranch, branches };
+  return { switchDays: await loadSwitchDays(db), branches };
 }
 
 /**
@@ -539,7 +541,7 @@ export async function modposFallbackSheets(db: Db | Tx = getDb(), from?: string,
   const start = from ?? MODPOS_FIRST_DAY;
   if (upto < start) return [];
   const sheets = await loadModposSheets(start, upto, db);
-  return sheets.filter((sh) => fallback.branches.has(sh.branchId) && !isAsilposDay(sh.day, branchSwitchDay(fallback.switchDay, sh.branchId, fallback.asilposBranch)));
+  return sheets.filter((sh) => fallback.branches.has(sh.branchId) && !isAsilposDay(sh.day, switchDayFor(fallback.switchDays, sh.branchId)));
 }
 
 /**

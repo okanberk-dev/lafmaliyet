@@ -21,7 +21,8 @@ import { loadToday } from "@/server/data/today";
 import { safe } from "@/server/data/today-safe";
 import { loadDueReminders } from "@/server/data/user-reminders";
 import { getDb, schema as s } from "@/server/db";
-import { loadAsilposCard, loadAsilposSwitchDay } from "@/server/asilpos/status";
+import { loadAsilposCard } from "@/server/asilpos/status";
+import { loadPosTills, loadSwitchDays } from "@/server/pos/tills";
 import { loadShiftWeek, shiftsOn, todayShifts } from "@/server/vardiya/store";
 
 /*
@@ -49,7 +50,7 @@ export const assistantReads: ReadToolDeps = {
     const [scope, rows] = await Promise.all([currentBranchScope(), listBranches()]);
     return { scope, rows };
   },
-  switchDay: () => loadAsilposSwitchDay(),
+  switchDays: () => loadSwitchDays(),
   dayEnd: async (date, branchId) => {
     const [end, ikram] = await Promise.all([loadAsilposDayEnd(date, branchId), loadDayAsilposIkram(date, getDb(), branchId)]);
     return { end, ikram: ikramRead(ikram) };
@@ -67,7 +68,11 @@ export const assistantReads: ReadToolDeps = {
       return { date: r.date, name: p ? productLabel(p) : r.posName, matched: Boolean(p) || r.isService, qty: r.qty, revenue: r.revenue, gross: r.gross, isService: r.isService };
     });
   },
-  asilposCard: () => loadAsilposCard(),
+  // Kasanın bölümü (çok şube): seçili şubenin kasası, "Tümü"de ya da kasası ModPOS olan şubede ilk açık kasa
+  asilposCard: async () => {
+    const [scope, { active, ids }] = await Promise.all([currentBranchScope(), loadPosTills()]);
+    return loadAsilposCard(undefined, active.includes(scope) ? scope : (active[0] ?? ids[0]));
+  },
   menu: async () => {
     // Seçimin kasaları (şube kapsamı A3): tek şubede onunki, "Tümü"de birden çok kasa açıkken toplam ve kasa başına
     const [soldOut, tills] = await Promise.all([loadSoldOut(), posPendingSummaries()]);

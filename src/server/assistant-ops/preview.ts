@@ -33,7 +33,7 @@ import {
 import { loadModel } from "@/server/data/dataset";
 import { cardResolver, paymentCredits } from "@/server/cari/settle";
 import { activeProductsUsing } from "@/server/data/ingredient-usage";
-import { asilposSwitchDayOf } from "@/server/data/asilpos-ikram";
+import { asilposSwitchDaysOf } from "@/server/data/asilpos-ikram";
 import { branchTill } from "@/server/data/till-scope";
 import { soldOutNoteFor } from "@/server/data/menu-status";
 import { getDb, schema as s } from "@/server/db";
@@ -656,8 +656,8 @@ const productPriceChange: OpPreview<"urun_fiyati_degistir", z.output<typeof prod
     // Menü ortak, kasa şube başına (şube kapsamı A3): değişiklik her açık kasanın Kasaya işle listesine düşer. Kasaların
     // bugünkü türü (Fiyatlar › Kasaya işle ile aynı kural): AsilPOS gününde bağlı olmayan ürün de listeye düşer, AsilPOS'ta
     // yerel ürünse fiyat orada elle değişir
-    const switchDay = await asilposSwitchDayOf(db());
-    const tills = tillBranches(ctx.branches).map((b) => branchTill(switchDay, b.id, ctx.now, ctx.branches));
+    const switchDays = await asilposSwitchDaysOf(db());
+    const tills = tillBranches(ctx.branches).map((b) => branchTill(switchDays, b.id, ctx.now, ctx.branches));
     const asilposTill = tills.some((t) => t.asilpos);
     const modposTill = !tills.length || tills.some((t) => !t.asilpos);
     const lines: OpCardLine[] = [

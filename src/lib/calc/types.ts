@@ -7,6 +7,7 @@ import type { TaxDoc, Withholding } from "../tax/rules";
 
 import type { AsilposIkramData } from "../asilpos/ikram";
 import type { AsilposWorked } from "../asilpos/personel";
+import type { PosFroms, SwitchDays } from "../pos/tills";
 
 import type { PurchaseLot } from "./fifo";
 
@@ -702,12 +703,20 @@ export interface Dataset {
    * AsilPOS'a geçiş günü seçiliyse satış kaynaklarının özeti (src/lib/asilpos/sales.ts): geçiş ayından itibaren her ayın
    * ModPOS listesi ve AsilPOS günleri. Yoksa (varsayılan) kasa ModPOS'tur, satışlar yalnız sales_lines'tan
    */
-  asilposSales?: { switchDay: string; countFrom: string; months: AsilposSalesMonth[] };
+  asilposSales?: {
+    switchDay: string;
+    /** Kasaların en erken sayılma günü (metinler) */
+    countFrom: string;
+    /** Kasa başına AsilPOS satışlarının sayıldığı ilk gün (çok şube; para hesapları bunu okur: listDiscountOf) */
+    froms: PosFroms;
+    months: AsilposSalesMonth[];
+  };
   /**
-   * AsilPOS'un şubesi (kütükten türetilir: kasa kaynağı AsilPOS olan şube, yoksa Marina; src/lib/asilpos/switch.ts
-   * asilposBranchOf). Geçiş günü yalnız bu şubenin kasasınındır; okunmamışsa (test verisi) geri düşüş değeri
+   * AsilPOS kasaları (çok şube; kütükten: kasa kaynağı AsilPOS olan fiziksel şubeler, src/lib/pos/tills.ts) ve geçiş
+   * günleri. "Tümü"de her kasa kendi geçiş günüyle; okunmamışsa (test verisi) yok
    */
-  asilposBranch?: string;
+  posTills?: readonly string[];
+  posSwitchDays?: SwitchDays;
   /**
    * AsilPOS'a geçiş günü seçiliyse o günden itibaren AsilPOS'un ikramları ve gün sonu gelen günler
    * (src/lib/asilpos/ikram.ts): ikram satırları kayıtlı tüketime girer, o günlerde paneldeki ürün ikramı sayılmaz. Yoksa

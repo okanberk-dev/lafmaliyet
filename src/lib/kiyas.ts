@@ -27,7 +27,8 @@
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import type { TillRow } from "@/lib/cash-month";
 import { dayRevenue } from "@/lib/cash-revenue";
-import { branchSwitchDay, isAsilposDay } from "@/lib/asilpos/switch";
+import { isAsilposDay } from "@/lib/asilpos/switch";
+import { switchDayFor, type SwitchDays } from "@/lib/pos/tills";
 import { addDays, monthTitleTR, shiftMonth } from "@/lib/reminders";
 
 export interface KiyasBranch {
@@ -44,10 +45,8 @@ export interface KiyasInput {
   branches: readonly KiyasBranch[];
   /** Bugünün iş günü (05:00 kuralı, src/lib/cash-report.ts businessDate) */
   today: string;
-  /** AsilPOS'a geçiş günü (ayar); AsilPOS satırı yalnız şubesinin geçiş gününden itibaren sayılır */
-  switchDay: string | null;
-  /** AsilPOS'un şubesi (kütükten türetilmiş, asilposBranchOf); verilmezse geri düşüş değeri */
-  asilposBranch?: string;
+  /** Kasa başına AsilPOS'a geçiş günü (çok şube); AsilPOS satırı yalnız şubesinin geçiş gününden itibaren sayılır */
+  switchDays: SwitchDays;
   /** Kasa raporlarının fiş sayısı, `şube|gün` anahtarıyla (tillRows rapor satırına fiş koymaz) */
   receipts?: ReadonlyMap<string, number | null>;
   /** Kapalı işaretli gün mü (şubenin kendi ya da işletme geneli işareti) */
@@ -205,7 +204,7 @@ export function cellReader(input: KiyasInput): (branch: KiyasBranch, date: strin
   for (const r of input.rows) {
     const b = r.branchId ?? DEFAULT_BRANCH_ID;
     // Geçiş gününden önceki AsilPOS gün sonu deneme günüdür: hiçbir hesaba girmez (tillRows zaten süzer; burada da)
-    if (r.source === "asilpos" && !isAsilposDay(r.date, branchSwitchDay(input.switchDay, b, input.asilposBranch))) continue;
+    if (r.source === "asilpos" && !isAsilposDay(r.date, switchDayFor(input.switchDays, b))) continue;
     const k = key(b, r.date);
     const had = byKey.get(k);
     if (!had || rank(r) < rank(had)) byKey.set(k, r);
