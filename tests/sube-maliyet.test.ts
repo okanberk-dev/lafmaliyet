@@ -117,7 +117,8 @@ test("veri yükleyici: şube süzgeci her tabloda, giderde işletme geneli de; o
   }
   assert.match(d, /branchWhereWithShared\(s\.expenseEntries\.branchId, scope\)/);
   // Sabit gider: şubenin ve işletme genelinin kalemleri (şubesi boş)
-  assert.match(d, /f\.branchId === null \|\| f\.branchId === branch\.id/);
+  // İşletme geneli kalem şubede de gelir; İşletme geneli giderler "Yalnız not" kipinde gelmez (şube ayrımı parça 6)
+  assert.match(d, /branch === null \|\| \(f\.branchId === null \? !sharedHidden : f\.branchId === branch\.id\)/);
   assert.match(d, /scope === ALL_BRANCHES \|\| branch\?\.kind === "online" \? loadSiteSales\(\) : Promise\.resolve\(\[\]\)/);
   assert.match(d, /branchView: branch \? \{ id: branch\.id, name: branch\.name, kind: branch\.kind \} : null/);
   assert.match(d, /opts\.scope === undefined \? readDataset\(\) : withBranchScope\(opts\.scope, readDataset\)/);

@@ -38,6 +38,7 @@ export function SoldOutCard({
   serverNow,
   branches = [],
   lockedStaff = false,
+  siteWide = null,
 }: {
   role: Role;
   entries: SoldOutEntry[];
@@ -46,6 +47,8 @@ export function SoldOutCard({
   branches?: string[];
   /** Şubesine kilitli personel ve birden çok şube açık: Tükendi önce onay ister */
   lockedStaff?: boolean;
+  /** Tek şube seçiliyken "Bütün şubeler" rozeti (site şubeyi göndermiyor; şube ayrımı parça 6, siteWideBadge) */
+  siteWide?: string | null;
 }) {
   const admin = role === "admin";
   const allText = soldOutAllBranchesText(branches);
@@ -139,6 +142,7 @@ export function SoldOutCard({
             <h2 className="flex items-center gap-2 text-base leading-6 font-semibold tracking-tight text-ink">
               Tükenenler
               {onCard.length ? <Badge tone="amber">{num(onCard.length)}</Badge> : null}
+              {siteWide ? <Badge tone="gray">{siteWide}</Badge> : null}
             </h2>
             {onCard.length ? null : <p className="text-[13px] leading-5 text-ink-mute">Biten ürün yok.</p>}
           </div>

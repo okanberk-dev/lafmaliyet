@@ -57,9 +57,10 @@ test("ModPOS föyünden sayılan gün çizgide ve satırda: Genel bakış'ın g�
     ],
   );
   assert.equal(s.missing, 0);
-  // Yükleyici föyü ay rakamının kuralıyla okur (anahtar kapalıyken okunmaz; bütün şubeler)
+  // Yükleyici föyü ay rakamının kuralıyla okur (anahtar kapalıyken okunmaz); Şubeleri yan yana alanının kapsamıyla (şube
+  // ayrımı parça 6: "Yan yana" kipinde ve "Tümü"de bütün şubeler, "Yalnız seçili şube" kipinde seçim)
   const loader = readFileSync(join(process.cwd(), "src/server/data/branch-day.ts"), "utf8");
-  assert.match(loader, /withBranchScope\(ALL_BRANCHES, \(\) => modposFallbackSheets\(db, from, today\)\)/);
+  assert.match(loader, /withBranchScope\(compareScope, \(\) => modposFallbackSheets\(db, from, today\)\)/);
   assert.match(loader, /const row = modposTillRow\(sh\);/);
   assert.match(readFileSync(join(process.cwd(), "src/app/panel/bugun/today-branches.tsx"), "utf8"), /row\.source === "modpos" \? "ModPOS API'den"/);
 });

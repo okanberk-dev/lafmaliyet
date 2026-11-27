@@ -156,6 +156,10 @@ geneli kipinde bugünkü gibi. **Yalnız şube** kipinde eşleşme aynıdır, g�
   oranı görünmez.
 - Elle eşleştirme penceresi firmanın havuzuyla çalışır (eylem `loadRecon()`'u kapsamsız çağırır).
 
+Şube ayrımı parça 6 ile bitti (27 Kasım 2026): ekstrenin kendisi ve bankaya gelen POS parası Hesabım'daki **Her zaman
+firma geneli** listesindedir (firmanın hesabı ve parası; kayıtta `vergi.beyan` gibi `yalniz-firma`). Kalan sınır: POS
+parası terminal → şube eşlemesi gelene kadar şubeye ayrılmaz; ekstre dışa aktarıma girmez (Dışa aktar'da sayfası yok).
+
 ## Şema
 
 Migration `0091_mutabakat` (entegrasyonda numara yeniden üretilebilir):

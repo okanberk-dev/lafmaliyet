@@ -17,7 +17,7 @@ Dalga 2 (Şube karşılaştırma) ve Dalga 3'ün üç maddesi (İşçilik / ciro
 |---|---|
 | Kim görür | Yalnız yönetici (`requireAdmin`; `src/lib/roles.ts`'te personel yolu değil, `tests/roller.test.ts`). Personelin ağacında grup yok |
 | Menü | Kenar çubuğunda **Raporlar** grubu (Kâr & ödemeler'in ardından, Vergi'den önce); komut paletinde aynı sırada. Sekmeler gruptan türer (`SECTION_TABS.raporlar`): Şubeler · İşçilik · Kaçak · Kayıp önleme (sekme yalnız kısaltır) |
-| Şube seçimi | Şube karşılaştırma ve İşçilik / ciro soldaki seçimi **süzmez**: her açık fiziksel şube kendi görünümüyle okunur (Gelir-gider'de o şube seçiliyken görünenler); şube seçiliyken ekran bunu söyler (`companyWideNote("raporlar")`; ayarı şube ayrımının 6. parçasında, "Şubeleri yan yana"). **Kayıp önleme** 27 Kasım 2026'dan beri seçimle okur (şube ayrımı, [SUBE.md](SUBE.md#şube-ayrımı-27-kasım-2026)): "Tümü"de açık fiziksel şubeler, tek şube seçiliyken yalnız o şube, online kanalda "Bu kanalın kasası ve stoğu yok". **Kaçak raporu** Marina'nındır: Marina ya da "Tümü" seçiliyken; başka şube seçiliyken "Bu şube için tahmini stok yok" |
+| Şube seçimi | Şube karşılaştırma, İşçilik / ciro ve Bugün'ün "Şubelerde gün" kartı **Şubeleri yan yana** alanının kipiyle (şube ayrımı parça 6, 27 Kasım 2026; [SUBE.md](SUBE.md#alanlar-şubeleri-yan-yana-i̇şletme-geneli-giderler-dışa-aktarım-parça-6)): "Tümü"de ve **Yan yana** kipinde her açık fiziksel şube kendi görünümüyle (Gelir-gider'de o şube seçiliyken görünenler), **Yalnız seçili şube** kipinde (yöneticinin varsayılanı) yalnız seçili şube; kasa satırları ve raporlar alanın kapsamıyla (`areaScope("karsilastirma")`, `compareBranchesIn`). Ekranın çipi kipi gösterir ve değiştirir ("Marina görünümü · Şubeleri yan yana göster"); online kanal seçiliyken "Yalnız seçili şube" kipinde "kanalın kasası yok". Müdür hep kendi şubesini görür (İşçilik / ciro, Bugün). **Kayıp önleme** 27 Kasım 2026'dan beri seçimle okur (şube ayrımı, [SUBE.md](SUBE.md#şube-ayrımı-27-kasım-2026)): "Tümü"de açık fiziksel şubeler, tek şube seçiliyken yalnız o şube, online kanalda "Bu kanalın kasası ve stoğu yok". **Kaçak raporu** Marina'nındır: Marina ya da "Tümü" seçiliyken; başka şube seçiliyken "Bu şube için tahmini stok yok" |
 | Dönem | `?ay=YYYY-MM` (seçilen son ay; bu aydan sonrası bu aya çekilir), Şube karşılaştırma ve Kayıp önleme'de `?sure=1|3|6|12` (ay; varsayılan 3). `?sube=` kullanılmaz: o, seçicinin bağlantı parametresidir |
 | Süren ay | Rakamlar bugüne kadar (iş günü, 05:00 kuralı); giderler ve personel Gelir-gider gibi ayın geçen günleriyle |
 | Bilinmeyen | Girilmemiş ciro, fiş, ödenmez, indirim, iptal "—" ya da "veri yok"; toplamda sıfır sayılmaz, orana girmez |
@@ -141,7 +141,9 @@ değişiklik, sahibin onayını bekler). Gelirse üçüncü bölüm doğrudan ki
 
 ## Kararlar (26 Kasım 2026, tutucu varsayılan; geri alınabilir)
 
-- Raporlar seçiciden bağımsız: şubeler hep yan yana. Seçiciyle süzmek isteniyorsa sayfa şubeyi okuyabilir.
+- Raporlar seçiciden bağımsızdı (şubeler hep yan yana); 27 Kasım 2026'dan beri kişinin Şube görünümüyle (sahibin isteği:
+  "bir şube seçince sadece o şubeye ait bilgiler çıksın"): varsayılan yalnız seçili şube, yan yana görmek isteyen çipten ya
+  da Hesabım › Şube görünümü › Şubeleri yan yana'dan "Yan yana"yı seçer.
 - İşçilik günlüğe takvim günüyle bölünür (açık güne değil): maaş kapalı günde de işler. Giderlerdeki maaş ödemeleri
   kullanılmaz.
 - Kaçak TL'si ay sonu birim maliyetiyle (FIFO katmanı değil): Stok sayımı'nın yeni miktar için kullandığı fiyat.

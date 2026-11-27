@@ -227,7 +227,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const month = resolveMonth(sp.ay, model);
   const months = availableMonths(model);
   const d = dashboard(model, month);
-  const branchNote = model.ds.branchView ? branchViewNote(model.ds.branchView) : null;
+  const branchNote = model.ds.branchView ? branchViewNote(model.ds.branchView, { sharedHidden: Boolean(model.ds.sharedCostsHidden) }) : null;
   // "Bu ayın işleri" kartı eşleşmeyen POS ürünlerini ve ödenmemiş faturaları zaten gösterir: uyarılarda tekrarlanmaz
   // (bildirimlerde alerts() olduğu gibi kalır)
   // Hammadde zammı yüzünden fiyatı hedefin altına düşen ürünler (Ürünler sayfasındaki zam bölümüne götürür) ve 6
@@ -645,7 +645,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
               // Toplam paranteze alınır: (A + B − C) ÷ oran ÷ gün (dökümle aynı)
               info={`Zarar etmemek için gereken günlük ciro (KDV dahil): ${d.breakEven.expensesTotal || d.onlineCover ? "(" : ""}standart aylık sabit gider ${tl(d.fixedStandardTotal)}${
                 d.breakEven.expensesTotal ? ` + her ay girilen harcamalar ${tl(d.breakEven.expensesTotal)}` : ""
-              }${d.onlineCover ? ` − ${monthLabel(d.onlineCover.month)} laffogato.net online satışının brüt kârı ${tl(d.onlineCover.grossProfit)}` : ""}${d.breakEven.expensesTotal || d.onlineCover ? ")" : ""} ÷ ${d.refMonth ? `${monthLabel(d.refMonth)} ` : ""}brüt kâr oranı (brüt kâr ÷ ciro, ${pct(d.grossRatio)}) ÷ ayda açık gün (${st.acikGun}, Şube ayarları).${d.breakEven.shared > 0 ? ` İşletme geneli sabit giderler (${tl(d.breakEven.shared)}) şubenin başabaşına girmez; Tümü'de bir kez sayılır.` : ""}`}
+              }${d.onlineCover ? ` − ${monthLabel(d.onlineCover.month)} laffogato.net online satışının brüt kârı ${tl(d.onlineCover.grossProfit)}` : ""}${d.breakEven.expensesTotal || d.onlineCover ? ")" : ""} ÷ ${d.refMonth ? `${monthLabel(d.refMonth)} ` : ""}brüt kâr oranı (brüt kâr ÷ ciro, ${pct(d.grossRatio)}) ÷ ayda açık gün (${st.acikGun}, Şube ayarları).${d.breakEven.sharedHidden ? " İşletme geneli sabit giderler şubenin başabaşına girmez (Tümü'de sayılır)." : d.breakEven.shared > 0 ? ` İşletme geneli sabit giderler (${tl(d.breakEven.shared)}) şubenin başabaşına girmez; Tümü'de bir kez sayılır.` : ""}`}
               value={<CountUp value={d.breakEvenDaily} />}
               sub={
                 showBreakEven ? (

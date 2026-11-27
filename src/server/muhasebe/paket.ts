@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, asc, eq, gte, lte, or } from "drizzle-orm";
 
-import { ALL_BRANCHES } from "@/lib/branches";
+import { ALL_BRANCHES, branchScopeLabel, type BranchScope } from "@/lib/branches";
 import { fixedMonthly } from "@/lib/calc/engine";
 import { accountDate, monthLastDay, monthTitle, periodStateOf } from "@/lib/closed-period";
 import { FIXED_PERIODS, FIXED_SECTIONS } from "@/lib/constants";
@@ -20,8 +20,10 @@ import {
   type PackageSettings,
 } from "@/lib/muhasebe/paket";
 import { logActivity } from "@/server/actions/log";
+import { branchWhere, branchWhereWithShared, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadClosedPeriods } from "@/server/closed-period";
+import { invoiceScopeWhere } from "@/server/invoice-scope";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { sendableRecipients } from "@/server/notify/recipients";
@@ -52,36 +54,51 @@ const PAYMENT: Record<string, string> = { nakit: "Nakit", kart: "Kart", havale: 
 const DOCUMENT: Record<string, string> = { fis: "Fiş", e_arsiv: "e-Arşiv", fatura: "Fatura", yok: "Belgesiz" };
 
 /**
- * Ayın paketi: bütün şubeler (muhasebe şirketindir). Faturalar ve harcamalar dönem kapanışının hesap gününe göre: belgesi
- * bu aydaki ve bu ayda sayılanlar; kapalı döneme düşüp karar bekleyen ve başka aya alınan kayıt notuyla listelenir,
- * toplama girmez (packageSummary). Kasa raporları ve yazarkasa KDV dökümü ayın günleri, sabit giderler modelin ayı.
+ * Ayın paketi: `scope` verilmezse bütün şubeler (muhasebe şirketindir; aylık e-posta hep böyle). Elle indirmede şube
+ * seçiliyken o şubenin paketi (şube ayrımı parça 6; `?sube=`): şubenin kasa raporları ve yazarkasa KDV dökümü, şubeye
+ * seçilmiş faturalar, şubenin harcamaları ve sabit giderleri; işletme geneli fatura, harcama ve sabit gider İşletme
+ * geneli giderler alanının kipiyle ("Tutarla göster"de "İşletme geneli" şube sütunuyla, "Yalnız not"ta yok). Faturalar
+ * ve harcamalar dönem kapanışının hesap gününe göre: belgesi bu aydaki ve bu ayda sayılanlar; kapalı döneme düşüp karar
+ * bekleyen ve başka aya alınan kayıt notuyla listelenir, toplama girmez (packageSummary). Kasa raporları ve yazarkasa KDV
+ * dökümü ayın günleri, sabit giderler modelin ayı.
  */
-export async function loadPackageData(month: string, now = new Date()): Promise<PackageData> {
+export async function loadPackageData(month: string, now = new Date(), scope: BranchScope = ALL_BRANCHES): Promise<PackageData> {
   const db = getDb();
   const from = `${month}-01`;
   const to = monthLastDay(month);
-  const [periods, branches, invoices, expenses, reports, model] = await Promise.all([
+  // Şubenin paketinde modelin veri kümesi İşletme geneli giderler alanının kipini taşır (sharedCostsHidden)
+  const model = await loadModel({ scope });
+  const sharedShown = scope === ALL_BRANCHES || !model.ds.sharedCostsHidden;
+  const [periods, branches, invoices, expenses, reports] = await Promise.all([
     loadClosedPeriods(db),
     listBranches(),
     db
       .select()
       .from(s.invoices)
-      .where(or(and(gte(s.invoices.date, from), lte(s.invoices.date, to)), and(gte(s.invoices.periodDate, from), lte(s.invoices.periodDate, to))))
+      .where(
+        and(
+          or(and(gte(s.invoices.date, from), lte(s.invoices.date, to)), and(gte(s.invoices.periodDate, from), lte(s.invoices.periodDate, to))),
+          sharedShown ? invoiceScopeWhere(scope) : branchWhere(s.invoices.branchId, scope),
+        ),
+      )
       .orderBy(asc(s.invoices.date), asc(s.invoices.id)),
     db
       .select({ e: s.expenseEntries, category: s.expenseCategories.name, docType: s.cashOuts.docType })
       .from(s.expenseEntries)
       .leftJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
       .leftJoin(s.cashOuts, eq(s.cashOuts.id, s.expenseEntries.cashOutId))
-      .where(or(and(gte(s.expenseEntries.date, from), lte(s.expenseEntries.date, to)), and(gte(s.expenseEntries.periodDate, from), lte(s.expenseEntries.periodDate, to))))
+      .where(
+        and(
+          or(and(gte(s.expenseEntries.date, from), lte(s.expenseEntries.date, to)), and(gte(s.expenseEntries.periodDate, from), lte(s.expenseEntries.periodDate, to))),
+          sharedShown ? branchWhereWithShared(s.expenseEntries.branchId, scope) : branchWhere(s.expenseEntries.branchId, scope),
+        ),
+      )
       .orderBy(asc(s.expenseEntries.date), asc(s.expenseEntries.id)),
     db
       .select()
       .from(s.cashReports)
-      .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to)))
+      .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to), branchWhere(s.cashReports.branchId, scope)))
       .orderBy(asc(s.cashReports.date), asc(s.cashReports.branchId)),
-    // şube-ayrımı: muhasebe.paket-eposta
-    loadModel({ scope: ALL_BRANCHES }),
   ]);
   const branchName = (id: string | null | undefined) => (id ? (branches.find((b) => b.id === id)?.name ?? id) : null);
   const closed = periods.months[month] ?? null;
@@ -100,7 +117,7 @@ export async function loadPackageData(month: string, now = new Date()): Promise<
   const fixedInMonth = model.fixedInMonth(month);
   return {
     month,
-    scope: "Bütün şubeler",
+    scope: scope === ALL_BRANCHES ? "Bütün şubeler" : branchScopeLabel(scope, branches),
     createdAt: now,
     closed: closed ? { at: closed.at, by: closed.by } : null,
     invoices: invoices.map((i) => {
@@ -170,11 +187,11 @@ export async function loadPackageData(month: string, now = new Date()): Promise<
   };
 }
 
-/** Ayın paketi .xlsx olarak (indirme ve e-postanın eki) */
-export async function packageFile(month: string, now = new Date()): Promise<{ data: PackageData; bytes: Uint8Array; filename: string }> {
-  const data = await loadPackageData(month, now);
+/** Ayın paketi .xlsx olarak (indirme ve e-postanın eki); `scope` şubenin paketi (elle indirme), verilmezse bütün şubeler */
+export async function packageFile(month: string, now = new Date(), scope: BranchScope = ALL_BRANCHES): Promise<{ data: PackageData; bytes: Uint8Array; filename: string }> {
+  const data = await loadPackageData(month, now, scope);
   const buffer = await buildPackageWorkbook(data).xlsx.writeBuffer();
-  return { data, bytes: new Uint8Array(buffer as ArrayBuffer), filename: packageFileName(month) };
+  return { data, bytes: new Uint8Array(buffer as ArrayBuffer), filename: packageFileName(month, scope === ALL_BRANCHES ? null : scope) };
 }
 
 export type PackageSendResult =
@@ -206,7 +223,9 @@ export async function sendAccountingPackage(
   const { to, dropped } = await sendableRecipients(db, settings.recipients);
   if (!to.length) return { status: "error", error: "Muhasebeci adreslerinin hepsi personel, müdür ya da pasif hesaba ait; e-posta gitmedi" };
   const now = new Date();
-  const [file, notify] = await Promise.all([packageFile(month, now), loadNotifySettings()]);
+  // Aylık e-posta firmanın (alıcı muhasebe şirketi): seçiciden ve kişinin şube görünümünden bağımsız, bütün şubeler
+  // şube-ayrımı: muhasebe.paket-eposta
+  const [file, notify] = await Promise.all([withBranchScope(ALL_BRANCHES, () => packageFile(month, now)), loadNotifySettings()]);
   const msg = renderPackageMail(file.data, packageSummary(file.data), { auto: o.trigger === "cron" });
   const res = await sendEmail(
     {

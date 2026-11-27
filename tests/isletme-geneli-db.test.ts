@@ -1,7 +1,8 @@
 // İşletme geneli payı (Faz 5, sahibin kararı 4), gerçek Postgres'te (src/server/data/dataset.ts loadModel): Marina ve Tuzla
 // görünümü işletme geneli giderleri (şubesi boş sabit gider, şubesi boş harcama, elle hücre, komisyon faturası) kârına
 // katmaz; bilgi satırı Tümü'nün saydığı tutarı (işletmenin günüyle) gösterir; Marina kârı + Tuzla kârı − işletme geneli
-// = Tümü kârı. Tuzla'nın şahsa kirası (resmi 100.000, stopaj 20.000) yalnız Tuzla'da.
+// = Tümü kârı. Tuzla'nın şahsa kirası (resmi 100.000, stopaj 20.000) yalnız Tuzla'da. Bilgi satırı İşletme geneli giderler
+// alanının "Tutarla göster" kipinde; yöneticinin varsayılanı "Yalnız not" (şube ayrımı parça 6): tutar yok, kâr aynı.
 //
 // ISLETME_TEST_DATABASE_URL verilmezse atlanır (npm run test:db onu TEST_DATABASE_URL'e bağlar). Test kendi geçici
 // veritabanını açar, migration'ları uygular, sonunda siler.
@@ -27,6 +28,7 @@ describe("işletme geneli payı: veritabanında", { skip: !SERVER_URL && "ISLETM
   let admin: postgres.Sql;
   let db: import("../src/server/db").DB;
   let dataset: typeof import("../src/server/data/dataset");
+  let scope: typeof import("../src/server/branch-scope");
   let kiraId = 0;
   let catId = 0;
 
@@ -55,6 +57,7 @@ describe("işletme geneli payı: veritabanında", { skip: !SERVER_URL && "ISLETM
     const me = async () => ({ ...a, role: "admin" as const });
     stub(require.resolve("../src/server/auth/dal"), { getCurrentUser: me, requireUser: me, requireAdmin: me });
     dataset = await import("../src/server/data/dataset");
+    scope = await import("../src/server/branch-scope");
 
     // Ekim 2026 (kapanmış ay): Tuzla 31 gün açık, Marina 18 gün (açılış ayı gibi); ikisinin elle yazılan ay satırı
     await db.insert(s.months).values([
@@ -103,8 +106,11 @@ describe("işletme geneli payı: veritabanında", { skip: !SERVER_URL && "ISLETM
     await admin?.end();
   });
 
+  /** İşletme geneli giderler "Tutarla göster" kipinde (bilgi satırı; şube ayrımı parça 6) */
+  const withAmounts = <T>(fn: () => Promise<T>) => scope.withBranchView({ ortak_gider: "firma" }, fn);
+
   test("Marina + Tuzla − işletme geneli = Tümü; bilgi satırı işletmenin günüyle, şubede kâra girmez", async () => {
-    const [all, marina, tuzla] = await Promise.all([dataset.loadModel({ scope: ALL_BRANCHES }), dataset.loadModel({ scope: "marina" }), dataset.loadModel({ scope: "tuzla" })]);
+    const [all, marina, tuzla] = await withAmounts(() => Promise.all([dataset.loadModel({ scope: ALL_BRANCHES }), dataset.loadModel({ scope: "marina" }), dataset.loadModel({ scope: "tuzla" })]));
     const a = all.pnlMonth("2026-10");
     const m = marina.pnlMonth("2026-10");
     const t = tuzla.pnlMonth("2026-10");
@@ -134,5 +140,27 @@ describe("işletme geneli payı: veritabanında", { skip: !SERVER_URL && "ISLETM
     );
     assert.equal(split.residual, 0);
     close(split.columns.find((c) => c.key === "isletme")!.expenses, a.shared.total, "işletme geneli sütunu");
+  });
+
+  test("İşletme geneli giderler “Yalnız not” (yöneticinin varsayılanı): tutar, bileşim ve işletme geneli kalem yok; kâr aynı", async () => {
+    const [shown, noted] = await Promise.all([withAmounts(() => dataset.loadModel({ scope: "marina" })), dataset.loadModel({ scope: "marina" })]);
+    assert.equal(noted.ds.sharedCostsHidden, true, "veri kümesinin bayrağı");
+    assert.equal(shown.ds.sharedCostsHidden, undefined);
+    const m = noted.pnlMonth("2026-10");
+    const t = shown.pnlMonth("2026-10");
+    assert.equal(m.shared.total, 0);
+    assert.deepEqual(m.shared.parts, []);
+    assert.equal(m.shared.hidden, true);
+    close(m.profit, t.profit, "şubenin kârı iki kipte aynı");
+    close(m.expenses, t.expenses, "şubenin giderleri iki kipte aynı");
+    assert.ok(!noted.pnlRowDefs(["2026-10"]).some((r) => r.key === "shared:total"), "bilgi satırı yok");
+    assert.ok(shown.pnlRowDefs(["2026-10"]).some((r) => r.key === "shared:total"));
+    // Sabit giderler listesi: işletme geneli kalem (şubesi boş) yok; standart sabit giderin işletme geneli kısmı 0
+    assert.ok(shown.fixedList.some((f) => (f.branchId ?? null) === null), "Tutarla göster'de işletme geneli kalem listede");
+    assert.equal(noted.fixedList.some((f) => (f.branchId ?? null) === null), false);
+    assert.equal(noted.fixedStandardSharedFor("2026-10"), 0);
+    close(noted.fixedStandardTotalFor("2026-10"), shown.fixedStandardTotalFor("2026-10"), "şubenin standart sabit gideri aynı");
+    // "Tümü"de kip anlamsız: bayrak yok, işletme geneli bölümlerinde
+    assert.equal((await dataset.loadModel({ scope: ALL_BRANCHES })).ds.sharedCostsHidden, undefined);
   });
 });

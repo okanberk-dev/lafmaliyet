@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
@@ -77,6 +78,10 @@ async function ExpensesContent() {
   // kapanmış online ayın brüt kârı düşülmüş
   const be = breakEvenOf(model, cur);
   const investTotals = investmentTotals(investments, scope);
+  // İşletme geneli giderler alanı "Yalnız not" kipinde (şube ayrımı parça 6): işletme geneli sabit gider kalemi veri
+  // kümesine hiç gelmez (liste ve toplam şubenin), işletme geneli yatırım listede yok; yalnız not
+  const sharedHidden = Boolean(model.ds.branchView && model.ds.sharedCostsHidden);
+  const shownInvestments = sharedHidden ? investments.filter((i) => i.branchId !== null) : investments;
   const total = model.fixedStandardTotal;
   const nextMonth = shiftMonth(cur, 1);
   const nextTotal = model.fixedStandardTotalFor(nextMonth);
@@ -112,6 +117,8 @@ async function ExpensesContent() {
   return (
     <>
       <Header />
+      {/* İşletme geneli giderler alanının çipi (şube ayrımı parça 6) */}
+      <BranchViewChip area="ortak_gider" className="mb-4" />
 
       <FixedSummary
         total={total}
@@ -124,7 +131,7 @@ async function ExpensesContent() {
         breakEvenOnline={be.onlineCover ? { month: monthLabel(be.onlineCover.month), amount: be.onlineCover.grossProfit } : null}
         monthlyExpenses={be.expenses.map((x) => ({ name: x.cat.name, amount: x.amount, from: x.from }))}
         next={Math.abs(nextTotal - total) >= 1 ? { month: monthLabel(nextMonth), total: nextTotal } : null}
-        shared={model.ds.branchView ? { branch: model.ds.branchView.name, amount: model.fixedStandardSharedFor(cur) } : null}
+        shared={model.ds.branchView ? { branch: model.ds.branchView.name, amount: model.fixedStandardSharedFor(cur), ...(sharedHidden ? { hidden: true } : {}) } : null}
       />
 
       <FixedExpensesClient
@@ -138,7 +145,7 @@ async function ExpensesContent() {
       />
       <div className="mt-6">
         <InvestmentsClient
-          rows={investments.map((i) => ({
+          rows={shownInvestments.map((i) => ({
             id: i.id,
             name: i.name,
             amount: i.amount,
@@ -149,7 +156,13 @@ async function ExpensesContent() {
           }))}
           total={investTotals.total}
           // Şube seçiliyken işletme geneli yatırımlar listede, toplamda değil (bilgi; şube ayrımı)
-          shared={model.ds.branchView && investTotals.sharedCount ? { branch: model.ds.branchView.name, amount: investTotals.shared, count: investTotals.sharedCount } : null}
+          shared={
+            model.ds.branchView && investTotals.sharedCount
+              ? sharedHidden
+                ? { branch: model.ds.branchView.name, amount: 0, count: 0, hidden: true }
+                : { branch: model.ds.branchView.name, amount: investTotals.shared, count: investTotals.sharedCount }
+              : null
+          }
           branches={branches}
         />
       </div>

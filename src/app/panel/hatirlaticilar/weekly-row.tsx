@@ -23,7 +23,7 @@ export interface WeeklyPanel {
   onStatus: string;
 }
 
-type Preview = { subject: string; html: string; items: number; failed: string[]; empty: boolean };
+type Preview = { subject: string; html: string; items: number; failed: string[]; empty: boolean; note?: string | null };
 
 /**
  * E-posta bildirimleri › Haftalık özet: açma / kapama, kime gittiği, bu haftanın durumu, önizleme ve kendine örnek
@@ -92,7 +92,7 @@ export function WeeklyRow({ weekly, emailConfigured }: { weekly: WeeklyPanel; em
           onClose={() => setPreview(null)}
           size="lg"
           title="Haftalık özet önizlemesi"
-          description={`${preview.empty ? "Bu hafta dikkat isteyen bir şey yok; e-posta tek satırla gider. Gönderilmez." : `Pazartesi giden e-posta böyle görünür; gönderilmez. ${preview.items} madde.`}${preview.failed.length ? ` Okunamadı: ${preview.failed.join(", ")}.` : ""}`}
+          description={`${preview.empty ? "Bu hafta dikkat isteyen bir şey yok; e-posta tek satırla gider. Gönderilmez." : `Pazartesi giden e-posta böyle görünür; gönderilmez. ${preview.items} madde.`}${preview.failed.length ? ` Okunamadı: ${preview.failed.join(", ")}.` : ""}${preview.note ? ` ${preview.note}` : ""}`}
           bodyClassName="px-0 sm:px-0 pb-0"
           footer={
             <Button variant="secondary" onClick={() => setPreview(null)} className={SHEET_BTN}>

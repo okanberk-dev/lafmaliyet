@@ -20,7 +20,8 @@ import { countedTillIds, earliestSwitchDay, scopeSwitchDay, scopeSwitchDays, typ
 import { addDays } from "@/lib/reminders";
 import { readCoverage, SALES_COVERAGE_BRANCH_KEY, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import type { SiteSalesMonth } from "@/lib/site-sales/schema";
-import { areaScope, branchWhere, branchWhereWithShared, currentBranchScope, currentWriteBranch, withBranchScope } from "@/server/branch-scope";
+import { sharedCostsHidden } from "@/lib/branch-view";
+import { areaScope, branchWhere, branchWhereWithShared, currentBranchScope, currentBranchView, currentWriteBranch, withBranchScope } from "@/server/branch-scope";
 import { invoiceAccountDates, loadClosedPeriods } from "@/server/closed-period";
 import { invoiceScopeWhere } from "@/server/invoice-scope";
 import { loadSplitLines } from "./invoice-split";
@@ -70,8 +71,11 @@ export async function loadDataset(opts: DatasetOptions = {}): Promise<Dataset> {
 async function readDataset(): Promise<Dataset> {
   const db = getDb();
   // Satışlar'ın içe aktarmasının yazdığı şube (seçili şube, "Tümü"de Tuzla): kartın listesinin son günü (writeCoverage)
-  const [scope, branches, writeBranch, posTills] = await Promise.all([currentBranchScope(), listBranches(), currentWriteBranch(), loadPosTills(db)]);
+  // İşletme geneli giderler alanının kipi (şube ayrımı parça 6): "Yalnız not" kipinde tek şube seçiliyken işletme geneli
+  // giderlerin tutarı yazılmaz (sharedCostsHidden; şubenin kârı değişmez, işletme geneli zaten ona girmez)
+  const [scope, branches, writeBranch, posTills, sharedMode] = await Promise.all([currentBranchScope(), listBranches(), currentWriteBranch(), loadPosTills(db), currentBranchView("ortak_gider")]);
   const branch = scope === ALL_BRANCHES ? null : (branches.find((b) => b.id === scope) ?? null);
+  const sharedHidden = sharedCostsHidden(branch !== null, sharedMode);
   const [
     storedSettings,
     ingredients,
@@ -222,8 +226,9 @@ async function readDataset(): Promise<Dataset> {
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
   const currentMonth = currentMonthTR();
   // Sabit giderler küçük tablo: hepsi okunur, şubeninkiler ve işletme genelinkiler burada ayrılır (silinmiş ya da
-  // başka şubenin kaleminin elle girilmiş hücresi de buna göre ayıklanır: branchPnlEntry)
-  const fixedInScope = fixedExpenses.filter((f) => branch === null || f.branchId === null || f.branchId === branch.id);
+  // başka şubenin kaleminin elle girilmiş hücresi de buna göre ayıklanır: branchPnlEntry). İşletme geneli giderler "Yalnız
+  // not" kipindeyken işletme geneli kalem şubenin görünümüne hiç gelmez (Sabit giderler listesi, dışa aktarım; parça 6)
+  const fixedInScope = fixedExpenses.filter((f) => branch === null || (f.branchId === null ? !sharedHidden : f.branchId === branch.id));
   const fixedIds = new Set(fixedInScope.map((f) => f.id));
   const allFixedIds = new Set(fixedExpenses.map((f) => f.id));
   const pnlInScope = branch === null ? pnlEntries : pnlEntries.filter((e) => branchPnlEntry(e.rowKey, fixedIds, allFixedIds));
@@ -351,6 +356,7 @@ async function readDataset(): Promise<Dataset> {
     posSwitchDays: allSwitchDays,
     currentMonth,
     branchView: branch ? { id: branch.id, name: branch.name, kind: branch.kind } : null,
+    ...(sharedHidden ? { sharedCostsHidden: true } : {}),
     // Ay hücreleri yazılmaz: "Tümü"de birden çok kasanın toplamı, online kanalda kasa satışı yok (monthWriteLock)
     monthTotalsLocked: monthWriteLock(scope, branches) !== null,
     monthLockText: monthWriteLock(scope, branches),

@@ -124,7 +124,7 @@ export const VIEW_AREAS: Record<ViewArea, ViewAreaDef> = {
   },
   ortak_gider: {
     label: "İşletme geneli giderler",
-    help: "Yalnız not: işletme geneli giderler bu şubenin kârına girmez (Tümü'de sayılır), tutar yazılmaz. Tutarla göster: İşletme geneli payı (bilgi) satırı.",
+    help: "Yalnız not: işletme geneli giderler bu şubenin kârına girmez (Tümü'de sayılır); tutarları ve kalemleri yazılmaz (Gelir-gider, Genel bakış, Aylık harcamalar, Sabit giderler, dışa aktarım). Tutarla göster: İşletme geneli payı (bilgi) satırı ve tutarları. Şubenin kârı iki kipte aynı.",
     modes: { sube: "Yalnız not", firma: "Tutarla göster" },
     firmOnly: null,
     defaults: { admin: "sube", accountant: "firma" },
@@ -246,6 +246,52 @@ export function areaKapsam(label: string, scope: BranchScope, parts: readonly { 
 /** Okunan kapsamdan alanın kipi: "Tümü" okunduysa firma, tek şube okunduysa şube */
 export const modeOfScope = (read: BranchScope): ViewMode => (read === ALL_BRANCHES ? "firma" : "sube");
 
+// ---------------------------------------------------------------- Parça 6: Şubeleri yan yana, İşletme geneli giderler
+
+/**
+ * Şubeleri yan yana koyan raporların şubeleri (Şubeleri yan yana alanı, şube ayrımı parça 6): Şube karşılaştırma, İşçilik
+ * / ciro ve Bugün'ün "Şubelerde gün" kartı. `read` alanın kapsamı (`areaScope("karsilastirma")`): "Yan yana" kipinde ve
+ * "Tümü"de bütün şubeler, "Yalnız seçili şube" kipinde yalnız seçili şube (online kanal seçiliyse boş: kanalın kasası yok)
+ */
+export function compareBranchesIn<T extends { id: string }>(branches: readonly T[], read: BranchScope): T[] {
+  return read === ALL_BRANCHES ? [...branches] : branches.filter((b) => b.id === read);
+}
+
+/**
+ * Şubeleri yan yana raporunun boş hâli: online kanal seçiliyken (kanalın kasası yok; "Yalnız seçili şube" kipinde rapor
+ * boş kalır) kanalın metni, öteki hâlde "Açık şube yok"
+ */
+export function compareEmptyText(scope: BranchScope, known: readonly { id: string; name: string; kind: string }[]): { title: string; description: string } {
+  const b = scope === ALL_BRANCHES ? null : known.find((x) => x.id === scope);
+  if (b && b.kind !== "fiziksel") {
+    return { title: `${b.name} seçili: kanalın kasası yok`, description: "Rapor fiziksel şubelerin kasasıyla kurulur. Soldan bir şube seçin ya da şubeleri yan yana gösterin." };
+  }
+  return { title: "Açık şube yok", description: "Ayarlar › Şubeler'de açık bir fiziksel şube olmalı." };
+}
+
+/**
+ * İşletme geneli giderler alanının "Yalnız not" kipindeki metni (şube ayrımı parça 6): şube seçiliyken işletme geneli
+ * giderlerin tutarı yazılmaz, yalnız bu not. "Tutarla göster" kipinde bugünkü "İşletme geneli payı (bilgi)" satırı
+ */
+export const SHARED_COSTS_NOTE = "İşletme geneli giderler bu şubenin kârına girmez (Tümü'de sayılır)";
+
+/**
+ * İşletme geneli giderlerin tutarı gizli mi: tek şube seçili ve alan "Yalnız not" kipinde. "Tümü"de gizlenecek bir şey
+ * yok (işletme geneli giderler bölümlerinde bir kez sayılır)
+ */
+export function sharedCostsHidden(branchSelected: boolean, mode: ViewMode): boolean {
+  return branchSelected && mode === "sube";
+}
+
+/**
+ * Sitenin şubesiz gönderdiği kayıtların rozeti (Tükendi, uygulama siparişleri, masa çağrıları; şube ayrımı parça 6): tek
+ * şube seçili ve birden çok şube açıkken "Bütün şubeler" (site şubeyi göndermiyor, liste süzülemez); öteki hâlde yok
+ */
+export function siteWideBadge(scope: BranchScope, activeBranches: number): string | null {
+  return scope !== ALL_BRANCHES && activeBranches >= 2 ? "Bütün şubeler" : null;
+}
+
+
 /** Hesabım'daki kartın başlığı ve açıklaması */
 export const BRANCH_VIEW_TITLE = "Şube görünümü";
 export const BRANCH_VIEW_DESCRIPTION =
@@ -283,8 +329,11 @@ export const ALWAYS_COMPANY_WIDE: readonly { title: string; reason: string }[] =
   { title: "Su + buz litre fiyatı", reason: "Tek faturadan gelir; şube şube döküm yine görünür." },
   { title: "Silme engelleri", reason: "Bütünlük denetimidir, hiçbir ekranda veri olarak görünmez." },
   { title: "Tükendi, uygulama siparişleri, masa çağrıları", reason: "Site şubeyi göndermiyor; site değişene kadar “Bütün şubeler” yazar." },
-  { title: "Firmaya giden sabah ve haftalık e-postası, aylık muhasebeci paketi e-postası", reason: "Alıcı firmanın kendisi." },
-  { title: "Tutarlılık bulguları", reason: "Bulgunun henüz şubesi yok." },
+  {
+    title: "Firmaya giden sabah ve haftalık e-postası, aylık muhasebeci paketi e-postası",
+    reason: "Alıcı firmanın kendisi; şubeye bağlı alıcı kendi şubesinin e-postasını alır, paketin elle indirmesi seçili şubenin.",
+  },
+  { title: "Tutarlılık bulguları ve elle yazılan alım miktarları", reason: "Henüz şubeleri yok; dışa aktarımda “Firma geneli” yazar." },
 ];
 
 // ---------------------------------------------------------------- Kodun kaydı (tests/sube-ayrimi.test.ts)
@@ -298,10 +347,10 @@ export const ALWAYS_COMPANY_WIDE: readonly { title: string; reason: string }[] =
  * - `sozlesme`: sitenin sözleşmesinde şube yok;
  * - `hesap`: Paraşüt hesabı başına;
  * - `gecici`: bilinen geçici istisna;
- * - `yazim`: okuma değil, kaydın hedefi işletme geneli;
- * - `bekliyor`: şube ayrımının sonraki parçası (`part`) kapsamla okuyacak ya da alana bağlayacak.
+ * - `yazim`: okuma değil, kaydın hedefi işletme geneli.
+ * Parça 1–5'in `bekliyor` kayıtları (sonraki parçanın kapatacağı okumalar) parça 6'da bitti (27 Kasım 2026).
  */
-export type CompanyWideKind = "yalniz-firma" | "alan" | "butunluk" | "ortak-veri" | "sozlesme" | "hesap" | "gecici" | "yazim" | "bekliyor";
+export type CompanyWideKind = "yalniz-firma" | "alan" | "butunluk" | "ortak-veri" | "sozlesme" | "hesap" | "gecici" | "yazim";
 
 export interface CompanyWideRead {
   /** İşaretin kimliği: okumanın üstündeki `// şube-ayrımı: <id>` */
@@ -309,10 +358,8 @@ export interface CompanyWideRead {
   /** "dosya#işlev" (birden çok yerse "; " ile) */
   where: string;
   kind: CompanyWideKind;
-  /** `alan` ve alana bağlanacak `bekliyor` kaydının alanı */
+  /** `alan` kaydının alanı */
   area?: ViewArea;
-  /** `bekliyor`: hangi parça kapatır (docs/SUBE.md › Şube ayrımı › Sıra) */
-  part?: 2 | 3 | 4 | 5 | 6;
   reason: string;
 }
 
@@ -334,7 +381,12 @@ export const COMPANY_WIDE_READS: readonly CompanyWideRead[] = [
     kind: "yalniz-firma",
     reason: "Sabah ve haftalık e-postası işletmenin tamamı için kurulur; şubeye bağlı alıcı kendi şubesinin grubunu alır",
   },
-  { id: "muhasebe.paket-eposta", where: "src/server/muhasebe/paket.ts#loadPackageData", kind: "yalniz-firma", reason: "Aylık muhasebeci paketi firmanın (elle indirmenin şubesi parça 6'da)" },
+  {
+    id: "muhasebe.paket-eposta",
+    where: "src/server/muhasebe/paket.ts#sendAccountingPackage",
+    kind: "yalniz-firma",
+    reason: "Aylık muhasebeci paketi e-postası firmanın (alıcı muhasebe şirketi); elle indirme şube seçiliyken şubenin paketi",
+  },
   // Bütünlük ve ortak veri
   { id: "costs.dataMonths", where: "src/server/actions/costs.ts#dataMonths", kind: "butunluk", reason: "Personelin ve sabit giderin silme engeli bütün şubelerin aylarına bakar" },
   { id: "dataset.companyMonths", where: "src/server/data/dataset.ts#loadDataset", kind: "ortak-veri", reason: "İşletmenin günü: işletme geneli giderler Tümü'nün açık günüyle oranlanır" },
@@ -358,10 +410,11 @@ export const COMPANY_WIDE_READS: readonly CompanyWideRead[] = [
   },
   {
     id: "alan.tedarikciler",
-    where: "src/app/panel/tedarikciler/page.tsx#SuppliersContent; src/app/panel/tedarikciler/[cari]/page.tsx#SupplierContent; src/server/mcp/tools.ts#tedarikci_ozeti",
+    where:
+      "src/app/panel/tedarikciler/page.tsx#SuppliersContent; src/app/panel/tedarikciler/[cari]/page.tsx#SupplierContent; src/server/mcp/tools.ts#tedarikci_ozeti; src/app/api/export/route.ts#exportWorkbook",
     kind: "alan",
     area: "tedarikciler",
-    reason: "Tedarikçi bakiyeleri: firma kipinde tedarikçinin bütün faturaları ve carisi",
+    reason: "Tedarikçi bakiyeleri ve dışa aktarımın Cari hareketleri sayfası: firma kipinde tedarikçinin bütün faturaları ve carisi",
   },
   {
     id: "alan.komisyon",
@@ -379,24 +432,25 @@ export const COMPANY_WIDE_READS: readonly CompanyWideRead[] = [
   // Alanlar: parça 5 Vergi, Tutarlılık, Mutabakat, Stok değeri
   {
     id: "alan.vergi",
-    where: "src/app/panel/vergi/page.tsx#TaxContent; src/app/panel/vergi/gelir-gider/page.tsx#TaxPnlContent; src/app/panel/vergi/demirbas/page.tsx#TaxAssetsContent",
+    where:
+      "src/app/panel/vergi/page.tsx#TaxContent; src/app/panel/vergi/gelir-gider/page.tsx#TaxPnlContent; src/app/panel/vergi/demirbas/page.tsx#TaxAssetsContent; src/app/api/export/route.ts#exportWorkbook",
     kind: "alan",
     area: "vergi",
-    reason: "Vergi ekranları: şube kipinde şubenin payı (bilgi), matraha katkısı, eksik belgeleri ve demirbaşları; firma kipinde yalnız firmanın",
+    reason: "Vergi ekranları ve dışa aktarımın Vergi sayfası: şube kipinde şubenin payı (bilgi), matraha katkısı, eksik belgeleri ve demirbaşları; firma kipinde yalnız firmanın",
   },
   {
     id: "vergi.beyan",
     where:
-      "src/app/panel/vergi/page.tsx#TaxContent; src/app/panel/vergi/gelir-gider/page.tsx#TaxPnlContent; src/app/panel/vergi/demirbas/page.tsx#TaxAssetsContent; src/server/data/cash-plan.ts#loadCashPlan",
+      "src/app/panel/vergi/page.tsx#TaxContent; src/app/panel/vergi/gelir-gider/page.tsx#TaxPnlContent; src/app/panel/vergi/demirbas/page.tsx#TaxAssetsContent; src/server/data/cash-plan.ts#loadCashPlan; src/app/api/export/route.ts#exportWorkbook",
     kind: "yalniz-firma",
     reason: "Beyan tutarları (KDV, muhtasar, geçici ve kurumlar vergisi, devreden KDV) ve takvim firmanın tek vergi numarasıyla: her kipte bütün şubeler",
   },
   {
     id: "alan.tutarlilik",
-    where: "src/app/panel/tutarlilik/page.tsx#ConsistencyContent",
+    where: "src/app/panel/tutarlilik/page.tsx#ConsistencyContent; src/app/api/export/route.ts#exportWorkbook",
     kind: "alan",
     area: "tutarlilik",
-    reason: "Tutarlılık: firma kipinde bütün şubelerin satışı, sayımı ve bütün faturaların alımı",
+    reason: "Tutarlılık ve dışa aktarımın Tutarlılık sayfası: firma kipinde bütün şubelerin satışı, sayımı ve bütün faturaların alımı",
   },
   {
     id: "alan.mutabakat",
@@ -419,11 +473,13 @@ export const COMPANY_WIDE_READS: readonly CompanyWideRead[] = [
     kind: "ortak-veri",
     reason: "Komisyon oranı ve hakediş işletmenin: bütün faturalar ÷ bütün şubelerin satışı; şubenin payı ve hakediş satırları bununla",
   },
-  // Sonraki parça (şube ayrımı 6; parça 2 kendi üç kaydını, parça 4 Nakit planı ve Komisyon, parça 5 Vergi, Tutarlılık ve
-  // stok değeri kayıtlarını kapattı)
-  { id: "karsilastirma.sayfa", where: "src/server/data/sube-karsilastirma.ts#loadBranchCompare", kind: "bekliyor", area: "karsilastirma", part: 6, reason: "Şube karşılaştırma bugün şubeleri yan yana okuyor" },
-  { id: "karsilastirma.iscilik", where: "src/server/data/iscilik.ts#loadLaborReport", kind: "bekliyor", area: "karsilastirma", part: 6, reason: "İşçilik / ciro bugün şubeleri yan yana okuyor" },
-  { id: "karsilastirma.sube-gunu", where: "src/server/data/branch-day.ts#loadBranchDay", kind: "bekliyor", area: "karsilastirma", part: 6, reason: "Bugün'ün Şubelerde gün kartı bugün bütün şubelerin föyünü okuyor" },
-  { id: "vergi.disa-aktar", where: "src/app/api/export/route.ts#exportWorkbook", kind: "bekliyor", area: "vergi", part: 6, reason: "Dışa aktarımın Vergi sayfası bugün firmanın" },
-  { id: "tedarikciler.disa-aktar", where: "src/app/api/export/route.ts#exportWorkbook", kind: "bekliyor", area: "tedarikciler", part: 6, reason: "Dışa aktarımın Cari hareketleri sayfası bugün firmanın" },
+  // Alanlar: parça 6 Şubeleri yan yana (İşletme geneli giderler okumayı değiştirmez: kip veri kümesinin bayrağı,
+  // sharedCostsHidden; şubenin kârı iki kipte aynı)
+  {
+    id: "alan.karsilastirma",
+    where: "src/server/data/sube-karsilastirma.ts#loadBranchCompare; src/server/data/iscilik.ts#loadLaborReport; src/server/data/branch-day.ts#loadBranchDay",
+    kind: "alan",
+    area: "karsilastirma",
+    reason: "Şube karşılaştırma, İşçilik / ciro ve Bugün'ün Şubelerde gün kartı: Yan yana kipinde bütün şubeler, Yalnız seçili şube kipinde seçim",
+  },
 ];

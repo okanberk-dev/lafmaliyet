@@ -25,6 +25,8 @@ görünümüyle ([SUBE.md › Alanlar](SUBE.md#alanlar-ödemeler-nakit-planı-te
 kipinde ana görünüm şubenin payı ve şubenin o ay satışı olan kanalların bekleyen hakedişi (`scopeCommissionReport`),
 işletmenin raporu katlı "İşletmenin raporu" bölümünde; zil ve Bugün öbür şubenin kullandığı kanalın gecikmesini
 göstermez. **Firma geneli** kipinde bugünkü gibi. Önceden ekran seçimi hiç okumuyordu: her şubede bütün şubelerin satışı vardı.
+Sabah e-postasının önizlemesi (Ödemeler › E-posta bildirimleri) şube seçiliyken o şubeye bağlı alıcıların e-postasıdır
+(şube ayrımı parça 6): komisyon kutusu şubenin grubunun kutusu; firmaya giden e-posta için soldan Tümü.
 Şubenin payı "Tümü"yle aynı kuralla sayılır, payların toplamı işletmenin faturasını aşmaz:
 
 - **ModPOS'ta kalan şube** (Tuzla) seçiliyken de geçiş ayından itibaren Z'deki yemek kartı ve online tek kanala yazılmaz

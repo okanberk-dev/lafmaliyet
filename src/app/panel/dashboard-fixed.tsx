@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { Well } from "@/components/ui/card";
 import { InfoTip } from "@/components/ui/info-tip";
+import { SHARED_COSTS_NOTE } from "@/lib/branch-view";
 import type { FixedMonthBreakdown } from "@/lib/calc/insights";
 import { tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -56,7 +57,8 @@ export function FixedReconcile({ f }: { f: FixedMonthBreakdown }) {
       .map((x) => x.label)
       .join(", ") + (xs.length > 3 ? "…" : "");
   // Şube seçiliyken işletme geneli giderler (Faz 5): şubenin kârına girmez, bilgi olarak toplamı
-  const shared = f.shared > 0 ? ` İşletme geneli payı (bilgi): ${tl(f.shared)}; şubenin kârına girmez, Tümü'de bir kez sayılır.` : "";
+  // "Yalnız not" kipinde (İşletme geneli giderler alanı, şube ayrımı parça 6) tutar yazılmaz
+  const shared = f.sharedHidden ? ` ${SHARED_COSTS_NOTE}.` : f.shared > 0 ? ` İşletme geneli payı (bilgi): ${tl(f.shared)}; şubenin kârına girmez, Tümü'de bir kez sayılır.` : "";
   if (!proration && !overrides && !manual && !expenses && !listShare) {
     return (
       <p className="text-xs leading-5 text-ink-mute">

@@ -2,7 +2,7 @@ import { Store } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
+import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { MonthPicker, MonthPickerSkeleton } from "@/components/panel/month-picker";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, InfoTip, PageSkeleton } from "@/components/ui/misc";
@@ -18,6 +18,7 @@ import { requireAdmin } from "@/server/auth/dal";
 import { monthParam } from "@/server/data/dataset";
 import { loadBranchCompare, type BranchCompareData } from "@/server/data/sube-karsilastirma";
 
+import { compareEmpty } from "./compare-empty";
 import { ReportHeader } from "./header";
 
 export const metadata: Metadata = { title: "Şube karşılaştırma" };
@@ -26,7 +27,7 @@ const PATH = "/panel/raporlar";
 const TITLE = "Şube karşılaştırma";
 const DESCRIPTION = "Şubeler ay ay yan yana: ciro, kasa farkı, ikram, zayi, işçilik, gider ve kâr.";
 const MORE =
-  "Her rakam başka bir ekranın rakamıdır: ciro, açık gün, mal maliyeti, personel, giderler ve kâr Gelir-gider'de o şube seçiliyken görünenler; ödenmez ve indirim ayın bilgisinden; zayi ve ikramın malzeme maliyeti Zayi & ikram'ın ay özetinden; kasa farkı kasa raporlarından; fiş sayısı ve ortalama sepet Kıyas'ın kuralıyla. Soldaki şube seçiminden bağımsızdır. İşletme geneli giderler (şubesi seçilmemiş) hiçbir şubeye bölünmez; işletmenin toplamı Gelir-gider'de Tümü seçiliyken.";
+  "Her rakam başka bir ekranın rakamıdır: ciro, açık gün, mal maliyeti, personel, giderler ve kâr Gelir-gider'de o şube seçiliyken görünenler; ödenmez ve indirim ayın bilgisinden; zayi ve ikramın malzeme maliyeti Zayi & ikram'ın ay özetinden; kasa farkı kasa raporlarından; fiş sayısı ve ortalama sepet Kıyas'ın kuralıyla. Soldan bir şube seçiliyken Şube görünümünüze göre (Hesabım › Şube görünümü › Şubeleri yan yana): yalnız seçili şube ya da bütün şubeler yan yana. İşletme geneli giderler (şubesi seçilmemiş) hiçbir şubeye bölünmez; işletmenin toplamı Gelir-gider'de Tümü seçiliyken.";
 
 /** Ay seçicide gösterilen aylar: bu aydan geriye iki yıl */
 const PICKER_MONTHS = 24;
@@ -69,15 +70,16 @@ async function BranchCompareContent({ searchParams }: { searchParams: PageProps<
     return (
       <>
         <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} />
-        <EmptyState icon={<Store />} title="Açık şube yok" description="Ayarlar › Şubeler'de açık bir fiziksel şube olmalı." />
+        <BranchViewChip area="karsilastirma" className="mb-4" />
+        <EmptyState icon={<Store />} {...(await compareEmpty())} />
       </>
     );
   }
   return (
     <>
       <ReportHeader path={PATH} title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} />
-      <CompanyWideNotice screen="raporlar" className="mb-4" />
-      {data.branches.length < 2 ? (
+      <BranchViewChip area="karsilastirma" className="mb-4" />
+      {data.branches.length < 2 && !data.only ? (
         <Notice tone="neutral" size="sm" className="mb-4" title="Tek şube açık">
           Karşılaştırma birden çok şube açıkken anlamlıdır; tek şubenin ayları yine aşağıda.
         </Notice>

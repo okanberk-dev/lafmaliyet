@@ -2,8 +2,8 @@
 // Kaynak taraması: seçimi bilerek aşan her okuma kayıtlı ve işaretli (a), şubesi olan tablolar kapsamla okunur (b),
 // alan ekranı çipini çizer ve "firma geneli" notu yalnız hep firma geneli ekranda kalır (c), saf kurallar (d).
 //
-// (b) ve (c) bugün cırcır gibi ilerler: kalan okumalar ve ekranlar `BEKLEYEN_*` listelerinde, şube ayrımının sonraki
-// parçaları (2–6) listeyi boşaltır. Listeye satır eklenmez; sayı yalnız azalır (artarsa yeni sızıntıdır).
+// (b) cırcır gibi ilerler: kalan kapsamsız okumalar `BEKLEYEN_B`'de, sayı yalnız azalır (artarsa yeni sızıntıdır). Parça
+// 6'dan beri (c)'nin bekleyen alanı kalmadı: her alanın ekranı çipini çizer, "bu ekran firma geneli" notu hiçbir ekranda yok.
 // Veritabanındaki sınama: tests/sube-gorunumu-db.test.ts.
 // Çalıştırma: npx tsx --test tests/sube-ayrimi.test.ts
 
@@ -126,9 +126,23 @@ test("(a) kayıt: kimlikler tek, her kimlik kullanılıyor, `where` dosyaları i
     }
     if (r.kind === "alan") assert.ok(r.area && VIEW_AREA_KEYS.includes(r.area), `${r.id}: alan`);
     if (r.area) assert.ok(VIEW_AREA_KEYS.includes(r.area), `${r.id}: bilinmeyen alan ${r.area}`);
-    if (r.kind === "bekliyor") assert.ok(r.part && r.part >= 2 && r.part <= 6, `${r.id}: hangi parça kapatır`);
-    else assert.equal(r.part, undefined, `${r.id}: parça yalnız bekleyende`);
   }
+});
+
+test("(a) parça 6'dan sonra kayıt son hâlinde: bekleyen yok, her ayarlı alanın okuması kayıtlı", () => {
+  const kinds = new Set(["yalniz-firma", "alan", "butunluk", "ortak-veri", "sozlesme", "hesap", "gecici", "yazim"]);
+  assert.deepEqual(
+    COMPANY_WIDE_READS.filter((r) => !kinds.has(r.kind)).map((r) => r.id),
+    [],
+    "bekleyen kayıt kalmadı",
+  );
+  // İşletme geneli giderler okumayı değiştirmez (kip veri kümesinin bayrağı); öteki dokuz alanın her birinin areaScope kaydı var
+  const areas = new Set(COMPANY_WIDE_READS.filter((r) => r.kind === "alan").map((r) => r.area));
+  assert.deepEqual(
+    VIEW_AREA_KEYS.filter((a) => a !== "ortak_gider" && !areas.has(a)),
+    [],
+  );
+  assert.equal(areas.has("ortak_gider"), false);
 });
 
 // ---------------------------------------------------------------- (b) şubesi olan tablolar
@@ -191,7 +205,6 @@ const BEKLEYEN_B: Record<string, number> = {
   "src/server/data/asilpos-day-end.ts": 1,
   "src/server/data/asilpos-day.ts": 2,
   "src/server/data/asilpos-ikram.ts": 1,
-  "src/server/data/branch-day.ts": 2,
   "src/server/data/cari.ts": 6,
   "src/server/data/cash-late.ts": 4,
   "src/server/data/cash-out-invoices.ts": 5,
@@ -254,9 +267,9 @@ test("(b) şubesi olan tablo kapsamla okunur ya da işaretli (kalanlar BEKLEYEN_
 
 /**
  * Ekranlarına çipi henüz konmamış alanlar: parça 4 dördünü (odemeler, nakit, tedarikciler, komisyon), parça 5 dördünü
- * (vergi, tutarlilik, mutabakat, stok_degeri) bağladı; 6 boşaltır
+ * (vergi, tutarlilik, mutabakat, stok_degeri), parça 6 son ikisini (karsilastirma, ortak_gider) bağladı: boş
  */
-const BEKLEYEN_ALANLAR: readonly ViewArea[] = ["karsilastirma", "ortak_gider"];
+const BEKLEYEN_ALANLAR: readonly ViewArea[] = [];
 /** Hep firma geneli kalan ekranlar: "bu ekran firma geneli" notu (CompanyWideNotice) yalnız bunlarda kalır */
 const YALNIZ_FIRMA_SAYFALARI: readonly string[] = [];
 /** Notu bir alanın ekranı olmadığı hâlde bugün taşıyan sayfalar (Kayıp önleme parça 2'de kapsamla okumaya geçti; boş) */

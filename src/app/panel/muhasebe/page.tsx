@@ -9,6 +9,7 @@ import { PageSkeleton } from "@/components/ui/misc";
 import { businessDate } from "@/lib/cash-report";
 import { monthTitle, prevMonth } from "@/lib/closed-period";
 import { requireCan } from "@/server/auth/dal";
+import { selectedBranchRow } from "@/server/branch-scope";
 
 import { PackageDownload } from "./package-download";
 
@@ -46,6 +47,8 @@ export default function AccountingHomePage() {
 
 async function AccountingContent() {
   await requireCan("muhasebe.oku");
+  // Şube seçiliyken paketin indirmesi o şubenin (şube ayrımı parça 6); aylık e-posta bütün şubeler
+  const branch = await selectedBranchRow();
   const months: { month: string; title: string }[] = [];
   let m = prevMonth(businessDate().slice(0, 7));
   for (let i = 0; i < MONTHS; i++, m = prevMonth(m)) months.push({ month: m, title: monthTitle(m) });
@@ -72,10 +75,10 @@ async function AccountingContent() {
           <CardHeader
             icon={<FileArchive />}
             title="Muhasebeci paketi"
-            description="Ayın faturaları, harcamaları, kasa raporları, yazarkasa Z'lerinin KDV dökümü ve sabit giderleri tek çalışma kitabında (.xlsx), bütün şubeler."
+            description={`Ayın faturaları, harcamaları, kasa raporları, yazarkasa Z'lerinin KDV dökümü ve sabit giderleri tek çalışma kitabında (.xlsx)${branch ? `: ${branch.name} seçiliyken ${branch.name} şubesinin paketi, yanında bütün şubeler.` : ", bütün şubeler."}`}
           />
           <CardContent>
-            <PackageDownload months={months} />
+            <PackageDownload months={months} branch={branch ? { id: branch.id, name: branch.name } : null} />
           </CardContent>
         </Card>
         <Card id="yardim" className="scroll-mt-20">

@@ -687,9 +687,11 @@ test("sabah e-postası: ek kutular ötekilerle aynı anda yüklenir; haber, teki
   // Önizleme kutuları yazmadan yükler; örnek satır yalnız hiç haber yoksa
   const actions = read("src/server/actions/reminders.ts");
   const preview = actions.slice(actions.indexOf("export async function previewDigest"), actions.indexOf("export async function runDigestNow"));
-  assert.match(preview, /loadDigestExtras\(today, \{ preview: true \}\)/);
+  // Şube seçiliyken o şubenin grubunun kutuları (şube ayrımı parça 6), "Tümü"de firmanınki
+  assert.match(preview, /loadDigestExtras\(today, group \? \{ preview: true, scope: group\.id \} : \{ preview: true \}\)/);
   assert.match(preview, /const sample = !due\.length && !invoiceNews && !prices && !system\.length && !extras\.news;/);
-  assert.match(preview, /extras\.extras,\s*\);/);
+  // Şubenin grubunun e-postası şubenin başlığıyla (sabah işinin şube grubu gibi)
+  assert.match(preview, /extras\.extras,\s*group\?\.name \?\? null,\s*\);/);
 });
 
 test("bildirim özeti: haber olan ek kutuların parçaları fiyat onayından sonra, zamdan önce", () => {
@@ -709,7 +711,7 @@ test("sabah e-postası seçiciden bağımsız: gönderim (sabah işi ve şimdi g
   assert.doesNotMatch(digest, /export async function sendReminderDigest/);
   const actions = read("src/server/actions/reminders.ts");
   const preview = actions.slice(actions.indexOf("export async function previewDigest"), actions.indexOf("export async function runDigestNow"));
-  assert.match(preview, /await requireAdmin\(\);\s+(?:\/\/[^\n]*\n\s+)*return withBranchScope\(ALL_BRANCHES, digestPreview\);/);
+  assert.match(preview, /await requireAdmin\(\);[\s\S]*?(?:\/\/[^\n]*\n\s+)*return withBranchScope\(ALL_BRANCHES, \(\) => digestPreview\(group \? \{ id: group\.id, name: group\.name \} : null\)\);/);
   // Şimdi gönder sabah işiyle aynı yoldan
   const now = actions.slice(actions.indexOf("export async function runDigestNow"));
   assert.match(now, /const r = await runReminderDigest\("manual"\);/);

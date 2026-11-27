@@ -21,6 +21,7 @@ import { invoiceSourceLabel } from "../../../lib/import-labels";
 import { SHARED_LABEL, UNASSIGNED_LABEL } from "../../../lib/invoice-branch";
 import { monthKasa, salesMonthKasa, type MonthKasa } from "../../../lib/asilpos/kasa";
 import { QUARTER_DEPRECIATION_LABELS } from "../../../lib/tax/assets";
+import { BRANCH_SHARE_NOTE, BRANCH_SHARE_TITLE, type BranchTaxShare } from "../../../lib/tax/branch-share";
 import { monthName as taxMonthName, quarterLabel, quarterMonths } from "../../../lib/tax/calendar";
 import { ACCOUNTANT_CHECKS } from "../../../lib/tax/checks";
 import type { QuarterCalc } from "../../../lib/tax/corporate";
@@ -102,12 +103,51 @@ export interface ExportExtras {
   /** Dosyanın hazırlandığı an (testte sabitlenir) */
   now?: Date;
   /**
-   * Dosyanın şube kapsamı (şube kapsamı C P1-9): Genel bakış'ın düğmesi ekranın seçimini gönderir, Ayarlar'daki tam yedek
-   * seçicisizdir ("Tümü"). İlk sayfa (Nasıl Okunur) kapsamı yazar. Verilmezse "Tümü"
+   * Dosyanın şube kapsamı (şube kapsamı C P1-9; şube ayrımı parça 6): Genel bakış'ın ve Ayarlar'ın düğmesi şube
+   * seçiliyken seçimi gönderir. İlk sayfa (Nasıl Okunur) kapsamı ve alanların kipini yazar (`exportScopeText`). Verilmezse
+   * "Tümü"
    */
-  scope?: { label: string; branch: boolean };
+  scope?: { label: string; branch: boolean; areas?: ExportAreas };
+  /**
+   * Şube dosyasının Tutarlılık sekmesi (Tutarlılık alanının kipiyle; şube ayrımı parça 6): firma kipinde bütün şubelerin
+   * modeli, şube kipinde şubenin modeli ve şubeye seçilmiş faturaların alımı. Verilmezse dosyanın modeli
+   */
+  consistency?: { model: Model; label: string; note: string | null };
+  /** Vergi alanı "Yalnız şube" kipinde: Vergi sekmesinin altında şubenin payı (bilgi; beyana girmez) */
+  taxShare?: { name: string; share: BranchTaxShare } | null;
   /** Şubelerin adları (kimlik → ad): Faturalar sekmesinin Şube sütunu; verilmezse kimlik yazılır */
   branchNames?: ReadonlyMap<string, string>;
+}
+
+/** Şube dosyasında alanların kipi (src/app/api/export/route.ts: kişinin Şube görünümü; şube ayrımı parça 6) */
+export interface ExportAreas {
+  tutarlilik: "sube" | "firma";
+  tedarikciler: "sube" | "firma";
+  vergi: "sube" | "firma";
+  /** İşletme geneli giderler "Yalnız not" kipinde: tutarları dosyada yok */
+  sharedHidden: boolean;
+}
+
+/**
+ * Kapağın "Kapsam" satırı (şube ayrımı parça 6): "Tümü" dosyasında bütün şubeler; şube dosyasında satış, kasa, personel ve
+ * şubenin giderleri şubenin, öbür sekmeler alanlarının kipiyle. Bulgular ve Alım Miktarları her dosyada firmanın
+ */
+export function exportScopeText(scope: ExportExtras["scope"]): string {
+  if (!scope?.branch) return "Tümü: bütün şubeler ve laffogato.net birlikte; işletme geneli giderler bir kez sayılır.";
+  const n = scope.label;
+  const a = scope.areas;
+  return [
+    `${n} şubesi: satış, kasa, personel ve ${n} şubesine bağlı giderler yalnız bu şubenin.`,
+    a?.sharedHidden
+      ? `İşletme geneli giderler (şubesi seçilmemiş) ${n} şubesinin kârına girmez, tutarları bu dosyada yok (Tümü'de sayılır).`
+      : `İşletme geneli giderler (şubesi seçilmemiş) "İşletme geneli payı" olarak bilgi.`,
+    "Faturalar bu şubenin ve işletme geneli olanlar (şubesi seçilmemişler Tümü'de).",
+    a?.tutarlilik === "sube" ? `Tutarlılık ${n} şubesinin; alınan yalnız şubeye seçilmiş faturalardan.` : "Tutarlılık firma geneli.",
+    a?.tedarikciler === "sube" ? `Cari hareketleri: ${n} şubesinin ödemeleri; faturasız borç İşletme geneli.` : "Cari hareketleri firma geneli.",
+    a?.vergi === "sube" ? "Vergi: beyan firmanın (tek vergi numarası), altında şubenin payı (bilgi)." : "Vergi firma geneli (beyan).",
+    "Tutarlılık bulguları ve Alım Miktarları firma geneli (şubesi yok).",
+    "Sayfaların kipi Hesabım › Şube görünümü'nden; bütün şubeler için panelde soldan Tümü'nü seçip yeniden indirin.",
+  ].join(" ");
 }
 
 /** "Vergi" sekmesinin girdisi (src/app/api/export/route.ts kurar: loadTaxView, vergi ayarları) */
@@ -420,7 +460,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
   addOverview(wb, model, month, d, now);
   addPnl(wb, model, month);
   addStock(wb, model, month);
-  addConsistency(wb, model, month, extras.findings);
+  addConsistency(wb, extras.consistency?.model ?? model, month, extras.findings, { label: extras.consistency?.label ?? null, note: extras.consistency?.note ?? null, firmFindings: extras.scope?.branch === true });
 
   // ---------------------------------------------------------------- Ürün Kârlılık
   const uk = addSheet(
@@ -574,10 +614,10 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
   filterRows(hm, 1, hm.rowCount);
 
   addInvoices(wb, model, extras.outstanding, extras.branchNames);
-  if (extras.cari?.length) addCari(wb, extras.cari);
+  if (extras.cari?.length) addCari(wb, extras.cari, extras.scope?.branch ? (extras.scope.areas?.tedarikciler === "sube" ? `${extras.scope.label} şubesi` : "Firma geneli") : null);
   addPeople(wb, model, month, extras.investments, extras.scope?.branch === true);
   // Vergi (dalga 12): tahmin, beyanname değil; Personel ve Sabit Giderler'den sonra
-  if (extras.tax) addTax(wb, extras.tax);
+  if (extras.tax) addTax(wb, extras.tax, { branchFile: extras.scope?.branch === true, share: extras.taxShare ?? null });
 
   // ---------------------------------------------------------------- Ayarlar
   const ay = addSheet(
@@ -622,7 +662,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
   }
 
   addRawRecords(wb, model);
-  addRawStock(wb, model);
+  addRawStock(wb, model, extras.scope?.branch === true);
   fillGuide(guide, wb, model, month, now, extras.scope);
   // Son biçim: yazdırma düzeni, üst / alt bilgi, sütun genişlikleri (kapakta açıklama sütunu sabit)
   const period = `${label} · ${extras.scope?.label ?? "Tümü"}`;
@@ -642,7 +682,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
 export const GUIDE_SHEET = "Nasıl Okunur";
 
 /** Sekme adının başına göre bir satırlık açıklama (seçili ay ve yıl adlarda) */
-function sheetPurpose(name: string, label: string, kasa: MonthKasa["both"] = "ModPOS"): string {
+function sheetPurpose(name: string, label: string, kasa: MonthKasa["both"] = "ModPOS", branchFile = false): string {
   const year = name.match(/^Gelir-Gider (\d{4})$/)?.[1];
   if (name === "Özet") return `Yönetim özeti: ${label} para nereye gitti, net kâr / zarar, başabaş cirosu, süren ayın tahmini, en kârlı ürün, kategori ortalamaları (sağda).`;
   if (year) return `Gelir-gider tablosu: Ocak–Aralık ve ${year} YILI toplamı. Elle düzeltilen hücrelerde not var.`;
@@ -664,7 +704,7 @@ function sheetPurpose(name: string, label: string, kasa: MonthKasa["both"] = "Mo
     "Ay Bilgileri": "Yedek: her ayın açık gün sayısı, POS cirosu, yönetici indirimi, ödenmez tutarı, kartlı satış oranı ve ay notu; kasa raporlarından gelenler ayrıca yazılır.",
     "Gelir-Gider Kayıtları": "Yedek: Gelir-gider tablosunda elle girilen ya da düzeltilen bütün hücreler ve notları.",
     "Sayım Kayıtları": "Yedek: bütün ayların stok sayımları (sayım biriminde ve malzemenin biriminde) ve listede olmayan kalemler.",
-    "Alım Miktarları": "Yedek: Tutarlılık için girilen aylık faturayla alınan miktarlar.",
+    "Alım Miktarları": `Yedek: Tutarlılık için girilen aylık faturayla alınan miktarlar.${branchFile ? " Firma geneli (şubesi yok)." : ""}`,
   };
   return fixed[name] ?? "";
 }
@@ -696,9 +736,7 @@ function fillGuide(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook, model: Model, mo
     ["Dönem", `${label} · Gelir-Gider sayfası ${month.slice(0, 4)} yılının 12 ayı`],
     [
       "Kapsam",
-      scope?.branch
-        ? `${scope.label} şubesi: satış, kasa, personel ve ${scope.label} şubesine bağlı giderler yalnız bu şubenin; işletme geneli giderler (şubesi seçilmemiş) "İşletme geneli payı" olarak bilgi. Faturalar bu şubenin ve işletme geneli olanlar (şubesi seçilmemişler Tümü'de); Vergi ve Cari hareketleri firma geneli. Bütün şubeler için panelde soldan Tümü'nü seçip yeniden indirin.`
-        : "Tümü: bütün şubeler ve laffogato.net birlikte; işletme geneli giderler bir kez sayılır.",
+      exportScopeText(scope),
     ],
     ["Oluşturulma", dateTimeTR(now)],
     ["Kaynak", "L'Affogato yönetim paneli (paneldeki kayıtların o anki hâli)"],
@@ -726,7 +764,7 @@ function fillGuide(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook, model: Model, mo
   // Ayın kasası (geçiş günü boşken ve öncesinde ModPOS; denetim E-39)
   const kasa = monthKasa(month, model.settings.asilposGecisGunu).both;
   for (const w of sheets) {
-    const r = ws.addRow({ a: sheetLink(w.name), b: sheetPurpose(w.name, label, kasa) });
+    const r = ws.addRow({ a: sheetLink(w.name), b: sheetPurpose(w.name, label, kasa, scope?.branch === true) });
     r.getCell("b").alignment = { wrapText: true, vertical: "top" };
     r.getCell("a").alignment = { vertical: "top" };
     // Bağlantılar mavi ve altı çizili görünsün
@@ -1049,7 +1087,13 @@ function addStock(wb: ExcelJS.Workbook, model: Model, month: string) {
 
 // ---------------------------------------------------------------------------- Tutarlılık
 
-function addConsistency(wb: ExcelJS.Workbook, model: Model, month: string, findings: ExportExtras["findings"]) {
+function addConsistency(
+  wb: ExcelJS.Workbook,
+  model: Model,
+  month: string,
+  findings: ExportExtras["findings"],
+  opts: { label?: string | null; note?: string | null; firmFindings?: boolean } = {},
+) {
   const label = monthLabel(month);
   const c = consistency(model, month);
   const ws = addSheet(
@@ -1072,8 +1116,10 @@ function addConsistency(wb: ExcelJS.Workbook, model: Model, month: string, findi
     ],
     { y: 1, landscape: true },
   );
-  const title = ws.addRow({ a: `Tutarlılık kontrolü – ${label}` });
+  const title = ws.addRow({ a: `Tutarlılık kontrolü – ${label}${opts.label ? ` · ${opts.label}` : ""}` });
   title.font = { ...TITLE_FONT, size: 13 };
+  // Şube dosyasında Tutarlılık alanının kipi (şube ayrımı parça 6)
+  if (opts.note) ws.addRow({ a: opts.note }).font = MUTED_FONT;
 
   // 1) Satış kaynakları
   ws.addRow({});
@@ -1171,7 +1217,7 @@ function addConsistency(wb: ExcelJS.Workbook, model: Model, month: string, findi
 
   // 3) Bulgular: reçetede olmayan alımlar, fiyat ve fatura kontrolü
   ws.addRow({});
-  sectionRow(ws, "a", "3) BULGULAR VE NOTLAR");
+  sectionRow(ws, "a", `3) BULGULAR VE NOTLAR${opts.firmFindings ? " · Firma geneli (bulgunun şubesi yok)" : ""}`);
   subHeaderRow(ws, { a: "Başlık", b: "Bölüm", c: "Durum", d: "Ayrıntı" });
   const sorted = [...findings].sort((x, y) => Number(x.resolved) - Number(y.resolved) || x.section.localeCompare(y.section, "tr-TR"));
   for (const f of sorted) ws.addRow({ a: f.title, b: f.section, c: f.resolved ? "Çözüldü" : "Açık", d: f.detail });
@@ -1260,7 +1306,8 @@ function addSales(wb: ExcelJS.Workbook, model: Model, month: string) {
 // ---------------------------------------------------------------------------- Faturalar + Aylık Alımlar
 
 /** Tedarikçilere elle girilen cari kayıtlar, gün sırasıyla */
-function addCari(wb: ExcelJS.Workbook, rows: readonly CariExportRow[]) {
+/** `scopeNote`: şube dosyasında sekmenin kapsamı ("Marina şubesi" ya da "Firma geneli"; Tedarikçi bakiyeleri alanı) */
+function addCari(wb: ExcelJS.Workbook, rows: readonly CariExportRow[], scopeNote: string | null = null) {
   const ws = addSheet(
     wb,
     "Cari hareketleri",
@@ -1281,6 +1328,12 @@ function addCari(wb: ExcelJS.Workbook, rows: readonly CariExportRow[]) {
   const head = headerRow(ws, colHeaders(ws));
   head.getCell("b").note = "Faturasız alım ya da eski borç (KDV dahil). Faturası gelecek alım ve eski borç gider değildir; faturası yok denen alımın gideri Aylık harcamalar'dadır.";
   head.getCell("o").note = "Tedarikçiye ödeme. Gider ya da KDV değildir; borçtan düşer.";
+  if (scopeNote) {
+    head.getCell("h").note =
+      scopeNote === "Firma geneli"
+        ? "Firma geneli: tedarikçilerin carisi firmanındır, bütün şubelerin hareketleri."
+        : `${scopeNote}: şubenin kasasından yapılan ödemeler ve öbür ödemelerin şubenin faturalarına sayılan kısmı. Faturasız borç firmanındır ("İşletme geneli"); öbür şubenin faturası adıyla yazılmaz.`;
+  }
   for (const r of [...rows].sort((a, b) => a.date.localeCompare(b.date) || a.supplier.localeCompare(b.supplier, "tr"))) {
     ws.addRow({
       d: excelDate(r.date),
@@ -1337,7 +1390,7 @@ export function taxQuarterFiscal(months: readonly TaxMonth[], calc: Pick<Quarter
  * hesabı (yalnız mali belgeli çeyrekler), takvim, kullanılan kurallar ve sahibin notları. ModPOS ile mali belge farkı,
  * belgesi yok işaretli kalemler ve sınıflandırılmamış kalemlerin adları yazılmaz (K11, K12, K31)
  */
-function addTax(wb: ExcelJS.Workbook, tax: TaxExport) {
+function addTax(wb: ExcelJS.Workbook, tax: TaxExport, opts: { branchFile?: boolean; share?: { name: string; share: BranchTaxShare } | null } = {}) {
   const { view, settings } = tax;
   const { rules, fromYear } = rulesFor(view.year, settings.overrides);
   const ws = addSheet(
@@ -1357,6 +1410,8 @@ function addTax(wb: ExcelJS.Workbook, tax: TaxExport) {
   const first = ws.addRow({ a: TAX_SHEET_FIRST_LINE });
   first.font = { ...TITLE_FONT, size: 13 };
   ws.addRow({ a: `${view.year} hesap dönemi · tutarlar KDV hariç, Türk lirası · ${rulesCompiledText(fromYear)}` }).font = grey;
+  // Şube dosyasında da beyan firmanın (tek vergi numarası; şube ayrımı parça 6)
+  if (opts.branchFile) ws.addRow({ a: "Firma geneli · beyan: bütün şubelerin satışı, faturaları ve giderleri (tek vergi numarası)." }).font = grey;
   const money = (r: ExcelJS.Row, keys: string[]) => setFmt(r, keys, MONEY);
   const wrap = (r: ExcelJS.Row) => (r.getCell("f").alignment = { wrapText: true, vertical: "top" });
 
@@ -1555,6 +1610,24 @@ function addTax(wb: ExcelJS.Workbook, tax: TaxExport) {
   for (const c of marked) {
     const m = settings.checks[c.key]!;
     wrap(ws.addRow({ a: c.title, f: ["Sahibin notu: muhasebecimle konuştum", dotted(m.date), m.note].filter(Boolean).join(" · ") }));
+  }
+
+  // ---- 6. Şubenin payı (bilgi): Vergi alanı "Yalnız şube" kipinde (şube ayrımı parça 6; Vergi sayfasının kartı)
+  if (opts.share) {
+    const { name, share } = opts.share;
+    ws.addRow({});
+    sectionRow(ws, "a", `6. ${name.toLocaleUpperCase("tr-TR")} · ${BRANCH_SHARE_TITLE.toLocaleUpperCase("tr-TR")}`);
+    ws.addRow({ a: `${share.year} başından bugüne, yalnız ${name} şubesinin kayıtlarıyla. Beyana girmez.` }).font = grey;
+    const lines: [string, number][] = [
+      ["Satış KDV'si (kasa)", share.salesVat],
+      [`Şubeye seçilmiş faturaların KDV'si (${num(share.invoices)} fatura)`, -share.purchaseVat],
+      ["KDV farkı (bilgi)", share.vatDiff],
+      [`Personelin SGK'sı${share.people ? ` (${num(share.people)} kişi)` : ""}`, share.sgk],
+      ["Maaş vergileri (gelir ve damga vergisi stopajı)", share.stopaj],
+      [`Amortisman (${num(share.assets)} demirbaş)`, share.depreciation],
+    ];
+    for (const [a, b] of lines) money(ws.addRow({ a, b }), ["b"]);
+    wrap(ws.addRow({ a: "Not", f: BRANCH_SHARE_NOTE }));
   }
 }
 
@@ -2029,7 +2102,7 @@ function addRawRecords(wb: ExcelJS.Workbook, model: Model) {
   filterRows(gk, 1, gk.rowCount);
 }
 
-function addRawStock(wb: ExcelJS.Workbook, model: Model) {
+function addRawStock(wb: ExcelJS.Workbook, model: Model, branchFile = false) {
   const ds = model.ds;
   const sk = addSheet(
     wb,
@@ -2076,7 +2149,9 @@ function addRawStock(wb: ExcelJS.Workbook, model: Model) {
     ],
     { y: 1, raw: true },
   );
-  headerRow(pq, colHeaders(pq));
+  const pqHead = headerRow(pq, colHeaders(pq));
+  // Alım miktarlarının şubesi yok: şube dosyasında da firmanın (şube ayrımı parça 6)
+  if (branchFile) pqHead.getCell("q").note = "Firma geneli: elle yazılan alım miktarlarının şubesi yok, bütün şubelerin alımıdır.";
   const order = new Map(ds.ingredients.map((i) => [i.id, i.sortOrder]));
   const rows = [...ds.purchaseQuantities].sort((a, b) => a.month.localeCompare(b.month) || (order.get(a.ingredientId) ?? 0) - (order.get(b.ingredientId) ?? 0));
   for (const p of rows) {

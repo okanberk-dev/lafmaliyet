@@ -178,7 +178,8 @@ export function packageSummary(d: PackageData): PackageSummary {
 }
 
 /** Dosyanın adı: laffogato-muhasebe-2026-10.xlsx */
-export const packageFileName = (month: string) => `laffogato-muhasebe-${month}.xlsx`;
+/** Dosyanın adı; şubenin paketinde şube kimliğiyle biter ("laffogato-muhasebe-2026-10-marina.xlsx"; şube ayrımı parça 6) */
+export const packageFileName = (month: string, branch: string | null = null) => `laffogato-muhasebe-${month}${branch ? `-${branch.replace(/[^a-z0-9-]/gi, "")}` : ""}.xlsx`;
 
 // ---------------------------------------------------------------------------- Çalışma kitabı
 

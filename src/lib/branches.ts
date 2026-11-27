@@ -543,12 +543,14 @@ export function monthWriteNote(scope: BranchScope, known: readonly BranchRow[]):
   return "Tümü seçili: aylık ciro, açık gün ve ay notu şubelerin toplamıdır, burada yazılmaz; yazmak için şube seçiciden şubeyi seçin.";
 }
 
-/** Firma geneli ekranlar (şube kapsamı C P1-12, P2-1): şube seçiliyken de bütün şubelerin verisini gösterir */
-export type CompanyWideScreen = "vergi" | "nakit" | "tedarikciler" | "tutarlilik" | "mutabakat" | "raporlar";
+/**
+ * Firma geneli ekranlar (şube kapsamı C P1-12, P2-1): şube seçiliyken de bütün şubelerin verisini gösterir. Şube ayrımı
+ * (27 Kasım 2026) bu ekranların hepsini kişinin şube görünümüne bağladı (çip, src/components/panel/branch-view-chip.tsx);
+ * not bugün hiçbir ekranda çizilmez, hep firma geneli kalacak bir ekran için durur (tests/sube-ayrimi.test.ts › (c))
+ */
+export type CompanyWideScreen = "vergi" | "nakit" | "tedarikciler" | "tutarlilik" | "mutabakat";
 
 const COMPANY_WIDE_TEXT: Record<CompanyWideScreen, string> = {
-  // Raporlar (docs/RAPORLAR.md): şubeler yan yana; Kaçak raporu hep Marina'nın
-  raporlar: "Raporlar şubeleri yan yana gösterir: her açık şube kendi görünümüyle okunur, soldaki seçim raporu süzmez.",
   vergi: "Vergi ve KDV firmanın: bütün şubelerin satışı, faturaları ve giderleri birlikte hesaplanır (tek vergi numarası).",
   nakit: "Nakit planı firmanın: bütün şubelerin kasası, ödemeleri ve faturaları birlikte.",
   tedarikciler:
@@ -574,14 +576,18 @@ export function companyWideNote(screen: CompanyWideScreen, scope: BranchScope, k
  * Şube görünümünün bilgi notu (Gelir-gider, Genel bakış): neyin şubenin, neyin işletme genelinin olduğu
  * (docs/SUBE.md › Şube görünümünde maliyet)
  */
-export function branchViewNote(b: { name: string; kind: BranchKind }): { title: string; text: string } {
+export function branchViewNote(b: { name: string; kind: BranchKind }, opts: { sharedHidden?: boolean } = {}): { title: string; text: string } {
   const [what, to, of] = b.kind === "online" ? ["kanal", "kanala", "kanalın"] : ["şube", "şubeye", "şubenin"];
+  // İşletme geneli giderler alanı (şube ayrımı parça 6): "Yalnız not" kipinde tutar yazılmaz, "Tutarla göster" kipinde
+  // bilgi satırı (Faz 5)
+  const shared = opts.sharedHidden
+    ? `${of} kârına girmez, tutarı burada yazılmaz; Tümü'de bir kez sayılır (bölüştürme yok; tutarıyla görmek için Hesabım › Şube görünümü › İşletme geneli giderler: Tutarla göster).`
+    : `${of} kârına girmez: "İşletme geneli payı (bilgi)" satırında toplamı görünür, Tümü'de bir kez sayılır (bölüştürme yok).`;
   return {
-    title: `${b.name} seçili: yalnız bu ${what}; işletme geneli giderler bilgi olarak`,
+    title: `${b.name} seçili: yalnız bu ${what}; işletme geneli giderler ${opts.sharedHidden ? "yalnız not" : "bilgi olarak"}`,
     text:
       `Ciro, kasa, personel ve bu ${to} bağlı giderler yalnız bu ${of}. İşletme geneli giderler (şubesi seçilmemiş harcama ve sabit ` +
-      `gider, işletme geneli faturalar, Gelir-gider'e elle yazılan tutarlar, komisyon faturaları) ${of} kârına girmez: "İşletme geneli ` +
-      `payı (bilgi)" satırında toplamı görünür, Tümü'de bir kez sayılır (bölüştürme yok). Bu ${to} seçilmiş faturalar ${of} giderinde; ` +
+      `gider, işletme geneli faturalar, Gelir-gider'e elle yazılan tutarlar, komisyon faturaları) ${shared} Bu ${to} seçilmiş faturalar ${of} giderinde; ` +
       `şubesi seçilmemiş faturalar hiçbir şubede yok (Faturalar › Tümü'de "Şubesi seçilmemiş" kutusu). Mal maliyeti ${of} satışından ` +
       `reçeteye göre (stok devri işletme genelinde). İşletmenin toplamı, sayımlı mal maliyeti ve elle yazılan tutarlar için soldan Tümü'nü seçin.`,
   };

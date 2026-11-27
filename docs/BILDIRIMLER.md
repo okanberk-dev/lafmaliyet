@@ -272,7 +272,11 @@ Ekrandan (sağdaki **E-posta bildirimleri** kutusu; kapalıyken tek satır özet
   ödeme, yeni fatura, zam ya da sistem uyarısı yoksa örnek bir ödeme satırıyla. Önizleme ve **Bugünküleri şimdi
   gönder** sabah işi gibi işletmenin tamamıyla okur, soldaki şube seçimiyle değil (`withBranchScope(ALL_BRANCHES, …)`;
   denetim 21 Kasım #18): önceden Marina seçiliyken zammın "ayda ≈ X ₺"ı Marina'nın satışından hesaplanıp gidiyor ve
-  sabah işi o zamları işletme geneli rakamla bir daha bildirmiyordu;
+  sabah işi o zamları işletme geneli rakamla bir daha bildirmiyordu. Birden çok kasa açıkken soldan bir şube seçiliyse
+  önizleme **o şubeye bağlı alıcıların e-postasıdır** (şube ayrımı parça 6; sabah işinin şube grubu: şubenin ve işletme
+  genelinin ödemeleri, şubenin kutuları ve kasadan faturalı alımları, başlıkta şubenin adı); pencerenin açıklaması hangi
+  grubun e-postası olduğunu yazar ("Marina şubesine bağlı alıcıların e-postası" / "Firmaya giden e-posta"). Okuma yine
+  "Tümü"yle, süzme gönderimin kuralıyla (`digestPreviewGroup`, `groupDigestInvoices`);
 - **Deneme gönder** (kayıtlı gönderenle, etkin adreslere; düşen adres bildirimin alt satırında "Gönderilmedi: …");
 - **Bugünküleri şimdi gönder** (sabahı beklemeden; daha önce gidenler tekrar gitmez). Bildirimde ne gittiği
   yazar: "2 hatırlatma · 4 yeni fatura · 1 zam";

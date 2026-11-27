@@ -21,6 +21,7 @@ import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Switch } from "@/components/ui/switch";
+import { SHARED_COSTS_NOTE } from "@/lib/branch-view";
 import { EXPENSE_SHARED } from "@/lib/branches";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { PANEL_FIXED_GROUPS } from "@/lib/constants";
@@ -61,6 +62,11 @@ export interface CategoryRow {
   prevTotal: number;
   /** Şube seçiliyken işletme geneli kısım (şubesi boş kayıtlar ve bağlı faturalar; toplama girmez); "Tümü"de 0 */
   sharedTotal: number;
+  /**
+   * İşletme geneli giderler "Yalnız not" kipinde (şube ayrımı parça 6) bu ay işletme geneli kayıt ya da fatura var: tutarı
+   * yazılmaz (`sharedTotal` 0), "girilmedi" uyarısı çıkmaz
+   */
+  sharedNote?: boolean;
 }
 export interface EntryRow {
   id: number;
@@ -156,11 +162,14 @@ export function MonthlyExpenses({
   invoiceCategories,
   branches,
   branchName: viewBranch = null,
+  sharedHidden = false,
 }: {
   month: string;
   isCurrent: boolean;
   /** Seçili şube (şube görünümü); "Tümü"de null. Toplam şubenin kendi kayıtları, işletme geneli ayrı (expenseSplit) */
   branchName?: string | null;
+  /** İşletme geneli giderler "Yalnız not" kipinde (şube ayrımı parça 6): işletme geneli kayıt listede ve tutarda yok */
+  sharedHidden?: boolean;
   categories: CategoryRow[];
   entries: EntryRow[];
   invoices: InvoiceItem[];
@@ -194,6 +203,7 @@ export function MonthlyExpenses({
   const offInvoice = categories.reduce((a, c) => a + c.monthEntries, 0);
   const fromInvoices = categories.reduce((a, c) => a + c.monthInvoices, 0);
   const shared = categories.reduce((a, c) => a + c.sharedTotal, 0);
+  const sharedNote = sharedHidden && categories.some((c) => c.sharedNote);
   const missing = missingCategories(categories);
   const shownFixed = showAllFixed ? fixed : fixed.filter((f) => f.group === "reklam");
   const breakdown = expenseBreakdowns(month, categories, entries, invoices, viewBranch !== null);
@@ -298,11 +308,20 @@ export function MonthlyExpenses({
             icon={<Tags />}
             label="Faturadan"
             value={tl(fromInvoices)}
-            sub={fromInvoices ? (viewBranch ? "İşletme geneli; şubenin toplamına girmez" : "Bağlı fatura kategorilerinden") : "Bağlı fatura yok"}
+            sub={fromInvoices ? (viewBranch ? (sharedHidden ? `${viewBranch} şubesine seçilmiş faturalar` : "İşletme geneli; şubenin toplamına girmez") : "Bağlı fatura kategorilerinden") : "Bağlı fatura yok"}
           />
         </StatBreakdown>
       </div>
 
+      {viewBranch && sharedNote ? (
+        <Notice
+          tone="neutral"
+          size="sm"
+          className="mb-4"
+          title={`${viewBranch} seçili: yalnız ${genitive(viewBranch)} harcamaları`}
+          text={`${SHARED_COSTS_NOTE}: şubesi seçilmemiş harcamalar ve kategoriye bağlı işletme geneli faturalar burada listelenmez. Tutarıyla görmek için Hesabım › Şube görünümü › İşletme geneli giderler: Tutarla göster; hepsi için soldan Tümü.`}
+        />
+      ) : null}
       {viewBranch && shared ? (
         <Notice
           tone="neutral"
@@ -404,11 +423,11 @@ export function MonthlyExpenses({
             meta={<span className="font-semibold text-ink tabular">{tl(total)}</span>}
           />
           <CardContent className="space-y-3">
-            {categories.filter((c) => c.monthTotal || c.sharedTotal || c.expected).length === 0 ? (
+            {categories.filter((c) => c.monthTotal || c.sharedTotal || c.sharedNote || c.expected).length === 0 ? (
               <EmptyState title="Bu ay harcama yok" description="Soldan ekledikçe burada kategori kategori listelenir." />
             ) : (
               categories
-                .filter((c) => c.monthTotal || c.sharedTotal || c.expected)
+                .filter((c) => c.monthTotal || c.sharedTotal || c.sharedNote || c.expected)
                 .map((c) => {
                   const rows = entries.filter((e) => e.categoryId === c.id);
                   const invs = invoices.filter((i) => i.categoryId === c.id);
@@ -425,6 +444,7 @@ export function MonthlyExpenses({
                         <p className="text-sm text-ink tabular">
                           <span className="font-semibold">{tl(c.monthTotal)}</span>
                           {c.sharedTotal ? <span className="ml-1.5 text-xs text-ink-mute">+ işletme geneli {tl(c.sharedTotal)}</span> : null}
+                          {c.sharedNote ? <span className="ml-1.5 text-xs text-ink-mute">+ işletme geneli (Tümü&apos;de)</span> : null}
                           {c.prevTotal ? <span className="ml-1.5 text-xs text-ink-mute">geçen ay {tl(c.prevTotal)}</span> : null}
                         </p>
                       </div>

@@ -251,6 +251,15 @@ export async function withAreaView<T>(area: ViewArea, mode: ViewMode | undefined
 }
 
 /**
+ * Seçili tek şube (kütükteki satırıyla); "Tümü"de null. İndirme bağlantıları şube seçiliyken o şubenin dosyasını sunar
+ * (dışa aktarım, muhasebeci paketi; şube ayrımı parça 6)
+ */
+export async function selectedBranchRow(): Promise<BranchRow | null> {
+  const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+  return scope === ALL_BRANCHES ? null : (branches.find((b) => b.id === scope) ?? null);
+}
+
+/**
  * Yeni kaydın ineceği tek şube. "Tümü" seçiliyken hedef belirsizdir ve varsayılan şubeye (Tuzla) iner; ekranlar
  * hangi şubeye yazdıklarını kullanıcıya gösterir. İstek dışında da varsayılan şube döner.
  */

@@ -29,7 +29,7 @@ async function refreshAfterAck(): Promise<void> {
  * "Çağırıyor"), ne zaman ve büyük "Gördüm" (tek dokunuş, onay yok; sitenin imzalı ucuna gider, ardından liste yeniden
  * çekilir). Çağrının zili kabuktaki uyarı motorunda çalar (alert-center.tsx).
  */
-export function TableCalls({ calls, now }: { calls: SiteCall[]; now: number }) {
+export function TableCalls({ calls, now, siteWide = null }: { calls: SiteCall[]; now: number; /** "Bütün şubeler" (şube ayrımı parça 6) */ siteWide?: string | null }) {
   return (
     <Card>
       <CardHeader
@@ -37,9 +37,12 @@ export function TableCalls({ calls, now }: { calls: SiteCall[]; now: number }) {
         title="Masa çağrıları"
         description="Masaya gidince Gördüm'e dokunun; çağrı sitede de kapanır."
         meta={
-          <Badge tone="amber" dot>
-            {num(calls.length)} masa bekliyor
-          </Badge>
+          <>
+            <Badge tone="amber" dot>
+              {num(calls.length)} masa bekliyor
+            </Badge>
+            {siteWide ? <Badge tone="gray">{siteWide}</Badge> : null}
+          </>
         }
       />
       <div className="px-5 pb-5">

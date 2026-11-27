@@ -662,6 +662,13 @@ export interface Dataset {
    */
   branchView?: { id: string; name: string; kind: "fiziksel" | "online" } | null;
   /**
+   * İşletme geneli giderlerin tutarı gizli (şube ayrımı parça 6; İşletme geneli giderler alanı "Yalnız not" kipinde, tek
+   * şube seçiliyken): "İşletme geneli payı (bilgi)" satırı, Genel bakış'ın ve Sabit giderler'in bilgi tutarı yerine
+   * yalnız not ("İşletme geneli giderler bu şubenin kârına girmez (Tümü'de sayılır)"); işletme geneli sabit gider kalemi
+   * listede yok. Şubenin kârı değişmez. "Tümü"de, "Tutarla göster" kipinde ve testlerde yok
+   */
+  sharedCostsHidden?: boolean;
+  /**
    * Şube görünümünde "Tümü"nün ay bilgisi (Faz 5; src/server/data/dataset.ts): işletme geneli giderlerin günü
    * işletmeninkidir, "İşletme geneli payı (bilgi)" satırı Tümü'nün saydığı tutarı gösterir. "Tümü"de ve testlerde yok
    */

@@ -106,17 +106,22 @@ test("kaynak: Satışlar'ın ay bilgisi 'Tümü'de birden çok kasa açıkken ş
   assert.match(read("src/app/panel/satislar/sales-client.tsx"), /\{num\(clearCount\)\} \{asilpos \? "ModPOS" : "satış"\} satırı silinecek\./);
 });
 
-test("kaynak: Dışa aktar düğmesi ekranın şubesini gönderir; dosya kapsamı yazar, Vergi ve Cari firma geneli", () => {
+test("kaynak: Dışa aktar düğmesi ekranın şubesini gönderir; dosya kapsamı yazar, sekmeler alanlarının kipiyle", () => {
   assert.match(read("src/app/panel/page.tsx"), /href=\{`\/api\/export\?ay=\$\{month\}&\$\{BRANCH_PARAM\}=\$\{encodeURIComponent\(scope\)\}`\}/);
   const route = read("src/app/api/export/route.ts");
   assert.match(route, /const scope = raw \? parseBranchScope\(raw, await listBranches\(\)\) : ALL_BRANCHES;/);
-  assert.match(route, /withBranchScope\(ALL_BRANCHES, \(\) => loadCariExport\(\)\)/);
+  // Şube ayrımı parça 6: Cari hareketleri Tedarikçi bakiyeleri alanının kipiyle, beyan her kipte "Tümü"yle
+  assert.match(route, /const cariScope = await areaScope\("tedarikciler"\);/);
+  assert.match(route, /loadCariExport\(cariScope\)/);
+  assert.match(route, /withBranchScope\(ALL_BRANCHES, async \(\) => loadTaxView\(/);
   // Kapak "Kapsam" satırı ve sayfaların üst bilgisi (davranışı tests/export-bicim.test.ts sınar)
   const wbSrc = read("src/app/api/export/workbook.ts");
-  assert.match(wbSrc, /scope\?\.branch\s*\? `\$\{scope\.label\} şubesi: /);
+  assert.match(wbSrc, /`\$\{n\} şubesi: satış, kasa, personel/);
   assert.match(wbSrc, /const period = `\$\{label\} · \$\{extras\.scope\?\.label \?\? "Tümü"\}`;/);
-  // Ayarlar'daki tam yedek seçicisiz ("Tümü")
-  assert.match(read("src/app/panel/ayarlar/page.tsx"), /<a href="\/api\/export" download/);
+  // Ayarlar'daki dışa aktarım şube seçiliyken şubenin dosyası, yanında bütün şubeler (şube ayrımı parça 6)
+  const ayarlar = read("src/app/panel/ayarlar/page.tsx");
+  assert.match(ayarlar, /<a href="\/api\/export" download/);
+  assert.match(ayarlar, /href=\{`\/api\/export\?\$\{BRANCH_PARAM\}=\$\{encodeURIComponent\(exportBranch\.id\)\}`\}/);
 });
 
 test("sabah e-postası alıcı grupları: şubesiz ve bütün kasaları seçen adres tek e-posta; şubeye bağlı adres ayrı", () => {

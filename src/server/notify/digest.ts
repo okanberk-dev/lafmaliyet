@@ -232,6 +232,18 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
 type CashOutState = Awaited<ReturnType<typeof loadCashOutInvoiceState>>;
 
 /** Fatura bölümünün "kasadan faturalı alımlar" satırı (yoksa null) */
+/**
+ * Şubeye bağlı alıcı grubunun fatura bölümü: kasadan faturalı alımlar kasanın şubesinin (eşleştirme bütün şubelerle
+ * yapıldı; yalnız gösterim süzülür). Bütün şubelerin grubunda (boş) olduğu gibi. Sabah e-postası ve önizlemesi
+ */
+export function groupDigestInvoices(invoices: DigestInvoices, cashOutState: CashOutState, branchIds: readonly string[]): DigestInvoices {
+  if (!branchIds.length) return invoices;
+  return {
+    ...invoices,
+    cashOuts: cashOutPartOf({ pending: cashOutState.pending.filter((r) => branchIds.includes(r.branchId)), duplicates: cashOutState.duplicates.filter((r) => branchIds.includes(r.branchId)) }),
+  };
+}
+
 function cashOutPartOf({ pending, duplicates }: CashOutState): DigestInvoices["cashOuts"] {
   return pending.length || duplicates.length
     ? { count: pending.length, summary: pendingCashOutSummary(pending), ...(duplicates.length ? { duplicates: duplicates.length } : {}) }
@@ -356,12 +368,7 @@ async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday
       const groupExtras = g.branchIds.length ? await branchGroupExtras(today, g.branchIds) : extras;
       const groupFresh = g.branchIds.length ? fresh.filter((f) => digestItemInGroup(itemBranch(f.item), g.branchIds)) : fresh;
       // Kasadan faturalı alımlar kasanın şubesinin (eşleştirme bütün şubelerle yapıldı; yalnız gösterim süzülür)
-      const groupInvoices = g.branchIds.length
-        ? {
-            ...invoices,
-            cashOuts: cashOutPartOf({ pending: cashOutState.pending.filter((r) => g.branchIds.includes(r.branchId)), duplicates: cashOutState.duplicates.filter((r) => g.branchIds.includes(r.branchId)) }),
-          }
-        : invoices;
+      const groupInvoices = groupDigestInvoices(invoices, cashOutState, g.branchIds);
       const news = groupFresh.length > 0 || invoiceNews || !!prices || system.length > 0 || groupExtras.news;
       return { ...g, branch, extras: groupExtras, fresh: groupFresh, invoices: groupInvoices, news };
     }),

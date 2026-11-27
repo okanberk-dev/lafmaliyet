@@ -134,7 +134,9 @@ düğmeleri gizli.
   seçiliyken ekran ekran "yalnız şube" ya da "firma geneli" seçer (muhasebecinin varsayılanı Vergi'de firma geneli);
   müdür ve şubesine kilitli personelde ayar yok, her ekran yalnız kendi şubesi (`saveBranchView` reddeder).
 - Tam dışa aktarım (`/api/export`) ve yedek yöneticinin; muhasebecinin dışa aktarımı aylık **muhasebeci paketi**
-  (`/api/muhasebe/paket`, [MUHASEBE-PAKETI.md](MUHASEBE-PAKETI.md)).
+  (`/api/muhasebe/paket`, [MUHASEBE-PAKETI.md](MUHASEBE-PAKETI.md)). Şube seçiliyken paketin elle indirmesi o şubenin
+  (`?sube=`, işletme geneli kalemler muhasebecinin İşletme geneli giderler kipiyle: varsayılanı "Tutarla göster"); aylık
+  e-posta bütün şubeler (şube ayrımı parça 6).
 
 ## Kullanıcı yönetimi ve davet
 

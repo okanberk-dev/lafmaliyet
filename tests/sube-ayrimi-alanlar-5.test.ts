@@ -332,9 +332,10 @@ test("kaynak: kayıt parça 5'in alanlarını taşır, parça 5'in bekleyenleri 
     assert.equal(r.area, area);
   }
   assert.equal(ids.get("vergi.beyan")?.kind, "yalniz-firma");
-  assert.deepEqual(
-    COMPANY_WIDE_READS.filter((r) => r.kind === "bekliyor" && r.part === 5).map((r) => r.id),
-    [],
+  // Bekleyen kayıt kalmadı (parça 6 sonuncuyu kapattı; tests/sube-ayrimi.test.ts kaydın türlerini denetler)
+  assert.equal(
+    COMPANY_WIDE_READS.some((r) => (r.kind as string) === "bekliyor"),
+    false,
   );
   assert.match(read("src/server/branch-scope.ts"), /if \(\(await listBranches\(\)\)\.filter\(\(b\) => b\.active\)\.length < 2\) return ALL_BRANCHES;/);
 });

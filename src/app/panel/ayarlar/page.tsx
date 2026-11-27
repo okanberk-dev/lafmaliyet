@@ -12,7 +12,7 @@ import { CardContent } from "@/components/ui/card";
 import { InfoTip, Skeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { logPerson } from "@/lib/activity-person";
-import { ALL_BRANCHES } from "@/lib/branches";
+import { ALL_BRANCHES, BRANCH_PARAM } from "@/lib/branches";
 import { AUTO_BACKUP_KEEP, storedBackupLabel } from "@/lib/backup/auto";
 import { backupCardSummary, backupDue, lastBackupText, sizeText } from "@/lib/backup/format";
 import { currentMonthTR, shiftMonth, type Model } from "@/lib/calc/engine";
@@ -21,7 +21,7 @@ import { missedPingShown } from "@/lib/site-orders/follow";
 import { activityActionLabel } from "@/lib/import-labels";
 import { requireAdmin } from "@/server/auth/dal";
 import { appUrl } from "@/server/auth/tokens";
-import { areaScope, branchWhereWithShared, currentBranchScope } from "@/server/branch-scope";
+import { areaScope, branchWhereWithShared, currentBranchScope, selectedBranchRow } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadAutoBackupInfo, type AutoBackupInfo } from "@/server/backup/auto";
 import { loadBackupInfo } from "@/server/backup/state";
@@ -142,6 +142,9 @@ function UsersLinkCard() {
  * (src/lib/job-health.ts › systemAlerts). Geri yükleme panelde yok: bilgisayardan bir komutla yapılır.
  */
 async function BackupCard() {
+  // Dışa aktarım şube seçiliyken o şubenin dosyası (şube ayrımı parça 6; sekmeler alanlarının kipiyle), yanında bütün
+  // şubelerin dosyası. Geri yüklenebilir tam yedek her zaman bütün veritabanı (yedek.tam)
+  const exportBranch = await selectedBranchRow();
   const [info, auto] = await Promise.all([
     loadBackupInfo().catch((e) => {
       console.error("Yedek bilgisi okunamadı", e);
@@ -176,9 +179,20 @@ async function BackupCard() {
         <>
           <BackupDownload uploads={info?.uploads ?? { count: 0, bytes: 0 }} last={last ? { dataBytes: last.dataBytes } : null} />
           {/* Dosya indiren rota: düz bağlantı (istemci yönlendirmesi önce sayfa isteği yapıp ikinci kez indirmesin) */}
-          <a href="/api/export" download className={buttonClass("secondary", "md", "max-sm:w-full")}>
-            <FileSpreadsheet size={16} aria-hidden="true" /> Dışa aktar (.xlsx)
-          </a>
+          {exportBranch ? (
+            <>
+              <a href={`/api/export?${BRANCH_PARAM}=${encodeURIComponent(exportBranch.id)}`} download className={buttonClass("secondary", "md", "max-sm:w-full")}>
+                <FileSpreadsheet size={16} aria-hidden="true" /> Dışa aktar · {exportBranch.name} (.xlsx)
+              </a>
+              <a href="/api/export" download className={buttonClass("ghost", "md", "max-sm:w-full")}>
+                Bütün şubeler (.xlsx)
+              </a>
+            </>
+          ) : (
+            <a href="/api/export" download className={buttonClass("secondary", "md", "max-sm:w-full")}>
+              <FileSpreadsheet size={16} aria-hidden="true" /> Dışa aktar (.xlsx)
+            </a>
+          )}
         </>
       }
     >

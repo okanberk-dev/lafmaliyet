@@ -10,6 +10,7 @@ import { buttonClass } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { featureBranches, featureInScope } from "@/lib/branch-features";
+import { siteWideBadge } from "@/lib/branch-view";
 import { tillBranches } from "@/lib/branches";
 import { adminActor } from "@/lib/roles";
 import { requireCan } from "@/server/auth/dal";
@@ -97,6 +98,9 @@ async function SiparislerContent() {
   const ordersHere = featureInScope("siparis", view.scope, view.branches);
   const callsHere = featureInScope("garson", view.scope, view.branches);
   const on = [...featureBranches(view.branches, "siparis"), ...featureBranches(view.branches, "garson")].filter((b, i, all) => all.findIndex((x) => x.id === b.id) === i);
+  // Site siparişin, çağrının ve Tükendi'nin şubesini göndermiyor (şube ayrımı parça 6; sözleşme): tek şube seçiliyken
+  // kartlar "Bütün şubeler" rozetiyle (site değişene kadar)
+  const siteWide = siteWideBadge(view.scope, view.branches.filter((b) => b.active).length);
   const recipes = Object.fromEntries(linked.filter((p) => p.siteMenuId && p.siteMenuSlot).map((p) => [`${p.siteMenuId}|${p.siteMenuSlot}`, p.name]));
   return (
     <>
@@ -116,11 +120,11 @@ async function SiparislerContent() {
           )
         ) : null}
         {ordersHere || callsHere ? (
-          <OrdersBoard role={user.role} siteBase={siteUrl()} recipes={recipes} serverNow={now} ordersOff={ordersHere ? null : "Uygulama siparişleri bu şubede kullanılmıyor; burada yalnız masa çağrıları görünür."} />
+          <OrdersBoard role={user.role} siteBase={siteUrl()} recipes={recipes} serverNow={now} ordersOff={ordersHere ? null : "Uygulama siparişleri bu şubede kullanılmıyor; burada yalnız masa çağrıları görünür."} siteWide={siteWide} />
         ) : (
           <FeatureOff title="Siparişler bu şubede kullanılmıyor" path="/panel/siparisler" on={on} locked={view.locked} admin={user.role === "admin"} />
         )}
-        {soldOut?.configured ? <SoldOutCard role={user.role} entries={soldOut.entries} serverNow={now} branches={branchNames} lockedStaff={locked} /> : null}
+        {soldOut?.configured ? <SoldOutCard role={user.role} entries={soldOut.entries} serverNow={now} branches={branchNames} lockedStaff={locked} siteWide={siteWide} /> : null}
         <div className="max-w-xl">
           {/* Karaoke alarmlarının satırları yalnız karaoke bu kapsamda açıkken (şube özelliği) */}
           <DeviceAlerts role={user.role} karaoke={featureInScope("karaoke", view.scope, view.branches)} />

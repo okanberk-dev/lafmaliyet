@@ -672,7 +672,11 @@ export function breakEvenBreakdown(model: Model, d: DashboardData): CardBreakdow
     description: `Zarar etmemek için gereken günlük ciro (KDV dahil): ${exp || cover ? "(" : ""}standart aylık sabit gider${exp ? " + her ay girilen harcamalar" : ""}${cover ? " − laffogato.net online satışın brüt kârı" : ""}${exp || cover ? ")" : ""} ÷ brüt kâr oranı ÷ ayda açık gün.${
       d.refMonth ? ` Brüt kâr oranı ${monthLabel(d.refMonth)} satışlarından.` : ""
     }${cover ? ` Online satış (laffogato.net) sabit giderin bir kısmını karşılar: ${monthLabel(cover.month)} brüt kârı düşülür, kalanı kasanın cirosu karşılar.` : ""}${
-      d.breakEven.shared > 0 ? ` Şube seçili: işletme geneli sabit giderler (${tl(d.breakEven.shared)}, bilgi) şubenin başabaşına girmez; Tümü'de bir kez sayılır.` : ""
+      d.breakEven.sharedHidden
+        ? " Şube seçili: işletme geneli sabit giderler şubenin başabaşına girmez (Tümü'de sayılır)."
+        : d.breakEven.shared > 0
+          ? ` Şube seçili: işletme geneli sabit giderler (${tl(d.breakEven.shared)}, bilgi) şubenin başabaşına girmez; Tümü'de bir kez sayılır.`
+          : ""
     }`,
     groups: [
       { key: "sabit", label: "Standart aylık sabit gider", rows: standardRows(d, 1) },

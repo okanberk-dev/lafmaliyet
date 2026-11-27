@@ -2,7 +2,7 @@ import { Users } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { CompanyWideNotice } from "@/components/panel/company-wide-notice";
+import { BranchViewChip } from "@/components/panel/branch-view-chip";
 import { MonthPicker, MonthPickerSkeleton } from "@/components/panel/month-picker";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
@@ -20,6 +20,7 @@ import { requireCan } from "@/server/auth/dal";
 import { monthParam } from "@/server/data/dataset";
 import { loadLaborReport, type LaborBranchReport, type LaborReport, type LaborRowShown } from "@/server/data/iscilik";
 
+import { compareEmpty } from "../compare-empty";
 import { ReportHeader } from "../header";
 
 export const metadata: Metadata = { title: "İşçilik / ciro" };
@@ -87,7 +88,8 @@ async function LaborContent({ searchParams }: { searchParams: PageProps<"/panel/
     return (
       <>
         <ReportHeader path={PATH} title={TITLE} description={description} more={more} actions={actions} role={me.role} />
-        <EmptyState icon={<Users />} title="Açık şube yok" description="Ayarlar › Şubeler'de açık bir fiziksel şube olmalı." />
+        <BranchViewChip area="karsilastirma" className="mb-4" />
+        <EmptyState icon={<Users />} {...(await compareEmpty())} />
       </>
     );
   }
@@ -98,7 +100,7 @@ async function LaborContent({ searchParams }: { searchParams: PageProps<"/panel/
       <p className="-mt-2 mb-4 text-xs text-pretty text-ink-mute" role="note">
         Yöntem: {data.wages ? LABOR_METHOD : LABOR_METHOD_NO_WAGES}
       </p>
-      {admin ? <CompanyWideNotice screen="raporlar" className="mb-4" /> : null}
+      <BranchViewChip area="karsilastirma" className="mb-4" />
       {data.missing.length ? (
         <Notice
           tone="warn"

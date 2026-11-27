@@ -19,8 +19,11 @@ import {
 } from "@/lib/cari/account";
 import type { CariMethod } from "@/lib/cari/balance";
 import { EPS, METHOD_LABEL, round2 } from "@/lib/cari/balance";
+import { branchPayments } from "@/lib/cari/branch-account";
 import type { ForeignCredit } from "@/lib/cari/statement";
 import { tl } from "@/lib/format";
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
+import { invoiceInScope } from "@/lib/invoice-branch";
 import { candidateOf, KASA_LOOKBACK_DAYS, kasaMatches, linkCandidates, type KasaLine, type LinkCandidate } from "@/lib/cari/match";
 import { addDays, todayTR } from "@/lib/reminders";
 import { loadSupplierRefs, supplierSlugOf } from "@/server/data/suppliers";
@@ -505,21 +508,32 @@ export async function loadExpectedDebtsByCard(): Promise<{ cardId: number; name:
 }
 
 /**
- * Dışa aktarımın "Cari hareketleri" sekmesi: bütün elle kayıtlar (borç ve ödeme), kartın adı, ödemenin sayıldığı kalemler,
- * borcun bağlandığı fatura. Kayıt yokken boş (sekme eklenmez).
+ * Dışa aktarımın "Cari hareketleri" sekmesi: tedarikçilere elle girilen borçlar ve ödemeler (KDV dahil). `scope` Tedarikçi
+ * bakiyeleri alanının kapsamı (şube ayrımı parça 6; src/lib/cari/branch-account.ts): "Tümü"de firmanın bütün hareketleri;
+ * tek şubede borçlar (faturasız alım, eski borç) "İşletme geneli" yazısıyla, ödemelerden şubenin kasasından yapılanın
+ * tamamı ve öbürlerinin şubenin (ve işletme genelinin) faturalarına sayılan kısmı (`branchPayments`). Öbür şubenin
+ * faturası adıyla yazılmaz ("öbür şubenin faturası")
  */
-export async function loadCariExport(): Promise<CariExportRow[]> {
+export async function loadCariExport(scope: BranchScope = ALL_BRANCHES): Promise<CariExportRow[]> {
   const entries = await loadCardEntries();
   if (!entries.debts.length && !entries.payments.length) return [];
   const db = getDb();
+  const branchMode = scope !== ALL_BRANCHES;
   const cardIds = [...new Set([...entries.debts, ...entries.payments].map((e) => e.supplierId))];
   const invoiceIds = [...new Set([...entries.allocations.flatMap((a) => (a.invoiceId !== null ? [a.invoiceId] : [])), ...entries.debts.flatMap((d) => (d.invoiceId !== null ? [d.invoiceId] : []))])];
   const [cards, invoices] = await Promise.all([
     db.select({ id: s.suppliers.id, name: s.suppliers.name }).from(s.suppliers).where(inArray(s.suppliers.id, cardIds)),
-    invoiceIds.length ? db.select({ id: s.invoices.id, invoiceNo: s.invoices.invoiceNo, date: s.invoices.date }).from(s.invoices).where(inArray(s.invoices.id, invoiceIds)) : [],
+    invoiceIds.length
+      ? db
+          .select({ id: s.invoices.id, invoiceNo: s.invoices.invoiceNo, date: s.invoices.date, branchId: s.invoices.branchId, companyWide: s.invoices.companyWide })
+          .from(s.invoices)
+          .where(inArray(s.invoices.id, invoiceIds))
+      : [],
   ]);
   const cardName = new Map(cards.map((c) => [c.id, c.name]));
-  const invoiceName = new Map(invoices.map((i) => [i.id, invoiceLabel(i)]));
+  // Şube kipinde öbür şubenin (ve şubesi seçilmemiş) faturası adıyla yazılmaz
+  const shownInvoice = new Set(invoices.filter((i) => !branchMode || invoiceInScope(i, scope)).map((i) => i.id));
+  const invoiceName = new Map(invoices.map((i) => [i.id, shownInvoice.has(i.id) ? invoiceLabel(i) : OTHER_BRANCH_INVOICE]));
   const debtName = new Map(entries.debts.map((d) => [d.id, debtLabel(d)]));
   const num2 = (v: number) => tl(v, 2).replace(/\s*₺$/u, "");
   const movement: Record<CostMode, string> = {
@@ -534,7 +548,8 @@ export async function loadCariExport(): Promise<CariExportRow[]> {
     rows.push({
       date: d.date,
       supplier: cardName.get(d.supplierId) ?? "",
-      movement: movement[d.costMode],
+      // Faturasız borç firmanındır: şube dosyasında "İşletme geneli" (şubenin bakiyesine girmez)
+      movement: branchMode ? `${movement[d.costMode]} · İşletme geneli` : movement[d.costMode],
       description: d.description,
       debt: d.amount,
       payment: null,
@@ -544,24 +559,32 @@ export async function loadCariExport(): Promise<CariExportRow[]> {
       note: d.note ?? null,
     });
   }
-  for (const p of entries.payments) {
-    const mine = entries.allocations.filter((a) => a.paymentId === p.id);
+  // Şube kipinde şubenin ödemeleri: kasasından yapılanın tamamı, öbürünün kapsamdaki faturalara sayılan kısmı
+  const payments = branchMode ? branchPayments(entries.payments, entries.allocations, shownInvoice, scope) : entries.payments;
+  const byId = new Map(entries.payments.map((p) => [p.id, p]));
+  for (const shown of payments) {
+    const p = byId.get(shown.id)!;
+    const own = !branchMode || p.cashOutBranchId === scope;
+    const mine = entries.allocations.filter((a) => a.paymentId === p.id && (own || (a.invoiceId !== null && shownInvoice.has(a.invoiceId))));
     const parts = mine.map((a) => `${a.invoiceId !== null ? (invoiceName.get(a.invoiceId) ?? "fatura") : (debtName.get(a.debtId ?? 0) ?? "alım")} ${num2(a.amount)}`);
     rows.push({
       date: p.date,
       supplier: cardName.get(p.supplierId) ?? "",
-      movement: "Ödeme",
+      movement: own ? "Ödeme" : "Ödeme (şubenin faturalarına sayılan kısmı)",
       description: null,
       debt: null,
-      payment: p.amount,
+      payment: shown.amount,
       method: p.method === "kasa" ? `Kasadan (Teslim · ${p.cashOutStore ?? cardName.get(p.supplierId) ?? ""})` : METHOD_LABEL[p.method],
-      counted: [...parts, `hesapta ${num2(paymentCredit(p, entries.allocations))}`].join(" · "),
+      counted: (own ? [...parts, `hesapta ${num2(paymentCredit(p, entries.allocations))}`] : parts).join(" · "),
       invoice: null,
       note: p.note ?? null,
     });
   }
   return rows;
 }
+
+/** Şube dosyasında öbür şubenin (ya da şubesi seçilmemiş) faturasının yerine yazılan */
+export const OTHER_BRANCH_INVOICE = "öbür şubenin faturası";
 
 /**
  * Faturalar'ın cari bilgisi (§6.4): faturaya sayılan ödemeler (gün, şekil, tutar) ve faturaya bağlanmış faturasız

@@ -189,6 +189,30 @@ export function digestGroups(rows: readonly { email: string; branchIds: readonly
   return [...groups.values()].sort((a, b) => rank(a) - rank(b));
 }
 
+/**
+ * E-posta önizlemesinin alıcı grubu (şube ayrımı parça 6): soldan birden çok kasa açıkken bir kasa (fiziksel şube)
+ * seçiliyse o şubeye bağlı alıcıların e-postası (`digestGroups`'un [şube] grubu); "Tümü"de, online kanalda ve tek kasada
+ * firmaya giden e-posta (null)
+ */
+export function digestPreviewGroup<T extends { id: string }>(scope: string, tills: readonly T[]): T | null {
+  return tills.length > 1 ? (tills.find((t) => t.id === scope) ?? null) : null;
+}
+
+/**
+ * Önizlemenin başlığındaki alıcı grubu (şube ayrımı parça 6): şube seçiliyken o şubeye bağlı alıcıların e-postası,
+ * "Tümü"de firmaya giden e-posta
+ */
+export function previewGroupText(group: string | null): string {
+  return group ? `${group} şubesine bağlı alıcıların e-postası (şubenin ve işletme genelinin ödemeleri). ` : "Firmaya giden e-posta (bütün şubeler). ";
+}
+
+/**
+ * Haftalık özetin önizlemesinde şube seçiliyken not (şube ayrımı parça 6): haftalık özetin şube grubu yok, firmaya gider
+ */
+export function weeklyPreviewNote(branch: string | null): string | null {
+  return branch ? `Haftalık özet şube şube gitmez: firmaya giden e-posta, bütün şubeler (${branch} seçili olsa da).` : null;
+}
+
 /** Adres şubeye bağlı ama seçili şubelerinin hiçbiri açık kasa değil: sabah e-postasını ve gün sonu yedeğini almaz */
 export function branchesClosed(branchIds: readonly string[] | undefined, tills: readonly { id: string }[]): boolean {
   return !!branchIds?.length && !branchIds.some((id) => tills.some((t) => t.id === id));

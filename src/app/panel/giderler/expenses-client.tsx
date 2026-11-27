@@ -22,6 +22,7 @@ import { ToggleRow } from "@/components/ui/toggle-row";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
+import { SHARED_COSTS_NOTE } from "@/lib/branch-view";
 import { shiftMonth, type FixedHistoryEntry, type RangeStatus } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { FixedPeriod, FixedSection, LandlordType } from "@/lib/calc/types";
@@ -274,7 +275,8 @@ export function FixedSummary({
   /** Gelecek ay toplam değişiyorsa (planlı zam, biten kalem): o ayın toplamı */
   next: { month: string; total: number } | null;
   /** Şube seçiliyken toplama ve başabaşa girmeyen işletme geneli kalemler (sahibin kararı 4); "Tümü"de null */
-  shared?: { branch: string; amount: number } | null;
+  /** Şube seçiliyken işletme geneli kalemler (bilgi); `hidden`: İşletme geneli giderler "Yalnız not" kipinde, tutar yok (parça 6) */
+  shared?: { branch: string; amount: number; hidden?: boolean } | null;
 }) {
   return (
     <Card className="mb-6 p-5">
@@ -290,7 +292,11 @@ export function FixedSummary({
             <CountUp value={total} />
           </p>
           <p className="mt-1 text-[13px] text-ink-mute">{acikGun} açık gün varsayımıyla · KDV hariç</p>
-          {shared && shared.amount > 0 ? (
+          {shared?.hidden ? (
+            <p className="mt-1.5 max-w-xl text-[13px] text-pretty text-ink-soft">
+              {shared.branch} seçili: işletme geneli kalemler bu listede, toplamda ve başabaşta yok. {SHARED_COSTS_NOTE}.
+            </p>
+          ) : shared && shared.amount > 0 ? (
             <p className="mt-1.5 max-w-xl text-[13px] text-pretty text-ink-soft">
               {shared.branch} seçili: işletme geneli kalemler (<span className="font-medium whitespace-nowrap text-ink tabular">{tl(shared.amount)}</span>, bilgi) bu
               toplama ve başabaşa girmez; Tümü&apos;de bir kez sayılır.
@@ -1522,7 +1528,8 @@ export function InvestmentsClient({
 }: {
   rows: Investment[];
   total: number;
-  shared?: { branch: string; amount: number; count: number } | null;
+  /** `hidden`: İşletme geneli giderler "Yalnız not" kipinde (şube ayrımı parça 6): işletme geneli yatırım listede yok */
+  shared?: { branch: string; amount: number; count: number; hidden?: boolean } | null;
   branches: FixedBranches;
 }) {
   const [editing, setEditing] = useState<Investment | "new" | null>(null);
@@ -1562,9 +1569,11 @@ export function InvestmentsClient({
         icon={<PiggyBank />}
         title="Tek seferlik yatırımlar"
         description={
-          shared
-            ? `Bilgi amaçlı, aylık gidere dahil değil. Toplam yalnız ${shared.branch} şubesinin; işletme geneli ${shared.count} kayıt (${tl(shared.amount)}) listede, toplama girmez.`
-            : "Bilgi amaçlı, aylık gidere dahil değil."
+          shared?.hidden
+            ? `Bilgi amaçlı, aylık gidere dahil değil. Yalnız ${shared.branch} şubesinin yatırımları; işletme geneli yatırımlar Tümü'de.`
+            : shared
+              ? `Bilgi amaçlı, aylık gidere dahil değil. Toplam yalnız ${shared.branch} şubesinin; işletme geneli ${shared.count} kayıt (${tl(shared.amount)}) listede, toplama girmez.`
+              : "Bilgi amaçlı, aylık gidere dahil değil."
         }
         meta={
           <>
