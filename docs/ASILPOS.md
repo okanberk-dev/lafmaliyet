@@ -845,9 +845,9 @@ atsın"; `src/server/asilpos/foto.ts`, kurallar `src/lib/asilpos/foto.ts`):
   Pavo için hâlâ false gönderir: panel buna bakmaz. Personelden **tek fotoğraf** istenir: "Pavo'dan gün sonu fişini
   (detaylı Z) alın ve fotoğrafını ekleyin" (birden çok fotoğraf da alınır, iki ayrı fotoğraf istenmez). Yalnız ayrı mali Z
   basan cihazda (TokenX, `zReport`) yazarkasa Z'si ayrıca istenir.
-- Otomatik raporlu AsilPOS gününde personelin Kasa sayfası raporu salt okunur gösterir (Düzenle, Silinmesini iste,
-  Düzeltme öner, WhatsApp ile gönder ve Metni kopyala yok; altında "Rakamlar AsilPOS'tan geldi; kasayı yönetici kontrol
-  eder.", farkı ima eden "AsilPOS'ta düzeltin" değil; sayım personele kör, aşağıda "Kör kasa") ve tek bir
+- Otomatik raporlu AsilPOS gününde personelin Kasa sayfası raporu salt okunur gösterir (Düzenle, Silinmesini iste ve
+  Düzeltme öner yok; altında "Rakamlar AsilPOS'tan geldi; kasayı yönetici kontrol eder.", farkı ima eden "AsilPOS'ta
+  düzeltin" değil; sayım personele kör, aşağıda "Kör kasa"; WhatsApp ile gönder ve Metni kopyala sayımsız metinle) ve tek bir
   "Gün sonu fotoğrafı" kartı. Sayfanın alt başlığı "Rakamlar AsilPOS'tan geldi; Pavo'dan gün sonu fişini (detaylı Z) alıp
   fotoğrafını ekleyin." ("Kapanışta Z raporunu alın, kasadaki nakdi sayın…" değil). Kart eklenince "Fotoğraf alındı",
   okunamadı ya da yanlış belgeyse "Fotoğraf okunamadı / yanlış belge, yeniden çekin" der; Pavo'nun sonucu AsilPOS'a henüz
@@ -885,14 +885,26 @@ atsın"; `src/server/asilpos/foto.ts`, kurallar `src/lib/asilpos/foto.ts`):
     alt başlığı elle girilmiş raporda "Gün sonu AsilPOS'ta alınır; bu günün kasa raporu girildi, kasayı yönetici kontrol
     eder."), döküm özetinde "sayılan" yok; dökümün kasa bölümünde yalnız
     nakit satış, gün içinde giren ve çıkan, altında "Kör sayım: açılış, sayılan nakit ve kasa farkı yalnız yöneticide."
-    Rapor salt okunur (Düzenle, Silinmesini iste, Düzeltme öner, WhatsApp ve Metni kopyala yok). Eski AsilPOS günü kartı
-    (dünden eski 14 gün) da aynı dökümü gösterir.
+    Rapor salt okunur (Düzenle, Silinmesini iste ve Düzeltme öner yok). Eski AsilPOS günü kartı (dünden eski 14 gün) da
+    aynı dökümü gösterir.
+  - **WhatsApp metni sayımsız** (sahibin isteği, 28 Kasım 2026: "WhatsApp kopyala gitmiş ladmin'de, o olsun"): kayıtlı
+    rapor kartında **WhatsApp ile gönder** ve **Metni kopyala** personelde yine var (24 ve 25 Kasım'dan beri yoktu). Metin
+    dökümün gösterdiği kadardır (`whatsappText(…, { blind: true })`): başlık (numara, şube, gün, gönderen ve sayan), Z no
+    ve fiş sayısı, fotoğraf satırı, Z bölümü (satış, ödeme türleri, indirim), kasa bölümünde yalnız nakit satış, gün
+    içinde giren ve çıkan (kasadan çıkan satırlarıyla, AsilPOS'un teslimi dahil), altında "Kör sayım: açılış, sayılan
+    nakit ve kasa farkı yalnız yöneticide.", kart bölümü, zayi / ikram ve not (açılış cümleleri çıkmış, yönetici
+    yönergesi yerine "Banka POS henüz gelmedi; yönetici ilgileniyor"). Açılış, sayılan, teslim, olması gereken, kasa
+    farkı, ertesi güne devir, açılış ↔ devir ve ertesi günün açılışı uyarıları, "Değişen" satırı (sürümler sayılanı
+    taşır) ve AsilPOS'tan farklı yazılanların sayıma ait satırları (açılış, sayılan, devir) metne girmez; alanlar dolu
+    gelse de metin onları sıfırlar. Otomatik raporda fotoğraf ↔ rapor farkı yine personele gitmez (`staffPhotoDiffs`).
+    Yöneticinin metni ve Tuzla (ModPOS) günü bayt bayt eskisi gibi (`tests/whatsapp-kor.test.ts`).
   - Bugün: "AsilPOS gün sonu · Fotoğraf alındı" ve elle girilmiş raporda "Ali gönderdi" (fark yok). Kasa sayfasının
     **Son 7 gün** listesinde AsilPOS gününün farkının yerinde gri "Sayım AsilPOS'ta" rozeti. Personelin zili zaten farkı
     söylemez; çalışanların gün sonu e-postası da (`sendStaffDayEnd`).
   - Sunucu: personel AsilPOS gününün raporunu formdan yazamaz (yöneticinin elle girdiği de: "AsilPOS gününün kasa raporunu
-    yalnız yönetici düzeltir; yanlışlık varsa yöneticinize yazın."), düzeltme öneremez (`proposeCashCorrection`) ve
-    WhatsApp metnini istemez (`cashReportWhatsapp`): ikisinin yanıtı farkı taşırdı.
+    yalnız yönetici düzeltir; yanlışlık varsa yöneticinize yazın.") ve düzeltme öneremez (`proposeCashCorrection`): ikisinin
+    yanıtı farkı taşırdı. WhatsApp metnini isteyen eylem (`cashReportWhatsapp`) reddetmez, sayımsız metni verir (Kasa
+    sayfasındaki metnin aynısı; 28 Kasım 2026'ya kadar reddediyordu).
   - Yönetici (rakam yetkisi) her şeyi eskisi gibi görür: kart, Kontrol listesi, e-posta, zil. Tuzla (ModPOS) ve geçiş
     gününden önceki gün değişmedi.
   - Kapsam dışı (bilinçli): AsilPOS'un hiç göndermediği güne personelin geç raporu (yazarkasa Z fotoğrafıyla, yöneticinin

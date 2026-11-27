@@ -1,6 +1,6 @@
 # Yapılacaklar (ladmin)
 
-Son güncelleme: 27 Kasım 2026. Kaynak: 25 Kasım yönetim paneli denetimi ve sahibin istekleri.
+Son güncelleme: 28 Kasım 2026. Kaynak: 25 Kasım yönetim paneli denetimi ve sahibin istekleri.
 
 Etiketler:
 - **[Ladmin]**: yalnız panelde değişiklik.
@@ -9,7 +9,16 @@ Etiketler:
 
 AsilPOS deposunda değişiklik gerektiren her madde sahibin onayını bekler.
 
-## Bitenler (25–27 Kasım 2026)
+## Bitenler (25–28 Kasım 2026)
+
+- **Personele kör sayımlı WhatsApp metni** (bu PR, 28 Kasım; sahibin bildirimi: "WhatsApp kopyala gitmiş ladmin'de, o
+  olsun"): Marina'da (AsilPOS günü, kör kasa) personelin Kasa raporu kartında **WhatsApp ile gönder** ve **Metni
+  kopyala** yine var. Metin sayımsız: açılış, sayılan nakit, teslim, olması gereken, kasa farkı, ertesi güne devir,
+  açılış ↔ devir uyarıları ve "Değişen" satırı yok; kasa bölümünde nakit satış, giren, çıkan (kasadan çıkan satırlarıyla)
+  ve "Kör sayım: açılış, sayılan nakit ve kasa farkı yalnız yöneticide."; not personelin kartındaki gibi süzülür.
+  Sunucunun eylemi (`cashReportWhatsapp`) artık reddetmez, aynı metni verir. Düzenle ve silme isteği personelde yine yok.
+  Yöneticinin metni ve Tuzla (ModPOS) günü bayt bayt aynı (altın metinle sınandı; `tests/whatsapp-kor.test.ts`,
+  `tests/roller-db.test.ts`). docs/ASILPOS.md › Kör kasa.
 
 - **Vergi bölümü kaldırıldı** (bu PR, 27 Kasım; sahibin kararı: vergiyi muhasebeci yürütüyor, "veriler silinmesin"):
   kenar çubuğundaki **Vergi, KDV, SGK** grubu ve dört ekranı (Özet, Vergi kârı, Demirbaş, Muhasebeci / Kurallar), vergi

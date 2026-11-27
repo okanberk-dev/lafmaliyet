@@ -99,6 +99,13 @@ Sıra:
 10. P8 fotoğraf okuma (+ banka POS Z ÖZET'inde Toplam KDV), P7 dönem kapanışı, P6 sabit listeler (ortağın adı koddan çıkar),
     P4 CI, P9 temizlik, A3 eski adlar (en erken 4 Aralık), asil-platform satışa hazırlık.
 
+## 28 Kasım: personele kör sayımlı WhatsApp metni (dal whatsapp-kor-metin)
+
+Sahibin bildirimi: "WhatsApp kopyala gitmiş ladmin'de, o olsun". Marina'da (AsilPOS günü, kör kasa) personelin Kasa raporu
+kartında WhatsApp ile gönder ve Metni kopyala geri geldi; metin sayımsız (`whatsappText(…, { blind: true })`; açılış,
+sayılan, teslim, olması gereken, fark ve devir yok), sunucunun eylemi reddetmek yerine aynı metni verir. Yönetici ve Tuzla
+değişmedi. Göç yok. Yukarıdaki sıra değişmedi.
+
 ## Kod paketleri (sırayla; her biri ayrı dal ve PR)
 
 ### P1. Roller + vardiya şube ayarları — BİTTİ (#163)
